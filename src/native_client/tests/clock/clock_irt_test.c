@@ -52,8 +52,8 @@ struct timespec;
 /*
  * Basic functionality test: the syscalls are present.
  */
-int TimeTest(int (*func)(clockid_t clk_id, struct timespec *ts),
-             clockid_t clk_id,
+int TimeTest(int (*func)(nacl_irt_clockid_t clk_id, struct timespec *ts),
+             nacl_irt_clockid_t clk_id,
              char const *error_string,
              char const *success_name) {
   struct timespec       ts;
@@ -84,11 +84,23 @@ int main(void) {
   errs += TimeTest(ti.clock_getres, CLOCK_MONOTONIC,
                    "clock_getres on monotonic clock failed",
                    "Monotonic clock resolution");
+  errs += TimeTest(ti.clock_getres, CLOCK_PROCESS_CPUTIME_ID,
+                   "clock_getres on process CPU-time clock failed",
+                   "Process CPU-time clock resolution");
+  errs += TimeTest(ti.clock_getres, CLOCK_THREAD_CPUTIME_ID,
+                   "clock_getres on thread CPU-time clock failed",
+                   "Thread CPU-time clock resolution");
   errs += TimeTest(ti.clock_gettime, CLOCK_REALTIME,
                    "clock_gettime on realtime clock failed",
                    "Realtime clock value");
   errs += TimeTest(ti.clock_gettime, CLOCK_MONOTONIC,
                    "clock_gettime on monotonic clock failed",
                    "Monotonic clock value");
+  errs += TimeTest(ti.clock_gettime, CLOCK_PROCESS_CPUTIME_ID,
+                   "clock_gettime on process CPU-time clock failed",
+                   "Process CPU-time clock value");
+  errs += TimeTest(ti.clock_gettime, CLOCK_THREAD_CPUTIME_ID,
+                   "clock_gettime on thread CPU-time clock failed",
+                   "Thread CPU-time clock value");
   return errs;
 }

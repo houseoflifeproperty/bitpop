@@ -1,0 +1,313 @@
+[
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/git_setup.py",
+      "--path",
+      "[SLAVE_BUILD]/swarming.client",
+      "--url",
+      "https://chromium.googlesource.com/external/swarming.client.git"
+    ],
+    "name": "git setup (swarming_client)",
+    "seed_steps": [
+      "git setup (swarming_client)",
+      "git fetch (swarming_client)",
+      "git checkout (swarming_client)",
+      "git clean (swarming_client)",
+      "submodule sync (swarming_client)",
+      "submodule update (swarming_client)"
+    ]
+  },
+  {
+    "cmd": [
+      "git",
+      "fetch",
+      "origin",
+      "master"
+    ],
+    "cwd": "[SLAVE_BUILD]/swarming.client",
+    "name": "git fetch (swarming_client)"
+  },
+  {
+    "cmd": [
+      "git",
+      "checkout",
+      "-f",
+      "FETCH_HEAD"
+    ],
+    "cwd": "[SLAVE_BUILD]/swarming.client",
+    "name": "git checkout (swarming_client)"
+  },
+  {
+    "cmd": [
+      "git",
+      "clean",
+      "-f",
+      "-d",
+      "-x"
+    ],
+    "cwd": "[SLAVE_BUILD]/swarming.client",
+    "name": "git clean (swarming_client)"
+  },
+  {
+    "cmd": [
+      "git",
+      "submodule",
+      "sync"
+    ],
+    "cwd": "[SLAVE_BUILD]/swarming.client",
+    "name": "submodule sync (swarming_client)"
+  },
+  {
+    "cmd": [
+      "git",
+      "submodule",
+      "update",
+      "--init",
+      "--recursive"
+    ],
+    "cwd": "[SLAVE_BUILD]/swarming.client",
+    "name": "submodule update (swarming_client)"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/swarming.client/swarming.py",
+      "--version"
+    ],
+    "name": "swarming.py --version",
+    "stdout": "/path/to/tmp/",
+    "~followup_annotations": [
+      "@@@STEP_TEXT@0.4.7@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/swarming.client/isolate.py",
+      "archive",
+      "--isolate",
+      "[SLAVE_BUILD]/swarming.client/example/payload/hello_world.isolate",
+      "--isolated",
+      "[TMP_BASE]/hello_isolated_world_tmp_1/hello_world.isolated",
+      "--isolate-server",
+      "https://isolateserver-dev.appspot.com",
+      "--config-variable",
+      "OS",
+      "win",
+      "--verbose"
+    ],
+    "name": "archive for win",
+    "stdout": "/path/to/tmp/"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/swarming.client/isolate.py",
+      "archive",
+      "--isolate",
+      "[SLAVE_BUILD]/swarming.client/example/payload/hello_world.isolate",
+      "--isolated",
+      "[TMP_BASE]/hello_isolated_world_tmp_1/hello_world.isolated",
+      "--isolate-server",
+      "https://isolateserver-dev.appspot.com",
+      "--config-variable",
+      "OS",
+      "linux",
+      "--verbose"
+    ],
+    "name": "archive for linux",
+    "stdout": "/path/to/tmp/"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/swarming.client/isolate.py",
+      "archive",
+      "--isolate",
+      "[SLAVE_BUILD]/swarming.client/example/payload/hello_world.isolate",
+      "--isolated",
+      "[TMP_BASE]/hello_isolated_world_tmp_1/hello_world.isolated",
+      "--isolate-server",
+      "https://isolateserver-dev.appspot.com",
+      "--config-variable",
+      "OS",
+      "mac",
+      "--verbose"
+    ],
+    "name": "archive for mac",
+    "stdout": "/path/to/tmp/"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/swarming.client/swarming.py",
+      "trigger",
+      "--swarming",
+      "https://chromium-swarm-dev.appspot.com",
+      "--isolate-server",
+      "https://isolateserver-dev.appspot.com",
+      "--priority",
+      "30",
+      "--shards",
+      "1",
+      "--task-name",
+      "hello_world/Windows-6.1/hash_for_win/local/0/1337000001500",
+      "--dimension",
+      "os",
+      "Windows-6.1",
+      "--env",
+      "TESTING",
+      "1",
+      "--profile",
+      "--verbose",
+      "hash_for_win"
+    ],
+    "name": "[trigger] hello_world on Windows-6.1",
+    "seed_steps": [
+      "[trigger] hello_world on Windows-6.1",
+      "[trigger] hello_world",
+      "[trigger] hello_world on Mac"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/swarming.client/swarming.py",
+      "trigger",
+      "--swarming",
+      "https://chromium-swarm-dev.appspot.com",
+      "--isolate-server",
+      "https://isolateserver-dev.appspot.com",
+      "--priority",
+      "30",
+      "--shards",
+      "1",
+      "--task-name",
+      "hello_world/Linux/hash_for_linux/local/0/1337000003000",
+      "--dimension",
+      "os",
+      "Linux",
+      "--env",
+      "TESTING",
+      "1",
+      "--profile",
+      "--verbose",
+      "hash_for_linux"
+    ],
+    "name": "[trigger] hello_world"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/swarming.client/swarming.py",
+      "trigger",
+      "--swarming",
+      "https://chromium-swarm-dev.appspot.com",
+      "--isolate-server",
+      "https://isolateserver-dev.appspot.com",
+      "--priority",
+      "30",
+      "--shards",
+      "1",
+      "--task-name",
+      "hello_world/Mac/hash_for_mac/local/0/1337000004500",
+      "--dimension",
+      "os",
+      "Mac",
+      "--env",
+      "TESTING",
+      "1",
+      "--profile",
+      "--verbose",
+      "hash_for_mac"
+    ],
+    "name": "[trigger] hello_world on Mac"
+  },
+  {
+    "cmd": [
+      "echo",
+      "running something locally"
+    ],
+    "name": "local step"
+  },
+  {
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/swarming.client/swarming.py",
+      "collect",
+      "--swarming",
+      "https://chromium-swarm-dev.appspot.com",
+      "--decorate",
+      "--print-status-updates",
+      "--verbose",
+      "hello_world/Windows-6.1/hash_for_win/local/0/1337000001500"
+    ],
+    "name": "[swarming] hello_world on Windows-6.1",
+    "seed_steps": [
+      "[swarming] hello_world on Windows-6.1",
+      "[swarming] hello_world",
+      "[swarming] hello_world on Mac"
+    ]
+  },
+  {
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/swarming.client/swarming.py",
+      "collect",
+      "--swarming",
+      "https://chromium-swarm-dev.appspot.com",
+      "--decorate",
+      "--print-status-updates",
+      "--verbose",
+      "hello_world/Linux/hash_for_linux/local/0/1337000003000"
+    ],
+    "name": "[swarming] hello_world"
+  },
+  {
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/swarming.client/swarming.py",
+      "collect",
+      "--swarming",
+      "https://chromium-swarm-dev.appspot.com",
+      "--decorate",
+      "--print-status-updates",
+      "--verbose",
+      "hello_world/Mac/hash_for_mac/local/0/1337000004500"
+    ],
+    "name": "[swarming] hello_world on Mac"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport os, sys\nfrom common import chromium_utils\n\nif os.path.exists(sys.argv[1]):\n  chromium_utils.RemoveDirectory(sys.argv[1])\n",
+      "[TMP_BASE]/hello_isolated_world_tmp_1"
+    ],
+    "name": "rmtree remove temp dir",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import os, sys@@@",
+      "@@@STEP_LOG_LINE@python.inline@from common import chromium_utils@@@",
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@if os.path.exists(sys.argv[1]):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  chromium_utils.RemoveDirectory(sys.argv[1])@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  }
+]

@@ -6,15 +6,16 @@
 #define CLOUD_PRINT_SERVICE_CHROME_LAUNCHER_H_
 
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/simple_thread.h"
 
 class ChromeLauncher : public base::DelegateSimpleThread::Delegate {
  public:
-  explicit ChromeLauncher(const FilePath& user_data);
+  explicit ChromeLauncher(const base::FilePath& user_data);
 
   virtual ~ChromeLauncher();
 
@@ -23,8 +24,12 @@ class ChromeLauncher : public base::DelegateSimpleThread::Delegate {
 
   virtual void Run() OVERRIDE;
 
+  static std::string CreateServiceStateFile(
+      const std::string& proxy_id,
+      const std::vector<std::string>& printers);
+
  private:
-  FilePath user_data_;
+  base::FilePath user_data_;
   base::WaitableEvent stop_event_;
   scoped_ptr<base::DelegateSimpleThread> thread_;
 

@@ -4,14 +4,15 @@
 
 #import <Cocoa/Cocoa.h>
 
-#import "base/memory/scoped_nsobject.h"
-#include "base/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#import "base/mac/scoped_nsobject.h"
+#include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #import "chrome/browser/extensions/extension_install_prompt.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #import "chrome/browser/ui/cocoa/extensions/extension_install_prompt_test_utils.h"
 #import "chrome/browser/ui/cocoa/extensions/extension_install_view_controller.h"
-#include "chrome/common/extensions/extension.h"
+#include "extensions/common/extension.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #import "testing/gtest_mac.h"
 
@@ -36,15 +37,18 @@ TEST_F(ExtensionInstallViewControllerTest, BasicsNormalCancel) {
   ExtensionInstallPrompt::Prompt prompt =
       chrome::BuildExtensionInstallPrompt(extension_.get());
 
-  std::vector<string16> permissions;
-  permissions.push_back(UTF8ToUTF16("warning 1"));
+  std::vector<base::string16> permissions;
+  permissions.push_back(base::UTF8ToUTF16("warning 1"));
   prompt.SetPermissions(permissions);
+  // No details provided with this permission.
+  std::vector<base::string16> details;
+  details.push_back(base::string16());
+  prompt.SetPermissionsDetails(details);
 
-  scoped_nsobject<ExtensionInstallViewController>
-    controller([[ExtensionInstallViewController alloc]
-                 initWithNavigator:browser()
-                          delegate:&delegate
-                            prompt:prompt]);
+  base::scoped_nsobject<ExtensionInstallViewController> controller(
+      [[ExtensionInstallViewController alloc] initWithNavigator:browser()
+                                                       delegate:&delegate
+                                                         prompt:prompt]);
 
   [controller view];  // Force nib load.
 
@@ -64,10 +68,10 @@ TEST_F(ExtensionInstallViewControllerTest, BasicsNormalCancel) {
   NSOutlineView* outlineView = [controller outlineView];
   EXPECT_TRUE(outlineView);
   EXPECT_EQ(2, [outlineView numberOfRows]);
-  EXPECT_NSEQ([[outlineView dataSource] outlineView:outlineView
+  EXPECT_NSEQ(base::SysUTF16ToNSString(prompt.GetPermission(0)),
+              [[outlineView dataSource] outlineView:outlineView
                           objectValueForTableColumn:nil
-                                             byItem:[outlineView itemAtRow:1]],
-              base::SysUTF16ToNSString(prompt.GetPermission(0)));
+                                             byItem:[outlineView itemAtRow:1]]);
 
   EXPECT_TRUE([controller cancelButton]);
   EXPECT_NE(0u, [[[controller cancelButton] stringValue] length]);
@@ -83,21 +87,23 @@ TEST_F(ExtensionInstallViewControllerTest, BasicsNormalCancel) {
   EXPECT_EQ(0, delegate.proceed_count());
 }
 
-
 TEST_F(ExtensionInstallViewControllerTest, BasicsNormalOK) {
   chrome::MockExtensionInstallPromptDelegate delegate;
 
   ExtensionInstallPrompt::Prompt prompt =
       chrome::BuildExtensionInstallPrompt(extension_.get());
-  std::vector<string16> permissions;
-  permissions.push_back(UTF8ToUTF16("warning 1"));
+  std::vector<base::string16> permissions;
+  permissions.push_back(base::UTF8ToUTF16("warning 1"));
   prompt.SetPermissions(permissions);
+  // No details provided with this permission.
+  std::vector<base::string16> details;
+  details.push_back(base::string16());
+  prompt.SetPermissionsDetails(details);
 
-  scoped_nsobject<ExtensionInstallViewController>
-  controller([[ExtensionInstallViewController alloc]
-               initWithNavigator:browser()
-                        delegate:&delegate
-                          prompt:prompt]);
+  base::scoped_nsobject<ExtensionInstallViewController> controller(
+      [[ExtensionInstallViewController alloc] initWithNavigator:browser()
+                                                       delegate:&delegate
+                                                         prompt:prompt]);
 
   [controller view];  // Force nib load.
   [controller ok:nil];
@@ -114,28 +120,35 @@ TEST_F(ExtensionInstallViewControllerTest, MultipleWarnings) {
 
   ExtensionInstallPrompt::Prompt one_warning_prompt =
       chrome::BuildExtensionInstallPrompt(extension_.get());
-  std::vector<string16> permissions;
-  permissions.push_back(UTF8ToUTF16("warning 1"));
+  std::vector<base::string16> permissions;
+  permissions.push_back(base::UTF8ToUTF16("warning 1"));
   one_warning_prompt.SetPermissions(permissions);
+  // No details provided with this permission.
+  std::vector<base::string16> details;
+  details.push_back(base::string16());
+  one_warning_prompt.SetPermissionsDetails(details);
 
   ExtensionInstallPrompt::Prompt two_warnings_prompt =
       chrome::BuildExtensionInstallPrompt(extension_.get());
-  permissions.push_back(UTF8ToUTF16("warning 2"));
+  permissions.push_back(base::UTF8ToUTF16("warning 2"));
   two_warnings_prompt.SetPermissions(permissions);
+  // No details provided with this permission.
+  details.push_back(base::string16());
+  two_warnings_prompt.SetPermissionsDetails(details);
 
-  scoped_nsobject<ExtensionInstallViewController>
-  controller1([[ExtensionInstallViewController alloc]
-                initWithNavigator:browser()
-                         delegate:&delegate1
-                           prompt:one_warning_prompt]);
+  base::scoped_nsobject<ExtensionInstallViewController> controller1(
+      [[ExtensionInstallViewController alloc]
+          initWithNavigator:browser()
+                   delegate:&delegate1
+                     prompt:one_warning_prompt]);
 
   [controller1 view];  // Force nib load.
 
-  scoped_nsobject<ExtensionInstallViewController>
-  controller2([[ExtensionInstallViewController alloc]
-                initWithNavigator:browser()
-                         delegate:&delegate2
-                           prompt:two_warnings_prompt]);
+  base::scoped_nsobject<ExtensionInstallViewController> controller2(
+      [[ExtensionInstallViewController alloc]
+          initWithNavigator:browser()
+                   delegate:&delegate2
+                     prompt:two_warnings_prompt]);
 
   [controller2 view];  // Force nib load.
 
@@ -158,11 +171,11 @@ TEST_F(ExtensionInstallViewControllerTest, BasicsSkinny) {
   ExtensionInstallPrompt::Prompt no_warnings_prompt =
       chrome::BuildExtensionInstallPrompt(extension_.get());
 
-  scoped_nsobject<ExtensionInstallViewController>
-  controller([[ExtensionInstallViewController alloc]
-               initWithNavigator:browser()
-                        delegate:&delegate
-                          prompt:no_warnings_prompt]);
+  base::scoped_nsobject<ExtensionInstallViewController> controller(
+      [[ExtensionInstallViewController alloc]
+          initWithNavigator:browser()
+                   delegate:&delegate
+                     prompt:no_warnings_prompt]);
 
   [controller view];  // Force nib load.
 
@@ -197,21 +210,20 @@ TEST_F(ExtensionInstallViewControllerTest, BasicsInline) {
 
   // No warnings should trigger skinny prompt.
   ExtensionInstallPrompt::Prompt inline_prompt(
-      NULL, ExtensionInstallPrompt::INLINE_INSTALL_PROMPT);
-  inline_prompt.SetInlineInstallWebstoreData("1,000", 3.5, 200);
+      ExtensionInstallPrompt::INLINE_INSTALL_PROMPT);
+  inline_prompt.SetWebstoreData("1,000", true, 3.5, 200);
   inline_prompt.set_extension(extension_.get());
   inline_prompt.set_icon(chrome::LoadInstallPromptIcon());
 
-  scoped_nsobject<ExtensionInstallViewController>
-  controller([[ExtensionInstallViewController alloc]
-               initWithNavigator:browser()
-                        delegate:&delegate
-                          prompt:inline_prompt]);
+  base::scoped_nsobject<ExtensionInstallViewController> controller(
+      [[ExtensionInstallViewController alloc] initWithNavigator:browser()
+                                                       delegate:&delegate
+                                                         prompt:inline_prompt]);
 
   [controller view];  // Force nib load.
 
   // Test the right nib loaded.
-  EXPECT_NSEQ(@"ExtensionInstallPromptInline", [controller nibName]);
+  EXPECT_NSEQ(@"ExtensionInstallPromptWebstoreData", [controller nibName]);
 
   // Check all the controls.
   EXPECT_TRUE([controller iconView]);
@@ -254,29 +266,99 @@ TEST_F(ExtensionInstallViewControllerTest, OAuthIssues) {
   chrome::MockExtensionInstallPromptDelegate delegate;
 
   ExtensionInstallPrompt::Prompt prompt =
-      chrome::BuildExtensionInstallPrompt(extension_);
-  std::vector<string16> permissions;
-  permissions.push_back(UTF8ToUTF16("warning 1"));
+      chrome::BuildExtensionInstallPrompt(extension_.get());
+  std::vector<base::string16> permissions;
+  permissions.push_back(base::UTF8ToUTF16("warning 1"));
   prompt.SetPermissions(permissions);
+  // No details provided with this permission.
+  std::vector<base::string16> details;
+  details.push_back(base::string16());
+  prompt.SetPermissionsDetails(details);
+
   IssueAdviceInfoEntry issue;
-  issue.description = UTF8ToUTF16("issue description 1");
-  issue.details.push_back(UTF8ToUTF16("issue detail 1"));
+  issue.description = base::UTF8ToUTF16("issue description 1");
+  issue.details.push_back(base::UTF8ToUTF16("issue detail 1"));
   IssueAdviceInfo issues;
   issues.push_back(issue);
   prompt.SetOAuthIssueAdvice(issues);
+  prompt.SetIsShowingDetails(
+      ExtensionInstallPrompt::OAUTH_DETAILS, 0, true);
 
-  scoped_nsobject<ExtensionInstallViewController>
-  controller([[ExtensionInstallViewController alloc]
-               initWithNavigator:browser()
-                        delegate:&delegate
-                          prompt:prompt]);
+  base::scoped_nsobject<ExtensionInstallViewController> controller(
+      [[ExtensionInstallViewController alloc] initWithNavigator:browser()
+                                                       delegate:&delegate
+                                                         prompt:prompt]);
 
   [controller view];  // Force nib load.
   NSOutlineView* outlineView = [controller outlineView];
   EXPECT_TRUE(outlineView);
-  EXPECT_EQ(4, [outlineView numberOfRows]);
-  EXPECT_NSEQ([[outlineView dataSource] outlineView:outlineView
+  EXPECT_EQ(6, [outlineView numberOfRows]);
+  EXPECT_NSEQ(base::SysUTF16ToNSString(prompt.GetOAuthIssue(0).description),
+              [[outlineView dataSource] outlineView:outlineView
                           objectValueForTableColumn:nil
-                                             byItem:[outlineView itemAtRow:3]],
-              base::SysUTF16ToNSString(prompt.GetOAuthIssue(0).description));
+                                             byItem:[outlineView itemAtRow:3]]);
+
+  EXPECT_NSEQ(base::SysUTF16ToNSString(prompt.GetOAuthIssue(0).details[0]),
+              [[outlineView dataSource] outlineView:outlineView
+                          objectValueForTableColumn:nil
+                                             byItem:[outlineView itemAtRow:4]]);
+}
+
+TEST_F(ExtensionInstallViewControllerTest, PostInstallPermissionsPrompt) {
+  chrome::MockExtensionInstallPromptDelegate delegate;
+
+  ExtensionInstallPrompt::Prompt prompt =
+      chrome::BuildExtensionPostInstallPermissionsPrompt(extension_.get());
+  std::vector<base::string16> permissions;
+  permissions.push_back(base::UTF8ToUTF16("warning 1"));
+  prompt.SetPermissions(permissions);
+  // No details provided with this permission.
+  std::vector<base::string16> details;
+  details.push_back(base::string16());
+  prompt.SetPermissionsDetails(details);
+
+  base::scoped_nsobject<ExtensionInstallViewController> controller(
+      [[ExtensionInstallViewController alloc] initWithNavigator:browser()
+                                                       delegate:&delegate
+                                                         prompt:prompt]);
+
+  [controller view];  // Force nib load.
+
+  EXPECT_TRUE([controller cancelButton]);
+  EXPECT_FALSE([controller okButton]);
+
+  [controller cancel:nil];
+  EXPECT_EQ(1, delegate.abort_count());
+}
+
+// Test that permission details show up.
+TEST_F(ExtensionInstallViewControllerTest, PermissionsDetails) {
+  chrome::MockExtensionInstallPromptDelegate delegate;
+
+  ExtensionInstallPrompt::Prompt prompt =
+      chrome::BuildExtensionInstallPrompt(extension_.get());
+
+  std::vector<base::string16> permissions;
+  permissions.push_back(base::UTF8ToUTF16("warning 1"));
+  std::vector<base::string16> permissions_details;
+  permissions_details.push_back(base::UTF8ToUTF16("Detail 1"));
+  prompt.SetPermissions(permissions);
+  prompt.SetPermissionsDetails(permissions_details);
+  prompt.SetIsShowingDetails(
+      ExtensionInstallPrompt::PERMISSIONS_DETAILS, 0, true);
+
+  base::scoped_nsobject<ExtensionInstallViewController> controller(
+      [[ExtensionInstallViewController alloc] initWithNavigator:browser()
+                                                       delegate:&delegate
+                                                         prompt:prompt]);
+
+  [controller view];  // Force nib load.
+
+  NSOutlineView* outlineView = [controller outlineView];
+  EXPECT_TRUE(outlineView);
+  EXPECT_EQ(4, [outlineView numberOfRows]);
+  EXPECT_NSEQ(base::SysUTF16ToNSString(prompt.GetPermissionsDetails(0)),
+              [[outlineView dataSource] outlineView:outlineView
+                          objectValueForTableColumn:nil
+                                             byItem:[outlineView itemAtRow:2]]);
 }

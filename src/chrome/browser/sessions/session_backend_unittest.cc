@@ -5,7 +5,7 @@
 #include "base/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "chrome/browser/sessions/session_backend.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -35,7 +35,7 @@ class SessionBackendTest : public testing::Test {
   virtual void SetUp() {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     path_ = temp_dir_.path().Append(FILE_PATH_LITERAL("SessionTestDirs"));
-    file_util::CreateDirectory(path_);
+    base::CreateDirectory(path_);
   }
 
   void AssertCommandEqualsData(const TestData& data, SessionCommand* command) {
@@ -46,7 +46,7 @@ class SessionBackendTest : public testing::Test {
   }
 
   // Path used in testing.
-  FilePath path_;
+  base::FilePath path_;
   base::ScopedTempDir temp_dir_;
 };
 
@@ -155,13 +155,7 @@ TEST_F(SessionBackendTest, BigData) {
   STLDeleteElements(&commands);
 }
 
-// Bug 132037: This test causes an assertion error on Windows.
-#if defined(OS_WIN) && !defined(NDEBUG)
-#define MAYBE_EmptyCommand DISABLED_EmptyCommand
-#else
-#define MAYBE_EmptyCommand EmptyCommand
-#endif
-TEST_F(SessionBackendTest, MAYBE_EmptyCommand) {
+TEST_F(SessionBackendTest, EmptyCommand) {
   TestData empty_command;
   empty_command.command_id = 1;
   scoped_refptr<SessionBackend> backend(

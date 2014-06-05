@@ -4,49 +4,88 @@
 
 #include "chrome/test/base/testing_browser_process.h"
 
-#include "base/string_util.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_util.h"
 #include "build/build_config.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/apps/chrome_apps_client.h"
+#include "chrome/browser/background/background_mode_manager.h"
+#include "chrome/browser/browser_process.h"
+#include "chrome/browser/browser_process_impl.h"
+#include "chrome/browser/extensions/chrome_extensions_browser_client.h"
+#include "chrome/browser/printing/print_job_manager.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/ui/bookmarks/bookmark_prompt_controller.h"
+#include "chrome/test/base/testing_browser_process_platform_part.h"
 #include "content/public/browser/notification_service.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/message_center/message_center.h"
 
 #if !defined(OS_IOS)
-#include "chrome/browser/media_gallery/media_file_system_registry.h"
 #include "chrome/browser/notifications/notification_ui_manager.h"
 #include "chrome/browser/prerender/prerender_tracker.h"
-#include "chrome/browser/printing/background_printing_manager.h"
-#include "chrome/browser/printing/print_preview_tab_controller.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
-#include "chrome/browser/thumbnails/render_widget_snapshot_taker.h"
+#endif
+
+#if !defined(OS_IOS) && !defined(OS_ANDROID)
+#include "chrome/browser/media_galleries/media_file_system_registry.h"
+#include "components/storage_monitor/storage_monitor.h"
+#include "components/storage_monitor/test_storage_monitor.h"
 #endif
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
-#include "chrome/browser/policy/browser_policy_connector.h"
+#include "components/policy/core/browser/browser_policy_connector.h"
 #else
-#include "chrome/browser/policy/policy_service_stub.h"
+#include "components/policy/core/common/policy_service_stub.h"
 #endif  // defined(ENABLE_CONFIGURATION_POLICY)
+
+#if defined(ENABLE_FULL_PRINTING)
+#include "chrome/browser/printing/background_printing_manager.h"
+#include "chrome/browser/printing/print_preview_dialog_controller.h"
+#endif
+
+// static
+TestingBrowserProcess* TestingBrowserProcess::GetGlobal() {
+  return static_cast<TestingBrowserProcess*>(g_browser_process);
+}
+
+// static
+void TestingBrowserProcess::CreateInstance() {
+  DCHECK(!g_browser_process);
+  g_browser_process = new TestingBrowserProcess;
+}
+
+// static
+void TestingBrowserProcess::DeleteInstance() {
+  // g_browser_process must be NULL during its own destruction.
+  BrowserProcess* browser_process = g_browser_process;
+  g_browser_process = NULL;
+  delete browser_process;
+}
 
 TestingBrowserProcess::TestingBrowserProcess()
     : notification_service_(content::NotificationService::Create()),
       module_ref_count_(0),
       app_locale_("en"),
-#if !defined(OS_IOS)
-      render_widget_snapshot_taker_(new RenderWidgetSnapshotTaker),
-#endif
       local_state_(NULL),
       io_thread_(NULL),
-      system_request_context_(NULL) {
+      system_request_context_(NULL),
+      platform_part_(new TestingBrowserProcessPlatformPart()),
+      extensions_browser_client_(
+          new extensions::ChromeExtensionsBrowserClient) {
+  extensions::ExtensionsBrowserClient::Set(extensions_browser_client_.get());
+  apps::AppsClient::Set(ChromeAppsClient::GetInstance());
 }
 
 TestingBrowserProcess::~TestingBrowserProcess() {
   EXPECT_FALSE(local_state_);
 #if defined(ENABLE_CONFIGURATION_POLICY)
-  if (browser_policy_connector_)
-    browser_policy_connector_->Shutdown();
+  SetBrowserPolicyConnector(NULL);
 #endif
+  extensions::ExtensionsBrowserClient::Set(NULL);
+
+  // Destructors for some objects owned by TestingBrowserProcess will use
+  // g_browser_process if it is not NULL, so it must be NULL before proceeding.
+  DCHECK_EQ(static_cast<BrowserProcess*>(NULL), g_browser_process);
 }
 
 void TestingBrowserProcess::ResourceDispatcherHostCreated() {
@@ -56,6 +95,10 @@ void TestingBrowserProcess::EndSession() {
 }
 
 MetricsService* TestingBrowserProcess::metrics_service() {
+  return NULL;
+}
+
+rappor::RapporService* TestingBrowserProcess::rappor_service() {
   return NULL;
 }
 
@@ -78,6 +121,13 @@ ProfileManager* TestingBrowserProcess::profile_manager() {
 
 void TestingBrowserProcess::SetProfileManager(ProfileManager* profile_manager) {
 #if !defined(OS_IOS)
+  // NotificationUIManager can contain references to elements in the current
+  // ProfileManager (for example, the MessageCenterSettingsController maintains
+  // a pointer to the ProfileInfoCache). So when we change the ProfileManager
+  // (typically during test shutdown) make sure to reset any objects that might
+  // maintain references to it. See SetLocalState() for a description of a
+  // similar situation.
+  notification_ui_manager_.reset();
   profile_manager_.reset(profile_manager);
 #endif
 }
@@ -95,7 +145,7 @@ policy::BrowserPolicyConnector*
     TestingBrowserProcess::browser_policy_connector() {
 #if defined(ENABLE_CONFIGURATION_POLICY)
   if (!browser_policy_connector_)
-    browser_policy_connector_.reset(new policy::BrowserPolicyConnector());
+    browser_policy_connector_ = platform_part_->CreateBrowserPolicyConnector();
   return browser_policy_connector_.get();
 #else
   return NULL;
@@ -123,18 +173,17 @@ GLStringManager* TestingBrowserProcess::gl_string_manager() {
   return NULL;
 }
 
-RenderWidgetSnapshotTaker*
-TestingBrowserProcess::GetRenderWidgetSnapshotTaker() {
-#if defined(OS_IOS)
-  NOTREACHED();
+GpuModeManager* TestingBrowserProcess::gpu_mode_manager() {
   return NULL;
-#else
-  return render_widget_snapshot_taker_.get();
-#endif
 }
 
 BackgroundModeManager* TestingBrowserProcess::background_mode_manager() {
   return NULL;
+}
+
+void TestingBrowserProcess::set_background_mode_manager_for_test(
+    scoped_ptr<BackgroundModeManager> manager) {
+  NOTREACHED();
 }
 
 StatusTray* TestingBrowserProcess::status_tray() {
@@ -159,11 +208,9 @@ net::URLRequestContextGetter* TestingBrowserProcess::system_request_context() {
   return system_request_context_;
 }
 
-#if defined(OS_CHROMEOS)
-chromeos::OomPriorityManager* TestingBrowserProcess::oom_priority_manager() {
-  return NULL;
+BrowserProcessPlatformPart* TestingBrowserProcess::platform_part() {
+  return platform_part_.get();
 }
-#endif  // defined(OS_CHROMEOS)
 
 extensions::EventRouterForwarder*
 TestingBrowserProcess::extension_event_router_forwarder() {
@@ -182,19 +229,17 @@ NotificationUIManager* TestingBrowserProcess::notification_ui_manager() {
 #endif
 }
 
+message_center::MessageCenter* TestingBrowserProcess::message_center() {
+  return message_center::MessageCenter::Get();
+}
+
 IntranetRedirectDetector* TestingBrowserProcess::intranet_redirect_detector() {
   return NULL;
 }
-
-AutomationProviderList* TestingBrowserProcess::GetAutomationProviderList() {
-  return NULL;
-}
-
 void TestingBrowserProcess::CreateDevToolsHttpProtocolHandler(
-    Profile* profile,
+    chrome::HostDesktopType host_desktop_type,
     const std::string& ip,
-    int port,
-    const std::string& frontend_url) {
+    int port) {
 }
 
 unsigned int TestingBrowserProcess::AddRefModule() {
@@ -211,15 +256,23 @@ bool TestingBrowserProcess::IsShuttingDown() {
 }
 
 printing::PrintJobManager* TestingBrowserProcess::print_job_manager() {
+#if defined(ENABLE_FULL_PRINTING)
+  if (!print_job_manager_.get())
+    print_job_manager_.reset(new printing::PrintJobManager());
+  return print_job_manager_.get();
+#else
+  NOTIMPLEMENTED();
   return NULL;
+#endif
 }
 
-printing::PrintPreviewTabController*
-TestingBrowserProcess::print_preview_tab_controller() {
-#if defined(ENABLE_PRINTING)
-  if (!print_preview_tab_controller_.get())
-    print_preview_tab_controller_ = new printing::PrintPreviewTabController();
-  return print_preview_tab_controller_.get();
+printing::PrintPreviewDialogController*
+TestingBrowserProcess::print_preview_dialog_controller() {
+#if defined(ENABLE_FULL_PRINTING)
+  if (!print_preview_dialog_controller_.get())
+    print_preview_dialog_controller_ =
+        new printing::PrintPreviewDialogController();
+  return print_preview_dialog_controller_.get();
 #else
   NOTIMPLEMENTED();
   return NULL;
@@ -228,7 +281,7 @@ TestingBrowserProcess::print_preview_tab_controller() {
 
 printing::BackgroundPrintingManager*
 TestingBrowserProcess::background_printing_manager() {
-#if defined(ENABLE_PRINTING)
+#if defined(ENABLE_FULL_PRINTING)
   if (!background_printing_manager_.get()) {
     background_printing_manager_.reset(
         new printing::BackgroundPrintingManager());
@@ -272,7 +325,8 @@ prerender::PrerenderTracker* TestingBrowserProcess::prerender_tracker() {
 #endif
 }
 
-ComponentUpdateService* TestingBrowserProcess::component_updater() {
+component_updater::ComponentUpdateService*
+TestingBrowserProcess::component_updater() {
   return NULL;
 }
 
@@ -280,37 +334,31 @@ CRLSetFetcher* TestingBrowserProcess::crl_set_fetcher() {
   return NULL;
 }
 
-BookmarkPromptController* TestingBrowserProcess::bookmark_prompt_controller() {
-#if defined(OS_IOS)
-  NOTIMPLEMENTED();
+component_updater::PnaclComponentInstaller*
+TestingBrowserProcess::pnacl_component_installer() {
   return NULL;
-#else
-  return bookmark_prompt_controller_.get();
-#endif
 }
 
-chrome::MediaFileSystemRegistry*
-TestingBrowserProcess::media_file_system_registry() {
-#if defined(OS_IOS)
+MediaFileSystemRegistry* TestingBrowserProcess::media_file_system_registry() {
+#if defined(OS_IOS) || defined(OS_ANDROID)
   NOTIMPLEMENTED();
   return NULL;
 #else
   if (!media_file_system_registry_)
-    media_file_system_registry_.reset(new chrome::MediaFileSystemRegistry());
+    media_file_system_registry_.reset(new MediaFileSystemRegistry());
   return media_file_system_registry_.get();
 #endif
 }
 
-void TestingBrowserProcess::PlatformSpecificCommandLineProcessing(
-    const CommandLine& command_line) {
+bool TestingBrowserProcess::created_local_state() const {
+    return (local_state_ != NULL);
 }
 
-void TestingBrowserProcess::SetBookmarkPromptController(
-    BookmarkPromptController* controller) {
-#if !defined(OS_IOS)
-  bookmark_prompt_controller_.reset(controller);
-#endif
+#if defined(ENABLE_WEBRTC)
+WebRtcLogUploader* TestingBrowserProcess::webrtc_log_uploader() {
+  return NULL;
 }
+#endif
 
 void TestingBrowserProcess::SetSystemRequestContext(
     net::URLRequestContextGetter* context_getter) {
@@ -345,8 +393,9 @@ void TestingBrowserProcess::SetIOThread(IOThread* io_thread) {
 void TestingBrowserProcess::SetBrowserPolicyConnector(
     policy::BrowserPolicyConnector* connector) {
 #if defined(ENABLE_CONFIGURATION_POLICY)
-  if (browser_policy_connector_)
+  if (browser_policy_connector_) {
     browser_policy_connector_->Shutdown();
+  }
   browser_policy_connector_.reset(connector);
 #else
   CHECK(false);
@@ -359,4 +408,14 @@ void TestingBrowserProcess::SetSafeBrowsingService(
   NOTIMPLEMENTED();
   sb_service_ = sb_service;
 #endif
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+TestingBrowserProcessInitializer::TestingBrowserProcessInitializer() {
+  TestingBrowserProcess::CreateInstance();
+}
+
+TestingBrowserProcessInitializer::~TestingBrowserProcessInitializer() {
+  TestingBrowserProcess::DeleteInstance();
 }

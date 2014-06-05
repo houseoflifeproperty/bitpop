@@ -34,6 +34,7 @@ void PortProxy::set_impl(PortInterface* port) {
   impl_->SignalUnknownAddress.connect(
       this, &PortProxy::OnUnknownAddress);
   impl_->SignalDestroyed.connect(this, &PortProxy::OnPortDestroyed);
+  impl_->SignalRoleConflict.connect(this, &PortProxy::OnRoleConflict);
 }
 
 const std::string& PortProxy::Type() const {
@@ -57,24 +58,24 @@ IceProtocolType PortProxy::IceProtocol() const {
 }
 
 // Methods to set/get ICE role and tiebreaker values.
-void PortProxy::SetRole(TransportRole role) {
+void PortProxy::SetIceRole(IceRole role) {
   ASSERT(impl_ != NULL);
-  impl_->SetRole(role);
+  impl_->SetIceRole(role);
 }
 
-TransportRole PortProxy::Role() const {
+IceRole PortProxy::GetIceRole() const {
   ASSERT(impl_ != NULL);
-  return impl_->Role();
+  return impl_->GetIceRole();
 }
 
-void PortProxy::SetTiebreaker(uint64 tiebreaker) {
+void PortProxy::SetIceTiebreaker(uint64 tiebreaker) {
   ASSERT(impl_ != NULL);
-  impl_->SetTiebreaker(tiebreaker);
+  impl_->SetIceTiebreaker(tiebreaker);
 }
 
-uint64 PortProxy::Tiebreaker() const {
+uint64 PortProxy::IceTiebreaker() const {
   ASSERT(impl_ != NULL);
-  return impl_->Tiebreaker();
+  return impl_->IceTiebreaker();
 }
 
 bool PortProxy::SharedSocket() const {
@@ -96,15 +97,22 @@ Connection* PortProxy::CreateConnection(const Candidate& remote_candidate,
 int PortProxy::SendTo(const void* data,
                       size_t size,
                       const talk_base::SocketAddress& addr,
+                      const talk_base::PacketOptions& options,
                       bool payload) {
   ASSERT(impl_ != NULL);
-  return impl_->SendTo(data, size, addr, payload);
+  return impl_->SendTo(data, size, addr, options, payload);
 }
 
 int PortProxy::SetOption(talk_base::Socket::Option opt,
                          int value) {
   ASSERT(impl_ != NULL);
   return impl_->SetOption(opt, value);
+}
+
+int PortProxy::GetOption(talk_base::Socket::Option opt,
+                         int* value) {
+  ASSERT(impl_ != NULL);
+  return impl_->GetOption(opt, value);
 }
 
 int PortProxy::GetError() {
@@ -156,6 +164,11 @@ void PortProxy::OnUnknownAddress(
   ASSERT(port == impl_);
   ASSERT(!port_muxed);
   SignalUnknownAddress(this, addr, proto, stun_msg, remote_username, true);
+}
+
+void PortProxy::OnRoleConflict(PortInterface* port) {
+  ASSERT(port == impl_);
+  SignalRoleConflict(this);
 }
 
 void PortProxy::OnPortDestroyed(PortInterface* port) {

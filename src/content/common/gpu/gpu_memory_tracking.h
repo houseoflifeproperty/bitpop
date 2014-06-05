@@ -5,50 +5,29 @@
 #ifndef CONTENT_COMMON_GPU_GPU_MEMORY_TRACKING_H_
 #define CONTENT_COMMON_GPU_GPU_MEMORY_TRACKING_H_
 
-#if defined(ENABLE_GPU)
-
 #include "base/basictypes.h"
-#include "content/common/gpu/gpu_memory_manager.h"
+#include "base/process/process.h"
+#include "content/common/content_export.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 
 namespace content {
 
+class GpuMemoryManager;
+
 // All decoders in a context group point to a single GpuMemoryTrackingGroup,
 // which tracks GPU resource consumption for the entire context group.
-class GpuMemoryTrackingGroup {
+class CONTENT_EXPORT GpuMemoryTrackingGroup {
  public:
-  GpuMemoryTrackingGroup(base::ProcessId pid,
-                         gpu::gles2::MemoryTracker* memory_tracker,
-                         GpuMemoryManager* memory_manager)
-      : pid_(pid),
-        size_(0),
-        memory_tracker_(memory_tracker),
-        memory_manager_(memory_manager) {
-    memory_manager_->AddTrackingGroup(this);
-  }
-  ~GpuMemoryTrackingGroup() {
-    memory_manager_->RemoveTrackingGroup(this);
-  }
+  ~GpuMemoryTrackingGroup();
   void TrackMemoryAllocatedChange(
-      size_t old_size,
-      size_t new_size,
-      gpu::gles2::MemoryTracker::Pool tracking_pool) {
-    if (old_size < new_size) {
-      size_t delta = new_size - old_size;
-      size_ += delta;
-    }
-    if (new_size < old_size) {
-      size_t delta = old_size - new_size;
-      DCHECK(size_ >= delta);
-      size_ -= delta;
-    }
-    memory_manager_->TrackMemoryAllocatedChange(
-        old_size, new_size, tracking_pool);
-  }
+      uint64 old_size,
+      uint64 new_size,
+      gpu::gles2::MemoryTracker::Pool tracking_pool);
+  bool EnsureGPUMemoryAvailable(uint64 size_needed);
   base::ProcessId GetPid() const {
     return pid_;
   }
-  size_t GetSize() const {
+  uint64 GetSize() const {
     return size_;
   }
   gpu::gles2::MemoryTracker* GetMemoryTracker() const {
@@ -56,14 +35,23 @@ class GpuMemoryTrackingGroup {
   }
 
  private:
+  friend class GpuMemoryManager;
+
+  GpuMemoryTrackingGroup(base::ProcessId pid,
+                         gpu::gles2::MemoryTracker* memory_tracker,
+                         GpuMemoryManager* memory_manager);
+
   base::ProcessId pid_;
-  size_t size_;
+  uint64 size_;
+
+  // Set and used only during the Manage function, to determine which
+  // non-surface clients should be hibernated.
+  bool hibernated_;
+
   gpu::gles2::MemoryTracker* memory_tracker_;
   GpuMemoryManager* memory_manager_;
 };
 
 }  // namespace content
-
-#endif
 
 #endif // CONTENT_COMMON_GPU_GPU_MEMORY_TRACKING_H_

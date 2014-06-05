@@ -4,8 +4,8 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
-#include "base/utf_string_conversions.h"
+#include "base/mac/scoped_nsobject.h"
+#include "base/strings/utf_string_conversions.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field.h"
 #import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_cell.h"
@@ -19,8 +19,8 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
-#include "third_party/ocmock/gtest_support.h"
 #import "third_party/ocmock/OCMock/OCMock.h"
+#include "third_party/ocmock/gtest_support.h"
 #include "ui/base/resource/resource_bundle.h"
 
 using ::testing::Return;
@@ -32,9 +32,6 @@ namespace {
 // Width of the field so that we don't have to ask |field_| for it all
 // the time.
 const CGFloat kWidth(300.0);
-
-// A narrow width for tests which test things that don't fit.
-const CGFloat kNarrowWidth(5.0);
 
 class MockDecoration : public LocationBarDecoration {
  public:
@@ -51,11 +48,11 @@ class AutocompleteTextFieldCellTest : public CocoaTest {
     // decorations.
     const NSRect frame = NSMakeRect(0, 0, kWidth, 30);
 
-    scoped_nsobject<NSTextField> view(
+    base::scoped_nsobject<NSTextField> view(
         [[NSTextField alloc] initWithFrame:frame]);
     view_ = view.get();
 
-    scoped_nsobject<AutocompleteTextFieldCell> cell(
+    base::scoped_nsobject<AutocompleteTextFieldCell> cell(
         [[AutocompleteTextFieldCell alloc] initTextCell:@"Testing"]);
     [cell setEditable:YES];
     [cell setBordered:YES];
@@ -101,9 +98,9 @@ TEST_F(AutocompleteTextFieldCellTest, DISABLED_FocusedDisplay) {
   // indicate that they should be omitted.
   const CGFloat kVeryWide = 1000.0;
 
-  SelectedKeywordDecoration selected_keyword_decoration([view_ font]);
+  SelectedKeywordDecoration selected_keyword_decoration;
   selected_keyword_decoration.SetVisible(true);
-  selected_keyword_decoration.SetKeyword(ASCIIToUTF16("Google"), false);
+  selected_keyword_decoration.SetKeyword(base::ASCIIToUTF16("Google"), false);
   [cell addLeftDecoration:&selected_keyword_decoration];
   EXPECT_NE(selected_keyword_decoration.GetWidthForSpace(kVeryWide),
             LocationBarDecoration::kOmittedWidth);
@@ -118,8 +115,7 @@ TEST_F(AutocompleteTextFieldCellTest, DISABLED_FocusedDisplay) {
   EXPECT_NE(location_icon_decoration.GetWidthForSpace(kVeryWide),
             LocationBarDecoration::kOmittedWidth);
 
-  EVBubbleDecoration ev_bubble_decoration(&location_icon_decoration,
-                                          [view_ font]);
+  EVBubbleDecoration ev_bubble_decoration(&location_icon_decoration);
   ev_bubble_decoration.SetVisible(true);
   ev_bubble_decoration.SetImage([NSImage imageNamed:@"NSApplicationIcon"]);
   ev_bubble_decoration.SetLabel(@"Application");
@@ -133,9 +129,9 @@ TEST_F(AutocompleteTextFieldCellTest, DISABLED_FocusedDisplay) {
   EXPECT_NE(star_decoration.GetWidthForSpace(kVeryWide),
             LocationBarDecoration::kOmittedWidth);
 
-  KeywordHintDecoration keyword_hint_decoration([view_ font]);
+  KeywordHintDecoration keyword_hint_decoration;
   keyword_hint_decoration.SetVisible(true);
-  keyword_hint_decoration.SetKeyword(ASCIIToUTF16("google"), false);
+  keyword_hint_decoration.SetKeyword(base::ASCIIToUTF16("google"), false);
   [cell addRightDecoration:&keyword_hint_decoration];
   EXPECT_NE(keyword_hint_decoration.GetWidthForSpace(kVeryWide),
             LocationBarDecoration::kOmittedWidth);

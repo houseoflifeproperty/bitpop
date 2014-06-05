@@ -2,7 +2,8 @@
 ; Use of this source code is governed by a BSD-style license that can be
 ; found in the LICENSE file.
 
-%include "x86inc.asm"
+%include "media/base/simd/media_export.asm"
+%include "third_party/x86inc/x86inc.asm"
 
 ;
 ; This file uses MMX instructions.
@@ -10,8 +11,14 @@
   SECTION_TEXT
   CPU       MMX
 
+;void LinearScaleYUVToRGB32Row_MMX_X64(const uint8* y_buf,
+;                                      const uint8* u_buf,
+;                                      const uint8* v_buf,
+;                                      uint8* rgb_buf,
+;                                      ptrdiff_t width,
+;                                      ptrdiff_t source_dx);
 %define SYMBOL LinearScaleYUVToRGB32Row_MMX_X64
-  global    mangle(SYMBOL) PRIVATE
+  EXPORT    SYMBOL
   align     function_align
 
 mangle(SYMBOL):
@@ -25,8 +32,9 @@ mangle(SYMBOL):
 ; 4. ARGB frame
 ; 5. Width
 ; 6. Source dx
+; 7. Conversion lookup table
 
-PROLOGUE  6, 7, 3, Y, U, V, ARGB, WIDTH, SOURCE_DX, COMPL
+PROLOGUE  7, 7, 3, Y, U, V, ARGB, WIDTH, SOURCE_DX, R1
 
 %define     TABLEq     r10
 %define     Xq         r11
@@ -34,6 +42,9 @@ PROLOGUE  6, 7, 3, Y, U, V, ARGB, WIDTH, SOURCE_DX, COMPL
 %define     COMPRd     r13d
 %define     COMPRq     r13
 %define     FRACTIONq  r14
+%define     COMPL      R1
+%define     COMPLq     R1q
+%define     COMPLd     R1d
 
   PUSH      TABLEq
   PUSH      Xq
@@ -49,7 +60,7 @@ PROLOGUE  6, 7, 3, Y, U, V, ARGB, WIDTH, SOURCE_DX, COMPL
   POP       TABLEq
 %endmacro
 
-  LOAD_SYM  TABLEq, mangle(kCoefficientsRgbY)
+  mov       TABLEq, R1q
 
   imul      WIDTHq, SOURCE_DXq           ; source_width = width * source_dx
   xor       Xq, Xq                       ; x = 0

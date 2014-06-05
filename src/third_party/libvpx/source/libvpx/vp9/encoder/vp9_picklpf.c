@@ -8,300 +8,93 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <assert.h>
+#include <limits.h>
 
-#include "vp9/common/vp9_onyxc_int.h"
-#include "vp9/encoder/vp9_onyx_int.h"
-#include "vp9/encoder/vp9_picklpf.h"
-#include "vp9/encoder/vp9_quantize.h"
-#include "vpx_mem/vpx_mem.h"
-#include "vpx_scale/vpxscale.h"
-#include "vp9/common/vp9_alloccommon.h"
-#include "vp9/common/vp9_loopfilter.h"
 #include "./vpx_scale_rtcd.h"
 
-void vp9_yv12_copy_partial_frame_c(YV12_BUFFER_CONFIG *src_ybc,
-                                   YV12_BUFFER_CONFIG *dst_ybc, int Fraction) {
-  unsigned char *src_y, *dst_y;
-  int yheight;
-  int ystride;
-  int border;
-  int yoffset;
-  int linestocopy;
+#include "vpx_mem/vpx_mem.h"
 
-  border   = src_ybc->border;
-  yheight  = src_ybc->y_height;
-  ystride  = src_ybc->y_stride;
+#include "vp9/common/vp9_loopfilter.h"
+#include "vp9/common/vp9_onyxc_int.h"
+#include "vp9/common/vp9_quant_common.h"
 
-  linestocopy = (yheight >> (Fraction + 4));
+#include "vp9/encoder/vp9_encoder.h"
+#include "vp9/encoder/vp9_picklpf.h"
+#include "vp9/encoder/vp9_quantize.h"
 
-  if (linestocopy < 1)
-    linestocopy = 1;
-
-  linestocopy <<= 4;
-
-  yoffset  = ystride * ((yheight >> 5) * 16 - 8);
-  src_y = src_ybc->y_buffer + yoffset;
-  dst_y = dst_ybc->y_buffer + yoffset;
-
-  vpx_memcpy(dst_y, src_y, ystride * (linestocopy + 16));
+static int get_max_filter_level(const VP9_COMP *cpi) {
+  return cpi->twopass.section_intra_rating > 8 ? MAX_LOOP_FILTER * 3 / 4
+                                               : MAX_LOOP_FILTER;
 }
 
-static int calc_partial_ssl_err(YV12_BUFFER_CONFIG *source,
-                                YV12_BUFFER_CONFIG *dest, int Fraction) {
-  int i, j;
-  int Total = 0;
-  int srcoffset, dstoffset;
-  unsigned char *src = source->y_buffer;
-  unsigned char *dst = dest->y_buffer;
 
-  int linestocopy = (source->y_height >> (Fraction + 4));
+static int try_filter_frame(const YV12_BUFFER_CONFIG *sd, VP9_COMP *const cpi,
+                            int filt_level, int partial_frame) {
+  VP9_COMMON *const cm = &cpi->common;
+  int filt_err;
 
-  if (linestocopy < 1)
-    linestocopy = 1;
+  vp9_loop_filter_frame(cm, &cpi->mb.e_mbd, filt_level, 1, partial_frame);
+  filt_err = vp9_get_y_sse(sd, cm->frame_to_show);
 
-  linestocopy <<= 4;
+  // Re-instate the unfiltered frame
+  vpx_yv12_copy_y(&cpi->last_frame_uf, cm->frame_to_show);
 
-
-  srcoffset = source->y_stride   * (dest->y_height >> 5) * 16;
-  dstoffset = dest->y_stride     * (dest->y_height >> 5) * 16;
-
-  src += srcoffset;
-  dst += dstoffset;
-
-  // Loop through the Y plane raw and reconstruction data summing (square differences)
-  for (i = 0; i < linestocopy; i += 16) {
-    for (j = 0; j < source->y_width; j += 16) {
-      unsigned int sse;
-      Total += vp9_mse16x16(src + j, source->y_stride, dst + j, dest->y_stride,
-                            &sse);
-    }
-
-    src += 16 * source->y_stride;
-    dst += 16 * dest->y_stride;
-  }
-
-  return Total;
+  return filt_err;
 }
 
-// Enforce a minimum filter level based upon baseline Q
-static int get_min_filter_level(VP9_COMP *cpi, int base_qindex) {
-  int min_filter_level;
-  /*int q = (int) vp9_convert_qindex_to_q(base_qindex);
-
-  if (cpi->source_alt_ref_active && cpi->common.refresh_golden_frame && !cpi->common.refresh_alt_ref_frame)
-      min_filter_level = 0;
-  else
-  {
-      if (q <= 10)
-          min_filter_level = 0;
-      else if (q <= 64)
-          min_filter_level = 1;
-      else
-          min_filter_level = (q >> 6);
-  }
-  */
-  min_filter_level = 0;
-
-  return min_filter_level;
-}
-
-// Enforce a maximum filter level based upon baseline Q
-static int get_max_filter_level(VP9_COMP *cpi, int base_qindex) {
-  // PGW August 2006: Highest filter values almost always a bad idea
-
-  // jbb chg: 20100118 - not so any more with this overquant stuff allow high values
-  // with lots of intra coming in.
-  int max_filter_level = MAX_LOOP_FILTER;// * 3 / 4;
-  (void)base_qindex;
-
-  if (cpi->twopass.section_intra_rating > 8)
-    max_filter_level = MAX_LOOP_FILTER * 3 / 4;
-
-  return max_filter_level;
-}
-
-void vp9_pick_filter_level_fast(YV12_BUFFER_CONFIG *sd, VP9_COMP *cpi) {
-  VP9_COMMON *cm = &cpi->common;
-
-  int best_err = 0;
-  int filt_err = 0;
-  int min_filter_level = get_min_filter_level(cpi, cm->base_qindex);
-  int max_filter_level = get_max_filter_level(cpi, cm->base_qindex);
-  int filt_val;
-  int best_filt_val = cm->filter_level;
-
-  //  Make a copy of the unfiltered / processed recon buffer
-  vp9_yv12_copy_partial_frame(cm->frame_to_show, &cpi->last_frame_uf, 3);
-
-  if (cm->frame_type == KEY_FRAME)
-    cm->sharpness_level = 0;
-  else
-    cm->sharpness_level = cpi->oxcf.Sharpness;
-
-  if (cm->sharpness_level != cm->last_sharpness_level) {
-    vp9_loop_filter_update_sharpness(&cm->lf_info, cm->sharpness_level);
-    cm->last_sharpness_level = cm->sharpness_level;
-  }
-
-  // Start the search at the previous frame filter level unless it is now out of range.
-  if (cm->filter_level < min_filter_level)
-    cm->filter_level = min_filter_level;
-  else if (cm->filter_level > max_filter_level)
-    cm->filter_level = max_filter_level;
-
-  filt_val = cm->filter_level;
-  best_filt_val = filt_val;
-
-  // Get the err using the previous frame's filter value.
-  vp9_loop_filter_partial_frame(cm, &cpi->mb.e_mbd, filt_val);
-
-  best_err = calc_partial_ssl_err(sd, cm->frame_to_show, 3);
-
-  //  Re-instate the unfiltered frame
-  vp9_yv12_copy_partial_frame(&cpi->last_frame_uf, cm->frame_to_show, 3);
-
-  filt_val -= (1 + ((filt_val > 10) ? 1 : 0));
-
-  // Search lower filter levels
-  while (filt_val >= min_filter_level) {
-    // Apply the loop filter
-    vp9_loop_filter_partial_frame(cm, &cpi->mb.e_mbd, filt_val);
-
-    // Get the err for filtered frame
-    filt_err = calc_partial_ssl_err(sd, cm->frame_to_show, 3);
-
-    //  Re-instate the unfiltered frame
-    vp9_yv12_copy_partial_frame(&cpi->last_frame_uf, cm->frame_to_show, 3);
-
-
-    // Update the best case record or exit loop.
-    if (filt_err < best_err) {
-      best_err = filt_err;
-      best_filt_val = filt_val;
-    } else
-      break;
-
-    // Adjust filter level
-    filt_val -= (1 + ((filt_val > 10) ? 1 : 0));
-  }
-
-  // Search up (note that we have already done filt_val = cm->filter_level)
-  filt_val = cm->filter_level + (1 + ((filt_val > 10) ? 1 : 0));
-
-  if (best_filt_val == cm->filter_level) {
-    // Resist raising filter level for very small gains
-    best_err -= (best_err >> 10);
-
-    while (filt_val < max_filter_level) {
-      // Apply the loop filter
-      vp9_loop_filter_partial_frame(cm, &cpi->mb.e_mbd, filt_val);
-
-      // Get the err for filtered frame
-      filt_err = calc_partial_ssl_err(sd, cm->frame_to_show, 3);
-
-      //  Re-instate the unfiltered frame
-      vp9_yv12_copy_partial_frame(&cpi->last_frame_uf,
-                                      cm->frame_to_show, 3);
-
-      // Update the best case record or exit loop.
-      if (filt_err < best_err) {
-        // Do not raise filter level if improvement is < 1 part in 4096
-        best_err = filt_err - (filt_err >> 10);
-
-        best_filt_val = filt_val;
-      } else
-        break;
-
-      // Adjust filter level
-      filt_val += (1 + ((filt_val > 10) ? 1 : 0));
-    }
-  }
-
-  cm->filter_level = best_filt_val;
-
-  if (cm->filter_level < min_filter_level)
-    cm->filter_level = min_filter_level;
-
-  if (cm->filter_level > max_filter_level)
-    cm->filter_level = max_filter_level;
-}
-
-// Stub function for now Alt LF not used
-void vp9_set_alt_lf_level(VP9_COMP *cpi, int filt_val) {
-}
-
-void vp9_pick_filter_level(YV12_BUFFER_CONFIG *sd, VP9_COMP *cpi) {
-  VP9_COMMON *cm = &cpi->common;
-
-  int best_err = 0;
-  int filt_err = 0;
-  int min_filter_level = get_min_filter_level(cpi, cm->base_qindex);
-  int max_filter_level = get_max_filter_level(cpi, cm->base_qindex);
-
-  int filter_step;
-  int filt_high = 0;
-  int filt_mid = cm->filter_level;      // Start search at previous frame filter level
-  int filt_low = 0;
-  int filt_best;
+static int search_filter_level(const YV12_BUFFER_CONFIG *sd, VP9_COMP *cpi,
+                               int partial_frame) {
+  const VP9_COMMON *const cm = &cpi->common;
+  const struct loopfilter *const lf = &cm->lf;
+  const int min_filter_level = 0;
+  const int max_filter_level = get_max_filter_level(cpi);
   int filt_direction = 0;
+  int best_err, filt_best;
 
-  int Bias = 0;                       // Bias against raising loop filter and in favour of lowering it
+  // Start the search at the previous frame filter level unless it is now out of
+  // range.
+  int filt_mid = clamp(lf->filter_level, min_filter_level, max_filter_level);
+  int filter_step = filt_mid < 16 ? 4 : filt_mid / 4;
+  // Sum squared error at each filter level
+  int ss_err[MAX_LOOP_FILTER + 1];
+
+  // Set each entry to -1
+  vpx_memset(ss_err, 0xFF, sizeof(ss_err));
 
   //  Make a copy of the unfiltered / processed recon buffer
-  vp8_yv12_copy_frame(cm->frame_to_show, &cpi->last_frame_uf);
+  vpx_yv12_copy_y(cm->frame_to_show, &cpi->last_frame_uf);
 
-  if (cm->frame_type == KEY_FRAME)
-    cm->sharpness_level = 0;
-  else
-    cm->sharpness_level = cpi->oxcf.Sharpness;
-
-  // Start the search at the previous frame filter level unless it is now out of range.
-  filt_mid = cm->filter_level;
-
-  if (filt_mid < min_filter_level)
-    filt_mid = min_filter_level;
-  else if (filt_mid > max_filter_level)
-    filt_mid = max_filter_level;
-
-  // Define the initial step size
-  filter_step = (filt_mid < 16) ? 4 : filt_mid / 4;
-
-  // Get baseline error score
-  vp9_set_alt_lf_level(cpi, filt_mid);
-  vp9_loop_filter_frame_yonly(cm, &cpi->mb.e_mbd, filt_mid);
-
-  best_err = vp9_calc_ss_err(sd, cm->frame_to_show);
+  best_err = try_filter_frame(sd, cpi, filt_mid, partial_frame);
   filt_best = filt_mid;
-
-  //  Re-instate the unfiltered frame
-  vp8_yv12_copy_y(&cpi->last_frame_uf, cm->frame_to_show);
+  ss_err[filt_mid] = best_err;
 
   while (filter_step > 0) {
-    Bias = (best_err >> (15 - (filt_mid / 8))) * filter_step; // PGW change 12/12/06 for small images
+    const int filt_high = MIN(filt_mid + filter_step, max_filter_level);
+    const int filt_low = MAX(filt_mid - filter_step, min_filter_level);
+    int filt_err;
 
-    // jbb chg: 20100118 - in sections with lots of new material coming in don't bias as much to a low filter value
+    // Bias against raising loop filter in favor of lowering it.
+    int bias = (best_err >> (15 - (filt_mid / 8))) * filter_step;
+
     if (cpi->twopass.section_intra_rating < 20)
-      Bias = Bias * cpi->twopass.section_intra_rating / 20;
+      bias = bias * cpi->twopass.section_intra_rating / 20;
 
     // yx, bias less for large block size
-    if (cpi->common.txfm_mode != ONLY_4X4)
-      Bias >>= 1;
+    if (cm->tx_mode != ONLY_4X4)
+      bias >>= 1;
 
-    filt_high = ((filt_mid + filter_step) > max_filter_level) ? max_filter_level : (filt_mid + filter_step);
-    filt_low = ((filt_mid - filter_step) < min_filter_level) ? min_filter_level : (filt_mid - filter_step);
-
-    if ((filt_direction <= 0) && (filt_low != filt_mid)) {
+    if (filt_direction <= 0 && filt_low != filt_mid) {
       // Get Low filter error score
-      vp9_set_alt_lf_level(cpi, filt_low);
-      vp9_loop_filter_frame_yonly(cm, &cpi->mb.e_mbd, filt_low);
-
-      filt_err = vp9_calc_ss_err(sd, cm->frame_to_show);
-
-      //  Re-instate the unfiltered frame
-      vp8_yv12_copy_y(&cpi->last_frame_uf, cm->frame_to_show);
-
-      // If value is close to the best so far then bias towards a lower loop filter value.
-      if ((filt_err - Bias) < best_err) {
+      if (ss_err[filt_low] < 0) {
+        filt_err = try_filter_frame(sd, cpi, filt_low, partial_frame);
+        ss_err[filt_low] = filt_err;
+      } else {
+        filt_err = ss_err[filt_low];
+      }
+      // If value is close to the best so far then bias towards a lower loop
+      // filter value.
+      if ((filt_err - bias) < best_err) {
         // Was it actually better than the previous best?
         if (filt_err < best_err)
           best_err = filt_err;
@@ -311,17 +104,15 @@ void vp9_pick_filter_level(YV12_BUFFER_CONFIG *sd, VP9_COMP *cpi) {
     }
 
     // Now look at filt_high
-    if ((filt_direction >= 0) && (filt_high != filt_mid)) {
-      vp9_set_alt_lf_level(cpi, filt_high);
-      vp9_loop_filter_frame_yonly(cm, &cpi->mb.e_mbd, filt_high);
-
-      filt_err = vp9_calc_ss_err(sd, cm->frame_to_show);
-
-      //  Re-instate the unfiltered frame
-      vp8_yv12_copy_y(&cpi->last_frame_uf, cm->frame_to_show);
-
+    if (filt_direction >= 0 && filt_high != filt_mid) {
+      if (ss_err[filt_high] < 0) {
+        filt_err = try_filter_frame(sd, cpi, filt_high, partial_frame);
+        ss_err[filt_high] = filt_err;
+      } else {
+        filt_err = ss_err[filt_high];
+      }
       // Was it better than the previous best?
-      if (filt_err < (best_err - Bias)) {
+      if (filt_err < (best_err - bias)) {
         best_err = filt_err;
         filt_best = filt_high;
       }
@@ -329,7 +120,7 @@ void vp9_pick_filter_level(YV12_BUFFER_CONFIG *sd, VP9_COMP *cpi) {
 
     // Half the step distance if the best filter value was the same as last time
     if (filt_best == filt_mid) {
-      filter_step = filter_step / 2;
+      filter_step /= 2;
       filt_direction = 0;
     } else {
       filt_direction = (filt_best < filt_mid) ? -1 : 1;
@@ -337,5 +128,29 @@ void vp9_pick_filter_level(YV12_BUFFER_CONFIG *sd, VP9_COMP *cpi) {
     }
   }
 
-  cm->filter_level = filt_best;
+  return filt_best;
+}
+
+void vp9_pick_filter_level(const YV12_BUFFER_CONFIG *sd, VP9_COMP *cpi,
+                           LPF_PICK_METHOD method) {
+  VP9_COMMON *const cm = &cpi->common;
+  struct loopfilter *const lf = &cm->lf;
+
+  lf->sharpness_level = cm->frame_type == KEY_FRAME ? 0
+                                                    : cpi->oxcf.sharpness;
+
+  if (method == LPF_PICK_FROM_Q) {
+    const int min_filter_level = 0;
+    const int max_filter_level = get_max_filter_level(cpi);
+    const int q = vp9_ac_quant(cm->base_qindex, 0);
+    // These values were determined by linear fitting the result of the
+    // searched level, filt_guess = q * 0.316206 + 3.87252
+    int filt_guess = ROUND_POWER_OF_TWO(q * 20723 + 1015158, 18);
+    if (cm->frame_type == KEY_FRAME)
+      filt_guess -= 4;
+    lf->filter_level = clamp(filt_guess, min_filter_level, max_filter_level);
+  } else {
+    lf->filter_level = search_filter_level(sd, cpi,
+                                           method == LPF_PICK_FROM_SUBIMAGE);
+  }
 }

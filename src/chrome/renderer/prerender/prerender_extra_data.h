@@ -6,12 +6,12 @@
 #define CHROME_RENDERER_PRERENDER_PRERENDER_EXTRA_DATA_H_
 
 #include "base/compiler_specific.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebPrerender.h"
+#include "third_party/WebKit/public/platform/WebPrerender.h"
 #include "ui/gfx/size.h"
 
 namespace prerender {
 
-class PrerenderExtraData : public WebKit::WebPrerender::ExtraData {
+class PrerenderExtraData : public blink::WebPrerender::ExtraData {
  public:
   PrerenderExtraData(int prerender_id,
                      int render_view_route_id,
@@ -23,7 +23,7 @@ class PrerenderExtraData : public WebKit::WebPrerender::ExtraData {
   const gfx::Size& size() const { return size_; }
 
   static const PrerenderExtraData& FromPrerender(
-      const WebKit::WebPrerender& prerender);
+      const blink::WebPrerender& prerender);
 
  private:
   const int prerender_id_;

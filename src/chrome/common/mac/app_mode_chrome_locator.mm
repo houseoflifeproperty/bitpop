@@ -7,13 +7,14 @@
 #import <AppKit/AppKit.h>
 #include <CoreFoundation/CoreFoundation.h>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/mac/foundation_util.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
+#include "chrome/common/chrome_constants.h"
 
 namespace app_mode {
 
-bool FindBundleById(NSString* bundle_id, FilePath* out_bundle) {
+bool FindBundleById(NSString* bundle_id, base::FilePath* out_bundle) {
   NSWorkspace* ws = [NSWorkspace sharedWorkspace];
   NSString *bundlePath = [ws absolutePathForAppBundleWithIdentifier:bundle_id];
   if (!bundlePath)
@@ -23,10 +24,10 @@ bool FindBundleById(NSString* bundle_id, FilePath* out_bundle) {
   return true;
 }
 
-bool GetChromeBundleInfo(const FilePath& chrome_bundle,
-                         string16* raw_version_str,
-                         FilePath* version_path,
-                         FilePath* framework_shlib_path) {
+bool GetChromeBundleInfo(const base::FilePath& chrome_bundle,
+                         base::string16* raw_version_str,
+                         base::FilePath* version_path,
+                         base::FilePath* framework_shlib_path) {
   using base::mac::ObjCCast;
 
   NSString* cr_bundle_path = base::mac::FilePathToNSString(chrome_bundle);
@@ -58,10 +59,17 @@ bool GetChromeBundleInfo(const FilePath& chrome_bundle,
           [cr_bundle objectForInfoDictionaryKey:@"CFBundleExecutable"]);
   NSString* cr_framework_shlib_path =
       [cr_versioned_path stringByAppendingPathComponent:
-          [cr_bundle_exe stringByAppendingString:@" Framework.framework"]];
+          base::SysUTF8ToNSString(chrome::kFrameworkName)];
+  // chrome::kFrameworkName looks like "$PRODUCT_STRING Framework.framework".
+  // The library itself is at
+  // "$PRODUCT_STRING Framework.framework/$PRODUCT_STRING Framework", so we cut
+  // off the .framework extension here and append it to the path.
+  // It's important to build the path to the framework this way because
+  // in Canary the framework is still called "Google Chrome Framework".
   cr_framework_shlib_path =
       [cr_framework_shlib_path stringByAppendingPathComponent:
-          [cr_bundle_exe stringByAppendingString:@" Framework"]];
+          [base::SysUTF8ToNSString(chrome::kFrameworkName)
+              stringByDeletingPathExtension]];
   if (!cr_bundle_exe || !cr_framework_shlib_path)
     return false;
 

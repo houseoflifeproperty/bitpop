@@ -9,9 +9,9 @@
 #include <string>
 
 #include "base/synchronization/lock.h"
-#include "chrome/common/extensions/extension_set.h"
-#include "googleurl/src/gurl.h"
-#include "webkit/quota/special_storage_policy.h"
+#include "extensions/common/extension_set.h"
+#include "url/gurl.h"
+#include "webkit/browser/quota/special_storage_policy.h"
 
 class CookieSettings;
 
@@ -31,8 +31,9 @@ class ExtensionSpecialStoragePolicy : public quota::SpecialStoragePolicy {
   virtual bool IsStorageProtected(const GURL& origin) OVERRIDE;
   virtual bool IsStorageUnlimited(const GURL& origin) OVERRIDE;
   virtual bool IsStorageSessionOnly(const GURL& origin) OVERRIDE;
-  virtual bool IsInstalledApp(const GURL& origin) OVERRIDE;
+  virtual bool CanQueryDiskSize(const GURL& origin) OVERRIDE;
   virtual bool IsFileHandler(const std::string& extension_id) OVERRIDE;
+  virtual bool HasIsolatedStorage(const GURL& origin) OVERRIDE;
   virtual bool HasSessionOnlyOrigins() OVERRIDE;
 
   // Methods used by the ExtensionService to populate this class.
@@ -45,7 +46,8 @@ class ExtensionSpecialStoragePolicy : public quota::SpecialStoragePolicy {
 
   // Returns the set of extensions protecting this origin. The caller does not
   // take ownership of the return value.
-  const ExtensionSet* ExtensionsProtectingOrigin(const GURL& origin);
+  const extensions::ExtensionSet* ExtensionsProtectingOrigin(
+      const GURL& origin);
 
  protected:
   virtual ~ExtensionSpecialStoragePolicy();
@@ -57,29 +59,31 @@ class ExtensionSpecialStoragePolicy : public quota::SpecialStoragePolicy {
     ~SpecialCollection();
 
     bool Contains(const GURL& origin);
-    const ExtensionSet* ExtensionsContaining(const GURL& origin);
+    const extensions::ExtensionSet* ExtensionsContaining(const GURL& origin);
     bool ContainsExtension(const std::string& extension_id);
-    void Add(const extensions::Extension* extension);
-    void Remove(const extensions::Extension* extension);
+    bool Add(const extensions::Extension* extension);
+    bool Remove(const extensions::Extension* extension);
     void Clear();
 
    private:
-    typedef std::map<GURL, ExtensionSet*> CachedResults;
+    typedef std::map<GURL, extensions::ExtensionSet*> CachedResults;
 
     void ClearCache();
 
-    ExtensionSet extensions_;
+    extensions::ExtensionSet extensions_;
     CachedResults cached_results_;
   };
 
-  void NotifyChanged();
+  void NotifyGranted(const GURL& origin, int change_flags);
+  void NotifyRevoked(const GURL& origin, int change_flags);
+  void NotifyCleared();
 
   base::Lock lock_;  // Synchronize all access to the collections.
   SpecialCollection protected_apps_;
   SpecialCollection installed_apps_;
   SpecialCollection unlimited_extensions_;
   SpecialCollection file_handler_extensions_;
-  SpecialCollection web_intent_extensions_;
+  SpecialCollection isolated_extensions_;
   scoped_refptr<CookieSettings> cookie_settings_;
 };
 

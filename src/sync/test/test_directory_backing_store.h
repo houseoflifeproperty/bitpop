@@ -26,7 +26,8 @@ class TestDirectoryBackingStore : public DirectoryBackingStore {
                             sql::Connection* connection);
   virtual ~TestDirectoryBackingStore();
   virtual DirOpenResult Load(
-      MetahandlesIndex* entry_bucket,
+      Directory::MetahandlesMap* handles_map,
+      JournalIndex* delete_journals,
       Directory::KernelLoadInfo* kernel_load_info) OVERRIDE;
 
   FRIEND_TEST_ALL_PREFIXES(DirectoryBackingStoreTest, MigrateVersion67To68);
@@ -47,12 +48,16 @@ class TestDirectoryBackingStore : public DirectoryBackingStore {
   FRIEND_TEST_ALL_PREFIXES(DirectoryBackingStoreTest, MigrateVersion82To83);
   FRIEND_TEST_ALL_PREFIXES(DirectoryBackingStoreTest, MigrateVersion83To84);
   FRIEND_TEST_ALL_PREFIXES(DirectoryBackingStoreTest, MigrateVersion84To85);
-  FRIEND_TEST_ALL_PREFIXES(DirectoryBackingStoreTest, DetectInvalidOrdinal);
+  FRIEND_TEST_ALL_PREFIXES(DirectoryBackingStoreTest, MigrateVersion85To86);
+  FRIEND_TEST_ALL_PREFIXES(DirectoryBackingStoreTest, MigrateVersion86To87);
+  FRIEND_TEST_ALL_PREFIXES(DirectoryBackingStoreTest, MigrateVersion87To88);
+  FRIEND_TEST_ALL_PREFIXES(DirectoryBackingStoreTest, DetectInvalidPosition);
   FRIEND_TEST_ALL_PREFIXES(DirectoryBackingStoreTest, ModelTypeIds);
   FRIEND_TEST_ALL_PREFIXES(DirectoryBackingStoreTest, Corruption);
   FRIEND_TEST_ALL_PREFIXES(DirectoryBackingStoreTest, DeleteEntries);
   FRIEND_TEST_ALL_PREFIXES(DirectoryBackingStoreTest, GenerateCacheGUID);
   FRIEND_TEST_ALL_PREFIXES(MigrationTest, ToCurrentVersion);
+  FRIEND_TEST_ALL_PREFIXES(DirectoryBackingStoreTest, MigrateToLatestAndDump);
   friend class MigrationTest;
 };
 

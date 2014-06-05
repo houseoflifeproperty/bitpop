@@ -12,12 +12,12 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread_checker.h"
-#include "base/timer.h"
-#include "chrome/browser/extensions/event_router.h"
+#include "base/timer/timer.h"
 #include "chrome/browser/idle.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/browser/event_router.h"
 
 namespace base {
 class StringValue;
@@ -39,7 +39,7 @@ struct IdleMonitor {
 
 class IdleManager : public content::NotificationObserver,
                     public EventRouter::Observer,
-                    public ProfileKeyedService {
+                    public KeyedService {
  public:
   class IdleTimeProvider {
    public:
@@ -72,7 +72,7 @@ class IdleManager : public content::NotificationObserver,
 
   void Init();
 
-  // ProfileKeyedService implementation.
+  // KeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
   // content::NotificationDelegate implementation.
@@ -103,6 +103,7 @@ class IdleManager : public content::NotificationObserver,
   FRIEND_TEST_ALL_PREFIXES(IdleTest, LockedToActive);
   FRIEND_TEST_ALL_PREFIXES(IdleTest, LockedToIdle);
   FRIEND_TEST_ALL_PREFIXES(IdleTest, MultipleExtensions);
+  FRIEND_TEST_ALL_PREFIXES(IdleTest, ReAddListener);
   FRIEND_TEST_ALL_PREFIXES(IdleTest, SetDetectionInterval);
   FRIEND_TEST_ALL_PREFIXES(IdleTest, SetDetectionIntervalBeforeListener);
   FRIEND_TEST_ALL_PREFIXES(IdleTest, SetDetectionIntervalMaximum);

@@ -8,13 +8,25 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/threading/thread_restrictions.h"
+#include "chrome/browser/policy/policy_path_parser.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
+
+#if defined(OS_CHROMEOS)
+#include "chromeos/chromeos_switches.h"
+#endif
+
+#if !defined(OS_WIN)
+#include "chrome/common/chrome_version_info.h"
+#include "grit/chromium_strings.h"
+#include "ui/base/l10n/l10n_util.h"
+#endif
 
 using content::BrowserThread;
 
@@ -24,15 +36,6 @@ ShellIntegration::DefaultWebClientSetPermission
   // browser.
   return CanSetAsDefaultBrowser();
 }
-
-ShellIntegration::ShortcutInfo::ShortcutInfo()
-    : is_platform_app(false),
-      create_on_desktop(false),
-      create_in_applications_menu(false),
-      create_in_quick_launch_bar(false) {
-}
-
-ShellIntegration::ShortcutInfo::~ShortcutInfo() {}
 
 static const struct ShellIntegration::AppModeInfo* gAppModeInfo = NULL;
 
@@ -55,29 +58,13 @@ bool ShellIntegration::IsRunningInAppMode() {
 CommandLine ShellIntegration::CommandLineArgsForLauncher(
     const GURL& url,
     const std::string& extension_app_id,
-    const FilePath& profile_path) {
-  const CommandLine& cmd_line = *CommandLine::ForCurrentProcess();
+    const base::FilePath& profile_path) {
+  base::ThreadRestrictions::AssertIOAllowed();
   CommandLine new_cmd_line(CommandLine::NO_PROGRAM);
 
-  // Use the same UserDataDir for new launches that we currently have set.
-  FilePath user_data_dir = cmd_line.GetSwitchValuePath(switches::kUserDataDir);
-  if (!user_data_dir.empty()) {
-    // Make sure user_data_dir is an absolute path.
-    if (file_util::AbsolutePath(&user_data_dir) &&
-        file_util::PathExists(user_data_dir)) {
-      new_cmd_line.AppendSwitchPath(switches::kUserDataDir, user_data_dir);
-    }
-  }
-
-#if defined(OS_CHROMEOS)
-  FilePath profile = cmd_line.GetSwitchValuePath(switches::kLoginProfile);
-  if (!profile.empty())
-    new_cmd_line.AppendSwitchPath(switches::kLoginProfile, profile);
-#else
-  if (!profile_path.empty() && !extension_app_id.empty())
-    new_cmd_line.AppendSwitchPath(switches::kProfileDirectory,
-                                  profile_path.BaseName());
-#endif
+  AppendProfileArgs(
+      extension_app_id.empty() ? base::FilePath() : profile_path,
+      &new_cmd_line);
 
   // If |extension_app_id| is present, we use the kAppId switch rather than
   // the kApp switch (the launch url will be read from the extension app
@@ -93,7 +80,46 @@ CommandLine ShellIntegration::CommandLineArgsForLauncher(
   return new_cmd_line;
 }
 
+// static
+void ShellIntegration::AppendProfileArgs(
+    const base::FilePath& profile_path,
+    CommandLine* command_line) {
+  DCHECK(command_line);
+  const CommandLine& cmd_line = *CommandLine::ForCurrentProcess();
+
+  // Use the same UserDataDir for new launches that we currently have set.
+  base::FilePath user_data_dir =
+      cmd_line.GetSwitchValuePath(switches::kUserDataDir);
+#if defined(OS_MACOSX) || defined(OS_WIN)
+  policy::path_parser::CheckUserDataDirPolicy(&user_data_dir);
+#endif
+  if (!user_data_dir.empty()) {
+    // Make sure user_data_dir is an absolute path.
+    user_data_dir = base::MakeAbsoluteFilePath(user_data_dir);
+    if (!user_data_dir.empty() && base::PathExists(user_data_dir))
+      command_line->AppendSwitchPath(switches::kUserDataDir, user_data_dir);
+  }
+
+#if defined(OS_CHROMEOS)
+  base::FilePath profile = cmd_line.GetSwitchValuePath(
+      chromeos::switches::kLoginProfile);
+  if (!profile.empty())
+    command_line->AppendSwitchPath(chromeos::switches::kLoginProfile, profile);
+#else
+  if (!profile_path.empty())
+    command_line->AppendSwitchPath(switches::kProfileDirectory,
+                                   profile_path.BaseName());
+#endif
+}
+
 #if !defined(OS_WIN)
+
+base::string16 ShellIntegration::GetAppShortcutsSubdirName() {
+  if (chrome::VersionInfo::GetChannel() == chrome::VersionInfo::CHANNEL_CANARY)
+    return l10n_util::GetStringUTF16(IDS_APP_SHORTCUTS_SUBDIR_NAME_CANARY);
+  return l10n_util::GetStringUTF16(IDS_APP_SHORTCUTS_SUBDIR_NAME);
+}
+
 // static
 bool ShellIntegration::SetAsDefaultBrowserInteractive() {
   return false;
@@ -273,6 +299,9 @@ bool ShellIntegration::DefaultProtocolClientWorker::SetAsDefault(
     bool interactive_permitted) {
   bool result = false;
   switch (ShellIntegration::CanSetAsDefaultProtocolClient()) {
+    case ShellIntegration::SET_DEFAULT_NOT_ALLOWED:
+      result = false;
+      break;
     case ShellIntegration::SET_DEFAULT_UNATTENDED:
       result = ShellIntegration::SetAsDefaultProtocolClient(protocol_);
       break;
@@ -282,8 +311,6 @@ bool ShellIntegration::DefaultProtocolClientWorker::SetAsDefault(
             protocol_);
       }
       break;
-    default:
-      NOTREACHED();
   }
 
   return result;

@@ -12,7 +12,7 @@
 // MetricsHandler
 
 // Let the page contents record UMA actions. Only use when you can't do it from
-// C++. For example, we currently use it to let the NTP log the postion of the
+// C++. For example, we currently use it to let the NTP log the position of the
 // Most Visited or Bookmark the user clicked on, as we don't get that
 // information through RequestOpenURL. You will need to update the metrics
 // dashboard with the action names you use, as our processor won't catch that
@@ -45,6 +45,9 @@ class MetricsHandler : public content::WebUIMessageHandler {
 
   // Callback for the "metricsHandler:logEventTime" message.
   void HandleLogEventTime(const base::ListValue* args);
+
+  // Used to log when a user mouses over a tile or title on the NTP.
+  void HandleLogMouseover(const base::ListValue* args);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MetricsHandler);

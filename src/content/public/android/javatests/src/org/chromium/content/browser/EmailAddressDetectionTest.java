@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,6 @@ package org.chromium.content.browser;
 
 import android.test.suitebuilder.annotation.MediumTest;
 
-import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
 
 /**
@@ -26,6 +25,7 @@ public class EmailAddressDetectionTest extends ContentDetectionTestBase {
     @Feature({"ContentDetection", "TabContents"})
     public void testValidEmailAddresses() throws Throwable {
         startActivityWithTestUrl("content/content_detection/email.html");
+        assertWaitForPageScaleFactorMatch(1.0f);
 
         // valid_1: i.want.a.pony@chromium.org.
         String intentUrl = scrollAndTapExpectingIntent("valid_1");

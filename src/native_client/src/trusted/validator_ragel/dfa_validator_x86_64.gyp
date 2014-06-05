@@ -9,9 +9,8 @@
     '../../../build/common.gypi',
   ],
   'target_defaults': {
-    'defines': [ 'NACL_TRUSTED_BUT_NOT_TCB' ],
     'conditions': [
-      ['OS=="win"', {
+      ['OS=="win" and target_arch=="ia32"', {
         'variables': {
           'win_target': 'x64',
          },
@@ -25,16 +24,13 @@
           'target_name': 'dfa_validate_x86_64',
           'type': 'static_library',
           'sources' : [
-            'unreviewed/dfa_validate_64.c',
-            'unreviewed/dfa_validate_common.c',
-            'unreviewed/validator_features_validator.c',
+            'dfa_validate_64.c',
+            'dfa_validate_common.c',
+            'validator_features_validator.c',
             'gen/validator_x86_64.c',
           ],
         },
       ],
-    }],
-    [ 'target_arch=="arm" or target_arch=="ia32"', {
-      'targets': []
     }],
   ],
 }

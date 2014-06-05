@@ -8,8 +8,8 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 
 // Scheduler task to drive a MetricsService object's uploading.
 class MetricsReportingScheduler {
@@ -24,12 +24,18 @@ class MetricsReportingScheduler {
   // Stops scheduling uploads.
   void Stop();
 
+  // Callback from MetricsService when the startup init task has completed.
+  void InitTaskComplete();
+
   // Callback from MetricsService when a triggered upload finishes.
   void UploadFinished(bool server_is_healthy, bool more_logs_remaining);
 
   // Callback from MetricsService when a triggered upload is cancelled by the
   // MetricsService.
   void UploadCancelled();
+
+  // Sets the upload interval to a specific value, exposed for unit tests.
+  void SetUploadIntervalForTesting(base::TimeDelta interval);
 
  private:
   // Timer callback indicating it's time for the MetricsService to upload
@@ -58,6 +64,13 @@ class MetricsReportingScheduler {
 
   // Indicates that the last triggered upload hasn't resolved yet.
   bool callback_pending_;
+
+  // Whether the InitTaskComplete() callback has been called.
+  bool init_task_complete_;
+
+  // Whether the initial scheduled upload timer has fired before the init task
+  // has been completed.
+  bool waiting_for_init_task_complete_;
 
   DISALLOW_COPY_AND_ASSIGN(MetricsReportingScheduler);
 };

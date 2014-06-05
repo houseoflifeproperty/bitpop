@@ -40,18 +40,18 @@ class PageSpeedFactory(gclient_factory.GClientFactory):
     fp = factory_properties
 
     if R('unit'):
-      f.AddAnnotatedGTestTestStep('pagespeed_test', fp,
-                              arg_list=PageSpeedFactory.TEST_ARG_LIST)
-      f.AddAnnotatedGTestTestStep('pagespeed_image_test', fp,
-                              arg_list=PageSpeedFactory.TEST_ARG_LIST)
+      f.AddGTestTestStep('pagespeed_test', fp,
+                         arg_list=PageSpeedFactory.TEST_ARG_LIST)
+      f.AddGTestTestStep('pagespeed_image_test', fp,
+                         arg_list=PageSpeedFactory.TEST_ARG_LIST)
     if R('firefox'):
-      f.AddAnnotatedGTestTestStep('pagespeed_firefox_test', fp,
-                              arg_list=PageSpeedFactory.TEST_ARG_LIST)
+      f.AddGTestTestStep('pagespeed_firefox_test', fp,
+                         arg_list=PageSpeedFactory.TEST_ARG_LIST)
     if R('chromium'):
-      f.AddAnnotatedGTestTestStep('pagespeed_chromium_test', fp,
-                              arg_list=PageSpeedFactory.TEST_ARG_LIST)
+      f.AddGTestTestStep('pagespeed_chromium_test', fp,
+                         arg_list=PageSpeedFactory.TEST_ARG_LIST)
     if R('modpagespeed'):
-      f.AddAnnotatedGTestTestStep('pagespeed_automatic_test', fp)
+      f.AddGTestTestStep('pagespeed_automatic_test', fp)
 
 
   def PageSpeedFactory(self, target='Release', clobber=False, tests=None,

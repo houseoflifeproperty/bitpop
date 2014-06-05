@@ -22,7 +22,7 @@ SDK_BUILDER_MAP = {
     'linux-sdk-mono64':
         [sys.executable, 'nacl-mono-buildbot.py'],
     'DEFAULT':
-        [sys.executable, 'build_sdk.py'],
+        [sys.executable, 'buildbot_run.py'],
 }
 
 
@@ -36,6 +36,12 @@ def main():
   build_tools_dir = chromium_utils.FindUpward(
       os.getcwd(), 'src', 'native_client_sdk', 'src', 'build_tools')
   os.chdir(build_tools_dir)
+  # Remove BOTO_CONFIG from the environment -- we want to use the NaCl .boto
+  # file that has access to gs://nativeclient-mirror.
+  if 'AWS_CREDENTIAL_FILE' in os.environ:
+    del os.environ['AWS_CREDENTIAL_FILE']
+  if 'BOTO_CONFIG' in os.environ:
+    del os.environ['BOTO_CONFIG']
   return chromium_utils.RunCommand(cmd + args)
 
 

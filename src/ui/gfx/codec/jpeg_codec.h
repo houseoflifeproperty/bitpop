@@ -8,7 +8,7 @@
 #include <stddef.h>
 #include <vector>
 
-#include "ui/base/ui_export.h"
+#include "ui/gfx/gfx_export.h"
 
 class SkBitmap;
 
@@ -18,7 +18,7 @@ namespace gfx {
 // which has an inconvenient interface for callers. This is only used for UI
 // elements, WebKit has its own more complicated JPEG decoder which handles,
 // among other things, partially downloaded data.
-class UI_EXPORT JPEGCodec {
+class GFX_EXPORT JPEGCodec {
  public:
   enum ColorFormat {
     // 3 bytes per pixel (packed), in RGB order regardless of endianness.

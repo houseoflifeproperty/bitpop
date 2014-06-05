@@ -19,6 +19,9 @@ scoped_ptr<VideoReader> VideoReader::Create(const SessionConfig& config) {
     if (video_config.codec == ChannelConfig::CODEC_VP8) {
       return scoped_ptr<VideoReader>(
           new ProtobufVideoReader(VideoPacketFormat::ENCODING_VP8));
+    } else if (video_config.codec == ChannelConfig::CODEC_VP9) {
+      return scoped_ptr<VideoReader>(
+          new ProtobufVideoReader(VideoPacketFormat::ENCODING_VP9));
     } else if (video_config.codec == ChannelConfig::CODEC_ZIP) {
       return scoped_ptr<VideoReader>(
           new ProtobufVideoReader(VideoPacketFormat::ENCODING_ZLIB));
@@ -28,7 +31,7 @@ scoped_ptr<VideoReader> VideoReader::Create(const SessionConfig& config) {
     }
   }
   NOTREACHED();
-  return scoped_ptr<VideoReader>(NULL);
+  return scoped_ptr<VideoReader>();
 }
 
 }  // namespace protocol

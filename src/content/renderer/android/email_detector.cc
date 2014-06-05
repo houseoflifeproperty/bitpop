@@ -6,10 +6,10 @@
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/public/renderer/android_content_detection_prefixes.h"
 #include "net/base/escape.h"
-#include "unicode/regex.h"
+#include "third_party/icu/source/i18n/unicode/regex.h"
 
 namespace {
 
@@ -42,12 +42,12 @@ GURL EmailDetector::GetIntentURL(const std::string& content_text) {
       net::EscapeQueryParamValue(content_text, true));
 }
 
-bool EmailDetector::FindContent(const string16::const_iterator& begin,
-                                const string16::const_iterator& end,
+bool EmailDetector::FindContent(const base::string16::const_iterator& begin,
+                                const base::string16::const_iterator& end,
                                 size_t* start_pos,
                                 size_t* end_pos,
                                 std::string* content_text) {
-  string16 utf16_input = string16(begin, end);
+  base::string16 utf16_input = base::string16(begin, end);
   icu::UnicodeString pattern(kEmailRegex);
   icu::UnicodeString input(utf16_input.data(), utf16_input.length());
   UErrorCode status = U_ZERO_ERROR;
@@ -63,7 +63,8 @@ bool EmailDetector::FindContent(const string16::const_iterator& begin,
     DCHECK(U_SUCCESS(status));
     icu::UnicodeString content_ustr(matcher->group(status));
     DCHECK(U_SUCCESS(status));
-    UTF16ToUTF8(content_ustr.getBuffer(), content_ustr.length(), content_text);
+    base::UTF16ToUTF8(content_ustr.getBuffer(), content_ustr.length(),
+        content_text);
     return true;
   }
 

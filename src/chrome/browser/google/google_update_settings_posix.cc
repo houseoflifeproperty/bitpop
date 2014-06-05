@@ -5,67 +5,84 @@
 #include "chrome/installer/util/google_update_settings.h"
 
 #include "base/file_util.h"
+#include "base/lazy_instance.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/synchronization/lock.h"
 #include "chrome/common/chrome_paths.h"
 
-namespace google_update {
+namespace {
 
-static std::string& posix_guid() {
-  CR_DEFINE_STATIC_LOCAL(std::string, guid, ());
-  return guid;
-}
-
-}  // namespace google_update
+base::LazyInstance<std::string>::Leaky g_posix_guid = LAZY_INSTANCE_INITIALIZER;
+base::LazyInstance<base::Lock>::Leaky g_posix_guid_lock =
+    LAZY_INSTANCE_INITIALIZER;
 
 // File name used in the user data dir to indicate consent.
-static const char kConsentToSendStats[] = "Consent To Send Stats";
+const char kConsentToSendStats[] = "Consent To Send Stats";
+
+}  // namespace
 
 // static
 bool GoogleUpdateSettings::GetCollectStatsConsent() {
-  FilePath consent_file;
+  base::FilePath consent_file;
   PathService::Get(chrome::DIR_USER_DATA, &consent_file);
   consent_file = consent_file.Append(kConsentToSendStats);
   std::string tmp_guid;
-  bool consented = file_util::ReadFileToString(consent_file, &tmp_guid);
-  if (consented)
-    google_update::posix_guid().assign(tmp_guid);
+  bool consented = base::ReadFileToString(consent_file, &tmp_guid);
+  if (consented) {
+    base::AutoLock lock(g_posix_guid_lock.Get());
+    g_posix_guid.Get().assign(tmp_guid);
+  }
   return consented;
 }
 
 // static
 bool GoogleUpdateSettings::SetCollectStatsConsent(bool consented) {
-  FilePath consent_dir;
+  base::FilePath consent_dir;
   PathService::Get(chrome::DIR_USER_DATA, &consent_dir);
-  if (!file_util::DirectoryExists(consent_dir))
+  if (!base::DirectoryExists(consent_dir))
     return false;
 
-  FilePath consent_file = consent_dir.AppendASCII(kConsentToSendStats);
+  base::AutoLock lock(g_posix_guid_lock.Get());
+
+  base::FilePath consent_file = consent_dir.AppendASCII(kConsentToSendStats);
   if (consented) {
-    if ((!file_util::PathExists(consent_file)) ||
-        (file_util::PathExists(consent_file) &&
-         !google_update::posix_guid().empty())) {
-      const char* c_str = google_update::posix_guid().c_str();
-      int size = google_update::posix_guid().size();
-      return file_util::WriteFile(consent_file, c_str, size) == size;
+    if ((!base::PathExists(consent_file)) ||
+        (base::PathExists(consent_file) && !g_posix_guid.Get().empty())) {
+      const char* c_str = g_posix_guid.Get().c_str();
+      int size = g_posix_guid.Get().size();
+      return base::WriteFile(consent_file, c_str, size) == size;
     }
   } else {
-    google_update::posix_guid().clear();
-    return file_util::Delete(consent_file, false);
+    g_posix_guid.Get().clear();
+    return base::DeleteFile(consent_file, false);
   }
   return true;
 }
 
-bool GoogleUpdateSettings::SetMetricsId(const std::wstring& client_id) {
-  // Make sure that user has consented to send crashes.
-  FilePath consent_dir;
-  PathService::Get(chrome::DIR_USER_DATA, &consent_dir);
-  if (!file_util::DirectoryExists(consent_dir) ||
-      !GoogleUpdateSettings::GetCollectStatsConsent())
-    return false;
+// static
+bool GoogleUpdateSettings::GetMetricsId(std::string* metrics_id) {
+  base::AutoLock lock(g_posix_guid_lock.Get());
+  *metrics_id = g_posix_guid.Get();
+  return true;
+}
 
-  // Since user has consented, write the metrics id to the file.
-  google_update::posix_guid() = WideToASCII(client_id);
+// static
+bool GoogleUpdateSettings::SetMetricsId(const std::string& client_id) {
+  // Make sure that user has consented to send crashes.
+  base::FilePath consent_dir;
+  PathService::Get(chrome::DIR_USER_DATA, &consent_dir);
+  if (!base::DirectoryExists(consent_dir) ||
+      !GoogleUpdateSettings::GetCollectStatsConsent()) {
+    return false;
+  }
+
+  {
+    // Since user has consented, write the metrics id to the file.
+    base::AutoLock lock(g_posix_guid_lock.Get());
+    g_posix_guid.Get() = client_id;
+  }
   return GoogleUpdateSettings::SetCollectStatsConsent(true);
 }
 

@@ -43,6 +43,7 @@ BrowserAccessibilityWin
       public CComObjectRootEx<CComMultiThreadModel>,
       public IDispatchImpl<IAccessible2, &IID_IAccessible2,
                            &LIBID_IAccessible2Lib>,
+      public IAccessibleApplication,
       public IAccessibleHyperlink,
       public IAccessibleHypertext,
       public IAccessibleImage,
@@ -62,6 +63,7 @@ BrowserAccessibilityWin
     COM_INTERFACE_ENTRY2(IAccessible, IAccessible2)
     COM_INTERFACE_ENTRY2(IAccessibleText, IAccessibleHypertext)
     COM_INTERFACE_ENTRY(IAccessible2)
+    COM_INTERFACE_ENTRY(IAccessibleApplication)
     COM_INTERFACE_ENTRY(IAccessibleHyperlink)
     COM_INTERFACE_ENTRY(IAccessibleHypertext)
     COM_INTERFACE_ENTRY(IAccessibleImage)
@@ -80,25 +82,30 @@ BrowserAccessibilityWin
   // Represents a non-static text node in IAccessibleHypertext. This character
   // is embedded in the response to IAccessibleText::get_text, indicating the
   // position where a non-static text child object appears.
-  CONTENT_EXPORT static const char16 kEmbeddedCharacter[];
+  CONTENT_EXPORT static const base::char16 kEmbeddedCharacter[];
 
   // Mappings from roles and states to human readable strings. Initialize
   // with |InitializeStringMaps|.
-  static std::map<int32, string16> role_string_map;
-  static std::map<int32, string16> state_string_map;
+  static std::map<int32, base::string16> role_string_map;
+  static std::map<int32, base::string16> state_string_map;
 
   CONTENT_EXPORT BrowserAccessibilityWin();
 
   CONTENT_EXPORT virtual ~BrowserAccessibilityWin();
 
+  // The Windows-specific unique ID, used as the child ID for MSAA methods
+  // like NotifyWinEvent, and as the unique ID for IAccessible2 and ISimpleDOM.
+  LONG unique_id_win() const { return unique_id_win_; }
+
   //
   // BrowserAccessibility methods.
   //
-  CONTENT_EXPORT virtual void PreInitialize() OVERRIDE;
-  CONTENT_EXPORT virtual void PostInitialize() OVERRIDE;
+  CONTENT_EXPORT virtual void OnDataChanged() OVERRIDE;
+  CONTENT_EXPORT virtual void OnUpdateFinished() OVERRIDE;
   CONTENT_EXPORT virtual void NativeAddReference() OVERRIDE;
   CONTENT_EXPORT virtual void NativeReleaseReference() OVERRIDE;
   CONTENT_EXPORT virtual bool IsNative() const OVERRIDE;
+  CONTENT_EXPORT virtual void OnLocationChanged() const OVERRIDE;
 
   //
   // IAccessible methods.
@@ -249,6 +256,17 @@ BrowserAccessibilityWin
   CONTENT_EXPORT STDMETHODIMP get_locale(IA2Locale* locale) {
     return E_NOTIMPL;
   }
+
+  //
+  // IAccessibleApplication methods.
+  //
+  CONTENT_EXPORT STDMETHODIMP get_appName(BSTR* app_name);
+
+  CONTENT_EXPORT STDMETHODIMP get_appVersion(BSTR* app_version);
+
+  CONTENT_EXPORT STDMETHODIMP get_toolkitName(BSTR* toolkit_name);
+
+  CONTENT_EXPORT STDMETHODIMP get_toolkitVersion(BSTR* toolkit_version);
 
   //
   // IAccessibleImage methods.
@@ -426,6 +444,14 @@ BrowserAccessibilityWin
 
   CONTENT_EXPORT STDMETHODIMP get_caretOffset(LONG* offset);
 
+  CONTENT_EXPORT STDMETHODIMP get_characterExtents(
+      LONG offset,
+      enum IA2CoordinateType coord_type,
+      LONG* out_x,
+      LONG* out_y,
+      LONG* out_width,
+      LONG* out_height);
+
   CONTENT_EXPORT STDMETHODIMP get_nSelections(LONG* n_selections);
 
   CONTENT_EXPORT STDMETHODIMP get_selection(LONG selection_index,
@@ -492,14 +518,6 @@ BrowserAccessibilityWin
   CONTENT_EXPORT STDMETHODIMP get_attributes(LONG offset, LONG* start_offset,
                                              LONG* end_offset,
                                              BSTR* text_attributes) {
-    return E_NOTIMPL;
-  }
-  CONTENT_EXPORT STDMETHODIMP get_characterExtents(LONG offset,
-      enum IA2CoordinateType coord_type,
-      LONG* x,
-      LONG* y,
-      LONG* width,
-      LONG* height) {
     return E_NOTIMPL;
   }
 
@@ -663,27 +681,21 @@ BrowserAccessibilityWin
   CONTENT_EXPORT STDMETHODIMP get_clippedSubstringBounds(
       unsigned int start_index,
       unsigned int end_index,
-      int* x,
-      int* y,
-      int* width,
-      int* height) {
-    return E_NOTIMPL;
-  }
+      int* out_x,
+      int* out_y,
+      int* out_width,
+      int* out_height);
 
   CONTENT_EXPORT STDMETHODIMP get_unclippedSubstringBounds(
       unsigned int start_index,
       unsigned int end_index,
-      int* x,
-      int* y,
-      int* width,
-      int* height) {
-    return E_NOTIMPL;
-  }
+      int* out_x,
+      int* out_y,
+      int* out_width,
+      int* out_height);
 
   CONTENT_EXPORT STDMETHODIMP scrollToSubstring(unsigned int start_index,
-                                                unsigned int end_index)  {
-    return E_NOTIMPL;
-  }
+                                                unsigned int end_index);
 
   CONTENT_EXPORT STDMETHODIMP get_fontFamily(BSTR *font_family)  {
     return E_NOTIMPL;
@@ -752,9 +764,10 @@ BrowserAccessibilityWin
   // Accessors.
   int32 ia_role() const { return ia_role_; }
   int32 ia_state() const { return ia_state_; }
+  const base::string16& role_name() const { return role_name_; }
   int32 ia2_role() const { return ia2_role_; }
   int32 ia2_state() const { return ia2_state_; }
-  const std::vector<string16>& ia2_attributes() const {
+  const std::vector<base::string16>& ia2_attributes() const {
     return ia2_attributes_;
   }
 
@@ -772,38 +785,42 @@ BrowserAccessibilityWin
   BrowserAccessibilityWin* GetTargetFromChildID(const VARIANT& var_id);
 
   // Initialize the role and state metadata from the role enum and state
-  // bitmasks defined in AccessibilityNodeData.
+  // bitmasks defined in ui::AXNodeData.
   void InitRoleAndState();
 
   // Retrieve the value of an attribute from the string attribute map and
   // if found and nonempty, allocate a new BSTR (with SysAllocString)
   // and return S_OK. If not found or empty, return S_FALSE.
   HRESULT GetStringAttributeAsBstr(
-      AccessibilityNodeData::StringAttribute attribute,
+      ui::AXStringAttribute attribute,
       BSTR* value_bstr);
 
   // If the string attribute |attribute| is present, add its value as an
   // IAccessible2 attribute with the name |ia2_attr|.
-  void StringAttributeToIA2(AccessibilityNodeData::StringAttribute attribute,
+  void StringAttributeToIA2(ui::AXStringAttribute attribute,
                             const char* ia2_attr);
 
   // If the bool attribute |attribute| is present, add its value as an
   // IAccessible2 attribute with the name |ia2_attr|.
-  void BoolAttributeToIA2(AccessibilityNodeData::BoolAttribute attribute,
+  void BoolAttributeToIA2(ui::AXBoolAttribute attribute,
                           const char* ia2_attr);
 
   // If the int attribute |attribute| is present, add its value as an
   // IAccessible2 attribute with the name |ia2_attr|.
-  void IntAttributeToIA2(AccessibilityNodeData::IntAttribute attribute,
+  void IntAttributeToIA2(ui::AXIntAttribute attribute,
                          const char* ia2_attr);
+
+  // Get the value text, which might come from the floating-point
+  // value for some roles.
+  base::string16 GetValueText();
 
   // Get the text of this node for the purposes of IAccessibleText - it may
   // be the name, it may be the value, etc. depending on the role.
-  const string16& TextForIAccessibleText();
+  base::string16 TextForIAccessibleText();
 
   // If offset is a member of IA2TextSpecialOffsets this function updates the
   // value of offset and returns, otherwise offset remains unchanged.
-  void HandleSpecialTextOffset(const string16& text, LONG* offset);
+  void HandleSpecialTextOffset(const base::string16& text, LONG* offset);
 
   // Convert from a IA2TextBoundaryType to a ui::TextBoundaryType.
   ui::TextBoundaryType IA2TextBoundaryToTextBoundary(IA2TextBoundaryType type);
@@ -811,37 +828,43 @@ BrowserAccessibilityWin
   // Search forwards (direction == 1) or backwards (direction == -1)
   // from the given offset until the given boundary is found, and
   // return the offset of that boundary.
-  LONG FindBoundary(const string16& text,
+  LONG FindBoundary(const base::string16& text,
                     IA2TextBoundaryType ia2_boundary,
                     LONG start_offset,
                     ui::TextBoundaryDirection direction);
 
-  // Return a pointer to the object corresponding to the given renderer_id,
+  // Return a pointer to the object corresponding to the given id,
   // does not make a new reference.
-  BrowserAccessibilityWin* GetFromRendererID(int32 renderer_id);
+  BrowserAccessibilityWin* GetFromID(int32 id);
+
+  // Windows-specific unique ID (unique within the browser process),
+  // used for get_accChild, NotifyWinEvent, and as the unique ID for
+  // IAccessible2 and ISimpleDOM.
+  LONG unique_id_win_;
 
   // IAccessible role and state.
   int32 ia_role_;
   int32 ia_state_;
+  base::string16 role_name_;
 
   // IAccessible2 role and state.
   int32 ia2_role_;
   int32 ia2_state_;
 
   // IAccessible2 attributes.
-  std::vector<string16> ia2_attributes_;
+  std::vector<base::string16> ia2_attributes_;
 
   // True in Initialize when the object is first created, and false
   // subsequent times.
   bool first_time_;
 
   // The previous text, before the last update to this object.
-  string16 previous_text_;
+  base::string16 previous_text_;
 
   // The old text to return in IAccessibleText::get_oldText - this is like
   // previous_text_ except that it's NOT updated when the object
   // is initialized again but the text doesn't change.
-  string16 old_text_;
+  base::string16 old_text_;
 
   // The previous state, used to see if there was a state change.
   int32 old_ia_state_;
@@ -850,7 +873,7 @@ BrowserAccessibilityWin
   std::vector<BrowserAccessibilityRelation*> relations_;
 
   // The text of this node including embedded hyperlink characters.
-  string16 hypertext_;
+  base::string16 hypertext_;
 
   // Maps the |hypertext_| embedded character offset to an index in
   // |hyperlinks_|.
@@ -859,6 +882,13 @@ BrowserAccessibilityWin
   // Collection of non-static text child indicies, each of which corresponds to
   // a hyperlink.
   std::vector<int32> hyperlinks_;
+
+  // The previous scroll position, so we can tell if this object scrolled.
+  int previous_scroll_x_;
+  int previous_scroll_y_;
+
+  // The next unique id to use.
+  static LONG next_unique_id_win_;
 
   // Give BrowserAccessibility::Create access to our constructor.
   friend class BrowserAccessibility;

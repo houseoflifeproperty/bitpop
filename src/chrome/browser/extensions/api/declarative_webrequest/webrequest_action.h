@@ -11,11 +11,12 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/linked_ptr.h"
+#include "base/memory/ref_counted.h"
+#include "chrome/browser/extensions/api/declarative/declarative_rule.h"
 #include "chrome/browser/extensions/api/declarative_webrequest/request_stage.h"
-#include "chrome/browser/extensions/api/declarative_webrequest/webrequest_rule.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api_helpers.h"
 #include "chrome/common/extensions/api/events.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 class WebRequestPermission;
 
@@ -31,6 +32,8 @@ struct EventResponseDelta;
 
 namespace extensions {
 class Extension;
+class InfoMap;
+struct WebRequestData;
 }
 
 namespace net {
@@ -47,9 +50,11 @@ typedef linked_ptr<extension_web_request_api_helpers::EventResponseDelta>
     LinkedPtrEventResponseDelta;
 
 // Base class for all WebRequestActions of the declarative Web Request API.
-class WebRequestAction {
+class WebRequestAction : public base::RefCounted<WebRequestAction> {
  public:
-  // Type identifiers for concrete WebRequestActions.
+  // Type identifiers for concrete WebRequestActions. If you add a new type,
+  // also update the unittest WebRequestActionTest.GetName, and add a
+  // WebRequestActionWithThreadsTest.Permission* unittest.
   enum Type {
     ACTION_CANCEL_REQUEST,
     ACTION_REDIRECT_REQUEST,
@@ -63,38 +68,52 @@ class WebRequestAction {
     ACTION_IGNORE_RULES,
     ACTION_MODIFY_REQUEST_COOKIE,
     ACTION_MODIFY_RESPONSE_COOKIE,
+    ACTION_SEND_MESSAGE_TO_EXTENSION,
   };
 
   // Strategies for checking host permissions.
   enum HostPermissionsStrategy {
-    STRATEGY_NONE,  // Do not check host permissions.
-    STRATEGY_DEFAULT,  // Check host permissions in HasPermission,
+    STRATEGY_NONE,     // Do not check host permissions.
+    STRATEGY_DEFAULT,  // Check for host permissions for all URLs
                        // before creating the delta.
-    STRATEGY_ALLOW_SAME_DOMAIN,  // Skip host permission checks if the request
-                                 // URL and new URL have the same domain.
-                                 // Do these checks in DeltaHasPermission,
-                                 // after creating the delta.
+    STRATEGY_HOST,     // Check that host permissions match the URL
+                       // of the request.
   };
 
-  WebRequestAction();
-  virtual ~WebRequestAction();
+  // Information necessary to decide how to apply a WebRequestAction
+  // inside a matching rule.
+  struct ApplyInfo {
+    const InfoMap* extension_info_map;
+    const WebRequestData& request_data;
+    bool crosses_incognito;
+    // Modified by each applied action:
+    std::list<LinkedPtrEventResponseDelta>* deltas;
+    std::set<std::string>* ignored_tags;
+  };
 
-  // Returns a bit vector representing extensions::RequestStage. The bit vector
-  // contains a 1 for each request stage during which the condition can be
-  // tested.
-  virtual int GetStages() const = 0;
+  int stages() const {
+    return stages_;
+  }
 
-  virtual Type GetType() const = 0;
+  Type type() const {
+    return type_;
+  }
 
-  // Returns the minimum priority of rules that may be evaluated after
-  // this rule. Defaults to MIN_INT.
-  virtual int GetMinimumPriority() const;
+  // Compares the Type of two WebRequestActions, needs to be overridden for
+  // parameterized types.
+  virtual bool Equals(const WebRequestAction* other) const;
 
-  // Returns whether host permissions checks depend on the resulting delta
-  // and therefore must be checked in DeltaHasPermission, after the delta
-  // is created, rather than in HasPermission, before it is created.
-  // Defaults to STRATEGY_DEFAULT.
-  virtual HostPermissionsStrategy GetHostPermissionsStrategy() const;
+  // Return the JavaScript type name corresponding to type(). If there are
+  // more names, they are returned separated by a colon.
+  virtual std::string GetName() const = 0;
+
+  int minimum_priority() const {
+    return minimum_priority_;
+  }
+
+  HostPermissionsStrategy host_permissions_strategy() const {
+    return host_permissions_strategy_;
+  }
 
   // Returns whether the specified extension has permission to execute this
   // action on |request|. Checks the host permission if the host permissions
@@ -103,23 +122,10 @@ class WebRequestAction {
   // host permissions are ignored. |crosses_incognito| specifies
   // whether the request comes from a different profile than |extension_id|
   // but was processed because the extension is in spanning mode.
-  virtual bool HasPermission(const ExtensionInfoMap* extension_info_map,
+  virtual bool HasPermission(const InfoMap* extension_info_map,
                              const std::string& extension_id,
                              const net::URLRequest* request,
                              bool crosses_incognito) const;
-
-  // Returns whether the specified extension has permission to modify the
-  // |request| with this |delta|. This check is in addition to HasPermission;
-  // if either fails, the request will not be modified. Unlike HasPermission,
-  // it runs after the change is created, so it can use the full information
-  // about what the change would be. Checks the host permission if the strategy
-  // is STRATEGY_ALLOW_SAME_DOMAIN.
-  virtual bool DeltaHasPermission(
-      const ExtensionInfoMap* extension_info_map,
-      const std::string& extension_id,
-      const net::URLRequest* request,
-      bool crosses_incognito,
-      const LinkedPtrEventResponseDelta& delta) const;
 
   // Factory method that instantiates a concrete WebRequestAction
   // implementation according to |json_action|, the representation of the
@@ -127,59 +133,49 @@ class WebRequestAction {
   // Sets |error| and returns NULL in case of a semantic error that cannot
   // be caught by schema validation. Sets |bad_message| and returns NULL
   // in case the input is syntactically unexpected.
-  static scoped_ptr<WebRequestAction> Create(const base::Value& json_action,
-                                             std::string* error,
-                                             bool* bad_message);
+  static scoped_refptr<const WebRequestAction> Create(
+      const Extension* extension,
+      const base::Value& json_action,
+      std::string* error,
+      bool* bad_message);
 
   // Returns a description of the modification to the request caused by
   // this action.
   virtual LinkedPtrEventResponseDelta CreateDelta(
-      const WebRequestRule::RequestData& request_data,
+      const WebRequestData& request_data,
       const std::string& extension_id,
       const base::Time& extension_install_time) const = 0;
-};
 
-// Immutable container for multiple actions.
-//
-// TODO(battre): As WebRequestActionSet can become the single owner of all
-// actions, we can optimize here by making some of them singletons (e.g. Cancel
-// actions).
-class WebRequestActionSet {
- public:
-  typedef std::vector<linked_ptr<json_schema_compiler::any::Any> > AnyVector;
-  typedef std::vector<linked_ptr<WebRequestAction> > Actions;
+  // Applies this action to a request, recording the results into
+  // apply_info.deltas.
+  void Apply(const std::string& extension_id,
+             base::Time extension_install_time,
+             ApplyInfo* apply_info) const;
 
-  explicit WebRequestActionSet(const Actions& actions);
-  virtual ~WebRequestActionSet();
-
-  // Factory method that instantiates a WebRequestActionSet according to
-  // |actions| which represents the array of actions received from the
-  // extension API.
-  static scoped_ptr<WebRequestActionSet> Create(const AnyVector& actions,
-                                                std::string* error,
-                                                bool* bad_message);
-
-  // Returns a description of the modifications to |request_data.request| caused
-  // by the |actions_| that can be executed at |request.stage|. If |extension|
-  // is not NULL, permissions of extensions are checked.
-  std::list<LinkedPtrEventResponseDelta> CreateDeltas(
-      const ExtensionInfoMap* extension_info_map,
-      const std::string& extension_id,
-      const WebRequestRule::RequestData& request_data,
-      bool crosses_incognito,
-      const base::Time& extension_install_time) const;
-
-  // Returns the minimum priority of rules that may be evaluated after
-  // this rule. Defaults to MIN_INT.
-  int GetMinimumPriority() const;
-
-  const Actions& actions() const { return actions_; }
+ protected:
+  friend class base::RefCounted<WebRequestAction>;
+  virtual ~WebRequestAction();
+  WebRequestAction(int stages,
+                   Type type,
+                   int minimum_priority,
+                   HostPermissionsStrategy strategy);
 
  private:
-  Actions actions_;
+  // A bit vector representing a set of extensions::RequestStage during which
+  // the condition can be tested.
+  const int stages_;
 
-  DISALLOW_COPY_AND_ASSIGN(WebRequestActionSet);
+  const Type type_;
+
+  // The minimum priority of rules that may be evaluated after the rule
+  // containing this action.
+  const int minimum_priority_;
+
+  // Defaults to STRATEGY_DEFAULT.
+  const HostPermissionsStrategy host_permissions_strategy_;
 };
+
+typedef DeclarativeActionSet<WebRequestAction> WebRequestActionSet;
 
 //
 // The following are concrete actions.
@@ -189,18 +185,16 @@ class WebRequestActionSet {
 class WebRequestCancelAction : public WebRequestAction {
  public:
   WebRequestCancelAction();
-  virtual ~WebRequestCancelAction();
 
   // Implementation of WebRequestAction:
-  virtual int GetStages() const OVERRIDE;
-  virtual Type GetType() const OVERRIDE;
-  virtual HostPermissionsStrategy GetHostPermissionsStrategy() const OVERRIDE;
+  virtual std::string GetName() const OVERRIDE;
   virtual LinkedPtrEventResponseDelta CreateDelta(
-      const WebRequestRule::RequestData& request_data,
+      const WebRequestData& request_data,
       const std::string& extension_id,
       const base::Time& extension_install_time) const OVERRIDE;
 
  private:
+  virtual ~WebRequestCancelAction();
   DISALLOW_COPY_AND_ASSIGN(WebRequestCancelAction);
 };
 
@@ -208,18 +202,18 @@ class WebRequestCancelAction : public WebRequestAction {
 class WebRequestRedirectAction : public WebRequestAction {
  public:
   explicit WebRequestRedirectAction(const GURL& redirect_url);
-  virtual ~WebRequestRedirectAction();
 
   // Implementation of WebRequestAction:
-  virtual int GetStages() const OVERRIDE;
-  virtual Type GetType() const OVERRIDE;
-  virtual HostPermissionsStrategy GetHostPermissionsStrategy() const OVERRIDE;
+  virtual bool Equals(const WebRequestAction* other) const OVERRIDE;
+  virtual std::string GetName() const OVERRIDE;
   virtual LinkedPtrEventResponseDelta CreateDelta(
-      const WebRequestRule::RequestData& request_data,
+      const WebRequestData& request_data,
       const std::string& extension_id,
       const base::Time& extension_install_time) const OVERRIDE;
 
  private:
+  virtual ~WebRequestRedirectAction();
+
   GURL redirect_url_;  // Target to which the request shall be redirected.
 
   DISALLOW_COPY_AND_ASSIGN(WebRequestRedirectAction);
@@ -229,18 +223,16 @@ class WebRequestRedirectAction : public WebRequestAction {
 class WebRequestRedirectToTransparentImageAction : public WebRequestAction {
  public:
   WebRequestRedirectToTransparentImageAction();
-  virtual ~WebRequestRedirectToTransparentImageAction();
 
   // Implementation of WebRequestAction:
-  virtual int GetStages() const OVERRIDE;
-  virtual Type GetType() const OVERRIDE;
-  virtual HostPermissionsStrategy GetHostPermissionsStrategy() const OVERRIDE;
+  virtual std::string GetName() const OVERRIDE;
   virtual LinkedPtrEventResponseDelta CreateDelta(
-      const WebRequestRule::RequestData& request_data,
+      const WebRequestData& request_data,
       const std::string& extension_id,
       const base::Time& extension_install_time) const OVERRIDE;
 
  private:
+  virtual ~WebRequestRedirectToTransparentImageAction();
   DISALLOW_COPY_AND_ASSIGN(WebRequestRedirectToTransparentImageAction);
 };
 
@@ -249,18 +241,16 @@ class WebRequestRedirectToTransparentImageAction : public WebRequestAction {
 class WebRequestRedirectToEmptyDocumentAction : public WebRequestAction {
  public:
   WebRequestRedirectToEmptyDocumentAction();
-  virtual ~WebRequestRedirectToEmptyDocumentAction();
 
   // Implementation of WebRequestAction:
-  virtual int GetStages() const OVERRIDE;
-  virtual Type GetType() const OVERRIDE;
-  virtual HostPermissionsStrategy GetHostPermissionsStrategy() const OVERRIDE;
+  virtual std::string GetName() const OVERRIDE;
   virtual LinkedPtrEventResponseDelta CreateDelta(
-      const WebRequestRule::RequestData& request_data,
+      const WebRequestData& request_data,
       const std::string& extension_id,
       const base::Time& extension_install_time) const OVERRIDE;
 
  private:
+  virtual ~WebRequestRedirectToEmptyDocumentAction();
   DISALLOW_COPY_AND_ASSIGN(WebRequestRedirectToEmptyDocumentAction);
 };
 
@@ -271,22 +261,22 @@ class WebRequestRedirectByRegExAction : public WebRequestAction {
   // capture groups are referenced in Perl style ($1, $2, ...).
   explicit WebRequestRedirectByRegExAction(scoped_ptr<re2::RE2> from_pattern,
                                            const std::string& to_pattern);
-  virtual ~WebRequestRedirectByRegExAction();
 
   // Conversion of capture group styles between Perl style ($1, $2, ...) and
   // RE2 (\1, \2, ...).
   static std::string PerlToRe2Style(const std::string& perl);
 
   // Implementation of WebRequestAction:
-  virtual int GetStages() const OVERRIDE;
-  virtual Type GetType() const OVERRIDE;
-  virtual HostPermissionsStrategy GetHostPermissionsStrategy() const OVERRIDE;
+  virtual bool Equals(const WebRequestAction* other) const OVERRIDE;
+  virtual std::string GetName() const OVERRIDE;
   virtual LinkedPtrEventResponseDelta CreateDelta(
-      const WebRequestRule::RequestData& request_data,
+      const WebRequestData& request_data,
       const std::string& extension_id,
       const base::Time& extension_install_time) const OVERRIDE;
 
  private:
+  virtual ~WebRequestRedirectByRegExAction();
+
   scoped_ptr<re2::RE2> from_pattern_;
   std::string to_pattern_;
 
@@ -298,17 +288,18 @@ class WebRequestSetRequestHeaderAction : public WebRequestAction {
  public:
   WebRequestSetRequestHeaderAction(const std::string& name,
                                    const std::string& value);
-  virtual ~WebRequestSetRequestHeaderAction();
 
   // Implementation of WebRequestAction:
-  virtual int GetStages() const OVERRIDE;
-  virtual Type GetType() const OVERRIDE;
+  virtual bool Equals(const WebRequestAction* other) const OVERRIDE;
+  virtual std::string GetName() const OVERRIDE;
   virtual LinkedPtrEventResponseDelta CreateDelta(
-      const WebRequestRule::RequestData& request_data,
+      const WebRequestData& request_data,
       const std::string& extension_id,
       const base::Time& extension_install_time) const OVERRIDE;
 
  private:
+  virtual ~WebRequestSetRequestHeaderAction();
+
   std::string name_;
   std::string value_;
   DISALLOW_COPY_AND_ASSIGN(WebRequestSetRequestHeaderAction);
@@ -318,17 +309,18 @@ class WebRequestSetRequestHeaderAction : public WebRequestAction {
 class WebRequestRemoveRequestHeaderAction : public WebRequestAction {
  public:
   explicit WebRequestRemoveRequestHeaderAction(const std::string& name);
-  virtual ~WebRequestRemoveRequestHeaderAction();
 
   // Implementation of WebRequestAction:
-  virtual int GetStages() const OVERRIDE;
-  virtual Type GetType() const OVERRIDE;
+  virtual bool Equals(const WebRequestAction* other) const OVERRIDE;
+  virtual std::string GetName() const OVERRIDE;
   virtual LinkedPtrEventResponseDelta CreateDelta(
-      const WebRequestRule::RequestData& request_data,
+      const WebRequestData& request_data,
       const std::string& extension_id,
       const base::Time& extension_install_time) const OVERRIDE;
 
  private:
+  virtual ~WebRequestRemoveRequestHeaderAction();
+
   std::string name_;
   DISALLOW_COPY_AND_ASSIGN(WebRequestRemoveRequestHeaderAction);
 };
@@ -338,17 +330,18 @@ class WebRequestAddResponseHeaderAction : public WebRequestAction {
  public:
   WebRequestAddResponseHeaderAction(const std::string& name,
                                     const std::string& value);
-  virtual ~WebRequestAddResponseHeaderAction();
 
   // Implementation of WebRequestAction:
-  virtual int GetStages() const OVERRIDE;
-  virtual Type GetType() const OVERRIDE;
+  virtual bool Equals(const WebRequestAction* other) const OVERRIDE;
+  virtual std::string GetName() const OVERRIDE;
   virtual LinkedPtrEventResponseDelta CreateDelta(
-      const WebRequestRule::RequestData& request_data,
+      const WebRequestData& request_data,
       const std::string& extension_id,
       const base::Time& extension_install_time) const OVERRIDE;
 
  private:
+  virtual ~WebRequestAddResponseHeaderAction();
+
   std::string name_;
   std::string value_;
   DISALLOW_COPY_AND_ASSIGN(WebRequestAddResponseHeaderAction);
@@ -360,17 +353,18 @@ class WebRequestRemoveResponseHeaderAction : public WebRequestAction {
   explicit WebRequestRemoveResponseHeaderAction(const std::string& name,
                                                 const std::string& value,
                                                 bool has_value);
-  virtual ~WebRequestRemoveResponseHeaderAction();
 
   // Implementation of WebRequestAction:
-  virtual int GetStages() const OVERRIDE;
-  virtual Type GetType() const OVERRIDE;
+  virtual bool Equals(const WebRequestAction* other) const OVERRIDE;
+  virtual std::string GetName() const OVERRIDE;
   virtual LinkedPtrEventResponseDelta CreateDelta(
-      const WebRequestRule::RequestData& request_data,
+      const WebRequestData& request_data,
       const std::string& extension_id,
       const base::Time& extension_install_time) const OVERRIDE;
 
  private:
+  virtual ~WebRequestRemoveResponseHeaderAction();
+
   std::string name_;
   std::string value_;
   bool has_value_;
@@ -380,21 +374,24 @@ class WebRequestRemoveResponseHeaderAction : public WebRequestAction {
 // Action that instructs to ignore rules below a certain priority.
 class WebRequestIgnoreRulesAction : public WebRequestAction {
  public:
-  explicit WebRequestIgnoreRulesAction(int minimum_priority);
-  virtual ~WebRequestIgnoreRulesAction();
+  explicit WebRequestIgnoreRulesAction(int minimum_priority,
+                                       const std::string& ignore_tag);
 
   // Implementation of WebRequestAction:
-  virtual int GetStages() const OVERRIDE;
-  virtual Type GetType() const OVERRIDE;
-  virtual int GetMinimumPriority() const OVERRIDE;
-  virtual HostPermissionsStrategy GetHostPermissionsStrategy() const OVERRIDE;
+  virtual bool Equals(const WebRequestAction* other) const OVERRIDE;
+  virtual std::string GetName() const OVERRIDE;
   virtual LinkedPtrEventResponseDelta CreateDelta(
-      const WebRequestRule::RequestData& request_data,
+      const WebRequestData& request_data,
       const std::string& extension_id,
       const base::Time& extension_install_time) const OVERRIDE;
+  const std::string& ignore_tag() const { return ignore_tag_; }
 
  private:
-  int minimum_priority_;
+  virtual ~WebRequestIgnoreRulesAction();
+
+  // Rules are ignored if they have a tag matching |ignore_tag_| and
+  // |ignore_tag_| is non-empty.
+  std::string ignore_tag_;
   DISALLOW_COPY_AND_ASSIGN(WebRequestIgnoreRulesAction);
 };
 
@@ -406,17 +403,18 @@ class WebRequestRequestCookieAction : public WebRequestAction {
 
   explicit WebRequestRequestCookieAction(
       linked_ptr<RequestCookieModification> request_cookie_modification);
-  virtual ~WebRequestRequestCookieAction();
 
   // Implementation of WebRequestAction:
-  virtual int GetStages() const OVERRIDE;
-  virtual Type GetType() const OVERRIDE;
+  virtual bool Equals(const WebRequestAction* other) const OVERRIDE;
+  virtual std::string GetName() const OVERRIDE;
   virtual LinkedPtrEventResponseDelta CreateDelta(
-      const WebRequestRule::RequestData& request_data,
+      const WebRequestData& request_data,
       const std::string& extension_id,
       const base::Time& extension_install_time) const OVERRIDE;
 
  private:
+  virtual ~WebRequestRequestCookieAction();
+
   linked_ptr<RequestCookieModification> request_cookie_modification_;
   DISALLOW_COPY_AND_ASSIGN(WebRequestRequestCookieAction);
 };
@@ -429,19 +427,41 @@ class WebRequestResponseCookieAction : public WebRequestAction {
 
   explicit WebRequestResponseCookieAction(
       linked_ptr<ResponseCookieModification> response_cookie_modification);
-  virtual ~WebRequestResponseCookieAction();
 
   // Implementation of WebRequestAction:
-  virtual int GetStages() const OVERRIDE;
-  virtual Type GetType() const OVERRIDE;
+  virtual bool Equals(const WebRequestAction* other) const OVERRIDE;
+  virtual std::string GetName() const OVERRIDE;
   virtual LinkedPtrEventResponseDelta CreateDelta(
-      const WebRequestRule::RequestData& request_data,
+      const WebRequestData& request_data,
       const std::string& extension_id,
       const base::Time& extension_install_time) const OVERRIDE;
 
  private:
+  virtual ~WebRequestResponseCookieAction();
+
   linked_ptr<ResponseCookieModification> response_cookie_modification_;
   DISALLOW_COPY_AND_ASSIGN(WebRequestResponseCookieAction);
+};
+
+// Action that triggers the chrome.declarativeWebRequest.onMessage event in
+// the background/event/... pages of the extension.
+class WebRequestSendMessageToExtensionAction : public WebRequestAction {
+ public:
+  explicit WebRequestSendMessageToExtensionAction(const std::string& message);
+
+  // Implementation of WebRequestAction:
+  virtual bool Equals(const WebRequestAction* other) const OVERRIDE;
+  virtual std::string GetName() const OVERRIDE;
+  virtual LinkedPtrEventResponseDelta CreateDelta(
+      const WebRequestData& request_data,
+      const std::string& extension_id,
+      const base::Time& extension_install_time) const OVERRIDE;
+
+ private:
+  virtual ~WebRequestSendMessageToExtensionAction();
+
+  std::string message_;
+  DISALLOW_COPY_AND_ASSIGN(WebRequestSendMessageToExtensionAction);
 };
 
 }  // namespace extensions

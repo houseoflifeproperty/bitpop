@@ -45,7 +45,7 @@ cr.define('options.browser_options', function() {
 
       var pageInfo = this.pageInfo_;
 
-      if (pageInfo.modelIndex == '-1') {
+      if (pageInfo.modelIndex == -1) {
         this.isPlaceholder = true;
         pageInfo.title = loadTimeData.getString('startupAddLabel');
         pageInfo.url = '';
@@ -57,7 +57,7 @@ cr.define('options.browser_options', function() {
       titleEl.classList.add('weakrtl');
       titleEl.textContent = pageInfo.title;
       if (!this.isPlaceholder) {
-        titleEl.style.backgroundImage = url(getFaviconURL(pageInfo.url));
+        titleEl.style.backgroundImage = getFaviconImageSet(pageInfo.url);
         titleEl.title = pageInfo.tooltip;
       }
 
@@ -149,7 +149,7 @@ cr.define('options.browser_options', function() {
 
     /** @override */
     deleteItemAtIndex: function(index) {
-      chrome.send('removeStartupPages', [String(index)]);
+      chrome.send('removeStartupPages', [index]);
     },
 
     /**
@@ -233,6 +233,12 @@ cr.define('options.browser_options', function() {
      */
     handleDrop_: function(e) {
       var dropTarget = this.getTargetFromDropEvent_(e);
+
+      if (!(dropTarget instanceof StartupPageListItem) ||
+          dropTarget.pageInfo_.modelIndex == -1) {
+        return;
+      }
+
       this.hideDropMarker_();
 
       // Insert the selection at the new position.
@@ -240,13 +246,19 @@ cr.define('options.browser_options', function() {
       if (this.dropPos == 'below')
         newIndex += 1;
 
-      var selected = this.selectionModel.selectedIndexes;
-      var stringized_selected = [];
-      for (var j = 0; j < selected.length; j++)
-        stringized_selected.push(String(selected[j]));
+      // If there are selected indexes, it was a re-order.
+      if (this.selectionModel.selectedIndexes.length > 0) {
+        chrome.send('dragDropStartupPage',
+                    [newIndex, this.selectionModel.selectedIndexes]);
+        return;
+      }
 
-      chrome.send('dragDropStartupPage',
-          [String(newIndex), stringized_selected]);
+      // Otherwise it was potentially a drop of new data (e.g. a bookmark).
+      var url = e.dataTransfer.getData('url');
+      if (url) {
+        e.preventDefault();
+        chrome.send('addStartupPage', [url, newIndex]);
+      }
     },
 
     /**

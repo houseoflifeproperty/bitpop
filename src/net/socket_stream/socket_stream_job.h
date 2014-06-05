@@ -15,6 +15,7 @@ class GURL;
 
 namespace net {
 
+class CookieStore;
 class SSLConfigService;
 class SSLInfo;
 class TransportSecurityState;
@@ -30,7 +31,9 @@ class NET_EXPORT SocketStreamJob
  public:
   // Callback function implemented by protocol handlers to create new jobs.
   typedef SocketStreamJob* (ProtocolFactory)(const GURL& url,
-                                             SocketStream::Delegate* delegate);
+                                             SocketStream::Delegate* delegate,
+                                             URLRequestContext* context,
+                                             CookieStore* cookie_store);
 
   static ProtocolFactory* RegisterProtocolFactory(const std::string& scheme,
                                                   ProtocolFactory* factory);
@@ -39,7 +42,9 @@ class NET_EXPORT SocketStreamJob
       const GURL& url,
       SocketStream::Delegate* delegate,
       TransportSecurityState* sts,
-      SSLConfigService* ssl);
+      SSLConfigService* ssl,
+      URLRequestContext* context,
+      CookieStore* cookie_store);
 
   SocketStreamJob();
   void InitSocketStream(SocketStream* socket) {
@@ -49,11 +54,11 @@ class NET_EXPORT SocketStreamJob
   virtual SocketStream::UserData* GetUserData(const void* key) const;
   virtual void SetUserData(const void* key, SocketStream::UserData* data);
 
-  const URLRequestContext* context() const {
-    return socket_->context();
+  URLRequestContext* context() const {
+    return socket_.get() ? socket_->context() : 0;
   }
-  void set_context(const URLRequestContext* context) {
-    socket_->set_context(context);
+  CookieStore* cookie_store() const {
+    return socket_.get() ? socket_->cookie_store() : 0;
   }
 
   virtual void Connect();
@@ -72,9 +77,10 @@ class NET_EXPORT SocketStreamJob
 
   virtual void DetachDelegate();
 
+  virtual void DetachContext();
+
  protected:
-  friend class WebSocketJobSpdy2Test;
-  friend class WebSocketJobSpdy3Test;
+  friend class WebSocketJobTest;
   friend class base::RefCountedThreadSafe<SocketStreamJob>;
   virtual ~SocketStreamJob();
 

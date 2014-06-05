@@ -4,6 +4,7 @@
 
 #include "content/renderer/pepper/mock_renderer_ppapi_host.h"
 
+#include "content/renderer/pepper/fake_pepper_plugin_instance.h"
 #include "ui/gfx/point.h"
 
 namespace content {
@@ -14,11 +15,10 @@ MockRendererPpapiHost::MockRendererPpapiHost(RenderView* render_view,
       ppapi_host_(&sink_, ppapi::PpapiPermissions()),
       render_view_(render_view),
       pp_instance_(instance),
-      has_user_gesture_(false) {
-}
+      has_user_gesture_(false),
+      plugin_instance_(new FakePepperPluginInstance) {}
 
-MockRendererPpapiHost::~MockRendererPpapiHost() {
-}
+MockRendererPpapiHost::~MockRendererPpapiHost() {}
 
 ppapi::host::PpapiHost* MockRendererPpapiHost::GetPpapiHost() {
   return &ppapi_host_;
@@ -28,9 +28,13 @@ bool MockRendererPpapiHost::IsValidInstance(PP_Instance instance) const {
   return instance == pp_instance_;
 }
 
-webkit::ppapi::PluginInstance* MockRendererPpapiHost::GetPluginInstance(
+PepperPluginInstance* MockRendererPpapiHost::GetPluginInstance(
     PP_Instance instance) const {
-  NOTIMPLEMENTED();
+  return plugin_instance_.get();
+}
+
+RenderFrame* MockRendererPpapiHost::GetRenderFrameForInstance(
+    PP_Instance instance) const {
   return NULL;
 }
 
@@ -41,16 +45,15 @@ RenderView* MockRendererPpapiHost::GetRenderViewForInstance(
   return NULL;
 }
 
-WebKit::WebPluginContainer* MockRendererPpapiHost::GetContainerForInstance(
+blink::WebPluginContainer* MockRendererPpapiHost::GetContainerForInstance(
     PP_Instance instance) const {
   NOTIMPLEMENTED();
   return NULL;
 }
 
-webkit::ppapi::PluginDelegate::PlatformGraphics2D*
-MockRendererPpapiHost::GetPlatformGraphics2D(PP_Resource resource) {
+base::ProcessId MockRendererPpapiHost::GetPluginPID() const {
   NOTIMPLEMENTED();
-  return NULL;
+  return base::kNullProcessId;
 }
 
 bool MockRendererPpapiHost::HasUserGesture(PP_Instance instance) const {
@@ -61,7 +64,7 @@ int MockRendererPpapiHost::GetRoutingIDForWidget(PP_Instance instance) const {
   return 0;
 }
 
-gfx::Point MockRendererPpapiHost::PluginPointToRenderView(
+gfx::Point MockRendererPpapiHost::PluginPointToRenderFrame(
     PP_Instance instance,
     const gfx::Point& pt) const {
   return gfx::Point();
@@ -74,9 +77,19 @@ IPC::PlatformFileForTransit MockRendererPpapiHost::ShareHandleWithRemote(
   return IPC::InvalidPlatformFileForTransit();
 }
 
-bool MockRendererPpapiHost::IsRunningInProcess() const {
+bool MockRendererPpapiHost::IsRunningInProcess() const { return false; }
+
+void MockRendererPpapiHost::CreateBrowserResourceHosts(
+    PP_Instance instance,
+    const std::vector<IPC::Message>& nested_msgs,
+    const base::Callback<void(const std::vector<int>&)>& callback) const {
+  callback.Run(std::vector<int>(nested_msgs.size(), 0));
+  return;
+}
+
+GURL MockRendererPpapiHost::GetDocumentURL(PP_Instance instance) const {
   NOTIMPLEMENTED();
-  return false;
+  return GURL();
 }
 
 }  // namespace content

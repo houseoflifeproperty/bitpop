@@ -9,8 +9,9 @@
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
+#include "base/prefs/pref_change_registrar.h"
 #include "content/public/browser/interstitial_page_delegate.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace content {
 class InterstitialPage;
@@ -22,23 +23,17 @@ class WebContents;
 // blocked page, to decide later whether to manually allow it.
 class ManagedModeInterstitial : public content::InterstitialPageDelegate {
  public:
+  static void Show(content::WebContents* web_contents,
+                   const GURL& url,
+                   const base::Callback<void(bool)>& callback);
+
+ private:
   ManagedModeInterstitial(content::WebContents* web_contents,
                           const GURL& url,
                           const base::Callback<void(bool)>& callback);
   virtual ~ManagedModeInterstitial();
 
-  // Should be called on the IO thread.
-  // |render_process_host_id| and |render_view_id| identify the WebContents
-  // where the request was blocked. |url| is the URL that was blocked.
-  // |callback| should be called with the result (whether to allow the request
-  // or not).
-  static void ShowInterstitial(int render_process_host_id,
-                               int render_view_id,
-                               const GURL& url,
-                               const base::Callback<void(bool)>& callback);
-
- private:
-  void GoToNewTabPage();
+  bool Init();
 
   // InterstitialPageDelegate implementation.
   virtual std::string GetHTMLContents() OVERRIDE;
@@ -46,12 +41,20 @@ class ManagedModeInterstitial : public content::InterstitialPageDelegate {
   virtual void OnProceed() OVERRIDE;
   virtual void OnDontProceed() OVERRIDE;
 
+  // Returns whether the blocked URL is now allowed. Called initially before the
+  // interstitial is shown (to catch race conditions), or when the URL filtering
+  // prefs change.
+  bool ShouldProceed();
+
+  void OnFilteringPrefsChanged();
   void DispatchContinueRequest(bool continue_request);
 
   // Owns the interstitial, which owns us.
   content::WebContents* web_contents_;
 
   content::InterstitialPage* interstitial_page_;  // Owns us.
+
+  PrefChangeRegistrar pref_change_registrar_;
 
   // The UI language. Used for formatting the URL for display.
   std::string languages_;

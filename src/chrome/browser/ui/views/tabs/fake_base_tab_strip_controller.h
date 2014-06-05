@@ -6,8 +6,8 @@
 #define CHROME_BROWSER_UI_VIEWS_TABS_FAKE_BASE_TAB_STRIP_CONTROLLER_H_
 
 #include "base/compiler_specific.h"
-#include "chrome/browser/ui/tabs/tab_strip_selection_model.h"
 #include "chrome/browser/ui/views/tabs/tab_strip_controller.h"
+#include "ui/base/models/list_selection_model.h"
 
 class TabStrip;
 
@@ -16,13 +16,13 @@ class FakeBaseTabStripController : public TabStripController {
   FakeBaseTabStripController();
   virtual ~FakeBaseTabStripController();
 
-  void AddTab(int index);
+  void AddTab(int index, bool is_active);
   void RemoveTab(int index);
 
   void set_tab_strip(TabStrip* tab_strip) { tab_strip_ = tab_strip; }
 
   // TabStripController overrides:
-  virtual const TabStripSelectionModel& GetSelectionModel() OVERRIDE;
+  virtual const ui::ListSelectionModel& GetSelectionModel() OVERRIDE;
   virtual int GetCount() const OVERRIDE;
   virtual bool IsValidIndex(int index) const OVERRIDE;
   virtual bool IsActiveTab(int index) const OVERRIDE;
@@ -36,7 +36,8 @@ class FakeBaseTabStripController : public TabStripController {
   virtual void AddSelectionFromAnchorTo(int index) OVERRIDE;
   virtual void CloseTab(int index, CloseTabSource source) OVERRIDE;
   virtual void ShowContextMenuForTab(Tab* tab,
-                                     const gfx::Point& p) OVERRIDE;
+                                     const gfx::Point& p,
+                                     ui::MenuSourceType source_type) OVERRIDE;
   virtual void UpdateLoadingAnimations() OVERRIDE;
   virtual int HasAvailableDragActions() const OVERRIDE;
   virtual void OnDropIndexUpdate(int index, bool drop_before) OVERRIDE;
@@ -45,15 +46,20 @@ class FakeBaseTabStripController : public TabStripController {
                            const GURL& url) OVERRIDE;
   virtual bool IsCompatibleWith(TabStrip* other) const OVERRIDE;
   virtual void CreateNewTab() OVERRIDE;
+  virtual void CreateNewTabWithLocation(const base::string16& loc) OVERRIDE;
   virtual bool IsIncognito() OVERRIDE;
   virtual void LayoutTypeMaybeChanged() OVERRIDE;
+  virtual void OnStartedDraggingTabs() OVERRIDE;
+  virtual void OnStoppedDraggingTabs() OVERRIDE;
+  virtual void CheckFileSupported(const GURL& url) OVERRIDE;
 
  private:
   TabStrip* tab_strip_;
 
   int num_tabs_;
+  int active_index_;
 
-  TabStripSelectionModel selection_model_;
+  ui::ListSelectionModel selection_model_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeBaseTabStripController);
 };

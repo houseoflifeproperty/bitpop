@@ -8,16 +8,20 @@
 
 #include "base/lazy_instance.h"
 #include "base/logging.h"
-#include "base/stringprintf.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/values.h"
+#include "chrome/browser/extensions/api/declarative/deduping_factory.h"
 #include "chrome/browser/extensions/api/declarative_webrequest/request_stage.h"
+#include "chrome/browser/extensions/api/declarative_webrequest/webrequest_condition.h"
 #include "chrome/browser/extensions/api/declarative_webrequest/webrequest_constants.h"
+#include "chrome/browser/extensions/api/web_request/web_request_api_constants.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api_helpers.h"
 #include "chrome/browser/extensions/api/web_request/web_request_permissions.h"
-#include "chrome/browser/extensions/extension_info_map.h"
-#include "chrome/common/extensions/extension.h"
 #include "content/public/common/url_constants.h"
+#include "extensions/browser/info_map.h"
+#include "extensions/common/error_utils.h"
+#include "extensions/common/extension.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/url_request/url_request.h"
 #include "third_party/re2/re2/re2.h"
@@ -29,8 +33,8 @@ namespace keys = declarative_webrequest_constants;
 
 namespace {
 // Error messages.
-const char kInvalidInstanceTypeError[] =
-    "An action has an invalid instanceType: %s";
+const char kIgnoreRulesRequiresParameterError[] =
+    "IgnoreRules requires at least one parameter.";
 
 const char kTransparentImageUrl[] = "data:image/png;base64,iVBORw0KGgoAAAANSUh"
     "EUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==";
@@ -39,12 +43,12 @@ const char kEmptyDocumentUrl[] = "data:text/html,";
 #define INPUT_FORMAT_VALIDATE(test) do { \
     if (!(test)) { \
       *bad_message = true; \
-      return scoped_ptr<WebRequestAction>(NULL); \
+      return scoped_refptr<const WebRequestAction>(NULL); \
     } \
   } while (0)
 
 scoped_ptr<helpers::RequestCookie> ParseRequestCookie(
-    const DictionaryValue* dict) {
+    const base::DictionaryValue* dict) {
   scoped_ptr<helpers::RequestCookie> result(new helpers::RequestCookie);
   std::string tmp;
   if (dict->GetString(keys::kNameKey, &tmp))
@@ -54,7 +58,7 @@ scoped_ptr<helpers::RequestCookie> ParseRequestCookie(
   return result.Pass();
 }
 
-void ParseResponseCookieImpl(const DictionaryValue* dict,
+void ParseResponseCookieImpl(const base::DictionaryValue* dict,
                              helpers::ResponseCookie* cookie) {
   std::string string_tmp;
   int int_tmp = 0;
@@ -78,14 +82,14 @@ void ParseResponseCookieImpl(const DictionaryValue* dict,
 }
 
 scoped_ptr<helpers::ResponseCookie> ParseResponseCookie(
-    const DictionaryValue* dict) {
+    const base::DictionaryValue* dict) {
   scoped_ptr<helpers::ResponseCookie> result(new helpers::ResponseCookie);
   ParseResponseCookieImpl(dict, result.get());
   return result.Pass();
 }
 
 scoped_ptr<helpers::FilterResponseCookie> ParseFilterResponseCookie(
-    const DictionaryValue* dict) {
+    const base::DictionaryValue* dict) {
   scoped_ptr<helpers::FilterResponseCookie> result(
       new helpers::FilterResponseCookie);
   ParseResponseCookieImpl(dict, result.get());
@@ -104,29 +108,36 @@ scoped_ptr<helpers::FilterResponseCookie> ParseFilterResponseCookie(
 // Helper function for WebRequestActions that can be instantiated by just
 // calling the constructor.
 template <class T>
-scoped_ptr<WebRequestAction> CallConstructorFactoryMethod(
-    const base::DictionaryValue* dict,
+scoped_refptr<const WebRequestAction> CallConstructorFactoryMethod(
+    const std::string& instance_type,
+    const base::Value* value,
     std::string* error,
     bool* bad_message) {
-  return scoped_ptr<WebRequestAction>(new T);
+  return scoped_refptr<const WebRequestAction>(new T);
 }
 
-scoped_ptr<WebRequestAction> CreateRedirectRequestAction(
-    const base::DictionaryValue* dict,
+scoped_refptr<const WebRequestAction> CreateRedirectRequestAction(
+    const std::string& instance_type,
+    const base::Value* value,
     std::string* error,
     bool* bad_message) {
+  const base::DictionaryValue* dict = NULL;
+  CHECK(value->GetAsDictionary(&dict));
   std::string redirect_url_string;
   INPUT_FORMAT_VALIDATE(
       dict->GetString(keys::kRedirectUrlKey, &redirect_url_string));
   GURL redirect_url(redirect_url_string);
-  return scoped_ptr<WebRequestAction>(
+  return scoped_refptr<const WebRequestAction>(
       new WebRequestRedirectAction(redirect_url));
 }
 
-scoped_ptr<WebRequestAction> CreateRedirectRequestByRegExAction(
-    const base::DictionaryValue* dict,
+scoped_refptr<const WebRequestAction> CreateRedirectRequestByRegExAction(
+    const std::string& instance_type,
+    const base::Value* value,
     std::string* error,
     bool* bad_message) {
+  const base::DictionaryValue* dict = NULL;
+  CHECK(value->GetAsDictionary(&dict));
   std::string from;
   std::string to;
   INPUT_FORMAT_VALIDATE(dict->GetString(keys::kFromKey, &from));
@@ -140,82 +151,142 @@ scoped_ptr<WebRequestAction> CreateRedirectRequestByRegExAction(
 
   if (!from_pattern->ok()) {
     *error = "Invalid pattern '" + from + "' -> '" + to + "'";
-    return scoped_ptr<WebRequestAction>(NULL);
+    return scoped_refptr<const WebRequestAction>(NULL);
   }
-  return scoped_ptr<WebRequestAction>(
+  return scoped_refptr<const WebRequestAction>(
       new WebRequestRedirectByRegExAction(from_pattern.Pass(), to));
 }
 
-scoped_ptr<WebRequestAction> CreateSetRequestHeaderAction(
-    const base::DictionaryValue* dict,
+scoped_refptr<const WebRequestAction> CreateSetRequestHeaderAction(
+    const std::string& instance_type,
+    const base::Value* json_value,
     std::string* error,
     bool* bad_message) {
+  const base::DictionaryValue* dict = NULL;
+  CHECK(json_value->GetAsDictionary(&dict));
   std::string name;
   std::string value;
   INPUT_FORMAT_VALIDATE(dict->GetString(keys::kNameKey, &name));
   INPUT_FORMAT_VALIDATE(dict->GetString(keys::kValueKey, &value));
-  return scoped_ptr<WebRequestAction>(
+  if (!helpers::IsValidHeaderName(name)) {
+    *error = extension_web_request_api_constants::kInvalidHeaderName;
+    return scoped_refptr<const WebRequestAction>(NULL);
+  }
+  if (!helpers::IsValidHeaderValue(value)) {
+    *error = ErrorUtils::FormatErrorMessage(
+        extension_web_request_api_constants::kInvalidHeaderValue, name);
+    return scoped_refptr<const WebRequestAction>(NULL);
+  }
+  return scoped_refptr<const WebRequestAction>(
       new WebRequestSetRequestHeaderAction(name, value));
 }
 
-scoped_ptr<WebRequestAction> CreateRemoveRequestHeaderAction(
-    const base::DictionaryValue* dict,
+scoped_refptr<const WebRequestAction> CreateRemoveRequestHeaderAction(
+    const std::string& instance_type,
+    const base::Value* value,
     std::string* error,
     bool* bad_message) {
+  const base::DictionaryValue* dict = NULL;
+  CHECK(value->GetAsDictionary(&dict));
   std::string name;
   INPUT_FORMAT_VALIDATE(dict->GetString(keys::kNameKey, &name));
-  return scoped_ptr<WebRequestAction>(
+  if (!helpers::IsValidHeaderName(name)) {
+    *error = extension_web_request_api_constants::kInvalidHeaderName;
+    return scoped_refptr<const WebRequestAction>(NULL);
+  }
+  return scoped_refptr<const WebRequestAction>(
       new WebRequestRemoveRequestHeaderAction(name));
 }
 
-scoped_ptr<WebRequestAction> CreateAddResponseHeaderAction(
-    const base::DictionaryValue* dict,
+scoped_refptr<const WebRequestAction> CreateAddResponseHeaderAction(
+    const std::string& instance_type,
+    const base::Value* json_value,
     std::string* error,
     bool* bad_message) {
+  const base::DictionaryValue* dict = NULL;
+  CHECK(json_value->GetAsDictionary(&dict));
   std::string name;
   std::string value;
   INPUT_FORMAT_VALIDATE(dict->GetString(keys::kNameKey, &name));
   INPUT_FORMAT_VALIDATE(dict->GetString(keys::kValueKey, &value));
-  return scoped_ptr<WebRequestAction>(
+  if (!helpers::IsValidHeaderName(name)) {
+    *error = extension_web_request_api_constants::kInvalidHeaderName;
+    return scoped_refptr<const WebRequestAction>(NULL);
+  }
+  if (!helpers::IsValidHeaderValue(value)) {
+    *error = ErrorUtils::FormatErrorMessage(
+        extension_web_request_api_constants::kInvalidHeaderValue, name);
+    return scoped_refptr<const WebRequestAction>(NULL);
+  }
+  return scoped_refptr<const WebRequestAction>(
       new WebRequestAddResponseHeaderAction(name, value));
 }
 
-scoped_ptr<WebRequestAction> CreateRemoveResponseHeaderAction(
-    const base::DictionaryValue* dict,
+scoped_refptr<const WebRequestAction> CreateRemoveResponseHeaderAction(
+    const std::string& instance_type,
+    const base::Value* json_value,
     std::string* error,
     bool* bad_message) {
+  const base::DictionaryValue* dict = NULL;
+  CHECK(json_value->GetAsDictionary(&dict));
   std::string name;
   std::string value;
   INPUT_FORMAT_VALIDATE(dict->GetString(keys::kNameKey, &name));
   bool has_value = dict->GetString(keys::kValueKey, &value);
-  return scoped_ptr<WebRequestAction>(
+  if (!helpers::IsValidHeaderName(name)) {
+    *error = extension_web_request_api_constants::kInvalidHeaderName;
+    return scoped_refptr<const WebRequestAction>(NULL);
+  }
+  if (has_value && !helpers::IsValidHeaderValue(value)) {
+    *error = ErrorUtils::FormatErrorMessage(
+        extension_web_request_api_constants::kInvalidHeaderValue, name);
+    return scoped_refptr<const WebRequestAction>(NULL);
+  }
+  return scoped_refptr<const WebRequestAction>(
       new WebRequestRemoveResponseHeaderAction(name, value, has_value));
 }
 
-scoped_ptr<WebRequestAction> CreateIgnoreRulesAction(
-    const base::DictionaryValue* dict,
+scoped_refptr<const WebRequestAction> CreateIgnoreRulesAction(
+    const std::string& instance_type,
+    const base::Value* value,
     std::string* error,
     bool* bad_message) {
-  int minium_priority;
-  INPUT_FORMAT_VALIDATE(
-      dict->GetInteger(keys::kLowerPriorityThanKey, &minium_priority));
-  return scoped_ptr<WebRequestAction>(
-      new WebRequestIgnoreRulesAction(minium_priority));
+  const base::DictionaryValue* dict = NULL;
+  CHECK(value->GetAsDictionary(&dict));
+  bool has_parameter = false;
+  int minimum_priority = std::numeric_limits<int>::min();
+  std::string ignore_tag;
+  if (dict->HasKey(keys::kLowerPriorityThanKey)) {
+    INPUT_FORMAT_VALIDATE(
+        dict->GetInteger(keys::kLowerPriorityThanKey, &minimum_priority));
+    has_parameter = true;
+  }
+  if (dict->HasKey(keys::kHasTagKey)) {
+    INPUT_FORMAT_VALIDATE(dict->GetString(keys::kHasTagKey, &ignore_tag));
+    has_parameter = true;
+  }
+  if (!has_parameter) {
+    *error = kIgnoreRulesRequiresParameterError;
+    return scoped_refptr<const WebRequestAction>(NULL);
+  }
+  return scoped_refptr<const WebRequestAction>(
+      new WebRequestIgnoreRulesAction(minimum_priority, ignore_tag));
 }
 
-scoped_ptr<WebRequestAction> CreateRequestCookieAction(
-    const base::DictionaryValue* dict,
+scoped_refptr<const WebRequestAction> CreateRequestCookieAction(
+    const std::string& instance_type,
+    const base::Value* value,
     std::string* error,
     bool* bad_message) {
   using extension_web_request_api_helpers::RequestCookieModification;
+
+  const base::DictionaryValue* dict = NULL;
+  CHECK(value->GetAsDictionary(&dict));
 
   linked_ptr<RequestCookieModification> modification(
       new RequestCookieModification);
 
   // Get modification type.
-  std::string instance_type;
-  INPUT_FORMAT_VALIDATE(
-      dict->GetString(keys::kInstanceTypeKey, &instance_type));
   if (instance_type == keys::kAddRequestCookieType)
     modification->type = helpers::ADD;
   else if (instance_type == keys::kEditRequestCookieType)
@@ -228,39 +299,40 @@ scoped_ptr<WebRequestAction> CreateRequestCookieAction(
   // Get filter.
   if (modification->type == helpers::EDIT ||
       modification->type == helpers::REMOVE) {
-    const DictionaryValue* filter = NULL;
+    const base::DictionaryValue* filter = NULL;
     INPUT_FORMAT_VALIDATE(dict->GetDictionary(keys::kFilterKey, &filter));
     modification->filter = ParseRequestCookie(filter);
   }
 
   // Get new value.
   if (modification->type == helpers::ADD) {
-    const DictionaryValue* value = NULL;
+    const base::DictionaryValue* value = NULL;
     INPUT_FORMAT_VALIDATE(dict->GetDictionary(keys::kCookieKey, &value));
     modification->modification = ParseRequestCookie(value);
   } else if (modification->type == helpers::EDIT) {
-    const DictionaryValue* value = NULL;
+    const base::DictionaryValue* value = NULL;
     INPUT_FORMAT_VALIDATE(dict->GetDictionary(keys::kModificationKey, &value));
     modification->modification = ParseRequestCookie(value);
   }
 
-  return scoped_ptr<WebRequestAction>(
+  return scoped_refptr<const WebRequestAction>(
       new WebRequestRequestCookieAction(modification));
 }
 
-scoped_ptr<WebRequestAction> CreateResponseCookieAction(
-    const base::DictionaryValue* dict,
+scoped_refptr<const WebRequestAction> CreateResponseCookieAction(
+    const std::string& instance_type,
+    const base::Value* value,
     std::string* error,
     bool* bad_message) {
   using extension_web_request_api_helpers::ResponseCookieModification;
+
+  const base::DictionaryValue* dict = NULL;
+  CHECK(value->GetAsDictionary(&dict));
 
   linked_ptr<ResponseCookieModification> modification(
       new ResponseCookieModification);
 
   // Get modification type.
-  std::string instance_type;
-  INPUT_FORMAT_VALIDATE(
-      dict->GetString(keys::kInstanceTypeKey, &instance_type));
   if (instance_type == keys::kAddResponseCookieType)
     modification->type = helpers::ADD;
   else if (instance_type == keys::kEditResponseCookieType)
@@ -273,72 +345,112 @@ scoped_ptr<WebRequestAction> CreateResponseCookieAction(
   // Get filter.
   if (modification->type == helpers::EDIT ||
       modification->type == helpers::REMOVE) {
-    const DictionaryValue* filter = NULL;
+    const base::DictionaryValue* filter = NULL;
     INPUT_FORMAT_VALIDATE(dict->GetDictionary(keys::kFilterKey, &filter));
     modification->filter = ParseFilterResponseCookie(filter);
   }
 
   // Get new value.
   if (modification->type == helpers::ADD) {
-    const DictionaryValue* value = NULL;
+    const base::DictionaryValue* value = NULL;
     INPUT_FORMAT_VALIDATE(dict->GetDictionary(keys::kCookieKey, &value));
     modification->modification = ParseResponseCookie(value);
   } else if (modification->type == helpers::EDIT) {
-    const DictionaryValue* value = NULL;
+    const base::DictionaryValue* value = NULL;
     INPUT_FORMAT_VALIDATE(dict->GetDictionary(keys::kModificationKey, &value));
     modification->modification = ParseResponseCookie(value);
   }
 
-  return scoped_ptr<WebRequestAction>(
+  return scoped_refptr<const WebRequestAction>(
       new WebRequestResponseCookieAction(modification));
 }
 
-struct WebRequestActionFactory {
-  // Factory methods for WebRequestAction instances. |dict| contains the json
-  // dictionary that describes the action. |error| is used to return error
-  // messages in case the extension passed an action that was syntactically
-  // correct but semantically incorrect. |bad_message| is set to true in case
-  // |dict| does not confirm to the validated JSON specification.
-  typedef scoped_ptr<WebRequestAction>
-      (* FactoryMethod)(const base::DictionaryValue* /* dict */ ,
-                        std::string* /* error */,
-                        bool* /* bad_message */);
-  std::map<std::string, FactoryMethod> factory_methods;
+scoped_refptr<const WebRequestAction> CreateSendMessageToExtensionAction(
+    const std::string& name,
+    const base::Value* value,
+    std::string* error,
+    bool* bad_message) {
+  const base::DictionaryValue* dict = NULL;
+  CHECK(value->GetAsDictionary(&dict));
+  std::string message;
+  INPUT_FORMAT_VALIDATE(dict->GetString(keys::kMessageKey, &message));
+  return scoped_refptr<const WebRequestAction>(
+      new WebRequestSendMessageToExtensionAction(message));
+}
 
-  WebRequestActionFactory() {
-    factory_methods[keys::kAddRequestCookieType] =
-        &CreateRequestCookieAction;
-    factory_methods[keys::kAddResponseCookieType] =
-        &CreateResponseCookieAction;
-    factory_methods[keys::kAddResponseHeaderType] =
-        &CreateAddResponseHeaderAction;
-    factory_methods[keys::kCancelRequestType] =
-        &CallConstructorFactoryMethod<WebRequestCancelAction>;
-    factory_methods[keys::kEditRequestCookieType] =
-        &CreateRequestCookieAction;
-    factory_methods[keys::kEditResponseCookieType] =
-        &CreateResponseCookieAction;
-    factory_methods[keys::kRedirectByRegExType] =
-        &CreateRedirectRequestByRegExAction;
-    factory_methods[keys::kRedirectRequestType] =
-        &CreateRedirectRequestAction;
-    factory_methods[keys::kRedirectToTransparentImageType] =
+struct WebRequestActionFactory {
+  DedupingFactory<WebRequestAction> factory;
+
+  WebRequestActionFactory() : factory(5) {
+    factory.RegisterFactoryMethod(
+        keys::kAddRequestCookieType,
+        DedupingFactory<WebRequestAction>::IS_PARAMETERIZED,
+        &CreateRequestCookieAction);
+    factory.RegisterFactoryMethod(
+        keys::kAddResponseCookieType,
+        DedupingFactory<WebRequestAction>::IS_PARAMETERIZED,
+        &CreateResponseCookieAction);
+    factory.RegisterFactoryMethod(
+        keys::kAddResponseHeaderType,
+        DedupingFactory<WebRequestAction>::IS_PARAMETERIZED,
+        &CreateAddResponseHeaderAction);
+    factory.RegisterFactoryMethod(
+        keys::kCancelRequestType,
+        DedupingFactory<WebRequestAction>::IS_NOT_PARAMETERIZED,
+        &CallConstructorFactoryMethod<WebRequestCancelAction>);
+    factory.RegisterFactoryMethod(
+        keys::kEditRequestCookieType,
+        DedupingFactory<WebRequestAction>::IS_PARAMETERIZED,
+        &CreateRequestCookieAction);
+    factory.RegisterFactoryMethod(
+        keys::kEditResponseCookieType,
+        DedupingFactory<WebRequestAction>::IS_PARAMETERIZED,
+        &CreateResponseCookieAction);
+    factory.RegisterFactoryMethod(
+        keys::kRedirectByRegExType,
+        DedupingFactory<WebRequestAction>::IS_PARAMETERIZED,
+        &CreateRedirectRequestByRegExAction);
+    factory.RegisterFactoryMethod(
+        keys::kRedirectRequestType,
+        DedupingFactory<WebRequestAction>::IS_PARAMETERIZED,
+        &CreateRedirectRequestAction);
+    factory.RegisterFactoryMethod(
+        keys::kRedirectToTransparentImageType,
+        DedupingFactory<WebRequestAction>::IS_NOT_PARAMETERIZED,
         &CallConstructorFactoryMethod<
-            WebRequestRedirectToTransparentImageAction>;
-    factory_methods[keys::kRedirectToEmptyDocumentType] =
-        &CallConstructorFactoryMethod<WebRequestRedirectToEmptyDocumentAction>;
-    factory_methods[keys::kRemoveRequestCookieType] =
-        &CreateRequestCookieAction;
-    factory_methods[keys::kRemoveResponseCookieType] =
-        &CreateResponseCookieAction;
-    factory_methods[keys::kSetRequestHeaderType] =
-        &CreateSetRequestHeaderAction;
-    factory_methods[keys::kRemoveRequestHeaderType] =
-        &CreateRemoveRequestHeaderAction;
-    factory_methods[keys::kRemoveResponseHeaderType] =
-        &CreateRemoveResponseHeaderAction;
-    factory_methods[keys::kIgnoreRulesType] =
-        &CreateIgnoreRulesAction;
+            WebRequestRedirectToTransparentImageAction>);
+    factory.RegisterFactoryMethod(
+        keys::kRedirectToEmptyDocumentType,
+        DedupingFactory<WebRequestAction>::IS_NOT_PARAMETERIZED,
+        &CallConstructorFactoryMethod<WebRequestRedirectToEmptyDocumentAction>);
+    factory.RegisterFactoryMethod(
+        keys::kRemoveRequestCookieType,
+        DedupingFactory<WebRequestAction>::IS_PARAMETERIZED,
+        &CreateRequestCookieAction);
+    factory.RegisterFactoryMethod(
+        keys::kRemoveResponseCookieType,
+        DedupingFactory<WebRequestAction>::IS_PARAMETERIZED,
+        &CreateResponseCookieAction);
+    factory.RegisterFactoryMethod(
+        keys::kSetRequestHeaderType,
+        DedupingFactory<WebRequestAction>::IS_PARAMETERIZED,
+        &CreateSetRequestHeaderAction);
+    factory.RegisterFactoryMethod(
+        keys::kRemoveRequestHeaderType,
+        DedupingFactory<WebRequestAction>::IS_PARAMETERIZED,
+        &CreateRemoveRequestHeaderAction);
+    factory.RegisterFactoryMethod(
+        keys::kRemoveResponseHeaderType,
+        DedupingFactory<WebRequestAction>::IS_PARAMETERIZED,
+        &CreateRemoveResponseHeaderAction);
+    factory.RegisterFactoryMethod(
+        keys::kIgnoreRulesType,
+        DedupingFactory<WebRequestAction>::IS_PARAMETERIZED,
+        &CreateIgnoreRulesAction);
+    factory.RegisterFactoryMethod(
+        keys::kSendMessageToExtensionType,
+        DedupingFactory<WebRequestAction>::IS_PARAMETERIZED,
+        &CreateSendMessageToExtensionAction);
   }
 };
 
@@ -351,20 +463,13 @@ base::LazyInstance<WebRequestActionFactory>::Leaky
 // WebRequestAction
 //
 
-WebRequestAction::WebRequestAction() {}
-
 WebRequestAction::~WebRequestAction() {}
 
-int WebRequestAction::GetMinimumPriority() const {
-  return std::numeric_limits<int>::min();
+bool WebRequestAction::Equals(const WebRequestAction* other) const {
+  return type() == other->type();
 }
 
-WebRequestAction::HostPermissionsStrategy
-WebRequestAction::GetHostPermissionsStrategy() const {
-  return STRATEGY_DEFAULT;
-}
-
-bool WebRequestAction::HasPermission(const ExtensionInfoMap* extension_info_map,
+bool WebRequestAction::HasPermission(const InfoMap* extension_info_map,
                                      const std::string& extension_id,
                                      const net::URLRequest* request,
                                      bool crosses_incognito) const {
@@ -376,35 +481,26 @@ bool WebRequestAction::HasPermission(const ExtensionInfoMap* extension_info_map,
   if (!extension_info_map)
     return true;
 
-  HostPermissionsStrategy strategy = GetHostPermissionsStrategy();
-  if (strategy == STRATEGY_NONE || strategy == STRATEGY_DEFAULT) {
-    bool check_host_permissions = strategy != STRATEGY_NONE;
-    return WebRequestPermissions::CanExtensionAccessURL(
-        extension_info_map, extension_id, request->url(), crosses_incognito,
-        check_host_permissions);
+  WebRequestPermissions::HostPermissionsCheck permission_check =
+      WebRequestPermissions::REQUIRE_ALL_URLS;
+  switch (host_permissions_strategy()) {
+    case STRATEGY_DEFAULT:  // Default value is already set.
+      break;
+    case STRATEGY_NONE:
+      permission_check = WebRequestPermissions::DO_NOT_CHECK_HOST;
+      break;
+    case STRATEGY_HOST:
+      permission_check = WebRequestPermissions::REQUIRE_HOST_PERMISSION;
+      break;
   }
-  return true;
-}
-
-bool WebRequestAction::DeltaHasPermission(
-    const ExtensionInfoMap* extension_info_map,
-    const std::string& extension_id,
-    const net::URLRequest* request,
-    bool crosses_incognito,
-    const LinkedPtrEventResponseDelta& delta) const {
-  if (GetHostPermissionsStrategy() == STRATEGY_ALLOW_SAME_DOMAIN) {
-    return
-        net::RegistryControlledDomainService::SameDomainOrHost(
-            request->url(), delta->new_url) ||
-        WebRequestPermissions::CanExtensionAccessURL(
-            extension_info_map, extension_id, request->url(), crosses_incognito,
-            true);
-  }
-  return true;
+  return WebRequestPermissions::CanExtensionAccessURL(
+      extension_info_map, extension_id, request->url(), crosses_incognito,
+      permission_check);
 }
 
 // static
-scoped_ptr<WebRequestAction> WebRequestAction::Create(
+scoped_refptr<const WebRequestAction> WebRequestAction::Create(
+    const Extension* extension,
     const base::Value& json_action,
     std::string* error,
     bool* bad_message) {
@@ -419,107 +515,62 @@ scoped_ptr<WebRequestAction> WebRequestAction::Create(
       action_dict->GetString(keys::kInstanceTypeKey, &instance_type));
 
   WebRequestActionFactory& factory = g_web_request_action_factory.Get();
-  std::map<std::string, WebRequestActionFactory::FactoryMethod>::iterator
-      factory_method_iter = factory.factory_methods.find(instance_type);
-  if (factory_method_iter != factory.factory_methods.end())
-    return (*factory_method_iter->second)(action_dict, error, bad_message);
-
-  *error = base::StringPrintf(kInvalidInstanceTypeError, instance_type.c_str());
-  return scoped_ptr<WebRequestAction>();
+  return factory.factory.Instantiate(
+      instance_type, action_dict, error, bad_message);
 }
 
-
-//
-// WebRequestActionSet
-//
-
-WebRequestActionSet::WebRequestActionSet(const Actions& actions)
-    : actions_(actions) {}
-
-WebRequestActionSet::~WebRequestActionSet() {}
-
-// static
-scoped_ptr<WebRequestActionSet> WebRequestActionSet::Create(
-    const AnyVector& actions,
-    std::string* error,
-    bool* bad_message) {
-  *error = "";
-  *bad_message = false;
-  Actions result;
-
-  for (AnyVector::const_iterator i = actions.begin();
-       i != actions.end(); ++i) {
-    CHECK(i->get());
-    scoped_ptr<WebRequestAction> action =
-        WebRequestAction::Create((*i)->value(), error, bad_message);
-    if (!error->empty() || *bad_message)
-      return scoped_ptr<WebRequestActionSet>(NULL);
-    result.push_back(make_linked_ptr(action.release()));
-  }
-
-  return scoped_ptr<WebRequestActionSet>(new WebRequestActionSet(result));
-}
-
-std::list<LinkedPtrEventResponseDelta> WebRequestActionSet::CreateDeltas(
-    const ExtensionInfoMap* extension_info_map,
-    const std::string& extension_id,
-    const WebRequestRule::RequestData& request_data,
-    bool crosses_incognito,
-    const base::Time& extension_install_time) const {
-  std::list<LinkedPtrEventResponseDelta> result;
-  for (Actions::const_iterator i = actions_.begin(); i != actions_.end(); ++i) {
-    if (!(*i)->HasPermission(extension_info_map, extension_id,
-                             request_data.request, crosses_incognito))
-      continue;
-    if ((*i)->GetStages() & request_data.stage) {
-      LinkedPtrEventResponseDelta delta = (*i)->CreateDelta(
-          request_data, extension_id, extension_install_time);
-      if (delta.get()) {
-        if ((*i)->DeltaHasPermission(extension_info_map, extension_id,
-                                     request_data.request, crosses_incognito,
-                                     delta))
-          result.push_back(delta);
-      }
+void WebRequestAction::Apply(const std::string& extension_id,
+                             base::Time extension_install_time,
+                             ApplyInfo* apply_info) const {
+  if (!HasPermission(apply_info->extension_info_map, extension_id,
+                     apply_info->request_data.request,
+                     apply_info->crosses_incognito))
+    return;
+  if (stages() & apply_info->request_data.stage) {
+    LinkedPtrEventResponseDelta delta = CreateDelta(
+        apply_info->request_data, extension_id, extension_install_time);
+    if (delta.get())
+      apply_info->deltas->push_back(delta);
+    if (type() == WebRequestAction::ACTION_IGNORE_RULES) {
+      const WebRequestIgnoreRulesAction* ignore_action =
+          static_cast<const WebRequestIgnoreRulesAction*>(this);
+      if (!ignore_action->ignore_tag().empty())
+        apply_info->ignored_tags->insert(ignore_action->ignore_tag());
     }
   }
-  return result;
 }
 
-int WebRequestActionSet::GetMinimumPriority() const {
-  int minimum_priority = std::numeric_limits<int>::min();
-  for (Actions::const_iterator i = actions_.begin(); i != actions_.end(); ++i) {
-    minimum_priority = std::max(minimum_priority, (*i)->GetMinimumPriority());
-  }
-  return minimum_priority;
-}
+WebRequestAction::WebRequestAction(int stages,
+                                   Type type,
+                                   int minimum_priority,
+                                   HostPermissionsStrategy strategy)
+    : stages_(stages),
+      type_(type),
+      minimum_priority_(minimum_priority),
+      host_permissions_strategy_(strategy) {}
 
 //
 // WebRequestCancelAction
 //
 
-WebRequestCancelAction::WebRequestCancelAction() {}
+WebRequestCancelAction::WebRequestCancelAction()
+    : WebRequestAction(ON_BEFORE_REQUEST | ON_BEFORE_SEND_HEADERS |
+                           ON_HEADERS_RECEIVED | ON_AUTH_REQUIRED,
+                       ACTION_CANCEL_REQUEST,
+                       std::numeric_limits<int>::min(),
+                       STRATEGY_NONE) {}
 
 WebRequestCancelAction::~WebRequestCancelAction() {}
 
-int WebRequestCancelAction::GetStages() const {
-  return ON_BEFORE_REQUEST | ON_BEFORE_SEND_HEADERS | ON_HEADERS_RECEIVED |
-      ON_AUTH_REQUIRED;
-}
-
-WebRequestAction::Type WebRequestCancelAction::GetType() const {
-  return WebRequestAction::ACTION_CANCEL_REQUEST;
-}
-
-WebRequestAction::HostPermissionsStrategy
-WebRequestCancelAction::GetHostPermissionsStrategy() const {
-  return WebRequestAction::STRATEGY_NONE;
+std::string WebRequestCancelAction::GetName() const {
+  return keys::kCancelRequestType;
 }
 
 LinkedPtrEventResponseDelta WebRequestCancelAction::CreateDelta(
-    const WebRequestRule::RequestData& request_data,
+    const WebRequestData& request_data,
     const std::string& extension_id,
     const base::Time& extension_install_time) const {
-  CHECK(request_data.stage & GetStages());
+  CHECK(request_data.stage & stages());
   LinkedPtrEventResponseDelta result(
       new helpers::EventResponseDelta(extension_id, extension_install_time));
   result->cancel = true;
@@ -531,28 +582,29 @@ LinkedPtrEventResponseDelta WebRequestCancelAction::CreateDelta(
 //
 
 WebRequestRedirectAction::WebRequestRedirectAction(const GURL& redirect_url)
-    : redirect_url_(redirect_url) {}
+    : WebRequestAction(ON_BEFORE_REQUEST | ON_HEADERS_RECEIVED,
+                       ACTION_REDIRECT_REQUEST,
+                       std::numeric_limits<int>::min(),
+                       STRATEGY_DEFAULT),
+      redirect_url_(redirect_url) {}
 
 WebRequestRedirectAction::~WebRequestRedirectAction() {}
 
-int WebRequestRedirectAction::GetStages() const {
-  return ON_BEFORE_REQUEST;
+bool WebRequestRedirectAction::Equals(const WebRequestAction* other) const {
+  return WebRequestAction::Equals(other) &&
+         redirect_url_ ==
+             static_cast<const WebRequestRedirectAction*>(other)->redirect_url_;
 }
 
-WebRequestAction::Type WebRequestRedirectAction::GetType() const {
-  return WebRequestAction::ACTION_REDIRECT_REQUEST;
-}
-
-WebRequestAction::HostPermissionsStrategy
-WebRequestRedirectAction::GetHostPermissionsStrategy() const {
-  return WebRequestAction::STRATEGY_ALLOW_SAME_DOMAIN;
+std::string WebRequestRedirectAction::GetName() const {
+  return keys::kRedirectRequestType;
 }
 
 LinkedPtrEventResponseDelta WebRequestRedirectAction::CreateDelta(
-    const WebRequestRule::RequestData& request_data,
+    const WebRequestData& request_data,
     const std::string& extension_id,
     const base::Time& extension_install_time) const {
-  CHECK(request_data.stage & GetStages());
+  CHECK(request_data.stage & stages());
   if (request_data.request->url() == redirect_url_)
     return LinkedPtrEventResponseDelta(NULL);
   LinkedPtrEventResponseDelta result(
@@ -566,31 +618,25 @@ LinkedPtrEventResponseDelta WebRequestRedirectAction::CreateDelta(
 //
 
 WebRequestRedirectToTransparentImageAction::
-WebRequestRedirectToTransparentImageAction() {}
+    WebRequestRedirectToTransparentImageAction()
+    : WebRequestAction(ON_BEFORE_REQUEST | ON_HEADERS_RECEIVED,
+                       ACTION_REDIRECT_TO_TRANSPARENT_IMAGE,
+                       std::numeric_limits<int>::min(),
+                       STRATEGY_NONE) {}
 
 WebRequestRedirectToTransparentImageAction::
 ~WebRequestRedirectToTransparentImageAction() {}
 
-int WebRequestRedirectToTransparentImageAction::GetStages() const {
-  return ON_BEFORE_REQUEST;
-}
-
-WebRequestAction::Type
-WebRequestRedirectToTransparentImageAction::GetType() const {
-  return WebRequestAction::ACTION_REDIRECT_TO_TRANSPARENT_IMAGE;
-}
-
-WebRequestAction::HostPermissionsStrategy
-WebRequestRedirectToTransparentImageAction::GetHostPermissionsStrategy() const {
-  return WebRequestAction::STRATEGY_NONE;
+std::string WebRequestRedirectToTransparentImageAction::GetName() const {
+  return keys::kRedirectToTransparentImageType;
 }
 
 LinkedPtrEventResponseDelta
 WebRequestRedirectToTransparentImageAction::CreateDelta(
-    const WebRequestRule::RequestData& request_data,
+    const WebRequestData& request_data,
     const std::string& extension_id,
     const base::Time& extension_install_time) const {
-  CHECK(request_data.stage & GetStages());
+  CHECK(request_data.stage & stages());
   LinkedPtrEventResponseDelta result(
       new helpers::EventResponseDelta(extension_id, extension_install_time));
   result->new_url = GURL(kTransparentImageUrl);
@@ -602,31 +648,25 @@ WebRequestRedirectToTransparentImageAction::CreateDelta(
 //
 
 WebRequestRedirectToEmptyDocumentAction::
-WebRequestRedirectToEmptyDocumentAction() {}
+    WebRequestRedirectToEmptyDocumentAction()
+    : WebRequestAction(ON_BEFORE_REQUEST | ON_HEADERS_RECEIVED,
+                       ACTION_REDIRECT_TO_EMPTY_DOCUMENT,
+                       std::numeric_limits<int>::min(),
+                       STRATEGY_NONE) {}
 
 WebRequestRedirectToEmptyDocumentAction::
 ~WebRequestRedirectToEmptyDocumentAction() {}
 
-int WebRequestRedirectToEmptyDocumentAction::GetStages() const {
-  return ON_BEFORE_REQUEST;
-}
-
-WebRequestAction::Type
-WebRequestRedirectToEmptyDocumentAction::GetType() const {
-  return WebRequestAction::ACTION_REDIRECT_TO_EMPTY_DOCUMENT;
-}
-
-WebRequestAction::HostPermissionsStrategy
-WebRequestRedirectToEmptyDocumentAction::GetHostPermissionsStrategy() const {
-  return WebRequestAction::STRATEGY_NONE;
+std::string WebRequestRedirectToEmptyDocumentAction::GetName() const {
+  return keys::kRedirectToEmptyDocumentType;
 }
 
 LinkedPtrEventResponseDelta
 WebRequestRedirectToEmptyDocumentAction::CreateDelta(
-    const WebRequestRule::RequestData& request_data,
+    const WebRequestData& request_data,
     const std::string& extension_id,
     const base::Time& extension_install_time) const {
-  CHECK(request_data.stage & GetStages());
+  CHECK(request_data.stage & stages());
   LinkedPtrEventResponseDelta result(
       new helpers::EventResponseDelta(extension_id, extension_install_time));
   result->new_url = GURL(kEmptyDocumentUrl);
@@ -640,7 +680,11 @@ WebRequestRedirectToEmptyDocumentAction::CreateDelta(
 WebRequestRedirectByRegExAction::WebRequestRedirectByRegExAction(
     scoped_ptr<RE2> from_pattern,
     const std::string& to_pattern)
-    : from_pattern_(from_pattern.Pass()),
+    : WebRequestAction(ON_BEFORE_REQUEST | ON_HEADERS_RECEIVED,
+                       ACTION_REDIRECT_BY_REGEX_DOCUMENT,
+                       std::numeric_limits<int>::min(),
+                       STRATEGY_DEFAULT),
+      from_pattern_(from_pattern.Pass()),
       to_pattern_(to_pattern.data(), to_pattern.size()) {}
 
 WebRequestRedirectByRegExAction::~WebRequestRedirectByRegExAction() {}
@@ -698,24 +742,25 @@ std::string WebRequestRedirectByRegExAction::PerlToRe2Style(
   return result;
 }
 
-int WebRequestRedirectByRegExAction::GetStages() const {
-  return ON_BEFORE_REQUEST;
+bool WebRequestRedirectByRegExAction::Equals(
+    const WebRequestAction* other) const {
+  if (!WebRequestAction::Equals(other))
+    return false;
+  const WebRequestRedirectByRegExAction* casted_other =
+      static_cast<const WebRequestRedirectByRegExAction*>(other);
+  return from_pattern_->pattern() == casted_other->from_pattern_->pattern() &&
+         to_pattern_ == casted_other->to_pattern_;
 }
 
-WebRequestAction::Type WebRequestRedirectByRegExAction::GetType() const {
-  return WebRequestAction::ACTION_REDIRECT_BY_REGEX_DOCUMENT;
-}
-
-WebRequestAction::HostPermissionsStrategy
-WebRequestRedirectByRegExAction::GetHostPermissionsStrategy() const {
-  return WebRequestAction::STRATEGY_ALLOW_SAME_DOMAIN;
+std::string WebRequestRedirectByRegExAction::GetName() const {
+  return keys::kRedirectByRegExType;
 }
 
 LinkedPtrEventResponseDelta WebRequestRedirectByRegExAction::CreateDelta(
-    const WebRequestRule::RequestData& request_data,
+    const WebRequestData& request_data,
     const std::string& extension_id,
     const base::Time& extension_install_time) const {
-  CHECK(request_data.stage & GetStages());
+  CHECK(request_data.stage & stages());
   CHECK(from_pattern_.get());
 
   const std::string& old_url = request_data.request->url().spec();
@@ -739,27 +784,35 @@ LinkedPtrEventResponseDelta WebRequestRedirectByRegExAction::CreateDelta(
 WebRequestSetRequestHeaderAction::WebRequestSetRequestHeaderAction(
     const std::string& name,
     const std::string& value)
-    : name_(name),
-      value_(value) {
-}
+    : WebRequestAction(ON_BEFORE_SEND_HEADERS,
+                       ACTION_SET_REQUEST_HEADER,
+                       std::numeric_limits<int>::min(),
+                       STRATEGY_DEFAULT),
+      name_(name),
+      value_(value) {}
 
 WebRequestSetRequestHeaderAction::~WebRequestSetRequestHeaderAction() {}
 
-int WebRequestSetRequestHeaderAction::GetStages() const {
-  return ON_BEFORE_SEND_HEADERS;
+bool WebRequestSetRequestHeaderAction::Equals(
+    const WebRequestAction* other) const {
+  if (!WebRequestAction::Equals(other))
+    return false;
+  const WebRequestSetRequestHeaderAction* casted_other =
+      static_cast<const WebRequestSetRequestHeaderAction*>(other);
+  return name_ == casted_other->name_ && value_ == casted_other->value_;
 }
 
-WebRequestAction::Type
-WebRequestSetRequestHeaderAction::GetType() const {
-  return WebRequestAction::ACTION_SET_REQUEST_HEADER;
+std::string WebRequestSetRequestHeaderAction::GetName() const {
+  return keys::kSetRequestHeaderType;
 }
+
 
 LinkedPtrEventResponseDelta
 WebRequestSetRequestHeaderAction::CreateDelta(
-    const WebRequestRule::RequestData& request_data,
+    const WebRequestData& request_data,
     const std::string& extension_id,
     const base::Time& extension_install_time) const {
-  CHECK(request_data.stage & GetStages());
+  CHECK(request_data.stage & stages());
   LinkedPtrEventResponseDelta result(
       new helpers::EventResponseDelta(extension_id, extension_install_time));
   result->modified_request_headers.SetHeader(name_, value_);
@@ -772,26 +825,33 @@ WebRequestSetRequestHeaderAction::CreateDelta(
 
 WebRequestRemoveRequestHeaderAction::WebRequestRemoveRequestHeaderAction(
     const std::string& name)
-    : name_(name) {
-}
+    : WebRequestAction(ON_BEFORE_SEND_HEADERS,
+                       ACTION_REMOVE_REQUEST_HEADER,
+                       std::numeric_limits<int>::min(),
+                       STRATEGY_DEFAULT),
+      name_(name) {}
 
 WebRequestRemoveRequestHeaderAction::~WebRequestRemoveRequestHeaderAction() {}
 
-int WebRequestRemoveRequestHeaderAction::GetStages() const {
-  return ON_BEFORE_SEND_HEADERS;
+bool WebRequestRemoveRequestHeaderAction::Equals(
+    const WebRequestAction* other) const {
+  if (!WebRequestAction::Equals(other))
+    return false;
+  const WebRequestRemoveRequestHeaderAction* casted_other =
+      static_cast<const WebRequestRemoveRequestHeaderAction*>(other);
+  return name_ == casted_other->name_;
 }
 
-WebRequestAction::Type
-WebRequestRemoveRequestHeaderAction::GetType() const {
-  return WebRequestAction::ACTION_REMOVE_REQUEST_HEADER;
+std::string WebRequestRemoveRequestHeaderAction::GetName() const {
+  return keys::kRemoveRequestHeaderType;
 }
 
 LinkedPtrEventResponseDelta
 WebRequestRemoveRequestHeaderAction::CreateDelta(
-    const WebRequestRule::RequestData& request_data,
+    const WebRequestData& request_data,
     const std::string& extension_id,
     const base::Time& extension_install_time) const {
-  CHECK(request_data.stage & GetStages());
+  CHECK(request_data.stage & stages());
   LinkedPtrEventResponseDelta result(
       new helpers::EventResponseDelta(extension_id, extension_install_time));
   result->deleted_request_headers.push_back(name_);
@@ -805,27 +865,34 @@ WebRequestRemoveRequestHeaderAction::CreateDelta(
 WebRequestAddResponseHeaderAction::WebRequestAddResponseHeaderAction(
     const std::string& name,
     const std::string& value)
-    : name_(name),
-      value_(value) {
-}
+    : WebRequestAction(ON_HEADERS_RECEIVED,
+                       ACTION_ADD_RESPONSE_HEADER,
+                       std::numeric_limits<int>::min(),
+                       STRATEGY_DEFAULT),
+      name_(name),
+      value_(value) {}
 
 WebRequestAddResponseHeaderAction::~WebRequestAddResponseHeaderAction() {}
 
-int WebRequestAddResponseHeaderAction::GetStages() const {
-  return ON_HEADERS_RECEIVED;
+bool WebRequestAddResponseHeaderAction::Equals(
+    const WebRequestAction* other) const {
+  if (!WebRequestAction::Equals(other))
+    return false;
+  const WebRequestAddResponseHeaderAction* casted_other =
+      static_cast<const WebRequestAddResponseHeaderAction*>(other);
+  return name_ == casted_other->name_ && value_ == casted_other->value_;
 }
 
-WebRequestAction::Type
-WebRequestAddResponseHeaderAction::GetType() const {
-  return WebRequestAction::ACTION_ADD_RESPONSE_HEADER;
+std::string WebRequestAddResponseHeaderAction::GetName() const {
+  return keys::kAddResponseHeaderType;
 }
 
 LinkedPtrEventResponseDelta
 WebRequestAddResponseHeaderAction::CreateDelta(
-    const WebRequestRule::RequestData& request_data,
+    const WebRequestData& request_data,
     const std::string& extension_id,
     const base::Time& extension_install_time) const {
-  CHECK(request_data.stage & GetStages());
+  CHECK(request_data.stage & stages());
   const net::HttpResponseHeaders* headers =
       request_data.original_response_headers;
   if (!headers)
@@ -849,28 +916,36 @@ WebRequestRemoveResponseHeaderAction::WebRequestRemoveResponseHeaderAction(
     const std::string& name,
     const std::string& value,
     bool has_value)
-    : name_(name),
+    : WebRequestAction(ON_HEADERS_RECEIVED,
+                       ACTION_REMOVE_RESPONSE_HEADER,
+                       std::numeric_limits<int>::min(),
+                       STRATEGY_DEFAULT),
+      name_(name),
       value_(value),
-      has_value_(has_value) {
-}
+      has_value_(has_value) {}
 
 WebRequestRemoveResponseHeaderAction::~WebRequestRemoveResponseHeaderAction() {}
 
-int WebRequestRemoveResponseHeaderAction::GetStages() const {
-  return ON_HEADERS_RECEIVED;
+bool WebRequestRemoveResponseHeaderAction::Equals(
+    const WebRequestAction* other) const {
+  if (!WebRequestAction::Equals(other))
+    return false;
+  const WebRequestRemoveResponseHeaderAction* casted_other =
+      static_cast<const WebRequestRemoveResponseHeaderAction*>(other);
+  return name_ == casted_other->name_ && value_ == casted_other->value_ &&
+         has_value_ == casted_other->has_value_;
 }
 
-WebRequestAction::Type
-WebRequestRemoveResponseHeaderAction::GetType() const {
-  return WebRequestAction::ACTION_REMOVE_RESPONSE_HEADER;
+std::string WebRequestRemoveResponseHeaderAction::GetName() const {
+  return keys::kRemoveResponseHeaderType;
 }
 
 LinkedPtrEventResponseDelta
 WebRequestRemoveResponseHeaderAction::CreateDelta(
-    const WebRequestRule::RequestData& request_data,
+    const WebRequestData& request_data,
     const std::string& extension_id,
     const base::Time& extension_install_time) const {
-  CHECK(request_data.stage & GetStages());
+  CHECK(request_data.stage & stages());
   const net::HttpResponseHeaders* headers =
       request_data.original_response_headers;
   if (!headers)
@@ -898,35 +973,35 @@ WebRequestRemoveResponseHeaderAction::CreateDelta(
 //
 
 WebRequestIgnoreRulesAction::WebRequestIgnoreRulesAction(
-    int minimum_priority)
-    : minimum_priority_(minimum_priority) {
-}
+    int minimum_priority,
+    const std::string& ignore_tag)
+    : WebRequestAction(ON_BEFORE_REQUEST | ON_BEFORE_SEND_HEADERS |
+                           ON_HEADERS_RECEIVED | ON_AUTH_REQUIRED,
+                       ACTION_IGNORE_RULES,
+                       minimum_priority,
+                       STRATEGY_NONE),
+      ignore_tag_(ignore_tag) {}
 
 WebRequestIgnoreRulesAction::~WebRequestIgnoreRulesAction() {}
 
-int WebRequestIgnoreRulesAction::GetStages() const {
-  return ON_BEFORE_REQUEST | ON_BEFORE_SEND_HEADERS | ON_HEADERS_RECEIVED |
-      ON_AUTH_REQUIRED;
+bool WebRequestIgnoreRulesAction::Equals(const WebRequestAction* other) const {
+  if (!WebRequestAction::Equals(other))
+    return false;
+  const WebRequestIgnoreRulesAction* casted_other =
+      static_cast<const WebRequestIgnoreRulesAction*>(other);
+  return minimum_priority() == casted_other->minimum_priority() &&
+         ignore_tag_ == casted_other->ignore_tag_;
 }
 
-WebRequestAction::Type WebRequestIgnoreRulesAction::GetType() const {
-  return WebRequestAction::ACTION_IGNORE_RULES;
-}
-
-int WebRequestIgnoreRulesAction::GetMinimumPriority() const {
-  return minimum_priority_;
-}
-
-WebRequestAction::HostPermissionsStrategy
-WebRequestIgnoreRulesAction::GetHostPermissionsStrategy() const {
-  return WebRequestAction::STRATEGY_NONE;
+std::string WebRequestIgnoreRulesAction::GetName() const {
+  return keys::kIgnoreRulesType;
 }
 
 LinkedPtrEventResponseDelta WebRequestIgnoreRulesAction::CreateDelta(
-    const WebRequestRule::RequestData& request_data,
+    const WebRequestData& request_data,
     const std::string& extension_id,
     const base::Time& extension_install_time) const {
-  CHECK(request_data.stage & GetStages());
+  CHECK(request_data.stage & stages());
   return LinkedPtrEventResponseDelta(NULL);
 }
 
@@ -936,25 +1011,45 @@ LinkedPtrEventResponseDelta WebRequestIgnoreRulesAction::CreateDelta(
 
 WebRequestRequestCookieAction::WebRequestRequestCookieAction(
     linked_ptr<RequestCookieModification> request_cookie_modification)
-    : request_cookie_modification_(request_cookie_modification) {
+    : WebRequestAction(ON_BEFORE_SEND_HEADERS,
+                       ACTION_MODIFY_REQUEST_COOKIE,
+                       std::numeric_limits<int>::min(),
+                       STRATEGY_DEFAULT),
+      request_cookie_modification_(request_cookie_modification) {
   CHECK(request_cookie_modification_.get());
 }
 
 WebRequestRequestCookieAction::~WebRequestRequestCookieAction() {}
 
-int WebRequestRequestCookieAction::GetStages() const {
-  return ON_BEFORE_SEND_HEADERS;
+bool WebRequestRequestCookieAction::Equals(
+    const WebRequestAction* other) const {
+  if (!WebRequestAction::Equals(other))
+    return false;
+  const WebRequestRequestCookieAction* casted_other =
+      static_cast<const WebRequestRequestCookieAction*>(other);
+  return helpers::NullableEquals(
+      request_cookie_modification_.get(),
+      casted_other->request_cookie_modification_.get());
 }
 
-WebRequestAction::Type WebRequestRequestCookieAction::GetType() const {
-  return WebRequestAction::ACTION_MODIFY_REQUEST_COOKIE;
+std::string WebRequestRequestCookieAction::GetName() const {
+  switch (request_cookie_modification_->type) {
+    case helpers::ADD:
+      return keys::kAddRequestCookieType;
+    case helpers::EDIT:
+      return keys::kEditRequestCookieType;
+    case helpers::REMOVE:
+      return keys::kRemoveRequestCookieType;
+  }
+  NOTREACHED();
+  return "";
 }
 
 LinkedPtrEventResponseDelta WebRequestRequestCookieAction::CreateDelta(
-    const WebRequestRule::RequestData& request_data,
+    const WebRequestData& request_data,
     const std::string& extension_id,
     const base::Time& extension_install_time) const {
-  CHECK(request_data.stage & GetStages());
+  CHECK(request_data.stage & stages());
   LinkedPtrEventResponseDelta result(
       new extension_web_request_api_helpers::EventResponseDelta(
           extension_id, extension_install_time));
@@ -969,30 +1064,91 @@ LinkedPtrEventResponseDelta WebRequestRequestCookieAction::CreateDelta(
 
 WebRequestResponseCookieAction::WebRequestResponseCookieAction(
     linked_ptr<ResponseCookieModification> response_cookie_modification)
-    : response_cookie_modification_(response_cookie_modification) {
+    : WebRequestAction(ON_HEADERS_RECEIVED,
+                       ACTION_MODIFY_RESPONSE_COOKIE,
+                       std::numeric_limits<int>::min(),
+                       STRATEGY_DEFAULT),
+      response_cookie_modification_(response_cookie_modification) {
   CHECK(response_cookie_modification_.get());
 }
 
 WebRequestResponseCookieAction::~WebRequestResponseCookieAction() {}
 
-int WebRequestResponseCookieAction::GetStages() const {
-  return ON_HEADERS_RECEIVED;
+bool WebRequestResponseCookieAction::Equals(
+    const WebRequestAction* other) const {
+  if (!WebRequestAction::Equals(other))
+    return false;
+  const WebRequestResponseCookieAction* casted_other =
+      static_cast<const WebRequestResponseCookieAction*>(other);
+  return helpers::NullableEquals(
+      response_cookie_modification_.get(),
+      casted_other->response_cookie_modification_.get());
 }
 
-WebRequestAction::Type WebRequestResponseCookieAction::GetType() const {
-  return WebRequestAction::ACTION_MODIFY_RESPONSE_COOKIE;
+std::string WebRequestResponseCookieAction::GetName() const {
+  switch (response_cookie_modification_->type) {
+    case helpers::ADD:
+      return keys::kAddResponseCookieType;
+    case helpers::EDIT:
+      return keys::kEditResponseCookieType;
+    case helpers::REMOVE:
+      return keys::kRemoveResponseCookieType;
+  }
+  NOTREACHED();
+  return "";
 }
 
 LinkedPtrEventResponseDelta WebRequestResponseCookieAction::CreateDelta(
-    const WebRequestRule::RequestData& request_data,
+    const WebRequestData& request_data,
     const std::string& extension_id,
     const base::Time& extension_install_time) const {
-  CHECK(request_data.stage & GetStages());
+  CHECK(request_data.stage & stages());
   LinkedPtrEventResponseDelta result(
       new extension_web_request_api_helpers::EventResponseDelta(
           extension_id, extension_install_time));
   result->response_cookie_modifications.push_back(
       response_cookie_modification_);
+  return result;
+}
+
+//
+// WebRequestSendMessageToExtensionAction
+//
+
+WebRequestSendMessageToExtensionAction::WebRequestSendMessageToExtensionAction(
+    const std::string& message)
+    : WebRequestAction(ON_BEFORE_REQUEST | ON_BEFORE_SEND_HEADERS |
+                           ON_HEADERS_RECEIVED | ON_AUTH_REQUIRED,
+                       ACTION_SEND_MESSAGE_TO_EXTENSION,
+                       std::numeric_limits<int>::min(),
+                       STRATEGY_HOST),
+      message_(message) {}
+
+WebRequestSendMessageToExtensionAction::
+~WebRequestSendMessageToExtensionAction() {}
+
+bool WebRequestSendMessageToExtensionAction::Equals(
+    const WebRequestAction* other) const {
+  if (!WebRequestAction::Equals(other))
+    return false;
+  const WebRequestSendMessageToExtensionAction* casted_other =
+      static_cast<const WebRequestSendMessageToExtensionAction*>(other);
+  return message_ == casted_other->message_;
+}
+
+std::string WebRequestSendMessageToExtensionAction::GetName() const {
+  return keys::kSendMessageToExtensionType;
+}
+
+LinkedPtrEventResponseDelta WebRequestSendMessageToExtensionAction::CreateDelta(
+    const WebRequestData& request_data,
+    const std::string& extension_id,
+    const base::Time& extension_install_time) const {
+  CHECK(request_data.stage & stages());
+  LinkedPtrEventResponseDelta result(
+      new extension_web_request_api_helpers::EventResponseDelta(
+          extension_id, extension_install_time));
+  result->messages_to_extension.insert(message_);
   return result;
 }
 

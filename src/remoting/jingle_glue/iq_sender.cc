@@ -9,9 +9,9 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/single_thread_task_runner.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/thread_task_runner_handle.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "remoting/jingle_glue/signal_strategy.h"
 #include "third_party/libjingle/source/talk/xmllite/xmlelement.h"
 #include "third_party/libjingle/source/talk/xmpp/constants.h"
@@ -46,7 +46,7 @@ scoped_ptr<IqRequest> IqSender::SendIq(scoped_ptr<buzz::XmlElement> stanza,
   std::string id = signal_strategy_->GetNextId();
   stanza->AddAttr(buzz::QN_ID, id);
   if (!signal_strategy_->SendStanza(stanza.Pass())) {
-    return scoped_ptr<IqRequest>(NULL);
+    return scoped_ptr<IqRequest>();
   }
   DCHECK(requests_.find(id) == requests_.end());
   scoped_ptr<IqRequest> request(new IqRequest(this, callback, addressee));
@@ -102,19 +102,6 @@ bool IqSender::OnSignalStrategyIncomingStanza(const buzz::XmlElement* stanza) {
   std::string from = stanza->Attr(buzz::QN_FROM);
 
   IqRequestMap::iterator it = requests_.find(id);
-
-  // This is a hack to workaround the issue with the WCS changing IDs
-  // of IQ responses sent from client to host. Whenever we receive a
-  // stanza with an unknown ID we try to match it with an outstanding
-  // request sent to the same peer.
-  if (it == requests_.end()) {
-    for (it = requests_.begin(); it != requests_.end(); ++it) {
-      if (it->second->addressee_ == from) {
-        break;
-      }
-    }
-  }
-
   if (it == requests_.end()) {
     return false;
   }

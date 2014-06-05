@@ -8,14 +8,11 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "build/build_config.h"
-#include "third_party/angle/include/EGL/egl.h"
-#include "third_party/angle/include/EGL/eglext.h"
+#include "third_party/khronos/EGL/egl.h"
+#include "third_party/khronos/EGL/eglext.h"
 #include "ui/gl/egl_util.h"
-#include "ui/gl/gl_surface_egl.h"
-
-// This header must come after the above third-party include, as
-// it brings in #defines that cause conflicts.
 #include "ui/gl/gl_bindings.h"
+#include "ui/gl/gl_surface_egl.h"
 
 #if defined(USE_X11)
 extern "C" {
@@ -28,10 +25,11 @@ using ui::GetLastEGLErrorString;
 namespace gfx {
 
 GLContextEGL::GLContextEGL(GLShareGroup* share_group)
-    : GLContext(share_group),
+    : GLContextReal(share_group),
       context_(NULL),
       display_(NULL),
-      config_(NULL) {
+      config_(NULL),
+      unbind_fbo_on_makecurrent_(false) {
 }
 
 bool GLContextEGL::Initialize(
@@ -73,7 +71,6 @@ bool GLContextEGL::Initialize(
   if (!context_) {
     LOG(ERROR) << "eglCreateContext failed with error "
                << GetLastEGLErrorString();
-    Destroy();
     return false;
   }
 
@@ -96,9 +93,15 @@ bool GLContextEGL::MakeCurrent(GLSurface* surface) {
   if (IsCurrent(surface))
       return true;
 
+  ScopedReleaseCurrent release_current;
   TRACE_EVENT2("gpu", "GLContextEGL::MakeCurrent",
                "context", context_,
                "surface", surface);
+
+  if (unbind_fbo_on_makecurrent_ &&
+      eglGetCurrentContext() != EGL_NO_CONTEXT) {
+    glBindFramebufferEXT(GL_FRAMEBUFFER, 0);
+  }
 
   if (!eglMakeCurrent(display_,
                       surface->GetHandle(),
@@ -109,9 +112,11 @@ bool GLContextEGL::MakeCurrent(GLSurface* surface) {
     return false;
   }
 
-  SetCurrent(this, surface);
-  if (!InitializeExtensionBindings()) {
-    ReleaseCurrent(surface);
+  // Set this as soon as the context is current, since we might call into GL.
+  SetRealGLApi();
+
+  SetCurrent(surface);
+  if (!InitializeDynamicBindings()) {
     return false;
   }
 
@@ -120,15 +125,22 @@ bool GLContextEGL::MakeCurrent(GLSurface* surface) {
     return false;
   }
 
-  SetRealGLApi();
+  release_current.Cancel();
   return true;
+}
+
+void GLContextEGL::SetUnbindFboOnMakeCurrent() {
+  unbind_fbo_on_makecurrent_ = true;
 }
 
 void GLContextEGL::ReleaseCurrent(GLSurface* surface) {
   if (!IsCurrent(surface))
     return;
 
-  SetCurrent(NULL, NULL);
+  if (unbind_fbo_on_makecurrent_)
+    glBindFramebufferEXT(GL_FRAMEBUFFER, 0);
+
+  SetCurrent(NULL);
   eglMakeCurrent(display_,
                  EGL_NO_SURFACE,
                  EGL_NO_SURFACE,
@@ -143,7 +155,7 @@ bool GLContextEGL::IsCurrent(GLSurface* surface) {
   // If our context is current then our notion of which GLContext is
   // current must be correct. On the other hand, third-party code
   // using OpenGL might change the current context.
-  DCHECK(!native_context_is_current || (GetCurrent() == this));
+  DCHECK(!native_context_is_current || (GetRealCurrent() == this));
 
   if (!native_context_is_current)
     return false;
@@ -184,5 +196,13 @@ bool GLContextEGL::WasAllocatedUsingRobustnessExtension() {
 GLContextEGL::~GLContextEGL() {
   Destroy();
 }
+
+#if !defined(OS_ANDROID)
+bool GLContextEGL::GetTotalGpuMemory(size_t* bytes) {
+  DCHECK(bytes);
+  *bytes = 0;
+  return false;
+}
+#endif
 
 }  // namespace gfx

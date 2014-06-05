@@ -5,37 +5,43 @@
 #include "chrome/browser/ui/views/infobars/extension_infobar.h"
 
 #include "chrome/browser/extensions/extension_context_menu_model.h"
-#include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_infobar_delegate.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
+#include "chrome/browser/extensions/extension_view_host.h"
+#include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/extension_icon_set.h"
-#include "chrome/common/extensions/extension_resource.h"
+#include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_icon_set.h"
+#include "extensions/common/extension_resource.h"
+#include "extensions/common/manifest_handlers/icons_handler.h"
 #include "grit/theme_resources.h"
-#include "ui/base/animation/slide_animation.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/canvas_image_source.h"
 #include "ui/gfx/image/image.h"
 #include "ui/views/controls/button/menu_button.h"
-#include "ui/views/controls/menu/menu_item_view.h"
+#include "ui/views/controls/image_view.h"
 #include "ui/views/widget/widget.h"
+
 
 // ExtensionInfoBarDelegate ----------------------------------------------------
 
-InfoBar* ExtensionInfoBarDelegate::CreateInfoBar(InfoBarService* owner) {
-  return new ExtensionInfoBar(
-      browser_, static_cast<InfoBarTabHelper*>(owner), this);
+// static
+scoped_ptr<infobars::InfoBar> ExtensionInfoBarDelegate::CreateInfoBar(
+    scoped_ptr<ExtensionInfoBarDelegate> delegate) {
+  Browser* browser = delegate->browser_;
+  return scoped_ptr<infobars::InfoBar>(
+      new ExtensionInfoBar(delegate.Pass(), browser));
 }
+
 
 // ExtensionInfoBar ------------------------------------------------------------
 
 namespace {
-// The horizontal margin between the menu and the Extension (HTML) view.
-const int kMenuHorizontalMargin = 1;
+// The horizontal margin between the infobar icon and the Extension (HTML) view.
+const int kIconHorizontalMargin = 1;
 
 class MenuImageSource: public gfx::CanvasImageSource {
  public:
@@ -49,7 +55,7 @@ class MenuImageSource: public gfx::CanvasImageSource {
   }
 
   // Overridden from gfx::CanvasImageSource
-  void Draw(gfx::Canvas* canvas) OVERRIDE {
+  virtual void Draw(gfx::Canvas* canvas) OVERRIDE {
     int image_size = extension_misc::EXTENSION_ICON_BITTY;
     canvas->DrawImageInt(icon_, 0, 0, icon_.width(), icon_.height(), 0, 0,
                          image_size, image_size, false);
@@ -75,78 +81,115 @@ class MenuImageSource: public gfx::CanvasImageSource {
 
 }  // namespace
 
-ExtensionInfoBar::ExtensionInfoBar(Browser* browser,
-                                   InfoBarTabHelper* owner,
-                                   ExtensionInfoBarDelegate* delegate)
-    : InfoBarView(owner, delegate),
-      delegate_(delegate),
+ExtensionInfoBar::ExtensionInfoBar(
+    scoped_ptr<ExtensionInfoBarDelegate> delegate,
+    Browser* browser)
+    : InfoBarView(delegate.PassAs<infobars::InfoBarDelegate>()),
       browser_(browser),
-      menu_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(tracker_(this)) {
-  delegate->set_observer(this);
-
-  int height = delegate->height();
-  SetBarTargetHeight((height > 0) ? (height + kSeparatorLineHeight) : 0);
+      infobar_icon_(NULL),
+      icon_as_menu_(NULL),
+      icon_as_image_(NULL),
+      weak_ptr_factory_(this) {
 }
 
 ExtensionInfoBar::~ExtensionInfoBar() {
-  if (GetDelegate())
-    GetDelegate()->set_observer(NULL);
 }
 
 void ExtensionInfoBar::Layout() {
   InfoBarView::Layout();
 
-  gfx::Size menu_size = menu_->GetPreferredSize();
-  menu_->SetBounds(StartX(), OffsetY(menu_size), menu_size.width(),
-                   menu_size.height());
-
-  GetDelegate()->extension_host()->view()->SetBounds(
-      menu_->bounds().right() + kMenuHorizontalMargin,
-      arrow_height(),
-      std::max(0, EndX() - StartX() - ContentMinimumWidth()),
-      height() - arrow_height() - 1);
+  infobar_icon_->SetPosition(gfx::Point(StartX(), OffsetY(infobar_icon_)));
+  ExtensionViewViews* extension_view =
+      GetDelegate()->extension_view_host()->view();
+  // TODO(pkasting): We'd like to simply set the extension view's desired height
+  // at creation time and position using OffsetY() like for other infobar items,
+  // but the NativeViewHost inside does not seem to be clipped by the ClipRect()
+  // call in InfoBarView::PaintChildren(), so we have to manually clamp the size
+  // here.
+  extension_view->SetSize(
+      gfx::Size(std::max(0, EndX() - StartX() - NonExtensionViewWidth()),
+                std::min(height() - kSeparatorLineHeight - arrow_height(),
+                         GetDelegate()->height())));
+  // We do SetPosition() separately after SetSize() so OffsetY() will work.
+  extension_view->SetPosition(
+      gfx::Point(infobar_icon_->bounds().right() + kIconHorizontalMargin,
+                 std::max(arrow_height(), OffsetY(extension_view))));
 }
 
-void ExtensionInfoBar::ViewHierarchyChanged(bool is_add,
-                                            views::View* parent,
-                                            views::View* child) {
-  if (!is_add || (child != this) || (menu_ != NULL)) {
-    InfoBarView::ViewHierarchyChanged(is_add, parent, child);
+void ExtensionInfoBar::ViewHierarchyChanged(
+    const ViewHierarchyChangedDetails& details) {
+  if (!details.is_add || (details.child != this) || (infobar_icon_ != NULL)) {
+    InfoBarView::ViewHierarchyChanged(details);
     return;
   }
 
-  menu_ = new views::MenuButton(NULL, string16(), this, false);
-  menu_->SetVisible(false);
-  menu_->set_focusable(true);
-  AddChildView(menu_);
+  extensions::ExtensionViewHost* extension_view_host =
+      GetDelegate()->extension_view_host();
 
-  extensions::ExtensionHost* extension_host = GetDelegate()->extension_host();
-  AddChildView(extension_host->view());
+  if (extension_view_host->extension()->ShowConfigureContextMenus()) {
+    icon_as_menu_ = new views::MenuButton(NULL, base::string16(), this, false);
+    icon_as_menu_->SetFocusable(true);
+    infobar_icon_ = icon_as_menu_;
+  } else {
+    icon_as_image_ = new views::ImageView();
+    infobar_icon_ = icon_as_image_;
+  }
+
+  // Wait until the icon image is loaded before showing it.
+  infobar_icon_->SetVisible(false);
+  AddChildView(infobar_icon_);
+
+  // Set the desired height of the ExtensionViewViews, so that when the
+  // AddChildView() call triggers InfoBarView::ViewHierarchyChanged(), it can
+  // read the correct height off this object in order to calculate the overall
+  // desired infobar height.
+  extension_view_host->view()->SetSize(gfx::Size(0, GetDelegate()->height()));
+  AddChildView(extension_view_host->view());
 
   // This must happen after adding all other children so InfoBarView can ensure
   // the close button is the last child.
-  InfoBarView::ViewHierarchyChanged(is_add, parent, child);
+  InfoBarView::ViewHierarchyChanged(details);
 
   // This must happen after adding all children because it can trigger layout,
   // which assumes that particular children (e.g. the close button) have already
   // been added.
-  const extensions::Extension* extension = extension_host->extension();
+  const extensions::Extension* extension = extension_view_host->extension();
   extension_misc::ExtensionIcons image_size =
       extension_misc::EXTENSION_ICON_BITTY;
-  ExtensionResource icon_resource = extension->GetIconResource(
-      image_size, ExtensionIconSet::MATCH_EXACTLY);
-  tracker_.LoadImage(extension, icon_resource,
-      gfx::Size(image_size, image_size), ImageLoadingTracker::DONT_CACHE);
+  extensions::ExtensionResource icon_resource =
+      extensions::IconsInfo::GetIconResource(
+          extension, image_size, ExtensionIconSet::MATCH_EXACTLY);
+  extensions::ImageLoader* loader =
+      extensions::ImageLoader::Get(extension_view_host->browser_context());
+  loader->LoadImageAsync(
+      extension,
+      icon_resource,
+      gfx::Size(image_size, image_size),
+      base::Bind(&ExtensionInfoBar::OnImageLoaded,
+                 weak_ptr_factory_.GetWeakPtr()));
 }
 
-int ExtensionInfoBar::ContentMinimumWidth() const {
-  return menu_->GetPreferredSize().width() + kMenuHorizontalMargin;
+int ExtensionInfoBar::ContentMinimumWidth() {
+  return NonExtensionViewWidth() +
+      GetDelegate()->extension_view_host()->view()->GetMinimumSize().width();
 }
 
-void ExtensionInfoBar::OnImageLoaded(const gfx::Image& image,
-                                     const std::string& extension_id,
-                                     int index) {
+void ExtensionInfoBar::OnMenuButtonClicked(views::View* source,
+                                           const gfx::Point& point) {
+  if (!owner())
+    return;  // We're closing; don't call anything, it might access the owner.
+  const extensions::Extension* extension =
+      GetDelegate()->extension_view_host()->extension();
+  DCHECK(icon_as_menu_);
+
+  scoped_refptr<ExtensionContextMenuModel> options_menu_contents =
+      new ExtensionContextMenuModel(extension, browser_);
+  DCHECK_EQ(icon_as_menu_, source);
+  RunMenuAt(
+      options_menu_contents.get(), icon_as_menu_, views::MENU_ANCHOR_TOPLEFT);
+}
+
+void ExtensionInfoBar::OnImageLoaded(const gfx::Image& image) {
   if (!GetDelegate())
     return;  // The delegate can go away while we asynchronously load images.
 
@@ -158,36 +201,27 @@ void ExtensionInfoBar::OnImageLoaded(const gfx::Image& image,
   else
     icon = image.ToImageSkia();
 
-  const gfx::ImageSkia* drop_image =
-      rb.GetImageNamed(IDR_APP_DROPARROW).ToImageSkia();
+  if (icon_as_menu_) {
+    const gfx::ImageSkia* drop_image =
+        rb.GetImageNamed(IDR_APP_DROPARROW).ToImageSkia();
 
-  gfx::CanvasImageSource* source = new MenuImageSource(*icon, *drop_image);
-  gfx::ImageSkia menu_image = gfx::ImageSkia(source, source->size());
-  menu_->SetIcon(menu_image);
-  menu_->SetVisible(true);
+    gfx::CanvasImageSource* source = new MenuImageSource(*icon, *drop_image);
+    gfx::ImageSkia menu_image = gfx::ImageSkia(source, source->size());
+    icon_as_menu_->SetIcon(menu_image);
+  } else {
+    icon_as_image_->SetImage(*icon);
+  }
+
+  infobar_icon_->SizeToPreferredSize();
+  infobar_icon_->SetVisible(true);
 
   Layout();
 }
 
-void ExtensionInfoBar::OnDelegateDeleted() {
-  delegate_ = NULL;
-}
-
-void ExtensionInfoBar::OnMenuButtonClicked(views::View* source,
-                                           const gfx::Point& point) {
-  if (!owned())
-    return;  // We're closing; don't call anything, it might access the owner.
-  const extensions::Extension* extension = GetDelegate()->extension_host()->
-      extension();
-  if (!extension->ShowConfigureContextMenus())
-    return;
-
-  scoped_refptr<ExtensionContextMenuModel> options_menu_contents =
-      new ExtensionContextMenuModel(extension, browser_);
-  DCHECK_EQ(menu_, source);
-  RunMenuAt(options_menu_contents.get(), menu_, views::MenuItemView::TOPLEFT);
-}
-
 ExtensionInfoBarDelegate* ExtensionInfoBar::GetDelegate() {
-  return delegate_ ? delegate_->AsExtensionInfoBarDelegate() : NULL;
+  return delegate()->AsExtensionInfoBarDelegate();
+}
+
+int ExtensionInfoBar::NonExtensionViewWidth() const {
+  return infobar_icon_->width() + kIconHorizontalMargin;
 }

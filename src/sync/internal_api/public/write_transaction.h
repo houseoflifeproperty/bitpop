@@ -7,6 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "sync/api/sync_change_processor.h"
 #include "sync/base/sync_export.h"
 #include "sync/internal_api/public/base_transaction.h"
 
@@ -42,6 +43,14 @@ class SYNC_EXPORT WriteTransaction : public BaseTransaction {
   // Provide access to the syncable transaction from the API WriteNode.
   virtual syncable::BaseTransaction* GetWrappedTrans() const OVERRIDE;
   syncable::WriteTransaction* GetWrappedWriteTrans() { return transaction_; }
+
+  // Set's a |type|'s local context. |refresh_status| controls whether
+  // a datatype refresh is performed (clearing the progress marker token and
+  // setting the version of all synced entities to 1).
+  void SetDataTypeContext(
+      ModelType type,
+      syncer::SyncChangeProcessor::ContextRefreshStatus refresh_status,
+      const std::string& context);
 
  protected:
   WriteTransaction() {}

@@ -69,7 +69,7 @@
 #include "base/win/scoped_com_initializer.h"
 #include "base/win/scoped_comptr.h"
 #include "base/win/scoped_handle.h"
-#include "media/audio/audio_input_stream_impl.h"
+#include "media/audio/agc_audio_stream.h"
 #include "media/audio/audio_parameters.h"
 #include "media/base/media_export.h"
 
@@ -79,7 +79,7 @@ class AudioManagerWin;
 
 // AudioInputStream implementation using Windows Core Audio APIs.
 class MEDIA_EXPORT WASAPIAudioInputStream
-    : public AudioInputStreamImpl,
+    : public AgcAudioStream<AudioInputStream>,
       public base::DelegateSimpleThread::Delegate,
       NON_EXPORTED_BASE(public base::NonThreadSafe) {
  public:
@@ -88,6 +88,7 @@ class MEDIA_EXPORT WASAPIAudioInputStream
   WASAPIAudioInputStream(AudioManagerWin* manager,
                          const AudioParameters& params,
                          const std::string& device_id);
+
   // The dtor is typically called by the AudioManager only and it is usually
   // triggered by calling AudioInputStream::Close().
   virtual ~WASAPIAudioInputStream();
@@ -101,15 +102,10 @@ class MEDIA_EXPORT WASAPIAudioInputStream
   virtual void SetVolume(double volume) OVERRIDE;
   virtual double GetVolume() OVERRIDE;
 
-  // Retrieves the sample rate used by the audio engine for its internal
-  // processing/mixing of shared-mode streams given a specifed device.
-  static int HardwareSampleRate(const std::string& device_id);
-
-  // Retrieves the number of audio channels used by the audio engine for its
-  // internal processing/mixing of shared-mode streams given a specified device.
-  static uint32 HardwareChannelCount(const std::string& device_id);
-
   bool started() const { return started_; }
+
+  // Returns the default hardware audio parameters of the specific device.
+  static AudioParameters GetInputStreamParameters(const std::string& device_id);
 
  private:
   // DelegateSimpleThread::Delegate implementation.
@@ -127,8 +123,11 @@ class MEDIA_EXPORT WASAPIAudioInputStream
 
   // Retrieves the stream format that the audio engine uses for its internal
   // processing/mixing of shared-mode streams.
+  // |effects| is a an AudioParameters::effects() flag that will have the
+  // DUCKING flag raised for only the default communication device.
   static HRESULT GetMixFormat(const std::string& device_id,
-                              WAVEFORMATEX** device_format);
+                              WAVEFORMATEX** device_format,
+                              int* effects);
 
   // Our creator, the audio manager needs to be notified when we close.
   AudioManagerWin* manager_;
@@ -155,7 +154,10 @@ class MEDIA_EXPORT WASAPIAudioInputStream
   size_t packet_size_bytes_;
 
   // Length of the audio endpoint buffer.
-  size_t endpoint_buffer_size_frames_;
+  uint32 endpoint_buffer_size_frames_;
+
+  // A copy of the supplied AudioParameter's |effects|.
+  const int effects_;
 
   // Contains the unique name of the selected endpoint device.
   // Note that AudioManagerBase::kDefaultDeviceId represents the default
@@ -178,11 +180,19 @@ class MEDIA_EXPORT WASAPIAudioInputStream
   // An IMMDevice interface which represents an audio endpoint device.
   base::win::ScopedComPtr<IMMDevice> endpoint_device_;
 
-  // Windows Audio Session API (WASAP) interfaces.
+  // Windows Audio Session API (WASAPI) interfaces.
 
   // An IAudioClient interface which enables a client to create and initialize
   // an audio stream between an audio application and the audio engine.
   base::win::ScopedComPtr<IAudioClient> audio_client_;
+
+  // Loopback IAudioClient doesn't support event-driven mode, so a separate
+  // IAudioClient is needed to receive notifications when data is available in
+  // the buffer. For loopback input |audio_client_| is used to receive data,
+  // while |audio_render_client_for_loopback_| is used to get notifications
+  // when a new buffer is ready. See comment in InitializeAudioEngine() for
+  // details.
+  base::win::ScopedComPtr<IAudioClient> audio_render_client_for_loopback_;
 
   // The IAudioCaptureClient interface enables a client to read input data
   // from a capture endpoint buffer.

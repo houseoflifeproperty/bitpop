@@ -6,10 +6,12 @@
 #include <vector>
 
 #include "base/logging.h"
-#include "base/string16.h"
-#include "base/time.h"
+#include "base/strings/string16.h"
+#include "base/time/time.h"
 #include "chrome/browser/chromeos/memory/oom_priority_manager.h"
+#include "chrome/common/url_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 namespace chromeos {
 
@@ -20,10 +22,12 @@ enum TestIndicies {
   kSelected,
   kPinned,
   kApp,
+  kPlayingAudio,
   kRecent,
   kOld,
   kReallyOld,
-  kOldButPinned
+  kOldButPinned,
+  kReloadableUI,
 };
 }  // namespace
 
@@ -51,21 +55,28 @@ TEST_F(OomPriorityManagerTest, Comparator) {
 
   {
     OomPriorityManager::TabStats stats;
-    stats.last_selected = now - base::TimeDelta::FromSeconds(10);
+    stats.is_playing_audio = true;
+    stats.renderer_handle = kPlayingAudio;
+    test_list.push_back(stats);
+  }
+
+  {
+    OomPriorityManager::TabStats stats;
+    stats.last_active = now - base::TimeDelta::FromSeconds(10);
     stats.renderer_handle = kRecent;
     test_list.push_back(stats);
   }
 
   {
     OomPriorityManager::TabStats stats;
-    stats.last_selected = now - base::TimeDelta::FromMinutes(15);
+    stats.last_active = now - base::TimeDelta::FromMinutes(15);
     stats.renderer_handle = kOld;
     test_list.push_back(stats);
   }
 
   {
     OomPriorityManager::TabStats stats;
-    stats.last_selected = now - base::TimeDelta::FromDays(365);
+    stats.last_active = now - base::TimeDelta::FromDays(365);
     stats.renderer_handle = kReallyOld;
     test_list.push_back(stats);
   }
@@ -73,8 +84,15 @@ TEST_F(OomPriorityManagerTest, Comparator) {
   {
     OomPriorityManager::TabStats stats;
     stats.is_pinned = true;
-    stats.last_selected = now - base::TimeDelta::FromDays(365);
+    stats.last_active = now - base::TimeDelta::FromDays(365);
     stats.renderer_handle = kOldButPinned;
+    test_list.push_back(stats);
+  }
+
+  {
+    OomPriorityManager::TabStats stats;
+    stats.is_reloadable_ui = true;
+    stats.renderer_handle = kReloadableUI;
     test_list.push_back(stats);
   }
 
@@ -91,13 +109,79 @@ TEST_F(OomPriorityManagerTest, Comparator) {
             test_list.end(),
             OomPriorityManager::CompareTabStats);
 
-  EXPECT_EQ(kSelected, test_list[0].renderer_handle);
-  EXPECT_EQ(kPinned, test_list[1].renderer_handle);
-  EXPECT_EQ(kOldButPinned, test_list[2].renderer_handle);
-  EXPECT_EQ(kApp, test_list[3].renderer_handle);
-  EXPECT_EQ(kRecent, test_list[4].renderer_handle);
-  EXPECT_EQ(kOld, test_list[5].renderer_handle);
-  EXPECT_EQ(kReallyOld, test_list[6].renderer_handle);
+  int index = 0;
+  EXPECT_EQ(kSelected, test_list[index++].renderer_handle);
+  EXPECT_EQ(kPinned, test_list[index++].renderer_handle);
+  EXPECT_EQ(kOldButPinned, test_list[index++].renderer_handle);
+  EXPECT_EQ(kApp, test_list[index++].renderer_handle);
+  EXPECT_EQ(kPlayingAudio, test_list[index++].renderer_handle);
+  EXPECT_EQ(kRecent, test_list[index++].renderer_handle);
+  EXPECT_EQ(kOld, test_list[index++].renderer_handle);
+  EXPECT_EQ(kReallyOld, test_list[index++].renderer_handle);
+  EXPECT_EQ(kReloadableUI, test_list[index++].renderer_handle);
+}
+
+TEST_F(OomPriorityManagerTest, IsReloadableUI) {
+  EXPECT_TRUE(OomPriorityManager::IsReloadableUI(
+      GURL(chrome::kChromeUIDownloadsURL)));
+  EXPECT_TRUE(OomPriorityManager::IsReloadableUI(
+      GURL(chrome::kChromeUIHistoryURL)));
+  EXPECT_TRUE(OomPriorityManager::IsReloadableUI(
+      GURL(chrome::kChromeUINewTabURL)));
+  EXPECT_TRUE(OomPriorityManager::IsReloadableUI(
+      GURL(chrome::kChromeUISettingsURL)));
+
+  // Debugging URLs are not included.
+  EXPECT_FALSE(OomPriorityManager::IsReloadableUI(
+      GURL(chrome::kChromeUIDiscardsURL)));
+  EXPECT_FALSE(OomPriorityManager::IsReloadableUI(
+      GURL(chrome::kChromeUINetInternalsURL)));
+
+  // Prefix matches are included.
+  EXPECT_TRUE(OomPriorityManager::IsReloadableUI(
+      GURL("chrome://settings/fakeSetting")));
+}
+
+TEST_F(OomPriorityManagerTest, GetProcessHandles) {
+  OomPriorityManager::TabStats stats;
+  std::vector<base::ProcessHandle> handles;
+
+  // Empty stats list gives empty handles list.
+  OomPriorityManager::TabStatsList empty_list;
+  handles = OomPriorityManager::GetProcessHandles(empty_list);
+  EXPECT_EQ(0u, handles.size());
+
+  // Two tabs in two different processes generates two handles out.
+  OomPriorityManager::TabStatsList two_list;
+  stats.renderer_handle = 100;
+  two_list.push_back(stats);
+  stats.renderer_handle = 101;
+  two_list.push_back(stats);
+  handles = OomPriorityManager::GetProcessHandles(two_list);
+  EXPECT_EQ(2u, handles.size());
+  EXPECT_EQ(100, handles[0]);
+  EXPECT_EQ(101, handles[1]);
+
+  // Zero handles are removed.
+  OomPriorityManager::TabStatsList zero_handle_list;
+  stats.renderer_handle = 0;
+  zero_handle_list.push_back(stats);
+  handles = OomPriorityManager::GetProcessHandles(zero_handle_list);
+  EXPECT_EQ(0u, handles.size());
+
+  // Two tabs in the same process generates one handle out. When a duplicate
+  // occurs the later instance is dropped.
+  OomPriorityManager::TabStatsList same_process_list;
+  stats.renderer_handle = 100;
+  same_process_list.push_back(stats);
+  stats.renderer_handle = 101;
+  same_process_list.push_back(stats);
+  stats.renderer_handle = 100;  // Duplicate.
+  same_process_list.push_back(stats);
+  handles = OomPriorityManager::GetProcessHandles(same_process_list);
+  EXPECT_EQ(2u, handles.size());
+  EXPECT_EQ(100, handles[0]);
+  EXPECT_EQ(101, handles[1]);
 }
 
 }  // namespace chromeos

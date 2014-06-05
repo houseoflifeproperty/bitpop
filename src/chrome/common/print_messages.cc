@@ -5,7 +5,7 @@
 #include "chrome/common/print_messages.h"
 
 #include "base/basictypes.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "ui/gfx/size.h"
 
 PrintMsg_Print_Params::PrintMsg_Print_Params()
@@ -24,12 +24,12 @@ PrintMsg_Print_Params::PrintMsg_Print_Params()
     preview_ui_id(-1),
     preview_request_id(0),
     is_first_request(false),
-    print_scaling_option(WebKit::WebPrintScalingOptionSourceSize),
+    print_scaling_option(blink::WebPrintScalingOptionSourceSize),
     print_to_pdf(false),
     display_header_footer(false),
-    date(),
     title(),
-    url() {
+    url(),
+    should_print_backgrounds(false) {
 }
 
 PrintMsg_Print_Params::~PrintMsg_Print_Params() {}
@@ -50,12 +50,12 @@ void PrintMsg_Print_Params::Reset() {
   preview_ui_id = -1;
   preview_request_id = 0;
   is_first_request = false;
-  print_scaling_option = WebKit::WebPrintScalingOptionSourceSize;
+  print_scaling_option = blink::WebPrintScalingOptionSourceSize;
   print_to_pdf = false;
   display_header_footer = false;
-  date = string16();
-  title = string16();
-  url = string16();
+  title = base::string16();
+  url = base::string16();
+  should_print_backgrounds = false;
 }
 
 PrintMsg_PrintPages_Params::PrintMsg_PrintPages_Params()
@@ -68,3 +68,14 @@ void PrintMsg_PrintPages_Params::Reset() {
   params.Reset();
   pages = std::vector<int>();
 }
+
+PrintHostMsg_RequestPrintPreview_Params::
+    PrintHostMsg_RequestPrintPreview_Params()
+    : is_modifiable(false),
+      webnode_only(false),
+      has_selection(false),
+      selection_only(false) {
+}
+
+PrintHostMsg_RequestPrintPreview_Params::
+    ~PrintHostMsg_RequestPrintPreview_Params() {}

@@ -6,6 +6,7 @@ cr.define('options.system.bluetooth', function() {
   /** @const */ var ArrayDataModel = cr.ui.ArrayDataModel;
   /** @const */ var DeletableItem = options.DeletableItem;
   /** @const */ var DeletableItemList = options.DeletableItemList;
+  /** @const */ var ListSingleSelectionModel = cr.ui.ListSingleSelectionModel;
 
   /**
    * Bluetooth settings constants.
@@ -17,10 +18,12 @@ cr.define('options.system.bluetooth', function() {
    * @param {{name: string,
    *          address: string,
    *          paired: boolean,
-   *          bonded: boolean,
    *          connected: boolean,
+   *          connecting: boolean,
+   *          connectable: boolean,
    *          pairing: string|undefined,
    *          passkey: number|undefined,
+   *          pincode: string|undefined,
    *          entered: number|undefined}} device
    *    Description of the Bluetooth device.
    * @constructor
@@ -33,8 +36,9 @@ cr.define('options.system.bluetooth', function() {
     for (var key in device)
       el.data[key] = device[key];
     el.decorate();
-    // Only show the close button for paired devices.
-    el.deletable = device.paired;
+    // Only show the close button for paired devices, but not for connecting
+    // devices.
+    el.deletable = device.paired && !device.connecting;
     return el;
   }
 
@@ -46,10 +50,12 @@ cr.define('options.system.bluetooth', function() {
      * @type {{name: string,
      *         address: string,
      *         paired: boolean,
-     *         bonded: boolean,
      *         connected: boolean,
+     *         connecting: boolean,
+     *         connectable: boolean,
      *         pairing: string|undefined,
      *         passkey: number|undefined,
+     *         pincode: string|undefined,
      *         entered: number|undefined}}
      */
     data: null,
@@ -60,16 +66,26 @@ cr.define('options.system.bluetooth', function() {
       var label = this.ownerDocument.createElement('div');
       label.className = 'bluetooth-device-label';
       this.classList.add('bluetooth-device');
-      this.connected = this.data.connected;
-      // Though strictly speaking, a connected device will also be paired, we
-      // are interested in tracking paired devices that are not connected.
-      this.paired = this.data.paired && !this.data.connected;
-      this.connecting = !!this.data.pairing;
+      // There are four kinds of devices we want to distinguish:
+      //  * Connecting devices: in bold with a "connecting" label,
+      //  * Connected devices: in bold,
+      //  * Paired, not connected but connectable devices: regular and
+      //  * Paired, not connected and not connectable devices: grayed out.
+      this.connected = this.data.connecting ||
+          (this.data.paired && this.data.connected);
+      this.notconnectable = this.data.paired && !this.data.connecting &&
+          !this.data.connected && !this.data.connectable;
+      // "paired" devices are those that are remembered but not connected.
+      this.paired = this.data.paired && !this.data.connected &&
+          this.data.connectable;
+
       var content = this.data.name;
-      // Update label for devices that are paired but not connected.
-      if (this.paired) {
-        content = content + ' (' +
-            loadTimeData.getString('bluetoothDeviceNotConnected') + ')';
+      // Update the device's label according to its state. A "connecting" device
+      // can be in the process of connecting and pairing, so we check connecting
+      // first.
+      if (this.data.connecting) {
+        content = loadTimeData.getStringF('bluetoothDeviceConnecting',
+            this.data.name);
       }
       label.textContent = content;
       this.contentElement.appendChild(label);
@@ -104,21 +120,15 @@ cr.define('options.system.bluetooth', function() {
     decorate: function() {
       DeletableItemList.prototype.decorate.call(this);
       // Force layout of all items even if not in the viewport to address
-      // calculation errors when the list is hidden.  The impact on performance
-      // should be minimal given that the list is not expected to grow very
-      // large.
-      this.autoExpand = true;
-      this.addEventListener('blur', this.onBlur_);
+      // errors in scroll positioning when the list is hidden during initial
+      // layout. The impact on performance should be minimal given that the
+      // list is not expected to grow very large. Fixed height items are also
+      // required to avoid caching incorrect sizes during layout of a hidden
+      // list.
+      this.autoExpands = true;
+      this.fixedHeight = true;
       this.clear();
-    },
-
-    /**
-     * When the list loses focus, unselect all items in the list.
-     * @private
-     */
-    onBlur_: function() {
-      // TODO(kevers): Should this be pushed up to the list class?
-      this.selectionModel.unselectAll();
+      this.selectionModel = new ListSingleSelectionModel();
     },
 
     /**
@@ -128,10 +138,12 @@ cr.define('options.system.bluetooth', function() {
      * @param {{name: string,
      *          address: string,
      *          paired: boolean,
-     *          bonded: boolean,
      *          connected: boolean,
+     *          connecting: boolean,
+     *          connectable: boolean,
      *          pairing: string|undefined,
      *          passkey: number|undefined,
+     *          pincode: string|undefined,
      *          entered: number|undefined}} device
      *     Description of the bluetooth device.
      * @return {boolean} True if the devies was successfully added or updated.
@@ -153,16 +165,14 @@ cr.define('options.system.bluetooth', function() {
     },
 
     /**
-     * Forces a revailidation of the list content. Content added while the list
-     * is hidden is not properly rendered when the list becomes visible. In
-     * addition, deleting a single item from the list results in a stale cache
-     * requiring an invalidation.
-     * @param {String=} opt_selection Optional address of device to select
+     * Forces a revailidation of the list content. Deleting a single item from
+     * the list results in a stale cache requiring an invalidation.
+     * @param {string=} opt_selection Optional address of device to select
      *     after refreshing the list.
      */
     refresh: function(opt_selection) {
-      // TODO(kevers): Investigate if the root source of the problems can be
-      // fixed in cr.ui.list.
+      // TODO(kevers): Investigate if the stale cache issue can be fixed in
+      // cr.ui.list.
       var selectedDevice = opt_selection ? opt_selection :
           this.getSelectedDevice_();
       this.invalidate();
@@ -174,7 +184,7 @@ cr.define('options.system.bluetooth', function() {
     /**
      * Retrieves the address of the selected device, or null if no device is
      * selected.
-     * @return {?String} Address of selected device or null.
+     * @return {?string} Address of selected device or null.
      * @private
      */
     getSelectedDevice_: function() {
@@ -186,7 +196,7 @@ cr.define('options.system.bluetooth', function() {
 
     /**
      * Selects the device with the matching address.
-     * @param {String} address The unique address of the device.
+     * @param {string} address The unique address of the device.
      * @private
      */
     setSelectedDevice_: function(address) {
@@ -276,25 +286,21 @@ cr.define('options.system.bluetooth', function() {
       if (!target.classList.contains('row-delete-button'))
         return;
 
-      var listItem = this.getListItemAncestor(target);
-      var selected = this.selectionModel.selectedIndexes;
-      var index = this.getIndexOfListItem(listItem);
-      if (selected.indexOf(index) == -1)
-        selected = [index];
-      for (var j = selected.length - 1; j >= 0; j--) {
-        var index = selected[j];
-        var item = this.getListItemByIndex(index);
-        if (item && item.deletable) {
-          // Device is busy until we hear back from the Bluetooth adapter.
-          // Prevent double removal request.
-          item.deletable = false;
-          // TODO(kevers): Provide visual feedback that the device is busy.
+      var item = this.getListItemAncestor(target);
+      var selected = this.selectionModel.selectedIndex;
+      var index = this.getIndexOfListItem(item);
+      if (item && item.deletable) {
+        if (selected != index)
+          this.setSelectedDevice_(item.data.address);
+        // Device is busy until we hear back from the Bluetooth adapter.
+        // Prevent double removal request.
+        item.deletable = false;
+        // TODO(kevers): Provide visual feedback that the device is busy.
 
-          // Inform the bluetooth adapter that we are disconnecting or
-          // forgetting the device.
-          chrome.send('updateBluetoothDevice',
-            [item.data.address, item.connected ? 'disconnect' : 'forget']);
-        }
+        // Inform the bluetooth adapter that we are disconnecting or
+        // forgetting the device.
+        chrome.send('updateBluetoothDevice',
+          [item.data.address, item.connected ? 'disconnect' : 'forget']);
       }
     },
 
@@ -329,6 +335,9 @@ cr.define('options.system.bluetooth', function() {
   cr.defineProperty(BluetoothListItem, 'paired', cr.PropertyKind.BOOL_ATTR);
 
   cr.defineProperty(BluetoothListItem, 'connecting', cr.PropertyKind.BOOL_ATTR);
+
+  cr.defineProperty(BluetoothListItem, 'notconnectable',
+      cr.PropertyKind.BOOL_ATTR);
 
   return {
     BluetoothListItem: BluetoothListItem,

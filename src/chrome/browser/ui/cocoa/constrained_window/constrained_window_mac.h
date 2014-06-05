@@ -7,10 +7,8 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
-#include "chrome/browser/ui/constrained_window.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "base/mac/scoped_nsobject.h"
+#include "components/web_modal/native_web_contents_modal_dialog.h"
 
 namespace content {
 class WebContents;
@@ -28,8 +26,7 @@ class ConstrainedWindowMacDelegate {
 // Constrained window implementation for Mac.
 // Normally an instance of this class is owned by the delegate. The delegate
 // should delete the instance when the window is closed.
-class ConstrainedWindowMac : public ConstrainedWindow,
-                             public content::NotificationObserver {
+class ConstrainedWindowMac {
  public:
   ConstrainedWindowMac(
       ConstrainedWindowMacDelegate* delegate,
@@ -37,18 +34,12 @@ class ConstrainedWindowMac : public ConstrainedWindow,
       id<ConstrainedWindowSheet> sheet);
   virtual ~ConstrainedWindowMac();
 
-  // ConstrainedWindow implementation.
-  virtual void ShowConstrainedWindow() OVERRIDE;
+  void ShowWebContentsModalDialog();
   // Closes the constrained window and deletes this instance.
-  virtual void CloseConstrainedWindow() OVERRIDE;
-  virtual void PulseConstrainedWindow() OVERRIDE;
-  virtual gfx::NativeWindow GetNativeWindow() OVERRIDE;
-  virtual bool CanShowConstrainedWindow() OVERRIDE;
-
-  // content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void CloseWebContentsModalDialog();
+  void FocusWebContentsModalDialog();
+  void PulseWebContentsModalDialog();
+  web_modal::NativeWebContentsModalDialog GetNativeDialog();
 
  private:
   // Gets the parent window of the dialog.
@@ -56,16 +47,13 @@ class ConstrainedWindowMac : public ConstrainedWindow,
 
   ConstrainedWindowMacDelegate* delegate_;  // weak, owns us.
 
-  // The WebContents that owns and constrains this ConstrainedWindow. Weak.
+  // The WebContents that owns and constrains this ConstrainedWindowMac. Weak.
   content::WebContents* web_contents_;
 
-  scoped_nsprotocol<id<ConstrainedWindowSheet> > sheet_;
+  base::scoped_nsprotocol<id<ConstrainedWindowSheet>> sheet_;
 
-  // A scoped container for notification registries.
-  content::NotificationRegistrar registrar_;
-
-  // This is true if the constrained window is waiting to be shown.
-  bool pending_show_;
+  // This is true if the constrained window has been shown.
+  bool shown_;
 };
 
 #endif  // CHROME_BROWSER_UI_COCOA_CONSTRAINED_WINDOW_CONSTRAINED_WINDOW_MAC_

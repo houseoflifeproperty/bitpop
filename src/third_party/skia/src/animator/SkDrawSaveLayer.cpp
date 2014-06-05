@@ -41,10 +41,10 @@ bool SkSaveLayer::draw(SkAnimateMaker& maker)
     {
         SkPaint realPaint;
         paint->setupPaint(&realPaint);
-        maker.fCanvas->saveLayer(&bounds->fRect, &realPaint, SkCanvas::kHasAlphaLayer_SaveFlag);
+        maker.fCanvas->saveLayer(&bounds->fRect, &realPaint);
     }
     else
-        maker.fCanvas->saveLayer(&bounds->fRect, save, SkCanvas::kHasAlphaLayer_SaveFlag);
+        maker.fCanvas->saveLayer(&bounds->fRect, save);
     SkPaint local = SkPaint(*maker.fPaint);
     maker.fPaint = &local;
     bool result = INHERITED::draw(maker);
@@ -74,5 +74,3 @@ void SkSaveLayer::onEndElement(SkAnimateMaker& maker)
         maker.setErrorCode(SkDisplayXMLParserError::kSaveLayerNeedsBounds);
     INHERITED::onEndElement(maker);
 }
-
-

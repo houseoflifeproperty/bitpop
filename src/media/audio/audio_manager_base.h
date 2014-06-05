@@ -5,67 +5,77 @@
 #ifndef MEDIA_AUDIO_AUDIO_MANAGER_BASE_H_
 #define MEDIA_AUDIO_AUDIO_MANAGER_BASE_H_
 
-#include <map>
 #include <string>
 #include <utility>
 
-#include "base/atomic_ref_count.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/observer_list.h"
-#include "base/synchronization/lock.h"
+#include "base/threading/thread.h"
 #include "media/audio/audio_manager.h"
+
+#include "media/audio/audio_output_dispatcher.h"
 
 #if defined(OS_WIN)
 #include "base/win/scoped_com_initializer.h"
 #endif
 
-namespace base {
-class Thread;
-}
-
 namespace media {
 
 class AudioOutputDispatcher;
-class VirtualAudioInputStream;
 
 // AudioManagerBase provides AudioManager functions common for all platforms.
 class MEDIA_EXPORT AudioManagerBase : public AudioManager {
  public:
+  // TODO(sergeyu): The constants below belong to AudioManager interface, not
+  // to the base implementation.
+
   // Name of the generic "default" device.
   static const char kDefaultDeviceName[];
   // Unique Id of the generic "default" device.
   static const char kDefaultDeviceId[];
 
+  // Input device ID used to capture the default system playback stream. When
+  // this device ID is passed to MakeAudioInputStream() the returned
+  // AudioInputStream will be capturing audio currently being played on the
+  // default playback device. At the moment this feature is supported only on
+  // some platforms. AudioInputStream::Intialize() will return an error on
+  // platforms that don't support it. GetInputStreamParameters() must be used
+  // to get the parameters of the loopback device before creating a loopback
+  // stream, otherwise stream initialization may fail.
+  static const char kLoopbackInputDeviceId[];
+
   virtual ~AudioManagerBase();
 
-  virtual scoped_refptr<base::MessageLoopProxy> GetMessageLoop() OVERRIDE;
+  virtual scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner() OVERRIDE;
+  virtual scoped_refptr<base::SingleThreadTaskRunner> GetWorkerTaskRunner()
+      OVERRIDE;
 
-  virtual string16 GetAudioInputDeviceModel() OVERRIDE;
+  virtual base::string16 GetAudioInputDeviceModel() OVERRIDE;
 
-  virtual bool CanShowAudioInputSettings() OVERRIDE;
   virtual void ShowAudioInputSettings() OVERRIDE;
 
   virtual void GetAudioInputDeviceNames(
-      media::AudioDeviceNames* device_names) OVERRIDE;
+      AudioDeviceNames* device_names) OVERRIDE;
+
+  virtual void GetAudioOutputDeviceNames(
+      AudioDeviceNames* device_names) OVERRIDE;
 
   virtual AudioOutputStream* MakeAudioOutputStream(
-      const AudioParameters& params) OVERRIDE;
+      const AudioParameters& params,
+      const std::string& device_id) OVERRIDE;
 
   virtual AudioInputStream* MakeAudioInputStream(
       const AudioParameters& params, const std::string& device_id) OVERRIDE;
 
   virtual AudioOutputStream* MakeAudioOutputStreamProxy(
-      const AudioParameters& params) OVERRIDE;
-
-  virtual bool IsRecordingInProcess() OVERRIDE;
+      const AudioParameters& params,
+      const std::string& device_id) OVERRIDE;
 
   // Called internally by the audio stream when it has been closed.
   virtual void ReleaseOutputStream(AudioOutputStream* stream);
   virtual void ReleaseInputStream(AudioInputStream* stream);
-
-  void IncreaseActiveInputStreamCount();
-  void DecreaseActiveInputStreamCount();
 
   // Creates the output stream for the |AUDIO_PCM_LINEAR| format. The legacy
   // name is also from |AUDIO_PCM_LINEAR|.
@@ -74,7 +84,8 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
 
   // Creates the output stream for the |AUDIO_PCM_LOW_LATENCY| format.
   virtual AudioOutputStream* MakeLowLatencyOutputStream(
-      const AudioParameters& params) = 0;
+      const AudioParameters& params,
+      const std::string& device_id) = 0;
 
   // Creates the input stream for the |AUDIO_PCM_LINEAR| format. The legacy
   // name is also from |AUDIO_PCM_LINEAR|.
@@ -85,30 +96,31 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
   virtual AudioInputStream* MakeLowLatencyInputStream(
       const AudioParameters& params, const std::string& device_id) = 0;
 
-  // Returns the preferred hardware audio output parameters for opening output
-  // streams in the |AUDIO_PCM_LOW_LATENCY| format.
-  // TODO(dalecurtis): Retrieve the |channel_layout| value from hardware instead
-  // of accepting the value.
-  // TODO(dalecurtis): Each AudioManager should implement their own version, see
-  // http://crbug.com/137326
-  virtual AudioParameters GetPreferredLowLatencyOutputStreamParameters(
-      const AudioParameters& input_params);
-
-  // Listeners will be notified on the AudioManager::GetMessageLoop() loop.
+  // Listeners will be notified on the GetTaskRunner() task runner.
   virtual void AddOutputDeviceChangeListener(
       AudioDeviceListener* listener) OVERRIDE;
   virtual void RemoveOutputDeviceChangeListener(
       AudioDeviceListener* listener) OVERRIDE;
 
- protected:
-  AudioManagerBase();
+  virtual AudioParameters GetDefaultOutputStreamParameters() OVERRIDE;
+  virtual AudioParameters GetOutputStreamParameters(
+      const std::string& device_id) OVERRIDE;
 
-  // TODO(dalecurtis): This must change to map both input and output parameters
-  // to a single dispatcher, otherwise on a device state change we'll just get
-  // the exact same invalid dispatcher.
-  typedef std::map<std::pair<AudioParameters, AudioParameters>,
-                   scoped_refptr<AudioOutputDispatcher> >
-      AudioOutputDispatchersMap;
+  virtual AudioParameters GetInputStreamParameters(
+      const std::string& device_id) OVERRIDE;
+
+  virtual std::string GetAssociatedOutputDeviceID(
+      const std::string& input_device_id) OVERRIDE;
+
+  virtual scoped_ptr<AudioLog> CreateAudioLog(
+      AudioLogFactory::AudioComponent component) OVERRIDE;
+
+  // Get number of input or output streams.
+  int input_stream_count() const { return num_input_streams_; }
+  int output_stream_count() const { return num_output_streams_; }
+
+ protected:
+  AudioManagerBase(AudioLogFactory* audio_log_factory);
 
   // Shuts down the audio thread and releases all the audio output dispatchers
   // on the audio thread.  All audio streams should be freed before Shutdown()
@@ -123,17 +135,33 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
   // thread.
   void NotifyAllOutputDeviceChangeListeners();
 
-  // Map of cached AudioOutputDispatcher instances.  Must only be touched
-  // from the audio thread (no locking).
-  AudioOutputDispatchersMap output_dispatchers_;
+  // Returns user buffer size as specified on the command line or 0 if no buffer
+  // size has been specified.
+  int GetUserBufferSize();
+
+  // Returns the preferred hardware audio output parameters for opening output
+  // streams. If the users inject a valid |input_params|, each AudioManager
+  // will decide if they should return the values from |input_params| or the
+  // default hardware values. If the |input_params| is invalid, it will return
+  // the default hardware audio parameters.
+  // If |output_device_id| is empty, the implementation must treat that as
+  // a request for the default output device.
+  virtual AudioParameters GetPreferredOutputStreamParameters(
+      const std::string& output_device_id,
+      const AudioParameters& input_params) = 0;
+
+  // Returns the ID of the default audio output device.
+  // Implementations that don't yet support this should return an empty string.
+  virtual std::string GetDefaultOutputDeviceID();
 
  private:
+  struct DispatcherParams;
+  typedef ScopedVector<DispatcherParams> AudioOutputDispatchers;
+
+  class CompareByParams;
+
   // Called by Shutdown().
   void ShutdownOnAudioThread();
-
-  // Counts the number of active input streams to find out if something else
-  // is currently recording in Chrome.
-  base::AtomicRefCount num_active_input_streams_;
 
   // Max number of open output streams, modified by
   // SetMaxOutputStreamsAllowed().
@@ -152,18 +180,19 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
   ObserverList<AudioDeviceListener> output_listeners_;
 
   // Thread used to interact with audio streams created by this audio manager.
-  scoped_ptr<base::Thread> audio_thread_;
-  mutable base::Lock audio_thread_lock_;
+  base::Thread audio_thread_;
 
-  // The message loop of the audio thread this object runs on. Used for internal
+  // The task runner of the audio thread this object runs on. Used for internal
   // tasks which run on the audio thread even after Shutdown() has been started
-  // and GetMessageLoop() starts returning NULL.
-  scoped_refptr<base::MessageLoopProxy> message_loop_;
+  // and GetTaskRunner() starts returning NULL.
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
-  // Currently active VirtualAudioInputStream. When this is set, we will
-  // create all audio output streams as virtual streams so as to redirect audio
-  // data to this virtual input stream.
-  VirtualAudioInputStream* virtual_audio_input_stream_;
+  // Map of cached AudioOutputDispatcher instances.  Must only be touched
+  // from the audio thread (no locking).
+  AudioOutputDispatchers output_dispatchers_;
+
+  // Proxy for creating AudioLog objects.
+  AudioLogFactory* const audio_log_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioManagerBase);
 };

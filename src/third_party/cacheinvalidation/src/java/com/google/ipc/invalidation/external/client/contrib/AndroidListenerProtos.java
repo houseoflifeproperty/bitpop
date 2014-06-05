@@ -101,10 +101,12 @@ class AndroidListenerProtos {
   }
 
   /** Creates start command proto. */
-  static StartCommand newStartCommand(int clientType, ByteString clientName) {
+  static StartCommand newStartCommand(int clientType, ByteString clientName,
+      boolean allowSuppression) {
     return StartCommand.newBuilder()
         .setClientType(clientType)
         .setClientName(clientName)
+        .setAllowSuppression(allowSuppression)
         .build();
   }
 

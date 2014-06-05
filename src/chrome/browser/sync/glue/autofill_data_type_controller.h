@@ -11,16 +11,16 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "chrome/browser/sync/glue/non_ui_data_type_controller.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 
-class WebDataService;
+namespace autofill {
+class AutofillWebDataService;
+}  // namespace autofill
 
 namespace browser_sync {
 
 // A class that manages the startup and shutdown of autofill sync.
-class AutofillDataTypeController : public NonUIDataTypeController,
-                                   public content::NotificationObserver {
+class AutofillDataTypeController
+    : public NonUIDataTypeController {
  public:
   AutofillDataTypeController(
       ProfileSyncComponentsFactory* profile_sync_factory,
@@ -35,11 +35,6 @@ class AutofillDataTypeController : public NonUIDataTypeController,
   // 163431 is addressed / implemented.
   virtual void StartAssociating(const StartCallback& start_callback) OVERRIDE;
 
-  // content::NotificationObserver implementation.
-  virtual void Observe(int notification_type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
  protected:
   virtual ~AutofillDataTypeController();
 
@@ -48,19 +43,14 @@ class AutofillDataTypeController : public NonUIDataTypeController,
       const tracked_objects::Location& from_here,
       const base::Closure& task) OVERRIDE;
   virtual bool StartModels() OVERRIDE;
-  virtual void StopModels() OVERRIDE;
 
  private:
   friend class AutofillDataTypeControllerTest;
   FRIEND_TEST_ALL_PREFIXES(AutofillDataTypeControllerTest, StartWDSReady);
   FRIEND_TEST_ALL_PREFIXES(AutofillDataTypeControllerTest, StartWDSNotReady);
 
-  // Self-invoked on the DB thread to call the AutocompleteSyncableService with
-  // an updated value of autofill culling settings.
-  void UpdateAutofillCullingSettings(bool cull_expired_entries);
-
-  scoped_refptr<WebDataService> web_data_service_;
-  content::NotificationRegistrar notification_registrar_;
+  // Callback once WebDatabase has loaded.
+  void WebDatabaseLoaded();
 
   DISALLOW_COPY_AND_ASSIGN(AutofillDataTypeController);
 };

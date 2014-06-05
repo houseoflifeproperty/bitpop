@@ -4,18 +4,29 @@
 
 #include "android_webview/browser/renderer_host/aw_render_view_host_ext.h"
 
+#include "android_webview/browser/aw_browser_context.h"
+#include "android_webview/browser/scoped_allow_wait_for_legacy_web_view_api.h"
 #include "android_webview/common/render_view_messages.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/callback.h"
+#include "base/command_line.h"
 #include "base/logging.h"
+#include "content/public/browser/android/content_view_core.h"
+#include "content/public/browser/render_process_host.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/frame_navigate_params.h"
 
 namespace android_webview {
 
-AwRenderViewHostExt::AwRenderViewHostExt(content::WebContents* contents)
+AwRenderViewHostExt::AwRenderViewHostExt(
+    AwRenderViewHostExtClient* client, content::WebContents* contents)
     : content::WebContentsObserver(contents),
+      client_(client),
+      background_color_(SK_ColorWHITE),
       has_new_hit_test_data_(false) {
+  DCHECK(client_);
 }
 
 AwRenderViewHostExt::~AwRenderViewHostExt() {}
@@ -58,7 +69,48 @@ const AwHitTestData& AwRenderViewHostExt::GetLastHitTestData() const {
   return last_hit_test_data_;
 }
 
-void AwRenderViewHostExt::RenderViewGone(base::TerminationStatus status) {
+void AwRenderViewHostExt::SetTextZoomFactor(float factor) {
+  DCHECK(CalledOnValidThread());
+  Send(new AwViewMsg_SetTextZoomFactor(web_contents()->GetRoutingID(), factor));
+}
+
+void AwRenderViewHostExt::SetFixedLayoutSize(const gfx::Size& size) {
+  DCHECK(CalledOnValidThread());
+  Send(new AwViewMsg_SetFixedLayoutSize(web_contents()->GetRoutingID(), size));
+}
+
+void AwRenderViewHostExt::ResetScrollAndScaleState() {
+  DCHECK(CalledOnValidThread());
+  Send(new AwViewMsg_ResetScrollAndScaleState(web_contents()->GetRoutingID()));
+}
+
+void AwRenderViewHostExt::SetInitialPageScale(double page_scale_factor) {
+  DCHECK(CalledOnValidThread());
+  Send(new AwViewMsg_SetInitialPageScale(web_contents()->GetRoutingID(),
+                                         page_scale_factor));
+}
+
+void AwRenderViewHostExt::SetBackgroundColor(SkColor c) {
+  if (background_color_ == c)
+    return;
+  background_color_ = c;
+  if (web_contents()->GetRenderViewHost()) {
+    Send(new AwViewMsg_SetBackgroundColor(web_contents()->GetRoutingID(),
+                                          background_color_));
+  }
+}
+
+void AwRenderViewHostExt::SetJsOnlineProperty(bool network_up) {
+  Send(new AwViewMsg_SetJsOnlineProperty(network_up));
+}
+
+void AwRenderViewHostExt::RenderViewCreated(
+    content::RenderViewHost* render_view_host) {
+  Send(new AwViewMsg_SetBackgroundColor(web_contents()->GetRoutingID(),
+                                        background_color_));
+}
+
+void AwRenderViewHostExt::RenderProcessGone(base::TerminationStatus status) {
   DCHECK(CalledOnValidThread());
   for (std::map<int, DocumentHasImagesResult>::iterator pending_req =
            pending_document_has_images_requests_.begin();
@@ -68,6 +120,15 @@ void AwRenderViewHostExt::RenderViewGone(base::TerminationStatus status) {
   }
 }
 
+void AwRenderViewHostExt::DidNavigateAnyFrame(
+    const content::LoadCommittedDetails& details,
+    const content::FrameNavigateParams& params) {
+  DCHECK(CalledOnValidThread());
+
+  AwBrowserContext::FromWebContents(web_contents())
+      ->AddVisitedURLs(params.redirects);
+}
+
 bool AwRenderViewHostExt::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(AwRenderViewHostExt, message)
@@ -75,6 +136,10 @@ bool AwRenderViewHostExt::OnMessageReceived(const IPC::Message& message) {
                         OnDocumentHasImagesResponse)
     IPC_MESSAGE_HANDLER(AwViewHostMsg_UpdateHitTestData,
                         OnUpdateHitTestData)
+    IPC_MESSAGE_HANDLER(AwViewHostMsg_PageScaleFactorChanged,
+                        OnPageScaleFactorChanged)
+    IPC_MESSAGE_HANDLER(AwViewHostMsg_OnContentsSizeChanged,
+                        OnContentsSizeChanged)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -99,6 +164,15 @@ void AwRenderViewHostExt::OnUpdateHitTestData(
   DCHECK(CalledOnValidThread());
   last_hit_test_data_ = hit_test_data;
   has_new_hit_test_data_ = true;
+}
+
+void AwRenderViewHostExt::OnPageScaleFactorChanged(float page_scale_factor) {
+  client_->OnWebLayoutPageScaleFactorChanged(page_scale_factor);
+}
+
+void AwRenderViewHostExt::OnContentsSizeChanged(
+    const gfx::Size& contents_size) {
+  client_->OnWebLayoutContentsSizeChanged(contents_size);
 }
 
 }  // namespace android_webview

@@ -65,7 +65,6 @@ static const char* const kFilteredVideoDevicesName[] =  {
     "Sonix SN9C201p",          // Crashes in OpenAComponent and CloseComponent
     NULL,
 };
-static const int kVideoDeviceOpenAttempts = 3;
 static const UInt32 kAudioDeviceNameLength = 64;
 // Obj-C functions defined in macdevicemanagermm.mm
 // TODO(ronghuawu): have a shared header for these function defines.
@@ -120,7 +119,7 @@ static bool GetAudioDeviceIDs(bool input,
   }
 
   size_t num_devices = propsize / sizeof(AudioDeviceID);
-  talk_base::scoped_array<AudioDeviceID> device_ids(
+  talk_base::scoped_ptr<AudioDeviceID[]> device_ids(
       new AudioDeviceID[num_devices]);
 
   err = AudioHardwareGetProperty(kAudioHardwarePropertyDevices,

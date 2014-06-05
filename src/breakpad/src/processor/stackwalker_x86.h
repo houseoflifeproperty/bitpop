@@ -67,21 +67,23 @@ class StackwalkerX86 : public Stackwalker {
 
  private:
   // A STACK CFI-driven frame walker for the X86.
-  typedef SimpleCFIWalker<u_int32_t, MDRawContextX86> CFIWalker;
+  typedef SimpleCFIWalker<uint32_t, MDRawContextX86> CFIWalker;
 
   // Implementation of Stackwalker, using x86 context (%ebp, %esp, %eip) and
   // stack conventions (saved %ebp at [%ebp], saved %eip at 4[%ebp], or
   // alternate conventions as guided by any WindowsFrameInfo available for the
   // code in question.).
   virtual StackFrame* GetContextFrame();
-  virtual StackFrame* GetCallerFrame(const CallStack* stack);
+  virtual StackFrame* GetCallerFrame(const CallStack* stack,
+                                     bool stack_scan_allowed);
 
   // Use windows_frame_info (derived from STACK WIN and FUNC records)
   // to construct the frame that called frames.back(). The caller
   // takes ownership of the returned frame. Return NULL on failure.
   StackFrameX86* GetCallerByWindowsFrameInfo(
       const vector<StackFrame*> &frames,
-      WindowsFrameInfo* windows_frame_info);
+      WindowsFrameInfo* windows_frame_info,
+      bool stack_scan_allowed);
 
   // Use cfi_frame_info (derived from STACK CFI records) to construct
   // the frame that called frames.back(). The caller takes ownership
@@ -94,7 +96,8 @@ class StackwalkerX86 : public Stackwalker {
   // %ebp points to the saved %ebp --- construct the frame that called
   // frames.back(). The caller takes ownership of the returned frame.
   // Return NULL on failure.
-  StackFrameX86* GetCallerByEBPAtBase(const vector<StackFrame*> &frames);
+  StackFrameX86* GetCallerByEBPAtBase(const vector<StackFrame*> &frames,
+                                      bool stack_scan_allowed);
 
   // Stores the CPU context corresponding to the innermost stack frame to
   // be returned by GetContextFrame.

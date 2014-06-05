@@ -7,7 +7,8 @@
 #include <stdlib.h>
 
 #include "base/bind.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "remoting/protocol/fake_session.h"
@@ -29,14 +30,16 @@ class BufferedSocketWriterTest : public testing::Test {
   }
 
   void OnDone() {
-    MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+    base::MessageLoop::current()->PostTask(FROM_HERE,
+                                           base::MessageLoop::QuitClosure());
   }
 
   void DestroyWriterAndQuit() {
     written_data_ = socket_->written_data();
     writer_.reset();
     socket_.reset();
-    MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+    base::MessageLoop::current()->PostTask(FROM_HERE,
+                                           base::MessageLoop::QuitClosure());
   }
 
   void Unexpected() {
@@ -44,7 +47,7 @@ class BufferedSocketWriterTest : public testing::Test {
   }
 
  protected:
-  void SetUp() OVERRIDE {
+  virtual void SetUp() OVERRIDE {
     socket_.reset(new FakeSocket());
     writer_.reset(new BufferedSocketWriter());
     writer_->Init(socket_.get(), base::Bind(
@@ -94,7 +97,7 @@ class BufferedSocketWriterTest : public testing::Test {
                         test_buffer_2_->size()));
   }
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   scoped_ptr<FakeSocket> socket_;
   scoped_ptr<BufferedSocketWriter> writer_;
   scoped_refptr<net::IOBufferWithSize> test_buffer_;
@@ -160,7 +163,7 @@ TEST_F(BufferedSocketWriterTest, TestWriteErrorSync) {
                             base::Unretained(this)));
   socket_->set_next_write_error(net::ERR_FAILED);
   socket_->set_async_write(false);
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(net::ERR_FAILED, write_error_);
   EXPECT_EQ(static_cast<size_t>(test_buffer_->size()),
             socket_->written_data().size());
@@ -175,7 +178,7 @@ TEST_F(BufferedSocketWriterTest, TestWriteErrorAsync) {
                  base::Bind(&BufferedSocketWriterTest::Unexpected,
                             base::Unretained(this)));
   socket_->set_next_write_error(net::ERR_FAILED);
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(net::ERR_FAILED, write_error_);
   EXPECT_EQ(static_cast<size_t>(test_buffer_->size()),
             socket_->written_data().size());

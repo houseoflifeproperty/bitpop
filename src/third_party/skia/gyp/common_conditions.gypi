@@ -3,41 +3,53 @@
 {
   'defines': [
     'SK_ALLOW_STATIC_GLOBAL_INITIALIZERS=<(skia_static_initializers)',
-#    'SK_SUPPORT_HINTING_SCALE_FACTOR',
-     'SK_REDEFINE_ROOT2OVER2_TO_MAKE_ARCTOS_CONVEX',
+    'SK_SUPPORT_GPU=<(skia_gpu)',
+    'SK_SUPPORT_OPENCL=<(skia_opencl)',
+    'SK_FORCE_DISTANCEFIELD_FONTS=<(skia_force_distancefield_fonts)',
   ],
   'conditions' : [
-    ['skia_gpu == 1',
-      {
-        'defines': [
-          'SK_SUPPORT_GPU=1',
-        ],
-      }, {
-        'defines': [
-          'SK_SUPPORT_GPU=0',
-        ],
-      },
-    ],
-    ['skia_os == "win"',
+    [ 'skia_arch_type == "arm64"', {
+      'cflags': [
+        '-ffp-contract=off',
+      ],
+    }],
+
+    [ 'skia_os == "win"',
       {
         'defines': [
           'SK_BUILD_FOR_WIN32',
-          'SK_IGNORE_STDINT_DOT_H',
           '_CRT_SECURE_NO_WARNINGS',
           'GR_GL_FUNCTION_TYPE=__stdcall',
         ],
         'msvs_cygwin_shell': 0,
         'msvs_settings': {
           'VCCLCompilerTool': {
-            'WarningLevel': '1',
-            'WarnAsError': 'false',
+            'WarningLevel': '3',
+            'ProgramDataBaseFileName': '$(OutDir)\\$(ProjectName).pdb',
             'DebugInformationFormat': '3',
-            'AdditionalOptions': [ '/MP' ],
+            'ExceptionHandling': '0',
+            'AdditionalOptions': [ '/MP', ],
           },
           'VCLinkerTool': {
+            'LargeAddressAware': 2,  # 2 means "Yes, please let me use more RAM on 32-bit builds."
             'AdditionalDependencies': [
               'OpenGL32.lib',
               'usp10.lib',
+
+              # Prior to gyp r1584, the following were included automatically.
+              'kernel32.lib',
+              'gdi32.lib',
+              'winspool.lib',
+              'comdlg32.lib',
+              'advapi32.lib',
+              'shell32.lib',
+              'ole32.lib',
+              'oleaut32.lib',
+              'user32.lib',
+              'uuid.lib',
+              'odbc32.lib',
+              'odbccp32.lib',
+              'DelayImp.lib',
             ],
           },
         },
@@ -46,13 +58,10 @@
             'msvs_settings': {
               'VCCLCompilerTool': {
                 'DebugInformationFormat': '4', # editAndContiue (/ZI)
-                'ProgramDataBaseFileName': '$(OutDir)\\$(ProjectName).pdb',
                 'Optimization': '0',           # optimizeDisabled (/Od)
                 'PreprocessorDefinitions': ['_DEBUG'],
                 'RuntimeLibrary': '3',         # rtMultiThreadedDebugDLL (/MDd)
-                'ExceptionHandling': '0',
                 'RuntimeTypeInfo': 'false',      # /GR-
-                'WarningLevel': '3',             # level3 (/W3)
               },
               'VCLinkerTool': {
                 'GenerateDebugInformation': 'true', # /DEBUG
@@ -64,18 +73,15 @@
             'msvs_settings': {
               'VCCLCompilerTool': {
                 'DebugInformationFormat': '3',      # programDatabase (/Zi)
-                'ProgramDataBaseFileName': '$(OutDir)\\$(ProjectName).pdb',
-                'Optimization': '3',                # full (/Ox)
+                'Optimization': '<(skia_release_optimization_level)',
                 'WholeProgramOptimization': 'true', #/GL
                # Changing the floating point model requires rebaseling gm images
                #'FloatingPointModel': '2',          # fast (/fp:fast)
                 'FavorSizeOrSpeed': '1',            # speed (/Ot)
                 'PreprocessorDefinitions': ['NDEBUG'],
                 'RuntimeLibrary': '2',              # rtMultiThreadedDLL (/MD)
-                'ExceptionHandling': '0',
                 'EnableEnhancedInstructionSet': '2',# /arch:SSE2
                 'RuntimeTypeInfo': 'false',         # /GR-
-                'WarningLevel': '3',                # level3 (/W3)
               },
               'VCLinkerTool': {
                 'GenerateDebugInformation': 'true', # /DEBUG
@@ -88,68 +94,265 @@
           },
         },
         'conditions' : [
-          ['skia_arch_width == 64', {
-            'msvs_configuration_platform': 'x64'
+          # Gyp's ninja generator depends on these specially named
+          # configurations to build 64-bit on Windows.
+          # See http://skbug.com/2348
+          #
+          # We handle the 64- vs 32-bit variations elsewhere, so I think it's
+          # OK for us to just make these inherit non-archwidth-specific
+          # configurations without modification.
+          #
+          # See http://skbug.com/2442 : These targets cause problems in the
+          # MSVS build, so only include them if gyp is generating a ninja build.
+          [ '"ninja" in "<!(echo %GYP_GENERATORS%)"', {
+            'configurations': {
+              'Debug_x64': {
+                'inherit_from': ['Debug'],
+              },
+              'Release_x64': {
+                'inherit_from': ['Release'],
+              },
+              'Release_Developer_x64': {
+                'inherit_from': ['Release_Developer'],
+              },
+            },
           }],
-          ['skia_arch_width == 32', {
+          [ 'skia_arch_width == 64', {
+            'msvs_configuration_platform': 'x64',
+          }],
+          [ 'skia_arch_width == 32', {
             'msvs_configuration_platform': 'Win32',
+          }],
+          [ 'skia_warnings_as_errors', {
+            'msvs_settings': {
+              'VCCLCompilerTool': {
+                'WarnAsError': 'true',
+                'AdditionalOptions': [
+                  '/we4189', # initialized but unused var warning
+                ],
+              },
+            },
+          }],
+          [ 'skia_win_exceptions', {
+            'msvs_settings': {
+              'VCCLCompilerTool': {
+                'AdditionalOptions': [
+                  '/EHsc',
+                ],
+              },
+            },
           }],
         ],
       },
     ],
 
-    ['skia_os in ["linux", "freebsd", "openbsd", "solaris", "nacl"]',
+    # The following section is common to linux + derivatives and android
+    [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "nacl", "chromeos", "android"]',
+      {
+        'cflags': [
+          '-g',
+          '-fno-exceptions',
+          '-fstrict-aliasing',
+
+          '-Wall',
+          '-Wextra',
+          '-Winit-self',
+          '-Wpointer-arith',
+
+          '-Wno-unused-parameter',
+        ],
+        'cflags_cc': [
+          '-fno-rtti',
+          '-Wnon-virtual-dtor',
+        ],
+        'conditions': [
+          [ 'skia_android_framework==0', {
+            'cflags': [
+              # This flag is not supported by Android build system.
+              '-Wno-c++11-extensions',
+            ],
+          }],
+          [ 'skia_warnings_as_errors', {
+            'cflags': [
+              '-Werror',
+            ],
+          }],
+          # For profiling; reveals some costs, exaggerates others (e.g. trivial setters & getters).
+          [ 'skia_disable_inlining', {
+            'cflags': [
+              '-fno-inline',
+              '-fno-default-inline',
+              '-finline-limit=0',
+              '-fno-omit-frame-pointer',
+            ],
+          }],
+          [ 'skia_arch_type == "arm" and arm_thumb == 1', {
+            'cflags': [
+              '-mthumb',
+            ],
+            # The --fix-cortex-a8 switch enables a link-time workaround for
+            # an erratum in certain Cortex-A8 processors.  The workaround is
+            # enabled by default if you target the ARM v7-A arch profile.
+            # It can be enabled otherwise by specifying --fix-cortex-a8, or
+            # disabled unconditionally by specifying --no-fix-cortex-a8.
+            #
+            # The erratum only affects Thumb-2 code.
+            'conditions': [
+              [ 'arm_version < 7', {
+                'ldflags': [
+                  '-Wl,--fix-cortex-a8',
+                ],
+              }],
+            ],
+          }],
+          [ 'skia_arch_type == "arm" and arm_version >= 7', {
+            'cflags': [
+              '-march=armv7-a',
+            ],
+            'ldflags': [
+              '-march=armv7-a',
+            ],
+            'conditions': [
+              [ 'arm_neon == 1', {
+                'defines': [
+                  '__ARM_HAVE_NEON',
+                ],
+                'cflags': [
+                  '-mfpu=neon',
+                ],
+              }],
+              [ 'arm_neon_optional == 1', {
+                'defines': [
+                  '__ARM_HAVE_OPTIONAL_NEON_SUPPORT',
+                ],
+              }],
+              [ 'skia_os != "chromeos"', {
+                'cflags': [
+                  '-mfloat-abi=softfp',
+                ],
+              }],
+            ],
+          }],
+        ],
+      },
+    ],
+
+    ['skia_android_framework', {
+      'cflags': [
+        # Skia does not enforce this usage pattern so we disable it here to avoid
+        # unecessary log spew when building
+        '-Wno-unused-parameter',
+
+        # Android's -D_FORTIFY_SOURCE=2 extensions are incompatibile with SkString.
+        # Revert to -D_FORTIFY_SOURCE=1
+        '-U_FORTIFY_SOURCE',
+        '-D_FORTIFY_SOURCE=1',
+      ],
+      # Remove flags which are either unnecessary or problematic for the
+      # Android framework build. Many of these flags are removed simply because
+      # they were not previously in the Android framework makefile, and we did
+      # did not intend to add them when generating the makefile.
+      # TODO (scroggo): Investigate whether any of these flags are actually
+      # needed/would be beneficial.
+      'cflags!': [
+        # Android has one makefile, used for both debugging (after manual
+        # modification) and release. Turn off debug info by default.
+        '-g',
+        '-march=armv7-a',
+        '-mthumb',
+        '-mfpu=neon',
+        '-mfloat-abi=softfp',
+        # This flag is not supported by Android build system.
+        '-Wno-c++11-extensions',
+        '-fno-exceptions',
+        '-fstrict-aliasing',
+        # Remove flags to turn on warnings, since most people building Android
+        # are not focused on Skia and do not need the extra warning info.
+        '-Wall',
+        '-Wextra',
+        '-Winit-self',
+        '-Wpointer-arith',
+      ],
+      'cflags_cc!': [
+        '-fno-rtti',
+        '-Wnon-virtual-dtor',
+      ],
+      'defines': [
+        'DCT_IFAST_SUPPORTED',
+        # using freetype's embolden allows us to adjust fake bold settings at
+        # draw-time, at which point we know which SkTypeface is being drawn
+        'SK_USE_FREETYPE_EMBOLDEN',
+        'SK_SFNTLY_SUBSETTER "sample/chromium/font_subsetter.h"',
+        # When built as part of the system image we can enable certian non-NDK
+        # compliant optimizations.
+        'SK_BUILD_FOR_ANDROID_FRAMEWORK',
+        # Optimizations for chromium (m30)
+        'GR_GL_CUSTOM_SETUP_HEADER "gl/GrGLConfig_chrome.h"',
+        'IGNORE_ROT_AA_RECT_OPT',
+        # Disable this check because it is too strict for some chromium-specific
+        # subclasses of SkPixelRef. See bug: crbug.com/171776.
+        'SK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK',
+        'SkLONGLONG int64_t',
+        'SK_DEFAULT_FONT_CACHE_LIMIT   (768 * 1024)',
+        'SK_ATOMICS_PLATFORM_H "../../src/ports/SkAtomics_android.h"',
+        'SK_MUTEX_PLATFORM_H "../../src/ports/SkMutex_pthread.h"',
+        # FIXME: b/13729784: Need to rework LayerRasterizer.cpp
+        'SK_SUPPORT_LEGACY_LAYERRASTERIZER_API',
+        # Temporary until https:#googleplex-android-review.git.corp.google.com/#/c/442220/
+        # lands.
+        'SK_SUPPORT_LEGACY_GETTOTALCLIP',
+        # Still need to switch Android to the new name for N32.
+        'kNative_8888_SkColorType kN32_SkColorType',
+        'SK_SUPPORT_LEGACY_PICTURE_CAN_RECORD',
+        'SK_SUPPORT_DEPRECATED_RECORD_FLAGS',
+        'SK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES',
+        'SK_SUPPORT_LEGACY_PICTURE_HEADERS',
+        'SK_SUPPORT_LEGACY_BLURDRAWLOOPERCONSTRUCTORS',
+        'SK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE',
+        # Needed until we fix skbug.com/2440.
+        'SK_SUPPORT_LEGACY_CLIPTOLAYERFLAG',
+        # Transitional, for deprecated SkCanvas::SaveFlags methods.
+        'SK_ATTR_DEPRECATED=SK_NOTHING_ARG1',
+      ],
+    }],
+
+    [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "nacl", "chromeos"]',
       {
         'defines': [
           'SK_SAMPLES_FOR_X',
           'SK_BUILD_FOR_UNIX',
         ],
         'configurations': {
+          'Coverage': {
+            'cflags': ['--coverage'],
+            'ldflags': ['--coverage'],
+          },
           'Debug': {
-            'cflags': ['-g']
           },
           'Release': {
-            'cflags': ['-O3 -g'],
+            'cflags': [
+              '-O<(skia_release_optimization_level)',
+            ],
             'defines': [ 'NDEBUG' ],
           },
         },
-        'cflags': [
-          # TODO(tony): Enable -Werror once all the strict-aliasing problems
-          # are fixed.
-          #'-Werror',
-          '-Wall',
-          '-Wextra',
-          '-Wno-unused',
-          # suppressions below here were added for clang
-          '-Wno-unused-parameter',
-          '-Wno-c++11-extensions'
-        ],
         'conditions' : [
-          ['skia_warnings_as_errors == 1', {
+          [ 'skia_shared_lib', {
             'cflags': [
-              '-Werror',
+              '-fPIC',
             ],
-          }],
-          ['skia_arch_width == 64', {
-            'cflags': [
-              '-m64',
-            ],
-            'ldflags': [
-              '-m64',
-            ],
-          }],
-          ['skia_arch_width == 32', {
-            'cflags': [
-              '-m32',
-            ],
-            'ldflags': [
-              '-m32',
+            'defines': [
+              'SKIA_DLL',
+              'SKIA_IMPLEMENTATION=1',
             ],
           }],
           [ 'skia_os == "nacl"', {
             'defines': [
               'SK_BUILD_FOR_NACL',
             ],
+            'variables': {
+              'nacl_sdk_root': '<!(echo ${NACL_SDK_ROOT})',
+            },
             'link_settings': {
               'libraries': [
                 '-lppapi',
@@ -157,34 +360,119 @@
                 '-lnosys',
                 '-pthread',
               ],
+              'ldflags': [
+                '-L<(nacl_sdk_root)/lib/newlib_x86_<(skia_arch_width)/Release',
+                '-L<(nacl_sdk_root)/ports/lib/newlib_x86_<(skia_arch_width)/Release',
+              ],
             },
           }, { # skia_os != "nacl"
-            'include_dirs' : [
-              '/usr/include/freetype2',
+            'link_settings': {
+              'ldflags': [
+                '-lstdc++',
+                '-lm',
+              ],
+            },
+          }],
+          [ 'skia_os != "chromeos"', {
+            'conditions': [
+              [ 'skia_arch_width == 64 and skia_arch_type == "x86"', {
+                'cflags': [
+                  '-m64',
+                ],
+                'ldflags': [
+                  '-m64',
+                ],
+              }],
+              [ 'skia_arch_width == 32 and skia_arch_type == "x86"', {
+                'cflags': [
+                  '-m32',
+                ],
+                'ldflags': [
+                  '-m32',
+                ],
+              }],
             ],
+          }],
+          # Enable asan, tsan, etc.
+          [ 'skia_sanitizer', {
+            'cflags': [
+              '-fsanitize=<(skia_sanitizer)',
+            ],
+            'ldflags': [
+              '-fsanitize=<(skia_sanitizer)',
+            ],
+            'conditions' : [
+              [ 'skia_sanitizer == "thread"', {
+                'defines': [ 'DYNAMIC_ANNOTATIONS_ENABLED=1' ],
+                'cflags': [ '-fPIC' ],
+                'target_conditions': [
+                  [ '_type == "executable"', {
+                    'cflags': [ '-fPIE' ],
+                    'ldflags': [ '-pie' ],
+                  }],
+                ],
+              }],
+              [ 'skia_sanitizer == "undefined"', {
+                'cflags': [ '-fPIC' ],
+                'cflags_cc!': ['-fno-rtti'],
+                'target_conditions': [
+                  [ '_type == "executable"', {
+                    'cflags': [ '-fPIE' ],
+                    'ldflags': [ '-pie' ],
+                  }],
+                ],
+              }],
+            ],
+          }],
+          [ 'skia_clang_build', {
+            'cflags': [
+              # Extra warnings we like but that only Clang knows about.
+              '-Wstring-conversion',
+            ],
+          }],
+          [ 'skia_keep_frame_pointer', {
+            'cflags': [ '-fno-omit-frame-pointer' ],
           }],
         ],
       },
     ],
 
-    ['skia_os == "mac"',
+    [ 'skia_os == "mac"',
       {
         'defines': [
           'SK_BUILD_FOR_MAC',
         ],
         'conditions' : [
-          ['skia_arch_width == 64', {
+          [ 'skia_arch_width == 64', {
             'xcode_settings': {
-              'ARCHS': 'x86_64',
+              'ARCHS': ['x86_64'],
             },
           }],
-          ['skia_arch_width == 32', {
+          [ 'skia_arch_width == 32', {
             'xcode_settings': {
-              'ARCHS': 'i386',
+              'ARCHS': ['i386'],
+            },
+          }],
+          [ 'skia_warnings_as_errors', {
+            'xcode_settings': {
+              'OTHER_CPLUSPLUSFLAGS': [
+                '-Werror',
+                '-Wall',
+                '-Wextra',
+                '-Wno-unused-parameter',
+                '-Wno-uninitialized',  # Disabled because we think GCC 4.2 is bad at this.
+              ],
             },
           }],
         ],
         'configurations': {
+          'Coverage': {
+            'xcode_settings': {
+               'GCC_OPTIMIZATION_LEVEL': '0',
+               'GCC_GENERATE_TEST_COVERAGE_FILES': 'YES',
+               'GCC_INSTRUMENT_PROGRAM_FLOW_ARCS' : 'YES',
+            },
+          },
           'Debug': {
             'xcode_settings': {
               'GCC_OPTIMIZATION_LEVEL': '0',
@@ -192,14 +480,20 @@
           },
           'Release': {
             'xcode_settings': {
-              'GCC_OPTIMIZATION_LEVEL': '3',
+              'GCC_OPTIMIZATION_LEVEL': '<(skia_release_optimization_level)',
             },
             'defines': [ 'NDEBUG' ],
           },
         },
         'xcode_settings': {
           'GCC_SYMBOLS_PRIVATE_EXTERN': 'NO',
-          'SDKROOT': '<(skia_osx_sdkroot)',
+          'conditions': [
+            [ 'skia_osx_deployment_target==""', {
+              'MACOSX_DEPLOYMENT_TARGET': '10.6', # -mmacos-version-min, passed in environment to ld.
+            }, {
+              'MACOSX_DEPLOYMENT_TARGET': '<(skia_osx_deployment_target)',
+            }],
+          ],
 # trying to get this to work, but it needs clang I think...
 #          'WARNING_CFLAGS': '-Wexit-time-destructors',
           'CLANG_WARN_CXX0X_EXTENSIONS': 'NO',
@@ -230,10 +524,19 @@
       },
     ],
 
-    ['skia_os == "ios"',
+    [ 'skia_os == "ios"',
       {
         'defines': [
           'SK_BUILD_FOR_IOS',
+        ],
+        'conditions' : [
+          [ 'skia_warnings_as_errors', {
+            'xcode_settings': {
+              'OTHER_CPLUSPLUSFLAGS': [
+                '-Werror',
+              ],
+            },
+          }],
         ],
         'configurations': {
           'Debug': {
@@ -243,29 +546,40 @@
           },
           'Release': {
             'xcode_settings': {
-              'GCC_OPTIMIZATION_LEVEL': '3',
+              'GCC_OPTIMIZATION_LEVEL': '<(skia_release_optimization_level)',
             },
             'defines': [ 'NDEBUG' ],
           },
         },
         'xcode_settings': {
-          'ARCHS': 'armv6 armv7',
+          'ARCHS': ['armv7'],
           'CODE_SIGNING_REQUIRED': 'NO',
           'CODE_SIGN_IDENTITY[sdk=iphoneos*]': '',
           'IPHONEOS_DEPLOYMENT_TARGET': '<(ios_sdk_version)',
           'SDKROOT': 'iphoneos',
           'TARGETED_DEVICE_FAMILY': '1,2',
-          'OTHER_CPLUSPLUSFLAGS': '-fvisibility=hidden -fvisibility-inlines-hidden',
+          'OTHER_CPLUSPLUSFLAGS': [
+            '-fvisibility=hidden',
+            '-fvisibility-inlines-hidden',
+          ],
           'GCC_THUMB_SUPPORT': 'NO',
         },
       },
     ],
 
-    ['skia_os == "android"',
+    [ 'skia_os == "android"',
       {
         'defines': [
           'SK_BUILD_FOR_ANDROID',
-          'SK_BUILD_FOR_ANDROID_NDK',
+          'SK_FONTHOST_DOES_NOT_USE_FONTMGR',
+
+          # Android Text Tuning
+          'SK_GAMMA_EXPONENT=1.4',
+          'SK_GAMMA_CONTRAST=0.0',
+        ],
+        # Android defines a fixed gamma exponent instead of using SRGB
+        'defines!': [
+          'SK_GAMMA_SRGB',
         ],
         'configurations': {
           'Debug': {
@@ -282,64 +596,30 @@
           '-llog',
         ],
         'cflags': [
-          '-fno-exceptions',
-          '-fno-rtti',
           '-fuse-ld=gold',
-          '--sysroot=<(android_base)/toolchains/<(android_toolchain)/sysroot',
-        ],
-        'include_dirs' : [
-          '<(android_base)/toolchains/<(android_toolchain)/lib/gcc/arm-linux-androideabi/4.6.x-google/include',
-          '<(android_base)/toolchains/<(android_toolchain)/lib/gcc/arm-linux-androideabi/4.6.x-google/include-fixed',
-          '<(android_base)/toolchains/<(android_toolchain)/arm-linux-androideabi/include/c++/4.6',
-          '<(android_base)/toolchains/<(android_toolchain)/arm-linux-androideabi/include/c++/4.6/arm-linux-androideabi',
-          '<(android_base)/toolchains/<(android_toolchain)/sysroot/usr/include',
         ],
         'conditions': [
-          [ 'skia_warnings_as_errors == 1', {
+          [ 'skia_android_framework', {
+            'libraries!': [
+              '-lstdc++',
+              '-lm',
+            ],
+            'cflags!': [
+              '-fuse-ld=gold',
+            ],
+          }],
+          [ 'skia_shared_lib', {
             'cflags': [
-              '-Werror',
+              '-fPIC',
+            ],
+            'defines': [
+              'SKIA_DLL',
+              'SKIA_IMPLEMENTATION=1',
             ],
           }],
           [ 'skia_profile_enabled == 1', {
             'cflags': ['-g', '-fno-omit-frame-pointer', '-marm', '-mapcs'],
           }],
-          [ 'skia_arch_type == "arm"', {
-            'ldflags': [
-              '-Wl',
-            ],
-          }],
-          [ 'skia_arch_type == "arm" and arm_thumb == 1', {
-            'cflags': [
-              '-mthumb',
-            ],
-          }],
-          [ 'skia_arch_type == "arm" and armv7 == 1', {
-            'variables': {
-              'arm_neon_optional%': 0,
-            },
-            'defines': [
-              '__ARM_ARCH__=7',
-            ],
-            'cflags': [
-              '-march=armv7-a',
-              '-mfloat-abi=softfp',
-            ],
-            'conditions': [
-              [ 'arm_neon == 1', {
-                'defines': [
-                  '__ARM_HAVE_NEON',
-                ],
-                'cflags': [
-                  '-mfpu=neon',
-                ],
-              }],
-              [ 'arm_neon_optional == 1', {
-                'defines': [
-                  '__ARM_HAVE_OPTIONAL_NEON_SUPPORT',
-                ],
-              }],
-            ],
-         }],
         ],
       },
     ],
@@ -357,9 +637,3 @@
     'SYMROOT': '<(DEPTH)/xcodebuild',
   },
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

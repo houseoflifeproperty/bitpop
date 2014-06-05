@@ -5,14 +5,18 @@
 #include "net/url_request/url_request_ftp_job.h"
 
 #include "base/compiler_specific.h"
-#include "base/message_loop.h"
-#include "base/utf_string_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/auth.h"
 #include "net/base/host_port_pair.h"
+#include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
+#include "net/ftp/ftp_auth_cache.h"
 #include "net/ftp/ftp_response_info.h"
 #include "net/ftp/ftp_transaction_factory.h"
+#include "net/http/http_response_headers.h"
+#include "net/http/http_transaction_factory.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_error_job.h"
@@ -25,65 +29,137 @@ URLRequestFtpJob::URLRequestFtpJob(
     FtpTransactionFactory* ftp_transaction_factory,
     FtpAuthCache* ftp_auth_cache)
     : URLRequestJob(request, network_delegate),
+      priority_(DEFAULT_PRIORITY),
+      proxy_service_(request_->context()->proxy_service()),
+      pac_request_(NULL),
+      http_response_info_(NULL),
       read_in_progress_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+      weak_factory_(this),
       ftp_transaction_factory_(ftp_transaction_factory),
       ftp_auth_cache_(ftp_auth_cache) {
+  DCHECK(proxy_service_);
   DCHECK(ftp_transaction_factory);
   DCHECK(ftp_auth_cache);
 }
 
-// static
-URLRequestJob* URLRequestFtpJob::Factory(URLRequest* request,
-                                         NetworkDelegate* network_delegate,
-                                         const std::string& scheme) {
-  DCHECK_EQ(scheme, "ftp");
+URLRequestFtpJob::~URLRequestFtpJob() {
+  if (pac_request_)
+    proxy_service_->CancelPacRequest(pac_request_);
+}
 
-  int port = request->url().IntPort();
-  if (request->url().has_port() &&
-      !IsPortAllowedByFtp(port) && !IsPortAllowedByOverride(port)) {
-    return new URLRequestErrorJob(request,
-                                  network_delegate,
-                                  ERR_UNSAFE_PORT);
-  }
-
-  return new URLRequestFtpJob(request,
-                              network_delegate,
-                              request->context()->ftp_transaction_factory(),
-                              request->context()->ftp_auth_cache());
+bool URLRequestFtpJob::IsSafeRedirect(const GURL& location) {
+  // Disallow all redirects.
+  return false;
 }
 
 bool URLRequestFtpJob::GetMimeType(std::string* mime_type) const {
-  if (transaction_->GetResponseInfo()->is_directory_listing) {
-    *mime_type = "text/vnd.chromium.ftp-dir";
-    return true;
+  if (proxy_info_.is_direct()) {
+    if (ftp_transaction_->GetResponseInfo()->is_directory_listing) {
+      *mime_type = "text/vnd.chromium.ftp-dir";
+      return true;
+    }
+  } else {
+    // No special handling of MIME type is needed. As opposed to direct FTP
+    // transaction, we do not get a raw directory listing to parse.
+    return http_transaction_->GetResponseInfo()->
+        headers->GetMimeType(mime_type);
   }
   return false;
 }
 
+void URLRequestFtpJob::GetResponseInfo(HttpResponseInfo* info) {
+  if (http_response_info_)
+    *info = *http_response_info_;
+}
+
 HostPortPair URLRequestFtpJob::GetSocketAddress() const {
-  if (!transaction_.get()) {
-    return HostPortPair();
+  if (proxy_info_.is_direct()) {
+    if (!ftp_transaction_)
+      return HostPortPair();
+    return ftp_transaction_->GetResponseInfo()->socket_address;
+  } else {
+    if (!http_transaction_)
+      return HostPortPair();
+    return http_transaction_->GetResponseInfo()->socket_address;
   }
-  return transaction_->GetResponseInfo()->socket_address;
 }
 
-URLRequestFtpJob::~URLRequestFtpJob() {
+void URLRequestFtpJob::SetPriority(RequestPriority priority) {
+  priority_ = priority;
+  if (http_transaction_)
+    http_transaction_->SetPriority(priority);
 }
 
-void URLRequestFtpJob::StartTransaction() {
+void URLRequestFtpJob::Start() {
+  DCHECK(!pac_request_);
+  DCHECK(!ftp_transaction_);
+  DCHECK(!http_transaction_);
+
+  int rv = OK;
+  if (request_->load_flags() & LOAD_BYPASS_PROXY) {
+    proxy_info_.UseDirect();
+  } else {
+    DCHECK_EQ(request_->context()->proxy_service(), proxy_service_);
+    rv = proxy_service_->ResolveProxy(
+        request_->url(),
+        &proxy_info_,
+        base::Bind(&URLRequestFtpJob::OnResolveProxyComplete,
+                   base::Unretained(this)),
+        &pac_request_,
+        request_->net_log());
+
+    if (rv == ERR_IO_PENDING)
+      return;
+  }
+  OnResolveProxyComplete(rv);
+}
+
+void URLRequestFtpJob::Kill() {
+  if (ftp_transaction_)
+    ftp_transaction_.reset();
+  if (http_transaction_)
+    http_transaction_.reset();
+  URLRequestJob::Kill();
+  weak_factory_.InvalidateWeakPtrs();
+}
+
+void URLRequestFtpJob::OnResolveProxyComplete(int result) {
+  pac_request_ = NULL;
+
+  if (result != OK) {
+    OnStartCompletedAsync(result);
+    return;
+  }
+
+  // Remove unsupported proxies from the list.
+  proxy_info_.RemoveProxiesWithoutScheme(
+      ProxyServer::SCHEME_DIRECT |
+      ProxyServer::SCHEME_HTTP |
+      ProxyServer::SCHEME_HTTPS);
+
+  // TODO(phajdan.jr): Implement proxy fallback, http://crbug.com/171495 .
+  if (proxy_info_.is_direct())
+    StartFtpTransaction();
+  else if (proxy_info_.is_http() || proxy_info_.is_https())
+    StartHttpTransaction();
+  else
+    OnStartCompletedAsync(ERR_NO_SUPPORTED_PROXIES);
+}
+
+void URLRequestFtpJob::StartFtpTransaction() {
   // Create a transaction.
-  DCHECK(!transaction_.get());
+  DCHECK(!ftp_transaction_);
 
-  transaction_.reset(ftp_transaction_factory_->CreateTransaction());
+  ftp_request_info_.url = request_->url();
+  ftp_transaction_.reset(ftp_transaction_factory_->CreateTransaction());
 
   // No matter what, we want to report our status as IO pending since we will
   // be notifying our consumer asynchronously via OnStartCompleted.
   SetStatus(URLRequestStatus(URLRequestStatus::IO_PENDING, 0));
   int rv;
-  if (transaction_.get()) {
-    rv = transaction_->Start(
-        &request_info_,
+  if (ftp_transaction_) {
+    rv = ftp_transaction_->Start(
+        &ftp_request_info_,
         base::Bind(&URLRequestFtpJob::OnStartCompleted,
                    base::Unretained(this)),
         request_->net_log());
@@ -94,47 +170,76 @@ void URLRequestFtpJob::StartTransaction() {
   }
   // The transaction started synchronously, but we need to notify the
   // URLRequest delegate via the message loop.
-  MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&URLRequestFtpJob::OnStartCompleted,
-                 weak_factory_.GetWeakPtr(), rv));
+  OnStartCompletedAsync(rv);
+}
+
+void URLRequestFtpJob::StartHttpTransaction() {
+  // Create a transaction.
+  DCHECK(!http_transaction_);
+
+  // Do not cache FTP responses sent through HTTP proxy.
+  request_->SetLoadFlags(request_->load_flags() |
+                         LOAD_DISABLE_CACHE |
+                         LOAD_DO_NOT_SAVE_COOKIES |
+                         LOAD_DO_NOT_SEND_COOKIES);
+
+  http_request_info_.url = request_->url();
+  http_request_info_.method = request_->method();
+  http_request_info_.load_flags = request_->load_flags();
+
+  int rv = request_->context()->http_transaction_factory()->CreateTransaction(
+      priority_, &http_transaction_);
+  if (rv == OK) {
+    rv = http_transaction_->Start(
+        &http_request_info_,
+        base::Bind(&URLRequestFtpJob::OnStartCompleted,
+                  base::Unretained(this)),
+        request_->net_log());
+    if (rv == ERR_IO_PENDING)
+      return;
+  }
+  // The transaction started synchronously, but we need to notify the
+  // URLRequest delegate via the message loop.
+  OnStartCompletedAsync(rv);
 }
 
 void URLRequestFtpJob::OnStartCompleted(int result) {
   // Clear the IO_PENDING status
   SetStatus(URLRequestStatus());
 
-  // Note that transaction_ may be NULL due to a creation failure.
-  if (transaction_.get()) {
+  // Note that ftp_transaction_ may be NULL due to a creation failure.
+  if (ftp_transaction_) {
     // FTP obviously doesn't have HTTP Content-Length header. We have to pass
     // the content size information manually.
     set_expected_content_size(
-        transaction_->GetResponseInfo()->expected_content_size);
+        ftp_transaction_->GetResponseInfo()->expected_content_size);
   }
 
   if (result == OK) {
-    NotifyHeadersComplete();
-  } else if (transaction_.get() &&
-             transaction_->GetResponseInfo()->needs_auth) {
-    GURL origin = request_->url().GetOrigin();
-    if (server_auth_ && server_auth_->state == AUTH_STATE_HAVE_AUTH) {
-      ftp_auth_cache_->Remove(origin, server_auth_->credentials);
-    } else if (!server_auth_) {
-      server_auth_ = new AuthData();
-    }
-    server_auth_->state = AUTH_STATE_NEED_AUTH;
+    if (http_transaction_) {
+      http_response_info_ = http_transaction_->GetResponseInfo();
 
-    FtpAuthCache::Entry* cached_auth = ftp_auth_cache_->Lookup(origin);
-    if (cached_auth) {
-      // Retry using cached auth data.
-      SetAuth(cached_auth->credentials);
-    } else {
-      // Prompt for a username/password.
-      NotifyHeadersComplete();
+      if (http_response_info_->headers->response_code() == 401 ||
+          http_response_info_->headers->response_code() == 407) {
+        HandleAuthNeededResponse();
+        return;
+      }
     }
+    NotifyHeadersComplete();
+  } else if (ftp_transaction_ &&
+             ftp_transaction_->GetResponseInfo()->needs_auth) {
+    HandleAuthNeededResponse();
+    return;
   } else {
     NotifyDone(URLRequestStatus(URLRequestStatus::FAILED, result));
   }
+}
+
+void URLRequestFtpJob::OnStartCompletedAsync(int result) {
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&URLRequestFtpJob::OnStartCompleted,
+                 weak_factory_.GetWeakPtr(), result));
 }
 
 void URLRequestFtpJob::OnReadCompleted(int result) {
@@ -151,56 +256,53 @@ void URLRequestFtpJob::OnReadCompleted(int result) {
 }
 
 void URLRequestFtpJob::RestartTransactionWithAuth() {
-  DCHECK(server_auth_ && server_auth_->state == AUTH_STATE_HAVE_AUTH);
+  DCHECK(auth_data_.get() && auth_data_->state == AUTH_STATE_HAVE_AUTH);
 
   // No matter what, we want to report our status as IO pending since we will
   // be notifying our consumer asynchronously via OnStartCompleted.
   SetStatus(URLRequestStatus(URLRequestStatus::IO_PENDING, 0));
 
-  int rv = transaction_->RestartWithAuth(
-      server_auth_->credentials,
-      base::Bind(&URLRequestFtpJob::OnStartCompleted,
-                 base::Unretained(this)));
+  int rv;
+  if (proxy_info_.is_direct()) {
+    rv = ftp_transaction_->RestartWithAuth(
+        auth_data_->credentials,
+        base::Bind(&URLRequestFtpJob::OnStartCompleted,
+                   base::Unretained(this)));
+  } else {
+    rv = http_transaction_->RestartWithAuth(
+        auth_data_->credentials,
+        base::Bind(&URLRequestFtpJob::OnStartCompleted,
+                   base::Unretained(this)));
+  }
   if (rv == ERR_IO_PENDING)
     return;
 
-  MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&URLRequestFtpJob::OnStartCompleted,
-                 weak_factory_.GetWeakPtr(), rv));
-}
-
-void URLRequestFtpJob::Start() {
-  DCHECK(!transaction_.get());
-  request_info_.url = request_->url();
-  StartTransaction();
-}
-
-void URLRequestFtpJob::Kill() {
-  if (!transaction_.get())
-    return;
-  transaction_.reset();
-  URLRequestJob::Kill();
-  weak_factory_.InvalidateWeakPtrs();
+  OnStartCompletedAsync(rv);
 }
 
 LoadState URLRequestFtpJob::GetLoadState() const {
-  return transaction_.get() ?
-      transaction_->GetLoadState() : LOAD_STATE_IDLE;
+  if (proxy_info_.is_direct()) {
+    return ftp_transaction_ ?
+        ftp_transaction_->GetLoadState() : LOAD_STATE_IDLE;
+  } else {
+    return http_transaction_ ?
+        http_transaction_->GetLoadState() : LOAD_STATE_IDLE;
+  }
 }
 
 bool URLRequestFtpJob::NeedsAuth() {
-  // Note that we only have to worry about cases where an actual FTP server
-  // requires auth (and not a proxy), because connecting to FTP via proxy
-  // effectively means the browser communicates via HTTP, and uses HTTP's
-  // Proxy-Authenticate protocol when proxy servers require auth.
-  return server_auth_ && server_auth_->state == AUTH_STATE_NEED_AUTH;
+  return auth_data_.get() && auth_data_->state == AUTH_STATE_NEED_AUTH;
 }
 
 void URLRequestFtpJob::GetAuthChallengeInfo(
     scoped_refptr<AuthChallengeInfo>* result) {
-  DCHECK((server_auth_ != NULL) &&
-         (server_auth_->state == AUTH_STATE_NEED_AUTH));
+  DCHECK(NeedsAuth());
+
+  if (http_response_info_) {
+    *result = http_response_info_->auth_challenge;
+    return;
+  }
+
   scoped_refptr<AuthChallengeInfo> auth_info(new AuthChallengeInfo);
   auth_info->is_proxy = false;
   auth_info->challenger = HostPortPair::FromURL(request_->url());
@@ -211,26 +313,30 @@ void URLRequestFtpJob::GetAuthChallengeInfo(
 }
 
 void URLRequestFtpJob::SetAuth(const AuthCredentials& credentials) {
+  DCHECK(ftp_transaction_ || http_transaction_);
   DCHECK(NeedsAuth());
-  server_auth_->state = AUTH_STATE_HAVE_AUTH;
-  server_auth_->credentials = credentials;
 
-  ftp_auth_cache_->Add(request_->url().GetOrigin(), server_auth_->credentials);
+  auth_data_->state = AUTH_STATE_HAVE_AUTH;
+  auth_data_->credentials = credentials;
+
+  if (ftp_transaction_) {
+    ftp_auth_cache_->Add(request_->url().GetOrigin(),
+                         auth_data_->credentials);
+  }
 
   RestartTransactionWithAuth();
 }
 
 void URLRequestFtpJob::CancelAuth() {
+  DCHECK(ftp_transaction_ || http_transaction_);
   DCHECK(NeedsAuth());
-  server_auth_->state = AUTH_STATE_CANCELED;
+
+  auth_data_->state = AUTH_STATE_CANCELED;
 
   // Once the auth is cancelled, we proceed with the request as though
   // there were no auth.  Schedule this for later so that we don't cause
   // any recursing into the caller as a result of this call.
-  MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&URLRequestFtpJob::OnStartCompleted,
-                 weak_factory_.GetWeakPtr(), OK));
+  OnStartCompletedAsync(OK);
 }
 
 UploadProgress URLRequestFtpJob::GetUploadProgress() const {
@@ -244,9 +350,17 @@ bool URLRequestFtpJob::ReadRawData(IOBuffer* buf,
   DCHECK(bytes_read);
   DCHECK(!read_in_progress_);
 
-  int rv = transaction_->Read(buf, buf_size,
-                              base::Bind(&URLRequestFtpJob::OnReadCompleted,
-                                         base::Unretained(this)));
+  int rv;
+  if (proxy_info_.is_direct()) {
+    rv = ftp_transaction_->Read(buf, buf_size,
+                                base::Bind(&URLRequestFtpJob::OnReadCompleted,
+                                           base::Unretained(this)));
+  } else {
+    rv = http_transaction_->Read(buf, buf_size,
+                                 base::Bind(&URLRequestFtpJob::OnReadCompleted,
+                                            base::Unretained(this)));
+  }
+
   if (rv >= 0) {
     *bytes_read = rv;
     return true;
@@ -259,6 +373,34 @@ bool URLRequestFtpJob::ReadRawData(IOBuffer* buf,
     NotifyDone(URLRequestStatus(URLRequestStatus::FAILED, rv));
   }
   return false;
+}
+
+void URLRequestFtpJob::HandleAuthNeededResponse() {
+  GURL origin = request_->url().GetOrigin();
+
+  if (auth_data_.get()) {
+    if (auth_data_->state == AUTH_STATE_CANCELED) {
+      NotifyHeadersComplete();
+      return;
+    }
+
+    if (ftp_transaction_ && auth_data_->state == AUTH_STATE_HAVE_AUTH)
+      ftp_auth_cache_->Remove(origin, auth_data_->credentials);
+  } else {
+    auth_data_ = new AuthData;
+  }
+  auth_data_->state = AUTH_STATE_NEED_AUTH;
+
+  FtpAuthCache::Entry* cached_auth = NULL;
+  if (ftp_transaction_ && ftp_transaction_->GetResponseInfo()->needs_auth)
+    cached_auth = ftp_auth_cache_->Lookup(origin);
+  if (cached_auth) {
+    // Retry using cached auth data.
+    SetAuth(cached_auth->credentials);
+  } else {
+    // Prompt for a username/password.
+    NotifyHeadersComplete();
+  }
 }
 
 }  // namespace net

@@ -8,9 +8,9 @@
 #include <string>
 #include <vector>
 
-#include "base/hash_tables.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/containers/hash_tables.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 
 // A helper object for recording spell-check related histograms.
 // This class encapsulates histogram names and metrics API.
@@ -33,7 +33,7 @@ class SpellCheckHostMetrics {
 
   // Collects the number of words in the custom dictionary, which is
   // to be uploaded via UMA.
-  void RecordCustomWordCountStats(size_t count);
+  static void RecordCustomWordCountStats(size_t count);
 
   // Collects status of spellchecking enabling state, which is
   // to be uploaded via UMA
@@ -45,7 +45,7 @@ class SpellCheckHostMetrics {
 
   // Collects status of spellchecking enabling state, which is
   // to be uploaded via UMA
-  void RecordCheckedWordStats(const string16& word, bool misspell);
+  void RecordCheckedWordStats(const base::string16& word, bool misspell);
 
   // Collects a histogram for misspelled word replacement
   // to be uploaded via UMA
@@ -54,6 +54,9 @@ class SpellCheckHostMetrics {
   // Collects a histogram for context menu showing as a spell correction
   // attempt to be uploaded via UMA
   void RecordSuggestionStats(int delta);
+
+  // Records if spelling service is enabled or disabled.
+  void RecordSpellingServiceStats(bool enabled);
 
  private:
   friend class SpellcheckHostMetricsTest;

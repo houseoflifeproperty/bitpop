@@ -8,63 +8,65 @@
 #include <vector>
 
 #include "base/base64.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/user_script_master.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_file_util.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/user_script.h"
 #include "crypto/sha2.h"
-#include "googleurl/src/gurl.h"
-
-namespace keys = extension_manifest_keys;
-namespace values = extension_manifest_values;
+#include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/file_util.h"
+#include "extensions/common/manifest_constants.h"
+#include "extensions/common/user_script.h"
+#include "url/gurl.h"
 
 namespace extensions {
 
+namespace keys = manifest_keys;
+namespace values = manifest_values;
+
 scoped_refptr<Extension> ConvertUserScriptToExtension(
-    const FilePath& user_script_path, const GURL& original_url,
-    const FilePath& extensions_dir, string16* error) {
+    const base::FilePath& user_script_path, const GURL& original_url,
+    const base::FilePath& extensions_dir, base::string16* error) {
   std::string content;
-  if (!file_util::ReadFileToString(user_script_path, &content)) {
-    *error = ASCIIToUTF16("Could not read source file.");
+  if (!base::ReadFileToString(user_script_path, &content)) {
+    *error = base::ASCIIToUTF16("Could not read source file.");
     return NULL;
   }
 
-  if (!IsStringUTF8(content)) {
-    *error = ASCIIToUTF16("User script must be UTF8 encoded.");
+  if (!base::IsStringUTF8(content)) {
+    *error = base::ASCIIToUTF16("User script must be UTF8 encoded.");
     return NULL;
   }
 
   UserScript script;
   if (!UserScriptMaster::ScriptReloader::ParseMetadataHeader(content,
                                                              &script)) {
-    *error = ASCIIToUTF16("Invalid script header.");
+    *error = base::ASCIIToUTF16("Invalid script header.");
     return NULL;
   }
 
-  FilePath install_temp_dir =
-      extension_file_util::GetInstallTempDir(extensions_dir);
+  base::FilePath install_temp_dir =
+      file_util::GetInstallTempDir(extensions_dir);
   if (install_temp_dir.empty()) {
-    *error = ASCIIToUTF16("Could not get path to profile temporary directory.");
+    *error = base::ASCIIToUTF16(
+        "Could not get path to profile temporary directory.");
     return NULL;
   }
 
   base::ScopedTempDir temp_dir;
   if (!temp_dir.CreateUniqueTempDirUnderPath(install_temp_dir)) {
-    *error = ASCIIToUTF16("Could not create temporary directory.");
+    *error = base::ASCIIToUTF16("Could not create temporary directory.");
     return NULL;
   }
 
   // Create the manifest
-  scoped_ptr<DictionaryValue> root(new DictionaryValue);
+  scoped_ptr<base::DictionaryValue> root(new base::DictionaryValue);
   std::string script_name;
   if (!script.name().empty() && !script.name_space().empty())
     script_name = script.name_space() + "/" + script.name();
@@ -100,42 +102,42 @@ scoped_refptr<Extension> ConvertUserScriptToExtension(
   root->SetString(keys::kPublicKey, key);
   root->SetBoolean(keys::kConvertedFromUserScript, true);
 
-  ListValue* js_files = new ListValue();
-  js_files->Append(Value::CreateStringValue("script.js"));
+  base::ListValue* js_files = new base::ListValue();
+  js_files->Append(new base::StringValue("script.js"));
 
   // If the script provides its own match patterns, we use those. Otherwise, we
   // generate some using the include globs.
-  ListValue* matches = new ListValue();
+  base::ListValue* matches = new base::ListValue();
   if (!script.url_patterns().is_empty()) {
     for (URLPatternSet::const_iterator i = script.url_patterns().begin();
          i != script.url_patterns().end(); ++i) {
-      matches->Append(Value::CreateStringValue(i->GetAsString()));
+      matches->Append(new base::StringValue(i->GetAsString()));
     }
   } else {
     // TODO(aa): Derive tighter matches where possible.
-    matches->Append(Value::CreateStringValue("http://*/*"));
-    matches->Append(Value::CreateStringValue("https://*/*"));
+    matches->Append(new base::StringValue("http://*/*"));
+    matches->Append(new base::StringValue("https://*/*"));
   }
 
   // Read the exclude matches, if any are present.
-  ListValue* exclude_matches = new ListValue();
+  base::ListValue* exclude_matches = new base::ListValue();
   if (!script.exclude_url_patterns().is_empty()) {
     for (URLPatternSet::const_iterator i =
          script.exclude_url_patterns().begin();
          i != script.exclude_url_patterns().end(); ++i) {
-      exclude_matches->Append(Value::CreateStringValue(i->GetAsString()));
+      exclude_matches->Append(new base::StringValue(i->GetAsString()));
     }
   }
 
-  ListValue* includes = new ListValue();
+  base::ListValue* includes = new base::ListValue();
   for (size_t i = 0; i < script.globs().size(); ++i)
-    includes->Append(Value::CreateStringValue(script.globs().at(i)));
+    includes->Append(new base::StringValue(script.globs().at(i)));
 
-  ListValue* excludes = new ListValue();
+  base::ListValue* excludes = new base::ListValue();
   for (size_t i = 0; i < script.exclude_globs().size(); ++i)
-    excludes->Append(Value::CreateStringValue(script.exclude_globs().at(i)));
+    excludes->Append(new base::StringValue(script.exclude_globs().at(i)));
 
-  DictionaryValue* content_script = new DictionaryValue();
+  base::DictionaryValue* content_script = new base::DictionaryValue();
   content_script->Set(keys::kMatches, matches);
   content_script->Set(keys::kExcludeMatches, exclude_matches);
   content_script->Set(keys::kIncludeGlobs, includes);
@@ -150,37 +152,36 @@ scoped_refptr<Extension> ConvertUserScriptToExtension(
     // This is the default, but store it just in case we change that.
     content_script->SetString(keys::kRunAt, values::kRunAtDocumentIdle);
 
-  ListValue* content_scripts = new ListValue();
+  base::ListValue* content_scripts = new base::ListValue();
   content_scripts->Append(content_script);
 
   root->Set(keys::kContentScripts, content_scripts);
 
-  FilePath manifest_path = temp_dir.path().Append(
-      Extension::kManifestFilename);
+  base::FilePath manifest_path = temp_dir.path().Append(kManifestFilename);
   JSONFileValueSerializer serializer(manifest_path);
   if (!serializer.Serialize(*root)) {
-    *error = ASCIIToUTF16("Could not write JSON.");
+    *error = base::ASCIIToUTF16("Could not write JSON.");
     return NULL;
   }
 
   // Write the script file.
-  if (!file_util::CopyFile(user_script_path,
-                           temp_dir.path().AppendASCII("script.js"))) {
-    *error = ASCIIToUTF16("Could not copy script file.");
+  if (!base::CopyFile(user_script_path,
+                      temp_dir.path().AppendASCII("script.js"))) {
+    *error = base::ASCIIToUTF16("Could not copy script file.");
     return NULL;
   }
 
   // TODO(rdevlin.cronin): Continue removing std::string errors and replacing
-  // with string16
+  // with base::string16
   std::string utf8_error;
   scoped_refptr<Extension> extension = Extension::Create(
       temp_dir.path(),
-      Extension::INTERNAL,
+      Manifest::INTERNAL,
       *root,
       Extension::NO_FLAGS,
       &utf8_error);
-  *error = UTF8ToUTF16(utf8_error);
-  if (!extension) {
+  *error = base::UTF8ToUTF16(utf8_error);
+  if (!extension.get()) {
     NOTREACHED() << "Could not init extension " << *error;
     return NULL;
   }

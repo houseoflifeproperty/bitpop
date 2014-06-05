@@ -13,9 +13,10 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
-#include "base/time.h"
-#include "net/cookies/cookie_options.h"
+#include "base/time/time.h"
 #include "net/base/net_export.h"
+#include "net/cookies/canonical_cookie.h"
+#include "net/cookies/cookie_options.h"
 
 class GURL;
 
@@ -27,34 +28,11 @@ class CookieMonster;
 // be thread safe as its methods can be accessed from IO as well as UI threads.
 class NET_EXPORT CookieStore : public base::RefCountedThreadSafe<CookieStore> {
  public:
-  // This struct contains additional consumer-specific information that might
-  // be stored with cookies; currently just MAC information, see:
-  // http://tools.ietf.org/html/draft-ietf-oauth-v2-http-mac
-  struct NET_EXPORT CookieInfo {
-    CookieInfo();
-    ~CookieInfo();
-
-    // The name of the cookie.
-    std::string name;
-    // TODO(abarth): Add value if any clients need it.
-
-    // The time at which the cookie was created.
-    base::Time creation_date;
-
-    // The value of the MAC-Key and MAC-Algorithm attributes, if present.
-    std::string mac_key;
-    std::string mac_algorithm;
-  };
-
   // Callback definitions.
-  typedef base::Callback <void(
-      const std::string& cookie_line,
-      const std::vector<CookieInfo>& cookie_infos)> GetCookieInfoCallback;
-  typedef base::Callback<void(const std::string& cookie)>
-      GetCookiesCallback;
+  typedef base::Callback<void(const CookieList& cookies)> GetCookieListCallback;
+  typedef base::Callback<void(const std::string& cookie)> GetCookiesCallback;
   typedef base::Callback<void(bool success)> SetCookiesCallback;
   typedef base::Callback<void(int num_deleted)> DeleteCallback;
-
 
   // Sets a single cookie.  Expects a cookie line, like "a=1; domain=b.com".
   //
@@ -74,17 +52,15 @@ class NET_EXPORT CookieStore : public base::RefCountedThreadSafe<CookieStore> {
   // Simple interface, gets a cookie string "a=b; c=d" for the given URL.
   // Use options to access httponly cookies.
   virtual void GetCookiesWithOptionsAsync(
-      const GURL& url, const CookieOptions& options,
-      const GetCookiesCallback& callback) = 0;
-
-  // This function is similar to GetCookiesWithOptions same functionality as
-  // GetCookiesWithOptions except that it additionally provides detailed
-  // information about the cookie contained in the cookie line.  See |struct
-  // CookieInfo| above for details.
-  virtual void GetCookiesWithInfoAsync(
       const GURL& url,
       const CookieOptions& options,
-      const GetCookieInfoCallback& callback) = 0;
+      const GetCookiesCallback& callback) = 0;
+
+  // Returns all matching cookies without marking them as accessed,
+  // including HTTP only cookies.
+  virtual void GetAllCookiesForURLAsync(
+      const GURL& url,
+      const GetCookieListCallback& callback) = 0;
 
   // Deletes the passed in cookie for the specified URL.
   virtual void DeleteCookieAsync(const GURL& url,
@@ -97,6 +73,18 @@ class NET_EXPORT CookieStore : public base::RefCountedThreadSafe<CookieStore> {
   virtual void DeleteAllCreatedBetweenAsync(const base::Time& delete_begin,
                                             const base::Time& delete_end,
                                             const DeleteCallback& callback) = 0;
+
+  // Deletes all of the cookies that match the host of the given URL
+  // regardless of path and that have a creation_date greater than or
+  // equal to |delete_begin| and less then |delete_end|. This includes
+  // all http_only and secure cookies, but does not include any domain
+  // cookies that may apply to this host.
+  // Returns the number of cookies deleted.
+  virtual void DeleteAllCreatedBetweenForHostAsync(
+      const base::Time delete_begin,
+      const base::Time delete_end,
+      const GURL& url,
+      const DeleteCallback& callback) = 0;
 
   virtual void DeleteSessionCookiesAsync(const DeleteCallback&) = 0;
 

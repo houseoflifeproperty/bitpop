@@ -14,6 +14,8 @@
 
 namespace chromeos {
 
+struct UserContext;
+
 class LoginFailure {
  public:
   enum FailureReason {
@@ -32,6 +34,7 @@ class LoginFailure {
                             // only. It is never generated or seen by any of the
                             // other authenticator classes.
     TPM_ERROR,              // Critical TPM error encountered.
+    USERNAME_HASH_FAILED,   // Could not get username hash.
     NUM_FAILURE_REASONS,    // This has to be the last item.
   };
 
@@ -56,7 +59,7 @@ class LoginFailure {
     return LoginFailure(NETWORK_AUTH_FAILED, error);
   }
 
-  static LoginFailure None() {
+  static LoginFailure LoginFailureNone() {
     return LoginFailure(NONE);
   }
 
@@ -67,7 +70,7 @@ class LoginFailure {
       case COULD_NOT_MOUNT_CRYPTOHOME:
         return "Could not mount cryptohome.";
       case COULD_NOT_UNMOUNT_CRYPTOHOME:
-        return "Could not mount cryptohome.";
+        return "Could not unmount cryptohome.";
       case COULD_NOT_MOUNT_TMPFS:
         return "Could not mount tmpfs.";
       case LOGIN_TIMED_OUT:
@@ -114,15 +117,9 @@ class LoginStatusConsumer {
   // The current retail mode login attempt has succeeded.
   // Unless overridden for special processing, this should always call
   // OnLoginSuccess with the magic |kRetailModeUserEMail| constant.
-  virtual void OnRetailModeLoginSuccess();
-  // The current login attempt has succeeded for
-  // |username|/|password|.  If |pending_requests| is false, we're totally done.
-  // If it's true, we will still have some more results to report later.
-  virtual void OnLoginSuccess(
-      const std::string& username,
-      const std::string& password,
-      bool pending_requests,
-      bool using_oauth) = 0;
+  virtual void OnRetailModeLoginSuccess(const UserContext& user_context);
+  // The current login attempt has succeeded for |user_context|.
+  virtual void OnLoginSuccess(const UserContext& user_context) = 0;
   // The current guest login attempt has succeeded.
   virtual void OnOffTheRecordLoginSuccess() {}
   // The same password didn't work both online and offline.

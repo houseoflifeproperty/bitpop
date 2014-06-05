@@ -11,21 +11,23 @@
 #include <string>
 
 #include "base/callback.h"
-#include "base/memory/linked_ptr.h"
+#include "base/containers/hash_tables.h"
+#include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
-#include "base/time.h"
+#include "base/time/time.h"
+#include "content/browser/gpu/gpu_surface_tracker.h"
 #include "content/common/content_export.h"
 #include "content/common/gpu/gpu_memory_uma_stats.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
 #include "content/public/browser/browser_child_process_host_delegate.h"
 #include "content/public/browser/gpu_data_manager.h"
-#include "content/public/common/gpu_info.h"
-#include "googleurl/src/gurl.h"
 #include "gpu/command_buffer/common/constants.h"
-#include "ipc/ipc_channel_proxy.h"
+#include "gpu/config/gpu_info.h"
 #include "ipc/ipc_sender.h"
+#include "ipc/message_filter.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
+#include "url/gurl.h"
 
 struct GPUCreateCommandBufferConfig;
 struct GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params;
@@ -39,6 +41,10 @@ struct ChannelHandle;
 namespace content {
 class BrowserChildProcessHostImpl;
 class GpuMainThread;
+class RenderWidgetHostViewFrameSubscriber;
+class ShaderDiskCache;
+
+typedef base::Thread* (*GpuMainThreadFactoryFunction)(const std::string& id);
 
 class GpuProcessHost : public BrowserChildProcessHostDelegate,
                        public IPC::Sender,
@@ -50,10 +56,10 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
     GPU_PROCESS_KIND_COUNT
   };
 
-  typedef base::Callback<void(const IPC::ChannelHandle&, const GPUInfo&)>
+  typedef base::Callback<void(const IPC::ChannelHandle&, const gpu::GPUInfo&)>
       EstablishChannelCallback;
 
-  typedef base::Callback<void(int32)> CreateCommandBufferCallback;
+  typedef base::Callback<void(bool)> CreateCommandBufferCallback;
 
   typedef base::Callback<void(const gfx::Size)> CreateImageCallback;
 
@@ -64,7 +70,8 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   // is not safe to store the pointer once control has returned to the message
   // loop as it can be destroyed. Instead store the associated GPU host ID.
   // This could return NULL if GPU access is not allowed (blacklisted).
-  static GpuProcessHost* Get(GpuProcessKind kind, CauseForGpuLaunch cause);
+  CONTENT_EXPORT static GpuProcessHost* Get(GpuProcessKind kind,
+                                            CauseForGpuLaunch cause);
 
   // Retrieves a list of process handles for all gpu processes.
   static void GetProcessHandles(
@@ -77,6 +84,9 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
                                       CauseForGpuLaunch cause,
                                       IPC::Message* message);
 
+  CONTENT_EXPORT static void RegisterGpuMainThreadFactory(
+      GpuMainThreadFactoryFunction create);
+
   // Get the GPU process host for the GPU process with the given ID. Returns
   // null if the process no longer exists.
   static GpuProcessHost* FromID(int host_id);
@@ -86,7 +96,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   virtual bool Send(IPC::Message* msg) OVERRIDE;
 
   // Adds a message filter to the GpuProcessHost's channel.
-  void AddFilter(IPC::ChannelProxy::MessageFilter* filter);
+  void AddFilter(IPC::MessageFilter* filter);
 
   // Tells the GPU process to create a new channel for communication with a
   // client. Once the GPU process responds asynchronously with the IPC handle
@@ -102,6 +112,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
       int surface_id,
       int client_id,
       const GPUCreateCommandBufferConfig& init_params,
+      int route_id,
       const CreateCommandBufferCallback& callback);
 
   // Tells the GPU process to create a new image using the given window.
@@ -114,16 +125,19 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
     // Tells the GPU process to delete image.
   void DeleteImage(int client_id, int image_id, int sync_point);
 
-  // Whether this GPU process is set up to use software rendering.
-  bool software_rendering();
-
   // What kind of GPU process, e.g. sandboxed or unsandboxed.
   GpuProcessKind kind();
 
   void ForceShutdown();
 
+  void BeginFrameSubscription(
+      int surface_id,
+      base::WeakPtr<RenderWidgetHostViewFrameSubscriber> subscriber);
+  void EndFrameSubscription(int surface_id);
+  void LoadedShader(const std::string& key, const std::string& data);
+
  private:
-  static bool HostIsValid(GpuProcessHost* host);
+  static bool ValidateHost(GpuProcessHost* host);
 
   GpuProcessHost(int host_id, GpuProcessKind kind);
   virtual ~GpuProcessHost();
@@ -140,9 +154,9 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   virtual void OnProcessCrashed(int exit_code) OVERRIDE;
 
   // Message handlers.
-  void OnInitialized(bool result);
+  void OnInitialized(bool result, const gpu::GPUInfo& gpu_info);
   void OnChannelEstablished(const IPC::ChannelHandle& channel_handle);
-  void OnCommandBufferCreated(const int32 route_id);
+  void OnCommandBufferCreated(bool succeeded);
   void OnDestroyCommandBuffer(int32 surface_id);
   void OnImageCreated(const gfx::Size size);
   void OnDidCreateOffscreenContext(const GURL& url);
@@ -155,31 +169,19 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   void OnAcceleratedSurfaceBuffersSwapped(
       const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params);
 #endif
-  // Note: Different implementations depending on USE_AURA.
-#if defined(OS_WIN)
-  void OnAcceleratedSurfaceBuffersSwapped(
-      const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params);
-  void OnAcceleratedSurfacePostSubBuffer(
-      const GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params& params);
-  void OnAcceleratedSurfaceSuspend(int32 surface_id);
-  void OnAcceleratedSurfaceRelease(
-    const GpuHostMsg_AcceleratedSurfaceRelease_Params& params);
-#endif
+
+  void CreateChannelCache(int32 client_id);
+  void OnDestroyChannel(int32 client_id);
+  void OnCacheShader(int32 client_id, const std::string& key,
+                     const std::string& shader);
 
   bool LaunchGpuProcess(const std::string& channel_id);
 
   void SendOutstandingReplies();
-  void EstablishChannelError(
-      const EstablishChannelCallback& callback,
-      const IPC::ChannelHandle& channel_handle,
-      base::ProcessHandle client_process_for_gpu,
-      const GPUInfo& gpu_info);
-  void CreateCommandBufferError(const CreateCommandBufferCallback& callback,
-                                int32 route_id);
-  void CreateImageError(const CreateImageCallback& callback,
-                        const gfx::Size size);
 
   void BlockLiveOffscreenContexts();
+
+  std::string GetShaderPrefixKey();
 
   // The serial number of the GpuProcessHost / GpuProcessHostUIShim pair.
   int host_id_;
@@ -194,18 +196,6 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   // The pending create image requests we need to reply to.
   std::queue<CreateImageCallback> create_image_requests_;
 
-#if defined(TOOLKIT_GTK)
-  // Encapsulates surfaces that we lock when creating view command buffers.
-  // We release this lock once the command buffer (or associated GPU process)
-  // is destroyed. This prevents the browser from destroying the surface
-  // while the GPU process is drawing to it.
-
-  // Multimap is used to simulate reference counting, see comment in
-  // GpuProcessHostUIShim::CreateViewCommandBuffer.
-  class SurfaceRef;
-  typedef std::multimap<int, linked_ptr<SurfaceRef> > SurfaceRefMap;
-  SurfaceRefMap surface_refs_;
-#endif
 
   // Qeueud messages to send when the process launches.
   std::queue<IPC::Message*> queued_messages_;
@@ -217,13 +207,16 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   // of a separate GPU process.
   bool in_process_;
 
-  bool software_rendering_;
+  bool swiftshader_rendering_;
   GpuProcessKind kind_;
 
-  scoped_ptr<GpuMainThread> in_process_gpu_thread_;
+  scoped_ptr<base::Thread> in_process_gpu_thread_;
 
   // Whether we actually launched a GPU process.
   bool process_launched_;
+
+  // Whether the GPU process successfully initialized.
+  bool initialized_;
 
   // Time Init started.  Used to log total GPU process startup time to UMA.
   base::TimeTicks init_start_time_;
@@ -245,7 +238,28 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   std::multiset<GURL> urls_with_live_offscreen_contexts_;
 
   // Statics kept around to send to UMA histograms on GPU process lost.
+  bool uma_memory_stats_received_;
   GPUMemoryUmaStats uma_memory_stats_;
+
+  // This map of frame subscribers are listening for frame presentation events.
+  // The key is the surface id and value is the subscriber.
+  typedef base::hash_map<int,
+                         base::WeakPtr<RenderWidgetHostViewFrameSubscriber> >
+  FrameSubscriberMap;
+  FrameSubscriberMap frame_subscribers_;
+
+  typedef std::map<int32, scoped_refptr<ShaderDiskCache> >
+      ClientIdToShaderCacheMap;
+  ClientIdToShaderCacheMap client_id_to_shader_cache_;
+
+  std::string shader_prefix_key_;
+
+  // Keep an extra reference to the SurfaceRef stored in the GpuSurfaceTracker
+  // in this map so that we don't destroy it whilst the GPU process is
+  // drawing to it.
+  typedef std::multimap<int, scoped_refptr<GpuSurfaceTracker::SurfaceRef> >
+      SurfaceRefMap;
+  SurfaceRefMap surface_refs_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuProcessHost);
 };

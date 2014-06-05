@@ -13,14 +13,15 @@
 
 #include <string>
 
-#include "base/string16.h"
-#include "chrome/common/instant_types.h"
+#include "base/strings/string16.h"
 #include "content/public/common/page_transition_types.h"
-#include "webkit/glue/window_open_disposition.h"
+#include "ui/base/window_open_disposition.h"
+#include "url/gurl.h"
 
 class ExtensionAction;
 class LocationBarTesting;
 class OmniboxView;
+class Profile;
 
 namespace content {
 class WebContents;
@@ -28,22 +29,14 @@ class WebContents;
 
 class LocationBar {
  public:
+  explicit LocationBar(Profile* profile);
+
   // Shows the first run bubble anchored to the location bar.
   virtual void ShowFirstRunBubble() = 0;
 
-  // Sets the suggested text to show in the omnibox. This is shown in addition
-  // to the current text of the omnibox.
-  virtual void SetInstantSuggestion(const InstantSuggestion& suggestion) = 0;
-
-  // Returns the string of text entered in the location bar.
-  virtual string16 GetInputString() const = 0;
-
-  // Returns the WindowOpenDisposition that should be used to determine where
-  // to open a URL entered in the location bar.
+  // The details necessary to open the user's desired omnibox match.
+  virtual GURL GetDestinationURL() const = 0;
   virtual WindowOpenDisposition GetWindowOpenDisposition() const = 0;
-
-  // Returns the PageTransition that should be recorded in history when the URL
-  // entered in the location bar is loaded.
   virtual content::PageTransition GetPageTransition() const = 0;
 
   // Accepts the current string of text entered in the location bar.
@@ -59,6 +52,9 @@ class LocationBar {
   // Updates the state of the images showing the content settings status.
   virtual void UpdateContentSettingsIcons() = 0;
 
+  // Updates the password icon and pops up a bubble from the icon if needed.
+  virtual void UpdateManagePasswordsIconAndBubble() = 0;
+
   // Updates the state of the page actions.
   virtual void UpdatePageActions() = 0;
 
@@ -66,11 +62,13 @@ class LocationBar {
   // extension is unloaded or crashes.
   virtual void InvalidatePageActions() = 0;
 
-  // Updates the state of the web intents use-another-service button.
-  virtual void UpdateWebIntentsButton() = 0;
-
   // Updates the state of the button to open a PDF in Adobe Reader.
   virtual void UpdateOpenPDFInReaderPrompt() = 0;
+
+  // Updates the generated credit card view. This view serves as an anchor for
+  // the generated credit card bubble, which can show on successful generation
+  // of a new credit card number.
+  virtual void UpdateGeneratedCreditCardView() = 0;
 
   // Saves the state of the location bar to the specified WebContents, so that
   // it can be restored later. (Done when switching tabs).
@@ -79,15 +77,24 @@ class LocationBar {
   // Reverts the location bar.  The bar's permanent text will be shown.
   virtual void Revert() = 0;
 
-  // Returns a pointer to the text entry view.
-  virtual const OmniboxView* GetLocationEntry() const = 0;
-  virtual OmniboxView* GetLocationEntry() = 0;
+  virtual const OmniboxView* GetOmniboxView() const = 0;
+  virtual OmniboxView* GetOmniboxView() = 0;
 
   // Returns a pointer to the testing interface.
   virtual LocationBarTesting* GetLocationBarForTesting() = 0;
 
+  Profile* profile() { return profile_; }
+
  protected:
-  virtual ~LocationBar() {}
+  virtual ~LocationBar();
+
+  // Checks if any extension has requested that the bookmark star be hidden.
+  bool IsBookmarkStarHiddenByExtension() const;
+
+ private:
+  Profile* profile_;
+
+  DISALLOW_COPY_AND_ASSIGN(LocationBar);
 };
 
 class LocationBarTesting {
@@ -106,10 +113,6 @@ class LocationBarTesting {
 
   // Simulates a left mouse pressed on the visible page action at |index|.
   virtual void TestPageActionPressed(size_t index) = 0;
-
-  // Simulates a left mouse pressed on the action box decoration, followed by
-  // a menu item selection.
-  virtual void TestActionBoxMenuItemSelected(int command_id) = 0;
 
   // Returns whether or not the bookmark star decoration is visible.
   virtual bool GetBookmarkStarVisibility() = 0;

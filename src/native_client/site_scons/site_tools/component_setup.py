@@ -143,7 +143,6 @@ def generate(env):
       'DESTINATION_ROOT',
       'OBJ_ROOT',
       'SOURCE_ROOT',
-      'TARGET_ROOT',
       'TOOL_ROOT',
   ])
 
@@ -186,8 +185,11 @@ def generate(env):
   # much be the first thing in a SConstruct.
   env.Default('$DESTINATION_ROOT')
 
-  # Use brief command line strings if necessary
-  if env.GetOption('brief_comstr'):
+  # Use brief command line strings if necessary.
+  # Since these get passed to PRINT_CMD_LINE_FUNC, which scons_to_ninja
+  # relies on, don't do this if generate_ninja is enabled.
+  if (env.GetOption('brief_comstr') and
+      'generate_ninja' not in SCons.Script.ARGUMENTS):
     env.SetDefault(
         ARCOMSTR='________Creating library $TARGET',
         ASCOMSTR='________Assembling $TARGET',
@@ -208,6 +210,7 @@ def generate(env):
         # so we have to add these *COM, *COMSTR manually.
         STRIPCOMSTR='________Stripping to create $TARGET',
         TRANSLATECOMSTR='________Translating $TARGET',
+        PNACLFINALIZECOMSTR='________Finalizing pexe $TARGET',
     )
 
   # Add other default tools from our toolkit

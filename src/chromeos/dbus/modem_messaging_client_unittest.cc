@@ -5,7 +5,7 @@
 #include "chromeos/dbus/modem_messaging_client.h"
 
 #include "base/bind.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/values.h"
 #include "dbus/message.h"
 #include "dbus/mock_bus.h"
@@ -47,14 +47,6 @@ const char kServiceName[] = "service.name";
 // D-Bus object path used by test.
 const char kObjectPath[] = "/object/path";
 
-// Keys of SMS dictionary.
-const char kNumberKey[] = "number";
-const char kTextKey[] = "text";
-
-// Example values of SMS dictionary.
-const char kExampleNumber[] = "00012345678";
-const char kExampleText[] = "Hello.";
-
 }  // namespace
 
 class ModemMessagingClientTest : public testing::Test {
@@ -75,24 +67,26 @@ class ModemMessagingClientTest : public testing::Test {
 
     // Set an expectation so mock_proxy's ConnectToSignal() will use
     // OnConnectToSignal() to run the callback.
-    EXPECT_CALL(*mock_proxy_, ConnectToSignal(
-        modemmanager::kModemManager1MessagingInterface,
-        modemmanager::kSMSAddedSignal, _, _))
+    EXPECT_CALL(*mock_proxy_.get(),
+                ConnectToSignal(modemmanager::kModemManager1MessagingInterface,
+                                modemmanager::kSMSAddedSignal,
+                                _,
+                                _))
         .WillRepeatedly(
-            Invoke(this, &ModemMessagingClientTest::OnConnectToSignal));
+             Invoke(this, &ModemMessagingClientTest::OnConnectToSignal));
 
     // Set an expectation so mock_bus's GetObjectProxy() for the given
     // service name and the object path will return mock_proxy_.
-    EXPECT_CALL(*mock_bus_, GetObjectProxy(kServiceName,
-                                           dbus::ObjectPath(kObjectPath)))
+    EXPECT_CALL(*mock_bus_.get(),
+                GetObjectProxy(kServiceName, dbus::ObjectPath(kObjectPath)))
         .WillOnce(Return(mock_proxy_.get()));
 
     // ShutdownAndBlock() will be called in TearDown().
-    EXPECT_CALL(*mock_bus_, ShutdownAndBlock()).WillOnce(Return());
+    EXPECT_CALL(*mock_bus_.get(), ShutdownAndBlock()).WillOnce(Return());
 
     // Create a client with the mock bus.
-    client_.reset(ModemMessagingClient::Create(REAL_DBUS_CLIENT_IMPLEMENTATION,
-                                               mock_bus_));
+    client_.reset(ModemMessagingClient::Create());
+    client_->Init(mock_bus_.get());
   }
 
   virtual void TearDown() OVERRIDE {
@@ -137,7 +131,7 @@ class ModemMessagingClientTest : public testing::Test {
   // The client to be tested.
   scoped_ptr<ModemMessagingClient> client_;
   // A message loop to emulate asynchronous behavior.
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   // The mock bus.
   scoped_refptr<dbus::MockBus> mock_bus_;
   // The mock object proxy.
@@ -199,7 +193,7 @@ TEST_F(ModemMessagingClientTest, Delete) {
   // Set expectations.
   const dbus::ObjectPath kSmsPath("/SMS/0");
   expected_sms_path_ = kSmsPath;
-  EXPECT_CALL(*mock_proxy_, CallMethod(_, _, _))
+  EXPECT_CALL(*mock_proxy_.get(), CallMethod(_, _, _))
       .WillOnce(Invoke(this, &ModemMessagingClientTest::OnDelete));
   MockDeleteCallback callback;
   EXPECT_CALL(callback, Run()).Times(1);
@@ -217,7 +211,7 @@ TEST_F(ModemMessagingClientTest, Delete) {
 
 TEST_F(ModemMessagingClientTest, List) {
   // Set expectations.
-  EXPECT_CALL(*mock_proxy_, CallMethod(_, _, _))
+  EXPECT_CALL(*mock_proxy_.get(), CallMethod(_, _, _))
       .WillOnce(Invoke(this, &ModemMessagingClientTest::OnList));
   MockListCallback callback;
   EXPECT_CALL(callback, Run(_))

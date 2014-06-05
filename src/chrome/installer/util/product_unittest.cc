@@ -5,9 +5,10 @@
 #include "chrome/installer/util/product_unittest.h"
 
 #include "base/logging.h"
+#include "base/path_service.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/test/test_reg_util_win.h"
-#include "base/utf_string_conversions.h"
-#include "chrome/common/chrome_constants.h"
+#include "chrome/common/chrome_paths.h"
 #include "chrome/installer/util/chrome_frame_distribution.h"
 #include "chrome/installer/util/google_update_constants.h"
 #include "chrome/installer/util/installation_state.h"
@@ -46,14 +47,7 @@ class ProductTest : public TestWithTempDirAndDeleteTempOverrideKeys {
  protected:
 };
 
-// This test is flaky on Win, see http://crbug.com/100567
-#if defined(OS_WIN)
-#define MAYBE_ProductInstallBasic DISABLED_ProductInstallBasic
-#else
-#define MAYBE_ProductInstallBasic ProductInstallBasic
-#endif
-
-TEST_F(ProductTest, MAYBE_ProductInstallBasic) {
+TEST_F(ProductTest, ProductInstallBasic) {
   // TODO(tommi): We should mock this and use our mocked distribution.
   const bool multi_install = false;
   const bool system_level = true;
@@ -71,26 +65,16 @@ TEST_F(ProductTest, MAYBE_ProductInstallBasic) {
   BrowserDistribution* distribution = product->distribution();
   EXPECT_EQ(BrowserDistribution::CHROME_BROWSER, distribution->GetType());
 
-  std::vector<FilePath> user_data_paths;
-  product->GetUserDataPaths(&user_data_paths);
-  EXPECT_GE(user_data_paths.size(), static_cast<size_t>(1));
-  const FilePath& user_data = user_data_paths[0];
-  EXPECT_FALSE(user_data_paths[0].empty());
-  EXPECT_NE(std::wstring::npos,
-            user_data_paths[0].value().find(installer::kInstallUserDataDir));
-  if (user_data_paths.size() > 1) {
-    EXPECT_FALSE(user_data_paths[1].empty());
-    EXPECT_NE(
-        std::wstring::npos,
-        user_data_paths[1].value().find(chrome::kMetroChromeUserDataSubDir));
-  }
+  base::FilePath user_data_dir;
+  ASSERT_TRUE(PathService::Get(chrome::DIR_USER_DATA, &user_data_dir));
+  EXPECT_FALSE(user_data_dir.empty());
 
-  FilePath program_files;
-  PathService::Get(base::DIR_PROGRAM_FILES, &program_files);
+  base::FilePath program_files;
+  ASSERT_TRUE(PathService::Get(base::DIR_PROGRAM_FILES, &program_files));
   // The User Data path should never be under program files, even though
   // system_level is true.
   EXPECT_EQ(std::wstring::npos,
-            user_data.value().find(program_files.value()));
+            user_data_dir.value().find(program_files.value()));
 
   // There should be no installed version in the registry.
   machine_state.Initialize();
@@ -110,7 +94,8 @@ TEST_F(ProductTest, MAYBE_ProductInstallBasic) {
     const char kCurrentVersion[] = "1.2.3.4";
     Version current_version(kCurrentVersion);
     version_key.WriteValue(google_update::kRegVersionField,
-                           UTF8ToWide(current_version.GetString()).c_str());
+                           base::UTF8ToWide(
+                               current_version.GetString()).c_str());
 
     // We started out with a non-msi product.
     machine_state.Initialize();

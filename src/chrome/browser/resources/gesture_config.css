@@ -7,56 +7,80 @@ body {
   font-size: 12px;
 }
 
-button {
-  background-image: -webkit-linear-gradient(#e7e7e7, #e7e7e7 38%, #d7d7d7);
-  border: 1px solid rgba(0, 0, 0, 0.25);
-  border-radius: 2px;
-  color: #444;
-  float: right;
-  margin-top: 15px;
-  min-height: 2em;
-  min-width: 7em;
-  padding-left: 10px;
-  padding-right: 10px;
-}
-
-.buttons-pane {
-  width: 90%;
-}
-
 form {
-  width: 610px;
+  display: table;
+  margin: 8px;
 }
 
 h2 {
+  border-bottom: 1px solid rgb(238, 238, 238);
   color: rgb(48, 57, 66);
-  font-size: 1.3em;
-  font-weight: normal;
 }
 
-input {
-  border: solid 1px rgb(170, 207, 228);
+.buttons-pane {
+  display: inline-block;
+  width: 100%;
+}
+
+#reset-all-button {
+  float: right;
+  min-width: 15em;
+}
+
+html[dir=rtl] #reset-all-button {
   float: left;
-  margin: 2px 0 8px 10px;
-  padding: 4px 2px;
+}
+
+.input {
   text-align: right;
   width: 110px;
 }
 
-label {
-  color: black;
-  float: left;
+html[dir=rtl] .input {
+  text-align: left;
+}
+
+.row {
+  display: table-row;
+}
+
+.row-label {
+  display: table-cell;
   font-size: 16px;
-  font-weight: normal;
-  padding-top: 4px;
   text-align: right;
   width: 370px;
 }
 
+html[dir=rtl] .row-label {
+  text-align: left;
+}
+
+.row-input {
+  display: table-cell;
+}
+
 .row-units {
-  float: left;
-  margin-left: 7px;
-  padding-top: 7px;
+  display: table-cell;
   text-align: left;
   width: 100px;
+}
+
+html[dir=rtl] .row-units {
+  text-align: right;
+}
+
+.row-reset {
+  display: table-cell;
+  font-size: 12px;
+  width: 100%;
+}
+
+.section-properties {
+  border-spacing: 8px;
+  display: table;
+}
+
+#section-row-template,
+#section-template {
+  display: none;
 }

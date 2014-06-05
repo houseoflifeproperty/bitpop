@@ -7,9 +7,9 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/extensions/event_router.h"
-#include "chrome/browser/extensions/extension_function.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_function.h"
 
 namespace chromeos {
 class ExtensionInputMethodEventRouter;
@@ -25,23 +25,44 @@ class GetInputMethodFunction : public SyncExtensionFunction {
  protected:
   virtual ~GetInputMethodFunction();
 
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 
  private:
-  DECLARE_EXTENSION_FUNCTION_NAME("inputMethodPrivate.get");
+  DECLARE_EXTENSION_FUNCTION("inputMethodPrivate.get", INPUTMETHODPRIVATE_GET)
 };
 
-class InputMethodAPI : public ProfileKeyedService,
+// Notify the initialization is done to input method engine.
+// TODO(nona): remove this function.
+class StartImeFunction : public SyncExtensionFunction {
+ public:
+  StartImeFunction();
+
+ protected:
+  virtual ~StartImeFunction();
+
+  virtual bool RunSync() OVERRIDE;
+
+ private:
+  DECLARE_EXTENSION_FUNCTION("inputMethodPrivate.startIme",
+                             INPUTMETHODPRIVATE_STARTIME)
+};
+
+class InputMethodAPI : public BrowserContextKeyedAPI,
                        public extensions::EventRouter::Observer {
  public:
-  explicit InputMethodAPI(Profile* profile);
+  static const char kOnInputMethodChanged[];
+
+  explicit InputMethodAPI(content::BrowserContext* context);
   virtual ~InputMethodAPI();
 
   // Returns input method name for the given XKB (X keyboard extensions in X
   // Window System) id.
   static std::string GetInputMethodForXkb(const std::string& xkb_id);
 
-  // ProfileKeyedService implementation.
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<InputMethodAPI>* GetFactoryInstance();
+
+  // BrowserContextKeyedAPI implementation.
   virtual void Shutdown() OVERRIDE;
 
   // EventRouter::Observer implementation.
@@ -49,11 +70,21 @@ class InputMethodAPI : public ProfileKeyedService,
       OVERRIDE;
 
  private:
-  Profile* const profile_;
+  friend class BrowserContextKeyedAPIFactory<InputMethodAPI>;
+
+  // BrowserContextKeyedAPI implementation.
+  static const char* service_name() {
+    return "InputMethodAPI";
+  }
+  static const bool kServiceIsNULLWhileTesting = true;
+
+  content::BrowserContext* const context_;
 
   // Created lazily upon OnListenerAdded.
   scoped_ptr<chromeos::ExtensionInputMethodEventRouter>
       input_method_event_router_;
+
+  DISALLOW_COPY_AND_ASSIGN(InputMethodAPI);
 };
 
 }  // namespace extensions

@@ -140,6 +140,16 @@ int write(int fd, const void *buf, size_t count) {
       NACL_SYSCALL(write)(fd, buf, count)));
 }
 
+int pread(int fd, void *buf, size_t count, off_t offset) {
+  return errno_value_call(NACL_GC_WRAP_SYSCALL(
+      NACL_SYSCALL(pread)(fd, buf, count, &offset)));
+}
+
+int pwrite(int fd, const void *buf, size_t count, off_t offset) {
+  return errno_value_call(NACL_GC_WRAP_SYSCALL(
+      NACL_SYSCALL(pwrite)(fd, buf, count, &offset)));
+}
+
 off_t lseek(int fd, off_t offset, int whence) {
   int error = NACL_SYSCALL(lseek)(fd, &offset, whence);
   if (error) {
@@ -170,10 +180,80 @@ int getdents(int fd, struct dirent *buf, size_t count) {
       NACL_SYSCALL(getdents)(fd, buf, count)));
 }
 
+int isatty(int fd) {
+  int result = NACL_SYSCALL(isatty)(fd);
+  if (result < 0) {
+    errno = -result;
+    return 0;
+  }
+  return result;
+}
+
 int getpid(void) {
   return errno_value_call(NACL_SYSCALL(getpid)());
 }
 
+int mkdir(const char *path, int mode) {
+  return errno_call(NACL_SYSCALL(mkdir)(path, mode));
+}
+
+int rmdir(const char *path) {
+  return errno_call(NACL_SYSCALL(rmdir)(path));
+}
+
+int chdir(const char *path) {
+  return errno_call(NACL_SYSCALL(chdir)(path));
+}
+
+char *getcwd(char *buffer, size_t len) {
+  int retval = NACL_SYSCALL(getcwd)(buffer, len);
+  if (retval != 0) {
+    errno = -retval;
+    return NULL;
+  }
+
+  return buffer;
+}
+
+int unlink(const char *path) {
+  return errno_call(NACL_SYSCALL(unlink)(path));
+}
+
+int truncate(const char *path, off_t length) {
+  return errno_call(NACL_SYSCALL(truncate)(path, &length));
+}
+
+int lstat(const char *file, struct stat *st) {
+  return errno_call(NACL_SYSCALL(lstat)(file, st));
+}
+
+int link(const char *oldpath, const char *newpath) {
+  return errno_call(NACL_SYSCALL(link)(oldpath, newpath));
+}
+
+int rename(const char *oldpath, const char* newpath) {
+  return errno_call(NACL_SYSCALL(rename)(oldpath, newpath));
+}
+
+int symlink(const char *oldpath, const char* newpath) {
+  return errno_call(NACL_SYSCALL(symlink)(oldpath, newpath));
+}
+
+int chmod(const char *path, mode_t mode) {
+  return errno_call(NACL_SYSCALL(chmod)(path, mode));
+}
+
+int access(const char *path, int amode) {
+  return errno_call(NACL_SYSCALL(access)(path, amode));
+}
+
+int readlink(const char *path, char *buf, int bufsize) {
+  return errno_value_call(NACL_SYSCALL(readlink)(path, buf, bufsize));
+}
+
+int utimes(const char *path, const struct timeval times[2]) {
+  return errno_value_call(NACL_SYSCALL(utimes)(path, times));
+}
 
 /*
  * This is a stub since _start will call it but we don't want to

@@ -2,20 +2,20 @@
  * Copyright (C) 2011 Michael Niedermayer (michaelni@gmx.at)
  * Copyright (c) 2012 Justin Ruggles <justin.ruggles@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -284,118 +284,6 @@ int avresample_build_matrix(uint64_t in_layout, uint64_t out_layout,
             for (j = 0; j < in_channels; j++)
                 matrix_out[i * stride + j] /= maxcoef;
     }
-
-    return 0;
-}
-
-int avresample_get_matrix(AVAudioResampleContext *avr, double *matrix,
-                          int stride)
-{
-    int in_channels, out_channels, i, o;
-
-    in_channels  = av_get_channel_layout_nb_channels(avr->in_channel_layout);
-    out_channels = av_get_channel_layout_nb_channels(avr->out_channel_layout);
-
-    if ( in_channels <= 0 ||  in_channels > AVRESAMPLE_MAX_CHANNELS ||
-        out_channels <= 0 || out_channels > AVRESAMPLE_MAX_CHANNELS) {
-        av_log(avr, AV_LOG_ERROR, "Invalid channel layouts\n");
-        return AVERROR(EINVAL);
-    }
-
-    switch (avr->mix_coeff_type) {
-    case AV_MIX_COEFF_TYPE_Q8:
-        if (!avr->am->matrix_q8[0]) {
-            av_log(avr, AV_LOG_ERROR, "matrix is not set\n");
-            return AVERROR(EINVAL);
-        }
-        for (o = 0; o < out_channels; o++)
-            for (i = 0; i < in_channels; i++)
-                matrix[o * stride + i] = avr->am->matrix_q8[o][i] / 256.0;
-        break;
-    case AV_MIX_COEFF_TYPE_Q15:
-        if (!avr->am->matrix_q15[0]) {
-            av_log(avr, AV_LOG_ERROR, "matrix is not set\n");
-            return AVERROR(EINVAL);
-        }
-        for (o = 0; o < out_channels; o++)
-            for (i = 0; i < in_channels; i++)
-                matrix[o * stride + i] = avr->am->matrix_q15[o][i] / 32768.0;
-        break;
-    case AV_MIX_COEFF_TYPE_FLT:
-        if (!avr->am->matrix_flt[0]) {
-            av_log(avr, AV_LOG_ERROR, "matrix is not set\n");
-            return AVERROR(EINVAL);
-        }
-        for (o = 0; o < out_channels; o++)
-            for (i = 0; i < in_channels; i++)
-                matrix[o * stride + i] = avr->am->matrix_flt[o][i];
-        break;
-    default:
-        av_log(avr, AV_LOG_ERROR, "Invalid mix coeff type\n");
-        return AVERROR(EINVAL);
-    }
-
-    return 0;
-}
-
-int avresample_set_matrix(AVAudioResampleContext *avr, const double *matrix,
-                          int stride)
-{
-    int in_channels, out_channels, i, o;
-
-    in_channels  = av_get_channel_layout_nb_channels(avr->in_channel_layout);
-    out_channels = av_get_channel_layout_nb_channels(avr->out_channel_layout);
-
-    if ( in_channels <= 0 ||  in_channels > AVRESAMPLE_MAX_CHANNELS ||
-        out_channels <= 0 || out_channels > AVRESAMPLE_MAX_CHANNELS) {
-        av_log(avr, AV_LOG_ERROR, "Invalid channel layouts\n");
-        return AVERROR(EINVAL);
-    }
-
-    if (avr->am->matrix) {
-        av_free(avr->am->matrix[0]);
-        avr->am->matrix = NULL;
-    }
-
-#define CONVERT_MATRIX(type, expr)                                          \
-    avr->am->matrix_## type[0] = av_mallocz(out_channels * in_channels *    \
-                                            sizeof(*avr->am->matrix_## type[0])); \
-    if (!avr->am->matrix_## type[0])                                        \
-        return AVERROR(ENOMEM);                                             \
-    for (o = 0; o < out_channels; o++) {                                    \
-        if (o > 0)                                                          \
-            avr->am->matrix_## type[o] = avr->am->matrix_## type[o - 1] +   \
-                                         in_channels;                       \
-        for (i = 0; i < in_channels; i++) {                                 \
-            double v = matrix[o * stride + i];                              \
-            avr->am->matrix_## type[o][i] = expr;                           \
-        }                                                                   \
-    }                                                                       \
-    avr->am->matrix = (void **)avr->am->matrix_## type;
-
-    switch (avr->mix_coeff_type) {
-    case AV_MIX_COEFF_TYPE_Q8:
-        CONVERT_MATRIX(q8, av_clip_int16(lrint(256.0 * v)))
-        break;
-    case AV_MIX_COEFF_TYPE_Q15:
-        CONVERT_MATRIX(q15, av_clipl_int32(llrint(32768.0 * v)))
-        break;
-    case AV_MIX_COEFF_TYPE_FLT:
-        CONVERT_MATRIX(flt, v)
-        break;
-    default:
-        av_log(avr, AV_LOG_ERROR, "Invalid mix coeff type\n");
-        return AVERROR(EINVAL);
-    }
-
-    /* TODO: detect situations where we can just swap around pointers
-             instead of doing matrix multiplications with 0.0 and 1.0 */
-
-    /* set AudioMix params */
-    avr->am->in_layout    = avr->in_channel_layout;
-    avr->am->out_layout   = avr->out_channel_layout;
-    avr->am->in_channels  = in_channels;
-    avr->am->out_channels = out_channels;
 
     return 0;
 }

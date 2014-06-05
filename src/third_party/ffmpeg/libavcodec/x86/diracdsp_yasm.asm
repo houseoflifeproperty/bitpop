@@ -18,7 +18,7 @@
 ;* 51, Inc., Foundation Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
-%include "x86inc.asm"
+%include "libavutil/x86/x86util.asm"
 
 SECTION_RODATA
 pw_3: times 8 dw 3
@@ -136,6 +136,8 @@ cglobal put_signed_rect_clamped_%1, 5,9,3, dst, dst_stride, src, src_stride, w, 
     and     wd, ~(mmsize-1)
 
 %if ARCH_X86_64
+    movsxd   dst_strideq, dst_strided
+    movsxd   src_strideq, src_strided
     mov   r7d, r5m
     mov   r8d, wd
     %define wspill r8d
@@ -177,6 +179,8 @@ cglobal add_rect_clamped_%1, 7,9,3, dst, src, stride, idwt, idwt_stride, w, h
     and     wd, ~(mmsize-1)
 
 %if ARCH_X86_64
+    movsxd   strideq, strided
+    movsxd   idwt_strideq, idwt_strided
     mov   r8d, wd
     %define wspill r8d
 %else

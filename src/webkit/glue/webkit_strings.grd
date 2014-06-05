@@ -30,7 +30,7 @@ below:
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 -->
 
@@ -50,34 +50,34 @@ below:
 
     <output filename="webkit_strings_am.pak" type="data_package" lang="am" />
     <output filename="webkit_strings_ar.pak" type="data_package" lang="ar" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="webkit_strings_ast.pak" type="data_package" lang="ast" />
     </if>
     <output filename="webkit_strings_bg.pak" type="data_package" lang="bg" />
     <output filename="webkit_strings_bn.pak" type="data_package" lang="bn" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="webkit_strings_bs.pak" type="data_package" lang="bs" />
     </if>
     <output filename="webkit_strings_ca.pak" type="data_package" lang="ca" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="webkit_strings_ca@valencia.pak" type="data_package" lang="ca@valencia" />
     </if>
     <output filename="webkit_strings_cs.pak" type="data_package" lang="cs" />
     <output filename="webkit_strings_da.pak" type="data_package" lang="da" />
     <output filename="webkit_strings_de.pak" type="data_package" lang="de" />
     <output filename="webkit_strings_el.pak" type="data_package" lang="el" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="webkit_strings_en-AU.pak" type="data_package" lang="en-AU" />
     </if>
     <output filename="webkit_strings_en-GB.pak" type="data_package" lang="en-GB" />
     <output filename="webkit_strings_en-US.pak" type="data_package" lang="en" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="webkit_strings_eo.pak" type="data_package" lang="eo" />
     </if>
     <output filename="webkit_strings_es.pak" type="data_package" lang="es" />
     <output filename="webkit_strings_es-419.pak" type="data_package" lang="es-419" />
     <output filename="webkit_strings_et.pak" type="data_package" lang="et" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="webkit_strings_eu.pak" type="data_package" lang="eu" />
     </if>
     <output filename="webkit_strings_fa.pak" type="data_package" lang="fa" />
@@ -85,7 +85,7 @@ below:
     <output filename="webkit_strings_fi.pak" type="data_package" lang="fi" />
     <output filename="webkit_strings_fil.pak" type="data_package" lang="fil" />
     <output filename="webkit_strings_fr.pak" type="data_package" lang="fr" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="webkit_strings_gl.pak" type="data_package" lang="gl" />
     </if>
     <output filename="webkit_strings_gu.pak" type="data_package" lang="gu" />
@@ -93,19 +93,19 @@ below:
     <output filename="webkit_strings_hi.pak" type="data_package" lang="hi" />
     <output filename="webkit_strings_hr.pak" type="data_package" lang="hr" />
     <output filename="webkit_strings_hu.pak" type="data_package" lang="hu" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="webkit_strings_hy.pak" type="data_package" lang="hy" />
       <output filename="webkit_strings_ia.pak" type="data_package" lang="ia" />
     </if>
     <output filename="webkit_strings_id.pak" type="data_package" lang="id" />
     <output filename="webkit_strings_it.pak" type="data_package" lang="it" />
     <output filename="webkit_strings_ja.pak" type="data_package" lang="ja" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="webkit_strings_ka.pak" type="data_package" lang="ka" />
     </if>
     <output filename="webkit_strings_kn.pak" type="data_package" lang="kn" />
     <output filename="webkit_strings_ko.pak" type="data_package" lang="ko" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="webkit_strings_ku.pak" type="data_package" lang="ku" />
       <output filename="webkit_strings_kw.pak" type="data_package" lang="kw" />
     </if>
@@ -132,7 +132,7 @@ below:
     <output filename="webkit_strings_te.pak" type="data_package" lang="te" />
     <output filename="webkit_strings_th.pak" type="data_package" lang="th" />
     <output filename="webkit_strings_tr.pak" type="data_package" lang="tr" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="webkit_strings_ug.pak" type="data_package" lang="ug" />
     </if>
     <output filename="webkit_strings_uk.pak" type="data_package" lang="uk" />
@@ -143,44 +143,44 @@ below:
   <translations>
     <file path="resources/webkit_strings_am.xtb" lang="am" />
     <file path="resources/webkit_strings_ar.xtb" lang="ar" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <file path="../../third_party/launchpad_translations/webkit_strings_ast.xtb" lang="ast" />
     </if>
     <file path="resources/webkit_strings_bg.xtb" lang="bg" />
     <file path="resources/webkit_strings_bn.xtb" lang="bn" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <file path="../../third_party/launchpad_translations/webkit_strings_bs.xtb" lang="bs" />
     </if>
     <file path="resources/webkit_strings_ca.xtb" lang="ca" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <file path="../../third_party/launchpad_translations/webkit_strings_ca-valencia.xtb" lang="ca@valencia" />
     </if>
     <file path="resources/webkit_strings_cs.xtb" lang="cs" />
     <file path="resources/webkit_strings_da.xtb" lang="da" />
     <file path="resources/webkit_strings_de.xtb" lang="de" />
     <file path="resources/webkit_strings_el.xtb" lang="el" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <file path="../../third_party/launchpad_translations/webkit_strings_en-AU.xtb" lang="en-AU" />
     </if>
     <file path="resources/webkit_strings_en-GB.xtb" lang="en-GB" />
     <file path="resources/webkit_strings_es.xtb" lang="es" />
     <file path="resources/webkit_strings_es-419.xtb" lang="es-419" />
     <file path="resources/webkit_strings_et.xtb" lang="et" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <file path="../../third_party/launchpad_translations/webkit_strings_eu.xtb" lang="eu" />
     </if>
     <file path="resources/webkit_strings_fa.xtb" lang="fa" />
     <file path="resources/webkit_strings_fi.xtb" lang="fi" />
     <file path="resources/webkit_strings_fil.xtb" lang="fil" />
     <file path="resources/webkit_strings_fr.xtb" lang="fr" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <file path="../../third_party/launchpad_translations/webkit_strings_gl.xtb" lang="gl" />
     </if>
     <file path="resources/webkit_strings_gu.xtb" lang="gu" />
     <file path="resources/webkit_strings_hi.xtb" lang="hi" />
     <file path="resources/webkit_strings_hr.xtb" lang="hr" />
     <file path="resources/webkit_strings_hu.xtb" lang="hu" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <file path="../../third_party/launchpad_translations/webkit_strings_hy.xtb" lang="hy" />
     </if>
     <file path="resources/webkit_strings_id.xtb" lang="id" />
@@ -188,12 +188,12 @@ below:
     <!-- The translation console uses 'iw' for Hebrew, but we use 'he'. -->
     <file path="resources/webkit_strings_iw.xtb" lang="he" />
     <file path="resources/webkit_strings_ja.xtb" lang="ja" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <file path="../../third_party/launchpad_translations/webkit_strings_ka.xtb" lang="ka" />
     </if>
     <file path="resources/webkit_strings_kn.xtb" lang="kn" />
     <file path="resources/webkit_strings_ko.xtb" lang="ko" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <file path="../../third_party/launchpad_translations/webkit_strings_ku.xtb" lang="ku" />
       <file path="../../third_party/launchpad_translations/webkit_strings_kw.xtb" lang="kw" />
     </if>
@@ -218,7 +218,7 @@ below:
     <file path="resources/webkit_strings_te.xtb" lang="te" />
     <file path="resources/webkit_strings_th.xtb" lang="th" />
     <file path="resources/webkit_strings_tr.xtb" lang="tr" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <file path="../../third_party/launchpad_translations/webkit_strings_ug.xtb" lang="ug" />
     </if>
     <file path="resources/webkit_strings_uk.xtb" lang="uk" />
@@ -272,9 +272,6 @@ below:
       <message name="IDS_FORM_FILE_NO_FILE_LABEL" desc="text to display in file button used in HTML forms when no file is selected">
         No file chosen
       </message>
-      <message name="IDS_FORM_FILE_NO_FILE_DRAG_LABEL" desc="text to display in file button used in HTML forms when no file is selected to indicate that files can be dragged onto the file button">
-        Drag file here
-      </message>
       <message name="IDS_FORM_FILE_MULTIPLE_UPLOAD" desc="text to display next to file buttons in HTML forms when 2 or more files are selected for uploading. This is not used for a case that just 1 file is selected.">
         <ph name="NUMBER_OF_FILES">$1<ex>3</ex></ph> files
       </message>
@@ -322,10 +319,6 @@ below:
         Clear Recent Searches
       </message>
 
-      <message name="IDS_IMAGE_TITLE_FOR_FILENAME" desc="window title for a standalone image (uses mutiplication symbol, not x)">
-        <ph name="FILENAME">%s<ex>My Cool Image.gif</ex></ph><ph name="WIDTH">%d<ex>400</ex></ph>×<ph name="HEIGHT">%d<ex>600</ex></ph>
-      </message>
-
       <message name="IDS_AX_ROLE_WEB_AREA" desc="accessibility role description for web area">
         HTML content
       </message>
@@ -341,12 +334,17 @@ below:
       <message name="IDS_AX_ROLE_HEADING" desc="accessibility role description for headings">
         heading
       </message>
-      <message name="IDS_AX_ROLE_FOOTER" desc="accessibility role description for footers">
-        footer
-      </message>
-      <message name="IDS_AX_ROLE_STEPPER" desc="accessibility role description for a stepper - a control where you can use up/down arrows to increment or decrement it. The name 'stepper' is how this user interface element is described by VoiceOver on Mac OS X; the translation should be consistent with VoiceOver.">
-        stepper
-      </message>
+      <if expr="is_macosx">
+        <message name="IDS_AX_ROLE_FOOTER" desc="accessibility role description for footers">
+          footer
+        </message>
+        <message name="IDS_AX_ROLE_STEPPER" desc="accessibility role description for a stepper - a control where you can use up/down arrows to increment or decrement it. The name 'stepper' is how this user interface element is described by VoiceOver on Mac OS X; the translation should be consistent with VoiceOver.">
+          stepper
+        </message>
+        <message name="IDS_AX_ROLE_TOGGLE_BUTTON" desc="accessibility role description for a toggle button">
+          toggle button
+        </message>
+      </if>
 
       <message name="IDS_AX_BUTTON_ACTION_VERB" desc="Verb stating the action that will occur when a button is pressed, as used by accessibility.">
         press
@@ -381,6 +379,130 @@ below:
 
       <message name="IDS_AX_HOUR_FIELD_TEXT" desc="Accessible description of the hour field in a date/time control">
         Hours
+      </message>
+
+      <message name="IDS_AX_MEDIA_DEFAULT" desc="Accessible description of a media control.">
+        media control
+      </message>
+
+      <message name="IDS_AX_MEDIA_AUDIO_ELEMENT" desc="Accessible description of audio">
+        audio
+      </message>
+
+      <message name="IDS_AX_MEDIA_VIDEO_ELEMENT" desc="Accessible description of video">
+        video
+      </message>
+
+      <message name="IDS_AX_MEDIA_MUTE_BUTTON" desc="accessibility role description for mute button">
+        mute
+      </message>
+
+      <message name="IDS_AX_MEDIA_UNMUTE_BUTTON" desc="accessibility role description for turn mute off button">
+        unmute
+      </message>
+
+      <message name="IDS_AX_MEDIA_PLAY_BUTTON" desc="accessibility role description for play button">
+        play
+      </message>
+
+      <message name="IDS_AX_MEDIA_PAUSE_BUTTON" desc="accessibility role description for pause button">
+        pause
+      </message>
+
+      <message name="IDS_AX_MEDIA_SLIDER" desc="accessibility role description for timeline slider">
+        movie time
+      </message>
+
+      <message name="IDS_AX_MEDIA_SLIDER_THUMB" desc="accessibility role description for timeline thumb">
+        movie timeline thumb
+      </message>
+
+      <message name="IDS_AX_MEDIA_CURRENT_TIME_DISPLAY" desc="accessibility role description for elapsed time display">
+        elapsed time
+      </message>
+
+      <message name="IDS_AX_MEDIA_TIME_REMAINING_DISPLAY" desc="accessibility role description for time remaining display">
+        remaining time
+      </message>
+
+      <message name="IDS_AX_MEDIA_STATUS_DISPLAY" desc="accessibility role description for movie status">
+        status
+      </message>
+
+      <message name="IDS_AX_MEDIA_ENTER_FULL_SCREEN_BUTTON" desc="accessibility role description for enter fullscreen button">
+        enter full screen
+      </message>
+
+      <message name="IDS_AX_MEDIA_EXIT_FULL_SCREEN_BUTTON" desc="accessibility role description for exit fullscreen button">
+        exit full screen
+      </message>
+
+      <message name="IDS_AX_MEDIA_SHOW_CLOSED_CAPTIONS_BUTTON" desc="accessibility role description for show closed captions button">
+        show closed captions
+      </message>
+
+      <message name="IDS_AX_MEDIA_HIDE_CLOSED_CAPTIONS_BUTTON" desc="accessibility role description for hide closed captions button">
+        hide closed captions
+      </message>
+
+      <message name="IDS_AX_MEDIA_AUDIO_ELEMENT_HELP" desc="Accessible help of audio controls">
+        audio
+      </message>
+
+      <message name="IDS_AX_MEDIA_VIDEO_ELEMENT_HELP" desc="Accessible help of video">
+        video
+      </message>
+
+      <message name="IDS_AX_MEDIA_MUTE_BUTTON_HELP" desc="accessibility help description for mute button">
+        mute audio track
+      </message>
+
+      <message name="IDS_AX_MEDIA_UNMUTE_BUTTON_HELP" desc="accessibility help description for turn mute off button">
+        unmute audio track
+      </message>
+
+      <message name="IDS_AX_MEDIA_PLAY_BUTTON_HELP" desc="accessibility help description for play button">
+        begin playback
+      </message>
+
+      <message name="IDS_AX_MEDIA_PAUSE_BUTTON_HELP" desc="accessibility help description for pause button">
+        pause playback
+      </message>
+
+      <message name="IDS_AX_MEDIA_SLIDER_HELP" desc="accessibility help description for timeline slider">
+        movie time scrubber
+      </message>
+
+      <message name="IDS_AX_MEDIA_SLIDER_THUMB_HELP" desc="accessibility help description for timeline thumb">
+        movie time scrubber thumb
+      </message>
+
+      <message name="IDS_AX_MEDIA_CURRENT_TIME_DISPLAY_HELP" desc="accessibility help description for elapsed time display">
+        current time in seconds
+      </message>
+
+      <message name="IDS_AX_MEDIA_TIME_REMAINING_DISPLAY_HELP" desc="accessibility help description for time remaining display">
+        number of seconds ofmovie remaining
+      </message>
+
+      <message name="IDS_AX_MEDIA_STATUS_DISPLAY_HELP" desc="accessibility help description for movie status">
+        current movie status
+      </message>
+
+      <message name="IDS_AX_MEDIA_ENTER_FULL_SCREEN_BUTTON_HELP" desc="accessibility help description for enter fullscreen button">
+        play movie in full screen mode
+      </message>
+
+      <message name="IDS_AX_MEDIA_EXIT_FULL_SCREEN_BUTTON_HELP" desc="accessibility help description for exit fullscreen button">
+        exit full screen
+      </message>
+
+      <message name="IDS_AX_MEDIA_SHOW_CLOSED_CAPTIONS_BUTTON_HELP" desc="accessibility help description for show closed captions button">
+        start displaying closed captions
+      </message>
+
+      <message name="IDS_AX_MEDIA_HIDE_CLOSED_CAPTIONS_BUTTON_HELP" desc="accessibility help description for hide closed captions button">
+        stop displaying closed captions
       </message>
 
       <message name="IDS_AX_MILLISECOND_FIELD_TEXT" desc="Accessible description of the millisecond field in a date/time control">
@@ -423,23 +545,47 @@ below:
       <message name="IDS_FORM_VALIDATION_TYPE_MISMATCH" desc="Heading or short sentence shown when a form control in a webpage requires specific type such as email address or URL, but the specified value does not comform to the type.">
         Invalid value.
       </message>
+      <message name="IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL_EMPTY" desc="Heading or short sentence shown when there is an email field in a form and a user specified an empty value.">
+        Please enter a non-empty email address.
+      </message>
+      <message name="IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL_EMPTY_DOMAIN" desc="Heading or short sentence shown when there is an email field in a form and a user specified an invalid value like 'user@'.">
+        Please enter a part following '<ph name="ATSIGN">$1<ex>@</ex></ph>'. '<ph name="INVALIDADDRESS">$2<ex>user@</ex></ph>' is incomplete.
+      </message>
+      <message name="IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL_EMPTY_LOCAL" desc="Heading or short sentence shown when there is an email field in a form and a user specified an invalid value like '@example.com'.">
+        Please enter a part followed by '<ph name="ATSIGN">$1<ex>@</ex></ph>'. '<ph name="INVALIDADDRESS">$2<ex>@example.com</ex></ph>' is incomplete.
+      </message>
+      <message name="IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL_INVALID_DOMAIN" desc="Heading or short sentence shown when there is an email field in a form and a user specified an invalid value like 'user@example,com'.">
+        A part following '<ph name="ATSIGN">$1<ex>@</ex></ph>' should not contain the symbol '<ph name="INVALIDCHARACTER">$2<ex>,</ex></ph>'.
+      </message>
+      <message name="IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL_INVALID_DOTS" desc="Heading or short sentence shown when there is an email field in a form and a user specified an invalid value with wrong dots like 'user@example..com'.">
+        '<ph name="DOT">$1<ex>.</ex></ph>' is used at a wrong position in '<ph name="INVALIDDOMAIN">$2<ex>example..com</ex></ph>'.
+      </message>
+      <message name="IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL_INVALID_LOCAL" desc="Heading or short sentence shown when there is an email field in a form and a user specified an invalid value like 'us,er@example.com'.">
+        A part followed by '<ph name="ATSIGN">$1<ex>@</ex></ph>' should not contain the symbol '<ph name="INVALIDCHARACTER">$2<ex>,</ex></ph>'.
+      </message>
+      <message name="IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL_NO_AT_SIGN" desc="Heading or short sentence shown when there is an email field in a form and a user specified an invalid value liek 'user'.">
+        Please include an '<ph name="ATSIGN">$1<ex>@</ex></ph>' in the email address. '<ph name="INVALIDADDRESS">$2<ex>user</ex></ph>' is missing an '<ph name="ATSIGN">$1<ex>@</ex></ph>'.
+      </message>
       <message name="IDS_FORM_VALIDATION_TYPE_MISMATCH_MULTIPLE_EMAIL" desc="Heading or short sentence shown there is a field which accepts multiple e-mail addresses and a user specified a value which is not a comma-separated e-mail addresses.">
         Please enter a comma separated list of email addresses.
       </message>
       <message name="IDS_FORM_VALIDATION_RANGE_UNDERFLOW" desc="Heading or short sentence shown when a form control value in a webpage needs to be larger than or equal to a minimum value specified by the page author, but a user specified a too small value.">
         Value must be greater than or equal to <ph name="MINIMUM">$1<ex>0</ex></ph>.
       </message>
+      <message name="IDS_FORM_VALIDATION_RANGE_UNDERFLOW_DATETIME" desc="Heading or short sentence shown when a form control value in a webpage needs to be later or equal to a minimum date/time value specified by the page author, but a user specified an earlier date/time.">
+        Value must be <ph name="MINIMUM_DATE_OR_TIME">$1<ex>01/04/2013</ex></ph> or later.
+      </message>
       <message name="IDS_FORM_VALIDATION_RANGE_OVERFLOW" desc="Heading or short sentence shown when a form control value in a webpage needs to be smaller than or equal to a maximum value specified by the page author, but a user specified a too large value.">
         Value must be less than or equal to <ph name="MAXIMUM">$1<ex>100</ex></ph>.
       </message>
-      <message name="IDS_FORM_VALIDATION_STEP_MISMATCH" desc="Heading or short sentence shown when a form control value in a webpage should be aligned to a step value specified by the page author, but a user speficified non-aligned value. e.g. A number type field, minimum value is 0, and step value is 4. If A user-specified value is not a multiple of 4, this warning message is shown.">
-        Invalid value.
+      <message name="IDS_FORM_VALIDATION_RANGE_OVERFLOW_DATETIME" desc="Heading or short sentence shown when a form control value in a webpage needs to be earlier than or equal to a maximum date/time value specified by the page author, but a user specified a later date/time.">
+        Value must be <ph name="MAXIMUM_DATE_OR_TIME">$1<ex>12/31/2013</ex></ph> or earlier.
       </message>
       <message name="IDS_FORM_VALIDATION_BAD_INPUT_DATETIME" desc="Heading or short sentence shown when a user specified an incomplete value or an invalid date (such as 02/31/2012) to a date/time form control in a webpage.">
-	Please enter a valid value. The field is incomplete or has an invalid date.
+        Please enter a valid value. The field is incomplete or has an invalid date.
       </message>
       <message name="IDS_FORM_VALIDATION_BAD_INPUT_NUMBER" desc="Heading or short sentence shown when a user entered a non-number string to a number field in a webpage.">
-	Please enter a number.
+        Please enter a number.
       </message>
 
 <!-- The following IDS_FORM_VALIDATION_* messages were taken from Mozilla's dom.properties file.
@@ -506,6 +652,12 @@ below:
       <message name="IDS_FORM_VALIDATION_PATTERN_MISMATCH" desc="Heading or short sentence shown when a form control value needs to satisfy a pattern specified by the page author, but a user specified unmatched value.">
         Please match the requested format.
       </message>
+      <message name="IDS_FORM_VALIDATION_STEP_MISMATCH" desc="Heading or short sentence shown when a form control value in a webpage should be aligned to a step value specified by the page author, but a user speficified non-aligned value. e.g. A number type field, minimum value is 0, and step value is 4. If A user-specified value is not a multiple of 4, this warning message is shown.">
+        Please enter a valid value. The two nearest valid values are <ph name="VALID_VALUE_LOW">$1<ex>4</ex></ph> and <ph name="VALID_VALUE_HIGHER">$2<ex>8</ex></ph>.
+      </message>
+      <message name="IDS_FORM_VALIDATION_STEP_MISMATCH_CLOSE_TO_LIMIT" desc="Heading or short sentence shown when a form control value in a webpage should be aligned to a step value specified by the page author, but a user speficified non-aligned value. e.g. A number type field, minimum value is 0, and step value is 4. If A user-specified value is not a multiple of 4, this warning message is shown.">
+        Please enter a valid value. The nearest valid value is <ph name="VALID_VALUE">$1<ex>0</ex></ph>.
+      </message>
       <message name="IDS_FORM_VALIDATION_TOO_LONG" desc="Heading or short sentence shown when a form control in a webpage needs to be shorter than a length specified by the page author, but a user specified long value.">
         Please shorten this text to <ph name="MAX_CHARACTERS">$2<ex>100</ex></ph> characters or less (you are currently using <ph name="CURRENT_LENGTH">$1<ex>101</ex></ph> characters).
       </message>
@@ -516,10 +668,6 @@ below:
 
       <message name="IDS_PDF_PAGE_LOADING" desc="A message displayed on the PDF page while page is loading.">
         Loading...
-      </message>
-
-      <message name="IDS_PDF_LOADING_PROGRESS" desc="A message displayed on the PDF control to indicate loading progress.">
-        Loading document: <ph name="PAGE_NUMBER">%d<ex>3</ex></ph>/<ph name="NUMBER_OF_PAGES">%d<ex>15</ex></ph> pages...
       </message>
 
       <message name="IDS_PDF_PAGE_LOAD_FAILED" desc="A message displayed on the PDF control to indicate that the PDF document failed to load.">

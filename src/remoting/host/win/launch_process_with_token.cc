@@ -11,20 +11,14 @@
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/process_util.h"
 #include "base/rand_util.h"
 #include "base/scoped_native_library.h"
-#include "base/single_thread_task_runner.h"
-#include "base/string16.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/scoped_handle.h"
 #include "base/win/scoped_process_information.h"
 #include "base/win/windows_version.h"
-#include "ipc/ipc_channel.h"
-#include "ipc/ipc_channel_proxy.h"
-#include "ipc/ipc_channel.h"
-#include "remoting/host/win/security_descriptor.h"
 
 using base::win::ScopedHandle;
 
@@ -60,11 +54,12 @@ void CloseHandlesAndTerminateProcess(PROCESS_INFORMATION* process_information) {
 // Connects to the executor server corresponding to |session_id|.
 bool ConnectToExecutionServer(uint32 session_id,
                               base::win::ScopedHandle* pipe_out) {
-  string16 pipe_name;
+  base::string16 pipe_name;
 
   // Use winsta!WinStationQueryInformationW() to determine the process creation
   // pipe name for the session.
-  FilePath winsta_path(base::GetNativeLibraryName(UTF8ToUTF16("winsta")));
+  base::FilePath winsta_path(
+      base::GetNativeLibraryName(base::UTF8ToUTF16("winsta")));
   base::ScopedNativeLibrary winsta(winsta_path);
   if (winsta.is_valid()) {
     PWINSTATIONQUERYINFORMATIONW win_station_query_information =
@@ -86,8 +81,8 @@ bool ConnectToExecutionServer(uint32 session_id,
 
   // Use the default pipe name if we couldn't query its name.
   if (pipe_name.empty()) {
-    pipe_name = UTF8ToUTF16(
-        StringPrintf(kCreateProcessDefaultPipeNameFormat, session_id));
+    pipe_name = base::UTF8ToUTF16(
+        base::StringPrintf(kCreateProcessDefaultPipeNameFormat, session_id));
   }
 
   // Try to connect to the named pipe.
@@ -128,26 +123,26 @@ bool ConnectToExecutionServer(uint32 session_id,
 // Copies the process token making it a primary impersonation token.
 // The returned handle will have |desired_access| rights.
 bool CopyProcessToken(DWORD desired_access, ScopedHandle* token_out) {
-  ScopedHandle process_token;
+  HANDLE temp_handle;
   if (!OpenProcessToken(GetCurrentProcess(),
                         TOKEN_DUPLICATE | desired_access,
-                        process_token.Receive())) {
+                        &temp_handle)) {
     LOG_GETLASTERROR(ERROR) << "Failed to open process token";
     return false;
   }
+  ScopedHandle process_token(temp_handle);
 
-  ScopedHandle copied_token;
   if (!DuplicateTokenEx(process_token,
                         desired_access,
                         NULL,
                         SecurityImpersonation,
                         TokenPrimary,
-                        copied_token.Receive())) {
+                        &temp_handle)) {
     LOG_GETLASTERROR(ERROR) << "Failed to duplicate the process token";
     return false;
   }
 
-  *token_out = copied_token.Pass();
+  token_out->Set(temp_handle);
   return true;
 }
 
@@ -293,10 +288,10 @@ bool ReceiveCreateProcessResponse(
 // Sends a remote process create request to the execution server.
 bool SendCreateProcessRequest(
     HANDLE pipe,
-    const FilePath::StringType& application_name,
+    const base::FilePath::StringType& application_name,
     const CommandLine::StringType& command_line,
     DWORD creation_flags,
-    const char16* desktop_name) {
+    const base::char16* desktop_name) {
   // |CreateProcessRequest| structure passes the same parameters to
   // the execution server as CreateProcessAsUser() function does. Strings are
   // stored as wide strings immediately after the structure. String pointers are
@@ -319,7 +314,7 @@ bool SendCreateProcessRequest(
     PROCESS_INFORMATION process_information;
   };
 
-  string16 desktop;
+  base::string16 desktop;
   if (desktop_name)
     desktop = desktop_name;
 
@@ -327,7 +322,7 @@ bool SendCreateProcessRequest(
   // and three NULL-terminated string parameters.
   size_t size = sizeof(CreateProcessRequest) + sizeof(wchar_t) *
       (application_name.size() + command_line.size() + desktop.size() + 3);
-  scoped_array<char> buffer(new char[size]);
+  scoped_ptr<char[]> buffer(new char[size]);
   memset(buffer.get(), 0, size);
 
   // Marshal the input parameters.
@@ -376,10 +371,10 @@ bool SendCreateProcessRequest(
 // OS functionality and will likely not work on anything but XP or W2K3.
 bool CreateRemoteSessionProcess(
     uint32 session_id,
-    const FilePath::StringType& application_name,
+    const base::FilePath::StringType& application_name,
     const CommandLine::StringType& command_line,
     DWORD creation_flags,
-    const char16* desktop_name,
+    const base::char16* desktop_name,
     PROCESS_INFORMATION* process_information_out)
 {
   DCHECK_LT(base::win::GetVersion(), base::win::VERSION_VISTA);
@@ -410,105 +405,8 @@ bool CreateRemoteSessionProcess(
 
 namespace remoting {
 
-// Pipe name prefix used by Chrome IPC channels to convert a channel name into
-// a pipe name.
-const char kChromePipeNamePrefix[] = "\\\\.\\pipe\\chrome.";
-
 base::LazyInstance<base::Lock>::Leaky g_inherit_handles_lock =
     LAZY_INSTANCE_INITIALIZER;
-
-bool CreateConnectedIpcChannel(
-    const std::string& channel_name,
-    const std::string& pipe_security_descriptor,
-    scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
-    IPC::Listener* delegate,
-    base::win::ScopedHandle* client_out,
-    scoped_ptr<IPC::ChannelProxy>* server_out) {
-  // Create the server end of the channel.
-  ScopedHandle pipe;
-  if (!CreateIpcChannel(channel_name, pipe_security_descriptor, &pipe)) {
-    return false;
-  }
-
-  // Wrap the pipe into an IPC channel.
-  scoped_ptr<IPC::ChannelProxy> server(new IPC::ChannelProxy(
-      IPC::ChannelHandle(pipe),
-      IPC::Channel::MODE_SERVER,
-      delegate,
-      io_task_runner));
-
-  // Convert the channel name to the pipe name.
-  std::string pipe_name(remoting::kChromePipeNamePrefix);
-  pipe_name.append(channel_name);
-
-  SECURITY_ATTRIBUTES security_attributes = {0};
-  security_attributes.nLength = sizeof(security_attributes);
-  security_attributes.lpSecurityDescriptor = NULL;
-  security_attributes.bInheritHandle = TRUE;
-
-  // Create the client end of the channel. This code should match the code in
-  // IPC::Channel.
-  ScopedHandle client;
-  client.Set(CreateFile(UTF8ToUTF16(pipe_name).c_str(),
-                        GENERIC_READ | GENERIC_WRITE,
-                        0,
-                        &security_attributes,
-                        OPEN_EXISTING,
-                        SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION |
-                            FILE_FLAG_OVERLAPPED,
-                        NULL));
-  if (!client.IsValid()) {
-    LOG_GETLASTERROR(ERROR) << "Failed to connect to '" << pipe_name << "'";
-    return false;
-  }
-
-  *client_out = client.Pass();
-  *server_out = server.Pass();
-  return true;
-}
-
-bool CreateIpcChannel(
-    const std::string& channel_name,
-    const std::string& pipe_security_descriptor,
-    base::win::ScopedHandle* pipe_out) {
-  // Create security descriptor for the channel.
-  ScopedSd sd = ConvertSddlToSd(pipe_security_descriptor);
-  if (!sd) {
-    LOG_GETLASTERROR(ERROR) <<
-        "Failed to create a security descriptor for the Chromoting IPC channel";
-    return false;
-  }
-
-  SECURITY_ATTRIBUTES security_attributes = {0};
-  security_attributes.nLength = sizeof(security_attributes);
-  security_attributes.lpSecurityDescriptor = sd.get();
-  security_attributes.bInheritHandle = FALSE;
-
-  // Convert the channel name to the pipe name.
-  std::string pipe_name(kChromePipeNamePrefix);
-  pipe_name.append(channel_name);
-
-  // Create the server end of the pipe. This code should match the code in
-  // IPC::Channel with exception of passing a non-default security descriptor.
-  base::win::ScopedHandle pipe;
-  pipe.Set(CreateNamedPipe(
-      UTF8ToUTF16(pipe_name).c_str(),
-      PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED | FILE_FLAG_FIRST_PIPE_INSTANCE,
-      PIPE_TYPE_BYTE | PIPE_READMODE_BYTE,
-      1,
-      IPC::Channel::kReadBufferSize,
-      IPC::Channel::kReadBufferSize,
-      5000,
-      &security_attributes));
-  if (!pipe.IsValid()) {
-    LOG_GETLASTERROR(ERROR) <<
-        "Failed to create the server end of the Chromoting IPC channel";
-    return false;
-  }
-
-  *pipe_out = pipe.Pass();
-  return true;
-}
 
 // Creates a copy of the current process token for the given |session_id| so
 // it can be used to launch a process in that session.
@@ -552,25 +450,25 @@ bool CreateSessionToken(uint32 session_id, ScopedHandle* token_out) {
   return true;
 }
 
-bool LaunchProcessWithToken(const FilePath& binary,
+bool LaunchProcessWithToken(const base::FilePath& binary,
                             const CommandLine::StringType& command_line,
                             HANDLE user_token,
                             SECURITY_ATTRIBUTES* process_attributes,
                             SECURITY_ATTRIBUTES* thread_attributes,
                             bool inherit_handles,
                             DWORD creation_flags,
-                            const char16* desktop_name,
+                            const base::char16* desktop_name,
                             ScopedHandle* process_out,
                             ScopedHandle* thread_out) {
-  FilePath::StringType application_name = binary.value();
+  base::FilePath::StringType application_name = binary.value();
 
   STARTUPINFOW startup_info;
   memset(&startup_info, 0, sizeof(startup_info));
   startup_info.cb = sizeof(startup_info);
   if (desktop_name)
-    startup_info.lpDesktop = const_cast<char16*>(desktop_name);
+    startup_info.lpDesktop = const_cast<base::char16*>(desktop_name);
 
-  base::win::ScopedProcessInformation process_info;
+  PROCESS_INFORMATION temp_process_info = {};
   BOOL result = CreateProcessAsUser(user_token,
                                     application_name.c_str(),
                                     const_cast<LPWSTR>(command_line.c_str()),
@@ -581,7 +479,7 @@ bool LaunchProcessWithToken(const FilePath& binary,
                                     NULL,
                                     NULL,
                                     &startup_info,
-                                    process_info.Receive());
+                                    &temp_process_info);
 
   // CreateProcessAsUser will fail on XP and W2K3 with ERROR_PIPE_NOT_CONNECTED
   // if the user hasn't logged to the target session yet. In such a case
@@ -605,7 +503,7 @@ bool LaunchProcessWithToken(const FilePath& binary,
                                           command_line,
                                           creation_flags,
                                           desktop_name,
-                                          process_info.Receive());
+                                          &temp_process_info);
     } else {
       // Restore the error status returned by CreateProcessAsUser().
       result = FALSE;
@@ -618,6 +516,8 @@ bool LaunchProcessWithToken(const FilePath& binary,
         "Failed to launch a process with a user token";
     return false;
   }
+
+  base::win::ScopedProcessInformation process_info(temp_process_info);
 
   CHECK(process_info.IsValid());
   process_out->Set(process_info.TakeProcessHandle());

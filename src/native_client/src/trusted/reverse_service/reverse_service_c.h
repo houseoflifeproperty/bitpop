@@ -19,6 +19,7 @@
 
 EXTERN_C_BEGIN
 
+struct NaClFileInfo;
 struct NaClReverseInterface;
 struct NaClReverseInterfaceVtbl;
 
@@ -80,11 +81,6 @@ struct NaClReverseInterface {
 struct NaClReverseInterfaceVtbl {
   struct NaClRefCountVtbl       vbase;
 
-  /* For debugging, messaging. |message| goes to console. */
-  void                          (*Log)(
-      struct NaClReverseInterface   *self,
-      char const                    *message);
-
   /* Startup handshake */
   void                          (*StartupInitializationComplete)(
       struct NaClReverseInterface   *self);
@@ -109,16 +105,6 @@ struct NaClReverseInterfaceVtbl {
    */
 
   /*
-   * Stores the manifest keys into the |buffer| of size |nbytes|.
-   * Returns the number of bytes copied if successful, otherwise
-   * returns the size required if |buffer| is not large enough.
-   */
-  size_t                        (*EnumerateManifestKeys)(
-      struct NaClReverseInterface   *self,
-      char                          *buffer,
-      size_t                        buffer_bytes);
-
-  /*
    * Opens manifest entry specified by |url_key|. Returns 1 if
    * successful and stores the file descriptor in |out_desc|, otherwise
    * returns 0.
@@ -126,15 +112,7 @@ struct NaClReverseInterfaceVtbl {
   int                           (*OpenManifestEntry)(
       struct NaClReverseInterface   *self,
       char const                    *url_key,
-      int32_t                       *out_desc);
-
-  /*
-   * Closes manifest entry with file descriptor |desc|. Returns 1 if
-   * successful, 0 otherwise.
-   */
-  int                           (*CloseManifestEntry)(
-      struct NaClReverseInterface   *self,
-      int32_t                       desc);
+      struct NaClFileInfo           *info);
 
   /*
    * Reports the client crash.
@@ -167,12 +145,35 @@ struct NaClReverseInterfaceVtbl {
    * Create new service runtime process and return secure command
    * channel and untrusted application channel socket addresses. Returns
    * 0 if successful or negative ABI error value otherwise (see
-   * service_runtime/include/sys/errno.h).
+   * service_runtime/include/sys/errno.h).  DEPRECATED.
    */
   int                           (*CreateProcess)(
       struct NaClReverseInterface  *self,
       struct NaClDesc              **out_sock_addr,
       struct NaClDesc              **out_app_addr);
+
+  /*
+   * Create new service runtime process and return secure command
+   * channel, untrusted application channel socket addresses, and pid
+   * via a result delivery functor.  Returns negated ABI errno value
+   * in pid if there were errors (see the header file
+   * service_runtime/include/sys/errno.h).  The |out_pid_or_errno|
+   * functor argument is also used to allow the "init" process to
+   * inform the embedding environment, via FinalizeProcess, that it is
+   * okay to finalize any resources associated with the identified
+   * subprocess when the subprocess has exited.
+   */
+  void                          (*CreateProcessFunctorResult)(
+      struct NaClReverseInterface *self,
+      void (*result_functor)(void *functor_state,
+                             struct NaClDesc *out_sock_addr,
+                             struct NaClDesc *out_app_addr,
+                             int32_t out_pid_or_errno),
+      void *functor_state);
+
+  void                          (*FinalizeProcess)(
+      struct NaClReverseInterface *self,
+      int32_t pid);
 
   /*
    * Quota checking for files that were sent to the untrusted module.
@@ -194,26 +195,13 @@ int NaClReverseInterfaceCtor_protected(
 
 void NaClReverseInterfaceDtor(struct NaClRefCount *vself);
 
-void NaClReverseInterfaceLog(
-    struct NaClReverseInterface   *self,
-    char const                    *message);
-
 void NaClReverseInterfaceStartupInitializationComplete(
     struct NaClReverseInterface   *self);
-
-size_t NaClReverseInterfaceEnumerateManifestKeys(
-    struct NaClReverseInterface   *self,
-    char                          *buffer,
-    size_t                        buffer_bytes);
 
 int NaClReverseInterfaceOpenManifestEntry(
     struct NaClReverseInterface   *self,
     char const                    *url_key,
-    int32_t                       *out_desc);
-
-int NaClReverseInterfaceCloseManifestEntry(
-    struct NaClReverseInterface   *self,
-    int32_t                       desc);
+    struct NaClFileInfo           *info);
 
 void NaClReverseInterfaceReportCrash(
     struct NaClReverseInterface   *self);
@@ -226,6 +214,17 @@ void NaClReverseInterfaceDoPostMessage(
     struct NaClReverseInterface   *self,
     char const                    *message,
     size_t                        message_bytes);
+
+void NaClReverseInterfaceCreateProcessFunctorResult(
+    struct NaClReverseInterface *self,
+    void (*result_functor)(void *functor_state,
+                           struct NaClDesc *out_sock_addr,
+                           struct NaClDesc *out_app_addr,
+                           int32_t out_pid_or_errno),
+    void *functor_state);
+
+void NaClReverseInterfaceFinalizeProcess(struct NaClReverseInterface *self,
+                                         int32_t pid);
 
 int NaClReverseInterfaceCreateProcess(
     struct NaClReverseInterface   *self,

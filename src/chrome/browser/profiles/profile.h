@@ -10,20 +10,18 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/logging.h"
-#include "chrome/browser/net/pref_proxy_config_tracker.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager_factory.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/content_browser_client.h"
+#include "net/url_request/url_request_job_factory.h"
 
 class ChromeAppCacheService;
-class ChromeURLDataManager;
 class ExtensionService;
 class ExtensionSpecialStoragePolicy;
 class FaviconService;
-class GAIAInfoUpdateService;
 class HostContentSettingsMap;
-class PasswordStore;
+class PrefProxyConfigTracker;
 class PrefService;
 class PromoCounter;
 class ProtocolHandlerRegistry;
@@ -57,7 +55,6 @@ class FileSystemContext;
 }
 
 namespace history {
-class ShortcutsBackend;
 class TopSites;
 }
 
@@ -65,11 +62,13 @@ namespace net {
 class SSLConfigService;
 }
 
-namespace policy {
-class ManagedModePolicyProvider;
-class PolicyService;
+namespace user_prefs {
+class PrefRegistrySyncable;
 }
 
+// Instead of adding more members to Profile, consider creating a
+// KeyedService. See
+// http://dev.chromium.org/developers/design-documents/profile-architecture
 class Profile : public content::BrowserContext {
  public:
   // Profile services are accessed with the following parameter. This parameter
@@ -98,12 +97,19 @@ class Profile : public content::BrowserContext {
   };
 
   enum CreateStatus {
-    // Profile services were not created.
-    CREATE_STATUS_FAIL,
+    // Profile services were not created due to a local error (e.g., disk full).
+    CREATE_STATUS_LOCAL_FAIL,
+    // Profile services were not created due to a remote error (e.g., network
+    // down during limited-user registration).
+    CREATE_STATUS_REMOTE_FAIL,
     // Profile created but before initializing extensions and promo resources.
     CREATE_STATUS_CREATED,
     // Profile is created, extensions and promo resources are initialized.
     CREATE_STATUS_INITIALIZED,
+    // Profile creation (managed-user registration, generally) was canceled
+    // by the user.
+    CREATE_STATUS_CANCELED,
+    MAX_CREATE_STATUS  // For histogram display.
   };
 
   enum CreateMode {
@@ -122,8 +128,16 @@ class Profile : public content::BrowserContext {
     EXIT_CRASHED,
   };
 
+  enum ProfileType {
+    REGULAR_PROFILE,  // Login user's normal profile
+    INCOGNITO_PROFILE,  // Login user's off-the-record profile
+    GUEST_PROFILE,  // Guest session's profile
+  };
+
   class Delegate {
    public:
+    virtual ~Delegate();
+
     // Called when creation of the profile is finished.
     virtual void OnProfileCreated(Profile* profile,
                                   bool success,
@@ -131,22 +145,18 @@ class Profile : public content::BrowserContext {
   };
 
   // Key used to bind profile to the widget with which it is associated.
-  static const char* const kProfileKey;
+  static const char kProfileKey[];
 
   Profile();
-  virtual ~Profile() {}
+  virtual ~Profile();
 
   // Profile prefs are registered as soon as the prefs are loaded for the first
   // time.
-  static void RegisterUserPrefs(PrefService* prefs);
-
-  // Gets task runner for I/O operations associated with |profile|.
-  static scoped_refptr<base::SequencedTaskRunner> GetTaskRunnerForProfile(
-      Profile* profile);
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // Create a new profile given a path. If |create_mode| is
   // CREATE_MODE_ASYNCHRONOUS then the profile is initialized asynchronously.
-  static Profile* CreateProfile(const FilePath& path,
+  static Profile* CreateProfile(const base::FilePath& path,
                                 Delegate* delegate,
                                 CreateMode create_mode);
 
@@ -169,6 +179,9 @@ class Profile : public content::BrowserContext {
   // the browser frame.
   virtual std::string GetProfileName() = 0;
 
+  // Returns the profile type.
+  virtual ProfileType GetProfileType() const = 0;
+
   // Return the incognito version of this profile. The returned pointer
   // is owned by the receiving profile. If the receiving profile is off the
   // record, the same profile is returned.
@@ -188,6 +201,9 @@ class Profile : public content::BrowserContext {
   // profile is not incognito.
   virtual Profile* GetOriginalProfile() = 0;
 
+  // Returns whether the profile is managed (see ManagedUserService).
+  virtual bool IsManaged() = 0;
+
   // Returns a pointer to the TopSites (thumbnail manager) instance
   // for this profile.
   virtual history::TopSites* GetTopSites() = 0;
@@ -205,17 +221,8 @@ class Profile : public content::BrowserContext {
   virtual ExtensionSpecialStoragePolicy*
       GetExtensionSpecialStoragePolicy() = 0;
 
-  // Accessor. The instance is created upon first access.
-  virtual GAIAInfoUpdateService* GetGAIAInfoUpdateService() = 0;
-
-  // Returns the ManagedModePolicyProvider for this profile, if it exists.
-  virtual policy::ManagedModePolicyProvider* GetManagedModePolicyProvider() = 0;
-
-  // Returns the PolicyService that provides policies for this profile.
-  virtual policy::PolicyService* GetPolicyService() = 0;
-
-  // Retrieves a pointer to the PrefService that manages the preferences
-  // for this user profile.
+  // Retrieves a pointer to the PrefService that manages the
+  // preferences for this user profile.
   virtual PrefService* GetPrefs() = 0;
 
   // Retrieves a pointer to the PrefService that manages the preferences
@@ -230,20 +237,11 @@ class Profile : public content::BrowserContext {
   // is only used for a separate cookie store currently.
   virtual net::URLRequestContextGetter* GetRequestContextForExtensions() = 0;
 
-  // Returns the request context used within |partition_id|.
-  virtual net::URLRequestContextGetter* GetRequestContextForStoragePartition(
-      const FilePath& partition_path,
-      bool in_memory) = 0;
-
   // Returns the SSLConfigService for this profile.
   virtual net::SSLConfigService* GetSSLConfigService() = 0;
 
   // Returns the Hostname <-> Content settings map for this profile.
   virtual HostContentSettingsMap* GetHostContentSettingsMap() = 0;
-
-  // Returns the ProtocolHandlerRegistry, creating if not yet created.
-  // TODO(smckay): replace this with access via ProtocolHandlerRegistryFactory.
-  virtual ProtocolHandlerRegistry* GetProtocolHandlerRegistry() = 0;
 
   // Return whether 2 profiles are the same. 2 profiles are the same if they
   // represent the same profile. This can happen if there is pointer equality
@@ -257,12 +255,32 @@ class Profile : public content::BrowserContext {
   // the user started chrome.
   virtual base::Time GetStartTime() const = 0;
 
-  // Start up service that gathers data from a promo resource feed.
-  virtual void InitPromoResources() = 0;
+  // Creates the main net::URLRequestContextGetter that will be returned by
+  // GetRequestContext(). Should only be called once per ContentBrowserClient
+  // object. This function is exposed because of the circular dependency where
+  // GetStoragePartition() is used to retrieve the request context, but creation
+  // still has to happen in the Profile so the StoragePartition calls
+  // ContextBrowserClient to call this function.
+  // TODO(ajwong): Remove once http://crbug.com/159193 is resolved.
+  virtual net::URLRequestContextGetter* CreateRequestContext(
+      content::ProtocolHandlerMap* protocol_handlers,
+      content::ProtocolHandlerScopedVector protocol_interceptors) = 0;
+
+  // Creates the net::URLRequestContextGetter for a StoragePartition. Should
+  // only be called once per partition_path per ContentBrowserClient object.
+  // This function is exposed because the request context is retrieved from the
+  // StoragePartition, but creation still has to happen in the Profile so the
+  // StoragePartition calls ContextBrowserClient to call this function.
+  // TODO(ajwong): Remove once http://crbug.com/159193 is resolved.
+  virtual net::URLRequestContextGetter* CreateRequestContextForStoragePartition(
+      const base::FilePath& partition_path,
+      bool in_memory,
+      content::ProtocolHandlerMap* protocol_handlers,
+      content::ProtocolHandlerScopedVector protocol_interceptors) = 0;
 
   // Returns the last directory that was chosen for uploading or opening a file.
-  virtual FilePath last_selected_directory() = 0;
-  virtual void set_last_selected_directory(const FilePath& path) = 0;
+  virtual base::FilePath last_selected_directory() = 0;
+  virtual void set_last_selected_directory(const base::FilePath& path) = 0;
 
 #if defined(OS_CHROMEOS)
   enum AppLocaleChangedVia {
@@ -282,9 +300,6 @@ class Profile : public content::BrowserContext {
 
   // Called after login.
   virtual void OnLogin() = 0;
-
-  // Creates ChromeOS's EnterpriseExtensionListener.
-  virtual void SetupChromeOSEnterpriseExtensionObserver() = 0;
 
   // Initializes Chrome OS's preferences.
   virtual void InitChromeOSPreferences() = 0;
@@ -316,7 +331,7 @@ class Profile : public content::BrowserContext {
   std::string GetDebugName();
 
   // Returns whether it is a guest session.
-  bool IsGuestSession();
+  virtual bool IsGuestSession() const;
 
   // Did the user restore the last session? This is set by SessionRestore.
   void set_restored_last_session(bool restored_last_session) {
@@ -355,6 +370,10 @@ class Profile : public content::BrowserContext {
     return 0 == accessibility_pause_level_;
   }
 
+  // Returns whether the profile is new.  A profile is new if the browser has
+  // not been shut down since the profile was created.
+  bool IsNewProfile();
+
   // Checks whether sync is configurable by the user. Returns false if sync is
   // disabled or controlled by configuration management.
   bool IsSyncAccessible();
@@ -366,19 +385,6 @@ class Profile : public content::BrowserContext {
 
   // Creates an OffTheRecordProfile which points to this Profile.
   Profile* CreateOffTheRecordProfile();
-
- protected:
-  // TODO(erg, willchan): Remove friendship once |ProfileIOData| is made into
-  //     a |ProfileKeyedService|.
-  friend class ChromeURLDataManagerFactory;
-  friend class OffTheRecordProfileImpl;
-
-  // Returns a callback to a method returning a |ChromeURLDataManagerBackend|.
-  // Used to create a |ChromeURLDataManager| for this |Profile|.
-  // TODO(erg, willchan): Remove this once |ProfileIOData| is made into a
-  //     |ProfileKeyedService|.
-  virtual base::Callback<ChromeURLDataManagerBackend*(void)>
-      GetChromeURLDataManagerBackendGetter() const = 0;
 
  private:
   bool restored_last_session_;
@@ -392,6 +398,13 @@ class Profile : public content::BrowserContext {
   // increment and decrement the level, respectively, rather than set it to
   // true or false, so that calls can be nested.
   int accessibility_pause_level_;
+
+  DISALLOW_COPY_AND_ASSIGN(Profile);
+};
+
+// The comparator for profile pointers as key in a map.
+struct ProfileCompare {
+  bool operator()(Profile* a, Profile* b) const;
 };
 
 #if defined(COMPILER_GCC)

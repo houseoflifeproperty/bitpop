@@ -7,7 +7,12 @@
 
 #include "base/values.h"
 #include "base/compiler_specific.h"
-#include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
+
+class Profile;
+
+namespace content {
+class WebUIDataSource;
+}
 
 namespace chromeos {
 
@@ -17,7 +22,7 @@ namespace chromeos {
  * @param localized_strings non-null dictionary that will be filled.
  */
 void AddAccountUITweaksLocalizedValues(
-    base::DictionaryValue* localized_strings);
+    base::DictionaryValue* localized_strings, Profile* profile);
 
 /**
  * Fills given data source with account status data (whether current user is
@@ -25,7 +30,8 @@ void AddAccountUITweaksLocalizedValues(
  * @param source non-null ui data source which localized values dictionary will
  * be filled.
  */
-void AddAccountUITweaksLocalizedValues(ChromeWebUIDataSource* source);
+void AddAccountUITweaksLocalizedValues(content::WebUIDataSource* source,
+                                       Profile* profile);
 
 }  // namespace chromeos
 

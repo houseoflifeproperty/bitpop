@@ -8,36 +8,40 @@
 
 #include "base/basictypes.h"
 #include "base/logging.h"
-#include "grit/renderer_resources.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebFileSystem.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "chrome/renderer/extensions/chrome_v8_context.h"
+#include "extensions/renderer/script_context.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/web/WebDOMFileSystem.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 
-namespace {
+namespace extensions {
 
-static v8::Handle<v8::Value> GetLocalFileSystem(
-    const v8::Arguments& args) {
+FileBrowserPrivateCustomBindings::FileBrowserPrivateCustomBindings(
+    ScriptContext* context)
+    : ObjectBackedNativeHandler(context) {
+  RouteFunction(
+      "GetFileSystem",
+       base::Bind(&FileBrowserPrivateCustomBindings::GetFileSystem,
+                  base::Unretained(this)));
+}
+
+void FileBrowserPrivateCustomBindings::GetFileSystem(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   DCHECK(args.Length() == 2);
   DCHECK(args[0]->IsString());
   DCHECK(args[1]->IsString());
   std::string name(*v8::String::Utf8Value(args[0]));
-  std::string path(*v8::String::Utf8Value(args[1]));
+  std::string root_url(*v8::String::Utf8Value(args[1]));
 
-  WebKit::WebFrame* webframe = WebKit::WebFrame::frameForCurrentContext();
+  blink::WebLocalFrame* webframe =
+      blink::WebLocalFrame::frameForContext(context()->v8_context());
   DCHECK(webframe);
-  return webframe->createFileSystem(
-      WebKit::WebFileSystem::TypeExternal,
-      WebKit::WebString::fromUTF8(name.c_str()),
-      WebKit::WebString::fromUTF8(path.c_str()));
-}
-
-}  // namespace
-
-namespace extensions {
-
-FileBrowserPrivateCustomBindings::FileBrowserPrivateCustomBindings()
-    : ChromeV8Extension(NULL) {
-  RouteStaticFunction("GetLocalFileSystem", &GetLocalFileSystem);
+  args.GetReturnValue().Set(
+      blink::WebDOMFileSystem::create(
+          webframe,
+          blink::WebFileSystemTypeExternal,
+          blink::WebString::fromUTF8(name),
+          GURL(root_url)).toV8Value());
 }
 
 }  // namespace extensions

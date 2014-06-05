@@ -8,7 +8,7 @@
 
 #include "base/logging.h"
 #include "base/mac/scoped_cftyperef.h"
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #include "skia/ext/bitmap_platform_device_mac.h"
 #include "third_party/skia/include/core/SkRegion.h"
@@ -17,23 +17,26 @@
 namespace {
 
 // Draws an NSImage or an NSImageRep with a given size into a SkBitmap.
-SkBitmap NSImageOrNSImageRepToSkBitmap(
+SkBitmap NSImageOrNSImageRepToSkBitmapWithColorSpace(
     NSImage* image,
     NSImageRep* image_rep,
     NSSize size,
-    bool is_opaque) {
+    bool is_opaque,
+    CGColorSpaceRef color_space) {
   // Only image or image_rep should be provided, not both.
   DCHECK((image != 0) ^ (image_rep != 0));
 
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, size.width, size.height);
+  bitmap.setConfig(SkBitmap::kARGB_8888_Config,
+                   size.width,
+                   size.height,
+                   0,
+                   is_opaque ? kOpaque_SkAlphaType : kPremul_SkAlphaType);
+
   if (!bitmap.allocPixels())
     return bitmap;  // Return |bitmap| which should respond true to isNull().
 
-  bitmap.setIsOpaque(is_opaque);
 
-  base::mac::ScopedCFTypeRef<CGColorSpaceRef> color_space(
-      CGColorSpaceCreateWithName(kCGColorSpaceGenericRGB));
   void* data = bitmap.getPixels();
 
   // Allocate a bitmap context with 4 components per pixel (BGRA). Apple
@@ -42,11 +45,14 @@ SkBitmap NSImageOrNSImageRepToSkBitmap(
             (SK_A32_SHIFT == (a) && SK_R32_SHIFT == (r) \
              && SK_G32_SHIFT == (g) && SK_B32_SHIFT == (b))
 #if defined(SK_CPU_LENDIAN) && HAS_ARGB_SHIFTS(24, 16, 8, 0)
-  base::mac::ScopedCFTypeRef<CGContextRef> context(
-    CGBitmapContextCreate(data, size.width, size.height, 8, size.width*4,
-                          color_space,
-                          kCGImageAlphaPremultipliedFirst |
-                              kCGBitmapByteOrder32Host));
+  base::ScopedCFTypeRef<CGContextRef> context(CGBitmapContextCreate(
+      data,
+      size.width,
+      size.height,
+      8,
+      size.width * 4,
+      color_space,
+      kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Host));
 #else
 #error We require that Skia's and CoreGraphics's recommended \
        image memory layout match.
@@ -128,10 +134,10 @@ CGRect SkRectToCGRect(const SkRect& rect) {
 SkColor CGColorRefToSkColor(CGColorRef color) {
   DCHECK(CGColorGetNumberOfComponents(color) == 4);
   const CGFloat* components = CGColorGetComponents(color);
-  return SkColorSetARGB(SkScalarRound(255.0 * components[3]), // alpha
-                        SkScalarRound(255.0 * components[0]), // red
-                        SkScalarRound(255.0 * components[1]), // green
-                        SkScalarRound(255.0 * components[2])); // blue
+  return SkColorSetARGB(SkScalarRoundToInt(255.0 * components[3]), // alpha
+                        SkScalarRoundToInt(255.0 * components[0]), // red
+                        SkScalarRoundToInt(255.0 * components[1]), // green
+                        SkScalarRoundToInt(255.0 * components[2])); // blue
 }
 
 // Converts ARGB to CGColorRef.
@@ -149,10 +155,10 @@ SkColor NSDeviceColorToSkColor(NSColor* color) {
   CGFloat red, green, blue, alpha;
   color = [color colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]];
   [color getRed:&red green:&green blue:&blue alpha:&alpha];
-  return SkColorSetARGB(SkScalarRound(255.0 * alpha),
-                        SkScalarRound(255.0 * red),
-                        SkScalarRound(255.0 * green),
-                        SkScalarRound(255.0 * blue));
+  return SkColorSetARGB(SkScalarRoundToInt(255.0 * alpha),
+                        SkScalarRoundToInt(255.0 * red),
+                        SkScalarRoundToInt(255.0 * green),
+                        SkScalarRoundToInt(255.0 * blue));
 }
 
 // Converts ARGB to NSColor.
@@ -170,6 +176,18 @@ NSColor* SkColorToDeviceNSColor(SkColor color) {
                                alpha:SkColorGetA(color) / 255.0];
 }
 
+NSColor* SkColorToSRGBNSColor(SkColor color) {
+  const CGFloat components[] = {
+    SkColorGetR(color) / 255.0,
+    SkColorGetG(color) / 255.0,
+    SkColorGetB(color) / 255.0,
+    SkColorGetA(color) / 255.0
+  };
+  return [NSColor colorWithColorSpace:[NSColorSpace sRGBColorSpace]
+                           components:components
+                                count:4];
+}
+
 SkBitmap CGImageToSkBitmap(CGImageRef image) {
   if (!image)
     return SkBitmap();
@@ -177,7 +195,7 @@ SkBitmap CGImageToSkBitmap(CGImageRef image) {
   int width = CGImageGetWidth(image);
   int height = CGImageGetHeight(image);
 
-  scoped_ptr<SkDevice> device(
+  scoped_ptr<SkBaseDevice> device(
       skia::BitmapPlatformDevice::Create(NULL, width, height, false));
 
   CGContextRef context = skia::GetBitmapContext(device.get());
@@ -202,17 +220,22 @@ SkBitmap CGImageToSkBitmap(CGImageRef image) {
   return bitmap;
 }
 
-SkBitmap NSImageToSkBitmap(NSImage* image, NSSize size, bool is_opaque) {
-  return NSImageOrNSImageRepToSkBitmap(image, nil, size, is_opaque);
+SkBitmap NSImageToSkBitmapWithColorSpace(
+    NSImage* image, bool is_opaque, CGColorSpaceRef color_space) {
+  return NSImageOrNSImageRepToSkBitmapWithColorSpace(
+      image, nil, [image size], is_opaque, color_space);
 }
 
-SkBitmap NSImageRepToSkBitmap(
-    NSImageRep* image_rep, NSSize size, bool is_opaque) {
-  return NSImageOrNSImageRepToSkBitmap(nil, image_rep, size, is_opaque);
+SkBitmap NSImageRepToSkBitmapWithColorSpace(NSImageRep* image_rep,
+                                            NSSize size,
+                                            bool is_opaque,
+                                            CGColorSpaceRef color_space) {
+  return NSImageOrNSImageRepToSkBitmapWithColorSpace(
+      nil, image_rep, size, is_opaque, color_space);
 }
 
 NSBitmapImageRep* SkBitmapToNSBitmapImageRep(const SkBitmap& skiaBitmap) {
-  base::mac::ScopedCFTypeRef<CGColorSpaceRef> color_space(
+  base::ScopedCFTypeRef<CGColorSpaceRef> color_space(
       CGColorSpaceCreateWithName(kCGColorSpaceGenericRGB));
   return SkBitmapToNSBitmapImageRepWithColorSpace(skiaBitmap, color_space);
 }
@@ -221,11 +244,11 @@ NSBitmapImageRep* SkBitmapToNSBitmapImageRepWithColorSpace(
     const SkBitmap& skiaBitmap,
     CGColorSpaceRef colorSpace) {
   // First convert SkBitmap to CGImageRef.
-  base::mac::ScopedCFTypeRef<CGImageRef> cgimage(
+  base::ScopedCFTypeRef<CGImageRef> cgimage(
       SkCreateCGImageRefWithColorspace(skiaBitmap, colorSpace));
 
   // Now convert to NSBitmapImageRep.
-  scoped_nsobject<NSBitmapImageRep> bitmap(
+  base::scoped_nsobject<NSBitmapImageRep> bitmap(
       [[NSBitmapImageRep alloc] initWithCGImage:cgimage]);
   return [bitmap.release() autorelease];
 }
@@ -235,7 +258,7 @@ NSImage* SkBitmapToNSImageWithColorSpace(const SkBitmap& skiaBitmap,
   if (skiaBitmap.isNull())
     return nil;
 
-  scoped_nsobject<NSImage> image([[NSImage alloc] init]);
+  base::scoped_nsobject<NSImage> image([[NSImage alloc] init]);
   [image addRepresentation:
       SkBitmapToNSBitmapImageRepWithColorSpace(skiaBitmap, colorSpace)];
   [image setSize:NSMakeSize(skiaBitmap.width(), skiaBitmap.height())];
@@ -243,7 +266,7 @@ NSImage* SkBitmapToNSImageWithColorSpace(const SkBitmap& skiaBitmap,
 }
 
 NSImage* SkBitmapToNSImage(const SkBitmap& skiaBitmap) {
-  base::mac::ScopedCFTypeRef<CGColorSpaceRef> colorSpace(
+  base::ScopedCFTypeRef<CGColorSpaceRef> colorSpace(
       CGColorSpaceCreateWithName(kCGColorSpaceGenericRGB));
   return SkBitmapToNSImageWithColorSpace(skiaBitmap, colorSpace.get());
 }
@@ -347,7 +370,7 @@ foundRight:
 }
 
 CGContextRef SkiaBitLocker::cgContext() {
-  SkDevice* device = canvas_->getTopDevice();
+  SkBaseDevice* device = canvas_->getTopDevice();
   DCHECK(device);
   if (!device)
     return 0;
@@ -363,8 +386,10 @@ CGContextRef SkiaBitLocker::cgContext() {
     bitmap_.allocPixels();
     bitmap_.eraseColor(0);
   }
+  base::ScopedCFTypeRef<CGColorSpaceRef> colorSpace(
+      CGColorSpaceCreateDeviceRGB());
   cgContext_ = CGBitmapContextCreate(bitmap_.getPixels(), bitmap_.width(),
-    bitmap_.height(), 8, bitmap_.rowBytes(), CGColorSpaceCreateDeviceRGB(), 
+    bitmap_.height(), 8, bitmap_.rowBytes(), colorSpace, 
     kCGBitmapByteOrder32Host | kCGImageAlphaPremultipliedFirst);
 
   // Apply device matrix.

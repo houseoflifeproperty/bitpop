@@ -5,6 +5,7 @@
 [
   {
     "namespace":"fileBrowserHandler",
+    "description": "Use the <code>chrome.fileBrowserHandler</code> API to extend the Chrome OS file browser. For example, you can use this API to enable users to upload files to your website.",
     "platforms": ["chromeos"],
     "types": [
       {
@@ -41,23 +42,6 @@
             "name": "details",
             "$ref": "FileHandlerExecuteEventDetails",
             "description": "File handler execute event details."
-          }
-        ]
-      },
-      {
-        "name": "onExecuteContentHandler",
-        "type": "function",
-        "description": "Fired when a resource is fetched which matches a mime type handled by this extension. The resource request is cancelled, and the extension is expected to handle the request. The event is restricted to a small number of white-listed fileBrowserHandlers.",
-        "parameters": [
-          {
-            "name": "mime_type",
-            "type": "string",
-            "description": "The MIME type of the intercepted URL request."
-          },
-          {
-            "name": "content_url",
-            "type": "string",
-            "description": "The intercepted URL request. The handler should fetch and handle data referenced by the URL."
           }
         ]
       }

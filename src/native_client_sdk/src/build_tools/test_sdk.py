@@ -3,16 +3,21 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Script for a testing an existing SDK.
 
-import copy
+This script is normally run immediately after build_sdk.py.
+"""
+
 import optparse
 import os
+import subprocess
 import sys
 
 import buildbot_common
-import build_utils
+import build_projects
 import build_sdk
-import generate_make
+import build_version
+import parse_dsc
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SDK_SRC_DIR = os.path.dirname(SCRIPT_DIR)
@@ -24,109 +29,159 @@ OUT_DIR = os.path.join(SRC_DIR, 'out')
 sys.path.append(os.path.join(SDK_SRC_DIR, 'tools'))
 import getos
 
+def StepBuildExamples(pepperdir):
+  for config in ('Debug', 'Release'):
+    build_sdk.BuildStepMakeAll(pepperdir, 'getting_started',
+                               'Build Getting Started (%s)' % config,
+                               deps=False, config=config)
 
-TEST_EXAMPLE_LIST = [
-  'nacl_mounts_test',
-]
-
-TEST_LIBRARY_LIST = [
-  'gmock',
-  'gtest',
-  'gtest_ppapi',
-]
-
-
-def BuildStepBuildToolsTests():
-  buildbot_common.BuildStep('Run build_tools tests')
-  test_all_py = os.path.join(SDK_SRC_DIR, 'build_tools', 'tests', 'test_all.py')
-  buildbot_common.Run([sys.executable, test_all_py])
+    build_sdk.BuildStepMakeAll(pepperdir, 'examples',
+                               'Build Examples (%s)' % config,
+                               deps=False, config=config)
 
 
-def BuildStepBuildExamples(pepperdir, platform):
-  build_sdk.BuildStepMakeAll(pepperdir, platform, 'examples', 'Build Examples')
-
-
-def BuildStepCopyTests(pepperdir, toolchains, build_experimental, clobber):
+def StepCopyTests(pepperdir, toolchains, build_experimental):
   buildbot_common.BuildStep('Copy Tests')
 
-  build_sdk.MakeDirectoryOrClobber(pepperdir, 'testlibs', clobber)
-  build_sdk.MakeDirectoryOrClobber(pepperdir, 'tests', clobber)
+  # Update test libraries and test apps
+  filters = {
+    'DEST': ['tests']
+  }
+  if not build_experimental:
+    filters['EXPERIMENTAL'] = False
 
-  args = ['--dstroot=%s' % pepperdir, '--master']
-  for toolchain in toolchains:
-    args.append('--' + toolchain)
-
-  for library in TEST_LIBRARY_LIST:
-    dsc = os.path.join(SDK_LIBRARY_DIR, library, 'library.dsc')
-    args.append(dsc)
-
-  for example in TEST_EXAMPLE_LIST:
-    dsc = os.path.join(SDK_LIBRARY_DIR, example, 'example.dsc')
-    args.append(dsc)
-
-  if build_experimental:
-    args.append('--experimental')
-
-  if generate_make.main(args):
-    buildbot_common.ErrorExit('Failed to build tests.')
+  tree = parse_dsc.LoadProjectTree(SDK_SRC_DIR, include=filters)
+  build_projects.UpdateHelpers(pepperdir, clobber=False)
+  build_projects.UpdateProjects(pepperdir, tree, clobber=False,
+                                toolchains=toolchains)
 
 
-def BuildStepBuildTests(pepperdir, platform):
-  build_sdk.BuildStepMakeAll(pepperdir, platform, 'testlibs',
-                             'Build Test Libraries')
-  build_sdk.BuildStepMakeAll(pepperdir, platform, 'tests', 'Build Tests')
+def StepBuildTests(pepperdir):
+  for config in ('Debug', 'Release'):
+    build_sdk.BuildStepMakeAll(pepperdir, 'tests',
+                                   'Build Tests (%s)' % config,
+                                   deps=False, config=config)
 
 
-def BuildStepRunPyautoTests(pepperdir, platform, pepper_ver):
-  buildbot_common.BuildStep('Test Examples')
-  env = copy.copy(os.environ)
-  env['PEPPER_VER'] = pepper_ver
-  env['NACL_SDK_ROOT'] = pepperdir
+def StepRunSelLdrTests(pepperdir):
+  filters = {
+    'SEL_LDR': True
+  }
 
-  pyauto_script = os.path.join(SRC_DIR, 'chrome', 'test',
-                               'functional', 'nacl_sdk.py')
-  pyauto_script_args = ['nacl_sdk.NaClSDKTest.NaClSDKExamples']
+  tree = parse_dsc.LoadProjectTree(SDK_SRC_DIR, include=filters)
 
-  if platform == 'linux' and buildbot_common.IsSDKBuilder():
-    # linux buildbots need to run the pyauto tests through xvfb. Running
-    # using runtest.py does this.
-    #env['PYTHON_PATH'] = '.:' + env.get('PYTHON_PATH', '.')
-    build_dir = os.path.dirname(SRC_DIR)
-    runtest_py = os.path.join(build_dir, '..', '..', '..', 'scripts', 'slave',
-                              'runtest.py')
-    buildbot_common.Run([sys.executable, runtest_py, '--target', 'Release',
-                         '--build-dir', 'src/build', sys.executable,
-                         pyauto_script] + pyauto_script_args,
-                        cwd=build_dir, env=env)
+  def RunTest(test, toolchain, arch, config):
+    args = ['TOOLCHAIN=%s' % toolchain, 'NACL_ARCH=%s' % arch]
+    args += ['SEL_LDR=1', 'run']
+    build_projects.BuildProjectsBranch(pepperdir, test, clean=False,
+                                       deps=False, config=config,
+                                       args=args)
+
+  if getos.GetPlatform() == 'win':
+    # On win32 we only support running on the system
+    # arch
+    archs = (getos.GetSystemArch('win'),)
+  elif getos.GetPlatform() == 'mac':
+    # We only ship 32-bit version of sel_ldr on mac.
+    archs = ('x86_32',)
   else:
-    buildbot_common.Run([sys.executable, 'nacl_sdk.py',
-                         'nacl_sdk.NaClSDKTest.NaClSDKExamples'],
-                        cwd=os.path.dirname(pyauto_script),
-                        env=env)
+    # On linux we can run both 32 and 64-bit
+    archs = ('x86_64', 'x86_32')
+
+  for root, projects in tree.iteritems():
+    for project in projects:
+      title = 'sel_ldr tests: %s' % os.path.basename(project['NAME'])
+      location = os.path.join(root, project['NAME'])
+      buildbot_common.BuildStep(title)
+      for toolchain in ('newlib', 'glibc'):
+        for arch in archs:
+          for config in ('Debug', 'Release'):
+            RunTest(location, toolchain, arch, config)
+
+
+def StepRunBrowserTests(toolchains, experimental):
+  buildbot_common.BuildStep('Run Tests')
+
+  args = [
+    sys.executable,
+    os.path.join(SCRIPT_DIR, 'test_projects.py'),
+    '--retry-times=3',
+  ]
+
+  if experimental:
+    args.append('-x')
+  for toolchain in toolchains:
+    args.extend(['-t', toolchain])
+
+  try:
+    subprocess.check_call(args)
+  except subprocess.CalledProcessError:
+    buildbot_common.ErrorExit('Error running tests.')
 
 
 def main(args):
-  parser = optparse.OptionParser()
+  usage = '%prog [<options>] [<phase...>]'
+  parser = optparse.OptionParser(description=__doc__, usage=usage)
   parser.add_option('--experimental', help='build experimental tests',
                     action='store_true')
-  parser.add_option('--pyauto', help='Run pyauto tests', action='store_true')
+  parser.add_option('--verbose', '-v', help='Verbose output',
+                    action='store_true')
+
+  if 'NACL_SDK_ROOT' in os.environ:
+    # We don't want the currently configured NACL_SDK_ROOT to have any effect
+    # of the build.
+    del os.environ['NACL_SDK_ROOT']
+
+  # To setup bash completion for this command first install optcomplete
+  # and then add this line to your .bashrc:
+  #  complete -F _optcomplete test_sdk.py
+  try:
+    import optcomplete
+    optcomplete.autocomplete(parser)
+  except ImportError:
+    pass
 
   options, args = parser.parse_args(args[1:])
 
-  platform = getos.GetPlatform()
-  pepper_ver = str(int(build_utils.ChromeMajorVersion()))
+  pepper_ver = str(int(build_version.ChromeMajorVersion()))
   pepperdir = os.path.join(OUT_DIR, 'pepper_' + pepper_ver)
-  toolchains = ['newlib', 'glibc', 'pnacl', 'host']
+  toolchains = ['newlib', 'glibc', 'pnacl']
+  toolchains.append(getos.GetPlatform())
 
-  BuildStepBuildToolsTests()
-  BuildStepBuildExamples(pepperdir, platform)
-  BuildStepCopyTests(pepperdir, toolchains, options.experimental, True)
-  BuildStepBuildTests(pepperdir, platform)
-  if options.pyauto:
-    BuildStepRunPyautoTests(pepperdir, platform, pepper_ver)
+  if options.verbose:
+    build_projects.verbose = True
+
+  phases = [
+    ('build_examples', StepBuildExamples, pepperdir),
+    ('copy_tests', StepCopyTests, pepperdir, toolchains, options.experimental),
+    ('build_tests', StepBuildTests, pepperdir),
+    ('sel_ldr_tests', StepRunSelLdrTests, pepperdir),
+    ('browser_tests', StepRunBrowserTests, toolchains, options.experimental),
+  ]
+
+  if args:
+    phase_names = [p[0] for p in phases]
+    for arg in args:
+      if arg not in phase_names:
+        msg = 'Invalid argument: %s\n' % arg
+        msg += 'Possible arguments:\n'
+        for name in phase_names:
+          msg += '   %s\n' % name
+        parser.error(msg.strip())
+
+  for phase in phases:
+    phase_name = phase[0]
+    if args and phase_name not in args:
+      continue
+    phase_func = phase[1]
+    phase_args = phase[2:]
+    phase_func(*phase_args)
 
   return 0
 
 
 if __name__ == '__main__':
-  sys.exit(main(sys.argv))
+  try:
+    sys.exit(main(sys.argv))
+  except KeyboardInterrupt:
+    buildbot_common.ErrorExit('test_sdk: interrupted')

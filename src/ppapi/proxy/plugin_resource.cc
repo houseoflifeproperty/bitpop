@@ -6,7 +6,9 @@
 
 #include <limits>
 
+#include "ppapi/proxy/plugin_globals.h"
 #include "ppapi/proxy/ppapi_messages.h"
+#include "ppapi/shared_impl/ppapi_globals.h"
 
 namespace ppapi {
 namespace proxy {
@@ -16,7 +18,10 @@ PluginResource::PluginResource(Connection connection, PP_Instance instance)
       connection_(connection),
       next_sequence_number_(1),
       sent_create_to_browser_(false),
-      sent_create_to_renderer_(false) {
+      sent_create_to_renderer_(false),
+      resource_reply_thread_registrar_(
+          PpapiGlobals::Get()->IsPluginGlobals() ?
+              PluginGlobals::Get()->resource_reply_thread_registrar() : NULL) {
 }
 
 PluginResource::~PluginResource() {
@@ -28,11 +33,17 @@ PluginResource::~PluginResource() {
     connection_.renderer_sender->Send(
         new PpapiHostMsg_ResourceDestroyed(pp_resource()));
   }
+
+  if (resource_reply_thread_registrar_)
+    resource_reply_thread_registrar_->Unregister(pp_resource());
 }
 
 void PluginResource::OnReplyReceived(
     const proxy::ResourceMessageReplyParams& params,
     const IPC::Message& msg) {
+  TRACE_EVENT2("ppapi proxy", "PluginResource::OnReplyReceived",
+               "Class", IPC_MESSAGE_ID_CLASS(msg.type()),
+               "Line", IPC_MESSAGE_ID_LINE(msg.type()));
   // Grab the callback for the reply sequence number and run it with |msg|.
   CallbackMap::iterator it = callbacks_.find(params.sequence());
   if (it == callbacks_.end()) {
@@ -69,6 +80,9 @@ void PluginResource::NotifyInstanceWasDeleted() {
 }
 
 void PluginResource::SendCreate(Destination dest, const IPC::Message& msg) {
+  TRACE_EVENT2("ppapi proxy", "PluginResource::SendCreate",
+               "Class", IPC_MESSAGE_ID_CLASS(msg.type()),
+               "Line", IPC_MESSAGE_ID_LINE(msg.type()));
   if (dest == RENDERER) {
     DCHECK(!sent_create_to_renderer_);
     sent_create_to_renderer_ = true;
@@ -96,6 +110,9 @@ void PluginResource::AttachToPendingHost(Destination dest,
 }
 
 void PluginResource::Post(Destination dest, const IPC::Message& msg) {
+  TRACE_EVENT2("ppapi proxy", "PluginResource::Post",
+               "Class", IPC_MESSAGE_ID_CLASS(msg.type()),
+               "Line", IPC_MESSAGE_ID_LINE(msg.type()));
   ResourceMessageCallParams params(pp_resource(), GetNextSequence());
   SendResourceCall(dest, params, msg);
 }
@@ -104,8 +121,18 @@ bool PluginResource::SendResourceCall(
     Destination dest,
     const ResourceMessageCallParams& call_params,
     const IPC::Message& nested_msg) {
-  return GetSender(dest)->Send(
-      new PpapiHostMsg_ResourceCall(call_params, nested_msg));
+  // For in-process plugins, we need to send the routing ID with the request.
+  // The browser then uses that routing ID when sending the reply so it will be
+  // routed back to the correct RenderFrameImpl.
+  if (dest == BROWSER && connection_.in_process) {
+    return GetSender(dest)->Send(new PpapiHostMsg_InProcessResourceCall(
+        connection_.browser_sender_routing_id,
+        call_params,
+        nested_msg));
+  } else {
+    return GetSender(dest)->Send(
+        new PpapiHostMsg_ResourceCall(call_params, nested_msg));
+  }
 }
 
 int32_t PluginResource::GenericSyncCall(
@@ -113,6 +140,9 @@ int32_t PluginResource::GenericSyncCall(
     const IPC::Message& msg,
     IPC::Message* reply,
     ResourceMessageReplyParams* reply_params) {
+  TRACE_EVENT2("ppapi proxy", "PluginResource::GenericSyncCall",
+               "Class", IPC_MESSAGE_ID_CLASS(msg.type()),
+               "Line", IPC_MESSAGE_ID_LINE(msg.type()));
   ResourceMessageCallParams params(pp_resource(), GetNextSequence());
   params.set_has_callback();
   bool success = GetSender(dest)->Send(new PpapiHostMsg_ResourceSyncCall(

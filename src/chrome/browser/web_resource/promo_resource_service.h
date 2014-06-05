@@ -10,13 +10,17 @@
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/web_resource/web_resource_service.h"
 
+class NotificationPromo;
+class PrefRegistrySimple;
+class PrefService;
+
 namespace base {
 class DictionaryValue;
 }
 
-class NotificationPromo;
-class PrefService;
-class Profile;
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
 
 // A PromoResourceService fetches data from a web resource server to be used to
 // dynamically change the appearance of the New Tab Page. For example, it has
@@ -24,11 +28,11 @@ class Profile;
 // promotional messages to certain groups of Chrome users.
 class PromoResourceService : public WebResourceService {
  public:
-  static void RegisterPrefs(PrefService* local_state);
+  static void RegisterPrefs(PrefRegistrySimple* registry);
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
+  static void MigrateUserPrefs(PrefService* user_prefs);
 
-  static void RegisterUserPrefs(PrefService* prefs);
-
-  explicit PromoResourceService(Profile* profile);
+  PromoResourceService();
 
  private:
   virtual ~PromoResourceService();
@@ -53,9 +57,6 @@ class PromoResourceService : public WebResourceService {
 
   // WebResourceService override to process the parsed information.
   virtual void Unpack(const base::DictionaryValue& parsed_json) OVERRIDE;
-
-  // The profile this service belongs to.
-  Profile* profile_;
 
   // Allows the creation of tasks to send a notification.
   // This allows the PromoResourceService to notify the New Tab Page immediately

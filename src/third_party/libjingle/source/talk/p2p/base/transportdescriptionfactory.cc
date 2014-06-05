@@ -37,16 +37,15 @@
 namespace cricket {
 
 static TransportProtocol kDefaultProtocol = ICEPROTO_GOOGLE;
-static const char* kDefaultDigestAlg = talk_base::DIGEST_SHA_1;
 
 TransportDescriptionFactory::TransportDescriptionFactory()
     : protocol_(kDefaultProtocol),
       secure_(SEC_DISABLED),
-      identity_(NULL),
-      digest_alg_(kDefaultDigestAlg) {
+      identity_(NULL) {
 }
 
 TransportDescription* TransportDescriptionFactory::CreateOffer(
+    const TransportOptions& options,
     const TransportDescription* current_description) const {
   talk_base::scoped_ptr<TransportDescription> desc(new TransportDescription());
 
@@ -61,7 +60,7 @@ TransportDescription* TransportDescriptionFactory::CreateOffer(
   }
 
   // Generate the ICE credentials if we don't already have them.
-  if (!current_description) {
+  if (!current_description || options.ice_restart) {
     desc->ice_ufrag = talk_base::CreateRandomString(ICE_UFRAG_LENGTH);
     desc->ice_pwd = talk_base::CreateRandomString(ICE_PWD_LENGTH);
   } else {
@@ -72,15 +71,18 @@ TransportDescription* TransportDescriptionFactory::CreateOffer(
   // If we are trying to establish a secure transport, add a fingerprint.
   if (secure_ == SEC_ENABLED || secure_ == SEC_REQUIRED) {
     // Fail if we can't create the fingerprint.
-    if (!CreateIdentityDigest(desc.get())) {
+    // If we are the initiator set role to "actpass".
+    if (!SetSecurityInfo(desc.get(), CONNECTIONROLE_ACTPASS)) {
       return NULL;
     }
   }
+
   return desc.release();
 }
 
 TransportDescription* TransportDescriptionFactory::CreateAnswer(
     const TransportDescription* offer,
+    const TransportOptions& options,
     const TransportDescription* current_description) const {
   // A NULL offer is treated as a GICE transport description.
   // TODO(juberti): Figure out why we get NULL offers, and fix this upstream.
@@ -99,7 +101,7 @@ TransportDescription* TransportDescriptionFactory::CreateAnswer(
     desc->transport_type = NS_GINGLE_P2P;
     // Offer is hybrid, we support GICE: use GICE.
   } else if ((!offer || offer->transport_type == NS_GINGLE_P2P) &&
-           (protocol_ == ICEPROTO_HYBRID || protocol_ == ICEPROTO_GOOGLE)) {
+             (protocol_ == ICEPROTO_HYBRID || protocol_ == ICEPROTO_GOOGLE)) {
     // Offer is GICE, we support hybrid or GICE: use GICE.
     desc->transport_type = NS_GINGLE_P2P;
   } else {
@@ -109,8 +111,9 @@ TransportDescription* TransportDescriptionFactory::CreateAnswer(
     return NULL;
   }
 
-  // Generate the ICE credentials if we don't already have them.
-  if (!current_description) {
+  // Generate the ICE credentials if we don't already have them or ice is
+  // being restarted.
+  if (!current_description || options.ice_restart) {
     desc->ice_ufrag = talk_base::CreateRandomString(ICE_UFRAG_LENGTH);
     desc->ice_pwd = talk_base::CreateRandomString(ICE_PWD_LENGTH);
   } else {
@@ -123,7 +126,11 @@ TransportDescription* TransportDescriptionFactory::CreateAnswer(
     // The offer supports DTLS, so answer with DTLS, as long as we support it.
     if (secure_ == SEC_ENABLED || secure_ == SEC_REQUIRED) {
       // Fail if we can't create the fingerprint.
-      if (!CreateIdentityDigest(desc.get())) {
+      // Setting DTLS role to active.
+      ConnectionRole role = (options.prefer_passive_role) ?
+          CONNECTIONROLE_PASSIVE : CONNECTIONROLE_ACTIVE;
+
+      if (!SetSecurityInfo(desc.get(), role)) {
         return NULL;
       }
     }
@@ -137,20 +144,32 @@ TransportDescription* TransportDescriptionFactory::CreateAnswer(
   return desc.release();
 }
 
-bool TransportDescriptionFactory::CreateIdentityDigest(
-    TransportDescription* desc) const {
+bool TransportDescriptionFactory::SetSecurityInfo(
+    TransportDescription* desc, ConnectionRole role) const {
   if (!identity_) {
     LOG(LS_ERROR) << "Cannot create identity digest with no identity";
     return false;
   }
 
-  desc->identity_fingerprint.reset(
-      talk_base::SSLFingerprint::Create(digest_alg_, identity_));
-  if (!desc->identity_fingerprint.get()) {
-    LOG(LS_ERROR) << "Failed to create identity digest, alg=" << digest_alg_;
+  // This digest algorithm is used to produce the a=fingerprint lines in SDP.
+  // RFC 4572 Section 5 requires that those lines use the same hash function as
+  // the certificate's signature.
+  std::string digest_alg;
+  if (!identity_->certificate().GetSignatureDigestAlgorithm(&digest_alg)) {
+    LOG(LS_ERROR) << "Failed to retrieve the certificate's digest algorithm";
     return false;
   }
 
+  desc->identity_fingerprint.reset(
+      talk_base::SSLFingerprint::Create(digest_alg, identity_));
+  if (!desc->identity_fingerprint.get()) {
+    LOG(LS_ERROR) << "Failed to create identity fingerprint, alg="
+                  << digest_alg;
+    return false;
+  }
+
+  // Assign security role.
+  desc->connection_role = role;
   return true;
 }
 

@@ -5,12 +5,12 @@
 #include "chrome/browser/ui/toolbar/back_forward_menu_model.h"
 
 #include "base/path_service.h"
-#include "base/string16.h"
-#include "base/string_util.h"
-#include "base/time.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
@@ -23,13 +23,12 @@
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/test/test_browser_thread.h"
 #include "content/public/test/web_contents_tester.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/codec/png_codec.h"
 
-using content::BrowserThread;
+using base::ASCIIToUTF16;
 using content::WebContentsTester;
 
 namespace {
@@ -47,9 +46,9 @@ class FaviconDelegate : public ui::MenuModelDelegate {
  public:
   FaviconDelegate() : was_called_(false) {}
 
-  void OnIconChanged(int model_index) {
+  virtual void OnIconChanged(int model_index) OVERRIDE {
     was_called_ = true;
-    MessageLoop::current()->Quit();
+    base::MessageLoop::current()->Quit();
   }
 
   bool was_called() const { return was_called_; }
@@ -64,10 +63,6 @@ class FaviconDelegate : public ui::MenuModelDelegate {
 
 class BackFwdMenuModelTest : public ChromeRenderViewHostTestHarness {
  public:
-  BackFwdMenuModelTest()
-      : ui_thread_(BrowserThread::UI, &message_loop_) {
-  }
-
   void ValidateModel(BackForwardMenuModel* model, int history_items,
                      int chapter_stops) {
     int h = std::min(BackForwardMenuModel::kMaxHistoryItems, history_items);
@@ -83,7 +78,7 @@ class BackFwdMenuModelTest : public ChromeRenderViewHostTestHarness {
 
   void LoadURLAndUpdateState(const char* url, const char* title) {
     NavigateAndCommit(GURL(url));
-    controller().GetLastCommittedEntry()->SetTitle(UTF8ToUTF16(title));
+    controller().GetLastCommittedEntry()->SetTitle(base::UTF8ToUTF16(title));
   }
 
   // Navigate back or forward the given amount and commits the entry (which
@@ -108,8 +103,6 @@ class BackFwdMenuModelTest : public ChromeRenderViewHostTestHarness {
     controller().GoForward();
     WebContentsTester::For(web_contents())->CommitPendingNavigation();
   }
-
-  content::TestBrowserThread ui_thread_;
 };
 
 TEST_F(BackFwdMenuModelTest, BasicCase) {
@@ -353,7 +346,7 @@ TEST_F(BackFwdMenuModelTest, ChapterStops) {
   // Check to see if the chapter stops have the right labels.
   int index = BackForwardMenuModel::kMaxHistoryItems;
   // Empty string indicates item is a separator.
-  EXPECT_EQ(string16(), back_model->GetLabelAt(index++));
+  EXPECT_EQ(base::string16(), back_model->GetLabelAt(index++));
   EXPECT_EQ(ASCIIToUTF16("F3"), back_model->GetLabelAt(index++));
   EXPECT_EQ(ASCIIToUTF16("E3"), back_model->GetLabelAt(index++));
   EXPECT_EQ(ASCIIToUTF16("D3"), back_model->GetLabelAt(index++));
@@ -361,7 +354,7 @@ TEST_F(BackFwdMenuModelTest, ChapterStops) {
   // The menu should only show a maximum of 5 chapter stops.
   EXPECT_EQ(ASCIIToUTF16("B3"), back_model->GetLabelAt(index));
   // Empty string indicates item is a separator.
-  EXPECT_EQ(string16(), back_model->GetLabelAt(index + 1));
+  EXPECT_EQ(base::string16(), back_model->GetLabelAt(index + 1));
   EXPECT_EQ(back_model->GetShowFullHistoryLabel(),
             back_model->GetLabelAt(index + 2));
 
@@ -379,7 +372,7 @@ TEST_F(BackFwdMenuModelTest, ChapterStops) {
   EXPECT_EQ(ASCIIToUTF16("A3"), back_model->GetLabelAt(index));
   GoBack();
   // It is now a separator.
-  EXPECT_EQ(string16(), back_model->GetLabelAt(index));
+  EXPECT_EQ(base::string16(), back_model->GetLabelAt(index));
   // Undo our position change.
   NavigateToOffset(6);
 
@@ -402,7 +395,7 @@ TEST_F(BackFwdMenuModelTest, ChapterStops) {
   // Check to see if the chapter stops have the right labels.
   index = BackForwardMenuModel::kMaxHistoryItems;
   // Empty string indicates item is a separator.
-  EXPECT_EQ(string16(), forward_model->GetLabelAt(index++));
+  EXPECT_EQ(base::string16(), forward_model->GetLabelAt(index++));
   EXPECT_EQ(ASCIIToUTF16("E3"), forward_model->GetLabelAt(index++));
   EXPECT_EQ(ASCIIToUTF16("F3"), forward_model->GetLabelAt(index++));
   EXPECT_EQ(ASCIIToUTF16("G3"), forward_model->GetLabelAt(index++));
@@ -410,7 +403,7 @@ TEST_F(BackFwdMenuModelTest, ChapterStops) {
   // The menu should only show a maximum of 5 chapter stops.
   EXPECT_EQ(ASCIIToUTF16("I3"), forward_model->GetLabelAt(index));
   // Empty string indicates item is a separator.
-  EXPECT_EQ(string16(), forward_model->GetLabelAt(index + 1));
+  EXPECT_EQ(base::string16(), forward_model->GetLabelAt(index + 1));
   EXPECT_EQ(forward_model->GetShowFullHistoryLabel(),
       forward_model->GetLabelAt(index + 2));
 
@@ -505,10 +498,11 @@ TEST_F(BackFwdMenuModelTest, EscapeLabel) {
 
 // Test asynchronous loading of favicon from history service.
 TEST_F(BackFwdMenuModelTest, FaviconLoadTest) {
-  profile()->CreateHistoryService(true, false);
+  ASSERT_TRUE(profile()->CreateHistoryService(true, false));
   profile()->CreateFaviconService();
+  Browser::CreateParams native_params(profile(), chrome::GetActiveDesktop());
   scoped_ptr<Browser> browser(
-      chrome::CreateBrowserWithTestWindowForProfile(profile()));
+      chrome::CreateBrowserWithTestWindowForParams(&native_params));
   FaviconDelegate favicon_delegate;
 
   BackForwardMenuModel back_model(
@@ -530,9 +524,11 @@ TEST_F(BackFwdMenuModelTest, FaviconLoadTest) {
   HistoryServiceFactory::GetForProfile(
       profile(), Profile::EXPLICIT_ACCESS)->AddPage(
           url1, base::Time::Now(), history::SOURCE_BROWSED);
-  FaviconServiceFactory::GetForProfile(
-      profile(), Profile::EXPLICIT_ACCESS)->SetFavicons(
-          url1, url1_favicon, history::FAVICON, gfx::Image(new_icon_bitmap));
+  FaviconServiceFactory::GetForProfile(profile(), Profile::EXPLICIT_ACCESS)
+      ->SetFavicons(url1,
+                    url1_favicon,
+                    favicon_base::FAVICON,
+                    gfx::Image::CreateFrom1xBitmap(new_icon_bitmap));
 
   // Will return the current icon (default) but start an anync call
   // to retrieve the favicon from the favicon service.
@@ -541,7 +537,7 @@ TEST_F(BackFwdMenuModelTest, FaviconLoadTest) {
 
   // Make the favicon service run GetFavIconForURL,
   // FaviconDelegate.OnIconChanged will be called.
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
 
   // Verify that the callback executed.
   EXPECT_TRUE(favicon_delegate.was_called());

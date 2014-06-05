@@ -19,6 +19,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/channel_layout.h"
 #include "libavutil/crc.h"
 #include "libavutil/log.h"
 #include "bytestream.h"
@@ -27,6 +28,17 @@
 #include "flacdata.h"
 
 static const int8_t sample_size_table[] = { 0, 8, 12, 0, 16, 20, 24, 0 };
+
+static const uint64_t flac_channel_layouts[8] = {
+    AV_CH_LAYOUT_MONO,
+    AV_CH_LAYOUT_STEREO,
+    AV_CH_LAYOUT_SURROUND,
+    AV_CH_LAYOUT_QUAD,
+    AV_CH_LAYOUT_5POINT0,
+    AV_CH_LAYOUT_5POINT1,
+    AV_CH_LAYOUT_6POINT1,
+    AV_CH_LAYOUT_7POINT1
+};
 
 static int64_t get_utf8(GetBitContext *gb)
 {
@@ -43,7 +55,7 @@ int ff_flac_decode_frame_header(AVCodecContext *avctx, GetBitContext *gb,
     /* frame sync code */
     if ((get_bits(gb, 15) & 0x7FFF) != 0x7FFC) {
         av_log(avctx, AV_LOG_ERROR + log_level_offset, "invalid sync code\n");
-        return -1;
+        return AVERROR_INVALIDDATA;
     }
 
     /* variable block size stream code */
@@ -64,7 +76,7 @@ int ff_flac_decode_frame_header(AVCodecContext *avctx, GetBitContext *gb,
     } else {
         av_log(avctx, AV_LOG_ERROR + log_level_offset,
                "invalid channel mode: %d\n", fi->ch_mode);
-        return -1;
+        return AVERROR_INVALIDDATA;
     }
 
     /* bits per sample */
@@ -73,7 +85,7 @@ int ff_flac_decode_frame_header(AVCodecContext *avctx, GetBitContext *gb,
         av_log(avctx, AV_LOG_ERROR + log_level_offset,
                "invalid sample size code (%d)\n",
                bps_code);
-        return -1;
+        return AVERROR_INVALIDDATA;
     }
     fi->bps = sample_size_table[bps_code];
 
@@ -81,7 +93,7 @@ int ff_flac_decode_frame_header(AVCodecContext *avctx, GetBitContext *gb,
     if (get_bits1(gb)) {
         av_log(avctx, AV_LOG_ERROR + log_level_offset,
                "broken stream, invalid padding\n");
-        return -1;
+        return AVERROR_INVALIDDATA;
     }
 
     /* sample or frame count */
@@ -89,14 +101,14 @@ int ff_flac_decode_frame_header(AVCodecContext *avctx, GetBitContext *gb,
     if (fi->frame_or_sample_num < 0) {
         av_log(avctx, AV_LOG_ERROR + log_level_offset,
                "sample/frame number invalid; utf8 fscked\n");
-        return -1;
+        return AVERROR_INVALIDDATA;
     }
 
     /* blocksize */
     if (bs_code == 0) {
         av_log(avctx, AV_LOG_ERROR + log_level_offset,
                "reserved blocksize code: 0\n");
-        return -1;
+        return AVERROR_INVALIDDATA;
     } else if (bs_code == 6) {
         fi->blocksize = get_bits(gb, 8) + 1;
     } else if (bs_code == 7) {
@@ -118,7 +130,7 @@ int ff_flac_decode_frame_header(AVCodecContext *avctx, GetBitContext *gb,
         av_log(avctx, AV_LOG_ERROR + log_level_offset,
                "illegal sample rate code %d\n",
                sr_code);
-        return -1;
+        return AVERROR_INVALIDDATA;
     }
 
     /* header CRC-8 check */
@@ -127,7 +139,7 @@ int ff_flac_decode_frame_header(AVCodecContext *avctx, GetBitContext *gb,
                get_bits_count(gb)/8)) {
         av_log(avctx, AV_LOG_ERROR + log_level_offset,
                "header crc mismatch\n");
-        return -1;
+        return AVERROR_INVALIDDATA;
     }
 
     return 0;
@@ -181,6 +193,14 @@ int avpriv_flac_is_extradata_valid(AVCodecContext *avctx,
     return 1;
 }
 
+void ff_flac_set_channel_layout(AVCodecContext *avctx)
+{
+    if (avctx->channels <= FF_ARRAY_ELEMS(flac_channel_layouts))
+        avctx->channel_layout = flac_channel_layouts[avctx->channels - 1];
+    else
+        avctx->channel_layout = 0;
+}
+
 void avpriv_flac_parse_streaminfo(AVCodecContext *avctx, struct FLACStreaminfo *s,
                               const uint8_t *buffer)
 {
@@ -205,8 +225,9 @@ void avpriv_flac_parse_streaminfo(AVCodecContext *avctx, struct FLACStreaminfo *
     avctx->channels = s->channels;
     avctx->sample_rate = s->samplerate;
     avctx->bits_per_raw_sample = s->bps;
+    ff_flac_set_channel_layout(avctx);
 
-    s->samples = get_bits_longlong(&gb, 36);
+    s->samples = get_bits64(&gb, 36);
 
     skip_bits_long(&gb, 64); /* md5 sum */
     skip_bits_long(&gb, 64); /* md5 sum */

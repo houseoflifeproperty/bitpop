@@ -61,7 +61,6 @@
 #define IDC_MOVE_TAB_NEXT               34032
 #define IDC_MOVE_TAB_PREVIOUS           34033
 #define IDC_SEARCH                      34035
-#define IDC_TABPOSE                     34036
 #define IDC_DEBUG_FRAME_TOGGLE          34038
 #define IDC_PRESENTATION_MODE           34039
 #define IDC_METRO_SNAP_ENABLE           34040
@@ -69,6 +68,13 @@
 #define IDC_WIN8_DESKTOP_RESTART        34042
 #define IDC_WIN8_METRO_RESTART          34043
 #define IDC_TOGGLE_ASH_DESKTOP          34044
+#define IDC_WINDOW_MENU                 34045
+#define IDC_MINIMIZE_WINDOW             34046
+#define IDC_MAXIMIZE_WINDOW             34047
+#define IDC_ALL_WINDOWS_FRONT           34048
+#define IDC_VISIT_DESKTOP_OF_LRU_USER_2 34049
+#define IDC_VISIT_DESKTOP_OF_LRU_USER_3 34050
+#define IDC_USE_SYSTEM_TITLE_BAR        34051
 
 // Page-related commands
 #define IDC_BOOKMARK_PAGE               35000
@@ -79,9 +85,9 @@
 #define IDC_ENCODING_MENU               35005
 #define IDC_EMAIL_PAGE_LOCATION         35006
 #define IDC_ADVANCED_PRINT              35007
-#define IDC_CHROME_TO_MOBILE_PAGE       35008
-#define IDC_PRINT_TO_DESTINATION        35009
-#define IDC_BOOKMARK_PAGE_FROM_STAR     35010
+#define IDC_PRINT_TO_DESTINATION        35008
+#define IDC_TRANSLATE_PAGE              35009
+#define IDC_MANAGE_PASSWORDS_FOR_PAGE   35010
 
 // When adding a new encoding to this list, be sure to append it to the
 // EncodingMenuController::kValidEncodingIds array in
@@ -128,7 +134,6 @@
 // Clipboard commands
 #define IDC_CUT                         36000
 #define IDC_COPY                        36001
-#define IDC_COPY_URL                    36002
 #define IDC_PASTE                       36003
 #define IDC_EDIT_MENU                   36004
 
@@ -136,6 +141,7 @@
 #define IDC_FIND                        37000
 #define IDC_FIND_NEXT                   37001
 #define IDC_FIND_PREVIOUS               37002
+#define IDC_FIND_MENU                   37100
 
 // Zoom
 #define IDC_ZOOM_MENU                   38000
@@ -152,15 +158,20 @@
 #define IDC_FOCUS_NEXT_PANE             39004
 #define IDC_FOCUS_PREVIOUS_PANE         39005
 #define IDC_FOCUS_BOOKMARKS             39006
+#define IDC_FOCUS_INFOBARS              39007
 
 // Show various bits of UI
 #define IDC_OPEN_FILE                   40000
 #define IDC_CREATE_SHORTCUTS            40001
-#define IDC_DEVELOPER_MENU              40002
-#define IDC_DEV_TOOLS                   40003
-#define IDC_DEV_TOOLS_CONSOLE           40004
-#define IDC_TASK_MANAGER                40005
+#define IDC_CREATE_HOSTED_APP           40002
+#define IDC_DEVELOPER_MENU              40003
+#define IDC_DEV_TOOLS                   40004
+#define IDC_DEV_TOOLS_CONSOLE           40005
+#define IDC_TASK_MANAGER                40006
+#define IDC_DEV_TOOLS_DEVICES           40007
+#if defined(GOOGLE_CHROME_BUILD)
 #define IDC_FEEDBACK                    40008
+#endif
 #define IDC_SHOW_BOOKMARK_BAR           40009
 #define IDC_SHOW_HISTORY                40010
 #define IDC_SHOW_BOOKMARK_MANAGER       40011
@@ -178,13 +189,15 @@
 #define IDC_DEV_TOOLS_INSPECT           40023
 #define IDC_UPGRADE_DIALOG              40024
 #define IDC_VIEW_INCOMPATIBILITIES      40025
-#define IDC_VIEW_BACKGROUND_PAGES       40026
 #define IDC_SHOW_KEYBOARD_OVERLAY       40027
 #define IDC_PROFILING_ENABLED           40028
 #define IDC_BOOKMARKS_MENU              40029
+// TODO(atwilson): Remove IDC_SHOW_SYNC_SETUP when we officially allow signin
+// when sync is disabled.
 #define IDC_SHOW_SYNC_SETUP             40030
+#define IDC_SHOW_SIGNIN                 40030
 #define IDC_EXTENSION_ERRORS            40031
-#define IDC_SHOW_SYNC_ERROR             40032
+#define IDC_SHOW_SIGNIN_ERROR           40032
 #define IDC_SHOW_SETTINGS_CHANGE_FIRST  40033
 #define IDC_SHOW_SETTINGS_CHANGE_LAST   40133
 #define IDC_SHOW_AVATAR_MENU            40134
@@ -195,6 +208,9 @@
 #define IDC_EXTERNAL_EXTENSION_ALERT    40238
 #define IDC_RECENT_TABS_MENU            40239
 #define IDC_RECENT_TABS_NO_DEVICE_TABS  40240
+#define IDC_SHOW_SETTINGS_RESET_BUBBLE  40241
+#define IDC_TAKE_SCREENSHOT             40242
+#define IDC_SHOW_SYNC_ERROR             40243
 
 // Spell-check
 // Insert any additional suggestions before _LAST; these have to be consecutive.
@@ -214,10 +230,10 @@
 #define IDC_SPELLCHECK_ADD_TO_DICTIONARY 41110
 
 // Writing direction
-#define IDC_WRITING_DIRECTION_MENU       41120     // OSX only
-#define IDC_WRITING_DIRECTION_DEFAULT    41121     // OSX only
-#define IDC_WRITING_DIRECTION_LTR        41122     // OSX only
-#define IDC_WRITING_DIRECTION_RTL        41123     // OSX only
+#define IDC_WRITING_DIRECTION_MENU       41120
+#define IDC_WRITING_DIRECTION_DEFAULT    41121
+#define IDC_WRITING_DIRECTION_LTR        41122
+#define IDC_WRITING_DIRECTION_RTL        41123
 
 // Translate
 #define IDC_TRANSLATE_OPTIONS_ALWAYS                42000
@@ -234,6 +250,9 @@
 // Identifiers for platform-specific items.
 // Placed in a common file to help insure they never collide.
 #define IDC_VIEW_MENU                   44000     // OSX only
+#define IDC_FILE_MENU                   44001     // OSX only
+#define IDC_CHROME_MENU                 44002     // OSX only
+#define IDC_HIDE_APP                    44003     // OSX only
 #define IDC_HISTORY_MENU                46000     // OSX only
 #define IDC_PROFILE_MAIN_MENU           46100     // OSX only
 #define IDC_INPUT_METHODS_MENU          46300     // Linux only
@@ -260,6 +279,7 @@
 #define IDC_CONTENT_CONTEXT_COPYIMAGELOCATION 50111
 #define IDC_CONTENT_CONTEXT_COPYIMAGE 50112
 #define IDC_CONTENT_CONTEXT_OPENIMAGENEWTAB 50113
+#define IDC_CONTENT_CONTEXT_SEARCHWEBFORIMAGE 50114
 // Audio/video items.
 #define IDC_CONTENT_CONTEXT_SAVEAVAS 50120
 #define IDC_CONTENT_CONTEXT_COPYAVLOCATION 50121
@@ -295,6 +315,7 @@
 #define IDC_CONTENT_CONTEXT_INSPECTBACKGROUNDPAGE 50161
 #define IDC_CONTENT_CONTEXT_RELOAD_PACKAGED_APP 50162
 #define IDC_CONTENT_CONTEXT_RESTART_PACKAGED_APP 50163
+#define IDC_CONTENT_CONTEXT_AUTOCORRECT_SPELLING_TOGGLE 50164
 // Frame items.
 #define IDC_CONTENT_CONTEXT_RELOADFRAME 50170
 #define IDC_CONTENT_CONTEXT_VIEWFRAMESOURCE 50171
@@ -316,14 +337,12 @@
 #define IDC_BOOKMARK_BAR_NEW_FOLDER 51008
 #define IDC_BOOKMARK_MANAGER 51009
 #define IDC_BOOKMARK_BAR_ALWAYS_SHOW 51010
+#define IDC_BOOKMARK_BAR_SHOW_APPS_SHORTCUT 51011
+#define IDC_BOOKMARK_BAR_UNDO 51012
+#define IDC_BOOKMARK_BAR_REDO 51013
 
 // Context menu items in the status tray
 #define IDC_STATUS_TRAY_KEEP_CHROME_RUNNING_IN_BACKGROUND 51100
-
-// Context menu items for speech recognition
-#define IDC_SPEECH_INPUT_MENU 51200
-#define IDC_CONTENT_CONTEXT_SPEECH_INPUT_FILTER_PROFANITIES 51201
-#define IDC_CONTENT_CONTEXT_SPEECH_INPUT_ABOUT 51202
 
 // Context menu items for media stream status tray
 #define IDC_MEDIA_STREAM_DEVICE_STATUS_TRAY 51300

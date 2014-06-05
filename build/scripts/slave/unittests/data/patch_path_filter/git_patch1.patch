@@ -1,0 +1,544 @@
+Index: content/browser/renderer_host/media/video_capture_manager.cc
+diff --git a/content/browser/renderer_host/media/video_capture_manager.cc b/content/browser/renderer_host/media/video_capture_manager.cc
+index 00fa52e43eb0e366848c675ecf7bd44a6559dfe9..4784134613e928bd3bef59df78b6288d19d2920e 100644
+--- a/content/browser/renderer_host/media/video_capture_manager.cc
++++ b/content/browser/renderer_host/media/video_capture_manager.cc
+@@ -19,8 +19,10 @@
+ #include "content/public/common/content_switches.h"
+ #include "content/public/common/desktop_media_id.h"
+ #include "content/public/common/media_stream_request.h"
++#include "media/base/media_switches.h"
+ #include "media/base/scoped_histogram_timer.h"
+ #include "media/video/capture/fake_video_capture_device.h"
++#include "media/video/capture/file_video_capture_device.h"
+ #include "media/video/capture/video_capture_device.h"
+ 
+ #if defined(ENABLE_SCREEN_CAPTURE)
+@@ -45,7 +47,7 @@ VideoCaptureManager::DeviceEntry::~DeviceEntry() {}
+ VideoCaptureManager::VideoCaptureManager()
+     : listener_(NULL),
+       new_capture_session_id_(1),
+-      use_fake_device_(false) {
++      artificial_device_source_for_testing_ (DISABLED) {
+ }
+ 
+ VideoCaptureManager::~VideoCaptureManager() {
+@@ -131,7 +133,12 @@ void VideoCaptureManager::Close(int capture_session_id) {
+ }
+ 
+ void VideoCaptureManager::UseFakeDevice() {
+-  use_fake_device_ = true;
++  if (CommandLine::ForCurrentProcess()->HasSwitch(
++          switches::kUseFileForFakeVideoCapture)) {
++    artificial_device_source_for_testing_ = Y4M_FILE;
++  } else {
++    artificial_device_source_for_testing_ = TEST_PATTERN;
++  }
+ }
+ 
+ void VideoCaptureManager::DoStartDeviceOnDeviceThread(
+@@ -150,9 +157,20 @@ void VideoCaptureManager::DoStartDeviceOnDeviceThread(
+       media::VideoCaptureDevice::Name* found =
+           video_capture_devices_.FindById(entry->id);
+       if (found) {
+-        video_capture_device.reset(use_fake_device_ ?
+-            media::FakeVideoCaptureDevice::Create(*found) :
+-            media::VideoCaptureDevice::Create(*found));
++        switch (artificial_device_source_for_testing_) {
++          case DISABLED:
++            video_capture_device.reset(
++                media::VideoCaptureDevice::Create(*found));
++            break;
++          case TEST_PATTERN:
++            video_capture_device.reset(
++                media::FakeVideoCaptureDevice::Create(*found));
++            break;
++          case Y4M_FILE:
++            video_capture_device.reset(
++                media::FileVideoCaptureDevice::Create(*found));
++            break;
++        }
+       }
+       break;
+     }
+@@ -320,10 +338,16 @@ VideoCaptureManager::GetAvailableDevicesOnDeviceThread(
+       // Cache the latest enumeration of video capture devices.
+       // We'll refer to this list again in OnOpen to avoid having to
+       // enumerate the devices again.
+-      if (!use_fake_device_) {
+-        media::VideoCaptureDevice::GetDeviceNames(&result);
+-      } else {
+-        media::FakeVideoCaptureDevice::GetDeviceNames(&result);
++      switch (artificial_device_source_for_testing_) {
++        case DISABLED:
++          media::VideoCaptureDevice::GetDeviceNames(&result);
++          break;
++        case TEST_PATTERN:
++          media::FakeVideoCaptureDevice::GetDeviceNames(&result);
++          break;
++        case Y4M_FILE:
++          media::FileVideoCaptureDevice::GetDeviceNames(&result);
++          break;
+       }
+ 
+       // TODO(nick): The correctness of device start depends on this cache being
+Index: content/browser/renderer_host/media/video_capture_manager.h
+diff --git a/content/browser/renderer_host/media/video_capture_manager.h b/content/browser/renderer_host/media/video_capture_manager.h
+index 67dbb753735a817cb4a2d998c5eb3b916bad53c9..82c61537ddf4ae17c735ca8c04dc14b4c41ecf13 100644
+--- a/content/browser/renderer_host/media/video_capture_manager.h
++++ b/content/browser/renderer_host/media/video_capture_manager.h
+@@ -168,9 +168,15 @@ class CONTENT_EXPORT VideoCaptureManager : public MediaStreamProvider {
+   typedef std::set<DeviceEntry*> DeviceEntries;
+   DeviceEntries devices_;
+ 
+-  // Set to true if using fake video capture devices for testing, false by
+-  // default. This is only used for the MEDIA_DEVICE_VIDEO_CAPTURE device type.
+-  bool use_fake_device_;
++  // For unit testing and for performance/quality tests, a test device can be
++  // used instead of a real one. The device can be a simple fake device (a
++  // rolling pacman), or a file that is played in a loop continuously. This only
++  // applies to the MEDIA_DEVICE_VIDEO_CAPTURE device type.
++  enum {
++    DISABLED,
++    TEST_PATTERN,
++    Y4M_FILE
++  } artificial_device_source_for_testing_;
+ 
+   // We cache the enumerated video capture devices in
+   // GetAvailableDevicesOnDeviceThread() and then later look up the requested ID
+Index: media/base/media_switches.cc
+diff --git a/media/base/media_switches.cc b/media/base/media_switches.cc
+index 3718d96ce1fd09391eacd9a9549339246a15ef08..3a8fb33bde9512200893b6b8fdc75b76d4b04b45 100644
+--- a/media/base/media_switches.cc
++++ b/media/base/media_switches.cc
+@@ -101,4 +101,7 @@ const char kUseCras[] = "use-cras";
+ // Disables system sounds manager.
+ const char kDisableSystemSoundsManager[] = "disable-system-sounds-manager";
+ 
++// Use a raw video file as fake video capture device.
++const char kUseFileForFakeVideoCapture[] = "use-file-for-fake-video-capture";
++
+ }  // namespace switches
+Index: media/base/media_switches.h
+diff --git a/media/base/media_switches.h b/media/base/media_switches.h
+index 43b62dfb89fb2bd1c1670603fddd9680dfe8f65c..0c7fa245c84bde92f19f0bc49476ff9b95b24c97 100644
+--- a/media/base/media_switches.h
++++ b/media/base/media_switches.h
+@@ -57,6 +57,8 @@ MEDIA_EXPORT extern const char kUseCras[];
+ 
+ MEDIA_EXPORT extern const char kDisableSystemSoundsManager[];
+ 
++MEDIA_EXPORT extern const char kUseFileForFakeVideoCapture[];
++
+ }  // namespace switches
+ 
+ #endif  // MEDIA_BASE_MEDIA_SWITCHES_H_
+Index: media/media.gyp
+diff --git a/media/media.gyp b/media/media.gyp
+index 6b0594fc8e48fa576253834c2f72d7482179de9c..7f67f1034b8b26bbdd3db688daeff26f6adfacfd 100644
+--- a/media/media.gyp
++++ b/media/media.gyp
+@@ -415,6 +415,8 @@
+         'video/capture/android/video_capture_device_android.h',
+         'video/capture/fake_video_capture_device.cc',
+         'video/capture/fake_video_capture_device.h',
++        'video/capture/file_video_capture_device.cc',
++        'video/capture/file_video_capture_device.h',
+         'video/capture/linux/video_capture_device_linux.cc',
+         'video/capture/linux/video_capture_device_linux.h',
+         'video/capture/mac/avfoundation_glue.h',
+Index: media/video/capture/file_video_capture_device.cc
+diff --git a/media/video/capture/file_video_capture_device.cc b/media/video/capture/file_video_capture_device.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..79e8f3b8f269b9ac237ce00a87079a49dfcab0b0
+--- /dev/null
++++ b/media/video/capture/file_video_capture_device.cc
+@@ -0,0 +1,302 @@
++// Copyright 2013 The Chromium Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "media/video/capture/file_video_capture_device.h"
++
++#include <string>
++
++#include "base/bind.h"
++#include "base/command_line.h"
++#include "base/memory/scoped_ptr.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_piece.h"
++#include "base/strings/sys_string_conversions.h"
++#include "media/base/media_switches.h"
++
++
++namespace media {
++static const char kFileVideoCaptureDeviceName[] =
++    "/dev/placeholder-for-file-backed-fake-capture-device";
++
++static const int kY4MHeaderMaxSize = 200;
++static const char kY4MSimpleFrameDelimiter[] = "FRAME";
++static const int kY4MSimpleFrameDelimiterSize = 6;
++
++int ParseY4MInt(const base::StringPiece& token) {
++  int temp_int;
++  CHECK(base::StringToInt(token, &temp_int));
++  return temp_int;
++}
++
++// Extract numerator and denominator out of a token that must have the aspect
++// numerator:denominator, both integer numbers.
++void ParseY4MRational(const base::StringPiece& token,
++                      int* numerator,
++                      int* denominator) {
++  size_t index_divider = token.find(':');
++  CHECK_NE(index_divider, token.npos);
++  *numerator = ParseY4MInt(token.substr(0, index_divider));
++  *denominator = ParseY4MInt(token.substr(index_divider + 1, token.length()));
++  CHECK(*denominator);
++}
++
++// This function parses the ASCII string in |header| as belonging to a Y4M file,
++// returning the collected format in |video_format|. For a non authoritative
++// explanation of the header format, check
++// http://wiki.multimedia.cx/index.php?title=YUV4MPEG2
++// Restrictions: Only interlaced I420 pixel format is supported, and pixel
++// aspect ratio is ignored.
++// Implementation notes: Y4M header should end with an ASCII 0x20 (whitespace)
++// character, however all examples mentioned in the Y4M header description end
++// with a newline character instead. Also, some headers do _not_ specify pixel
++// format, in this case it means I420.
++// This code was inspired by third_party/libvpx/.../y4minput.* .
++void ParseY4MTags(const std::string& file_header,
++                  media::VideoCaptureFormat* video_format) {
++  video_format->pixel_format = media::PIXEL_FORMAT_I420;
++  video_format->frame_size.set_width(0);
++  video_format->frame_size.set_height(0);
++  size_t index = 0;
++  size_t blank_position = 0;
++  base::StringPiece token;
++  while ((blank_position = file_header.find_first_of("\n ", index)) !=
++         std::string::npos) {
++    // Every token is supposed to have an identifier letter and a bunch of
++    // information immediately after, which we extract into a |token| here.
++    token =
++        base::StringPiece(&file_header[index + 1], blank_position - index - 1);
++    CHECK(!token.empty());
++    switch (file_header[index]) {
++      case 'W':
++        video_format->frame_size.set_width(ParseY4MInt(token));
++        break;
++      case 'H':
++        video_format->frame_size.set_height(ParseY4MInt(token));
++        break;
++      case 'F': {
++        // If the token is "FRAME", it means we have finished with the header.
++        if (token[0] == 'R')
++          break;
++        int fps_numerator, fps_denominator;
++        ParseY4MRational(token, &fps_numerator, &fps_denominator);
++        video_format->frame_rate = fps_numerator / fps_denominator;
++        break;
++      }
++      case 'I':
++        // Interlacing is ignored, but we don't like mixed modes.
++        CHECK_NE(token[0], 'm');
++        break;
++      case 'A':
++        // Pixel aspect ratio ignored.
++        break;
++      case 'C':
++        CHECK_EQ(ParseY4MInt(token), 420); // Only I420 supported.
++        break;
++      default:
++        break;
++    }
++    // We're done if we have found a newline character right after the token.
++    if (file_header[blank_position] == '\n')
++      break;
++    index = blank_position + 1;
++  }
++  // Last video format semantic correctness check before sending it back.
++  CHECK(video_format->IsValid());
++}
++
++// Reads and parses the header of a Y4M |file|, returning the collected pixel
++// format in |video_format|. Returns the index of the first byte of the first
++// video frame.
++// Restrictions: Only trivial per-frame headers are supported.
++int64 ParseFileAndExtractVideoFormat(
++    const base::PlatformFile& file,
++    media::VideoCaptureFormat* video_format) {
++  std::string header(kY4MHeaderMaxSize, 0);
++  base::ReadPlatformFile(file, 0, &header[0], kY4MHeaderMaxSize - 1);
++
++  size_t header_end = header.find(kY4MSimpleFrameDelimiter);
++  CHECK_NE(header_end, header.npos);
++
++  ParseY4MTags(header, video_format);
++  return header_end + kY4MSimpleFrameDelimiterSize;
++}
++
++// Opens a given file for reading, and returns the file to the caller, who is
++// responsible for closing it.
++base::PlatformFile OpenFileForRead(const base::FilePath& file_path) {
++  base::PlatformFileError file_error;
++  base::PlatformFile file = base::CreatePlatformFile(
++      file_path,
++      base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ,
++      NULL,
++      &file_error);
++  CHECK_EQ(file_error, base::PLATFORM_FILE_OK);
++  return file;
++}
++
++// Inspects the command line and retrieves the file path parameter.
++base::FilePath GetFilePathFromCommandLine() {
++  base::FilePath command_line_file_path =
++      CommandLine::ForCurrentProcess()->GetSwitchValuePath(
++          switches::kUseFileForFakeVideoCapture);
++  CHECK(!command_line_file_path.empty());
++  return command_line_file_path;
++}
++
++void FileVideoCaptureDevice::GetDeviceNames(Names* const device_names) {
++  DCHECK(device_names->empty());
++  base::FilePath command_line_file_path = GetFilePathFromCommandLine();
++#if defined(OS_WIN)
++  device_names->push_back(
++      Name(base::SysWideToUTF8(command_line_file_path.value()),
++           kFileVideoCaptureDeviceName));
++#else
++  device_names->push_back(Name(command_line_file_path.value(),
++                               kFileVideoCaptureDeviceName));
++#endif  // OS_WIN
++}
++
++void FileVideoCaptureDevice::GetDeviceSupportedFormats(
++    const Name& device,
++    VideoCaptureCapabilities* formats) {
++  base::PlatformFile file = OpenFileForRead(GetFilePathFromCommandLine());
++  VideoCaptureCapability capture_capability;
++  ParseFileAndExtractVideoFormat(file, &capture_capability.supported_format);
++  formats->push_back(capture_capability);
++
++  CHECK(base::ClosePlatformFile(file));
++}
++
++VideoCaptureDevice* FileVideoCaptureDevice::Create(const Name& device_name) {
++#if defined(OS_WIN)
++  return new FileVideoCaptureDevice(
++      base::FilePath(base::SysUTF8ToWide(device_name.name())));
++#else
++  return new FileVideoCaptureDevice(base::FilePath(device_name.name()));
++#endif  // OS_WIN
++}
++
++FileVideoCaptureDevice::FileVideoCaptureDevice(const base::FilePath& file_path)
++    : capture_thread_("CaptureThread"),
++      file_path_(file_path),
++      file_(base::kInvalidPlatformFileValue),
++      frame_size_(0),
++      current_byte_index_(0),
++      first_frame_byte_index_(0) {}
++
++FileVideoCaptureDevice::~FileVideoCaptureDevice() {
++  DCHECK(thread_checker_.CalledOnValidThread());
++  // Check if the thread is running.
++  // This means that the device have not been DeAllocated properly.
++  CHECK(!capture_thread_.IsRunning());
++}
++
++void FileVideoCaptureDevice::AllocateAndStart(
++    const VideoCaptureParams& params,
++    scoped_ptr<VideoCaptureDevice::Client> client) {
++  DCHECK(thread_checker_.CalledOnValidThread());
++  CHECK(!capture_thread_.IsRunning());
++
++  capture_thread_.Start();
++  capture_thread_.message_loop()->PostTask(
++      FROM_HERE,
++      base::Bind(&FileVideoCaptureDevice::OnAllocateAndStart,
++                 base::Unretained(this),
++                 params,
++                 base::Passed(&client)));
++}
++
++void FileVideoCaptureDevice::StopAndDeAllocate() {
++  DCHECK(thread_checker_.CalledOnValidThread());
++  CHECK(capture_thread_.IsRunning());
++
++  capture_thread_.message_loop()->PostTask(
++      FROM_HERE,
++      base::Bind(&FileVideoCaptureDevice::OnStopAndDeAllocate,
++                 base::Unretained(this)));
++  capture_thread_.Stop();
++}
++
++int FileVideoCaptureDevice::CalculateFrameSize() {
++  DCHECK_EQ(capture_format_.pixel_format, PIXEL_FORMAT_I420);
++  DCHECK_EQ(capture_thread_.message_loop(), base::MessageLoop::current());
++  return capture_format_.frame_size.GetArea() * 12 / 8;
++}
++
++void FileVideoCaptureDevice::OnAllocateAndStart(
++    const VideoCaptureParams& params,
++    scoped_ptr<VideoCaptureDevice::Client> client) {
++  DCHECK_EQ(capture_thread_.message_loop(), base::MessageLoop::current());
++
++  client_ = client.Pass();
++
++  // Open the file and parse the header. Get frame size and format.
++  DCHECK_EQ(file_, base::kInvalidPlatformFileValue);
++  file_ = OpenFileForRead(file_path_);
++  first_frame_byte_index_ =
++      ParseFileAndExtractVideoFormat(file_, &capture_format_);
++  current_byte_index_ = first_frame_byte_index_;
++  DVLOG(1) << "Opened video file " << capture_format_.frame_size.ToString()
++           << ", fps: " << capture_format_.frame_rate;
++
++  frame_size_ = CalculateFrameSize();
++  video_frame_.reset(new uint8[frame_size_]);
++
++  capture_thread_.message_loop()->PostTask(
++      FROM_HERE,
++      base::Bind(&FileVideoCaptureDevice::OnCaptureTask,
++                 base::Unretained(this)));
++}
++
++void FileVideoCaptureDevice::OnStopAndDeAllocate() {
++  DCHECK_EQ(capture_thread_.message_loop(), base::MessageLoop::current());
++  CHECK(base::ClosePlatformFile(file_));
++  client_.reset();
++  current_byte_index_ = 0;
++  first_frame_byte_index_ = 0;
++  frame_size_ = 0;
++  video_frame_.reset();
++}
++
++void FileVideoCaptureDevice::OnCaptureTask() {
++  DCHECK_EQ(capture_thread_.message_loop(), base::MessageLoop::current());
++  if (!client_)
++    return;
++  int result =
++      base::ReadPlatformFile(file_,
++                             current_byte_index_,
++                             reinterpret_cast<char*>(video_frame_.get()),
++                             frame_size_);
++
++  // If we passed EOF to PlatformFile, it will return 0 read characters. In that
++  // case, reset the pointer and read again.
++  if (result != frame_size_) {
++    CHECK_EQ(result, 0);
++    current_byte_index_ = first_frame_byte_index_;
++    CHECK_EQ(base::ReadPlatformFile(file_,
++                                    current_byte_index_,
++                                    reinterpret_cast<char*>(video_frame_.get()),
++                                    frame_size_),
++             frame_size_);
++  } else {
++    current_byte_index_ += frame_size_ + kY4MSimpleFrameDelimiterSize;
++  }
++
++  // Give the captured frame to the client.
++  client_->OnIncomingCapturedFrame(video_frame_.get(),
++                                   frame_size_,
++                                   base::Time::Now(),
++                                   0,
++                                   false,
++                                   false,
++                                   capture_format_);
++  // Reschedule next CaptureTask.
++  base::MessageLoop::current()->PostDelayedTask(
++      FROM_HERE,
++      base::Bind(&FileVideoCaptureDevice::OnCaptureTask,
++                 base::Unretained(this)),
++      base::TimeDelta::FromSeconds(1) / capture_format_.frame_rate);
++}
++
++}  // namespace media
+Index: media/video/capture/file_video_capture_device.h
+diff --git a/media/video/capture/file_video_capture_device.h b/media/video/capture/file_video_capture_device.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..d03fd7fc7b08afbc3a9cb8de145e55df7b4bf743
+--- /dev/null
++++ b/media/video/capture/file_video_capture_device.h
+@@ -0,0 +1,79 @@
++// Copyright 2013 The Chromium Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef MEDIA_VIDEO_CAPTURE_FILE_VIDEO_CAPTURE_DEVICE_H_
++#define MEDIA_VIDEO_CAPTURE_FILE_VIDEO_CAPTURE_DEVICE_H_
++
++#include <string>
++
++#include "base/memory/scoped_ptr.h"
++#include "base/platform_file.h"
++#include "base/threading/thread.h"
++#include "base/threading/thread_checker.h"
++#include "media/video/capture/video_capture_device.h"
++
++namespace media {
++
++// Implementation of a VideoCaptureDevice class that reads from a file. Used for
++// testing the video capture pipeline when no real hardware is available. The
++// only supported file format is YUV4MPEG2 (a.k.a. Y4M), a minimal container
++// with a series of uncompressed video only frames, see the link
++// http://wiki.multimedia.cx/index.php?title=YUV4MPEG2 for more information
++// on the file format. Several restrictions and notes apply, see the
++// implementation file.
++// Example videos can be found in http://media.xiph.org/video/derf.
++class MEDIA_EXPORT FileVideoCaptureDevice : public VideoCaptureDevice {
++ public:
++  // VideoCaptureDevice implementation, static methods. Create() returns a
++  // pointer to the object, fully owned by the caller.
++  // TODO(mcasas): Create() should return a scoped_ptr<> http://crbug.com/321613
++  static VideoCaptureDevice* Create(const Name& device_name);
++  static void GetDeviceNames(Names* device_names);
++  static void GetDeviceSupportedFormats(const Name& device,
++                                        VideoCaptureCapabilities* formats);
++
++  // VideoCaptureDevice implementation, class methods.
++  virtual ~FileVideoCaptureDevice();
++  virtual void AllocateAndStart(
++      const VideoCaptureParams& params,
++      scoped_ptr<VideoCaptureDevice::Client> client) OVERRIDE;
++  virtual void StopAndDeAllocate() OVERRIDE;
++
++ private:
++  // Constructor of the class, with a fully qualified file path as input, which
++  // represents the Y4M video file to stream repeatedly.
++  explicit FileVideoCaptureDevice(const base::FilePath& file_path);
++  // Returns size in bytes of an I420 frame, not including possible paddings,
++  // defined by |capture_format_|.
++  int CalculateFrameSize();
++
++  // Called on the |capture_thread_|.
++  void OnAllocateAndStart(const VideoCaptureParams& params,
++                          scoped_ptr<Client> client);
++  void OnStopAndDeAllocate();
++  void OnCaptureTask();
++
++  // |thread_checker_| is used to check that destructor, AllocateAndStart() and
++  // StopAndDeAllocate() are called in the correct thread that owns the object.
++  base::ThreadChecker thread_checker_;
++
++  // |capture_thread_| is used for internal operations via posting tasks to it.
++  // It is active between OnAllocateAndStart() and OnStopAndDeAllocate().
++  base::Thread capture_thread_;
++  // The following members belong to |capture_thread_|.
++  scoped_ptr<VideoCaptureDevice::Client> client_;
++  const base::FilePath file_path_;
++  base::PlatformFile file_;
++  scoped_ptr<uint8[]> video_frame_;
++  VideoCaptureFormat capture_format_;
++  int frame_size_;
++  int64 current_byte_index_;
++  int64 first_frame_byte_index_;
++
++  DISALLOW_COPY_AND_ASSIGN(FileVideoCaptureDevice);
++};
++
++}  // namespace media
++
++#endif  // MEDIA_VIDEO_CAPTURE_FILE_VIDEO_CAPTURE_DEVICE_H_

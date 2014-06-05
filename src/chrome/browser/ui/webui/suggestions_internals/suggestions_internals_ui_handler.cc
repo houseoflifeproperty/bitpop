@@ -7,7 +7,6 @@
 #include "base/bind.h"
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "chrome/browser/ui/webui/ntp/suggestions_combiner.h"
 #include "content/public/browser/web_ui.h"
 
@@ -31,7 +30,7 @@ void SuggestionsInternalsUIHandler::OnSuggestionsReady() {
 
 void SuggestionsInternalsUIHandler::RegisterMessages() {
   // Setup the suggestions sources.
-  suggestions_combiner_.reset(SuggestionsCombiner::Create(this, profile_));
+  suggestions_combiner_.reset(new SuggestionsCombiner(this, profile_));
   suggestions_combiner_->SetSuggestionsCount(kSuggestionsCount);
   suggestions_combiner_->EnableDebug(true);
 

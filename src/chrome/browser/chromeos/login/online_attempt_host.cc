@@ -16,34 +16,32 @@
 namespace chromeos {
 
 OnlineAttemptHost::OnlineAttemptHost(Delegate* delegate)
-    : delegate_(delegate) {
-}
+    : delegate_(delegate), weak_ptr_factory_(this) {}
 
 OnlineAttemptHost::~OnlineAttemptHost() {
   Reset();
 }
 
 void OnlineAttemptHost::Check(Profile* profile,
-                              const std::string& username,
-                              const std::string& password) {
+                              const UserContext& user_context) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  std::string attempt_hash = base::SHA1HashString(username + "\n" + password);
+  std::string attempt_hash = base::SHA1HashString(
+      user_context.username + "\n" + user_context.password);
   if (attempt_hash != current_attempt_hash_) {
     Reset();
     current_attempt_hash_ = attempt_hash;
-    current_username_ = username;
+    current_username_ = user_context.username;
 
     state_.reset(
         new AuthAttemptState(
-            gaia::CanonicalizeEmail(username),
-            password,
-            std::string(),
-            std::string(),
-            std::string(),
+            UserContext(gaia::CanonicalizeEmail(user_context.username),
+                        user_context.password,
+                        user_context.auth_code),
+            std::string(),  // login_token
+            std::string(),  // login_captcha
             User::USER_TYPE_REGULAR,
-            false));  // Isn't a new user.
-    online_attempt_.reset(new OnlineAttempt(false,  // Don't use oauth.
-                                            state_.get(),
+            false));  // user_is_new.
+    online_attempt_.reset(new OnlineAttempt(state_.get(),
                                             this));
     online_attempt_->Initiate(profile);
   }
@@ -61,9 +59,11 @@ void OnlineAttemptHost::Resolve() {
   if (state_->online_complete()) {
     bool success = state_->online_outcome().reason() == LoginFailure::NONE;
     content::BrowserThread::PostTask(
-        content::BrowserThread::UI, FROM_HERE,
+        content::BrowserThread::UI,
+        FROM_HERE,
         base::Bind(&OnlineAttemptHost::ResolveOnUIThread,
-                   base::Unretained(this), success));
+                   weak_ptr_factory_.GetWeakPtr(),
+                   success));
   }
 }
 
@@ -73,4 +73,4 @@ void OnlineAttemptHost::ResolveOnUIThread(bool success) {
   Reset();
 }
 
-}  // chromeos
+}  // namespace chromeos

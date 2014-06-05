@@ -5,7 +5,7 @@
 #include "net/cookies/cookie_store_test_helpers.h"
 
 #include "base/bind.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 
 namespace net {
 
@@ -20,14 +20,6 @@ DelayedCookieMonster::DelayedCookieMonster()
 DelayedCookieMonster::~DelayedCookieMonster() {
 }
 
-void DelayedCookieMonster::GetCookiesInternalCallback(
-    const std::string& cookie_line,
-    const std::vector<CookieStore::CookieInfo>& cookie_info) {
-  cookie_line_ = cookie_line;
-  cookie_info_ = cookie_info;
-  did_run_ = true;
-}
-
 void DelayedCookieMonster::SetCookiesInternalCallback(bool result) {
   result_ = result;
   did_run_ = true;
@@ -39,25 +31,9 @@ void DelayedCookieMonster::GetCookiesWithOptionsInternalCallback(
   did_run_ = true;
 }
 
-void DelayedCookieMonster::GetCookiesWithInfoAsync(
-    const GURL& url,
-    const CookieOptions& options,
-    const CookieMonster::GetCookieInfoCallback& callback) {
-  did_run_ = false;
-  cookie_monster_->GetCookiesWithInfoAsync(
-      url, options,
-      base::Bind(&DelayedCookieMonster::GetCookiesInternalCallback,
-                 base::Unretained(this)));
-  DCHECK_EQ(did_run_, true);
-  MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,
-      base::Bind(&DelayedCookieMonster::InvokeGetCookiesCallback,
-                 base::Unretained(this), callback),
-      base::TimeDelta::FromMilliseconds(kDelayedTime));
-}
-
 void DelayedCookieMonster::SetCookieWithOptionsAsync(
-    const GURL& url, const std::string& cookie_line,
+    const GURL& url,
+    const std::string& cookie_line,
     const CookieOptions& options,
     const CookieMonster::SetCookiesCallback& callback) {
   did_run_ = false;
@@ -66,15 +42,17 @@ void DelayedCookieMonster::SetCookieWithOptionsAsync(
       base::Bind(&DelayedCookieMonster::SetCookiesInternalCallback,
                  base::Unretained(this)));
   DCHECK_EQ(did_run_, true);
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&DelayedCookieMonster::InvokeSetCookiesCallback,
-                 base::Unretained(this), callback),
+                 base::Unretained(this),
+                 callback),
       base::TimeDelta::FromMilliseconds(kDelayedTime));
 }
 
 void DelayedCookieMonster::GetCookiesWithOptionsAsync(
-    const GURL& url, const CookieOptions& options,
+    const GURL& url,
+    const CookieOptions& options,
     const CookieMonster::GetCookiesCallback& callback) {
   did_run_ = false;
   cookie_monster_->GetCookiesWithOptionsAsync(
@@ -82,17 +60,18 @@ void DelayedCookieMonster::GetCookiesWithOptionsAsync(
       base::Bind(&DelayedCookieMonster::GetCookiesWithOptionsInternalCallback,
                  base::Unretained(this)));
   DCHECK_EQ(did_run_, true);
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&DelayedCookieMonster::InvokeGetCookieStringCallback,
-                 base::Unretained(this), callback),
+                 base::Unretained(this),
+                 callback),
       base::TimeDelta::FromMilliseconds(kDelayedTime));
 }
 
-void DelayedCookieMonster::InvokeGetCookiesCallback(
-    const CookieMonster::GetCookieInfoCallback& callback) {
-  if (!callback.is_null())
-    callback.Run(cookie_line_, cookie_info_);
+void DelayedCookieMonster::GetAllCookiesForURLAsync(
+    const GURL& url,
+    const GetCookieListCallback& callback) {
+  cookie_monster_->GetAllCookiesForURLAsync(url, callback);
 }
 
 void DelayedCookieMonster::InvokeSetCookiesCallback(
@@ -119,15 +98,7 @@ std::string DelayedCookieMonster::GetCookiesWithOptions(
     const GURL& url,
     const CookieOptions& options) {
   ADD_FAILURE();
-  return "";
-}
-
-void DelayedCookieMonster::GetCookiesWithInfo(
-    const GURL& url,
-    const CookieOptions& options,
-    std::string* cookie_line,
-    std::vector<CookieInfo>* cookie_infos) {
-  ADD_FAILURE();
+  return std::string();
 }
 
 void DelayedCookieMonster::DeleteCookie(const GURL& url,
@@ -148,12 +119,20 @@ void DelayedCookieMonster::DeleteAllCreatedBetweenAsync(
   ADD_FAILURE();
 }
 
+void DelayedCookieMonster::DeleteAllCreatedBetweenForHostAsync(
+    const base::Time delete_begin,
+    const base::Time delete_end,
+    const GURL& url,
+    const DeleteCallback& callback) {
+  ADD_FAILURE();
+}
+
 void DelayedCookieMonster::DeleteSessionCookiesAsync(const DeleteCallback&) {
   ADD_FAILURE();
 }
 
 CookieMonster* DelayedCookieMonster::GetCookieMonster() {
-  return cookie_monster_;
+  return cookie_monster_.get();
 }
 
 }  // namespace net

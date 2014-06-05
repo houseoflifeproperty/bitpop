@@ -12,19 +12,20 @@
 #include "base/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_handle.h"
-#include "base/string_util.h"
-#include "chrome/browser/extensions/crx_file.h"
+#include "base/strings/string_util.h"
 #include "chrome/browser/extensions/extension_creator_filter.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_file_util.h"
-#include "chrome/common/zip.h"
 #include "crypto/rsa_private_key.h"
 #include "crypto/signature_creator.h"
+#include "extensions/common/crx_file.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/file_util.h"
+#include "extensions/common/id_util.h"
 #include "grit/generated_resources.h"
+#include "third_party/zlib/google/zip.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace {
-  const int kRSAKeySize = 1024;
+  const int kRSAKeySize = 2048;
 };
 
 namespace extensions {
@@ -33,21 +34,22 @@ ExtensionCreator::ExtensionCreator() : error_type_(kOtherError) {
 }
 
 bool ExtensionCreator::InitializeInput(
-    const FilePath& extension_dir,
-    const FilePath& crx_path,
-    const FilePath& private_key_path,
-    const FilePath& private_key_output_path,
+    const base::FilePath& extension_dir,
+    const base::FilePath& crx_path,
+    const base::FilePath& private_key_path,
+    const base::FilePath& private_key_output_path,
     int run_flags) {
   // Validate input |extension_dir|.
   if (extension_dir.value().empty() ||
-      !file_util::DirectoryExists(extension_dir)) {
+      !base::DirectoryExists(extension_dir)) {
     error_message_ =
         l10n_util::GetStringUTF8(IDS_EXTENSION_DIRECTORY_NO_EXISTS);
     return false;
   }
 
-  FilePath absolute_extension_dir = extension_dir;
-  if (!file_util::AbsolutePath(&absolute_extension_dir)) {
+  base::FilePath absolute_extension_dir =
+      base::MakeAbsoluteFilePath(extension_dir);
+  if (absolute_extension_dir.empty()) {
     error_message_ =
         l10n_util::GetStringUTF8(IDS_EXTENSION_CANT_GET_ABSOLUTE_PATH);
     return false;
@@ -55,7 +57,7 @@ bool ExtensionCreator::InitializeInput(
 
   // Validate input |private_key| (if provided).
   if (!private_key_path.value().empty() &&
-      !file_util::PathExists(private_key_path)) {
+      !base::PathExists(private_key_path)) {
     error_message_ =
         l10n_util::GetStringUTF8(IDS_EXTENSION_PRIVATE_KEY_INVALID_PATH);
     return false;
@@ -65,7 +67,7 @@ bool ExtensionCreator::InitializeInput(
   // an existing private key.
   if (private_key_path.value().empty() &&
       !private_key_output_path.value().empty() &&
-      file_util::PathExists(private_key_output_path)) {
+      base::PathExists(private_key_output_path)) {
       error_message_ =
           l10n_util::GetStringUTF8(IDS_EXTENSION_PRIVATE_KEY_EXISTS);
       return false;
@@ -73,7 +75,7 @@ bool ExtensionCreator::InitializeInput(
 
   // Check whether crx file already exists. Should be last check, as this is
   // a warning only.
-  if (!(run_flags & kOverwriteCRX) && file_util::PathExists(crx_path)) {
+  if (!(run_flags & kOverwriteCRX) && base::PathExists(crx_path)) {
     error_message_ = l10n_util::GetStringUTF8(IDS_EXTENSION_CRX_EXISTS);
     error_type_ = kCRXExists;
 
@@ -83,7 +85,7 @@ bool ExtensionCreator::InitializeInput(
   return true;
 }
 
-bool ExtensionCreator::ValidateManifest(const FilePath& extension_dir,
+bool ExtensionCreator::ValidateManifest(const base::FilePath& extension_dir,
                                         crypto::RSAPrivateKey* key_pair,
                                         int run_flags) {
   std::vector<uint8> public_key_bytes;
@@ -97,9 +99,7 @@ bool ExtensionCreator::ValidateManifest(const FilePath& extension_dir,
   public_key.insert(public_key.begin(),
                     public_key_bytes.begin(), public_key_bytes.end());
 
-  std::string extension_id;
-  if (!Extension::GenerateId(public_key, &extension_id))
-    return false;
+  std::string extension_id = id_util::GenerateId(public_key);
 
   // Load the extension once. We don't really need it, but this does a lot of
   // useful validation of the structure.
@@ -109,26 +109,24 @@ bool ExtensionCreator::ValidateManifest(const FilePath& extension_dir,
     create_flags |= Extension::REQUIRE_MODERN_MANIFEST_VERSION;
 
   scoped_refptr<Extension> extension(
-      extension_file_util::LoadExtension(
-          extension_dir,
-          extension_id,
-          Extension::INTERNAL,
-          create_flags,
-          &error_message_));
+      file_util::LoadExtension(extension_dir,
+                               extension_id,
+                               Manifest::INTERNAL,
+                               create_flags,
+                               &error_message_));
   return !!extension.get();
 }
 
-crypto::RSAPrivateKey* ExtensionCreator::ReadInputKey(const FilePath&
+crypto::RSAPrivateKey* ExtensionCreator::ReadInputKey(const base::FilePath&
     private_key_path) {
-  if (!file_util::PathExists(private_key_path)) {
+  if (!base::PathExists(private_key_path)) {
     error_message_ =
         l10n_util::GetStringUTF8(IDS_EXTENSION_PRIVATE_KEY_NO_EXISTS);
     return NULL;
   }
 
   std::string private_key_contents;
-  if (!file_util::ReadFileToString(private_key_path,
-      &private_key_contents)) {
+  if (!base::ReadFileToString(private_key_path, &private_key_contents)) {
     error_message_ =
         l10n_util::GetStringUTF8(IDS_EXTENSION_PRIVATE_KEY_FAILED_TO_READ);
     return NULL;
@@ -146,11 +144,11 @@ crypto::RSAPrivateKey* ExtensionCreator::ReadInputKey(const FilePath&
       std::vector<uint8>(private_key_bytes.begin(), private_key_bytes.end()));
 }
 
-crypto::RSAPrivateKey* ExtensionCreator::GenerateKey(const FilePath&
+crypto::RSAPrivateKey* ExtensionCreator::GenerateKey(const base::FilePath&
     output_private_key_path) {
   scoped_ptr<crypto::RSAPrivateKey> key_pair(
       crypto::RSAPrivateKey::Create(kRSAKeySize));
-  if (!key_pair.get()) {
+  if (!key_pair) {
     error_message_ =
         l10n_util::GetStringUTF8(IDS_EXTENSION_PRIVATE_KEY_FAILED_TO_GENERATE);
     return NULL;
@@ -181,7 +179,7 @@ crypto::RSAPrivateKey* ExtensionCreator::GenerateKey(const FilePath&
   }
 
   if (!output_private_key_path.empty()) {
-    if (-1 == file_util::WriteFile(output_private_key_path,
+    if (-1 == base::WriteFile(output_private_key_path,
         pem_output.c_str(), pem_output.size())) {
       error_message_ =
           l10n_util::GetStringUTF8(IDS_EXTENSION_PRIVATE_KEY_FAILED_TO_OUTPUT);
@@ -192,13 +190,13 @@ crypto::RSAPrivateKey* ExtensionCreator::GenerateKey(const FilePath&
   return key_pair.release();
 }
 
-bool ExtensionCreator::CreateZip(const FilePath& extension_dir,
-                                 const FilePath& temp_path,
-                                 FilePath* zip_path) {
+bool ExtensionCreator::CreateZip(const base::FilePath& extension_dir,
+                                 const base::FilePath& temp_path,
+                                 base::FilePath* zip_path) {
   *zip_path = temp_path.Append(FILE_PATH_LITERAL("extension.zip"));
 
   scoped_refptr<ExtensionCreatorFilter> filter = new ExtensionCreatorFilter();
-  const base::Callback<bool(const FilePath&)>& filter_cb =
+  const base::Callback<bool(const base::FilePath&)>& filter_cb =
     base::Bind(&ExtensionCreatorFilter::ShouldPackageFile, filter.get());
   if (!zip::ZipWithFilterCallback(extension_dir, *zip_path, filter_cb)) {
     error_message_ =
@@ -209,14 +207,14 @@ bool ExtensionCreator::CreateZip(const FilePath& extension_dir,
   return true;
 }
 
-bool ExtensionCreator::SignZip(const FilePath& zip_path,
+bool ExtensionCreator::SignZip(const base::FilePath& zip_path,
                                crypto::RSAPrivateKey* private_key,
                                std::vector<uint8>* signature) {
   scoped_ptr<crypto::SignatureCreator> signature_creator(
       crypto::SignatureCreator::Create(private_key));
-  ScopedStdioHandle zip_handle(file_util::OpenFile(zip_path, "rb"));
+  ScopedStdioHandle zip_handle(base::OpenFile(zip_path, "rb"));
   size_t buffer_size = 1 << 16;
-  scoped_array<uint8> buffer(new uint8[buffer_size]);
+  scoped_ptr<uint8[]> buffer(new uint8[buffer_size]);
   int bytes_read = -1;
   while ((bytes_read = fread(buffer.get(), 1, buffer_size,
        zip_handle.get())) > 0) {
@@ -228,17 +226,21 @@ bool ExtensionCreator::SignZip(const FilePath& zip_path,
   }
   zip_handle.Close();
 
-  signature_creator->Final(signature);
+  if (!signature_creator->Final(signature)) {
+    error_message_ =
+        l10n_util::GetStringUTF8(IDS_EXTENSION_ERROR_WHILE_SIGNING);
+    return false;
+  }
   return true;
 }
 
-bool ExtensionCreator::WriteCRX(const FilePath& zip_path,
+bool ExtensionCreator::WriteCRX(const base::FilePath& zip_path,
                                 crypto::RSAPrivateKey* private_key,
                                 const std::vector<uint8>& signature,
-                                const FilePath& crx_path) {
-  if (file_util::PathExists(crx_path))
-    file_util::Delete(crx_path, false);
-  ScopedStdioHandle crx_handle(file_util::OpenFile(crx_path, "wb"));
+                                const base::FilePath& crx_path) {
+  if (base::PathExists(crx_path))
+    base::DeleteFile(crx_path, false);
+  ScopedStdioHandle crx_handle(base::OpenFile(crx_path, "wb"));
   if (!crx_handle.get()) {
     error_message_ = l10n_util::GetStringUTF8(IDS_EXTENSION_SHARING_VIOLATION);
     return false;
@@ -250,7 +252,7 @@ bool ExtensionCreator::WriteCRX(const FilePath& zip_path,
   CrxFile::Error error;
   scoped_ptr<CrxFile> crx(
       CrxFile::Create(public_key.size(), signature.size(), &error));
-  if (!crx.get()) {
+  if (!crx) {
     LOG(ERROR) << "cannot create CrxFileHeader: " << error;
   }
   const CrxFile::Header header = crx->header();
@@ -268,9 +270,9 @@ bool ExtensionCreator::WriteCRX(const FilePath& zip_path,
   }
 
   size_t buffer_size = 1 << 16;
-  scoped_array<uint8> buffer(new uint8[buffer_size]);
+  scoped_ptr<uint8[]> buffer(new uint8[buffer_size]);
   size_t bytes_read = 0;
-  ScopedStdioHandle zip_handle(file_util::OpenFile(zip_path, "rb"));
+  ScopedStdioHandle zip_handle(base::OpenFile(zip_path, "rb"));
   while ((bytes_read = fread(buffer.get(), 1, buffer_size,
                              zip_handle.get())) > 0) {
     if (fwrite(buffer.get(), sizeof(char), bytes_read, crx_handle.get()) !=
@@ -282,10 +284,10 @@ bool ExtensionCreator::WriteCRX(const FilePath& zip_path,
   return true;
 }
 
-bool ExtensionCreator::Run(const FilePath& extension_dir,
-                           const FilePath& crx_path,
-                           const FilePath& private_key_path,
-                           const FilePath& output_private_key_path,
+bool ExtensionCreator::Run(const base::FilePath& extension_dir,
+                           const base::FilePath& crx_path,
+                           const base::FilePath& private_key_path,
+                           const base::FilePath& output_private_key_path,
                            int run_flags) {
   // Check input diretory and read manifest.
   if (!InitializeInput(extension_dir, crx_path, private_key_path,
@@ -299,7 +301,7 @@ bool ExtensionCreator::Run(const FilePath& extension_dir,
     key_pair.reset(ReadInputKey(private_key_path));
   else
     key_pair.reset(GenerateKey(output_private_key_path));
-  if (!key_pair.get())
+  if (!key_pair)
     return false;
 
   // Perform some extra validation by loading the extension.
@@ -313,7 +315,7 @@ bool ExtensionCreator::Run(const FilePath& extension_dir,
     return false;
 
   // Zip up the extension.
-  FilePath zip_path;
+  base::FilePath zip_path;
   std::vector<uint8> signature;
   bool result = false;
   if (CreateZip(extension_dir, temp_dir.path(), &zip_path) &&
@@ -322,7 +324,7 @@ bool ExtensionCreator::Run(const FilePath& extension_dir,
     result = true;
   }
 
-  file_util::Delete(zip_path, false);
+  base::DeleteFile(zip_path, false);
   return result;
 }
 

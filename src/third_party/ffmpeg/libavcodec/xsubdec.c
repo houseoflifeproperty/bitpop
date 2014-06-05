@@ -26,7 +26,7 @@
 #include "bytestream.h"
 
 static av_cold int decode_init(AVCodecContext *avctx) {
-    avctx->pix_fmt = PIX_FMT_PAL8;
+    avctx->pix_fmt = AV_PIX_FMT_PAL8;
     return 0;
 }
 
@@ -137,9 +137,9 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *data_size,
 
 AVCodec ff_xsub_decoder = {
     .name      = "xsub",
+    .long_name = NULL_IF_CONFIG_SMALL("XSUB"),
     .type      = AVMEDIA_TYPE_SUBTITLE,
     .id        = AV_CODEC_ID_XSUB,
     .init      = decode_init,
     .decode    = decode_frame,
-    .long_name = NULL_IF_CONFIG_SMALL("XSUB"),
 };

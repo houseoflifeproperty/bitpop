@@ -10,15 +10,14 @@
 
 class CocoaSpellingEngine : public SpellingEngine {
  public:
-  virtual void Init(base::PlatformFile bdict_file,
-                    const std::vector<std::string>& custom_words) OVERRIDE;
+  virtual void Init(base::File bdict_file) OVERRIDE;
   virtual bool InitializeIfNeeded() OVERRIDE;
   virtual bool IsEnabled() OVERRIDE;
-  virtual bool CheckSpelling(const string16& word_to_check, int tag) OVERRIDE;
-  virtual void FillSuggestionList(const string16& wrong_word,
-                          std::vector<string16>* optional_suggestions) OVERRIDE;
-  virtual void OnWordAdded(const std::string& word) OVERRIDE;
-  virtual void OnWordRemoved(const std::string& word) OVERRIDE;
+  virtual bool CheckSpelling(const base::string16& word_to_check,
+                             int tag) OVERRIDE;
+  virtual void FillSuggestionList(
+      const base::string16& wrong_word,
+      std::vector<base::string16>* optional_suggestions) OVERRIDE;
 };
 
 #endif  // CHROME_RENDERER_SPELLCHECKER_NSSPELLCHECKER_ENGINE_H_

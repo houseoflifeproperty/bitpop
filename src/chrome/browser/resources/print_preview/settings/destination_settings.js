@@ -58,7 +58,9 @@ cr.define('print_preview', function() {
     ICON_MOBILE: 'destination-settings-icon-mobile',
     ICON_MOBILE_SHARED: 'destination-settings-icon-mobile-shared',
     LOCATION: 'destination-settings-location',
-    NAME: 'destination-settings-name'
+    NAME: 'destination-settings-name',
+    STALE: 'stale',
+    THOBBER_NAME: 'destination-throbber-name'
   };
 
   DestinationSettings.prototype = {
@@ -82,6 +84,11 @@ cr.define('print_preview', function() {
           this.destinationStore_,
           print_preview.DestinationStore.EventType.DESTINATION_SELECT,
           this.onDestinationSelect_.bind(this));
+      this.tracker_.add(
+          this.destinationStore_,
+          print_preview.DestinationStore.EventType.
+              CACHED_SELECTED_DESTINATION_INFO_READY,
+          this.onSelectedDestinationNameSet_.bind(this));
     },
 
     /**
@@ -99,24 +106,51 @@ cr.define('print_preview', function() {
      * @private
      */
     onDestinationSelect_: function() {
+      var destinationSettingsBoxEl =
+          this.getChildElement('.destination-settings-box');
+
       var destination = this.destinationStore_.selectedDestination;
-      var nameEl = this.getElement().getElementsByClassName(
-          DestinationSettings.Classes_.NAME)[0];
-      nameEl.textContent = destination.displayName;
-      nameEl.title = destination.displayName;
+      if (destination != null) {
+        var nameEl = this.getElement().getElementsByClassName(
+            DestinationSettings.Classes_.NAME)[0];
+        nameEl.textContent = destination.displayName;
+        nameEl.title = destination.displayName;
 
-      var iconEl = this.getElement().getElementsByClassName(
-          DestinationSettings.Classes_.ICON)[0];
-      iconEl.src = destination.iconUrl;
+        var iconEl = this.getElement().getElementsByClassName(
+            DestinationSettings.Classes_.ICON)[0];
+        iconEl.src = destination.iconUrl;
 
-      var locationEl = this.getElement().getElementsByClassName(
-          DestinationSettings.Classes_.LOCATION)[0];
-      locationEl.textContent = destination.location;
-      locationEl.title = destination.location;
+        var hint = destination.hint;
+        var locationEl = this.getElement().getElementsByClassName(
+            DestinationSettings.Classes_.LOCATION)[0];
+        locationEl.textContent = hint;
+        locationEl.title = hint;
 
-      setIsVisible(this.getElement().querySelector('.throbber'), false);
+        var offlineStatusText = destination.offlineStatusText;
+        var offlineStatusEl =
+            this.getChildElement('.destination-settings-offline-status');
+        offlineStatusEl.textContent = offlineStatusText;
+        offlineStatusEl.title = offlineStatusText;
+
+        var isOffline = destination.isOffline;
+        destinationSettingsBoxEl.classList.toggle(
+            DestinationSettings.Classes_.STALE, isOffline);
+        setIsVisible(locationEl, !isOffline);
+        setIsVisible(offlineStatusEl, isOffline);
+      }
+
       setIsVisible(
-          this.getElement().querySelector('.destination-settings-box'), true);
+          this.getChildElement('.throbber-container'), destination == null);
+      setIsVisible(destinationSettingsBoxEl, destination != null);
+    },
+
+    onSelectedDestinationNameSet_: function() {
+      var destinationName =
+          this.destinationStore_.selectedDestination.displayName;
+      var nameEl = this.getElement().getElementsByClassName(
+          DestinationSettings.Classes_.THOBBER_NAME)[0];
+      nameEl.textContent = destinationName;
+      nameEl.title = destinationName;
     }
   };
 

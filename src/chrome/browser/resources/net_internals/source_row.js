@@ -42,6 +42,7 @@ var SourceRow = (function() {
 
       var selectionCol = addNode(tr, 'td');
       var checkbox = addNode(selectionCol, 'input');
+      checkbox.title = this.getSourceId();
       selectionCol.style.borderLeft = '0';
       checkbox.type = 'checkbox';
 
@@ -91,7 +92,7 @@ var SourceRow = (function() {
         this.updateDescription_();
 
       // Update filters.
-      var matchesFilter = this.matchesFilter(this.parentView_.currentFilter_);
+      var matchesFilter = this.parentView_.currentFilter_(this.sourceEntry_);
       this.setIsMatchedByFilter(matchesFilter);
     },
 
@@ -163,52 +164,6 @@ var SourceRow = (function() {
       } else {
         this.row_.style.display = 'none';
       }
-    },
-
-    matchesFilter: function(filter) {
-      if (filter.isActive && this.isInactive_)
-        return false;
-      if (filter.isInactive && !this.isInactive_)
-        return false;
-      if (filter.isError && !this.isError_)
-        return false;
-      if (filter.isNotError && this.isError_)
-        return false;
-
-      // Check source type, if needed.
-      if (filter.type) {
-        var i;
-        var sourceType = this.sourceEntry_.getSourceTypeString().toLowerCase();
-        for (i = 0; i < filter.type.length; ++i) {
-          if (sourceType.search(filter.type[i]) != -1)
-            break;
-        }
-        if (i == filter.type.length)
-          return false;
-      }
-
-      // Check source ID, if needed.
-      if (filter.id) {
-        if (filter.id.indexOf(this.getSourceId() + '') == -1)
-          return false;
-      }
-
-      if (filter.text == '')
-        return true;
-
-      // The description is not always contained in one of the log entries.
-      if (this.description_.toLowerCase().indexOf(filter.text) != -1)
-        return true;
-
-      // Allow specifying source types by name.
-      var sourceType = this.sourceEntry_.getSourceTypeString();
-      if (sourceType.toLowerCase().indexOf(filter.text) != -1)
-        return true;
-
-      return searchLogEntriesForText(
-          filter.text,
-          this.sourceEntry_.getLogEntries(),
-          SourceTracker.getInstance().getPrivacyStripping());
     },
 
     isSelected: function() {

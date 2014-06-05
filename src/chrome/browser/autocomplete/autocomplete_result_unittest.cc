@@ -4,17 +4,62 @@
 
 #include "chrome/browser/autocomplete/autocomplete_result.h"
 
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include <vector>
+
+#include "base/memory/scoped_ptr.h"
+#include "base/metrics/field_trial.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
+#include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/search_engines/template_url_prepopulate_data.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_test_util.h"
+#include "chrome/common/autocomplete_match_type.h"
+#include "chrome/common/metrics/variations/variations_util.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/variations/entropy_provider.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+namespace {
+
+struct AutocompleteMatchTestData {
+  std::string destination_url;
+  AutocompleteMatch::Type type;
+};
+
+const AutocompleteMatchTestData kVerbatimMatches[] = {
+  { "http://search-what-you-typed/",
+    AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED },
+  { "http://url-what-you-typed/", AutocompleteMatchType::URL_WHAT_YOU_TYPED },
+};
+
+const AutocompleteMatchTestData kNonVerbatimMatches[] = {
+  { "http://search-history/", AutocompleteMatchType::SEARCH_HISTORY },
+  { "http://history-title/", AutocompleteMatchType::HISTORY_TITLE },
+};
+
+// Adds |count| AutocompleteMatches to |matches|.
+void PopulateAutocompleteMatchesFromTestData(
+    const AutocompleteMatchTestData* data,
+    size_t count,
+    ACMatches* matches) {
+  ASSERT_TRUE(matches != NULL);
+  for (size_t i = 0; i < count; ++i) {
+    AutocompleteMatch match;
+    match.destination_url = GURL(data[i].destination_url);
+    match.relevance =
+        matches->empty() ? 1300 : (matches->back().relevance - 100);
+    match.allowed_to_be_default_match = true;
+    match.type = data[i].type;
+    matches->push_back(match);
+  }
+}
+
+}  // namespace
 
 class AutocompleteResultTest : public testing::Test  {
  public:
@@ -28,9 +73,19 @@ class AutocompleteResultTest : public testing::Test  {
 
     // Relevance score.
     int relevance;
+
+    // Duplicate matches.
+    std::vector<AutocompleteMatch> duplicate_matches;
   };
 
-  AutocompleteResultTest() {}
+  AutocompleteResultTest() {
+    // Destroy the existing FieldTrialList before creating a new one to avoid
+    // a DCHECK.
+    field_trial_list_.reset();
+    field_trial_list_.reset(new base::FieldTrialList(
+        new metrics::SHA1EntropyProvider("foo")));
+    chrome_variations::testing::ClearAllVariationParams();
+  }
 
   virtual void SetUp() OVERRIDE {
 #if defined(OS_ANDROID)
@@ -69,6 +124,8 @@ class AutocompleteResultTest : public testing::Test  {
   TemplateURLServiceTestUtil test_util_;
 
  private:
+  scoped_ptr<base::FieldTrialList> field_trial_list_;
+
   DISALLOW_COPY_AND_ASSIGN(AutocompleteResultTest);
 };
 
@@ -81,6 +138,8 @@ void AutocompleteResultTest::PopulateAutocompleteMatch(
   std::string url_id(1, data.url_id + 'a');
   match->destination_url = GURL("http://" + url_id);
   match->relevance = data.relevance;
+  match->allowed_to_be_default_match = true;
+  match->duplicate_matches = data.duplicate_matches;
 }
 
 // static
@@ -115,8 +174,10 @@ void AutocompleteResultTest::RunCopyOldMatchesTest(
     const TestData* last, size_t last_size,
     const TestData* current, size_t current_size,
     const TestData* expected, size_t expected_size) {
-  AutocompleteInput input(ASCIIToUTF16("a"), string16::npos, string16(), false,
-                          false, false, AutocompleteInput::ALL_MATCHES);
+  AutocompleteInput input(base::ASCIIToUTF16("a"), base::string16::npos,
+                          base::string16(), GURL(),
+                          AutocompleteInput::INVALID_SPEC, false, false, false,
+                          true);
 
   ACMatches last_matches;
   PopulateAutocompleteMatches(last, last_size, &last_matches);
@@ -147,8 +208,12 @@ TEST_F(AutocompleteResultTest, Swap) {
   // Swap with a single match.
   ACMatches matches;
   AutocompleteMatch match;
-  AutocompleteInput input(ASCIIToUTF16("a"), string16::npos, string16(), false,
-                          false, false, AutocompleteInput::ALL_MATCHES);
+  match.relevance = 1;
+  match.allowed_to_be_default_match = true;
+  AutocompleteInput input(base::ASCIIToUTF16("a"), base::string16::npos,
+                          base::string16(), GURL(),
+                          AutocompleteInput::INVALID_SPEC, false, false, false,
+                          true);
   matches.push_back(match);
   r1.AppendMatches(matches);
   r1.SortAndCull(input, test_util_.profile());
@@ -228,8 +293,10 @@ TEST_F(AutocompleteResultTest, SortAndCullEmptyDestinationURLs) {
 
   AutocompleteResult result;
   result.AppendMatches(matches);
-  AutocompleteInput input(string16(), string16::npos, string16(), false, false,
-                          false, AutocompleteInput::ALL_MATCHES);
+  AutocompleteInput input(base::string16(), base::string16::npos,
+                          base::string16(), GURL(),
+                          AutocompleteInput::INVALID_SPEC, false, false, false,
+                          true);
   result.SortAndCull(input, test_util_.profile());
 
   // Of the two results with the same non-empty destination URL, the
@@ -249,8 +316,8 @@ TEST_F(AutocompleteResultTest, SortAndCullEmptyDestinationURLs) {
 TEST_F(AutocompleteResultTest, SortAndCullDuplicateSearchURLs) {
   // Register a template URL that corresponds to 'foo' search engine.
   TemplateURLData url_data;
-  url_data.short_name = ASCIIToUTF16("unittest");
-  url_data.SetKeyword(ASCIIToUTF16("foo"));
+  url_data.short_name = base::ASCIIToUTF16("unittest");
+  url_data.SetKeyword(base::ASCIIToUTF16("foo"));
   url_data.SetURL("http://www.foo.com/s?q={searchTerms}");
   test_util_.model()->Add(new TemplateURL(test_util_.profile(), url_data));
 
@@ -272,8 +339,10 @@ TEST_F(AutocompleteResultTest, SortAndCullDuplicateSearchURLs) {
 
   AutocompleteResult result;
   result.AppendMatches(matches);
-  AutocompleteInput input(string16(), string16::npos, string16(), false, false,
-                          false, AutocompleteInput::ALL_MATCHES);
+  AutocompleteInput input(base::string16(), base::string16::npos,
+                          base::string16(), GURL(),
+                          AutocompleteInput::INVALID_SPEC, false, false, false,
+                          true);
   result.SortAndCull(input, test_util_.profile());
 
   // We expect the 3rd and 4th results to be removed.
@@ -287,4 +356,315 @@ TEST_F(AutocompleteResultTest, SortAndCullDuplicateSearchURLs) {
   EXPECT_EQ("http://www.foo.com/",
             result.match_at(2)->destination_url.spec());
   EXPECT_EQ(900, result.match_at(2)->relevance);
+}
+
+TEST_F(AutocompleteResultTest, SortAndCullWithMatchDups) {
+  // Register a template URL that corresponds to 'foo' search engine.
+  TemplateURLData url_data;
+  url_data.short_name = base::ASCIIToUTF16("unittest");
+  url_data.SetKeyword(base::ASCIIToUTF16("foo"));
+  url_data.SetURL("http://www.foo.com/s?q={searchTerms}");
+  test_util_.model()->Add(new TemplateURL(test_util_.profile(), url_data));
+
+  AutocompleteMatch dup_match;
+  dup_match.destination_url = GURL("http://www.foo.com/s?q=foo&oq=dup");
+  std::vector<AutocompleteMatch> dups;
+  dups.push_back(dup_match);
+
+  TestData data[] = {
+    { 0, 0, 1300, dups },
+    { 1, 0, 1200 },
+    { 2, 0, 1100 },
+    { 3, 0, 1000, dups },
+    { 4, 1, 900 },
+    { 5, 0, 800 },
+  };
+
+  ACMatches matches;
+  PopulateAutocompleteMatches(data, arraysize(data), &matches);
+  matches[0].destination_url = GURL("http://www.foo.com/s?q=foo");
+  matches[1].destination_url = GURL("http://www.foo.com/s?q=foo2");
+  matches[2].destination_url = GURL("http://www.foo.com/s?q=foo&oq=f");
+  matches[3].destination_url = GURL("http://www.foo.com/s?q=foo&aqs=0");
+  matches[4].destination_url = GURL("http://www.foo.com/");
+  matches[5].destination_url = GURL("http://www.foo.com/s?q=foo2&oq=f");
+
+  AutocompleteResult result;
+  result.AppendMatches(matches);
+  AutocompleteInput input(base::string16(), base::string16::npos,
+                          base::string16(), GURL(),
+                          AutocompleteInput::INVALID_SPEC, false, false, false,
+                          true);
+  result.SortAndCull(input, test_util_.profile());
+
+  // Expect 3 unique results after SortAndCull().
+  ASSERT_EQ(3U, result.size());
+
+  // Check that 3rd and 4th result got added to the first result as dups
+  // and also duplicates of the 4th match got copied.
+  ASSERT_EQ(4U, result.match_at(0)->duplicate_matches.size());
+  const AutocompleteMatch* first_match = result.match_at(0);
+  EXPECT_EQ(matches[2].destination_url,
+            first_match->duplicate_matches.at(1).destination_url);
+  EXPECT_EQ(dup_match.destination_url,
+            first_match->duplicate_matches.at(2).destination_url);
+  EXPECT_EQ(matches[3].destination_url,
+            first_match->duplicate_matches.at(3).destination_url);
+
+  // Check that 6th result started a new list of dups for the second result.
+  ASSERT_EQ(1U, result.match_at(1)->duplicate_matches.size());
+  EXPECT_EQ(matches[5].destination_url,
+            result.match_at(1)->duplicate_matches.at(0).destination_url);
+}
+
+TEST_F(AutocompleteResultTest, SortAndCullWithDemotionsByType) {
+  // Add some matches.
+  ACMatches matches;
+  const AutocompleteMatchTestData data[] = {
+    { "http://history-url/", AutocompleteMatchType::HISTORY_URL },
+    { "http://search-what-you-typed/",
+      AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED },
+    { "http://history-title/", AutocompleteMatchType::HISTORY_TITLE },
+    { "http://search-history/", AutocompleteMatchType::SEARCH_HISTORY },
+  };
+  PopulateAutocompleteMatchesFromTestData(data, arraysize(data), &matches);
+
+  // Demote the search history match relevance score.
+  matches.back().relevance = 500;
+
+  // Add a rule demoting history-url and killing history-title.
+  {
+    std::map<std::string, std::string> params;
+    params[std::string(OmniboxFieldTrial::kDemoteByTypeRule) + ":3:*"] =
+        "1:50,7:100,2:0";  // 3 == HOME_PAGE
+    ASSERT_TRUE(chrome_variations::AssociateVariationParams(
+        OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A", params));
+  }
+  base::FieldTrialList::CreateFieldTrial(
+      OmniboxFieldTrial::kBundledExperimentFieldTrialName, "A");
+
+  AutocompleteResult result;
+  result.AppendMatches(matches);
+  AutocompleteInput input(base::string16(), base::string16::npos,
+                          base::string16(), GURL(),
+                          AutocompleteInput::HOME_PAGE, false, false, false,
+                          true);
+  result.SortAndCull(input, test_util_.profile());
+
+  // Check the new ordering.  The history-title results should be omitted.
+  // We cannot check relevance scores because the matches are sorted by
+  // demoted relevance but the actual relevance scores are not modified.
+  ASSERT_EQ(3u, result.size());
+  EXPECT_EQ("http://search-what-you-typed/",
+            result.match_at(0)->destination_url.spec());
+  EXPECT_EQ("http://history-url/",
+            result.match_at(1)->destination_url.spec());
+  EXPECT_EQ("http://search-history/",
+            result.match_at(2)->destination_url.spec());
+}
+
+TEST_F(AutocompleteResultTest, SortAndCullWithMatchDupsAndDemotionsByType) {
+  // Add some matches.
+  ACMatches matches;
+  const AutocompleteMatchTestData data[] = {
+    { "http://search-what-you-typed/",
+      AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED },
+    { "http://dup-url/", AutocompleteMatchType::HISTORY_URL },
+    { "http://dup-url/", AutocompleteMatchType::NAVSUGGEST },
+    { "http://search-url/", AutocompleteMatchType::SEARCH_SUGGEST },
+    { "http://history-url/", AutocompleteMatchType::HISTORY_URL },
+  };
+  PopulateAutocompleteMatchesFromTestData(data, arraysize(data), &matches);
+
+  // Add a rule demoting HISTORY_URL.
+  {
+    std::map<std::string, std::string> params;
+    params[std::string(OmniboxFieldTrial::kDemoteByTypeRule) + ":8:*"] =
+        "1:50";  // 8 == INSTANT_NTP_WITH_FAKEBOX_AS_STARTING_FOCUS
+    ASSERT_TRUE(chrome_variations::AssociateVariationParams(
+        OmniboxFieldTrial::kBundledExperimentFieldTrialName, "C", params));
+  }
+  base::FieldTrialList::CreateFieldTrial(
+      OmniboxFieldTrial::kBundledExperimentFieldTrialName, "C");
+
+  {
+    AutocompleteResult result;
+    result.AppendMatches(matches);
+    AutocompleteInput input(
+        base::string16(), base::string16::npos, base::string16(), GURL(),
+        AutocompleteInput::INSTANT_NTP_WITH_FAKEBOX_AS_STARTING_FOCUS, false,
+        false, false, true);
+    result.SortAndCull(input, test_util_.profile());
+
+    // The NAVSUGGEST dup-url stay above search-url since the navsuggest
+    // variant should not be demoted.
+    ASSERT_EQ(4u, result.size());
+    EXPECT_EQ("http://search-what-you-typed/",
+              result.match_at(0)->destination_url.spec());
+    EXPECT_EQ("http://dup-url/",
+              result.match_at(1)->destination_url.spec());
+    EXPECT_EQ(AutocompleteMatchType::NAVSUGGEST,
+              result.match_at(1)->type);
+    EXPECT_EQ("http://search-url/",
+              result.match_at(2)->destination_url.spec());
+    EXPECT_EQ("http://history-url/",
+              result.match_at(3)->destination_url.spec());
+  }
+}
+
+TEST_F(AutocompleteResultTest, SortAndCullReorderForDefaultMatch) {
+  TestData data[] = {
+    { 0, 0, 1300 },
+    { 1, 0, 1200 },
+    { 2, 0, 1100 },
+    { 3, 0, 1000 }
+  };
+
+  {
+    // Check that reorder doesn't do anything if the top result
+    // is already a legal default match (which is the default from
+    // PopulateAutocompleteMatches()).
+    ACMatches matches;
+    PopulateAutocompleteMatches(data, arraysize(data), &matches);
+    AutocompleteResult result;
+    result.AppendMatches(matches);
+    AutocompleteInput input(base::string16(), base::string16::npos,
+                            base::string16(), GURL(),
+                            AutocompleteInput::HOME_PAGE, false, false, false,
+                            true);
+    result.SortAndCull(input, test_util_.profile());
+    AssertResultMatches(result, data, 4);
+  }
+
+  {
+    // Check that reorder swaps up a result appropriately.
+    ACMatches matches;
+    PopulateAutocompleteMatches(data, arraysize(data), &matches);
+    matches[0].allowed_to_be_default_match = false;
+    matches[1].allowed_to_be_default_match = false;
+    AutocompleteResult result;
+    result.AppendMatches(matches);
+    AutocompleteInput input(base::string16(), base::string16::npos,
+                            base::string16(), GURL(),
+                            AutocompleteInput::HOME_PAGE, false, false, false,
+                            true);
+    result.SortAndCull(input, test_util_.profile());
+    ASSERT_EQ(4U, result.size());
+    EXPECT_EQ("http://c/", result.match_at(0)->destination_url.spec());
+    EXPECT_EQ("http://a/", result.match_at(1)->destination_url.spec());
+    EXPECT_EQ("http://b/", result.match_at(2)->destination_url.spec());
+    EXPECT_EQ("http://d/", result.match_at(3)->destination_url.spec());
+  }
+}
+
+TEST_F(AutocompleteResultTest, ShouldHideTopMatch) {
+  base::FieldTrialList::CreateFieldTrial("InstantExtended",
+                                         "Group1 hide_verbatim:1");
+  ACMatches matches;
+
+  // Case 1: Top match is a verbatim match.
+  PopulateAutocompleteMatchesFromTestData(kVerbatimMatches, 1, &matches);
+  AutocompleteResult result;
+  result.AppendMatches(matches);
+  EXPECT_TRUE(result.ShouldHideTopMatch());
+  matches.clear();
+  result.Reset();
+
+  // Case 2: If the verbatim first match is followed by another verbatim match,
+  // don't hide the top verbatim match.
+  PopulateAutocompleteMatchesFromTestData(kVerbatimMatches,
+                                          arraysize(kVerbatimMatches),
+                                          &matches);
+  result.AppendMatches(matches);
+  EXPECT_FALSE(result.ShouldHideTopMatch());
+  matches.clear();
+  result.Reset();
+
+  // Case 3: Top match is not a verbatim match. Do not hide the top match.
+  PopulateAutocompleteMatchesFromTestData(kNonVerbatimMatches, 1, &matches);
+  PopulateAutocompleteMatchesFromTestData(kVerbatimMatches,
+                                          arraysize(kVerbatimMatches),
+                                          &matches);
+  result.AppendMatches(matches);
+  EXPECT_FALSE(result.ShouldHideTopMatch());
+}
+
+TEST_F(AutocompleteResultTest, ShouldHideTopMatchAfterCopy) {
+  base::FieldTrialList::CreateFieldTrial("InstantExtended",
+                                         "Group1 hide_verbatim:1");
+  ACMatches matches;
+
+  // Case 1: Top match is a verbatim match followed by only copied matches.
+  PopulateAutocompleteMatchesFromTestData(kVerbatimMatches,
+                                          arraysize(kVerbatimMatches),
+                                          &matches);
+  for (size_t i = 1; i < arraysize(kVerbatimMatches); ++i)
+    matches[i].from_previous = true;
+  AutocompleteResult result;
+  result.AppendMatches(matches);
+  EXPECT_TRUE(result.ShouldHideTopMatch());
+  result.Reset();
+
+  // Case 2: The copied matches are then followed by a non-verbatim match.
+  PopulateAutocompleteMatchesFromTestData(kNonVerbatimMatches, 1, &matches);
+  result.AppendMatches(matches);
+  EXPECT_TRUE(result.ShouldHideTopMatch());
+  result.Reset();
+
+  // Case 3: The copied matches are instead followed by a verbatim match.
+  matches.back().from_previous = true;
+  PopulateAutocompleteMatchesFromTestData(kVerbatimMatches, 1, &matches);
+  result.AppendMatches(matches);
+  EXPECT_FALSE(result.ShouldHideTopMatch());
+}
+
+TEST_F(AutocompleteResultTest, DoNotHideTopMatch_FieldTrialFlagDisabled) {
+  // This test config is identical to ShouldHideTopMatch test ("Case 1") except
+  // that the "hide_verbatim" flag is disabled in the field trials.
+  base::FieldTrialList::CreateFieldTrial("InstantExtended",
+                                         "Group1 hide_verbatim:0");
+  ACMatches matches;
+  PopulateAutocompleteMatchesFromTestData(kVerbatimMatches, 1, &matches);
+  AutocompleteResult result;
+  result.AppendMatches(matches);
+  // Field trial flag "hide_verbatim" is disabled. Do not hide top match.
+  EXPECT_FALSE(result.ShouldHideTopMatch());
+}
+
+TEST_F(AutocompleteResultTest, TopMatchIsStandaloneVerbatimMatch) {
+  ACMatches matches;
+  AutocompleteResult result;
+  result.AppendMatches(matches);
+
+  // Case 1: Result set is empty.
+  EXPECT_FALSE(result.TopMatchIsStandaloneVerbatimMatch());
+
+  // Case 2: Top match is not a verbatim match.
+  PopulateAutocompleteMatchesFromTestData(kNonVerbatimMatches, 1, &matches);
+  result.AppendMatches(matches);
+  EXPECT_FALSE(result.TopMatchIsStandaloneVerbatimMatch());
+  result.Reset();
+  matches.clear();
+
+  // Case 3: Top match is a verbatim match.
+  PopulateAutocompleteMatchesFromTestData(kVerbatimMatches, 1, &matches);
+  result.AppendMatches(matches);
+  EXPECT_TRUE(result.TopMatchIsStandaloneVerbatimMatch());
+  result.Reset();
+  matches.clear();
+
+  // Case 4: Standalone verbatim match found in AutocompleteResult.
+  PopulateAutocompleteMatchesFromTestData(kVerbatimMatches, 1, &matches);
+  PopulateAutocompleteMatchesFromTestData(kNonVerbatimMatches, 1, &matches);
+  result.AppendMatches(matches);
+  EXPECT_TRUE(result.TopMatchIsStandaloneVerbatimMatch());
+  result.Reset();
+  matches.clear();
+
+  // Case 5: Multiple verbatim matches found in AutocompleteResult.
+  PopulateAutocompleteMatchesFromTestData(kVerbatimMatches,
+                                          arraysize(kVerbatimMatches),
+                                          &matches);
+  result.AppendMatches(matches);
+  EXPECT_FALSE(result.ShouldHideTopMatch());
 }

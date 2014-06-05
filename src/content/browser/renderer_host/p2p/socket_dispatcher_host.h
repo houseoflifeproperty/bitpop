@@ -6,12 +6,24 @@
 #define CONTENT_BROWSER_RENDERER_HOST_P2P_SOCKET_DISPATCHER_HOST_H_
 
 #include <map>
+#include <set>
+#include <string>
+#include <vector>
 
-#include "content/common/p2p_sockets.h"
+#include "content/browser/renderer_host/p2p/socket_host_throttler.h"
+#include "content/common/p2p_socket_type.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/network_change_notifier.h"
+
+namespace net {
+class URLRequestContextGetter;
+}
+
+namespace talk_base {
+struct PacketOptions;
+}
 
 namespace content {
 
@@ -22,7 +34,8 @@ class P2PSocketDispatcherHost
     : public content::BrowserMessageFilter,
       public net::NetworkChangeNotifier::IPAddressObserver {
  public:
-  P2PSocketDispatcherHost(content::ResourceContext* resource_context);
+  P2PSocketDispatcherHost(content::ResourceContext* resource_context,
+                          net::URLRequestContextGetter* url_context);
 
   // content::BrowserMessageFilter overrides.
   virtual void OnChannelClosing() OVERRIDE;
@@ -56,28 +69,33 @@ class P2PSocketDispatcherHost
   void OnCreateSocket(P2PSocketType type,
                       int socket_id,
                       const net::IPEndPoint& local_address,
-                      const net::IPEndPoint& remote_address);
+                      const P2PHostAndIPEndPoint& remote_address);
   void OnAcceptIncomingTcpConnection(int listen_socket_id,
                                      const net::IPEndPoint& remote_address,
                                      int connected_socket_id);
   void OnSend(int socket_id,
               const net::IPEndPoint& socket_address,
-              const std::vector<char>& data);
+              const std::vector<char>& data,
+              const talk_base::PacketOptions& options,
+              uint64 packet_id);
+  void OnSetOption(int socket_id, P2PSocketOption option, int value);
   void OnDestroySocket(int socket_id);
 
   void DoGetNetworkList();
   void SendNetworkList(const net::NetworkInterfaceList& list);
 
   void OnAddressResolved(DnsRequest* request,
-                         const net::IPAddressNumber& result);
+                         const net::IPAddressList& addresses);
 
   content::ResourceContext* resource_context_;
+  scoped_refptr<net::URLRequestContextGetter> url_context_;
 
   SocketsMap sockets_;
 
   bool monitoring_networks_;
 
   std::set<DnsRequest*> dns_requests_;
+  P2PMessageThrottler throttler_;
 
   DISALLOW_COPY_AND_ASSIGN(P2PSocketDispatcherHost);
 };

@@ -5,29 +5,23 @@
 #include "chrome/browser/ui/views/location_bar/star_view.h"
 
 #include "base/metrics/histogram.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
-#include "chrome/browser/command_updater.h"
+#include "chrome/browser/bookmarks/bookmark_stats.h"
 #include "chrome/browser/ui/view_ids.h"
-#include "chrome/browser/ui/views/browser_dialogs.h"
+#include "chrome/browser/ui/views/bookmarks/bookmark_bubble_view.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "ui/base/accessibility/accessible_view_state.h"
-#include "ui/base/events/event.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
 StarView::StarView(CommandUpdater* command_updater)
-    : command_updater_(command_updater) {
+    : BubbleIconView(command_updater, IDC_BOOKMARK_PAGE) {
   set_id(VIEW_ID_STAR_BUTTON);
   SetToggled(false);
-  set_accessibility_focusable(true);
-  TouchableLocationBarView::Init(this);
 }
 
-StarView::~StarView() {
-}
+StarView::~StarView() {}
 
 void StarView::SetToggled(bool on) {
   SetTooltipText(l10n_util::GetStringUTF16(
@@ -36,56 +30,25 @@ void StarView::SetToggled(bool on) {
       on ? IDR_STAR_LIT : IDR_STAR));
 }
 
-int StarView::GetBuiltInHorizontalPadding() const {
-  return GetBuiltInHorizontalPaddingImpl();
+bool StarView::IsBubbleShowing() const {
+  return BookmarkBubbleView::IsShowing();
 }
 
-void StarView::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->name = l10n_util::GetStringUTF16(IDS_ACCNAME_STAR);
-  state->role = ui::AccessibilityTypes::ROLE_PUSHBUTTON;
-}
-
-bool StarView::GetTooltipText(const gfx::Point& p, string16* tooltip) const {
-  // Don't show tooltip to distract user if BookmarkBubbleView is showing.
-  if (chrome::IsBookmarkBubbleViewShowing())
-    return false;
-
-  return views::ImageView::GetTooltipText(p, tooltip);
-}
-
-bool StarView::OnMousePressed(const ui::MouseEvent& event) {
-  // We want to show the bubble on mouse release; that is the standard behavior
-  // for buttons.
-  return true;
-}
-
-void StarView::OnMouseReleased(const ui::MouseEvent& event) {
-  if (event.IsOnlyLeftMouseButton() && HitTestPoint(event.location())) {
-    UMA_HISTOGRAM_ENUMERATION("Bookmarks.EntryPoint",
-                              bookmark_utils::ENTRY_POINT_STAR_MOUSE,
-                              bookmark_utils::ENTRY_POINT_LIMIT);
-    command_updater_->ExecuteCommand(IDC_BOOKMARK_PAGE_FROM_STAR);
+void StarView::OnExecuting(
+    BubbleIconView::ExecuteSource execute_source) {
+  BookmarkEntryPoint entry_point = BOOKMARK_ENTRY_POINT_STAR_MOUSE;
+  switch (execute_source) {
+    case EXECUTE_SOURCE_MOUSE:
+      entry_point = BOOKMARK_ENTRY_POINT_STAR_MOUSE;
+      break;
+    case EXECUTE_SOURCE_KEYBOARD:
+      entry_point = BOOKMARK_ENTRY_POINT_STAR_KEY;
+      break;
+    case EXECUTE_SOURCE_GESTURE:
+      entry_point = BOOKMARK_ENTRY_POINT_STAR_GESTURE;
+      break;
   }
-}
-
-bool StarView::OnKeyPressed(const ui::KeyEvent& event) {
-  if (event.key_code() == ui::VKEY_SPACE ||
-      event.key_code() == ui::VKEY_RETURN) {
-    UMA_HISTOGRAM_ENUMERATION("Bookmarks.EntryPoint",
-                              bookmark_utils::ENTRY_POINT_STAR_KEY,
-                              bookmark_utils::ENTRY_POINT_LIMIT);
-    command_updater_->ExecuteCommand(IDC_BOOKMARK_PAGE_FROM_STAR);
-    return true;
-  }
-  return false;
-}
-
-void StarView::OnGestureEvent(ui::GestureEvent* event) {
-  if (event->type() == ui::ET_GESTURE_TAP) {
-    UMA_HISTOGRAM_ENUMERATION("Bookmarks.EntryPoint",
-                              bookmark_utils::ENTRY_POINT_STAR_GESTURE,
-                              bookmark_utils::ENTRY_POINT_LIMIT);
-    command_updater_->ExecuteCommand(IDC_BOOKMARK_PAGE_FROM_STAR);
-    event->SetHandled();
-  }
+  UMA_HISTOGRAM_ENUMERATION("Bookmarks.EntryPoint",
+                            entry_point,
+                            BOOKMARK_ENTRY_POINT_LIMIT);
 }

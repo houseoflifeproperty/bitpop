@@ -8,8 +8,8 @@
 #include <string>
 
 #include "base/memory/ref_counted.h"
-#include "base/string16.h"
-#include "ui/base/ui_export.h"
+#include "base/strings/string16.h"
+#include "ui/gfx/gfx_export.h"
 #include "ui/gfx/native_widget_types.h"
 
 namespace gfx {
@@ -18,14 +18,23 @@ class PlatformFont;
 
 // Font provides a wrapper around an underlying font. Copy and assignment
 // operators are explicitly allowed, and cheap.
-class UI_EXPORT Font {
+//
+// Figure of font metrics:
+//   +--------+-------------------+------------------+
+//   |        |                   | internal leading |
+//   |        | ascent (baseline) +------------------+
+//   | height |                   | cap height       |
+//   |        |-------------------+------------------+
+//   |        | descent (height - baseline)          |
+//   +--------+--------------------------------------+
+class GFX_EXPORT Font {
  public:
   // The following constants indicate the font style.
   enum FontStyle {
     NORMAL = 0,
     BOLD = 1,
     ITALIC = 2,
-    UNDERLINED = 4,
+    UNDERLINE = 4,
   };
 
   // Creates a font with the default name and style.
@@ -33,7 +42,7 @@ class UI_EXPORT Font {
 
   // Creates a font that is a clone of another font object.
   Font(const Font& other);
-  gfx::Font& operator=(const Font& other);
+  Font& operator=(const Font& other);
 
   // Creates a font from the specified native font.
   explicit Font(NativeFont native_font);
@@ -48,16 +57,11 @@ class UI_EXPORT Font {
   ~Font();
 
   // Returns a new Font derived from the existing font.
-  // |size_deta| is the size in pixels to add to the current font. For example,
+  // |size_delta| is the size in pixels to add to the current font. For example,
   // a value of 5 results in a font 5 pixels bigger than this font.
-  Font DeriveFont(int size_delta) const;
-
-  // Returns a new Font derived from the existing font.
-  // |size_delta| is the size in pixels to add to the current font. See the
-  // single argument version of this method for an example.
   // The style parameter specifies the new style for the font, and is a
-  // bitmask of the values: BOLD, ITALIC and UNDERLINED.
-  Font DeriveFont(int size_delta, int style) const;
+  // bitmask of the values: BOLD, ITALIC and UNDERLINE.
+  Font Derive(int size_delta, int style) const;
 
   // Returns the number of vertical pixels needed to display characters from
   // the specified font.  This may include some leading, i.e. height may be
@@ -69,23 +73,22 @@ class UI_EXPORT Font {
   // Returns the baseline, or ascent, of the font.
   int GetBaseline() const;
 
-  // Returns the average character width for the font.
-  int GetAverageCharacterWidth() const;
-
-  // Returns the number of horizontal pixels needed to display the specified
-  // string.
-  int GetStringWidth(const string16& text) const;
+  // Returns the cap height of the font.
+  int GetCapHeight() const;
 
   // Returns the expected number of horizontal pixels needed to display the
-  // specified length of characters. Call GetStringWidth() to retrieve the
+  // specified length of characters. Call gfx::GetStringWidth() to retrieve the
   // actual number.
   int GetExpectedTextWidth(int length) const;
 
   // Returns the style of the font.
   int GetStyle() const;
 
-  // Returns the font name in UTF-8.
+  // Returns the specified font name in UTF-8.
   std::string GetFontName() const;
+
+  // Returns the actually used font name in UTF-8.
+  std::string GetActualFontNameForTesting() const;
 
   // Returns the font size in pixels.
   int GetFontSize() const;

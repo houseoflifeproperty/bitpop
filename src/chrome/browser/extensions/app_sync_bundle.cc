@@ -5,18 +5,19 @@
 #include "chrome/browser/extensions/app_sync_bundle.h"
 
 #include "base/location.h"
-#include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_sorting.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_set.h"
+#include "chrome/browser/extensions/extension_sync_service.h"
+#include "chrome/common/extensions/sync_helper.h"
+#include "extensions/browser/app_sorting.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
 #include "sync/api/sync_change_processor.h"
+#include "sync/api/sync_data.h"
 #include "sync/api/sync_error_factory.h"
 
 namespace extensions {
 
-AppSyncBundle::AppSyncBundle(ExtensionService* extension_service)
-    : extension_service_(extension_service),
-      sync_processor_(NULL) {}
+AppSyncBundle::AppSyncBundle(ExtensionSyncService* extension_sync_service)
+    : extension_sync_service_(extension_sync_service) {}
 
 AppSyncBundle::~AppSyncBundle() {}
 
@@ -32,7 +33,7 @@ void AppSyncBundle::SetupSync(
        ++i) {
     AppSyncData app_sync_data(*i);
     AddApp(app_sync_data.id());
-    extension_service_->ProcessAppSyncData(app_sync_data);
+    extension_sync_service_->ProcessAppSyncData(app_sync_data);
   }
 }
 
@@ -46,11 +47,11 @@ void AppSyncBundle::Reset() {
 syncer::SyncChange AppSyncBundle::CreateSyncChangeToDelete(
     const Extension* extension)
     const {
-  AppSyncData sync_data = extension_service_->GetAppSyncData(*extension);
+  AppSyncData sync_data = extension_sync_service_->GetAppSyncData(*extension);
   return sync_data.GetSyncChange(syncer::SyncChange::ACTION_DELETE);
 }
 
-void AppSyncBundle::ProcessDeletion(std::string extension_id,
+void AppSyncBundle::ProcessDeletion(const std::string& extension_id,
                                     const syncer::SyncChange& sync_change) {
   RemoveApp(extension_id);
   sync_processor_->ProcessSyncChanges(FROM_HERE,
@@ -59,12 +60,13 @@ void AppSyncBundle::ProcessDeletion(std::string extension_id,
 
 syncer::SyncChange AppSyncBundle::CreateSyncChange(
     const syncer::SyncData& sync_data) {
-  if (HasExtensionId(sync_data.GetTag())) {
+  const syncer::SyncDataLocal sync_data_local(sync_data);
+  if (HasExtensionId(sync_data_local.GetTag())) {
     return syncer::SyncChange(FROM_HERE,
                               syncer::SyncChange::ACTION_UPDATE,
                               sync_data);
   } else {
-    AddApp(sync_data.GetTag());
+    AddApp(sync_data_local.GetTag());
     return syncer::SyncChange(FROM_HERE,
                               syncer::SyncChange::ACTION_ADD,
                               sync_data);
@@ -73,7 +75,7 @@ syncer::SyncChange AppSyncBundle::CreateSyncChange(
 
 syncer::SyncDataList AppSyncBundle::GetAllSyncData() const {
   std::vector<AppSyncData> app_sync_data =
-      extension_service_->GetAppSyncDataList();
+      extension_sync_service_->GetAppSyncDataList();
   syncer::SyncDataList result(app_sync_data.size());
   for (int i = 0; i < static_cast<int>(app_sync_data.size()); ++i) {
     result[i] = app_sync_data[i].GetSyncData();
@@ -81,28 +83,18 @@ syncer::SyncDataList AppSyncBundle::GetAllSyncData() const {
   return result;
 }
 
-void AppSyncBundle::SyncChangeIfNeeded(const Extension& extension) {
-  AppSyncData app_sync_data = extension_service_->GetAppSyncData(extension);
-
-  syncer::SyncChangeList sync_change_list(1, app_sync_data.GetSyncChange(
-      HasExtensionId(extension.id()) ?
-      syncer::SyncChange::ACTION_UPDATE : syncer::SyncChange::ACTION_ADD));
-  sync_processor_->ProcessSyncChanges(FROM_HERE, sync_change_list);
-  MarkPendingAppSynced(extension.id());
-}
-
 void AppSyncBundle::ProcessSyncChange(AppSyncData app_sync_data) {
   if (app_sync_data.uninstalled())
     RemoveApp(app_sync_data.id());
   else
     AddApp(app_sync_data.id());
-  extension_service_->ProcessAppSyncData(app_sync_data);
+  extension_sync_service_->ProcessAppSyncData(app_sync_data);
 }
 
 void AppSyncBundle::ProcessSyncChangeList(
     syncer::SyncChangeList sync_change_list) {
   sync_processor_->ProcessSyncChanges(FROM_HERE, sync_change_list);
-  extension_service_->extension_prefs()->extension_sorting()->
+  extension_sync_service_->extension_prefs().app_sorting()->
       FixNTPOrdinalCollisions();
 }
 
@@ -119,9 +111,19 @@ void AppSyncBundle::AddPendingApp(const std::string& id,
   pending_sync_data_[id] = app_sync_data;
 }
 
-bool AppSyncBundle::HandlesApp(const Extension& extension) const {
-  return sync_processor_ != NULL &&
-      extension.GetSyncType() == Extension::SYNC_TYPE_APP;
+bool AppSyncBundle::IsSyncing() const {
+  return sync_processor_ != NULL;
+}
+
+void AppSyncBundle::SyncChangeIfNeeded(const Extension& extension) {
+  AppSyncData app_sync_data = extension_sync_service_->GetAppSyncData(
+      extension);
+
+  syncer::SyncChangeList sync_change_list(1, app_sync_data.GetSyncChange(
+      HasExtensionId(extension.id()) ?
+      syncer::SyncChange::ACTION_UPDATE : syncer::SyncChange::ACTION_ADD));
+  sync_processor_->ProcessSyncChanges(FROM_HERE, sync_change_list);
+  MarkPendingAppSynced(extension.id());
 }
 
 std::vector<AppSyncData> AppSyncBundle::GetPendingData() const {
@@ -141,13 +143,14 @@ void AppSyncBundle::GetAppSyncDataListHelper(
     std::vector<AppSyncData>* sync_data_list) const {
   for (ExtensionSet::const_iterator it = extensions.begin();
        it != extensions.end(); ++it) {
-    const Extension& extension = **it;
+    const Extension& extension = *it->get();
     // If we have pending app data for this app, then this
     // version is out of date.  We'll sync back the version we got from
     // sync.
-    if (HandlesApp(extension) &&
+    if (IsSyncing() && sync_helper::IsSyncableApp(&extension) &&
         !HasPendingExtensionId(extension.id())) {
-      sync_data_list->push_back(extension_service_->GetAppSyncData(extension));
+      sync_data_list->push_back(extension_sync_service_->GetAppSyncData(
+          extension));
     }
   }
 }

@@ -4,44 +4,36 @@
 
 #include "content/public/browser/user_metrics.h"
 
+#include <vector>
+
 #include "base/bind.h"
+#include "base/metrics/user_metrics.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_types.h"
 
 namespace content {
-namespace {
 
-// Forward declare because of circular dependency.
-void CallRecordOnUI(const std::string& action);
-
-void Record(const char *action) {
+void RecordAction(const base::UserMetricsAction& action) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
     BrowserThread::PostTask(
         BrowserThread::UI,
         FROM_HERE,
-        base::Bind(&CallRecordOnUI, action));
+        base::Bind(&RecordAction, action));
     return;
   }
 
-  NotificationService::current()->Notify(
-      NOTIFICATION_USER_ACTION,
-      NotificationService::AllSources(),
-      Details<const char*>(&action));
-}
-
-void CallRecordOnUI(const std::string& action) {
-  Record(action.c_str());
-}
-
-}  // namespace
-
-void RecordAction(const UserMetricsAction& action) {
-  Record(action.str_);
+  base::RecordAction(action);
 }
 
 void RecordComputedAction(const std::string& action) {
-  Record(action.c_str());
+  if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
+    BrowserThread::PostTask(
+        BrowserThread::UI,
+        FROM_HERE,
+        base::Bind(&RecordComputedAction, action));
+    return;
+  }
+
+  base::RecordComputedAction(action);
 }
 
 }  // namespace content

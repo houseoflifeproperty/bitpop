@@ -1,19 +1,23 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.android_webview.test.util;
 
-// The purpose of the generator is to provide a sequence of distinct images
-// to avoid caching side-effects.  As we don't need too many images, I've
-// found it easier to hardcode image samples. It is possible to generate
-// images on the fly, but it will require hooking up additional packages.
+import org.chromium.net.test.util.TestWebServer;
+
+/**
+ * The purpose of the generator is to provide a sequence of distinct images to
+ * avoid caching side-effects. As we don't need too many images, I've found it
+ * easier to hardcode image samples. It is possible to generate images on the
+ * fly, but it will require hooking up additional packages.
+ */
 public class ImagePageGenerator {
 
     public static final String IMAGE_LOADED_STRING = "1";
     public static final String IMAGE_NOT_LOADED_STRING = "0";
 
-    private final String[] COLORS = {
+    private static final String[] COLORS = {
         "AAAAIAAc3j0Ss", "AQABIAEayS9b0", "AgACIAIQ8BmAc", "AwADIAMW5wvJE",
         "BAAEIAQZNWRTI", "BQAFIAUfInYaQ", "BgAGIAYVG0DB4", "BwAHIAcTDFKIg",
         "CAAIIAgXCI+Rk", "CQAJIAkRH53Y8", "CgAKIAobJqsDU", "CwALIAsdMblKM",
@@ -21,13 +25,13 @@ public class ImagePageGenerator {
         "D+AQAA/9vaUwc", "D/AQEBANNhzkw"
     };
 
-    private final String IMAGE_PREFIX = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA" +
+    private static final String IMAGE_PREFIX = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA" +
             "6fptVAAAAAXNSR0IArs4c6QAAAA1JREFUCB0BAgD9/w";
 
-    private final String IMAGE_SUFFIX = "AAAAASUVORK5CYII=";
+    private static final String IMAGE_SUFFIX = "AAAAASUVORK5CYII=";
 
     private int mIndex;
-    private boolean mAdvance;
+    private final boolean mAdvance;
 
     public ImagePageGenerator(int startIndex, boolean advance) {
         mIndex = startIndex;
@@ -47,5 +51,14 @@ public class ImagePageGenerator {
                 getPageTemplateSource("data:image/png;base64," + getImageSourceNoAdvance());
         if (mAdvance) mIndex += 2;
         return result;
+    }
+
+    public String getPageUrl(TestWebServer webServer) {
+        final String imagePath = "/image_" + mIndex + ".png";
+        final String pagePath = "/html_image_" + mIndex + ".html";
+        webServer.setResponseBase64(imagePath, getImageSourceNoAdvance(),
+                CommonResources.getImagePngHeaders(false));
+        if (mAdvance) mIndex += 2;
+        return webServer.setResponse(pagePath, getPageTemplateSource(imagePath), null);
     }
 }

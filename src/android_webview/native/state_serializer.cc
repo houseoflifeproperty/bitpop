@@ -8,10 +8,13 @@
 
 #include "base/memory/scoped_vector.h"
 #include "base/pickle.h"
-#include "base/time.h"
+#include "base/time/time.h"
+#include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/page_state.h"
 
 // Reasons for not re-using TabNavigation under chrome/ as of 20121116:
 // * Android WebView has different requirements for fields to store since
@@ -32,7 +35,7 @@ namespace {
 // Sanity check value that we are restoring from a valid pickle.
 // This can potentially used as an actual serialization version number in the
 // future if we ever decide to support restoring from older versions.
-const uint32 AW_STATE_VERSION = 20121126;
+const uint32 AW_STATE_VERSION = 20130814;
 
 }  // namespace
 
@@ -103,11 +106,30 @@ bool RestoreFromPickle(PickleIterator* iterator,
   }
 
   // |web_contents| takes ownership of these entries after this call.
-  web_contents->GetController().Restore(
+  content::NavigationController& controller = web_contents->GetController();
+  controller.Restore(
       selected_entry,
       content::NavigationController::RESTORE_LAST_SESSION_EXITED_CLEANLY,
       &restored_entries.get());
   DCHECK_EQ(0u, restored_entries.size());
+
+  if (controller.GetActiveEntry()) {
+    // Set up the file access rights for the selected navigation entry.
+    // TODO(joth): This is duplicated from chrome/.../session_restore.cc and
+    // should be shared e.g. in  NavigationController. http://crbug.com/68222
+    const int id = web_contents->GetRenderProcessHost()->GetID();
+    const content::PageState& page_state =
+        controller.GetActiveEntry()->GetPageState();
+    const std::vector<base::FilePath>& file_paths =
+        page_state.GetReferencedFiles();
+    for (std::vector<base::FilePath>::const_iterator file = file_paths.begin();
+         file != file_paths.end(); ++file) {
+      content::ChildProcessSecurityPolicy::GetInstance()->GrantReadFile(id,
+                                                                        *file);
+    }
+  }
+
+  controller.LoadIfNecessary();
 
   return true;
 }
@@ -146,7 +168,7 @@ bool WriteNavigationEntryToPickle(const content::NavigationEntry& entry,
   if (!pickle->WriteString16(entry.GetTitle()))
     return false;
 
-  if (!pickle->WriteString(entry.GetContentState()))
+  if (!pickle->WriteString(entry.GetPageState().ToEncodedData()))
     return false;
 
   if (!pickle->WriteBool(static_cast<int>(entry.GetHasPostData())))
@@ -162,6 +184,9 @@ bool WriteNavigationEntryToPickle(const content::NavigationEntry& entry,
     return false;
 
   if (!pickle->WriteInt64(entry.GetTimestamp().ToInternalValue()))
+    return false;
+
+  if (!pickle->WriteInt(entry.GetHttpStatusCode()))
     return false;
 
   // Please update AW_STATE_VERSION if serialization format is changed.
@@ -196,12 +221,12 @@ bool RestoreNavigationEntryFromPickle(PickleIterator* iterator,
       return false;
 
     referrer.url = GURL(referrer_url);
-    referrer.policy = static_cast<WebKit::WebReferrerPolicy>(policy);
+    referrer.policy = static_cast<blink::WebReferrerPolicy>(policy);
     entry->SetReferrer(referrer);
   }
 
   {
-    string16 title;
+    base::string16 title;
     if (!iterator->ReadString16(&title))
       return false;
     entry->SetTitle(title);
@@ -211,7 +236,8 @@ bool RestoreNavigationEntryFromPickle(PickleIterator* iterator,
     string content_state;
     if (!iterator->ReadString(&content_state))
       return false;
-    entry->SetContentState(content_state);
+    entry->SetPageState(
+        content::PageState::CreateFromEncodedData(content_state));
   }
 
   {
@@ -247,6 +273,13 @@ bool RestoreNavigationEntryFromPickle(PickleIterator* iterator,
     if (!iterator->ReadInt64(&timestamp))
       return false;
     entry->SetTimestamp(base::Time::FromInternalValue(timestamp));
+  }
+
+  {
+    int http_status_code;
+    if (!iterator->ReadInt(&http_status_code))
+      return false;
+    entry->SetHttpStatusCode(http_status_code);
   }
 
   return true;

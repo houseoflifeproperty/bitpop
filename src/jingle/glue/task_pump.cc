@@ -3,15 +3,16 @@
 // found in the LICENSE file.
 
 #include "base/bind.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "jingle/glue/task_pump.h"
 
 namespace jingle_glue {
 
 TaskPump::TaskPump()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
-      posted_wake_(false),
-      stopped_(false) {}
+    : posted_wake_(false),
+      stopped_(false),
+      weak_factory_(this) {
+}
 
 TaskPump::~TaskPump() {
   DCHECK(CalledOnValidThread());
@@ -20,7 +21,7 @@ TaskPump::~TaskPump() {
 void TaskPump::WakeTasks() {
   DCHECK(CalledOnValidThread());
   if (!stopped_ && !posted_wake_) {
-    MessageLoop* current_message_loop = MessageLoop::current();
+    base::MessageLoop* current_message_loop = base::MessageLoop::current();
     CHECK(current_message_loop);
     // Do the requested wake up.
     current_message_loop->PostTask(

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "sandbox/win/src/handle_policy.h"
 #include "sandbox/win/src/nt_internals.h"
 #include "sandbox/win/src/sandbox.h"
@@ -54,8 +54,8 @@ TEST(HandlePolicyTest, DuplicateHandle) {
   EXPECT_EQ(SBOX_TEST_SUCCEEDED, target.RunTest(L"Handle_WaitProcess 30000"));
 
   // First test that we fail to open the event.
-  std::wstring cmd_line = base::StringPrintf(L"Handle_DuplicateEvent %d",
-                                             target.process_id());
+  base::string16 cmd_line = base::StringPrintf(L"Handle_DuplicateEvent %d",
+                                               target.process_id());
   EXPECT_EQ(SBOX_TEST_DENIED, runner.RunTest(cmd_line.c_str()));
 
   // Now successfully open the event after adding a duplicate handle rule.
@@ -76,8 +76,8 @@ TEST(HandlePolicyTest, DuplicatePeerHandle) {
   EXPECT_EQ(SBOX_TEST_SUCCEEDED, target.RunTest(L"Handle_WaitProcess 30000"));
 
   // First test that we fail to open the event.
-  std::wstring cmd_line = base::StringPrintf(L"Handle_DuplicateEvent %d",
-                                             target.process_id());
+  base::string16 cmd_line = base::StringPrintf(L"Handle_DuplicateEvent %d",
+                                               target.process_id());
   EXPECT_EQ(SBOX_TEST_DENIED, runner.RunTest(cmd_line.c_str()));
 
   // Now successfully open the event after adding a duplicate handle rule.
@@ -92,7 +92,7 @@ TEST(HandlePolicyTest, DuplicateBrokerHandle) {
   TestRunner runner;
 
   // First test that we fail to open the event.
-  std::wstring cmd_line = base::StringPrintf(L"Handle_DuplicateEvent %d",
+  base::string16 cmd_line = base::StringPrintf(L"Handle_DuplicateEvent %d",
                                              ::GetCurrentProcessId());
   EXPECT_EQ(SBOX_TEST_DENIED, runner.RunTest(cmd_line.c_str()));
 

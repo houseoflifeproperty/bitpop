@@ -278,6 +278,9 @@ Other options:
         message = node.UberClique().BestClique(id).GetMessage()
         messages += [message]
 
+    # Ensure a stable order of messages, to help regression testing.
+    messages.sort(key=lambda x:x.GetId())
+
     if self.format == self.FORMAT_IDS_ONLY:
       # We just print the list of IDs to the output file.
       for msg in messages:

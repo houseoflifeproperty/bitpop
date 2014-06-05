@@ -3,35 +3,59 @@
  * found in the LICENSE file.
  */
 
-#capture-status-view,
-#halted-status-view,
-#loaded-status-view {
-  color: #eee;
-  padding: 0 6px;
-  white-space: nowrap;
+.capture-status-view {
+  background: rgb(238, 0, 0);
+}
+
+.halted-status-view {
+  background: rgb(0, 138, 0);
+}
+
+.loaded-status-view {
+  background: rgb(113, 113, 171);
 }
 
 #capture-status-view {
-  background: rgb(255, 0, 0);
+  -webkit-align-items: center;
+  display: -webkit-flex;
 }
 
-#halted-status-view {
-  background: rgb(0, 170, 0);
+.capture-status-view-link,
+.capture-status-view-link:visited,
+.capture-status-view-link:active {
+  color: white;
+  text-decoration: none;
 }
 
-#loaded-status-view {
-  background: rgb(136, 136, 204);
+.capture-status-view-link:hover {
+  color: white;
+  text-decoration: underline;
 }
 
-#capture-status-view-toggle-extras {
-  -webkit-filter: invert();  /* Make it white! */
-  cursor: pointer;
+/* Completely un-style the SELECT. Will place an arrow over it manually. */
+#capture-status-view-actions {
+  -webkit-appearance: none;
+  background: none;
+  border: none;
+  height: 25px;
+  outline: none;
+  width: 30px;
 }
 
-.capture-status-view-rotateleft {
-  -webkit-transform: rotate(90deg);
+.capture-status-view-arrow {
+  display: inline-block;
+  position: relative;
 }
 
-.capture-status-view-rotateright {
-  -webkit-transform: rotate(270deg);
+.capture-status-view-arrow::after {
+  color: black;
+  content: '\25bc';
+  font-size: 9px;
+  left: 0;
+  line-height: 25px;
+  pointer-events: none;
+  position: absolute;
+  text-align: center;
+  top: 0;
+  width: 100%;
 }

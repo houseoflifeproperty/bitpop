@@ -11,8 +11,12 @@
 #include "SkCGUtils.h"
 #include "SkEvent.h"
 SK_COMPILE_ASSERT(SK_SUPPORT_GPU, not_implemented_for_non_gpu_build);
+#include <OpenGL/gl.h>
 
 //#define FORCE_REDRAW
+// Can be dropped when we no longer support 10.6.
+#define RETINA_API_AVAILABLE (defined(MAC_OS_X_VERSION_10_7) && \
+                              MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_7)
 @implementation SkNSView
 @synthesize fWind, fTitle, fOptionsDelegate, fGLContext;
 
@@ -33,16 +37,27 @@ SK_COMPILE_ASSERT(SK_SUPPORT_GPU, not_implemented_for_non_gpu_build);
 }
 
 - (id)initWithDefaults {
+#if RETINA_API_AVAILABLE
+    [self setWantsBestResolutionOpenGLSurface:YES];
+#endif
     fRedrawRequestPending = false;
     fWind = NULL;
     return self;
 }
 
 - (void)setUpWindow {
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                          selector:@selector(backingPropertiesChanged:)
+                                          name:@"NSWindowDidChangeBackingPropertiesNotification"
+                                          object:[self window]];
     if (NULL != fWind) {
         fWind->setVisibleP(true);
-        fWind->resize((int) self.frame.size.width, (int) self.frame.size.height, 
-                      SkBitmap::kARGB_8888_Config);
+        NSSize size = self.frame.size;
+#if RETINA_API_AVAILABLE
+        size = [self convertSizeToBacking:self.frame.size];
+#endif
+        fWind->resize((int) size.width, (int) size.height,
+                      kN32_SkColorType);
     }
 }
 
@@ -54,13 +69,49 @@ SK_COMPILE_ASSERT(SK_SUPPORT_GPU, not_implemented_for_non_gpu_build);
     return YES;
 }
 
+- (float)scaleFactor {
+    NSWindow *window = [self window];
+#if RETINA_API_AVAILABLE
+    if (window) {
+        return [window backingScaleFactor];
+    }
+    return [[NSScreen mainScreen] backingScaleFactor];
+#else
+    if (window) {
+        return [window userSpaceScaleFactor];
+    }
+    return [[NSScreen mainScreen] userSpaceScaleFactor];
+#endif
+}
+
+- (void)backingPropertiesChanged:(NSNotification *)notification {
+    CGFloat oldBackingScaleFactor = (CGFloat)[
+        [notification.userInfo objectForKey:@"NSBackingPropertyOldScaleFactorKey"] doubleValue
+    ];
+    CGFloat newBackingScaleFactor = [self scaleFactor];
+    if (oldBackingScaleFactor == newBackingScaleFactor) {
+        return;
+    }
+    
+    // TODO: need a better way to force a refresh (that works).
+    // [fGLContext update] does not appear to update if the point size has not changed,
+    // even if the backing size has changed.
+    [self setFrameSize:NSMakeSize(self.frame.size.width + 1, self.frame.size.height + 1)];
+}
+
 - (void)resizeSkView:(NSSize)newSize {
-    if (NULL != fWind && (fWind->width() != newSize.width || fWind->height() != newSize.height)) {
+#if RETINA_API_AVAILABLE
+    newSize = [self convertSizeToBacking:newSize];
+#endif
+    if (NULL != fWind &&
+            (fWind->width()  != newSize.width ||
+             fWind->height() != newSize.height))
+    {
         fWind->resize((int) newSize.width, (int) newSize.height);
         if (NULL != fGLContext) {
             glClear(GL_STENCIL_BUFFER_BIT);
+            [fGLContext update];
         }
-        [fGLContext update];
     }
 }
 
@@ -192,35 +243,84 @@ static SkKey raw2key(UInt32 raw)
  //     unichar c = [[event characters] characterAtIndex:0];
 }
 
+static const struct {
+    unsigned    fNSModifierMask;
+    unsigned    fSkModifierMask;
+} gModifierMasks[] = {
+    { NSAlphaShiftKeyMask,  kShift_SkModifierKey },
+    { NSShiftKeyMask,       kShift_SkModifierKey },
+    { NSControlKeyMask,     kControl_SkModifierKey },
+    { NSAlternateKeyMask,   kOption_SkModifierKey },
+    { NSCommandKeyMask,     kCommand_SkModifierKey },
+};
+
+static unsigned convertNSModifiersToSk(NSUInteger nsModi) {
+    unsigned skModi = 0;
+    for (size_t i = 0; i < SK_ARRAY_COUNT(gModifierMasks); ++i) {
+        if (nsModi & gModifierMasks[i].fNSModifierMask) {
+            skModi |= gModifierMasks[i].fSkModifierMask;
+        }
+    }
+    return skModi;
+}
+
 - (void)mouseDown:(NSEvent *)event {
     NSPoint p = [event locationInWindow];
+    unsigned modi = convertNSModifiersToSk([event modifierFlags]);
+
     if ([self mouse:p inRect:[self bounds]] && NULL != fWind) {
         NSPoint loc = [self convertPoint:p fromView:nil];
-        fWind->handleClick((int) loc.x, (int) loc.y, SkView::Click::kDown_State, self);
+#if RETINA_API_AVAILABLE
+        loc = [self convertPointToBacking:loc]; //y-up
+        loc.y = -loc.y;
+#endif
+        fWind->handleClick((int) loc.x, (int) loc.y,
+                           SkView::Click::kDown_State, self, modi);
     }
 }
 
 - (void)mouseDragged:(NSEvent *)event {
     NSPoint p = [event locationInWindow];
+    unsigned modi = convertNSModifiersToSk([event modifierFlags]);
+
     if ([self mouse:p inRect:[self bounds]] && NULL != fWind) {
         NSPoint loc = [self convertPoint:p fromView:nil];
-        fWind->handleClick((int) loc.x, (int) loc.y, SkView::Click::kMoved_State, self);
+#if RETINA_API_AVAILABLE
+        loc = [self convertPointToBacking:loc]; //y-up
+        loc.y = -loc.y;
+#endif
+        fWind->handleClick((int) loc.x, (int) loc.y,
+                           SkView::Click::kMoved_State, self, modi);
     }
 }
 
 - (void)mouseMoved:(NSEvent *)event {
     NSPoint p = [event locationInWindow];
+    unsigned modi = convertNSModifiersToSk([event modifierFlags]);
+    
     if ([self mouse:p inRect:[self bounds]] && NULL != fWind) {
         NSPoint loc = [self convertPoint:p fromView:nil];
-        fWind->handleClick((int) loc.x, (int) loc.y, SkView::Click::kMoved_State, self);
+#if RETINA_API_AVAILABLE
+        loc = [self convertPointToBacking:loc]; //y-up
+        loc.y = -loc.y;
+#endif
+        fWind->handleClick((int) loc.x, (int) loc.y,
+                           SkView::Click::kMoved_State, self, modi);
     }
 }
 
 - (void)mouseUp:(NSEvent *)event {
     NSPoint p = [event locationInWindow];
+    unsigned modi = convertNSModifiersToSk([event modifierFlags]);
+    
     if ([self mouse:p inRect:[self bounds]] && NULL != fWind) {
         NSPoint loc = [self convertPoint:p fromView:nil];
-        fWind->handleClick((int) loc.x, (int) loc.y, SkView::Click::kUp_State, self);
+#if RETINA_API_AVAILABLE
+        loc = [self convertPointToBacking:loc]; //y-up
+        loc.y = -loc.y;
+#endif
+        fWind->handleClick((int) loc.x, (int) loc.y,
+                           SkView::Click::kUp_State, self, modi);
     }
 }
 
@@ -258,7 +358,6 @@ CGLContextObj createGLContext(int msaaSampleCount) {
     if (!npix) {
         CGLChoosePixelFormat(attributes, &format, &npix);
     }
-    
     CGLContextObj ctx;
     CGLCreateContext(format, NULL, &ctx);
     CGLDestroyPixelFormat(format);
@@ -281,7 +380,8 @@ CGLContextObj createGLContext(int msaaSampleCount) {
     }
 }
 - (bool)attach:(SkOSWindow::SkBackEndTypes)attachType
-        withMSAASampleCount:(int) sampleCount {
+        withMSAASampleCount:(int) sampleCount
+        andGetInfo:(SkOSWindow::AttachmentInfo*) info {
     if (nil == fGLContext) {
         CGLContextObj ctx = createGLContext(sampleCount);
         fGLContext = [[NSOpenGLContext alloc] initWithCGLContextObj:ctx];
@@ -291,10 +391,16 @@ CGLContextObj createGLContext(int msaaSampleCount) {
         }
         [fGLContext setView:self];
     }
-    
+
     [fGLContext makeCurrentContext];
-    
-    glViewport(0, 0, (int) self.bounds.size.width, (int) self.bounds.size.width);
+    CGLPixelFormatObj format = CGLGetPixelFormat((CGLContextObj)[fGLContext CGLContextObj]);
+    CGLDescribePixelFormat(format, 0, kCGLPFASamples, &info->fSampleCount);
+    CGLDescribePixelFormat(format, 0, kCGLPFAStencilSize, &info->fStencilBits);
+    NSSize size = self.bounds.size;
+#if RETINA_API_AVAILABLE
+    size = [self convertSizeToBacking:size];
+#endif
+    glViewport(0, 0, (int) size.width, (int) size.height);
     glClearColor(0, 0, 0, 0);
     glClearStencil(0);
     glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);

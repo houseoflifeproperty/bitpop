@@ -37,14 +37,14 @@ public:
 
     uint32_t getLength() const { return fLength; }
 
-    void* addEntry(uint32_t tag, uint32_t length, const void* data = NULL) {
+    void* addEntry(uint32_t tag, size_t length, const void* data = NULL) {
         SkASSERT(tag);
         SkASSERT(SkAlign4(length) == length);
         SkASSERT(this->findEntry(tag, NULL) == NULL);
 
         Entry*  entry = (Entry*)((char*)this + fLength);
         entry->fTag = tag;
-        entry->fLen = length;
+        entry->fLen = SkToU32(length);
         if (data) {
             memcpy(entry + 1, data, length);
         }
@@ -159,7 +159,7 @@ private:
     SkDescriptor*   fDesc;
     uint32_t        fStorage[(kStorageSize + 3) >> 2];
 };
+#define SkAutoDescriptor(...) SK_REQUIRE_LOCAL_VAR(SkAutoDescriptor)
 
 
 #endif
-

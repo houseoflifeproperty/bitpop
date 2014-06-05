@@ -5,7 +5,7 @@
 #include <algorithm>
 
 #include "base/basictypes.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "net/http/http_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -612,6 +612,21 @@ TEST(HttpUtilTest, RequestUrlSanitize) {
       "http://user:pass@google.com",
       "http://google.com/",
       "/"
+    },
+    { // https scheme
+      "https://www.google.com:78/foobar?query=1#hash",
+      "https://www.google.com:78/foobar?query=1",
+      "/foobar?query=1"
+    },
+    { // WebSocket's ws scheme
+      "ws://www.google.com:78/foobar?query=1#hash",
+      "ws://www.google.com:78/foobar?query=1",
+      "/foobar?query=1"
+    },
+    { // WebSocket's wss scheme
+      "wss://www.google.com:78/foobar?query=1#hash",
+      "wss://www.google.com:78/foobar?query=1",
+      "/foobar?query=1"
     }
   };
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
@@ -624,19 +639,19 @@ TEST(HttpUtilTest, RequestUrlSanitize) {
   }
 }
 
+// Test SpecForRequest() for "ftp" scheme.
+TEST(HttpUtilTest, SpecForRequestForUrlWithFtpScheme) {
+  GURL ftp_url("ftp://user:pass@google.com/pub/chromium/");
+  EXPECT_EQ("ftp://google.com/pub/chromium/",
+            HttpUtil::SpecForRequest(ftp_url));
+}
+
 TEST(HttpUtilTest, GenerateAcceptLanguageHeader) {
   EXPECT_EQ(std::string("en-US,fr;q=0.8,de;q=0.6"),
             HttpUtil::GenerateAcceptLanguageHeader("en-US,fr,de"));
   EXPECT_EQ(std::string("en-US,fr;q=0.8,de;q=0.6,ko;q=0.4,zh-CN;q=0.2,"
                         "ja;q=0.2"),
             HttpUtil::GenerateAcceptLanguageHeader("en-US,fr,de,ko,zh-CN,ja"));
-}
-
-TEST(HttpUtilTest, GenerateAcceptCharsetHeader) {
-  EXPECT_EQ(std::string("utf-8,*;q=0.5"),
-            HttpUtil::GenerateAcceptCharsetHeader("utf-8"));
-  EXPECT_EQ(std::string("EUC-JP,utf-8;q=0.7,*;q=0.3"),
-            HttpUtil::GenerateAcceptCharsetHeader("EUC-JP"));
 }
 
 // HttpResponseHeadersTest.GetMimeType also tests ParseContentType.
@@ -973,12 +988,12 @@ TEST(HttpUtilTest, NameValuePairsIteratorCopyAndAssign) {
 }
 
 TEST(HttpUtilTest, NameValuePairsIteratorEmptyInput) {
-  std::string data = "";
+  std::string data;
   HttpUtil::NameValuePairsIterator parser(data.begin(), data.end(), ';');
 
   EXPECT_TRUE(parser.valid());
-  ASSERT_NO_FATAL_FAILURE(
-      CheckNextNameValuePair(&parser, false, true, "", ""));
+  ASSERT_NO_FATAL_FAILURE(CheckNextNameValuePair(
+      &parser, false, true, std::string(), std::string()));
 }
 
 TEST(HttpUtilTest, NameValuePairsIterator) {
@@ -1004,19 +1019,19 @@ TEST(HttpUtilTest, NameValuePairsIterator) {
   ASSERT_NO_FATAL_FAILURE(
       CheckNextNameValuePair(&parser, true, true, "f", "'hello world'"));
   ASSERT_NO_FATAL_FAILURE(
-      CheckNextNameValuePair(&parser, true, true, "g", ""));
+      CheckNextNameValuePair(&parser, true, true, "g", std::string()));
   ASSERT_NO_FATAL_FAILURE(
       CheckNextNameValuePair(&parser, true, true, "h", "hello"));
-  ASSERT_NO_FATAL_FAILURE(
-      CheckNextNameValuePair(&parser, false, true, "", ""));
+  ASSERT_NO_FATAL_FAILURE(CheckNextNameValuePair(
+      &parser, false, true, std::string(), std::string()));
 }
 
 TEST(HttpUtilTest, NameValuePairsIteratorIllegalInputs) {
   ASSERT_NO_FATAL_FAILURE(CheckInvalidNameValuePair("alpha=1", "; beta"));
-  ASSERT_NO_FATAL_FAILURE(CheckInvalidNameValuePair("", "beta"));
+  ASSERT_NO_FATAL_FAILURE(CheckInvalidNameValuePair(std::string(), "beta"));
 
   ASSERT_NO_FATAL_FAILURE(CheckInvalidNameValuePair("alpha=1", "; 'beta'=2"));
-  ASSERT_NO_FATAL_FAILURE(CheckInvalidNameValuePair("", "'beta'=2"));
+  ASSERT_NO_FATAL_FAILURE(CheckInvalidNameValuePair(std::string(), "'beta'=2"));
   ASSERT_NO_FATAL_FAILURE(CheckInvalidNameValuePair("alpha=1", ";beta="));
   ASSERT_NO_FATAL_FAILURE(CheckInvalidNameValuePair("alpha=1",
                                                     ";beta=;cappa=2"));
@@ -1040,8 +1055,8 @@ TEST(HttpUtilTest, NameValuePairsIteratorExtraSeparators) {
       CheckNextNameValuePair(&parser, true, true, "beta", "2"));
   ASSERT_NO_FATAL_FAILURE(
       CheckNextNameValuePair(&parser, true, true, "cappa", "3"));
-  ASSERT_NO_FATAL_FAILURE(
-      CheckNextNameValuePair(&parser, false, true, "", ""));
+  ASSERT_NO_FATAL_FAILURE(CheckNextNameValuePair(
+      &parser, false, true, std::string(), std::string()));
 }
 
 // See comments on the implementation of NameValuePairsIterator::GetNext
@@ -1053,6 +1068,6 @@ TEST(HttpUtilTest, NameValuePairsIteratorMissingEndQuote) {
 
   ASSERT_NO_FATAL_FAILURE(
       CheckNextNameValuePair(&parser, true, true, "name", "value"));
-  ASSERT_NO_FATAL_FAILURE(
-      CheckNextNameValuePair(&parser, false, true, "", ""));
+  ASSERT_NO_FATAL_FAILURE(CheckNextNameValuePair(
+      &parser, false, true, std::string(), std::string()));
 }

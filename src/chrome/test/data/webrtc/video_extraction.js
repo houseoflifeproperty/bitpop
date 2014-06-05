@@ -62,7 +62,7 @@ var gWebSocketOpened = false;
 var gFrameIntervalAdjustment = false;
 
 /**
- * We need this global variable to syncronyze with PyAuto how long to run the
+ * We need this global variable to synchronize with the test how long to run the
  * call between the two peers.
  */
 var dDoneFrameCapturing = false;
@@ -165,10 +165,15 @@ function shoot(width, height, canvas_height){
   } else {  // Else reset gFrameCounter and send the frames
     dDoneFrameCapturing = true;
     gFrameCounter = 0;
+    clearPage_();
+    prepareProgressBar_();
     sendFrames();
   }
 }
 
+/**
+ * Queries if we're done with the frame capturing yet.
+ */
 function doneFrameCapturing() {
   if (dDoneFrameCapturing) {
     returnToTest('done-capturing');
@@ -185,15 +190,23 @@ function sendFrames() {
   if (!gWebSocketOpened) {
     console.log('WebSocket connection is not yet open');
     setTimeout(function() { sendFrames(); }, 100);
+    return;
   }
 
+  progressBar = document.getElementById('progress-bar');
   if (gFrames.length > 0) {
     var frame = gFrames.shift();
     gWebSocket.send(frame);
     gFrameCounter++;
     setTimeout(function() { sendFrames(); }, 100);
+
+    var totalNumFrames = gFrameCounter + gFrames.length;
+    progressBar.innerHTML =
+        'Writing captured frames to disk: ' +
+        '(' + gFrameCounter + '/' + totalNumFrames + ')';
   } else {
-    console.log('Finished sending out frames');
+    progressBar.innerHTML = 'Finished sending frames.'
+    console.log('Finished sending frames.');
   }
 }
 
@@ -240,4 +253,22 @@ function openWebSocket() {
   gWebSocket.onmessage = function (e) {
     console.log('Server says: ' + e.data);
   };
+}
+
+/**
+ * @private
+ */
+function clearPage_() {
+  document.body.innerHTML = '';
+}
+
+/**
+ * @private
+ */
+function prepareProgressBar_() {
+  document.body.innerHTML =
+    '<html><body>' +
+    '<p id="progress-bar" style="position: absolute; top: 50%; left: 40%;">' +
+    'Preparing to send frames.</p>' +
+    '</body></html>';
 }

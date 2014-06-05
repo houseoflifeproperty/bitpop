@@ -12,16 +12,17 @@
 #include "base/guid.h"
 #include "base/i18n/case_conversion.h"
 #include "base/metrics/histogram.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/autocomplete/autocomplete_log.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/history/history_notifications.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/in_memory_database.h"
+#include "chrome/browser/omnibox/omnibox_log.h"
 #include "chrome/browser/predictors/autocomplete_action_predictor_factory.h"
 #include "chrome/browser/predictors/predictor_database.h"
 #include "chrome/browser/predictors/predictor_database_factory.h"
@@ -30,7 +31,7 @@
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
@@ -105,11 +106,11 @@ AutocompleteActionPredictor::~AutocompleteActionPredictor() {
 }
 
 void AutocompleteActionPredictor::RegisterTransitionalMatches(
-    const string16& user_text,
+    const base::string16& user_text,
     const AutocompleteResult& result) {
   if (user_text.length() < kMinimumUserTextLength)
     return;
-  const string16 lower_user_text(base::i18n::ToLower(user_text));
+  const base::string16 lower_user_text(base::i18n::ToLower(user_text));
 
   // Merge this in to an existing match if we already saw |user_text|
   std::vector<TransitionalMatch>::iterator match_it =
@@ -136,31 +137,41 @@ void AutocompleteActionPredictor::ClearTransitionalMatches() {
   transitional_matches_.clear();
 }
 
+void AutocompleteActionPredictor::CancelPrerender() {
+  // If the prerender has already been abandoned, leave it to its own timeout;
+  // this normally gets called immediately after OnOmniboxOpenedUrl.
+  if (prerender_handle_ && !prerender_handle_->IsAbandoned()) {
+    prerender_handle_->OnCancel();
+    prerender_handle_.reset();
+  }
+}
+
 void AutocompleteActionPredictor::StartPrerendering(
     const GURL& url,
     const content::SessionStorageNamespaceMap& session_storage_namespace_map,
     const gfx::Size& size) {
-  if (prerender_handle_)
-    prerender_handle_->OnCancel();
+  // Only cancel the old prerender after starting the new one, so if the URLs
+  // are the same, the underlying prerender will be reused.
+  scoped_ptr<prerender::PrerenderHandle> old_prerender_handle(
+      prerender_handle_.release());
   if (prerender::PrerenderManager* prerender_manager =
           prerender::PrerenderManagerFactory::GetForProfile(profile_)) {
     content::SessionStorageNamespace* session_storage_namespace = NULL;
     content::SessionStorageNamespaceMap::const_iterator it =
-        session_storage_namespace_map.find("");
+        session_storage_namespace_map.find(std::string());
     if (it != session_storage_namespace_map.end())
-      session_storage_namespace = it->second;
-    prerender_handle_.reset(
-        prerender_manager->AddPrerenderFromOmnibox(
-            url, session_storage_namespace, size));
-  } else {
-    prerender_handle_.reset();
+      session_storage_namespace = it->second.get();
+    prerender_handle_.reset(prerender_manager->AddPrerenderFromOmnibox(
+        url, session_storage_namespace, size));
   }
+  if (old_prerender_handle)
+    old_prerender_handle->OnCancel();
 }
 
 // Given a match, return a recommended action.
 AutocompleteActionPredictor::Action
     AutocompleteActionPredictor::RecommendAction(
-        const string16& user_text,
+        const base::string16& user_text,
         const AutocompleteMatch& match) const {
   bool is_in_db = false;
   const double confidence = CalculateConfidence(user_text, match, &is_in_db);
@@ -208,6 +219,10 @@ bool AutocompleteActionPredictor::IsPreconnectable(
   return AutocompleteMatch::IsSearchType(match.type);
 }
 
+bool AutocompleteActionPredictor::IsPrerenderAbandonedForTesting() {
+  return prerender_handle_ && prerender_handle_->IsAbandoned();
+}
+
 void AutocompleteActionPredictor::Observe(
     int type,
     const content::NotificationSource& source,
@@ -233,15 +248,12 @@ void AutocompleteActionPredictor::Observe(
       break;
     }
 
-    // This notification does not catch all instances of the user navigating
-    // from the Omnibox, but it does catch the cases where the dropdown is open
-    // and those are the events we're most interested in.
     case chrome::NOTIFICATION_OMNIBOX_OPENED_URL: {
       DCHECK(initialized_);
 
       // TODO(dominich): This doesn't need to be synchronous. Investigate
       // posting it as a task to be run later.
-      OnOmniboxOpenedUrl(*content::Details<AutocompleteLog>(details).ptr());
+      OnOmniboxOpenedUrl(*content::Details<OmniboxLog>(details).ptr());
       break;
     }
 
@@ -320,20 +332,36 @@ void AutocompleteActionPredictor::DeleteRowsWithURLs(
                             DATABASE_ACTION_DELETE_SOME, DATABASE_ACTION_COUNT);
 }
 
-void AutocompleteActionPredictor::OnOmniboxOpenedUrl(
-    const AutocompleteLog& log) {
+void AutocompleteActionPredictor::OnOmniboxOpenedUrl(const OmniboxLog& log) {
   if (log.text.length() < kMinimumUserTextLength)
     return;
 
-  const AutocompleteMatch& match = log.result.match_at(log.selected_index);
+  // Do not attempt to learn from omnibox interactions where the omnibox
+  // dropdown is closed.  In these cases the user text (|log.text|) that we
+  // learn from is either empty or effectively identical to the destination
+  // string.  In either case, it can't teach us much.  Also do not attempt
+  // to learn from paste-and-go actions even if the popup is open because
+  // the paste-and-go destination has no relation to whatever text the user
+  // may have typed.
+  if (!log.is_popup_open || log.is_paste_and_go)
+    return;
+
+  // Abandon the current prerender. If it is to be used, it will be used very
+  // soon, so use the lower timeout.
+  if (prerender_handle_) {
+    prerender_handle_->OnNavigateAway();
+    // Don't release |prerender_handle_| so it is canceled if it survives to the
+    // next StartPrerendering call.
+  }
 
   UMA_HISTOGRAM_BOOLEAN(
-      StringPrintf("Prerender.OmniboxNavigationsCouldPrerender%s",
-                   prerender::PrerenderManager::GetModeString()).c_str(),
+      base::StringPrintf("Prerender.OmniboxNavigationsCouldPrerender%s",
+                         prerender::PrerenderManager::GetModeString()).c_str(),
       prerender::IsOmniboxEnabled(profile_));
 
+  const AutocompleteMatch& match = log.result.match_at(log.selected_index);
   const GURL& opened_url = match.destination_url;
-  const string16 lower_user_text(base::i18n::ToLower(log.text));
+  const base::string16 lower_user_text(base::i18n::ToLower(log.text));
 
   // Traverse transitional matches for those that have a user_text that is a
   // prefix of |lower_user_text|.
@@ -548,7 +576,7 @@ void AutocompleteActionPredictor::FinishInitialization() {
 }
 
 double AutocompleteActionPredictor::CalculateConfidence(
-    const string16& user_text,
+    const base::string16& user_text,
     const AutocompleteMatch& match,
     bool* is_in_db) const {
   const DBCacheKey key = { user_text, match.destination_url };

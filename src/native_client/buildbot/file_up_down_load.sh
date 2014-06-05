@@ -44,7 +44,7 @@ readonly GS_UTIL=${GS_UTIL:-buildbot/gsutil.sh}
 readonly DIR_ARCHIVE=nativeclient-archive2
 readonly DIR_TRYBOT=nativeclient-trybot
 
-readonly URL_PREFIX_RAW=https://commondatastorage.googleapis.com
+readonly URL_PREFIX_RAW=https://storage.googleapis.com
 readonly URL_PREFIX_ARCHIVE="${URL_PREFIX_RAW}/${DIR_ARCHIVE}"
 readonly URL_PREFIX_TRYBOT="${URL_PREFIX_RAW}/${DIR_TRYBOT}"
 
@@ -160,7 +160,7 @@ ShowRecentArmTrustedToolchains() {
 #@ pnacl_mac_x86
 #@ pnacl_win_x86
 
-UploadPnaclToolchains() {
+UploadToolchainTarball() {
   local rev=$1
   local label=$2
   local tarball=$3
@@ -177,7 +177,7 @@ DownloadPnaclToolchains() {
   local label=$2
   local tarball=$3
 
-  DownloadComponent toolchain/${rev}/naclsdk_${label}.tgz ${tarball}
+  DownloadArchive toolchain/${rev}/naclsdk_${label}.tgz ${tarball}
 }
 
 ShowRecentPnaclToolchains() {
@@ -234,14 +234,6 @@ DownloadArchivedPexes() {
   local label="archived_pexes_$2.tar.bz2"
   local tarball=$3
   DownloadArchive toolchain/${rev}/${label} ${tarball}
-}
-
-UploadArchivedPexesTranslator() {
-    UploadArchivedPexes $1 "translator" $2
-}
-
-DownloadArchivedPexesTranslator() {
-    DownloadArchivedPexes $1 "translator" $2
 }
 
 UploadArchivedPexesSpec2k() {

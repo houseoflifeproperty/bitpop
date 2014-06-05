@@ -54,24 +54,25 @@ class ScopedHashEntryFactory {
   // it can store affix flags into 'h->astr[0]',...,'h->astr[alen-1]'. To handle
   // this new hentry struct, we define a struct which combines three values: an
   // hentry struct 'hentry'; a char array 'word[kMaxWordLen]', and; an unsigned
-  // short value 'astr' so a hentry struct 'h' returned from
+  // short array 'astr' so a hentry struct 'h' returned from
   // CreateScopedHashEntry() satisfies the following equations:
   //   hentry* h = factory.CreateScopedHashEntry(0, source);
   //   h->word[0] == ((HashEntryItem*)h)->entry.word[0].
   //   h->word[1] == ((HashEntryItem*)h)->word[0].
   //   ...
   //   h->word[h->blen] == ((HashEntryItem*)h)->word[h->blen-1].
-  //   h->astr[0] == ((HashEntryItem*)h)->astr.
-  // Our BDICT does not use affix flags longer than one for now since they are
-  // discarded by convert_dict, i.e. 'h->astr' is always <= 1. Therefore, this
-  // struct does not use an array for 'astr'.
+  //   h->astr[0] == ((HashEntryItem*)h)->astr[0].
+  //   h->astr[1] == ((HashEntryItem*)h)->astr[1].
+  //   ...
+  //   h->astr[h->alen-1] == ((HashEntryItem*)h)->astr[h->alen-1].
   enum {
     kMaxWordLen = 128,
+    kMaxAffixLen = 8,
   };
   struct HashEntryItem {
     hentry entry;
     char word[kMaxWordLen];
-    unsigned short astr;
+    unsigned short astr[kMaxAffixLen];
   };
 
   HashEntryItem hash_items_[MAX_ROOTS];
@@ -86,7 +87,7 @@ ScopedHashEntryFactory::~ScopedHashEntryFactory() {
 
 hentry* ScopedHashEntryFactory::CreateScopedHashEntry(int index,
                                                       const hentry* source) {
-  if (index >= MAX_ROOTS || source->blen >= kMaxWordLen || source->alen > 1)
+  if (index >= MAX_ROOTS || source->blen >= kMaxWordLen)
     return NULL;
 
   // Retrieve a HashEntryItem struct from our spool, initialize it, and
@@ -95,8 +96,11 @@ hentry* ScopedHashEntryFactory::CreateScopedHashEntry(int index,
   HashEntryItem* hash_item = &hash_items_[index];
   memcpy(&hash_item->entry, source, source_size);
   if (source->astr) {
-    hash_item->astr = *source->astr;
-    hash_item->entry.astr = &hash_item->astr;
+    hash_item->entry.alen = source->alen;
+    if (hash_item->entry.alen > kMaxAffixLen)
+      hash_item->entry.alen = kMaxAffixLen;
+    memcpy(hash_item->astr, source->astr, hash_item->entry.alen * sizeof(hash_item->astr[0]));
+    hash_item->entry.astr = &hash_item->astr[0];
   }
   return &hash_item->entry;
 }
@@ -104,9 +108,18 @@ hentry* ScopedHashEntryFactory::CreateScopedHashEntry(int index,
 }  // namespace
 #endif
 
+
+#ifdef HUNSPELL_CHROME_CLIENT
+SuggestMgr::SuggestMgr(hunspell::BDictReader* reader,
+                       const char * tryme, int maxn, 
+                       AffixMgr * aptr)
+{
+  bdict_reader = reader;
+#else
 SuggestMgr::SuggestMgr(const char * tryme, int maxn, 
                        AffixMgr * aptr)
 {
+#endif
 
   // register affix manager and check in string of chars to 
   // try when building candidate suggestions
@@ -499,6 +512,49 @@ int SuggestMgr::replchars(char** wlst, const char * word, int ns, int cpdsuggest
   int lenr, lenp;
   int wl = strlen(word);
   if (wl < 2 || ! pAMgr) return ns;
+  
+#ifdef HUNSPELL_CHROME_CLIENT
+  const char *pattern, *pattern2;
+  hunspell::ReplacementIterator iterator = bdict_reader->GetReplacementIterator();
+  while (iterator.GetNext(&pattern, &pattern2)) {
+      r = word;
+      lenr = strlen(pattern2);
+      lenp = strlen(pattern);
+      
+      // search every occurence of the pattern in the word
+      while ((r=strstr(r, pattern)) != NULL) {
+          strcpy(candidate, word);
+          if (r-word + lenr + strlen(r+lenp) >= MAXLNLEN) break;
+          strcpy(candidate+(r-word), pattern2);
+          strcpy(candidate+(r-word)+lenr, r+lenp);
+          ns = testsug(wlst, candidate, wl-lenp+lenr, ns, cpdsuggest, NULL, NULL);
+          if (ns == -1) return -1;
+          // check REP suggestions with space
+          char * sp = strchr(candidate, ' ');
+          if (sp) {
+            char * prev = candidate;
+            while (sp) {
+              *sp = '\0';
+              if (checkword(prev, strlen(prev), 0, NULL, NULL)) {
+                int oldns = ns;
+                *sp = ' ';
+                ns = testsug(wlst, sp + 1, strlen(sp + 1), ns, cpdsuggest, NULL, NULL);
+                if (ns == -1) return -1;
+                if (oldns < ns) {
+                  free(wlst[ns - 1]);
+                  wlst[ns - 1] = mystrdup(candidate);
+                  if (!wlst[ns - 1]) return -1;
+                }
+              }
+              *sp = ' ';
+              prev = sp + 1;
+              sp = strchr(prev, ' ');
+            }
+          }
+          r++; // search for the next letter
+    }
+  }
+#else
   int numrep = pAMgr->get_numrep();
   struct replentry* reptable = pAMgr->get_reptable();
   if (reptable==NULL) return ns;
@@ -540,6 +596,7 @@ int SuggestMgr::replchars(char** wlst, const char * word, int ns, int cpdsuggest
           r++; // search for the next letter
       }
    }
+#endif
    return ns;
 }
 
@@ -770,7 +827,9 @@ int SuggestMgr::extrachar(char** wlst, const char * word, int ns, int cpdsuggest
 // error is missing a letter it needs
 int SuggestMgr::forgotchar(char ** wlst, const char * word, int ns, int cpdsuggest)
 {
-   char candidate[MAXSWUTF8L];
+   // TODO(rouslan): Remove the interim change below when this patch lands:
+   // http://sf.net/tracker/?func=detail&aid=3595024&group_id=143754&atid=756395
+   char candidate[MAXSWUTF8L + 4];
    char * p;
    clock_t timelimit = clock();
    int timer = MINTIMER;
@@ -792,8 +851,10 @@ int SuggestMgr::forgotchar(char ** wlst, const char * word, int ns, int cpdsugge
 // error is missing a letter it needs
 int SuggestMgr::forgotchar_utf(char ** wlst, const w_char * word, int wl, int ns, int cpdsuggest)
 {
-   w_char  candidate_utf[MAXSWL];
-   char    candidate[MAXSWUTF8L];
+   // TODO(rouslan): Remove the interim change below when this patch lands:
+   // http://sf.net/tracker/?func=detail&aid=3595024&group_id=143754&atid=756395
+   w_char  candidate_utf[MAXSWL + 1];
+   char    candidate[MAXSWUTF8L + 4];
    w_char * p;
    clock_t timelimit = clock();
    int timer = MINTIMER;

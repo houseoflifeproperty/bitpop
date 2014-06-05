@@ -6,6 +6,7 @@
   'target_defaults': {
     'variables': {
       'sandbox_windows_target': 0,
+      'target_arch%': 'ia32',
     },
     'target_conditions': [
       ['sandbox_windows_target==1', {
@@ -92,6 +93,7 @@
             'src/restricted_token.cc',
             'src/restricted_token.h',
             'src/sandbox_factory.h',
+            'src/sandbox_globals.cc',
             'src/sandbox_nt_types.h',
             'src/sandbox_nt_util.cc',
             'src/sandbox_nt_util.h',
@@ -133,6 +135,34 @@
             'src/window.cc',
             'src/window.h',
         ],
+        'target_conditions': [
+          ['target_arch=="x64"', {
+            'sources': [
+              'src/interceptors_64.cc',
+              'src/interceptors_64.h',
+              'src/resolver_64.cc',
+              'src/service_resolver_64.cc',
+              'src/Wow64_64.cc',
+            ],
+          }],
+          ['target_arch=="ia32"', {
+            'sources': [
+              'src/resolver_32.cc',
+              'src/service_resolver_32.cc',
+              'src/sidestep_resolver.cc',
+              'src/sidestep_resolver.h',
+              'src/sidestep\ia32_modrm_map.cpp',
+              'src/sidestep\ia32_opcode_map.cpp',
+              'src/sidestep\mini_disassembler_types.h',
+              'src/sidestep\mini_disassembler.cpp',
+              'src/sidestep\mini_disassembler.h',
+              'src/sidestep\preamble_patcher_with_stub.cpp',
+              'src/sidestep\preamble_patcher.h',
+              'src/Wow64.cc',
+              'src/Wow64.h',
+            ],
+          }],
+        ],
       }],
     ],
   },
@@ -144,84 +174,34 @@
         'sandbox_windows_target': 1,
       },
       'dependencies': [
-        '../testing/gtest.gyp:gtest',
         '../base/base.gyp:base',
         '../base/base.gyp:base_static',
       ],
       'export_dependent_settings': [
         '../base/base.gyp:base',
       ],
-      'sources': [
-        # Files that are used by the 32-bit version of Windows sandbox only.
-        'src/resolver_32.cc',
-        'src/service_resolver_32.cc',
-        'src/sidestep_resolver.cc',
-        'src/sidestep_resolver.h',
-        'src/sidestep\ia32_modrm_map.cpp',
-        'src/sidestep\ia32_opcode_map.cpp',
-        'src/sidestep\mini_disassembler_types.h',
-        'src/sidestep\mini_disassembler.cpp',
-        'src/sidestep\mini_disassembler.h',
-        'src/sidestep\preamble_patcher_with_stub.cpp',
-        'src/sidestep\preamble_patcher.h',
-        'src/Wow64.cc',
-        'src/Wow64.h',
-      ],
       'include_dirs': [
         '../..',
       ],
-      'copies': [
-        {
-          'destination': '<(PRODUCT_DIR)',
-          'files': [
-            'wow_helper/wow_helper.exe',
-            'wow_helper/wow_helper.pdb',
+      'direct_dependent_settings': {
+        'include_dirs': [
+          'src',
+          '../..',
+        ],
+      },
+      'target_conditions': [
+        ['target_arch=="ia32"', {
+          'copies': [
+            {
+              'destination': '<(PRODUCT_DIR)',
+              'files': [
+                'wow_helper/wow_helper.exe',
+                'wow_helper/wow_helper.pdb',
+              ],
+            },
           ],
-        },
+        }],
       ],
-      'direct_dependent_settings': {
-        'include_dirs': [
-          'src',
-          '../..',
-        ],
-      },
-    },
-    {
-      'target_name': 'sandbox_win64',
-      'type': 'static_library',
-      'variables': {
-        'sandbox_windows_target': 1,
-      },
-      'dependencies': [
-        '../testing/gtest.gyp:gtest',
-        '../base/base.gyp:base_nacl_win64',
-        '../base/base.gyp:base_static_win64',
-      ],
-      'configurations': {
-        'Common_Base': {
-          'msvs_target_platform': 'x64',
-        },
-      },
-      'sources': [
-        # Files that are used by the 64-bit version of Windows sandbox only.
-        'src/interceptors_64.cc',
-        'src/interceptors_64.h',
-        'src/resolver_64.cc',
-        'src/service_resolver_64.cc',
-        'src/Wow64_64.cc',
-      ],
-      'include_dirs': [
-        '../..',
-      ],
-      'direct_dependent_settings': {
-        'include_dirs': [
-          'src',
-          '../..',
-        ],
-      },
-      'defines': [
-        '<@(nacl_win64_defines)',
-      ]
     },
     {
       'target_name': 'sbox_integration_tests',
@@ -233,6 +213,7 @@
       'sources': [
         'src/app_container_test.cc',
         'src/file_policy_test.cc',
+        'src/handle_inheritance_test.cc',
         'src/handle_policy_test.cc',
         'tests/integration_tests/integration_tests_test.cc',
         'src/handle_closer_test.cc',
@@ -343,5 +324,40 @@
         '../..',
       ],
     },
+  ],
+  'conditions': [
+    ['OS=="win" and target_arch=="ia32"', {
+      'targets': [
+        {
+          'target_name': 'sandbox_win64',
+          'type': 'static_library',
+          'variables': {
+            'sandbox_windows_target': 1,
+            'target_arch': 'x64',
+          },
+          'dependencies': [
+            '../base/base.gyp:base_win64',
+            '../base/base.gyp:base_static_win64',
+          ],
+          'configurations': {
+            'Common_Base': {
+              'msvs_target_platform': 'x64',
+            },
+          },
+          'include_dirs': [
+            '../..',
+          ],
+          'direct_dependent_settings': {
+            'include_dirs': [
+              'src',
+              '../..',
+            ],
+          },
+          'defines': [
+            '<@(nacl_win64_defines)',
+          ]
+        },
+      ],
+    }],
   ],
 }

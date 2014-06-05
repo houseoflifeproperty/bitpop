@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2011 Google Inc.
  *
@@ -6,18 +5,17 @@
  * found in the LICENSE file.
  */
 
-
 #ifndef GrPathRendererChain_DEFINED
 #define GrPathRendererChain_DEFINED
 
-#include "GrRefCnt.h"
+#include "SkRefCnt.h"
 #include "SkTArray.h"
 
 class GrContext;
 class GrDrawTarget;
 class GrPathRenderer;
 class SkPath;
-class SkStroke;
+class SkStrokeRec;
 
 /**
  * Keeps track of an ordered list of path renderers. When a path needs to be
@@ -58,13 +56,12 @@ public:
         whether the path can be rendered with arbitrary stencil rules or not. See comments on
         StencilSupport in GrPathRenderer.h. */
     GrPathRenderer* getPathRenderer(const SkPath& path,
-                                    const SkStroke& stroke,
+                                    const SkStrokeRec& rec,
                                     const GrDrawTarget* target,
                                     DrawType drawType,
                                     StencilSupport* stencilSupport);
 
 private:
-
     GrPathRendererChain();
 
     void init();
@@ -78,6 +75,5 @@ private:
 
     typedef SkRefCnt INHERITED;
 };
-
 
 #endif

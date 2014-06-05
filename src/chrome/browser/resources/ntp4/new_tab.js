@@ -42,7 +42,7 @@ cr.define('ntp', function() {
 
   /**
    * true if |loginBubble| should be shown.
-   * @type {Boolean}
+   * @type {boolean}
    */
   var shouldShowLoginBubble = false;
 
@@ -114,7 +114,18 @@ cr.define('ntp', function() {
    * Invoked at startup once the DOM is available to initialize the app.
    */
   function onLoad() {
-    sectionsToWaitFor = loadTimeData.getBoolean('showApps') ? 2 : 1;
+    sectionsToWaitFor = 0;
+    if (loadTimeData.getBoolean('showMostvisited'))
+      sectionsToWaitFor++;
+    if (loadTimeData.getBoolean('showApps')) {
+      sectionsToWaitFor++;
+      if (loadTimeData.getBoolean('showAppLauncherPromo')) {
+        $('app-launcher-promo-close-button').addEventListener('click',
+            function() { chrome.send('stopShowingAppLauncherPromo'); });
+        $('apps-promo-learn-more').addEventListener('click',
+            function() { chrome.send('onLearnMore'); });
+      }
+    }
     if (loadTimeData.getBoolean('isDiscoveryInNTPEnabled'))
       sectionsToWaitFor++;
     measureNavDots();
@@ -128,29 +139,37 @@ cr.define('ntp', function() {
     notificationContainer.addEventListener(
         'webkitTransitionEnd', onNotificationTransitionEnd);
 
-    cr.ui.decorate($('recently-closed-menu-button'), ntp.RecentMenuButton);
-    chrome.send('getRecentlyClosedTabs');
+    if (loadTimeData.getBoolean('showRecentlyClosed')) {
+      cr.ui.decorate($('recently-closed-menu-button'), ntp.RecentMenuButton);
+      chrome.send('getRecentlyClosedTabs');
+    } else {
+      $('recently-closed-menu-button').hidden = true;
+    }
 
     if (loadTimeData.getBoolean('showOtherSessionsMenu')) {
       otherSessionsButton = getRequiredElement('other-sessions-menu-button');
       cr.ui.decorate(otherSessionsButton, ntp.OtherSessionsMenuButton);
       otherSessionsButton.initialize(loadTimeData.getBoolean('isUserSignedIn'));
+    } else {
+      getRequiredElement('other-sessions-menu-button').hidden = true;
     }
 
-    var mostVisited = new ntp.MostVisitedPage();
-    // Move the footer into the most visited page if we are in "bare minimum"
-    // mode.
-    if (document.body.classList.contains('bare-minimum'))
-      mostVisited.appendFooter(getRequiredElement('footer'));
-    newTabView.appendTilePage(mostVisited,
-                              loadTimeData.getString('mostvisited'),
-                              false);
-    chrome.send('getMostVisited');
+    if (loadTimeData.getBoolean('showMostvisited')) {
+      var mostVisited = new ntp.MostVisitedPage();
+      // Move the footer into the most visited page if we are in "bare minimum"
+      // mode.
+      if (document.body.classList.contains('bare-minimum'))
+        mostVisited.appendFooter(getRequiredElement('footer'));
+      newTabView.appendTilePage(mostVisited,
+                                loadTimeData.getString('mostvisited'),
+                                false);
+      chrome.send('getMostVisited');
+    }
 
     if (loadTimeData.getBoolean('isDiscoveryInNTPEnabled')) {
-      var suggestions_script = document.createElement('script');
-      suggestions_script.src = 'suggestions_page.js';
-      suggestions_script.onload = function() {
+      var suggestionsScript = document.createElement('script');
+      suggestionsScript.src = 'suggestions_page.js';
+      suggestionsScript.onload = function() {
          newTabView.appendTilePage(new ntp.SuggestionsPage(),
                                    loadTimeData.getString('suggestions'),
                                    false,
@@ -159,14 +178,25 @@ cr.define('ntp', function() {
          chrome.send('getSuggestions');
          cr.dispatchSimpleEvent(document, 'sectionready', true, true);
       };
-      document.querySelector('head').appendChild(suggestions_script);
+      document.querySelector('head').appendChild(suggestionsScript);
     }
 
-    var webStoreLink = loadTimeData.getString('webStoreLink');
-    var url = appendParam(webStoreLink, 'utm_source', 'chrome-ntp-launcher');
-    $('chrome-web-store-link').href = url;
-    $('chrome-web-store-link').addEventListener('click',
-        onChromeWebStoreButtonClick);
+    if (!loadTimeData.getBoolean('showWebStoreIcon')) {
+      var webStoreIcon = $('chrome-web-store-link');
+      // Not all versions of the NTP have a footer, so this may not exist.
+      if (webStoreIcon)
+        webStoreIcon.hidden = true;
+    } else {
+      var webStoreLink = loadTimeData.getString('webStoreLink');
+      var url = appendParam(webStoreLink, 'utm_source', 'chrome-ntp-launcher');
+      $('chrome-web-store-link').href = url;
+      $('chrome-web-store-link').addEventListener('click',
+          onChromeWebStoreButtonClick);
+    }
+
+    // We need to wait for all the footer menu setup to be completed before
+    // we can compute its layout.
+    layoutFooter();
 
     if (loadTimeData.getString('login_status_message')) {
       loginBubble = new cr.ui.Bubble;
@@ -216,7 +246,8 @@ cr.define('ntp', function() {
 
     var loginContainer = getRequiredElement('login-container');
     loginContainer.addEventListener('click', showSyncLoginUI);
-    chrome.send('initializeSyncLogin');
+    if (loadTimeData.getBoolean('shouldShowSyncLogin'))
+      chrome.send('initializeSyncLogin');
 
     doWhenAllSectionsReady(function() {
       // Tell the slider about the pages.
@@ -255,7 +286,8 @@ cr.define('ntp', function() {
       startTime = Date.now();
     });
 
-    preventDefaultOnPoundLinkClicks();  // From shared/js/util.js.
+    preventDefaultOnPoundLinkClicks();  // From webui/js/util.js.
+    cr.ui.FocusManager.disableMouseFocusOnButtons();
   }
 
   /**
@@ -309,14 +341,25 @@ cr.define('ntp', function() {
   }
 
   /**
-   * Fills in an invisible div with the 'Most Visited' string so that
+   * Measure the width of a nav dot with a given title.
+   * @param {string} id The loadTimeData ID of the desired title.
+   * @return {number} The width of the nav dot.
+   */
+  function measureNavDot(id) {
+    var measuringDiv = $('fontMeasuringDiv');
+    measuringDiv.textContent = loadTimeData.getString(id);
+    // The 4 is for border and padding.
+    return Math.max(measuringDiv.clientWidth * 1.15 + 4, 80);
+  }
+
+  /**
+   * Fills in an invisible div with the longest dot title string so that
    * its length may be measured and the nav dots sized accordingly.
    */
   function measureNavDots() {
-    var measuringDiv = $('fontMeasuringDiv');
-    measuringDiv.textContent = loadTimeData.getString('mostvisited');
-    // The 4 is for border and padding.
-    var pxWidth = Math.max(measuringDiv.clientWidth * 1.15 + 4, 80);
+    var pxWidth = measureNavDot('appDefaultPageName');
+    if (loadTimeData.getBoolean('showMostvisited'))
+      pxWidth = Math.max(measureNavDot('mostvisited'), pxWidth);
 
     var styleElement = document.createElement('style');
     styleElement.type = 'text/css';
@@ -324,6 +367,25 @@ cr.define('ntp', function() {
     // shrunk.
     styleElement.textContent = '.dot { max-width: ' + pxWidth + 'px; }';
     document.querySelector('head').appendChild(styleElement);
+  }
+
+  /**
+   * Layout the footer so that the nav dots stay centered.
+   */
+  function layoutFooter() {
+    // We need the image to be loaded.
+    var logo = $('logo-img');
+    var logoImg = logo.querySelector('img');
+    if (!logoImg.complete) {
+      logoImg.onload = layoutFooter;
+      return;
+    }
+
+    var menu = $('footer-menu-container');
+    if (menu.clientWidth > logoImg.width)
+      logo.style.WebkitFlex = '0 1 ' + menu.clientWidth + 'px';
+    else
+      menu.style.WebkitFlex = '0 1 ' + logoImg.width + 'px';
   }
 
   function themeChanged(opt_hasAttribution) {
@@ -347,8 +409,6 @@ cr.define('ntp', function() {
   function updateAttribution() {
     var attribution = $('attribution');
     if (document.documentElement.getAttribute('hasattribution') == 'true') {
-      $('attribution-img').src =
-          'chrome://theme/IDR_THEME_NTP_ATTRIBUTION?' + Date.now();
       attribution.hidden = false;
     } else {
       attribution.hidden = true;
@@ -478,6 +538,7 @@ cr.define('ntp', function() {
 
   function setRecentlyClosedTabs(dataItems) {
     $('recently-closed-menu-button').dataItems = dataItems;
+    layoutFooter();
   }
 
   function setMostVisitedPages(data, hasBlacklistedUrls) {
@@ -537,8 +598,10 @@ cr.define('ntp', function() {
     } else if (loginBubble) {
       loginBubble.reposition();
     }
-    if (otherSessionsButton)
+    if (otherSessionsButton) {
       otherSessionsButton.updateSignInState(isUserSignedIn);
+      layoutFooter();
+    }
   }
 
   /**
@@ -580,6 +643,11 @@ cr.define('ntp', function() {
     return newTabView.appsPrefChangedCallback.apply(newTabView, arguments);
   }
 
+  function appLauncherPromoPrefChangeCallback() {
+    return newTabView.appLauncherPromoPrefChangeCallback.apply(newTabView,
+                                                               arguments);
+  }
+
   function appsReordered() {
     return newTabView.appsReordered.apply(newTabView, arguments);
   }
@@ -589,8 +657,10 @@ cr.define('ntp', function() {
   }
 
   function setForeignSessions(sessionList, isTabSyncEnabled) {
-    if (otherSessionsButton)
+    if (otherSessionsButton) {
       otherSessionsButton.setForeignSessions(sessionList, isTabSyncEnabled);
+      layoutFooter();
+    }
   }
 
   function getAppsCallback() {
@@ -623,6 +693,7 @@ cr.define('ntp', function() {
     appMoved: appMoved,
     appRemoved: appRemoved,
     appsPrefChangeCallback: appsPrefChangeCallback,
+    appLauncherPromoPrefChangeCallback: appLauncherPromoPrefChangeCallback,
     enterRearrangeMode: enterRearrangeMode,
     getAppsCallback: getAppsCallback,
     getAppsPageIndex: getAppsPageIndex,

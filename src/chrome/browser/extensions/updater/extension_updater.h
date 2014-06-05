@@ -13,28 +13,28 @@
 
 #include "base/callback_forward.h"
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "chrome/browser/extensions/updater/extension_downloader_delegate.h"
 #include "chrome/browser/extensions/updater/manifest_fetch_data.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 class ExtensionServiceInterface;
-class ExtensionSet;
 class PrefService;
 class Profile;
 
 namespace extensions {
 
-class Blacklist;
+class ExtensionCache;
 class ExtensionDownloader;
 class ExtensionPrefs;
+class ExtensionSet;
 class ExtensionUpdaterTest;
 
 // A class for doing auto-updates of installed Extensions. Used like this:
@@ -53,17 +53,13 @@ class ExtensionUpdater : public ExtensionDownloaderDelegate,
   typedef base::Closure FinishedCallback;
 
   struct CheckParams {
-    // Creates a default CheckParams instance that checks for all extensions and
-    // the extension blacklist.
+    // Creates a default CheckParams instance that checks for all extensions.
     CheckParams();
     ~CheckParams();
 
     // The set of extensions that should be checked for updates. If empty
     // all extensions will be included in the update check.
     std::list<std::string> ids;
-
-    // If true, the extension blacklist will also be updated.
-    bool check_blacklist;
 
     // Normally extension updates get installed only when the extension is idle.
     // Setting this to true causes any updates that are found to be installed
@@ -82,8 +78,8 @@ class ExtensionUpdater : public ExtensionDownloaderDelegate,
                    ExtensionPrefs* extension_prefs,
                    PrefService* prefs,
                    Profile* profile,
-                   Blacklist* blacklist,
-                   int frequency_seconds);
+                   int frequency_seconds,
+                   ExtensionCache* cache);
 
   virtual ~ExtensionUpdater();
 
@@ -128,14 +124,14 @@ class ExtensionUpdater : public ExtensionDownloaderDelegate,
   struct FetchedCRXFile {
     FetchedCRXFile();
     FetchedCRXFile(const std::string& id,
-                   const FilePath& path,
-                   const GURL& download_url,
+                   const base::FilePath& path,
+                   bool file_ownership_passed,
                    const std::set<int>& request_ids);
     ~FetchedCRXFile();
 
     std::string extension_id;
-    FilePath path;
-    GURL download_url;
+    base::FilePath path;
+    bool file_ownership_passed;
     std::set<int> request_ids;
   };
 
@@ -181,15 +177,9 @@ class ExtensionUpdater : public ExtensionDownloaderDelegate,
 
   virtual void OnExtensionDownloadFinished(
       const std::string& id,
-      const FilePath& path,
+      const base::FilePath& path,
+      bool file_ownership_passed,
       const GURL& download_url,
-      const std::string& version,
-      const PingResult& ping,
-      const std::set<int>& request_id) OVERRIDE;
-
-  virtual void OnBlacklistDownloadFinished(
-      const std::string& data,
-      const std::string& package_hash,
       const std::string& version,
       const PingResult& ping,
       const std::set<int>& request_id) OVERRIDE;
@@ -242,7 +232,6 @@ class ExtensionUpdater : public ExtensionDownloaderDelegate,
   ExtensionPrefs* extension_prefs_;
   PrefService* prefs_;
   Profile* profile_;
-  Blacklist* blacklist_;
 
   std::map<int, InProgressCheck> requests_in_progress_;
   int next_request_id_;
@@ -259,6 +248,8 @@ class ExtensionUpdater : public ExtensionDownloaderDelegate,
   FetchedCRXFile current_crx_file_;
 
   CheckParams default_params_;
+
+  ExtensionCache* extension_cache_;
 
   // Keeps track of when an extension tried to update itself, so we can throttle
   // checks to prevent too many requests from being made.

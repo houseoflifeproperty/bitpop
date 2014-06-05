@@ -6,65 +6,85 @@
 #define ASH_TOUCH_TOUCH_OBSERVER_HUD_H_
 
 #include "ash/ash_export.h"
-#include "ash/shell.h"
-#include "ui/base/events/event_handler.h"
-#include "ui/gfx/point.h"
+#include "ash/display/display_controller.h"
+#include "ui/events/event_handler.h"
+#include "ui/gfx/display_observer.h"
 #include "ui/views/widget/widget_observer.h"
 
-namespace aura {
-class Window;
-}
+#if defined(OS_CHROMEOS)
+#include "ui/display/chromeos/display_configurator.h"
+#endif  // defined(OS_CHROMEOS)
 
 namespace views {
-class Label;
-class View;
 class Widget;
 }
 
 namespace ash {
-namespace internal {
 
-class TouchHudCanvas;
-
-// An event filter which handles system level gesture events.
+// An event filter which handles system level gesture events. Objects of this
+// class manage their own lifetime.
 class ASH_EXPORT TouchObserverHUD : public ui::EventHandler,
-                                    public views::WidgetObserver {
+                                    public views::WidgetObserver,
+                                    public gfx::DisplayObserver,
+#if defined(OS_CHROMEOS)
+                                    public ui::DisplayConfigurator::Observer,
+#endif  // defined(OS_CHROMEOS)
+                                    public DisplayController::Observer {
  public:
-  TouchObserverHUD();
+  // Called to clear touch points and traces from the screen. Default
+  // implementation does nothing. Sub-classes should implement appropriately.
+  virtual void Clear();
+
+  // Removes the HUD from the screen.
+  void Remove();
+
+  int64 display_id() const { return display_id_; }
+
+ protected:
+  explicit TouchObserverHUD(aura::Window* initial_root);
+
   virtual ~TouchObserverHUD();
 
-  // Changes the display mode (e.g. scale, visibility). Calling this repeatedly
-  // cycles between a fixed number of display modes.
-  void ChangeToNextMode();
+  virtual void SetHudForRootWindowController(
+      RootWindowController* controller) = 0;
+  virtual void UnsetHudForRootWindowController(
+      RootWindowController* controller) = 0;
 
-  // Removes all existing touch points from the screen (only if the HUD is
-  // visible).
-  void Clear();
+  views::Widget* widget() { return widget_; }
 
-  std::string GetLogAsString() const;
-
- private:
-  void UpdateTouchPointLabel(int index);
-
-  // Overriden from ui::EventHandler:
+  // Overriden from ui::EventHandler.
   virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
 
-  // Overridden from views::WidgetObserver:
-  virtual void OnWidgetClosing(views::Widget* widget) OVERRIDE;
+  // Overridden from views::WidgetObserver.
+  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE;
 
-  static const int kMaxTouchPoints = 32;
+  // Overridden from gfx::DisplayObserver.
+  virtual void OnDisplayBoundsChanged(const gfx::Display& display) OVERRIDE;
+  virtual void OnDisplayAdded(const gfx::Display& new_display) OVERRIDE;
+  virtual void OnDisplayRemoved(const gfx::Display& old_display) OVERRIDE;
+
+#if defined(OS_CHROMEOS)
+  // Overriden from ui::DisplayConfigurator::Observer.
+  virtual void OnDisplayModeChanged(
+      const ui::DisplayConfigurator::DisplayStateList& outputs) OVERRIDE;
+#endif  // defined(OS_CHROMEOS)
+
+  // Overriden form DisplayController::Observer.
+  virtual void OnDisplaysInitialized() OVERRIDE;
+  virtual void OnDisplayConfigurationChanging() OVERRIDE;
+  virtual void OnDisplayConfigurationChanged() OVERRIDE;
+
+ private:
+  friend class TouchHudTestBase;
+
+  const int64 display_id_;
+  aura::Window* root_window_;
 
   views::Widget* widget_;
-  TouchHudCanvas* canvas_;
-  views::View* label_container_;
-  views::Label* touch_labels_[kMaxTouchPoints];
-  gfx::Point touch_positions_[kMaxTouchPoints];
-  ui::EventType touch_status_[kMaxTouchPoints];
 
   DISALLOW_COPY_AND_ASSIGN(TouchObserverHUD);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_TOUCH_TOUCH_OBSERVER_HUD_H_

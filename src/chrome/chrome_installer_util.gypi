@@ -11,6 +11,8 @@
       # This part is shared between the two versions of the target.
       ['installer_util_target==1', {
         'sources': [
+          'installer/util/advanced_firewall_manager_win.cc',
+          'installer/util/advanced_firewall_manager_win.h',
           'installer/util/app_command.cc',
           'installer/util/app_command.h',
           'installer/util/app_commands.cc',
@@ -47,12 +49,16 @@
           'installer/util/delete_tree_work_item.h',
           'installer/util/duplicate_tree_detector.cc',
           'installer/util/duplicate_tree_detector.h',
+          'installer/util/firewall_manager_win.cc',
+          'installer/util/firewall_manager_win.h',
           'installer/util/google_chrome_binaries_distribution.cc',
           'installer/util/google_chrome_binaries_distribution.h',
           'installer/util/google_chrome_sxs_distribution.cc',
           'installer/util/google_chrome_sxs_distribution.h',
           'installer/util/google_update_constants.cc',
           'installer/util/google_update_constants.h',
+          'installer/util/google_update_experiment_util.cc',
+          'installer/util/google_update_experiment_util.h',
           'installer/util/google_update_settings.cc',
           'installer/util/google_update_settings.h',
           'installer/util/google_update_util.cc',
@@ -69,6 +75,8 @@
           'installer/util/l10n_string_util.h',
           'installer/util/language_selector.cc',
           'installer/util/language_selector.h',
+          'installer/util/legacy_firewall_manager_win.cc',
+          'installer/util/legacy_firewall_manager_win.h',
           'installer/util/master_preferences_constants.cc',
           'installer/util/master_preferences_constants.h',
           'installer/util/move_tree_work_item.cc',
@@ -107,11 +115,9 @@
             'installer_util_strings',
             '<(DEPTH)/base/base.gyp:base',
             '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-            '<(DEPTH)/build/temp_gyp/googleurl.gyp:googleurl',
             '<(DEPTH)/chrome/chrome_resources.gyp:chrome_resources',
             '<(DEPTH)/chrome/chrome_resources.gyp:chrome_strings',
             '<(DEPTH)/chrome/common_constants.gyp:common_constants',
-            '<(DEPTH)/content/content.gyp:content_common',
             '<(DEPTH)/courgette/courgette.gyp:courgette_lib',
             '<(DEPTH)/crypto/crypto.gyp:crypto',
             '<(DEPTH)/third_party/bspatch/bspatch.gyp:bspatch',
@@ -134,6 +140,8 @@
             'installer/util/compat_checks.h',
             'installer/util/delete_after_reboot_helper.cc',
             'installer/util/delete_after_reboot_helper.h',
+            'installer/util/eula_util.cc',
+            'installer/util/eula_util.h',
             'installer/util/google_chrome_distribution.cc',
             'installer/util/google_chrome_distribution.h',
             'installer/util/html_dialog.h',
@@ -153,16 +161,18 @@
             'installer/util/self_cleaning_temp_dir.h',
             'installer/util/shell_util.cc',
             'installer/util/shell_util.h',
+            'installer/util/uninstall_metrics.cc',
+            'installer/util/uninstall_metrics.h',
+            'installer/util/user_experiment.cc',
+            'installer/util/user_experiment.h',
           ],
-          'conditions': [
-            ['component=="shared_library"', {
-              'sources': [ '../content/public/common/content_switches.cc' ],
-              'defines': [ 'COMPILE_CONTENT_STATICALLY'],
-            }, {
-              'dependencies': ['<(DEPTH)/content/content.gyp:content_common'],
-            }],
-          ],
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [ 4267, ],
         },
+      ],
+    }],
+    ['OS=="win" and target_arch=="ia32"', {
+      'targets': [
         {
           'target_name': 'installer_util_nacl_win64',
           'type': 'static_library',
@@ -194,11 +204,13 @@
           'target_name': 'installer_util',
           'type': 'static_library',
           'dependencies': [
+            '<(DEPTH)/base/base.gyp:base',
             '<(DEPTH)/chrome/chrome_resources.gyp:chrome_resources',
             '<(DEPTH)/chrome/chrome_resources.gyp:chrome_strings',
-            '<(DEPTH)/chrome/common_constants.gyp:common_constants',
           ],
           'sources': [
+            'installer/util/google_update_experiment_util.cc',
+            'installer/util/google_update_experiment_util.h',
             'installer/util/master_preferences.cc',
             'installer/util/master_preferences.h',
             'installer/util/master_preferences_constants.cc',
@@ -206,12 +218,6 @@
           ],
           'include_dirs': [
             '<(DEPTH)',
-          ],
-          'conditions': [
-            ['component == "shared_library"', {
-              'sources': [ '../content/public/common/content_switches.cc' ],
-              'defines': [ 'COMPILE_CONTENT_STATICALLY'],
-            }],
           ],
         }
       ],

@@ -1,3 +1,8 @@
-cduvall@chromium.org
-kalman@chromium.org
+# For documentation.
+awatson@chromium.org
+mkearney@chromium.org
 mkwst@chromium.org
+scheib@chromium.org
+
+# For server related things (Python, JavaScript, templates, etc).
+kalman@chromium.org

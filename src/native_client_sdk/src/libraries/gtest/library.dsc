@@ -1,13 +1,5 @@
 {
-  # TODO(binji): pnacl fails with error:
-  # In file included from gtest.cc:133:
-  # pepper_23/include/gtest/internal/src/gtest-internal-inl.h:213:8:
-  #   error: private field 'pretty_' is not used [-Werror,-Wunused-private-field]
-  #
-  # We can fix this by passing -Wno-unused-private-field to clang, but gcc
-  # doesn't support this flag so we'll have to support splitting CXXFLAGS based
-  # on TOOL first.
-  'TOOLS': ['newlib:x86', 'newlib:x64', 'glibc', 'win', 'linux'],
+  'TOOLS': ['bionic', 'newlib', 'glibc', 'pnacl', 'win', 'linux'],
   'SEARCH': [
     '.',
     '../../../../testing/gtest/include/gtest',
@@ -29,14 +21,11 @@
         'gtest-typed-test.cc',
         'nacl_gtest_dummy_sys.cc',
       ],
-      # Ignore warnings:
-      #   gtest.cc:2555: error: enumeration value ‘COLOR_DEFAULT’ not handled in switch
-      #   gtest-typed-test.h:239:47: error: anonymous variadic macros were introduced in C99 [-Werror=variadic-macros]
-      'CXXFLAGS': ['-Wno-switch-enum', '-Wno-variadic-macros'],
       'INCLUDES': [
         # See comment below about gtest-internal-inl.h
         '$(NACL_SDK_ROOT)/include/gtest/internal',
       ],
+      'CXXFLAGS': ['-Wno-unused-const-variable'],
     }
   ],
   'HEADERS': [
@@ -82,6 +71,6 @@
       'DEST': 'include/gtest/internal/src',
     },
   ],
-  'DEST': 'testlibs',
+  'DEST': 'src',
   'NAME': 'gtest',
 }

@@ -7,10 +7,10 @@
 #include <sys/types.h>
 #include <sys/xattr.h>
 
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -27,9 +27,9 @@ static void SetExtendedFileAttribute(const char* path, const char* name,
   }
 }
 
-void AddOriginMetadataToFile(const FilePath& file, const GURL& source,
+void AddOriginMetadataToFile(const base::FilePath& file, const GURL& source,
                              const GURL& referrer) {
-  DCHECK(file_util::PathIsWritable(file));
+  DCHECK(base::PathIsWritable(file));
   if (source.is_valid()) {
     SetExtendedFileAttribute(file.value().c_str(), kSourceURLAttrName,
         source.spec().c_str(), source.spec().length(), 0);

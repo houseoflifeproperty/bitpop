@@ -5,7 +5,7 @@
 [
   {
     "namespace": "systemPrivate",
-    "nodoc": true,
+    "description": "none",
     "types": [
       {
         "id": "UpdateStatus",
@@ -82,6 +82,24 @@
                 "$ref": "UpdateStatus",
                 "name": "status",
                 "description": "Details of the system update"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "getApiKey",
+        "type": "function",
+        "description": "Gets Chrome's API key to use for requests to Google services.",
+        "parameters": [
+          {
+            "type": "function",
+            "name": "callback",
+            "parameters": [
+              {
+                "name": "key",
+                "type": "string",
+                "description": "The API key."
               }
             ]
           }

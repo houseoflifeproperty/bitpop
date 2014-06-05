@@ -8,6 +8,8 @@
 #include <string>
 #include "base/basictypes.h"
 #include "base/debug/trace_event.h"
+#include "base/logging.h"
+#include "base/memory/ref_counted.h"
 
 namespace gpu {
 namespace gles2 {
@@ -24,6 +26,9 @@ class MemoryTracker : public base::RefCounted<MemoryTracker> {
    virtual void TrackMemoryAllocatedChange(size_t old_size,
                                            size_t new_size,
                                            Pool pool) = 0;
+
+   // Ensure a certain amount of GPU memory is free. Returns true on success.
+   virtual bool EnsureGPUMemoryAvailable(size_t size_needed) = 0;
 
  protected:
   friend class base::RefCounted<MemoryTracker>;
@@ -45,17 +50,37 @@ class MemoryTypeTracker {
       has_done_update_(false),
       mem_represented_(0),
       mem_represented_at_last_update_(0) {
+    UpdateMemRepresented();
+  }
+
+  ~MemoryTypeTracker() {
+    UpdateMemRepresented();
   }
 
   void TrackMemAlloc(size_t bytes) {
     mem_represented_ += bytes;
+    UpdateMemRepresented();
   }
 
   void TrackMemFree(size_t bytes) {
     DCHECK(bytes <= mem_represented_);
     mem_represented_ -= bytes;
+    UpdateMemRepresented();
   }
 
+  size_t GetMemRepresented() const {
+    return mem_represented_at_last_update_;
+  }
+
+  // Ensure a certain amount of GPU memory is free. Returns true on success.
+  bool EnsureGPUMemoryAvailable(size_t size_needed) {
+    if (memory_tracker_) {
+      return memory_tracker_->EnsureGPUMemoryAvailable(size_needed);
+    }
+    return true;
+  }
+
+ private:
   void UpdateMemRepresented() {
     // Skip redundant updates only if we have already done an update.
     if (!has_done_update_ &&
@@ -72,11 +97,6 @@ class MemoryTypeTracker {
     mem_represented_at_last_update_ = mem_represented_;
   }
 
-  size_t GetMemRepresented() const {
-    return mem_represented_at_last_update_;
-  }
-
- private:
   MemoryTracker* memory_tracker_;
   MemoryTracker::Pool pool_;
   bool has_done_update_;

@@ -5,8 +5,8 @@
 #ifndef SYNC_INTERNAL_API_PUBLIC_DATA_TYPE_ASSOCIATION_STATS_H_
 #define SYNC_INTERNAL_API_PUBLIC_DATA_TYPE_ASSOCIATION_STATS_H_
 
+#include "base/time/time.h"
 #include "sync/base/sync_export.h"
-#include "sync/internal_api/public/base/model_type.h"
 
 namespace syncer {
 
@@ -14,9 +14,6 @@ namespace syncer {
 struct SYNC_EXPORT DataTypeAssociationStats {
   DataTypeAssociationStats();
   ~DataTypeAssociationStats();
-
-  // The datatype that was associated.
-  ModelType model_type;
 
   // The state of the world before association.
   int num_local_items_before_association;
@@ -35,8 +32,19 @@ struct SYNC_EXPORT DataTypeAssociationStats {
   int num_sync_items_deleted;
   int num_sync_items_modified;
 
+  // Model versions before association.
+  int64 local_version_pre_association;
+  int64 sync_version_pre_association;
+
   // Whether a datatype unrecoverable error was encountered during association.
   bool had_error;
+
+  // Waiting time within association manager for loading local models and
+  // associating other types.
+  base::TimeDelta association_wait_time;
+
+  // Time spent on association.
+  base::TimeDelta association_time;
 };
 
 }  // namespace syncer

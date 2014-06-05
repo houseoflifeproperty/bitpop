@@ -5,36 +5,37 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_IDLE_IDLE_API_H_
 #define CHROME_BROWSER_EXTENSIONS_API_IDLE_IDLE_API_H_
 
-#include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/idle.h"
 
 namespace extensions {
 
 // Implementation of the chrome.idle.queryState API.
-class IdleQueryStateFunction : public AsyncExtensionFunction {
+class IdleQueryStateFunction : public ChromeAsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("idle.queryState")
+  DECLARE_EXTENSION_FUNCTION("idle.queryState", IDLE_QUERYSTATE)
 
  protected:
   virtual ~IdleQueryStateFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   void IdleStateCallback(IdleState state);
 };
 
 // Implementation of the chrome.idle.setDetectionInterval API.
-class IdleSetDetectionIntervalFunction : public SyncExtensionFunction {
+class IdleSetDetectionIntervalFunction : public ChromeSyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("idle.setDetectionInterval");
+  DECLARE_EXTENSION_FUNCTION("idle.setDetectionInterval",
+                             IDLE_SETDETECTIONINTERVAL)
 
  protected:
   virtual ~IdleSetDetectionIntervalFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 }  // namespace extensions

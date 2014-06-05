@@ -39,9 +39,17 @@ TEST(VideoCommonTest, TestCanonicalFourCC) {
   EXPECT_EQ(FOURCC_I420, CanonicalFourCC(FOURCC_IYUV));
   EXPECT_EQ(FOURCC_I422, CanonicalFourCC(FOURCC_YU16));
   EXPECT_EQ(FOURCC_I444, CanonicalFourCC(FOURCC_YU24));
-  EXPECT_EQ(FOURCC_24BG, CanonicalFourCC(FOURCC_BGR3));
-  EXPECT_EQ(FOURCC_RAW, CanonicalFourCC(FOURCC_RGB3));
+  EXPECT_EQ(FOURCC_YUY2, CanonicalFourCC(FOURCC_YUYV));
+  EXPECT_EQ(FOURCC_YUY2, CanonicalFourCC(FOURCC_YUVS));
+  EXPECT_EQ(FOURCC_UYVY, CanonicalFourCC(FOURCC_HDYC));
+  EXPECT_EQ(FOURCC_UYVY, CanonicalFourCC(FOURCC_2VUY));
+  EXPECT_EQ(FOURCC_MJPG, CanonicalFourCC(FOURCC_JPEG));
   EXPECT_EQ(FOURCC_MJPG, CanonicalFourCC(FOURCC_DMB1));
+  EXPECT_EQ(FOURCC_BGGR, CanonicalFourCC(FOURCC_BA81));
+  EXPECT_EQ(FOURCC_RAW, CanonicalFourCC(FOURCC_RGB3));
+  EXPECT_EQ(FOURCC_24BG, CanonicalFourCC(FOURCC_BGR3));
+  EXPECT_EQ(FOURCC_BGRA, CanonicalFourCC(FOURCC_CM32));
+  EXPECT_EQ(FOURCC_RAW, CanonicalFourCC(FOURCC_CM24));
 }
 
 // Test conversion between interval and fps
@@ -49,6 +57,7 @@ TEST(VideoCommonTest, TestVideoFormatFps) {
   EXPECT_EQ(VideoFormat::kMinimumInterval, VideoFormat::FpsToInterval(0));
   EXPECT_EQ(talk_base::kNumNanosecsPerSec / 20, VideoFormat::FpsToInterval(20));
   EXPECT_EQ(20, VideoFormat::IntervalToFps(talk_base::kNumNanosecsPerSec / 20));
+  EXPECT_EQ(0, VideoFormat::IntervalToFps(0));
 }
 
 // Test IsSize0x0
@@ -62,7 +71,7 @@ TEST(VideoCommonTest, TestVideoFormatIsSize0x0) {
 // Test ToString: print fourcc when it is printable.
 TEST(VideoCommonTest, TestVideoFormatToString) {
   VideoFormat format;
-  EXPECT_EQ("0x0x10000", format.ToString());
+  EXPECT_EQ("0x0x0", format.ToString());
 
   format.fourcc = FOURCC_I420;
   format.width = 640;
@@ -99,38 +108,73 @@ TEST(VideoCommonTest, TestVideoFormatCompare) {
   EXPECT_TRUE(format.IsPixelRateLess(format2));
 }
 
-TEST(VideoCommonTest, TestComputeScale) {
+TEST(VideoCommonTest, TestComputeScaleWithLowFps) {
   int scaled_width, scaled_height;
 
-  // Request small enough.  Expect no change.
-  ComputeScale(2560, 1600, &scaled_width, &scaled_height);
+  // Request small enough. Expect no change.
+  ComputeScale(2560, 1600, 5, &scaled_width, &scaled_height);
   EXPECT_EQ(2560, scaled_width);
   EXPECT_EQ(1600, scaled_height);
 
-  // Request too many pixels.  Expect max pixels.
-  ComputeScale(4096, 2560, &scaled_width, &scaled_height);
-  EXPECT_EQ(2880, scaled_width);
-  EXPECT_EQ(1800, scaled_height);
+  // Request too many pixels. Expect 1/2 size.
+  ComputeScale(4096, 2560, 5, &scaled_width, &scaled_height);
+  EXPECT_EQ(2048, scaled_width);
+  EXPECT_EQ(1280, scaled_height);
 
-  // Request too many pixels and too wide and tall.  Expect max pixels.
-  ComputeScale(16000, 10000, &scaled_width, &scaled_height);
-  EXPECT_EQ(2880, scaled_width);
-  EXPECT_EQ(1800, scaled_height);
+  // Request too many pixels and too wide and tall. Expect 1/4 size.
+  ComputeScale(16000, 10000, 5, &scaled_width, &scaled_height);
+  EXPECT_EQ(2000, scaled_width);
+  EXPECT_EQ(1250, scaled_height);
 
-  // Request too wide. (two 30 inch monitors). Expect width scaled to max.
-  ComputeScale(5120, 1600, &scaled_width, &scaled_height);
-  EXPECT_EQ(4048, scaled_width);
-  EXPECT_EQ(1264, scaled_height);
+  // Request too wide. (two 30 inch monitors). Expect 1/2 size.
+  ComputeScale(5120, 1600, 5, &scaled_width, &scaled_height);
+  EXPECT_EQ(2560, scaled_width);
+  EXPECT_EQ(800, scaled_height);
 
-  // Request too wide but not too many pixels.  Expect width scaled to max.
-  ComputeScale(8192, 1024, &scaled_width, &scaled_height);
-  EXPECT_EQ(4048, scaled_width);
-  EXPECT_EQ(506, scaled_height);
+  // Request too wide but not too many pixels. Expect 1/2 size.
+  ComputeScale(8192, 1024, 5, &scaled_width, &scaled_height);
+  EXPECT_EQ(4096, scaled_width);
+  EXPECT_EQ(512, scaled_height);
 
-  // Request too tall.  Expect height scaled to max.
-  ComputeScale(1024, 8192, &scaled_width, &scaled_height);
-  EXPECT_EQ(380, scaled_width);
-  EXPECT_EQ(3040, scaled_height);
+  // Request too tall. Expect 1/4 size.
+  ComputeScale(1024, 8192, 5, &scaled_width, &scaled_height);
+  EXPECT_EQ(256, scaled_width);
+  EXPECT_EQ(2048, scaled_height);
+}
+
+// Same as TestComputeScale but with 15 fps instead of 5 fps.
+TEST(VideoCommonTest, TestComputeScaleWithHighFps) {
+  int scaled_width, scaled_height;
+
+  // Request small enough but high fps. Expect 1/2 size.
+  ComputeScale(2560, 1600, 15, &scaled_width, &scaled_height);
+  EXPECT_EQ(1280, scaled_width);
+  EXPECT_EQ(800, scaled_height);
+
+  // Request too many pixels. Expect 1/2 size.
+  ComputeScale(4096, 2560, 15, &scaled_width, &scaled_height);
+  EXPECT_EQ(2048, scaled_width);
+  EXPECT_EQ(1280, scaled_height);
+
+  // Request too many pixels and too wide and tall. Expect 1/16 size.
+  ComputeScale(64000, 40000, 15, &scaled_width, &scaled_height);
+  EXPECT_EQ(4000, scaled_width);
+  EXPECT_EQ(2500, scaled_height);
+
+  // Request too wide. (two 30 inch monitors). Expect 1/2 size.
+  ComputeScale(5120, 1600, 15, &scaled_width, &scaled_height);
+  EXPECT_EQ(2560, scaled_width);
+  EXPECT_EQ(800, scaled_height);
+
+  // Request too wide but not too many pixels. Expect 1/2 size.
+  ComputeScale(8192, 1024, 15, &scaled_width, &scaled_height);
+  EXPECT_EQ(4096, scaled_width);
+  EXPECT_EQ(512, scaled_height);
+
+  // Request too tall. Expect 1/4 size.
+  ComputeScale(1024, 8192, 15, &scaled_width, &scaled_height);
+  EXPECT_EQ(256, scaled_width);
+  EXPECT_EQ(2048, scaled_height);
 }
 
 TEST(VideoCommonTest, TestComputeCrop) {
@@ -233,6 +277,15 @@ TEST(VideoCommonTest, TestComputeCrop) {
   EXPECT_EQ(640, cropped_width);
   EXPECT_EQ(480, cropped_height);
 
+  // Request 9:16 from VGA rotated (portrait).  Expect crop.
+  ComputeCrop(360, 640,  // Crop size 9:16
+              640, 480,  // Frame is 3:4 portrait
+              1, 1,  // Normal 1:1 pixels
+              90,
+              &cropped_width, &cropped_height);
+  EXPECT_EQ(640, cropped_width);
+  EXPECT_EQ(360, cropped_height);
+
   // Cropped size 0x0.  Expect no cropping.
   // This is used when adding multiple capturers
   ComputeCrop(0, 0,  // Crop size 0x0
@@ -242,6 +295,28 @@ TEST(VideoCommonTest, TestComputeCrop) {
               &cropped_width, &cropped_height);
   EXPECT_EQ(1024, cropped_width);
   EXPECT_EQ(768, cropped_height);
+}
+
+TEST(VideoCommonTest, TestComputeScaleToSquarePixels) {
+  int scaled_width, scaled_height;
+
+  // Pixel aspect ratio is 4:3.  Logical aspect ratio is 16:9.  Expect scale
+  // to square pixels with physical aspect ratio of 16:9.
+  ComputeScaleToSquarePixels(640, 480,
+                             4, 3,  // 4 x 3 pixel aspect ratio
+                             &scaled_width, &scaled_height);
+  EXPECT_EQ(640, scaled_width);
+  EXPECT_EQ(360, scaled_height);
+
+  // Pixel aspect ratio is 3:8.  Physical aspect ratio is 4:3.  Expect scale
+  // to square pixels with logical aspect ratio of 1:2.
+  // Note that 640x1280 will be scaled down by video adapter to view request
+  // of 640*360 and will end up using 320x640.
+  ComputeScaleToSquarePixels(640, 480,
+                             3, 8,  // 4 x 3 pixel aspect ratio
+                             &scaled_width, &scaled_height);
+  EXPECT_EQ(640, scaled_width);
+  EXPECT_EQ(1280, scaled_height);
 }
 
 }  // namespace cricket

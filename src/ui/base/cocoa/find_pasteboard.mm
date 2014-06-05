@@ -5,7 +5,7 @@
 #import "ui/base/cocoa/find_pasteboard.h"
 
 #include "base/logging.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 
 NSString* kFindPasteboardChangedNotification =
     @"kFindPasteboardChangedNotification_Chrome";
@@ -77,6 +77,6 @@ NSString* kFindPasteboardChangedNotification =
 
 @end
 
-string16 GetFindPboardText() {
+base::string16 GetFindPboardText() {
   return base::SysNSStringToUTF16([[FindPasteboard sharedInstance] findText]);
 }

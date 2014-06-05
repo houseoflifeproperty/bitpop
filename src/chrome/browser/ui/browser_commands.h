@@ -7,10 +7,11 @@
 
 #include <string>
 
-#include "chrome/browser/debugger/devtools_toggle_action.h"
+#include "chrome/browser/devtools/devtools_toggle_action.h"
 #include "chrome/browser/ui/host_desktop.h"
+#include "chrome/browser/ui/tabs/tab_strip_model_delegate.h"
 #include "content/public/common/page_zoom.h"
-#include "webkit/glue/window_open_disposition.h"
+#include "ui/base/window_open_disposition.h"
 
 class Browser;
 class CommandObserver;
@@ -18,6 +19,7 @@ class GURL;
 class Profile;
 
 namespace content {
+class PageState;
 class WebContents;
 struct SSLStatus;
 }
@@ -39,16 +41,15 @@ void RemoveCommandObserver(Browser*, int command, CommandObserver* observer);
 int GetContentRestrictions(const Browser* browser);
 
 // Opens a new window with the default blank tab.
-void NewEmptyWindow(Profile* profile);
 void NewEmptyWindow(Profile* profile, HostDesktopType desktop_type);
 
 // Opens a new window with the default blank tab. This bypasses metrics and
 // various internal bookkeeping; NewEmptyWindow (above) is preferred.
-Browser* OpenEmptyWindow(Profile* profile);
 Browser* OpenEmptyWindow(Profile* profile, HostDesktopType desktop_type);
 
 // Opens a new window with the tabs from |profile|'s TabRestoreService.
-void OpenWindowWithRestoredTabs(Profile* profile);
+void OpenWindowWithRestoredTabs(Profile* profile,
+                                HostDesktopType host_desktop_type);
 
 // Opens the specified URL in a new browser window in an incognito session on
 // the desktop specified by |desktop_type|. If there is already an existing
@@ -63,7 +64,7 @@ bool CanGoForward(const Browser* browser);
 void GoForward(Browser* browser, WindowOpenDisposition disposition);
 bool NavigateToIndexWithDisposition(Browser* browser,
                                     int index,
-                                    WindowOpenDisposition disp);
+                                    WindowOpenDisposition disposition);
 void Reload(Browser* browser, WindowOpenDisposition disposition);
 void ReloadIgnoringCache(Browser* browser, WindowOpenDisposition disposition);
 bool CanReload(const Browser* browser);
@@ -76,10 +77,10 @@ void CloseWindow(Browser* browser);
 void NewTab(Browser* browser);
 void CloseTab(Browser* browser);
 void RestoreTab(Browser* browser);
-bool CanRestoreTab(const Browser* browser);
+TabStripModelDelegate::RestoreTabType GetRestoreTabType(
+    const Browser* browser);
 void SelectNextTab(Browser* browser);
 void SelectPreviousTab(Browser* browser);
-void OpenTabpose(Browser* browser);  // Mac-only
 void MoveTabNext(Browser* browser);
 void MoveTabPrevious(Browser* browser);
 void SelectNumberedTab(Browser* browser, int index);
@@ -91,20 +92,19 @@ bool CanDuplicateTabAt(Browser* browser, int index);
 void ConvertPopupToTabbedBrowser(Browser* browser);
 void Exit();
 void BookmarkCurrentPage(Browser* browser);
-void BookmarkCurrentPageFromStar(Browser* browser);
 bool CanBookmarkCurrentPage(const Browser* browser);
 void BookmarkAllTabs(Browser* browser);
 bool CanBookmarkAllTabs(const Browser* browser);
+void Translate(Browser* browser);
+void ManagePasswordsForPage(Browser* browser);
 void TogglePagePinnedToStartScreen(Browser* browser);
 void SavePage(Browser* browser);
 bool CanSavePage(const Browser* browser);
 void ShowFindBar(Browser* browser);
-void ShowPageInfo(Browser* browser,
-                  content::WebContents* web_contents,
-                  const GURL& url,
-                  const content::SSLStatus& ssl,
-                  bool show_history);
-void ShowChromeToMobileBubble(Browser* browser);
+void ShowWebsiteSettings(Browser* browser,
+                         content::WebContents* web_contents,
+                         const GURL& url,
+                         const content::SSLStatus& ssl);
 void Print(Browser* browser);
 bool CanPrint(const Browser* browser);
 void AdvancedPrint(Browser* browser);
@@ -125,11 +125,12 @@ void FocusLocationBar(Browser* browser);
 void FocusSearch(Browser* browser);
 void FocusAppMenu(Browser* browser);
 void FocusBookmarksToolbar(Browser* browser);
+void FocusInfobars(Browser* browser);
 void FocusNextPane(Browser* browser);
 void FocusPreviousPane(Browser* browser);
 void ToggleDevToolsWindow(Browser* browser, DevToolsToggleAction action);
 bool CanOpenTaskManager();
-void OpenTaskManager(Browser* browser, bool highlight_background_resources);
+void OpenTaskManager(Browser* browser);
 void OpenFeedbackDialog(Browser* browser);
 void ToggleBookmarkBar(Browser* browser);
 void ShowAppMenu(Browser* browser);
@@ -150,13 +151,15 @@ void ViewSource(Browser* browser, content::WebContents* tab);
 void ViewSource(Browser* browser,
                 content::WebContents* tab,
                 const GURL& url,
-                const std::string& content_state);
+                const content::PageState& page_state);
 
 void ViewSelectedSource(Browser* browser);
 bool CanViewSource(const Browser* browser);
 
 void CreateApplicationShortcuts(Browser* browser);
+void CreateBookmarkAppFromCurrentWebContents(Browser* browser);
 bool CanCreateApplicationShortcuts(const Browser* browser);
+bool CanCreateBookmarkApp(const Browser* browser);
 
 void ConvertTabToAppWindow(Browser* browser, content::WebContents* contents);
 

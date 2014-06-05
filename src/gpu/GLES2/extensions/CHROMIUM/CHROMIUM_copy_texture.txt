@@ -8,7 +8,7 @@ Name Strings
 
 Version
 
-    Last Modifed Date: April 3, 2012
+    Last Modifed Date: April 1, 2013
 
 Dependencies
 
@@ -30,23 +30,27 @@ Overview
     GL_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM are enabled.  Then no alpha
     processing occurs.  This is the equivalent of having neither flag set.
 
-    The extension also supports copying BGRA textures, which is not explicitly
+    The extension also supports copying BGRA textures and copying
+    EXTERNAL_OES texture to BGRA texture, which is not explicitly
     granted by EXT_texture_format_BGRA8888.
 
 New Procedures and Functions
 
     void glCopyTextureCHROMIUM (GLenum target, GLenum source_id,
                                 GLenum dest_id, GLint level,
-                                GLint internal_format)
+                                GLint internal_format, GLenum dest_type)
 
     Copies the contents of texture referred to by <source_id> to texture
     <dest_id>.
 
     Texture level 0 is copied from the source image to level <level> of the
-    destination texture.
+    destination texture. The level parameter must be 0 at present.
 
     The internal format of the destination texture is converted to that
-    specified by <internal_format>
+    specified by <internal_format>.
+
+    The format type of the destination texture is converted to that specified
+    by <dest_type>.
 
     <target> uses the same parameters as TexImage2D.
 
@@ -55,8 +59,11 @@ New Procedures and Functions
     INVALID_VALUE is generated if <source_id> or <dest_id> are not valid texture
     objects.
 
-    INVALID_VALUE is generated if textures corresponding to <source_id> and
-    <dest_id> have not been bound as GL_TEXTURE_2D objects.
+    INVALID_VALUE is generated if textures corresponding to <dest_id> have not
+    been bound as GL_TEXTURE_2D object.
+
+    INVALID_VALUE is generated if textures corresponding to <source_id> have not
+    been bound as GL_TEXTURE_2D or GL_TEXTURE_EXTERNAL_OES objects.
 
     INVALID_VALUE is generated if <level> is not a valid level of the
     destination texture, or if level 0 of the source texture is not defined.
@@ -76,3 +83,4 @@ New State
 Revision History
 
     8/1/2011    Documented the extension
+    7/4/2013    Add a new parameter dest_type to glCopyTextureCHROMIUM()

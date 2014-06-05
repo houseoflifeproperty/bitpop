@@ -9,8 +9,8 @@
 #include <string>
 
 #import "base/mac/scoped_sending_event.h"
-#include "base/message_loop.h"
-#import "base/message_pump_mac.h"
+#include "base/message_loop/message_loop.h"
+#import "base/message_loop/message_pump_mac.h"
 #include "content/browser/renderer_host/popup_menu_helper_mac.h"
 #include "content/browser/renderer_host/render_view_host_factory.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -28,8 +28,9 @@
 #include "ui/base/dragdrop/cocoa_dnd_util.h"
 #include "ui/gfx/image/image_skia_util_mac.h"
 
-using WebKit::WebDragOperation;
-using WebKit::WebDragOperationsMask;
+using blink::WebDragOperation;
+using blink::WebDragOperationsMask;
+using content::DropData;
 using content::PopupMenuHelper;
 using content::RenderViewHostFactory;
 using content::RenderWidgetHostView;
@@ -38,10 +39,10 @@ using content::WebContents;
 using content::WebContentsImpl;
 using content::WebContentsViewMac;
 
-// Ensure that the WebKit::WebDragOperation enum values stay in sync with
+// Ensure that the blink::WebDragOperation enum values stay in sync with
 // NSDragOperation constants, since the code below static_casts between 'em.
 #define COMPILE_ASSERT_MATCHING_ENUM(name) \
-  COMPILE_ASSERT(int(NS##name) == int(WebKit::Web##name), enum_mismatch_##name)
+  COMPILE_ASSERT(int(NS##name) == int(blink::Web##name), enum_mismatch_##name)
 COMPILE_ASSERT_MATCHING_ENUM(DragOperationNone);
 COMPILE_ASSERT_MATCHING_ENUM(DragOperationCopy);
 COMPILE_ASSERT_MATCHING_ENUM(DragOperationLink);
@@ -55,8 +56,8 @@ COMPILE_ASSERT_MATCHING_ENUM(DragOperationEvery);
 - (id)initWithWebContentsViewMac:(WebContentsViewMac*)w;
 - (void)registerDragTypes;
 - (void)setCurrentDragOperation:(NSDragOperation)operation;
-- (WebDropData*)dropData;
-- (void)startDragWithDropData:(const WebDropData&)dropData
+- (DropData*)dropData;
+- (void)startDragWithDropData:(const DropData&)dropData
             dragOperationMask:(NSDragOperation)operationMask
                         image:(NSImage*)image
                        offset:(NSPoint)offset;
@@ -80,7 +81,9 @@ WebContentsViewMac::WebContentsViewMac(WebContentsImpl* web_contents,
                                        WebContentsViewDelegate* delegate)
     : web_contents_(web_contents),
       delegate_(delegate),
-      allow_overlapping_views_(false) {
+      allow_overlapping_views_(false),
+      overlay_view_(NULL),
+      underlay_view_(NULL) {
 }
 
 WebContentsViewMac::~WebContentsViewMac() {
@@ -90,56 +93,6 @@ WebContentsViewMac::~WebContentsViewMac() {
   // WebContentsViewMac instance due to Cocoa retain count.
   [cocoa_view_ cancelDeferredClose];
   [cocoa_view_ clearWebContentsView];
-}
-
-void WebContentsViewMac::CreateView(
-    const gfx::Size& initial_size, gfx::NativeView context) {
-  WebContentsViewCocoa* view =
-      [[WebContentsViewCocoa alloc] initWithWebContentsViewMac:this];
-  cocoa_view_.reset(view);
-}
-
-RenderWidgetHostView* WebContentsViewMac::CreateViewForWidget(
-    RenderWidgetHost* render_widget_host) {
-  if (render_widget_host->GetView()) {
-    // During testing, the view will already be set up in most cases to the
-    // test view, so we don't want to clobber it with a real one. To verify that
-    // this actually is happening (and somebody isn't accidentally creating the
-    // view twice), we check for the RVH Factory, which will be set when we're
-    // making special ones (which go along with the special views).
-    DCHECK(RenderViewHostFactory::has_factory());
-    return render_widget_host->GetView();
-  }
-
-  RenderWidgetHostViewMac* view = static_cast<RenderWidgetHostViewMac*>(
-      RenderWidgetHostView::CreateViewForWidget(render_widget_host));
-  if (delegate()) {
-    NSObject<RenderWidgetHostViewMacDelegate>* rw_delegate =
-        delegate()->CreateRenderWidgetHostViewDelegate(render_widget_host);
-    view->SetDelegate(rw_delegate);
-  }
-  view->SetAllowOverlappingViews(allow_overlapping_views_);
-
-  // Fancy layout comes later; for now just make it our size and resize it
-  // with us. In case there are other siblings of the content area, we want
-  // to make sure the content area is on the bottom so other things draw over
-  // it.
-  NSView* view_view = view->GetNativeView();
-  [view_view setFrame:[cocoa_view_.get() bounds]];
-  [view_view setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
-  // Add the new view below all other views; this also keeps it below any
-  // overlay view installed.
-  [cocoa_view_.get() addSubview:view_view
-                     positioned:NSWindowBelow
-                     relativeTo:nil];
-  // For some reason known only to Cocoa, the autorecalculation of the key view
-  // loop set on the window doesn't set the next key view when the subview is
-  // added. On 10.6 things magically work fine; on 10.5 they fail
-  // <http://crbug.com/61493>. Digging into Cocoa key view loop code yielded
-  // madness; TODO(avi,rohit): look at this again and figure out what's really
-  // going on.
-  [cocoa_view_.get() setNextKeyView:view_view];
-  return view;
 }
 
 gfx::NativeView WebContentsViewMac::GetNativeView() const {
@@ -174,7 +127,7 @@ void WebContentsViewMac::GetContainerBounds(gfx::Rect* out) const {
 }
 
 void WebContentsViewMac::StartDragging(
-    const WebDropData& drop_data,
+    const DropData& drop_data,
     WebDragOperationsMask allowed_operations,
     const gfx::ImageSkia& image,
     const gfx::Vector2d& image_offset,
@@ -188,7 +141,8 @@ void WebContentsViewMac::StartDragging(
 
   // The drag invokes a nested event loop, arrange to continue
   // processing events.
-  MessageLoop::ScopedNestableTaskAllower allow(MessageLoop::current());
+  base::MessageLoop::ScopedNestableTaskAllower allow(
+      base::MessageLoop::current());
   NSDragOperation mask = static_cast<NSDragOperation>(allowed_operations);
   NSPoint offset = NSPointFromCGPoint(
       gfx::PointAtOffsetFromOrigin(image_offset).ToCGPoint());
@@ -198,37 +152,19 @@ void WebContentsViewMac::StartDragging(
                               offset:offset];
 }
 
-void WebContentsViewMac::RenderViewCreated(RenderViewHost* host) {
-  // We want updates whenever the intrinsic width of the webpage changes.
-  // Put the RenderView into that mode. The preferred width is used for example
-  // when the "zoom" button in the browser window is clicked.
-  host->EnablePreferredSizeMode();
-}
-
-void WebContentsViewMac::SetPageTitle(const string16& title) {
-  // Meaningless on the Mac; widgets don't have a "title" attribute
-}
-
-void WebContentsViewMac::OnTabCrashed(base::TerminationStatus /* status */,
-                                      int /* error_code */) {
-}
-
 void WebContentsViewMac::SizeContents(const gfx::Size& size) {
   // TODO(brettw | japhet) This is a hack and should be removed.
   // See web_contents_view.h.
-  gfx::Rect rect(gfx::Point(), size);
-  WebContentsViewCocoa* view = cocoa_view_.get();
-
-  NSPoint origin = [view frame].origin;
-  NSRect frame = [view flipRectToNSRect:rect];
-  frame.origin = NSMakePoint(NSMinX(frame) + origin.x,
-                             NSMinY(frame) + origin.y);
-  [view setFrame:frame];
+  // Note(erikchen): This method has /never/ worked correctly. I've removed the
+  // previous implementation.
 }
 
 void WebContentsViewMac::Focus() {
-  [[cocoa_view_.get() window] makeFirstResponder:GetContentNativeView()];
-  [[cocoa_view_.get() window] makeKeyAndOrderFront:GetContentNativeView()];
+  NSWindow* window = [cocoa_view_.get() window];
+  [window makeFirstResponder:GetContentNativeView()];
+  if (![window isVisible])
+    return;
+  [window makeKeyAndOrderFront:nil];
 }
 
 void WebContentsViewMac::SetInitialFocus() {
@@ -261,7 +197,7 @@ void WebContentsViewMac::RestoreFocus() {
   focus_tracker_.reset(nil);
 }
 
-WebDropData* WebContentsViewMac::GetDropData() const {
+DropData* WebContentsViewMac::GetDropData() const {
   return [cocoa_view_ dropData];
 }
 
@@ -284,8 +220,9 @@ void WebContentsViewMac::TakeFocus(bool reverse) {
   }
 }
 
-void WebContentsViewMac::ShowContextMenu(const ContextMenuParams& params,
-                                         ContextMenuSourceType type) {
+void WebContentsViewMac::ShowContextMenu(
+    content::RenderFrameHost* render_frame_host,
+    const ContextMenuParams& params) {
   // Allow delegates to handle the context menu operation first.
   if (web_contents_->GetDelegate() &&
       web_contents_->GetDelegate()->HandleContextMenu(params)) {
@@ -293,7 +230,7 @@ void WebContentsViewMac::ShowContextMenu(const ContextMenuParams& params,
   }
 
   if (delegate())
-    delegate()->ShowContextMenu(params, type);
+    delegate()->ShowContextMenu(render_frame_host, params);
   else
     DLOG(ERROR) << "Cannot show context menus without a delegate.";
 }
@@ -304,28 +241,20 @@ void WebContentsViewMac::ShowPopupMenu(
     int item_height,
     double item_font_size,
     int selected_item,
-    const std::vector<WebMenuItem>& items,
+    const std::vector<MenuItem>& items,
     bool right_aligned,
     bool allow_multiple_selection) {
-  PopupMenuHelper popup_menu_helper(web_contents_->GetRenderViewHost());
-  popup_menu_helper.ShowPopupMenu(bounds, item_height, item_font_size,
-                                  selected_item, items, right_aligned,
-                                  allow_multiple_selection);
+  popup_menu_helper_.reset(
+      new PopupMenuHelper(web_contents_->GetRenderViewHost()));
+  popup_menu_helper_->ShowPopupMenu(bounds, item_height, item_font_size,
+                                    selected_item, items, right_aligned,
+                                    allow_multiple_selection);
+  popup_menu_helper_.reset();
 }
 
-bool WebContentsViewMac::IsEventTracking() const {
-  return base::MessagePumpMac::IsHandlingSendEvent();
-}
-
-// Arrange to call CloseTab() after we're back to the main event loop.
-// The obvious way to do this would be PostNonNestableTask(), but that
-// will fire when the event-tracking loop polls for events.  So we
-// need to bounce the message via Cocoa, instead.
-void WebContentsViewMac::CloseTabAfterEventTracking() {
-  [cocoa_view_ cancelDeferredClose];
-  [cocoa_view_ performSelector:@selector(closeTabAfterEvent)
-                    withObject:nil
-                    afterDelay:0.0];
+void WebContentsViewMac::HidePopupMenu() {
+  if (popup_menu_helper_)
+    popup_menu_helper_->Hide();
 }
 
 gfx::Rect WebContentsViewMac::GetViewBounds() const {
@@ -343,6 +272,150 @@ void WebContentsViewMac::SetAllowOverlappingViews(bool overlapping) {
       web_contents_->GetRenderWidgetHostView());
   if (view)
     view->SetAllowOverlappingViews(allow_overlapping_views_);
+}
+
+bool WebContentsViewMac::GetAllowOverlappingViews() const {
+  return allow_overlapping_views_;
+}
+
+void WebContentsViewMac::SetOverlayView(
+    WebContentsView* overlay, const gfx::Point& offset) {
+  DCHECK(!underlay_view_);
+  if (overlay_view_)
+    RemoveOverlayView();
+
+  overlay_view_ = static_cast<WebContentsViewMac*>(overlay);
+  DCHECK(!overlay_view_->overlay_view_);
+  overlay_view_->underlay_view_ = this;
+  overlay_view_offset_ = offset;
+  UpdateRenderWidgetHostViewOverlay();
+}
+
+void WebContentsViewMac::RemoveOverlayView() {
+  DCHECK(overlay_view_);
+
+  RenderWidgetHostViewMac* rwhv = static_cast<RenderWidgetHostViewMac*>(
+      web_contents_->GetRenderWidgetHostView());
+  if (rwhv)
+    rwhv->RemoveOverlayView();
+
+  overlay_view_->underlay_view_ = NULL;
+  overlay_view_ = NULL;
+}
+
+void WebContentsViewMac::UpdateRenderWidgetHostViewOverlay() {
+  RenderWidgetHostViewMac* rwhv = static_cast<RenderWidgetHostViewMac*>(
+      web_contents_->GetRenderWidgetHostView());
+  if (!rwhv)
+    return;
+
+  if (overlay_view_) {
+    RenderWidgetHostViewMac* overlay_rwhv =
+        static_cast<RenderWidgetHostViewMac*>(
+            overlay_view_->web_contents_->GetRenderWidgetHostView());
+    if (overlay_rwhv)
+      rwhv->SetOverlayView(overlay_rwhv, overlay_view_offset_);
+  }
+
+  if (underlay_view_) {
+    RenderWidgetHostViewMac* underlay_rwhv =
+        static_cast<RenderWidgetHostViewMac*>(
+            underlay_view_->web_contents_->GetRenderWidgetHostView());
+    if (underlay_rwhv)
+      underlay_rwhv->SetOverlayView(rwhv, underlay_view_->overlay_view_offset_);
+  }
+}
+
+void WebContentsViewMac::CreateView(
+    const gfx::Size& initial_size, gfx::NativeView context) {
+  WebContentsViewCocoa* view =
+      [[WebContentsViewCocoa alloc] initWithWebContentsViewMac:this];
+  cocoa_view_.reset(view);
+}
+
+RenderWidgetHostViewBase* WebContentsViewMac::CreateViewForWidget(
+    RenderWidgetHost* render_widget_host) {
+  if (render_widget_host->GetView()) {
+    // During testing, the view will already be set up in most cases to the
+    // test view, so we don't want to clobber it with a real one. To verify that
+    // this actually is happening (and somebody isn't accidentally creating the
+    // view twice), we check for the RVH Factory, which will be set when we're
+    // making special ones (which go along with the special views).
+    DCHECK(RenderViewHostFactory::has_factory());
+    return static_cast<RenderWidgetHostViewBase*>(
+        render_widget_host->GetView());
+  }
+
+  RenderWidgetHostViewMac* view = new RenderWidgetHostViewMac(
+      render_widget_host);
+  if (delegate()) {
+    base::scoped_nsobject<NSObject<RenderWidgetHostViewMacDelegate> >
+        rw_delegate(
+            delegate()->CreateRenderWidgetHostViewDelegate(render_widget_host));
+
+    view->SetDelegate(rw_delegate.get());
+  }
+  view->SetAllowOverlappingViews(allow_overlapping_views_);
+
+  // Fancy layout comes later; for now just make it our size and resize it
+  // with us. In case there are other siblings of the content area, we want
+  // to make sure the content area is on the bottom so other things draw over
+  // it.
+  NSView* view_view = view->GetNativeView();
+  [view_view setFrame:[cocoa_view_.get() bounds]];
+  [view_view setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
+  // Add the new view below all other views; this also keeps it below any
+  // overlay view installed.
+  [cocoa_view_.get() addSubview:view_view
+                     positioned:NSWindowBelow
+                     relativeTo:nil];
+  // For some reason known only to Cocoa, the autorecalculation of the key view
+  // loop set on the window doesn't set the next key view when the subview is
+  // added. On 10.6 things magically work fine; on 10.5 they fail
+  // <http://crbug.com/61493>. Digging into Cocoa key view loop code yielded
+  // madness; TODO(avi,rohit): look at this again and figure out what's really
+  // going on.
+  [cocoa_view_.get() setNextKeyView:view_view];
+  return view;
+}
+
+RenderWidgetHostViewBase* WebContentsViewMac::CreateViewForPopupWidget(
+    RenderWidgetHost* render_widget_host) {
+  return new RenderWidgetHostViewMac(render_widget_host);
+}
+
+void WebContentsViewMac::SetPageTitle(const base::string16& title) {
+  // Meaningless on the Mac; widgets don't have a "title" attribute
+}
+
+
+void WebContentsViewMac::RenderViewCreated(RenderViewHost* host) {
+  // We want updates whenever the intrinsic width of the webpage changes.
+  // Put the RenderView into that mode. The preferred width is used for example
+  // when the "zoom" button in the browser window is clicked.
+  host->EnablePreferredSizeMode();
+}
+
+void WebContentsViewMac::RenderViewSwappedIn(RenderViewHost* host) {
+  UpdateRenderWidgetHostViewOverlay();
+}
+
+void WebContentsViewMac::SetOverscrollControllerEnabled(bool enabled) {
+}
+
+bool WebContentsViewMac::IsEventTracking() const {
+  return base::MessagePumpMac::IsHandlingSendEvent();
+}
+
+// Arrange to call CloseTab() after we're back to the main event loop.
+// The obvious way to do this would be PostNonNestableTask(), but that
+// will fire when the event-tracking loop polls for events.  So we
+// need to bounce the message via Cocoa, instead.
+void WebContentsViewMac::CloseTabAfterEventTracking() {
+  [cocoa_view_ cancelDeferredClose];
+  [cocoa_view_ performSelector:@selector(closeTabAfterEvent)
+                    withObject:nil
+                    afterDelay:0.0];
 }
 
 void WebContentsViewMac::CloseTab() {
@@ -406,7 +479,7 @@ void WebContentsViewMac::CloseTab() {
   [dragDest_ setCurrentOperation:operation];
 }
 
-- (WebDropData*)dropData {
+- (DropData*)dropData {
   return [dragDest_ currentDropData];
 }
 
@@ -448,7 +521,7 @@ void WebContentsViewMac::CloseTab() {
                              forType:type];
 }
 
-- (void)startDragWithDropData:(const WebDropData&)dropData
+- (void)startDragWithDropData:(const DropData&)dropData
             dragOperationMask:(NSDragOperation)operationMask
                         image:(NSImage*)image
                        offset:(NSPoint)offset {
@@ -468,7 +541,7 @@ void WebContentsViewMac::CloseTab() {
 // Returns what kind of drag operations are available. This is a required
 // method for NSDraggingSource.
 - (NSDragOperation)draggingSourceOperationMaskForLocal:(BOOL)isLocal {
-  if (dragSource_.get())
+  if (dragSource_)
     return [dragSource_ draggingSourceOperationMaskForLocal:isLocal];
   // No web drag source - this is the case for dragging a file from the
   // downloads manager. Default to copy operation. Note: It is desirable to
@@ -489,19 +562,18 @@ void WebContentsViewMac::CloseTab() {
 
 // Called when a drag initiated in our view moves.
 - (void)draggedImage:(NSImage*)draggedImage movedTo:(NSPoint)screenPoint {
-  [dragSource_ moveDragTo:screenPoint];
 }
 
-// Called when we're informed where a file should be dropped.
+// Called when a file drag is dropped and the promised files need to be written.
 - (NSArray*)namesOfPromisedFilesDroppedAtDestination:(NSURL*)dropDest {
   if (![dropDest isFileURL])
     return nil;
 
-  NSString* file_name = [dragSource_ dragPromisedFileTo:[dropDest path]];
-  if (!file_name)
+  NSString* fileName = [dragSource_ dragPromisedFileTo:[dropDest path]];
+  if (!fileName)
     return nil;
 
-  return [NSArray arrayWithObject:file_name];
+  return @[ fileName ];
 }
 
 // NSDraggingDestination methods
@@ -551,6 +623,15 @@ void WebContentsViewMac::CloseTab() {
 
   [self webContents]->
       FocusThroughTabTraversal(direction == NSSelectingPrevious);
+}
+
+// When the subviews require a layout, their size should be reset to the size
+// of this view. (It is possible for the size to get out of sync as an
+// optimization in preparation for an upcoming WebContentsView resize.
+// http://crbug.com/264207)
+- (void)resizeSubviewsWithOldSize:(NSSize)oldBoundsSize {
+  for (NSView* subview in self.subviews)
+    [subview setFrame:self.bounds];
 }
 
 @end

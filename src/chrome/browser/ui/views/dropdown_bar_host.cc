@@ -10,29 +10,14 @@
 #include "chrome/browser/ui/views/dropdown_bar_host_delegate.h"
 #include "chrome/browser/ui/views/dropdown_bar_view.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
-#include "ui/base/animation/slide_animation.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/keycodes/keyboard_codes.h"
+#include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/path.h"
+#include "ui/gfx/scoped_sk_region.h"
 #include "ui/gfx/scrollbar_size.h"
 #include "ui/views/focus/external_focus_tracker.h"
 #include "ui/views/focus/view_storage.h"
 #include "ui/views/widget/widget.h"
-
-#if defined(USE_AURA)
-#include "ui/gfx/scoped_sk_region.h"
-#elif defined(OS_WIN)
-#include "base/win/scoped_gdi_object.h"
-#endif
-
-namespace {
-
-#if defined(USE_AURA)
-typedef gfx::ScopedSkRegion ScopedPlatformRegion;
-#elif defined(OS_WIN)
-typedef base::win::ScopedRegion ScopedPlatformRegion;
-#endif
-
-}  // namespace
 
 using gfx::Path;
 
@@ -52,7 +37,8 @@ DropdownBarHost::DropdownBarHost(BrowserView* browser_view)
       is_visible_(false) {
 }
 
-void DropdownBarHost::Init(views::View* view,
+void DropdownBarHost::Init(views::View* host_view,
+                           views::View* view,
                            DropdownBarHostDelegate* delegate) {
   DCHECK(view);
   DCHECK(delegate);
@@ -65,11 +51,11 @@ void DropdownBarHost::Init(views::View* view,
   views::Widget::InitParams params(views::Widget::InitParams::TYPE_CONTROL);
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.parent = browser_view_->GetWidget()->GetNativeView();
-#if defined(USE_AURA)
-  params.transparent = true;
-#endif
+  params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   host_->Init(params);
   host_->SetContentsView(view_);
+
+  SetHostViewNative(host_view);
 
   // Start listening to focus changes, so we can register and unregister our
   // own handler for Escape.
@@ -83,7 +69,7 @@ void DropdownBarHost::Init(views::View* view,
   }
 
   // Start the process of animating the opening of the widget.
-  animation_.reset(new ui::SlideAnimation(this));
+  animation_.reset(new gfx::SlideAnimation(this));
 }
 
 DropdownBarHost::~DropdownBarHost() {
@@ -96,18 +82,19 @@ void DropdownBarHost::Show(bool animate) {
   // restore focus when the dropdown widget is closed.
   focus_tracker_.reset(new views::ExternalFocusTracker(view_, focus_manager_));
 
+  bool was_visible = is_visible_;
+  is_visible_ = true;
   if (!animate || disable_animations_during_testing_) {
-    is_visible_ = true;
     animation_->Reset(1);
     AnimationProgressed(animation_.get());
-  } else {
-    if (!is_visible_) {
-      // Don't re-start the animation.
-      is_visible_ = true;
-      animation_->Reset();
-      animation_->Show();
-    }
+  } else if (!was_visible) {
+    // Don't re-start the animation.
+    animation_->Reset();
+    animation_->Show();
   }
+
+  if (!was_visible)
+    OnVisibilityChanged();
 }
 
 void DropdownBarHost::SetFocusAndSelection() {
@@ -179,9 +166,9 @@ void DropdownBarHost::OnDidChangeFocus(views::View* focused_before,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// DropdownBarHost, ui::AnimationDelegate implementation:
+// DropdownBarHost, gfx::AnimationDelegate implementation:
 
-void DropdownBarHost::AnimationProgressed(const ui::Animation* animation) {
+void DropdownBarHost::AnimationProgressed(const gfx::Animation* animation) {
   // First, we calculate how many pixels to slide the widget.
   gfx::Size pref_size = view_->GetPreferredSize();
   animation_offset_ = static_cast<int>((1.0 - animation_->GetCurrentValue()) *
@@ -198,7 +185,7 @@ void DropdownBarHost::AnimationProgressed(const ui::Animation* animation) {
   view_->SchedulePaint();
 }
 
-void DropdownBarHost::AnimationEnded(const ui::Animation* animation) {
+void DropdownBarHost::AnimationEnded(const gfx::Animation* animation) {
   // Place the dropdown widget in its fully opened state.
   animation_offset_ = 0;
 
@@ -206,6 +193,7 @@ void DropdownBarHost::AnimationEnded(const ui::Animation* animation) {
     // Animation has finished closing.
     host_->Hide();
     is_visible_ = false;
+    OnVisibilityChanged();
   } else {
     // Animation has finished opening.
   }
@@ -216,6 +204,9 @@ void DropdownBarHost::AnimationEnded(const ui::Animation* animation) {
 
 void DropdownBarHost::ResetFocusTracker() {
   focus_tracker_.reset(NULL);
+}
+
+void DropdownBarHost::OnVisibilityChanged() {
 }
 
 void DropdownBarHost::GetWidgetBounds(gfx::Rect* bounds) {
@@ -252,7 +243,7 @@ void DropdownBarHost::UpdateWindowEdges(const gfx::Rect& new_pos) {
   // We then create the polygon and use SetWindowRgn to force the window to draw
   // only within that area. This region may get reduced in size below.
   Path path(polygon, arraysize(polygon));
-  ScopedPlatformRegion region(path.CreateNativeRegion());
+  gfx::ScopedSkRegion region(path.CreateNativeRegion());
   // Are we animating?
   if (animation_offset() > 0) {
     // The animation happens in two steps: First, we clip the window and then in
@@ -270,7 +261,7 @@ void DropdownBarHost::UpdateWindowEdges(const gfx::Rect& new_pos) {
     SkRect animation_rect = { SkIntToScalar(0), SkIntToScalar(y),
                               SkIntToScalar(max_x), SkIntToScalar(max_y) };
     animation_path.addRect(animation_rect);
-    ScopedPlatformRegion animation_region(
+    gfx::ScopedSkRegion animation_region(
         animation_path.CreateNativeRegion());
     region.Set(Path::IntersectRegions(animation_region.Get(), region.Get()));
 
@@ -286,7 +277,7 @@ void DropdownBarHost::UpdateWindowEdges(const gfx::Rect& new_pos) {
 
     // Combine the region for the curve on the left with our main region.
     Path left_path(left_curve, arraysize(left_curve));
-    ScopedPlatformRegion r(left_path.CreateNativeRegion());
+    gfx::ScopedSkRegion r(left_path.CreateNativeRegion());
     region.Set(Path::CombineRegions(r.Get(), region.Get()));
 
     // Combine the region for the curve on the right with our main region.
@@ -324,7 +315,7 @@ void DropdownBarHost::UpdateWindowEdges(const gfx::Rect& new_pos) {
 
     // Subtract this region from the original region.
     gfx::Path exclude_path(exclude, arraysize(exclude));
-    ScopedPlatformRegion exclude_region(exclude_path.CreateNativeRegion());
+    gfx::ScopedSkRegion exclude_region(exclude_path.CreateNativeRegion());
     region.Set(Path::SubtractRegion(region.Get(), exclude_region.Get()));
   }
 

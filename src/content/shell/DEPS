@@ -20,6 +20,11 @@ include_rules = [
   "+ui/aura",
   "+ui/views",
 
-  # For WebTestRunner library
-  "+third_party/WebKit/Tools/DumpRenderTree/chromium/TestRunner/public",
+  "+components/breakpad",
 ]
+
+specific_include_rules = {
+  "shell_views\.cc": [
+    "+ui/wm/test"
+  ],
+}

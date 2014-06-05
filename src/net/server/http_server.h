@@ -9,14 +9,15 @@
 #include <map>
 
 #include "base/basictypes.h"
-#include "base/memory/ref_counted.h"
-#include "net/base/stream_listen_socket.h"
+#include "base/memory/scoped_ptr.h"
 #include "net/http/http_status_code.h"
+#include "net/socket/stream_listen_socket.h"
 
 namespace net {
 
 class HttpConnection;
 class HttpServerRequestInfo;
+class HttpServerResponseInfo;
 class IPEndPoint;
 class WebSocket;
 
@@ -46,6 +47,11 @@ class HttpServer : public StreamListenSocket::Delegate,
   void AcceptWebSocket(int connection_id,
                        const HttpServerRequestInfo& request);
   void SendOverWebSocket(int connection_id, const std::string& data);
+  // Sends the provided data directly to the given connection. No validation is
+  // performed that data constitutes a valid HTTP response. A valid HTTP
+  // response may be split across multiple calls to SendRaw.
+  void SendRaw(int connection_id, const std::string& data);
+  void SendResponse(int connection_id, const HttpServerResponseInfo& response);
   void Send(int connection_id,
             HttpStatusCode status_code,
             const std::string& data,
@@ -63,7 +69,7 @@ class HttpServer : public StreamListenSocket::Delegate,
 
   // ListenSocketDelegate
   virtual void DidAccept(StreamListenSocket* server,
-                         StreamListenSocket* socket) OVERRIDE;
+                         scoped_ptr<StreamListenSocket> socket) OVERRIDE;
   virtual void DidRead(StreamListenSocket* socket,
                        const char* data,
                        int len) OVERRIDE;
@@ -87,7 +93,7 @@ class HttpServer : public StreamListenSocket::Delegate,
   HttpConnection* FindConnection(StreamListenSocket* socket);
 
   HttpServer::Delegate* delegate_;
-  scoped_refptr<StreamListenSocket> server_;
+  scoped_ptr<StreamListenSocket> server_;
   typedef std::map<int, HttpConnection*> IdToConnectionMap;
   IdToConnectionMap id_to_connection_;
   typedef std::map<StreamListenSocket*, HttpConnection*> SocketToConnectionMap;

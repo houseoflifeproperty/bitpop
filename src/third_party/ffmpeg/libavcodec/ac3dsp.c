@@ -214,7 +214,7 @@ static void ac3_sum_square_butterfly_float_c(float sum[4],
     }
 }
 
-static void ac3_downmix_c(float (*samples)[256], float (*matrix)[2],
+static void ac3_downmix_c(float **samples, float (*matrix)[2],
                           int out_ch, int in_ch, int len)
 {
     int i, j;
@@ -239,6 +239,19 @@ static void ac3_downmix_c(float (*samples)[256], float (*matrix)[2],
     }
 }
 
+static void apply_window_int16_c(int16_t *output, const int16_t *input,
+                                 const int16_t *window, unsigned int len)
+{
+    int i;
+    int len2 = len >> 1;
+
+    for (i = 0; i < len2; i++) {
+        int16_t w       = window[i];
+        output[i]       = (MUL16(input[i],       w) + (1 << 14)) >> 15;
+        output[len-i-1] = (MUL16(input[len-i-1], w) + (1 << 14)) >> 15;
+    }
+}
+
 av_cold void ff_ac3dsp_init(AC3DSPContext *c, int bit_exact)
 {
     c->ac3_exponent_min = ac3_exponent_min_c;
@@ -253,9 +266,12 @@ av_cold void ff_ac3dsp_init(AC3DSPContext *c, int bit_exact)
     c->sum_square_butterfly_int32 = ac3_sum_square_butterfly_int32_c;
     c->sum_square_butterfly_float = ac3_sum_square_butterfly_float_c;
     c->downmix = ac3_downmix_c;
+    c->apply_window_int16 = apply_window_int16_c;
 
     if (ARCH_ARM)
         ff_ac3dsp_init_arm(c, bit_exact);
-    if (HAVE_MMX)
+    if (ARCH_X86)
         ff_ac3dsp_init_x86(c, bit_exact);
+    if (ARCH_MIPS)
+        ff_ac3dsp_init_mips(c, bit_exact);
 }

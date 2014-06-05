@@ -8,18 +8,103 @@
 #include "base/metrics/histogram.h"
 #include "base/values.h"
 #include "net/base/ip_endpoint.h"
+#include "net/base/ip_pattern.h"
 
 namespace net {
+
+NameServerClassifier::NameServerClassifier() {
+  // Google Public DNS addresses from:
+  // https://developers.google.com/speed/public-dns/docs/using
+  AddRule("8.8.8.8", NAME_SERVERS_TYPE_GOOGLE_PUBLIC_DNS);
+  AddRule("8.8.4.4", NAME_SERVERS_TYPE_GOOGLE_PUBLIC_DNS);
+  AddRule("2001:4860:4860:0:0:0:0:8888", NAME_SERVERS_TYPE_GOOGLE_PUBLIC_DNS),
+  AddRule("2001:4860:4860:0:0:0:0:8844", NAME_SERVERS_TYPE_GOOGLE_PUBLIC_DNS),
+
+  // Count localhost as private, since we don't know what upstream it uses:
+  AddRule("127.*.*.*", NAME_SERVERS_TYPE_PRIVATE);
+  AddRule("0:0:0:0:0:0:0:1", NAME_SERVERS_TYPE_PRIVATE);
+
+  // RFC 1918 private addresses:
+  AddRule("10.*.*.*", NAME_SERVERS_TYPE_PRIVATE);
+  AddRule("172.[16-31].*.*", NAME_SERVERS_TYPE_PRIVATE);
+  AddRule("192.168.*.*", NAME_SERVERS_TYPE_PRIVATE);
+
+  // IPv4 link-local addresses:
+  AddRule("169.254.*.*", NAME_SERVERS_TYPE_PRIVATE);
+
+  // IPv6 link-local addresses:
+  AddRule("fe80:*:*:*:*:*:*:*", NAME_SERVERS_TYPE_PRIVATE);
+
+  // Anything else counts as public:
+  AddRule("*.*.*.*", NAME_SERVERS_TYPE_PUBLIC);
+  AddRule("*:*:*:*:*:*:*:*", NAME_SERVERS_TYPE_PUBLIC);
+}
+
+NameServerClassifier::~NameServerClassifier() {}
+
+NameServerClassifier::NameServersType NameServerClassifier::GetNameServersType(
+    const std::vector<IPEndPoint>& nameservers) const {
+  NameServersType type = NAME_SERVERS_TYPE_NONE;
+  for (std::vector<IPEndPoint>::const_iterator it = nameservers.begin();
+       it != nameservers.end();
+       ++it) {
+    type = MergeNameServersTypes(type, GetNameServerType(it->address()));
+  }
+  return type;
+}
+
+struct NameServerClassifier::NameServerTypeRule {
+  NameServerTypeRule(const char* pattern_string, NameServersType type)
+      : type(type) {
+    bool parsed = pattern.ParsePattern(pattern_string);
+    DCHECK(parsed);
+  }
+
+  IPPattern pattern;
+  NameServersType type;
+};
+
+void NameServerClassifier::AddRule(const char* pattern_string,
+                                   NameServersType address_type) {
+  rules_.push_back(new NameServerTypeRule(pattern_string, address_type));
+}
+
+NameServerClassifier::NameServersType NameServerClassifier::GetNameServerType(
+    const IPAddressNumber& address) const {
+  for (ScopedVector<NameServerTypeRule>::const_iterator it = rules_.begin();
+       it != rules_.end();
+       ++it) {
+    if ((*it)->pattern.Match(address))
+      return (*it)->type;
+  }
+  NOTREACHED();
+  return NAME_SERVERS_TYPE_NONE;
+}
+
+NameServerClassifier::NameServersType
+NameServerClassifier::MergeNameServersTypes(NameServersType a,
+                                            NameServersType b) {
+  if (a == NAME_SERVERS_TYPE_NONE)
+    return b;
+  if (b == NAME_SERVERS_TYPE_NONE)
+    return a;
+  if (a == b)
+    return a;
+  return NAME_SERVERS_TYPE_MIXED;
+}
 
 // Default values are taken from glibc resolv.h except timeout which is set to
 // |kDnsTimeoutSeconds|.
 DnsConfig::DnsConfig()
-    : append_to_multi_label_name(true),
+    : unhandled_options(false),
+      append_to_multi_label_name(true),
+      randomize_ports(false),
       ndots(1),
       timeout(base::TimeDelta::FromSeconds(kDnsTimeoutSeconds)),
       attempts(2),
       rotate(false),
-      edns0(false) {}
+      edns0(false),
+      use_local_ipv6(false) {}
 
 DnsConfig::~DnsConfig() {}
 
@@ -30,44 +115,50 @@ bool DnsConfig::Equals(const DnsConfig& d) const {
 bool DnsConfig::EqualsIgnoreHosts(const DnsConfig& d) const {
   return (nameservers == d.nameservers) &&
          (search == d.search) &&
+         (unhandled_options == d.unhandled_options) &&
          (append_to_multi_label_name == d.append_to_multi_label_name) &&
          (ndots == d.ndots) &&
          (timeout == d.timeout) &&
          (attempts == d.attempts) &&
          (rotate == d.rotate) &&
-         (edns0 == d.edns0);
+         (edns0 == d.edns0) &&
+         (use_local_ipv6 == d.use_local_ipv6);
 }
 
 void DnsConfig::CopyIgnoreHosts(const DnsConfig& d) {
   nameservers = d.nameservers;
   search = d.search;
+  unhandled_options = d.unhandled_options;
   append_to_multi_label_name = d.append_to_multi_label_name;
   ndots = d.ndots;
   timeout = d.timeout;
   attempts = d.attempts;
   rotate = d.rotate;
   edns0 = d.edns0;
+  use_local_ipv6 = d.use_local_ipv6;
 }
 
 base::Value* DnsConfig::ToValue() const {
-  DictionaryValue* dict = new DictionaryValue();
+  base::DictionaryValue* dict = new base::DictionaryValue();
 
-  ListValue* list = new ListValue();
+  base::ListValue* list = new base::ListValue();
   for (size_t i = 0; i < nameservers.size(); ++i)
-    list->Append(Value::CreateStringValue(nameservers[i].ToString()));
+    list->Append(new base::StringValue(nameservers[i].ToString()));
   dict->Set("nameservers", list);
 
-  list = new ListValue();
+  list = new base::ListValue();
   for (size_t i = 0; i < search.size(); ++i)
-    list->Append(Value::CreateStringValue(search[i]));
+    list->Append(new base::StringValue(search[i]));
   dict->Set("search", list);
 
+  dict->SetBoolean("unhandled_options", unhandled_options);
   dict->SetBoolean("append_to_multi_label_name", append_to_multi_label_name);
   dict->SetInteger("ndots", ndots);
   dict->SetDouble("timeout", timeout.InSecondsF());
   dict->SetInteger("attempts", attempts);
   dict->SetBoolean("rotate", rotate);
   dict->SetBoolean("edns0", edns0);
+  dict->SetBoolean("use_local_ipv6", use_local_ipv6);
   dict->SetInteger("num_hosts", hosts.size());
 
   return dict;
@@ -144,6 +235,10 @@ void DnsConfigService::OnConfigRead(const DnsConfig& config) {
                              base::TimeTicks::Now() - last_sent_empty_time_);
   }
   UMA_HISTOGRAM_BOOLEAN("AsyncDNS.ConfigChange", changed);
+  UMA_HISTOGRAM_ENUMERATION(
+      "AsyncDNS.NameServersType",
+      classifier_.GetNameServersType(dns_config_.nameservers),
+      NameServerClassifier::NAME_SERVERS_TYPE_MAX_VALUE);
 
   have_config_ = true;
   if (have_hosts_ || watch_failed_)
@@ -184,10 +279,10 @@ void DnsConfigService::StartTimer() {
   // unnecessary Job aborts in HostResolverImpl. The signals come from multiple
   // sources so it might receive multiple events during a config change.
 
-  // DHCP and user-induced changes are on the order of seconds, so 100ms should
+  // DHCP and user-induced changes are on the order of seconds, so 150ms should
   // not add perceivable delay. On the other hand, config readers should finish
-  // within 100ms with the rare exception of I/O block or extra large HOSTS.
-  const base::TimeDelta kTimeout = base::TimeDelta::FromMilliseconds(100);
+  // within 150ms with the rare exception of I/O block or extra large HOSTS.
+  const base::TimeDelta kTimeout = base::TimeDelta::FromMilliseconds(150);
 
   timer_.Start(FROM_HERE,
                kTimeout,

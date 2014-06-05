@@ -9,6 +9,7 @@ import shutil
 import sys
 import tempfile
 import time
+import urlparse
 
 import browserprocess
 
@@ -105,7 +106,7 @@ class BrowserLauncher(object):
   def CreateProfile(self):
     raise NotImplementedError
 
-  def MakeCmd(self, url):
+  def MakeCmd(self, url, host, port):
     raise NotImplementedError
 
   def CreateToolLogDir(self):
@@ -188,8 +189,6 @@ class BrowserLauncher(object):
       env['NACL_SEL_LDR_BOOTSTRAP'] = self.options.sel_ldr_bootstrap
     if self.options.irt_library:
       env['NACL_IRT_LIBRARY'] = self.options.irt_library
-    if self.options.prefer_portable_in_manifest:
-      env['NACL_PREFER_PORTABLE_IN_MANIFEST'] = '1'
     self.SetStandardStream(env, 'NACL_EXE_STDIN',
                            self.options.nacl_exe_stdin, False)
     self.SetStandardStream(env, 'NACL_EXE_STDOUT',
@@ -207,12 +206,12 @@ class BrowserLauncher(object):
   def GetReturnCode(self):
     return self.browser_process.GetReturnCode()
 
-  def Run(self, url, port):
+  def Run(self, url, host, port):
     self.binary = EscapeSpaces(self.FindBinary())
     self.profile = self.CreateProfile()
     if self.options.tool is not None:
       self.tool_log_dir = self.CreateToolLogDir()
-    cmd = self.MakeCmd(url, port)
+    cmd = self.MakeCmd(url, host, port)
     self.Launch(cmd, MakeEnv(self.options))
 
 
@@ -264,15 +263,28 @@ class ChromeLauncher(BrowserLauncher):
   def NetLogName(self):
     return os.path.join(self.profile, 'netlog.json')
 
-  def MakeCmd(self, url, port):
+  def MakeCmd(self, url, host, port):
     cmd = [self.binary,
+            # --enable-logging enables stderr output from Chromium subprocesses
+            # on Windows (see
+            # https://code.google.com/p/chromium/issues/detail?id=171836)
+            '--enable-logging',
             '--disable-web-resources',
             '--disable-preconnect',
+            # This is speculative, sync should not occur with a clean profile.
+            '--disable-sync',
+            # This prevents Chrome from making "hidden" network requests at
+            # startup.  These requests could be a source of non-determinism,
+            # and they also add noise to the netlogs.
+            '--dns-prefetch-disable',
             '--no-first-run',
             '--no-default-browser-check',
-            '--enable-logging',
             '--log-level=1',
             '--safebrowsing-disable-auto-update',
+            '--disable-default-apps',
+            # Suppress metrics reporting.  This prevents misconfigured bots,
+            # people testing at their desktop, etc from poisoning the UMA data.
+            '--metrics-recording-only',
             # Chrome explicitly blacklists some ports as "unsafe" because
             # certain protocols use them.  Chrome gives an error like this:
             # Error 312 (net::ERR_UNSAFE_PORT): Unknown error
@@ -283,6 +295,10 @@ class ChromeLauncher(BrowserLauncher):
             '--user-data-dir=%s' % self.profile]
     # Log network requests to assist debugging.
     cmd.append('--log-net-log=%s' % self.NetLogName())
+    if PLATFORM == 'linux':
+      # Explicitly run with mesa on linux. The test infrastructure doesn't have
+      # sufficient native GL contextes to run these tests.
+      cmd.append('--use-gl=osmesa')
     if self.options.ppapi_plugin is None:
       cmd.append('--enable-nacl')
       disable_sandbox = False
@@ -293,13 +309,16 @@ class ChromeLauncher(BrowserLauncher):
       if disable_sandbox:
         cmd.append('--no-sandbox')
     else:
-      cmd.append('--register-pepper-plugins=%s;application/x-nacl'
-                 % self.options.ppapi_plugin)
+      cmd.append('--register-pepper-plugins=%s;%s'
+                 % (self.options.ppapi_plugin,
+                    self.options.ppapi_plugin_mimetype))
       cmd.append('--no-sandbox')
     if self.options.browser_extensions:
       cmd.append('--load-extension=%s' %
                  ','.join(self.options.browser_extensions))
       cmd.append('--enable-experimental-extension-apis')
+    if self.options.enable_crash_reporter:
+      cmd.append('--enable-crash-reporter-for-testing')
     if self.options.tool == 'memcheck':
       cmd = ['src/third_party/valgrind/memcheck.sh',
              '-v',
@@ -324,6 +343,8 @@ class ChromeLauncher(BrowserLauncher):
              '--log-file=%s/log.%%p' % (self.tool_log_dir,)] + cmd
     elif self.options.tool != None:
       raise LaunchFailure('Invalid tool name "%s"' % (self.options.tool,))
+    if self.options.enable_sockets:
+      cmd.append('--allow-nacl-socket-api=%s' % host)
     cmd.extend(self.options.browser_flags)
     cmd.append(url)
     return cmd

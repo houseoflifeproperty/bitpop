@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef EXTENSIONS_COMMMON_URL_PATTERN_SET_H_
-#define EXTENSIONS_COMMMON_URL_PATTERN_SET_H_
+#ifndef EXTENSIONS_COMMON_URL_PATTERN_SET_H_
+#define EXTENSIONS_COMMON_URL_PATTERN_SET_H_
 
 #include <set>
 
@@ -68,8 +68,12 @@ class URLPatternSet {
 
   void ClearPatterns();
 
-  // Returns true if the permission |set| is a subset of this.
+  // Returns true if every URL that matches |set| is matched by this. In other
+  // words, if every pattern in |set| is encompassed by a pattern in this.
   bool Contains(const URLPatternSet& set) const;
+
+  // Returns true if any pattern in this set encompasses |pattern|.
+  bool ContainsPattern(const URLPattern& pattern) const;
 
   // Test if the extent contains a URL.
   bool MatchesURL(const GURL& url) const;
@@ -98,4 +102,4 @@ class URLPatternSet {
 
 }  // namespace extensions
 
-#endif  // EXTENSIONS_COMMMON_URL_PATTERN_SET_H_
+#endif  // EXTENSIONS_COMMON_URL_PATTERN_SET_H_

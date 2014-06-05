@@ -11,13 +11,11 @@
 
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
-
 #include "printing/backend/print_backend.h"
-
-class FilePath;
 
 namespace base {
 class DictionaryValue;
+class FilePath;
 }
 
 namespace printing {
@@ -34,7 +32,8 @@ enum PrintJobStatus {
   PRINT_JOB_STATUS_INVALID,
   PRINT_JOB_STATUS_IN_PROGRESS,
   PRINT_JOB_STATUS_ERROR,
-  PRINT_JOB_STATUS_COMPLETED
+  PRINT_JOB_STATUS_COMPLETED,
+  PRINT_JOB_STATUS_MAX,
 };
 
 struct PrintJobDetails {
@@ -131,7 +130,8 @@ class PrintSystem : public base::RefCountedThreadSafe<PrintSystem> {
     // time. Subsequent calls to Spool (before the Delegate::OnJobSpoolSucceeded
     // or Delegate::OnJobSpoolFailed methods are called) can fail.
     virtual bool Spool(const std::string& print_ticket,
-                       const FilePath& print_data_file_path,
+                       const std::string& print_ticket_mime_type,
+                       const base::FilePath& print_data_file_path,
                        const std::string& print_data_mime_type,
                        const std::string& printer_name,
                        const std::string& job_title,
@@ -178,8 +178,10 @@ class PrintSystem : public base::RefCountedThreadSafe<PrintSystem> {
   virtual bool IsValidPrinter(const std::string& printer_name) = 0;
 
   // Returns true if ticket is valid.
-  virtual bool ValidatePrintTicket(const std::string& printer_name,
-                                   const std::string& print_ticket_data) = 0;
+  virtual bool ValidatePrintTicket(
+      const std::string& printer_name,
+      const std::string& print_ticket_data,
+      const std::string& print_ticket_mime_type) = 0;
 
   // Get details for already spooled job.
   virtual bool GetJobDetails(const std::string& printer_name,
@@ -192,6 +194,10 @@ class PrintSystem : public base::RefCountedThreadSafe<PrintSystem> {
   virtual PrinterWatcher* CreatePrinterWatcher(
       const std::string& printer_name) = 0;
   virtual JobSpooler* CreateJobSpooler() = 0;
+
+  // Returns a true if connector should use CDD for capabilities and CJT as
+  // print ticket.
+  virtual bool UseCddAndCjt() = 0;
 
   // Returns a comma separated list of mimetypes for print data that are
   // supported by this print system. The format of this string is the same as
@@ -211,15 +217,6 @@ class PrintSystem : public base::RefCountedThreadSafe<PrintSystem> {
   friend class base::RefCountedThreadSafe<PrintSystem>;
   virtual ~PrintSystem();
 };
-
-
-// This typedef is to workaround the issue with certain versions of
-// Visual Studio where it gets confused between multiple Delegate
-// classes and gives a C2500 error. (I saw this error on the try bots -
-// the workaround was not needed for my machine).
-typedef PrintSystem::PrintServerWatcher::Delegate PrintServerWatcherDelegate;
-typedef PrintSystem::PrinterWatcher::Delegate PrinterWatcherDelegate;
-typedef PrintSystem::JobSpooler::Delegate JobSpoolerDelegate;
 
 }  // namespace cloud_print
 

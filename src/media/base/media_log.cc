@@ -50,12 +50,14 @@ const char* MediaLog::EventTypeToString(MediaLogEvent::Type type) {
       return "AUDIO_ENDED";
     case MediaLogEvent::VIDEO_ENDED:
       return "VIDEO_ENDED";
-    case MediaLogEvent::AUDIO_RENDERER_DISABLED:
-      return "AUDIO_RENDERER_DISABLED";
+    case MediaLogEvent::TEXT_ENDED:
+      return "TEXT_ENDED";
     case MediaLogEvent::BUFFERED_EXTENTS_CHANGED:
       return "BUFFERED_EXTENTS_CHANGED";
     case MediaLogEvent::MEDIA_SOURCE_ERROR:
       return "MEDIA_SOURCE_ERROR";
+    case MediaLogEvent::PROPERTY_CHANGE:
+      return "PROPERTY_CHANGE";
   }
   NOTREACHED();
   return NULL;
@@ -93,8 +95,6 @@ const char* MediaLog::PipelineStatusToString(PipelineStatus status) {
       return "demuxer: no supported streams";
     case DECODER_ERROR_NOT_SUPPORTED:
       return "decoder: not supported";
-    case PIPELINE_STATUS_MAX:
-      NOTREACHED();
   }
   NOTREACHED();
   return NULL;
@@ -118,7 +118,7 @@ scoped_ptr<MediaLogEvent> MediaLog::CreateEvent(MediaLogEvent::Type type) {
   scoped_ptr<MediaLogEvent> event(new MediaLogEvent);
   event->id = id_;
   event->type = type;
-  event->time = base::Time::Now();
+  event->time = base::TimeTicks::Now();
   return event.Pass();
 }
 
@@ -139,7 +139,10 @@ scoped_ptr<MediaLogEvent> MediaLog::CreateStringEvent(
 scoped_ptr<MediaLogEvent> MediaLog::CreateTimeEvent(
     MediaLogEvent::Type type, const char* property, base::TimeDelta value) {
   scoped_ptr<MediaLogEvent> event(CreateEvent(type));
-  event->params.SetDouble(property, value.InSecondsF());
+  if (value.is_max())
+    event->params.SetString(property, "unknown");
+  else
+    event->params.SetDouble(property, value.InSecondsF());
   return event.Pass();
 }
 
@@ -179,12 +182,14 @@ scoped_ptr<MediaLogEvent> MediaLog::CreateVideoSizeSetEvent(
 }
 
 scoped_ptr<MediaLogEvent> MediaLog::CreateBufferedExtentsChangedEvent(
-    size_t start, size_t current, size_t end) {
+    int64 start, int64 current, int64 end) {
   scoped_ptr<MediaLogEvent> event(
       CreateEvent(MediaLogEvent::BUFFERED_EXTENTS_CHANGED));
-  event->params.SetInteger("buffer_start", start);
-  event->params.SetInteger("buffer_current", current);
-  event->params.SetInteger("buffer_end", end);
+  // These values are headed to JS where there is no int64 so we use a double
+  // and accept loss of precision above 2^53 bytes (8 Exabytes).
+  event->params.SetDouble("buffer_start", start);
+  event->params.SetDouble("buffer_current", current);
+  event->params.SetDouble("buffer_end", end);
   return event.Pass();
 }
 
@@ -194,6 +199,44 @@ scoped_ptr<MediaLogEvent> MediaLog::CreateMediaSourceErrorEvent(
       CreateEvent(MediaLogEvent::MEDIA_SOURCE_ERROR));
   event->params.SetString("error", error);
   return event.Pass();
+}
+
+void MediaLog::SetStringProperty(
+    const char* key, const std::string& value) {
+  scoped_ptr<MediaLogEvent> event(CreateEvent(MediaLogEvent::PROPERTY_CHANGE));
+  event->params.SetString(key, value);
+  AddEvent(event.Pass());
+}
+
+void MediaLog::SetIntegerProperty(
+    const char* key, int value) {
+  scoped_ptr<MediaLogEvent> event(CreateEvent(MediaLogEvent::PROPERTY_CHANGE));
+  event->params.SetInteger(key, value);
+  AddEvent(event.Pass());
+}
+
+void MediaLog::SetDoubleProperty(
+    const char* key, double value) {
+  scoped_ptr<MediaLogEvent> event(CreateEvent(MediaLogEvent::PROPERTY_CHANGE));
+  event->params.SetDouble(key, value);
+  AddEvent(event.Pass());
+}
+
+void MediaLog::SetBooleanProperty(
+    const char* key, bool value) {
+  scoped_ptr<MediaLogEvent> event(CreateEvent(MediaLogEvent::PROPERTY_CHANGE));
+  event->params.SetBoolean(key, value);
+  AddEvent(event.Pass());
+}
+
+void MediaLog::SetTimeProperty(
+    const char* key, base::TimeDelta value) {
+  scoped_ptr<MediaLogEvent> event(CreateEvent(MediaLogEvent::PROPERTY_CHANGE));
+  if (value.is_max())
+    event->params.SetString(key, "unknown");
+  else
+    event->params.SetDouble(key, value.InSecondsF());
+  AddEvent(event.Pass());
 }
 
 }  //namespace media

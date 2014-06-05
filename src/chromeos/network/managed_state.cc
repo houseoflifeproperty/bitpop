@@ -7,24 +7,47 @@
 #include "base/logging.h"
 #include "base/values.h"
 #include "chromeos/network/device_state.h"
+#include "chromeos/network/favorite_state.h"
+#include "chromeos/network/network_event_log.h"
 #include "chromeos/network/network_state.h"
+#include "chromeos/network/shill_property_util.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
 namespace chromeos {
 
+bool ManagedState::Matches(const NetworkTypePattern& pattern) const {
+  return pattern.MatchesType(type());
+}
+
+// static
+std::string ManagedState::TypeToString(ManagedType type) {
+  switch (type) {
+    case MANAGED_TYPE_NETWORK:
+      return "Network";
+    case MANAGED_TYPE_FAVORITE:
+      return "Favorite";
+    case MANAGED_TYPE_DEVICE:
+      return "Device";
+  }
+  return "Unknown";
+}
+
 ManagedState::ManagedState(ManagedType type, const std::string& path)
     : managed_type_(type),
       path_(path),
-      is_observed_(false) {
+      update_received_(false),
+      update_requested_(false) {
 }
 
 ManagedState::~ManagedState() {
 }
 
 ManagedState* ManagedState::Create(ManagedType type, const std::string& path) {
-  switch(type) {
+  switch (type) {
     case MANAGED_TYPE_NETWORK:
       return new NetworkState(path);
+    case MANAGED_TYPE_FAVORITE:
+      return new FavoriteState(path);
     case MANAGED_TYPE_DEVICE:
       return new DeviceState(path);
   }
@@ -43,11 +66,27 @@ DeviceState* ManagedState::AsDeviceState() {
   return NULL;
 }
 
+FavoriteState* ManagedState::AsFavoriteState() {
+  if (managed_type() == MANAGED_TYPE_FAVORITE)
+    return static_cast<FavoriteState*>(this);
+  return NULL;
+}
+
+bool ManagedState::InitialPropertiesReceived(
+    const base::DictionaryValue& properties) {
+  return false;
+}
+
+void ManagedState::GetStateProperties(base::DictionaryValue* dictionary) const {
+  dictionary->SetStringWithoutPathExpansion(shill::kNameProperty, name());
+  dictionary->SetStringWithoutPathExpansion(shill::kTypeProperty, type());
+}
+
 bool ManagedState::ManagedStatePropertyChanged(const std::string& key,
                                                const base::Value& value) {
-  if (key == flimflam::kNameProperty) {
+  if (key == shill::kNameProperty) {
     return GetStringValue(key, value, &name_);
-  } else if (key == flimflam::kTypeProperty) {
+  } else if (key == shill::kTypeProperty) {
     return GetStringValue(key, value, &type_);
   }
   return false;
@@ -56,28 +95,62 @@ bool ManagedState::ManagedStatePropertyChanged(const std::string& key,
 bool ManagedState::GetBooleanValue(const std::string& key,
                                    const base::Value& value,
                                    bool* out_value) {
-  bool res = value.GetAsBoolean(out_value);
-  if (!res)
-    LOG(WARNING) << "Failed to parse boolean value for:" << key;
-  return res;
+  bool new_value;
+  if (!value.GetAsBoolean(&new_value)) {
+    NET_LOG_ERROR("Error parsing state value", path() + "." + key);
+    return false;
+  }
+  if (*out_value == new_value)
+    return false;
+  *out_value = new_value;
+  return true;
 }
 
 bool ManagedState::GetIntegerValue(const std::string& key,
                                    const base::Value& value,
                                    int* out_value) {
-  bool res = value.GetAsInteger(out_value);
-  if (!res)
-    LOG(WARNING) << "Failed to parse integer value for:" << key;
-  return res;
+  int new_value;
+  if (!value.GetAsInteger(&new_value)) {
+    NET_LOG_ERROR("Error parsing state value", path() + "." + key);
+    return false;
+  }
+  if (*out_value == new_value)
+    return false;
+  *out_value = new_value;
+  return true;
 }
 
 bool ManagedState::GetStringValue(const std::string& key,
                                   const base::Value& value,
                                   std::string* out_value) {
-  bool res = value.GetAsString(out_value);
-  if (!res)
-    LOG(WARNING) << "Failed to parse string value for:" << key;
-  return res;
+  std::string new_value;
+  if (!value.GetAsString(&new_value)) {
+    NET_LOG_ERROR("Error parsing state: " + key, path());
+    return false;
+  }
+  if (*out_value == new_value)
+    return false;
+  *out_value = new_value;
+  return true;
+}
+
+bool ManagedState::GetUInt32Value(const std::string& key,
+                                  const base::Value& value,
+                                  uint32* out_value) {
+  // base::Value restricts the number types to BOOL, INTEGER, and DOUBLE only.
+  // uint32 will automatically get converted to a double, which is why we try
+  // to obtain the value as a double (see dbus/values_util.h).
+  uint32 new_value;
+  double double_value;
+  if (!value.GetAsDouble(&double_value) || double_value < 0) {
+    NET_LOG_ERROR("Error parsing state value", path() + "." + key);
+    return false;
+  }
+  new_value = static_cast<uint32>(double_value);
+  if (*out_value == new_value)
+    return false;
+  *out_value = new_value;
+  return true;
 }
 
 }  // namespace chromeos

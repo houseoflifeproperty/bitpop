@@ -6,8 +6,7 @@
 
 #include <algorithm>
 
-#include "base/string_tokenizer.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "net/base/net_util.h"
 #include "net/http/http_util.h"
 
@@ -37,6 +36,8 @@ ProxyServer::Scheme GetSchemeFromPacTypeInternal(
     return ProxyServer::SCHEME_DIRECT;
   if (LowerCaseEqualsASCII(begin, end, "https"))
     return ProxyServer::SCHEME_HTTPS;
+  if (LowerCaseEqualsASCII(begin, end, "quic"))
+    return ProxyServer::SCHEME_QUIC;
 
   return ProxyServer::SCHEME_INVALID;
 }
@@ -58,6 +59,8 @@ ProxyServer::Scheme GetSchemeFromURIInternal(std::string::const_iterator begin,
     return ProxyServer::SCHEME_DIRECT;
   if (LowerCaseEqualsASCII(begin, end, "https"))
     return ProxyServer::SCHEME_HTTPS;
+  if (LowerCaseEqualsASCII(begin, end, "quic"))
+    return ProxyServer::SCHEME_QUIC;
   return ProxyServer::SCHEME_INVALID;
 }
 
@@ -132,6 +135,8 @@ std::string ProxyServer::ToURI() const {
       return std::string("socks5://") + host_port_pair().ToString();
     case SCHEME_HTTPS:
       return std::string("https://") + host_port_pair().ToString();
+    case SCHEME_QUIC:
+      return std::string("quic://") + host_port_pair().ToString();
     default:
       // Got called with an invalid scheme.
       NOTREACHED();
@@ -182,6 +187,8 @@ std::string ProxyServer::ToPacString() const {
       return std::string("SOCKS5 ") + host_port_pair().ToString();
     case SCHEME_HTTPS:
       return std::string("HTTPS ") + host_port_pair().ToString();
+    case SCHEME_QUIC:
+      return std::string("QUIC ") + host_port_pair().ToString();
     default:
       // Got called with an invalid scheme.
       NOTREACHED();
@@ -198,16 +205,40 @@ int ProxyServer::GetDefaultPortForScheme(Scheme scheme) {
     case SCHEME_SOCKS5:
       return 1080;
     case SCHEME_HTTPS:
+    case SCHEME_QUIC:
       return 443;
-    default:
-      return -1;
+    case SCHEME_INVALID:
+    case SCHEME_DIRECT:
+      break;
   }
+  return -1;
 }
 
 // static
 ProxyServer::Scheme ProxyServer::GetSchemeFromURI(const std::string& scheme) {
   return GetSchemeFromURIInternal(scheme.begin(), scheme.end());
 }
+
+// TODO(bengr): Use |scheme_| to indicate that this is the data reduction proxy.
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
+bool ProxyServer::isDataReductionProxy() const {
+    bool dev_host = false;
+#if defined (DATA_REDUCTION_DEV_HOST)
+    dev_host = host_port_pair_.Equals(
+        HostPortPair::FromURL(GURL(DATA_REDUCTION_DEV_HOST)));
+#endif
+  return dev_host || host_port_pair_.Equals(
+      HostPortPair::FromURL(GURL(SPDY_PROXY_AUTH_ORIGIN)));
+}
+
+bool ProxyServer::isDataReductionProxyFallback() const {
+#if defined(DATA_REDUCTION_FALLBACK_HOST)
+  return host_port_pair_.Equals(
+      HostPortPair::FromURL(GURL(DATA_REDUCTION_FALLBACK_HOST)));
+#endif  // defined(DATA_REDUCTION_FALLBACK_HOST)
+  return false;
+}
+#endif  // defined(SPDY_PROXY_AUTH_ORIGIN)
 
 // static
 ProxyServer ProxyServer::FromSchemeHostAndPort(

@@ -6,15 +6,23 @@
 
 #include "base/callback.h"
 #include "base/logging.h"
+#include "chrome/browser/profiles/profile.h"
+#include "content/public/browser/browser_context.h"
+#include "content/public/browser/storage_partition.h"
 
-MockBrowsingDataIndexedDBHelper::MockBrowsingDataIndexedDBHelper() {
+MockBrowsingDataIndexedDBHelper::MockBrowsingDataIndexedDBHelper(
+    Profile* profile)
+    : BrowsingDataIndexedDBHelper(
+        content::BrowserContext::GetDefaultStoragePartition(profile)->
+            GetIndexedDBContext()) {
 }
 
 MockBrowsingDataIndexedDBHelper::~MockBrowsingDataIndexedDBHelper() {
 }
 
 void MockBrowsingDataIndexedDBHelper::StartFetching(
-    const base::Callback<void(const std::list<IndexedDBInfo>&)>& callback) {
+    const base::Callback<void(const std::list<content::IndexedDBInfo>&)>&
+    callback) {
   callback_ = callback;
 }
 
@@ -27,13 +35,11 @@ void MockBrowsingDataIndexedDBHelper::DeleteIndexedDB(
 void MockBrowsingDataIndexedDBHelper::AddIndexedDBSamples() {
   const GURL kOrigin1("http://idbhost1:1/");
   const GURL kOrigin2("http://idbhost2:2/");
-  response_.push_back(
-      BrowsingDataIndexedDBHelper::IndexedDBInfo(
-          kOrigin1, 1, base::Time()));
+  content::IndexedDBInfo info1(kOrigin1, 1, base::Time(), base::FilePath(), 0);
+  response_.push_back(info1);
   origins_[kOrigin1] = true;
-  response_.push_back(
-      BrowsingDataIndexedDBHelper::IndexedDBInfo(
-          kOrigin2, 2, base::Time()));
+  content::IndexedDBInfo info2(kOrigin2, 2, base::Time(), base::FilePath(), 0);
+  response_.push_back(info2);
   origins_[kOrigin2] = true;
 }
 

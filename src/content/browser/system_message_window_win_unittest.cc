@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/system_monitor/system_monitor.h"
 #include "base/test/mock_devices_changed_observer.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -25,7 +25,7 @@ class SystemMessageWindowWinTest : public testing::Test {
     system_monitor_.AddDevicesChangedObserver(&observer_);
   }
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   base::SystemMonitor system_monitor_;
   base::MockDevicesChangedObserver observer_;
   SystemMessageWindowWin window_;

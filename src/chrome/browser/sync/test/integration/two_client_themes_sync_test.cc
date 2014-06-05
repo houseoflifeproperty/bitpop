@@ -3,10 +3,12 @@
 // found in the LICENSE file.
 
 #include "base/basictypes.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
+#include "chrome/browser/sync/test/integration/sync_integration_test_util.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/browser/sync/test/integration/themes_helper.h"
 
+using sync_integration_test_util::AwaitCommitActivityCompletion;
 using themes_helper::GetCustomTheme;
 using themes_helper::GetThemeID;
 using themes_helper::HasOrWillHaveCustomTheme;
@@ -25,6 +27,15 @@ class TwoClientThemesSyncTest : public SyncTest {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TwoClientThemesSyncTest);
+};
+
+class LegacyTwoClientThemesSyncTest : public SyncTest {
+ public:
+  LegacyTwoClientThemesSyncTest() : SyncTest(TWO_CLIENT_LEGACY) {}
+  virtual ~LegacyTwoClientThemesSyncTest() {}
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(LegacyTwoClientThemesSyncTest);
 };
 
 // TODO(akalin): Add tests for model association (i.e., tests that
@@ -57,7 +68,8 @@ IN_PROC_BROWSER_TEST_F(TwoClientThemesSyncTest, CustomTheme) {
 
 // TCM ID - 3599303.
 // TODO(sync): Fails on Chrome OS. See http://crbug.com/84575.
-#if defined(OS_CHROMEOS)
+// TODO(erg): Fails on linux_aura. See http://crbug.com/304554
+#if defined(OS_CHROMEOS) || defined(OS_LINUX)
 IN_PROC_BROWSER_TEST_F(TwoClientThemesSyncTest, DISABLED_NativeTheme) {
 #else
 IN_PROC_BROWSER_TEST_F(TwoClientThemesSyncTest, NativeTheme) {
@@ -106,7 +118,8 @@ IN_PROC_BROWSER_TEST_F(TwoClientThemesSyncTest, DefaultTheme) {
 
 // TCM ID - 7292065.
 // TODO(sync): Fails on Chrome OS. See http://crbug.com/84575.
-#if defined(OS_CHROMEOS)
+// TODO(erg): Fails on linux_aura. See http://crbug.com/304554
+#if defined(OS_CHROMEOS) || defined(OS_LINUX)
 IN_PROC_BROWSER_TEST_F(TwoClientThemesSyncTest, DISABLED_NativeDefaultRace) {
 #else
 IN_PROC_BROWSER_TEST_F(TwoClientThemesSyncTest, NativeDefaultRace) {
@@ -192,7 +205,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientThemesSyncTest, CustomCustomRace) {
 }
 
 // TCM ID - 3723272.
-IN_PROC_BROWSER_TEST_F(TwoClientThemesSyncTest, DisableThemes) {
+IN_PROC_BROWSER_TEST_F(LegacyTwoClientThemesSyncTest, DisableThemes) {
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
   ASSERT_FALSE(UsingCustomTheme(GetProfile(0)));
@@ -202,7 +215,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientThemesSyncTest, DisableThemes) {
   ASSERT_TRUE(GetClient(1)->DisableSyncForDatatype(syncer::THEMES));
   UseCustomTheme(GetProfile(0), 0);
   UseCustomTheme(verifier(), 0);
-  ASSERT_TRUE(GetClient(0)->AwaitFullSyncCompletion("Changed the theme."));
+  ASSERT_TRUE(AwaitCommitActivityCompletion(GetSyncService((0))));
 
   ASSERT_EQ(GetCustomTheme(0), GetThemeID(GetProfile(0)));
   ASSERT_FALSE(UsingCustomTheme(GetProfile(1)));
@@ -229,7 +242,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientThemesSyncTest, DisableSync) {
   UseCustomTheme(GetProfile(0), 0);
   UseCustomTheme(verifier(), 0);
   ASSERT_TRUE(
-      GetClient(0)->AwaitFullSyncCompletion("Installed a custom theme."));
+      AwaitCommitActivityCompletion(GetSyncService((0))));
 
   ASSERT_EQ(GetCustomTheme(0), GetThemeID(GetProfile(0)));
   ASSERT_FALSE(UsingCustomTheme(GetProfile(1)));

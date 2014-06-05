@@ -25,6 +25,18 @@ name=Sophos LEAK
 ...
 sophos*.dll!*
 
+# Reports from Micorosft RDP ActiveX control (mstscax.dll)
+
+GDI USAGE ERROR
+name=crbug.com/177832: mstscax.dll causes "GDI USAGE ERROR" errors.
+...
+mstscax.dll!*
+
+UNADDRESSABLE ACCESS
+name=crbug.com/177832: mstscax.dll causes "UNADDRESSABLE ACCESS" errors.
+...
+mstscax.dll!*
+
 ############################
 # Suppress some false reports due to bugs in Dr.Memory like wrong analysis
 # assumptions or unhandled syscalls
@@ -106,6 +118,12 @@ name=http://crbug.com/107567 intentional mismatch in _DebugHeapDelete, no frame
 *!std::numpunct<*>::_Tidy
 *!std::numpunct<*>::~numpunct<*>
 
+# TODO(rbultje): Investigate if code fix is required instead.
+WARNING
+name=http://crbug.com/223255 - prefetches in vp8
+instruction=prefetch*
+ffmpegsumo.dll!ff_prefetch_mmxext
+
 ############################
 # Intentional errors in Chromium tests (ToolsSanityTests)
 LEAK
@@ -183,12 +201,14 @@ base_unittests.exe!base::ToolsSanityTest_SingleElementDeletedWithBraces_Test::Te
 UNINITIALIZED READ
 name=sanity test 14 (malloc/read uninit)
 base_unittests.exe!*ReadUninitializedValue
+...
 base_unittests.exe!*MakeSomeErrors
 base_unittests.exe!base::ToolsSanityTest_AccessesToMallocMemory_Test::TestBody
 
 UNINITIALIZED READ
 name=sanity test 15 (new/read uninit)
 base_unittests.exe!*ReadUninitializedValue
+...
 base_unittests.exe!*MakeSomeErrors
 base_unittests.exe!base::ToolsSanityTest_AccessesToNewMemory_Test::TestBody
 
@@ -196,12 +216,6 @@ UNADDRESSABLE ACCESS
 name=AboutHandler::AboutCrash deliberate crash
 # TODO(bruening): switch to annotation once have support for that
 chrome.dll!AboutHandler::AboutCrash
-
-UNADDRESSABLE ACCESS
-name=RendererCrashTest.Crash deliberate crash
-# function is small, little risk for false negative in rest of it
-# TODO(bruening): switch to annotation once have support for that
-chrome.dll!HandleRendererErrorTestParameters
 
 UNADDRESSABLE ACCESS
 name=NPAPITesterBase.NoHangIfInitCrashes deliberate crash
@@ -216,7 +230,7 @@ name=CrashingChildProcess deliberate crash
 
 UNADDRESSABLE ACCESS
 name=::Crasher::Run deliberate crash
-*!`anonymous namespace'::Crasher::Run
+*!base::`anonymous namespace'::Crasher::Run
 
 ############################
 # Benign issues in Chromium
@@ -243,12 +257,8 @@ instruction=mov    0xfffffffc(%esp) -> %eax
 chrome.dll!WebCore::RenderStyle::resetBorder*
 
 INVALID HEAP ARGUMENT
-name=http://crbug.com/101537
-*!scoped_ptr<_TOKEN_USER>*
-
-INVALID HEAP ARGUMENT
-name=http://crbug.com/101717 (1)
-*!scoped_ptr<_TOKEN_DEFAULT_DACL>*
+name=http://crbug.com/101537, http://crbug.com/101717 (1)
+*!scoped_ptr<>*
 
 INVALID HEAP ARGUMENT
 name=http://crbug.com/101717 (2)
@@ -256,12 +266,12 @@ name=http://crbug.com/101717 (2)
 
 INVALID HEAP ARGUMENT
 name=http://crbug.com/101717 (3)
-*!scoped_ptr<_UNICODE_STRING>::~scoped_ptr<_UNICODE_STRING>
+*!scoped_ptr<>::~scoped_ptr<>
 *!sandbox::GetHandleName
 
 INVALID HEAP ARGUMENT
 name=http://crbug.com/101717 (4)
-*!scoped_ptr<_OBJECT_NAME_INFORMATION>::~scoped_ptr<_OBJECT_NAME_INFORMATION>
+*!scoped_ptr<>::~scoped_ptr<>
 *!sandbox::GetPathFromHandle
 
 GDI USAGE ERROR
@@ -290,29 +300,17 @@ name=http://crbug.com/106522
 npapi_test_plugin.dll!NPAPIClient::PluginTest::id
 npapi_test_plugin.dll!NPAPIClient::ExecuteGetJavascriptUrlTest::TimerProc
 
-# Bad GDI teardown sequence.
-GDI USAGE ERROR
-name=http://crbug.com/109963 a
-system call NtGdiDeleteObjectApp
-# usually one or two GDI32.dll frames here but sometimes in light mode
-# there are zero.  still pretty narrow b/c of frames on either side.
-...
-*!skia::BitmapPlatformDevice::BitmapPlatformDeviceData::~BitmapPlatformDeviceData
-
-GDI USAGE ERROR
-name=http://crbug.com/109963 b
-system call NtGdiDeleteObjectApp
-# usually one or two GDI32.dll frames here but sometimes in light mode
-# there are zero.  still pretty narrow b/c of frames on either side.
-...
-*!skia::BitmapPlatformDevice::BitmapPlatformDeviceData::ReleaseBitmapDC
-
 GDI USAGE ERROR
 name=http://crbug.com/109963 c
 system call NtGdiDeleteObjectApp
-...
-skia.dll!skia::PlatformBitmap::~PlatformBitmap
-*!skia::PlatformBitmap*
+GDI32.dll!DeleteDC
+content.dll!*
+
+GDI USAGE ERROR
+name=http://crbug.com/109963 d
+system call NtGdiDeleteObjectApp
+GDI32.dll!DeleteDC
+*!base::internal::RunnableAdapter*
 
 # GDI usage errors in 3rd-party components
 GDI USAGE ERROR
@@ -358,7 +356,7 @@ name=http://crbug.com/158090
 ...
 content.dll!content::*::FontCache::PreCacheFont
 content.dll!content::FontCacheDispatcher::OnPreCacheFont
-content.dll!DispatchToMethod<content::FontCacheDispatcher*
+content.dll!DispatchToMethod<>
 
 GDI USAGE ERROR
 name=http://crbug.com/158090 c#4
@@ -390,3 +388,120 @@ content.dll!*
 KERNEL32.dll!*
 ntdll.dll!*
 ntdll.dll!*
+
+WARNING
+name=Security test (new oveflow)
+MSVCR100D.dll!operator new
+*!operator new
+*!operator new[]
+*!`anonymous namespace'::SecurityTest_NewOverflow_Test::TestBody
+*!testing::internal::HandleExceptionsInMethodIfSupported<>
+
+WARNING
+name=Security test (calloc overflow)
+*!`anonymous namespace'::CallocReturnsNull
+*!`anonymous namespace'::SecurityTest_CallocOverflow_Test::TestBody
+*!testing::internal::HandleExceptionsInMethodIfSupported<>
+
+GDI USAGE ERROR
+name=http://crbug.com/234484
+# "DC created by one thread and used by another"
+...
+*!chrome::`anonymous namespace'::SetOverlayIcon
+
+INVALID HEAP ARGUMENT
+name=http://crbug.com/262088
+drmemorylib.dll!av_dup_packet
+msvcrt.dll!wcsrchr
+ntdll.dll!RtlIsCurrentThreadAttachExempt
+ntdll.dll!LdrShutdownThread
+ntdll.dll!RtlExitUserThread
+
+GDI USAGE ERROR
+name=http://crbug.com/266484
+skia.dll!HDCOffscreen::draw
+skia.dll!SkScalerContext_GDI::generateImage
+skia.dll!SkScalerContext::getImage
+skia.dll!SkGlyphCache::findImage
+skia.dll!D1G_NoBounder_RectClip
+skia.dll!SkDraw::drawText
+
+HANDLE LEAK
+name=http://crbug.com/346842
+system call NtGdiCreateDIBSection
+GDI32.dll!CreateDIBSection
+skia.dll!HDCOffscreen::draw
+skia.dll!SkScalerContext_GDI::generateImage
+skia.dll!SkScalerContext::getImage
+skia.dll!SkGlyphCache::findImage
+skia.dll!D1G_NoBounder_RectClip
+skia.dll!SkDraw::drawPosText
+skia.dll!SkBitmapDevice::drawPosText
+
+HANDLE LEAK
+name=http://crbug.com/346993
+system call NtDuplicateObject
+KERNELBASE.dll!DuplicateHandle
+KERNEL32.dll!DuplicateHandle*
+base.dll!base::`anonymous namespace'::ThreadFunc
+KERNEL32.dll!BaseThreadInitThunk
+
+UNADDRESSABLE ACCESS
+name=http://crbug.com/42043-uninit
+...
+QuickTime.qts!*
+
+GDI USAGE ERROR
+name=http://crbug.com/42043-gdi
+...
+QuickTime.qts!*
+
+UNADDRESSABLE ACCESS
+name=IntentionalCrash
+*!content::*::*Crash*
+*!content::*::MaybeHandleDebugURL
+
+HANDLE LEAK
+name=http://crbug.com/371348
+system call NtCreateSection
+KERNELBASE.dll!CreateFileMappingW
+base.dll!base::SharedMemory::Create
+base.dll!base::SharedMemory::CreateAndMapAnonymous
+content.dll!content::ChildThread::AllocateSharedMemory
+content.dll!content::ChildSharedBitmapManager::AllocateSharedBitmap
+cc.dll!cc::ResourceProvider::CreateBitmap
+
+HANDLE LEAK
+name=http://crbug.com/371357
+system call NtCreateEvent
+KERNELBASE.dll!CreateEventExW
+KERNELBASE.dll!CreateEventW
+
+HANDLE LEAK
+name=http://crbug.com/371368
+system call NtCreateNamedPipeFile
+KERNELBASE.dll!CreateNamedPipeW
+ipc.dll!IPC::Channel::ChannelImpl::CreatePipe
+ipc.dll!IPC::Channel::ChannelImpl::ChannelImpl
+ipc.dll!IPC::Channel::Channel
+ipc.dll!IPC::ChannelProxy::Context::CreateChannel
+
+HANDLE LEAK
+name=http://crbug.com/371942
+system call NtCreateThreadEx
+KERNELBASE.dll!CreateRemoteThreadEx
+KERNEL32.dll!CreateThread
+
+HANDLE LEAK
+name=http://crbug.com/371946
+system call NtUserWindowFromPoint
+content.dll!content::LegacyRenderWidgetHostHWND::OnMouseLeave
+content.dll!content::LegacyRenderWidgetHostHWND::_ProcessWindowMessage
+content.dll!content::LegacyRenderWidgetHostHWND::ProcessWindowMessage
+content.dll!ATL::CWindowImplBaseT<>::WindowProc
+USER32.dll!gapfnScSendMessage
+USER32.dll!GetThreadDesktop
+USER32.dll!CharPrevW
+USER32.dll!DispatchMessageW
+base.dll!base::MessagePumpForUI::ProcessMessageHelper
+base.dll!base::MessagePumpForUI::ProcessNextWindowsMessage

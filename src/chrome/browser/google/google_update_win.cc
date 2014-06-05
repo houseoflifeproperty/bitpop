@@ -8,11 +8,11 @@
 #include <atlcom.h>
 
 #include "base/bind.h"
-#include "base/file_path.h"
-#include "base/message_loop.h"
+#include "base/files/file_path.h"
+#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/threading/thread.h"
 #include "base/win/scoped_comptr.h"
 #include "base/win/windows_version.h"
@@ -24,6 +24,7 @@
 #include "google_update/google_update_idl.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/win/atl_module.h"
 #include "ui/views/widget/widget.h"
 
 using content::BrowserThread;
@@ -34,18 +35,18 @@ namespace {
 // Returns GOOGLE_UPDATE_NO_ERROR only if the instance running is a Google
 // Chrome distribution installed in a standard location.
 GoogleUpdateErrorCode CanUpdateCurrentChrome(
-    const FilePath& chrome_exe_path) {
+    const base::FilePath& chrome_exe_path) {
 #if !defined(GOOGLE_CHROME_BUILD)
   return CANNOT_UPGRADE_CHROME_IN_THIS_DIRECTORY;
 #else
   // TODO(tommi): Check if using the default distribution is always the right
   // thing to do.
   BrowserDistribution* dist = BrowserDistribution::GetDistribution();
-  FilePath user_exe_path = installer::GetChromeInstallPath(false, dist);
-  FilePath machine_exe_path = installer::GetChromeInstallPath(true, dist);
-  if (!FilePath::CompareEqualIgnoreCase(chrome_exe_path.value(),
+  base::FilePath user_exe_path = installer::GetChromeInstallPath(false, dist);
+  base::FilePath machine_exe_path = installer::GetChromeInstallPath(true, dist);
+  if (!base::FilePath::CompareEqualIgnoreCase(chrome_exe_path.value(),
                                         user_exe_path.value()) &&
-      !FilePath::CompareEqualIgnoreCase(chrome_exe_path.value(),
+      !base::FilePath::CompareEqualIgnoreCase(chrome_exe_path.value(),
                                         machine_exe_path.value())) {
     LOG(ERROR) << L"Google Update cannot update Chrome installed in a "
                << L"non-standard location: " << chrome_exe_path.value().c_str()
@@ -55,13 +56,18 @@ GoogleUpdateErrorCode CanUpdateCurrentChrome(
     return CANNOT_UPGRADE_CHROME_IN_THIS_DIRECTORY;
   }
 
-  string16 app_guid = installer::GetAppGuidForUpdates(
+  base::string16 app_guid = installer::GetAppGuidForUpdates(
       !InstallUtil::IsPerUserInstall(chrome_exe_path.value().c_str()));
   DCHECK(!app_guid.empty());
 
-  if (GoogleUpdateSettings::GetAppUpdatePolicy(app_guid, NULL) ==
-      GoogleUpdateSettings::UPDATES_DISABLED)
+  GoogleUpdateSettings::UpdatePolicy update_policy =
+      GoogleUpdateSettings::GetAppUpdatePolicy(app_guid, NULL);
+
+  if (update_policy == GoogleUpdateSettings::UPDATES_DISABLED)
     return GOOGLE_UPDATE_DISABLED_BY_POLICY;
+
+  if (update_policy == GoogleUpdateSettings::AUTO_UPDATES_ONLY)
+    return GOOGLE_UPDATE_DISABLED_BY_POLICY_AUTO_ONLY;
 
   return GOOGLE_UPDATE_NO_ERROR;
 #endif
@@ -84,7 +90,7 @@ HRESULT CoCreateInstanceAsAdmin(REFCLSID class_id, REFIID interface_id,
     StringFromGUID2(class_id, class_id_as_string,
                     arraysize(class_id_as_string));
 
-    string16 elevation_moniker_name =
+    base::string16 elevation_moniker_name =
         base::StringPrintf(L"Elevation:Administrator!new:%ls",
                            class_id_as_string);
 
@@ -175,7 +181,7 @@ class GoogleUpdateJobObserver
 
     // No longer need to spin the message loop that started spinning in
     // InitiateGoogleUpdateCheck.
-    MessageLoop::current()->Quit();
+    base::MessageLoop::current()->Quit();
     return S_OK;
   }
   STDMETHOD(SetEventSink)(IProgressWndEvents* event_sink) {
@@ -194,14 +200,14 @@ class GoogleUpdateJobObserver
 
   // Returns which version Google Update found on the server (if a more
   // recent version was found). Otherwise, this will be blank.
-  STDMETHOD(GetVersionInfo)(string16* version_string) {
+  STDMETHOD(GetVersionInfo)(base::string16* version_string) {
     *version_string = new_version_;
     return S_OK;
   }
 
   // Returns the Google Update supplied error string that describes the error
   // that occurred during the update check/upgrade.
-  STDMETHOD(GetErrorMessage)(string16* error_message) {
+  STDMETHOD(GetErrorMessage)(base::string16* error_message) {
     *error_message = error_message_;
     return S_OK;
   }
@@ -211,10 +217,10 @@ class GoogleUpdateJobObserver
   GoogleUpdateUpgradeResult result_;
 
   // The version string Google Update found.
-  string16 new_version_;
+  base::string16 new_version_;
 
   // An error message, if any.
-  string16 error_message_;
+  base::string16 error_message_;
 
   // Allows us control the upgrade process to a small degree. After OnComplete
   // has been called, this object can not be used.
@@ -237,7 +243,7 @@ void GoogleUpdate::CheckForUpdate(bool install_if_newer, HWND window) {
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
       base::Bind(&GoogleUpdate::InitiateGoogleUpdateCheck, this,
-                 install_if_newer, window, MessageLoop::current()));
+                 install_if_newer, window, base::MessageLoop::current()));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -245,8 +251,8 @@ void GoogleUpdate::CheckForUpdate(bool install_if_newer, HWND window) {
 
 void GoogleUpdate::InitiateGoogleUpdateCheck(bool install_if_newer,
                                              HWND window,
-                                             MessageLoop* main_loop) {
-  FilePath chrome_exe;
+                                             base::MessageLoop* main_loop) {
+  base::FilePath chrome_exe;
   if (!PathService::Get(base::DIR_EXE, &chrome_exe))
     NOTREACHED();
 
@@ -255,9 +261,12 @@ void GoogleUpdate::InitiateGoogleUpdateCheck(bool install_if_newer,
     main_loop->PostTask(
         FROM_HERE,
         base::Bind(&GoogleUpdate::ReportResults, this,
-                   UPGRADE_ERROR, error_code, string16()));
+                   UPGRADE_ERROR, error_code, base::string16()));
     return;
   }
+
+  // Make sure ATL is initialized in this module.
+  ui::win::CreateATLModuleIfNeeded();
 
   CComObject<GoogleUpdateJobObserver>* job_observer;
   HRESULT hr =
@@ -266,7 +275,7 @@ void GoogleUpdate::InitiateGoogleUpdateCheck(bool install_if_newer,
     // Most of the error messages come straight from Google Update. This one is
     // deemed worthy enough to also warrant its own error.
     GoogleUpdateErrorCode error = GOOGLE_UPDATE_JOB_SERVER_CREATION_FAILED;
-    string16 error_code = base::StringPrintf(L"%d: 0x%x", error, hr);
+    base::string16 error_code = base::StringPrintf(L"%d: 0x%x", error, hr);
     ReportFailure(
         hr, error,
         l10n_util::GetStringFUTF16(IDS_ABOUT_BOX_ERROR_UPDATE_CHECK_FAILED,
@@ -299,7 +308,7 @@ void GoogleUpdate::InitiateGoogleUpdateCheck(bool install_if_newer,
 
   if (hr != S_OK) {
     GoogleUpdateErrorCode error = GOOGLE_UPDATE_ONDEMAND_CLASS_NOT_FOUND;
-    string16 error_code = base::StringPrintf(L"%d: 0x%x", error, hr);
+    base::string16 error_code = base::StringPrintf(L"%d: 0x%x", error, hr);
     if (system_level)
       error_code += L" -- system level";
     ReportFailure(hr, error,
@@ -310,7 +319,7 @@ void GoogleUpdate::InitiateGoogleUpdateCheck(bool install_if_newer,
     return;
   }
 
-  string16 app_guid = installer::GetAppGuidForUpdates(system_level);
+  base::string16 app_guid = installer::GetAppGuidForUpdates(system_level);
   DCHECK(!app_guid.empty());
 
   if (!install_if_newer)
@@ -320,7 +329,7 @@ void GoogleUpdate::InitiateGoogleUpdateCheck(bool install_if_newer,
 
   if (hr != S_OK) {
     GoogleUpdateErrorCode error = GOOGLE_UPDATE_ONDEMAND_CLASS_REPORTED_ERROR;
-    string16 error_code = base::StringPrintf(L"%d: 0x%x", error, hr);
+    base::string16 error_code = base::StringPrintf(L"%d: 0x%x", error, hr);
     ReportFailure(hr, error,
                   l10n_util::GetStringFUTF16(
                       IDS_ABOUT_BOX_ERROR_UPDATE_CHECK_FAILED,
@@ -333,14 +342,14 @@ void GoogleUpdate::InitiateGoogleUpdateCheck(bool install_if_newer,
   // can report back to us through GoogleUpdateJobObserver. This message loop
   // will terminate once Google Update sends us the completion status
   // (success/error). See OnComplete().
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
 
   GoogleUpdateUpgradeResult results;
   hr = job_observer->GetResult(&results);
 
   if (hr != S_OK) {
     GoogleUpdateErrorCode error = GOOGLE_UPDATE_GET_RESULT_CALL_FAILED;
-    string16 error_code = base::StringPrintf(L"%d: 0x%x", error, hr);
+    base::string16 error_code = base::StringPrintf(L"%d: 0x%x", error, hr);
     ReportFailure(hr, error,
                   l10n_util::GetStringFUTF16(
                       IDS_ABOUT_BOX_ERROR_UPDATE_CHECK_FAILED,
@@ -350,7 +359,7 @@ void GoogleUpdate::InitiateGoogleUpdateCheck(bool install_if_newer,
   }
 
   if (results == UPGRADE_ERROR) {
-    string16 error_message;
+    base::string16 error_message;
     job_observer->GetErrorMessage(&error_message);
     ReportFailure(hr, GOOGLE_UPDATE_ERROR_UPDATING, error_message, main_loop);
     return;
@@ -359,7 +368,7 @@ void GoogleUpdate::InitiateGoogleUpdateCheck(bool install_if_newer,
   hr = job_observer->GetVersionInfo(&version_available_);
   if (hr != S_OK) {
     GoogleUpdateErrorCode error = GOOGLE_UPDATE_GET_VERSION_INFO_FAILED;
-    string16 error_code = base::StringPrintf(L"%d: 0x%x", error, hr);
+    base::string16 error_code = base::StringPrintf(L"%d: 0x%x", error, hr);
     ReportFailure(hr, error,
                   l10n_util::GetStringFUTF16(
                       IDS_ABOUT_BOX_ERROR_UPDATE_CHECK_FAILED,
@@ -371,14 +380,14 @@ void GoogleUpdate::InitiateGoogleUpdateCheck(bool install_if_newer,
   main_loop->PostTask(
       FROM_HERE,
       base::Bind(&GoogleUpdate::ReportResults, this,
-                 results, GOOGLE_UPDATE_NO_ERROR, string16()));
+                 results, GOOGLE_UPDATE_NO_ERROR, base::string16()));
   job_holder = NULL;
   on_demand = NULL;
 }
 
 void GoogleUpdate::ReportResults(GoogleUpdateUpgradeResult results,
                                  GoogleUpdateErrorCode error_code,
-                                 const string16& error_message) {
+                                 const base::string16& error_message) {
   // If there is an error, then error code must not be blank, and vice versa.
   DCHECK(results == UPGRADE_ERROR ? error_code != GOOGLE_UPDATE_NO_ERROR :
                                     error_code == GOOGLE_UPDATE_NO_ERROR);
@@ -390,8 +399,8 @@ void GoogleUpdate::ReportResults(GoogleUpdateUpgradeResult results,
 
 bool GoogleUpdate::ReportFailure(HRESULT hr,
                                  GoogleUpdateErrorCode error_code,
-                                 const string16& error_message,
-                                 MessageLoop* main_loop) {
+                                 const base::string16& error_message,
+                                 base::MessageLoop* main_loop) {
   NOTREACHED() << "Communication with Google Update failed: " << hr
                << " error: " << error_code
                << ", message: " << error_message.c_str();

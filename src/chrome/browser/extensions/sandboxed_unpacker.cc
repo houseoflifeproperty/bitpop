@@ -10,31 +10,39 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
-#include "base/file_util_proxy.h"
+#include "base/files/file_util_proxy.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/memory/scoped_handle.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/path_service.h"
 #include "base/sequenced_task_runner.h"
-#include "base/utf_string_conversions.h"  // TODO(viettrungluu): delete me.
-#include "chrome/browser/extensions/crx_file.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_utility_messages.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_file_util.h"
-#include "chrome/common/extensions/extension_l10n_util.h"
-#include "chrome/common/extensions/unpacker.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/utility_process_host.h"
+#include "content/public/common/common_param_traits.h"
 #include "crypto/signature_verifier.h"
+#include "extensions/common/constants.h"
+#include "extensions/common/crx_file.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_l10n_util.h"
+#include "extensions/common/file_util.h"
+#include "extensions/common/id_util.h"
+#include "extensions/common/manifest_constants.h"
+#include "extensions/common/manifest_handlers/icons_handler.h"
 #include "grit/generated_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/codec/png_codec.h"
 
+using base::ASCIIToUTF16;
 using content::BrowserThread;
 using content::UtilityProcessHost;
 
@@ -52,10 +60,11 @@ using content::UtilityProcessHost;
 #define UNPACK_RATE_HISTOGRAM(name, rate) \
     UMA_HISTOGRAM_CUSTOM_COUNTS(name, rate, 1, 100000, 100);
 
+namespace extensions {
 namespace {
 
 void RecordSuccessfulUnpackTimeHistograms(
-    const FilePath& crx_path, const base::TimeDelta unpack_time) {
+    const base::FilePath& crx_path, const base::TimeDelta unpack_time) {
 
   const int64 kBytesPerKb = 1024;
   const int64 kBytesPerMb = 1024 * 1024;
@@ -65,7 +74,7 @@ void RecordSuccessfulUnpackTimeHistograms(
   // To get a sense of how CRX size impacts unpack time, record unpack
   // time for several increments of CRX size.
   int64 crx_file_size;
-  if (!file_util::GetFileSize(crx_path, &crx_file_size)) {
+  if (!base::GetFileSize(crx_path, &crx_file_size)) {
     UMA_HISTOGRAM_COUNTS("Extensions.SandboxUnpackSuccessCantGetCrxSize", 1);
     return;
   }
@@ -112,23 +121,23 @@ void RecordSuccessfulUnpackTimeHistograms(
 
 // Work horse for FindWritableTempLocation. Creates a temp file in the folder
 // and uses NormalizeFilePath to check if the path is junction free.
-bool VerifyJunctionFreeLocation(FilePath* temp_dir) {
+bool VerifyJunctionFreeLocation(base::FilePath* temp_dir) {
   if (temp_dir->empty())
     return false;
 
-  FilePath temp_file;
-  if (!file_util::CreateTemporaryFileInDir(*temp_dir, &temp_file)) {
+  base::FilePath temp_file;
+  if (!base::CreateTemporaryFileInDir(*temp_dir, &temp_file)) {
     LOG(ERROR) << temp_dir->value() << " is not writable";
     return false;
   }
   // NormalizeFilePath requires a non-empty file, so write some data.
   // If you change the exit points of this function please make sure all
   // exit points delete this temp file!
-  file_util::WriteFile(temp_file, ".", 1);
+  if (base::WriteFile(temp_file, ".", 1) != 1)
+    return false;
 
-  FilePath normalized_temp_file;
-  bool normalized =
-      file_util::NormalizeFilePath(temp_file, &normalized_temp_file);
+  base::FilePath normalized_temp_file;
+  bool normalized = base::NormalizeFilePath(temp_file, &normalized_temp_file);
   if (!normalized) {
     // If |temp_file| contains a link, the sandbox will block al file system
     // operations, and the install will fail.
@@ -137,7 +146,7 @@ bool VerifyJunctionFreeLocation(FilePath* temp_dir) {
     *temp_dir = normalized_temp_file.DirName();
   }
   // Clean up the temp file.
-  file_util::Delete(temp_file, false);
+  base::DeleteFile(temp_file, false);
 
   return normalized;
 }
@@ -148,8 +157,8 @@ bool VerifyJunctionFreeLocation(FilePath* temp_dir) {
 // proceed and should fail.
 // The result will be written to |temp_dir|. The function will write to this
 // parameter even if it returns false.
-bool FindWritableTempLocation(const FilePath& extensions_dir,
-                              FilePath* temp_dir) {
+bool FindWritableTempLocation(const base::FilePath& extensions_dir,
+                              base::FilePath* temp_dir) {
 // On ChromeOS, we will only attempt to unpack extension in cryptohome (profile)
 // directory to provide additional security/privacy and speed up the rest of
 // the extension install process.
@@ -159,7 +168,7 @@ bool FindWritableTempLocation(const FilePath& extensions_dir,
     return true;
 #endif
 
-  *temp_dir = extension_file_util::GetInstallTempDir(extensions_dir);
+  *temp_dir = file_util::GetInstallTempDir(extensions_dir);
   if (VerifyJunctionFreeLocation(temp_dir))
     return true;
   // Neither paths is link free chances are good installation will fail.
@@ -168,20 +177,48 @@ bool FindWritableTempLocation(const FilePath& extensions_dir,
   return false;
 }
 
+// Read the decoded images back from the file we saved them to.
+// |extension_path| is the path to the extension we unpacked that wrote the
+// data. Returns true on success.
+bool ReadImagesFromFile(const base::FilePath& extension_path,
+                        DecodedImages* images) {
+  base::FilePath path =
+      extension_path.AppendASCII(kDecodedImagesFilename);
+  std::string file_str;
+  if (!base::ReadFileToString(path, &file_str))
+    return false;
+
+  IPC::Message pickle(file_str.data(), file_str.size());
+  PickleIterator iter(pickle);
+  return IPC::ReadParam(&pickle, &iter, images);
+}
+
+// Read the decoded message catalogs back from the file we saved them to.
+// |extension_path| is the path to the extension we unpacked that wrote the
+// data. Returns true on success.
+bool ReadMessageCatalogsFromFile(const base::FilePath& extension_path,
+                                 base::DictionaryValue* catalogs) {
+  base::FilePath path = extension_path.AppendASCII(
+      kDecodedMessageCatalogsFilename);
+  std::string file_str;
+  if (!base::ReadFileToString(path, &file_str))
+    return false;
+
+  IPC::Message pickle(file_str.data(), file_str.size());
+  PickleIterator iter(pickle);
+  return IPC::ReadParam(&pickle, &iter, catalogs);
+}
+
 }  // namespace
 
-namespace extensions {
-
 SandboxedUnpacker::SandboxedUnpacker(
-    const FilePath& crx_path,
-    bool run_out_of_process,
-    Extension::Location location,
+    const base::FilePath& crx_path,
+    Manifest::Location location,
     int creation_flags,
-    const FilePath& extensions_dir,
+    const base::FilePath& extensions_dir,
     base::SequencedTaskRunner* unpacker_io_task_runner,
     SandboxedUnpackerClient* client)
     : crx_path_(crx_path),
-      run_out_of_process_(run_out_of_process),
       client_(client),
       extensions_dir_(extensions_dir),
       got_response_(false),
@@ -193,7 +230,7 @@ SandboxedUnpacker::SandboxedUnpacker(
 bool SandboxedUnpacker::CreateTempDirectory() {
   CHECK(unpacker_io_task_runner_->RunsTasksOnCurrentThread());
 
-  FilePath temp_dir;
+  base::FilePath temp_dir;
   if (!FindWritableTempLocation(extensions_dir_, &temp_dir)) {
     ReportFailure(
         COULD_NOT_GET_TEMP_DIRECTORY,
@@ -228,8 +265,7 @@ void SandboxedUnpacker::Start() {
     return;  // ReportFailure() already called.
 
   // Initialize the path that will eventually contain the unpacked extension.
-  extension_root_ = temp_dir_.path().AppendASCII(
-      extension_filenames::kTempExtensionName);
+  extension_root_ = temp_dir_.path().AppendASCII(kTempExtensionName);
   PATH_LENGTH_HISTOGRAM("Extensions.SandboxUnpackUnpackedCrxPathLength",
                         extension_root_);
 
@@ -238,11 +274,11 @@ void SandboxedUnpacker::Start() {
     return;  // ValidateSignature() already reported the error.
 
   // Copy the crx file into our working directory.
-  FilePath temp_crx_path = temp_dir_.path().Append(crx_path_.BaseName());
+  base::FilePath temp_crx_path = temp_dir_.path().Append(crx_path_.BaseName());
   PATH_LENGTH_HISTOGRAM("Extensions.SandboxUnpackTempCrxPathLength",
                         temp_crx_path);
 
-  if (!file_util::CopyFile(crx_path_, temp_crx_path)) {
+  if (!base::CopyFile(crx_path_, temp_crx_path)) {
     // Failed to copy extension file to temporary directory.
     ReportFailure(
         FAILED_TO_COPY_EXTENSION_FILE_TO_TEMP_DIRECTORY,
@@ -252,46 +288,29 @@ void SandboxedUnpacker::Start() {
     return;
   }
 
-  // If we are supposed to use a subprocess, kick off the subprocess.
-  //
-  // TODO(asargent) we shouldn't need to do this branch here - instead
-  // UtilityProcessHost should handle it for us. (http://crbug.com/19192)
-  bool use_utility_process = run_out_of_process_ &&
-      !CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess);
-  if (use_utility_process) {
-    // The utility process will have access to the directory passed to
-    // SandboxedUnpacker.  That directory should not contain a symlink or NTFS
-    // reparse point.  When the path is used, following the link/reparse point
-    // will cause file system access outside the sandbox path, and the sandbox
-    // will deny the operation.
-    FilePath link_free_crx_path;
-    if (!file_util::NormalizeFilePath(temp_crx_path, &link_free_crx_path)) {
-      LOG(ERROR) << "Could not get the normalized path of "
-                 << temp_crx_path.value();
-      ReportFailure(
-          COULD_NOT_GET_SANDBOX_FRIENDLY_PATH,
-          l10n_util::GetStringUTF16(IDS_EXTENSION_UNPACK_FAILED));
-      return;
-    }
-    PATH_LENGTH_HISTOGRAM("Extensions.SandboxUnpackLinkFreeCrxPathLength",
-                          link_free_crx_path);
-
-    BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        base::Bind(
-            &SandboxedUnpacker::StartProcessOnIOThread,
-            this,
-            link_free_crx_path));
-  } else {
-    // Otherwise, unpack the extension in this process.
-    Unpacker unpacker(temp_crx_path, extension_id_, location_, creation_flags_);
-    if (unpacker.Run() && unpacker.DumpImagesToFile() &&
-        unpacker.DumpMessageCatalogsToFile()) {
-      OnUnpackExtensionSucceeded(*unpacker.parsed_manifest());
-    } else {
-      OnUnpackExtensionFailed(unpacker.error_message());
-    }
+  // The utility process will have access to the directory passed to
+  // SandboxedUnpacker.  That directory should not contain a symlink or NTFS
+  // reparse point.  When the path is used, following the link/reparse point
+  // will cause file system access outside the sandbox path, and the sandbox
+  // will deny the operation.
+  base::FilePath link_free_crx_path;
+  if (!base::NormalizeFilePath(temp_crx_path, &link_free_crx_path)) {
+    LOG(ERROR) << "Could not get the normalized path of "
+               << temp_crx_path.value();
+    ReportFailure(
+        COULD_NOT_GET_SANDBOX_FRIENDLY_PATH,
+        l10n_util::GetStringUTF16(IDS_EXTENSION_UNPACK_FAILED));
+    return;
   }
+  PATH_LENGTH_HISTOGRAM("Extensions.SandboxUnpackLinkFreeCrxPathLength",
+                        link_free_crx_path);
+
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE,
+      base::Bind(
+          &SandboxedUnpacker::StartProcessOnIOThread,
+          this,
+          link_free_crx_path));
 }
 
 SandboxedUnpacker::~SandboxedUnpacker() {
@@ -319,12 +338,15 @@ void SandboxedUnpacker::OnProcessCrashed(int exit_code) {
      UTILITY_PROCESS_CRASHED_WHILE_TRYING_TO_INSTALL,
      l10n_util::GetStringFUTF16(
          IDS_EXTENSION_PACKAGE_INSTALL_ERROR,
-         ASCIIToUTF16("UTILITY_PROCESS_CRASHED_WHILE_TRYING_TO_INSTALL")));
+         ASCIIToUTF16("UTILITY_PROCESS_CRASHED_WHILE_TRYING_TO_INSTALL")) +
+       ASCIIToUTF16(". ") +
+       l10n_util::GetStringUTF16(IDS_EXTENSION_INSTALL_PROCESS_CRASHED));
 }
 
-void SandboxedUnpacker::StartProcessOnIOThread(const FilePath& temp_crx_path) {
-  UtilityProcessHost* host = UtilityProcessHost::Create(
-      this, unpacker_io_task_runner_);
+void SandboxedUnpacker::StartProcessOnIOThread(
+    const base::FilePath& temp_crx_path) {
+  UtilityProcessHost* host =
+      UtilityProcessHost::Create(this, unpacker_io_task_runner_.get());
   // Grant the subprocess access to the entire subdir the extension file is
   // in, so that it can unpack to that dir.
   host->SetExposedDir(temp_crx_path.DirName());
@@ -334,12 +356,13 @@ void SandboxedUnpacker::StartProcessOnIOThread(const FilePath& temp_crx_path) {
 }
 
 void SandboxedUnpacker::OnUnpackExtensionSucceeded(
-    const DictionaryValue& manifest) {
+    const base::DictionaryValue& manifest) {
   CHECK(unpacker_io_task_runner_->RunsTasksOnCurrentThread());
   got_response_ = true;
 
-  scoped_ptr<DictionaryValue> final_manifest(RewriteManifestFile(manifest));
-  if (!final_manifest.get())
+  scoped_ptr<base::DictionaryValue> final_manifest(
+      RewriteManifestFile(manifest));
+  if (!final_manifest)
     return;
 
   // Create an extension object that refers to the temporary location the
@@ -350,7 +373,7 @@ void SandboxedUnpacker::OnUnpackExtensionSucceeded(
   // Localize manifest now, so confirm UI gets correct extension name.
 
   // TODO(rdevlin.cronin): Continue removing std::string errors and replacing
-  // with string16
+  // with base::string16
   std::string utf8_error;
   if (!extension_l10n_util::LocalizeExtension(extension_root_,
                                               final_manifest.get(),
@@ -359,7 +382,7 @@ void SandboxedUnpacker::OnUnpackExtensionSucceeded(
         COULD_NOT_LOCALIZE_EXTENSION,
         l10n_util::GetStringFUTF16(
             IDS_EXTENSION_PACKAGE_ERROR_MESSAGE,
-            UTF8ToUTF16(utf8_error)));
+            base::UTF8ToUTF16(utf8_error)));
     return;
   }
 
@@ -370,24 +393,23 @@ void SandboxedUnpacker::OnUnpackExtensionSucceeded(
       Extension::REQUIRE_KEY | creation_flags_,
       &utf8_error);
 
-
   if (!extension_.get()) {
-    ReportFailure(
-        INVALID_MANIFEST,
-        ASCIIToUTF16("Manifest is invalid: " + utf8_error));
+    ReportFailure(INVALID_MANIFEST,
+                  ASCIIToUTF16("Manifest is invalid: " + utf8_error));
     return;
   }
 
-  if (!RewriteImageFiles())
+  SkBitmap install_icon;
+  if (!RewriteImageFiles(&install_icon))
     return;
 
   if (!RewriteCatalogFiles())
     return;
 
-  ReportSuccess(manifest);
+  ReportSuccess(manifest, install_icon);
 }
 
-void SandboxedUnpacker::OnUnpackExtensionFailed(const string16& error) {
+void SandboxedUnpacker::OnUnpackExtensionFailed(const base::string16& error) {
   CHECK(unpacker_io_task_runner_->RunsTasksOnCurrentThread());
   got_response_ = true;
   ReportFailure(
@@ -398,7 +420,7 @@ void SandboxedUnpacker::OnUnpackExtensionFailed(const string16& error) {
 }
 
 bool SandboxedUnpacker::ValidateSignature() {
-  ScopedStdioHandle file(file_util::OpenFile(crx_path_, "rb"));
+  ScopedStdioHandle file(base::OpenFile(crx_path_, "rb"));
 
   if (!file.get()) {
     // Could not open crx file for reading.
@@ -446,7 +468,7 @@ bool SandboxedUnpacker::ValidateSignature() {
 
   CrxFile::Error error;
   scoped_ptr<CrxFile> crx(CrxFile::Parse(header, &error));
-  if (!crx.get()) {
+  if (!crx) {
     switch (error) {
       case CrxFile::kWrongMagic:
         ReportFailure(
@@ -554,14 +576,13 @@ bool SandboxedUnpacker::ValidateSignature() {
       std::string(reinterpret_cast<char*>(&key.front()), key.size());
   base::Base64Encode(public_key, &public_key_);
 
-  if (!Extension::GenerateId(public_key, &extension_id_))
-    return false;
+  extension_id_ = id_util::GenerateId(public_key);
 
   return true;
 }
 
 void SandboxedUnpacker::ReportFailure(FailureReason reason,
-                                      const string16& error) {
+                                      const base::string16& error) {
   UMA_HISTOGRAM_ENUMERATION("Extensions.SandboxUnpackFailureReason",
                             reason, NUM_FAILURE_REASONS);
   UMA_HISTOGRAM_TIMES("Extensions.SandboxUnpackFailureTime",
@@ -571,27 +592,27 @@ void SandboxedUnpacker::ReportFailure(FailureReason reason,
 }
 
 void SandboxedUnpacker::ReportSuccess(
-    const DictionaryValue& original_manifest) {
+    const base::DictionaryValue& original_manifest,
+    const SkBitmap& install_icon) {
   UMA_HISTOGRAM_COUNTS("Extensions.SandboxUnpackSuccess", 1);
 
   RecordSuccessfulUnpackTimeHistograms(
       crx_path_, base::TimeTicks::Now() - unpack_start_time_);
 
   // Client takes ownership of temporary directory and extension.
-  client_->OnUnpackSuccess(temp_dir_.Take(),
-                           extension_root_,
-                           &original_manifest,
-                           extension_);
+  client_->OnUnpackSuccess(
+      temp_dir_.Take(), extension_root_, &original_manifest, extension_.get(),
+      install_icon);
   extension_ = NULL;
 }
 
-DictionaryValue* SandboxedUnpacker::RewriteManifestFile(
-    const DictionaryValue& manifest) {
+base::DictionaryValue* SandboxedUnpacker::RewriteManifestFile(
+    const base::DictionaryValue& manifest) {
   // Add the public key extracted earlier to the parsed manifest and overwrite
   // the original manifest. We do this to ensure the manifest doesn't contain an
   // exploitable bug that could be used to compromise the browser.
-  scoped_ptr<DictionaryValue> final_manifest(manifest.DeepCopy());
-  final_manifest->SetString(extension_manifest_keys::kPublicKey, public_key_);
+  scoped_ptr<base::DictionaryValue> final_manifest(manifest.DeepCopy());
+  final_manifest->SetString(manifest_keys::kPublicKey, public_key_);
 
   std::string manifest_json;
   JSONStringValueSerializer serializer(&manifest_json);
@@ -606,10 +627,10 @@ DictionaryValue* SandboxedUnpacker::RewriteManifestFile(
     return NULL;
   }
 
-  FilePath manifest_path =
-      extension_root_.Append(Extension::kManifestFilename);
-  if (!file_util::WriteFile(manifest_path,
-                            manifest_json.data(), manifest_json.size())) {
+  base::FilePath manifest_path =
+      extension_root_.Append(kManifestFilename);
+  int size = base::checked_cast<int>(manifest_json.size());
+  if (base::WriteFile(manifest_path, manifest_json.data(), size) != size) {
     // Error saving manifest.json.
     ReportFailure(
         ERROR_SAVING_MANIFEST_JSON,
@@ -622,9 +643,9 @@ DictionaryValue* SandboxedUnpacker::RewriteManifestFile(
   return final_manifest.release();
 }
 
-bool SandboxedUnpacker::RewriteImageFiles() {
-  Unpacker::DecodedImages images;
-  if (!Unpacker::ReadImagesFromFile(temp_dir_.path(), &images)) {
+bool SandboxedUnpacker::RewriteImageFiles(SkBitmap* install_icon) {
+  DecodedImages images;
+  if (!ReadImagesFromFile(temp_dir_.path(), &images)) {
     // Couldn't read image data from disk.
     ReportFailure(
         COULD_NOT_READ_IMAGE_DATA_FROM_DISK,
@@ -637,7 +658,8 @@ bool SandboxedUnpacker::RewriteImageFiles() {
   // Delete any images that may be used by the browser.  We're going to write
   // out our own versions of the parsed images, and we want to make sure the
   // originals are gone for good.
-  std::set<FilePath> image_paths = extension_->GetBrowserImages();
+  std::set<base::FilePath> image_paths =
+      extension_file_util::GetBrowserImagePaths(extension_.get());
   if (image_paths.size() != images.size()) {
     // Decoded images don't match what's in the manifest.
     ReportFailure(
@@ -648,9 +670,9 @@ bool SandboxedUnpacker::RewriteImageFiles() {
     return false;
   }
 
-  for (std::set<FilePath>::iterator it = image_paths.begin();
+  for (std::set<base::FilePath>::iterator it = image_paths.begin();
        it != image_paths.end(); ++it) {
-    FilePath path = *it;
+    base::FilePath path = *it;
     if (path.IsAbsolute() || path.ReferencesParent()) {
       // Invalid path for browser image.
       ReportFailure(
@@ -660,7 +682,7 @@ bool SandboxedUnpacker::RewriteImageFiles() {
               ASCIIToUTF16("INVALID_PATH_FOR_BROWSER_IMAGE")));
       return false;
     }
-    if (!file_util::Delete(extension_root_.Append(path), false)) {
+    if (!base::DeleteFile(extension_root_.Append(path), false)) {
       // Error removing old image file.
       ReportFailure(
           ERROR_REMOVING_OLD_IMAGE_FILE,
@@ -671,10 +693,27 @@ bool SandboxedUnpacker::RewriteImageFiles() {
     }
   }
 
+  std::string install_icon_path = IconsInfo::GetIcons(extension_).Get(
+      extension_misc::EXTENSION_ICON_LARGE,
+      ExtensionIconSet::MATCH_BIGGER);
+
   // Write our parsed images back to disk as well.
   for (size_t i = 0; i < images.size(); ++i) {
+    if (BrowserThread::GetBlockingPool()->IsShutdownInProgress()) {
+      // Abort package installation if shutdown was initiated, crbug.com/235525
+      ReportFailure(
+          ABORTED_DUE_TO_SHUTDOWN,
+          l10n_util::GetStringFUTF16(
+              IDS_EXTENSION_PACKAGE_INSTALL_ERROR,
+              ASCIIToUTF16("ABORTED_DUE_TO_SHUTDOWN")));
+      return false;
+    }
+
     const SkBitmap& image = images[i].a;
-    FilePath path_suffix = images[i].b;
+    base::FilePath path_suffix = images[i].b;
+    if (path_suffix.MaybeAsASCII() == install_icon_path)
+      *install_icon = image;
+
     if (path_suffix.IsAbsolute() || path_suffix.ReferencesParent()) {
       // Invalid path for bitmap image.
       ReportFailure(
@@ -684,7 +723,7 @@ bool SandboxedUnpacker::RewriteImageFiles() {
               ASCIIToUTF16("INVALID_PATH_FOR_BITMAP_IMAGE")));
       return false;
     }
-    FilePath path = extension_root_.Append(path_suffix);
+    base::FilePath path = extension_root_.Append(path_suffix);
 
     std::vector<unsigned char> image_data;
     // TODO(mpcomplete): It's lame that we're encoding all images as PNG, even
@@ -703,7 +742,8 @@ bool SandboxedUnpacker::RewriteImageFiles() {
     // Note: we're overwriting existing files that the utility process wrote,
     // so we can be sure the directory exists.
     const char* image_data_ptr = reinterpret_cast<const char*>(&image_data[0]);
-    if (!file_util::WriteFile(path, image_data_ptr, image_data.size())) {
+    int size = base::checked_cast<int>(image_data.size());
+    if (base::WriteFile(path, image_data_ptr, size) != size) {
       // Error saving theme image.
       ReportFailure(
           ERROR_SAVING_THEME_IMAGE,
@@ -718,8 +758,8 @@ bool SandboxedUnpacker::RewriteImageFiles() {
 }
 
 bool SandboxedUnpacker::RewriteCatalogFiles() {
-  DictionaryValue catalogs;
-  if (!Unpacker::ReadMessageCatalogsFromFile(temp_dir_.path(), &catalogs)) {
+  base::DictionaryValue catalogs;
+  if (!ReadMessageCatalogsFromFile(temp_dir_.path(), &catalogs)) {
     // Could not read catalog data from disk.
     ReportFailure(
         COULD_NOT_READ_CATALOG_DATA_FROM_DISK,
@@ -730,10 +770,10 @@ bool SandboxedUnpacker::RewriteCatalogFiles() {
   }
 
   // Write our parsed catalogs back to disk.
-  for (DictionaryValue::key_iterator key_it = catalogs.begin_keys();
-       key_it != catalogs.end_keys(); ++key_it) {
-    DictionaryValue* catalog;
-    if (!catalogs.GetDictionaryWithoutPathExpansion(*key_it, &catalog)) {
+  for (base::DictionaryValue::Iterator it(catalogs);
+       !it.IsAtEnd(); it.Advance()) {
+    const base::DictionaryValue* catalog = NULL;
+    if (!it.value().GetAsDictionary(&catalog)) {
       // Invalid catalog data.
       ReportFailure(
           INVALID_CATALOG_DATA,
@@ -743,10 +783,8 @@ bool SandboxedUnpacker::RewriteCatalogFiles() {
       return false;
     }
 
-    // TODO(viettrungluu): Fix the |FilePath::FromWStringHack(UTF8ToWide())|
-    // hack and remove the corresponding #include.
-    FilePath relative_path = FilePath::FromWStringHack(UTF8ToWide(*key_it));
-    relative_path = relative_path.Append(Extension::kMessagesFilename);
+    base::FilePath relative_path = base::FilePath::FromUTF8Unsafe(it.key());
+    relative_path = relative_path.Append(kMessagesFilename);
     if (relative_path.IsAbsolute() || relative_path.ReferencesParent()) {
       // Invalid path for catalog.
       ReportFailure(
@@ -756,7 +794,7 @@ bool SandboxedUnpacker::RewriteCatalogFiles() {
               ASCIIToUTF16("INVALID_PATH_FOR_CATALOG")));
       return false;
     }
-    FilePath path = extension_root_.Append(relative_path);
+    base::FilePath path = extension_root_.Append(relative_path);
 
     std::string catalog_json;
     JSONStringValueSerializer serializer(&catalog_json);
@@ -773,9 +811,8 @@ bool SandboxedUnpacker::RewriteCatalogFiles() {
 
     // Note: we're overwriting existing files that the utility process read,
     // so we can be sure the directory exists.
-    if (!file_util::WriteFile(path,
-                              catalog_json.c_str(),
-                              catalog_json.size())) {
+    int size = base::checked_cast<int>(catalog_json.size());
+    if (base::WriteFile(path, catalog_json.c_str(), size) != size) {
       // Error saving catalog.
       ReportFailure(
           ERROR_SAVING_CATALOG,

@@ -4,34 +4,26 @@
 
 #include "chrome/browser/web_applications/web_app.h"
 
-#include "base/file_path.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/files/file_path.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
-#include "chrome/browser/ui/web_applications/web_app_ui.h"
-#include "chrome/common/extensions/extension_messages.h"
+#include "chrome/browser/web_applications/web_app.h"
+#include "chrome/common/extensions/chrome_extension_messages.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
-#include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_renderer_host.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using content::BrowserThread;
 using content::RenderViewHostTester;
 
 class WebApplicationTest : public ChromeRenderViewHostTestHarness {
- public:
-  WebApplicationTest() : ui_thread_(BrowserThread::UI, &message_loop_) {
-  }
-
- private:
+ protected:
   virtual void SetUp() OVERRIDE {
     ChromeRenderViewHostTestHarness::SetUp();
     extensions::TabHelper::CreateForWebContents(web_contents());
     FaviconTabHelper::CreateForWebContents(web_contents());
   }
-
-  content::TestBrowserThread ui_thread_;
 };
 
 #if defined(OS_MACOSX)
@@ -40,8 +32,8 @@ class WebApplicationTest : public ChromeRenderViewHostTestHarness {
 #define MAYBE_GetShortcutInfoForTab GetShortcutInfoForTab
 #endif
 TEST_F(WebApplicationTest, MAYBE_GetShortcutInfoForTab) {
-  const string16 title = ASCIIToUTF16("TEST_TITLE");
-  const string16 description = ASCIIToUTF16("TEST_DESCRIPTION");
+  const base::string16 title = base::ASCIIToUTF16("TEST_TITLE");
+  const base::string16 description = base::ASCIIToUTF16("TEST_DESCRIPTION");
   const GURL url("http://www.foo.com/bar");
   WebApplicationInfo web_app_info;
   web_app_info.title = title;
@@ -50,8 +42,8 @@ TEST_F(WebApplicationTest, MAYBE_GetShortcutInfoForTab) {
 
   RenderViewHostTester::TestOnMessageReceived(
       rvh(),
-      ExtensionHostMsg_DidGetApplicationInfo(0, 0, web_app_info));
-  ShellIntegration::ShortcutInfo info;
+      ChromeExtensionHostMsg_DidGetApplicationInfo(0, 0, web_app_info));
+  web_app::ShortcutInfo info;
   web_app::GetShortcutInfoForTab(web_contents(), &info);
 
   EXPECT_EQ(title, info.title);
@@ -60,19 +52,19 @@ TEST_F(WebApplicationTest, MAYBE_GetShortcutInfoForTab) {
 }
 
 TEST_F(WebApplicationTest, AppDirWithId) {
-  FilePath profile_path(FILE_PATH_LITERAL("profile"));
-  FilePath result(web_app::GetWebAppDataDirectory(profile_path, "123", GURL()));
-  FilePath expected = profile_path.AppendASCII("Web Applications")
+  base::FilePath profile_path(FILE_PATH_LITERAL("profile"));
+  base::FilePath result(
+      web_app::GetWebAppDataDirectory(profile_path, "123", GURL()));
+  base::FilePath expected = profile_path.AppendASCII("Web Applications")
                                   .AppendASCII("_crx_123");
   EXPECT_EQ(expected, result);
 }
 
 TEST_F(WebApplicationTest, AppDirWithUrl) {
-  FilePath profile_path(FILE_PATH_LITERAL("profile"));
-  FilePath result(web_app::GetWebAppDataDirectory(
-      profile_path, "", GURL("http://example.com")));
-  FilePath expected = profile_path.AppendASCII("Web Applications")
-                                  .AppendASCII("example.com")
-                                  .AppendASCII("http_80");
+  base::FilePath profile_path(FILE_PATH_LITERAL("profile"));
+  base::FilePath result(web_app::GetWebAppDataDirectory(
+      profile_path, std::string(), GURL("http://example.com")));
+  base::FilePath expected = profile_path.AppendASCII("Web Applications")
+      .AppendASCII("example.com").AppendASCII("http_80");
   EXPECT_EQ(expected, result);
 }

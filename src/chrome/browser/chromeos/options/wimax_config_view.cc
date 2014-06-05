@@ -4,23 +4,31 @@
 
 #include "chrome/browser/chromeos/options/wimax_config_view.h"
 
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/chromeos/cros/cros_library.h"
-#include "chrome/browser/chromeos/cros/network_library.h"
+#include "ash/system/chromeos/network/network_connect.h"
+#include "base/bind.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chromeos/enrollment_dialog_view.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/chromeos/login/wizard_controller.h"
+#include "chrome/browser/chromeos/login/startup_utils.h"
+#include "chrome/browser/chromeos/net/onc_utils.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chromeos/network/onc/onc_constants.h"
+#include "chromeos/login/login_state.h"
+#include "chromeos/network/network_configuration_handler.h"
+#include "chromeos/network/network_event_log.h"
+#include "chromeos/network/network_profile.h"
+#include "chromeos/network/network_profile_handler.h"
+#include "chromeos/network/network_state.h"
+#include "chromeos/network/network_state_handler.h"
+#include "components/onc/onc_constants.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "grit/theme_resources.h"
-#include "ui/base/events/event.h"
+#include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/events/event.h"
 #include "ui/views/controls/button/checkbox.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/label.h"
@@ -32,8 +40,19 @@
 
 namespace chromeos {
 
-WimaxConfigView::WimaxConfigView(NetworkConfigView* parent, WimaxNetwork* wimax)
-    : ChildNetworkConfigView(parent, wimax),
+namespace {
+
+void ShillError(const std::string& function,
+                const std::string& error_name,
+                scoped_ptr<base::DictionaryValue> error_data) {
+  NET_LOG_ERROR("Shill Error from WimaxConfigView: " + error_name, function);
+}
+
+}  // namespace
+
+WimaxConfigView::WimaxConfigView(NetworkConfigView* parent,
+                                 const std::string& service_path)
+    : ChildNetworkConfigView(parent, service_path),
       identity_label_(NULL),
       identity_textfield_(NULL),
       save_credentials_checkbox_(NULL),
@@ -42,11 +61,17 @@ WimaxConfigView::WimaxConfigView(NetworkConfigView* parent, WimaxNetwork* wimax)
       passphrase_label_(NULL),
       passphrase_textfield_(NULL),
       passphrase_visible_button_(NULL),
-      error_label_(NULL) {
-  Init(wimax);
+      error_label_(NULL),
+      weak_ptr_factory_(this) {
+  Init();
 }
 
 WimaxConfigView::~WimaxConfigView() {
+  RemoveAllChildViews(true);  // Destroy children before models
+}
+
+base::string16 WimaxConfigView::GetTitle() const {
+  return l10n_util::GetStringUTF16(IDS_OPTIONS_SETTINGS_JOIN_WIMAX_NETWORKS);
 }
 
 views::View* WimaxConfigView::GetInitiallyFocusedView() {
@@ -59,7 +84,7 @@ views::View* WimaxConfigView::GetInitiallyFocusedView() {
 
 bool WimaxConfigView::CanLogin() {
   // In OOBE it may be valid to log in with no credentials (crbug.com/137776).
-  if (!chromeos::WizardController::IsOobeCompleted())
+  if (!chromeos::StartupUtils::IsOobeCompleted())
     return true;
 
   // TODO(benchan): Update this with the correct minimum length (don't just
@@ -73,33 +98,16 @@ void WimaxConfigView::UpdateDialogButtons() {
 }
 
 void WimaxConfigView::UpdateErrorLabel() {
-  std::string error_msg;
+  base::string16 error_msg;
   if (!service_path_.empty()) {
-    NetworkLibrary* cros = CrosLibrary::Get()->GetNetworkLibrary();
-    const WimaxNetwork* wimax = cros->FindWimaxNetworkByPath(service_path_);
-    if (wimax && wimax->failed()) {
-      bool passphrase_empty = wimax->eap_passphrase().empty();
-      switch (wimax->error()) {
-        case ERROR_BAD_PASSPHRASE:
-          if (!passphrase_empty) {
-            error_msg = l10n_util::GetStringUTF8(
-                IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_BAD_PASSPHRASE);
-          }
-          break;
-        case ERROR_BAD_WEPKEY:
-          if (!passphrase_empty) {
-            error_msg = l10n_util::GetStringUTF8(
-                IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_BAD_WEPKEY);
-          }
-          break;
-        default:
-          error_msg = wimax->GetErrorString();
-          break;
-      }
-    }
+    const NetworkState* wimax = NetworkHandler::Get()->network_state_handler()->
+        GetNetworkState(service_path_);
+    if (wimax && wimax->connection_state() == shill::kStateFailure)
+      error_msg = ash::network_connect::ErrorString(
+          wimax->last_error(), wimax->path());
   }
   if (!error_msg.empty()) {
-    error_label_->SetText(UTF8ToUTF16(error_msg));
+    error_label_->SetText(error_msg);
     error_label_->SetVisible(true);
   } else {
     error_label_->SetVisible(false);
@@ -107,7 +115,7 @@ void WimaxConfigView::UpdateErrorLabel() {
 }
 
 void WimaxConfigView::ContentsChanged(views::Textfield* sender,
-                                      const string16& new_contents) {
+                                      const base::string16& new_contents) {
   UpdateDialogButtons();
 }
 
@@ -122,11 +130,13 @@ bool WimaxConfigView::HandleKeyEvent(views::Textfield* sender,
 
 void WimaxConfigView::ButtonPressed(views::Button* sender,
                                    const ui::Event& event) {
-  if (sender == passphrase_visible_button_) {
-    if (passphrase_textfield_) {
-      passphrase_textfield_->SetObscured(!passphrase_textfield_->IsObscured());
-      passphrase_visible_button_->SetToggled(
-          !passphrase_textfield_->IsObscured());
+  if (sender == passphrase_visible_button_ && passphrase_textfield_) {
+    if (passphrase_textfield_->GetTextInputType() == ui::TEXT_INPUT_TYPE_TEXT) {
+      passphrase_textfield_->SetTextInputType(ui::TEXT_INPUT_TYPE_PASSWORD);
+      passphrase_visible_button_->SetToggled(false);
+    } else {
+      passphrase_textfield_->SetTextInputType(ui::TEXT_INPUT_TYPE_TEXT);
+      passphrase_visible_button_->SetToggled(true);
     }
   } else {
     NOTREACHED();
@@ -134,36 +144,45 @@ void WimaxConfigView::ButtonPressed(views::Button* sender,
 }
 
 bool WimaxConfigView::Login() {
-  NetworkLibrary* cros = CrosLibrary::Get()->GetNetworkLibrary();
-  WimaxNetwork* wimax = cros->FindWimaxNetworkByPath(service_path_);
+  const NetworkState* wimax = NetworkHandler::Get()->network_state_handler()->
+      GetNetworkState(service_path_);
   if (!wimax) {
-    // Shill no longer knows about this wimax network (edge case).
-    // TODO(stevenjb): Add a notification (chromium-os13225).
-    LOG(WARNING) << "Wimax network: " << service_path_ << " no longer exists.";
-    return true;
+    // Shill no longer knows about this network (edge case).
+    // TODO(stevenjb): Add notification for this.
+    NET_LOG_ERROR("Network not found", service_path_);
+    return true;  // Close dialog
   }
-  wimax->SetEAPIdentity(GetEapIdentity());
-  wimax->SetEAPPassphrase(GetEapPassphrase());
-  wimax->SetSaveCredentials(GetSaveCredentials());
-  bool share_default = (wimax->profile_type() != PROFILE_USER);
-  bool share = GetShareNetwork(share_default);
-  wimax->SetEnrollmentDelegate(
-      CreateEnrollmentDelegate(GetWidget()->GetNativeWindow(),
-                               wimax->name(),
-                               ProfileManager::GetLastUsedProfile()));
-  cros->ConnectToWimaxNetwork(wimax, share);
-  // Connection failures are responsible for updating the UI, including
-  // reopening dialogs.
+  base::DictionaryValue properties;
+  properties.SetStringWithoutPathExpansion(
+      shill::kEapIdentityProperty, GetEapIdentity());
+  properties.SetStringWithoutPathExpansion(
+      shill::kEapPasswordProperty, GetEapPassphrase());
+  properties.SetBooleanWithoutPathExpansion(
+      shill::kSaveCredentialsProperty, GetSaveCredentials());
+
+  const bool share_default = true;
+  bool share_network = GetShareNetwork(share_default);
+
+  bool only_policy_autoconnect =
+      onc::PolicyAllowsOnlyPolicyNetworksToAutoconnect(!share_network);
+  if (only_policy_autoconnect) {
+    properties.SetBooleanWithoutPathExpansion(shill::kAutoConnectProperty,
+                                              false);
+  }
+
+  ash::network_connect::ConfigureNetworkAndConnect(
+      service_path_, properties, share_network);
   return true;  // dialog will be closed
 }
 
 std::string WimaxConfigView::GetEapIdentity() const {
   DCHECK(identity_textfield_);
-  return UTF16ToUTF8(identity_textfield_->text());
+  return base::UTF16ToUTF8(identity_textfield_->text());
 }
 
 std::string WimaxConfigView::GetEapPassphrase() const {
-  return passphrase_textfield_ ? UTF16ToUTF8(passphrase_textfield_->text()) :
+  return passphrase_textfield_ ? base::UTF16ToUTF8(
+                                     passphrase_textfield_->text()) :
                                  std::string();
 }
 
@@ -180,14 +199,17 @@ bool WimaxConfigView::GetShareNetwork(bool share_default) const {
 void WimaxConfigView::Cancel() {
 }
 
-void WimaxConfigView::Init(WimaxNetwork* wimax) {
-  DCHECK(wimax);
-  WifiConfigView::ParseWiFiEAPUIProperty(
-      &save_credentials_ui_data_, wimax, onc::eap::kSaveCredentials);
-  WifiConfigView::ParseWiFiEAPUIProperty(
-      &identity_ui_data_, wimax, onc::eap::kIdentity);
-  WifiConfigView::ParseWiFiUIProperty(
-      &passphrase_ui_data_, wimax, onc::wifi::kPassphrase);
+void WimaxConfigView::Init() {
+  const NetworkState* wimax = NetworkHandler::Get()->network_state_handler()->
+      GetNetworkState(service_path_);
+  DCHECK(wimax && wimax->type() == shill::kTypeWimax);
+
+  WifiConfigView::ParseEAPUIProperty(
+      &save_credentials_ui_data_, wimax, ::onc::eap::kSaveCredentials);
+  WifiConfigView::ParseEAPUIProperty(
+      &identity_ui_data_, wimax, ::onc::eap::kIdentity);
+  WifiConfigView::ParseUIProperty(
+      &passphrase_ui_data_, wimax, ::onc::wifi::kPassphrase);
 
   views::GridLayout* layout = views::GridLayout::CreatePanel(this);
   SetLayoutManager(layout);
@@ -208,59 +230,49 @@ void WimaxConfigView::Init(WimaxNetwork* wimax) {
   column_set->AddColumn(views::GridLayout::CENTER, views::GridLayout::FILL, 1,
                         views::GridLayout::USE_PREF, 0, kPasswordVisibleWidth);
 
-  // Title
-  layout->StartRow(0, column_view_set_id);
-  views::Label* title = new views::Label(l10n_util::GetStringUTF16(
-      IDS_OPTIONS_SETTINGS_JOIN_WIMAX_NETWORKS));
-  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  title->SetFont(rb.GetFont(ui::ResourceBundle::MediumFont));
-  layout->AddView(title, 5, 1);
-  layout->AddPaddingRow(0, views::kUnrelatedControlVerticalSpacing);
-
-  // Netowrk name
+  // Network name
   layout->StartRow(0, column_view_set_id);
   layout->AddView(new views::Label(l10n_util::GetStringUTF16(
       IDS_OPTIONS_SETTINGS_INTERNET_TAB_NETWORK)));
-  views::Label* label = new views::Label(UTF8ToUTF16(wimax->name()));
+  views::Label* label = new views::Label(base::UTF8ToUTF16(wimax->name()));
   label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   layout->AddView(label);
   layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
 
   // Identity
   layout->StartRow(0, column_view_set_id);
-  identity_label_ = new views::Label(l10n_util::GetStringUTF16(
-      IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_CERT_IDENTITY));
+  base::string16 identity_label_text = l10n_util::GetStringUTF16(
+      IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_CERT_IDENTITY);
+  identity_label_ = new views::Label(identity_label_text);
   layout->AddView(identity_label_);
-  identity_textfield_ = new views::Textfield(
-      views::Textfield::STYLE_DEFAULT);
-  identity_textfield_->SetController(this);
-  const std::string& eap_identity = wimax->eap_identity();
-  identity_textfield_->SetText(UTF8ToUTF16(eap_identity));
-  identity_textfield_->SetEnabled(identity_ui_data_.editable());
+  identity_textfield_ = new views::Textfield();
+  identity_textfield_->SetAccessibleName(identity_label_text);
+  identity_textfield_->set_controller(this);
+  identity_textfield_->SetEnabled(identity_ui_data_.IsEditable());
   layout->AddView(identity_textfield_);
   layout->AddView(new ControlledSettingIndicatorView(identity_ui_data_));
   layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
 
   // Passphrase input
   layout->StartRow(0, column_view_set_id);
-  int label_text_id = IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_PASSPHRASE;
-  passphrase_label_ = new views::Label(
-      l10n_util::GetStringUTF16(label_text_id));
+  base::string16 passphrase_label_text = l10n_util::GetStringUTF16(
+      IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_PASSPHRASE);
+  passphrase_label_ = new views::Label(passphrase_label_text);
   layout->AddView(passphrase_label_);
-  passphrase_textfield_ = new views::Textfield(
-      views::Textfield::STYLE_OBSCURED);
-  passphrase_textfield_->SetController(this);
+  passphrase_textfield_ = new views::Textfield();
+  passphrase_textfield_->SetTextInputType(ui::TEXT_INPUT_TYPE_PASSWORD);
+  passphrase_textfield_->set_controller(this);
   passphrase_label_->SetEnabled(true);
-  passphrase_textfield_->SetEnabled(passphrase_ui_data_.editable());
-  passphrase_textfield_->SetAccessibleName(l10n_util::GetStringUTF16(
-      label_text_id));
+  passphrase_textfield_->SetEnabled(passphrase_ui_data_.IsEditable());
+  passphrase_textfield_->SetAccessibleName(passphrase_label_text);
   layout->AddView(passphrase_textfield_);
 
-  if (passphrase_ui_data_.managed()) {
+  if (passphrase_ui_data_.IsManaged()) {
     layout->AddView(new ControlledSettingIndicatorView(passphrase_ui_data_));
   } else {
     // Password visible button.
     passphrase_visible_button_ = new views::ToggleImageButton(this);
+    passphrase_visible_button_->SetFocusable(true);
     passphrase_visible_button_->SetTooltipText(
         l10n_util::GetStringUTF16(
             IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_PASSPHRASE_SHOW));
@@ -292,31 +304,38 @@ void WimaxConfigView::Init(WimaxNetwork* wimax) {
 
   // Checkboxes.
 
-  if (UserManager::Get()->IsUserLoggedIn()) {
+  if (LoginState::Get()->IsUserAuthenticated()) {
     // Save credentials
     layout->StartRow(0, column_view_set_id);
     save_credentials_checkbox_ = new views::Checkbox(
         l10n_util::GetStringUTF16(
             IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_SAVE_CREDENTIALS));
     save_credentials_checkbox_->SetEnabled(
-        save_credentials_ui_data_.editable());
-    save_credentials_checkbox_->SetChecked(wimax->save_credentials());
+        save_credentials_ui_data_.IsEditable());
     layout->SkipColumns(1);
     layout->AddView(save_credentials_checkbox_);
     layout->AddView(
         new ControlledSettingIndicatorView(save_credentials_ui_data_));
+  }
 
-    // Share network
-    if (wimax->profile_type() == PROFILE_NONE && wimax->passphrase_required()) {
-      layout->StartRow(0, column_view_set_id);
-      share_network_checkbox_ = new views::Checkbox(
-          l10n_util::GetStringUTF16(
-              IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_SHARE_NETWORK));
-      share_network_checkbox_->SetEnabled(true);
-      share_network_checkbox_->SetChecked(false);  // Default to unshared.
-      layout->SkipColumns(1);
-      layout->AddView(share_network_checkbox_);
-    }
+  // Share network
+  if (wimax->profile_path().empty()) {
+    layout->StartRow(0, column_view_set_id);
+    share_network_checkbox_ = new views::Checkbox(
+        l10n_util::GetStringUTF16(
+            IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_SHARE_NETWORK));
+
+    bool share_network_checkbox_value = false;
+    bool share_network_checkbox_enabled = false;
+    ChildNetworkConfigView::GetShareStateForLoginState(
+        &share_network_checkbox_value,
+        &share_network_checkbox_enabled);
+
+    share_network_checkbox_->SetChecked(share_network_checkbox_value);
+    share_network_checkbox_->SetEnabled(share_network_checkbox_enabled);
+
+    layout->SkipColumns(1);
+    layout->AddView(share_network_checkbox_);
   }
   layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
 
@@ -329,6 +348,32 @@ void WimaxConfigView::Init(WimaxNetwork* wimax) {
   layout->AddView(error_label_);
 
   UpdateErrorLabel();
+
+  if (wimax) {
+    NetworkHandler::Get()->network_configuration_handler()->GetProperties(
+        service_path_,
+        base::Bind(&WimaxConfigView::InitFromProperties,
+                   weak_ptr_factory_.GetWeakPtr()),
+        base::Bind(&ShillError, "GetProperties"));
+  }
+}
+
+void WimaxConfigView::InitFromProperties(
+    const std::string& service_path,
+    const base::DictionaryValue& properties) {
+  // EapIdentity
+  std::string eap_identity;
+  properties.GetStringWithoutPathExpansion(
+      shill::kEapIdentityProperty, &eap_identity);
+  identity_textfield_->SetText(base::UTF8ToUTF16(eap_identity));
+
+  // Save credentials
+  if (save_credentials_checkbox_) {
+    bool save_credentials = false;
+    properties.GetBooleanWithoutPathExpansion(
+        shill::kSaveCredentialsProperty, &save_credentials);
+    save_credentials_checkbox_->SetChecked(save_credentials);
+  }
 }
 
 void WimaxConfigView::InitFocus() {

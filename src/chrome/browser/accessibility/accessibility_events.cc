@@ -5,25 +5,49 @@
 #include "chrome/browser/accessibility/accessibility_events.h"
 
 #include "base/values.h"
-
+#include "chrome/browser/accessibility/accessibility_extension_api.h"
 #include "chrome/browser/accessibility/accessibility_extension_api_constants.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 
 namespace keys = extension_accessibility_api_constants;
 
-void SendAccessibilityNotification(int type, AccessibilityEventInfo* info) {
-  Profile *profile = info->profile();
+void SendControlAccessibilityNotification(
+  ui::AXEvent event,
+  AccessibilityControlInfo* info) {
+  Profile* profile = info->profile();
   if (profile->ShouldSendAccessibilityEvents()) {
-    content::NotificationService::current()->Notify(
-        type,
-        content::Source<Profile>(profile),
-        content::Details<AccessibilityEventInfo>(info));
+    ExtensionAccessibilityEventRouter::GetInstance()->HandleControlEvent(
+        event,
+        info);
   }
 }
+
+void SendMenuAccessibilityNotification(
+  ui::AXEvent event,
+  AccessibilityMenuInfo* info) {
+  Profile* profile = info->profile();
+  if (profile->ShouldSendAccessibilityEvents()) {
+    ExtensionAccessibilityEventRouter::GetInstance()->HandleMenuEvent(
+        event,
+        info);
+  }
+}
+
+void SendWindowAccessibilityNotification(
+  ui::AXEvent event,
+  AccessibilityWindowInfo* info) {
+  Profile* profile = info->profile();
+  if (profile->ShouldSendAccessibilityEvents()) {
+    ExtensionAccessibilityEventRouter::GetInstance()->HandleWindowEvent(
+        event,
+        info);
+  }
+}
+
 
 AccessibilityControlInfo::AccessibilityControlInfo(
     Profile* profile, const std::string& name)
@@ -34,7 +58,8 @@ AccessibilityControlInfo::AccessibilityControlInfo(
 AccessibilityControlInfo::~AccessibilityControlInfo() {
 }
 
-void AccessibilityControlInfo::SerializeToDict(DictionaryValue *dict) const {
+void AccessibilityControlInfo::SerializeToDict(
+    base::DictionaryValue *dict) const {
   dict->SetString(keys::kNameKey, name_);
   dict->SetString(keys::kTypeKey, type());
   if (!context_.empty())
@@ -91,7 +116,7 @@ const char* AccessibilityRadioButtonInfo::type() const {
 }
 
 void AccessibilityRadioButtonInfo::SerializeToDict(
-    DictionaryValue *dict) const {
+    base::DictionaryValue *dict) const {
   AccessibilityControlInfo::SerializeToDict(dict);
   dict->SetBoolean(keys::kCheckedKey, checked_);
   dict->SetInteger(keys::kItemIndexKey, item_index_);
@@ -111,7 +136,8 @@ const char* AccessibilityCheckboxInfo::type() const {
   return keys::kTypeCheckbox;
 }
 
-void AccessibilityCheckboxInfo::SerializeToDict(DictionaryValue *dict) const {
+void AccessibilityCheckboxInfo::SerializeToDict(
+    base::DictionaryValue *dict) const {
   AccessibilityControlInfo::SerializeToDict(dict);
   dict->SetBoolean(keys::kCheckedKey, checked_);
 }
@@ -131,7 +157,7 @@ const char* AccessibilityTabInfo::type() const {
   return keys::kTypeTab;
 }
 
-void AccessibilityTabInfo::SerializeToDict(DictionaryValue *dict) const {
+void AccessibilityTabInfo::SerializeToDict(base::DictionaryValue *dict) const {
   AccessibilityControlInfo::SerializeToDict(dict);
   dict->SetInteger(keys::kItemIndexKey, tab_index_);
   dict->SetInteger(keys::kItemCountKey, tab_count_);
@@ -154,7 +180,8 @@ const char* AccessibilityComboBoxInfo::type() const {
   return keys::kTypeComboBox;
 }
 
-void AccessibilityComboBoxInfo::SerializeToDict(DictionaryValue *dict) const {
+void AccessibilityComboBoxInfo::SerializeToDict(
+    base::DictionaryValue *dict) const {
   AccessibilityControlInfo::SerializeToDict(dict);
   dict->SetString(keys::kValueKey, value_);
   dict->SetInteger(keys::kItemIndexKey, item_index_);
@@ -166,7 +193,6 @@ AccessibilityTextBoxInfo::AccessibilityTextBoxInfo(Profile* profile,
                                                    const std::string& context,
                                                    bool password)
     : AccessibilityControlInfo(profile, name),
-      value_(""),
       password_(password),
       selection_start_(0),
       selection_end_(0) {
@@ -177,7 +203,8 @@ const char* AccessibilityTextBoxInfo::type() const {
   return keys::kTypeTextBox;
 }
 
-void AccessibilityTextBoxInfo::SerializeToDict(DictionaryValue *dict) const {
+void AccessibilityTextBoxInfo::SerializeToDict(
+    base::DictionaryValue *dict) const {
   AccessibilityControlInfo::SerializeToDict(dict);
   dict->SetString(keys::kValueKey, value_);
   dict->SetBoolean(keys::kPasswordKey, password_);
@@ -202,7 +229,8 @@ const char* AccessibilityListBoxInfo::type() const {
   return keys::kTypeListBox;
 }
 
-void AccessibilityListBoxInfo::SerializeToDict(DictionaryValue *dict) const {
+void AccessibilityListBoxInfo::SerializeToDict(
+    base::DictionaryValue *dict) const {
   AccessibilityControlInfo::SerializeToDict(dict);
   dict->SetString(keys::kValueKey, value_);
   dict->SetInteger(keys::kItemIndexKey, item_index_);
@@ -235,11 +263,52 @@ const char* AccessibilityMenuItemInfo::type() const {
   return keys::kTypeMenuItem;
 }
 
-void AccessibilityMenuItemInfo::SerializeToDict(DictionaryValue *dict) const {
+void AccessibilityMenuItemInfo::SerializeToDict(
+    base::DictionaryValue *dict) const {
   AccessibilityControlInfo::SerializeToDict(dict);
   dict->SetBoolean(keys::kHasSubmenuKey, has_submenu_);
   dict->SetInteger(keys::kItemIndexKey, item_index_);
   dict->SetInteger(keys::kItemCountKey, item_count_);
+}
+
+AccessibilityTreeInfo::AccessibilityTreeInfo(Profile* profile,
+                                             const std::string& menu_name)
+    : AccessibilityControlInfo(profile, menu_name) {
+}
+
+const char* AccessibilityTreeInfo::type() const {
+  return keys::kTypeTree;
+}
+
+AccessibilityTreeItemInfo::AccessibilityTreeItemInfo(Profile* profile,
+                                                     const std::string& name,
+                                                     const std::string& context,
+                                                     int item_depth,
+                                                     int item_index,
+                                                     int item_count,
+                                                     int children_count,
+                                                     bool is_expanded)
+    : AccessibilityControlInfo(profile, name),
+      item_depth_(item_depth),
+      item_index_(item_index),
+      item_count_(item_count),
+      children_count_(children_count),
+      is_expanded_(is_expanded) {
+  set_context(context);
+}
+
+const char* AccessibilityTreeItemInfo::type() const {
+  return keys::kTypeTreeItem;
+}
+
+void AccessibilityTreeItemInfo::SerializeToDict(
+    base::DictionaryValue *dict) const {
+  AccessibilityControlInfo::SerializeToDict(dict);
+  dict->SetInteger(keys::kItemDepthKey, item_depth_);
+  dict->SetInteger(keys::kItemIndexKey, item_index_);
+  dict->SetInteger(keys::kItemCountKey, item_count_);
+  dict->SetInteger(keys::kChildrenCountKey, children_count_);
+  dict->SetBoolean(keys::kItemExpandedKey, is_expanded_);
 }
 
 AccessibilitySliderInfo::AccessibilitySliderInfo(Profile* profile,
@@ -255,7 +324,17 @@ const char* AccessibilitySliderInfo::type() const {
   return keys::kTypeSlider;
 }
 
-void AccessibilitySliderInfo::SerializeToDict(DictionaryValue *dict) const {
+void AccessibilitySliderInfo::SerializeToDict(
+    base::DictionaryValue *dict) const {
   AccessibilityControlInfo::SerializeToDict(dict);
   dict->SetString(keys::kStringValueKey, value_);
+}
+
+AccessibilityAlertInfo::AccessibilityAlertInfo(Profile* profile,
+                                               const std::string& name)
+    : AccessibilityControlInfo(profile, name) {
+}
+
+const char* AccessibilityAlertInfo::type() const {
+  return keys::kTypeAlert;
 }

@@ -1,8 +1,6 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-//
-// Unit test for SyncChannel.
 
 #include "ipc/ipc_sync_channel.h"
 
@@ -13,14 +11,13 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
-#include "base/process_util.h"
-#include "base/stl_util.h"
-#include "base/string_util.h"
-#include "base/third_party/dynamic_annotations/dynamic_annotations.h"
+#include "base/message_loop/message_loop.h"
+#include "base/process/process_handle.h"
+#include "base/run_loop.h"
+#include "base/strings/string_util.h"
+#include "base/synchronization/waitable_event.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread.h"
-#include "base/synchronization/waitable_event.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_sender.h"
@@ -31,7 +28,6 @@
 using base::WaitableEvent;
 
 namespace IPC {
-
 namespace {
 
 // Base class for a "process" with listener and IPC threads.
@@ -45,12 +41,8 @@ class Worker : public Listener, public Sender {
         ipc_thread_((thread_name + "_ipc").c_str()),
         listener_thread_((thread_name + "_listener").c_str()),
         overrided_thread_(NULL),
-        shutdown_event_(true, false) {
-    // The data race on vfptr is real but is very hard
-    // to suppress using standard Valgrind mechanism (suppressions).
-    // We have to use ANNOTATE_BENIGN_RACE to hide the reports and
-    // make ThreadSanitizer bots green.
-    ANNOTATE_BENIGN_RACE(this, "Race on vfptr, http://crbug.com/25841");
+        shutdown_event_(true, false),
+        is_shutdown_(false) {
   }
 
   // Will create a named channel and use this name for the threads' name.
@@ -62,17 +54,31 @@ class Worker : public Listener, public Sender {
         ipc_thread_((channel_name + "_ipc").c_str()),
         listener_thread_((channel_name + "_listener").c_str()),
         overrided_thread_(NULL),
-        shutdown_event_(true, false) {
-    // The data race on vfptr is real but is very hard
-    // to suppress using standard Valgrind mechanism (suppressions).
-    // We have to use ANNOTATE_BENIGN_RACE to hide the reports and
-    // make ThreadSanitizer bots green.
-    ANNOTATE_BENIGN_RACE(this, "Race on vfptr, http://crbug.com/25841");
+        shutdown_event_(true, false),
+        is_shutdown_(false) {
   }
 
-  // The IPC thread needs to outlive SyncChannel, so force the correct order of
-  // destruction.
   virtual ~Worker() {
+    // Shutdown() must be called before destruction.
+    CHECK(is_shutdown_);
+  }
+  void AddRef() { }
+  void Release() { }
+  virtual bool Send(Message* msg) OVERRIDE { return channel_->Send(msg); }
+  void WaitForChannelCreation() { channel_created_->Wait(); }
+  void CloseChannel() {
+    DCHECK(base::MessageLoop::current() == ListenerThread()->message_loop());
+    channel_->Close();
+  }
+  void Start() {
+    StartThread(&listener_thread_, base::MessageLoop::TYPE_DEFAULT);
+    ListenerThread()->message_loop()->PostTask(
+        FROM_HERE, base::Bind(&Worker::OnStart, this));
+  }
+  void Shutdown() {
+    // The IPC thread needs to outlive SyncChannel. We can't do this in
+    // ~Worker(), since that'll reset the vtable pointer (to Worker's), which
+    // may result in a race conditions. See http://crbug.com/25841.
     WaitableEvent listener_done(false, false), ipc_done(false, false);
     ListenerThread()->message_loop()->PostTask(
         FROM_HERE, base::Bind(&Worker::OnListenerThreadShutdown1, this,
@@ -81,33 +87,18 @@ class Worker : public Listener, public Sender {
     ipc_done.Wait();
     ipc_thread_.Stop();
     listener_thread_.Stop();
-  }
-  void AddRef() { }
-  void Release() { }
-  bool Send(Message* msg) { return channel_->Send(msg); }
-  bool SendWithTimeout(Message* msg, int timeout_ms) {
-    return channel_->SendWithTimeout(msg, timeout_ms);
-  }
-  void WaitForChannelCreation() { channel_created_->Wait(); }
-  void CloseChannel() {
-    DCHECK(MessageLoop::current() == ListenerThread()->message_loop());
-    channel_->Close();
-  }
-  void Start() {
-    StartThread(&listener_thread_, MessageLoop::TYPE_DEFAULT);
-    ListenerThread()->message_loop()->PostTask(
-        FROM_HERE, base::Bind(&Worker::OnStart, this));
+    is_shutdown_ = true;
   }
   void OverrideThread(base::Thread* overrided_thread) {
     DCHECK(overrided_thread_ == NULL);
     overrided_thread_ = overrided_thread;
   }
-  bool SendAnswerToLife(bool pump, int timeout, bool succeed) {
+  bool SendAnswerToLife(bool pump, bool succeed) {
     int answer = 0;
     SyncMessage* msg = new SyncChannelTestMsg_AnswerToLife(&answer);
     if (pump)
       msg->EnableMessagePumping();
-    bool result = SendWithTimeout(msg, timeout);
+    bool result = Send(msg);
     DCHECK_EQ(result, succeed);
     DCHECK_EQ(answer, (succeed ? 42 : 0));
     return result;
@@ -160,9 +151,12 @@ class Worker : public Listener, public Sender {
   }
 
   virtual SyncChannel* CreateChannel() {
-    return new SyncChannel(
-        channel_name_, mode_, this, ipc_thread_.message_loop_proxy(), true,
-        &shutdown_event_);
+    return new SyncChannel(channel_name_,
+                           mode_,
+                           this,
+                           ipc_thread_.message_loop_proxy().get(),
+                           true,
+                           &shutdown_event_);
   }
 
   base::Thread* ListenerThread() {
@@ -175,7 +169,7 @@ class Worker : public Listener, public Sender {
   // Called on the listener thread to create the sync channel.
   void OnStart() {
     // Link ipc_thread_, listener_thread_ and channel_ altogether.
-    StartThread(&ipc_thread_, MessageLoop::TYPE_IO);
+    StartThread(&ipc_thread_, base::MessageLoop::TYPE_IO);
     channel_.reset(CreateChannel());
     channel_created_->Signal();
     Run();
@@ -186,7 +180,7 @@ class Worker : public Listener, public Sender {
     // SyncChannel needs to be destructed on the thread that it was created on.
     channel_.reset();
 
-    MessageLoop::current()->RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
 
     ipc_thread_.message_loop()->PostTask(
         FROM_HERE, base::Bind(&Worker::OnIPCThreadShutdown, this,
@@ -195,7 +189,7 @@ class Worker : public Listener, public Sender {
 
   void OnIPCThreadShutdown(WaitableEvent* listener_event,
                            WaitableEvent* ipc_event) {
-    MessageLoop::current()->RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
     ipc_event->Signal();
 
     listener_thread_.message_loop()->PostTask(
@@ -204,11 +198,11 @@ class Worker : public Listener, public Sender {
   }
 
   void OnListenerThreadShutdown2(WaitableEvent* listener_event) {
-    MessageLoop::current()->RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
     listener_event->Signal();
   }
 
-  bool OnMessageReceived(const Message& message) {
+  virtual bool OnMessageReceived(const Message& message) OVERRIDE {
     IPC_BEGIN_MESSAGE_MAP(Worker, message)
      IPC_MESSAGE_HANDLER_DELAY_REPLY(SyncChannelTestMsg_Double, OnDoubleDelay)
      IPC_MESSAGE_HANDLER_DELAY_REPLY(SyncChannelTestMsg_AnswerToLife,
@@ -219,7 +213,7 @@ class Worker : public Listener, public Sender {
     return true;
   }
 
-  void StartThread(base::Thread* thread, MessageLoop::Type type) {
+  void StartThread(base::Thread* thread, base::MessageLoop::Type type) {
     base::Thread::Options options;
     options.message_loop_type = type;
     thread->StartWithOptions(options);
@@ -235,6 +229,8 @@ class Worker : public Listener, public Sender {
   base::Thread* overrided_thread_;
 
   base::WaitableEvent shutdown_event_;
+
+  bool is_shutdown_;
 
   DISALLOW_COPY_AND_ASSIGN(Worker);
 };
@@ -262,27 +258,26 @@ void RunTest(std::vector<Worker*> workers) {
   for (size_t i = 0; i < workers.size(); ++i)
     workers[i]->done_event()->Wait();
 
-  STLDeleteContainerPointers(workers.begin(), workers.end());
+  for (size_t i = 0; i < workers.size(); ++i) {
+    workers[i]->Shutdown();
+    delete workers[i];
+  }
 }
-
-}  // namespace
 
 class IPCSyncChannelTest : public testing::Test {
  private:
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
 };
 
-//-----------------------------------------------------------------------------
-
-namespace {
+//------------------------------------------------------------------------------
 
 class SimpleServer : public Worker {
  public:
   explicit SimpleServer(bool pump_during_send)
       : Worker(Channel::MODE_SERVER, "simpler_server"),
         pump_during_send_(pump_during_send) { }
-  void Run() {
-    SendAnswerToLife(pump_during_send_, base::kNoTimeout, true);
+  virtual void Run() OVERRIDE {
+    SendAnswerToLife(pump_during_send_, true);
     Done();
   }
 
@@ -293,7 +288,7 @@ class SimpleClient : public Worker {
  public:
   SimpleClient() : Worker(Channel::MODE_CLIENT, "simple_client") { }
 
-  void OnAnswer(int* answer) {
+  virtual void OnAnswer(int* answer) OVERRIDE {
     *answer = 42;
     Done();
   }
@@ -306,17 +301,13 @@ void Simple(bool pump_during_send) {
   RunTest(workers);
 }
 
-}  // namespace
-
 // Tests basic synchronous call
 TEST_F(IPCSyncChannelTest, Simple) {
   Simple(false);
   Simple(true);
 }
 
-//-----------------------------------------------------------------------------
-
-namespace {
+//------------------------------------------------------------------------------
 
 // Worker classes which override how the sync channel is created to use the
 // two-step initialization (calling the lightweight constructor and then
@@ -327,14 +318,14 @@ class TwoStepServer : public Worker {
       : Worker(Channel::MODE_SERVER, "simpler_server"),
         create_pipe_now_(create_pipe_now) { }
 
-  void Run() {
-    SendAnswerToLife(false, base::kNoTimeout, true);
+  virtual void Run() OVERRIDE {
+    SendAnswerToLife(false, true);
     Done();
   }
 
-  virtual SyncChannel* CreateChannel() {
+  virtual SyncChannel* CreateChannel() OVERRIDE {
     SyncChannel* channel = new SyncChannel(
-        this, ipc_thread().message_loop_proxy(), shutdown_event());
+        this, ipc_thread().message_loop_proxy().get(), shutdown_event());
     channel->Init(channel_name(), mode(), create_pipe_now_);
     return channel;
   }
@@ -348,14 +339,14 @@ class TwoStepClient : public Worker {
       : Worker(Channel::MODE_CLIENT, "simple_client"),
         create_pipe_now_(create_pipe_now) { }
 
-  void OnAnswer(int* answer) {
+  virtual void OnAnswer(int* answer) OVERRIDE {
     *answer = 42;
     Done();
   }
 
-  virtual SyncChannel* CreateChannel() {
+  virtual SyncChannel* CreateChannel() OVERRIDE {
     SyncChannel* channel = new SyncChannel(
-        this, ipc_thread().message_loop_proxy(), shutdown_event());
+        this, ipc_thread().message_loop_proxy().get(), shutdown_event());
     channel->Init(channel_name(), mode(), create_pipe_now_);
     return channel;
   }
@@ -370,8 +361,6 @@ void TwoStep(bool create_server_pipe_now, bool create_client_pipe_now) {
   RunTest(workers);
 }
 
-}  // namespace
-
 // Tests basic two-step initialization, where you call the lightweight
 // constructor then Init.
 TEST_F(IPCSyncChannelTest, TwoStepInitialization) {
@@ -381,16 +370,13 @@ TEST_F(IPCSyncChannelTest, TwoStepInitialization) {
   TwoStep(true, true);
 }
 
-
-//-----------------------------------------------------------------------------
-
-namespace {
+//------------------------------------------------------------------------------
 
 class DelayClient : public Worker {
  public:
   DelayClient() : Worker(Channel::MODE_CLIENT, "delay_client") { }
 
-  void OnAnswerDelay(Message* reply_msg) {
+  virtual void OnAnswerDelay(Message* reply_msg) OVERRIDE {
     SyncChannelTestMsg_AnswerToLife::WriteReplyParams(reply_msg, 42);
     Send(reply_msg);
     Done();
@@ -404,17 +390,13 @@ void DelayReply(bool pump_during_send) {
   RunTest(workers);
 }
 
-}  // namespace
-
 // Tests that asynchronous replies work
 TEST_F(IPCSyncChannelTest, DelayReply) {
   DelayReply(false);
   DelayReply(true);
 }
 
-//-----------------------------------------------------------------------------
-
-namespace {
+//------------------------------------------------------------------------------
 
 class NoHangServer : public Worker {
  public:
@@ -422,11 +404,11 @@ class NoHangServer : public Worker {
       : Worker(Channel::MODE_SERVER, "no_hang_server"),
         got_first_reply_(got_first_reply),
         pump_during_send_(pump_during_send) { }
-  void Run() {
-    SendAnswerToLife(pump_during_send_, base::kNoTimeout, true);
+  virtual void Run() OVERRIDE {
+    SendAnswerToLife(pump_during_send_, true);
     got_first_reply_->Signal();
 
-    SendAnswerToLife(pump_during_send_, base::kNoTimeout, false);
+    SendAnswerToLife(pump_during_send_, false);
     Done();
   }
 
@@ -440,7 +422,7 @@ class NoHangClient : public Worker {
     : Worker(Channel::MODE_CLIENT, "no_hang_client"),
       got_first_reply_(got_first_reply) { }
 
-  virtual void OnAnswerDelay(Message* reply_msg) {
+  virtual void OnAnswerDelay(Message* reply_msg) OVERRIDE {
     // Use the DELAY_REPLY macro so that we can force the reply to be sent
     // before this function returns (when the channel will be reset).
     SyncChannelTestMsg_AnswerToLife::WriteReplyParams(reply_msg, 42);
@@ -461,17 +443,13 @@ void NoHang(bool pump_during_send) {
   RunTest(workers);
 }
 
-}  // namespace
-
 // Tests that caller doesn't hang if receiver dies
 TEST_F(IPCSyncChannelTest, NoHang) {
   NoHang(false);
   NoHang(true);
 }
 
-//-----------------------------------------------------------------------------
-
-namespace {
+//------------------------------------------------------------------------------
 
 class UnblockServer : public Worker {
  public:
@@ -479,7 +457,7 @@ class UnblockServer : public Worker {
     : Worker(Channel::MODE_SERVER, "unblock_server"),
       pump_during_send_(pump_during_send),
       delete_during_send_(delete_during_send) { }
-  void Run() {
+  virtual void Run() OVERRIDE {
     if (delete_during_send_) {
       // Use custom code since race conditions mean the answer may or may not be
       // available.
@@ -489,12 +467,12 @@ class UnblockServer : public Worker {
         msg->EnableMessagePumping();
       Send(msg);
     } else {
-      SendAnswerToLife(pump_during_send_, base::kNoTimeout, true);
+      SendAnswerToLife(pump_during_send_, true);
     }
     Done();
   }
 
-  void OnDoubleDelay(int in, Message* reply_msg) {
+  virtual void OnDoubleDelay(int in, Message* reply_msg) OVERRIDE {
     SyncChannelTestMsg_Double::WriteReplyParams(reply_msg, in * 2);
     Send(reply_msg);
     if (delete_during_send_)
@@ -511,7 +489,7 @@ class UnblockClient : public Worker {
     : Worker(Channel::MODE_CLIENT, "unblock_client"),
       pump_during_send_(pump_during_send) { }
 
-  void OnAnswer(int* answer) {
+  virtual void OnAnswer(int* answer) OVERRIDE {
     SendDouble(pump_during_send_, true);
     *answer = 42;
     Done();
@@ -527,8 +505,6 @@ void Unblock(bool server_pump, bool client_pump, bool delete_during_send) {
   RunTest(workers);
 }
 
-}  // namespace
-
 // Tests that the caller unblocks to answer a sync message from the receiver.
 TEST_F(IPCSyncChannelTest, Unblock) {
   Unblock(false, false, false);
@@ -537,7 +513,7 @@ TEST_F(IPCSyncChannelTest, Unblock) {
   Unblock(true, true, false);
 }
 
-//-----------------------------------------------------------------------------
+//------------------------------------------------------------------------------
 
 // Tests that the the SyncChannel object can be deleted during a Send.
 TEST_F(IPCSyncChannelTest, ChannelDeleteDuringSend) {
@@ -547,9 +523,7 @@ TEST_F(IPCSyncChannelTest, ChannelDeleteDuringSend) {
   Unblock(true, true, true);
 }
 
-//-----------------------------------------------------------------------------
-
-namespace {
+//------------------------------------------------------------------------------
 
 class RecursiveServer : public Worker {
  public:
@@ -557,14 +531,14 @@ class RecursiveServer : public Worker {
       : Worker(Channel::MODE_SERVER, "recursive_server"),
         expected_send_result_(expected_send_result),
         pump_first_(pump_first), pump_second_(pump_second) {}
-  void Run() {
+  virtual void Run() OVERRIDE {
     SendDouble(pump_first_, expected_send_result_);
     Done();
   }
 
-  void OnDouble(int in, int* out) {
+  virtual void OnDouble(int in, int* out) OVERRIDE {
     *out = in * 2;
-    SendAnswerToLife(pump_second_, base::kNoTimeout, expected_send_result_);
+    SendAnswerToLife(pump_second_, expected_send_result_);
   }
 
   bool expected_send_result_, pump_first_, pump_second_;
@@ -576,7 +550,7 @@ class RecursiveClient : public Worker {
       : Worker(Channel::MODE_CLIENT, "recursive_client"),
         pump_during_send_(pump_during_send), close_channel_(close_channel) {}
 
-  void OnDoubleDelay(int in, Message* reply_msg) {
+  virtual void OnDoubleDelay(int in, Message* reply_msg) OVERRIDE {
     SendDouble(pump_during_send_, !close_channel_);
     if (close_channel_) {
       delete reply_msg;
@@ -587,7 +561,7 @@ class RecursiveClient : public Worker {
     Done();
   }
 
-  void OnAnswerDelay(Message* reply_msg) {
+  virtual void OnAnswerDelay(Message* reply_msg) OVERRIDE {
     if (close_channel_) {
       delete reply_msg;
       CloseChannel();
@@ -609,8 +583,6 @@ void Recursive(
   RunTest(workers);
 }
 
-}  // namespace
-
 // Tests a server calling Send while another Send is pending.
 TEST_F(IPCSyncChannelTest, Recursive) {
   Recursive(false, false, false);
@@ -623,9 +595,7 @@ TEST_F(IPCSyncChannelTest, Recursive) {
   Recursive(true, true, true);
 }
 
-//-----------------------------------------------------------------------------
-
-namespace {
+//------------------------------------------------------------------------------
 
 void RecursiveNoHang(
     bool server_pump_first, bool server_pump_second, bool client_pump) {
@@ -635,8 +605,6 @@ void RecursiveNoHang(
   workers.push_back(new RecursiveClient(client_pump, true));
   RunTest(workers);
 }
-
-}  // namespace
 
 // Tests that if a caller makes a sync call during an existing sync call and
 // the receiver dies, neither of the Send() calls hang.
@@ -651,9 +619,7 @@ TEST_F(IPCSyncChannelTest, RecursiveNoHang) {
   RecursiveNoHang(true, true, true);
 }
 
-//-----------------------------------------------------------------------------
-
-namespace {
+//------------------------------------------------------------------------------
 
 class MultipleServer1 : public Worker {
  public:
@@ -661,7 +627,7 @@ class MultipleServer1 : public Worker {
     : Worker("test_channel1", Channel::MODE_SERVER),
       pump_during_send_(pump_during_send) { }
 
-  void Run() {
+  virtual void Run() OVERRIDE {
     SendDouble(pump_during_send_, true);
     Done();
   }
@@ -677,7 +643,7 @@ class MultipleClient1 : public Worker {
       client1_msg_received_(client1_msg_received),
       client1_can_reply_(client1_can_reply) { }
 
-  void OnDouble(int in, int* out) {
+  virtual void OnDouble(int in, int* out) OVERRIDE {
     client1_msg_received_->Signal();
     *out = in * 2;
     client1_can_reply_->Wait();
@@ -692,7 +658,7 @@ class MultipleServer2 : public Worker {
  public:
   MultipleServer2() : Worker("test_channel2", Channel::MODE_SERVER) { }
 
-  void OnAnswer(int* result) {
+  virtual void OnAnswer(int* result) OVERRIDE {
     *result = 42;
     Done();
   }
@@ -708,9 +674,9 @@ class MultipleClient2 : public Worker {
       client1_can_reply_(client1_can_reply),
       pump_during_send_(pump_during_send) { }
 
-  void Run() {
+  virtual void Run() OVERRIDE {
     client1_msg_received_->Wait();
-    SendAnswerToLife(pump_during_send_, base::kNoTimeout, true);
+    SendAnswerToLife(pump_during_send_, true);
     client1_can_reply_->Signal();
     Done();
   }
@@ -754,8 +720,6 @@ void Multiple(bool server_pump, bool client_pump) {
   RunTest(workers);
 }
 
-}  // namespace
-
 // Tests that multiple SyncObjects on the same listener thread can unblock each
 // other.
 TEST_F(IPCSyncChannelTest, Multiple) {
@@ -765,9 +729,7 @@ TEST_F(IPCSyncChannelTest, Multiple) {
   Multiple(true, true);
 }
 
-//-----------------------------------------------------------------------------
-
-namespace {
+//------------------------------------------------------------------------------
 
 // This class provides server side functionality to test the case where
 // multiple sync channels are in use on the same thread on the client and
@@ -782,7 +744,7 @@ class QueuedReplyServer : public Worker {
     Worker::OverrideThread(listener_thread);
   }
 
-  virtual void OnNestedTestMsg(Message* reply_msg) {
+  virtual void OnNestedTestMsg(Message* reply_msg) OVERRIDE {
     VLOG(1) << __FUNCTION__ << " Sending reply: " << reply_text_;
     SyncChannelNestedTestMsg_String::WriteReplyParams(reply_msg, reply_text_);
     Send(reply_msg);
@@ -811,7 +773,7 @@ class QueuedReplyClient : public Worker {
     Worker::OverrideThread(listener_thread);
   }
 
-  virtual void Run() {
+  virtual void Run() OVERRIDE {
     std::string response;
     SyncMessage* msg = new SyncChannelNestedTestMsg_String(&response);
     if (pump_during_send_)
@@ -866,8 +828,6 @@ void QueuedReply(bool client_pump) {
   RunTest(workers);
 }
 
-}  // namespace
-
 // While a blocking send is in progress, the listener thread might answer other
 // synchronous messages.  This tests that if during the response to another
 // message the reply to the original messages comes, it is queued up correctly
@@ -879,16 +839,14 @@ TEST_F(IPCSyncChannelTest, QueuedReply) {
   QueuedReply(true);
 }
 
-//-----------------------------------------------------------------------------
-
-namespace {
+//------------------------------------------------------------------------------
 
 class ChattyClient : public Worker {
  public:
   ChattyClient() :
       Worker(Channel::MODE_CLIENT, "chatty_client") { }
 
-  void OnAnswer(int* answer) {
+  virtual void OnAnswer(int* answer) OVERRIDE {
     // The PostMessage limit is 10k.  Send 20% more than that.
     const int kMessageLimit = 10000;
     const int kMessagesToSend = kMessageLimit * 120 / 100;
@@ -908,8 +866,6 @@ void ChattyServer(bool pump_during_send) {
   RunTest(workers);
 }
 
-}  // namespace
-
 // Tests http://b/1093251 - that sending lots of sync messages while
 // the receiver is waiting for a sync reply does not overflow the PostMessage
 // queue.
@@ -920,124 +876,10 @@ TEST_F(IPCSyncChannelTest, ChattyServer) {
 
 //------------------------------------------------------------------------------
 
-namespace {
-
-class TimeoutServer : public Worker {
- public:
-  TimeoutServer(int timeout_ms,
-                std::vector<bool> timeout_seq,
-                bool pump_during_send)
-      : Worker(Channel::MODE_SERVER, "timeout_server"),
-        timeout_ms_(timeout_ms),
-        timeout_seq_(timeout_seq),
-        pump_during_send_(pump_during_send) {
-  }
-
-  void Run() {
-    for (std::vector<bool>::const_iterator iter = timeout_seq_.begin();
-         iter != timeout_seq_.end(); ++iter) {
-      SendAnswerToLife(pump_during_send_, timeout_ms_, !*iter);
-    }
-    Done();
-  }
-
- private:
-  int timeout_ms_;
-  std::vector<bool> timeout_seq_;
-  bool pump_during_send_;
-};
-
-class UnresponsiveClient : public Worker {
- public:
-  explicit UnresponsiveClient(std::vector<bool> timeout_seq)
-      : Worker(Channel::MODE_CLIENT, "unresponsive_client"),
-        timeout_seq_(timeout_seq) {
-  }
-
-  void OnAnswerDelay(Message* reply_msg) {
-    DCHECK(!timeout_seq_.empty());
-    if (!timeout_seq_[0]) {
-      SyncChannelTestMsg_AnswerToLife::WriteReplyParams(reply_msg, 42);
-      Send(reply_msg);
-    } else {
-      // Don't reply.
-      delete reply_msg;
-    }
-    timeout_seq_.erase(timeout_seq_.begin());
-    if (timeout_seq_.empty())
-      Done();
-  }
-
- private:
-  // Whether we should time-out or respond to the various messages we receive.
-  std::vector<bool> timeout_seq_;
-};
-
-void SendWithTimeoutOK(bool pump_during_send) {
-  std::vector<Worker*> workers;
-  std::vector<bool> timeout_seq;
-  timeout_seq.push_back(false);
-  timeout_seq.push_back(false);
-  timeout_seq.push_back(false);
-  workers.push_back(new TimeoutServer(5000, timeout_seq, pump_during_send));
-  workers.push_back(new SimpleClient());
-  RunTest(workers);
-}
-
-void SendWithTimeoutTimeout(bool pump_during_send) {
-  std::vector<Worker*> workers;
-  std::vector<bool> timeout_seq;
-  timeout_seq.push_back(true);
-  timeout_seq.push_back(false);
-  timeout_seq.push_back(false);
-  workers.push_back(new TimeoutServer(100, timeout_seq, pump_during_send));
-  workers.push_back(new UnresponsiveClient(timeout_seq));
-  RunTest(workers);
-}
-
-void SendWithTimeoutMixedOKAndTimeout(bool pump_during_send) {
-  std::vector<Worker*> workers;
-  std::vector<bool> timeout_seq;
-  timeout_seq.push_back(true);
-  timeout_seq.push_back(false);
-  timeout_seq.push_back(false);
-  timeout_seq.push_back(true);
-  timeout_seq.push_back(false);
-  workers.push_back(new TimeoutServer(100, timeout_seq, pump_during_send));
-  workers.push_back(new UnresponsiveClient(timeout_seq));
-  RunTest(workers);
-}
-
-}  // namespace
-
-// Tests that SendWithTimeout does not time-out if the response comes back fast
-// enough.
-TEST_F(IPCSyncChannelTest, SendWithTimeoutOK) {
-  SendWithTimeoutOK(false);
-  SendWithTimeoutOK(true);
-}
-
-// Tests that SendWithTimeout does time-out.
-TEST_F(IPCSyncChannelTest, SendWithTimeoutTimeout) {
-  SendWithTimeoutTimeout(false);
-  SendWithTimeoutTimeout(true);
-}
-
-// Sends some message that time-out and some that succeed.
-// Crashes flakily, http://crbug.com/70075.
-TEST_F(IPCSyncChannelTest, DISABLED_SendWithTimeoutMixedOKAndTimeout) {
-  SendWithTimeoutMixedOKAndTimeout(false);
-  SendWithTimeoutMixedOKAndTimeout(true);
-}
-
-//------------------------------------------------------------------------------
-
-namespace {
-
 void NestedCallback(Worker* server) {
   // Sleep a bit so that we wake up after the reply has been received.
   base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(250));
-  server->SendAnswerToLife(true, base::kNoTimeout, true);
+  server->SendAnswerToLife(true, true);
 }
 
 bool timeout_occurred = false;
@@ -1051,10 +893,10 @@ class DoneEventRaceServer : public Worker {
   DoneEventRaceServer()
       : Worker(Channel::MODE_SERVER, "done_event_race_server") { }
 
-  void Run() {
-    MessageLoop::current()->PostTask(FROM_HERE,
-                                     base::Bind(&NestedCallback, this));
-    MessageLoop::current()->PostDelayedTask(
+  virtual void Run() OVERRIDE {
+    base::MessageLoop::current()->PostTask(FROM_HERE,
+                                           base::Bind(&NestedCallback, this));
+    base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&TimeoutCallback),
         base::TimeDelta::FromSeconds(9));
@@ -1062,13 +904,11 @@ class DoneEventRaceServer : public Worker {
     // bug, the reply message comes back and is deserialized, however the done
     // event wasn't set.  So we indirectly use the timeout task to notice if a
     // timeout occurred.
-    SendAnswerToLife(true, 10000, true);
+    SendAnswerToLife(true, true);
     DCHECK(!timeout_occurred);
     Done();
   }
 };
-
-}  // namespace
 
 // Tests http://b/1474092 - that if after the done_event is set but before
 // OnObjectSignaled is called another message is sent out, then after its
@@ -1080,9 +920,7 @@ TEST_F(IPCSyncChannelTest, DoneEventRace) {
   RunTest(workers);
 }
 
-//-----------------------------------------------------------------------------
-
-namespace {
+//------------------------------------------------------------------------------
 
 class TestSyncMessageFilter : public SyncMessageFilter {
  public:
@@ -1094,7 +932,7 @@ class TestSyncMessageFilter : public SyncMessageFilter {
         message_loop_(message_loop) {
   }
 
-  virtual void OnFilterAdded(Channel* channel) {
+  virtual void OnFilterAdded(Channel* channel) OVERRIDE {
     SyncMessageFilter::OnFilterAdded(channel);
     message_loop_->PostTask(
         FROM_HERE,
@@ -1123,13 +961,13 @@ class SyncMessageFilterServer : public Worker {
       : Worker(Channel::MODE_SERVER, "sync_message_filter_server"),
         thread_("helper_thread") {
     base::Thread::Options options;
-    options.message_loop_type = MessageLoop::TYPE_DEFAULT;
+    options.message_loop_type = base::MessageLoop::TYPE_DEFAULT;
     thread_.StartWithOptions(options);
     filter_ = new TestSyncMessageFilter(shutdown_event(), this,
                                         thread_.message_loop_proxy());
   }
 
-  void Run() {
+  virtual void Run() OVERRIDE {
     channel()->AddFilter(filter_.get());
   }
 
@@ -1158,12 +996,12 @@ class ServerSendAfterClose : public Worker {
   }
 
  private:
-  virtual void Run() {
+  virtual void Run() OVERRIDE {
     CloseChannel();
     Done();
   }
 
-  bool Send(Message* msg) {
+  virtual bool Send(Message* msg) OVERRIDE {
     send_result_ = Worker::Send(msg);
     Done();
     return send_result_;
@@ -1171,8 +1009,6 @@ class ServerSendAfterClose : public Worker {
 
   bool send_result_;
 };
-
-}  // namespace
 
 // Tests basic synchronous call
 TEST_F(IPCSyncChannelTest, SyncMessageFilter) {
@@ -1194,11 +1030,11 @@ TEST_F(IPCSyncChannelTest, SendAfterClose) {
   server.done_event()->Wait();
 
   EXPECT_FALSE(server.send_result());
+
+  server.Shutdown();
 }
 
-//-----------------------------------------------------------------------------
-
-namespace {
+//------------------------------------------------------------------------------
 
 class RestrictedDispatchServer : public Worker {
  public:
@@ -1227,7 +1063,7 @@ class RestrictedDispatchServer : public Worker {
   base::Thread* ListenerThread() { return Worker::ListenerThread(); }
 
  private:
-  bool OnMessageReceived(const Message& message) {
+  virtual bool OnMessageReceived(const Message& message) OVERRIDE {
     IPC_BEGIN_MESSAGE_MAP(RestrictedDispatchServer, message)
      IPC_MESSAGE_HANDLER(SyncChannelTestMsg_NoArgs, OnNoArgs)
      IPC_MESSAGE_HANDLER(SyncChannelTestMsg_PingTTL, OnPingTTL)
@@ -1260,7 +1096,7 @@ class NonRestrictedDispatchServer : public Worker {
   }
 
  private:
-  bool OnMessageReceived(const Message& message) {
+  virtual bool OnMessageReceived(const Message& message) OVERRIDE {
     IPC_BEGIN_MESSAGE_MAP(NonRestrictedDispatchServer, message)
      IPC_MESSAGE_HANDLER(SyncChannelTestMsg_NoArgs, OnNoArgs)
      IPC_MESSAGE_HANDLER(SyncChannelTestMsg_Done, Done)
@@ -1285,7 +1121,7 @@ class RestrictedDispatchClient : public Worker {
         success_(success),
         sent_ping_event_(sent_ping_event) {}
 
-  void Run() {
+  virtual void Run() OVERRIDE {
     // Incoming messages from our channel should only be dispatched when we
     // send a message on that same channel.
     channel()->SetRestrictDispatchChannelGroup(1);
@@ -1299,9 +1135,13 @@ class RestrictedDispatchClient : public Worker {
     else
       LOG(ERROR) << "Send failed to dispatch incoming message on same channel";
 
-    non_restricted_channel_.reset(new SyncChannel(
-        "non_restricted_channel", Channel::MODE_CLIENT, this,
-        ipc_thread().message_loop_proxy(), true, shutdown_event()));
+    non_restricted_channel_.reset(
+        new SyncChannel("non_restricted_channel",
+                        Channel::MODE_CLIENT,
+                        this,
+                        ipc_thread().message_loop_proxy().get(),
+                        true,
+                        shutdown_event()));
 
     server_->ListenerThread()->message_loop()->PostTask(
         FROM_HERE, base::Bind(&RestrictedDispatchServer::OnDoPing, server_, 2));
@@ -1345,7 +1185,7 @@ class RestrictedDispatchClient : public Worker {
   }
 
  private:
-  bool OnMessageReceived(const Message& message) {
+  virtual bool OnMessageReceived(const Message& message) OVERRIDE {
     IPC_BEGIN_MESSAGE_MAP(RestrictedDispatchClient, message)
      IPC_MESSAGE_HANDLER(SyncChannelTestMsg_Ping, OnPing)
      IPC_MESSAGE_HANDLER_DELAY_REPLY(SyncChannelTestMsg_PingTTL, OnPingTTL)
@@ -1373,8 +1213,6 @@ class RestrictedDispatchClient : public Worker {
   scoped_ptr<SyncChannel> non_restricted_channel_;
 };
 
-}  // namespace
-
 TEST_F(IPCSyncChannelTest, RestrictedDispatch) {
   WaitableEvent sent_ping_event(false, false);
   WaitableEvent wait_event(false, false);
@@ -1393,7 +1231,7 @@ TEST_F(IPCSyncChannelTest, RestrictedDispatch) {
   EXPECT_EQ(4, success);
 }
 
-//-----------------------------------------------------------------------------
+//------------------------------------------------------------------------------
 
 // This test case inspired by crbug.com/108491
 // We create two servers that use the same ListenerThread but have
@@ -1422,8 +1260,6 @@ TEST_F(IPCSyncChannelTest, RestrictedDispatch) {
 //   event 2: indicate to server1 that client2 listener is in OnDoClient2Task
 //   event 3: indicate to client2 that server listener is in OnDoServerTask
 
-namespace {
-
 class RestrictedDispatchDeadlockServer : public Worker {
  public:
   RestrictedDispatchDeadlockServer(int server_num,
@@ -1443,7 +1279,7 @@ class RestrictedDispatchDeadlockServer : public Worker {
     SendMessageToClient();
   }
 
-  void Run() {
+  virtual void Run() OVERRIDE {
     channel()->SetRestrictDispatchChannelGroup(1);
     server_ready_event_->Signal();
   }
@@ -1451,7 +1287,7 @@ class RestrictedDispatchDeadlockServer : public Worker {
   base::Thread* ListenerThread() { return Worker::ListenerThread(); }
 
  private:
-  bool OnMessageReceived(const Message& message) {
+  virtual bool OnMessageReceived(const Message& message) OVERRIDE {
     IPC_BEGIN_MESSAGE_MAP(RestrictedDispatchDeadlockServer, message)
      IPC_MESSAGE_HANDLER(SyncChannelTestMsg_NoArgs, OnNoArgs)
      IPC_MESSAGE_HANDLER(SyncChannelTestMsg_Done, Done)
@@ -1491,7 +1327,7 @@ class RestrictedDispatchDeadlockClient2 : public Worker {
         received_noarg_reply_(false),
         done_issued_(false) {}
 
-  void Run() {
+  virtual void Run() OVERRIDE {
     server_ready_event_->Wait();
   }
 
@@ -1509,7 +1345,7 @@ class RestrictedDispatchDeadlockClient2 : public Worker {
 
   base::Thread* ListenerThread() { return Worker::ListenerThread(); }
  private:
-  bool OnMessageReceived(const Message& message) {
+  virtual bool OnMessageReceived(const Message& message) OVERRIDE {
     IPC_BEGIN_MESSAGE_MAP(RestrictedDispatchDeadlockClient2, message)
      IPC_MESSAGE_HANDLER(SyncChannelTestMsg_NoArgs, OnNoArgs)
     IPC_END_MESSAGE_MAP()
@@ -1552,7 +1388,7 @@ class RestrictedDispatchDeadlockClient1 : public Worker {
         received_noarg_reply_(false),
         done_issued_(false) {}
 
-  void Run() {
+  virtual void Run() OVERRIDE {
     server_ready_event_->Wait();
     server_->ListenerThread()->message_loop()->PostTask(
         FROM_HERE,
@@ -1571,9 +1407,8 @@ class RestrictedDispatchDeadlockClient1 : public Worker {
     PossiblyDone();
   }
 
-  base::Thread* ListenerThread() { return Worker::ListenerThread(); }
  private:
-  bool OnMessageReceived(const Message& message) {
+  virtual bool OnMessageReceived(const Message& message) OVERRIDE {
     IPC_BEGIN_MESSAGE_MAP(RestrictedDispatchDeadlockClient1, message)
      IPC_MESSAGE_HANDLER(SyncChannelTestMsg_NoArgs, OnNoArgs)
     IPC_END_MESSAGE_MAP()
@@ -1602,8 +1437,6 @@ class RestrictedDispatchDeadlockClient1 : public Worker {
   bool received_noarg_reply_;
   bool done_issued_;
 };
-
-}  // namespace
 
 TEST_F(IPCSyncChannelTest, RestrictedDispatchDeadlock) {
   std::vector<Worker*> workers;
@@ -1647,14 +1480,13 @@ TEST_F(IPCSyncChannelTest, RestrictedDispatchDeadlock) {
   RunTest(workers);
 }
 
-//-----------------------------------------------------------------------------
+//------------------------------------------------------------------------------
 
 // This test case inspired by crbug.com/120530
 // We create 4 workers that pipe to each other W1->W2->W3->W4->W1 then we send a
 // message that recurses through 3, 4 or 5 steps to make sure, say, W1 can
 // re-enter when called from W4 while it's sending a message to W2.
 // The first worker drives the whole test so it must be treated specially.
-namespace {
 
 class RestrictedDispatchPipeWorker : public Worker {
  public:
@@ -1689,14 +1521,18 @@ class RestrictedDispatchPipeWorker : public Worker {
     Done();
   }
 
-  void Run() {
+  virtual void Run() OVERRIDE {
     channel()->SetRestrictDispatchChannelGroup(group_);
     if (is_first())
       event1_->Signal();
     event2_->Wait();
-    other_channel_.reset(new SyncChannel(
-        other_channel_name_, Channel::MODE_CLIENT, this,
-        ipc_thread().message_loop_proxy(), true, shutdown_event()));
+    other_channel_.reset(
+        new SyncChannel(other_channel_name_,
+                        Channel::MODE_CLIENT,
+                        this,
+                        ipc_thread().message_loop_proxy().get(),
+                        true,
+                        shutdown_event()));
     other_channel_->SetRestrictDispatchChannelGroup(group_);
     if (!is_first()) {
       event1_->Signal();
@@ -1718,7 +1554,7 @@ class RestrictedDispatchPipeWorker : public Worker {
   bool is_first() { return !!success_; }
 
  private:
-  bool OnMessageReceived(const Message& message) {
+  virtual bool OnMessageReceived(const Message& message) OVERRIDE {
     IPC_BEGIN_MESSAGE_MAP(RestrictedDispatchPipeWorker, message)
      IPC_MESSAGE_HANDLER(SyncChannelTestMsg_PingTTL, OnPingTTL)
      IPC_MESSAGE_HANDLER(SyncChannelTestMsg_Done, OnDone)
@@ -1733,8 +1569,6 @@ class RestrictedDispatchPipeWorker : public Worker {
   int group_;
   int* success_;
 };
-
-}  // namespace
 
 TEST_F(IPCSyncChannelTest, RestrictedDispatch4WayDeadlock) {
   int success = 0;
@@ -1755,9 +1589,8 @@ TEST_F(IPCSyncChannelTest, RestrictedDispatch4WayDeadlock) {
   EXPECT_EQ(3, success);
 }
 
+//------------------------------------------------------------------------------
 
-//-----------------------------------------------------------------------------
-//
 // This test case inspired by crbug.com/122443
 // We want to make sure a reply message with the unblock flag set correctly
 // behaves as a reply, not a regular message.
@@ -1766,18 +1599,20 @@ TEST_F(IPCSyncChannelTest, RestrictedDispatch4WayDeadlock) {
 // it will send another message to Server2. While sending that second message it
 // will receive a reply from Server1 with the unblock flag.
 
-namespace {
-
 class ReentrantReplyServer1 : public Worker {
  public:
   ReentrantReplyServer1(WaitableEvent* server_ready)
       : Worker("reentrant_reply1", Channel::MODE_SERVER),
         server_ready_(server_ready) { }
 
-  void Run() {
-    server2_channel_.reset(new SyncChannel(
-        "reentrant_reply2", Channel::MODE_CLIENT, this,
-        ipc_thread().message_loop_proxy(), true, shutdown_event()));
+  virtual void Run() OVERRIDE {
+    server2_channel_.reset(
+        new SyncChannel("reentrant_reply2",
+                        Channel::MODE_CLIENT,
+                        this,
+                        ipc_thread().message_loop_proxy().get(),
+                        true,
+                        shutdown_event()));
     server_ready_->Signal();
     Message* msg = new SyncChannelTestMsg_Reentrant1();
     server2_channel_->Send(msg);
@@ -1786,7 +1621,7 @@ class ReentrantReplyServer1 : public Worker {
   }
 
  private:
-  bool OnMessageReceived(const Message& message) {
+  virtual bool OnMessageReceived(const Message& message) OVERRIDE {
     IPC_BEGIN_MESSAGE_MAP(ReentrantReplyServer1, message)
      IPC_MESSAGE_HANDLER(SyncChannelTestMsg_Reentrant2, OnReentrant2)
      IPC_REPLY_HANDLER(OnReply)
@@ -1816,7 +1651,7 @@ class ReentrantReplyServer2 : public Worker {
         reply_(NULL) { }
 
  private:
-  bool OnMessageReceived(const Message& message) {
+  virtual bool OnMessageReceived(const Message& message) OVERRIDE {
     IPC_BEGIN_MESSAGE_MAP(ReentrantReplyServer2, message)
      IPC_MESSAGE_HANDLER_DELAY_REPLY(
          SyncChannelTestMsg_Reentrant1, OnReentrant1)
@@ -1848,7 +1683,7 @@ class ReentrantReplyClient : public Worker {
       : Worker("reentrant_reply1", Channel::MODE_CLIENT),
         server_ready_(server_ready) { }
 
-  void Run() {
+  virtual void Run() OVERRIDE {
     server_ready_->Wait();
     Send(new SyncChannelTestMsg_Reentrant2());
     Done();
@@ -1857,8 +1692,6 @@ class ReentrantReplyClient : public Worker {
  private:
   WaitableEvent* server_ready_;
 };
-
-}  // namespace
 
 TEST_F(IPCSyncChannelTest, ReentrantReply) {
   std::vector<Worker*> workers;
@@ -1869,10 +1702,9 @@ TEST_F(IPCSyncChannelTest, ReentrantReply) {
   RunTest(workers);
 }
 
-//-----------------------------------------------------------------------------
+//------------------------------------------------------------------------------
 
 // Generate a validated channel ID using Channel::GenerateVerifiedChannelID().
-namespace {
 
 class VerifiedServer : public Worker {
  public:
@@ -1884,7 +1716,7 @@ class VerifiedServer : public Worker {
     Worker::OverrideThread(listener_thread);
   }
 
-  virtual void OnNestedTestMsg(Message* reply_msg) {
+  virtual void OnNestedTestMsg(Message* reply_msg) OVERRIDE {
     VLOG(1) << __FUNCTION__ << " Sending reply: " << reply_text_;
     SyncChannelNestedTestMsg_String::WriteReplyParams(reply_msg, reply_text_);
     Send(reply_msg);
@@ -1906,7 +1738,7 @@ class VerifiedClient : public Worker {
     Worker::OverrideThread(listener_thread);
   }
 
-  virtual void Run() {
+  virtual void Run() OVERRIDE {
     std::string response;
     SyncMessage* msg = new SyncChannelNestedTestMsg_String(&response);
     bool result = Send(msg);
@@ -1949,12 +1781,7 @@ void Verified() {
   workers.push_back(worker);
 
   RunTest(workers);
-
-#if defined(OS_WIN)
-#endif
 }
-
-}  // namespace
 
 // Windows needs to send an out-of-band secret to verify the client end of the
 // channel. Test that we still connect correctly in that case.
@@ -1962,4 +1789,5 @@ TEST_F(IPCSyncChannelTest, Verified) {
   Verified();
 }
 
+}  // namespace
 }  // namespace IPC

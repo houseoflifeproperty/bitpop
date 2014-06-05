@@ -7,7 +7,7 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 
 using base::MessageLoopProxy;
 using testing::_;
@@ -40,12 +40,12 @@ void FakeAccessTokenStore::NotifyDelegateTokensLoaded() {
 
 void FakeAccessTokenStore::DefaultLoadAccessTokens(
     const LoadAccessTokensCallbackType& callback) {
-  originating_message_loop_ = MessageLoopProxy::current();
+  originating_message_loop_ = MessageLoopProxy::current().get();
   callback_ = callback;
 }
 
 void FakeAccessTokenStore::DefaultSaveAccessToken(
-    const GURL& server_url, const string16& access_token) {
+    const GURL& server_url, const base::string16& access_token) {
   DCHECK(server_url.is_valid());
   access_token_set_[server_url] = access_token;
 }

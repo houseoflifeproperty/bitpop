@@ -5,30 +5,6 @@
  */
 
 /*
- * The MacOS assembler has a macro facility that is pretty close
- * to GNU as macros, but not quite the same.
- */
-#if NACL_OSX || defined(__clang__)
-# define MACRO(name)    .macro name
-# define ENDMACRO       .endmacro
-# define MACROENTRY     DEFINE_GLOBAL_HIDDEN_IDENTIFIER($0):
-# define MACROARG1      $0
-# define MACROARG2      $1
-#else
-# define MACRO(name)    .macro name arg1=0, arg2=0
-# define ENDMACRO       .endm
-# define MACROENTRY     DEFINE_GLOBAL_HIDDEN_IDENTIFIER(\arg1):
-# define MACROARG1      \arg1
-# define MACROARG2      \arg2
-#endif
-/*
- * We must write x86 assembly immediates as "$ 0" rather than "$0" to
- * avoid this being treated as a macro argument by the Mac/Clang
- * assemblers.  We use DOLLAR below to make this more explicit.
- */
-#define DOLLAR $
-
-/*
  * This code gets executed when switching from a 64-bit nacl module to
  * the 64-bit service. NaClSyscallSeg is the lcall target from the
  * syscall trampoline code, and this code is responsible for figuring
@@ -41,15 +17,15 @@
 #include "native_client/src/trusted/service_runtime/nacl_config.h"
 
 /*
- * This macro gets the thread index from the nacl_thread_index TLS variable
- * in Windows or Linux, or the corresponding pthread_getspecific(...) TSD
- * data in OSX and puts it in %eax.
+ * This macro gets the NaClThreadContext from the nacl_current_thread
+ * TLS variable in Windows or Linux, or the corresponding
+ * pthread_getspecific(...) TSD data in OSX and puts it in %rdx.
  *
- * May clobber two registers %rcx and %rdx (windows only).
+ * May clobber two registers, %rax and %rcx.
  *
- * If %rax contains 0, then this is an invalid thread.
+ * If %rdx contains 0, then this is an invalid thread.
  */
-MACRO(get_tls)
+.macro get_tls
         /*
          * WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING
          *
@@ -67,25 +43,25 @@ MACRO(get_tls)
          * Linux uses TLS.
          * We use "@GOTTPOFF" rather than "@TPOFF" in order to be PIC-friendly.
          */
-        movq    nacl_thread_index@GOTTPOFF(%rip), %rax
-        movl    %fs:(%rax), %eax
+        movq    nacl_current_thread@GOTTPOFF(%rip), %rax
+        movq    %fs:(%rax), %rdx
 #elif NACL_OSX
         /*
          * This assumes a particular implementation of OS X's
          * pthread_getspecific(), which we check for in NaClTlsInit().
          */
-        movl    _nacl_thread_index_tls_offset(%rip), %eax
-        movl    %gs:(%rax), %eax
+        movl    _nacl_current_thread_tls_offset(%rip), %eax
+        movq    %gs:(%rax), %rdx
 #elif NACL_WINDOWS
         /*
          * NOTE: This code should match the code in platform/win/test_tls.S!
          * If you change this code, please update that file as well.
          *
          * The following two lines generate this instruction:
-         *   ba XX XX XX XX    movl $nacl_thread_index@SECREL, %edx
+         *   ba XX XX XX XX    movl $nacl_current_thread@SECREL, %edx
          *
          * SECREL is a relocation type which gives the offset of
-         * nacl_thread_index within the TLS template section.  GNU
+         * nacl_current_thread within the TLS template section.  GNU
          * binutils' assembler does not have a syntax for generating
          * this relocation as part of an instruction.  It only has the
          * .secrel32 syntax for generating the relocated value as a
@@ -99,18 +75,18 @@ MACRO(get_tls)
          * scratch registers via macro arguments.
          */
         .byte 0xba
-        .secrel32 nacl_thread_index
+        .secrel32 nacl_current_thread
 
         mov _tls_index(%rip), %ecx
         movq %gs:0x58, %rax
         /* Get the address of this module (executable/DLL)'s TLS area. */
         movq (%rax,%rcx,8), %rax
-        /* Get the value of nacl_thread_index from the TLS area. */
-        movl (%rdx,%rax), %eax
+        /* Get the value of nacl_current_thread from the TLS area. */
+        movq (%rdx,%rax), %rdx
 #else
 # error "What OS/compiler is the service runtime being compiled with?"
 #endif
-ENDMACRO
+.endm
 
 /*
  * On untrusted stack:
@@ -123,39 +99,35 @@ ENDMACRO
  * using MS Studio (NACL_WINDOWS).
  */
         .text
-DEFINE_GLOBAL_HIDDEN_IDENTIFIER(NaClSyscallSeg):
+DEFINE_GLOBAL_HIDDEN_FUNCTION(NaClSyscallSeg):
         cld
 
         /* Save system call arguments on the untrusted stack. */
-        movl %r9d, -0x04(%rsp)
-        movl %r8d, -0x08(%rsp)
-        movl %ecx, -0x0c(%rsp)
-        movl %edx, -0x10(%rsp)
-        movl %esi, -0x14(%rsp)
-        movl %edi, -0x18(%rsp)
+        movl %r9d, -0x0c(%rsp)
+        movl %r8d, -0x10(%rsp)
+        movl %ecx, -0x14(%rsp)
+        movl %edx, -0x18(%rsp)
+        movl %esi, -0x1c(%rsp)
+        movl %edi, -0x20(%rsp)
 
         /* rax, rdi, rsi, rdx, rcx, r8, r9 are usable for scratch */
 
         get_tls
-
-        leaq    IDENTIFIER(nacl_user)(%rip), %rdx
-        leaq    (%rdx,%rax,8), %rdx
-        movq    0x0(%rdx), %rdx
         /*
          * Code below will segfault if %rdx is the NULL pointer, since
          * the zero page is unmapped.
          */
 
         /* only save the callee saved registers */
-DEFINE_GLOBAL_HIDDEN_IDENTIFIER(NaClSyscallThreadCaptureFault):
+DEFINE_GLOBAL_HIDDEN_LOCATION(NaClSyscallThreadCaptureFault):
         movq    %rbx, NACL_THREAD_CONTEXT_OFFSET_RBX(%rdx)
         movq    %rbp, NACL_THREAD_CONTEXT_OFFSET_RBP(%rdx)
         /*
          * Record the value of %rsp that we will restore when
          * returning to untrusted code from the syscall.
          */
-        leaq    0x10(%rsp), %rbx
-        movq    %rbx, NACL_THREAD_CONTEXT_OFFSET_RSP(%rdx)
+        leaq    8(%rsp), %rcx
+        movq    %rcx, NACL_THREAD_CONTEXT_OFFSET_RSP(%rdx)
         movq    %r12, NACL_THREAD_CONTEXT_OFFSET_R12(%rdx)
         movq    %r13, NACL_THREAD_CONTEXT_OFFSET_R13(%rdx)
         movq    %r14, NACL_THREAD_CONTEXT_OFFSET_R14(%rdx)
@@ -169,18 +141,25 @@ DEFINE_GLOBAL_HIDDEN_IDENTIFIER(NaClSyscallThreadCaptureFault):
         fnstcw  NACL_THREAD_CONTEXT_OFFSET_FCW(%rdx)
         fldcw   NACL_THREAD_CONTEXT_OFFSET_SYS_FCW(%rdx)
 
+        /*
+         * Save the SSE control word.  Then reload the system default
+         * state to use while running trusted code.
+         */
+        stmxcsr NACL_THREAD_CONTEXT_OFFSET_MXCSR(%rdx)
+        ldmxcsr NACL_THREAD_CONTEXT_OFFSET_SYS_MXCSR(%rdx)
+DEFINE_GLOBAL_HIDDEN_LOCATION(NaClSyscallSegRegsSaved):
+
         movq    NACL_THREAD_CONTEXT_OFFSET_TRUSTED_STACK_PTR(%rdx), %rsp
 #if NACL_LINUX || NACL_OSX
-        movq    %rax, %rdi
+        movq    %rdx, %rdi
 #elif NACL_WINDOWS
-        movq    %rax, %rcx
+        movq    %rdx, %rcx
 #else
 # error "What OS/compiler is the service runtime being compiled with?"
 #endif
         /*
-         * Although NaClSyscallCSegHook() never returns, we want to
-         * make sure that the return address on the stack will be
-         * handled properly by the host system's stack unwinder.
+         * We want to make sure that the return address on the stack will
+         * be handled properly by the host system's stack unwinder.
          *
          * For Linux, it is fine that the return address does not have
          * associated unwind info, because libgcc's stack unwinder
@@ -200,9 +179,17 @@ DEFINE_GLOBAL_HIDDEN_IDENTIFIER(NaClSyscallThreadCaptureFault):
          * associated unwind info.
          */
 #if NACL_WINDOWS
+        /* NaClSyscallCSegHook returns to NaClSwitchSavingStackPtr. */
         jmp     IDENTIFIER(NaClSyscallCSegHook)
 #else
         call    IDENTIFIER(NaClSyscallCSegHook)
+        /*
+         * NaClSyscallCSegHook returned the struct NaClThreadContext
+         * pointer (in %rax), which will be the argument (in %rdi) to
+         * the NaClSwitch function.
+         */
+        movq    %rax, %rdi
+        call    *IDENTIFIER(NaClSwitch)(%rip)
         hlt
         /* noret */
 #endif
@@ -220,18 +207,16 @@ DEFINE_GLOBAL_HIDDEN_IDENTIFIER(NaClSyscallThreadCaptureFault):
          * 0x00 -0x18 rdi
          */
 
-MACRO(tls_syscall)
-MACROENTRY
+.macro tls_syscall arg1, arg2, arg3, arg4
+DEFINE_GLOBAL_HIDDEN_LOCATION(\arg1):  /* Entry */
         get_tls
-        leaq    IDENTIFIER(nacl_user)(%rip), %rdx
-        movq    (%rdx,%rax,8), %rdx
-        movl    MACROARG2(%rdx), %eax
+        movl    \arg4(%rdx), %eax
         /* sandbox the return, straight off the untrusted stack */
-        movq    0x8(%rsp), %rcx
-        addq    DOLLAR 0x10, %rsp
-        addl    DOLLAR 31, %ecx
-        andl    DOLLAR 0xffffffe0, %ecx
-        addq    %r15, %rcx
+        pop     %rcx
+DEFINE_GLOBAL_HIDDEN_LOCATION(\arg2):  /* RspRestored */
+        addl    $31, %ecx
+        andl    $0xffffffe0, %ecx
+        leaq    (%r15, %rcx), %r11
         /*
          * Set %rdx to zero so that we do not leak the address of the
          * NaClThreadContext struct.  This also resets flags.
@@ -240,8 +225,13 @@ MACROENTRY
          * flags.
          */
         xorl    %edx, %edx
-        jmp     *%rcx
-ENDMACRO
+        jmp     *%r11
+DEFINE_GLOBAL_HIDDEN_LOCATION(\arg3):  /* End */
+.endm
 
-        tls_syscall NaClGetTlsFastPath1, NACL_THREAD_CONTEXT_OFFSET_TLS_VALUE1
-        tls_syscall NaClGetTlsFastPath2, NACL_THREAD_CONTEXT_OFFSET_TLS_VALUE2
+        /*
+         * Note that long lines are required here because "\" does not
+         * work in the Windows build.
+         */
+        tls_syscall NaClGetTlsFastPath1, NaClGetTlsFastPath1RspRestored, NaClGetTlsFastPath1End, NACL_THREAD_CONTEXT_OFFSET_TLS_VALUE1
+        tls_syscall NaClGetTlsFastPath2, NaClGetTlsFastPath2RspRestored, NaClGetTlsFastPath2End, NACL_THREAD_CONTEXT_OFFSET_TLS_VALUE2

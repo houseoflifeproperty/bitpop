@@ -4,12 +4,12 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #import "chrome/browser/ui/cocoa/find_bar/find_bar_view.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
-#include "ui/base/test/cocoa_test_event_utils.h"
+#include "ui/events/test/cocoa_test_event_utils.h"
 
 @interface MouseDownViewPong : NSView {
   BOOL pong_;
@@ -31,7 +31,7 @@ class FindBarViewTest : public CocoaTest {
  public:
   FindBarViewTest() {
     NSRect frame = NSMakeRect(0, 0, 100, 30);
-    scoped_nsobject<FindBarView> view(
+    base::scoped_nsobject<FindBarView> view(
         [[FindBarView alloc] initWithFrame:frame]);
     view_ = view.get();
     [[test_window() contentView] addSubview:view_];
@@ -43,7 +43,7 @@ class FindBarViewTest : public CocoaTest {
 TEST_VIEW(FindBarViewTest, view_)
 
 TEST_F(FindBarViewTest, FindBarEatsMouseClicksInBackgroundArea) {
-  scoped_nsobject<MouseDownViewPong> pongView(
+  base::scoped_nsobject<MouseDownViewPong> pongView(
       [[MouseDownViewPong alloc] initWithFrame:NSMakeRect(0, 0, 200, 200)]);
 
   // Remove all of the subviews of the findbar, to make sure we don't
@@ -68,7 +68,7 @@ TEST_F(FindBarViewTest, FindBarEatsMouseClicksInBackgroundArea) {
 }
 
 TEST_F(FindBarViewTest, FindBarPassesThroughClicksInTransparentArea) {
-  scoped_nsobject<MouseDownViewPong> pongView(
+  base::scoped_nsobject<MouseDownViewPong> pongView(
       [[MouseDownViewPong alloc] initWithFrame:NSMakeRect(0, 0, 200, 200)]);
   [view_ setFrame:NSMakeRect(0, 0, 200, 200)];
 

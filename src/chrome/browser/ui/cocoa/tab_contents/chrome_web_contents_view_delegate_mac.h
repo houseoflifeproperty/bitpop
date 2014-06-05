@@ -9,19 +9,23 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
+#include "chrome/browser/renderer_context_menu/context_menu_delegate.h"
 #include "content/public/browser/web_contents_view_delegate.h"
 
+class RenderViewContextMenu;
 class RenderViewContextMenuMac;
 class WebDragBookmarkHandlerMac;
 
 namespace content {
+class RenderWidgetHostView;
 class WebContents;
 }
 
 // A chrome/ specific class that extends WebContentsViewMac with features that
 // live in chrome/.
 class ChromeWebContentsViewDelegateMac
-    : public content::WebContentsViewDelegate {
+    : public content::WebContentsViewDelegate,
+      public ContextMenuDelegate {
  public:
   explicit ChromeWebContentsViewDelegateMac(content::WebContents* web_contents);
   virtual ~ChromeWebContentsViewDelegateMac();
@@ -32,10 +36,18 @@ class ChromeWebContentsViewDelegateMac
           content::RenderWidgetHost* render_widget_host) OVERRIDE;
   virtual content::WebDragDestDelegate* GetDragDestDelegate() OVERRIDE;
   virtual void ShowContextMenu(
-      const content::ContextMenuParams& params,
-      content::ContextMenuSourceType type) OVERRIDE;
+      content::RenderFrameHost* render_frame_host,
+      const content::ContextMenuParams& params) OVERRIDE;
+
+  // Overridden from ContextMenuDelegate.
+  virtual scoped_ptr<RenderViewContextMenu> BuildMenu(
+      content::WebContents* web_contents,
+      const content::ContextMenuParams& params) OVERRIDE;
+  virtual void ShowMenu(scoped_ptr<RenderViewContextMenu> menu) OVERRIDE;
 
  private:
+  content::RenderWidgetHostView* GetActiveRenderWidgetHostView();
+
   // The context menu. Callbacks are asynchronous so we need to keep it around.
   scoped_ptr<RenderViewContextMenuMac> context_menu_;
 

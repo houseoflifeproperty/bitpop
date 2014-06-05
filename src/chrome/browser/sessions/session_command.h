@@ -26,6 +26,7 @@ class SessionCommand {
   // These get written to disk, so we define types for them.
   // Type for the identifier.
   typedef uint8 id_type;
+
   // Type for writing the size.
   typedef uint16 size_type;
 
@@ -38,8 +39,8 @@ class SessionCommand {
   SessionCommand(id_type id, const Pickle& pickle);
 
   // The contents of the command.
-  char* contents() { return &(contents_[0]); }
-  const char* contents() const { return &(contents_[0]); }
+  char* contents() { return const_cast<char*>(contents_.c_str()); }
+  const char* contents() const { return contents_.c_str(); }
 
   // Identifier for the command.
   id_type id() const { return id_; }

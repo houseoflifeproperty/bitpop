@@ -8,8 +8,7 @@
 #include "base/callback.h"
 #include "base/location.h"
 #include "remoting/base/constants.h"
-#include "remoting/jingle_glue/javascript_signal_strategy.h"
-#include "remoting/jingle_glue/xmpp_signal_strategy.h"
+#include "remoting/jingle_glue/signal_strategy.h"
 #include "remoting/protocol/audio_reader.h"
 #include "remoting/protocol/audio_stub.h"
 #include "remoting/protocol/auth_util.h"
@@ -23,7 +22,6 @@
 #include "remoting/protocol/transport.h"
 #include "remoting/protocol/video_reader.h"
 #include "remoting/protocol/video_stub.h"
-#include "remoting/protocol/util.h"
 
 namespace remoting {
 namespace protocol {
@@ -34,13 +32,23 @@ ConnectionToHost::ConnectionToHost(
       event_callback_(NULL),
       client_stub_(NULL),
       clipboard_stub_(NULL),
-      video_stub_(NULL),
       audio_stub_(NULL),
+      signal_strategy_(NULL),
       state_(INITIALIZING),
       error_(OK) {
 }
 
 ConnectionToHost::~ConnectionToHost() {
+  CloseChannels();
+
+  if (session_.get())
+    session_.reset();
+
+  if (session_manager_.get())
+    session_manager_.reset();
+
+  if (signal_strategy_)
+    signal_strategy_->RemoveListener(this);
 }
 
 ClipboardStub* ConnectionToHost::clipboard_stub() {
@@ -56,8 +64,7 @@ InputStub* ConnectionToHost::input_stub() {
   return &event_forwarder_;
 }
 
-void ConnectionToHost::Connect(scoped_refptr<XmppProxy> xmpp_proxy,
-                               const std::string& local_jid,
+void ConnectionToHost::Connect(SignalStrategy* signal_strategy,
                                const std::string& host_jid,
                                const std::string& host_public_key,
                                scoped_ptr<TransportFactory> transport_factory,
@@ -67,10 +74,16 @@ void ConnectionToHost::Connect(scoped_refptr<XmppProxy> xmpp_proxy,
                                ClipboardStub* clipboard_stub,
                                VideoStub* video_stub,
                                AudioStub* audio_stub) {
+  signal_strategy_ = signal_strategy;
   event_callback_ = event_callback;
   client_stub_ = client_stub;
   clipboard_stub_ = clipboard_stub;
-  video_stub_ = video_stub;
+  monitored_video_stub_.reset(new MonitoredVideoStub(
+      video_stub,
+      base::TimeDelta::FromSeconds(
+          MonitoredVideoStub::kConnectivityCheckDelaySeconds),
+      base::Bind(&ConnectionToHost::OnVideoChannelStatus,
+                 base::Unretained(this))));
   audio_stub_ = audio_stub;
   authenticator_ = authenticator.Pass();
 
@@ -79,36 +92,13 @@ void ConnectionToHost::Connect(scoped_refptr<XmppProxy> xmpp_proxy,
   host_jid_ = host_jid;
   host_public_key_ = host_public_key;
 
-  JavascriptSignalStrategy* strategy = new JavascriptSignalStrategy(local_jid);
-  strategy->AttachXmppProxy(xmpp_proxy);
-  signal_strategy_.reset(strategy);
   signal_strategy_->AddListener(this);
   signal_strategy_->Connect();
 
-  session_manager_.reset(new JingleSessionManager(
-      transport_factory.Pass(), allow_nat_traversal_));
-  session_manager_->Init(signal_strategy_.get(), this);
+  session_manager_.reset(new JingleSessionManager(transport_factory.Pass()));
+  session_manager_->Init(signal_strategy_, this);
 
   SetState(CONNECTING, OK);
-}
-
-void ConnectionToHost::Disconnect(const base::Closure& shutdown_task) {
-  DCHECK(CalledOnValidThread());
-
-  CloseChannels();
-
-  if (session_.get())
-    session_.reset();
-
-  if (session_manager_.get())
-    session_manager_.reset();
-
-  if (signal_strategy_.get()) {
-    signal_strategy_->RemoveListener(this);
-    signal_strategy_.reset();
-  }
-
-  shutdown_task.Run();
 }
 
 const SessionConfig& ConnectionToHost::config() {
@@ -139,6 +129,9 @@ void ConnectionToHost::OnSessionManagerReady() {
   // After SessionManager is initialized we can try to connect to the host.
   scoped_ptr<CandidateSessionConfig> candidate_config =
       CandidateSessionConfig::CreateDefault();
+  if (!audio_stub_)
+    CandidateSessionConfig::DisableAudioChannel(candidate_config.get());
+
   session_ = session_manager_->Connect(
       host_jid_, authenticator_.Pass(), candidate_config.Pass());
   session_->SetEventHandler(this);
@@ -160,11 +153,15 @@ void ConnectionToHost::OnSessionStateChange(
   switch (state) {
     case Session::INITIALIZING:
     case Session::CONNECTING:
+    case Session::ACCEPTING:
     case Session::CONNECTED:
+    case Session::AUTHENTICATING:
       // Don't care about these events.
       break;
 
     case Session::AUTHENTICATED:
+      SetState(AUTHENTICATED, OK);
+
       control_dispatcher_.reset(new ClientControlDispatcher());
       control_dispatcher_->Init(
           session_.get(), session_->config().control_config(),
@@ -180,15 +177,15 @@ void ConnectionToHost::OnSessionStateChange(
                      base::Unretained(this)));
 
       video_reader_ = VideoReader::Create(session_->config());
-      video_reader_->Init(session_.get(), video_stub_, base::Bind(
-          &ConnectionToHost::OnChannelInitialized, base::Unretained(this)));
+      video_reader_->Init(session_.get(), monitored_video_stub_.get(),
+                          base::Bind(&ConnectionToHost::OnChannelInitialized,
+                                     base::Unretained(this)));
 
       audio_reader_ = AudioReader::Create(session_->config());
       if (audio_reader_.get()) {
-        audio_reader_->Init(
-            session_.get(), session_->config().audio_config(),
-            base::Bind(&ConnectionToHost::OnChannelInitialized,
-                       base::Unretained(this)));
+        audio_reader_->Init(session_.get(), session_->config().audio_config(),
+                            base::Bind(&ConnectionToHost::OnChannelInitialized,
+                                       base::Unretained(this)));
         audio_reader_->set_audio_stub(audio_stub_);
       }
       break;
@@ -219,17 +216,11 @@ void ConnectionToHost::OnSessionStateChange(
 
 void ConnectionToHost::OnSessionRouteChange(const std::string& channel_name,
                                             const TransportRoute& route) {
+  event_callback_->OnRouteChanged(channel_name, route);
 }
 
-void ConnectionToHost::OnSessionChannelReady(const std::string& channel_name,
-                                             bool ready) {
-  if (ready) {
-    not_ready_channels_.erase(channel_name);
-  } else if (!ready) {
-    not_ready_channels_.insert(channel_name);
-  }
-
-  event_callback_->OnConnectionReady(not_ready_channels_.empty());
+void ConnectionToHost::OnVideoChannelStatus(bool active) {
+  event_callback_->OnConnectionReady(active);
 }
 
 ConnectionToHost::State ConnectionToHost::state() const {
@@ -257,7 +248,7 @@ void ConnectionToHost::NotifyIfChannelsReady() {
       session_->config().is_audio_enabled()) {
     return;
   }
-  if (state_ != CONNECTING)
+  if (state_ != AUTHENTICATED)
     return;
 
   // Start forwarding clipboard and input events.

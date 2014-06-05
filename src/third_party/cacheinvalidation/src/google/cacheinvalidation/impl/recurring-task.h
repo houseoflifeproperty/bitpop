@@ -119,6 +119,8 @@ class RecurringTask {
 
   /* If the task has been currently scheduled. */
   bool is_scheduled_;
+
+  DISALLOW_COPY_AND_ASSIGN(RecurringTask);
 };
 
 }  // namespace invalidation

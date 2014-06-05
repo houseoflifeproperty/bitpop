@@ -4,10 +4,10 @@
 
 #include "chrome/test/base/browser_with_test_window_test.h"
 
-#include "base/synchronization/waitable_event.h"
+#include "base/run_loop.h"
 #include "chrome/browser/profiles/profile_destroyer.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_navigator.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/test/base/testing_profile.h"
@@ -19,69 +19,103 @@
 
 #if defined(USE_AURA)
 #include "ui/aura/test/aura_test_helper.h"
+#include "ui/compositor/test/context_factories_for_test.h"
+#include "ui/wm/core/default_activation_client.h"
 #endif
 
-using content::BrowserThread;
+#if defined(USE_ASH)
+#include "ash/test/ash_test_helper.h"
+#endif
+
+#if defined(TOOLKIT_VIEWS)
+#include "ui/views/test/test_views_delegate.h"
+#endif
+
 using content::NavigationController;
 using content::RenderViewHost;
 using content::RenderViewHostTester;
 using content::WebContents;
 
 BrowserWithTestWindowTest::BrowserWithTestWindowTest()
-    : ui_thread_(BrowserThread::UI, message_loop()),
-      db_thread_(BrowserThread::DB),
-      file_thread_(BrowserThread::FILE, message_loop()),
-      file_user_blocking_thread_(
-          BrowserThread::FILE_USER_BLOCKING, message_loop()) {
-  db_thread_.Start();
+    : browser_type_(Browser::TYPE_TABBED),
+      host_desktop_type_(chrome::HOST_DESKTOP_TYPE_NATIVE),
+      hosted_app_(false) {
+}
+
+BrowserWithTestWindowTest::BrowserWithTestWindowTest(
+    Browser::Type browser_type,
+    chrome::HostDesktopType host_desktop_type,
+    bool hosted_app)
+    : browser_type_(browser_type),
+      host_desktop_type_(host_desktop_type),
+      hosted_app_(hosted_app) {
+}
+
+BrowserWithTestWindowTest::~BrowserWithTestWindowTest() {
 }
 
 void BrowserWithTestWindowTest::SetUp() {
   testing::Test::SetUp();
+#if defined(OS_CHROMEOS)
+  // TODO(jamescook): Windows Ash support. This will require refactoring
+  // AshTestHelper and AuraTestHelper so they can be used at the same time,
+  // perhaps by AshTestHelper owning an AuraTestHelper.
+  ash_test_helper_.reset(new ash::test::AshTestHelper(
+      base::MessageLoopForUI::current()));
+  ash_test_helper_->SetUp(true);
+#elif defined(USE_AURA)
+  // The ContextFactory must exist before any Compositors are created.
+  bool enable_pixel_output = false;
+  ui::InitializeContextFactoryForTests(enable_pixel_output);
 
-  set_profile(CreateProfile());
-
-  // Allow subclasses to specify a |window_| in their SetUp().
-  if (!window_.get())
-    window_.reset(new TestBrowserWindow);
-
-  Browser::CreateParams params(profile());
-  params.window = window_.get();
-  browser_.reset(new Browser(params));
-#if defined(USE_AURA)
-  aura_test_helper_.reset(new aura::test::AuraTestHelper(&ui_loop_));
+  aura_test_helper_.reset(new aura::test::AuraTestHelper(
+      base::MessageLoopForUI::current()));
   aura_test_helper_->SetUp();
+  new wm::DefaultActivationClient(aura_test_helper_->root_window());
 #endif  // USE_AURA
+#if defined(TOOLKIT_VIEWS)
+  views_delegate_.reset(CreateViewsDelegate());
+  views::ViewsDelegate::views_delegate = views_delegate_.get();
+#endif
+
+  // Subclasses can provide their own Profile.
+  profile_ = CreateProfile();
+  // Subclasses can provide their own test BrowserWindow. If they return NULL
+  // then Browser will create the a production BrowserWindow and the subclass
+  // is responsible for cleaning it up (usually by NativeWidget destruction).
+  window_.reset(CreateBrowserWindow());
+
+  browser_.reset(CreateBrowser(profile(), browser_type_, hosted_app_,
+                               host_desktop_type_, window_.get()));
 }
 
 void BrowserWithTestWindowTest::TearDown() {
-  testing::Test::TearDown();
-#if defined(USE_AURA)
-  aura_test_helper_->TearDown();
-#endif
-}
+  // Some tests end up posting tasks to the DB thread that must be completed
+  // before the profile can be destroyed and the test safely shut down.
+  base::RunLoop().RunUntilIdle();
 
-BrowserWithTestWindowTest::~BrowserWithTestWindowTest() {
-  // A Task is leaked if we don't destroy everything, then run the message
-  // loop.
+  // Reset the profile here because some profile keyed services (like the
+  // audio service) depend on test stubs that the helpers below will remove.
   DestroyBrowserAndProfile();
 
-  // Schedule another task on the DB thread to notify us that it's safe to
-  // carry on with the test.
-  base::WaitableEvent done(false, false);
-  BrowserThread::PostTask(BrowserThread::DB, FROM_HERE,
-      base::Bind(&base::WaitableEvent::Signal, base::Unretained(&done)));
-  done.Wait();
-  db_thread_.Stop();
-  MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
-  MessageLoop::current()->Run();
-}
+#if defined(OS_CHROMEOS)
+  ash_test_helper_->TearDown();
+#elif defined(USE_AURA)
+  aura_test_helper_->TearDown();
+  ui::TerminateContextFactoryForTests();
+#endif
+  testing::Test::TearDown();
 
-void BrowserWithTestWindowTest::set_profile(TestingProfile* profile) {
-  if (profile_.get() != NULL)
-    ProfileDestroyer::DestroyProfileWhenAppropriate(profile_.release());
+  // A Task is leaked if we don't destroy everything, then run the message
+  // loop.
+  base::MessageLoop::current()->PostTask(FROM_HERE,
+                                         base::MessageLoop::QuitClosure());
+  base::MessageLoop::current()->Run();
 
-  profile_.reset(profile);
+#if defined(TOOLKIT_VIEWS)
+  views::ViewsDelegate::views_delegate = NULL;
+  views_delegate_.reset(NULL);
+#endif
 }
 
 void BrowserWithTestWindowTest::AddTab(Browser* browser, const GURL& url) {
@@ -103,14 +137,18 @@ void BrowserWithTestWindowTest::CommitPendingLoad(
   RenderViewHost* pending_rvh = RenderViewHostTester::GetPendingForController(
       controller);
   if (pending_rvh) {
-    // Simulate the ShouldClose_ACK that is received from the current renderer
+    // Simulate the BeforeUnload_ACK that is received from the current renderer
     // for a cross-site navigation.
     DCHECK_NE(old_rvh, pending_rvh);
-    RenderViewHostTester::For(old_rvh)->SendShouldCloseACK(true);
+    RenderViewHostTester::For(old_rvh)->SendBeforeUnloadACK(true);
   }
   // Commit on the pending_rvh, if one exists.
   RenderViewHost* test_rvh = pending_rvh ? pending_rvh : old_rvh;
   RenderViewHostTester* test_rvh_tester = RenderViewHostTester::For(test_rvh);
+
+  // Simulate a SwapOut_ACK before the navigation commits.
+  if (pending_rvh)
+    RenderViewHostTester::For(old_rvh)->SimulateSwapOutACK();
 
   // For new navigations, we need to send a larger page ID. For renavigations,
   // we need to send the preexisting page ID. We can tell these apart because
@@ -128,9 +166,6 @@ void BrowserWithTestWindowTest::CommitPendingLoad(
         controller->GetPendingEntry()->GetURL(),
         controller->GetPendingEntry()->GetTransitionType());
   }
-
-  if (pending_rvh)
-    RenderViewHostTester::For(old_rvh)->SimulateSwapOutACK();
 }
 
 void BrowserWithTestWindowTest::NavigateAndCommit(
@@ -142,8 +177,19 @@ void BrowserWithTestWindowTest::NavigateAndCommit(
 }
 
 void BrowserWithTestWindowTest::NavigateAndCommitActiveTab(const GURL& url) {
-  NavigateAndCommit(&chrome::GetActiveWebContents(browser())->GetController(),
+  NavigateAndCommit(&browser()->tab_strip_model()->GetActiveWebContents()->
+                        GetController(),
                     url);
+}
+
+void BrowserWithTestWindowTest::NavigateAndCommitActiveTabWithTitle(
+    Browser* navigating_browser,
+    const GURL& url,
+    const base::string16& title) {
+  NavigationController* controller = &navigating_browser->tab_strip_model()->
+      GetActiveWebContents()->GetController();
+  NavigateAndCommit(controller, url);
+  controller->GetActiveEntry()->SetTitle(title);
 }
 
 void BrowserWithTestWindowTest::DestroyBrowserAndProfile() {
@@ -158,9 +204,45 @@ void BrowserWithTestWindowTest::DestroyBrowserAndProfile() {
   // destructor, and a test subclass owns a resource that the profile depends
   // on (such as g_browser_process()->local_state()) there's no way for the
   // subclass to free it after the profile.
-  profile_.reset(NULL);
+  if (profile_)
+    DestroyProfile(profile_);
+  profile_ = NULL;
 }
 
 TestingProfile* BrowserWithTestWindowTest::CreateProfile() {
   return new TestingProfile();
 }
+
+void BrowserWithTestWindowTest::DestroyProfile(TestingProfile* profile) {
+  delete profile;
+}
+
+BrowserWindow* BrowserWithTestWindowTest::CreateBrowserWindow() {
+  return new TestBrowserWindow();
+}
+
+Browser* BrowserWithTestWindowTest::CreateBrowser(
+    Profile* profile,
+    Browser::Type browser_type,
+    bool hosted_app,
+    chrome::HostDesktopType host_desktop_type,
+    BrowserWindow* browser_window) {
+  Browser::CreateParams params(profile, host_desktop_type);
+  if (hosted_app) {
+    params = Browser::CreateParams::CreateForApp("Test",
+                                                 true /* trusted_source */,
+                                                 gfx::Rect(),
+                                                 profile,
+                                                 host_desktop_type);
+  } else {
+    params.type = browser_type;
+  }
+  params.window = browser_window;
+  return new Browser(params);
+}
+
+#if defined(TOOLKIT_VIEWS)
+views::ViewsDelegate* BrowserWithTestWindowTest::CreateViewsDelegate() {
+  return new views::TestViewsDelegate;
+}
+#endif

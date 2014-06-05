@@ -4,42 +4,49 @@
 
 #include "sync/sessions/sync_session_context.h"
 
-#include "sync/engine/throttled_data_type_tracker.h"
 #include "sync/sessions/debug_info_getter.h"
-#include "sync/util/extensions_activity_monitor.h"
+#include "sync/util/extensions_activity.h"
 
 namespace syncer {
 namespace sessions {
 
-const unsigned int kMaxMessagesToRecord = 10;
-const unsigned int kMaxMessageSizeToRecord = 5 * 1024;
-
 SyncSessionContext::SyncSessionContext(
     ServerConnectionManager* connection_manager,
     syncable::Directory* directory,
-    const std::vector<ModelSafeWorker*>& workers,
-    ExtensionsActivityMonitor* extensions_activity_monitor,
-    ThrottledDataTypeTracker* throttled_data_type_tracker,
+    ExtensionsActivity* extensions_activity,
     const std::vector<SyncEngineEventListener*>& listeners,
     DebugInfoGetter* debug_info_getter,
-    TrafficRecorder* traffic_recorder,
-    bool keystore_encryption_enabled)
+    ModelTypeRegistry* model_type_registry,
+    bool keystore_encryption_enabled,
+    bool client_enabled_pre_commit_update_avoidance,
+    const std::string& invalidator_client_id)
     : connection_manager_(connection_manager),
       directory_(directory),
-      workers_(workers),
-      extensions_activity_monitor_(extensions_activity_monitor),
+      extensions_activity_(extensions_activity),
       notifications_enabled_(false),
       max_commit_batch_size_(kDefaultMaxCommitBatchSize),
-      throttled_data_type_tracker_(throttled_data_type_tracker),
       debug_info_getter_(debug_info_getter),
-      traffic_recorder_(traffic_recorder),
-      keystore_encryption_enabled_(keystore_encryption_enabled) {
+      model_type_registry_(model_type_registry),
+      keystore_encryption_enabled_(keystore_encryption_enabled),
+      invalidator_client_id_(invalidator_client_id),
+      server_enabled_pre_commit_update_avoidance_(false),
+      client_enabled_pre_commit_update_avoidance_(
+          client_enabled_pre_commit_update_avoidance) {
   std::vector<SyncEngineEventListener*>::const_iterator it;
   for (it = listeners.begin(); it != listeners.end(); ++it)
     listeners_.AddObserver(*it);
 }
 
 SyncSessionContext::~SyncSessionContext() {
+}
+
+ModelTypeSet SyncSessionContext::GetEnabledTypes() const {
+  return model_type_registry_->GetEnabledTypes();
+}
+
+void SyncSessionContext::SetRoutingInfo(
+    const ModelSafeRoutingInfo& routing_info) {
+  model_type_registry_->SetEnabledDirectoryTypes(routing_info);
 }
 
 }  // namespace sessions

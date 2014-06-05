@@ -5,6 +5,7 @@
 #ifndef UI_VIEWS_CONTROLS_SCROLLBAR_BASE_SCROLL_BAR_H_
 #define UI_VIEWS_CONTROLS_SCROLLBAR_BASE_SCROLL_BAR_H_
 
+#include "base/gtest_prod_util.h"
 #include "ui/views/animation/scroll_animator.h"
 #include "ui/views/context_menu_controller.h"
 #include "ui/views/controls/button/image_button.h"
@@ -57,12 +58,19 @@ class VIEWS_EXPORT BaseScrollBar : public ScrollBar,
   // Scroll the contents by the specified offset (contents coordinates).
   bool ScrollByContentsOffset(int contents_offset);
 
+  // Called when the thumb state has been changed from |old_state| to
+  // |new_state|.
+  void OnThumbStateChanged(CustomButton::ButtonState old_state,
+                           CustomButton::ButtonState new_state);
+
   // View overrides:
   virtual gfx::Size GetPreferredSize() OVERRIDE = 0;
   virtual void Layout() OVERRIDE = 0;
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseCaptureLost() OVERRIDE;
+  virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
+  virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
   virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
   virtual bool OnMouseWheel(const ui::MouseWheelEvent& event) OVERRIDE;
 
@@ -81,10 +89,11 @@ class VIEWS_EXPORT BaseScrollBar : public ScrollBar,
 
   // ContextMenuController overrides:
   virtual void ShowContextMenuForView(View* source,
-                                      const gfx::Point& point) OVERRIDE;
+                                      const gfx::Point& point,
+                                      ui::MenuSourceType source_type) OVERRIDE;
 
   // Menu::Delegate overrides:
-  virtual string16 GetLabel(int id) const OVERRIDE;
+  virtual base::string16 GetLabel(int id) const OVERRIDE;
   virtual bool IsCommandEnabled(int id) const OVERRIDE;
   virtual void ExecuteCommand(int id) OVERRIDE;
 
@@ -93,7 +102,6 @@ class VIEWS_EXPORT BaseScrollBar : public ScrollBar,
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE = 0;
 
   BaseScrollBarThumb* GetThumb() const;
-
   CustomButton::ButtonState GetThumbTrackState() const;
 
   // Wrapper functions that calls the controller. We need this since native
@@ -105,11 +113,14 @@ class VIEWS_EXPORT BaseScrollBar : public ScrollBar,
   virtual int GetScrollIncrement(bool is_page, bool is_positive);
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(NativeScrollBarTest, ScrollBarFitsToBottom);
+  int GetThumbSizeForTest();
+
   // Changes to 'pushed' state and starts a timer to scroll repeatedly.
   void ProcessPressEvent(const ui::LocatedEvent& event);
 
-  // Resets state to 'normal' and stops the repeater.
-  void ResetState();
+  // Sets state to |state| and stops the repeater.
+  void SetState(CustomButton::ButtonState state);
 
   // Called when the mouse is pressed down in the track area.
   void TrackClicked();
@@ -143,6 +154,9 @@ class VIEWS_EXPORT BaseScrollBar : public ScrollBar,
   // The current amount the contents is offset by in the viewport.
   int contents_scroll_offset_;
 
+  // The current size of the view port, in pixels.
+  int viewport_size_;
+
   // The state of the scrollbar track. Typically, the track will highlight when
   // the user presses the mouse on them (during page scrolling).
   CustomButton::ButtonState thumb_track_state_;
@@ -163,6 +177,12 @@ class VIEWS_EXPORT BaseScrollBar : public ScrollBar,
 
   scoped_ptr<MenuRunner> menu_runner_;
   scoped_ptr<ScrollAnimator> scroll_animator_;
+
+  // Difference between current position and cumulative deltas obtained from
+  // scroll update events.
+  // TODO(tdresser): This should be removed when raw pixel scrolling for views
+  // is enabled. See crbug.com/329354.
+  gfx::Vector2dF roundoff_error_;
 
   DISALLOW_COPY_AND_ASSIGN(BaseScrollBar);
 };

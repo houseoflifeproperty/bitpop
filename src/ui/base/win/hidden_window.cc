@@ -4,7 +4,7 @@
 
 #include "ui/base/win/hidden_window.h"
 
-#include "ui/base/win/window_impl.h"
+#include "ui/gfx/win/window_impl.h"
 
 namespace ui {
 
@@ -21,7 +21,7 @@ namespace {
 // window that interact poorly with us.
 //
 // See: http://crbug.com/16476
-class TempParent : public ui::WindowImpl {
+class TempParent : public gfx::WindowImpl {
  public:
   static TempParent* Get() {
     static TempParent* g_temp_parent;
@@ -42,9 +42,9 @@ class TempParent : public ui::WindowImpl {
   void OnClose() {
   }
 
-  BEGIN_MSG_MAP_EX(WebContentsViewWin)
-    MSG_WM_CLOSE(OnClose)
-  END_MSG_MAP()
+  CR_BEGIN_MSG_MAP_EX(WebContentsViewWin)
+    CR_MSG_WM_CLOSE(OnClose)
+  CR_END_MSG_MAP()
 };
 
 }  // namespace

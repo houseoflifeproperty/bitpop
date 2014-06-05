@@ -9,17 +9,12 @@
 # updates the copy in the toolchain/ tree.
 #
 
-import os
 import sys
 import pathtools
 
 #TODO: DriverOpen/Close are in here because this is a low level lib without
-# any dependencies. maybe they should go in another low level lib, or maybe
+# any dependencies. Maybe they should go in another low level lib, or maybe
 # this should become a low level lib that's more general than just log
-
-# same with TempFiles. this factoring is at least a little useful though
-# because it helps tease apart the dependencies. The TempName stuff is
-# smarter and uses env, so it is not here for now.
 
 def DriverOpen(filename, mode, fail_ok = False):
   try:
@@ -35,28 +30,41 @@ def DriverOpen(filename, mode, fail_ok = False):
 def DriverClose(fp):
   fp.close()
 
+def FixArch(arch):
+  arch = arch.lower()
+  archfix = { 'x86-32': 'X8632',
+              'x86_32': 'X8632',
+              'x8632' : 'X8632',
+              'i686'  : 'X8632',
+              'ia32'  : 'X8632',
+              '386'   : 'X8632',
+              '686'   : 'X8632',
 
-class TempFileHandler(object):
-  def __init__(self):
-    self.files = []
+              'amd64' : 'X8664',
+              'x86_64': 'X8664',
+              'x86-64': 'X8664',
+              'x8664' : 'X8664',
 
-  def add(self, path):
-    path = pathtools.abspath(path)
-    self.files.append(path)
+              'arm'   : 'ARM',
+              'armv7' : 'ARM',
+              'armv7a': 'ARM',
 
-  def wipe(self):
-    for path in self.files:
-      try:
-        os.remove(pathtools.tosys(path))
-      except OSError as err:
-        # If we're exiting early, the temp file
-        # may have never been created.
-        Log.Warning("TempFileHandler: Unable to wipe file %s w/ error %s",
-                    pathtools.touser(path),
-                    err.strerror)
-    self.files = []
+              'mips32': 'MIPS32',
+              'mips'  : 'MIPS32',
+              'mipsel': 'MIPS32',
 
-TempFiles = TempFileHandler()
+              'x86-32-linux': 'X8632_LINUX',
+              'x86-32-mac': 'X8632_MAC',
+              'x86-32-nonsfi': 'X8632_NONSFI',
+              'arm-nonsfi': 'ARM_NONSFI',
+              }
+  if arch not in archfix:
+    Log.Fatal('Unrecognized arch "%s"!', arch)
+  return archfix[arch]
+
+driver_exit_funcs = []
+def AtDriverExit(func):
+  driver_exit_funcs.append(func)
 
 # Completely terminate the driver and all module layers.
 #
@@ -68,7 +76,8 @@ TempFiles = TempFileHandler()
 # exit (in loader.py).
 def DriverExit(retcode, is_final_exit=False):
   assert(is_final_exit or retcode != 0)
-  TempFiles.wipe()
+  for func in driver_exit_funcs:
+    func()
   sys.exit(retcode)
 
 ######################################################################
@@ -82,9 +91,30 @@ class LogManager(object):
     self._error_out = [sys.stderr]
     self._debug_out = []
     self._script_name = ''
+    self._capture_output = False
+    self._orig_err = self._error_out
+    self._orig_debug = self._debug_out
+
+  def CaptureToStream(self, s):
+    # Provide a way to capture output for testing.
+    self._capture_output = True
+    self._orig_err = self._error_out
+    self._orig_debug = self._debug_out
+    self._error_out = [s]
+    self._debug_out = [s]
+
+  def ResetStreams(self):
+    # Reset the streams back to normal.
+    self._error_out = self._orig_err
+    self._debug_out = self._orig_debug
+    self._capture_output = False
 
   def IncreaseVerbosity(self):
-    self._debug_out = [sys.stderr]
+    # Ignore if capturing output for test.
+    if self._capture_output:
+      return
+    if not sys.stderr in self._debug_out:
+      self._debug_out.append(sys.stderr)
 
   def SetScriptName(self, script_name):
     self._script_name = script_name

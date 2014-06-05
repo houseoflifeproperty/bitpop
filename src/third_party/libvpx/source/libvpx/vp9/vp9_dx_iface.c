@@ -8,49 +8,32 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-
 #include <stdlib.h>
 #include <string.h>
-#include "vpx/vpx_decoder.h"
-#include "vpx/vp8dx.h"
+
+#include "./vpx_version.h"
+
 #include "vpx/internal/vpx_codec_internal.h"
-#include "vpx_version.h"
-#include "common/vp9_onyxd.h"
-#include "decoder/vp9_onyxd_int.h"
+#include "vpx/vp8dx.h"
+#include "vpx/vpx_decoder.h"
 
-#define VP8_CAP_POSTPROC (CONFIG_POSTPROC ? VPX_CODEC_CAP_POSTPROC : 0)
-typedef vpx_codec_stream_info_t  vp8_stream_info_t;
+#include "vp9/common/vp9_frame_buffers.h"
 
-/* Structures for handling memory allocations */
-typedef enum {
-  VP8_SEG_ALG_PRIV     = 256,
-  VP8_SEG_MAX
-} mem_seg_id_t;
-#define NELEMENTS(x) ((int)(sizeof(x)/sizeof(x[0])))
+#include "vp9/decoder/vp9_decoder.h"
+#include "vp9/decoder/vp9_read_bit_buffer.h"
 
-static unsigned long vp8_priv_sz(const vpx_codec_dec_cfg_t *si, vpx_codec_flags_t);
+#include "vp9/vp9_iface_common.h"
 
-typedef struct {
-  unsigned int   id;
-  unsigned long  sz;
-  unsigned int   align;
-  unsigned int   flags;
-  unsigned long(*calc_sz)(const vpx_codec_dec_cfg_t *, vpx_codec_flags_t);
-} mem_req_t;
+#define VP9_CAP_POSTPROC (CONFIG_VP9_POSTPROC ? VPX_CODEC_CAP_POSTPROC : 0)
 
-static const mem_req_t vp8_mem_req_segs[] = {
-  {VP8_SEG_ALG_PRIV,    0, 8, VPX_CODEC_MEM_ZERO, vp8_priv_sz},
-  {VP8_SEG_MAX, 0, 0, 0, NULL}
-};
+typedef vpx_codec_stream_info_t vp9_stream_info_t;
 
 struct vpx_codec_alg_priv {
   vpx_codec_priv_t        base;
-  vpx_codec_mmap_t        mmaps[NELEMENTS(vp8_mem_req_segs) - 1];
   vpx_codec_dec_cfg_t     cfg;
-  vp8_stream_info_t       si;
-  int                     defer_alloc;
+  vp9_stream_info_t       si;
   int                     decoder_init;
-  VP9D_PTR                pbi;
+  struct VP9Decoder *pbi;
   int                     postproc_cfg_set;
   vp8_postproc_cfg_t      postproc_cfg;
 #if CONFIG_POSTPROC_VISUALIZER
@@ -60,511 +43,467 @@ struct vpx_codec_alg_priv {
   int                     dbg_color_b_modes_flag;
   int                     dbg_display_mv_flag;
 #endif
+  vpx_decrypt_cb          decrypt_cb;
+  void                   *decrypt_state;
   vpx_image_t             img;
   int                     img_setup;
   int                     img_avail;
+  int                     invert_tile_order;
+
+  // External frame buffer info to save for VP9 common.
+  void *ext_priv;  // Private data associated with the external frame buffers.
+  vpx_get_frame_buffer_cb_fn_t get_ext_fb_cb;
+  vpx_release_frame_buffer_cb_fn_t release_ext_fb_cb;
 };
 
-static unsigned long vp8_priv_sz(const vpx_codec_dec_cfg_t *si,
-                                 vpx_codec_flags_t flags) {
-  /* Although this declaration is constant, we can't use it in the requested
-   * segments list because we want to define the requested segments list
-   * before defining the private type (so that the number of memory maps is
-   * known)
-   */
-  (void)si;
-  return sizeof(vpx_codec_alg_priv_t);
-}
-
-
-static void vp8_mmap_dtor(vpx_codec_mmap_t *mmap) {
-  free(mmap->priv);
-}
-
-static vpx_codec_err_t vp8_mmap_alloc(vpx_codec_mmap_t *mmap) {
-  vpx_codec_err_t  res;
-  unsigned int   align;
-
-  align = mmap->align ? mmap->align - 1 : 0;
-
-  if (mmap->flags & VPX_CODEC_MEM_ZERO)
-    mmap->priv = calloc(1, mmap->sz + align);
-  else
-    mmap->priv = malloc(mmap->sz + align);
-
-  res = (mmap->priv) ? VPX_CODEC_OK : VPX_CODEC_MEM_ERROR;
-  mmap->base = (void *)((((uintptr_t)mmap->priv) + align) & ~(uintptr_t)align);
-  mmap->dtor = vp8_mmap_dtor;
-  return res;
-}
-
-static vpx_codec_err_t vp8_validate_mmaps(const vp8_stream_info_t *si,
-                                          const vpx_codec_mmap_t *mmaps,
-                                          vpx_codec_flags_t init_flags) {
-  int i;
-  vpx_codec_err_t res = VPX_CODEC_OK;
-
-  for (i = 0; i < NELEMENTS(vp8_mem_req_segs) - 1; i++) {
-    /* Ensure the segment has been allocated */
-    if (!mmaps[i].base) {
-      res = VPX_CODEC_MEM_ERROR;
-      break;
-    }
-
-    /* Verify variable size segment is big enough for the current si. */
-    if (vp8_mem_req_segs[i].calc_sz) {
-      vpx_codec_dec_cfg_t cfg;
-
-      cfg.w = si->w;
-      cfg.h = si->h;
-
-      if (mmaps[i].sz < vp8_mem_req_segs[i].calc_sz(&cfg, init_flags)) {
-        res = VPX_CODEC_MEM_ERROR;
-        break;
-      }
-    }
-  }
-
-  return res;
-}
-
-static void vp8_init_ctx(vpx_codec_ctx_t *ctx, const vpx_codec_mmap_t *mmap) {
-  int i;
-
-  ctx->priv = mmap->base;
-  ctx->priv->sz = sizeof(*ctx->priv);
-  ctx->priv->iface = ctx->iface;
-  ctx->priv->alg_priv = mmap->base;
-
-  for (i = 0; i < NELEMENTS(ctx->priv->alg_priv->mmaps); i++)
-    ctx->priv->alg_priv->mmaps[i].id = vp8_mem_req_segs[i].id;
-
-  ctx->priv->alg_priv->mmaps[0] = *mmap;
-  ctx->priv->alg_priv->si.sz = sizeof(ctx->priv->alg_priv->si);
-  ctx->priv->init_flags = ctx->init_flags;
-
-  if (ctx->config.dec) {
-    /* Update the reference to the config structure to an internal copy. */
-    ctx->priv->alg_priv->cfg = *ctx->config.dec;
-    ctx->config.dec = &ctx->priv->alg_priv->cfg;
-  }
-}
-
-static void *mmap_lkup(vpx_codec_alg_priv_t *ctx, unsigned int id) {
-  int i;
-
-  for (i = 0; i < NELEMENTS(ctx->mmaps); i++)
-    if (ctx->mmaps[i].id == id)
-      return ctx->mmaps[i].base;
-
-  return NULL;
-}
-static void vp8_finalize_mmaps(vpx_codec_alg_priv_t *ctx) {
-  /* nothing to clean up */
-}
-
-static vpx_codec_err_t vp8_init(vpx_codec_ctx_t *ctx,
-                                vpx_codec_priv_enc_mr_cfg_t *data) {
-  vpx_codec_err_t        res = VPX_CODEC_OK;
-
-  /* This function only allocates space for the vpx_codec_alg_priv_t
-   * structure. More memory may be required at the time the stream
-   * information becomes known.
-   */
+static vpx_codec_err_t decoder_init(vpx_codec_ctx_t *ctx,
+                            vpx_codec_priv_enc_mr_cfg_t *data) {
+  // This function only allocates space for the vpx_codec_alg_priv_t
+  // structure. More memory may be required at the time the stream
+  // information becomes known.
   if (!ctx->priv) {
-    vpx_codec_mmap_t mmap;
+    vpx_codec_alg_priv_t *alg_priv = vpx_memalign(32, sizeof(*alg_priv));
+    if (alg_priv == NULL)
+      return VPX_CODEC_MEM_ERROR;
 
-    mmap.id = vp8_mem_req_segs[0].id;
-    mmap.sz = sizeof(vpx_codec_alg_priv_t);
-    mmap.align = vp8_mem_req_segs[0].align;
-    mmap.flags = vp8_mem_req_segs[0].flags;
+    vp9_zero(*alg_priv);
 
-    res = vp8_mmap_alloc(&mmap);
+    ctx->priv = (vpx_codec_priv_t *)alg_priv;
+    ctx->priv->sz = sizeof(*ctx->priv);
+    ctx->priv->iface = ctx->iface;
+    ctx->priv->alg_priv = alg_priv;
+    ctx->priv->alg_priv->si.sz = sizeof(ctx->priv->alg_priv->si);
+    ctx->priv->init_flags = ctx->init_flags;
 
-    if (!res) {
-      vp8_init_ctx(ctx, &mmap);
-
-      ctx->priv->alg_priv->defer_alloc = 1;
-      /*post processing level initialized to do nothing */
+    if (ctx->config.dec) {
+      // Update the reference to the config structure to an internal copy.
+      ctx->priv->alg_priv->cfg = *ctx->config.dec;
+      ctx->config.dec = &ctx->priv->alg_priv->cfg;
     }
-  }
-
-  return res;
-}
-
-static vpx_codec_err_t vp8_destroy(vpx_codec_alg_priv_t *ctx) {
-  int i;
-
-  vp9_remove_decompressor(ctx->pbi);
-
-  for (i = NELEMENTS(ctx->mmaps) - 1; i >= 0; i--) {
-    if (ctx->mmaps[i].dtor)
-      ctx->mmaps[i].dtor(&ctx->mmaps[i]);
   }
 
   return VPX_CODEC_OK;
 }
 
-static vpx_codec_err_t vp8_peek_si(const uint8_t         *data,
-                                   unsigned int           data_sz,
-                                   vpx_codec_stream_info_t *si) {
-  vpx_codec_err_t res = VPX_CODEC_OK;
+static vpx_codec_err_t decoder_destroy(vpx_codec_alg_priv_t *ctx) {
+  if (ctx->pbi) {
+    vp9_decoder_remove(ctx->pbi);
+    ctx->pbi = NULL;
+  }
+
+  vpx_free(ctx);
+
+  return VPX_CODEC_OK;
+}
+
+static vpx_codec_err_t decoder_peek_si_internal(const uint8_t *data,
+                                                unsigned int data_sz,
+                                                vpx_codec_stream_info_t *si,
+                                                vpx_decrypt_cb decrypt_cb,
+                                                void *decrypt_state) {
+  uint8_t clear_buffer[9];
+
+  if (data_sz <= 8)
+    return VPX_CODEC_UNSUP_BITSTREAM;
 
   if (data + data_sz <= data)
-    res = VPX_CODEC_INVALID_PARAM;
-  else {
-    /* Parse uncompresssed part of key frame header.
-     * 3 bytes:- including version, frame type and an offset
-     * 3 bytes:- sync code (0x9d, 0x01, 0x2a)
-     * 4 bytes:- including image width and height in the lowest 14 bits
-     *           of each 2-byte value.
-     */
-    si->is_kf = 0;
+    return VPX_CODEC_INVALID_PARAM;
 
-    if (data_sz >= 10 && !(data[0] & 0x01)) { /* I-Frame */
-      const uint8_t *c = data + 3;
-      si->is_kf = 1;
+  si->is_kf = 0;
+  si->w = si->h = 0;
 
-      /* vet via sync code */
-      if (c[0] != 0x9d || c[1] != 0x01 || c[2] != 0x2a)
-        res = VPX_CODEC_UNSUP_BITSTREAM;
-
-      si->w = (c[3] | (c[4] << 8)) & 0x3fff;
-      si->h = (c[5] | (c[6] << 8)) & 0x3fff;
-
-      /*printf("w=%d, h=%d\n", si->w, si->h);*/
-      if (!(si->h | si->w))
-        res = VPX_CODEC_UNSUP_BITSTREAM;
-    } else
-      res = VPX_CODEC_UNSUP_BITSTREAM;
+  if (decrypt_cb) {
+    data_sz = MIN(sizeof(clear_buffer), data_sz);
+    decrypt_cb(decrypt_state, data, clear_buffer, data_sz);
+    data = clear_buffer;
   }
 
-  return res;
+  {
+    struct vp9_read_bit_buffer rb = { data, data + data_sz, 0, NULL, NULL };
+    const int frame_marker = vp9_rb_read_literal(&rb, 2);
+    const int version = vp9_rb_read_bit(&rb);
+    (void) vp9_rb_read_bit(&rb);  // unused version bit
 
-}
+    if (frame_marker != VP9_FRAME_MARKER)
+      return VPX_CODEC_UNSUP_BITSTREAM;
+    if (version > 1) return VPX_CODEC_UNSUP_BITSTREAM;
 
-static vpx_codec_err_t vp8_get_si(vpx_codec_alg_priv_t    *ctx,
-                                  vpx_codec_stream_info_t *si) {
+    if (vp9_rb_read_bit(&rb)) {  // show an existing frame
+      return VPX_CODEC_OK;
+    }
 
-  unsigned int sz;
+    si->is_kf = !vp9_rb_read_bit(&rb);
+    if (si->is_kf) {
+      const int sRGB = 7;
+      int colorspace;
 
-  if (si->sz >= sizeof(vp8_stream_info_t))
-    sz = sizeof(vp8_stream_info_t);
-  else
-    sz = sizeof(vpx_codec_stream_info_t);
+      rb.bit_offset += 1;  // show frame
+      rb.bit_offset += 1;  // error resilient
 
-  memcpy(si, &ctx->si, sz);
-  si->sz = sz;
+      if (vp9_rb_read_literal(&rb, 8) != VP9_SYNC_CODE_0 ||
+          vp9_rb_read_literal(&rb, 8) != VP9_SYNC_CODE_1 ||
+          vp9_rb_read_literal(&rb, 8) != VP9_SYNC_CODE_2) {
+        return VPX_CODEC_UNSUP_BITSTREAM;
+      }
+
+      colorspace = vp9_rb_read_literal(&rb, 3);
+      if (colorspace != sRGB) {
+        rb.bit_offset += 1;  // [16,235] (including xvycc) vs [0,255] range
+        if (version == 1) {
+          rb.bit_offset += 2;  // subsampling x/y
+          rb.bit_offset += 1;  // has extra plane
+        }
+      } else {
+        if (version == 1) {
+          rb.bit_offset += 1;  // has extra plane
+        } else {
+          // RGB is only available in version 1
+          return VPX_CODEC_UNSUP_BITSTREAM;
+        }
+      }
+
+      // TODO(jzern): these are available on non-keyframes in intra only mode.
+      si->w = vp9_rb_read_literal(&rb, 16) + 1;
+      si->h = vp9_rb_read_literal(&rb, 16) + 1;
+    }
+  }
 
   return VPX_CODEC_OK;
 }
 
-
-static vpx_codec_err_t
-update_error_state(vpx_codec_alg_priv_t                 *ctx,
-                   const struct vpx_internal_error_info *error) {
-  vpx_codec_err_t res;
-
-  if ((res = error->error_code))
-    ctx->base.err_detail = error->has_detail
-                           ? error->detail
-                           : NULL;
-
-  return res;
+static vpx_codec_err_t decoder_peek_si(const uint8_t *data,
+                                       unsigned int data_sz,
+                                       vpx_codec_stream_info_t *si) {
+  return decoder_peek_si_internal(data, data_sz, si, NULL, NULL);
 }
 
-static void yuvconfig2image(vpx_image_t               *img,
-                            const YV12_BUFFER_CONFIG  *yv12,
-                            void                      *user_priv) {
-  /** vpx_img_wrap() doesn't allow specifying independent strides for
-    * the Y, U, and V planes, nor other alignment adjustments that
-    * might be representable by a YV12_BUFFER_CONFIG, so we just
-    * initialize all the fields.*/
-  img->fmt = yv12->clrtype == REG_YUV ?
-             VPX_IMG_FMT_I420 : VPX_IMG_FMT_VPXI420;
-  img->w = yv12->y_stride;
-  img->h = (yv12->y_height + 2 * VP9BORDERINPIXELS + 15) & ~15;
-  img->d_w = yv12->y_width;
-  img->d_h = yv12->y_height;
-  img->x_chroma_shift = 1;
-  img->y_chroma_shift = 1;
-  img->planes[VPX_PLANE_Y] = yv12->y_buffer;
-  img->planes[VPX_PLANE_U] = yv12->u_buffer;
-  img->planes[VPX_PLANE_V] = yv12->v_buffer;
-  img->planes[VPX_PLANE_ALPHA] = NULL;
-  img->stride[VPX_PLANE_Y] = yv12->y_stride;
-  img->stride[VPX_PLANE_U] = yv12->uv_stride;
-  img->stride[VPX_PLANE_V] = yv12->uv_stride;
-  img->stride[VPX_PLANE_ALPHA] = yv12->y_stride;
-  img->bps = 12;
-  img->user_priv = user_priv;
-  img->img_data = yv12->buffer_alloc;
-  img->img_data_owner = 0;
-  img->self_allocd = 0;
+static vpx_codec_err_t decoder_get_si(vpx_codec_alg_priv_t *ctx,
+                                      vpx_codec_stream_info_t *si) {
+  const size_t sz = (si->sz >= sizeof(vp9_stream_info_t))
+                       ? sizeof(vp9_stream_info_t)
+                       : sizeof(vpx_codec_stream_info_t);
+  memcpy(si, &ctx->si, sz);
+  si->sz = (unsigned int)sz;
+
+  return VPX_CODEC_OK;
 }
 
-static vpx_codec_err_t decode_one(vpx_codec_alg_priv_t  *ctx,
-                                  const uint8_t        **data,
-                                  unsigned int           data_sz,
-                                  void                  *user_priv,
-                                  long                   deadline) {
-  vpx_codec_err_t res = VPX_CODEC_OK;
+static vpx_codec_err_t update_error_state(vpx_codec_alg_priv_t *ctx,
+                           const struct vpx_internal_error_info *error) {
+  if (error->error_code)
+    ctx->base.err_detail = error->has_detail ? error->detail : NULL;
+
+  return error->error_code;
+}
+
+static void init_buffer_callbacks(vpx_codec_alg_priv_t *ctx) {
+  VP9_COMMON *const cm = &ctx->pbi->common;
+
+  cm->new_fb_idx = -1;
+
+  if (ctx->get_ext_fb_cb != NULL && ctx->release_ext_fb_cb != NULL) {
+    cm->get_fb_cb = ctx->get_ext_fb_cb;
+    cm->release_fb_cb = ctx->release_ext_fb_cb;
+    cm->cb_priv = ctx->ext_priv;
+  } else {
+    cm->get_fb_cb = vp9_get_frame_buffer;
+    cm->release_fb_cb = vp9_release_frame_buffer;
+
+    if (vp9_alloc_internal_frame_buffers(&cm->int_frame_buffers))
+      vpx_internal_error(&cm->error, VPX_CODEC_MEM_ERROR,
+                         "Failed to initialize internal frame buffers");
+
+    cm->cb_priv = &cm->int_frame_buffers;
+  }
+}
+
+static void set_default_ppflags(vp8_postproc_cfg_t *cfg) {
+  cfg->post_proc_flag = VP8_DEBLOCK | VP8_DEMACROBLOCK;
+  cfg->deblocking_level = 4;
+  cfg->noise_level = 0;
+}
+
+static void set_ppflags(const vpx_codec_alg_priv_t *ctx,
+                        vp9_ppflags_t *flags) {
+  flags->post_proc_flag =
+#if CONFIG_POSTPROC_VISUALIZER
+      (ctx->dbg_color_ref_frame_flag ? VP9D_DEBUG_CLR_FRM_REF_BLKS : 0) |
+      (ctx->dbg_color_mb_modes_flag ? VP9D_DEBUG_CLR_BLK_MODES : 0) |
+      (ctx->dbg_color_b_modes_flag ? VP9D_DEBUG_CLR_BLK_MODES : 0) |
+      (ctx->dbg_display_mv_flag ? VP9D_DEBUG_DRAW_MV : 0) |
+#endif
+      ctx->postproc_cfg.post_proc_flag;
+
+  flags->deblocking_level = ctx->postproc_cfg.deblocking_level;
+  flags->noise_level = ctx->postproc_cfg.noise_level;
+#if CONFIG_POSTPROC_VISUALIZER
+  flags->display_ref_frame_flag = ctx->dbg_color_ref_frame_flag;
+  flags->display_mb_modes_flag = ctx->dbg_color_mb_modes_flag;
+  flags->display_b_modes_flag = ctx->dbg_color_b_modes_flag;
+  flags->display_mv_flag = ctx->dbg_display_mv_flag;
+#endif
+}
+
+static void init_decoder(vpx_codec_alg_priv_t *ctx) {
+  VP9DecoderConfig oxcf;
+  oxcf.width = ctx->si.w;
+  oxcf.height = ctx->si.h;
+  oxcf.version = 9;
+  oxcf.max_threads = ctx->cfg.threads;
+  oxcf.inv_tile_order = ctx->invert_tile_order;
+
+  ctx->pbi = vp9_decoder_create(&oxcf);
+  if (ctx->pbi == NULL)
+    return;
+
+  vp9_initialize_dec();
+
+  // If postprocessing was enabled by the application and a
+  // configuration has not been provided, default it.
+  if (!ctx->postproc_cfg_set &&
+      (ctx->base.init_flags & VPX_CODEC_USE_POSTPROC))
+    set_default_ppflags(&ctx->postproc_cfg);
+
+  init_buffer_callbacks(ctx);
+}
+
+static vpx_codec_err_t decode_one(vpx_codec_alg_priv_t *ctx,
+                                  const uint8_t **data, unsigned int data_sz,
+                                  void *user_priv, int64_t deadline) {
+  YV12_BUFFER_CONFIG sd = { 0 };
+  int64_t time_stamp = 0, time_end_stamp = 0;
+  vp9_ppflags_t flags = {0};
+  VP9_COMMON *cm = NULL;
 
   ctx->img_avail = 0;
 
-  /* Determine the stream parameters. Note that we rely on peek_si to
-   * validate that we have a buffer that does not wrap around the top
-   * of the heap.
-   */
-  if (!ctx->si.h)
-    res = ctx->base.iface->dec.peek_si(*data, data_sz, &ctx->si);
-
-
-  /* Perform deferred allocations, if required */
-  if (!res && ctx->defer_alloc) {
-    int i;
-
-    for (i = 1; !res && i < NELEMENTS(ctx->mmaps); i++) {
-      vpx_codec_dec_cfg_t cfg;
-
-      cfg.w = ctx->si.w;
-      cfg.h = ctx->si.h;
-      ctx->mmaps[i].id = vp8_mem_req_segs[i].id;
-      ctx->mmaps[i].sz = vp8_mem_req_segs[i].sz;
-      ctx->mmaps[i].align = vp8_mem_req_segs[i].align;
-      ctx->mmaps[i].flags = vp8_mem_req_segs[i].flags;
-
-      if (!ctx->mmaps[i].sz)
-        ctx->mmaps[i].sz = vp8_mem_req_segs[i].calc_sz(&cfg,
-                                                       ctx->base.init_flags);
-
-      res = vp8_mmap_alloc(&ctx->mmaps[i]);
-    }
-
-    if (!res)
-      vp8_finalize_mmaps(ctx);
-
-    ctx->defer_alloc = 0;
+  // Determine the stream parameters. Note that we rely on peek_si to
+  // validate that we have a buffer that does not wrap around the top
+  // of the heap.
+  if (!ctx->si.h) {
+    const vpx_codec_err_t res =
+        decoder_peek_si_internal(*data, data_sz, &ctx->si, ctx->decrypt_cb,
+                                 ctx->decrypt_state);
+    if (res != VPX_CODEC_OK)
+      return res;
   }
 
-  /* Initialize the decoder instance on the first frame*/
-  if (!res && !ctx->decoder_init) {
-    res = vp8_validate_mmaps(&ctx->si, ctx->mmaps, ctx->base.init_flags);
-
-    if (!res) {
-      VP9D_CONFIG oxcf;
-      VP9D_PTR optr;
-
-      vp9_initialize_dec();
-
-      oxcf.Width = ctx->si.w;
-      oxcf.Height = ctx->si.h;
-      oxcf.Version = 9;
-      oxcf.postprocess = 0;
-      oxcf.max_threads = ctx->cfg.threads;
-      optr = vp9_create_decompressor(&oxcf);
-
-      /* If postprocessing was enabled by the application and a
-       * configuration has not been provided, default it.
-       */
-      if (!ctx->postproc_cfg_set
-          && (ctx->base.init_flags & VPX_CODEC_USE_POSTPROC)) {
-        ctx->postproc_cfg.post_proc_flag =
-          VP8_DEBLOCK | VP8_DEMACROBLOCK;
-        ctx->postproc_cfg.deblocking_level = 4;
-        ctx->postproc_cfg.noise_level = 0;
-      }
-
-      if (!optr)
-        res = VPX_CODEC_ERROR;
-      else
-        ctx->pbi = optr;
-    }
+  // Initialize the decoder instance on the first frame
+  if (!ctx->decoder_init) {
+    init_decoder(ctx);
+    if (ctx->pbi == NULL)
+      return VPX_CODEC_ERROR;
 
     ctx->decoder_init = 1;
   }
 
-  if (!res && ctx->pbi) {
-    YV12_BUFFER_CONFIG sd;
-    int64_t time_stamp = 0, time_end_stamp = 0;
-    vp9_ppflags_t flags = {0};
+  // Set these even if already initialized.  The caller may have changed the
+  // decrypt config between frames.
+  ctx->pbi->decrypt_cb = ctx->decrypt_cb;
+  ctx->pbi->decrypt_state = ctx->decrypt_state;
 
-    if (ctx->base.init_flags & VPX_CODEC_USE_POSTPROC) {
-      flags.post_proc_flag = ctx->postproc_cfg.post_proc_flag
-#if CONFIG_POSTPROC_VISUALIZER
+  cm = &ctx->pbi->common;
 
-                             | ((ctx->dbg_color_ref_frame_flag != 0) ? VP9D_DEBUG_CLR_FRM_REF_BLKS : 0)
-                             | ((ctx->dbg_color_mb_modes_flag != 0) ? VP9D_DEBUG_CLR_BLK_MODES : 0)
-                             | ((ctx->dbg_color_b_modes_flag != 0) ? VP9D_DEBUG_CLR_BLK_MODES : 0)
-                             | ((ctx->dbg_display_mv_flag != 0) ? VP9D_DEBUG_DRAW_MV : 0)
-#endif
-;
-      flags.deblocking_level      = ctx->postproc_cfg.deblocking_level;
-      flags.noise_level           = ctx->postproc_cfg.noise_level;
-#if CONFIG_POSTPROC_VISUALIZER
-      flags.display_ref_frame_flag = ctx->dbg_color_ref_frame_flag;
-      flags.display_mb_modes_flag = ctx->dbg_color_mb_modes_flag;
-      flags.display_b_modes_flag  = ctx->dbg_color_b_modes_flag;
-      flags.display_mv_flag       = ctx->dbg_display_mv_flag;
-#endif
-    }
+  if (vp9_receive_compressed_data(ctx->pbi, data_sz, data, deadline))
+    return update_error_state(ctx, &cm->error);
 
-    if (vp9_receive_compressed_data(ctx->pbi, data_sz, data, deadline)) {
-      VP9D_COMP *pbi = (VP9D_COMP *)ctx->pbi;
-      res = update_error_state(ctx, &pbi->common.error);
-    }
+  if (ctx->base.init_flags & VPX_CODEC_USE_POSTPROC)
+    set_ppflags(ctx, &flags);
 
-    if (!res && 0 == vp9_get_raw_frame(ctx->pbi, &sd, &time_stamp,
-                                       &time_end_stamp, &flags)) {
-      yuvconfig2image(&ctx->img, &sd, user_priv);
-      ctx->img_avail = 1;
-    }
-  }
+  if (vp9_get_raw_frame(ctx->pbi, &sd, &time_stamp, &time_end_stamp, &flags))
+    return update_error_state(ctx, &cm->error);
 
-  return res;
+  yuvconfig2image(&ctx->img, &sd, user_priv);
+  ctx->img.fb_priv = cm->frame_bufs[cm->new_fb_idx].raw_frame_buffer.priv;
+  ctx->img_avail = 1;
+
+  return VPX_CODEC_OK;
 }
 
-static vpx_codec_err_t vp9_decode(vpx_codec_alg_priv_t  *ctx,
-                                  const uint8_t         *data,
-                                  unsigned int           data_sz,
-                                  void                  *user_priv,
-                                  long                   deadline) {
+static INLINE uint8_t read_marker(vpx_decrypt_cb decrypt_cb,
+                                  void *decrypt_state,
+                                  const uint8_t *data) {
+  if (decrypt_cb) {
+    uint8_t marker;
+    decrypt_cb(decrypt_state, data, &marker, 1);
+    return marker;
+  }
+  return *data;
+}
+
+static void parse_superframe_index(const uint8_t *data, size_t data_sz,
+                                   uint32_t sizes[8], int *count,
+                                   vpx_decrypt_cb decrypt_cb,
+                                   void *decrypt_state) {
+  uint8_t marker;
+
+  assert(data_sz);
+  marker = read_marker(decrypt_cb, decrypt_state, data + data_sz - 1);
+  *count = 0;
+
+  if ((marker & 0xe0) == 0xc0) {
+    const uint32_t frames = (marker & 0x7) + 1;
+    const uint32_t mag = ((marker >> 3) & 0x3) + 1;
+    const size_t index_sz = 2 + mag * frames;
+
+    uint8_t marker2 = read_marker(decrypt_cb, decrypt_state,
+                                  data + data_sz - index_sz);
+
+    if (data_sz >= index_sz && marker2 == marker) {
+      // found a valid superframe index
+      uint32_t i, j;
+      const uint8_t *x = &data[data_sz - index_sz + 1];
+
+      // frames has a maximum of 8 and mag has a maximum of 4.
+      uint8_t clear_buffer[32];
+      assert(sizeof(clear_buffer) >= frames * mag);
+      if (decrypt_cb) {
+        decrypt_cb(decrypt_state, x, clear_buffer, frames * mag);
+        x = clear_buffer;
+      }
+
+      for (i = 0; i < frames; i++) {
+        uint32_t this_sz = 0;
+
+        for (j = 0; j < mag; j++)
+          this_sz |= (*x++) << (j * 8);
+        sizes[i] = this_sz;
+      }
+
+      *count = frames;
+    }
+  }
+}
+
+static vpx_codec_err_t decoder_decode(vpx_codec_alg_priv_t *ctx,
+                                      const uint8_t *data, unsigned int data_sz,
+                                      void *user_priv, long deadline) {
   const uint8_t *data_start = data;
   const uint8_t *data_end = data + data_sz;
-  vpx_codec_err_t res;
+  vpx_codec_err_t res = VPX_CODEC_OK;
+  uint32_t sizes[8];
+  int frames_this_pts, frame_count = 0;
+
+  if (data == NULL || data_sz == 0)
+    return VPX_CODEC_INVALID_PARAM;
+
+  parse_superframe_index(data, data_sz, sizes, &frames_this_pts,
+                         ctx->decrypt_cb, ctx->decrypt_state);
 
   do {
+    if (data_sz) {
+      uint8_t marker = read_marker(ctx->decrypt_cb, ctx->decrypt_state,
+                                   data_start);
+      // Skip over the superframe index, if present
+      if ((marker & 0xe0) == 0xc0) {
+        const uint32_t frames = (marker & 0x7) + 1;
+        const uint32_t mag = ((marker >> 3) & 0x3) + 1;
+        const uint32_t index_sz = 2 + mag * frames;
+
+        if (data_sz >= index_sz) {
+          uint8_t marker2 = read_marker(ctx->decrypt_cb, ctx->decrypt_state,
+                                        data_start + index_sz - 1);
+          if (marker2 == marker) {
+            data_start += index_sz;
+            data_sz -= index_sz;
+            if (data_start < data_end)
+              continue;
+            else
+              break;
+          }
+        }
+      }
+    }
+
+    // Use the correct size for this frame, if an index is present.
+    if (frames_this_pts) {
+      uint32_t this_sz = sizes[frame_count];
+
+      if (data_sz < this_sz) {
+        ctx->base.err_detail = "Invalid frame size in index";
+        return VPX_CODEC_CORRUPT_FRAME;
+      }
+
+      data_sz = this_sz;
+      frame_count++;
+    }
+
     res = decode_one(ctx, &data_start, data_sz, user_priv, deadline);
     assert(data_start >= data);
     assert(data_start <= data_end);
 
-    /* Early exit if there was a decode error */
+    // Early exit if there was a decode error
     if (res)
       break;
 
-    /* Account for suboptimal termination by the encoder. */
-    while (data_start < data_end && *data_start == 0)
+    // Account for suboptimal termination by the encoder.
+    while (data_start < data_end) {
+      uint8_t marker3 = read_marker(ctx->decrypt_cb, ctx->decrypt_state,
+                                    data_start);
+      if (marker3)
+        break;
       data_start++;
+    }
 
-    data_sz = data_end - data_start;
+    data_sz = (unsigned int)(data_end - data_start);
   } while (data_start < data_end);
+
   return res;
 }
 
-static vpx_image_t *vp8_get_frame(vpx_codec_alg_priv_t  *ctx,
-                                  vpx_codec_iter_t      *iter) {
+static vpx_image_t *decoder_get_frame(vpx_codec_alg_priv_t *ctx,
+                                      vpx_codec_iter_t *iter) {
   vpx_image_t *img = NULL;
 
   if (ctx->img_avail) {
-    /* iter acts as a flip flop, so an image is only returned on the first
-     * call to get_frame.
-     */
+    // iter acts as a flip flop, so an image is only returned on the first
+    // call to get_frame.
     if (!(*iter)) {
       img = &ctx->img;
       *iter = img;
     }
   }
+  ctx->img_avail = 0;
 
   return img;
 }
 
-
-static
-vpx_codec_err_t vp8_xma_get_mmap(const vpx_codec_ctx_t      *ctx,
-                                 vpx_codec_mmap_t           *mmap,
-                                 vpx_codec_iter_t           *iter) {
-  vpx_codec_err_t     res;
-  const mem_req_t  *seg_iter = *iter;
-
-  /* Get address of next segment request */
-  do {
-    if (!seg_iter)
-      seg_iter = vp8_mem_req_segs;
-    else if (seg_iter->id != VP8_SEG_MAX)
-      seg_iter++;
-
-    *iter = (vpx_codec_iter_t)seg_iter;
-
-    if (seg_iter->id != VP8_SEG_MAX) {
-      mmap->id = seg_iter->id;
-      mmap->sz = seg_iter->sz;
-      mmap->align = seg_iter->align;
-      mmap->flags = seg_iter->flags;
-
-      if (!seg_iter->sz)
-        mmap->sz = seg_iter->calc_sz(ctx->config.dec, ctx->init_flags);
-
-      res = VPX_CODEC_OK;
-    } else
-      res = VPX_CODEC_LIST_END;
-  } while (!mmap->sz && res != VPX_CODEC_LIST_END);
-
-  return res;
-}
-
-static vpx_codec_err_t vp8_xma_set_mmap(vpx_codec_ctx_t         *ctx,
-                                        const vpx_codec_mmap_t  *mmap) {
-  vpx_codec_err_t res = VPX_CODEC_MEM_ERROR;
-  int i, done;
-
-  if (!ctx->priv) {
-    if (mmap->id == VP8_SEG_ALG_PRIV) {
-      if (!ctx->priv) {
-        vp8_init_ctx(ctx, mmap);
-        res = VPX_CODEC_OK;
-      }
-    }
+static vpx_codec_err_t decoder_set_fb_fn(
+    vpx_codec_alg_priv_t *ctx,
+    vpx_get_frame_buffer_cb_fn_t cb_get,
+    vpx_release_frame_buffer_cb_fn_t cb_release, void *cb_priv) {
+  if (cb_get == NULL || cb_release == NULL) {
+    return VPX_CODEC_INVALID_PARAM;
+  } else if (ctx->pbi == NULL) {
+    // If the decoder has already been initialized, do not accept changes to
+    // the frame buffer functions.
+    ctx->get_ext_fb_cb = cb_get;
+    ctx->release_ext_fb_cb = cb_release;
+    ctx->ext_priv = cb_priv;
+    return VPX_CODEC_OK;
   }
 
-  done = 1;
-
-  if (!res && ctx->priv->alg_priv) {
-    for (i = 0; i < NELEMENTS(ctx->priv->alg_priv->mmaps); i++) {
-      if (ctx->priv->alg_priv->mmaps[i].id == mmap->id)
-        if (!ctx->priv->alg_priv->mmaps[i].base) {
-          ctx->priv->alg_priv->mmaps[i] = *mmap;
-          res = VPX_CODEC_OK;
-        }
-
-      done &= (ctx->priv->alg_priv->mmaps[i].base != NULL);
-    }
-  }
-
-  if (done && !res) {
-    vp8_finalize_mmaps(ctx->priv->alg_priv);
-    res = ctx->iface->init(ctx, NULL);
-  }
-
-  return res;
+  return VPX_CODEC_ERROR;
 }
 
-static vpx_codec_err_t image2yuvconfig(const vpx_image_t   *img,
-                                       YV12_BUFFER_CONFIG  *yv12) {
-  vpx_codec_err_t        res = VPX_CODEC_OK;
-  yv12->y_buffer = img->planes[VPX_PLANE_Y];
-  yv12->u_buffer = img->planes[VPX_PLANE_U];
-  yv12->v_buffer = img->planes[VPX_PLANE_V];
+static vpx_codec_err_t ctrl_set_reference(vpx_codec_alg_priv_t *ctx,
+                                          int ctr_id, va_list args) {
+  vpx_ref_frame_t *const data = va_arg(args, vpx_ref_frame_t *);
 
-  yv12->y_width  = img->d_w;
-  yv12->y_height = img->d_h;
-  yv12->uv_width = yv12->y_width / 2;
-  yv12->uv_height = yv12->y_height / 2;
+  if (data) {
+    vpx_ref_frame_t *const frame = (vpx_ref_frame_t *)data;
+    YV12_BUFFER_CONFIG sd;
 
-  yv12->y_stride = img->stride[VPX_PLANE_Y];
-  yv12->uv_stride = img->stride[VPX_PLANE_U];
-
-  yv12->border  = (img->stride[VPX_PLANE_Y] - img->d_w) / 2;
-  yv12->clrtype = (img->fmt == VPX_IMG_FMT_VPXI420 ||
-                   img->fmt == VPX_IMG_FMT_VPXYV12);
-
-  return res;
+    image2yuvconfig(&frame->img, &sd);
+    return vp9_set_reference_dec(&ctx->pbi->common,
+                                 (VP9_REFFRAME)frame->frame_type, &sd);
+  } else {
+    return VPX_CODEC_INVALID_PARAM;
+  }
 }
 
-
-static vpx_codec_err_t vp9_set_reference(vpx_codec_alg_priv_t *ctx,
-                                         int ctr_id,
-                                         va_list args) {
-
+static vpx_codec_err_t ctrl_copy_reference(vpx_codec_alg_priv_t *ctx,
+                                           int ctr_id, va_list args) {
   vpx_ref_frame_t *data = va_arg(args, vpx_ref_frame_t *);
 
   if (data) {
@@ -573,51 +512,47 @@ static vpx_codec_err_t vp9_set_reference(vpx_codec_alg_priv_t *ctx,
 
     image2yuvconfig(&frame->img, &sd);
 
-    return vp9_set_reference_dec(ctx->pbi, frame->frame_type, &sd);
-  } else
+    return vp9_copy_reference_dec(ctx->pbi,
+                                  (VP9_REFFRAME)frame->frame_type, &sd);
+  } else {
     return VPX_CODEC_INVALID_PARAM;
-
+  }
 }
 
-static vpx_codec_err_t vp9_get_reference(vpx_codec_alg_priv_t *ctx,
-                                         int ctr_id,
-                                         va_list args) {
-
-  vpx_ref_frame_t *data = va_arg(args, vpx_ref_frame_t *);
+static vpx_codec_err_t ctrl_get_reference(vpx_codec_alg_priv_t *ctx,
+                                          int ctr_id, va_list args) {
+  vp9_ref_frame_t *data = va_arg(args, vp9_ref_frame_t *);
 
   if (data) {
-    vpx_ref_frame_t *frame = (vpx_ref_frame_t *)data;
-    YV12_BUFFER_CONFIG sd;
+    YV12_BUFFER_CONFIG* fb;
 
-    image2yuvconfig(&frame->img, &sd);
-
-    return vp9_get_reference_dec(ctx->pbi, frame->frame_type, &sd);
-  } else
+    vp9_get_reference_dec(ctx->pbi, data->idx, &fb);
+    yuvconfig2image(&data->img, fb, NULL);
+    return VPX_CODEC_OK;
+  } else {
     return VPX_CODEC_INVALID_PARAM;
-
+  }
 }
 
-static vpx_codec_err_t vp8_set_postproc(vpx_codec_alg_priv_t *ctx,
-                                        int ctr_id,
-                                        va_list args) {
-#if CONFIG_POSTPROC
+static vpx_codec_err_t ctrl_set_postproc(vpx_codec_alg_priv_t *ctx,
+                                         int ctr_id, va_list args) {
+#if CONFIG_VP9_POSTPROC
   vp8_postproc_cfg_t *data = va_arg(args, vp8_postproc_cfg_t *);
 
   if (data) {
     ctx->postproc_cfg_set = 1;
     ctx->postproc_cfg = *((vp8_postproc_cfg_t *)data);
     return VPX_CODEC_OK;
-  } else
+  } else {
     return VPX_CODEC_INVALID_PARAM;
-
+  }
 #else
   return VPX_CODEC_INCAPABLE;
 #endif
 }
 
-static vpx_codec_err_t vp8_set_dbg_options(vpx_codec_alg_priv_t *ctx,
-                                           int ctrl_id,
-                                           va_list args) {
+static vpx_codec_err_t ctrl_set_dbg_options(vpx_codec_alg_priv_t *ctx,
+                                            int ctrl_id, va_list args) {
 #if CONFIG_POSTPROC_VISUALIZER && CONFIG_POSTPROC
   int data = va_arg(args, int);
 
@@ -636,52 +571,91 @@ static vpx_codec_err_t vp8_set_dbg_options(vpx_codec_alg_priv_t *ctx,
 #endif
 }
 
-static vpx_codec_err_t vp8_get_last_ref_updates(vpx_codec_alg_priv_t *ctx,
-                                                int ctrl_id,
-                                                va_list args) {
-  int *update_info = va_arg(args, int *);
-  VP9D_COMP *pbi = (VP9D_COMP *)ctx->pbi;
+static vpx_codec_err_t ctrl_get_last_ref_updates(vpx_codec_alg_priv_t *ctx,
+                                                 int ctrl_id, va_list args) {
+  int *const update_info = va_arg(args, int *);
 
   if (update_info) {
-    *update_info = pbi->common.refresh_alt_ref_frame * (int) VP8_ALTR_FRAME
-                   + pbi->common.refresh_golden_frame * (int) VP8_GOLD_FRAME
-                   + pbi->common.refresh_last_frame * (int) VP8_LAST_FRAME;
-
+    if (ctx->pbi)
+      *update_info = ctx->pbi->refresh_frame_flags;
+    else
+      return VPX_CODEC_ERROR;
     return VPX_CODEC_OK;
-  } else
+  } else {
     return VPX_CODEC_INVALID_PARAM;
+  }
 }
 
 
-static vpx_codec_err_t vp8_get_frame_corrupted(vpx_codec_alg_priv_t *ctx,
-                                               int ctrl_id,
-                                               va_list args) {
-
+static vpx_codec_err_t ctrl_get_frame_corrupted(vpx_codec_alg_priv_t *ctx,
+                                                int ctrl_id, va_list args) {
   int *corrupted = va_arg(args, int *);
 
   if (corrupted) {
-    VP9D_COMP *pbi = (VP9D_COMP *)ctx->pbi;
-    *corrupted = pbi->common.frame_to_show->corrupted;
-
+    if (ctx->pbi)
+      *corrupted = ctx->pbi->common.frame_to_show->corrupted;
+    else
+      return VPX_CODEC_ERROR;
     return VPX_CODEC_OK;
-  } else
+  } else {
     return VPX_CODEC_INVALID_PARAM;
-
+  }
 }
 
-static vpx_codec_ctrl_fn_map_t ctf_maps[] = {
-  {VP8_SET_REFERENCE,             vp9_set_reference},
-  {VP8_COPY_REFERENCE,            vp9_get_reference},
-  {VP8_SET_POSTPROC,              vp8_set_postproc},
-  {VP8_SET_DBG_COLOR_REF_FRAME,   vp8_set_dbg_options},
-  {VP8_SET_DBG_COLOR_MB_MODES,    vp8_set_dbg_options},
-  {VP8_SET_DBG_COLOR_B_MODES,     vp8_set_dbg_options},
-  {VP8_SET_DBG_DISPLAY_MV,        vp8_set_dbg_options},
-  {VP8D_GET_LAST_REF_UPDATES,     vp8_get_last_ref_updates},
-  {VP8D_GET_FRAME_CORRUPTED,      vp8_get_frame_corrupted},
+static vpx_codec_err_t ctrl_get_display_size(vpx_codec_alg_priv_t *ctx,
+                                             int ctrl_id, va_list args) {
+  int *const display_size = va_arg(args, int *);
+
+  if (display_size) {
+    if (ctx->pbi) {
+      const VP9_COMMON *const cm = &ctx->pbi->common;
+      display_size[0] = cm->display_width;
+      display_size[1] = cm->display_height;
+    } else {
+      return VPX_CODEC_ERROR;
+    }
+    return VPX_CODEC_OK;
+  } else {
+    return VPX_CODEC_INVALID_PARAM;
+  }
+}
+
+static vpx_codec_err_t ctrl_set_invert_tile_order(vpx_codec_alg_priv_t *ctx,
+                                                  int ctr_id, va_list args) {
+  ctx->invert_tile_order = va_arg(args, int);
+  return VPX_CODEC_OK;
+}
+
+static vpx_codec_err_t ctrl_set_decryptor(vpx_codec_alg_priv_t *ctx,
+                                          int ctrl_id,
+                                          va_list args) {
+  vpx_decrypt_init *init = va_arg(args, vpx_decrypt_init *);
+  ctx->decrypt_cb = init ? init->decrypt_cb : NULL;
+  ctx->decrypt_state = init ? init->decrypt_state : NULL;
+  return VPX_CODEC_OK;
+}
+
+static vpx_codec_ctrl_fn_map_t decoder_ctrl_maps[] = {
+  {VP8_COPY_REFERENCE,            ctrl_copy_reference},
+
+  // Setters
+  {VP8_SET_REFERENCE,             ctrl_set_reference},
+  {VP8_SET_POSTPROC,              ctrl_set_postproc},
+  {VP8_SET_DBG_COLOR_REF_FRAME,   ctrl_set_dbg_options},
+  {VP8_SET_DBG_COLOR_MB_MODES,    ctrl_set_dbg_options},
+  {VP8_SET_DBG_COLOR_B_MODES,     ctrl_set_dbg_options},
+  {VP8_SET_DBG_DISPLAY_MV,        ctrl_set_dbg_options},
+  {VP9_INVERT_TILE_DECODE_ORDER,  ctrl_set_invert_tile_order},
+  {VPXD_SET_DECRYPTOR,            ctrl_set_decryptor},
+
+  // Getters
+  {VP8D_GET_LAST_REF_UPDATES,     ctrl_get_last_ref_updates},
+  {VP8D_GET_FRAME_CORRUPTED,      ctrl_get_frame_corrupted},
+  {VP9_GET_REFERENCE,             ctrl_get_reference},
+  {VP9D_GET_DISPLAY_SIZE,         ctrl_get_display_size},
+
   { -1, NULL},
 };
-
 
 #ifndef VERSION_STRING
 #define VERSION_STRING
@@ -689,21 +663,21 @@ static vpx_codec_ctrl_fn_map_t ctf_maps[] = {
 CODEC_INTERFACE(vpx_codec_vp9_dx) = {
   "WebM Project VP9 Decoder" VERSION_STRING,
   VPX_CODEC_INTERNAL_ABI_VERSION,
-  VPX_CODEC_CAP_DECODER | VP8_CAP_POSTPROC,
-  /* vpx_codec_caps_t          caps; */
-  vp8_init,         /* vpx_codec_init_fn_t       init; */
-  vp8_destroy,      /* vpx_codec_destroy_fn_t    destroy; */
-  ctf_maps,         /* vpx_codec_ctrl_fn_map_t  *ctrl_maps; */
-  vp8_xma_get_mmap, /* vpx_codec_get_mmap_fn_t   get_mmap; */
-  vp8_xma_set_mmap, /* vpx_codec_set_mmap_fn_t   set_mmap; */
-  {
-    vp8_peek_si,      /* vpx_codec_peek_si_fn_t    peek_si; */
-    vp8_get_si,       /* vpx_codec_get_si_fn_t     get_si; */
-    vp9_decode,       /* vpx_codec_decode_fn_t     decode; */
-    vp8_get_frame,    /* vpx_codec_frame_get_fn_t  frame_get; */
+  VPX_CODEC_CAP_DECODER | VP9_CAP_POSTPROC |
+      VPX_CODEC_CAP_EXTERNAL_FRAME_BUFFER,  // vpx_codec_caps_t
+  decoder_init,       // vpx_codec_init_fn_t
+  decoder_destroy,    // vpx_codec_destroy_fn_t
+  decoder_ctrl_maps,  // vpx_codec_ctrl_fn_map_t
+  NOT_IMPLEMENTED,    // vpx_codec_get_mmap_fn_t
+  NOT_IMPLEMENTED,    // vpx_codec_set_mmap_fn_t
+  { // NOLINT
+    decoder_peek_si,    // vpx_codec_peek_si_fn_t
+    decoder_get_si,     // vpx_codec_get_si_fn_t
+    decoder_decode,     // vpx_codec_decode_fn_t
+    decoder_get_frame,  // vpx_codec_frame_get_fn_t
+    decoder_set_fb_fn,  // vpx_codec_set_fb_fn_t
   },
-  {
-    /* encoder functions */
+  { // NOLINT
     NOT_IMPLEMENTED,
     NOT_IMPLEMENTED,
     NOT_IMPLEMENTED,

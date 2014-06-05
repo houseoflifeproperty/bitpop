@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/memory/scoped_nsobject.h"
-#include "base/string16.h"
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
+#include "base/mac/scoped_nsobject.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_folder_controller.h"
@@ -15,6 +14,9 @@
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #import "chrome/browser/ui/cocoa/url_drop_target.h"
+#include "chrome/test/base/testing_profile.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/core/test/bookmark_test_helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 #import "third_party/mozilla/NSPasteboard+Utils.h"
@@ -42,7 +44,7 @@
 }
 
 -(CGFloat)dropIndicatorPosition {
-  return dropIndicatorPosition_;
+  return NSMinY([dropIndicator_ frame]);
 }
 
 @end
@@ -112,7 +114,7 @@ class BookmarkBarFolderViewTest : public CocoaProfileTest {
      draggingAllowed:OCMOCK_ANY];
     [[[mock_controller stub] andReturnBool:show_indicator]
      shouldShowIndicatorShownForPoint:kPoint];
-    [[[mock_controller stub] andReturnFloat:kFakeIndicatorPos]
+    [[[mock_controller stub] andReturnCGFloat:kFakeIndicatorPos]
      indicatorPosForDragToPoint:kPoint];
     [[[mock_controller stub] andReturnValue:OCMOCK_VALUE(model)] bookmarkModel];
     return [mock_controller retain];
@@ -124,7 +126,7 @@ class BookmarkBarFolderViewTest : public CocoaProfileTest {
     const BookmarkNode* node =
         bookmark_model->AddURL(bookmark_model->bookmark_bar_node(),
                                0,
-                               ASCIIToUTF16("Test Bookmark"),
+                               base::ASCIIToUTF16("Test Bookmark"),
                                GURL("http://www.exmaple.com"));
 
     id mock_button = [OCMockObject mockForClass:[BookmarkButton class]];
@@ -132,9 +134,9 @@ class BookmarkBarFolderViewTest : public CocoaProfileTest {
     return [mock_button retain];
   }
 
-  scoped_nsobject<id> mock_controller_;
-  scoped_nsobject<BookmarkBarFolderView> view_;
-  scoped_nsobject<id> mock_button_;
+  base::scoped_nsobject<id> mock_controller_;
+  base::scoped_nsobject<BookmarkBarFolderView> view_;
+  base::scoped_nsobject<id> mock_button_;
 };
 
 TEST_F(BookmarkBarFolderViewTest, BookmarkButtonDragAndDrop) {
@@ -156,7 +158,8 @@ TEST_F(BookmarkBarFolderViewTest, BookmarkButtonDragAndDropAcrossProfiles) {
   TestingProfile* other_profile =
       testing_profile_manager()->CreateTestingProfile("other");
   other_profile->CreateBookmarkModel(true);
-  other_profile->BlockUntilBookmarkModelLoaded();
+  test::WaitForBookmarkModelToLoad(
+      BookmarkModelFactory::GetForProfile(other_profile));
 
   mock_controller_.reset(GetMockController(
       YES, BookmarkModelFactory::GetForProfile(other_profile)));

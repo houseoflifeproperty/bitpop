@@ -80,11 +80,12 @@ StreamState SSLStreamAdapterHelper::GetState() const {
   // not reached
 }
 
-void SSLStreamAdapterHelper::SetPeerCertificate(SSLCertificate* cert) {
-  ASSERT(peer_certificate_.get() == NULL);
-  ASSERT(peer_certificate_digest_algorithm_.empty());
-  ASSERT(ssl_server_name_.empty());
-  peer_certificate_.reset(cert);
+bool SSLStreamAdapterHelper::GetPeerCertificate(SSLCertificate** cert) const {
+  if (!peer_certificate_)
+    return false;
+
+  *cert = peer_certificate_->GetReference();
+  return true;
 }
 
 bool SSLStreamAdapterHelper::SetPeerCertificateDigest(

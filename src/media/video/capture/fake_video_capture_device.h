@@ -10,58 +10,59 @@
 
 #include <string>
 
+#include "base/atomicops.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread.h"
+#include "base/threading/thread_checker.h"
 #include "media/video/capture/video_capture_device.h"
 
 namespace media {
 
 class MEDIA_EXPORT FakeVideoCaptureDevice : public VideoCaptureDevice {
  public:
-  static VideoCaptureDevice* Create(const Name& device_name);
-  virtual ~FakeVideoCaptureDevice();
-  // Used for testing. This will make sure the next call to Create will
-  // return NULL;
-  static void SetFailNextCreate();
+  static const int kFakeCaptureTimeoutMs = 50;
 
-  static void GetDeviceNames(Names* device_names);
+  FakeVideoCaptureDevice();
+  virtual ~FakeVideoCaptureDevice();
 
   // VideoCaptureDevice implementation.
-  virtual void Allocate(int width,
-                        int height,
-                        int frame_rate,
-                        VideoCaptureDevice::EventHandler* observer) OVERRIDE;
-  virtual void Start() OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void DeAllocate() OVERRIDE;
-  virtual const Name& device_name() OVERRIDE;
+  virtual void AllocateAndStart(
+      const VideoCaptureParams& params,
+      scoped_ptr<VideoCaptureDevice::Client> client) OVERRIDE;
+  virtual void StopAndDeAllocate() OVERRIDE;
+
+  // Sets the formats to use sequentially when the device is configured as
+  // variable capture resolution. Works only before AllocateAndStart() or
+  // after StopAndDeallocate().
+  void PopulateVariableFormatsRoster(const VideoCaptureFormats& formats);
 
  private:
-  // Flag indicating the internal state.
-  enum InternalState {
-    kIdle,
-    kAllocated,
-    kCapturing,
-    kError
-  };
-  explicit FakeVideoCaptureDevice(const Name& device_name);
-
-  // Called on the capture_thread_.
+  // Called on the |capture_thread_| only.
+  void OnAllocateAndStart(const VideoCaptureParams& params,
+                          scoped_ptr<Client> client);
+  void OnStopAndDeAllocate();
   void OnCaptureTask();
+  void Reallocate();
 
-  Name device_name_;
-  VideoCaptureDevice::EventHandler* observer_;
-  InternalState state_;
+  // |thread_checker_| is used to check that destructor, AllocateAndStart() and
+  // StopAndDeAllocate() are called in the correct thread that owns the object.
+  base::ThreadChecker thread_checker_;
+
   base::Thread capture_thread_;
-  int frame_size_;
-  scoped_array<uint8> fake_frame_;
+  // The following members are only used on the |capture_thread_|.
+  scoped_ptr<VideoCaptureDevice::Client> client_;
+  scoped_ptr<uint8[]> fake_frame_;
   int frame_count_;
-  int frame_width_;
-  int frame_height_;
+  VideoCaptureFormat capture_format_;
 
-  static bool fail_next_create_;
+  // When the device is allowed to change resolution, this vector holds the
+  // available ones, used sequentially restarting at the end. These two members
+  // are initialised in PopulateFormatRoster() before |capture_thread_| is
+  // running and are subsequently read-only in that thread.
+  std::vector<VideoCaptureFormat> format_roster_;
+  int format_roster_index_;
 
-  DISALLOW_IMPLICIT_CONSTRUCTORS(FakeVideoCaptureDevice);
+  DISALLOW_COPY_AND_ASSIGN(FakeVideoCaptureDevice);
 };
 
 }  // namespace media

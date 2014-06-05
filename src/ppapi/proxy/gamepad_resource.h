@@ -8,7 +8,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/shared_memory.h"
+#include "base/memory/shared_memory.h"
 #include "ppapi/c/ppb_gamepad.h"
 #include "ppapi/proxy/plugin_resource.h"
 #include "ppapi/proxy/ppapi_proxy_export.h"
@@ -39,7 +39,8 @@ class PPAPI_PROXY_EXPORT GamepadResource
   virtual thunk::PPB_Gamepad_API* AsPPB_Gamepad_API() OVERRIDE;
 
   // PPB_Gamepad_API.
-  virtual void Sample(PP_GamepadsSampleData* data) OVERRIDE;
+  virtual void Sample(PP_Instance instance,
+                      PP_GamepadsSampleData* data) OVERRIDE;
 
  private:
   void OnPluginMsgSendMemory(const ResourceMessageReplyParams& params);

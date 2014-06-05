@@ -10,25 +10,185 @@
  */
 #include "native_client/src/include/portability.h"
 #include "native_client/src/include/portability_io.h"
+
 #include <windows.h>
+#include <direct.h>
+#include <io.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <share.h>
 
+#include "native_client/src/include/nacl_macros.h"
 #include "native_client/src/include/nacl_platform.h"
+#include "native_client/src/shared/platform/nacl_check.h"
 #include "native_client/src/shared/platform/nacl_find_addrsp.h"
 #include "native_client/src/shared/platform/nacl_host_desc.h"
 #include "native_client/src/shared/platform/nacl_log.h"
+#include "native_client/src/shared/platform/nacl_sync.h"
+#include "native_client/src/shared/platform/nacl_sync_checked.h"
 #include "native_client/src/shared/platform/win/xlate_system_error.h"
 #include "native_client/src/trusted/desc/nacl_desc_effector.h"
 
 #include "native_client/src/trusted/service_runtime/nacl_config.h"
 #include "native_client/src/trusted/service_runtime/internal_errno.h"
+#include "native_client/src/trusted/service_runtime/sel_util-inl.h"
 
+#include "native_client/src/trusted/service_runtime/include/bits/mman.h"
 #include "native_client/src/trusted/service_runtime/include/sys/errno.h"
 #include "native_client/src/trusted/service_runtime/include/sys/fcntl.h"
-#include "native_client/src/trusted/service_runtime/include/bits/mman.h"
 #include "native_client/src/trusted/service_runtime/include/sys/stat.h"
+#include "native_client/src/trusted/service_runtime/include/sys/unistd.h"
+
+#define OFFSET_FOR_FILEPOS_LOCK (GG_LONGLONG(0x7000000000000000))
+
+/*
+ * By convention, we use locking the byte at OFFSET_FOR_FILEPOS_LOCK
+ * as locking for the implicit file position associated with a file
+ * handle.  According to MSDN, LockFileEx of a byte range that does
+ * not (yet) exist in a file is not an error, which makes sense in
+ * that one might want to have exclusive access to a file region that
+ * is beyond the end of the file before populating it.  We assume that
+ * OFFSET_FOR_FILEPOS_LOCK is large enough that no real file will
+ * actually be that big (even if sparse) and cause problems.
+ *
+ * One drawback of this is that two independent file handles on the
+ * same file will share the same lock.  If this leads to actual
+ * contention issues, we can use the following randomized approach,
+ * ASSUMING that each file handle / posix-level host descriptor is
+ * introduced to NaCl at most once (e.g., no dup'ing and invoking
+ * NaClHostDescPosixTake multiple times): we pick a random offset from
+ * OFFSET_FOR_FILEPOS_LOCK, and make sure we transfer that with the
+ * file handle in the nrd_xfer protocol.  This way, we use a range of
+ * byte offsets for locking files and avoid false contention.  We
+ * would be subject to the birthday paradox, of course, so if we
+ * picked a 16-bit random offset to use, then if a file is opened ~256
+ * times we would start seeing performance issues caused by
+ * contention, which is probably acceptable; a 32-bit nonce would be
+ * plenty.
+ *
+ * On Windows, fcntl is not available.  A very similar function to
+ * lockf, _locking, exists in the Windows CRT.  It does not permit
+ * specification of the start of a region, only size (just like lockf)
+ * -- implicitly from the current position -- which is less than
+ * useful for our purposes.
+ */
+static void NaClTakeFilePosLock(HANDLE hFile) {
+  OVERLAPPED overlap;
+  DWORD err;
+
+  memset(&overlap, 0, sizeof overlap);
+  overlap.Offset = (DWORD) OFFSET_FOR_FILEPOS_LOCK;
+  overlap.OffsetHigh = (DWORD) (OFFSET_FOR_FILEPOS_LOCK >> 32);
+  /*
+   * LockFileEx should never fail -- untrusted code cannot cause hFile
+   * to become invalid, since all NaClHostDesc objects are wrapped in
+   * NaClDesc objects and all uses of NaClDesc objects take a
+   * reference before use, so a threading race that closes a
+   * descriptor at the untrusted code level will only dereference the
+   * NaClDesc (and make it unavailable to the untrusted code), but the
+   * object will not be destroyed until after the NaClDesc-level
+   * operation (which in turn invokes the NaClHostDesc level
+   * operation) completes.  Only after the operation completes will
+   * the reference to the NaClDesc be drop by the syscall handler.
+   */
+  if (!LockFileEx(hFile, LOCKFILE_EXCLUSIVE_LOCK,
+                  /* dwReserved= */ 0,
+                  /* nNumberOfBytesToLockLow= */ 1,
+                  /* nNumberOfBytesToLockHigh= */ 0,
+                  &overlap)) {
+    err = GetLastError();
+    NaClLog(LOG_FATAL, "NaClTakeFilePosLock: LockFileEx failed, error %u\n",
+            err);
+  }
+}
+
+/*
+ * Map our ABI to the host OS's ABI.
+ * Note: there is no X bit equivalent on windows so NACL_ABI_S_IXUSR
+ * is ignored.
+ */
+static INLINE mode_t NaClMapMode(nacl_abi_mode_t abi_mode) {
+  mode_t m = 0;
+  if (0 != (abi_mode & NACL_ABI_S_IRUSR))
+    m |= _S_IREAD;
+  if (0 != (abi_mode & NACL_ABI_S_IWUSR))
+    m |= _S_IWRITE;
+  return m;
+}
+
+/* Windows doesn't define R_OK or W_OK macros but expects these constants */
+#define WIN_F_OK 0
+#define WIN_R_OK 4
+#define WIN_W_OK 2
+
+/*
+ * Map our ABI to the host OS's ABI.
+ * There is no X_OK (0x1) on win32 so we ignore
+ * NACL_ABI_X_OK and report everything that exists
+ * as being executable.
+ */
+static INLINE int NaClMapAccessMode(int nacl_mode) {
+  int mode = 0;
+  if (nacl_mode == NACL_ABI_F_OK) {
+    mode = WIN_F_OK;
+  } else {
+    if (nacl_mode & NACL_ABI_R_OK)
+      mode |= WIN_R_OK;
+    if (nacl_mode & NACL_ABI_W_OK)
+      mode |= WIN_W_OK;
+  }
+  return mode;
+}
+
+static void NaClDropFilePosLock(HANDLE hFile) {
+  OVERLAPPED overlap;
+  DWORD err;
+
+  memset(&overlap, 0, sizeof overlap);
+  overlap.Offset = (DWORD) OFFSET_FOR_FILEPOS_LOCK;
+  overlap.OffsetHigh = (DWORD) (OFFSET_FOR_FILEPOS_LOCK >> 32);
+  if (!UnlockFileEx(hFile,
+                    /* dwReserved= */ 0,
+                    /* nNumberOfBytesToLockLow= */ 1,
+                    /* nNumberOfBytesToLockHigh= */ 0,
+                    &overlap)) {
+    err = GetLastError();
+    NaClLog(LOG_FATAL, "NaClDropFilePosLock: UnlockFileEx failed, error %u\n",
+            err);
+  }
+}
+
+static nacl_off64_t NaClLockAndGetCurrentFilePos(HANDLE hFile) {
+  LARGE_INTEGER to_move;
+  LARGE_INTEGER cur_pos;
+  DWORD err;
+
+  NaClTakeFilePosLock(hFile);
+  to_move.QuadPart = 0;
+  if (!SetFilePointerEx(hFile, to_move, &cur_pos, FILE_CURRENT)) {
+    err = GetLastError();
+    NaClLog(LOG_FATAL,
+            "NaClLockAndGetCurrentFilePos: SetFilePointerEx failed, error %u\n",
+            err);
+  }
+  return cur_pos.QuadPart;
+}
+
+static void NaClSetCurrentFilePosAndUnlock(HANDLE hFile,
+                                           nacl_off64_t pos) {
+  LARGE_INTEGER to_move;
+  DWORD err;
+
+  to_move.QuadPart = pos;
+  if (!SetFilePointerEx(hFile, to_move, (LARGE_INTEGER *) NULL, FILE_BEGIN)) {
+    err = GetLastError();
+    NaClLog(LOG_FATAL,
+            "NaClSetCurrentFilePosAndUnlock: SetFilePointerEx failed:"
+            " error %d\n",
+            err);
+  }
+  NaClDropFilePosLock(hFile);
+}
 
 /*
  * WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING
@@ -106,8 +266,297 @@ static INLINE size_t size_min(size_t a, size_t b) {
  */
 
 /*
- * TODO(bsy): handle the !NACL_ABI_MAP_FIXED case.
+ * out_flProtect == 0 means error, and the error string can be used
+ * for a logging message (except for the cases that the caller should
+ * be checking for).
+ *
+ * in parameters are all NACL_ABI_ values or bool (0/1).
+ *
+ * accmode may be NACL_ABI_O_RDONLY or NACL_ABI_O_RDWR, but not
+ * NACL_ABI_O_WRONLY (see below).
+ *
+ * Caller should check for:
+ *
+ * - PROT_NONE -> special case handling,
+ * - NACL_ABI_O_APPEND and PROT_WRITE -> EACCES,
+ * - accmode is O_WRONLY -> EACCES,
+ *
+ * The interpretation here is that PROT_EXEC or PROT_WRITE implies
+ * asking for PROT_READ, since most hardware behaves this way.  So if
+ * the descriptor is O_WRONLY, we generally refuse.
+ *
+ * The file mapping object created by CreateFileMapping's flProtect
+ * argument specifies the MAXIMUM protection, and MapViewOfFileEx will
+ * request a lesser level of access.  We should always
+ * CreateFileMapping with a high level of access so that
+ * VirtualProtect (used by mprotect) can be used to turn on write when
+ * the initial mmap had read-only mappings.
+ *
+ * BUG(phosek): Due to Windows XP limitation, in particular the missing
+ * PAGE_EXECUTE_WRITECOPY protection support for file mapping objects,
+ * we cannot mmap r/o file as private, read/write and later make it
+ * executable or vice versa mmap r/o file as private, read/execute and
+ * later make it writable. This is a platform difference, but since
+ * untrusted code is not allowed to mmap files as write/execute, this
+ * difference is invisible to application developers and will therefore
+ * likely remain unresolved as the solution would likely be very
+ * expensive. Furthemore, after dropping the support for Windows XP, this
+ * difference can be easily resolved by updating the flag mapping.
  */
+void NaClflProtectAndDesiredAccessMap(int prot,
+                                      int is_private,
+                                      int accmode,
+                                      DWORD *out_flMappingProtect,
+                                      DWORD *out_flProtect,
+                                      DWORD *out_dwDesiredAccess,
+                                      char const **out_msg) {
+#define M(mp,p,da,err) { mp, p, da, err, #mp, #p, #da }
+  static struct {
+    DWORD flMappingProtect;
+    DWORD flProtect;
+    DWORD dwDesiredAccess;
+    char const *err;
+    char const *flMappingProtect_str;
+    char const *flProtect_str;
+    char const *dwDesiredAccess_str;
+  } table[] = {
+    /* RDONLY */
+    /* shared */
+    /* PROT_NONE */
+    M(PAGE_EXECUTE_READ, PAGE_NOACCESS, FILE_MAP_READ, NULL),
+    /* PROT_READ */
+    M(PAGE_EXECUTE_READ, PAGE_READONLY, FILE_MAP_READ, NULL),
+    /* PROT_WRITE */
+    M(0, 0, 0, "file open for read only; no shared write allowed"),
+    /* PROT_READ | PROT_WRITE */
+    M(0, 0, 0, "file open for read only; no shared read/write allowed"),
+    /* PROT_EXEC */
+    M(PAGE_EXECUTE_WRITECOPY, PAGE_EXECUTE,
+      FILE_MAP_READ | FILE_MAP_EXECUTE, NULL),
+    /* PROT_READ | PROT_EXEC */
+    M(PAGE_EXECUTE_WRITECOPY, PAGE_EXECUTE_READ,
+      FILE_MAP_READ | FILE_MAP_EXECUTE, NULL),
+    /* PROT_WRITE | PROT_EXEC */
+    M(0, 0, 0, "file open for read only; no shared write/exec allowed"),
+    /* PROT_READ | PROT_WRITE | PROT_EXEC */
+    M(0, 0, 0, "file open for read only; no shared read/write/exec allowed"),
+
+    /* is_private */
+    /* PROT_NONE */
+    M(PAGE_EXECUTE_READ, PAGE_NOACCESS, FILE_MAP_READ, NULL),
+    /* PROT_READ */
+    M(PAGE_EXECUTE_READ, PAGE_READONLY, FILE_MAP_READ, NULL),
+    /* PROT_WRITE */
+    M(PAGE_EXECUTE_READ, PAGE_WRITECOPY, FILE_MAP_COPY, NULL),
+    /* PROT_READ | PROT_WRITE */
+    M(PAGE_EXECUTE_READ, PAGE_WRITECOPY, FILE_MAP_COPY, NULL),
+
+    /*
+     * NB: PAGE_EXECUTE_WRITECOPY is not supported on Server 2003 or
+     * XP, which means that the mmap will fail.  In this case we fallback
+     * to PAGE_EXECUTE_READ.
+     *
+     * Even with PAGE_EXECUTE_WRITECOPY, the PROT_WRITE | PROT_EXEC
+     * case where we are asking for FILE_MAP_COPY | FILE_MAP_EXECUTE
+     * seems to always fail, with GetLastError() yielding 87
+     * (ERROR_INVALID_PARAMETER).  This may be due to antivirus.
+     */
+
+    /* PROT_EXEC */
+    M(PAGE_EXECUTE_WRITECOPY, PAGE_EXECUTE,
+      FILE_MAP_READ | FILE_MAP_EXECUTE, NULL),
+    /* PROT_READ | PROT_EXEC */
+    M(PAGE_EXECUTE_WRITECOPY, PAGE_EXECUTE_READ,
+      FILE_MAP_READ | FILE_MAP_EXECUTE, NULL),
+    /* PROT_WRITE | PROT_EXEC */
+    M(PAGE_EXECUTE_WRITECOPY, PAGE_EXECUTE_WRITECOPY,
+      FILE_MAP_COPY | FILE_MAP_EXECUTE, NULL),
+    /* PROT_READ | PROT_WRITE | PROT_EXEC */
+    M(PAGE_EXECUTE_WRITECOPY, PAGE_EXECUTE_WRITECOPY,
+      FILE_MAP_COPY | FILE_MAP_EXECUTE, NULL),
+
+    /* RDWR */
+    /* shared */
+    /* PROT_NONE */
+    M(PAGE_EXECUTE_READWRITE, PAGE_NOACCESS, FILE_MAP_READ, NULL),
+    /* PROT_READ */
+    M(PAGE_EXECUTE_READWRITE, PAGE_READONLY, FILE_MAP_READ, NULL),
+    /* PROT_WRITE */
+    M(PAGE_EXECUTE_READWRITE, PAGE_READWRITE, FILE_MAP_WRITE, NULL),
+    /* PROT_READ | PROT_WRITE */
+    M(PAGE_EXECUTE_READWRITE, PAGE_READWRITE, FILE_MAP_WRITE, NULL),
+
+    /* PROT_EXEC */
+    M(PAGE_EXECUTE_READWRITE, PAGE_EXECUTE,
+      FILE_MAP_READ | FILE_MAP_EXECUTE, NULL),
+    /* PROT_READ | PROT_EXEC */
+    M(PAGE_EXECUTE_READWRITE, PAGE_EXECUTE_READ,
+      FILE_MAP_READ | FILE_MAP_EXECUTE, NULL),
+    /* PROT_WRITE | PROT_EXEC */
+    M(PAGE_EXECUTE_READWRITE, PAGE_EXECUTE_READWRITE,
+      FILE_MAP_WRITE | FILE_MAP_EXECUTE, NULL),
+    /* PROT_READ | PROT_WRITE | PROT_EXEC */
+    M(PAGE_EXECUTE_READWRITE, PAGE_EXECUTE_READWRITE,
+      FILE_MAP_WRITE | FILE_MAP_EXECUTE, NULL),
+
+    /* is_private */
+    /* PROT_NONE */
+    M(PAGE_EXECUTE_READWRITE, PAGE_NOACCESS, FILE_MAP_READ, NULL),
+    /* PROT_READ */
+    M(PAGE_EXECUTE_READWRITE, PAGE_READONLY, FILE_MAP_READ, NULL),
+    /* PROT_WRITE */
+    M(PAGE_EXECUTE_READWRITE, PAGE_WRITECOPY, FILE_MAP_COPY, NULL),
+    /* PROT_READ | PROT_WRITE */
+    M(PAGE_EXECUTE_READWRITE, PAGE_WRITECOPY, FILE_MAP_COPY, NULL),
+
+    /* PROT_EXEC */
+    M(PAGE_EXECUTE_READWRITE, PAGE_EXECUTE,
+      FILE_MAP_WRITE | FILE_MAP_EXECUTE, NULL),
+    /* PROT_READ | PROT_EXEC */
+    M(PAGE_EXECUTE_READWRITE, PAGE_EXECUTE_READ,
+      FILE_MAP_WRITE | FILE_MAP_EXECUTE, NULL),
+    /* PROT_WRITE | PROT_EXEC */
+    M(PAGE_EXECUTE_READWRITE, PAGE_EXECUTE_WRITECOPY,
+      FILE_MAP_WRITE | FILE_MAP_EXECUTE, NULL),
+    /* PROT_READ | PROT_WRITE | PROT_EXEC */
+    M(PAGE_EXECUTE_READWRITE, PAGE_EXECUTE_WRITECOPY,
+      FILE_MAP_WRITE | FILE_MAP_EXECUTE, NULL),
+  };
+#undef M
+
+  size_t ix;
+
+  NaClLog(3,
+          "NaClflProtectAndDesiredAccessMap(prot 0x%x,"
+          " priv 0x%x, accmode 0x%x, ...)\n",
+          prot, is_private, accmode);
+
+  NACL_COMPILE_TIME_ASSERT(NACL_ABI_O_RDONLY == 0);
+  NACL_COMPILE_TIME_ASSERT(NACL_ABI_O_RDWR == 2);
+  NACL_COMPILE_TIME_ASSERT(NACL_ABI_PROT_NONE == 0);
+  NACL_COMPILE_TIME_ASSERT(NACL_ABI_PROT_READ == 1);
+  NACL_COMPILE_TIME_ASSERT(NACL_ABI_PROT_WRITE == 2);
+  NACL_COMPILE_TIME_ASSERT(NACL_ABI_PROT_EXEC == 4);
+
+  CHECK(accmode != NACL_ABI_O_WRONLY);
+
+  /*
+   * NACL_ABI_O_RDONLY == 0, NACL_ABI_O_RDWR == 2, so multiplying by 8
+   * yields a base separation of 8 for the 16 element subtable indexed
+   * by the NACL_ABI_PROT_{READ|WRITE|EXEC} and is_private values.
+   */
+  ix = ((prot & NACL_ABI_PROT_MASK) +
+        (is_private << 3) +
+        ((accmode & NACL_ABI_O_ACCMODE) << 3));
+
+  CHECK(ix < NACL_ARRAY_SIZE(table));  /* compiler should elide this */
+
+  if (NULL != out_flMappingProtect) {
+    *out_flMappingProtect = table[ix].flMappingProtect;
+  }
+  if (NULL != out_flProtect) {
+    *out_flProtect = table[ix].flProtect;
+  }
+  if (NULL != out_dwDesiredAccess) {
+    *out_dwDesiredAccess = table[ix].dwDesiredAccess;
+  }
+  if (NULL != out_msg) {
+    *out_msg = table[ix].err;
+  }
+
+  NaClLog(3, "NaClflProtectAndDesiredAccessMap: %s %s %s\n",
+          table[ix].flMappingProtect_str,
+          table[ix].flProtect_str,
+          table[ix].dwDesiredAccess_str);
+}
+
+/*
+ * Returns flProtect flags for VirtualAlloc'd memory, file based
+ * mappings should always use NaClflProtectAndDesiredAccessMap.
+ */
+DWORD NaClflProtectMap(int prot) {
+#define M(p) { p, #p }
+  static struct {
+    DWORD flProtect;
+    char const *flProtect_str;
+  } table[] = {
+    /* PROT_NONE */
+    M(PAGE_NOACCESS),
+    /* PROT_READ */
+    M(PAGE_READONLY),
+    /* PROT_WRITE */
+    M(PAGE_READWRITE),
+    /* PROT_READ | PROT_WRITE */
+    M(PAGE_READWRITE),
+
+    /* PROT_EXEC */
+    M(PAGE_EXECUTE),
+    /* PROT_READ | PROT_EXEC */
+    M(PAGE_EXECUTE_READ),
+    /* PROT_WRITE | PROT_EXEC */
+    M(PAGE_EXECUTE_READWRITE),
+    /* PROT_READ | PROT_WRITE | PROT_EXEC */
+    M(PAGE_EXECUTE_READWRITE),
+  };
+#undef M
+
+  size_t ix;
+
+  NaClLog(3, "NaClflProtectMap(prot 0x%x)\n", prot);
+
+  NACL_COMPILE_TIME_ASSERT(NACL_ABI_PROT_NONE == 0);
+  NACL_COMPILE_TIME_ASSERT(NACL_ABI_PROT_READ == 1);
+  NACL_COMPILE_TIME_ASSERT(NACL_ABI_PROT_WRITE == 2);
+  NACL_COMPILE_TIME_ASSERT(NACL_ABI_PROT_EXEC == 4);
+
+  ix = (prot & NACL_ABI_PROT_MASK);
+  CHECK(ix < NACL_ARRAY_SIZE(table));  /* compiler should elide this */
+
+  NaClLog(3, "NaClflProtectMap: %s\n", table[ix].flProtect_str);
+
+  return table[ix].flProtect;
+}
+
+/*
+ * Unfortunately, when the descriptor is imported via
+ * NaClHostDescPosixTake or NaClHostDescPosixDup, the underlying file
+ * handle may not have GENERIC_EXECUTE permission associated with it,
+ * unlike the files open using NaClHostDescOpen.  This means that the
+ * CreateFileMapping with flMappingProtect that specifies PAGE_EXECUTE_*
+ * will fail. Since we don't know whether GENERIC_EXECUTE without doing
+ * a query, we instead lazily determine the need by detecting the
+ * CreateFileMapping error and retrying using a fallback
+ * flMappingProtect that does not have EXECUTE rights.  We record this
+ * in the descriptor so that the next time we do not have to try with
+ * the PAGE_EXECUTE_* and have it deterministically fail.
+ *
+ * This function is also used when mapping in anonymous memory.  We
+ * assume that we never map anonymous executable memory -- mmap of
+ * executable data is always from a file, and the page will be
+ * non-writable -- and we ensure that anonymous memory is never
+ * executable.
+ */
+static DWORD NaClflProtectRemoveExecute(DWORD flProtect) {
+  switch (flProtect) {
+    case PAGE_EXECUTE:
+      return PAGE_NOACCESS;
+    case PAGE_EXECUTE_READ:
+      return PAGE_READONLY;
+    case PAGE_EXECUTE_READWRITE:
+      return PAGE_READWRITE;
+    case PAGE_EXECUTE_WRITECOPY:
+      return PAGE_WRITECOPY;
+  }
+  return flProtect;
+}
+
+/* Check if flProtect has executable permission. */
+static int NaClflProtectHasExecute(DWORD flProtect) {
+  return flProtect == PAGE_EXECUTE ||
+         flProtect == PAGE_EXECUTE_READ ||
+         flProtect == PAGE_EXECUTE_READWRITE ||
+         flProtect == PAGE_EXECUTE_WRITECOPY;
+}
 
 /*
  * TODO(mseaborn): Reduce duplication between this function and
@@ -122,12 +571,17 @@ uintptr_t NaClHostDescMap(struct NaClHostDesc *d,
                           nacl_off64_t        offset) {
   uintptr_t retval;
   uintptr_t addr;
+  int       desc_flags;
   HANDLE    hFile;
   HANDLE    hMap;
+  int       retry_fallback;
+  DWORD     flMappingProtect;
+  DWORD     dwDesiredAccess;
   DWORD     flProtect;
+  DWORD     flOldProtect;
+  char const *err_msg;
   DWORD     dwMaximumSizeHigh;
   DWORD     dwMaximumSizeLow;
-  DWORD     dwDesiredAccess;
   uintptr_t map_result;
   size_t    chunk_offset;
   size_t    unmap_offset;
@@ -135,7 +589,7 @@ uintptr_t NaClHostDescMap(struct NaClHostDesc *d,
 
   NaClLog(4,
           ("NaClHostDescMap(0x%08"NACL_PRIxPTR", 0x%08"NACL_PRIxPTR
-           ", 0x%"NACL_PRIxS", %d, %d, 0x%016"NACL_PRIxNACL_OFF64")\n"),
+           ", 0x%"NACL_PRIxS", 0x%x, 0x%x, 0x%016"NACL_PRIxNACL_OFF64")\n"),
           (uintptr_t) d, (uintptr_t) start_addr,
           len, prot, flags, offset);
   if (NULL == d && 0 == (flags & NACL_ABI_MAP_ANONYMOUS)) {
@@ -144,9 +598,14 @@ uintptr_t NaClHostDescMap(struct NaClHostDesc *d,
   if (NULL != d && -1 == d->d) {
     NaClLog(LOG_FATAL, "NaClHostDescMap: already closed\n");
   }
+  if ((0 == (flags & NACL_ABI_MAP_SHARED)) ==
+      (0 == (flags & NACL_ABI_MAP_PRIVATE))) {
+    NaClLog(LOG_FATAL,
+            "NaClHostDescMap: exactly one of NACL_ABI_MAP_SHARED"
+            " and NACL_ABI_MAP_PRIVATE must be set.\n");
+  }
   addr = (uintptr_t) start_addr;
-  prot &= (NACL_ABI_PROT_READ | NACL_ABI_PROT_WRITE);
-  /* may be PROT_NONE too, just not PROT_EXEC */
+  prot &= NACL_ABI_PROT_MASK;
 
   /*
    * Check that if FIXED, start_addr is not NULL.
@@ -162,7 +621,7 @@ uintptr_t NaClHostDescMap(struct NaClHostDesc *d,
     if (!NaClFindAddressSpace(&addr, len)) {
       NaClLog(LOG_ERROR,
               "NaClHostDescMap: not fixed, and could not find space\n");
-      return (uintptr_t) NACL_ABI_MAP_FAILED;
+      return (uintptr_t) -NACL_ABI_ENOMEM;
     }
 
     NaClLog(4,
@@ -175,39 +634,15 @@ uintptr_t NaClHostDescMap(struct NaClHostDesc *d,
   flProtect = 0;
   dwDesiredAccess = 0;
 
-
-  switch (prot) {
-    case NACL_ABI_PROT_NONE:
-      /*
-       * PAGE_NOACCESS is not supported by CreateFileMapping, so
-       * NACL_ABI_PROT_NONE memory must be free'd using VirtualFree.
-       */
-      flProtect = PAGE_NOACCESS;
-      flags |= NACL_ABI_MAP_ANONYMOUS;
-      break;
-    case NACL_ABI_PROT_READ:
-      flProtect |= PAGE_READONLY;
-      dwDesiredAccess = FILE_MAP_READ;
-      break;
-    case NACL_ABI_PROT_WRITE:
-      flProtect |= PAGE_WRITECOPY;
-      dwDesiredAccess = FILE_MAP_COPY;
-      break;
-    case NACL_ABI_PROT_READ | NACL_ABI_PROT_WRITE:
-      flProtect |= PAGE_WRITECOPY;
-      dwDesiredAccess = FILE_MAP_COPY;
-      break;
-  }
-
   if (0 != (flags & NACL_ABI_MAP_ANONYMOUS)) {
     /*
      * anonymous memory must be free'able later via VirtualFree
      */
-    if (0 != (flProtect & PAGE_WRITECOPY)) {
-      flProtect &= ~PAGE_WRITECOPY;
-      flProtect |= PAGE_READWRITE;
-    }
     NaClLog(3, "NaClHostDescMap: anonymous mapping\n");
+
+    flProtect = NaClflProtectMap(prot & (~PROT_EXEC));
+    NaClLog(3, "NaClHostDescMap: flProtect 0x%x\n", flProtect);
+
     for (chunk_offset = 0;
          chunk_offset < len;
          chunk_offset += NACL_MAP_PAGESIZE) {
@@ -231,32 +666,138 @@ uintptr_t NaClHostDescMap(struct NaClHostDesc *d,
                 addr + chunk_offset, flProtect);
       }
     }
-    NaClLog(3, "NaClHostDescMap: returning 0x%08"NACL_PRIxPTR"\n", start_addr);
+    NaClLog(3, "NaClHostDescMap: (anon) returning 0x%08"NACL_PRIxPTR"\n",
+            start_addr);
     return (uintptr_t) start_addr;
   }
+
+  if (NULL == d) {
+    desc_flags = NACL_ABI_O_RDWR;
+  } else {
+    desc_flags = d->flags;
+  }
+
+  if (0 != (desc_flags & NACL_ABI_O_APPEND) &&
+      0 != (prot & NACL_ABI_PROT_WRITE)) {
+    return (uintptr_t) -NACL_ABI_EACCES;
+  }
+  if (NACL_ABI_O_WRONLY == (desc_flags & NACL_ABI_O_ACCMODE)) {
+    return (uintptr_t) -NACL_ABI_EACCES;
+  }
+  NaClflProtectAndDesiredAccessMap(prot,
+                                   0 != (flags & NACL_ABI_MAP_PRIVATE),
+                                   (desc_flags & NACL_ABI_O_ACCMODE),
+                                   &flMappingProtect,
+                                   &flProtect,
+                                   &dwDesiredAccess,
+                                   &err_msg);
+  if (0 == flProtect) {
+    NaClLog(3, "NaClHostDescMap: %s\n", err_msg);
+    return (uintptr_t) -NACL_ABI_EACCES;
+  }
+  NaClLog(3,
+          "NaClHostDescMap: flMappingProtect 0x%x,"
+          " dwDesiredAccess 0x%x, flProtect 0x%x\n",
+          flMappingProtect, dwDesiredAccess, flProtect);
 
   hFile = (HANDLE) _get_osfhandle(d->d);
   dwMaximumSizeLow = 0;
   dwMaximumSizeHigh = 0;
 
   /*
-   * if hFile is INVALID_HANDLE_VALUE, the memory is backed by the
-   * system paging file.  why does it returns NULL instead of
-   * INVALID_HANDLE_VALUE when there is an error?
+   * Ensure consistency of the d->flMappingProtect access.
    */
-  hMap = CreateFileMapping(hFile,
-                           NULL,
-                           flProtect,
-                           dwMaximumSizeHigh,
-                           dwMaximumSizeLow,
-                           NULL);
+  NaClFastMutexLock(&d->mu);
+  if (0 != d->flMappingProtect) {
+    flMappingProtect = d->flMappingProtect;
+    retry_fallback = 0;
+  } else {
+    retry_fallback = 1;
+  }
+  NaClFastMutexUnlock(&d->mu);
+
+  /*
+   * Finite retry cycle.  We can fallback from PAGE_EXECUTE_WRITECOPY to
+   * PAGE_EXECUTE_READ and from having executable permissions to not having
+   * them.
+   */
+  while (1) {
+    /*
+     * If hFile is INVALID_HANDLE_VALUE, the memory is backed by the
+     * system paging file.  Why does it returns NULL instead of
+     * INVALID_HANDLE_VALUE when there is an error?
+     */
+    hMap = CreateFileMapping(hFile,
+                             NULL,
+                             flMappingProtect,
+                             dwMaximumSizeHigh,
+                             dwMaximumSizeLow,
+                             NULL);
+    if (NULL == hMap && retry_fallback) {
+      /*
+       * PAGE_EXECUTE_WRITECOPY is not supported on Windows XP so we fallback
+       * to PAGE_EXECUTE_READ.
+       */
+      if (PAGE_EXECUTE_WRITECOPY == flMappingProtect) {
+        NaClLog(3,
+                "NaClHostDescMap: CreateFileMapping failed, retrying with"
+                " PAGE_EXECUTE_READ instead of PAGE_EXECUTE_WRITECOPY\n");
+        flMappingProtect = PAGE_EXECUTE_READ;
+        continue;
+      }
+      if (0 == (prot & NACL_ABI_PROT_EXEC) &&
+          NaClflProtectHasExecute(flMappingProtect)) {
+        NaClLog(3,
+                "NaClHostDescMap: CreateFileMapping failed, retrying without"
+                " execute permission.  Original flMappingProtect 0x%x\n",
+                flMappingProtect);
+        NaClflProtectAndDesiredAccessMap(prot & (~PROT_EXEC),
+                                         0 != (flags & NACL_ABI_MAP_PRIVATE),
+                                         (desc_flags & NACL_ABI_O_ACCMODE),
+                                         &flMappingProtect,
+                                         &flProtect,
+                                         &dwDesiredAccess,
+                                         &err_msg);
+        if (0 == flProtect) {
+          NaClLog(3, "NaClHostDescMap: %s\n", err_msg);
+          return (uintptr_t) -NACL_ABI_EACCES;
+        }
+        flMappingProtect = NaClflProtectRemoveExecute(flMappingProtect);
+        NaClLog(3,
+                "NaClHostDescMap: fallback flMappingProtect 0x%x,"
+                " dwDesiredAccess 0x%x, flProtect 0x%x\n",
+                flMappingProtect, dwDesiredAccess, flProtect);
+        continue;
+      }
+      NaClLog(3,
+              "NaClHostDescMap: not retrying, since caller explicitly asked"
+              " for NACL_ABI_PROT_EXEC\n");
+      break;
+    }
+    /*
+     * Remember successful flProtect used.  Note that this just
+     * ensures reads of d->flMappingProtect gets a consistent value;
+     * we have a potential race where two threads perform mmap and in
+     * parallel determine the replacement flProtect value.  This is
+     * okay, since those two threads should arrive at the same
+     * replacement value.  This could be replaced with an atomic
+     * word.
+     */
+    NaClFastMutexLock(&d->mu);
+    d->flMappingProtect = flMappingProtect;
+    NaClFastMutexUnlock(&d->mu);
+    break;
+  }
+
   if (NULL == hMap) {
     DWORD err = GetLastError();
     NaClLog(LOG_INFO,
-            "NaclHostDescMap: CreateFileMapping failed: %d\n",
+            "NaClHostDescMap: CreateFileMapping failed: %d\n",
             err);
     return -NaClXlateSystemError(err);
   }
+  NaClLog(3, "NaClHostDescMap: CreateFileMapping got handle %d\n", (int) hMap);
+  NaClLog(3, "NaClHostDescMap: dwDesiredAccess 0x%x\n", dwDesiredAccess);
 
   retval = (uintptr_t) -NACL_ABI_EINVAL;
 
@@ -275,16 +816,28 @@ uintptr_t NaClHostDescMap(struct NaClHostDesc *d,
     net_offset = offset + chunk_offset;
     net_offset_high = (uint32_t) (net_offset >> 32);
     net_offset_low = (uint32_t) net_offset;
+    NaClLog(4,
+            "NaClHostDescMap: MapViewOfFileEx(hMap=%d, dwDesiredAccess=0x%x,"
+            " net_offset_high = 0x%08x, net_offset_low = 0x%08x,"
+            " chunk_size = 0x%"NACL_PRIxS", chunk_addr = 0x%"NACL_PRIxPTR"\n",
+            hMap, dwDesiredAccess, net_offset_high, net_offset_low,
+            chunk_size, chunk_addr);
     map_result = (uintptr_t) MapViewOfFileEx(hMap,
                                              dwDesiredAccess,
                                              net_offset_high,
                                              net_offset_low,
                                              chunk_size,
                                              (void *) chunk_addr);
+    NaClLog(3,
+            "NaClHostDescMap: map_result %"NACL_PRIxPTR
+            ", chunk_addr %"NACL_PRIxPTR
+            ", addr + chunk_offset %"NACL_PRIxPTR"\n",
+            map_result, chunk_addr, (addr + chunk_offset));
     if ((addr + chunk_offset) != map_result) {
       DWORD err = GetLastError();
       NaClLog(LOG_INFO,
-              "MapViewOfFileEx failed at 0x%08x, got 0x%08x, err %x\n",
+              "MapViewOfFileEx failed at 0x%08"NACL_PRIxPTR
+              ", got 0x%08"NACL_PRIxPTR", err %x\n",
               addr + chunk_offset,
               map_result,
               err);
@@ -296,10 +849,22 @@ uintptr_t NaClHostDescMap(struct NaClHostDesc *d,
       retval = (uintptr_t) -NaClXlateSystemError(err);
       goto cleanup;
     }
+    if (!VirtualProtect((void *) map_result,
+                        NaClRoundPage(chunk_size),
+                        flProtect,
+                        &flOldProtect)) {
+        DWORD err = GetLastError();
+        NaClLog(LOG_INFO,
+                "VirtualProtect failed at 0x%08x, err %x\n",
+                addr, err);
+        retval = (uintptr_t) -NaClXlateSystemError(err);
+        goto cleanup;
+    }
   }
   retval = (uintptr_t) start_addr;
 cleanup:
   (void) CloseHandle(hMap);
+  NaClLog(3, "NaClHostDescMap: returning %"NACL_PRIxPTR"\n", retval);
   return retval;
 }
 
@@ -321,61 +886,165 @@ int NaClHostDescUnmapUnsafe(void    *start_addr,
   return 0;
 }
 
+static void NaClHostDescCtorIntern(struct NaClHostDesc *hd,
+                                   int posix_d,
+                                   int flags) {
+  nacl_host_stat_t stbuf;
+
+  hd->d = posix_d;
+  hd->flags = flags;
+  hd->flMappingProtect = 0;
+  if (_fstat64(posix_d, &stbuf) != 0) {
+    /* inherited non-fstat'able are IPC channels, e.g., for bootstrap channel */
+    NaClLog(4,
+            "NaClHostDescCtorIntern: could not _fstat64,"
+            " assuming non-seekable\n");
+    hd->protect_filepos = 0;
+  } else {
+    int file_type = stbuf.st_mode & S_IFMT;
+    /*
+     * Inherited stdio are console handles and are not seekable.
+     *
+     * Posix descriptors (wrapping Windows HANDLES) opened for
+     * O_WRONLY | O_APPEND cannot have byte range locks applied, which
+     * is how the protect_filepos mechanism is implemented.  Luckily,
+     * this is only needed for O_RDWR | O_APPEND or non-append
+     * descriptor.
+     */
+    hd->protect_filepos = (((S_IFREG == file_type) ||
+                           (S_IFDIR == file_type)) &&
+                           !((flags & NACL_ABI_O_APPEND) != 0 &&
+                             (flags & NACL_ABI_O_ACCMODE) ==
+                             NACL_ABI_O_WRONLY));
+  }
+  if (!NaClFastMutexCtor(&hd->mu)) {
+    NaClLog(LOG_FATAL, "NaClHostDescCtorIntern: NaClFastMutexCtor failed\n");
+  }
+}
 
 int NaClHostDescOpen(struct NaClHostDesc  *d,
                      char const           *path,
-                     int                  flag,
+                     int                  flags,
                      int                  perms) {
+  DWORD dwDesiredAccess;
+  DWORD dwCreationDisposition;
+  DWORD dwFlagsAndAttributes;
   int oflags;
-  int pmode;
+  int truncate_after_open = 0;
+  HANDLE hFile;
+  DWORD err;
+  int fd;
 
   if (NULL == d) {
     NaClLog(LOG_FATAL, "NaClHostDescOpen: 'this' is NULL\n");
   }
+
   /*
    * Sanitize access flags.
    */
-  if (0 != (flag & ~NACL_ALLOWED_OPEN_FLAGS)) {
+  if (0 != (flags & ~NACL_ALLOWED_OPEN_FLAGS)) {
     return -NACL_ABI_EINVAL;
   }
 
-  /*
-   * Translate *x access flag to window's.
-   */
-  oflags = _O_BINARY;
-  switch (flag & NACL_ABI_O_ACCMODE) {
+  switch (flags & NACL_ABI_O_ACCMODE) {
     case NACL_ABI_O_RDONLY:
-      oflags |= _O_RDONLY;
+      dwDesiredAccess = GENERIC_READ | GENERIC_EXECUTE;
+      oflags = _O_RDONLY | _O_BINARY;
       break;
     case NACL_ABI_O_RDWR:
-      oflags |= _O_RDWR;
+      oflags = _O_RDWR | _O_BINARY;
+      dwDesiredAccess = GENERIC_READ | GENERIC_WRITE | GENERIC_EXECUTE;
       break;
-    case NACL_ABI_O_WRONLY:
-      oflags |= _O_WRONLY;
+    case NACL_ABI_O_WRONLY:  /* Enforced in the Read call */
+      oflags = _O_WRONLY | _O_BINARY;
+      dwDesiredAccess = GENERIC_READ | GENERIC_WRITE | GENERIC_EXECUTE;
       break;
     default:
       NaClLog(LOG_ERROR,
-              "NaClHostDescOpen: bad access flag 0x%x.\n",
-              flag);
+              "NaClHostDescOpen: bad access flags 0x%x.\n",
+              flags);
       return -NACL_ABI_EINVAL;
   }
-  if (flag & NACL_ABI_O_CREAT) {
-    oflags |= _O_CREAT;
+  /*
+   * Possibly make the file read-only.  The file attribute only
+   * applies if the file is created; if it pre-exists, the attributes
+   * from the file is combined with the FILE_FLAG_* values.
+   */
+  if (0 == (perms & NACL_ABI_S_IWUSR)) {
+    dwFlagsAndAttributes = (FILE_ATTRIBUTE_READONLY |
+                            FILE_FLAG_POSIX_SEMANTICS);
+  } else {
+    dwFlagsAndAttributes = (FILE_ATTRIBUTE_NORMAL |
+                            FILE_FLAG_POSIX_SEMANTICS);
   }
-  if (flag & NACL_ABI_O_TRUNC) {
-    oflags |= _O_TRUNC;
+  /*
+   * Postcondition: flags & NACL_ABI_O_ACCMODE is one of the three
+   * allowed values.
+   */
+  switch (flags & (NACL_ABI_O_CREAT | NACL_ABI_O_TRUNC)) {
+    case 0:
+      dwCreationDisposition = OPEN_EXISTING;
+      break;
+    case NACL_ABI_O_CREAT:
+      dwCreationDisposition = OPEN_ALWAYS;
+      break;
+    case NACL_ABI_O_TRUNC:
+      dwCreationDisposition = TRUNCATE_EXISTING;
+      truncate_after_open = 1;
+      break;
+    case NACL_ABI_O_CREAT | NACL_ABI_O_TRUNC:
+      dwCreationDisposition = OPEN_ALWAYS;
+      truncate_after_open = 1;
   }
-  pmode = 0;
-  if (0 != (perms & NACL_ABI_S_IRUSR)) {
-    pmode |= _S_IREAD;
-  }
-  if (0 != (perms & NACL_ABI_S_IWUSR)) {
-    pmode |= _S_IWRITE;
+  if (0 != (flags & NACL_ABI_O_APPEND)) {
+    oflags |= _O_APPEND;
   }
 
-  if (0 != _sopen_s(&d->d, path, oflags, _SH_DENYNO, pmode)) {
-    return -GetErrno();
+  NaClLog(1,
+          "NaClHostDescOpen: CreateFileA(path=%s, desired_access=0x%x,"
+          " share_mode=ALL, security_attributes=NULL, creation_disposition=%d,"
+          " flags_and_attributes=%d, template_file=NULL)\n",
+          path, dwDesiredAccess, dwCreationDisposition, dwFlagsAndAttributes);
+
+  hFile = CreateFileA(path, dwDesiredAccess,
+                      (FILE_SHARE_DELETE |
+                       FILE_SHARE_READ |
+                       FILE_SHARE_WRITE),
+                      NULL,
+                      dwCreationDisposition,
+                      dwFlagsAndAttributes,
+                      NULL);
+  if (INVALID_HANDLE_VALUE == hFile) {
+    err = GetLastError();
+    NaClLog(3, "NaClHostDescOpen: CreateFile failed %d\n", err);
+    return -NaClXlateSystemError(err);
   }
+  if (truncate_after_open &&
+      NACL_ABI_O_RDONLY != (flags & NACL_ABI_O_ACCMODE)) {
+    NaClLog(4, "NaClHostDescOpen: Truncating file\n");
+    if (!SetEndOfFile(hFile)) {
+      err = GetLastError();
+      NaClLog(LOG_ERROR,
+              "NaClHostDescOpen: could not truncate file:"
+              " last error %d.\n",
+              err);
+      if (err == ERROR_USER_MAPPED_FILE) {
+        NaClLog(LOG_ERROR,
+                "NaClHostDescOpen: this is due to an existing mapping"
+                " of the same file.\n");
+      }
+    }
+  }
+  fd = _open_osfhandle((intptr_t) hFile, oflags);
+  /*
+   * oflags _O_APPEND, _O_RDONLY, and _O_TEXT are meaningful; unclear
+   * whether _O_RDWR, _O_WRONLY, etc has any effect.
+   */
+  if (-1 == fd) {
+    NaClLog(LOG_FATAL, "NaClHostDescOpen failed: err %d\n",
+            GetLastError());
+  }
+  NaClHostDescCtorIntern(d, fd, flags);
   return 0;
 }
 
@@ -411,7 +1080,7 @@ int NaClHostDescPosixDup(struct NaClHostDesc  *d,
   if (-1 == host_desc) {
     return -GetErrno();
   }
-  d->d = host_desc;
+  NaClHostDescCtorIntern(d, host_desc, flags);
   return 0;
 }
 
@@ -438,19 +1107,19 @@ int NaClHostDescPosixTake(struct NaClHostDesc *d,
               flags);
       return -NACL_ABI_EINVAL;
   }
-
-  d->d = posix_d;
+  NaClHostDescCtorIntern(d, posix_d, flags);
   return 0;
 }
 
 ssize_t NaClHostDescRead(struct NaClHostDesc  *d,
                          void                 *buf,
                          size_t               len) {
-  ssize_t actual;
-
-  /* Windows _read only supports uint, so we need
+  /* Windows ReadFile only supports DWORD, so we need
    * to clamp the length. */
   unsigned int actual_len;
+  HANDLE fh;
+  DWORD bytes_received;
+  DWORD err;
 
   if (len < UINT_MAX) {
     actual_len = (unsigned int) len;
@@ -459,22 +1128,71 @@ ssize_t NaClHostDescRead(struct NaClHostDesc  *d,
   }
 
   NaClHostDescCheckValidity("NaClHostDescRead", d);
-  if (-1 == (actual =_read(d->d, buf, actual_len))) {
-    return -GetErrno();
+  if (NACL_ABI_O_WRONLY == (d->flags & NACL_ABI_O_ACCMODE)) {
+    NaClLog(3, "NaClHostDescRead: WRONLY file\n");
+    return -NACL_ABI_EBADF;
   }
-  return actual;
+  /*
+   * We drop into using Windows ReadFile rather than using _read from
+   * the POSIX compatibility layer here.  The reason for this is
+   * because the pread/pwrite implementation uses ReadFile/WriteFile,
+   * it would be more consistent with the pread/pwrite implementation
+   * to just also use ReadFile/WriteFile directly here as well.
+   *
+   * NB: contrary to the documentation available on MSDN, operations
+   * on synchronous files with non-NULL LPOVERLAPPED arguments result
+   * in the *implicit* file position getting updated before the
+   * ReadFile/WriteFile returning, rather than the Offset/OffsetHigh
+   * members of the explicit OVERLAPPED structure (!).  In order to
+   * support mixed read/pread syscall sequences (and similarly mixed
+   * write/pwrite sequences) we must effectively lock the file
+   * position from access by other threads and then read/write, so
+   * that when pread/pwrite mess up the implicit file position
+   * temporarily, it would not be visible.
+   */
+  fh = (HANDLE) _get_osfhandle(d->d);
+  CHECK(INVALID_HANDLE_VALUE != fh);
+
+  /*
+   * Ensure that we do not corrupt shared implicit file position.
+   */
+  if (d->protect_filepos) {
+    NaClTakeFilePosLock(fh);
+  }
+  if (!ReadFile(fh, buf, actual_len, &bytes_received, NULL)) {
+    err = GetLastError();
+    if (ERROR_HANDLE_EOF == err) {
+      bytes_received = 0;
+    } else {
+      NaClLog(4, "NaClHostDescRead: ReadFile error %d\n", err);
+      bytes_received = -NaClXlateSystemError(err);
+    }
+  }
+  if (d->protect_filepos) {
+    NaClDropFilePosLock(fh);
+  }
+
+  return bytes_received;
 }
 
 ssize_t NaClHostDescWrite(struct NaClHostDesc *d,
                           void const          *buf,
                           size_t              len) {
-  ssize_t actual;
-
-  /* Windows _write only supports uint, so we need
-   * to clamp the length.
+  /*
+   * Windows WriteFile only supports DWORD uint, so we need to clamp
+   * the length.
    */
   unsigned int actual_len;
+  HANDLE fh;
+  DWORD bytes_written;
+  DWORD err;
+  OVERLAPPED overlap;
+  OVERLAPPED *overlap_ptr = NULL;
 
+  if (NACL_ABI_O_RDONLY == (d->flags & NACL_ABI_O_ACCMODE)) {
+    NaClLog(3, "NaClHostDescWrite: RDONLY file\n");
+    return -NACL_ABI_EBADF;
+  }
   if (len < UINT_MAX) {
     actual_len = (unsigned int) len;
   } else {
@@ -482,61 +1200,344 @@ ssize_t NaClHostDescWrite(struct NaClHostDesc *d,
   }
 
   NaClHostDescCheckValidity("NaClHostDescWrite", d);
-  if (-1 == (actual = _write(d->d, buf, actual_len))) {
-    return -GetErrno();
+  /*
+   * See discussion in NaClHostDescRead above wrt why we use WriteFile
+   * instead of _write below.
+   */
+  if (0 != (NACL_ABI_O_APPEND & d->flags)) {
+    nacl_off64_t offset = GG_LONGLONG(0xffffffffffffffff);
+    memset(&overlap, 0, sizeof overlap);
+    overlap.Offset = (DWORD) offset;
+    overlap.OffsetHigh = (DWORD) (offset >> 32);
+    overlap_ptr = &overlap;
   }
-  return actual;
+  fh = (HANDLE) _get_osfhandle(d->d);
+  CHECK(INVALID_HANDLE_VALUE != fh);
+  /*
+   * Ensure that we do not corrupt shared implicit file position.
+   */
+  if (d->protect_filepos) {
+    NaClTakeFilePosLock(fh);
+  }
+  if (!WriteFile(fh, buf, actual_len, &bytes_written, overlap_ptr)) {
+    err = GetLastError();
+    NaClLog(4, "NaClHostDescWrite: WriteFile error %d\n", err);
+
+    bytes_written = -NaClXlateSystemError(err);
+  }
+  if (d->protect_filepos) {
+    NaClDropFilePosLock(fh);
+  }
+
+  return bytes_written;
 }
 
 nacl_off64_t NaClHostDescSeek(struct NaClHostDesc  *d,
                               nacl_off64_t         offset,
                               int                  whence) {
+  HANDLE hFile;
   nacl_off64_t retval;
 
   NaClHostDescCheckValidity("NaClHostDescSeek", d);
-  return (-1 == (retval = _lseeki64(d->d, offset, whence))) ? -errno : retval;
+  hFile = (HANDLE) _get_osfhandle(d->d);
+  CHECK(INVALID_HANDLE_VALUE != hFile);
+  if (d->protect_filepos) {
+    NaClTakeFilePosLock(hFile);
+  }
+  retval = _lseeki64(d->d, offset, whence);
+  if (d->protect_filepos) {
+    NaClDropFilePosLock(hFile);
+  }
+  return (-1 == retval) ? -errno : retval;
 }
 
-int NaClHostDescIoctl(struct NaClHostDesc *d,
-                      int                 request,
-                      void                *arg) {
-  UNREFERENCED_PARAMETER(request);
-  UNREFERENCED_PARAMETER(arg);
+ssize_t NaClHostDescPRead(struct NaClHostDesc *d,
+                          void *buf,
+                          size_t len,
+                          nacl_off64_t offset) {
+  HANDLE fh;
+  OVERLAPPED overlap;
+  DWORD bytes_received;
+  DWORD err;
+  nacl_off64_t orig_pos = 0;
 
-  NaClHostDescCheckValidity("NaClHostDescIoctl", d);
-  return -NACL_ABI_ENOSYS;
+  NaClHostDescCheckValidity("NaClHostDescPRead", d);
+  if (NACL_ABI_O_WRONLY == (d->flags & NACL_ABI_O_ACCMODE)) {
+    NaClLog(3, "NaClHostDescPRead: WRONLY file\n");
+    return -NACL_ABI_EBADF;
+  }
+  if (offset < 0) {
+    return -NACL_ABI_EINVAL;
+  }
+  /*
+   * There are reports of driver issues that may require clamping len
+   * to a megabyte or so, lest ReadFile returns an error with
+   * GetLastError() returning ERROR_INVALID_PARAMETER, but since we
+   * do not expect to ever read from / write to anything other than
+   * filesystem files, we do not clamp.
+   */
+  fh = (HANDLE) _get_osfhandle(d->d);
+  CHECK(INVALID_HANDLE_VALUE != fh);
+  memset(&overlap, 0, sizeof overlap);
+  overlap.Offset = (DWORD) offset;
+  overlap.OffsetHigh = (DWORD) (offset >> 32);
+  if (len > UINT_MAX) {
+    len = UINT_MAX;
+  }
+  if (d->protect_filepos) {
+    orig_pos = NaClLockAndGetCurrentFilePos(fh);
+  }
+  if (!ReadFile(fh, buf, (DWORD) len, &bytes_received, &overlap)) {
+    err = GetLastError();
+    if (ERROR_HANDLE_EOF == err) {
+      bytes_received = 0;
+      /* handle as if returned true. */
+    } else {
+      NaClLog(4, "NaClHostDescPRead: ReadFile failed, error %d\n", err);
+      NaClSetCurrentFilePosAndUnlock(fh, orig_pos);
+      bytes_received = -NaClXlateSystemError(err);
+    }
+  }
+  if (d->protect_filepos) {
+    NaClSetCurrentFilePosAndUnlock(fh, orig_pos);
+  }
+  return bytes_received;
+}
+
+ssize_t NaClHostDescPWrite(struct NaClHostDesc *d,
+                           void const *buf,
+                           size_t len,
+                           nacl_off64_t offset) {
+  HANDLE fh;
+  OVERLAPPED overlap;
+  DWORD bytes_sent;
+  DWORD err;
+  nacl_off64_t orig_pos = 0;
+
+  NaClHostDescCheckValidity("NaClHostDescPWrite", d);
+  if (NACL_ABI_O_RDONLY == (d->flags & NACL_ABI_O_ACCMODE)) {
+    NaClLog(3, "NaClHostDescPWrite: RDONLY file\n");
+    return -NACL_ABI_EBADF;
+  }
+  if (offset < 0) {
+    /*
+     * This also avoids the case where having 0xffffffff in both
+     * overlap.Offset and overlap.OffsetHigh means append to the file.
+     * In Posix, offset does not permit special meanings being encoded
+     * like this.
+     */
+    return -NACL_ABI_EINVAL;
+  }
+  fh = (HANDLE) _get_osfhandle(d->d);
+  CHECK(INVALID_HANDLE_VALUE != fh);
+  memset(&overlap, 0, sizeof overlap);
+  overlap.Offset = (DWORD) offset;
+  overlap.OffsetHigh = (DWORD) (offset >> 32);
+  if (len > UINT_MAX) {
+    len = UINT_MAX;
+  }
+  if (d->protect_filepos) {
+    orig_pos = NaClLockAndGetCurrentFilePos(fh);
+  }
+  if (!WriteFile(fh, buf, (DWORD) len, &bytes_sent, &overlap)) {
+    err = GetLastError();
+    if (ERROR_HANDLE_EOF == err) {
+      bytes_sent = 0;
+      /* handle as if returned true. */
+    } else {
+      NaClLog(4,
+              "NaClHostDescPWrite: WriteFile failed, error %d\n", err);
+      bytes_sent = -NaClXlateSystemError(err);
+    }
+  }
+  if (d->protect_filepos) {
+    NaClSetCurrentFilePosAndUnlock(fh, orig_pos);
+  }
+  return bytes_sent;
 }
 
 int NaClHostDescFstat(struct NaClHostDesc   *d,
                       nacl_host_stat_t      *nasp) {
   NaClHostDescCheckValidity("NaClHostDescFstat", d);
-  if (_fstat64(d->d, nasp) == -1) {
+  if (NACL_HOST_FSTAT64(d->d, nasp) == -1) {
     return -GetErrno();
   }
 
   return 0;
+}
+
+int NaClHostDescIsatty(struct NaClHostDesc *d) {
+  int retval;
+
+  NaClHostDescCheckValidity("NaClHostDescIsatty", d);
+  retval = _isatty(d->d);
+  /* When windows _isatty fails it returns zero, but does not set errno. */
+  return (0 == retval) ? -NACL_ABI_ENOTTY : 1;
 }
 
 int NaClHostDescClose(struct NaClHostDesc *d) {
   int retval;
 
   NaClHostDescCheckValidity("NaClHostDescClose", d);
-  retval = _close(d->d);
-  if (-1 != retval) {
+  if (-1 != d->d) {
+    retval = _close(d->d);
+    if (-1 == retval) {
+      return -GetErrno();
+    }
     d->d = -1;
   }
-  return (-1 == retval) ? -GetErrno() : retval;
+  NaClFastMutexDtor(&d->mu);
+  return 0;
 }
 
 /*
  * This is not a host descriptor function, but is closely related to
  * fstat and should behave similarly.
  */
-int NaClHostDescStat(char const       *host_os_pathname,
-                     nacl_host_stat_t *nhsp) {
-  if (_stati64(host_os_pathname, nhsp) == -1) {
+int NaClHostDescStat(char const *path, nacl_host_stat_t *nhsp) {
+  if (NACL_HOST_STAT64(path, nhsp) == -1) {
     return -GetErrno();
   }
 
   return 0;
+}
+
+int NaClHostDescMkdir(const char *path, int mode) {
+  UNREFERENCED_PARAMETER(mode);
+  if (_mkdir(path) != 0)
+    return -NaClXlateErrno(errno);
+  return 0;
+}
+
+int NaClHostDescRmdir(const char *path) {
+  if (_rmdir(path) != 0)
+    return -NaClXlateErrno(errno);
+  return 0;
+}
+
+int NaClHostDescChdir(const char *path) {
+  if (_chdir(path) != 0)
+    return -NaClXlateErrno(errno);
+  return 0;
+}
+
+int NaClHostDescGetcwd(char *path, size_t len) {
+  if (_getcwd(path, (int) len) == NULL)
+    return -NaClXlateErrno(errno);
+  return 0;
+}
+
+int NaClHostDescUnlink(const char *path) {
+  /*
+   * If the file exists and is not writable we make it writeable
+   * before calling _unlink() to match the POSIX semantics where
+   * unlink(2) can remove readonly files.
+   */
+  if (_access(path, WIN_F_OK) == 0 && _access(path, WIN_W_OK) != 0) {
+    if (_chmod(path, _S_IREAD | S_IWRITE) != 0) {
+      /* If _chmod fails just log it and contine on to call _unlink anyway */
+      NaClLog(3, "NaClHostDescUnlink: _chmod failed: %d\n", errno);
+    }
+  }
+
+  if (_unlink(path) != 0)
+    return -NaClXlateErrno(errno);
+
+  return 0;
+}
+
+int NaClHostDescTruncate(char const *path, nacl_abi_off_t length) {
+  LARGE_INTEGER win_length;
+  DWORD err;
+
+  HANDLE hfile = CreateFileA(path,
+      GENERIC_READ | GENERIC_WRITE,
+      FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
+      NULL,
+      OPEN_EXISTING,
+      FILE_ATTRIBUTE_NORMAL | FILE_FLAG_POSIX_SEMANTICS,
+      NULL);
+
+  if (INVALID_HANDLE_VALUE == hfile) {
+    err = GetLastError();
+    NaClLog(3, "NaClHostDescTruncate: CreateFile failed %d\n", err);
+    return -NaClXlateSystemError(err);
+  }
+
+  win_length.QuadPart = length;
+  if (!SetFilePointerEx(hfile, win_length, NULL, FILE_BEGIN)) {
+    err = GetLastError();
+    NaClLog(LOG_ERROR,
+            "NaClHostDescTruncate: SetFilePointerEx failed:"
+            " last error %d.\n", err);
+    return -NaClXlateSystemError(err);
+  }
+
+  if (!SetEndOfFile(hfile)) {
+    err = GetLastError();
+    NaClLog(LOG_ERROR,
+            "NaClHostDescTruncate: could not truncate file:"
+            " last error %d.\n", err);
+    if (err == ERROR_USER_MAPPED_FILE) {
+      NaClLog(LOG_ERROR,
+              "NaClHostDescTruncate: this is due to an existing"
+              " mapping of the same file.\n");
+    }
+    return -NaClXlateSystemError(err);
+  }
+
+  return 0;
+}
+
+int NaClHostDescLstat(char const *path, nacl_host_stat_t *nhsp) {
+  /*
+   * Since symlinks don't exist on windows, stat() and lstat()
+   * are equivalent.
+   */
+  return NaClHostDescStat(path, nhsp);
+}
+
+int NaClHostDescLink(const char *oldpath, const char *newpath) {
+  /*
+   * Hard linking not implemented for win32
+   */
+  NaClLog(1, "NaClHostDescLink: hard linking not supported on windows.\n");
+  return -NACL_ABI_ENOSYS;
+}
+
+int NaClHostDescRename(const char *oldpath, const char *newpath) {
+  if (rename(oldpath, newpath) != 0)
+    return -NaClXlateErrno(errno);
+  return 0;
+}
+
+int NaClHostDescSymlink(const char *oldpath, const char *newpath) {
+  /*
+   * Symlinks are not supported on win32.
+   */
+  NaClLog(1, "NaClHostDescSymlink: symbolic links not supported on windows.\n");
+  return -NACL_ABI_ENOSYS;
+}
+
+int NaClHostDescChmod(const char *path, nacl_abi_mode_t mode) {
+  if (_chmod(path, NaClMapMode(mode)) != 0)
+    return -NaClXlateErrno(errno);
+  return 0;
+}
+
+int NaClHostDescAccess(const char *path, int amode) {
+  if (_access(path, NaClMapAccessMode(amode)) != 0)
+    return -NaClXlateErrno(errno);
+  return 0;
+}
+
+int NaClHostDescReadlink(const char *path, char *buf, size_t bufsize) {
+  /*
+   * readlink(2) sets errno to EINVAL when the file in question is
+   * not a symlink.  Since win32 does not support symlinks we simply
+   * return EINVAL in all cases here.
+   */
+  NaClLog(1,
+          "NaClHostDescReadlink: symbolic links not supported on Windows.\n");
+  return -NACL_ABI_EINVAL;
 }

@@ -12,20 +12,21 @@
     {
       'target_name': 'everything',
       'type': 'none',
-      'dependencies': ['most.gyp:most'],
+      'dependencies': [
+        'most.gyp:most',
+      ],
       'conditions': [
-        ['skia_os in ("ios", "android", "nacl") or (skia_os == "mac" and skia_arch_width == 32)', {
+        ['skia_os in ("ios", "android", "chromeos") or (skia_os == "mac" and skia_arch_width == 32)', {
           # debugger is not supported on this platform
         }, {
-          'dependencies': [ 'debugger.gyp:debugger' ],
+          'dependencies': [
+            'debugger.gyp:debugger',
+            'pdfviewer.gyp:pdfviewer',
+            #'v8.gyp:SkV8Example',
+            #'webtry.gyp:webtry',
+            ],
         }],
       ],
     },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

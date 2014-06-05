@@ -8,11 +8,13 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
-#include "chrome/browser/webdata/web_database_table.h"
+#include "components/webdata/common/web_database_table.h"
 
 #if defined(OS_WIN)
 struct IE7PasswordInfo;
 #endif
+
+class WebDatabase;
 
 // This class manages the logins table within the SQLite database passed to the
 // constructor. We no longer store passwords here except for imported IE
@@ -20,11 +22,17 @@ struct IE7PasswordInfo;
 // it is found to exist. (The data was migrated out long ago.)
 class LoginsTable : public WebDatabaseTable {
  public:
-  LoginsTable(sql::Connection* db, sql::MetaTable* meta_table)
-      : WebDatabaseTable(db, meta_table) {}
+  LoginsTable() {}
   virtual ~LoginsTable() {}
-  virtual bool Init() OVERRIDE;
+
+  // Retrieves the LoginsTable* owned by |database|.
+  static LoginsTable* FromWebDatabase(WebDatabase* db);
+
+  virtual WebDatabaseTable::TypeKey GetTypeKey() const OVERRIDE;
+  virtual bool CreateTablesIfNecessary() OVERRIDE;
   virtual bool IsSyncable() OVERRIDE;
+  virtual bool MigrateToVersion(int version,
+                                bool* update_compatible_version) OVERRIDE;
 
 #if defined(OS_WIN)
   // Adds |info| to the list of imported passwords from ie7/ie8.

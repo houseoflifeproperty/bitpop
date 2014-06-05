@@ -5,14 +5,14 @@
 // A fake implementation of AudioInputStream, useful for testing purpose.
 
 #ifndef MEDIA_AUDIO_FAKE_AUDIO_INPUT_STREAM_H_
-#define MEDIA_AUDIO_FAKE_AUDIO_INOUT_STREAM_H_
+#define MEDIA_AUDIO_FAKE_AUDIO_INPUT_STREAM_H_
 
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_parameters.h"
 
@@ -57,11 +57,11 @@ class MEDIA_EXPORT FakeAudioInputStream
 
   AudioManagerBase* audio_manager_;
   AudioInputCallback* callback_;
-  scoped_array<uint8> buffer_;
+  scoped_ptr<uint8[]> buffer_;
   int buffer_size_;
   AudioParameters params_;
   base::Thread thread_;
-  base::Time last_callback_time_;
+  base::TimeTicks last_callback_time_;
   base::TimeDelta callback_interval_;
   int beep_duration_in_buffers_;
   int beep_generated_in_buffers_;

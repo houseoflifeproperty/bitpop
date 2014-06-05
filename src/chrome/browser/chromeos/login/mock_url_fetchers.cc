@@ -7,15 +7,14 @@
 #include <errno.h>
 
 #include "base/bind.h"
-#include "base/message_loop.h"
-#include "base/stringprintf.h"
-#include "content/public/browser/browser_thread.h"
-#include "googleurl/src/gurl.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/stringprintf.h"
 #include "net/http/http_status_code.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "net/url_request/url_request_status.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 namespace chromeos {
 
@@ -26,14 +25,14 @@ ExpectCanceledFetcher::ExpectCanceledFetcher(
     net::URLFetcher::RequestType request_type,
     net::URLFetcherDelegate* d)
     : net::TestURLFetcher(0, url, d),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
 }
 
 ExpectCanceledFetcher::~ExpectCanceledFetcher() {
 }
 
 void ExpectCanceledFetcher::Start() {
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&ExpectCanceledFetcher::CompleteFetch,
                  weak_factory_.GetWeakPtr()),
@@ -42,7 +41,7 @@ void ExpectCanceledFetcher::Start() {
 
 void ExpectCanceledFetcher::CompleteFetch() {
   ADD_FAILURE() << "Fetch completed in ExpectCanceledFetcher!";
-  MessageLoop::current()->Quit();  // Allow exiting even if we mess up.
+  base::MessageLoop::current()->Quit();  // Allow exiting even if we mess up.
 }
 
 GotCanceledFetcher::GotCanceledFetcher(

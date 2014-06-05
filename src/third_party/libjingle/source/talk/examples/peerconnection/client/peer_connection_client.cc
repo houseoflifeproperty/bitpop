@@ -134,17 +134,16 @@ void PeerConnectionClient::Connect(const std::string& server, int port,
   if (server_address_.IsUnresolved()) {
     state_ = RESOLVING;
     resolver_ = new talk_base::AsyncResolver();
-    resolver_->SignalWorkDone.connect(this,
-                                      &PeerConnectionClient::OnResolveResult);
-    resolver_->set_address(server_address_);
-    resolver_->Start();
+    resolver_->SignalDone.connect(this, &PeerConnectionClient::OnResolveResult);
+    resolver_->Start(server_address_);
   } else {
     DoConnect();
   }
 }
 
-void PeerConnectionClient::OnResolveResult(talk_base::SignalThread *t) {
-  if (resolver_->error() != 0) {
+void PeerConnectionClient::OnResolveResult(
+    talk_base::AsyncResolverInterface* resolver) {
+  if (resolver_->GetError() != 0) {
     callback_->OnServerConnectionFailure();
     resolver_->Destroy(false);
     resolver_ = NULL;
@@ -264,7 +263,7 @@ void PeerConnectionClient::OnHangingGetConnect(talk_base::AsyncSocket* socket) {
   char buffer[1024];
   sprintfn(buffer, sizeof(buffer),
            "GET /wait?peer_id=%i HTTP/1.0\r\n\r\n", my_id_);
-  int len = strlen(buffer);
+  int len = static_cast<int>(strlen(buffer));
   int sent = socket->Send(buffer, len);
   ASSERT(sent == len);
   UNUSED2(sent, len);
@@ -357,7 +356,7 @@ void PeerConnectionClient::OnRead(talk_base::AsyncSocket* socket) {
       if (my_id_ == -1) {
         // First response.  Let's store our server assigned ID.
         ASSERT(state_ == SIGNING_IN);
-        my_id_ = peer_id;
+        my_id_ = static_cast<int>(peer_id);
         ASSERT(my_id_ != -1);
 
         // The body of the response will be a list of already connected peers.
@@ -427,7 +426,8 @@ void PeerConnectionClient::OnHangingGetRead(talk_base::AsyncSocket* socket) {
           }
         }
       } else {
-        OnMessageFromPeer(peer_id, notification_data_.substr(pos));
+        OnMessageFromPeer(static_cast<int>(peer_id),
+                          notification_data_.substr(pos));
       }
     }
 

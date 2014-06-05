@@ -4,20 +4,17 @@
 
 #include "chrome/renderer/pepper/pepper_flash_menu_host.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/public/common/context_menu_params.h"
+#include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/renderer_ppapi_host.h"
-#include "content/public/renderer/render_view.h"
+#include "ipc/ipc_message.h"
 #include "ppapi/c/private/ppb_flash_menu.h"
 #include "ppapi/host/dispatch_host_message.h"
 #include "ppapi/host/ppapi_host.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/proxy/serialized_flash_menu.h"
 #include "ui/gfx/point.h"
-#include "webkit/glue/webmenuitem.h"
-#include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
-
-namespace chrome {
 
 namespace {
 
@@ -35,11 +32,11 @@ const size_t kMaxMenuIdMapEntries = 501;
 // Converts menu data from one form to another.
 //  - |depth| is the current nested depth (call it starting with 0).
 //  - |menu_id_map| is such that |menu_id_map[output_item.action] ==
-//    input_item.id| (where |action| is what a |WebMenuItem| has, |id| is what a
+//    input_item.id| (where |action| is what a |MenuItem| has, |id| is what a
 //    |PP_Flash_MenuItem| has).
 bool ConvertMenuData(const PP_Flash_Menu* in_menu,
                      size_t depth,
-                     std::vector<WebMenuItem>* out_menu,
+                     std::vector<content::MenuItem>* out_menu,
                      std::vector<int32_t>* menu_id_map) {
   if (depth > kMaxMenuDepth || !in_menu)
     return false;
@@ -53,27 +50,27 @@ bool ConvertMenuData(const PP_Flash_Menu* in_menu,
   if (!in_menu->items || in_menu->count > kMaxMenuEntries)
     return false;
   for (uint32_t i = 0; i < in_menu->count; i++) {
-    WebMenuItem item;
+    content::MenuItem item;
 
     PP_Flash_MenuItem_Type type = in_menu->items[i].type;
     switch (type) {
       case PP_FLASH_MENUITEM_TYPE_NORMAL:
-        item.type = WebMenuItem::OPTION;
+        item.type = content::MenuItem::OPTION;
         break;
       case PP_FLASH_MENUITEM_TYPE_CHECKBOX:
-        item.type = WebMenuItem::CHECKABLE_OPTION;
+        item.type = content::MenuItem::CHECKABLE_OPTION;
         break;
       case PP_FLASH_MENUITEM_TYPE_SEPARATOR:
-        item.type = WebMenuItem::SEPARATOR;
+        item.type = content::MenuItem::SEPARATOR;
         break;
       case PP_FLASH_MENUITEM_TYPE_SUBMENU:
-        item.type = WebMenuItem::SUBMENU;
+        item.type = content::MenuItem::SUBMENU;
         break;
       default:
         return false;
     }
     if (in_menu->items[i].name)
-      item.label = UTF8ToUTF16(in_menu->items[i].name);
+      item.label = base::UTF8ToUTF16(in_menu->items[i].name);
     if (menu_id_map->size() >= kMaxMenuIdMapEntries)
       return false;
     item.action = static_cast<unsigned>(menu_id_map->size());
@@ -82,8 +79,8 @@ bool ConvertMenuData(const PP_Flash_Menu* in_menu,
     item.enabled = PP_ToBool(in_menu->items[i].enabled);
     item.checked = PP_ToBool(in_menu->items[i].checked);
     if (type == PP_FLASH_MENUITEM_TYPE_SUBMENU) {
-      if (!ConvertMenuData(in_menu->items[i].submenu, depth + 1, &item.submenu,
-                           menu_id_map))
+      if (!ConvertMenuData(
+              in_menu->items[i].submenu, depth + 1, &item.submenu, menu_id_map))
         return false;
     }
 
@@ -115,10 +112,10 @@ PepperFlashMenuHost::PepperFlashMenuHost(
 
 PepperFlashMenuHost::~PepperFlashMenuHost() {
   if (showing_context_menu_) {
-    content::RenderView* render_view =
-        renderer_ppapi_host_->GetRenderViewForInstance(pp_instance());
-    if (render_view)
-      render_view->CancelContextMenu(context_menu_request_id_);
+    content::RenderFrame* render_frame =
+        renderer_ppapi_host_->GetRenderFrameForInstance(pp_instance());
+    if (render_frame)
+      render_frame->CancelContextMenu(context_menu_request_id_);
   }
 }
 
@@ -126,8 +123,7 @@ int32_t PepperFlashMenuHost::OnResourceMessageReceived(
     const IPC::Message& msg,
     ppapi::host::HostMessageContext* context) {
   IPC_BEGIN_MESSAGE_MAP(PepperFlashMenuHost, msg)
-    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_FlashMenu_Show,
-                                      OnHostMsgShow)
+  PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_FlashMenu_Show, OnHostMsgShow)
   IPC_END_MESSAGE_MAP()
   return PP_ERROR_FAILED;
 }
@@ -147,8 +143,8 @@ int32_t PepperFlashMenuHost::OnHostMsgShow(
     return PP_ERROR_INPROGRESS;
   }
 
-  content::RenderView* render_view =
-      renderer_ppapi_host_->GetRenderViewForInstance(pp_instance());
+  content::RenderFrame* render_frame =
+      renderer_ppapi_host_->GetRenderFrameForInstance(pp_instance());
 
   content::ContextMenuParams params;
   params.x = location.x;
@@ -158,14 +154,14 @@ int32_t PepperFlashMenuHost::OnHostMsgShow(
       renderer_ppapi_host_->GetRoutingIDForWidget(pp_instance());
   params.custom_items = menu_data_;
 
-  // Transform the position to be in render view's coordinates.
-  gfx::Point render_view_pt = renderer_ppapi_host_->PluginPointToRenderView(
+  // Transform the position to be in render frame's coordinates.
+  gfx::Point render_frame_pt = renderer_ppapi_host_->PluginPointToRenderFrame(
       pp_instance(), gfx::Point(location.x, location.y));
-  params.x = render_view_pt.x();
-  params.y = render_view_pt.y();
+  params.x = render_frame_pt.x();
+  params.y = render_frame_pt.y();
 
   showing_context_menu_ = true;
-  context_menu_request_id_ = render_view->ShowContextMenu(this, params);
+  context_menu_request_id_ = render_frame->ShowContextMenu(this, params);
 
   // Note: the show message is sync so this OK is for the sync reply which we
   // don't actually use (see the comment in the resource file for this). The
@@ -198,11 +194,8 @@ void PepperFlashMenuHost::OnMenuClosed(int request_id) {
 void PepperFlashMenuHost::SendMenuReply(int32_t result, int action) {
   ppapi::host::ReplyMessageContext reply_context(
       ppapi::proxy::ResourceMessageReplyParams(pp_resource(), 0),
-      NULL);
+      NULL,
+      MSG_ROUTING_NONE);
   reply_context.params.set_result(result);
-  host()->SendReply(reply_context,
-                    PpapiPluginMsg_FlashMenu_ShowReply(action));
-
+  host()->SendReply(reply_context, PpapiPluginMsg_FlashMenu_ShowReply(action));
 }
-
-}  // namespace chrome

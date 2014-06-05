@@ -19,38 +19,6 @@
 namespace ppapi {
 namespace proxy {
 
-namespace {
-
-#if !defined(OS_NACL)
-void HandleMessage(PP_Instance instance, PP_Var message_data) {
-  HostDispatcher* dispatcher = HostDispatcher::GetForInstance(instance);
-  if (!dispatcher || (message_data.type == PP_VARTYPE_OBJECT)) {
-    // The dispatcher should always be valid, and the browser should never send
-    // an 'object' var over PPP_Messaging.
-    NOTREACHED();
-    return;
-  }
-
-  dispatcher->Send(new PpapiMsg_PPPMessaging_HandleMessage(
-      API_ID_PPP_MESSAGING,
-      instance,
-      SerializedVarSendInput(dispatcher, message_data)));
-}
-
-static const PPP_Messaging messaging_interface = {
-  &HandleMessage
-};
-#else
-// The NaCl plugin doesn't need the host side interface - stub it out.
-static const PPP_Messaging messaging_interface = {};
-#endif  // !defined(OS_NACL)
-
-InterfaceProxy* CreateMessagingProxy(Dispatcher* dispatcher) {
-  return new PPP_Messaging_Proxy(dispatcher);
-}
-
-}  // namespace
-
 PPP_Messaging_Proxy::PPP_Messaging_Proxy(Dispatcher* dispatcher)
     : InterfaceProxy(dispatcher),
       ppp_messaging_impl_(NULL) {
@@ -61,18 +29,6 @@ PPP_Messaging_Proxy::PPP_Messaging_Proxy(Dispatcher* dispatcher)
 }
 
 PPP_Messaging_Proxy::~PPP_Messaging_Proxy() {
-}
-
-// static
-const InterfaceProxy::Info* PPP_Messaging_Proxy::GetInfo() {
-  static const Info info = {
-    &messaging_interface,
-    PPP_MESSAGING_INTERFACE,
-    API_ID_PPP_MESSAGING,
-    false,
-    &CreateMessagingProxy,
-  };
-  return &info;
 }
 
 bool PPP_Messaging_Proxy::OnMessageReceived(const IPC::Message& msg) {
@@ -90,7 +46,7 @@ bool PPP_Messaging_Proxy::OnMessageReceived(const IPC::Message& msg) {
 
 void PPP_Messaging_Proxy::OnMsgHandleMessage(
     PP_Instance instance, SerializedVarReceiveInput message_data) {
-  PP_Var received_var(message_data.Get(dispatcher()));
+  PP_Var received_var(message_data.GetForInstance(dispatcher(), instance));
   // SerializedVarReceiveInput will decrement the reference count, but we want
   // to give the recipient a reference.
   PpapiGlobals::Get()->GetVarTracker()->AddRefVar(received_var);

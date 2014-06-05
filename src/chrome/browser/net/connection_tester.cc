@@ -9,35 +9,36 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/browser_thread.h"
-#include "net/base/cert_verifier.h"
-#include "net/base/host_resolver.h"
+#include "content/public/browser/cookie_store_factory.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
-#include "net/base/ssl_config_service_defaults.h"
-#include "net/cookies/cookie_monster.h"
-#include "net/ftp/ftp_network_layer.h"
+#include "net/base/request_priority.h"
+#include "net/cert/cert_verifier.h"
+#include "net/dns/host_resolver.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties_impl.h"
+#include "net/http/transport_security_state.h"
 #include "net/proxy/dhcp_proxy_script_fetcher_factory.h"
 #include "net/proxy/proxy_config_service_fixed.h"
 #include "net/proxy/proxy_script_fetcher_impl.h"
 #include "net/proxy/proxy_service.h"
 #include "net/proxy/proxy_service_v8.h"
+#include "net/ssl/ssl_config_service_defaults.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_storage.h"
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
-#include "chrome/browser/importer/firefox_proxy_settings.h"
+#include "chrome/browser/net/firefox_proxy_settings.h"
 #endif
 
 namespace {
@@ -50,10 +51,12 @@ namespace {
 class ExperimentURLRequestContext : public net::URLRequestContext {
  public:
   explicit ExperimentURLRequestContext(
-      net::URLRequestContext* proxy_request_context)
-      : proxy_request_context_(proxy_request_context),
-        ALLOW_THIS_IN_INITIALIZER_LIST(storage_(this)),
-        ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {}
+      net::URLRequestContext* proxy_request_context) :
+#if !defined(OS_IOS)
+        proxy_request_context_(proxy_request_context),
+#endif
+        storage_(this),
+        weak_factory_(this) {}
 
   virtual ~ExperimentURLRequestContext() {}
 
@@ -107,18 +110,18 @@ class ExperimentURLRequestContext : public net::URLRequestContext {
     // The rest of the dependencies are standard, and don't depend on the
     // experiment being run.
     storage_.set_cert_verifier(net::CertVerifier::CreateDefault());
-#if !defined(DISABLE_FTP_SUPPORT)
-    storage_.set_ftp_transaction_factory(
-        new net::FtpNetworkLayer(host_resolver()));
-#endif
+    storage_.set_transport_security_state(new net::TransportSecurityState);
     storage_.set_ssl_config_service(new net::SSLConfigServiceDefaults);
     storage_.set_http_auth_handler_factory(
         net::HttpAuthHandlerFactory::CreateDefault(host_resolver()));
-    storage_.set_http_server_properties(new net::HttpServerPropertiesImpl);
+    storage_.set_http_server_properties(
+        scoped_ptr<net::HttpServerProperties>(
+            new net::HttpServerPropertiesImpl()));
 
     net::HttpNetworkSession::Params session_params;
     session_params.host_resolver = host_resolver();
     session_params.cert_verifier = cert_verifier();
+    session_params.transport_security_state = transport_security_state();
     session_params.proxy_service = proxy_service();
     session_params.ssl_config_service = ssl_config_service();
     session_params.http_auth_handler_factory = http_auth_handler_factory();
@@ -127,10 +130,10 @@ class ExperimentURLRequestContext : public net::URLRequestContext {
     scoped_refptr<net::HttpNetworkSession> network_session(
         new net::HttpNetworkSession(session_params));
     storage_.set_http_transaction_factory(new net::HttpCache(
-        network_session,
-        net::HttpCache::DefaultBackend::InMemory(0)));
+        network_session.get(), net::HttpCache::DefaultBackend::InMemory(0)));
     // In-memory cookie store.
-    storage_.set_cookie_store(new net::CookieMonster(NULL, NULL));
+    storage_.set_cookie_store(
+        content::CreateCookieStore(content::CookieStoreConfig()));
 
     return net::OK;
   }
@@ -160,12 +163,7 @@ class ExperimentURLRequestContext : public net::URLRequestContext {
         resolver->SetDefaultAddressFamily(net::ADDRESS_FAMILY_IPV4);
         break;
       case ConnectionTester::HOST_RESOLVER_EXPERIMENT_IPV6_PROBE: {
-        // Note that we don't use impl->ProbeIPv6Support() since that finishes
-        // asynchronously and may not take effect in time for the test.
-        // So instead we will probe synchronously (might take 100-200 ms).
-        net::AddressFamily family = net::TestIPv6Support().ipv6_supported ?
-            net::ADDRESS_FAMILY_UNSPECIFIED : net::ADDRESS_FAMILY_IPV4;
-        resolver->SetDefaultAddressFamily(family);
+        // The system HostResolver will probe by default.
         break;
       }
       default:
@@ -191,10 +189,6 @@ class ExperimentURLRequestContext : public net::URLRequestContext {
     }
 
     net::DhcpProxyScriptFetcherFactory dhcp_factory;
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kDisableDhcpWpad)) {
-      dhcp_factory.set_enabled(false);
-    }
 
 #if defined(OS_IOS)
     experiment_proxy_service->reset(
@@ -204,7 +198,6 @@ class ExperimentURLRequestContext : public net::URLRequestContext {
     experiment_proxy_service->reset(
         net::CreateProxyServiceUsingV8ProxyResolver(
             proxy_config_service->release(),
-            0u,
             new net::ProxyScriptFetcherImpl(proxy_request_context_),
             dhcp_factory.Create(proxy_request_context_),
             host_resolver(),
@@ -225,9 +218,8 @@ class ExperimentURLRequestContext : public net::URLRequestContext {
     // construction needs ot happen on the UI thread.
     return net::ERR_NOT_IMPLEMENTED;
 #else
-    config_service->reset(
-        net::ProxyService::CreateSystemProxyConfigService(
-            base::ThreadTaskRunnerHandle::Get(), NULL));
+    config_service->reset(net::ProxyService::CreateSystemProxyConfigService(
+        base::ThreadTaskRunnerHandle::Get().get(), NULL));
     return net::OK;
 #endif
   }
@@ -286,7 +278,9 @@ class ExperimentURLRequestContext : public net::URLRequestContext {
 #endif
   }
 
+#if !defined(OS_IOS)
   net::URLRequestContext* const proxy_request_context_;
+#endif
   net::URLRequestContextStorage storage_;
   base::WeakPtrFactory<ExperimentURLRequestContext> weak_factory_;
 };
@@ -304,7 +298,7 @@ class ConnectionTester::TestRunner : public net::URLRequest::Delegate {
   TestRunner(ConnectionTester* tester, net::NetLog* net_log)
       : tester_(tester),
         net_log_(net_log),
-        ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {}
+        weak_factory_(this) {}
 
   // Finish running |experiment| once a ProxyConfigService has been created.
   // In the case of a FirefoxProxyConfigService, this will be called back
@@ -318,8 +312,9 @@ class ConnectionTester::TestRunner : public net::URLRequest::Delegate {
   void Run(const Experiment& experiment);
 
   // Overridden from net::URLRequest::Delegate:
-  virtual void OnResponseStarted(net::URLRequest* request);
-  virtual void OnReadCompleted(net::URLRequest* request, int bytes_read);
+  virtual void OnResponseStarted(net::URLRequest* request) OVERRIDE;
+  virtual void OnReadCompleted(net::URLRequest* request,
+                               int bytes_read) OVERRIDE;
   // TODO(eroman): handle cases requiring authentication.
 
  private:
@@ -370,7 +365,7 @@ void ConnectionTester::TestRunner::ReadBody(net::URLRequest* request) {
   scoped_refptr<net::IOBuffer> unused_buffer(
       new net::IOBuffer(kReadBufferSize));
   int num_bytes;
-  if (request->Read(unused_buffer, kReadBufferSize, &num_bytes)) {
+  if (request->Read(unused_buffer.get(), kReadBufferSize, &num_bytes)) {
     OnReadCompleted(request, num_bytes);
   } else if (!request->status().is_io_pending()) {
     // Read failed synchronously.
@@ -389,7 +384,7 @@ void ConnectionTester::TestRunner::OnResponseCompleted(
   // Post a task to notify the parent rather than handling it right away,
   // to avoid re-entrancy problems with URLRequest. (Don't want the caller
   // to end up deleting the URLRequest while in the middle of processing).
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&TestRunner::OnExperimentCompletedWithResult,
                  weak_factory_.GetWeakPtr(), result));
@@ -412,7 +407,8 @@ void ConnectionTester::TestRunner::ProxyConfigServiceCreated(
     return;
   }
   // Fetch a request using the experimental context.
-  request_.reset(request_context_->CreateRequest(experiment.url, this));
+  request_ = request_context_->CreateRequest(
+      experiment.url, net::DEFAULT_PRIORITY, this, NULL);
   request_->Start();
 }
 
@@ -460,38 +456,38 @@ void ConnectionTester::RunAllTests(const GURL& url) {
 }
 
 // static
-string16 ConnectionTester::ProxySettingsExperimentDescription(
+base::string16 ConnectionTester::ProxySettingsExperimentDescription(
     ProxySettingsExperiment experiment) {
   // TODO(eroman): Use proper string resources.
   switch (experiment) {
     case PROXY_EXPERIMENT_USE_DIRECT:
-      return ASCIIToUTF16("Don't use any proxy");
+      return base::ASCIIToUTF16("Don't use any proxy");
     case PROXY_EXPERIMENT_USE_SYSTEM_SETTINGS:
-      return ASCIIToUTF16("Use system proxy settings");
+      return base::ASCIIToUTF16("Use system proxy settings");
     case PROXY_EXPERIMENT_USE_FIREFOX_SETTINGS:
-      return ASCIIToUTF16("Use Firefox's proxy settings");
+      return base::ASCIIToUTF16("Use Firefox's proxy settings");
     case PROXY_EXPERIMENT_USE_AUTO_DETECT:
-      return ASCIIToUTF16("Auto-detect proxy settings");
+      return base::ASCIIToUTF16("Auto-detect proxy settings");
     default:
       NOTREACHED();
-      return string16();
+      return base::string16();
   }
 }
 
 // static
-string16 ConnectionTester::HostResolverExperimentDescription(
+base::string16 ConnectionTester::HostResolverExperimentDescription(
     HostResolverExperiment experiment) {
   // TODO(eroman): Use proper string resources.
   switch (experiment) {
     case HOST_RESOLVER_EXPERIMENT_PLAIN:
-      return string16();
+      return base::string16();
     case HOST_RESOLVER_EXPERIMENT_DISABLE_IPV6:
-      return ASCIIToUTF16("Disable IPv6 host resolving");
+      return base::ASCIIToUTF16("Disable IPv6 host resolving");
     case HOST_RESOLVER_EXPERIMENT_IPV6_PROBE:
-      return ASCIIToUTF16("Probe for IPv6 host resolving");
+      return base::ASCIIToUTF16("Probe for IPv6 host resolving");
     default:
       NOTREACHED();
-      return string16();
+      return base::string16();
   }
 }
 

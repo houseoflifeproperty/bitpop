@@ -4,72 +4,80 @@
 
 #include "media/audio/virtual_audio_output_stream.h"
 
-#include "base/message_loop.h"
-#include "media/audio/audio_manager_base.h"
+#include "base/logging.h"
 #include "media/audio/virtual_audio_input_stream.h"
 
 namespace media {
 
-// static
-VirtualAudioOutputStream* VirtualAudioOutputStream::MakeStream(
-    AudioManagerBase* manager, const AudioParameters& params,
-    base::MessageLoopProxy* message_loop, VirtualAudioInputStream* target) {
-  return new VirtualAudioOutputStream(manager, params, message_loop, target);
-}
-
 VirtualAudioOutputStream::VirtualAudioOutputStream(
-    AudioManagerBase* manager, const AudioParameters& params,
-    base::MessageLoopProxy* message_loop, VirtualAudioInputStream* target)
-    : audio_manager_(manager), message_loop_(message_loop), callback_(NULL),
-      params_(params), target_input_stream_(target), volume_(1.0f),
-      attached_(false) {
+    const AudioParameters& params, VirtualAudioInputStream* target,
+    const AfterCloseCallback& after_close_cb)
+    : params_(params), target_input_stream_(target),
+      after_close_cb_(after_close_cb), callback_(NULL), volume_(1.0f) {
+  DCHECK(params_.IsValid());
+  DCHECK(target);
+
+  // VAOS can be constructed on any thread, but will DCHECK that all
+  // AudioOutputStream methods are called from the same thread.
+  thread_checker_.DetachFromThread();
 }
 
 VirtualAudioOutputStream::~VirtualAudioOutputStream() {
   DCHECK(!callback_);
-  DCHECK(!attached_);
 }
 
 bool VirtualAudioOutputStream::Open() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(thread_checker_.CalledOnValidThread());
   return true;
 }
 
 void VirtualAudioOutputStream::Start(AudioSourceCallback* callback)  {
-  DCHECK(message_loop_->BelongsToCurrentThread());
-  DCHECK(!attached_);
+  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(!callback_);
   callback_ = callback;
   target_input_stream_->AddOutputStream(this, params_);
-  attached_ = true;
 }
 
 void VirtualAudioOutputStream::Stop() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
-  DCHECK(attached_);
-  callback_ = NULL;
-  target_input_stream_->RemoveOutputStream(this, params_);
-  attached_ = false;
+  DCHECK(thread_checker_.CalledOnValidThread());
+  if (callback_) {
+    target_input_stream_->RemoveOutputStream(this, params_);
+    callback_ = NULL;
+  }
 }
 
 void VirtualAudioOutputStream::Close() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
-  audio_manager_->ReleaseOutputStream(this);
+  DCHECK(thread_checker_.CalledOnValidThread());
+
+  Stop();
+
+  // If a non-null AfterCloseCallback was provided to the constructor, invoke it
+  // here.  The callback is moved to a stack-local first since |this| could be
+  // destroyed during Run().
+  if (!after_close_cb_.is_null()) {
+    const AfterCloseCallback cb = after_close_cb_;
+    after_close_cb_.Reset();
+    cb.Run(this);
+  }
 }
 
 void VirtualAudioOutputStream::SetVolume(double volume) {
+  DCHECK(thread_checker_.CalledOnValidThread());
   volume_ = volume;
 }
 
 void VirtualAudioOutputStream::GetVolume(double* volume) {
+  DCHECK(thread_checker_.CalledOnValidThread());
   *volume = volume_;
 }
 
 double VirtualAudioOutputStream::ProvideInput(AudioBus* audio_bus,
                                               base::TimeDelta buffer_delay) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  // Note: This method may be invoked on any one thread, depending on the
+  // platform.
   DCHECK(callback_);
 
-  int frames = callback_->OnMoreData(audio_bus, AudioBuffersState());
+  const int frames = callback_->OnMoreData(audio_bus, AudioBuffersState());
   if (frames < audio_bus->frames())
     audio_bus->ZeroFramesPartial(frames, audio_bus->frames() - frames);
 

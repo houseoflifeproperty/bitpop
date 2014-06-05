@@ -17,13 +17,15 @@
 package com.google.ipc.invalidation.ticl;
 
 import com.google.common.base.Preconditions;
+import com.google.ipc.invalidation.common.CommonProtoStrings2;
 import com.google.ipc.invalidation.common.DigestFunction;
 import com.google.ipc.invalidation.external.client.InvalidationClient;
 import com.google.ipc.invalidation.external.client.InvalidationListener;
 import com.google.ipc.invalidation.external.client.SystemResources;
 import com.google.ipc.invalidation.util.InternalBase;
+import com.google.ipc.invalidation.util.TextBuilder;
 import com.google.protobuf.ByteString;
-import com.google.protos.ipc.invalidation.Channel.NetworkEndpointId;
+import com.google.protos.ipc.invalidation.ChannelCommon.NetworkEndpointId;
 import com.google.protos.ipc.invalidation.ClientProtocol.ClientConfigP;
 import com.google.protos.ipc.invalidation.ClientProtocol.ObjectIdP;
 import com.google.protos.ipc.invalidation.ClientProtocol.RegistrationSummary;
@@ -66,6 +68,17 @@ public interface TestableInvalidationClient extends InvalidationClient {
 
     public Collection<ObjectIdP> getRegisteredObjects() {
       return registeredObjects;
+    }
+
+    @Override
+    public void toCompactString(TextBuilder builder) {
+      builder.append("<RegistrationManagerState: clientSummary=");
+      CommonProtoStrings2.toCompactString(builder, clientSummary);
+      builder.append(", serverSummary=");
+      CommonProtoStrings2.toCompactString(builder, serverSummary);
+      builder.append(", registeredObjects=");
+      CommonProtoStrings2.toCompactStringForObjectIds(builder, registeredObjects);
+      builder.append(">");
     }
   }
 

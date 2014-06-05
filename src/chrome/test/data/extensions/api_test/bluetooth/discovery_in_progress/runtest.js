@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-var kExpectedDeviceNames = ["d1", "d2"];
+var kExpectedDeviceNames = ["d2"];
 
 function testDiscovery() {
   chrome.test.assertEq(kExpectedDeviceNames.length,
@@ -23,16 +23,17 @@ function sendReady(callback) {
   chrome.test.sendMessage('ready', callback);
 }
 
-function stopDiscoveryAndContinue() {
-  chrome.bluetooth.stopDiscovery();
-  sendReady(startTests);
-}
-
 var discoveredDevices = [];
 function recordDevice(device) {
   discoveredDevices.push(device);
 }
 
+function stopDiscoveryAndContinue() {
+  chrome.bluetooth.stopDiscovery();
+  chrome.bluetooth.onDeviceAdded.removeListener(recordDevice);
+  sendReady(startTests);
+}
+
+chrome.bluetooth.onDeviceAdded.addListener(recordDevice);
 chrome.bluetooth.startDiscovery(
-    { deviceCallback:recordDevice },
     function() { sendReady(stopDiscoveryAndContinue); });

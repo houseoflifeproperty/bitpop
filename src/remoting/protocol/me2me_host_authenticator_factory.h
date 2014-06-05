@@ -9,24 +9,45 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "remoting/protocol/authentication_method.h"
 #include "remoting/protocol/authenticator.h"
-
-namespace crypto {
-class RSAPrivateKey;
-}  // namespace crypto
+#include "remoting/protocol/third_party_host_authenticator.h"
+#include "remoting/protocol/token_validator.h"
 
 namespace remoting {
+
+class RsaKeyPair;
+
 namespace protocol {
+
+class PairingRegistry;
 
 class Me2MeHostAuthenticatorFactory : public AuthenticatorFactory {
  public:
-  // Doesn't take ownership of |local_private_key|.
-  Me2MeHostAuthenticatorFactory(
+  // Create a factory that dispenses shared secret authenticators.
+  static scoped_ptr<AuthenticatorFactory> CreateWithSharedSecret(
+      bool use_service_account,
+      const std::string& host_owner,
       const std::string& local_cert,
-      const crypto::RSAPrivateKey& local_private_key,
-      const SharedSecretHash& shared_secret_hash);
+      scoped_refptr<RsaKeyPair> key_pair,
+      const SharedSecretHash& shared_secret_hash,
+      scoped_refptr<PairingRegistry> pairing_registry);
+
+  // Create a factory that dispenses third party authenticators.
+  static scoped_ptr<AuthenticatorFactory> CreateWithThirdPartyAuth(
+      bool use_service_account,
+      const std::string& host_owner,
+      const std::string& local_cert,
+      scoped_refptr<RsaKeyPair> key_pair,
+      scoped_ptr<TokenValidatorFactory> token_validator_factory);
+
+  // Create a factory that dispenses rejecting authenticators (used when the
+  // host config/policy is inconsistent)
+  static scoped_ptr<AuthenticatorFactory> CreateRejecting();
+
+  Me2MeHostAuthenticatorFactory();
   virtual ~Me2MeHostAuthenticatorFactory();
 
   // AuthenticatorFactory interface.
@@ -36,10 +57,20 @@ class Me2MeHostAuthenticatorFactory : public AuthenticatorFactory {
       const buzz::XmlElement* first_message) OVERRIDE;
 
  private:
-  std::string local_jid_prefix_;
+  // Used for all host authenticators.
+  bool use_service_account_;
+  std::string host_owner_;
   std::string local_cert_;
-  scoped_ptr<crypto::RSAPrivateKey> local_private_key_;
+  scoped_refptr<RsaKeyPair> key_pair_;
+
+  // Used only for shared secret host authenticators.
   SharedSecretHash shared_secret_hash_;
+
+  // Used only for third party host authenticators.
+  scoped_ptr<TokenValidatorFactory> token_validator_factory_;
+
+  // Used only for pairing host authenticators.
+  scoped_refptr<PairingRegistry> pairing_registry_;
 
   DISALLOW_COPY_AND_ASSIGN(Me2MeHostAuthenticatorFactory);
 };

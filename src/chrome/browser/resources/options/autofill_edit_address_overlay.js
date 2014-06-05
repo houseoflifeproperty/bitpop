@@ -9,6 +9,9 @@ cr.define('options', function() {
   // The GUID of the loaded address.
   var guid;
 
+  // The BCP 47 language code for the layout of input fields.
+  var languageCode;
+
   /**
    * AutofillEditAddressOverlay class
    * Encapsulated handling of the 'Add Page' overlay page.
@@ -46,8 +49,11 @@ cr.define('options', function() {
         // Blurring is delayed for list elements.  Queue save and close to
         // ensure that pending changes have been applied.
         setTimeout(function() {
-          self.saveAddress_();
-          self.dismissOverlay_();
+          self.pageDiv.querySelector('[field=phone]').doneValidating().then(
+              function() {
+                self.saveAddress_();
+                self.dismissOverlay_();
+              });
         }, 0);
       };
 
@@ -62,41 +68,51 @@ cr.define('options', function() {
         event.preventDefault();
       };
 
-      self.guid = '';
-      self.populateCountryList_();
-      self.clearInputFields_();
-      self.connectInputEvents_();
+      this.guid = '';
+      this.populateCountryList_();
+      this.rebuildInputFields_(
+          loadTimeData.getValue('autofillDefaultCountryComponents'));
+      this.languageCode =
+          loadTimeData.getString('autofillDefaultCountryLanguageCode');
+      this.connectInputEvents_();
+      this.setInputFields_({});
+      this.getCountrySelector_().onchange = function(event) {
+        self.countryChanged_();
+      };
     },
 
     /**
-     * Creates, decorates and initializes the multi-value lists for full name,
-     * phone, and email.
+    * Specifically catch the situations in which the overlay is cancelled
+    * externally (e.g. by pressing <Esc>), so that the input fields and
+    * GUID can be properly cleared.
+    * @override
+    */
+    handleCancel: function() {
+      this.dismissOverlay_();
+    },
+
+    /**
+     * Creates, decorates and initializes the multi-value lists for phone and
+     * email.
      * @private
      */
     createMultiValueLists_: function() {
-      var list = $('full-name-list');
-      options.autofillOptions.AutofillNameValuesList.decorate(list);
-      list.autoExpands = true;
-
-      list = $('phone-list');
+      var list = this.pageDiv.querySelector('[field=phone]');
       options.autofillOptions.AutofillPhoneValuesList.decorate(list);
       list.autoExpands = true;
 
-      list = $('email-list');
+      list = this.pageDiv.querySelector('[field=email]');
       options.autofillOptions.AutofillValuesList.decorate(list);
       list.autoExpands = true;
     },
 
     /**
-     * Updates the data model for the list named |listName| with the values from
-     * |entries|.
-     * @param {String} listName The id of the list.
+     * Updates the data model for the |list| with the values from |entries|.
+     * @param {element} list The list to update.
      * @param {Array} entries The list of items to be added to the list.
+     * @private
      */
-    setMultiValueList_: function(listName, entries) {
-      // Add data entries.
-      var list = $(listName);
-
+    setMultiValueList_: function(list, entries) {
       // Add special entry for adding new values.
       var augmentedList = entries.slice();
       augmentedList.push(null);
@@ -117,9 +133,82 @@ cr.define('options', function() {
      * @private
      */
     dismissOverlay_: function() {
-      this.clearInputFields_();
+      this.setInputFields_({});
+      this.inputFieldChanged_();
       this.guid = '';
+      this.languageCode = '';
       OptionsPage.closeOverlay();
+    },
+
+    /**
+     * Returns the country selector element.
+     * @return {element} The country selector.
+     * @private
+     */
+    getCountrySelector_: function() {
+      return this.pageDiv.querySelector('[field=country]');
+    },
+
+    /**
+     * Returns all list elements.
+     * @return {NodeList} The list elements.
+     * @private
+     */
+    getLists_: function() {
+      return this.pageDiv.querySelectorAll('list[field]');
+    },
+
+    /**
+     * Returns all text input elements.
+     * @return {NodeList} The text input elements.
+     * @private
+     */
+    getTextFields_: function() {
+      return this.pageDiv.querySelectorAll(
+          ':-webkit-any(textarea, input)[field]');
+    },
+
+    /**
+     * Aggregates the values in the input fields into an object.
+     * @return {object} The mapping from field names to values.
+     * @private
+     */
+    getInputFields_: function() {
+      var address = {};
+      address['country'] = this.getCountrySelector_().value;
+
+      var lists = this.getLists_();
+      for (var i = 0; i < lists.length; i++) {
+        address[lists[i].getAttribute('field')] =
+            lists[i].dataModel.slice(0, lists[i].dataModel.length - 1);
+      }
+
+      var fields = this.getTextFields_();
+      for (var i = 0; i < fields.length; i++) {
+        address[fields[i].getAttribute('field')] = fields[i].value;
+      }
+
+      return address;
+    },
+
+    /**
+     * Sets the value of each input field according to |address|.
+     * @param {object} address The object with values to use.
+     * @private
+     */
+    setInputFields_: function(address) {
+      this.getCountrySelector_().value = address['country'] || '';
+
+      var lists = this.getLists_();
+      for (var i = 0; i < lists.length; i++) {
+        this.setMultiValueList_(
+            lists[i], address[lists[i].getAttribute('field')] || []);
+      }
+
+      var fields = this.getTextFields_();
+      for (var i = 0; i < fields.length; i++) {
+        fields[i].value = address[fields[i].getAttribute('field')] || '';
+      }
     },
 
     /**
@@ -128,21 +217,22 @@ cr.define('options', function() {
      * @private
      */
     saveAddress_: function() {
+      var inputFields = this.getInputFields_();
       var address = new Array();
-      address[0] = this.guid;
-      var list = $('full-name-list');
-      address[1] = list.dataModel.slice(0, list.dataModel.length - 1);
-      address[2] = $('company-name').value;
-      address[3] = $('addr-line-1').value;
-      address[4] = $('addr-line-2').value;
-      address[5] = $('city').value;
-      address[6] = $('state').value;
-      address[7] = $('postal-code').value;
-      address[8] = $('country').value;
-      list = $('phone-list');
-      address[9] = list.dataModel.slice(0, list.dataModel.length - 1);
-      list = $('email-list');
-      address[10] = list.dataModel.slice(0, list.dataModel.length - 1);
+      var argCounter = 0;
+      address[argCounter++] = this.guid;
+      address[argCounter++] = inputFields['fullName'] || [];
+      address[argCounter++] = inputFields['companyName'] || '';
+      address[argCounter++] = inputFields['addrLines'] || '';
+      address[argCounter++] = inputFields['dependentLocality'] || '';
+      address[argCounter++] = inputFields['city'] || '';
+      address[argCounter++] = inputFields['state'] || '';
+      address[argCounter++] = inputFields['postalCode'] || '';
+      address[argCounter++] = inputFields['sortingCode'] || '';
+      address[argCounter++] = inputFields['country'] || '';
+      address[argCounter++] = inputFields['phone'] || [];
+      address[argCounter++] = inputFields['email'] || [];
+      address[argCounter++] = this.languageCode;
 
       chrome.send('setAddress', address);
     },
@@ -155,51 +245,56 @@ cr.define('options', function() {
      */
     connectInputEvents_: function() {
       var self = this;
-      $('company-name').oninput = $('addr-line-1').oninput =
-          $('addr-line-2').oninput = $('city').oninput = $('state').oninput =
-          $('postal-code').oninput = function(event) {
-        self.inputFieldChanged_();
-      };
-
-      $('country').onchange = function(event) {
-        self.countryChanged_();
-      };
+      var fields = this.getTextFields_();
+      for (var i = 0; i < fields.length; i++) {
+        fields[i].oninput = function(event) { self.inputFieldChanged_(); };
+      }
     },
 
     /**
-     * Checks the values of each of the input fields and disables the 'Ok'
-     * button if all of the fields are empty.
+     * Disables the 'Ok' button if all of the fields are empty.
      * @private
      */
     inputFieldChanged_: function() {
-      // Length of lists are tested for <= 1 due to the "add" placeholder item
-      // in the list.
-      var disabled =
-          $('full-name-list').items.length <= 1 &&
-          !$('company-name').value &&
-          !$('addr-line-1').value && !$('addr-line-2').value &&
-          !$('city').value && !$('state').value && !$('postal-code').value &&
-          !$('country').value && $('phone-list').items.length <= 1 &&
-          $('email-list').items.length <= 1;
+      var disabled = true;
+      if (this.getCountrySelector_().value)
+        disabled = false;
+
+      if (disabled) {
+        // Length of lists are tested for > 1 due to the "add" placeholder item
+        // in the list.
+        var lists = this.getLists_();
+        for (var i = 0; i < lists.length; i++) {
+          if (lists[i].items.length > 1) {
+            disabled = false;
+            break;
+          }
+        }
+      }
+
+      if (disabled) {
+        var fields = this.getTextFields_();
+        for (var i = 0; i < fields.length; i++) {
+          if (fields[i].value) {
+            disabled = false;
+            break;
+          }
+        }
+      }
+
       $('autofill-edit-address-apply-button').disabled = disabled;
     },
 
     /**
-     * Updates the postal code and state field labels appropriately for the
-     * selected country.
+     * Updates the address fields appropriately for the selected country.
      * @private
      */
     countryChanged_: function() {
-      var countryCode = $('country').value ||
-          loadTimeData.getString('defaultCountryCode');
-
-      var details = loadTimeData.getValue('autofillCountryData')[countryCode];
-      var postal = $('postal-code-label');
-      postal.textContent = details.postalCodeLabel;
-      $('state-label').textContent = details.stateLabel;
-
-      // Also update the 'Ok' button as needed.
-      this.inputFieldChanged_();
+      var countryCode = this.getCountrySelector_().value;
+      if (countryCode)
+        chrome.send('loadAddressEditorComponents', [countryCode]);
+      else
+        this.inputFieldChanged_();
     },
 
     /**
@@ -207,106 +302,102 @@ cr.define('options', function() {
      * @private
      */
     populateCountryList_: function() {
-      var countryData = loadTimeData.getValue('autofillCountryData');
-      var defaultCountryCode = loadTimeData.getString('defaultCountryCode');
-
-      // Build an array of the country names and their corresponding country
-      // codes, so that we can sort and insert them in order.
-      var countries = [];
-      for (var countryCode in countryData) {
-        var country = {
-          countryCode: countryCode,
-          name: countryData[countryCode].name
-        };
-        countries.push(country);
-      }
-
-      // Sort the countries in alphabetical order by name.
-      countries = countries.sort(function(a, b) {
-        return a.name < b.name ? -1 : 1;
-      });
-
-      // Insert the empty and default countries at the beginning of the array.
-      var emptyCountry = {
-        countryCode: '',
-        name: ''
-      };
-      var defaultCountry = {
-        countryCode: defaultCountryCode,
-        name: countryData[defaultCountryCode].name
-      };
-      var separator = {
-        countryCode: '',
-        name: '---',
-        disabled: true
-      };
-      countries.unshift(emptyCountry, defaultCountry, separator);
+      var countryList = loadTimeData.getValue('autofillCountrySelectList');
 
       // Add the countries to the country <select> list.
-      var countryList = $('country');
-      for (var i = 0; i < countries.length; i++) {
-        var country = new Option(countries[i].name, countries[i].countryCode);
-        country.disabled = countries[i].disabled;
-        countryList.appendChild(country);
+      var countrySelect = this.getCountrySelector_();
+      // Add an empty option.
+      countrySelect.appendChild(new Option('', ''));
+      for (var i = 0; i < countryList.length; i++) {
+        var option = new Option(countryList[i].name,
+                                countryList[i].value);
+        option.disabled = countryList[i].value == 'separator';
+        countrySelect.appendChild(option);
       }
-    },
-
-    /**
-     * Clears the value of each input field.
-     * @private
-     */
-    clearInputFields_: function() {
-      this.setMultiValueList_('full-name-list', []);
-      $('company-name').value = '';
-      $('addr-line-1').value = '';
-      $('addr-line-2').value = '';
-      $('city').value = '';
-      $('state').value = '';
-      $('postal-code').value = '';
-      $('country').value = '';
-      this.setMultiValueList_('phone-list', []);
-      this.setMultiValueList_('email-list', []);
-
-      this.countryChanged_();
     },
 
     /**
      * Loads the address data from |address|, sets the input fields based on
-     * this data and stores the GUID of the address.
+     * this data, and stores the GUID and language code of the address.
      * @private
      */
     loadAddress_: function(address) {
+      this.rebuildInputFields_(address.components);
       this.setInputFields_(address);
       this.inputFieldChanged_();
+      this.connectInputEvents_();
       this.guid = address.guid;
+      this.languageCode = address.languageCode;
     },
 
     /**
-     * Sets the value of each input field according to |address|
+     * Takes a snapshot of the input values, clears the input values, loads the
+     * address input layout from |input.components|, restores the input values
+     * from snapshot, and stores the |input.languageCode| for the address.
      * @private
      */
-    setInputFields_: function(address) {
-      this.setMultiValueList_('full-name-list', address.fullName);
-      $('company-name').value = address.companyName;
-      $('addr-line-1').value = address.addrLine1;
-      $('addr-line-2').value = address.addrLine2;
-      $('city').value = address.city;
-      $('state').value = address.state;
-      $('postal-code').value = address.postalCode;
-      $('country').value = address.country;
-      this.setMultiValueList_('phone-list', address.phone);
-      this.setMultiValueList_('email-list', address.email);
-
-      this.countryChanged_();
+    loadAddressComponents_: function(input) {
+      var address = this.getInputFields_();
+      this.rebuildInputFields_(input.components);
+      this.setInputFields_(address);
+      this.inputFieldChanged_();
+      this.connectInputEvents_();
+      this.languageCode = input.languageCode;
     },
-  };
 
-  AutofillEditAddressOverlay.clearInputFields = function() {
-    AutofillEditAddressOverlay.getInstance().clearInputFields_();
+    /**
+     * Clears address inputs and rebuilds the input fields according to
+     * |components|.
+     * @private
+     */
+    rebuildInputFields_: function(components) {
+      var content = $('autofill-edit-address-fields');
+      while (content.firstChild) {
+        content.removeChild(content.firstChild);
+      }
+
+      var customContainerElements = {'fullName': 'div'};
+      var customInputElements = {'fullName': 'list', 'addrLines': 'textarea'};
+
+      for (var i in components) {
+        var row = document.createElement('div');
+        row.classList.add('input-group', 'settings-row');
+        content.appendChild(row);
+
+        for (var j in components[i]) {
+          if (components[i][j].field == 'country')
+            continue;
+
+          var fieldContainer = document.createElement(
+              customContainerElements[components[i][j].field] || 'label');
+          row.appendChild(fieldContainer);
+
+          var fieldName = document.createElement('div');
+          fieldName.textContent = components[i][j].name;
+          fieldContainer.appendChild(fieldName);
+
+          var input = document.createElement(
+              customInputElements[components[i][j].field] || 'input');
+          input.setAttribute('field', components[i][j].field);
+          input.classList.add(components[i][j].length);
+          input.setAttribute('placeholder', components[i][j].placeholder || '');
+          fieldContainer.appendChild(input);
+
+          if (input.tagName == 'LIST') {
+            options.autofillOptions.AutofillValuesList.decorate(input);
+            input.autoExpands = true;
+          }
+        }
+      }
+    },
   };
 
   AutofillEditAddressOverlay.loadAddress = function(address) {
     AutofillEditAddressOverlay.getInstance().loadAddress_(address);
+  };
+
+  AutofillEditAddressOverlay.loadAddressComponents = function(input) {
+    AutofillEditAddressOverlay.getInstance().loadAddressComponents_(input);
   };
 
   AutofillEditAddressOverlay.setTitle = function(title) {
@@ -314,8 +405,10 @@ cr.define('options', function() {
   };
 
   AutofillEditAddressOverlay.setValidatedPhoneNumbers = function(numbers) {
-    AutofillEditAddressOverlay.getInstance().setMultiValueList_('phone-list',
-                                                                numbers);
+    var instance = AutofillEditAddressOverlay.getInstance();
+    var phoneList = instance.pageDiv.querySelector('[field=phone]');
+    instance.setMultiValueList_(phoneList, numbers);
+    phoneList.didReceiveValidationResult();
   };
 
   // Export

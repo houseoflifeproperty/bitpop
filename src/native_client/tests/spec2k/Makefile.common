@@ -9,29 +9,26 @@
 # NOTE: we assume you have a symlink "CLIENT" in this directory pointing
 #       to your .../native_client directory
 
-ifndef BUILD_PLATFORM
-BUILD_PLATFORM="build_platform_undefined"
-endif
-
 ifndef SCONS_BUILD_PLATFORM
 SCONS_BUILD_PLATFORM="scons_build_platform_undefined"
 endif
 
-ifndef BUILD_ARCH
-BUILD_ARCH="build_arch_undefined"
+ifndef BUILD_ARCH_SHORT
+BUILD_ARCH_SHORT="build_arch_short_undefined"
 endif
 
 TC_ROOT=../../../toolchain
+TOOLCHAIN_BASE=$(TC_ROOT)/$(SCONS_BUILD_PLATFORM)_$(BUILD_ARCH_SHORT)
 
-NNACL_ROOT=$(TC_ROOT)/$(SCONS_BUILD_PLATFORM)_x86
-NNACL_NEWLIB_ROOT=$(TC_ROOT)/$(SCONS_BUILD_PLATFORM)_x86_newlib
+NNACL_GLIBC_ROOT=$(TOOLCHAIN_BASE)/nacl_$(BUILD_ARCH_SHORT)_glibc
+NNACL_NEWLIB_ROOT=$(TOOLCHAIN_BASE)/nacl_$(BUILD_ARCH_SHORT)_newlib
 
 NNACL_NEWLIB_SDK32=../../../scons-out/nacl-x86-32
 NNACL_NEWLIB_SDK64=../../../scons-out/nacl-x86-64
 
-PNACL_ROOT=$(TC_ROOT)/pnacl_$(BUILD_PLATFORM)_x86/$(PNACL_LIBMODE)
-PNACL_TRANSLATOR_ROOT=$(TC_ROOT)/pnacl_translator
-ARM_ROOT=$(TC_ROOT)/linux_arm-trusted
+PNACL_ROOT=$(TOOLCHAIN_BASE)/pnacl_newlib
+PNACL_TRANSLATOR_ROOT=$(TOOLCHAIN_BASE)/pnacl_translator
+ARM_ROOT=$(TOOLCHAIN_BASE)/arm_trusted
 
 CFLAGS = $(CFLAGS_EXTRA)
 
@@ -60,7 +57,7 @@ TIME_TRANSLATE=$(COMPILE_REPEATER) $(REPETITIONS) $@
 # Assumes time is logged to a file with name $(1).compile_time
 LOG_TRANSLATE_TIME=(TIME_FILE="$(1).compile_time" && \
 	 FILE_TYPE=$(subst $(2).,,$(1)) && \
-	 $(PERF_LOGGER) LogUserSysTime $$TIME_FILE "compiletime" $(2) $$FILE_TYPE)
+	 $(PERF_LOGGER) LogRealTime $$TIME_FILE "compiletime" $(2) $$FILE_TYPE)
 else
 # Set the various operations to nops
 TIME_TRANSLATE=
@@ -90,6 +87,7 @@ endif
 
 clean:
 	rm -f -- *.pexe *.bc *.o *.s *.x86 *.arm  *.c~ .h~ \
+              *.html *.data \
               $(IT) $(IT).* *.out src/*bc $(EXTRA_CLEAN)
 
 
@@ -103,13 +101,20 @@ nacl_bin: $(IT).nacl.x8632 $(IT).nacl.opt.x8632 \
 nosfi_bin: $(IT).gcc.x8632 $(IT).gcc.opt.x8632 \
 	   $(IT).gcc.arm $(IT).gcc.opt.arm
 
-all: pnacl_bin nacl_bin nosfi_bin
+nosfillvm_bin: $(IT).llvm.x8632 $(IT).llvm.opt.x8632 \
+	       $(IT).llvm.hw.arm $(IT).llvm.opt.hw.arm
+
+all: pnacl_bin nacl_bin nosfi_bin nosfillvm_bin
 
 
 ######################################################################
-## NON-SANDBOXING TOOLCHAINS
+## NON-SANDBOXING GCC TOOLCHAINS
 ######################################################################
 LOCAL_GCC=/usr/bin/gcc
+EMCCFLAGS=-s ASM_JS=1 -s TOTAL_MEMORY=268435456 $(CFLAGS_EXTRA)
+# Note: emcc should be in $PATH, or LOCAL_EMCC can be set to
+# the location of emcc.
+LOCAL_EMCC=emcc
 
 # straight x86-32 gcc
 $(IT).gcc.x8632: $(SRC) $(CPPSRC)
@@ -134,6 +139,62 @@ $(IT).gcc.opt.x8664: $(SRC) $(CPPSRC)
 	 	$^ -static -lstdc++ -lm  -o $@
 	@$(call LOG_ZIP_SIZE,$@,$(IT))
 
+# Emscripten javascript/html generation for Asm.js
+# Sadly, we have to build two versions -- one for "ref" and one for "train" --
+# due to the way Emscripten packages data files.
+# It will actually create .emcc.ref.html and .emcc.train.html files
+$(IT).emcc.html: $(SRC) $(CPPSRC)
+	../prepare_input.py -v --config $(SPEC_COMPONENT) train
+	$(LOCAL_EMCC) -O2 -m32 $(CFLAGS) \
+		$(EMCCFLAGS) $(EMCCFLAGS_EXTRA_TRAIN) $^ \
+		-static -lstdc++ -lm -o $@.train.html
+	../fixup_asmjs.py $@.train.html
+	../prepare_input.py -v --config $(SPEC_COMPONENT) ref
+	$(LOCAL_EMCC) -O2 -m32 $(CFLAGS) \
+		$(EMCCFLAGS) $(EMCCFLAGS_EXTRA_REF) $^ \
+		-static -lstdc++ -lm  -o $@.ref.html
+	../fixup_asmjs.py $@.ref.html
+	touch $@
+
+######################################################################
+## NON-SANDBOXING LLVM TOOLCHAINS
+######################################################################
+LOCAL_LLVM=clang++
+
+# straight x86-32 llvm
+$(IT).llvm.x8632: $(SRC) $(CPPSRC)
+	$(LOCAL_LLVM) -O0 -m32 $(CFLAGS) $^ -static -o $@
+	@$(call LOG_ZIP_SIZE,$@,$(IT))
+
+# optimized x86-32 llvm
+$(IT).llvm.opt.x8632: $(SRC) $(CPPSRC)
+	$(LOCAL_LLVM) -O3 -m32 $(CFLAGS) $^ -static -o $@
+	@$(call LOG_ZIP_SIZE,$@,$(IT))
+
+
+# straight x86-64 llvm
+$(IT).llvm.x8664: $(SRC) $(CPPSRC)
+	$(LOCAL_LLVM) -O0 -m64 -DSPEC_CPU2000_LP64 $(CFLAGS) \
+	 	$^ -static -o $@
+	@$(call LOG_ZIP_SIZE,$@,$(IT))
+
+# optimized x86-64 llvm
+$(IT).llvm.opt.x8664: $(SRC) $(CPPSRC)
+	$(LOCAL_LLVM) -O3 -m64 -DSPEC_CPU2000_LP64 $(CFLAGS) \
+	 	$^ -static -o $@
+	@$(call LOG_ZIP_SIZE,$@,$(IT))
+
+# straight ARM llvm
+$(IT).llvm.hw.arm: $(SRC) $(CPPSRC)
+	$(LOCAL_LLVM) -O0 $(CFLAGS) \
+	 	$^ -static -o $@
+	@$(call LOG_ZIP_SIZE,$@,$(IT))
+
+# optimized ARM llvm
+$(IT).llvm.opt.hw.arm: $(SRC) $(CPPSRC)
+	$(LOCAL_LLVM) -O3 $(CFLAGS) \
+	 	$^ -static -o $@
+	@$(call LOG_ZIP_SIZE,$@,$(IT))
 
 ######################################################################
 # EXPERIMENTAL
@@ -148,7 +209,7 @@ ARM_GCC = arm-linux-gnueabi-gcc
 endif
 
 ifndef ARM_ARCH_FLAGS
-ARM_ARCH_FLAGS = -march=armv7-a -mcpu=cortex-a8 -mfpu=neon -marm
+ARM_ARCH_FLAGS = -march=armv7-a -mcpu=cortex-a9 -mfpu=neon -marm
 endif
 
 ifndef ARM_LINK_FLAGS
@@ -168,7 +229,7 @@ $(IT).gcc.opt.arm: $(SRC) $(CPPSRC)
 ######################################################################
 ## NACL-GCC TOOLCHAINS
 ######################################################################
-NACL_GCC=$(NNACL_ROOT)/bin/x86_64-nacl-gcc
+NACL_GCC=$(NNACL_GLIBC_ROOT)/bin/x86_64-nacl-gcc
 NACL_GCC_NEWLIB32=$(NNACL_NEWLIB_ROOT)/bin/x86_64-nacl-gcc \
 		  -B $(NNACL_NEWLIB_SDK32)/lib \
 		  -I $(NNACL_NEWLIB_SDK32)/include
@@ -178,46 +239,42 @@ NACL_GCC_NEWLIB64=$(NNACL_NEWLIB_ROOT)/bin/x86_64-nacl-gcc \
 
 # nacl x86 gcc
 $(IT).nacl.x8632: $(SRC) $(CPPSRC)
-	$(NACL_GCC_NEWLIB32) -O0 -m32 $(CFLAGS) $^ -static -lstdc++ -lm \
-		-lnosys -o $@
+	$(NACL_GCC_NEWLIB32) -O0 -m32 $(CFLAGS) $^ -static -lstdc++ -lm -o $@
 	@$(call LOG_ZIP_SIZE,$@,$(IT))
 
 # nacl optimized x86 gcc
 $(IT).nacl.opt.x8632: $(SRC) $(CPPSRC)
-	$(NACL_GCC_NEWLIB32) -O3 -m32 $(CFLAGS) $^ -static -lstdc++ -lm \
-		-lnosys -o $@
+	$(NACL_GCC_NEWLIB32) -O3 -m32 $(CFLAGS) $^ -static -lstdc++ -lm -o $@
 	@$(call LOG_ZIP_SIZE,$@,$(IT))
 
 # nacl x86 gcc, dynamic
 $(IT).nacl.dyn.x8632: $(SRC) $(CPPSRC)
-	$(NACL_GCC) -O0 -m32 $(CFLAGS) -fPIC -g $^ -lstdc++ -lm  -lnosys -o $@
+	$(NACL_GCC) -O0 -m32 $(CFLAGS) -fPIC -g $^ -lstdc++ -lm -o $@
 	@$(call LOG_ZIP_SIZE,$@,$(IT))
 
 # nacl optimized x86 gcc, dynamic
 $(IT).nacl.dyn.opt.x8632: $(SRC) $(CPPSRC)
-	$(NACL_GCC) -O3 -m32 $(CFLAGS) -fPIC -g $^ -lstdc++ -lm  -lnosys -o $@
+	$(NACL_GCC) -O3 -m32 $(CFLAGS) -fPIC -g $^ -lstdc++ -lm -o $@
 	@$(call LOG_ZIP_SIZE,$@,$(IT))
 
 # nacl x86-64 gcc
 $(IT).nacl.x8664: $(SRC) $(CPPSRC)
-	$(NACL_GCC_NEWLIB64) -O0 -m64 $(CFLAGS) $^  -static -lstdc++ -lm \
-		-lnosys -o $@
+	$(NACL_GCC_NEWLIB64) -O0 -m64 $(CFLAGS) $^  -static -lstdc++ -lm -o $@
 	@$(call LOG_ZIP_SIZE,$@,$(IT))
 
 # nacl optimized x86-64 gcc
 $(IT).nacl.opt.x8664: $(SRC) $(CPPSRC)
-	$(NACL_GCC_NEWLIB64) -O3 -m64 $(CFLAGS) $^  -static -lstdc++ -lm \
-		-lnosys -o $@
+	$(NACL_GCC_NEWLIB64) -O3 -m64 $(CFLAGS) $^  -static -lstdc++ -lm -o $@
 	@$(call LOG_ZIP_SIZE,$@,$(IT))
 
 # nacl x86-64 gcc, dynamic
 $(IT).nacl.dyn.x8664: $(SRC) $(CPPSRC)
-	$(NACL_GCC) -O0 -m64 $(CFLAGS) -fPIC -g $^ -lstdc++ -lm  -lnosys -o $@
+	$(NACL_GCC) -O0 -m64 $(CFLAGS) -fPIC -g $^ -lstdc++ -lm -o $@
 	@$(call LOG_ZIP_SIZE,$@,$(IT))
 
 # nacl optimized x86-64 gcc, dynamic
 $(IT).nacl.dyn.opt.x8664: $(SRC) $(CPPSRC)
-	$(NACL_GCC) -O3 -m64 $(CFLAGS) -fPIC -g $^ -lstdc++ -lm  -lnosys -o $@
+	$(NACL_GCC) -O3 -m64 $(CFLAGS) -fPIC -g $^ -lstdc++ -lm -o $@
 	@$(call LOG_ZIP_SIZE,$@,$(IT))
 
 ######################################################################
@@ -230,6 +287,7 @@ EXTRA_TRANSLATOR_FLAGS=-sfi-zero-based-sandbox
 else
 EXTRA_TRANSLATOR_FLAGS=
 endif
+
 PNACL_TRANSLATOR_FLAGS_FAST=-translate-fast
 
 PNACL_BIN=$(PNACL_ROOT)/bin
@@ -244,15 +302,10 @@ PNACL_TRANSLATOR_SB_EMU=$(PNACL_TRANSLATOR_SB) --pnacl-use-emulator \
   $(EXTRA_TRANSLATOR_FLAGS)
 PNACL_CC=$(PNACL_BIN)/pnacl-clang
 PNACL_CXX=$(PNACL_BIN)/pnacl-clang++
-PNACL_STRIP=$(PNACL_BIN)/pnacl-strip
+PNACL_FINALIZE=$(PNACL_BIN)/pnacl-finalize
 PNACL_FLAGS=--pnacl-driver-verbose
 
 PNACL_FLAGS_COMMON=$(PNACL_FLAGS) $(CFLAGS)
-ifeq ($(PNACL_LIBMODE), newlib)
-  PNACL_EXTRA_LIB=-lnosys
-else
-  PNACL_EXTRA_LIB=
-endif
 
 %.bc: %.c
 	$(PNACL_CC) -O0 $(PNACL_FLAGS_COMMON) $< -c -o $@
@@ -265,21 +318,19 @@ endif
 	$(PNACL_CXX) -O3 $(PNACL_FLAGS_COMMON) $< -c -o $@
 
 $(IT).unopt.pexe: $(SRC:%.c=%.bc) $(CPPSRC:%.cc=%.bc)
-	$(PNACL_CXX) -O0  $(PNACL_FLAGS_COMMON) $^ \
-	-static -lm $(PNACL_EXTRA_LIB)  -o $@
+	$(PNACL_CXX) -O0  $(PNACL_FLAGS_COMMON) $^ -static -lm -o $@
 	@$(call LOG_ZIP_SIZE,$@,$(IT))
 
 $(IT).unopt.stripped.pexe: $(IT).unopt.pexe
-	$(PNACL_STRIP) $^ -o $@
+	$(PNACL_FINALIZE) $^ -o $@
 	@$(call LOG_ZIP_SIZE,$@,$(IT))
 
 $(IT).opt.pexe: $(SRC:%.c=%.o3.bc) $(CPPSRC:%.cc=%.o3.bc)
-	$(PNACL_CXX) -O3 $(PNACL_FLAGS_COMMON) $^ -static -lm \
-	$(PNACL_EXTRA_LIB) -o $@
+	$(PNACL_CXX) -O3 $(PNACL_FLAGS_COMMON) $^ -static -lm -o $@
 	@$(call LOG_ZIP_SIZE,$@,$(IT))
 
 $(IT).opt.stripped.pexe: $(IT).opt.pexe
-	$(PNACL_STRIP) $^ -o $@
+	$(PNACL_FINALIZE) $^ -o $@
 	@$(call LOG_ZIP_SIZE,$@,$(IT))
 
 ######################################################################
@@ -302,8 +353,8 @@ $(IT).pnacl_translator.opt.arm: $(IT).opt.stripped.pexe
 	@$(call LOG_TIME_AND_SIZE,$@,$(IT))
 
 $(IT).pnacl_translator_fast.opt.arm: $(IT).opt.stripped.pexe
-	$(PNACL_TRANSLATOR_SB_EMU) $(PNACL_FLAGS) ${PNACL_TRANSLATOR_FLAGS_FAST} \
-	  $^ -o $@ -arch arm
+	$(PNACL_TRANSLATOR_SB_EMU) $(PNACL_FLAGS) \
+	  $(PNACL_TRANSLATOR_FLAGS_FAST) $^ -o $@ -arch arm
 	@$(call LOG_TIME_AND_SIZE,$@,$(IT))
 
 
@@ -323,13 +374,25 @@ $(IT).pnacl_translator.opt.hw.arm:
 
 $(IT).pnacl_translator_fast.opt.hw.arm:
 	$(PNACL_TRANSLATOR_SB) $(PNACL_FLAGS) $(IT).opt.stripped.pexe \
-	 ${PNACL_TRANSLATOR_FLAGS_FAST} -o $@ -arch arm
+	 $(PNACL_TRANSLATOR_FLAGS_FAST) -o $@ -arch arm
+	@$(call LOG_TIME_AND_SIZE,$@,$(IT))
+
+$(IT).pnacl_translator_1thread.opt.hw.arm:
+	$(PNACL_TRANSLATOR_SB) $(PNACL_FLAGS) $(IT).opt.stripped.pexe \
+	 -o $@ -arch arm -split-module=1
+	@$(call LOG_TIME_AND_SIZE,$@,$(IT))
+
+$(IT).pnacl_translator_fast_1thread.opt.hw.arm:
+	$(PNACL_TRANSLATOR_SB) $(PNACL_FLAGS) $(IT).opt.stripped.pexe \
+	 $(PNACL_TRANSLATOR_FLAGS_FAST) -o $@ -arch arm -split-module=1
 	@$(call LOG_TIME_AND_SIZE,$@,$(IT))
 
 
 .PHONY: $(IT).pnacl_translator.hw.arm
 .PHONY: $(IT).pnacl_translator.opt.hw.arm
 .PHONY: $(IT).pnacl_translator_fast.opt.hw.arm
+.PHONY: $(IT).pnacl_translator_1thread.opt.hw.arm
+.PHONY: $(IT).pnacl_translator_fast_1thread.opt.hw.arm
 
 ######################################################################
 # BITCODE - BACKEND - X8632 (sandboxed and non-sandboxed translators)
@@ -351,8 +414,18 @@ $(IT).pnacl_translator.opt.x8632: $(IT).opt.stripped.pexe
 	@$(call LOG_TIME_AND_SIZE,$@,$(IT))
 
 $(IT).pnacl_translator_fast.opt.x8632: $(IT).opt.stripped.pexe
-	$(PNACL_TRANSLATOR_SB) $(PNACL_FLAGS) ${PNACL_TRANSLATOR_FLAGS_FAST} \
+	$(PNACL_TRANSLATOR_SB) $(PNACL_FLAGS) $(PNACL_TRANSLATOR_FLAGS_FAST) \
 	  $^ -o $@ -arch x86-32
+	@$(call LOG_TIME_AND_SIZE,$@,$(IT))
+
+$(IT).pnacl_translator_1thread.opt.x8632: $(IT).opt.stripped.pexe
+	$(PNACL_TRANSLATOR_SB) $(PNACL_FLAGS) $^ -o $@ -arch x86-32 \
+	  -split-module=1
+	@$(call LOG_TIME_AND_SIZE,$@,$(IT))
+
+$(IT).pnacl_translator_fast_1thread.opt.x8632: $(IT).opt.stripped.pexe
+	$(PNACL_TRANSLATOR_SB) $(PNACL_FLAGS) $(PNACL_TRANSLATOR_FLAGS_FAST) \
+	  $^ -o $@ -arch x86-32 -split-module=1
 	@$(call LOG_TIME_AND_SIZE,$@,$(IT))
 
 
@@ -376,6 +449,16 @@ $(IT).pnacl_translator.opt.x8664: $(IT).opt.stripped.pexe
 	@$(call LOG_TIME_AND_SIZE,$@,$(IT))
 
 $(IT).pnacl_translator_fast.opt.x8664: $(IT).opt.stripped.pexe
-	$(PNACL_TRANSLATOR_SB) $(PNACL_FLAGS) ${PNACL_TRANSLATOR_FLAGS_FAST} \
+	$(PNACL_TRANSLATOR_SB) $(PNACL_FLAGS) $(PNACL_TRANSLATOR_FLAGS_FAST) \
 	  $^ -o $@ -arch x86-64
+	@$(call LOG_TIME_AND_SIZE,$@,$(IT))
+
+$(IT).pnacl_translator_1thread.opt.x8664: $(IT).opt.stripped.pexe
+	$(PNACL_TRANSLATOR_SB) $(PNACL_FLAGS) $^ -o $@ -arch x86-64 \
+	  -split-module=1
+	@$(call LOG_TIME_AND_SIZE,$@,$(IT))
+
+$(IT).pnacl_translator_fast_1thread.opt.x8664: $(IT).opt.stripped.pexe
+	$(PNACL_TRANSLATOR_SB) $(PNACL_FLAGS) $(PNACL_TRANSLATOR_FLAGS_FAST) \
+	  $^ -o $@ -arch x86-64 -split-module=1
 	@$(call LOG_TIME_AND_SIZE,$@,$(IT))

@@ -8,24 +8,46 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
+#include "content/child/blink_platform_impl.h"
 #include "content/common/content_export.h"
-#include "content/common/webkitplatformsupport_impl.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSharedWorkerRepository.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebGraphicsContext3D.h"
+#include "content/renderer/webpublicsuffixlist_impl.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebIDBFactory.h"
+#include "third_party/WebKit/public/platform/WebScreenOrientationType.h"
+#include "webkit/renderer/compositor_bindings/web_compositor_support_impl.h"
 
-namespace webkit_glue {
-class WebClipboardImpl;
+namespace base {
+class MessageLoopProxy;
+}
+
+namespace cc {
+class ContextProvider;
+}
+
+namespace IPC {
+class SyncMessageFilter;
+}
+
+namespace blink {
+class WebDeviceMotionData;
+class WebDeviceOrientationData;
+class WebGraphicsContext3DProvider;
+class WebScreenOrientationListener;
 }
 
 namespace content {
-class GamepadSharedMemoryReader;
-class Hyphenator;
+class DeviceMotionEventPump;
+class DeviceOrientationEventPump;
+class QuotaMessageFilter;
 class RendererClipboardClient;
+class ScreenOrientationDispatcher;
+class ThreadSafeSender;
+class WebClipboardImpl;
+class WebDatabaseObserverImpl;
 class WebFileSystemImpl;
-class WebSharedWorkerRepositoryImpl;
 
 class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
-    : public WebKitPlatformSupportImpl {
+    : public BlinkPlatformImpl {
  public:
   RendererWebKitPlatformSupportImpl();
   virtual ~RendererWebKitPlatformSupportImpl();
@@ -33,62 +55,100 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   void set_plugin_refresh_allowed(bool plugin_refresh_allowed) {
     plugin_refresh_allowed_ = plugin_refresh_allowed;
   }
-  // WebKitPlatformSupport methods:
-  virtual WebKit::WebClipboard* clipboard() OVERRIDE;
-  virtual WebKit::WebMimeRegistry* mimeRegistry() OVERRIDE;
-  virtual WebKit::WebFileUtilities* fileUtilities() OVERRIDE;
-  virtual WebKit::WebSandboxSupport* sandboxSupport() OVERRIDE;
-  virtual WebKit::WebCookieJar* cookieJar() OVERRIDE;
-  virtual bool sandboxEnabled() OVERRIDE;
+  // Platform methods:
+  virtual blink::WebClipboard* clipboard();
+  virtual blink::WebMimeRegistry* mimeRegistry();
+  virtual blink::WebFileUtilities* fileUtilities();
+  virtual blink::WebSandboxSupport* sandboxSupport();
+  virtual blink::WebCookieJar* cookieJar();
+  virtual blink::WebThemeEngine* themeEngine();
+  virtual blink::WebSpeechSynthesizer* createSpeechSynthesizer(
+      blink::WebSpeechSynthesizerClient* client);
+  virtual bool sandboxEnabled();
   virtual unsigned long long visitedLinkHash(
-      const char* canonicalURL, size_t length) OVERRIDE;
-  virtual bool isLinkVisited(unsigned long long linkHash) OVERRIDE;
-  virtual WebKit::WebMessagePortChannel* createMessagePortChannel() OVERRIDE;
-  virtual void prefetchHostName(const WebKit::WebString&) OVERRIDE;
+      const char* canonicalURL, size_t length);
+  virtual bool isLinkVisited(unsigned long long linkHash);
+  virtual void createMessageChannel(blink::WebMessagePortChannel** channel1,
+                                    blink::WebMessagePortChannel** channel2);
+  virtual blink::WebPrescientNetworking* prescientNetworking();
   virtual void cacheMetadata(
-      const WebKit::WebURL&, double, const char*, size_t) OVERRIDE;
-  virtual WebKit::WebString defaultLocale() OVERRIDE;
-  virtual void suddenTerminationChanged(bool enabled) OVERRIDE;
-  virtual WebKit::WebStorageNamespace* createLocalStorageNamespace(
-      const WebKit::WebString& path, unsigned quota) OVERRIDE;
-  virtual WebKit::WebKitPlatformSupport::FileHandle databaseOpenFile(
-      const WebKit::WebString& vfs_file_name, int desired_flags) OVERRIDE;
-  virtual int databaseDeleteFile(const WebKit::WebString& vfs_file_name,
-                                 bool sync_dir) OVERRIDE;
+      const blink::WebURL&, double, const char*, size_t);
+  virtual blink::WebString defaultLocale();
+  virtual void suddenTerminationChanged(bool enabled);
+  virtual blink::WebStorageNamespace* createLocalStorageNamespace();
+  virtual blink::Platform::FileHandle databaseOpenFile(
+      const blink::WebString& vfs_file_name, int desired_flags);
+  virtual int databaseDeleteFile(const blink::WebString& vfs_file_name,
+                                 bool sync_dir);
   virtual long databaseGetFileAttributes(
-      const WebKit::WebString& vfs_file_name) OVERRIDE;
+      const blink::WebString& vfs_file_name);
   virtual long long databaseGetFileSize(
-      const WebKit::WebString& vfs_file_name) OVERRIDE;
+      const blink::WebString& vfs_file_name);
   virtual long long databaseGetSpaceAvailableForOrigin(
-      const WebKit::WebString& origin_identifier) OVERRIDE;
-  virtual WebKit::WebString signedPublicKeyAndChallengeString(
+      const blink::WebString& origin_identifier);
+  virtual blink::WebString signedPublicKeyAndChallengeString(
       unsigned key_size_index,
-      const WebKit::WebString& challenge,
-      const WebKit::WebURL& url) OVERRIDE;
-  virtual void screenColorProfile(WebKit::WebVector<char>* to_profile) OVERRIDE;
-  virtual WebKit::WebIDBFactory* idbFactory() OVERRIDE;
-  virtual WebKit::WebFileSystem* fileSystem() OVERRIDE;
-  virtual WebKit::WebSharedWorkerRepository* sharedWorkerRepository() OVERRIDE;
+      const blink::WebString& challenge,
+      const blink::WebURL& url);
+  virtual void getPluginList(bool refresh,
+                             blink::WebPluginListBuilder* builder);
+  virtual blink::WebPublicSuffixList* publicSuffixList();
+  virtual void screenColorProfile(blink::WebVector<char>* to_profile);
+  virtual blink::WebScrollbarBehavior* scrollbarBehavior();
+  virtual blink::WebIDBFactory* idbFactory();
+  virtual blink::WebFileSystem* fileSystem();
   virtual bool canAccelerate2dCanvas();
-  virtual double audioHardwareSampleRate() OVERRIDE;
-  virtual size_t audioHardwareBufferSize() OVERRIDE;
-  virtual WebKit::WebAudioDevice* createAudioDevice(
-      size_t buffer_size, unsigned channels, double sample_rate,
-      WebKit::WebAudioDevice::RenderCallback* callback) OVERRIDE;
-  virtual WebKit::WebBlobRegistry* blobRegistry() OVERRIDE;
-  virtual void sampleGamepads(WebKit::WebGamepads&) OVERRIDE;
-  virtual WebKit::WebString userAgent(const WebKit::WebURL& url) OVERRIDE;
-  virtual void GetPlugins(bool refresh,
-                          std::vector<webkit::WebPluginInfo>* plugins) OVERRIDE;
-  virtual WebKit::WebRTCPeerConnectionHandler* createRTCPeerConnectionHandler(
-      WebKit::WebRTCPeerConnectionHandlerClient* client) OVERRIDE;
-  virtual WebKit::WebMediaStreamCenter* createMediaStreamCenter(
-      WebKit::WebMediaStreamCenterClient* client) OVERRIDE;
-  virtual bool canHyphenate(const WebKit::WebString& locale) OVERRIDE;
-  virtual size_t computeLastHyphenLocation(const char16* characters,
-      size_t length,
-      size_t before_index,
-      const WebKit::WebString& locale) OVERRIDE;
+  virtual bool isThreadedCompositingEnabled();
+  virtual double audioHardwareSampleRate();
+  virtual size_t audioHardwareBufferSize();
+  virtual unsigned audioHardwareOutputChannels();
+  virtual blink::WebDatabaseObserver* databaseObserver();
+
+  virtual blink::WebAudioDevice* createAudioDevice(
+      size_t buffer_size, unsigned input_channels, unsigned channels,
+      double sample_rate, blink::WebAudioDevice::RenderCallback* callback,
+      const blink::WebString& input_device_id);
+
+  virtual bool loadAudioResource(
+      blink::WebAudioBus* destination_bus, const char* audio_file_data,
+      size_t data_size);
+
+  virtual blink::WebMIDIAccessor*
+      createMIDIAccessor(blink::WebMIDIAccessorClient* client);
+
+  virtual blink::WebBlobRegistry* blobRegistry();
+  virtual void sampleGamepads(blink::WebGamepads&) OVERRIDE;
+  virtual void setGamepadListener(blink::WebGamepadListener*) OVERRIDE;
+  virtual blink::WebRTCPeerConnectionHandler* createRTCPeerConnectionHandler(
+      blink::WebRTCPeerConnectionHandlerClient* client);
+  virtual blink::WebMediaStreamCenter* createMediaStreamCenter(
+      blink::WebMediaStreamCenterClient* client);
+  virtual bool processMemorySizesInBytes(
+      size_t* private_bytes, size_t* shared_bytes);
+  virtual blink::WebGraphicsContext3D* createOffscreenGraphicsContext3D(
+      const blink::WebGraphicsContext3D::Attributes& attributes);
+  virtual blink::WebGraphicsContext3D* createOffscreenGraphicsContext3D(
+      const blink::WebGraphicsContext3D::Attributes& attributes,
+      blink::WebGraphicsContext3D* share_context);
+  virtual blink::WebGraphicsContext3DProvider*
+      createSharedOffscreenGraphicsContext3DProvider();
+  virtual blink::WebCompositorSupport* compositorSupport();
+  virtual blink::WebString convertIDNToUnicode(
+      const blink::WebString& host, const blink::WebString& languages);
+  virtual void setDeviceMotionListener(
+      blink::WebDeviceMotionListener* listener) OVERRIDE;
+  virtual void setDeviceOrientationListener(
+      blink::WebDeviceOrientationListener* listener) OVERRIDE;
+  virtual void queryStorageUsageAndQuota(
+      const blink::WebURL& storage_partition,
+      blink::WebStorageQuotaType,
+      blink::WebStorageQuotaCallbacks) OVERRIDE;
+  virtual void vibrate(unsigned int milliseconds);
+  virtual void cancelVibration();
+  virtual void setScreenOrientationListener(
+    blink::WebScreenOrientationListener*) OVERRIDE;
+  virtual void lockOrientation(blink::WebScreenOrientationLockType) OVERRIDE;
+  virtual void unlockOrientation() OVERRIDE;
 
   // Disables the WebSandboxSupport implementation for testing.
   // Tests that do not set up a full sandbox environment should call
@@ -100,16 +160,36 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   static bool SetSandboxEnabledForTesting(bool enable);
 
   // Set WebGamepads to return when sampleGamepads() is invoked.
-  static void SetMockGamepadsForTesting(const WebKit::WebGamepads& pads);
+  static void SetMockGamepadsForTesting(const blink::WebGamepads& pads);
 
- protected:
-  virtual GpuChannelHostFactory* GetGpuChannelHostFactory() OVERRIDE;
+  // Notifies blink::WebGamepadListener about a new gamepad if a listener
+  // has been set via setGamepadListener.
+  static void MockGamepadConnected(int index, const blink::WebGamepad& pad);
+
+  // Notifies blink::WebGamepadListener that a gamepad has been disconnected if
+  // a listener has been set via setGamepadListener.
+  static void MockGamepadDisconnected(int index, const blink::WebGamepad& pad);
+
+  // Set WebDeviceMotionData to return when setDeviceMotionListener is invoked.
+  static void SetMockDeviceMotionDataForTesting(
+      const blink::WebDeviceMotionData& data);
+  // Set WebDeviceOrientationData to return when setDeviceOrientationListener
+  // is invoked.
+  static void SetMockDeviceOrientationDataForTesting(
+      const blink::WebDeviceOrientationData& data);
+  // Forces the screen orientation for testing purposes.
+  static void SetMockScreenOrientationForTesting(
+      blink::WebScreenOrientationType);
+
+  WebDatabaseObserverImpl* web_database_observer_impl() {
+    return web_database_observer_impl_.get();
+  }
 
  private:
   bool CheckPreparsedJsCachingEnabled() const;
 
   scoped_ptr<RendererClipboardClient> clipboard_client_;
-  scoped_ptr<webkit_glue::WebClipboardImpl> clipboard_;
+  scoped_ptr<WebClipboardImpl> clipboard_;
 
   class FileUtilities;
   scoped_ptr<FileUtilities> file_utilities_;
@@ -129,19 +209,29 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   // If true, then a GetPlugins call is allowed to rescan the disk.
   bool plugin_refresh_allowed_;
 
-  // Implementation of the WebSharedWorkerRepository APIs (provides an interface
-  // to WorkerService on the browser thread.
-  scoped_ptr<WebSharedWorkerRepositoryImpl> shared_worker_repository_;
+  scoped_ptr<blink::WebIDBFactory> web_idb_factory_;
 
-  scoped_ptr<WebKit::WebIDBFactory> web_idb_factory_;
+  scoped_ptr<blink::WebBlobRegistry> blob_registry_;
 
-  scoped_ptr<WebFileSystemImpl> web_file_system_;
+  WebPublicSuffixListImpl public_suffix_list_;
 
-  scoped_ptr<WebKit::WebBlobRegistry> blob_registry_;
+  scoped_ptr<DeviceMotionEventPump> device_motion_event_pump_;
+  scoped_ptr<DeviceOrientationEventPump> device_orientation_event_pump_;
 
-  scoped_ptr<GamepadSharedMemoryReader> gamepad_shared_memory_reader_;
+  scoped_refptr<base::MessageLoopProxy> child_thread_loop_;
+  scoped_refptr<IPC::SyncMessageFilter> sync_message_filter_;
+  scoped_refptr<ThreadSafeSender> thread_safe_sender_;
+  scoped_refptr<QuotaMessageFilter> quota_message_filter_;
 
-  scoped_ptr<content::Hyphenator> hyphenator_;
+  scoped_ptr<WebDatabaseObserverImpl> web_database_observer_impl_;
+
+  webkit::WebCompositorSupportImpl compositor_support_;
+
+  scoped_ptr<ScreenOrientationDispatcher> screen_orientation_dispatcher_;
+
+  scoped_ptr<blink::WebScrollbarBehavior> web_scrollbar_behavior_;
+
+  DISALLOW_COPY_AND_ASSIGN(RendererWebKitPlatformSupportImpl);
 };
 
 }  // namespace content

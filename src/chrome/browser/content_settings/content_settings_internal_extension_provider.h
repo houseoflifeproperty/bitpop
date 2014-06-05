@@ -40,7 +40,7 @@ class InternalExtensionProvider : public ObservableProvider,
       const ContentSettingsPattern& secondary_pattern,
       ContentSettingsType content_type,
       const ResourceIdentifier& resource_identifier,
-      Value* value) OVERRIDE;
+      base::Value* value) OVERRIDE;
 
   virtual void ClearAllContentSettingsRules(ContentSettingsType content_type)
       OVERRIDE;
@@ -54,6 +54,10 @@ class InternalExtensionProvider : public ObservableProvider,
  private:
   void SetContentSettingForExtension(const extensions::Extension* extension,
                                      ContentSetting setting);
+  void SetContentSettingForExtensionAndResource(
+      const extensions::Extension* extension,
+      const ResourceIdentifier& resource,
+      ContentSetting setting);
 
   OriginIdentifierValueMap value_map_;
 

@@ -8,10 +8,13 @@
 #include "base/callback_forward.h"
 #include "base/compiler_specific.h"
 #include "net/socket/socket.h"
+#include "third_party/libjingle/source/talk/base/asyncpacketsocket.h"
 #include "third_party/libjingle/source/talk/base/socketaddress.h"
 #include "third_party/libjingle/source/talk/base/sigslot.h"
 
+namespace base {
 class MessageLoop;
+}
 
 namespace cricket {
 class TransportChannel;
@@ -45,18 +48,19 @@ class TransportChannelSocketAdapter : public net::Socket,
   virtual int Write(net::IOBuffer* buf, int buf_len,
                     const net::CompletionCallback& callback) OVERRIDE;
 
-  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual bool SetSendBufferSize(int32 size) OVERRIDE;
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
+  virtual int SetSendBufferSize(int32 size) OVERRIDE;
 
  private:
   void OnNewPacket(cricket::TransportChannel* channel,
                    const char* data,
                    size_t data_size,
+                   const talk_base::PacketTime& packet_time,
                    int flags);
   void OnWritableState(cricket::TransportChannel* channel);
   void OnChannelDestroyed(cricket::TransportChannel* channel);
 
-  MessageLoop* message_loop_;
+  base::MessageLoop* message_loop_;
 
   cricket::TransportChannel* channel_;
 

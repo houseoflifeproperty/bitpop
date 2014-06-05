@@ -18,29 +18,23 @@ class ASH_EXPORT DefaultWindowResizer : public WindowResizer {
   virtual ~DefaultWindowResizer();
 
   // Creates a new DefaultWindowResizer. The caller takes ownership of the
-  // returned object. Returns NULL if not resizable.
-  static DefaultWindowResizer* Create(aura::Window* window,
-                                      const gfx::Point& location,
-                                      int window_component);
+  // returned object.
+  static DefaultWindowResizer* Create(wm::WindowState* window_state);
 
   // Returns true if the drag will result in changing the window in anyway.
-  bool is_resizable() const { return details_.is_resizable; }
+  bool is_resizable() const { return details().is_resizable; }
 
   bool changed_size() const {
-    return !(details_.bounds_change & kBoundsChange_Repositions);
+    return !(details().bounds_change & kBoundsChange_Repositions);
   }
-  aura::Window* target_window() const { return details_.window; }
 
-  // WindowResizer overides:
+  // WindowResizer:
   virtual void Drag(const gfx::Point& location, int event_flags) OVERRIDE;
-  virtual void CompleteDrag(int event_flags) OVERRIDE;
+  virtual void CompleteDrag() OVERRIDE;
   virtual void RevertDrag() OVERRIDE;
-  virtual aura::Window* GetTarget() OVERRIDE;
 
  private:
-  explicit DefaultWindowResizer(const Details& details);
-
-  const Details details_;
+  explicit DefaultWindowResizer(wm::WindowState* window_state);
 
   // Set to true once Drag() is invoked and the bounds of the window change.
   bool did_move_or_resize_;

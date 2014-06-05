@@ -9,6 +9,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/posix/eintr_wrapper.h"
 
@@ -23,7 +24,7 @@ class MultiProcessLockLinux : public MultiProcessLock {
     }
   }
 
-  virtual bool TryLock() {
+  virtual bool TryLock() OVERRIDE {
     struct sockaddr_un address;
 
     // +1 for terminator, +1 for 0 in position 0 that makes it an
@@ -77,19 +78,19 @@ class MultiProcessLockLinux : public MultiProcessLock {
       DVLOG(1) << "Couldn't bind socket - "
                << &(address.sun_path[1])
                << " Length: " << length;
-      if (HANDLE_EINTR(close(socket_fd)) < 0) {
+      if (IGNORE_EINTR(close(socket_fd)) < 0) {
         PLOG(ERROR) << "close";
       }
       return false;
     }
   }
 
-  virtual void Unlock() {
+  virtual void Unlock() OVERRIDE {
     if (fd_ == -1) {
       DLOG(ERROR) << "Over-unlocked MultiProcessLock - " << name_;
       return;
     }
-    if (HANDLE_EINTR(close(fd_)) < 0) {
+    if (IGNORE_EINTR(close(fd_)) < 0) {
       DPLOG(ERROR) << "close";
     }
     fd_ = -1;

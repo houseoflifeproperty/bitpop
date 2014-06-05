@@ -10,10 +10,10 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
-#include "googleurl/src/gurl.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "url/gurl.h"
 
 class GURL;
 
@@ -88,12 +88,19 @@ void SetTitle(int profile,
                      const BookmarkNode* node,
                      const std::wstring& new_title);
 
+// The source of the favicon.
+enum FaviconSource {
+  FROM_UI,
+  FROM_SYNC
+};
+
 // Sets the |icon_url| and |image| data for the favicon for |node| in the
 // bookmark model for |profile|.
 void SetFavicon(int profile,
                 const BookmarkNode* node,
                 const GURL& icon_url,
-                const gfx::Image& image);
+                const gfx::Image& image,
+                FaviconSource source);
 
 // Changes the url of the node |node| in the bookmark model of profile
 // |profile| to |new_url|. Returns a pointer to the node with the changed url.
@@ -113,6 +120,9 @@ void Move(
 // Removes the node in the bookmark model of profile |profile| under the node
 // |parent| at position |index|.
 void Remove(int profile, const BookmarkNode* parent, int index);
+
+// Removes all non-permanent nodes in the bookmark model of profile |profile|.
+void RemoveAll(int profile);
 
 // Sorts the children of the node |parent| in the bookmark model of profile
 // |profile|.
@@ -138,6 +148,11 @@ bool ModelsMatch(int profile_a, int profile_b) WARN_UNUSED_RESULT;
 // not compare them with the verifier bookmark model. Returns true if they
 // match.
 bool AllModelsMatch() WARN_UNUSED_RESULT;
+
+// Check if the bookmarks models of all sync profiles match each other, using
+// AllModelsMatch. Returns true if bookmark models match and don't timeout
+// while checking.
+bool AwaitAllModelsMatch() WARN_UNUSED_RESULT;
 
 // Checks if the bookmark model of profile |profile| contains any instances of
 // two bookmarks with the same URL under the same parent folder. Returns true
@@ -168,6 +183,9 @@ int CountFoldersWithTitlesMatching(
 // Creates a favicon of |color| with image reps of the platform's supported
 // scale factors (eg MacOS) in addition to 1x.
 gfx::Image CreateFavicon(SkColor color);
+
+// Creates a 1x only favicon from the PNG file at |path|.
+gfx::Image Create1xFaviconFromPNGFile(const std::string& path);
 
 // Returns a URL identifiable by |i|.
 std::string IndexedURL(int i);

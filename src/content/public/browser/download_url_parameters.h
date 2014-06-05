@@ -10,10 +10,10 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
+#include "content/public/browser/download_interrupt_reasons.h"
 #include "content/public/browser/download_save_info.h"
 #include "content/public/common/referrer.h"
-#include "googleurl/src/gurl.h"
-#include "net/base/net_errors.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -39,7 +39,8 @@ class WebContents;
 class CONTENT_EXPORT DownloadUrlParameters {
  public:
   // If there is an error, then |item| will be NULL.
-  typedef base::Callback<void(DownloadItem*, net::Error)> OnStartedCallback;
+  typedef base::Callback<void(DownloadItem*, DownloadInterruptReason)>
+      OnStartedCallback;
 
   typedef std::pair<std::string, std::string> RequestHeadersNameValuePair;
   typedef std::vector<RequestHeadersNameValuePair> RequestHeadersType;
@@ -67,6 +68,12 @@ class CONTENT_EXPORT DownloadUrlParameters {
     referrer_encoding_ = referrer_encoding;
   }
   void set_load_flags(int load_flags) { load_flags_ |= load_flags; }
+  void set_last_modified(const std::string& last_modified) {
+    last_modified_ = last_modified;
+  }
+  void set_etag(const std::string& etag) {
+    etag_ = etag;
+  }
   void set_method(const std::string& method) {
     method_ = method;
   }
@@ -80,10 +87,10 @@ class CONTENT_EXPORT DownloadUrlParameters {
   void set_callback(const OnStartedCallback& callback) {
     callback_ = callback;
   }
-  void set_file_path(const FilePath& file_path) {
+  void set_file_path(const base::FilePath& file_path) {
     save_info_.file_path = file_path;
   }
-  void set_suggested_name(const string16& suggested_name) {
+  void set_suggested_name(const base::string16& suggested_name) {
     save_info_.suggested_name = suggested_name;
   }
   void set_offset(int64 offset) { save_info_.offset = offset; }
@@ -91,13 +98,15 @@ class CONTENT_EXPORT DownloadUrlParameters {
     save_info_.hash_state = hash_state;
   }
   void set_prompt(bool prompt) { save_info_.prompt_for_save_location = prompt; }
-  void set_file_stream(scoped_ptr<net::FileStream> file_stream) {
-    save_info_.file_stream = file_stream.Pass();
+  void set_file(base::File file) {
+    save_info_.file = file.Pass();
   }
 
   const OnStartedCallback& callback() const { return callback_; }
   bool content_initiated() const { return content_initiated_; }
   int load_flags() const { return load_flags_; }
+  const std::string& last_modified() const { return last_modified_; }
+  const std::string& etag() const { return etag_; }
   const std::string& method() const { return method_; }
   const std::string& post_body() const { return post_body_; }
   int64 post_id() const { return post_id_; }
@@ -117,27 +126,26 @@ class CONTENT_EXPORT DownloadUrlParameters {
   content::ResourceContext* resource_context() const {
     return resource_context_;
   }
-  ResourceDispatcherHost* resource_dispatcher_host() const {
-    return resource_dispatcher_host_;
+  const base::FilePath& file_path() const { return save_info_.file_path; }
+  const base::string16& suggested_name() const {
+    return save_info_.suggested_name;
   }
-  const FilePath& file_path() const { return save_info_.file_path; }
-  const string16& suggested_name() const { return save_info_.suggested_name; }
   int64 offset() const { return save_info_.offset; }
   const std::string& hash_state() const { return save_info_.hash_state; }
   bool prompt() const { return save_info_.prompt_for_save_location; }
   const GURL& url() const { return url_; }
 
   // Note that this is state changing--the DownloadUrlParameters object
-  // will not have a file_stream attached to it after this call.
-  scoped_ptr<net::FileStream> GetFileStream() {
-    return save_info_.file_stream.Pass();
-  }
+  // will not have a file attached to it after this call.
+  base::File GetFile() { return save_info_.file.Pass(); }
 
  private:
   OnStartedCallback callback_;
   bool content_initiated_;
   RequestHeadersType request_headers_;
   int load_flags_;
+  std::string last_modified_;
+  std::string etag_;
   std::string method_;
   std::string post_body_;
   int64 post_id_;
@@ -147,7 +155,6 @@ class CONTENT_EXPORT DownloadUrlParameters {
   int render_process_host_id_;
   int render_view_host_routing_id_;
   ResourceContext* resource_context_;
-  ResourceDispatcherHost* resource_dispatcher_host_;
   DownloadSaveInfo save_info_;
   GURL url_;
 

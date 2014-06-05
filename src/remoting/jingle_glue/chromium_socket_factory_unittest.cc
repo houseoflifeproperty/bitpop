@@ -4,7 +4,7 @@
 
 #include "remoting/jingle_glue/chromium_socket_factory.h"
 
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -29,7 +29,8 @@ class ChromiumSocketFactoryTest : public testing::Test,
 
   void OnPacket(talk_base::AsyncPacketSocket* socket,
                 const char* data, size_t size,
-                const talk_base::SocketAddress& address) {
+                const talk_base::SocketAddress& address,
+                const talk_base::PacketTime& packet_time) {
     EXPECT_EQ(socket, socket_.get());
     last_packet_.assign(data, data + size);
     last_address_ = address;
@@ -37,7 +38,7 @@ class ChromiumSocketFactoryTest : public testing::Test,
   }
 
  protected:
-  MessageLoopForIO message_loop_;
+  base::MessageLoopForIO message_loop_;
   base::RunLoop run_loop_;
 
   scoped_ptr<talk_base::PacketSocketFactory> socket_factory_;
@@ -64,9 +65,10 @@ TEST_F(ChromiumSocketFactoryTest, SendAndReceive) {
 
   std::string test_packet("TEST PACKET");
   int attempts = 0;
+  talk_base::PacketOptions options;
   while (last_packet_.empty() && attempts++ < kMaxAttempts) {
     sending_socket->SendTo(test_packet.data(), test_packet.size(),
-                           socket_->GetLocalAddress());
+                           socket_->GetLocalAddress(), options);
     message_loop_.PostDelayedTask(FROM_HERE, run_loop_.QuitClosure(),
                                   kAttemptPeriod);
     run_loop_.Run();

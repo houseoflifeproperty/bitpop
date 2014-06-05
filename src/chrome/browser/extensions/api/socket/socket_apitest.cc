@@ -3,20 +3,20 @@
 // found in the LICENSE file.
 
 #include "base/memory/ref_counted.h"
-#include "base/stringprintf.h"
-#include "chrome/browser/extensions/api/dns/host_resolver_wrapper.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/extensions/api/dns/mock_host_resolver_creator.h"
-#include "chrome/browser/extensions/api/socket/socket_api.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/common/chrome_switches.h"
+#include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "net/base/mock_host_resolver.h"
-#include "net/test/test_server.h"
+#include "extensions/browser/api/dns/host_resolver_wrapper.h"
+#include "extensions/browser/api/socket/socket_api.h"
+#include "net/dns/mock_host_resolver.h"
+#include "net/test/spawned_test_server/spawned_test_server.h"
 
 using extensions::Extension;
 
@@ -34,20 +34,12 @@ class SocketApiTest : public ExtensionApiTest {
                         new extensions::MockHostResolverCreator()) {
   }
 
-  // We need this while the socket.{listen,accept} methods require the
-  // enable-experimental-extension-apis flag. After that we should remove it,
-  // as well as the "experimental" permission in the test apps' manifests.
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    ExtensionApiTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(switches::kEnableExperimentalExtensionApis);
-  }
-
-  void SetUpOnMainThread() OVERRIDE {
+  virtual void SetUpOnMainThread() OVERRIDE {
     extensions::HostResolverWrapper::GetInstance()->SetHostResolverForTesting(
         resolver_creator_->CreateMockHostResolver());
   }
 
-  void CleanUpOnMainThread() OVERRIDE {
+  virtual void CleanUpOnMainThread() OVERRIDE {
     extensions::HostResolverWrapper::GetInstance()->
         SetHostResolverForTesting(NULL);
     resolver_creator_->DeleteMockHostResolver();
@@ -73,14 +65,13 @@ IN_PROC_BROWSER_TEST_F(SocketApiTest, SocketUDPCreateGood) {
   socket_create_function->set_has_callback(true);
 
   scoped_ptr<base::Value> result(utils::RunFunctionAndReturnSingleResult(
-      socket_create_function,
-      "[\"udp\"]",
-      browser(), utils::NONE));
+      socket_create_function.get(), "[\"udp\"]", browser(), utils::NONE));
   ASSERT_EQ(base::Value::TYPE_DICTIONARY, result->GetType());
-  DictionaryValue *value = static_cast<DictionaryValue*>(result.get());
-  int socketId = -1;
-  EXPECT_TRUE(value->GetInteger("socketId", &socketId));
-  EXPECT_TRUE(socketId > 0);
+  base::DictionaryValue *value =
+      static_cast<base::DictionaryValue*>(result.get());
+  int socket_id = -1;
+  EXPECT_TRUE(value->GetInteger("socketId", &socket_id));
+  EXPECT_GT(socket_id, 0);
 }
 
 IN_PROC_BROWSER_TEST_F(SocketApiTest, SocketTCPCreateGood) {
@@ -92,14 +83,13 @@ IN_PROC_BROWSER_TEST_F(SocketApiTest, SocketTCPCreateGood) {
   socket_create_function->set_has_callback(true);
 
   scoped_ptr<base::Value> result(utils::RunFunctionAndReturnSingleResult(
-      socket_create_function,
-      "[\"tcp\"]",
-      browser(), utils::NONE));
+      socket_create_function.get(), "[\"tcp\"]", browser(), utils::NONE));
   ASSERT_EQ(base::Value::TYPE_DICTIONARY, result->GetType());
-  DictionaryValue *value = static_cast<DictionaryValue*>(result.get());
-  int socketId = -1;
-  EXPECT_TRUE(value->GetInteger("socketId", &socketId));
-  ASSERT_TRUE(socketId > 0);
+  base::DictionaryValue *value =
+      static_cast<base::DictionaryValue*>(result.get());
+  int socket_id = -1;
+  EXPECT_TRUE(value->GetInteger("socketId", &socket_id));
+  ASSERT_GT(socket_id, 0);
 }
 
 IN_PROC_BROWSER_TEST_F(SocketApiTest, GetNetworkList) {
@@ -111,25 +101,26 @@ IN_PROC_BROWSER_TEST_F(SocketApiTest, GetNetworkList) {
   socket_function->set_has_callback(true);
 
   scoped_ptr<base::Value> result(utils::RunFunctionAndReturnSingleResult(
-      socket_function, "[]", browser(), utils::NONE));
+      socket_function.get(), "[]", browser(), utils::NONE));
   ASSERT_EQ(base::Value::TYPE_LIST, result->GetType());
 
   // If we're invoking socket tests, all we can confirm is that we have at
   // least one address, but not what it is.
-  ListValue *value = static_cast<ListValue*>(result.get());
-  ASSERT_TRUE(value->GetSize() > 0);
+  base::ListValue *value = static_cast<base::ListValue*>(result.get());
+  ASSERT_GT(value->GetSize(), 0U);
 }
 
 IN_PROC_BROWSER_TEST_F(SocketApiTest, SocketUDPExtension) {
-  scoped_ptr<net::TestServer> test_server(
-      new net::TestServer(net::TestServer::TYPE_UDP_ECHO,
-                          net::TestServer::kLocalhost,
-                          FilePath(FILE_PATH_LITERAL("net/data"))));
+  scoped_ptr<net::SpawnedTestServer> test_server(
+      new net::SpawnedTestServer(
+          net::SpawnedTestServer::TYPE_UDP_ECHO,
+          net::SpawnedTestServer::kLocalhost,
+          base::FilePath(FILE_PATH_LITERAL("net/data"))));
   EXPECT_TRUE(test_server->Start());
 
   net::HostPortPair host_port_pair = test_server->host_port_pair();
   int port = host_port_pair.port();
-  ASSERT_TRUE(port > 0);
+  ASSERT_GT(port, 0);
 
   // Test that sendTo() is properly resolving hostnames.
   host_port_pair.set_host("LOCALhost");
@@ -148,15 +139,16 @@ IN_PROC_BROWSER_TEST_F(SocketApiTest, SocketUDPExtension) {
 }
 
 IN_PROC_BROWSER_TEST_F(SocketApiTest, SocketTCPExtension) {
-  scoped_ptr<net::TestServer> test_server(
-      new net::TestServer(net::TestServer::TYPE_TCP_ECHO,
-                          net::TestServer::kLocalhost,
-                          FilePath(FILE_PATH_LITERAL("net/data"))));
+  scoped_ptr<net::SpawnedTestServer> test_server(
+      new net::SpawnedTestServer(
+          net::SpawnedTestServer::TYPE_TCP_ECHO,
+          net::SpawnedTestServer::kLocalhost,
+          base::FilePath(FILE_PATH_LITERAL("net/data"))));
   EXPECT_TRUE(test_server->Start());
 
   net::HostPortPair host_port_pair = test_server->host_port_pair();
   int port = host_port_pair.port();
-  ASSERT_TRUE(port > 0);
+  ASSERT_GT(port, 0);
 
   // Test that connect() is properly resolving hostnames.
   host_port_pair.set_host("lOcAlHoSt");
@@ -187,6 +179,27 @@ IN_PROC_BROWSER_TEST_F(SocketApiTest, SocketTCPServerExtension) {
 }
 
 IN_PROC_BROWSER_TEST_F(SocketApiTest, SocketTCPServerUnbindOnUnload) {
-  ASSERT_TRUE(RunExtensionTest("socket/unload")) << message_;
-  ASSERT_TRUE(RunExtensionTest("socket/unload")) << message_;
+  ResultCatcher catcher;
+  const Extension* extension =
+      LoadExtension(test_data_dir_.AppendASCII("socket/unload"));
+  ASSERT_TRUE(extension);
+  EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
+
+  UnloadExtension(extension->id());
+
+  ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII("socket/unload")))
+      << message_;
+  EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
+}
+
+IN_PROC_BROWSER_TEST_F(SocketApiTest, SocketMulticast) {
+  ResultCatcher catcher;
+  catcher.RestrictToProfile(browser()->profile());
+  ExtensionTestMessageListener listener("info_please", true);
+  ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII("socket/api")));
+  EXPECT_TRUE(listener.WaitUntilSatisfied());
+  listener.Reply(
+      base::StringPrintf("multicast:%s:%d", kHostname.c_str(), kPort));
+
+  EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }

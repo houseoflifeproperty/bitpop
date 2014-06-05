@@ -11,7 +11,7 @@
 #endif
 
 #include "base/logging.h"
-#include "ui/base/animation/tween.h"
+#include "ui/gfx/animation/tween.h"
 
 namespace {
 
@@ -20,10 +20,6 @@ static const double EPSILON = 1e-6;
 bool IsMultipleOfNinetyDegrees(double degrees) {
   double remainder = fabs(fmod(degrees, 90.0));
   return remainder < EPSILON || 90.0 - remainder < EPSILON;
-}
-
-bool IsApproximatelyZero(double value) {
-  return fabs(value) < EPSILON;
 }
 
 // Returns false if |degrees| is not a multiple of ninety degrees or if
@@ -125,7 +121,8 @@ inline float InterpolatedTransform::ValueBetween(float time,
     return end_value;
 
   float t = (time - start_time_) / (end_time_ - start_time_);
-  return static_cast<float>(Tween::ValueBetween(t, start_value, end_value));
+  return static_cast<float>(
+      gfx::Tween::DoubleValueBetween(t, start_value, end_value));
 }
 
 ///////////////////////////////////////////////////////////////////////////////

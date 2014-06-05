@@ -173,7 +173,7 @@ class MockRequest(object):
     """
 
     def __init__(self, uri=None, headers_in={}, connection=None, method='GET',
-                 is_https=False):
+                 protocol='HTTP/1.1', is_https=False):
         """Construct an instance.
 
         Arguments:
@@ -186,8 +186,10 @@ class MockRequest(object):
         See the document of mod_python Request for details.
         """
         self.uri = uri
+        self.unparsed_uri = uri
         self.connection = connection
         self.method = method
+        self.protocol = protocol
         self.headers_in = MockTable(headers_in)
         # self.is_https_ needs to be accessible from tests.  To avoid name
         # conflict with self.is_https(), it is named as such.
@@ -198,14 +200,9 @@ class MockRequest(object):
         self.ws_version = common.VERSION_HYBI00
         self.ws_deflate = False
 
-        self.drain_received_data_called = False
-
     def is_https(self):
         """Return whether this request is over SSL."""
         return self.is_https_
-
-    def _drain_received_data(self):
-        self.drain_received_data_called = True
 
 
 class MockDispatcher(object):

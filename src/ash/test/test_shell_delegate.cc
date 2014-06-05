@@ -4,225 +4,198 @@
 
 #include "ash/test/test_shell_delegate.h"
 
-#include <algorithm>
+#include <limits>
 
-#include "ash/caps_lock_delegate_stub.h"
-#include "ash/host/root_window_host_factory.h"
+#include "ash/default_accessibility_delegate.h"
+#include "ash/gpu_support_stub.h"
+#include "ash/media_delegate.h"
+#include "ash/new_window_delegate.h"
+#include "ash/session/session_state_delegate.h"
 #include "ash/shell.h"
+#include "ash/shell/keyboard_controller_proxy_stub.h"
 #include "ash/shell_window_ids.h"
-#include "ash/test/test_launcher_delegate.h"
-#include "ash/wm/stacking_controller.h"
+#include "ash/test/test_session_state_delegate.h"
+#include "ash/test/test_shelf_delegate.h"
+#include "ash/test/test_system_tray_delegate.h"
+#include "ash/test/test_user_wallpaper_delegate.h"
+#include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
+#include "base/logging.h"
 #include "content/public/test/test_browser_context.h"
+#include "ui/app_list/app_list_model.h"
+#include "ui/app_list/app_list_view_delegate.h"
+#include "ui/app_list/test/app_list_test_view_delegate.h"
 #include "ui/aura/window.h"
+
+#if defined(OS_CHROMEOS)
+#include "ash/system/tray/system_tray_notifier.h"
+#endif
 
 namespace ash {
 namespace test {
+namespace {
+
+class NewWindowDelegateImpl : public NewWindowDelegate {
+ public:
+  NewWindowDelegateImpl() {}
+  virtual ~NewWindowDelegateImpl() {}
+
+ private:
+  // NewWindowDelegate:
+  virtual void NewTab() OVERRIDE {}
+  virtual void NewWindow(bool incognito) OVERRIDE {}
+  virtual void OpenFileManager() OVERRIDE {}
+  virtual void OpenCrosh() OVERRIDE {}
+  virtual void RestoreTab() OVERRIDE {}
+  virtual void ShowKeyboardOverlay() OVERRIDE {}
+  virtual void ShowTaskManager() OVERRIDE {}
+  virtual void OpenFeedbackPage() OVERRIDE {}
+
+  DISALLOW_COPY_AND_ASSIGN(NewWindowDelegateImpl);
+};
+
+class MediaDelegateImpl : public MediaDelegate {
+ public:
+  MediaDelegateImpl() : state_(MEDIA_CAPTURE_NONE) {}
+  virtual ~MediaDelegateImpl() {}
+
+  void set_media_capture_state(MediaCaptureState state) { state_ = state; }
+
+ private:
+  // MediaDelegate:
+  virtual void HandleMediaNextTrack() OVERRIDE {}
+  virtual void HandleMediaPlayPause() OVERRIDE {}
+  virtual void HandleMediaPrevTrack() OVERRIDE {}
+  virtual MediaCaptureState GetMediaCaptureState(
+      content::BrowserContext* context) OVERRIDE {
+    return state_;
+  }
+
+  MediaCaptureState state_;
+
+  DISALLOW_COPY_AND_ASSIGN(MediaDelegateImpl);
+};
+
+}  // namespace
 
 TestShellDelegate::TestShellDelegate()
-    : locked_(false),
-      session_started_(true),
-      spoken_feedback_enabled_(false),
-      high_contrast_enabled_(false),
-      screen_magnifier_type_(MAGNIFIER_OFF),
-      user_logged_in_(true),
-      can_lock_screen_(true),
-      num_exit_requests_(0) {
+    : num_exit_requests_(0),
+      multi_profiles_enabled_(false),
+      test_session_state_delegate_(NULL) {
 }
 
 TestShellDelegate::~TestShellDelegate() {
-}
-
-bool TestShellDelegate::IsUserLoggedIn() const {
-  return user_logged_in_;
-}
-
-bool TestShellDelegate::IsSessionStarted() const {
-  return session_started_;
 }
 
 bool TestShellDelegate::IsFirstRunAfterBoot() const {
   return false;
 }
 
-bool TestShellDelegate::CanLockScreen() const {
-  return user_logged_in_ && can_lock_screen_;
+bool TestShellDelegate::IsIncognitoAllowed() const {
+  return true;
 }
 
-void TestShellDelegate::LockScreen() {
-  locked_ = true;
+bool TestShellDelegate::IsMultiProfilesEnabled() const {
+  return multi_profiles_enabled_;
 }
 
-void TestShellDelegate::UnlockScreen() {
-  locked_ = false;
+bool TestShellDelegate::IsRunningInForcedAppMode() const {
+  return false;
 }
 
-bool TestShellDelegate::IsScreenLocked() const {
-  return locked_;
+bool TestShellDelegate::IsMultiAccountEnabled() const {
+  return false;
 }
 
-void TestShellDelegate::Shutdown() {
+void TestShellDelegate::PreInit() {
+}
+
+void TestShellDelegate::PreShutdown() {
 }
 
 void TestShellDelegate::Exit() {
   num_exit_requests_++;
 }
 
-void TestShellDelegate::NewTab() {
+keyboard::KeyboardControllerProxy*
+    TestShellDelegate::CreateKeyboardControllerProxy() {
+  return new KeyboardControllerProxyStub();
 }
 
-void TestShellDelegate::NewWindow(bool incognito) {
+void TestShellDelegate::VirtualKeyboardActivated(bool activated) {
 }
 
-void TestShellDelegate::ToggleMaximized() {
-  aura::Window* window = ash::wm::GetActiveWindow();
-  if (window)
-    ash::wm::ToggleMaximizedWindow(window);
+void TestShellDelegate::AddVirtualKeyboardStateObserver(
+    VirtualKeyboardStateObserver* observer) {
 }
 
-void TestShellDelegate::OpenFileManager() {
+void TestShellDelegate::RemoveVirtualKeyboardStateObserver(
+    VirtualKeyboardStateObserver* observer) {
 }
 
-void TestShellDelegate::OpenCrosh() {
-}
-
-void TestShellDelegate::OpenMobileSetup(const std::string& service_path) {
-}
-
-void TestShellDelegate::RestoreTab() {
-}
-
-bool TestShellDelegate::RotatePaneFocus(Shell::Direction direction) {
-  return true;
-}
-
-void TestShellDelegate::ShowKeyboardOverlay() {
-}
-
-void TestShellDelegate::ShowTaskManager() {
-}
-
-content::BrowserContext* TestShellDelegate::GetCurrentBrowserContext() {
-  current_browser_context_.reset(new content::TestBrowserContext());
-  return current_browser_context_.get();
-}
-
-void TestShellDelegate::ToggleSpokenFeedback(
-    AccessibilityNotificationVisibility notify) {
-  spoken_feedback_enabled_ = !spoken_feedback_enabled_;
-}
-
-bool TestShellDelegate::IsSpokenFeedbackEnabled() const {
-  return spoken_feedback_enabled_;
-}
-
-void TestShellDelegate::ToggleHighContrast() {
-  high_contrast_enabled_ = !high_contrast_enabled_;
-}
-
-bool TestShellDelegate::IsHighContrastEnabled() const {
-  return high_contrast_enabled_;
-}
-
-void TestShellDelegate::SetMagnifier(const MagnifierType type) {
-  screen_magnifier_type_ = type;
-}
-
-MagnifierType TestShellDelegate::GetMagnifierType() const {
-  return screen_magnifier_type_;
-}
-
-bool TestShellDelegate::ShouldAlwaysShowAccessibilityMenu() const {
-  return false;
+content::BrowserContext* TestShellDelegate::GetActiveBrowserContext() {
+  active_browser_context_.reset(new content::TestBrowserContext());
+  return active_browser_context_.get();
 }
 
 app_list::AppListViewDelegate* TestShellDelegate::CreateAppListViewDelegate() {
-  return NULL;
+  return new app_list::test::AppListTestViewDelegate;
 }
 
-LauncherDelegate* TestShellDelegate::CreateLauncherDelegate(
-    ash::LauncherModel* model) {
-  return new TestLauncherDelegate(model);
+ShelfDelegate* TestShellDelegate::CreateShelfDelegate(ShelfModel* model) {
+  return new TestShelfDelegate(model);
 }
 
 SystemTrayDelegate* TestShellDelegate::CreateSystemTrayDelegate() {
-  return NULL;
+  return new TestSystemTrayDelegate;
 }
 
 UserWallpaperDelegate* TestShellDelegate::CreateUserWallpaperDelegate() {
+  return new TestUserWallpaperDelegate();
+}
+
+SessionStateDelegate* TestShellDelegate::CreateSessionStateDelegate() {
+  DCHECK(!test_session_state_delegate_);
+  test_session_state_delegate_ = new TestSessionStateDelegate();
+  return test_session_state_delegate_;
+}
+
+AccessibilityDelegate* TestShellDelegate::CreateAccessibilityDelegate() {
+  return new DefaultAccessibilityDelegate();
+}
+
+NewWindowDelegate* TestShellDelegate::CreateNewWindowDelegate() {
+  return new NewWindowDelegateImpl;
+}
+
+MediaDelegate* TestShellDelegate::CreateMediaDelegate() {
+  return new MediaDelegateImpl;
+}
+
+ui::MenuModel* TestShellDelegate::CreateContextMenu(
+    aura::Window* root,
+    ash::ShelfItemDelegate* item_delegate,
+    ash::ShelfItem* item) {
   return NULL;
 }
 
-CapsLockDelegate* TestShellDelegate::CreateCapsLockDelegate() {
-  return new CapsLockDelegateStub;
+GPUSupport* TestShellDelegate::CreateGPUSupport() {
+  // Real GPU support depends on src/content, so just use a stub.
+  return new GPUSupportStub;
 }
 
-aura::client::UserActionClient* TestShellDelegate::CreateUserActionClient() {
-  return NULL;
+base::string16 TestShellDelegate::GetProductName() const {
+  return base::string16();
 }
 
-void TestShellDelegate::OpenFeedbackPage() {
+void TestShellDelegate::SetMediaCaptureState(MediaCaptureState state) {
+#if defined(OS_CHROMEOS)
+  Shell* shell = Shell::GetInstance();
+  static_cast<MediaDelegateImpl*>(shell->media_delegate())
+      ->set_media_capture_state(state);
+  shell->system_tray_notifier()->NotifyMediaCaptureChanged();
+#endif
 }
-
-void TestShellDelegate::RecordUserMetricsAction(UserMetricsAction action) {
-}
-
-void TestShellDelegate::HandleMediaNextTrack() {
-}
-
-void TestShellDelegate::HandleMediaPlayPause() {
-}
-
-void TestShellDelegate::HandleMediaPrevTrack() {
-}
-
-string16 TestShellDelegate::GetTimeRemainingString(base::TimeDelta delta) {
-  return string16();
-}
-
-string16 TestShellDelegate::GetTimeDurationLongString(base::TimeDelta delta) {
-  return string16();
-}
-
-void TestShellDelegate::SaveScreenMagnifierScale(double scale) {
-}
-
-ui::MenuModel* TestShellDelegate::CreateContextMenu(aura::RootWindow* root) {
-  return NULL;
-}
-
-double TestShellDelegate::GetSavedScreenMagnifierScale() {
-  return std::numeric_limits<double>::min();
-}
-
-aura::client::StackingClient* TestShellDelegate::CreateStackingClient() {
-  return new StackingController;
-}
-
-RootWindowHostFactory* TestShellDelegate::CreateRootWindowHostFactory() {
-  return RootWindowHostFactory::Create();
-}
-
-void TestShellDelegate::SetSessionStarted(bool session_started) {
-  session_started_ = session_started;
-  if (session_started)
-    user_logged_in_ = true;
-}
-
-void TestShellDelegate::SetUserLoggedIn(bool user_logged_in) {
-  user_logged_in_ = user_logged_in;
-  if (!user_logged_in)
-    session_started_ = false;
-}
-
-void TestShellDelegate::SetCanLockScreen(bool can_lock_screen) {
-  can_lock_screen_ = can_lock_screen;
-}
-
-string16 TestShellDelegate::GetProductName() const {
-  return string16();
-}
-
 
 }  // namespace test
 }  // namespace ash

@@ -10,8 +10,9 @@
 
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_vector.h"
 #include "base/task_runner.h"
 #include "base/threading/thread_checker.h"
 #include "sync/base/sync_export.h"
@@ -20,10 +21,13 @@
 #include "sync/internal_api/public/configure_reason.h"
 #include "sync/internal_api/public/engine/model_safe_worker.h"
 #include "sync/internal_api/public/engine/sync_status.h"
+#include "sync/internal_api/public/events/protocol_event.h"
+#include "sync/internal_api/public/sync_core_proxy.h"
 #include "sync/internal_api/public/sync_encryption_handler.h"
 #include "sync/internal_api/public/util/report_unrecoverable_error_function.h"
+#include "sync/internal_api/public/util/unrecoverable_error_handler.h"
 #include "sync/internal_api/public/util/weak_handle.h"
-#include "sync/notifier/invalidation_util.h"
+#include "sync/notifier/invalidation_handler.h"
 #include "sync/protocol/sync_protocol_error.h"
 
 namespace sync_pb {
@@ -33,19 +37,20 @@ class EncryptedData;
 namespace syncer {
 
 class BaseTransaction;
+class CancelationSignal;
 class DataTypeDebugInfoListener;
 class Encryptor;
-struct Experiments;
-class ExtensionsActivityMonitor;
+class ExtensionsActivity;
 class HttpPostProviderFactory;
 class InternalComponentsFactory;
-class InvalidationHandler;
-class Invalidator;
 class JsBackend;
 class JsEventHandler;
+class ProtocolEvent;
+class SyncCoreProxy;
 class SyncEncryptionHandler;
 class SyncScheduler;
-class UnrecoverableErrorHandler;
+class TypeDebugInfoObserver;
+struct Experiments;
 struct UserShare;
 
 namespace sessions {
@@ -54,6 +59,7 @@ class SyncSessionSnapshot;
 
 // Used by SyncManager::OnConnectionStatusChange().
 enum ConnectionStatus {
+  CONNECTION_NOT_ATTEMPTED,
   CONNECTION_OK,
   CONNECTION_AUTH_ERROR,
   CONNECTION_SERVER_ERROR
@@ -61,7 +67,9 @@ enum ConnectionStatus {
 
 // Contains everything needed to talk to and identify a user account.
 struct SyncCredentials {
+  // The email associated with this account.
   std::string email;
+  // The raw authentication token's bytes.
   std::string sync_token;
 };
 
@@ -73,7 +81,7 @@ struct SyncCredentials {
 //
 // Unless stated otherwise, all methods of SyncManager should be called on the
 // same thread.
-class SYNC_EXPORT SyncManager {
+class SYNC_EXPORT SyncManager : public syncer::InvalidationHandler {
  public:
   // An interface the embedding application implements to be notified
   // on change events.  Note that these methods may be called on *any*
@@ -131,7 +139,7 @@ class SYNC_EXPORT SyncManager {
   // Like ChangeDelegate, except called only on the sync thread and
   // not while a transaction is held.  For objects that want to know
   // when changes happen, but don't need to process them.
-  class ChangeObserver {
+  class SYNC_EXPORT_PRIVATE ChangeObserver {
    public:
     // Ids referred to in |changes| may or may not be in the write
     // transaction specified by |write_transaction_id|.  If they're
@@ -175,9 +183,6 @@ class SYNC_EXPORT SyncManager {
     // changed.
     virtual void OnConnectionStatusChange(ConnectionStatus status) = 0;
 
-    // Called when a new auth token is provided by the sync server.
-    virtual void OnUpdatedToken(const std::string& token) = 0;
-
     // Called when initialization is complete to the point that SyncManager can
     // process changes. This does not necessarily mean authentication succeeded
     // or that the SyncManager is online.
@@ -185,75 +190,6 @@ class SYNC_EXPORT SyncManager {
     // notification is illegal!
     // WARNING: Calling methods on the SyncManager before receiving this
     // message, unless otherwise specified, produces undefined behavior.
-    //
-    // |js_backend| is what about:sync interacts with.  It can emit
-    // the following events:
-
-    /**
-     * @param {{ enabled: boolean }} details A dictionary containing:
-     *     - enabled: whether or not notifications are enabled.
-     */
-    // function onNotificationStateChange(details);
-
-    /**
-     * @param {{ changedTypes: Array.<string> }} details A dictionary
-     *     containing:
-     *     - changedTypes: a list of types (as strings) for which there
-             are new updates.
-     */
-    // function onIncomingNotification(details);
-
-    // Also, it responds to the following messages (all other messages
-    // are ignored):
-
-    /**
-     * Gets the current notification state.
-     *
-     * @param {function(boolean)} callback Called with whether or not
-     *     notifications are enabled.
-     */
-    // function getNotificationState(callback);
-
-    /**
-     * Gets details about the root node.
-     *
-     * @param {function(!Object)} callback Called with details about the
-     *     root node.
-     */
-    // TODO(akalin): Change this to getRootNodeId or eliminate it
-    // entirely.
-    // function getRootNodeDetails(callback);
-
-    /**
-     * Gets summary information for a list of ids.
-     *
-     * @param {Array.<string>} idList List of 64-bit ids in decimal
-     *     string form.
-     * @param {Array.<{id: string, title: string, isFolder: boolean}>}
-     * callback Called with summaries for the nodes in idList that
-     *     exist.
-     */
-    // function getNodeSummariesById(idList, callback);
-
-    /**
-     * Gets detailed information for a list of ids.
-     *
-     * @param {Array.<string>} idList List of 64-bit ids in decimal
-     *     string form.
-     * @param {Array.<!Object>} callback Called with detailed
-     *     information for the nodes in idList that exist.
-     */
-    // function getNodeDetailsById(idList, callback);
-
-    /**
-     * Gets child ids for a given id.
-     *
-     * @param {string} id 64-bit id in decimal string form of the parent
-     *     node.
-     * @param {Array.<string>} callback Called with the (possibly empty)
-     *     list of child ids.
-     */
-    // function getChildNodeIds(id);
 
     virtual void OnInitializationComplete(
         const WeakHandle<JsBackend>& js_backend,
@@ -261,14 +197,12 @@ class SYNC_EXPORT SyncManager {
         bool success,
         ModelTypeSet restored_types) = 0;
 
-    // We are no longer permitted to communicate with the server. Sync should
-    // be disabled and state cleaned up at once.  This can happen for a number
-    // of reasons, e.g. swapping from a test instance to production, or a
-    // global stop syncing operation has wiped the store.
-    virtual void OnStopSyncingPermanently() = 0;
-
     virtual void OnActionableError(
         const SyncProtocolError& sync_protocol_error) = 0;
+
+    virtual void OnMigrationRequested(ModelTypeSet types) = 0;
+
+    virtual void OnProtocolEvent(const ProtocolEvent& event) = 0;
 
    protected:
     virtual ~Observer();
@@ -292,32 +226,38 @@ class SYNC_EXPORT SyncManager {
   // |user_agent| is a 7-bit ASCII string suitable for use as the User-Agent
   // HTTP header. Used internally when collecting stats to classify clients.
   // |invalidator| is owned and used to listen for invalidations.
+  // |invalidator_client_id| is used to unqiuely identify this client to the
+  // invalidation notification server.
   // |restored_key_for_bootstrapping| is the key used to boostrap the
   // cryptographer
   // |keystore_encryption_enabled| determines whether we enable the keystore
   // encryption functionality in the cryptographer/nigori.
   // |report_unrecoverable_error_function| may be NULL.
+  // |cancelation_signal| carries shutdown requests across threads.  This one
+  // will be used to cut short any network I/O and tell the syncer to exit
+  // early.
   //
   // TODO(akalin): Replace the |post_factory| parameter with a
   // URLFetcher parameter.
   virtual void Init(
-      const FilePath& database_location,
+      const base::FilePath& database_location,
       const WeakHandle<JsEventHandler>& event_handler,
       const std::string& sync_server_and_path,
       int sync_server_port,
       bool use_ssl,
       scoped_ptr<HttpPostProviderFactory> post_factory,
-      const std::vector<ModelSafeWorker*>& workers,
-      ExtensionsActivityMonitor* extensions_activity_monitor,
+      const std::vector<scoped_refptr<ModelSafeWorker> >& workers,
+      ExtensionsActivity* extensions_activity,
       ChangeDelegate* change_delegate,
       const SyncCredentials& credentials,
-      scoped_ptr<Invalidator> invalidator,
+      const std::string& invalidator_client_id,
       const std::string& restored_key_for_bootstrapping,
       const std::string& restored_keystore_key_for_bootstrapping,
-      scoped_ptr<InternalComponentsFactory> internal_components_factory,
+      InternalComponentsFactory* internal_components_factory,
       Encryptor* encryptor,
-      UnrecoverableErrorHandler* unrecoverable_error_handler,
-      ReportUnrecoverableErrorFunction report_unrecoverable_error_function) = 0;
+      scoped_ptr<UnrecoverableErrorHandler> unrecoverable_error_handler,
+      ReportUnrecoverableErrorFunction report_unrecoverable_error_function,
+      CancelationSignal* cancelation_signal) = 0;
 
   // Throw an unrecoverable error from a transaction (mostly used for
   // testing).
@@ -338,22 +278,6 @@ class SYNC_EXPORT SyncManager {
   // Update tokens that we're using in Sync. Email must stay the same.
   virtual void UpdateCredentials(const SyncCredentials& credentials) = 0;
 
-  // Called when the user disables or enables a sync type.
-  virtual void UpdateEnabledTypes(ModelTypeSet enabled_types) = 0;
-
-  // Forwards to the underlying invalidator (see comments in invalidator.h).
-  virtual void RegisterInvalidationHandler(
-      InvalidationHandler* handler) = 0;
-
-  // Forwards to the underlying notifier (see comments in invalidator.h).
-  virtual void UpdateRegisteredInvalidationIds(
-      InvalidationHandler* handler,
-      const ObjectIdSet& ids) = 0;
-
-  // Forwards to the underlying notifier (see comments in invalidator.h).
-  virtual void UnregisterInvalidationHandler(
-      InvalidationHandler* handler) = 0;
-
   // Put the syncer in normal mode ready to perform nudges and polls.
   virtual void StartSyncingNormally(
       const ModelSafeRoutingInfo& routing_info) = 0;
@@ -362,16 +286,31 @@ class SYNC_EXPORT SyncManager {
   // any configuration tasks needed as determined by the params. Once complete,
   // syncer will remain in CONFIGURATION_MODE until StartSyncingNormally is
   // called.
+  // Data whose types are not in |new_routing_info| are purged from sync
+  // directory, unless they're part of |to_ignore|, in which case they're left
+  // untouched. The purged data is backed up in delete journal for recovery in
+  // next session if its type is in |to_journal|. If in |to_unapply|
+  // only the local data is removed; the server data is preserved.
   // |ready_task| is invoked when the configuration completes.
   // |retry_task| is invoked if the configuration job could not immediately
   //              execute. |ready_task| will still be called when it eventually
   //              does finish.
   virtual void ConfigureSyncer(
       ConfigureReason reason,
-      ModelTypeSet types_to_config,
+      ModelTypeSet to_download,
+      ModelTypeSet to_purge,
+      ModelTypeSet to_journal,
+      ModelTypeSet to_unapply,
       const ModelSafeRoutingInfo& new_routing_info,
       const base::Closure& ready_task,
       const base::Closure& retry_task) = 0;
+
+  // Inform the syncer of a change in the invalidator's state.
+  virtual void OnInvalidatorStateChange(InvalidatorState state) = 0;
+
+  // Inform the syncer that its cached information about a type is obsolete.
+  virtual void OnIncomingInvalidation(
+      const ObjectIdInvalidationMap& invalidation_map) = 0;
 
   // Adds a listener to be notified of sync events.
   // NOTE: It is OK (in fact, it's probably a good idea) to call this before
@@ -390,22 +329,14 @@ class SYNC_EXPORT SyncManager {
   // to the syncapi model.
   virtual void SaveChanges() = 0;
 
-  // Initiates shutdown of various components in the sync engine.  Must be
-  // called from the main thread to allow preempting ongoing tasks on the sync
-  // loop (that may be blocked on I/O).  The semantics of |callback| are the
-  // same as with StartConfigurationMode. If provided and a scheduler / sync
-  // loop exists, it will be invoked from the sync loop by the scheduler to
-  // notify that all work has been flushed + cancelled, and it is idle.
-  // If no scheduler exists, the callback is run immediately (from the loop
-  // this was created on, which is the sync loop), as sync is effectively
-  // stopped.
-  virtual void StopSyncingForShutdown(const base::Closure& callback) = 0;
-
   // Issue a final SaveChanges, and close sqlite handles.
   virtual void ShutdownOnSyncThread() = 0;
 
   // May be called from any thread.
   virtual UserShare* GetUserShare() = 0;
+
+  // Returns an instance of the main interface for non-blocking sync types.
+  virtual syncer::SyncCoreProxy* GetSyncCoreProxy() = 0;
 
   // Returns the cache_guid of the currently open database.
   // Requires that the SyncManager be initialized.
@@ -422,6 +353,27 @@ class SYNC_EXPORT SyncManager {
 
   // Returns the SyncManager's encryption handler.
   virtual SyncEncryptionHandler* GetEncryptionHandler() = 0;
+
+  virtual scoped_ptr<base::ListValue> GetAllNodesForType(
+      syncer::ModelType type) = 0;
+
+  // Ask the SyncManager to fetch updates for the given types.
+  virtual void RefreshTypes(ModelTypeSet types) = 0;
+
+  // Returns any buffered protocol events.  Does not clear the buffer.
+  virtual ScopedVector<syncer::ProtocolEvent> GetBufferedProtocolEvents() = 0;
+
+  // Functions to manage registrations of DebugInfoObservers.
+  virtual void RegisterDirectoryTypeDebugInfoObserver(
+      syncer::TypeDebugInfoObserver* observer) = 0;
+  virtual void UnregisterDirectoryTypeDebugInfoObserver(
+      syncer::TypeDebugInfoObserver* observer) = 0;
+  virtual bool HasDirectoryTypeDebugInfoObserver(
+      syncer::TypeDebugInfoObserver* observer) = 0;
+
+  // Request that all current counter values be emitted as though they had just
+  // been updated.  Useful for initializing new observers' state.
+  virtual void RequestEmitDebugInfo() = 0;
 };
 
 }  // namespace syncer

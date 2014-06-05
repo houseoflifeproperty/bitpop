@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,10 +13,14 @@ import org.chromium.base.JNINamespace;
  */
 @JNINamespace("content")
 public abstract class WebContentsObserverAndroid {
-    private int mNativeWebContentsObserverAndroid;
+    private long mNativeWebContentsObserverAndroid;
 
     public WebContentsObserverAndroid(ContentViewCore contentViewCore) {
         mNativeWebContentsObserverAndroid = nativeInit(contentViewCore.getNativeContentViewCore());
+    }
+
+    @CalledByNative
+    public void renderProcessGone(boolean wasOomProtected) {
     }
 
     /**
@@ -50,9 +54,20 @@ public abstract class WebContentsObserverAndroid {
      * Called when the main frame of the page has committed.
      * @param url The validated url for the page.
      * @param baseUrl The validated base url for the page.
+     * @param isNavigationToDifferentPage Whether the main frame navigated to a different page.
+     * @param isNavigationInPage Whether the main frame navigation did not cause changes to the
+     *                           document (for example scrolling to a named anchor or PopState).
      */
     @CalledByNative
-    public void didNavigateMainFrame(String url, String baseUrl) {
+    public void didNavigateMainFrame(String url, String baseUrl,
+            boolean isNavigationToDifferentPage, boolean isNavigationInPage) {
+    }
+
+    /**
+     * Called when the page had painted something non-empty.
+     */
+    @CalledByNative
+    public void didFirstVisuallyNonEmptyPaint() {
     }
 
     /**
@@ -73,6 +88,7 @@ public abstract class WebContentsObserverAndroid {
      * @param isMainFrame Whether the load is happening for the main frame.
      * @param validatedUrl The validated URL that is being navigated to.
      * @param isErrorPage Whether this is navigating to an error page.
+     * @param isIframeSrcdoc Whether this is navigating to about:srcdoc.
      */
     @CalledByNative
     public void didStartProvisionalLoadForFrame(
@@ -80,7 +96,61 @@ public abstract class WebContentsObserverAndroid {
             long parentFrameId,
             boolean isMainFrame,
             String validatedUrl,
-            boolean isErrorPage) {
+            boolean isErrorPage,
+            boolean isIframeSrcdoc) {
+    }
+
+    /**
+     * Notifies that the provisional load was successfully committed. The RenderViewHost is now
+     * the current RenderViewHost of the WebContents.
+     * @param frameId A positive, non-zero integer identifying the navigating frame.
+     * @param isMainFrame Whether the load is happening for the main frame.
+     * @param url The committed URL being navigated to.
+     * @param transitionType The transition type as defined in
+     *                      {@link org.chromium.content.browser.PageTransitionTypes} for the load.
+     */
+    @CalledByNative
+    public void didCommitProvisionalLoadForFrame(
+            long frameId, boolean isMainFrame, String url, int transitionType) {
+
+    }
+
+    /**
+     * Notifies that a load has finished for a given frame.
+     * @param frameId A positive, non-zero integer identifying the navigating frame.
+     * @param validatedUrl The validated URL that is being navigated to.
+     * @param isMainFrame Whether the load is happening for the main frame.
+     */
+    @CalledByNative
+    public void didFinishLoad(long frameId, String validatedUrl, boolean isMainFrame) {
+    }
+
+    /**
+     * Notifies that a navigation entry has been committed.
+     */
+    @CalledByNative
+    public void navigationEntryCommitted() {
+    }
+
+    /**
+     * Invoked when visible SSL state changes.
+     */
+    @CalledByNative
+    public void didChangeVisibleSSLState() {
+    }
+
+    /**
+     * Called when an interstitial page gets attached to the tab content.
+     */
+    @CalledByNative
+    public void didAttachInterstitialPage() {
+    }
+
+    /**
+     * Called when an interstitial page gets detached from the tab content.
+     */
+    @CalledByNative
+    public void didDetachInterstitialPage() {
     }
 
     /**
@@ -94,6 +164,6 @@ public abstract class WebContentsObserverAndroid {
         }
     }
 
-    private native int nativeInit(int contentViewCorePtr);
-    private native void nativeDestroy(int nativeWebContentsObserverAndroid);
+    private native long nativeInit(long contentViewCorePtr);
+    private native void nativeDestroy(long nativeWebContentsObserverAndroid);
 }

@@ -5,16 +5,41 @@
 #include "content/renderer/p2p/ipc_network_manager.h"
 
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/sys_byteorder.h"
+#include "content/public/common/content_switches.h"
 #include "net/base/net_util.h"
 
 namespace content {
+
+namespace {
+
+talk_base::AdapterType ConvertConnectionTypeToAdapterType(
+    net::NetworkChangeNotifier::ConnectionType type) {
+  switch (type) {
+    case net::NetworkChangeNotifier::CONNECTION_UNKNOWN:
+        return talk_base::ADAPTER_TYPE_UNKNOWN;
+    case net::NetworkChangeNotifier::CONNECTION_ETHERNET:
+        return talk_base::ADAPTER_TYPE_ETHERNET;
+    case net::NetworkChangeNotifier::CONNECTION_WIFI:
+        return talk_base::ADAPTER_TYPE_WIFI;
+    case net::NetworkChangeNotifier::CONNECTION_2G:
+    case net::NetworkChangeNotifier::CONNECTION_3G:
+    case net::NetworkChangeNotifier::CONNECTION_4G:
+        return talk_base::ADAPTER_TYPE_CELLULAR;
+    default:
+        return talk_base::ADAPTER_TYPE_UNKNOWN;
+  }
+  return talk_base::ADAPTER_TYPE_UNKNOWN;
+}
+
+}  // namespace
 
 IpcNetworkManager::IpcNetworkManager(P2PSocketDispatcher* socket_dispatcher)
     : socket_dispatcher_(socket_dispatcher),
       start_count_(0),
       network_list_received_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
   socket_dispatcher_->AddNetworkListObserver(this);
 }
 
@@ -26,9 +51,10 @@ IpcNetworkManager::~IpcNetworkManager() {
 void IpcNetworkManager::StartUpdating() {
   if (network_list_received_) {
     // Post a task to avoid reentrancy.
-    MessageLoop::current()->PostTask(
-        FROM_HERE, base::Bind(&IpcNetworkManager::SendNetworksChangedSignal,
-                              weak_factory_.GetWeakPtr()));
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&IpcNetworkManager::SendNetworksChangedSignal,
+                   weak_factory_.GetWeakPtr()));
   }
   ++start_count_;
 }
@@ -45,18 +71,51 @@ void IpcNetworkManager::OnNetworkListChanged(
   if (!network_list_received_)
     network_list_received_ = true;
 
+  // Note: 32 and 64 are the arbitrary(kind of) prefix length used to
+  // differentiate IPv4 and IPv6 addresses.
+  // talk_base::Network uses these prefix_length to compare network
+  // interfaces discovered.
   std::vector<talk_base::Network*> networks;
   for (net::NetworkInterfaceList::const_iterator it = list.begin();
        it != list.end(); it++) {
-    uint32 address;
-    if (it->address.size() != net::kIPv4AddressSize)
-      continue;
-    memcpy(&address, &it->address[0], sizeof(uint32));
-    address = talk_base::NetworkToHost32(address);
-    talk_base::Network* network = new talk_base::Network(
-        it->name, it->name, talk_base::IPAddress(address), 32);
-    network->AddIP(talk_base::IPAddress(address));
-    networks.push_back(network);
+    if (it->address.size() == net::kIPv4AddressSize) {
+      uint32 address;
+      memcpy(&address, &it->address[0], sizeof(uint32));
+      address = talk_base::NetworkToHost32(address);
+      talk_base::Network* network = new talk_base::Network(
+          it->name, it->name, talk_base::IPAddress(address), 32,
+          ConvertConnectionTypeToAdapterType(it->type));
+      network->AddIP(talk_base::IPAddress(address));
+      networks.push_back(network);
+    } else if (it->address.size() == net::kIPv6AddressSize) {
+      in6_addr address;
+      memcpy(&address, &it->address[0], sizeof(in6_addr));
+      talk_base::IPAddress ip6_addr(address);
+      if (!talk_base::IPIsPrivate(ip6_addr)) {
+        talk_base::Network* network = new talk_base::Network(
+            it->name, it->name, ip6_addr, 64,
+            ConvertConnectionTypeToAdapterType(it->type));
+        network->AddIP(ip6_addr);
+        networks.push_back(network);
+      }
+    }
+  }
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kAllowLoopbackInPeerConnection)) {
+    std::string name_v4("loopback_ipv4");
+    talk_base::IPAddress ip_address_v4(INADDR_LOOPBACK);
+    talk_base::Network* network_v4 = new talk_base::Network(
+        name_v4, name_v4, ip_address_v4, 32, talk_base::ADAPTER_TYPE_UNKNOWN);
+    network_v4->AddIP(ip_address_v4);
+    networks.push_back(network_v4);
+
+    std::string name_v6("loopback_ipv6");
+    talk_base::IPAddress ip_address_v6(in6addr_loopback);
+    talk_base::Network* network_v6 = new talk_base::Network(
+        name_v6, name_v6, ip_address_v6, 64, talk_base::ADAPTER_TYPE_UNKNOWN);
+    network_v6->AddIP(ip_address_v6);
+    networks.push_back(network_v6);
   }
 
   bool changed = false;

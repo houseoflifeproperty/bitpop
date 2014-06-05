@@ -15,6 +15,9 @@ using ::testing::Invoke;
 
 namespace gpu {
 
+MockCommandBufferBase::MockCommandBufferBase() {
+}
+
 MockCommandBufferBase::~MockCommandBufferBase() {
 }
 
@@ -22,76 +25,69 @@ bool MockCommandBufferBase::Initialize() {
   return true;
 }
 
-CommandBuffer::State MockCommandBufferBase::GetState() {
+CommandBuffer::State MockCommandBufferBase::GetLastState() {
   return state_;
 }
 
-CommandBuffer::State MockCommandBufferBase::GetLastState() {
-  return state_;
+int32 MockCommandBufferBase::GetLastToken() {
+  return state_.token;
 }
 
 void MockCommandBufferBase::SetGetOffset(int32 get_offset) {
   state_.get_offset = get_offset;
 }
 
-CommandBuffer::State MockCommandBufferBase::FlushSync(
-    int32 put_offset, int32 last_known_get) {
-  state_.put_offset = put_offset;
-  state_.get_offset = put_offset;
+void MockCommandBufferBase::WaitForTokenInRange(int32 start, int32 end) {}
+
+void MockCommandBufferBase::WaitForGetOffsetInRange(int32 start, int32 end) {
+  state_.get_offset = state_.put_offset;
   OnFlush();
-  return state_;
 }
 
 void MockCommandBufferBase::SetGetBuffer(int transfer_buffer_id) {
   ring_buffer_buffer_ = GetTransferBuffer(transfer_buffer_id);
-  ring_buffer_ = static_cast<CommandBufferEntry*>(ring_buffer_buffer_.ptr);
-  state_.num_entries = ring_buffer_buffer_.size / sizeof(ring_buffer_[0]);
+  ring_buffer_ =
+      static_cast<CommandBufferEntry*>(ring_buffer_buffer_->memory());
+  state_.num_entries = ring_buffer_buffer_->size() / sizeof(ring_buffer_[0]);
   state_.token = 10000;  // All token checks in the tests should pass.
 }
 
 // Get's the Id of the next transfer buffer that will be returned
 // by CreateTransferBuffer. This is useful for testing expected ids.
 int32 MockCommandBufferBase::GetNextFreeTransferBufferId() {
-  for (size_t ii = 0; ii < arraysize(transfer_buffers_); ++ii) {
-    if (!transfer_buffers_[ii].get()) {
+  for (size_t ii = 0; ii < arraysize(transfer_buffer_buffers_); ++ii) {
+    if (!transfer_buffer_buffers_[ii].get()) {
       return kTransferBufferBaseId + ii;
     }
   }
   return -1;
 }
 
-int32 MockCommandBufferBase::CreateTransferBuffer(
-    size_t size, int32 id_request) {
-  int32 id = GetNextFreeTransferBufferId();
-  if (id >= 0) {
-    int32 ndx = id - kTransferBufferBaseId;
-    transfer_buffers_[ndx].reset(new int8[size]);
-    transfer_buffer_buffers_[ndx].ptr = transfer_buffers_[ndx].get();
-    transfer_buffer_buffers_[ndx].size = size;
+scoped_refptr<gpu::Buffer> MockCommandBufferBase::CreateTransferBuffer(
+    size_t size,
+    int32* id) {
+  *id = GetNextFreeTransferBufferId();
+  if (*id >= 0) {
+    int32 ndx = *id - kTransferBufferBaseId;
+    scoped_ptr<base::SharedMemory> shared_memory(new base::SharedMemory());
+    shared_memory->CreateAndMapAnonymous(size);
+    transfer_buffer_buffers_[ndx] =
+        MakeBufferFromSharedMemory(shared_memory.Pass(), size);
   }
-  return id;
+  return GetTransferBuffer(*id);
 }
 
 void MockCommandBufferBase::DestroyTransferBufferHelper(int32 id) {
-  GPU_DCHECK_GE(id, kTransferBufferBaseId);
-  GPU_DCHECK_LT(id, kTransferBufferBaseId + kMaxTransferBuffers);
+  DCHECK_GE(id, kTransferBufferBaseId);
+  DCHECK_LT(id, kTransferBufferBaseId + kMaxTransferBuffers);
   id -= kTransferBufferBaseId;
-  transfer_buffers_[id].reset();
-  transfer_buffer_buffers_[id] = Buffer();
+  transfer_buffer_buffers_[id] = NULL;
 }
 
-Buffer MockCommandBufferBase::GetTransferBuffer(int32 id) {
-  GPU_DCHECK_GE(id, kTransferBufferBaseId);
-  GPU_DCHECK_LT(id, kTransferBufferBaseId + kMaxTransferBuffers);
+scoped_refptr<Buffer> MockCommandBufferBase::GetTransferBuffer(int32 id) {
+  DCHECK_GE(id, kTransferBufferBaseId);
+  DCHECK_LT(id, kTransferBufferBaseId + kMaxTransferBuffers);
   return transfer_buffer_buffers_[id - kTransferBufferBaseId];
-}
-
-int32 MockCommandBufferBase::RegisterTransferBuffer(
-    base::SharedMemory* shared_memory,
-    size_t size,
-    int32 id_request) {
-  GPU_NOTREACHED();
-  return -1;
 }
 
 void MockCommandBufferBase::FlushHelper(int32 put_offset) {
@@ -99,18 +95,18 @@ void MockCommandBufferBase::FlushHelper(int32 put_offset) {
 }
 
 void MockCommandBufferBase::SetToken(int32 token) {
-  GPU_NOTREACHED();
+  NOTREACHED();
   state_.token = token;
 }
 
 void MockCommandBufferBase::SetParseError(error::Error error) {
-  GPU_NOTREACHED();
+  NOTREACHED();
   state_.error = error;
 }
 
 void MockCommandBufferBase::SetContextLostReason(
     error::ContextLostReason reason) {
-  GPU_NOTREACHED();
+  NOTREACHED();
   state_.context_lost_reason = reason;
 }
 
@@ -149,6 +145,12 @@ void MockClientCommandBufferMockFlush::DelegateToFake() {
   ON_CALL(*this, Flush(_))
       .WillByDefault(Invoke(
           this, &MockCommandBufferBase::FlushHelper));
+}
+
+MockClientGpuControl::MockClientGpuControl() {
+}
+
+MockClientGpuControl::~MockClientGpuControl() {
 }
 
 }  // namespace gpu

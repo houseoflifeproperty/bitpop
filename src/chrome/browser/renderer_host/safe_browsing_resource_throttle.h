@@ -9,8 +9,8 @@
 #include <vector>
 
 #include "base/memory/ref_counted.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "chrome/browser/safe_browsing/database_manager.h"
 #include "chrome/browser/safe_browsing/ui_manager.h"
 #include "content/public/browser/resource_throttle.h"
@@ -49,14 +49,13 @@ class SafeBrowsingResourceThrottle
       public base::SupportsWeakPtr<SafeBrowsingResourceThrottle> {
  public:
   SafeBrowsingResourceThrottle(const net::URLRequest* request,
-                               int render_process_host_id,
-                               int render_view_id,
                                bool is_subresource,
                                SafeBrowsingService* safe_browsing);
 
   // content::ResourceThrottle implementation (called on IO thread):
   virtual void WillStartRequest(bool* defer) OVERRIDE;
   virtual void WillRedirectRequest(const GURL& new_url, bool* defer) OVERRIDE;
+  virtual const char* GetNameForLogging() const OVERRIDE;
 
   // SafeBrowsingDabaseManager::Client implementation (called on IO thread):
   virtual void OnCheckBrowseUrlResult(
@@ -91,8 +90,16 @@ class SafeBrowsingResourceThrottle
   // StartCheckingUrl()) has taken longer than kCheckUrlTimeoutMs.
   void OnCheckUrlTimeout();
 
-  // Starts displaying the safe browsing interstitial page.
-  void StartDisplayingBlockingPage(const GURL& url, SBThreatType threat_type);
+  // Starts displaying the safe browsing interstitial page if it's not
+  // prerendering. Called on the UI thread.
+  static void StartDisplayingBlockingPage(
+      const base::WeakPtr<SafeBrowsingResourceThrottle>& throttle,
+      scoped_refptr<SafeBrowsingUIManager> ui_manager,
+      const SafeBrowsingUIManager::UnsafeResource& resource);
+
+  // Called on the IO thread if the request turned out to be for a prerendered
+  // page.
+  void Cancel();
 
   // Resumes the request, by continuing the deferred action (either starting the
   // request, or following a redirect).
@@ -116,8 +123,6 @@ class SafeBrowsingResourceThrottle
 
   GURL url_being_checked_;
 
-  int render_process_host_id_;
-  int render_view_id_;
   scoped_refptr<SafeBrowsingDatabaseManager> database_manager_;
   scoped_refptr<SafeBrowsingUIManager> ui_manager_;
   const net::URLRequest* request_;

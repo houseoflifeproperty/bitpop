@@ -5,11 +5,11 @@
       'product_name': 'skia_svg',
       'type': 'static_library',
       'standalone_static_library': 1,
+      'dependencies': [
+        'skia_lib.gyp:skia_lib',
+        'xml.gyp:*',
+      ],
       'include_dirs': [
-        '../include/config',
-        '../include/core',
-        '../include/xml',
-        '../include/utils',
         '../include/svg',
       ],
       'sources': [
@@ -82,9 +82,3 @@
     },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

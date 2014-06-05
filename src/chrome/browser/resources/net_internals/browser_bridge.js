@@ -54,6 +54,9 @@ var BrowserBridge = (function() {
     this.pollableDataHelpers_.historicNetworkStats =
       new PollableDataHelper('onHistoricNetworkStatsChanged',
                              this.sendGetHistoricNetworkStats.bind(this));
+    this.pollableDataHelpers_.quicInfo =
+        new PollableDataHelper('onQuicInfoChanged',
+                               this.sendGetQuicInfo.bind(this));
     this.pollableDataHelpers_.spdySessionInfo =
         new PollableDataHelper('onSpdySessionInfoChanged',
                                this.sendGetSpdySessionInfo.bind(this));
@@ -75,6 +78,14 @@ var BrowserBridge = (function() {
     this.pollableDataHelpers_.httpPipeliningStatus =
         new PollableDataHelper('onHttpPipeliningStatusChanged',
                                this.sendGetHttpPipeliningStatus.bind(this));
+    this.pollableDataHelpers_.extensionInfo =
+        new PollableDataHelper('onExtensionInfoChanged',
+                               this.sendGetExtensionInfo.bind(this));
+    if (cr.isChromeOS) {
+      this.pollableDataHelpers_.systemLog =
+          new PollableDataHelper('onSystemLogChanged',
+                               this.getSystemLog.bind(this, 'syslog'));
+    }
 
     // Setting this to true will cause messages from the browser to be ignored,
     // and no messages will be sent to the browser, either.  Intended for use
@@ -151,10 +162,6 @@ var BrowserBridge = (function() {
       this.send('getHostResolverInfo');
     },
 
-    sendRunIPv6Probe: function() {
-      this.send('onRunIPv6Probe');
-    },
-
     sendClearBadProxies: function() {
       this.send('clearBadProxies');
     },
@@ -180,8 +187,10 @@ var BrowserBridge = (function() {
       this.send('hstsQuery', [domain]);
     },
 
-    sendHSTSAdd: function(domain, include_subdomains, pins) {
-      this.send('hstsAdd', [domain, include_subdomains, pins]);
+    sendHSTSAdd: function(domain, sts_include_subdomains,
+                          pkp_include_subdomains, pins) {
+      this.send('hstsAdd', [domain, sts_include_subdomains,
+                            pkp_include_subdomains, pins]);
     },
 
     sendHSTSDelete: function(domain) {
@@ -212,6 +221,10 @@ var BrowserBridge = (function() {
       this.send('flushSocketPools');
     },
 
+    sendGetQuicInfo: function() {
+      this.send('getQuicInfo');
+    },
+
     sendGetSpdySessionInfo: function() {
       this.send('getSpdySessionInfo');
     },
@@ -230,6 +243,14 @@ var BrowserBridge = (function() {
 
     sendGetPrerenderInfo: function() {
       this.send('getPrerenderInfo');
+    },
+
+    sendGetHttpPipeliningStatus: function() {
+      this.send('getHttpPipeliningStatus');
+    },
+
+    sendGetExtensionInfo: function() {
+      this.send('getExtensionInfo');
     },
 
     enableIPv6: function() {
@@ -258,10 +279,6 @@ var BrowserBridge = (function() {
 
     setNetworkDebugMode: function(subsystem) {
       this.send('setNetworkDebugMode', [subsystem]);
-    },
-
-    sendGetHttpPipeliningStatus: function() {
-      this.send('getHttpPipeliningStatus');
     },
 
     //--------------------------------------------------------------------------
@@ -325,6 +342,10 @@ var BrowserBridge = (function() {
     receivedHistoricNetworkStats: function(historicNetworkStats) {
       this.pollableDataHelpers_.historicNetworkStats.update(
           historicNetworkStats);
+    },
+
+    receivedQuicInfo: function(quicInfo) {
+      this.pollableDataHelpers_.quicInfo.update(quicInfo);
     },
 
     receivedSpdySessionInfo: function(spdySessionInfo) {
@@ -400,6 +421,14 @@ var BrowserBridge = (function() {
     receivedHttpPipeliningStatus: function(httpPipeliningStatus) {
       this.pollableDataHelpers_.httpPipeliningStatus.update(
           httpPipeliningStatus);
+    },
+
+    receivedExtensionInfo: function(extensionInfo) {
+      this.pollableDataHelpers_.extensionInfo.update(extensionInfo);
+    },
+
+    getSystemLogCallback: function(systemLog) {
+      this.pollableDataHelpers_.systemLog.update(systemLog);
     },
 
     //--------------------------------------------------------------------------
@@ -501,6 +530,17 @@ var BrowserBridge = (function() {
      */
     addHistoricNetworkStatsObserver: function(observer, ignoreWhenUnchanged) {
       this.pollableDataHelpers_.historicNetworkStats.addObserver(
+          observer, ignoreWhenUnchanged);
+    },
+
+    /**
+     * Adds a listener of the QUIC info. |observer| will be called back
+     * when data is received, through:
+     *
+     *   observer.onQuicInfoChanged(quicInfo)
+     */
+    addQuicInfoObserver: function(observer, ignoreWhenUnchanged) {
+      this.pollableDataHelpers_.quicInfo.addObserver(
           observer, ignoreWhenUnchanged);
     },
 
@@ -649,6 +689,30 @@ var BrowserBridge = (function() {
     addHttpPipeliningStatusObserver: function(observer, ignoreWhenUnchanged) {
       this.pollableDataHelpers_.httpPipeliningStatus.addObserver(
           observer, ignoreWhenUnchanged);
+    },
+
+    /**
+     * Adds a listener of extension information. |observer| will be called
+     * back when data is received, through:
+     *
+     *   observer.onExtensionInfoChanged(extensionInfo)
+     */
+    addExtensionInfoObserver: function(observer, ignoreWhenUnchanged) {
+      this.pollableDataHelpers_.extensionInfo.addObserver(
+          observer, ignoreWhenUnchanged);
+    },
+
+    /**
+     * Adds a listener of system log information. |observer| will be called
+     * back when data is received, through:
+     *
+     *   observer.onSystemLogChanged(systemLogInfo)
+     */
+    addSystemLogObserver: function(observer, ignoreWhenUnchanged) {
+      if (this.pollableDataHelpers_.systemLog) {
+        this.pollableDataHelpers_.systemLog.addObserver(
+            observer, ignoreWhenUnchanged);
+      }
     },
 
     /**

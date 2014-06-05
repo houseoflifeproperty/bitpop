@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/history/history_types.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -31,9 +31,8 @@ void CheckHistoryResultConsistency(const QueryResults& result) {
   }
 }
 
-static const char kURL1[] = "http://www.google.com/";
-static const char kURL2[] = "http://news.google.com/";
-static const char kURL3[] = "http://images.google.com/";
+const char kURL1[] = "http://www.google.com/";
+const char kURL2[] = "http://news.google.com/";
 
 // Adds kURL1 twice and kURL2 once.
 void AddSimpleData(QueryResults* results) {
@@ -47,19 +46,6 @@ void AddSimpleData(QueryResults* results) {
   results->AppendURLBySwapping(&result1);
   results->AppendURLBySwapping(&result2);
   results->AppendURLBySwapping(&result3);
-  CheckHistoryResultConsistency(*results);
-}
-
-// Adds kURL2 once and kURL3 once.
-void AddAlternateData(QueryResults* results) {
-  GURL url2(kURL2);
-  GURL url3(kURL3);
-  URLResult result1(url2, base::Time::Now());
-  URLResult result2(url3, base::Time::Now());
-
-  // The URLResults are invalid after being inserted.
-  results->AppendURLBySwapping(&result1);
-  results->AppendURLBySwapping(&result2);
   CheckHistoryResultConsistency(*results);
 }
 
@@ -133,7 +119,7 @@ TEST(HistoryQueryResult, RowSignificance) {
   const base::Time& threshold(AutocompleteAgeThreshold());
   const GURL url("http://www.google.com/");
   URLRow url_row(url);
-  url_row.set_title(UTF8ToUTF16("Google"));
+  url_row.set_title(base::UTF8ToUTF16("Google"));
   EXPECT_FALSE(RowQualifiesAsSignificant(url_row, threshold));
   EXPECT_FALSE(RowQualifiesAsSignificant(url_row, base::Time()));
   url_row.set_visit_count(kLowQualityMatchVisitLimit);
@@ -157,4 +143,4 @@ TEST(HistoryQueryResult, RowSignificance) {
   EXPECT_FALSE(RowQualifiesAsSignificant(url_row, base::Time()));
 }
 
-}  // namespace
+}  // namespace history

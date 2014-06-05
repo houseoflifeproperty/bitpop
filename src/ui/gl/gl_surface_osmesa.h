@@ -34,9 +34,26 @@ class GL_EXPORT GLSurfaceOSMesa : public GLSurface {
  private:
   unsigned format_;
   gfx::Size size_;
-  scoped_array<int32> buffer_;
+  scoped_ptr<int32[]> buffer_;
 
   DISALLOW_COPY_AND_ASSIGN(GLSurfaceOSMesa);
+};
+
+// A thin subclass of |GLSurfaceOSMesa| that can be used in place
+// of a native hardware-provided surface when a native surface
+// provider is not available.
+class GLSurfaceOSMesaHeadless : public GLSurfaceOSMesa {
+ public:
+  explicit GLSurfaceOSMesaHeadless();
+
+  virtual bool IsOffscreen() OVERRIDE;
+  virtual bool SwapBuffers() OVERRIDE;
+
+ protected:
+  virtual ~GLSurfaceOSMesaHeadless();
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(GLSurfaceOSMesaHeadless);
 };
 
 }  // namespace gfx

@@ -7,26 +7,26 @@
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/string_split.h"
-#include "base/string_util.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "chrome/common/content_settings_pattern_parser.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
 #include "extensions/common/constants.h"
-#include "googleurl/src/gurl.h"
-#include "googleurl/src/url_canon.h"
 #include "ipc/ipc_message_utils.h"
 #include "net/base/dns_util.h"
 #include "net/base/net_util.h"
+#include "url/gurl.h"
+#include "url/url_canon.h"
 
 namespace {
 
 std::string GetDefaultPort(const std::string& scheme) {
-  if (scheme == chrome::kHttpScheme)
+  if (scheme == url::kHttpScheme)
     return "80";
-  if (scheme == chrome::kHttpsScheme)
+  if (scheme == url::kHttpsScheme)
     return "443";
-  return "";
+  return std::string();
 }
 
 // Returns true if |sub_domain| is a sub domain or equls |domain|.  E.g.
@@ -156,6 +156,20 @@ ContentSettingsPattern ContentSettingsPattern::Builder::Build() {
   } else {
     is_valid_ = Validate(parts_);
   }
+  if (!is_valid_)
+    return ContentSettingsPattern();
+
+  // A pattern is invalid if canonicalization is not idempotent.
+  // This check is here because it should be checked no matter
+  // use_legacy_validate_ is.
+  PatternParts parts(parts_);
+  if (!Canonicalize(&parts))
+    return ContentSettingsPattern();
+  if (ContentSettingsPattern(parts_, true) !=
+      ContentSettingsPattern(parts, true)) {
+    return ContentSettingsPattern();
+  }
+
   return ContentSettingsPattern(parts_, is_valid_);
 }
 
@@ -165,16 +179,16 @@ bool ContentSettingsPattern::Builder::Canonicalize(PatternParts* parts) {
   const std::string scheme(StringToLowerASCII(parts->scheme));
   parts->scheme = scheme;
 
-  if (parts->scheme == std::string(chrome::kFileScheme) &&
+  if (parts->scheme == std::string(content::kFileScheme) &&
       !parts->is_path_wildcard) {
-      GURL url(std::string(chrome::kFileScheme) +
+      GURL url(std::string(content::kFileScheme) +
                std::string(content::kStandardSchemeSeparator) + parts->path);
       parts->path = url.path();
   }
 
   // Canonicalize the host part.
   const std::string host(parts->host);
-  url_canon::CanonHostInfo host_info;
+  url::CanonHostInfo host_info;
   std::string canonicalized_host(net::CanonicalizeHost(host, &host_info));
   if (host_info.IsIPAddress() && parts->has_domain_wildcard)
     return false;
@@ -199,7 +213,7 @@ bool ContentSettingsPattern::Builder::Validate(const PatternParts& parts) {
   }
 
   // file:// URL patterns have an empty host and port.
-  if (parts.scheme == std::string(chrome::kFileScheme)) {
+  if (parts.scheme == std::string(content::kFileScheme)) {
     if (parts.has_domain_wildcard || !parts.host.empty() || !parts.port.empty())
       return false;
     if (parts.is_path_wildcard)
@@ -229,8 +243,8 @@ bool ContentSettingsPattern::Builder::Validate(const PatternParts& parts) {
 
   // Test if the scheme is supported or a wildcard.
   if (!parts.is_scheme_wildcard &&
-      parts.scheme != std::string(chrome::kHttpScheme) &&
-      parts.scheme != std::string(chrome::kHttpsScheme)) {
+      parts.scheme != std::string(url::kHttpScheme) &&
+      parts.scheme != std::string(url::kHttpsScheme)) {
     return false;
   }
   return true;
@@ -240,7 +254,7 @@ bool ContentSettingsPattern::Builder::Validate(const PatternParts& parts) {
 bool ContentSettingsPattern::Builder::LegacyValidate(
     const PatternParts& parts) {
   // If the pattern is for a "file-pattern" test if it is valid.
-  if (parts.scheme == std::string(chrome::kFileScheme) &&
+  if (parts.scheme == std::string(content::kFileScheme) &&
       !parts.is_scheme_wildcard &&
       parts.host.empty() &&
       parts.port.empty())
@@ -264,8 +278,8 @@ bool ContentSettingsPattern::Builder::LegacyValidate(
 
   // Test if the scheme is supported or a wildcard.
   if (!parts.is_scheme_wildcard &&
-      parts.scheme != std::string(chrome::kHttpScheme) &&
-      parts.scheme != std::string(chrome::kHttpsScheme)) {
+      parts.scheme != std::string(url::kHttpScheme) &&
+      parts.scheme != std::string(url::kHttpsScheme)) {
     return false;
   }
   return true;
@@ -325,18 +339,18 @@ ContentSettingsPattern ContentSettingsPattern::FromURL(
     // also have a "http" scheme.
     if (local_url->HostIsIPAddress()) {
       builder->WithScheme(local_url->scheme())->WithHost(local_url->host());
-    } else if (local_url->SchemeIs(chrome::kHttpScheme)) {
+    } else if (local_url->SchemeIs(url::kHttpScheme)) {
       builder->WithSchemeWildcard()->WithDomainWildcard()->WithHost(
           local_url->host());
-    } else if (local_url->SchemeIs(chrome::kHttpsScheme)) {
+    } else if (local_url->SchemeIs(url::kHttpsScheme)) {
       builder->WithScheme(local_url->scheme())->WithDomainWildcard()->WithHost(
           local_url->host());
     } else {
       // Unsupported scheme
     }
     if (local_url->port().empty()) {
-      if (local_url->SchemeIs(chrome::kHttpsScheme))
-        builder->WithPort(GetDefaultPort(chrome::kHttpsScheme));
+      if (local_url->SchemeIs(url::kHttpsScheme))
+        builder->WithPort(GetDefaultPort(url::kHttpsScheme));
       else
         builder->WithPortWildcard();
     } else {
@@ -443,7 +457,7 @@ bool ContentSettingsPattern::Matches(
   // TODO(markusheintz): Content settings should be defined for all files on
   // a machine. Unless there is a good use case for supporting paths for file
   // patterns, stop supporting path for file patterns.
-  if (!parts_.is_scheme_wildcard && scheme == chrome::kFileScheme)
+  if (!parts_.is_scheme_wildcard && scheme == content::kFileScheme)
     return parts_.is_path_wildcard ||
         parts_.path == std::string(local_url->path());
 
@@ -487,7 +501,7 @@ const std::string ContentSettingsPattern::ToString() const {
   if (IsValid())
     return content_settings::PatternParser::ToString(parts_);
   else
-    return "";
+    return std::string();
 }
 
 ContentSettingsPattern::Relation ContentSettingsPattern::Compare(

@@ -1,8 +1,16 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.content.browser.test.util;
+
+import static org.chromium.base.test.util.ScalableTimeout.scaleTimeout;
+
+import android.os.SystemClock;
+
+import org.chromium.base.ThreadUtils;
+
+import java.util.concurrent.Callable;
 
 /**
  * Helper methods for creating and managing criteria.
@@ -15,7 +23,7 @@ package org.chromium.content.browser.test.util;
 public class CriteriaHelper {
 
     /** The default maximum time to wait for a criteria to become valid. */
-    public static final long DEFAULT_MAX_TIME_TO_POLL = 3000;
+    public static final long DEFAULT_MAX_TIME_TO_POLL = scaleTimeout(3000);
     /** The default polling interval to wait between checking for a satisfied criteria. */
     public static final long DEFAULT_POLLING_INTERVAL = 50;
 
@@ -32,8 +40,8 @@ public class CriteriaHelper {
     public static boolean pollForCriteria(Criteria criteria, long maxTimeoutMs,
             long checkIntervalMs) throws InterruptedException {
         boolean isSatisfied = criteria.isSatisfied();
-        long startTime = System.currentTimeMillis();
-        while (!isSatisfied && System.currentTimeMillis() - startTime < maxTimeoutMs) {
+        long startTime = SystemClock.uptimeMillis();
+        while (!isSatisfied && SystemClock.uptimeMillis() - startTime < maxTimeoutMs) {
             Thread.sleep(checkIntervalMs);
             isSatisfied = criteria.isSatisfied();
         }
@@ -50,6 +58,31 @@ public class CriteriaHelper {
      */
     public static boolean pollForCriteria(Criteria criteria) throws InterruptedException {
         return pollForCriteria(criteria, DEFAULT_MAX_TIME_TO_POLL, DEFAULT_POLLING_INTERVAL);
+    }
+
+    /**
+     * Checks whether the given Criteria is satisfied polling at a default interval on the UI
+     * thread.
+     * @param criteria The Criteria that will be checked.
+     * @return iff checking has ended with the criteria being satisfied.
+     * @throws InterruptedException
+     * @see #pollForCriteria(Criteria)
+     */
+    public static boolean pollForUIThreadCriteria(final Criteria criteria)
+            throws InterruptedException {
+        final Callable<Boolean> callable = new Callable<Boolean>() {
+            @Override
+            public Boolean call() throws Exception {
+                return criteria.isSatisfied();
+            }
+        };
+
+        return pollForCriteria(new Criteria() {
+            @Override
+            public boolean isSatisfied() {
+                return ThreadUtils.runOnUiThreadBlockingNoException(callable);
+            }
+        });
     }
 
     /**

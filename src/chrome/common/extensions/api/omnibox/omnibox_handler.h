@@ -7,8 +7,8 @@
 
 #include <string>
 
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/manifest_handler.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_handler.h"
 
 namespace extensions {
 
@@ -20,11 +20,6 @@ struct OmniboxInfo : public Extension::ManifestData {
 
   // Returns the omnibox keyword for the extension.
   static const std::string& GetKeyword(const Extension* extension);
-
-  // Returns true if the extension needs a verbose install message.
-  // TODO(yoz): This should be associated with page actions, not
-  // the omnibox.
-  static bool IsVerboseInstallMessage(const Extension* extension);
 };
 
 // Parses the "omnibox" manifest key.
@@ -33,9 +28,10 @@ class OmniboxHandler : public ManifestHandler {
   OmniboxHandler();
   virtual ~OmniboxHandler();
 
-  virtual bool Parse(const base::Value* value,
-                     Extension* extension,
-                     string16* error) OVERRIDE;
+  virtual bool Parse(Extension* extension, base::string16* error) OVERRIDE;
+
+ private:
+  virtual const std::vector<std::string> Keys() const OVERRIDE;
 };
 
 }  // namespace extensions

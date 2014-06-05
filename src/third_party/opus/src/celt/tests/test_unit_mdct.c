@@ -1,3 +1,30 @@
+/* Copyright (c) 2008-2011 Xiph.Org Foundation
+   Written by Jean-Marc Valin */
+/*
+   Redistribution and use in source and binary forms, with or without
+   modification, are permitted provided that the following conditions
+   are met:
+
+   - Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+
+   - Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+
+   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+   ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER
+   OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+   EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+   PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+   PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+   LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+   NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -124,6 +151,9 @@ void test1d(int nfft,int isinverse)
        for (k=0;k<nfft;++k)
           out[k] = 0;
        clt_mdct_backward(&cfg,in,out, window, nfft/2, 0, 1);
+       /* apply TDAC because clt_mdct_backward() no longer does that */
+       for (k=0;k<nfft/4;++k)
+          out[nfft-k-1] = out[nfft/2+k];
        check_inv(in,out,nfft,isinverse);
     } else {
        clt_mdct_forward(&cfg,in,out,window, nfft/2, 0, 1);
@@ -153,15 +183,27 @@ int main(int argc,char ** argv)
         test1d(256,1);
         test1d(512,0);
         test1d(512,1);
+        test1d(1024,0);
+        test1d(1024,1);
+        test1d(2048,0);
+        test1d(2048,1);
 #ifndef RADIX_TWO_ONLY
+        test1d(36,0);
+        test1d(36,1);
         test1d(40,0);
         test1d(40,1);
+        test1d(60,0);
+        test1d(60,1);
         test1d(120,0);
         test1d(120,1);
         test1d(240,0);
         test1d(240,1);
         test1d(480,0);
         test1d(480,1);
+        test1d(960,0);
+        test1d(960,1);
+        test1d(1920,0);
+        test1d(1920,1);
 #endif
     }
     return ret;

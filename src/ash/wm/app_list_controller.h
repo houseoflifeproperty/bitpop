@@ -5,20 +5,22 @@
 #ifndef ASH_WM_APP_LIST_CONTROLLER_H_
 #define ASH_WM_APP_LIST_CONTROLLER_H_
 
-#include "ash/launcher/launcher_icon_observer.h"
+#include "ash/shelf/shelf_icon_observer.h"
 #include "ash/shell_observer.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "ui/app_list/pagination_model_observer.h"
 #include "ui/aura/client/focus_change_observer.h"
-#include "ui/aura/root_window_observer.h"
-#include "ui/base/events/event_handler.h"
+#include "ui/aura/window_observer.h"
 #include "ui/compositor/layer_animation_observer.h"
+#include "ui/events/event_handler.h"
 #include "ui/gfx/rect.h"
+#include "ui/keyboard/keyboard_controller_observer.h"
 #include "ui/views/widget/widget_observer.h"
 
 namespace app_list {
+class ApplicationDragAndDropHost;
 class AppListView;
 class PaginationModel;
 }
@@ -28,7 +30,9 @@ class LocatedEvent;
 }
 
 namespace ash {
-namespace internal {
+namespace test {
+class AppListControllerTestApi;
+}
 
 // AppListController is a controller that manages app list UI for shell.
 // It creates AppListView and schedules showing/hiding animation.
@@ -36,11 +40,12 @@ namespace internal {
 // activation state and desktop mouse click to auto dismiss the UI.
 class AppListController : public ui::EventHandler,
                           public aura::client::FocusChangeObserver,
-                          public aura::RootWindowObserver,
+                          public aura::WindowObserver,
                           public ui::ImplicitAnimationObserver,
                           public views::WidgetObserver,
+                          public keyboard::KeyboardControllerObserver,
                           public ShellObserver,
-                          public LauncherIconObserver,
+                          public ShelfIconObserver,
                           public app_list::PaginationModelObserver {
  public:
   AppListController();
@@ -61,7 +66,17 @@ class AppListController : public ui::EventHandler,
   // Returns app list window or NULL if it is not visible.
   aura::Window* GetWindow();
 
+  // Returns app list view or NULL if it is not visible.
+  app_list::AppListView* GetView() { return view_; }
+
  private:
+  friend class test::AppListControllerTestApi;
+
+  // If |drag_and_drop_host| is not NULL it will be called upon drag and drop
+  // operations outside the application list.
+  void SetDragAndDropHostOfCurrentAppList(
+      app_list::ApplicationDragAndDropHost* drag_and_drop_host);
+
   // Sets the app list view and attempts to show it.
   void SetView(app_list::AppListView* view);
 
@@ -84,31 +99,39 @@ class AppListController : public ui::EventHandler,
   virtual void OnWindowFocused(aura::Window* gained_focus,
                                aura::Window* lost_focus) OVERRIDE;
 
-  // aura::RootWindowObserver overrides:
-  virtual void OnRootWindowResized(const aura::RootWindow* root,
-                                   const gfx::Size& old_size) OVERRIDE;
+  // aura::WindowObserver overrides:
+  virtual void OnWindowBoundsChanged(aura::Window* root,
+                                     const gfx::Rect& old_bounds,
+                                     const gfx::Rect& new_bounds) OVERRIDE;
 
   // ui::ImplicitAnimationObserver overrides:
   virtual void OnImplicitAnimationsCompleted() OVERRIDE;
 
   // views::WidgetObserver overrides:
-  virtual void OnWidgetClosing(views::Widget* widget) OVERRIDE;
+  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE;
+
+  // KeyboardControllerObserver overrides:
+  virtual void OnKeyboardBoundsChanging(const gfx::Rect& new_bounds) OVERRIDE;
 
   // ShellObserver overrides:
-  virtual void OnShelfAlignmentChanged(aura::RootWindow* root_window) OVERRIDE;
+  virtual void OnShelfAlignmentChanged(aura::Window* root_window) OVERRIDE;
 
-  // LauncherIconObserver overrides:
-  virtual void OnLauncherIconPositionsChanged() OVERRIDE;
+  // ShelfIconObserver overrides:
+  virtual void OnShelfIconPositionsChanged() OVERRIDE;
 
   // app_list::PaginationModelObserver overrides:
   virtual void TotalPagesChanged() OVERRIDE;
   virtual void SelectedPageChanged(int old_selected, int new_selected) OVERRIDE;
+  virtual void TransitionStarted() OVERRIDE;
   virtual void TransitionChanged() OVERRIDE;
 
   scoped_ptr<app_list::PaginationModel> pagination_model_;
 
   // Whether we should show or hide app list widget.
   bool is_visible_;
+
+  // Whether the app list should remain centered.
+  bool is_centered_;
 
   // The AppListView this class manages, owned by its widget.
   app_list::AppListView* view_;
@@ -122,7 +145,6 @@ class AppListController : public ui::EventHandler,
   DISALLOW_COPY_AND_ASSIGN(AppListController);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_WM_APP_LIST_CONTROLLER_H_

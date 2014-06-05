@@ -5,6 +5,8 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_TABS_WINDOWS_EVENT_ROUTER_H_
 #define CHROME_BROWSER_EXTENSIONS_API_TABS_WINDOWS_EVENT_ROUTER_H_
 
+#include <string>
+
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/extensions/window_controller_list_observer.h"
@@ -12,8 +14,6 @@
 #include "content/public/browser/notification_registrar.h"
 #if defined(TOOLKIT_VIEWS)
 #include "ui/views/focus/widget_focus_manager.h"
-#elif defined(TOOLKIT_GTK)
-#include "ui/base/x/active_window_watcher_x_observer.h"
 #endif
 
 class Profile;
@@ -31,8 +31,6 @@ namespace extensions {
 class WindowsEventRouter : public WindowControllerListObserver,
 #if defined(TOOLKIT_VIEWS)
                           public views::WidgetFocusChangeListener,
-#elif defined(TOOLKIT_GTK)
-                          public ui::ActiveWindowWatcherXObserver,
 #endif
                           public content::NotificationObserver {
  public:
@@ -48,8 +46,6 @@ class WindowsEventRouter : public WindowControllerListObserver,
 #if defined(TOOLKIT_VIEWS)
   virtual void OnNativeFocusChange(gfx::NativeView focused_before,
                                    gfx::NativeView focused_now) OVERRIDE;
-#elif defined(TOOLKIT_GTK)
-  virtual void ActiveWindowChanged(GdkWindow* active_window) OVERRIDE;
 #endif
 
   // content::NotificationObserver.
@@ -61,7 +57,7 @@ class WindowsEventRouter : public WindowControllerListObserver,
   void OnActiveWindowChanged(WindowController* window_controller);
 
  private:
-  void DispatchEvent(const char* event_name,
+  void DispatchEvent(const std::string& event_name,
                      Profile* profile,
                      scoped_ptr<base::ListValue> args);
 

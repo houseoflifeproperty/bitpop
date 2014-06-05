@@ -9,410 +9,353 @@
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "media/audio/audio_util.h"
-#include "media/base/buffers.h"
+#include "media/base/audio_buffer.h"
+#include "media/base/audio_bus.h"
+#include "media/base/limits.h"
+#include "media/filters/wsola_internals.h"
 
 namespace media {
 
-// The starting size in bytes for |audio_buffer_|.
-// Previous usage maintained a deque of 16 Buffers, each of size 4Kb. This
-// worked well, so we maintain this number of bytes (16 * 4096).
-static const int kStartingBufferSizeInBytes = 65536;
 
-// The maximum size in bytes for the |audio_buffer_|. Arbitrarily determined.
-// This number represents 3 seconds of 96kHz/16 bit 7.1 surround sound.
-static const int kMaxBufferSizeInBytes = 4608000;
+// Waveform Similarity Overlap-and-add (WSOLA).
+//
+// One WSOLA iteration
+//
+// 1) Extract |target_block_| as input frames at indices
+//    [|target_block_index_|, |target_block_index_| + |ola_window_size_|).
+//    Note that |target_block_| is the "natural" continuation of the output.
+//
+// 2) Extract |search_block_| as input frames at indices
+//    [|search_block_index_|,
+//     |search_block_index_| + |num_candidate_blocks_| + |ola_window_size_|).
+//
+// 3) Find a block within the |search_block_| that is most similar
+//    to |target_block_|. Let |optimal_index| be the index of such block and
+//    write it to |optimal_block_|.
+//
+// 4) Update:
+//    |optimal_block_| = |transition_window_| * |target_block_| +
+//    (1 - |transition_window_|) * |optimal_block_|.
+//
+// 5) Overlap-and-add |optimal_block_| to the |wsola_output_|.
+//
+// 6) Update:
+//    |target_block_| = |optimal_index| + |ola_window_size_| / 2.
+//    |output_index_| = |output_index_| + |ola_window_size_| / 2,
+//    |search_block_center_offset_| = |output_index_| * |playback_rate_|, and
+//    |search_block_index_| = |search_block_center_offset_| -
+//        |search_block_center_offset_|.
 
-// Duration of audio segments used for crossfading (in seconds).
-static const double kWindowDuration = 0.08;
+// Overlap-and-add window size in milliseconds.
+static const int kOlaWindowSizeMs = 20;
 
-// Duration of crossfade between audio segments (in seconds).
-static const double kCrossfadeDuration = 0.008;
+// Size of search interval in milliseconds. The search interval is
+// [-delta delta] around |output_index_| * |playback_rate_|. So the search
+// interval is 2 * delta.
+static const int kWsolaSearchIntervalMs = 30;
 
-// Max/min supported playback rates for fast/slow audio. Audio outside of these
-// ranges are muted.
-// Audio at these speeds would sound better under a frequency domain algorithm.
-static const float kMinPlaybackRate = 0.5f;
-static const float kMaxPlaybackRate = 4.0f;
+// The maximum size in seconds for the |audio_buffer_|. Arbitrarily determined.
+static const int kMaxCapacityInSeconds = 3;
+
+// The starting size in frames for |audio_buffer_|. Previous usage maintained a
+// queue of 16 AudioBuffers, each of 512 frames. This worked well, so we
+// maintain this number of frames.
+static const int kStartingBufferSizeInFrames = 16 * 512;
+
+COMPILE_ASSERT(kStartingBufferSizeInFrames <
+               (kMaxCapacityInSeconds * limits::kMinSampleRate),
+               max_capacity_smaller_than_starting_buffer_size);
 
 AudioRendererAlgorithm::AudioRendererAlgorithm()
     : channels_(0),
       samples_per_second_(0),
-      bytes_per_channel_(0),
-      playback_rate_(0.0f),
-      audio_buffer_(0, kStartingBufferSizeInBytes),
-      bytes_in_crossfade_(0),
-      bytes_per_frame_(0),
-      index_into_window_(0),
-      crossfade_frame_number_(0),
-      muted_(false),
-      needs_more_data_(false),
-      window_size_(0) {
+      playback_rate_(0),
+      capacity_(kStartingBufferSizeInFrames),
+      output_time_(0.0),
+      search_block_center_offset_(0),
+      search_block_index_(0),
+      num_candidate_blocks_(0),
+      target_block_index_(0),
+      ola_window_size_(0),
+      ola_hop_size_(0),
+      num_complete_frames_(0) {
 }
 
 AudioRendererAlgorithm::~AudioRendererAlgorithm() {}
 
 void AudioRendererAlgorithm::Initialize(float initial_playback_rate,
-                                        const AudioParameters& params,
-                                        const base::Closure& callback) {
+                                        const AudioParameters& params) {
   CHECK(params.IsValid());
-  DCHECK(!callback.is_null());
 
   channels_ = params.channels();
   samples_per_second_ = params.sample_rate();
-  bytes_per_channel_ = params.bits_per_sample() / 8;
-  bytes_per_frame_ = params.GetBytesPerFrame();
-  request_read_cb_ = callback;
   SetPlaybackRate(initial_playback_rate);
+  num_candidate_blocks_ = (kWsolaSearchIntervalMs * samples_per_second_) / 1000;
+  ola_window_size_ = kOlaWindowSizeMs * samples_per_second_ / 1000;
 
-  window_size_ =
-      samples_per_second_ * bytes_per_channel_ * channels_ * kWindowDuration;
-  AlignToFrameBoundary(&window_size_);
+  // Make sure window size in an even number.
+  ola_window_size_ += ola_window_size_ & 1;
+  ola_hop_size_ = ola_window_size_ / 2;
 
-  bytes_in_crossfade_ =
-      samples_per_second_ * bytes_per_channel_ * channels_ * kCrossfadeDuration;
-  AlignToFrameBoundary(&bytes_in_crossfade_);
+  // |num_candidate_blocks_| / 2 is the offset of the center of the search
+  // block to the center of the first (left most) candidate block. The offset
+  // of the center of a candidate block to its left most point is
+  // |ola_window_size_| / 2 - 1. Note that |ola_window_size_| is even and in
+  // our convention the center belongs to the left half, so we need to subtract
+  // one frame to get the correct offset.
+  //
+  //                             Search Block
+  //              <------------------------------------------->
+  //
+  //   |ola_window_size_| / 2 - 1
+  //              <----
+  //
+  //             |num_candidate_blocks_| / 2
+  //                   <----------------
+  //                                 center
+  //              X----X----------------X---------------X-----X
+  //              <---------->                     <---------->
+  //                Candidate      ...               Candidate
+  //                   1,          ...         |num_candidate_blocks_|
+  search_block_center_offset_ = num_candidate_blocks_ / 2 +
+      (ola_window_size_ / 2 - 1);
 
-  crossfade_buffer_.reset(new uint8[bytes_in_crossfade_]);
+  ola_window_.reset(new float[ola_window_size_]);
+  internal::GetSymmetricHanningWindow(ola_window_size_, ola_window_.get());
+
+  transition_window_.reset(new float[ola_window_size_ * 2]);
+  internal::GetSymmetricHanningWindow(2 * ola_window_size_,
+                                      transition_window_.get());
+
+  wsola_output_ = AudioBus::Create(channels_, ola_window_size_ + ola_hop_size_);
+  wsola_output_->Zero();  // Initialize for overlap-and-add of the first block.
+
+  // Auxiliary containers.
+  optimal_block_ = AudioBus::Create(channels_, ola_window_size_);
+  search_block_ = AudioBus::Create(
+      channels_, num_candidate_blocks_ + (ola_window_size_ - 1));
+  target_block_ = AudioBus::Create(channels_, ola_window_size_);
 }
 
-int AudioRendererAlgorithm::FillBuffer(
-    uint8* dest, int requested_frames) {
-  DCHECK_NE(bytes_per_frame_, 0);
-
-  if (playback_rate_ == 0.0f)
+int AudioRendererAlgorithm::FillBuffer(AudioBus* dest, int requested_frames) {
+  if (playback_rate_ == 0)
     return 0;
 
-  int slower_step = ceil(window_size_ * playback_rate_);
-  int faster_step = ceil(window_size_ / playback_rate_);
-  AlignToFrameBoundary(&slower_step);
-  AlignToFrameBoundary(&faster_step);
+  DCHECK_EQ(channels_, dest->channels());
 
-  int total_frames_rendered = 0;
-  uint8* output_ptr = dest;
-  while (total_frames_rendered < requested_frames) {
-    if (index_into_window_ == window_size_)
-      ResetWindow();
+  int slower_step = ceil(ola_window_size_ * playback_rate_);
+  int faster_step = ceil(ola_window_size_ / playback_rate_);
 
-    bool rendered_frame = true;
-    if (window_size_ > faster_step) {
-      rendered_frame = OutputFasterPlayback(
-          output_ptr, window_size_, faster_step);
-    } else if (slower_step < window_size_) {
-      rendered_frame = OutputSlowerPlayback(
-          output_ptr, slower_step, window_size_);
-    } else {
-      rendered_frame = OutputNormalPlayback(output_ptr);
-    }
-
-    if (!rendered_frame) {
-      needs_more_data_ = true;
-      break;
-    }
-
-    output_ptr += bytes_per_frame_;
-    total_frames_rendered++;
-  }
-  return total_frames_rendered;
-}
-
-void AudioRendererAlgorithm::ResetWindow() {
-  DCHECK_LE(index_into_window_, window_size_);
-  index_into_window_ = 0;
-  crossfade_frame_number_ = 0;
-}
-
-bool AudioRendererAlgorithm::OutputFasterPlayback(uint8* dest,
-                                                  int input_step,
-                                                  int output_step) {
-  // Ensure we don't run into OOB read/write situation.
-  CHECK_GT(input_step, output_step);
-  DCHECK_LT(index_into_window_, window_size_);
-  DCHECK_GT(playback_rate_, 1.0);
-
-  if (audio_buffer_.forward_bytes() < bytes_per_frame_)
-    return false;
-
-  // The audio data is output in a series of windows. For sped-up playback,
-  // the window is comprised of the following phases:
-  //
-  //  a) Output raw data.
-  //  b) Save bytes for crossfade in |crossfade_buffer_|.
-  //  c) Drop data.
-  //  d) Output crossfaded audio leading up to the next window.
-  //
-  // The duration of each phase is computed below based on the |window_size_|
-  // and |playback_rate_|.
-  int bytes_to_crossfade = bytes_in_crossfade_;
-  if (muted_ || bytes_to_crossfade > output_step)
-    bytes_to_crossfade = 0;
-
-  // This is the index of the end of phase a, beginning of phase b.
-  int outtro_crossfade_begin = output_step - bytes_to_crossfade;
-
-  // This is the index of the end of phase b, beginning of phase c.
-  int outtro_crossfade_end = output_step;
-
-  // This is the index of the end of phase c, beginning of phase d.
-  // This phase continues until |index_into_window_| reaches |window_size_|, at
-  // which point the window restarts.
-  int intro_crossfade_begin = input_step - bytes_to_crossfade;
-
-  // a) Output a raw frame if we haven't reached the crossfade section.
-  if (index_into_window_ < outtro_crossfade_begin) {
-    CopyWithAdvance(dest);
-    index_into_window_ += bytes_per_frame_;
-    return true;
+  // Optimize the most common |playback_rate_| ~= 1 case to use a single copy
+  // instead of copying frame by frame.
+  if (ola_window_size_ <= faster_step && slower_step >= ola_window_size_) {
+    const int frames_to_copy =
+        std::min(audio_buffer_.frames(), requested_frames);
+    const int frames_read = audio_buffer_.ReadFrames(frames_to_copy, 0, dest);
+    DCHECK_EQ(frames_read, frames_to_copy);
+    return frames_read;
   }
 
-  // b) Save outtro crossfade frames into intermediate buffer, but do not output
-  //    anything to |dest|.
-  while (index_into_window_ < outtro_crossfade_end) {
-    if (audio_buffer_.forward_bytes() < bytes_per_frame_)
-      return false;
-
-    // This phase only applies if there are bytes to crossfade.
-    DCHECK_GT(bytes_to_crossfade, 0);
-    uint8* place_to_copy = crossfade_buffer_.get() +
-        (index_into_window_ - outtro_crossfade_begin);
-    CopyWithAdvance(place_to_copy);
-    index_into_window_ += bytes_per_frame_;
-  }
-
-  // c) Drop frames until we reach the intro crossfade section.
-  while (index_into_window_ < intro_crossfade_begin) {
-    if (audio_buffer_.forward_bytes() < bytes_per_frame_)
-      return false;
-
-    DropFrame();
-    index_into_window_ += bytes_per_frame_;
-  }
-
-  // Return if we have run out of data after Phase c).
-  if (audio_buffer_.forward_bytes() < bytes_per_frame_)
-    return false;
-
-  // Phase d) doesn't apply if there are no bytes to crossfade.
-  if (bytes_to_crossfade == 0) {
-    DCHECK_EQ(index_into_window_, window_size_);
-    return false;
-  }
-
-  // d) Crossfade and output a frame.
-  DCHECK_LT(index_into_window_, window_size_);
-  int offset_into_buffer = index_into_window_ - intro_crossfade_begin;
-  memcpy(dest, crossfade_buffer_.get() + offset_into_buffer,
-         bytes_per_frame_);
-  scoped_array<uint8> intro_frame_ptr(new uint8[bytes_per_frame_]);
-  audio_buffer_.Read(intro_frame_ptr.get(), bytes_per_frame_);
-  OutputCrossfadedFrame(dest, intro_frame_ptr.get());
-  index_into_window_ += bytes_per_frame_;
-  return true;
-}
-
-bool AudioRendererAlgorithm::OutputSlowerPlayback(uint8* dest,
-                                                  int input_step,
-                                                  int output_step) {
-  // Ensure we don't run into OOB read/write situation.
-  CHECK_LT(input_step, output_step);
-  DCHECK_LT(index_into_window_, window_size_);
-  DCHECK_LT(playback_rate_, 1.0);
-  DCHECK_NE(playback_rate_, 0.0);
-
-  if (audio_buffer_.forward_bytes() < bytes_per_frame_)
-    return false;
-
-  // The audio data is output in a series of windows. For slowed down playback,
-  // the window is comprised of the following phases:
-  //
-  //  a) Output raw data.
-  //  b) Output and save bytes for crossfade in |crossfade_buffer_|.
-  //  c) Output* raw data.
-  //  d) Output* crossfaded audio leading up to the next window.
-  //
-  // * Phases c) and d) do not progress |audio_buffer_|'s cursor so that the
-  // |audio_buffer_|'s cursor is in the correct place for the next window.
-  //
-  // The duration of each phase is computed below based on the |window_size_|
-  // and |playback_rate_|.
-  int bytes_to_crossfade = bytes_in_crossfade_;
-  if (muted_ || bytes_to_crossfade > input_step)
-    bytes_to_crossfade = 0;
-
-  // This is the index of the end of phase a, beginning of phase b.
-  int intro_crossfade_begin = input_step - bytes_to_crossfade;
-
-  // This is the index of the end of phase b, beginning of phase c.
-  int intro_crossfade_end = input_step;
-
-  // This is the index of the end of phase c,  beginning of phase d.
-  // This phase continues until |index_into_window_| reaches |window_size_|, at
-  // which point the window restarts.
-  int outtro_crossfade_begin = output_step - bytes_to_crossfade;
-
-  // a) Output a raw frame.
-  if (index_into_window_ < intro_crossfade_begin) {
-    CopyWithAdvance(dest);
-    index_into_window_ += bytes_per_frame_;
-    return true;
-  }
-
-  // b) Save the raw frame for the intro crossfade section, then output the
-  //    frame to |dest|.
-  if (index_into_window_ < intro_crossfade_end) {
-    int offset = index_into_window_ - intro_crossfade_begin;
-    uint8* place_to_copy = crossfade_buffer_.get() + offset;
-    CopyWithoutAdvance(place_to_copy);
-    CopyWithAdvance(dest);
-    index_into_window_ += bytes_per_frame_;
-    return true;
-  }
-
-  int audio_buffer_offset = index_into_window_ - intro_crossfade_end;
-
-  if (audio_buffer_.forward_bytes() < audio_buffer_offset + bytes_per_frame_)
-    return false;
-
-  // c) Output a raw frame into |dest| without advancing the |audio_buffer_|
-  //    cursor. See function-level comment.
-  DCHECK_GE(index_into_window_, intro_crossfade_end);
-  CopyWithoutAdvance(dest, audio_buffer_offset);
-
-  // d) Crossfade the next frame of |crossfade_buffer_| into |dest| if we've
-  //    reached the outtro crossfade section of the window.
-  if (index_into_window_ >= outtro_crossfade_begin) {
-    int offset_into_crossfade_buffer =
-        index_into_window_ - outtro_crossfade_begin;
-    uint8* intro_frame_ptr =
-        crossfade_buffer_.get() + offset_into_crossfade_buffer;
-    OutputCrossfadedFrame(dest, intro_frame_ptr);
-  }
-
-  index_into_window_ += bytes_per_frame_;
-  return true;
-}
-
-bool AudioRendererAlgorithm::OutputNormalPlayback(uint8* dest) {
-  if (audio_buffer_.forward_bytes() >= bytes_per_frame_) {
-    CopyWithAdvance(dest);
-    index_into_window_ += bytes_per_frame_;
-    return true;
-  }
-  return false;
-}
-
-void AudioRendererAlgorithm::CopyWithAdvance(uint8* dest) {
-  CopyWithoutAdvance(dest);
-  DropFrame();
-}
-
-void AudioRendererAlgorithm::CopyWithoutAdvance(uint8* dest) {
-  CopyWithoutAdvance(dest, 0);
-}
-
-void AudioRendererAlgorithm::CopyWithoutAdvance(
-    uint8* dest, int offset) {
-  if (muted_) {
-    memset(dest, 0, bytes_per_frame_);
-    return;
-  }
-  int copied = audio_buffer_.Peek(dest, bytes_per_frame_, offset);
-  DCHECK_EQ(bytes_per_frame_, copied);
-}
-
-void AudioRendererAlgorithm::DropFrame() {
-  audio_buffer_.Seek(bytes_per_frame_);
-
-  if (!IsQueueFull())
-    request_read_cb_.Run();
-}
-
-void AudioRendererAlgorithm::OutputCrossfadedFrame(
-    uint8* outtro, const uint8* intro) {
-  DCHECK_LE(index_into_window_, window_size_);
-  DCHECK(!muted_);
-
-  switch (bytes_per_channel_) {
-    case 4:
-      CrossfadeFrame<int32>(outtro, intro);
-      break;
-    case 2:
-      CrossfadeFrame<int16>(outtro, intro);
-      break;
-    case 1:
-      CrossfadeFrame<uint8>(outtro, intro);
-      break;
-    default:
-      NOTREACHED() << "Unsupported audio bit depth in crossfade.";
-  }
-}
-
-template <class Type>
-void AudioRendererAlgorithm::CrossfadeFrame(
-    uint8* outtro_bytes, const uint8* intro_bytes) {
-  Type* outtro = reinterpret_cast<Type*>(outtro_bytes);
-  const Type* intro = reinterpret_cast<const Type*>(intro_bytes);
-
-  int frames_in_crossfade = bytes_in_crossfade_ / bytes_per_frame_;
-  float crossfade_ratio =
-      static_cast<float>(crossfade_frame_number_) / frames_in_crossfade;
-  for (int channel = 0; channel < channels_; ++channel) {
-    *outtro *= 1.0 - crossfade_ratio;
-    *outtro++ += (*intro++) * crossfade_ratio;
-  }
-  crossfade_frame_number_++;
+  int rendered_frames = 0;
+  do {
+    rendered_frames += WriteCompletedFramesTo(
+        requested_frames - rendered_frames, rendered_frames, dest);
+  } while (rendered_frames < requested_frames && RunOneWsolaIteration());
+  return rendered_frames;
 }
 
 void AudioRendererAlgorithm::SetPlaybackRate(float new_rate) {
-  DCHECK_GE(new_rate, 0.0);
+  DCHECK_GE(new_rate, 0);
   playback_rate_ = new_rate;
-  muted_ =
-      playback_rate_ < kMinPlaybackRate || playback_rate_ > kMaxPlaybackRate;
-
-  ResetWindow();
-}
-
-void AudioRendererAlgorithm::AlignToFrameBoundary(int* value) {
-  (*value) -= ((*value) % bytes_per_frame_);
 }
 
 void AudioRendererAlgorithm::FlushBuffers() {
-  ResetWindow();
-
   // Clear the queue of decoded packets (releasing the buffers).
   audio_buffer_.Clear();
-  request_read_cb_.Run();
+  output_time_ = 0.0;
+  search_block_index_ = 0;
+  target_block_index_ = 0;
+  wsola_output_->Zero();
+  num_complete_frames_ = 0;
+
+  // Reset |capacity_| so growth triggered by underflows doesn't penalize
+  // seek time.
+  capacity_ = kStartingBufferSizeInFrames;
 }
 
 base::TimeDelta AudioRendererAlgorithm::GetTime() {
   return audio_buffer_.current_time();
 }
 
-void AudioRendererAlgorithm::EnqueueBuffer(Buffer* buffer_in) {
-  DCHECK(!buffer_in->IsEndOfStream());
+void AudioRendererAlgorithm::EnqueueBuffer(
+    const scoped_refptr<AudioBuffer>& buffer_in) {
+  DCHECK(!buffer_in->end_of_stream());
   audio_buffer_.Append(buffer_in);
-  needs_more_data_ = false;
-
-  // If we still don't have enough data, request more.
-  if (!IsQueueFull())
-    request_read_cb_.Run();
-}
-
-bool AudioRendererAlgorithm::CanFillBuffer() {
-  return audio_buffer_.forward_bytes() > 0 && !needs_more_data_;
 }
 
 bool AudioRendererAlgorithm::IsQueueFull() {
-  return audio_buffer_.forward_bytes() >= audio_buffer_.forward_capacity();
-}
-
-int AudioRendererAlgorithm::QueueCapacity() {
-  return audio_buffer_.forward_capacity();
+  return audio_buffer_.frames() >= capacity_;
 }
 
 void AudioRendererAlgorithm::IncreaseQueueCapacity() {
-  audio_buffer_.set_forward_capacity(
-      std::min(2 * audio_buffer_.forward_capacity(), kMaxBufferSizeInBytes));
+  int max_capacity = kMaxCapacityInSeconds * samples_per_second_;
+  DCHECK_LE(capacity_, max_capacity);
+
+  capacity_ = std::min(2 * capacity_, max_capacity);
+}
+
+bool AudioRendererAlgorithm::CanPerformWsola() const {
+  const int search_block_size = num_candidate_blocks_ + (ola_window_size_ - 1);
+  const int frames = audio_buffer_.frames();
+  return target_block_index_ + ola_window_size_ <= frames &&
+      search_block_index_ + search_block_size <= frames;
+}
+
+bool AudioRendererAlgorithm::RunOneWsolaIteration() {
+  if (!CanPerformWsola())
+    return false;
+
+  GetOptimalBlock();
+
+  // Overlap-and-add.
+  for (int k = 0; k < channels_; ++k) {
+    const float* const ch_opt_frame = optimal_block_->channel(k);
+    float* ch_output = wsola_output_->channel(k) + num_complete_frames_;
+    for (int n = 0; n < ola_hop_size_; ++n) {
+      ch_output[n] = ch_output[n] * ola_window_[ola_hop_size_ + n] +
+          ch_opt_frame[n] * ola_window_[n];
+    }
+
+    // Copy the second half to the output.
+    memcpy(&ch_output[ola_hop_size_], &ch_opt_frame[ola_hop_size_],
+           sizeof(*ch_opt_frame) * ola_hop_size_);
+  }
+
+  num_complete_frames_ += ola_hop_size_;
+  UpdateOutputTime(ola_hop_size_);
+  RemoveOldInputFrames();
+  return true;
+}
+
+void AudioRendererAlgorithm::UpdateOutputTime(double time_change) {
+  output_time_ += time_change;
+  // Center of the search region, in frames.
+  const int search_block_center_index = static_cast<int>(
+      output_time_ * playback_rate_ + 0.5);
+  search_block_index_ = search_block_center_index - search_block_center_offset_;
+}
+
+void AudioRendererAlgorithm::RemoveOldInputFrames() {
+  const int earliest_used_index = std::min(target_block_index_,
+                                           search_block_index_);
+  if (earliest_used_index <= 0)
+    return;  // Nothing to remove.
+
+  // Remove frames from input and adjust indices accordingly.
+  audio_buffer_.SeekFrames(earliest_used_index);
+  target_block_index_ -= earliest_used_index;
+
+  // Adjust output index.
+  double output_time_change = static_cast<double>(earliest_used_index) /
+      playback_rate_;
+  CHECK_GE(output_time_, output_time_change);
+  UpdateOutputTime(-output_time_change);
+}
+
+int AudioRendererAlgorithm::WriteCompletedFramesTo(
+    int requested_frames, int dest_offset, AudioBus* dest) {
+  int rendered_frames = std::min(num_complete_frames_, requested_frames);
+
+  if (rendered_frames == 0)
+    return 0;  // There is nothing to read from |wsola_output_|, return.
+
+  wsola_output_->CopyPartialFramesTo(0, rendered_frames, dest_offset, dest);
+
+  // Remove the frames which are read.
+  int frames_to_move = wsola_output_->frames() - rendered_frames;
+  for (int k = 0; k < channels_; ++k) {
+    float* ch = wsola_output_->channel(k);
+    memmove(ch, &ch[rendered_frames], sizeof(*ch) * frames_to_move);
+  }
+  num_complete_frames_ -= rendered_frames;
+  return rendered_frames;
+}
+
+bool AudioRendererAlgorithm::TargetIsWithinSearchRegion() const {
+  const int search_block_size = num_candidate_blocks_ + (ola_window_size_ - 1);
+
+  return target_block_index_ >= search_block_index_ &&
+      target_block_index_ + ola_window_size_ <=
+      search_block_index_ + search_block_size;
+}
+
+void AudioRendererAlgorithm::GetOptimalBlock() {
+  int optimal_index = 0;
+
+  // An interval around last optimal block which is excluded from the search.
+  // This is to reduce the buzzy sound. The number 160 is rather arbitrary and
+  // derived heuristically.
+  const int kExcludeIntervalLengthFrames = 160;
+  if (TargetIsWithinSearchRegion()) {
+    optimal_index = target_block_index_;
+    PeekAudioWithZeroPrepend(optimal_index, optimal_block_.get());
+  } else {
+    PeekAudioWithZeroPrepend(target_block_index_, target_block_.get());
+    PeekAudioWithZeroPrepend(search_block_index_, search_block_.get());
+    int last_optimal = target_block_index_ - ola_hop_size_ -
+        search_block_index_;
+    internal::Interval exclude_iterval = std::make_pair(
+        last_optimal - kExcludeIntervalLengthFrames / 2,
+        last_optimal + kExcludeIntervalLengthFrames / 2);
+
+    // |optimal_index| is in frames and it is relative to the beginning of the
+    // |search_block_|.
+    optimal_index = internal::OptimalIndex(
+        search_block_.get(), target_block_.get(), exclude_iterval);
+
+    // Translate |index| w.r.t. the beginning of |audio_buffer_| and extract the
+    // optimal block.
+    optimal_index += search_block_index_;
+    PeekAudioWithZeroPrepend(optimal_index, optimal_block_.get());
+
+    // Make a transition from target block to the optimal block if different.
+    // Target block has the best continuation to the current output.
+    // Optimal block is the most similar block to the target, however, it might
+    // introduce some discontinuity when over-lap-added. Therefore, we combine
+    // them for a smoother transition. The length of transition window is twice
+    // as that of the optimal-block which makes it like a weighting function
+    // where target-block has higher weight close to zero (weight of 1 at index
+    // 0) and lower weight close the end.
+    for (int k = 0; k < channels_; ++k) {
+      float* ch_opt = optimal_block_->channel(k);
+      const float* const ch_target = target_block_->channel(k);
+      for (int n = 0; n < ola_window_size_; ++n) {
+        ch_opt[n] = ch_opt[n] * transition_window_[n] + ch_target[n] *
+            transition_window_[ola_window_size_ + n];
+      }
+    }
+  }
+
+  // Next target is one hop ahead of the current optimal.
+  target_block_index_ = optimal_index + ola_hop_size_;
+}
+
+void AudioRendererAlgorithm::PeekAudioWithZeroPrepend(
+    int read_offset_frames, AudioBus* dest) {
+  CHECK_LE(read_offset_frames + dest->frames(), audio_buffer_.frames());
+
+  int write_offset = 0;
+  int num_frames_to_read = dest->frames();
+  if (read_offset_frames < 0) {
+    int num_zero_frames_appended = std::min(-read_offset_frames,
+                                            num_frames_to_read);
+    read_offset_frames = 0;
+    num_frames_to_read -= num_zero_frames_appended;
+    write_offset = num_zero_frames_appended;
+    dest->ZeroFrames(num_zero_frames_appended);
+  }
+  audio_buffer_.PeekFrames(num_frames_to_read, read_offset_frames,
+                           write_offset, dest);
 }
 
 }  // namespace media

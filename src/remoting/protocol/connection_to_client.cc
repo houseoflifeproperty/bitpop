@@ -6,7 +6,7 @@
 
 #include "base/bind.h"
 #include "base/location.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "net/base/io_buffer.h"
 #include "remoting/protocol/clipboard_stub.h"
 #include "remoting/protocol/host_control_dispatcher.h"
@@ -108,10 +108,13 @@ void ConnectionToClient::OnSessionStateChange(Session::State state) {
   switch(state) {
     case Session::INITIALIZING:
     case Session::CONNECTING:
+    case Session::ACCEPTING:
     case Session::CONNECTED:
       // Don't care about these events.
       break;
-
+    case Session::AUTHENTICATING:
+      handler_->OnConnectionAuthenticating(this);
+      break;
     case Session::AUTHENTICATED:
       // Initialize channels.
       control_dispatcher_.reset(new HostControlDispatcher());

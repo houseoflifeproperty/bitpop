@@ -108,14 +108,32 @@ GLuint GLTestHelper::SetupUnitQuad(GLint position_location) {
   return vbo;
 }
 
+GLuint GLTestHelper::SetupColorsForUnitQuad(
+    GLint location, const GLfloat color[4], GLenum usage) {
+  GLuint vbo = 0;
+  glGenBuffers(1, &vbo);
+  glBindBuffer(GL_ARRAY_BUFFER, vbo);
+  GLfloat vertices[6 * 4];
+  for (int ii = 0; ii < 6; ++ii) {
+    for (int jj = 0; jj < 4; ++jj) {
+      vertices[ii * 4 + jj] = color[jj];
+    }
+  }
+  glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, usage);
+  glEnableVertexAttribArray(location);
+  glVertexAttribPointer(location, 4, GL_FLOAT, GL_FALSE, 0, 0);
+
+  return vbo;
+}
+
 bool GLTestHelper::CheckPixels(
     GLint x, GLint y, GLsizei width, GLsizei height, GLint tolerance,
     const uint8* color) {
   GLsizei size = width * height * 4;
-  scoped_array<uint8> pixels(new uint8[size]);
+  scoped_ptr<uint8[]> pixels(new uint8[size]);
   memset(pixels.get(), kCheckClearValue, size);
   glReadPixels(x, y, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.get());
-  bool same = true;
+  int bad_count = 0;
   for (GLint yy = 0; yy < height; ++yy) {
     for (GLint xx = 0; xx < width; ++xx) {
       int offset = yy * width * 4 + xx * 4;
@@ -127,12 +145,17 @@ bool GLTestHelper::CheckPixels(
         if (diff > tolerance) {
           EXPECT_EQ(expected, actual) << " at " << (xx + x) << ", " << (yy + y)
                                       << " channel " << jj;
-          same = false;
+          ++bad_count;
+          // Exit early just so we don't spam the log but we print enough
+          // to hopefully make it easy to diagnose the issue.
+          if (bad_count > 16) {
+            return false;
+          }
         }
       }
     }
   }
-  return same;
+  return bad_count == 0;
 }
 
 namespace {
@@ -179,7 +202,7 @@ bool GLTestHelper::SaveBackbufferAsBMP(
   glPixelStorei(GL_PACK_ALIGNMENT, 1);
   int num_pixels = width * height;
   int size = num_pixels * 4;
-  scoped_array<uint8> data(new uint8[size]);
+  scoped_ptr<uint8[]> data(new uint8[size]);
   uint8* pixels = data.get();
   glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
 

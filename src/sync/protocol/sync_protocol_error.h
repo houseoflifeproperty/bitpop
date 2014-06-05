@@ -39,6 +39,12 @@ enum SyncProtocolErrorType {
   // Invalid Credential.
   INVALID_CREDENTIAL,
 
+  // An administrator disabled sync for this domain.
+  DISABLED_BY_ADMIN,
+
+  // Client told to stop syncing this device and roll back local data.
+  USER_ROLLBACK,
+
   // The default value.
   UNKNOWN_ERROR
 };
@@ -59,6 +65,13 @@ enum ClientAction {
   // Wipe this client of any sync data.
   DISABLE_SYNC_ON_CLIENT,
 
+  // Account is disabled by admin. Stop sync, clear prefs and show message on
+  // settings page that account is disabled.
+  STOP_SYNC_FOR_DISABLED_ACCOUNT,
+
+  // Disable sync and roll back local model to pre-sync state.
+  DISABLE_SYNC_AND_ROLLBACK,
+
   // The default. No action.
   UNKNOWN_ACTION
 };
@@ -71,7 +84,7 @@ struct SYNC_EXPORT SyncProtocolError {
   ModelTypeSet error_data_types;
   SyncProtocolError();
   ~SyncProtocolError();
-  DictionaryValue* ToValue() const;
+  base::DictionaryValue* ToValue() const;
 };
 
 SYNC_EXPORT const char* GetSyncErrorTypeString(SyncProtocolErrorType type);

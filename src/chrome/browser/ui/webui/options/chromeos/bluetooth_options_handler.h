@@ -14,6 +14,7 @@
 #include "chrome/browser/ui/webui/options/options_ui.h"
 #include "device/bluetooth/bluetooth_adapter.h"
 #include "device/bluetooth/bluetooth_device.h"
+#include "device/bluetooth/bluetooth_discovery_session.h"
 
 namespace base {
 class DictionaryValue;
@@ -37,6 +38,8 @@ class BluetoothOptionsHandler
   virtual void RegisterMessages() OVERRIDE;
   virtual void InitializeHandler() OVERRIDE;
   virtual void InitializePage() OVERRIDE;
+
+  void InitializeAdapter(scoped_refptr<device::BluetoothAdapter> adapter);
 
   // Sends a notification to the Web UI of the status of a Bluetooth device.
   // |device| is the Bluetooth device.
@@ -95,6 +98,22 @@ class BluetoothOptionsHandler
 
   // device::BluetoothDevice::PairingDelegate override.
   //
+  // This method will be called when the Bluetooth daemon gets a notification
+  // of a key entered on the device |device| while pairing with the device
+  // using a PIN code or a Passkey.
+  //
+  // The UI will show a visual indication that a given key was pressed in the
+  // same pairing overlay where the PIN code or Passkey is displayed.
+  //
+  // A first call with |entered| as 0 will indicate that this notification
+  // mechanism is supported by the device allowing the UI to display this fact.
+  // A last call with |entered| as the length of the key plus one will indicate
+  // that the [enter] key was pressed.
+  virtual void KeysEntered(device::BluetoothDevice* device,
+                           uint32 entered) OVERRIDE;
+
+  // device::BluetoothDevice::PairingDelegate override.
+  //
   // This method will be called when the Bluetooth daemon requires that the
   // user confirm that the Passkey |passkey| is displayed on the screen
   // of the device |device| so that it may be authenticated, the UI will
@@ -108,11 +127,7 @@ class BluetoothOptionsHandler
       device::BluetoothDevice* device, uint32 passkey) OVERRIDE;
 
   // device::BluetoothDevice::PairingDelegate override.
-  //
-  // This method will be called when any previous DisplayPinCode(),
-  // DisplayPasskey() or ConfirmPasskey() request should be concluded
-  // and removed from the user.
-  virtual void DismissDisplayOrConfirm() OVERRIDE;
+  virtual void AuthorizePairing(device::BluetoothDevice* device) OVERRIDE;
 
   // Displays a Bluetooth error.
   // |error| maps to a localized resource for the error message.
@@ -125,6 +140,8 @@ class BluetoothOptionsHandler
                                      bool present) OVERRIDE;
   virtual void AdapterPoweredChanged(device::BluetoothAdapter* adapter,
                                      bool powered) OVERRIDE;
+  virtual void AdapterDiscoveringChanged(device::BluetoothAdapter* adapter,
+                                         bool discovering) OVERRIDE;
   virtual void DeviceAdded(device::BluetoothAdapter* adapter,
                            device::BluetoothDevice* device) OVERRIDE;
   virtual void DeviceChanged(device::BluetoothAdapter* adapter,
@@ -133,17 +150,29 @@ class BluetoothOptionsHandler
                              device::BluetoothDevice* device) OVERRIDE;
 
  private:
+  // Displays in the UI a connecting to the device |device| message.
+  void DeviceConnecting(device::BluetoothDevice* device);
+
   // Called by device::BluetoothAdapter in response to a failure to
   // change the power status of the adapter.
   void EnableChangeError();
 
+  // Called by device::BluetoothAdapter in response to a successful request
+  // to initiate a discovery session.
+  void OnStartDiscoverySession(
+      scoped_ptr<device::BluetoothDiscoverySession> discovery_session);
+
   // Called by device::BluetoothAdapter in response to a failure to
-  // set the adapter into discovery mode.
+  // initiate a discovery session.
   void FindDevicesError();
 
   // Called by device::BluetoothAdapter in response to a failure to
-  // remove the adapter from discovery mode.
+  // terminate a discovery session.
   void StopDiscoveryError();
+
+  // Called by device::BluetoothDevice on a successful pairing and connection
+  // to a device.
+  void Connected();
 
   // Called by device::BluetoothDevice in response to a failure to
   // connect to the device with bluetooth address |address| due to an error
@@ -188,6 +217,23 @@ class BluetoothOptionsHandler
 
   // Default bluetooth adapter, used for all operations.
   scoped_refptr<device::BluetoothAdapter> adapter_;
+
+  // True, if the UI has requested device discovery. False, if either no device
+  // discovery was requested or the dialog responsible for device discovery was
+  // dismissed.
+  bool should_run_device_discovery_;
+
+  // The current device discovery session. Only one active discovery session is
+  // kept at a time and the instance that |discovery_session_| points to gets
+  // replaced by a new one when a new discovery session is initiated.
+  scoped_ptr<device::BluetoothDiscoverySession> discovery_session_;
+
+  // Cached information about the current pairing device, if any.
+  std::string pairing_device_address_;
+  std::string pairing_device_pairing_;
+  std::string pairing_device_pincode_;
+  int pairing_device_passkey_;
+  int pairing_device_entered_;
 
   // Weak pointer factory for generating 'this' pointers that might live longer
   // than this object does.

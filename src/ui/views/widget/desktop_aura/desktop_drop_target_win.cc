@@ -4,13 +4,15 @@
 
 #include "ui/views/widget/desktop_aura/desktop_drop_target_win.h"
 
-#include "ui/aura/client/drag_drop_client.h"
-#include "ui/aura/client/drag_drop_delegate.h"
+#include "base/win/win_util.h"
 #include "ui/aura/window.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
+#include "ui/base/dragdrop/drop_target_event.h"
 #include "ui/base/dragdrop/os_exchange_data_provider_win.h"
-#include "ui/base/events/event.h"
+#include "ui/events/event_constants.h"
+#include "ui/wm/public/drag_drop_client.h"
+#include "ui/wm/public/drag_drop_delegate.h"
 
 using aura::client::DragDropDelegate;
 using ui::OSExchangeData;
@@ -18,9 +20,9 @@ using ui::OSExchangeDataProviderWin;
 
 namespace views {
 
-DesktopDropTargetWin::DesktopDropTargetWin(aura::RootWindow* root_window,
+DesktopDropTargetWin::DesktopDropTargetWin(aura::Window* root_window,
                                            HWND window)
-    : ui::DropTarget(window),
+    : ui::DropTargetWin(window),
       root_window_(root_window),
       target_window_(NULL) {
 }
@@ -94,7 +96,8 @@ void DesktopDropTargetWin::Translate(
     DragDropDelegate** delegate) {
   gfx::Point location(position.x, position.y);
   gfx::Point root_location = location;
-  root_window_->ConvertPointFromNativeScreen(&root_location);
+  root_window_->GetHost()->ConvertPointFromNativeScreen(
+      &root_location);
   aura::Window* target_window =
       root_window_->GetEventHandlerForPoint(root_location);
   bool target_window_changed = false;
@@ -121,6 +124,11 @@ void DesktopDropTargetWin::Translate(
       location,
       root_location,
       ui::DragDropTypes::DropEffectToDragOperation(effect)));
+  int flags = 0;
+  flags |= base::win::IsAltPressed() ? ui::EF_ALT_DOWN : ui::EF_NONE;
+  flags |= base::win::IsShiftPressed() ? ui::EF_SHIFT_DOWN : ui::EF_NONE;
+  flags |= base::win::IsCtrlPressed() ? ui::EF_CONTROL_DOWN : ui::EF_NONE;
+  (*event)->set_flags(flags);
   if (target_window_changed)
     (*delegate)->OnDragEntered(*event->get());
 }

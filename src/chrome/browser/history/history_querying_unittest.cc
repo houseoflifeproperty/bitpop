@@ -5,12 +5,12 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/history/history.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/history/history_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::Time;
@@ -26,33 +26,25 @@ struct TestEntry {
   const char* url;
   const char* title;
   const int days_ago;
-  const char* body;
   Time time;  // Filled by SetUp.
 } test_entries[] = {
   // This one is visited super long ago so it will be in a different database
   // from the next appearance of it at the end.
-  {"http://example.com/", "Other", 180, "Other"},
+  {"http://example.com/", "Other", 180},
 
   // These are deliberately added out of chronological order. The history
   // service should sort them by visit time when returning query results.
   // The correct index sort order is 4 2 3 1 7 6 5 0.
-  {"http://www.google.com/1", "Title 1", 10,
-   "PAGEONE FOO some body text"},
-  {"http://www.google.com/3", "Title 3", 8,
-   "PAGETHREE BAR some hello world for you"},
-  {"http://www.google.com/2", "Title 2", 9,
-   "PAGETWO FOO some more blah blah blah Title"},
+  {"http://www.google.com/1", "Title PAGEONE FOO some text", 10},
+  {"http://www.google.com/3", "Title PAGETHREE BAR some hello world", 8},
+  {"http://www.google.com/2", "Title PAGETWO FOO some more blah blah blah", 9},
 
   // A more recent visit of the first one.
-  {"http://example.com/", "Other", 6, "Other"},
+  {"http://example.com/", "Other", 6},
 
-  {"http://www.google.com/6", "Title 6", 12,
-   "I'm the second oldest"},
-
-  {"http://www.google.com/4", "Title 4", 11,
-   "duplicate timestamps"},
-  {"http://www.google.com/5", "Title 5", 11,
-   "duplicate timestamps"},
+  {"http://www.google.com/6", "Title I'm the second oldest", 13},
+  {"http://www.google.com/4", "Title four", 12},
+  {"http://www.google.com/5", "Title five", 11},
 };
 
 // Returns true if the nth result in the given results set matches. It will
@@ -71,14 +63,15 @@ bool NthResultIs(const QueryResults& results,
 
   // Now check the URL & title.
   return result.url() == GURL(test_entries[test_entry_index].url) &&
-         result.title() == UTF8ToUTF16(test_entries[test_entry_index].title);
+         result.title() ==
+             base::UTF8ToUTF16(test_entries[test_entry_index].title);
 }
 
 }  // namespace
 
 class HistoryQueryTest : public testing::Test {
  public:
-  HistoryQueryTest() {
+  HistoryQueryTest() : page_id_(0) {
   }
 
   // Acts like a synchronous call to history's QueryHistory.
@@ -86,19 +79,20 @@ class HistoryQueryTest : public testing::Test {
                     const QueryOptions& options,
                     QueryResults* results) {
     history_->QueryHistory(
-        UTF8ToUTF16(text_query), options, &consumer_,
+        base::UTF8ToUTF16(text_query), options, &consumer_,
         base::Bind(&HistoryQueryTest::QueryHistoryComplete,
                    base::Unretained(this)));
-    MessageLoop::current()->Run();  // Will go until ...Complete calls Quit.
+    // Will go until ...Complete calls Quit.
+    base::MessageLoop::current()->Run();
     results->Swap(&last_query_results_);
   }
 
-  // Test paging through results using a cursor.
-  // Defined here so code can be shared for the FTS version and the non-FTS
-  // version.
-  void TestWithCursor(const std::string& query_text,
-                      int* expected_results,
-                      int results_length) {
+  // Test paging through results, with a fixed number of results per page.
+  // Defined here so code can be shared for the text search and the non-text
+  // seach versions.
+  void TestPaging(const std::string& query_text,
+                  const int* expected_results,
+                  int results_length) {
     ASSERT_TRUE(history_.get());
 
     QueryOptions options;
@@ -110,32 +104,63 @@ class HistoryQueryTest : public testing::Test {
       QueryHistory(query_text, options, &results);
       ASSERT_EQ(1U, results.size());
       EXPECT_TRUE(NthResultIs(results, 0, expected_results[i]));
-      options.cursor = results.cursor();
+      options.end_time = results.back().visit_time();
     }
     QueryHistory(query_text, options, &results);
     EXPECT_EQ(0U, results.size());
 
-    // Try using a cursor with a max_count > 1.
+    // Try with a max_count > 1.
     options.max_count = 2;
-    options.cursor.Clear();
+    options.end_time = base::Time();
     for (int i = 0; i < results_length / 2; i++) {
       SCOPED_TRACE(testing::Message() << "i = " << i);
       QueryHistory(query_text, options, &results);
       ASSERT_EQ(2U, results.size());
       EXPECT_TRUE(NthResultIs(results, 0, expected_results[i * 2]));
       EXPECT_TRUE(NthResultIs(results, 1, expected_results[i * 2 + 1]));
-      options.cursor = results.cursor();
+      options.end_time = results.back().visit_time();
     }
+
+    // Add a couple of entries with duplicate timestamps. Use |query_text| as
+    // the title of both entries so that they match a text query.
+    TestEntry duplicates[] = {
+      { "http://www.google.com/x",  query_text.c_str(), 1, },
+      { "http://www.google.com/y",  query_text.c_str(), 1, }
+    };
+    AddEntryToHistory(duplicates[0]);
+    AddEntryToHistory(duplicates[1]);
+
+    // Make sure that paging proceeds even if there are duplicate timestamps.
+    options.end_time = base::Time();
+    do {
+      QueryHistory(query_text, options, &results);
+      ASSERT_NE(options.end_time, results.back().visit_time());
+      options.end_time = results.back().visit_time();
+    } while (!results.reached_beginning());
   }
 
  protected:
   scoped_ptr<HistoryService> history_;
 
+  // Counter used to generate a unique ID for each page added to the history.
+  int32 page_id_;
+
+  void AddEntryToHistory(const TestEntry& entry) {
+    // We need the ID scope and page ID so that the visit tracker can find it.
+    const void* id_scope = reinterpret_cast<void*>(1);
+    GURL url(entry.url);
+
+    history_->AddPage(url, entry.time, id_scope, page_id_++, GURL(),
+                      history::RedirectList(), content::PAGE_TRANSITION_LINK,
+                      history::SOURCE_BROWSED, false);
+    history_->SetPageTitle(url, base::UTF8ToUTF16(entry.title));
+  }
+
  private:
   virtual void SetUp() {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     history_dir_ = temp_dir_.path().AppendASCII("HistoryTest");
-    ASSERT_TRUE(file_util::CreateDirectory(history_dir_));
+    ASSERT_TRUE(base::CreateDirectory(history_dir_));
 
     history_.reset(new HistoryService);
     if (!history_->Init(history_dir_, NULL)) {
@@ -148,39 +173,29 @@ class HistoryQueryTest : public testing::Test {
     for (size_t i = 0; i < arraysize(test_entries); i++) {
       test_entries[i].time =
           now - (test_entries[i].days_ago * TimeDelta::FromDays(1));
-
-      // We need the ID scope and page ID so that the visit tracker can find it.
-      const void* id_scope = reinterpret_cast<void*>(1);
-      int32 page_id = i;
-      GURL url(test_entries[i].url);
-
-      history_->AddPage(url, test_entries[i].time, id_scope, page_id, GURL(),
-                        history::RedirectList(), content::PAGE_TRANSITION_LINK,
-                        history::SOURCE_BROWSED, false);
-      history_->SetPageTitle(url, UTF8ToUTF16(test_entries[i].title));
-      history_->SetPageContents(url, UTF8ToUTF16(test_entries[i].body));
+      AddEntryToHistory(test_entries[i]);
     }
   }
 
   virtual void TearDown() {
-    if (history_.get()) {
-      history_->SetOnBackendDestroyTask(MessageLoop::QuitClosure());
+    if (history_) {
+      history_->SetOnBackendDestroyTask(base::MessageLoop::QuitClosure());
       history_->Cleanup();
       history_.reset();
-      MessageLoop::current()->Run();  // Wait for the other thread.
+      base::MessageLoop::current()->Run();  // Wait for the other thread.
     }
   }
 
   void QueryHistoryComplete(HistoryService::Handle, QueryResults* results) {
     results->Swap(&last_query_results_);
-    MessageLoop::current()->Quit();  // Will return out to QueryHistory.
+    base::MessageLoop::current()->Quit();  // Will return out to QueryHistory.
   }
 
   base::ScopedTempDir temp_dir_;
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
 
-  FilePath history_dir_;
+  base::FilePath history_dir_;
 
   CancelableRequestConsumer consumer_;
 
@@ -294,14 +309,13 @@ TEST_F(HistoryQueryTest, ReachedBeginning) {
   EXPECT_TRUE(results.reached_beginning());
   options.max_count = results.size();
   QueryHistory("some", options, &results);
-  // Since the query didn't cover the oldest visit in the database, we
-  // expect false here.
-  EXPECT_FALSE(results.reached_beginning());
+  EXPECT_TRUE(results.reached_beginning());
 }
 
-// This does most of the same tests above, but searches for a FTS string that
-// will match the pages in question. This will trigger a different code path.
-TEST_F(HistoryQueryTest, FTS) {
+// This does most of the same tests above, but performs a text searches for a
+// string that will match the pages in question. This will trigger a
+// different code path.
+TEST_F(HistoryQueryTest, TextSearch) {
   ASSERT_TRUE(history_.get());
 
   QueryOptions options;
@@ -330,33 +344,8 @@ TEST_F(HistoryQueryTest, FTS) {
   EXPECT_TRUE(NthResultIs(results, 0, 1));
 }
 
-// Searches titles.
-TEST_F(HistoryQueryTest, FTSTitle) {
-  ASSERT_TRUE(history_.get());
-
-  QueryOptions options;
-  QueryResults results;
-
-  // First execute a body-only query, to ensure that it works and that that
-  // version of the statement is not cached for the next query.
-  options.body_only = true;
-  QueryHistory("Title", options, &results);
-  EXPECT_EQ(1U, results.size());
-  EXPECT_TRUE(NthResultIs(results, 0, 3));
-  options.body_only = false;
-
-  // Query all time but with a limit on the number of entries. We should
-  // get the N most recent entries.
-  options.max_count = 3;
-  QueryHistory("title", options, &results);
-  EXPECT_EQ(3U, results.size());
-  EXPECT_TRUE(NthResultIs(results, 0, 2));
-  EXPECT_TRUE(NthResultIs(results, 1, 3));
-  EXPECT_TRUE(NthResultIs(results, 2, 1));
-}
-
-// Tests prefix searching for Full Text Search queries.
-TEST_F(HistoryQueryTest, FTSPrefix) {
+// Tests prefix searching for text search queries.
+TEST_F(HistoryQueryTest, TextSearchPrefix) {
   ASSERT_TRUE(history_.get());
 
   QueryOptions options;
@@ -370,8 +359,8 @@ TEST_F(HistoryQueryTest, FTSPrefix) {
   EXPECT_TRUE(NthResultIs(results, 1, 3));
 }
 
-// Tests max_count feature for Full Text Search queries.
-TEST_F(HistoryQueryTest, FTSCount) {
+// Tests max_count feature for text search queries.
+TEST_F(HistoryQueryTest, TextSearchCount) {
   ASSERT_TRUE(history_.get());
 
   QueryOptions options;
@@ -394,21 +383,21 @@ TEST_F(HistoryQueryTest, FTSCount) {
   EXPECT_TRUE(NthResultIs(results, 0, 3));
 }
 
-// Tests that FTS queries can find URLs when they exist only in the archived
-// database. This also tests that imported URLs can be found, since we use
-// AddPageWithDetails just like the importer.
-TEST_F(HistoryQueryTest, FTSArchived) {
+// Tests that text search queries can find URLs when they exist only in the
+// archived database. This also tests that imported URLs can be found, since
+// we use AddPageWithDetails just like the importer.
+TEST_F(HistoryQueryTest, TextSearchArchived) {
   ASSERT_TRUE(history_.get());
 
   URLRows urls_to_add;
 
   URLRow row1(GURL("http://foo.bar/"));
-  row1.set_title(UTF8ToUTF16("archived title"));
+  row1.set_title(base::UTF8ToUTF16("archived title same"));
   row1.set_last_visit(Time::Now() - TimeDelta::FromDays(365));
   urls_to_add.push_back(row1);
 
   URLRow row2(GURL("http://foo.bar/"));
-  row2.set_title(UTF8ToUTF16("nonarchived title"));
+  row2.set_title(base::UTF8ToUTF16("nonarchived title same"));
   row2.set_last_visit(Time::Now());
   urls_to_add.push_back(row2);
 
@@ -417,13 +406,22 @@ TEST_F(HistoryQueryTest, FTSArchived) {
   QueryOptions options;
   QueryResults results;
 
-  // Query all time. The title we get should be the one in the full text
-  // database and not the most current title (since otherwise highlighting in
+  // Query all time. The title we get should be the one in the archived and
+  // not the most current title (since otherwise highlighting in
   // the title might be wrong).
   QueryHistory("archived", options, &results);
   ASSERT_EQ(1U, results.size());
   EXPECT_TRUE(row1.url() == results[0].url());
   EXPECT_TRUE(row1.title() == results[0].title());
+
+  // Check query is ordered correctly when split between archived and
+  // non-archived database.
+  QueryHistory("same", options, &results);
+  ASSERT_EQ(2U, results.size());
+  EXPECT_TRUE(row2.url() == results[0].url());
+  EXPECT_TRUE(row2.title() == results[0].title());
+  EXPECT_TRUE(row1.url() == results[1].url());
+  EXPECT_TRUE(row1.title() == results[1].title());
 }
 
 /* TODO(brettw) re-enable this. It is commented out because the current history
@@ -432,33 +430,59 @@ TEST_F(HistoryQueryTest, FTSArchived) {
    won't get picked up by the deletor and it can happen again. When this is the
    case, we should fix this test to duplicate that situation.
 
-// Tests duplicate collapsing and not in Full Text Search situations.
-TEST_F(HistoryQueryTest, FTSDupes) {
+// Tests duplicate collapsing and not in text search situations.
+TEST_F(HistoryQueryTest, TextSearchDupes) {
   ASSERT_TRUE(history_.get());
 
   QueryOptions options;
   QueryResults results;
 
   QueryHistory("Other", options, &results);
-  EXPECT_EQ(1, results.urls().size());
+  EXPECT_EQ(1U, results.size());
   EXPECT_TRUE(NthResultIs(results, 0, 4));
 }
 */
 
-// Test iterating over pages of results using a cursor.
-TEST_F(HistoryQueryTest, Cursor) {
+// Tests IDN text search by both ASCII and UTF.
+TEST_F(HistoryQueryTest, TextSearchIDN) {
+  ASSERT_TRUE(history_.get());
+
+  QueryOptions options;
+  QueryResults results;
+
+  TestEntry entry = { "http://xn--d1abbgf6aiiy.xn--p1ai/",  "Nothing", 0, };
+  AddEntryToHistory(entry);
+
+  struct QueryEntry {
+    std::string query;
+    size_t results_size;
+  } queries[] = {
+    { "bad query", 0 },
+    { std::string("xn--d1abbgf6aiiy.xn--p1ai"), 1 },
+    { base::WideToUTF8(std::wstring(L"\u043f\u0440\u0435\u0437") +
+                       L"\u0438\u0434\u0435\u043d\u0442.\u0440\u0444"), 1, },
+  };
+
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(queries); ++i) {
+    QueryHistory(queries[i].query, options, &results);
+    EXPECT_EQ(queries[i].results_size, results.size());
+  }
+}
+
+// Test iterating over pages of results.
+TEST_F(HistoryQueryTest, Paging) {
   // Since results are fetched 1 and 2 at a time, entry #0 and #6 will not
   // be de-duplicated.
   int expected_results[] = { 4, 2, 3, 1, 7, 6, 5, 0 };
-  TestWithCursor("", expected_results, arraysize(expected_results));
+  TestPaging(std::string(), expected_results, arraysize(expected_results));
 }
 
-TEST_F(HistoryQueryTest, FTSCursor) {
+TEST_F(HistoryQueryTest, TextSearchPaging) {
   // Since results are fetched 1 and 2 at a time, entry #0 and #6 will not
   // be de-duplicated. Entry #4 does not contain the text "title", so it
   // shouldn't appear.
   int expected_results[] = { 2, 3, 1, 7, 6, 5 };
-  TestWithCursor("title", expected_results, arraysize(expected_results));
+  TestPaging("title", expected_results, arraysize(expected_results));
 }
 
 }  // namespace history

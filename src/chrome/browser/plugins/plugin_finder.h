@@ -10,11 +10,11 @@
 
 #include "base/callback.h"
 #include "base/gtest_prod_util.h"
-#include "base/synchronization/lock.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
-#include "base/string16.h"
-#include "webkit/plugins/webplugininfo.h"
+#include "base/strings/string16.h"
+#include "base/synchronization/lock.h"
+#include "content/public/common/webplugininfo.h"
 
 namespace base {
 class DictionaryValue;
@@ -22,7 +22,7 @@ class DictionaryValue;
 
 class GURL;
 class PluginMetadata;
-class PrefService;
+class PrefRegistrySimple;
 
 #if defined(ENABLE_PLUGIN_INSTALLATION)
 class PluginInstaller;
@@ -33,16 +33,16 @@ class PluginInstaller;
 // After that it can be safely used on any other thread.
 class PluginFinder {
  public:
-  static void RegisterPrefs(PrefService* local_state);
+  static void RegisterPrefs(PrefRegistrySimple* registry);
 
   static PluginFinder* GetInstance();
 
   // It should be called on the UI thread.
   void Init();
 
-#if defined(ENABLE_PLUGIN_INSTALLATION)
-  void ReinitializePlugins(const base::DictionaryValue& json_metadata);
+  void ReinitializePlugins(const base::DictionaryValue* json_metadata);
 
+#if defined(ENABLE_PLUGIN_INSTALLATION)
   // Finds a plug-in for the given MIME type and language (specified as an IETF
   // language tag, i.e. en-US). If found, sets |installer| to the
   // corresponding PluginInstaller and |plugin_metadata| to a copy of the
@@ -61,11 +61,11 @@ class PluginFinder {
 #endif
 
   // Returns the plug-in name with the given identifier.
-  string16 FindPluginNameWithIdentifier(const std::string& identifier);
+  base::string16 FindPluginNameWithIdentifier(const std::string& identifier);
 
   // Gets plug-in metadata using |plugin|.
   scoped_ptr<PluginMetadata> GetPluginMetadata(
-      const webkit::WebPluginInfo& plugin);
+      const content::WebPluginInfo& plugin);
 
  private:
   friend struct DefaultSingletonTraits<PluginFinder>;
@@ -76,20 +76,20 @@ class PluginFinder {
   PluginFinder();
   ~PluginFinder();
 
-  static base::DictionaryValue* ComputePluginList();
-
   // Loads the plug-in information from the browser resources and parses it.
   // Returns NULL if the plug-in list couldn't be parsed.
-  static base::DictionaryValue* LoadPluginList();
+  static base::DictionaryValue* LoadBuiltInPluginList();
 
-  void InitInternal();
-
-  scoped_ptr<base::DictionaryValue> plugin_list_;
 #if defined(ENABLE_PLUGIN_INSTALLATION)
   std::map<std::string, PluginInstaller*> installers_;
 #endif
 
   std::map<std::string, PluginMetadata*> identifier_plugin_;
+
+  // Version of the metadata information. We use this to consolidate multiple
+  // sources (baked into resource and fetched from a URL), making sure that we
+  // don't overwrite newer versions with older ones.
+  int version_;
 
   // Synchronization for the above member variables is
   // required since multiple threads can be accessing them concurrently.

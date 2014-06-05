@@ -7,40 +7,44 @@
 
 #include <string>
 
+#include "base/observer_list.h"
 #include "base/prefs/base_prefs_export.h"
 #include "base/prefs/pref_store.h"
 #include "base/prefs/pref_value_map.h"
 #include "base/values.h"
 
-// This PrefStore keeps track of default preference values set when a
-// preference is registered with the PrefService.
+// Used within a PrefRegistry to keep track of default preference values.
 class BASE_PREFS_EXPORT DefaultPrefStore : public PrefStore {
  public:
   typedef PrefValueMap::const_iterator const_iterator;
 
   DefaultPrefStore();
 
+  // PrefStore implementation:
   virtual bool GetValue(const std::string& key,
                         const base::Value** result) const OVERRIDE;
+  virtual void AddObserver(PrefStore::Observer* observer) OVERRIDE;
+  virtual void RemoveObserver(PrefStore::Observer* observer) OVERRIDE;
+  virtual bool HasObservers() const OVERRIDE;
 
-  // Stores a new |value| for |key|. Assumes ownership of |value|.
-  void SetDefaultValue(const std::string& key, Value* value);
+  // Sets a |value| for |key|. Should only be called if a value has not been
+  // set yet; otherwise call ReplaceDefaultValue().
+  void SetDefaultValue(const std::string& key, scoped_ptr<base::Value> value);
 
-  // Removes the value for |key|.
-  void RemoveDefaultValue(const std::string& key);
-
-  // Returns the registered type for |key| or Value::TYPE_NULL if the |key|
-  // has not been registered.
-  base::Value::Type GetType(const std::string& key) const;
+  // Replaces the the value for |key| with a new value. Should only be called
+  // if a value has alreday been set; otherwise call SetDefaultValue().
+  void ReplaceDefaultValue(const std::string& key,
+                           scoped_ptr<base::Value> value);
 
   const_iterator begin() const;
   const_iterator end() const;
 
- protected:
+ private:
   virtual ~DefaultPrefStore();
 
- private:
   PrefValueMap prefs_;
+
+  ObserverList<PrefStore::Observer, true> observers_;
 
   DISALLOW_COPY_AND_ASSIGN(DefaultPrefStore);
 };

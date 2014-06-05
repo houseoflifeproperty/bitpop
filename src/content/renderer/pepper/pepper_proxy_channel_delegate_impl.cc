@@ -4,13 +4,12 @@
 
 #include "content/renderer/pepper/pepper_proxy_channel_delegate_impl.h"
 
-#include "content/common/child_process.h"
-#include "content/public/common/sandbox_init.h"
+#include "content/child/child_process.h"
+#include "content/common/sandbox_util.h"
 
 namespace content {
 
-PepperProxyChannelDelegateImpl::~PepperProxyChannelDelegateImpl() {
-}
+PepperProxyChannelDelegateImpl::~PepperProxyChannelDelegateImpl() {}
 
 base::MessageLoopProxy* PepperProxyChannelDelegateImpl::GetIPCMessageLoop() {
   // This is called only in the renderer so we know we have a child process.
@@ -28,8 +27,7 @@ PepperProxyChannelDelegateImpl::ShareHandleWithRemote(
     base::PlatformFile handle,
     base::ProcessId remote_pid,
     bool should_close_source) {
-  return BrokerGetFileHandleForProcess(handle, remote_pid,
-                                       should_close_source);
+  return BrokerGetFileHandleForProcess(handle, remote_pid, should_close_source);
 }
 
 }  // namespace content

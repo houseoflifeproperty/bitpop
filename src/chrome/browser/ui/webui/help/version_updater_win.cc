@@ -5,10 +5,10 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/version.h"
-#include "base/win/windows_version.h"
 #include "base/win/win_util.h"
+#include "base/win/windows_version.h"
 #include "chrome/browser/google/google_update_win.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/ui/browser.h"
@@ -23,8 +23,8 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/views/widget/widget.h"
 
+using base::UserMetricsAction;
 using content::BrowserThread;
-using content::UserMetricsAction;
 
 namespace {
 
@@ -47,20 +47,23 @@ class VersionUpdaterWin : public VersionUpdater,
   // GoogleUpdateStatusListener implementation.
   virtual void OnReportResults(GoogleUpdateUpgradeResult result,
                                GoogleUpdateErrorCode error_code,
-                               const string16& error_message,
-                               const string16& version) OVERRIDE;
+                               const base::string16& error_message,
+                               const base::string16& version) OVERRIDE;
 
   // Update the UI to show the status of the upgrade.
   void UpdateStatus(GoogleUpdateUpgradeResult result,
                     GoogleUpdateErrorCode error_code,
-                    const string16& error_message);
+                    const base::string16& error_message);
 
   // Got the intalled version so the handling of the UPGRADE_ALREADY_UP_TO_DATE
   // result case can now be completeb on the UI thread.
   void GotInstalledVersion(const Version& version);
 
-  // Little helper function to reset google_updater_.
-  void SetGoogleUpdater();
+  // Little helper function to create google_updater_.
+  void CreateGoogleUpdater();
+
+  // Helper function to clear google_updater_.
+  void ClearGoogleUpdater();
 
   // Returns a window that can be used for elevation.
   HWND GetElevationParent();
@@ -120,15 +123,14 @@ class VersionReader
 };
 
 VersionUpdaterWin::VersionUpdaterWin()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
-  SetGoogleUpdater();
+    : weak_factory_(this) {
+  CreateGoogleUpdater();
 }
 
 VersionUpdaterWin::~VersionUpdaterWin() {
   // The Google Updater will hold a pointer to the listener until it reports
   // status, so that pointer must be cleared when the listener is destoyed.
-  if (google_updater_)
-    google_updater_->set_status_listener(NULL);
+  ClearGoogleUpdater();
 }
 
 void VersionUpdaterWin::CheckForUpdate(const StatusCallback& callback) {
@@ -144,34 +146,35 @@ void VersionUpdaterWin::CheckForUpdate(const StatusCallback& callback) {
         !base::win::UserAccountControlIsEnabled())) {
     // This could happen if the page got refreshed after results were returned.
     if (!google_updater_)
-      SetGoogleUpdater();
-    UpdateStatus(UPGRADE_CHECK_STARTED, GOOGLE_UPDATE_NO_ERROR, string16());
+      CreateGoogleUpdater();
+    UpdateStatus(UPGRADE_CHECK_STARTED, GOOGLE_UPDATE_NO_ERROR,
+                 base::string16());
     // Specify false to not upgrade yet.
     google_updater_->CheckForUpdate(false, GetElevationParent());
   }
 }
 
 void VersionUpdaterWin::RelaunchBrowser() const {
-  browser::AttemptRestart();
+  chrome::AttemptRestart();
 }
 
 void VersionUpdaterWin::OnReportResults(
     GoogleUpdateUpgradeResult result, GoogleUpdateErrorCode error_code,
-    const string16& error_message, const string16& version) {
+    const base::string16& error_message, const base::string16& version) {
   // Drop the last reference to the object so that it gets cleaned up here.
-  google_updater_ = NULL;
+  ClearGoogleUpdater();
   UpdateStatus(result, error_code, error_message);
 }
 
 void VersionUpdaterWin::UpdateStatus(GoogleUpdateUpgradeResult result,
                                      GoogleUpdateErrorCode error_code,
-                                     const string16& error_message) {
+                                     const base::string16& error_message) {
   // For Chromium builds it would show an error message.
   // But it looks weird because in fact there is no error,
   // just the update server is not available for non-official builds.
 #if defined(GOOGLE_CHROME_BUILD)
   Status status = UPDATED;
-  string16 message;
+  base::string16 message;
 
   switch (result) {
     case UPGRADE_CHECK_STARTED: {
@@ -188,8 +191,8 @@ void VersionUpdaterWin::UpdateStatus(GoogleUpdateUpgradeResult result,
       content::RecordAction(
           UserMetricsAction("UpgradeCheck_UpgradeIsAvailable"));
       DCHECK(!google_updater_);  // Should have been nulled out already.
-      SetGoogleUpdater();
-      UpdateStatus(UPGRADE_STARTED, GOOGLE_UPDATE_NO_ERROR, string16());
+      CreateGoogleUpdater();
+      UpdateStatus(UPGRADE_STARTED, GOOGLE_UPDATE_NO_ERROR, base::string16());
       // Specify true to upgrade now.
       google_updater_->CheckForUpdate(true, GetElevationParent());
       return;
@@ -212,13 +215,17 @@ void VersionUpdaterWin::UpdateStatus(GoogleUpdateUpgradeResult result,
     case UPGRADE_ERROR: {
       content::RecordAction(UserMetricsAction("UpgradeCheck_Error"));
       status = FAILED;
-      if (error_code != GOOGLE_UPDATE_DISABLED_BY_POLICY) {
-        message =
-            l10n_util::GetStringFUTF16Int(IDS_UPGRADE_ERROR, error_code);
-      } else {
+      if (error_code == GOOGLE_UPDATE_DISABLED_BY_POLICY) {
         message =
             l10n_util::GetStringUTF16(IDS_UPGRADE_DISABLED_BY_POLICY);
+      } else if (error_code == GOOGLE_UPDATE_DISABLED_BY_POLICY_AUTO_ONLY) {
+        message =
+            l10n_util::GetStringUTF16(IDS_UPGRADE_DISABLED_BY_POLICY_MANUAL);
+      } else {
+        message =
+            l10n_util::GetStringFUTF16Int(IDS_UPGRADE_ERROR, error_code);
       }
+
       if (!error_message.empty()) {
         message +=
             l10n_util::GetStringFUTF16(IDS_ABOUT_BOX_ERROR_DURING_UPDATE_CHECK,
@@ -236,7 +243,7 @@ void VersionUpdaterWin::UpdateStatus(GoogleUpdateUpgradeResult result,
 
 void VersionUpdaterWin::GotInstalledVersion(const Version& version) {
   // This must be called on the UI thread so that callback_ can be called.
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // Make sure that the latest version is running and if not,
   // notify the user by setting the status to NEARLY_UPDATED.
@@ -249,16 +256,24 @@ void VersionUpdaterWin::GotInstalledVersion(const Version& version) {
   if (!version.IsValid() || version.CompareTo(running_version) <= 0) {
     content::RecordAction(
         UserMetricsAction("UpgradeCheck_AlreadyUpToDate"));
-    callback_.Run(UPDATED, 0, string16());
+    callback_.Run(UPDATED, 0, base::string16());
   } else {
     content::RecordAction(UserMetricsAction("UpgradeCheck_AlreadyUpgraded"));
-    callback_.Run(NEARLY_UPDATED, 0, string16());
+    callback_.Run(NEARLY_UPDATED, 0, base::string16());
   }
 }
 
-void VersionUpdaterWin::SetGoogleUpdater() {
+void VersionUpdaterWin::CreateGoogleUpdater() {
+  ClearGoogleUpdater();
   google_updater_ = new GoogleUpdate();
   google_updater_->set_status_listener(this);
+}
+
+void VersionUpdaterWin::ClearGoogleUpdater() {
+  if (google_updater_) {
+    google_updater_->set_status_listener(NULL);
+    google_updater_ = NULL;
+  }
 }
 
 BOOL CALLBACK WindowEnumeration(HWND window, LPARAM param) {
@@ -272,13 +287,17 @@ BOOL CALLBACK WindowEnumeration(HWND window, LPARAM param) {
 
 HWND VersionUpdaterWin::GetElevationParent() {
   // Look for a visible window belonging to the UI thread.
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   HWND window = NULL;
   EnumThreadWindows(GetCurrentThreadId(),
                     WindowEnumeration,
                     reinterpret_cast<LPARAM>(&window));
+#if !defined(USE_AURA)
+  // If using Aura, we might not have a Visible window in this process. In
+  // theory Google update can cope with that.
   DCHECK(window != NULL) << "Failed to find a valid window handle on thread: "
                          << GetCurrentThreadId();
+#endif
   return window;
 }
 

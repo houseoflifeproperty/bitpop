@@ -10,15 +10,15 @@
 namespace content {
 
 DownloadInterruptReason BaseFile::MoveFileAndAdjustPermissions(
-    const FilePath& new_path) {
+    const base::FilePath& new_path) {
   // Similarly, on Unix, we're moving a temp file created with permissions 600
   // to |new_path|. Here, we try to fix up the destination file with appropriate
   // permissions.
   struct stat st;
   // First check the file existence and create an empty file if it doesn't
   // exist.
-  if (!file_util::PathExists(new_path)) {
-    int write_error = file_util::WriteFile(new_path, "", 0);
+  if (!base::PathExists(new_path)) {
+    int write_error = base::WriteFile(new_path, "", 0);
     if (write_error < 0)
       return LogSystemError("WriteFile", errno);
   }
@@ -29,7 +29,7 @@ DownloadInterruptReason BaseFile::MoveFileAndAdjustPermissions(
 
   // TODO(estade): Move() falls back to copying and deleting when a simple
   // rename fails. Copying sucks for large downloads. crbug.com/8737
-  if (!file_util::Move(full_path_, new_path))
+  if (!base::Move(full_path_, new_path))
     return LogSystemError("Move", errno);
 
   if (stat_succeeded) {

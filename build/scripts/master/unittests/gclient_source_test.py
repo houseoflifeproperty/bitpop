@@ -47,15 +47,19 @@ ________ running 'svn checkout http://src.chromium.org/native_client/trunk\
  U   .../build/src/native_client/src
 Checked out revision 98765.
 
+________ running 'svn checkout svn://svn.chromium.org/webrtc/stable/webrtc@4297\
+ .../build/src/third_party/webrtc' in '.../build'
+ U   .../build/src/third_party/webrtc
+Checked out revision 4297.
+
 ________ running 'svn checkout http://svn.webkit.org/repository/webkit/trunk\
-/Source@66952 .../build/src/third_party/WebKit/Source --revision 66952'\
-in '.../build'
- U   .../build/src/third_party/WebKit/Source
+@66952 .../build/src/third_party/WebKit --revision 66952' in '.../build'
+ U   .../build/src/third_party/WebKit
 Checked out revision 67890."""
 
 SVN_UPDATE_STDOUT = """solutions=[...]
 
-________ running 'svn update http://src.chromium.org/svn/trunk/src\
+________ running 'svn update http://src.chromium.org/svn/trunk/src \
 .../build/src' in '.../build'
  U   .../build/src
 Updated to revision 12345.
@@ -65,10 +69,14 @@ ________ running 'svn update http://src.chromium.org/native_client/trunk\
  U   .../build/src/native_client/src
 Updated to revision 98765.
 
+________ running 'svn update svn://svn.chromium.org/webrtc/stable/webrtc@4297 \
+.../build/src/third_party/webrtc' in '.../build'
+ U   .../build/src/third_party/webrtc
+Updated to revision 4297.
+
 ________ running 'svn update http://svn.webkit.org/repository/webkit/trunk\
-/Source@66952 .../build/src/third_party/WebKit/Source --revision \
-66952' in '.../build'
- U   .../build/src/third_party/WebKit/Source
+@66952 .../build/src/third_party/WebKit --revision 66952' in '.../build'
+ U   .../build/src/third_party/WebKit
 Updated to revision 67890."""
 
 SVN_UPDATE_NO_CHANGE_STDOUT = """solutions=[...]
@@ -81,9 +89,12 @@ ________ running 'svn update http://src.chromium.org/native_client/trunk/\
 src/native_client .../build/src/native_client' in '.../build'
 At revision 98765.
 
+________ running 'svn update svn://svn.chromium.org/webrtc/stable/webrtc@4297 \
+.../build/src/third_party/webrtc' in '.../build'
+At revision 4297.
+
 ________ running 'svn update http://svn.webkit.org/repository/webkit/trunk/\
-Source@66952 .../build/src/third_party/WebKit/Source --revision \
-66952' in '.../build'
+@66952 .../build/src/third_party/WebKit --revision 66952' in '.../build'
 At revision 67890."""
 
 GCLIENT_SYNC_NO_CHANGE_STDOUT = """solutions=[...]
@@ -94,8 +105,11 @@ _____ src at 12345
 Syncing projects:  50% (12/24)
 _____ src/native_client at 98765
 
+Syncing projects:  60% (14/24)
+_____ src/third_party/webrtc at 4297
+
 Syncing projects:  77% (45/58)
-_____ src/third_party/WebKit/Source at 67890"""
+_____ src/third_party/WebKit at 67890"""
 
 GCLIENT_SYNC_MULTI_JOB_STDOUT = """solutions=[...]
 1>
@@ -130,8 +144,8 @@ At revision 61624.
 Syncing projects:  76% (46/60)
 
 ________ running 'svn update --revision BASE' in '.../build/src/third_party/\
-WebKit/Source'
-At revision 69168.
+WebKit'
+At revision 12345.
 
 Syncing projects: 100% (60/60)
 Syncing projects: 100% (60/60), done.
@@ -158,20 +172,10 @@ LayoutTests/fast/events --revision 69169' in '.../build'
 3>At revision 69169.
 3>
 
-50>
-50>________ running 'svn update .../build/src/third_party/WebKit/WebKit/\
-chromium --revision 69169' in '.../build'
-52>
-52>________ running 'svn update .../build/src/third_party/WebKit/Tools/\
-Scripts --revision 69169' in '.../build'
-50>At revision 69169.
-52>Updated to revision 69169.
 51>
-51>________ running 'svn update .../build/src/third_party/WebKit/Source \
+51>________ running 'svn update .../build/src/third_party/WebKit/ \
 --revision 69169' in '.../build'
-50>
 51>
-52>
 51>At revision 69169.
 51>
 
@@ -203,27 +207,29 @@ LayoutTests/fast/events --revision 69168' in '.../build'
 2>At revision 69168.
 2>
 
-46>
-46>________ running 'svn update .../build/src/third_party/WebKit/WebKit/\
-chromium --revision 69168' in '.../build'
-46>
-48>
-48>________ running 'svn update .../build/src/third_party/WebKit/Tools/\
-Scripts --revision 69168' in '.../build'
-46>At revision 69168.
-46>
-48>
 47>
-47>________ running 'svn update .../build/src/third_party/WebKit/Source \
+47>________ running 'svn update .../build/src/third_party/WebKit \
 --revision 69168' in '.../build'
-48>Updated to revision 69168.
 47>At revision 69168.
 47>
-48>
 
 ________ running '/usr/bin/python src/build/gyp_chromium' in '.../build'
 Updating projects from gyp files...
 Generating .../build/src/sandbox/sandbox.Makefile
+"""
+
+NACL_CHECKOUT = """
+solutions=[{"name":"native_client","url":"http://src.chromium.org/native_clie...
+1>________ running 'svn update /build/native_client --revision 11' in '/build'
+1>U    /build.sh
+1>Updated to revision 11.
+3>________ running 'svn update /build/native_client/tools/perf_expectations \
+--revision 191009' in '/build'
+4>________ running 'svn update /build/testing/gtest --revision 629' in '/build'
+2>________ running 'svn update /build/breakpad/src --revision 1172' in '/build'
+3>At revision 191009.
+2>At revision 1172.
+4>At revision 629.
 """
 
 
@@ -231,68 +237,87 @@ class GClientSourceTest(unittest.TestCase):
 
   def testParseGotRevision_NoRevisions(self):
     gclient = TestableGClient("hello world!")
-    (chromium_revision, webkit_revision,
-     nacl_revision, v8_revision) = gclient.parseGotRevision()
-    self.assertEqual(None, chromium_revision)
-    self.assertEqual(None, webkit_revision)
-    self.assertEqual(None, nacl_revision)
-    self.assertEqual(None, v8_revision)
+    actual = gclient.parseGotRevision()
+    expected = {}
+    self.assertEqual(expected, actual)
 
   def testParseGotRevision_Checkout(self):
     gclient = TestableGClient(SVN_CHECKOUT_STDOUT)
-    (chromium_revision, webkit_revision,
-     nacl_revision, v8_revision) = gclient.parseGotRevision()
-    self.assertEqual(12345, chromium_revision)
-    self.assertEqual(67890, webkit_revision)
-    self.assertEqual(98765, nacl_revision)
-    self.assertEqual(None, v8_revision)
+    actual = gclient.parseGotRevision()
+    expected = {
+      'got_chromium_revision': '12345',
+      'got_nacl_revision': '98765',
+      'got_revision': '12345',
+      'got_webkit_revision': '67890',
+      'got_webrtc_revision': '4297',
+    }
+    self.assertEqual(expected, actual)
 
   def testParseGotRevision_Update(self):
     gclient = TestableGClient(SVN_UPDATE_STDOUT)
-    (chromium_revision, webkit_revision,
-     nacl_revision, v8_revision) = gclient.parseGotRevision()
-    self.assertEqual(12345, chromium_revision)
-    self.assertEqual(67890, webkit_revision)
-    self.assertEqual(98765, nacl_revision)
-    self.assertEqual(None, v8_revision)
+    actual = gclient.parseGotRevision()
+    expected = {
+      'got_chromium_revision': '12345',
+      'got_nacl_revision': '98765',
+      'got_revision': '12345',
+      'got_webkit_revision': '67890',
+      'got_webrtc_revision': '4297',
+    }
+    self.assertEqual(expected, actual)
 
   def testParseGotRevision_UpdateNoChange(self):
     gclient = TestableGClient(SVN_UPDATE_NO_CHANGE_STDOUT)
-    (chromium_revision, webkit_revision,
-     nacl_revision, v8_revision) = gclient.parseGotRevision()
-    self.assertEqual(12345, chromium_revision)
-    self.assertEqual(67890, webkit_revision)
-    self.assertEqual(98765, nacl_revision)
-    self.assertEqual(None, v8_revision)
+    actual = gclient.parseGotRevision()
+    expected = {
+      'got_chromium_revision': '12345',
+      'got_nacl_revision': '98765',
+      'got_revision': '12345',
+      'got_webkit_revision': '67890',
+      'got_webrtc_revision': '4297',
+    }
+    self.assertEqual(expected, actual)
 
   def testParseGotRevision_GClientSyncNoChange(self):
     gclient = TestableGClient(GCLIENT_SYNC_NO_CHANGE_STDOUT)
-    (chromium_revision, webkit_revision,
-     nacl_revision, v8_revision) = gclient.parseGotRevision()
-    self.assertEqual(12345, chromium_revision)
-    self.assertEqual(67890, webkit_revision)
-    self.assertEqual(98765, nacl_revision)
-    self.assertEqual(None, v8_revision)
+    actual = gclient.parseGotRevision()
+    expected = {
+      'got_chromium_revision': '12345',
+      'got_nacl_revision': '98765',
+      'got_revision': '12345',
+      'got_webkit_revision': '67890',
+      'got_webrtc_revision': '4297',
+    }
+    self.assertEqual(expected, actual)
 
   def testParseGotRevision_MulitJob(self):
     gclient = TestableGClient(stdout=GCLIENT_SYNC_MULTI_JOB_STDOUT)
-    (chromium_revision, webkit_revision,
-     nacl_revision, v8_revision) = gclient.parseGotRevision()
-    self.assertEqual(59820, chromium_revision)
-    self.assertEqual(None, webkit_revision)  # not in truncated stdout
-    self.assertEqual(None, nacl_revision)  # not in truncated stdout
-    self.assertEqual(None, v8_revision)
+    actual = gclient.parseGotRevision()
+    # The truncated stdout misses some values.
+    expected = {
+      'got_chromium_revision': '59820',
+      'got_revision': '59820',
+    }
+    self.assertEqual(expected, actual)
 
   def testParseGotRevision_MultiJobDepsTry(self):
     gclient = TestableGClient(stdout=GCLIENT_SYNC_MULTI_JOB_DEPS_TRY_STDOUT)
-    (chromium_revision, webkit_revision,
-     nacl_revision, v8_revision) = gclient.parseGotRevision()
-    self.assertEqual(61624, chromium_revision)
-    # Finds the revision in the changed DEPS, not the one in the lkgr DEPS.
-    self.assertEqual(69168, webkit_revision)
-    # Nothing with nacl.
-    self.assertEqual(None, nacl_revision)
-    self.assertEqual(None, v8_revision)
+    actual = gclient.parseGotRevision()
+    expected = {
+      # Finds the revision in the changed DEPS, not the first one, e.g. 69168,
+      # not 12345.
+      'got_chromium_revision': '61624',
+      'got_revision': '61624',
+      'got_webkit_revision': '69168',
+    }
+    self.assertEqual(expected, actual)
+
+  def testParseGotRevision_Nacl(self):
+    gclient = TestableGClient(stdout=NACL_CHECKOUT)
+    actual = gclient.parseGotRevision()
+    expected = {
+      'got_revision': '11',
+    }
+    self.assertEqual(expected, actual)
 
   def testUntangle_UpToDoubleDigits(self):
     stdout_lines = ['4>four', '9>nine', '1>one', '6>six', '3>three',
@@ -349,8 +374,8 @@ class GClientSourceTest(unittest.TestCase):
         'At revision 61624.',
         'Syncing projects:  76% (46/60)',
         '________ running \'svn update --revision BASE\' '
-        'in \'.../build/src/third_party/WebKit/Source\'',
-        'At revision 69168.',
+        'in \'.../build/src/third_party/WebKit\'',
+        'At revision 12345.',
         'Syncing projects: 100% (60/60)',
         'Syncing projects: 100% (60/60), done.',
         'solutions=[{"name":"src","url":"http://src.chromium.org/svn/'
@@ -368,14 +393,8 @@ class GClientSourceTest(unittest.TestCase):
         'in \'.../build\'',
         'At revision 69169.',
         '________ running \'svn update .../build/src/third_party/WebKit/'
-        'WebKit/chromium --revision 69169\' in \'.../build\'',
+        ' --revision 69169\' in \'.../build\'',
         'At revision 69169.',
-        '________ running \'svn update .../build/src/third_party/WebKit/'
-        'Source --revision 69169\' in \'.../build\'',
-        'At revision 69169.',
-        '________ running \'svn update .../build/src/third_party/WebKit/'
-        'Tools/Scripts --revision 69169\' in \'.../build\'',
-        'Updated to revision 69169.',
         '________ running \'/usr/bin/python src/build/'
         'gyp_chromium\' in \'.../build\'',
         'Updating projects from gyp files...',
@@ -395,15 +414,9 @@ class GClientSourceTest(unittest.TestCase):
         'layout_tests/LayoutTests/fast/events '
         '--revision 69168\' in \'.../build\'',
         'At revision 69168.',
-        '________ running \'svn update .../build/src/third_party/WebKit/'
-        'WebKit/chromium --revision 69168\' in \'.../build\'',
+        '________ running \'svn update .../build/src/third_party/WebKit'
+        ' --revision 69168\' in \'.../build\'',
         'At revision 69168.',
-        '________ running \'svn update .../build/src/third_party/WebKit/'
-        'Source --revision 69168\' in \'.../build\'',
-        'At revision 69168.',
-        '________ running \'svn update .../build/src/third_party/WebKit/'
-        'Tools/Scripts --revision 69168\' in \'.../build\'',
-        'Updated to revision 69168.',
         '________ running \'/usr/bin/python src/build/'
         'gyp_chromium\' in \'.../build\'',
         'Updating projects from gyp files...',

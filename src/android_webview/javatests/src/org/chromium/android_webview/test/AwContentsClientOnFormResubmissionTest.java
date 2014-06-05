@@ -1,28 +1,28 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.android_webview.test;
 
-import android.content.Context;
 import android.os.Message;
 import android.test.suitebuilder.annotation.SmallTest;
 
+import static org.chromium.base.test.util.ScalableTimeout.scaleTimeout;
+
 import org.apache.http.util.EncodingUtils;
 import org.chromium.android_webview.AwContents;
+import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
-import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer;
 import org.chromium.net.test.util.TestWebServer;
 
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
  * Tests if resubmission of post data is handled properly.
  */
-public class AwContentsClientOnFormResubmissionTest extends AndroidWebViewTestBase {
+public class AwContentsClientOnFormResubmissionTest extends AwTestBase {
 
     private static class TestAwContentsClient
             extends org.chromium.android_webview.test.TestAwContentsClient {
@@ -56,7 +56,7 @@ public class AwContentsClientOnFormResubmissionTest extends AndroidWebViewTestBa
             "<html><head><title>Reload</title></head><body>HELLO</body></html>";
 
     // Server timeout in seconds. Used to detect dontResend case.
-    private static final int TIMEOUT = 3;
+    private static final long TIMEOUT = scaleTimeout(3);
 
     // The web server.
     private TestWebServer mServer;
@@ -80,8 +80,11 @@ public class AwContentsClientOnFormResubmissionTest extends AndroidWebViewTestBa
         super.tearDown();
     }
 
+    /*
     @SmallTest
     @Feature({"AndroidWebView", "Navigation"})
+    */
+    @DisabledTest
     public void testResend() throws Throwable {
         mContentsClient.setResubmit(true);
         doReload();
@@ -114,7 +117,7 @@ public class AwContentsClientOnFormResubmissionTest extends AndroidWebViewTestBa
         getInstrumentation().runOnMainSync(new Runnable() {
             @Override
             public void run() {
-                mAwContents.getContentViewCore().reload();
+                mAwContents.getContentViewCore().reload(true);
             }
         });
         try {
@@ -122,6 +125,7 @@ public class AwContentsClientOnFormResubmissionTest extends AndroidWebViewTestBa
             // to detect a dontResend response.
             onPageFinishedHelper.waitForCallback(callCount, 1, TIMEOUT, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
+            // Exception expected from testDontResend case.
         }
     }
 }

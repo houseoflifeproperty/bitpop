@@ -10,6 +10,7 @@
 
 #include "base/basictypes.h"
 #include "net/base/net_export.h"
+#include "net/cookies/cookie_constants.h"
 
 namespace net {
 
@@ -39,18 +40,13 @@ class NET_EXPORT ParsedCookie {
   const std::string& Path() const { return pairs_[path_index_].second; }
   bool HasDomain() const { return domain_index_ != 0; }
   const std::string& Domain() const { return pairs_[domain_index_].second; }
-  bool HasMACKey() const { return mac_key_index_ != 0; }
-  const std::string& MACKey() const { return pairs_[mac_key_index_].second; }
-  bool HasMACAlgorithm() const { return mac_algorithm_index_ != 0; }
-  const std::string& MACAlgorithm() const {
-    return pairs_[mac_algorithm_index_].second;
-  }
   bool HasExpires() const { return expires_index_ != 0; }
   const std::string& Expires() const { return pairs_[expires_index_].second; }
   bool HasMaxAge() const { return maxage_index_ != 0; }
   const std::string& MaxAge() const { return pairs_[maxage_index_].second; }
   bool IsSecure() const { return secure_index_ != 0; }
   bool IsHttpOnly() const { return httponly_index_ != 0; }
+  CookiePriority Priority() const;
 
   // Returns the number of attributes, for example, returning 2 for:
   //   "BLAH=hah; path=/; domain=.google.com"
@@ -65,12 +61,11 @@ class NET_EXPORT ParsedCookie {
   bool SetValue(const std::string& value);
   bool SetPath(const std::string& path);
   bool SetDomain(const std::string& domain);
-  bool SetMACKey(const std::string& mac_key);
-  bool SetMACAlgorithm(const std::string& mac_algorithm);
   bool SetExpires(const std::string& expires);
   bool SetMaxAge(const std::string& maxage);
   bool SetIsSecure(bool is_secure);
   bool SetIsHttpOnly(bool is_http_only);
+  bool SetPriority(const std::string& priority);
 
   // Returns the cookie description as it appears in a HTML response header.
   std::string ToCookieLine() const;
@@ -138,12 +133,11 @@ class NET_EXPORT ParsedCookie {
   // could fit these into 3 bits each if we're worried about size...
   size_t path_index_;
   size_t domain_index_;
-  size_t mac_key_index_;
-  size_t mac_algorithm_index_;
   size_t expires_index_;
   size_t maxage_index_;
   size_t secure_index_;
   size_t httponly_index_;
+  size_t priority_index_;
 
   DISALLOW_COPY_AND_ASSIGN(ParsedCookie);
 };

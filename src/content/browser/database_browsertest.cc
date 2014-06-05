@@ -2,18 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/content_browser_test.h"
+#include "content/public/test/content_browser_test_utils.h"
 #include "content/public/test/test_utils.h"
-#include "content/shell/shell.h"
-#include "content/test/content_browser_test.h"
-#include "content/test/content_browser_test_utils.h"
+#include "content/shell/browser/shell.h"
 #include "content/test/net/url_request_mock_http_job.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -27,9 +27,10 @@ class DatabaseTest : public ContentBrowserTest {
                                const std::string& script,
                                const std::string& result) {
     std::string data;
-    ASSERT_TRUE(ExecuteJavaScriptAndExtractString(
-        shell->web_contents()->GetRenderViewHost(), L"",
-        ASCIIToWide(script), &data));
+    ASSERT_TRUE(ExecuteScriptAndExtractString(
+        shell->web_contents(),
+        script,
+        &data));
     ASSERT_EQ(data, result);
   }
 
@@ -47,13 +48,14 @@ class DatabaseTest : public ContentBrowserTest {
 
   void UpdateRecord(Shell* shell, int index, const std::string& data) {
     RunScriptAndCheckResult(
-      shell, "updateRecord(" + base::IntToString(index) + ", '" + data + "')",
-      "done");
+        shell,
+        "updateRecord(" + base::IntToString(index) + ", '" + data + "')",
+        "done");
   }
 
   void DeleteRecord(Shell* shell, int index) {
     RunScriptAndCheckResult(
-      shell, "deleteRecord(" + base::IntToString(index) + ")", "done");
+        shell, "deleteRecord(" + base::IntToString(index) + ")", "done");
   }
 
   void CompareRecords(Shell* shell, const std::string& expected) {
@@ -62,9 +64,10 @@ class DatabaseTest : public ContentBrowserTest {
 
   bool HasTable(Shell* shell) {
     std::string data;
-    CHECK(ExecuteJavaScriptAndExtractString(
-        shell->web_contents()->GetRenderViewHost(), L"",
-        ASCIIToWide("getRecords()"), &data));
+    CHECK(ExecuteScriptAndExtractString(
+        shell->web_contents(),
+        "getRecords()",
+        &data));
     return data != "getRecords error: [object SQLError]";
   }
 };
@@ -99,7 +102,7 @@ IN_PROC_BROWSER_TEST_F(DatabaseTest, DeleteRecord) {
   CreateTable(shell());
   InsertRecord(shell(), "text");
   DeleteRecord(shell(), 0);
-  CompareRecords(shell(), "");
+  CompareRecords(shell(), std::string());
 
   InsertRecord(shell(), "0");
   InsertRecord(shell(), "1");
@@ -148,12 +151,12 @@ IN_PROC_BROWSER_TEST_F(DatabaseTest, DatabaseOperations) {
   for (int i = 0; i < 10; ++i)
     DeleteRecord(shell(), 0);
 
-  CompareRecords(shell(), "");
+  CompareRecords(shell(), std::string());
 
   RunScriptAndCheckResult(
       shell(), "deleteRecord(1)", "could not find row with index: 1");
 
-  CompareRecords(shell(), "");
+  CompareRecords(shell(), std::string());
 }
 
 // Create records in the database and verify they persist after reload.
@@ -183,7 +186,7 @@ IN_PROC_BROWSER_TEST_F(DatabaseTest, OffTheRecordCannotReadRegularDatabase) {
   ASSERT_FALSE(HasTable(otr));
 
   CreateTable(otr);
-  CompareRecords(otr, "");
+  CompareRecords(otr, std::string());
 }
 
 // Attempt to read a database created in an off the record browser from a
@@ -197,7 +200,7 @@ IN_PROC_BROWSER_TEST_F(DatabaseTest, RegularCannotReadOffTheRecordDatabase) {
   Navigate(shell());
   ASSERT_FALSE(HasTable(shell()));
   CreateTable(shell());
-  CompareRecords(shell(), "");
+  CompareRecords(shell(), std::string());
 }
 
 // Verify DB changes within first window are present in the second window.

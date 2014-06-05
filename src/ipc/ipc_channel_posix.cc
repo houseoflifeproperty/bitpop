@@ -7,9 +7,9 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stddef.h>
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/un.h>
 #include <unistd.h>
 
@@ -17,22 +17,22 @@
 #include <sys/uio.h>
 #endif
 
-#include <string>
 #include <map>
+#include <string>
 
 #include "base/command_line.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/posix/global_descriptors.h"
-#include "base/process_util.h"
+#include "base/process/process_handle.h"
 #include "base/rand_util.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/synchronization/lock.h"
 #include "ipc/file_descriptor_set_posix.h"
 #include "ipc/ipc_descriptors.h"
@@ -40,6 +40,7 @@
 #include "ipc/ipc_logging.h"
 #include "ipc/ipc_message_utils.h"
 #include "ipc/ipc_switches.h"
+#include "ipc/unix_domain_socket_util.h"
 
 namespace IPC {
 
@@ -134,146 +135,12 @@ class PipeMap {
   ChannelToFDMap map_;
 
   friend struct DefaultSingletonTraits<PipeMap>;
+#if defined(OS_ANDROID)
+  friend void ::IPC::Channel::NotifyProcessForkedForTesting();
+#endif
 };
 
 //------------------------------------------------------------------------------
-// Verify that kMaxPipeNameLength is a decent size.
-COMPILE_ASSERT(sizeof(((sockaddr_un*)0)->sun_path) >= kMaxPipeNameLength,
-               BAD_SUN_PATH_LENGTH);
-
-// Creates a unix domain socket bound to the specified name that is listening
-// for connections.
-bool CreateServerUnixDomainSocket(const std::string& pipe_name,
-                                  int* server_listen_fd) {
-  DCHECK(server_listen_fd);
-
-  if (pipe_name.length() == 0 || pipe_name.length() >= kMaxPipeNameLength) {
-    DLOG(ERROR) << "pipe_name.length() == " << pipe_name.length();
-    return false;
-  }
-
-  // Create socket.
-  int fd = socket(AF_UNIX, SOCK_STREAM, 0);
-  if (fd < 0) {
-    return false;
-  }
-
-  // Make socket non-blocking
-  if (fcntl(fd, F_SETFL, O_NONBLOCK) == -1) {
-    PLOG(ERROR) << "fcntl(O_NONBLOCK) " << pipe_name;
-    if (HANDLE_EINTR(close(fd)) < 0)
-      PLOG(ERROR) << "close " << pipe_name;
-    return false;
-  }
-
-  // Delete any old FS instances.
-  unlink(pipe_name.c_str());
-
-  // Make sure the path we need exists.
-  FilePath path(pipe_name);
-  FilePath dir_path = path.DirName();
-  if (!file_util::CreateDirectory(dir_path)) {
-    if (HANDLE_EINTR(close(fd)) < 0)
-      PLOG(ERROR) << "close " << pipe_name;
-    return false;
-  }
-
-  // Create unix_addr structure.
-  struct sockaddr_un unix_addr;
-  memset(&unix_addr, 0, sizeof(unix_addr));
-  unix_addr.sun_family = AF_UNIX;
-  int path_len = snprintf(unix_addr.sun_path, IPC::kMaxPipeNameLength,
-                          "%s", pipe_name.c_str());
-  DCHECK_EQ(static_cast<int>(pipe_name.length()), path_len);
-  size_t unix_addr_len = offsetof(struct sockaddr_un,
-                                       sun_path) + path_len + 1;
-
-  // Bind the socket.
-  if (bind(fd, reinterpret_cast<const sockaddr*>(&unix_addr),
-           unix_addr_len) != 0) {
-    PLOG(ERROR) << "bind " << pipe_name;
-    if (HANDLE_EINTR(close(fd)) < 0)
-      PLOG(ERROR) << "close " << pipe_name;
-    return false;
-  }
-
-  // Start listening on the socket.
-  const int listen_queue_length = 1;
-  if (listen(fd, listen_queue_length) != 0) {
-    PLOG(ERROR) << "listen " << pipe_name;
-    if (HANDLE_EINTR(close(fd)) < 0)
-      PLOG(ERROR) << "close " << pipe_name;
-    return false;
-  }
-
-  *server_listen_fd = fd;
-  return true;
-}
-
-// Accept a connection on a socket we are listening to.
-bool ServerAcceptConnection(int server_listen_fd, int* server_socket) {
-  DCHECK(server_socket);
-
-  int accept_fd = HANDLE_EINTR(accept(server_listen_fd, NULL, 0));
-  if (accept_fd < 0)
-    return false;
-  if (fcntl(accept_fd, F_SETFL, O_NONBLOCK) == -1) {
-    PLOG(ERROR) << "fcntl(O_NONBLOCK) " << accept_fd;
-    if (HANDLE_EINTR(close(accept_fd)) < 0)
-      PLOG(ERROR) << "close " << accept_fd;
-    return false;
-  }
-
-  *server_socket = accept_fd;
-  return true;
-}
-
-bool CreateClientUnixDomainSocket(const std::string& pipe_name,
-                                  int* client_socket) {
-  DCHECK(client_socket);
-  DCHECK_GT(pipe_name.length(), 0u);
-  DCHECK_LT(pipe_name.length(), kMaxPipeNameLength);
-
-  if (pipe_name.length() == 0 || pipe_name.length() >= kMaxPipeNameLength) {
-    return false;
-  }
-
-  // Create socket.
-  int fd = socket(AF_UNIX, SOCK_STREAM, 0);
-  if (fd < 0) {
-    PLOG(ERROR) << "socket " << pipe_name;
-    return false;
-  }
-
-  // Make socket non-blocking
-  if (fcntl(fd, F_SETFL, O_NONBLOCK) == -1) {
-    PLOG(ERROR) << "fcntl(O_NONBLOCK) " << pipe_name;
-    if (HANDLE_EINTR(close(fd)) < 0)
-      PLOG(ERROR) << "close " << pipe_name;
-    return false;
-  }
-
-  // Create server side of socket.
-  struct sockaddr_un server_unix_addr;
-  memset(&server_unix_addr, 0, sizeof(server_unix_addr));
-  server_unix_addr.sun_family = AF_UNIX;
-  int path_len = snprintf(server_unix_addr.sun_path, IPC::kMaxPipeNameLength,
-                          "%s", pipe_name.c_str());
-  DCHECK_EQ(static_cast<int>(pipe_name.length()), path_len);
-  size_t server_unix_addr_len = offsetof(struct sockaddr_un,
-                                         sun_path) + path_len + 1;
-
-  if (HANDLE_EINTR(connect(fd, reinterpret_cast<sockaddr*>(&server_unix_addr),
-                           server_unix_addr_len)) != 0) {
-    PLOG(ERROR) << "connect " << pipe_name;
-    if (HANDLE_EINTR(close(fd)) < 0)
-      PLOG(ERROR) << "close " << pipe_name;
-    return false;
-  }
-
-  *client_socket = fd;
-  return true;
-}
 
 bool SocketWriteErrorIsRecoverable() {
 #if defined(OS_MACOSX)
@@ -295,6 +162,15 @@ bool SocketWriteErrorIsRecoverable() {
 }
 
 }  // namespace
+
+#if defined(OS_ANDROID)
+// When we fork for simple tests on Android, we can't 'exec', so we need to
+// reset these entries manually to get the expected testing behavior.
+void Channel::NotifyProcessForkedForTesting() {
+  PipeMap::GetInstance()->map_.clear();
+}
+#endif
+
 //------------------------------------------------------------------------------
 
 #if defined(OS_LINUX)
@@ -342,9 +218,9 @@ bool SocketPair(int* fd1, int* fd2) {
   if (fcntl(pipe_fds[0], F_SETFL, O_NONBLOCK) == -1 ||
       fcntl(pipe_fds[1], F_SETFL, O_NONBLOCK) == -1) {
     PLOG(ERROR) << "fcntl(O_NONBLOCK)";
-    if (HANDLE_EINTR(close(pipe_fds[0])) < 0)
+    if (IGNORE_EINTR(close(pipe_fds[0])) < 0)
       PLOG(ERROR) << "close";
-    if (HANDLE_EINTR(close(pipe_fds[1])) < 0)
+    if (IGNORE_EINTR(close(pipe_fds[1])) < 0)
       PLOG(ERROR) << "close";
     return false;
   }
@@ -363,7 +239,7 @@ bool Channel::ChannelImpl::CreatePipe(
   // 1) It's a channel wrapping a pipe that is given to us.
   // 2) It's for a named channel, so we create it.
   // 3) It's for a client that we implement ourself. This is used
-  //    in unittesting.
+  //    in single-process unittesting.
   // 4) It's the initial IPC channel:
   //   4a) Client side: Pull the pipe out of the GlobalDescriptors set.
   //   4b) Server side: create the pipe.
@@ -388,12 +264,14 @@ bool Channel::ChannelImpl::CreatePipe(
   } else if (mode_ & MODE_NAMED_FLAG) {
     // Case 2 from comment above.
     if (mode_ & MODE_SERVER_FLAG) {
-      if (!CreateServerUnixDomainSocket(pipe_name_, &local_pipe)) {
+      if (!CreateServerUnixDomainSocket(base::FilePath(pipe_name_),
+                                        &local_pipe)) {
         return false;
       }
       must_unlink_ = true;
     } else if (mode_ & MODE_CLIENT_FLAG) {
-      if (!CreateClientUnixDomainSocket(pipe_name_, &local_pipe)) {
+      if (!CreateClientUnixDomainSocket(base::FilePath(pipe_name_),
+                                        &local_pipe)) {
         return false;
       }
     } else {
@@ -461,7 +339,7 @@ bool Channel::ChannelImpl::CreatePipe(
 
 bool Channel::ChannelImpl::Connect() {
   if (server_listen_pipe_ == -1 && pipe_ == -1) {
-    DLOG(INFO) << "Channel creation failed: " << pipe_name_;
+    DLOG(WARNING) << "Channel creation failed: " << pipe_name_;
     return false;
   }
 
@@ -469,16 +347,37 @@ bool Channel::ChannelImpl::Connect() {
   if (server_listen_pipe_ != -1) {
     // Watch the pipe for connections, and turn any connections into
     // active sockets.
-    MessageLoopForIO::current()->WatchFileDescriptor(
+    base::MessageLoopForIO::current()->WatchFileDescriptor(
         server_listen_pipe_,
         true,
-        MessageLoopForIO::WATCH_READ,
+        base::MessageLoopForIO::WATCH_READ,
         &server_listen_connection_watcher_,
         this);
   } else {
     did_connect = AcceptConnection();
   }
   return did_connect;
+}
+
+void Channel::ChannelImpl::CloseFileDescriptors(Message* msg) {
+#if defined(OS_MACOSX)
+  // There is a bug on OSX which makes it dangerous to close
+  // a file descriptor while it is in transit. So instead we
+  // store the file descriptor in a set and send a message to
+  // the recipient, which is queued AFTER the message that
+  // sent the FD. The recipient will reply to the message,
+  // letting us know that it is now safe to close the file
+  // descriptor. For more information, see:
+  // http://crbug.com/298276
+  std::vector<int> to_close;
+  msg->file_descriptor_set()->ReleaseFDsToClose(&to_close);
+  for (size_t i = 0; i < to_close.size(); i++) {
+    fds_to_close_.insert(to_close[i]);
+    QueueCloseFDMessage(to_close[i], 2);
+  }
+#else
+  msg->file_descriptor_set()->CommitAll();
+#endif
 }
 
 bool Channel::ChannelImpl::ProcessOutgoingMessages() {
@@ -553,7 +452,7 @@ bool Channel::ChannelImpl::ProcessOutgoingMessages() {
         msgh.msg_iov = &iov;
         msgh.msg_controllen = 0;
         if (bytes_written > 0) {
-          msg->file_descriptor_set()->CommitAll();
+          CloseFileDescriptors(msg);
         }
       }
 #endif  // IPC_USES_READWRITE
@@ -574,18 +473,22 @@ bool Channel::ChannelImpl::ProcessOutgoingMessages() {
       }
     }
     if (bytes_written > 0)
-      msg->file_descriptor_set()->CommitAll();
+      CloseFileDescriptors(msg);
 
     if (bytes_written < 0 && !SocketWriteErrorIsRecoverable()) {
+      // We can't close the pipe here, because calling OnChannelError
+      // may destroy this object, and that would be bad if we are
+      // called from Send(). Instead, we return false and hope the
+      // caller will close the pipe. If they do not, the pipe will
+      // still be closed next time OnFileCanReadWithoutBlocking is
+      // called.
 #if defined(OS_MACOSX)
       // On OSX writing to a pipe with no listener returns EPERM.
       if (errno == EPERM) {
-        Close();
         return false;
       }
 #endif  // OS_MACOSX
       if (errno == EPIPE) {
-        Close();
         return false;
       }
       PLOG(ERROR) << "pipe error on "
@@ -603,10 +506,10 @@ bool Channel::ChannelImpl::ProcessOutgoingMessages() {
 
       // Tell libevent to call us back once things are unblocked.
       is_blocked_on_write_ = true;
-      MessageLoopForIO::current()->WatchFileDescriptor(
+      base::MessageLoopForIO::current()->WatchFileDescriptor(
           pipe_,
           false,  // One shot
-          MessageLoopForIO::WATCH_WRITE,
+          base::MessageLoopForIO::WATCH_WRITE,
           &write_watcher_,
           this);
       return true;
@@ -660,7 +563,7 @@ void Channel::ChannelImpl::CloseClientFileDescriptor() {
   base::AutoLock lock(client_pipe_lock_);
   if (client_pipe_ != -1) {
     PipeMap::GetInstance()->Remove(pipe_name_);
-    if (HANDLE_EINTR(close(client_pipe_)) < 0)
+    if (IGNORE_EINTR(close(client_pipe_)) < 0)
       PLOG(ERROR) << "close " << pipe_name_;
     client_pipe_ = -1;
   }
@@ -674,33 +577,9 @@ bool Channel::ChannelImpl::HasAcceptedConnection() const {
   return AcceptsConnections() && pipe_ != -1;
 }
 
-bool Channel::ChannelImpl::GetClientEuid(uid_t* client_euid) const {
-  DCHECK(HasAcceptedConnection());
-#if defined(OS_MACOSX) || defined(OS_OPENBSD)
-  uid_t peer_euid;
-  gid_t peer_gid;
-  if (getpeereid(pipe_, &peer_euid, &peer_gid) != 0) {
-    PLOG(ERROR) << "getpeereid " << pipe_;
-    return false;
-  }
-  *client_euid = peer_euid;
-  return true;
-#elif defined(OS_SOLARIS)
-  return false;
-#else
-  struct ucred cred;
-  socklen_t cred_len = sizeof(cred);
-  if (getsockopt(pipe_, SOL_SOCKET, SO_PEERCRED, &cred, &cred_len) != 0) {
-    PLOG(ERROR) << "getsockopt " << pipe_;
-    return false;
-  }
-  if (static_cast<unsigned>(cred_len) < sizeof(cred)) {
-    NOTREACHED() << "Truncated ucred from SO_PEERCRED?";
-    return false;
-  }
-  *client_euid = cred.uid;
-  return true;
-#endif
+bool Channel::ChannelImpl::GetPeerEuid(uid_t* peer_euid) const {
+  DCHECK(!(mode_ & MODE_SERVER) || HasAcceptedConnection());
+  return IPC::GetPeerEuid(pipe_, peer_euid);
 }
 
 void Channel::ChannelImpl::ResetToAcceptingConnectionState() {
@@ -708,18 +587,18 @@ void Channel::ChannelImpl::ResetToAcceptingConnectionState() {
   read_watcher_.StopWatchingFileDescriptor();
   write_watcher_.StopWatchingFileDescriptor();
   if (pipe_ != -1) {
-    if (HANDLE_EINTR(close(pipe_)) < 0)
+    if (IGNORE_EINTR(close(pipe_)) < 0)
       PLOG(ERROR) << "close pipe_ " << pipe_name_;
     pipe_ = -1;
   }
 #if defined(IPC_USES_READWRITE)
   if (fd_pipe_ != -1) {
-    if (HANDLE_EINTR(close(fd_pipe_)) < 0)
+    if (IGNORE_EINTR(close(fd_pipe_)) < 0)
       PLOG(ERROR) << "close fd_pipe_ " << pipe_name_;
     fd_pipe_ = -1;
   }
   if (remote_fd_pipe_ != -1) {
-    if (HANDLE_EINTR(close(remote_fd_pipe_)) < 0)
+    if (IGNORE_EINTR(close(remote_fd_pipe_)) < 0)
       PLOG(ERROR) << "close remote_fd_pipe_ " << pipe_name_;
     remote_fd_pipe_ = -1;
   }
@@ -733,12 +612,23 @@ void Channel::ChannelImpl::ResetToAcceptingConnectionState() {
 
   // Close any outstanding, received file descriptors.
   ClearInputFDs();
+
+#if defined(OS_MACOSX)
+  // Clear any outstanding, sent file descriptors.
+  for (std::set<int>::iterator i = fds_to_close_.begin();
+       i != fds_to_close_.end();
+       ++i) {
+    if (IGNORE_EINTR(close(*i)) < 0)
+      PLOG(ERROR) << "close";
+  }
+  fds_to_close_.clear();
+#endif
 }
 
 // static
 bool Channel::ChannelImpl::IsNamedServerInitialized(
     const std::string& channel_id) {
-  return file_util::PathExists(FilePath(channel_id));
+  return base::PathExists(base::FilePath(channel_id));
 }
 
 #if defined(OS_LINUX)
@@ -750,10 +640,10 @@ void Channel::ChannelImpl::SetGlobalPid(int pid) {
 
 // Called by libevent when we can read from the pipe without blocking.
 void Channel::ChannelImpl::OnFileCanReadWithoutBlocking(int fd) {
-  bool send_server_hello_msg = false;
   if (fd == server_listen_pipe_) {
     int new_pipe = 0;
-    if (!ServerAcceptConnection(server_listen_pipe_, &new_pipe)) {
+    if (!ServerAcceptConnection(server_listen_pipe_, &new_pipe) ||
+        new_pipe < 0) {
       Close();
       listener()->OnChannelListenError();
     }
@@ -763,7 +653,7 @@ void Channel::ChannelImpl::OnFileCanReadWithoutBlocking(int fd) {
       // close our new descriptor.
       if (HANDLE_EINTR(shutdown(new_pipe, SHUT_RDWR)) < 0)
         DPLOG(ERROR) << "shutdown " << pipe_name_;
-      if (HANDLE_EINTR(close(new_pipe)) < 0)
+      if (IGNORE_EINTR(close(new_pipe)) < 0)
         DPLOG(ERROR) << "close " << pipe_name_;
       listener()->OnChannelDenied();
       return;
@@ -773,7 +663,7 @@ void Channel::ChannelImpl::OnFileCanReadWithoutBlocking(int fd) {
     if ((mode_ & MODE_OPEN_ACCESS_FLAG) == 0) {
       // Verify that the IPC channel peer is running as the same user.
       uid_t client_euid;
-      if (!GetClientEuid(&client_euid)) {
+      if (!GetPeerEuid(&client_euid)) {
         DLOG(ERROR) << "Unable to query client euid";
         ResetToAcceptingConnectionState();
         return;
@@ -788,18 +678,16 @@ void Channel::ChannelImpl::OnFileCanReadWithoutBlocking(int fd) {
     if (!AcceptConnection()) {
       NOTREACHED() << "AcceptConnection should not fail on server";
     }
-    send_server_hello_msg = true;
     waiting_connect_ = false;
   } else if (fd == pipe_) {
     if (waiting_connect_ && (mode_ & MODE_SERVER_FLAG)) {
-      send_server_hello_msg = true;
       waiting_connect_ = false;
     }
     if (!ProcessIncomingMessages()) {
       // ClosePipeOnError may delete this object, so we mustn't call
       // ProcessOutgoingMessages.
-      send_server_hello_msg = false;
       ClosePipeOnError();
+      return;
     }
   } else {
     NOTREACHED() << "Unknown pipe " << fd;
@@ -808,9 +696,11 @@ void Channel::ChannelImpl::OnFileCanReadWithoutBlocking(int fd) {
   // If we're a server and handshaking, then we want to make sure that we
   // only send our handshake message after we've processed the client's.
   // This gives us a chance to kill the client if the incoming handshake
-  // is invalid.
-  if (send_server_hello_msg) {
-    ProcessOutgoingMessages();
+  // is invalid. This also flushes any closefd messages.
+  if (!is_blocked_on_write_) {
+    if (!ProcessOutgoingMessages()) {
+      ClosePipeOnError();
+    }
   }
 }
 
@@ -824,11 +714,8 @@ void Channel::ChannelImpl::OnFileCanWriteWithoutBlocking(int fd) {
 }
 
 bool Channel::ChannelImpl::AcceptConnection() {
-  MessageLoopForIO::current()->WatchFileDescriptor(pipe_,
-                                                   true,
-                                                   MessageLoopForIO::WATCH_READ,
-                                                   &read_watcher_,
-                                                   this);
+  base::MessageLoopForIO::current()->WatchFileDescriptor(
+      pipe_, true, base::MessageLoopForIO::WATCH_READ, &read_watcher_, this);
   QueueHelloMessage();
 
   if (mode_ & MODE_CLIENT_FLAG) {
@@ -1001,11 +888,6 @@ bool Channel::ChannelImpl::WillDispatchInputMessage(Message* msg) {
                  << " channel:" << this
                  << " message-type:" << msg->type()
                  << " header()->num_fds:" << header_fds;
-#if defined(CHROMIUM_SELINUX)
-    LOG(WARNING) << "In the case of SELinux this can be caused when "
-                    "using a --user-data-dir to which the default "
-                    "policy doesn't give the renderer access to. ";
-#endif  // CHROMIUM_SELINUX
     // Abort the connection.
     ClearInputFDs();
     return false;
@@ -1061,35 +943,86 @@ bool Channel::ChannelImpl::ExtractFileDescriptorsFromMsghdr(msghdr* msg) {
 
 void Channel::ChannelImpl::ClearInputFDs() {
   for (size_t i = 0; i < input_fds_.size(); ++i) {
-    if (HANDLE_EINTR(close(input_fds_[i])) < 0)
+    if (IGNORE_EINTR(close(input_fds_[i])) < 0)
       PLOG(ERROR) << "close ";
   }
   input_fds_.clear();
 }
 
-void Channel::ChannelImpl::HandleHelloMessage(const Message& msg) {
+void Channel::ChannelImpl::QueueCloseFDMessage(int fd, int hops) {
+  switch (hops) {
+    case 1:
+    case 2: {
+      // Create the message
+      scoped_ptr<Message> msg(new Message(MSG_ROUTING_NONE,
+                                          CLOSE_FD_MESSAGE_TYPE,
+                                          IPC::Message::PRIORITY_NORMAL));
+      if (!msg->WriteInt(hops - 1) || !msg->WriteInt(fd)) {
+        NOTREACHED() << "Unable to pickle close fd.";
+      }
+      // Send(msg.release());
+      output_queue_.push(msg.release());
+      break;
+    }
+
+    default:
+      NOTREACHED();
+      break;
+  }
+}
+
+void Channel::ChannelImpl::HandleInternalMessage(const Message& msg) {
   // The Hello message contains only the process id.
   PickleIterator iter(msg);
-  int pid;
-  if (!msg.ReadInt(&iter, &pid))
-    NOTREACHED();
+
+  switch (msg.type()) {
+    default:
+      NOTREACHED();
+      break;
+
+    case Channel::HELLO_MESSAGE_TYPE:
+      int pid;
+      if (!msg.ReadInt(&iter, &pid))
+        NOTREACHED();
 
 #if defined(IPC_USES_READWRITE)
-  if (mode_ & MODE_SERVER_FLAG) {
-    // With IPC_USES_READWRITE, the Hello message from the client to the
-    // server also contains the fd_pipe_, which  will be used for all
-    // subsequent file descriptor passing.
-    DCHECK_EQ(msg.file_descriptor_set()->size(), 1U);
-    base::FileDescriptor descriptor;
-    if (!msg.ReadFileDescriptor(&iter, &descriptor)) {
-      NOTREACHED();
-    }
-    fd_pipe_ = descriptor.fd;
-    CHECK(descriptor.auto_close);
-  }
+      if (mode_ & MODE_SERVER_FLAG) {
+        // With IPC_USES_READWRITE, the Hello message from the client to the
+        // server also contains the fd_pipe_, which  will be used for all
+        // subsequent file descriptor passing.
+        DCHECK_EQ(msg.file_descriptor_set()->size(), 1U);
+        base::FileDescriptor descriptor;
+        if (!msg.ReadFileDescriptor(&iter, &descriptor)) {
+          NOTREACHED();
+        }
+        fd_pipe_ = descriptor.fd;
+        CHECK(descriptor.auto_close);
+      }
 #endif  // IPC_USES_READWRITE
-  peer_pid_ = pid;
-  listener()->OnChannelConnected(pid);
+      peer_pid_ = pid;
+      listener()->OnChannelConnected(pid);
+      break;
+
+#if defined(OS_MACOSX)
+    case Channel::CLOSE_FD_MESSAGE_TYPE:
+      int fd, hops;
+      if (!msg.ReadInt(&iter, &hops))
+        NOTREACHED();
+      if (!msg.ReadInt(&iter, &fd))
+        NOTREACHED();
+      if (hops == 0) {
+        if (fds_to_close_.erase(fd) > 0) {
+          if (IGNORE_EINTR(close(fd)) < 0)
+            PLOG(ERROR) << "close";
+        } else {
+          NOTREACHED();
+        }
+      } else {
+        QueueCloseFDMessage(fd, hops);
+      }
+      break;
+#endif
+  }
 }
 
 void Channel::ChannelImpl::Close() {
@@ -1103,7 +1036,7 @@ void Channel::ChannelImpl::Close() {
     must_unlink_ = false;
   }
   if (server_listen_pipe_ != -1) {
-    if (HANDLE_EINTR(close(server_listen_pipe_)) < 0)
+    if (IGNORE_EINTR(close(server_listen_pipe_)) < 0)
       DPLOG(ERROR) << "close " << server_listen_pipe_;
     server_listen_pipe_ = -1;
     // Unregister libevent for the listening socket and close it.
@@ -1133,10 +1066,6 @@ void Channel::Close() {
     channel_impl_->Close();
 }
 
-void Channel::set_listener(Listener* listener) {
-  channel_impl_->set_listener(listener);
-}
-
 base::ProcessId Channel::peer_pid() const {
   return channel_impl_->peer_pid();
 }
@@ -1161,8 +1090,8 @@ bool Channel::HasAcceptedConnection() const {
   return channel_impl_->HasAcceptedConnection();
 }
 
-bool Channel::GetClientEuid(uid_t* client_euid) const {
-  return channel_impl_->GetClientEuid(client_euid);
+bool Channel::GetPeerEuid(uid_t* peer_euid) const {
+  return channel_impl_->GetPeerEuid(peer_euid);
 }
 
 void Channel::ResetToAcceptingConnectionState() {

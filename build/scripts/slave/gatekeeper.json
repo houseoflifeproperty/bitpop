@@ -1,0 +1,260 @@
+{
+  "comment": ["This is a configuration file for gatekeeper_ng.py",
+              "Look at that for documentation on this file's format."],
+
+  "masters": {
+    "http://build.chromium.org/p/chromium": [
+      {
+        "categories": [
+          "gclient"
+        ],
+
+        "forgive_all": "true",
+
+        "builders": {
+          "Win": {
+            "categories": [
+              "chromium_archive_build",
+              "chromium_checkdeps2git",
+              "chromium_compile",
+              "chromium_crash_handler",
+              "chromium_sizes",
+              "chromium_windows"
+            ]
+          },
+          "Win Split": {
+            "categories": [
+              "chromium_compile",
+              "chromium_crash_handler",
+              "chromium_windows"
+            ]
+          },
+          "Mac": {
+            "categories": [
+              "chromium_archive_build",
+              "chromium_checkdeps2git",
+              "chromium_compile",
+              "chromium_sizes"
+            ]
+          },
+          "Linux": {
+            "categories": [
+              "chromium_checkdeps2git",
+              "chromium_compile",
+              "chromium_archive_build",
+              "chromium_sizes"
+            ]
+          },
+          "Linux x64": {
+            "categories": [
+              "chromium_checkdeps2git",
+              "chromium_compile",
+              "chromium_archive_build",
+              "chromium_sizes"
+            ]
+          },
+          "Android": {
+            "comment": ["Android slave_steps aren't enabled in",
+                        "master_full_cfg.py."]
+          }
+        }
+      }
+    ],
+    "http://build.chromium.org/p/chromium.gatekeeper": [
+      {
+        "tree_notify": [
+          "chromium-build-heartbeat@chromium-gatekeeper-sentry.appspotmail.com"
+        ],
+
+        "builders": {
+          "Chromium Gatekeeper Failure": {
+            "forgiving_steps": [
+              "*"
+            ]
+          }
+        }
+      }
+    ],
+    "http://build.chromium.org/p/chromium.lkgr": [
+      {
+        "tree_notify": [
+          "jschuh@chromium.org",
+          "scottmg@chromium.org",
+          "wfh@chromium.org"
+        ],
+
+        "builders": {
+          "Win x64": {
+            "categories": [
+              "chromium_archive_build",
+              "chromium_compile",
+              "chromium_windows",
+              "gclient"
+            ]
+          }
+        }
+      }
+    ],
+    "http://build.chromium.org/p/chromium.perf": [
+      {
+        "tree_notify": [
+          "stip@chromium.org",
+          "tonyg@chromium.org"
+        ],
+
+        "sheriff_classes": ["sheriff_perf"],
+
+        "forgive_all": "true",
+
+        "subject_template": "%(project_name)s %(builder_name)s %(result)s",
+
+        "categories": [
+          "chromium_perf_steps",
+          "gclient"
+        ],
+
+        "builders": {
+          "*": {}
+        }
+      }
+    ],
+    "http://build.chromium.org/p/chromium.webkit": [
+      {
+        "tree_notify": [
+          "eseidel@chromium.org",
+          "stip@chromium.org"
+        ],
+
+        "sheriff_classes": ["sheriff_webkit"],
+
+        "forgive_all": "true",
+
+        "subject_template": "%(project_name)s %(builder_name)s %(result)s",
+
+        "comment": ["Would be nice to use a regexp  here: /Oilpan/i, etc."],
+        "excluded_builders" : [
+            "WebKit Linux (deps)",
+            "WebKit Linux Oilpan (dbg)",
+            "WebKit Linux Oilpan",
+            "WebKit Linux Leak",
+            "WebKit Linux Oilpan Leak",
+            "WebKit Mac Builder (deps)",
+            "WebKit Mac Oilpan (dbg)",
+            "WebKit Mac Oilpan",
+            "WebKit Mac10.6 (deps)",
+            "WebKit Win Builder (deps)",
+            "WebKit Win Oilpan (dbg)",
+            "WebKit Win Oilpan",
+            "WebKit XP (deps)"
+        ],
+
+        "builders": {
+          "*": {
+            "comment": ["We should close on test failures, but we don't",
+                        "currently."],
+            "categories": [
+              "chromium_compile_optional"
+            ],
+
+            "closing_optional": [
+              "compile",
+              "runhooks",
+              "update"
+            ]
+          },
+
+          "WebKit XP": {
+            "categories": [
+              "chromium_compile_optional"
+            ],
+
+            "closing_optional": [
+              "compile",
+              "update"
+            ]
+          }
+        }
+      }
+    ],
+    "http://build.chromium.org/p/client.libvpx": [
+      {
+        "tree_notify": [
+          "stip@chromium.org",
+          "vpx-eng@google.com"
+        ],
+
+        "forgive_all": "true",
+
+        "builders": {
+          "*": {
+            "closing_optional": [
+              "*"
+            ]
+          }
+        }
+      }
+    ]
+  },
+
+  "categories": {
+    "gclient": {
+      "closing_steps": [
+        "runhooks"
+      ],
+      "forgiving_steps": [
+        "gclient_revert",
+        "update",
+        "update_scripts"
+      ]
+    },
+
+    "chromium_sizes": {
+      "closing_steps": [
+        "sizes"
+      ]
+    },
+
+    "chromium_crash_handler": {
+      "forgiving_steps": [
+        "start_crash_handler"
+      ]
+    },
+
+    "chromium_windows": {
+      "forgiving_steps": [
+        "svnkill",
+        "taskkill"
+      ]
+    },
+
+    "chromium_checkdeps2git": {
+      "closing_steps": [
+        "check_deps2git"
+      ]
+    },
+
+    "chromium_compile": {
+      "closing_steps": [
+        "compile"
+      ]
+    },
+
+    "chromium_compile_optional": {
+      "closing_optional": [
+        "compile"
+      ]
+    },
+
+    "chromium_archive_build": {
+      "forgiving_steps": [
+        "archive_build"
+      ]
+    },
+
+    "chromium_perf_steps": {
+      "closing_optional": [
+        "*"
+      ]
+    }
+  }
+}

@@ -8,15 +8,19 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <sstream>
+#include <string>
 #include <vector>
 
-#include "gtest/gtest.h"
-#include "testsupport/fileutils.h"
-#include "testsupport/metrics/video_metrics.h"
-#include "video_engine/test/auto_test/interface/vie_autotest.h"
-#include "video_engine/test/auto_test/interface/vie_file_based_comparison_tests.h"
-#include "video_engine/test/auto_test/primitives/framedrop_primitives.h"
-#include "video_engine/test/libvietest/include/vie_to_file_renderer.h"
+#include "testing/gtest/include/gtest/gtest.h"
+#include "webrtc/test/testsupport/fileutils.h"
+#include "webrtc/test/testsupport/metrics/video_metrics.h"
+#include "webrtc/test/testsupport/perf_test.h"
+#include "webrtc/video_engine/test/auto_test/interface/vie_autotest.h"
+#include "webrtc/video_engine/test/auto_test/interface/vie_file_based_comparison_tests.h"
+#include "webrtc/video_engine/test/auto_test/primitives/framedrop_primitives.h"
+#include "webrtc/video_engine/test/libvietest/include/tb_external_transport.h"
+#include "webrtc/video_engine/test/libvietest/include/vie_to_file_renderer.h"
 
 namespace {
 
@@ -113,34 +117,101 @@ class ViEVideoVerificationTest : public testing::Test {
 
 class ParameterizedFullStackTest : public ViEVideoVerificationTest,
                                    public ::testing::WithParamInterface<int> {
+ public:
+  static const int kNumFullStackInstances = 4;
+
  protected:
   struct TestParameters {
-    int packet_loss_rate;
-    int one_way_delay;
+    NetworkParameters network;
+    std::string file_name;
+    int width;
+    int height;
     int bitrate;
     double avg_psnr_threshold;
     double avg_ssim_threshold;
+    ProtectionMethod protection_method;
     std::string test_label;
   };
 
   void SetUp() {
+    for (int i = 0; i < kNumFullStackInstances; ++i) {
+      parameter_table_[i].file_name = webrtc::test::ResourcePath("foreman_cif",
+                                                                 "yuv");
+      parameter_table_[i].width = 352;
+      parameter_table_[i].height = 288;
+    }
     int i = 0;
-    parameter_table_[i].packet_loss_rate = 0;
-    parameter_table_[i].one_way_delay = 0;
+    parameter_table_[i].protection_method = kNack;
+    // Uniform loss => Setting burst length to -1.
+    parameter_table_[i].network.loss_model = kUniformLoss;
+    parameter_table_[i].network.packet_loss_rate = 0;
+    parameter_table_[i].network.burst_length = -1;
+    parameter_table_[i].network.mean_one_way_delay = 0;
+    parameter_table_[i].network.std_dev_one_way_delay = 0;
     parameter_table_[i].bitrate = 300;
+    // TODO(holmer): Enable for Win and Mac when the file rendering has been
+    // moved to a separate thread.
+#ifdef WEBRTC_LINUX
     parameter_table_[i].avg_psnr_threshold = 35;
     parameter_table_[i].avg_ssim_threshold = 0.96;
-    parameter_table_[i].test_label = "net delay 0, plr 0";
+#else
+    parameter_table_[i].avg_psnr_threshold = 0;
+    parameter_table_[i].avg_ssim_threshold = 0.0;
+#endif
+    parameter_table_[i].test_label = "net_delay_0_0_plr_0";
     ++i;
-    parameter_table_[i].packet_loss_rate = 5;
-    parameter_table_[i].one_way_delay = 50;
+    parameter_table_[i].protection_method = kNack;
+    parameter_table_[i].network.loss_model = kUniformLoss;
+    parameter_table_[i].network.packet_loss_rate = 5;
+    parameter_table_[i].network.burst_length = -1;
+    parameter_table_[i].network.mean_one_way_delay = 50;
+    parameter_table_[i].network.std_dev_one_way_delay = 5;
     parameter_table_[i].bitrate = 300;
+    // TODO(holmer): Enable for Win and Mac when the file rendering has been
+    // moved to a separate thread.
+#ifdef WEBRTC_LINUX
     parameter_table_[i].avg_psnr_threshold = 35;
     parameter_table_[i].avg_ssim_threshold = 0.96;
-    parameter_table_[i].test_label = "net delay 50, plr 5";
+#else
+    parameter_table_[i].avg_psnr_threshold = 0;
+    parameter_table_[i].avg_ssim_threshold = 0.0;
+#endif
+    parameter_table_[i].test_label = "net_delay_50_5_plr_5";
+    ++i;
+    parameter_table_[i].protection_method = kNack;
+    parameter_table_[i].network.loss_model = kUniformLoss;
+    parameter_table_[i].network.packet_loss_rate = 0;
+    parameter_table_[i].network.burst_length = -1;
+    parameter_table_[i].network.mean_one_way_delay = 100;
+    parameter_table_[i].network.std_dev_one_way_delay = 10;
+    parameter_table_[i].bitrate = 300;
+    // TODO(holmer): Enable for Win and Mac when the file rendering has been
+    // moved to a separate thread.
+#ifdef WEBRTC_LINUX
+    parameter_table_[i].avg_psnr_threshold = 35;
+    parameter_table_[i].avg_ssim_threshold = 0.96;
+#else
+    parameter_table_[i].avg_psnr_threshold = 0;
+    parameter_table_[i].avg_ssim_threshold = 0.0;
+#endif
+    parameter_table_[i].test_label = "net_delay_100_10_plr_0";
+    ++i;
+    parameter_table_[i].protection_method = kNack;
+    parameter_table_[i].network.loss_model = kGilbertElliotLoss;
+    parameter_table_[i].network.packet_loss_rate = 5;
+    parameter_table_[i].network.burst_length = 3;
+    parameter_table_[i].network.mean_one_way_delay = 100;
+    parameter_table_[i].network.std_dev_one_way_delay = 10;
+    parameter_table_[i].bitrate = 300;
+    // Thresholds disabled for now. This is being run mainly to get a graph.
+    parameter_table_[i].avg_psnr_threshold = 0;
+    parameter_table_[i].avg_ssim_threshold = 0.0;
+    parameter_table_[i].test_label = "net_delay_100_10_plr_5_gilbert_elliot";
+
+    ASSERT_EQ(kNumFullStackInstances - 1, i);
   }
 
-  TestParameters parameter_table_[2];
+  TestParameters parameter_table_[kNumFullStackInstances];
 };
 
 TEST_F(ViEVideoVerificationTest, RunsBaseStandardTestWithoutErrors) {
@@ -150,6 +221,8 @@ TEST_F(ViEVideoVerificationTest, RunsBaseStandardTestWithoutErrors) {
   // However, it's hard to make 100% stringent requirements on the video engine
   // since for instance the jitter buffer has non-deterministic elements. If it
   // breaks five times in a row though, you probably introduced a bug.
+  const double kReasonablePsnr = webrtc::test::kMetricsPerfectPSNR - 2.0f;
+  const double kReasonableSsim = 0.99f;
   const int kNumAttempts = 5;
   for (int attempt = 0; attempt < kNumAttempts; ++attempt) {
     InitializeFileRenderers();
@@ -166,8 +239,7 @@ TEST_F(ViEVideoVerificationTest, RunsBaseStandardTestWithoutErrors) {
 
     TearDownFileRenderers();
 
-    if (actual_psnr == webrtc::test::kMetricsInfinitePSNR &&
-        actual_ssim == 1.0f) {
+    if (actual_psnr > kReasonablePsnr && actual_ssim > kReasonableSsim) {
       // Test successful.
       return;
     } else {
@@ -175,7 +247,7 @@ TEST_F(ViEVideoVerificationTest, RunsBaseStandardTestWithoutErrors) {
     }
   }
 
-  FAIL() << "Failed to achieve perfect PSNR and SSIM results after " <<
+  FAIL() << "Failed to achieve near-perfect PSNR and SSIM results after " <<
       kNumAttempts << " attempts.";
 }
 
@@ -185,7 +257,7 @@ TEST_F(ViEVideoVerificationTest, RunsBaseStandardTestWithoutErrors) {
 TEST_P(ParameterizedFullStackTest, RunsFullStackWithoutErrors)  {
   // Using CIF here since it's a more common resolution than QCIF, and higher
   // resolutions shouldn't be a problem for a test using VP8.
-  input_file_ = webrtc::test::ResourcePath("foreman_cif", "yuv");
+  input_file_ = parameter_table_[GetParam()].file_name;
   FrameDropDetector detector;
   local_file_renderer_ = new ViEToFileRenderer();
   remote_file_renderer_ = new FrameDropMonitoringRemoteFileRenderer(&detector);
@@ -195,16 +267,18 @@ TEST_P(ParameterizedFullStackTest, RunsFullStackWithoutErrors)  {
   // Set a low bit rate so the encoder budget will be tight, causing it to drop
   // frames every now and then.
   const int kBitRateKbps = parameter_table_[GetParam()].bitrate;
-  const int kPacketLossPercent = parameter_table_[GetParam()].packet_loss_rate;
-  const int kNetworkDelayMs = parameter_table_[GetParam()].one_way_delay;
-  int width = 352;
-  int height = 288;
+  const NetworkParameters network = parameter_table_[GetParam()].network;
+  int width = parameter_table_[GetParam()].width;
+  int height = parameter_table_[GetParam()].height;
+  ProtectionMethod protection_method =
+      parameter_table_[GetParam()].protection_method;
   ViETest::Log("Bit rate     : %5d kbps", kBitRateKbps);
-  ViETest::Log("Packet loss  : %5d %%", kPacketLossPercent);
-  ViETest::Log("Network delay: %5d ms", kNetworkDelayMs);
+  ViETest::Log("Packet loss  : %5d %%", network.packet_loss_rate);
+  ViETest::Log("Network delay: mean=%dms std dev=%d ms",
+               network.mean_one_way_delay, network.std_dev_one_way_delay);
   tests_.TestFullStack(input_file_, width, height, kBitRateKbps,
-                       kPacketLossPercent, kNetworkDelayMs,
-                       local_file_renderer_, remote_file_renderer_, &detector);
+                       protection_method, network, local_file_renderer_,
+                       remote_file_renderer_, &detector);
   const std::string reference_file = local_file_renderer_->GetFullOutputPath();
   const std::string output_file = remote_file_renderer_->GetFullOutputPath();
   StopRenderers();
@@ -255,9 +329,21 @@ TEST_P(ParameterizedFullStackTest, RunsFullStackWithoutErrors)  {
 
   EXPECT_GE(actual_psnr, kExpectedMinimumPSNR);
   EXPECT_GE(actual_ssim, kExpectedMinimumSSIM);
+
+  std::stringstream ss;
+  ss << std::setprecision(3) << std::fixed << actual_psnr;
+  webrtc::test::PrintResult(
+      "psnr", "", parameter_table_[GetParam()].test_label,
+      ss.str(), "dB", false);
+
+  ss.str("");
+  ss << std::setprecision(3) << std::fixed << actual_ssim;
+  webrtc::test::PrintResult(
+      "ssim", "", parameter_table_[GetParam()].test_label,
+      ss.str(), "", false);
 }
 
 INSTANTIATE_TEST_CASE_P(FullStackTests, ParameterizedFullStackTest,
-                        ::testing::Values(0, 1));
+    ::testing::Range(0, ParameterizedFullStackTest::kNumFullStackInstances));
 
 }  // namespace

@@ -9,7 +9,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/win/registry.h"
 #include "chrome/installer/util/conditional_work_item_list.h"
 #include "chrome/installer/util/work_item.h"
@@ -55,18 +55,18 @@ TEST_F(WorkItemListTest, ExecutionSuccess) {
   scoped_ptr<WorkItemList> work_item_list(WorkItem::CreateWorkItemList());
   scoped_ptr<WorkItem> work_item;
 
-  FilePath top_dir_to_create(temp_dir_.path());
+  base::FilePath top_dir_to_create(temp_dir_.path());
   top_dir_to_create = top_dir_to_create.AppendASCII("a");
-  FilePath dir_to_create(top_dir_to_create);
+  base::FilePath dir_to_create(top_dir_to_create);
   dir_to_create = dir_to_create.AppendASCII("b");
-  ASSERT_FALSE(file_util::PathExists(dir_to_create));
+  ASSERT_FALSE(base::PathExists(dir_to_create));
 
   work_item.reset(reinterpret_cast<WorkItem*>(
       WorkItem::CreateCreateDirWorkItem(dir_to_create)));
   work_item_list->AddWorkItem(work_item.release());
 
   std::wstring key_to_create(kTestRoot);
-  key_to_create.push_back(FilePath::kSeparators[0]);
+  key_to_create.push_back(base::FilePath::kSeparators[0]);
   key_to_create.append(L"ExecutionSuccess");
 
   work_item.reset(reinterpret_cast<WorkItem*>(
@@ -90,7 +90,7 @@ TEST_F(WorkItemListTest, ExecutionSuccess) {
   EXPECT_EQ(ERROR_SUCCESS, key.ReadValue(name.c_str(), &read_out));
   EXPECT_EQ(0, read_out.compare(kDataStr));
   key.Close();
-  EXPECT_TRUE(file_util::PathExists(dir_to_create));
+  EXPECT_TRUE(base::PathExists(dir_to_create));
 
   work_item_list->Rollback();
 
@@ -99,7 +99,7 @@ TEST_F(WorkItemListTest, ExecutionSuccess) {
   // can not be deleted.
   EXPECT_NE(ERROR_SUCCESS,
       key.Open(HKEY_CURRENT_USER, key_to_create.c_str(), KEY_READ));
-  EXPECT_FALSE(file_util::PathExists(top_dir_to_create));
+  EXPECT_FALSE(base::PathExists(top_dir_to_create));
 }
 
 // Execute a WorkItem list. Fail in the middle. Rollback what has been done.
@@ -107,18 +107,18 @@ TEST_F(WorkItemListTest, ExecutionFailAndRollback) {
   scoped_ptr<WorkItemList> work_item_list(WorkItem::CreateWorkItemList());
   scoped_ptr<WorkItem> work_item;
 
-  FilePath top_dir_to_create(temp_dir_.path());
+  base::FilePath top_dir_to_create(temp_dir_.path());
   top_dir_to_create = top_dir_to_create.AppendASCII("a");
-  FilePath dir_to_create(top_dir_to_create);
+  base::FilePath dir_to_create(top_dir_to_create);
   dir_to_create = dir_to_create.AppendASCII("b");
-  ASSERT_FALSE(file_util::PathExists(dir_to_create));
+  ASSERT_FALSE(base::PathExists(dir_to_create));
 
   work_item.reset(reinterpret_cast<WorkItem*>(
       WorkItem::CreateCreateDirWorkItem(dir_to_create)));
   work_item_list->AddWorkItem(work_item.release());
 
   std::wstring key_to_create(kTestRoot);
-  key_to_create.push_back(FilePath::kSeparators[0]);
+  key_to_create.push_back(base::FilePath::kSeparators[0]);
   key_to_create.append(L"ExecutionFail");
 
   work_item.reset(reinterpret_cast<WorkItem*>(
@@ -126,7 +126,7 @@ TEST_F(WorkItemListTest, ExecutionFailAndRollback) {
   work_item_list->AddWorkItem(work_item.release());
 
   std::wstring not_created_key(kTestRoot);
-  not_created_key.push_back(FilePath::kSeparators[0]);
+  not_created_key.push_back(base::FilePath::kSeparators[0]);
   not_created_key.append(L"NotCreated");
   std::wstring name(kName);
   std::wstring data(kDataStr);
@@ -148,7 +148,7 @@ TEST_F(WorkItemListTest, ExecutionFailAndRollback) {
   EXPECT_EQ(ERROR_SUCCESS,
       key.Open(HKEY_CURRENT_USER, key_to_create.c_str(), KEY_READ));
   key.Close();
-  EXPECT_TRUE(file_util::PathExists(dir_to_create));
+  EXPECT_TRUE(base::PathExists(dir_to_create));
   // The last one should not be there.
   EXPECT_NE(ERROR_SUCCESS,
       key.Open(HKEY_CURRENT_USER, not_created_key.c_str(), KEY_READ));
@@ -158,18 +158,18 @@ TEST_F(WorkItemListTest, ExecutionFailAndRollback) {
   // Verify everything is rolled back.
   EXPECT_NE(ERROR_SUCCESS,
       key.Open(HKEY_CURRENT_USER, key_to_create.c_str(), KEY_READ));
-  EXPECT_FALSE(file_util::PathExists(top_dir_to_create));
+  EXPECT_FALSE(base::PathExists(top_dir_to_create));
 }
 
 TEST_F(WorkItemListTest, ConditionalExecutionSuccess) {
   scoped_ptr<WorkItemList> work_item_list(WorkItem::CreateWorkItemList());
   scoped_ptr<WorkItem> work_item;
 
-  FilePath top_dir_to_create(temp_dir_.path());
+  base::FilePath top_dir_to_create(temp_dir_.path());
   top_dir_to_create = top_dir_to_create.AppendASCII("a");
-  FilePath dir_to_create(top_dir_to_create);
+  base::FilePath dir_to_create(top_dir_to_create);
   dir_to_create = dir_to_create.AppendASCII("b");
-  ASSERT_FALSE(file_util::PathExists(dir_to_create));
+  ASSERT_FALSE(base::PathExists(dir_to_create));
 
   work_item.reset(reinterpret_cast<WorkItem*>(
       WorkItem::CreateCreateDirWorkItem(dir_to_create)));
@@ -180,7 +180,7 @@ TEST_F(WorkItemListTest, ConditionalExecutionSuccess) {
           new ConditionRunIfFileExists(dir_to_create)));
 
   std::wstring key_to_create(kTestRoot);
-  key_to_create.push_back(FilePath::kSeparators[0]);
+  key_to_create.push_back(base::FilePath::kSeparators[0]);
   key_to_create.append(L"ExecutionSuccess");
   work_item.reset(reinterpret_cast<WorkItem*>(
       WorkItem::CreateCreateRegKeyWorkItem(HKEY_CURRENT_USER, key_to_create)));
@@ -205,7 +205,7 @@ TEST_F(WorkItemListTest, ConditionalExecutionSuccess) {
   EXPECT_EQ(ERROR_SUCCESS, key.ReadValue(name.c_str(), &read_out));
   EXPECT_EQ(0, read_out.compare(kDataStr));
   key.Close();
-  EXPECT_TRUE(file_util::PathExists(dir_to_create));
+  EXPECT_TRUE(base::PathExists(dir_to_create));
 
   work_item_list->Rollback();
 
@@ -214,18 +214,18 @@ TEST_F(WorkItemListTest, ConditionalExecutionSuccess) {
   // can not be deleted.
   EXPECT_NE(ERROR_SUCCESS,
       key.Open(HKEY_CURRENT_USER, key_to_create.c_str(), KEY_READ));
-  EXPECT_FALSE(file_util::PathExists(top_dir_to_create));
+  EXPECT_FALSE(base::PathExists(top_dir_to_create));
 }
 
 TEST_F(WorkItemListTest, ConditionalExecutionConditionFailure) {
   scoped_ptr<WorkItemList> work_item_list(WorkItem::CreateWorkItemList());
   scoped_ptr<WorkItem> work_item;
 
-  FilePath top_dir_to_create(temp_dir_.path());
+  base::FilePath top_dir_to_create(temp_dir_.path());
   top_dir_to_create = top_dir_to_create.AppendASCII("a");
-  FilePath dir_to_create(top_dir_to_create);
+  base::FilePath dir_to_create(top_dir_to_create);
   dir_to_create = dir_to_create.AppendASCII("b");
-  ASSERT_FALSE(file_util::PathExists(dir_to_create));
+  ASSERT_FALSE(base::PathExists(dir_to_create));
 
   work_item.reset(reinterpret_cast<WorkItem*>(
       WorkItem::CreateCreateDirWorkItem(dir_to_create)));
@@ -236,7 +236,7 @@ TEST_F(WorkItemListTest, ConditionalExecutionConditionFailure) {
           new ConditionRunIfFileExists(dir_to_create.AppendASCII("c"))));
 
   std::wstring key_to_create(kTestRoot);
-  key_to_create.push_back(FilePath::kSeparators[0]);
+  key_to_create.push_back(base::FilePath::kSeparators[0]);
   key_to_create.append(L"ExecutionSuccess");
   work_item.reset(reinterpret_cast<WorkItem*>(
       WorkItem::CreateCreateRegKeyWorkItem(HKEY_CURRENT_USER, key_to_create)));
@@ -263,7 +263,7 @@ TEST_F(WorkItemListTest, ConditionalExecutionConditionFailure) {
   key.Close();
 
   // Verify that the other work item was executed.
-  EXPECT_TRUE(file_util::PathExists(dir_to_create));
+  EXPECT_TRUE(base::PathExists(dir_to_create));
 
   work_item_list->Rollback();
 
@@ -272,5 +272,5 @@ TEST_F(WorkItemListTest, ConditionalExecutionConditionFailure) {
   // can not be deleted.
   EXPECT_NE(ERROR_SUCCESS,
       key.Open(HKEY_CURRENT_USER, key_to_create.c_str(), KEY_READ));
-  EXPECT_FALSE(file_util::PathExists(top_dir_to_create));
+  EXPECT_FALSE(base::PathExists(top_dir_to_create));
 }

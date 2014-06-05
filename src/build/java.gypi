@@ -10,17 +10,12 @@
 #   'target_name': 'my-package_java',
 #   'type': 'none',
 #   'variables': {
-#     'package_name': 'my-package',
 #     'java_in_dir': 'path/to/package/root',
 #   },
 #   'includes': ['path/to/this/gypi/file'],
 # }
 #
-# The generated jar-file will be:
-#   <(PRODUCT_DIR)/lib.java/chromium_<(package_name).jar
 # Required variables:
-#  package_name - Used to name the intermediate output directory and in the
-#    names of some output files.
 #  java_in_dir - The top-level java directory. The src should be in
 #    <java_in_dir>/src.
 # Optional/automatic variables:
@@ -44,110 +39,349 @@
 #  R_package - The java package in which the R class (which maps resources to
 #    integer IDs) should be generated, e.g. org.chromium.content.
 #  R_package_relpath - Same as R_package, but replace each '.' with '/'.
+#  java_strings_grd - The name of the grd file from which to generate localized
+#    strings.xml files, if any.
+#  res_extra_dirs - A list of extra directories containing Android resources.
+#    These directories may be generated at build time.
+#  res_extra_files - A list of the files in res_extra_dirs.
+#  never_lint - Set to 1 to not run lint on this target.
 
 {
   'dependencies': [
-    '<(DEPTH)/build/build_output_dirs_android.gyp:build_output_dirs'
+    '<(DEPTH)/build/android/setup.gyp:build_output_dirs'
   ],
-  # This all_dependent_settings is used for java targets only. This will add the
-  # chromium_<(package_name) jar to the classpath of dependent java targets.
-  'all_dependent_settings': {
-    'variables': {
-      'input_jars_paths': ['<(PRODUCT_DIR)/lib.java/chromium_<(package_name).jar'],
-    },
-  },
   'variables': {
-    'input_jars_paths': [],
+    'android_jar': '<(android_sdk)/android.jar',
+    'input_jars_paths': [ '<(android_jar)' ],
     'additional_src_dirs': [],
     'javac_includes': [],
-    'additional_input_paths': ['>@(additional_R_files)'],
+    'jar_name': '<(_target_name).jar',
+    'jar_dir': '<(PRODUCT_DIR)/lib.java',
+    'jar_path': '<(intermediate_dir)/<(jar_name)',
+    'jar_final_path': '<(jar_dir)/<(jar_name)',
+    'jar_excluded_classes': [ '*/R.class', '*/R##*.class' ],
+    'instr_stamp': '<(intermediate_dir)/instr.stamp',
+    'additional_input_paths': [],
+    'dex_path': '<(PRODUCT_DIR)/lib.java/<(_target_name).dex.jar',
     'generated_src_dirs': ['>@(generated_R_dirs)'],
     'generated_R_dirs': [],
-    'additional_R_files': [],
     'has_java_resources%': 0,
+    'java_strings_grd%': '',
+    'res_extra_dirs': [],
+    'res_extra_files': [],
+    'res_v14_verify_only%': 0,
+    'resource_input_paths': ['>@(res_extra_files)'],
+    'intermediate_dir': '<(SHARED_INTERMEDIATE_DIR)/<(_target_name)',
+    'classes_dir': '<(intermediate_dir)/classes',
+    'compile_stamp': '<(intermediate_dir)/compile.stamp',
+    'lint_stamp': '<(intermediate_dir)/lint.stamp',
+    'lint_result': '<(intermediate_dir)/lint_result.xml',
+    'lint_config': '<(intermediate_dir)/lint_config.xml',
+    'never_lint%': 0,
+    'proguard_config%': '',
+    'proguard_preprocess%': '0',
+    'variables': {
+      'variables': {
+        'proguard_preprocess%': 0,
+        'emma_never_instrument%': 0,
+      },
+      'conditions': [
+        ['proguard_preprocess == 1', {
+          'javac_jar_path': '<(intermediate_dir)/<(_target_name).pre.jar'
+        }, {
+          'javac_jar_path': '<(jar_path)'
+        }],
+        ['chromium_code != 0 and emma_coverage != 0 and emma_never_instrument == 0', {
+          'emma_instrument': 1,
+        }, {
+          'emma_instrument': 0,
+        }],
+      ],
+    },
+    'emma_instrument': '<(emma_instrument)',
+    'javac_jar_path': '<(javac_jar_path)',
+  },
+  # This all_dependent_settings is used for java targets only. This will add the
+  # jar path to the classpath of dependent java targets.
+  'all_dependent_settings': {
+    'variables': {
+      'input_jars_paths': ['<(jar_final_path)'],
+      'library_dexed_jars_paths': ['<(dex_path)'],
+    },
   },
   'conditions': [
     ['has_java_resources == 1', {
       'variables': {
         'res_dir': '<(java_in_dir)/res',
-        'crunched_res_dir': '<(SHARED_INTERMEDIATE_DIR)/<(package_name)/res',
-        'R_dir': '<(SHARED_INTERMEDIATE_DIR)/<(package_name)/java_R',
-        'R_file': '<(R_dir)/<(R_package_relpath)/R.java',
+        'res_crunched_dir': '<(intermediate_dir)/res_crunched',
+        'res_v14_compatibility_stamp': '<(intermediate_dir)/res_v14_compatibility.stamp',
+        'res_v14_compatibility_dir': '<(intermediate_dir)/res_v14_compatibility',
+        'res_input_dirs': ['<(res_dir)', '<@(res_extra_dirs)'],
+        'resource_input_paths': ['<!@(find <(res_dir) -type f)'],
+        'R_dir': '<(intermediate_dir)/java_R',
+        'R_text_file': '<(R_dir)/R.txt',
+        'R_stamp': '<(intermediate_dir)/resources.stamp',
         'generated_src_dirs': ['<(R_dir)'],
-        'additional_input_paths': ['<(R_file)'],
+        'additional_input_paths': ['<(R_stamp)',
+                                   '<(res_v14_compatibility_stamp)',],
+        'additional_res_dirs': [],
+        'dependencies_res_input_dirs': [],
+        'dependencies_res_files': [],
       },
       'all_dependent_settings': {
         'variables': {
           # Dependent jars include this target's R.java file via
-          # generated_R_dirs and additional_R_files.
+          # generated_R_dirs and include its resources via
+          # dependencies_res_files.
           'generated_R_dirs': ['<(R_dir)'],
-          'additional_R_files': ['<(R_file)'],
+          'additional_input_paths': ['<(R_stamp)',
+                                     '<(res_v14_compatibility_stamp)',],
+          'dependencies_res_files': ['<@(resource_input_paths)'],
+
+          'dependencies_res_input_dirs': ['<@(res_input_dirs)'],
 
           # Dependent APKs include this target's resources via
-          # additional_res_dirs and additional_res_packages.
-          'additional_res_dirs': ['<(crunched_res_dir)', '<(res_dir)'],
+          # additional_res_dirs, additional_res_packages, and
+          # additional_R_text_files.
+          'additional_res_dirs': ['<(res_crunched_dir)',
+                                  '<(res_v14_compatibility_dir)',
+                                  '<@(res_input_dirs)'],
           'additional_res_packages': ['<(R_package)'],
+          'additional_R_text_files': ['<(R_text_file)'],
         },
       },
+      'conditions': [
+        ['java_strings_grd != ""', {
+          'variables': {
+            'res_grit_dir': '<(intermediate_dir)/res_grit',
+            'res_input_dirs': ['<(res_grit_dir)'],
+            'grit_grd_file': '<(java_in_dir)/strings/<(java_strings_grd)',
+            'resource_input_paths': ['<!@pymod_do_main(grit_info <@(grit_defines) --outputs "<(res_grit_dir)" <(grit_grd_file))'],
+          },
+          'actions': [
+            {
+              'action_name': 'generate_localized_strings_xml',
+              'variables': {
+                'grit_additional_defines': ['-E', 'ANDROID_JAVA_TAGGED_ONLY=false'],
+                'grit_out_dir': '<(res_grit_dir)',
+                # resource_ids is unneeded since we don't generate .h headers.
+                'grit_resource_ids': '',
+              },
+              'includes': ['../build/grit_action.gypi'],
+            },
+          ],
+        }],
+      ],
       'actions': [
         # Generate R.java and crunch image resources.
         {
           'action_name': 'process_resources',
-          'message': 'processing resources for <(package_name)',
+          'message': 'processing resources for <(_target_name)',
+          'variables': {
+            'android_manifest': '<(DEPTH)/build/android/AndroidManifest.xml',
+            # Include the dependencies' res dirs so that references to
+            # resources in dependencies can be resolved.
+            'all_res_dirs': ['<@(res_input_dirs)',
+                             '>@(dependencies_res_input_dirs)',],
+            # Write the inputs list to a file, so that its mtime is updated when
+            # the list of inputs changes.
+            'inputs_list_file': '>|(java_resources.<(_target_name).gypcmd >@(resource_input_paths) >@(dependencies_res_files))'
+          },
           'inputs': [
-            '<(DEPTH)/build/android/process_resources.py',
-            '<!@(find <(res_dir) -type f)',
+            '<(DEPTH)/build/android/gyp/util/build_utils.py',
+            '<(DEPTH)/build/android/gyp/process_resources.py',
+            '>@(resource_input_paths)',
+            '>@(dependencies_res_files)',
+            '>(inputs_list_file)',
           ],
           'outputs': [
-            '<(R_file)',
+            '<(R_stamp)',
           ],
           'action': [
-            '<(DEPTH)/build/android/process_resources.py',
+            'python', '<(DEPTH)/build/android/gyp/process_resources.py',
             '--android-sdk', '<(android_sdk)',
             '--android-sdk-tools', '<(android_sdk_tools)',
-            '--R-package', '<(R_package)',
             '--R-dir', '<(R_dir)',
-            '--res-dir', '<(res_dir)',
-            '--crunched-res-dir', '<(crunched_res_dir)',
+            '--res-dirs', '>(all_res_dirs)',
+            '--crunch-input-dir', '>(res_dir)',
+            '--crunch-output-dir', '<(res_crunched_dir)',
+            '--android-manifest', '<(android_manifest)',
+            '--non-constant-id',
+            '--custom-package', '<(R_package)',
+            '--stamp', '<(R_stamp)',
           ],
+        },
+        # Generate API 14 resources.
+        {
+          'action_name': 'generate_api_14_resources_<(_target_name)',
+          'message': 'Generating Android API 14 resources <(_target_name)',
+          'variables' : {
+            'res_v14_additional_options': [],
+          },
+          'conditions': [
+            ['res_v14_verify_only == 1', {
+              'variables': {
+                'res_v14_additional_options': ['--verify-only']
+              },
+            }],
+          ],
+          'inputs': [
+            '<(DEPTH)/build/android/gyp/util/build_utils.py',
+            '<(DEPTH)/build/android/gyp/generate_v14_compatible_resources.py',
+            '>@(resource_input_paths)',
+          ],
+          'outputs': [
+            '<(res_v14_compatibility_stamp)',
+          ],
+          'action': [
+            'python', '<(DEPTH)/build/android/gyp/generate_v14_compatible_resources.py',
+            '--res-dir=<(res_dir)',
+            '--res-v14-compatibility-dir=<(res_v14_compatibility_dir)',
+            '--stamp', '<(res_v14_compatibility_stamp)',
+            '<@(res_v14_additional_options)',
+          ]
+        },
+      ],
+    }],
+    ['proguard_preprocess == 1', {
+      'actions': [
+        {
+          'action_name': 'proguard_<(_target_name)',
+          'message': 'Proguard preprocessing <(_target_name) jar',
+          'inputs': [
+            '<(android_sdk_root)/tools/proguard/bin/proguard.sh',
+            '<(DEPTH)/build/android/gyp/util/build_utils.py',
+            '<(DEPTH)/build/android/gyp/proguard.py',
+            '<(javac_jar_path)',
+            '<(proguard_config)',
+          ],
+          'outputs': [
+            '<(jar_path)',
+          ],
+          'action': [
+            'python', '<(DEPTH)/build/android/gyp/proguard.py',
+            '--proguard-path=<(android_sdk_root)/tools/proguard/bin/proguard.sh',
+            '--input-path=<(javac_jar_path)',
+            '--output-path=<(jar_path)',
+            '--proguard-config=<(proguard_config)',
+            '--classpath=<(android_sdk_jar) >(input_jars_paths)',
+          ]
         },
       ],
     }],
   ],
   'actions': [
     {
-      'action_name': 'ant_<(package_name)',
-      'message': 'Building <(package_name) java sources.',
+      'action_name': 'javac_<(_target_name)',
+      'message': 'Compiling <(_target_name) java sources',
+      'variables': {
+        'java_sources': ['>!@(find >(java_in_dir)/src >(additional_src_dirs) -name "*.java")'],
+      },
       'inputs': [
-        'android/ant/common.xml',
-        'android/ant/chromium-jars.xml',
-        '>!@(find >(java_in_dir) >(additional_src_dirs) -name "*.java")',
+        '<(DEPTH)/build/android/gyp/util/build_utils.py',
+        '<(DEPTH)/build/android/gyp/javac.py',
+        '>@(java_sources)',
         '>@(input_jars_paths)',
         '>@(additional_input_paths)',
       ],
       'outputs': [
-        '<(PRODUCT_DIR)/lib.java/chromium_<(package_name).jar',
+        '<(compile_stamp)',
       ],
       'action': [
-        'ant',
-        '-DCONFIGURATION_NAME=<(CONFIGURATION_NAME)',
-        '-DANDROID_SDK=<(android_sdk)',
-        '-DANDROID_SDK_ROOT=<(android_sdk_root)',
-        '-DANDROID_SDK_TOOLS=<(android_sdk_tools)',
-        '-DANDROID_SDK_VERSION=<(android_sdk_version)',
-        '-DANDROID_GDBSERVER=<(android_gdbserver)',
-        '-DPRODUCT_DIR=<(ant_build_out)',
-
-        '-DADDITIONAL_SRC_DIRS=>(additional_src_dirs)',
-        '-DGENERATED_SRC_DIRS=>(generated_src_dirs)',
-        '-DINPUT_JARS_PATHS=>(input_jars_paths)',
-        '-DPACKAGE_NAME=<(package_name)',
-        '-DJAVAC_INCLUDES=>(javac_includes)',
-
-        '-Dbasedir=<(java_in_dir)',
-        '-buildfile',
-        '<(DEPTH)/build/android/ant/chromium-jars.xml'
+        'python', '<(DEPTH)/build/android/gyp/javac.py',
+        '--output-dir=<(classes_dir)',
+        '--classpath=>(input_jars_paths)',
+        '--src-gendirs=>(generated_src_dirs)',
+        '--javac-includes=<(javac_includes)',
+        '--chromium-code=<(chromium_code)',
+        '--stamp=<(compile_stamp)',
+        '>@(java_sources)',
       ]
+    },
+    {
+      'variables': {
+        'src_dirs': [
+          '<(java_in_dir)/src',
+          '>@(additional_src_dirs)',
+        ],
+        'stamp_path': '<(lint_stamp)',
+        'result_path': '<(lint_result)',
+        'config_path': '<(lint_config)',
+      },
+      'inputs': [
+        '<(compile_stamp)',
+      ],
+      'outputs': [
+        '<(lint_stamp)',
+      ],
+      'includes': [ 'android/lint_action.gypi' ],
+    },
+    {
+      'action_name': 'jar_<(_target_name)',
+      'message': 'Creating <(_target_name) jar',
+      'inputs': [
+        '<(DEPTH)/build/android/gyp/util/build_utils.py',
+        '<(DEPTH)/build/android/gyp/util/md5_check.py',
+        '<(DEPTH)/build/android/gyp/jar.py',
+        '<(compile_stamp)',
+      ],
+      'outputs': [
+        '<(javac_jar_path)',
+      ],
+      'action': [
+        'python', '<(DEPTH)/build/android/gyp/jar.py',
+        '--classes-dir=<(classes_dir)',
+        '--jar-path=<(javac_jar_path)',
+        '--excluded-classes=<(jar_excluded_classes)',
+      ]
+    },
+    {
+      'action_name': 'instr_jar_<(_target_name)',
+      'message': 'Instrumenting <(_target_name) jar',
+      'variables': {
+        'input_path': '<(jar_path)',
+        'output_path': '<(jar_final_path)',
+        'stamp_path': '<(instr_stamp)',
+        'instr_type': 'jar',
+      },
+      'outputs': [
+        '<(jar_final_path)',
+      ],
+      'inputs': [
+        '<(jar_path)',
+      ],
+      'includes': [ 'android/instr_action.gypi' ],
+    },
+    {
+      'action_name': 'jar_toc_<(_target_name)',
+      'message': 'Creating <(_target_name) jar.TOC',
+      'inputs': [
+        '<(DEPTH)/build/android/gyp/util/build_utils.py',
+        '<(DEPTH)/build/android/gyp/util/md5_check.py',
+        '<(DEPTH)/build/android/gyp/jar_toc.py',
+        '<(jar_final_path)',
+      ],
+      'outputs': [
+        '<(jar_final_path).TOC',
+      ],
+      'action': [
+        'python', '<(DEPTH)/build/android/gyp/jar_toc.py',
+        '--jar-path=<(jar_final_path)',
+        '--toc-path=<(jar_final_path).TOC',
+      ]
+    },
+    {
+      'action_name': 'dex_<(_target_name)',
+      'variables': {
+        'conditions': [
+          ['emma_instrument != 0', {
+            'dex_no_locals': 1,
+          }],
+        ],
+        'dex_input_paths': [ '<(jar_final_path)' ],
+        'output_path': '<(dex_path)',
+      },
+      'includes': [ 'android/dex_action.gypi' ],
     },
   ],
 }

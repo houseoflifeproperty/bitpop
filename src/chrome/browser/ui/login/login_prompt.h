@@ -9,11 +9,10 @@
 
 #include "base/basictypes.h"
 #include "base/synchronization/lock.h"
-#include "chrome/browser/password_manager/password_manager.h"
+#include "components/password_manager/core/browser/password_manager.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/resource_dispatcher_host_login_delegate.h"
 
-class ConstrainedWindow;
 class GURL;
 
 namespace content {
@@ -31,7 +30,7 @@ class URLRequest;
 // authentication info to the net::URLRequest that needs it. These functions
 // must be implemented in a thread safe manner.
 class LoginHandler : public content::ResourceDispatcherHostLoginDelegate,
-                     public LoginModelObserver,
+                     public password_manager::LoginModelObserver,
                      public content::NotificationObserver {
  public:
   LoginHandler(net::AuthChallengeInfo* auth_info, net::URLRequest* request);
@@ -45,20 +44,21 @@ class LoginHandler : public content::ResourceDispatcherHostLoginDelegate,
   virtual void OnRequestCancelled() OVERRIDE;
 
   // Initializes the underlying platform specific view.
-  virtual void BuildViewForPasswordManager(PasswordManager* manager,
-                                           const string16& explanation) = 0;
+  virtual void BuildViewForPasswordManager(
+      password_manager::PasswordManager* manager,
+      const base::string16& explanation) = 0;
 
   // Sets information about the authentication type (|form|) and the
   // |password_manager| for this profile.
-  void SetPasswordForm(const content::PasswordForm& form);
-  void SetPasswordManager(PasswordManager* password_manager);
+  void SetPasswordForm(const autofill::PasswordForm& form);
+  void SetPasswordManager(password_manager::PasswordManager* password_manager);
 
   // Returns the WebContents that needs authentication.
   content::WebContents* GetWebContentsForLogin() const;
 
   // Resend the request with authentication credentials.
   // This function can be called from either thread.
-  void SetAuth(const string16& username, const string16& password);
+  void SetAuth(const base::string16& username, const base::string16& password);
 
   // Display the error page without asking for credentials again.
   // This function can be called from either thread.
@@ -81,15 +81,16 @@ class LoginHandler : public content::ResourceDispatcherHostLoginDelegate,
  protected:
   virtual ~LoginHandler();
 
-  void SetModel(LoginModel* model);
-
-  void SetDialog(ConstrainedWindow* dialog);
+  void SetModel(password_manager::LoginModel* model);
 
   // Notify observers that authentication is needed.
   void NotifyAuthNeeded();
 
   // Performs necessary cleanup before deletion.
   void ReleaseSoon();
+
+  // Closes the native dialog.
+  virtual void CloseDialog() = 0;
 
  private:
   // Starts observing notifications from other LoginHandlers.
@@ -99,8 +100,8 @@ class LoginHandler : public content::ResourceDispatcherHostLoginDelegate,
   void RemoveObservers();
 
   // Notify observers that authentication is supplied.
-  void NotifyAuthSupplied(const string16& username,
-                          const string16& password);
+  void NotifyAuthSupplied(const base::string16& username,
+                          const base::string16& password);
 
   // Notify observers that authentication is cancelled.
   void NotifyAuthCancelled();
@@ -110,8 +111,8 @@ class LoginHandler : public content::ResourceDispatcherHostLoginDelegate,
   bool TestAndSetAuthHandled();
 
   // Calls SetAuth from the IO loop.
-  void SetAuthDeferred(const string16& username,
-                       const string16& password);
+  void SetAuthDeferred(const base::string16& username,
+                       const base::string16& password);
 
   // Calls CancelAuth from the IO loop.
   void CancelAuthDeferred();
@@ -122,10 +123,6 @@ class LoginHandler : public content::ResourceDispatcherHostLoginDelegate,
   // True if we've handled auth (SetAuth or CancelAuth has been called).
   bool handled_auth_;
   mutable base::Lock handled_auth_lock_;
-
-  // The ConstrainedWindow that is hosting our LoginView.
-  // This should only be accessed on the UI loop.
-  ConstrainedWindow* dialog_;
 
   // Who/where/what asked for the authentication.
   scoped_refptr<net::AuthChallengeInfo> auth_info_;
@@ -141,19 +138,19 @@ class LoginHandler : public content::ResourceDispatcherHostLoginDelegate,
   // when later notifying the password manager if the credentials were accepted
   // or rejected.
   // This should only be accessed on the UI loop.
-  content::PasswordForm password_form_;
+  autofill::PasswordForm password_form_;
 
   // Points to the password manager owned by the WebContents requesting auth.
   // This should only be accessed on the UI loop.
-  PasswordManager* password_manager_;
+  password_manager::PasswordManager* password_manager_;
 
   // Cached from the net::URLRequest, in case it goes NULL on us.
   int render_process_host_id_;
-  int tab_contents_id_;
+  int render_frame_id_;
 
   // If not null, points to a model we need to notify of our own destruction
   // so it doesn't try and access this when its too late.
-  LoginModel* login_model_;
+  password_manager::LoginModel* login_model_;
 
   // Observes other login handlers so this login handler can respond.
   // This is only accessed on the UI thread.
@@ -182,20 +179,20 @@ class LoginNotificationDetails {
 class AuthSuppliedLoginNotificationDetails : public LoginNotificationDetails {
  public:
   AuthSuppliedLoginNotificationDetails(LoginHandler* handler,
-                                       const string16& username,
-                                       const string16& password)
+                                       const base::string16& username,
+                                       const base::string16& password)
       : LoginNotificationDetails(handler),
         username_(username),
         password_(password) {}
-  const string16& username() const { return username_; }
-  const string16& password() const { return password_; }
+  const base::string16& username() const { return username_; }
+  const base::string16& password() const { return password_; }
 
  private:
   // The username that was used for the authentication.
-  const string16 username_;
+  const base::string16 username_;
 
   // The password that was used for the authentication.
-  const string16 password_;
+  const base::string16 password_;
 
   DISALLOW_COPY_AND_ASSIGN(AuthSuppliedLoginNotificationDetails);
 };

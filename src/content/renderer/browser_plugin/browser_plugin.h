@@ -1,161 +1,195 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef  CONTENT_RENDERER_BROWSER_PLUGIN_BROWSER_PLUGIN_H_
 #define  CONTENT_RENDERER_BROWSER_PLUGIN_BROWSER_PLUGIN_H_
 
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPlugin.h"
+#include "third_party/WebKit/public/web/WebPlugin.h"
 
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/process_util.h"
 #include "base/sequenced_task_runner_helpers.h"
-#if defined(OS_WIN)
-#include "base/shared_memory.h"
-#endif
-#include "content/renderer/browser_plugin/browser_plugin_backing_store.h"
+#include "base/values.h"
 #include "content/renderer/browser_plugin/browser_plugin_bindings.h"
+#include "content/renderer/mouse_lock_dispatcher.h"
 #include "content/renderer/render_view_impl.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDragStatus.h"
+#include "third_party/WebKit/public/web/WebCompositionUnderline.h"
+#include "third_party/WebKit/public/web/WebDragStatus.h"
+#include "third_party/WebKit/public/web/WebWidget.h"
 
 struct BrowserPluginHostMsg_AutoSize_Params;
 struct BrowserPluginHostMsg_ResizeGuest_Params;
-struct BrowserPluginMsg_LoadCommit_Params;
+struct BrowserPluginMsg_Attach_ACK_Params;
 struct BrowserPluginMsg_UpdateRect_Params;
+struct FrameMsg_BuffersSwapped_Params;
 
 namespace content {
 
+class ChildFrameCompositingHelper;
 class BrowserPluginManager;
 class MockBrowserPlugin;
 
 class CONTENT_EXPORT BrowserPlugin :
-    NON_EXPORTED_BASE(public WebKit::WebPlugin) {
+    NON_EXPORTED_BASE(public blink::WebPlugin),
+    public MouseLockDispatcher::LockTarget {
  public:
   RenderViewImpl* render_view() const { return render_view_.get(); }
-  // Called only by tests to clean up before we blow away the MockRenderProcess.
-  void Cleanup();
+  int render_view_routing_id() const { return render_view_routing_id_; }
+  int guest_instance_id() const { return guest_instance_id_; }
+  bool attached() const { return attached_; }
+  BrowserPluginManager* browser_plugin_manager() const {
+    return browser_plugin_manager_.get();
+  }
 
-  virtual bool OnMessageReceived(const IPC::Message& msg);
+  bool OnMessageReceived(const IPC::Message& msg);
 
   // Update Browser Plugin's DOM Node attribute |attribute_name| with the value
   // |attribute_value|.
   void UpdateDOMAttribute(const std::string& attribute_name,
                           const std::string& attribute_value);
+  // Remove the DOM Node attribute with the name |attribute_name|.
+  void RemoveDOMAttribute(const std::string& attribute_name);
+  // Get Browser Plugin's DOM Node attribute |attribute_name|'s value.
+  std::string GetDOMAttributeValue(const std::string& attribute_name) const;
+  // Checks if the attribute |attribute_name| exists in the DOM.
+  bool HasDOMAttribute(const std::string& attribute_name) const;
 
+  // Get the name attribute value.
+  std::string GetNameAttribute() const;
+  // Parse the name attribute value.
+  void ParseNameAttribute();
+  // Get the allowtransparency attribute value.
+  bool GetAllowTransparencyAttribute() const;
+  // Parse the allowtransparency attribute and adjust transparency of
+  // BrowserPlugin accordingly.
+  void ParseAllowTransparencyAttribute();
   // Get the src attribute value of the BrowserPlugin instance.
-  std::string src_attribute() const { return src_; }
-  // Set the src attribute value of the BrowserPlugin instance.
-  bool SetSrcAttribute(const std::string& src, std::string* error_message);
+  std::string GetSrcAttribute() const;
+  // Parse the src attribute value of the BrowserPlugin instance.
+  bool ParseSrcAttribute(std::string* error_message);
   // Get the autosize attribute value.
-  bool auto_size_attribute() const { return auto_size_; }
-  // Sets the autosize attribute value.
-  void SetAutoSizeAttribute(bool auto_size);
+  bool GetAutoSizeAttribute() const;
+  // Parses the autosize attribute value.
+  void ParseAutoSizeAttribute();
   // Get the maxheight attribute value.
-  int max_height_attribute() const { return max_height_; }
-  // Set the maxheight attribute value.
-  void SetMaxHeightAttribute(int maxheight);
+  int GetMaxHeightAttribute() const;
   // Get the maxwidth attribute value.
-  int max_width_attribute() const { return max_width_; }
-  // Set the maxwidth attribute value.
-  void SetMaxWidthAttribute(int max_width);
+  int GetMaxWidthAttribute() const;
   // Get the minheight attribute value.
-  int min_height_attribute() const { return min_height_; }
-  // Set the minheight attribute value.
-  void SetMinHeightAttribute(int minheight);
+  int GetMinHeightAttribute() const;
   // Get the minwidth attribute value.
-  int min_width_attribute() const { return min_width_; }
-  // Set the minwidth attribute value.
-  void SetMinWidthAttribute(int minwidth);
+  int GetMinWidthAttribute() const;
+  // Parse the minwidth, maxwidth, minheight, and maxheight attribute values.
+  void ParseSizeContraintsChanged();
+  // The partition identifier string is stored as UTF-8.
+  std::string GetPartitionAttribute() const;
+  // This method can be successfully called only before the first navigation for
+  // this instance of BrowserPlugin. If an error occurs, the |error_message| is
+  // set appropriately to indicate the failure reason.
+  bool ParsePartitionAttribute(std::string* error_message);
+  // True if the partition attribute can be removed.
+  bool CanRemovePartitionAttribute(std::string* error_message);
+
   bool InAutoSizeBounds(const gfx::Size& size) const;
 
   // Get the guest's DOMWindow proxy.
   NPObject* GetContentWindow() const;
 
-  // Returns Chrome's process ID for the current guest.
-  int process_id() const { return process_id_; }
-  // The partition identifier string is stored as UTF-8.
-  std::string GetPartitionAttribute() const;
-  // Query whether the guest can navigate back to the previous entry.
-  bool CanGoBack() const;
-  // Query whether the guest can navigation forward to the next entry.
-  bool CanGoForward() const;
-  // This method can be successfully called only before the first navigation for
-  // this instance of BrowserPlugin. If an error occurs, the |error_message| is
-  // set appropriately to indicate the failure reason.
-  bool SetPartitionAttribute(const std::string& partition_id,
-                             std::string* error_message);
+  // Returns whether the guest process has crashed.
+  bool guest_crashed() const { return guest_crashed_; }
+  // Returns whether this BrowserPlugin has requested an instance ID.
+  bool HasNavigated() const;
+  // Returns whether this BrowserPlugin has allocated an instance ID.
+  bool HasGuestInstanceID() const;
 
-  // Inform the BrowserPlugin of the focus state of the embedder RenderView.
-  void SetEmbedderFocus(bool focused);
   // Informs the guest of an updated focus state.
   void UpdateGuestFocusState();
   // Indicates whether the guest should be focused.
   bool ShouldGuestBeFocused() const;
 
-  // Tells the BrowserPlugin to tell the guest to navigate to the previous
-  // navigation entry in the navigation history.
-  void Back();
-  // Tells the BrowserPlugin to tell the guest to navigate to the next
-  // navigation entry in the navigation history.
-  void Forward();
-  // Tells the BrowserPlugin to tell the guest to navigate to a position
-  // relative to the current index in its navigation history.
-  void Go(int relativeIndex);
-  // Tells the BrowserPlugin to terminate the guest process.
-  void TerminateGuest();
+  // Embedder's device scale factor changed, we need to update the guest
+  // renderer.
+  void UpdateDeviceScaleFactor(float device_scale_factor);
 
-  // A request from Javascript has been made to stop the loading of the page.
-  void Stop();
-  // A request from Javascript has been made to reload the page.
-  void Reload();
+  // A request to enable hardware compositing.
+  void EnableCompositing(bool enable);
 
-  // Returns true if |point| lies within the bounds of the plugin rectangle.
-  // Not OK to use this function for making security-sensitive decision since it
-  // can return false positives when the plugin has rotation transformation
-  // applied.
-  bool InBounds(const gfx::Point& point) const;
+  // Called when a guest instance ID has been allocated by the browser process.
+  void OnInstanceIDAllocated(int guest_instance_id);
+  // Provided that a guest instance ID has been allocated, this method attaches
+  // this BrowserPlugin instance to that guest. |extra_params| are parameters
+  // passed in by the content embedder to the browser process.
+  void Attach(int guest_instance_id,
+              scoped_ptr<base::DictionaryValue> extra_params);
 
-  gfx::Point ToLocalCoordinates(const gfx::Point& point) const;
+  // Notify the plugin about a compositor commit so that frame ACKs could be
+  // sent, if needed.
+  void DidCommitCompositorFrame();
 
-  // WebKit::WebPlugin implementation.
-  virtual WebKit::WebPluginContainer* container() const OVERRIDE;
-  virtual bool initialize(WebKit::WebPluginContainer* container) OVERRIDE;
+  // Returns whether a message should be forwarded to BrowserPlugin.
+  static bool ShouldForwardToBrowserPlugin(const IPC::Message& message);
+
+  // blink::WebPlugin implementation.
+  virtual blink::WebPluginContainer* container() const OVERRIDE;
+  virtual bool initialize(blink::WebPluginContainer* container) OVERRIDE;
   virtual void destroy() OVERRIDE;
   virtual NPObject* scriptableObject() OVERRIDE;
+  virtual struct _NPP* pluginNPP() OVERRIDE;
   virtual bool supportsKeyboardFocus() const OVERRIDE;
+  virtual bool supportsEditCommands() const OVERRIDE;
+  virtual bool supportsInputMethod() const OVERRIDE;
   virtual bool canProcessDrag() const OVERRIDE;
   virtual void paint(
-      WebKit::WebCanvas* canvas,
-      const WebKit::WebRect& rect) OVERRIDE;
+      blink::WebCanvas* canvas,
+      const blink::WebRect& rect) OVERRIDE;
   virtual void updateGeometry(
-      const WebKit::WebRect& frame_rect,
-      const WebKit::WebRect& clip_rect,
-      const WebKit::WebVector<WebKit::WebRect>& cut_outs_rects,
+      const blink::WebRect& frame_rect,
+      const blink::WebRect& clip_rect,
+      const blink::WebVector<blink::WebRect>& cut_outs_rects,
       bool is_visible) OVERRIDE;
   virtual void updateFocus(bool focused) OVERRIDE;
   virtual void updateVisibility(bool visible) OVERRIDE;
   virtual bool acceptsInputEvents() OVERRIDE;
   virtual bool handleInputEvent(
-      const WebKit::WebInputEvent& event,
-      WebKit::WebCursorInfo& cursor_info) OVERRIDE;
-  virtual bool handleDragStatusUpdate(WebKit::WebDragStatus drag_status,
-                                      const WebKit::WebDragData& drag_data,
-                                      WebKit::WebDragOperationsMask mask,
-                                      const WebKit::WebPoint& position,
-                                      const WebKit::WebPoint& screen) OVERRIDE;
+      const blink::WebInputEvent& event,
+      blink::WebCursorInfo& cursor_info) OVERRIDE;
+  virtual bool handleDragStatusUpdate(blink::WebDragStatus drag_status,
+                                      const blink::WebDragData& drag_data,
+                                      blink::WebDragOperationsMask mask,
+                                      const blink::WebPoint& position,
+                                      const blink::WebPoint& screen) OVERRIDE;
   virtual void didReceiveResponse(
-      const WebKit::WebURLResponse& response) OVERRIDE;
+      const blink::WebURLResponse& response) OVERRIDE;
   virtual void didReceiveData(const char* data, int data_length) OVERRIDE;
   virtual void didFinishLoading() OVERRIDE;
-  virtual void didFailLoading(const WebKit::WebURLError& error) OVERRIDE;
+  virtual void didFailLoading(const blink::WebURLError& error) OVERRIDE;
   virtual void didFinishLoadingFrameRequest(
-      const WebKit::WebURL& url,
+      const blink::WebURL& url,
       void* notify_data) OVERRIDE;
   virtual void didFailLoadingFrameRequest(
-      const WebKit::WebURL& url,
+      const blink::WebURL& url,
       void* notify_data,
-      const WebKit::WebURLError& error) OVERRIDE;
+      const blink::WebURLError& error) OVERRIDE;
+  virtual bool executeEditCommand(const blink::WebString& name) OVERRIDE;
+  virtual bool executeEditCommand(const blink::WebString& name,
+                                  const blink::WebString& value) OVERRIDE;
+  virtual bool setComposition(
+      const blink::WebString& text,
+      const blink::WebVector<blink::WebCompositionUnderline>& underlines,
+      int selectionStart,
+      int selectionEnd) OVERRIDE;
+  virtual bool confirmComposition(
+      const blink::WebString& text,
+      blink::WebWidget::ConfirmCompositionBehavior selectionBehavior) OVERRIDE;
+  virtual void extendSelectionAndDelete(int before, int after) OVERRIDE;
+
+  // MouseLockDispatcher::LockTarget implementation.
+  virtual void OnLockMouseACK(bool succeeded) OVERRIDE;
+  virtual void OnMouseLockLost() OVERRIDE;
+  virtual bool HandleMouseLockedInputEvent(
+          const blink::WebMouseEvent& event) OVERRIDE;
+
  private:
   friend class base::DeleteHelper<BrowserPlugin>;
   // Only the manager is allowed to create a BrowserPlugin.
@@ -166,160 +200,146 @@ class CONTENT_EXPORT BrowserPlugin :
   friend class MockBrowserPlugin;
 
   // A BrowserPlugin object is a controller that represents an instance of a
-  // browser plugin within the embedder renderer process. Each BrowserPlugin
-  // within a process has a unique instance_id that is used to route messages
-  // to it. It takes in a RenderViewImpl that it's associated with along
-  // with the frame within which it lives and the initial attributes assigned
-  // to it on creation.
-  BrowserPlugin(
-      int instance_id,
-      RenderViewImpl* render_view,
-      WebKit::WebFrame* frame,
-      const WebKit::WebPluginParams& params);
+  // browser plugin within the embedder renderer process. Once a BrowserPlugin
+  // does an initial navigation or is attached to a newly created guest, it
+  // acquires a guest_instance_id as well. The guest instance ID uniquely
+  // identifies a guest WebContents that's hosted by this BrowserPlugin.
+  BrowserPlugin(RenderViewImpl* render_view,
+                blink::WebFrame* frame,
+                bool auto_navigate);
 
   virtual ~BrowserPlugin();
 
   int width() const { return plugin_rect_.width(); }
   int height() const { return plugin_rect_.height(); }
-  int instance_id() const { return instance_id_; }
-  int render_view_routing_id() const { return render_view_routing_id_; }
-  BrowserPluginManager* browser_plugin_manager() const {
-    return browser_plugin_manager_;
-  }
+  gfx::Rect plugin_rect() { return plugin_rect_; }
+  // Gets the Max Height value used for auto size.
+  int GetAdjustedMaxHeight() const;
+  // Gets the Max Width value used for auto size.
+  int GetAdjustedMaxWidth() const;
+  // Gets the Min Height value used for auto size.
+  int GetAdjustedMinHeight() const;
+  // Gets the Min Width value used for auto size.
+  int GetAdjustedMinWidth() const;
 
   // Virtual to allow for mocking in tests.
   virtual float GetDeviceScaleFactor() const;
 
+  void ShowSadGraphic();
+
   // Parses the attributes of the browser plugin from the element's attributes
   // and sets them appropriately.
-  void ParseAttributes(const WebKit::WebPluginParams& params);
+  void ParseAttributes();
 
   // Triggers the event-listeners for |event_name|. Note that the function
   // frees all the values in |props|.
   void TriggerEvent(const std::string& event_name,
                     std::map<std::string, base::Value*>* props);
 
-  // Creates and maps transport dib. Overridden in tests.
-  virtual TransportDIB* CreateTransportDIB(const size_t size);
-  // Frees up the damage buffer. Overridden in tests.
-  virtual void FreeDamageBuffer(TransportDIB** damage_buffer);
-  // Swaps out the |current_damage_buffer_| with the |pending_damage_buffer_|.
-  void SwapDamageBuffers();
-
-  // Populates BrowserPluginHostMsg_ResizeGuest_Params with resize state and
-  // returns the newly allocated TransportDIB.
-  TransportDIB* PopulateResizeGuestParameters(
+  // Populates BrowserPluginHostMsg_ResizeGuest_Params with resize state.
+  void PopulateResizeGuestParameters(
       BrowserPluginHostMsg_ResizeGuest_Params* params,
-      const gfx::Size& view_size);
+      const gfx::Rect& view_size,
+      bool needs_repaint);
 
   // Populates BrowserPluginHostMsg_AutoSize_Params object with autosize state.
   void PopulateAutoSizeParameters(
-      BrowserPluginHostMsg_AutoSize_Params* params);
+      BrowserPluginHostMsg_AutoSize_Params* params, bool auto_size_enabled);
 
   // Populates both AutoSize and ResizeGuest parameters based on the current
   // autosize state.
-  TransportDIB* GetDamageBufferWithSizeParams(
+  void GetSizeParams(
       BrowserPluginHostMsg_AutoSize_Params* auto_size_params,
-      BrowserPluginHostMsg_ResizeGuest_Params* resize_guest_params);
+      BrowserPluginHostMsg_ResizeGuest_Params* resize_guest_params,
+      bool needs_repaint);
 
   // Informs the guest of an updated autosize state.
-  void UpdateGuestAutoSizeState();
+  void UpdateGuestAutoSizeState(bool auto_size_enabled);
 
-  // Informs the BrowserPlugin that guest has changed its size in autosize mode.
-  void SizeChangedDueToAutoSize(const gfx::Size& old_view_size);
-
-#if defined(OS_MACOSX)
-  bool DamageBufferMatches(const TransportDIB* damage_buffer,
-                           const TransportDIB::Id& other_damage_buffer_id);
-#else
-  bool DamageBufferMatches(
-      const TransportDIB* damage_buffer,
-      const TransportDIB::Handle& other_damage_buffer_handle);
-#endif
 
   // IPC message handlers.
   // Please keep in alphabetical order.
   void OnAdvanceFocus(int instance_id, bool reverse);
+  void OnAttachACK(int instance_id,
+                   const BrowserPluginMsg_Attach_ACK_Params& ack_params);
+  void OnBuffersSwapped(int instance_id,
+                        const FrameMsg_BuffersSwapped_Params& params);
+  void OnCompositorFrameSwapped(const IPC::Message& message);
+  void OnCopyFromCompositingSurface(int instance_id,
+                                    int request_id,
+                                    gfx::Rect source_rect,
+                                    gfx::Size dest_size);
   void OnGuestContentWindowReady(int instance_id,
                                  int content_window_routing_id);
-  void OnGuestGone(int instance_id, int process_id, int status);
-  void OnGuestResponsive(int instance_id, int process_id);
-  void OnGuestUnresponsive(int instance_id, int process_id);
-  void OnLoadAbort(int instance_id,
-                   const GURL& url,
-                   bool is_top_level,
-                   const std::string& type);
-  void OnLoadCommit(int instance_id,
-                    const BrowserPluginMsg_LoadCommit_Params& params);
-  void OnLoadRedirect(int instance_id,
-                      const GURL& old_url,
-                      const GURL& new_url,
-                      bool is_top_level);
-  void OnLoadStart(int instance_id, const GURL& url, bool is_top_level);
-  void OnLoadStop(int instance_id);
+  void OnGuestGone(int instance_id);
   void OnSetCursor(int instance_id, const WebCursor& cursor);
+  void OnSetMouseLock(int instance_id, bool enable);
   void OnShouldAcceptTouchEvents(int instance_id, bool accept);
+  void OnUpdatedName(int instance_id, const std::string& name);
   void OnUpdateRect(int instance_id,
-                    int message_id,
                     const BrowserPluginMsg_UpdateRect_Params& params);
 
-  int instance_id_;
+  // This is the browser-process-allocated instance ID that uniquely identifies
+  // a guest WebContents.
+  int guest_instance_id_;
+  // This indicates whether this BrowserPlugin has been attached to a
+  // WebContents.
+  bool attached_;
   base::WeakPtr<RenderViewImpl> render_view_;
   // We cache the |render_view_|'s routing ID because we need it on destruction.
   // If the |render_view_| is destroyed before the BrowserPlugin is destroyed
   // then we will attempt to access a NULL pointer.
   int render_view_routing_id_;
-  WebKit::WebPluginContainer* container_;
+  blink::WebPluginContainer* container_;
   scoped_ptr<BrowserPluginBindings> bindings_;
-  scoped_ptr<BrowserPluginBackingStore> backing_store_;
-  TransportDIB* current_damage_buffer_;
-  TransportDIB* pending_damage_buffer_;
+  bool paint_ack_received_;
   gfx::Rect plugin_rect_;
+  float last_device_scale_factor_;
   // Bitmap for crashed plugin. Lazily initialized, non-owning pointer.
   SkBitmap* sad_guest_;
   bool guest_crashed_;
   scoped_ptr<BrowserPluginHostMsg_ResizeGuest_Params> pending_resize_params_;
-  // True if we have ever sent a NavigateGuest message to the embedder.
-  bool navigate_src_sent_;
-  std::string src_;
-  bool auto_size_;
-  int max_height_;
-  int max_width_;
-  int min_height_;
-  int min_width_;
-  int process_id_;
+  bool is_auto_size_state_dirty_;
+  // Maximum size constraint for autosize.
+  gfx::Size max_auto_size_;
   std::string storage_partition_id_;
   bool persist_storage_;
   bool valid_partition_id_;
   int content_window_routing_id_;
   bool plugin_focused_;
-  bool embedder_focused_;
   // Tracks the visibility of the browser plugin regardless of the whole
   // embedder RenderView's visibility.
   bool visible_;
 
+  bool auto_navigate_;
+  std::string html_string_;
+
   WebCursor cursor_;
 
   gfx::Size last_view_size_;
-  bool size_changed_in_flight_;
+  bool before_first_navigation_;
+  bool mouse_locked_;
 
   // BrowserPlugin outlives RenderViewImpl in Chrome Apps and so we need to
   // store the BrowserPlugin's BrowserPluginManager in a member variable to
   // avoid accessing the RenderViewImpl.
   scoped_refptr<BrowserPluginManager> browser_plugin_manager_;
 
-  // Important: Do not add more history state here.
-  // We strongly discourage storing additional history state (such as page IDs)
-  // in the embedder process, at the risk of having incorrect information that
-  // can lead to broken back/forward logic in apps.
-  // It's also important that this state does not get modified by any logic in
-  // the embedder process. It should only be updated in response to navigation
-  // events in the guest.  No assumptions should be made about how the index
-  // will change after a navigation (e.g., for back, forward, or go), because
-  // the changes are not always obvious.  For example, there is a maximum
-  // number of entries and earlier ones will automatically be pruned.
-  int current_nav_entry_index_;
-  int nav_entry_count_;
+  // Used for HW compositing.
+  scoped_refptr<ChildFrameCompositingHelper> compositing_helper_;
+
+  // Used to identify the plugin to WebBindings.
+  scoped_ptr<struct _NPP> npp_;
+
+  // URL for the embedder frame.
+  GURL embedder_frame_url_;
+
+  std::vector<EditCommand> edit_commands_;
+
+  // Weak factory used in v8 |MakeWeak| callback, since the v8 callback might
+  // get called after BrowserPlugin has been destroyed.
+  base::WeakPtrFactory<BrowserPlugin> weak_ptr_factory_;
+
   DISALLOW_COPY_AND_ASSIGN(BrowserPlugin);
 };
 

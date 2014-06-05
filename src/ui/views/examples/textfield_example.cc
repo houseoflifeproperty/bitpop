@@ -4,19 +4,32 @@
 
 #include "ui/views/examples/textfield_example.h"
 
-#include "base/utf_string_conversions.h"
-#include "ui/base/events/event.h"
-#include "ui/base/range/range.h"
+#include "base/strings/utf_string_conversions.h"
+#include "ui/events/event.h"
+#include "ui/gfx/range/range.h"
 #include "ui/gfx/render_text.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/view.h"
 
+using base::ASCIIToUTF16;
+using base::UTF16ToUTF8;
+
 namespace views {
 namespace examples {
 
-TextfieldExample::TextfieldExample() : ExampleBase("Textfield") {
+TextfieldExample::TextfieldExample()
+   : ExampleBase("Textfield"),
+     name_(NULL),
+     password_(NULL),
+     read_only_(NULL),
+     show_password_(NULL),
+     clear_all_(NULL),
+     append_(NULL),
+     set_(NULL),
+     set_style_(NULL) {
 }
 
 TextfieldExample::~TextfieldExample() {
@@ -24,15 +37,19 @@ TextfieldExample::~TextfieldExample() {
 
 void TextfieldExample::CreateExampleView(View* container) {
   name_ = new Textfield();
-  password_ = new Textfield(Textfield::STYLE_OBSCURED);
+  password_ = new Textfield();
+  password_->SetTextInputType(ui::TEXT_INPUT_TYPE_PASSWORD);
   password_->set_placeholder_text(ASCIIToUTF16("password"));
-  show_password_ = new TextButton(this, ASCIIToUTF16("Show password"));
-  clear_all_ = new TextButton(this, ASCIIToUTF16("Clear All"));
-  append_ = new TextButton(this, ASCIIToUTF16("Append"));
-  set_ = new TextButton(this, ASCIIToUTF16("Set"));
-  set_style_ = new TextButton(this, ASCIIToUTF16("Set Styles"));
-  name_->SetController(this);
-  password_->SetController(this);
+  read_only_ = new Textfield();
+  read_only_->SetReadOnly(true);
+  read_only_->SetText(ASCIIToUTF16("read only"));
+  show_password_ = new LabelButton(this, ASCIIToUTF16("Show password"));
+  clear_all_ = new LabelButton(this, ASCIIToUTF16("Clear All"));
+  append_ = new LabelButton(this, ASCIIToUTF16("Append"));
+  set_ = new LabelButton(this, ASCIIToUTF16("Set"));
+  set_style_ = new LabelButton(this, ASCIIToUTF16("Set Styles"));
+  name_->set_controller(this);
+  password_->set_controller(this);
 
   GridLayout* layout = new GridLayout(container);
   container->SetLayoutManager(layout);
@@ -49,6 +66,9 @@ void TextfieldExample::CreateExampleView(View* container) {
   layout->AddView(new Label(ASCIIToUTF16("Password:")));
   layout->AddView(password_);
   layout->StartRow(0, 0);
+  layout->AddView(new Label(ASCIIToUTF16("Read Only:")));
+  layout->AddView(read_only_);
+  layout->StartRow(0, 0);
   layout->AddView(show_password_);
   layout->StartRow(0, 0);
   layout->AddView(clear_all_);
@@ -61,11 +81,13 @@ void TextfieldExample::CreateExampleView(View* container) {
 }
 
 void TextfieldExample::ContentsChanged(Textfield* sender,
-                                       const string16& new_contents) {
+                                       const base::string16& new_contents) {
   if (sender == name_) {
     PrintStatus("Name [%s]", UTF16ToUTF8(new_contents).c_str());
   } else if (sender == password_) {
     PrintStatus("Password [%s]", UTF16ToUTF8(new_contents).c_str());
+  } else if (sender == read_only_) {
+    PrintStatus("Read Only [%s]", UTF16ToUTF8(new_contents).c_str());
   }
 }
 
@@ -74,37 +96,45 @@ bool TextfieldExample::HandleKeyEvent(Textfield* sender,
   return false;
 }
 
+bool TextfieldExample::HandleMouseEvent(Textfield* sender,
+                                        const ui::MouseEvent& mouse_event) {
+  PrintStatus("HandleMouseEvent click count=%d", mouse_event.GetClickCount());
+  return false;
+}
+
 void TextfieldExample::ButtonPressed(Button* sender, const ui::Event& event) {
   if (sender == show_password_) {
     PrintStatus("Password [%s]", UTF16ToUTF8(password_->text()).c_str());
   } else if (sender == clear_all_) {
-    string16 empty;
+    base::string16 empty;
     name_->SetText(empty);
     password_->SetText(empty);
+    read_only_->SetText(empty);
   } else if (sender == append_) {
     name_->AppendText(ASCIIToUTF16("[append]"));
+    password_->AppendText(ASCIIToUTF16("[append]"));
+    read_only_->AppendText(ASCIIToUTF16("[append]"));
   } else if (sender == set_) {
     name_->SetText(ASCIIToUTF16("[set]"));
+    password_->SetText(ASCIIToUTF16("[set]"));
+    read_only_->SetText(ASCIIToUTF16("[set]"));
   } else if (sender == set_style_) {
     if (!name_->text().empty()) {
-      gfx::StyleRange color;
-      color.foreground = SK_ColorYELLOW;
-      color.range = ui::Range(0, name_->text().length());
-      name_->ApplyStyleRange(color);
+      name_->SetColor(SK_ColorGREEN);
+      name_->SetStyle(gfx::BOLD, true);
 
       if (name_->text().length() >= 5) {
         size_t fifth = name_->text().length() / 5;
-        gfx::StyleRange underline;
-        underline.underline = true;
-        underline.foreground = SK_ColorBLUE;
-        underline.range = ui::Range(1 * fifth, 4 * fifth);
-        name_->ApplyStyleRange(underline);
+        const gfx::Range big_range(1 * fifth, 4 * fifth);
+        name_->ApplyStyle(gfx::BOLD, false, big_range);
+        name_->ApplyStyle(gfx::UNDERLINE, true, big_range);
+        name_->ApplyColor(SK_ColorBLUE, big_range);
 
-        gfx::StyleRange strike;
-        strike.strike = true;
-        strike.foreground = SK_ColorRED;
-        strike.range = ui::Range(2 * fifth, 3 * fifth);
-        name_->ApplyStyleRange(strike);
+        const gfx::Range small_range(2 * fifth, 3 * fifth);
+        name_->ApplyStyle(gfx::ITALIC, true, small_range);
+        name_->ApplyStyle(gfx::UNDERLINE, false, small_range);
+        name_->ApplyStyle(gfx::DIAGONAL_STRIKE, true, small_range);
+        name_->ApplyColor(SK_ColorRED, small_range);
       }
     }
   }

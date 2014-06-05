@@ -42,7 +42,8 @@ class ArchiveCommand(shell.ShellCommand):
            'more_link_url',
            'more_link_text',
            'name',
-           'index_suffix']
+           'index_suffix',
+           'include_last_change']
 
   def __init__(self, **kwargs):
     shell.ShellCommand.__init__(self, **kwargs)
@@ -51,17 +52,19 @@ class ArchiveCommand(shell.ShellCommand):
     self.link_text = kwargs['link_text']
     self.addLogObserver('stdio', self.script_observer)
     self.index_suffix = kwargs.get('index_suffix', '')
+    self.include_last_change = kwargs.get('include_last_change', True)
+    self.more_link_url = kwargs.get('more_link_url', '')
+    self.more_link_text = kwargs.get('more_link_text', '')
 
   def createSummary(self, log):
     if (self.base_url and self.link_text):
-      base_url = self.base_url % {'build_name': self.script_observer.build_name}
+      url_prefix = self.base_url % {
+          'build_name': self.script_observer.build_name}
+
       if self.script_observer.build_number:
-        url = ('%s/%s/%s%s' % (base_url,
-                               self.script_observer.build_number,
-                               self.script_observer.last_change,
-                               self.index_suffix))
-      else:
-        url = ('%s/%s%s' % (base_url,
-                            self.script_observer.last_change,
-                            self.index_suffix))
-      self.addURL(self.link_text, url)
+        url_prefix += '/' + self.script_observer.build_number
+      if self.include_last_change:
+        url_prefix += '/' + self.script_observer.last_change
+      self.addURL(self.link_text, url_prefix + '/' + self.index_suffix)
+      if self.more_link_url and self.more_link_text:
+        self.addURL(self.more_link_text, url_prefix + '/' + self.more_link_url)

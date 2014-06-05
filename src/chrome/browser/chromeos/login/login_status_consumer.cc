@@ -7,8 +7,9 @@
 
 namespace chromeos {
 
-void LoginStatusConsumer::OnRetailModeLoginSuccess() {
-  OnLoginSuccess(kRetailModeUserEMail, "", false, false);
+void LoginStatusConsumer::OnRetailModeLoginSuccess(
+    const UserContext& user_context) {
+  OnLoginSuccess(user_context);
 }
 
 void LoginStatusConsumer::OnPasswordChangeDetected() {

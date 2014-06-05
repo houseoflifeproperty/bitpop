@@ -7,20 +7,20 @@
 #include <string>
 #include <vector>
 
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/test/scoped_path_override.h"
-#include "chrome/common/chrome_paths.h"
+#include "chromeos/chromeos_paths.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace chromeos {
 
 namespace {
 
-const FilePath::CharType kTestFile[] =
+const base::FilePath::CharType kTestFile[] =
     FILE_PATH_LITERAL("test_default_app_order.json");
 }
 
@@ -48,15 +48,15 @@ class DefaultAppOrderTest : public testing::Test {
     return true;
   }
 
-  void SetExternalFile(const FilePath& path) {
+  void SetExternalFile(const base::FilePath& path) {
     path_override_.reset(new base::ScopedPathOverride(
-        chrome::FILE_DEFAULT_APP_ORDER, path));
+        chromeos::FILE_DEFAULT_APP_ORDER, path));
   }
 
   void CreateExternalOrderFile(const std::string& content) {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-    FilePath external_file = temp_dir_.path().Append(kTestFile);
-    file_util::WriteFile(external_file, content.c_str(), content.size());
+    base::FilePath external_file = temp_dir_.path().Append(kTestFile);
+    base::WriteFile(external_file, content.c_str(), content.size());
     SetExternalFile(external_file);
   }
 
@@ -79,7 +79,9 @@ TEST_F(DefaultAppOrderTest, BuiltInDefault) {
 
 // Tests external order file overrides built-in default.
 TEST_F(DefaultAppOrderTest, ExternalOrder) {
-  const char kExternalOrder[] = "[\"app1\",\"app2\",\"app3\"]";
+  const char kExternalOrder[] = "[\"app1\",\"app2\",\"app3\","
+      "{ \"oem_apps_folder\": true,\"localized_content\": {"
+      "    \"default\": {\"name\": \"OEM name\"}}}]";
   CreateExternalOrderFile(std::string(kExternalOrder));
 
   scoped_ptr<default_app_order::ExternalLoader> loader(
@@ -91,11 +93,18 @@ TEST_F(DefaultAppOrderTest, ExternalOrder) {
   EXPECT_EQ(std::string("app1"), apps[0]);
   EXPECT_EQ(std::string("app2"), apps[1]);
   EXPECT_EQ(std::string("app3"), apps[2]);
+  EXPECT_EQ(std::string("OEM name"), default_app_order::GetOemAppsFolderName());
 }
 
 // Tests none-existent order file gives built-in default.
 TEST_F(DefaultAppOrderTest, NoExternalFile) {
-  SetExternalFile(FilePath(FILE_PATH_LITERAL("none_existent_file")));
+  base::ScopedTempDir scoped_tmp_dir;
+  ASSERT_TRUE(scoped_tmp_dir.CreateUniqueTempDir());
+
+  base::FilePath none_existent_file =
+      scoped_tmp_dir.path().AppendASCII("none_existent_file");
+  ASSERT_FALSE(base::PathExists(none_existent_file));
+  SetExternalFile(none_existent_file);
 
   scoped_ptr<default_app_order::ExternalLoader> loader(
       new default_app_order::ExternalLoader(false));

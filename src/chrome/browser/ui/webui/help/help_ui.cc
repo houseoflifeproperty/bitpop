@@ -6,24 +6,26 @@
 
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/help/help_handler.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
-#include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
-#include "chrome/browser/ui/webui/shared_resources_data_source.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_data_source.h"
 #include "grit/browser_resources.h"
 
 namespace {
 
-ChromeWebUIDataSource* CreateAboutPageHTMLSource() {
-  ChromeWebUIDataSource* source =
-      new ChromeWebUIDataSource(chrome::kChromeUIHelpFrameHost);
+content::WebUIDataSource* CreateAboutPageHTMLSource() {
+  content::WebUIDataSource* source =
+      content::WebUIDataSource::Create(chrome::kChromeUIHelpFrameHost);
 
-  source->set_json_path("strings.js");
-  source->set_use_json_js_format_v2();
-  source->add_resource_path("help.js", IDR_HELP_JS);
-  source->set_default_resource(IDR_HELP_HTML);
+  source->SetJsonPath("strings.js");
+  source->SetUseJsonJSFormatV2();
+  source->AddResourcePath("help.js", IDR_HELP_JS);
+  source->AddResourcePath("help_focus_manager.js", IDR_HELP_FOCUS_MANAGER_JS);
+  source->AddResourcePath("help_base_page.js", IDR_HELP_BASE_PAGE_JS);
+  source->AddResourcePath("channel_change_page.js", IDR_CHANNEL_CHANGE_PAGE_JS);
+  source->SetDefaultResource(IDR_HELP_HTML);
+  source->DisableDenyXFrameOptions();
   return source;
 }
 
@@ -32,12 +34,11 @@ ChromeWebUIDataSource* CreateAboutPageHTMLSource() {
 HelpUI::HelpUI(content::WebUI* web_ui)
     : WebUIController(web_ui) {
   Profile* profile = Profile::FromWebUI(web_ui);
-  ChromeWebUIDataSource* source = CreateAboutPageHTMLSource();
-  ChromeURLDataManager::AddDataSource(profile, source);
-  ChromeURLDataManager::AddDataSource(profile, new SharedResourcesDataSource());
+  content::WebUIDataSource* source = CreateAboutPageHTMLSource();
 
   HelpHandler* handler = new HelpHandler();
-  handler->GetLocalizedValues(source->localized_strings());
+  handler->GetLocalizedValues(source);
+  content::WebUIDataSource::Add(profile, source);
   web_ui->AddMessageHandler(handler);
 }
 

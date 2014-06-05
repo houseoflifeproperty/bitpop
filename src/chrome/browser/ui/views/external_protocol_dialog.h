@@ -7,13 +7,11 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/time.h"
-#include "googleurl/src/gurl.h"
+#include "base/time/time.h"
 #include "ui/views/window/dialog_delegate.h"
+#include "url/gurl.h"
 
-namespace content {
-class WebContents;
-}
+class ProtocolDialogDelegate;
 
 namespace views {
 class MessageBoxView;
@@ -22,20 +20,17 @@ class MessageBoxView;
 class ExternalProtocolDialog : public views::DialogDelegate {
  public:
   // RunExternalProtocolDialog calls this private constructor.
-  ExternalProtocolDialog(content::WebContents* web_contents,
-                         const GURL& url,
-                         const std::wstring& command);
-
-  // Returns the path of the application to be launched given the protocol
-  // of the requested url. Returns an empty string on failure.
-  static std::wstring GetApplicationForProtocol(const GURL& url);
+  ExternalProtocolDialog(scoped_ptr<const ProtocolDialogDelegate> delegate,
+                         int render_process_host_id,
+                         int routing_id);
 
   virtual ~ExternalProtocolDialog();
 
   // views::DialogDelegate methods:
   virtual int GetDefaultDialogButton() const OVERRIDE;
-  virtual string16 GetDialogButtonLabel(ui::DialogButton button) const OVERRIDE;
-  virtual string16 GetWindowTitle() const OVERRIDE;
+  virtual base::string16 GetDialogButtonLabel(
+      ui::DialogButton button) const OVERRIDE;
+  virtual base::string16 GetWindowTitle() const OVERRIDE;
   virtual void DeleteDelegate() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
   virtual bool Accept() OVERRIDE;
@@ -44,14 +39,14 @@ class ExternalProtocolDialog : public views::DialogDelegate {
   virtual const views::Widget* GetWidget() const OVERRIDE;
 
  private:
+  const scoped_ptr<const ProtocolDialogDelegate> delegate_;
+
   // The message box view whose commands we handle.
   views::MessageBoxView* message_box_view_;
 
-  // The associated WebContents.
-  content::WebContents* web_contents_;
-
-  // URL of the external protocol request.
-  GURL url_;
+  // IDs of the associated WebContents.
+  int render_process_host_id_;
+  int routing_id_;
 
   // The time at which this dialog was created.
   base::TimeTicks creation_time_;

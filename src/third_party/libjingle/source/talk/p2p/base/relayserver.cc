@@ -51,7 +51,8 @@ static const uint32 kMessageAcceptConnection = 1;
 // Calls SendTo on the given socket and logs any bad results.
 void Send(talk_base::AsyncPacketSocket* socket, const char* bytes, size_t size,
           const talk_base::SocketAddress& addr) {
-  int result = socket->SendTo(bytes, size, addr);
+  talk_base::PacketOptions options;
+  int result = socket->SendTo(bytes, size, addr, options);
   if (result < static_cast<int>(size)) {
     LOG(LS_ERROR) << "SendTo wrote only " << result << " of " << size
                   << " bytes";
@@ -108,6 +109,8 @@ RelayServer::~RelayServer() {
     delete internal_sockets_[i];
   for (size_t i = 0; i < external_sockets_.size(); ++i)
     delete external_sockets_[i];
+  for (size_t i = 0; i < removed_sockets_.size(); ++i)
+    delete removed_sockets_[i];
   while (!server_sockets_.empty()) {
     talk_base::AsyncSocket* socket = server_sockets_.begin()->first;
     server_sockets_.erase(server_sockets_.begin()->first);
@@ -127,6 +130,7 @@ void RelayServer::RemoveInternalSocket(talk_base::AsyncPacketSocket* socket) {
       std::find(internal_sockets_.begin(), internal_sockets_.end(), socket);
   ASSERT(iter != internal_sockets_.end());
   internal_sockets_.erase(iter);
+  removed_sockets_.push_back(socket);
   socket->SignalReadPacket.disconnect(this);
 }
 
@@ -142,6 +146,7 @@ void RelayServer::RemoveExternalSocket(talk_base::AsyncPacketSocket* socket) {
       std::find(external_sockets_.begin(), external_sockets_.end(), socket);
   ASSERT(iter != external_sockets_.end());
   external_sockets_.erase(iter);
+  removed_sockets_.push_back(socket);
   socket->SignalReadPacket.disconnect(this);
 }
 
@@ -162,7 +167,7 @@ void RelayServer::RemoveInternalServerSocket(
 }
 
 int RelayServer::GetConnectionCount() const {
-  return connections_.size();
+  return static_cast<int>(connections_.size());
 }
 
 talk_base::SocketAddressPair RelayServer::GetConnection(int connection) const {
@@ -194,7 +199,8 @@ void RelayServer::OnReadEvent(talk_base::AsyncSocket* socket) {
 
 void RelayServer::OnInternalPacket(
     talk_base::AsyncPacketSocket* socket, const char* bytes, size_t size,
-    const talk_base::SocketAddress& remote_addr) {
+    const talk_base::SocketAddress& remote_addr,
+    const talk_base::PacketTime& packet_time) {
 
   // Get the address of the connection we just received on.
   talk_base::SocketAddressPair ap(remote_addr, socket->GetLocalAddress());
@@ -238,7 +244,8 @@ void RelayServer::OnInternalPacket(
 
 void RelayServer::OnExternalPacket(
     talk_base::AsyncPacketSocket* socket, const char* bytes, size_t size,
-    const talk_base::SocketAddress& remote_addr) {
+    const talk_base::SocketAddress& remote_addr,
+    const talk_base::PacketTime& packet_time) {
 
   // Get the address of the connection we just received on.
   talk_base::SocketAddressPair ap(remote_addr, socket->GetLocalAddress());
@@ -706,8 +713,7 @@ bool RelayServerBinding::HasMagicCookie(const char* bytes, size_t size) const {
   if (size < 24 + magic_cookie_.size()) {
     return false;
   } else {
-    return 0 == std::memcmp(
-        bytes + 24, magic_cookie_.c_str(), magic_cookie_.size());
+    return memcmp(bytes + 24, magic_cookie_.c_str(), magic_cookie_.size()) == 0;
   }
 }
 

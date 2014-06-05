@@ -10,7 +10,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "remoting/protocol/input_stub.h"
-#include "third_party/skia/include/core/SkPoint.h"
+#include "third_party/webrtc/modules/desktop_capture/desktop_geometry.h"
 
 namespace remoting {
 namespace protocol {
@@ -35,6 +35,7 @@ class InputEventTracker : public InputStub {
 
   // InputStub interface.
   virtual void InjectKeyEvent(const KeyEvent& event) OVERRIDE;
+  virtual void InjectTextEvent(const TextEvent& event) OVERRIDE;
   virtual void InjectMouseEvent(const MouseEvent& event) OVERRIDE;
 
  private:
@@ -42,7 +43,7 @@ class InputEventTracker : public InputStub {
 
   std::set<uint32> pressed_keys_;
 
-  SkIPoint mouse_pos_;
+  webrtc::DesktopVector mouse_pos_;
   uint32 mouse_button_state_;
 
   DISALLOW_COPY_AND_ASSIGN(InputEventTracker);

@@ -24,6 +24,7 @@ from twisted.web.error import NoResource
 from buildbot import interfaces
 from buildbot.status import logfile
 from buildbot.status.web.base import IHTMLLog, HtmlResource, path_to_root
+from buildbot.util.ansicodes import parse_ansi_sgr
 
 class ChunkConsumer:
     implements(interfaces.IStatusLogConsumer)
@@ -46,7 +47,6 @@ class ChunkConsumer:
             self.producing.stopProducing()
     def finish(self):
         self.textlog.finished()
-
 
 # /builders/$builder/builds/$buildnum/steps/$stepname/logs/$logname
 class TextLog(Resource):
@@ -74,16 +74,28 @@ class TextLog(Resource):
             if type >= len(logfile.ChunkTypes) or type < 0:
                 # non-std channel, don't display
                 continue
-            
+
             is_header = type == logfile.HEADER
 
             if not self.asText:
                 # jinja only works with unicode, or pure ascii, so assume utf-8 in logs
                 if not isinstance(entry, unicode):
                     entry = unicode(entry, 'utf-8', 'replace')
-                html_entries.append(dict(type = logfile.ChunkTypes[type], 
-                                         text = entry,
-                                         is_header = is_header))
+                first_entry = True
+                _type = logfile.ChunkTypes[type]
+                for ansi_entry in entry.split("\033["):
+                    code = ""
+                    if not first_entry:
+
+                        ansi_entry, ansi_classes = parse_ansi_sgr(ansi_entry)
+                        if ansi_classes:
+                            code = "".join([" ansi" + i for i in ansi_classes])
+
+                    html_entries.append(dict(type=_type + code,
+                                             text=ansi_entry,
+                                             is_header=is_header))
+                    first_entry = False
+
             elif not is_header:
                 text_data += entry
 

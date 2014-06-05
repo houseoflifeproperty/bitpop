@@ -2,19 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Custom bindings for the declarativeWebRequest API.
+// Custom binding for the declarativeWebRequest API.
 
-var chromeHidden = requireNative('chrome_hidden').GetChromeHidden();
+var binding = require('binding').Binding.create('declarativeWebRequest');
+
 var utils = require('utils');
 var validate = require('schemaUtils').validate;
 
-chromeHidden.registerCustomHook('declarativeWebRequest', function(api) {
+binding.registerCustomHook(function(api) {
+  var declarativeWebRequest = api.compiledApi;
+
   // Returns the schema definition of type |typeId| defined in |namespace|.
-  function getSchema(namespace, typeId) {
-    var apiSchema = utils.lookup(api.apiDefinitions, 'namespace', namespace);
-    var resultSchema = utils.lookup(
-        apiSchema.types, 'id', namespace + '.' + typeId);
-    return resultSchema;
+  function getSchema(typeId) {
+    return utils.lookup(api.schema.types,
+                        'id',
+                        'declarativeWebRequest.' + typeId);
   }
 
   // Helper function for the constructor of concrete datatypes of the
@@ -24,66 +26,71 @@ chromeHidden.registerCustomHook('declarativeWebRequest', function(api) {
   // generated union dictionary against the schema for |typeId|.
   function setupInstance(instance, parameters, typeId) {
     for (var key in parameters) {
-      if (parameters.hasOwnProperty(key)) {
+      if ($Object.hasOwnProperty(parameters, key)) {
         instance[key] = parameters[key];
       }
     }
     instance.instanceType = 'declarativeWebRequest.' + typeId;
-    var schema = getSchema('declarativeWebRequest', typeId);
+    var schema = getSchema(typeId);
     validate([instance], [schema]);
   }
 
   // Setup all data types for the declarative webRequest API.
-  chrome.declarativeWebRequest.RequestMatcher = function(parameters) {
+  declarativeWebRequest.RequestMatcher = function(parameters) {
     setupInstance(this, parameters, 'RequestMatcher');
   };
-  chrome.declarativeWebRequest.CancelRequest = function(parameters) {
+  declarativeWebRequest.CancelRequest = function(parameters) {
     setupInstance(this, parameters, 'CancelRequest');
   };
-  chrome.declarativeWebRequest.RedirectRequest = function(parameters) {
+  declarativeWebRequest.RedirectRequest = function(parameters) {
     setupInstance(this, parameters, 'RedirectRequest');
   };
-  chrome.declarativeWebRequest.SetRequestHeader = function(parameters) {
+  declarativeWebRequest.SetRequestHeader = function(parameters) {
     setupInstance(this, parameters, 'SetRequestHeader');
   };
-  chrome.declarativeWebRequest.RemoveRequestHeader = function(parameters) {
+  declarativeWebRequest.RemoveRequestHeader = function(parameters) {
     setupInstance(this, parameters, 'RemoveRequestHeader');
   };
-  chrome.declarativeWebRequest.AddResponseHeader = function(parameters) {
+  declarativeWebRequest.AddResponseHeader = function(parameters) {
     setupInstance(this, parameters, 'AddResponseHeader');
   };
-  chrome.declarativeWebRequest.RemoveResponseHeader = function(parameters) {
+  declarativeWebRequest.RemoveResponseHeader = function(parameters) {
     setupInstance(this, parameters, 'RemoveResponseHeader');
   };
-  chrome.declarativeWebRequest.RedirectToTransparentImage =
+  declarativeWebRequest.RedirectToTransparentImage =
       function(parameters) {
     setupInstance(this, parameters, 'RedirectToTransparentImage');
   };
-  chrome.declarativeWebRequest.RedirectToEmptyDocument = function(parameters) {
+  declarativeWebRequest.RedirectToEmptyDocument = function(parameters) {
     setupInstance(this, parameters, 'RedirectToEmptyDocument');
   };
-  chrome.declarativeWebRequest.RedirectByRegEx = function(parameters) {
+  declarativeWebRequest.RedirectByRegEx = function(parameters) {
     setupInstance(this, parameters, 'RedirectByRegEx');
   };
-  chrome.declarativeWebRequest.IgnoreRules = function(parameters) {
+  declarativeWebRequest.IgnoreRules = function(parameters) {
     setupInstance(this, parameters, 'IgnoreRules');
   };
-  chrome.declarativeWebRequest.AddRequestCookie = function(parameters) {
+  declarativeWebRequest.AddRequestCookie = function(parameters) {
     setupInstance(this, parameters, 'AddRequestCookie');
   };
-  chrome.declarativeWebRequest.AddResponseCookie = function(parameters) {
+  declarativeWebRequest.AddResponseCookie = function(parameters) {
     setupInstance(this, parameters, 'AddResponseCookie');
   };
-  chrome.declarativeWebRequest.EditRequestCookie = function(parameters) {
+  declarativeWebRequest.EditRequestCookie = function(parameters) {
     setupInstance(this, parameters, 'EditRequestCookie');
   };
-  chrome.declarativeWebRequest.EditResponseCookie = function(parameters) {
+  declarativeWebRequest.EditResponseCookie = function(parameters) {
     setupInstance(this, parameters, 'EditResponseCookie');
   };
-  chrome.declarativeWebRequest.RemoveRequestCookie = function(parameters) {
+  declarativeWebRequest.RemoveRequestCookie = function(parameters) {
     setupInstance(this, parameters, 'RemoveRequestCookie');
   };
-  chrome.declarativeWebRequest.RemoveResponseCookie = function(parameters) {
+  declarativeWebRequest.RemoveResponseCookie = function(parameters) {
     setupInstance(this, parameters, 'RemoveResponseCookie');
   };
+  declarativeWebRequest.SendMessageToExtension = function(parameters) {
+    setupInstance(this, parameters, 'SendMessageToExtension');
+  };
 });
+
+exports.binding = binding.generate();

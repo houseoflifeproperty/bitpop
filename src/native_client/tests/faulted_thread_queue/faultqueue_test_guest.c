@@ -43,7 +43,7 @@ int main(int argc, char **argv) {
 
   char stack[0x10000];
 
-  RegsFillTestValues(expected_regs);
+  RegsFillTestValues(expected_regs, /* seed= */ 0);
   expected_regs->stack_ptr = (uintptr_t) stack + sizeof(stack);
   expected_regs->prog_ctr = (uintptr_t) FaultAddr;
   RegsApplySandboxConstraints(expected_regs);
@@ -69,16 +69,41 @@ int main(int argc, char **argv) {
     ASM_WITH_REGS(
         expected_regs,
         ".p2align 4\n"
-        "FaultAddr: .word " NACL_TO_STRING(NACL_INSTR_ARM_BREAKPOINT) "\n"
+        "FaultAddr: .word " NACL_TO_STRING(NACL_INSTR_ARM_ABORT_NOW) "\n"
         /*
          * ARM does not provide hardware single-stepping so we do not
          * test it here, unlike in the x86 case.
          */
         "b DoLongjmp\n"
         ".p2align 4\n");
+#elif defined(__mips__)
+    ASM_WITH_REGS(
+        expected_regs,
+        ".p2align 4\n"
+        ".global FaultAddr\n"
+        "FaultAddr: .word " NACL_TO_STRING(NACL_HALT_WORD) "\n"
+        "nop\n"
+        /*
+         * MIPS does not provide hardware single-stepping so we do not
+         * test it here, unlike in the x86 case.
+         */
+        "lui $t9, %%hi(DoLongjmp)\n"
+        "addiu $t9, $t9, %%lo(DoLongjmp)\n"
+        "and $t9, $t9, $t6\n"
+        "jr $t9\n"
+        "nop\n"
+        ".p2align 4\n");
 #else
 # error Unknown architecture
 #endif
   }
-  return 0;
+
+  /*
+   * Avoid calling exit().  This nexe's _start() entry point is called
+   * multiple times by faultqueue_test_host.c, without resetting the
+   * data segment, which is unusual.  This causes exit() to hang when
+   * libpthread is linked in, which recent PNaCl toolchains have
+   * started to do by default.
+   */
+  _exit(0);
 }

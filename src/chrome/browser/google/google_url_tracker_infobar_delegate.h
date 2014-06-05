@@ -5,27 +5,25 @@
 #ifndef CHROME_BROWSER_GOOGLE_GOOGLE_URL_TRACKER_INFOBAR_DELEGATE_H_
 #define CHROME_BROWSER_GOOGLE_GOOGLE_URL_TRACKER_INFOBAR_DELEGATE_H_
 
-#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
-#include "googleurl/src/gurl.h"
+#include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "url/gurl.h"
 
 class GoogleURLTracker;
-class InfoBarTabHelper;
+class InfoBarService;
 
 // This infobar is shown by the GoogleURLTracker when the Google base URL has
 // changed.
 class GoogleURLTrackerInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
-  GoogleURLTrackerInfoBarDelegate(InfoBarTabHelper* infobar_helper,
-                                  GoogleURLTracker* google_url_tracker,
-                                  const GURL& search_url);
+  // Creates a Google URL tracker infobar and delegate and adds the infobar to
+  // |infobar_service|.  Returns the infobar if it was successfully added.
+  static infobars::InfoBar* Create(InfoBarService* infobar_service,
+                                   GoogleURLTracker* google_url_tracker,
+                                   const GURL& search_url);
 
   // ConfirmInfoBarDelegate:
   virtual bool Accept() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
-  virtual string16 GetLinkText() const OVERRIDE;
-  virtual bool LinkClicked(WindowOpenDisposition disposition) OVERRIDE;
-  virtual bool ShouldExpireInternal(
-      const content::LoadCommittedDetails& details) const OVERRIDE;
 
   // Other than set_pending_id(), these accessors are only used by test code.
   const GURL& search_url() const { return search_url_; }
@@ -38,12 +36,18 @@ class GoogleURLTrackerInfoBarDelegate : public ConfirmInfoBarDelegate {
   virtual void Close(bool redo_search);
 
  protected:
+  GoogleURLTrackerInfoBarDelegate(GoogleURLTracker* google_url_tracker,
+                                  const GURL& search_url);
   virtual ~GoogleURLTrackerInfoBarDelegate();
 
  private:
   // ConfirmInfoBarDelegate:
-  virtual string16 GetMessageText() const OVERRIDE;
-  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual base::string16 GetLinkText() const OVERRIDE;
+  virtual bool LinkClicked(WindowOpenDisposition disposition) OVERRIDE;
+  virtual bool ShouldExpireInternal(
+      const NavigationDetails& details) const OVERRIDE;
 
   GoogleURLTracker* google_url_tracker_;
   GURL search_url_;

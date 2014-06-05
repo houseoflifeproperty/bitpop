@@ -64,7 +64,7 @@ static const AVCodecDefault defaults[] = {
     { NULL },
 };
 
-static const AVClass class = {
+static const AVClass vorbis_class = {
     .class_name = "libvorbis",
     .item_name  = av_default_item_name,
     .option     = options,
@@ -187,9 +187,6 @@ static av_cold int oggvorbis_encode_close(AVCodecContext *avctx)
 
     av_fifo_free(s->pkt_fifo);
     ff_af_queue_close(&s->afq);
-#if FF_API_OLD_ENCODE_AUDIO
-    av_freep(&avctx->coded_frame);
-#endif
     av_freep(&avctx->extradata);
 
     return 0;
@@ -267,14 +264,6 @@ static av_cold int oggvorbis_encode_init(AVCodecContext *avctx)
         goto error;
     }
 
-#if FF_API_OLD_ENCODE_AUDIO
-    avctx->coded_frame = avcodec_alloc_frame();
-    if (!avctx->coded_frame) {
-        ret = AVERROR(ENOMEM);
-        goto error;
-    }
-#endif
-
     return 0;
 error:
     oggvorbis_encode_close(avctx);
@@ -290,24 +279,22 @@ static int oggvorbis_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
 
     /* send samples to libvorbis */
     if (frame) {
-        const float *audio = (const float *)frame->data[0];
         const int samples = frame->nb_samples;
         float **buffer;
         int c, channels = s->vi.channels;
 
         buffer = vorbis_analysis_buffer(&s->vd, samples);
         for (c = 0; c < channels; c++) {
-            int i;
             int co = (channels > 8) ? c :
                      ff_vorbis_encoding_channel_layout_offsets[channels - 1][c];
-            for (i = 0; i < samples; i++)
-                buffer[c][i] = audio[i * channels + co];
+            memcpy(buffer[c], frame->extended_data[co],
+                   samples * sizeof(*buffer[c]));
         }
         if ((ret = vorbis_analysis_wrote(&s->vd, samples)) < 0) {
             av_log(avctx, AV_LOG_ERROR, "error in vorbis_analysis_wrote()\n");
             return vorbis_error_to_averror(ret);
         }
-        if ((ret = ff_af_queue_add(&s->afq, frame) < 0))
+        if ((ret = ff_af_queue_add(&s->afq, frame)) < 0)
             return ret;
     } else {
         if (!s->eof)
@@ -350,7 +337,7 @@ static int oggvorbis_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
 
     av_fifo_generic_read(s->pkt_fifo, &op, sizeof(ogg_packet), NULL);
 
-    if ((ret = ff_alloc_packet2(avctx, avpkt, op.bytes)))
+    if ((ret = ff_alloc_packet2(avctx, avpkt, op.bytes)) < 0)
         return ret;
     av_fifo_generic_read(s->pkt_fifo, avpkt->data, op.bytes, NULL);
 
@@ -360,9 +347,11 @@ static int oggvorbis_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     if (duration > 0) {
         /* we do not know encoder delay until we get the first packet from
          * libvorbis, so we have to update the AudioFrameQueue counts */
-        if (!avctx->delay) {
+        if (!avctx->delay && s->afq.frames) {
             avctx->delay              = duration;
-            s->afq.remaining_delay   += duration;
+            av_assert0(!s->afq.remaining_delay);
+            s->afq.frames->duration  += duration;
+            s->afq.frames->pts       -= duration;
             s->afq.remaining_samples += duration;
         }
         ff_af_queue_remove(&s->afq, duration, &avpkt->pts, &avpkt->duration);
@@ -374,6 +363,7 @@ static int oggvorbis_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
 
 AVCodec ff_libvorbis_encoder = {
     .name           = "libvorbis",
+    .long_name      = NULL_IF_CONFIG_SMALL("libvorbis"),
     .type           = AVMEDIA_TYPE_AUDIO,
     .id             = AV_CODEC_ID_VORBIS,
     .priv_data_size = sizeof(OggVorbisEncContext),
@@ -381,9 +371,8 @@ AVCodec ff_libvorbis_encoder = {
     .encode2        = oggvorbis_encode_frame,
     .close          = oggvorbis_encode_close,
     .capabilities   = CODEC_CAP_DELAY,
-    .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLT,
+    .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLTP,
                                                       AV_SAMPLE_FMT_NONE },
-    .long_name      = NULL_IF_CONFIG_SMALL("libvorbis"),
-    .priv_class     = &class,
+    .priv_class     = &vorbis_class,
     .defaults       = defaults,
 };

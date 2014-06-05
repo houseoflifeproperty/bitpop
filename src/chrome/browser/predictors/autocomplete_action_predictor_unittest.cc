@@ -8,12 +8,12 @@
 #include "base/command_line.h"
 #include "base/guid.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop.h"
-#include "base/string_util.h"
-#include "base/time.h"
-#include "base/utf_string_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/in_memory_database.h"
 #include "chrome/browser/history/url_database.h"
@@ -23,6 +23,7 @@
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using base::ASCIIToUTF16;
 using content::BrowserThread;
 using predictors::AutocompleteActionPredictor;
 
@@ -30,9 +31,9 @@ namespace {
 
 struct TestUrlInfo {
   GURL url;
-  string16 title;
+  base::string16 title;
   int days_from_now;
-  string16 user_text;
+  base::string16 user_text;
   int number_of_hits;
   int number_of_misses;
   AutocompleteActionPredictor::Action expected_action;
@@ -63,7 +64,7 @@ struct TestUrlInfo {
     AutocompleteActionPredictor::ACTION_PRERENDER },
   { GURL("http://www.testsite.com/g.html"),
     ASCIIToUTF16("Test - site - just a test"), 12,
-    string16(), 5, 0,
+    base::string16(), 5, 0,
     AutocompleteActionPredictor::ACTION_NONE },
   { GURL("http://www.testsite.com/h.html"),
     ASCIIToUTF16("Test - site - just a test"), 21,
@@ -82,29 +83,35 @@ namespace predictors {
 class AutocompleteActionPredictorTest : public testing::Test {
  public:
   AutocompleteActionPredictorTest()
-      : loop_(MessageLoop::TYPE_DEFAULT),
-        ui_thread_(BrowserThread::UI, &loop_),
+      : ui_thread_(BrowserThread::UI, &loop_),
         db_thread_(BrowserThread::DB, &loop_),
         file_thread_(BrowserThread::FILE, &loop_),
-        predictor_(new AutocompleteActionPredictor(&profile_)) {
+        profile_(new TestingProfile()),
+        predictor_(new AutocompleteActionPredictor(profile_.get())) {
   }
 
-  void SetUp() {
+  virtual ~AutocompleteActionPredictorTest() {
+    predictor_.reset(NULL);
+    profile_.reset(NULL);
+    loop_.RunUntilIdle();
+  }
+
+  virtual void SetUp() {
     CommandLine::ForCurrentProcess()->AppendSwitchASCII(
         switches::kPrerenderFromOmnibox,
         switches::kPrerenderFromOmniboxSwitchValueEnabled);
 
     predictor_->CreateLocalCachesFromDatabase();
-    profile_.CreateHistoryService(true, false);
-    profile_.BlockUntilHistoryProcessesPendingRequests();
+    ASSERT_TRUE(profile_->CreateHistoryService(true, false));
+    profile_->BlockUntilHistoryProcessesPendingRequests();
 
     ASSERT_TRUE(predictor_->initialized_);
     ASSERT_TRUE(db_cache()->empty());
     ASSERT_TRUE(db_id_cache()->empty());
   }
 
-  void TearDown() {
-    profile_.DestroyHistoryService();
+  virtual void TearDown() {
+    profile_->DestroyHistoryService();
     predictor_->Shutdown();
   }
 
@@ -121,7 +128,7 @@ class AutocompleteActionPredictorTest : public testing::Test {
 
   history::URLID AddRowToHistory(const TestUrlInfo& test_row) {
     HistoryService* history =
-        HistoryServiceFactory::GetForProfile(&profile_,
+        HistoryServiceFactory::GetForProfile(profile_.get(),
                                              Profile::EXPLICIT_ACCESS);
     CHECK(history);
     history::URLDatabase* url_db = history->InMemoryDatabase();
@@ -155,8 +162,6 @@ class AutocompleteActionPredictorTest : public testing::Test {
   }
 
   std::string AddRow(const TestUrlInfo& test_row) {
-    AutocompleteActionPredictor::DBCacheKey key = { test_row.user_text,
-                                                    test_row.url };
     AutocompleteActionPredictorTable::Row row =
         CreateRowFromTestUrlInfo(test_row);
     predictor_->AddAndUpdateRows(
@@ -185,7 +190,7 @@ class AutocompleteActionPredictorTest : public testing::Test {
   void DeleteOldIdsFromCaches(
       std::vector<AutocompleteActionPredictorTable::Row::Id>* id_list) {
     HistoryService* history_service =
-        HistoryServiceFactory::GetForProfile(&profile_,
+        HistoryServiceFactory::GetForProfile(profile_.get(),
                                              Profile::EXPLICIT_ACCESS);
     ASSERT_TRUE(history_service);
 
@@ -209,11 +214,11 @@ class AutocompleteActionPredictorTest : public testing::Test {
   }
 
  private:
-  MessageLoop loop_;
+  base::MessageLoop loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread db_thread_;
   content::TestBrowserThread file_thread_;
-  TestingProfile profile_;
+  scoped_ptr<TestingProfile> profile_;
   scoped_ptr<AutocompleteActionPredictor> predictor_;
 };
 
@@ -347,7 +352,7 @@ TEST_F(AutocompleteActionPredictorTest, RecommendActionURL) {
   ASSERT_NO_FATAL_FAILURE(AddAllRows());
 
   AutocompleteMatch match;
-  match.type = AutocompleteMatch::HISTORY_URL;
+  match.type = AutocompleteMatchType::HISTORY_URL;
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_url_db); ++i) {
     match.destination_url = GURL(test_url_db[i].url);
@@ -361,7 +366,7 @@ TEST_F(AutocompleteActionPredictorTest, RecommendActionSearch) {
   ASSERT_NO_FATAL_FAILURE(AddAllRows());
 
   AutocompleteMatch match;
-  match.type = AutocompleteMatch::SEARCH_WHAT_YOU_TYPED;
+  match.type = AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED;
 
   for (size_t i = 0; i < arraysize(test_url_db); ++i) {
     match.destination_url = GURL(test_url_db[i].url);

@@ -8,7 +8,7 @@
 #import <Cocoa/Cocoa.h>
 
 #include "base/memory/scoped_ptr.h"
-#import "chrome/browser/ui/cocoa/menu_controller.h"
+#import "ui/base/cocoa/menu_controller.h"
 
 class BookmarkMenuBridge;
 class Browser;
@@ -17,6 +17,11 @@ class RecentTabsMenuModelDelegate;
 @class ToolbarController;
 @class WrenchMenuButtonViewController;
 class WrenchMenuModel;
+
+namespace wrench_menu_controller {
+// The vertical offset of the wrench bubbles from the wrench menu button.
+extern const CGFloat kWrenchBubblePointOffsetY;
+}
 
 namespace WrenchMenuControllerInternal {
 class AcceleratorDelegate;
@@ -46,7 +51,7 @@ class ZoomLevelObserver;
 
   // A shim NSViewController that loads the buttons from the NIB because ObjC
   // doesn't have multiple inheritance as this class is a MenuController.
-  scoped_nsobject<WrenchMenuButtonViewController> buttonViewController_;
+  base::scoped_nsobject<WrenchMenuButtonViewController> buttonViewController_;
 
   // The browser for which this controller exists.
   Browser* browser_;  // weak

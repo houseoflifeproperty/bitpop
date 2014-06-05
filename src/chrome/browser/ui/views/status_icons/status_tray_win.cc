@@ -4,14 +4,88 @@
 
 #include "chrome/browser/ui/views/status_icons/status_tray_win.h"
 
+#include <commctrl.h>
+
+#include "base/bind.h"
+#include "base/threading/non_thread_safe.h"
+#include "base/threading/thread.h"
 #include "base/win/wrapped_window_proc.h"
 #include "chrome/browser/ui/views/status_icons/status_icon_win.h"
+#include "chrome/browser/ui/views/status_icons/status_tray_state_changer_win.h"
 #include "chrome/common/chrome_constants.h"
-#include "ui/base/win/hwnd_util.h"
 #include "ui/gfx/screen.h"
-#include "win8/util/win8_util.h"
+#include "ui/gfx/win/hwnd_util.h"
 
 static const UINT kStatusIconMessage = WM_APP + 1;
+
+namespace {
+// |kBaseIconId| is 2 to avoid conflicts with plugins that hard-code id 1.
+const UINT kBaseIconId = 2;
+
+UINT ReservedIconId(StatusTray::StatusIconType type) {
+  return kBaseIconId + static_cast<UINT>(type);
+}
+}  // namespace
+
+// Default implementation for StatusTrayStateChanger that communicates to
+// Exporer.exe via COM.  It spawns a background thread with a fresh COM
+// apartment and requests that the visibility be increased unless the user
+// has explicitly set the icon to be hidden.
+class StatusTrayStateChangerProxyImpl : public StatusTrayStateChangerProxy,
+                                        public base::NonThreadSafe {
+ public:
+  StatusTrayStateChangerProxyImpl()
+      : pending_requests_(0),
+        worker_thread_("StatusIconCOMWorkerThread"),
+        weak_factory_(this) {
+    worker_thread_.init_com_with_mta(false);
+  }
+
+  virtual void EnqueueChange(UINT icon_id, HWND window) OVERRIDE {
+    DCHECK(CalledOnValidThread());
+    if (pending_requests_ == 0)
+      worker_thread_.Start();
+
+    ++pending_requests_;
+    worker_thread_.message_loop_proxy()->PostTaskAndReply(
+        FROM_HERE,
+        base::Bind(
+            &StatusTrayStateChangerProxyImpl::EnqueueChangeOnWorkerThread,
+            icon_id,
+            window),
+        base::Bind(&StatusTrayStateChangerProxyImpl::ChangeDone,
+                   weak_factory_.GetWeakPtr()));
+  }
+
+ private:
+  // Must be called only on |worker_thread_|, to ensure the correct COM
+  // apartment.
+  static void EnqueueChangeOnWorkerThread(UINT icon_id, HWND window) {
+    // It appears that IUnknowns are coincidentally compatible with
+    // scoped_refptr.  Normally I wouldn't depend on that but it seems that
+    // base::win::IUnknownImpl itself depends on that coincidence so it's
+    // already being assumed elsewhere.
+    scoped_refptr<StatusTrayStateChangerWin> status_tray_state_changer(
+        new StatusTrayStateChangerWin(icon_id, window));
+    status_tray_state_changer->EnsureTrayIconVisible();
+  }
+
+  // Called on UI thread.
+  void ChangeDone() {
+    DCHECK(CalledOnValidThread());
+    DCHECK_GT(pending_requests_, 0);
+
+    if (--pending_requests_ == 0)
+      worker_thread_.Stop();
+  }
+
+ private:
+  int pending_requests_;
+  base::Thread worker_thread_;
+  base::WeakPtrFactory<StatusTrayStateChangerProxyImpl> weak_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(StatusTrayStateChangerProxyImpl);
+};
 
 StatusTrayWin::StatusTrayWin()
     : next_icon_id_(1),
@@ -39,8 +113,25 @@ StatusTrayWin::StatusTrayWin()
   // "TaskbarCreated".
   window_ = CreateWindow(MAKEINTATOM(atom_),
                          0, WS_POPUP, 0, 0, 0, 0, 0, 0, instance_, 0);
-  ui::CheckWindowCreated(window_);
-  ui::SetWindowUserData(window_, this);
+  gfx::CheckWindowCreated(window_);
+  gfx::SetWindowUserData(window_, this);
+}
+
+StatusTrayWin::~StatusTrayWin() {
+  if (window_)
+    DestroyWindow(window_);
+
+  if (atom_)
+    UnregisterClass(MAKEINTATOM(atom_), instance_);
+}
+
+void StatusTrayWin::UpdateIconVisibilityInBackground(
+    StatusIconWin* status_icon) {
+  if (!state_changer_proxy_.get())
+    state_changer_proxy_.reset(new StatusTrayStateChangerProxyImpl);
+
+  state_changer_proxy_->EnqueueChange(status_icon->icon_id(),
+                                      status_icon->window());
 }
 
 LRESULT CALLBACK StatusTrayWin::WndProcStatic(HWND hwnd,
@@ -68,42 +159,70 @@ LRESULT CALLBACK StatusTrayWin::WndProc(HWND hwnd,
     }
     return TRUE;
   } else if (message == kStatusIconMessage) {
+    StatusIconWin* win_icon = NULL;
+
+    // Find the selected status icon.
+    for (StatusIcons::const_iterator i(status_icons().begin());
+         i != status_icons().end();
+         ++i) {
+      StatusIconWin* current_win_icon = static_cast<StatusIconWin*>(*i);
+      if (current_win_icon->icon_id() == wparam) {
+        win_icon = current_win_icon;
+        break;
+      }
+    }
+
+    // It is possible for this procedure to be called with an obsolete icon
+    // id.  In that case we should just return early before handling any
+    // actions.
+    if (!win_icon)
+      return TRUE;
+
     switch (lparam) {
+      case TB_INDETERMINATE:
+        win_icon->HandleBalloonClickEvent();
+        return TRUE;
+
       case WM_LBUTTONDOWN:
       case WM_RBUTTONDOWN:
       case WM_CONTEXTMENU:
         // Walk our icons, find which one was clicked on, and invoke its
         // HandleClickEvent() method.
-        for (StatusIcons::const_iterator i(status_icons().begin());
-             i != status_icons().end(); ++i) {
-          StatusIconWin* win_icon = static_cast<StatusIconWin*>(*i);
-          if (win_icon->icon_id() == wparam) {
-            gfx::Point cursor_pos(
-                gfx::Screen::GetNativeScreen()->GetCursorScreenPoint());
-            win_icon->HandleClickEvent(cursor_pos, lparam == WM_LBUTTONDOWN);
-            break;
-          }
-        }
+        gfx::Point cursor_pos(
+            gfx::Screen::GetNativeScreen()->GetCursorScreenPoint());
+        win_icon->HandleClickEvent(cursor_pos, lparam == WM_LBUTTONDOWN);
         return TRUE;
     }
   }
   return ::DefWindowProc(hwnd, message, wparam, lparam);
 }
 
-StatusTrayWin::~StatusTrayWin() {
-  if (window_)
-    DestroyWindow(window_);
+StatusIcon* StatusTrayWin::CreatePlatformStatusIcon(
+    StatusTray::StatusIconType type,
+    const gfx::ImageSkia& image,
+    const base::string16& tool_tip) {
+  UINT next_icon_id;
+  if (type == StatusTray::OTHER_ICON)
+    next_icon_id = NextIconId();
+  else
+    next_icon_id = ReservedIconId(type);
 
-  if (atom_)
-    UnregisterClass(MAKEINTATOM(atom_), instance_);
+  StatusIcon* icon =
+      new StatusIconWin(this, next_icon_id, window_, kStatusIconMessage);
+
+  icon->SetImage(image);
+  icon->SetToolTip(tool_tip);
+  return icon;
 }
 
-StatusIcon* StatusTrayWin::CreatePlatformStatusIcon() {
-  if (win8::IsSingleWindowMetroMode()) {
-    return new StatusIconMetro(next_icon_id_++);
-  } else {
-    return new StatusIconWin(next_icon_id_++, window_, kStatusIconMessage);
-  }
+UINT StatusTrayWin::NextIconId() {
+  UINT icon_id = next_icon_id_++;
+  return kBaseIconId + static_cast<UINT>(NAMED_STATUS_ICON_COUNT) + icon_id;
+}
+
+void StatusTrayWin::SetStatusTrayStateChangerProxyForTest(
+    scoped_ptr<StatusTrayStateChangerProxy> proxy) {
+  state_changer_proxy_ = proxy.Pass();
 }
 
 StatusTray* StatusTray::Create() {

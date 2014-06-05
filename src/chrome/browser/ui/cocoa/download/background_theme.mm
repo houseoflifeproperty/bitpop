@@ -4,7 +4,7 @@
 
 #include "chrome/browser/ui/cocoa/download/background_theme.h"
 
-#import "chrome/browser/themes/theme_service.h"
+#import "chrome/browser/themes/theme_properties.h"
 
 BackgroundTheme::BackgroundTheme(ui::ThemeProvider* provider) :
     provider_(provider) {
@@ -27,6 +27,10 @@ BackgroundTheme::BackgroundTheme(ui::ThemeProvider* provider) :
 
 BackgroundTheme::~BackgroundTheme() {}
 
+bool BackgroundTheme::UsingNativeTheme() const {
+  return true;
+}
+
 gfx::ImageSkia* BackgroundTheme::GetImageSkiaNamed(int id) const {
   return NULL;
 }
@@ -35,8 +39,8 @@ SkColor BackgroundTheme::GetColor(int id) const {
   return SkColor();
 }
 
-bool BackgroundTheme::GetDisplayProperty(int id, int* result) const {
-  return false;
+int BackgroundTheme::GetDisplayProperty(int id) const {
+  return -1;
 }
 
 bool BackgroundTheme::ShouldUseNativeFrame() const {
@@ -53,33 +57,32 @@ base::RefCountedMemory* BackgroundTheme::GetRawData(
   return NULL;
 }
 
-NSImage* BackgroundTheme::GetNSImageNamed(int id, bool allow_default) const {
+NSImage* BackgroundTheme::GetNSImageNamed(int id) const {
   return nil;
 }
 
-NSColor* BackgroundTheme::GetNSImageColorNamed(int id,
-                                               bool allow_default) const {
+NSColor* BackgroundTheme::GetNSImageColorNamed(int id) const {
   return nil;
 }
 
-NSColor* BackgroundTheme::GetNSColor(int id, bool allow_default) const {
-  return provider_->GetNSColor(id, allow_default);
+NSColor* BackgroundTheme::GetNSColor(int id) const {
+  return provider_->GetNSColor(id);
 }
 
-NSColor* BackgroundTheme::GetNSColorTint(int id, bool allow_default) const {
-  if (id == ThemeService::TINT_BUTTONS)
+NSColor* BackgroundTheme::GetNSColorTint(int id) const {
+  if (id == ThemeProperties::TINT_BUTTONS)
     return borderColor_.get();
 
-  return provider_->GetNSColorTint(id, allow_default);
+  return provider_->GetNSColorTint(id);
 }
 
 NSGradient* BackgroundTheme::GetNSGradient(int id) const {
   switch (id) {
-    case ThemeService::GRADIENT_TOOLBAR_BUTTON:
-    case ThemeService::GRADIENT_TOOLBAR_BUTTON_INACTIVE:
+    case ThemeProperties::GRADIENT_TOOLBAR_BUTTON:
+    case ThemeProperties::GRADIENT_TOOLBAR_BUTTON_INACTIVE:
       return buttonGradient_.get();
-    case ThemeService::GRADIENT_TOOLBAR_BUTTON_PRESSED:
-    case ThemeService::GRADIENT_TOOLBAR_BUTTON_PRESSED_INACTIVE:
+    case ThemeProperties::GRADIENT_TOOLBAR_BUTTON_PRESSED:
+    case ThemeProperties::GRADIENT_TOOLBAR_BUTTON_PRESSED_INACTIVE:
       return buttonPressedGradient_.get();
     default:
       return provider_->GetNSGradient(id);

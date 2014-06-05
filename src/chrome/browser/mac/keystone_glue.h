@@ -5,14 +5,14 @@
 #ifndef CHROME_BROWSER_MAC_KEYSTONE_GLUE_H_
 #define CHROME_BROWSER_MAC_KEYSTONE_GLUE_H_
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
 #if defined(__OBJC__)
 
 #import <Foundation/Foundation.h>
 
 #include "base/mac/scoped_authorizationref.h"
-#import "base/memory/scoped_nsobject.h"
+#import "base/mac/scoped_nsobject.h"
 
 // Possible outcomes of various operations.  A version may accompany some of
 // these, but beware: a version is never required.  For statuses that can be
@@ -89,7 +89,7 @@ enum BrandFileType {
   NSTimer* timer_;  // strong
 
   // The most recent kAutoupdateStatusNotification notification posted.
-  scoped_nsobject<NSNotification> recentNotification_;
+  base::scoped_nsobject<NSNotification> recentNotification_;
 
   // The authorization object, when it needs to persist because it's being
   // carried across threads.
@@ -207,7 +207,7 @@ std::string BrandCode();
 bool KeystoneEnabled();
 
 // The version of the application currently installed on disk.
-string16 CurrentlyInstalledVersion();
+base::string16 CurrentlyInstalledVersion();
 
 }  // namespace keystone_glue
 

@@ -22,7 +22,7 @@
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
 namespace content {
 class RenderView;
@@ -83,7 +83,7 @@ class PhishingClassifier {
   //
   // It is an error to call BeginClassification if the classifier is not yet
   // ready.
-  virtual void BeginClassification(const string16* page_text,
+  virtual void BeginClassification(const base::string16* page_text,
                                    const DoneCallback& callback);
 
   // Called by the RenderView (on the render thread) when a page is unloading
@@ -135,7 +135,7 @@ class PhishingClassifier {
 
   // State for any in-progress extraction.
   scoped_ptr<FeatureMap> features_;
-  const string16* page_text_;  // owned by the caller
+  const base::string16* page_text_;  // owned by the caller
   DoneCallback done_callback_;
 
   // Used in scheduling BeginFeatureExtraction tasks.

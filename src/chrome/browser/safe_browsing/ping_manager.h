@@ -15,8 +15,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/safe_browsing/protocol_manager_helper.h"
 #include "chrome/browser/safe_browsing/safe_browsing_util.h"
-#include "googleurl/src/gurl.h"
 #include "net/url_request/url_fetcher_delegate.h"
+#include "url/gurl.h"
 
 namespace net {
 class URLRequestContextGetter;
@@ -55,6 +55,8 @@ class SafeBrowsingPingManager : public net::URLFetcherDelegate {
   FRIEND_TEST_ALL_PREFIXES(SafeBrowsingPingManagerTest,
                            TestMalwareDetailsUrl);
 
+  typedef std::set<const net::URLFetcher*> Reports;
+
   // Constructs a SafeBrowsingPingManager that issues network requests
   // using |request_context_getter|.
   SafeBrowsingPingManager(
@@ -84,7 +86,7 @@ class SafeBrowsingPingManager : public net::URLFetcherDelegate {
 
   // Track outstanding SafeBrowsing report fetchers for clean up.
   // We add both "hit" and "detail" fetchers in this set.
-  std::set<const net::URLFetcher*> safebrowsing_reports_;
+  Reports safebrowsing_reports_;
 
   DISALLOW_COPY_AND_ASSIGN(SafeBrowsingPingManager);
 };

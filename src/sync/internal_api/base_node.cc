@@ -6,11 +6,8 @@
 
 #include <stack>
 
-#include "base/base64.h"
-#include "base/sha1.h"
-#include "base/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
-#include "base/values.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "sync/internal_api/public/base_transaction.h"
 #include "sync/internal_api/syncapi_internal.h"
 #include "sync/protocol/app_specifics.pb.h"
@@ -40,56 +37,23 @@ static int64 IdToMetahandle(syncable::BaseTransaction* trans,
   syncable::Entry entry(trans, syncable::GET_BY_ID, id);
   if (!entry.good())
     return kInvalidId;
-  return entry.Get(syncable::META_HANDLE);
-}
-
-static bool EndsWithSpace(const std::string& string) {
-  return !string.empty() && *string.rbegin() == ' ';
-}
-
-// In the reverse direction, if a server name matches the pattern of a
-// server-illegal name followed by one or more spaces, remove the trailing
-// space.
-static void ServerNameToSyncAPIName(const std::string& server_name,
-                                    std::string* out) {
-  CHECK(out);
-  int length_to_copy = server_name.length();
-  if (IsNameServerIllegalAfterTrimming(server_name) &&
-      EndsWithSpace(server_name)) {
-    --length_to_copy;
-  }
-  *out = std::string(server_name.c_str(), length_to_copy);
+  return entry.GetMetahandle();
 }
 
 BaseNode::BaseNode() : password_data_(new sync_pb::PasswordSpecificsData) {}
 
 BaseNode::~BaseNode() {}
 
-std::string BaseNode::GenerateSyncableHash(
-    ModelType model_type, const std::string& client_tag) {
-  // Blank PB with just the field in it has termination symbol,
-  // handy for delimiter.
-  sync_pb::EntitySpecifics serialized_type;
-  AddDefaultFieldValue(model_type, &serialized_type);
-  std::string hash_input;
-  serialized_type.AppendToString(&hash_input);
-  hash_input.append(client_tag);
-
-  std::string encode_output;
-  CHECK(base::Base64Encode(base::SHA1HashString(hash_input), &encode_output));
-  return encode_output;
-}
-
 bool BaseNode::DecryptIfNecessary() {
-  if (!GetEntry()->Get(syncable::UNIQUE_SERVER_TAG).empty())
+  if (!GetEntry()->GetUniqueServerTag().empty())
       return true;  // Ignore unique folders.
   const sync_pb::EntitySpecifics& specifics =
-      GetEntry()->Get(syncable::SPECIFICS);
+      GetEntry()->GetSpecifics();
   if (specifics.has_password()) {
     // Passwords have their own legacy encryption structure.
     scoped_ptr<sync_pb::PasswordSpecificsData> data(DecryptPasswordSpecifics(
         specifics, GetTransaction()->GetCryptographer()));
-    if (!data.get()) {
+    if (!data) {
       LOG(ERROR) << "Failed to decrypt password specifics.";
       return false;
     }
@@ -144,7 +108,7 @@ bool BaseNode::DecryptIfNecessary() {
 
 const sync_pb::EntitySpecifics& BaseNode::GetUnencryptedSpecifics(
     const syncable::Entry* entry) const {
-  const sync_pb::EntitySpecifics& specifics = entry->Get(SPECIFICS);
+  const sync_pb::EntitySpecifics& specifics = entry->GetSpecifics();
   if (specifics.has_encrypted()) {
     DCHECK_NE(GetModelTypeFromSpecifics(unencrypted_data_), UNSPECIFIED);
     return unencrypted_data_;
@@ -158,7 +122,7 @@ const sync_pb::EntitySpecifics& BaseNode::GetUnencryptedSpecifics(
           specifics.bookmark();
       if (bookmark_specifics.has_title() ||
           GetTitle().empty() ||  // For the empty node case
-          !GetEntry()->Get(syncable::UNIQUE_SERVER_TAG).empty()) {
+          !GetEntry()->GetUniqueServerTag().empty()) {
         // It's possible we previously had to convert and set
         // |unencrypted_data_| but then wrote our own data, so we allow
         // |unencrypted_data_| to be non-empty.
@@ -176,30 +140,30 @@ const sync_pb::EntitySpecifics& BaseNode::GetUnencryptedSpecifics(
 
 int64 BaseNode::GetParentId() const {
   return IdToMetahandle(GetTransaction()->GetWrappedTrans(),
-                        GetEntry()->Get(syncable::PARENT_ID));
+                        GetEntry()->GetParentId());
 }
 
 int64 BaseNode::GetId() const {
-  return GetEntry()->Get(syncable::META_HANDLE);
+  return GetEntry()->GetMetahandle();
 }
 
 base::Time BaseNode::GetModificationTime() const {
-  return GetEntry()->Get(syncable::MTIME);
+  return GetEntry()->GetMtime();
 }
 
 bool BaseNode::GetIsFolder() const {
-  return GetEntry()->Get(syncable::IS_DIR);
+  return GetEntry()->GetIsDir();
 }
 
 std::string BaseNode::GetTitle() const {
   std::string result;
   // TODO(zea): refactor bookmarks to not need this functionality.
   if (BOOKMARKS == GetModelType() &&
-      GetEntry()->Get(syncable::SPECIFICS).has_encrypted()) {
+      GetEntry()->GetSpecifics().has_encrypted()) {
     // Special case for legacy bookmarks dealing with encryption.
     ServerNameToSyncAPIName(GetBookmarkSpecifics().title(), &result);
   } else {
-    ServerNameToSyncAPIName(GetEntry()->Get(syncable::NON_UNIQUE_NAME),
+    ServerNameToSyncAPIName(GetEntry()->GetNonUniqueName(),
                             &result);
   }
   return result;
@@ -208,96 +172,48 @@ std::string BaseNode::GetTitle() const {
 bool BaseNode::HasChildren() const {
   syncable::Directory* dir = GetTransaction()->GetDirectory();
   syncable::BaseTransaction* trans = GetTransaction()->GetWrappedTrans();
-  return dir->HasChildren(trans, GetEntry()->Get(syncable::ID));
+  return dir->HasChildren(trans, GetEntry()->GetId());
 }
 
 int64 BaseNode::GetPredecessorId() const {
-  syncable::Id id_string = GetEntry()->Get(syncable::PREV_ID);
+  syncable::Id id_string = GetEntry()->GetPredecessorId();
   if (id_string.IsRoot())
     return kInvalidId;
   return IdToMetahandle(GetTransaction()->GetWrappedTrans(), id_string);
 }
 
 int64 BaseNode::GetSuccessorId() const {
-  syncable::Id id_string = GetEntry()->Get(syncable::NEXT_ID);
+  syncable::Id id_string = GetEntry()->GetSuccessorId();
   if (id_string.IsRoot())
     return kInvalidId;
   return IdToMetahandle(GetTransaction()->GetWrappedTrans(), id_string);
 }
 
 int64 BaseNode::GetFirstChildId() const {
-  syncable::Directory* dir = GetTransaction()->GetDirectory();
-  syncable::BaseTransaction* trans = GetTransaction()->GetWrappedTrans();
-  syncable::Id id_string;
-  // TODO(akalin): Propagate up the error further (see
-  // http://crbug.com/100907).
-  CHECK(dir->GetFirstChildId(trans,
-                             GetEntry()->Get(syncable::ID), &id_string));
+  syncable::Id id_string = GetEntry()->GetFirstChildId();
   if (id_string.IsRoot())
     return kInvalidId;
   return IdToMetahandle(GetTransaction()->GetWrappedTrans(), id_string);
 }
 
+void BaseNode::GetChildIds(std::vector<int64>* result) const {
+  GetEntry()->GetChildHandles(result);
+}
+
 int BaseNode::GetTotalNodeCount() const {
-  syncable::Directory* dir = GetTransaction()->GetDirectory();
-  syncable::BaseTransaction* trans = GetTransaction()->GetWrappedTrans();
-
-  int count = 1;  // Start with one to include the node itself.
-
-  std::stack<int64> stack;
-  stack.push(GetFirstChildId());
-  while (!stack.empty()) {
-    int64 handle = stack.top();
-    stack.pop();
-    if (handle == kInvalidId)
-      continue;
-    count++;
-    syncable::Entry entry(trans, syncable::GET_BY_HANDLE, handle);
-    if (!entry.good())
-      continue;
-    syncable::Id id = entry.Get(syncable::ID);
-    syncable::Id child_id;
-    if (dir->GetFirstChildId(trans, id, &child_id) && !child_id.IsRoot())
-      stack.push(IdToMetahandle(trans, child_id));
-    syncable::Id successor_id = entry.Get(syncable::NEXT_ID);
-    if (!successor_id.IsRoot())
-      stack.push(IdToMetahandle(trans, successor_id));
-  }
-  return count;
+  return GetEntry()->GetTotalNodeCount();
 }
 
-DictionaryValue* BaseNode::GetSummaryAsValue() const {
-  DictionaryValue* node_info = new DictionaryValue();
-  node_info->SetString("id", base::Int64ToString(GetId()));
-  node_info->SetBoolean("isFolder", GetIsFolder());
-  node_info->SetString("title", GetTitle());
-  node_info->Set("type", ModelTypeToValue(GetModelType()));
-  return node_info;
+int BaseNode::GetPositionIndex() const {
+  return GetEntry()->GetPositionIndex();
 }
 
-DictionaryValue* BaseNode::GetDetailsAsValue() const {
-  DictionaryValue* node_info = GetSummaryAsValue();
-  node_info->SetString(
-      "modificationTime",
-      GetTimeDebugString(GetModificationTime()));
-  node_info->SetString("parentId", base::Int64ToString(GetParentId()));
-  // Specifics are already in the Entry value, so no need to duplicate
-  // it here.
-  node_info->SetString("externalId",
-                       base::Int64ToString(GetExternalId()));
-  node_info->SetString("predecessorId",
-                       base::Int64ToString(GetPredecessorId()));
-  node_info->SetString("successorId",
-                       base::Int64ToString(GetSuccessorId()));
-  node_info->SetString("firstChildId",
-                       base::Int64ToString(GetFirstChildId()));
-  node_info->Set("entry",
-                 GetEntry()->ToValue(GetTransaction()->GetCryptographer()));
-  return node_info;
+base::DictionaryValue* BaseNode::ToValue() const {
+  return GetEntry()->ToValue(GetTransaction()->GetCryptographer());
 }
 
 int64 BaseNode::GetExternalId() const {
-  return GetEntry()->Get(syncable::LOCAL_EXTERNAL_ID);
+  return GetEntry()->GetLocalExternalId();
 }
 
 const sync_pb::AppSpecifics& BaseNode::GetAppSpecifics() const {
@@ -360,12 +276,28 @@ const sync_pb::ExperimentsSpecifics& BaseNode::GetExperimentsSpecifics() const {
   return GetEntitySpecifics().experiments();
 }
 
+const sync_pb::PriorityPreferenceSpecifics&
+    BaseNode::GetPriorityPreferenceSpecifics() const {
+  DCHECK_EQ(GetModelType(), PRIORITY_PREFERENCES);
+  return GetEntitySpecifics().priority_preference();
+}
+
 const sync_pb::EntitySpecifics& BaseNode::GetEntitySpecifics() const {
   return GetUnencryptedSpecifics(GetEntry());
 }
 
 ModelType BaseNode::GetModelType() const {
   return GetEntry()->GetModelType();
+}
+
+const syncer::AttachmentIdList BaseNode::GetAttachmentIds() const {
+  AttachmentIdList result;
+  const sync_pb::AttachmentMetadata& metadata =
+      GetEntry()->GetAttachmentMetadata();
+  for (int i = 0; i < metadata.record_size(); ++i) {
+    result.push_back(AttachmentId::CreateFromProto(metadata.record(i).id()));
+  }
+  return result;
 }
 
 void BaseNode::SetUnencryptedSpecifics(

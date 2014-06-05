@@ -7,7 +7,7 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/memory/weak_ptr.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "ui/views/window/dialog_delegate.h"
 
 namespace base {
@@ -46,8 +46,8 @@ class IdleLogoutDialogView : public views::DialogDelegateView {
   // views::DialogDelegateView:
   virtual int GetDialogButtons() const OVERRIDE;
   virtual ui::ModalType GetModalType() const OVERRIDE;
-  virtual string16 GetWindowTitle() const OVERRIDE;
-  virtual views::View* GetContentsView() OVERRIDE;
+  virtual base::string16 GetWindowTitle() const OVERRIDE;
+  virtual bool Close() OVERRIDE;
 
  private:
   friend class MockIdleLogoutSettingsProvider;
@@ -63,7 +63,6 @@ class IdleLogoutDialogView : public views::DialogDelegateView {
   void InitAndShow();
 
   void Show();
-  void Close();
 
   void UpdateCountdown();
 

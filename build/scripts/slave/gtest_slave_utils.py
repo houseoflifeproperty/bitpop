@@ -17,8 +17,8 @@ from slave.gtest.test_result import TestResult
 
 GENERATE_JSON_RESULTS_OPTIONS = [
     'builder_name', 'build_name', 'build_number', 'results_directory',
-    'builder_base_url', 'webkit_dir', 'chrome_dir', 'test_results_server',
-    'test_type', 'master_name']
+    'builder_base_url', 'webkit_revision', 'chrome_revision',
+    'test_results_server', 'test_type', 'master_name']
 
 INCREMENTAL_RESULTS_FILENAME = 'incremental_results.json'
 TIMES_MS_FILENAME = 'times_ms.json'
@@ -64,13 +64,10 @@ class GTestUnexpectedDeathTracker(object):
       return
 
   def GetResultsMap(self):
-    """Returns a map of TestResults.  Returns an empty map if no current test
-    has been recorded."""
+    """Returns a map of TestResults."""
 
-    if not self._current_test:
-      return dict()
-
-    self._failed_tests.add(self._current_test)
+    if self._current_test:
+      self._failed_tests.add(self._current_test)
 
     test_results_map = dict()
     for test in self._failed_tests:
@@ -93,15 +90,13 @@ class GTestUnexpectedDeathTracker(object):
 
 
 def GetResultsMap(observer):
-  """Returns a map of TestResults.  Returns an empty map if no current test
-  has been recorded."""
-
-  if not observer.GetCurrentTest():
-    return dict()
+  """Returns a map of TestResults."""
 
   test_results_map = dict()
   for test in observer.FailedTests(include_fails=True, include_flaky=True):
     test_results_map[canonical_name(test)] = TestResult(test, failed=True)
+  for test in observer.PassedTests():
+    test_results_map[canonical_name(test)] = TestResult(test, failed=False)
 
   return test_results_map
 
@@ -137,9 +132,9 @@ def GetResultsMapFromXML(results_xml):
   return test_results_map
 
 
-def GenerateAndUploadJSONResults(test_results_map, options):
-  """Generates a JSON results file from the given test_results_map and
-  upload it to the results server if options.test_results_server is given.
+def GenerateJSONResults(test_results_map, options):
+  """Generates a JSON results file from the given test_results_map,
+  returning the associated generator for use with UploadJSONResults, below.
 
   Args:
     test_results_map: A map of TestResult.
@@ -150,10 +145,6 @@ def GenerateAndUploadJSONResults(test_results_map, options):
 
   if not test_results_map:
     logging.warn('No input results map was given.')
-    return
-
-  if not os.path.exists(options.webkit_dir):
-    logging.warn('No options.webkit_dir (--webkit-dir) was given.')
     return
 
   # Make sure we have all the required options (set empty string otherwise).
@@ -175,11 +166,11 @@ def GenerateAndUploadJSONResults(test_results_map, options):
   print('Generating json: '
         'builder_name:%s, build_name:%s, build_number:%s, '
         'results_directory:%s, builder_base_url:%s, '
-        'webkit_dir:%s, chrome_dir:%s '
+        'webkit_revision:%s, chrome_revision:%s '
         'test_results_server:%s, test_type:%s, master_name:%s' %
         (options.builder_name, options.build_name, options.build_number,
          options.results_directory, options.builder_base_url,
-         options.webkit_dir, options.chrome_dir,
+         options.webkit_revision, options.chrome_revision,
          options.test_results_server, options.test_type,
          options.master_name))
 
@@ -187,15 +178,21 @@ def GenerateAndUploadJSONResults(test_results_map, options):
       options.builder_name, options.build_name, options.build_number,
       options.results_directory, options.builder_base_url,
       test_results_map,
-      svn_repositories=(('webkit', options.webkit_dir),
-                        ('chrome', options.chrome_dir)),
+      svn_revisions=(('blink', options.webkit_revision),
+                     ('chrome', options.chrome_revision)),
       test_results_server=options.test_results_server,
       test_type=options.test_type,
       master_name=options.master_name)
   generator.generate_json_output()
   generator.generate_times_ms_file()
-  generator.upload_json_files([INCREMENTAL_RESULTS_FILENAME, TIMES_MS_FILENAME])
+  return generator
 
+def UploadJSONResults(generator):
+  """Conditionally uploads the results from GenerateJSONResults if
+  test_results_server was given."""
+  if generator:
+    generator.upload_json_files([INCREMENTAL_RESULTS_FILENAME,
+                                 TIMES_MS_FILENAME])
 
 # For command-line testing.
 def main():
@@ -236,11 +233,12 @@ def main():
                                 'Both test-results-server and master-name '
                                 'need to be specified to upload the results '
                                 'to the server.')
-  option_parser.add_option('--webkit-dir', default='.',
-                           help='The WebKit code base.')
-  option_parser.add_option('--chrome-dir', default='',
-                           help='The Chromium code base. If not given '
-                                '${webkit_dir}/WebKit/chromium will be used.')
+  option_parser.add_option('--webkit-revision', default='0',
+                           help='The WebKit revision being tested. If not '
+                                'given, defaults to 0.')
+  option_parser.add_option('--chrome-revision', default='0',
+                           help='The Chromium revision being tested. If not '
+                                'given, defaults to 0.')
 
   options = option_parser.parse_args()[0]
 
@@ -257,11 +255,9 @@ def main():
                  '--master-name is not specified; the results won\'t be '
                  'uploaded to the server.')
 
-  if not options.chrome_dir:
-    options.chrome_dir = os.path.join(options.webkit_dir, 'WebKit', 'chromium')
-
   results_map = GetResultsMapFromXML(options.input_results_xml)
-  GenerateAndUploadJSONResults(results_map, options)
+  generator = GenerateJSONResults(results_map, options)
+  UploadJSONResults(generator)
 
 
 if '__main__' == __name__:

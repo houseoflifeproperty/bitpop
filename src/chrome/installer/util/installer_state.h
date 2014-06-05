@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
@@ -23,8 +23,9 @@
 #include <windows.h>  // NOLINT
 #endif
 
+namespace base {
 class CommandLine;
-class Version;
+}
 
 namespace installer {
 
@@ -74,7 +75,7 @@ class InstallerState {
   explicit InstallerState(Level level);
 
   // Initializes this object based on the current operation.
-  void Initialize(const CommandLine& command_line,
+  void Initialize(const base::CommandLine& command_line,
                   const MasterPreferences& prefs,
                   const InstallationState& machine_state);
 
@@ -119,7 +120,7 @@ class InstallerState {
   }
 
   // The full path to the place where the operand resides.
-  const FilePath& target_path() const { return target_path_; }
+  const base::FilePath& target_path() const { return target_path_; }
 
   // True if the "msi" preference is set or if a product with the "msi" state
   // flag is set is to be operated on.
@@ -155,35 +156,41 @@ class InstallerState {
 
   // Returns the currently installed version in |target_path|, or NULL if no
   // products are installed.  Ownership is passed to the caller.
-  Version* GetCurrentVersion(const InstallationState& machine_state) const;
+  base::Version* GetCurrentVersion(
+      const InstallationState& machine_state) const;
 
   // Returns the critical update version if all of the following are true:
   // * --critical-update-version=CUV was specified on the command-line.
   // * current_version == NULL or current_version < CUV.
   // * new_version >= CUV.
   // Otherwise, returns an invalid version.
-  Version DetermineCriticalVersion(const Version* current_version,
-                                   const Version& new_version) const;
+  base::Version DetermineCriticalVersion(
+      const base::Version* current_version,
+      const base::Version& new_version) const;
 
   // Returns whether or not there is currently a Chrome Frame instance running.
   // Note that there isn't a mechanism to lock Chrome Frame in place, so Chrome
   // Frame may either exit or start up after this is called.
   bool IsChromeFrameRunning(const InstallationState& machine_state) const;
 
+  // Returns true if any of the binaries from a multi-install Chrome Frame that
+  // has been migrated to single-install are still in use.
+  bool AreBinariesInUse(const InstallationState& machine_state) const;
+
   // Returns the path to the installer under Chrome version folder
   // (for example <target_path>\Google\Chrome\Application\<Version>\Installer)
-  FilePath GetInstallerDirectory(const Version& version) const;
+  base::FilePath GetInstallerDirectory(const base::Version& version) const;
 
   // Try to delete all directories under |temp_path| whose versions are less
   // than |new_version| and not equal to |existing_version|. |existing_version|
   // may be NULL.
-  void RemoveOldVersionDirectories(const Version& new_version,
-                                   Version* existing_version,
-                                   const FilePath& temp_path) const;
+  void RemoveOldVersionDirectories(const base::Version& new_version,
+                                   base::Version* existing_version,
+                                   const base::FilePath& temp_path) const;
 
   // Adds to |com_dll_list| the list of COM DLLs that are to be registered
   // and/or unregistered. The list may be empty.
-  void AddComDllList(std::vector<FilePath>* com_dll_list) const;
+  void AddComDllList(std::vector<base::FilePath>* com_dll_list) const;
 
   bool SetChannelFlags(bool set, ChannelInfo* channel_info) const;
 
@@ -209,13 +216,30 @@ class InstallerState {
   bool RequiresActiveSetup() const;
 
  protected:
+  // Bits for the |file_bits| argument of AnyExistsAndIsInUse.
+  enum {
+    CHROME_DLL              = 1 << 0,
+    CHROME_FRAME_DLL        = 1 << 1,
+    CHROME_FRAME_HELPER_DLL = 1 << 2,
+    CHROME_FRAME_HELPER_EXE = 1 << 3,
+    NUM_BINARIES            = 4
+  };
+
   // Returns true if |file| exists and cannot be opened for exclusive write
   // access.
-  static bool IsFileInUse(const FilePath& file);
+  static bool IsFileInUse(const base::FilePath& file);
 
-  FilePath GetDefaultProductInstallPath(BrowserDistribution* dist) const;
-  bool CanAddProduct(const Product& product, const FilePath* product_dir) const;
-  Product* AddProductInDirectory(const FilePath* product_dir,
+  // Clears the instance to an uninitialized state.
+  void Clear();
+
+  // Returns true if any file corresponding to a bit in |file_bits| (from the
+  // enum above) for the currently installed version exists and is in use.
+  bool AnyExistsAndIsInUse(const InstallationState& machine_state,
+                           uint32 file_bits) const;
+  base::FilePath GetDefaultProductInstallPath(BrowserDistribution* dist) const;
+  bool CanAddProduct(const Product& product,
+                     const base::FilePath* product_dir) const;
+  Product* AddProductInDirectory(const base::FilePath* product_dir,
                                  scoped_ptr<Product>* product);
   Product* AddProductFromPreferences(
       BrowserDistribution::Type distribution_type,
@@ -237,12 +261,12 @@ class InstallerState {
   void set_package_type(PackageType type);
 
   Operation operation_;
-  FilePath target_path_;
+  base::FilePath target_path_;
   std::wstring state_key_;
   BrowserDistribution::Type state_type_;
   ScopedVector<Product> products_;
   BrowserDistribution* multi_package_distribution_;
-  Version critical_update_version_;
+  base::Version critical_update_version_;
   Level level_;
   PackageType package_type_;
 #if defined(OS_WIN)

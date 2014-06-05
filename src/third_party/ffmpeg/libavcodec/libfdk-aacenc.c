@@ -21,12 +21,12 @@
 
 #include <fdk-aac/aacenc_lib.h>
 
+#include "libavutil/channel_layout.h"
+#include "libavutil/common.h"
+#include "libavutil/opt.h"
 #include "avcodec.h"
 #include "audio_frame_queue.h"
 #include "internal.h"
-#include "libavutil/audioconvert.h"
-#include "libavutil/common.h"
-#include "libavutil/opt.h"
 
 typedef struct AACContext {
     const AVClass *class;
@@ -97,9 +97,6 @@ static int aac_encode_close(AVCodecContext *avctx)
 
     if (s->handle)
         aacEncClose(&s->handle);
-#if FF_API_OLD_ENCODE_AUDIO
-    av_freep(&avctx->coded_frame);
-#endif
     av_freep(&avctx->extradata);
     ff_af_queue_close(&s->afq);
 
@@ -200,6 +197,7 @@ static av_cold int aac_encode_init(AVCodecContext *avctx)
             avctx->bit_rate = (96*sce + 128*cpe) * avctx->sample_rate / 44;
             if (avctx->profile == FF_PROFILE_AAC_HE ||
                 avctx->profile == FF_PROFILE_AAC_HE_V2 ||
+                avctx->profile == FF_PROFILE_MPEG2_AAC_HE ||
                 s->eld_sbr)
                 avctx->bit_rate /= 2;
         }
@@ -250,14 +248,14 @@ static av_cold int aac_encode_init(AVCodecContext *avctx)
     }
 
     if (avctx->cutoff > 0) {
-        if (avctx->cutoff < (avctx->sample_rate + 255) >> 8) {
+        if (avctx->cutoff < (avctx->sample_rate + 255) >> 8 || avctx->cutoff > 20000) {
             av_log(avctx, AV_LOG_ERROR, "cutoff valid range is %d-20000\n",
                    (avctx->sample_rate + 255) >> 8);
             goto error;
         }
         if ((err = aacEncoder_SetParam(s->handle, AACENC_BANDWIDTH,
                                        avctx->cutoff)) != AACENC_OK) {
-            av_log(avctx, AV_LOG_ERROR, "Unable to set the encoder bandwith to %d: %s\n",
+            av_log(avctx, AV_LOG_ERROR, "Unable to set the encoder bandwidth to %d: %s\n",
                    avctx->cutoff, aac_get_error(err));
             goto error;
         }
@@ -275,13 +273,6 @@ static av_cold int aac_encode_init(AVCodecContext *avctx)
         goto error;
     }
 
-#if FF_API_OLD_ENCODE_AUDIO
-    avctx->coded_frame = avcodec_alloc_frame();
-    if (!avctx->coded_frame) {
-        ret = AVERROR(ENOMEM);
-        goto error;
-    }
-#endif
     avctx->frame_size = info.frameLength;
     avctx->delay      = info.encoderDelay;
     ff_af_queue_init(avctx, &s->afq);
@@ -334,12 +325,12 @@ static int aac_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
         in_buf.bufElSizes        = &in_buffer_element_size;
 
         /* add current frame to the queue */
-        if ((ret = ff_af_queue_add(&s->afq, frame) < 0))
+        if ((ret = ff_af_queue_add(&s->afq, frame)) < 0)
             return ret;
     }
 
     /* The maximum packet size is 6144 bits aka 768 bytes per channel. */
-    if ((ret = ff_alloc_packet2(avctx, avpkt, FFMAX(8192, 768 * avctx->channels))))
+    if ((ret = ff_alloc_packet2(avctx, avpkt, FFMAX(8192, 768 * avctx->channels))) < 0)
         return ret;
 
     out_ptr                   = avpkt->data;
@@ -403,6 +394,7 @@ static const int aac_sample_rates[] = {
 
 AVCodec ff_libfdk_aac_encoder = {
     .name                  = "libfdk_aac",
+    .long_name             = NULL_IF_CONFIG_SMALL("Fraunhofer FDK AAC"),
     .type                  = AVMEDIA_TYPE_AUDIO,
     .id                    = AV_CODEC_ID_AAC,
     .priv_data_size        = sizeof(AACContext),
@@ -412,7 +404,6 @@ AVCodec ff_libfdk_aac_encoder = {
     .capabilities          = CODEC_CAP_SMALL_LAST_FRAME | CODEC_CAP_DELAY,
     .sample_fmts           = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_S16,
                                                             AV_SAMPLE_FMT_NONE },
-    .long_name             = NULL_IF_CONFIG_SMALL("Fraunhofer FDK AAC"),
     .priv_class            = &aac_enc_class,
     .defaults              = aac_encode_defaults,
     .profiles              = profiles,

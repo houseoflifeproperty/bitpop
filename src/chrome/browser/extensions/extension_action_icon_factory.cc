@@ -5,8 +5,9 @@
 #include "chrome/browser/extensions/extension_action_icon_factory.h"
 
 #include "chrome/browser/extensions/extension_action.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_icon_set.h"
+#include "chrome/browser/profiles/profile.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_icon_set.h"
 #include "grit/theme_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image_skia.h"
@@ -24,6 +25,7 @@ gfx::ImageSkia GetDefaultIcon() {
 }  // namespace
 
 ExtensionActionIconFactory::ExtensionActionIconFactory(
+    Profile* profile,
     const Extension* extension,
     const ExtensionAction* action,
     Observer* observer)
@@ -32,6 +34,7 @@ ExtensionActionIconFactory::ExtensionActionIconFactory(
       observer_(observer) {
   if (action_->default_icon()) {
     default_icon_.reset(new IconImage(
+        profile,
         extension_,
         *action_->default_icon(),
         ExtensionAction::GetIconSizeForType(action_->action_type()),
@@ -50,7 +53,7 @@ void ExtensionActionIconFactory::OnExtensionIconImageChanged(IconImage* image) {
 
 gfx::Image ExtensionActionIconFactory::GetIcon(int tab_id) {
   gfx::ImageSkia base_icon = GetBaseIconFromAction(tab_id);
-  return action_->ApplyAttentionAndAnimation(base_icon, tab_id);
+  return gfx::Image(base_icon);
 }
 
 gfx::ImageSkia ExtensionActionIconFactory::GetBaseIconFromAction(int tab_id) {
@@ -58,7 +61,7 @@ gfx::ImageSkia ExtensionActionIconFactory::GetBaseIconFromAction(int tab_id) {
   if (!icon.isNull())
     return icon;
 
-  if (default_icon_.get())
+  if (default_icon_)
     return default_icon_->image_skia();
 
   return GetDefaultIcon();

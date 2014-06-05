@@ -159,7 +159,8 @@ cr.define('options', function() {
         var query = this.lastQuery_;
         var filter = function(entry, index, list) {
           // Search both URL and username.
-          if (entry[0].indexOf(query) >= 0 || entry[1].indexOf(query) >= 0) {
+          if (entry[0].toLowerCase().indexOf(query.toLowerCase()) >= 0 ||
+              entry[1].toLowerCase().indexOf(query.toLowerCase()) >= 0) {
             // Keep the original index so we can delete correctly. See also
             // deleteItemAtIndex() in password_manager_list.js that uses this.
             entry[3] = index;
@@ -182,6 +183,31 @@ cr.define('options', function() {
       this.passwordExceptionsList_.dataModel = new ArrayDataModel(entries);
       this.updateListVisibility_(this.passwordExceptionsList_);
     },
+
+    /**
+     * Reveals the password for a saved password entry. This is called by the
+     * backend after it has authenticated the user.
+     * @param {number} index The original index of the entry in the model.
+     * @param {string} password The saved password.
+     */
+    showPassword_: function(index, password) {
+      var model = this.savedPasswordsList_.dataModel;
+      if (this.lastQuery_) {
+        // When a filter is active, |index| does not represent the current
+        // index in the model, but each entry stores its original index, so
+        // we can find the item using a linear search.
+        for (var i = 0; i < model.length; ++i) {
+          if (model.item(i)[3] == index) {
+            index = i;
+            break;
+          }
+        }
+      }
+
+      // Reveal the password in the UI.
+      var item = this.savedPasswordsList_.getListItemByIndex(index);
+      item.showPassword(password);
+    },
   };
 
   /**
@@ -200,27 +226,21 @@ cr.define('options', function() {
       chrome.send('removePasswordException', [String(rowIndex)]);
   };
 
-  /**
-   * Removes all saved passwords.
-   */
-  PasswordManager.removeAllPasswords = function() {
-    chrome.send('removeAllSavedPasswords');
+  PasswordManager.requestShowPassword = function(index) {
+    chrome.send('requestShowPassword', [index]);
   };
 
-  /**
-   * Removes all password exceptions.
-   */
-  PasswordManager.removeAllPasswordExceptions = function() {
-    chrome.send('removeAllPasswordExceptions');
-  };
-
-  PasswordManager.setSavedPasswordsList = function(entries) {
-    PasswordManager.getInstance().setSavedPasswordsList_(entries);
-  };
-
-  PasswordManager.setPasswordExceptionsList = function(entries) {
-    PasswordManager.getInstance().setPasswordExceptionsList_(entries);
-  };
+  // Forward public APIs to private implementations on the singleton instance.
+  [
+    'setSavedPasswordsList',
+    'setPasswordExceptionsList',
+    'showPassword'
+   ].forEach(function(name) {
+     PasswordManager[name] = function() {
+      var instance = PasswordManager.getInstance();
+      return instance[name + '_'].apply(instance, arguments);
+    };
+  });
 
   // Export
   return {

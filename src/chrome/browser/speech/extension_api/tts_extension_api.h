@@ -7,36 +7,79 @@
 
 #include <string>
 
-#include "chrome/browser/extensions/extension_function.h"
-#include "chrome/browser/speech/extension_api/tts_extension_api_controller.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
+#include "chrome/browser/speech/tts_controller.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 
-class ExtensionTtsSpeakFunction
-    : public AsyncExtensionFunction {
+namespace content {
+class BrowserContext;
+}
+
+const char *TtsEventTypeToString(TtsEventType event_type);
+TtsEventType TtsEventTypeFromString(const std::string& str);
+
+namespace extensions {
+
+class TtsSpeakFunction : public ChromeAsyncExtensionFunction {
  private:
-  virtual ~ExtensionTtsSpeakFunction() {}
-  virtual bool RunImpl() OVERRIDE;
-  DECLARE_EXTENSION_FUNCTION_NAME("tts.speak")
+  virtual ~TtsSpeakFunction() {}
+  virtual bool RunAsync() OVERRIDE;
+  DECLARE_EXTENSION_FUNCTION("tts.speak", TTS_SPEAK)
 };
 
-class ExtensionTtsStopSpeakingFunction : public SyncExtensionFunction {
+class TtsStopSpeakingFunction : public ChromeSyncExtensionFunction {
  private:
-  virtual ~ExtensionTtsStopSpeakingFunction() {}
-  virtual bool RunImpl() OVERRIDE;
-  DECLARE_EXTENSION_FUNCTION_NAME("tts.stop")
+  virtual ~TtsStopSpeakingFunction() {}
+  virtual bool RunSync() OVERRIDE;
+  DECLARE_EXTENSION_FUNCTION("tts.stop", TTS_STOP)
 };
 
-class ExtensionTtsIsSpeakingFunction : public SyncExtensionFunction {
+class TtsPauseFunction : public ChromeSyncExtensionFunction {
  private:
-  virtual ~ExtensionTtsIsSpeakingFunction() {}
-  virtual bool RunImpl() OVERRIDE;
-  DECLARE_EXTENSION_FUNCTION_NAME("tts.isSpeaking")
+  virtual ~TtsPauseFunction() {}
+  virtual bool RunSync() OVERRIDE;
+  DECLARE_EXTENSION_FUNCTION("tts.pause", TTS_PAUSE)
 };
 
-class ExtensionTtsGetVoicesFunction : public SyncExtensionFunction {
+class TtsResumeFunction : public ChromeSyncExtensionFunction {
  private:
-  virtual ~ExtensionTtsGetVoicesFunction() {}
-  virtual bool RunImpl() OVERRIDE;
-  DECLARE_EXTENSION_FUNCTION_NAME("tts.getVoices")
+  virtual ~TtsResumeFunction() {}
+  virtual bool RunSync() OVERRIDE;
+  DECLARE_EXTENSION_FUNCTION("tts.resume", TTS_RESUME)
 };
+
+class TtsIsSpeakingFunction : public ChromeSyncExtensionFunction {
+ private:
+  virtual ~TtsIsSpeakingFunction() {}
+  virtual bool RunSync() OVERRIDE;
+  DECLARE_EXTENSION_FUNCTION("tts.isSpeaking", TTS_ISSPEAKING)
+};
+
+class TtsGetVoicesFunction : public ChromeSyncExtensionFunction {
+ private:
+  virtual ~TtsGetVoicesFunction() {}
+  virtual bool RunSync() OVERRIDE;
+  DECLARE_EXTENSION_FUNCTION("tts.getVoices", TTS_GETVOICES)
+};
+
+class TtsAPI : public BrowserContextKeyedAPI {
+ public:
+  explicit TtsAPI(content::BrowserContext* context);
+  virtual ~TtsAPI();
+
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<TtsAPI>* GetFactoryInstance();
+
+ private:
+  friend class BrowserContextKeyedAPIFactory<TtsAPI>;
+
+  // BrowserContextKeyedAPI implementation.
+  static const char* service_name() {
+    return "TtsAPI";
+  }
+  static const bool kServiceIsNULLWhileTesting = true;
+};
+
+}  // namespace extensions
 
 #endif  // CHROME_BROWSER_SPEECH_EXTENSION_API_TTS_EXTENSION_API_H_

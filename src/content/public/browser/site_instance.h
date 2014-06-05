@@ -8,7 +8,7 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "content/common/content_export.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace content {
 class BrowserContext;
@@ -71,11 +71,12 @@ class CONTENT_EXPORT SiteInstance : public base::RefCounted<SiteInstance> {
   // we use process-per-site and there is an existing process available.
   virtual bool HasProcess() const = 0;
 
-  // Returns the current process being used to render pages in this
-  // SiteInstance.  If the process has not yet been created or has cleanly
-  // exited (e.g., when it is not actively being used), then this method will
-  // create a new process with a new ID.  Note that renderer process crashes
-  // leave the current RenderProcessHost (and ID) in place.
+  // Returns the current RenderProcessHost being used to render pages for this
+  // SiteInstance.  If there is no RenderProcessHost (because either none has
+  // yet been created or there was one but it was cleanly destroyed (e.g. when
+  // it is not actively being used)), then this method will create a new
+  // RenderProcessHost (and a new ID).  Note that renderer process crashes leave
+  // the current RenderProcessHost (and ID) in place.
   //
   // For sites that require process-per-site mode (e.g., WebUI), this will
   // ensure only one RenderProcessHost for the site exists/ within the

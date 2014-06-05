@@ -11,8 +11,6 @@
 #include "sync/internal_api/public/engine/model_safe_worker.h"
 #include "sync/internal_api/public/util/syncer_error.h"
 
-class MessageLoop;
-
 namespace syncer {
 
 // Implementation of ModelSafeWorker for passive types.  All work is
@@ -20,17 +18,21 @@ namespace syncer {
 // thread).
 class SYNC_EXPORT PassiveModelWorker : public ModelSafeWorker {
  public:
-  explicit PassiveModelWorker(const MessageLoop* sync_loop);
+  explicit PassiveModelWorker(const base::MessageLoop* sync_loop,
+                              WorkerLoopDestructionObserver* observer);
 
   // ModelSafeWorker implementation. Called on the sync thread.
-  virtual SyncerError DoWorkAndWaitUntilDone(
-      const WorkCallback& work) OVERRIDE;
+  virtual void RegisterForLoopDestruction() OVERRIDE;
   virtual ModelSafeGroup GetModelSafeGroup() OVERRIDE;
+
+ protected:
+  virtual SyncerError DoWorkAndWaitUntilDoneImpl(
+      const WorkCallback& work) OVERRIDE;
 
  private:
   virtual ~PassiveModelWorker();
 
-  const MessageLoop* const sync_loop_;
+  const base::MessageLoop* const sync_loop_;
 
   DISALLOW_COPY_AND_ASSIGN(PassiveModelWorker);
 };

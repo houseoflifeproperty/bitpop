@@ -16,16 +16,18 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
+#include "base/rand_util.h"
 #include "base/task_runner.h"
 #include "base/threading/thread.h"
 #include "jingle/notifier/base/notification_method.h"
 #include "jingle/notifier/base/notifier_options.h"
 #include "net/base/host_port_pair.h"
-#include "net/base/host_resolver.h"
 #include "net/base/network_change_notifier.h"
-#include "net/base/transport_security_state.h"
+#include "net/dns/host_resolver.h"
+#include "net/http/transport_security_state.h"
 #include "net/url_request/url_request_test_util.h"
+#include "sync/internal_api/public/base/cancelation_signal.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/base_node.h"
 #include "sync/internal_api/public/engine/passive_model_worker.h"
@@ -39,9 +41,7 @@
 #include "sync/internal_api/public/util/weak_handle.h"
 #include "sync/js/js_event_details.h"
 #include "sync/js/js_event_handler.h"
-#include "sync/notifier/invalidation_state_tracker.h"
-#include "sync/notifier/invalidator.h"
-#include "sync/notifier/invalidator_factory.h"
+#include "sync/notifier/non_blocking_invalidator.h"
 #include "sync/test/fake_encryptor.h"
 #include "sync/tools/null_invalidation_state_tracker.h"
 
@@ -63,7 +63,6 @@ const char kXmppHostPortSwitch[] = "xmpp-host-port";
 const char kXmppTrySslTcpFirstSwitch[] = "xmpp-try-ssltcp-first";
 const char kXmppAllowInsecureConnectionSwitch[] =
     "xmpp-allow-insecure-connection";
-const char kNotificationMethodSwitch[] = "notification-method";
 
 // Needed to use a real host resolver.
 class MyTestURLRequestContext : public net::TestURLRequestContext {
@@ -88,7 +87,7 @@ class MyTestURLRequestContextGetter : public net::TestURLRequestContextGetter {
   virtual net::TestURLRequestContext* GetURLRequestContext() OVERRIDE {
     // Construct |context_| lazily so it gets constructed on the right
     // thread (the IO thread).
-    if (!context_.get())
+    if (!context_)
       context_.reset(new MyTestURLRequestContext());
     return context_.get();
   }
@@ -117,7 +116,7 @@ class NullEncryptor : public Encryptor {
   }
 };
 
-std::string ValueToString(const Value& value) {
+std::string ValueToString(const base::Value& value) {
   std::string str;
   base::JSONWriter::Write(&value, &str);
   return str;
@@ -144,7 +143,7 @@ class LoggingChangeDelegate : public SyncManager::ChangeDelegate {
       if (it->action != ChangeRecord::ACTION_DELETE) {
         ReadNode node(trans);
         CHECK_EQ(node.InitByIdLookup(it->id), BaseNode::INIT_OK);
-        scoped_ptr<base::DictionaryValue> details(node.GetDetailsAsValue());
+        scoped_ptr<base::DictionaryValue> details(node.ToValue());
         VLOG(1) << "Details: " << ValueToString(*details);
       }
       ++i;
@@ -186,8 +185,7 @@ class LoggingJsEventHandler
 };
 
 void LogUnrecoverableErrorContext() {
-  base::debug::StackTrace stack_trace;
-  stack_trace.PrintBacktrace();
+  base::debug::StackTrace().Print();
 }
 
 notifier::NotifierOptions ParseNotifierOptions(
@@ -196,6 +194,7 @@ notifier::NotifierOptions ParseNotifierOptions(
         request_context_getter) {
   notifier::NotifierOptions notifier_options;
   notifier_options.request_context_getter = request_context_getter;
+  notifier_options.auth_mechanism = "X-OAUTH2";
 
   if (command_line.HasSwitch(kXmppHostPortSwitch)) {
     notifier_options.xmpp_host_port =
@@ -215,13 +214,12 @@ notifier::NotifierOptions ParseNotifierOptions(
   LOG_IF(INFO, notifier_options.allow_insecure_connection)
       << "Allowing insecure XMPP connections.";
 
-  if (command_line.HasSwitch(kNotificationMethodSwitch)) {
-    notifier_options.notification_method =
-        notifier::StringToNotificationMethod(
-            command_line.GetSwitchValueASCII(kNotificationMethodSwitch));
-  }
-
   return notifier_options;
+}
+
+void StubNetworkTimeUpdateCallback(const base::Time&,
+                                   const base::TimeDelta&,
+                                   const base::TimeDelta&) {
 }
 
 int SyncClientMain(int argc, char* argv[]) {
@@ -230,17 +228,14 @@ int SyncClientMain(int argc, char* argv[]) {
 #endif
   base::AtExitManager exit_manager;
   CommandLine::Init(argc, argv);
-  logging::InitLogging(
-      NULL,
-      logging::LOG_ONLY_TO_SYSTEM_DEBUG_LOG,
-      logging::LOCK_LOG_FILE,
-      logging::DELETE_OLD_LOG_FILE,
-      logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS);
+  logging::LoggingSettings settings;
+  settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;
+  logging::InitLogging(settings);
 
-  MessageLoop sync_loop;
+  base::MessageLoop sync_loop;
   base::Thread io_thread("IO thread");
   base::Thread::Options options;
-  options.message_loop_type = MessageLoop::TYPE_IO;
+  options.message_loop_type = base::MessageLoop::TYPE_IO;
   io_thread.StartWithOptions(options);
 
   // Parse command line.
@@ -253,7 +248,6 @@ int SyncClientMain(int argc, char* argv[]) {
   if (credentials.email.empty() || credentials.sync_token.empty()) {
     std::printf("Usage: %s --%s=foo@bar.com --%s=token\n"
                 "[--%s=host:port] [--%s] [--%s]\n"
-                "[--%s=(server|p2p)]\n\n"
                 "Run chrome and set a breakpoint on\n"
                 "syncer::SyncManagerImpl::UpdateCredentials() "
                 "after logging into\n"
@@ -261,8 +255,7 @@ int SyncClientMain(int argc, char* argv[]) {
                 argv[0],
                 kEmailSwitch, kTokenSwitch, kXmppHostPortSwitch,
                 kXmppTrySslTcpFirstSwitch,
-                kXmppAllowInsecureConnectionSwitch,
-                kNotificationMethodSwitch);
+                kXmppAllowInsecureConnectionSwitch);
     return -1;
   }
 
@@ -275,27 +268,62 @@ int SyncClientMain(int argc, char* argv[]) {
       new MyTestURLRequestContextGetter(io_thread.message_loop_proxy());
   const notifier::NotifierOptions& notifier_options =
       ParseNotifierOptions(command_line, context_getter);
-  const char kClientInfo[] = "sync_listen_notifications";
+  syncer::NetworkChannelCreator network_channel_creator =
+      syncer::NonBlockingInvalidator::MakePushClientChannelCreator(
+          notifier_options);
+  const char kClientInfo[] = "standalone_sync_client";
+  std::string invalidator_id = base::RandBytesAsString(8);
   NullInvalidationStateTracker null_invalidation_state_tracker;
-  InvalidatorFactory invalidator_factory(
-      notifier_options, kClientInfo,
-      null_invalidation_state_tracker.AsWeakPtr());
+  scoped_ptr<Invalidator> invalidator(new NonBlockingInvalidator(
+      network_channel_creator,
+      invalidator_id,
+      null_invalidation_state_tracker.GetSavedInvalidations(),
+      null_invalidation_state_tracker.GetBootstrapData(),
+      &null_invalidation_state_tracker,
+      kClientInfo,
+      notifier_options.request_context_getter));
 
   // Set up database directory for the syncer.
   base::ScopedTempDir database_dir;
   CHECK(database_dir.CreateUniqueTempDir());
 
-  // Set up model type parameters.
-  const ModelTypeSet model_types = ModelTypeSet::All();
+  // Developers often add types to ModelTypeSet::All() before the server
+  // supports them.  We need to be explicit about which types we want here.
+  ModelTypeSet model_types;
+  model_types.Put(BOOKMARKS);
+  model_types.Put(PREFERENCES);
+  model_types.Put(PASSWORDS);
+  model_types.Put(AUTOFILL);
+  model_types.Put(THEMES);
+  model_types.Put(TYPED_URLS);
+  model_types.Put(EXTENSIONS);
+  model_types.Put(NIGORI);
+  model_types.Put(SEARCH_ENGINES);
+  model_types.Put(SESSIONS);
+  model_types.Put(APPS);
+  model_types.Put(AUTOFILL_PROFILE);
+  model_types.Put(APP_SETTINGS);
+  model_types.Put(EXTENSION_SETTINGS);
+  model_types.Put(APP_NOTIFICATIONS);
+  model_types.Put(HISTORY_DELETE_DIRECTIVES);
+  model_types.Put(SYNCED_NOTIFICATIONS);
+  model_types.Put(SYNCED_NOTIFICATION_APP_INFO);
+  model_types.Put(DEVICE_INFO);
+  model_types.Put(EXPERIMENTS);
+  model_types.Put(PRIORITY_PREFERENCES);
+  model_types.Put(DICTIONARY);
+  model_types.Put(FAVICON_IMAGES);
+  model_types.Put(FAVICON_TRACKING);
+
   ModelSafeRoutingInfo routing_info;
   for (ModelTypeSet::Iterator it = model_types.First();
        it.Good(); it.Inc()) {
     routing_info[it.Get()] = GROUP_PASSIVE;
   }
   scoped_refptr<PassiveModelWorker> passive_model_safe_worker =
-      new PassiveModelWorker(&sync_loop);
-  std::vector<ModelSafeWorker*> workers;
-  workers.push_back(passive_model_safe_worker.get());
+      new PassiveModelWorker(&sync_loop, NULL);
+  std::vector<scoped_refptr<ModelSafeWorker> > workers;
+  workers.push_back(passive_model_safe_worker);
 
   // Set up sync manager.
   SyncManagerFactory sync_manager_factory;
@@ -310,20 +338,24 @@ int SyncClientMain(int argc, char* argv[]) {
   const char kUserAgent[] = "sync_client";
   // TODO(akalin): Replace this with just the context getter once
   // HttpPostProviderFactory is removed.
+  CancelationSignal factory_cancelation_signal;
   scoped_ptr<HttpPostProviderFactory> post_factory(
-      new HttpBridgeFactory(context_getter, kUserAgent));
+      new HttpBridgeFactory(context_getter.get(),
+                            base::Bind(&StubNetworkTimeUpdateCallback),
+                            &factory_cancelation_signal));
+  post_factory->Init(kUserAgent);
   // Used only when committing bookmarks, so it's okay to leave this
   // as NULL.
-  ExtensionsActivityMonitor* extensions_activity_monitor = NULL;
+  ExtensionsActivity* extensions_activity = NULL;
   LoggingChangeDelegate change_delegate;
   const char kRestoredKeyForBootstrapping[] = "";
   const char kRestoredKeystoreKeyForBootstrapping[] = "";
   NullEncryptor null_encryptor;
-  LoggingUnrecoverableErrorHandler unrecoverable_error_handler;
   InternalComponentsFactoryImpl::Switches factory_switches = {
       InternalComponentsFactory::ENCRYPTION_KEYSTORE,
       InternalComponentsFactory::BACKOFF_NORMAL
   };
+  CancelationSignal scm_cancelation_signal;
 
   sync_manager->Init(database_dir.path(),
                     WeakHandle<JsEventHandler>(
@@ -333,21 +365,24 @@ int SyncClientMain(int argc, char* argv[]) {
                     kUseSsl,
                     post_factory.Pass(),
                     workers,
-                    extensions_activity_monitor,
+                    extensions_activity,
                     &change_delegate,
                     credentials,
-                    scoped_ptr<Invalidator>(
-                        invalidator_factory.CreateInvalidator()),
+                    invalidator_id,
                     kRestoredKeyForBootstrapping,
                     kRestoredKeystoreKeyForBootstrapping,
-                    scoped_ptr<InternalComponentsFactory>(
-                        new InternalComponentsFactoryImpl(factory_switches)),
+                    new InternalComponentsFactoryImpl(factory_switches),
                     &null_encryptor,
-                    &unrecoverable_error_handler,
-                    &LogUnrecoverableErrorContext);
+                    scoped_ptr<UnrecoverableErrorHandler>(
+                        new LoggingUnrecoverableErrorHandler).Pass(),
+                    &LogUnrecoverableErrorContext,
+                    &scm_cancelation_signal);
   // TODO(akalin): Avoid passing in model parameters multiple times by
   // organizing handling of model types.
-  sync_manager->UpdateEnabledTypes(model_types);
+  invalidator->UpdateCredentials(credentials.email, credentials.sync_token);
+  invalidator->RegisterHandler(sync_manager.get());
+  invalidator->UpdateRegisteredIds(
+      sync_manager.get(), ModelTypeSetToObjectIdSet(model_types));
   sync_manager->StartSyncingNormally(routing_info);
 
   sync_loop.Run();

@@ -4,23 +4,39 @@
 
 #include "ui/compositor/compositor_switches.h"
 
+#include "base/command_line.h"
+
 namespace switches {
 
-const char kDisableTestCompositor[] = "disable-test-compositor";
+// Enable compositing individual elements via hardware overlays when
+// permitted by device.
+const char kEnableHardwareOverlays[] = "enable-hardware-overlays";
 
-const char kUIEnablePartialSwap[] = "ui-enable-partial-swap";
+// Forces tests to produce pixel output when they normally wouldn't.
+const char kEnablePixelOutputInTests[] = "enable-pixel-output-in-tests";
 
-// Show FPS counter.
-const char kUIShowFPSCounter[] = "ui-show-fps-counter";
+const char kUIDisableThreadedCompositing[] = "ui-disable-threaded-compositing";
 
-// Show colored borders around layers.
-const char kUIShowLayerBorders[] = "ui-show-layer-borders";
+const char kUIEnableImplSidePainting[] = "ui-enable-impl-side-painting";
 
-// Show layer tree.
-const char kUIShowLayerTree[] = "ui-show-layer-tree";
+const char kUIEnableZeroCopy[] = "ui-enable-zero-copy";
 
-const char kUIEnablePerTilePainting[] = "ui-enable-per-tile-painting";
-
-const char kUIEnableThreadedCompositing[] = "ui-enable-threaded-compositing";
+const char kUIShowPaintRects[] = "ui-show-paint-rects";
 
 }  // namespace switches
+
+namespace ui {
+
+bool IsUIImplSidePaintingEnabled() {
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+
+  return command_line.HasSwitch(switches::kUIEnableImplSidePainting);
+}
+
+bool IsUIZeroCopyEnabled() {
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+
+  return command_line.HasSwitch(switches::kUIEnableZeroCopy);
+}
+
+}  // namespace ui

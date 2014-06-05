@@ -6,7 +6,7 @@
 #define NET_QUIC_QUIC_DATA_READER_H_
 
 #include "base/basictypes.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "net/base/int128.h"
 #include "net/base/net_export.h"
 
@@ -58,6 +58,12 @@ class NET_EXPORT_PRIVATE QuicDataReader {
   // Forwards the internal iterator on success.
   // Returns true on success, false otherwise.
   bool ReadUInt128(uint128* result);
+
+  // Reads a 16-bit unsigned float into the given output parameter.
+  // Forwards the internal iterator on success.
+  // Returns true on success, false otherwise.
+  bool ReadUFloat16(uint64* result);
+
   // Reads a string prefixed with 16-bit length into the given output parameter.
   //
   // NOTE: Does not copy but rather references strings in the underlying buffer.
@@ -118,6 +124,8 @@ class NET_EXPORT_PRIVATE QuicDataReader {
 
   // The location of the next read from our data buffer.
   size_t pos_;
+
+  DISALLOW_COPY_AND_ASSIGN(QuicDataReader);
 };
 
 }  // namespace net

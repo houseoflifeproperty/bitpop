@@ -4,7 +4,7 @@
 
 #include "chrome/common/worker_thread_ticker.h"
 
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/threading/platform_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -12,42 +12,41 @@ namespace {
 
 class TestCallback : public WorkerThreadTicker::Callback {
  public:
-  TestCallback() : counter_(0), message_loop_(MessageLoop::current()) {
-  }
+  TestCallback() : counter_(0), message_loop_(base::MessageLoop::current()) {}
 
-  virtual void OnTick() {
+  virtual void OnTick() OVERRIDE {
     counter_++;
 
     // Finish the test faster.
-    message_loop_->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+    message_loop_->PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
   }
 
   int counter() const { return counter_; }
 
  private:
   int counter_;
-  MessageLoop* message_loop_;
+  base::MessageLoop* message_loop_;
 };
 
 class LongCallback : public WorkerThreadTicker::Callback {
  public:
-  virtual void OnTick() {
+  virtual void OnTick() OVERRIDE {
     base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(1500));
   }
 };
 
 void RunMessageLoopForAWhile() {
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
-      MessageLoop::QuitClosure(),
+      base::MessageLoop::QuitClosure(),
       base::TimeDelta::FromMilliseconds(500));
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
 }
 
 }  // namespace
 
 TEST(WorkerThreadTickerTest, Basic) {
-  MessageLoop loop;
+  base::MessageLoop loop;
 
   TestCallback callback;
   WorkerThreadTicker ticker(50);
@@ -65,7 +64,7 @@ TEST(WorkerThreadTickerTest, Basic) {
 }
 
 TEST(WorkerThreadTickerTest, Callback) {
-  MessageLoop loop;
+  base::MessageLoop loop;
 
   TestCallback callback;
   WorkerThreadTicker ticker(50);
@@ -82,7 +81,7 @@ TEST(WorkerThreadTickerTest, Callback) {
 }
 
 TEST(WorkerThreadTickerTest, OutOfScope) {
-  MessageLoop loop;
+  base::MessageLoop loop;
 
   TestCallback callback;
   {
@@ -99,7 +98,7 @@ TEST(WorkerThreadTickerTest, OutOfScope) {
 }
 
 TEST(WorkerThreadTickerTest, LongCallback) {
-  MessageLoop loop;
+  base::MessageLoop loop;
 
   LongCallback callback;
   WorkerThreadTicker ticker(50);

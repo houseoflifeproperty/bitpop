@@ -4,20 +4,20 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "chrome/browser/browser_about_handler.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
-#include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 using content::BrowserThread;
 
 typedef testing::Test BrowserAboutHandlerTest;
 
 TEST_F(BrowserAboutHandlerTest, WillHandleBrowserAboutURL) {
-  std::string chrome_prefix(chrome::kChromeUIScheme);
+  std::string chrome_prefix(content::kChromeUIScheme);
   chrome_prefix.append(content::kStandardSchemeSeparator);
   struct AboutURLTestData {
     GURL test_url;
@@ -28,8 +28,8 @@ TEST_F(BrowserAboutHandlerTest, WillHandleBrowserAboutURL) {
         GURL("http://google.com")
       },
       {
-        GURL(chrome::kAboutBlankURL),
-        GURL(chrome::kAboutBlankURL)
+        GURL(content::kAboutBlankURL),
+        GURL(content::kAboutBlankURL)
       },
       {
         GURL(chrome_prefix + chrome::kChromeUIMemoryHost),
@@ -45,11 +45,7 @@ TEST_F(BrowserAboutHandlerTest, WillHandleBrowserAboutURL) {
       },
       {
         GURL(chrome_prefix + chrome::kChromeUICacheHost),
-        GURL(chrome_prefix + chrome::kChromeUINetworkViewCacheHost)
-      },
-      {
-        GURL(chrome_prefix + chrome::kChromeUIGpuHost),
-        GURL(chrome_prefix + chrome::kChromeUIGpuInternalsHost)
+        GURL(chrome_prefix + content::kChromeUINetworkViewCacheHost)
       },
       {
         GURL(chrome_prefix + chrome::kChromeUISignInInternalsHost),
@@ -60,11 +56,15 @@ TEST_F(BrowserAboutHandlerTest, WillHandleBrowserAboutURL) {
         GURL(chrome_prefix + chrome::kChromeUISyncInternalsHost)
       },
       {
+        GURL(chrome_prefix + chrome::kChromeUIInvalidationsHost),
+        GURL(chrome_prefix + chrome::kChromeUIInvalidationsHost)
+      },
+      {
         GURL(chrome_prefix + "host/path?query#ref"),
         GURL(chrome_prefix + "host/path?query#ref"),
       }
   };
-  MessageLoopForUI message_loop;
+  base::MessageLoopForUI message_loop;
   content::TestBrowserThread ui_thread(BrowserThread::UI, &message_loop);
   TestingProfile profile;
 

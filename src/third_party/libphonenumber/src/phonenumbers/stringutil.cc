@@ -27,7 +27,7 @@ namespace phonenumbers {
 using std::equal;
 using std::stringstream;
 
-string operator+(const string& s, int n) {
+string operator+(const string& s, int n) {  // NOLINT(runtime/string)
   stringstream stream;
 
   stream << s << n;
@@ -53,6 +53,10 @@ string SimpleItoa(int n) {
 }
 
 string SimpleItoa(uint64 n) {
+  return GenericSimpleItoa(n);
+}
+
+string SimpleItoa(int64 n) {
   return GenericSimpleItoa(n);
 }
 
@@ -133,6 +137,10 @@ void safe_strtou64(const string& s, uint64 *n) {
   GenericAtoi(s, n);
 }
 
+void safe_strto64(const string& s, int64* n) {
+  GenericAtoi(s, n);
+}
+
 void strrmm(string* s, const string& chars) {
   for (string::iterator it = s->begin(); it != s->end(); ) {
     const char current_char = *it;
@@ -171,23 +179,23 @@ int GlobalReplaceSubstring(const string& substring,
 
 // StringHolder class
 
-StringHolder::StringHolder(const string& s) :
-  string_(&s),
-  cstring_(NULL),
-  len_(s.size())
+StringHolder::StringHolder(const string& s)
+  : string_(&s),
+    cstring_(NULL),
+    len_(s.size())
 {}
 
-StringHolder::StringHolder(const char* s) :
-  string_(NULL),
-  cstring_(s),
-  len_(std::strlen(s))
+StringHolder::StringHolder(const char* s)
+  : string_(NULL),
+    cstring_(s),
+    len_(std::strlen(s))
 {}
 
-StringHolder::StringHolder(uint64 n) :
-  converted_string_(SimpleItoa(n)),
-  string_(&converted_string_),
-  cstring_(NULL),
-  len_(converted_string_.length())
+StringHolder::StringHolder(uint64 n)
+  : converted_string_(SimpleItoa(n)),
+    string_(&converted_string_),
+    cstring_(NULL),
+    len_(converted_string_.length())
 {}
 
 StringHolder::~StringHolder() {}
@@ -353,6 +361,32 @@ string StrCat(const StringHolder& s1, const StringHolder& s2,
   result += s9;
   result += s10;
   result += s11;
+
+  return result;
+}
+
+string StrCat(const StringHolder& s1, const StringHolder& s2,
+              const StringHolder& s3, const StringHolder& s4,
+              const StringHolder& s5, const StringHolder& s6,
+              const StringHolder& s7, const StringHolder& s8,
+              const StringHolder& s9, const StringHolder& s10,
+              const StringHolder& s11, const StringHolder& s12) {
+  string result;
+  result.reserve(s1.Length() + s2.Length()  + s3.Length() + s4.Length() +
+                 s5.Length() + s6.Length()  + s7.Length() + s8.Length() +
+                 s9.Length() + s10.Length() + s11.Length() + s12.Length());
+  result += s1;
+  result += s2;
+  result += s3;
+  result += s4;
+  result += s5;
+  result += s6;
+  result += s7;
+  result += s8;
+  result += s9;
+  result += s10;
+  result += s11;
+  result += s12;
 
   return result;
 }

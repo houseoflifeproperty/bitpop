@@ -9,10 +9,11 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/metrics/histogram.h"
+#include "base/command_line.h"
 #include "base/i18n/time_formatting.h"
-#include "base/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/metrics/histogram.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browsing_data/browsing_data_cookie_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_database_helper.h"
@@ -24,7 +25,6 @@
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/content_settings/local_shared_objects_container.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ssl/ssl_error_info.h"
 #include "chrome/browser/ui/website_settings/website_settings_infobar_delegate.h"
@@ -33,18 +33,27 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/cert_store.h"
 #include "content/public/browser/user_metrics.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/ssl_status.h"
 #include "content/public/common/url_constants.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
-#include "net/base/cert_status_flags.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
-#include "net/base/ssl_cipher_suite_names.h"
-#include "net/base/ssl_connection_status_flags.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/cert_status_flags.h"
+#include "net/cert/x509_certificate.h"
+#include "net/ssl/ssl_cipher_suite_names.h"
+#include "net/ssl/ssl_connection_status_flags.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/policy/policy_cert_service.h"
+#include "chrome/browser/chromeos/policy/policy_cert_service_factory.h"
+#endif
+
+using base::ASCIIToUTF16;
+using base::UTF8ToUTF16;
+using base::UTF16ToUTF8;
 using content::BrowserThread;
 
 namespace {
@@ -60,7 +69,58 @@ ContentSettingsType kPermissionType[] = {
   CONTENT_SETTINGS_TYPE_FULLSCREEN,
   CONTENT_SETTINGS_TYPE_MOUSELOCK,
   CONTENT_SETTINGS_TYPE_MEDIASTREAM,
+  CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS,
+  CONTENT_SETTINGS_TYPE_MIDI_SYSEX,
 };
+
+bool CertificateTransparencyStatusMatch(
+    const content::SignedCertificateTimestampIDStatusList& scts,
+    net::ct::SCTVerifyStatus status) {
+  for (content::SignedCertificateTimestampIDStatusList::const_iterator it =
+           scts.begin();
+       it != scts.end();
+       ++it) {
+    if (it->status == status)
+      return true;
+  }
+
+  return false;
+}
+
+int GetSiteIdentityDetailsMessageByCTInfo(
+    const content::SignedCertificateTimestampIDStatusList& scts,
+    bool is_ev) {
+  // No SCTs - no CT information.
+  if (scts.empty())
+    return (is_ev ? IDS_PAGE_INFO_SECURITY_TAB_SECURE_IDENTITY_EV_NO_CT
+                  : IDS_PAGE_INFO_SECURITY_TAB_SECURE_IDENTITY_NO_CT);
+
+  if (CertificateTransparencyStatusMatch(scts, net::ct::SCT_STATUS_OK))
+    return (is_ev ? IDS_PAGE_INFO_SECURITY_TAB_SECURE_IDENTITY_EV_CT_VERIFIED
+                  : IDS_PAGE_INFO_SECURITY_TAB_SECURE_IDENTITY_CT_VERIFIED);
+
+  if (CertificateTransparencyStatusMatch(scts, net::ct::SCT_STATUS_INVALID))
+    return (is_ev ? IDS_PAGE_INFO_SECURITY_TAB_SECURE_IDENTITY_EV_CT_INVALID
+                  : IDS_PAGE_INFO_SECURITY_TAB_SECURE_IDENTITY_CT_INVALID);
+
+  // status is SCT_STATUS_LOG_UNKNOWN
+  return (is_ev ? IDS_PAGE_INFO_SECURITY_TAB_SECURE_IDENTITY_EV_CT_UNVERIFIED
+                : IDS_PAGE_INFO_SECURITY_TAB_SECURE_IDENTITY_CT_UNVERIFIED);
+}
+
+// This function will return SITE_IDENTITY_STATUS_CERT or
+// SITE_IDENTITY_STATUS_EV_CERT depending on |is_ev| unless there are SCTs
+// which failed verification, in which case it will return
+// SITE_IDENTITY_STATUS_ERROR.
+WebsiteSettings::SiteIdentityStatus GetSiteIdentityStatusByCTInfo(
+    const content::SignedCertificateTimestampIDStatusList& scts,
+    bool is_ev) {
+  if (CertificateTransparencyStatusMatch(scts, net::ct::SCT_STATUS_INVALID))
+    return WebsiteSettings::SITE_IDENTITY_STATUS_ERROR;
+
+  return is_ev ? WebsiteSettings::SITE_IDENTITY_STATUS_EV_CERT
+               : WebsiteSettings::SITE_IDENTITY_STATUS_CERT;
+}
 
 }  // namespace
 
@@ -68,14 +128,14 @@ WebsiteSettings::WebsiteSettings(
     WebsiteSettingsUI* ui,
     Profile* profile,
     TabSpecificContentSettings* tab_specific_content_settings,
-    InfoBarTabHelper* infobar_tab_helper,
+    InfoBarService* infobar_service,
     const GURL& url,
     const content::SSLStatus& ssl,
     content::CertStore* cert_store)
     : TabSpecificContentSettings::SiteDataObserver(
           tab_specific_content_settings),
       ui_(ui),
-      infobar_helper_(infobar_tab_helper),
+      infobar_service_(infobar_service),
       show_info_bar_(false),
       site_url_(url),
       site_identity_status_(SITE_IDENTITY_STATUS_UNKNOWN),
@@ -102,7 +162,7 @@ WebsiteSettings::WebsiteSettings(
 
   // Every time the Website Settings UI is opened a |WebsiteSettings| object is
   // created. So this counts how ofter the Website Settings UI is opened.
-  content::RecordAction(content::UserMetricsAction("WebsiteSettings_Opened"));
+  content::RecordAction(base::UserMetricsAction("WebsiteSettings_Opened"));
 }
 
 WebsiteSettings::~WebsiteSettings() {
@@ -118,6 +178,7 @@ void WebsiteSettings::OnSitePermissionChanged(ContentSettingsType type,
   ContentSettingsPattern secondary_pattern;
   switch (type) {
     case CONTENT_SETTINGS_TYPE_GEOLOCATION:
+    case CONTENT_SETTINGS_TYPE_MIDI_SYSEX:
       // TODO(markusheintz): The rule we create here should also change the
       // location permission for iframed content.
       primary_pattern = ContentSettingsPattern::FromURLNoWildcard(site_url_);
@@ -133,6 +194,7 @@ void WebsiteSettings::OnSitePermissionChanged(ContentSettingsType type,
     case CONTENT_SETTINGS_TYPE_POPUPS:
     case CONTENT_SETTINGS_TYPE_FULLSCREEN:
     case CONTENT_SETTINGS_TYPE_MOUSELOCK:
+    case CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS:
       primary_pattern = ContentSettingsPattern::FromURL(site_url_);
       secondary_pattern = ContentSettingsPattern::Wildcard();
       break;
@@ -143,12 +205,18 @@ void WebsiteSettings::OnSitePermissionChanged(ContentSettingsType type,
       secondary_pattern = ContentSettingsPattern::Wildcard();
       // Set permission for both microphone and camera.
       content_settings_->SetContentSetting(
-          primary_pattern, secondary_pattern,
-          CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC, "", setting);
+          primary_pattern,
+          secondary_pattern,
+          CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC,
+          std::string(),
+          setting);
 
       content_settings_->SetContentSetting(
-          primary_pattern, secondary_pattern,
-          CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA, "", setting);
+          primary_pattern,
+          secondary_pattern,
+          CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA,
+          std::string(),
+          setting);
       break;
     }
     default:
@@ -166,8 +234,8 @@ void WebsiteSettings::OnSitePermissionChanged(ContentSettingsType type,
     // This is not a concern for CONTENT_SETTINGS_TYPE_MEDIASTREAM since users
     // can not create media settings exceptions by hand.
     content_settings::SettingInfo info;
-    scoped_ptr<Value> v(content_settings_->GetWebsiteSetting(
-        site_url_, site_url_, type, "", &info));
+    scoped_ptr<base::Value> v(content_settings_->GetWebsiteSetting(
+        site_url_, site_url_, type, std::string(), &info));
     DCHECK(info.source == content_settings::SETTING_SOURCE_USER);
     ContentSettingsPattern::Relation r1 =
         info.primary_pattern.Compare(primary_pattern);
@@ -184,11 +252,11 @@ void WebsiteSettings::OnSitePermissionChanged(ContentSettingsType type,
         secondary_pattern = info.secondary_pattern;
     }
 
-    Value* value = NULL;
+    base::Value* value = NULL;
     if (setting != CONTENT_SETTING_DEFAULT)
-      value = Value::CreateIntegerValue(setting);
+      value = base::Value::CreateIntegerValue(setting);
     content_settings_->SetWebsiteSetting(
-        primary_pattern, secondary_pattern, type, "", value);
+        primary_pattern, secondary_pattern, type, std::string(), value);
   }
 
   show_info_bar_ = true;
@@ -220,16 +288,14 @@ void WebsiteSettings::OnSiteDataAccessed() {
 }
 
 void WebsiteSettings::OnUIClosing() {
-  if (show_info_bar_) {
-    infobar_helper_->AddInfoBar(
-        new WebsiteSettingsInfobarDelegate(infobar_helper_));
-  }
+  if (show_info_bar_)
+    WebsiteSettingsInfoBarDelegate::Create(infobar_service_);
 }
 
 void WebsiteSettings::Init(Profile* profile,
                            const GURL& url,
                            const content::SSLStatus& ssl) {
-  if (url.SchemeIs(chrome::kChromeUIScheme)) {
+  if (url.SchemeIs(content::kChromeUIScheme)) {
     site_identity_status_ = SITE_IDENTITY_STATUS_INTERNAL_PAGE;
     site_identity_details_ =
         l10n_util::GetStringUTF16(IDS_PAGE_INFO_INTERNAL_PAGE);
@@ -240,7 +306,7 @@ void WebsiteSettings::Init(Profile* profile,
   scoped_refptr<net::X509Certificate> cert;
 
   // Identity section.
-  string16 subject_name(UTF8ToUTF16(url.host()));
+  base::string16 subject_name(UTF8ToUTF16(url.host()));
   if (subject_name.empty()) {
     subject_name.assign(
         l10n_util::GetStringUTF16(IDS_PAGE_INFO_SECURITY_TAB_UNKNOWN_PARTY));
@@ -248,20 +314,40 @@ void WebsiteSettings::Init(Profile* profile,
 
   cert_id_ = ssl.cert_id;
 
+  if (ssl.cert_id && !ssl.signed_certificate_timestamp_ids.empty()) {
+    signed_certificate_timestamp_ids_.assign(
+        ssl.signed_certificate_timestamp_ids.begin(),
+        ssl.signed_certificate_timestamp_ids.end());
+  }
+
   if (ssl.cert_id &&
       cert_store_->RetrieveCert(ssl.cert_id, &cert) &&
       (!net::IsCertStatusError(ssl.cert_status) ||
        net::IsCertStatusMinorError(ssl.cert_status))) {
     // There are no major errors. Check for minor errors.
-    if (net::IsCertStatusMinorError(ssl.cert_status)) {
+#if defined(OS_CHROMEOS)
+    policy::PolicyCertService* service =
+        policy::PolicyCertServiceFactory::GetForProfile(profile);
+    const bool used_policy_certs = service && service->UsedPolicyCertificates();
+#else
+    const bool used_policy_certs = false;
+#endif
+    if (used_policy_certs) {
+      site_identity_status_ = SITE_IDENTITY_STATUS_ADMIN_PROVIDED_CERT;
+      site_identity_details_ = l10n_util::GetStringFUTF16(
+          IDS_CERT_POLICY_PROVIDED_CERT_MESSAGE, UTF8ToUTF16(url.host()));
+    } else if (net::IsCertStatusMinorError(ssl.cert_status)) {
       site_identity_status_ = SITE_IDENTITY_STATUS_CERT_REVOCATION_UNKNOWN;
-      string16 issuer_name(UTF8ToUTF16(cert->issuer().GetDisplayName()));
+      base::string16 issuer_name(UTF8ToUTF16(cert->issuer().GetDisplayName()));
       if (issuer_name.empty()) {
         issuer_name.assign(l10n_util::GetStringUTF16(
             IDS_PAGE_INFO_SECURITY_TAB_UNKNOWN_PARTY));
       }
+
       site_identity_details_.assign(l10n_util::GetStringFUTF16(
-          IDS_PAGE_INFO_SECURITY_TAB_SECURE_IDENTITY, issuer_name));
+          GetSiteIdentityDetailsMessageByCTInfo(
+              ssl.signed_certificate_timestamp_ids, false /* not EV */),
+          issuer_name));
 
       site_identity_details_ += ASCIIToUTF16("\n\n");
       if (ssl.cert_status & net::CERT_STATUS_UNABLE_TO_CHECK_REVOCATION) {
@@ -275,14 +361,15 @@ void WebsiteSettings::Init(Profile* profile,
       }
     } else if (ssl.cert_status & net::CERT_STATUS_IS_EV) {
       // EV HTTPS page.
-      site_identity_status_ = SITE_IDENTITY_STATUS_EV_CERT;
+      site_identity_status_ = GetSiteIdentityStatusByCTInfo(
+          ssl.signed_certificate_timestamp_ids, true);
       DCHECK(!cert->subject().organization_names.empty());
       organization_name_ = UTF8ToUTF16(cert->subject().organization_names[0]);
       // An EV Cert is required to have a city (localityName) and country but
       // state is "if any".
       DCHECK(!cert->subject().locality_name.empty());
       DCHECK(!cert->subject().country_name.empty());
-      string16 locality;
+      base::string16 locality;
       if (!cert->subject().state_or_province_name.empty()) {
         locality = l10n_util::GetStringFUTF16(
             IDS_PAGEINFO_ADDRESS,
@@ -297,20 +384,25 @@ void WebsiteSettings::Init(Profile* profile,
       }
       DCHECK(!cert->subject().organization_names.empty());
       site_identity_details_.assign(l10n_util::GetStringFUTF16(
-          IDS_PAGE_INFO_SECURITY_TAB_SECURE_IDENTITY_EV,
+          GetSiteIdentityDetailsMessageByCTInfo(
+              ssl.signed_certificate_timestamp_ids, true /* is EV */),
           UTF8ToUTF16(cert->subject().organization_names[0]),
           locality,
           UTF8ToUTF16(cert->issuer().GetDisplayName())));
     } else {
       // Non-EV OK HTTPS page.
-      site_identity_status_ = SITE_IDENTITY_STATUS_CERT;
-      string16 issuer_name(UTF8ToUTF16(cert->issuer().GetDisplayName()));
+      site_identity_status_ = GetSiteIdentityStatusByCTInfo(
+          ssl.signed_certificate_timestamp_ids, false);
+      base::string16 issuer_name(UTF8ToUTF16(cert->issuer().GetDisplayName()));
       if (issuer_name.empty()) {
         issuer_name.assign(l10n_util::GetStringUTF16(
             IDS_PAGE_INFO_SECURITY_TAB_UNKNOWN_PARTY));
       }
+
       site_identity_details_.assign(l10n_util::GetStringFUTF16(
-          IDS_PAGE_INFO_SECURITY_TAB_SECURE_IDENTITY, issuer_name));
+          GetSiteIdentityDetailsMessageByCTInfo(
+              ssl.signed_certificate_timestamp_ids, false /* not EV */),
+          issuer_name));
     }
   } else {
     // HTTP or HTTPS with errors (not warnings).
@@ -321,7 +413,7 @@ void WebsiteSettings::Init(Profile* profile,
     else
       site_identity_status_ = SITE_IDENTITY_STATUS_ERROR;
 
-    const string16 bullet = UTF8ToUTF16("\n • ");
+    const base::string16 bullet = UTF8ToUTF16("\n • ");
     std::vector<SSLErrorInfo> errors;
     SSLErrorInfo::GetErrorsForCertStatus(ssl.cert_id, ssl.cert_status,
                                          url, &errors);
@@ -407,25 +499,19 @@ void WebsiteSettings::Init(Profile* profile,
         (ssl.connection_status &
         net::SSL_CONNECTION_NO_RENEGOTIATION_EXTENSION) != 0;
     const char *key_exchange, *cipher, *mac;
-    net::SSLCipherSuiteToStrings(&key_exchange, &cipher, &mac, cipher_suite);
+    bool is_aead;
+    net::SSLCipherSuiteToStrings(
+        &key_exchange, &cipher, &mac, &is_aead, cipher_suite);
 
     site_connection_details_ += ASCIIToUTF16("\n\n");
-    site_connection_details_ += l10n_util::GetStringFUTF16(
-        IDS_PAGE_INFO_SECURITY_TAB_ENCRYPTION_DETAILS,
-        ASCIIToUTF16(cipher), ASCIIToUTF16(mac), ASCIIToUTF16(key_exchange));
-
-    site_connection_details_ += ASCIIToUTF16("\n\n");
-    uint8 compression_id =
-        net::SSLConnectionStatusToCompression(ssl.connection_status);
-    if (compression_id) {
-      const char* compression;
-      net::SSLCompressionToString(&compression, compression_id);
+    if (is_aead) {
       site_connection_details_ += l10n_util::GetStringFUTF16(
-          IDS_PAGE_INFO_SECURITY_TAB_COMPRESSION_DETAILS,
-          ASCIIToUTF16(compression));
+          IDS_PAGE_INFO_SECURITY_TAB_ENCRYPTION_DETAILS_AEAD,
+          ASCIIToUTF16(cipher), ASCIIToUTF16(key_exchange));
     } else {
-      site_connection_details_ += l10n_util::GetStringUTF16(
-          IDS_PAGE_INFO_SECURITY_TAB_NO_COMPRESSION);
+      site_connection_details_ += l10n_util::GetStringFUTF16(
+          IDS_PAGE_INFO_SECURITY_TAB_ENCRYPTION_DETAILS,
+          ASCIIToUTF16(cipher), ASCIIToUTF16(mac), ASCIIToUTF16(key_exchange));
     }
 
     if (did_fallback) {
@@ -453,7 +539,8 @@ void WebsiteSettings::Init(Profile* profile,
   if (site_connection_status_ == SITE_CONNECTION_STATUS_ENCRYPTED_ERROR ||
       site_connection_status_ == SITE_CONNECTION_STATUS_MIXED_CONTENT ||
       site_identity_status_ == SITE_IDENTITY_STATUS_ERROR ||
-      site_identity_status_ == SITE_IDENTITY_STATUS_CERT_REVOCATION_UNKNOWN)
+      site_identity_status_ == SITE_IDENTITY_STATUS_CERT_REVOCATION_UNKNOWN ||
+      site_identity_status_ == SITE_IDENTITY_STATUS_ADMIN_PROVIDED_CERT)
     tab_id = WebsiteSettingsUI::TAB_ID_CONNECTION;
   ui_->SetSelectedTab(tab_id);
 }
@@ -464,18 +551,29 @@ void WebsiteSettings::PresentSitePermissions() {
   WebsiteSettingsUI::PermissionInfo permission_info;
   for (size_t i = 0; i < arraysize(kPermissionType); ++i) {
     permission_info.type = kPermissionType[i];
+    if (permission_info.type == CONTENT_SETTINGS_TYPE_MIDI_SYSEX) {
+      const CommandLine* command_line = CommandLine::ForCurrentProcess();
+      if (!command_line->HasSwitch(switches::kEnableWebMIDI))
+        continue;
+    }
 
     content_settings::SettingInfo info;
     if (permission_info.type == CONTENT_SETTINGS_TYPE_MEDIASTREAM) {
       scoped_ptr<base::Value> mic_value(content_settings_->GetWebsiteSetting(
-          site_url_, site_url_, CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC,
-          "", &info));
+          site_url_,
+          site_url_,
+          CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC,
+          std::string(),
+          &info));
       ContentSetting mic_setting =
           content_settings::ValueToContentSetting(mic_value.get());
 
       scoped_ptr<base::Value> camera_value(content_settings_->GetWebsiteSetting(
-          site_url_, site_url_, CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA,
-          "", &info));
+          site_url_,
+          site_url_,
+          CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA,
+          std::string(),
+          &info));
       ContentSetting camera_setting =
           content_settings::ValueToContentSetting(camera_value.get());
 
@@ -484,10 +582,10 @@ void WebsiteSettings::PresentSitePermissions() {
       else
         permission_info.setting = mic_setting;
     } else {
-      scoped_ptr<Value> value(content_settings_->GetWebsiteSetting(
-          site_url_, site_url_, permission_info.type, "", &info));
+      scoped_ptr<base::Value> value(content_settings_->GetWebsiteSetting(
+          site_url_, site_url_, permission_info.type, std::string(), &info));
       DCHECK(value.get());
-      if (value->GetType() == Value::TYPE_INTEGER) {
+      if (value->GetType() == base::Value::TYPE_INTEGER) {
         permission_info.setting =
             content_settings::ValueToContentSetting(value.get());
       } else {
@@ -523,7 +621,9 @@ void WebsiteSettings::PresentSiteData() {
   // Add first party cookie and site data counts.
   WebsiteSettingsUI::CookieInfo cookie_info;
   std::string cookie_source =
-      net::RegistryControlledDomainService::GetDomainAndRegistry(site_url_);
+      net::registry_controlled_domains::GetDomainAndRegistry(
+          site_url_,
+          net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
   if (cookie_source.empty())
     cookie_source = site_url_.host();
   cookie_info.cookie_source = cookie_source;
@@ -559,12 +659,15 @@ void WebsiteSettings::PresentSiteIdentity() {
   info.identity_status_description =
       UTF16ToUTF8(site_identity_details_);
   info.cert_id = cert_id_;
+  info.signed_certificate_timestamp_ids.assign(
+      signed_certificate_timestamp_ids_.begin(),
+      signed_certificate_timestamp_ids_.end());
   ui_->SetIdentityInfo(info);
 }
 
 void WebsiteSettings::PresentHistoryInfo(base::Time first_visit) {
   if (first_visit == base::Time()) {
-    ui_->SetFirstVisit(string16());
+    ui_->SetFirstVisit(base::string16());
     return;
   }
 
@@ -573,7 +676,7 @@ void WebsiteSettings::PresentHistoryInfo(base::Time first_visit) {
   base::Time first_visit_midnight = first_visit.LocalMidnight();
   visited_before_today = (first_visit_midnight < today);
 
-  string16 first_visit_text;
+  base::string16 first_visit_text;
   if (visited_before_today) {
     first_visit_text = l10n_util::GetStringFUTF16(
         IDS_PAGE_INFO_SECURITY_TAB_VISITED_BEFORE_TODAY,
@@ -581,7 +684,6 @@ void WebsiteSettings::PresentHistoryInfo(base::Time first_visit) {
   } else {
     first_visit_text = l10n_util::GetStringUTF16(
         IDS_PAGE_INFO_SECURITY_TAB_FIRST_VISITED_TODAY);
-
   }
   ui_->SetFirstVisit(first_visit_text);
 }

@@ -5,13 +5,19 @@
 #ifndef ASH_SYSTEM_USER_USER_OBSERVER_H_
 #define ASH_SYSTEM_USER_USER_OBSERVER_H_
 
+#include "ash/ash_export.h"
+
 namespace ash {
 
-class UserObserver {
+class ASH_EXPORT UserObserver {
  public:
   virtual ~UserObserver() {}
 
+  // A user got updated / changed.
   virtual void OnUserUpdate() = 0;
+
+  // A user was added to the existing session.
+  virtual void OnUserAddedToSession() = 0;
 };
 
 }  // namespace ash

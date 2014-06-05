@@ -5,11 +5,13 @@
 #ifndef UI_COMPOSITOR_LAYER_ANIMATION_OBSERVER_H_
 #define UI_COMPOSITOR_LAYER_ANIMATION_OBSERVER_H_
 
+#include <map>
 #include <set>
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "ui/compositor/compositor_export.h"
+#include "ui/compositor/layer_animation_element.h"
 
 namespace ui {
 
@@ -85,8 +87,6 @@ class COMPOSITOR_EXPORT ImplicitAnimationObserver
   // Called when the first animation sequence has started.
   virtual void OnImplicitAnimationsScheduled() {}
 
-  // Do not "delete this" in your implementation.  Consider using something
-  // like MessageLoop::current()->DeleteSoon() instead.
   virtual void OnImplicitAnimationsCompleted() = 0;
 
  protected:
@@ -94,7 +94,25 @@ class COMPOSITOR_EXPORT ImplicitAnimationObserver
   // waiting for.
   void StopObservingImplicitAnimations();
 
+  // Returns whether animation for |property| was aborted.
+  // Note that if the property wasn't animated, then it couldn't have been
+  // aborted, so this will return false for that property.
+  bool WasAnimationAbortedForProperty(
+      LayerAnimationElement::AnimatableProperty property) const;
+
+  // Returns whether animation for |property| was completed successfully.
+  // Note that if the property wasn't animated, then it couldn't have been
+  // completed, so this will return false for that property.
+  bool WasAnimationCompletedForProperty(
+      LayerAnimationElement::AnimatableProperty property) const;
+
  private:
+  enum AnimationStatus {
+    ANIMATION_STATUS_UNKNOWN,
+    ANIMATION_STATUS_COMPLETED,
+    ANIMATION_STATUS_ABORTED,
+  };
+
   friend class ScopedLayerAnimationSettings;
 
   // LayerAnimationObserver implementation
@@ -115,11 +133,20 @@ class COMPOSITOR_EXPORT ImplicitAnimationObserver
 
   void CheckCompleted();
 
+  void UpdatePropertyAnimationStatus(LayerAnimationSequence* sequence,
+                                     AnimationStatus status);
+  AnimationStatus AnimationStatusForProperty(
+      LayerAnimationElement::AnimatableProperty property) const;
+
   bool active_;
 
   // Set to true in the destructor (if non-NULL). Used to detect deletion while
   // calling out.
   bool* destroyed_;
+
+  typedef std::map<LayerAnimationElement::AnimatableProperty,
+                   AnimationStatus> PropertyAnimationStatusMap;
+  PropertyAnimationStatusMap property_animation_status_;
 
   // True if OnLayerAnimationScheduled() has been called at least once.
   bool first_sequence_scheduled_;

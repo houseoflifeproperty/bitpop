@@ -33,6 +33,7 @@
 #include "talk/base/physicalsocketserver.h"
 #include "talk/base/scoped_ptr.h"
 #include "talk/base/socket_unittest.h"
+#include "talk/base/testutils.h"
 #include "talk/base/thread.h"
 
 namespace talk_base {
@@ -74,21 +75,11 @@ TEST_F(PhysicalSocketTest, TestConnectWithDnsLookupFailIPv6) {
 }
 
 
-#ifdef OSX
-// This test crashes the OS X kernel on 10.6 (at bsd/netinet/tcp_subr.c:2118).
-TEST_F(PhysicalSocketTest, DISABLED_TestConnectWithClosedSocketIPv4) {
-#else
 TEST_F(PhysicalSocketTest, TestConnectWithClosedSocketIPv4) {
-#endif
   SocketTest::TestConnectWithClosedSocketIPv4();
 }
 
-#ifdef OSX
-// This test crashes the OS X kernel on 10.6 (at bsd/netinet/tcp_subr.c:2118).
-TEST_F(PhysicalSocketTest, DISABLED_TestConnectWithClosedSocketIPv6) {
-#else
 TEST_F(PhysicalSocketTest, TestConnectWithClosedSocketIPv6) {
-#endif
   SocketTest::TestConnectWithClosedSocketIPv6();
 }
 
@@ -156,6 +147,14 @@ TEST_F(PhysicalSocketTest, TestUdpIPv6) {
   SocketTest::TestUdpIPv6();
 }
 
+TEST_F(PhysicalSocketTest, TestUdpReadyToSendIPv4) {
+  SocketTest::TestUdpReadyToSendIPv4();
+}
+
+TEST_F(PhysicalSocketTest, TestUdpReadyToSendIPv6) {
+  SocketTest::TestUdpReadyToSendIPv6();
+}
+
 TEST_F(PhysicalSocketTest, TestGetSetOptionsIPv4) {
   SocketTest::TestGetSetOptionsIPv4();
 }
@@ -219,7 +218,7 @@ Thread *PosixSignalDeliveryTest::signaled_thread_ = NULL;
 // Test receiving a synchronous signal while not in Wait() and then entering
 // Wait() afterwards.
 TEST_F(PosixSignalDeliveryTest, RaiseThenWait) {
-  ss_->SetPosixSignalHandler(SIGTERM, &RecordSignal);
+  ASSERT_TRUE(ss_->SetPosixSignalHandler(SIGTERM, &RecordSignal));
   raise(SIGTERM);
   EXPECT_TRUE(ss_->Wait(0, true));
   EXPECT_TRUE(ExpectSignal(SIGTERM));
@@ -279,7 +278,8 @@ TEST_F(PosixSignalDeliveryTest, SignalOnDifferentThread) {
   // thread. Our implementation should safely handle it and dispatch
   // RecordSignal() on this thread.
   scoped_ptr<Thread> thread(new Thread());
-  thread->Start(new RaiseSigTermRunnable());
+  scoped_ptr<RaiseSigTermRunnable> runnable(new RaiseSigTermRunnable());
+  thread->Start(runnable.get());
   EXPECT_TRUE(ss_->Wait(1500, true));
   EXPECT_TRUE(ExpectSignal(SIGTERM));
   EXPECT_EQ(Thread::Current(), signaled_thread_);

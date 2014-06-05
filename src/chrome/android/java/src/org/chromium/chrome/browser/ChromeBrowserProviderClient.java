@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -76,6 +76,16 @@ public class ChromeBrowserProviderClient {
     public static BookmarkNode getBookmarkFolderHierarchy(Context context) {
         return chromeBrowserProviderCall(BookmarkNode.class,
                 ChromeBrowserProvider.CLIENT_API_GET_BOOKMARK_FOLDER_HIERARCHY, context,
+                argsToBundle());
+    }
+
+    /**
+     * Removes all bookmarks and bookmark folders.
+     * Only the permanent bookmark folders remain after this operation.
+     */
+    public static void removeAllBookmarks(Context context) {
+        chromeBrowserProviderCall(BookmarkNode.class,
+                ChromeBrowserProvider.CLIENT_API_DELETE_ALL_BOOKMARKS, context,
                 argsToBundle());
     }
 

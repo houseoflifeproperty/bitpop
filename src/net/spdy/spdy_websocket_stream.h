@@ -9,11 +9,13 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/time.h"
+#include "base/memory/weak_ptr.h"
+#include "base/time/time.h"
 #include "net/base/completion_callback.h"
 #include "net/base/request_priority.h"
 #include "net/spdy/spdy_framer.h"
 #include "net/spdy/spdy_header_block.h"
+#include "net/spdy/spdy_session.h"
 #include "net/spdy/spdy_stream.h"
 
 namespace net {
@@ -34,20 +36,20 @@ class NET_EXPORT_PRIVATE SpdyWebSocketStream
 
     // Called on corresponding to OnSendHeadersComplete() or SPDY's SYN frame
     // has been sent.
-    virtual void OnSentSpdyHeaders(int status) = 0;
+    virtual void OnSentSpdyHeaders() = 0;
 
-    // Called on corresponding to OnResponseReceived() or SPDY's SYN_STREAM,
-    // SYN_REPLY, or HEADERS frames are received. This callback may be called
-    // multiple times as SPDY's delegate does.
-    virtual int OnReceivedSpdyResponseHeader(
-        const SpdyHeaderBlock& headers,
-        int status) = 0;
+    // Called on corresponding to OnResponseHeadersUpdated() or
+    // SPDY's SYN_STREAM, SYN_REPLY, or HEADERS frames are
+    // received. This callback may be called multiple times as SPDY's
+    // delegate does.
+    virtual void OnSpdyResponseHeadersUpdated(
+        const SpdyHeaderBlock& response_headers) = 0;
 
     // Called when data is sent.
-    virtual void OnSentSpdyData(int amount_sent) = 0;
+    virtual void OnSentSpdyData(size_t bytes_sent) = 0;
 
     // Called when data is received.
-    virtual void OnReceivedSpdyData(const char* data, int length) = 0;
+    virtual void OnReceivedSpdyData(scoped_ptr<SpdyBuffer> buffer) = 0;
 
     // Called when SpdyStream is closed.
     virtual void OnCloseSpdyStream() = 0;
@@ -56,7 +58,8 @@ class NET_EXPORT_PRIVATE SpdyWebSocketStream
     virtual ~Delegate() {}
   };
 
-  SpdyWebSocketStream(SpdySession* spdy_session, Delegate* delegate);
+  SpdyWebSocketStream(const base::WeakPtr<SpdySession>& spdy_session,
+                      Delegate* delegate);
   virtual ~SpdyWebSocketStream();
 
   // Initializes SPDY stream for the WebSocket.
@@ -72,27 +75,24 @@ class NET_EXPORT_PRIVATE SpdyWebSocketStream
   void Close();
 
   // SpdyStream::Delegate
-  virtual bool OnSendHeadersComplete(int status) OVERRIDE;
-  virtual int OnSendBody() OVERRIDE;
-  virtual int OnSendBodyComplete(int status, bool* eof) OVERRIDE;
-  virtual int OnResponseReceived(const SpdyHeaderBlock& response,
-                                 base::Time response_time,
-                                 int status) OVERRIDE;
-  virtual void OnHeadersSent() OVERRIDE;
-  virtual int OnDataReceived(const char* data, int length) OVERRIDE;
-  virtual void OnDataSent(int length) OVERRIDE;
+  virtual void OnRequestHeadersSent() OVERRIDE;
+  virtual SpdyResponseHeadersStatus OnResponseHeadersUpdated(
+      const SpdyHeaderBlock& response_headers) OVERRIDE;
+  virtual void OnDataReceived(scoped_ptr<SpdyBuffer> buffer) OVERRIDE;
+  virtual void OnDataSent() OVERRIDE;
   virtual void OnClose(int status) OVERRIDE;
 
  private:
-  friend class SpdyWebSocketStreamSpdy2Test;
-  friend class SpdyWebSocketStreamSpdy3Test;
-  FRIEND_TEST_ALL_PREFIXES(SpdyWebSocketStreamSpdy2Test, Basic);
-  FRIEND_TEST_ALL_PREFIXES(SpdyWebSocketStreamSpdy3Test, Basic);
+  friend class SpdyWebSocketStreamTest;
+  FRIEND_TEST_ALL_PREFIXES(SpdyWebSocketStreamTest, Basic);
 
   void OnSpdyStreamCreated(int status);
 
-  scoped_refptr<SpdyStream> stream_;
-  scoped_refptr<SpdySession> spdy_session_;
+  base::WeakPtrFactory<SpdyWebSocketStream> weak_ptr_factory_;
+  SpdyStreamRequest stream_request_;
+  base::WeakPtr<SpdyStream> stream_;
+  const base::WeakPtr<SpdySession> spdy_session_;
+  size_t pending_send_data_length_;
   Delegate* delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(SpdyWebSocketStream);

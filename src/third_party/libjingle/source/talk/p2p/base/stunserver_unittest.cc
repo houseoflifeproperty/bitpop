@@ -58,7 +58,7 @@ class StunServerTest : public testing::Test {
   void Send(const StunMessage& msg) {
     talk_base::ByteBuffer buf;
     msg.Write(&buf);
-    Send(buf.Data(), buf.Length());
+    Send(buf.Data(), static_cast<int>(buf.Length()));
   }
   void Send(const char* buf, int len) {
     client_->SendTo(buf, len, server_addr);
@@ -81,6 +81,10 @@ class StunServerTest : public testing::Test {
   talk_base::scoped_ptr<StunServer> server_;
   talk_base::scoped_ptr<talk_base::TestClient> client_;
 };
+
+// Disable for TSan v2, see
+// https://code.google.com/p/webrtc/issues/detail?id=2517 for details.
+#if !defined(THREAD_SANITIZER)
 
 TEST_F(StunServerTest, TestGood) {
   StunMessage req;
@@ -109,11 +113,13 @@ TEST_F(StunServerTest, TestGood) {
   delete msg;
 }
 
+#endif // if !defined(THREAD_SANITIZER)
+
 TEST_F(StunServerTest, TestBad) {
   const char* bad = "this is a completely nonsensical message whose only "
                     "purpose is to make the parser go 'ack'.  it doesn't "
                     "look anything like a normal stun message";
-  Send(bad, std::strlen(bad));
+  Send(bad, static_cast<int>(strlen(bad)));
 
   StunMessage* msg = Receive();
   ASSERT_TRUE(msg == NULL);

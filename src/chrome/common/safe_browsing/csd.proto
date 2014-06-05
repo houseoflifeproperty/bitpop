@@ -87,6 +87,45 @@ message ClientPhishingResponse {
   repeated string OBSOLETE_whitelist_expression = 2;
 }
 
+message ClientMalwareRequest {
+  // URL that the client visited.  The CGI parameters are stripped by the
+  // client.
+  required string url = 1;
+
+  // Field 2 is deleted and no longer in use.
+
+  // Field 3 is only used on the server.
+
+  // The referrer URL.  This field might not be set, for example, in the case
+  // where the referrer uses HTTPS.
+  optional string referrer_url = 4;
+
+  // Field 5 and 6 are only used on the server.
+
+  message UrlInfo {
+    required string ip = 1;
+    required string url = 2;
+    optional string method = 3;
+    optional string referrer = 4;
+    // Resource type, the int value is a direct cast from the Type enum 
+    // of ResourceType class defined in //src/webkit/commom/resource_type.h
+    optional int32 resource_type = 5;
+  }
+
+  // List of resource urls that match the malware IP list.
+  repeated UrlInfo bad_ip_url_info = 7;
+}
+
+message ClientMalwareResponse {
+  required bool blacklist = 1;
+  // The confirmed blacklisted bad IP and its url, which will be shown in
+  // malware warning, if the blacklist verdict is true.
+  // This IP string could be either in IPv4 or IPv6 format, which is the same
+  // as the ones client sent to server.
+  optional string bad_ip = 2;
+  optional string bad_url = 3;
+}
+
 message ClientDownloadRequest {
   // The final URL of the download (after all redirects).
   required string url = 1;
@@ -181,7 +220,38 @@ message ClientDownloadRequest {
   // Locale of the device, eg en, en_US.
   optional string locale = 11;
 
-  // Field 12 is only used on the server.
+  message PEImageHeaders {
+    // IMAGE_DOS_HEADER.
+    optional bytes dos_header = 1;
+    // IMAGE_FILE_HEADER.
+    optional bytes file_header = 2;
+    // IMAGE_OPTIONAL_HEADER32. Present only for 32-bit PE images.
+    optional bytes optional_headers32 = 3;
+    // IMAGE_OPTIONAL_HEADER64. Present only for 64-bit PE images.
+    optional bytes optional_headers64 = 4;
+    // IMAGE_SECTION_HEADER.
+    repeated bytes section_header = 5;
+    // Contents of the .edata section.
+    optional bytes export_section_data = 6;
+
+    message DebugData {
+      // IMAGE_DEBUG_DIRECTORY.
+      optional bytes directory_entry = 1;
+      optional bytes raw_data = 2;
+    }
+
+    repeated DebugData debug_data = 7;
+  }
+
+  message ImageHeaders {
+    // Windows Portable Executable image headers.
+    optional PEImageHeaders pe_headers = 1;
+  };
+
+  // Fields 12-17 are reserved for server-side use and are never sent by the
+  // client.
+
+  optional ImageHeaders image_headers = 18;
 }
 
 message ClientDownloadResponse {
@@ -195,6 +265,8 @@ message ClientDownloadResponse {
     UNCOMMON = 2;
     // The download is potentially unwanted.
     POTENTIALLY_UNWANTED = 3;
+    // The download is from a dangerous host.
+    DANGEROUS_HOST = 4;
   }
   required Verdict verdict = 1;
 
@@ -241,4 +313,21 @@ message ClientDownloadReport {
 
   // The original download response sent from the verdict server.
   optional ClientDownloadResponse download_response = 5;
+}
+
+// This is used to send back upload status to the client after upload completion
+message ClientUploadResponse {
+  enum UploadStatus {
+    // The upload was successful and a complete response can be expected
+    SUCCESS = 0;
+
+    // The upload was unsuccessful and the response is incomplete.
+    UPLOAD_FAILURE = 1;
+  }
+
+  // Holds the upload status
+  optional UploadStatus status = 1;
+
+  // Holds the permalink where the results of scanning the binary are available
+  optional string permalink = 2;
 }

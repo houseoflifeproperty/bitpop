@@ -1,51 +1,62 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.android_webview;
 
+import android.content.res.Resources;
+import android.util.SparseArray;
+
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 
-import android.content.res.Resources;
-
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.lang.ref.SoftReference;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Scanner;
 
+/**
+ * A class that defines a set of resource IDs and functionality to resolve
+ * those IDs to concrete resources.
+ */
 @JNINamespace("android_webview::AwResource")
 public class AwResource {
     // The following resource ID's must be initialized by the embedder.
 
     // Raw resource ID for an HTML page to be displayed in the case of
     // a specific load error.
-    public static int RAW_LOAD_ERROR;
+    private static int RAW_LOAD_ERROR;
 
     // Raw resource ID for an HTML page to be displayed in the case of
     // a generic load error. (It's called NO_DOMAIN for legacy reasons).
-    public static int RAW_NO_DOMAIN;
+    private static int RAW_NO_DOMAIN;
 
     // String resource ID for the default text encoding to use.
-    public static int STRING_DEFAULT_TEXT_ENCODING;
+    private static int STRING_DEFAULT_TEXT_ENCODING;
 
     // The embedder should inject a Resources object that will be used
     // to resolve Resource IDs into the actual resources.
     private static Resources sResources;
 
     // Loading some resources is expensive, so cache the results.
-    private static Map<Integer, SoftReference<String> > sResourceCache;
+    private static SparseArray<SoftReference<String>> sResourceCache;
 
     private static final int TYPE_STRING = 0;
     private static final int TYPE_RAW = 1;
 
     public static void setResources(Resources resources) {
         sResources = resources;
-        sResourceCache = new HashMap<Integer, SoftReference<String> >();
+        sResourceCache = new SparseArray<SoftReference<String>>();
+    }
+
+    public static void setErrorPageResources(int loaderror, int nodomain) {
+        RAW_LOAD_ERROR = loaderror;
+        RAW_NO_DOMAIN = nodomain;
+    }
+
+    public static void setDefaultTextEncoding(int encoding) {
+        STRING_DEFAULT_TEXT_ENCODING = encoding;
     }
 
     @CalledByNative
@@ -68,8 +79,8 @@ public class AwResource {
         assert sResources != null;
         assert sResourceCache != null;
 
-        String result = sResourceCache.get(resid) == null ?
-                null : sResourceCache.get(resid).get();
+        SoftReference<String> stringRef = sResourceCache.get(resid);
+        String result = stringRef == null ? null : stringRef.get();
         if (result == null) {
             switch (type) {
                 case TYPE_STRING:
@@ -104,13 +115,13 @@ public class AwResource {
             return "";
         } catch (NoSuchElementException e) {
             return "";
-        }
-        finally {
+        } finally {
             try {
                 if (isr != null) {
                     isr.close();
                 }
-            } catch(IOException e) {
+            } catch (IOException e) {
+                // Nothing to do if close() fails.
             }
         }
         return result;

@@ -16,14 +16,19 @@ from common import chromium_utils
 
 def main():
   builder_name = os.getenv('BUILDBOT_BUILDERNAME', default='')
-  is_release_bot = builder_name.startswith('release')
-  script = ''
-  if is_release_bot:
-    script = 'src/dartium_tools/buildbot_release_annotated_steps.py'
-  else:
-    script = 'src/dartium_tools/buildbot_annotated_steps.py'
 
-  return chromium_utils.RunCommand([sys.executable, script])
+  script = 'src/dartium_tools/buildbot_annotated_steps.py'
+
+  chromium_utils.RunCommand([sys.executable, script])
+
+  # BIG HACK
+  # Normal ninja clobbering does not work due to symlinks/python on windows
+  # Full clobbering before building does not work since it will destroy
+  # the ninja build files
+  # So we basically clobber at the end here
+  if chromium_utils.IsWindows() and 'full' in builder_name:
+    chromium_utils.RemoveDirectory('src/out')
+  return 0
 
 if __name__ == '__main__':
   sys.exit(main())

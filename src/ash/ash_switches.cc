@@ -4,6 +4,8 @@
 
 #include "ash/ash_switches.h"
 
+#include "base/command_line.h"
+
 namespace ash {
 namespace switches {
 
@@ -14,12 +16,6 @@ namespace switches {
 // same time as the white/grayscale login screen animation).
 const char kAshAnimateFromBootSplashScreen[] =
     "ash-animate-from-boot-splash-screen";
-
-// Variation of boot animation that uses Tween::EASE_OUT_2.
-const char kAshBootAnimationFunction2[] = "ash-boot-animation-function2";
-
-// Variation of boot animation that uses Tween::EASE_OUT_3.
-const char kAshBootAnimationFunction3[] = "ash-boot-animation-function3";
 
 // Constrains the pointer movement within a root window on desktop.
 const char kAshConstrainPointerToRoot[] = "ash-constrain-pointer-to-root";
@@ -33,50 +29,59 @@ const char kAshCopyHostBackgroundAtBoot[] = "ash-copy-host-background-at-boot";
 // Enable keyboard shortcuts useful for debugging.
 const char kAshDebugShortcuts[] = "ash-debug-shortcuts";
 
-// Disable support for auto window placement.
-const char kAshDisableAutoWindowPlacement[] =
-    "ash-enable-auto-window-placement";
+// Indicates that the wallpaper images specified by
+// kAshDefaultWallpaper{Large,Small} are OEM-specific (i.e. they are not
+// downloadable from Google).
+const char kAshDefaultWallpaperIsOem[] = "ash-default-wallpaper-is-oem";
 
-// Disables the limitter to throttle how quickly a user
-// can change display settings.
-const char kAshDisableDisplayChangeLimiter[] =
-    "ash-disable-display-change-limiter";
+// Default wallpaper to use (as paths to trusted, non-user-writable JPEG files).
+const char kAshDefaultWallpaperLarge[] = "ash-default-wallpaper-large";
+const char kAshDefaultWallpaperSmall[] = "ash-default-wallpaper-small";
 
-// Disables boot animation v2, go back to v1.
-const char kAshDisableBootAnimation2[] = "ash-disable-boot-animation2";
+// Disable ability to dock windows at the desktop edge.
+const char kAshDisableDockedWindows[] = "ash-disable-docked-windows";
 
-// Disables panel fitting (used for mirror mode).
-const char kAshDisablePanelFitting[] = "ash-disable-panel-fitting";
+// Enable the Touch Exploration Mode. Touch Exploration Mode will be turned on
+// automatically when spoken feedback is enabled when this flag is set.
+const char kAshEnableTouchExplorationMode[] =
+    "ash-enable-touch-exploration-mode";
 
-// Enable advanced gestures (e.g. for window management).
-const char kAshEnableAdvancedGestures[] = "ash-enable-advanced-gestures";
-
-// Enable workspace switching via a three finger vertical scroll.
-const char kAshEnableWorkspaceScrubbing[] = "ash-enable-workspace-scrubbing";
-
-#if defined(OS_LINUX)
-// Enable memory monitoring.
-const char kAshEnableMemoryMonitor[] = "ash-enable-memory-monitor";
+#if defined(OS_CHROMEOS)
+// Enables key bindings to scroll magnified screen.
+const char kAshEnableMagnifierKeyScroller[] =
+    "ash-enable-magnifier-key-scroller";
 #endif
 
-// Enable the per application grouping version of the launcher.
-const char kAshEnablePerAppLauncher[] = "ash-enable-per-app-launcher";
+// Enables software based mirroring.
+const char kAshEnableSoftwareMirroring[] = "ash-enable-software-mirroring";
 
-// Enables the Oak tree viewer.
-const char kAshEnableOak[] = "ash-enable-oak";
+// Enables touch view testing.
+// TODO(skuhne): Remove TOGGLE_TOUCH_VIEW_TESTING accelerator once this
+// flag is removed.
+const char kAshEnableTouchViewTesting[] = "ash-enable-touch-view-testing";
+
+// When this flag is set, system sounds will be played whether the
+// ChromeVox is enabled or not.
+const char kAshEnableSystemSounds[] = "ash-enable-system-sounds";
 
 // Enables showing the tray bubble by dragging on the shelf.
 const char kAshEnableTrayDragging[] = "ash-enable-tray-dragging";
 
-// Enables experimental "immersive" mode, a nearly-fullscreen view of the web
-// content without a tab strip or omnibox.
-const char kAshImmersive[] = "ash-immersive";
+// Wallpaper to use in guest mode (as paths to trusted, non-user-writable JPEG
+// files).
+const char kAshGuestWallpaperLarge[] = "ash-guest-wallpaper-large";
+const char kAshGuestWallpaperSmall[] = "ash-guest-wallpaper-small";
 
-// Enables creating a launcher per display.
-const char kAshLauncherPerDisplay[] = "ash-launcher-per-display";
+// Hides notifications that are irrelevant to Chrome OS device factory testing,
+// such as battery level updates.
+const char kAshHideNotificationsForFactory[] =
+    "ash-hide-notifications-for-factory";
 
-// If present new lock animations are enabled.
-const char kAshDisableNewLockAnimations[] = "ash-disable-new-lock-animations";
+// Sets a window size, optional position, and optional scale factor.
+// "1024x768" creates a window of size 1024x768.
+// "100+200-1024x768" positions the window at 100,200.
+// "1024x768*2" sets the scale factor to 2 for a high DPI display.
+const char kAshHostWindowBounds[] = "ash-host-window-bounds";
 
 // Specifies the layout mode and offsets for the secondary display for
 // testing. The format is "<t|r|b|l>,<offset>" where t=TOP, r=RIGHT,
@@ -87,14 +92,27 @@ const char kAshSecondaryDisplayLayout[] = "ash-secondary-display-layout";
 // Enables the heads-up display for tracking touch points.
 const char kAshTouchHud[] = "ash-touch-hud";
 
+// Uses the 1st display in --ash-host-window-bounds as internal display.
+// This is for debugging on linux desktop.
+const char kAshUseFirstDisplayAsInternal[] =
+    "ash-use-first-display-as-internal";
+
 // (Most) Chrome OS hardware reports ACPI power button releases correctly.
 // Standard hardware reports releases immediately after presses.  If set, we
 // lock the screen or shutdown the system immediately in response to a press
 // instead of displaying an interactive animation.
 const char kAuraLegacyPowerButton[] = "aura-legacy-power-button";
 
-// Avoid drawing drop shadows under windows.
-const char kAuraNoShadows[] = "aura-no-shadows";
+#if defined(OS_WIN)
+// Force Ash to open its root window on the desktop, even on Windows 8 where
+// it would normally end up in metro.
+const char kForceAshToDesktop[] = "ash-force-desktop";
+
+#endif
+
+bool UseDockedWindows() {
+  return !CommandLine::ForCurrentProcess()->HasSwitch(kAshDisableDockedWindows);
+}
 
 }  // namespace switches
 }  // namespace ash

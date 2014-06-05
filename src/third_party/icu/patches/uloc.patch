@@ -1,8 +1,39 @@
 Index: source/common/uloc.c
 ===================================================================
---- source/common/uloc.c	(revision 113138)
+--- source/common/uloc.c	(revision 68397)
 +++ source/common/uloc.c	(working copy)
-@@ -713,7 +713,7 @@
+@@ -693,6 +693,13 @@
+                     keywordList[numKeywords].keyword[n++] = uprv_tolower(pos[i]);
+                 }
+             }
++
++            /* zero-length keyword is an error. */
++            if (n == 0) {
++                *status = U_INVALID_FORMAT_ERROR;
++                return 0;
++            }
++
+             keywordList[numKeywords].keyword[n] = 0;
+             keywordList[numKeywords].keywordLen = n;
+             /* now grab the value part. First we skip the '=' */
+@@ -701,8 +708,15 @@
+             while(*equalSign == ' ') {
+                 equalSign++;
+             }
++
++            /* Premature end or zero-length value */
++            if (!equalSign || equalSign == semicolon) {
++                *status = U_INVALID_FORMAT_ERROR;
++                return 0;
++            }
++
+             keywordList[numKeywords].valueStart = equalSign;
+-            
++
+             pos = semicolon;
+             i = 0;
+             if(pos) {
+@@ -713,7 +727,7 @@
                  pos++;
              } else {
                  i = (int32_t)uprv_strlen(equalSign);
@@ -11,7 +42,7 @@ Index: source/common/uloc.c
                      i--;
                  }
                  keywordList[numKeywords].valueLen = i;
-@@ -1797,7 +1797,7 @@
+@@ -1797,7 +1811,7 @@
                  int32_t variantLen = _deleteVariant(variant, uprv_min(variantSize, (nameCapacity-len)), variantToCompare, n);
                  len -= variantLen;
                  if (variantLen > 0) {
@@ -20,7 +51,7 @@ Index: source/common/uloc.c
                          --len;
                      }
                      addKeyword = VARIANT_MAP[j].keyword;
-@@ -1805,7 +1805,7 @@
+@@ -1805,7 +1819,7 @@
                      break;
                  }
              }

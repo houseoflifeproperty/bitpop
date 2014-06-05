@@ -5,11 +5,13 @@
 #include "ash/system/status_area_widget_delegate.h"
 
 #include "ash/ash_export.h"
+#include "ash/ash_switches.h"
 #include "ash/focus_cycler.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
-#include "base/utf_string_conversions.h"
-#include "ui/aura/root_window.h"
+#include "ash/system/tray/tray_constants.h"
+#include "base/strings/utf_string_conversions.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image.h"
@@ -17,18 +19,14 @@
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/widget/widget.h"
 
-namespace {
-
-int kTraySpacing = 8;
-
-}  // namespace
-
 namespace ash {
-namespace internal {
 
 StatusAreaWidgetDelegate::StatusAreaWidgetDelegate()
     : focus_cycler_for_testing_(NULL),
       alignment_(SHELF_ALIGNMENT_BOTTOM) {
+  // Allow the launcher to surrender the focus to another window upon
+  // navigation completion by the user.
+  set_allow_deactivate_on_esc(true);
 }
 
 StatusAreaWidgetDelegate::~StatusAreaWidgetDelegate() {
@@ -41,16 +39,6 @@ void StatusAreaWidgetDelegate::SetFocusCyclerForTesting(
 
 views::View* StatusAreaWidgetDelegate::GetDefaultFocusableChild() {
   return child_at(0);
-}
-
-bool StatusAreaWidgetDelegate::AcceleratorPressed(
-    const ui::Accelerator& accelerator) {
-  if (accelerator.key_code() == ui::VKEY_ESCAPE) {
-    RemovePaneFocus();
-    GetFocusManager()->ClearFocus();
-    return true;
-  }
-  return false;
 }
 
 views::Widget* StatusAreaWidgetDelegate::GetWidget() {
@@ -93,26 +81,40 @@ void StatusAreaWidgetDelegate::UpdateLayout() {
   SetLayoutManager(layout);
 
   views::ColumnSet* columns = layout->AddColumnSet(0);
-  if (alignment_ == SHELF_ALIGNMENT_BOTTOM) {
+  if (alignment_ == SHELF_ALIGNMENT_BOTTOM ||
+      alignment_ == SHELF_ALIGNMENT_TOP) {
+    bool is_first_visible_child = true;
     for (int c = 0; c < child_count(); ++c) {
-      if (c != 0)
+      views::View* child = child_at(c);
+      if (!child->visible())
+        continue;
+      if (!is_first_visible_child)
         columns->AddPaddingColumn(0, kTraySpacing);
-      columns->AddColumn(views::GridLayout::CENTER, views::GridLayout::CENTER,
+      is_first_visible_child = false;
+      columns->AddColumn(views::GridLayout::CENTER, views::GridLayout::FILL,
                          0, /* resize percent */
                          views::GridLayout::USE_PREF, 0, 0);
     }
     layout->StartRow(0, 0);
-    for (int c = child_count() - 1; c >= 0; --c)
-      layout->AddView(child_at(c));
+    for (int c = child_count() - 1; c >= 0; --c) {
+      views::View* child = child_at(c);
+      if (child->visible())
+        layout->AddView(child);
+    }
   } else {
-    columns->AddColumn(views::GridLayout::CENTER, views::GridLayout::CENTER,
+    columns->AddColumn(views::GridLayout::FILL, views::GridLayout::CENTER,
                        0, /* resize percent */
                        views::GridLayout::USE_PREF, 0, 0);
+    bool is_first_visible_child = true;
     for (int c = child_count() - 1; c >= 0; --c) {
-      if (c != child_count() - 1)
+      views::View* child = child_at(c);
+      if (!child->visible())
+        continue;
+      if (!is_first_visible_child)
         layout->AddPaddingRow(0, kTraySpacing);
+      is_first_visible_child = false;
       layout->StartRow(0, 0);
-      layout->AddView(child_at(c));
+      layout->AddView(child);
     }
   }
   Layout();
@@ -124,10 +126,13 @@ void StatusAreaWidgetDelegate::ChildPreferredSizeChanged(View* child) {
   UpdateWidgetSize();
 }
 
+void StatusAreaWidgetDelegate::ChildVisibilityChanged(View* child) {
+  UpdateLayout();
+}
+
 void StatusAreaWidgetDelegate::UpdateWidgetSize() {
   if (GetWidget())
     GetWidget()->SetSize(GetPreferredSize());
 }
 
-}  // namespace internal
 }  // namespace ash

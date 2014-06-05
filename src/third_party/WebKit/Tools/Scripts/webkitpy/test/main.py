@@ -33,7 +33,9 @@ import time
 import traceback
 import unittest
 
+from webkitpy.common.webkit_finder import WebKitFinder
 from webkitpy.common.system.filesystem import FileSystem
+from webkitpy.common.system.executive import Executive
 from webkitpy.test.finder import Finder
 from webkitpy.test.printer import Printer
 from webkitpy.test.runner import Runner, unit_test_name
@@ -41,17 +43,19 @@ from webkitpy.test.runner import Runner, unit_test_name
 _log = logging.getLogger(__name__)
 
 
-def main():
-    up = os.path.dirname
-    webkit_root = up(up(up(up(up(os.path.abspath(__file__))))))
+up = os.path.dirname
+webkit_root = up(up(up(up(up(os.path.abspath(__file__))))))
 
-    tester = Tester()
-    tester.add_tree(os.path.join(webkit_root, 'Tools', 'Scripts'), 'webkitpy')
-    tester.add_tree(os.path.join(webkit_root, 'Source', 'WebKit2', 'Scripts'), 'webkit2')
+
+def main():
+    filesystem = FileSystem()
+    wkf = WebKitFinder(filesystem)
+    tester = Tester(filesystem, wkf)
+    tester.add_tree(wkf.path_from_webkit_base('Tools', 'Scripts'), 'webkitpy')
 
     tester.skip(('webkitpy.common.checkout.scm.scm_unittest',), 'are really, really, slow', 31818)
     if sys.platform == 'win32':
-        tester.skip(('webkitpy.common.checkout', 'webkitpy.common.config', 'webkitpy.tool'), 'fail horribly on win32', 54526)
+        tester.skip(('webkitpy.common.checkout', 'webkitpy.common.config', 'webkitpy.tool', 'webkitpy.w3c', 'webkitpy.layout_tests.layout_package.bot_test_expectations'), 'fail horribly on win32', 54526)
 
     # This only needs to run on Unix, so don't worry about win32 for now.
     appengine_sdk_path = '/usr/local/google_appengine'
@@ -62,17 +66,20 @@ def main():
         from google.appengine.dist import use_library
         use_library('django', '1.2')
         dev_appserver.fix_sys_path()
-        tester.add_tree(os.path.join(webkit_root, 'Tools', 'QueueStatusServer'))
+        tester.add_tree(wkf.path_from_webkit_base('Tools', 'TestResultServer'))
     else:
-        _log.info('Skipping QueueStatusServer tests; the Google AppEngine Python SDK is not installed.')
+        _log.info('Skipping TestResultServer tests; the Google AppEngine Python SDK is not installed.')
 
     return not tester.run()
 
 
 class Tester(object):
-    def __init__(self, filesystem=None):
-        self.finder = Finder(filesystem or FileSystem())
+    def __init__(self, filesystem=None, webkit_finder=None):
+        self.filesystem = filesystem or FileSystem()
+        self.executive = Executive()
+        self.finder = Finder(self.filesystem)
         self.printer = Printer(sys.stderr)
+        self.webkit_finder = webkit_finder or WebKitFinder(self.filesystem)
         self._options = None
 
     def add_tree(self, top_directory, starting_subdirectory=None):
@@ -81,12 +88,12 @@ class Tester(object):
     def skip(self, names, reason, bugid):
         self.finder.skip(names, reason, bugid)
 
-    def _parse_args(self, argv=None):
+    def _parse_args(self, argv):
         parser = optparse.OptionParser(usage='usage: %prog [options] [args...]')
         parser.add_option('-a', '--all', action='store_true', default=False,
                           help='run all the tests')
         parser.add_option('-c', '--coverage', action='store_true', default=False,
-                          help='generate code coverage info (requires http://pypi.python.org/pypi/coverage)')
+                          help='generate code coverage info')
         parser.add_option('-i', '--integration-tests', action='store_true', default=False,
                           help='run integration tests as well as unit tests'),
         parser.add_option('-j', '--child-processes', action='store', type='int', default=(1 if sys.platform == 'win32' else multiprocessing.cpu_count()),
@@ -106,8 +113,24 @@ class Tester(object):
         return parser.parse_args(argv)
 
     def run(self):
-        self._options, args = self._parse_args()
+        argv = sys.argv[1:]
+        self._options, args = self._parse_args(argv)
+
+        # Make sure PYTHONPATH is set up properly.
+        sys.path = self.finder.additional_paths(sys.path) + sys.path
+
+        # FIXME: unittest2 needs to be in sys.path for its internal imports to work.
+        thirdparty_path = self.webkit_finder.path_from_webkit_base('Tools', 'Scripts', 'webkitpy', 'thirdparty')
+        if not thirdparty_path in sys.path:
+            sys.path.append(thirdparty_path)
+
         self.printer.configure(self._options)
+
+        # Do this after configuring the printer, so that logging works properly.
+        if self._options.coverage:
+            argv = ['-j', '1'] + [arg for arg in argv if arg not in ('-c', '--coverage', '-j', '--child-processes')]
+            _log.warning('Checking code coverage, so running things serially')
+            return self._run_under_coverage(argv)
 
         self.finder.clean_trees()
 
@@ -118,30 +141,26 @@ class Tester(object):
 
         return self._run_tests(names)
 
+    def _run_under_coverage(self, argv):
+        # coverage doesn't run properly unless its parent dir is in PYTHONPATH.
+        # This means we need to add that dir to the environment. Also, the
+        # report output is best when the paths are relative to the Scripts dir.
+        dirname = self.filesystem.dirname
+        script_dir = dirname(dirname(dirname(__file__)))
+        thirdparty_dir = self.filesystem.join(script_dir, 'webkitpy', 'thirdparty')
+
+        env = os.environ.copy()
+        python_path = env.get('PYTHONPATH', '')
+        python_path = python_path + os.pathsep + thirdparty_dir
+        env['PYTHONPATH'] = python_path
+
+        prefix_cmd = [sys.executable, 'webkitpy/thirdparty/coverage']
+        exit_code = self.executive.call(prefix_cmd + ['run', __file__] + argv, cwd=script_dir, env=env)
+        if not exit_code:
+            exit_code = self.executive.call(prefix_cmd + ['report', '--omit', 'webkitpy/thirdparty/*,/usr/*,/Library/*'], cwd=script_dir, env=env)
+        return (exit_code == 0)
+
     def _run_tests(self, names):
-        # Make sure PYTHONPATH is set up properly.
-        sys.path = self.finder.additional_paths(sys.path) + sys.path
-
-        # We autoinstall everything up so that we can run tests concurrently
-        # and not have to worry about autoinstalling packages concurrently.
-        self.printer.write_update("Checking autoinstalled packages ...")
-        from webkitpy.thirdparty import autoinstall_everything
-        installed_something = autoinstall_everything()
-
-        # FIXME: There appears to be a bug in Python 2.6.1 that is causing multiprocessing
-        # to hang after we install the packages in a clean checkout.
-        if installed_something:
-            _log.warning("We installed new packages, so running things serially at first")
-            self._options.child_processes = 1
-
-        if self._options.coverage:
-            _log.warning("Checking code coverage, so running things serially")
-            self._options.child_processes = 1
-
-            import webkitpy.thirdparty.autoinstalled.coverage as coverage
-            cov = coverage.coverage(omit=["/usr/*", "*/webkitpy/thirdparty/autoinstalled/*"])
-            cov.start()
-
         self.printer.write_update("Checking imports ...")
         if not self._check_imports(names):
             return False
@@ -153,16 +172,11 @@ class Tester(object):
         self.printer.write_update("Running the tests ...")
         self.printer.num_tests = len(parallel_tests) + len(serial_tests)
         start = time.time()
-        test_runner = Runner(self.printer, loader)
+        test_runner = Runner(self.printer, loader, self.webkit_finder)
         test_runner.run(parallel_tests, self._options.child_processes)
         test_runner.run(serial_tests, 1)
 
         self.printer.print_result(time.time() - start)
-
-        if self._options.coverage:
-            cov.stop()
-            cov.save()
-            cov.report(show_missing=False)
 
         return not self.printer.num_errors and not self.printer.num_failures
 

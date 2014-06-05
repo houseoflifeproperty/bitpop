@@ -32,9 +32,9 @@ class VIEWS_EXPORT SingleSplitView : public View {
                   SingleSplitViewListener* listener);
 
   virtual void Layout() OVERRIDE;
-  virtual std::string GetClassName() const OVERRIDE;
+  virtual const char* GetClassName() const OVERRIDE;
 
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
   // SingleSplitView's preferred size is the sum of the preferred widths
   // and the max of the heights.
@@ -56,6 +56,13 @@ class VIEWS_EXPORT SingleSplitView : public View {
   }
   int divider_offset() const { return divider_offset_; }
 
+  int GetDividerSize() const;
+
+  void set_resize_disabled(bool resize_disabled) {
+    resize_disabled_ = resize_disabled;
+  }
+  bool is_resize_disabled() const { return resize_disabled_; }
+
   // Sets whether the leading component is resized when the split views size
   // changes. The default is true. A value of false results in the trailing
   // component resizing on a bounds change.
@@ -70,13 +77,7 @@ class VIEWS_EXPORT SingleSplitView : public View {
                                gfx::Rect* leading_bounds,
                                gfx::Rect* trailing_bounds) const;
 
-  void SetAccessibleName(const string16& name);
-
-  // This allows for a layout where another view is placed between the
-  // leading view and the separator. Calling this method will cause a layout
-  // invalidation, i.e., InvalidateLayou()t will be called if |offset| is
-  // different from the current value of |leading_bottom_offset_|.
-  void SetLeadingBottomOffset(int offset);
+  void SetAccessibleName(const base::string16& name);
 
  protected:
   // View overrides.
@@ -129,15 +130,14 @@ class VIEWS_EXPORT SingleSplitView : public View {
 
   bool resize_leading_on_bounds_change_;
 
+  // Whether resizing is disabled.
+  bool resize_disabled_;
+
   // Listener to notify about user initiated handle movements. Not owned.
   SingleSplitViewListener* listener_;
 
   // The accessible name of this view.
-  string16 accessible_name_;
-
-  // An offset to leave room between the bottom of the leading view bounds and
-  // the separator, if any, or the bottom of the splitview bounds otherwise.
-  int leading_bottom_offset_;
+  base::string16 accessible_name_;
 
   DISALLOW_COPY_AND_ASSIGN(SingleSplitView);
 };

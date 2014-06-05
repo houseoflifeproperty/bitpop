@@ -7,31 +7,39 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/panels/detached_panel_collection.h"
 #include "chrome/browser/ui/panels/native_panel.h"
 #include "chrome/browser/ui/panels/panel_collection.h"
 #include "chrome/browser/ui/panels/panel_mouse_watcher.h"
+#include "chrome/browser/ui/panels/stacked_panel_collection.h"
 #include "chrome/browser/ui/panels/test_panel_active_state_observer.h"
 #include "chrome/browser/ui/panels/test_panel_mouse_watcher.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/web_contents_tester.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/common/manifest_constants.h"
 #include "sync/api/string_ordinal.h"
 
 #if defined(OS_LINUX)
 #include "chrome/browser/ui/browser_window.h"
 #include "ui/base/x/x11_util.h"
+#endif
+
+#if defined(OS_LINUX) && !defined(USE_AURA)
+#include "ui/base/x/active_window_watcher_x.h"
 #endif
 
 #if defined(OS_MACOSX)
@@ -44,8 +52,8 @@ using extensions::Extension;
 
 namespace {
 
-const gfx::Rect kTestingPrimaryScreenArea = gfx::Rect(0, 0, 800, 600);
-const gfx::Rect kTestingWorkArea = gfx::Rect(0, 0, 800, 580);
+const gfx::Rect kTestingPrimaryDisplayArea = gfx::Rect(0, 0, 800, 600);
+const gfx::Rect kTestingPrimaryWorkArea = gfx::Rect(0, 0, 800, 580);
 
 struct MockDesktopBar {
   bool auto_hiding_enabled;
@@ -56,23 +64,29 @@ struct MockDesktopBar {
 class MockDisplaySettingsProviderImpl :
     public BasePanelBrowserTest::MockDisplaySettingsProvider {
  public:
-  explicit MockDisplaySettingsProviderImpl(PanelManager* panel_manager);
+  explicit MockDisplaySettingsProviderImpl();
   virtual ~MockDisplaySettingsProviderImpl() { }
 
   // Overridden from DisplaySettingsProvider:
-  virtual gfx::Rect GetPrimaryScreenArea() const OVERRIDE;
-  virtual gfx::Rect GetWorkArea() const OVERRIDE;
+  virtual gfx::Rect GetPrimaryDisplayArea() const OVERRIDE;
+  virtual gfx::Rect GetPrimaryWorkArea() const OVERRIDE;
+  virtual gfx::Rect GetDisplayAreaMatching(
+      const gfx::Rect& bounds) const OVERRIDE;
+  virtual gfx::Rect GetWorkAreaMatching(
+      const gfx::Rect& bounds) const OVERRIDE;
   virtual bool IsAutoHidingDesktopBarEnabled(
       DesktopBarAlignment alignment) OVERRIDE;
   virtual int GetDesktopBarThickness(
       DesktopBarAlignment alignment) const OVERRIDE;
   virtual DesktopBarVisibility GetDesktopBarVisibility(
       DesktopBarAlignment alignment) const OVERRIDE;
+  virtual bool IsFullScreen() OVERRIDE;
 
   // Overridden from MockDisplaySettingsProvider:
-  virtual void SetPrimaryScreenArea(
-      const gfx::Rect& primary_screen_area) OVERRIDE;
-  virtual void SetWorkArea(const gfx::Rect& work_area) OVERRIDE;
+  virtual void SetPrimaryDisplay(
+      const gfx::Rect& display_area, const gfx::Rect& work_area) OVERRIDE;
+  virtual void SetSecondaryDisplay(
+      const gfx::Rect& display_area, const gfx::Rect& work_area) OVERRIDE;
   virtual void EnableAutoHidingDesktopBar(DesktopBarAlignment alignment,
                                           bool enabled,
                                           int thickness) OVERRIDE;
@@ -80,47 +94,69 @@ class MockDisplaySettingsProviderImpl :
       DesktopBarAlignment alignment, DesktopBarVisibility visibility) OVERRIDE;
   virtual void SetDesktopBarThickness(DesktopBarAlignment alignment,
                                       int thickness) OVERRIDE;
+  virtual void EnableFullScreenMode(bool enabled) OVERRIDE;
 
  private:
-  gfx::Rect testing_primary_screen_area_;
-  gfx::Rect testing_work_area_;
+  gfx::Rect primary_display_area_;
+  gfx::Rect primary_work_area_;
+  gfx::Rect secondary_display_area_;
+  gfx::Rect secondary_work_area_;
   MockDesktopBar mock_desktop_bars[3];
+  bool full_screen_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(MockDisplaySettingsProviderImpl);
 };
 
 
-MockDisplaySettingsProviderImpl::MockDisplaySettingsProviderImpl(
-    PanelManager* panel_manager) {
-  DisplaySettingsProvider* old_provider =
-      panel_manager->display_settings_provider();
-
-  ObserverListBase<DisplaySettingsProvider::DisplayAreaObserver>::Iterator
-      display_area_observers_iter(old_provider->display_area_observers());
-  AddDisplayAreaObserver(display_area_observers_iter.GetNext());
-  DCHECK(!display_area_observers_iter.GetNext());
-
-  ObserverListBase<DisplaySettingsProvider::DesktopBarObserver>::Iterator
-      desktop_bar_observer_iter(old_provider->desktop_bar_observers());
-  AddDesktopBarObserver(desktop_bar_observer_iter.GetNext());
-  DCHECK(!desktop_bar_observer_iter.GetNext());
-
-  ObserverListBase<DisplaySettingsProvider::FullScreenObserver>::Iterator
-      full_screen_observer_iter(old_provider->full_screen_observers());
-  AddFullScreenObserver(full_screen_observer_iter.GetNext());
-  DCHECK(!full_screen_observer_iter.GetNext());
-
-  panel_manager->set_display_settings_provider(this);
-
+MockDisplaySettingsProviderImpl::MockDisplaySettingsProviderImpl()
+    : full_screen_enabled_(false) {
   memset(mock_desktop_bars, 0, sizeof(mock_desktop_bars));
 }
 
-gfx::Rect MockDisplaySettingsProviderImpl::GetPrimaryScreenArea() const {
-  return testing_primary_screen_area_;
+gfx::Rect MockDisplaySettingsProviderImpl::GetPrimaryDisplayArea() const {
+  return primary_display_area_;
 }
 
-gfx::Rect MockDisplaySettingsProviderImpl::GetWorkArea() const {
-  return testing_work_area_;
+gfx::Rect MockDisplaySettingsProviderImpl::GetPrimaryWorkArea() const {
+  return primary_work_area_;
+}
+
+gfx::Rect MockDisplaySettingsProviderImpl::GetDisplayAreaMatching(
+    const gfx::Rect& bounds) const {
+  if (secondary_display_area_.IsEmpty())
+    return primary_display_area_;
+
+  gfx::Rect primary_intersection =
+      gfx::IntersectRects(bounds, primary_display_area_);
+  int primary_intersection_size =
+      primary_intersection.width() * primary_intersection.height();
+
+  gfx::Rect secondary_intersection =
+      gfx::IntersectRects(bounds, secondary_display_area_);
+  int secondary_intersection_size =
+      secondary_intersection.width() * secondary_intersection.height();
+
+  return primary_intersection_size >= secondary_intersection_size ?
+      primary_display_area_ : secondary_display_area_;
+}
+
+gfx::Rect MockDisplaySettingsProviderImpl::GetWorkAreaMatching(
+    const gfx::Rect& bounds) const {
+  if (secondary_work_area_.IsEmpty())
+    return primary_work_area_;
+
+  gfx::Rect primary_intersection =
+      gfx::IntersectRects(bounds, primary_work_area_);
+  int primary_intersection_size =
+      primary_intersection.width() * primary_intersection.height();
+
+  gfx::Rect secondary_intersection =
+      gfx::IntersectRects(bounds, secondary_work_area_);
+  int secondary_intersection_size =
+      secondary_intersection.width() * secondary_intersection.height();
+
+  return primary_intersection_size >= secondary_intersection_size ?
+      primary_work_area_ : secondary_work_area_;
 }
 
 bool MockDisplaySettingsProviderImpl::IsAutoHidingDesktopBarEnabled(
@@ -139,21 +175,30 @@ MockDisplaySettingsProviderImpl::GetDesktopBarVisibility(
   return mock_desktop_bars[static_cast<int>(alignment)].visibility;
 }
 
+bool MockDisplaySettingsProviderImpl::IsFullScreen() {
+  return full_screen_enabled_;
+}
+
 void MockDisplaySettingsProviderImpl::EnableAutoHidingDesktopBar(
     DesktopBarAlignment alignment, bool enabled, int thickness) {
   MockDesktopBar* bar = &(mock_desktop_bars[static_cast<int>(alignment)]);
   bar->auto_hiding_enabled = enabled;
   bar->thickness = thickness;
-  OnAutoHidingDesktopBarChanged();
 }
 
-void MockDisplaySettingsProviderImpl::SetPrimaryScreenArea(
-    const gfx::Rect& primary_screen_area) {
-  testing_primary_screen_area_ = primary_screen_area;
+void MockDisplaySettingsProviderImpl::SetPrimaryDisplay(
+    const gfx::Rect& display_area, const gfx::Rect& work_area) {
+  DCHECK(display_area.Contains(work_area));
+  primary_display_area_ = display_area;
+  primary_work_area_ = work_area;
+  OnDisplaySettingsChanged();
 }
 
-void MockDisplaySettingsProviderImpl::SetWorkArea(const gfx::Rect& work_area) {
-  testing_work_area_ = work_area;
+void MockDisplaySettingsProviderImpl::SetSecondaryDisplay(
+    const gfx::Rect& display_area, const gfx::Rect& work_area) {
+  DCHECK(display_area.Contains(work_area));
+  secondary_display_area_ = display_area;
+  secondary_work_area_ = work_area;
   OnDisplaySettingsChanged();
 }
 
@@ -165,7 +210,10 @@ void MockDisplaySettingsProviderImpl::SetDesktopBarVisibility(
   if (visibility == bar->visibility)
     return;
   bar->visibility = visibility;
-  OnAutoHidingDesktopBarChanged();
+  FOR_EACH_OBSERVER(
+      DesktopBarObserver,
+      desktop_bar_observers(),
+      OnAutoHidingDesktopBarVisibilityChanged(alignment, visibility));
 }
 
 void MockDisplaySettingsProviderImpl::SetDesktopBarThickness(
@@ -176,12 +224,20 @@ void MockDisplaySettingsProviderImpl::SetDesktopBarThickness(
   if (thickness == bar->thickness)
     return;
   bar->thickness = thickness;
-  OnAutoHidingDesktopBarChanged();
+  FOR_EACH_OBSERVER(
+      DesktopBarObserver,
+      desktop_bar_observers(),
+      OnAutoHidingDesktopBarThicknessChanged(alignment, thickness));
+}
+
+void MockDisplaySettingsProviderImpl::EnableFullScreenMode(bool enabled) {
+  full_screen_enabled_ = enabled;
+  CheckFullScreenMode(PERFORM_FULLSCREEN_CHECK);
 }
 
 }  // namespace
 
-const FilePath::CharType* BasePanelBrowserTest::kTestDir =
+const base::FilePath::CharType* BasePanelBrowserTest::kTestDir =
     FILE_PATH_LITERAL("panels");
 
 BasePanelBrowserTest::BasePanelBrowserTest()
@@ -217,13 +273,15 @@ void BasePanelBrowserTest::SetUpOnMainThread() {
 
   // Setup the work area and desktop bar so that we have consistent testing
   // environment for all panel related tests.
-  PanelManager* panel_manager = PanelManager::GetInstance();
   if (mock_display_settings_enabled_) {
-    mock_display_settings_provider_ =
-        new MockDisplaySettingsProviderImpl(panel_manager);
-    SetTestingAreas(kTestingPrimaryScreenArea, kTestingWorkArea);
+    mock_display_settings_provider_ = new MockDisplaySettingsProviderImpl();
+    mock_display_settings_provider_->SetPrimaryDisplay(
+        kTestingPrimaryDisplayArea, kTestingPrimaryWorkArea);
+    PanelManager::SetDisplaySettingsProviderForTesting(
+        mock_display_settings_provider_);
   }
 
+  PanelManager* panel_manager = PanelManager::GetInstance();
   panel_manager->enable_auto_sizing(false);
 
   PanelManager::shorten_time_intervals_for_testing();
@@ -242,6 +300,14 @@ void BasePanelBrowserTest::WaitForPanelActiveState(
     Panel* panel, ActiveState expected_state) {
   DCHECK(expected_state == SHOW_AS_ACTIVE ||
          expected_state == SHOW_AS_INACTIVE);
+
+#if defined(OS_MACOSX)
+  scoped_ptr<NativePanelTesting> panel_testing(
+      CreateNativePanelTesting(panel));
+  ASSERT_TRUE(panel_testing->EnsureApplicationRunOnForeground()) <<
+      "Failed to bring application to foreground. Bail out.";
+#endif
+
   PanelActiveStateObserver signal(panel, expected_state == SHOW_AS_ACTIVE);
   signal.Wait();
 }
@@ -282,7 +348,8 @@ BasePanelBrowserTest::CreatePanelParams::CreatePanelParams(
       show_flag(show_flag),
       wait_for_fully_created(true),
       expected_active_state(show_flag),
-      create_mode(PanelManager::CREATE_AS_DOCKED) {
+      create_mode(PanelManager::CREATE_AS_DOCKED),
+      profile(NULL) {
 }
 
 Panel* BasePanelBrowserTest::CreatePanelWithParams(
@@ -302,9 +369,12 @@ Panel* BasePanelBrowserTest::CreatePanelWithParams(
       content::NotificationService::AllSources());
 
   PanelManager* manager = PanelManager::GetInstance();
-  Panel* panel = manager->CreatePanel(params.name, browser()->profile(),
-                                      params.url, params.bounds,
-                                      params.create_mode);
+  Panel* panel = manager->CreatePanel(
+      params.name,
+      params.profile ? params.profile : browser()->profile(),
+      params.url,
+      params.bounds,
+      params.create_mode);
 
   if (!params.url.is_empty())
     observer.Wait();
@@ -323,7 +393,7 @@ Panel* BasePanelBrowserTest::CreatePanelWithParams(
   }
 
   if (params.wait_for_fully_created) {
-    MessageLoopForUI::current()->RunUntilIdle();
+    base::MessageLoopForUI::current()->RunUntilIdle();
 
 #if defined(OS_LINUX)
     // On bots, we might have a simple window manager which always activates new
@@ -375,9 +445,10 @@ Panel* BasePanelBrowserTest::CreateDockedPanel(const std::string& name,
 Panel* BasePanelBrowserTest::CreateDetachedPanel(const std::string& name,
                                                  const gfx::Rect& bounds) {
   Panel* panel = CreatePanelWithBounds(name, bounds);
-  panel->manager()->MovePanelToCollection(panel,
-                                          PanelCollection::DETACHED,
-                                          PanelCollection::DEFAULT_POSITION);
+  PanelManager* panel_manager = panel->manager();
+  panel_manager->MovePanelToCollection(panel,
+                                       panel_manager->detached_collection(),
+                                       PanelCollection::DEFAULT_POSITION);
   EXPECT_EQ(PanelCollection::DETACHED, panel->collection()->type());
   // The panel is first created as docked panel, which ignores the specified
   // origin in |bounds|. We need to reposition the panel after it becomes
@@ -387,6 +458,93 @@ Panel* BasePanelBrowserTest::CreateDetachedPanel(const std::string& name,
   return panel;
 }
 
+Panel* BasePanelBrowserTest::CreateStackedPanel(const std::string& name,
+                                                const gfx::Rect& bounds,
+                                                StackedPanelCollection* stack) {
+  Panel* panel = CreateDetachedPanel(name, bounds);
+  panel->manager()->MovePanelToCollection(
+      panel,
+      stack,
+      static_cast<PanelCollection::PositioningMask>(
+          PanelCollection::DEFAULT_POSITION |
+          PanelCollection::COLLAPSE_TO_FIT));
+  EXPECT_EQ(PanelCollection::STACKED, panel->collection()->type());
+  WaitForBoundsAnimationFinished(panel);
+  return panel;
+}
+
+Panel* BasePanelBrowserTest::CreateInactivePanel(const std::string& name) {
+  // Create an active panel first, instead of inactive panel. This is because
+  // certain window managers on Linux, like icewm, will always activate the
+  // new window.
+  Panel* panel = CreatePanel(name);
+
+  DeactivatePanel(panel);
+  WaitForPanelActiveState(panel, SHOW_AS_INACTIVE);
+
+  return panel;
+}
+
+Panel* BasePanelBrowserTest::CreateInactiveDockedPanel(
+    const std::string& name, const gfx::Rect& bounds) {
+  // Create an active panel first, instead of inactive panel. This is because
+  // certain window managers on Linux, like icewm, will always activate the
+  // new window.
+  Panel* panel = CreateDockedPanel(name, bounds);
+
+  DeactivatePanel(panel);
+  WaitForPanelActiveState(panel, SHOW_AS_INACTIVE);
+
+  return panel;
+}
+
+Panel* BasePanelBrowserTest::CreateInactiveDetachedPanel(
+    const std::string& name, const gfx::Rect& bounds) {
+  // Create an active panel first, instead of inactive panel. This is because
+  // certain window managers on Linux, like icewm, will always activate the
+  // new window.
+  Panel* panel = CreateDetachedPanel(name, bounds);
+
+  DeactivatePanel(panel);
+  WaitForPanelActiveState(panel, SHOW_AS_INACTIVE);
+
+  return panel;
+}
+
+void BasePanelBrowserTest::ActivatePanel(Panel* panel) {
+  // For certain window managers on Linux, the window activation/deactivation
+  // signals might not be sent. To work around this, we explicitly deactivate
+  // all other panels first.
+#if defined(OS_LINUX)
+  std::vector<Panel*> panels = PanelManager::GetInstance()->panels();
+  for (std::vector<Panel*>::const_iterator iter = panels.begin();
+       iter != panels.end(); ++iter) {
+    Panel* current_panel = *iter;
+    if (panel != current_panel)
+      current_panel->Deactivate();
+  }
+#endif
+
+  panel->Activate();
+}
+
+void BasePanelBrowserTest::DeactivatePanel(Panel* panel) {
+#if defined(OS_LINUX)
+  // For certain window managers on Linux, like icewm, panel activation and
+  // deactivation notification might not get tiggered when non-panel window is
+  // activated or deactivated. So we deactivate the panel directly.
+  panel->Deactivate();
+#else
+  // Make the panel lose focus by activating the browser window. This is
+  // because:
+  // 1) On Windows, deactivating the panel window might cause the application
+  //    to lose the foreground status. When this occurs, trying to activate
+  //    the panel window again will not be allowed by the system.
+  // 2) On MacOS, deactivating a window is not supported by Cocoa.
+  browser()->window()->Activate();
+#endif
+}
+
 // static
 NativePanelTesting* BasePanelBrowserTest::CreateNativePanelTesting(
     Panel* panel) {
@@ -394,19 +552,16 @@ NativePanelTesting* BasePanelBrowserTest::CreateNativePanelTesting(
 }
 
 scoped_refptr<Extension> BasePanelBrowserTest::CreateExtension(
-    const FilePath::StringType& path,
-    Extension::Location location,
-    const DictionaryValue& extra_value) {
-#if defined(OS_WIN)
-  FilePath full_path(FILE_PATH_LITERAL("c:\\"));
-#else
-  FilePath full_path(FILE_PATH_LITERAL("/"));
-#endif
-  full_path = full_path.Append(path);
+    const base::FilePath::StringType& path,
+    extensions::Manifest::Location location,
+    const base::DictionaryValue& extra_value) {
+  extensions::ExtensionPrefs* extension_prefs =
+      extensions::ExtensionPrefs::Get(browser()->profile());
+  base::FilePath full_path = extension_prefs->install_directory().Append(path);
 
-  scoped_ptr<DictionaryValue> input_value(extra_value.DeepCopy());
-  input_value->SetString(extension_manifest_keys::kVersion, "1.0.0.0");
-  input_value->SetString(extension_manifest_keys::kName, "Sample Extension");
+  scoped_ptr<base::DictionaryValue> input_value(extra_value.DeepCopy());
+  input_value->SetString(extensions::manifest_keys::kVersion, "1.0.0.0");
+  input_value->SetString(extensions::manifest_keys::kName, "Sample Extension");
 
   std::string error;
   scoped_refptr<Extension> extension = Extension::Create(
@@ -414,18 +569,12 @@ scoped_refptr<Extension> BasePanelBrowserTest::CreateExtension(
   EXPECT_TRUE(extension.get());
   EXPECT_STREQ("", error.c_str());
   browser()->profile()->GetExtensionService()->
-      OnExtensionInstalled(extension.get(), syncer::StringOrdinal(),
+      OnExtensionInstalled(extension.get(),
+                           syncer::StringOrdinal(),
                            false /* no requirement errors */,
+                           extensions::NOT_BLACKLISTED,
                            false /* don't wait for idle */);
   return extension;
-}
-
-void BasePanelBrowserTest::SetTestingAreas(const gfx::Rect& primary_screen_area,
-                                           const gfx::Rect& work_area) {
-  DCHECK(primary_screen_area.Contains(work_area));
-  mock_display_settings_provider_->SetPrimaryScreenArea(primary_screen_area);
-  mock_display_settings_provider_->SetWorkArea(
-      work_area.IsEmpty() ? primary_screen_area : work_area);
 }
 
 void BasePanelBrowserTest::CloseWindowAndWait(Panel* panel) {
@@ -470,4 +619,12 @@ void BasePanelBrowserTest::MoveMouse(const gfx::Point& position) {
 std::string BasePanelBrowserTest::MakePanelName(int index) {
   std::string panel_name("Panel");
   return panel_name + base::IntToString(index);
+}
+
+bool BasePanelBrowserTest::WmSupportWindowActivation() {
+#if defined(OS_LINUX) && !defined(USE_AURA)
+  return ui::ActiveWindowWatcherX::WMSupportsActivation();
+#else
+  return true;
+#endif
 }

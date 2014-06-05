@@ -1,5 +1,8 @@
+benm@chromium.org
 bulach@chromium.org
-jcivelli@chromium.org
-nileshagrawal@chromium.org
 tedchoc@chromium.org
 yfriedman@chromium.org
+
+per-file *.aidl=set noparent
+per-file *.aidl=palmer@chromium.org
+per-file *.aidl=cdn@chromium.org

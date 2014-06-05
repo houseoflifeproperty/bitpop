@@ -5,16 +5,14 @@
 #include <algorithm>
 
 #include "base/command_line.h"
-#include "base/file_util.h"
 #include "base/logging.h"
 #include "base/memory/singleton.h"
 #include "base/path_service.h"
-#include "base/process_util.h"
 #include "base/sha1.h"
-#include "base/string16.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/version.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
@@ -104,10 +102,10 @@ ServiceProcessRunningState GetServiceProcessRunningState(
 // use the hash of the user-data-dir as a scoping prefix. We can't use
 // the user-data-dir itself as we have limits on the size of the lock names.
 std::string GetServiceProcessScopedName(const std::string& append_str) {
-  FilePath user_data_dir;
+  base::FilePath user_data_dir;
   PathService::Get(chrome::DIR_USER_DATA, &user_data_dir);
 #if defined(OS_WIN)
-  std::string user_data_dir_path = WideToUTF8(user_data_dir.value());
+  std::string user_data_dir_path = base::WideToUTF8(user_data_dir.value());
 #elif defined(OS_POSIX)
   std::string user_data_dir_path = user_data_dir.value();
 #endif  // defined(OS_WIN)
@@ -225,8 +223,9 @@ bool ServiceProcessState::CreateSharedData() {
     return false;
 
   uint32 alloc_size = sizeof(ServiceProcessSharedData);
-  if (!shared_mem_service_data->CreateNamed(GetServiceProcessSharedMemName(),
-                                            true, alloc_size))
+  // TODO(viettrungluu): Named shared memory is deprecated (crbug.com/345734).
+  if (!shared_mem_service_data->CreateNamedDeprecated
+          (GetServiceProcessSharedMemName(), true, alloc_size))
     return false;
 
   if (!shared_mem_service_data->Map(alloc_size))
@@ -250,7 +249,7 @@ IPC::ChannelHandle ServiceProcessState::GetServiceProcessChannel() {
 #endif  // !OS_MACOSX
 
 void ServiceProcessState::CreateAutoRunCommandLine() {
-  FilePath exe_path;
+  base::FilePath exe_path;
   PathService::Get(content::CHILD_PROCESS_EXE, &exe_path);
   DCHECK(!exe_path.empty()) << "Unable to get service process binary name.";
   autorun_command_line_.reset(new CommandLine(exe_path));
@@ -260,7 +259,7 @@ void ServiceProcessState::CreateAutoRunCommandLine() {
   // The user data directory is the only other flag we currently want to
   // possibly store.
   const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
-  FilePath user_data_dir =
+  base::FilePath user_data_dir =
     browser_command_line.GetSwitchValuePath(switches::kUserDataDir);
   if (!user_data_dir.empty())
     autorun_command_line_->AppendSwitchPath(switches::kUserDataDir,

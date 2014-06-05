@@ -9,26 +9,29 @@
 
 #include "base/compiler_specific.h"
 #include "base/logging.h"
-#include "base/time.h"
+#include "base/time/time.h"
 
 namespace net {
 
 class MockClock : public QuicClock {
  public:
   MockClock();
-
   virtual ~MockClock();
 
   void AdvanceTime(QuicTime::Delta delta);
 
   virtual QuicTime Now() const OVERRIDE;
 
-  base::TimeTicks NowInTicks() const;
+  virtual QuicTime ApproximateNow() const OVERRIDE;
 
-  void AdvanceTime(QuicTime delta);
+  virtual QuicWallTime WallNow() const OVERRIDE;
+
+  base::TimeTicks NowInTicks() const;
 
  private:
   QuicTime now_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockClock);
 };
 
 }  // namespace net

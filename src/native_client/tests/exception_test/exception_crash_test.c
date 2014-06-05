@@ -8,14 +8,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/nacl_syscalls.h>
 #include <unistd.h>
 
-#include "native_client/src/trusted/service_runtime/include/sys/nacl_exception.h"
+#include "native_client/src/include/nacl/nacl_exception.h"
+#include "native_client/src/trusted/service_runtime/include/sys/nacl_test_crash.h"
 #include "native_client/src/untrusted/nacl/syscall_bindings_trampoline.h"
 
-
-typedef void (*handler_func_t)(struct NaClExceptionContext *context);
 
 char stack_in_rwdata[0x1000];
 
@@ -33,7 +31,7 @@ void test_bad_handler(void) {
    * the code segment range and is well-aligned.  The bottom 64k of
    * address space is never mapped.
    */
-  handler_func_t handler = (handler_func_t) 0x1000;
+  nacl_exception_handler_t handler = (nacl_exception_handler_t) 0x1000;
   int rc = NACL_SYSCALL(exception_handler)(handler, NULL);
   assert(rc == 0);
   fprintf(stderr, "** intended_exit_status=untrusted_segfault\n");
@@ -73,6 +71,30 @@ asm(".pushsection .text, \"ax\", @progbits\n"
     ".popsection\n");
 
 void error_exit(void) {
+  _exit(1);
+}
+
+#elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_mips
+
+char recovery_stack[0x1000] __attribute__((aligned(8)));
+
+void bad_stack_exception_handler(struct NaClExceptionContext *context);
+__asm__(".pushsection .text, \"ax\", @progbits\n"
+        ".set noreorder\n"
+        ".global bad_stack_exception_handler\n"
+        "bad_stack_exception_handler:\n"
+        "lui   $t9,      %hi(recovery_stack)\n"
+        "addiu $sp, $t9, %lo(recovery_stack)\n"
+        "and   $sp, $sp, $t7\n"
+        "lui   $t9,      %hi(error_exit)\n"
+        "j error_exit\n"
+        "addiu $t9, $t9, %lo(error_exit)\n"
+        "nop\n"
+        "nop\n"
+        ".set reorder\n"
+        ".popsection\n");
+
+void error_exit() {
   _exit(1);
 }
 
@@ -201,11 +223,9 @@ void test_crash_in_syscall(void) {
   assert(rc == 0);
   fprintf(stderr, "** intended_exit_status=trusted_segfault\n");
   /*
-   * Cause a crash inside a NaCl syscall.  This is based on
-   * tests/signal_handler/crash_in_syscall.c.
-   * TODO(mseaborn): Add a specific testing syscall for this purpose.
+   * Cause a crash inside a NaCl syscall.
    */
-  imc_recvmsg(0, (struct NaClImcMsgHdr *) 0x1000, 0);
+  NACL_SYSCALL(test_crash)(NACL_TEST_CRASH_MEMORY);
   /* Should not reach here. */
   _exit(1);
 }

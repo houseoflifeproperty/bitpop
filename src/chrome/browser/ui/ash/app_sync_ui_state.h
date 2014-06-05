@@ -8,9 +8,9 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/observer_list.h"
-#include "base/timer.h"
-#include "chrome/browser/api/sync/profile_sync_service_observer.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "base/timer/timer.h"
+#include "chrome/browser/sync/profile_sync_service_observer.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
@@ -22,7 +22,7 @@ class ProfileSyncService;
 // accordingly. Its status is for UI display only. It only watches for new
 // normal user profile (i.e. it does not watch for guest profile or exsiting
 // user profile) and lasts for at the most 1 minute.
-class AppSyncUIState : public ProfileKeyedService,
+class AppSyncUIState : public KeyedService,
                        public content::NotificationObserver,
                        public ProfileSyncServiceObserver {
  public:

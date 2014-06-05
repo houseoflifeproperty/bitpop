@@ -12,22 +12,23 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
+#include "base/rand_util.h"
 #include "base/threading/thread.h"
 #include "jingle/notifier/base/notification_method.h"
 #include "jingle/notifier/base/notifier_options.h"
 #include "net/base/host_port_pair.h"
-#include "net/base/host_resolver.h"
 #include "net/base/network_change_notifier.h"
-#include "net/base/transport_security_state.h"
+#include "net/dns/host_resolver.h"
+#include "net/http/transport_security_state.h"
 #include "net/url_request/url_request_test_util.h"
 #include "sync/internal_api/public/base/model_type.h"
-#include "sync/internal_api/public/base/model_type_invalidation_map.h"
-#include "sync/notifier/invalidation_state_tracker.h"
 #include "sync/notifier/invalidation_handler.h"
+#include "sync/notifier/invalidation_state_tracker.h"
 #include "sync/notifier/invalidation_util.h"
-#include "sync/notifier/invalidator_factory.h"
 #include "sync/notifier/invalidator.h"
+#include "sync/notifier/non_blocking_invalidator.h"
+#include "sync/notifier/object_id_invalidation_map.h"
 #include "sync/tools/null_invalidation_state_tracker.h"
 
 #if defined(OS_MACOSX)
@@ -45,7 +46,6 @@ const char kTokenSwitch[] = "token";
 const char kHostPortSwitch[] = "host-port";
 const char kTrySslTcpFirstSwitch[] = "try-ssltcp-first";
 const char kAllowInsecureConnectionSwitch[] = "allow-insecure-connection";
-const char kNotificationMethodSwitch[] = "notification-method";
 
 // Class to print received notifications events.
 class NotificationPrinter : public InvalidationHandler {
@@ -59,18 +59,16 @@ class NotificationPrinter : public InvalidationHandler {
   }
 
   virtual void OnIncomingInvalidation(
-      const ObjectIdInvalidationMap& invalidation_map,
-      IncomingInvalidationSource source) OVERRIDE {
-    const ModelTypeInvalidationMap& type_invalidation_map =
-        ObjectIdInvalidationMapToModelTypeInvalidationMap(invalidation_map);
-    for (ModelTypeInvalidationMap::const_iterator it =
-             type_invalidation_map.begin(); it != type_invalidation_map.end();
-         ++it) {
-      LOG(INFO) << (source == REMOTE_INVALIDATION ? "Remote" : "Local")
-                << " Invalidation: type = "
-                << ModelTypeToString(it->first)
-                << ", payload = " << it->second.payload;
+      const ObjectIdInvalidationMap& invalidation_map) OVERRIDE {
+    ObjectIdSet ids = invalidation_map.GetObjectIds();
+    for (ObjectIdSet::const_iterator it = ids.begin(); it != ids.end(); ++it) {
+      LOG(INFO) << "Remote invalidation: "
+                << invalidation_map.ToString();
     }
+  }
+
+  virtual std::string GetOwnerName() const OVERRIDE {
+    return "NotificationPrinter";
   }
 
  private:
@@ -100,7 +98,7 @@ class MyTestURLRequestContextGetter : public net::TestURLRequestContextGetter {
   virtual net::TestURLRequestContext* GetURLRequestContext() OVERRIDE {
     // Construct |context_| lazily so it gets constructed on the right
     // thread (the IO thread).
-    if (!context_.get())
+    if (!context_)
       context_.reset(new MyTestURLRequestContext());
     return context_.get();
   }
@@ -136,12 +134,6 @@ notifier::NotifierOptions ParseNotifierOptions(
   LOG_IF(INFO, notifier_options.allow_insecure_connection)
       << "Allowing insecure XMPP connections.";
 
-  if (command_line.HasSwitch(kNotificationMethodSwitch)) {
-    notifier_options.notification_method =
-        notifier::StringToNotificationMethod(
-            command_line.GetSwitchValueASCII(kNotificationMethodSwitch));
-  }
-
   return notifier_options;
 }
 
@@ -152,17 +144,14 @@ int SyncListenNotificationsMain(int argc, char* argv[]) {
 #endif
   base::AtExitManager exit_manager;
   CommandLine::Init(argc, argv);
-  logging::InitLogging(
-      NULL,
-      logging::LOG_ONLY_TO_SYSTEM_DEBUG_LOG,
-      logging::LOCK_LOG_FILE,
-      logging::DELETE_OLD_LOG_FILE,
-      logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS);
+  logging::LoggingSettings settings;
+  settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;
+  logging::InitLogging(settings);
 
-  MessageLoop ui_loop;
+  base::MessageLoop ui_loop;
   base::Thread io_thread("IO thread");
   base::Thread::Options options;
-  options.message_loop_type = MessageLoop::TYPE_IO;
+  options.message_loop_type = base::MessageLoop::TYPE_IO;
   io_thread.StartWithOptions(options);
 
   // Parse command line.
@@ -174,15 +163,13 @@ int SyncListenNotificationsMain(int argc, char* argv[]) {
   if (email.empty() || token.empty()) {
     std::printf("Usage: %s --%s=foo@bar.com --%s=token\n"
                 "[--%s=host:port] [--%s] [--%s]\n"
-                "[--%s=(server|p2p)]\n\n"
                 "Run chrome and set a breakpoint on\n"
                 "syncer::SyncManagerImpl::UpdateCredentials() "
                 "after logging into\n"
                 "sync to get the token to pass into this utility.\n",
                 argv[0],
                 kEmailSwitch, kTokenSwitch, kHostPortSwitch,
-                kTrySslTcpFirstSwitch, kAllowInsecureConnectionSwitch,
-                kNotificationMethodSwitch);
+                kTrySslTcpFirstSwitch, kAllowInsecureConnectionSwitch);
     return -1;
   }
 
@@ -194,17 +181,23 @@ int SyncListenNotificationsMain(int argc, char* argv[]) {
       ParseNotifierOptions(
           command_line,
           new MyTestURLRequestContextGetter(io_thread.message_loop_proxy()));
+  syncer::NetworkChannelCreator network_channel_creator =
+      syncer::NonBlockingInvalidator::MakePushClientChannelCreator(
+          notifier_options);
   const char kClientInfo[] = "sync_listen_notifications";
   NullInvalidationStateTracker null_invalidation_state_tracker;
-  InvalidatorFactory invalidator_factory(
-      notifier_options, kClientInfo,
-      null_invalidation_state_tracker.AsWeakPtr());
   scoped_ptr<Invalidator> invalidator(
-      invalidator_factory.CreateInvalidator());
+      new NonBlockingInvalidator(
+          network_channel_creator,
+          base::RandBytesAsString(8),
+          null_invalidation_state_tracker.GetSavedInvalidations(),
+          null_invalidation_state_tracker.GetBootstrapData(),
+          &null_invalidation_state_tracker,
+          kClientInfo,
+          notifier_options.request_context_getter));
+
   NotificationPrinter notification_printer;
 
-  const char kUniqueId[] = "fake_unique_id";
-  invalidator->SetUniqueId(kUniqueId);
   invalidator->UpdateCredentials(email, token);
 
   // Listen for notifications for all known types.

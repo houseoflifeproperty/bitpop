@@ -8,16 +8,12 @@
 
 #include "base/memory/singleton.h"
 #include "build/build_config.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/base/network_delegate.h"
-#include "net/url_request/url_request_about_job.h"
 #include "net/url_request/url_request_context.h"
-#include "net/url_request/url_request_data_job.h"
 #include "net/url_request/url_request_error_job.h"
-#include "net/url_request/url_request_file_job.h"
-#include "net/url_request/url_request_ftp_job.h"
 #include "net/url_request/url_request_http_job.h"
 #include "net/url_request/url_request_job_factory.h"
 
@@ -36,12 +32,12 @@ struct SchemeToFactory {
 static const SchemeToFactory kBuiltinFactories[] = {
   { "http", URLRequestHttpJob::Factory },
   { "https", URLRequestHttpJob::Factory },
-  { "file", URLRequestFileJob::Factory },
-#if !defined(DISABLE_FTP_SUPPORT)
-  { "ftp", URLRequestFtpJob::Factory },
-#endif
-  { "about", URLRequestAboutJob::Factory },
-  { "data", URLRequestDataJob::Factory },
+
+#if !defined(OS_IOS)
+  { "ws", URLRequestHttpJob::Factory },
+  { "wss", URLRequestHttpJob::Factory },
+#endif  // !defined(OS_IOS)
+
 };
 
 // static
@@ -79,14 +75,8 @@ URLRequestJob* URLRequestJobManager::CreateJob(
   // See if the request should be intercepted.
   //
 
-  if (job_factory) {
-    URLRequestJob* job = job_factory->MaybeCreateJobWithInterceptor(
-        request, network_delegate);
-    if (job)
-      return job;
-  }
-
-  // TODO(willchan): Remove this in favor of URLRequestJobFactory::Interceptor.
+  // TODO(pauljensen): Remove this when AppCacheInterceptor is a
+  // ProtocolHandler, see crbug.com/161547.
   if (!(request->load_flags() & LOAD_DISABLE_INTERCEPT)) {
     InterceptorList::const_iterator i;
     for (i = interceptors_.begin(); i != interceptors_.end(); ++i) {
@@ -155,16 +145,11 @@ URLRequestJob* URLRequestJobManager::MaybeInterceptRedirect(
     return NULL;
   }
 
-  URLRequestJob* job = NULL;
-  if (job_factory)
-    job = job_factory->MaybeInterceptRedirect(
-        location, request, network_delegate);
-  if (job)
-    return job;
-
   InterceptorList::const_iterator i;
   for (i = interceptors_.begin(); i != interceptors_.end(); ++i) {
-    job = (*i)->MaybeInterceptRedirect(request, network_delegate, location);
+    URLRequestJob* job = (*i)->MaybeInterceptRedirect(request,
+                                                      network_delegate,
+                                                      location);
     if (job)
       return job;
   }
@@ -192,15 +177,10 @@ URLRequestJob* URLRequestJobManager::MaybeInterceptResponse(
     return NULL;
   }
 
-  URLRequestJob* job = NULL;
-  if (job_factory)
-    job = job_factory->MaybeInterceptResponse(request, network_delegate);
-  if (job)
-    return job;
-
   InterceptorList::const_iterator i;
   for (i = interceptors_.begin(); i != interceptors_.end(); ++i) {
-    job = (*i)->MaybeInterceptResponse(request, network_delegate);
+    URLRequestJob* job = (*i)->MaybeInterceptResponse(request,
+                                                      network_delegate);
     if (job)
       return job;
   }

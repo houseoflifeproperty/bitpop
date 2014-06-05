@@ -18,6 +18,7 @@ import os
 import signal
 import time
 import textwrap
+import twisted.internet.error
 
 try:
   import pyximport
@@ -28,6 +29,8 @@ except ImportError:
   print 'Unable to load the epoll module, falling back to select.'
   print 'This may be caused by the lack of cython, python-dev, or'
   print 'you may be on a platform other than linux 2.6' 
+except twisted.internet.error.ReactorAlreadyInstalledError:
+  pass
 
 from zope.interface import implements
 from twisted.python import log, components
@@ -295,7 +298,7 @@ class BuildMaster(service.MultiService):
                           "logHorizon", "buildHorizon", "changeHorizon",
                           "logMaxSize", "logMaxTailSize", "logCompressionMethod",
                           "db_url", "multiMaster", "db_poll_interval",
-                          "metrics", "caches"
+                          "metrics", "caches", "autoBuildCacheRatio"
                           )
             for k in config.keys():
                 if k not in known_keys:
@@ -312,7 +315,8 @@ class BuildMaster(service.MultiService):
                 #change_source = config['change_source']
 
                 # optional
-                db_url = config.get("db_url", "sqlite:///state.sqlite")
+                db_url = config.get("db_url",
+                                    "sqlite:///state.sqlite?serialize_access=1")
                 db_poll_interval = config.get("db_poll_interval", None)
                 debugPassword = config.get('debugPassword')
                 manhole = config.get('manhole')
@@ -357,6 +361,7 @@ class BuildMaster(service.MultiService):
 
                 metrics_config = config.get("metrics")
                 caches_config = config.get("caches", {})
+                autoBuildCacheRatio = config.get("autoBuildCacheRatio", None)
 
             except KeyError:
                 log.msg("config dictionary is missing a required parameter")
@@ -555,6 +560,7 @@ class BuildMaster(service.MultiService):
             self.logHorizon = logHorizon
             self.buildHorizon = buildHorizon
             self.slavePortnum = slavePortnum # TODO: move this to master.config.slavePortnum
+            self.autoBuildCacheRatio = autoBuildCacheRatio
 
             # Set up the database
             d.addCallback(lambda res:
@@ -783,6 +789,17 @@ class BuildMaster(service.MultiService):
         # to update its config
         for builder in allBuilders.values():
             builder.builder_status.reconfigFromBuildmaster(self)
+
+            # Adjust the caches if autoBuildCacheRatio is on. Each builder's
+            # build cache is set to (autoBuildCacheRatio * number of slaves).
+            # This assumes that each slave-entry can only execute one concurrent
+            # build.
+            if self.autoBuildCacheRatio:
+                builder_status = builder.builder_status
+                slavecount = len(builder_status.slavenames)
+                max_size = max(self.autoBuildCacheRatio * slavecount, 50)
+                builder_status.buildCache.set_max_size(max_size)
+                builder_status.buildCacheSize = max_size
 
         metrics.MetricCountEvent.log("num_builders",
             len(allBuilders), absolute=True)

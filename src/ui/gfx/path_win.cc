@@ -5,18 +5,33 @@
 #include "ui/gfx/path_win.h"
 
 #include "base/memory/scoped_ptr.h"
+#include "base/win/scoped_gdi_object.h"
+#include "third_party/skia/include/core/SkRegion.h"
 #include "ui/gfx/path.h"
 
 namespace gfx {
 
+HRGN CreateHRGNFromSkRegion(const SkRegion& region) {
+  base::win::ScopedRegion temp(::CreateRectRgn(0, 0, 0, 0));
+  base::win::ScopedRegion result(::CreateRectRgn(0, 0, 0, 0));
+
+  for (SkRegion::Iterator i(region); !i.done(); i.next()) {
+    const SkIRect& rect = i.rect();
+    ::SetRectRgn(temp, rect.left(), rect.top(), rect.right(), rect.bottom());
+    ::CombineRgn(result, result, temp, RGN_OR);
+  }
+
+  return result.release();
+}
+
 HRGN CreateHRGNFromSkPath(const SkPath& path) {
   int point_count = path.getPoints(NULL, 0);
-  scoped_array<SkPoint> points(new SkPoint[point_count]);
+  scoped_ptr<SkPoint[]> points(new SkPoint[point_count]);
   path.getPoints(points.get(), point_count);
-  scoped_array<POINT> windows_points(new POINT[point_count]);
+  scoped_ptr<POINT[]> windows_points(new POINT[point_count]);
   for (int i = 0; i < point_count; ++i) {
-    windows_points[i].x = SkScalarRound(points[i].fX);
-    windows_points[i].y = SkScalarRound(points[i].fY);
+    windows_points[i].x = SkScalarRoundToInt(points[i].fX);
+    windows_points[i].y = SkScalarRoundToInt(points[i].fY);
   }
 
   return ::CreatePolygonRgn(windows_points.get(), point_count, ALTERNATE);

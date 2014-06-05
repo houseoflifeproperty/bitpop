@@ -8,27 +8,26 @@
 #include <vector>
 
 #include "base/bind.h"
+#include "base/prefs/pref_registry_simple.h"
+#include "base/prefs/pref_service.h"
 #include "base/rand_util.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/sys_info.h"
-#include "base/time.h"
+#include "base/threading/thread_restrictions.h"
+#include "base/time/time.h"
 #include "base/values.h"
-#include "chrome/browser/prefs/pref_service.h"
-#include "chrome/browser/profiles/profile_impl.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/web_resource/promo_resource_service.h"
 #include "chrome/common/chrome_version_info.h"
-#include "chrome/common/net/url_util.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/user_metrics.h"
-#include "googleurl/src/gurl.h"
+#include "net/base/url_util.h"
+#include "ui/base/device_form_factor.h"
+#include "url/gurl.h"
 
-#if defined(OS_ANDROID)
-#include "base/command_line.h"
-#include "chrome/common/chrome_switches.h"
-#endif  // defined(OS_ANDROID)
-
-using content::UserMetricsAction;
+using base::UserMetricsAction;
 
 namespace {
 
@@ -53,26 +52,25 @@ const char kPrefPromoMaxViews[] = "max_views";
 const char kPrefPromoGroup[] = "group";
 const char kPrefPromoViews[] = "views";
 const char kPrefPromoClosed[] = "closed";
-const char kPrefPromoGPlusRequired[] = "gplus_required";
 
 // Returns a string suitable for the Promo Server URL 'osname' value.
 std::string PlatformString() {
 #if defined(OS_WIN)
   return "win";
+#elif defined(OS_ANDROID)
+  ui::DeviceFormFactor form_factor = ui::GetDeviceFormFactor();
+  return std::string("android-") +
+      (form_factor == ui::DEVICE_FORM_FACTOR_TABLET ? "tablet" : "phone");
 #elif defined(OS_IOS)
-  // TODO(noyau): add iOS-specific implementation
-  const bool isTablet = false;
-  return std::string("ios-") + (isTablet ? "tablet" : "phone");
+  ui::DeviceFormFactor form_factor = ui::GetDeviceFormFactor();
+  return std::string("ios-") +
+      (form_factor == ui::DEVICE_FORM_FACTOR_TABLET ? "tablet" : "phone");
 #elif defined(OS_MACOSX)
   return "mac";
 #elif defined(OS_CHROMEOS)
   return "chromeos";
 #elif defined(OS_LINUX)
   return "linux";
-#elif defined(OS_ANDROID)
-  const bool isTablet =
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kTabletUI);
-  return std::string("android-") + (isTablet ? "tablet" : "phone");
 #else
   return "none";
 #endif
@@ -141,33 +139,31 @@ base::Value* DeepCopyAndResolveStrings(
       const base::ListValue* list = static_cast<const base::ListValue*>(node);
       base::ListValue* copy = new base::ListValue;
       for (base::ListValue::const_iterator it = list->begin();
-           it != list->end(); ++it) {
+           it != list->end();
+           ++it) {
         base::Value* child_copy = DeepCopyAndResolveStrings(*it, strings);
         copy->Append(child_copy);
       }
       return copy;
     }
 
-    case Value::TYPE_DICTIONARY: {
+    case base::Value::TYPE_DICTIONARY: {
       const base::DictionaryValue* dict =
           static_cast<const base::DictionaryValue*>(node);
       base::DictionaryValue* copy = new base::DictionaryValue;
-      for (base::DictionaryValue::key_iterator it = dict->begin_keys();
-           it != dict->end_keys(); ++it) {
-        const base::Value* child = NULL;
-        bool rv = dict->GetWithoutPathExpansion(*it, &child);
-        DCHECK(rv);
-        base::Value* child_copy = DeepCopyAndResolveStrings(child, strings);
-        copy->SetWithoutPathExpansion(*it, child_copy);
+      for (base::DictionaryValue::Iterator it(*dict);
+           !it.IsAtEnd();
+           it.Advance()) {
+        base::Value* child_copy = DeepCopyAndResolveStrings(&it.value(),
+                                                            strings);
+        copy->SetWithoutPathExpansion(it.key(), child_copy);
       }
       return copy;
     }
 
-    case Value::TYPE_STRING: {
-      const base::StringValue* str =
-          static_cast<const base::StringValue*>(node);
+    case base::Value::TYPE_STRING: {
       std::string value;
-      bool rv = str->GetAsString(&value);
+      bool rv = node->GetAsString(&value);
       DCHECK(rv);
       std::string actual_value;
       if (!strings || !strings->GetString(value, &actual_value))
@@ -184,14 +180,13 @@ base::Value* DeepCopyAndResolveStrings(
 void AppendQueryParameter(GURL* url,
                           const std::string& param,
                           const std::string& value) {
-  *url = chrome_common_net::AppendQueryParameter(*url, param, value);
+  *url = net::AppendQueryParameter(*url, param, value);
 }
 
 }  // namespace
 
-NotificationPromo::NotificationPromo(Profile* profile)
-    : profile_(profile),
-      prefs_(profile_->GetPrefs()),
+NotificationPromo::NotificationPromo()
+    : prefs_(g_browser_process->local_state()),
       promo_type_(NO_PROMO),
       promo_payload_(new base::DictionaryValue()),
       start_(0.0),
@@ -205,31 +200,29 @@ NotificationPromo::NotificationPromo(Profile* profile)
       group_(0),
       views_(0),
       closed_(false),
-      gplus_required_(false),
       new_notification_(false) {
-  DCHECK(profile);
   DCHECK(prefs_);
 }
 
 NotificationPromo::~NotificationPromo() {}
 
-void NotificationPromo::InitFromJson(const DictionaryValue& json,
+void NotificationPromo::InitFromJson(const base::DictionaryValue& json,
                                      PromoType promo_type) {
   promo_type_ = promo_type;
-  const ListValue* promo_list = NULL;
+  const base::ListValue* promo_list = NULL;
   DVLOG(1) << "InitFromJson " << PromoTypeToString(promo_type_);
   if (!json.GetList(PromoTypeToString(promo_type_), &promo_list))
     return;
 
   // No support for multiple promos yet. Only consider the first one.
-  const DictionaryValue* promo = NULL;
+  const base::DictionaryValue* promo = NULL;
   if (!promo_list->GetDictionary(0, &promo))
     return;
 
   // Date.
-  const ListValue* date_list = NULL;
+  const base::ListValue* date_list = NULL;
   if (promo->GetList("date", &date_list)) {
-    const DictionaryValue* date;
+    const base::DictionaryValue* date;
     if (date_list->GetDictionary(0, &date)) {
       std::string time_str;
       base::Time time;
@@ -249,7 +242,7 @@ void NotificationPromo::InitFromJson(const DictionaryValue& json,
   }
 
   // Grouping.
-  const DictionaryValue* grouping = NULL;
+  const base::DictionaryValue* grouping = NULL;
   if (promo->GetDictionary("grouping", &grouping)) {
     grouping->GetInteger("buckets", &num_groups_);
     grouping->GetInteger("segment", &initial_segment_);
@@ -265,15 +258,12 @@ void NotificationPromo::InitFromJson(const DictionaryValue& json,
   }
 
   // Strings.
-  const DictionaryValue* strings = NULL;
+  const base::DictionaryValue* strings = NULL;
   promo->GetDictionary("strings", &strings);
 
   // Payload.
-  const DictionaryValue* payload = NULL;
+  const base::DictionaryValue* payload = NULL;
   if (promo->GetDictionary("payload", &payload)) {
-    payload->GetBoolean("gplus_required", &gplus_required_);
-    DVLOG(1) << "gplus_required_ = " << gplus_required_;
-
     base::Value* ppcopy = DeepCopyAndResolveStrings(payload, strings);
     DCHECK(ppcopy && ppcopy->IsType(base::Value::TYPE_DICTIONARY));
     promo_payload_.reset(static_cast<base::DictionaryValue*>(ppcopy));
@@ -284,7 +274,7 @@ void NotificationPromo::InitFromJson(const DictionaryValue& json,
     // For compatibility with the legacy desktop version,
     // if no |payload.promo_message_short| is specified,
     // the first string in |strings| is used.
-    DictionaryValue::Iterator iter(*strings);
+    base::DictionaryValue::Iterator iter(*strings);
     iter.value().GetAsString(&promo_text_);
   }
   DVLOG(1) << "promo_text_=" << promo_text_;
@@ -296,7 +286,7 @@ void NotificationPromo::InitFromJson(const DictionaryValue& json,
 }
 
 void NotificationPromo::CheckForNewNotification() {
-  NotificationPromo old_promo(profile_);
+  NotificationPromo old_promo;
   old_promo.InitFromPrefs(promo_type_);
   const double old_start = old_promo.start_;
   const double old_end = old_promo.end_;
@@ -316,10 +306,23 @@ void NotificationPromo::OnNewNotification() {
 }
 
 // static
-void NotificationPromo::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterDictionaryPref(kPrefPromoObject,
-                                new base::DictionaryValue,
-                                PrefService::UNSYNCABLE_PREF);
+void NotificationPromo::RegisterPrefs(PrefRegistrySimple* registry) {
+  registry->RegisterDictionaryPref(kPrefPromoObject);
+}
+
+// static
+void NotificationPromo::RegisterProfilePrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
+  // TODO(dbeam): Registered only for migration. Remove in M28 when
+  // we're reasonably sure all prefs are gone.
+  // http://crbug.com/168887
+  registry->RegisterDictionaryPref(
+      kPrefPromoObject, user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+}
+
+// static
+void NotificationPromo::MigrateUserPrefs(PrefService* user_prefs) {
+  user_prefs->ClearPref(kPrefPromoObject);
 }
 
 void NotificationPromo::WritePrefs() {
@@ -340,8 +343,6 @@ void NotificationPromo::WritePrefs() {
   ntp_promo->SetInteger(kPrefPromoGroup, group_);
   ntp_promo->SetInteger(kPrefPromoViews, views_);
   ntp_promo->SetBoolean(kPrefPromoClosed, closed_);
-
-  ntp_promo->SetBoolean(kPrefPromoGPlusRequired, gplus_required_);
 
   base::ListValue* promo_list = new base::ListValue;
   promo_list->Set(0, ntp_promo);  // Only support 1 promo for now.
@@ -389,8 +390,19 @@ void NotificationPromo::InitFromPrefs(PromoType promo_type) {
   ntp_promo->GetInteger(kPrefPromoGroup, &group_);
   ntp_promo->GetInteger(kPrefPromoViews, &views_);
   ntp_promo->GetBoolean(kPrefPromoClosed, &closed_);
+}
 
-  ntp_promo->GetBoolean(kPrefPromoGPlusRequired, &gplus_required_);
+bool NotificationPromo::CheckAppLauncher() const {
+#if !defined(ENABLE_APP_LIST)
+  return true;
+#else
+  bool is_app_launcher_promo = false;
+  if (!promo_payload_->GetBoolean("is_app_launcher_promo",
+                                  &is_app_launcher_promo))
+    return true;
+  return !is_app_launcher_promo ||
+         !prefs_->GetBoolean(prefs::kAppLauncherIsEnabled);
+#endif  // !defined(ENABLE_APP_LIST)
 }
 
 bool NotificationPromo::CanShow() const {
@@ -398,15 +410,15 @@ bool NotificationPromo::CanShow() const {
          !promo_text_.empty() &&
          !ExceedsMaxGroup() &&
          !ExceedsMaxViews() &&
+         CheckAppLauncher() &&
          base::Time::FromDoubleT(StartTimeForGroup()) < base::Time::Now() &&
-         base::Time::FromDoubleT(EndTime()) > base::Time::Now() &&
-         IsGPlusRequired();
+         base::Time::FromDoubleT(EndTime()) > base::Time::Now();
 }
 
 // static
-void NotificationPromo::HandleClosed(Profile* profile, PromoType promo_type) {
+void NotificationPromo::HandleClosed(PromoType promo_type) {
   content::RecordAction(UserMetricsAction("NTPPromoClosed"));
-  NotificationPromo promo(profile);
+  NotificationPromo promo;
   promo.InitFromPrefs(promo_type);
   if (!promo.closed_) {
     promo.closed_ = true;
@@ -415,9 +427,9 @@ void NotificationPromo::HandleClosed(Profile* profile, PromoType promo_type) {
 }
 
 // static
-bool NotificationPromo::HandleViewed(Profile* profile, PromoType promo_type) {
+bool NotificationPromo::HandleViewed(PromoType promo_type) {
   content::RecordAction(UserMetricsAction("NTPPromoShown"));
-  NotificationPromo promo(profile);
+  NotificationPromo promo;
   promo.InitFromPrefs(promo_type);
   ++promo.views_;
   promo.WritePrefs();
@@ -430,10 +442,6 @@ bool NotificationPromo::ExceedsMaxGroup() const {
 
 bool NotificationPromo::ExceedsMaxViews() const {
   return (max_views_ == 0) ? false : views_ >= max_views_;
-}
-
-bool NotificationPromo::IsGPlusRequired() const {
-  return !gplus_required_ || prefs_->GetBoolean(prefs::kIsGooglePlusUser);
 }
 
 // static

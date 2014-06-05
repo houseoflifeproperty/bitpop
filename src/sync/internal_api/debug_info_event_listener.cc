@@ -4,6 +4,7 @@
 
 #include "sync/internal_api/debug_info_event_listener.h"
 
+#include "sync/notifier/object_id_invalidation_map.h"
 #include "sync/util/cryptographer.h"
 
 namespace syncer {
@@ -14,7 +15,7 @@ DebugInfoEventListener::DebugInfoEventListener()
     : events_dropped_(false),
       cryptographer_has_pending_keys_(false),
       cryptographer_ready_(false),
-      weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      weak_ptr_factory_(this) {
 }
 
 DebugInfoEventListener::~DebugInfoEventListener() {
@@ -39,29 +40,9 @@ void DebugInfoEventListener::OnSyncCycleCompleted(
   sync_completed_event_info->set_num_reflected_updates_downloaded(
       snapshot.model_neutral_state().num_reflected_updates_downloaded_total);
   sync_completed_event_info->mutable_caller_info()->set_source(
-      snapshot.source().updates_source);
+      snapshot.legacy_updates_source());
   sync_completed_event_info->mutable_caller_info()->set_notifications_enabled(
       snapshot.notifications_enabled());
-
-  // Log the sources and per-type payloads coalesced into this session.
-  const std::vector<sessions::SyncSourceInfo>& snap_sources =
-      snapshot.debug_info_sources_list();
-  for (std::vector<sessions::SyncSourceInfo>::const_iterator source_iter =
-       snap_sources.begin(); source_iter != snap_sources.end(); ++source_iter) {
-    sync_pb::SourceInfo* pb_source_info =
-        sync_completed_event_info->add_source_info();
-
-    pb_source_info->set_source(source_iter->updates_source);
-
-    for (ModelTypeInvalidationMap::const_iterator type_iter =
-         source_iter->types.begin();
-         type_iter != source_iter->types.end(); ++type_iter) {
-      sync_pb::TypeHint* pb_type_hint = pb_source_info->add_type_hint();
-      pb_type_hint->set_data_type_id(
-          GetSpecificsFieldNumberFromModelType(type_iter->first));
-      pb_type_hint->set_has_valid_hint(!type_iter->second.payload.empty());
-    }
-  }
 
   AddEventToQueue(event_info);
 }
@@ -71,58 +52,48 @@ void DebugInfoEventListener::OnInitializationComplete(
     const WeakHandle<DataTypeDebugInfoListener>& debug_listener,
     bool success, ModelTypeSet restored_types) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  CreateAndAddEvent(sync_pb::DebugEventInfo::INITIALIZATION_COMPLETE);
+  CreateAndAddEvent(sync_pb::SyncEnums::INITIALIZATION_COMPLETE);
 }
 
 void DebugInfoEventListener::OnConnectionStatusChange(
     ConnectionStatus status) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  CreateAndAddEvent(sync_pb::DebugEventInfo::CONNECTION_STATUS_CHANGE);
+  CreateAndAddEvent(sync_pb::SyncEnums::CONNECTION_STATUS_CHANGE);
 }
 
 void DebugInfoEventListener::OnPassphraseRequired(
     PassphraseRequiredReason reason,
     const sync_pb::EncryptedData& pending_keys) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  CreateAndAddEvent(sync_pb::DebugEventInfo::PASSPHRASE_REQUIRED);
+  CreateAndAddEvent(sync_pb::SyncEnums::PASSPHRASE_REQUIRED);
 }
 
 void DebugInfoEventListener::OnPassphraseAccepted() {
   DCHECK(thread_checker_.CalledOnValidThread());
-  CreateAndAddEvent(sync_pb::DebugEventInfo::PASSPHRASE_ACCEPTED);
+  CreateAndAddEvent(sync_pb::SyncEnums::PASSPHRASE_ACCEPTED);
 }
 
 void DebugInfoEventListener::OnBootstrapTokenUpdated(
     const std::string& bootstrap_token, BootstrapTokenType type) {
   DCHECK(thread_checker_.CalledOnValidThread());
   if (type == PASSPHRASE_BOOTSTRAP_TOKEN) {
-    CreateAndAddEvent(sync_pb::DebugEventInfo::BOOTSTRAP_TOKEN_UPDATED);
+    CreateAndAddEvent(sync_pb::SyncEnums::BOOTSTRAP_TOKEN_UPDATED);
     return;
   }
   DCHECK_EQ(type, KEYSTORE_BOOTSTRAP_TOKEN);
-  CreateAndAddEvent(sync_pb::DebugEventInfo::KEYSTORE_TOKEN_UPDATED);
-}
-
-void DebugInfoEventListener::OnStopSyncingPermanently() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  CreateAndAddEvent(sync_pb::DebugEventInfo::STOP_SYNCING_PERMANENTLY);
-}
-
-void DebugInfoEventListener::OnUpdatedToken(const std::string& token) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  CreateAndAddEvent(sync_pb::DebugEventInfo::UPDATED_TOKEN);
+  CreateAndAddEvent(sync_pb::SyncEnums::KEYSTORE_TOKEN_UPDATED);
 }
 
 void DebugInfoEventListener::OnEncryptedTypesChanged(
     ModelTypeSet encrypted_types,
     bool encrypt_everything) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  CreateAndAddEvent(sync_pb::DebugEventInfo::ENCRYPTED_TYPES_CHANGED);
+  CreateAndAddEvent(sync_pb::SyncEnums::ENCRYPTED_TYPES_CHANGED);
 }
 
 void DebugInfoEventListener::OnEncryptionComplete() {
   DCHECK(thread_checker_.CalledOnValidThread());
-  CreateAndAddEvent(sync_pb::DebugEventInfo::ENCRYPTION_COMPLETE);
+  CreateAndAddEvent(sync_pb::SyncEnums::ENCRYPTION_COMPLETE);
 }
 
 void DebugInfoEventListener::OnCryptographerStateChanged(
@@ -136,14 +107,18 @@ void DebugInfoEventListener::OnPassphraseTypeChanged(
     PassphraseType type,
     base::Time explicit_passphrase_time) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  CreateAndAddEvent(sync_pb::DebugEventInfo::PASSPHRASE_TYPE_CHANGED);
+  CreateAndAddEvent(sync_pb::SyncEnums::PASSPHRASE_TYPE_CHANGED);
 }
 
 void DebugInfoEventListener::OnActionableError(
     const SyncProtocolError& sync_error) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  CreateAndAddEvent(sync_pb::DebugEventInfo::ACTIONABLE_ERROR);
+  CreateAndAddEvent(sync_pb::SyncEnums::ACTIONABLE_ERROR);
 }
+
+void DebugInfoEventListener::OnMigrationRequested(ModelTypeSet types) {}
+
+void DebugInfoEventListener::OnProtocolEvent(const ProtocolEvent& event) {}
 
 void DebugInfoEventListener::OnNudgeFromDatatype(ModelType datatype) {
   DCHECK(thread_checker_.CalledOnValidThread());
@@ -154,10 +129,11 @@ void DebugInfoEventListener::OnNudgeFromDatatype(ModelType datatype) {
 }
 
 void DebugInfoEventListener::OnIncomingNotification(
-     const ModelTypeInvalidationMap& invalidation_map) {
+    const ObjectIdInvalidationMap& invalidation_map) {
   DCHECK(thread_checker_.CalledOnValidThread());
   sync_pb::DebugEventInfo event_info;
-  ModelTypeSet types = ModelTypeInvalidationMapToSet(invalidation_map);
+  ModelTypeSet types =
+      ObjectIdSetToModelTypeSet(invalidation_map.GetObjectIds());
 
   for (ModelTypeSet::Iterator it = types.First(); it.Good(); it.Inc()) {
     event_info.add_datatypes_notified_from_server(
@@ -167,22 +143,28 @@ void DebugInfoEventListener::OnIncomingNotification(
   AddEventToQueue(event_info);
 }
 
-void DebugInfoEventListener::GetAndClearDebugInfo(
-    sync_pb::DebugInfo* debug_info) {
+void DebugInfoEventListener::GetDebugInfo(sync_pb::DebugInfo* debug_info) {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK_LE(events_.size(), kMaxEntries);
-  while (!events_.empty()) {
+
+  for (DebugEventInfoQueue::const_iterator iter = events_.begin();
+       iter != events_.end();
+       ++iter) {
     sync_pb::DebugEventInfo* event_info = debug_info->add_events();
-    const sync_pb::DebugEventInfo& debug_event_info = events_.front();
-    event_info->CopyFrom(debug_event_info);
-    events_.pop();
+    event_info->CopyFrom(*iter);
   }
 
   debug_info->set_events_dropped(events_dropped_);
   debug_info->set_cryptographer_ready(cryptographer_ready_);
   debug_info->set_cryptographer_has_pending_keys(
       cryptographer_has_pending_keys_);
+}
 
+void DebugInfoEventListener::ClearDebugInfo() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK_LE(events_.size(), kMaxEntries);
+
+  events_.clear();
   events_dropped_ = false;
 }
 
@@ -191,46 +173,80 @@ base::WeakPtr<DataTypeDebugInfoListener> DebugInfoEventListener::GetWeakPtr() {
   return weak_ptr_factory_.GetWeakPtr();
 }
 
-void DebugInfoEventListener::OnDataTypeAssociationComplete(
-    const DataTypeAssociationStats& association_stats) {
+void DebugInfoEventListener::OnDataTypeConfigureComplete(
+    const std::vector<DataTypeConfigurationStats>& configuration_stats) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  sync_pb::DebugEventInfo association_event;
-  sync_pb::DatatypeAssociationStats* datatype_stats =
-      association_event.mutable_datatype_association_stats();
-  datatype_stats->set_data_type_id(
-      GetSpecificsFieldNumberFromModelType(association_stats.model_type));
-  datatype_stats->set_num_local_items_before_association(
-      association_stats.num_local_items_before_association);
-  datatype_stats->set_num_sync_items_before_association(
-      association_stats.num_sync_items_before_association);
-  datatype_stats->set_num_local_items_after_association(
-      association_stats.num_local_items_after_association);
-  datatype_stats->set_num_sync_items_after_association(
-      association_stats.num_sync_items_after_association);
-  datatype_stats->set_num_local_items_added(
-      association_stats.num_local_items_added);
-  datatype_stats->set_num_local_items_deleted(
-      association_stats.num_local_items_deleted);
-  datatype_stats->set_num_local_items_modified(
-      association_stats.num_local_items_modified);
-  datatype_stats->set_num_sync_items_added(
-      association_stats.num_sync_items_added);
-  datatype_stats->set_num_sync_items_deleted(
-      association_stats.num_sync_items_deleted);
-  datatype_stats->set_num_sync_items_modified(
-      association_stats.num_sync_items_modified);
-  datatype_stats->set_had_error(association_stats.had_error);
 
-  AddEventToQueue(association_event);
-}
+  for (size_t i = 0; i < configuration_stats.size(); ++i) {
+    DCHECK(ProtocolTypes().Has(configuration_stats[i].model_type));
+    const DataTypeAssociationStats& association_stats =
+        configuration_stats[i].association_stats;
 
-void DebugInfoEventListener::OnConfigureComplete() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  CreateAndAddEvent(sync_pb::DebugEventInfo::CONFIGURE_COMPLETE);
+    sync_pb::DebugEventInfo association_event;
+    sync_pb::DatatypeAssociationStats* datatype_stats =
+        association_event.mutable_datatype_association_stats();
+    datatype_stats->set_data_type_id(
+        GetSpecificsFieldNumberFromModelType(
+            configuration_stats[i].model_type));
+    datatype_stats->set_num_local_items_before_association(
+        association_stats.num_local_items_before_association);
+    datatype_stats->set_num_sync_items_before_association(
+        association_stats.num_sync_items_before_association);
+    datatype_stats->set_num_local_items_after_association(
+        association_stats.num_local_items_after_association);
+    datatype_stats->set_num_sync_items_after_association(
+        association_stats.num_sync_items_after_association);
+    datatype_stats->set_num_local_items_added(
+        association_stats.num_local_items_added);
+    datatype_stats->set_num_local_items_deleted(
+        association_stats.num_local_items_deleted);
+    datatype_stats->set_num_local_items_modified(
+        association_stats.num_local_items_modified);
+    datatype_stats->set_num_sync_items_added(
+        association_stats.num_sync_items_added);
+    datatype_stats->set_num_sync_items_deleted(
+        association_stats.num_sync_items_deleted);
+    datatype_stats->set_num_sync_items_modified(
+        association_stats.num_sync_items_modified);
+    datatype_stats->set_local_version_pre_association(
+        association_stats.local_version_pre_association);
+    datatype_stats->set_sync_version_pre_association(
+        association_stats.sync_version_pre_association);
+    datatype_stats->set_had_error(association_stats.had_error);
+    datatype_stats->set_association_wait_time_for_same_priority_us(
+          association_stats.association_wait_time.InMicroseconds());
+    datatype_stats->set_association_time_us(
+        association_stats.association_time.InMicroseconds());
+    datatype_stats->set_download_wait_time_us(
+        configuration_stats[i].download_wait_time.InMicroseconds());
+    datatype_stats->set_download_time_us(
+        configuration_stats[i].download_time.InMicroseconds());
+    datatype_stats->set_association_wait_time_for_high_priority_us(
+        configuration_stats[i].association_wait_time_for_high_priority
+            .InMicroseconds());
+
+    for (ModelTypeSet::Iterator it =
+             configuration_stats[i].high_priority_types_configured_before
+                 .First();
+         it.Good(); it.Inc()) {
+      datatype_stats->add_high_priority_type_configured_before(
+          GetSpecificsFieldNumberFromModelType(it.Get()));
+    }
+
+    for (ModelTypeSet::Iterator it =
+             configuration_stats[i].same_priority_types_configured_before
+                 .First();
+        it.Good(); it.Inc()) {
+      datatype_stats->add_same_priority_type_configured_before(
+          GetSpecificsFieldNumberFromModelType(it.Get()));
+    }
+
+    AddEventToQueue(association_event);
+  }
 }
 
 void DebugInfoEventListener::CreateAndAddEvent(
-    sync_pb::DebugEventInfo::SingletonEventType type) {
+    sync_pb::SyncEnums::SingletonDebugEventType type) {
   DCHECK(thread_checker_.CalledOnValidThread());
   sync_pb::DebugEventInfo event_info;
   event_info.set_singleton_event(type);
@@ -244,10 +260,10 @@ void DebugInfoEventListener::AddEventToQueue(
     DVLOG(1) << "DebugInfoEventListener::AddEventToQueue Dropping an old event "
              << "because of full queue";
 
-    events_.pop();
+    events_.pop_front();
     events_dropped_ = true;
   }
-  events_.push(event_info);
+  events_.push_back(event_info);
 }
 
 }  // namespace syncer

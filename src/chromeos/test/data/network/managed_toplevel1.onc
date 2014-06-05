@@ -14,7 +14,7 @@
           "Type": "OpenVPN",
           "OpenVPN": {
               "Port": 1194,
-              "Username": "policy user",
+              "Username": "abc ${LOGIN_ID} def",
               "Recommended": [ "Username", "Password" ],
               "ClientCertType": "Pattern",
               "ClientCertPattern": {

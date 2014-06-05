@@ -4,355 +4,335 @@
 
 #include "media/filters/ffmpeg_audio_decoder.h"
 
-#include "base/bind.h"
 #include "base/callback_helpers.h"
-#include "base/location.h"
-#include "base/message_loop_proxy.h"
+#include "base/single_thread_task_runner.h"
+#include "media/base/audio_buffer.h"
+#include "media/base/audio_bus.h"
 #include "media/base/audio_decoder_config.h"
-#include "media/base/audio_timestamp_helper.h"
-#include "media/base/data_buffer.h"
+#include "media/base/audio_discard_helper.h"
+#include "media/base/bind_to_current_loop.h"
 #include "media/base/decoder_buffer.h"
-#include "media/base/demuxer.h"
-#include "media/base/pipeline.h"
+#include "media/base/limits.h"
+#include "media/base/sample_format.h"
 #include "media/ffmpeg/ffmpeg_common.h"
 #include "media/filters/ffmpeg_glue.h"
 
 namespace media {
 
-// Helper structure for managing multiple decoded audio frames per packet.
-struct QueuedAudioBuffer {
-  AudioDecoder::Status status;
-  scoped_refptr<Buffer> buffer;
-};
-
 // Returns true if the decode result was end of stream.
-static inline bool IsEndOfStream(int result, int decoded_size, Buffer* input) {
+static inline bool IsEndOfStream(int result,
+                                 int decoded_size,
+                                 const scoped_refptr<DecoderBuffer>& input) {
   // Three conditions to meet to declare end of stream for this decoder:
   // 1. FFmpeg didn't read anything.
   // 2. FFmpeg didn't output anything.
   // 3. An end of stream buffer is received.
-  return result == 0 && decoded_size == 0 && input->IsEndOfStream();
+  return result == 0 && decoded_size == 0 && input->end_of_stream();
+}
+
+// Return the number of channels from the data in |frame|.
+static inline int DetermineChannels(AVFrame* frame) {
+#if defined(CHROMIUM_NO_AVFRAME_CHANNELS)
+  // When use_system_ffmpeg==1, libav's AVFrame doesn't have channels field.
+  return av_get_channel_layout_nb_channels(frame->channel_layout);
+#else
+  return frame->channels;
+#endif
+}
+
+// Called by FFmpeg's allocation routine to free a buffer. |opaque| is the
+// AudioBuffer allocated, so unref it.
+static void ReleaseAudioBufferImpl(void* opaque, uint8* data) {
+  scoped_refptr<AudioBuffer> buffer;
+  buffer.swap(reinterpret_cast<AudioBuffer**>(&opaque));
+}
+
+// Called by FFmpeg's allocation routine to allocate a buffer. Uses
+// AVCodecContext.opaque to get the object reference in order to call
+// GetAudioBuffer() to do the actual allocation.
+static int GetAudioBuffer(struct AVCodecContext* s, AVFrame* frame, int flags) {
+  DCHECK(s->codec->capabilities & CODEC_CAP_DR1);
+  DCHECK_EQ(s->codec_type, AVMEDIA_TYPE_AUDIO);
+
+  // Since this routine is called by FFmpeg when a buffer is required for audio
+  // data, use the values supplied by FFmpeg (ignoring the current settings).
+  // FFmpegDecode() gets to determine if the buffer is useable or not.
+  AVSampleFormat format = static_cast<AVSampleFormat>(frame->format);
+  SampleFormat sample_format = AVSampleFormatToSampleFormat(format);
+  int channels = DetermineChannels(frame);
+  if (channels <= 0 || channels >= limits::kMaxChannels) {
+    DLOG(ERROR) << "Requested number of channels (" << channels
+                << ") exceeds limit.";
+    return AVERROR(EINVAL);
+  }
+
+  int bytes_per_channel = SampleFormatToBytesPerChannel(sample_format);
+  if (frame->nb_samples <= 0)
+    return AVERROR(EINVAL);
+
+  if (s->channels != channels) {
+    DLOG(ERROR) << "AVCodecContext and AVFrame disagree on channel count.";
+    return AVERROR(EINVAL);
+  }
+
+  // Determine how big the buffer should be and allocate it. FFmpeg may adjust
+  // how big each channel data is in order to meet the alignment policy, so
+  // we need to take this into consideration.
+  int buffer_size_in_bytes =
+      av_samples_get_buffer_size(&frame->linesize[0],
+                                 channels,
+                                 frame->nb_samples,
+                                 format,
+                                 AudioBuffer::kChannelAlignment);
+  // Check for errors from av_samples_get_buffer_size().
+  if (buffer_size_in_bytes < 0)
+    return buffer_size_in_bytes;
+  int frames_required = buffer_size_in_bytes / bytes_per_channel / channels;
+  DCHECK_GE(frames_required, frame->nb_samples);
+  scoped_refptr<AudioBuffer> buffer = AudioBuffer::CreateBuffer(
+      sample_format,
+      ChannelLayoutToChromeChannelLayout(s->channel_layout, s->channels),
+      channels,
+      s->sample_rate,
+      frames_required);
+
+  // Initialize the data[] and extended_data[] fields to point into the memory
+  // allocated for AudioBuffer. |number_of_planes| will be 1 for interleaved
+  // audio and equal to |channels| for planar audio.
+  int number_of_planes = buffer->channel_data().size();
+  if (number_of_planes <= AV_NUM_DATA_POINTERS) {
+    DCHECK_EQ(frame->extended_data, frame->data);
+    for (int i = 0; i < number_of_planes; ++i)
+      frame->data[i] = buffer->channel_data()[i];
+  } else {
+    // There are more channels than can fit into data[], so allocate
+    // extended_data[] and fill appropriately.
+    frame->extended_data = static_cast<uint8**>(
+        av_malloc(number_of_planes * sizeof(*frame->extended_data)));
+    int i = 0;
+    for (; i < AV_NUM_DATA_POINTERS; ++i)
+      frame->extended_data[i] = frame->data[i] = buffer->channel_data()[i];
+    for (; i < number_of_planes; ++i)
+      frame->extended_data[i] = buffer->channel_data()[i];
+  }
+
+  // Now create an AVBufferRef for the data just allocated. It will own the
+  // reference to the AudioBuffer object.
+  void* opaque = NULL;
+  buffer.swap(reinterpret_cast<AudioBuffer**>(&opaque));
+  frame->buf[0] = av_buffer_create(
+      frame->data[0], buffer_size_in_bytes, ReleaseAudioBufferImpl, opaque, 0);
+  return 0;
 }
 
 FFmpegAudioDecoder::FFmpegAudioDecoder(
-    const scoped_refptr<base::MessageLoopProxy>& message_loop)
-    : message_loop_(message_loop),
-      codec_context_(NULL),
-      bits_per_channel_(0),
-      channel_layout_(CHANNEL_LAYOUT_NONE),
-      samples_per_second_(0),
-      bytes_per_frame_(0),
-      last_input_timestamp_(kNoTimestamp()),
-      output_bytes_to_drop_(0),
-      av_frame_(NULL) {
-}
-
-void FFmpegAudioDecoder::Initialize(
-    const scoped_refptr<DemuxerStream>& stream,
-    const PipelineStatusCB& status_cb,
-    const StatisticsCB& statistics_cb) {
-  if (!message_loop_->BelongsToCurrentThread()) {
-    message_loop_->PostTask(FROM_HERE, base::Bind(
-        &FFmpegAudioDecoder::DoInitialize, this,
-        stream, status_cb, statistics_cb));
-    return;
-  }
-  DoInitialize(stream, status_cb, statistics_cb);
-}
-
-void FFmpegAudioDecoder::Read(const ReadCB& read_cb) {
-  // Complete operation asynchronously on different stack of execution as per
-  // the API contract of AudioDecoder::Read()
-  message_loop_->PostTask(FROM_HERE, base::Bind(
-      &FFmpegAudioDecoder::DoRead, this, read_cb));
-}
-
-int FFmpegAudioDecoder::bits_per_channel() {
-  return bits_per_channel_;
-}
-
-ChannelLayout FFmpegAudioDecoder::channel_layout() {
-  return channel_layout_;
-}
-
-int FFmpegAudioDecoder::samples_per_second() {
-  return samples_per_second_;
-}
-
-void FFmpegAudioDecoder::Reset(const base::Closure& closure) {
-  message_loop_->PostTask(FROM_HERE, base::Bind(
-      &FFmpegAudioDecoder::DoReset, this, closure));
+    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+    const LogCB& log_cb)
+    : task_runner_(task_runner),
+      state_(kUninitialized),
+      av_sample_format_(0),
+      log_cb_(log_cb) {
 }
 
 FFmpegAudioDecoder::~FFmpegAudioDecoder() {
-  // TODO(scherkus): should we require Stop() to be called? this might end up
-  // getting called on a random thread due to refcounting.
-  ReleaseFFmpegResources();
+  DCHECK_EQ(state_, kUninitialized);
+  DCHECK(!codec_context_);
+  DCHECK(!av_frame_);
 }
 
-void FFmpegAudioDecoder::DoInitialize(
-    const scoped_refptr<DemuxerStream>& stream,
-    const PipelineStatusCB& status_cb,
-    const StatisticsCB& statistics_cb) {
+void FFmpegAudioDecoder::Initialize(const AudioDecoderConfig& config,
+                                    const PipelineStatusCB& status_cb) {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  DCHECK(!config.is_encrypted());
+
   FFmpegGlue::InitializeFFmpeg();
 
-  if (demuxer_stream_) {
-    // TODO(scherkus): initialization currently happens more than once in
-    // PipelineIntegrationTest.BasicPlayback.
-    LOG(ERROR) << "Initialize has already been called.";
-    CHECK(false);
-  }
+  config_ = config;
+  PipelineStatusCB initialize_cb = BindToCurrentLoop(status_cb);
 
-  demuxer_stream_ = stream;
-
-  if (!ConfigureDecoder()) {
-    status_cb.Run(DECODER_ERROR_NOT_SUPPORTED);
+  if (!config.IsValidConfig() || !ConfigureDecoder()) {
+    initialize_cb.Run(DECODER_ERROR_NOT_SUPPORTED);
     return;
-  }
-
-  statistics_cb_ = statistics_cb;
-  status_cb.Run(PIPELINE_OK);
-}
-
-void FFmpegAudioDecoder::DoReset(const base::Closure& closure) {
-  avcodec_flush_buffers(codec_context_);
-  ResetTimestampState();
-  queued_audio_.clear();
-  closure.Run();
-}
-
-void FFmpegAudioDecoder::DoRead(const ReadCB& read_cb) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
-  DCHECK(!read_cb.is_null());
-  CHECK(read_cb_.is_null()) << "Overlapping decodes are not supported.";
-
-  read_cb_ = read_cb;
-
-  // If we don't have any queued audio from the last packet we decoded, ask for
-  // more data from the demuxer to satisfy this read.
-  if (queued_audio_.empty()) {
-    ReadFromDemuxerStream();
-    return;
-  }
-
-  base::ResetAndReturn(&read_cb_).Run(
-      queued_audio_.front().status, queued_audio_.front().buffer);
-  queued_audio_.pop_front();
-}
-
-void FFmpegAudioDecoder::DoDecodeBuffer(
-    DemuxerStream::Status status,
-    const scoped_refptr<DecoderBuffer>& input) {
-  if (!message_loop_->BelongsToCurrentThread()) {
-    message_loop_->PostTask(FROM_HERE, base::Bind(
-        &FFmpegAudioDecoder::DoDecodeBuffer, this, status, input));
-    return;
-  }
-
-  DCHECK(!read_cb_.is_null());
-  DCHECK(queued_audio_.empty());
-  DCHECK_EQ(status != DemuxerStream::kOk, !input) << status;
-
-  if (status == DemuxerStream::kAborted) {
-    DCHECK(!input);
-    base::ResetAndReturn(&read_cb_).Run(kAborted, NULL);
-    return;
-  }
-
-  if (status == DemuxerStream::kConfigChanged) {
-    DCHECK(!input);
-
-    // Send a "end of stream" buffer to the decode loop
-    // to output any remaining data still in the decoder.
-    RunDecodeLoop(DecoderBuffer::CreateEOSBuffer(), true);
-
-    DVLOG(1) << "Config changed.";
-
-    if (!ConfigureDecoder()) {
-      base::ResetAndReturn(&read_cb_).Run(kDecodeError, NULL);
-      return;
-    }
-
-    ResetTimestampState();
-
-    if (queued_audio_.empty()) {
-      ReadFromDemuxerStream();
-      return;
-    }
-
-    base::ResetAndReturn(&read_cb_).Run(
-        queued_audio_.front().status, queued_audio_.front().buffer);
-    queued_audio_.pop_front();
-    return;
-  }
-
-  DCHECK_EQ(status, DemuxerStream::kOk);
-  DCHECK(input);
-
-  // Make sure we are notified if http://crbug.com/49709 returns.  Issue also
-  // occurs with some damaged files.
-  if (!input->IsEndOfStream() && input->GetTimestamp() == kNoTimestamp() &&
-      output_timestamp_helper_->base_timestamp() == kNoTimestamp()) {
-    DVLOG(1) << "Received a buffer without timestamps!";
-    base::ResetAndReturn(&read_cb_).Run(kDecodeError, NULL);
-    return;
-  }
-
-  bool is_vorbis = codec_context_->codec_id == CODEC_ID_VORBIS;
-  if (!input->IsEndOfStream()) {
-    if (last_input_timestamp_ == kNoTimestamp()) {
-      if (is_vorbis && (input->GetTimestamp() < base::TimeDelta())) {
-        // Dropping frames for negative timestamps as outlined in section A.2
-        // in the Vorbis spec. http://xiph.org/vorbis/doc/Vorbis_I_spec.html
-        int frames_to_drop = floor(
-            0.5 + -input->GetTimestamp().InSecondsF() * samples_per_second_);
-        output_bytes_to_drop_ = bytes_per_frame_ * frames_to_drop;
-      } else {
-        last_input_timestamp_ = input->GetTimestamp();
-      }
-    } else if (input->GetTimestamp() != kNoTimestamp()) {
-      if (input->GetTimestamp() < last_input_timestamp_) {
-        base::TimeDelta diff = input->GetTimestamp() - last_input_timestamp_;
-        DVLOG(1) << "Input timestamps are not monotonically increasing! "
-                 << " ts " << input->GetTimestamp().InMicroseconds() << " us"
-                 << " diff " << diff.InMicroseconds() << " us";
-        base::ResetAndReturn(&read_cb_).Run(kDecodeError, NULL);
-        return;
-      }
-
-      last_input_timestamp_ = input->GetTimestamp();
-    }
-  }
-
-  RunDecodeLoop(input, false);
-
-  // We exhausted the provided packet, but it wasn't enough for a frame.  Ask
-  // for more data in order to fulfill this read.
-  if (queued_audio_.empty()) {
-    ReadFromDemuxerStream();
-    return;
-  }
-
-  // Execute callback to return the first frame we decoded.
-  base::ResetAndReturn(&read_cb_).Run(
-      queued_audio_.front().status, queued_audio_.front().buffer);
-  queued_audio_.pop_front();
-}
-
-void FFmpegAudioDecoder::ReadFromDemuxerStream() {
-  DCHECK(!read_cb_.is_null());
-
-  demuxer_stream_->Read(base::Bind(&FFmpegAudioDecoder::DoDecodeBuffer, this));
-}
-
-bool FFmpegAudioDecoder::ConfigureDecoder() {
-  const AudioDecoderConfig& config = demuxer_stream_->audio_decoder_config();
-
-  if (!config.IsValidConfig()) {
-    DLOG(ERROR) << "Invalid audio stream -"
-                << " codec: " << config.codec()
-                << " channel layout: " << config.channel_layout()
-                << " bits per channel: " << config.bits_per_channel()
-                << " samples per second: " << config.samples_per_second();
-    return false;
-  }
-
-  if (config.is_encrypted()) {
-    DLOG(ERROR) << "Encrypted audio stream not supported";
-    return false;
-  }
-
-  if (codec_context_ &&
-      (bits_per_channel_ != config.bits_per_channel() ||
-       channel_layout_ != config.channel_layout() ||
-       samples_per_second_ != config.samples_per_second())) {
-    DVLOG(1) << "Unsupported config change :";
-    DVLOG(1) << "\tbits_per_channel : " << bits_per_channel_
-             << " -> " << config.bits_per_channel();
-    DVLOG(1) << "\tchannel_layout : " << channel_layout_
-             << " -> " << config.channel_layout();
-    DVLOG(1) << "\tsample_rate : " << samples_per_second_
-             << " -> " << config.samples_per_second();
-    return false;
-  }
-
-  // Release existing decoder resources if necessary.
-  ReleaseFFmpegResources();
-
-  // Initialize AVCodecContext structure.
-  codec_context_ = avcodec_alloc_context3(NULL);
-  AudioDecoderConfigToAVCodecContext(config, codec_context_);
-
-  AVCodec* codec = avcodec_find_decoder(codec_context_->codec_id);
-  if (!codec || avcodec_open2(codec_context_, codec, NULL) < 0) {
-    DLOG(ERROR) << "Could not initialize audio decoder: "
-                << codec_context_->codec_id;
-    return false;
   }
 
   // Success!
-  av_frame_ = avcodec_alloc_frame();
-  bits_per_channel_ = config.bits_per_channel();
-  channel_layout_ = config.channel_layout();
-  samples_per_second_ = config.samples_per_second();
-  output_timestamp_helper_.reset(new AudioTimestampHelper(
-      config.bytes_per_frame(), config.samples_per_second()));
-  return true;
+  state_ = kNormal;
+  initialize_cb.Run(PIPELINE_OK);
 }
 
-void FFmpegAudioDecoder::ReleaseFFmpegResources() {
-  if (codec_context_) {
-    av_free(codec_context_->extradata);
-    avcodec_close(codec_context_);
-    av_free(codec_context_);
+void FFmpegAudioDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
+                                const DecodeCB& decode_cb) {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  DCHECK(!decode_cb.is_null());
+  CHECK_NE(state_, kUninitialized);
+  DecodeCB decode_cb_bound = BindToCurrentLoop(decode_cb);
+
+  if (state_ == kError) {
+    decode_cb_bound.Run(kDecodeError, NULL);
+    return;
   }
 
-  if (av_frame_) {
-    av_free(av_frame_);
-    av_frame_ = NULL;
+  // Return empty frames if decoding has finished.
+  if (state_ == kDecodeFinished) {
+    decode_cb_bound.Run(kOk, AudioBuffer::CreateEOSBuffer());
+    return;
   }
+
+  if (!buffer) {
+    decode_cb_bound.Run(kAborted, NULL);
+    return;
+  }
+
+  DecodeBuffer(buffer, decode_cb_bound);
 }
 
-void FFmpegAudioDecoder::ResetTimestampState() {
-  output_timestamp_helper_->SetBaseTimestamp(kNoTimestamp());
-  last_input_timestamp_ = kNoTimestamp();
-  output_bytes_to_drop_ = 0;
+scoped_refptr<AudioBuffer> FFmpegAudioDecoder::GetDecodeOutput() {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  if (queued_audio_.empty())
+    return NULL;
+  scoped_refptr<AudioBuffer> out = queued_audio_.front();
+  queued_audio_.pop_front();
+  return out;
 }
 
-void FFmpegAudioDecoder::RunDecodeLoop(
-    const scoped_refptr<DecoderBuffer>& input,
-    bool skip_eos_append) {
+void FFmpegAudioDecoder::Reset(const base::Closure& closure) {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+
+  avcodec_flush_buffers(codec_context_.get());
+  state_ = kNormal;
+  ResetTimestampState();
+  task_runner_->PostTask(FROM_HERE, closure);
+}
+
+void FFmpegAudioDecoder::Stop() {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+
+  if (state_ == kUninitialized)
+    return;
+
+  ReleaseFFmpegResources();
+  ResetTimestampState();
+  state_ = kUninitialized;
+}
+
+void FFmpegAudioDecoder::DecodeBuffer(
+    const scoped_refptr<DecoderBuffer>& buffer,
+    const DecodeCB& decode_cb) {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  DCHECK_NE(state_, kUninitialized);
+  DCHECK_NE(state_, kDecodeFinished);
+  DCHECK_NE(state_, kError);
+
+  DCHECK(buffer);
+
+  // During decode, because reads are issued asynchronously, it is possible to
+  // receive multiple end of stream buffers since each decode is acked. When the
+  // first end of stream buffer is read, FFmpeg may still have frames queued
+  // up in the decoder so we need to go through the decode loop until it stops
+  // giving sensible data.  After that, the decoder should output empty
+  // frames.  There are three states the decoder can be in:
+  //
+  //   kNormal: This is the starting state. Buffers are decoded. Decode errors
+  //            are discarded.
+  //   kFlushCodec: There isn't any more input data. Call avcodec_decode_audio4
+  //                until no more data is returned to flush out remaining
+  //                frames. The input buffer is ignored at this point.
+  //   kDecodeFinished: All calls return empty frames.
+  //   kError: Unexpected error happened.
+  //
+  // These are the possible state transitions.
+  //
+  // kNormal -> kFlushCodec:
+  //     When buffer->end_of_stream() is first true.
+  // kNormal -> kError:
+  //     A decoding error occurs and decoding needs to stop.
+  // kFlushCodec -> kDecodeFinished:
+  //     When avcodec_decode_audio4() returns 0 data.
+  // kFlushCodec -> kError:
+  //     When avcodec_decode_audio4() errors out.
+  // (any state) -> kNormal:
+  //     Any time Reset() is called.
+
+  // Make sure we are notified if http://crbug.com/49709 returns.  Issue also
+  // occurs with some damaged files.
+  if (!buffer->end_of_stream() && buffer->timestamp() == kNoTimestamp()) {
+    DVLOG(1) << "Received a buffer without timestamps!";
+    decode_cb.Run(kDecodeError, NULL);
+    return;
+  }
+
+  if (!buffer->end_of_stream() && !discard_helper_->initialized() &&
+      codec_context_->codec_id == AV_CODEC_ID_VORBIS &&
+      buffer->timestamp() < base::TimeDelta()) {
+    // Dropping frames for negative timestamps as outlined in section A.2
+    // in the Vorbis spec. http://xiph.org/vorbis/doc/Vorbis_I_spec.html
+    const int discard_frames =
+        discard_helper_->TimeDeltaToFrames(-buffer->timestamp());
+    discard_helper_->Reset(discard_frames);
+  }
+
+  // Transition to kFlushCodec on the first end of stream buffer.
+  if (state_ == kNormal && buffer->end_of_stream()) {
+    state_ = kFlushCodec;
+  }
+
+  if (!FFmpegDecode(buffer)) {
+    state_ = kError;
+    decode_cb.Run(kDecodeError, NULL);
+    return;
+  }
+
+  if (queued_audio_.empty()) {
+    if (state_ == kFlushCodec) {
+      DCHECK(buffer->end_of_stream());
+      state_ = kDecodeFinished;
+      decode_cb.Run(kOk, AudioBuffer::CreateEOSBuffer());
+      return;
+    }
+
+    decode_cb.Run(kNotEnoughData, NULL);
+    return;
+  }
+
+  decode_cb.Run(kOk, queued_audio_.front());
+  queued_audio_.pop_front();
+}
+
+bool FFmpegAudioDecoder::FFmpegDecode(
+    const scoped_refptr<DecoderBuffer>& buffer) {
+  DCHECK(queued_audio_.empty());
+
   AVPacket packet;
   av_init_packet(&packet);
-  packet.data = const_cast<uint8*>(input->GetData());
-  packet.size = input->GetDataSize();
+  if (buffer->end_of_stream()) {
+    packet.data = NULL;
+    packet.size = 0;
+  } else {
+    packet.data = const_cast<uint8*>(buffer->data());
+    packet.size = buffer->data_size();
+  }
 
   // Each audio packet may contain several frames, so we must call the decoder
   // until we've exhausted the packet.  Regardless of the packet size we always
   // want to hand it to the decoder at least once, otherwise we would end up
   // skipping end of stream packets since they have a size of zero.
   do {
-    // Reset frame to default values.
-    avcodec_get_frame_defaults(av_frame_);
-
     int frame_decoded = 0;
-    int result = avcodec_decode_audio4(
-        codec_context_, av_frame_, &frame_decoded, &packet);
+    const int result = avcodec_decode_audio4(
+        codec_context_.get(), av_frame_.get(), &frame_decoded, &packet);
 
     if (result < 0) {
-      DCHECK(!input->IsEndOfStream())
+      DCHECK(!buffer->end_of_stream())
           << "End of stream buffer produced an error! "
           << "This is quite possibly a bug in the audio decoder not handling "
           << "end of stream AVPackets correctly.";
 
-      DLOG(ERROR)
-          << "Error decoding an audio frame with timestamp: "
-          << input->GetTimestamp().InMicroseconds() << " us, duration: "
-          << input->GetDuration().InMicroseconds() << " us, packet size: "
-          << input->GetDataSize() << " bytes";
+      DLOG(WARNING)
+          << "Failed to decode an audio frame with timestamp: "
+          << buffer->timestamp().InMicroseconds() << " us, duration: "
+          << buffer->duration().InMicroseconds() << " us, packet size: "
+          << buffer->data_size() << " bytes";
 
-      // TODO(dalecurtis): We should return a kDecodeError here instead:
-      // http://crbug.com/145276
       break;
     }
 
@@ -361,74 +341,123 @@ void FFmpegAudioDecoder::RunDecodeLoop(
     packet.size -= result;
     packet.data += result;
 
-    if (output_timestamp_helper_->base_timestamp() == kNoTimestamp() &&
-        !input->IsEndOfStream()) {
-      DCHECK(input->GetTimestamp() != kNoTimestamp());
-      if (output_bytes_to_drop_ > 0) {
-        // Currently Vorbis is the only codec that causes us to drop samples.
-        // If we have to drop samples it always means the timeline starts at 0.
-        DCHECK_EQ(codec_context_->codec_id, CODEC_ID_VORBIS);
-        output_timestamp_helper_->SetBaseTimestamp(base::TimeDelta());
-      } else {
-        output_timestamp_helper_->SetBaseTimestamp(input->GetTimestamp());
-      }
-    }
-
-    const uint8* decoded_audio_data = NULL;
-    int decoded_audio_size = 0;
+    scoped_refptr<AudioBuffer> output;
+    const int channels = DetermineChannels(av_frame_.get());
     if (frame_decoded) {
-      int output_sample_rate = av_frame_->sample_rate;
-      if (output_sample_rate != samples_per_second_) {
-        DLOG(ERROR) << "Output sample rate (" << output_sample_rate
-                    << ") doesn't match expected rate " << samples_per_second_;
+      if (av_frame_->sample_rate != config_.samples_per_second() ||
+          channels != ChannelLayoutToChannelCount(config_.channel_layout()) ||
+          av_frame_->format != av_sample_format_) {
+        DLOG(ERROR) << "Unsupported midstream configuration change!"
+                    << " Sample Rate: " << av_frame_->sample_rate << " vs "
+                    << config_.samples_per_second()
+                    << ", Channels: " << channels << " vs "
+                    << ChannelLayoutToChannelCount(config_.channel_layout())
+                    << ", Sample Format: " << av_frame_->format << " vs "
+                    << av_sample_format_;
 
+        if (config_.codec() == kCodecAAC &&
+            av_frame_->sample_rate == 2 * config_.samples_per_second()) {
+          MEDIA_LOG(log_cb_) << "Implicit HE-AAC signalling is being used."
+                             << " Please use mp4a.40.5 instead of mp4a.40.2 in"
+                             << " the mimetype.";
+        }
         // This is an unrecoverable error, so bail out.
-        QueuedAudioBuffer queue_entry = { kDecodeError, NULL };
-        queued_audio_.push_back(queue_entry);
-        break;
+        queued_audio_.clear();
+        av_frame_unref(av_frame_.get());
+        return false;
       }
 
-      decoded_audio_data = av_frame_->data[0];
-      decoded_audio_size = av_samples_get_buffer_size(
-          NULL, codec_context_->channels, av_frame_->nb_samples,
-          codec_context_->sample_fmt, 1);
+      // Get the AudioBuffer that the data was decoded into. Adjust the number
+      // of frames, in case fewer than requested were actually decoded.
+      output = reinterpret_cast<AudioBuffer*>(
+          av_buffer_get_opaque(av_frame_->buf[0]));
+
+      DCHECK_EQ(ChannelLayoutToChannelCount(config_.channel_layout()),
+                output->channel_count());
+      const int unread_frames = output->frame_count() - av_frame_->nb_samples;
+      DCHECK_GE(unread_frames, 0);
+      if (unread_frames > 0)
+        output->TrimEnd(unread_frames);
+
+      av_frame_unref(av_frame_.get());
     }
 
-    scoped_refptr<DataBuffer> output;
-
-    if (decoded_audio_size > 0 && output_bytes_to_drop_ > 0) {
-      int dropped_size = std::min(decoded_audio_size, output_bytes_to_drop_);
-      decoded_audio_data += dropped_size;
-      decoded_audio_size -= dropped_size;
-      output_bytes_to_drop_ -= dropped_size;
-    }
-
-    if (decoded_audio_size > 0) {
-      // Copy the audio samples into an output buffer.
-      output = new DataBuffer(decoded_audio_data, decoded_audio_size);
-      output->SetTimestamp(output_timestamp_helper_->GetTimestamp());
-      output->SetDuration(
-          output_timestamp_helper_->GetDuration(decoded_audio_size));
-      output_timestamp_helper_->AddBytes(decoded_audio_size);
-    } else if (IsEndOfStream(result, decoded_audio_size, input) &&
-               !skip_eos_append) {
+    // WARNING: |av_frame_| no longer has valid data at this point.
+    const int decoded_frames = frame_decoded ? output->frame_count() : 0;
+    if (IsEndOfStream(result, decoded_frames, buffer)) {
       DCHECK_EQ(packet.size, 0);
-      // Create an end of stream output buffer.
-      output = new DataBuffer(0);
-    }
-
-    if (output) {
-      QueuedAudioBuffer queue_entry = { kOk, output };
-      queued_audio_.push_back(queue_entry);
-    }
-
-    // Decoding finished successfully, update statistics.
-    if (result > 0) {
-      PipelineStatistics statistics;
-      statistics.audio_bytes_decoded = result;
-      statistics_cb_.Run(statistics);
+      queued_audio_.push_back(AudioBuffer::CreateEOSBuffer());
+    } else if (discard_helper_->ProcessBuffers(buffer, output)) {
+      queued_audio_.push_back(output);
     }
   } while (packet.size > 0);
+
+  return true;
+}
+
+void FFmpegAudioDecoder::ReleaseFFmpegResources() {
+  codec_context_.reset();
+  av_frame_.reset();
+}
+
+bool FFmpegAudioDecoder::ConfigureDecoder() {
+  if (!config_.IsValidConfig()) {
+    DLOG(ERROR) << "Invalid audio stream -"
+                << " codec: " << config_.codec()
+                << " channel layout: " << config_.channel_layout()
+                << " bits per channel: " << config_.bits_per_channel()
+                << " samples per second: " << config_.samples_per_second();
+    return false;
+  }
+
+  if (config_.is_encrypted()) {
+    DLOG(ERROR) << "Encrypted audio stream not supported";
+    return false;
+  }
+
+  // Release existing decoder resources if necessary.
+  ReleaseFFmpegResources();
+
+  // Initialize AVCodecContext structure.
+  codec_context_.reset(avcodec_alloc_context3(NULL));
+  AudioDecoderConfigToAVCodecContext(config_, codec_context_.get());
+
+  codec_context_->opaque = this;
+  codec_context_->get_buffer2 = GetAudioBuffer;
+  codec_context_->refcounted_frames = 1;
+
+  AVCodec* codec = avcodec_find_decoder(codec_context_->codec_id);
+  if (!codec || avcodec_open2(codec_context_.get(), codec, NULL) < 0) {
+    DLOG(ERROR) << "Could not initialize audio decoder: "
+                << codec_context_->codec_id;
+    ReleaseFFmpegResources();
+    state_ = kUninitialized;
+    return false;
+  }
+
+  // Success!
+  av_frame_.reset(av_frame_alloc());
+  discard_helper_.reset(new AudioDiscardHelper(config_.samples_per_second(),
+                                               config_.codec_delay()));
+  av_sample_format_ = codec_context_->sample_fmt;
+
+  if (codec_context_->channels !=
+      ChannelLayoutToChannelCount(config_.channel_layout())) {
+    DLOG(ERROR) << "Audio configuration specified "
+                << ChannelLayoutToChannelCount(config_.channel_layout())
+                << " channels, but FFmpeg thinks the file contains "
+                << codec_context_->channels << " channels";
+    ReleaseFFmpegResources();
+    state_ = kUninitialized;
+    return false;
+  }
+
+  ResetTimestampState();
+  return true;
+}
+
+void FFmpegAudioDecoder::ResetTimestampState() {
+  discard_helper_->Reset(config_.codec_delay());
 }
 
 }  // namespace media

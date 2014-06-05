@@ -2844,3 +2844,975 @@ index 28e46de..7ec0032 100644
          recent = cxt['recent'] = []
          for build in b.generateFinishedBuilds(num_builds=int(numbuilds)):
              recent.append(self.get_line_values(req, build, False))
+
+
+diff --git a/third_party/buildbot_8_4p1/buildbot/master.py b/third_party/buildbot_8_4p1/buildbot/master.py
+index 7ec0032..425572e 100644
+--- a/third_party/buildbot_8_4p1/buildbot/master.py
++++ b/third_party/buildbot_8_4p1/buildbot/master.py
+@@ -295,7 +295,7 @@ class BuildMaster(service.MultiService):
+                           "logHorizon", "buildHorizon", "changeHorizon",
+                           "logMaxSize", "logMaxTailSize", "logCompressionMethod",
+                           "db_url", "multiMaster", "db_poll_interval",
+-                          "metrics", "caches"
++                          "metrics", "caches", "autoBuildCacheRatio"
+                           )
+             for k in config.keys():
+                 if k not in known_keys:
+@@ -357,6 +357,7 @@ class BuildMaster(service.MultiService):
+
+                 metrics_config = config.get("metrics")
+                 caches_config = config.get("caches", {})
++                autoBuildCacheRatio = config.get("autoBuildCacheRatio", None)
+
+             except KeyError:
+                 log.msg("config dictionary is missing a required parameter")
+@@ -555,6 +556,7 @@ class BuildMaster(service.MultiService):
+             self.logHorizon = logHorizon
+             self.buildHorizon = buildHorizon
+             self.slavePortnum = slavePortnum # TODO: move this to master.config.slavePortnum
++            self.autoBuildCacheRatio = autoBuildCacheRatio
+
+             # Set up the database
+             d.addCallback(lambda res:
+@@ -784,6 +786,16 @@ class BuildMaster(service.MultiService):
+         for builder in allBuilders.values():
+             builder.builder_status.reconfigFromBuildmaster(self)
+
++            # Adjust the caches if autoBuildCacheRatio is on. Each builder's
++            # build cache is set to (autoBuildCacheRatio * number of slaves).
++            # This assumes that each slave-entry can only execute one concurrent
++            # build.
++            if self.autoBuildCacheRatio:
++                builder_status = builder.builder_status
++                slavecount = len(builder_status.slavenames)
++                max_size = max(self.autoBuildCacheRatio * slavecount, 15)
++                builder_status.buildCache.set_max_size(max_size)
++                builder_status.buildCacheSize = max_size
++
+         metrics.MetricCountEvent.log("num_builders",
+             len(allBuilders), absolute=True)
+
+
+Added error catching so buildbot would not crash during initial config.
+diff --git a/third_party/buildbot_8_4p1/buildbot/master.py b/third_party/buildbot_8_4p1/buildbot/master.py
+index df80ca6..5304401 100644
+--- a/third_party/buildbot_8_4p1/buildbot/master.py
++++ b/third_party/buildbot_8_4p1/buildbot/master.py
+@@ -18,6 +18,7 @@ import os
+ import signal
+ import time
+ import textwrap
++import twisted.internet.error
+ 
+ try:
+   import pyximport
+@@ -28,6 +29,8 @@ except ImportError:
+   print 'Unable to load the epoll module, falling back to select.'
+   print 'This may be caused by the lack of cython, python-dev, or'
+   print 'you may be on a platform other than linux 2.6' 
++except twisted.internet.error.ReactorAlreadyInstalledError:
++  pass
+ 
+ from zope.interface import implements
+ from twisted.python import log, components
+
+Suppress a warning about old name.
+Index: buildbot/changes/svnpoller.py
+===================================================================
+--- buildbot/changes/svnpoller.py       (revision 195053)
++++ buildbot/changes/svnpoller.py       (working copy)
+@@ -352,7 +352,7 @@
+                     log.msg("Ignoring deletion of branch '%s'" % branch)
+                 else:
+                     chdict = dict(
+-                            who=author,
++                            author=author,
+                             files=files,
+                             comments=comments,
+                             revision=revision,
+
+diff --git a/third_party/buildbot_8_4p1/buildbot/process/buildstep.py b/third_party/buildbot_8_4p1/buildbot/process/buildstep.py
+index ed12ea0..32e1bd3 100644
+--- a/third_party/buildbot_8_4p1/buildbot/process/buildstep.py
++++ b/third_party/buildbot_8_4p1/buildbot/process/buildstep.py
+@@ -635,8 +635,8 @@ class BuildStep:
+     doStepIf = True
+     hideStepIf = False
+     # like doStepIf, but evaluated at runtime if executing under runbuild.py
+-    # we also overload 'False' to signify this isn't a buildrunner step
+-    brDoStepIf = False
++    # We use None to signify that a step is not a buildrunner step.
++    brDoStepIf = None
+
+     def __init__(self, **kwargs):
+         self.factory = (self.__class__, dict(kwargs))
+
+
+diff --git a/third_party/buildbot_8_4p1/buildbot/status/web/status_json.py b/third_party/buildbot_8_4p1/buildbot/status/web/status_json.py
+index b656563..e48542d 100644
+--- a/third_party/buildbot_8_4p1/buildbot/status/web/status_json.py
++++ b/third_party/buildbot_8_4p1/buildbot/status/web/status_json.py
+@@ -16,6 +16,7 @@
+
+ """Simple JSON exporter."""
+
++import collections
+ import datetime
+ import os
+ import re
+@@ -635,21 +636,38 @@ class SlaveJsonResource(JsonResource):
+                     self.builders.append(builderName)
+         return self.builders
+
++    def getSlaveBuildMap(self, buildcache, buildercache):
++        for builderName in self.getBuilders():
++            if builderName not in buildercache:
++                buildercache.add(builderName)
++                builder_status = self.status.getBuilder(builderName)
++                for i in range(1, builder_status.buildCacheSize - 1):
++                    build_status = builder_status.getBuild(-i)
++                    if not build_status or not build_status.isFinished():
++                        # If not finished, it will appear in runningBuilds.
++                        break
++                    slave = buildcache[build_status.getSlavename()]
++                    slave.setdefault(builderName, []).append(
++                            build_status.getNumber())
++        return buildcache[self.name]
++
+     def asDict(self, request):
++        if not hasattr(request, 'custom_data'):
++            request.custom_data = {}
++        if 'buildcache' not in request.custom_data:
++            # buildcache is used to cache build information across multiple
++            # invocations of SlaveJsonResource. It should be set to an empty
++            # collections.defaultdict(dict).
++            request.custom_data['buildcache'] = collections.defaultdict(dict)
++
++            # Tracks which builders have been stored in the buildcache.
++            request.custom_data['buildercache'] = set()
++
+         results = self.slave_status.asDict()
+-        # Enhance it by adding more informations.
+-        results['builders'] = {}
+-        for builderName in self.getBuilders():
+-            builds = []
+-            builder_status = self.status.getBuilder(builderName)
+-            for i in range(1, builder_status.buildCacheSize - 1):
+-                build_status = builder_status.getBuild(-i)
+-                if not build_status or not build_status.isFinished():
+-                    # If not finished, it will appear in runningBuilds.
+-                    break
+-                if build_status.getSlavename() == self.name:
+-                    builds.append(build_status.getNumber())
+-            results['builders'][builderName] = builds
++        # Enhance it by adding more information.
++        results['builders'] = self.getSlaveBuildMap(
++                request.custom_data['buildcache'],
++                request.custom_data['buildercache'])
+         return results
+
+
+
+diff --git a/third_party/buildbot_8_4p1/buildbot/status/builder.py b/third_party/buildbot_8_4p1/buildbot/status/builder.py
+index 3f42eb6..c5bd1ec 100644
+--- a/third_party/buildbot_8_4p1/buildbot/status/builder.py
++++ b/third_party/buildbot_8_4p1/buildbot/status/builder.py
+@@ -17,6 +17,7 @@
+ import weakref
+ import gc
+ import os, re, itertools
++import random
+ from cPickle import load, dump
+
+ from zope.interface import implements
+@@ -323,17 +324,58 @@ class BuilderStatus(styles.Versioned):
+     def getCategory(self):
+         return self.category
+
+-    def getBuild(self, number):
++    def _resolveBuildNumber(self, number):
+         if number < 0:
+             number = self.nextBuildNumber + number
+         if number < 0 or number >= self.nextBuildNumber:
+             return None
++        return number
+
++    def _safeGetBuild(self, build_number):
+         try:
+-            return self.getBuildByNumber(number)
++            return self.getBuildByNumber(build_number)
+         except IndexError:
+             return None
+
++    def getBuild(self, number):
++        number = self._resolveBuildNumber(number)
++
++        if number is None:
++            return None
++
++        return self._safeGetBuild(number)
++
++    def getBuilds(self, numbers):
++        """Cache-aware method to get multiple builds.
++
++        Prevents cascading evict/load when multiple builds are requested in
++        succession: requesting build 1 evicts build 2, requesting build 2 evicts
++        build 3, etc.
++
++        We query the buildCache and load hits first, then misses.  When loading,
++        we randomize the load order to alleviate the problem when external web
++        requests load builds sequentially (they don't have access to this
++        function).
++        """
++
++        numbers = list(enumerate(self._resolveBuildNumber(x) for x in numbers))
++        random.shuffle(numbers)
++
++        builds = [None] * len(numbers)
++        misses = []
++        for idx, build_number in numbers:
++            if build_number is None:
++                continue
++            if build_number in self.buildCache.cache:
++                builds[idx] = self._safeGetBuild(build_number)
++            else:
++                misses.append((idx, build_number))
++
++        for idx, build_number in misses:
++            builds[idx] = self._safeGetBuild(build_number)
++
++        return builds
++
+     def getEvent(self, number):
+         try:
+             return self.events[number]
+@@ -616,6 +658,11 @@ class BuilderStatus(styles.Versioned):
+         # Collect build numbers.
+         # Important: Only grab the *cached* builds numbers to reduce I/O.
+         current_builds = [b.getNumber() for b in self.currentBuilds]
++
++        # Populates buildCache with last N builds.
++        buildnums = range(-1, -(self.buildCacheSize - 1), -1)
++        self.getBuilds(buildnums)
++
+         cached_builds = list(set(self.buildCache.cache.keys() + current_builds))
+         cached_builds.sort()
+         result['cachedBuilds'] = cached_builds
+diff --git a/third_party/buildbot_8_4p1/buildbot/status/web/status_json.py b/third_party/buildbot_8_4p1/buildbot/status/web/status_json.py
+index c357939..e7cd932 100644
+--- a/third_party/buildbot_8_4p1/buildbot/status/web/status_json.py
++++ b/third_party/buildbot_8_4p1/buildbot/status/web/status_json.py
+@@ -641,8 +641,11 @@ class SlaveJsonResource(JsonResource):
+             if builderName not in buildercache:
+                 buildercache.add(builderName)
+                 builder_status = self.status.getBuilder(builderName)
+-                for i in range(1, builder_status.buildCacheSize - 1):
+-                    build_status = builder_status.getBuild(-i)
++
++                buildnums = range(-1, -(builder_status.buildCacheSize - 1), -1)
++                builds = builder_status.getBuilds(buildnums)
++
++                for build_status in builds:
+                     if not build_status or not build_status.isFinished():
+                         # If not finished, it will appear in runningBuilds.
+                         break
+
+
+diff --git a/third_party/buildbot_8_4p1/buildbot/status/buildstep.py b/third_party/buildbot_8_4p1/buildbot/status/buildstep.py
+index 264b599..f64e0b9 100644
+--- a/third_party/buildbot_8_4p1/buildbot/status/buildstep.py
++++ b/third_party/buildbot_8_4p1/buildbot/status/buildstep.py
+@@ -13,7 +13,10 @@
+ #
+ # Copyright Buildbot Team Members
+
++import collections
+ import os, weakref
++
++
+ from zope.interface import implements
+ from twisted.persisted import styles
+ from twisted.python import log
+@@ -21,6 +24,9 @@ from twisted.internet import reactor, defer
+ from buildbot import interfaces, util
+ from buildbot.status.logfile import LogFile, HTMLLogFile
+
++# This allows use of OrderedDict on python 2.6, found in scripts/common.
++import common.python26_polyfill  # pylint: disable=W0611
++
+ class BuildStepStatus(styles.Versioned):
+     """
+     I represent a collection of output status for a
+@@ -70,7 +76,7 @@ class BuildStepStatus(styles.Versioned):
+         self.step_number = step_number
+         self.hidden = False
+         self.logs = []
+-        self.urls = {}
++        self.urls = collections.OrderedDict()
+         self.watchers = []
+         self.updates = {}
+         self.finishedWatchers = []
+
+diff --git a/third_party/buildbot_8_4p1/buildbot/changes/gitpoller.py b/third_party/buildbot_8_4p1/buildbot/changes/gitpoller.py
+index 5bf2725..71a0386 100644
+--- a/third_party/buildbot_8_4p1/buildbot/changes/gitpoller.py
++++ b/third_party/buildbot_8_4p1/buildbot/changes/gitpoller.py
+@@ -238,7 +238,8 @@ class GitPoller(base.PollingChangeSource):
+     @defer.deferredGenerator
+     def _process_changes(self, unused_output):
+         # get the change list
+-        revListArgs = ['log', '%s..origin/%s' % (self.branch, self.branch), r'--format=%H']
++        revListArgs = ['log', '%s..origin/%s' % (self.branch, self.branch),
++                       r'--format=%H', '--first-parent']
+         self.changeCount = 0
+         d = utils.getProcessOutput(self.gitbin, revListArgs, path=self.workdir,
+                                    env=os.environ, errortoo=False )
+
+diff --git a/third_party/buildbot_8_4p1/buildbot/master.py b/third_party/buildbot_8_4p1/buildbot/master.py
+index 5304401..c90ad32 100644
+--- a/third_party/buildbot_8_4p1/buildbot/master.py
++++ b/third_party/buildbot_8_4p1/buildbot/master.py
+@@ -796,7 +796,7 @@ class BuildMaster(service.MultiService):
+             if self.autoBuildCacheRatio:
+                 builder_status = builder.builder_status
+                 slavecount = len(builder_status.slavenames)
+-                max_size = max(self.autoBuildCacheRatio * slavecount, 15)
++                max_size = max(self.autoBuildCacheRatio * slavecount, 30)
+                 builder_status.buildCache.set_max_size(max_size)
+                 builder_status.buildCacheSize = max_size
+
+
+*** maruel on 2013-12-05
+Add support for transferring 'reason' from a build to its triggered build.
+Otherwise the default is 'Triggerable(%(name))' which is not very useful.
+
+--- a/third_party/buildbot_8_4p1/buildbot/schedulers/triggerable.py
++++ b/third_party/buildbot_8_4p1/buildbot/schedulers/triggerable.py
+@@ -28,7 +28,7 @@ class Triggerable(base.BaseScheduler):
+         self._bsc_subscription = None
+         self.reason = "Triggerable(%s)" % name
+ 
+-    def trigger(self, ssid, set_props=None):
++    def trigger(self, ssid, set_props=None, reason=None):
+         """Trigger this scheduler with the given sourcestamp ID. Returns a
+         deferred that will fire when the buildset is finished."""
+         # properties for this buildset are composed of our own properties,
+@@ -42,10 +42,10 @@ class Triggerable(base.BaseScheduler):
+         # the duration of interest to the caller is bounded by the lifetime of
+         # this process.
+         if ssid:
+-            d = self.addBuildsetForSourceStamp(reason=self.reason, ssid=ssid,
++            d = self.addBuildsetForSourceStamp(reason=reason or self.reason, ssid=ssid,
+                     properties=props)
+         else:
+-            d = self.addBuildsetForLatest(reason=self.reason, properties=props)
++            d = self.addBuildsetForLatest(reason=reason or self.reason, properties=props)
+         def setup_waiter((bsid,brids)):
+             self._waiters[bsid] = d = defer.Deferred()
+             self._updateWaiters()
+--- a/third_party/buildbot_8_4p1/buildbot/steps/trigger.py
++++ b/third_party/buildbot_8_4p1/buildbot/steps/trigger.py
+@@ -167,7 +167,7 @@ class Trigger(LoggingBuildStep):
+             dl = []
+             for scheduler in triggered_schedulers:
+                 sch = all_schedulers[scheduler]
+-                dl.append(sch.trigger(ssid, set_props=props_to_set))
++                dl.append(sch.trigger(ssid, set_props=props_to_set, reason=self.build.reason))
+             self.step_status.setText(['triggered'] + triggered_schedulers)
+ 
+             d = defer.DeferredList(dl, consumeErrors=1)
+
+Hard-disables shutdown hooks for https://code.google.com/p/chromium/issues/detail?id=309046
+===================================================================
+--- a/third_party/buildbot_8_4p1/buildbot/status/web/root.py
++++ b/third_party/buildbot_8_4p1/buildbot/status/web/root.py
+@@ -25,17 +25,9 @@
+         status = self.getStatus(request)
+ 
+         if request.path == '/shutdown':
+-            if self.getAuthz(request).actionAllowed("cleanShutdown", request):
+-                eventually(status.cleanShutdown)
+-                return redirectTo("/", request)
+-            else:
+-                return redirectTo(path_to_authfail(request), request)
++            return redirectTo(path_to_authfail(request), request)
+         elif request.path == '/cancel_shutdown':
+-            if self.getAuthz(request).actionAllowed("cleanShutdown", request):
+-                eventually(status.cancelCleanShutdown)
+-                return redirectTo("/", request)
+-            else:
+-                return redirectTo(path_to_authfail(request), request)
++            return redirectTo(path_to_authfail(request), request)
+ 
+         cxt.update(
+                 shutting_down = status.shuttingDown,
+
+
+Provide support for messageFormatter to create custom subject lines.
+--- a/third_party/buildbot_8_4p1/buildbot/status/mail.py
++++ b/third_party/buildbot_8_4p1/buildbot/status/mail.py
+@@ -587,7 +587,12 @@ class MailNotifier(base.StatusReceiverMultiService):
+                                         build=build, results=build.results)
+             msgdict['body'] += tmp['body']
+             msgdict['body'] += '\n\n'
++            # This is terrible. Whichever build is iterated over last will
++            # overwrite the subject and type set by all previous builds.
++            # But we never iterate over more than one build, so we'll
++            # just do this anyway and try not to lose any sleep over it.
+             msgdict['type'] = tmp['type']
++            if 'subject' in tmp:
++              msgdict['subject'] = tmp['subject']
+             
+         m = self.createEmail(msgdict, name, self.master_status.getTitle(),
+                              results, builds, patches, logs)
+
+
+Change minimum cache size to 50 to prevent waterfall and console view bustage.
+--- a/third_party/buildbot_8_4p1/buildbot/master.py
++++ b/third_party/buildbot_8_4p1/buildbot/master.py
+@@ -796,7 +796,7 @@ class BuildMaster(service.MultiService):
+             if self.autoBuildCacheRatio:
+                 builder_status = builder.builder_status
+                 slavecount = len(builder_status.slavenames)
+-                max_size = max(self.autoBuildCacheRatio * slavecount, 30)
++                max_size = max(self.autoBuildCacheRatio * slavecount, 50)
+                 builder_status.buildCache.set_max_size(max_size)
+                 builder_status.buildCacheSize = max_size
+
+
+Cherry-pick ANSI color codes in logs from upstream buildbot.  These commits were manually
+resolved.
+
+  ** https://github.com/buildbot/buildbot/commit/3a563189374737aa2ebf3f6467bf461bc3ec5443
+commit 3a563189374737aa2ebf3f6467bf461bc3ec5443
+Author: Pierre Tardy <pierre.tardy@intel.com>
+Date:   Mon Jul 15 18:48:35 2013 +0200
+
+    logs: implement on the fly parsing of ansi code
+    
+    grunt and js tools have the habit of using ansi
+    code a lot, which are ugly inside python log window.
+    http://en.wikipedia.org/wiki/ANSI_escape_code
+    
+    This is a simple enough implementation of ansicode parser
+    which integrates well into buildbot's way of displaying logs
+    
+    Signed-off-by: Pierre Tardy <pierre.tardy@intel.com>
+
+diff --git a/master/buildbot/status/web/files/default.css b/master/buildbot/status/web/files/default.css
+index d109be1..2d24c2b 100644
+--- a/master/buildbot/status/web/files/default.css
++++ b/master/buildbot/status/web/files/default.css
+@@ -564,6 +564,30 @@ span.stderr {
+ span.header {
+ 	color: blue;
+ }
++span.ansi30 {
++	color: black;
++}
++span.ansi31 {
++	color: red;
++}
++span.ansi32 {
++	color: green;
++}
++span.ansi33 {
++	color: orange;
++}
++span.ansi34 {
++	color: yellow;
++}
++span.ansi35 {
++	color: purple;
++}
++span.ansi36 {
++	color: blue;
++}
++span.ansi37 {
++	color: white;
++}
+ 
+ /* revision & email */
+ .revision .full {
+diff --git a/master/buildbot/status/web/logs.py b/master/buildbot/status/web/logs.py
+index d7da811..b883dc2 100644
+--- a/master/buildbot/status/web/logs.py
++++ b/master/buildbot/status/web/logs.py
+@@ -24,6 +24,9 @@ from buildbot import interfaces
+ from buildbot.status import logfile
+ from buildbot.status.web.base import IHTMLLog, HtmlResource, path_to_root
+ 
++import re
++
++
+ class ChunkConsumer:
+     implements(interfaces.IStatusLogConsumer)
+ 
+@@ -46,6 +49,7 @@ class ChunkConsumer:
+     def finish(self):
+         self.textlog.finished()
+ 
++ANSI_RE = re.compile(r"^(\d*)(;(\d+))?([a-zA-Z])")
+ 
+ # /builders/$builder/builds/$buildnum/steps/$stepname/logs/$logname
+ class TextLog(Resource):
+@@ -80,9 +84,26 @@ class TextLog(Resource):
+                 # jinja only works with unicode, or pure ascii, so assume utf-8 in logs
+                 if not isinstance(entry, unicode):
+                     entry = unicode(entry, 'utf-8', 'replace')
+-                html_entries.append(dict(type = logfile.ChunkTypes[type], 
+-                                         text = entry,
+-                                         is_header = is_header))
++                first_entry = True
++                _type = logfile.ChunkTypes[type]
++                for ansi_entry in entry.split("\033["):
++                    code = ""
++                    if not first_entry:
++                        res = ANSI_RE.search(ansi_entry)
++                        if res:
++                            mode = res.group(4)
++                            ansi_entry = ansi_entry[len(res.group(0)):]
++                            if mode == 'm':
++                                code = " ansi" + res.group(1)
++                        else:
++                            # illegal code, restore the CSI
++                            ansi_entry = "\033[" + ansi_entry
++
++                    html_entries.append(dict(type=_type + code,
++                                             text=ansi_entry,
++                                             is_header=is_header))
++                    first_entry = False
++
+             elif not is_header:
+                 text_data += entry
+
+  ** https://github.com/buildbot/buildbot/commit/c451dd5c7cd377e774c4bf5c5d16d53986a9ccbf
+commit c451dd5c7cd377e774c4bf5c5d16d53986a9ccbf
+Author: Pierre Tardy <pierre.tardy@intel.com>
+Date:   Thu Aug 22 11:48:31 2013 +0200
+
+    ansi codes: add support for multiple sgr classes
+    
+    Add some unit tests and factorize for potencial reuse
+    
+    nine plan is to reuse the regex and overall idea, but probably
+    rewrite this client side.
+    
+    Signed-off-by: Pierre Tardy <pierre.tardy@intel.com>
+
+diff --git a/master/buildbot/status/web/logs.py b/master/buildbot/status/web/logs.py
+index b883dc2..37eaf29 100644
+--- a/master/buildbot/status/web/logs.py
++++ b/master/buildbot/status/web/logs.py
+@@ -23,9 +23,7 @@ from twisted.web.resource import Resource, NoResource
+ from buildbot import interfaces
+ from buildbot.status import logfile
+ from buildbot.status.web.base import IHTMLLog, HtmlResource, path_to_root
+-
+-import re
+-
++from buildbot.util.ansicodes import parse_ansi_sgr
+ 
+ class ChunkConsumer:
+     implements(interfaces.IStatusLogConsumer)
+@@ -49,8 +47,6 @@ class ChunkConsumer:
+     def finish(self):
+         self.textlog.finished()
+ 
+-ANSI_RE = re.compile(r"^(\d*)(;(\d+))?([a-zA-Z])")
+-
+ # /builders/$builder/builds/$buildnum/steps/$stepname/logs/$logname
+ class TextLog(Resource):
+     # a new instance of this Resource is created for each client who views
+@@ -77,7 +73,7 @@ class TextLog(Resource):
+             if type >= len(logfile.ChunkTypes) or type < 0:
+                 # non-std channel, don't display
+                 continue
+-            
++
+             is_header = type == logfile.HEADER
+ 
+             if not self.asText:
+@@ -89,16 +85,9 @@ class TextLog(Resource):
+                 for ansi_entry in entry.split("\033["):
+                     code = ""
+                     if not first_entry:
+-                        res = ANSI_RE.search(ansi_entry)
+-                        if res:
+-                            mode = res.group(4)
+-                            ansi_entry = ansi_entry[len(res.group(0)):]
+-                            if mode == 'm':
+-                                code = " ansi" + res.group(1)
+-                        else:
+-                            # illegal code, restore the CSI
+-                            ansi_entry = "\033[" + ansi_entry
+-
++                        ansi_entry, ansi_classes = parse_ansi_sgr(ansi_entry)
++                        if ansi_classes:
++                            code = "".join([" ansi" + i for i in ansi_classes])
+                     html_entries.append(dict(type=_type + code,
+                                              text=ansi_entry,
+                                              is_header=is_header))
+diff --git a/master/buildbot/test/unit/test_util_ansi_codes.py b/master/buildbot/test/unit/test_util_ansi_codes.py
+new file mode 100644
+index 0000000..f9ca02c
+--- /dev/null
++++ b/master/buildbot/test/unit/test_util_ansi_codes.py
+@@ -0,0 +1,39 @@
++# This file is part of Buildbot.  Buildbot is free software: you can
++# redistribute it and/or modify it under the terms of the GNU General Public
++# License as published by the Free Software Foundation, version 2.
++#
++# This program is distributed in the hope that it will be useful, but WITHOUT
++# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
++# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
++# details.
++#
++# You should have received a copy of the GNU General Public License along with
++# this program; if not, write to the Free Software Foundation, Inc., 51
++# Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++#
++# Copyright Buildbot Team Members
++
++from twisted.trial import unittest
++from buildbot.util.ansicodes import parse_ansi_sgr
++
++
++class TestAnsiCodes(unittest.TestCase):
++
++    def runTest(self, string, expected):
++        ret = parse_ansi_sgr(string)
++        self.assertEqual(ret, expected)
++
++    def test_ansi1m(self):
++        self.runTest("33mfoo", ("foo", ["33"]))
++
++    def test_ansi2m(self):
++        self.runTest("1;33mfoo", ("foo", ["1", "33"]))
++
++    def test_ansi5m(self):
++        self.runTest("1;2;3;4;33mfoo", ("foo", ["1", "2", "3", "4", "33"]))
++
++    def test_ansi_notm(self):
++        self.runTest("33xfoo", ("foo", []))
++
++    def test_ansi_invalid(self):
++        self.runTest("<>foo", ("\033[<>foo", []))
+diff --git a/master/buildbot/util/ansicodes.py b/master/buildbot/util/ansicodes.py
+new file mode 100644
+index 0000000..bc58066
+--- /dev/null
++++ b/master/buildbot/util/ansicodes.py
+@@ -0,0 +1,36 @@
++# This file is part of Buildbot.  Buildbot is free software: you can
++# redistribute it and/or modify it under the terms of the GNU General Public
++# License as published by the Free Software Foundation, version 2.
++#
++# This program is distributed in the hope that it will be useful, but WITHOUT
++# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
++# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
++# details.
++#
++# You should have received a copy of the GNU General Public License along with
++# this program; if not, write to the Free Software Foundation, Inc., 51
++# Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++#
++# Copyright Buildbot Team Members
++
++import re
++
++ANSI_RE = re.compile(r"^((\d*)(;\d+)*)([a-zA-Z])")
++
++
++def parse_ansi_sgr(ansi_entry):
++    """simple utility to extract ansi sgr (Select Graphic Rendition) codes,
++    and ignore other codes.
++    Invalid codes are restored
++    """
++    classes = []
++    res = ANSI_RE.search(ansi_entry)
++    if res:
++        mode = res.group(4)
++        ansi_entry = ansi_entry[len(res.group(0)):]
++        if mode == 'm':
++            classes = res.group(1).split(";")
++    else:
++        # illegal code, restore the CSI
++        ansi_entry = "\033[" + ansi_entry
++    return ansi_entry, classes
+
+  ** https://github.com/buildbot/buildbot/commit/94e11e9888ad3933cd5c3fc61d7e78ed3d0d79d1
+commit 94e11e9888ad3933cd5c3fc61d7e78ed3d0d79d1
+Author: Dustin J. Mitchell <dustin@mozilla.com>
+Date:   Thu Sep 26 08:34:36 2013 -0400
+
+    render '\e[m' as a class-less SGR; fixes #2565
+
+diff --git a/master/buildbot/test/unit/test_util_ansi_codes.py b/master/buildbot/test/unit/test_util_ansi_codes.py
+deleted file mode 100644
+index bde441f..0000000
+--- a/master/buildbot/test/unit/test_util_ansi_codes.py
++++ /dev/null
+@@ -1,42 +0,0 @@
+-# This file is part of Buildbot.  Buildbot is free software: you can
+-# redistribute it and/or modify it under the terms of the GNU General Public
+-# License as published by the Free Software Foundation, version 2.
+-#
+-# This program is distributed in the hope that it will be useful, but WITHOUT
+-# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+-# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+-# details.
+-#
+-# You should have received a copy of the GNU General Public License along with
+-# this program; if not, write to the Free Software Foundation, Inc., 51
+-# Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+-#
+-# Copyright Buildbot Team Members
+-
+-from twisted.trial import unittest
+-from buildbot.util.ansicodes import parse_ansi_sgr
+-
+-
+-class TestAnsiCodes(unittest.TestCase):
+-
+-    def runTest(self, string, expected):
+-        ret = parse_ansi_sgr(string)
+-        self.assertEqual(ret, expected)
+-
+-    def test_ansi1m(self):
+-        self.runTest("33mfoo", ("foo", ["33"]))
+-
+-    def test_ansi2m(self):
+-        self.runTest("1;33mfoo", ("foo", ["1", "33"]))
+-
+-    def test_ansi5m(self):
+-        self.runTest("1;2;3;4;33mfoo", ("foo", ["1", "2", "3", "4", "33"]))
+-
+-    def test_ansi_notm(self):
+-        self.runTest("33xfoo", ("foo", []))
+-
+-    def test_ansi_invalid(self):
+-        self.runTest("<>foo", ("\033[<>foo", []))
+-
+-    def test_ansi_invalid_start_by_semicolon(self):
+-        self.runTest(";3m", ("\033[;3m", []))
+diff --git a/master/buildbot/test/unit/test_util_ansicodes.py b/master/buildbot/test/unit/test_util_ansicodes.py
+new file mode 100644
+index 0000000..e0d1926
+--- /dev/null
++++ b/master/buildbot/test/unit/test_util_ansicodes.py
+@@ -0,0 +1,45 @@
++# This file is part of Buildbot.  Buildbot is free software: you can
++# redistribute it and/or modify it under the terms of the GNU General Public
++# License as published by the Free Software Foundation, version 2.
++#
++# This program is distributed in the hope that it will be useful, but WITHOUT
++# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
++# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
++# details.
++#
++# You should have received a copy of the GNU General Public License along with
++# this program; if not, write to the Free Software Foundation, Inc., 51
++# Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++#
++# Copyright Buildbot Team Members
++
++from twisted.trial import unittest
++from buildbot.util.ansicodes import parse_ansi_sgr
++
++
++class TestAnsiCodes(unittest.TestCase):
++
++    def runTest(self, string, expected):
++        ret = parse_ansi_sgr(string)
++        self.assertEqual(ret, expected)
++
++    def test_ansi0m(self):
++        self.runTest("mfoo", ("foo", []))
++
++    def test_ansi1m(self):
++        self.runTest("33mfoo", ("foo", ["33"]))
++
++    def test_ansi2m(self):
++        self.runTest("1;33mfoo", ("foo", ["1", "33"]))
++
++    def test_ansi5m(self):
++        self.runTest("1;2;3;4;33mfoo", ("foo", ["1", "2", "3", "4", "33"]))
++
++    def test_ansi_notm(self):
++        self.runTest("33xfoo", ("foo", []))
++
++    def test_ansi_invalid(self):
++        self.runTest("<>foo", ("\033[<>foo", []))
++
++    def test_ansi_invalid_start_by_semicolon(self):
++        self.runTest(";3m", ("\033[;3m", []))
+diff --git a/master/buildbot/util/ansicodes.py b/master/buildbot/util/ansicodes.py
+index ebcf95f..01054ae 100644
+--- a/master/buildbot/util/ansicodes.py
++++ b/master/buildbot/util/ansicodes.py
+@@ -15,7 +15,7 @@
+ 
+ import re
+ 
+-ANSI_RE = re.compile(r"^((\d+)(;\d+)*)([a-zA-Z])")
++ANSI_RE = re.compile(r"^((\d+)(;\d+)*)?([a-zA-Z])")
+ 
+ 
+ def parse_ansi_sgr(ansi_entry):
+@@ -29,7 +29,11 @@ def parse_ansi_sgr(ansi_entry):
+         mode = res.group(4)
+         ansi_entry = ansi_entry[len(res.group(0)):]
+         if mode == 'm':
+-            classes = res.group(1).split(";")
++            classes = res.group(1)
++            if classes:
++                classes = res.group(1).split(";")
++            else:
++                classes = []
+     else:
+         # illegal code, restore the CSI
+         ansi_entry = "\033[" + ansi_entry
+         ]
+
+
+GitPoller used .split() instead of .split('\n') to split files. As a
+result, it parsed a file with a space in the name as separate files.
+
+--- a/third_party/buildbot_8_4p1/buildbot/changes/gitpoller.py
++++ b/third_party/buildbot_8_4p1/buildbot/changes/gitpoller.py
+@@ -200,7 +200,7 @@ class GitPoller(base.PollingChangeSource):
+         args = ['log', rev, '--name-only', '--no-walk', r'--format=%n']
+         d = utils.getProcessOutput(self.gitbin, args, path=self.workdir, env=os.environ, errortoo=False )
+         def process(git_output):
+-            fileList = git_output.split()
++            fileList = git_output.splitlines()
+             return fileList
+         d.addCallback(process)
+         return d
+
+
+Cherry-pick change to allow serialization of sqlite access to de-flake unittests.
+See https://github.com/buildbot/buildbot/commit/2c58b952ae93c45ee5bfe37f6cf70043da8b5d70.
+
+diff --git a/third_party/buildbot_8_4p1/buildbot/db/enginestrategy.py b/third_party/buildbot_8_4p1/buildbot/db/enginestrategy.py
+index 3d05cb6..cb711ce 100644
+--- a/third_party/buildbot_8_4p1/buildbot/db/enginestrategy.py
++++ b/third_party/buildbot_8_4p1/buildbot/db/enginestrategy.py
+@@ -82,6 +82,11 @@ class BuildbotEngineStrategy(strategies.ThreadLocalEngineStrategy):
+             kwargs['pool_size'] = 1
+             max_conns = 1
+
++        # allow serializing access to the db
++        if 'serialize_access' in u.query:
++            u.query.pop('serialize_access')
++            max_conns = 1
++
+         return u, kwargs, max_conns
+
+     def set_up_sqlite_engine(self, u, engine):
+
+Enable serialized access from the above patch.
+
+diff --git a/third_party/buildbot_8_4p1/buildbot/master.py b/third_party/buildbot_8_4p1/buildbot/master.py
+index cbebc0f..9a1b6d0 100644
+--- a/third_party/buildbot_8_4p1/buildbot/master.py
++++ b/third_party/buildbot_8_4p1/buildbot/master.py
+@@ -315,7 +315,8 @@ class BuildMaster(service.MultiService):
+                 #change_source = config['change_source']
+
+                 # optional
+-                db_url = config.get("db_url", "sqlite:///state.sqlite")
++                db_url = config.get("db_url",
++                                    "sqlite:///state.sqlite?serialize_access=1")
+                 db_poll_interval = config.get("db_poll_interval", None)
+                 debugPassword = config.get('debugPassword')
+                 manhole = config.get('manhole')
+
+Fix to file parsing. GitPoller produced blank lines
+
+--- a/third_party/buildbot_8_4p1/buildbot/changes/gitpoller.py
++++ b/third_party/buildbot_8_4p1/buildbot/changes/gitpoller.py
+@@ -200,7 +200,8 @@ class GitPoller(base.PollingChangeSource):
+         args = ['log', rev, '--name-only', '--no-walk', r'--format=%n']
+         d = utils.getProcessOutput(self.gitbin, args, path=self.workdir, env=os.environ, errortoo=False )
+         def process(git_output):
+-            fileList = git_output.splitlines()
++            fileList = [f.strip() for f in git_output.splitlines()]
++            fileList = [f for f in fileList if f]
+             return fileList
+         d.addCallback(process)
+         return d
+
+GitPoller: made self.master.addChange call overridable, so it can be used in
+TryJobGit.
+
+diff --git a/third_party/buildbot_8_4p1/buildbot/changes/gitpoller.py b/third_party/buildbot_8_4p1/buildbot/changes/gitpoller.py
+index 0b6d388..d5c18ba 100644
+--- a/third_party/buildbot_8_4p1/buildbot/changes/gitpoller.py
++++ b/third_party/buildbot_8_4p1/buildbot/changes/gitpoller.py
+@@ -282,21 +282,31 @@ class GitPoller(base.PollingChangeSource):
+               revlink = self.revlinktmpl % urllib.quote_plus(rev)
+ 
+             timestamp, name, files, comments = [ r[1] for r in results ]
+-            d = self.master.addChange(
++            d = self.add_change(
+                    author=name,
+                    revision=rev,
+                    files=files,
+                    comments=comments,
+                    when_timestamp=epoch2datetime(timestamp),
+-                   branch=self.branch,
+-                   category=self.category,
+-                   project=self.project,
+-                   repository=self.repourl,
+                    revlink=revlink)
+             wfd = defer.waitForDeferred(d)
+             yield wfd
+             results = wfd.getResult()
+ 
++    def add_change(self, author, revision, files, comments, when_timestamp,
++                   revlink):
++        return self.master.addChange(
++                author=author,
++                revision=revision,
++                files=files,
++                comments=comments,
++                when_timestamp=when_timestamp,
++                branch=self.branch,
++                category=self.category,
++                project=self.project,
++                repository=self.repourl,
++                revlink=revlink)
++
+     def _process_changes_failure(self, f):
+         log.msg('gitpoller: repo poll failed')
+         log.err(f)
+
+
+Fix broken links to step names with '/' characters in them.
+
+diff --git a/third_party/buildbot_8_4p1/buildbot/status/web/build.py b/third_party/buildbot_8_4p1/buildbot/status/web/build.py
+index c634060..711d36a 100644
+--- a/third_party/buildbot_8_4p1/buildbot/status/web/build.py
++++ b/third_party/buildbot_8_4p1/buildbot/status/web/build.py
+@@ -115,7 +115,8 @@ class StatusResourceBuild(HtmlResource):
+ 
+             cxt['steps'].append(step)
+ 
+-            step['link'] = req.childLink("steps/%s" % urllib.quote(s.getName()))
++            step['link'] = req.childLink("steps/%s" % urllib.quote(s.getName(),
++                                                                   safe=''))
+             step['text'] = " ".join(s.getText())
+             step['urls'] = map(lambda x:dict(url=x[1],logname=x[0]), s.getURLs().items())
+ 
+@@ -123,7 +124,7 @@ class StatusResourceBuild(HtmlResource):
+             for l in s.getLogs():
+                 logname = l.getName()
+                 step['logs'].append({ 'link': req.childLink("steps/%s/logs/%s" %
+-                                           (urllib.quote(s.getName()),
++                                           (urllib.quote(s.getName(), safe=''),
+                                             urllib.quote(logname))), 
+                                       'name': logname })
+ 

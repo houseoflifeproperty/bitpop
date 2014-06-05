@@ -5,28 +5,27 @@
 #ifndef UI_BASE_RESOURCE_RESOURCE_BUNDLE_H_
 #define UI_BASE_RESOURCE_RESOURCE_BUNDLE_H_
 
-#include "build/build_config.h"
-
 #include <map>
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
-#include "base/platform_file.h"
-#include "base/string16.h"
-#include "base/string_piece.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_piece.h"
+#include "build/build_config.h"
 #include "ui/base/layout.h"
-#include "ui/base/ui_export.h"
-#include "ui/gfx/font.h"
+#include "ui/base/ui_base_export.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/native_widget_types.h"
 
 class SkBitmap;
 
 namespace base {
+class File;
 class Lock;
 class RefCountedStaticMemory;
 }
@@ -38,20 +37,21 @@ class ResourceHandle;
 
 // ResourceBundle is a central facility to load images and other resources,
 // such as theme graphics. Every resource is loaded only once.
-class UI_EXPORT ResourceBundle {
+class UI_BASE_EXPORT ResourceBundle {
  public:
   // An enumeration of the various font styles used throughout Chrome.
   // The following holds true for the font sizes:
-  // Small <= Base <= Bold <= Medium <= MediumBold <= Large.
+  // Small <= SmallBold <= Base <= Bold <= Medium <= MediumBold <= Large.
   enum FontStyle {
+    // NOTE: depending upon the locale, using one of the *BoldFont below
+    // may *not* actually result in a bold font.
     SmallFont,
+    SmallBoldFont,
     BaseFont,
     BoldFont,
     MediumFont,
-    // NOTE: depending upon the locale, this may *not* result in a bold font.
     MediumBoldFont,
     LargeFont,
-    // NOTE: depending upon the locale, this may *not* result in a bold font.
     LargeBoldFont,
   };
 
@@ -70,15 +70,17 @@ class UI_EXPORT ResourceBundle {
     // the pack file to continue loading or an empty value to cancel loading.
     // |pack_path| will contain the complete default path for the pack file if
     // known or just the pack file name otherwise.
-    virtual FilePath GetPathForResourcePack(const FilePath& pack_path,
-                                            ScaleFactor scale_factor) = 0;
+    virtual base::FilePath GetPathForResourcePack(
+        const base::FilePath& pack_path,
+        ScaleFactor scale_factor) = 0;
 
     // Called before a locale pack file is loaded. Return the full path for
     // the pack file to continue loading or an empty value to cancel loading.
     // |pack_path| will contain the complete default path for the pack file if
     // known or just the pack file name otherwise.
-    virtual FilePath GetPathForLocalePack(const FilePath& pack_path,
-                                          const std::string& locale) = 0;
+    virtual base::FilePath GetPathForLocalePack(
+        const base::FilePath& pack_path,
+        const std::string& locale) = 0;
 
     // Return an image resource or an empty value to attempt retrieval of the
     // default resource.
@@ -102,10 +104,9 @@ class UI_EXPORT ResourceBundle {
 
     // Retrieve a localized string. Return true if a string was provided or
     // false to attempt retrieval of the default string.
-    virtual bool GetLocalizedString(int message_id, string16* value) = 0;
+    virtual bool GetLocalizedString(int message_id, base::string16* value) = 0;
 
-    // Return a font resource or NULL to attempt retrieval of the default
-    // resource.
+    // Returns a font or NULL to attempt retrieval of the default resource.
     virtual scoped_ptr<gfx::Font> GetFont(FontStyle style) = 0;
 
    protected:
@@ -133,11 +134,11 @@ class UI_EXPORT ResourceBundle {
   // controls whether or not ResourceBundle::LoadCommonResources is called.
   // This allows the use of this function in a sandbox without local file
   // access (as on Android).
-  static void InitSharedInstanceWithPakFile(
-      base::PlatformFile file, bool should_load_common_resources);
+  static void InitSharedInstanceWithPakFile(base::File file,
+                                            bool should_load_common_resources);
 
   // Initialize the ResourceBundle using given data pack path for testing.
-  static void InitSharedInstanceWithPakPath(const FilePath& path);
+  static void InitSharedInstanceWithPakPath(const base::FilePath& path);
 
   // Delete the ResourceBundle for this process if it exists.
   static void CleanupSharedInstance();
@@ -158,14 +159,15 @@ class UI_EXPORT ResourceBundle {
   // this value). |scale_factor| is the scale of images in this resource pak
   // relative to the images in the 1x resource pak. This method is not thread
   // safe! You should call it immediately after calling InitSharedInstance.
-  void AddDataPackFromPath(const FilePath& path, ScaleFactor scale_factor);
+  void AddDataPackFromPath(const base::FilePath& path,
+                           ScaleFactor scale_factor);
 
   // Same as above but using an already open file.
-  void AddDataPackFromFile(base::PlatformFile file, ScaleFactor scale_factor);
+  void AddDataPackFromFile(base::File file, ScaleFactor scale_factor);
 
   // Same as AddDataPackFromPath but does not log an error if the pack fails to
   // load.
-  void AddOptionalDataPackFromPath(const FilePath& path,
+  void AddOptionalDataPackFromPath(const base::FilePath& path,
                                    ScaleFactor scale_factor);
 
   // Changes the locale for an already-initialized ResourceBundle, returning the
@@ -227,7 +229,10 @@ class UI_EXPORT ResourceBundle {
 
   // Get a localized string given a message id.  Returns an empty
   // string if the message_id is not found.
-  string16 GetLocalizedString(int message_id);
+  base::string16 GetLocalizedString(int message_id);
+
+  // Returns the font list for the specified style.
+  const gfx::FontList& GetFontList(FontStyle style);
 
   // Returns the font for the specified style.
   const gfx::Font& GetFont(FontStyle style);
@@ -238,20 +243,18 @@ class UI_EXPORT ResourceBundle {
 
   // Overrides the path to the pak file from which the locale resources will be
   // loaded. Pass an empty path to undo.
-  void OverrideLocalePakForTest(const FilePath& pak_path);
+  void OverrideLocalePakForTest(const base::FilePath& pak_path);
 
   // Returns the full pathname of the locale file to load.  May return an empty
   // string if no locale data files are found and |test_file_exists| is true.
   // Used on Android to load the local file in the browser process and pass it
   // to the sandboxed renderer process.
-  FilePath GetLocaleFilePath(const std::string& app_locale,
-                             bool test_file_exists);
+  base::FilePath GetLocaleFilePath(const std::string& app_locale,
+                                   bool test_file_exists);
 
   // Returns the maximum scale factor currently loaded.
   // Returns SCALE_FACTOR_100P if no resource is loaded.
-  ScaleFactor max_scale_factor() const {
-    return max_scale_factor_;
-  }
+  ScaleFactor GetMaxScaleFactor() const;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(ResourceBundleTest, DelegateGetPathForLocalePack);
@@ -268,6 +271,9 @@ class UI_EXPORT ResourceBundle {
   explicit ResourceBundle(Delegate* delegate);
   ~ResourceBundle();
 
+  // Shared initialization.
+  static void InitSharedInstance(Delegate* delegate);
+
   // Free skia_images_.
   void FreeImages();
 
@@ -276,7 +282,7 @@ class UI_EXPORT ResourceBundle {
 
   // Implementation for AddDataPackFromPath and AddOptionalDataPackFromPath, if
   // the pack is not |optional| logs an error on failure to load.
-  void AddDataPackFromPathInternal(const FilePath& path,
+  void AddDataPackFromPathInternal(const base::FilePath& path,
                                    ScaleFactor scale_factor,
                                    bool optional);
 
@@ -290,14 +296,20 @@ class UI_EXPORT ResourceBundle {
 
   // Load test resources in given paths. If either path is empty an empty
   // resource pack is loaded.
-  void LoadTestResources(const FilePath& path, const FilePath& locale_path);
+  void LoadTestResources(const base::FilePath& path,
+                         const base::FilePath& locale_path);
 
   // Unload the locale specific strings and prepares to load new ones. See
   // comments for ReloadLocaleResources().
   void UnloadLocaleResources();
 
-  // Initialize all the gfx::Font members if they haven't yet been initialized.
+  // Initializes all the gfx::FontList members if they haven't yet been
+  // initialized.
   void LoadFontsIfNecessary();
+
+  // Returns a FontList or NULL by calling Delegate::GetFont and converting
+  // scoped_ptr<gfx::Font> to scoped_ptr<gfx::FontList>.
+  scoped_ptr<gfx::FontList> GetFontListFromDelegate(FontStyle style);
 
   // Fills the |bitmap| given the data file to look in and the |resource_id|.
   // Returns false if the resource does not exist.
@@ -318,11 +330,38 @@ class UI_EXPORT ResourceBundle {
                   SkBitmap* bitmap,
                   bool* fell_back_to_1x) const;
 
+  // Returns true if missing scaled resources should be visually indicated when
+  // drawing the fallback (e.g., by tinting the image).
+  static bool ShouldHighlightMissingScaledResources();
+
+  // Returns true if the data in |buf| is a PNG that has the special marker
+  // added by GRIT that indicates that the image is actually 1x data.
+  static bool PNGContainsFallbackMarker(const unsigned char* buf, size_t size);
+
+  // A wrapper for PNGCodec::Decode that returns information about custom
+  // chunks. For security reasons we can't alter PNGCodec to return this
+  // information. Our PNG files are preprocessed by GRIT, and any special chunks
+  // should occur immediately after the IHDR chunk.
+  static bool DecodePNG(const unsigned char* buf,
+                        size_t size,
+                        SkBitmap* bitmap,
+                        bool* fell_back_to_1x);
+
   // Returns an empty image for when a resource cannot be loaded. This is a
   // bright red bitmap.
   gfx::Image& GetEmptyImage();
 
-  const FilePath& GetOverriddenPakPath();
+  const base::FilePath& GetOverriddenPakPath();
+
+  // Platform specific image scaling is done here. Currently only implemented
+  // for Windows.
+  // |image| is the bitmap to be scaled.
+  // |loaded_image_scale| is the current scale of the bitmap.
+  // |desired_scale| is the desired scale of the bitmap.
+  // Returns the scaled bitmap or the original bitmap.
+ static SkBitmap PlatformScaleImage(const SkBitmap& image,
+                                    float loaded_image_scale,
+                                    float desired_scale);
 
   // This pointer is guaranteed to outlive the ResourceBundle instance and may
   // be NULL.
@@ -348,17 +387,19 @@ class UI_EXPORT ResourceBundle {
 
   gfx::Image empty_image_;
 
-  // The various fonts used. Cached to avoid repeated GDI creation/destruction.
-  scoped_ptr<gfx::Font> base_font_;
-  scoped_ptr<gfx::Font> bold_font_;
-  scoped_ptr<gfx::Font> small_font_;
-  scoped_ptr<gfx::Font> medium_font_;
-  scoped_ptr<gfx::Font> medium_bold_font_;
-  scoped_ptr<gfx::Font> large_font_;
-  scoped_ptr<gfx::Font> large_bold_font_;
-  scoped_ptr<gfx::Font> web_font_;
+  // The various font lists used. Cached to avoid repeated GDI
+  // creation/destruction.
+  scoped_ptr<gfx::FontList> base_font_list_;
+  scoped_ptr<gfx::FontList> bold_font_list_;
+  scoped_ptr<gfx::FontList> small_font_list_;
+  scoped_ptr<gfx::FontList> small_bold_font_list_;
+  scoped_ptr<gfx::FontList> medium_font_list_;
+  scoped_ptr<gfx::FontList> medium_bold_font_list_;
+  scoped_ptr<gfx::FontList> large_font_list_;
+  scoped_ptr<gfx::FontList> large_bold_font_list_;
+  scoped_ptr<gfx::FontList> web_font_list_;
 
-  FilePath overridden_pak_path_;
+  base::FilePath overridden_pak_path_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceBundle);
 };

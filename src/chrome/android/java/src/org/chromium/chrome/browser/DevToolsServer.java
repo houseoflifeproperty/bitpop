@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,11 +9,10 @@ package org.chromium.chrome.browser;
  */
 public class DevToolsServer {
 
-    private int mNativeDevToolsServer = 0;
+    private long mNativeDevToolsServer = 0;
 
-    public DevToolsServer(boolean useBundledFrontendResources,
-                          String socketName) {
-        mNativeDevToolsServer = nativeInitRemoteDebugging(useBundledFrontendResources, socketName);
+    public DevToolsServer(String socketNamePrefix) {
+        mNativeDevToolsServer = nativeInitRemoteDebugging(socketNamePrefix);
     }
 
     public void destroy() {
@@ -29,9 +28,8 @@ public class DevToolsServer {
         nativeSetRemoteDebuggingEnabled(mNativeDevToolsServer, enabled);
     }
 
-    private native int nativeInitRemoteDebugging(boolean useBundledFrontendResources,
-            String socketName);
-    private native void nativeDestroyRemoteDebugging(int devToolsServer);
-    private native boolean nativeIsRemoteDebuggingEnabled(int devToolsServer);
-    private native void nativeSetRemoteDebuggingEnabled(int devToolsServer, boolean enabled);
+    private native long nativeInitRemoteDebugging(String socketNamePrefix);
+    private native void nativeDestroyRemoteDebugging(long devToolsServer);
+    private native boolean nativeIsRemoteDebuggingEnabled(long devToolsServer);
+    private native void nativeSetRemoteDebuggingEnabled(long devToolsServer, boolean enabled);
 }

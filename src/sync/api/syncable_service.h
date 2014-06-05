@@ -7,6 +7,7 @@
 
 #include <vector>
 
+#include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -21,8 +22,6 @@ namespace syncer {
 
 class SyncErrorFactory;
 
-typedef std::vector<SyncData> SyncDataList;
-
 // TODO(zea): remove SupportsWeakPtr in favor of having all SyncableService
 // implementers provide a way of getting a weak pointer to themselves.
 // See crbug.com/100114.
@@ -30,6 +29,15 @@ class SYNC_EXPORT SyncableService
     : public SyncChangeProcessor,
       public base::SupportsWeakPtr<SyncableService> {
  public:
+  // A StartSyncFlare is useful when your SyncableService has a need for sync
+  // to start ASAP, typically because a local change event has occurred but
+  // MergeDataAndStartSyncing hasn't been called yet, meaning you don't have a
+  // SyncChangeProcessor. The sync subsystem will respond soon after invoking
+  // Run() on your flare by calling MergeDataAndStartSyncing. The ModelType
+  // parameter is included so that the recieving end can track usage and timing
+  // statistics, make optimizations or tradeoffs by type, etc.
+  typedef base::Callback<void(ModelType)> StartSyncFlare;
+
   // Informs the service to begin syncing the specified synced datatype |type|.
   // The service should then merge |initial_sync_data| into it's local data,
   // calling |sync_processor|'s ProcessSyncChanges as necessary to reconcile the
@@ -47,11 +55,6 @@ class SYNC_EXPORT SyncableService
 
   // Stop syncing the specified type and reset state.
   virtual void StopSyncing(ModelType type) = 0;
-
-  // Fills a list of SyncData from the local data. This should create an up
-  // to date representation of the SyncableService's view of that datatype, and
-  // should match/be a subset of the server's view of that datatype.
-  virtual SyncDataList GetAllSyncData(ModelType type) const = 0;
 
   // SyncChangeProcessor interface.
   // Process a list of new SyncChanges and update the local data as necessary.

@@ -9,7 +9,8 @@
 #include "ash/wm/coordinate_conversion.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/aura/client/screen_position_client.h"
-#include "ui/base/animation/throb_animation.h"
+#include "ui/aura/window_event_dispatcher.h"
+#include "ui/gfx/animation/throb_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/screen.h"
@@ -17,7 +18,6 @@
 #include "ui/views/widget/widget.h"
 
 namespace ash {
-namespace internal {
 namespace {
 
 const int kIndicatorAnimationDurationMs = 1000;
@@ -48,9 +48,12 @@ views::Widget* CreateWidget(const gfx::Rect& bounds,
                             views::View* contents_view) {
   views::Widget* widget = new views::Widget;
   views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
-  params.transparent = true;
+  params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   params.can_activate = false;
   params.keep_on_top = true;
+  // We set the context to the primary root window; this is OK because the ash
+  // stacking controller will still place us in the correct RootWindow.
+  params.context = Shell::GetPrimaryRootWindow();
   widget->set_focus_on_creation(false);
   widget->Init(params);
   widget->SetVisibilityChangedAnimationsEnabled(false);
@@ -83,8 +86,8 @@ void SharedDisplayEdgeIndicator::Show(const gfx::Rect& src_bounds,
   src_indicator_ = new IndicatorView;
   dst_indicator_ = new IndicatorView;
   CreateWidget(src_bounds, src_indicator_);
-  CreateWidget(src_bounds, dst_indicator_);
-  animation_.reset(new ui::ThrobAnimation(this));
+  CreateWidget(dst_bounds, dst_indicator_);
+  animation_.reset(new gfx::ThrobAnimation(this));
   animation_->SetThrobDuration(kIndicatorAnimationDurationMs);
   animation_->StartThrobbing(-1 /* infinite */);
 }
@@ -99,7 +102,7 @@ void SharedDisplayEdgeIndicator::Hide() {
 }
 
 void SharedDisplayEdgeIndicator::AnimationProgressed(
-    const ui::Animation* animation) {
+    const gfx::Animation* animation) {
   int value = animation->CurrentValueBetween(0, 255);
   SkColor color = SkColorSetARGB(0xFF, value, value, value);
   if (src_indicator_)
@@ -109,5 +112,4 @@ void SharedDisplayEdgeIndicator::AnimationProgressed(
 
 }
 
-}  // namespace internal
 }  // namespace ash

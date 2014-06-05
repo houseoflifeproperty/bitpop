@@ -6,57 +6,64 @@
 #define CHROME_BROWSER_AUTOFILL_AUTOFILL_CC_INFOBAR_DELEGATE_H_
 
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
-#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
-#include "chrome/browser/autofill/autofill_metrics.h"
-#include "webkit/glue/window_open_disposition.h"
+#include "base/strings/string16.h"
+#include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "components/autofill/core/browser/autofill_metrics.h"
+#include "ui/base/window_open_disposition.h"
 
 class CreditCard;
 class PersonalDataManager;
 
-namespace content {
-struct LoadCommittedDetails;
-}
+namespace autofill {
 
 // An InfoBar delegate that enables the user to allow or deny storing credit
 // card information gathered from a form submission.
 class AutofillCCInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
-  AutofillCCInfoBarDelegate(InfoBarService* infobar_service,
-                            const CreditCard* credit_card,
-                            PersonalDataManager* personal_data,
-                            const AutofillMetrics* metric_logger);
+  // Creates an autofill credit card infobar and delegate and adds the infobar
+  // to |infobar_service|.
+  static void Create(InfoBarService* infobar_service,
+                     const AutofillMetrics* metric_logger,
+                     const base::Closure& save_card_callback);
+
+#if defined(UNIT_TEST)
+  static scoped_ptr<ConfirmInfoBarDelegate> Create(
+      const AutofillMetrics* metric_logger,
+      const base::Closure& save_card_callback) {
+    return scoped_ptr<ConfirmInfoBarDelegate>(
+        new AutofillCCInfoBarDelegate(metric_logger, save_card_callback));
+  }
+#endif
 
  private:
+  AutofillCCInfoBarDelegate(const AutofillMetrics* metric_logger,
+                            const base::Closure& save_card_callback);
   virtual ~AutofillCCInfoBarDelegate();
 
   void LogUserAction(AutofillMetrics::InfoBarMetric user_action);
 
   // ConfirmInfoBarDelegate:
-  virtual bool ShouldExpire(
-      const content::LoadCommittedDetails& details) const OVERRIDE;
   virtual void InfoBarDismissed() OVERRIDE;
-  virtual gfx::Image* GetIcon() const OVERRIDE;
+  virtual int GetIconID() const OVERRIDE;
   virtual Type GetInfoBarType() const OVERRIDE;
-  virtual string16 GetMessageText() const OVERRIDE;
-  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual bool ShouldExpireInternal(
+      const NavigationDetails& details) const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
   virtual bool Accept() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
-  virtual string16 GetLinkText() const OVERRIDE;
+  virtual base::string16 GetLinkText() const OVERRIDE;
   virtual bool LinkClicked(WindowOpenDisposition disposition) OVERRIDE;
-
-  // The credit card that should be saved if the user accepts the infobar.
-  scoped_ptr<const CreditCard> credit_card_;
-
-  // The personal data manager to which the credit card should be saved.
-  // Weak reference.
-  PersonalDataManager* personal_data_;
 
   // For logging UMA metrics.
   // Weak reference. Owned by the AutofillManager that initiated this infobar.
   const AutofillMetrics* metric_logger_;
+
+  // The callback to save credit card if the user accepts the infobar.
+  base::Closure save_card_callback_;
 
   // Did the user ever explicitly accept or dismiss this infobar?
   bool had_user_interaction_;
@@ -65,5 +72,7 @@ class AutofillCCInfoBarDelegate : public ConfirmInfoBarDelegate {
 
   DISALLOW_COPY_AND_ASSIGN(AutofillCCInfoBarDelegate);
 };
+
+}  // namespace autofill
 
 #endif  // CHROME_BROWSER_AUTOFILL_AUTOFILL_CC_INFOBAR_DELEGATE_H_

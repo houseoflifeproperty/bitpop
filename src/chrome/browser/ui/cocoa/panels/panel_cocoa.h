@@ -18,7 +18,7 @@ class Panel;
 // interact with this object when it needs to manipulate the window.
 class PanelCocoa : public NativePanel {
  public:
-  PanelCocoa(Panel* panel, const gfx::Rect& bounds);
+  PanelCocoa(Panel* panel, const gfx::Rect& bounds, bool always_on_top);
   virtual ~PanelCocoa();
 
   // Overridden from NativePanel
@@ -32,10 +32,9 @@ class PanelCocoa : public NativePanel {
   virtual void DeactivatePanel() OVERRIDE;
   virtual bool IsPanelActive() const OVERRIDE;
   virtual void PreventActivationByOS(bool prevent_activation) OVERRIDE;
-  virtual gfx::NativeWindow GetNativePanelHandle() OVERRIDE;
+  virtual gfx::NativeWindow GetNativePanelWindow() OVERRIDE;
   virtual void UpdatePanelTitleBar() OVERRIDE;
   virtual void UpdatePanelLoadingAnimations(bool should_animate) OVERRIDE;
-  virtual void NotifyPanelOnUserChangedTheme() OVERRIDE;
   virtual void PanelWebContentsFocused(content::WebContents* contents) OVERRIDE;
   virtual void PanelCut() OVERRIDE;
   virtual void PanelCopy() OVERRIDE;
@@ -47,8 +46,8 @@ class PanelCocoa : public NativePanel {
   virtual void FullScreenModeChanged(bool is_full_screen) OVERRIDE;
   virtual bool IsPanelAlwaysOnTop() const OVERRIDE;
   virtual void SetPanelAlwaysOnTop(bool on_top) OVERRIDE;
-  virtual void EnableResizeByMouse(bool enable) OVERRIDE;
   virtual void UpdatePanelMinimizeRestoreButtonVisibility() OVERRIDE;
+  virtual void SetWindowCornerStyle(panel::CornerStyle corner_style) OVERRIDE;
   virtual void PanelExpansionStateChanging(
       Panel::ExpansionState old_state,
       Panel::ExpansionState new_state) OVERRIDE;
@@ -62,10 +61,20 @@ class PanelCocoa : public NativePanel {
       const gfx::Size& window_size) const OVERRIDE;
   virtual int TitleOnlyHeight() const OVERRIDE;
 
+  virtual void MinimizePanelBySystem() OVERRIDE;
+  virtual bool IsPanelMinimizedBySystem() const OVERRIDE;
+  virtual bool IsPanelShownOnActiveDesktop() const OVERRIDE;
+  virtual void ShowShadow(bool show) OVERRIDE;
   virtual NativePanelTesting* CreateNativePanelTesting() OVERRIDE;
 
   Panel* panel() const;
   void DidCloseNativeWindow();
+
+  bool IsClosed() const;
+
+  // PanelStackWindowCocoa might want to update the stored bounds directly since
+  // it has already taken care of updating the window bounds directly.
+  void set_cached_bounds_directly(const gfx::Rect& bounds) { bounds_ = bounds; }
 
  private:
   friend class CocoaNativePanelTesting;
@@ -81,7 +90,6 @@ class PanelCocoa : public NativePanel {
   FRIEND_TEST_ALL_PREFIXES(PanelCocoaTest, SetTitle);
   FRIEND_TEST_ALL_PREFIXES(PanelCocoaTest, ActivatePanel);
 
-  bool isClosed();
   void setBoundsInternal(const gfx::Rect& bounds, bool animate);
 
   scoped_ptr<Panel> panel_;
@@ -97,6 +105,9 @@ class PanelCocoa : public NativePanel {
 
   bool is_shown_;  // Panel is hidden on creation, Show() changes that forever.
   NSInteger attention_request_id_;  // identifier from requestUserAttention.
+
+  // Indicates how the window corner should be rendered, rounded or not.
+  panel::CornerStyle corner_style_;
 
   DISALLOW_COPY_AND_ASSIGN(PanelCocoa);
 };

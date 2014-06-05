@@ -6,28 +6,35 @@
 
 #import "remoting/host/disconnect_window_mac.h"
 
+#include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/string_util.h"
-#include "base/sys_string_conversions.h"
-#include "remoting/host/disconnect_window.h"
-#include "remoting/host/ui_strings.h"
+#include "base/i18n/rtl.h"
+#include "base/memory/weak_ptr.h"
+#include "base/strings/string_util.h"
+#include "base/strings/sys_string_conversions.h"
+#include "remoting/base/string_resources.h"
+#include "remoting/host/client_session_control.h"
+#include "remoting/host/host_window.h"
+#include "ui/base/l10n/l10n_util_mac.h"
 
 @interface DisconnectWindowController()
 - (BOOL)isRToL;
 - (void)Hide;
 @end
 
+const int kMaximumConnectedNameWidthInPixels = 600;
+
 namespace remoting {
 
-class DisconnectWindowMac : public remoting::DisconnectWindow {
+class DisconnectWindowMac : public HostWindow {
  public:
   DisconnectWindowMac();
   virtual ~DisconnectWindowMac();
 
-  virtual bool Show(const UiStrings& ui_strings,
-                    const base::Closure& disconnect_callback,
-                    const std::string& username) OVERRIDE;
-  virtual void Hide() OVERRIDE;
+  // HostWindow overrides.
+  virtual void Start(
+      const base::WeakPtr<ClientSessionControl>& client_session_control)
+      OVERRIDE;
 
  private:
   DisconnectWindowController* window_controller_;
@@ -40,47 +47,46 @@ DisconnectWindowMac::DisconnectWindowMac()
 }
 
 DisconnectWindowMac::~DisconnectWindowMac() {
-  Hide();
-}
+  DCHECK(CalledOnValidThread());
 
-bool DisconnectWindowMac::Show(const UiStrings& ui_strings,
-                               const base::Closure& disconnect_callback,
-                               const std::string& username) {
-  DCHECK(!disconnect_callback.is_null());
-  DCHECK(window_controller_ == nil);
-
-  window_controller_ =
-      [[DisconnectWindowController alloc] initWithUiStrings:ui_strings
-                                                   callback:disconnect_callback
-                                                   username:username];
-  [window_controller_ showWindow:nil];
-  return true;
-}
-
-void DisconnectWindowMac::Hide() {
   // DisconnectWindowController is responsible for releasing itself in its
   // windowWillClose: method.
   [window_controller_ Hide];
   window_controller_ = nil;
 }
 
-scoped_ptr<DisconnectWindow> DisconnectWindow::Create() {
-  return scoped_ptr<DisconnectWindow>(new DisconnectWindowMac());
+void DisconnectWindowMac::Start(
+    const base::WeakPtr<ClientSessionControl>& client_session_control) {
+  DCHECK(CalledOnValidThread());
+  DCHECK(client_session_control);
+  DCHECK(window_controller_ == nil);
+
+  // Create the window.
+  base::Closure disconnect_callback =
+      base::Bind(&ClientSessionControl::DisconnectSession,
+                 client_session_control);
+  std::string client_jid = client_session_control->client_jid();
+  std::string username = client_jid.substr(0, client_jid.find('/'));
+  window_controller_ =
+      [[DisconnectWindowController alloc] initWithCallback:disconnect_callback
+                                                  username:username];
+  [window_controller_ showWindow:nil];
+}
+
+// static
+scoped_ptr<HostWindow> HostWindow::CreateDisconnectWindow() {
+  return scoped_ptr<HostWindow>(new DisconnectWindowMac());
 }
 
 }  // namespace remoting
 
 @implementation DisconnectWindowController
-- (id)initWithUiStrings:(const remoting::UiStrings&)ui_strings
-               callback:(const base::Closure&)disconnect_callback
-               username:(const std::string&)username {
+- (id)initWithCallback:(const base::Closure&)disconnect_callback
+              username:(const std::string&)username {
   self = [super initWithWindowNibName:@"disconnect_window"];
   if (self) {
-    rtl_ = (ui_strings.direction == remoting::UiStrings::RTL);
-    disconnect_message_ = ui_strings.disconnect_message;
-    disconnect_button_text_ = ui_strings.disconnect_button_text;
     disconnect_callback_ = disconnect_callback;
-    username_ = UTF8ToUTF16(username);
+    username_ = base::UTF8ToUTF16(username);
   }
   return self;
 }
@@ -96,7 +102,7 @@ scoped_ptr<DisconnectWindow> DisconnectWindow::Create() {
 }
 
 - (BOOL)isRToL {
-  return rtl_;
+  return base::i18n::IsRTL();
 }
 
 - (void)Hide {
@@ -105,12 +111,9 @@ scoped_ptr<DisconnectWindow> DisconnectWindow::Create() {
 }
 
 - (void)windowDidLoad {
-  string16 text = ReplaceStringPlaceholders(disconnect_message_, username_,
-                                            NULL);
-  [connectedToField_ setStringValue:base::SysUTF16ToNSString(text)];
-
-  [disconnectButton_ setTitle:base::SysUTF16ToNSString(
-      disconnect_button_text_)];
+  [connectedToField_ setStringValue:l10n_util::GetNSStringF(IDS_MESSAGE_SHARED,
+                                                            username_)];
+  [disconnectButton_ setTitle:l10n_util::GetNSString(IDS_STOP_SHARING_BUTTON)];
 
   // Resize the window dynamically based on the content.
   CGFloat oldConnectedWidth = NSWidth([connectedToField_ bounds]);
@@ -119,10 +122,8 @@ scoped_ptr<DisconnectWindow> DisconnectWindow::Create() {
   CGFloat newConnectedWidth = NSWidth(connectedToFrame);
 
   // Set a max width for the connected to text field.
-  if (newConnectedWidth >
-      remoting::DisconnectWindow::kMaximumConnectedNameWidthInPixels) {
-    newConnectedWidth
-        = remoting::DisconnectWindow::kMaximumConnectedNameWidthInPixels;
+  if (newConnectedWidth > kMaximumConnectedNameWidthInPixels) {
+    newConnectedWidth = kMaximumConnectedNameWidthInPixels;
     connectedToFrame.size.width = newConnectedWidth;
     [connectedToField_ setFrame:connectedToFrame];
   }
@@ -177,7 +178,7 @@ scoped_ptr<DisconnectWindow> DisconnectWindow::Create() {
 @implementation DisconnectWindow
 
 - (id)initWithContentRect:(NSRect)contentRect
-                styleMask:(unsigned int)aStyle
+                styleMask:(NSUInteger)aStyle
                   backing:(NSBackingStoreType)bufferingType
                   defer:(BOOL)flag {
   // Pass NSBorderlessWindowMask for the styleMask to remove the title bar.

@@ -7,16 +7,18 @@
 
 #include <set>
 #include <string>
-#include <vector>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
+#include "base/scoped_observer.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/extensions/extension_icon_manager.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/common/extensions/api/omnibox.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
+#include "extensions/browser/extension_registry_observer.h"
+#include "ui/base/window_open_disposition.h"
 
 class Profile;
 class TemplateURL;
@@ -27,6 +29,7 @@ class ListValue;
 }
 
 namespace content {
+class BrowserContext;
 class WebContents;
 }
 
@@ -35,6 +38,7 @@ class Image;
 }
 
 namespace extensions {
+class ExtensionRegistry;
 
 // Event router class for events related to the omnibox API.
 class ExtensionOmniboxEventRouter {
@@ -56,7 +60,8 @@ class ExtensionOmniboxEventRouter {
   static void OnInputEntered(
       content::WebContents* web_contents,
       const std::string& extension_id,
-      const std::string& input);
+      const std::string& input,
+      WindowOpenDisposition disposition);
 
   // The user has cleared the keyword, or closed the omnibox popup. This is
   // sent at most once in a give input session, after any OnInputChanged events.
@@ -67,33 +72,31 @@ class ExtensionOmniboxEventRouter {
   DISALLOW_COPY_AND_ASSIGN(ExtensionOmniboxEventRouter);
 };
 
-class OmniboxSendSuggestionsFunction : public SyncExtensionFunction {
+class OmniboxSendSuggestionsFunction : public ChromeSyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("omnibox.sendSuggestions");
+  DECLARE_EXTENSION_FUNCTION("omnibox.sendSuggestions", OMNIBOX_SENDSUGGESTIONS)
 
  protected:
   virtual ~OmniboxSendSuggestionsFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
-class OmniboxAPI : public ProfileKeyedService,
-                   public content::NotificationObserver {
+class OmniboxAPI : public BrowserContextKeyedAPI,
+                   public ExtensionRegistryObserver {
  public:
-  explicit OmniboxAPI(Profile* profile);
+  explicit OmniboxAPI(content::BrowserContext* context);
   virtual ~OmniboxAPI();
 
-  // ProfileKeyedService implementation.
-  virtual void Shutdown() OVERRIDE;
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<OmniboxAPI>* GetFactoryInstance();
 
   // Convenience method to get the OmniboxAPI for a profile.
-  static OmniboxAPI* Get(Profile* profile);
+  static OmniboxAPI* Get(content::BrowserContext* context);
 
-  // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // KeyedService implementation.
+  virtual void Shutdown() OVERRIDE;
 
   // Returns the icon to display in the omnibox for the given extension.
   gfx::Image GetOmniboxIcon(const std::string& extension_id);
@@ -103,7 +106,27 @@ class OmniboxAPI : public ProfileKeyedService,
   gfx::Image GetOmniboxPopupIcon(const std::string& extension_id);
 
  private:
+  friend class BrowserContextKeyedAPIFactory<OmniboxAPI>;
+
   typedef std::set<const Extension*> PendingExtensions;
+
+  void OnTemplateURLsLoaded();
+
+  // ExtensionRegistryObserver implementation.
+  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
+                                 const Extension* extension) OVERRIDE;
+  virtual void OnExtensionUnloaded(
+      content::BrowserContext* browser_context,
+      const Extension* extension,
+      UnloadedExtensionInfo::Reason reason) OVERRIDE;
+
+  // BrowserContextKeyedAPI implementation.
+  static const char* service_name() {
+    return "OmniboxAPI";
+  }
+  static const bool kServiceRedirectedInIncognito = true;
+
+  Profile* profile_;
 
   TemplateURLService* url_service_;
 
@@ -111,60 +134,32 @@ class OmniboxAPI : public ProfileKeyedService,
   // have keywords registered.
   PendingExtensions pending_extensions_;
 
-  content::NotificationRegistrar registrar_;
+  // Listen to extension load, unloaded notifications.
+  ScopedObserver<ExtensionRegistry, ExtensionRegistryObserver>
+      extension_registry_observer_;
 
   // Keeps track of favicon-sized omnibox icons for extensions.
   ExtensionIconManager omnibox_icon_manager_;
   ExtensionIconManager omnibox_popup_icon_manager_;
+
+  scoped_ptr<TemplateURLService::Subscription> template_url_sub_;
+
+  DISALLOW_COPY_AND_ASSIGN(OmniboxAPI);
 };
 
-class OmniboxSetDefaultSuggestionFunction : public SyncExtensionFunction {
+template <>
+void BrowserContextKeyedAPIFactory<OmniboxAPI>::DeclareFactoryDependencies();
+
+class OmniboxSetDefaultSuggestionFunction : public ChromeSyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("omnibox.setDefaultSuggestion");
+  DECLARE_EXTENSION_FUNCTION("omnibox.setDefaultSuggestion",
+                             OMNIBOX_SETDEFAULTSUGGESTION)
 
  protected:
   virtual ~OmniboxSetDefaultSuggestionFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
-};
-
-struct ExtensionOmniboxSuggestion {
-  ExtensionOmniboxSuggestion();
-  ~ExtensionOmniboxSuggestion();
-
-  // Populate a suggestion value from a DictionaryValue. If |require_content|
-  // is false, then we won't fail if |content| is missing, to support
-  // default suggestions.
-  bool Populate(const base::DictionaryValue& value, bool require_content);
-
-  // Converts a list of style ranges from the extension into the format expected
-  // by the autocomplete system.
-  bool ReadStylesFromValue(const base::ListValue& value);
-
-  // Converts this structure to a DictionaryValue suitable for saving to disk.
-  scoped_ptr<base::DictionaryValue> ToValue() const;
-
-  // The text that gets put in the edit box.
-  string16 content;
-
-  // The text that is displayed in the drop down.
-  string16 description;
-
-  // Contains style ranges for the description.
-  ACMatchClassifications description_styles;
-};
-
-struct ExtensionOmniboxSuggestions {
-  ExtensionOmniboxSuggestions();
-  ~ExtensionOmniboxSuggestions();
-
-  int request_id;
-  std::vector<ExtensionOmniboxSuggestion> suggestions;
-
- private:
-  // This class is passed around by pointer.
-  DISALLOW_COPY_AND_ASSIGN(ExtensionOmniboxSuggestions);
+  virtual bool RunSync() OVERRIDE;
 };
 
 // If the extension has set a custom default suggestion via
@@ -172,8 +167,13 @@ struct ExtensionOmniboxSuggestions {
 void ApplyDefaultSuggestionForExtensionKeyword(
     Profile* profile,
     const TemplateURL* keyword,
-    const string16& remaining_input,
+    const base::string16& remaining_input,
     AutocompleteMatch* match);
+
+// This function converts style information populated by the JSON schema
+// // compiler into an ACMatchClassifications object.
+ACMatchClassifications StyleTypesToACMatchClassifications(
+    const api::omnibox::SuggestResult &suggestion);
 
 }  // namespace extensions
 

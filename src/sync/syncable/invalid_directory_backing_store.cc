@@ -15,7 +15,8 @@ InvalidDirectoryBackingStore::~InvalidDirectoryBackingStore() {
 }
 
 DirOpenResult InvalidDirectoryBackingStore::Load(
-    MetahandlesIndex* entry_bucket,
+    Directory::MetahandlesMap* handles_map,
+    JournalIndex* delete_journals,
     Directory::KernelLoadInfo* kernel_load_info) {
   return FAILED_OPEN_DATABASE;
 }

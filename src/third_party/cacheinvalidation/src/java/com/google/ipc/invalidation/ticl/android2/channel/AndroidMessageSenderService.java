@@ -27,7 +27,7 @@ import com.google.ipc.invalidation.ticl.android2.channel.AndroidChannelConstants
 import com.google.ipc.invalidation.ticl.android2.channel.AndroidChannelConstants.HttpConstants;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protos.ipc.invalidation.AndroidService.AndroidNetworkSendRequest;
-import com.google.protos.ipc.invalidation.Channel.NetworkEndpointId;
+import com.google.protos.ipc.invalidation.ChannelCommon.NetworkEndpointId;
 
 import android.app.IntentService;
 import android.app.PendingIntent;
@@ -44,6 +44,7 @@ import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.ProtocolException;
 import java.net.URL;
+import java.util.Arrays;
 
 
 /**
@@ -57,6 +58,11 @@ import java.net.URL;
  */
 public class AndroidMessageSenderService extends IntentService {
   /* This class is public so that it can be instantiated by the Android runtime. */
+
+  /**
+   * A prefix on the "auth token type" that indicates we're using an OAuth2 token to authenticate.
+   */
+  private static final String OAUTH2_TOKEN_TYPE_PREFIX = "oauth2:";
 
   /**
    * Client key used in network endpoint ids. We only have one client at present, so there is no
@@ -77,6 +83,7 @@ public class AndroidMessageSenderService extends IntentService {
 
   public AndroidMessageSenderService() {
     super("AndroidNetworkService");
+    setIntentRedelivery(true);
   }
 
   @Override
@@ -91,6 +98,10 @@ public class AndroidMessageSenderService extends IntentService {
 
   @Override
   protected void onHandleIntent(Intent intent) {
+    if (intent == null) {
+      return;
+    }
+
     if (intent.hasExtra(ProtocolIntents.OUTBOUND_MESSAGE_KEY)) {
       // Request from the Ticl service to send a message.
       handleOutboundMessage(intent.getByteArrayExtra(ProtocolIntents.OUTBOUND_MESSAGE_KEY));
@@ -159,7 +170,7 @@ public class AndroidMessageSenderService extends IntentService {
 
     // The pending intent allows the application to send us the tokenResponseIntent.
     PendingIntent pendingIntent = PendingIntent.getService(
-        this, message.hashCode(), tokenResponseIntent, PendingIntent.FLAG_ONE_SHOT);
+        this, Arrays.hashCode(message), tokenResponseIntent, PendingIntent.FLAG_ONE_SHOT);
 
     // We send the pending intent as an extra in a normal intent to the application. We require that
     // the intent be delivered only within this package, as a security check. The application must
@@ -224,8 +235,14 @@ public class AndroidMessageSenderService extends IntentService {
     HttpURLConnection urlConnection = null;
     try {
       // Open the connection.
-      url = buildUrl(authTokenType, networkEndpointId);
-      urlConnection = createUrlConnectionForPost(this, url, authToken);
+      boolean isOAuth2Token = authTokenType.startsWith(OAUTH2_TOKEN_TYPE_PREFIX);
+      url = buildUrl(isOAuth2Token ? null : authTokenType, networkEndpointId);
+      urlConnection = createUrlConnectionForPost(this, url, authToken, isOAuth2Token);
+
+      // We are seeing EOFException errors when reusing connections. Request that the connection is
+      // closed on response to work around this issue. Client-to-server messages are batched and
+      // infrequent so there isn't much benefit in connection reuse here.
+      urlConnection.setRequestProperty("Connection", "close");
       urlConnection.setFixedLengthStreamingMode(outgoingMessage.length);
       urlConnection.connect();
 
@@ -283,10 +300,11 @@ public class AndroidMessageSenderService extends IntentService {
   /**
    * Returns a URL to use to send a message to the data center.
    *
-   * @param authTokenType type of authentication token that will be used in the request
+   * @param gaiaServiceId Gaia service for which the request will be authenticated (when using a
+   *      GoogleLogin token), or {@code null} when using an OAuth2 token.
    * @param networkEndpointId network id of the client
    */
-  private static URL buildUrl(String authTokenType, NetworkEndpointId networkEndpointId)
+  private static URL buildUrl(String gaiaServiceId, NetworkEndpointId networkEndpointId)
       throws MalformedURLException {
     StringBuilder urlBuilder = new StringBuilder();
 
@@ -294,13 +312,20 @@ public class AndroidMessageSenderService extends IntentService {
     // id.
     urlBuilder.append((channelUrlForTest != null) ? channelUrlForTest : HttpConstants.CHANNEL_URL);
     urlBuilder.append(HttpConstants.REQUEST_URL);
+
+    // TODO: We should be sending a ClientGatewayMessage in the request body
+    // instead of appending the client's network endpoint id to the request URL. Once we do that, we
+    // should use a UriBuilder to build up a structured Uri object instead of the brittle string
+    // concatenation we're doing below.
     urlBuilder.append(base64Encode(networkEndpointId.toByteArray()));
 
     // Add query parameter indicating the service to authenticate against
-    urlBuilder.append('?');
-    urlBuilder.append(HttpConstants.SERVICE_PARAMETER);
-    urlBuilder.append('=');
-    urlBuilder.append(authTokenType);
+    if (gaiaServiceId != null) {
+      urlBuilder.append('?');
+      urlBuilder.append(HttpConstants.SERVICE_PARAMETER);
+      urlBuilder.append('=');
+      urlBuilder.append(gaiaServiceId);
+    }
     return new URL(urlBuilder.toString());
   }
 
@@ -312,10 +337,11 @@ public class AndroidMessageSenderService extends IntentService {
    * @param context Android context
    * @param url URL to which to post
    * @param authToken auth token to provide in the request header
+   * @param isOAuth2Token whether the token is an OAuth2 token (vs. a GoogleLogin token)
    */
   
   public static HttpURLConnection createUrlConnectionForPost(Context context, URL url,
-      String authToken) throws IOException {
+      String authToken, boolean isOAuth2Token) throws IOException {
     HttpURLConnection connection = (HttpURLConnection) url.openConnection();
     try {
       connection.setRequestMethod("POST");
@@ -323,7 +349,11 @@ public class AndroidMessageSenderService extends IntentService {
       throw new RuntimeException("Cannot set request method to POST: " + exception);
     }
     connection.setDoOutput(true);
-    connection.setRequestProperty("Authorization", "GoogleLogin auth=" + authToken);
+    if (isOAuth2Token) {
+      connection.setRequestProperty("Authorization", "Bearer " + authToken);
+    } else {
+      connection.setRequestProperty("Authorization", "GoogleLogin auth=" + authToken);
+    }
     connection.setRequestProperty("Content-Type", HttpConstants.PROTO_CONTENT_TYPE);
     connection.setRequestProperty("User-Agent",
         context.getApplicationInfo().className + "(" + Build.VERSION.RELEASE + ")");

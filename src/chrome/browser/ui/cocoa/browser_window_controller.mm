@@ -9,40 +9,41 @@
 
 #include "base/command_line.h"
 #include "base/mac/bundle_locations.h"
+#import "base/mac/foundation_util.h"
 #include "base/mac/mac_util.h"
-#import "base/memory/scoped_nsobject.h"
-#include "base/sys_string_conversions.h"
+#import "base/mac/sdk_forward_declarations.h"
+#include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"  // IDC_*
-#include "chrome/browser/bookmarks/bookmark_editor.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/managed_mode/managed_mode.h"
-#include "chrome/browser/profiles/avatar_menu_model.h"
+#include "chrome/browser/devtools/devtools_window.h"
+#include "chrome/browser/fullscreen.h"
+#include "chrome/browser/profiles/avatar_menu.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/sync/profile_sync_service.h"
-#include "chrome/browser/sync/sync_ui_util_mac.h"
+#include "chrome/browser/profiles/profiles_state.h"
+#include "chrome/browser/signin/signin_ui_util.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
+#include "chrome/browser/translate/translate_tab_helper.h"
+#include "chrome/browser/ui/bookmarks/bookmark_editor.h"
+#include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_command_controller.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_instant_controller.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window_state.h"
 #import "chrome/browser/ui/cocoa/background_gradient_view.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_controller.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_editor_controller.h"
-#import "chrome/browser/ui/cocoa/browser/avatar_button_controller.h"
 #import "chrome/browser/ui/cocoa/browser_window_cocoa.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller_private.h"
 #import "chrome/browser/ui/cocoa/browser_window_utils.h"
-#import "chrome/browser/ui/cocoa/chrome_to_mobile_bubble_controller.h"
 #import "chrome/browser/ui/cocoa/dev_tools_controller.h"
 #import "chrome/browser/ui/cocoa/download/download_shelf_controller.h"
-#import "chrome/browser/ui/cocoa/event_utils.h"
 #include "chrome/browser/ui/cocoa/extensions/extension_keybinding_registry_cocoa.h"
 #import "chrome/browser/ui/cocoa/fast_resize_view.h"
 #import "chrome/browser/ui/cocoa/find_bar/find_bar_bridge.h"
@@ -51,34 +52,49 @@
 #import "chrome/browser/ui/cocoa/fullscreen_window.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_container_controller.h"
 #import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_editor.h"
+#import "chrome/browser/ui/cocoa/nsview_additions.h"
 #import "chrome/browser/ui/cocoa/presentation_mode_controller.h"
+#import "chrome/browser/ui/cocoa/profiles/avatar_base_controller.h"
+#import "chrome/browser/ui/cocoa/profiles/avatar_button_controller.h"
+#import "chrome/browser/ui/cocoa/profiles/avatar_icon_controller.h"
 #import "chrome/browser/ui/cocoa/status_bubble_mac.h"
-#import "chrome/browser/ui/cocoa/tab_contents/previewable_contents_controller.h"
+#import "chrome/browser/ui/cocoa/tab_contents/overlayable_contents_controller.h"
 #import "chrome/browser/ui/cocoa/tab_contents/sad_tab_controller.h"
 #import "chrome/browser/ui/cocoa/tab_contents/tab_contents_controller.h"
-#import "chrome/browser/ui/cocoa/tabpose_window.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_controller.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_view.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_view.h"
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
-#include "chrome/browser/ui/constrained_window_tab_helper.h"
+#import "chrome/browser/ui/cocoa/translate/translate_bubble_controller.h"
+#include "chrome/browser/ui/cocoa/website_settings/permission_bubble_cocoa.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
-#include "chrome/browser/ui/tabs/dock_info.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_delegate.h"
 #include "chrome/browser/ui/toolbar/encoding_menu_controller.h"
+#include "chrome/browser/ui/translate/translate_bubble_model_impl.h"
+#include "chrome/browser/ui/website_settings/permission_bubble_manager.h"
 #include "chrome/browser/ui/window_sizer/window_sizer.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/extensions/command.h"
 #include "chrome/common/url_constants.h"
+#include "components/signin/core/common/profile_management_switches.h"
+#include "components/translate/core/browser/translate_ui_delegate.h"
+#include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
+#include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
+#import "ui/base/cocoa/cocoa_base_utils.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/gfx/mac/scoped_ns_disable_screen_updates.h"
+
+using l10n_util::GetStringUTF16;
+using l10n_util::GetNSStringWithFixup;
+using l10n_util::GetNSStringFWithFixup;
 
 // ORGANIZATION: This is a big file. It is (in principle) organized as follows
 // (in order):
@@ -158,6 +174,7 @@ using content::OpenURLParams;
 using content::Referrer;
 using content::RenderWidgetHostView;
 using content::WebContents;
+using web_modal::WebContentsModalDialogManager;
 
 @interface NSWindow (NSPrivateApis)
 // Note: These functions are private, use -[NSObject respondsToSelector:]
@@ -174,15 +191,6 @@ using content::WebContents;
     MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
 
 enum {
-  NSWindowAnimationBehaviorDefault = 0,
-  NSWindowAnimationBehaviorNone = 2,
-  NSWindowAnimationBehaviorDocumentWindow = 3,
-  NSWindowAnimationBehaviorUtilityWindow = 4,
-  NSWindowAnimationBehaviorAlertPanel = 5
-};
-typedef NSInteger NSWindowAnimationBehavior;
-
-enum {
   NSWindowCollectionBehaviorFullScreenPrimary = 1 << 7,
   NSWindowCollectionBehaviorFullScreenAuxiliary = 1 << 8
 };
@@ -193,7 +201,6 @@ enum {
 
 @interface NSWindow (LionSDKDeclarations)
 - (void)setRestorable:(BOOL)flag;
-- (void)setAnimationBehavior:(NSWindowAnimationBehavior)newAnimationBehavior;
 @end
 
 #endif  // MAC_OS_X_VERSION_10_7
@@ -215,6 +222,33 @@ enum {
   return [BrowserWindowController browserWindowControllerForWindow:window];
 }
 
++ (void)updateSigninItem:(id)signinItem
+              shouldShow:(BOOL)showSigninMenuItem
+          currentProfile:(Profile*)profile {
+  DCHECK([signinItem isKindOfClass:[NSMenuItem class]]);
+  NSMenuItem* signinMenuItem = static_cast<NSMenuItem*>(signinItem);
+
+  // Look for a separator immediately after the menu item so it can be hidden
+  // or shown appropriately along with the signin menu item.
+  NSMenuItem* followingSeparator = nil;
+  NSMenu* menu = [signinItem menu];
+  if (menu) {
+    NSInteger signinItemIndex = [menu indexOfItem:signinMenuItem];
+    DCHECK_NE(signinItemIndex, -1);
+    if ((signinItemIndex + 1) < [menu numberOfItems]) {
+      NSMenuItem* menuItem = [menu itemAtIndex:(signinItemIndex + 1)];
+      if ([menuItem isSeparatorItem]) {
+        followingSeparator = menuItem;
+      }
+    }
+  }
+
+  base::string16 label = signin_ui_util::GetSigninMenuLabel(profile);
+  [signinMenuItem setTitle:l10n_util::FixUpWindowsStyleLabel(label)];
+  [signinMenuItem setHidden:!showSigninMenuItem];
+  [followingSeparator setHidden:!showSigninMenuItem];
+}
+
 // Load the browser window nib and do any Cocoa-specific initialization.
 // Takes ownership of |browser|. Note that the nib also sets this controller
 // up as the window's delegate.
@@ -231,6 +265,10 @@ enum {
     browser_.reset(browser);
     ownsBrowser_ = ownIt;
     NSWindow* window = [self window];
+    // Make the content view for the window have a layer. This will make all
+    // sub-views have layers. This is necessary to ensure correct layer
+    // ordering of all child views and their layers.
+    [[window contentView] cr_setWantsLayer:YES];
     windowShim_.reset(new BrowserWindowCocoa(browser, self));
 
     // Set different minimum sizes on tabbed windows vs non-tabbed, e.g. popups.
@@ -278,8 +316,8 @@ enum {
 
     // When we are given x/y coordinates of 0 on a created popup window, assume
     // none were given by the window.open() command.
-    if ((browser_->is_type_popup() || browser_->is_type_panel()) &&
-         windowRect.x() == 0 && windowRect.y() == 0) {
+    if (browser_->is_type_popup() &&
+        windowRect.x() == 0 && windowRect.y() == 0) {
       gfx::Size size = windowRect.size();
       windowRect.set_origin(
           WindowSizer::GetDefaultPopupOrigin(size,
@@ -300,15 +338,14 @@ enum {
     [[devToolsController_ view] setFrame:[[self tabContentArea] bounds]];
     [[self tabContentArea] addSubview:[devToolsController_ view]];
 
-    // Create the previewable contents controller.  This provides the switch
+    // Create the overlayable contents controller.  This provides the switch
     // view that TabStripController needs.
-    previewableContentsController_.reset(
-        [[PreviewableContentsController alloc] initWithBrowser:browser
-                                              windowController:self]);
-    [[previewableContentsController_ view]
+    overlayableContentsController_.reset(
+        [[OverlayableContentsController alloc] initWithBrowser:browser]);
+    [[overlayableContentsController_ view]
         setFrame:[[devToolsController_ view] bounds]];
     [[devToolsController_ view]
-        addSubview:[previewableContentsController_ view]];
+        addSubview:[overlayableContentsController_ view]];
 
     // Create a controller for the tab strip, giving it the model object for
     // this window's Browser and the tab strip view. The controller will handle
@@ -321,14 +358,12 @@ enum {
     // registering for the appropriate command state changes from the back-end.
     // Adds the toolbar to the content area.
     toolbarController_.reset([[ToolbarController alloc]
-              initWithModel:browser->toolbar_model()
-                   commands:browser->command_controller()->command_updater()
-                    profile:browser->profile()
-                    browser:browser
-             resizeDelegate:self]);
+              initWithCommands:browser->command_controller()->command_updater()
+                       profile:browser->profile()
+                       browser:browser
+                resizeDelegate:self]);
     [toolbarController_ setHasToolbar:[self hasToolbar]
                        hasLocationBar:[self hasLocationBar]];
-    [[[self window] contentView] addSubview:[toolbarController_ view]];
 
     // Create a sub-controller for the bookmark bar.
     bookmarkBarController_.reset(
@@ -337,21 +372,13 @@ enum {
                initialWidth:NSWidth([[[self window] contentView] frame])
                    delegate:self
              resizeDelegate:self]);
-
-    // Add bookmark bar to the view hierarchy, which also triggers the nib load.
-    // The bookmark bar is defined (in the nib) to be bottom-aligned to its
-    // parent view (among other things), so position and resize properties don't
-    // need to be set.
-    [[[self window] contentView] addSubview:[bookmarkBarController_ view]
-                                 positioned:NSWindowBelow
-                                 relativeTo:[toolbarController_ view]];
     [bookmarkBarController_ setBookmarkBarEnabled:[self supportsBookmarkBar]];
 
     // Create the infobar container view, so we can pass it to the
     // ToolbarController.
     infoBarContainerController_.reset(
         [[InfoBarContainerController alloc] initWithResizeDelegate:self]);
-    [[[self window] contentView] addSubview:[infoBarContainerController_ view]];
+    [self updateInfoBarTipVisibility];
 
     // We don't want to try and show the bar before it gets placed in its parent
     // view, so this step shoudn't be inside the bookmark bar controller's
@@ -383,7 +410,7 @@ enum {
     // out, measure the current content area size and grow if needed.  The
     // window has not been placed onscreen yet, so this extra resize will not
     // cause visible jank.
-    if (browser_->is_type_popup() || browser_->is_type_panel()) {
+    if (browser_->is_type_popup()) {
       CGFloat deltaH = desiredContentRect.height() -
                        NSHeight([[self tabContentArea] frame]);
       // Do not shrink the window, as that may break minimum size invariants.
@@ -401,6 +428,9 @@ enum {
 
     // Create the bridge for the status bubble.
     statusBubble_ = new StatusBubbleMac([self window], self);
+
+    // Create the permissions bubble.
+    permissionBubbleCocoa_.reset(new PermissionBubbleCocoa([self window]));
 
     // Register for application hide/unhide notifications.
     [[NSNotificationCenter defaultCenter]
@@ -474,6 +504,10 @@ enum {
   return tabStripController_.get();
 }
 
+- (FindBarCocoaController*)findBarCocoaController {
+  return findBarCocoaController_.get();
+}
+
 - (InfoBarContainerController*)infoBarContainerController {
   return infoBarContainerController_.get();
 }
@@ -486,11 +520,19 @@ enum {
   return [toolbarController_ locationBarBridge];
 }
 
+- (NSView*)floatingBarBackingView {
+  return floatingBarBackingView_;
+}
+
+- (OverlayableContentsController*)overlayableContentsController {
+  return overlayableContentsController_;
+}
+
 - (Profile*)profile {
   return browser_->profile();
 }
 
-- (AvatarButtonController*)avatarButtonController {
+- (AvatarBaseController*)avatarButtonController {
   return avatarButtonController_.get();
 }
 
@@ -531,6 +573,7 @@ enum {
 - (void)updateDevToolsForContents:(WebContents*)contents {
   [devToolsController_ updateDevToolsForWebContents:contents
                                         withProfile:browser_->profile()];
+  [self updateAllowOverlappingViews:[self inPresentationMode]];
 }
 
 // Called when the user wants to close a window or from the shutdown process.
@@ -552,12 +595,24 @@ enum {
   // have to save the window position before we call orderOut:.
   [self saveWindowPositionIfNeeded];
 
+  bool fast_tab_closing_enabled =
+      CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableFastUnload);
+
   if (!browser_->tab_strip_model()->empty()) {
     // Tab strip isn't empty.  Hide the frame (so it appears to have closed
     // immediately) and close all the tabs, allowing the renderers to shut
     // down. When the tab strip is empty we'll be called back again.
     [[self window] orderOut:self];
     browser_->OnWindowClosing();
+    if (fast_tab_closing_enabled)
+      browser_->tab_strip_model()->CloseAllTabs();
+    return NO;
+  } else if (fast_tab_closing_enabled &&
+        !browser_->HasCompletedUnloadProcessing()) {
+    // The browser needs to finish running unload handlers.
+    // Hide the window (so it appears to have closed immediately), and
+    // the browser will call us back again when it is ready to close.
+    [[self window] orderOut:self];
     return NO;
   }
 
@@ -593,7 +648,20 @@ enum {
 - (void)windowDidBecomeKey:(NSNotification*)notification {
   // We need to activate the controls (in the "WebView"). To do this, get the
   // selected WebContents's RenderWidgetHostView and tell it to activate.
-  if (WebContents* contents = chrome::GetActiveWebContents(browser_.get())) {
+  if (WebContents* contents =
+          browser_->tab_strip_model()->GetActiveWebContents()) {
+
+    DevToolsWindow* devtoolsWindow =
+        DevToolsWindow::GetDockedInstanceForInspectedTab(contents);
+    if (devtoolsWindow) {
+      RenderWidgetHostView* devtoolsView =
+          devtoolsWindow->web_contents()->GetRenderWidgetHostView();
+      if (devtoolsView && devtoolsView->HasFocus()) {
+        devtoolsView->SetActive(true);
+        return;
+      }
+    }
+
     if (RenderWidgetHostView* rwhv = contents->GetRenderWidgetHostView())
       rwhv->SetActive(true);
   }
@@ -610,7 +678,20 @@ enum {
 
   // We need to deactivate the controls (in the "WebView"). To do this, get the
   // selected WebContents's RenderWidgetHostView and tell it to deactivate.
-  if (WebContents* contents = chrome::GetActiveWebContents(browser_.get())) {
+  if (WebContents* contents =
+          browser_->tab_strip_model()->GetActiveWebContents()) {
+
+    DevToolsWindow* devtoolsWindow =
+        DevToolsWindow::GetDockedInstanceForInspectedTab(contents);
+    if (devtoolsWindow) {
+      RenderWidgetHostView* devtoolsView =
+          devtoolsWindow->web_contents()->GetRenderWidgetHostView();
+      if (devtoolsView && devtoolsView->HasFocus()) {
+        devtoolsView->SetActive(false);
+        return;
+      }
+    }
+
     if (RenderWidgetHostView* rwhv = contents->GetRenderWidgetHostView())
       rwhv->SetActive(false);
   }
@@ -621,7 +702,8 @@ enum {
   [self saveWindowPositionIfNeeded];
 
   // Let the selected RenderWidgetHostView know, so that it can tell plugins.
-  if (WebContents* contents = chrome::GetActiveWebContents(browser_.get())) {
+  if (WebContents* contents =
+          browser_->tab_strip_model()->GetActiveWebContents()) {
     if (RenderWidgetHostView* rwhv = contents->GetRenderWidgetHostView())
       rwhv->SetWindowVisibility(false);
   }
@@ -630,7 +712,8 @@ enum {
 // Called when we have been unminimized.
 - (void)windowDidDeminiaturize:(NSNotification *)notification {
   // Let the selected RenderWidgetHostView know, so that it can tell plugins.
-  if (WebContents* contents = chrome::GetActiveWebContents(browser_.get())) {
+  if (WebContents* contents =
+          browser_->tab_strip_model()->GetActiveWebContents()) {
     if (RenderWidgetHostView* rwhv = contents->GetRenderWidgetHostView())
       rwhv->SetWindowVisibility(true);
   }
@@ -641,7 +724,8 @@ enum {
   // Let the selected RenderWidgetHostView know, so that it can tell plugins
   // (unless we are minimized, in which case nothing has really changed).
   if (![[self window] isMiniaturized]) {
-    if (WebContents* contents = chrome::GetActiveWebContents(browser_.get())) {
+  if (WebContents* contents =
+          browser_->tab_strip_model()->GetActiveWebContents()) {
       if (RenderWidgetHostView* rwhv = contents->GetRenderWidgetHostView())
         rwhv->SetWindowVisibility(false);
     }
@@ -653,7 +737,8 @@ enum {
   // Let the selected RenderWidgetHostView know, so that it can tell plugins
   // (unless we are minimized, in which case nothing has really changed).
   if (![[self window] isMiniaturized]) {
-    if (WebContents* contents = chrome::GetActiveWebContents(browser_.get())) {
+  if (WebContents* contents =
+          browser_->tab_strip_model()->GetActiveWebContents()) {
       if (RenderWidgetHostView* rwhv = contents->GetRenderWidgetHostView())
         rwhv->SetWindowVisibility(true);
     }
@@ -698,7 +783,7 @@ enum {
       std::max(kProportion * NSWidth(frame),
                std::min(kProportion * NSHeight(frame), NSWidth(frame)));
 
-  WebContents* contents = chrome::GetActiveWebContents(browser_.get());
+  WebContents* contents = browser_->tab_strip_model()->GetActiveWebContents();
   if (contents) {
     // If the intrinsic width is bigger, then make it the zoomed width.
     const int kScrollbarWidth = 16;  // TODO(viettrungluu): ugh.
@@ -903,6 +988,9 @@ enum {
   if (NSHeight(frame) == height)
     return;
 
+  // Disable screen updates to prevent flickering.
+  gfx::ScopedNSDisableScreenUpdates disabler;
+
   // Grow or shrink the window by the amount of the height change.  We adjust
   // the window height only in two cases:
   // 1) We are adjusting the height of the bookmark bar and it is currently
@@ -917,7 +1005,6 @@ enum {
   BOOL resizeRectDirty = NO;
   if ((shouldAdjustBookmarkHeight && view == [bookmarkBarController_ view]) ||
       view == [downloadShelfController_ view]) {
-    [[self window] disableScreenUpdatesUntilFlush];
     CGFloat deltaH = height - NSHeight(frame);
     if ([self adjustWindowHeightBy:deltaH] &&
         view == [downloadShelfController_ view]) {
@@ -936,7 +1023,7 @@ enum {
   if (resizeRectDirty) {
     // Send new resize rect to foreground tab.
     if (content::WebContents* contents =
-            chrome::GetActiveWebContents(browser_.get())) {
+            browser_->tab_strip_model()->GetActiveWebContents()) {
       if (content::RenderViewHost* rvh = contents->GetRenderViewHost()) {
         rvh->ResizeRectChanged(windowShim_->GetRootWindowResizerRect());
       }
@@ -976,10 +1063,11 @@ enum {
     DCHECK(browser_.get());
     Profile* profile = browser_->profile();
     DCHECK(profile);
-    WebContents* current_tab = chrome::GetActiveWebContents(browser_.get());
-    if (!current_tab) {
+    WebContents* current_tab =
+        browser_->tab_strip_model()->GetActiveWebContents();
+    if (!current_tab)
       return;
-    }
+
     const std::string encoding = current_tab->GetEncoding();
 
     bool toggled = encoding_controller.IsItemChecked(profile, encoding, tag);
@@ -1015,36 +1103,59 @@ enum {
           // We simply check whether the item has a keyboard shortcut set here;
           // app_controller_mac.mm actually determines whether the item should
           // be enabled.
-          if ([static_cast<NSObject*>(item) isKindOfClass:[NSMenuItem class]])
-            enable &= !![[static_cast<NSMenuItem*>(item) keyEquivalent] length];
+          if (NSMenuItem* menuItem = base::mac::ObjCCast<NSMenuItem>(item))
+            enable &= !![[menuItem keyEquivalent] length];
           break;
         case IDC_FULLSCREEN: {
-          if ([static_cast<NSObject*>(item) isKindOfClass:[NSMenuItem class]]) {
+          if (NSMenuItem* menuItem = base::mac::ObjCCast<NSMenuItem>(item)) {
             NSString* menuTitle = l10n_util::GetNSString(
                 [self isFullscreen] && ![self inPresentationMode] ?
                     IDS_EXIT_FULLSCREEN_MAC :
                     IDS_ENTER_FULLSCREEN_MAC);
-            [static_cast<NSMenuItem*>(item) setTitle:menuTitle];
+            [menuItem setTitle:menuTitle];
 
-            if (base::mac::IsOSSnowLeopard())
-              [static_cast<NSMenuItem*>(item) setHidden:YES];
+            if (!chrome::mac::SupportsSystemFullscreen())
+              [menuItem setHidden:YES];
           }
           break;
         }
         case IDC_PRESENTATION_MODE: {
-          if ([static_cast<NSObject*>(item) isKindOfClass:[NSMenuItem class]]) {
+          if (NSMenuItem* menuItem = base::mac::ObjCCast<NSMenuItem>(item)) {
             NSString* menuTitle = l10n_util::GetNSString(
                 [self inPresentationMode] ? IDS_EXIT_PRESENTATION_MAC :
                                             IDS_ENTER_PRESENTATION_MAC);
-            [static_cast<NSMenuItem*>(item) setTitle:menuTitle];
+            [menuItem setTitle:menuTitle];
           }
           break;
         }
-        case IDC_SHOW_SYNC_SETUP: {
+        case IDC_SHOW_SIGNIN: {
           Profile* original_profile =
               browser_->profile()->GetOriginalProfile();
-          enable &= original_profile->IsSyncAccessible();
-          sync_ui_util::UpdateSyncItem(item, enable, original_profile);
+          [BrowserWindowController updateSigninItem:item
+                                         shouldShow:enable
+                                     currentProfile:original_profile];
+          break;
+        }
+        case IDC_BOOKMARK_PAGE: {
+          // Extensions have the ability to hide the bookmark page menu item.
+          // This only affects the bookmark page menu item under the main menu.
+          // The bookmark page menu item under the wrench menu has its
+          // visibility controlled by WrenchMenuModel.
+          bool shouldHide =
+              chrome::ShouldRemoveBookmarkThisPageUI(browser_->profile());
+          NSMenuItem* menuItem = base::mac::ObjCCast<NSMenuItem>(item);
+          [menuItem setHidden:shouldHide];
+          break;
+        }
+        case IDC_BOOKMARK_ALL_TABS: {
+          // Extensions have the ability to hide the bookmark all tabs menu
+          // item.  This only affects the bookmark page menu item under the main
+          // menu.  The bookmark page menu item under the wrench menu has its
+          // visibility controlled by WrenchMenuModel.
+          bool shouldHide =
+              chrome::ShouldRemoveBookmarkOpenPagesUI(browser_->profile());
+          NSMenuItem* menuItem = base::mac::ObjCCast<NSMenuItem>(item);
+          [menuItem setHidden:shouldHide];
           break;
         }
         default:
@@ -1105,6 +1216,8 @@ enum {
   if ([sender respondsToSelector:@selector(window)])
     targetController = [[sender window] windowController];
   DCHECK([targetController isKindOfClass:[BrowserWindowController class]]);
+  DCHECK(targetController->browser_.get());
+
   NSInteger command = [sender tag];
   NSUInteger modifierFlags = [[NSApp currentEvent] modifierFlags];
   if ((command == IDC_RELOAD) &&
@@ -1118,24 +1231,10 @@ enum {
     // the background" in this case.
     modifierFlags &= ~NSCommandKeyMask;
   }
-  WindowOpenDisposition disposition =
-      event_utils::WindowOpenDispositionFromNSEventWithFlags(
-          [NSApp currentEvent], modifierFlags);
-  switch (command) {
-    case IDC_BACK:
-    case IDC_FORWARD:
-    case IDC_RELOAD:
-    case IDC_RELOAD_IGNORING_CACHE:
-      if (disposition == CURRENT_TAB) {
-        // Forcibly reset the location bar, since otherwise it won't discard any
-        // ongoing user edits, since it doesn't realize this is a user-initiated
-        // action.
-        [targetController locationBarBridge]->Revert();
-      }
-  }
-  DCHECK(targetController->browser_.get());
-  chrome::ExecuteCommandWithDisposition(targetController->browser_.get(),
-                                        command, disposition);
+  chrome::ExecuteCommandWithDisposition(
+      targetController->browser_.get(), command,
+      ui::WindowOpenDispositionFromNSEventWithFlags(
+          [NSApp currentEvent], modifierFlags));
 }
 
 // Called when another part of the internal codebase needs to execute a
@@ -1152,18 +1251,20 @@ enum {
 // StatusBubble delegate method: tell the status bubble the frame it should
 // position itself in.
 - (NSRect)statusBubbleBaseFrame {
-  NSView* view = [previewableContentsController_ view];
+  NSView* view = [overlayableContentsController_ view];
   return [view convertRect:[view bounds] toView:nil];
 }
 
-- (void)updateToolbarWithContents:(WebContents*)tab
-               shouldRestoreState:(BOOL)shouldRestore {
-  [toolbarController_ updateToolbarWithContents:tab
-                             shouldRestoreState:shouldRestore];
+- (void)updateToolbarWithContents:(WebContents*)tab {
+  [toolbarController_ updateToolbarWithContents:tab];
 }
 
 - (void)setStarredState:(BOOL)isStarred {
   [toolbarController_ setStarredState:isStarred];
+}
+
+- (void)setCurrentPageIsTranslated:(BOOL)on {
+  [toolbarController_ setTranslateIconLit:on];
 }
 
 - (void)zoomChangedForActiveTab:(BOOL)canShowBubble {
@@ -1189,13 +1290,9 @@ enum {
 
 // Accept tabs from a BrowserWindowController with the same Profile.
 - (BOOL)canReceiveFrom:(TabWindowController*)source {
-  if (![source isKindOfClass:[BrowserWindowController class]]) {
-    return NO;
-  }
-
   BrowserWindowController* realSource =
-      static_cast<BrowserWindowController*>(source);
-  if (browser_->profile() != realSource->browser_->profile()) {
+      base::mac::ObjCCast<BrowserWindowController>(source);
+  if (!realSource || browser_->profile() != realSource->browser_->profile()) {
     return NO;
   }
 
@@ -1214,60 +1311,70 @@ enum {
 // placed into this one. The implementation will call |-removePlaceholder| since
 // the drag is now complete.  This also calls |-layoutTabs| internally so
 // clients do not need to call it again.
-- (void)moveTabView:(NSView*)view
-     fromController:(TabWindowController*)dragController {
+- (void)moveTabViews:(NSArray*)views
+      fromController:(TabWindowController*)dragController {
   if (dragController) {
-    // Moving between windows. Figure out the WebContents to drop into our tab
-    // model from the source window's model.
-    BOOL isBrowser =
-        [dragController isKindOfClass:[BrowserWindowController class]];
-    DCHECK(isBrowser);
-    if (!isBrowser) return;
-    BrowserWindowController* dragBWC = (BrowserWindowController*)dragController;
-    int index = [dragBWC->tabStripController_ modelIndexForTabView:view];
-    WebContents* contents =
-        dragBWC->browser_->tab_strip_model()->GetWebContentsAt(index);
-    // The tab contents may have gone away if given a window.close() while it
-    // is being dragged. If so, bail, we've got nothing to drop.
-    if (!contents)
-      return;
+    // Moving between windows.
+    NSView* activeTabView = [dragController activeTabView];
+    BrowserWindowController* dragBWC =
+        base::mac::ObjCCastStrict<BrowserWindowController>(dragController);
 
-    // Convert |view|'s frame (which starts in the source tab strip's coordinate
-    // system) to the coordinate system of the destination tab strip. This needs
-    // to be done before being detached so the window transforms can be
-    // performed.
-    NSRect destinationFrame = [view frame];
-    NSPoint tabOrigin = destinationFrame.origin;
-    tabOrigin = [[dragController tabStripView] convertPoint:tabOrigin
-                                                     toView:nil];
-    tabOrigin = [[view window] convertBaseToScreen:tabOrigin];
-    tabOrigin = [[self window] convertScreenToBase:tabOrigin];
-    tabOrigin = [[self tabStripView] convertPoint:tabOrigin fromView:nil];
-    destinationFrame.origin = tabOrigin;
+    // We will drop the tabs starting at indexOfPlaceholder, and increment from
+    // there. We remove the placehoder before dropping the tabs, so that the
+    // new tab animation's destination frame is correct.
+    int tabIndex = [tabStripController_ indexOfPlaceholder];
+    [self removePlaceholder];
 
-    // Before the tab is detached from its originating tab strip, store the
-    // pinned state so that it can be maintained between the windows.
-    bool isPinned = dragBWC->browser_->tab_strip_model()->IsTabPinned(index);
+    for (NSView* view in views) {
+      // Figure out the WebContents to drop into our tab model from the source
+      // window's model.
+      int index = [dragBWC->tabStripController_ modelIndexForTabView:view];
+      WebContents* contents =
+          dragBWC->browser_->tab_strip_model()->GetWebContentsAt(index);
+      // The tab contents may have gone away if given a window.close() while it
+      // is being dragged. If so, bail, we've got nothing to drop.
+      if (!contents)
+        continue;
 
-    // Now that we have enough information about the tab, we can remove it from
-    // the dragging window. We need to do this *before* we add it to the new
-    // window as this will remove the WebContents' delegate.
-    [dragController detachTabView:view];
+      // Convert |view|'s frame (which starts in the source tab strip's
+      // coordinate system) to the coordinate system of the destination tab
+      // strip. This needs to be done before being detached so the window
+      // transforms can be performed.
+      NSRect destinationFrame = [view frame];
+      NSPoint tabOrigin = destinationFrame.origin;
+      tabOrigin = [[dragController tabStripView] convertPoint:tabOrigin
+                                                       toView:nil];
+      tabOrigin = [[dragController window] convertBaseToScreen:tabOrigin];
+      tabOrigin = [[self window] convertScreenToBase:tabOrigin];
+      tabOrigin = [[self tabStripView] convertPoint:tabOrigin fromView:nil];
+      destinationFrame.origin = tabOrigin;
 
-    // Deposit it into our model at the appropriate location (it already knows
-    // where it should go from tracking the drag). Doing this sets the tab's
-    // delegate to be the Browser.
-    [tabStripController_ dropWebContents:contents
-                               withFrame:destinationFrame
-                             asPinnedTab:isPinned];
+      // Before the tab is detached from its originating tab strip, store the
+      // pinned state so that it can be maintained between the windows.
+      bool isPinned = dragBWC->browser_->tab_strip_model()->IsTabPinned(index);
+
+      // Now that we have enough information about the tab, we can remove it
+      // from the dragging window. We need to do this *before* we add it to the
+      // new window as this will remove the WebContents' delegate.
+      [dragController detachTabView:view];
+
+      // Deposit it into our model at the appropriate location (it already knows
+      // where it should go from tracking the drag). Doing this sets the tab's
+      // delegate to be the Browser.
+      [tabStripController_ dropWebContents:contents
+                                   atIndex:tabIndex++
+                                 withFrame:destinationFrame
+                               asPinnedTab:isPinned
+                                  activate:view == activeTabView];
+    }
   } else {
     // Moving within a window.
-    int index = [tabStripController_ modelIndexForTabView:view];
-    [tabStripController_ moveTabFromIndex:index];
+    for (NSView* view in views) {
+      int index = [tabStripController_ modelIndexForTabView:view];
+      [tabStripController_ moveTabFromIndex:index];
+    }
+    [self removePlaceholder];
   }
-
-  // Remove the placeholder since the drag is now complete.
-  [self removePlaceholder];
 }
 
 // Tells the tab strip to forget about this tab in preparation for it being
@@ -1275,6 +1382,10 @@ enum {
 - (void)detachTabView:(NSView*)view {
   int index = [tabStripController_ modelIndexForTabView:view];
   browser_->tab_strip_model()->DetachWebContentsAt(index);
+}
+
+- (NSArray*)tabViews {
+  return [tabStripController_ tabViews];
 }
 
 - (NSView*)activeTabView {
@@ -1298,55 +1409,52 @@ enum {
   [tabStripController_ layoutTabs];
 }
 
-- (TabWindowController*)detachTabToNewWindow:(TabView*)tabView {
+- (TabWindowController*)detachTabsToNewWindow:(NSArray*)tabViews
+                                   draggedTab:(NSView*)draggedTab {
+  DCHECK_GT([tabViews count], 0U);
+
   // Disable screen updates so that this appears as a single visual change.
   gfx::ScopedNSDisableScreenUpdates disabler;
-
-  // Fetch the tab contents for the tab being dragged.
-  int index = [tabStripController_ modelIndexForTabView:tabView];
-  WebContents* contents = browser_->tab_strip_model()->GetWebContentsAt(index);
 
   // Set the window size. Need to do this before we detach the tab so it's
   // still in the window. We have to flip the coordinates as that's what
   // is expected by the Browser code.
-  NSWindow* sourceWindow = [tabView window];
+  NSWindow* sourceWindow = [draggedTab window];
   NSRect windowRect = [sourceWindow frame];
   NSScreen* screen = [sourceWindow screen];
   windowRect.origin.y = NSHeight([screen frame]) - NSMaxY(windowRect);
   gfx::Rect browserRect(windowRect.origin.x, windowRect.origin.y,
                         NSWidth(windowRect), NSHeight(windowRect));
 
-  NSRect sourceTabRect = [tabView frame];
-  NSView* tabStrip = [self tabStripView];
-
-  // Pushes tabView's frame back inside the tabstrip.
-  NSSize tabOverflow =
-      [self overflowFrom:[tabStrip convertRect:sourceTabRect toView:nil]
-                      to:[tabStrip frame]];
-  NSRect tabRect = NSOffsetRect(sourceTabRect,
-                                -tabOverflow.width, -tabOverflow.height);
-
-  // Before detaching the tab, store the pinned state.
-  bool isPinned = browser_->tab_strip_model()->IsTabPinned(index);
-
-  // Detach it from the source window, which just updates the model without
-  // deleting the tab contents. This needs to come before creating the new
-  // Browser because it clears the WebContents' delegate, which gets hooked
-  // up during creation of the new window.
-  browser_->tab_strip_model()->DetachWebContentsAt(index);
-
-  // Create the new window with a single tab in its model, the one being
-  // dragged.
-  DockInfo dockInfo;
-  TabStripModelDelegate::NewStripContents item;
-  item.web_contents = contents;
-  item.add_types = TabStripModel::ADD_ACTIVE |
-                   (isPinned ? TabStripModel::ADD_PINNED
-                             : TabStripModel::ADD_NONE);
   std::vector<TabStripModelDelegate::NewStripContents> contentses;
-  contentses.push_back(item);
+  TabStripModel* model = browser_->tab_strip_model();
+
+  for (TabView* tabView in tabViews) {
+    // Fetch the tab contents for the tab being dragged.
+    int index = [tabStripController_ modelIndexForTabView:tabView];
+    bool isPinned = model->IsTabPinned(index);
+    bool isActive = (index == model->active_index());
+
+    TabStripModelDelegate::NewStripContents item;
+    item.web_contents = model->GetWebContentsAt(index);
+    item.add_types =
+        (isActive ? TabStripModel::ADD_ACTIVE : TabStripModel::ADD_NONE) |
+        (isPinned ? TabStripModel::ADD_PINNED : TabStripModel::ADD_NONE);
+    contentses.push_back(item);
+  }
+
+  for (TabView* tabView in tabViews) {
+    int index = [tabStripController_ modelIndexForTabView:tabView];
+    // Detach it from the source window, which just updates the model without
+    // deleting the tab contents. This needs to come before creating the new
+    // Browser because it clears the WebContents' delegate, which gets hooked
+    // up during creation of the new window.
+    model->DetachWebContentsAt(index);
+  }
+
+  // Create a new window with the dragged tabs in its model.
   Browser* newBrowser = browser_->tab_strip_model()->delegate()->
-      CreateNewStripWithContents(contentses, browserRect, dockInfo, false);
+      CreateNewStripWithContents(contentses, browserRect, false);
 
   // Get the new controller by asking the new window for its delegate.
   BrowserWindowController* controller =
@@ -1354,11 +1462,27 @@ enum {
           [newBrowser->window()->GetNativeWindow() delegate]);
   DCHECK(controller && [controller isKindOfClass:[TabWindowController class]]);
 
-  // Force the added tab to the right size (remove stretching.)
-  tabRect.size.height = [TabStripController defaultTabHeight];
-
   // And make sure we use the correct frame in the new view.
-  [[controller tabStripController] setFrameOfActiveTab:tabRect];
+  TabStripController* tabStripController = [controller tabStripController];
+  NSView* tabStrip = [self tabStripView];
+  NSEnumerator* tabEnumerator = [tabViews objectEnumerator];
+  for (NSView* newView in [tabStripController tabViews]) {
+    NSView* oldView = [tabEnumerator nextObject];
+    if (oldView) {
+      // Pushes tabView's frame back inside the tabstrip.
+      NSRect sourceTabRect = [oldView frame];
+      NSSize tabOverflow =
+          [self overflowFrom:[tabStrip convertRect:sourceTabRect toView:nil]
+                          to:[tabStrip frame]];
+      NSRect tabRect =
+          NSOffsetRect(sourceTabRect, -tabOverflow.width, -tabOverflow.height);
+      // Force the added tab to the right size (remove stretching.)
+      tabRect.size.height = [TabStripController defaultTabHeight];
+
+      [tabStripController setFrame:tabRect ofTabView:newView];
+    }
+  }
+
   return controller;
 }
 
@@ -1403,10 +1527,8 @@ enum {
 - (BOOL)shouldShowAvatar {
   if (![self hasTabStrip])
     return NO;
-  if (browser_->profile()->IsOffTheRecord() ||
-      ManagedMode::IsInManagedMode()) {
+  if (browser_->profile()->IsOffTheRecord())
     return YES;
-  }
 
   ProfileInfoCache& cache =
       g_browser_process->profile_manager()->GetProfileInfoCache();
@@ -1415,7 +1537,12 @@ enum {
     return NO;
   }
 
-  return AvatarMenuModel::ShouldShowAvatarMenu();
+  return AvatarMenu::ShouldShowAvatarMenu();
+}
+
+- (BOOL)shouldUseNewAvatarButton {
+  return switches::IsNewAvatarMenu() &&
+      profiles::IsRegularOrGuestSession(browser_.get());
 }
 
 - (BOOL)isBookmarkBarVisible {
@@ -1428,6 +1555,10 @@ enum {
 
 - (BookmarkBarController*)bookmarkBarController {
   return bookmarkBarController_;
+}
+
+- (DevToolsController*)devToolsController {
+  return devToolsController_;
 }
 
 - (BOOL)isDownloadShelfVisible {
@@ -1450,26 +1581,8 @@ enum {
 
   // Create a controller for the findbar.
   findBarCocoaController_.reset([findBarCocoaController retain]);
-  NSView* contentView = [[self window] contentView];
-  NSView* relativeView =
-      [self inPresentationMode] ? [toolbarController_ view] :
-                                  [infoBarContainerController_ view];
-  [contentView addSubview:[findBarCocoaController_ view]
-               positioned:NSWindowAbove
-               relativeTo:relativeView];
-
-  // Place the find bar immediately below the toolbar/attached bookmark bar. In
-  // presentation mode, it hangs off the top of the screen when the bar is
-  // hidden.
-  CGFloat maxY = [self placeBookmarkBarBelowInfoBar] ?
-      NSMinY([[toolbarController_ view] frame]) :
-      NSMinY([[bookmarkBarController_ view] frame]);
-  CGFloat maxWidth = NSWidth([contentView frame]);
-  [findBarCocoaController_ positionFindBarViewAtMaxY:maxY maxWidth:maxWidth];
-
-  // This allows the FindBarCocoaController to call |layoutSubviews| and get
-  // its position adjusted.
-  [findBarCocoaController_ setBrowserWindowController:self];
+  [self layoutSubviews];
+  [self updateSubviewZOrder:[self inPresentationMode]];
 }
 
 - (NSWindow*)createFullscreenWindow {
@@ -1479,7 +1592,7 @@ enum {
 
 - (NSInteger)numberOfTabs {
   // count() includes pinned tabs.
-  return browser_->tab_count();
+  return browser_->tab_strip_model()->count();
 }
 
 - (BOOL)hasLiveTabs {
@@ -1487,7 +1600,7 @@ enum {
 }
 
 - (NSString*)activeTabTitle {
-  WebContents* contents = chrome::GetActiveWebContents(browser_.get());
+  WebContents* contents = browser_->tab_strip_model()->GetActiveWebContents();
   return base::SysUTF16ToNSString(contents->GetTitle());
 }
 
@@ -1506,11 +1619,11 @@ enum {
   // tabsheets between windows. Until then, we have to prevent having to move a
   // tabsheet between windows, e.g. no tearing off of tabs.
   int index = [tabStripController_ modelIndexForTabView:tabView];
-  WebContents* contents = chrome::GetWebContentsAt(browser_.get(), index);
+  WebContents* contents = browser_->tab_strip_model()->GetWebContentsAt(index);
   if (!contents)
     return NO;
-  return ConstrainedWindowTabHelper::FromWebContents(contents)->
-      constrained_window_count() == 0;
+  return !WebContentsModalDialogManager::FromWebContents(contents)->
+      IsDialogActive();
 }
 
 // TabStripControllerDelegate protocol.
@@ -1521,12 +1634,7 @@ enum {
   // Update all the UI bits.
   windowShim_->UpdateTitleBar();
 
-  [devToolsController_ updateDevToolsForWebContents:contents
-                                        withProfile:browser_->profile()];
-
   // Update the bookmark bar.
-  // Must do it after devtools updates, otherwise bookmark bar might
-  // call resizeView -> layoutSubviews and cause unnecessary relayout.
   // TODO(viettrungluu): perhaps update to not terminate running animations (if
   // applicable)?
   windowShim_->BookmarkBarStateChanged(
@@ -1534,7 +1642,20 @@ enum {
 
   [infoBarContainerController_ changeWebContents:contents];
 
-  [previewableContentsController_ onActivateTabWithContents:contents];
+  // No need to remove previous bubble. It will close itself.
+  // TODO(leng):  The PermissionBubbleManager for the previous contents should
+  // have SetView(NULL) called.  Fix this when the previous contents are
+  // available here or move to BrowserWindowCocoa::OnActiveTabChanged().
+  // crbug.com/340720
+  PermissionBubbleManager::FromWebContents(contents)->SetView(
+      permissionBubbleCocoa_.get());
+
+  // Must do this after bookmark and infobar updates to avoid
+  // unnecesary resize in contents.
+  [devToolsController_ updateDevToolsForWebContents:contents
+                                        withProfile:browser_->profile()];
+
+  [self updateAllowOverlappingViews:[self inPresentationMode]];
 }
 
 - (void)onTabChanged:(TabStripModelObserver::TabChangeType)change
@@ -1560,9 +1681,8 @@ enum {
 }
 
 - (void)userChangedTheme {
-  // TODO(dmaclach): Instead of redrawing the whole window, views that care
-  // about the active window state should be registering for notifications.
-  [[self window] setViewsNeedDisplay:YES];
+  NSView* contentView = [[self window] contentView];
+  [[contentView superview] cr_recursivelySetNeedsDisplay:YES];
 }
 
 - (ui::ThemeProvider*)themeProvider {
@@ -1582,10 +1702,14 @@ enum {
   return style;
 }
 
-- (NSPoint)themePatternPhase {
+- (NSPoint)themeImagePositionForAlignment:(ThemeImageAlignment)alignment {
   NSView* windowChromeView = [[[self window] contentView] superview];
-  return [BrowserWindowUtils themePatternPhaseFor:windowChromeView
-                                     withTabStrip:[self tabStripView]];
+  NSView* tabStripView = nil;
+  if ([self hasTabStrip])
+    tabStripView = [self tabStripView];
+  return [BrowserWindowUtils themeImagePositionFor:windowChromeView
+                                      withTabStrip:tabStripView
+                                         alignment:alignment];
 }
 
 - (NSPoint)bookmarkBubblePoint {
@@ -1624,24 +1748,6 @@ enum {
   bookmarkBubbleController_ = nil;
 }
 
-// Show the Chrome To Mobile bubble (e.g. user just clicked on the icon).
-- (void)showChromeToMobileBubble {
-  // Do nothing if the bubble is already showing.
-  if (chromeToMobileBubbleController_)
-    return;
-
-  chromeToMobileBubbleController_ =
-      [[ChromeToMobileBubbleController alloc]
-          initWithParentWindow:[self window]
-                       browser:browser_.get()];
-  [chromeToMobileBubbleController_ showWindow:self];
-}
-
-// Nil out the weak Chrome To Mobile bubble controller reference.
-- (void)chromeToMobileBubbleWindowWillClose {
-  chromeToMobileBubbleController_ = nil;
-}
-
 // Handle the editBookmarkNode: action sent from bookmark bubble controllers.
 - (void)editBookmarkNode:(id)sender {
   BOOL responds = [sender respondsToSelector:@selector(node)];
@@ -1655,16 +1761,82 @@ enum {
   }
 }
 
+- (void)showTranslateBubbleForWebContents:(content::WebContents*)contents
+                                     step:(translate::TranslateStep)step
+                                errorType:(TranslateErrors::Type)errorType {
+  // TODO(hajimehoshi): The similar logic exists at TranslateBubbleView::
+  // ShowBubble. This should be unified.
+  if (translateBubbleController_) {
+    // When the user reads the advanced setting panel, the bubble should not be
+    // changed because he/she is focusing on the bubble.
+    if (translateBubbleController_.webContents == contents &&
+        translateBubbleController_.model->GetViewState() ==
+        TranslateBubbleModel::VIEW_STATE_ADVANCED) {
+      return;
+    }
+    if (step != translate::TRANSLATE_STEP_TRANSLATE_ERROR) {
+      TranslateBubbleModel::ViewState viewState =
+          TranslateBubbleModelImpl::TranslateStepToViewState(step);
+      [translateBubbleController_ switchView:viewState];
+    } else {
+      [translateBubbleController_ switchToErrorView:errorType];
+    }
+    return;
+  }
+
+  std::string sourceLanguage;
+  std::string targetLanguage;
+  TranslateTabHelper::GetTranslateLanguages(contents,
+                                            &sourceLanguage, &targetLanguage);
+
+  scoped_ptr<TranslateUIDelegate> uiDelegate(new TranslateUIDelegate(
+      TranslateTabHelper::FromWebContents(contents),
+      TranslateTabHelper::GetManagerFromWebContents(contents),
+      sourceLanguage,
+      targetLanguage));
+  scoped_ptr<TranslateBubbleModel> model(
+      new TranslateBubbleModelImpl(step, uiDelegate.Pass()));
+  translateBubbleController_ = [[TranslateBubbleController alloc]
+                                 initWithParentWindow:self
+                                                model:model.Pass()
+                                          webContents:contents];
+  [translateBubbleController_ showWindow:nil];
+
+  NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
+  [center addObserver:self
+             selector:@selector(translateBubbleWindowWillClose:)
+                 name:NSWindowWillCloseNotification
+               object:[translateBubbleController_ window]];
+}
+
+// Nil out the weak translate bubble controller reference.
+- (void)translateBubbleWindowWillClose:(NSNotification*)notification {
+  DCHECK_EQ([notification object], [translateBubbleController_ window]);
+
+  NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
+  [center removeObserver:self
+                    name:NSWindowWillCloseNotification
+                  object:[translateBubbleController_ window]];
+  translateBubbleController_ = nil;
+}
+
 // If the browser is in incognito mode or has multi-profiles, install the image
 // view to decorate the window at the upper right. Use the same base y
 // coordinate as the tab strip.
 - (void)installAvatar {
   // Install the image into the badge view. Hide it for now; positioning and
-  // sizing will be done by the layout code. The AvatarButton will choose which
-  // image to display based on the browser.
-  avatarButtonController_.reset(
+  // sizing will be done by the layout code. The AvatarIcon will choose which
+  // image to display based on the browser. The AvatarButton will display
+  // the browser profile's name unless the browser is incognito.
+  NSView* view;
+  if ([self shouldUseNewAvatarButton]) {
+    avatarButtonController_.reset(
       [[AvatarButtonController alloc] initWithBrowser:browser_.get()]);
-  NSView* view = [avatarButtonController_ view];
+  } else {
+    avatarButtonController_.reset(
+      [[AvatarIconController alloc] initWithBrowser:browser_.get()]);
+  }
+  view = [avatarButtonController_ view];
   [view setAutoresizingMask:NSViewMinXMargin | NSViewMinYMargin];
   [view setHidden:![self shouldShowAvatar]];
 
@@ -1687,7 +1859,6 @@ enum {
     // TODO(pinkerton): figure out page-up, http://crbug.com/16305
   } else if (deltaY < -0.5) {
     // TODO(pinkerton): figure out page-down, http://crbug.com/16305
-    chrome::ExecuteCommand(browser_.get(), IDC_TABPOSE);
   }
 
   // Ensure the command is valid first (ExecuteCommand() won't do that) and
@@ -1696,42 +1867,7 @@ enum {
     chrome::ExecuteCommandWithDisposition(
         browser_.get(),
         command,
-        event_utils::WindowOpenDispositionFromNSEvent(event));
-  }
-}
-
-// Called repeatedly during a pinch gesture, with incremental change values.
-- (void)magnifyWithEvent:(NSEvent*)event {
-  // The deltaZ difference necessary to trigger a zoom action. Derived from
-  // experimentation to find a value that feels reasonable.
-  const float kZoomStepValue = 0.6;
-
-  // Find the (absolute) thresholds on either side of the current zoom factor,
-  // then convert those to actual numbers to trigger a zoom in or out.
-  // This logic deliberately makes the range around the starting zoom value for
-  // the gesture twice as large as the other ranges (i.e., the notches are at
-  // ..., -3*step, -2*step, -step, step, 2*step, 3*step, ... but not at 0)
-  // so that it's easier to get back to your starting point than it is to
-  // overshoot.
-  float nextStep = (abs(currentZoomStepDelta_) + 1) * kZoomStepValue;
-  float backStep = abs(currentZoomStepDelta_) * kZoomStepValue;
-  float zoomInThreshold = (currentZoomStepDelta_ >= 0) ? nextStep : -backStep;
-  float zoomOutThreshold = (currentZoomStepDelta_ <= 0) ? -nextStep : backStep;
-
-  unsigned int command = 0;
-  totalMagnifyGestureAmount_ += [event magnification];
-  if (totalMagnifyGestureAmount_ > zoomInThreshold) {
-    command = IDC_ZOOM_PLUS;
-  } else if (totalMagnifyGestureAmount_ < zoomOutThreshold) {
-    command = IDC_ZOOM_MINUS;
-  }
-
-  if (command && chrome::IsCommandEnabled(browser_.get(), command)) {
-    currentZoomStepDelta_ += (command == IDC_ZOOM_PLUS) ? 1 : -1;
-    chrome::ExecuteCommandWithDisposition(
-        browser_.get(),
-        command,
-        event_utils::WindowOpenDispositionFromNSEvent(event));
+        ui::WindowOpenDispositionFromNSEvent(event));
   }
 }
 
@@ -1746,7 +1882,8 @@ enum {
   }
 
   // Let the selected RenderWidgetHostView know, so that it can tell plugins.
-  if (WebContents* contents = chrome::GetActiveWebContents(browser_.get())) {
+  if (WebContents* contents =
+          browser_->tab_strip_model()->GetActiveWebContents()) {
     if (RenderWidgetHostView* rwhv = contents->GetRenderWidgetHostView())
       rwhv->WindowFrameChanged();
   }
@@ -1758,25 +1895,20 @@ enum {
   // do this.
   if ([findBarCocoaController_ isFindBarVisible])
     [self layoutSubviews];
-
-  if ([self placeBookmarkBarBelowInfoBar] &&
-      [bookmarkBarController_ shouldShowAtBottomWhenDetached]) {
-    [self layoutBottomBookmarkBarInContentFrame:[[self tabContentArea] frame]];
-  }
 }
 
 // Handle the openLearnMoreAboutCrashLink: action from SadTabController when
 // "Learn more" link in "Aw snap" page (i.e. crash page or sad tab) is
 // clicked. Decoupling the action from its target makes unit testing possible.
 - (void)openLearnMoreAboutCrashLink:(id)sender {
-  if ([sender isKindOfClass:[SadTabController class]]) {
-    SadTabController* sad_tab = static_cast<SadTabController*>(sender);
-    WebContents* web_contents = [sad_tab webContents];
-    if (web_contents) {
+  if (SadTabController* sadTab =
+          base::mac::ObjCCast<SadTabController>(sender)) {
+    WebContents* webContents = [sadTab webContents];
+    if (webContents) {
       OpenURLParams params(
           GURL(chrome::kCrashReasonURL), Referrer(), CURRENT_TAB,
           content::PAGE_TRANSITION_LINK, false);
-      web_contents->OpenURL(params);
+      webContents->OpenURL(params);
     }
   }
 }
@@ -1805,7 +1937,8 @@ enum {
     [self resetWindowGrowthState];
 
   // Let the selected RenderWidgetHostView know, so that it can tell plugins.
-  if (WebContents* contents = chrome::GetActiveWebContents(browser_.get())) {
+  if (WebContents* contents =
+          browser_->tab_strip_model()->GetActiveWebContents()) {
     if (RenderWidgetHostView* rwhv = contents->GetRenderWidgetHostView())
       rwhv->WindowFrameChanged();
   }
@@ -1829,8 +1962,7 @@ enum {
 - (void)bookmarkBar:(BookmarkBarController*)controller
  didChangeFromState:(BookmarkBar::State)oldState
             toState:(BookmarkBar::State)newState {
-  [toolbarController_
-      setDividerOpacity:[bookmarkBarController_ toolbarDividerOpacity]];
+  [toolbarController_ setDividerOpacity:[self toolbarDividerOpacity]];
   [self adjustToolbarAndBookmarkBarForCompression:
           [controller getDesiredToolbarHeightCompression]];
 }
@@ -1839,8 +1971,7 @@ enum {
 - (void)bookmarkBar:(BookmarkBarController*)controller
 willAnimateFromState:(BookmarkBar::State)oldState
             toState:(BookmarkBar::State)newState {
-  [toolbarController_
-      setDividerOpacity:[bookmarkBarController_ toolbarDividerOpacity]];
+  [toolbarController_ setDividerOpacity:[self toolbarDividerOpacity]];
   [self adjustToolbarAndBookmarkBarForCompression:
           [controller getDesiredToolbarHeightCompression]];
 }
@@ -1878,42 +2009,59 @@ willAnimateFromState:(BookmarkBar::State)oldState
   return fullscreenExitBubbleController_.get();
 }
 
-- (void)commitInstant {
-  if (chrome::BrowserInstantController* controller =
-          browser_->instant_controller())
-    controller->instant()->CommitIfPossible(INSTANT_COMMIT_FOCUS_LOST);
+- (NSRect)omniboxPopupAnchorRect {
+  // Start with toolbar rect.
+  NSView* toolbarView = [toolbarController_ view];
+  NSRect anchorRect = [toolbarView frame];
+
+  // Adjust to account for height and possible bookmark bar. Compress by 1
+  // to account for the separator.
+  anchorRect.origin.y =
+      NSMaxY(anchorRect) - [toolbarController_ desiredHeightForCompression:1];
+
+  // Shift to window base coordinates.
+  return [[toolbarView superview] convertRect:anchorRect toView:nil];
 }
 
-- (BOOL)isInstantTabShowing {
-  return previewableContentsController_ &&
-      [previewableContentsController_ isShowingPreview];
-}
-
-- (NSRect)instantFrame {
-  // The view's bounds are in its own coordinate system.  Convert that to the
-  // window base coordinate system, then translate it into the screen's
-  // coordinate system.
-  NSView* view = [previewableContentsController_ view];
-  if (!view)
-    return NSZeroRect;
-
-  NSRect frame = [view convertRect:[view bounds] toView:nil];
-  NSPoint originInScreenCoords =
-      [[view window] convertBaseToScreen:frame.origin];
-  frame.origin = originInScreenCoords;
-
-  // Account for the bookmark bar height if it is currently in the detached
-  // state on the new tab page.
-  if ([bookmarkBarController_ isInState:BookmarkBar::DETACHED])
-    frame.size.height += NSHeight([[bookmarkBarController_ view] bounds]);
-
-  return frame;
+- (void)layoutInfoBars {
+  [self layoutSubviews];
 }
 
 - (void)sheetDidEnd:(NSWindow*)sheet
          returnCode:(NSInteger)code
             context:(void*)context {
   [sheet orderOut:self];
+}
+
+- (void)onFindBarVisibilityChanged {
+  [self updateAllowOverlappingViews:[self inPresentationMode]];
+}
+
+- (void)onOverlappedViewShown {
+  ++overlappedViewCount_;
+  [self updateAllowOverlappingViews:[self inPresentationMode]];
+}
+
+- (void)onOverlappedViewHidden {
+  --overlappedViewCount_;
+  [self updateAllowOverlappingViews:[self inPresentationMode]];
+}
+
+- (void)executeExtensionCommand:(const std::string&)extension_id
+                        command:(const extensions::Command&)command {
+  // Global commands are handled by the ExtensionCommandsGlobalRegistry
+  // instance.
+  DCHECK(!command.global());
+  extension_keybinding_registry_->ExecuteCommand(extension_id,
+                                                 command.accelerator());
+}
+
+- (void)activatePageAction:(const std::string&)extension_id {
+  [toolbarController_ activatePageAction:extension_id];
+}
+
+- (void)activateBrowserAction:(const std::string&)extension_id {
+  [toolbarController_ activateBrowserAction:extension_id];
 }
 
 @end  // @implementation BrowserWindowController
@@ -1926,52 +2074,68 @@ willAnimateFromState:(BookmarkBar::State)oldState
   chrome::ExecuteCommand(browser_.get(), IDC_FULLSCREEN);
 }
 
-// On Lion, this method is called by either the Lion fullscreen button or the
-// "Enter Full Screen" menu item.  On Snow Leopard, this function is never
-// called by the UI directly, but it provides the implementation for
-// |-setPresentationMode:|.
-- (void)setFullscreen:(BOOL)fullscreen
-                  url:(const GURL&)url
-           bubbleType:(FullscreenExitBubbleType)bubbleType {
+// Called to transition into or out of fullscreen mode. Only use System
+// Fullscreen mode if the system supports it and we aren't trying to go
+// fullscreen for the renderer-initiated use cases.
+// Discussion: http://crbug.com/179181 and http:/crbug.com/351252
+- (void)setFullscreen:(BOOL)fullscreen {
   if (fullscreen == [self isFullscreen])
     return;
 
-  if (!chrome::IsCommandEnabled(browser_.get(), IDC_FULLSCREEN))
-    return;
-
-  if (base::mac::IsOSLionOrLater()) {
-    enteredPresentationModeFromFullscreen_ = YES;
-    if ([[self window] isKindOfClass:[FramedBrowserWindow class]])
-      [static_cast<FramedBrowserWindow*>([self window]) toggleSystemFullScreen];
+  if (fullscreen) {
+    const BOOL shouldUseSystemFullscreen =
+        chrome::mac::SupportsSystemFullscreen() && !fullscreenWindow_ &&
+        !browser_->fullscreen_controller()->IsWindowFullscreenForTabOrPending();
+    if (shouldUseSystemFullscreen) {
+      if (FramedBrowserWindow* framedBrowserWindow =
+          base::mac::ObjCCast<FramedBrowserWindow>([self window])) {
+        [framedBrowserWindow toggleSystemFullScreen];
+      }
+    } else {
+      [self enterImmersiveFullscreen];
+    }
   } else {
-    if (fullscreen)
-      [self enterFullscreenForSnowLeopard];
-    else
-      [self exitFullscreenForSnowLeopard];
+    if ([self isInSystemFullscreen]) {
+      if (FramedBrowserWindow* framedBrowserWindow =
+          base::mac::ObjCCast<FramedBrowserWindow>([self window])) {
+        [framedBrowserWindow toggleSystemFullScreen];
+      }
+    } else {
+      DCHECK(fullscreenWindow_.get());
+      [self exitImmersiveFullscreen];
+    }
   }
 }
 
-- (void)enterFullscreenForURL:(const GURL&)url
-                   bubbleType:(FullscreenExitBubbleType)bubbleType {
-  [self setFullscreen:YES url:url bubbleType:bubbleType];
+- (void)enterFullscreen {
+  [self setFullscreen:YES];
 }
 
 - (void)exitFullscreen {
-  // url: and bubbleType: are ignored when leaving fullscreen.
-  [self setFullscreen:NO url:GURL() bubbleType:FEB_TYPE_NONE];
+  [self setFullscreen:NO];
 }
 
 - (void)updateFullscreenExitBubbleURL:(const GURL&)url
                            bubbleType:(FullscreenExitBubbleType)bubbleType {
   fullscreenUrl_ = url;
   fullscreenBubbleType_ = bubbleType;
+  [self layoutSubviews];
   [self showFullscreenExitBubbleIfNecessary];
 }
 
 - (BOOL)isFullscreen {
-  return (fullscreenWindow_.get() != nil) ||
-         ([[self window] styleMask] & NSFullScreenWindowMask) ||
+  return [self isInImmersiveFullscreen] ||
+         [self isInSystemFullscreen] ||
          enteringFullscreen_;
+}
+
+- (BOOL)isInImmersiveFullscreen {
+  return fullscreenWindow_.get() != nil;
+}
+
+- (BOOL)isInSystemFullscreen {
+  return ([[self window] styleMask] & NSFullScreenWindowMask) ==
+      NSFullScreenWindowMask;
 }
 
 // On Lion, this function is called by either the presentation mode toggle
@@ -1986,15 +2150,15 @@ willAnimateFromState:(BookmarkBar::State)oldState
   fullscreenUrl_ = url;
   fullscreenBubbleType_ = bubbleType;
 
-  // Presentation mode on Snow Leopard maps directly to fullscreen mode.
-  if (base::mac::IsOSSnowLeopard()) {
-    [self setFullscreen:presentationMode url:url bubbleType:bubbleType];
+  // Presentation mode on systems without fullscreen support maps directly to
+  // fullscreen mode.
+  if (!chrome::mac::SupportsSystemFullscreen()) {
+    [self setFullscreen:presentationMode];
     return;
   }
 
   if (presentationMode) {
     BOOL fullscreen = [self isFullscreen];
-    enteredPresentationModeFromFullscreen_ = fullscreen;
     enteringPresentationMode_ = YES;
 
     if (fullscreen) {
@@ -2014,17 +2178,21 @@ willAnimateFromState:(BookmarkBar::State)oldState
       [self showFullscreenExitBubbleIfNecessary];
       browser_->WindowFullscreenStateChanged();
     } else {
-      // If not in fullscreen mode, trigger the Lion fullscreen mode machinery.
-      // Presentation mode will automatically be enabled in
-      // |-windowWillEnterFullScreen:|.
-      NSWindow* window = [self window];
-      if ([window isKindOfClass:[FramedBrowserWindow class]])
-        [static_cast<FramedBrowserWindow*>(window) toggleSystemFullScreen];
+      // Need to transition into fullscreen mode.  Presentation mode will
+      // automatically be enabled in |-windowWillEnterFullScreen:|.
+      [self setFullscreen:YES];
     }
   } else {
     // Exiting presentation mode does not exit system fullscreen; it merely
     // switches from presentation mode to normal fullscreen.
     [self setPresentationModeInternal:NO forceDropdown:NO];
+
+    // Since -windowDidExitFullScreen: won't be called in the
+    // presentation mode --> normal fullscreen case, manually show the exit
+    // bubble and notify the change happened with
+    // WindowFullscreenStateChanged().
+    [self showFullscreenExitBubbleIfNecessary];
+    browser_->WindowFullscreenStateChanged();
   }
 }
 
@@ -2036,6 +2204,16 @@ willAnimateFromState:(BookmarkBar::State)oldState
 - (void)exitPresentationMode {
   // url: and bubbleType: are ignored when leaving presentation mode.
   [self setPresentationMode:NO url:GURL() bubbleType:FEB_TYPE_NONE];
+}
+
+- (void)enterFullscreenForURL:(const GURL&)url
+                   bubbleType:(FullscreenExitBubbleType)bubbleType {
+  // This method may only be called in simplified fullscreen mode.
+  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  DCHECK(command_line->HasSwitch(switches::kEnableSimplifiedFullscreen));
+
+  [self enterImmersiveFullscreen];
+  [self updateFullscreenExitBubbleURL:url bubbleType:bubbleType];
 }
 
 - (BOOL)inPresentationMode {
@@ -2100,47 +2278,6 @@ willAnimateFromState:(BookmarkBar::State)oldState
 - (BOOL)floatingBarHasFocus {
   NSResponder* focused = [[self window] firstResponder];
   return [focused isKindOfClass:[AutocompleteTextFieldEditor class]];
-}
-
-- (void)tabposeWillClose:(NSNotification*)notif {
-  // Re-show the container after Tabpose closes.
-  [[infoBarContainerController_ view] setHidden:NO];
-}
-
-- (void)openTabpose {
-  NSUInteger modifierFlags = [[NSApp currentEvent] modifierFlags];
-  BOOL slomo = (modifierFlags & NSShiftKeyMask) != 0;
-
-  // Cover info bars, inspector window, and detached bookmark bar on NTP.
-  // Do not cover download shelf.
-  NSRect activeArea = [[self tabContentArea] frame];
-  // Take out the anti-spoof height so that Tabpose doesn't draw on top of the
-  // browser chrome.
-  activeArea.size.height +=
-      NSHeight([[infoBarContainerController_ view] frame]) -
-          [infoBarContainerController_ overlappingTipHeight];
-  if ([self isBookmarkBarVisible] && [self placeBookmarkBarBelowInfoBar]) {
-    NSView* bookmarkBarView = [bookmarkBarController_ view];
-    activeArea.size.height += NSHeight([bookmarkBarView frame]);
-  }
-
-  // Hide the infobar container so that the anti-spoof bulge doesn't show when
-  // Tabpose is open.
-  [[infoBarContainerController_ view] setHidden:YES];
-
-  TabposeWindow* window =
-      [TabposeWindow openTabposeFor:[self window]
-                               rect:activeArea
-                              slomo:slomo
-                      tabStripModel:browser_->tab_strip_model()];
-
-  // When the Tabpose window closes, the infobar container needs to be made
-  // visible again.
-  NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
-  [center addObserver:self
-             selector:@selector(tabposeWillClose:)
-                 name:NSWindowWillCloseNotification
-               object:window];
 }
 
 @end  // @implementation BrowserWindowController(Fullscreen)

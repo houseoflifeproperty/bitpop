@@ -4,11 +4,11 @@
 
 #include "net/http/http_auth_handler_negotiate.h"
 
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
-#include "net/base/mock_host_resolver.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
+#include "net/dns/mock_host_resolver.h"
 #include "net/http/http_request_info.h"
 #include "net/http/mock_allow_url_security_manager.h"
 #if defined(OS_WIN)
@@ -226,9 +226,9 @@ TEST_F(HttpAuthHandlerNegotiateTest, DisableCname) {
   EXPECT_EQ(OK, auth_handler->GenerateAuthToken(NULL, &request_info,
                                                 callback.callback(), &token));
 #if defined(OS_WIN)
-  EXPECT_EQ(L"HTTP/alias", auth_handler->spn());
+  EXPECT_EQ("HTTP/alias", auth_handler->spn());
 #elif defined(OS_POSIX)
-  EXPECT_EQ(L"HTTP@alias", auth_handler->spn());
+  EXPECT_EQ("HTTP@alias", auth_handler->spn());
 #endif
 }
 
@@ -244,9 +244,9 @@ TEST_F(HttpAuthHandlerNegotiateTest, DisableCnameStandardPort) {
   EXPECT_EQ(OK, auth_handler->GenerateAuthToken(NULL, &request_info,
                                                 callback.callback(), &token));
 #if defined(OS_WIN)
-  EXPECT_EQ(L"HTTP/alias", auth_handler->spn());
+  EXPECT_EQ("HTTP/alias", auth_handler->spn());
 #elif defined(OS_POSIX)
-  EXPECT_EQ(L"HTTP@alias", auth_handler->spn());
+  EXPECT_EQ("HTTP@alias", auth_handler->spn());
 #endif
 }
 
@@ -262,9 +262,9 @@ TEST_F(HttpAuthHandlerNegotiateTest, DisableCnameNonstandardPort) {
   EXPECT_EQ(OK, auth_handler->GenerateAuthToken(NULL, &request_info,
                                                 callback.callback(), &token));
 #if defined(OS_WIN)
-  EXPECT_EQ(L"HTTP/alias:500", auth_handler->spn());
+  EXPECT_EQ("HTTP/alias:500", auth_handler->spn());
 #elif defined(OS_POSIX)
-  EXPECT_EQ(L"HTTP@alias:500", auth_handler->spn());
+  EXPECT_EQ("HTTP@alias:500", auth_handler->spn());
 #endif
 }
 
@@ -280,9 +280,9 @@ TEST_F(HttpAuthHandlerNegotiateTest, CnameSync) {
   EXPECT_EQ(OK, auth_handler->GenerateAuthToken(NULL, &request_info,
                                                 callback.callback(), &token));
 #if defined(OS_WIN)
-  EXPECT_EQ(L"HTTP/canonical.example.com", auth_handler->spn());
+  EXPECT_EQ("HTTP/canonical.example.com", auth_handler->spn());
 #elif defined(OS_POSIX)
-  EXPECT_EQ(L"HTTP@canonical.example.com", auth_handler->spn());
+  EXPECT_EQ("HTTP@canonical.example.com", auth_handler->spn());
 #endif
 }
 
@@ -299,9 +299,9 @@ TEST_F(HttpAuthHandlerNegotiateTest, CnameAsync) {
       NULL, &request_info, callback.callback(), &token));
   EXPECT_EQ(OK, callback.WaitForResult());
 #if defined(OS_WIN)
-  EXPECT_EQ(L"HTTP/canonical.example.com", auth_handler->spn());
+  EXPECT_EQ("HTTP/canonical.example.com", auth_handler->spn());
 #elif defined(OS_POSIX)
-  EXPECT_EQ(L"HTTP@canonical.example.com", auth_handler->spn());
+  EXPECT_EQ("HTTP@canonical.example.com", auth_handler->spn());
 #endif
 }
 

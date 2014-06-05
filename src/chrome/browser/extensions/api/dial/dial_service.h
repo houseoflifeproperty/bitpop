@@ -8,11 +8,12 @@
 #include <string>
 
 #include "base/gtest_prod_util.h"
-#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
+#include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/threading/thread_checker.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "net/base/net_log.h"
 #include "net/udp/udp_socket.h"
 
@@ -52,8 +53,13 @@ class DialDeviceData;
 //
 // TODO(mfoltz): Port this into net/.
 // See https://code.google.com/p/chromium/issues/detail?id=164473
-class DialService : public base::RefCountedThreadSafe<DialService> {
+class DialService {
  public:
+  enum DialServiceErrorCode {
+    DIAL_SERVICE_NO_INTERFACES = 0,
+    DIAL_SERVICE_SOCKET_ERROR
+  };
+
   class Observer {
    public:
     // Called when a single discovery request was sent.
@@ -67,11 +73,14 @@ class DialService : public base::RefCountedThreadSafe<DialService> {
     virtual void OnDiscoveryFinished(DialService* service) = 0;
 
     // Called when an error occurs.
-    virtual void OnError(DialService* service, const std::string& msg) = 0;
+    virtual void OnError(DialService* service,
+                         const DialServiceErrorCode& code) = 0;
 
    protected:
     virtual ~Observer() {}
   };
+
+  virtual ~DialService() {}
 
   // Starts a new round of discovery.  Returns |true| if discovery was started
   // successfully or there is already one active. Returns |false| on error.
@@ -81,17 +90,19 @@ class DialService : public base::RefCountedThreadSafe<DialService> {
   virtual void AddObserver(Observer* observer) = 0;
   virtual void RemoveObserver(Observer* observer) = 0;
   virtual bool HasObserver(Observer* observer) = 0;
-
- protected:
-  virtual ~DialService() {}
-
- private:
-  friend class base::RefCountedThreadSafe<DialService>;
 };
 
-class DialServiceImpl : public DialService {
+// Implements DialService.
+//
+// NOTE(mfoltz): It would make this class cleaner to refactor most of the state
+// associated with a single discovery cycle into its own |DiscoveryOperation|
+// object.  This would also simplify lifetime of the object w.r.t. DialRegistry;
+// the Registry would not need to create/destroy the Service on demand.
+class DialServiceImpl : public DialService,
+                        public base::SupportsWeakPtr<DialServiceImpl> {
  public:
   explicit DialServiceImpl(net::NetLog* net_log);
+  virtual ~DialServiceImpl();
 
   // DialService implementation
   virtual bool Discover() OVERRIDE;
@@ -100,60 +111,140 @@ class DialServiceImpl : public DialService {
   virtual bool HasObserver(Observer* observer) OVERRIDE;
 
  private:
-  virtual ~DialServiceImpl();
+  // Represents a socket binding to a single network interface.
+  class DialSocket {
+   public:
+    // TODO(imcheng): Consider writing a DialSocket::Delegate interface that
+    // declares methods for these callbacks, and taking a ptr to the delegate
+    // here.
+    DialSocket(
+        const base::Closure& discovery_request_cb,
+        const base::Callback<void(const DialDeviceData&)>& device_discovered_cb,
+        const base::Closure& on_error_cb);
+    ~DialSocket();
 
-  // Starts the flow to construct and send a discovery request.
-  void StartRequest();
+    // Creates a socket using |net_log| and |net_log_source| and binds it to
+    // |bind_ip_address|.
+    bool CreateAndBindSocket(const net::IPAddressNumber& bind_ip_address,
+                             net::NetLog* net_log,
+                             net::NetLog::Source net_log_source);
 
-  // Establishes the UDP socket that is used for requests and responses, then
-  // sends a discovery request on the bound socket.  Returns |true| if
-  // successful.
-  bool BindAndWriteSocket(const net::NetworkInterface& bind_interface);
+    // Sends a single discovery request |send_buffer| to |send_address|
+    // over the socket.
+    void SendOneRequest(const net::IPEndPoint& send_address,
+                        const scoped_refptr<net::StringIOBuffer>& send_buffer);
 
-  // Callback invoked for socket writes.
-  void OnSocketWrite(int result);
+    // Returns true if the socket is closed.
+    bool IsClosed();
 
-  // Method to get the network list on the FILE thread.
-  void DoGetNetworkList();
+   private:
+    // Checks the result of a socket operation.  The name of the socket
+    // operation is given by |operation| and the result of the operation is
+    // given by |result|. If the result is an error, closes the socket,
+    // calls |on_error_cb_|, and returns |false|.  Returns
+    // |true| otherwise. |operation| and |result| are logged.
+    bool CheckResult(const char* operation, int result);
 
-  // Send the network list to IO thread.
+    // Closes the socket.
+    void Close();
+
+    // Callback invoked for socket writes.
+    void OnSocketWrite(int buffer_size, int result);
+
+    // Establishes the callback to read from the socket.  Returns true if
+    // successful.
+    bool ReadSocket();
+
+    // Callback invoked for socket reads.
+    void OnSocketRead(int result);
+
+    // Callback invoked for socket reads.
+    void HandleResponse(int bytes_read);
+
+    // Parses a response into a DialDeviceData object. If the DIAL response is
+    // invalid or does not contain enough information, then the return
+    // value will be false and |device| is not changed.
+    static bool ParseResponse(const std::string& response,
+                              const base::Time& response_time,
+                              DialDeviceData* device);
+
+    // The UDP socket.
+    scoped_ptr<net::UDPSocket> socket_;
+
+    // Buffer for socket reads.
+    scoped_refptr<net::IOBufferWithSize> recv_buffer_;
+
+    // The source of of the last socket read.
+    net::IPEndPoint recv_address_;
+
+    // Thread checker.
+    base::ThreadChecker thread_checker_;
+
+    // The callback to be invoked when a discovery request was made.
+    base::Closure discovery_request_cb_;
+
+    // The callback to be invoked when a device has been discovered.
+    base::Callback<void(const DialDeviceData&)> device_discovered_cb_;
+
+    // The callback to be invoked when there is an error with socket operations.
+    base::Closure on_error_cb_;
+
+    // Marks whether there is an active write callback.
+    bool is_writing_;
+
+    // Marks whether there is an active read callback.
+    bool is_reading_;
+
+    FRIEND_TEST_ALL_PREFIXES(DialServiceTest, TestNotifyOnError);
+    FRIEND_TEST_ALL_PREFIXES(DialServiceTest, TestOnDeviceDiscovered);
+    FRIEND_TEST_ALL_PREFIXES(DialServiceTest, TestOnDiscoveryRequest);
+    FRIEND_TEST_ALL_PREFIXES(DialServiceTest, TestResponseParsing);
+    DISALLOW_COPY_AND_ASSIGN(DialSocket);
+  };
+
+  // Starts the control flow for one discovery cycle.
+  void StartDiscovery();
+
+  // For each network interface in |list|, finds all unqiue IPv4 network
+  // interfaces and call |DiscoverOnAddresses()| with their IP addresses.
   void SendNetworkList(const net::NetworkInterfaceList& list);
 
-  // Establishes the callback to read from the socket.  Returns true if
-  // successful.
-  bool ReadSocket();
+  // Calls |BindAndAddSocket()| for each address in |ip_addresses|, calls
+  // |SendOneRequest()|, and start the timer to finish discovery if needed.
+  // The (Address family, interface index) of each address in |ip_addresses|
+  // must be unique. If |ip_address| is empty, calls |FinishDiscovery()|.
+  void DiscoverOnAddresses(
+      const std::vector<net::IPAddressNumber>& ip_addresses);
 
-  // Callback invoked for socket reads.
-  void OnSocketRead(int result);
+  // Creates a DialSocket, binds it to |bind_ip_address| and if
+  // successful, add the DialSocket to |dial_sockets_|.
+  void BindAndAddSocket(const net::IPAddressNumber& bind_ip_address);
 
-  // Handles |bytes_read| bytes read from the socket and calls ReadSocket to
-  // await the next response.
-  void HandleResponse(int bytes_read);
+  // Creates a DialSocket with callbacks to this object.
+  scoped_ptr<DialSocket> CreateDialSocket();
 
-  // Parses a response into a DialDeviceData object. If the DIAL response is
-  // invalid or does not contain enough information, then the return
-  // value will be false and |device| is not changed.
-  static bool ParseResponse(const std::string& response,
-                            const base::Time& response_time,
-                            DialDeviceData* device);
+  // Sends a single discovery request to every socket that are currently open.
+  void SendOneRequest();
+
+  // Notify observers that a discovery request was made.
+  void NotifyOnDiscoveryRequest();
+
+  // Notify observers a device has been discovered.
+  void NotifyOnDeviceDiscovered(const DialDeviceData& device_data);
+
+  // Notify observers that there has been an error with one of the DialSockets.
+  void NotifyOnError();
 
   // Called from finish_timer_ when we are done with the current round of
   // discovery.
   void FinishDiscovery();
 
-  // Closes the socket.
-  void CloseSocket();
+  // Returns |true| if there are open sockets.
+  bool HasOpenSockets();
 
-  // Checks the result of a socket operation.  If the result is an error, closes
-  // the socket, notifies observers via OnError(), and returns |false|.  Returns
-  // |true| otherwise.
-  bool CheckResult(const char* operation, int result);
-
-  // The UDP socket.
-  scoped_ptr<net::UDPSocket> socket_;
-
-  // The multicast address:port for search requests.
-  net::IPEndPoint send_address_;
+  // DialSockets for each network interface whose ip address was
+  // successfully bound.
+  ScopedVector<DialSocket> dial_sockets_;
 
   // The NetLog for this service.
   net::NetLog* net_log_;
@@ -161,20 +252,11 @@ class DialServiceImpl : public DialService {
   // The NetLog source for this service.
   net::NetLog::Source net_log_source_;
 
+  // The multicast address:port for search requests.
+  net::IPEndPoint send_address_;
+
   // Buffer for socket writes.
   scoped_refptr<net::StringIOBuffer> send_buffer_;
-
-  // Marks whether there is an active write callback.
-  bool is_writing_;
-
-  // Buffer for socket reads.
-  scoped_refptr<net::IOBufferWithSize> recv_buffer_;
-
-  // The source of of the last socket read.
-  net::IPEndPoint recv_address_;
-
-  // Marks whether there is an active read callback.
-  bool is_reading_;
 
   // True when we are currently doing discovery.
   bool discovery_active_;
@@ -182,11 +264,22 @@ class DialServiceImpl : public DialService {
   // The number of requests that have been sent in the current discovery.
   int num_requests_sent_;
 
+  // The maximum number of requests to send per discovery cycle.
+  int max_requests_;
+
   // Timer for finishing discovery.
   base::OneShotTimer<DialServiceImpl> finish_timer_;
 
   // The delay for |finish_timer_|; how long to wait for discovery to finish.
+  // Setting this to zero disables the timer.
   base::TimeDelta finish_delay_;
+
+  // Timer for sending multiple requests at fixed intervals.
+  base::RepeatingTimer<DialServiceImpl> request_timer_;
+
+  // The delay for |request_timer_|; how long to wait between successive
+  // requests.
+  base::TimeDelta request_interval_;
 
   // List of observers.
   ObserverList<Observer> observer_list_;
@@ -194,6 +287,10 @@ class DialServiceImpl : public DialService {
   // Thread checker.
   base::ThreadChecker thread_checker_;
 
+  friend class DialServiceTest;
+  FRIEND_TEST_ALL_PREFIXES(DialServiceTest, TestSendMultipleRequests);
+  FRIEND_TEST_ALL_PREFIXES(DialServiceTest, TestMultipleNetworkInterfaces);
+  FRIEND_TEST_ALL_PREFIXES(DialServiceTest, TestNotifyOnError);
   FRIEND_TEST_ALL_PREFIXES(DialServiceTest, TestOnDeviceDiscovered);
   FRIEND_TEST_ALL_PREFIXES(DialServiceTest, TestOnDiscoveryFinished);
   FRIEND_TEST_ALL_PREFIXES(DialServiceTest, TestOnDiscoveryRequest);

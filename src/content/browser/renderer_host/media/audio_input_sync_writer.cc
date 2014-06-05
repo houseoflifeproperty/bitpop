@@ -6,13 +6,24 @@
 
 #include <algorithm>
 
-#include "base/process_util.h"
-#include "base/shared_memory.h"
+#include "base/memory/shared_memory.h"
+#include "content/browser/renderer_host/media/media_stream_manager.h"
+
+static const uint32 kLogDelayThreadholdMs = 500;
 
 namespace content {
 
-AudioInputSyncWriter::AudioInputSyncWriter(base::SharedMemory* shared_memory)
-    : shared_memory_(shared_memory) {
+AudioInputSyncWriter::AudioInputSyncWriter(
+    base::SharedMemory* shared_memory,
+    int shared_memory_segment_count)
+    : shared_memory_(shared_memory),
+      shared_memory_segment_count_(shared_memory_segment_count),
+      current_segment_id_(0),
+      creation_time_(base::Time::Now()) {
+  DCHECK_GT(shared_memory_segment_count, 0);
+  DCHECK_EQ(shared_memory->requested_size() % shared_memory_segment_count, 0u);
+  shared_memory_segment_size_ =
+      shared_memory->requested_size() / shared_memory_segment_count;
 }
 
 AudioInputSyncWriter::~AudioInputSyncWriter() {}
@@ -22,13 +33,39 @@ void AudioInputSyncWriter::UpdateRecordedBytes(uint32 bytes) {
   socket_->Send(&bytes, sizeof(bytes));
 }
 
-uint32 AudioInputSyncWriter::Write(const void* data, uint32 size,
-                                   double volume) {
+uint32 AudioInputSyncWriter::Write(const void* data,
+                                   uint32 size,
+                                   double volume,
+                                   bool key_pressed) {
+  std::ostringstream oss;
+  if (last_write_time_.is_null()) {
+    // This is the first time Write is called.
+    base::TimeDelta interval = base::Time::Now() - creation_time_;
+    oss << "Audio input data received for the first time: delay = "
+        << interval.InMilliseconds() << "ms.";
+  } else {
+    base::TimeDelta interval = base::Time::Now() - last_write_time_;
+    if (interval.InMilliseconds() > kLogDelayThreadholdMs) {
+      oss << "Audio input data delay unexpectedly long: delay = "
+         << interval.InMilliseconds() << "ms.";
+    }
+  }
+  if (!oss.str().empty())
+    MediaStreamManager::SendMessageToNativeLog(oss.str());
+
+  last_write_time_ = base::Time::Now();
+
+  uint8* ptr = static_cast<uint8*>(shared_memory_->memory());
+  ptr += current_segment_id_ * shared_memory_segment_size_;
   media::AudioInputBuffer* buffer =
-      reinterpret_cast<media::AudioInputBuffer*>(shared_memory_->memory());
+      reinterpret_cast<media::AudioInputBuffer*>(ptr);
   buffer->params.volume = volume;
   buffer->params.size = size;
+  buffer->params.key_pressed = key_pressed;
   memcpy(buffer->audio, data, size);
+
+  if (++current_segment_id_ >= shared_memory_segment_count_)
+    current_segment_id_ = 0;
 
   return size;
 }

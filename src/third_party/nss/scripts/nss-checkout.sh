@@ -3,62 +3,64 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# This shell script checks out the NSS source tree from CVS and prepares
+# This shell script checks out the NSS source tree from hg and prepares
 # it for Chromium.
 
 # Make the script exit as soon as something fails.
 set -ex
 
-rm -rf mozilla/security/nss/lib
-cvs -q -d :pserver:anonymous@cvs-mirror.mozilla.org:/cvsroot export \
-    -r NSS_3_14_1_RC0 mozilla/security/nss/lib
+# We only need the nss/lib directory, but hg requires us to check out the
+# complete nss source tree.
+rm -rf nss
+hg clone -u NSS_3_16_RTM https://hg.mozilla.org/projects/nss
 
 # Rename one of the utf8.c files to avoid name conflict.
-mv mozilla/security/nss/lib/base/utf8.c mozilla/security/nss/lib/base/nssutf8.c
+mv nss/lib/base/utf8.c nss/lib/base/nssutf8.c
 
-rm -r mozilla/security/nss/lib/ckfw/capi
-rm -r mozilla/security/nss/lib/ckfw/dbm
-rm -r mozilla/security/nss/lib/ckfw/nssmkey
-rm -r mozilla/security/nss/lib/crmf
-rm -r mozilla/security/nss/lib/freebl/ecl/tests
-rm -r mozilla/security/nss/lib/freebl/mpi/doc
-rm -r mozilla/security/nss/lib/freebl/mpi/tests
-rm -r mozilla/security/nss/lib/freebl/mpi/utils
-rm -r mozilla/security/nss/lib/jar
-rm -r mozilla/security/nss/lib/pkcs12
-rm -r mozilla/security/nss/lib/pki/doc
-rm -r mozilla/security/nss/lib/softoken/legacydb
-rm -r mozilla/security/nss/lib/sqlite
-rm -r mozilla/security/nss/lib/sysinit
-rm -r mozilla/security/nss/lib/zlib
+rm -r nss/lib/ckfw/capi
+rm -r nss/lib/ckfw/dbm
+rm -r nss/lib/ckfw/nssmkey
+rm -r nss/lib/crmf
+rm -r nss/lib/dbm
+rm -r nss/lib/freebl/ecl/tests
+rm -r nss/lib/freebl/mpi/doc
+rm -r nss/lib/freebl/mpi/tests
+rm -r nss/lib/freebl/mpi/utils
+rm -r nss/lib/jar
+rm -r nss/lib/pkcs12
+rm -r nss/lib/pki/doc
+rm -r nss/lib/softoken/legacydb
+rm -r nss/lib/sqlite
+rm -r nss/lib/sysinit
+rm -r nss/lib/zlib
 
-find mozilla/security/nss/lib -name .cvsignore -print | xargs rm
-find mozilla/security/nss/lib -name README -print | xargs rm
+find nss/lib -name .cvsignore -print | xargs rm
+find nss/lib -name README -print | xargs rm
 
 # Remove the build system.
-find mozilla/security/nss/lib -name Makefile -print | xargs rm
-find mozilla/security/nss/lib -name manifest.mn -print | xargs rm
-find mozilla/security/nss/lib -name "*.mk" -print | xargs rm
+find nss/lib -name Makefile -print | xargs rm
+find nss/lib -name manifest.mn -print | xargs rm
+find nss/lib -name "*.mk" -print | xargs rm
 
 # Remove files for building shared libraries/DLLs.
-find mozilla/security/nss/lib -name "*.def" -print | xargs rm
-find mozilla/security/nss/lib -name "*.rc" -print | xargs rm
+find nss/lib -name "*.def" -print | xargs rm
+find nss/lib -name "*.rc" -print | xargs rm
 
 # Remove obsolete files or files we don't need.
-rm mozilla/security/nss/lib/ckfw/builtins/certdata.perl
-rm mozilla/security/nss/lib/ckfw/builtins/certdata.txt
-rm mozilla/security/nss/lib/ckfw/ck.api
-rm mozilla/security/nss/lib/ckfw/ckapi.perl
-rm mozilla/security/nss/lib/libpkix/pkix/params/pkix_buildparams.c
-rm mozilla/security/nss/lib/libpkix/pkix/params/pkix_buildparams.h
-rm mozilla/security/nss/lib/util/secload.c
-rm mozilla/security/nss/lib/util/secplcy.c
-rm mozilla/security/nss/lib/util/secplcy.h
-rm mozilla/security/nss/lib/smime/*.c
+rm nss/lib/ckfw/builtins/certdata.perl
+rm nss/lib/ckfw/builtins/certdata.txt
+rm nss/lib/ckfw/ck.api
+rm nss/lib/ckfw/ckapi.perl
+rm nss/lib/libpkix/pkix/params/pkix_buildparams.c
+rm nss/lib/libpkix/pkix/params/pkix_buildparams.h
+rm nss/lib/util/secload.c
+rm nss/lib/util/secplcy.c
+rm nss/lib/util/secplcy.h
+rm nss/lib/smime/*.c
 
-find mozilla/security/nss/lib/ssl -type f ! -name sslerr.h | xargs rm
+find nss/lib/ssl -type f ! -name sslerr.h | xargs rm
 
-find mozilla/security/nss/lib/freebl -type f \
+find nss/lib/freebl -type f \
     ! -name aeskeywrap.c ! -name alg2268.c ! -name alghmac.c \
     ! -name alghmac.h ! -name arcfive.c ! -name arcfour.c \
     ! -name blapi.h ! -name blapii.h ! -name blapit.h \
@@ -70,19 +72,21 @@ find mozilla/security/nss/lib/freebl -type f \
     ! -name ecl-exp.h ! -name ecl-priv.h ! -name ecl.c \
     ! -name ecl.c ! -name ecl.h ! -name ecl_curve.c \
     ! -name ecl_gf.c ! -name ecl_mult.c ! -name ecp.h \
+    ! -name ecp_256.c ! -name ecp_256_32.c \
+    ! -name ecp_384.c ! -name ecp_521.c \
     ! -name ecp_aff.c ! -name ecp_jac.c ! -name ecp_jm.c \
     ! -name ecp_mont.c ! -name ec_naf.c ! -name gcm.c ! -name gcm.h \
-    ! -name jpake.c ! -name md2.c ! -name md5.c ! -name logtab.h \
-    ! -name mpcpucache.c \
+    ! -name hmacct.c ! -name hmacct.h ! -name jpake.c ! -name md2.c \
+    ! -name md5.c ! -name logtab.h ! -name mpcpucache.c \
     ! -name mpi-config.h \
     ! -name mpi-priv.h ! -name mpi.c ! -name mpi.h \
-    ! -name mpi_amd64.c ! -name mpi_x86_asm.c ! -name mplogic.c \
-    ! -name mplogic.h ! -name mpmontg.c ! -name mpprime.c \
-    ! -name mpprime.h \
+    ! -name mpi_amd64.c ! -name mpi_arm.c ! -name mpi_x86_asm.c \
+    ! -name mplogic.c ! -name mplogic.h ! -name mpmontg.c \
+    ! -name mpprime.c ! -name mpprime.h \
     ! -name mp_gf2m-priv.h ! -name mp_gf2m.c ! -name mp_gf2m.h \
     ! -name primes.c ! -name pqg.c ! -name pqg.h ! -name rawhash.c \
     ! -name rijndael.c ! -name rijndael.h ! -name rijndael32.tab \
-    ! -name rsa.c ! -name secmpi.h \
+    ! -name rsa.c ! -name rsapkcs.c ! -name secmpi.h \
     ! -name secrng.h ! -name seed.c ! -name seed.h \
     ! -name sha256.h ! -name sha512.c ! -name sha_fast.c \
     ! -name sha_fast.h ! -name shsign.h ! -name shvfy.c \

@@ -7,6 +7,8 @@
 
 #include <winsock2.h>
 
+#include "net/base/net_export.h"
+
 namespace net {
 
 // Assert that the (manual-reset) event object is not signaled.

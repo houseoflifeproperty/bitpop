@@ -12,7 +12,7 @@
 // Special thread is created in the process to periodically flushes logs for all
 // threads for the case the thread has stopped before flushing its logs.
 //
-// Use this profiler with linux_use_tcmalloc=0.
+// Use this profiler with use_allocator!="none".
 //
 // Note for the ChromeOS Chrome. Remove renderer process from the sandbox (add
 // --no-sandbox option to running Chrome in /sbin/session_manager_setup.sh).
@@ -34,7 +34,7 @@
 #include <sys/types.h>
 #include <vector>
 
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/singleton.h"
@@ -105,6 +105,7 @@ class CygTlsLog {
  private:
   static const int kBufMaxSize;
   static const char kLogFilenameFmt[];
+  static const char kLogFileNamePrefix[];
 
   // Flush the log to file. Create file if needed.
   // Must be called with locked log_mutex_.
@@ -163,12 +164,11 @@ CygTlsLog* const kMagicBeingConstructed = reinterpret_cast<CygTlsLog*>(1);
 // Note, that we also flush by timer so not all thread logs may grow up to this.
 const int CygTlsLog::kBufMaxSize = 3000;
 
-
 #if defined(OS_ANDROID)
-const char CytTlsLog::kLogFileNamePrefix =
-"/data/local/tmp/chrome/cyglog/";
+const char CygTlsLog::kLogFileNamePrefix[] =
+    "/data/local/tmp/chrome/cyglog/";
 #else
-const char CytTlsLog::kLogFileNamePrefix = "/var/log/chrome/";
+const char CygTlsLog::kLogFileNamePrefix[] = "/var/log/chrome/";
 #endif
 
 // "cyglog.PID.LWP.pthread_self.PPID"

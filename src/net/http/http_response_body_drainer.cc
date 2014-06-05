@@ -9,11 +9,11 @@
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_network_session.h"
-#include "net/http/http_stream.h"
+#include "net/http/http_stream_base.h"
 
 namespace net {
 
-HttpResponseBodyDrainer::HttpResponseBodyDrainer(HttpStream* stream)
+HttpResponseBodyDrainer::HttpResponseBodyDrainer(HttpStreamBase* stream)
     : read_size_(0),
       stream_(stream),
       next_state_(STATE_NONE),
@@ -87,7 +87,8 @@ int HttpResponseBodyDrainer::DoDrainResponseBody() {
   next_state_ = STATE_DRAIN_RESPONSE_BODY_COMPLETE;
 
   return stream_->ReadResponseBody(
-      read_buf_, read_size_ - total_read_,
+      read_buf_.get(),
+      read_size_ - total_read_,
       base::Bind(&HttpResponseBodyDrainer::OnIOComplete,
                  base::Unretained(this)));
 }

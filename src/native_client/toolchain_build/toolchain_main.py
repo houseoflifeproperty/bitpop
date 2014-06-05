@@ -5,42 +5,43 @@
 
 """Build NativeClient toolchain packages."""
 
-# Done first to setup python module path.
-import toolchain_env
-
 import logging
 import optparse
 import os
 import sys
 import textwrap
 
-import file_tools
-import gsd_storage
-import log_tools
-import once
-import local_storage_cache
-
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+import pynacl.file_tools
+import pynacl.gsd_storage
+import pynacl.log_tools
+import pynacl.local_storage_cache
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 NACL_DIR = os.path.dirname(SCRIPT_DIR)
 ROOT_DIR = os.path.dirname(NACL_DIR)
+BUILD_DIR = os.path.join(NACL_DIR, 'build')
+PKG_VER_DIR = os.path.join(BUILD_DIR, 'package_version')
+sys.path.append(PKG_VER_DIR)
+import archive_info
+import package_info
+
+import once
 
 DEFAULT_CACHE_DIR = os.path.join(SCRIPT_DIR, 'cache')
 DEFAULT_SRC_DIR = os.path.join(SCRIPT_DIR, 'src')
 DEFAULT_OUT_DIR = os.path.join(SCRIPT_DIR, 'out')
 
-
 def PrintFlush(message):
-  """Print to stdout and flush.
+  """Flush stdout and print a message to stderr.
 
-  Windows flushes stdout very intermittently (particularly through the
-  buildbot). Forcing an immediate flush so that buildbot annotator section
-  headings appear at the right place in relation to logging output which goes
-  to stderr.
+  Buildbot annotator messages must be at the beginning of a line, and we want to
+  ensure that any output from the script or from subprocesses appears in the
+  correct order wrt BUILD_STEP messages. So we flush stdout before printing all
+  buildbot messages here.
   """
-  print message
   sys.stdout.flush()
-
+  print >>sys.stderr, message
 
 def PrintAnnotatorURL(url):
   """Print an URL in buildbot annotator form.
@@ -54,89 +55,112 @@ def PrintAnnotatorURL(url):
 class PackageBuilder(object):
   """Module to build a setup of packages."""
 
-  def __init__(self, packages, args):
+  def __init__(self, packages, package_targets, args):
     """Constructor.
 
     Args:
-      packages: A dictionary with the following format:
+      packages: A dictionary with the following format. There are two types of
+                packages: source and build (described below).
         {
           '<package name>': {
-            REPO_SRC_INFO,
-            'commands':
-              [<list of command.Command objects to run>],
+            'type': 'source',
+                # Source packages are for sources; in particular remote sources
+                # where it is not known whether they have changed until they are
+                # synced (it can also or for tarballs which need to be
+                # unpacked). Source package commands are run unconditionally
+                # unless sync is skipped via the command-line option. Source
+                # package contents are not memoized.
             'dependencies':  # optional
               [<list of package depdenencies>],
-            'unpack_commands':  # optional
-              [<list of command.Command objects for unpacking inputs
-                before they are hashed>'],
-            'hashed_inputs':  # optional
-              [<list of paths to use for build signature>],
+            'output_dirname': # optional
+              '<directory name>', # Name of the directory to checkout sources
+              # into (a subdirectory of the global source directory); defaults
+              # to the package name.
+            'commands':
+              [<list of command.Runnable objects to run>],
+            'inputs': # optional
+              {<mapping whose keys are names, and whose values are files or
+                directories (e.g. checked-in tarballs) used as input. Since
+                source targets are unconditional, this is only useful as a
+                convenience for commands, which may refer to the inputs by their
+                key name>},
+           },
+          '<package name>': {
+            'type': 'build',
+                # Build packages are memoized, and will build only if their
+                # inputs have changed. Their inputs consist of the output of
+                # their package dependencies plus any file or directory inputs
+                # given by their 'inputs' member
+            'dependencies':  # optional
+              [<list of package depdenencies>],
+            'inputs': # optional
+              {<mapping whose keys are names, and whose values are files or
+                directories (e.g. checked-in tarballs) used as input>},
+            'output_subdir': # optional
+              '<directory name>', # Name of a subdir to be created in the output
+               # directory, into which all output will be placed. If not present
+               # output will go into the root of the output directory.
+            'commands':
+              [<list of command.Command objects to run>],
+              # Objects that have a 'skip_for_incremental' attribute that
+              # evaluates to True will not be run on incremental builds unless
+              # the working directory is empty.
           },
         }
-        REPO_SRC_INFO is either:
-         'git_url': '<git repo url>',
-         'git_revision': '<git hex digest to sync>',
-        OR:
-         'tar_src': '<root relative path to source tarball>',
+      package_targets: A dictionary with the following format. This is a
+                       description of output package targets the packages are
+                       built for. Each output package should contain a list of
+                       <package_name> referenced in the previous "packages"
+                       dictionary. This list of targets is expected to stay
+                       the same from build to build, so it should include
+                       package names even if they aren't being built. A package
+                       target is usually the platform, such as "$OS_$ARCH",
+                       while the output package is usually the toolchain name,
+                       such as "nacl_arm_newlib".
+        {
+          '<package_target>': {
+            '<output_package>':
+              [<list of package names included in output package>]
+          }
+        }
       args: sys.argv[1:] or equivalent.
     """
     self._packages = packages
+    self._package_targets = package_targets
     self.DecodeArgs(packages, args)
-    self.SetupLogging()
     self._build_once = once.Once(
         use_cached_results=self._options.use_cached_results,
         cache_results=self._options.cache_results,
         print_url=PrintAnnotatorURL,
         storage=self.CreateStorage())
+    self._signature_file = None
+    if self._options.emit_signatures is not None:
+      if self._options.emit_signatures == '-':
+        self._signature_file = sys.stdout
+      else:
+        self._signature_file = open(self._options.emit_signatures, 'w')
 
   def Main(self):
     """Main entry point."""
-    if self._options.clobber:
-      PrintFlush('@@@BUILD_STEP clobber@@@')
-      file_tools.RemoveDirectoryIfPresent(self._options.source)
-      file_tools.RemoveDirectoryIfPresent(self._options.output)
-    self.SyncAll()
+    pynacl.file_tools.MakeDirectoryIfAbsent(self._options.source)
+    pynacl.file_tools.MakeDirectoryIfAbsent(self._options.output)
+    pynacl.log_tools.SetupLogging(self._options.verbose,
+                                  open(os.path.join(self._options.output,
+                                                   'toolchain_build.log'), 'w'))
     self.BuildAll()
+    self.OutputPackagesInformation()
 
-  def SetupLogging(self):
-    """Setup python logging based on options."""
-    if self._options.verbose:
-      logging.getLogger().setLevel(logging.DEBUG)
+  def GetOutputDir(self, package, use_subdir):
+    # The output dir of source packages is in the source directory, and can be
+    # overridden.
+    if self._packages[package]['type'] == 'source':
+      dirname = self._packages[package].get('output_dirname', package)
+      return os.path.join(self._options.source, dirname)
     else:
-      logging.getLogger().setLevel(logging.INFO)
-    logging.basicConfig(format='%(levelname)s: %(message)s')
-
-  def SyncGitRepo(self, package):
-    """Sync the git repo for a package.
-
-    Args:
-      package: Package name to sync.
-    """
-    PrintFlush('@@@BUILD_STEP sync %s@@@' % package)
-    package_info = self._packages[package]
-    url = package_info['git_url']
-    revision = package_info['git_revision']
-    destination = os.path.join(self._options.source, package)
-    logging.info('Syncing %s...' % package)
-    if self._options.reclone:
-      file_tools.RemoveDirectoryIfPresent(destination)
-    if sys.platform == 'win32':
-      # On windows, we want to use the depot_tools version of git, which has
-      # git.bat as an entry point. When running through the msys command
-      # prompt, subprocess does not handle batch files. Explicitly invoking
-      # cmd.exe to be sure we run the correct git in this case.
-      git = ['cmd.exe', '/c', 'git.bat']
-    else:
-      git = ['git']
-    if not os.path.exists(destination):
-      logging.info('Cloning %s...' % package)
-      log_tools.CheckCall(git + ['clone', '-n', url, destination])
-    if self._options.pinned:
-      logging.info('Checking out pinned revision...')
-      log_tools.CheckCall(git + ['fetch', '--all'], cwd=destination)
-      log_tools.CheckCall(git + ['checkout', '-f', revision], cwd=destination)
-      log_tools.CheckCall(git + ['clean', '-dffx'], cwd=destination)
-    logging.info('Done syncing %s.' % package)
+       root = os.path.join(self._options.output, package + '_install')
+       if use_subdir and 'output_subdir' in self._packages[package]:
+         return os.path.join(root, self._packages[package]['output_subdir'])
+       return root
 
   def BuildPackage(self, package):
     """Build a single package.
@@ -145,42 +169,85 @@ class PackageBuilder(object):
     Args:
       package: Package to build.
     """
-    PrintFlush('@@@BUILD_STEP build %s@@@' % package)
+
     package_info = self._packages[package]
+
+    # Validate the package description.
+    if 'type' not in package_info:
+      raise Exception('package %s does not have a type' % package)
+    type_text = package_info['type']
+    if type_text not in ('source', 'build'):
+      raise Execption('package %s has unrecognized type: %s' %
+                      (package, type_text))
+    is_source_target = type_text == 'source'
+
+    if 'commands' not in package_info:
+      raise Exception('package %s does not have any commands' % package)
+
+    # Source targets are the only ones to run when doing sync-only.
+    if not is_source_target and self._options.sync_sources_only:
+      logging.debug('Build skipped: not running commands for %s' % package)
+      return
+
+    # Source targets do not run when skipping sync.
+    if is_source_target and not (
+        self._options.sync_sources or self._options.sync_sources_only):
+      logging.debug('Sync skipped: not running commands for %s' % package)
+      return
+
+    PrintFlush('@@@BUILD_STEP %s (%s)@@@' % (package, type_text))
+    logging.debug('Building %s package %s' % (type_text, package))
+
     dependencies = package_info.get('dependencies', [])
+
     # Collect a dict of all the inputs.
     inputs = {}
-    # Add in either a tar source or a git source.
-    if 'tar_src' in package_info:
-      inputs['src'] = os.path.join(ROOT_DIR, package_info['tar_src'])
+    # Add in explicit inputs.
+    if 'inputs' in package_info:
+      for key, value in package_info['inputs'].iteritems():
+        if key in dependencies:
+          raise Exception('key "%s" found in both dependencies and inputs of '
+                          'package "%s"' % (key, package))
+        inputs[key] = value
     else:
       inputs['src'] = os.path.join(self._options.source, package)
     # Add in each dependency by package name.
     for dependency in dependencies:
-      inputs[dependency] = os.path.join(
-          self._options.output, dependency + '_install')
+      inputs[dependency] = self.GetOutputDir(dependency, True)
+
     # Each package generates intermediate into output/<PACKAGE>_work.
     # Clobbered here explicitly.
     work_dir = os.path.join(self._options.output, package + '_work')
-    file_tools.RemoveDirectoryIfPresent(work_dir)
-    os.mkdir(work_dir)
-    # Each package emits its output to output/<PACKAGE>_install.
-    # Clobbered implicitly by Run().
-    output = os.path.join(self._options.output, package + '_install')
-    # A package may define an alternate set of inputs to be used for
-    # computing the build signature. These are assumed to be in the working
-    # directory.
-    hashed_inputs = package_info.get('hashed_inputs')
-    if hashed_inputs is not None:
-      for key, value in hashed_inputs.iteritems():
-        hashed_inputs[key] = os.path.join(work_dir, value)
+    if self._options.clobber:
+      logging.debug('Clobbering working directory %s' % work_dir)
+      pynacl.file_tools.RemoveDirectoryIfPresent(work_dir)
+    pynacl.file_tools.MakeDirectoryIfAbsent(work_dir)
+
+    output = self.GetOutputDir(package, False)
+    output_subdir = self.GetOutputDir(package, True)
+
+    if not is_source_target or self._options.clobber_source:
+      logging.debug('Clobbering output directory %s' % output)
+      pynacl.file_tools.RemoveDirectoryIfPresent(output)
+      os.makedirs(output_subdir)
+
+    commands = package_info.get('commands', [])
+    if not self._options.clobber and len(os.listdir(work_dir)) > 0:
+      commands = [cmd for cmd in commands if
+                  not (hasattr(cmd, 'skip_for_incremental') and
+                       cmd.skip_for_incremental)]
     # Do it.
     self._build_once.Run(
         package, inputs, output,
-        commands=package_info.get('commands', []),
-        unpack_commands=package_info.get('unpack_commands', []),
-        hashed_inputs=hashed_inputs,
-        working_dir=work_dir)
+        commands=commands,
+        working_dir=work_dir,
+        memoize=not is_source_target,
+        signature_file=self._signature_file,
+        subdir=output_subdir)
+
+    if not is_source_target and self._options.install:
+      logging.debug('Installing output to %s' % self._options.install)
+      pynacl.file_tools.CopyTree(output, self._options.install)
 
   def BuildOrder(self, targets):
     """Find what needs to be built in what order to build all targets.
@@ -193,6 +260,8 @@ class PackageBuilder(object):
     """
     order = []
     order_set = set()
+    if self._options.ignore_dependencies:
+      return targets
     def Add(target, target_path):
       if target in order_set:
         return
@@ -209,19 +278,52 @@ class PackageBuilder(object):
       Add(target, [])
     return order
 
-  def SyncAll(self):
-    """Sync all packages selected and their dependencies."""
-    file_tools.MakeDirectoryIfAbsent(self._options.source)
-    for target in self._targets:
-      # Only packages using git repos need to be synced.
-      if 'git_url' in self._packages[target]:
-        self.SyncGitRepo(target)
-
   def BuildAll(self):
     """Build all packages selected and their dependencies."""
-    file_tools.MakeDirectoryIfAbsent(self._options.output)
     for target in self._targets:
       self.BuildPackage(target)
+
+  def OutputPackagesInformation(self):
+    """Outputs packages information for the built data."""
+    packages_dir = os.path.join(self._options.output, 'packages')
+    pynacl.file_tools.RemoveDirectoryIfPresent(packages_dir)
+    os.makedirs(packages_dir)
+
+    built_packages = []
+    for target, target_dict in self._package_targets.iteritems():
+      target_dir = os.path.join(packages_dir, target)
+      pynacl.file_tools.MakeDirectoryIfAbsent(target_dir)
+      for output_package, components in target_dict.iteritems():
+        package_desc = package_info.PackageInfo()
+
+        include_package = False
+        for component in components:
+          if '.' in component:
+            archive_name = component
+          else:
+            archive_name = component + '.tgz'
+          cache_item = self._build_once.GetCachedDirItemForPackage(component)
+          if cache_item is None:
+            archive_desc = archive_info.ArchiveInfo(archive_name)
+          else:
+            include_package = True
+            archive_desc = archive_info.ArchiveInfo(archive_name,
+                                                    cache_item.hash,
+                                                    url=cache_item.url)
+
+          package_desc.AppendArchive(archive_desc)
+
+        # Only output package file if an archive was actually included.
+        if include_package:
+          package_file = os.path.join(target_dir, output_package + '.json')
+          package_desc.SavePackageFile(package_file)
+
+          built_packages.append(package_file)
+
+    if self._options.packages_file:
+      pynacl.file_tools.MakeParentDirectoryIfAbsent(self._options.packages_file)
+      with open(self._options.packages_file, 'wt') as f:
+        f.write('\n'.join(built_packages))
 
   def DecodeArgs(self, packages, args):
     """Decode command line arguments to this build.
@@ -243,7 +345,7 @@ class PackageBuilder(object):
     parser.add_option(
         '-c', '--clobber', dest='clobber',
         default=False, action='store_true',
-        help='Clobber source and output directories.')
+        help='Clobber working directories before building.')
     parser.add_option(
         '--cache', dest='cache',
         default=DEFAULT_CACHE_DIR,
@@ -257,6 +359,10 @@ class PackageBuilder(object):
         default=DEFAULT_OUT_DIR,
         help='Select directory containing build output.')
     parser.add_option(
+        '--packages-file', dest='packages_file',
+        default=None,
+        help='Output packages file describing list of package files built.')
+    parser.add_option(
         '--no-use-cached-results', dest='use_cached_results',
         default=True, action='store_false',
         help='Do not rely on cached results.')
@@ -269,10 +375,6 @@ class PackageBuilder(object):
         default=True, action='store_false',
         help='Do not cache results.')
     parser.add_option(
-        '--reclone', dest='reclone',
-        default=False, action='store_true',
-        help='Clone source trees from scratch.')
-    parser.add_option(
         '--no-pinned', dest='pinned',
         default=True, action='store_false',
         help='Do not use pinned revisions.')
@@ -284,16 +386,47 @@ class PackageBuilder(object):
         '--buildbot', dest='buildbot',
         default=False, action='store_true',
         help='Run and cache as if on a non-trybot buildbot.')
+    parser.add_option(
+        '--clobber-source', dest='clobber_source',
+        default=False, action='store_true',
+        help='Clobber source directories before building')
+    parser.add_option(
+        '-y', '--sync', dest='sync_sources',
+        default=False, action='store_true',
+        help='Run source target commands')
+    parser.add_option(
+        '--sync-only', dest='sync_sources_only',
+        default=False, action='store_true',
+        help='Run source target commands only')
+    parser.add_option(
+        '--emit-signatures', dest='emit_signatures',
+        help='Write human readable build signature for each step to FILE.',
+        metavar='FILE')
+    parser.add_option(
+        '-i', '--ignore-dependencies', dest='ignore_dependencies',
+        default=False, action='store_true',
+        help='Ignore target dependencies and build only the specified target.')
+    parser.add_option('--install', dest='install',
+                      help='After building, copy contents of build packages' +
+                      ' to the specified directory')
     options, targets = parser.parse_args(args)
     if options.trybot and options.buildbot:
-      PrintFlush('ERROR: Tried to run with both --trybot and --buildbot.')
+      print >>sys.stderr, (
+          'ERROR: Tried to run with both --trybot and --buildbot.')
       sys.exit(1)
     if options.trybot or options.buildbot:
       options.verbose = True
+      options.sync_sources = True
+      options.clobber = True
+      options.emit_signatures = '-'
+    self._options = options
     if not targets:
+      if self._options.ignore_dependencies:
+        print >>sys.stderr, (
+            'ERROR: A target must be specified if ignoring target dependencies')
+        sys.exit(1)
       targets = sorted(packages.keys())
     targets = self.BuildOrder(targets)
-    self._options = options
     self._targets = targets
 
   def CreateStorage(self):
@@ -303,19 +436,19 @@ class PackageBuilder(object):
       A storage object (GSDStorage).
     """
     if self._options.buildbot:
-      return gsd_storage.GSDStorage(
+      return pynacl.gsd_storage.GSDStorage(
           write_bucket='nativeclient-once',
           read_buckets=['nativeclient-once'])
     elif self._options.trybot:
-      return gsd_storage.GSDStorage(
+      return pynacl.gsd_storage.GSDStorage(
           write_bucket='nativeclient-once-try',
           read_buckets=['nativeclient-once', 'nativeclient-once-try'])
     else:
       read_buckets = []
       if self._options.use_remote_cache:
         read_buckets += ['nativeclient-once']
-      return local_storage_cache.LocalStorageCache(
+      return pynacl.local_storage_cache.LocalStorageCache(
           cache_path=self._options.cache,
-          storage=gsd_storage.GSDStorage(
+          storage=pynacl.gsd_storage.GSDStorage(
               write_bucket=None,
               read_buckets=read_buckets))

@@ -12,112 +12,162 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/nacl_syscalls.h>
 
-#include "native_client/src/trusted/service_runtime/include/sys/nacl_exception.h"
+#include "native_client/src/include/elf_constants.h"
+#include "native_client/src/include/nacl/nacl_exception.h"
+#include "native_client/src/trusted/service_runtime/include/sys/nacl_syscalls.h"
 #include "native_client/src/untrusted/nacl/syscall_bindings_trampoline.h"
+#include "native_client/tests/common/register_set.h"
 #include "native_client/tests/inbrowser_test_runner/test_runner.h"
 
 
-typedef void (*handler_func_t)(struct NaClExceptionContext *context);
-
-#ifndef __pnacl__
-void crash_at_known_address(void);
-extern uintptr_t stack_ptr_at_crash;
-extern char prog_ctr_at_crash[];
-#endif
-
 /*
- * These variables are set by the assembly code.  We initialise them
- * to dummy values to avoid false positives in case the assembly code
- * does not get run.
+ * This is used for calculating the size of the exception stack frame
+ * when alignment is taken into account.
  */
-#if defined(__i386__)
-uint32_t exception_handler_esp = -1;
-#elif defined(__x86_64__)
-uint64_t exception_handler_rsp = -1;
-uint64_t exception_handler_rbp = -1;
-#elif defined(__arm__)
-uint32_t exception_handler_sp = -1;
-#endif
-void exception_handler_wrapper(struct NaClExceptionContext *context);
+struct CombinedContext {
+  struct NaClExceptionContext c1;
+  struct NaClExceptionPortableContext c2;
+};
 
-char stack[4096];
+char stack[0x10000];
 
+struct NaClSignalContext g_regs_at_crash;
 jmp_buf g_jmp_buf;
 
 char *g_registered_stack;
 size_t g_registered_stack_size;
 
-char *main_stack;
 
-
-#define STACK_ALIGNMENT 16
-
-/*
- * The x86-64 ABI's red zone is 128 bytes of scratch space below %rsp
- * which a function may use without it being clobbered by a signal
- * handler.
- *
- * Note that if we are running the pure-bitcode version of the test on
- * x86-64, the exact value of kRedZoneSize does not matter.
- */
-#if defined(__x86_64__)
-const int kRedZoneSize = 128;
+#if defined(__mips__)
+#define STACK_ALIGNMENT 8
 #else
-const int kRedZoneSize = 0;
+#define STACK_ALIGNMENT 16
 #endif
 
-struct AlignedType {
-  int blah;
-} __attribute__((aligned(16)));
+#if defined(__i386__)
+const int kReturnAddrSize = 4;
+const int kArgSizeOnStack = 4;
+const int kRedZoneSize = 0;
+#elif defined(__x86_64__)
+const int kReturnAddrSize = 8;
+const int kArgSizeOnStack = 0;
+const int kRedZoneSize = 128;
+#elif defined(__arm__)
+const int kReturnAddrSize = 0;
+const int kArgSizeOnStack = 0;
+const int kRedZoneSize = 0;
+#elif defined(__mips__)
+const int kReturnAddrSize = 0;
+const int kArgSizeOnStack = 16;
+const int kRedZoneSize = 0;
+#else
+# error Unsupported architecture
+#endif
 
-/*
- * We do this check in a separate function in an attempt to prevent
- * the compiler from optimising away the check for a stack-allocated
- * variable.
- *
- * We test for an alignment that is small enough for the compiler to
- * assume on x86-32, even if sel_ldr sets up a larger alignment.
- */
-__attribute__((noinline))
-void check_pointer_is_aligned(void *pointer) {
-  assert((uintptr_t) pointer % 16 == 0);
+void crash_at_known_address(void);
+extern char prog_ctr_at_crash[];
+#if defined(__i386__)
+__asm__(".pushsection .text, \"ax\", @progbits\n"
+        ".p2align 5\n"
+        "crash_at_known_address:\n"
+        "prog_ctr_at_crash:\n"
+        "movl $0, 0\n"
+        ".popsection");
+#elif defined(__x86_64__)
+__asm__(".pushsection .text, \"ax\", @progbits\n"
+        ".p2align 5\n"
+        "crash_at_known_address:\n"
+        "prog_ctr_at_crash:\n"
+        "movl $0, (%r15)\n"
+        ".popsection");
+#elif defined(__arm__)
+__asm__(".pushsection .text, \"ax\", %progbits\n"
+        ".p2align 4\n"
+        "crash_at_known_address:\n"
+        "mov r0, #0\n"
+        "bic r0, r0, #0xc0000000\n"
+        "prog_ctr_at_crash:\n"
+        "str r0, [r0]\n"
+        ".popsection\n");
+#elif defined(__mips__)
+__asm__(".pushsection .text, \"ax\", @progbits\n"
+        ".p2align 4\n"
+        ".global crash_at_known_address\n"
+        "crash_at_known_address:\n"
+        "and $zero, $zero, $t7\n"
+        ".global prog_ctr_at_crash\n"
+        "prog_ctr_at_crash:\n"
+        "sw $t0, 0($zero)\n"
+        ".popsection\n");
+#else
+# error Unsupported architecture
+#endif
+
+
+void return_from_exception_handler(void) {
+  /*
+   * Clear the exception flag so that future faults will invoke the
+   * exception handler.
+   */
+  int rc = NACL_SYSCALL(exception_clear_flag)();
+  assert(rc == 0);
+  longjmp(g_jmp_buf, 1);
 }
 
-void check_stack_is_aligned(void) {
-  struct AlignedType var;
-  check_pointer_is_aligned(&var);
+void simple_exception_handler(struct NaClExceptionContext *regs) {
+  return_from_exception_handler();
 }
 
+void exception_handler(struct NaClExceptionContext *context);
+REGS_SAVER_FUNC_NOPROTO(exception_handler, exception_handler_wrapped);
 
-void exception_handler(struct NaClExceptionContext *context) {
+void exception_handler_wrapped(struct NaClSignalContext *entry_regs) {
+  struct NaClExceptionContext *context =
+      (struct NaClExceptionContext *) RegsGetArg1(entry_regs);
+  struct NaClExceptionPortableContext *portable =
+      nacl_exception_context_get_portable(context);
+
   printf("handler called\n");
 
-  check_stack_is_aligned();
+  assert(context->size == (uintptr_t) (portable + 1) - (uintptr_t) context);
+  assert(context->portable_context_size ==
+         sizeof(struct NaClExceptionPortableContext));
+  assert(context->regs_size == sizeof(NaClUserRegisterState));
 
-  /*
-   * Check the saved stack pointer.  We cannot portably test this, but
-   * we assume the faulting function's stack frame is not excessively
-   * large.  We assume the stack grows down.
-   */
-  const int kMaxStackFrameSize = 0x1000;
-  assert(main_stack - kMaxStackFrameSize < (char *) context->stack_ptr);
-  assert((char *) context->stack_ptr < main_stack);
-  /*
-   * If we can link in assembly code, we can check the saved values
-   * more exactly.
-   */
-#ifndef __pnacl__
-  assert(context->stack_ptr == stack_ptr_at_crash);
-  assert(context->prog_ctr == (uintptr_t) prog_ctr_at_crash);
+  assert(portable->stack_ptr == (uint32_t) g_regs_at_crash.stack_ptr);
+  assert(portable->prog_ctr == (uintptr_t) prog_ctr_at_crash);
+#if defined(__i386__)
+  assert(portable->frame_ptr == g_regs_at_crash.ebp);
+  assert(context->arch == EM_386);
+#elif defined(__x86_64__)
+  assert(portable->frame_ptr == (uint32_t) g_regs_at_crash.rbp);
+  assert(context->arch == EM_X86_64);
+#elif defined(__arm__)
+  assert(portable->frame_ptr == g_regs_at_crash.r11);
+  assert(context->arch == EM_ARM);
+  assert(context->regs.r9 == -1);
+#elif defined(__mips__)
+  assert(portable->frame_ptr == g_regs_at_crash.frame_ptr);
+  assert(context->arch == EM_MIPS);
+#else
+# error Unsupported architecture
 #endif
 
+  /*
+   * Convert the NaClUserRegisterState to a NaClSignalContext so that
+   * we can reuse RegsAssertEqual() to compare the register state.
+   */
+  struct NaClSignalContext reported_regs;
+  RegsCopyFromUserRegisterState(&reported_regs, &context->regs);
+  RegsAssertEqual(&reported_regs, &g_regs_at_crash);
+
+  const int kMaxStackFrameSize = 0x1000;
   char *stack_top;
   char local_var;
   if (g_registered_stack == NULL) {
     /* Check that our current stack is just below the saved stack pointer. */
-    stack_top = (char *) context->stack_ptr - kRedZoneSize;
+    stack_top = (char *) portable->stack_ptr - kRedZoneSize;
     assert(stack_top - kMaxStackFrameSize < &local_var);
     assert(&local_var < stack_top);
   } else {
@@ -127,59 +177,26 @@ void exception_handler(struct NaClExceptionContext *context) {
     assert(&local_var < stack_top);
   }
 
-  /*
-   * If we can link in assembly code, we can check the exception
-   * handler's initial stack pointer more exactly.
-   */
-#if defined(__i386__)
-  /* Skip over the 4 byte return address. */
-  uintptr_t frame_base = exception_handler_esp + 4;
+  /* Check the exception handler's initial stack pointer more exactly. */
+  uintptr_t frame_base = entry_regs->stack_ptr + kReturnAddrSize;
   assert(frame_base % STACK_ALIGNMENT == 0);
-  /* Skip over the arguments + context. */
-  char *frame_top = (char *) (frame_base +
-                              sizeof(struct NaClExceptionContext *) +
-                              sizeof(struct NaClExceptionContext));
-  /* Check that no more than the stack alignment size is wasted. */
-  assert(stack_top - STACK_ALIGNMENT < frame_top);
-  assert(frame_top <= stack_top);
-#elif defined(__x86_64__)
-  /* Skip over the 8 byte return address. */
-  uintptr_t frame_base = ((uint32_t) exception_handler_rsp) + 8;
-  assert(frame_base % STACK_ALIGNMENT == 0);
-  /* Skip over the context (argument in registers). */
-  char *frame_top = (char *) (frame_base +
-                              sizeof(struct NaClExceptionContext));
+  char *frame_top = (char *) (frame_base + kArgSizeOnStack +
+                              sizeof(struct CombinedContext));
   /* Check that no more than the stack alignment size is wasted. */
   assert(stack_top - STACK_ALIGNMENT < frame_top);
   assert(frame_top <= stack_top);
 
-  /* Check that %rbp has been reset to a safe value. */
-  uint64_t sandbox_base;
-  asm("mov %%r15, %0" : "=m"(sandbox_base));
-  assert(exception_handler_rbp == sandbox_base);
-  assert(exception_handler_rsp >> 32 == sandbox_base >> 32);
+#if defined(__x86_64__)
+  /* Check that %rsp and %rbp have safe, %r15-extended values. */
+  assert(entry_regs->stack_ptr >> 32 == entry_regs->r15 >> 32);
+  assert(entry_regs->rbp >> 32 == entry_regs->r15 >> 32);
 #endif
 
-  /*
-   * Clear the exception flag so that future faults will invoke the
-   * exception handler.
-   */
-  if (0 != NACL_SYSCALL(exception_clear_flag)()) {
-    printf("failed to clear exception flag\n");
-    exit(6);
-  }
-  longjmp(g_jmp_buf, 1);
+  return_from_exception_handler();
 }
 
 void test_exception_stack_with_size(char *stack, size_t stack_size) {
-  handler_func_t handler;
-#ifndef __pnacl__
-  handler = exception_handler_wrapper;
-#else
-  handler = exception_handler;
-#endif
-
-  if (0 != NACL_SYSCALL(exception_handler)(handler, 0)) {
+  if (0 != NACL_SYSCALL(exception_handler)(exception_handler, 0)) {
     printf("failed to set exception handler\n");
     exit(4);
   }
@@ -190,25 +207,18 @@ void test_exception_stack_with_size(char *stack, size_t stack_size) {
   g_registered_stack = stack;
   g_registered_stack_size = stack_size;
 
-  /* Record the address of the current stack for testing against later. */
-  char local_var;
-  main_stack = &local_var;
+  char crash_stack[0x1000];
+  RegsFillTestValues(&g_regs_at_crash, /* seed= */ 0);
+  g_regs_at_crash.stack_ptr = (uintptr_t) crash_stack + sizeof(crash_stack);
+  g_regs_at_crash.prog_ctr = (uintptr_t) prog_ctr_at_crash;
+  RegsApplySandboxConstraints(&g_regs_at_crash);
+#if defined(__arm__)
+  /* crash_at_known_address clobbers r0. */
+  g_regs_at_crash.r0 = 0;
+#endif
 
   if (!setjmp(g_jmp_buf)) {
-    /*
-     * We need a memory barrier if we are using a volatile assignment to
-     * cause the crash, because otherwise the compiler might reorder the
-     * assignment of "main_stack" to after the volatile assignment.
-     */
-    __sync_synchronize();
-#ifdef __pnacl__
-    /* Cause crash. */
-    *((volatile int *) 0) = 0;
-#else
-    crash_at_known_address();
-#endif
-    /* Should not reach here. */
-    exit(1);
+    JUMP_WITH_REGS(&g_regs_at_crash, crash_at_known_address);
   }
   /* Clear the jmp_buf to prevent it from being reused accidentally. */
   memset(g_jmp_buf, 0, sizeof(g_jmp_buf));
@@ -234,7 +244,7 @@ void test_exception_stack_alignments(void) {
 
 void test_getting_previous_handler(void) {
   int rc;
-  handler_func_t prev_handler;
+  nacl_exception_handler_t prev_handler;
 
   rc = NACL_SYSCALL(exception_handler)(exception_handler, NULL);
   assert(rc == 0);
@@ -250,8 +260,8 @@ void test_getting_previous_handler(void) {
 
 void test_invalid_handlers(void) {
   int rc;
-  handler_func_t unaligned_func_ptr =
-    (handler_func_t) ((uintptr_t) exception_handler + 1);
+  nacl_exception_handler_t unaligned_func_ptr =
+    (nacl_exception_handler_t) ((uintptr_t) exception_handler + 1);
   const char *ptr_in_rodata_segment = "";
 
   /* An alignment check is required for safety in all NaCl sandboxes. */
@@ -260,7 +270,7 @@ void test_invalid_handlers(void) {
 
   /* A range check is required for safety in the NaCl ARM sandbox. */
   rc = NACL_SYSCALL(exception_handler)(
-      (handler_func_t) (uintptr_t) ptr_in_rodata_segment, NULL);
+      (nacl_exception_handler_t) (uintptr_t) ptr_in_rodata_segment, NULL);
   assert(rc == -EFAULT);
 }
 
@@ -289,6 +299,35 @@ void test_exceptions_on_non_main_thread(void) {
   assert(rc == 0);
 }
 
+void test_catching_various_exception_types(void) {
+  int rc = NACL_SYSCALL(exception_handler)(simple_exception_handler, NULL);
+  assert(rc == 0);
+
+#if defined(__i386__) || defined(__x86_64__)
+  printf("Testing hlt...\n");
+  if (!setjmp(g_jmp_buf)) {
+    __asm__("hlt");
+    exit(1);
+  }
+  printf("Testing ud2a (an illegal instruction)...\n");
+  if (!setjmp(g_jmp_buf)) {
+    __asm__("ud2a");
+    exit(1);
+  }
+  printf("Testing integer division by zero...\n");
+  if (!setjmp(g_jmp_buf)) {
+    uint32_t result;
+    __asm__ volatile("idivb %1"
+                     : "=a"(result)
+                     : "r"((uint8_t) 0), "a"((uint16_t) 1));
+    exit(1);
+  }
+#endif
+
+  /* Clear the jmp_buf to prevent it from being reused accidentally. */
+  memset(g_jmp_buf, 0, sizeof(g_jmp_buf));
+}
+
 
 #if defined(__i386__) || defined(__x86_64__)
 
@@ -309,10 +348,7 @@ void test_get_x86_direction_flag(void) {
 
 void direction_flag_exception_handler(struct NaClExceptionContext *context) {
   assert(get_x86_direction_flag() == 0);
-  /* Return from exception handler. */
-  int rc = NACL_SYSCALL(exception_clear_flag)();
-  assert(rc == 0);
-  longjmp(g_jmp_buf, 1);
+  return_from_exception_handler();
 }
 
 /*
@@ -330,35 +366,6 @@ void test_unsetting_x86_direction_flag(void) {
   if (!setjmp(g_jmp_buf)) {
     /* Cause a crash with the direction flag set. */
     asm("std");
-    *((volatile int *) 0) = 0;
-    /* Should not reach here. */
-    exit(1);
-  }
-  /* Clear the jmp_buf to prevent it from being reused accidentally. */
-  memset(g_jmp_buf, 0, sizeof(g_jmp_buf));
-}
-
-void frame_ptr_exception_handler(struct NaClExceptionContext *context) {
-  assert(context->frame_ptr == 0x12345678);
-  /* Return from exception handler. */
-  int rc = NACL_SYSCALL(exception_clear_flag)();
-  assert(rc == 0);
-  longjmp(g_jmp_buf, 1);
-}
-
-void test_preserving_frame_ptr(void) {
-  int rc = NACL_SYSCALL(exception_handler)(frame_ptr_exception_handler, NULL);
-  assert(rc == 0);
-  if (!setjmp(g_jmp_buf)) {
-    /* Crash with frame_ptr set to a known value. */
-#if defined(__i386__)
-    asm("mov $0x12345678, %ebp\n");
-#elif defined(__x86_64__)
-    asm("movl $0x12345678, %ebp\n"
-        "addq %r15, %rbp\n");
-#else
-#  error Unsupported aritecture
-#endif
     *((volatile int *) 0) = 0;
     /* Should not reach here. */
     exit(1);
@@ -385,11 +392,11 @@ int TestMain(void) {
   /* pthread_join() is broken under qemu-arm. */
   if (getenv("UNDER_QEMU_ARM") == NULL)
     RUN_TEST(test_exceptions_on_non_main_thread);
+  RUN_TEST(test_catching_various_exception_types);
 
 #if defined(__i386__) || defined(__x86_64__)
   RUN_TEST(test_get_x86_direction_flag);
   RUN_TEST(test_unsetting_x86_direction_flag);
-  RUN_TEST(test_preserving_frame_ptr);
 #endif
 
   fprintf(stderr, "** intended_exit_status=0\n");

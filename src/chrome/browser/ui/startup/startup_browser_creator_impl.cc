@@ -7,38 +7,41 @@
 #include <algorithm>
 #include <vector>
 
+#include "apps/app_restore_service.h"
+#include "apps/app_restore_service_factory.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/environment.h"
-#include "base/event_recorder.h"
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/statistics_recorder.h"
 #include "base/path_service.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/utf_string_conversions.h"
+#include "chrome/browser/apps/install_chrome_app.h"
 #include "chrome/browser/auto_launch_trial.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
+#include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
 #include "chrome/browser/defaults.h"
-#include "chrome/browser/extensions/app_restore_service.h"
-#include "chrome/browser/extensions/app_restore_service_factory.h"
 #include "chrome/browser/extensions/extension_creator.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/extensions/pack_extension_job.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/google/google_util.h"
+#include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/net/predictor.h"
-#include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/performance_monitor/startup_timer.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_io_data.h"
@@ -47,6 +50,8 @@
 #include "chrome/browser/sessions/session_service.h"
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/shell_integration.h"
+#include "chrome/browser/signin/signin_promo.h"
+#include "chrome/browser/ui/app_list/app_list_service.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
@@ -59,21 +64,21 @@
 #include "chrome/browser/ui/startup/autolaunch_prompt.h"
 #include "chrome/browser/ui/startup/bad_flags_prompt.h"
 #include "chrome/browser/ui/startup/default_browser_prompt.h"
-#include "chrome/browser/ui/startup/obsolete_os_prompt.h"
-#include "chrome/browser/ui/startup/session_crashed_prompt.h"
+#include "chrome/browser/ui/startup/google_api_keys_infobar_delegate.h"
+#include "chrome/browser/ui/startup/obsolete_system_infobar_delegate.h"
+#include "chrome/browser/ui/startup/session_crashed_bubble.h"
+#include "chrome/browser/ui/startup/session_crashed_infobar_delegate.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/browser/ui/tabs/pinned_tab_codec.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/browser/ui/webui/ntp/app_launcher_handler.h"
-#include "chrome/browser/ui/webui/sync_promo/sync_promo_trial.h"
-#include "chrome/browser/ui/webui/sync_promo/sync_promo_ui.h"
+#include "chrome/browser/ui/webui/ntp/core_app_launcher_handler.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_result_codes.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/installer/util/browser_distribution.h"
@@ -83,35 +88,29 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
 #include "grit/locale_settings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/screen.h"
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
 #include "chrome/browser/ui/cocoa/keystone_infobar_delegate.h"
 #endif
 
-#if defined(TOOLKIT_GTK)
-#include "chrome/browser/ui/gtk/gtk_util.h"
-#endif
-
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
-#endif
-
-#if defined(ENABLE_APP_LIST)
-#include "chrome/browser/ui/app_list/app_list_controller.h"
+#include "chrome/browser/apps/app_launch_for_metro_restart_win.h"
 #endif
 
 using content::ChildProcessSecurityPolicy;
 using content::WebContents;
 using extensions::Extension;
-
-extern bool in_synchronous_profile_launch;
 
 namespace {
 
@@ -140,9 +139,9 @@ LaunchMode GetLaunchShortcutKind() {
   if (si.dwFlags & 0x800) {
     if (!si.lpTitle)
       return LM_SHORTCUT_NONAME;
-    string16 shortcut(si.lpTitle);
+    base::string16 shortcut(si.lpTitle);
     // The windows quick launch path is not localized.
-    if (shortcut.find(L"\\Quick Launch\\") != string16::npos) {
+    if (shortcut.find(L"\\Quick Launch\\") != base::string16::npos) {
       if (base::win::GetVersion() >= base::win::VERSION_WIN7)
         return LM_SHORTCUT_TASKBAR;
       else
@@ -152,7 +151,7 @@ LaunchMode GetLaunchShortcutKind() {
     std::string appdata_path;
     env->GetVar("USERPROFILE", &appdata_path);
     if (!appdata_path.empty() &&
-        shortcut.find(ASCIIToWide(appdata_path)) != std::wstring::npos)
+        shortcut.find(base::ASCIIToWide(appdata_path)) != std::wstring::npos)
       return LM_SHORTCUT_DESKTOP;
     return LM_SHORTCUT_UNKNOWN;
   }
@@ -172,11 +171,6 @@ void RecordLaunchModeHistogram(LaunchMode mode) {
   UMA_HISTOGRAM_COUNTS_100("Launch.Modes", bucket);
 }
 
-GURL GetWelcomePageURL() {
-  std::string welcome_url = l10n_util::GetStringUTF8(IDS_WELCOME_PAGE_URL);
-  return GURL(welcome_url);
-}
-
 void UrlsToTabs(const std::vector<GURL>& urls, StartupTabs* tabs) {
   for (size_t i = 0; i < urls.size(); ++i) {
     StartupTab tab;
@@ -193,68 +187,71 @@ bool GetAppLaunchContainer(
     Profile* profile,
     const std::string& app_id,
     const Extension** out_extension,
-    extension_misc::LaunchContainer* out_launch_container) {
+    extensions::LaunchContainer* out_launch_container) {
 
   ExtensionService* extensions_service = profile->GetExtensionService();
   const Extension* extension =
       extensions_service->GetExtensionById(app_id, false);
-
   // The extension with id |app_id| may have been uninstalled.
   if (!extension)
     return false;
 
-  // Look at preferences to find the right launch container.  If no
+  // Don't launch platform apps in incognito mode.
+  if (profile->IsOffTheRecord() && extension->is_platform_app())
+    return false;
+
+  // Look at preferences to find the right launch container. If no
   // preference is set, launch as a window.
-  extension_misc::LaunchContainer launch_container =
-      extensions_service->extension_prefs()->GetLaunchContainer(
-          extension, extensions::ExtensionPrefs::LAUNCH_WINDOW);
+  extensions::LaunchContainer launch_container = extensions::GetLaunchContainer(
+      extensions::ExtensionPrefs::Get(profile), extension);
+
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+           switches::kEnableStreamlinedHostedApps) &&
+      !extensions::HasPreferredLaunchContainer(
+           extensions::ExtensionPrefs::Get(profile), extension)) {
+    launch_container = extensions::LAUNCH_CONTAINER_WINDOW;
+  }
 
   *out_extension = extension;
   *out_launch_container = launch_container;
   return true;
 }
 
-// Parse two comma-separated integers from string. Return true on success.
-bool ParseCommaSeparatedIntegers(const std::string& str,
-                                 int* ret_num1,
-                                 int* ret_num2) {
-  std::vector<std::string> dimensions;
-  base::SplitString(str, ',', &dimensions);
-  if (dimensions.size() != 2)
-    return false;
-
-  int num1, num2;
-  if (!base::StringToInt(dimensions[0], &num1) ||
-      !base::StringToInt(dimensions[1], &num2))
-    return false;
-
-  *ret_num1 = num1;
-  *ret_num2 = num2;
-  return true;
-}
-
-void RecordCmdLineAppHistogram() {
-  AppLauncherHandler::RecordAppLaunchType(
-      extension_misc::APP_LAUNCH_CMD_LINE_APP);
+void RecordCmdLineAppHistogram(extensions::Manifest::Type app_type) {
+  CoreAppLauncherHandler::RecordAppLaunchType(
+      extension_misc::APP_LAUNCH_CMD_LINE_APP,
+      app_type);
 }
 
 void RecordAppLaunches(Profile* profile,
                        const std::vector<GURL>& cmd_line_urls,
                        StartupTabs& autolaunch_tabs) {
-  ExtensionService* extension_service = profile->GetExtensionService();
-  DCHECK(extension_service);
+  const extensions::ExtensionSet& extensions =
+      extensions::ExtensionRegistry::Get(profile)->enabled_extensions();
   for (size_t i = 0; i < cmd_line_urls.size(); ++i) {
-    if (extension_service->IsInstalledApp(cmd_line_urls.at(i))) {
-      AppLauncherHandler::RecordAppLaunchType(
-          extension_misc::APP_LAUNCH_CMD_LINE_URL);
+    const extensions::Extension* extension =
+        extensions.GetAppByURL(cmd_line_urls.at(i));
+    if (extension) {
+      CoreAppLauncherHandler::RecordAppLaunchType(
+          extension_misc::APP_LAUNCH_CMD_LINE_URL,
+          extension->GetType());
     }
   }
   for (size_t i = 0; i < autolaunch_tabs.size(); ++i) {
-    if (extension_service->IsInstalledApp(autolaunch_tabs.at(i).url)) {
-      AppLauncherHandler::RecordAppLaunchType(
-          extension_misc::APP_LAUNCH_AUTOLAUNCH);
+    const extensions::Extension* extension =
+        extensions.GetAppByURL(autolaunch_tabs.at(i).url);
+    if (extension) {
+      CoreAppLauncherHandler::RecordAppLaunchType(
+          extension_misc::APP_LAUNCH_AUTOLAUNCH,
+          extension->GetType());
     }
   }
+}
+
+bool IsNewTabURL(Profile* profile, const GURL& url) {
+  GURL ntp_url(chrome::kChromeUINewTabURL);
+  return url == ntp_url ||
+         (url.is_empty() && profile->GetHomePage() == ntp_url);
 }
 
 class WebContentsCloseObserver : public content::NotificationObserver {
@@ -288,10 +285,28 @@ class WebContentsCloseObserver : public content::NotificationObserver {
   DISALLOW_COPY_AND_ASSIGN(WebContentsCloseObserver);
 };
 
+// TODO(koz): Consolidate this function and remove the special casing.
+const Extension* GetPlatformApp(Profile* profile,
+                                const std::string& extension_id) {
+  const Extension* extension =
+      extensions::ExtensionRegistry::Get(profile)->GetExtensionById(
+          extension_id, extensions::ExtensionRegistry::EVERYTHING);
+  return extension && extension->is_platform_app() ? extension : NULL;
+}
+
 }  // namespace
 
+namespace internals {
+
+GURL GetWelcomePageURL() {
+  std::string welcome_url = l10n_util::GetStringUTF8(IDS_WELCOME_PAGE_URL);
+  return GURL(welcome_url);
+}
+
+}  // namespace internals
+
 StartupBrowserCreatorImpl::StartupBrowserCreatorImpl(
-    const FilePath& cur_dir,
+    const base::FilePath& cur_dir,
     const CommandLine& command_line,
     chrome::startup::IsFirstRun is_first_run)
     : cur_dir_(cur_dir),
@@ -302,7 +317,7 @@ StartupBrowserCreatorImpl::StartupBrowserCreatorImpl(
 }
 
 StartupBrowserCreatorImpl::StartupBrowserCreatorImpl(
-    const FilePath& cur_dir,
+    const base::FilePath& cur_dir,
     const CommandLine& command_line,
     StartupBrowserCreator* browser_creator,
     chrome::startup::IsFirstRun is_first_run)
@@ -318,7 +333,8 @@ StartupBrowserCreatorImpl::~StartupBrowserCreatorImpl() {
 
 bool StartupBrowserCreatorImpl::Launch(Profile* profile,
                                        const std::vector<GURL>& urls_to_open,
-                                       bool process_startup) {
+                                       bool process_startup,
+                                       chrome::HostDesktopType desktop_type) {
   DCHECK(profile);
   profile_ = profile;
 
@@ -329,16 +345,31 @@ bool StartupBrowserCreatorImpl::Launch(Profile* profile,
     profile->GetNetworkPredictor()->EnablePredictor(false);
   }
 
-  if (command_line_.HasSwitch(switches::kDumpHistogramsOnExit))
-    base::StatisticsRecorder::set_dump_on_exit(true);
-
-#if defined(ENABLE_APP_LIST)
-  app_list_controller::InitAppList();
-  if (command_line_.HasSwitch(switches::kShowAppList)) {
-    app_list_controller::ShowAppList();
+  AppListService::InitAll(profile);
+  if (command_line_.HasSwitch(switches::kAppId)) {
+    std::string app_id = command_line_.GetSwitchValueASCII(switches::kAppId);
+    const Extension* extension = GetPlatformApp(profile, app_id);
+    // If |app_id| is a disabled or terminated platform app we handle it
+    // specially here, otherwise it will be handled below.
+    if (extension) {
+      RecordCmdLineAppHistogram(extensions::Manifest::TYPE_PLATFORM_APP);
+      AppLaunchParams params(profile, extension,
+                             extensions::LAUNCH_CONTAINER_NONE, NEW_WINDOW);
+      params.command_line = command_line_;
+      params.current_directory = cur_dir_;
+      // If we are being launched from the command line, default to native
+      // desktop.
+      params.desktop_type = chrome::HOST_DESKTOP_TYPE_NATIVE;
+      OpenApplicationWithReenablePrompt(params);
+      return true;
+    }
+  } else if (command_line_.HasSwitch(switches::kShowAppList)) {
+    // This switch is used for shortcuts on the native desktop.
+    AppListService::RecordShowTimings(command_line_);
+    AppListService::Get(chrome::HOST_DESKTOP_TYPE_NATIVE)->
+        ShowForProfile(profile);
     return true;
   }
-#endif
 
   // Open the required browser windows and tabs. First, see if
   // we're being run as an application window. If so, the user
@@ -354,7 +385,12 @@ bool StartupBrowserCreatorImpl::Launch(Profile* profile,
     RecordLaunchModeHistogram(urls_to_open.empty() ?
                               LM_TO_BE_DECIDED : LM_WITH_URLS);
 
-    ProcessLaunchURLs(process_startup, urls_to_open);
+    ProcessLaunchURLs(process_startup, urls_to_open, desktop_type);
+
+    if (command_line_.HasSwitch(switches::kInstallChromeApp)) {
+      install_chrome_app::InstallChromeApp(
+          command_line_.GetSwitchValueASCII(switches::kInstallChromeApp));
+    }
 
     // If this is an app launch, but we didn't open an app window, it may
     // be an app tab.
@@ -369,23 +405,6 @@ bool StartupBrowserCreatorImpl::Launch(Profile* profile,
 #endif
   }
 
-  // If we're recording or playing back, startup the EventRecorder now
-  // unless otherwise specified.
-  if (!command_line_.HasSwitch(switches::kNoEvents)) {
-    FilePath script_path;
-    PathService::Get(chrome::FILE_RECORDED_SCRIPT, &script_path);
-
-    bool record_mode = command_line_.HasSwitch(switches::kRecordMode);
-    bool playback_mode = command_line_.HasSwitch(switches::kPlaybackMode);
-
-    if (record_mode && chrome::kRecordModeEnabled)
-      base::EventRecorder::current()->StartRecording(script_path);
-    // Do not enter Playback mode if PageCycler is running; Playback mode does
-    // not work correctly.
-    if (playback_mode && !command_line_.HasSwitch(switches::kVisitURLs))
-      base::EventRecorder::current()->StartPlayback(script_path);
-  }
-
 #if defined(OS_WIN)
   if (process_startup)
     ShellIntegration::MigrateChromiumShortcuts();
@@ -394,34 +413,8 @@ bool StartupBrowserCreatorImpl::Launch(Profile* profile,
   return true;
 }
 
-void StartupBrowserCreatorImpl::ExtractOptionalAppWindowSize(
-    gfx::Rect* bounds) {
-  if (command_line_.HasSwitch(switches::kAppWindowSize)) {
-    int width, height;
-    width = height = 0;
-    std::string switch_value =
-        command_line_.GetSwitchValueASCII(switches::kAppWindowSize);
-    if (ParseCommaSeparatedIntegers(switch_value, &width, &height)) {
-      // TODO(scottmg): NativeScreen might be wrong. http://crbug.com/133312
-      const gfx::Rect work_area =
-          gfx::Screen::GetNativeScreen()->GetPrimaryDisplay().work_area();
-      width = std::min(width, work_area.width());
-      height = std::min(height, work_area.height());
-      bounds->set_size(gfx::Size(width, height));
-      bounds->set_x((work_area.width() - bounds->width()) / 2);
-      // TODO(nkostylev): work_area does include launcher but should not.
-      // Launcher auto hide pref is synced and is most likely not applied here.
-      bounds->set_y((work_area.height() - bounds->height()) / 2);
-    }
-  }
-}
-
-bool StartupBrowserCreatorImpl::IsAppLaunch(Profile* profile,
-                                            std::string* app_url,
+bool StartupBrowserCreatorImpl::IsAppLaunch(std::string* app_url,
                                             std::string* app_id) {
-  // Don't launch apps in incognito mode.
-  if (profile->IsOffTheRecord())
-    return false;
   if (command_line_.HasSwitch(switches::kApp)) {
     if (app_url)
       *app_url = command_line_.GetSwitchValueASCII(switches::kApp);
@@ -441,23 +434,23 @@ bool StartupBrowserCreatorImpl::OpenApplicationTab(Profile* profile) {
   // function will open an app that should be in a tab, there is no need
   // to look at the app URL.  OpenApplicationWindow() will open app url
   // shortcuts.
-  if (!IsAppLaunch(profile, NULL, &app_id) || app_id.empty())
+  if (!IsAppLaunch(NULL, &app_id) || app_id.empty())
     return false;
 
-  extension_misc::LaunchContainer launch_container;
+  extensions::LaunchContainer launch_container;
   const Extension* extension;
   if (!GetAppLaunchContainer(profile, app_id, &extension, &launch_container))
     return false;
 
   // If the user doesn't want to open a tab, fail.
-  if (launch_container != extension_misc::LAUNCH_TAB)
+  if (launch_container != extensions::LAUNCH_CONTAINER_TAB)
     return false;
 
-  RecordCmdLineAppHistogram();
+  RecordCmdLineAppHistogram(extension->GetType());
 
-  WebContents* app_tab = application_launch::OpenApplication(
-      application_launch::LaunchParams(profile, extension,
-          extension_misc::LAUNCH_TAB, NEW_FOREGROUND_TAB));
+  WebContents* app_tab = OpenApplication(AppLaunchParams(
+      profile, extension, extensions::LAUNCH_CONTAINER_TAB,
+      NEW_FOREGROUND_TAB));
   return (app_tab != NULL);
 }
 
@@ -469,7 +462,7 @@ bool StartupBrowserCreatorImpl::OpenApplicationWindow(
     *out_app_contents = NULL;
 
   std::string url_string, app_id;
-  if (!IsAppLaunch(profile, &url_string, &app_id))
+  if (!IsAppLaunch(&url_string, &app_id))
     return false;
 
   // This can fail if the app_id is invalid.  It can also fail if the
@@ -477,7 +470,7 @@ bool StartupBrowserCreatorImpl::OpenApplicationWindow(
   // TODO(skerner): Do something reasonable here. Pop up a warning panel?
   // Open an URL to the gallery page of the extension id?
   if (!app_id.empty()) {
-    extension_misc::LaunchContainer launch_container;
+    extensions::LaunchContainer launch_container;
     const Extension* extension;
     if (!GetAppLaunchContainer(profile, app_id, &extension, &launch_container))
       return false;
@@ -486,23 +479,21 @@ bool StartupBrowserCreatorImpl::OpenApplicationWindow(
     // and avoid calling GetAppLaunchContainer() both here and in
     // OpenApplicationTab().
 
-    if (launch_container == extension_misc::LAUNCH_TAB)
+    if (launch_container == extensions::LAUNCH_CONTAINER_TAB)
       return false;
 
-    RecordCmdLineAppHistogram();
+    RecordCmdLineAppHistogram(extension->GetType());
 
-    application_launch::LaunchParams params(profile, extension,
-                                            launch_container, NEW_WINDOW);
-    params.command_line = &command_line_;
+    AppLaunchParams params(profile, extension, launch_container, NEW_WINDOW);
+    params.command_line = command_line_;
     params.current_directory = cur_dir_;
-    WebContents* tab_in_app_window = application_launch::OpenApplication(
-        params);
+    WebContents* tab_in_app_window = OpenApplication(params);
 
     if (out_app_contents)
       *out_app_contents = tab_in_app_window;
 
     // Platform apps fire off a launch event which may or may not open a window.
-    return (tab_in_app_window != NULL || extension->is_platform_app());
+    return (tab_in_app_window != NULL || CanLaunchViaEvent(extension));
   }
 
   if (url_string.empty())
@@ -518,21 +509,19 @@ bool StartupBrowserCreatorImpl::OpenApplicationWindow(
     ChildProcessSecurityPolicy* policy =
         ChildProcessSecurityPolicy::GetInstance();
     if (policy->IsWebSafeScheme(url.scheme()) ||
-        url.SchemeIs(chrome::kFileScheme)) {
-      if (profile->GetExtensionService()->IsInstalledApp(url)) {
-        RecordCmdLineAppHistogram();
+        url.SchemeIs(content::kFileScheme)) {
+      const extensions::Extension* extension =
+          extensions::ExtensionRegistry::Get(profile)
+              ->enabled_extensions().GetAppByURL(url);
+      if (extension) {
+        RecordCmdLineAppHistogram(extension->GetType());
       } else {
-        AppLauncherHandler::RecordAppLaunchType(
-            extension_misc::APP_LAUNCH_CMD_LINE_APP_LEGACY);
+        CoreAppLauncherHandler::RecordAppLaunchType(
+            extension_misc::APP_LAUNCH_CMD_LINE_APP_LEGACY,
+            extensions::Manifest::TYPE_HOSTED_APP);
       }
 
-      gfx::Rect override_bounds;
-      ExtractOptionalAppWindowSize(&override_bounds);
-
-      WebContents* app_tab = application_launch::OpenAppShortcutWindow(
-          profile,
-          url,
-          override_bounds);
+      WebContents* app_tab = OpenAppShortcutWindow(profile, url);
 
       if (out_app_contents)
         *out_app_contents = app_tab;
@@ -545,7 +534,8 @@ bool StartupBrowserCreatorImpl::OpenApplicationWindow(
 
 void StartupBrowserCreatorImpl::ProcessLaunchURLs(
     bool process_startup,
-    const std::vector<GURL>& urls_to_open) {
+    const std::vector<GURL>& urls_to_open,
+    chrome::HostDesktopType desktop_type) {
   // If we're starting up in "background mode" (no open browser window) then
   // don't open any browser windows, unless kAutoLaunchAtStartup is also
   // specified.
@@ -555,7 +545,16 @@ void StartupBrowserCreatorImpl::ProcessLaunchURLs(
     return;
   }
 
-  if (process_startup && ProcessStartupURLs(urls_to_open)) {
+// TODO(tapted): Move this to startup_browser_creator_win.cc after refactor.
+#if defined(OS_WIN)
+  if (base::win::GetVersion() >= base::win::VERSION_WIN8) {
+    // See if there are apps for this profile that should be launched on startup
+    // due to a switch from Metro mode.
+    app_metro_launch::HandleAppLaunchForMetroRestart(profile_);
+  }
+#endif
+
+  if (process_startup && ProcessStartupURLs(urls_to_open, desktop_type)) {
     // ProcessStartupURLs processed the urls, nothing else to do.
     return;
   }
@@ -569,7 +568,8 @@ void StartupBrowserCreatorImpl::ProcessLaunchURLs(
     // Chrome may have been running in the background due to an app with a
     // background page being installed, or running with only an app window
     // displayed.
-    SessionService* service = SessionServiceFactory::GetForProfile(profile_);
+    SessionService* service =
+        SessionServiceFactory::GetForProfileForSessionRestore(profile_);
     if (service && service->ShouldNewWindowStartSession()) {
       // Restore the last session if any.
       if (!HasPendingUncleanExit(profile_) &&
@@ -577,7 +577,7 @@ void StartupBrowserCreatorImpl::ProcessLaunchURLs(
         return;
       }
       // Open user-specified URLs like pinned tabs and startup tabs.
-      Browser* browser = ProcessSpecifiedURLs(urls_to_open);
+      Browser* browser = ProcessSpecifiedURLs(urls_to_open, desktop_type);
       if (browser) {
         AddInfoBarsIfNecessary(browser, is_process_startup);
         return;
@@ -590,23 +590,22 @@ void StartupBrowserCreatorImpl::ProcessLaunchURLs(
   std::vector<GURL> adjust_urls = urls_to_open;
   if (adjust_urls.empty()) {
     AddStartupURLs(&adjust_urls);
-    if (StartupBrowserCreatorImpl::OpenStartupURLsInExistingBrowser(
-            profile_, adjust_urls))
-      return;
   } else if (!command_line_.HasSwitch(switches::kOpenInNewWindow)) {
     // Always open a list of urls in a window on the native desktop.
-    browser = browser::FindTabbedBrowser(profile_, false,
-                                         chrome::HOST_DESKTOP_TYPE_NATIVE);
+    browser = chrome::FindTabbedBrowser(profile_, false,
+                                        chrome::HOST_DESKTOP_TYPE_NATIVE);
   }
   // This will launch a browser; prevent session restore.
-  in_synchronous_profile_launch = true;
-  browser = OpenURLsInBrowser(browser, process_startup, adjust_urls);
-  in_synchronous_profile_launch = false;
+  StartupBrowserCreator::in_synchronous_profile_launch_ = true;
+  browser = OpenURLsInBrowser(browser, process_startup, adjust_urls,
+                              desktop_type);
+  StartupBrowserCreator::in_synchronous_profile_launch_ = false;
   AddInfoBarsIfNecessary(browser, is_process_startup);
 }
 
 bool StartupBrowserCreatorImpl::ProcessStartupURLs(
-    const std::vector<GURL>& urls_to_open) {
+    const std::vector<GURL>& urls_to_open,
+    chrome::HostDesktopType desktop_type) {
   VLOG(1) << "StartupBrowserCreatorImpl::ProcessStartupURLs";
   SessionStartupPref pref =
       StartupBrowserCreator::GetSessionStartupPref(command_line_, profile_);
@@ -617,17 +616,14 @@ bool StartupBrowserCreatorImpl::ProcessStartupURLs(
   else if (pref.type == SessionStartupPref::DEFAULT)
     VLOG(1) << "Pref: default";
 
-  extensions::AppRestoreService* service =
-      extensions::AppRestoreServiceFactory::GetForProfile(profile_);
+  apps::AppRestoreService* restore_service =
+      apps::AppRestoreServiceFactory::GetForProfile(profile_);
   // NULL in incognito mode.
-  if (service) {
-    bool should_restore_apps = StartupBrowserCreator::WasRestarted();
-#if defined(OS_CHROMEOS)
-    // Chromeos always restarts apps, even if it was a regular shutdown.
-    should_restore_apps = true;
-#endif
-    service->HandleStartup(should_restore_apps);
+  if (restore_service) {
+    restore_service->HandleStartup(apps::AppRestoreService::ShouldRestoreApps(
+        StartupBrowserCreator::WasRestarted()));
   }
+
   if (pref.type == SessionStartupPref::LAST) {
     if (profile_->GetLastSessionExitType() == Profile::EXIT_CRASHED &&
         !command_line_.HasSwitch(switches::kRestoreLastSession)) {
@@ -661,10 +657,11 @@ bool StartupBrowserCreatorImpl::ProcessStartupURLs(
     // separate.
     performance_monitor::StartupTimer::PauseTimer();
 
-    Browser* browser = SessionRestore::RestoreSession(profile_,
-                                                      NULL,
-                                                      restore_behavior,
-                                                      urls_to_open);
+    // The startup code only executes for browsers launched in desktop mode.
+    // i.e. HOST_DESKTOP_TYPE_NATIVE. Ash should never get here.
+    Browser* browser = SessionRestore::RestoreSession(
+        profile_, NULL, desktop_type, restore_behavior,
+        urls_to_open);
 
     performance_monitor::StartupTimer::UnpauseTimer();
 
@@ -672,7 +669,7 @@ bool StartupBrowserCreatorImpl::ProcessStartupURLs(
     return true;
   }
 
-  Browser* browser = ProcessSpecifiedURLs(urls_to_open);
+  Browser* browser = ProcessSpecifiedURLs(urls_to_open, desktop_type);
   if (!browser)
     return false;
 
@@ -691,7 +688,8 @@ bool StartupBrowserCreatorImpl::ProcessStartupURLs(
 }
 
 Browser* StartupBrowserCreatorImpl::ProcessSpecifiedURLs(
-    const std::vector<GURL>& urls_to_open) {
+    const std::vector<GURL>& urls_to_open,
+    chrome::HostDesktopType desktop_type) {
   SessionStartupPref pref =
       StartupBrowserCreator::GetSessionStartupPref(command_line_, profile_);
   StartupTabs tabs;
@@ -731,7 +729,7 @@ Browser* StartupBrowserCreatorImpl::ProcessSpecifiedURLs(
   if (tabs.empty())
     return NULL;
 
-  Browser* browser = OpenTabsInBrowser(NULL, true, tabs);
+  Browser* browser = OpenTabsInBrowser(NULL, true, tabs, desktop_type);
   return browser;
 }
 
@@ -758,15 +756,18 @@ void StartupBrowserCreatorImpl::AddUniqueURLs(const std::vector<GURL>& urls,
 Browser* StartupBrowserCreatorImpl::OpenURLsInBrowser(
     Browser* browser,
     bool process_startup,
-    const std::vector<GURL>& urls) {
+    const std::vector<GURL>& urls,
+    chrome::HostDesktopType desktop_type) {
   StartupTabs tabs;
   UrlsToTabs(urls, &tabs);
-  return OpenTabsInBrowser(browser, process_startup, tabs);
+  return OpenTabsInBrowser(browser, process_startup, tabs, desktop_type);
 }
 
-Browser* StartupBrowserCreatorImpl::OpenTabsInBrowser(Browser* browser,
-                                                      bool process_startup,
-                                                      const StartupTabs& tabs) {
+Browser* StartupBrowserCreatorImpl::OpenTabsInBrowser(
+    Browser* browser,
+    bool process_startup,
+    const StartupTabs& tabs,
+    chrome::HostDesktopType desktop_type) {
   DCHECK(!tabs.empty());
 
   // If we don't yet have a profile, try to use the one we're given from
@@ -775,34 +776,19 @@ Browser* StartupBrowserCreatorImpl::OpenTabsInBrowser(Browser* browser,
   if (!profile_ && browser)
     profile_ = browser->profile();
 
-  if (!browser || !browser->is_type_tabbed()) {
-    // The startup code only executes for browsers launched in desktop mode.
-    // i.e. HOST_DESKTOP_TYPE_NATIVE. Ash should never get here.
-    chrome::HostDesktopType host_desktop_type = browser ?
-        browser->host_desktop_type() : chrome::HOST_DESKTOP_TYPE_NATIVE;
-    browser = new Browser(Browser::CreateParams(profile_, host_desktop_type));
-  } else {
-#if defined(TOOLKIT_GTK)
-    // Setting the time of the last action on the window here allows us to steal
-    // focus, which is what the user wants when opening a new tab in an existing
-    // browser window.
-    gtk_util::SetWMLastUserActionTime(browser->window()->GetNativeWindow());
-#endif
-  }
-
-  // In kiosk mode, we want to always be fullscreen, so switch to that now.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kKioskMode))
-    chrome::ToggleFullscreenMode(browser);
+  if (!browser || !browser->is_type_tabbed())
+    browser = new Browser(Browser::CreateParams(profile_, desktop_type));
 
   bool first_tab = true;
+  ProtocolHandlerRegistry* registry = profile_ ?
+      ProtocolHandlerRegistryFactory::GetForProfile(profile_) : NULL;
   for (size_t i = 0; i < tabs.size(); ++i) {
     // We skip URLs that we'd have to launch an external protocol handler for.
     // This avoids us getting into an infinite loop asking ourselves to open
     // a URL, should the handler be (incorrectly) configured to be us. Anyone
     // asking us to open such a URL should really ask the handler directly.
     bool handled_by_chrome = ProfileIOData::IsHandledURL(tabs[i].url) ||
-        (profile_ && profile_->GetProtocolHandlerRegistry()->IsHandledProtocol(
-            tabs[i].url.scheme()));
+        (registry && registry->IsHandledProtocol(tabs[i].url.scheme()));
     if (!process_startup && !handled_by_chrome)
       continue;
 
@@ -818,32 +804,36 @@ Browser* StartupBrowserCreatorImpl::OpenTabsInBrowser(Browser* browser,
     params.tabstrip_add_types = add_types;
     params.extension_app_id = tabs[i].app_id;
 
-#if defined(ENABLE_RLZ)
-    if (process_startup &&
-        google_util::IsGoogleHomePageUrl(tabs[i].url.spec())) {
+#if defined(ENABLE_RLZ) && !defined(OS_IOS)
+    if (process_startup && google_util::IsGoogleHomePageUrl(tabs[i].url)) {
       params.extra_headers = RLZTracker::GetAccessPointHttpHeader(
           RLZTracker::CHROME_HOME_PAGE);
     }
-#endif
+#endif  // defined(ENABLE_RLZ) && !defined(OS_IOS)
 
     chrome::Navigate(&params);
 
     first_tab = false;
   }
-  if (!chrome::GetActiveWebContents(browser)) {
+  if (!browser->tab_strip_model()->GetActiveWebContents()) {
     // TODO: this is a work around for 110909. Figure out why it's needed.
-    if (!browser->tab_count())
-      chrome::AddBlankTabAt(browser, -1, true);
+    if (!browser->tab_strip_model()->count())
+      chrome::AddTabAt(browser, GURL(), -1, true);
     else
       browser->tab_strip_model()->ActivateTabAt(0, false);
   }
 
-  // The default behaviour is to show the window, as expressed by the default
+  // The default behavior is to show the window, as expressed by the default
   // value of StartupBrowserCreated::show_main_browser_window_. If this was set
   // to true ahead of this place, it means another task must have been spawned
   // to take care of that.
   if (!browser_creator_ || browser_creator_->show_main_browser_window())
     browser->window()->Show();
+
+  // In kiosk mode, we want to always be fullscreen, so switch to that now.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kKioskMode) ||
+      CommandLine::ForCurrentProcess()->HasSwitch(switches::kStartFullscreen))
+    chrome::ToggleFullscreenMode(browser);
 
   return browser;
 }
@@ -851,22 +841,28 @@ Browser* StartupBrowserCreatorImpl::OpenTabsInBrowser(Browser* browser,
 void StartupBrowserCreatorImpl::AddInfoBarsIfNecessary(
     Browser* browser,
     chrome::startup::IsProcessStartup is_process_startup) {
-  if (!browser || !profile_ || browser->tab_count() == 0)
+  if (!browser || !profile_ || browser->tab_strip_model()->count() == 0)
     return;
 
-  if (HasPendingUncleanExit(browser->profile()))
-    chrome::ShowSessionCrashedPrompt(browser);
+  if (HasPendingUncleanExit(browser->profile())) {
+    if (!command_line_.HasSwitch(switches::kEnableSessionCrashedBubble) ||
+        !ShowSessionCrashedBubble(browser))
+      SessionCrashedInfoBarDelegate::Create(browser);
+  }
 
-  // The bad flags info bar and the obsolete system info bar are only added to
-  // the first profile which is launched. Other profiles might be restoring the
-  // browsing sessions asynchronously, so we cannot add the info bars to the
-  // focused tabs here.
-  if (is_process_startup == chrome::startup::IS_PROCESS_STARTUP) {
+  // The below info bars are only added to the first profile which is launched.
+  // Other profiles might be restoring the browsing sessions asynchronously,
+  // so we cannot add the info bars to the focused tabs here.
+  if (is_process_startup == chrome::startup::IS_PROCESS_STARTUP &&
+      !command_line_.HasSwitch(switches::kTestType)) {
     chrome::ShowBadFlagsPrompt(browser);
-    chrome::ShowObsoleteOSPrompt(browser);
+    GoogleApiKeysInfoBarDelegate::Create(InfoBarService::FromWebContents(
+        browser->tab_strip_model()->GetActiveWebContents()));
+    ObsoleteSystemInfoBarDelegate::Create(InfoBarService::FromWebContents(
+        browser->tab_strip_model()->GetActiveWebContents()));
 
-    if (browser_defaults::kOSSupportsOtherBrowsers &&
-        !command_line_.HasSwitch(switches::kNoDefaultBrowserCheck)) {
+#if !defined(OS_CHROMEOS)
+    if (!command_line_.HasSwitch(switches::kNoDefaultBrowserCheck)) {
       // Generally, the default browser prompt should not be shown on first
       // run. However, when the set-as-default dialog has been suppressed, we
       // need to allow it.
@@ -878,12 +874,15 @@ void StartupBrowserCreatorImpl::AddInfoBarsIfNecessary(
                                          browser->host_desktop_type());
       }
     }
+#endif
   }
 }
 
-
 void StartupBrowserCreatorImpl::AddStartupURLs(
     std::vector<GURL>* startup_urls) const {
+  // TODO(atwilson): Simplify the logic that decides which tabs to open on
+  // start-up and make it more consistent. http://crbug.com/248883
+
   // If we have urls specified by the first run master preferences use them
   // and nothing else.
   if (browser_creator_ && startup_urls->empty()) {
@@ -895,7 +894,7 @@ void StartupBrowserCreatorImpl::AddStartupURLs(
         if (it->host() == "new_tab_page") {
           startup_urls->push_back(GURL(chrome::kChromeUINewTabURL));
         } else if (it->host() == "welcome_page") {
-          startup_urls->push_back(GetWelcomePageURL());
+          startup_urls->push_back(internals::GetWelcomePageURL());
         } else {
           startup_urls->push_back(*it);
         }
@@ -910,55 +909,34 @@ void StartupBrowserCreatorImpl::AddStartupURLs(
   // specified on the command line.
   if (startup_urls->empty()) {
     startup_urls->push_back(GURL(chrome::kChromeUINewTabURL));
-    PrefService* prefs = g_browser_process->local_state();
-    if (prefs->FindPreference(prefs::kShouldShowWelcomePage) &&
-        prefs->GetBoolean(prefs::kShouldShowWelcomePage)) {
-      // Reset the preference so we don't show the welcome page next time.
-      prefs->ClearPref(prefs::kShouldShowWelcomePage);
-      startup_urls->push_back(GetWelcomePageURL());
-    }
+    if (first_run::ShouldShowWelcomePage())
+      startup_urls->push_back(internals::GetWelcomePageURL());
   }
 
-  // If the sync promo page is going to be displayed then insert it at the front
-  // of the list.
-  if (SyncPromoUI::ShouldShowSyncPromoAtStartup(profile_, is_first_run_)) {
-    GURL continue_url;
-    if (!SyncPromoUI::UseWebBasedSigninFlow()) {
-      continue_url = GURL(chrome::kChromeUINewTabURL);
+  if (signin::ShouldShowPromoAtStartup(profile_, is_first_run_)) {
+    signin::DidShowPromoAtStartup(profile_);
+
+    const GURL sync_promo_url = signin::GetPromoURL(signin::SOURCE_START_PAGE,
+                                                    false);
+
+    // No need to add if the sync promo is already in the startup list.
+    bool add_promo = true;
+    for (std::vector<GURL>::const_iterator it = startup_urls->begin();
+         it != startup_urls->end(); ++it) {
+      if (*it == sync_promo_url) {
+        add_promo = false;
+        break;
+      }
     }
 
-    SyncPromoUI::DidShowSyncPromoAtStartup(profile_);
-    GURL old_url = (*startup_urls)[0];
-    (*startup_urls)[0] =
-        SyncPromoUI::GetSyncPromoURL(continue_url,
-                                     SyncPromoUI::SOURCE_START_PAGE,
-                                     false);
-
-    // An empty URL means to go to the home page.
-    if (old_url.is_empty() &&
-        profile_->GetHomePage() == GURL(chrome::kChromeUINewTabURL)) {
-      old_url = GURL(chrome::kChromeUINewTabURL);
-    }
-
-    // If the old URL is not the NTP then insert it right after the sync promo.
-    if (old_url != GURL(chrome::kChromeUINewTabURL))
-      startup_urls->insert(startup_urls->begin() + 1, old_url);
-
-    // If we have more than two startup tabs then skip the welcome page.
-    if (startup_urls->size() > 2) {
-      std::vector<GURL>::iterator it = std::find(
-          startup_urls->begin(), startup_urls->end(), GetWelcomePageURL());
-      if (it != startup_urls->end())
-        startup_urls->erase(it);
+    if (add_promo) {
+      // If the first URL is the NTP, replace it with the sync promo. This
+      // behavior is desired because completing or skipping the sync promo
+      // causes a redirect to the NTP.
+      if (!startup_urls->empty() && IsNewTabURL(profile_, startup_urls->at(0)))
+        startup_urls->at(0) = sync_promo_url;
+      else
+        startup_urls->insert(startup_urls->begin(), sync_promo_url);
     }
   }
 }
-
-#if !defined(OS_WIN) || defined(USE_AURA)
-// static
-bool StartupBrowserCreatorImpl::OpenStartupURLsInExistingBrowser(
-    Profile* profile,
-    const std::vector<GURL>& startup_urls) {
-  return false;
-}
-#endif

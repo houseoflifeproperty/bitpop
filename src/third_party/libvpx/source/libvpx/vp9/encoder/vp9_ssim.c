@@ -8,10 +8,11 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include "./vp9_rtcd.h"
 
-#include "vp9/encoder/vp9_onyx_int.h"
+#include "vp9/encoder/vp9_ssim.h"
 
-void vp9_ssim_parms_16x16_c(unsigned char *s, int sp, unsigned char *r,
+void vp9_ssim_parms_16x16_c(uint8_t *s, int sp, uint8_t *r,
                             int rp, unsigned long *sum_s, unsigned long *sum_r,
                             unsigned long *sum_sq_s, unsigned long *sum_sq_r,
                             unsigned long *sum_sxr) {
@@ -26,7 +27,7 @@ void vp9_ssim_parms_16x16_c(unsigned char *s, int sp, unsigned char *r,
     }
   }
 }
-void vp9_ssim_parms_8x8_c(unsigned char *s, int sp, unsigned char *r, int rp,
+void vp9_ssim_parms_8x8_c(uint8_t *s, int sp, uint8_t *r, int rp,
                           unsigned long *sum_s, unsigned long *sum_r,
                           unsigned long *sum_sq_s, unsigned long *sum_sq_r,
                           unsigned long *sum_sxr) {
@@ -42,8 +43,8 @@ void vp9_ssim_parms_8x8_c(unsigned char *s, int sp, unsigned char *r, int rp,
   }
 }
 
-const static int64_t cc1 =  26634; // (64^2*(.01*255)^2
-const static int64_t cc2 = 239708; // (64^2*(.03*255)^2
+static const int64_t cc1 =  26634;  // (64^2*(.01*255)^2
+static const int64_t cc2 = 239708;  // (64^2*(.03*255)^2
 
 static double similarity(unsigned long sum_s, unsigned long sum_r,
                          unsigned long sum_sq_s, unsigned long sum_sq_r,
@@ -65,13 +66,7 @@ static double similarity(unsigned long sum_s, unsigned long sum_r,
   return ssim_n * 1.0 / ssim_d;
 }
 
-static double ssim_16x16(unsigned char *s, int sp, unsigned char *r, int rp) {
-  unsigned long sum_s = 0, sum_r = 0, sum_sq_s = 0, sum_sq_r = 0, sum_sxr = 0;
-  vp9_ssim_parms_16x16(s, sp, r, rp, &sum_s, &sum_r, &sum_sq_s, &sum_sq_r,
-                       &sum_sxr);
-  return similarity(sum_s, sum_r, sum_sq_s, sum_sq_r, sum_sxr, 256);
-}
-static double ssim_8x8(unsigned char *s, int sp, unsigned char *r, int rp) {
+static double ssim_8x8(uint8_t *s, int sp, uint8_t *r, int rp) {
   unsigned long sum_s = 0, sum_r = 0, sum_sq_s = 0, sum_sq_r = 0, sum_sxr = 0;
   vp9_ssim_parms_8x8(s, sp, r, rp, &sum_s, &sum_r, &sum_sq_s, &sum_sq_r,
                      &sum_sxr);
@@ -81,15 +76,16 @@ static double ssim_8x8(unsigned char *s, int sp, unsigned char *r, int rp) {
 // We are using a 8x8 moving window with starting location of each 8x8 window
 // on the 4x4 pixel grid. Such arrangement allows the windows to overlap
 // block boundaries to penalize blocking artifacts.
-double vp9_ssim2(unsigned char *img1, unsigned char *img2, int stride_img1,
+double vp9_ssim2(uint8_t *img1, uint8_t *img2, int stride_img1,
                  int stride_img2, int width, int height) {
   int i, j;
   int samples = 0;
   double ssim_total = 0;
 
   // sample point start with each 4x4 location
-  for (i = 0; i < height - 8; i += 4, img1 += stride_img1 * 4, img2 += stride_img2 * 4) {
-    for (j = 0; j < width - 8; j += 4) {
+  for (i = 0; i <= height - 8;
+       i += 4, img1 += stride_img1 * 4, img2 += stride_img2 * 4) {
+    for (j = 0; j <= width - 8; j += 4) {
       double v = ssim_8x8(img1 + j, stride_img1, img2 + j, stride_img2);
       ssim_total += v;
       samples++;
@@ -104,16 +100,16 @@ double vp9_calc_ssim(YV12_BUFFER_CONFIG *source, YV12_BUFFER_CONFIG *dest,
   double ssimv;
 
   a = vp9_ssim2(source->y_buffer, dest->y_buffer,
-                source->y_stride, dest->y_stride, source->y_width,
-                source->y_height);
+                source->y_stride, dest->y_stride,
+                source->y_crop_width, source->y_crop_height);
 
   b = vp9_ssim2(source->u_buffer, dest->u_buffer,
-                source->uv_stride, dest->uv_stride, source->uv_width,
-                source->uv_height);
+                source->uv_stride, dest->uv_stride,
+                source->uv_crop_width, source->uv_crop_height);
 
   c = vp9_ssim2(source->v_buffer, dest->v_buffer,
-                source->uv_stride, dest->uv_stride, source->uv_width,
-                source->uv_height);
+                source->uv_stride, dest->uv_stride,
+                source->uv_crop_width, source->uv_crop_height);
 
   ssimv = a * .8 + .1 * (b + c);
 
@@ -128,16 +124,16 @@ double vp9_calc_ssimg(YV12_BUFFER_CONFIG *source, YV12_BUFFER_CONFIG *dest,
   double a, b, c;
 
   a = vp9_ssim2(source->y_buffer, dest->y_buffer,
-                source->y_stride, dest->y_stride, source->y_width,
-                source->y_height);
+                source->y_stride, dest->y_stride,
+                source->y_crop_width, source->y_crop_height);
 
   b = vp9_ssim2(source->u_buffer, dest->u_buffer,
-                source->uv_stride, dest->uv_stride, source->uv_width,
-                source->uv_height);
+                source->uv_stride, dest->uv_stride,
+                source->uv_crop_width, source->uv_crop_height);
 
   c = vp9_ssim2(source->v_buffer, dest->v_buffer,
-                source->uv_stride, dest->uv_stride, source->uv_width,
-                source->uv_height);
+                source->uv_stride, dest->uv_stride,
+                source->uv_crop_width, source->uv_crop_height);
   *ssim_y = a;
   *ssim_u = b;
   *ssim_v = c;

@@ -8,6 +8,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/painter.h"
+#include "ui/views/view.h"
 
 namespace views {
 
@@ -21,6 +22,7 @@ class SidedSolidBorder : public Border {
   // Overridden from Border:
   virtual void Paint(const View& view, gfx::Canvas* canvas) OVERRIDE;
   virtual gfx::Insets GetInsets() const OVERRIDE;
+  virtual gfx::Size GetMinimumSize() const OVERRIDE;
 
  private:
   const SkColor color_;
@@ -55,6 +57,10 @@ gfx::Insets SidedSolidBorder::GetInsets() const {
   return insets_;
 }
 
+gfx::Size SidedSolidBorder::GetMinimumSize() const {
+  return gfx::Size(insets_.width(), insets_.height());
+}
+
 // A variation of SidedSolidBorder, where each side has the same thickness.
 class SolidBorder : public SidedSolidBorder {
  public:
@@ -76,6 +82,10 @@ class EmptyBorder : public Border {
 
   virtual gfx::Insets GetInsets() const OVERRIDE {
     return insets_;
+  }
+
+  virtual gfx::Size GetMinimumSize() const OVERRIDE {
+    return gfx::Size();
   }
 
  private:
@@ -103,6 +113,10 @@ class BorderPainter : public Border {
     return insets_;
   }
 
+  virtual gfx::Size GetMinimumSize() const OVERRIDE {
+    return painter_->GetMinimumSize();
+  }
+
  private:
   scoped_ptr<Painter> painter_;
   const gfx::Insets insets_;
@@ -119,36 +133,37 @@ Border::~Border() {
 }
 
 // static
-Border* Border::CreateSolidBorder(int thickness, SkColor color) {
-  return new SolidBorder(thickness, color);
+scoped_ptr<Border> Border::NullBorder() {
+  return scoped_ptr<Border>();
 }
 
 // static
-Border* Border::CreateEmptyBorder(int top, int left, int bottom, int right) {
-  return new EmptyBorder(top, left, bottom, right);
+scoped_ptr<Border> Border::CreateSolidBorder(int thickness, SkColor color) {
+  return scoped_ptr<Border>(new SolidBorder(thickness, color));
 }
 
 // static
-Border* Border::CreateSolidSidedBorder(int top,
-                                       int left,
-                                       int bottom,
-                                       int right,
-                                       SkColor color) {
-  return new SidedSolidBorder(top, left, bottom, right, color);
+scoped_ptr<Border> Border::CreateEmptyBorder(int top,
+                                             int left,
+                                             int bottom,
+                                             int right) {
+  return scoped_ptr<Border>(new EmptyBorder(top, left, bottom, right));
 }
 
 // static
-Border* Border::CreateBorderPainter(Painter* painter,
-                                    const gfx::Insets& insets) {
-  return new BorderPainter(painter, insets);
+scoped_ptr<Border> Border::CreateSolidSidedBorder(int top,
+                                                  int left,
+                                                  int bottom,
+                                                  int right,
+                                                  SkColor color) {
+  return scoped_ptr<Border>(
+      new SidedSolidBorder(top, left, bottom, right, color));
 }
 
-TextButtonBorder* Border::AsTextButtonBorder() {
-  return NULL;
-}
-
-const TextButtonBorder* Border::AsTextButtonBorder() const {
-  return NULL;
+// static
+scoped_ptr<Border> Border::CreateBorderPainter(Painter* painter,
+                                               const gfx::Insets& insets) {
+  return scoped_ptr<Border>(new BorderPainter(painter, insets));
 }
 
 }  // namespace views

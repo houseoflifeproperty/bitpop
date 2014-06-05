@@ -5,26 +5,29 @@
 
 """A wrapper script to run layout tests on the buildbots.
 
-Runs the run_webkit_tests.py script found in webkit/tools/layout_tests above
+Runs the run-webkit-tests script found in third_party/WebKit/Tools/Scripts above
 this script. For a complete list of command-line options, pass '--help' on the
 command line.
 
-To pass additional options to run_webkit_tests without having them interpreted
+To pass additional options to run-webkit-tests without having them interpreted
 as options for this script, include them in an '--options="..."' argument. In
 addition, a list of one or more tests or test directories, specified relative
 to the main webkit test directory, may be passed on the command line.
 """
 
+import json
 import optparse
 import os
+import re
 import sys
 
 from common import chromium_utils
+from slave import build_directory
 from slave import slave_utils
 
 
 def layout_test(options, args):
-  """Parse options and call run_webkit_tests.py, using Python from the tree."""
+  """Parse options and call run-webkit-tests, using Python from the tree."""
   build_dir = os.path.abspath(options.build_dir)
 
   dumprendertree_exe = 'DumpRenderTree.exe'
@@ -38,13 +41,13 @@ def layout_test(options, args):
     # If we don't have gflags.exe, report it but don't worry about it.
     print 'Warning: Couldn\'t disable page heap, if it was already enabled.'
 
-  webkit_tests_dir = chromium_utils.FindUpward(build_dir,
-                                              'webkit', 'tools', 'layout_tests')
-  run_webkit_tests = os.path.join(webkit_tests_dir, 'run_webkit_tests.py')
+  blink_scripts_dir = chromium_utils.FindUpward(build_dir,
+    'third_party', 'WebKit', 'Tools', 'Scripts')
+  run_blink_tests = os.path.join(blink_scripts_dir, 'run-webkit-tests')
 
   slave_name = slave_utils.SlaveBuildName(build_dir)
 
-  command = [run_webkit_tests,
+  command = [run_blink_tests,
              '--no-show-results',
              '--no-new-test-results',
              '--full-results-html',    # For the dashboards.
@@ -57,7 +60,7 @@ def layout_test(options, args):
   # after all the bots have WebKit r124789 or later.
   capture_obj = slave_utils.RunCommandCaptureFilter()
   slave_utils.RunPythonCommandInBuildDir(build_dir, options.target,
-                                         [run_webkit_tests, '--help'],
+                                         [run_blink_tests, '--help'],
                                          filter_obj=capture_obj)
   if '--debug-rwt-logging' in ''.join(capture_obj.lines):
     command.append('--debug-rwt-logging')
@@ -66,12 +69,12 @@ def layout_test(options, args):
 
   if options.results_directory:
     # Prior to the fix in https://bugs.webkit.org/show_bug.cgi?id=58272,
-    # run_webkit_tests expects the results directory to be relative to
+    # run_blink_tests expects the results directory to be relative to
     # the configuration directory (e.g., src/webkit/Release). The
     # parameter is given to us relative to build_dir, which is where we
     # will run the command from.
     #
-    # When 58272 is landed, run_webkit_tests will support absolute file
+    # When 58272 is landed, run_blink_tests will support absolute file
     # paths as well as paths relative to CWD for non-Chromium ports and
     # paths relative to the configuration dir for Chromium ports. As
     # a transitional fix, we convert to an absolute dir, but once the
@@ -122,6 +125,12 @@ def layout_test(options, args):
   for additional_drt_flag in options.additional_drt_flag:
     command.append('--additional-drt-flag=%s' % additional_drt_flag)
 
+  for test_list in options.test_list:
+    command += ['--test-list', test_list]
+
+  if options.enable_leak_detection:
+    command.append('--enable-leak-detection')
+
   # The list of tests is given as arguments.
   command.extend(options.options.split(' '))
   command.extend(args)
@@ -140,67 +149,100 @@ def layout_test(options, args):
     if options.enable_pageheap:
       slave_utils.SetPageHeap(build_dir, dumprendertree_exe, False)
 
+    if options.json_test_results:
+      results_dir = options.results_directory
+      results_json = os.path.join(results_dir, "failing_results.json")
+      with open(results_json, 'rb') as f:
+        data = f.read()
+
+      # data is in the form of:
+      #   ADD_RESULTS(<json object>);
+      # but use a regex match to also support a raw json object.
+      m = re.match(r'[^({]*' # From the beginning, take any except '(' or '{'
+                  r'(?:'
+                    r'\((.*)\);'  # Expect '(<json>);'
+                    r'|'          # or
+                    r'({.*})'     # '<json object>'
+                  r')$',
+        data)
+      assert m is not None
+      data = m.group(1) or m.group(2)
+
+      json_data = json.loads(data)
+      assert isinstance(json_data, dict)
+
+      with open(options.json_test_results, 'wb') as f:
+        f.write(data)
+
 
 def main():
   option_parser = optparse.OptionParser()
   option_parser.add_option('-o', '--results-directory', default='',
                            help='output results directory')
-  option_parser.add_option('', '--build-dir', default='webkit',
-                           help='path to main build directory (the parent of '
-                                'the Release or Debug directory)')
-  option_parser.add_option('', '--target', default='',
+  option_parser.add_option('--build-dir', default='webkit', help='ignored')
+  option_parser.add_option('--target', default='',
       help='DumpRenderTree build configuration (Release or Debug)')
-  option_parser.add_option('', '--options', default='',
-      help='additional options to pass to run_webkit_tests.py')
-  option_parser.add_option("", "--platform", default='',
-      help=("Platform value passed directly to run_webkit_tests."))
-  option_parser.add_option('', '--no-pixel-tests', action='store_true',
+  option_parser.add_option('--options', default='',
+      help='additional options to pass to run-webkit-tests')
+  option_parser.add_option('--platform', default='',
+      help=('Platform value passed directly to run_blink_tests.'))
+  option_parser.add_option('--no-pixel-tests', action='store_true',
                            default=False,
                            help='disable pixel-to-pixel PNG comparisons')
-  option_parser.add_option('', '--enable-pageheap', action='store_true',
+  option_parser.add_option('--enable-pageheap', action='store_true',
                            default=False, help='Enable page heap checking')
-  option_parser.add_option("", "--batch-size",
+  option_parser.add_option('--batch-size',
                            default=None,
-                           help=("Run a the tests in batches (n), after every "
-                                 "n tests, the test shell is relaunched."))
-  option_parser.add_option("", "--run-part",
+                           help=('Run a the tests in batches (n), after every '
+                                 'n tests, the test shell is relaunched.'))
+  option_parser.add_option('--run-part',
                            default=None,
-                           help=("Run a specified part (n:l), the nth of lth"
-                                 ", of the layout tests"))
-  option_parser.add_option("", "--builder-name",
+                           help=('Run a specified part (n:l), the nth of lth'
+                                 ', of the layout tests'))
+  option_parser.add_option('--builder-name',
                            default=None,
-                           help="The name of the builder running this script.")
-  option_parser.add_option("", "--build-number",
+                           help='The name of the builder running this script.')
+  option_parser.add_option('--build-number',
                            default=None,
-                           help=("The build number of the builder running"
-                                 "this script."))
-  option_parser.add_option("", "--test-results-server",
-                           help=("If specified, upload results json files to "
-                                 "this appengine server."))
-  option_parser.add_option("--additional-expectations", action="append",
+                           help=('The build number of the builder running'
+                                 'this script.'))
+  option_parser.add_option('--test-results-server',
+                           help=('If specified, upload results json files to '
+                                 'this appengine server.'))
+  option_parser.add_option('--additional-expectations', action='append',
                            default=[],
-                           help=("Path to a test_expectations file "
-                                 "that will override previous expectations. "
-                                 "Specify multiple times for multiple sets "
-                                 "of overrides."))
+                           help=('Path to a test_expectations file '
+                                 'that will override previous expectations. '
+                                 'Specify multiple times for multiple sets '
+                                 'of overrides.'))
   # TODO(dpranke): remove this after we fix the flag in the chromium command.
-  option_parser.add_option("--additional-expectations-file",
+  option_parser.add_option('--additional-expectations-file',
                            dest='additional_expectations',
-                           action="append", default=[],
-                           help=("DEPRECATED. "
-                                 "Same as --additional-expectations"))
-  option_parser.add_option("--time-out-ms",
-                           action="store", default=None,
-                           help="Set the timeout for each (non-SLOW) test")
-  option_parser.add_option("--driver-name",
-                           help=("If specified, alternative DumpRenderTree "
-                                 "binary to use"))
-  option_parser.add_option("--additional-drt-flag", action="append",
+                           action='append', default=[],
+                           help=('DEPRECATED. '
+                                 'Same as --additional-expectations'))
+  option_parser.add_option('--time-out-ms',
+                           action='store', default=None,
+                           help='Set the timeout for each (non-SLOW) test')
+  option_parser.add_option('--driver-name',
+                           help=('If specified, alternative DumpRenderTree '
+                                 'binary to use'))
+  option_parser.add_option('--additional-drt-flag', action='append',
                            default=[],
-                           help=("If specified, additional command line flag "
-                                 "to pass to DumpRenderTree. Specify multiple "
-                                 "times to add multiple flags."))
+                           help=('If specified, additional command line flag '
+                                 'to pass to DumpRenderTree. Specify multiple '
+                                 'times to add multiple flags.'))
+  option_parser.add_option('--json-test-results',
+                           help=('Path to write json results to allow '
+                                 'TryJob recipe to know how to ignore '
+                                 'expected failures.'))
+  option_parser.add_option('--test-list', action='append', metavar='FILE',
+                           default=[],
+                           help='Read list of tests to run from file.')
+  option_parser.add_option('--enable-leak-detection', action='store_true',
+                           default=False, help='Enable the leak detection')
   options, args = option_parser.parse_args()
+  options.build_dir = build_directory.GetBuildOutputDirectory()
 
   # Disable pageheap checking except on Windows.
   if sys.platform != 'win32':

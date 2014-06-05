@@ -6,76 +6,49 @@
 
 #include <string>
 
-#include "base/file_path.h"
-#include "base/stringprintf.h"
-#include "chrome/common/extensions/extension_constants.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
+#include "extensions/renderer/script_context.h"
+#include "third_party/WebKit/public/web/WebDOMFileSystem.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "v8/include/v8.h"
-#include "webkit/fileapi/file_system_util.h"
+#include "webkit/common/fileapi/file_system_util.h"
 
 namespace extensions {
 
-MediaGalleriesCustomBindings::MediaGalleriesCustomBindings()
-    : ChromeV8Extension(NULL) {
-  RouteFunction(
-      "GetMediaFileSystemObject",
-      base::Bind(&MediaGalleriesCustomBindings::GetMediaFileSystemObject,
-                 base::Unretained(this)));
-  RouteFunction(
-      "ExtractEmbeddedThumbnails",
-      base::Bind(&MediaGalleriesCustomBindings::ExtractEmbeddedThumbnails,
-                 base::Unretained(this)));
-}
+namespace {
 
-v8::Handle<v8::Value> MediaGalleriesCustomBindings::GetMediaFileSystemObject(
-    const v8::Arguments& args) {
-  if (args.Length() != 2) {
-    NOTREACHED();
-    return v8::Undefined();
-  }
-  if (!args[0]->IsString()) {
-    NOTREACHED();
-    return v8::Undefined();
-  }
-  if (!args[1]->IsString()) {
-    NOTREACHED();
-    return v8::Undefined();
-  }
+// FileSystemObject GetMediaFileSystem(string file_system_url): construct
+// a file system object from a file system url.
+void GetMediaFileSystemObject(const v8::FunctionCallbackInfo<v8::Value>& args) {
+  CHECK_EQ(1, args.Length());
+  CHECK(args[0]->IsString());
 
-  std::string fsid(*v8::String::Utf8Value(args[0]));
-  if (fsid.empty()) {
-    NOTREACHED();
-    return v8::Undefined();
-  }
-  std::string name(*v8::String::Utf8Value(args[1]));
-  if (name.empty()) {
-    NOTREACHED();
-    return v8::Undefined();
-  }
+  std::string fs_mount(*v8::String::Utf8Value(args[0]));
+  CHECK(!fs_mount.empty());
 
-  WebKit::WebFrame* webframe = WebKit::WebFrame::frameForCurrentContext();
+  blink::WebLocalFrame* webframe =
+      blink::WebLocalFrame::frameForCurrentContext();
   const GURL origin = GURL(webframe->document().securityOrigin().toString());
-  const GURL root_url =
-      fileapi::GetFileSystemRootURI(origin, fileapi::kFileSystemTypeIsolated);
-  const std::string url =
-      base::StringPrintf("%s%s/%s/", root_url.spec().c_str(), fsid.c_str(),
-                         extension_misc::kMediaFileSystemPathPart);
-  return webframe->createFileSystem(WebKit::WebFileSystem::TypeIsolated,
-                                    WebKit::WebString::fromUTF8(name),
-                                    WebKit::WebString::fromUTF8(url));
+  std::string fs_name =
+      fileapi::GetFileSystemName(origin, fileapi::kFileSystemTypeExternal);
+  fs_name.append("_");
+  fs_name.append(fs_mount);
+  const GURL root_url(
+      fileapi::GetExternalFileSystemRootURIString(origin, fs_mount));
+  args.GetReturnValue().Set(
+      blink::WebDOMFileSystem::create(webframe,
+                                      blink::WebFileSystemTypeExternal,
+                                      blink::WebString::fromUTF8(fs_name),
+                                      root_url).toV8Value());
 }
 
-v8::Handle<v8::Value> MediaGalleriesCustomBindings::ExtractEmbeddedThumbnails(
-    const v8::Arguments& args) {
-  if (args.Length() != 1) {
-    NOTREACHED() << "Bad arguments";
-    return v8::Undefined();
-  }
-  // TODO(vandebo) Check that the object is a FileEntry.
+}  // namespace
 
-  // TODO(vandebo) Create and return a Directory entry object.
-  return v8::Null();
+MediaGalleriesCustomBindings::MediaGalleriesCustomBindings(
+    ScriptContext* context)
+    : ObjectBackedNativeHandler(context) {
+  RouteFunction("GetMediaFileSystemObject",
+                base::Bind(&GetMediaFileSystemObject));
 }
 
 }  // namespace extensions

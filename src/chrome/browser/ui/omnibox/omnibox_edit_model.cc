@@ -9,106 +9,209 @@
 #include "base/auto_reset.h"
 #include "base/format_macros.h"
 #include "base/metrics/histogram.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
-#include "chrome/browser/autocomplete/autocomplete_input.h"
-#include "chrome/browser/autocomplete/autocomplete_log.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
 #include "chrome/browser/autocomplete/extension_app_provider.h"
+#include "chrome/browser/autocomplete/history_url_provider.h"
 #include "chrome/browser/autocomplete/keyword_provider.h"
 #include "chrome/browser/autocomplete/search_provider.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
+#include "chrome/browser/bookmarks/bookmark_stats.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/extensions/api/omnibox/omnibox_api.h"
+#include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/google/google_url_tracker.h"
-#include "chrome/browser/instant/instant_controller.h"
 #include "chrome/browser/net/predictor.h"
-#include "chrome/browser/net/url_fixer_upper.h"
+#include "chrome/browser/omnibox/omnibox_log.h"
 #include "chrome/browser/predictors/autocomplete_action_predictor.h"
 #include "chrome/browser/predictors/autocomplete_action_predictor_factory.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prerender/prerender_field_trial.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_prepopulate_data.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/omnibox/omnibox_current_page_delegate_impl.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_controller.h"
+#include "chrome/browser/ui/omnibox/omnibox_navigation_observer.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_view.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
-#include "chrome/browser/ui/search/search.h"
+#include "chrome/browser/ui/search/instant_search_prerenderer.h"
 #include "chrome/browser/ui/search/search_tab_helper.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "chrome/browser/ui/toolbar/toolbar_model.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/user_metrics.h"
-#include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "extensions/common/constants.h"
-#include "googleurl/src/url_util.h"
 #include "ui/gfx/image/image.h"
+#include "url/url_util.h"
 
-using content::UserMetricsAction;
 using predictors::AutocompleteActionPredictor;
-using predictors::AutocompleteActionPredictorFactory;
 
-///////////////////////////////////////////////////////////////////////////////
-// OmniboxEditModel::State
+
+// Helpers --------------------------------------------------------------------
+
+namespace {
+
+// Histogram name which counts the number of times that the user text is
+// cleared.  IME users are sometimes in the situation that IME was
+// unintentionally turned on and failed to input latin alphabets (ASCII
+// characters) or the opposite case.  In that case, users may delete all
+// the text and the user text gets cleared.  We'd like to measure how often
+// this scenario happens.
+//
+// Note that since we don't currently correlate "text cleared" events with
+// IME usage, this also captures many other cases where users clear the text;
+// though it explicitly doesn't log deleting all the permanent text as
+// the first action of an editing sequence (see comments in
+// OnAfterPossibleChange()).
+const char kOmniboxUserTextClearedHistogram[] = "Omnibox.UserTextCleared";
+
+enum UserTextClearedType {
+  OMNIBOX_USER_TEXT_CLEARED_BY_EDITING = 0,
+  OMNIBOX_USER_TEXT_CLEARED_WITH_ESCAPE = 1,
+  OMNIBOX_USER_TEXT_CLEARED_NUM_OF_ITEMS,
+};
+
+// Histogram name which counts the number of times the user enters
+// keyword hint mode and via what method.  The possible values are listed
+// in the EnteredKeywordModeMethod enum which is defined in the .h file.
+const char kEnteredKeywordModeHistogram[] = "Omnibox.EnteredKeywordMode";
+
+// Histogram name which counts the number of milliseconds a user takes
+// between focusing and editing the omnibox.
+const char kFocusToEditTimeHistogram[] = "Omnibox.FocusToEditTime";
+
+// Histogram name which counts the number of milliseconds a user takes
+// between focusing and opening an omnibox match.
+const char kFocusToOpenTimeHistogram[] = "Omnibox.FocusToOpenTimeAnyPopupState";
+
+// Split the percentage match histograms into buckets based on the width of the
+// omnibox.
+const int kPercentageMatchHistogramWidthBuckets[] = { 400, 700, 1200 };
+
+void RecordPercentageMatchHistogram(const base::string16& old_text,
+                                    const base::string16& new_text,
+                                    bool url_replacement_active,
+                                    content::PageTransition transition,
+                                    int omnibox_width) {
+  size_t avg_length = (old_text.length() + new_text.length()) / 2;
+
+  int percent = 0;
+  if (!old_text.empty() && !new_text.empty()) {
+    size_t shorter_length = std::min(old_text.length(), new_text.length());
+    base::string16::const_iterator end(old_text.begin() + shorter_length);
+    base::string16::const_iterator mismatch(
+        std::mismatch(old_text.begin(), end, new_text.begin()).first);
+    size_t matching_characters = mismatch - old_text.begin();
+    percent = static_cast<float>(matching_characters) / avg_length * 100;
+  }
+
+  std::string histogram_name;
+  if (url_replacement_active) {
+    if (transition == content::PAGE_TRANSITION_TYPED) {
+      histogram_name = "InstantExtended.PercentageMatchV2_QuerytoURL";
+      UMA_HISTOGRAM_PERCENTAGE(histogram_name, percent);
+    } else {
+      histogram_name = "InstantExtended.PercentageMatchV2_QuerytoQuery";
+      UMA_HISTOGRAM_PERCENTAGE(histogram_name, percent);
+    }
+  } else {
+    if (transition == content::PAGE_TRANSITION_TYPED) {
+      histogram_name = "InstantExtended.PercentageMatchV2_URLtoURL";
+      UMA_HISTOGRAM_PERCENTAGE(histogram_name, percent);
+    } else {
+      histogram_name = "InstantExtended.PercentageMatchV2_URLtoQuery";
+      UMA_HISTOGRAM_PERCENTAGE(histogram_name, percent);
+    }
+  }
+
+  std::string suffix = "large";
+  for (size_t i = 0; i < arraysize(kPercentageMatchHistogramWidthBuckets);
+       ++i) {
+    if (omnibox_width < kPercentageMatchHistogramWidthBuckets[i]) {
+      suffix = base::IntToString(kPercentageMatchHistogramWidthBuckets[i]);
+      break;
+    }
+  }
+
+  // Cannot rely on UMA histograms macro because the name of the histogram is
+  // generated dynamically.
+  base::HistogramBase* counter = base::LinearHistogram::FactoryGet(
+      histogram_name + "_" + suffix, 1, 101, 102,
+      base::Histogram::kUmaTargetedHistogramFlag);
+  counter->Add(percent);
+}
+
+}  // namespace
+
+
+// OmniboxEditModel::State ----------------------------------------------------
 
 OmniboxEditModel::State::State(bool user_input_in_progress,
-                               const string16& user_text,
-                               const string16& keyword,
+                               const base::string16& user_text,
+                               const base::string16& gray_text,
+                               const base::string16& keyword,
                                bool is_keyword_hint,
-                               OmniboxFocusState focus_state)
+                               bool url_replacement_enabled,
+                               OmniboxFocusState focus_state,
+                               FocusSource focus_source,
+                               const AutocompleteInput& autocomplete_input)
     : user_input_in_progress(user_input_in_progress),
       user_text(user_text),
+      gray_text(gray_text),
       keyword(keyword),
       is_keyword_hint(is_keyword_hint),
-      focus_state(focus_state) {
+      url_replacement_enabled(url_replacement_enabled),
+      focus_state(focus_state),
+      focus_source(focus_source),
+      autocomplete_input(autocomplete_input) {
 }
 
 OmniboxEditModel::State::~State() {
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// OmniboxEditModel
+
+// OmniboxEditModel -----------------------------------------------------------
 
 OmniboxEditModel::OmniboxEditModel(OmniboxView* view,
                                    OmniboxEditController* controller,
                                    Profile* profile)
     : view_(view),
-      popup_(NULL),
       controller_(controller),
       focus_state_(OMNIBOX_FOCUS_NONE),
+      focus_source_(INVALID),
       user_input_in_progress_(false),
+      user_input_since_focus_(true),
       just_deleted_text_(false),
       has_temporary_text_(false),
-      is_temporary_text_set_by_instant_(false),
       paste_state_(NONE),
       control_key_state_(UP),
       is_keyword_hint_(false),
       profile_(profile),
       in_revert_(false),
-      in_escape_handler_(false),
       allow_exact_keyword_match_(false) {
-  // Use a restricted subset of the autocomplete providers if we're using the
-  // Instant Extended API, as it doesn't support them all.
-  autocomplete_controller_.reset(new AutocompleteController(profile, this,
-      chrome::search::IsInstantExtendedAPIEnabled(profile) ?
-          AutocompleteClassifier::kInstantExtendedOmniboxProviders :
-          AutocompleteClassifier::kDefaultOmniboxProviders));
+  omnibox_controller_.reset(new OmniboxController(this, profile));
+  delegate_.reset(new OmniboxCurrentPageDelegateImpl(controller, profile));
 }
 
 OmniboxEditModel::~OmniboxEditModel() {
@@ -122,8 +225,9 @@ const OmniboxEditModel::State OmniboxEditModel::GetStateForTabSwitch() {
     // Weird edge case to match other browsers: if the edit is empty, revert to
     // the permanent text (so the user can get it back easily) but select it (so
     // on switching back, typing will "just work").
-    const string16 user_text(UserTextFromDisplayText(view_->GetText()));
+    const base::string16 user_text(UserTextFromDisplayText(view_->GetText()));
     if (user_text.empty()) {
+      base::AutoReset<bool> tmp(&in_revert_, true);
       view_->RevertAll();
       view_->SelectAll(true);
     } else {
@@ -131,116 +235,125 @@ const OmniboxEditModel::State OmniboxEditModel::GetStateForTabSwitch() {
     }
   }
 
-  return State(user_input_in_progress_, user_text_, keyword_, is_keyword_hint_,
-               focus_state_);
+  UMA_HISTOGRAM_BOOLEAN("Omnibox.SaveStateForTabSwitch.UserInputInProgress",
+                        user_input_in_progress_);
+  return State(
+      user_input_in_progress_, user_text_, view_->GetGrayTextAutocompletion(),
+      keyword_, is_keyword_hint_,
+      controller_->GetToolbarModel()->url_replacement_enabled(),
+      focus_state_, focus_source_, input_);
 }
 
-void OmniboxEditModel::RestoreState(const State& state) {
-  SetFocusState(state.focus_state, OMNIBOX_FOCUS_CHANGE_TAB_SWITCH);
+void OmniboxEditModel::RestoreState(const State* state) {
+  // We need to update the permanent text correctly and revert the view
+  // regardless of whether there is saved state.
+  bool url_replacement_enabled = !state || state->url_replacement_enabled;
+  controller_->GetToolbarModel()->set_url_replacement_enabled(
+      url_replacement_enabled);
+  controller_->GetToolbarModel()->set_origin_chip_enabled(
+      url_replacement_enabled);
+  permanent_text_ = controller_->GetToolbarModel()->GetText();
+  // Don't muck with the search term replacement state, as we've just set it
+  // correctly.
+  view_->RevertWithoutResettingSearchTermReplacement();
+  // Restore the autocomplete controller's input, or clear it if this is a new
+  // tab.
+  input_ = state ? state->autocomplete_input : AutocompleteInput();
+  if (!state)
+    return;
+
+  SetFocusState(state->focus_state, OMNIBOX_FOCUS_CHANGE_TAB_SWITCH);
+  focus_source_ = state->focus_source;
   // Restore any user editing.
-  if (state.user_input_in_progress) {
+  if (state->user_input_in_progress) {
     // NOTE: Be sure and set keyword-related state BEFORE invoking
     // DisplayTextFromUserText(), as its result depends upon this state.
-    keyword_ = state.keyword;
-    is_keyword_hint_ = state.is_keyword_hint;
-    view_->SetUserText(state.user_text,
-        DisplayTextFromUserText(state.user_text), false);
+    keyword_ = state->keyword;
+    is_keyword_hint_ = state->is_keyword_hint;
+    view_->SetUserText(state->user_text,
+        DisplayTextFromUserText(state->user_text), false);
+    view_->SetGrayTextAutocompletion(state->gray_text);
   }
 }
 
-AutocompleteMatch OmniboxEditModel::CurrentMatch() {
-  AutocompleteMatch match;
-  GetInfoForCurrentText(&match, NULL);
+AutocompleteMatch OmniboxEditModel::CurrentMatch(
+    GURL* alternate_nav_url) const {
+  // If we have a valid match use it. Otherwise get one for the current text.
+  AutocompleteMatch match = omnibox_controller_->current_match();
+
+  if (!match.destination_url.is_valid()) {
+    GetInfoForCurrentText(&match, alternate_nav_url);
+  } else if (alternate_nav_url) {
+    *alternate_nav_url = AutocompleteResult::ComputeAlternateNavUrl(
+        input_, match);
+  }
   return match;
 }
 
-bool OmniboxEditModel::UpdatePermanentText(const string16& new_permanent_text) {
-  // When there's a new URL, and the user is not editing anything or the edit
-  // doesn't have focus, we want to revert the edit to show the new URL.  (The
-  // common case where the edit doesn't have focus is when the user has started
-  // an edit and then abandoned it and clicked a link on the page.)
+bool OmniboxEditModel::UpdatePermanentText() {
+  SearchProvider* search_provider =
+      autocomplete_controller()->search_provider();
+  if (search_provider && delegate_->CurrentPageExists())
+    search_provider->set_current_page_url(delegate_->GetURL());
+
+  // When there's new permanent text, and the user isn't interacting with the
+  // omnibox, we want to revert the edit to show the new text.  We could simply
+  // define "interacting" as "the omnibox has focus", but we still allow updates
+  // when the omnibox has focus as long as the user hasn't begun editing, isn't
+  // seeing zerosuggestions (because changing this text would require changing
+  // or hiding those suggestions), and hasn't toggled on "Show URL" (because
+  // this update will re-enable search term replacement, which will be annoying
+  // if the user is trying to copy the URL).  When the omnibox doesn't have
+  // focus, we assume the user may have abandoned their interaction and it's
+  // always safe to change the text; this also prevents someone toggling "Show
+  // URL" (which sounds as if it might be persistent) from seeing just that URL
+  // forever afterwards.
+  //
+  // If the page is auto-committing gray text, however, we generally don't want
+  // to make any change to the edit.  While auto-commits modify the underlying
+  // permanent URL, they're intended to have no effect on the user's editing
+  // process -- before and after the auto-commit, the omnibox should show the
+  // same user text and the same instant suggestion, even if the auto-commit
+  // happens while the edit doesn't have focus.
+  base::string16 new_permanent_text = controller_->GetToolbarModel()->GetText();
+  base::string16 gray_text = view_->GetGrayTextAutocompletion();
   const bool visibly_changed_permanent_text =
       (permanent_text_ != new_permanent_text) &&
-      (!user_input_in_progress_ || !has_focus());
+      (!has_focus() ||
+       (!user_input_in_progress_ &&
+        !(popup_model() && popup_model()->IsOpen()) &&
+        controller_->GetToolbarModel()->url_replacement_enabled())) &&
+      (gray_text.empty() ||
+       new_permanent_text != user_text_ + gray_text);
 
   permanent_text_ = new_permanent_text;
   return visibly_changed_permanent_text;
 }
 
 GURL OmniboxEditModel::PermanentURL() {
-  return URLFixerUpper::FixupURL(UTF16ToUTF8(permanent_text_), std::string());
+  return URLFixerUpper::FixupURL(base::UTF16ToUTF8(permanent_text_),
+                                 std::string());
 }
 
-void OmniboxEditModel::SetUserText(const string16& text) {
+void OmniboxEditModel::SetUserText(const base::string16& text) {
   SetInputInProgress(true);
   InternalSetUserText(text);
+  omnibox_controller_->InvalidateCurrentMatch();
   paste_state_ = NONE;
   has_temporary_text_ = false;
-  is_temporary_text_set_by_instant_ = false;
 }
 
-void OmniboxEditModel::FinalizeInstantQuery(const string16& input_text,
-                                            const InstantSuggestion& suggestion,
-                                            bool skip_inline_autocomplete) {
-  if (skip_inline_autocomplete) {
-    const string16 final_text = input_text + suggestion.text;
-    view_->OnBeforePossibleChange();
-    view_->SetWindowTextAndCaretPos(final_text, final_text.length(), false,
-        false);
-    view_->OnAfterPossibleChange();
-  } else if (popup_->IsOpen()) {
-    SearchProvider* search_provider =
-        autocomplete_controller_->search_provider();
-    // There may be no providers during testing; guard against that.
-    if (search_provider)
-      search_provider->FinalizeInstantQuery(input_text, suggestion);
-  }
-}
-
-void OmniboxEditModel::SetInstantSuggestion(
-    const InstantSuggestion& suggestion) {
-  switch (suggestion.behavior) {
-    case INSTANT_COMPLETE_NOW:
-      view_->SetInstantSuggestion(string16());
-      if (!suggestion.text.empty())
-        FinalizeInstantQuery(view_->GetText(), suggestion, false);
-      break;
-
-    case INSTANT_COMPLETE_NEVER:
-      DCHECK_EQ(INSTANT_SUGGESTION_SEARCH, suggestion.type);
-      view_->SetInstantSuggestion(suggestion.text);
-      break;
-
-    case INSTANT_COMPLETE_REPLACE:
-      view_->SetInstantSuggestion(string16());
-      has_temporary_text_ = true;
-      is_temporary_text_set_by_instant_ = true;
-      view_->SetWindowTextAndCaretPos(suggestion.text, suggestion.text.size(),
-                                      false, false);
-      break;
-  }
-}
-
-bool OmniboxEditModel::CommitSuggestedText(bool skip_inline_autocomplete) {
-  if (!controller_->GetInstant())
-    return false;
-
-  const string16 suggestion = view_->GetInstantSuggestion();
+bool OmniboxEditModel::CommitSuggestedText() {
+  const base::string16 suggestion = view_->GetGrayTextAutocompletion();
   if (suggestion.empty())
     return false;
 
-  // Assume that the gray text we are committing is a search suggestion.
-  FinalizeInstantQuery(view_->GetText(),
-                       InstantSuggestion(suggestion,
-                                         INSTANT_COMPLETE_NOW,
-                                         INSTANT_SUGGESTION_SEARCH),
-                       skip_inline_autocomplete);
+  const base::string16 final_text = view_->GetText() + suggestion;
+  view_->OnBeforePossibleChange();
+  view_->SetWindowTextAndCaretPos(final_text, final_text.length(), false,
+      false);
+  view_->OnAfterPossibleChange();
   return true;
-}
-
-bool OmniboxEditModel::AcceptCurrentInstantPreview() {
-  return controller_->GetInstant() &&
-      controller_->GetInstant()->CommitIfPossible(INSTANT_COMMIT_PRESSED_ENTER);
 }
 
 void OmniboxEditModel::OnChanged() {
@@ -248,108 +361,75 @@ void OmniboxEditModel::OnChanged() {
   // never actually use it.  This avoids running the autocomplete providers (and
   // any systems they then spin up) during startup.
   const AutocompleteMatch& current_match = user_input_in_progress_ ?
-      CurrentMatch() : AutocompleteMatch();
+      CurrentMatch(NULL) : AutocompleteMatch();
 
   AutocompleteActionPredictor::Action recommended_action =
       AutocompleteActionPredictor::ACTION_NONE;
-  AutocompleteActionPredictor* action_predictor =
-      user_input_in_progress_ ?
-      AutocompleteActionPredictorFactory::GetForProfile(profile_) : NULL;
-  if (action_predictor) {
-    action_predictor->RegisterTransitionalMatches(user_text_, result());
-    // Confer with the AutocompleteActionPredictor to determine what action, if
-    // any, we should take. Get the recommended action here even if we don't
-    // need it so we can get stats for anyone who is opted in to UMA, but only
-    // get it if the user has actually typed something to avoid constructing it
-    // before it's needed. Note: This event is triggered as part of startup when
-    // the initial tab transitions to the start page.
-    recommended_action =
-        action_predictor->RecommendAction(user_text_, current_match);
+  if (user_input_in_progress_) {
+    InstantSearchPrerenderer* prerenderer =
+        InstantSearchPrerenderer::GetForProfile(profile_);
+    if (prerenderer &&
+        prerenderer->IsAllowed(current_match, controller_->GetWebContents()) &&
+        popup_model()->IsOpen() && has_focus()) {
+      recommended_action = AutocompleteActionPredictor::ACTION_PRERENDER;
+    } else {
+      AutocompleteActionPredictor* action_predictor =
+          predictors::AutocompleteActionPredictorFactory::GetForProfile(
+              profile_);
+      action_predictor->RegisterTransitionalMatches(user_text_, result());
+      // Confer with the AutocompleteActionPredictor to determine what action,
+      // if any, we should take. Get the recommended action here even if we
+      // don't need it so we can get stats for anyone who is opted in to UMA,
+      // but only get it if the user has actually typed something to avoid
+      // constructing it before it's needed. Note: This event is triggered as
+      // part of startup when the initial tab transitions to the start page.
+      recommended_action =
+          action_predictor->RecommendAction(user_text_, current_match);
+    }
   }
 
   UMA_HISTOGRAM_ENUMERATION("AutocompleteActionPredictor.Action",
                             recommended_action,
                             AutocompleteActionPredictor::LAST_PREDICT_ACTION);
 
-  if (!DoInstant(current_match)) {
-    switch (recommended_action) {
-      case AutocompleteActionPredictor::ACTION_PRERENDER:
-        DoPrerender(current_match);
-        break;
-      case AutocompleteActionPredictor::ACTION_PRECONNECT:
-        DoPreconnect(current_match);
-        break;
-      case AutocompleteActionPredictor::ACTION_NONE:
-        break;
-      default:
-        NOTREACHED() << "Unexpected recommended action: " << recommended_action;
-        break;
-    }
+  // Hide any suggestions we might be showing.
+  view_->SetGrayTextAutocompletion(base::string16());
 
-    // Hide any suggestions we might be showing.
-    view_->SetInstantSuggestion(string16());
-
-    // No need to wait any longer for Instant.
-    FinalizeInstantQuery(string16(), InstantSuggestion(), false);
+  switch (recommended_action) {
+    case AutocompleteActionPredictor::ACTION_PRERENDER:
+      // It's possible that there is no current page, for instance if the tab
+      // has been closed or on return from a sleep state.
+      // (http://crbug.com/105689)
+      if (!delegate_->CurrentPageExists())
+        break;
+      // Ask for prerendering if the destination URL is different than the
+      // current URL.
+      if (current_match.destination_url != delegate_->GetURL())
+        delegate_->DoPrerender(current_match);
+      break;
+    case AutocompleteActionPredictor::ACTION_PRECONNECT:
+      omnibox_controller_->DoPreconnect(current_match);
+      break;
+    case AutocompleteActionPredictor::ACTION_NONE:
+      break;
   }
 
   controller_->OnChanged();
 }
 
 void OmniboxEditModel::GetDataForURLExport(GURL* url,
-                                           string16* title,
+                                           base::string16* title,
                                            gfx::Image* favicon) {
-  AutocompleteMatch match;
-  GetInfoForCurrentText(&match, NULL);
-  *url = match.destination_url;
-  if (*url == URLFixerUpper::FixupURL(UTF16ToUTF8(permanent_text_),
-                                      std::string())) {
-    *title = controller_->GetTitle();
-    *favicon = controller_->GetFavicon();
+  *url = CurrentMatch(NULL).destination_url;
+  if (*url == delegate_->GetURL()) {
+    content::WebContents* web_contents = controller_->GetWebContents();
+    *title = web_contents->GetTitle();
+    *favicon = FaviconTabHelper::FromWebContents(web_contents)->GetFavicon();
   }
 }
 
-bool OmniboxEditModel::UseVerbatimInstant() {
-#if defined(OS_MACOSX)
-  // TODO(suzhe): Fix Mac port to display Instant suggest in a separated NSView,
-  // so that we can display Instant suggest along with composition text.
-  const AutocompleteInput& input = autocomplete_controller_->input();
-  if (input.prevent_inline_autocomplete())
-    return true;
-#endif
-
-  // The value of input.prevent_inline_autocomplete() is determined by the
-  // following conditions:
-  // 1. If the caret is at the end of the text.
-  // 2. If it's in IME composition mode.
-  // We send the caret position to Instant (so it can determine #1 itself), and
-  // we use a separated widget for displaying the Instant suggest (so it doesn't
-  // interfere with #2). So, we don't need to care about the value of
-  // input.prevent_inline_autocomplete() here.
-  return view_->DeleteAtEndPressed() || popup_->selected_line() != 0 ||
-         just_deleted_text_;
-}
-
-string16 OmniboxEditModel::GetDesiredTLD() const {
-  // Tricky corner case: The user has typed "foo" and currently sees an inline
-  // autocomplete suggestion of "foo.net".  He now presses ctrl-a (e.g. to
-  // select all, on Windows).  If we treat the ctrl press as potentially for the
-  // sake of ctrl-enter, then we risk "www.foo.com" being promoted as the best
-  // match.  This would make the autocompleted text disappear, leaving our user
-  // feeling very confused when the wrong text gets highlighted.
-  //
-  // Thus, we only treat the user as pressing ctrl-enter when the user presses
-  // ctrl without any fragile state built up in the omnibox:
-  // * the contents of the omnibox have not changed since the keypress,
-  // * there is no autocompleted text visible, and
-  // * the user is not typing a keyword query.
-  return (control_key_state_ == DOWN_WITHOUT_CHANGE &&
-          inline_autocomplete_text_.empty() && !KeywordIsSelected())?
-    ASCIIToUTF16("com") : string16();
-}
-
 bool OmniboxEditModel::CurrentTextIsURL() const {
-  if (view_->toolbar_model()->WouldReplaceSearchURLWithSearchTerms())
+  if (controller_->GetToolbarModel()->WouldReplaceURL())
     return false;
 
   // If current text is not composed of replaced search terms and
@@ -360,28 +440,23 @@ bool OmniboxEditModel::CurrentTextIsURL() const {
   if (!user_input_in_progress_)
     return true;
 
-  AutocompleteMatch match;
-  GetInfoForCurrentText(&match, NULL);
-  return !AutocompleteMatch::IsSearchType(match.type);
+  return !AutocompleteMatch::IsSearchType(CurrentMatch(NULL).type);
 }
 
 AutocompleteMatch::Type OmniboxEditModel::CurrentTextType() const {
-  AutocompleteMatch match;
-  GetInfoForCurrentText(&match, NULL);
-  return match.type;
+  return CurrentMatch(NULL).type;
 }
 
 void OmniboxEditModel::AdjustTextForCopy(int sel_min,
                                          bool is_all_selected,
-                                         string16* text,
+                                         base::string16* text,
                                          GURL* url,
                                          bool* write_url) {
   *write_url = false;
 
   // Do not adjust if selection did not start at the beginning of the field, or
-  // if the URL was replaced by search terms.
-  if (sel_min != 0 ||
-      view_->toolbar_model()->WouldReplaceSearchURLWithSearchTerms())
+  // if the URL was omitted.
+  if ((sel_min != 0) || controller_->GetToolbarModel()->WouldReplaceURL())
     return;
 
   if (!user_input_in_progress_ && is_all_selected) {
@@ -389,7 +464,7 @@ void OmniboxEditModel::AdjustTextForCopy(int sel_min,
     // text so that if the scheme was stripped it's added back, and the url
     // is unescaped (we escape parts of the url for display).
     *url = PermanentURL();
-    *text = UTF8ToUTF16(url->spec());
+    *text = base::UTF8ToUTF16(url->spec());
     *write_url = true;
     return;
   }
@@ -398,8 +473,8 @@ void OmniboxEditModel::AdjustTextForCopy(int sel_min,
   // the user is probably holding down control to cause the copy, which will
   // screw up our calculation of the desired_tld.
   AutocompleteMatch match;
-  AutocompleteClassifierFactory::GetForProfile(profile_)->Classify(*text,
-        string16(), KeywordIsSelected(), true, &match, NULL);
+  AutocompleteClassifierFactory::GetForProfile(profile_)->Classify(
+      *text, KeywordIsSelected(), true, ClassifyPage(), &match, NULL);
   if (AutocompleteMatch::IsSearchType(match.type))
     return;
   *url = match.destination_url;
@@ -409,60 +484,80 @@ void OmniboxEditModel::AdjustTextForCopy(int sel_min,
   // entire host, and the user hasn't edited the host or manually removed the
   // scheme.
   GURL perm_url(PermanentURL());
-  if (perm_url.SchemeIs(chrome::kHttpScheme) &&
-      url->SchemeIs(chrome::kHttpScheme) && perm_url.host() == url->host()) {
+  if (perm_url.SchemeIs(url::kHttpScheme) &&
+      url->SchemeIs(url::kHttpScheme) && perm_url.host() == url->host()) {
     *write_url = true;
-    string16 http = ASCIIToUTF16(chrome::kHttpScheme) +
-        ASCIIToUTF16(content::kStandardSchemeSeparator);
+    base::string16 http = base::ASCIIToUTF16(url::kHttpScheme) +
+        base::ASCIIToUTF16(content::kStandardSchemeSeparator);
     if (text->compare(0, http.length(), http) != 0)
       *text = http + *text;
   }
 }
 
 void OmniboxEditModel::SetInputInProgress(bool in_progress) {
+  if (in_progress && !user_input_since_focus_) {
+    base::TimeTicks now = base::TimeTicks::Now();
+    DCHECK(last_omnibox_focus_ <= now);
+    UMA_HISTOGRAM_TIMES(kFocusToEditTimeHistogram, now - last_omnibox_focus_);
+    user_input_since_focus_ = true;
+  }
+
   if (user_input_in_progress_ == in_progress)
     return;
 
   user_input_in_progress_ = in_progress;
   if (user_input_in_progress_) {
     time_user_first_modified_omnibox_ = base::TimeTicks::Now();
-    autocomplete_controller_->ResetSession();
+    content::RecordAction(base::UserMetricsAction("OmniboxInputInProgress"));
+    autocomplete_controller()->ResetSession();
   }
-  controller_->OnInputInProgress(in_progress);
 
-  NotifySearchTabHelper();
+  // The following code handles two cases:
+  // * For HIDE_ON_USER_INPUT and ON_SRP, it hides the chip when user input
+  //   begins.
+  // * For HIDE_ON_MOUSE_RELEASE, which only hides the chip on mouse release if
+  //   the omnibox is empty, it handles the "omnibox was not empty" case by
+  //   acting like HIDE_ON_USER_INPUT.
+  if (chrome::ShouldDisplayOriginChipV2() && in_progress)
+    controller()->GetToolbarModel()->set_origin_chip_enabled(false);
+
+  controller_->GetToolbarModel()->set_input_in_progress(in_progress);
+  controller_->Update(NULL);
+
+  if (user_input_in_progress_ || !in_revert_)
+    delegate_->OnInputStateChanged();
 }
 
 void OmniboxEditModel::Revert() {
   SetInputInProgress(false);
   paste_state_ = NONE;
-  InternalSetUserText(string16());
+  InternalSetUserText(base::string16());
   keyword_.clear();
   is_keyword_hint_ = false;
   has_temporary_text_ = false;
-  is_temporary_text_set_by_instant_ = false;
   view_->SetWindowTextAndCaretPos(permanent_text_,
                                   has_focus() ? permanent_text_.length() : 0,
                                   false, true);
   AutocompleteActionPredictor* action_predictor =
-      AutocompleteActionPredictorFactory::GetForProfile(profile_);
-  if (action_predictor)
-    action_predictor->ClearTransitionalMatches();
+      predictors::AutocompleteActionPredictorFactory::GetForProfile(profile_);
+  action_predictor->ClearTransitionalMatches();
+  action_predictor->CancelPrerender();
 }
 
 void OmniboxEditModel::StartAutocomplete(
     bool has_selected_text,
-    bool prevent_inline_autocomplete) const {
-  ClearPopupKeywordMode();
-
-  bool keyword_is_selected = KeywordIsSelected();
-  popup_->SetHoveredLine(OmniboxPopupModel::kNoMatch);
-
+    bool prevent_inline_autocomplete) {
   size_t cursor_position;
   if (inline_autocomplete_text_.empty()) {
     // Cursor position is equivalent to the current selection's end.
     size_t start;
     view_->GetSelectionBounds(&start, &cursor_position);
+    // Adjust cursor position taking into account possible keyword in the user
+    // text.  We rely on DisplayTextFromUserText() method which is consistent
+    // with keyword extraction done in KeywordProvider/SearchProvider.
+    const size_t cursor_offset =
+        user_text_.length() - DisplayTextFromUserText(user_text_).length();
+    cursor_position += cursor_offset;
   } else {
     // There are some cases where StartAutocomplete() may be called
     // with non-empty |inline_autocomplete_text_|.  In such cases, we cannot
@@ -473,25 +568,35 @@ void OmniboxEditModel::StartAutocomplete(
     // inline autocomplete text.
     // TODO: Rethink how we are going to handle this case to avoid
     // inconsistent behavior when user presses Ctrl key.
+    // See http://crbug.com/165961 and http://crbug.com/165968 for more details.
     cursor_position = user_text_.length();
   }
 
-  // We don't explicitly clear OmniboxPopupModel::manually_selected_match, as
-  // Start ends up invoking OmniboxPopupModel::OnResultChanged which clears it.
-  autocomplete_controller_->Start(AutocompleteInput(
-      user_text_, cursor_position, GetDesiredTLD(),
+  GURL current_url =
+      (delegate_->CurrentPageExists() && view_->IsIndicatingQueryRefinement()) ?
+      delegate_->GetURL() : GURL();
+  bool keyword_is_selected = KeywordIsSelected();
+  input_ = AutocompleteInput(
+      user_text_,
+      cursor_position,
+      base::string16(),
+      current_url,
+      ClassifyPage(),
       prevent_inline_autocomplete || just_deleted_text_ ||
       (has_selected_text && inline_autocomplete_text_.empty()) ||
-      (paste_state_ != NONE), keyword_is_selected,
+      (paste_state_ != NONE),
+      keyword_is_selected,
       keyword_is_selected || allow_exact_keyword_match_,
-      AutocompleteInput::ALL_MATCHES));
+      true);
+
+  omnibox_controller_->StartAutocomplete(input_);
 }
 
 void OmniboxEditModel::StopAutocomplete() {
-  autocomplete_controller_->Stop(true);
+  autocomplete_controller()->Stop(true);
 }
 
-bool OmniboxEditModel::CanPasteAndGo(const string16& text) const {
+bool OmniboxEditModel::CanPasteAndGo(const base::string16& text) const {
   if (!view_->command_updater()->IsCommandEnabled(IDC_OPEN_CURRENT_URL))
     return false;
 
@@ -500,17 +605,19 @@ bool OmniboxEditModel::CanPasteAndGo(const string16& text) const {
   return match.destination_url.is_valid();
 }
 
-void OmniboxEditModel::PasteAndGo(const string16& text) {
+void OmniboxEditModel::PasteAndGo(const base::string16& text) {
   DCHECK(CanPasteAndGo(text));
+  UMA_HISTOGRAM_COUNTS("Omnibox.PasteAndGo", 1);
+
   view_->RevertAll();
   AutocompleteMatch match;
   GURL alternate_nav_url;
   ClassifyStringForPasteAndGo(text, &match, &alternate_nav_url);
-  view_->OpenMatch(match, CURRENT_TAB, alternate_nav_url,
+  view_->OpenMatch(match, CURRENT_TAB, alternate_nav_url, text,
                    OmniboxPopupModel::kNoMatch);
 }
 
-bool OmniboxEditModel::IsPasteAndSearch(const string16& text) const {
+bool OmniboxEditModel::IsPasteAndSearch(const base::string16& text) const {
   AutocompleteMatch match;
   ClassifyStringForPasteAndGo(text, &match, NULL);
   return AutocompleteMatch::IsSearchType(match.type);
@@ -519,16 +626,48 @@ bool OmniboxEditModel::IsPasteAndSearch(const string16& text) const {
 void OmniboxEditModel::AcceptInput(WindowOpenDisposition disposition,
                                    bool for_drop) {
   // Get the URL and transition type for the selected entry.
-  AutocompleteMatch match;
   GURL alternate_nav_url;
-  GetInfoForCurrentText(&match, &alternate_nav_url);
+  AutocompleteMatch match = CurrentMatch(&alternate_nav_url);
+
+  // If CTRL is down it means the user wants to append ".com" to the text he
+  // typed. If we can successfully generate a URL_WHAT_YOU_TYPED match doing
+  // that, then we use this. These matches are marked as generated by the
+  // HistoryURLProvider so we only generate them if this provider is present.
+  if (control_key_state_ == DOWN_WITHOUT_CHANGE && !KeywordIsSelected() &&
+      autocomplete_controller()->history_url_provider()) {
+    // Generate a new AutocompleteInput, copying the latest one but using "com"
+    // as the desired TLD. Then use this autocomplete input to generate a
+    // URL_WHAT_YOU_TYPED AutocompleteMatch. Note that using the most recent
+    // input instead of the currently visible text means we'll ignore any
+    // visible inline autocompletion: if a user types "foo" and is autocompleted
+    // to "foodnetwork.com", ctrl-enter will navigate to "foo.com", not
+    // "foodnetwork.com".  At the time of writing, this behavior matches
+    // Internet Explorer, but not Firefox.
+    input_ = AutocompleteInput(
+      has_temporary_text_ ?
+          UserTextFromDisplayText(view_->GetText())  : input_.text(),
+      input_.cursor_position(), base::ASCIIToUTF16("com"),
+      GURL(), input_.current_page_classification(),
+      input_.prevent_inline_autocomplete(), input_.prefer_keyword(),
+      input_.allow_exact_keyword_match(),
+      input_.want_asynchronous_matches());
+    AutocompleteMatch url_match(
+        autocomplete_controller()->history_url_provider()->SuggestExactInput(
+            input_.text(), input_.canonicalized_url(), false));
+
+
+    if (url_match.destination_url.is_valid()) {
+      // We have a valid URL, we use this newly generated AutocompleteMatch.
+      match = url_match;
+      alternate_nav_url = GURL();
+    }
+  }
 
   if (!match.destination_url.is_valid())
     return;
 
   if ((match.transition == content::PAGE_TRANSITION_TYPED) &&
-      (match.destination_url ==
-       URLFixerUpper::FixupURL(UTF16ToUTF8(permanent_text_), std::string()))) {
+      (match.destination_url == PermanentURL())) {
     // When the user hit enter on the existing permanent URL, treat it like a
     // reload for scoring purposes.  We could detect this by just checking
     // user_input_in_progress_, but it seems better to treat "edits" that end
@@ -551,58 +690,92 @@ void OmniboxEditModel::AcceptInput(WindowOpenDisposition disposition,
   if (template_url && template_url->url_ref().HasGoogleBaseURLs())
     GoogleURLTracker::GoogleURLSearchCommitted(profile_);
 
-  view_->OpenMatch(match, disposition, alternate_nav_url,
-                   OmniboxPopupModel::kNoMatch);
+  DCHECK(popup_model());
+  view_->OpenMatch(match, disposition, alternate_nav_url, base::string16(),
+                   popup_model()->selected_line());
 }
 
-void OmniboxEditModel::OpenMatch(const AutocompleteMatch& match,
+void OmniboxEditModel::OpenMatch(AutocompleteMatch match,
                                  WindowOpenDisposition disposition,
                                  const GURL& alternate_nav_url,
+                                 const base::string16& pasted_text,
                                  size_t index) {
-  // We only care about cases where there is a selection (i.e. the popup is
-  // open).
-  if (popup_->IsOpen()) {
-    const base::TimeTicks& now(base::TimeTicks::Now());
-    // TODO(sreeram): Handle is_temporary_text_set_by_instant_ correctly.
-    AutocompleteLog log(
-        autocomplete_controller_->input().text(),
-        just_deleted_text_,
-        autocomplete_controller_->input().type(),
-        popup_->selected_line(),
-        -1,  // don't yet know tab ID; set later if appropriate
-        ClassifyPage(controller_->GetWebContents()->GetURL()),
-        now - time_user_first_modified_omnibox_,
-        string16::npos,  // inline autocomplete length; possibly set later
-        now - autocomplete_controller_->last_time_default_match_changed(),
-        result());
-    DCHECK(user_input_in_progress_ ||
-           match.provider->type() == AutocompleteProvider::TYPE_ZERO_SUGGEST)
-        << "We didn't get here through the expected series of calls. "
-        << "time_user_first_modified_omnibox_ is not set correctly and other "
-        << "things may be wrong. Match provider: " << match.provider->GetName();
-    DCHECK(log.elapsed_time_since_user_first_modified_omnibox >=
-           log.elapsed_time_since_last_change_to_default_match)
-        << "We should've got the notification that the user modified the "
-        << "omnibox text at same time or before the most recent time the "
-        << "default match changed.";
-    if (index != OmniboxPopupModel::kNoMatch)
-      log.selected_index = index;
-    else if (!has_temporary_text_)
-      log.inline_autocompleted_length = inline_autocomplete_text_.length();
-    if (disposition == CURRENT_TAB) {
-      // If we know the destination is being opened in the current tab,
-      // we can easily get the tab ID.  (If it's being opened in a new
-      // tab, we don't know the tab ID yet.)
-      log.tab_id = SessionTabHelper::FromWebContents(
-          controller_->GetWebContents())->session_id().id();
-    }
-    autocomplete_controller_->AddProvidersInfo(&log.providers_info);
-    content::NotificationService::current()->Notify(
-        chrome::NOTIFICATION_OMNIBOX_OPENED_URL,
-        content::Source<Profile>(profile_),
-        content::Details<AutocompleteLog>(&log));
-    HISTOGRAM_ENUMERATION("Omnibox.EventCount", 1, 2);
+  const base::TimeTicks& now(base::TimeTicks::Now());
+  base::TimeDelta elapsed_time_since_user_first_modified_omnibox(
+      now - time_user_first_modified_omnibox_);
+  autocomplete_controller()->UpdateMatchDestinationURL(
+      elapsed_time_since_user_first_modified_omnibox, &match);
+
+  base::string16 input_text(pasted_text);
+  if (input_text.empty())
+      input_text = user_input_in_progress_ ? user_text_ : permanent_text_;
+  scoped_ptr<OmniboxNavigationObserver> observer(
+      new OmniboxNavigationObserver(
+          profile_, input_text, match,
+          autocomplete_controller()->history_url_provider()->SuggestExactInput(
+              input_text, alternate_nav_url,
+              AutocompleteInput::HasHTTPScheme(input_text))));
+
+  base::TimeDelta elapsed_time_since_last_change_to_default_match(
+      now - autocomplete_controller()->last_time_default_match_changed());
+  DCHECK(match.provider);
+  // These elapsed times don't really make sense for ZeroSuggest matches
+  // (because the user does not modify the omnibox for ZeroSuggest), so for
+  // those we set the elapsed times to something that will be ignored by
+  // metrics_log.cc.  They also don't necessarily make sense if the omnibox
+  // dropdown is closed or the user used a paste-and-go action.  (In most
+  // cases when this happens, the user never modified the omnibox.)
+  if ((match.provider->type() == AutocompleteProvider::TYPE_ZERO_SUGGEST) ||
+      !popup_model()->IsOpen() || !pasted_text.empty()) {
+    const base::TimeDelta default_time_delta =
+        base::TimeDelta::FromMilliseconds(-1);
+    elapsed_time_since_user_first_modified_omnibox = default_time_delta;
+    elapsed_time_since_last_change_to_default_match = default_time_delta;
   }
+  // If the popup is closed or this is a paste-and-go action (meaning the
+  // contents of the dropdown are ignored regardless), we record for logging
+  // purposes a selected_index of 0 and a suggestion list as having a single
+  // entry of the match used.
+  ACMatches fake_single_entry_matches;
+  fake_single_entry_matches.push_back(match);
+  AutocompleteResult fake_single_entry_result;
+  fake_single_entry_result.AppendMatches(fake_single_entry_matches);
+  OmniboxLog log(
+      input_text,
+      just_deleted_text_,
+      input_.type(),
+      popup_model()->IsOpen(),
+      (!popup_model()->IsOpen() || !pasted_text.empty()) ? 0 : index,
+      !pasted_text.empty(),
+      -1,  // don't yet know tab ID; set later if appropriate
+      ClassifyPage(),
+      elapsed_time_since_user_first_modified_omnibox,
+      match.inline_autocompletion.length(),
+      elapsed_time_since_last_change_to_default_match,
+      (!popup_model()->IsOpen() || !pasted_text.empty()) ?
+          fake_single_entry_result : result());
+  DCHECK(!popup_model()->IsOpen() || !pasted_text.empty() ||
+         (log.elapsed_time_since_user_first_modified_omnibox >=
+          log.elapsed_time_since_last_change_to_default_match))
+      << "We should've got the notification that the user modified the "
+      << "omnibox text at same time or before the most recent time the "
+      << "default match changed.";
+
+  if ((disposition == CURRENT_TAB) && delegate_->CurrentPageExists()) {
+    // If we know the destination is being opened in the current tab,
+    // we can easily get the tab ID.  (If it's being opened in a new
+    // tab, we don't know the tab ID yet.)
+    log.tab_id = delegate_->GetSessionID().id();
+  }
+  autocomplete_controller()->AddProvidersInfo(&log.providers_info);
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_OMNIBOX_OPENED_URL,
+      content::Source<Profile>(profile_),
+      content::Details<OmniboxLog>(&log));
+  HISTOGRAM_ENUMERATION("Omnibox.EventCount", 1, 2);
+  DCHECK(!last_omnibox_focus_.is_null())
+      << "An omnibox focus should have occurred before opening a match.";
+  UMA_HISTOGRAM_TIMES(kFocusToOpenTimeHistogram, now - last_omnibox_focus_);
 
   TemplateURL* template_url = match.GetTemplateURL(profile_, false);
   if (template_url) {
@@ -610,27 +783,16 @@ void OmniboxEditModel::OpenMatch(const AutocompleteMatch& match,
       // The user is using a non-substituting keyword or is explicitly in
       // keyword mode.
 
-      // Special case for extension keywords. Don't increment usage count for
-      // these.
-      if (template_url->IsExtensionKeyword()) {
-        AutocompleteMatch current_match;
-        GetInfoForCurrentText(&current_match, NULL);
-
-        const AutocompleteMatch& match =
-            (index == OmniboxPopupModel::kNoMatch) ?
-                current_match : result().match_at(index);
-
-        // Strip the keyword + leading space off the input.
-        size_t prefix_length = match.keyword.length() + 1;
-        extensions::ExtensionOmniboxEventRouter::OnInputEntered(
-            controller_->GetWebContents(),
-            template_url->GetExtensionId(),
-            UTF16ToUTF8(match.fill_into_edit.substr(prefix_length)));
-        view_->RevertAll();
+      // Don't increment usage count for extension keywords.
+      if (delegate_->ProcessExtensionKeyword(template_url, match,
+                                             disposition)) {
+        observer->OnSuccessfulNavigation();
+        if (disposition != NEW_BACKGROUND_TAB)
+          view_->RevertAll();
         return;
       }
 
-      content::RecordAction(UserMetricsAction("AcceptedKeyword"));
+      content::RecordAction(base::UserMetricsAction("AcceptedKeyword"));
       TemplateURLServiceFactory::GetForProfile(profile_)->IncrementUsageCount(
           template_url);
     } else {
@@ -640,57 +802,60 @@ void OmniboxEditModel::OpenMatch(const AutocompleteMatch& match,
       // in template_url.h.
     }
 
-    // NOTE: Non-prepopulated engines will all have ID 0, which is fine as
-    // the prepopulate IDs start at 1.  Distribution-specific engines will
-    // all have IDs above the maximum, and will be automatically lumped
-    // together in an "overflow" bucket in the histogram.
-    UMA_HISTOGRAM_ENUMERATION("Omnibox.SearchEngine",
-        template_url->prepopulate_id(),
-        TemplateURLPrepopulateData::kMaxPrepopulatedEngineID);
+    UMA_HISTOGRAM_ENUMERATION("Omnibox.SearchEngineType",
+        TemplateURLPrepopulateData::GetEngineType(*template_url),
+        SEARCH_ENGINE_MAX);
   }
+
+  // Get the current text before we call RevertAll() which will clear it.
+  base::string16 current_text = view_->GetText();
 
   if (disposition != NEW_BACKGROUND_TAB) {
     base::AutoReset<bool> tmp(&in_revert_, true);
-    view_->RevertAll();  // Revert the box to its unedited state
+    view_->RevertAll();  // Revert the box to its unedited state.
   }
 
-  if (match.type == AutocompleteMatch::EXTENSION_APP) {
+  if (match.type == AutocompleteMatchType::EXTENSION_APP) {
     ExtensionAppProvider::LaunchAppFromOmnibox(match, profile_, disposition);
+    observer->OnSuccessfulNavigation();
   } else {
-    GURL destination_url(match.destination_url);
-    // Append the query formulation time (time from when the user first typed a
-    // character into the omnibox to when the user selected a query) to the AQS
-    // parameter if other AQS parameters were already populated.
-    if (template_url && match.search_terms_args.get() &&
-        !match.search_terms_args->assisted_query_stats.empty()) {
-      base::TimeDelta query_formulation_time =
-          base::TimeTicks::Now() - time_user_first_modified_omnibox_;
-      TemplateURLRef::SearchTermsArgs search_terms_args(
-          *match.search_terms_args);
-      search_terms_args.assisted_query_stats +=
-          base::StringPrintf(".%" PRId64,
-                             query_formulation_time.InMilliseconds());
-      destination_url = GURL(template_url->url_ref().
-                             ReplaceSearchTerms(search_terms_args));
+    RecordPercentageMatchHistogram(
+        permanent_text_, current_text,
+        controller_->GetToolbarModel()->WouldReplaceURL(),
+        match.transition, view_->GetWidth());
+
+    // Track whether the destination URL sends us to a search results page
+    // using the default search provider.
+    if (TemplateURLServiceFactory::GetForProfile(profile_)->
+        IsSearchResultsPageFromDefaultSearchProvider(match.destination_url)) {
+      content::RecordAction(
+          base::UserMetricsAction("OmniboxDestinationURLIsSearchOnDSP"));
     }
-    // This calls RevertAll again.
-    base::AutoReset<bool> tmp(&in_revert_, true);
-    controller_->OnAutocompleteAccept(destination_url, disposition,
-                                      match.transition, alternate_nav_url);
+
+    if (match.destination_url.is_valid()) {
+      // This calls RevertAll again.
+      base::AutoReset<bool> tmp(&in_revert_, true);
+      controller_->OnAutocompleteAccept(
+          match.destination_url, disposition,
+          content::PageTransitionFromInt(
+              match.transition | content::PAGE_TRANSITION_FROM_ADDRESS_BAR));
+      if (observer->load_state() != OmniboxNavigationObserver::LOAD_NOT_SEEN)
+        ignore_result(observer.release());  // The observer will delete itself.
+    }
   }
 
   if (match.starred)
-    bookmark_utils::RecordBookmarkLaunch(bookmark_utils::LAUNCH_OMNIBOX);
+    RecordBookmarkLaunch(NULL, BOOKMARK_LAUNCH_LOCATION_OMNIBOX);
 }
 
-bool OmniboxEditModel::AcceptKeyword() {
+bool OmniboxEditModel::AcceptKeyword(EnteredKeywordModeMethod entered_method) {
   DCHECK(is_keyword_hint_ && !keyword_.empty());
 
-  autocomplete_controller_->Stop(false);
+  autocomplete_controller()->Stop(false);
   is_keyword_hint_ = false;
 
-  if (popup_->IsOpen())
-    popup_->SetSelectedLineState(OmniboxPopupModel::KEYWORD);
+  if (popup_model() && popup_model()->IsOpen())
+    popup_model()->SetSelectedLineState(OmniboxPopupModel::KEYWORD);
   else
     StartAutocomplete(false, true);
 
@@ -699,24 +864,35 @@ bool OmniboxEditModel::AcceptKeyword() {
   // the current state properly.
   bool save_original_selection = !has_temporary_text_;
   has_temporary_text_ = true;
-  is_temporary_text_set_by_instant_ = false;
   view_->OnTemporaryTextMaybeChanged(
-      DisplayTextFromUserText(CurrentMatch().fill_into_edit),
-      save_original_selection);
+      DisplayTextFromUserText(CurrentMatch(NULL).fill_into_edit),
+      save_original_selection, true);
 
-  content::RecordAction(UserMetricsAction("AcceptedKeywordHint"));
+  content::RecordAction(base::UserMetricsAction("AcceptedKeywordHint"));
+  UMA_HISTOGRAM_ENUMERATION(kEnteredKeywordModeHistogram, entered_method,
+                            ENTERED_KEYWORD_MODE_NUM_ITEMS);
+
   return true;
 }
 
-void OmniboxEditModel::ClearKeyword(const string16& visible_text) {
-  autocomplete_controller_->Stop(false);
-  ClearPopupKeywordMode();
+void OmniboxEditModel::AcceptTemporaryTextAsUserText() {
+  InternalSetUserText(UserTextFromDisplayText(view_->GetText()));
+  has_temporary_text_ = false;
 
-  const string16 window_text(keyword_ + visible_text);
+  if (user_input_in_progress_ || !in_revert_)
+    delegate_->OnInputStateChanged();
+}
+
+void OmniboxEditModel::ClearKeyword(const base::string16& visible_text) {
+  autocomplete_controller()->Stop(false);
+  omnibox_controller_->ClearPopupKeywordMode();
+
+  const base::string16 window_text(keyword_ + visible_text);
 
   // Only reset the result if the edit text has changed since the
   // keyword was accepted, or if the popup is closed.
-  if (just_deleted_text_ || !visible_text.empty() || !popup_->IsOpen()) {
+  if (just_deleted_text_ || !visible_text.empty() ||
+      !(popup_model() && popup_model()->IsOpen())) {
     view_->OnBeforePossibleChange();
     view_->SetWindowTextAndCaretPos(window_text.c_str(), keyword_.length(),
         false, false);
@@ -733,11 +909,10 @@ void OmniboxEditModel::ClearKeyword(const string16& visible_text) {
   }
 }
 
-const AutocompleteResult& OmniboxEditModel::result() const {
-  return autocomplete_controller_->result();
-}
-
 void OmniboxEditModel::OnSetFocus(bool control_down) {
+  last_omnibox_focus_ = base::TimeTicks::Now();
+  user_input_since_focus_ = false;
+
   // If the omnibox lost focus while the caret was hidden and then regained
   // focus, OnSetFocus() is called and should restore visibility. Note that
   // focus can be regained without an accompanying call to
@@ -745,18 +920,26 @@ void OmniboxEditModel::OnSetFocus(bool control_down) {
   SetFocusState(OMNIBOX_FOCUS_VISIBLE, OMNIBOX_FOCUS_CHANGE_EXPLICIT);
   control_key_state_ = control_down ? DOWN_WITHOUT_CHANGE : UP;
 
-  content::WebContents* web_contents = controller_->GetWebContents();
-  if (web_contents) {
+  // Try to get ZeroSuggest suggestions if a page is loaded and the user has
+  // not been typing in the omnibox.  The |user_input_in_progress_| check is
+  // used to detect the case where this function is called after right-clicking
+  // in the omnibox and selecting paste in Linux (in which case we actually get
+  // the OnSetFocus() call after the process of handling the paste has kicked
+  // off).
+  // TODO(hfung): Remove this when crbug/271590 is fixed.
+  if (delegate_->CurrentPageExists() && !user_input_in_progress_) {
     // TODO(jered): We may want to merge this into Start() and just call that
     // here rather than having a special entry point for zero-suggest.  Note
     // that we avoid PermanentURL() here because it's not guaranteed to give us
     // the actual underlying current URL, e.g. if we're on the NTP and the
     // |permanent_text_| is empty.
-    autocomplete_controller_->StartZeroSuggest(web_contents->GetURL(),
-                                               user_text_);
+    autocomplete_controller()->StartZeroSuggest(AutocompleteInput(
+        permanent_text_, base::string16::npos, base::string16(),
+        delegate_->GetURL(), ClassifyPage(), false, false, true, true));
   }
 
-  NotifySearchTabHelper();
+  if (user_input_in_progress_ || !in_revert_)
+    delegate_->OnInputStateChanged();
 }
 
 void OmniboxEditModel::SetCaretVisibility(bool visible) {
@@ -768,33 +951,20 @@ void OmniboxEditModel::SetCaretVisibility(bool visible) {
 }
 
 void OmniboxEditModel::OnWillKillFocus(gfx::NativeView view_gaining_focus) {
-  SetInstantSuggestion(InstantSuggestion());
-
-  InstantController* instant = controller_->GetInstant();
-  if (instant) {
-    instant->OmniboxFocusChanged(OMNIBOX_FOCUS_NONE,
-                                 OMNIBOX_FOCUS_CHANGE_EXPLICIT,
-                                 view_gaining_focus);
-  }
-
-  // TODO(jered): Rip this out along with StartZeroSuggest.
-  autocomplete_controller_->StopZeroSuggest();
-  NotifySearchTabHelper();
+  if (user_input_in_progress_ || !in_revert_)
+    delegate_->OnInputStateChanged();
 }
 
 void OmniboxEditModel::OnKillFocus() {
-  // TODO(samarth): determine if it is safe to move the call to
-  // OmniboxFocusChanged() from OnWillKillFocus() to here, which would let us
-  // just call SetFocusState() to handle the state change.
-  focus_state_ = OMNIBOX_FOCUS_NONE;
+  SetFocusState(OMNIBOX_FOCUS_NONE, OMNIBOX_FOCUS_CHANGE_EXPLICIT);
+  focus_source_ = INVALID;
   control_key_state_ = UP;
   paste_state_ = NONE;
 }
 
 bool OmniboxEditModel::OnEscapeKeyPressed() {
+  const AutocompleteMatch& match = CurrentMatch(NULL);
   if (has_temporary_text_) {
-    AutocompleteMatch match;
-    InfoForCurrentSelection(&match, NULL);
     if (match.destination_url != original_url_) {
       RevertTemporaryText(true);
       return true;
@@ -803,91 +973,92 @@ bool OmniboxEditModel::OnEscapeKeyPressed() {
 
   // We do not clear the pending entry from the omnibox when a load is first
   // stopped.  If the user presses Escape while stopped, we clear it.
-  content::WebContents* contents = controller_->GetWebContents();
-  if (!contents->IsLoading()) {
-    contents->GetController().DiscardNonCommittedEntries();
-    view_->Update(NULL);
+  if (delegate_->CurrentPageExists() && !delegate_->IsLoading()) {
+    delegate_->GetNavigationController().DiscardNonCommittedEntries();
+    view_->Update();
   }
+
+  // When using the origin chip, hitting escape to revert all should either
+  // display the URL (when search term replacement would not be performed for
+  // this page) or the search terms (when it would).  To accomplish this,
+  // we'll need to disable URL replacement iff it's currently enabled and
+  // search term replacement wouldn't normally happen.
+  bool should_disable_url_replacement =
+      controller_->GetToolbarModel()->url_replacement_enabled() &&
+      !controller_->GetToolbarModel()->WouldPerformSearchTermReplacement(true);
 
   // If the user wasn't editing, but merely had focus in the edit, allow <esc>
   // to be processed as an accelerator, so it can still be used to stop a load.
   // When the permanent text isn't all selected we still fall through to the
   // SelectAll() call below so users can arrow around in the text and then hit
   // <esc> to quickly replace all the text; this matches IE.
-  if (!user_input_in_progress_ && view_->IsSelectAll())
+  const bool has_zero_suggest_match = match.provider &&
+      (match.provider->type() == AutocompleteProvider::TYPE_ZERO_SUGGEST);
+  if (!has_zero_suggest_match && !should_disable_url_replacement &&
+      !user_input_in_progress_ && view_->IsSelectAll())
     return false;
 
-  in_escape_handler_ = true;
-  view_->RevertAll();
-  in_escape_handler_ = false;
+  if (!user_text_.empty()) {
+    UMA_HISTOGRAM_ENUMERATION(kOmniboxUserTextClearedHistogram,
+                              OMNIBOX_USER_TEXT_CLEARED_WITH_ESCAPE,
+                              OMNIBOX_USER_TEXT_CLEARED_NUM_OF_ITEMS);
+  }
+
+  if (should_disable_url_replacement) {
+    controller_->GetToolbarModel()->set_url_replacement_enabled(false);
+    UpdatePermanentText();
+  }
+  view_->RevertWithoutResettingSearchTermReplacement();
   view_->SelectAll(true);
   return true;
 }
 
 void OmniboxEditModel::OnControlKeyChanged(bool pressed) {
-  // Don't change anything unless the key state is actually toggling.
-  if (pressed == (control_key_state_ == UP)) {
-    ControlKeyState old_state = control_key_state_;
+  if (pressed == (control_key_state_ == UP))
     control_key_state_ = pressed ? DOWN_WITHOUT_CHANGE : UP;
-    if ((control_key_state_ == DOWN_WITHOUT_CHANGE) && has_temporary_text_) {
-      // Arrowing down and then hitting control accepts the temporary text as
-      // the input text.
-      InternalSetUserText(UserTextFromDisplayText(view_->GetText()));
-      has_temporary_text_ = false;
-      is_temporary_text_set_by_instant_ = false;
-      if (KeywordIsSelected())
-        AcceptKeyword();
-    }
-    if ((old_state != DOWN_WITH_CHANGE) && popup_->IsOpen()) {
-      // Autocomplete history provider results may change, so refresh the
-      // popup.  This will force user_input_in_progress_ to true, but if the
-      // popup is open, that should have already been the case.
-      view_->UpdatePopup();
-    }
-  }
+}
+
+void OmniboxEditModel::OnPaste() {
+  UMA_HISTOGRAM_COUNTS("Omnibox.Paste", 1);
+  paste_state_ = PASTING;
 }
 
 void OmniboxEditModel::OnUpOrDownKeyPressed(int count) {
-  // If Instant handles the key press, it's showing a list of suggestions that
-  // it's stepping through. In that case, our popup model is irrelevant, so
-  // don't process the key press ourselves. However, do stop the autocomplete
-  // system from changing the results.
-  InstantController* instant = controller_->GetInstant();
-  if (instant && instant->OnUpOrDownKeyPressed(count)) {
-    autocomplete_controller_->Stop(false);
+  // NOTE: This purposefully doesn't trigger any code that resets paste_state_.
+  if (popup_model() && popup_model()->IsOpen()) {
+    // The popup is open, so the user should be able to interact with it
+    // normally.
+    popup_model()->Move(count);
     return;
   }
 
-  // NOTE: This purposefully doesn't trigger any code that resets paste_state_.
-  if (!popup_->IsOpen()) {
-    if (!query_in_progress()) {
-      // The popup is neither open nor working on a query already.  So, start an
-      // autocomplete query for the current text.  This also sets
-      // user_input_in_progress_ to true, which we want: if the user has started
-      // to interact with the popup, changing the permanent_text_ shouldn't
-      // change the displayed text.
-      // Note: This does not force the popup to open immediately.
-      // TODO(pkasting): We should, in fact, force this particular query to open
-      // the popup immediately.
-      if (!user_input_in_progress_)
-        InternalSetUserText(permanent_text_);
-      view_->UpdatePopup();
-    } else {
-      // TODO(pkasting): The popup is working on a query but is not open.  We
-      // should force it to open immediately.
-    }
-  } else {
-    // The popup is open, so the user should be able to interact with it
-    // normally.
-    popup_->Move(count);
+  if (!query_in_progress()) {
+    // The popup is neither open nor working on a query already.  So, start an
+    // autocomplete query for the current text.  This also sets
+    // user_input_in_progress_ to true, which we want: if the user has started
+    // to interact with the popup, changing the permanent_text_ shouldn't change
+    // the displayed text.
+    // Note: This does not force the popup to open immediately.
+    // TODO(pkasting): We should, in fact, force this particular query to open
+    // the popup immediately.
+    if (!user_input_in_progress_)
+      InternalSetUserText(permanent_text_);
+    view_->UpdatePopup();
+    return;
   }
+
+  // TODO(pkasting): The popup is working on a query but is not open.  We should
+  // force it to open immediately.
 }
 
 void OmniboxEditModel::OnPopupDataChanged(
-    const string16& text,
+    const base::string16& text,
     GURL* destination_for_temporary_text_change,
-    const string16& keyword,
+    const base::string16& keyword,
     bool is_keyword_hint) {
+  // The popup changed its data, the match in the controller is no longer valid.
+  omnibox_controller_->InvalidateCurrentMatch();
+
   // Update keyword/hint-related local state.
   bool keyword_state_changed = (keyword_ != keyword) ||
       ((is_keyword_hint_ != is_keyword_hint) && !keyword.empty());
@@ -905,9 +1076,9 @@ void OmniboxEditModel::OnPopupDataChanged(
     if (save_original_selection) {
       // Save the original selection and URL so it can be reverted later.
       has_temporary_text_ = true;
-      is_temporary_text_set_by_instant_ = false;
       original_url_ = *destination_for_temporary_text_change;
       inline_autocomplete_text_.clear();
+      view_->OnInlineAutocompleteTextCleared();
     }
     if (control_key_state_ == DOWN_WITHOUT_CHANGE) {
       // Arrowing around the popup cancels control-enter.
@@ -920,13 +1091,17 @@ void OmniboxEditModel::OnPopupDataChanged(
       // right answer here :(
     }
     view_->OnTemporaryTextMaybeChanged(DisplayTextFromUserText(text),
-                                       save_original_selection);
+                                       save_original_selection, true);
     return;
   }
 
   bool call_controller_onchanged = true;
   inline_autocomplete_text_ = text;
+  if (inline_autocomplete_text_.empty())
+    view_->OnInlineAutocompleteTextCleared();
 
+  const base::string16& user_text =
+      user_input_in_progress_ ? user_text_ : permanent_text_;
   if (keyword_state_changed && KeywordIsSelected()) {
     // If we reach here, the user most likely entered keyword mode by inserting
     // a space between a keyword name and a search string (as pressing space or
@@ -943,11 +1118,11 @@ void OmniboxEditModel::OnPopupDataChanged(
     // temporary text back to a default match that's a keyword search, but in
     // that case the RevertTemporaryText() call below will reset the caret or
     // selection correctly so the caret positioning we do here won't matter.
-    view_->SetWindowTextAndCaretPos(DisplayTextFromUserText(user_text_), 0,
+    view_->SetWindowTextAndCaretPos(DisplayTextFromUserText(user_text), 0,
                                                             false, false);
   } else if (view_->OnInlineAutocompleteTextMaybeChanged(
-             DisplayTextFromUserText(user_text_ + inline_autocomplete_text_),
-             DisplayTextFromUserText(user_text_).length())) {
+             DisplayTextFromUserText(user_text + inline_autocomplete_text_),
+             DisplayTextFromUserText(user_text).length())) {
     call_controller_onchanged = false;
   }
 
@@ -967,8 +1142,8 @@ void OmniboxEditModel::OnPopupDataChanged(
     OnChanged();
 }
 
-bool OmniboxEditModel::OnAfterPossibleChange(const string16& old_text,
-                                             const string16& new_text,
+bool OmniboxEditModel::OnAfterPossibleChange(const base::string16& old_text,
+                                             const base::string16& new_text,
                                              size_t selection_start,
                                              size_t selection_end,
                                              bool selection_differs,
@@ -983,38 +1158,55 @@ bool OmniboxEditModel::OnAfterPossibleChange(const string16& old_text,
   else if (text_differs)
     paste_state_ = NONE;
 
-  // Restore caret visibility whenever the user changes text or selection in the
-  // omnibox.
-  if (text_differs || selection_differs)
+  if (text_differs || selection_differs) {
+    // Record current focus state for this input if we haven't already.
+    if (focus_source_ == INVALID) {
+      // We should generally expect the omnibox to have focus at this point, but
+      // it doesn't always on Linux. This is because, unlike other platforms,
+      // right clicking in the omnibox on Linux doesn't focus it. So pasting via
+      // right-click can change the contents without focusing the omnibox.
+      // TODO(samarth): fix Linux focus behavior and add a DCHECK here to
+      // check that the omnibox does have focus.
+      focus_source_ = (focus_state_ == OMNIBOX_FOCUS_INVISIBLE) ?
+          FAKEBOX : OMNIBOX;
+    }
+
+    // Restore caret visibility whenever the user changes text or selection in
+    // the omnibox.
     SetFocusState(OMNIBOX_FOCUS_VISIBLE, OMNIBOX_FOCUS_CHANGE_TYPING);
+  }
 
   // Modifying the selection counts as accepting the autocompleted text.
   const bool user_text_changed =
       text_differs || (selection_differs && !inline_autocomplete_text_.empty());
 
   // If something has changed while the control key is down, prevent
-  // "ctrl-enter" until the control key is released.  When we do this, we need
-  // to update the popup if it's open, since the desired_tld will have changed.
+  // "ctrl-enter" until the control key is released.
   if ((text_differs || selection_differs) &&
-      (control_key_state_ == DOWN_WITHOUT_CHANGE)) {
+      (control_key_state_ == DOWN_WITHOUT_CHANGE))
     control_key_state_ = DOWN_WITH_CHANGE;
-    if (!text_differs && !popup_->IsOpen())
-      return false;  // Don't open the popup for no reason.
-  } else if (!user_text_changed) {
+
+  if (!user_text_changed)
     return false;
-  }
 
   // If the user text has not changed, we do not want to change the model's
   // state associated with the text.  Otherwise, we can get surprising behavior
   // where the autocompleted text unexpectedly reappears, e.g. crbug.com/55983
-  if (user_text_changed) {
-    InternalSetUserText(UserTextFromDisplayText(new_text));
-    has_temporary_text_ = false;
-    is_temporary_text_set_by_instant_ = false;
+  InternalSetUserText(UserTextFromDisplayText(new_text));
+  has_temporary_text_ = false;
 
-    // Track when the user has deleted text so we won't allow inline
-    // autocomplete.
-    just_deleted_text_ = just_deleted_text;
+  // Track when the user has deleted text so we won't allow inline
+  // autocomplete.
+  just_deleted_text_ = just_deleted_text;
+
+  if (user_input_in_progress_ && user_text_.empty()) {
+    // Log cases where the user started editing and then subsequently cleared
+    // all the text.  Note that this explicitly doesn't catch cases like
+    // "hit ctrl-l to select whole edit contents, then hit backspace", because
+    // in such cases, |user_input_in_progress| won't be true here.
+    UMA_HISTOGRAM_ENUMERATION(kOmniboxUserTextClearedHistogram,
+                              OMNIBOX_USER_TEXT_CLEARED_BY_EDITING,
+                              OMNIBOX_USER_TEXT_CLEARED_NUM_OF_ITEMS);
   }
 
   const bool no_selection = selection_start == selection_end;
@@ -1028,6 +1220,11 @@ bool OmniboxEditModel::OnAfterPossibleChange(const string16& old_text,
       !just_deleted_text && no_selection &&
       CreatedKeywordSearchByInsertingSpaceInMiddle(old_text, user_text_,
                                                    selection_start);
+  if (allow_exact_keyword_match_) {
+    UMA_HISTOGRAM_ENUMERATION(kEnteredKeywordModeHistogram,
+                              ENTERED_KEYWORD_MODE_VIA_SPACE_IN_MIDDLE,
+                              ENTERED_KEYWORD_MODE_NUM_ITEMS);
+  }
   view_->UpdatePopup();
   allow_exact_keyword_match_ = false;
 
@@ -1047,70 +1244,45 @@ bool OmniboxEditModel::OnAfterPossibleChange(const string16& old_text,
            MaybeAcceptKeywordBySpace(user_text_));
 }
 
-void OmniboxEditModel::OnPopupBoundsChanged(const gfx::Rect& bounds) {
-  InstantController* instant = controller_->GetInstant();
-  if (instant)
-    instant->SetPopupBounds(bounds);
+// TODO(beaudoin): Merge OnPopupDataChanged with this method once the popup
+// handling has completely migrated to omnibox_controller.
+void OmniboxEditModel::OnCurrentMatchChanged() {
+  has_temporary_text_ = false;
+
+  const AutocompleteMatch& match = omnibox_controller_->current_match();
+
+  // We store |keyword| and |is_keyword_hint| in temporary variables since
+  // OnPopupDataChanged use their previous state to detect changes.
+  base::string16 keyword;
+  bool is_keyword_hint;
+  match.GetKeywordUIState(profile_, &keyword, &is_keyword_hint);
+  if (popup_model())
+    popup_model()->OnResultChanged();
+  // OnPopupDataChanged() resets OmniboxController's |current_match_| early
+  // on.  Therefore, copy match.inline_autocompletion to a temp to preserve
+  // its value across the entire call.
+  const base::string16 inline_autocompletion(match.inline_autocompletion);
+  OnPopupDataChanged(inline_autocompletion, NULL, keyword, is_keyword_hint);
 }
 
-void OmniboxEditModel::OnResultChanged(bool default_match_changed) {
-  const bool was_open = popup_->IsOpen();
-  if (default_match_changed) {
-    string16 inline_autocomplete_text;
-    string16 keyword;
-    bool is_keyword_hint = false;
-    const AutocompleteResult& result = this->result();
-    const AutocompleteResult::const_iterator match(result.default_match());
-    if (match != result.end()) {
-      if ((match->inline_autocomplete_offset != string16::npos) &&
-          (match->inline_autocomplete_offset <
-           match->fill_into_edit.length())) {
-        inline_autocomplete_text =
-            match->fill_into_edit.substr(match->inline_autocomplete_offset);
-      }
-
-      if (!prerender::IsOmniboxEnabled(profile_))
-        DoPreconnect(*match);
-
-      // We could prefetch the alternate nav URL, if any, but because there
-      // can be many of these as a user types an initial series of characters,
-      // the OS DNS cache could suffer eviction problems for minimal gain.
-
-      match->GetKeywordUIState(profile_, &keyword, &is_keyword_hint);
-    }
-
-    popup_->OnResultChanged();
-    OnPopupDataChanged(inline_autocomplete_text, NULL, keyword,
-                       is_keyword_hint);
-  } else {
-    popup_->OnResultChanged();
-  }
-
-  if (popup_->IsOpen()) {
-    OnPopupBoundsChanged(popup_->view()->GetTargetBounds());
-  } else if (was_open) {
-    // Accepts the temporary text as the user text, because it makes little
-    // sense to have temporary text when the popup is closed.
-    InternalSetUserText(UserTextFromDisplayText(view_->GetText()));
-    has_temporary_text_ = false;
-    is_temporary_text_set_by_instant_ = false;
-    OnPopupBoundsChanged(gfx::Rect());
-    NotifySearchTabHelper();
-  }
-
-  InstantController* instant = controller_->GetInstant();
-  if (instant)
-    instant->HandleAutocompleteResults(*autocomplete_controller_->providers());
+void OmniboxEditModel::SetSuggestionToPrefetch(
+    const InstantSuggestion& suggestion) {
+  delegate_->SetSuggestionToPrefetch(suggestion);
 }
+
+// static
+const char OmniboxEditModel::kCutOrCopyAllTextHistogram[] =
+    "Omnibox.CutOrCopyAllText";
 
 bool OmniboxEditModel::query_in_progress() const {
-  return !autocomplete_controller_->done();
+  return !autocomplete_controller()->done();
 }
 
-void OmniboxEditModel::InternalSetUserText(const string16& text) {
+void OmniboxEditModel::InternalSetUserText(const base::string16& text) {
   user_text_ = text;
   just_deleted_text_ = false;
   inline_autocomplete_text_.clear();
+  view_->OnInlineAutocompleteTextCleared();
 }
 
 bool OmniboxEditModel::KeywordIsSelected() const {
@@ -1118,57 +1290,66 @@ bool OmniboxEditModel::KeywordIsSelected() const {
 }
 
 void OmniboxEditModel::ClearPopupKeywordMode() const {
-  if (popup_->IsOpen() &&
-      popup_->selected_line_state() == OmniboxPopupModel::KEYWORD)
-    popup_->SetSelectedLineState(OmniboxPopupModel::NORMAL);
+  omnibox_controller_->ClearPopupKeywordMode();
 }
 
-string16 OmniboxEditModel::DisplayTextFromUserText(const string16& text) const {
+base::string16 OmniboxEditModel::DisplayTextFromUserText(
+    const base::string16& text) const {
   return KeywordIsSelected() ?
       KeywordProvider::SplitReplacementStringFromInput(text, false) : text;
 }
 
-string16 OmniboxEditModel::UserTextFromDisplayText(const string16& text) const {
-  return KeywordIsSelected() ? (keyword_ + char16(' ') + text) : text;
-}
-
-void OmniboxEditModel::InfoForCurrentSelection(AutocompleteMatch* match,
-                                               GURL* alternate_nav_url) const {
-  DCHECK(match != NULL);
-  const AutocompleteResult& result = this->result();
-  if (!autocomplete_controller_->done()) {
-    // It's technically possible for |result| to be empty if no provider returns
-    // a synchronous result but the query has not completed synchronously;
-    // pratically, however, that should never actually happen.
-    if (result.empty())
-      return;
-    // The user cannot have manually selected a match, or the query would have
-    // stopped.  So the default match must be the desired selection.
-    *match = *result.default_match();
-  } else {
-    CHECK(popup_->IsOpen());
-    // If there are no results, the popup should be closed (so we should have
-    // failed the CHECK above), and URLsForDefaultMatch() should have been
-    // called instead.
-    CHECK(!result.empty());
-    CHECK(popup_->selected_line() < result.size());
-    *match = result.match_at(popup_->selected_line());
-  }
-  if (alternate_nav_url && popup_->manually_selected_match().empty())
-    *alternate_nav_url = result.alternate_nav_url();
+base::string16 OmniboxEditModel::UserTextFromDisplayText(
+    const base::string16& text) const {
+  return KeywordIsSelected() ? (keyword_ + base::char16(' ') + text) : text;
 }
 
 void OmniboxEditModel::GetInfoForCurrentText(AutocompleteMatch* match,
                                              GURL* alternate_nav_url) const {
-  // If there's temporary text and it has been set by Instant, we won't find it
-  // in the popup model, so classify the text anew.
-  if ((popup_->IsOpen() || query_in_progress()) &&
-      !is_temporary_text_set_by_instant_) {
-    InfoForCurrentSelection(match, alternate_nav_url);
+  DCHECK(match != NULL);
+
+  if (controller_->GetToolbarModel()->WouldPerformSearchTermReplacement(
+      false)) {
+    // Any time the user hits enter on the unchanged omnibox, we should reload.
+    // When we're not extracting search terms, AcceptInput() will take care of
+    // this (see code referring to PAGE_TRANSITION_RELOAD there), but when we're
+    // extracting search terms, the conditionals there won't fire, so we
+    // explicitly set up a match that will reload here.
+
+    // It's important that we fetch the current visible URL to reload instead of
+    // just getting a "search what you typed" URL from
+    // SearchProvider::CreateSearchSuggestion(), since the user may be in a
+    // non-default search mode such as image search.
+    match->type = AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED;
+    match->provider = autocomplete_controller()->search_provider();
+    match->destination_url =
+        delegate_->GetNavigationController().GetVisibleEntry()->GetURL();
+    match->transition = content::PAGE_TRANSITION_RELOAD;
+  } else if (query_in_progress() ||
+             (popup_model() && popup_model()->IsOpen())) {
+    if (query_in_progress()) {
+      // It's technically possible for |result| to be empty if no provider
+      // returns a synchronous result but the query has not completed
+      // synchronously; pratically, however, that should never actually happen.
+      if (result().empty())
+        return;
+      // The user cannot have manually selected a match, or the query would have
+      // stopped. So the default match must be the desired selection.
+      *match = *result().default_match();
+    } else {
+      // If there are no results, the popup should be closed, so we shouldn't
+      // have gotten here.
+      CHECK(!result().empty());
+      CHECK(popup_model()->selected_line() < result().size());
+      *match = result().match_at(popup_model()->selected_line());
+    }
+    if (alternate_nav_url &&
+        (!popup_model() || popup_model()->manually_selected_match().empty()))
+      *alternate_nav_url = result().alternate_nav_url();
   } else {
     AutocompleteClassifierFactory::GetForProfile(profile_)->Classify(
-        UserTextFromDisplayText(view_->GetText()), GetDesiredTLD(),
-        KeywordIsSelected(), true, match, alternate_nav_url);
+        UserTextFromDisplayText(view_->GetText()), KeywordIsSelected(), true,
+        ClassifyPage(), match, alternate_nav_url);
   }
 }
 
@@ -1178,25 +1359,26 @@ void OmniboxEditModel::RevertTemporaryText(bool revert_popup) {
   // NOTE: This purposefully does not reset paste_state_.
   just_deleted_text_ = false;
   has_temporary_text_ = false;
-  is_temporary_text_set_by_instant_ = false;
-  if (revert_popup)
-    popup_->ResetToDefaultMatch();
+
+  if (revert_popup && popup_model())
+    popup_model()->ResetToDefaultMatch();
   view_->OnRevertTemporaryText();
 }
 
-bool OmniboxEditModel::MaybeAcceptKeywordBySpace(const string16& new_text) {
+bool OmniboxEditModel::MaybeAcceptKeywordBySpace(
+    const base::string16& new_text) {
   size_t keyword_length = new_text.length() - 1;
   return (paste_state_ == NONE) && is_keyword_hint_ && !keyword_.empty() &&
       inline_autocomplete_text_.empty() &&
       (keyword_.length() == keyword_length) &&
       IsSpaceCharForAcceptingKeyword(new_text[keyword_length]) &&
       !new_text.compare(0, keyword_length, keyword_, 0, keyword_length) &&
-      AcceptKeyword();
+      AcceptKeyword(ENTERED_KEYWORD_MODE_VIA_SPACE_AT_END);
 }
 
 bool OmniboxEditModel::CreatedKeywordSearchByInsertingSpaceInMiddle(
-    const string16& old_text,
-    const string16& new_text,
+    const base::string16& old_text,
+    const base::string16& new_text,
     size_t caret_position) const {
   DCHECK_GE(new_text.length(), caret_position);
 
@@ -1216,80 +1398,11 @@ bool OmniboxEditModel::CreatedKeywordSearchByInsertingSpaceInMiddle(
   }
 
   // Then check if the text before the inserted space matches a keyword.
-  string16 keyword;
-  TrimWhitespace(new_text.substr(0, space_position), TRIM_LEADING, &keyword);
-  // TODO(sreeram): Once the Instant extended API supports keywords properly,
-  // keyword_provider() should never be NULL. Remove that clause.
-  return !keyword.empty() && autocomplete_controller_->keyword_provider() &&
-      !autocomplete_controller_->keyword_provider()->
-          GetKeywordForText(keyword).empty();
-}
-
-void OmniboxEditModel::NotifySearchTabHelper() {
-  if (controller_->GetWebContents()) {
-    chrome::search::SearchTabHelper::FromWebContents(
-        controller_->GetWebContents())->
-            OmniboxEditModelChanged(user_input_in_progress_, !in_revert_);
-  }
-}
-
-bool OmniboxEditModel::DoInstant(const AutocompleteMatch& match) {
-  InstantController* instant = controller_->GetInstant();
-  if (!instant || in_revert_)
-    return false;
-
-  // The two pieces of text we want to send Instant, viz., what the user has
-  // typed, and the full omnibox text including any inline autocompletion.
-  string16 user_text = has_temporary_text_ ?
-      match.fill_into_edit : DisplayTextFromUserText(user_text_);
-  string16 full_text = view_->GetText();
-
-  // Remove "?" if we're in forced query mode.
-  AutocompleteInput::RemoveForcedQueryStringIfNecessary(
-      autocomplete_controller_->input().type(), &user_text);
-  AutocompleteInput::RemoveForcedQueryStringIfNecessary(
-      autocomplete_controller_->input().type(), &full_text);
-
-  size_t start, end;
-  view_->GetSelectionBounds(&start, &end);
-
-  return instant->Update(match, user_text, full_text, start, end,
-      UseVerbatimInstant(), user_input_in_progress_, popup_->IsOpen(),
-      in_escape_handler_, KeywordIsSelected());
-}
-
-void OmniboxEditModel::DoPrerender(const AutocompleteMatch& match) {
-  // Do not prerender if the destination URL is the same as the current URL.
-  if (match.destination_url == PermanentURL())
-    return;
-  // It's possible the tab strip does not have an active tab contents, for
-  // instance if the tab has been closed or on return from a sleep state
-  // (http://crbug.com/105689)
-  content::WebContents* tab = controller_->GetWebContents();
-  if (!tab)
-    return;
-  gfx::Rect container_bounds;
-  tab->GetView()->GetContainerBounds(&container_bounds);
-  AutocompleteActionPredictorFactory::GetForProfile(profile_)->
-      StartPrerendering(match.destination_url,
-                        tab->GetController().GetSessionStorageNamespaceMap(),
-                        container_bounds.size());
-}
-
-void OmniboxEditModel::DoPreconnect(const AutocompleteMatch& match) {
-  if (!match.destination_url.SchemeIs(extensions::kExtensionScheme)) {
-    // Warm up DNS Prefetch cache, or preconnect to a search service.
-    UMA_HISTOGRAM_ENUMERATION("Autocomplete.MatchType", match.type,
-                              AutocompleteMatch::NUM_TYPES);
-    if (profile_->GetNetworkPredictor()) {
-      profile_->GetNetworkPredictor()->AnticipateOmniboxUrl(
-          match.destination_url,
-          AutocompleteActionPredictor::IsPreconnectable(match));
-    }
-    // We could prefetch the alternate nav URL, if any, but because there
-    // can be many of these as a user types an initial series of characters,
-    // the OS DNS cache could suffer eviction problems for minimal gain.
-  }
+  base::string16 keyword;
+  base::TrimWhitespace(new_text.substr(0, space_position), base::TRIM_LEADING,
+                       &keyword);
+  return !keyword.empty() && !autocomplete_controller()->keyword_provider()->
+      GetKeywordForText(keyword).empty();
 }
 
 //  static
@@ -1303,37 +1416,46 @@ bool OmniboxEditModel::IsSpaceCharForAcceptingKeyword(wchar_t c) {
   }
 }
 
-metrics::OmniboxEventProto::PageClassification
-    OmniboxEditModel::ClassifyPage(const GURL& gurl) const {
+AutocompleteInput::PageClassification OmniboxEditModel::ClassifyPage() const {
+  if (!delegate_->CurrentPageExists())
+    return AutocompleteInput::OTHER;
+  if (delegate_->IsInstantNTP()) {
+    // Note that we treat OMNIBOX as the source if focus_source_ is INVALID,
+    // i.e., if input isn't actually in progress.
+    return (focus_source_ == FAKEBOX) ?
+        AutocompleteInput::INSTANT_NTP_WITH_FAKEBOX_AS_STARTING_FOCUS :
+        AutocompleteInput::INSTANT_NTP_WITH_OMNIBOX_AS_STARTING_FOCUS;
+  }
+  const GURL& gurl = delegate_->GetURL();
   if (!gurl.is_valid())
-    return metrics::OmniboxEventProto_PageClassification_INVALID_SPEC;
+    return AutocompleteInput::INVALID_SPEC;
   const std::string& url = gurl.spec();
   if (url == chrome::kChromeUINewTabURL)
-    return metrics::OmniboxEventProto_PageClassification_NEW_TAB_PAGE;
-  if (url == chrome::kAboutBlankURL)
-    return metrics::OmniboxEventProto_PageClassification_BLANK;
+    return AutocompleteInput::NTP;
+  if (url == content::kAboutBlankURL)
+    return AutocompleteInput::BLANK;
   if (url == profile()->GetPrefs()->GetString(prefs::kHomePage))
-    return metrics::OmniboxEventProto_PageClassification_HOMEPAGE;
-  return metrics::OmniboxEventProto_PageClassification_OTHER;
+    return AutocompleteInput::HOME_PAGE;
+  if (controller_->GetToolbarModel()->WouldPerformSearchTermReplacement(true))
+    return AutocompleteInput::SEARCH_RESULT_PAGE_DOING_SEARCH_TERM_REPLACEMENT;
+  if (delegate_->IsSearchResultsPage())
+    return AutocompleteInput::SEARCH_RESULT_PAGE_NO_SEARCH_TERM_REPLACEMENT;
+  return AutocompleteInput::OTHER;
 }
 
 void OmniboxEditModel::ClassifyStringForPasteAndGo(
-    const string16& text,
+    const base::string16& text,
     AutocompleteMatch* match,
     GURL* alternate_nav_url) const {
   DCHECK(match);
-  AutocompleteClassifierFactory::GetForProfile(profile_)->Classify(text,
-      string16(), false, false, match, alternate_nav_url);
+  AutocompleteClassifierFactory::GetForProfile(profile_)->Classify(
+      text, false, false, ClassifyPage(), match, alternate_nav_url);
 }
 
 void OmniboxEditModel::SetFocusState(OmniboxFocusState state,
                                      OmniboxFocusChangeReason reason) {
   if (state == focus_state_)
     return;
-
-  InstantController* instant = controller_->GetInstant();
-  if (instant)
-    instant->OmniboxFocusChanged(state, reason, NULL);
 
   // Update state and notify view if the omnibox has focus and the caret
   // visibility changed.
@@ -1342,4 +1464,6 @@ void OmniboxEditModel::SetFocusState(OmniboxFocusState state,
   if (focus_state_ != OMNIBOX_FOCUS_NONE &&
       is_caret_visible() != was_caret_visible)
     view_->ApplyCaretVisibility();
+
+  delegate_->OnFocusChanged(focus_state_, reason);
 }

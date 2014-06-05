@@ -3,71 +3,118 @@
 # found in the LICENSE file.
 
 {
+  'variables': {
+    'conditions': [
+      ['OS=="linux"', {
+        'compile_suid_client': 1,
+        'compile_credentials': 1,
+      }, {
+        'compile_suid_client': 0,
+        'compile_credentials': 0,
+      }],
+      ['OS=="linux" and (target_arch=="ia32" or target_arch=="x64")', {
+        'compile_seccomp_bpf_demo': 1,
+      }, {
+        'compile_seccomp_bpf_demo': 0,
+      }],
+    ],
+  },
+  'target_defaults': {
+    'target_conditions': [
+      # All linux/ files will automatically be excluded on Android
+      # so make sure we re-include them explicitly.
+      ['OS == "android"', {
+        'sources/': [
+          ['include', '^linux/'],
+        ],
+      }],
+    ],
+  },
   'targets': [
     # We have two principal targets: sandbox and sandbox_linux_unittests
     # All other targets are listed as dependencies.
-    # FIXME(jln): for historial reasons, sandbox_linux is the setuid sandbox
-    # and is its own target.
+    # There is one notable exception: for historical reasons, chrome_sandbox is
+    # the setuid sandbox and is its own target.
     {
       'target_name': 'sandbox',
       'type': 'none',
       'dependencies': [
-        'suid_sandbox_client',
         'sandbox_services',
       ],
       'conditions': [
-        # Only compile in the seccomp mode 1 code for the flag combination
-        # where we support it.
-        [ 'OS=="linux" and (target_arch=="ia32" or target_arch=="x64") '
-          'and toolkit_views==0 and selinux==0', {
+        [ 'compile_suid_client==1', {
           'dependencies': [
-            'linux/seccomp-legacy/seccomp.gyp:seccomp_sandbox',
+            'suid_sandbox_client',
           ],
         }],
-        # Similarly, compile seccomp BPF when we support it
-        [ 'OS=="linux" and (target_arch=="ia32" or target_arch=="x64" '
-                           'or target_arch=="arm")', {
-          'type': 'static_library',
+        # Compile seccomp BPF when we support it.
+        [ 'use_seccomp_bpf==1', {
           'dependencies': [
             'seccomp_bpf',
+            'seccomp_bpf_helpers',
           ],
         }],
       ],
     },
     {
-      'target_name': 'sandbox_linux_unittests',
-      'type': 'executable',
+      'target_name': 'sandbox_linux_test_utils',
+      'type': 'static_library',
       'dependencies': [
-        'sandbox',
         '../testing/gtest.gyp:gtest',
-      ],
-      'sources': [
-        'tests/main.cc',
-        'tests/unit_tests.cc',
-        'tests/unit_tests.h',
-        'suid/client/setuid_sandbox_client_unittest.cc',
-        'services/broker_process_unittest.cc',
       ],
       'include_dirs': [
         '../..',
       ],
+      'sources': [
+        'tests/sandbox_test_runner.h',
+        'tests/sandbox_test_runner_function_pointer.cc',
+        'tests/sandbox_test_runner_function_pointer.h',
+        'tests/test_utils.cc',
+        'tests/test_utils.h',
+        'tests/unit_tests.cc',
+        'tests/unit_tests.h',
+      ],
       'conditions': [
-        [ 'OS=="linux" and (target_arch=="ia32" or target_arch=="x64" '
-                           'or target_arch=="arm")', {
+        [ 'use_seccomp_bpf==1', {
           'sources': [
+            'seccomp-bpf/bpf_tester_compatibility_delegate.h',
             'seccomp-bpf/bpf_tests.h',
-            'seccomp-bpf/codegen_unittest.cc',
-            'seccomp-bpf/errorcode_unittest.cc',
-            'seccomp-bpf/sandbox_bpf_unittest.cc',
-            'seccomp-bpf/syscall_iterator_unittest.cc',
-            'seccomp-bpf/syscall_unittest.cc',
+            'seccomp-bpf/sandbox_bpf_test_runner.cc',
+            'seccomp-bpf/sandbox_bpf_test_runner.h',
+          ],
+          'dependencies': [
+            'seccomp_bpf',
+          ]
+        }],
+      ],
+    },
+    {
+      # The main sandboxing test target.
+      'target_name': 'sandbox_linux_unittests',
+      'includes': [
+        'sandbox_linux_test_sources.gypi',
+      ],
+      'type': 'executable',
+    },
+    {
+      # This target is the shared library used by Android APK (i.e.
+      # JNI-friendly) tests.
+      'target_name': 'sandbox_linux_jni_unittests',
+      'includes': [
+        'sandbox_linux_test_sources.gypi',
+      ],
+      'type': 'shared_library',
+      'conditions': [
+        [ 'OS == "android" and gtest_target_type == "shared_library"', {
+          'dependencies': [
+            '../testing/android/native_test.gyp:native_test_native_code',
           ],
         }],
       ],
     },
     {
       'target_name': 'seccomp_bpf',
-      'type': 'static_library',
+      'type': '<(component)',
       'sources': [
         'seccomp-bpf/basicblock.cc',
         'seccomp-bpf/basicblock.h',
@@ -78,20 +125,73 @@
         'seccomp-bpf/errorcode.cc',
         'seccomp-bpf/errorcode.h',
         'seccomp-bpf/instruction.h',
+        'seccomp-bpf/linux_seccomp.h',
         'seccomp-bpf/sandbox_bpf.cc',
         'seccomp-bpf/sandbox_bpf.h',
+        'seccomp-bpf/sandbox_bpf_compatibility_policy.h',
+        'seccomp-bpf/sandbox_bpf_policy.h',
         'seccomp-bpf/syscall.cc',
         'seccomp-bpf/syscall.h',
         'seccomp-bpf/syscall_iterator.cc',
         'seccomp-bpf/syscall_iterator.h',
+        'seccomp-bpf/trap.cc',
+        'seccomp-bpf/trap.h',
         'seccomp-bpf/verifier.cc',
         'seccomp-bpf/verifier.h',
       ],
       'dependencies': [
         '../base/base.gyp:base',
+        'sandbox_services_headers',
+      ],
+      'defines': [
+        'SANDBOX_IMPLEMENTATION',
       ],
       'include_dirs': [
         '../..',
+      ],
+    },
+    {
+      'target_name': 'seccomp_bpf_helpers',
+      'type': '<(component)',
+      'sources': [
+        'seccomp-bpf-helpers/baseline_policy.cc',
+        'seccomp-bpf-helpers/baseline_policy.h',
+        'seccomp-bpf-helpers/sigsys_handlers.cc',
+        'seccomp-bpf-helpers/sigsys_handlers.h',
+        'seccomp-bpf-helpers/syscall_parameters_restrictions.cc',
+        'seccomp-bpf-helpers/syscall_parameters_restrictions.h',
+        'seccomp-bpf-helpers/syscall_sets.cc',
+        'seccomp-bpf-helpers/syscall_sets.h',
+      ],
+      'dependencies': [
+        '../base/base.gyp:base',
+        'seccomp_bpf',
+      ],
+      'defines': [
+        'SANDBOX_IMPLEMENTATION',
+      ],
+      'include_dirs': [
+        '../..',
+      ],
+    },
+    {
+      # A demonstration program for the seccomp-bpf sandbox.
+      'target_name': 'seccomp_bpf_demo',
+      'conditions': [
+        ['compile_seccomp_bpf_demo==1', {
+          'type': 'executable',
+          'sources': [
+            'seccomp-bpf/demo.cc',
+          ],
+          'dependencies': [
+            'seccomp_bpf',
+          ],
+        }, {
+          'type': 'none',
+        }],
+      ],
+      'include_dirs': [
+        '../../',
       ],
     },
     {
@@ -116,13 +216,51 @@
       ],
     },
     { 'target_name': 'sandbox_services',
-      'type': 'static_library',
+      'type': '<(component)',
       'sources': [
         'services/broker_process.cc',
         'services/broker_process.h',
+        'services/init_process_reaper.cc',
+        'services/init_process_reaper.h',
+        'services/scoped_process.cc',
+        'services/scoped_process.h',
+        'services/thread_helpers.cc',
+        'services/thread_helpers.h',
+        'services/yama.h',
+        'services/yama.cc',
       ],
       'dependencies': [
         '../base/base.gyp:base',
+      ],
+      'defines': [
+        'SANDBOX_IMPLEMENTATION',
+      ],
+      'conditions': [
+        ['compile_credentials==1', {
+          'sources': [
+            'services/credentials.cc',
+            'services/credentials.h',
+          ],
+          'dependencies': [
+            # for capabilities.cc.
+            '../build/linux/system.gyp:libcap',
+          ],
+        }],
+      ],
+      'include_dirs': [
+        '..',
+      ],
+    },
+    { 'target_name': 'sandbox_services_headers',
+      'type': 'none',
+      'sources': [
+        'services/android_arm_ucontext.h',
+        'services/android_ucontext.h',
+        'services/android_i386_ucontext.h',
+        'services/arm_linux_syscalls.h',
+        'services/linux_syscalls.h',
+        'services/x86_32_linux_syscalls.h',
+        'services/x86_64_linux_syscalls.h',
       ],
       'include_dirs': [
         '..',
@@ -146,20 +284,56 @@
     },
     {
       'target_name': 'suid_sandbox_client',
-      'type': 'static_library',
+      'type': '<(component)',
       'sources': [
         'suid/common/sandbox.h',
         'suid/common/suid_unsafe_environment_variables.h',
         'suid/client/setuid_sandbox_client.cc',
         'suid/client/setuid_sandbox_client.h',
       ],
+      'defines': [
+        'SANDBOX_IMPLEMENTATION',
+      ],
       'dependencies': [
         '../base/base.gyp:base',
+        'sandbox_services',
       ],
       'include_dirs': [
         '..',
       ],
     },
-
+  ],
+  'conditions': [
+    [ 'OS=="android"', {
+      'targets': [
+        {
+        'target_name': 'sandbox_linux_unittests_stripped',
+        'type': 'none',
+        'dependencies': [ 'sandbox_linux_unittests' ],
+        'actions': [{
+          'action_name': 'strip sandbox_linux_unittests',
+          'inputs': [ '<(PRODUCT_DIR)/sandbox_linux_unittests' ],
+          'outputs': [ '<(PRODUCT_DIR)/sandbox_linux_unittests_stripped' ],
+          'action': [ '<(android_strip)', '<@(_inputs)', '-o', '<@(_outputs)' ],
+          }],
+        }
+      ],
+    }],
+    # Strategy copied from base_unittests_apk in base/base.gyp.
+    [ 'OS=="android" and gtest_target_type == "shared_library"', {
+      'targets': [
+        {
+        'target_name': 'sandbox_linux_jni_unittests_apk',
+        'type': 'none',
+        'variables': {
+          'test_suite_name': 'sandbox_linux_jni_unittests',
+        },
+        'dependencies': [
+          'sandbox_linux_jni_unittests',
+        ],
+        'includes': [ '../../build/apk_test.gypi' ],
+        }
+      ],
+    }],
   ],
 }

@@ -29,23 +29,32 @@
 
 #include <vector>
 
+#include "talk/app/webrtc/dtmfsender.h"
 #include "talk/app/webrtc/jsepicecandidate.h"
 #include "talk/app/webrtc/jsepsessiondescription.h"
+#include "talk/app/webrtc/mediaconstraintsinterface.h"
 #include "talk/app/webrtc/mediastreamhandler.h"
 #include "talk/app/webrtc/streamcollection.h"
 #include "talk/base/logging.h"
 #include "talk/base/stringencode.h"
+#include "talk/p2p/client/basicportallocator.h"
 #include "talk/session/media/channelmanager.h"
 
 namespace {
 
-// The min number of tokens in the ice uri.
-static const size_t kMinIceUriTokens = 2;
+using webrtc::PeerConnectionInterface;
+
 // The min number of tokens must present in Turn host uri.
 // e.g. user@turn.example.org
 static const size_t kTurnHostTokensNum = 2;
+// Number of tokens must be preset when TURN uri has transport param.
+static const size_t kTurnTransportTokensNum = 2;
 // The default stun port.
-static const int kDefaultPort = 3478;
+static const int kDefaultStunPort = 3478;
+static const int kDefaultStunTlsPort = 5349;
+static const char kTransport[] = "transport";
+static const char kUdpTransportType[] = "udp";
+static const char kTcpTransportType[] = "tcp";
 
 // NOTE: Must be in the same order as the ServiceType enum.
 static const char* kValidIceServiceTypes[] = {
@@ -60,32 +69,9 @@ enum ServiceType {
 };
 
 enum {
-  MSG_CREATE_SESSIONDESCRIPTION_SUCCESS = 0,
-  MSG_CREATE_SESSIONDESCRIPTION_FAILED,
-  MSG_SET_SESSIONDESCRIPTION_SUCCESS,
+  MSG_SET_SESSIONDESCRIPTION_SUCCESS = 0,
   MSG_SET_SESSIONDESCRIPTION_FAILED,
   MSG_GETSTATS,
-  MSG_ICECHANGE,
-  MSG_ICECANDIDATE,
-  MSG_ICECOMPLETE,
-};
-
-struct CandidateMsg : public talk_base::MessageData {
-  explicit CandidateMsg(const webrtc::JsepIceCandidate* candidate)
-      : candidate(candidate) {
-  }
-  talk_base::scoped_ptr<const webrtc::JsepIceCandidate> candidate;
-};
-
-struct CreateSessionDescriptionMsg : public talk_base::MessageData {
-  explicit CreateSessionDescriptionMsg(
-      webrtc::CreateSessionDescriptionObserver* observer)
-      : observer(observer) {
-  }
-
-  talk_base::scoped_refptr<webrtc::CreateSessionDescriptionObserver> observer;
-  std::string error;
-  talk_base::scoped_ptr<webrtc::SessionDescriptionInterface> description;
 };
 
 struct SetSessionDescriptionMsg : public talk_base::MessageData {
@@ -106,12 +92,79 @@ struct GetStatsMsg : public talk_base::MessageData {
   talk_base::scoped_refptr<webrtc::StatsObserver> observer;
 };
 
+// |in_str| should be of format
+// stunURI       = scheme ":" stun-host [ ":" stun-port ]
+// scheme        = "stun" / "stuns"
+// stun-host     = IP-literal / IPv4address / reg-name
+// stun-port     = *DIGIT
+
+// draft-petithuguenin-behave-turn-uris-01
+// turnURI       = scheme ":" turn-host [ ":" turn-port ]
+// turn-host     = username@IP-literal / IPv4address / reg-name
+bool GetServiceTypeAndHostnameFromUri(const std::string& in_str,
+                                      ServiceType* service_type,
+                                      std::string* hostname) {
+  std::string::size_type colonpos = in_str.find(':');
+  if (colonpos == std::string::npos) {
+    return false;
+  }
+  std::string type = in_str.substr(0, colonpos);
+  for (size_t i = 0; i < ARRAY_SIZE(kValidIceServiceTypes); ++i) {
+    if (type.compare(kValidIceServiceTypes[i]) == 0) {
+      *service_type = static_cast<ServiceType>(i);
+      break;
+    }
+  }
+  if (*service_type == INVALID) {
+    return false;
+  }
+  *hostname = in_str.substr(colonpos + 1, std::string::npos);
+  return true;
+}
+
+// This method parses IPv6 and IPv4 literal strings, along with hostnames in
+// standard hostname:port format.
+// Consider following formats as correct.
+// |hostname:port|, |[IPV6 address]:port|, |IPv4 address|:port,
+// |hostname|, |[IPv6 address]|, |IPv4 address|
+bool ParseHostnameAndPortFromString(const std::string& in_str,
+                                    std::string* host,
+                                    int* port) {
+  if (in_str.at(0) == '[') {
+    std::string::size_type closebracket = in_str.rfind(']');
+    if (closebracket != std::string::npos) {
+      *host = in_str.substr(1, closebracket - 1);
+      std::string::size_type colonpos = in_str.find(':', closebracket);
+      if (std::string::npos != colonpos) {
+        if (!talk_base::FromString(
+            in_str.substr(closebracket + 2, std::string::npos), port)) {
+          return false;
+        }
+      }
+    } else {
+      return false;
+    }
+  } else {
+    std::string::size_type colonpos = in_str.find(':');
+    if (std::string::npos != colonpos) {
+      *host = in_str.substr(0, colonpos);
+      if (!talk_base::FromString(
+          in_str.substr(colonpos + 1, std::string::npos), port)) {
+        return false;
+      }
+    } else {
+      *host = in_str;
+    }
+  }
+  return true;
+}
+
 typedef webrtc::PortAllocatorFactoryInterface::StunConfiguration
     StunConfiguration;
 typedef webrtc::PortAllocatorFactoryInterface::TurnConfiguration
     TurnConfiguration;
 
-bool ParseIceServers(const webrtc::JsepInterface::IceServers& configuration,
+bool ParseIceServers(const PeerConnectionInterface::IceServers& configuration,
                      std::vector<StunConfiguration>* stun_config,
                      std::vector<TurnConfiguration>* turn_config) {
   // draft-nandakumar-rtcweb-stun-uri-01
@@ -128,48 +181,66 @@ bool ParseIceServers(const webrtc::JsepInterface::IceServers& configuration,
   // transport-ext = 1*unreserved
   // turn-host     = IP-literal / IPv4address / reg-name
   // turn-port     = *DIGIT
-
-  // TODO(ronghuawu): Handle IPV6 address
   for (size_t i = 0; i < configuration.size(); ++i) {
-    webrtc::JsepInterface::IceServer server = configuration[i];
+    webrtc::PeerConnectionInterface::IceServer server = configuration[i];
     if (server.uri.empty()) {
       LOG(WARNING) << "Empty uri.";
       continue;
     }
     std::vector<std::string> tokens;
+    std::string turn_transport_type = kUdpTransportType;
     talk_base::tokenize(server.uri, '?', &tokens);
-    // TODO(ronghuawu): Handle [ "?transport=" transport ].
     std::string uri_without_transport = tokens[0];
-    tokens.clear();
-    talk_base::tokenize(uri_without_transport, ':', &tokens);
-    if (tokens.size() < kMinIceUriTokens) {
-      LOG(WARNING) << "Invalid uri: " << server.uri;
-      continue;
-    }
-    ServiceType service_type = INVALID;
-    const std::string& type = tokens[0];
-    for (size_t i = 0; i < ARRAY_SIZE(kValidIceServiceTypes); ++i) {
-      if (type.compare(kValidIceServiceTypes[i]) == 0) {
-        service_type = static_cast<ServiceType>(i);
-        break;
+    // Let's look into transport= param, if it exists.
+    if (tokens.size() == kTurnTransportTokensNum) {  // ?transport= is present.
+      std::string uri_transport_param = tokens[1];
+      talk_base::tokenize(uri_transport_param, '=', &tokens);
+      if (tokens[0] == kTransport) {
+        // As per above grammar transport param will be consist of lower case
+        // letters.
+        if (tokens[1] != kUdpTransportType && tokens[1] != kTcpTransportType) {
+          LOG(LS_WARNING) << "Transport param should always be udp or tcp.";
+          continue;
+        }
+        turn_transport_type = tokens[1];
       }
     }
-    if (service_type == INVALID) {
-      LOG(WARNING) << "Invalid service type: " << type;
-      continue;
-    }
-    std::string address = tokens[1];
-    int port = kDefaultPort;
-    if (tokens.size() > kMinIceUriTokens) {
-      if (!talk_base::FromString(tokens[2], &port)) {
-        LOG(LS_WARNING)  << "Failed to parse port string: " << tokens[2];
-        continue;
-      }
 
-      if (port <= 0 || port > 0xffff) {
-        LOG(WARNING) << "Invalid port: " << port;
-        continue;
-      }
+    std::string hoststring;
+    ServiceType service_type = INVALID;
+    if (!GetServiceTypeAndHostnameFromUri(uri_without_transport,
+                                         &service_type,
+                                         &hoststring)) {
+      LOG(LS_WARNING) << "Invalid transport parameter in ICE URI: "
+                      << uri_without_transport;
+      continue;
+    }
+
+    // Let's break hostname.
+    tokens.clear();
+    talk_base::tokenize(hoststring, '@', &tokens);
+    hoststring = tokens[0];
+    if (tokens.size() == kTurnHostTokensNum) {
+      server.username = talk_base::s_url_decode(tokens[0]);
+      hoststring = tokens[1];
+    }
+
+    int port = kDefaultStunPort;
+    if (service_type == TURNS) {
+      port = kDefaultStunTlsPort;
+      turn_transport_type = kTcpTransportType;
+    }
+
+    std::string address;
+    if (!ParseHostnameAndPortFromString(hoststring, &address, &port)) {
+      LOG(WARNING) << "Invalid Hostname format: " << uri_without_transport;
+      continue;
+    }
+
+
+    if (port <= 0 || port > 0xffff) {
+      LOG(WARNING) << "Invalid port: " << port;
+      continue;
     }
 
     switch (service_type) {
@@ -179,20 +250,23 @@ bool ParseIceServers(const webrtc::JsepInterface::IceServers& configuration,
         break;
       case TURN:
       case TURNS: {
-        // Turn url example from the spec |url:"turn:user@turn.example.org"|.
-        std::vector<std::string> turn_tokens;
-        talk_base::tokenize(address, '@', &turn_tokens);
-        if (turn_tokens.size() != kTurnHostTokensNum) {
-          LOG(LS_ERROR) << "Invalid TURN configuration : "
-                        << address << " can't proceed.";
-          return false;
+        if (server.username.empty()) {
+          // Turn url example from the spec |url:"turn:user@turn.example.org"|.
+          std::vector<std::string> turn_tokens;
+          talk_base::tokenize(address, '@', &turn_tokens);
+          if (turn_tokens.size() == kTurnHostTokensNum) {
+            server.username = talk_base::s_url_decode(turn_tokens[0]);
+            address = turn_tokens[1];
+          }
         }
-        std::string username = turn_tokens[0];
-        address = turn_tokens[1];
+
+        bool secure = (service_type == TURNS);
+
         turn_config->push_back(TurnConfiguration(address, port,
-                                                 username, server.password));
-        // STUN functionality is part of TURN.
-        stun_config->push_back(StunConfiguration(address, port));
+                                                 server.username,
+                                                 server.password,
+                                                 turn_transport_type,
+                                                 secure));
         break;
       }
       case INVALID:
@@ -211,18 +285,12 @@ bool CanAddLocalMediaStream(webrtc::StreamCollectionInterface* current_streams,
                             webrtc::MediaStreamInterface* new_stream) {
   if (!new_stream || !current_streams)
     return false;
-
-  bool audio_track_exist = false;
-  for (size_t j = 0; j < current_streams->count(); ++j) {
-    if (!audio_track_exist) {
-      audio_track_exist = current_streams->at(j)->audio_tracks()->count() > 0;
-    }
-  }
-  if (audio_track_exist && (new_stream->audio_tracks()->count() > 0)) {
-    LOG(LS_ERROR) << "AddStream - Currently only one audio track is supported"
-                  << "per PeerConnection.";
+  if (current_streams->find(new_stream->label()) != NULL) {
+    LOG(LS_ERROR) << "MediaStream with label " << new_stream->label()
+                  << " is already added.";
     return false;
   }
+
   return true;
 }
 
@@ -233,34 +301,43 @@ namespace webrtc {
 PeerConnection::PeerConnection(PeerConnectionFactory* factory)
     : factory_(factory),
       observer_(NULL),
-      ready_state_(kNew),
+      uma_observer_(NULL),
+      signaling_state_(kStable),
       ice_state_(kIceNew),
-      local_media_streams_(StreamCollection::Create()) {
+      ice_connection_state_(kIceConnectionNew),
+      ice_gathering_state_(kIceGatheringNew) {
 }
 
 PeerConnection::~PeerConnection() {
+  if (mediastream_signaling_)
+    mediastream_signaling_->TearDown();
+  if (stream_handler_container_)
+    stream_handler_container_->TearDown();
 }
 
 bool PeerConnection::Initialize(
-    const JsepInterface::IceServers& configuration,
+    const PeerConnectionInterface::RTCConfiguration& configuration,
     const MediaConstraintsInterface* constraints,
-    webrtc::PortAllocatorFactoryInterface* allocator_factory,
+    PortAllocatorFactoryInterface* allocator_factory,
+    DTLSIdentityServiceInterface* dtls_identity_service,
     PeerConnectionObserver* observer) {
   std::vector<PortAllocatorFactoryInterface::StunConfiguration> stun_config;
   std::vector<PortAllocatorFactoryInterface::TurnConfiguration> turn_config;
-  if (!ParseIceServers(configuration, &stun_config, &turn_config)) {
+  if (!ParseIceServers(configuration.servers, &stun_config, &turn_config)) {
     return false;
   }
 
-  return DoInitialize(stun_config, turn_config, constraints,
-                      allocator_factory, observer);
+  return DoInitialize(configuration.type, stun_config, turn_config, constraints,
+                      allocator_factory, dtls_identity_service, observer);
 }
 
 bool PeerConnection::DoInitialize(
+    IceTransportsType type,
     const StunConfigurations& stun_config,
     const TurnConfigurations& turn_config,
     const MediaConstraintsInterface* constraints,
     webrtc::PortAllocatorFactoryInterface* allocator_factory,
+    DTLSIdentityServiceInterface* dtls_identity_service,
     PeerConnectionObserver* observer) {
   ASSERT(observer != NULL);
   if (!observer)
@@ -268,39 +345,57 @@ bool PeerConnection::DoInitialize(
   observer_ = observer;
   port_allocator_.reset(
       allocator_factory->CreatePortAllocator(stun_config, turn_config));
+
   // To handle both internal and externally created port allocator, we will
-  // enable BUNDLE here. Also enabling TURN and disable legacy relay service.
-  port_allocator_->set_flags(cricket::PORTALLOCATOR_ENABLE_BUNDLE |
-                             cricket::PORTALLOCATOR_ENABLE_SHARED_UFRAG |
-                             cricket::PORTALLOCATOR_ENABLE_SHARED_SOCKET);
+  // enable BUNDLE here.
+  int portallocator_flags = cricket::PORTALLOCATOR_ENABLE_BUNDLE |
+                            cricket::PORTALLOCATOR_ENABLE_SHARED_UFRAG |
+                            cricket::PORTALLOCATOR_ENABLE_SHARED_SOCKET;
+  bool value;
+  if (FindConstraint(
+        constraints,
+        MediaConstraintsInterface::kEnableIPv6,
+        &value, NULL) && value) {
+    portallocator_flags |= cricket::PORTALLOCATOR_ENABLE_IPV6;
+  }
+
+  if (value && uma_observer_) {
+    uma_observer_->IncrementCounter(kPeerConnection_IPv6);
+  } else if (!value && uma_observer_) {
+    uma_observer_->IncrementCounter(kPeerConnection_IPv4);
+  }
+
+  port_allocator_->set_flags(portallocator_flags);
+  // No step delay is used while allocating ports.
+  port_allocator_->set_step_delay(cricket::kMinimumStepDelay);
 
   mediastream_signaling_.reset(new MediaStreamSignaling(
-      factory_->signaling_thread(), this));
+      factory_->signaling_thread(), this, factory_->channel_manager()));
 
   session_.reset(new WebRtcSession(factory_->channel_manager(),
                                    factory_->signaling_thread(),
                                    factory_->worker_thread(),
                                    port_allocator_.get(),
                                    mediastream_signaling_.get()));
-  stream_handler_.reset(new MediaStreamHandlers(session_.get(),
-                                                session_.get()));
+  stream_handler_container_.reset(new MediaStreamHandlerContainer(
+      session_.get(), session_.get()));
   stats_.set_session(session_.get());
 
   // Initialize the WebRtcSession. It creates transport channels etc.
-  if (!session_->Initialize(constraints))
+  if (!session_->Initialize(factory_->options(), constraints,
+                            dtls_identity_service, type))
     return false;
-
 
   // Register PeerConnection as receiver of local ice candidates.
   // All the callbacks will be posted to the application from PeerConnection.
-  session_->RegisterObserver(this);
+  session_->RegisterIceObserver(this);
   session_->SignalState.connect(this, &PeerConnection::OnSessionStateChange);
   return true;
 }
 
 talk_base::scoped_refptr<StreamCollectionInterface>
 PeerConnection::local_streams() {
-  return local_media_streams_;
+  return mediastream_signaling_->local_streams();
 }
 
 talk_base::scoped_refptr<StreamCollectionInterface>
@@ -310,31 +405,59 @@ PeerConnection::remote_streams() {
 
 bool PeerConnection::AddStream(MediaStreamInterface* local_stream,
                                const MediaConstraintsInterface* constraints) {
-  if (!CanAddLocalMediaStream(local_media_streams_, local_stream))
+  if (IsClosed()) {
+    return false;
+  }
+  if (!CanAddLocalMediaStream(mediastream_signaling_->local_streams(),
+                              local_stream))
     return false;
 
   // TODO(perkj): Implement support for MediaConstraints in AddStream.
-  local_media_streams_->AddStream(local_stream);
-  mediastream_signaling_->SetLocalStreams(local_media_streams_);
+  if (!mediastream_signaling_->AddLocalStream(local_stream)) {
+    return false;
+  }
   stats_.AddStream(local_stream);
   observer_->OnRenegotiationNeeded();
   return true;
 }
 
-void PeerConnection::RemoveStream(MediaStreamInterface* remove_stream) {
-  local_media_streams_->RemoveStream(remove_stream);
-  mediastream_signaling_->SetLocalStreams(local_media_streams_);
+void PeerConnection::RemoveStream(MediaStreamInterface* local_stream) {
+  mediastream_signaling_->RemoveLocalStream(local_stream);
+  if (IsClosed()) {
+    return;
+  }
   observer_->OnRenegotiationNeeded();
 }
 
+talk_base::scoped_refptr<DtmfSenderInterface> PeerConnection::CreateDtmfSender(
+    AudioTrackInterface* track) {
+  if (!track) {
+    LOG(LS_ERROR) << "CreateDtmfSender - track is NULL.";
+    return NULL;
+  }
+  if (!mediastream_signaling_->local_streams()->FindAudioTrack(track->id())) {
+    LOG(LS_ERROR) << "CreateDtmfSender is called with a non local audio track.";
+    return NULL;
+  }
+
+  talk_base::scoped_refptr<DtmfSenderInterface> sender(
+      DtmfSender::Create(track, signaling_thread(), session_.get()));
+  if (!sender.get()) {
+    LOG(LS_ERROR) << "CreateDtmfSender failed on DtmfSender::Create.";
+    return NULL;
+  }
+  return DtmfSenderProxy::Create(signaling_thread(), sender.get());
+}
+
 bool PeerConnection::GetStats(StatsObserver* observer,
-                              MediaStreamTrackInterface* track) {
+                              MediaStreamTrackInterface* track,
+                              StatsOutputLevel level) {
   if (!VERIFY(observer != NULL)) {
     LOG(LS_ERROR) << "GetStats - observer is NULL.";
     return false;
   }
 
-  stats_.UpdateStats();
+  stats_.UpdateStats(level);
   talk_base::scoped_ptr<GetStatsMsg> msg(new GetStatsMsg(observer));
   if (!stats_.GetStats(track, &(msg->reports))) {
     return false;
@@ -343,54 +466,40 @@ bool PeerConnection::GetStats(StatsObserver* observer,
   return true;
 }
 
-PeerConnectionInterface::ReadyState PeerConnection::ready_state() {
-  return ready_state_;
+PeerConnectionInterface::SignalingState PeerConnection::signaling_state() {
+  return signaling_state_;
 }
 
 PeerConnectionInterface::IceState PeerConnection::ice_state() {
   return ice_state_;
 }
 
-bool PeerConnection::CanSendDtmf(const AudioTrackInterface* track) {
-  if (!track) {
-    return false;
-  }
-  return session_->CanSendDtmf(track->label());
+PeerConnectionInterface::IceConnectionState
+PeerConnection::ice_connection_state() {
+  return ice_connection_state_;
 }
 
-bool PeerConnection::SendDtmf(const AudioTrackInterface* send_track,
-                              const std::string& tones, int duration,
-                              const AudioTrackInterface* play_track) {
-  if (!send_track) {
-    return false;
-  }
-  std::string play_name;
-  if (play_track) {
-    play_name = play_track->label();
-  }
-
-  return session_->SendDtmf(send_track->label(), tones, duration, play_name);
+PeerConnectionInterface::IceGatheringState
+PeerConnection::ice_gathering_state() {
+  return ice_gathering_state_;
 }
 
 talk_base::scoped_refptr<DataChannelInterface>
 PeerConnection::CreateDataChannel(
     const std::string& label,
     const DataChannelInit* config) {
+  talk_base::scoped_ptr<InternalDataChannelInit> internal_config;
+  if (config) {
+    internal_config.reset(new InternalDataChannelInit(*config));
+  }
   talk_base::scoped_refptr<DataChannelInterface> channel(
-      session_->CreateDataChannel(label, config));
+      session_->CreateDataChannel(label, internal_config.get()));
+  if (!channel.get())
+    return NULL;
+
   observer_->OnRenegotiationNeeded();
-  return channel;
-}
 
-bool PeerConnection::StartIce(IceOptions options) {
-  // Ice will be started by default and will be removed in Jsep01.
-  // TODO: Remove this method once fully migrated to JSEP01.
-  return true;
-}
-
-SessionDescriptionInterface* PeerConnection::CreateOffer(
-    const MediaHints& hints) {
-  return session_->CreateOffer(hints);
+  return DataChannelProxy::Create(signaling_thread(), channel.get());
 }
 
 void PeerConnection::CreateOffer(CreateSessionDescriptionObserver* observer,
@@ -399,24 +508,7 @@ void PeerConnection::CreateOffer(CreateSessionDescriptionObserver* observer,
     LOG(LS_ERROR) << "CreateOffer - observer is NULL.";
     return;
   }
-
-  CreateSessionDescriptionMsg* msg = new CreateSessionDescriptionMsg(observer);
-  msg->description.reset(
-      session_->CreateOffer(constraints));
-
-  if (!msg->description) {
-    msg->error = "CreateOffer failed.";
-    signaling_thread()->Post(this, MSG_CREATE_SESSIONDESCRIPTION_FAILED, msg);
-    return;
-  }
-
-  signaling_thread()->Post(this, MSG_CREATE_SESSIONDESCRIPTION_SUCCESS, msg);
-}
-
-SessionDescriptionInterface* PeerConnection::CreateAnswer(
-    const MediaHints& hints,
-    const SessionDescriptionInterface* offer) {
-  return session_->CreateAnswer(hints, offer);
+  session_->CreateOffer(observer, constraints);
 }
 
 void PeerConnection::CreateAnswer(
@@ -426,39 +518,7 @@ void PeerConnection::CreateAnswer(
     LOG(LS_ERROR) << "CreateAnswer - observer is NULL.";
     return;
   }
-
-  CreateSessionDescriptionMsg* msg = new CreateSessionDescriptionMsg(observer);
-  // TODO(perkj): This checks should be done by the session. Not here.
-  // Clean this up once the old Jsep API has been removed.
-  const SessionDescriptionInterface* offer = session_->remote_description();
-  std::string error;
-  if (!offer) {
-    msg->error = "CreateAnswer can't be called before SetRemoteDescription.";
-    signaling_thread()->Post(this, MSG_CREATE_SESSIONDESCRIPTION_FAILED, msg);
-    return;
-  }
-  if (offer->type() != JsepSessionDescription::kOffer) {
-    msg->error =
-        "CreateAnswer failed because remote_description is not an offer.";
-    signaling_thread()->Post(this, MSG_CREATE_SESSIONDESCRIPTION_FAILED, msg);
-    return;
-  }
-
-  msg->description.reset(session_->CreateAnswer(constraints, offer));
-  if (!msg->description) {
-    msg->error = "CreateAnswer failed.";
-    signaling_thread()->Post(this, MSG_CREATE_SESSIONDESCRIPTION_FAILED, msg);
-    return;
-  }
-
-  signaling_thread()->Post(this, MSG_CREATE_SESSIONDESCRIPTION_SUCCESS, msg);
-}
-
-bool PeerConnection::SetLocalDescription(Action action,
-                                         SessionDescriptionInterface* desc) {
-  bool result =  session_->SetLocalDescription(action, desc);
-  stream_handler_->CommitLocalStreams(local_media_streams_);
-  return result;
+  session_->CreateAnswer(observer, constraints);
 }
 
 void PeerConnection::SetLocalDescription(
@@ -474,20 +534,14 @@ void PeerConnection::SetLocalDescription(
   }
   // Update stats here so that we have the most recent stats for tracks and
   // streams that might be removed by updating the session description.
-  stats_.UpdateStats();
-  if (!SetLocalDescription(JsepSessionDescription::GetAction(desc->type()),
-                           desc)) {
-    PostSetSessionDescriptionFailure(observer, "SetLocalDescription failed.");
+  stats_.UpdateStats(kStatsOutputLevelStandard);
+  std::string error;
+  if (!session_->SetLocalDescription(desc, &error)) {
+    PostSetSessionDescriptionFailure(observer, error);
     return;
   }
-  stream_handler_->CommitLocalStreams(local_media_streams_);
   SetSessionDescriptionMsg* msg =  new SetSessionDescriptionMsg(observer);
   signaling_thread()->Post(this, MSG_SET_SESSIONDESCRIPTION_SUCCESS, msg);
-}
-
-bool PeerConnection::SetRemoteDescription(Action action,
-                                          SessionDescriptionInterface* desc) {
-  return session_->SetRemoteDescription(action, desc);
 }
 
 void PeerConnection::SetRemoteDescription(
@@ -497,17 +551,16 @@ void PeerConnection::SetRemoteDescription(
     LOG(LS_ERROR) << "SetRemoteDescription - observer is NULL.";
     return;
   }
-
   if (!desc) {
     PostSetSessionDescriptionFailure(observer, "SessionDescription is NULL.");
     return;
   }
   // Update stats here so that we have the most recent stats for tracks and
   // streams that might be removed by updating the session description.
-  stats_.UpdateStats();
-  if (!SetRemoteDescription(JsepSessionDescription::GetAction(desc->type()),
-                            desc)) {
-    PostSetSessionDescriptionFailure(observer, "SetRemoteDescription failed.");
+  stats_.UpdateStats(kStatsOutputLevelStandard);
+  std::string error;
+  if (!session_->SetRemoteDescription(desc, &error)) {
+    PostSetSessionDescriptionFailure(observer, error);
     return;
   }
   SetSessionDescriptionMsg* msg  = new SetSessionDescriptionMsg(observer);
@@ -524,19 +577,57 @@ void PeerConnection::PostSetSessionDescriptionFailure(
 
 bool PeerConnection::UpdateIce(const IceServers& configuration,
                                const MediaConstraintsInterface* constraints) {
-  // TODO(ronghuawu): Implement UpdateIce.
-  LOG(LS_ERROR) << "UpdateIce is not implemented.";
   return false;
 }
 
-bool PeerConnection::ProcessIceMessage(
-    const IceCandidateInterface* ice_candidate) {
-  return session_->ProcessIceMessage(ice_candidate);
+bool PeerConnection::UpdateIce(const RTCConfiguration& config) {
+  if (port_allocator_) {
+    std::vector<PortAllocatorFactoryInterface::StunConfiguration> stuns;
+    std::vector<PortAllocatorFactoryInterface::TurnConfiguration> turns;
+    if (!ParseIceServers(config.servers, &stuns, &turns)) {
+      return false;
+    }
+
+    std::vector<talk_base::SocketAddress> stun_hosts;
+    typedef std::vector<StunConfiguration>::const_iterator StunIt;
+    for (StunIt stun_it = stuns.begin(); stun_it != stuns.end(); ++stun_it) {
+      stun_hosts.push_back(stun_it->server);
+    }
+
+    talk_base::SocketAddress stun_addr;
+    if (!stun_hosts.empty()) {
+      stun_addr = stun_hosts.front();
+      LOG(LS_INFO) << "UpdateIce: StunServer Address: " << stun_addr.ToString();
+    }
+
+    for (size_t i = 0; i < turns.size(); ++i) {
+      cricket::RelayCredentials credentials(turns[i].username,
+                                            turns[i].password);
+      cricket::RelayServerConfig relay_server(cricket::RELAY_TURN);
+      cricket::ProtocolType protocol;
+      if (cricket::StringToProto(turns[i].transport_type.c_str(), &protocol)) {
+        relay_server.ports.push_back(cricket::ProtocolAddress(
+            turns[i].server, protocol, turns[i].secure));
+        relay_server.credentials = credentials;
+        LOG(LS_INFO) << "UpdateIce: TurnServer Address: "
+                     << turns[i].server.ToString();
+      } else {
+        LOG(LS_WARNING) << "Ignoring TURN server " << turns[i].server << ". "
+                        << "Reason= Incorrect " << turns[i].transport_type
+                        << " transport parameter.";
+      }
+    }
+  }
+  return session_->UpdateIce(config.type);
 }
 
 bool PeerConnection::AddIceCandidate(
     const IceCandidateInterface* ice_candidate) {
-  return ProcessIceMessage(ice_candidate);
+  return session_->ProcessIceMessage(ice_candidate);
+}
+
+void PeerConnection::RegisterUMAObserver(UMAObserver* observer) {
+  uma_observer_ = observer;
 }
 
 const SessionDescriptionInterface* PeerConnection::local_description() const {
@@ -547,18 +638,38 @@ const SessionDescriptionInterface* PeerConnection::remote_description() const {
   return session_->remote_description();
 }
 
+void PeerConnection::Close() {
+  // Update stats here so that we have the most recent stats for tracks and
+  // streams before the channels are closed.
+  stats_.UpdateStats(kStatsOutputLevelStandard);
+
+  session_->Terminate();
+}
+
 void PeerConnection::OnSessionStateChange(cricket::BaseSession* /*session*/,
                                           cricket::BaseSession::State state) {
   switch (state) {
     case cricket::BaseSession::STATE_INIT:
-      ChangeReadyState(PeerConnectionInterface::kNew);
+      ChangeSignalingState(PeerConnectionInterface::kStable);
+      break;
     case cricket::BaseSession::STATE_SENTINITIATE:
+      ChangeSignalingState(PeerConnectionInterface::kHaveLocalOffer);
+      break;
+    case cricket::BaseSession::STATE_SENTPRACCEPT:
+      ChangeSignalingState(PeerConnectionInterface::kHaveLocalPrAnswer);
+      break;
     case cricket::BaseSession::STATE_RECEIVEDINITIATE:
-      ChangeReadyState(PeerConnectionInterface::kOpening);
+      ChangeSignalingState(PeerConnectionInterface::kHaveRemoteOffer);
+      break;
+    case cricket::BaseSession::STATE_RECEIVEDPRACCEPT:
+      ChangeSignalingState(PeerConnectionInterface::kHaveRemotePrAnswer);
       break;
     case cricket::BaseSession::STATE_SENTACCEPT:
     case cricket::BaseSession::STATE_RECEIVEDACCEPT:
-      ChangeReadyState(PeerConnectionInterface::kActive);
+      ChangeSignalingState(PeerConnectionInterface::kStable);
+      break;
+    case cricket::BaseSession::STATE_RECEIVEDTERMINATE:
+      ChangeSignalingState(PeerConnectionInterface::kClosed);
       break;
     default:
       break;
@@ -567,20 +678,6 @@ void PeerConnection::OnSessionStateChange(cricket::BaseSession* /*session*/,
 
 void PeerConnection::OnMessage(talk_base::Message* msg) {
   switch (msg->message_id) {
-    case MSG_CREATE_SESSIONDESCRIPTION_SUCCESS: {
-      CreateSessionDescriptionMsg* param =
-          static_cast<CreateSessionDescriptionMsg*>(msg->pdata);
-      param->observer->OnSuccess(param->description.release());
-      delete param;
-      break;
-    }
-    case MSG_CREATE_SESSIONDESCRIPTION_FAILED: {
-      CreateSessionDescriptionMsg* param =
-          static_cast<CreateSessionDescriptionMsg*>(msg->pdata);
-      param->observer->OnFailure(param->error);
-      delete param;
-      break;
-    }
     case MSG_SET_SESSIONDESCRIPTION_SUCCESS: {
       SetSessionDescriptionMsg* param =
           static_cast<SetSessionDescriptionMsg*>(msg->pdata);
@@ -601,67 +698,118 @@ void PeerConnection::OnMessage(talk_base::Message* msg) {
       delete param;
       break;
     }
-    case MSG_ICECHANGE: {
-      observer_->OnIceChange();
-      break;
-    }
-    case MSG_ICECANDIDATE: {
-      CandidateMsg* data = static_cast<CandidateMsg*>(msg->pdata);
-      observer_->OnIceCandidate(data->candidate.get());
-      delete data;
-      break;
-    }
-    case MSG_ICECOMPLETE: {
-      observer_->OnIceComplete();
-      break;
-    }
     default:
-      ASSERT(!"Not implemented");
+      ASSERT(false && "Not implemented");
       break;
   }
 }
 
-void PeerConnection::OnAddStream(MediaStreamInterface* stream) {
-  stream_handler_->AddRemoteStream(stream);
+void PeerConnection::OnAddRemoteStream(MediaStreamInterface* stream) {
   stats_.AddStream(stream);
   observer_->OnAddStream(stream);
 }
 
-void PeerConnection::OnRemoveStream(MediaStreamInterface* stream) {
-  stream_handler_->RemoveRemoteStream(stream);
+void PeerConnection::OnRemoveRemoteStream(MediaStreamInterface* stream) {
+  stream_handler_container_->RemoveRemoteStream(stream);
   observer_->OnRemoveStream(stream);
 }
 
 void PeerConnection::OnAddDataChannel(DataChannelInterface* data_channel) {
-  observer_->OnDataChannel(data_channel);
+  observer_->OnDataChannel(DataChannelProxy::Create(signaling_thread(),
+                                                    data_channel));
 }
 
-void PeerConnection::OnIceChange() {
-  signaling_thread()->Post(this, MSG_ICECHANGE);
+void PeerConnection::OnAddRemoteAudioTrack(MediaStreamInterface* stream,
+                                           AudioTrackInterface* audio_track,
+                                           uint32 ssrc) {
+  stream_handler_container_->AddRemoteAudioTrack(stream, audio_track, ssrc);
+}
+
+void PeerConnection::OnAddRemoteVideoTrack(MediaStreamInterface* stream,
+                                           VideoTrackInterface* video_track,
+                                           uint32 ssrc) {
+  stream_handler_container_->AddRemoteVideoTrack(stream, video_track, ssrc);
+}
+
+void PeerConnection::OnRemoveRemoteAudioTrack(
+    MediaStreamInterface* stream,
+    AudioTrackInterface* audio_track) {
+  stream_handler_container_->RemoveRemoteTrack(stream, audio_track);
+}
+
+void PeerConnection::OnRemoveRemoteVideoTrack(
+    MediaStreamInterface* stream,
+    VideoTrackInterface* video_track) {
+  stream_handler_container_->RemoveRemoteTrack(stream, video_track);
+}
+void PeerConnection::OnAddLocalAudioTrack(MediaStreamInterface* stream,
+                                          AudioTrackInterface* audio_track,
+                                          uint32 ssrc) {
+  stream_handler_container_->AddLocalAudioTrack(stream, audio_track, ssrc);
+  stats_.AddLocalAudioTrack(audio_track, ssrc);
+}
+void PeerConnection::OnAddLocalVideoTrack(MediaStreamInterface* stream,
+                                          VideoTrackInterface* video_track,
+                                          uint32 ssrc) {
+  stream_handler_container_->AddLocalVideoTrack(stream, video_track, ssrc);
+}
+
+void PeerConnection::OnRemoveLocalAudioTrack(MediaStreamInterface* stream,
+                                             AudioTrackInterface* audio_track,
+                                             uint32 ssrc) {
+  stream_handler_container_->RemoveLocalTrack(stream, audio_track);
+  stats_.RemoveLocalAudioTrack(audio_track, ssrc);
+}
+
+void PeerConnection::OnRemoveLocalVideoTrack(MediaStreamInterface* stream,
+                                             VideoTrackInterface* video_track) {
+  stream_handler_container_->RemoveLocalTrack(stream, video_track);
+}
+
+void PeerConnection::OnRemoveLocalStream(MediaStreamInterface* stream) {
+  stream_handler_container_->RemoveLocalStream(stream);
+}
+
+void PeerConnection::OnIceConnectionChange(
+    PeerConnectionInterface::IceConnectionState new_state) {
+  ASSERT(signaling_thread()->IsCurrent());
+  ice_connection_state_ = new_state;
+  observer_->OnIceConnectionChange(ice_connection_state_);
+}
+
+void PeerConnection::OnIceGatheringChange(
+    PeerConnectionInterface::IceGatheringState new_state) {
+  ASSERT(signaling_thread()->IsCurrent());
+  if (IsClosed()) {
+    return;
+  }
+  ice_gathering_state_ = new_state;
+  observer_->OnIceGatheringChange(ice_gathering_state_);
 }
 
 void PeerConnection::OnIceCandidate(const IceCandidateInterface* candidate) {
-  JsepIceCandidate* candidate_copy = NULL;
-  if (candidate) {
-    // TODO(ronghuawu): Make IceCandidateInterface reference counted instead
-    // of making a copy.
-    candidate_copy = new JsepIceCandidate(candidate->sdp_mid(),
-                                          candidate->sdp_mline_index(),
-                                          candidate->candidate());
-  }
-  // The Post takes the ownership of the |candidate_copy|.
-  signaling_thread()->Post(this, MSG_ICECANDIDATE,
-                           new CandidateMsg(candidate_copy));
+  ASSERT(signaling_thread()->IsCurrent());
+  observer_->OnIceCandidate(candidate);
 }
 
 void PeerConnection::OnIceComplete() {
-  signaling_thread()->Post(this, MSG_ICECOMPLETE);
+  ASSERT(signaling_thread()->IsCurrent());
+  observer_->OnIceComplete();
 }
 
-void PeerConnection::ChangeReadyState(
-    PeerConnectionInterface::ReadyState ready_state) {
-  ready_state_ = ready_state;
-  observer_->OnStateChange(PeerConnectionObserver::kReadyState);
+void PeerConnection::ChangeSignalingState(
+    PeerConnectionInterface::SignalingState signaling_state) {
+  signaling_state_ = signaling_state;
+  if (signaling_state == kClosed) {
+    ice_connection_state_ = kIceConnectionClosed;
+    observer_->OnIceConnectionChange(ice_connection_state_);
+    if (ice_gathering_state_ != kIceGatheringComplete) {
+      ice_gathering_state_ = kIceGatheringComplete;
+      observer_->OnIceGatheringChange(ice_gathering_state_);
+    }
+  }
+  observer_->OnSignalingChange(signaling_state_);
+  observer_->OnStateChange(PeerConnectionObserver::kSignalingState);
 }
 
 }  // namespace webrtc

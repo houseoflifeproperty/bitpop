@@ -9,10 +9,12 @@
 #define SkSurface_Base_DEFINED
 
 #include "SkSurface.h"
+#include "SkCanvas.h"
 
 class SkSurface_Base : public SkSurface {
 public:
     SkSurface_Base(int width, int height);
+    explicit SkSurface_Base(const SkImageInfo&);
     virtual ~SkSurface_Base();
 
     /**
@@ -23,7 +25,7 @@ public:
      */
     virtual SkCanvas* onNewCanvas() = 0;
 
-    virtual SkSurface* onNewSurface(const SkImage::Info&) = 0;
+    virtual SkSurface* onNewSurface(const SkImageInfo&) = 0;
 
     /**
      *  Allocate an SkImage that represents the current contents of the surface.
@@ -31,7 +33,7 @@ public:
      *  must faithfully represent the current contents, even if the surface
      *  is chaged after this calle (e.g. it is drawn to via its canvas).
      */
-    virtual SkImage* onNewImageShapshot() = 0;
+    virtual SkImage* onNewImageSnapshot() = 0;
 
     /**
      *  Default implementation:
@@ -45,13 +47,17 @@ public:
     virtual void onDraw(SkCanvas*, SkScalar x, SkScalar y, const SkPaint*);
 
     /**
+     * Called as a performance hint when the Surface is allowed to make it's contents
+     * undefined.
+     */
+    virtual void onDiscard() {}
+
+    /**
      *  If the surface is about to change, we call this so that our subclass
      *  can optionally fork their backend (copy-on-write) in case it was
      *  being shared with the cachedImage.
-     *
-     *  The default implementation does nothing.
      */
-    virtual void onCopyOnWrite(SkImage* cachedImage, SkCanvas*) = 0;
+    virtual void onCopyOnWrite(ContentChangeMode) = 0;
 
     inline SkCanvas* getCachedCanvas();
     inline SkImage* getCachedImage();
@@ -63,14 +69,29 @@ private:
     SkCanvas*   fCachedCanvas;
     SkImage*    fCachedImage;
 
-    void aboutToDraw(SkCanvas*);
+    void aboutToDraw(ContentChangeMode mode);
     friend class SkCanvas;
     friend class SkSurface;
-
-    inline void installIntoCanvasForDirtyNotification();
 
     typedef SkSurface INHERITED;
 };
 
-#endif
+SkCanvas* SkSurface_Base::getCachedCanvas() {
+    if (NULL == fCachedCanvas) {
+        fCachedCanvas = this->onNewCanvas();
+        if (NULL != fCachedCanvas) {
+            fCachedCanvas->setSurfaceBase(this);
+        }
+    }
+    return fCachedCanvas;
+}
 
+SkImage* SkSurface_Base::getCachedImage() {
+    if (NULL == fCachedImage) {
+        fCachedImage = this->onNewImageSnapshot();
+        SkASSERT(!fCachedCanvas || fCachedCanvas->getSurfaceBase() == this);
+    }
+    return fCachedImage;
+}
+
+#endif

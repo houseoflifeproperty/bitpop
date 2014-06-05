@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "testing/gtest/include/gtest/gtest.h"
@@ -11,21 +13,25 @@
 #include "base/callback.h"
 #include "base/location.h"
 #include "base/memory/ref_counted.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
-#include "base/time.h"
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/history/history.h"
+#include "base/time/time.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/history/history_backend.h"
+#include "chrome/browser/history/history_db_task.h"
 #include "chrome/browser/history/history_notifications.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/history_types.h"
-#include "chrome/browser/profiles/refcounted_profile_keyed_service.h"
-#include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/invalidation/fake_invalidation_service.h"
+#include "chrome/browser/invalidation/invalidation_service_factory.h"
+#include "chrome/browser/prefs/pref_service_syncable.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service_builder.h"
+#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/browser/sync/abstract_profile_sync_service_test.h"
-#include "chrome/browser/sync/glue/data_type_error_handler_mock.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
 #include "chrome/browser/sync/glue/typed_url_change_processor.h"
 #include "chrome/browser/sync/glue/typed_url_data_type_controller.h"
@@ -36,21 +42,24 @@
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/sync/profile_sync_test_util.h"
 #include "chrome/browser/sync/test_profile_sync_service.h"
-#include "chrome/common/chrome_notification_types.h"
-#include "chrome/test/base/profile_mock.h"
+#include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
+#include "chrome/test/base/testing_profile_manager.h"
+#include "components/keyed_service/content/refcounted_browser_context_keyed_service.h"
+#include "components/signin/core/browser/signin_manager.h"
+#include "components/sync_driver/data_type_error_handler_mock.h"
 #include "content/public/browser/notification_service.h"
 #include "google_apis/gaia/gaia_constants.h"
-#include "googleurl/src/gurl.h"
 #include "sync/internal_api/public/read_node.h"
 #include "sync/internal_api/public/read_transaction.h"
 #include "sync/internal_api/public/write_node.h"
 #include "sync/internal_api/public/write_transaction.h"
 #include "sync/protocol/typed_url_specifics.pb.h"
 #include "testing/gmock/include/gmock/gmock.h"
+#include "url/gurl.h"
 
-using base::Time;
 using base::Thread;
+using base::Time;
 using browser_sync::TypedUrlChangeProcessor;
 using browser_sync::TypedUrlDataTypeController;
 using browser_sync::TypedUrlModelAssociator;
@@ -58,18 +67,21 @@ using history::HistoryBackend;
 using history::URLID;
 using history::URLRow;
 using syncer::syncable::WriteTransaction;
-using testing::_;
 using testing::DoAll;
 using testing::Return;
 using testing::SetArgumentPointee;
+using testing::_;
 
 namespace {
+
+const char kTestProfileName[] = "test-profile";
+
 // Visits with this timestamp are treated as expired.
 static const int EXPIRED_VISIT = -1;
 
 class HistoryBackendMock : public HistoryBackend {
  public:
-  HistoryBackendMock() : HistoryBackend(FilePath(), 0, NULL, NULL) {}
+  HistoryBackendMock() : HistoryBackend(base::FilePath(), NULL, NULL) {}
   virtual bool IsExpiredVisitTime(const base::Time& time) OVERRIDE {
     return time.ToInternalValue() == EXPIRED_VISIT;
   }
@@ -83,7 +95,8 @@ class HistoryBackendMock : public HistoryBackend {
                                history::VisitSource visit_source));
   MOCK_METHOD1(RemoveVisits, bool(const history::VisitVector& visits));
   MOCK_METHOD2(GetURL, bool(const GURL& url_id, history::URLRow* url_row));
-  MOCK_METHOD2(SetPageTitle, void(const GURL& url, const string16& title));
+  MOCK_METHOD2(SetPageTitle, void(const GURL& url,
+                                  const base::string16& title));
   MOCK_METHOD1(DeleteURL, void(const GURL& url));
 
  private:
@@ -93,15 +106,20 @@ class HistoryBackendMock : public HistoryBackend {
 class HistoryServiceMock : public HistoryService {
  public:
   explicit HistoryServiceMock(Profile* profile) : HistoryService(profile) {}
-  MOCK_METHOD2(ScheduleDBTask, void(HistoryDBTask*,
+  MOCK_METHOD2(ScheduleDBTask, void(history::HistoryDBTask*,
                                     CancelableRequestConsumerBase*));
+  MOCK_METHOD0(Shutdown, void());
+
+  void ShutdownBaseService() {
+    HistoryService::Shutdown();
+  }
 
  private:
   virtual ~HistoryServiceMock() {}
 };
 
-ProfileKeyedService* BuildHistoryService(Profile* profile) {
-  return new HistoryServiceMock(profile);
+KeyedService* BuildHistoryService(content::BrowserContext* profile) {
+  return new HistoryServiceMock(static_cast<Profile*>(profile));
 }
 
 class TestTypedUrlModelAssociator : public TypedUrlModelAssociator {
@@ -115,21 +133,26 @@ class TestTypedUrlModelAssociator : public TypedUrlModelAssociator {
  protected:
   // Don't clear error stats - that way we can verify their values in our
   // tests.
-  virtual void ClearErrorStats() {}
+  virtual void ClearErrorStats() OVERRIDE {}
 };
 
 void RunOnDBThreadCallback(HistoryBackend* backend,
-                           HistoryDBTask* task) {
+                           history::HistoryDBTask* task) {
   task->RunOnDBThread(backend, NULL);
 }
 
 ACTION_P2(RunTaskOnDBThread, thread, backend) {
   // ScheduleDBTask takes ownership of its task argument, so we
   // should, too.
-  scoped_refptr<HistoryDBTask> task(arg0);
+  scoped_refptr<history::HistoryDBTask> task(arg0);
   thread->message_loop()->PostTask(
       FROM_HERE, base::Bind(&RunOnDBThreadCallback, base::Unretained(backend),
                             task));
+}
+
+ACTION_P2(ShutdownHistoryService, thread, service) {
+  service->ShutdownBaseService();
+  delete thread;
 }
 
 ACTION_P6(MakeTypedUrlSyncComponents,
@@ -166,68 +189,75 @@ class ProfileSyncServiceTypedUrlTest : public AbstractProfileSyncServiceTest {
 
  protected:
   ProfileSyncServiceTypedUrlTest()
-      : history_thread_("history") {
+      : profile_manager_(TestingBrowserProcess::GetGlobal()) {
+    history_thread_.reset(new Thread("history"));
   }
 
   virtual void SetUp() {
     AbstractProfileSyncServiceTest::SetUp();
-    profile_.CreateRequestContext();
+    ASSERT_TRUE(profile_manager_.SetUp());
+    TestingProfile::TestingFactories testing_factories;
+    testing_factories.push_back(std::make_pair(
+        ProfileOAuth2TokenServiceFactory::GetInstance(),
+        BuildAutoIssuingFakeProfileOAuth2TokenService));
+    profile_ = profile_manager_.CreateTestingProfile(
+        kTestProfileName,
+        scoped_ptr<PrefServiceSyncable>(),
+        base::UTF8ToUTF16(kTestProfileName),
+        0,
+        std::string(),
+        testing_factories);
+    invalidation::InvalidationServiceFactory::GetInstance()->SetTestingFactory(
+        profile_, invalidation::FakeInvalidationService::Build);
     history_backend_ = new HistoryBackendMock();
     history_service_ = static_cast<HistoryServiceMock*>(
         HistoryServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-            &profile_, BuildHistoryService));
+            profile_, BuildHistoryService));
     EXPECT_CALL((*history_service_), ScheduleDBTask(_, _))
-        .WillRepeatedly(RunTaskOnDBThread(&history_thread_,
+        .WillRepeatedly(RunTaskOnDBThread(history_thread_.get(),
                                           history_backend_.get()));
-    history_thread_.Start();
+    history_thread_->Start();
   }
 
   virtual void TearDown() {
-    history_backend_ = NULL;
-    history_service_ = NULL;
-    ProfileSyncServiceFactory::GetInstance()->SetTestingFactory(
-        &profile_, NULL);
-    history_thread_.Stop();
-    profile_.ResetRequestContext();
+    EXPECT_CALL((*history_service_), Shutdown())
+        .WillOnce(ShutdownHistoryService(history_thread_.release(),
+                                         history_service_));
+    profile_ = NULL;
+    profile_manager_.DeleteTestingProfile(kTestProfileName);
     AbstractProfileSyncServiceTest::TearDown();
   }
 
   TypedUrlModelAssociator* StartSyncService(const base::Closure& callback) {
     TypedUrlModelAssociator* model_associator = NULL;
     if (!sync_service_) {
-      SigninManager* signin = SigninManagerFactory::GetForProfile(&profile_);
+      SigninManagerBase* signin = SigninManagerFactory::GetForProfile(profile_);
       signin->SetAuthenticatedUsername("test");
-      token_service_ = static_cast<TokenService*>(
-          TokenServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-              &profile_, BuildTokenService));
-      sync_service_ = static_cast<TestProfileSyncService*>(
-          ProfileSyncServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-              &profile_, &TestProfileSyncService::BuildAutoStartAsyncInit));
-      sync_service_->set_backend_init_callback(callback);
+      sync_service_ = TestProfileSyncService::BuildAutoStartAsyncInit(profile_,
+                                                                      callback);
       ProfileSyncComponentsFactoryMock* components =
           sync_service_->components_factory_mock();
       TypedUrlDataTypeController* data_type_controller =
-          new TypedUrlDataTypeController(components,
-                                         &profile_,
-                                         sync_service_);
+          new TypedUrlDataTypeController(components, profile_, sync_service_);
 
       EXPECT_CALL(*components, CreateTypedUrlSyncComponents(_, _, _)).
-          WillOnce(MakeTypedUrlSyncComponents(&profile_,
+          WillOnce(MakeTypedUrlSyncComponents(profile_,
                                               sync_service_,
                                               history_backend_.get(),
                                               data_type_controller,
                                               &error_handler_,
                                               &model_associator));
-      EXPECT_CALL(*components, CreateDataTypeManager(_, _, _, _)).
+      EXPECT_CALL(*components, CreateDataTypeManager(_, _, _, _, _, _)).
           WillOnce(ReturnNewDataTypeManager());
 
-      token_service_->IssueAuthTokenForTest(
-          GaiaConstants::kSyncService, "token");
+      ProfileOAuth2TokenService* oauth2_token_service =
+          ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
+      oauth2_token_service->UpdateCredentials("test", "oauth2_login_token");
 
       sync_service_->RegisterDataTypeController(data_type_controller);
 
       sync_service_->Initialize();
-      MessageLoop::current()->Run();
+      base::MessageLoop::current()->Run();
     }
     return model_associator;
   }
@@ -250,7 +280,7 @@ class ProfileSyncServiceTypedUrlTest : public AbstractProfileSyncServiceTest {
           child_node.GetTypedUrlSpecifics());
       history::URLRow new_url(GURL(typed_url.url()));
 
-      new_url.set_title(UTF8ToUTF16(typed_url.title()));
+      new_url.set_title(base::UTF8ToUTF16(typed_url.title()));
       DCHECK(typed_url.visits_size());
       DCHECK_EQ(typed_url.visits_size(), typed_url.visit_transitions_size());
       new_url.set_last_visit(base::Time::FromInternalValue(
@@ -289,7 +319,7 @@ class ProfileSyncServiceTypedUrlTest : public AbstractProfileSyncServiceTest {
     static int unique_url_id = 0;
     GURL gurl(url);
     URLRow history_url(gurl, ++unique_url_id);
-    history_url.set_title(UTF8ToUTF16(title));
+    history_url.set_title(base::UTF8ToUTF16(title));
     history_url.set_typed_count(typed_count);
     history_url.set_last_visit(
         base::Time::FromInternalValue(last_visit));
@@ -301,9 +331,9 @@ class ProfileSyncServiceTypedUrlTest : public AbstractProfileSyncServiceTest {
     return history_url;
   }
 
-  Thread history_thread_;
-
-  ProfileMock profile_;
+  scoped_ptr<Thread> history_thread_;
+  TestingProfileManager profile_manager_;
+  TestingProfile* profile_;
   scoped_refptr<HistoryBackendMock> history_backend_;
   HistoryServiceMock* history_service_;
   browser_sync::DataTypeErrorHandlerMock error_handler_;
@@ -551,9 +581,10 @@ TEST_F(ProfileSyncServiceTypedUrlTest, ProcessUserChangeAdd) {
 
   history::URLsModifiedDetails details;
   details.changed_urls.push_back(added_entry);
-  scoped_refptr<ThreadNotifier> notifier(new ThreadNotifier(&history_thread_));
+  scoped_refptr<ThreadNotifier> notifier(
+      new ThreadNotifier(history_thread_.get()));
   notifier->Notify(chrome::NOTIFICATION_HISTORY_URLS_MODIFIED,
-                   content::Source<Profile>(&profile_),
+                   content::Source<Profile>(profile_),
                    content::Details<history::URLsModifiedDetails>(&details));
 
   history::URLRows new_sync_entries;
@@ -581,9 +612,10 @@ TEST_F(ProfileSyncServiceTypedUrlTest, ProcessUserChangeAddWithBlank) {
   history::URLsModifiedDetails details;
   details.changed_urls.push_back(empty_entry);
   details.changed_urls.push_back(added_entry);
-  scoped_refptr<ThreadNotifier> notifier(new ThreadNotifier(&history_thread_));
+  scoped_refptr<ThreadNotifier> notifier(
+      new ThreadNotifier(history_thread_.get()));
   notifier->Notify(chrome::NOTIFICATION_HISTORY_URLS_MODIFIED,
-                   content::Source<Profile>(&profile_),
+                   content::Source<Profile>(profile_),
                    content::Details<history::URLsModifiedDetails>(&details));
 
   std::vector<history::URLRow> new_sync_entries;
@@ -618,9 +650,10 @@ TEST_F(ProfileSyncServiceTypedUrlTest, ProcessUserChangeUpdate) {
 
   history::URLsModifiedDetails details;
   details.changed_urls.push_back(updated_entry);
-  scoped_refptr<ThreadNotifier> notifier(new ThreadNotifier(&history_thread_));
+  scoped_refptr<ThreadNotifier> notifier(
+      new ThreadNotifier(history_thread_.get()));
   notifier->Notify(chrome::NOTIFICATION_HISTORY_URLS_MODIFIED,
-                   content::Source<Profile>(&profile_),
+                   content::Source<Profile>(profile_),
                    content::Details<history::URLsModifiedDetails>(&details));
 
   history::URLRows new_sync_entries;
@@ -646,9 +679,10 @@ TEST_F(ProfileSyncServiceTypedUrlTest, ProcessUserChangeAddFromVisit) {
   history::URLVisitedDetails details;
   details.row = added_entry;
   details.transition = content::PAGE_TRANSITION_TYPED;
-  scoped_refptr<ThreadNotifier> notifier(new ThreadNotifier(&history_thread_));
+  scoped_refptr<ThreadNotifier> notifier(
+      new ThreadNotifier(history_thread_.get()));
   notifier->Notify(chrome::NOTIFICATION_HISTORY_URL_VISITED,
-                   content::Source<Profile>(&profile_),
+                   content::Source<Profile>(profile_),
                    content::Details<history::URLVisitedDetails>(&details));
 
   history::URLRows new_sync_entries;
@@ -684,9 +718,10 @@ TEST_F(ProfileSyncServiceTypedUrlTest, ProcessUserChangeUpdateFromVisit) {
   history::URLVisitedDetails details;
   details.row = updated_entry;
   details.transition = content::PAGE_TRANSITION_TYPED;
-  scoped_refptr<ThreadNotifier> notifier(new ThreadNotifier(&history_thread_));
+  scoped_refptr<ThreadNotifier> notifier(
+      new ThreadNotifier(history_thread_.get()));
   notifier->Notify(chrome::NOTIFICATION_HISTORY_URL_VISITED,
-                   content::Source<Profile>(&profile_),
+                   content::Source<Profile>(profile_),
                    content::Details<history::URLVisitedDetails>(&details));
 
   history::URLRows new_sync_entries;
@@ -724,9 +759,10 @@ TEST_F(ProfileSyncServiceTypedUrlTest, ProcessUserIgnoreChangeUpdateFromVisit) {
 
   // Should ignore this change because it's not TYPED.
   details.transition = content::PAGE_TRANSITION_RELOAD;
-  scoped_refptr<ThreadNotifier> notifier(new ThreadNotifier(&history_thread_));
+  scoped_refptr<ThreadNotifier> notifier(
+      new ThreadNotifier(history_thread_.get()));
   notifier->Notify(chrome::NOTIFICATION_HISTORY_URL_VISITED,
-                   content::Source<Profile>(&profile_),
+                   content::Source<Profile>(profile_),
                    content::Details<history::URLVisitedDetails>(&details));
 
   GetTypedUrlsFromSyncDB(&new_sync_entries);
@@ -743,7 +779,7 @@ TEST_F(ProfileSyncServiceTypedUrlTest, ProcessUserIgnoreChangeUpdateFromVisit) {
   details.row = twelve_visits;
   details.transition = content::PAGE_TRANSITION_TYPED;
   notifier->Notify(chrome::NOTIFICATION_HISTORY_URL_VISITED,
-                   content::Source<Profile>(&profile_),
+                   content::Source<Profile>(profile_),
                    content::Details<history::URLVisitedDetails>(&details));
   GetTypedUrlsFromSyncDB(&new_sync_entries);
   // Should be no changes to the sync DB from this notification.
@@ -758,7 +794,7 @@ TEST_F(ProfileSyncServiceTypedUrlTest, ProcessUserIgnoreChangeUpdateFromVisit) {
   details.row = twenty_visits;
   details.transition = content::PAGE_TRANSITION_TYPED;
   notifier->Notify(chrome::NOTIFICATION_HISTORY_URL_VISITED,
-                   content::Source<Profile>(&profile_),
+                   content::Source<Profile>(profile_),
                    content::Details<history::URLVisitedDetails>(&details));
   GetTypedUrlsFromSyncDB(&new_sync_entries);
   ASSERT_EQ(1U, new_sync_entries.size());
@@ -790,9 +826,10 @@ TEST_F(ProfileSyncServiceTypedUrlTest, ProcessUserChangeRemove) {
   history::URLsDeletedDetails changes;
   changes.all_history = false;
   changes.rows.push_back(history::URLRow(GURL("http://mine.com")));
-  scoped_refptr<ThreadNotifier> notifier(new ThreadNotifier(&history_thread_));
+  scoped_refptr<ThreadNotifier> notifier(
+      new ThreadNotifier(history_thread_.get()));
   notifier->Notify(chrome::NOTIFICATION_HISTORY_URLS_DELETED,
-                   content::Source<Profile>(&profile_),
+                   content::Source<Profile>(profile_),
                    content::Details<history::URLsDeletedDetails>(&changes));
 
   history::URLRows new_sync_entries;
@@ -828,9 +865,10 @@ TEST_F(ProfileSyncServiceTypedUrlTest, ProcessUserChangeRemoveArchive) {
   // Setting archived=true should cause the sync code to ignore this deletion.
   changes.archived = true;
   changes.rows.push_back(history::URLRow(GURL("http://mine.com")));
-  scoped_refptr<ThreadNotifier> notifier(new ThreadNotifier(&history_thread_));
+  scoped_refptr<ThreadNotifier> notifier(
+      new ThreadNotifier(history_thread_.get()));
   notifier->Notify(chrome::NOTIFICATION_HISTORY_URLS_DELETED,
-                   content::Source<Profile>(&profile_),
+                   content::Source<Profile>(profile_),
                    content::Details<history::URLsDeletedDetails>(&changes));
 
   history::URLRows new_sync_entries;
@@ -867,9 +905,10 @@ TEST_F(ProfileSyncServiceTypedUrlTest, ProcessUserChangeRemoveAll) {
 
   history::URLsDeletedDetails changes;
   changes.all_history = true;
-  scoped_refptr<ThreadNotifier> notifier(new ThreadNotifier(&history_thread_));
+  scoped_refptr<ThreadNotifier> notifier(
+      new ThreadNotifier(history_thread_.get()));
   notifier->Notify(chrome::NOTIFICATION_HISTORY_URLS_DELETED,
-                   content::Source<Profile>(&profile_),
+                   content::Source<Profile>(profile_),
                    content::Details<history::URLsDeletedDetails>(&changes));
 
   GetTypedUrlsFromSyncDB(&new_sync_entries);
@@ -905,7 +944,7 @@ TEST_F(ProfileSyncServiceTypedUrlTest, FailWriteToHistoryBackend) {
   // Errors writing to the DB should be recorded, but should not cause an
   // unrecoverable error.
   ASSERT_FALSE(
-      sync_service_->failed_datatypes_handler().GetFailedTypes().Has(
+      sync_service_->failed_data_types_handler().GetFailedTypes().Has(
           syncer::TYPED_URLS));
   // Some calls should have succeeded, so the error percentage should be
   // somewhere > 0 and < 100.
@@ -930,20 +969,23 @@ TEST_F(ProfileSyncServiceTypedUrlTest, FailToGetTypedURLs) {
   sync_entries.push_back(sync_entry);
 
   EXPECT_CALL(error_handler_, CreateAndUploadError(_, _, _)).
-              WillOnce(Return(syncer::SyncError(FROM_HERE,
-                                        "Unit test",
-                                        syncer::TYPED_URLS)));
+              WillOnce(Return(syncer::SyncError(
+                                  FROM_HERE,
+                                  syncer::SyncError::DATATYPE_ERROR,
+                                  "Unit test",
+                                  syncer::TYPED_URLS)));
   StartSyncService(base::Bind(&AddTypedUrlEntries, this, sync_entries));
   // Errors getting typed URLs will cause an unrecoverable error (since we can
   // do *nothing* in that case).
   ASSERT_TRUE(
-      sync_service_->failed_datatypes_handler().GetFailedTypes().Has(
+      sync_service_->failed_data_types_handler().GetFailedTypes().Has(
           syncer::TYPED_URLS));
   ASSERT_EQ(
-      1u, sync_service_->failed_datatypes_handler().GetFailedTypes().Size());
+      1u, sync_service_->failed_data_types_handler().GetFailedTypes().Size());
   // Can't check GetErrorPercentage(), because generating an unrecoverable
   // error will free the model associator.
 }
+
 TEST_F(ProfileSyncServiceTypedUrlTest, IgnoreLocalFileURL) {
   history::VisitVector original_visits;
   // Create http and file url.
@@ -982,9 +1024,10 @@ TEST_F(ProfileSyncServiceTypedUrlTest, IgnoreLocalFileURL) {
   details.changed_urls.push_back(updated_url_entry);
   details.changed_urls.push_back(updated_file_entry);
   details.changed_urls.push_back(new_file_entry);
-  scoped_refptr<ThreadNotifier> notifier(new ThreadNotifier(&history_thread_));
+  scoped_refptr<ThreadNotifier> notifier(
+      new ThreadNotifier(history_thread_.get()));
   notifier->Notify(chrome::NOTIFICATION_HISTORY_URLS_MODIFIED,
-                   content::Source<Profile>(&profile_),
+                   content::Source<Profile>(profile_),
                    content::Details<history::URLsModifiedDetails>(&details));
 
   history::URLRows new_sync_entries;
@@ -1035,9 +1078,10 @@ TEST_F(ProfileSyncServiceTypedUrlTest, IgnoreLocalhostURL) {
   details.changed_urls.push_back(updated_url_entry);
   details.changed_urls.push_back(updated_localhost_entry);
   details.changed_urls.push_back(localhost_ip_entry);
-  scoped_refptr<ThreadNotifier> notifier(new ThreadNotifier(&history_thread_));
+  scoped_refptr<ThreadNotifier> notifier(
+      new ThreadNotifier(history_thread_.get()));
   notifier->Notify(chrome::NOTIFICATION_HISTORY_URLS_MODIFIED,
-                   content::Source<Profile>(&profile_),
+                   content::Source<Profile>(profile_),
                    content::Details<history::URLsModifiedDetails>(&details));
 
   history::URLRows new_sync_entries;

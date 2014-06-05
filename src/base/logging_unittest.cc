@@ -17,9 +17,11 @@ using ::testing::Return;
 // Needs to be global since log assert handlers can't maintain state.
 int log_sink_call_count = 0;
 
+#if !defined(OFFICIAL_BUILD) || defined(DCHECK_ALWAYS_ON) || !defined(NDEBUG)
 void LogSink(const std::string& str) {
   ++log_sink_call_count;
 }
+#endif
 
 // Class to make sure any manipulations we do to the min log level are
 // contained (i.e., do not affect other unit tests).
@@ -52,11 +54,7 @@ class MockLogSource {
 
 TEST_F(LoggingTest, BasicLogging) {
   MockLogSource mock_log_source;
-  const int kExpectedDebugOrReleaseCalls = 6;
-  const int kExpectedDebugCalls = 6;
-  const int kExpectedCalls =
-      kExpectedDebugOrReleaseCalls + (DEBUG_MODE ? kExpectedDebugCalls : 0);
-  EXPECT_CALL(mock_log_source, Log()).Times(kExpectedCalls).
+  EXPECT_CALL(mock_log_source, Log()).Times(DEBUG_MODE ? 16 : 8).
       WillRepeatedly(Return("log message"));
 
   SetMinLogLevel(LOG_INFO);
@@ -65,7 +63,7 @@ TEST_F(LoggingTest, BasicLogging) {
   // As of g++-4.5, the first argument to EXPECT_EQ cannot be a
   // constant expression.
   const bool kIsDebugMode = (DEBUG_MODE != 0);
-  EXPECT_EQ(kIsDebugMode, DLOG_IS_ON(INFO));
+  EXPECT_TRUE(kIsDebugMode == DLOG_IS_ON(INFO));
   EXPECT_TRUE(VLOG_IS_ON(0));
 
   LOG(INFO) << mock_log_source.Log();
@@ -74,6 +72,8 @@ TEST_F(LoggingTest, BasicLogging) {
   PLOG_IF(INFO, true) << mock_log_source.Log();
   VLOG(0) << mock_log_source.Log();
   VLOG_IF(0, true) << mock_log_source.Log();
+  VPLOG(0) << mock_log_source.Log();
+  VPLOG_IF(0, true) << mock_log_source.Log();
 
   DLOG(INFO) << mock_log_source.Log();
   DLOG_IF(INFO, true) << mock_log_source.Log();
@@ -81,6 +81,8 @@ TEST_F(LoggingTest, BasicLogging) {
   DPLOG_IF(INFO, true) << mock_log_source.Log();
   DVLOG(0) << mock_log_source.Log();
   DVLOG_IF(0, true) << mock_log_source.Log();
+  DVPLOG(0) << mock_log_source.Log();
+  DVPLOG_IF(0, true) << mock_log_source.Log();
 }
 
 TEST_F(LoggingTest, LogIsOn) {
@@ -120,7 +122,7 @@ TEST_F(LoggingTest, LogIsOn) {
   EXPECT_FALSE(LOG_IS_ON(ERROR));
   EXPECT_TRUE(LOG_IS_ON(ERROR_REPORT));
   EXPECT_TRUE(LOG_IS_ON(FATAL));
-  EXPECT_EQ(kDfatalIsFatal, LOG_IS_ON(DFATAL));
+  EXPECT_TRUE(kDfatalIsFatal == LOG_IS_ON(DFATAL));
 
   // LOG_IS_ON(ERROR_REPORT) should always be true.
   SetMinLogLevel(LOG_FATAL);
@@ -129,7 +131,7 @@ TEST_F(LoggingTest, LogIsOn) {
   EXPECT_FALSE(LOG_IS_ON(ERROR));
   EXPECT_TRUE(LOG_IS_ON(ERROR_REPORT));
   EXPECT_TRUE(LOG_IS_ON(FATAL));
-  EXPECT_EQ(kDfatalIsFatal, LOG_IS_ON(DFATAL));
+  EXPECT_TRUE(kDfatalIsFatal == LOG_IS_ON(DFATAL));
 
   // So should LOG_IS_ON(FATAL).
   SetMinLogLevel(LOG_FATAL + 1);
@@ -138,7 +140,7 @@ TEST_F(LoggingTest, LogIsOn) {
   EXPECT_FALSE(LOG_IS_ON(ERROR));
   EXPECT_TRUE(LOG_IS_ON(ERROR_REPORT));
   EXPECT_TRUE(LOG_IS_ON(FATAL));
-  EXPECT_EQ(kDfatalIsFatal, LOG_IS_ON(DFATAL));
+  EXPECT_TRUE(kDfatalIsFatal == LOG_IS_ON(DFATAL));
 }
 
 TEST_F(LoggingTest, LoggingIsLazy) {
@@ -157,6 +159,8 @@ TEST_F(LoggingTest, LoggingIsLazy) {
   PLOG_IF(INFO, false) << mock_log_source.Log();
   VLOG(1) << mock_log_source.Log();
   VLOG_IF(1, true) << mock_log_source.Log();
+  VPLOG(1) << mock_log_source.Log();
+  VPLOG_IF(1, true) << mock_log_source.Log();
 
   DLOG(INFO) << mock_log_source.Log();
   DLOG_IF(INFO, true) << mock_log_source.Log();
@@ -164,10 +168,12 @@ TEST_F(LoggingTest, LoggingIsLazy) {
   DPLOG_IF(INFO, true) << mock_log_source.Log();
   DVLOG(1) << mock_log_source.Log();
   DVLOG_IF(1, true) << mock_log_source.Log();
+  DVPLOG(1) << mock_log_source.Log();
+  DVPLOG_IF(1, true) << mock_log_source.Log();
 }
 
 // Official builds have CHECKs directly call BreakDebugger.
-#if !defined(LOGGING_IS_OFFICIAL_BUILD)
+#if !defined(OFFICIAL_BUILD)
 
 TEST_F(LoggingTest, CheckStreamsAreLazy) {
   MockLogSource mock_log_source, uncalled_mock_log_source;
@@ -202,10 +208,10 @@ TEST_F(LoggingTest, DebugLoggingReleaseBehavior) {
 TEST_F(LoggingTest, DcheckStreamsAreLazy) {
   MockLogSource mock_log_source;
   EXPECT_CALL(mock_log_source, Log()).Times(0);
-#if !defined(LOGGING_IS_OFFICIAL_BUILD) && defined(NDEBUG) && \
-    !defined(DCHECK_ALWAYS_ON)
-  // Unofficial release build without dcheck enabled.
-  g_dcheck_state = DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS;
+#if DCHECK_IS_ON
+  DCHECK(true) << mock_log_source.Log();
+  DCHECK_EQ(0, 0) << mock_log_source.Log();
+#else
   DCHECK(mock_log_source.Log()) << mock_log_source.Log();
   DPCHECK(mock_log_source.Log()) << mock_log_source.Log();
   DCHECK_EQ(0, 0) << mock_log_source.Log();
@@ -215,36 +221,29 @@ TEST_F(LoggingTest, DcheckStreamsAreLazy) {
 }
 
 TEST_F(LoggingTest, Dcheck) {
-#if LOGGING_IS_OFFICIAL_BUILD
-  // Official build.
-  EXPECT_FALSE(DCHECK_IS_ON());
-  EXPECT_FALSE(DLOG_IS_ON(DCHECK));
-#elif defined(NDEBUG) && !defined(DCHECK_ALWAYS_ON)
-  // Unofficial release build.
-  g_dcheck_state = ENABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS;
-  SetLogReportHandler(&LogSink);
-  EXPECT_TRUE(DCHECK_IS_ON());
+#if defined(NDEBUG) && !defined(DCHECK_ALWAYS_ON)
+  // Release build.
+  EXPECT_FALSE(DCHECK_IS_ON);
   EXPECT_FALSE(DLOG_IS_ON(DCHECK));
 #elif defined(NDEBUG) && defined(DCHECK_ALWAYS_ON)
-  // Unofficial release build with real DCHECKS.
-  g_dcheck_state = ENABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS;
+  // Release build with real DCHECKS.
   SetLogAssertHandler(&LogSink);
-  EXPECT_TRUE(DCHECK_IS_ON());
+  EXPECT_TRUE(DCHECK_IS_ON);
   EXPECT_FALSE(DLOG_IS_ON(DCHECK));
 #else
-  // Unofficial debug build.
+  // Debug build.
   SetLogAssertHandler(&LogSink);
-  EXPECT_TRUE(DCHECK_IS_ON());
+  EXPECT_TRUE(DCHECK_IS_ON);
   EXPECT_TRUE(DLOG_IS_ON(DCHECK));
-#endif  // defined(LOGGING_IS_OFFICIAL_BUILD)
+#endif
 
   EXPECT_EQ(0, log_sink_call_count);
   DCHECK(false);
-  EXPECT_EQ(DCHECK_IS_ON() ? 1 : 0, log_sink_call_count);
+  EXPECT_EQ(DCHECK_IS_ON ? 1 : 0, log_sink_call_count);
   DPCHECK(false);
-  EXPECT_EQ(DCHECK_IS_ON() ? 2 : 0, log_sink_call_count);
+  EXPECT_EQ(DCHECK_IS_ON ? 2 : 0, log_sink_call_count);
   DCHECK_EQ(0, 1);
-  EXPECT_EQ(DCHECK_IS_ON() ? 3 : 0, log_sink_call_count);
+  EXPECT_EQ(DCHECK_IS_ON ? 3 : 0, log_sink_call_count);
 }
 
 TEST_F(LoggingTest, DcheckReleaseBehavior) {

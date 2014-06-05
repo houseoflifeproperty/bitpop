@@ -5,6 +5,7 @@
 #include "android_webview/browser/net/aw_network_delegate.h"
 
 #include "android_webview/browser/aw_cookie_access_policy.h"
+#include "base/android/build_info.h"
 #include "net/base/net_errors.h"
 #include "net/base/completion_callback.h"
 #include "net/url_request/url_request.h"
@@ -28,6 +29,11 @@ int AwNetworkDelegate::OnBeforeSendHeaders(
     net::URLRequest* request,
     const net::CompletionCallback& callback,
     net::HttpRequestHeaders* headers) {
+
+  DCHECK(headers);
+  headers->SetHeaderIfMissing(
+      "X-Requested-With",
+      base::android::BuildInfo::GetInstance()->package_name());
   return net::OK;
 }
 
@@ -39,7 +45,8 @@ int AwNetworkDelegate::OnHeadersReceived(
     net::URLRequest* request,
     const net::CompletionCallback& callback,
     const net::HttpResponseHeaders* original_response_headers,
-    scoped_refptr<net::HttpResponseHeaders>* override_response_headers) {
+    scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
+    GURL* allowed_unsafe_redirect_url) {
   return net::OK;
 }
 
@@ -61,7 +68,7 @@ void AwNetworkDelegate::OnURLRequestDestroyed(net::URLRequest* request) {
 }
 
 void AwNetworkDelegate::OnPACScriptError(int line_number,
-                                         const string16& error) {
+                                         const base::string16& error) {
 }
 
 net::NetworkDelegate::AuthRequiredResponse AwNetworkDelegate::OnAuthRequired(
@@ -87,7 +94,7 @@ bool AwNetworkDelegate::OnCanSetCookie(const net::URLRequest& request,
 }
 
 bool AwNetworkDelegate::OnCanAccessFile(const net::URLRequest& request,
-                                        const FilePath& path) const {
+                                        const base::FilePath& path) const {
   return true;
 }
 
@@ -100,10 +107,6 @@ int AwNetworkDelegate::OnBeforeSocketStreamConnect(
     net::SocketStream* stream,
     const net::CompletionCallback& callback) {
   return net::OK;
-}
-
-void AwNetworkDelegate::OnRequestWaitStateChange(const net::URLRequest& request,
-                                                 RequestWaitState state) {
 }
 
 }  // namespace android_webview

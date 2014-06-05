@@ -66,6 +66,8 @@ class Call : public talk_base::MessageHandler, public sigslot::has_slots<> {
   // |initiator| can be empty.
   Session* InitiateSession(const buzz::Jid& to, const buzz::Jid& initiator,
                            const CallOptions& options);
+  Session* InitiateSession(const std::string& id, const buzz::Jid& to,
+                           const CallOptions& options);
   void AcceptSession(Session* session, const CallOptions& options);
   void RejectSession(Session* session);
   void TerminateSession(Session* session);
@@ -84,9 +86,10 @@ class Call : public talk_base::MessageHandler, public sigslot::has_slots<> {
   void StopSpeakerMonitor(Session* session);
   void Mute(bool mute);
   void MuteVideo(bool mute);
-  void SendData(Session* session,
+  bool SendData(Session* session,
                 const SendDataParams& params,
-                const std::string& data);
+                const talk_base::Buffer& payload,
+                SendDataResult* result);
   void PressDTMF(int event);
   bool StartScreencast(Session* session,
                        const std::string& stream_name, uint32 ssrc,
@@ -99,6 +102,8 @@ class Call : public talk_base::MessageHandler, public sigslot::has_slots<> {
   bool has_video() const { return has_video_; }
   bool has_data() const { return has_data_; }
   bool muted() const { return muted_; }
+  bool video() const { return has_video_; }
+  bool secure() const;
   bool video_muted() const { return video_muted_; }
   const std::vector<StreamParams>* GetDataRecvStreams(Session* session) const {
     MediaStreams* recv_streams = GetMediaStreams(session);
@@ -112,6 +117,9 @@ class Call : public talk_base::MessageHandler, public sigslot::has_slots<> {
     MediaStreams* recv_streams = GetMediaStreams(session);
     return recv_streams ? &recv_streams->audio() : NULL;
   }
+  VoiceChannel* GetVoiceChannel(Session* session) const;
+  VideoChannel* GetVideoChannel(Session* session) const;
+  DataChannel* GetDataChannel(Session* session) const;
   // Public just for unit tests
   VideoContentDescription* CreateVideoStreamUpdate(const StreamParams& stream);
   // Takes ownership of video.
@@ -157,7 +165,7 @@ class Call : public talk_base::MessageHandler, public sigslot::has_slots<> {
                    const MediaStreams&> SignalMediaStreamsUpdate;
   sigslot::signal3<Call*,
                    const ReceiveDataParams&,
-                   const std::string&> SignalDataReceived;
+                   const talk_base::Buffer&> SignalDataReceived;
 
  private:
   void OnMessage(talk_base::Message* message);
@@ -187,10 +195,7 @@ class Call : public talk_base::MessageHandler, public sigslot::has_slots<> {
   void OnMediaMonitor(VideoChannel* channel, const VideoMediaInfo& info);
   void OnDataReceived(DataChannel* channel,
                       const ReceiveDataParams& params,
-                      const std::string& data);
-  VoiceChannel* GetVoiceChannel(Session* session) const;
-  VideoChannel* GetVideoChannel(Session* session) const;
-  DataChannel* GetDataChannel(Session* session) const;
+                      const talk_base::Buffer& payload);
   MediaStreams* GetMediaStreams(Session* session) const;
   void UpdateRemoteMediaStreams(Session* session,
                                 const ContentInfos& updated_contents,
@@ -221,6 +226,11 @@ class Call : public talk_base::MessageHandler, public sigslot::has_slots<> {
   void ContinuePlayDTMF();
   bool StopScreencastWithoutSendingUpdate(Session* session, uint32 ssrc);
   bool StopAllScreencastsWithoutSendingUpdate(Session* session);
+  bool SessionDescriptionContainsCrypto(const SessionDescription* sdesc) const;
+  Session* InternalInitiateSession(const std::string& id,
+                                   const buzz::Jid& to,
+                                   const std::string& initiator_name,
+                                   const CallOptions& options);
 
   uint32 id_;
   MediaSessionClient* session_client_;

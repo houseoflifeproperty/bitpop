@@ -7,7 +7,7 @@
 
 #include <windows.ui.notifications.h>
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/win/metro.h"
 
 // Provides functionality to display a metro style toast notification.
@@ -17,12 +17,12 @@ class ToastNotificationHandler {
   struct DesktopNotification {
     std::string origin_url;
     std::string icon_url;
-    string16 title;
-    string16 body;
-    string16 display_source;
+    base::string16 title;
+    base::string16 body;
+    base::string16 display_source;
     std::string id;
     base::win::MetroNotificationClickedHandler notification_handler;
-    string16 notification_context;
+    base::string16 notification_context;
 
     DesktopNotification(const char* notification_origin,
                         const char* notification_icon,

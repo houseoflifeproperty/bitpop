@@ -8,8 +8,8 @@
 #include "base/memory/ref_counted.h"
 #include "chrome/browser/ui/views/color_chooser_dialog.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/base/dialogs/base_shell_dialog.h"
-#include "ui/base/dialogs/base_shell_dialog_win.h"
+#include "ui/shell_dialogs/base_shell_dialog.h"
+#include "ui/shell_dialogs/base_shell_dialog_win.h"
 
 namespace views {
 class ColorChooserListener;
@@ -26,7 +26,7 @@ class ColorChooserDialog
   virtual ~ColorChooserDialog();
 
   // BaseShellDialog:
-  virtual bool IsRunning(HWND owning_hwnd) const OVERRIDE;
+  virtual bool IsRunning(gfx::NativeWindow owning_window) const OVERRIDE;
   virtual void ListenerDestroyed() OVERRIDE;
 
  private:

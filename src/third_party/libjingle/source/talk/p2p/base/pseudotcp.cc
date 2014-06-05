@@ -27,8 +27,9 @@
 
 #include "talk/p2p/base/pseudotcp.h"
 
-#include <cstdio>
-#include <cstdlib>
+#include <stdio.h>
+#include <stdlib.h>
+
 #include <set>
 
 #include "talk/base/basictypes.h"
@@ -36,6 +37,7 @@
 #include "talk/base/byteorder.h"
 #include "talk/base/common.h"
 #include "talk/base/logging.h"
+#include "talk/base/scoped_ptr.h"
 #include "talk/base/socket.h"
 #include "talk/base/stringutils.h"
 #include "talk/base/timeutils.h"
@@ -80,7 +82,6 @@ const uint32 MAX_PACKET = 65535;
 const uint32 MIN_PACKET = 296;
 
 const uint32 IP_HEADER_SIZE = 20; // (+ up to 40 bytes of options?)
-const uint32 ICMP_HEADER_SIZE = 8;
 const uint32 UDP_HEADER_SIZE = 8;
 // TODO: Make JINGLE_HEADER_SIZE transparent to this code?
 const uint32 JINGLE_HEADER_SIZE = 64; // when relay framing is in use
@@ -117,7 +118,6 @@ const uint32 DEFAULT_SND_BUF_SIZE = 90 * 1024;
 
 #define PSEUDO_KEEPALIVE 0
 
-const uint32 MAX_SEQ = 0xFFFFFFFF;
 const uint32 HEADER_SIZE = 24;
 const uint32 PACKET_OVERHEAD = HEADER_SIZE + UDP_HEADER_SIZE + IP_HEADER_SIZE + JINGLE_HEADER_SIZE;
 
@@ -130,22 +130,12 @@ const uint8 FLAG_CTL = 0x02;
 const uint8 FLAG_RST = 0x04;
 
 const uint8 CTL_CONNECT = 0;
-//const uint8 CTL_REDIRECT = 1;
-const uint8 CTL_EXTRA = 255;
 
 // TCP options.
 const uint8 TCP_OPT_EOL = 0;  // End of list.
 const uint8 TCP_OPT_NOOP = 1;  // No-op.
 const uint8 TCP_OPT_MSS = 2;  // Maximum segment size.
 const uint8 TCP_OPT_WND_SCALE = 3;  // Window scale factor.
-
-/*
-const uint8 FLAG_FIN = 0x01;
-const uint8 FLAG_SYN = 0x02;
-const uint8 FLAG_ACK = 0x10;
-*/
-
-const uint32 CTRL_BOUND = 0x80000000;
 
 const long DEFAULT_TIMEOUT = 4000; // If there are no pending clocks, wake up every 4 seconds
 const long CLOSED_TIMEOUT = 60 * 1000; // If the connection is closed, once per minute
@@ -428,7 +418,7 @@ uint32 PseudoTcp::GetBytesInFlight() const {
 uint32 PseudoTcp::GetBytesBufferedNotSent() const {
   size_t buffered_bytes = 0;
   m_sbuf.GetBuffered(&buffered_bytes);
-  return m_snd_una + buffered_bytes - m_snd_nxt;
+  return static_cast<uint32>(m_snd_una + buffered_bytes - m_snd_nxt);
 }
 
 uint32 PseudoTcp::GetRoundTripTimeEstimateMs() const {
@@ -461,15 +451,16 @@ int PseudoTcp::Recv(char* buffer, size_t len) {
 
   if (uint32(available_space) - m_rcv_wnd >=
       talk_base::_min<uint32>(m_rbuf_len / 2, m_mss)) {
-    bool bWasClosed = (m_rcv_wnd == 0); // !?! Not sure about this was closed business
-    m_rcv_wnd = available_space;
+    // TODO(jbeda): !?! Not sure about this was closed business
+    bool bWasClosed = (m_rcv_wnd == 0);
+    m_rcv_wnd = static_cast<uint32>(available_space);
 
     if (bWasClosed) {
       attemptSend(sfImmediateAck);
     }
   }
 
-  return read;
+  return static_cast<int>(read);
 }
 
 int PseudoTcp::Send(const char* buffer, size_t len) {
@@ -516,18 +507,19 @@ uint32 PseudoTcp::queue(const char* data, uint32 len, bool bCtrl) {
 
   // We can concatenate data if the last segment is the same type
   // (control v. regular data), and has not been transmitted yet
-  if (!m_slist.empty() && (m_slist.back().bCtrl == bCtrl) && (m_slist.back().xmit == 0)) {
+  if (!m_slist.empty() && (m_slist.back().bCtrl == bCtrl) &&
+      (m_slist.back().xmit == 0)) {
     m_slist.back().len += len;
   } else {
     size_t snd_buffered = 0;
     m_sbuf.GetBuffered(&snd_buffered);
-    SSegment sseg(m_snd_una + snd_buffered, len, bCtrl);
+    SSegment sseg(static_cast<uint32>(m_snd_una + snd_buffered), len, bCtrl);
     m_slist.push_back(sseg);
   }
 
   size_t written = 0;
   m_sbuf.Write(data, len, &written, NULL);
-  return written;
+  return static_cast<uint32>(written);
 }
 
 IPseudoTcpNotify::WriteResult PseudoTcp::packet(uint32 seq, uint8 flags,
@@ -536,25 +528,24 @@ IPseudoTcpNotify::WriteResult PseudoTcp::packet(uint32 seq, uint8 flags,
 
   uint32 now = Now();
 
-  uint8 buffer[MAX_PACKET];
-  long_to_bytes(m_conv, buffer);
-  long_to_bytes(seq, buffer + 4);
-  long_to_bytes(m_rcv_nxt, buffer + 8);
+  talk_base::scoped_ptr<uint8[]> buffer(new uint8[MAX_PACKET]);
+  long_to_bytes(m_conv, buffer.get());
+  long_to_bytes(seq, buffer.get() + 4);
+  long_to_bytes(m_rcv_nxt, buffer.get() + 8);
   buffer[12] = 0;
   buffer[13] = flags;
-  short_to_bytes(static_cast<uint16>(m_rcv_wnd >> m_rwnd_scale), buffer + 14);
+  short_to_bytes(
+      static_cast<uint16>(m_rcv_wnd >> m_rwnd_scale), buffer.get() + 14);
 
   // Timestamp computations
-  long_to_bytes(now, buffer + 16);
-  long_to_bytes(m_ts_recent, buffer + 20);
+  long_to_bytes(now, buffer.get() + 16);
+  long_to_bytes(m_ts_recent, buffer.get() + 20);
   m_ts_lastack = m_rcv_nxt;
 
   if (len) {
     size_t bytes_read = 0;
-    talk_base::StreamResult result = m_sbuf.ReadOffset(buffer + HEADER_SIZE,
-                                                       len,
-                                                       offset,
-                                                       &bytes_read);
+    talk_base::StreamResult result = m_sbuf.ReadOffset(
+        buffer.get() + HEADER_SIZE, len, offset, &bytes_read);
     UNUSED(result);
     ASSERT(result == talk_base::SR_SUCCESS);
     ASSERT(static_cast<uint32>(bytes_read) == len);
@@ -571,7 +562,8 @@ IPseudoTcpNotify::WriteResult PseudoTcp::packet(uint32 seq, uint8 flags,
                << "><LEN=" << len << ">";
 #endif // _DEBUGMSG
 
-  IPseudoTcpNotify::WriteResult wres = m_notify->TcpWritePacket(this, reinterpret_cast<char *>(buffer), len + HEADER_SIZE);
+  IPseudoTcpNotify::WriteResult wres = m_notify->TcpWritePacket(
+      this, reinterpret_cast<char *>(buffer.get()), len + HEADER_SIZE);
   // Note: When len is 0, this is an ACK packet.  We don't read the return value for those,
   // and thus we won't retry.  So go ahead and treat the packet as a success (basically simulate
   // as if it were dropped), which will prevent our timers from being messed up.
@@ -725,13 +717,16 @@ bool PseudoTcp::process(Segment& seg) {
   if ((seg.ack > m_snd_una) && (seg.ack <= m_snd_nxt)) {
     // Calculate round-trip time
     if (seg.tsecr) {
-      long rtt = talk_base::TimeDiff(now, seg.tsecr);
+      int32 rtt = talk_base::TimeDiff(now, seg.tsecr);
       if (rtt >= 0) {
         if (m_rx_srtt == 0) {
           m_rx_srtt = rtt;
           m_rx_rttvar = rtt / 2;
         } else {
-          m_rx_rttvar = (3 * m_rx_rttvar + abs(long(rtt - m_rx_srtt))) / 4;
+          uint32 unsigned_rtt = static_cast<uint32>(rtt);
+          uint32 abs_err = unsigned_rtt > m_rx_srtt ? unsigned_rtt - m_rx_srtt
+                                                    : m_rx_srtt - unsigned_rtt;
+          m_rx_rttvar = (3 * m_rx_rttvar + abs_err) / 4;
           m_rx_srtt = (7 * m_rx_srtt + rtt) / 8;
         }
         m_rx_rto = bound(MIN_RTO, m_rx_srtt +
@@ -1184,8 +1179,8 @@ PseudoTcp::queueConnectMessage() {
     buf.WriteUInt8(1);
     buf.WriteUInt8(m_rwnd_scale);
   }
-  m_snd_wnd = buf.Length();
-  queue(buf.Data(), buf.Length(), true);
+  m_snd_wnd = static_cast<uint32>(buf.Length());
+  queue(buf.Data(), static_cast<uint32>(buf.Length()), true);
 }
 
 void
@@ -1290,7 +1285,7 @@ PseudoTcp::resizeReceiveBuffer(uint32 new_size) {
 
   size_t available_space = 0;
   m_rbuf.GetWriteRemaining(&available_space);
-  m_rcv_wnd = available_space;
+  m_rcv_wnd = static_cast<uint32>(available_space);
 }
 
 }  // namespace cricket

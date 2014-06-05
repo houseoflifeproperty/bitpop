@@ -15,14 +15,12 @@ from twisted.python import log
 from zope.interface import implements
 
 from master.autoreboot_buildslave import AutoRebootBuildSlave
+from buildbot.status.web.authz import Authz
 from buildbot.status.web.baseweb import WebStatus
 
-if int(buildbot.version.split('.')[1]) == 7:
-  from master import chromium_status_bb7 as chromium_status
-else:
-  import master.chromium_status_bb8 as chromium_status
+import master.chromium_status_bb8 as chromium_status
 
-from master import slaves_list
+from common import chromium_utils
 import config
 
 
@@ -120,7 +118,7 @@ def VerifySetup(c, slaves):
 
   # Make sure every defined slave is used.
   for s in slaves.GetSlaves():
-    name = slaves_list.EntryToSlaveName(s)
+    name = chromium_utils.EntryToSlaveName(s)
     if not name in slaves_name:
       raise InvalidConfig('Slave %s defined in your slaves_list is not '
                           'referenced at all' % name)
@@ -201,7 +199,13 @@ def CreateWebStatus(port, templates=None, tagComparator=None, **kwargs):
   return webstatus
 
 
+def GetMastername():
+  # Get the master name from the directory name. Remove leading "master.".
+  return re.sub('^master.', '', os.path.basename(os.getcwd()))
+
+
 def AutoSetupMaster(c, active_master, mail_notifier=False,
+                    mail_notifier_mode=None,
                     public_html=None, templates=None,
                     order_console_by_time=False,
                     tagComparator=None,
@@ -221,9 +225,9 @@ def AutoSetupMaster(c, active_master, mail_notifier=False,
   c['projectName'] = active_master.project_name
   c['projectURL'] = config.Master.project_url
 
-  # Get the master name from the directory name. Remove leading "master.".
-  mastername = re.sub('^master.', '', os.path.basename(os.getcwd()))
-  c['properties'] = {'mastername': mastername}
+  c['properties'] = {'mastername': GetMastername()}
+  if 'buildbotURL' in c:
+    c['properties']['buildbotURL'] = c['buildbotURL']
 
   # 'status' is a list of Status Targets. The results of each build will be
   # pushed to these targets. buildbot/status/*.py has a variety to choose from,
@@ -233,7 +237,7 @@ def AutoSetupMaster(c, active_master, mail_notifier=False,
     # pylint: disable=E1101
     c['status'].append(mail.MailNotifier(
         fromaddr=active_master.from_address,
-        mode='problem',
+        mode=mail_notifier_mode or 'problem',
         relayhost=config.Master.smtp,
         lookup=FilterDomain()))
 
@@ -273,16 +277,25 @@ def AutoSetupMaster(c, active_master, mail_notifier=False,
   if buildbot.version == '0.8.4p1':
     kwargs['provide_feeds'] = ['json']
   if active_master.master_port:
+    # Actions we want to allow must be explicitly listed here.
+    # Deliberately omitted are:
+    #   - gracefulShutdown
+    #   - cleanShutdown
+    authz = Authz(forceBuild=True,
+                  forceAllBuilds=True,
+                  pingBuilder=True,
+                  stopBuild=True,
+                  stopAllBuilds=True,
+                  cancelPendingBuild=True)
     c['status'].append(CreateWebStatus(active_master.master_port,
                                        tagComparator=tagComparator,
-                                       allowForce=True,
+                                       authz=authz,
                                        num_events_max=3000,
                                        templates=templates,
                                        **kwargs))
   if active_master.master_port_alt:
     c['status'].append(CreateWebStatus(active_master.master_port_alt,
                                        tagComparator=tagComparator,
-                                       allowForce=False,
                                        num_events_max=3000,
                                        templates=templates,
                                        **kwargs))
@@ -329,3 +342,90 @@ def AutoSetupMaster(c, active_master, mail_notifier=False,
     elif 'port' in values:
       c['manhole'] = manhole.AuthorizedKeysManhole(interface,
           os.path.expanduser("~/.ssh/authorized_keys"))
+
+def DumpSetup(c, important=None, filename='config.current.txt'):
+  """Writes a flattened version of the setup to a text file.
+     Some interesting classes are exploded with their variables
+     exposed,  by default the BuildFactories and Schedulers.
+     Newlines and indentation are sprinkled through the representation,
+     to make the output more easily broken up and groked with grep or diff.
+
+     Note that the heuristics of how to find classes that you want expanded
+     is not too hard to fool, but it seems to handle it usefully for
+     normal master configs.
+
+     c         The config: same as the rest of the utilities here.
+     important Array of classes to also expand.
+     filename  Where to write this ill-defined but useful information.
+  """
+  from buildbot.schedulers.base import BaseScheduler
+  from buildbot.process.factory import BuildFactory
+
+  def hacky_repr(obj, name, indent, important):
+    def hacky_repr_class(obj, indent, subdent, important):
+      r = '%s {\n' % obj.__class__.__name__
+      for (n, v) in vars(obj).iteritems():
+        if not n.startswith('_'):
+          r += hacky_repr(v, "%s: " % n, indent + subdent, important) + ',\n'
+      r += indent + '}'
+      return r
+
+    if isinstance(obj, list):
+      r = '[' + ', '.join(hacky_repr(o, '', '', important) for o in obj) + ']'
+    elif isinstance(obj, tuple):
+      r = '(' + ', '.join(hacky_repr(o, '', '', important) for o in obj) + ')'
+    else:
+      r = repr(obj)
+      if not isinstance(obj, basestring):
+        r = re.sub(' at 0x[0-9a-fA-F]*>', '>', r)
+
+    subdent = '  '
+    if any(isinstance(obj, c) for c in important):
+      r = hacky_repr_class(obj, indent, subdent, important)
+    elif len(r) > max(30, 76-len(indent)-len(name)) and \
+        not isinstance(obj, basestring):
+      if isinstance(obj, list):
+        r = '[\n'
+        for o in obj:
+          r += hacky_repr(o, '', indent + subdent, important) + ',\n'
+        r += indent + ']'
+      elif isinstance(obj, tuple):
+        r = '(\n'
+        for o in obj:
+          r += hacky_repr(o, '', indent + subdent, important) + ',\n'
+        r += indent + ')'
+      elif isinstance(obj, dict):
+        r = '{\n'
+        for (n, v) in sorted(obj.iteritems(), key=lambda x: x[0]):
+          if not n.startswith('_'):
+            r += hacky_repr(v, "'%s': " % n, indent + subdent, important)
+            r += ',\n'
+        r += indent + '}'
+    return "%s%s%s" % (indent, name, r)
+
+  important = (important or []) + [BaseScheduler, BuildFactory]
+
+  with open(filename, 'w') as f:
+    print >> f, hacky_repr(c, 'config = ', '', important)
+
+
+def Partition(item_tuples, num_partitions):
+  """Divides |item_tuples| into |num_partitions| separate lists.
+
+  Perfect partitioning is NP hard, this is a "good enough" estimate.
+
+  Args:
+    item_tuples: tuple in the format (weight, item_name).
+    num_partitions: int number of partitions to generate.
+
+  Returns:
+    A list of lists of item_names with as close to equal weight as possible.
+  """
+  assert num_partitions > 0, 'Must pass a positive number of partitions'
+  assert len(item_tuples) >= num_partitions, 'Need more items than partitions'
+  partitions = [[] for _ in xrange(num_partitions)]
+  def GetLowestSumPartition():
+    return sorted(partitions, key=lambda x: sum([i[0] for i in x]))[0]
+  for item in sorted(item_tuples, reverse=True):
+    GetLowestSumPartition().append(item)
+  return sorted([sorted([name for _, name in p]) for p in partitions])

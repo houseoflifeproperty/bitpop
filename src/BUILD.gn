@@ -1,0 +1,82 @@
+# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# This is the root build file for GN. GN will start processing by loading this
+# file, and recursively load all dependencies until all dependencies are either
+# resolved or known not to exist (which will cause the build to fail). So if
+# you add a new build file, there must be some path of dependencies from this
+# file to your new one or GN won't know about it.
+
+# In GN, a "group" is a dummy target that just lists other targets.
+group("root") {
+  # Note that some dependencies are commented out. These are things that are
+  # currently written but not hooked up to the build yet. They may need to be
+  # completed or possibly just tested and then re-enabled.
+  deps = [
+    # This is a temporary test of the not-yet-complete NaCl cross-compilation.
+    #"//base(//build/toolchain/nacl:x86_newlib)",
+
+    "//apps/common/api:apps_api",
+    #"//chrome",
+    "//components/language_usage_metrics",
+    "//components/metrics",
+    "//components/navigation_metrics",
+    "//components/onc",
+    "//components/os_crypt",
+    "//components/startup_metric_utils",
+    "//components/resources:components_resources",
+    "//components/translate:translate_core_browser",
+    "//components/translate:translate_core_common",
+    "//components/url_matcher",
+    "//crypto",
+    "//device/usb",
+    #"//extensions/common/api:extensions_api",
+    "//ipc",
+    "//mojo",
+    "//net",
+    #"//sdch",
+    "//skia",
+    #"//third_party/WebKit/Source/platform",
+    "//third_party/icu",
+    "//third_party/leveldatabase",
+    "//third_party/libpng",
+    "//third_party/libusb",
+    "//third_party/libwebp",
+    "//third_party/re2",
+    "//third_party/smhasher:cityhash",
+    "//third_party/smhasher:murmurhash3",
+    "//third_party/smhasher:pmurhash",
+    "//third_party/WebKit/Source/wtf",
+    "//third_party/zlib",
+    "//third_party:jpeg",
+    "//tools/gn",
+    "//ui/base:ui_base",
+    "//ui/base/strings",
+    "//ui/events",
+    "//ui/gfx",
+    "//ui/resources",
+    "//url",
+  ]
+
+  if (is_linux) {
+    deps += [
+      "//third_party/freetype2",
+    ]
+  }
+
+  if (is_android) {
+    deps -= [
+      "//components/os_crypt",
+      "//crypto",
+      "//net",
+      "//skia",
+      "//third_party/libusb",
+      "//third_party/WebKit/Source/wtf",  # TODO(brettw) re-enable for Android.
+      "//tools/gn",
+      "//ui/base:ui_base",
+      "//ui/events",
+      "//ui/gfx",
+    ]
+  }
+}

@@ -9,7 +9,7 @@
 
 namespace skia {
 
-SkDevice* GetTopDevice(const SkCanvas& canvas) {
+SkBaseDevice* GetTopDevice(const SkCanvas& canvas) {
   return canvas.getTopDevice(true);
 }
 
@@ -39,10 +39,6 @@ void DrawToNativeContext(SkCanvas* canvas, PlatformSurface context, int x,
     platform_device->DrawToNativeContext(context, x, y, src_rect);
 }
 
-static SkPMColor MakeOpaqueXfermodeProc(SkPMColor src, SkPMColor dst) {
-    return dst | (0xFF << SK_A32_SHIFT);
-}
-
 void MakeOpaque(SkCanvas* canvas, int x, int y, int width, int height) {
   if (width <= 0 || height <= 0)
     return;
@@ -51,12 +47,8 @@ void MakeOpaque(SkCanvas* canvas, int x, int y, int width, int height) {
   rect.setXYWH(SkIntToScalar(x), SkIntToScalar(y),
                SkIntToScalar(width), SkIntToScalar(height));
   SkPaint paint;
-  // so we don't draw anything on a device that ignores xfermodes
-  paint.setColor(0);
-  // install our custom mode
-  skia::RefPtr<SkProcXfermode> xfermode =
-      skia::AdoptRef(new SkProcXfermode(MakeOpaqueXfermodeProc));
-  paint.setXfermode(xfermode.get());
+  paint.setColor(SK_ColorBLACK);
+  paint.setXfermodeMode(SkXfermode::kDstATop_Mode);
   canvas->drawRect(rect, paint);
 }
 
@@ -64,7 +56,7 @@ size_t PlatformCanvasStrideForWidth(unsigned width) {
   return 4 * width;
 }
 
-SkCanvas* CreateCanvas(const skia::RefPtr<SkDevice>& device, OnFailureType failureType) {
+SkCanvas* CreateCanvas(const skia::RefPtr<SkBaseDevice>& device, OnFailureType failureType) {
   if (!device) {
     if (CRASH_ON_FAILURE == failureType)
       SK_CRASH();

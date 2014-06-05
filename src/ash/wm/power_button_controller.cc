@@ -5,32 +5,41 @@
 #include "ash/wm/power_button_controller.h"
 
 #include "ash/ash_switches.h"
+#include "ash/session/session_state_delegate.h"
 #include "ash/shell.h"
-#include "ash/shell_delegate.h"
 #include "ash/shell_window_ids.h"
+#include "ash/wm/lock_state_controller.h"
 #include "ash/wm/session_state_animator.h"
-#include "ash/wm/session_state_controller.h"
 #include "base/command_line.h"
-#include "ui/aura/root_window.h"
-#include "ui/views/corewm/compound_event_filter.h"
+#include "ui/aura/window_event_dispatcher.h"
+#include "ui/display/types/chromeos/display_snapshot.h"
+#include "ui/wm/core/compound_event_filter.h"
 
 namespace ash {
 
-PowerButtonController::PowerButtonController(SessionStateController* controller)
+PowerButtonController::PowerButtonController(
+    LockStateController* controller)
     : power_button_down_(false),
       lock_button_down_(false),
-      screen_is_off_(false),
+      brightness_is_zero_(false),
+      internal_display_off_and_external_display_on_(false),
       has_legacy_power_button_(
           CommandLine::ForCurrentProcess()->HasSwitch(
               switches::kAuraLegacyPowerButton)),
       controller_(controller) {
+#if defined(OS_CHROMEOS)
+  Shell::GetInstance()->display_configurator()->AddObserver(this);
+#endif
 }
 
 PowerButtonController::~PowerButtonController() {
+#if defined(OS_CHROMEOS)
+  Shell::GetInstance()->display_configurator()->RemoveObserver(this);
+#endif
 }
 
 void PowerButtonController::OnScreenBrightnessChanged(double percent) {
-  screen_is_off_ = percent <= 0.001;
+  brightness_is_zero_ = percent <= 0.001;
 }
 
 void PowerButtonController::OnPowerButtonEvent(
@@ -41,17 +50,20 @@ void PowerButtonController::OnPowerButtonEvent(
     return;
 
   // Avoid starting the lock/shutdown sequence if the power button is pressed
-  // while the screen is off (http://crbug.com/128451).
-  if (screen_is_off_)
+  // while the screen is off (http://crbug.com/128451), unless an external
+  // display is still on (http://crosbug.com/p/24912).
+  if (brightness_is_zero_ && !internal_display_off_and_external_display_on_)
     return;
 
-  Shell* shell = Shell::GetInstance();
+  const SessionStateDelegate* session_state_delegate =
+      Shell::GetInstance()->session_state_delegate();
   if (has_legacy_power_button_) {
     // If power button releases won't get reported correctly because we're not
     // running on official hardware, just lock the screen or shut down
     // immediately.
     if (down) {
-      if (shell->CanLockScreen() && !shell->IsScreenLocked() &&
+      if (session_state_delegate->CanLockScreen() &&
+          !session_state_delegate->IsScreenLocked() &&
           !controller_->LockRequested()) {
         controller_->StartLockAnimationAndLockImmediately();
       } else {
@@ -64,10 +76,12 @@ void PowerButtonController::OnPowerButtonEvent(
       if (controller_->LockRequested())
         return;
 
-      if (shell->CanLockScreen() && !shell->IsScreenLocked())
+      if (session_state_delegate->CanLockScreen() &&
+          !session_state_delegate->IsScreenLocked()) {
         controller_->StartLockAnimation(true);
-      else
+      } else {
         controller_->StartShutdownAnimation();
+      }
     } else {  // Button is up.
       if (controller_->CanCancelLockAnimation())
         controller_->CancelLockAnimation();
@@ -81,9 +95,12 @@ void PowerButtonController::OnLockButtonEvent(
     bool down, const base::TimeTicks& timestamp) {
   lock_button_down_ = down;
 
-  Shell* shell = Shell::GetInstance();
-  if (!shell->CanLockScreen() || shell->IsScreenLocked() ||
-      controller_->LockRequested() || controller_->ShutdownRequested()) {
+  const SessionStateDelegate* session_state_delegate =
+      Shell::GetInstance()->session_state_delegate();
+  if (!session_state_delegate->CanLockScreen() ||
+      session_state_delegate->IsScreenLocked() ||
+      controller_->LockRequested() ||
+      controller_->ShutdownRequested()) {
     return;
   }
 
@@ -98,5 +115,24 @@ void PowerButtonController::OnLockButtonEvent(
   else
     controller_->CancelLockAnimation();
 }
+
+#if defined(OS_CHROMEOS)
+void PowerButtonController::OnDisplayModeChanged(
+    const ui::DisplayConfigurator::DisplayStateList& display_states) {
+  bool internal_display_off = false;
+  bool external_display_on = false;
+  for (size_t i = 0; i < display_states.size(); ++i) {
+    const ui::DisplayConfigurator::DisplayState& state = display_states[i];
+    if (state.display->type() == ui::DISPLAY_CONNECTION_TYPE_INTERNAL) {
+      if (!state.display->current_mode())
+        internal_display_off = true;
+    } else if (state.display->current_mode()) {
+      external_display_on = true;
+    }
+  }
+  internal_display_off_and_external_display_on_ =
+      internal_display_off && external_display_on;
+}
+#endif
 
 }  // namespace ash

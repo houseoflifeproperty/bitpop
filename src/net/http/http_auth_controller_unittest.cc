@@ -4,11 +4,12 @@
 
 #include "net/http/http_auth_controller.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
 #include "net/base/test_completion_callback.h"
 #include "net/http/http_auth_cache.h"
+#include "net/http/http_auth_challenge_tokenizer.h"
 #include "net/http/http_auth_handler_mock.h"
 #include "net/http/http_request_info.h"
 #include "net/http/http_response_headers.h"
@@ -127,7 +128,7 @@ TEST(HttpAuthControllerTest, NoExplicitCredentialsAllowed) {
     }
 
    protected:
-    virtual bool Init(HttpAuth::ChallengeTokenizer* challenge) OVERRIDE {
+    virtual bool Init(HttpAuthChallengeTokenizer* challenge) OVERRIDE {
       HttpAuthHandlerMock::Init(challenge);
       set_allows_default_credentials(true);
       set_allows_explicit_credentials(false);
@@ -224,7 +225,8 @@ TEST(HttpAuthControllerTest, NoExplicitCredentialsAllowed) {
   ASSERT_EQ(OK,
             controller->HandleAuthChallenge(headers, false, false, dummy_log));
   ASSERT_TRUE(controller->HaveAuthHandler());
-  controller->ResetAuth(AuthCredentials(ASCIIToUTF16("Hello"), string16()));
+  controller->ResetAuth(AuthCredentials(base::ASCIIToUTF16("Hello"),
+                        base::string16()));
   EXPECT_TRUE(controller->HaveAuth());
   EXPECT_TRUE(controller->IsAuthSchemeDisabled(HttpAuth::AUTH_SCHEME_MOCK));
   EXPECT_FALSE(controller->IsAuthSchemeDisabled(HttpAuth::AUTH_SCHEME_BASIC));

@@ -27,25 +27,24 @@ class RenderTextMac : public RenderText {
 
   // Overridden from RenderText:
   virtual Size GetStringSize() OVERRIDE;
-  virtual int GetBaseline() OVERRIDE;
+  virtual SizeF GetStringSizeF() OVERRIDE;
   virtual SelectionModel FindCursorPosition(const Point& point) OVERRIDE;
   virtual std::vector<FontSpan> GetFontSpansForTesting() OVERRIDE;
 
  protected:
   // Overridden from RenderText:
+  virtual int GetLayoutTextBaseline() OVERRIDE;
   virtual SelectionModel AdjacentCharSelectionModel(
       const SelectionModel& selection,
       VisualCursorDirection direction) OVERRIDE;
   virtual SelectionModel AdjacentWordSelectionModel(
       const SelectionModel& selection,
       VisualCursorDirection direction) OVERRIDE;
-  virtual void GetGlyphBounds(size_t index,
-                              ui::Range* xspan,
-                              int* height) OVERRIDE;
-  virtual std::vector<Rect> GetSubstringBounds(const ui::Range& range) OVERRIDE;
+  virtual Range GetGlyphBounds(size_t index) OVERRIDE;
+  virtual std::vector<Rect> GetSubstringBounds(const Range& range) OVERRIDE;
   virtual size_t TextIndexToLayoutIndex(size_t index) const OVERRIDE;
   virtual size_t LayoutIndexToTextIndex(size_t index) const OVERRIDE;
-  virtual bool IsCursorablePosition(size_t position) OVERRIDE;
+  virtual bool IsValidCursorIndex(size_t index) OVERRIDE;
   virtual void ResetLayout() OVERRIDE;
   virtual void EnsureLayout() OVERRIDE;
   virtual void DrawVisualText(Canvas* canvas) OVERRIDE;
@@ -61,7 +60,9 @@ class RenderTextMac : public RenderText {
     int font_style;
     SkScalar text_size;
     SkColor foreground;
-    StyleRange style;
+    bool underline;
+    bool strike;
+    bool diagonal_strike;
 
     TextRun();
     ~TextRun();
@@ -74,14 +75,14 @@ class RenderTextMac : public RenderText {
   void ComputeRuns();
 
   // The Core Text line of text. Created by |EnsureLayout()|.
-  base::mac::ScopedCFTypeRef<CTLineRef> line_;
+  base::ScopedCFTypeRef<CTLineRef> line_;
 
   // Array to hold CFAttributedString attributes that allows Core Text to hold
   // weak references to them without leaking.
-  base::mac::ScopedCFTypeRef<CFMutableArrayRef> attributes_;
+  base::ScopedCFTypeRef<CFMutableArrayRef> attributes_;
 
   // Visual dimensions of the text. Computed by |EnsureLayout()|.
-  Size string_size_;
+  SizeF string_size_;
 
   // Common baseline for this line of text. Computed by |EnsureLayout()|.
   SkScalar common_baseline_;

@@ -4,11 +4,12 @@
 
 """A StatusReceiver module to mail someone when a step warns/fails.
 
-Since the behavior is very similar to the MainNotifier, we simply inherit from
+Since the behavior is very similar to the MailNotifier, we simply inherit from
 it and also reuse some of its methods to send emails.
 """
 
-import logging
+import datetime
+import os
 import re
 import time
 import urllib
@@ -46,8 +47,9 @@ class ChromiumNotifier(MailNotifier):
 
   def __init__(self, reply_to=None, categories_steps=None,
       exclusions=None, forgiving_steps=None, status_header=None,
-      use_getname=False, send_to_sheriffs=None, sheriffs=None,
-      public_html='public_html', minimum_delay_between_alert=600, **kwargs):
+      use_getname=False, sheriffs=None,
+      public_html='public_html', minimum_delay_between_alert=600,
+      enable_mail=True, **kwargs):
     """Constructor with following specific arguments (on top of base class').
 
     @type categories_steps: Dictionary of category string mapped to a list of
@@ -76,10 +78,6 @@ class ChromiumNotifier(MailNotifier):
     @param minimum_delay_between_alert: Don't send failure e-mails more often
                                         than the given value (in seconds).
 
-    @type send_to_sheriffs: Boolean or None.
-    @param send_to_sheriffs: Force the list of sheriffes to either ['sheriff']
-                             or [].  Deprecated, backwards compatability only.
-
     @type sheriffs: List of strings.
     @param sheriffs: The list of sheriff type names to be used for the set of
                      sheriffs.  The final destination changes over time.
@@ -91,6 +89,10 @@ class ChromiumNotifier(MailNotifier):
     @type use_getname: Boolean.
     @param use_getname: If true, step name is taken from getName(), otherwise
                         the step name is taken from getText().
+
+    @type enable_mail: Boolean.
+    @param enable_mail: If true, mail is sent, otherwise mail is formatted
+                        and logged, but not sent.
     """
     # Change the default.
     kwargs.setdefault('sendToInterestedUsers', False)
@@ -105,22 +107,11 @@ class ChromiumNotifier(MailNotifier):
     self.status_header = status_header
     assert self.status_header
     self.minimum_delay_between_alert = minimum_delay_between_alert
-    #TODO(petermayo) Remove send_to_sheriffs one day soon.
-    if send_to_sheriffs is None:
-      self.sheriffs = sheriffs or []
-    elif send_to_sheriffs:
-      log.msg(
-          'Do not use send_to_sheriffs=True, please use sheriffs=["sheriff"]',
-          logLevel=logging.ERROR)
-      self.sheriffs = ['sheriff']
-    else:
-      log.msg(
-          'Do not use send_to_sheriffs=False, if you must: use sheriffs=[]',
-          logLevel=logging.ERROR)
-      self.sheriffs = []
+    self.sheriffs = sheriffs or []
 
     self.public_html = public_html
     self.use_getname = use_getname
+    self.enable_mail = enable_mail
     self._last_time_mail_sent = None
 
   def isInterestingBuilder(self, builder_status):
@@ -216,12 +207,13 @@ class ChromiumNotifier(MailNotifier):
     # Now get all the steps we must check for this builder.
     steps_to_check = []
     wildcard = False
-    for category in builder_status.category.split(self._CATEGORY_SPLITTER):
-      if self.categories_steps.get(category) == '*':
-        wildcard = True
-        break
-      if category in self.categories_steps:
-        steps_to_check += self.categories_steps[category]
+    if builder_status.category:
+      for category in builder_status.category.split(self._CATEGORY_SPLITTER):
+        if self.categories_steps.get(category) == '*':
+          wildcard = True
+          break
+        if category in self.categories_steps:
+          steps_to_check += self.categories_steps[category]
     if '' in self.categories_steps:
       steps_to_check += self.categories_steps['']
 
@@ -232,15 +224,27 @@ class ChromiumNotifier(MailNotifier):
     """Called after being done sending the email."""
     return defer.succeed(0)
 
+  def sendMessage(self, message, recipients):
+    if os.path.exists('.suppress_mailer') or not self.enable_mail:
+      format_string = 'Not sending mail to %r (suppressed!):\n%s'
+      if not self.enable_mail:
+        format_string = 'Not sending mail to %r:\n%s'
+      log.msg(format_string % (recipients, str(message)))
+      return None
+    return MailNotifier.sendMessage(self, message, recipients)
+
   def shouldBlameCommitters(self, step_name):
     if self.getGenericName(step_name) not in self.forgiving_steps:
       return True
     return False
 
+  def _logMail(self, res, recipients, message):
+    log.msg('Not sending mail to %r:\n%s' % (recipients, str(message)))
+
   def buildMessage(self, builder_name, build_status, results, step_name):
     """Send an email about the tree closing.
 
-    Don't attach the patch as MailNotifier.buildMessage do.
+    Don't attach the patch as MailNotifier.buildMessage does.
 
     @type builder_name: string
     @type build_status: L{buildbot.status.builder.BuildStatus}
@@ -248,11 +252,12 @@ class ChromiumNotifier(MailNotifier):
     """
     # TODO(maruel): Update function signature to match
     # mail.MailNotifier.buildMessage().
-    log.msg('About to email')
     if (self._last_time_mail_sent and self._last_time_mail_sent >
         time.time() - self.minimum_delay_between_alert):
       # Rate limit tree alerts.
+      log.msg('Supressing repeat email')
       return
+    log.msg('About to email')
     self._last_time_mail_sent = time.time()
 
     # TODO(maruel): Use self.createEmail().
@@ -262,7 +267,14 @@ class ChromiumNotifier(MailNotifier):
     build_url = self.master_status.getURLForThing(build_status)
     waterfall_url = self.master_status.getBuildbotURL()
     status_text = self.status_header % {
+        'buildbotURL': waterfall_url,
         'builder': builder_name,
+        'builderName': builder_name,
+        'buildProperties': build_status.getProperties(),
+        'buildURL': build_url,
+        'project': project_name,
+        'reason':  build_status.getReason(),
+        'slavename': build_status.getSlavename(),
         'steps': step_name,
     }
     # Use the first line as a title.
@@ -343,6 +355,8 @@ Buildbot waterfall: http://build.chromium.org/
         'reason': build_status.getReason(),
         'revision': str(latest_revision),
         'buildnumber': str(build_status.getNumber()),
+        'date': str(datetime.date.today()),
+        'steps': step_name,
     }
     m['From'] = self.fromaddr
     if self.reply_to:
@@ -360,7 +374,10 @@ Buildbot waterfall: http://build.chromium.org/
         d.addCallback(recipients.append)
         dl.append(d)
     defered_object = defer.DeferredList(dl)
-    defered_object.addCallback(self._gotRecipients, recipients, m)
+    if not self.enable_mail:
+      defered_object.addCallback(self._logMail, recipients, m)
+    else:
+      defered_object.addCallback(self._gotRecipients, recipients, m)
     defered_object.addCallback(self.getFinishedMessage, builder_name,
                                build_status, step_name)
     return defered_object

@@ -9,7 +9,7 @@
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
+#include "chromeos/settings/cros_settings_names.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace chromeos {
@@ -39,8 +39,8 @@ class StubCrosSettingsProviderTest : public testing::Test {
     observer_count_.clear();
   }
 
-  void AssertPref(const std::string& prefName, const Value* value) {
-    const Value* pref = provider_->Get(prefName);
+  void AssertPref(const std::string& prefName, const base::Value* value) {
+    const base::Value* pref = provider_->Get(prefName);
     ASSERT_TRUE(pref);
     ASSERT_TRUE(pref->Equals(value));
   }

@@ -36,6 +36,7 @@
         'sources': [
           'dyn_array.c',
           'elf_util.c',
+          'load_file.c',
           'nacl_all_modules.c',
           'nacl_app_thread.c',
           'nacl_bootstrap_channel_error_reporter.c',
@@ -47,7 +48,9 @@
           'nacl_globals.c',
           'nacl_kernel_service.c',
           'nacl_resource.c',
+          'nacl_reverse_host_interface.c',
           'nacl_reverse_quota_interface.c',
+          'nacl_runtime_host_interface.c',
           'nacl_secure_service.c',
           'nacl_signal_common.c',
           'nacl_stack_safety.c',
@@ -68,7 +71,16 @@
           'sel_mem.c',
           'sel_qualify.c',
           'sel_validate_image.c',
+          'sys_exception.c',
+          'sys_fdio.c',
+          'sys_filename.c',
+          'sys_futex.c',
+          'sys_imc.c',
+          'sys_list_mappings.c',
+          'sys_memory.c',
+          'sys_parallel_io.c',
           'thread_suspension_common.c',
+          'thread_suspension_unwind.c',
         ],
         'include_dirs': [
           # For generated header files from the x86-64 validator,
@@ -89,7 +101,7 @@
               # TODO(gregoryd): find out how to generate a file
               # in such a location that can be found in both
               # NaCl and Chrome builds.
-              ['<@(python_exe)', 'nacl_syscall_handlers_gen.py',
+              ['python', 'nacl_syscall_handlers_gen.py',
                '-i', '<@(syscall_handler)',
                '-o', '<@(_outputs)'],
 
@@ -107,6 +119,7 @@
               'sources': [
                 'osx/crash_filter.c',
                 'osx/mach_exception_handler.c',
+                'osx/mach_thread_map.c',
                 'osx/nacl_ldt.c',
                 'osx/nacl_thread_nice.c',
                 'osx/outer_sandbox.c',
@@ -131,7 +144,7 @@
                   ],
                   'process_outputs_as_sources': 1,
                   'action': [
-                    '<(python_exe)', '<@(_inputs)', '<@(_outputs)',
+                    'python', '<@(_inputs)', '<@(_outputs)',
                   ],
                   'message': 'Generating mig plumbing for exc.defs',
                 },
@@ -167,6 +180,20 @@
                 'linux/nacl_signal_arm.c',
               ],
             }],
+            ['target_arch=="mipsel"', {
+              'sources': [
+                'arch/mips/nacl_app.c',
+                'arch/mips/nacl_switch.S',
+                'arch/mips/nacl_switch_to_app_mips.c',
+                'arch/mips/nacl_syscall.S',
+                'arch/mips/nacl_tls.c',
+                'arch/mips/sel_addrspace_mips.c',
+                'arch/mips/sel_ldr_mips.c',
+                'arch/mips/sel_rt.c',
+                'arch/mips/tramp_mips.S',
+                'linux/nacl_signal_mips.c',
+              ],
+            }],
             ['OS=="linux"', {
               'sources': [
                 'linux/nacl_bootstrap_args.c',
@@ -189,17 +216,22 @@
                     'linux/arm/sel_segments.c',
                   ],
                 }],
+                ['target_arch=="mipsel"', {
+                  'sources': [
+                    'linux/mips/sel_segments.c',
+                  ],
+                }],
               ],
             }],
             ['OS=="linux" or OS=="mac" or OS=="FreeBSD"', {
               'sources': [
-                'posix/nacl_signal.c',
+                'posix/nacl_signal_stack.c',
                 'posix/sel_addrspace_posix.c',
                ],
             }],
             ['OS=="win"', {
               'sources': [
-                'win/nacl_signal.c',
+                'win/nacl_signal_stack.c',
                 'win/sel_addrspace_win.c',
                 'win/thread_suspension.c',
                 'win/vm_hole.c',
@@ -229,6 +261,7 @@
         '<(DEPTH)/native_client/src/shared/srpc/srpc.gyp:nonnacl_srpc',
         '<(DEPTH)/native_client/src/trusted/debug_stub/debug_stub.gyp:debug_stub',
         '<(DEPTH)/native_client/src/trusted/desc/desc.gyp:nrd_xfer',
+        '<(DEPTH)/native_client/src/trusted/desc_cacheability/desc_cacheability.gyp:desc_cacheability',
         '<(DEPTH)/native_client/src/trusted/fault_injection/fault_injection.gyp:nacl_fault_inject',
         '<(DEPTH)/native_client/src/trusted/gio/gio_wrapped_desc.gyp:gio_wrapped_desc',
         '<(DEPTH)/native_client/src/trusted/interval_multiset/interval_multiset.gyp:nacl_interval',
@@ -237,12 +270,18 @@
         '<(DEPTH)/native_client/src/trusted/manifest_name_service_proxy/manifest_name_service_proxy.gyp:manifest_proxy',
         '<(DEPTH)/native_client/src/trusted/simple_service/simple_service.gyp:simple_service',
         '<(DEPTH)/native_client/src/trusted/threading/threading.gyp:thread_interface',
+        '<(DEPTH)/native_client/src/trusted/validator/validator.gyp:validation_cache',
         '<(DEPTH)/native_client/src/trusted/validator/validator.gyp:validators',
       ],
       'conditions': [
         ['target_arch=="arm"', {
           'dependencies': [
             '<(DEPTH)/native_client/src/trusted/validator_arm/validator_arm.gyp:ncvalidate_arm_v2',
+          ],
+        }],
+        ['target_arch=="mipsel"', {
+          'dependencies': [
+            '<(DEPTH)/native_client/src/trusted/validator_mips/validator_mips.gyp:ncvalidate_mips',
           ],
         }],
         ['target_arch=="ia32" or target_arch=="x64"', {
@@ -253,13 +292,18 @@
         ['target_arch == "ia32"', {
           'dependencies': [
             'arch/x86_32/service_runtime_x86_32.gyp:service_runtime_x86_32',
-            '<(DEPTH)/native_client/src/trusted/validator/x86/32/validator_x86_32.gyp:ncvalidate_x86_32',
+            '<(DEPTH)/native_client/src/trusted/validator_x86/validator_x86.gyp:nccopy_x86_32',
           ],
         }],
         ['target_arch == "x64"', {
           'dependencies': [
             'arch/x86_64/service_runtime_x86_64.gyp:service_runtime_x86_64',
-            '<(DEPTH)/native_client/src/trusted/validator/x86/64/validator_x86_64.gyp:ncvalidate_x86_64',
+            '<(DEPTH)/native_client/src/trusted/validator_x86/validator_x86.gyp:nccopy_x86_64',
+          ],
+        }],
+        ['OS=="linux" or OS=="FreeBSD"', {
+          'dependencies': [
+            'nacl_signal',
           ],
         }],
       ],
@@ -300,6 +344,7 @@
       ],
       'sources': [
         'nacl_test_injection_main.c',
+        'force_cpp.cc',
       ],
       'conditions': [
         ['OS=="linux"', {
@@ -314,7 +359,7 @@
     },
   ],
   'conditions': [
-    ['OS=="win"', {
+    ['OS=="win" and target_arch=="ia32"', {
       'targets': [
         {
           'target_name': 'sel64',
@@ -330,6 +375,7 @@
             '<(DEPTH)/native_client/src/shared/srpc/srpc.gyp:nonnacl_srpc64',
             '<(DEPTH)/native_client/src/trusted/debug_stub/debug_stub.gyp:debug_stub64',
             '<(DEPTH)/native_client/src/trusted/desc/desc.gyp:nrd_xfer64',
+            '<(DEPTH)/native_client/src/trusted/desc_cacheability/desc_cacheability.gyp:desc_cacheability64',
             '<(DEPTH)/native_client/src/trusted/fault_injection/fault_injection.gyp:nacl_fault_inject64',
             '<(DEPTH)/native_client/src/trusted/gio/gio_wrapped_desc.gyp:gio_wrapped_desc64',
             '<(DEPTH)/native_client/src/trusted/interval_multiset/interval_multiset.gyp:nacl_interval64',
@@ -338,7 +384,8 @@
             '<(DEPTH)/native_client/src/trusted/manifest_name_service_proxy/manifest_name_service_proxy.gyp:manifest_proxy64',
             '<(DEPTH)/native_client/src/trusted/simple_service/simple_service.gyp:simple_service64',
             '<(DEPTH)/native_client/src/trusted/threading/threading.gyp:thread_interface64',
-            '<(DEPTH)/native_client/src/trusted/validator/x86/64/validator_x86_64.gyp:ncvalidate_x86_64',
+            '<(DEPTH)/native_client/src/trusted/validator_x86/validator_x86.gyp:nccopy_x86_64',
+            '<(DEPTH)/native_client/src/trusted/validator/validator.gyp:validation_cache64',
             '<(DEPTH)/native_client/src/trusted/validator/validator.gyp:validators64',
             'arch/x86/service_runtime_x86.gyp:service_runtime_x86_common64',
             'arch/x86_64/service_runtime_x86_64.gyp:service_runtime_x86_64',
@@ -403,5 +450,32 @@
         },
       ],
     }],
-  ]
+    ['OS=="linux" or OS=="FreeBSD"', {
+      'targets': [
+        {
+          # This has to be an independent target in order to benefit from
+          # specific flags.
+          'target_name': 'nacl_signal',
+          'type': 'static_library',
+          'conditions': [
+            ['target_arch=="ia32"', {
+              # nacl_signal.c needs to be compiled without the stack
+              # protector on i386.
+              # See https://code.google.com/p/nativeclient/issues/detail?id=3581.
+              'cflags!': [
+                '-fstack-protector',
+                '-fstack-protector-all',
+              ],
+              'cflags': [
+                '-fno-stack-protector',
+              ],
+            }],
+          ],
+          'sources': [
+            'linux/nacl_signal.c',
+          ],
+        },
+      ],
+    }],
+  ],
 }

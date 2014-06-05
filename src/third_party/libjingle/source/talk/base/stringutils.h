@@ -31,6 +31,7 @@
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
 
 #ifdef WIN32
 #include <malloc.h>
@@ -46,7 +47,6 @@
 #endif  // !BSD
 #endif  // POSIX
 
-#include <cstring>
 #include <string>
 
 #include "talk/base/basictypes.h"
@@ -111,9 +111,6 @@ inline const wchar_t* strstr(const wchar_t* haystack, const wchar_t* needle) {
   return wcsstr(haystack, needle);
 }
 #ifndef vsnprintf
-inline int vsnprintf(char* buf, size_t n, const char* fmt, va_list args) {
-  return _vsnprintf(buf, n, fmt, args);
-}
 inline int vsnprintf(wchar_t* buf, size_t n, const wchar_t* fmt, va_list args) {
   return _vsnwprintf(buf, n, fmt, args);
 }

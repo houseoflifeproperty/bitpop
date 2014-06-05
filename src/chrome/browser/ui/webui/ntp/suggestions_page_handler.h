@@ -16,11 +16,14 @@
 
 class GURL;
 class PageUsageData;
-class PrefService;
 
 namespace base {
 class ListValue;
 class Value;
+}
+
+namespace user_prefs {
+class PrefRegistrySyncable;
 }
 
 // The handler for Javascript messages related to the "suggestions" view.
@@ -65,7 +68,7 @@ class SuggestionsHandler : public content::WebUIMessageHandler,
   // SuggestionsCombiner::Delegate implementation.
   virtual void OnSuggestionsReady() OVERRIDE;
 
-  static void RegisterUserPrefs(PrefService* prefs);
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
  private:
   // Puts the passed URL in the blacklist (so it does not show as a thumbnail).

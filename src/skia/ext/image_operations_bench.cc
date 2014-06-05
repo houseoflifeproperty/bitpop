@@ -19,11 +19,11 @@
 #include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/format_macros.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
-#include "base/string_util.h"
-#include "base/time.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "skia/ext/image_operations.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkRect.h"
@@ -144,7 +144,7 @@ class Benchmark {
         method_(kDefaultResizeMethod) {}
 
   // Returns true if command line parsing was successful, false otherwise.
-  bool ParseArgs(const CommandLine* command_line);
+  bool ParseArgs(const base::CommandLine* command_line);
 
   // Returns true if successful, false otherwise.
   bool Run() const;
@@ -176,17 +176,17 @@ void Benchmark::Usage() {
   printf("\n  -help: prints this help and exits\n");
 }
 
-bool Benchmark::ParseArgs(const CommandLine* command_line) {
-  const CommandLine::SwitchMap& switches = command_line->GetSwitches();
+bool Benchmark::ParseArgs(const base::CommandLine* command_line) {
+  const base::CommandLine::SwitchMap& switches = command_line->GetSwitches();
   bool fNeedHelp = false;
 
-  for (CommandLine::SwitchMap::const_iterator iter = switches.begin();
+  for (base::CommandLine::SwitchMap::const_iterator iter = switches.begin();
        iter != switches.end();
        ++iter) {
     const std::string& s = iter->first;
     std::string value;
 #if defined(OS_WIN)
-    value = WideToUTF8(iter->second);
+    value = base::WideToUTF8(iter->second);
 #else
     value = iter->second;
 #endif
@@ -249,7 +249,7 @@ bool Benchmark::Run() const {
   const uint64 num_bytes = static_cast<uint64>(num_iterations_) *
       (GetBitmapSize(&source) + GetBitmapSize(&dest));
 
-  printf("%"PRIu64" MB/s,\telapsed = %"PRIu64" source=%d dest=%d\n",
+  printf("%" PRIu64 " MB/s,\telapsed = %" PRIu64 " source=%d dest=%d\n",
          static_cast<uint64>(elapsed_us == 0 ? 0 : num_bytes / elapsed_us),
          static_cast<uint64>(elapsed_us),
          GetBitmapSize(&source), GetBitmapSize(&dest));
@@ -262,14 +262,14 @@ bool Benchmark::Run() const {
 class CommandLineAutoReset {
  public:
   CommandLineAutoReset(int argc, char** argv) {
-    CommandLine::Init(argc, argv);
+    base::CommandLine::Init(argc, argv);
   }
   ~CommandLineAutoReset() {
-    CommandLine::Reset();
+    base::CommandLine::Reset();
   }
 
-  const CommandLine* Get() const {
-    return CommandLine::ForCurrentProcess();
+  const base::CommandLine* Get() const {
+    return base::CommandLine::ForCurrentProcess();
   }
 };
 

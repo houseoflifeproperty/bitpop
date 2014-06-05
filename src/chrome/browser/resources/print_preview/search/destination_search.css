@@ -17,20 +17,32 @@
 }
 
 #destination-search .user-info {
-  -webkit-user-select: none;
-  overflow: hidden;
+  display: flex;
   position: absolute;
   right: 40px;
   text-align: right;
-  text-overflow: ellipsis;
   top: 14px;
-  white-space: nowrap;
   width: 350px;
 }
 
 [dir='rtl'] #destination-search .user-info {
   left: 40px;
   right: auto;
+}
+
+#destination-search .account-select-label {
+  -webkit-user-select: none;
+  flex: 1;
+  height: 2em;
+  line-height: 2em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#destination-search .account-select {
+  flex: 1;
+  margin-left: 8px;
 }
 
 #destination-search > .page > .close-button {
@@ -77,7 +89,9 @@
 
 #destination-search .cloudprint-promo .close-button {
   -webkit-margin-start: 12px;
-  background-image: url('chrome://theme/IDR_WEB_UI_CLOSE');
+  background-image: -webkit-image-set(
+    url('chrome://theme/IDR_CLOSE_DIALOG') 1x,
+    url('chrome://theme/IDR_CLOSE_DIALOG@2x') 2x);
   background-repeat: no-repeat;
   background-size: 14px;
   height: 14px;
@@ -85,9 +99,13 @@
 }
 
 #destination-search .cloudprint-promo .close-button:hover {
-  background-image: url('chrome://theme/IDR_WEB_UI_CLOSE_HOVER');
+  background-image: -webkit-image-set(
+    url('chrome://theme/IDR_CLOSE_DIALOG_H') 1x,
+    url('chrome://theme/IDR_CLOSE_DIALOG_H@2x') 2x);
 }
 
 #destination-search .cloudprint-promo .close-button:active {
-  background-image: url('chrome://theme/IDR_WEB_UI_CLOSE_PRESSED');
+  background-image: -webkit-image-set(
+    url('chrome://theme/IDR_CLOSE_DIALOG_P') 1x,
+    url('chrome://theme/IDR_CLOSE_DIALOG_P@2x') 2x);
 }

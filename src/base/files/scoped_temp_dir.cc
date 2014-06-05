@@ -23,8 +23,7 @@ bool ScopedTempDir::CreateUniqueTempDir() {
 
   // This "scoped_dir" prefix is only used on Windows and serves as a template
   // for the unique name.
-  if (!file_util::CreateNewTempDirectory(FILE_PATH_LITERAL("scoped_dir"),
-                                         &path_))
+  if (!base::CreateNewTempDirectory(FILE_PATH_LITERAL("scoped_dir"), &path_))
     return false;
 
   return true;
@@ -35,14 +34,13 @@ bool ScopedTempDir::CreateUniqueTempDirUnderPath(const FilePath& base_path) {
     return false;
 
   // If |base_path| does not exist, create it.
-  if (!file_util::CreateDirectory(base_path))
+  if (!base::CreateDirectory(base_path))
     return false;
 
   // Create a new, uniquely named directory under |base_path|.
-  if (!file_util::CreateTemporaryDirInDir(
-          base_path,
-          FILE_PATH_LITERAL("scoped_dir_"),
-          &path_))
+  if (!base::CreateTemporaryDirInDir(base_path,
+                                     FILE_PATH_LITERAL("scoped_dir_"),
+                                     &path_))
     return false;
 
   return true;
@@ -52,8 +50,7 @@ bool ScopedTempDir::Set(const FilePath& path) {
   if (!path_.empty())
     return false;
 
-  if (!file_util::DirectoryExists(path) &&
-      !file_util::CreateDirectory(path))
+  if (!DirectoryExists(path) && !base::CreateDirectory(path))
     return false;
 
   path_ = path;
@@ -64,7 +61,7 @@ bool ScopedTempDir::Delete() {
   if (path_.empty())
     return false;
 
-  bool ret = file_util::Delete(path_, true);
+  bool ret = base::DeleteFile(path_, true);
   if (ret) {
     // We only clear the path if deleted the directory.
     path_.clear();
@@ -80,7 +77,7 @@ FilePath ScopedTempDir::Take() {
 }
 
 bool ScopedTempDir::IsValid() const {
-  return !path_.empty() && file_util::DirectoryExists(path_);
+  return !path_.empty() && DirectoryExists(path_);
 }
 
 }  // namespace base

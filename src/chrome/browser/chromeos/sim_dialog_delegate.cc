@@ -4,7 +4,7 @@
 
 #include "chrome/browser/chromeos/sim_dialog_delegate.h"
 
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser_dialogs.h"
@@ -45,7 +45,7 @@ namespace chromeos {
 void SimDialogDelegate::ShowDialog(gfx::NativeWindow owning_window,
                                    SimDialogMode mode) {
   chrome::ShowWebDialog(owning_window,
-                        ProfileManager::GetDefaultProfileOrOffTheRecord(),
+                        ProfileManager::GetActiveUserProfile(),
                         new SimDialogDelegate(mode));
 }
 
@@ -60,8 +60,8 @@ ui::ModalType SimDialogDelegate::GetDialogModalType() const {
   return ui::MODAL_TYPE_SYSTEM;
 }
 
-string16 SimDialogDelegate::GetDialogTitle() const {
-  return string16();
+base::string16 SimDialogDelegate::GetDialogTitle() const {
+  return base::string16();
 }
 
 GURL SimDialogDelegate::GetDialogContentURL() const {
@@ -76,7 +76,8 @@ GURL SimDialogDelegate::GetDialogContentURL() const {
       mode_value = kSimDialogSetLockOnMode;
     else
       mode_value = kSimDialogSetLockOffMode;
-    return GURL(StringPrintf(kSimDialogSpecialModeURL, mode_value.c_str()));
+    return GURL(
+        base::StringPrintf(kSimDialogSpecialModeURL, mode_value.c_str()));
   }
 }
 

@@ -54,7 +54,7 @@ import com.google.ipc.invalidation.util.TextBuilder;
 import com.google.ipc.invalidation.util.TypedUtil;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
-import com.google.protos.ipc.invalidation.Channel.NetworkEndpointId;
+import com.google.protos.ipc.invalidation.ChannelCommon.NetworkEndpointId;
 import com.google.protos.ipc.invalidation.Client.AckHandleP;
 import com.google.protos.ipc.invalidation.Client.ExponentialBackoffState;
 import com.google.protos.ipc.invalidation.Client.PersistentTiclState;
@@ -149,8 +149,7 @@ public abstract class InvalidationClientCore extends InternalBase
       // If token is still not assigned (as expected), sends a request. Otherwise, ignore.
       if (clientToken == null) {
         // Allocate a nonce and send a message requesting a new token.
-        setNonce(ByteString.copyFromUtf8(Long.toString(
-            internalScheduler.getCurrentTimeMs())));
+        setNonce(generateNonce(random));
         protocolHandler.sendInitializeMessage(applicationClientId, nonce, batchingTask, TASK_NAME);
         return true;  // Reschedule to check state, retry if necessary after timeout.
       } else {
@@ -475,7 +474,7 @@ public abstract class InvalidationClientCore extends InternalBase
     this.registrationManager = new RegistrationManager(logger, statistics, digestFn,
         regManagerState);
     this.protocolHandler = new ProtocolHandler(config.getProtocolHandlerConfig(), resources,
-        smearer, statistics, applicationName, this, msgValidator, protocolHandlerState);
+        smearer, statistics, clientType, applicationName, this, msgValidator, protocolHandlerState);
   }
 
   /**
@@ -544,7 +543,6 @@ public abstract class InvalidationClientCore extends InternalBase
     resources.getNetwork().setListener(new NetworkChannel.NetworkListener() {
       @Override
       public void onMessageReceived(byte[] incomingMessage) {
-        final String name = "handleIncomingMessage";
         InvalidationClientCore.this.handleIncomingMessage(incomingMessage);
       }
       @Override
@@ -769,11 +767,14 @@ public abstract class InvalidationClientCore extends InternalBase
   public void start() {
     Preconditions.checkState(resources.isStarted(), "Resources must be started before starting " +
         "the Ticl");
-    Preconditions.checkState(!ticlState.isStarted(), "Already started");
+    if (ticlState.isStarted()) {
+      logger.severe("Ignoring start call since already started: client = %s", this);
+      return;
+    }
 
     // Initialize the nonce so that we can maintain the invariant that exactly one of
     // "nonce" and "clientToken" is non-null.
-    setNonce(ByteString.copyFromUtf8(Long.toString(internalScheduler.getCurrentTimeMs())));
+    setNonce(generateNonce(random));
 
     logger.info("Starting with Java config: %s", config);
     // Read the state blob and then schedule startInternal once the value is there.
@@ -941,14 +942,21 @@ public abstract class InvalidationClientCore extends InternalBase
     Preconditions.checkState(internalScheduler.isRunningOnThread(),
         "Not running on internal thread");
 
-    Preconditions.checkState(ticlState.isStarted() || ticlState.isStopped(),
-      "Cannot call %s for object %s when the Ticl has not been started (currently in state %s)." +
-      "If start has been called, caller must wait for InvalidationListener.ready",
-      ticlState, regOpType, objectIds);
     if (ticlState.isStopped()) {
       // The Ticl has been stopped. This might be some old registration op coming in. Just ignore
       // instead of crashing.
-      logger.warning("Ticl stopped: register (%s) of %s ignored.", regOpType, objectIds);
+      logger.severe("Ticl stopped: register (%s) of %s ignored.", regOpType, objectIds);
+      return;
+    }
+    if (!ticlState.isStarted()) {
+      // We must be in the NOT_STARTED state, since we can't be in STOPPED or STARTED (since the
+      // previous if-check didn't succeeded, and isStarted uses a != STARTED test).
+      logger.severe(
+          "Ticl is not yet started; failing registration call; client = %s, objects = %s, op = %s",
+          this, objectIds, regOpType);
+      for (ObjectId objectId : objectIds) {
+        listener.informRegistrationFailure(this, objectId, true, "Client not yet ready");
+      }
       return;
     }
 
@@ -1133,12 +1141,20 @@ public abstract class InvalidationClientCore extends InternalBase
   private void handleTokenChanged(ByteString headerToken, final ByteString newToken) {
     Preconditions.checkState(internalScheduler.isRunningOnThread(), "Not on internal thread");
 
-    // If we have a new token, then we know that the nonce matched. Accept the token and clear
-    // the nonce.
+    // The server is either supplying a new token in response to an InitializeMessage, spontaneously
+    // destroying a token we hold, or spontaneously upgrading a token we hold.
+
     if (newToken != null) {
-      Preconditions.checkArgument(TypedUtil.<ByteString>equals(headerToken, nonce),
-          "Provided with new token and mismatched nonce: header = %s, nonce = %s",
-          headerToken, nonce);
+      // Note: headerToken cannot be null, so a null nonce or clientToken will always be non-equal.
+      boolean headerTokenMatchesNonce = TypedUtil.<ByteString>equals(headerToken, nonce);
+      boolean headerTokenMatchesExistingToken =
+          TypedUtil.<ByteString>equals(headerToken, clientToken);
+      boolean shouldAcceptToken = headerTokenMatchesNonce || headerTokenMatchesExistingToken;
+      if (!shouldAcceptToken) {
+        logger.info("Ignoring new token; %s does not match nonce = %s or existing token = %s",
+            newToken, nonce, clientToken);
+        return;
+      }
       logger.info("New token being assigned at client: %s, Old = %s",
           CommonProtoStrings2.toLazyCompactString(newToken),
           CommonProtoStrings2.toLazyCompactString(clientToken));
@@ -1194,12 +1210,18 @@ public abstract class InvalidationClientCore extends InternalBase
       } else {
         // Regular object. Could be unknown version or not.
         Invalidation inv = ProtoConverter.convertFromInvalidationProto(invalidation);
-        logger.info("Issuing invalidate (known-version = %s): %s", invalidation.getIsKnownVersion(),
-            inv);
-        if (invalidation.getIsKnownVersion()) {
+
+        boolean isSuppressed = invalidation.getIsTrickleRestart();
+        logger.info("Issuing invalidate (known-version = %s, is-trickle-restart = %s): %s",
+            invalidation.getIsKnownVersion(), isSuppressed, inv);
+
+        // Issue invalidate if the invalidation had a known version AND either no suppression has
+        // occurred or the client allows suppression.
+        if (invalidation.getIsKnownVersion() &&
+            (!isSuppressed || InvalidationClientCore.this.config.getAllowSuppression())) {
           listener.invalidate(InvalidationClientCore.this, inv, ackHandle);
         } else {
-          // Unknown version
+          // Otherwise issue invalidateUnknownVersion.
           listener.invalidateUnknownVersion(InvalidationClientCore.this, inv.getObjectId(),
               ackHandle);
         }
@@ -1368,8 +1390,6 @@ public abstract class InvalidationClientCore extends InternalBase
 
     List<SimplePair<String, Integer>> performanceCounters =
         new ArrayList<SimplePair<String, Integer>>();
-    List<SimplePair<String, Integer>> configParams =
-        new ArrayList<SimplePair<String, Integer>>();
     ClientConfigP configToSend = null;
     if (mustSendPerformanceCounters) {
       statistics.getNonZeroStatistics(performanceCounters);
@@ -1421,6 +1441,19 @@ public abstract class InvalidationClientCore extends InternalBase
     Preconditions.checkState((newNonce == null) || (clientToken == null),
         "Tried to set nonce with existing token %s", clientToken);
     this.nonce = newNonce;
+  }
+
+  /**
+   * Returns a randomly generated nonce. Visible for testing only.
+   */
+  
+  public static ByteString generateNonce(Random random) {
+    // Generate 8 random bytes.
+    byte[] randomBytes = new byte[8];
+    random.nextBytes(randomBytes);
+
+    // Return the bytes as a ByteString.
+    return ByteString.copyFrom(randomBytes);
   }
 
   /**
@@ -1489,8 +1522,8 @@ public abstract class InvalidationClientCore extends InternalBase
 
   @Override
   public void toCompactString(TextBuilder builder) {
-    builder.appendFormat("Client: %s, %s", applicationClientId,
-        CommonProtoStrings2.toLazyCompactString(clientToken));
+    builder.appendFormat("Client: %s, %s, %s", applicationClientId,
+        CommonProtoStrings2.toLazyCompactString(clientToken), ticlState);
   }
 
   @Override

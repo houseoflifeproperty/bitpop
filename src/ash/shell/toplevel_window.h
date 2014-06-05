@@ -17,9 +17,13 @@ class ToplevelWindow : public views::WidgetDelegateView {
 
     bool can_resize;
     bool can_maximize;
-    bool persist_across_all_workspaces;
   };
-  static void CreateToplevelWindow(const CreateParams& params);
+  static views::Widget* CreateToplevelWindow(
+      const CreateParams& params);
+
+  // Clears saved show state and bounds used to position
+  // a new window.
+  static void ClearSavedStateForTest();
 
  private:
   explicit ToplevelWindow(const CreateParams& params);
@@ -29,7 +33,14 @@ class ToplevelWindow : public views::WidgetDelegateView {
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
 
   // Overridden from views::WidgetDelegate:
-  virtual string16 GetWindowTitle() const OVERRIDE;
+  virtual base::string16 GetWindowTitle() const OVERRIDE;
+  virtual void SaveWindowPlacement(
+      const gfx::Rect& bounds,
+      ui::WindowShowState show_state) OVERRIDE;
+  virtual bool GetSavedWindowPlacement(
+      const views::Widget* widget,
+      gfx::Rect* bounds,
+      ui::WindowShowState* show_state) const OVERRIDE;
   virtual View* GetContentsView() OVERRIDE;
   virtual bool CanResize() const OVERRIDE;
   virtual bool CanMaximize() const OVERRIDE;

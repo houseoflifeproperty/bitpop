@@ -6,8 +6,8 @@
       'type': 'static_library',
       'standalone_static_library': 1,
       'dependencies': [
-        'skia_base_libs.gyp:skia_base_libs',
-        'images.gyp:images',
+        'skia_lib.gyp:skia_lib',
+        'sfnt.gyp:sfnt',
       ],
       'include_dirs': [
         '../include/device/xps',
@@ -25,8 +25,8 @@
         [ 'skia_os == "win"', {
           'link_settings': {
             'libraries': [
-              'T2Embed.lib',
-              'FontSub.lib',
+              '-lt2embed.lib',
+              '-lfontsub.lib',
             ],
           },
         },{ #else if 'skia_os != "win"'
@@ -58,9 +58,3 @@
     },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

@@ -2,39 +2,49 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#import "chrome/browser/ui/cocoa/infobars/infobar_container_controller.h"
+
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
-#import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
-#import "chrome/browser/ui/cocoa/infobars/infobar_container_controller.h"
+#include "base/mac/scoped_nsobject.h"
+#include "chrome/browser/infobars/infobar_service.h"
+#include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
+#import "chrome/browser/ui/cocoa/infobars/confirm_infobar_controller.h"
+#include "chrome/browser/ui/cocoa/infobars/infobar_cocoa.h"
 #include "chrome/browser/ui/cocoa/infobars/mock_confirm_infobar_delegate.h"
-#include "chrome/browser/ui/cocoa/infobars/mock_link_infobar_delegate.h"
 #import "chrome/browser/ui/cocoa/view_resizer_pong.h"
+#include "chrome/test/base/testing_profile.h"
+#import "content/public/browser/web_contents.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 
 namespace {
 
-class InfoBarContainerControllerTest : public CocoaTest {
-  virtual void SetUp() {
-    CocoaTest::SetUp();
+class InfoBarContainerControllerTest : public CocoaProfileTest {
+  virtual void SetUp() OVERRIDE {
+    CocoaProfileTest::SetUp();
+    web_contents_.reset(content::WebContents::Create(
+        content::WebContents::CreateParams(profile())));
+    InfoBarService::CreateForWebContents(web_contents_.get());
+
     resizeDelegate_.reset([[ViewResizerPong alloc] init]);
     ViewResizerPong *viewResizer = resizeDelegate_.get();
-    controller_ =
-        [[InfoBarContainerController alloc] initWithResizeDelegate:viewResizer];
+    controller_.reset([[InfoBarContainerController alloc]
+        initWithResizeDelegate:viewResizer]);
     NSView* view = [controller_ view];
     [[test_window() contentView] addSubview:view];
   }
 
-  virtual void TearDown() {
+  virtual void TearDown() OVERRIDE {
     [[controller_ view] removeFromSuperviewWithoutNeedingDisplay];
-    [controller_ release];
-    CocoaTest::TearDown();
+    controller_.reset();
+    CocoaProfileTest::TearDown();
   }
 
  public:
-  scoped_nsobject<ViewResizerPong> resizeDelegate_;
-  InfoBarContainerController* controller_;
+  base::scoped_nsobject<ViewResizerPong> resizeDelegate_;
+  base::scoped_nsobject<InfoBarContainerController> controller_;
+  scoped_ptr<content::WebContents> web_contents_;
 };
 
 TEST_VIEW(InfoBarContainerControllerTest, [controller_ view])
@@ -42,64 +52,25 @@ TEST_VIEW(InfoBarContainerControllerTest, [controller_ view])
 TEST_F(InfoBarContainerControllerTest, BWCPong) {
   // Call positionInfoBarsAndResize and check that |resizeDelegate_| got a
   // resize message.
-  [resizeDelegate_ setHeight:-1];
-  [controller_ positionInfoBarsAndRedraw];
+  [resizeDelegate_ resizeView:[controller_ view] newHeight:-1];
+  [controller_ positionInfoBarsAndRedraw:NO];
   EXPECT_NE(-1, [resizeDelegate_ height]);
 }
 
 TEST_F(InfoBarContainerControllerTest, AddAndRemoveInfoBars) {
   NSView* view = [controller_ view];
 
-  // Add three infobars and then remove them.
-  // After each step check to make sure we have the correct number of
-  // infobar subviews.
-
-  // These delegates delete themselves when they're told their infobars have
-  // closed.
-  InfoBarDelegate* linkDelegate = new MockLinkInfoBarDelegate(NULL);
-  InfoBarDelegate* linkDelegate2 = new MockLinkInfoBarDelegate(NULL);
-  InfoBarDelegate* confirmDelegate = new MockConfirmInfoBarDelegate(NULL);
-
-  [controller_ addInfoBar:linkDelegate->CreateInfoBar(NULL) animate:NO];
+  scoped_ptr<infobars::InfoBarDelegate> confirm_delegate(
+      new MockConfirmInfoBarDelegate(NULL));
+  scoped_ptr<InfoBarCocoa> infobar(new InfoBarCocoa(confirm_delegate.Pass()));
+  base::scoped_nsobject<ConfirmInfoBarController> controller(
+      [[ConfirmInfoBarController alloc] initWithInfoBar:infobar.get()]);
+  infobar->set_controller(controller);
+  [controller_ addInfoBar:infobar.get() position:0];
   EXPECT_EQ(1U, [[view subviews] count]);
 
-  [controller_ addInfoBar:confirmDelegate->CreateInfoBar(NULL) animate:NO];
-  EXPECT_EQ(2U, [[view subviews] count]);
-
-  [controller_ addInfoBar:linkDelegate2->CreateInfoBar(NULL) animate:NO];
-  EXPECT_EQ(3U, [[view subviews] count]);
-
-  // Just to mix things up, remove them in a different order.
-  [controller_ closeInfoBarsForDelegate:confirmDelegate animate:NO];
-  EXPECT_EQ(2U, [[view subviews] count]);
-
-  [controller_ closeInfoBarsForDelegate:linkDelegate animate:NO];
-  EXPECT_EQ(1U, [[view subviews] count]);
-
-  [controller_ closeInfoBarsForDelegate:linkDelegate2 animate:NO];
+  [controller_ removeInfoBar:infobar.get()];
   EXPECT_EQ(0U, [[view subviews] count]);
 }
 
-TEST_F(InfoBarContainerControllerTest, RemoveAllInfoBars) {
-  NSView* view = [controller_ view];
-
-  // Add three infobars and then remove them all.
-
-  // removeAllInfobars does not close these, so we stack-allocate them so
-  // they'll get cleaned up.
-  MockLinkInfoBarDelegate linkDelegate(NULL);
-  MockConfirmInfoBarDelegate confirmDelegate(NULL);
-  MockConfirmInfoBarDelegate confirmDelegate2(NULL);
-  InfoBarDelegate* linkDelegatePtr = &linkDelegate;
-  InfoBarDelegate* confirmDelegatePtr = &confirmDelegate;
-  InfoBarDelegate* confirmDelegate2Ptr = &confirmDelegate2;
-
-  [controller_ addInfoBar:linkDelegatePtr->CreateInfoBar(NULL) animate:NO];
-  [controller_ addInfoBar:confirmDelegatePtr->CreateInfoBar(NULL) animate:NO];
-  [controller_ addInfoBar:confirmDelegate2Ptr->CreateInfoBar(NULL) animate:NO];
-  EXPECT_EQ(3U, [[view subviews] count]);
-
-  [controller_ removeAllInfoBars];
-  EXPECT_EQ(0U, [[view subviews] count]);
-}
 }  // namespace

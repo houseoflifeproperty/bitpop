@@ -8,13 +8,15 @@
   },
 
   'includes': [
-    'version.gypi',
+    '../build/util/version.gypi',
   ],
 
   'target_defaults': {
     'sources': [
       'common/chrome_constants.cc',
       'common/chrome_constants.h',
+      'common/chrome_icon_resources_win.cc',
+      'common/chrome_icon_resources_win.h',
       'common/chrome_paths.cc',
       'common/chrome_paths.h',
       'common/chrome_paths_android.cc',
@@ -28,8 +30,12 @@
       'common/env_vars.h',
       'common/net/test_server_locations.cc',
       'common/net/test_server_locations.h',
+      'common/pref_font_script_names-inl.h',
+      'common/pref_font_webkit_names.h',
       'common/pref_names.cc',
       'common/pref_names.h',
+      'common/widevine_cdm_constants.cc',
+      'common/widevine_cdm_constants.h',
     ],
     'actions': [
       {
@@ -63,6 +69,9 @@
       ],
       'dependencies': [
         '../base/base.gyp:base',
+        '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '../components/components.gyp:bookmarks_core_common',
+        '../components/nacl.gyp:nacl_switches',
         '../third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
       ],
       'target_conditions': [
@@ -74,15 +83,10 @@
           ],
         }],
       ],
-      'conditions': [
-        ['toolkit_uses_gtk == 1', {
-          'dependencies': ['../build/linux/system.gyp:gtk'],
-        }],
-      ],
     },
   ],
   'conditions': [
-    ['OS=="win"', {
+    ['OS=="win" and target_arch=="ia32"', {
       'targets': [
         {
           'target_name': 'common_constants_win64',
@@ -91,7 +95,9 @@
             '<(SHARED_INTERMEDIATE_DIR)',  # Needed by chrome_paths.cc.
           ],
           'dependencies': [
-            '../base/base.gyp:base_nacl_win64',
+            '../base/base.gyp:base_win64',
+            '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations_win64',
+            '../components/nacl.gyp:nacl_switches_win64',
             '../third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
           ],
           'defines': [

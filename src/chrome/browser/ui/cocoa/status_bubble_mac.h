@@ -12,11 +12,12 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/ui/status_bubble.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 class StatusBubbleMacTest;
+@class StatusBubbleWindow;
 
 class StatusBubbleMac : public StatusBubble {
  public:
@@ -35,7 +36,7 @@ class StatusBubbleMac : public StatusBubble {
   virtual ~StatusBubbleMac();
 
   // StatusBubble implementation.
-  virtual void SetStatus(const string16& status) OVERRIDE;
+  virtual void SetStatus(const base::string16& status) OVERRIDE;
   virtual void SetURL(const GURL& url, const std::string& languages) OVERRIDE;
   virtual void Hide() OVERRIDE;
   virtual void MouseMoved(const gfx::Point& location,
@@ -50,11 +51,6 @@ class StatusBubbleMac : public StatusBubble {
   // Mac-specific method: Change the parent window of the status bubble. Safe to
   // call even when the status bubble does not exist.
   void SwitchParentWindow(NSWindow* parent);
-
-  // Delegate method called when a fade-in or fade-out transition has
-  // completed.  This is public so that it may be visible to the CAAnimation
-  // delegate, which is an Objective-C object.
-  void AnimationDidStop(CAAnimation* animation, bool finished);
 
   // Expand the bubble to fit a URL too long for the standard bubble size.
   void ExpandBubble();
@@ -72,7 +68,7 @@ class StatusBubbleMac : public StatusBubble {
   void SetState(StatusBubbleState state);
 
   // Sets the bubble text for SetStatus and SetURL.
-  void SetText(const string16& text, bool is_url);
+  void SetText(const base::string16& text, bool is_url);
 
   // Construct the window/widget if it does not already exist. (Safe to call if
   // it does.)
@@ -97,6 +93,14 @@ class StatusBubbleMac : public StatusBubble {
   // reverse a transition before it has completed.
   void Fade(bool show);
 
+  // Starts an animation of the bubble window to a specific alpha value over a
+  // specific period of time.
+  void AnimateWindowAlpha(CGFloat alpha, NSTimeInterval duration);
+
+  // Method called from the completion callbacks when a fade-in or fade-out
+  // transition has completed.
+  void AnimationDidStop();
+
   // One-shot timer operations to manage the delays associated with the
   // kBubbleShowingTimer and kBubbleHidingTimer states.  StartTimer and
   // TimerFired must be called from one of these states.  StartTimer may be
@@ -119,11 +123,16 @@ class StatusBubbleMac : public StatusBubble {
   // for the given mouse position if necessary. Protected for use in tests.
   void SetFrameAvoidingMouse(NSRect window_frame, const gfx::Point& mouse_pos);
 
-  // The timer factory used for show and hide delay timers.
+  // The factory used to generate weak pointers for the show and hide delay
+  // timers.
   base::WeakPtrFactory<StatusBubbleMac> timer_factory_;
 
-  // The timer factory used for the expansion delay timer.
+  // The factory used to generate weak pointers for the expansion delay timer.
   base::WeakPtrFactory<StatusBubbleMac> expand_timer_factory_;
+
+  // The factory used to generate weak pointers for the CAAnimation completion
+  // handlers.
+  base::WeakPtrFactory<StatusBubbleMac> completion_handler_factory_;
 
   // Calculate the appropriate frame for the status bubble window. If
   // |expanded_width|, use entire width of parent frame.
@@ -147,7 +156,7 @@ class StatusBubbleMac : public StatusBubble {
   id delegate_;  // WEAK
 
   // The window we own.
-  NSWindow* window_;
+  StatusBubbleWindow* window_;
 
   // The status text we want to display when there are no URLs to display.
   NSString* status_text_;

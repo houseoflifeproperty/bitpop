@@ -6,7 +6,6 @@
 
 #include <string.h>  // For memcpy
 
-#include "ppapi/c/pp_file_info.h"
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/proxy/serialized_var.h"
@@ -98,47 +97,6 @@ bool ParamTraits<PP_Bool>::Read(const Message* m,
 void ParamTraits<PP_Bool>::Log(const param_type& p, std::string* l) {
 }
 
-// PP_FileInfo -------------------------------------------------------------
-
-// static
-void ParamTraits<PP_FileInfo>::Write(Message* m, const param_type& p) {
-  ParamTraits<int64_t>::Write(m, p.size);
-  ParamTraits<int>::Write(m, static_cast<int>(p.type));
-  ParamTraits<int>::Write(m, static_cast<int>(p.system_type));
-  ParamTraits<double>::Write(m, p.creation_time);
-  ParamTraits<double>::Write(m, p.last_access_time);
-  ParamTraits<double>::Write(m, p.last_modified_time);
-}
-
-// static
-bool ParamTraits<PP_FileInfo>::Read(const Message* m, PickleIterator* iter,
-                                        param_type* r) {
-  int type, system_type;
-  if (!ParamTraits<int64_t>::Read(m, iter, &r->size) ||
-      !ParamTraits<int>::Read(m, iter, &type) ||
-      !ParamTraits<int>::Read(m, iter, &system_type) ||
-      !ParamTraits<double>::Read(m, iter, &r->creation_time) ||
-      !ParamTraits<double>::Read(m, iter, &r->last_access_time) ||
-      !ParamTraits<double>::Read(m, iter, &r->last_modified_time))
-    return false;
-  if (type != PP_FILETYPE_REGULAR &&
-      type != PP_FILETYPE_DIRECTORY &&
-      type != PP_FILETYPE_OTHER)
-    return false;
-  r->type = static_cast<PP_FileType>(type);
-  if (system_type != PP_FILESYSTEMTYPE_INVALID &&
-      system_type != PP_FILESYSTEMTYPE_EXTERNAL &&
-      system_type != PP_FILESYSTEMTYPE_LOCALPERSISTENT &&
-      system_type != PP_FILESYSTEMTYPE_LOCALTEMPORARY)
-    return false;
-  r->system_type = static_cast<PP_FileSystemType>(system_type);
-  return true;
-}
-
-// static
-void ParamTraits<PP_FileInfo>::Log(const param_type& p, std::string* l) {
-}
-
 // PP_NetAddress_Private -------------------------------------------------------
 
 // static
@@ -172,52 +130,6 @@ void ParamTraits<PP_NetAddress_Private>::Log(const param_type& p,
   l->append("<PP_NetAddress_Private (");
   LogParam(p.size, l);
   l->append(" bytes)>");
-}
-
-// PP_ObjectProperty -----------------------------------------------------------
-
-// static
-void ParamTraits<PP_ObjectProperty>::Write(Message* m, const param_type& p) {
-  // FIXME(brettw);
-}
-
-// static
-bool ParamTraits<PP_ObjectProperty>::Read(const Message* m,
-                                          PickleIterator* iter,
-                                          param_type* r) {
-  // FIXME(brettw);
-  return true;
-}
-
-// static
-void ParamTraits<PP_ObjectProperty>::Log(const param_type& p, std::string* l) {
-}
-
-// PPB_FileRef_CreateInfo ------------------------------------------------------
-
-// static
-void ParamTraits<ppapi::PPB_FileRef_CreateInfo>::Write(Message* m,
-                                                       const param_type& p) {
-  ParamTraits<ppapi::HostResource>::Write(m, p.resource);
-  ParamTraits<int>::Write(m, p.file_system_type);
-  ParamTraits<std::string>::Write(m, p.path);
-  ParamTraits<std::string>::Write(m, p.name);
-}
-
-// static
-bool ParamTraits<ppapi::PPB_FileRef_CreateInfo>::Read(const Message* m,
-                                                      PickleIterator* iter,
-                                                      param_type* r) {
-  return
-      ParamTraits<ppapi::HostResource>::Read(m, iter, &r->resource) &&
-      ParamTraits<int>::Read(m, iter, &r->file_system_type) &&
-      ParamTraits<std::string>::Read(m, iter, &r->path) &&
-      ParamTraits<std::string>::Read(m, iter, &r->name);
-}
-
-// static
-void ParamTraits<ppapi::PPB_FileRef_CreateInfo>::Log(const param_type& p,
-                                                     std::string* l) {
 }
 
 // HostResource ----------------------------------------------------------------
@@ -289,28 +201,6 @@ void ParamTraits< std::vector<ppapi::proxy::SerializedVar> >::Log(
     std::string* l) {
 }
 
-// std::vector<PPB_FileRef_CreateInfo> -----------------------------------------
-
-void ParamTraits< std::vector<ppapi::PPB_FileRef_CreateInfo> >::Write(
-    Message* m,
-    const param_type& p) {
-  WriteVectorWithoutCopy(m, p);
-}
-
-// static
-bool ParamTraits< std::vector<ppapi::PPB_FileRef_CreateInfo> >::Read(
-    const Message* m,
-    PickleIterator* iter,
-    param_type* r) {
-  return ReadVectorWithoutCopy(m, iter, r);
-}
-
-// static
-void ParamTraits< std::vector<ppapi::PPB_FileRef_CreateInfo> >::Log(
-    const param_type& p,
-    std::string* l) {
-}
-
 // ppapi::PpapiPermissions -----------------------------------------------------
 
 void ParamTraits<ppapi::PpapiPermissions>::Write(Message* m,
@@ -345,7 +235,6 @@ void ParamTraits<ppapi::proxy::SerializedHandle>::Write(Message* m,
       ParamTraits<base::SharedMemoryHandle>::Write(m, p.shmem());
       break;
     case ppapi::proxy::SerializedHandle::SOCKET:
-    case ppapi::proxy::SerializedHandle::CHANNEL_HANDLE:
     case ppapi::proxy::SerializedHandle::FILE:
       ParamTraits<IPC::PlatformFileForTransit>::Write(m, p.descriptor());
       break;
@@ -379,18 +268,10 @@ bool ParamTraits<ppapi::proxy::SerializedHandle>::Read(const Message* m,
       }
       break;
     }
-    case ppapi::proxy::SerializedHandle::CHANNEL_HANDLE: {
-      IPC::PlatformFileForTransit desc;
-      if (ParamTraits<IPC::PlatformFileForTransit>::Read(m, iter, &desc)) {
-        r->set_channel_handle(desc);
-        return true;
-      }
-      break;
-    }
     case ppapi::proxy::SerializedHandle::FILE: {
       IPC::PlatformFileForTransit desc;
       if (ParamTraits<IPC::PlatformFileForTransit>::Read(m, iter, &desc)) {
-        r->set_file_handle(desc);
+        r->set_file_handle(desc, header.open_flags, header.file_io);
         return true;
       }
       break;
@@ -560,7 +441,44 @@ void ParamTraits<ppapi::proxy::SerializedFontDescription>::Log(
     const param_type& p,
     std::string* l) {
 }
+#endif  // !defined(OS_NACL) && !defined(NACL_WIN64)
 
+// ppapi::proxy::SerializedTrueTypeFontDesc ------------------------------------
+
+// static
+void ParamTraits<ppapi::proxy::SerializedTrueTypeFontDesc>::Write(
+    Message* m,
+    const param_type& p) {
+  ParamTraits<std::string>::Write(m, p.family);
+  ParamTraits<PP_TrueTypeFontFamily_Dev>::Write(m, p.generic_family);
+  ParamTraits<PP_TrueTypeFontStyle_Dev>::Write(m, p.style);
+  ParamTraits<PP_TrueTypeFontWeight_Dev>::Write(m, p.weight);
+  ParamTraits<PP_TrueTypeFontWidth_Dev>::Write(m, p.width);
+  ParamTraits<PP_TrueTypeFontCharset_Dev>::Write(m, p.charset);
+}
+
+// static
+bool ParamTraits<ppapi::proxy::SerializedTrueTypeFontDesc>::Read(
+    const Message* m,
+    PickleIterator* iter,
+    param_type* r) {
+  return
+      ParamTraits<std::string>::Read(m, iter, &r->family) &&
+      ParamTraits<PP_TrueTypeFontFamily_Dev>::Read(m, iter,
+                                                   &r->generic_family) &&
+      ParamTraits<PP_TrueTypeFontStyle_Dev>::Read(m, iter, &r->style) &&
+      ParamTraits<PP_TrueTypeFontWeight_Dev>::Read(m, iter, &r->weight) &&
+      ParamTraits<PP_TrueTypeFontWidth_Dev>::Read(m, iter, &r->width) &&
+      ParamTraits<PP_TrueTypeFontCharset_Dev>::Read(m, iter, &r->charset);
+}
+
+// static
+void ParamTraits<ppapi::proxy::SerializedTrueTypeFontDesc>::Log(
+    const param_type& p,
+    std::string* l) {
+}
+
+#if !defined(OS_NACL) && !defined(NACL_WIN64)
 // ppapi::PepperFilePath -------------------------------------------------------
 
 // static
@@ -575,7 +493,7 @@ bool ParamTraits<ppapi::PepperFilePath>::Read(const Message* m,
                                               PickleIterator* iter,
                                               param_type* p) {
   unsigned domain;
-  FilePath path;
+  base::FilePath path;
   if (!ReadParam(m, iter, &domain) || !ReadParam(m, iter, &path))
     return false;
   if (domain > ppapi::PepperFilePath::DOMAIN_MAX_VALID)
@@ -624,19 +542,95 @@ void ParamTraits<ppapi::proxy::SerializedFlashMenu>::Log(const param_type& p,
 void ParamTraits<ppapi::PPB_X509Certificate_Fields>::Write(
     Message* m,
     const param_type& p) {
-  ParamTraits<ListValue>::Write(m, p.values_);
+  ParamTraits<base::ListValue>::Write(m, p.values_);
 }
 
 // static
 bool ParamTraits<ppapi::PPB_X509Certificate_Fields>::Read(const Message* m,
                                                           PickleIterator* iter,
                                                           param_type* r) {
-  return ParamTraits<ListValue>::Read(m, iter, &(r->values_));
+  return ParamTraits<base::ListValue>::Read(m, iter, &(r->values_));
 }
 
 // static
 void ParamTraits<ppapi::PPB_X509Certificate_Fields>::Log(const param_type& p,
                                                          std::string* l) {
+}
+
+// ppapi::SocketOptionData -----------------------------------------------------
+
+// static
+void ParamTraits<ppapi::SocketOptionData>::Write(Message* m,
+                                                 const param_type& p) {
+  ppapi::SocketOptionData::Type type = p.GetType();
+  ParamTraits<int32_t>::Write(m, static_cast<int32_t>(type));
+  switch (type) {
+    case ppapi::SocketOptionData::TYPE_INVALID: {
+      break;
+    }
+    case ppapi::SocketOptionData::TYPE_BOOL: {
+      bool out_value = false;
+      bool result = p.GetBool(&out_value);
+      // Suppress unused variable warnings.
+      static_cast<void>(result);
+      DCHECK(result);
+
+      ParamTraits<bool>::Write(m, out_value);
+      break;
+    }
+    case ppapi::SocketOptionData::TYPE_INT32: {
+      int32_t out_value = 0;
+      bool result = p.GetInt32(&out_value);
+      // Suppress unused variable warnings.
+      static_cast<void>(result);
+      DCHECK(result);
+
+      ParamTraits<int32_t>::Write(m, out_value);
+      break;
+    }
+    // No default so the compiler will warn on new types.
+  }
+}
+
+// static
+bool ParamTraits<ppapi::SocketOptionData>::Read(const Message* m,
+                                                PickleIterator* iter,
+                                                param_type* r) {
+  *r = ppapi::SocketOptionData();
+  int32_t type = 0;
+  if (!ParamTraits<int32_t>::Read(m, iter, &type))
+    return false;
+  if (type != ppapi::SocketOptionData::TYPE_INVALID &&
+      type != ppapi::SocketOptionData::TYPE_BOOL &&
+      type != ppapi::SocketOptionData::TYPE_INT32) {
+    return false;
+  }
+  switch (static_cast<ppapi::SocketOptionData::Type>(type)) {
+    case ppapi::SocketOptionData::TYPE_INVALID: {
+      return true;
+    }
+    case ppapi::SocketOptionData::TYPE_BOOL: {
+      bool value = false;
+      if (!ParamTraits<bool>::Read(m, iter, &value))
+        return false;
+      r->SetBool(value);
+      return true;
+    }
+    case ppapi::SocketOptionData::TYPE_INT32: {
+      int32_t value = 0;
+      if (!ParamTraits<int32_t>::Read(m, iter, &value))
+        return false;
+      r->SetInt32(value);
+      return true;
+    }
+    // No default so the compiler will warn on new types.
+  }
+  return false;
+}
+
+// static
+void ParamTraits<ppapi::SocketOptionData>::Log(const param_type& p,
+                                               std::string* l) {
 }
 
 }  // namespace IPC

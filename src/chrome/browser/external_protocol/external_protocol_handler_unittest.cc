@@ -4,7 +4,7 @@
 
 #include "chrome/browser/external_protocol/external_protocol_handler.h"
 
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -46,14 +46,15 @@ class FakeExternalProtocolHandlerDelegate
 
   virtual ShellIntegration::DefaultProtocolClientWorker* CreateShellWorker(
       ShellIntegration::DefaultWebClientObserver* observer,
-      const std::string& protocol) {
+      const std::string& protocol) OVERRIDE {
     return new FakeExternalProtocolHandlerWorker(observer, protocol, os_state_);
   }
 
   virtual ExternalProtocolHandler::BlockState GetBlockState(
-      const std::string& scheme) { return block_state_; }
+      const std::string& scheme,
+      bool initiated_by_user_gesture) OVERRIDE { return block_state_; }
 
-  virtual void BlockRequest() {
+  virtual void BlockRequest() OVERRIDE {
     ASSERT_TRUE(block_state_ == ExternalProtocolHandler::BLOCK ||
                 os_state_ == ShellIntegration::IS_DEFAULT);
     has_blocked_ = true;
@@ -61,20 +62,20 @@ class FakeExternalProtocolHandlerDelegate
 
   virtual void RunExternalProtocolDialog(const GURL& url,
                                          int render_process_host_id,
-                                         int routing_id) {
+                                         int routing_id) OVERRIDE {
     ASSERT_EQ(block_state_, ExternalProtocolHandler::UNKNOWN);
     ASSERT_NE(os_state_, ShellIntegration::IS_DEFAULT);
     has_prompted_ = true;
   }
 
-  virtual void LaunchUrlWithoutSecurityCheck(const GURL& url) {
+  virtual void LaunchUrlWithoutSecurityCheck(const GURL& url) OVERRIDE {
     ASSERT_EQ(block_state_, ExternalProtocolHandler::DONT_BLOCK);
     ASSERT_NE(os_state_, ShellIntegration::IS_DEFAULT);
     has_launched_ = true;
   }
 
-  virtual void FinishedProcessingCheck() {
-    MessageLoop::current()->Quit();
+  virtual void FinishedProcessingCheck() OVERRIDE {
+    base::MessageLoop::current()->Quit();
   }
 
   void set_os_state(ShellIntegration::DefaultWebClientState value) {
@@ -100,16 +101,11 @@ class FakeExternalProtocolHandlerDelegate
 class ExternalProtocolHandlerTest : public testing::Test {
  protected:
   ExternalProtocolHandlerTest()
-      : ui_thread_(BrowserThread::UI, MessageLoop::current()),
+      : ui_thread_(BrowserThread::UI, base::MessageLoop::current()),
         file_thread_(BrowserThread::FILE) {}
 
   virtual void SetUp() {
     file_thread_.Start();
-  }
-
-  virtual void TearDown() {
-    // Ensure that g_accept_requests gets set back to true after test execution.
-    ExternalProtocolHandler::PermitLaunchUrl();
   }
 
   void DoTest(ExternalProtocolHandler::BlockState block_state,
@@ -122,16 +118,16 @@ class ExternalProtocolHandlerTest : public testing::Test {
 
     delegate_.set_block_state(block_state);
     delegate_.set_os_state(os_state);
-    ExternalProtocolHandler::LaunchUrlWithDelegate(url, 0, 0, &delegate_);
+    ExternalProtocolHandler::LaunchUrlWithDelegate(url, 0, 0, &delegate_, true);
     if (block_state != ExternalProtocolHandler::BLOCK)
-      MessageLoop::current()->Run();
+      base::MessageLoop::current()->Run();
 
     ASSERT_EQ(should_prompt, delegate_.has_prompted());
     ASSERT_EQ(should_launch, delegate_.has_launched());
     ASSERT_EQ(should_block, delegate_.has_blocked());
   }
 
-  MessageLoopForUI ui_message_loop_;
+  base::MessageLoopForUI ui_message_loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread file_thread_;
 

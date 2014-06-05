@@ -16,13 +16,13 @@ setup_gitsvn
 (
   set -e
   cd git-svn
-  git config rietveld.server localhost:8080
+  git config rietveld.server localhost:10000
 
   # Create a branch, rename a file, upload it.
   git checkout -q -b rename
   git mv test test2
   git commit -q -m "renamed"
-  export EDITOR=$(which true)
+  export GIT_EDITOR=$(which true)
   test_expect_success "upload succeeds" \
     "$GIT_CL upload -m test master | grep -q 'Issue created'"
 

@@ -5,11 +5,11 @@
 #include <map>
 #include <string>
 
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"  // TODO(brettw) remove when WideToASCII moves.
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/parsers/metadata_parser_filebase.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -25,8 +25,8 @@ class FileMetaDataParserTest : public testing::Test {
 
     // Create the test file.
     std::string content = "content";
-    int write_size = file_util::WriteFile(test_file_, content.c_str(),
-                                          content.length());
+    int write_size = base::WriteFile(test_file_, content.c_str(),
+                                     content.length());
     ASSERT_EQ(static_cast<int>(content.length()), write_size);
   }
 
@@ -34,19 +34,19 @@ class FileMetaDataParserTest : public testing::Test {
 #if defined(OS_POSIX)
     return test_file_.BaseName().value();
 #elif defined(OS_WIN)
-    return WideToASCII(test_file_.BaseName().value());
+    return base::UTF16ToASCII(test_file_.BaseName().value());
 #endif  // defined(OS_POSIX)
   }
 
   std::string test_file_size() {
     int64 size;
-    EXPECT_TRUE(file_util::GetFileSize(test_file_, &size));
+    EXPECT_TRUE(base::GetFileSize(test_file_, &size));
 
     return base::Int64ToString(size);
   }
 
   base::ScopedTempDir temp_dir_;
-  FilePath test_file_;
+  base::FilePath test_file_;
 };
 
 TEST_F(FileMetaDataParserTest, Parse) {

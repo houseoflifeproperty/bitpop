@@ -8,17 +8,19 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "content/public/renderer/content_renderer_client.h"
+#include "content/common/browser_plugin/browser_plugin_messages.h"
 #include "content/public/test/render_view_test.h"
 #include "content/renderer/browser_plugin/mock_browser_plugin_manager.h"
 #include "content/renderer/render_view_impl.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/platform/WebSize.h"
+#include "third_party/WebKit/public/web/WebView.h"
 
 class RenderThreadImpl;
 
 namespace content {
+
+class MockBrowserPlugin;
 
 class BrowserPluginTest : public RenderViewTest {
  public:
@@ -27,14 +29,20 @@ class BrowserPluginTest : public RenderViewTest {
 
   virtual void SetUp() OVERRIDE;
   virtual void TearDown() OVERRIDE;
+  virtual ContentRendererClient* CreateContentRendererClient() OVERRIDE;
+
   MockBrowserPluginManager* browser_plugin_manager() const {
     return static_cast<MockBrowserPluginManager*>(
-        static_cast<RenderViewImpl*>(view_)->browser_plugin_manager());
+        static_cast<RenderViewImpl*>(view_)->GetBrowserPluginManager());
   }
   std::string ExecuteScriptAndReturnString(const std::string& script);
   int ExecuteScriptAndReturnInt(const std::string& script);
- private:
-  ContentRendererClient content_renderer_client_;
+  bool ExecuteScriptAndReturnBool(const std::string& script, bool* result);
+  // Returns NULL if there is no plugin.
+  MockBrowserPlugin* GetCurrentPlugin();
+  // Returns NULL if there is no plugin.
+  MockBrowserPlugin* GetCurrentPluginWithAttachParams(
+      BrowserPluginHostMsg_Attach_Params* params);
 };
 
 }  // namespace content

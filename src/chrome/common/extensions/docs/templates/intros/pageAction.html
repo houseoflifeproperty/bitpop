@@ -1,8 +1,4 @@
 <p>
-Use page actions to put icons inside the address bar.
-Page actions represent actions
-that can be taken on the current page,
-but that aren't applicable to all pages.
 Some examples:
 </p>
 <ul>
@@ -33,7 +29,8 @@ Register your page action in the
 like this:
 </p>
 
-<pre>{
+<pre data-filename="manifest.json">
+{
   "name": "My extension",
   ...
   <b>"page_action": {
@@ -54,7 +51,8 @@ can lose detail or make it look fuzzy. The old syntax for registering the
 default icon is still supported:
 </p>
 
-<pre>{
+<pre data-filename="manifest.json">
+{
   "name": "My extension",
   ...
   <b>"page_action": {
@@ -80,8 +78,8 @@ by reading about the
 
 <p>
 You make a page action appear and disappear using the
-$ref:pageAction.show and
-$ref:pageAction.hide methods, respectively.
+$(ref:pageAction.show) and
+$(ref:pageAction.hide) methods, respectively.
 By default, a page action is hidden.
 When you show it, you specify the tab
 in which the icon should appear.

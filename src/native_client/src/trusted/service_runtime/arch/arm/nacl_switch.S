@@ -12,16 +12,34 @@
 
 /*
  * This trusted code is linked into the service_runtime and
- * executed when switching from the service runtime to a nacl
- * module. This happens when a main nacl thread is created and starting to
- * execute the nacle code, or when nacl module is returning from a system
+ * executed when switching from the service runtime to a NaCl
+ * module. This happens when a main NaCl thread is created and starting to
+ * execute the NaCl code, or when NaCl module is returning from a system
  * call. This piece of code lives in a service runtime part of address space.
- * the one and only argument is in register r0
+ * The one and only argument is in register r0.
  *
  * r0 -- address of thread context (struct NaClThreadContext)
  */
 
-DEFINE_GLOBAL_HIDDEN_IDENTIFIER(NaClSwitch):
+/*
+ * Here we are starting a new untrusted thread.  The callee-saved VFP/NEON
+ * registers have ambient values from trusted code, which must not leak
+ * into untrusted code.  So clear them.
+ */
+DEFINE_GLOBAL_HIDDEN_FUNCTION(NaClStartSwitch):
+  veor q4, q4, q4
+  veor q5, q5, q5
+  veor q6, q6, q6
+  veor q7, q7, q7
+
+/*
+ * Execution falls through to here.  This is also the entry point for
+ * returning from a syscall, which does not need to repeat the work of
+ * clearing the callee-saved registers because the C frames for the call
+ * to NaClSyscallCSegHook and its callees will save and restore their
+ * incoming (i.e. the untrusted) values of those registers.
+ */
+DEFINE_GLOBAL_HIDDEN_FUNCTION(NaClSwitch):
 
 /*
  * Load the untrusted code's value of the fpscr into a scratch register.
@@ -41,7 +59,7 @@ DEFINE_GLOBAL_HIDDEN_IDENTIFIER(NaClSwitch):
 
 /*
  * Clear out the VFP/NEON state that otherwise might leak information.
- * Registers d0-15 (aka q4-q7) are callee-saves, so the untrusted state
+ * Registers d8-d15 (aka q4-q7) are callee-saves, so the untrusted state
  * of those will have been saved and restored by whatever trusted code
  * paths might have touched them.  The other VFP/NEON registers are
  * call-clobbered, so trusted code might have left interesting bits
@@ -65,6 +83,10 @@ DEFINE_GLOBAL_HIDDEN_IDENTIFIER(NaClSwitch):
  */
   fmxr fpscr, ip
 
+/*
+ * TODO(mcgrathr): Perhaps drop callee-saved registers (r4-r8,r10-r11)
+ * from this restore and instead just clear them in NaClStartSwitch.
+ */
   ldmia r0!, NACL_CALLEE_SAVE_LIST
   add r0, #4  /* skip prog_ctr in struct NaClThreadContext */
   /* Read sysret and new_prog_ctr from struct NaClThreadContext */

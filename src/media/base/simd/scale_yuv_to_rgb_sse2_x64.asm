@@ -2,7 +2,8 @@
 ; Use of this source code is governed by a BSD-style license that can be
 ; found in the LICENSE file.
 
-%include "x86inc.asm"
+%include "media/base/simd/media_export.asm"
+%include "third_party/x86inc/x86inc.asm"
 
 ;
 ; This file uses MMX, SSE2 and instructions.
@@ -14,11 +15,10 @@
 ;                                  const uint8* u_buf,
 ;                                  const uint8* v_buf,
 ;                                  uint8* rgb_buf,
-;                                  int width,
-;                                  int source_dx);
+;                                  ptrdiff_t width,
+;                                  ptrdiff_t source_dx);
 %define SYMBOL ScaleYUVToRGB32Row_SSE2_X64
-
-  global    mangle(SYMBOL) PRIVATE
+  EXPORT    SYMBOL
   align     function_align
 
 mangle(SYMBOL):
@@ -32,17 +32,21 @@ mangle(SYMBOL):
 ; 4. ARGB frame
 ; 5. Width
 ; 6. Source dx
+; 7. Convert table
 
-PROLOGUE  6, 7, 3, Y, U, V, ARGB, WIDTH, SOURCE_DX, COMP
+PROLOGUE  7, 7, 3, Y, U, V, ARGB, WIDTH, SOURCE_DX, R1
 
 %define     TABLEq   r10
 %define     Xq       r11
 %define     INDEXq   r12
+%define     COMPq    R1q
+%define     COMPd    R1d
+
   PUSH      r10
   PUSH      r11
   PUSH      r12
 
-  LOAD_SYM  TABLEq, mangle(kCoefficientsRgbY)
+  mov TABLEq, R1q
 
   ; Set Xq index to 0.
   xor       Xq, Xq

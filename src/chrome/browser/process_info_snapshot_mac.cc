@@ -9,9 +9,11 @@
 #include <sstream>
 
 #include "base/command_line.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
+#include "base/process/launch.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/threading/thread.h"
 
 // Default constructor.
@@ -126,7 +128,7 @@ static bool ConvertByteUnitToScale(char unit, uint64_t* out_scale) {
 static bool GetProcessMemoryInfoUsingPS(
     const std::vector<base::ProcessId>& pid_list,
     std::map<int,ProcessInfoSnapshot::ProcInfoEntry>& proc_info_entries) {
-  const FilePath kProgram("/bin/ps");
+  const base::FilePath kProgram("/bin/ps");
   CommandLine command_line(kProgram);
 
   // Get resident set size, virtual memory size.
@@ -147,7 +149,6 @@ static bool GetProcessMemoryInfoUsingPS(
   }
 
   std::istringstream in(output, std::istringstream::in);
-  std::string line;
 
   // Process lines until done.
   while (true) {
@@ -187,7 +188,7 @@ static bool GetProcessMemoryInfoUsingPS(
 
 static bool GetProcessMemoryInfoUsingTop(
     std::map<int,ProcessInfoSnapshot::ProcInfoEntry>& proc_info_entries) {
-  const FilePath kProgram("/usr/bin/top");
+  const base::FilePath kProgram("/usr/bin/top");
   CommandLine command_line(kProgram);
 
   // -stats tells top to print just the given fields as ordered.

@@ -5,20 +5,23 @@
 #ifndef CHROME_BROWSER_SYNC_GLUE_TYPED_URL_CHANGE_PROCESSOR_H_
 #define CHROME_BROWSER_SYNC_GLUE_TYPED_URL_CHANGE_PROCESSOR_H_
 
-#include "chrome/browser/sync/glue/change_processor.h"
+#include "components/sync_driver/change_processor.h"
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/sync/glue/data_type_error_handler.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
 #include "chrome/browser/sync/glue/typed_url_model_associator.h"
+#include "components/sync_driver/data_type_error_handler.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_types.h"
 
-class MessageLoop;
 class Profile;
+
+namespace base {
+class MessageLoop;
+}
 
 namespace content {
 class NotificationService;
@@ -64,8 +67,11 @@ class TypedUrlChangeProcessor : public ChangeProcessor,
   // jank.
   virtual void CommitChangesFromSyncModel() OVERRIDE;
 
+  // Stop processing changes and wait for being destroyed.
+  void Disconnect();
+
  protected:
-  virtual void StartImpl(Profile* profile) OVERRIDE;
+  virtual void StartImpl() OVERRIDE;
 
  private:
   friend class ScopedStopObserving<TypedUrlChangeProcessor>;
@@ -98,10 +104,9 @@ class TypedUrlChangeProcessor : public ChangeProcessor,
   // WebDataService which is kept alive by our data type controller
   // holding a reference.
   history::HistoryBackend* history_backend_;
+  base::MessageLoop* backend_loop_;
 
   content::NotificationRegistrar notification_registrar_;
-
-  MessageLoop* expected_loop_;
 
   scoped_ptr<content::NotificationService> notification_service_;
 
@@ -112,6 +117,9 @@ class TypedUrlChangeProcessor : public ChangeProcessor,
   std::vector<GURL> pending_deleted_urls_;
   TypedUrlModelAssociator::TypedUrlVisitVector pending_new_visits_;
   history::VisitVector pending_deleted_visits_;
+
+  bool disconnected_;
+  base::Lock disconnect_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(TypedUrlChangeProcessor);
 };

@@ -5,9 +5,10 @@
 #include "chrome/browser/lifetime/application_lifetime.h"
 
 #include "base/command_line.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/notifications/notification_ui_manager.h"
+#include "chrome/common/chrome_switches.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/views/widget/widget.h"
 
 #if defined(USE_ASH)
@@ -15,7 +16,7 @@
 #include "ui/aura/client/capture_client.h"
 #endif
 
-namespace browser {
+namespace chrome {
 
 void HandleAppExitingForPlatform() {
   // Close all non browser windows now. Those includes notifications
@@ -39,8 +40,8 @@ void HandleAppExitingForPlatform() {
 #if defined(OS_CHROMEOS)
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableZeroBrowsersOpenForTests)) {
-    // App is exiting, call EndKeepAlive() on behalf of Aura Shell.
-    EndKeepAlive();
+    // App is exiting, call DecrementKeepAliveCount() on behalf of Aura Shell.
+    DecrementKeepAliveCount();
     // Make sure we have notified the session manager that we are exiting.
     // This might be called from FastShutdown() or CloseAllBrowsers(), but not
     // if something prevents a browser from closing before SetTryingToQuit()
@@ -48,7 +49,7 @@ void HandleAppExitingForPlatform() {
     // NotifyAndTerminate does nothing if called more than once.
     NotifyAndTerminate(true);
   }
-#endif // OS_CHROMEOS
+#endif  // OS_CHROMEOS
 }
 
-}  // namespace browser
+}  // namespace chrome

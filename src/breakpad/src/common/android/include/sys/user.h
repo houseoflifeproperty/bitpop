@@ -75,6 +75,11 @@ struct user_vfpregs {
   unsigned long       fpscr;
 };
 
+#elif defined(__aarch64__)
+
+// aarch64 does not have user_regs definitions in <asm/user.h>, instead
+// use the definitions in <asm/ptrace.h>, which we don't need to redefine here.
+
 #elif defined(__i386__)
 
 #define _I386_USER_H 1  // Prevent <asm/user.h> conflicts
@@ -120,8 +125,45 @@ struct user {
 
 #elif defined(__mips__)
 
-// TODO: Provide some useful definitions here, once the rest of Breakpad
-//        requires them.
+#define _ASM_USER_H 1  // Prevent <asm/user.h> conflicts
+
+struct user_regs_struct {
+  unsigned long long regs[32];
+  unsigned long long lo;
+  unsigned long long hi;
+  unsigned long long epc;
+  unsigned long long badvaddr;
+  unsigned long long status;
+  unsigned long long cause;
+};
+
+struct user_fpregs_struct {
+  unsigned long long regs[32];
+  unsigned int fpcsr;
+  unsigned int fir;
+};
+
+#elif defined(__x86_64__)
+#include <sys/types.h>
+#include_next <sys/user.h>
+
+// This struct is essentially the same as user_i387_struct in sys/user.h
+// except that the struct name and individual field names are chosen here
+// to match the ones used in breakpad for other x86_64 platforms.
+
+struct user_fpregs_struct {
+  __u16 cwd;
+  __u16 swd;
+  __u16 ftw;
+  __u16 fop;
+  __u64 rip;
+  __u64 rdp;
+  __u32 mxcsr;
+  __u32 mxcr_mask;
+  __u32 st_space[32];   /* 8*16 bytes for each FP-reg = 128 bytes */
+  __u32 xmm_space[64];  /* 16*16 bytes for each XMM-reg = 256 bytes */
+  __u32 padding[24];
+};
 
 #else
 #  error "Unsupported Android CPU ABI"

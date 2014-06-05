@@ -4,21 +4,21 @@
 
 #include "base/logging.h"
 #include "chrome/browser/platform_util.h"
-#include "content/public/browser/android/content_view_core.h"
+#include "ui/base/android/view_android.h"
 
 namespace platform_util {
 
 // TODO: crbug/115682 to track implementation of the following methods.
 
-void ShowItemInFolder(const FilePath& full_path) {
+void ShowItemInFolder(Profile* profile, const base::FilePath& full_path) {
   NOTIMPLEMENTED();
 }
 
-void OpenItem(const FilePath& full_path) {
+void OpenItem(Profile* profile, const base::FilePath& full_path) {
   NOTIMPLEMENTED();
 }
 
-void OpenExternal(const GURL& url) {
+void OpenExternal(Profile* profile, const GURL& url) {
   NOTIMPLEMENTED();
 }
 
@@ -47,4 +47,3 @@ bool IsVisible(gfx::NativeView view) {
 }
 
 } // namespace platform_util
-

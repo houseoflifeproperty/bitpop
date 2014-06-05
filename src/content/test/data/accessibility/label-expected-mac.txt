@@ -1,1 +1,4 @@
-#<skip -- not interesting on mac>
+AXWebArea
+    AXGroup
+        AXGroup
+            AXStaticText AXValue='Label'

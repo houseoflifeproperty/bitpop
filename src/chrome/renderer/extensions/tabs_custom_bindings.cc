@@ -6,26 +6,28 @@
 
 #include <string>
 
-#include "chrome/common/extensions/extension_messages.h"
+#include "base/bind.h"
 #include "content/public/renderer/render_view.h"
-#include "grit/renderer_resources.h"
+#include "extensions/common/extension_messages.h"
+#include "extensions/renderer/script_context.h"
 #include "v8/include/v8.h"
 
 namespace extensions {
 
-TabsCustomBindings::TabsCustomBindings()
-    : ChromeV8Extension(NULL) {
-  RouteStaticFunction("OpenChannelToTab", &OpenChannelToTab);
+TabsCustomBindings::TabsCustomBindings(ScriptContext* context)
+    : ObjectBackedNativeHandler(context) {
+  RouteFunction("OpenChannelToTab",
+      base::Bind(&TabsCustomBindings::OpenChannelToTab,
+                 base::Unretained(this)));
 }
 
-// static
-v8::Handle<v8::Value> TabsCustomBindings::OpenChannelToTab(
-    const v8::Arguments& args) {
+void TabsCustomBindings::OpenChannelToTab(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   // Get the current RenderView so that we can send a routed IPC message from
   // the correct source.
-  content::RenderView* renderview = GetCurrentRenderView();
+  content::RenderView* renderview = context()->GetRenderView();
   if (!renderview)
-    return v8::Undefined();
+    return;
 
   if (args.Length() >= 3 && args[0]->IsInt32() && args[1]->IsString() &&
       args[2]->IsString()) {
@@ -36,9 +38,9 @@ v8::Handle<v8::Value> TabsCustomBindings::OpenChannelToTab(
     renderview->Send(new ExtensionHostMsg_OpenChannelToTab(
       renderview->GetRoutingID(), tab_id, extension_id, channel_name,
         &port_id));
-    return v8::Integer::New(port_id);
+    args.GetReturnValue().Set(static_cast<int32_t>(port_id));
+    return;
   }
-  return v8::Undefined();
 }
 
-}  // extensions
+}  // namespace extensions

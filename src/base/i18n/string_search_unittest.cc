@@ -6,10 +6,10 @@
 
 #include "base/i18n/rtl.h"
 #include "base/i18n/string_search.h"
-#include "base/string16.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "unicode/usearch.h"
+#include "third_party/icu/source/i18n/unicode/usearch.h"
 
 namespace base {
 namespace i18n {
@@ -197,6 +197,29 @@ TEST(StringSearchTest, UnicodeLocaleDependent) {
       a_base, a_with_ring, NULL, NULL));
 
   SetICUDefaultLocale(default_locale);
+}
+
+TEST(StringSearchTest, FixedPatternMultipleSearch) {
+  std::string default_locale(uloc_getDefault());
+  bool locale_is_posix = (default_locale == "en_US_POSIX");
+  if (locale_is_posix)
+    SetICUDefaultLocale("en_US");
+
+  size_t index = 0;
+  size_t length = 0;
+
+  // Search "hello" over multiple texts.
+  FixedPatternStringSearchIgnoringCaseAndAccents query(ASCIIToUTF16("hello"));
+  EXPECT_TRUE(query.Search(ASCIIToUTF16("12hello34"), &index, &length));
+  EXPECT_EQ(2U, index);
+  EXPECT_EQ(5U, length);
+  EXPECT_FALSE(query.Search(ASCIIToUTF16("bye"), &index, &length));
+  EXPECT_TRUE(query.Search(ASCIIToUTF16("hELLo"), &index, &length));
+  EXPECT_EQ(0U, index);
+  EXPECT_EQ(5U, length);
+
+  if (locale_is_posix)
+    SetICUDefaultLocale(default_locale.data());
 }
 
 }  // namespace i18n

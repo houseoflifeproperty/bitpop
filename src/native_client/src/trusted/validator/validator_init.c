@@ -7,13 +7,11 @@
 #include "native_client/src/shared/platform/nacl_log.h"
 #include "native_client/src/trusted/validator/ncvalidate.h"
 
-
-/* The function is not static to avoid compiler error on platforms where it is
- * not used.
- */
-void EmitExperimentalValidatorWarning(void) {
-  NaClLog(LOG_WARNING, "DANGER! USING THE EXPERIMENTAL DFA VALIDATOR!\n");
+#if !defined(NACL_VALIDATOR_RAGEL) && NACL_ARCH(NACL_TARGET_ARCH) == NACL_x86
+static INLINE void EmitObsoleteValidatorWarning(void) {
+  NaClLog(LOG_WARNING, "USING OBSOLETE NON-DFA-BASED VALIDATOR!\n");
 }
+#endif
 
 const struct NaClValidatorInterface *NaClCreateValidator(void) {
 #if NACL_ARCH(NACL_BUILD_ARCH) == NACL_arm
@@ -23,16 +21,16 @@ const struct NaClValidatorInterface *NaClCreateValidator(void) {
 #elif NACL_ARCH(NACL_TARGET_ARCH) == NACL_x86
 # if NACL_TARGET_SUBARCH == 64
 #  if defined(NACL_VALIDATOR_RAGEL)
-  EmitExperimentalValidatorWarning();
   return NaClDfaValidatorCreate_x86_64();
 #  else
+  EmitObsoleteValidatorWarning();
   return NaClValidatorCreate_x86_64();
 #  endif  /* defined(NACL_VALIDATOR_RAGEL) */
 # elif NACL_TARGET_SUBARCH == 32
 #  if defined(NACL_VALIDATOR_RAGEL)
-  EmitExperimentalValidatorWarning();
   return NaClDfaValidatorCreate_x86_32();
 #  else
+  EmitObsoleteValidatorWarning();
   return NaClValidatorCreate_x86_32();
 #  endif  /* defined(NACL_VALIDATOR_RAGEL) */
 # else

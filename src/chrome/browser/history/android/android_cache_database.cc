@@ -20,7 +20,7 @@ AndroidCacheDatabase::~AndroidCacheDatabase() {
 }
 
 sql::InitStatus AndroidCacheDatabase::InitAndroidCacheDatabase(
-    const FilePath& db_name) {
+    const base::FilePath& db_name) {
   if (!CreateDatabase(db_name))
     return sql::INIT_FAILURE;
 
@@ -92,7 +92,8 @@ bool AndroidCacheDatabase::MarkURLsAsBookmarked(
   return true;
 }
 
-bool AndroidCacheDatabase::SetFaviconID(URLID url_id, FaviconID favicon_id) {
+bool AndroidCacheDatabase::SetFaviconID(URLID url_id,
+                                        favicon_base::FaviconID favicon_id) {
   sql::Statement update_statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
       "UPDATE android_cache_db.bookmark_cache "
       "SET favicon_id = ? WHERE url_id = ? "));
@@ -107,7 +108,7 @@ bool AndroidCacheDatabase::SetFaviconID(URLID url_id, FaviconID favicon_id) {
 }
 
 SearchTermID AndroidCacheDatabase::AddSearchTerm(
-    const string16& term,
+    const base::string16& term,
     const base::Time& last_visit_time) {
   sql::Statement statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
       "INSERT INTO android_cache_db.search_terms (search, "
@@ -138,7 +139,7 @@ bool AndroidCacheDatabase::UpdateSearchTerm(SearchTermID id,
   return statement.Run();
 }
 
-SearchTermID AndroidCacheDatabase::GetSearchTerm(const string16& term,
+SearchTermID AndroidCacheDatabase::GetSearchTerm(const base::string16& term,
                                                  SearchTermRow* row) {
   sql::Statement statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
       "SELECT _id, search, date "
@@ -171,10 +172,9 @@ bool AndroidCacheDatabase::DeleteUnusedSearchTerms() {
   return statement.Run();
 }
 
-bool AndroidCacheDatabase::CreateDatabase(const FilePath& db_name) {
+bool AndroidCacheDatabase::CreateDatabase(const base::FilePath& db_name) {
   db_name_ = db_name;
-  if (file_util::PathExists(db_name_))
-    file_util::Delete(db_name_, false);
+  sql::Connection::Delete(db_name_);
 
   // Using a new connection, otherwise we can not create the database.
   sql::Connection connection;

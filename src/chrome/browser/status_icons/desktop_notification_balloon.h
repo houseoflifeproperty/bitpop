@@ -7,7 +7,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
 class Notification;
 
@@ -23,8 +23,8 @@ class DesktopNotificationBalloon {
   virtual ~DesktopNotificationBalloon();
 
   void DisplayBalloon(const gfx::ImageSkia& icon,
-                      const string16& title,
-                      const string16& contents);
+                      const base::string16& title,
+                      const base::string16& contents);
 
  private:
   std::string notification_id_;

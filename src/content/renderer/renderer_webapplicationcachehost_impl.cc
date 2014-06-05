@@ -7,16 +7,14 @@
 #include "content/common/view_messages.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebView.h"
 
 using appcache::AppCacheBackend;
-using WebKit::WebApplicationCacheHostClient;
-using WebKit::WebConsoleMessage;
+using blink::WebApplicationCacheHostClient;
+using blink::WebConsoleMessage;
 
 namespace content {
-
-static bool g_disable_logging = false;
 
 RendererWebApplicationCacheHostImpl::RendererWebApplicationCacheHostImpl(
     RenderViewImpl* render_view,
@@ -28,7 +26,7 @@ RendererWebApplicationCacheHostImpl::RendererWebApplicationCacheHostImpl(
 
 void RendererWebApplicationCacheHostImpl::OnLogMessage(
     appcache::LogLevel log_level, const std::string& message) {
-  if (g_disable_logging)
+  if (RenderThreadImpl::current()->layout_test_mode())
     return;
 
   RenderViewImpl* render_view = GetRenderView();
@@ -36,10 +34,10 @@ void RendererWebApplicationCacheHostImpl::OnLogMessage(
       !render_view->webview()->mainFrame())
     return;
 
-  WebKit::WebFrame* frame = render_view->webview()->mainFrame();
+  blink::WebFrame* frame = render_view->webview()->mainFrame();
   frame->addMessageToConsole(WebConsoleMessage(
         static_cast<WebConsoleMessage::Level>(log_level),
-        WebKit::WebString::fromUTF8(message.c_str())));
+        blink::WebString::fromUTF8(message.c_str())));
 }
 
 void RendererWebApplicationCacheHostImpl::OnContentBlocked(
@@ -58,13 +56,7 @@ void RendererWebApplicationCacheHostImpl::OnCacheSelected(
 }
 
 RenderViewImpl* RendererWebApplicationCacheHostImpl::GetRenderView() {
-  return static_cast<RenderViewImpl*>
-      (RenderThreadImpl::current()->ResolveRoute(routing_id_));
-}
-
-// static
-void RendererWebApplicationCacheHostImpl::DisableLoggingForTesting() {
-  g_disable_logging = true;
+  return RenderViewImpl::FromRoutingID(routing_id_);
 }
 
 }  // namespace content

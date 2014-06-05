@@ -5,12 +5,11 @@
 #include <set>
 #include <vector>
 
-#include "base/file_path.h"
-#include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
-#include "base/time.h"
+#include "base/strings/string_util.h"
+#include "base/time/time.h"
 #include "chrome/browser/history/url_database.h"
 #include "chrome/browser/history/visit_database.h"
 #include "sql/connection.h"
@@ -30,8 +29,7 @@ bool IsVisitInfoEqual(const VisitRow& a,
          a.url_id == b.url_id &&
          a.visit_time == b.visit_time &&
          a.referring_visit == b.referring_visit &&
-         a.transition == b.transition &&
-         a.is_indexed == b.is_indexed;
+         a.transition == b.transition;
 }
 
 }  // namespace
@@ -45,10 +43,10 @@ class VisitDatabaseTest : public PlatformTest,
 
  private:
   // Test setup.
-  void SetUp() {
+  virtual void SetUp() {
     PlatformTest::SetUp();
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-    FilePath db_file = temp_dir_.path().AppendASCII("VisitTest.db");
+    base::FilePath db_file = temp_dir_.path().AppendASCII("VisitTest.db");
 
     EXPECT_TRUE(db_.Open(db_file));
 
@@ -57,13 +55,13 @@ class VisitDatabaseTest : public PlatformTest,
     CreateMainURLIndex();
     InitVisitTable();
   }
-  void TearDown() {
+  virtual void TearDown() {
     db_.Close();
     PlatformTest::TearDown();
   }
 
   // Provided for URL/VisitDatabase.
-  virtual sql::Connection& GetDB() {
+  virtual sql::Connection& GetDB() OVERRIDE {
     return db_;
   }
 
@@ -149,7 +147,6 @@ TEST_F(VisitDatabaseTest, Update) {
   modification.transition = content::PAGE_TRANSITION_TYPED;
   modification.visit_time = Time::Now() + TimeDelta::FromDays(1);
   modification.referring_visit = 9292;
-  modification.is_indexed = true;
   UpdateVisitRow(modification);
 
   // Check that the mutated version was written.
@@ -321,6 +318,15 @@ TEST_F(VisitDatabaseTest, GetVisibleVisitsInRange) {
   EXPECT_TRUE(IsVisitInfoEqual(results[1], test_visit_rows[3]));
   EXPECT_TRUE(IsVisitInfoEqual(results[2], test_visit_rows[1]));
 
+  // Now try without de-duping, expect to see all visible visits.
+  options.duplicate_policy = QueryOptions::KEEP_ALL_DUPLICATES;
+  GetVisibleVisitsInRange(options, &results);
+  ASSERT_EQ(static_cast<size_t>(4), results.size());
+  EXPECT_TRUE(IsVisitInfoEqual(results[0], test_visit_rows[5]));
+  EXPECT_TRUE(IsVisitInfoEqual(results[1], test_visit_rows[3]));
+  EXPECT_TRUE(IsVisitInfoEqual(results[2], test_visit_rows[1]));
+  EXPECT_TRUE(IsVisitInfoEqual(results[3], test_visit_rows[0]));
+
   // Set the end time to exclude the second visit. The first visit should be
   // returned. Even though the second is a more recent visit, it's not in the
   // query range.
@@ -379,31 +385,38 @@ TEST_F(VisitDatabaseTest, VisitSource) {
   EXPECT_EQ(SOURCE_EXTENSION, sources[matches[0].visit_id]);
 }
 
-TEST_F(VisitDatabaseTest, GetIndexedVisits) {
-  // Add non-indexed visits.
-  int url_id = 111;
-  VisitRow visit_info1(
-      url_id, Time::Now(), 0, content::PAGE_TRANSITION_LINK, 0);
-  ASSERT_TRUE(AddVisit(&visit_info1, SOURCE_BROWSED));
+TEST_F(VisitDatabaseTest, GetVisibleVisitsForURL) {
+  std::vector<VisitRow> test_visit_rows = GetTestVisitRows();
 
-  VisitRow visit_info2(
-      url_id, Time::Now(), 0, content::PAGE_TRANSITION_TYPED, 0);
-  ASSERT_TRUE(AddVisit(&visit_info2, SOURCE_SYNCED));
+  for (size_t i = 0; i < test_visit_rows.size(); ++i) {
+    EXPECT_TRUE(AddVisit(&test_visit_rows[i], SOURCE_BROWSED));
+  }
 
-  std::vector<VisitRow> visits;
-  EXPECT_TRUE(GetVisitsForURL(url_id, &visits));
-  EXPECT_EQ(static_cast<size_t>(2), visits.size());
-  EXPECT_TRUE(GetIndexedVisitsForURL(url_id, &visits));
-  EXPECT_EQ(static_cast<size_t>(0), visits.size());
+  // Query the visits for the first url id.  We should not get the first or the
+  // second visit (duplicates of the sixth) or any other urls, redirects or
+  // subframe visits.
+  VisitVector results;
+  QueryOptions options;
+  int url_id = test_visit_rows[0].url_id;
+  GetVisibleVisitsForURL(url_id, options, &results);
+  ASSERT_EQ(static_cast<size_t>(1), results.size());
+  EXPECT_TRUE(IsVisitInfoEqual(results[0], test_visit_rows[5]));
 
-  VisitRow visit_info3(
-      url_id, Time::Now(), 2, content::PAGE_TRANSITION_TYPED, 0);
-  visit_info3.is_indexed = true;
-  ASSERT_TRUE(AddVisit(&visit_info3, SOURCE_SYNCED));
-  EXPECT_TRUE(GetVisitsForURL(url_id, &visits));
-  EXPECT_EQ(static_cast<size_t>(3), visits.size());
-  EXPECT_TRUE(GetIndexedVisitsForURL(url_id, &visits));
-  EXPECT_EQ(static_cast<size_t>(1), visits.size());
+  // Now try with only per-day de-duping -- the second visit should appear,
+  // since it's a duplicate of visit6 but on a different day.
+  options.duplicate_policy = QueryOptions::REMOVE_DUPLICATES_PER_DAY;
+  GetVisibleVisitsForURL(url_id, options, &results);
+  ASSERT_EQ(static_cast<size_t>(2), results.size());
+  EXPECT_TRUE(IsVisitInfoEqual(results[0], test_visit_rows[5]));
+  EXPECT_TRUE(IsVisitInfoEqual(results[1], test_visit_rows[1]));
+
+  // Now try without de-duping, expect to see all visible visits to url id 1.
+  options.duplicate_policy = QueryOptions::KEEP_ALL_DUPLICATES;
+  GetVisibleVisitsForURL(url_id, options, &results);
+  ASSERT_EQ(static_cast<size_t>(3), results.size());
+  EXPECT_TRUE(IsVisitInfoEqual(results[0], test_visit_rows[5]));
+  EXPECT_TRUE(IsVisitInfoEqual(results[1], test_visit_rows[1]));
+  EXPECT_TRUE(IsVisitInfoEqual(results[2], test_visit_rows[0]));
 }
 
 }  // namespace history

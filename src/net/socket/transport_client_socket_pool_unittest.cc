@@ -9,17 +9,21 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/threading/platform_thread.h"
+#include "net/base/capturing_net_log.h"
 #include "net/base/ip_endpoint.h"
-#include "net/base/mock_host_resolver.h"
+#include "net/base/load_timing_info.h"
+#include "net/base/load_timing_info_test_util.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "net/base/test_completion_callback.h"
+#include "net/dns/mock_host_resolver.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/client_socket_pool_histograms.h"
 #include "net/socket/socket_test_util.h"
+#include "net/socket/ssl_client_socket.h"
 #include "net/socket/stream_socket.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -32,6 +36,41 @@ namespace {
 const int kMaxSockets = 32;
 const int kMaxSocketsPerGroup = 6;
 const net::RequestPriority kDefaultPriority = LOW;
+
+// Make sure |handle| sets load times correctly when it has been assigned a
+// reused socket.
+void TestLoadTimingInfoConnectedReused(const ClientSocketHandle& handle) {
+  LoadTimingInfo load_timing_info;
+  // Only pass true in as |is_reused|, as in general, HttpStream types should
+  // have stricter concepts of reuse than socket pools.
+  EXPECT_TRUE(handle.GetLoadTimingInfo(true, &load_timing_info));
+
+  EXPECT_TRUE(load_timing_info.socket_reused);
+  EXPECT_NE(NetLog::Source::kInvalidId, load_timing_info.socket_log_id);
+
+  ExpectConnectTimingHasNoTimes(load_timing_info.connect_timing);
+  ExpectLoadTimingHasOnlyConnectionTimes(load_timing_info);
+}
+
+// Make sure |handle| sets load times correctly when it has been assigned a
+// fresh socket.  Also runs TestLoadTimingInfoConnectedReused, since the owner
+// of a connection where |is_reused| is false may consider the connection
+// reused.
+void TestLoadTimingInfoConnectedNotReused(const ClientSocketHandle& handle) {
+  EXPECT_FALSE(handle.is_reused());
+
+  LoadTimingInfo load_timing_info;
+  EXPECT_TRUE(handle.GetLoadTimingInfo(false, &load_timing_info));
+
+  EXPECT_FALSE(load_timing_info.socket_reused);
+  EXPECT_NE(NetLog::Source::kInvalidId, load_timing_info.socket_log_id);
+
+  ExpectConnectTimingHasTimes(load_timing_info.connect_timing,
+                              CONNECT_TIMING_HAS_DNS_TIMES);
+  ExpectLoadTimingHasOnlyConnectionTimes(load_timing_info);
+
+  TestLoadTimingInfoConnectedReused(handle);
+}
 
 void SetIPv4Address(IPEndPoint* address) {
   IPAddressNumber number;
@@ -47,28 +86,30 @@ void SetIPv6Address(IPEndPoint* address) {
 
 class MockClientSocket : public StreamSocket {
  public:
-  MockClientSocket(const AddressList& addrlist)
+  MockClientSocket(const AddressList& addrlist, net::NetLog* net_log)
       : connected_(false),
-        addrlist_(addrlist) {}
+        addrlist_(addrlist),
+        net_log_(BoundNetLog::Make(net_log, NetLog::SOURCE_SOCKET)) {
+  }
 
   // StreamSocket implementation.
-  virtual int Connect(const CompletionCallback& callback) {
+  virtual int Connect(const CompletionCallback& callback) OVERRIDE {
     connected_ = true;
     return OK;
   }
-  virtual void Disconnect() {
+  virtual void Disconnect() OVERRIDE {
     connected_ = false;
   }
-  virtual bool IsConnected() const {
+  virtual bool IsConnected() const OVERRIDE {
     return connected_;
   }
-  virtual bool IsConnectedAndIdle() const {
+  virtual bool IsConnectedAndIdle() const OVERRIDE {
     return connected_;
   }
-  virtual int GetPeerAddress(IPEndPoint* address) const {
+  virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE {
     return ERR_UNEXPECTED;
   }
-  virtual int GetLocalAddress(IPEndPoint* address) const {
+  virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE {
     if (!connected_)
       return ERR_SOCKET_NOT_CONNECTED;
     if (addrlist_.front().GetFamily() == ADDRESS_FAMILY_IPV4)
@@ -77,107 +118,106 @@ class MockClientSocket : public StreamSocket {
       SetIPv6Address(address);
     return OK;
   }
-  virtual const BoundNetLog& NetLog() const {
+  virtual const BoundNetLog& NetLog() const OVERRIDE {
     return net_log_;
   }
 
-  virtual void SetSubresourceSpeculation() {}
-  virtual void SetOmniboxSpeculation() {}
-  virtual bool WasEverUsed() const { return false; }
-  virtual bool UsingTCPFastOpen() const { return false; }
-  virtual int64 NumBytesRead() const { return -1; }
-  virtual base::TimeDelta GetConnectTimeMicros() const {
-    return base::TimeDelta::FromMicroseconds(-1);
-  }
-  virtual bool WasNpnNegotiated() const {
+  virtual void SetSubresourceSpeculation() OVERRIDE {}
+  virtual void SetOmniboxSpeculation() OVERRIDE {}
+  virtual bool WasEverUsed() const OVERRIDE { return false; }
+  virtual bool UsingTCPFastOpen() const OVERRIDE { return false; }
+  virtual bool WasNpnNegotiated() const OVERRIDE {
     return false;
   }
-  virtual NextProto GetNegotiatedProtocol() const {
+  virtual NextProto GetNegotiatedProtocol() const OVERRIDE {
     return kProtoUnknown;
   }
-  virtual bool GetSSLInfo(SSLInfo* ssl_info) {
+  virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE {
     return false;
   }
 
   // Socket implementation.
   virtual int Read(IOBuffer* buf, int buf_len,
-                   const CompletionCallback& callback) {
+                   const CompletionCallback& callback) OVERRIDE {
     return ERR_FAILED;
   }
   virtual int Write(IOBuffer* buf, int buf_len,
-                    const CompletionCallback& callback) {
+                    const CompletionCallback& callback) OVERRIDE {
     return ERR_FAILED;
   }
-  virtual bool SetReceiveBufferSize(int32 size) { return true; }
-  virtual bool SetSendBufferSize(int32 size) { return true; }
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE { return OK; }
+  virtual int SetSendBufferSize(int32 size) OVERRIDE { return OK; }
 
  private:
   bool connected_;
   const AddressList addrlist_;
   BoundNetLog net_log_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockClientSocket);
 };
 
 class MockFailingClientSocket : public StreamSocket {
  public:
-  MockFailingClientSocket(const AddressList& addrlist) : addrlist_(addrlist) {}
+  MockFailingClientSocket(const AddressList& addrlist, net::NetLog* net_log)
+      : addrlist_(addrlist),
+        net_log_(BoundNetLog::Make(net_log, NetLog::SOURCE_SOCKET)) {
+  }
 
   // StreamSocket implementation.
-  virtual int Connect(const CompletionCallback& callback) {
+  virtual int Connect(const CompletionCallback& callback) OVERRIDE {
     return ERR_CONNECTION_FAILED;
   }
 
-  virtual void Disconnect() {}
+  virtual void Disconnect() OVERRIDE {}
 
-  virtual bool IsConnected() const {
+  virtual bool IsConnected() const OVERRIDE {
     return false;
   }
-  virtual bool IsConnectedAndIdle() const {
+  virtual bool IsConnectedAndIdle() const OVERRIDE {
     return false;
   }
-  virtual int GetPeerAddress(IPEndPoint* address) const {
+  virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE {
     return ERR_UNEXPECTED;
   }
-  virtual int GetLocalAddress(IPEndPoint* address) const {
+  virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE {
     return ERR_UNEXPECTED;
   }
-  virtual const BoundNetLog& NetLog() const {
+  virtual const BoundNetLog& NetLog() const OVERRIDE {
     return net_log_;
   }
 
-  virtual void SetSubresourceSpeculation() {}
-  virtual void SetOmniboxSpeculation() {}
-  virtual bool WasEverUsed() const { return false; }
-  virtual bool UsingTCPFastOpen() const { return false; }
-  virtual int64 NumBytesRead() const { return -1; }
-  virtual base::TimeDelta GetConnectTimeMicros() const {
-    return base::TimeDelta::FromMicroseconds(-1);
-  }
-  virtual bool WasNpnNegotiated() const {
+  virtual void SetSubresourceSpeculation() OVERRIDE {}
+  virtual void SetOmniboxSpeculation() OVERRIDE {}
+  virtual bool WasEverUsed() const OVERRIDE { return false; }
+  virtual bool UsingTCPFastOpen() const OVERRIDE { return false; }
+  virtual bool WasNpnNegotiated() const OVERRIDE {
     return false;
   }
-  virtual NextProto GetNegotiatedProtocol() const {
+  virtual NextProto GetNegotiatedProtocol() const OVERRIDE {
     return kProtoUnknown;
   }
-  virtual bool GetSSLInfo(SSLInfo* ssl_info) {
+  virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE {
     return false;
   }
 
   // Socket implementation.
   virtual int Read(IOBuffer* buf, int buf_len,
-                   const CompletionCallback& callback) {
+                   const CompletionCallback& callback) OVERRIDE {
     return ERR_FAILED;
   }
 
   virtual int Write(IOBuffer* buf, int buf_len,
-                    const CompletionCallback& callback) {
+                    const CompletionCallback& callback) OVERRIDE {
     return ERR_FAILED;
   }
-  virtual bool SetReceiveBufferSize(int32 size) { return true; }
-  virtual bool SetSendBufferSize(int32 size) { return true; }
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE { return OK; }
+  virtual int SetSendBufferSize(int32 size) OVERRIDE { return OK; }
 
  private:
   const AddressList addrlist_;
   BoundNetLog net_log_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockFailingClientSocket);
 };
 
 class MockPendingClientSocket : public StreamSocket {
@@ -190,17 +230,20 @@ class MockPendingClientSocket : public StreamSocket {
       const AddressList& addrlist,
       bool should_connect,
       bool should_stall,
-      base::TimeDelta delay)
-      : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
-        should_connect_(should_connect),
+      base::TimeDelta delay,
+      net::NetLog* net_log)
+      : should_connect_(should_connect),
         should_stall_(should_stall),
         delay_(delay),
         is_connected_(false),
-        addrlist_(addrlist) {}
+        addrlist_(addrlist),
+        net_log_(BoundNetLog::Make(net_log, NetLog::SOURCE_SOCKET)),
+        weak_factory_(this) {
+  }
 
   // StreamSocket implementation.
-  virtual int Connect(const CompletionCallback& callback) {
-    MessageLoop::current()->PostDelayedTask(
+  virtual int Connect(const CompletionCallback& callback) OVERRIDE {
+    base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&MockPendingClientSocket::DoCallback,
                    weak_factory_.GetWeakPtr(), callback),
@@ -208,18 +251,18 @@ class MockPendingClientSocket : public StreamSocket {
     return ERR_IO_PENDING;
   }
 
-  virtual void Disconnect() {}
+  virtual void Disconnect() OVERRIDE {}
 
-  virtual bool IsConnected() const {
+  virtual bool IsConnected() const OVERRIDE {
     return is_connected_;
   }
-  virtual bool IsConnectedAndIdle() const {
+  virtual bool IsConnectedAndIdle() const OVERRIDE {
     return is_connected_;
   }
-  virtual int GetPeerAddress(IPEndPoint* address) const {
+  virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE {
     return ERR_UNEXPECTED;
   }
-  virtual int GetLocalAddress(IPEndPoint* address) const {
+  virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE {
     if (!is_connected_)
       return ERR_SOCKET_NOT_CONNECTED;
     if (addrlist_.front().GetFamily() == ADDRESS_FAMILY_IPV4)
@@ -228,40 +271,36 @@ class MockPendingClientSocket : public StreamSocket {
       SetIPv6Address(address);
     return OK;
   }
-  virtual const BoundNetLog& NetLog() const {
+  virtual const BoundNetLog& NetLog() const OVERRIDE {
     return net_log_;
   }
 
-  virtual void SetSubresourceSpeculation() {}
-  virtual void SetOmniboxSpeculation() {}
-  virtual bool WasEverUsed() const { return false; }
-  virtual bool UsingTCPFastOpen() const { return false; }
-  virtual int64 NumBytesRead() const { return -1; }
-  virtual base::TimeDelta GetConnectTimeMicros() const {
-    return base::TimeDelta::FromMicroseconds(-1);
-  }
-  virtual bool WasNpnNegotiated() const {
+  virtual void SetSubresourceSpeculation() OVERRIDE {}
+  virtual void SetOmniboxSpeculation() OVERRIDE {}
+  virtual bool WasEverUsed() const OVERRIDE { return false; }
+  virtual bool UsingTCPFastOpen() const OVERRIDE { return false; }
+  virtual bool WasNpnNegotiated() const OVERRIDE {
     return false;
   }
-  virtual NextProto GetNegotiatedProtocol() const {
+  virtual NextProto GetNegotiatedProtocol() const OVERRIDE {
     return kProtoUnknown;
   }
-  virtual bool GetSSLInfo(SSLInfo* ssl_info) {
+  virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE {
     return false;
   }
 
   // Socket implementation.
   virtual int Read(IOBuffer* buf, int buf_len,
-                   const CompletionCallback& callback) {
+                   const CompletionCallback& callback) OVERRIDE {
     return ERR_FAILED;
   }
 
   virtual int Write(IOBuffer* buf, int buf_len,
-                    const CompletionCallback& callback) {
+                    const CompletionCallback& callback) OVERRIDE {
     return ERR_FAILED;
   }
-  virtual bool SetReceiveBufferSize(int32 size) { return true; }
-  virtual bool SetSendBufferSize(int32 size) { return true; }
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE { return OK; }
+  virtual int SetSendBufferSize(int32 size) OVERRIDE { return OK; }
 
  private:
   void DoCallback(const CompletionCallback& callback) {
@@ -277,13 +316,16 @@ class MockPendingClientSocket : public StreamSocket {
     }
   }
 
-  base::WeakPtrFactory<MockPendingClientSocket> weak_factory_;
   bool should_connect_;
   bool should_stall_;
   base::TimeDelta delay_;
   bool is_connected_;
   const AddressList addrlist_;
   BoundNetLog net_log_;
+
+  base::WeakPtrFactory<MockPendingClientSocket> weak_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockPendingClientSocket);
 };
 
 class MockClientSocketFactory : public ClientSocketFactory {
@@ -299,26 +341,26 @@ class MockClientSocketFactory : public ClientSocketFactory {
     MOCK_STALLED_CLIENT_SOCKET,
   };
 
-  MockClientSocketFactory()
-      : allocation_count_(0), client_socket_type_(MOCK_CLIENT_SOCKET),
-        client_socket_types_(NULL), client_socket_index_(0),
-        client_socket_index_max_(0),
+  explicit MockClientSocketFactory(NetLog* net_log)
+      : net_log_(net_log), allocation_count_(0),
+        client_socket_type_(MOCK_CLIENT_SOCKET), client_socket_types_(NULL),
+        client_socket_index_(0), client_socket_index_max_(0),
         delay_(base::TimeDelta::FromMilliseconds(
             ClientSocketPool::kMaxConnectRetryIntervalMs)) {}
 
-  virtual DatagramClientSocket* CreateDatagramClientSocket(
+  virtual scoped_ptr<DatagramClientSocket> CreateDatagramClientSocket(
       DatagramSocket::BindType bind_type,
       const RandIntCallback& rand_int_cb,
       NetLog* net_log,
-      const NetLog::Source& source) {
+      const NetLog::Source& source) OVERRIDE {
     NOTREACHED();
-    return NULL;
+    return scoped_ptr<DatagramClientSocket>();
   }
 
-  virtual StreamSocket* CreateTransportClientSocket(
+  virtual scoped_ptr<StreamSocket> CreateTransportClientSocket(
       const AddressList& addresses,
       NetLog* /* net_log */,
-      const NetLog::Source& /* source */) {
+      const NetLog::Source& /* source */) OVERRIDE {
     allocation_count_++;
 
     ClientSocketType type = client_socket_type_;
@@ -329,36 +371,44 @@ class MockClientSocketFactory : public ClientSocketFactory {
 
     switch (type) {
       case MOCK_CLIENT_SOCKET:
-        return new MockClientSocket(addresses);
+        return scoped_ptr<StreamSocket>(
+            new MockClientSocket(addresses, net_log_));
       case MOCK_FAILING_CLIENT_SOCKET:
-        return new MockFailingClientSocket(addresses);
+        return scoped_ptr<StreamSocket>(
+            new MockFailingClientSocket(addresses, net_log_));
       case MOCK_PENDING_CLIENT_SOCKET:
-        return new MockPendingClientSocket(
-            addresses, true, false, base::TimeDelta());
+        return scoped_ptr<StreamSocket>(
+            new MockPendingClientSocket(
+                addresses, true, false, base::TimeDelta(), net_log_));
       case MOCK_PENDING_FAILING_CLIENT_SOCKET:
-        return new MockPendingClientSocket(
-            addresses, false, false, base::TimeDelta());
+        return scoped_ptr<StreamSocket>(
+            new MockPendingClientSocket(
+                addresses, false, false, base::TimeDelta(), net_log_));
       case MOCK_DELAYED_CLIENT_SOCKET:
-        return new MockPendingClientSocket(addresses, true, false, delay_);
+        return scoped_ptr<StreamSocket>(
+            new MockPendingClientSocket(
+                addresses, true, false, delay_, net_log_));
       case MOCK_STALLED_CLIENT_SOCKET:
-        return new MockPendingClientSocket(
-            addresses, true, true, base::TimeDelta());
+        return scoped_ptr<StreamSocket>(
+            new MockPendingClientSocket(
+                addresses, true, true, base::TimeDelta(), net_log_));
       default:
         NOTREACHED();
-        return new MockClientSocket(addresses);
+        return scoped_ptr<StreamSocket>(
+            new MockClientSocket(addresses, net_log_));
     }
   }
 
-  virtual SSLClientSocket* CreateSSLClientSocket(
-      ClientSocketHandle* transport_socket,
+  virtual scoped_ptr<SSLClientSocket> CreateSSLClientSocket(
+      scoped_ptr<ClientSocketHandle> transport_socket,
       const HostPortPair& host_and_port,
       const SSLConfig& ssl_config,
-      const SSLClientSocketContext& context) {
+      const SSLClientSocketContext& context) OVERRIDE {
     NOTIMPLEMENTED();
-    return NULL;
+    return scoped_ptr<SSLClientSocket>();
   }
 
-  virtual void ClearSSLSessionCache() {
+  virtual void ClearSSLSessionCache() OVERRIDE {
     NOTIMPLEMENTED();
   }
 
@@ -380,12 +430,15 @@ class MockClientSocketFactory : public ClientSocketFactory {
   void set_delay(base::TimeDelta delay) { delay_ = delay; }
 
  private:
+  NetLog* net_log_;
   int allocation_count_;
   ClientSocketType client_socket_type_;
   ClientSocketType* client_socket_types_;
   int client_socket_index_;
   int client_socket_index_max_;
   base::TimeDelta delay_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockClientSocketFactory);
 };
 
 class TransportClientSocketPoolTest : public testing::Test {
@@ -395,14 +448,11 @@ class TransportClientSocketPoolTest : public testing::Test {
             ClientSocketPoolBaseHelper::set_connect_backup_jobs_enabled(true)),
         params_(
             new TransportSocketParams(HostPortPair("www.google.com", 80),
-                                      kDefaultPriority, false, false,
-                                      OnHostResolutionCallback())),
-        low_params_(
-            new TransportSocketParams(HostPortPair("www.google.com", 80),
-                                      LOW, false, false,
+                                      false, false,
                                       OnHostResolutionCallback())),
         histograms_(new ClientSocketPoolHistograms("TCPUnitTest")),
         host_resolver_(new MockHostResolver),
+        client_socket_factory_(&net_log_),
         pool_(kMaxSockets,
               kMaxSocketsPerGroup,
               histograms_.get(),
@@ -411,14 +461,14 @@ class TransportClientSocketPoolTest : public testing::Test {
               NULL) {
   }
 
-  ~TransportClientSocketPoolTest() {
+  virtual ~TransportClientSocketPoolTest() {
     internal::ClientSocketPoolBaseHelper::set_connect_backup_jobs_enabled(
         connect_backup_jobs_enabled_);
   }
 
   int StartRequest(const std::string& group_name, RequestPriority priority) {
     scoped_refptr<TransportSocketParams> params(new TransportSocketParams(
-        HostPortPair("www.google.com", 80), MEDIUM, false, false,
+        HostPortPair("www.google.com", 80), false, false,
         OnHostResolutionCallback()));
     return test_base_.StartRequestUsingPool(
         &pool_, group_name, priority, params);
@@ -440,13 +490,15 @@ class TransportClientSocketPoolTest : public testing::Test {
   size_t completion_count() const { return test_base_.completion_count(); }
 
   bool connect_backup_jobs_enabled_;
+  CapturingNetLog net_log_;
   scoped_refptr<TransportSocketParams> params_;
-  scoped_refptr<TransportSocketParams> low_params_;
   scoped_ptr<ClientSocketPoolHistograms> histograms_;
   scoped_ptr<MockHostResolver> host_resolver_;
   MockClientSocketFactory client_socket_factory_;
   TransportClientSocketPool pool_;
   ClientSocketPoolTest test_base_;
+
+  DISALLOW_COPY_AND_ASSIGN(TransportClientSocketPoolTest);
 };
 
 TEST(TransportConnectJobTest, MakeAddrListStartWithIPv4) {
@@ -523,7 +575,7 @@ TEST(TransportConnectJobTest, MakeAddrListStartWithIPv4) {
 TEST_F(TransportClientSocketPoolTest, Basic) {
   TestCompletionCallback callback;
   ClientSocketHandle handle;
-  int rv = handle.Init("a", low_params_, LOW, callback.callback(), &pool_,
+  int rv = handle.Init("a", params_, LOW, callback.callback(), &pool_,
                        BoundNetLog());
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_FALSE(handle.is_initialized());
@@ -532,8 +584,21 @@ TEST_F(TransportClientSocketPoolTest, Basic) {
   EXPECT_EQ(OK, callback.WaitForResult());
   EXPECT_TRUE(handle.is_initialized());
   EXPECT_TRUE(handle.socket());
+  TestLoadTimingInfoConnectedNotReused(handle);
+}
 
-  handle.Reset();
+// Make sure that TransportConnectJob passes on its priority to its
+// HostResolver request on Init.
+TEST_F(TransportClientSocketPoolTest, SetResolvePriorityOnInit) {
+  for (int i = MINIMUM_PRIORITY; i <= MAXIMUM_PRIORITY; ++i) {
+    RequestPriority priority = static_cast<RequestPriority>(i);
+    TestCompletionCallback callback;
+    ClientSocketHandle handle;
+    EXPECT_EQ(ERR_IO_PENDING,
+              handle.Init("a", params_, priority, callback.callback(), &pool_,
+                          BoundNetLog()));
+    EXPECT_EQ(priority, host_resolver_->last_request_priority());
+  }
 }
 
 TEST_F(TransportClientSocketPoolTest, InitHostResolutionFailure) {
@@ -542,7 +607,7 @@ TEST_F(TransportClientSocketPoolTest, InitHostResolutionFailure) {
   ClientSocketHandle handle;
   HostPortPair host_port_pair("unresolvable.host.name", 80);
   scoped_refptr<TransportSocketParams> dest(new TransportSocketParams(
-      host_port_pair, kDefaultPriority, false, false,
+      host_port_pair, false, false,
       OnHostResolutionCallback()));
   EXPECT_EQ(ERR_IO_PENDING,
             handle.Init("a", dest, kDefaultPriority, callback.callback(),
@@ -792,9 +857,8 @@ class RequestSocketCallback : public TestCompletionCallbackBase {
       : handle_(handle),
         pool_(pool),
         within_callback_(false),
-        ALLOW_THIS_IN_INITIALIZER_LIST(callback_(
-            base::Bind(&RequestSocketCallback::OnComplete,
-                       base::Unretained(this)))) {
+        callback_(base::Bind(&RequestSocketCallback::OnComplete,
+                             base::Unretained(this))) {
   }
 
   virtual ~RequestSocketCallback() {}
@@ -812,12 +876,13 @@ class RequestSocketCallback : public TestCompletionCallbackBase {
       handle_->socket()->Disconnect();
       handle_->Reset();
       {
-        MessageLoop::ScopedNestableTaskAllower allow(MessageLoop::current());
-        MessageLoop::current()->RunUntilIdle();
+        base::MessageLoop::ScopedNestableTaskAllower allow(
+            base::MessageLoop::current());
+        base::MessageLoop::current()->RunUntilIdle();
       }
       within_callback_ = true;
       scoped_refptr<TransportSocketParams> dest(new TransportSocketParams(
-          HostPortPair("www.google.com", 80), LOWEST, false, false,
+          HostPortPair("www.google.com", 80), false, false,
           OnHostResolutionCallback()));
       int rv = handle_->Init("a", dest, LOWEST, callback(), pool_,
                              BoundNetLog());
@@ -837,7 +902,7 @@ TEST_F(TransportClientSocketPoolTest, RequestTwice) {
   ClientSocketHandle handle;
   RequestSocketCallback callback(&handle, &pool_);
   scoped_refptr<TransportSocketParams> dest(new TransportSocketParams(
-      HostPortPair("www.google.com", 80), LOWEST, false, false,
+      HostPortPair("www.google.com", 80), false, false,
       OnHostResolutionCallback()));
   int rv = handle.Init("a", dest, LOWEST, callback.callback(), &pool_,
                        BoundNetLog());
@@ -899,10 +964,38 @@ TEST_F(TransportClientSocketPoolTest, FailingActiveRequestWithPendingRequests) {
     EXPECT_EQ(ERR_CONNECTION_FAILED, (*requests())[i]->WaitForResult());
 }
 
+TEST_F(TransportClientSocketPoolTest, IdleSocketLoadTiming) {
+  TestCompletionCallback callback;
+  ClientSocketHandle handle;
+  int rv = handle.Init("a", params_, LOW, callback.callback(), &pool_,
+                       BoundNetLog());
+  EXPECT_EQ(ERR_IO_PENDING, rv);
+  EXPECT_FALSE(handle.is_initialized());
+  EXPECT_FALSE(handle.socket());
+
+  EXPECT_EQ(OK, callback.WaitForResult());
+  EXPECT_TRUE(handle.is_initialized());
+  EXPECT_TRUE(handle.socket());
+  TestLoadTimingInfoConnectedNotReused(handle);
+
+  handle.Reset();
+  // Need to run all pending to release the socket back to the pool.
+  base::MessageLoop::current()->RunUntilIdle();
+
+  // Now we should have 1 idle socket.
+  EXPECT_EQ(1, pool_.IdleSocketCount());
+
+  rv = handle.Init("a", params_, LOW, callback.callback(), &pool_,
+                   BoundNetLog());
+  EXPECT_EQ(OK, rv);
+  EXPECT_EQ(0, pool_.IdleSocketCount());
+  TestLoadTimingInfoConnectedReused(handle);
+}
+
 TEST_F(TransportClientSocketPoolTest, ResetIdleSocketsOnIPAddressChange) {
   TestCompletionCallback callback;
   ClientSocketHandle handle;
-  int rv = handle.Init("a", low_params_, LOW, callback.callback(), &pool_,
+  int rv = handle.Init("a", params_, LOW, callback.callback(), &pool_,
                        BoundNetLog());
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_FALSE(handle.is_initialized());
@@ -915,14 +1008,14 @@ TEST_F(TransportClientSocketPoolTest, ResetIdleSocketsOnIPAddressChange) {
   handle.Reset();
 
   // Need to run all pending to release the socket back to the pool.
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   // Now we should have 1 idle socket.
   EXPECT_EQ(1, pool_.IdleSocketCount());
 
   // After an IP address change, we should have 0 idle sockets.
   NetworkChangeNotifier::NotifyObserversOfIPAddressChangeForTests();
-  MessageLoop::current()->RunUntilIdle();  // Notification happens async.
+  base::MessageLoop::current()->RunUntilIdle();  // Notification happens async.
 
   EXPECT_EQ(0, pool_.IdleSocketCount());
 }
@@ -958,21 +1051,21 @@ TEST_F(TransportClientSocketPoolTest, BackupSocketConnect) {
 
     TestCompletionCallback callback;
     ClientSocketHandle handle;
-    int rv = handle.Init("b", low_params_, LOW, callback.callback(), &pool_,
+    int rv = handle.Init("b", params_, LOW, callback.callback(), &pool_,
                          BoundNetLog());
     EXPECT_EQ(ERR_IO_PENDING, rv);
     EXPECT_FALSE(handle.is_initialized());
     EXPECT_FALSE(handle.socket());
 
     // Create the first socket, set the timer.
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
 
     // Wait for the backup socket timer to fire.
     base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(
         ClientSocketPool::kMaxConnectRetryIntervalMs + 50));
 
     // Let the appropriate socket connect.
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
 
     EXPECT_EQ(OK, callback.WaitForResult());
     EXPECT_TRUE(handle.is_initialized());
@@ -1000,14 +1093,14 @@ TEST_F(TransportClientSocketPoolTest, BackupSocketCancel) {
 
     TestCompletionCallback callback;
     ClientSocketHandle handle;
-    int rv = handle.Init("c", low_params_, LOW, callback.callback(), &pool_,
+    int rv = handle.Init("c", params_, LOW, callback.callback(), &pool_,
                          BoundNetLog());
     EXPECT_EQ(ERR_IO_PENDING, rv);
     EXPECT_FALSE(handle.is_initialized());
     EXPECT_FALSE(handle.socket());
 
     // Create the first socket, set the timer.
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
 
     if (index == CANCEL_AFTER_WAIT) {
       // Wait for the backup socket timer to fire.
@@ -1016,7 +1109,7 @@ TEST_F(TransportClientSocketPoolTest, BackupSocketCancel) {
     }
 
     // Let the appropriate socket connect.
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
 
     handle.Reset();
 
@@ -1046,14 +1139,14 @@ TEST_F(TransportClientSocketPoolTest, BackupSocketFailAfterStall) {
 
   TestCompletionCallback callback;
   ClientSocketHandle handle;
-  int rv = handle.Init("b", low_params_, LOW, callback.callback(), &pool_,
+  int rv = handle.Init("b", params_, LOW, callback.callback(), &pool_,
                        BoundNetLog());
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_FALSE(handle.is_initialized());
   EXPECT_FALSE(handle.socket());
 
   // Create the first socket, set the timer.
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   // Wait for the backup socket timer to fire.
   base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(
@@ -1064,7 +1157,7 @@ TEST_F(TransportClientSocketPoolTest, BackupSocketFailAfterStall) {
   host_resolver_->set_synchronous_mode(true);
 
   // Let the appropriate socket connect.
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   EXPECT_EQ(ERR_CONNECTION_FAILED, callback.WaitForResult());
   EXPECT_FALSE(handle.is_initialized());
@@ -1094,14 +1187,14 @@ TEST_F(TransportClientSocketPoolTest, BackupSocketFailAfterDelay) {
 
   TestCompletionCallback callback;
   ClientSocketHandle handle;
-  int rv = handle.Init("b", low_params_, LOW, callback.callback(), &pool_,
+  int rv = handle.Init("b", params_, LOW, callback.callback(), &pool_,
                        BoundNetLog());
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_FALSE(handle.is_initialized());
   EXPECT_FALSE(handle.socket());
 
   // Create the first socket, set the timer.
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   // Wait for the backup socket timer to fire.
   base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(
@@ -1112,7 +1205,7 @@ TEST_F(TransportClientSocketPoolTest, BackupSocketFailAfterDelay) {
   host_resolver_->set_synchronous_mode(true);
 
   // Let the appropriate socket connect.
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   EXPECT_EQ(ERR_CONNECTION_FAILED, callback.WaitForResult());
   EXPECT_FALSE(handle.is_initialized());
@@ -1145,12 +1238,12 @@ TEST_F(TransportClientSocketPoolTest, IPv6FallbackSocketIPv4FinishesFirst) {
   client_socket_factory_.set_client_socket_types(case_types, 2);
 
   // Resolve an AddressList with a IPv6 address first and then a IPv4 address.
-  host_resolver_->rules()->AddIPLiteralRule(
-      "*", "2:abcd::3:4:ff,2.2.2.2", "");
+  host_resolver_->rules()
+      ->AddIPLiteralRule("*", "2:abcd::3:4:ff,2.2.2.2", std::string());
 
   TestCompletionCallback callback;
   ClientSocketHandle handle;
-  int rv = handle.Init("a", low_params_, LOW, callback.callback(), &pool,
+  int rv = handle.Init("a", params_, LOW, callback.callback(), &pool,
                        BoundNetLog());
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_FALSE(handle.is_initialized());
@@ -1190,12 +1283,12 @@ TEST_F(TransportClientSocketPoolTest, IPv6FallbackSocketIPv6FinishesFirst) {
       TransportConnectJob::kIPv6FallbackTimerInMs + 50));
 
   // Resolve an AddressList with a IPv6 address first and then a IPv4 address.
-  host_resolver_->rules()->AddIPLiteralRule(
-      "*", "2:abcd::3:4:ff,2.2.2.2", "");
+  host_resolver_->rules()
+      ->AddIPLiteralRule("*", "2:abcd::3:4:ff,2.2.2.2", std::string());
 
   TestCompletionCallback callback;
   ClientSocketHandle handle;
-  int rv = handle.Init("a", low_params_, LOW, callback.callback(), &pool,
+  int rv = handle.Init("a", params_, LOW, callback.callback(), &pool,
                        BoundNetLog());
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_FALSE(handle.is_initialized());
@@ -1224,12 +1317,12 @@ TEST_F(TransportClientSocketPoolTest, IPv6NoIPv4AddressesToFallbackTo) {
       MockClientSocketFactory::MOCK_DELAYED_CLIENT_SOCKET);
 
   // Resolve an AddressList with only IPv6 addresses.
-  host_resolver_->rules()->AddIPLiteralRule(
-      "*", "2:abcd::3:4:ff,3:abcd::3:4:ff", "");
+  host_resolver_->rules()
+      ->AddIPLiteralRule("*", "2:abcd::3:4:ff,3:abcd::3:4:ff", std::string());
 
   TestCompletionCallback callback;
   ClientSocketHandle handle;
-  int rv = handle.Init("a", low_params_, LOW, callback.callback(), &pool,
+  int rv = handle.Init("a", params_, LOW, callback.callback(), &pool,
                        BoundNetLog());
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_FALSE(handle.is_initialized());
@@ -1258,12 +1351,11 @@ TEST_F(TransportClientSocketPoolTest, IPv4HasNoFallback) {
       MockClientSocketFactory::MOCK_DELAYED_CLIENT_SOCKET);
 
   // Resolve an AddressList with only IPv4 addresses.
-  host_resolver_->rules()->AddIPLiteralRule(
-      "*", "1.1.1.1", "");
+  host_resolver_->rules()->AddIPLiteralRule("*", "1.1.1.1", std::string());
 
   TestCompletionCallback callback;
   ClientSocketHandle handle;
-  int rv = handle.Init("a", low_params_, LOW, callback.callback(), &pool,
+  int rv = handle.Init("a", params_, LOW, callback.callback(), &pool,
                        BoundNetLog());
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_FALSE(handle.is_initialized());

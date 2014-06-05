@@ -1,4 +1,5 @@
 #include "talk/base/gunit.h"
+#include "talk/base/testutils.h"
 #include "talk/base/window.h"
 #include "talk/base/windowpicker.h"
 #include "talk/base/windowpickerfactory.h"
@@ -10,6 +11,7 @@
 #endif
 
 TEST(WindowPickerTest, GetWindowList) {
+  MAYBE_SKIP_SCREENCAST_TEST();
   if (!talk_base::WindowPickerFactory::IsSupported()) {
     LOG(LS_INFO) << "skipping test: window capturing is not supported with "
                  << "current configuration.";
@@ -24,6 +26,7 @@ TEST(WindowPickerTest, GetWindowList) {
 // TODO(hughv) Investigate why this fails on pulse but not locally after
 // upgrading to XCode 4.5.  The failure is GetDesktopList returning FALSE.
 TEST(WindowPickerTest, DISABLE_ON_MAC(GetDesktopList)) {
+  MAYBE_SKIP_SCREENCAST_TEST();
   if (!talk_base::WindowPickerFactory::IsSupported()) {
     LOG(LS_INFO) << "skipping test: window capturing is not supported with "
                  << "current configuration.";
@@ -40,5 +43,16 @@ TEST(WindowPickerTest, DISABLE_ON_MAC(GetDesktopList)) {
                                              &height));
     EXPECT_GT(width, 0);
     EXPECT_GT(height, 0);
+
+    // Test |IsPrimaryDesktop|. Only one desktop should be a primary.
+    bool found_primary = false;
+    for (talk_base::DesktopDescriptionList::iterator it = descriptions.begin();
+         it != descriptions.end(); ++it) {
+      if (it->primary()) {
+        EXPECT_FALSE(found_primary);
+        found_primary = true;
+      }
+    }
+    EXPECT_TRUE(found_primary);
   }
 }

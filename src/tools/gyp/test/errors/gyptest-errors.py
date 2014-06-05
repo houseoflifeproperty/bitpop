@@ -11,9 +11,9 @@ Test that two targets with the same name generates an error.
 import TestGyp
 import TestCmd
 
-# TODO(sbc): Remove the need for match_re below, and make scons
-# error messages consistent with other generators by removing
-# input.py:generator_wants_absolute_build_file_paths.
+# TODO(sbc): Remove the use of match_re below, done because scons
+# error messages were not consistent with other generators.
+# Also remove input.py:generator_wants_absolute_build_file_paths.
 
 test = TestGyp.TestGyp()
 
@@ -22,10 +22,9 @@ stderr = ('gyp: Duplicate target definitions for '
 test.run_gyp('duplicate_targets.gyp', status=1, stderr=stderr,
              match=TestCmd.match_re)
 
-stderr = ('gyp: Unable to find targets in build file .*missing_targets.gyp '
-          'while trying to load missing_targets.gyp\n')
+stderr = ('.*: Unable to find targets in build file .*missing_targets.gyp.*')
 test.run_gyp('missing_targets.gyp', status=1, stderr=stderr,
-             match=TestCmd.match_re)
+             match=TestCmd.match_re_dotall)
 
 stderr = ('gyp: rule bar exists in duplicate, target '
           '.*duplicate_rule.gyp:foo#target\n')
@@ -33,10 +32,9 @@ test.run_gyp('duplicate_rule.gyp', status=1, stderr=stderr,
              match=TestCmd.match_re)
 
 stderr = ("gyp: Key 'targets' repeated at level 1 with key path '' while "
-          "reading .*duplicate_node.gyp while trying to load "
-          "duplicate_node.gyp\n")
+          "reading .*duplicate_node.gyp.*")
 test.run_gyp('duplicate_node.gyp', '--check', status=1, stderr=stderr,
-             match=TestCmd.match_re)
+             match=TestCmd.match_re_dotall)
 
 stderr = 'gyp: Duplicate basenames in sources section, see list above\n'
 test.run_gyp('duplicate_basenames.gyp', status=1, stderr=stderr)

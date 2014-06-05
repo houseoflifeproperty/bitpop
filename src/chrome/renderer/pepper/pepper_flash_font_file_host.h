@@ -20,8 +20,6 @@ struct SerializedFontDescription;
 }
 }
 
-namespace chrome {
-
 class PepperFlashFontFileHost : public ppapi::host::ResourceHost {
  public:
   PepperFlashFontFileHost(
@@ -37,8 +35,8 @@ class PepperFlashFontFileHost : public ppapi::host::ResourceHost {
       ppapi::host::HostMessageContext* context) OVERRIDE;
 
  private:
-  int32_t OnMsgGetFontTable(ppapi::host::HostMessageContext* context,
-                            uint32_t table);
+  int32_t OnGetFontTable(ppapi::host::HostMessageContext* context,
+                         uint32_t table);
 
   // Non-owning pointer.
   content::RendererPpapiHost* renderer_ppapi_host_;
@@ -47,7 +45,5 @@ class PepperFlashFontFileHost : public ppapi::host::ResourceHost {
 
   DISALLOW_COPY_AND_ASSIGN(PepperFlashFontFileHost);
 };
-
-}  // namespace chrome
 
 #endif  // CHROME_RENDERER_PEPPER_PEPPER_FLASH_FONT_FILE_HOST_H_

@@ -10,7 +10,9 @@
 #include "base/basictypes.h"
 #include "skia/ext/platform_device.h"
 #include "skia/ext/refptr.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
+#include "third_party/skia/include/core/SkPixelRef.h"
 
 namespace skia {
 
@@ -72,7 +74,7 @@ static inline SkCanvas* CreatePlatformCanvas(int width,
   return CreatePlatformCanvas(width, height, is_opaque, 0, CRASH_ON_FAILURE);
 }
 
-SK_API SkCanvas* CreateCanvas(const skia::RefPtr<SkDevice>& device,
+SK_API SkCanvas* CreateCanvas(const skia::RefPtr<SkBaseDevice>& device,
                               OnFailureType failure_type);
 
 static inline SkCanvas* CreateBitmapCanvas(int width,
@@ -88,33 +90,23 @@ static inline SkCanvas* TryCreateBitmapCanvas(int width,
                               RETURN_NULL_ON_FAILURE);
 }
 
-class SK_API ScopedPlatformCanvas : public RefPtr<SkCanvas> {
- public:
-  ScopedPlatformCanvas(int width, int height, bool is_opaque)
-      : RefPtr<SkCanvas>(AdoptRef(
-          CreatePlatformCanvas(width, height, is_opaque)))
-  {}
-};
-
 // Return the stride (length of a line in bytes) for the given width. Because
 // we use 32-bits per pixel, this will be roughly 4*width. However, for
 // alignment reasons we may wish to increase that.
 SK_API size_t PlatformCanvasStrideForWidth(unsigned width);
 
-// Returns the SkDevice pointer of the topmost rect with a non-empty
+// Returns the SkBaseDevice pointer of the topmost rect with a non-empty
 // clip. In practice, this is usually either the top layer or nothing, since
 // we usually set the clip to new layers when we make them.
 //
-// If there is no layer that is not all clipped out, this will return a
-// dummy device so callers do not have to check. If you are concerned about
-// performance, check the clip before doing any painting.
+// This may return NULL, so callers need to check.
 //
 // This is different than SkCanvas' getDevice, because that returns the
 // bottommost device.
 //
 // Danger: the resulting device should not be saved. It will be invalidated
 // by the next call to save() or restore().
-SK_API SkDevice* GetTopDevice(const SkCanvas& canvas);
+SK_API SkBaseDevice* GetTopDevice(const SkCanvas& canvas);
 
 // Returns true if native platform routines can be used to draw on the
 // given canvas. If this function returns false, BeginPlatformPaint will
@@ -163,6 +155,7 @@ class SK_API ScopedPlatformPaint {
   ScopedPlatformPaint& operator=(const ScopedPlatformPaint&);
 };
 
+// PlatformBitmap holds a PlatformSurface that can also be used as an SkBitmap.
 class SK_API PlatformBitmap {
  public:
   PlatformBitmap();
@@ -176,12 +169,16 @@ class SK_API PlatformBitmap {
 
   // Return the skia bitmap, which will be empty if Allocate() did not
   // return true.
+  //
+  // The resulting SkBitmap holds a refcount on the underlying platform surface,
+  // so the surface will remain allocated so long as the SkBitmap or its copies
+  // stay around.
   const SkBitmap& GetBitmap() { return bitmap_; }
 
  private:
   SkBitmap bitmap_;
-  PlatformSurface surface_; // initialized to 0
-  intptr_t platform_extra_; // initialized to 0, specific to each platform
+  PlatformSurface surface_;  // initialized to 0
+  intptr_t platform_extra_;  // platform specific, initialized to 0
 
   DISALLOW_COPY_AND_ASSIGN(PlatformBitmap);
 };

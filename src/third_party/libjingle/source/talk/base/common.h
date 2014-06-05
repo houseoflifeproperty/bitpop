@@ -25,7 +25,7 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef TALK_BASE_COMMON_H_
+#ifndef TALK_BASE_COMMON_H_  // NOLINT
 #define TALK_BASE_COMMON_H_
 
 #include "talk/base/basictypes.h"
@@ -61,10 +61,16 @@ inline void Unused(const void*) {}
 #endif  // UNUSED
 
 #ifndef WIN32
-#define strnicmp(x, y, n) strncasecmp(x, y, n)
-#define stricmp(x, y) strcasecmp(x, y)
 
-// TODO: Remove this. std::max should be used everywhere in the code.
+#ifndef strnicmp
+#define strnicmp(x, y, n) strncasecmp(x, y, n)
+#endif
+
+#ifndef stricmp
+#define stricmp(x, y) strcasecmp(x, y)
+#endif
+
+// TODO(fbarchard): Remove this. std::max should be used everywhere in the code.
 // NOMINMAX must be defined where we include <windows.h>.
 #define stdmax(x, y) std::max(x, y)
 #else
@@ -81,16 +87,40 @@ inline void Unused(const void*) {}
 #define ENABLE_DEBUG _DEBUG
 #endif  // !defined(ENABLE_DEBUG)
 
-#if ENABLE_DEBUG
+// Even for release builds, allow for the override of LogAssert. Though no
+// macro is provided, this can still be used for explicit runtime asserts
+// and allow applications to override the assert behavior.
 
 namespace talk_base {
 
-// Break causes the debugger to stop executing, or the program to abort
+
+// If a debugger is attached, triggers a debugger breakpoint. If a debugger is
+// not attached, forces program termination.
 void Break();
 
-// LogAssert writes information about an assertion to the log
+// LogAssert writes information about an assertion to the log. It's called by
+// Assert (and from the ASSERT macro in debug mode) before any other action
+// is taken (e.g. breaking the debugger, abort()ing, etc.).
 void LogAssert(const char* function, const char* file, int line,
                const char* expression);
+
+typedef void (*AssertLogger)(const char* function,
+                             const char* file,
+                             int line,
+                             const char* expression);
+
+// Sets a custom assert logger to be used instead of the default LogAssert
+// behavior. To clear the custom assert logger, pass NULL for |logger| and the
+// default behavior will be restored. Only one custom assert logger can be set
+// at a time, so this should generally be set during application startup and
+// only by one component.
+void SetCustomAssertLogger(AssertLogger logger);
+
+}  // namespace talk_base
+
+#if ENABLE_DEBUG
+
+namespace talk_base {
 
 inline bool Assert(bool result, const char* function, const char* file,
                    int line, const char* expression) {
@@ -157,9 +187,32 @@ inline bool ImplicitCastToBool(bool result) { return result; }
 #if defined(WIN32)
 #define OVERRIDE override
 #elif defined(__clang__)
+// Clang defaults to C++03 and warns about using override. Squelch that.
+// Intentionally no push/pop here so all users of OVERRIDE ignore the warning
+// too. This is like passing -Wno-c++11-extensions, except that GCC won't die
+// (because it won't see this pragma).
+#pragma clang diagnostic ignored "-Wc++11-extensions"
+#define OVERRIDE override
+#elif defined(__GNUC__) && __cplusplus >= 201103 && \
+    (__GNUC__ * 10000 + __GNUC_MINOR__ * 100) >= 40700
+// GCC 4.7 supports explicit virtual overrides when C++11 support is enabled.
 #define OVERRIDE override
 #else
 #define OVERRIDE
 #endif
 
-#endif  // TALK_BASE_COMMON_H_
+// Annotate a function indicating the caller must examine the return value.
+// Use like:
+//   int foo() WARN_UNUSED_RESULT;
+// To explicitly ignore a result, see |ignore_result()| in <base/basictypes.h>.
+// TODO(ajm): Hack to avoid multiple definitions until the base/ of webrtc and
+// libjingle are merged.
+#if !defined(WARN_UNUSED_RESULT)
+#if defined(__GNUC__)
+#define WARN_UNUSED_RESULT __attribute__((warn_unused_result))
+#else
+#define WARN_UNUSED_RESULT
+#endif
+#endif  // WARN_UNUSED_RESULT
+
+#endif  // TALK_BASE_COMMON_H_    // NOLINT

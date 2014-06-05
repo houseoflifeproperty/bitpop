@@ -4,45 +4,55 @@
 
 #import "chrome/browser/app_controller_mac.h"
 
+#include "apps/app_shim/app_shim_mac.h"
+#include "apps/app_shim/extension_app_shim_handler_mac.h"
+#include "apps/app_window_registry.h"
 #include "base/auto_reset.h"
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/mac/foundation_util.h"
 #include "base/mac/mac_util.h"
-#include "base/message_loop.h"
-#include "base/string_number_conversions.h"
-#include "base/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/background/background_application_list_model.h"
 #include "chrome/browser/background/background_mode_manager.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
+#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
-#include "chrome/browser/prefs/pref_service.h"
-#include "chrome/browser/printing/print_dialog_cloud.h"
+#include "chrome/browser/profiles/profile_info_cache_observer.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/service/service_process_control.h"
+#include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/sessions/session_restore.h"
 #include "chrome/browser/sessions/session_service.h"
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/sync_ui_util.h"
-#include "chrome/browser/sync/sync_ui_util_mac.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_command_controller.h"
 #include "chrome/browser/ui/browser_commands.h"
+#include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_finder.h"
-#include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/browser/ui/browser_mac.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/chrome_pages.h"
+#import "chrome/browser/ui/cocoa/apps/app_shim_menu_controller_mac.h"
+#include "chrome/browser/ui/cocoa/apps/quit_with_apps_controller_mac.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_menu_bridge.h"
 #import "chrome/browser/ui/cocoa/browser_window_cocoa.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
@@ -51,36 +61,41 @@
 #import "chrome/browser/ui/cocoa/encoding_menu_controller_delegate_mac.h"
 #import "chrome/browser/ui/cocoa/history_menu_bridge.h"
 #include "chrome/browser/ui/cocoa/last_active_browser_cocoa.h"
-#import "chrome/browser/ui/cocoa/profile_menu_controller.h"
+#import "chrome/browser/ui/cocoa/profiles/profile_menu_controller.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_controller.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_window_controller.h"
 #include "chrome/browser/ui/cocoa/task_manager_mac.h"
+#include "chrome/browser/ui/extensions/application_launch.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/browser/ui/startup/startup_browser_creator_impl.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths_internal.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/cloud_print/cloud_print_class_mac.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/mac/app_mode_common.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/service_messages.h"
 #include "chrome/common/url_constants.h"
+#include "components/signin/core/common/profile_management_switches.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/user_metrics.h"
+#include "extensions/browser/extension_system.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
-#include "net/base/net_util.h"
+#include "net/base/filename_util.h"
+#include "ui/base/cocoa/focus_window_set.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 
+using base::UserMetricsAction;
 using content::BrowserContext;
 using content::BrowserThread;
 using content::DownloadManager;
-using content::UserMetricsAction;
 
 namespace {
 
@@ -90,6 +105,11 @@ namespace {
 NSString* NSPopoverDidShowNotification = @"NSPopoverDidShowNotification";
 NSString* NSPopoverDidCloseNotification = @"NSPopoverDidCloseNotification";
 #endif
+
+// How long we allow a workspace change notification to wait to be
+// associated with a dock activation. The animation lasts 250ms. See
+// applicationShouldHandleReopen:hasVisibleWindows:.
+static const int kWorkspaceChangeTimeoutMs = 500;
 
 // True while AppController is calling chrome::NewEmptyWindow(). We need a
 // global flag here, analogue to StartupBrowserCreator::InProcessStartup()
@@ -114,7 +134,7 @@ Browser* ActivateBrowser(Profile* profile) {
 Browser* CreateBrowser(Profile* profile) {
   {
     base::AutoReset<bool> auto_reset_in_run(&g_is_opening_new_window, true);
-    chrome::NewEmptyWindow(profile);
+    chrome::NewEmptyWindow(profile, chrome::HOST_DESKTOP_TYPE_NATIVE);
   }
 
   Browser* browser = chrome::GetLastActiveBrowser();
@@ -152,12 +172,15 @@ void RecordLastRunAppBundlePath() {
   // real, user-visible app bundle directory. (The alternatives give either the
   // framework's path or the initial app's path, which may be an app mode shim
   // or a unit test.)
-  FilePath appBundlePath =
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+
+  base::FilePath app_bundle_path =
       chrome::GetVersionedDirectory().DirName().DirName().DirName();
+  base::ScopedCFTypeRef<CFStringRef> app_bundle_path_cfstring(
+      base::SysUTF8ToCFStringRef(app_bundle_path.value()));
   CFPreferencesSetAppValue(
       base::mac::NSToCFCast(app_mode::kLastRunAppBundlePathPrefsKey),
-      base::SysUTF8ToCFStringRef(appBundlePath.value()),
-      BaseBundleID_CFString());
+      app_bundle_path_cfstring, BaseBundleID_CFString());
 
   // Sync after a delay avoid I/O contention on startup; 1500 ms is plenty.
   BrowserThread::PostDelayedTask(
@@ -166,24 +189,89 @@ void RecordLastRunAppBundlePath() {
       base::TimeDelta::FromMilliseconds(1500));
 }
 
+bool IsProfileSignedOut(Profile* profile) {
+  // The signed out status only makes sense at the moment in the context of the
+  // --new-profile-management flag.
+  if (!switches::IsNewProfileManagement())
+    return false;
+  ProfileInfoCache& cache =
+      g_browser_process->profile_manager()->GetProfileInfoCache();
+  size_t profile_index = cache.GetIndexOfProfileWithPath(profile->GetPath());
+  if (profile_index == std::string::npos)
+    return false;
+  return cache.ProfileIsSigninRequiredAtIndex(profile_index);
+}
+
 }  // anonymous namespace
 
 @interface AppController (Private)
 - (void)initMenuState;
 - (void)initProfileMenu;
 - (void)updateConfirmToQuitPrefMenuItem:(NSMenuItem*)item;
+- (void)updateDisplayMessageCenterPrefMenuItem:(NSMenuItem*)item;
 - (void)registerServicesMenuTypesTo:(NSApplication*)app;
 - (void)openUrls:(const std::vector<GURL>&)urls;
 - (void)getUrl:(NSAppleEventDescriptor*)event
      withReply:(NSAppleEventDescriptor*)reply;
-- (void)submitCloudPrintJob:(NSAppleEventDescriptor*)event;
 - (void)windowLayeringDidChange:(NSNotification*)inNotification;
+- (void)activeSpaceDidChange:(NSNotification*)inNotification;
 - (void)windowChangedToProfile:(Profile*)profile;
 - (void)checkForAnyKeyWindows;
 - (BOOL)userWillWaitForInProgressDownloads:(int)downloadCount;
 - (BOOL)shouldQuitWithInProgressDownloads;
 - (void)executeApplication:(id)sender;
+- (void)profileWasRemoved:(const base::FilePath&)profilePath;
 @end
+
+class AppControllerProfileObserver : public ProfileInfoCacheObserver {
+ public:
+  AppControllerProfileObserver(
+      ProfileManager* profile_manager, AppController* app_controller)
+      : profile_manager_(profile_manager),
+        app_controller_(app_controller) {
+    DCHECK(profile_manager_);
+    DCHECK(app_controller_);
+    profile_manager_->GetProfileInfoCache().AddObserver(this);
+  }
+
+  virtual ~AppControllerProfileObserver() {
+    DCHECK(profile_manager_);
+    profile_manager_->GetProfileInfoCache().RemoveObserver(this);
+  }
+
+ private:
+  // ProfileInfoCacheObserver implementation:
+
+  virtual void OnProfileAdded(const base::FilePath& profile_path) OVERRIDE {
+  }
+
+  virtual void OnProfileWasRemoved(
+      const base::FilePath& profile_path,
+      const base::string16& profile_name) OVERRIDE {
+    // When a profile is deleted we need to notify the AppController,
+    // so it can correctly update its pointer to the last used profile.
+    [app_controller_ profileWasRemoved:profile_path];
+  }
+
+  virtual void OnProfileWillBeRemoved(
+      const base::FilePath& profile_path) OVERRIDE {
+  }
+
+  virtual void OnProfileNameChanged(
+      const base::FilePath& profile_path,
+      const base::string16& old_profile_name) OVERRIDE {
+  }
+
+  virtual void OnProfileAvatarChanged(
+      const base::FilePath& profile_path) OVERRIDE {
+  }
+
+  ProfileManager* profile_manager_;
+
+  AppController* app_controller_;  // Weak; owns us.
+
+  DISALLOW_COPY_AND_ASSIGN(AppControllerProfileObserver);
+};
 
 @implementation AppController
 
@@ -199,10 +287,6 @@ void RecordLastRunAppBundlePath() {
           andSelector:@selector(getUrl:withReply:)
         forEventClass:kInternetEventClass
            andEventID:kAEGetURL];
-  [em setEventHandler:self
-          andSelector:@selector(submitCloudPrintJob:)
-        forEventClass:cloud_print::kAECloudPrintClass
-           andEventID:cloud_print::kAECloudPrintClass];
   [em setEventHandler:self
           andSelector:@selector(getUrl:withReply:)
         forEventClass:'WWW!'    // A particularly ancient AppleEvent that dates
@@ -247,6 +331,13 @@ void RecordLastRunAppBundlePath() {
              object:nil];
   }
 
+  // Register for space change notifications.
+  [[[NSWorkspace sharedWorkspace] notificationCenter]
+    addObserver:self
+       selector:@selector(activeSpaceDidChange:)
+           name:NSWorkspaceActiveSpaceDidChangeNotification
+         object:nil];
+
   // Set up the command updater for when there are no windows open
   [self initMenuState];
 
@@ -263,6 +354,7 @@ void RecordLastRunAppBundlePath() {
   [em removeEventHandlerForEventClass:'WWW!'
                            andEventID:'OURL'];
   [[NSNotificationCenter defaultCenter] removeObserver:self];
+  [[[NSWorkspace sharedWorkspace] notificationCenter] removeObserver:self];
 }
 
 // (NSApplicationDelegate protocol) This is the Apple-approved place to override
@@ -280,6 +372,12 @@ void RecordLastRunAppBundlePath() {
       ![self shouldQuitWithInProgressDownloads])
     return NO;
 
+  // Check for active apps, and prompt the user if they really want to quit
+  // (and also quit the apps).
+  if (!browser_shutdown::IsTryingToQuit() &&
+      quitWithAppsController_.get() && !quitWithAppsController_->ShouldQuit())
+    return NO;
+
   // TODO(viettrungluu): Remove Apple Event handlers here? (It's safe to leave
   // them in, but I'm not sure about UX; we'd also want to disable other things
   // though.) http://crbug.com/40861
@@ -290,16 +388,16 @@ void RecordLastRunAppBundlePath() {
       [self applicationShouldTerminate:app] != NSTerminateNow)
     return NO;
 
-  size_t num_browsers = BrowserList::size();
+  size_t num_browsers = chrome::GetTotalBrowserCount();
 
-  // Initiate a shutdown (via browser::CloseAllBrowsers()) if we aren't
+  // Initiate a shutdown (via chrome::CloseAllBrowsersAndQuit()) if we aren't
   // already shutting down.
   if (!browser_shutdown::IsTryingToQuit()) {
     content::NotificationService::current()->Notify(
         chrome::NOTIFICATION_CLOSE_ALL_BROWSERS_REQUEST,
         content::NotificationService::AllSources(),
         content::NotificationService::NoDetails());
-    browser::CloseAllBrowsers();
+    chrome::CloseAllBrowsersAndQuit();
   }
 
   return num_browsers == 0 ? YES : NO;
@@ -317,6 +415,12 @@ void RecordLastRunAppBundlePath() {
 }
 
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication*)app {
+  // If there are no windows, quit immediately.
+  if (chrome::BrowserIterator().done() &&
+      !apps::AppWindowRegistry::IsAppWindowRegisteredInAnyProfile(0)) {
+    return NSTerminateNow;
+  }
+
   // Check if the preference is turned on.
   const PrefService* prefs = g_browser_process->local_state();
   if (!prefs->GetBoolean(prefs::kConfirmToQuitEnabled)) {
@@ -339,18 +443,26 @@ void RecordLastRunAppBundlePath() {
 // Called when the app is shutting down. Clean-up as appropriate.
 - (void)applicationWillTerminate:(NSNotification*)aNotification {
   // There better be no browser windows left at this point.
-  CHECK_EQ(0u, BrowserList::size());
+  CHECK_EQ(0u, chrome::GetTotalBrowserCount());
 
   // Tell BrowserList not to keep the browser process alive. Once all the
   // browsers get dealloc'd, it will stop the RunLoop and fall back into main().
-  browser::EndKeepAlive();
+  chrome::DecrementKeepAliveCount();
+
+  // Reset all pref watching, as this object outlives the prefs system.
+  profilePrefRegistrar_.reset();
+  localPrefRegistrar_.RemoveAll();
 
   [self unregisterEventHandlers];
+
+  appShimMenuController_.reset();
 }
 
 - (void)didEndMainMessageLoop {
-  DCHECK_EQ(0u, chrome::GetBrowserCount([self lastProfile]));
-  if (!chrome::GetBrowserCount([self lastProfile])) {
+  DCHECK_EQ(0u, chrome::GetBrowserCount([self lastProfile],
+                                        chrome::HOST_DESKTOP_TYPE_NATIVE));
+  if (!chrome::GetBrowserCount([self lastProfile],
+                               chrome::HOST_DESKTOP_TYPE_NATIVE)) {
     // As we're shutting down, we need to nuke the TabRestoreService, which
     // will start the shutdown of the NavigationControllers and allow for
     // proper shutdown. If we don't do this, Chrome won't shut down cleanly,
@@ -464,14 +576,38 @@ void RecordLastRunAppBundlePath() {
 
   // If the window changed to a new BrowserWindowController, update the profile.
   id windowController = [[notify object] windowController];
-  if ([notify name] == NSWindowDidBecomeMainNotification &&
-      [windowController isKindOfClass:[BrowserWindowController class]]) {
+  if (![windowController isKindOfClass:[BrowserWindowController class]])
+    return;
+
+  if ([notify name] == NSWindowDidBecomeMainNotification) {
     // If the profile is incognito, use the original profile.
     Profile* newProfile = [windowController profile]->GetOriginalProfile();
     [self windowChangedToProfile:newProfile];
-  } else if (BrowserList::empty()) {
+  } else if (chrome::GetTotalBrowserCount() == 0) {
     [self windowChangedToProfile:
         g_browser_process->profile_manager()->GetLastUsedProfile()];
+  }
+}
+
+- (void)activeSpaceDidChange:(NSNotification*)notify {
+  if (reopenTime_.is_null() ||
+      ![NSApp isActive] ||
+      (base::TimeTicks::Now() - reopenTime_).InMilliseconds() >
+      kWorkspaceChangeTimeoutMs) {
+    return;
+  }
+
+  // The last applicationShouldHandleReopen:hasVisibleWindows: call
+  // happened during a space change. Now that the change has
+  // completed, raise browser windows.
+  reopenTime_ = base::TimeTicks();
+  std::set<NSWindow*> browserWindows;
+  for (chrome::BrowserIterator iter; !iter.done(); iter.Next()) {
+    Browser* browser = *iter;
+    browserWindows.insert(browser->window()->GetNativeWindow());
+  }
+  if (!browserWindows.empty()) {
+    ui::FocusWindowSet(browserWindows, false);
   }
 }
 
@@ -511,6 +647,18 @@ void RecordLastRunAppBundlePath() {
 
   historyMenuBridge_.reset(new HistoryMenuBridge(lastProfile_));
   historyMenuBridge_->BuildMenu();
+
+  chrome::BrowserCommandController::
+      UpdateSharedCommandsForIncognitoAvailability(
+          menuState_.get(), lastProfile_);
+  profilePrefRegistrar_.reset(new PrefChangeRegistrar());
+  profilePrefRegistrar_->Init(lastProfile_->GetPrefs());
+  profilePrefRegistrar_->Add(
+      prefs::kIncognitoModeAvailability,
+      base::Bind(&chrome::BrowserCommandController::
+                     UpdateSharedCommandsForIncognitoAvailability,
+                 menuState_.get(),
+                 lastProfile_));
 }
 
 - (void)checkForAnyKeyWindows {
@@ -524,15 +672,13 @@ void RecordLastRunAppBundlePath() {
 }
 
 // If the auto-update interval is not set, make it 5 hours.
-// This code is specific to Mac Chrome Dev Channel.
 // Placed here for 2 reasons:
 // 1) Same spot as other Pref stuff
 // 2) Try and be friendly by keeping this after app launch
-// TODO(jrg): remove once we go Beta.
 - (void)setUpdateCheckInterval {
 #if defined(GOOGLE_CHROME_BUILD)
-  CFStringRef app = (CFStringRef)@"com.google.Keystone.Agent";
-  CFStringRef checkInterval = (CFStringRef)@"checkInterval";
+  CFStringRef app = CFSTR("com.google.Keystone.Agent");
+  CFStringRef checkInterval = CFSTR("checkInterval");
   CFPropertyListRef plist = CFPreferencesCopyAppValue(checkInterval, app);
   if (!plist) {
     const float fiveHoursInSeconds = 5.0 * 60.0 * 60.0;
@@ -543,14 +689,57 @@ void RecordLastRunAppBundlePath() {
 #endif
 }
 
+- (void)openStartupUrls {
+  // On Mac, the URLs are passed in via Cocoa, not command line. The Chrome
+  // NSApplication is created in MainMessageLoop, and then the shortcut urls
+  // are passed in via Apple events. At this point, the first browser is
+  // already loaded in PreMainMessageLoop. If we initialize NSApplication
+  // before PreMainMessageLoop to capture shortcut URL events, it may cause
+  // more problems because it relies on things created in PreMainMessageLoop
+  // and may break existing message loop design.
+  if (startupUrls_.empty())
+    return;
+
+  // If there's only 1 tab and the tab is NTP, close this NTP tab and open all
+  // startup urls in new tabs, because the omnibox will stay focused if we
+  // load url in NTP tab.
+  Browser* browser = chrome::GetLastActiveBrowser();
+  int startupIndex = TabStripModel::kNoTab;
+  content::WebContents* startupContent = NULL;
+
+  if (browser && browser->tab_strip_model()->count() == 1) {
+    startupIndex = browser->tab_strip_model()->active_index();
+    startupContent = browser->tab_strip_model()->GetActiveWebContents();
+  }
+
+  if (startupUrls_.size()) {
+    [self openUrls:startupUrls_];
+    startupUrls_.clear();
+  }
+
+  if (startupIndex != TabStripModel::kNoTab &&
+      startupContent->GetVisibleURL() == GURL(chrome::kChromeUINewTabURL)) {
+    browser->tab_strip_model()->CloseWebContentsAt(startupIndex,
+        TabStripModel::CLOSE_NONE);
+  }
+}
+
 // This is called after profiles have been loaded and preferences registered.
 // It is safe to access the default profile here.
 - (void)applicationDidFinishLaunching:(NSNotification*)notify {
   // Notify BrowserList to keep the application running so it doesn't go away
   // when all the browser windows get closed.
-  browser::StartKeepAlive();
+  chrome::IncrementKeepAliveCount();
 
   [self setUpdateCheckInterval];
+
+  // Start managing the menu for app windows. This needs to be done here because
+  // main menu item titles are not yet initialized in awakeFromNib.
+  [self initAppShimMenuController];
+
+  // If enabled, keep Chrome alive when apps are open instead of quitting all
+  // apps.
+  quitWithAppsController_ = new QuitWithAppsController();
 
   // Build up the encoding menu, the order of the items differs based on the
   // current locale (see http://crbug.com/7647 for details).
@@ -562,30 +751,36 @@ void RecordLastRunAppBundlePath() {
   EncodingMenuControllerDelegate::BuildEncodingMenu([self lastProfile],
                                                     encodingMenu);
 
+  // Instantiate the ProfileInfoCache observer so that we can get
+  // notified when a profile is deleted.
+  profileInfoCacheObserver_.reset(new AppControllerProfileObserver(
+      g_browser_process->profile_manager(), self));
+
   // Since Chrome is localized to more languages than the OS, tell Cocoa which
   // menu is the Help so it can add the search item to it.
   [NSApp setHelpMenu:helpMenu_];
 
   // Record the path to the (browser) app bundle; this is used by the app mode
-  // shim.
-  RecordLastRunAppBundlePath();
+  // shim.  It has to be done in FILE thread because getting the path requires
+  // I/O.
+  BrowserThread::PostTask(
+      BrowserThread::FILE, FROM_HERE,
+      base::Bind(&RecordLastRunAppBundlePath));
 
   // Makes "Services" menu items available.
   [self registerServicesMenuTypesTo:[notify object]];
 
   startupComplete_ = YES;
 
-  // TODO(viettrungluu): This is very temporary, since this should be done "in"
-  // |BrowserMain()|, i.e., this list of startup URLs should be appended to the
-  // (probably-empty) list of URLs from the command line.
-  if (startupUrls_.size()) {
-    [self openUrls:startupUrls_];
-    [self clearStartupUrls];
-  }
+  [self openStartupUrls];
 
-  const CommandLine& parsed_command_line = *CommandLine::ForCurrentProcess();
-  if (!parsed_command_line.HasSwitch(switches::kEnableExposeForTabs)) {
-    [tabposeMenuItem_ setHidden:YES];
+  PrefService* localState = g_browser_process->local_state();
+  if (localState) {
+    localPrefRegistrar_.Init(localState);
+    localPrefRegistrar_.Add(
+        prefs::kAllowFileSelectionDialogs,
+        base::Bind(&chrome::BrowserCommandController::UpdateOpenFileState,
+                   menuState_.get()));
   }
 }
 
@@ -627,8 +822,8 @@ void RecordLastRunAppBundlePath() {
       IDS_DOWNLOAD_REMOVE_CONFIRM_CANCEL_BUTTON_LABEL);
 
   // 'waitButton' is the default choice.
-  int choice = NSRunAlertPanel(titleText, explanationText,
-                               waitTitle, exitTitle, nil);
+  int choice = NSRunAlertPanel(titleText, @"%@",
+                               waitTitle, exitTitle, nil, explanationText);
   return choice == NSAlertDefaultReturn ? YES : NO;
 }
 
@@ -643,19 +838,21 @@ void RecordLastRunAppBundlePath() {
   std::vector<Profile*> profiles(profile_manager->GetLoadedProfiles());
   for (size_t i = 0; i < profiles.size(); ++i) {
     DownloadService* download_service =
-      DownloadServiceFactory::GetForProfile(profiles[i]);
+      DownloadServiceFactory::GetForBrowserContext(profiles[i]);
     DownloadManager* download_manager =
         (download_service->HasCreatedDownloadManager() ?
          BrowserContext::GetDownloadManager(profiles[i]) : NULL);
-    if (download_manager && download_manager->InProgressCount() > 0) {
-      int downloadCount = download_manager->InProgressCount();
+    if (download_manager &&
+        download_manager->NonMaliciousInProgressCount() > 0) {
+      int downloadCount = download_manager->NonMaliciousInProgressCount();
       if ([self userWillWaitForInProgressDownloads:downloadCount]) {
         // Create a new browser window (if necessary) and navigate to the
         // downloads page if the user chooses to wait.
         Browser* browser = chrome::FindBrowserWithProfile(
             profiles[i], chrome::HOST_DESKTOP_TYPE_NATIVE);
         if (!browser) {
-          browser = new Browser(Browser::CreateParams(profiles[i]));
+          browser = new Browser(Browser::CreateParams(
+              profiles[i], chrome::HOST_DESKTOP_TYPE_NATIVE));
           browser->window()->Show();
         }
         DCHECK(browser);
@@ -681,15 +878,30 @@ void RecordLastRunAppBundlePath() {
   return service && !service->entries().empty();
 }
 
-// Returns true if there is not a modal window (either window- or application-
+// Called from the AppControllerProfileObserver every time a profile is deleted.
+- (void)profileWasRemoved:(const base::FilePath&)profilePath {
+  Profile* lastProfile = [self lastProfile];
+
+  // If the lastProfile has been deleted, the profile manager has
+  // already loaded a new one, so the pointer needs to be updated;
+  // otherwise we will try to start up a browser window with a pointer
+  // to the old profile.
+  if (profilePath == lastProfile->GetPath())
+    lastProfile_ = g_browser_process->profile_manager()->GetLastUsedProfile();
+}
+
+// Returns true if there is a modal window (either window- or application-
 // modal) blocking the active browser. Note that tab modal dialogs (HTTP auth
 // sheets) will not count as blocking the browser. But things like open/save
 // dialogs that are window modal will block the browser.
-- (BOOL)keyWindowIsNotModal {
+- (BOOL)keyWindowIsModal {
+  if ([NSApp modalWindow])
+    return YES;
+
   Browser* browser = chrome::GetLastActiveBrowser();
-  return [NSApp modalWindow] == nil && (!browser ||
-         ![[browser->window()->GetNativeWindow() attachedSheet]
-             isKindOfClass:[NSWindow class]]);
+  return browser &&
+         [[browser->window()->GetNativeWindow() attachedSheet]
+             isKindOfClass:[NSWindow class]];
 }
 
 // Called to validate menu items when there are no key windows. All the
@@ -701,9 +913,11 @@ void RecordLastRunAppBundlePath() {
 - (BOOL)validateUserInterfaceItem:(id<NSValidatedUserInterfaceItem>)item {
   SEL action = [item action];
   BOOL enable = NO;
-  if (action == @selector(commandDispatch:)) {
+  if (action == @selector(commandDispatch:) ||
+      action == @selector(commandFromDock:)) {
     NSInteger tag = [item tag];
-    if (menuState_->SupportsCommand(tag)) {
+    if (menuState_ &&  // NULL in tests.
+        menuState_->SupportsCommand(tag)) {
       switch (tag) {
         // The File Menu commands are not automatically disabled by Cocoa when a
         // dialog sheet obscures the browser window, so we disable several of
@@ -711,7 +925,7 @@ void RecordLastRunAppBundlePath() {
         // app_controller is only activated when there are no key windows (see
         // function comment).
         case IDC_RESTORE_TAB:
-          enable = [self keyWindowIsNotModal] && [self canRestoreTab];
+          enable = ![self keyWindowIsModal] && [self canRestoreTab];
           break;
         // Browser-level items that open in new tabs should not open if there's
         // a window- or app-modal dialog.
@@ -719,14 +933,13 @@ void RecordLastRunAppBundlePath() {
         case IDC_NEW_TAB:
         case IDC_SHOW_HISTORY:
         case IDC_SHOW_BOOKMARK_MANAGER:
-          enable = [self keyWindowIsNotModal];
+          enable = ![self keyWindowIsModal];
           break;
         // Browser-level items that open in new windows.
-        case IDC_NEW_WINDOW:
         case IDC_TASK_MANAGER:
           // Allow the user to open a new window if there's a window-modal
           // dialog.
-          enable = [self keyWindowIsNotModal] || ([NSApp modalWindow] == nil);
+          enable = ![self keyWindowIsModal];
           break;
         case IDC_SHOW_SYNC_SETUP: {
           Profile* lastProfile = [self lastProfile];
@@ -741,17 +954,23 @@ void RecordLastRunAppBundlePath() {
                 << "NULL lastProfile detected -- not doing anything";
             break;
           }
-          enable = lastProfile->IsSyncAccessible() &&
-              [self keyWindowIsNotModal];
-          sync_ui_util::UpdateSyncItem(item, enable, lastProfile);
+          SigninManager* signin = SigninManagerFactory::GetForProfile(
+              lastProfile->GetOriginalProfile());
+          enable = signin->IsSigninAllowed() &&
+              ![self keyWindowIsModal];
+          [BrowserWindowController updateSigninItem:item
+                                         shouldShow:enable
+                                     currentProfile:lastProfile];
           break;
         }
+#if defined(GOOGLE_CHROME_BUILD)
         case IDC_FEEDBACK:
           enable = NO;
           break;
+#endif
         default:
           enable = menuState_->IsCommandEnabled(tag) ?
-                   [self keyWindowIsNotModal] : NO;
+                   ![self keyWindowIsModal] : NO;
       }
     }
   } else if (action == @selector(terminate:)) {
@@ -765,6 +984,12 @@ void RecordLastRunAppBundlePath() {
   } else if (action == @selector(toggleConfirmToQuit:)) {
     [self updateConfirmToQuitPrefMenuItem:static_cast<NSMenuItem*>(item)];
     enable = YES;
+  } else if (action == @selector(toggleDisplayMessageCenter:)) {
+    NSMenuItem* menuItem = static_cast<NSMenuItem*>(item);
+    [self updateDisplayMessageCenterPrefMenuItem:menuItem];
+    enable = YES;
+  } else if (action == @selector(executeApplication:)) {
+    enable = YES;
   }
   return enable;
 }
@@ -775,7 +1000,7 @@ void RecordLastRunAppBundlePath() {
 // check, otherwise it should have been disabled in the UI in
 // |-validateUserInterfaceItem:|.
 - (void)commandDispatch:(id)sender {
-  Profile* lastProfile = [self lastProfile];
+  Profile* lastProfile = [self safeLastProfileForNewWindows];
 
   // Handle the case where we're dispatching a command from a sender that's in a
   // browser window. This means that the command came from a background window
@@ -792,10 +1017,19 @@ void RecordLastRunAppBundlePath() {
   // nested message loop and commands dispatched during this operation cause
   // havoc.
   if (SessionRestore::IsRestoring(lastProfile) &&
-      MessageLoop::current()->IsNested())
+      base::MessageLoop::current()->IsNested())
     return;
 
   NSInteger tag = [sender tag];
+
+  // If there are no browser windows, and we are trying to open a browser
+  // for a locked profile, we have to show the User Manager instead as the
+  // locked profile needs authentication.
+  if (IsProfileSignedOut(lastProfile)) {
+    chrome::ShowUserManager(lastProfile->GetPath());
+    return;
+  }
+
   switch (tag) {
     case IDC_NEW_TAB:
       // Create a new tab in an existing browser window (which we activate) if
@@ -820,7 +1054,9 @@ void RecordLastRunAppBundlePath() {
       CreateBrowser(lastProfile->GetOffTheRecordProfile());
       break;
     case IDC_RESTORE_TAB:
-      chrome::OpenWindowWithRestoredTabs(lastProfile);
+      // There is only the native desktop on Mac.
+      chrome::OpenWindowWithRestoredTabs(lastProfile,
+                                         chrome::HOST_DESKTOP_TYPE_NATIVE);
       break;
     case IDC_OPEN_FILE:
       chrome::ExecuteCommand(CreateBrowser(lastProfile), IDC_OPEN_FILE);
@@ -865,7 +1101,7 @@ void RecordLastRunAppBundlePath() {
       break;
     case IDC_MANAGE_EXTENSIONS:
       if (Browser* browser = ActivateBrowser(lastProfile))
-        chrome::ShowExtensions(browser);
+        chrome::ShowExtensions(browser, std::string());
       else
         chrome::OpenExtensionsWindow(lastProfile);
       break;
@@ -876,23 +1112,18 @@ void RecordLastRunAppBundlePath() {
         chrome::OpenHelpWindow(lastProfile, chrome::HELP_SOURCE_MENU);
       break;
     case IDC_SHOW_SYNC_SETUP:
-      if (Browser* browser = ActivateBrowser(lastProfile))
-        chrome::ShowSyncSetup(browser, SyncPromoUI::SOURCE_MENU);
-      else
-        chrome::OpenSyncSetupWindow(lastProfile, SyncPromoUI::SOURCE_MENU);
+      if (Browser* browser = ActivateBrowser(lastProfile)) {
+        chrome::ShowBrowserSignin(browser, signin::SOURCE_MENU);
+      } else {
+        chrome::OpenSyncSetupWindow(lastProfile, signin::SOURCE_MENU);
+      }
       break;
     case IDC_TASK_MANAGER:
       content::RecordAction(UserMetricsAction("TaskManager"));
-      TaskManagerMac::Show(false);
+      TaskManagerMac::Show();
       break;
     case IDC_OPTIONS:
       [self showPreferences:sender];
-      break;
-    default:
-      // Background Applications use dynamic values that must be less than the
-      // smallest value among the predefined IDC_* labels.
-      if ([sender tag] < IDC_MinimumLabelValue)
-        [self executeApplication:sender];
       break;
   }
 }
@@ -924,27 +1155,50 @@ void RecordLastRunAppBundlePath() {
   }
 }
 
-// NSApplication delegate method called when someone clicks on the
-// dock icon and there are no open windows.  To match standard mac
-// behavior, we should open a new window.
+// NSApplication delegate method called when someone clicks on the dock icon.
+// To match standard mac behavior, we should open a new window if there are no
+// browser windows.
 - (BOOL)applicationShouldHandleReopen:(NSApplication*)theApplication
-                    hasVisibleWindows:(BOOL)flag {
+                    hasVisibleWindows:(BOOL)hasVisibleWindows {
   // If the browser is currently trying to quit, don't do anything and return NO
   // to prevent AppKit from doing anything.
   // TODO(rohitrao): Remove this code when http://crbug.com/40861 is resolved.
   if (browser_shutdown::IsTryingToQuit())
     return NO;
 
-  // Don't do anything if there are visible tabbed or popup windows.  This will
-  // cause AppKit to unminimize the most recently minimized window. If the
-  // visible windows are panels or notifications, we still need to open a new
-  // window.
-  if (flag) {
-    for (BrowserList::const_iterator iter = BrowserList::begin();
-         iter != BrowserList::end(); ++iter) {
+  // Bring all browser windows to the front. Specifically, this brings them in
+  // front of any app windows. FocusWindowSet will also unminimize the most
+  // recently minimized window if no windows in the set are visible.
+  // If there are any, return here. Otherwise, the windows are panels or
+  // notifications so we still need to open a new window.
+  if (hasVisibleWindows) {
+    std::set<NSWindow*> browserWindows;
+    for (chrome::BrowserIterator iter; !iter.done(); iter.Next()) {
       Browser* browser = *iter;
-      if (browser->is_type_tabbed() || browser->is_type_popup())
-        return YES;
+      browserWindows.insert(browser->window()->GetNativeWindow());
+    }
+    if (!browserWindows.empty()) {
+      NSWindow* keyWindow = [NSApp keyWindow];
+      if (keyWindow && ![keyWindow isOnActiveSpace]) {
+        // The key window is not on the active space. We must be mid-animation
+        // for a space transition triggered by the dock. Delay the call to
+        // |ui::FocusWindowSet| until the transition completes. Otherwise, the
+        // wrong space's windows get raised, resulting in an off-screen key
+        // window. It does not work to |ui::FocusWindowSet| twice, once here
+        // and once in |activeSpaceDidChange:|, as that appears to break when
+        // the omnibox is focused.
+        //
+        // This check relies on OS X setting the key window to a window on the
+        // target space before calling this method.
+        //
+        // See http://crbug.com/309656.
+        reopenTime_ = base::TimeTicks::Now();
+      } else {
+        ui::FocusWindowSet(browserWindows, false);
+      }
+      // Return NO; we've done (or soon will do) the deminiaturize, so
+      // AppKit shouldn't do anything.
+      return NO;
     }
   }
 
@@ -958,7 +1212,8 @@ void RecordLastRunAppBundlePath() {
       doneOnce = YES;
       if (base::mac::WasLaunchedAsHiddenLoginItem()) {
         SessionService* sessionService =
-            SessionServiceFactory::GetForProfile([self lastProfile]);
+            SessionServiceFactory::GetForProfileForSessionRestore(
+                [self lastProfile]);
         if (sessionService &&
             sessionService->RestoreIfNecessary(std::vector<GURL>()))
           return NO;
@@ -967,21 +1222,35 @@ void RecordLastRunAppBundlePath() {
   }
 
   // Platform apps don't use browser windows so don't do anything if there are
-  // visible windows.
+  // visible windows, otherwise, launch the browser with the same command line
+  // which should launch the app again.
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (flag && command_line.HasSwitch(switches::kAppId))
-    return YES;
+  if (command_line.HasSwitch(switches::kAppId)) {
+    if (hasVisibleWindows)
+      return YES;
+
+    {
+      base::AutoReset<bool> auto_reset_in_run(&g_is_opening_new_window, true);
+      int return_code;
+      StartupBrowserCreator browser_creator;
+      browser_creator.LaunchBrowser(
+          command_line, [self lastProfile], base::FilePath(),
+          chrome::startup::IS_NOT_PROCESS_STARTUP,
+          chrome::startup::IS_NOT_FIRST_RUN, &return_code);
+    }
+    return NO;
+  }
 
   // Otherwise open a new window.
-  {
-    base::AutoReset<bool> auto_reset_in_run(&g_is_opening_new_window, true);
-    int return_code;
-    StartupBrowserCreator browser_creator;
-    browser_creator.LaunchBrowser(
-        command_line, [self lastProfile], FilePath(),
-        chrome::startup::IS_NOT_PROCESS_STARTUP,
-        chrome::startup::IS_NOT_FIRST_RUN, &return_code);
-  }
+  // If the last profile was locked, we have to open the User Manager, as the
+  // profile requires authentication. Similarly, because guest mode is
+  // implemented as forced incognito, we can't open a new guest browser either,
+  // so we have to show the User Manager as well.
+  Profile* lastProfile = [self lastProfile];
+  if (lastProfile->IsGuestSession() || IsProfileSignedOut(lastProfile))
+    chrome::ShowUserManager(lastProfile->GetPath());
+  else
+    CreateBrowser(lastProfile);
 
   // We've handled the reopen event, so return NO to tell AppKit not
   // to do anything.
@@ -1004,7 +1273,9 @@ void RecordLastRunAppBundlePath() {
   menuState_->UpdateCommandEnabled(IDC_MANAGE_EXTENSIONS, true);
   menuState_->UpdateCommandEnabled(IDC_HELP_PAGE_VIA_MENU, true);
   menuState_->UpdateCommandEnabled(IDC_IMPORT_SETTINGS, true);
+#if defined(GOOGLE_CHROME_BUILD)
   menuState_->UpdateCommandEnabled(IDC_FEEDBACK, true);
+#endif
   menuState_->UpdateCommandEnabled(IDC_SHOW_SYNC_SETUP, true);
   menuState_->UpdateCommandEnabled(IDC_TASK_MANAGER, true);
 }
@@ -1014,7 +1285,7 @@ void RecordLastRunAppBundlePath() {
   NSMenu* mainMenu = [NSApp mainMenu];
   NSMenuItem* profileMenu = [mainMenu itemWithTag:IDC_PROFILE_MAIN_MENU];
 
-  if (!ProfileManager::IsMultipleProfilesEnabled()) {
+  if (!profiles::IsMultipleProfilesEnabled()) {
     [mainMenu removeItem:profileMenu];
     return;
   }
@@ -1041,6 +1312,14 @@ void RecordLastRunAppBundlePath() {
   [item setState:enabled ? NSOnState : NSOffState];
 }
 
+- (void)updateDisplayMessageCenterPrefMenuItem:(NSMenuItem*)item {
+  const PrefService* prefService = g_browser_process->local_state();
+  bool enabled = prefService->GetBoolean(prefs::kMessageCenterShowIcon);
+  // The item should be checked if "show icon" is false, since the text reads
+  // "Hide notification center icon."
+  [item setState:enabled ? NSOffState : NSOnState];
+}
+
 - (void)registerServicesMenuTypesTo:(NSApplication*)app {
   // Note that RenderWidgetHostViewCocoa implements NSServicesRequests which
   // handles requests from services.
@@ -1053,11 +1332,25 @@ void RecordLastRunAppBundlePath() {
   if (lastProfile_)
     return lastProfile_;
 
-  // On first launch, no profile will be stored, so use last from Local State.
-  if (g_browser_process->profile_manager())
-    return g_browser_process->profile_manager()->GetLastUsedProfile();
+  // On first launch, use the logic that ChromeBrowserMain uses to determine
+  // the initial profile.
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  if (!profile_manager)
+    return NULL;
 
-  return NULL;
+  return profile_manager->GetProfile(GetStartupProfilePath(
+      profile_manager->user_data_dir(),
+      *CommandLine::ForCurrentProcess()));
+}
+
+- (Profile*)safeLastProfileForNewWindows {
+  Profile* profile = [self lastProfile];
+
+  // Guest sessions must always be OffTheRecord. Use that when opening windows.
+  if (profile->IsGuestSession())
+    return profile->GetOffTheRecordProfile();
+
+  return profile;
 }
 
 // Various methods to open URLs that we get in a native fashion. We use
@@ -1075,15 +1368,16 @@ void RecordLastRunAppBundlePath() {
   Browser* browser = chrome::GetLastActiveBrowser();
   // if no browser window exists then create one with no tabs to be filled in
   if (!browser) {
-    browser = new Browser(Browser::CreateParams([self lastProfile]));
+    browser = new Browser(Browser::CreateParams(
+        [self lastProfile], chrome::HOST_DESKTOP_TYPE_NATIVE));
     browser->window()->Show();
   }
 
   CommandLine dummy(CommandLine::NO_PROGRAM);
   chrome::startup::IsFirstRun first_run = first_run::IsChromeFirstRun() ?
       chrome::startup::IS_FIRST_RUN : chrome::startup::IS_NOT_FIRST_RUN;
-  StartupBrowserCreatorImpl launch(FilePath(), dummy, first_run);
-  launch.OpenURLsInBrowser(browser, false, urls);
+  StartupBrowserCreatorImpl launch(base::FilePath(), dummy, first_run);
+  launch.OpenURLsInBrowser(browser, false, urls, browser->host_desktop_type());
 }
 
 - (void)getUrl:(NSAppleEventDescriptor*)event
@@ -1098,34 +1392,12 @@ void RecordLastRunAppBundlePath() {
   [self openUrls:gurlVector];
 }
 
-// Apple Event handler that receives print event from service
-// process, gets the required data and launches Print dialog.
-- (void)submitCloudPrintJob:(NSAppleEventDescriptor*)event {
-  // Pull parameter list out of Apple Event.
-  NSAppleEventDescriptor* paramList =
-      [event paramDescriptorForKeyword:cloud_print::kAECloudPrintClass];
-
-  if (paramList != nil) {
-    // Pull required fields out of parameter list.
-    NSString* mime = [[paramList descriptorAtIndex:1] stringValue];
-    NSString* inputPath = [[paramList descriptorAtIndex:2] stringValue];
-    NSString* printTitle = [[paramList descriptorAtIndex:3] stringValue];
-    NSString* printTicket = [[paramList descriptorAtIndex:4] stringValue];
-    // Convert the title to UTF 16 as required.
-    string16 title16 = base::SysNSStringToUTF16(printTitle);
-    string16 printTicket16 = base::SysNSStringToUTF16(printTicket);
-    print_dialog_cloud::CreatePrintDialogForFile(
-        ProfileManager::GetDefaultProfile(), NULL,
-        FilePath([inputPath UTF8String]), title16,
-        printTicket16, [mime UTF8String], /*delete_on_close=*/false);
-  }
-}
-
 - (void)application:(NSApplication*)sender
           openFiles:(NSArray*)filenames {
   std::vector<GURL> gurlVector;
   for (NSString* file in filenames) {
-    GURL gurl = net::FilePathToFileURL(FilePath(base::SysNSStringToUTF8(file)));
+    GURL gurl =
+        net::FilePathToFileURL(base::FilePath([file fileSystemRepresentation]));
     gurlVector.push_back(gurl);
   }
   if (!gurlVector.empty())
@@ -1144,7 +1416,7 @@ void RecordLastRunAppBundlePath() {
     chrome::ShowSettings(browser);
   } else {
     // No browser window, so create one for the options tab.
-    chrome::OpenOptionsWindow([self lastProfile]);
+    chrome::OpenOptionsWindow([self safeLastProfileForNewWindows]);
   }
 }
 
@@ -1153,7 +1425,7 @@ void RecordLastRunAppBundlePath() {
     chrome::ShowAboutChrome(browser);
   } else {
     // No browser window, so create one for the about tab.
-    chrome::OpenAboutWindow([self lastProfile]);
+    chrome::OpenAboutWindow([self safeLastProfileForNewWindows]);
   }
 }
 
@@ -1161,6 +1433,12 @@ void RecordLastRunAppBundlePath() {
   PrefService* prefService = g_browser_process->local_state();
   bool enabled = prefService->GetBoolean(prefs::kConfirmToQuitEnabled);
   prefService->SetBoolean(prefs::kConfirmToQuitEnabled, !enabled);
+}
+
+- (IBAction)toggleDisplayMessageCenter:(id)sender {
+  PrefService* prefService = g_browser_process->local_state();
+  bool enabled = prefService->GetBoolean(prefs::kMessageCenterShowIcon);
+  prefService->SetBoolean(prefs::kMessageCenterShowIcon, !enabled);
 }
 
 // Explicitly bring to the foreground when creating new windows from the dock.
@@ -1180,22 +1458,27 @@ void RecordLastRunAppBundlePath() {
     [dockMenu addItem:[NSMenuItem separatorItem]];
 
   NSString* titleStr = l10n_util::GetNSStringWithFixup(IDS_NEW_WINDOW_MAC);
-  scoped_nsobject<NSMenuItem> item(
+  base::scoped_nsobject<NSMenuItem> item(
       [[NSMenuItem alloc] initWithTitle:titleStr
                                  action:@selector(commandFromDock:)
                           keyEquivalent:@""]);
   [item setTarget:self];
   [item setTag:IDC_NEW_WINDOW];
+  [item setEnabled:[self validateUserInterfaceItem:item]];
   [dockMenu addItem:item];
 
-  titleStr = l10n_util::GetNSStringWithFixup(IDS_NEW_INCOGNITO_WINDOW_MAC);
-  item.reset(
-      [[NSMenuItem alloc] initWithTitle:titleStr
-                                 action:@selector(commandFromDock:)
-                          keyEquivalent:@""]);
-  [item setTarget:self];
-  [item setTag:IDC_NEW_INCOGNITO_WINDOW];
-  [dockMenu addItem:item];
+  // |profile| can be NULL during unit tests.
+  if (!profile || !profile->IsManaged()) {
+    titleStr = l10n_util::GetNSStringWithFixup(IDS_NEW_INCOGNITO_WINDOW_MAC);
+    item.reset(
+        [[NSMenuItem alloc] initWithTitle:titleStr
+                                   action:@selector(commandFromDock:)
+                            keyEquivalent:@""]);
+    [item setTarget:self];
+    [item setTag:IDC_NEW_INCOGNITO_WINDOW];
+    [item setEnabled:[self validateUserInterfaceItem:item]];
+    [dockMenu addItem:item];
+  }
 
   // TODO(rickcam): Mock out BackgroundApplicationListModel, then add unit
   // tests which use the mock in place of the profile-initialized model.
@@ -1207,30 +1490,23 @@ void RecordLastRunAppBundlePath() {
       int position = 0;
       NSString* menuStr =
           l10n_util::GetNSStringWithFixup(IDS_BACKGROUND_APPS_MAC);
-      scoped_nsobject<NSMenu> appMenu([[NSMenu alloc] initWithTitle:menuStr]);
+      base::scoped_nsobject<NSMenu> appMenu(
+          [[NSMenu alloc] initWithTitle:menuStr]);
       for (extensions::ExtensionList::const_iterator cursor =
-            applications.begin();
+               applications.begin();
            cursor != applications.end();
            ++cursor, ++position) {
-        DCHECK_EQ(applications.GetPosition(*cursor), position);
+        DCHECK_EQ(applications.GetPosition(cursor->get()), position);
         NSString* itemStr =
-            base::SysUTF16ToNSString(UTF8ToUTF16((*cursor)->name()));
-        scoped_nsobject<NSMenuItem> appItem([[NSMenuItem alloc]
-            initWithTitle:itemStr
-                   action:@selector(commandFromDock:)
-            keyEquivalent:@""]);
+            base::SysUTF16ToNSString(base::UTF8ToUTF16((*cursor)->name()));
+        base::scoped_nsobject<NSMenuItem> appItem(
+            [[NSMenuItem alloc] initWithTitle:itemStr
+                                       action:@selector(executeApplication:)
+                                keyEquivalent:@""]);
         [appItem setTarget:self];
         [appItem setTag:position];
         [appMenu addItem:appItem];
       }
-      scoped_nsobject<NSMenuItem> appMenuItem([[NSMenuItem alloc]
-          initWithTitle:menuStr
-                 action:@selector(commandFromDock:)
-          keyEquivalent:@""]);
-      [appMenuItem setTarget:self];
-      [appMenuItem setTag:position];
-      [appMenuItem setSubmenu:appMenu];
-      [dockMenu addItem:appMenuItem];
     }
   }
 
@@ -1239,10 +1515,6 @@ void RecordLastRunAppBundlePath() {
 
 - (const std::vector<GURL>&)startupUrls {
   return startupUrls_;
-}
-
-- (void)clearStartupUrls {
-  startupUrls_.clear();
 }
 
 - (BookmarkMenuBridge*)bookmarkMenuBridge {
@@ -1255,6 +1527,11 @@ void RecordLastRunAppBundlePath() {
 
 - (void)removeObserverForWorkAreaChange:(ui::WorkAreaWatcherObserver*)observer {
   workAreaChangeObservers_.RemoveObserver(observer);
+}
+
+- (void)initAppShimMenuController {
+  if (!appShimMenuController_)
+    appShimMenuController_.reset([[AppShimMenuController alloc] init]);
 }
 
 - (void)applicationDidChangeScreenParameters:(NSNotification*)notification {

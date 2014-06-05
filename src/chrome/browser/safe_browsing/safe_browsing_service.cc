@@ -11,15 +11,15 @@
 #include "base/debug/leak_tracker.h"
 #include "base/lazy_instance.h"
 #include "base/path_service.h"
-#include "base/prefs/public/pref_change_registrar.h"
+#include "base/prefs/pref_change_registrar.h"
+#include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/metrics/metrics_service.h"
-#include "chrome/browser/net/sqlite_persistent_cookie_store.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/safe_browsing/client_side_detection_service.h"
@@ -31,12 +31,14 @@
 #include "chrome/browser/safe_browsing/safe_browsing_database.h"
 #include "chrome/browser/safe_browsing/ui_manager.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/startup_metric_utils/startup_metric_utils.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/cookie_crypto_delegate.h"
+#include "content/public/browser/cookie_store_factory.h"
 #include "content/public/browser/notification_service.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/url_request/url_request_context.h"
@@ -51,15 +53,29 @@ using content::BrowserThread;
 namespace {
 
 // Filename suffix for the cookie database.
-const FilePath::CharType kCookiesFile[] = FILE_PATH_LITERAL(" Cookies");
+const base::FilePath::CharType kCookiesFile[] = FILE_PATH_LITERAL(" Cookies");
 
 // The default URL prefix where browser fetches chunk updates, hashes,
 // and reports safe browsing hits and malware details.
 const char* const kSbDefaultURLPrefix =
     "https://safebrowsing.google.com/safebrowsing";
 
-FilePath CookieFilePath() {
-  return FilePath(
+// The backup URL prefix used when there are issues establishing a connection
+// with the server at the primary URL.
+const char* const kSbBackupConnectErrorURLPrefix =
+    "https://alt1-safebrowsing.google.com/safebrowsing";
+
+// The backup URL prefix used when there are HTTP-specific issues with the
+// server at the primary URL.
+const char* const kSbBackupHttpErrorURLPrefix =
+    "https://alt2-safebrowsing.google.com/safebrowsing";
+
+// The backup URL prefix used when there are local network specific issues.
+const char* const kSbBackupNetworkErrorURLPrefix =
+    "https://alt3-safebrowsing.google.com/safebrowsing";
+
+base::FilePath CookieFilePath() {
+  return base::FilePath(
       SafeBrowsingService::GetBaseFilename().value() + kCookiesFile);
 }
 
@@ -115,7 +131,7 @@ SafeBrowsingServiceFactory* SafeBrowsingService::factory_ = NULL;
 // don't leak it.
 class SafeBrowsingServiceFactoryImpl : public SafeBrowsingServiceFactory {
  public:
-  virtual SafeBrowsingService* CreateSafeBrowsingService() {
+  virtual SafeBrowsingService* CreateSafeBrowsingService() OVERRIDE {
     return new SafeBrowsingService();
   }
 
@@ -127,17 +143,17 @@ class SafeBrowsingServiceFactoryImpl : public SafeBrowsingServiceFactory {
   DISALLOW_COPY_AND_ASSIGN(SafeBrowsingServiceFactoryImpl);
 };
 
-static base::LazyInstance<SafeBrowsingServiceFactoryImpl>
+static base::LazyInstance<SafeBrowsingServiceFactoryImpl>::Leaky
     g_safe_browsing_service_factory_impl = LAZY_INSTANCE_INITIALIZER;
 
 // static
-FilePath SafeBrowsingService::GetCookieFilePathForTesting() {
+base::FilePath SafeBrowsingService::GetCookieFilePathForTesting() {
   return CookieFilePath();
 }
 
 // static
-FilePath SafeBrowsingService::GetBaseFilename() {
-  FilePath path;
+base::FilePath SafeBrowsingService::GetBaseFilename() {
+  base::FilePath path;
   bool result = PathService::Get(chrome::DIR_USER_DATA, &path);
   DCHECK(result);
   return path.Append(chrome::kSafeBrowsingBaseFilename);
@@ -164,6 +180,9 @@ SafeBrowsingService::~SafeBrowsingService() {
 }
 
 void SafeBrowsingService::Initialize() {
+  startup_metric_utils::ScopedSlowStartupUMA
+      scoped_timer("Startup.SlowStartupSafeBrowsingServiceInitialize");
+
   url_request_context_getter_ =
       new SafeBrowsingURLRequestContextGetter(this);
 
@@ -180,13 +199,11 @@ void SafeBrowsingService::Initialize() {
 #if defined(FULL_SAFE_BROWSING)
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableClientSidePhishingDetection)) {
-    csd_service_.reset(
-        safe_browsing::ClientSideDetectionService::Create(
-            url_request_context_getter_));
+    csd_service_.reset(safe_browsing::ClientSideDetectionService::Create(
+        url_request_context_getter_.get()));
   }
   download_service_.reset(new safe_browsing::DownloadProtectionService(
-      this,
-      url_request_context_getter_));
+      this, url_request_context_getter_.get()));
 #endif
 
   // Track the safe browsing preference of existing profiles.
@@ -261,10 +278,12 @@ SafeBrowsingService::database_manager() const {
 }
 
 SafeBrowsingProtocolManager* SafeBrowsingService::protocol_manager() const {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   return protocol_manager_;
 }
 
 SafeBrowsingPingManager* SafeBrowsingService::ping_manager() const {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   return ping_manager_;
 }
 
@@ -286,9 +305,13 @@ void SafeBrowsingService::InitURLRequestContextOnIOThread(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DCHECK(!url_request_context_.get());
 
-  scoped_refptr<net::CookieStore> cookie_store = new net::CookieMonster(
-      new SQLitePersistentCookieStore(CookieFilePath(), false, NULL),
-      NULL);
+  scoped_refptr<net::CookieStore> cookie_store(
+      content::CreateCookieStore(
+          content::CookieStoreConfig(
+              CookieFilePath(),
+              content::CookieStoreConfig::EPHEMERAL_SESSION_COOKIES,
+              NULL,
+              NULL)));
 
   url_request_context_.reset(new net::URLRequestContext);
   // |system_url_request_context_getter| may be NULL during tests.
@@ -296,7 +319,7 @@ void SafeBrowsingService::InitURLRequestContextOnIOThread(
     url_request_context_->CopyFrom(
         system_url_request_context_getter->GetURLRequestContext());
   }
-  url_request_context_->set_cookie_store(cookie_store);
+  url_request_context_->set_cookie_store(cookie_store.get());
 }
 
 void SafeBrowsingService::DestroyURLRequestContextOnIOThread() {
@@ -313,12 +336,7 @@ void SafeBrowsingService::DestroyURLRequestContextOnIOThread() {
   url_request_context_.reset();
 }
 
-void SafeBrowsingService::StartOnIOThread() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  if (enabled_)
-    return;
-  enabled_ = true;
-
+SafeBrowsingProtocolConfig SafeBrowsingService::GetProtocolConfig() const {
   SafeBrowsingProtocolConfig config;
   // On Windows, get the safe browsing client name from the browser
   // distribution classes in installer util. These classes don't yet have
@@ -337,27 +355,36 @@ void SafeBrowsingService::StartOnIOThread() {
   config.disable_auto_update =
       cmdline->HasSwitch(switches::kSbDisableAutoUpdate) ||
       cmdline->HasSwitch(switches::kDisableBackgroundNetworking);
-  config.url_prefix =
-      cmdline->HasSwitch(switches::kSbURLPrefix) ?
-      cmdline->GetSwitchValueASCII(switches::kSbURLPrefix) :
-      kSbDefaultURLPrefix;
+  config.url_prefix = kSbDefaultURLPrefix;
+  config.backup_connect_error_url_prefix = kSbBackupConnectErrorURLPrefix;
+  config.backup_http_error_url_prefix = kSbBackupHttpErrorURLPrefix;
+  config.backup_network_error_url_prefix = kSbBackupNetworkErrorURLPrefix;
+
+  return config;
+}
+
+void SafeBrowsingService::StartOnIOThread(
+    net::URLRequestContextGetter* url_request_context_getter) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  if (enabled_)
+    return;
+  enabled_ = true;
+
+  SafeBrowsingProtocolConfig config = GetProtocolConfig();
 
 #if defined(FULL_SAFE_BROWSING)
-  DCHECK(database_manager_);
+  DCHECK(database_manager_.get());
   database_manager_->StartOnIOThread();
 
   DCHECK(!protocol_manager_);
-  protocol_manager_ =
-      SafeBrowsingProtocolManager::Create(database_manager_,
-                                          url_request_context_getter_,
-                                          config);
+  protocol_manager_ = SafeBrowsingProtocolManager::Create(
+      database_manager_.get(), url_request_context_getter, config);
   protocol_manager_->Initialize();
 #endif
 
   DCHECK(!ping_manager_);
-  ping_manager_ =
-      SafeBrowsingPingManager::Create(url_request_context_getter_,
-                                      config);
+  ping_manager_ = SafeBrowsingPingManager::Create(
+      url_request_context_getter, config);
 }
 
 void SafeBrowsingService::StopOnIOThread(bool shutdown) {
@@ -388,7 +415,8 @@ void SafeBrowsingService::Start() {
 
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      base::Bind(&SafeBrowsingService::StartOnIOThread, this));
+      base::Bind(&SafeBrowsingService::StartOnIOThread, this,
+                 url_request_context_getter_));
 }
 
 void SafeBrowsingService::Stop(bool shutdown) {
@@ -461,9 +489,7 @@ void SafeBrowsingService::RefreshState() {
   if (csd_service_.get())
     csd_service_->SetEnabledAndRefreshState(enable);
   if (download_service_.get()) {
-    download_service_->SetEnabled(
-        enable && !CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kDisableImprovedDownloadProtection));
+    download_service_->SetEnabled(enable);
   }
 #endif
 }

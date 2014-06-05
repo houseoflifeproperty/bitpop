@@ -10,7 +10,7 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_log.h"
 #include "net/base/test_completion_callback.h"
@@ -50,8 +50,8 @@ class MockClientSocket : public net::StreamSocket {
                          const net::CompletionCallback&));
   MOCK_METHOD3(Write, int(net::IOBuffer*, int,
                           const net::CompletionCallback&));
-  MOCK_METHOD1(SetReceiveBufferSize, bool(int32));
-  MOCK_METHOD1(SetSendBufferSize, bool(int32));
+  MOCK_METHOD1(SetReceiveBufferSize, int(int32));
+  MOCK_METHOD1(SetSendBufferSize, int(int32));
   MOCK_METHOD1(Connect, int(const net::CompletionCallback&));
   MOCK_METHOD0(Disconnect, void());
   MOCK_CONST_METHOD0(IsConnected, bool());
@@ -91,7 +91,7 @@ class FakeSSLClientSocketTest : public testing::Test {
 
   virtual ~FakeSSLClientSocketTest() {}
 
-  net::StreamSocket* MakeClientSocket() {
+  scoped_ptr<net::StreamSocket> MakeClientSocket() {
     return mock_client_socket_factory_.CreateTransportClientSocket(
         net::AddressList(), NULL, net::NetLog::Source());
   }
@@ -164,14 +164,15 @@ class FakeSSLClientSocketTest : public testing::Test {
         scoped_refptr<net::IOBuffer> read_buf(
             new net::IOBuffer(read_buf_len));
         int read_status = fake_ssl_client_socket.Read(
-            read_buf, read_buf_len, test_completion_callback.callback());
+            read_buf.get(), read_buf_len, test_completion_callback.callback());
         ExpectStatus(mode, read_len, read_status, &test_completion_callback);
 
         scoped_refptr<net::IOBuffer> write_buf(
             new net::StringIOBuffer(kWriteTestData));
-        int write_status = fake_ssl_client_socket.Write(
-            write_buf, arraysize(kWriteTestData),
-            test_completion_callback.callback());
+        int write_status =
+            fake_ssl_client_socket.Write(write_buf.get(),
+                                         arraysize(kWriteTestData),
+                                         test_completion_callback.callback());
         ExpectStatus(mode, arraysize(kWriteTestData), write_status,
                      &test_completion_callback);
       } else {
@@ -261,14 +262,14 @@ class FakeSSLClientSocketTest : public testing::Test {
   }
 
   // MockTCPClientSocket needs a message loop.
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
 
   net::MockClientSocketFactory mock_client_socket_factory_;
   scoped_ptr<net::StaticSocketDataProvider> static_socket_data_provider_;
 };
 
 TEST_F(FakeSSLClientSocketTest, PassThroughMethods) {
-  MockClientSocket* mock_client_socket = new MockClientSocket();
+  scoped_ptr<MockClientSocket> mock_client_socket(new MockClientSocket());
   const int kReceiveBufferSize = 10;
   const int kSendBufferSize = 20;
   net::IPEndPoint ip_endpoint(net::IPAddressNumber(net::kIPv4AddressSize), 80);
@@ -283,7 +284,8 @@ TEST_F(FakeSSLClientSocketTest, PassThroughMethods) {
   EXPECT_CALL(*mock_client_socket, SetOmniboxSpeculation());
 
   // Takes ownership of |mock_client_socket|.
-  FakeSSLClientSocket fake_ssl_client_socket(mock_client_socket);
+  FakeSSLClientSocket fake_ssl_client_socket(
+      mock_client_socket.PassAs<net::StreamSocket>());
   fake_ssl_client_socket.SetReceiveBufferSize(kReceiveBufferSize);
   fake_ssl_client_socket.SetSendBufferSize(kSendBufferSize);
   EXPECT_EQ(kPeerAddress,

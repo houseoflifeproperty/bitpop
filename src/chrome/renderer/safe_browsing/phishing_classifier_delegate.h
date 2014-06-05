@@ -8,11 +8,11 @@
 #define CHROME_RENDERER_SAFE_BROWSING_PHISHING_CLASSIFIER_DELEGATE_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/renderer/render_process_observer.h"
 #include "content/public/renderer/render_view_observer.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace safe_browsing {
 class ClientPhishingRequest;
@@ -51,7 +51,7 @@ class PhishingClassifierDelegate : public content::RenderViewObserver {
   // conditions are met (see MaybeStartClassification for details).
   // We ignore preliminary captures, since these happen before the page has
   // finished loading.
-  void PageCaptured(string16* page_text, bool preliminary_capture);
+  void PageCaptured(base::string16* page_text, bool preliminary_capture);
 
   // RenderViewObserver implementation, public for testing.
 
@@ -59,7 +59,7 @@ class PhishingClassifierDelegate : public content::RenderViewObserver {
   // WebFrame.  Typically, this will cause any pending classification to be
   // cancelled.  However, if the navigation is within the same page, we
   // continue running the current classification.
-  virtual void DidCommitProvisionalLoad(WebKit::WebFrame* frame,
+  virtual void DidCommitProvisionalLoad(blink::WebLocalFrame* frame,
                                         bool is_new_navigation) OVERRIDE;
 
  private:
@@ -127,7 +127,7 @@ class PhishingClassifierDelegate : public content::RenderViewObserver {
   // there is no Scorer yet when OnNavigate is called, or the browser has not
   // instructed us to classify the page, the page text will be cached until
   // these conditions are met.
-  string16 classifier_page_text_;
+  base::string16 classifier_page_text_;
 
   // Tracks whether we have stored anything in classifier_page_text_ for the
   // most recent load.  We use this to distinguish empty text from cases where

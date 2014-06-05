@@ -7,18 +7,16 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/prefs/public/pref_member.h"
+#include "base/prefs/pref_member.h"
 #include "base/threading/non_thread_safe.h"
-#include "base/time.h"
-#include "base/timer.h"
-#include "chrome/browser/captive_portal/captive_portal_detector.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
-#include "googleurl/src/gurl.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
+#include "components/captive_portal/captive_portal_detector.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "net/base/backoff_entry.h"
+#include "url/gurl.h"
 
 class Profile;
-
-namespace captive_portal {
 
 // Service that checks for captive portals when queried, and sends a
 // NOTIFICATION_CAPTIVE_PORTAL_CHECK_RESULT with the Profile as the source and
@@ -27,8 +25,7 @@ namespace captive_portal {
 // Captive portal checks are rate-limited.  The CaptivePortalService may only
 // be accessed on the UI thread.
 // Design doc: https://docs.google.com/document/d/1k-gP2sswzYNvryu9NcgN7q5XrsMlUdlUdoW9WRaEmfM/edit
-class CaptivePortalService : public ProfileKeyedService,
-                             public base::NonThreadSafe {
+class CaptivePortalService : public KeyedService, public base::NonThreadSafe {
  public:
   enum TestingState {
     NOT_TESTING,
@@ -40,9 +37,9 @@ class CaptivePortalService : public ProfileKeyedService,
   // The details sent via a NOTIFICATION_CAPTIVE_PORTAL_CHECK_RESULT.
   struct Results {
     // The result of the second most recent captive portal check.
-    Result previous_result;
+    captive_portal::CaptivePortalResult previous_result;
     // The result of the most recent captive portal check.
-    Result result;
+    captive_portal::CaptivePortalResult result;
   };
 
   explicit CaptivePortalService(Profile* profile);
@@ -58,7 +55,9 @@ class CaptivePortalService : public ProfileKeyedService,
   const GURL& test_url() const { return test_url_; }
 
   // Result of the most recent captive portal check.
-  Result last_detection_result() const { return last_detection_result_; }
+  captive_portal::CaptivePortalResult last_detection_result() const {
+    return last_detection_result_;
+  }
 
   // Whether or not the CaptivePortalService is enabled.  When disabled, all
   // checks return INTERNET_CONNECTED.
@@ -112,18 +111,18 @@ class CaptivePortalService : public ProfileKeyedService,
 
   // Called by CaptivePortalDetector when detection completes.
   void OnPortalDetectionCompleted(
-      const CaptivePortalDetector::Results& results);
+      const captive_portal::CaptivePortalDetector::Results& results);
 
-  // ProfileKeyedService:
+  // KeyedService:
   virtual void Shutdown() OVERRIDE;
 
   // Called when a captive portal check completes.  Passes the result to all
   // observers.
-  void OnResult(Result result);
+  void OnResult(captive_portal::CaptivePortalResult result);
 
   // Updates BackoffEntry::Policy and creates a new BackoffEntry, which
   // resets the count used for throttling.
-  void ResetBackoffEntry(Result result);
+  void ResetBackoffEntry(captive_portal::CaptivePortalResult result);
 
   // Updates |enabled_| based on command line flags and Profile preferences,
   // and sets |state_| to STATE_NONE if it's false.
@@ -163,14 +162,14 @@ class CaptivePortalService : public ProfileKeyedService,
   State state_;
 
   // Detector for checking active network for a portal state.
-  CaptivePortalDetector captive_portal_detector_;
+  captive_portal::CaptivePortalDetector captive_portal_detector_;
 
   // True if the service is enabled.  When not enabled, all checks will return
   // RESULT_INTERNET_CONNECTED.
   bool enabled_;
 
   // The result of the most recent captive portal check.
-  Result last_detection_result_;
+  captive_portal::CaptivePortalResult last_detection_result_;
 
   // Number of sequential checks with the same captive portal result.
   int num_checks_with_same_result_;
@@ -185,8 +184,8 @@ class CaptivePortalService : public ProfileKeyedService,
   RecheckPolicy recheck_policy_;
 
   // Implements behavior needed by |recheck_policy_|.  Whenever there's a new
-  // captive_portal::Result, BackoffEntry::Policy is updated and
-  // |backoff_entry_| is recreated.  Each check that returns the same Result
+  // captive_portal::CaptivePortalResult, BackoffEntry::Policy is updated and
+  // |backoff_entry_| is recreated.  Each check that returns the same result
   // is considered a "failure", to trigger throttling.
   scoped_ptr<net::BackoffEntry> backoff_entry_;
 
@@ -207,7 +206,5 @@ class CaptivePortalService : public ProfileKeyedService,
 
   DISALLOW_COPY_AND_ASSIGN(CaptivePortalService);
 };
-
-}  // namespace captive_portal
 
 #endif  // CHROME_BROWSER_CAPTIVE_PORTAL_CAPTIVE_PORTAL_SERVICE_H_

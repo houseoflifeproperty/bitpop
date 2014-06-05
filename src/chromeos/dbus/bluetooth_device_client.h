@@ -1,11 +1,10 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROMEOS_DBUS_BLUETOOTH_DEVICE_CLIENT_H_
 #define CHROMEOS_DBUS_BLUETOOTH_DEVICE_CLIENT_H_
 
-#include <map>
 #include <string>
 #include <vector>
 
@@ -13,40 +12,24 @@
 #include "base/observer_list.h"
 #include "base/values.h"
 #include "chromeos/chromeos_export.h"
-#include "chromeos/dbus/bluetooth_property.h"
-#include "chromeos/dbus/dbus_client_implementation_type.h"
+#include "chromeos/dbus/dbus_client.h"
 #include "dbus/object_path.h"
-
-namespace dbus {
-class Bus;
-}  // namespace dbus
+#include "dbus/property.h"
 
 namespace chromeos {
 
-class BluetoothAdapterClient;
-
-// BluetoothDeviceClient is used to communicate with a bluetooth Device
-// interface.
-class CHROMEOS_EXPORT BluetoothDeviceClient {
+// BluetoothDeviceClient is used to communicate with objects representing
+// remote Bluetooth Devices.
+class CHROMEOS_EXPORT BluetoothDeviceClient : public DBusClient {
  public:
   // Structure of properties associated with bluetooth devices.
-  struct Properties : public BluetoothPropertySet {
+  struct Properties : public dbus::PropertySet {
     // The Bluetooth device address of the device. Read-only.
     dbus::Property<std::string> address;
 
     // The Bluetooth friendly name of the device. Read-only, to give a
     // different local name, use the |alias| property.
     dbus::Property<std::string> name;
-
-    // Unique numeric identifier for the vendor of the device. Read-only.
-    dbus::Property<uint16> vendor;
-
-    // Unique vendor-assigned product identifier for the product of the
-    // device. Read-only.
-    dbus::Property<uint16> product;
-
-    // Unique vendor-assigned version identifier for the device. Read-only.
-    dbus::Property<uint16> version;
 
     // Proposed icon name for the device according to the freedesktop.org
     // icon naming specification. Read-only.
@@ -55,12 +38,15 @@ class CHROMEOS_EXPORT BluetoothDeviceClient {
     // The Bluetooth class of the device. Read-only.
     dbus::Property<uint32> bluetooth_class;
 
-    // List of 128-bit UUIDs that represent the available remote services.
-    // Raed-only.
-    dbus::Property<std::vector<std::string> > uuids;
+    // The GAP external appearance of the device. Read-only.
+    dbus::Property<uint16> appearance;
 
-    // List of characteristics-based available remote services. Read-only.
-    dbus::Property<std::vector<dbus::ObjectPath> > services;
+    // Unique numeric identifier for the vendor of the device. Read-only.
+    dbus::Property<uint16> vendor;
+
+    // List of 128-bit UUIDs that represent the available remote services.
+    // Read-only.
+    dbus::Property<std::vector<std::string> > uuids;
 
     // Indicates that the device is currently paired. Read-only.
     dbus::Property<bool> paired;
@@ -79,9 +65,6 @@ class CHROMEOS_EXPORT BluetoothDeviceClient {
     // Local alias for the device, if not set, is equal to |name|.
     dbus::Property<std::string> alias;
 
-    // List of object paths of nodes the device provides. Read-only.
-    dbus::Property<std::vector<dbus::ObjectPath> > nodes;
-
     // Object path of the adapter the device belongs to. Read-only.
     dbus::Property<dbus::ObjectPath> adapter;
 
@@ -90,7 +73,29 @@ class CHROMEOS_EXPORT BluetoothDeviceClient {
     // give false positives. Read-only.
     dbus::Property<bool> legacy_pairing;
 
+    // Remote Device ID information in Linux kernel modalias format. Read-only.
+    dbus::Property<std::string> modalias;
+
+    // Received signal strength indicator that is set when the device is
+    // discovered during inquiry. Read-only.
+    dbus::Property<int16> rssi;
+
+    // Received signal strength indicator when a connection is open to the
+    // device. This property is not set unless connection monitor is enabled.
+    // Read-only.
+    dbus::Property<int16> connection_rssi;
+
+    // The transmit power level of the host when a connection is open
+    // to the device. This property is not set unless connection monitor is
+    // enabled. Read-only.
+    dbus::Property<int16> connection_tx_power;
+
+    // The maximum transmit power level of the host that can be set
+    // when connected to the device. Read-only.
+    dbus::Property<int16> connection_tx_power_max;
+
     Properties(dbus::ObjectProxy* object_proxy,
+               const std::string& interface_name,
                const PropertyChangedCallback& callback);
     virtual ~Properties();
   };
@@ -100,25 +105,18 @@ class CHROMEOS_EXPORT BluetoothDeviceClient {
    public:
     virtual ~Observer() {}
 
+    // Called when the remote device with object path |object_path| is added
+    // to the set of known devices.
+    virtual void DeviceAdded(const dbus::ObjectPath& object_path) {}
+
+    // Called when the remote device with object path |object_path| is removed
+    // from the set of known devices.
+    virtual void DeviceRemoved(const dbus::ObjectPath& object_path) {}
+
     // Called when the device with object path |object_path| has a
     // change in value of the property named |property_name|.
     virtual void DevicePropertyChanged(const dbus::ObjectPath& object_path,
                                        const std::string& property_name) {}
-
-    // Called when the device with object path |object_path| is about
-    // to be disconnected, giving a chance for application layers to
-    // shut down cleanly.
-    virtual void DisconnectRequested(const dbus::ObjectPath& object_path) {}
-
-    // Called when the device with object path |object_path| has a new
-    // persistent device node with object path |node_path|.
-    virtual void NodeCreated(const dbus::ObjectPath& object_path,
-                             const dbus::ObjectPath& node_path) {}
-
-    // Called when the device with object path |object_path| removes
-    // the persistent device node with object path |node_path|.
-    virtual void NodeRemoved(const dbus::ObjectPath& object_path,
-                             const dbus::ObjectPath& node_path) {}
   };
 
   virtual ~BluetoothDeviceClient();
@@ -129,75 +127,82 @@ class CHROMEOS_EXPORT BluetoothDeviceClient {
   virtual void AddObserver(Observer* observer) = 0;
   virtual void RemoveObserver(Observer* observer) = 0;
 
+  // Returns the list of device object paths associated with the given adapter
+  // identified by the D-Bus object path |adapter_path|.
+  virtual std::vector<dbus::ObjectPath> GetDevicesForAdapter(
+      const dbus::ObjectPath& adapter_path) = 0;
+
   // Obtain the properties for the device with object path |object_path|,
   // any values should be copied if needed.
   virtual Properties* GetProperties(const dbus::ObjectPath& object_path) = 0;
 
-  // The Services map is used to convey the set of services discovered
-  // on a device. The keys are unique record handles and the values are
-  // XML-formatted service records. Both can be generated using the
-  // sdptool(1) binary distributed with bluetoothd.
-  typedef std::map<const uint32, std::string> ServiceMap;
+  // The ErrorCallback is used by device methods to indicate failure.
+  // It receives two arguments: the name of the error in |error_name| and
+  // an optional message in |error_message|.
+  typedef base::Callback<void(const std::string& error_name,
+                              const std::string& error_message)> ErrorCallback;
 
-  // The ServicesCallback is used for the DiscoverServices() method. It
-  // receives three arguments, the |object_path| of the device, the
-  // dictionary of the |services| discovered where the keys are unique
-  // record handles and the values are XML formatted service records,
-  // and |success| which indicates whether or not the request succeded.
-  typedef base::Callback<void(const dbus::ObjectPath&, const ServiceMap&,
-                              bool)> ServicesCallback;
-
-  // Starts the service discovery process for the device with object path
-  // |object_path|, the |pattern| paramter can be used to specify specific
-  // UUIDs while an empty string will look for the public browse group.
-  virtual void DiscoverServices(const dbus::ObjectPath& object_path,
-                                const std::string& pattern,
-                                const ServicesCallback& callback) = 0;
-
-  // The DeviceCallback is used for device methods that only return to
-  // indicate success. It receives two arguments, the |object_path| of the
-  // device the call was made on and |success| which indicates whether or
-  // not the request succeeded.
-  typedef base::Callback<void(const dbus::ObjectPath&, bool)> DeviceCallback;
-
-  // Cancels any previous service discovery processes for the device with
-  // object path |object_path|.
-  virtual void CancelDiscovery(const dbus::ObjectPath& object_path,
-                               const DeviceCallback& callback) = 0;
+  // Connects to the device with object path |object_path|, connecting any
+  // profiles that can be connected to and have been flagged as auto-connected;
+  // may be used to connect additional profiles for an already connected device,
+  // and succeeds if at least one profile is connected.
+  virtual void Connect(const dbus::ObjectPath& object_path,
+                       const base::Closure& callback,
+                       const ErrorCallback& error_callback) = 0;
 
   // Disconnects the device with object path |object_path|, terminating
-  // the low-level ACL connection and any application connections using it.
-  // Actual disconnection takes place after two seconds during which a
-  // DisconnectRequested signal is emitted by the device to allow those
-  // applications to terminate gracefully.
+  // the low-level ACL connection and any profiles using it.
   virtual void Disconnect(const dbus::ObjectPath& object_path,
-                          const DeviceCallback& callback) = 0;
+                          const base::Closure& callback,
+                          const ErrorCallback& error_callback) = 0;
 
-  // The NodeCallback is used for device methods that return a dbus
-  // object path for a persistent device node binding, as well as success.
-  // It receives two arguments, the |object_path| of the persistent device
-  // node binding object returned by the method and |success} which indicates
-  // whether or not the request succeeded.
-  typedef base::Callback<void(const dbus::ObjectPath&, bool)> NodeCallback;
+  // Connects to the profile |uuid| on the device with object path
+  // |object_path|, provided that the profile has been registered with a
+  // handler on the local device.
+  virtual void ConnectProfile(const dbus::ObjectPath& object_path,
+                              const std::string& uuid,
+                              const base::Closure& callback,
+                              const ErrorCallback& error_callback) = 0;
 
-  // Creates a persistent device node binding with the device with object path
-  // |object_path| using the specified service |uuid|. The actual support
-  // depends on the device driver, at the moment only RFCOMM TTY nodes are
-  // supported.
-  virtual void CreateNode(const dbus::ObjectPath& object_path,
-                          const std::string& uuid,
-                          const NodeCallback& callback) = 0;
+  // Disconnects from the profile |uuid| on the device with object path
+  // |object_path|.
+  virtual void DisconnectProfile(const dbus::ObjectPath& object_path,
+                                 const std::string& uuid,
+                                 const base::Closure& callback,
+                                 const ErrorCallback& error_callback) = 0;
 
-  // Removes the persistent device node binding with the dbus object path
-  // |node_path| from the device with object path |object_path|.
-  virtual void RemoveNode(const dbus::ObjectPath& object_path,
-                          const dbus::ObjectPath& node_path,
-                          const DeviceCallback& callback) = 0;
+  // Initiates pairing with the device with object path |object_path| and
+  // retrieves all SDP records or GATT primary services. An agent must be
+  // registered to handle the pairing request.
+  virtual void Pair(const dbus::ObjectPath& object_path,
+                    const base::Closure& callback,
+                    const ErrorCallback& error_callback) = 0;
+
+  // Cancels an in-progress pairing with the device with object path
+  // |object_path| initiated by Pair().
+  virtual void CancelPairing(const dbus::ObjectPath& object_path,
+                             const base::Closure& callback,
+                             const ErrorCallback& error_callback) = 0;
+
+  // Starts connection monitor for the device with object path
+  // |object_path|. Connection monitor is a mode the connection properties,
+  // RSSI and TX power are tracked and updated when they change.
+  virtual void StartConnectionMonitor(const dbus::ObjectPath& object_path,
+                                      const base::Closure& callback,
+                                      const ErrorCallback& error_callback) = 0;
+
+  // Stops connection monitor for the device with object path
+  // |object_path|.
+  virtual void StopConnectionMonitor(const dbus::ObjectPath& object_path,
+                                     const base::Closure& callback,
+                                     const ErrorCallback& error_callback) = 0;
 
   // Creates the instance.
-  static BluetoothDeviceClient* Create(DBusClientImplementationType type,
-                                       dbus::Bus* bus,
-                                       BluetoothAdapterClient* adapter_client);
+  static BluetoothDeviceClient* Create();
+
+  // Constants used to indicate exceptional error conditions.
+  static const char kNoResponseError[];
+  static const char kUnknownDeviceError[];
 
  protected:
   BluetoothDeviceClient();

@@ -169,7 +169,7 @@ static int vaapi_vc1_start_frame(AVCodecContext *avctx, av_unused const uint8_t 
     pic_param->sequence_fields.bits.psf                             = v->psf;
     pic_param->sequence_fields.bits.multires                        = v->multires;
     pic_param->sequence_fields.bits.overlap                         = v->overlap;
-    pic_param->sequence_fields.bits.syncmarker                      = s->resync_marker;
+    pic_param->sequence_fields.bits.syncmarker                      = v->resync_marker;
     pic_param->sequence_fields.bits.rangered                        = v->rangered;
     pic_param->sequence_fields.bits.max_b_frames                    = s->avctx->max_b_frames;
 #if VA_CHECK_VERSION(0,32,0)
@@ -310,13 +310,6 @@ static int vaapi_vc1_start_frame(AVCodecContext *avctx, av_unused const uint8_t 
     return 0;
 }
 
-static int vaapi_vc1_end_frame(AVCodecContext *avctx)
-{
-    VC1Context * const v = avctx->priv_data;
-
-    return ff_vaapi_common_end_frame(&v->s);
-}
-
 static int vaapi_vc1_decode_slice(AVCodecContext *avctx, const uint8_t *buffer, uint32_t size)
 {
     VC1Context * const v = avctx->priv_data;
@@ -345,9 +338,9 @@ AVHWAccel ff_wmv3_vaapi_hwaccel = {
     .name           = "wmv3_vaapi",
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_WMV3,
-    .pix_fmt        = PIX_FMT_VAAPI_VLD,
+    .pix_fmt        = AV_PIX_FMT_VAAPI_VLD,
     .start_frame    = vaapi_vc1_start_frame,
-    .end_frame      = vaapi_vc1_end_frame,
+    .end_frame      = ff_vaapi_mpeg_end_frame,
     .decode_slice   = vaapi_vc1_decode_slice,
 };
 #endif
@@ -356,8 +349,8 @@ AVHWAccel ff_vc1_vaapi_hwaccel = {
     .name           = "vc1_vaapi",
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_VC1,
-    .pix_fmt        = PIX_FMT_VAAPI_VLD,
+    .pix_fmt        = AV_PIX_FMT_VAAPI_VLD,
     .start_frame    = vaapi_vc1_start_frame,
-    .end_frame      = vaapi_vc1_end_frame,
+    .end_frame      = ff_vaapi_mpeg_end_frame,
     .decode_slice   = vaapi_vc1_decode_slice,
 };

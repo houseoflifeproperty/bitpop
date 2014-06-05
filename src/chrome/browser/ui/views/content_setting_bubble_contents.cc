@@ -9,23 +9,31 @@
 #include <string>
 #include <vector>
 
-#include "base/utf_string_conversions.h"
+#include "base/bind.h"
+#include "base/stl_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/plugins/plugin_finder.h"
 #include "chrome/browser/plugins/plugin_metadata.h"
-#include "chrome/browser/ui/chrome_style.h"
 #include "chrome/browser/ui/content_settings/content_setting_bubble_model.h"
+#include "chrome/browser/ui/content_settings/content_setting_media_menu_model.h"
 #include "chrome/browser/ui/views/browser_dialogs.h"
-#include "content/public/browser/notification_source.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/browser/plugin_service.h"
+#include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
+#include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/models/simple_menu_model.h"
+#include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/font_list.h"
+#include "ui/views/controls/button/label_button.h"
+#include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/button/radio_button.h"
-#include "ui/views/controls/button/text_button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/link.h"
+#include "ui/views/controls/menu/menu.h"
+#include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/controls/separator.h"
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/layout/layout_constants.h"
@@ -33,6 +41,8 @@
 #if defined(USE_AURA)
 #include "ui/base/cursor/cursor.h"
 #endif
+
+namespace {
 
 // If we don't clamp the maximum width, then very long URLs and titles can make
 // the bubble arbitrarily wide.
@@ -42,8 +52,16 @@ const int kMaxContentsWidth = 500;
 // narrow bubbles with lots of line-wrapping.
 const int kMinMultiLineContentsWidth = 250;
 
+// The minimum width of the media menu buttons.
+const int kMinMediaMenuButtonWidth = 100;
+
+}  // namespace
+
 using content::PluginService;
 using content::WebContents;
+
+
+// ContentSettingBubbleContents::Favicon --------------------------------------
 
 class ContentSettingBubbleContents::Favicon : public views::ImageView {
  public:
@@ -97,25 +115,43 @@ gfx::NativeCursor ContentSettingBubbleContents::Favicon::GetCursor(
 #endif
 }
 
+
+// ContentSettingBubbleContents::MediaMenuParts -------------------------------
+
+struct ContentSettingBubbleContents::MediaMenuParts {
+  explicit MediaMenuParts(content::MediaStreamType type);
+  ~MediaMenuParts();
+
+  content::MediaStreamType type;
+  scoped_ptr<ui::SimpleMenuModel> menu_model;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MediaMenuParts);
+};
+
+ContentSettingBubbleContents::MediaMenuParts::MediaMenuParts(
+    content::MediaStreamType type)
+    : type(type) {}
+
+ContentSettingBubbleContents::MediaMenuParts::~MediaMenuParts() {}
+
+// ContentSettingBubbleContents -----------------------------------------------
+
 ContentSettingBubbleContents::ContentSettingBubbleContents(
     ContentSettingBubbleModel* content_setting_bubble_model,
-    WebContents* web_contents,
     views::View* anchor_view,
-    views::BubbleBorder::ArrowLocation arrow_location)
-    : BubbleDelegateView(anchor_view, arrow_location),
+    views::BubbleBorder::Arrow arrow)
+    : BubbleDelegateView(anchor_view, arrow),
       content_setting_bubble_model_(content_setting_bubble_model),
-      web_contents_(web_contents),
       custom_link_(NULL),
       manage_link_(NULL),
       close_button_(NULL) {
   // Compensate for built-in vertical padding in the anchor view's image.
-  set_anchor_insets(gfx::Insets(5, 0, 5, 0));
-
-  registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
-                 content::Source<WebContents>(web_contents));
+  set_anchor_view_insets(gfx::Insets(5, 0, 5, 0));
 }
 
 ContentSettingBubbleContents::~ContentSettingBubbleContents() {
+  STLDeleteValues(&media_menus_);
 }
 
 gfx::Size ContentSettingBubbleContents::GetPreferredSize() {
@@ -126,6 +162,19 @@ gfx::Size ContentSettingBubbleContents::GetPreferredSize() {
       kMinMultiLineContentsWidth : preferred_size.width();
   preferred_size.set_width(std::min(preferred_width, kMaxContentsWidth));
   return preferred_size;
+}
+
+void ContentSettingBubbleContents::UpdateMenuLabel(
+    content::MediaStreamType type,
+    const std::string& label) {
+  for (MediaMenuPartsMap::const_iterator it = media_menus_.begin();
+       it != media_menus_.end(); ++it) {
+    if (it->second->type == type) {
+      it->first->SetText(base::UTF8ToUTF16(label));
+      return;
+    }
+  }
+  NOTREACHED();
 }
 
 void ContentSettingBubbleContents::Init() {
@@ -144,25 +193,13 @@ void ContentSettingBubbleContents::Init() {
   bool bubble_content_empty = true;
 
   if (!bubble_content.title.empty()) {
-    views::Label* title_label = new views::Label(UTF8ToUTF16(
+    views::Label* title_label = new views::Label(base::UTF8ToUTF16(
         bubble_content.title));
+    title_label->SetMultiLine(true);
+    title_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
     layout->StartRow(0, kSingleColumnSetId);
     layout->AddView(title_label);
     bubble_content_empty = false;
-  }
-
-  const std::set<std::string>& plugins = bubble_content.resource_identifiers;
-  if (!plugins.empty()) {
-    if (!bubble_content_empty)
-      layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
-    PluginFinder* finder = PluginFinder::GetInstance();
-    for (std::set<std::string>::const_iterator i(plugins.begin());
-         i != plugins.end(); ++i) {
-      string16 name = finder->FindPluginNameWithIdentifier(*i);
-      layout->StartRow(0, kSingleColumnSetId);
-      layout->AddView(new views::Label(name));
-      bubble_content_empty = false;
-    }
   }
 
   if (content_setting_bubble_model_->content_type() ==
@@ -184,7 +221,7 @@ void ContentSettingBubbleContents::Init() {
         layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
       layout->StartRow(0, kPopupColumnSetId);
 
-      views::Link* link = new views::Link(UTF8ToUTF16(i->title));
+      views::Link* link = new views::Link(base::UTF8ToUTF16(i->title));
       link->set_listener(this);
       link->SetElideBehavior(views::Label::ELIDE_IN_MIDDLE);
       popup_links_[link] = i - bubble_content.popup_items.begin();
@@ -198,8 +235,7 @@ void ContentSettingBubbleContents::Init() {
   // Insert a column set with greater indent.
   views::ColumnSet* indented_single_column_set =
       layout->AddColumnSet(indented_kSingleColumnSetId);
-  indented_single_column_set->AddPaddingColumn(
-      0, chrome_style::kCheckboxIndent);
+  indented_single_column_set->AddPaddingColumn(0, views::kCheckboxIndent);
   indented_single_column_set->AddColumn(GridLayout::LEADING, GridLayout::FILL,
                                         1, GridLayout::USE_PREF, 0, 0);
 
@@ -211,7 +247,8 @@ void ContentSettingBubbleContents::Init() {
     for (ContentSettingBubbleModel::RadioItems::const_iterator i(
          radio_group.radio_items.begin());
          i != radio_group.radio_items.end(); ++i) {
-      views::RadioButton* radio = new views::RadioButton(UTF8ToUTF16(*i), 0);
+      views::RadioButton* radio =
+          new views::RadioButton(base::UTF8ToUTF16(*i), 0);
       radio->SetEnabled(bubble_content.radio_group_enabled);
       radio->set_listener(this);
       radio_group_.push_back(radio);
@@ -225,26 +262,106 @@ void ContentSettingBubbleContents::Init() {
     radio_group_[radio_group.default_item]->SetChecked(true);
   }
 
-  gfx::Font domain_font =
-      views::Label().font().DeriveFont(0, gfx::Font::BOLD);
+  // Layout code for the media device menus.
+  if (content_setting_bubble_model_->content_type() ==
+      CONTENT_SETTINGS_TYPE_MEDIASTREAM) {
+    const int kMediaMenuColumnSetId = 2;
+    views::ColumnSet* menu_column_set =
+        layout->AddColumnSet(kMediaMenuColumnSetId);
+    menu_column_set->AddPaddingColumn(0, views::kCheckboxIndent);
+    menu_column_set->AddColumn(GridLayout::LEADING, GridLayout::FILL, 0,
+                               GridLayout::USE_PREF, 0, 0);
+    menu_column_set->AddPaddingColumn(
+        0, views::kRelatedControlHorizontalSpacing);
+    menu_column_set->AddColumn(GridLayout::LEADING, GridLayout::FILL, 1,
+                               GridLayout::USE_PREF, 0, 0);
+
+    int menu_width = 0;
+    for (ContentSettingBubbleModel::MediaMenuMap::const_iterator i(
+         bubble_content.media_menus.begin());
+         i != bubble_content.media_menus.end(); ++i) {
+      if (!bubble_content_empty)
+        layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
+      layout->StartRow(0, kMediaMenuColumnSetId);
+
+      views::Label* label =
+          new views::Label(base::UTF8ToUTF16(i->second.label));
+      label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+
+      views::MenuButton* menu_button = new views::MenuButton(
+          NULL, base::UTF8ToUTF16((i->second.selected_device.name)),
+          this, true);
+      menu_button->set_alignment(views::TextButton::ALIGN_LEFT);
+      menu_button->SetBorder(scoped_ptr<views::Border>(
+          new views::TextButtonNativeThemeBorder(menu_button)));
+      menu_button->set_animate_on_state_change(false);
+
+      MediaMenuParts* menu_view = new MediaMenuParts(i->first);
+      menu_view->menu_model.reset(new ContentSettingMediaMenuModel(
+          i->first,
+          content_setting_bubble_model_.get(),
+          base::Bind(&ContentSettingBubbleContents::UpdateMenuLabel,
+                     base::Unretained(this))));
+      media_menus_[menu_button] = menu_view;
+
+      if (!menu_view->menu_model->GetItemCount()) {
+        // Show a "None available" title and grey out the menu when there are
+        // no available devices.
+        menu_button->SetText(
+            l10n_util::GetStringUTF16(IDS_MEDIA_MENU_NO_DEVICE_TITLE));
+        menu_button->SetEnabled(false);
+      }
+
+      // Disable the device selection when the website is managing the devices
+      // itself.
+      if (i->second.disabled)
+        menu_button->SetEnabled(false);
+
+      // Use the longest width of the menus as the width of the menu buttons.
+      menu_width = std::max(menu_width,
+                            GetPreferredMediaMenuWidth(
+                                menu_button, menu_view->menu_model.get()));
+
+      layout->AddView(label);
+      layout->AddView(menu_button);
+
+      bubble_content_empty = false;
+    }
+
+    // Make sure the width is at least kMinMediaMenuButtonWidth. The
+    // maximum width will be clamped by kMaxContentsWidth of the view.
+    menu_width = std::max(kMinMediaMenuButtonWidth, menu_width);
+
+    // Set all the menu buttons to the width we calculated above.
+    for (MediaMenuPartsMap::const_iterator i = media_menus_.begin();
+         i != media_menus_.end(); ++i) {
+      i->first->set_min_width(menu_width);
+      i->first->set_max_width(menu_width);
+    }
+  }
+
+  const gfx::FontList& domain_font =
+      ui::ResourceBundle::GetSharedInstance().GetFontList(
+          ui::ResourceBundle::BoldFont);
   for (std::vector<ContentSettingBubbleModel::DomainList>::const_iterator i(
-       bubble_content.domain_lists.begin());
+           bubble_content.domain_lists.begin());
        i != bubble_content.domain_lists.end(); ++i) {
     layout->StartRow(0, kSingleColumnSetId);
-    views::Label* section_title = new views::Label(UTF8ToUTF16(i->title));
+    views::Label* section_title = new views::Label(base::UTF8ToUTF16(i->title));
     section_title->SetMultiLine(true);
     section_title->SetHorizontalAlignment(gfx::ALIGN_LEFT);
     layout->AddView(section_title, 1, 1, GridLayout::FILL, GridLayout::LEADING);
     for (std::set<std::string>::const_iterator j = i->hosts.begin();
          j != i->hosts.end(); ++j) {
       layout->StartRow(0, indented_kSingleColumnSetId);
-      layout->AddView(new views::Label(UTF8ToUTF16(*j), domain_font));
+      layout->AddView(new views::Label(base::UTF8ToUTF16(*j), domain_font));
     }
     bubble_content_empty = false;
   }
 
   if (!bubble_content.custom_link.empty()) {
-    custom_link_ = new views::Link(UTF8ToUTF16(bubble_content.custom_link));
+    custom_link_ =
+        new views::Link(base::UTF8ToUTF16(bubble_content.custom_link));
     custom_link_->SetEnabled(bubble_content.custom_link_enabled);
     custom_link_->set_listener(this);
     if (!bubble_content_empty)
@@ -254,61 +371,58 @@ void ContentSettingBubbleContents::Init() {
     bubble_content_empty = false;
   }
 
-  if (!bubble_content_empty) {
-    layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
-    layout->StartRow(0, kSingleColumnSetId);
-    layout->AddView(new views::Separator, 1, 1,
-                    GridLayout::FILL, GridLayout::FILL);
-    layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
-  }
-
   const int kDoubleColumnSetId = 1;
   views::ColumnSet* double_column_set =
       layout->AddColumnSet(kDoubleColumnSetId);
-  double_column_set->AddColumn(GridLayout::LEADING, GridLayout::CENTER, 1,
-                        GridLayout::USE_PREF, 0, 0);
-  double_column_set->AddPaddingColumn(
-      0, views::kUnrelatedControlHorizontalSpacing);
-  double_column_set->AddColumn(GridLayout::TRAILING, GridLayout::CENTER, 0,
-                        GridLayout::USE_PREF, 0, 0);
+  if (!bubble_content_empty) {
+      layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
+      layout->StartRow(0, kSingleColumnSetId);
+      layout->AddView(new views::Separator(views::Separator::HORIZONTAL), 1, 1,
+                      GridLayout::FILL, GridLayout::FILL);
+      layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
+    }
 
-  layout->StartRow(0, kDoubleColumnSetId);
-  manage_link_ = new views::Link(UTF8ToUTF16(bubble_content.manage_link));
-  manage_link_->set_listener(this);
-  layout->AddView(manage_link_);
+    double_column_set->AddColumn(GridLayout::LEADING, GridLayout::CENTER, 1,
+                                 GridLayout::USE_PREF, 0, 0);
+    double_column_set->AddPaddingColumn(
+        0, views::kUnrelatedControlHorizontalSpacing);
+    double_column_set->AddColumn(GridLayout::TRAILING, GridLayout::CENTER, 0,
+                                 GridLayout::USE_PREF, 0, 0);
 
-  close_button_ = new views::NativeTextButton(
-      this, l10n_util::GetStringUTF16(IDS_DONE));
-  layout->AddView(close_button_);
+    layout->StartRow(0, kDoubleColumnSetId);
+    manage_link_ =
+        new views::Link(base::UTF8ToUTF16(bubble_content.manage_link));
+    manage_link_->set_listener(this);
+    layout->AddView(manage_link_);
+
+    close_button_ =
+        new views::LabelButton(this, l10n_util::GetStringUTF16(IDS_DONE));
+    close_button_->SetStyle(views::Button::STYLE_BUTTON);
+    layout->AddView(close_button_);
 }
 
 void ContentSettingBubbleContents::ButtonPressed(views::Button* sender,
                                                  const ui::Event& event) {
-  if (sender == close_button_) {
-    content_setting_bubble_model_->OnDoneClicked();
-    StartFade(false);
+  RadioGroup::const_iterator i(
+      std::find(radio_group_.begin(), radio_group_.end(), sender));
+  if (i != radio_group_.end()) {
+    content_setting_bubble_model_->OnRadioClicked(i - radio_group_.begin());
     return;
   }
-
-  for (RadioGroup::const_iterator i(radio_group_.begin());
-       i != radio_group_.end(); ++i) {
-    if (sender == *i) {
-      content_setting_bubble_model_->OnRadioClicked(i - radio_group_.begin());
-      return;
-    }
-  }
-  NOTREACHED() << "unknown radio";
+  DCHECK_EQ(sender, close_button_);
+  content_setting_bubble_model_->OnDoneClicked();
+  GetWidget()->Close();
 }
 
 void ContentSettingBubbleContents::LinkClicked(views::Link* source,
                                                int event_flags) {
   if (source == custom_link_) {
     content_setting_bubble_model_->OnCustomLinkClicked();
-    StartFade(false);
+    GetWidget()->Close();
     return;
   }
   if (source == manage_link_) {
-    StartFade(false);
+    GetWidget()->Close();
     content_setting_bubble_model_->OnManageLinkClicked();
     // CAREFUL: Showing the settings window activates it, which deactivates the
     // info bubble, which causes it to close, which deletes us.
@@ -320,11 +434,37 @@ void ContentSettingBubbleContents::LinkClicked(views::Link* source,
   content_setting_bubble_model_->OnPopupClicked(i->second);
 }
 
-void ContentSettingBubbleContents::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  DCHECK_EQ(content::NOTIFICATION_WEB_CONTENTS_DESTROYED, type);
-  DCHECK(source == content::Source<WebContents>(web_contents_));
-  web_contents_ = NULL;
+void ContentSettingBubbleContents::OnMenuButtonClicked(
+    views::View* source,
+    const gfx::Point& point) {
+    MediaMenuPartsMap::iterator j(media_menus_.find(
+        static_cast<views::MenuButton*>(source)));
+    DCHECK(j != media_menus_.end());
+    menu_runner_.reset(new views::MenuRunner(j->second->menu_model.get()));
+
+    gfx::Point screen_location;
+    views::View::ConvertPointToScreen(j->first, &screen_location);
+    ignore_result(
+        menu_runner_->RunMenuAt(source->GetWidget(),
+                                j->first,
+                                gfx::Rect(screen_location, j->first->size()),
+                                views::MENU_ANCHOR_TOPLEFT,
+                                ui::MENU_SOURCE_NONE,
+                                views::MenuRunner::HAS_MNEMONICS));
+}
+
+int ContentSettingBubbleContents::GetPreferredMediaMenuWidth(
+    views::MenuButton* button,
+    ui::SimpleMenuModel* menu_model) {
+  base::string16 title = button->text();
+
+  int width = button->GetPreferredSize().width();
+  for (int i = 0; i < menu_model->GetItemCount(); ++i) {
+    button->SetText(menu_model->GetLabelAt(i));
+    width = std::max(width, button->GetPreferredSize().width());
+  }
+
+  // Recover the title for the menu button.
+  button->SetText(title);
+  return width;
 }

@@ -5,50 +5,16 @@
 #ifndef GPU_COMMAND_BUFFER_CLIENT_TRANSFER_BUFFER_H_
 #define GPU_COMMAND_BUFFER_CLIENT_TRANSFER_BUFFER_H_
 
-#include "../../gpu_export.h"
-#include "../common/buffer.h"
-#include "../common/compiler_specific.h"
-#include "../common/gles2_cmd_utils.h"
-#include "../common/scoped_ptr.h"
-#include "../client/ring_buffer.h"
+#include "base/compiler_specific.h"
+#include "base/memory/scoped_ptr.h"
+#include "gpu/command_buffer/client/ring_buffer.h"
+#include "gpu/command_buffer/common/buffer.h"
+#include "gpu/command_buffer/common/gles2_cmd_utils.h"
+#include "gpu/gpu_export.h"
 
 namespace gpu {
 
 class CommandBufferHelper;
-
-// Wraps RingBufferWrapper to provide aligned allocations.
-class AlignedRingBuffer : public RingBufferWrapper {
- public:
-  AlignedRingBuffer(
-      unsigned int alignment,
-      int32 shm_id,
-      RingBuffer::Offset base_offset,
-      unsigned int size,
-      CommandBufferHelper* helper,
-      void* base)
-      : RingBufferWrapper(base_offset, size, helper, base),
-        alignment_(alignment),
-        shm_id_(shm_id) {
-  }
-  ~AlignedRingBuffer();
-
-  // Hiding Alloc from RingBufferWrapper
-  void* Alloc(unsigned int size) {
-    return RingBufferWrapper::Alloc(RoundToAlignment(size));
-  }
-
-  int32 GetShmId() const {
-    return shm_id_;
-  }
-
- private:
-  unsigned int RoundToAlignment(unsigned int size) {
-    return (size + alignment_ - 1) & ~(alignment_ - 1);
-  }
-
-  unsigned int alignment_;
-  int32 shm_id_;
-};
 
 // Interface for managing the transfer buffer.
 class GPU_EXPORT TransferBufferInterface {
@@ -120,7 +86,7 @@ class GPU_EXPORT TransferBuffer : public TransferBufferInterface {
   void AllocateRingBuffer(unsigned int size);
 
   CommandBufferHelper* helper_;
-  scoped_ptr<AlignedRingBuffer> ring_buffer_;
+  scoped_ptr<RingBuffer> ring_buffer_;
 
   // size reserved for results
   unsigned int result_size_;
@@ -144,7 +110,7 @@ class GPU_EXPORT TransferBuffer : public TransferBufferInterface {
   unsigned int bytes_since_last_flush_;
 
   // the current buffer.
-  gpu::Buffer buffer_;
+  scoped_refptr<gpu::Buffer> buffer_;
 
   // id of buffer. -1 = no buffer
   int32 buffer_id_;

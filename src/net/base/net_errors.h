@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/platform_file.h"
+#include "base/files/file.h"
 #include "net/base/net_export.h"
 
 namespace net {
@@ -36,7 +36,10 @@ NET_EXPORT const char* ErrorToString(int error);
 inline bool IsCertificateError(int error) {
   // Certificate errors are negative integers from net::ERR_CERT_BEGIN
   // (inclusive) to net::ERR_CERT_END (exclusive) in *decreasing* order.
-  return error <= ERR_CERT_BEGIN && error > ERR_CERT_END;
+  // ERR_SSL_PINNED_KEY_NOT_IN_CERT_CHAIN is currently an exception to this
+  // rule.
+  return (error <= ERR_CERT_BEGIN && error > ERR_CERT_END) ||
+         (error == ERR_SSL_PINNED_KEY_NOT_IN_CERT_CHAIN);
 }
 
 // Map system error code to Error.
@@ -51,9 +54,8 @@ NET_EXPORT Error MapSystemError(int os_error);
 // error code that is not followed immediately by a valid error code.
 NET_EXPORT std::vector<int> GetAllErrorCodesForUma();
 
-// A convenient function to translate platform file error to net error code.
-NET_EXPORT Error PlatformFileErrorToNetError(
-    base::PlatformFileError file_error);
+// A convenient function to translate file error to net error code.
+NET_EXPORT Error FileErrorToNetError(base::File::Error file_error);
 
 }  // namespace net
 

@@ -384,12 +384,12 @@ bool MainWnd::OnMessage(UINT msg, WPARAM wp, LPARAM lp, LRESULT* result) {
 // static
 LRESULT CALLBACK MainWnd::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   MainWnd* me = reinterpret_cast<MainWnd*>(
-      ::GetWindowLongPtr(hwnd, GWL_USERDATA));
+      ::GetWindowLongPtr(hwnd, GWLP_USERDATA));
   if (!me && WM_CREATE == msg) {
     CREATESTRUCT* cs = reinterpret_cast<CREATESTRUCT*>(lp);
     me = reinterpret_cast<MainWnd*>(cs->lpCreateParams);
     me->wnd_ = hwnd;
-    ::SetWindowLongPtr(hwnd, GWL_USERDATA, reinterpret_cast<LONG_PTR>(me));
+    ::SetWindowLongPtr(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(me));
   }
 
   LRESULT result = 0;
@@ -499,7 +499,9 @@ void MainWnd::LayoutConnectUI(bool show) {
     size_t y = rc.bottom / 2;
     for (size_t i = 0; i < ARRAYSIZE(windows); ++i) {
       size_t top = y - (windows[i].height / 2);
-      ::MoveWindow(windows[i].wnd, x, top, windows[i].width, windows[i].height,
+      ::MoveWindow(windows[i].wnd, static_cast<int>(x), static_cast<int>(top),
+                   static_cast<int>(windows[i].width),
+                   static_cast<int>(windows[i].height),
                    TRUE);
       x += kSeparator + windows[i].width;
       if (windows[i].text[0] != 'X')

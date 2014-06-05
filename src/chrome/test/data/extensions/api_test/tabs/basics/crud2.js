@@ -136,5 +136,45 @@ chrome.test.runTests([
         assertEq(window.id, tab.windowId);
       }));
     }));
-  }
+  },
+
+  // An empty popup window does not contain any tabs and the number of tabs
+  // before and after creation should be the same.
+  function testOpenEmptyPopup() {
+    chrome.tabs.query({}, pass(function(tabs) {
+      var tabsCountBefore = tabs.length;
+      chrome.windows.create({type: 'popup'}, pass(function(window) {
+        assertEq(window.tabs.length, 0);
+        chrome.tabs.query({}, pass(function(tabs) {
+          assertEq(tabsCountBefore, tabs.length);
+        }));
+      }));
+    }));
+  },
+
+  function testCreatePopupAndMoveTab() {
+    // An existing tab can be moved into a created empty popup.
+    chrome.tabs.create({url: 'about:blank'}, pass(function(tab) {
+      chrome.windows.create({type: 'popup', tabId: tab.id},
+          pass(function(window) {
+        assertEq(window.tabs.length, 1);
+        chrome.tabs.get(tab.id, pass(function(updatedTabInfo) {
+          assertEq(window.id, updatedTabInfo.windowId);
+        }));
+      }));
+    }));
+
+    // An existing tab cannot be moved into a created non-empty popup.
+    chrome.tabs.create({url: 'about:blank'}, pass(function(tab) {
+      chrome.windows.create({type: 'popup', url: 'about:blank', tabId: tab.id},
+          pass(function(window) {
+        assertEq(window.tabs.length, 1);
+        chrome.tabs.get(tab.id, pass(function(updatedTabInfo) {
+          assertEq(tab.windowId, updatedTabInfo.windowId);
+          assertTrue(window.id != updatedTabInfo.windowId);
+        }));
+      }));
+    }));
+  },
+
 ]);

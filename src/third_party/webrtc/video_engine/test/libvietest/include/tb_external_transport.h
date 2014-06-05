@@ -18,7 +18,7 @@
 #include <list>
 #include <map>
 
-#include "common_types.h"
+#include "webrtc/common_types.h"
 
 namespace webrtc
 {
@@ -27,6 +27,22 @@ class EventWrapper;
 class ThreadWrapper;
 class ViENetwork;
 }
+
+enum RandomLossModel {
+  kNoLoss,
+  kUniformLoss,
+  kGilbertElliotLoss
+};
+struct NetworkParameters {
+  int packet_loss_rate;
+  int burst_length;  // Only applicable for kGilbertElliotLoss.
+  int mean_one_way_delay;
+  int std_dev_one_way_delay;
+  RandomLossModel loss_model;
+  NetworkParameters():
+    packet_loss_rate(0), burst_length(0), mean_one_way_delay(0),
+        std_dev_one_way_delay(0), loss_model(kNoLoss) {}
+};
 
 // Allows to subscribe for callback when a frame is started being sent.
 class SendFrameCallback
@@ -80,16 +96,18 @@ public:
     // Only one observer can be set (multiple calls will overwrite each other).
     virtual void RegisterReceiveFrameCallback(ReceiveFrameCallback* callback);
 
-    // The probability of a packet of being dropped. Packets belonging to the
-    // first packet (same RTP timestamp) will never be dropped.
-    WebRtc_Word32 SetPacketLoss(WebRtc_Word32 lossRate);  // Rate in %
-    void SetNetworkDelay(WebRtc_Word64 delayMs);
-    void SetSSRCFilter(WebRtc_UWord32 SSRC);
+    // The network parameters of the link. Regarding packet losses, packets
+    // belonging to the first frame (same RTP timestamp) will never be dropped.
+    void SetNetworkParameters(const NetworkParameters& network_parameters);
+    void SetSSRCFilter(uint32_t SSRC);
 
     void ClearStats();
-    void GetStats(WebRtc_Word32& numRtpPackets,
-                  WebRtc_Word32& numDroppedPackets,
-                  WebRtc_Word32& numRtcpPackets);
+    // |packet_counters| is a map which counts the number of packets sent per
+    // payload type.
+    void GetStats(int32_t& numRtpPackets,
+                  int32_t& numDroppedPackets,
+                  int32_t& numRtcpPackets,
+                  std::map<uint8_t, int>* packet_counters);
 
     void SetTemporalToggle(unsigned char layers);
     void EnableSSRCCheck();
@@ -104,7 +122,11 @@ protected:
     static bool ViEExternalTransportRun(void* object);
     bool ViEExternalTransportProcess();
 private:
-    WebRtc_Word64 NowMs();
+    // TODO(mikhal): Break these out to classes.
+    static int GaussianRandom(int mean_ms, int standard_deviation_ms);
+    bool UniformLoss(int loss_rate);
+    bool GilbertElliotLoss(int loss_rate, int burst_length);
+    int64_t NowMs();
 
     enum
     {
@@ -116,10 +138,10 @@ private:
     };
     typedef struct
     {
-        WebRtc_Word8 packetBuffer[KMaxPacketSize];
-        WebRtc_Word32 length;
-        WebRtc_Word32 channel;
-        WebRtc_Word64 receiveTime;
+        int8_t packetBuffer[KMaxPacketSize];
+        int32_t length;
+        int32_t channel;
+        int64_t receiveTime;
     } VideoPacket;
 
     int sender_channel_;
@@ -130,11 +152,13 @@ private:
     webrtc::CriticalSectionWrapper& _crit;
     webrtc::CriticalSectionWrapper& _statCrit;
 
-    WebRtc_Word32 _lossRate;
-    WebRtc_Word64 _networkDelayMs;
-    WebRtc_Word32 _rtpCount;
-    WebRtc_Word32 _rtcpCount;
-    WebRtc_Word32 _dropCount;
+    NetworkParameters network_parameters_;
+    int32_t _rtpCount;
+    int32_t _rtcpCount;
+    int32_t _dropCount;
+    // |packet_counters| is a map which counts the number of packets sent per
+    // payload type.
+    std::map<uint8_t, int> packet_counters_;
 
     std::list<VideoPacket*> _rtpPackets;
     std::list<VideoPacket*> _rtcpPackets;
@@ -151,18 +175,20 @@ private:
     unsigned int _lastTimeMs;
 
     bool _checkSSRC;
-    WebRtc_UWord32 _lastSSRC;
+    uint32_t _lastSSRC;
     bool _filterSSRC;
-    WebRtc_UWord32 _SSRC;
+    uint32_t _SSRC;
     bool _checkSequenceNumber;
-    WebRtc_UWord16 _firstSequenceNumber;
+    uint16_t _firstSequenceNumber;
 
     // Keep track of the first RTP timestamp so we don't do packet loss on
     // the first frame.
-    WebRtc_UWord32 _firstRTPTimestamp;
+    uint32_t _firstRTPTimestamp;
     // Track RTP timestamps so we invoke callbacks properly (if registered).
-    WebRtc_UWord32 _lastSendRTPTimestamp;
-    WebRtc_UWord32 _lastReceiveRTPTimestamp;
+    uint32_t _lastSendRTPTimestamp;
+    uint32_t _lastReceiveRTPTimestamp;
+    int64_t last_receive_time_;
+    bool previous_drop_;
 };
 
 #endif  // WEBRTC_VIDEO_ENGINE_TEST_AUTOTEST_INTERFACE_TB_EXTERNAL_TRANSPORT_H_

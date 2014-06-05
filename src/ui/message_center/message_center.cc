@@ -4,150 +4,40 @@
 
 #include "ui/message_center/message_center.h"
 
-#include "base/logging.h"
+#include "base/observer_list.h"
+#include "ui/message_center/message_center_impl.h"
 
 namespace message_center {
 
 //------------------------------------------------------------------------------
 
-MessageCenter::MessageCenter(Host* host)
-    : host_(host),
-      delegate_(NULL) {
-  notification_list_.reset(new NotificationList(this));
+namespace {
+static MessageCenter* g_message_center;
+}
+
+// static
+void MessageCenter::Initialize() {
+  DCHECK(g_message_center == NULL);
+  g_message_center = new MessageCenterImpl();
+}
+
+// static
+MessageCenter* MessageCenter::Get() {
+  DCHECK(g_message_center);
+  return g_message_center;
+}
+
+// static
+void MessageCenter::Shutdown() {
+  DCHECK(g_message_center);
+  delete g_message_center;
+  g_message_center = NULL;
+}
+
+MessageCenter::MessageCenter() {
 }
 
 MessageCenter::~MessageCenter() {
-  notification_list_.reset();
-}
-
-void MessageCenter::SetDelegate(Delegate* delegate) {
-  DCHECK(!delegate_);
-  delegate_ = delegate;
-}
-
-void MessageCenter::SetMessageCenterVisible(bool visible) {
-  notification_list_->SetMessageCenterVisible(visible);
-}
-
-size_t MessageCenter::NotificationCount() const {
-  return notification_list_->NotificationCount();
-}
-
-size_t MessageCenter::UnreadNotificationCount() const {
-  return notification_list_->unread_count();
-}
-
-bool MessageCenter::HasPopupNotifications() const {
-  return notification_list_->HasPopupNotifications();
-}
-
-//------------------------------------------------------------------------------
-// Client code interface.
-
-void MessageCenter::AddNotification(
-    ui::notifications::NotificationType type,
-    const std::string& id,
-    const string16& title,
-    const string16& message,
-    const string16& display_source,
-    const std::string& extension_id,
-    const base::DictionaryValue* optional_fields) {
-  notification_list_->AddNotification(type, id, title, message, display_source,
-                                      extension_id, optional_fields);
-  if (host_)
-    host_->MessageCenterChanged(true);
-}
-
-void MessageCenter::UpdateNotification(
-    const std::string& old_id,
-    const std::string& new_id,
-    const string16& title,
-    const string16& message,
-    const base::DictionaryValue* optional_fields) {
-  notification_list_->UpdateNotificationMessage(
-      old_id, new_id, title, message, optional_fields);
-  if (host_)
-    host_->MessageCenterChanged(true);
-}
-
-void MessageCenter::RemoveNotification(const std::string& id) {
-  if (!notification_list_->RemoveNotification(id))
-    return;
-  if (host_)
-    host_->MessageCenterChanged(false);
-}
-
-void MessageCenter::SetNotificationImage(const std::string& id,
-                                         const gfx::ImageSkia& image) {
-  if (!notification_list_->SetNotificationImage(id, image))
-    return;
-  if (host_)
-    host_->MessageCenterChanged(true);
-}
-
-//------------------------------------------------------------------------------
-// Overridden from NotificationList::Delegate.
-
-void MessageCenter::SendRemoveNotification(const std::string& id) {
-  if (delegate_)
-    delegate_->NotificationRemoved(id);
-}
-
-void MessageCenter::SendRemoveAllNotifications() {
-  if (delegate_) {
-    NotificationList::Notifications notifications;
-    notification_list_->GetNotifications(&notifications);
-    for (NotificationList::Notifications::const_iterator loopiter =
-             notifications.begin();
-         loopiter != notifications.end(); ) {
-      NotificationList::Notifications::const_iterator curiter = loopiter++;
-      std::string notification_id = curiter->id;
-      // May call RemoveNotification and erase curiter.
-      delegate_->NotificationRemoved(notification_id);
-    }
-  }
-}
-
-void MessageCenter::DisableNotificationByExtension(
-    const std::string& id) {
-  if (delegate_)
-    delegate_->DisableExtension(id);
-  // When we disable notifications, we remove any existing matching
-  // notifications to avoid adding complicated UI to re-enable the source.
-  notification_list_->SendRemoveNotificationsByExtension(id);
-}
-
-void MessageCenter::DisableNotificationByUrl(const std::string& id) {
-  if (delegate_)
-    delegate_->DisableNotificationsFromSource(id);
-  notification_list_->SendRemoveNotificationsBySource(id);
-}
-
-void MessageCenter::ShowNotificationSettings(const std::string& id) {
-  if (delegate_)
-    delegate_->ShowSettings(id);
-}
-
-void MessageCenter::OnNotificationClicked(const std::string& id) {
-  if (delegate_)
-    delegate_->OnClicked(id);
-}
-
-void MessageCenter::OnQuietModeChanged(bool quiet_mode) {
-  host_->MessageCenterChanged(true);
-}
-
-void MessageCenter::OnButtonClicked(const std::string& id, int button_index) {
-  if (delegate_)
-    delegate_->OnButtonClicked(id, button_index);
-}
-
-NotificationList* MessageCenter::GetNotificationList() {
-  return notification_list_.get();
-}
-
-void MessageCenter::Delegate::OnButtonClicked(const std::string& id,
-                                              int button_index) {
 }
 
 }  // namespace message_center

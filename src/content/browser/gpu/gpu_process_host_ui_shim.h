@@ -19,15 +19,18 @@
 #include "base/threading/non_thread_safe.h"
 #include "content/common/content_export.h"
 #include "content/common/message_router.h"
-#include "content/public/common/gpu_info.h"
 #include "content/public/common/gpu_memory_stats.h"
+#include "gpu/config/gpu_info.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 
 struct GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params;
 struct GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params;
-struct GpuHostMsg_AcceleratedSurfaceNew_Params;
 struct GpuHostMsg_AcceleratedSurfaceRelease_Params;
+
+namespace ui {
+struct LatencyInfo;
+}
 
 namespace gfx {
 class Size;
@@ -51,7 +54,7 @@ class GpuProcessHostUIShim : public IPC::Listener,
   // Destroy the GpuProcessHostUIShim with the given host ID. This can only
   // be called on the UI thread. Only the GpuProcessHost should destroy the
   // UI shim.
-  static void Destroy(int host_id);
+  static void Destroy(int host_id, const std::string& message);
 
   // Destroy all remaining GpuProcessHostUIShims.
   CONTENT_EXPORT static void DestroyAll();
@@ -84,21 +87,15 @@ class GpuProcessHostUIShim : public IPC::Listener,
 
   void OnLogMessage(int level, const std::string& header,
       const std::string& message);
-#if defined(TOOLKIT_GTK) || defined(OS_WIN)
-  void OnResizeView(int32 surface_id,
-                    int32 route_id,
-                    gfx::Size size);
-#endif
 
-  void OnGraphicsInfoCollected(const GPUInfo& gpu_info);
+  void OnGraphicsInfoCollected(const gpu::GPUInfo& gpu_info);
 
+  void OnAcceleratedSurfaceInitialized(int32 surface_id, int32 route_id);
   void OnAcceleratedSurfaceBuffersSwapped(
       const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params);
   void OnAcceleratedSurfacePostSubBuffer(
       const GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params& params);
   void OnAcceleratedSurfaceSuspend(int32 surface_id);
-  void OnAcceleratedSurfaceNew(
-      const GpuHostMsg_AcceleratedSurfaceNew_Params& params);
   void OnAcceleratedSurfaceRelease(
       const GpuHostMsg_AcceleratedSurfaceRelease_Params& params);
   void OnVideoMemoryUsageStatsReceived(
@@ -106,6 +103,7 @@ class GpuProcessHostUIShim : public IPC::Listener,
   void OnUpdateVSyncParameters(int surface_id,
                                base::TimeTicks timebase,
                                base::TimeDelta interval);
+  void OnFrameDrawn(const std::vector<ui::LatencyInfo>& latency_info);
 
   // The serial number of the GpuProcessHost / GpuProcessHostUIShim pair.
   int host_id_;

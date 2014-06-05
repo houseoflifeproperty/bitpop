@@ -9,8 +9,9 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/string16.h"
-#include "net/base/x509_certificate.h"
+#include "base/strings/string16.h"
+#include "net/cert/cert_status_flags.h"
+#include "net/cert/x509_certificate.h"
 
 namespace content {
 class NavigationControllerImpl;
@@ -26,15 +27,22 @@ class SSLPolicyBackend {
   // Returns whether the specified host ran insecure content.
   bool DidHostRunInsecureContent(const std::string& host, int pid) const;
 
-  // Records that |cert| is permitted to be used for |host| in the future.
-  void DenyCertForHost(net::X509Certificate* cert, const std::string& host);
+  // Records that |cert| is not permitted to be used for |host| in the future,
+  // for a specific error type.
+  void DenyCertForHost(net::X509Certificate* cert,
+                       const std::string& host,
+                       net::CertStatus error);
 
-  // Records that |cert| is not permitted to be used for |host| in the future.
-  void AllowCertForHost(net::X509Certificate* cert, const std::string& host);
+  // Records that |cert| is permitted to be used for |host| in the future, for
+  // a specific error type.
+  void AllowCertForHost(net::X509Certificate* cert,
+                        const std::string& host,
+                        net::CertStatus error);
 
   // Queries whether |cert| is allowed or denied for |host|.
-  net::CertPolicy::Judgment QueryPolicy(
-      net::X509Certificate* cert, const std::string& host);
+  net::CertPolicy::Judgment QueryPolicy(net::X509Certificate* cert,
+                                        const std::string& host,
+                                        net::CertStatus error);
 
  private:
   // SSL state specific for each host.

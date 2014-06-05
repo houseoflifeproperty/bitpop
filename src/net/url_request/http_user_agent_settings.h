@@ -14,8 +14,8 @@ class GURL;
 
 namespace net {
 
-// The interface used by HTTP jobs to retrieve HTTP Accept-Language,
-// Accept-Charset and User-Agent header values.
+// The interface used by HTTP jobs to retrieve HTTP Accept-Language
+// and User-Agent header values.
 class NET_EXPORT HttpUserAgentSettings {
  public:
   HttpUserAgentSettings() {}
@@ -24,12 +24,8 @@ class NET_EXPORT HttpUserAgentSettings {
   // Gets the value of 'Accept-Language' header field.
   virtual std::string GetAcceptLanguage() const = 0;
 
-  // Gets the value of 'Accept-Charset' header field.
-  virtual std::string GetAcceptCharset() const = 0;
-
-  // Gets the UA string to use for the given URL.  Pass an empty URL to get
-  // the default UA string.
-  virtual std::string GetUserAgent(const GURL& url) const = 0;
+  // Gets the UA string.
+  virtual std::string GetUserAgent() const = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(HttpUserAgentSettings);

@@ -14,6 +14,16 @@
     }
     return (random_seed % 1);
   };
+  if (typeof(crypto) == 'object' &&
+      typeof(crypto.getRandomValues) == 'function') {
+    crypto.getRandomValues = function(arr) {
+      var scale = Math.pow(256, arr.BYTES_PER_ELEMENT);
+      for (var i = 0; i < arr.length; i++) {
+        arr[i] = Math.floor(Math.random() * scale);
+      }
+      return arr;
+    };
+  }
   Date = function() {
     if (this instanceof Date) {
       date_count++;
@@ -39,5 +49,12 @@
   Date.prototype.constructor = Date;
   orig_date.now = function() {
     return new Date().getTime();
+  };
+  orig_date.prototype.getTimezoneOffset = function() {
+    var dst2010Start = 1268560800000;
+    var dst2010End = 1289120400000;
+    if (this.getTime() >= dst2010Start && this.getTime() < dst2010End)
+      return 420;
+    return 480;
   };
 })();

@@ -12,13 +12,13 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "net/http/http_basic_state.h"
 #include "net/http/http_stream.h"
 
 namespace net {
 
 class BoundNetLog;
 class ClientSocketHandle;
-class GrowableIOBuffer;
 class HttpResponseInfo;
 struct HttpRequestInfo;
 class HttpRequestHeaders;
@@ -27,17 +27,14 @@ class IOBuffer;
 
 class HttpBasicStream : public HttpStream {
  public:
-  // Constructs a new HttpBasicStream.  If |parser| is NULL, then
-  // InitializeStream should be called to initialize it correctly.  If
-  // |parser| is non-null, then InitializeStream should not be called,
-  // as the stream is already initialized.
-  HttpBasicStream(ClientSocketHandle* connection,
-                  HttpStreamParser* parser,
-                  bool using_proxy);
+  // Constructs a new HttpBasicStream. InitializeStream must be called to
+  // initialize it correctly.
+  HttpBasicStream(ClientSocketHandle* connection, bool using_proxy);
   virtual ~HttpBasicStream();
 
   // HttpStream methods:
   virtual int InitializeStream(const HttpRequestInfo* request_info,
+                               RequestPriority priority,
                                const BoundNetLog& net_log,
                                const CompletionCallback& callback) OVERRIDE;
 
@@ -51,7 +48,8 @@ class HttpBasicStream : public HttpStream {
 
   virtual const HttpResponseInfo* GetResponseInfo() const OVERRIDE;
 
-  virtual int ReadResponseBody(IOBuffer* buf, int buf_len,
+  virtual int ReadResponseBody(IOBuffer* buf,
+                               int buf_len,
                                const CompletionCallback& callback) OVERRIDE;
 
   virtual void Close(bool not_reusable) OVERRIDE;
@@ -62,13 +60,16 @@ class HttpBasicStream : public HttpStream {
 
   virtual bool CanFindEndOfResponse() const OVERRIDE;
 
-  virtual bool IsMoreDataBuffered() const OVERRIDE;
-
   virtual bool IsConnectionReused() const OVERRIDE;
 
   virtual void SetConnectionReused() OVERRIDE;
 
   virtual bool IsConnectionReusable() const OVERRIDE;
+
+  virtual int64 GetTotalReceivedBytes() const OVERRIDE;
+
+  virtual bool GetLoadTimingInfo(
+      LoadTimingInfo* load_timing_info) const OVERRIDE;
 
   virtual void GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
 
@@ -77,26 +78,14 @@ class HttpBasicStream : public HttpStream {
 
   virtual bool IsSpdyHttpStream() const OVERRIDE;
 
-  virtual void LogNumRttVsBytesMetrics() const OVERRIDE;
-
   virtual void Drain(HttpNetworkSession* session) OVERRIDE;
 
+  virtual void SetPriority(RequestPriority priority) OVERRIDE;
+
  private:
-  scoped_refptr<GrowableIOBuffer> read_buf_;
+  HttpStreamParser* parser() const { return state_.parser(); }
 
-  scoped_ptr<HttpStreamParser> parser_;
-
-  scoped_ptr<ClientSocketHandle> connection_;
-
-  bool using_proxy_;
-
-  std::string request_line_;
-
-  const HttpRequestInfo* request_info_;
-
-  const HttpResponseInfo* response_;
-
-  int64 bytes_read_offset_;
+  HttpBasicState state_;
 
   DISALLOW_COPY_AND_ASSIGN(HttpBasicStream);
 };

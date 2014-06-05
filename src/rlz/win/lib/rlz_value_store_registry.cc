@@ -4,14 +4,16 @@
 
 #include "rlz/win/lib/rlz_value_store_registry.h"
 
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/registry.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
 #include "rlz/lib/assert.h"
 #include "rlz/lib/lib_values.h"
 #include "rlz/lib/rlz_lib.h"
 #include "rlz/lib/string_utils.h"
 #include "rlz/win/lib/registry_util.h"
+
+using base::ASCIIToWide;
 
 namespace rlz_lib {
 

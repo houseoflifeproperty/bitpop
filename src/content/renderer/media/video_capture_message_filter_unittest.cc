@@ -2,125 +2,78 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/message_loop.h"
-#include "base/shared_memory.h"
+#include "base/memory/shared_memory.h"
 #include "content/common/media/video_capture_messages.h"
 #include "content/renderer/media/video_capture_message_filter.h"
+#include "ipc/ipc_test_sink.h"
+#include "media/video/capture/video_capture_types.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using ::testing::_;
+using ::testing::AnyNumber;
+using ::testing::Mock;
+using ::testing::Return;
+using ::testing::SaveArg;
+using ::testing::StrictMock;
 
 namespace content {
 namespace {
 
 class MockVideoCaptureDelegate : public VideoCaptureMessageFilter::Delegate {
  public:
-  MockVideoCaptureDelegate() {
-    Reset();
-    device_id_received_ = false;
-    device_id_ = 0;
-  }
+  MockVideoCaptureDelegate() : device_id_(0) {}
 
-  virtual void OnBufferCreated(base::SharedMemoryHandle handle,
-                               int length, int buffer_id) {
-    buffer_created_ = true;
-    handle_ = handle;
-  }
+  // VideoCaptureMessageFilter::Delegate implementation.
+  MOCK_METHOD3(OnBufferCreated, void(base::SharedMemoryHandle handle,
+                                     int length,
+                                     int buffer_id));
+  MOCK_METHOD1(OnBufferDestroyed, void(int buffer_id));
+  MOCK_METHOD3(OnBufferReceived,
+               void(int buffer_id,
+                    const media::VideoCaptureFormat& format,
+                    base::TimeTicks timestamp));
+  MOCK_METHOD4(OnMailboxBufferReceived,
+               void(int buffer_id,
+                    const gpu::MailboxHolder& mailbox_holder,
+                    const media::VideoCaptureFormat& format,
+                    base::TimeTicks timestamp));
+  MOCK_METHOD1(OnStateChanged, void(VideoCaptureState state));
+  MOCK_METHOD1(OnDeviceSupportedFormatsEnumerated,
+               void(const media::VideoCaptureFormats& formats));
+  MOCK_METHOD1(OnDeviceFormatsInUseReceived,
+               void(const media::VideoCaptureFormats& formats_in_use));
 
-  // Called when a video frame buffer is received from the browser process.
-  virtual void OnBufferReceived(int buffer_id, base::Time timestamp) {
-    buffer_received_ = true;
-    buffer_id_ = buffer_id;
-    timestamp_ = timestamp;
-  }
-
-  virtual void OnStateChanged(VideoCaptureState state) {
-    state_changed_received_ = true;
-    state_ = state;
-  }
-
-  virtual void OnDeviceInfoReceived(const media::VideoCaptureParams& params) {
-    device_info_received_ = true;
-    params_.width = params.width;
-    params_.height = params.height;
-    params_.frame_per_second = params.frame_per_second;
-  }
-
-  virtual void OnDelegateAdded(int32 device_id) {
-    device_id_received_ = true;
+  virtual void OnDelegateAdded(int32 device_id) OVERRIDE {
+    ASSERT_TRUE(device_id != 0);
+    ASSERT_TRUE(device_id_ == 0);
     device_id_ = device_id;
   }
 
-  void Reset() {
-    buffer_created_ = false;
-    handle_ = base::SharedMemory::NULLHandle();
-
-    buffer_received_ = false;
-    buffer_id_ = -1;
-    timestamp_ = base::Time();
-
-    state_changed_received_ = false;
-    state_ = VIDEO_CAPTURE_STATE_ERROR;
-
-    device_info_received_ = false;
-    params_.width = 0;
-    params_.height = 0;
-    params_.frame_per_second = 0;
-  }
-
-  bool buffer_created() { return buffer_created_; }
-  base::SharedMemoryHandle received_buffer_handle() { return handle_; }
-
-  bool buffer_received() { return buffer_received_; }
-  int received_buffer_id() { return buffer_id_; }
-  base::Time received_buffer_ts() { return timestamp_; }
-
-  bool state_changed_received() { return state_changed_received_; }
-  VideoCaptureState state() { return state_; }
-
-  bool device_info_receive() { return device_info_received_; }
-  const media::VideoCaptureParams& received_device_info() { return params_; }
-
-  int32 device_id() { return device_id_; }
+  int device_id() { return device_id_; }
 
  private:
-  bool buffer_created_;
-  base::SharedMemoryHandle handle_;
-
-  bool buffer_received_;
-  int buffer_id_;
-  base::Time timestamp_;
-
-  bool state_changed_received_;
-  VideoCaptureState state_;
-
-  bool device_info_received_;
-  media::VideoCaptureParams params_;
-
-  bool device_id_received_;
-  int32 device_id_;
-
-  DISALLOW_COPY_AND_ASSIGN(MockVideoCaptureDelegate);
+  int device_id_;
 };
 
 }  // namespace
 
 TEST(VideoCaptureMessageFilterTest, Basic) {
-  MessageLoop message_loop(MessageLoop::TYPE_IO);
-
   scoped_refptr<VideoCaptureMessageFilter> filter(
       new VideoCaptureMessageFilter());
-  filter->channel_ = reinterpret_cast<IPC::Channel*>(1);
 
+  IPC::TestSink channel;
+  filter->OnFilterAdded(&channel);
   MockVideoCaptureDelegate delegate;
   filter->AddDelegate(&delegate);
+  ASSERT_EQ(1, delegate.device_id());
 
   // VideoCaptureMsg_StateChanged
-  EXPECT_FALSE(delegate.state_changed_received());
+  EXPECT_CALL(delegate, OnStateChanged(VIDEO_CAPTURE_STATE_STARTED));
   filter->OnMessageReceived(
       VideoCaptureMsg_StateChanged(delegate.device_id(),
                                    VIDEO_CAPTURE_STATE_STARTED));
-  EXPECT_TRUE(delegate.state_changed_received());
-  EXPECT_TRUE(VIDEO_CAPTURE_STATE_STARTED == delegate.state());
-  delegate.Reset();
+  Mock::VerifyAndClearExpectations(&delegate);
 
   // VideoCaptureMsg_NewBuffer
   const base::SharedMemoryHandle handle =
@@ -129,92 +82,133 @@ TEST(VideoCaptureMessageFilterTest, Basic) {
 #else
       base::SharedMemoryHandle(10, true);
 #endif
-  EXPECT_FALSE(delegate.buffer_created());
+  EXPECT_CALL(delegate, OnBufferCreated(handle, 100, 1));
   filter->OnMessageReceived(VideoCaptureMsg_NewBuffer(
-      delegate.device_id(), handle, 1, 1));
-  EXPECT_TRUE(delegate.buffer_created());
-  EXPECT_EQ(handle, delegate.received_buffer_handle());
-  delegate.Reset();
+      delegate.device_id(), handle, 100, 1));
+  Mock::VerifyAndClearExpectations(&delegate);
 
   // VideoCaptureMsg_BufferReady
-  int buffer_id = 1;
-  base::Time timestamp = base::Time::FromInternalValue(1);
+  int buffer_id = 22;
+  base::TimeTicks timestamp = base::TimeTicks::FromInternalValue(1);
 
-  EXPECT_FALSE(delegate.buffer_received());
+  const media::VideoCaptureFormat shm_format(
+      gfx::Size(234, 512), 30, media::PIXEL_FORMAT_I420);
+  media::VideoCaptureFormat saved_format;
+  EXPECT_CALL(delegate, OnBufferReceived(buffer_id, _, timestamp))
+      .WillRepeatedly(SaveArg<1>(&saved_format));
   filter->OnMessageReceived(VideoCaptureMsg_BufferReady(
-      delegate.device_id(), buffer_id, timestamp));
-  EXPECT_TRUE(delegate.buffer_received());
-  EXPECT_EQ(buffer_id, delegate.received_buffer_id());
-  EXPECT_TRUE(timestamp == delegate.received_buffer_ts());
-  delegate.Reset();
+      delegate.device_id(), buffer_id, shm_format, timestamp));
+  Mock::VerifyAndClearExpectations(&delegate);
+  EXPECT_EQ(shm_format.frame_size, saved_format.frame_size);
+  EXPECT_EQ(shm_format.frame_rate, saved_format.frame_rate);
+  EXPECT_EQ(shm_format.pixel_format, saved_format.pixel_format);
 
-  // VideoCaptureMsg_DeviceInfo
-  media::VideoCaptureParams params;
-  params.width = 320;
-  params.height = 240;
-  params.frame_per_second = 30;
+  // VideoCaptureMsg_MailboxBufferReady
+  buffer_id = 33;
+  timestamp = base::TimeTicks::FromInternalValue(2);
 
-  EXPECT_FALSE(delegate.device_info_receive());
-  filter->OnMessageReceived(VideoCaptureMsg_DeviceInfo(
-      delegate.device_id(), params));
-  EXPECT_TRUE(delegate.device_info_receive());
-  EXPECT_EQ(params.width, delegate.received_device_info().width);
-  EXPECT_EQ(params.height, delegate.received_device_info().height);
-  EXPECT_EQ(params.frame_per_second,
-            delegate.received_device_info().frame_per_second);
-  delegate.Reset();
+  const media::VideoCaptureFormat mailbox_format(
+      gfx::Size(234, 512), 30, media::PIXEL_FORMAT_TEXTURE);
+  gpu::Mailbox mailbox;
+  const int8 mailbox_name[arraysize(mailbox.name)] = "TEST MAILBOX";
+  mailbox.SetName(mailbox_name);
+  unsigned int syncpoint = 44;
+  gpu::MailboxHolder saved_mailbox_holder;
+  EXPECT_CALL(delegate, OnMailboxBufferReceived(buffer_id, _, _, timestamp))
+      .WillRepeatedly(
+           DoAll(SaveArg<1>(&saved_mailbox_holder), SaveArg<2>(&saved_format)));
+  gpu::MailboxHolder mailbox_holder(mailbox, 0, syncpoint);
+  filter->OnMessageReceived(
+      VideoCaptureMsg_MailboxBufferReady(delegate.device_id(),
+                                         buffer_id,
+                                         mailbox_holder,
+                                         mailbox_format,
+                                         timestamp));
+  Mock::VerifyAndClearExpectations(&delegate);
+  EXPECT_EQ(mailbox_format.frame_size, saved_format.frame_size);
+  EXPECT_EQ(mailbox_format.frame_rate, saved_format.frame_rate);
+  EXPECT_EQ(mailbox_format.pixel_format, saved_format.pixel_format);
+  EXPECT_EQ(memcmp(mailbox.name,
+                   saved_mailbox_holder.mailbox.name,
+                   sizeof(mailbox.name)),
+            0);
 
-  message_loop.RunUntilIdle();
+  // VideoCaptureMsg_FreeBuffer
+  EXPECT_CALL(delegate, OnBufferDestroyed(buffer_id));
+  filter->OnMessageReceived(VideoCaptureMsg_FreeBuffer(
+      delegate.device_id(), buffer_id));
+  Mock::VerifyAndClearExpectations(&delegate);
 }
 
 TEST(VideoCaptureMessageFilterTest, Delegates) {
-  MessageLoop message_loop(MessageLoop::TYPE_IO);
-
   scoped_refptr<VideoCaptureMessageFilter> filter(
       new VideoCaptureMessageFilter());
-  filter->channel_ = reinterpret_cast<IPC::Channel*>(1);
 
-  MockVideoCaptureDelegate delegate1;
-  MockVideoCaptureDelegate delegate2;
+  IPC::TestSink channel;
+  filter->OnFilterAdded(&channel);
+
+  StrictMock<MockVideoCaptureDelegate> delegate1;
+  StrictMock<MockVideoCaptureDelegate> delegate2;
 
   filter->AddDelegate(&delegate1);
   filter->AddDelegate(&delegate2);
+  ASSERT_EQ(1, delegate1.device_id());
+  ASSERT_EQ(2, delegate2.device_id());
 
   // Send an IPC message. Make sure the correct delegate gets called.
-  EXPECT_FALSE(delegate1.state_changed_received());
-  EXPECT_FALSE(delegate2.state_changed_received());
+  EXPECT_CALL(delegate1, OnStateChanged(VIDEO_CAPTURE_STATE_STARTED));
   filter->OnMessageReceived(
       VideoCaptureMsg_StateChanged(delegate1.device_id(),
                                    VIDEO_CAPTURE_STATE_STARTED));
-  EXPECT_TRUE(delegate1.state_changed_received());
-  EXPECT_FALSE(delegate2.state_changed_received());
-  delegate1.Reset();
+  Mock::VerifyAndClearExpectations(&delegate1);
 
-  EXPECT_FALSE(delegate1.state_changed_received());
-  EXPECT_FALSE(delegate2.state_changed_received());
+  EXPECT_CALL(delegate2, OnStateChanged(VIDEO_CAPTURE_STATE_STARTED));
   filter->OnMessageReceived(
       VideoCaptureMsg_StateChanged(delegate2.device_id(),
                                    VIDEO_CAPTURE_STATE_STARTED));
-  EXPECT_FALSE(delegate1.state_changed_received());
-  EXPECT_TRUE(delegate2.state_changed_received());
-  delegate2.Reset();
+  Mock::VerifyAndClearExpectations(&delegate2);
 
   // Remove the delegates. Make sure they won't get called.
   filter->RemoveDelegate(&delegate1);
-  EXPECT_FALSE(delegate1.state_changed_received());
   filter->OnMessageReceived(
       VideoCaptureMsg_StateChanged(delegate1.device_id(),
-                                   VIDEO_CAPTURE_STATE_STARTED));
-  EXPECT_FALSE(delegate1.state_changed_received());
+                                   VIDEO_CAPTURE_STATE_ENDED));
 
   filter->RemoveDelegate(&delegate2);
-  EXPECT_FALSE(delegate2.state_changed_received());
   filter->OnMessageReceived(
       VideoCaptureMsg_StateChanged(delegate2.device_id(),
-                                   VIDEO_CAPTURE_STATE_STARTED));
-  EXPECT_FALSE(delegate2.state_changed_received());
-
-  message_loop.RunUntilIdle();
+                                   VIDEO_CAPTURE_STATE_ENDED));
 }
 
+TEST(VideoCaptureMessageFilterTest, GetSomeDeviceSupportedFormats) {
+  scoped_refptr<VideoCaptureMessageFilter> filter(
+      new VideoCaptureMessageFilter());
+
+  IPC::TestSink channel;
+  filter->OnFilterAdded(&channel);
+  MockVideoCaptureDelegate delegate;
+  filter->AddDelegate(&delegate);
+  ASSERT_EQ(1, delegate.device_id());
+
+  EXPECT_CALL(delegate, OnDeviceSupportedFormatsEnumerated(_));
+  media::VideoCaptureFormats supported_formats;
+  filter->OnMessageReceived(VideoCaptureMsg_DeviceSupportedFormatsEnumerated(
+      delegate.device_id(), supported_formats));
+}
+
+TEST(VideoCaptureMessageFilterTest, GetSomeDeviceFormatInUse) {
+  scoped_refptr<VideoCaptureMessageFilter> filter(
+      new VideoCaptureMessageFilter());
+
+  IPC::TestSink channel;
+  filter->OnFilterAdded(&channel);
+  MockVideoCaptureDelegate delegate;
+  filter->AddDelegate(&delegate);
+  ASSERT_EQ(1, delegate.device_id());
+
+  EXPECT_CALL(delegate, OnDeviceFormatsInUseReceived(_));
+  media::VideoCaptureFormats formats_in_use;
+  filter->OnMessageReceived(VideoCaptureMsg_DeviceFormatsInUseReceived(
+      delegate.device_id(), formats_in_use));
+}
 }  // namespace content

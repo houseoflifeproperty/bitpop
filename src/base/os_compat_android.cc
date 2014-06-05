@@ -4,35 +4,55 @@
 
 #include "base/os_compat_android.h"
 
+#include <asm/unistd.h>
 #include <errno.h>
 #include <math.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
+
+#if !defined(__LP64__)
 #include <time64.h>
+#endif
 
 #include "base/rand_util.h"
-#include "base/string_piece.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_piece.h"
+#include "base/strings/stringprintf.h"
 
+extern "C" {
 // There is no futimes() avaiable in Bionic, so we provide our own
 // implementation until it is there.
-extern "C" {
-
 int futimes(int fd, const struct timeval tv[2]) {
-  const std::string fd_path = StringPrintf("/proc/self/fd/%d", fd);
-  return utimes(fd_path.c_str(), tv);
+  if (tv == NULL)
+    return syscall(__NR_utimensat, fd, NULL, NULL, 0);
+
+  if (tv[0].tv_usec < 0 || tv[0].tv_usec >= 1000000 ||
+      tv[1].tv_usec < 0 || tv[1].tv_usec >= 1000000) {
+    errno = EINVAL;
+    return -1;
+  }
+
+  // Convert timeval to timespec.
+  struct timespec ts[2];
+  ts[0].tv_sec = tv[0].tv_sec;
+  ts[0].tv_nsec = tv[0].tv_usec * 1000;
+  ts[1].tv_sec = tv[1].tv_sec;
+  ts[1].tv_nsec = tv[1].tv_usec * 1000;
+  return syscall(__NR_utimensat, fd, NULL, ts, 0);
 }
 
-// Android has only timegm64() and no timegm().
+#if !defined(__LP64__)
+// 32-bit Android has only timegm64() and not timegm().
 // We replicate the behaviour of timegm() when the result overflows time_t.
 time_t timegm(struct tm* const t) {
   // time_t is signed on Android.
-  static const time_t kTimeMax = ~(1 << (sizeof(time_t) * CHAR_BIT - 1));
-  static const time_t kTimeMin = (1 << (sizeof(time_t) * CHAR_BIT - 1));
+  static const time_t kTimeMax = ~(1L << (sizeof(time_t) * CHAR_BIT - 1));
+  static const time_t kTimeMin = (1L << (sizeof(time_t) * CHAR_BIT - 1));
   time64_t result = timegm64(t);
   if (result < kTimeMin || result > kTimeMax)
     return -1;
   return result;
 }
+#endif
 
 // The following is only needed when building with GCC 4.6 or higher
 // (i.e. not with Android GCC 4.4.3, nor with Clang).
@@ -60,7 +80,8 @@ time_t timegm(struct tm* const t) {
 // for each function would simply end up calling itself, resulting in a
 // runtime crash due to stack overflow.
 //
-#if defined(__GNUC__) && !defined(__clang__)
+#if defined(__GNUC__) && !defined(__clang__) && \
+    !defined(ANDROID_SINCOS_PROVIDED)
 
 // For the record, Clang does not support the 'optimize' attribute.
 // In the unlikely event that it begins performing this optimization too,

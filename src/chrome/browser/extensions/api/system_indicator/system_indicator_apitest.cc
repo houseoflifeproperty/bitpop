@@ -7,27 +7,29 @@
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_apitest.h"
-#include "chrome/browser/extensions/extension_process_manager.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/lazy_background_page_test_util.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/browser/process_manager.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/switches.h"
 
 class SystemIndicatorApiTest : public ExtensionApiTest {
  public:
-  void SetUpCommandLine(CommandLine* command_line) {
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     ExtensionApiTest::SetUpCommandLine(command_line);
     // Set shorter delays to prevent test timeouts in tests that need to wait
     // for the event page to unload.
-    command_line->AppendSwitchASCII(switches::kEventPageIdleTime, "1");
-    command_line->AppendSwitchASCII(switches::kEventPageUnloadingTime, "1");
+    command_line->AppendSwitchASCII(
+        extensions::switches::kEventPageIdleTime, "1000");
+    command_line->AppendSwitchASCII(
+        extensions::switches::kEventPageSuspendingTime, "1000");
   }
 
   const extensions::Extension* LoadExtensionAndWait(
       const std::string& test_name) {
     LazyBackgroundObserver page_complete;
-    FilePath extdir = test_data_dir_.AppendASCII(test_name);
+    base::FilePath extdir = test_data_dir_.AppendASCII(test_name);
     const extensions::Extension* extension = LoadExtension(extdir);
     if (extension)
       page_complete.Wait();
@@ -58,9 +60,9 @@ IN_PROC_BROWSER_TEST_F(SystemIndicatorApiTest, SystemIndicator) {
     ASSERT_TRUE(extension) << message_;
 
     // Lazy Background Page has been shut down.
-    ExtensionProcessManager* pm =
+    extensions::ProcessManager* pm =
         extensions::ExtensionSystem::Get(profile())->process_manager();
-    EXPECT_FALSE(pm->GetBackgroundHostForExtension(last_loaded_extension_id_));
+    EXPECT_FALSE(pm->GetBackgroundHostForExtension(last_loaded_extension_id()));
 
     EXPECT_TRUE(manager->SendClickEventToExtensionForTest(extension->id()));
     EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();

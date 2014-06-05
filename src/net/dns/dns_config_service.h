@@ -11,9 +11,10 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/threading/non_thread_safe.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 // Needed on shared build with MSVS2010 to avoid multiple definitions of
 // std::vector<IPEndPoint>.
 #include "net/base/address_list.h"
@@ -30,6 +31,37 @@ namespace net {
 // Always use 1 second timeout (followed by binary exponential backoff).
 // TODO(szym): Remove code which reads timeout from system.
 const unsigned kDnsTimeoutSeconds = 1;
+
+// Classifies nameserver address lists for histograms.
+class NET_EXPORT_PRIVATE NameServerClassifier {
+ public:
+  // This is used in a histogram (AsyncDNS.NameServersType); add new entries
+  // right before MAX_VALUE.
+  enum NameServersType {
+    NAME_SERVERS_TYPE_NONE,
+    NAME_SERVERS_TYPE_GOOGLE_PUBLIC_DNS,
+    NAME_SERVERS_TYPE_PRIVATE,
+    NAME_SERVERS_TYPE_PUBLIC,
+    NAME_SERVERS_TYPE_MIXED,
+    NAME_SERVERS_TYPE_MAX_VALUE
+  };
+
+  NameServerClassifier();
+  ~NameServerClassifier();
+
+  NameServersType GetNameServersType(
+      const std::vector<net::IPEndPoint>& nameservers) const;
+
+ private:
+  struct NameServerTypeRule;
+
+  void AddRule(const char* pattern_string, NameServersType type);
+  NameServersType GetNameServerType(const IPAddressNumber& address) const;
+  static NameServersType MergeNameServersTypes(NameServersType a,
+                                               NameServersType b);
+
+  ScopedVector<NameServerTypeRule> rules_;
+};
 
 // DnsConfig stores configuration of the system resolver.
 struct NET_EXPORT_PRIVATE DnsConfig {
@@ -59,9 +91,17 @@ struct NET_EXPORT_PRIVATE DnsConfig {
 
   DnsHosts hosts;
 
+  // True if there are options set in the system configuration that are not yet
+  // supported by DnsClient.
+  bool unhandled_options;
+
   // AppendToMultiLabelName: is suffix search performed for multi-label names?
   // True, except on Windows where it can be configured.
   bool append_to_multi_label_name;
+
+  // Indicates that source port randomization is required. This uses additional
+  // resources on some platforms.
+  bool randomize_ports;
 
   // Resolver options; see man resolv.conf.
 
@@ -75,8 +115,12 @@ struct NET_EXPORT_PRIVATE DnsConfig {
   bool rotate;
   // Enable EDNS0 extensions.
   bool edns0;
-};
 
+  // Indicates system configuration uses local IPv6 connectivity, e.g.,
+  // DirectAccess. This is exposed for HostResolver to skip IPv6 probes,
+  // as it may cause them to return incorrect results.
+  bool use_local_ipv6;
+};
 
 // Service for reading system DNS settings, on demand or when signalled by
 // internal watchers and NetworkChangeNotifier.
@@ -104,7 +148,16 @@ class NET_EXPORT_PRIVATE DnsConfigService
   void WatchConfig(const CallbackType& callback);
 
  protected:
-  // Immediately attempts to read the current configuration.
+  enum WatchStatus {
+    DNS_CONFIG_WATCH_STARTED = 0,
+    DNS_CONFIG_WATCH_FAILED_TO_START_CONFIG,
+    DNS_CONFIG_WATCH_FAILED_TO_START_HOSTS,
+    DNS_CONFIG_WATCH_FAILED_CONFIG,
+    DNS_CONFIG_WATCH_FAILED_HOSTS,
+    DNS_CONFIG_WATCH_MAX,
+  };
+
+ // Immediately attempts to read the current configuration.
   virtual void ReadNow() = 0;
   // Registers system watchers. Returns true iff succeeds.
   virtual bool StartWatching() = 0;
@@ -152,6 +205,8 @@ class NET_EXPORT_PRIVATE DnsConfigService
 
   // Started in Invalidate*, cleared in On*Read.
   base::OneShotTimer<DnsConfigService> timer_;
+
+  NameServerClassifier classifier_;
 
   DISALLOW_COPY_AND_ASSIGN(DnsConfigService);
 };

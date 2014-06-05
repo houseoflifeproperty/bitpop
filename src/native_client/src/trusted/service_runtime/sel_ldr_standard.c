@@ -25,7 +25,6 @@
 
 #include "native_client/src/shared/srpc/nacl_srpc.h"
 
-#include "native_client/src/trusted/manifest_name_service_proxy/manifest_proxy.h"
 #include "native_client/src/trusted/perf_counter/nacl_perf_counter.h"
 
 #include "native_client/src/trusted/reverse_service/reverse_control_rpc.h"
@@ -37,6 +36,7 @@
 #include "native_client/src/trusted/service_runtime/elf_util.h"
 #include "native_client/src/trusted/service_runtime/nacl_app_thread.h"
 #include "native_client/src/trusted/service_runtime/nacl_kernel_service.h"
+#include "native_client/src/trusted/service_runtime/nacl_runtime_host_interface.h"
 #include "native_client/src/trusted/service_runtime/nacl_signal.h"
 #include "native_client/src/trusted/service_runtime/nacl_switch_to_app.h"
 #include "native_client/src/trusted/service_runtime/nacl_syscall_common.h"
@@ -163,6 +163,18 @@ NaClErrorCode NaClCheckAddressSpaceLayoutSanity(struct NaClApp *nap,
     NaClLog(LOG_INFO, "rodata_start not a multiple of allocation size\n");
     return LOAD_BAD_RODATA_ALIGNMENT;
   }
+#if NACL_ARCH(NACL_BUILD_ARCH) == NACL_mips
+  /*
+   * This check is necessary to make MIPS sandbox secure, as there is no NX page
+   * protection support on MIPS.
+   */
+  if (nap->rodata_start < NACL_DATA_SEGMENT_START) {
+    NaClLog(LOG_INFO,
+            "rodata_start is below NACL_DATA_SEGMENT_START (0x%X) address\n",
+            NACL_DATA_SEGMENT_START);
+    return LOAD_SEGMENT_BAD_LOC;
+  }
+#endif
   return LOAD_OK;
 }
 
@@ -189,11 +201,12 @@ void NaClLogAddressSpaceLayout(struct NaClApp *nap) {
   NaClLog(2, "nap->bundle_size        = 0x%x\n", nap->bundle_size);
 }
 
-NaClErrorCode NaClAppLoadFileAslr(struct Gio        *gp,
-                                  struct NaClApp    *nap,
+
+NaClErrorCode NaClAppLoadFileAslr(struct NaClDesc *ndp,
+                                  struct NaClApp *nap,
                                   enum NaClAslrMode aslr_mode) {
   NaClErrorCode       ret = LOAD_INTERNAL;
-  NaClErrorCode       subret;
+  NaClErrorCode       subret = LOAD_INTERNAL;
   uintptr_t           rodata_end;
   uintptr_t           data_end;
   uintptr_t           max_vaddr;
@@ -212,14 +225,8 @@ NaClErrorCode NaClAppLoadFileAslr(struct Gio        *gp,
   nap->stack_size = NaClRoundAllocPage(nap->stack_size);
 
   /* temporay object will be deleted at end of function */
-  image = NaClElfImageNew(gp, &subret);
-  if (NULL == image) {
-    ret = subret;
-    goto done;
-  }
-
-  subret = NaClElfImageValidateElfHeader(image);
-  if (LOAD_OK != subret) {
+  image = NaClElfImageNew(ndp, &subret);
+  if (NULL == image || LOAD_OK != subret) {
     ret = subret;
     goto done;
   }
@@ -230,6 +237,18 @@ NaClErrorCode NaClAppLoadFileAslr(struct Gio        *gp,
   if (LOAD_OK != subret) {
     ret = subret;
     goto done;
+  }
+
+  if (nap->initial_nexe_max_code_bytes != 0) {
+    size_t code_segment_size = info.static_text_end - NACL_TRAMPOLINE_END;
+    if (code_segment_size > nap->initial_nexe_max_code_bytes) {
+      NaClLog(LOG_ERROR, "NaClAppLoadFileAslr: "
+              "Code segment size (%"NACL_PRIdS" bytes) exceeds limit (%"
+              NACL_PRId32" bytes)\n",
+              code_segment_size, nap->initial_nexe_max_code_bytes);
+      ret = LOAD_CODE_SEGMENT_TOO_LARGE;
+      goto done;
+    }
   }
 
   nap->static_text_end = info.static_text_end;
@@ -264,6 +283,12 @@ NaClErrorCode NaClAppLoadFileAslr(struct Gio        *gp,
    * max_vaddr -- the break or the boundary between data (initialized
    * and bss) and the address space hole -- does not have to be at a
    * page boundary.
+   *
+   * Memory allocation will use NaClRoundPage(nap->break_addr), but
+   * the system notion of break is always an exact address.  Even
+   * though we must allocate and make accessible multiples of pages,
+   * the linux-style brk system call (which returns current break on
+   * failure) permits a non-aligned address as argument.
    */
   nap->break_addr = max_vaddr;
   nap->data_end = max_vaddr;
@@ -310,16 +335,16 @@ NaClErrorCode NaClAppLoadFileAslr(struct Gio        *gp,
    * to write them.
    */
   NaClLog(2, "Loading into memory\n");
-  ret = NaCl_mprotect((void *) (nap->mem_start + NACL_TRAMPOLINE_START),
-                      NaClRoundAllocPage(nap->data_end) - NACL_TRAMPOLINE_START,
-                      PROT_READ | PROT_WRITE);
+  ret = NaClMprotect((void *) (nap->mem_start + NACL_TRAMPOLINE_START),
+                     NaClRoundAllocPage(nap->data_end) - NACL_TRAMPOLINE_START,
+                     PROT_READ | PROT_WRITE);
   if (0 != ret) {
     NaClLog(LOG_FATAL,
             "NaClAppLoadFile: Failed to make image pages writable. "
             "Error code 0x%x\n",
             ret);
   }
-  subret = NaClElfImageLoad(image, gp, nap->addr_bits, nap->mem_start);
+  subret = NaClElfImageLoad(image, ndp, nap);
   if (LOAD_OK != subret) {
     ret = subret;
     goto done;
@@ -361,8 +386,14 @@ NaClErrorCode NaClAppLoadFileAslr(struct Gio        *gp,
    */
   NaClFillEndOfTextRegion(nap);
 
-  NaClLog(2, "Validating image\n");
-  subret = NaClValidateImage(nap);
+  if (nap->main_exe_prevalidated) {
+    NaClLog(2, "Main executable segment hit validation cache and mapped in,"
+            " skipping validation.\n");
+    subret = LOAD_OK;
+  } else {
+    NaClLog(2, "Validating image\n");
+    subret = NaClValidateImage(nap);
+  }
   NaClPerfCounterMark(&time_load_file,
                       NACL_PERF_IMPORTANT_PREFIX "ValidateImg");
   NaClPerfCounterIntervalLast(&time_load_file);
@@ -375,13 +406,13 @@ NaClErrorCode NaClAppLoadFileAslr(struct Gio        *gp,
   NaClInitSwitchToApp(nap);
 
   NaClLog(2, "Installing trampoline\n");
-  NaClLoadTrampoline(nap);
+  NaClLoadTrampoline(nap, aslr_mode);
 
   NaClLog(2, "Installing springboard\n");
   NaClLoadSpringboard(nap);
 
   /*
-   * NaClMemoryProtect also initializes the mem_map w/ information
+   * NaClMemoryProtection also initializes the mem_map w/ information
    * about the memory pages and their current protection value.
    *
    * The contents of the dynamic text region will get remapped as
@@ -405,25 +436,23 @@ done:
   return ret;
 }
 
-NaClErrorCode NaClAppLoadFile(struct Gio       *gp,
-                              struct NaClApp   *nap) {
-  return NaClAppLoadFileAslr(gp, nap, NACL_ENABLE_ASLR);
+NaClErrorCode NaClAppLoadFile(struct NaClDesc *ndp,
+                              struct NaClApp *nap) {
+  return NaClAppLoadFileAslr(ndp, nap, NACL_ENABLE_ASLR);
 }
 
-NaClErrorCode NaClAppLoadFileDynamically(struct NaClApp *nap,
-                                         struct Gio     *gio_file) {
+NaClErrorCode NaClAppLoadFileDynamically(
+    struct NaClApp *nap,
+    struct NaClDesc *ndp,
+    struct NaClValidationMetadata *metadata) {
   struct NaClElfImage *image = NULL;
   NaClErrorCode ret = LOAD_INTERNAL;
 
-  image = NaClElfImageNew((struct Gio *) gio_file, &ret);
-  if (NULL == image) {
+  image = NaClElfImageNew(ndp, &ret);
+  if (NULL == image || LOAD_OK != ret) {
     goto done;
   }
-  ret = NaClElfImageValidateElfHeader(image);
-  if (LOAD_OK != ret) {
-    goto done;
-  }
-  ret = NaClElfImageLoadDynamically(image, nap, gio_file);
+  ret = NaClElfImageLoadDynamically(image, nap, ndp, metadata);
   if (LOAD_OK != ret) {
     goto done;
   }
@@ -437,31 +466,37 @@ NaClErrorCode NaClAppLoadFileDynamically(struct NaClApp *nap,
 
 int NaClAddrIsValidEntryPt(struct NaClApp *nap,
                            uintptr_t      addr) {
-#if defined(NACL_TARGET_ARM_THUMB2_MODE)
-  /*
-   * The entry point needs to be aligned 0xe mod 0x10.  But ARM processors need
-   * an odd target address to indicate that the target is in thumb mode.  When
-   * control is actually transferred, it is to the target address minus one.
-   */
-  if (0xf != (addr & (nap->bundle_size - 1))) {
-    return 0;
-  }
-#else
   if (0 != (addr & (nap->bundle_size - 1))) {
     return 0;
   }
-#endif
 
   return addr < nap->static_text_end;
 }
 
 int NaClAppLaunchServiceThreads(struct NaClApp *nap) {
-  struct NaClManifestProxy                    *manifest_proxy = NULL;
-  struct NaClKernelService                    *kernel_service = NULL;
-  int                                         rv = 0;
-  enum NaClReverseChannelInitializationState  init_state;
+  struct NaClKernelService  *kernel_service = NULL;
+  int                       rv = 0;
+
+  NaClLog(4, "NaClAppLaunchServiceThreads: Entered, nap 0x%"NACL_PRIxPTR"\n",
+          (uintptr_t) nap);
 
   NaClNameServiceLaunch(nap->name_service);
+
+  if (LOAD_OK != NaClWaitForStartModuleCommand(nap)) {
+    return rv;
+  }
+
+  NaClXMutexLock(&nap->mu);
+  if (NULL == nap->runtime_host_interface) {
+    nap->runtime_host_interface = malloc(sizeof *nap->runtime_host_interface);
+    if (NULL == nap->runtime_host_interface ||
+        !NaClRuntimeHostInterfaceCtor_protected(nap->runtime_host_interface)) {
+      NaClLog(LOG_ERROR, "NaClAppLaunchServiceThreads:"
+              " Failed to initialise runtime host interface\n");
+      goto done;
+    }
+  }
+  NaClXMutexUnlock(&nap->mu);
 
   kernel_service = (struct NaClKernelService *) malloc(sizeof *kernel_service);
   if (NULL == kernel_service) {
@@ -473,7 +508,7 @@ int NaClAppLaunchServiceThreads(struct NaClApp *nap) {
   if (!NaClKernelServiceCtor(kernel_service,
                              NaClAddrSpSquattingThreadIfFactoryFunction,
                              (void *) nap,
-                             nap)) {
+                             nap->runtime_host_interface)) {
     NaClLog(LOG_ERROR,
             "NaClAppLaunchServiceThreads: KernServiceCtor failed\n");
     free(kernel_service);
@@ -494,99 +529,9 @@ int NaClAppLaunchServiceThreads(struct NaClApp *nap) {
    * that reference.
    */
 
-  /*
-   * The locking here isn't really needed.  Here is why:
-   * reverse_channel_initialized is written in reverse_setup RPC
-   * handler of the secure command channel RPC handler thread.  and
-   * the RPC order requires that the plugin invoke reverse_setup prior
-   * to invoking start_module, so there will have been plenty of other
-   * synchronization operations to force cache coherency
-   * (module_may_start, for example, is set in the cache of the secure
-   * channel RPC handler (in start_module) and read by the main
-   * thread, and the synchronization operations needed to propagate
-   * its value properly suffices to propagate
-   * reverse_channel_initialized as well).  However, reading it while
-   * holding a lock is more obviously correct for tools like tsan.
-   * Due to the RPC order, it is impossible for
-   * reverse_channel_initialized to get set after the unlock and
-   * before the if test.
-   */
   NaClXMutexLock(&nap->mu);
-  /*
-   * If no reverse_setup RPC was made, then we do not set up a
-   * manifest proxy.  Otherwise, we make sure that the reverse channel
-   * setup is done, so that the application can actually use
-   * reverse-channel-based services such as the manifest proxy.
-   */
-  if (NACL_REVERSE_CHANNEL_UNINITIALIZED !=
-      (init_state = nap->reverse_channel_initialization_state)) {
-    while (NACL_REVERSE_CHANNEL_INITIALIZED !=
-      (init_state = nap->reverse_channel_initialization_state)) {
-      NaClXCondVarWait(&nap->cv, &nap->mu);
-    }
-  }
-  NaClXMutexUnlock(&nap->mu);
-  if (NACL_REVERSE_CHANNEL_INITIALIZED != init_state) {
-    NaClLog(3,
-            ("NaClAppLaunchServiceThreads: no reverse channel;"
-             " launched kernel services.\n"));
-    NaClLog(3,
-            ("NaClAppLaunchServiceThreads: no reverse channel;"
-             " NOT launching manifest proxy.\n"));
-    nap->kernel_service = kernel_service;
-    kernel_service = NULL;
-
-    rv = 1;
-    goto done;
-  }
-
-  /*
-   * Allocate/construct the manifest proxy without grabbing global
-   * locks.
-   */
-  NaClLog(3, "NaClAppLaunchServiceThreads: launching manifest proxy\n");
-
-  /*
-   * ReverseClientSetup RPC should be done via the command channel
-   * prior to the load_module / start_module RPCs, and
-   *  occurs after that, so checking
-   * nap->reverse_client suffices for determining whether the proxy is
-   * exporting reverse services.
-   */
-  manifest_proxy = (struct NaClManifestProxy *) malloc(sizeof *manifest_proxy);
-  if (NULL == manifest_proxy) {
-    NaClLog(LOG_ERROR, "No memory for manifest proxy\n");
-    NaClDescUnref(kernel_service->base.bound_and_cap[1]);
-    goto done;
-  }
-  if (!NaClManifestProxyCtor(manifest_proxy,
-                             NaClAddrSpSquattingThreadIfFactoryFunction,
-                             (void *) nap,
-                             nap)) {
-    NaClLog(LOG_ERROR, "ManifestProxyCtor failed\n");
-    /* do not leave a non-NULL pointer to a not-fully constructed object */
-    free(manifest_proxy);
-    manifest_proxy = NULL;
-    NaClDescUnref(kernel_service->base.bound_and_cap[1]);
-    goto done;
-  }
-
-  /*
-   * NaClSimpleServiceStartServiceThread requires the nap->mu lock.
-   */
-  if (!NaClSimpleServiceStartServiceThread((struct NaClSimpleService *)
-                                           manifest_proxy)) {
-    NaClLog(LOG_ERROR, "ManifestProxy start service failed\n");
-    NaClDescUnref(kernel_service->base.bound_and_cap[1]);
-    goto done;
-  }
-
-  NaClXMutexLock(&nap->mu);
-  CHECK(NULL == nap->manifest_proxy);
   CHECK(NULL == nap->kernel_service);
 
-  nap->manifest_proxy = manifest_proxy;
-  manifest_proxy = NULL;
   nap->kernel_service = kernel_service;
   kernel_service = NULL;
   NaClXMutexUnlock(&nap->mu);
@@ -594,15 +539,6 @@ int NaClAppLaunchServiceThreads(struct NaClApp *nap) {
 
 done:
   NaClXMutexLock(&nap->mu);
-  if (NULL != nap->manifest_proxy) {
-    NaClLog(3,
-            ("NaClAppLaunchServiceThreads: adding manifest proxy to"
-             " name service\n"));
-    (*NACL_VTBL(NaClNameService, nap->name_service)->
-     CreateDescEntry)(nap->name_service,
-                      "ManifestNameService", NACL_ABI_O_RDWR,
-                      NaClDescRef(nap->manifest_proxy->base.bound_and_cap[1]));
-  }
   if (NULL != nap->kernel_service) {
     NaClLog(3,
             ("NaClAppLaunchServiceThreads: adding kernel service to"
@@ -612,7 +548,6 @@ done:
                       "KernelService", NACL_ABI_O_RDWR,
                       NaClDescRef(nap->kernel_service->base.bound_and_cap[1]));
   }
-
   NaClXMutexUnlock(&nap->mu);
 
   /*
@@ -624,14 +559,12 @@ done:
    * transferred to the NaClApp object the corresponding automatic
    * variable is set to NULL.
    */
-  NaClRefCountSafeUnref((struct NaClRefCount *) manifest_proxy);
   NaClRefCountSafeUnref((struct NaClRefCount *) kernel_service);
   return rv;
 }
 
 int NaClReportExitStatus(struct NaClApp *nap, int exit_status) {
-  int           rv = 0;
-  NaClSrpcError rpc_result;
+  int rv = 0;
 
   NaClXMutexLock(&nap->mu);
   /*
@@ -644,14 +577,12 @@ int NaClReportExitStatus(struct NaClApp *nap, int exit_status) {
     return 0;
   }
 
-  if (NACL_REVERSE_CHANNEL_INITIALIZED ==
-      nap->reverse_channel_initialization_state) {
+  if (NULL != nap->runtime_host_interface) {
     /* TODO(halyavin) update NaCl plugin to accept full exit_status value */
     if (NACL_ABI_WIFEXITED(exit_status)) {
-      rpc_result = NaClSrpcInvokeBySignature(&nap->reverse_channel,
-                                             NACL_REVERSE_CONTROL_REPORT_STATUS,
-                                             NACL_ABI_WEXITSTATUS(exit_status));
-      rv = NACL_SRPC_RESULT_OK == rpc_result;
+    rv = (*NACL_VTBL(NaClRuntimeHostInterface, nap->runtime_host_interface)->
+          ReportExitStatus)(nap->runtime_host_interface,
+                            NACL_ABI_WEXITSTATUS(exit_status));
     }
     /*
      * Due to cross-repository checkins, the Cr-side might not yet
@@ -665,6 +596,20 @@ int NaClReportExitStatus(struct NaClApp *nap, int exit_status) {
   NaClXMutexUnlock(&nap->mu);
 
   return rv;
+}
+
+uintptr_t NaClGetInitialStackTop(struct NaClApp *nap) {
+  /*
+   * We keep the top of useful memory a page below the top of the
+   * sandbox region so that compilers can do tricks like computing a
+   * base register of sp + constant and then using a
+   * register-minus-constant addressing mode, which comes up at least
+   * on ARM where the compiler is trying to optimize given the limited
+   * size of immediate offsets available.  The maximum such negative
+   * constant on ARM will be -4095, but we use page size (64k) for
+   * good measure and do it on all machines just for uniformity.
+   */
+  return ((uintptr_t) 1U << nap->addr_bits) - NACL_MAP_PAGESIZE;
 }
 
 /*
@@ -690,7 +635,6 @@ int NaClCreateMainThread(struct NaClApp     *nap,
   char                  *strp;
   size_t                *argv_len;
   size_t                *envv_len;
-  struct NaClAppThread  *natp;
   uintptr_t             stack_ptr;
 
   retval = 0;  /* fail */
@@ -779,18 +723,14 @@ int NaClCreateMainThread(struct NaClApp     *nap,
   }
 
   /*
-   * Write strings and char * arrays to stack.  We keep the top of useful
-   * memory a page below the top of the sandbox region so that compilers
-   * can do tricks like computing a base register of sp + constant and then
-   * using a register-minus-constant addressing mode, which comes up at
-   * least on ARM where the compiler is trying to optimize given the
-   * limited size of immediate offsets available.  The maximum such
-   * negative constant on ARM will be -4095, but we use page size (64k)
-   * for good measure and do it on all machines just for uniformity.
+   * Write strings and char * arrays to stack.
    */
-  stack_ptr = (nap->mem_start +
-               ((uintptr_t) 1U << nap->addr_bits) - NACL_MAP_PAGESIZE -
-               size);
+  stack_ptr = NaClUserToSysAddrRange(nap, NaClGetInitialStackTop(nap) - size,
+                                     size);
+  if (stack_ptr == kNaClBadAddress) {
+    retval = 0;
+    goto cleanup;
+  }
 
   NaClLog(2, "setting stack to : %016"NACL_PRIxPTR"\n", stack_ptr);
 
@@ -844,6 +784,22 @@ int NaClCreateMainThread(struct NaClApp     *nap,
 
   /* now actually spawn the thread */
   NaClXMutexLock(&nap->mu);
+  /*
+   * Unreference the main nexe and irt at this point if no debug stub callbacks
+   * have been registered, as these references to the main nexe and irt
+   * descriptors are only used when providing file access to the debugger.
+   * In the debug case, let shutdown take care of cleanup.
+   */
+  if (NULL == nap->debug_stub_callbacks) {
+    if (NULL != nap->main_nexe_desc) {
+      NaClDescUnref(nap->main_nexe_desc);
+      nap->main_nexe_desc = NULL;
+    }
+    if (NULL != nap->irt_nexe_desc) {
+      NaClDescUnref(nap->irt_nexe_desc);
+      nap->irt_nexe_desc = NULL;
+    }
+  }
   nap->running = 1;
   NaClXMutexUnlock(&nap->mu);
 
@@ -865,17 +821,12 @@ int NaClCreateMainThread(struct NaClApp     *nap,
           NaClSysToUserStackAddr(nap, stack_ptr));
 
   /* e_entry is user addr */
-  natp = NaClAppThreadMake(nap,
-                           nap->initial_entry_pt,
-                           NaClSysToUserStackAddr(nap, stack_ptr),
-                           /* user_tls1= */ (uint32_t) nap->break_addr,
-                           /* user_tls2= */ 0);
-  if (natp == NULL) {
-    retval = 0;
-    goto cleanup;
-  }
+  retval = NaClAppThreadSpawn(nap,
+                              nap->initial_entry_pt,
+                              NaClSysToUserStackAddr(nap, stack_ptr),
+                              /* user_tls1= */ (uint32_t) nap->break_addr,
+                              /* user_tls2= */ 0);
 
-  retval = 1;
 cleanup:
   free(argv_len);
   free(envv_len);
@@ -912,14 +863,11 @@ int32_t NaClCreateAdditionalThread(struct NaClApp *nap,
                                    uintptr_t      sys_stack_ptr,
                                    uint32_t       user_tls1,
                                    uint32_t       user_tls2) {
-  struct NaClAppThread  *natp;
-
-  natp = NaClAppThreadMake(nap,
-                           prog_ctr,
-                           NaClSysToUserStackAddr(nap, sys_stack_ptr),
-                           user_tls1,
-                           user_tls2);
-  if (natp == NULL) {
+  if (!NaClAppThreadSpawn(nap,
+                          prog_ctr,
+                          NaClSysToUserStackAddr(nap, sys_stack_ptr),
+                          user_tls1,
+                          user_tls2)) {
     NaClLog(LOG_WARNING,
             ("NaClCreateAdditionalThread: could not allocate thread."
              "  Returning EAGAIN per POSIX specs.\n"));

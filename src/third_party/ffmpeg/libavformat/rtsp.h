@@ -42,6 +42,10 @@ enum RTSPLowerTransport {
     RTSP_LOWER_TRANSPORT_HTTP = 8,          /**< HTTP tunneled - not a proper
                                                  transport mode as such,
                                                  only for use via AVOptions */
+    RTSP_LOWER_TRANSPORT_CUSTOM = 16,       /**< Custom IO - not a public
+                                                 option for lower_transport_mask,
+                                                 but set in the SDP demuxer based
+                                                 on a flag. */
 };
 
 /**
@@ -385,12 +389,34 @@ typedef struct RTSPState {
      * Timeout to wait for incoming connections.
      */
     int initial_timeout;
+
+    /**
+     * timeout of socket i/o operations.
+     */
+    int stimeout;
+
+    /**
+     * Size of RTP packet reordering queue.
+     */
+    int reordering_queue_size;
+
+    /**
+     * User-Agent string
+     */
+    char *user_agent;
 } RTSPState;
 
 #define RTSP_FLAG_FILTER_SRC  0x1    /**< Filter incoming UDP packets -
                                           receive packets only from the right
                                           source address and port. */
-#define RTSP_FLAG_LISTEN 0x2         /**< Wait for incoming connections. */
+#define RTSP_FLAG_LISTEN      0x2    /**< Wait for incoming connections. */
+#define RTSP_FLAG_CUSTOM_IO   0x4    /**< Do all IO via the AVIOContext. */
+#define RTSP_FLAG_RTCP_TO_SOURCE 0x8 /**< Send RTCP packets to the source
+                                          address of received packets. */
+
+typedef struct RTSPSource {
+    char addr[128]; /**< Source-specific multicast include source IP address (from SDP content) */
+} RTSPSource;
 
 /**
  * Describe a single stream, as identified by a single m= line block in the
@@ -415,11 +441,15 @@ typedef struct RTSPStream {
     //@{
     int sdp_port;             /**< port (from SDP content) */
     struct sockaddr_storage sdp_ip; /**< IP address (from SDP content) */
+    int nb_include_source_addrs; /**< Number of source-specific multicast include source IP addresses (from SDP content) */
+    struct RTSPSource **include_source_addrs; /**< Source-specific multicast include source IP addresses (from SDP content) */
+    int nb_exclude_source_addrs; /**< Number of source-specific multicast exclude source IP addresses (from SDP content) */
+    struct RTSPSource **exclude_source_addrs; /**< Source-specific multicast exclude source IP addresses (from SDP content) */
     int sdp_ttl;              /**< IP Time-To-Live (from SDP content) */
     int sdp_payload_type;     /**< payload type */
     //@}
 
-    /** The following are used for dynamic protocols (rtp_*.c/rdt.c) */
+    /** The following are used for dynamic protocols (rtpdec_*.c/rdt.c) */
     //@{
     /** handler structure */
     RTPDynamicProtocolHandler *dynamic_handler;
@@ -427,6 +457,12 @@ typedef struct RTSPStream {
     /** private data associated with the dynamic protocol */
     PayloadContext *dynamic_protocol_context;
     //@}
+
+    /** Enable sending RTCP feedback messages according to RFC 4585 */
+    int feedback;
+
+    char crypto_suite[40];
+    char crypto_params[100];
 } RTSPStream;
 
 void ff_rtsp_parse_line(RTSPMessageHeader *reply, const char *buf,
@@ -562,6 +598,11 @@ int ff_rtsp_tcp_read_packet(AVFormatContext *s, RTSPStream **prtsp_st,
                             uint8_t *buf, int buf_size);
 
 /**
+ * Send buffered packets over TCP.
+ */
+int ff_rtsp_tcp_write_packet(AVFormatContext *s, RTSPStream *rtsp_st);
+
+/**
  * Receive one packet from the RTSPStreams set up in the AVFormatContext
  * (which should contain a RTSPState struct as priv_data).
  */
@@ -579,7 +620,7 @@ int ff_rtsp_make_setup_request(AVFormatContext *s, const char *host, int port,
  * Undo the effect of ff_rtsp_make_setup_request, close the
  * transport_priv and rtp_handle fields.
  */
-void ff_rtsp_undo_setup(AVFormatContext *s);
+void ff_rtsp_undo_setup(AVFormatContext *s, int send_packets);
 
 /**
  * Open RTSP transport context.

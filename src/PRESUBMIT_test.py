@@ -43,6 +43,11 @@ class MockOutputApi(object):
       MockOutputApi.PresubmitResult.__init__(self, message, items, long_text)
       self.type = 'notify'
 
+  class PresubmitPromptOrNotify(PresubmitResult):
+    def __init__(self, message, items, long_text=''):
+      MockOutputApi.PresubmitResult.__init__(self, message, items, long_text)
+      self.type = 'promptOrNotify'
+
 
 class MockFile(object):
   def __init__(self, local_path, new_contents):
@@ -58,6 +63,14 @@ class MockFile(object):
 
   def LocalPath(self):
     return self._local_path
+
+
+class MockChange(object):
+  def __init__(self, changed_files):
+    self._changed_files = changed_files
+
+  def LocalPaths(self):
+    return self._changed_files
 
 
 class IncludeOrderTest(unittest.TestCase):
@@ -167,6 +180,16 @@ class IncludeOrderTest(unittest.TestCase):
         mock_input_api, mock_file, range(1, len(contents) + 1))
     self.assertEqual(0, len(warnings))
 
+  def testSpecialFirstInclude6(self):
+    mock_input_api = MockInputApi()
+    contents = ['#include "some/other/path/foo_win.h"',
+                '#include <set>',
+                '#include "a/header.h"']
+    mock_file = MockFile('some/path/foo_unittest_win.h', contents)
+    warnings = PRESUBMIT._CheckIncludeOrderInFile(
+        mock_input_api, mock_file, range(1, len(contents) + 1))
+    self.assertEqual(0, len(warnings))
+
   def testOrderAlreadyWrong(self):
     scope = [(1, '#include "b.h"'),
              (2, '#include "a.h"'),
@@ -216,11 +239,25 @@ class IncludeOrderTest(unittest.TestCase):
         mock_input_api, mock_file, range(1, len(contents) + 1))
     self.assertEqual(0, len(warnings))
 
-  def testSysIncludes(self):
+  def testExcludedIncludes(self):
     # #include <sys/...>'s can appear in any order.
     mock_input_api = MockInputApi()
     contents = ['#include <sys/b.h>',
                 '#include <sys/a.h>']
+    mock_file = MockFile('', contents)
+    warnings = PRESUBMIT._CheckIncludeOrderInFile(
+        mock_input_api, mock_file, range(1, len(contents) + 1))
+    self.assertEqual(0, len(warnings))
+
+    contents = ['#include <atlbase.h>',
+                '#include <aaa.h>']
+    mock_file = MockFile('', contents)
+    warnings = PRESUBMIT._CheckIncludeOrderInFile(
+        mock_input_api, mock_file, range(1, len(contents) + 1))
+    self.assertEqual(0, len(warnings))
+
+    contents = ['#include "build/build_config.h"',
+                '#include "aaa.h"']
     mock_file = MockFile('', contents)
     warnings = PRESUBMIT._CheckIncludeOrderInFile(
         mock_input_api, mock_file, range(1, len(contents) + 1))
@@ -238,22 +275,44 @@ class IncludeOrderTest(unittest.TestCase):
     warnings = PRESUBMIT._CheckIncludeOrder(mock_input_api, mock_output_api)
     self.assertEqual(1, len(warnings))
     self.assertEqual(2, len(warnings[0].items))
-    self.assertEqual('warning', warnings[0].type)
+    self.assertEqual('promptOrNotify', warnings[0].type)
 
-  def testOnlyNotifyOnCommit(self):
+  def testUncheckableIncludes(self):
     mock_input_api = MockInputApi()
-    mock_input_api.is_committing = True
-    mock_output_api = MockOutputApi()
-    contents = ['#include <b.h>',
-                '#include <a.h>']
-    mock_input_api.files = [MockFile('something.cc', contents)]
-    warnings = PRESUBMIT._CheckIncludeOrder(mock_input_api, mock_output_api)
+    contents = ['#include <windows.h>',
+                '#include "b.h"',
+                '#include "a.h"']
+    mock_file = MockFile('', contents)
+    warnings = PRESUBMIT._CheckIncludeOrderInFile(
+        mock_input_api, mock_file, range(1, len(contents) + 1))
     self.assertEqual(1, len(warnings))
-    self.assertEqual(1, len(warnings[0].items))
-    self.assertEqual('notify', warnings[0].type)
+
+    contents = ['#include "gpu/command_buffer/gles_autogen.h"',
+                '#include "b.h"',
+                '#include "a.h"']
+    mock_file = MockFile('', contents)
+    warnings = PRESUBMIT._CheckIncludeOrderInFile(
+        mock_input_api, mock_file, range(1, len(contents) + 1))
+    self.assertEqual(1, len(warnings))
+
+    contents = ['#include "gl_mock_autogen.h"',
+                '#include "b.h"',
+                '#include "a.h"']
+    mock_file = MockFile('', contents)
+    warnings = PRESUBMIT._CheckIncludeOrderInFile(
+        mock_input_api, mock_file, range(1, len(contents) + 1))
+    self.assertEqual(1, len(warnings))
+
+    contents = ['#include "ipc/some_macros.h"',
+                '#include "b.h"',
+                '#include "a.h"']
+    mock_file = MockFile('', contents)
+    warnings = PRESUBMIT._CheckIncludeOrderInFile(
+        mock_input_api, mock_file, range(1, len(contents) + 1))
+    self.assertEqual(1, len(warnings))
 
 
-class VersionControlerConflictsTest(unittest.TestCase):
+class VersionControlConflictsTest(unittest.TestCase):
   def testTypicalConflict(self):
     lines = ['<<<<<<< HEAD',
              '  base::ScopedTempDir temp_dir_;',
@@ -304,6 +363,72 @@ class BadExtensionsTest(unittest.TestCase):
     ]
     results = PRESUBMIT._CheckPatchFiles(mock_input_api, MockOutputApi())
     self.assertEqual(0, len(results))
+
+  def testOnlyOwnersFiles(self):
+    mock_change = MockChange([
+      'some/path/OWNERS',
+      'A\Windows\Path\OWNERS',
+    ])
+    results = PRESUBMIT.GetPreferredTryMasters(None, mock_change)
+    self.assertEqual({}, results)
+
+
+class InvalidOSMacroNamesTest(unittest.TestCase):
+  def testInvalidOSMacroNames(self):
+    lines = ['#if defined(OS_WINDOWS)',
+             ' #elif defined(OS_WINDOW)',
+             ' # if defined(OS_MACOSX) || defined(OS_CHROME)',
+             '# else  // defined(OS_MAC)',
+             '#endif  // defined(OS_MACOS)']
+    errors = PRESUBMIT._CheckForInvalidOSMacrosInFile(
+        MockInputApi(), MockFile('some/path/foo_platform.cc', lines))
+    self.assertEqual(len(lines), len(errors))
+    self.assertTrue(':1 OS_WINDOWS' in errors[0])
+    self.assertTrue('(did you mean OS_WIN?)' in errors[0])
+
+  def testValidOSMacroNames(self):
+    lines = ['#if defined(%s)' % m for m in PRESUBMIT._VALID_OS_MACROS]
+    errors = PRESUBMIT._CheckForInvalidOSMacrosInFile(
+        MockInputApi(), MockFile('some/path/foo_platform.cc', lines))
+    self.assertEqual(0, len(errors))
+
+
+class CheckAddedDepsHaveTetsApprovalsTest(unittest.TestCase):
+  def testFilesToCheckForIncomingDeps(self):
+    changed_lines = [
+      '"+breakpad",',
+      '"+chrome/installer",',
+      '"+chrome/plugin/chrome_content_plugin_client.h",',
+      '"+chrome/utility/chrome_content_utility_client.h",',
+      '"+chromeos/chromeos_paths.h",',
+      '"+components/breakpad",',
+      '"+components/nacl/common",',
+      '"+content/public/browser/render_process_host.h",',
+      '"+jni/fooblat.h",',
+      '"+grit",  # For generated headers',
+      '"+grit/generated_resources.h",',
+      '"+grit/",',
+      '"+policy",  # For generated headers and source',
+      '"+sandbox",',
+      '"+tools/memory_watcher",',
+      '"+third_party/lss/linux_syscall_support.h",',
+    ]
+    files_to_check = PRESUBMIT._FilesToCheckForIncomingDeps(re, changed_lines)
+    expected = set([
+      'breakpad/DEPS',
+      'chrome/installer/DEPS',
+      'chrome/plugin/chrome_content_plugin_client.h',
+      'chrome/utility/chrome_content_utility_client.h',
+      'chromeos/chromeos_paths.h',
+      'components/breakpad/DEPS',
+      'components/nacl/common/DEPS',
+      'content/public/browser/render_process_host.h',
+      'policy/DEPS',
+      'sandbox/DEPS',
+      'tools/memory_watcher/DEPS',
+      'third_party/lss/linux_syscall_support.h',
+    ])
+    self.assertEqual(expected, files_to_check);
 
 
 if __name__ == '__main__':

@@ -21,6 +21,13 @@ class Authenticator;
 
 class AuthenticationMethod {
  public:
+  enum MethodType {
+    INVALID,
+    SPAKE2,
+    SPAKE2_PAIR,
+    THIRD_PARTY
+  };
+
   enum HashFunction {
     NONE,
     HMAC_SHA256,
@@ -29,6 +36,8 @@ class AuthenticationMethod {
   // Constructors for various authentication methods.
   static AuthenticationMethod Invalid();
   static AuthenticationMethod Spake2(HashFunction hash_function);
+  static AuthenticationMethod Spake2Pair();
+  static AuthenticationMethod ThirdParty();
 
   // Parses a string that defines an authentication method. Returns an
   // invalid value if the string is invalid.
@@ -40,8 +49,9 @@ class AuthenticationMethod {
                                        const std::string& tag,
                                        const std::string& shared_secret);
 
-  // Returns true
-  bool is_valid() const { return !invalid_; }
+  bool is_valid() const { return type_ != INVALID; }
+
+  MethodType type() const { return type_; }
 
   // Following methods are valid only when is_valid() returns true.
 
@@ -58,11 +68,11 @@ class AuthenticationMethod {
     return !(*this == other);
   }
 
- private:
+ protected:
   AuthenticationMethod();
-  explicit AuthenticationMethod(HashFunction hash_function);
+  AuthenticationMethod(MethodType type, HashFunction hash_function);
 
-  bool invalid_;
+  MethodType type_;
   HashFunction hash_function_;
 };
 

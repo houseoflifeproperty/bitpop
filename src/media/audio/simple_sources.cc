@@ -10,7 +10,6 @@
 #include <algorithm>
 
 #include "base/logging.h"
-#include "media/audio/audio_util.h"
 
 namespace media {
 
@@ -55,7 +54,7 @@ int SineWaveAudioSource::OnMoreIOData(AudioBus* source,
   return OnMoreData(dest, audio_buffers);
 }
 
-void SineWaveAudioSource::OnError(AudioOutputStream* stream, int code) {
+void SineWaveAudioSource::OnError(AudioOutputStream* stream) {
   errors_++;
 }
 

@@ -19,8 +19,10 @@ static std::string IncludeNUL(const char* in) {
 TEST_F(DNSUtilTest, DNSDomainFromDot) {
   std::string out;
 
-  EXPECT_TRUE(DNSDomainFromDot("", &out));
-  EXPECT_EQ(out, IncludeNUL(""));
+  EXPECT_FALSE(DNSDomainFromDot("", &out));
+  EXPECT_FALSE(DNSDomainFromDot(".", &out));
+  EXPECT_FALSE(DNSDomainFromDot("..", &out));
+
   EXPECT_TRUE(DNSDomainFromDot("com", &out));
   EXPECT_EQ(out, IncludeNUL("\003com"));
   EXPECT_TRUE(DNSDomainFromDot("google.com", &out));
@@ -66,19 +68,6 @@ TEST_F(DNSUtilTest, DNSDomainToString) {
   // Invalid inputs should return an empty string.
   EXPECT_EQ("", DNSDomainToString(IncludeNUL("\x80")));
   EXPECT_EQ("", DNSDomainToString("\x06"));
-}
-
-TEST_F(DNSUtilTest, STD3ASCII) {
-  EXPECT_TRUE(IsSTD3ASCIIValidCharacter('a'));
-  EXPECT_TRUE(IsSTD3ASCIIValidCharacter('b'));
-  EXPECT_TRUE(IsSTD3ASCIIValidCharacter('c'));
-  EXPECT_TRUE(IsSTD3ASCIIValidCharacter('1'));
-  EXPECT_TRUE(IsSTD3ASCIIValidCharacter('2'));
-  EXPECT_TRUE(IsSTD3ASCIIValidCharacter('3'));
-
-  EXPECT_FALSE(IsSTD3ASCIIValidCharacter('.'));
-  EXPECT_FALSE(IsSTD3ASCIIValidCharacter('/'));
-  EXPECT_FALSE(IsSTD3ASCIIValidCharacter('\x00'));
 }
 
 }  // namespace net

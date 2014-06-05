@@ -4,7 +4,7 @@
 
 #include "jingle/glue/task_pump.h"
 
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "jingle/glue/mock_task.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -16,7 +16,7 @@ using ::testing::Return;
 
 class TaskPumpTest : public testing::Test {
  private:
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
 };
 
 TEST_F(TaskPumpTest, Basic) {
@@ -28,7 +28,7 @@ TEST_F(TaskPumpTest, Basic) {
   EXPECT_CALL(*task, ProcessStart()).WillOnce(Return(TASK_STATE_DONE));
   task->Start();
 
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 }
 
 TEST_F(TaskPumpTest, Stop) {
@@ -42,7 +42,7 @@ TEST_F(TaskPumpTest, Stop) {
   task->Start();
 
   task_pump.Stop();
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 }
 
 }  // namespace

@@ -33,14 +33,16 @@
 //
 // Author: Mark Mentovai, Ted Mielczarek
 
+#include <assert.h>
 
+#include "common/scoped_ptr.h"
 #include "google_breakpad/processor/call_stack.h"
 #include "google_breakpad/processor/memory_region.h"
 #include "google_breakpad/processor/source_line_resolver_interface.h"
 #include "google_breakpad/processor/stack_frame_cpu.h"
+#include "google_breakpad/processor/system_info.h"
 #include "processor/cfi_frame_info.h"
 #include "processor/logging.h"
-#include "processor/scoped_ptr.h"
 #include "processor/stackwalker_amd64.h"
 
 namespace google_breakpad {
@@ -100,6 +102,10 @@ StackwalkerAMD64::StackwalkerAMD64(const SystemInfo* system_info,
                   (sizeof(cfi_register_map_) / sizeof(cfi_register_map_[0]))) {
 }
 
+uint64_t StackFrameAMD64::ReturnAddress() const {
+  assert(context_validity & StackFrameAMD64::CONTEXT_VALID_RIP);
+  return context.rip;
+}
 
 StackFrame* StackwalkerAMD64::GetContextFrame() {
   if (!context_) {
@@ -144,10 +150,11 @@ StackFrameAMD64* StackwalkerAMD64::GetCallerByCFIFrameInfo(
 StackFrameAMD64* StackwalkerAMD64::GetCallerByStackScan(
     const vector<StackFrame*> &frames) {
   StackFrameAMD64* last_frame = static_cast<StackFrameAMD64*>(frames.back());
-  u_int64_t last_rsp = last_frame->context.rsp;
-  u_int64_t caller_rip_address, caller_rip;
+  uint64_t last_rsp = last_frame->context.rsp;
+  uint64_t caller_rip_address, caller_rip;
 
-  if (!ScanForReturnAddress(last_rsp, &caller_rip_address, &caller_rip)) {
+  if (!ScanForReturnAddress(last_rsp, &caller_rip_address, &caller_rip,
+                            frames.size() == 1 /* is_context_frame */)) {
     // No plausible return address was found.
     return NULL;
   }
@@ -173,7 +180,7 @@ StackFrameAMD64* StackwalkerAMD64::GetCallerByStackScan(
     // pointing to the first word below the alleged return address, presume
     // that the caller's %rbp is saved there.
     if (caller_rip_address - 8 == last_frame->context.rbp) {
-      u_int64_t caller_rbp = 0;
+      uint64_t caller_rbp = 0;
       if (memory_->GetMemoryAtAddress(last_frame->context.rbp, &caller_rbp) &&
           caller_rbp > caller_rip_address) {
         frame->context.rbp = caller_rbp;
@@ -190,7 +197,8 @@ StackFrameAMD64* StackwalkerAMD64::GetCallerByStackScan(
   return frame;
 }
 
-StackFrame* StackwalkerAMD64::GetCallerFrame(const CallStack* stack) {
+StackFrame* StackwalkerAMD64::GetCallerFrame(const CallStack* stack,
+                                             bool stack_scan_allowed) {
   if (!memory_ || !stack) {
     BPLOG(ERROR) << "Can't get caller frame without memory or stack";
     return NULL;
@@ -208,13 +216,23 @@ StackFrame* StackwalkerAMD64::GetCallerFrame(const CallStack* stack) {
 
   // If CFI failed, or there wasn't CFI available, fall back
   // to stack scanning.
-  if (!new_frame.get()) {
+  if (stack_scan_allowed && !new_frame.get()) {
     new_frame.reset(GetCallerByStackScan(frames));
   }
 
   // If nothing worked, tell the caller.
   if (!new_frame.get())
     return NULL;
+
+  if (system_info_->os_short == "nacl") {
+    // Apply constraints from Native Client's x86-64 sandbox.  These
+    // registers have the 4GB-aligned sandbox base address (from r15)
+    // added to them, and only the bottom 32 bits are relevant for
+    // stack walking.
+    new_frame->context.rip = static_cast<uint32_t>(new_frame->context.rip);
+    new_frame->context.rsp = static_cast<uint32_t>(new_frame->context.rsp);
+    new_frame->context.rbp = static_cast<uint32_t>(new_frame->context.rbp);
+  }
 
   // Treat an instruction address of 0 as end-of-stack.
   if (new_frame->context.rip == 0)
@@ -226,14 +244,11 @@ StackFrame* StackwalkerAMD64::GetCallerFrame(const CallStack* stack) {
   if (new_frame->context.rsp <= last_frame->context.rsp)
     return NULL;
 
-  // new_frame->context.rip is the return address, which is one instruction
-  // past the CALL that caused us to arrive at the callee. Set
-  // new_frame->instruction to one less than that. This won't reference the
-  // beginning of the CALL instruction, but it's guaranteed to be within
-  // the CALL, which is sufficient to get the source line information to
-  // match up with the line that contains a function call. Callers that
-  // require the exact return address value may access the context.rip
-  // field of StackFrameAMD64.
+  // new_frame->context.rip is the return address, which is the instruction
+  // after the CALL that caused us to arrive at the callee. Set
+  // new_frame->instruction to one less than that, so it points within the
+  // CALL instruction. See StackFrame::instruction for details, and
+  // StackFrameAMD64::ReturnAddress.
   new_frame->instruction = new_frame->context.rip - 1;
 
   return new_frame.release();

@@ -4,7 +4,6 @@
 
 #include "chrome/browser/ui/views/infobars/translate_language_menu_model.h"
 
-#include "base/metrics/histogram.h"
 #include "chrome/browser/translate/translate_infobar_delegate.h"
 #include "chrome/browser/ui/views/infobars/translate_infobar_base.h"
 
@@ -14,7 +13,7 @@ TranslateLanguageMenuModel::TranslateLanguageMenuModel(
     TranslateInfoBarBase* infobar,
     views::MenuButton* button,
     bool translate_on_change)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(ui::SimpleMenuModel(this)),
+    : ui::SimpleMenuModel(this),
       language_type_(language_type),
       infobar_delegate_(infobar_delegate),
       infobar_(infobar),
@@ -44,15 +43,14 @@ bool TranslateLanguageMenuModel::GetAcceleratorForCommandId(
   return false;
 }
 
-void TranslateLanguageMenuModel::ExecuteCommand(int command_id) {
+void TranslateLanguageMenuModel::ExecuteCommand(int command_id,
+                                                int event_flags) {
   size_t command_id_size_t = static_cast<size_t>(command_id);
-  if (language_type_ == ORIGINAL) {
-    UMA_HISTOGRAM_COUNTS("Translate.ModifyOriginalLang", 1);
-    infobar_delegate_->set_original_language_index(command_id_size_t);
-  } else {
-    UMA_HISTOGRAM_COUNTS("Translate.ModifyTargetLang", 1);
-    infobar_delegate_->set_target_language_index(command_id_size_t);
-  }
+  if (language_type_ == ORIGINAL)
+    infobar_delegate_->UpdateOriginalLanguageIndex(command_id_size_t);
+  else
+    infobar_delegate_->UpdateTargetLanguageIndex(command_id_size_t);
+
   infobar_->UpdateLanguageButtonText(button_,
       infobar_delegate_->language_name_at(GetLanguageIndex()));
   if (translate_on_change_)

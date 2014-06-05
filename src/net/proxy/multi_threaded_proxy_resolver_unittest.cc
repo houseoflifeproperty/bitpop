@@ -4,20 +4,22 @@
 
 #include "net/proxy/multi_threaded_proxy_resolver.h"
 
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "base/threading/platform_thread.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
-#include "googleurl/src/gurl.h"
+#include "base/threading/platform_thread.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
 #include "net/base/net_log_unittest.h"
 #include "net/base/test_completion_callback.h"
 #include "net/proxy/proxy_info.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
+
+using base::ASCIIToUTF16;
 
 namespace net {
 
@@ -30,9 +32,8 @@ class MockProxyResolver : public ProxyResolver {
  public:
   MockProxyResolver()
       : ProxyResolver(true /*expects_pac_bytes*/),
-        wrong_loop_(MessageLoop::current()),
-        request_count_(0),
-        purge_count_(0) {}
+        wrong_loop_(base::MessageLoop::current()),
+        request_count_(0) {}
 
   // ProxyResolver implementation.
   virtual int GetProxyForURL(const GURL& query_url,
@@ -49,7 +50,7 @@ class MockProxyResolver : public ProxyResolver {
     EXPECT_TRUE(request == NULL);
 
     // Write something into |net_log| (doesn't really have any meaning.)
-    net_log.BeginEvent(NetLog::TYPE_PAC_JAVASCRIPT_DNS_RESOLVE);
+    net_log.BeginEvent(NetLog::TYPE_PAC_JAVASCRIPT_ALERT);
 
     results->UseNamedProxy(query_url.host());
 
@@ -66,12 +67,6 @@ class MockProxyResolver : public ProxyResolver {
     return LOAD_STATE_IDLE;
   }
 
-  virtual LoadState GetLoadStateThreadSafe(
-      RequestHandle request) const OVERRIDE {
-    NOTREACHED();
-    return LOAD_STATE_IDLE;
-  }
-
   virtual void CancelSetPacScript() OVERRIDE {
     NOTREACHED();
   }
@@ -84,16 +79,10 @@ class MockProxyResolver : public ProxyResolver {
     return OK;
   }
 
-  virtual void PurgeMemory() OVERRIDE {
-    CheckIsOnWorkerThread();
-    ++purge_count_;
-  }
-
-  int purge_count() const { return purge_count_; }
   int request_count() const { return request_count_; }
 
   const ProxyResolverScriptData* last_script_data() const {
-    return last_script_data_;
+    return last_script_data_.get();
   }
 
   void SetResolveLatency(base::TimeDelta latency) {
@@ -106,12 +95,11 @@ class MockProxyResolver : public ProxyResolver {
     // message loop of MultiThreadedProxyResolver's worker thread, we do
     // know that it is going to be distinct from the loop running the
     // test, so at least make sure it isn't the main loop.
-    EXPECT_NE(MessageLoop::current(), wrong_loop_);
+    EXPECT_NE(base::MessageLoop::current(), wrong_loop_);
   }
 
-  MessageLoop* wrong_loop_;
+  base::MessageLoop* wrong_loop_;
   int request_count_;
-  int purge_count_;
   scoped_refptr<ProxyResolverScriptData> last_script_data_;
   base::TimeDelta resolve_latency_;
 };
@@ -190,12 +178,6 @@ class ForwardingProxyResolver : public ProxyResolver {
     return LOAD_STATE_IDLE;
   }
 
-  virtual LoadState GetLoadStateThreadSafe(
-      RequestHandle request) const OVERRIDE {
-    NOTREACHED();
-    return LOAD_STATE_IDLE;
-  }
-
   virtual void CancelSetPacScript() OVERRIDE {
     impl_->CancelSetPacScript();
   }
@@ -204,10 +186,6 @@ class ForwardingProxyResolver : public ProxyResolver {
       const scoped_refptr<ProxyResolverScriptData>& script_data,
       const CompletionCallback& callback) OVERRIDE {
     return impl_->SetPacScript(script_data, callback);
-  }
-
-  virtual void PurgeMemory() OVERRIDE {
-    impl_->PurgeMemory();
   }
 
  private:
@@ -235,7 +213,7 @@ class BlockableProxyResolverFactory : public ProxyResolverFactory {
  public:
   BlockableProxyResolverFactory() : ProxyResolverFactory(true) {}
 
-  ~BlockableProxyResolverFactory() {
+  virtual ~BlockableProxyResolverFactory() {
     STLDeleteElements(&resolvers_);
   }
 
@@ -331,19 +309,6 @@ TEST(MultiThreadedProxyResolverTest, SingleThread_Basic) {
   rv = callback3.WaitForResult();
   EXPECT_EQ(3, rv);
   EXPECT_EQ("PROXY request3:80", results3.ToPacString());
-
-  // Ensure that PurgeMemory() reaches the wrapped resolver and happens on the
-  // right thread.
-  EXPECT_EQ(0, mock->purge_count());
-  resolver.PurgeMemory();
-  // There is no way to get a callback directly when PurgeMemory() completes, so
-  // we queue up a dummy request after the PurgeMemory() call and wait until it
-  // finishes to ensure PurgeMemory() has had a chance to run.
-  TestCompletionCallback dummy_callback;
-  rv = resolver.SetPacScript(ProxyResolverScriptData::FromUTF8("dummy"),
-                             dummy_callback.callback());
-  EXPECT_EQ(OK, dummy_callback.WaitForResult());
-  EXPECT_EQ(1, mock->purge_count());
 }
 
 // Tests that the NetLog is updated to include the time the request was waiting
@@ -573,7 +538,7 @@ TEST(MultiThreadedProxyResolverTest, SingleThread_CancelRequestByDeleting) {
   resolver.reset();
 
   // Give any posted tasks a chance to run (in case there is badness).
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   // Check that none of the outstanding requests were completed.
   EXPECT_FALSE(callback0.have_result());
@@ -657,7 +622,7 @@ TEST(MultiThreadedProxyResolverTest, ThreeThreads_Basic) {
   ASSERT_EQ(1u, factory->resolvers().size());
   EXPECT_EQ(1, factory->resolvers()[0]->request_count());
 
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   // We now start 8 requests in parallel -- this will cause the maximum of
   // three threads to be provisioned (an additional two from what we already

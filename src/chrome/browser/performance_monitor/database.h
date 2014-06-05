@@ -5,15 +5,15 @@
 #ifndef CHROME_BROWSER_PERFORMANCE_MONITOR_DATABASE_H_
 #define CHROME_BROWSER_PERFORMANCE_MONITOR_DATABASE_H_
 
-#include <vector>
 #include <set>
 #include <string>
+#include <vector>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/performance_monitor/constants.h"
 #include "chrome/browser/performance_monitor/event.h"
 #include "chrome/browser/performance_monitor/metric.h"
@@ -117,7 +117,7 @@ class Database {
 
   virtual ~Database();
 
-  static scoped_ptr<Database> Create(FilePath path);
+  static scoped_ptr<Database> Create(base::FilePath path);
 
   // A "state" value is anything that can only have one value at a time, and
   // usually describes the state of the browser eg. version.
@@ -229,7 +229,7 @@ class Database {
   std::vector<TimeRange> GetActiveIntervals(const base::Time& start,
                                             const base::Time& end);
 
-  FilePath path() const { return path_; }
+  base::FilePath path() const { return path_; }
 
   void set_clock(scoped_ptr<Clock> clock) {
     clock_ = clock.Pass();
@@ -249,9 +249,17 @@ class Database {
     virtual base::Time GetTime() OVERRIDE;
   };
 
-  explicit Database(const FilePath& path);
+  explicit Database(const base::FilePath& path);
 
-  void InitDBs();
+  bool InitDBs();
+
+  // Attempts to open a database, and tries to fix it if it is corrupt or
+  // damaged (if |fix_if_damaged| is true). Returns a scoped_ptr to the
+  // database on success, or NULL on failure.
+  scoped_ptr<leveldb::DB> SafelyOpenDatabase(
+      const leveldb::Options& options,
+      const std::string& path,
+      bool fix_if_damaged);
 
   bool Close();
 
@@ -278,7 +286,7 @@ class Database {
   MaxValueMap max_value_map_;
 
   // The directory where all the databases will reside.
-  FilePath path_;
+  base::FilePath path_;
 
   // The key for the beginning of the active interval.
   std::string start_time_key_;
@@ -302,6 +310,10 @@ class Database {
 
   leveldb::ReadOptions read_options_;
   leveldb::WriteOptions write_options_;
+
+  // Indicates whether or not the database successfully initialized. If false,
+  // the Create() call will return NULL.
+  bool valid_;
 
   DISALLOW_COPY_AND_ASSIGN(Database);
 };

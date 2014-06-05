@@ -9,17 +9,20 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
-#include "base/string_number_conversions.h"
-#include "base/timer.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/timer/timer.h"
 #include "base/values.h"
 #include "chrome/browser/net/predictor.h"
+#include "chrome/browser/net/spdyproxy/proxy_advisor.h"
 #include "chrome/browser/net/url_info.h"
 #include "chrome/common/net/predictor_common.h"
 #include "content/public/test/test_browser_thread.h"
 #include "net/base/address_list.h"
-#include "net/base/mock_host_resolver.h"
 #include "net/base/winsock_init.h"
+#include "net/dns/mock_host_resolver.h"
+#include "net/http/transport_security_state.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::Time;
@@ -35,21 +38,25 @@ typedef base::RepeatingTimer<WaitForResolutionHelper> HelperTimer;
 class WaitForResolutionHelper {
  public:
   WaitForResolutionHelper(Predictor* predictor, const UrlList& hosts,
-                          HelperTimer* timer)
+                          HelperTimer* timer, int checks_until_quit)
       : predictor_(predictor),
         hosts_(hosts),
-        timer_(timer) {
+        timer_(timer),
+        checks_until_quit_(checks_until_quit) {
   }
 
-  void Run() {
-    for (UrlList::const_iterator i = hosts_.begin(); i != hosts_.end(); ++i)
-      if (predictor_->GetResolutionDuration(*i) ==
-          UrlInfo::NullDuration())
-        return;  // We don't have resolution for that host.
+  void CheckIfResolutionsDone() {
+    if (--checks_until_quit_ > 0) {
+      for (UrlList::const_iterator i = hosts_.begin(); i != hosts_.end(); ++i)
+        if (predictor_->GetResolutionDuration(*i) ==
+            UrlInfo::NullDuration())
+          return;  // We don't have resolution for that host.
+    }
 
-    // When all hostnames have been resolved, exit the loop.
+    // When all hostnames have been resolved, or we've hit the limit,
+    // exit the loop.
     timer_->Stop();
-    MessageLoop::current()->Quit();
+    base::MessageLoop::current()->Quit();
     delete timer_;
     delete this;
   }
@@ -58,6 +65,7 @@ class WaitForResolutionHelper {
   Predictor* predictor_;
   const UrlList hosts_;
   HelperTimer* timer_;
+  int checks_until_quit_;
 };
 
 class PredictorTest : public testing::Test {
@@ -89,17 +97,27 @@ class PredictorTest : public testing::Test {
 
   void WaitForResolution(Predictor* predictor, const UrlList& hosts) {
     HelperTimer* timer = new HelperTimer();
+    // By default allow the loop to run for a minute -- 600 iterations.
     timer->Start(FROM_HERE, TimeDelta::FromMilliseconds(100),
-                 new WaitForResolutionHelper(predictor, hosts, timer),
-                 &WaitForResolutionHelper::Run);
-    MessageLoop::current()->Run();
+                 new WaitForResolutionHelper(predictor, hosts, timer, 600),
+                 &WaitForResolutionHelper::CheckIfResolutionsDone);
+    base::MessageLoop::current()->Run();
+  }
+
+  void WaitForResolutionWithLimit(
+      Predictor* predictor, const UrlList& hosts, int limit) {
+    HelperTimer* timer = new HelperTimer();
+    timer->Start(FROM_HERE, TimeDelta::FromMilliseconds(100),
+                 new WaitForResolutionHelper(predictor, hosts, timer, limit),
+                 &WaitForResolutionHelper::CheckIfResolutionsDone);
+    base::MessageLoop::current()->Run();
   }
 
  private:
   // IMPORTANT: do not move this below |host_resolver_|; the host resolver
   // must not outlive the message loop, otherwise bad things can happen
   // (like posting to a deleted message loop).
-  MessageLoopForUI loop_;
+  base::MessageLoopForUI loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread io_thread_;
 
@@ -127,18 +145,18 @@ TEST_F(PredictorTest, ShutdownWhenResolutionIsPendingTest) {
 
   testing_master.ResolveList(names, UrlInfo::PAGE_SCAN_MOTIVATED);
 
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
-      MessageLoop::QuitClosure(),
+      base::MessageLoop::QuitClosure(),
       base::TimeDelta::FromMilliseconds(500));
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
 
   EXPECT_FALSE(testing_master.WasFound(localhost));
 
   testing_master.Shutdown();
 
   // Clean up after ourselves.
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 }
 
 TEST_F(PredictorTest, SingleLookupTest) {
@@ -158,7 +176,7 @@ TEST_F(PredictorTest, SingleLookupTest) {
 
   EXPECT_TRUE(testing_master.WasFound(goog));
 
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   EXPECT_GT(testing_master.peak_pending_lookups(), names.size() / 2);
   EXPECT_LE(testing_master.peak_pending_lookups(), names.size());
@@ -203,7 +221,7 @@ TEST_F(PredictorTest, ConcurrentLookupTest) {
   EXPECT_FALSE(testing_master.WasFound(bad1));
   EXPECT_FALSE(testing_master.WasFound(bad2));
 
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   EXPECT_FALSE(testing_master.WasFound(bad1));
   EXPECT_FALSE(testing_master.WasFound(bad2));
@@ -232,7 +250,7 @@ TEST_F(PredictorTest, MassiveConcurrentLookupTest) {
 
   WaitForResolution(&testing_master, names);
 
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   EXPECT_LE(testing_master.peak_pending_lookups(), names.size());
   EXPECT_LE(testing_master.peak_pending_lookups(),
@@ -247,14 +265,14 @@ TEST_F(PredictorTest, MassiveConcurrentLookupTest) {
 
 // Return a motivation_list if we can find one for the given motivating_host (or
 // NULL if a match is not found).
-static const ListValue* FindSerializationMotivation(
+static const base::ListValue* FindSerializationMotivation(
     const GURL& motivation,
-    const ListValue* referral_list) {
+    const base::ListValue* referral_list) {
   CHECK_LT(0u, referral_list->GetSize());  // Room for version.
   int format_version = -1;
   CHECK(referral_list->GetInteger(0, &format_version));
   CHECK_EQ(Predictor::kPredictorReferrerVersion, format_version);
-  const ListValue* motivation_list(NULL);
+  const base::ListValue* motivation_list(NULL);
   for (size_t i = 1; i < referral_list->GetSize(); ++i) {
     referral_list->GetList(i, &motivation_list);
     std::string existing_spec;
@@ -265,14 +283,15 @@ static const ListValue* FindSerializationMotivation(
   return NULL;
 }
 
-static ListValue* FindSerializationMotivation(const GURL& motivation,
-                                              ListValue* referral_list) {
-  return const_cast<ListValue*>(FindSerializationMotivation(
-      motivation, static_cast<const ListValue*>(referral_list)));
+static base::ListValue* FindSerializationMotivation(
+    const GURL& motivation,
+    base::ListValue* referral_list) {
+  return const_cast<base::ListValue*>(FindSerializationMotivation(
+      motivation, static_cast<const base::ListValue*>(referral_list)));
 }
 
 // Create a new empty serialization list.
-static ListValue* NewEmptySerializationList() {
+static base::ListValue* NewEmptySerializationList() {
   base::ListValue* list = new base::ListValue;
   list->Append(
       new base::FundamentalValue(Predictor::kPredictorReferrerVersion));
@@ -285,22 +304,22 @@ static ListValue* NewEmptySerializationList() {
 static void AddToSerializedList(const GURL& motivation,
                                 const GURL& subresource,
                                 double use_rate,
-                                ListValue* referral_list ) {
+                                base::ListValue* referral_list) {
   // Find the motivation if it is already used.
-  ListValue* motivation_list = FindSerializationMotivation(motivation,
+  base::ListValue* motivation_list = FindSerializationMotivation(motivation,
                                                            referral_list);
   if (!motivation_list) {
     // This is the first mention of this motivation, so build a list.
-    motivation_list = new ListValue;
-    motivation_list->Append(new StringValue(motivation.spec()));
+    motivation_list = new base::ListValue;
+    motivation_list->Append(new base::StringValue(motivation.spec()));
     // Provide empty subresource list.
-    motivation_list->Append(new ListValue());
+    motivation_list->Append(new base::ListValue());
 
     // ...and make it part of the serialized referral_list.
     referral_list->Append(motivation_list);
   }
 
-  ListValue* subresource_list(NULL);
+  base::ListValue* subresource_list(NULL);
   // 0 == url; 1 == subresource_list.
   EXPECT_TRUE(motivation_list->GetList(1, &subresource_list));
 
@@ -312,21 +331,19 @@ static void AddToSerializedList(const GURL& motivation,
   subresource_list->Append(new base::FundamentalValue(use_rate));
 }
 
-static const int kLatencyNotFound = -1;
-
 // For a given motivation, and subresource, find what latency is currently
 // listed.  This assume a well formed serialization, which has at most one such
 // entry for any pair of names.  If no such pair is found, then return false.
 // Data is written into use_rate arguments.
 static bool GetDataFromSerialization(const GURL& motivation,
                                      const GURL& subresource,
-                                     const ListValue& referral_list,
+                                     const base::ListValue& referral_list,
                                      double* use_rate) {
-  const ListValue* motivation_list =
+  const base::ListValue* motivation_list =
       FindSerializationMotivation(motivation, &referral_list);
   if (!motivation_list)
     return false;
-  const ListValue* subresource_list;
+  const base::ListValue* subresource_list;
   EXPECT_TRUE(motivation_list->GetList(1, &subresource_list));
   for (size_t i = 0; i < subresource_list->GetSize();) {
     std::string url_spec;
@@ -346,7 +363,7 @@ TEST_F(PredictorTest, ReferrerSerializationNilTest) {
   Predictor predictor(true);
   predictor.SetHostResolver(host_resolver_.get());
 
-  scoped_ptr<ListValue> referral_list(NewEmptySerializationList());
+  scoped_ptr<base::ListValue> referral_list(NewEmptySerializationList());
   predictor.SerializeReferrers(referral_list.get());
   EXPECT_EQ(1U, referral_list->GetSize());
   EXPECT_FALSE(GetDataFromSerialization(
@@ -365,14 +382,14 @@ TEST_F(PredictorTest, ReferrerSerializationSingleReferrerTest) {
   const GURL motivation_url("http://www.google.com:91");
   const GURL subresource_url("http://icons.google.com:90");
   const double kUseRate = 23.4;
-  scoped_ptr<ListValue> referral_list(NewEmptySerializationList());
+  scoped_ptr<base::ListValue> referral_list(NewEmptySerializationList());
 
   AddToSerializedList(motivation_url, subresource_url,
       kUseRate, referral_list.get());
 
   predictor.DeserializeReferrers(*referral_list.get());
 
-  ListValue recovered_referral_list;
+  base::ListValue recovered_referral_list;
   predictor.SerializeReferrers(&recovered_referral_list);
   EXPECT_EQ(2U, recovered_referral_list.GetSize());
   double rate;
@@ -390,7 +407,7 @@ TEST_F(PredictorTest, GetHtmlReferrerLists) {
   Predictor predictor(true);
   predictor.SetHostResolver(host_resolver_.get());
   const double kUseRate = 23.4;
-  scoped_ptr<ListValue> referral_list(NewEmptySerializationList());
+  scoped_ptr<base::ListValue> referral_list(NewEmptySerializationList());
 
   AddToSerializedList(
       GURL("http://d.google.com/x1"),
@@ -481,7 +498,7 @@ TEST_F(PredictorTest, ReferrerSerializationTrimTest) {
   GURL img_subresource_url("http://img.google.com:118");
   const double kRateImg = 8.0 * Predictor::kDiscardableExpectedValue;
 
-  scoped_ptr<ListValue> referral_list(NewEmptySerializationList());
+  scoped_ptr<base::ListValue> referral_list(NewEmptySerializationList());
   AddToSerializedList(
       motivation_url, icon_subresource_url, kRateIcon, referral_list.get());
   AddToSerializedList(
@@ -489,7 +506,7 @@ TEST_F(PredictorTest, ReferrerSerializationTrimTest) {
 
   predictor.DeserializeReferrers(*referral_list.get());
 
-  ListValue recovered_referral_list;
+  base::ListValue recovered_referral_list;
   predictor.SerializeReferrers(&recovered_referral_list);
   EXPECT_EQ(2U, recovered_referral_list.GetSize());
   double rate;
@@ -663,7 +680,7 @@ TEST_F(PredictorTest, CanonicalizeUrl) {
 TEST_F(PredictorTest, DiscardPredictorResults) {
   Predictor predictor(true);
   predictor.SetHostResolver(host_resolver_.get());
-  ListValue referral_list;
+  base::ListValue referral_list;
   predictor.SerializeReferrers(&referral_list);
   EXPECT_EQ(1U, referral_list.GetSize());
 
@@ -680,5 +697,172 @@ TEST_F(PredictorTest, DiscardPredictorResults) {
 
   predictor.Shutdown();
 }
+
+class TestPredictorObserver : public PredictorObserver {
+ public:
+  // PredictorObserver implementation:
+  virtual void OnPreconnectUrl(const GURL& url,
+                               const GURL& first_party_for_cookies,
+                               UrlInfo::ResolutionMotivation motivation,
+                               int count) OVERRIDE {
+    preconnected_urls_.push_back(url);
+  }
+
+  std::vector<GURL> preconnected_urls_;
+};
+
+// Tests that preconnects apply the HSTS list.
+TEST_F(PredictorTest, HSTSRedirect) {
+  const GURL kHttpUrl("http://example.com");
+  const GURL kHttpsUrl("https://example.com");
+
+  const base::Time expiry =
+      base::Time::Now() + base::TimeDelta::FromSeconds(1000);
+  net::TransportSecurityState state;
+  state.AddHSTS(kHttpUrl.host(), expiry, false);
+
+  Predictor predictor(true);
+  TestPredictorObserver observer;
+  predictor.SetObserver(&observer);
+  predictor.SetTransportSecurityState(&state);
+
+  predictor.PreconnectUrl(kHttpUrl, GURL(), UrlInfo::OMNIBOX_MOTIVATED, 2);
+  ASSERT_EQ(1u, observer.preconnected_urls_.size());
+  EXPECT_EQ(kHttpsUrl, observer.preconnected_urls_[0]);
+
+  predictor.Shutdown();
+}
+
+// Tests that preconnecting a URL on the HSTS list preconnects the subresources
+// for the SSL version.
+TEST_F(PredictorTest, HSTSRedirectSubresources) {
+  const GURL kHttpUrl("http://example.com");
+  const GURL kHttpsUrl("https://example.com");
+  const GURL kSubresourceUrl("https://images.example.com");
+  const double kUseRate = 23.4;
+
+  const base::Time expiry =
+      base::Time::Now() + base::TimeDelta::FromSeconds(1000);
+  net::TransportSecurityState state;
+  state.AddHSTS(kHttpUrl.host(), expiry, false);
+
+  Predictor predictor(true);
+  TestPredictorObserver observer;
+  predictor.SetObserver(&observer);
+  predictor.SetTransportSecurityState(&state);
+
+  scoped_ptr<base::ListValue> referral_list(NewEmptySerializationList());
+  AddToSerializedList(
+      kHttpsUrl, kSubresourceUrl, kUseRate, referral_list.get());
+  predictor.DeserializeReferrers(*referral_list.get());
+
+  predictor.PreconnectUrlAndSubresources(kHttpUrl, GURL());
+  ASSERT_EQ(2u, observer.preconnected_urls_.size());
+  EXPECT_EQ(kHttpsUrl, observer.preconnected_urls_[0]);
+  EXPECT_EQ(kSubresourceUrl, observer.preconnected_urls_[1]);
+
+  predictor.Shutdown();
+}
+
+#if defined(OS_ANDROID) || defined(OS_IOS)
+// Tests for the predictor with a proxy advisor
+
+class TestProxyAdvisor : public ProxyAdvisor {
+ public:
+  TestProxyAdvisor()
+      : ProxyAdvisor(NULL, NULL),
+        would_proxy_(false),
+        advise_count_(0),
+        would_proxy_count_(0) {
+  }
+
+  virtual ~TestProxyAdvisor() {}
+
+  virtual void Advise(const GURL& url,
+                      UrlInfo::ResolutionMotivation motivation,
+                      bool is_preconnect) OVERRIDE {
+    ++advise_count_;
+  }
+
+  virtual bool WouldProxyURL(const GURL& url) OVERRIDE {
+    ++would_proxy_count_;
+    return would_proxy_;
+  }
+
+  bool would_proxy_;
+  int advise_count_;
+  int would_proxy_count_;
+};
+
+TEST_F(PredictorTest, SingleLookupTestWithDisabledAdvisor) {
+  Predictor testing_master(true);
+  TestProxyAdvisor* advisor = new TestProxyAdvisor();
+  testing_master.SetHostResolver(host_resolver_.get());
+  testing_master.proxy_advisor_.reset(advisor);
+
+  GURL goog("http://www.google.com:80");
+
+  advisor->would_proxy_ = false;
+
+  UrlList names;
+  names.push_back(goog);
+  testing_master.ResolveList(names, UrlInfo::PAGE_SCAN_MOTIVATED);
+
+  WaitForResolution(&testing_master, names);
+  EXPECT_TRUE(testing_master.WasFound(goog));
+  EXPECT_EQ(advisor->would_proxy_count_, 1);
+  EXPECT_EQ(advisor->advise_count_, 1);
+
+  base::MessageLoop::current()->RunUntilIdle();
+
+  testing_master.Shutdown();
+}
+
+TEST_F(PredictorTest, SingleLookupTestWithEnabledAdvisor) {
+  Predictor testing_master(true);
+  testing_master.SetHostResolver(host_resolver_.get());
+  TestProxyAdvisor* advisor = new TestProxyAdvisor();
+  testing_master.proxy_advisor_.reset(advisor);
+
+  GURL goog("http://www.google.com:80");
+
+  advisor->would_proxy_ = true;
+
+  UrlList names;
+  names.push_back(goog);
+
+  testing_master.ResolveList(names, UrlInfo::PAGE_SCAN_MOTIVATED);
+
+  // Attempt to resolve a few times.
+  WaitForResolutionWithLimit(&testing_master, names, 10);
+
+  // Because the advisor indicated that the url would be proxied,
+  // no resolution should have occurred.
+  EXPECT_FALSE(testing_master.WasFound(goog));
+  EXPECT_EQ(advisor->would_proxy_count_, 1);
+  EXPECT_EQ(advisor->advise_count_, 1);
+
+  base::MessageLoop::current()->RunUntilIdle();
+
+  testing_master.Shutdown();
+}
+
+TEST_F(PredictorTest, TestSimplePreconnectAdvisor) {
+  Predictor testing_master(true);
+  testing_master.SetHostResolver(host_resolver_.get());
+  TestProxyAdvisor* advisor = new TestProxyAdvisor();
+  testing_master.proxy_advisor_.reset(advisor);
+
+  GURL goog("http://www.google.com:80");
+
+  testing_master.PreconnectUrl(goog, goog, UrlInfo::OMNIBOX_MOTIVATED, 2);
+
+  EXPECT_EQ(advisor->would_proxy_count_, 0);
+  EXPECT_EQ(advisor->advise_count_, 1);
+
+  testing_master.Shutdown();
+}
+
+#endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
 }  // namespace chrome_browser_net

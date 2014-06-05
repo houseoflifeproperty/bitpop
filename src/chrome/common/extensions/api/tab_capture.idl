@@ -2,12 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// An API for tab media streams.
-
+// Use the <code>chrome.tabCapture</code> API to interact with tab media
+// streams.
 namespace tabCapture {
 
   enum TabCaptureState {
-    requested,
     pending,
     active,
     stopped,
@@ -20,6 +19,9 @@ namespace tabCapture {
 
     // The new capture status of the tab.
     TabCaptureState status;
+
+    // Whether an element in the tab being captured is in fullscreen mode.
+    boolean fullscreen;
   };
 
   // MediaTrackConstraints for the media streams that will be passed to WebRTC.
@@ -27,6 +29,7 @@ namespace tabCapture {
   // http://dev.w3.org/2011/webrtc/editor/getusermedia.html
   dictionary MediaStreamConstraint {
     object mandatory;
+    object? _optional;
   };
 
   // Whether we are requesting tab video and/or audio and the
@@ -45,7 +48,9 @@ namespace tabCapture {
 
   interface Functions {
     // Captures the visible area of the currently active tab.
-    // Extensions must have the "tabCapture" permission to use this method.
+    // This method can only be used on the currently active page after the
+    // extension has been <em>invoked</em>, similar to the way that
+    // <a href="activeTab.html">activeTab</a> works.
     // |options| : Configures the returned media stream.
     // |callback| : Callback with either the stream returned or null.
     static void capture(CaptureOptions options,

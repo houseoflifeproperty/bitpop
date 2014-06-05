@@ -26,6 +26,23 @@ _root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 BINARY, RAW_TEXT = range(2)
 
 
+# Unique constants representing data pack encodings.
+_, UTF8, UTF16 = range(3)
+
+
+def Encode(message, encoding):
+  '''Returns a byte stream that represents |message| in the given |encoding|.'''
+  # |message| is a python unicode string, so convert to a byte stream that
+  # has the correct encoding requested for the datapacks. We skip the first
+  # 2 bytes of text resources because it is the BOM.
+  if encoding == UTF8:
+    return message.encode('utf8')
+  if encoding == UTF16:
+    return message.encode('utf16')[2:]
+  # Default is BINARY
+  return message
+
+
 # Matches all different types of linebreaks.
 LINEBREAKS = re.compile('\r\n|\n|\r')
 

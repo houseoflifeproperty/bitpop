@@ -11,12 +11,16 @@
 
 class PrefService;
 
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
+
 // This service manages a pref which is used to determine the version of
 // Chrome by which the profile was created.
 class ChromeVersionService {
  public:
   // Register the user pref we use.
-  static void RegisterUserPrefs(PrefService* prefs);
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // Sets the version string in the pref for the current profile.
   static void SetVersion(PrefService* prefs, const std::string& version);

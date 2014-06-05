@@ -4,11 +4,28 @@
 
 """A wrapper for subprocess to make calling shell commands easier."""
 
-import os
 import logging
+import pipes
+import signal
 import subprocess
+import tempfile
 
-import constants
+from pylib.utils import timeout_retry
+
+
+def Popen(args, stdout=None, stderr=None, shell=None, cwd=None, env=None):
+  return subprocess.Popen(
+      args=args, cwd=cwd, stdout=stdout, stderr=stderr,
+      shell=shell, close_fds=True, env=env,
+      preexec_fn=lambda: signal.signal(signal.SIGPIPE, signal.SIG_DFL))
+
+
+def Call(args, stdout=None, stderr=None, shell=None, cwd=None, env=None):
+  pipe = Popen(args, stdout=stdout, stderr=stderr, shell=shell, cwd=cwd,
+               env=env)
+  pipe.communicate()
+  return pipe.wait()
+
 
 def RunCmd(args, cwd=None):
   """Opens a subprocess to execute a program and returns its return value.
@@ -23,8 +40,7 @@ def RunCmd(args, cwd=None):
     Return code from the command execution.
   """
   logging.info(str(args) + ' ' + (cwd or ''))
-  p = subprocess.Popen(args=args, cwd=cwd)
-  return p.wait()
+  return Call(args, cwd=cwd)
 
 
 def GetCmdOutput(args, cwd=None, shell=False):
@@ -44,6 +60,7 @@ def GetCmdOutput(args, cwd=None, shell=False):
   (_, output) = GetCmdStatusAndOutput(args, cwd, shell)
   return output
 
+
 def GetCmdStatusAndOutput(args, cwd=None, shell=False):
   """Executes a subprocess and returns its exit code and output.
 
@@ -55,23 +72,49 @@ def GetCmdStatusAndOutput(args, cwd=None, shell=False):
     shell: Whether to execute args as a shell command.
 
   Returns:
-    The tuple (exit code, output).
+    The 2-tuple (exit code, output).
   """
-  logging.info(str(args) + ' ' + (cwd or ''))
-  p = subprocess.Popen(args=args, cwd=cwd, stdout=subprocess.PIPE,
-                       stderr=subprocess.PIPE, shell=shell)
-  stdout, stderr = p.communicate()
-  exit_code = p.returncode
+  if isinstance(args, basestring):
+    args_repr = args
+    if not shell:
+      raise Exception('string args must be run with shell=True')
+  elif shell:
+    raise Exception('array args must be run with shell=False')
+  else:
+    args_repr = ' '.join(map(pipes.quote, args))
+
+  s = '[host]'
+  if cwd:
+    s += ':' + cwd
+  s += '> ' + args_repr
+  logging.info(s)
+  tmpout = tempfile.TemporaryFile(bufsize=0)
+  tmperr = tempfile.TemporaryFile(bufsize=0)
+  exit_code = Call(args, cwd=cwd, stdout=tmpout, stderr=tmperr, shell=shell)
+  tmperr.seek(0)
+  stderr = tmperr.read()
+  tmperr.close()
   if stderr:
     logging.critical(stderr)
-  logging.info(stdout[:4096])  # Truncate output longer than 4k.
+  tmpout.seek(0)
+  stdout = tmpout.read()
+  tmpout.close()
+  if len(stdout) > 4096:
+    logging.debug('Truncated output:')
+  logging.debug(stdout[:4096])
   return (exit_code, stdout)
 
-class OutDirectory(object):
-  _out_directory = os.path.join(constants.CHROME_DIR, 'out')
-  @staticmethod
-  def set(out_directory):
-    OutDirectory._out_directory = out_directory
-  @staticmethod
-  def get():
-    return OutDirectory._out_directory
+
+def GetCmdStatusAndOutputWithTimeoutAndRetries(args, timeout, retries):
+  """Executes a subprocess with a timeout and retries.
+
+  Args:
+    args: List of arguments to the program, the program to execute is the first
+      element.
+    timeout: the timeout in seconds.
+    retries: the number of retries.
+
+  Returns:
+    The 2-tuple (exit code, output).
+  """
+  return timeout_retry.Run(GetCmdStatusAndOutput, timeout, retries, [args])

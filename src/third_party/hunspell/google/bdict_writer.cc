@@ -5,7 +5,7 @@
 #include "third_party/hunspell/google/bdict_writer.h"
 
 #include "base/logging.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "third_party/hunspell/google/bdict.h"
 
 namespace hunspell {

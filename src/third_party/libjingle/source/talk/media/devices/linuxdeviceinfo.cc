@@ -52,7 +52,8 @@ class ScopedLibUdev {
   ScopedLibUdev() {}
 
   bool Init() {
-    return libudev_.Load();
+    return libudev_.Load() &&
+           !IsWrongLibUDevAbiVersion(libudev_.GetDllHandle());
   }
 
   LibUDevSymbolTable libudev_;
@@ -91,7 +92,7 @@ class ScopedUdevEnumerate {
   udev_enumerate* enumerate_;
 };
 
-bool GetUsbProperty(Device device, const char* property_name,
+bool GetUsbProperty(const Device& device, const char* property_name,
                     std::string* property) {
   talk_base::scoped_ptr<ScopedLibUdev> libudev_context(ScopedLibUdev::Create());
   if (!libudev_context) {
@@ -116,10 +117,12 @@ bool GetUsbProperty(Device device, const char* property_name,
   if (!devices) {
     return false;
   }
-  udev_list_entry* dev_list_entry;
+  udev_list_entry* dev_list_entry = NULL;
   const char* property_value = NULL;
   // Macro that expands to a for-loop over the devices.
-  udev_list_entry_foreach(dev_list_entry, devices) {
+  for (dev_list_entry = devices; dev_list_entry != NULL;
+       dev_list_entry = libudev_context->instance()->
+           udev_list_entry_get_next()(dev_list_entry)) {
     const char* path = libudev_context->instance()->udev_list_entry_get_name()(
         dev_list_entry);
     if (!path) continue;
@@ -129,7 +132,7 @@ bool GetUsbProperty(Device device, const char* property_name,
     if (!dev) continue;
     const char* device_node =
         libudev_context->instance()->udev_device_get_devnode()(dev);
-    if (!device_node && device.id.compare(device_node) != 0) {
+    if (!device_node || device.id.compare(device_node) != 0) {
       continue;
     }
     dev = libudev_context->instance()->
@@ -148,7 +151,7 @@ bool GetUsbProperty(Device device, const char* property_name,
   return true;
 }
 
-bool GetUsbUvcId(Device device, std::string* uvc_id) {
+bool GetUsbId(const Device& device, std::string* usb_id) {
   std::string id_vendor;
   std::string id_product;
   if (!GetUsbProperty(device, "idVendor", &id_vendor)) {
@@ -157,14 +160,14 @@ bool GetUsbUvcId(Device device, std::string* uvc_id) {
   if (!GetUsbProperty(device, "idProduct", &id_product)) {
     return false;
   }
-  uvc_id->clear();
-  uvc_id->append(id_vendor);
-  uvc_id->append(":");
-  uvc_id->append(id_product);
+  usb_id->clear();
+  usb_id->append(id_vendor);
+  usb_id->append(":");
+  usb_id->append(id_product);
   return true;
 }
 
-bool GetUsbVersion(Device device, std::string* usb_version) {
+bool GetUsbVersion(const Device& device, std::string* usb_version) {
   return GetUsbProperty(device, "version", usb_version);
 }
 

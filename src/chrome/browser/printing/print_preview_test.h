@@ -6,7 +6,6 @@
 #define CHROME_BROWSER_PRINTING_PRINT_PREVIEW_TEST_H_
 
 #include "chrome/test/base/browser_with_test_window_test.h"
-#include "webkit/plugins/npapi/mock_plugin_list.h"
 
 class PrintPreviewTest : public BrowserWithTestWindowTest {
  public:
@@ -16,9 +15,10 @@ class PrintPreviewTest : public BrowserWithTestWindowTest {
  protected:
   virtual void SetUp() OVERRIDE;
 
- private:
-  webkit::npapi::MockPluginList plugin_list_;
+  // Create a browser window to provide parenting for web contents modal dialog.
+  virtual BrowserWindow* CreateBrowserWindow() OVERRIDE;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(PrintPreviewTest);
 };
 

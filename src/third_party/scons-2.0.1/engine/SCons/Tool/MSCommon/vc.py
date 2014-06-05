@@ -128,9 +128,11 @@ def get_host_target(env):
 
     return (host, target,req_target_platform)
 
-_VCVER = ["10.0", "9.0", "9.0Exp","8.0", "8.0Exp","7.1", "7.0", "6.0"]
+_VCVER = ["12.0", "10.0", "9.0", "9.0Exp","8.0", "8.0Exp","7.1", "7.0", "6.0"]
 
 _VCVER_TO_PRODUCT_DIR = {
+        '12.0': [
+            r'Microsoft\VisualStudio\12.0\Setup\VC\ProductDir'],
         '10.0': [
             r'Microsoft\VisualStudio\10.0\Setup\VC\ProductDir'],
         '9.0': [

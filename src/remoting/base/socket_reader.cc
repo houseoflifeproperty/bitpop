@@ -20,7 +20,7 @@ int kReadBufferSize = 4096;
 
 SocketReader::SocketReader()
     : socket_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
 }
 
 SocketReader::~SocketReader() {
@@ -40,8 +40,9 @@ void SocketReader::DoRead() {
   while (true) {
     read_buffer_ = new net::IOBuffer(kReadBufferSize);
     int result = socket_->Read(
-        read_buffer_, kReadBufferSize, base::Bind(&SocketReader::OnRead,
-                                                  weak_factory_.GetWeakPtr()));
+        read_buffer_.get(),
+        kReadBufferSize,
+        base::Bind(&SocketReader::OnRead, weak_factory_.GetWeakPtr()));
     HandleReadResult(result);
     if (result <= 0)
       break;

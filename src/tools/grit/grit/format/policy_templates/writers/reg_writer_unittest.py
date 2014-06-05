@@ -216,17 +216,14 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     # Tests a policy group with a single policy of type 'dict'.
     example = {
       'bool': True,
-      'int': 10,
-      'string': 'abc',
-      'list': [1, 2, 3],
       'dict': {
         'a': 1,
         'b': 2,
-      }
+      },
+      'int': 10,
+      'list': [1, 2, 3],
+      'string': 'abc',
     }
-    # Encode |value| here, to make sure the string encoded within the reg_writer
-    # and the expected value are the same.
-    value = str(example)
     grd = self.PrepareTest(
         '{'
         '  "policy_definitions": ['
@@ -236,7 +233,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         '      "caption": "",'
         '      "desc": "",'
         '      "supported_on": ["chrome.win:8-"],'
-        '      "example_value": ' + value +
+        '      "example_value": ' + str(example) +
         '    },'
         '  ],'
         '  "placeholders": [],'
@@ -247,7 +244,8 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         'Windows Registry Editor Version 5.00',
         '',
         '[HKEY_LOCAL_MACHINE\\Software\\Policies\\Chromium]',
-        '"DictionaryPolicy"="%s"' % str(eval(value))])
+        '"DictionaryPolicy"="{"bool": true, "dict": {"a": 1, '
+        '"b": 2}, "int": 10, "list": [1, 2, 3], "string": "abc"}"'])
     self.CompareOutputs(output, expected_output)
 
   def testNonSupportedPolicy(self):

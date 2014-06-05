@@ -4,15 +4,19 @@
 
 #include "ui/views/examples/text_example.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/font_list.h"
+#include "ui/views/border.h"
 #include "ui/views/controls/button/checkbox.h"
 #include "ui/views/controls/combobox/combobox.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/examples/example_combobox_model.h"
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/view.h"
+
+using base::ASCIIToUTF16;
 
 namespace views {
 namespace examples {
@@ -48,11 +52,8 @@ const char* kTextExamples[] = {
 const char* kElidingBehaviors[] = {
     "Ellipsis",
     "None",
-#if defined(OS_WIN)
     "Fade Tail",
     "Fade Head",
-    "Fade Head and Tail",
-#endif
 };
 
 const char* kPrefixOptions[] = {
@@ -83,9 +84,7 @@ void SetFlagFromCheckbox(Checkbox* checkbox, int* flags, int flag) {
 class TextExample::TextExampleView : public View {
  public:
   TextExampleView()
-    : font_(ResourceBundle::GetSharedInstance().GetFont(
-          ResourceBundle::BaseFont)),
-      text_(ASCIIToUTF16(kShortText)),
+    : text_(ASCIIToUTF16(kShortText)),
       text_flags_(0),
       halo_(false),
       fade_(false),
@@ -94,33 +93,25 @@ class TextExample::TextExampleView : public View {
 
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {
     View::OnPaint(canvas);
-
     const gfx::Rect bounds = GetContentsBounds();
 
-#if defined(OS_WIN)
     if (fade_) {
-      size_t characters_to_truncate_from_head =
-          gfx::Canvas::TruncateFadeHeadAndTail ? 10 : 0;
-      canvas->DrawFadeTruncatingString(text_, fade_mode_,
-          characters_to_truncate_from_head, font_, SK_ColorDKGRAY, bounds);
-      return;
-    }
-#endif
-
-    if (halo_) {
-      canvas->DrawStringWithHalo(text_, font_, SK_ColorDKGRAY, SK_ColorWHITE,
-          bounds.x(), bounds.y(), bounds.width(), bounds.height(), text_flags_);
+      canvas->DrawFadeTruncatingStringRect(text_, fade_mode_, font_list_,
+                                           SK_ColorDKGRAY, bounds);
+    } else if (halo_) {
+      canvas->DrawStringRectWithHalo(text_, font_list_, SK_ColorDKGRAY,
+                                     SK_ColorWHITE, bounds, text_flags_);
     } else {
-      canvas->DrawStringInt(text_, font_, SK_ColorDKGRAY, bounds.x(),
-          bounds.y(), bounds.width(), bounds.height(), text_flags_);
+      canvas->DrawStringRectWithFlags(text_, font_list_, SK_ColorDKGRAY, bounds,
+                                      text_flags_);
     }
   }
 
   int text_flags() const { return text_flags_; }
   void set_text_flags(int text_flags) { text_flags_ = text_flags; }
 
-  const string16& text() const { return text_; }
-  void set_text(const string16& text) { text_ = text; }
+  const base::string16& text() const { return text_; }
+  void set_text(const base::string16& text) { text_ = text; }
 
   bool halo() const { return halo_; }
   void set_halo(bool halo) { halo_ = halo; }
@@ -129,33 +120,31 @@ class TextExample::TextExampleView : public View {
   void set_fade(bool fade) { fade_ = fade; }
 
   gfx::Canvas::TruncateFadeMode fade_mode() const { return fade_mode_; }
-  void set_fade_mode(gfx::Canvas::TruncateFadeMode fade_mode) {
-    fade_mode_ = fade_mode;
-  }
+  void set_fade_mode(gfx::Canvas::TruncateFadeMode mode) { fade_mode_ = mode; }
 
   int GetFontStyle() const {
-    return font_.GetStyle();
+    return font_list_.GetFontStyle();
   }
   void SetFontStyle(int style) {
-    font_ = font_.DeriveFont(0, style);
+    font_list_ = font_list_.DeriveWithStyle(style);
   }
 
  private:
   // The font used for drawing the text.
-  gfx::Font font_;
+  gfx::FontList font_list_;
 
   // The text to draw.
-  string16 text_;
+  base::string16 text_;
 
-  // Text flags for passing to |DrawStringInt()|.
+  // Text flags for passing to |DrawStringRect()|.
   int text_flags_;
 
   // If |true|, specifies to call |DrawStringWithHalo()| instead of
-  // |DrawStringInt()|.
+  // |DrawStringRect()|.
   bool halo_;
 
   // If |true|, specifies to call |DrawFadeTruncatingString()| instead of
-  // |DrawStringInt()|.
+  // |DrawStringRect()|.
   bool fade_;
 
   // If |fade_| is |true|, fade mode parameter to |DrawFadeTruncatingString()|.
@@ -168,6 +157,9 @@ TextExample::TextExample() : ExampleBase("Text Styles") {
 }
 
 TextExample::~TextExample() {
+  // Remove all the views first as some reference models in
+  // |example_combobox_model_|.
+  container()->RemoveAllChildViews(true);
 }
 
 Checkbox* TextExample::AddCheckbox(GridLayout* layout, const char* name) {
@@ -195,7 +187,7 @@ Combobox* TextExample::AddCombobox(GridLayout* layout,
 
 void TextExample::CreateExampleView(View* container) {
   text_view_ = new TextExampleView;
-  text_view_->set_border(Border::CreateSolidBorder(1, SK_ColorGRAY));
+  text_view_->SetBorder(Border::CreateSolidBorder(1, SK_ColorGRAY));
 
   GridLayout* layout = new GridLayout(container);
   container->SetLayoutManager(layout);
@@ -256,14 +248,14 @@ void TextExample::ButtonPressed(Button* button, const ui::Event& event) {
   SetFlagFromCheckbox(break_checkbox_, &flags, gfx::Canvas::CHARACTER_BREAK);
   SetFlagFromCheckbox(bold_checkbox_, &style, gfx::Font::BOLD);
   SetFlagFromCheckbox(italic_checkbox_, &style, gfx::Font::ITALIC);
-  SetFlagFromCheckbox(underline_checkbox_, &style, gfx::Font::UNDERLINED);
+  SetFlagFromCheckbox(underline_checkbox_, &style, gfx::Font::UNDERLINE);
   text_view_->set_halo(halo_checkbox_->checked());
   text_view_->set_text_flags(flags);
   text_view_->SetFontStyle(style);
   text_view_->SchedulePaint();
 }
 
-void TextExample::OnSelectedIndexChanged(Combobox* combobox) {
+void TextExample::OnPerformAction(Combobox* combobox) {
   int text_flags = text_view_->text_flags();
   if (combobox == h_align_cb_) {
     text_flags &= ~(gfx::Canvas::TEXT_ALIGN_LEFT |
@@ -310,7 +302,6 @@ void TextExample::OnSelectedIndexChanged(Combobox* combobox) {
         text_flags |= gfx::Canvas::NO_ELLIPSIS;
         text_view_->set_fade(false);
         break;
-#if defined(OS_WIN)
       case 2:
         text_view_->set_fade_mode(gfx::Canvas::TruncateFadeTail);
         text_view_->set_fade(true);
@@ -319,11 +310,6 @@ void TextExample::OnSelectedIndexChanged(Combobox* combobox) {
         text_view_->set_fade_mode(gfx::Canvas::TruncateFadeHead);
         text_view_->set_fade(true);
         break;
-      case 4:
-        text_view_->set_fade_mode(gfx::Canvas::TruncateFadeHeadAndTail);
-        text_view_->set_fade(true);
-        break;
-#endif
     }
   } else if (combobox == prefix_cb_) {
     text_flags &= ~(gfx::Canvas::SHOW_PREFIX | gfx::Canvas::HIDE_PREFIX);

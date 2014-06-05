@@ -14,7 +14,7 @@
 namespace gfx {
 
 GLContextOSMesa::GLContextOSMesa(GLShareGroup* share_group)
-    : GLContext(share_group),
+    : GLContextReal(share_group),
       context_(NULL) {
 }
 
@@ -52,6 +52,7 @@ bool GLContextOSMesa::MakeCurrent(GLSurface* surface) {
 
   gfx::Size size = surface->GetSize();
 
+  ScopedReleaseCurrent release_current;
   if (!OSMesaMakeCurrent(context_,
                          surface->GetHandle(),
                          GL_UNSIGNED_BYTE,
@@ -62,12 +63,14 @@ bool GLContextOSMesa::MakeCurrent(GLSurface* surface) {
     return false;
   }
 
+  // Set this as soon as the context is current, since we might call into GL.
+  SetRealGLApi();
+
   // Row 0 is at the top.
   OSMesaPixelStore(OSMESA_Y_UP, 0);
 
-  SetCurrent(this, surface);
-  if (!InitializeExtensionBindings()) {
-    ReleaseCurrent(surface);
+  SetCurrent(surface);
+  if (!InitializeDynamicBindings()) {
     return false;
   }
 
@@ -76,7 +79,7 @@ bool GLContextOSMesa::MakeCurrent(GLSurface* surface) {
     return false;
   }
 
-  SetRealGLApi();
+  release_current.Cancel();
   return true;
 }
 
@@ -84,7 +87,8 @@ void GLContextOSMesa::ReleaseCurrent(GLSurface* surface) {
   if (!IsCurrent(surface))
     return;
 
-  SetCurrent(NULL, NULL);
+  SetCurrent(NULL);
+  // TODO: Calling with NULL here does not work to release the context.
   OSMesaMakeCurrent(NULL, NULL, GL_UNSIGNED_BYTE, 0, 0);
 }
 
@@ -97,7 +101,7 @@ bool GLContextOSMesa::IsCurrent(GLSurface* surface) {
   // If our context is current then our notion of which GLContext is
   // current must be correct. On the other hand, third-party code
   // using OpenGL might change the current context.
-  DCHECK(!native_context_is_current || (GetCurrent() == this));
+  DCHECK(!native_context_is_current || (GetRealCurrent() == this));
 
   if (!native_context_is_current)
     return false;
@@ -121,7 +125,6 @@ void* GLContextOSMesa::GetHandle() {
 
 void GLContextOSMesa::SetSwapInterval(int interval) {
   DCHECK(IsCurrent(NULL));
-  DLOG(INFO) << "GLContextOSMesa::SetSwapInterval is ignored.";
 }
 
 GLContextOSMesa::~GLContextOSMesa() {

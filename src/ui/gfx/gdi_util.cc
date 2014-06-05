@@ -4,6 +4,7 @@
 
 #include "ui/gfx/gdi_util.h"
 
+#include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 
 namespace gfx {
@@ -27,7 +28,6 @@ void CreateBitmapHeaderWithColorDepth(int width, int height, int color_depth,
   hdr->biClrUsed = 0;
   hdr->biClrImportant = 0;
 }
-
 
 void CreateBitmapV4Header(int width, int height, BITMAPV4HEADER* hdr) {
   // Because bmp v4 header is just an extension, we just create a v3 header and
@@ -81,12 +81,12 @@ void SubtractRectanglesFromRegion(HRGN hrgn,
 HRGN ConvertPathToHRGN(const gfx::Path& path) {
 #if defined(USE_AURA)
   int point_count = path.getPoints(NULL, 0);
-  scoped_array<SkPoint> points(new SkPoint[point_count]);
+  scoped_ptr<SkPoint[]> points(new SkPoint[point_count]);
   path.getPoints(points.get(), point_count);
-  scoped_array<POINT> windows_points(new POINT[point_count]);
+  scoped_ptr<POINT[]> windows_points(new POINT[point_count]);
   for (int i = 0; i < point_count; ++i) {
-    windows_points[i].x = SkScalarRound(points[i].fX);
-    windows_points[i].y = SkScalarRound(points[i].fY);
+    windows_points[i].x = SkScalarRoundToInt(points[i].fX);
+    windows_points[i].y = SkScalarRoundToInt(points[i].fY);
   }
 
   return ::CreatePolygonRgn(windows_points.get(), point_count, ALTERNATE);
@@ -117,6 +117,29 @@ bool ScaleDC(HDC dc, double scale_factor) {
   XFORM xform = {0};
   xform.eM11 = xform.eM22 = scale_factor;
   return !!ModifyWorldTransform(dc, &xform, MWT_LEFTMULTIPLY);
+}
+
+void StretchDIBits(HDC hdc, int dest_x, int dest_y, int dest_w, int dest_h,
+                   int src_x, int src_y, int src_w, int src_h, void* pixels,
+                   const BITMAPINFO* bitmap_info) {
+  // When blitting a rectangle that touches the bottom, left corner of the
+  // bitmap, StretchDIBits looks at it top-down!  For more details, see
+  // http://wiki.allegro.cc/index.php?title=StretchDIBits.
+  int rv;
+  int bitmap_h = -bitmap_info->bmiHeader.biHeight;
+  int bottom_up_src_y = bitmap_h - src_y - src_h;
+  if (bottom_up_src_y == 0 && src_x == 0 && src_h != bitmap_h) {
+    rv = ::StretchDIBits(hdc,
+                         dest_x, dest_h + dest_y - 1, dest_w, -dest_h,
+                         src_x, bitmap_h - src_y + 1, src_w, -src_h,
+                         pixels, bitmap_info, DIB_RGB_COLORS, SRCCOPY);
+  } else {
+    rv = ::StretchDIBits(hdc,
+                         dest_x, dest_y, dest_w, dest_h,
+                         src_x, bottom_up_src_y, src_w, src_h,
+                         pixels, bitmap_info, DIB_RGB_COLORS, SRCCOPY);
+  }
+  DCHECK(rv != GDI_ERROR);
 }
 
 }  // namespace gfx

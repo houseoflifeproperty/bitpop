@@ -3,8 +3,6 @@
 # To build on Linux:
 #  ./gyp_skia tools.gyp && make tools
 #
-# Building on other platforms not tested yet.
-#
 {
   'includes': [
     'apptype_console.gypi',
@@ -15,13 +13,33 @@
       'target_name': 'tools',
       'type': 'none',
       'dependencies': [
+        'bbh_shootout',
+        'bench_pictures',
+        'bench_record',
+        'bench_playback',
+        'filter',
+        'gpuveto',
+        'lua_app',
+        'lua_pictures',
+        'pinspect',
+        'render_pdfs',
+        'render_pictures',
         'skdiff',
         'skhello',
+        'skpdiff',
+        'skpinfo',
+        'skpmaker',
         'skimage',
-        'render_pictures',
-        'bench_pictures',
-        'pinspect',
-        'filter',
+        'test_image_decoder',
+      ],
+      'conditions': [
+        ['skia_shared_lib',
+          {
+            'dependencies': [
+              'sklua', # This can only be built if skia is built as a shared library
+            ],
+          },
+        ],
       ],
     },
     {
@@ -37,9 +55,77 @@
         '../tools/skdiff_utils.h',
       ],
       'dependencies': [
-        'skia_base_libs.gyp:skia_base_libs',
-        'effects.gyp:effects',
-        'images.gyp:images',
+        'skia_lib.gyp:skia_lib',
+      ],
+    },
+    {
+      'target_name': 'skpdiff',
+      'type': 'executable',
+      'sources': [
+        '../tools/skpdiff/skpdiff_main.cpp',
+        '../tools/skpdiff/SkDiffContext.cpp',
+        '../tools/skpdiff/SkImageDiffer.cpp',
+        '../tools/skpdiff/SkPMetric.cpp',
+        '../tools/skpdiff/skpdiff_util.cpp',
+        '../tools/flags/SkCommandLineFlags.cpp',
+      ],
+      'include_dirs': [
+        '../tools/flags',
+        '../src/core/', # needed for SkTLList.h
+      ],
+      'dependencies': [
+        'skia_lib.gyp:skia_lib',
+      ],
+      'cflags': [
+        '-O3',
+      ],
+      'conditions': [
+        [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "chromeos"]', {
+          'link_settings': {
+            'libraries': [
+              '-lrt',
+            ],
+          },
+        }],
+        ['skia_opencl', {
+          'sources': [
+            '../tools/skpdiff/SkCLImageDiffer.cpp',
+            '../tools/skpdiff/SkDifferentPixelsMetric_opencl.cpp',
+          ],
+          'conditions': [
+            [ 'skia_os == "mac"', {
+              'link_settings': {
+                'libraries': [
+                  '$(SDKROOT)/System/Library/Frameworks/OpenCL.framework',
+                ]
+              }
+            }, {
+              'link_settings': {
+                'libraries': [
+                  '-lOpenCL',
+                ],
+              },
+            }],
+          ],
+        }, { # !skia_opencl
+          'sources': [
+            '../tools/skpdiff/SkDifferentPixelsMetric_cpu.cpp',
+          ],
+        }],
+      ],
+    },
+    {
+      'target_name': 'skpmaker',
+      'type': 'executable',
+      'sources': [
+        '../tools/skpmaker.cpp',
+      ],
+      'include_dirs': [
+        '../src/core',
+      ],
+      'dependencies': [
+        'flags.gyp:flags',
+        'skia_lib.gyp:skia_lib',
       ],
     },
     {
@@ -55,21 +141,29 @@
         '../tools/skdiff_utils.h',
       ],
       'dependencies': [
-        'skia_base_libs.gyp:skia_base_libs',
-        'effects.gyp:effects',
-        'images.gyp:images',
+        'skia_lib.gyp:skia_lib',
       ],
     },
     {
       'target_name': 'skhello',
       'type': 'executable',
-      'sources': [
-        '../tools/skhello.cpp',
-      ],
       'dependencies': [
-        'skia_base_libs.gyp:skia_base_libs',
-        'effects.gyp:effects',
-        'images.gyp:images',
+        'skia_lib.gyp:skia_lib',
+      ],
+      'conditions': [
+        [ 'skia_os == "nacl"', {
+          'sources': [
+            '../platform_tools/nacl/src/nacl_hello.cpp',
+          ],
+        }, {
+          'sources': [
+            '../tools/skhello.cpp',
+          ],
+          'dependencies': [
+            'flags.gyp:flags',
+            'pdf.gyp:pdf',
+          ],
+        }],
       ],
     },
     {
@@ -78,10 +172,97 @@
       'sources': [
         '../tools/skimage_main.cpp',
       ],
+      'include_dirs': [
+        # For SkBitmapHasher.h
+        '../src/utils/',
+      ],
       'dependencies': [
-        'skia_base_libs.gyp:skia_base_libs',
+        'flags.gyp:flags',
+        'gm.gyp:gm_expectations',
+        'jsoncpp.gyp:jsoncpp',
+        'skia_lib.gyp:skia_lib',
+        'utils.gyp:utils',
+      ],
+    },
+    {
+      'target_name': 'skpinfo',
+      'type': 'executable',
+      'sources': [
+        '../tools/skpinfo.cpp',
+      ],
+      'include_dirs': [
+        '../tools/flags',
+        '../src/core/',
+      ],
+      'dependencies': [
+        'flags.gyp:flags',
+        'skia_lib.gyp:skia_lib',
+      ],
+    },
+    {
+      'target_name': 'gpuveto',
+      'type': 'executable',
+      'sources': [
+        '../tools/gpuveto.cpp',
+        '../tools/LazyDecodeBitmap.cpp',
+      ],
+      'include_dirs': [
+        '../src/core/',
+        '../src/images',
+        '../src/lazy',
+        '../tools/flags',
+      ],
+      'dependencies': [
+        'flags.gyp:flags',
+        'skia_lib.gyp:skia_lib',
+      ],
+    },
+    {
+      'target_name': 'lua_app',
+      'type': 'executable',
+      'sources': [
+        '../tools/lua/lua_app.cpp',
+        '../src/utils/SkLua.cpp',
+      ],
+      'include_dirs': [
+        # Lua exposes GrReduceClip which in turn requires src/core for SkTLList
+        '../src/gpu/',
+        '../src/core/',
+      ],
+      'dependencies': [
         'effects.gyp:effects',
         'images.gyp:images',
+        'lua.gyp:lua',
+        'pdf.gyp:pdf',
+        'ports.gyp:ports',
+        'skia_lib.gyp:skia_lib',
+        'utils.gyp:utils',
+      ],
+    },
+    {
+      'target_name': 'lua_pictures',
+      'type': 'executable',
+      'sources': [
+        '../tools/lua/lua_pictures.cpp',
+        '../src/utils/SkLuaCanvas.cpp',
+        '../src/utils/SkLua.cpp',
+      ],
+      'include_dirs': [
+        # Lua exposes GrReduceClip which in turn requires src/core for SkTLList
+        '../src/gpu/',
+        '../src/core/',
+      ],
+      'dependencies': [
+        'effects.gyp:effects',
+        'flags.gyp:flags',
+        'images.gyp:images',
+        'lua.gyp:lua',
+        'tools.gyp:picture_renderer',
+        'tools.gyp:picture_utils',
+        'pdf.gyp:pdf',
+        'ports.gyp:ports',
+        'skia_lib.gyp:skia_lib',
+        'utils.gyp:utils',
       ],
     },
     {
@@ -91,10 +272,14 @@
         '../tools/render_pictures_main.cpp',
       ],
       'include_dirs': [
+        '../src/core',
+        '../src/images',
+        '../src/lazy',
         '../src/pipe/utils/',
       ],
       'dependencies': [
-        'skia_base_libs.gyp:skia_base_libs',
+        'flags.gyp:flags',
+        'skia_lib.gyp:skia_lib',
         'tools.gyp:picture_renderer',
         'tools.gyp:picture_utils',
       ],
@@ -111,40 +296,100 @@
         '../tools/PictureBenchmark.cpp',
       ],
       'include_dirs': [
+        '../src/core/',
         '../bench',
+        '../src/lazy/',
       ],
       'dependencies': [
-        'skia_base_libs.gyp:skia_base_libs',
-        'effects.gyp:effects',
+        'bench.gyp:bench_timer',
+        'flags.gyp:flags',
+        'skia_lib.gyp:skia_lib',
         'tools.gyp:picture_utils',
         'tools.gyp:picture_renderer',
+      ],
+    },
+    {
+      'target_name': 'bench_record',
+      'type': 'executable',
+      'sources': [
+        '../tools/bench_record.cpp',
+        '../tools/LazyDecodeBitmap.cpp',
+      ],
+      'include_dirs': [
+        '../src/core/',
+        '../src/images',
+        '../src/lazy',
+      ],
+      'dependencies': [
         'bench.gyp:bench_timer',
+        'flags.gyp:flags',
+        'skia_lib.gyp:skia_lib',
+        'record.gyp:*',
+      ],
+    },
+    {
+      'target_name': 'bench_playback',
+      'type': 'executable',
+      'sources': [
+        '../tools/bench_playback.cpp',
+      ],
+      'include_dirs': [
+        '../src/core/',
+        '../src/images',
+        '../src/record',
+      ],
+      'dependencies': [
+        'bench.gyp:bench_timer',
+        'flags.gyp:flags',
+        'skia_lib.gyp:skia_lib',
+        'record.gyp:*',
       ],
     },
     {
       'target_name': 'picture_renderer',
       'type': 'static_library',
       'sources': [
+        '../tools/LazyDecodeBitmap.cpp',
         '../tools/PictureRenderer.h',
         '../tools/PictureRenderer.cpp',
+        '../tools/PictureRenderingFlags.h',
+        '../tools/PictureRenderingFlags.cpp',
         '../tools/CopyTilesRenderer.h',
         '../tools/CopyTilesRenderer.cpp',
         '../src/pipe/utils/SamplePipeControllers.h',
         '../src/pipe/utils/SamplePipeControllers.cpp',
       ],
       'include_dirs': [
-        '../src/core/',
+        '../src/core',
+        '../src/images',
+        '../src/lazy',
         '../src/pipe/utils/',
         '../src/utils/',
       ],
+      'direct_dependent_settings': {
+        'include_dirs': [
+          # needed for JSON headers used within PictureRenderer.h
+          '../third_party/externals/jsoncpp-chromium/overrides/include/',
+          '../third_party/externals/jsoncpp/include/',
+        ],
+      },
       'dependencies': [
-        'skia_base_libs.gyp:skia_base_libs',
-        'effects.gyp:effects',
-        'images.gyp:images',
+        'flags.gyp:flags',
+        'jsoncpp.gyp:jsoncpp',
+        'skia_lib.gyp:skia_lib',
         'tools.gyp:picture_utils',
       ],
-      'export_dependent_settings': [
-        'images.gyp:images',
+      'conditions': [
+        ['skia_gpu == 1',
+          {
+            'include_dirs' : [
+              '../src/gpu',
+            ],
+            'dependencies': [
+              'gputest.gyp:skgputest',
+            ],
+          },
+        ],
       ],
     },
     {
@@ -160,12 +405,44 @@
         '../src/utils/',
       ],
       'dependencies': [
-        'core.gyp:core',
-        'effects.gyp:effects',
-        'images.gyp:images',
         'pdf.gyp:pdf',
-        'ports.gyp:ports',
+        'skia_lib.gyp:skia_lib',
         'tools.gyp:picture_utils',
+      ],
+      'conditions': [
+        ['skia_win_debuggers_path and skia_os == "win"',
+          {
+            'dependencies': [
+              'tools.gyp:win_dbghelp',
+            ],
+          },
+        ],
+        # VS static libraries don't have a linker option. We must set a global
+        # project linker option, or add it to each executable.
+        ['skia_win_debuggers_path and skia_os == "win" and '
+         'skia_arch_width == 64',
+          {
+            'msvs_settings': {
+              'VCLinkerTool': {
+                'AdditionalDependencies': [
+                  '<(skia_win_debuggers_path)/x64/DbgHelp.lib',
+                ],
+              },
+            },
+          },
+        ],
+        ['skia_win_debuggers_path and skia_os == "win" and '
+         'skia_arch_width == 32',
+          {
+            'msvs_settings': {
+              'VCLinkerTool': {
+                'AdditionalDependencies': [
+                  '<(skia_win_debuggers_path)/DbgHelp.lib',
+                ],
+              },
+            },
+          },
+        ],
       ],
     },
     {
@@ -176,8 +453,13 @@
         '../tools/picture_utils.h',
       ],
       'dependencies': [
-        'skia_base_libs.gyp:skia_base_libs',
+        'skia_lib.gyp:skia_lib',
       ],
+      'direct_dependent_settings': {
+        'include_dirs': [
+        '../tools/',
+        ],
+      },
     },
     {
       'target_name': 'pinspect',
@@ -186,9 +468,31 @@
         '../tools/pinspect.cpp',
       ],
       'dependencies': [
-        'skia_base_libs.gyp:skia_base_libs',
-        'effects.gyp:effects',
-        'images.gyp:images',
+        'flags.gyp:flags',
+        'skia_lib.gyp:skia_lib',
+        'tools.gyp:picture_renderer',
+      ],
+    },
+    {
+      'target_name': 'bbh_shootout',
+      'type': 'executable',
+      'include_dirs': [
+        '../bench',
+        '../tools/'
+      ],
+      'sources': [
+        '../tools/bbh_shootout.cpp',
+
+        # Bench code:
+        '../bench/TimerData.h',
+        '../bench/TimerData.cpp',
+      ],
+      'dependencies': [
+        'bench.gyp:bench_timer',
+        'flags.gyp:flags',
+        'skia_lib.gyp:skia_lib',
+        'tools.gyp:picture_renderer',
+        'tools.gyp:picture_utils',
       ],
     },
     {
@@ -196,24 +500,102 @@
       'type': 'executable',
       'include_dirs' : [
         '../src/core',
+        '../src/utils/debugger',
       ],
       'sources': [
         '../tools/filtermain.cpp',
-        '../tools/path_utils.cpp',
         '../tools/path_utils.h',
+        '../tools/path_utils.cpp',
+        '../src/utils/debugger/SkDrawCommand.h',
+        '../src/utils/debugger/SkDrawCommand.cpp',
+        '../src/utils/debugger/SkDebugCanvas.h',
+        '../src/utils/debugger/SkDebugCanvas.cpp',
+        '../src/utils/debugger/SkObjectParser.h',
+        '../src/utils/debugger/SkObjectParser.cpp',
       ],
       'dependencies': [
-        'skia_base_libs.gyp:skia_base_libs',
-        'effects.gyp:effects',
-        'images.gyp:images',
+        'skia_lib.gyp:skia_lib',
         'tools.gyp:picture_utils',
       ],
     },
+    {
+      'target_name': 'test_image_decoder',
+      'type': 'executable',
+      'sources': [
+        '../tools/test_image_decoder.cpp',
+      ],
+      'dependencies': [
+        'skia_lib.gyp:skia_lib',
+      ],
+    },
+  ],
+  'conditions': [
+    ['skia_shared_lib',
+      {
+        'targets': [
+          {
+            'target_name': 'sklua',
+            'product_name': 'skia',
+            'product_prefix': '',
+            'product_dir': '<(PRODUCT_DIR)/',
+            'type': 'shared_library',
+            'sources': [
+              '../src/utils/SkLuaCanvas.cpp',
+              '../src/utils/SkLua.cpp',
+            ],
+            'include_dirs': [
+              # Lua exposes GrReduceClip which in turn requires src/core for SkTLList
+              '../src/gpu/',
+              '../src/core/',
+              '../third_party/lua/src/',
+            ],
+            'dependencies': [
+              'lua.gyp:lua',
+              'pdf.gyp:pdf',
+              'skia_lib.gyp:skia_lib',
+            ],
+            'conditions': [
+              ['skia_os != "win"',
+                {
+                  'ldflags': [
+                    '-Wl,-rpath,\$$ORIGIN,--enable-new-dtags',
+                  ],
+                },
+              ],
+            ],
+          },
+        ],
+      },
+    ],
+    ['skia_win_debuggers_path and skia_os == "win"',
+      {
+        'targets': [
+          {
+            'target_name': 'win_dbghelp',
+            'type': 'static_library',
+            'defines': [
+              'SK_CDB_PATH="<(skia_win_debuggers_path)"',
+            ],
+            'sources': [
+              '../tools/win_dbghelp.h',
+              '../tools/win_dbghelp.cpp',
+            ],
+          },
+        ],
+      },
+    ],
+    ['skia_os == "win"',
+      {
+        'targets': [
+          {
+            'target_name': 'win_lcid',
+            'type': 'executable',
+            'sources': [
+              '../tools/win_lcid.cpp',
+            ],
+          },
+        ],
+      },
+    ],
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

@@ -10,15 +10,21 @@
 #ifndef SkMaskFilter_DEFINED
 #define SkMaskFilter_DEFINED
 
+#include "SkBlurTypes.h"
 #include "SkFlattenable.h"
 #include "SkMask.h"
 #include "SkPaint.h"
 
+class GrContext;
+class GrPaint;
+class SkBitmap;
 class SkBlitter;
 class SkBounder;
 class SkMatrix;
 class SkPath;
 class SkRasterClip;
+class SkRRect;
+class SkStrokeRec;
 
 /** \class SkMaskFilter
 
@@ -35,12 +41,10 @@ class SK_API SkMaskFilter : public SkFlattenable {
 public:
     SK_DECLARE_INST_COUNT(SkMaskFilter)
 
-    SkMaskFilter() {}
-
     /** Returns the format of the resulting mask that this subclass will return
         when its filterMask() method is called.
     */
-    virtual SkMask::Format getFormat() = 0;
+    virtual SkMask::Format getFormat() const = 0;
 
     /** Create a new mask by filter the src mask.
         If src.fImage == null, then do not allocate or create the dst image
@@ -56,37 +60,71 @@ public:
         @return true if the dst mask was correctly created.
     */
     virtual bool filterMask(SkMask* dst, const SkMask& src, const SkMatrix&,
-                            SkIPoint* margin);
+                            SkIPoint* margin) const;
 
-    enum BlurType {
-        kNone_BlurType,    //!< this maskfilter is not a blur
-        kNormal_BlurType,  //!< fuzzy inside and outside
-        kSolid_BlurType,   //!< solid inside, fuzzy outside
-        kOuter_BlurType,   //!< nothing inside, fuzzy outside
-        kInner_BlurType    //!< fuzzy inside, nothing outside
-    };
-
-    struct BlurInfo {
-        SkScalar fRadius;
-        bool     fIgnoreTransform;
-        bool     fHighQuality;
-    };
+#if SK_SUPPORT_GPU
+    /**
+     *  Returns true if the filter can be expressed a single-pass GrEffect without requiring an
+     *  explicit input mask. Per-pixel, the effect receives the incoming mask's coverage as
+     *  the input color and outputs the filtered covereage value. This means that each pixel's
+     *  filtered coverage must only depend on the unfiltered mask value for that pixel and not on
+     *  surrounding values.
+     *
+     * If effect is non-NULL, a new GrEffect instance is stored in it. The caller assumes ownership
+     * of the effect and must unref it.
+     */
+    virtual bool asNewEffect(GrEffectRef** effect,
+                             GrTexture*,
+                             const SkMatrix& ctm) const;
 
     /**
-     *  Optional method for maskfilters that can be described as a blur. If so,
-     *  they return the corresponding BlurType and set the fields in BlurInfo
-     *  (if not null). If they cannot be described as a blur, they return
-     *  kNone_BlurType and ignore the info parameter.
+     *  If asNewEffect() fails the filter may be implemented on the GPU by a subclass overriding
+     *  filterMaskGPU (declared below). That code path requires constructing a src mask as input.
+     *  Since that is a potentially expensive operation, the subclass must also override this
+     *  function to indicate whether filterTextureMaskGPU would succeeed if the mask were to be
+     *  created.
+     *
+     *  'maskRect' returns the device space portion of the mask that the filter needs. The mask
+     *  passed into 'filterMaskGPU' should have the same extent as 'maskRect' but be translated
+     *  to the upper-left corner of the mask (i.e., (maskRect.fLeft, maskRect.fTop) appears at
+     *  (0, 0) in the mask).
      */
-    virtual BlurType asABlur(BlurInfo*) const;
+    virtual bool canFilterMaskGPU(const SkRect& devBounds,
+                                  const SkIRect& clipBounds,
+                                  const SkMatrix& ctm,
+                                  SkRect* maskRect) const;
 
     /**
-     * TEMPORARY HACK -- SkMaskFilters are designed to be immutable
-     * Optional method for maskfilters that can be described as a blur. If so,
-     * set the current blur to respect the [radius / ignore-transform /
-     * quality] settings.
+     *  Try to directly render the mask filter into the target.  Returns
+     *  true if drawing was successful.
      */
-    virtual void setAsABlur(const BlurInfo& );
+    virtual bool directFilterMaskGPU(GrContext* context,
+                                     GrPaint* grp,
+                                     const SkStrokeRec& strokeRec,
+                                     const SkPath& path) const;
+    /**
+     *  Try to directly render a rounded rect mask filter into the target.  Returns
+     *  true if drawing was successful.
+     */
+    virtual bool directFilterRRectMaskGPU(GrContext* context,
+                                          GrPaint* grp,
+                                          const SkStrokeRec& strokeRec,
+                                          const SkRRect& rrect) const;
+
+    /**
+     * This function is used to implement filters that require an explicit src mask. It should only
+     * be called if canFilterMaskGPU returned true and the maskRect param should be the output from
+     * that call. canOverwriteSrc indicates whether the implementation may treat src as a scratch
+     * texture and overwrite its contents. When true it is also legal to return src as the result.
+     * Implementations are free to get the GrContext from the src texture in order to create
+     * additional textures and perform multiple passes.
+     */
+    virtual bool filterMaskGPU(GrTexture* src,
+                               const SkMatrix& ctm,
+                               const SkRect& maskRect,
+                               GrTexture** result,
+                               bool canOverwriteSrc) const;
+#endif
 
     /**
      * The fast bounds function is used to enable the paint to be culled early
@@ -99,11 +137,27 @@ public:
      *  The default impl calls filterMask with the src mask having no image,
      *  but subclasses may override this if they can compute the rect faster.
      */
-    virtual void computeFastBounds(const SkRect& src, SkRect* dest);
+    virtual void computeFastBounds(const SkRect& src, SkRect* dest) const;
+
+    struct BlurRec {
+        SkScalar        fSigma;
+        SkBlurStyle     fStyle;
+        SkBlurQuality   fQuality;
+    };
+    /**
+     *  If this filter can be represented by a BlurRec, return true and (if not null) fill in the
+     *  provided BlurRec parameter. If this effect cannot be represented as a BlurRec, return false
+     *  and ignore the BlurRec parameter.
+     */
+    virtual bool asABlur(BlurRec*) const;
+
+    SK_TO_STRING_PUREVIRT()
+    SK_DEFINE_FLATTENABLE_TYPE(SkMaskFilter)
 
 protected:
+    SkMaskFilter() {}
     // empty for now, but lets get our subclass to remember to init us for the future
-    SkMaskFilter(SkFlattenableReadBuffer& buffer) : INHERITED(buffer) {}
+    SkMaskFilter(SkReadBuffer& buffer) : INHERITED(buffer) {}
 
     enum FilterReturn {
         kFalse_FilterReturn,
@@ -135,7 +189,13 @@ protected:
     virtual FilterReturn filterRectsToNine(const SkRect[], int count,
                                            const SkMatrix&,
                                            const SkIRect& clipBounds,
-                                           NinePatch*);
+                                           NinePatch*) const;
+    /**
+     *  Similar to filterRectsToNine, except it performs the work on a round rect.
+     */
+    virtual FilterReturn filterRRectToNine(const SkRRect&, const SkMatrix&,
+                                           const SkIRect& clipBounds,
+                                           NinePatch*) const;
 
 private:
     friend class SkDraw;
@@ -147,10 +207,17 @@ private:
      */
     bool filterPath(const SkPath& devPath, const SkMatrix& devMatrix,
                     const SkRasterClip&, SkBounder*, SkBlitter* blitter,
-                    SkPaint::Style style);
+                    SkPaint::Style style) const;
+
+    /** Helper method that, given a roundRect in device space, will rasterize it into a kA8_Format
+     mask and then call filterMask(). If this returns true, the specified blitter will be called
+     to render that mask. Returns false if filterMask() returned false.
+     */
+    bool filterRRect(const SkRRect& devRRect, const SkMatrix& devMatrix,
+                     const SkRasterClip&, SkBounder*, SkBlitter* blitter,
+                     SkPaint::Style style) const;
 
     typedef SkFlattenable INHERITED;
 };
 
 #endif
-

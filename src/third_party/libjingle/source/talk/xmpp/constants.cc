@@ -118,6 +118,31 @@ const char STR_MUC_ROOM_FEATURE_HANGOUT[] = "muc_es";
 const char STR_MUC_ROOM_FEATURE_HANGOUT_LITE[] = "muc_lite";
 const char STR_MUC_ROOM_FEATURE_BROADCAST[] = "broadcast";
 const char STR_MUC_ROOM_FEATURE_MULTI_USER_VC[] = "muc_muvc";
+const char STR_MUC_ROOM_FEATURE_RECORDABLE[] = "recordable";
+const char STR_MUC_ROOM_FEATURE_CUSTOM_RECORDING[] = "custom_recording";
+const char STR_MUC_ROOM_OWNER_PROFILE_ID[] = "muc#roominfo_owner_profile_id";
+const char STR_MUC_ROOM_FEATURE_ABUSE_RECORDABLE[] = "abuse_recordable";
+
+const char STR_ID_TYPE_CONVERSATION[] = "conversation";
+const char NS_GOOGLE_MUC_HANGOUT[] = "google:muc#hangout";
+const StaticQName QN_GOOGLE_MUC_HANGOUT_INVITE =
+    { NS_GOOGLE_MUC_HANGOUT, "invite" };
+const StaticQName QN_GOOGLE_MUC_HANGOUT_INVITE_TYPE =
+    { NS_GOOGLE_MUC_HANGOUT, "invite-type" };
+const StaticQName QN_ATTR_CREATE_ACTIVITY =
+    { STR_EMPTY, "create-activity" };
+const StaticQName QN_GOOGLE_MUC_HANGOUT_PUBLIC =
+    { NS_GOOGLE_MUC_HANGOUT, "public" };
+const StaticQName QN_GOOGLE_MUC_HANGOUT_INVITEE =
+    { NS_GOOGLE_MUC_HANGOUT, "invitee" };
+const StaticQName QN_GOOGLE_MUC_HANGOUT_NOTIFICATION_STATUS =
+    { NS_GOOGLE_MUC_HANGOUT, "notification-status" };
+const StaticQName QN_GOOGLE_MUC_HANGOUT_NOTIFICATION_TYPE = {
+    NS_GOOGLE_MUC_HANGOUT, "notification-type" };
+const StaticQName QN_GOOGLE_MUC_HANGOUT_HANGOUT_START_CONTEXT = {
+    NS_GOOGLE_MUC_HANGOUT, "hangout-start-context" };
+const StaticQName QN_GOOGLE_MUC_HANGOUT_CONVERSATION_ID = {
+    NS_GOOGLE_MUC_HANGOUT, "conversation-id" };
 
 const StaticQName QN_STREAM_STREAM = { NS_STREAM, STR_STREAM };
 const StaticQName QN_STREAM_FEATURES = { NS_STREAM, "features" };
@@ -192,7 +217,6 @@ const char NS_GOOGLE_AUTH_PROTOCOL[] =
     "http://www.google.com/talk/protocol/auth";
 const StaticQName QN_GOOGLE_AUTH_CLIENT_USES_FULL_BIND_RESULT =
     { NS_GOOGLE_AUTH_PROTOCOL, "client-uses-full-bind-result" };
-const char NS_GOOGLE_AUTH_OLD[] = "google:auth";
 const StaticQName QN_GOOGLE_ALLOW_NON_GOOGLE_ID_XMPP_LOGIN =
     { NS_GOOGLE_AUTH_PROTOCOL, "allow-non-google-login" };
 const StaticQName QN_GOOGLE_AUTH_SERVICE =
@@ -321,8 +345,6 @@ const StaticQName QN_NICK = { STR_EMPTY, "nick" };
 const StaticQName QN_SUBSCRIPTION = { STR_EMPTY, "subscription" };
 const StaticQName QN_TITLE1 = { STR_EMPTY, "title1" };
 const StaticQName QN_TITLE2 = { STR_EMPTY, "title2" };
-const StaticQName QN_SOURCE = { STR_EMPTY, "source" };
-const StaticQName QN_TIME = { STR_EMPTY, "time" };
 
 const StaticQName QN_XMLNS_CLIENT = { NS_XMLNS, STR_CLIENT };
 const StaticQName QN_XMLNS_SERVER = { NS_XMLNS, STR_SERVER };
@@ -342,6 +364,7 @@ const StaticQName QN_ATTR_STATUS = { STR_EMPTY, "status" };
 
 // Presence connection status
 const char STR_PSTN_CONFERENCE_STATUS_CONNECTING[] = "connecting";
+const char STR_PSTN_CONFERENCE_STATUS_JOINING[] = "joining";
 const char STR_PSTN_CONFERENCE_STATUS_CONNECTED[] = "connected";
 const char STR_PSTN_CONFERENCE_STATUS_HANGUP[] = "hangup";
 
@@ -585,6 +608,7 @@ const StaticQName QN_GOOGLE_MUC_USER_TYPE = { NS_GOOGLE_MUC_USER, "type" };
 const StaticQName QN_GOOGLE_MUC_USER_SRC_ID = { NS_GOOGLE_MUC_USER, "src-id" };
 const StaticQName QN_GOOGLE_MUC_USER_STATUS = { NS_GOOGLE_MUC_USER, "status" };
 const StaticQName QN_CLIENT_VERSION = { NS_GOOGLE_MUC_USER, "client-version" };
+const StaticQName QN_LOCALE = { NS_GOOGLE_MUC_USER, "locale" };
 const StaticQName QN_LABEL = { STR_EMPTY, "label" };
 
 const char NS_GOOGLE_MUC_MEDIA[] = "google:muc#media";

@@ -8,15 +8,16 @@
 #include <string>
 #include <vector>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "net/base/net_export.h"
 #include "net/http/http_byte_range.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_job.h"
 
-namespace base{
-struct PlatformFileInfo;
+namespace base {
+class TaskRunner;
 }
 namespace file_util {
 struct FileInfo;
@@ -31,9 +32,8 @@ class NET_EXPORT URLRequestFileJob : public URLRequestJob {
  public:
   URLRequestFileJob(URLRequest* request,
                     NetworkDelegate* network_delegate,
-                    const FilePath& file_path);
-
-  static URLRequest::ProtocolFactory Factory;
+                    const base::FilePath& file_path,
+                    const scoped_refptr<base::TaskRunner>& file_task_runner);
 
   // URLRequestJob:
   virtual void Start() OVERRIDE;
@@ -48,11 +48,17 @@ class NET_EXPORT URLRequestFileJob : public URLRequestJob {
   virtual void SetExtraRequestHeaders(
       const HttpRequestHeaders& headers) OVERRIDE;
 
+  // An interface for subclasses who wish to monitor read operations.
+  virtual void OnSeekComplete(int64 result);
+  virtual void OnReadComplete(net::IOBuffer* buf, int result);
+
  protected:
   virtual ~URLRequestFileJob();
 
+  int64 remaining_bytes() const { return remaining_bytes_; }
+
   // The OS-specific full path name of the file
-  FilePath file_path_;
+  base::FilePath file_path_;
 
  private:
   // Meta information about the file. It's used as a member in the
@@ -75,7 +81,7 @@ class NET_EXPORT URLRequestFileJob : public URLRequestJob {
   };
 
   // Fetches file info on a background thread.
-  static void FetchMetaInfo(const FilePath& file_path,
+  static void FetchMetaInfo(const base::FilePath& file_path,
                             FileMetaInfo* meta_info);
 
   // Callback after fetching file info on a background thread.
@@ -88,11 +94,12 @@ class NET_EXPORT URLRequestFileJob : public URLRequestJob {
   // on a background thread.
   void DidSeek(int64 result);
 
-  // Callback after data is asynchronously read from the file.
-  void DidRead(int result);
+  // Callback after data is asynchronously read from the file into |buf|.
+  void DidRead(scoped_refptr<net::IOBuffer> buf, int result);
 
   scoped_ptr<FileStream> stream_;
   FileMetaInfo meta_info_;
+  const scoped_refptr<base::TaskRunner> file_task_runner_;
 
   HttpByteRange byte_range_;
   int64 remaining_bytes_;

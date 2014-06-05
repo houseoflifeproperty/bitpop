@@ -1,23 +1,25 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/format_macros.h"
 #include "base/location.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/stringprintf.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/stringprintf.h"
 #include "sync/engine/apply_control_data_updates.h"
 #include "sync/engine/syncer.h"
 #include "sync/engine/syncer_util.h"
 #include "sync/internal_api/public/test/test_entry_factory.h"
 #include "sync/protocol/nigori_specifics.pb.h"
+#include "sync/syncable/directory.h"
 #include "sync/syncable/mutable_entry.h"
 #include "sync/syncable/nigori_util.h"
-#include "sync/syncable/read_transaction.h"
+#include "sync/syncable/syncable_read_transaction.h"
 #include "sync/syncable/syncable_util.h"
-#include "sync/syncable/write_transaction.h"
+#include "sync/syncable/syncable_write_transaction.h"
 #include "sync/test/engine/fake_model_worker.h"
-#include "sync/test/engine/syncer_command_test.h"
+#include "sync/test/engine/test_directory_setter_upper.h"
 #include "sync/test/engine/test_id_factory.h"
 #include "sync/test/fake_sync_encryption_handler.h"
 #include "sync/util/cryptographer.h"
@@ -29,32 +31,31 @@ using syncable::MutableEntry;
 using syncable::UNITTEST;
 using syncable::Id;
 
-class ApplyControlDataUpdatesTest : public SyncerCommandTest {
+class ApplyControlDataUpdatesTest : public ::testing::Test {
  public:
  protected:
   ApplyControlDataUpdatesTest() {}
   virtual ~ApplyControlDataUpdatesTest() {}
 
   virtual void SetUp() {
-    workers()->clear();
-    mutable_routing_info()->clear();
-    workers()->push_back(make_scoped_refptr(new FakeModelWorker(GROUP_UI)));
-    workers()->push_back(
-        make_scoped_refptr(new FakeModelWorker(GROUP_PASSWORD)));
-    (*mutable_routing_info())[NIGORI] = GROUP_PASSIVE;
-    (*mutable_routing_info())[EXPERIMENTS] = GROUP_PASSIVE;
-    SyncerCommandTest::SetUp();
+    dir_maker_.SetUp();
     entry_factory_.reset(new TestEntryFactory(directory()));
+  }
 
-    session()->mutable_status_controller()->set_updates_request_types(
-        ControlTypes());
+  virtual void TearDown() {
+    dir_maker_.TearDown();
+  }
 
-    syncable::ReadTransaction trans(FROM_HERE, directory());
+  syncable::Directory* directory() {
+    return dir_maker_.directory();
   }
 
   TestIdFactory id_factory_;
   scoped_ptr<TestEntryFactory> entry_factory_;
  private:
+  base::MessageLoop loop_;  // Needed for directory init.
+  TestDirectorySetterUpper dir_maker_;
+
   DISALLOW_COPY_AND_ASSIGN(ApplyControlDataUpdatesTest);
 };
 
@@ -87,7 +88,7 @@ TEST_F(ApplyControlDataUpdatesTest, NigoriUpdate) {
       ModelTypeToRootTag(NIGORI), specifics, true);
   EXPECT_FALSE(cryptographer->has_pending_keys());
 
-  ApplyControlDataUpdates(session());
+  ApplyControlDataUpdates(directory());
 
   EXPECT_FALSE(cryptographer->is_ready());
   EXPECT_TRUE(cryptographer->has_pending_keys());
@@ -133,14 +134,14 @@ TEST_F(ApplyControlDataUpdatesTest, EncryptUnsyncedChanges) {
   size_t batch_s = 5;
   for (i = 0; i < batch_s; ++i) {
     entry_factory_->CreateUnsyncedItem(id_factory_.NewLocalId(), folder_id,
-                                       base::StringPrintf("Item %"PRIuS"", i),
+                                       base::StringPrintf("Item %" PRIuS "", i),
                                        false, BOOKMARKS, NULL);
   }
   // Next five items are children of the root.
   for (; i < 2*batch_s; ++i) {
     entry_factory_->CreateUnsyncedItem(
         id_factory_.NewLocalId(), id_factory_.root(),
-        base::StringPrintf("Item %"PRIuS"", i), false,
+        base::StringPrintf("Item %" PRIuS "", i), false,
         BOOKMARKS, NULL);
   }
 
@@ -166,7 +167,7 @@ TEST_F(ApplyControlDataUpdatesTest, EncryptUnsyncedChanges) {
     EXPECT_EQ(2*batch_s+1, handles.size());
   }
 
-  ApplyControlDataUpdates(session());
+  ApplyControlDataUpdates(directory());
 
   EXPECT_FALSE(cryptographer->has_pending_keys());
   EXPECT_TRUE(cryptographer->is_ready());
@@ -190,11 +191,11 @@ TEST_F(ApplyControlDataUpdatesTest, EncryptUnsyncedChanges) {
     MutableEntry entry(&trans, syncable::GET_BY_SERVER_TAG,
                        ModelTypeToRootTag(NIGORI));
     ASSERT_TRUE(entry.good());
-    entry.Put(syncable::SERVER_VERSION, entry_factory_->GetNextRevision());
-    entry.Put(syncable::IS_UNAPPLIED_UPDATE, true);
+    entry.PutServerVersion(entry_factory_->GetNextRevision());
+    entry.PutIsUnappliedUpdate(true);
   }
 
-  ApplyControlDataUpdates(session());
+  ApplyControlDataUpdates(directory());
 
   EXPECT_FALSE(cryptographer->has_pending_keys());
   EXPECT_TRUE(cryptographer->is_ready());
@@ -247,14 +248,14 @@ TEST_F(ApplyControlDataUpdatesTest, CannotEncryptUnsyncedChanges) {
   size_t batch_s = 5;
   for (i = 0; i < batch_s; ++i) {
     entry_factory_->CreateUnsyncedItem(id_factory_.NewLocalId(), folder_id,
-                                       base::StringPrintf("Item %"PRIuS"", i),
+                                       base::StringPrintf("Item %" PRIuS "", i),
                                        false, BOOKMARKS, NULL);
   }
   // Next five items are children of the root.
   for (; i < 2*batch_s; ++i) {
     entry_factory_->CreateUnsyncedItem(
         id_factory_.NewLocalId(), id_factory_.root(),
-        base::StringPrintf("Item %"PRIuS"", i), false,
+        base::StringPrintf("Item %" PRIuS "", i), false,
         BOOKMARKS, NULL);
   }
 
@@ -281,7 +282,7 @@ TEST_F(ApplyControlDataUpdatesTest, CannotEncryptUnsyncedChanges) {
     EXPECT_EQ(2*batch_s+1, handles.size());
   }
 
-  ApplyControlDataUpdates(session());
+  ApplyControlDataUpdates(directory());
 
   EXPECT_FALSE(cryptographer->is_ready());
   EXPECT_TRUE(cryptographer->has_pending_keys());
@@ -359,7 +360,7 @@ TEST_F(ApplyControlDataUpdatesTest,
 
   EXPECT_TRUE(entry_factory_->GetIsUnsyncedForItem(nigori_handle));
   EXPECT_TRUE(entry_factory_->GetIsUnappliedForItem(nigori_handle));
-  ApplyControlDataUpdates(session());
+  ApplyControlDataUpdates(directory());
   EXPECT_TRUE(entry_factory_->GetIsUnsyncedForItem(nigori_handle));
   EXPECT_FALSE(entry_factory_->GetIsUnappliedForItem(nigori_handle));
 
@@ -437,7 +438,7 @@ TEST_F(ApplyControlDataUpdatesTest,
 
   EXPECT_TRUE(entry_factory_->GetIsUnsyncedForItem(nigori_handle));
   EXPECT_TRUE(entry_factory_->GetIsUnappliedForItem(nigori_handle));
-  ApplyControlDataUpdates(session());
+  ApplyControlDataUpdates(directory());
   EXPECT_TRUE(entry_factory_->GetIsUnsyncedForItem(nigori_handle));
   EXPECT_FALSE(entry_factory_->GetIsUnappliedForItem(nigori_handle));
 
@@ -510,7 +511,7 @@ TEST_F(ApplyControlDataUpdatesTest,
 
   EXPECT_TRUE(entry_factory_->GetIsUnsyncedForItem(nigori_handle));
   EXPECT_TRUE(entry_factory_->GetIsUnappliedForItem(nigori_handle));
-  ApplyControlDataUpdates(session());
+  ApplyControlDataUpdates(directory());
   EXPECT_TRUE(entry_factory_->GetIsUnsyncedForItem(nigori_handle));
   EXPECT_FALSE(entry_factory_->GetIsUnappliedForItem(nigori_handle));
 
@@ -589,7 +590,7 @@ TEST_F(ApplyControlDataUpdatesTest,
 
   EXPECT_TRUE(entry_factory_->GetIsUnsyncedForItem(nigori_handle));
   EXPECT_TRUE(entry_factory_->GetIsUnappliedForItem(nigori_handle));
-  ApplyControlDataUpdates(session());
+  ApplyControlDataUpdates(directory());
   EXPECT_TRUE(entry_factory_->GetIsUnsyncedForItem(nigori_handle));
   EXPECT_FALSE(entry_factory_->GetIsUnappliedForItem(nigori_handle));
 
@@ -671,7 +672,7 @@ TEST_F(ApplyControlDataUpdatesTest,
 
   EXPECT_TRUE(entry_factory_->GetIsUnsyncedForItem(nigori_handle));
   EXPECT_TRUE(entry_factory_->GetIsUnappliedForItem(nigori_handle));
-  ApplyControlDataUpdates(session());
+  ApplyControlDataUpdates(directory());
   EXPECT_TRUE(entry_factory_->GetIsUnsyncedForItem(nigori_handle));
   EXPECT_FALSE(entry_factory_->GetIsUnappliedForItem(nigori_handle));
 
@@ -751,7 +752,7 @@ TEST_F(ApplyControlDataUpdatesTest,
 
   EXPECT_TRUE(entry_factory_->GetIsUnsyncedForItem(nigori_handle));
   EXPECT_TRUE(entry_factory_->GetIsUnappliedForItem(nigori_handle));
-  ApplyControlDataUpdates(session());
+  ApplyControlDataUpdates(directory());
   EXPECT_TRUE(entry_factory_->GetIsUnsyncedForItem(nigori_handle));
   EXPECT_FALSE(entry_factory_->GetIsUnappliedForItem(nigori_handle));
 
@@ -831,7 +832,7 @@ TEST_F(ApplyControlDataUpdatesTest,
 
   EXPECT_TRUE(entry_factory_->GetIsUnsyncedForItem(nigori_handle));
   EXPECT_TRUE(entry_factory_->GetIsUnappliedForItem(nigori_handle));
-  ApplyControlDataUpdates(session());
+  ApplyControlDataUpdates(directory());
   EXPECT_TRUE(entry_factory_->GetIsUnsyncedForItem(nigori_handle));
   EXPECT_FALSE(entry_factory_->GetIsUnappliedForItem(nigori_handle));
 
@@ -865,7 +866,7 @@ TEST_F(ApplyControlDataUpdatesTest, ControlApply) {
       set_enabled(true);
   int64 experiment_handle = entry_factory_->CreateUnappliedNewItem(
       experiment_id, specifics, false);
-  ApplyControlDataUpdates(session());
+  ApplyControlDataUpdates(directory());
 
   EXPECT_FALSE(entry_factory_->GetIsUnappliedForItem(experiment_handle));
   EXPECT_TRUE(
@@ -884,7 +885,7 @@ TEST_F(ApplyControlDataUpdatesTest, ControlApplyParentBeforeChild) {
       experiment_id, specifics, parent_id);
   int64 parent_handle = entry_factory_->CreateUnappliedNewItem(
       parent_id, specifics, true);
-  ApplyControlDataUpdates(session());
+  ApplyControlDataUpdates(directory());
 
   EXPECT_FALSE(entry_factory_->GetIsUnappliedForItem(parent_handle));
   EXPECT_FALSE(entry_factory_->GetIsUnappliedForItem(experiment_handle));
@@ -908,7 +909,7 @@ TEST_F(ApplyControlDataUpdatesTest, ControlConflict) {
                                             server_specifics);
   entry_factory_->SetLocalSpecificsForItem(experiment_handle,
                                            local_specifics);
-  ApplyControlDataUpdates(session());
+  ApplyControlDataUpdates(directory());
 
   EXPECT_FALSE(entry_factory_->GetIsUnappliedForItem(experiment_handle));
   EXPECT_TRUE(

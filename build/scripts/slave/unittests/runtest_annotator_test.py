@@ -3,11 +3,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Unit tests for annotated log parsers in runtest.py.
+"""Unit tests for annotated log parsers used by runtest.py.
 
-runtest.py has the option to parse test output locally and send results to the
-master via annotator steps. This file tests those parsers.
+The classes tested here reside in process_log_utils.py.
 
+The script runtest.py has the option to parse test output locally and send
+results to the master via annotator steps. This file tests those parsers.
 """
 
 import json
@@ -18,20 +19,19 @@ import test_env  # pylint: disable=W0403,W0611
 
 from slave import process_log_utils
 
-TEST_PERCENTILES = [.05, .3, .8]
-
-# From buildbot.status.builder:
+# These should be the same as the constants used in process_log_utils.
+# See: http://docs.buildbot.net/current/developer/results.html
 SUCCESS, WARNINGS, FAILURE, SKIPPED, EXCEPTION, RETRY = range(6)
 
-class LoggingStepBase(unittest.TestCase):
-  """Logging testcases superclass.
+# Custom percentile numbers to use in the tests below.
+TEST_PERCENTILES = [.05, .3, .8]
 
-  The class provides some operations common for testcases.
-  """
+
+class LogProcessorTest(unittest.TestCase):
+  """Base class for log processor unit tests. Contains common operations."""
 
   def setUp(self):
-    super(LoggingStepBase, self).setUp()
-
+    super(LogProcessorTest, self).setUp()
     self._revision = 12345
     self._webkit_revision = 67890
 
@@ -42,15 +42,17 @@ class LoggingStepBase(unittest.TestCase):
     factory_properties['perf_filename'] = perf_expectations_path
     factory_properties['perf_name'] = 'test-system'
     factory_properties['test_name'] = 'test-name'
-    parser = log_processor_class(revision=self._revision, build_property={},
-                                 factory_properties=factory_properties,
-                                 webkit_revision=self._webkit_revision)
+    processor = log_processor_class(
+        revision=self._revision, build_properties={},
+        factory_properties=factory_properties,
+        webkit_revision=self._webkit_revision)
 
-    # Set custom percentiles if we're testing GraphingLogProcessor.
-    if hasattr(parser, '_percentiles'):
-      parser._percentiles = TEST_PERCENTILES
+    # Set custom percentiles. This will be used by GraphingLogProcessor, which
+    # has and uses a private member attribute called _percentiles.
+    if hasattr(processor, '_percentiles'):
+      processor._percentiles = TEST_PERCENTILES
 
-    return parser
+    return processor
 
   def _ProcessLog(self, log_processor, logfile):  # pylint: disable=R0201
     for line in open(os.path.join(test_env.DATA_PATH, logfile)):
@@ -91,28 +93,9 @@ class LoggingStepBase(unittest.TestCase):
           'expectations.' % filename)
 
 
-class BenchpressPerformanceTestStepTest(LoggingStepBase):
-  def testOutputsSummaryBenchpress(self):
-    input_files = ['benchpress_log']
-    output_files = ['summary.dat']
+class GraphingLogProcessorTest(LogProcessorTest):
+  """Test case for basic functionality of GraphingLogProcessor class."""
 
-    self._ConstructParseAndCheckLogfiles(input_files, output_files,
-        process_log_utils.BenchpressLogProcessor)
-
-  def testBenchpressSummary(self):
-    input_files = ['benchpress_log']
-    summary_file = 'summary.dat'
-    output_files = [summary_file]
-
-    logs = self._ConstructParseAndCheckLogfiles(input_files, output_files,
-        process_log_utils.BenchpressLogProcessor)
-
-    actual = logs[summary_file][0]
-    expected = '12345 469 165 1306 64 676 38 372 120 232 294 659 1157 397\n'
-    self.assertEqual(expected, actual)
-
-
-class GraphingLogProcessorTest(LoggingStepBase):
   def testSummary(self):
     input_files = ['graphing_processor.log']
     output_files = ['%s-summary.dat' % graph for graph in ('commit_charge',
@@ -121,28 +104,6 @@ class GraphingLogProcessorTest(LoggingStepBase):
 
     self._ConstructParseAndCheckJSON(input_files, output_files, None,
         process_log_utils.GraphingLogProcessor)
-
-  def testFrameRateSummary(self):
-    input_files = ['frame_rate_graphing_processor.log']
-    output_files = ['%s-summary.dat' % g for g in ('blank', 'googleblog')]
-
-    self._ConstructParseAndCheckJSON(input_files, output_files, 'frame_rate',
-        process_log_utils.GraphingFrameRateLogProcessor)
-
-  def testFrameRateGestureList(self):
-    input_files = ['frame_rate_graphing_processor.log']
-    output_files = ['%s_%s_%s.dat' % (self._revision, g, t)
-                    for g in ('blank','googleblog') for t in ('fps', 'fps_ref')]
-
-    logs = self._ConstructParseAndCheckLogfiles(input_files, output_files,
-        process_log_utils.GraphingFrameRateLogProcessor)
-
-    for filename in output_files:
-      actual = ''.join(logs[filename])
-      expected = open(os.path.join(test_env.DATA_PATH, 'frame_rate',
-                                   filename)).read()
-      self.assertEqual(actual, expected, 'Filename %s did not contain expected '
-          'data.' % filename)
 
   def testGraphList(self):
     input_files = ['graphing_processor.log']
@@ -192,7 +153,14 @@ class GraphingLogProcessorTest(LoggingStepBase):
       self.assertEqual(actual, expected, 'Filename %s did not contain expected '
           'data.' % filename)
 
-class GraphingLogProcessorPerfTest(LoggingStepBase):
+
+class GraphingLogProcessorPerfTest(LogProcessorTest):
+  """Another test case for the GraphingLogProcessor class.
+
+  The tests in this test case compare results against the contents of a
+  perf expectations file.
+  """
+
   def _TestPerfExpectations(self, perf_expectations_file):
     perf_expectations_path = os.path.join(
         test_env.DATA_PATH, perf_expectations_file)
@@ -354,6 +322,77 @@ class GraphingLogProcessorPerfTest(LoggingStepBase):
     expected = ('PERF_IMPROVE: vm_final_browser/1t_vm_b (inf%)')
     self.assertEqual(expected, step.PerformanceSummary()[0])
     self.assertEqual(WARNINGS, step.evaluateCommand('mycommand'))
+
+
+class GraphingPageCyclerLogProcessorPerfTest(LogProcessorTest):
+  """Unit tests for the GraphingPageCyclerLogProcessor class."""
+
+  def testPageCycler(self):
+    parser = self._ConstructDefaultProcessor(
+        process_log_utils.GraphingPageCyclerLogProcessor)
+    self._ProcessLog(parser, 'page_cycler.log')
+
+    expected = 't: 2.32k'
+    self.assertEqual(expected, parser.PerformanceSummary()[0])
+
+
+class GraphingEndureLogProcessorTest(LogProcessorTest):
+  """Unit tests for the GraphingEndureLogProcessor class."""
+
+  def testProcessLogs(self):
+    log_processor = self._ConstructDefaultProcessor(
+        process_log_utils.GraphingEndureLogProcessor)
+
+    # Process the sample endure output log file.
+    self._ProcessLog(log_processor, 'endure_sample.log')
+    output = log_processor.PerformanceLogs()
+
+    # The data in the input sample file is considered to have 3 separate
+    # graph names, so there are 3 entries here.
+    self.assertEqual(3, len(output))
+
+    # Each of these three entries is mapped to a list that contains one string.
+    self.assertEqual(1, len(output['object_counts-summary.dat']))
+    self.assertEqual(1, len(output['vm_stats-summary.dat']))
+    self.assertEqual(1, len(output['new_graph_name-summary.dat']))
+
+    self.assertEqual(
+        {
+            'traces': {
+                'event_listeners': [[1, 492], [2, 490], [3, 487]],
+                'event_listeners_max': [492, 0],
+                'dom_nodes': [[1, 2621], [2, 2812], [3, 1242]],
+                'dom_nodes_max': [2812, 0],
+            },
+            'units_x': 'iterations',
+            'units': 'count',
+            'rev': 12345,
+        },
+        json.loads(output['object_counts-summary.dat'][0]))
+
+    self.assertEqual(
+        {
+            'traces': {
+                'renderer_vm': [[1, 180.1], [2, 181.0], [3, 180.7]],
+                'renderer_vm_max': [181, 0],
+            },
+            'units_x': 'iterations',
+            'units': 'MB',
+            'rev': 12345,
+        },
+        json.loads(output['vm_stats-summary.dat'][0]))
+
+    self.assertEqual(
+        {
+            'traces': {
+                'my_trace_name': [10, 0],
+            },
+            'units': 'kg',
+            'units_x': '',
+            'rev': 12345,
+        },
+        json.loads(output['new_graph_name-summary.dat'][0]))
+
 
 if __name__ == '__main__':
   unittest.main()

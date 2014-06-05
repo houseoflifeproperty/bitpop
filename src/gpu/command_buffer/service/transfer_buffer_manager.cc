@@ -6,8 +6,12 @@
 
 #include <limits>
 
-#include "base/process_util.h"
+#include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/debug/trace_event.h"
+#include "base/process/process_handle.h"
+#include "gpu/command_buffer/common/cmd_buffer_common.h"
+#include "gpu/command_buffer/common/gles2_cmd_utils.h"
 
 using ::base::SharedMemory;
 
@@ -18,17 +22,14 @@ TransferBufferManagerInterface::~TransferBufferManagerInterface() {
 
 TransferBufferManager::TransferBufferManager()
     : shared_memory_bytes_allocated_(0) {
-  // Element zero is always NULL.
-  registered_objects_.push_back(Buffer());
 }
 
 TransferBufferManager::~TransferBufferManager() {
-  for (size_t i = 0; i < registered_objects_.size(); ++i) {
-    if (registered_objects_[i].shared_memory) {
-      DCHECK(shared_memory_bytes_allocated_ >= registered_objects_[i].size);
-      shared_memory_bytes_allocated_ -= registered_objects_[i].size;
-      delete registered_objects_[i].shared_memory;
-    }
+  while (!registered_buffers_.empty()) {
+    BufferMap::iterator it = registered_buffers_.begin();
+    DCHECK(shared_memory_bytes_allocated_ >= it->second->size());
+    shared_memory_bytes_allocated_ -= it->second->size();
+    registered_buffers_.erase(it);
   }
   DCHECK(!shared_memory_bytes_allocated_);
 }
@@ -37,118 +38,60 @@ bool TransferBufferManager::Initialize() {
   return true;
 }
 
-int32 TransferBufferManager::CreateTransferBuffer(
-    size_t size, int32 id_request) {
-  SharedMemory buffer;
-  if (!buffer.CreateAnonymous(size))
-    return -1;
-
-  return RegisterTransferBuffer(&buffer, size, id_request);
-}
-
-int32 TransferBufferManager::RegisterTransferBuffer(
-    base::SharedMemory* shared_memory, size_t size, int32 id_request) {
-  // Check we haven't exceeded the range that fits in a 32-bit integer.
-  if (unused_registered_object_elements_.empty()) {
-    if (registered_objects_.size() > std::numeric_limits<uint32>::max())
-      return -1;
+bool TransferBufferManager::RegisterTransferBuffer(
+    int32 id,
+    scoped_ptr<BufferBacking> buffer_backing) {
+  if (id <= 0) {
+    DVLOG(0) << "Cannot register transfer buffer with non-positive ID.";
+    return false;
   }
 
-  // Check that the requested ID is sane (not too large, or less than -1)
-  if (id_request != -1 && (id_request > 100 || id_request < -1))
-    return -1;
-
-  // Duplicate the handle.
-  base::SharedMemoryHandle duped_shared_memory_handle;
-  if (!shared_memory->ShareToProcess(base::GetCurrentProcessHandle(),
-                                     &duped_shared_memory_handle)) {
-    return -1;
+  // Fail if the ID is in use.
+  if (registered_buffers_.find(id) != registered_buffers_.end()) {
+    DVLOG(0) << "Buffer ID already in use.";
+    return false;
   }
-  scoped_ptr<SharedMemory> duped_shared_memory(
-      new SharedMemory(duped_shared_memory_handle, false));
 
-  // Map the shared memory into this process. This validates the size.
-  if (!duped_shared_memory->Map(size))
-    return -1;
+  // Register the shared memory with the ID.
+  scoped_refptr<Buffer> buffer(new gpu::Buffer(buffer_backing.Pass()));
 
-  // If it could be mapped, allocate an ID and register the shared memory with
-  // that ID.
-  Buffer buffer;
-  buffer.ptr = duped_shared_memory->memory();
-  buffer.size = size;
-  buffer.shared_memory = duped_shared_memory.release();
+  // Check buffer alignment is sane.
+  DCHECK(!(reinterpret_cast<uintptr_t>(buffer->memory()) &
+           (kCommandBufferEntrySize - 1)));
 
-  shared_memory_bytes_allocated_ += size;
+  shared_memory_bytes_allocated_ += buffer->size();
   TRACE_COUNTER_ID1(
       "gpu", "GpuTransferBufferMemory", this, shared_memory_bytes_allocated_);
 
-  // If caller requested specific id, first try to use id_request.
-  if (id_request != -1) {
-    int32 cur_size = static_cast<int32>(registered_objects_.size());
-    if (cur_size <= id_request) {
-      // Pad registered_objects_ to reach id_request.
-      registered_objects_.resize(static_cast<size_t>(id_request + 1));
-      for (int32 id = cur_size; id < id_request; ++id)
-        unused_registered_object_elements_.insert(id);
-      registered_objects_[id_request] = buffer;
-      return id_request;
-    } else if (!registered_objects_[id_request].shared_memory) {
-      // id_request is already in free list.
-      registered_objects_[id_request] = buffer;
-      unused_registered_object_elements_.erase(id_request);
-      return id_request;
-    }
-  }
+  registered_buffers_[id] = buffer;
 
-  if (unused_registered_object_elements_.empty()) {
-    int32 handle = static_cast<int32>(registered_objects_.size());
-    registered_objects_.push_back(buffer);
-    return handle;
-  } else {
-    int32 handle = *unused_registered_object_elements_.begin();
-    unused_registered_object_elements_.erase(
-        unused_registered_object_elements_.begin());
-    DCHECK(!registered_objects_[handle].shared_memory);
-    registered_objects_[handle] = buffer;
-    return handle;
-  }
+  return true;
 }
 
-void TransferBufferManager::DestroyTransferBuffer(int32 handle) {
-  if (handle <= 0)
+void TransferBufferManager::DestroyTransferBuffer(int32 id) {
+  BufferMap::iterator it = registered_buffers_.find(id);
+  if (it == registered_buffers_.end()) {
+    DVLOG(0) << "Transfer buffer ID was not registered.";
     return;
+  }
 
-  if (static_cast<size_t>(handle) >= registered_objects_.size())
-    return;
-
-  DCHECK(shared_memory_bytes_allocated_ >= registered_objects_[handle].size);
-  shared_memory_bytes_allocated_ -= registered_objects_[handle].size;
+  DCHECK(shared_memory_bytes_allocated_ >= it->second->size());
+  shared_memory_bytes_allocated_ -= it->second->size();
   TRACE_COUNTER_ID1(
-      "CommandBuffer", "SharedMemory", this, shared_memory_bytes_allocated_);
+      "gpu", "GpuTransferBufferMemory", this, shared_memory_bytes_allocated_);
 
-  delete registered_objects_[handle].shared_memory;
-  registered_objects_[handle] = Buffer();
-  unused_registered_object_elements_.insert(handle);
-
-  // Remove all null objects from the end of the vector. This allows the vector
-  // to shrink when, for example, all objects are unregistered. Note that this
-  // loop never removes element zero, which is always NULL.
-  while (registered_objects_.size() > 1 &&
-      !registered_objects_.back().shared_memory) {
-    registered_objects_.pop_back();
-    unused_registered_object_elements_.erase(
-        static_cast<int32>(registered_objects_.size()));
-  }
+  registered_buffers_.erase(it);
 }
 
-Buffer TransferBufferManager::GetTransferBuffer(int32 handle) {
-  if (handle < 0)
-    return Buffer();
+scoped_refptr<Buffer> TransferBufferManager::GetTransferBuffer(int32 id) {
+  if (id == 0)
+    return NULL;
 
-  if (static_cast<size_t>(handle) >= registered_objects_.size())
-    return Buffer();
+  BufferMap::iterator it = registered_buffers_.find(id);
+  if (it == registered_buffers_.end())
+    return NULL;
 
-  return registered_objects_[handle];
+  return it->second;
 }
 
 }  // namespace gpu

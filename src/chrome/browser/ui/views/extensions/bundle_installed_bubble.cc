@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 #include "base/i18n/rtl.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/bundle_installer.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
-#include "chrome/browser/ui/views/toolbar_view.h"
+#include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -32,16 +32,13 @@ const int kColumnSetId = 0;
 // The width of the left column.
 const int kLeftColumnWidth = 325;
 
-// Heading font size correction.
-const int kHeadingFontSizeDelta = 1;
-
 class BundleInstalledBubble : public views::BubbleDelegateView,
                               public views::ButtonListener {
  public:
   BundleInstalledBubble(const BundleInstaller* bundle,
                         View* anchor_view,
-                        views::BubbleBorder::ArrowLocation arrow_location)
-      : views::BubbleDelegateView(anchor_view, arrow_location) {
+                        views::BubbleBorder::Arrow arrow)
+      : views::BubbleDelegateView(anchor_view, arrow) {
     GridLayout* layout = GridLayout::CreatePanel(this);
     SetLayoutManager(layout);
     views::ColumnSet* column_set = layout->AddColumnSet(kColumnSetId);
@@ -69,9 +66,9 @@ class BundleInstalledBubble : public views::BubbleDelegateView,
 
  private:
   void AddContent(GridLayout* layout, const BundleInstaller* bundle) {
-    string16 installed_heading = bundle->GetHeadingTextFor(
+    base::string16 installed_heading = bundle->GetHeadingTextFor(
         BundleInstaller::Item::STATE_INSTALLED);
-    string16 failed_heading = bundle->GetHeadingTextFor(
+    base::string16 failed_heading = bundle->GetHeadingTextFor(
         BundleInstaller::Item::STATE_FAILED);
 
     // Insert the list of installed items.
@@ -101,13 +98,13 @@ class BundleInstalledBubble : public views::BubbleDelegateView,
           BundleInstaller::Item::STATE_FAILED));
     }
 
-    views::BubbleDelegateView::CreateBubble(this);
-    StartFade(true);
+    views::BubbleDelegateView::CreateBubble(this)->Show();
   }
 
   void AddItemList(GridLayout* layout, const BundleInstaller::ItemList& items) {
     for (size_t i = 0; i < items.size(); ++i) {
-      string16 extension_name = UTF8ToUTF16(items[i].localized_name);
+      base::string16 extension_name =
+          base::UTF8ToUTF16(items[i].localized_name);
       base::i18n::AdjustStringForLocaleDirection(&extension_name);
       layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
       layout->StartRow(0, kColumnSetId);
@@ -126,20 +123,18 @@ class BundleInstalledBubble : public views::BubbleDelegateView,
 
     views::ImageButton* button = new views::ImageButton(listener);
     button->SetImage(views::CustomButton::STATE_NORMAL,
-                     rb.GetImageSkiaNamed(IDR_CLOSE_BAR));
+                     rb.GetImageSkiaNamed(IDR_CLOSE_2));
     button->SetImage(views::CustomButton::STATE_HOVERED,
-                     rb.GetImageSkiaNamed(IDR_CLOSE_BAR_H));
+                     rb.GetImageSkiaNamed(IDR_CLOSE_2_H));
     button->SetImage(views::CustomButton::STATE_PRESSED,
-                     rb.GetImageSkiaNamed(IDR_CLOSE_BAR_P));
+                     rb.GetImageSkiaNamed(IDR_CLOSE_2_P));
     layout->AddView(button);
   }
 
-  void AddHeading(GridLayout* layout, const string16& heading) {
+  void AddHeading(GridLayout* layout, const base::string16& heading) {
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-    gfx::Font bold_font = rb.GetFont(ui::ResourceBundle::BaseFont).DeriveFont(
-        kHeadingFontSizeDelta, gfx::Font::BOLD);
-
-    views::Label* heading_label = new views::Label(heading, bold_font);
+    views::Label* heading_label = new views::Label(
+        heading, rb.GetFontList(ui::ResourceBundle::MediumFont));
     heading_label->SetMultiLine(true);
     heading_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
     heading_label->SizeToFit(kLeftColumnWidth);
@@ -149,7 +144,7 @@ class BundleInstalledBubble : public views::BubbleDelegateView,
   // views::ButtonListener implementation:
   virtual void ButtonPressed(views::Button* sender,
                              const ui::Event& event) OVERRIDE {
-    StartFade(false);
+    GetWidget()->Close();
   }
 
   DISALLOW_COPY_AND_ASSIGN(BundleInstalledBubble);

@@ -18,33 +18,60 @@
     <?define Manufacturer = "The Chromium Authors" ?>
   <?endif?>
 
+  <?if $(var.OfficialBuild) != 0 ?>
+    <?define ChromotingKeyPath = "Google\Chrome Remote Desktop" ?>
+  <?else?>
+    <?define ChromotingKeyPath = "Chromoting" ?>
+  <?endif?>
+
   <?define FirewallName = "$(var.ChromotingHost)" ?>
 
   <?define OmahaAppid = "{b210701e-ffc4-49e3-932b-370728c72662}" ?>
   <?define UpgradeCode = "2b21f767-e157-4fa6-963c-55834c1433a6" ?>
 
+  <?define CoreBinary = "remoting_core.dll" ?>
+  <?define HostBinary = "remoting_host.exe" ?>
+
+  <?define ChromotingTypelib = "{b6396c45-b0cc-456b-9f49-f12964ee6df4}" ?>
+
+  <!-- AppIDs used by the COM components. -->
   <?define ControllerAppid = "{4ff35d5e-d226-4550-9248-03e7779e67de}" ?>
-  <?define ControllerBinary = "remoting_controller.exe" ?>
+  <?define RdpAppid = "{52e6fd1a-f16e-49c0-aacb-5436a915448b}" ?>
+
   <?define ControllerClass = "ElevatedController Class" ?>
   <?define ControllerProgid =
-    "ChromotingElevatedController.ElevatedController" ?>
-  <?define ControllerTypelib = "{9d9a5a2c-576e-4acd-9c75-aabff74b205d}" ?>
+      "ChromotingElevatedController.ElevatedController" ?>
+
+  <?define IRdpDesktopSessionId = "{6a7699f0-ee43-43e7-aa30-a6738f9bd470}" ?>
+  <?define IRdpDesktopSessionEventHandlerId =
+      "{b59b96da-83cb-40ee-9b91-c377400fc3e3}" ?>
 
   <!--
-    The long hex value below is a security descriptor that allows SYSTEM,
-    built-in administrators and interactive users to call methods of a COM
-    object (COM_RIGHTS_EXECUTE and COM_RIGHTS_EXECUTE_LOCAL). The security
-    descriptor was generated from SDDL definition using the PowerShell script
-    below:
+    The long hex value(s) below are security descriptors generated from SDDL
+    definition using the PowerShell script below:
 
-      $sddl = "O:BAG:BAD:(A;;0x3;;;IU)(A;;0x3;;;SY)(A;;0x3;;;BA)"
-      $i = ([wmiclass]"Win32_SecurityDescriptorHelper").SDDLToBinarySD($sddl).BinarySD
-      -join ($i | foreach {$_.ToString("X2")})
+    $sddl = "<SDDL definition goes here>"
+    $i = ([wmiclass]"Win32_SecurityDescriptorHelper").SDDLToBinarySD($sddl).BinarySD
+    -join ($i | foreach {$_.ToString("X2")})
   -->
-  <?define ControllerSd = "010004805C0000006C00000000000000140000000200480003000000000014000300000001010000000000050400000000001400030000000101000000000005120000000000180003000000010200000000000520000000200200000102000000000005200000002002000001020000000000052000000020020000" ?>
 
+  <!--
+    A security descriptor that gives SYSTEM, built-in administrators and
+    LocalService accounts COM_RIGHTS_EXECUTE, COM_RIGHTS_EXECUTE_LOCAL, and
+    COM_RIGHTS_ACTIVATE_LOCAL rights. It specifies a mandatory label that
+    specifies "no execute up" policy for medium integrity level.
+
+    $sddl = "O:BAG:BAD:(A;;0xb;;;SY)(A;;0xb;;;BA)(A;;0xb;;;LS)S:(ML;;NX;;;ME)"
+  -->
+  <?define RdpSd = "010014807800000088000000140000003000000002001C000100000011001400040000000101000000000010002000000200480003000000000014000B000000010100000000000512000000000018000B00000001020000000000052000000020020000000014000B0000000101000000000005130000000102000000000005200000002002000001020000000000052000000020020000" ?>
+
+  <!-- Verify that all required parameters are defined. -->
   <?ifndef ControllerClsid ?>
     <?error ControllerClsid must be defined ?>
+  <?endif?>
+
+  <?ifndef RdpDesktopSessionClsid ?>
+    <?error RdpDesktopSessionClsid must be defined ?>
   <?endif?>
 
   <?ifndef Version ?>
@@ -64,6 +91,9 @@
              InstallerVersion="200"
              Manufacturer="$(var.Manufacturer)"
              InstallScope="perMachine"/>
+
+    <PropertyRef Id="WIX_ACCOUNT_LOCALSYSTEM" />
+    <PropertyRef Id="WIX_ACCOUNT_ADMINISTRATORS" />
 
     <Condition
       Message="$(var.ChromotingHost) is only supported on Windows XP, Windows Server 2003, or higher.">
@@ -136,21 +166,75 @@
               Vital="yes"/>
       </Component>
 
-      <?if $(var.RemotingMultiProcess) != 0 ?>
-        <Component Id="remoting_desktop" Guid="*">
-          <File Id="remoting_desktop.exe"
-                DiskId="1"
-                KeyPath="yes"
-                Name="remoting_desktop.exe"
-                Vital="yes"/>
-        </Component>
-      <?endif?>
-
-      <Component Id="remoting_daemon" Guid="*">
-        <File Id="remoting_daemon.exe"
+      <Component Id="remoting_core" Guid="*">
+        <File Id="$(var.CoreBinary)"
               DiskId="1"
               KeyPath="yes"
-              Name="remoting_daemon.exe"
+              Name="$(var.CoreBinary)"
+              Vital="yes"/>
+
+        <util:EventSource xmlns:util="http://schemas.microsoft.com/wix/UtilExtension"
+                          Name="$(var.EventSourceName)"
+                          Log="Application"
+                          CategoryCount="1"
+                          CategoryMessageFile="[#$(var.CoreBinary)]"
+                          EventMessageFile="[#$(var.CoreBinary)]"
+                          SupportsErrors="yes"
+                          SupportsInformationals="yes"/>
+      </Component>
+
+      <Component Id="remoting_desktop" Guid="*">
+        <File Id="remoting_desktop.exe"
+              DiskId="1"
+              KeyPath="yes"
+              Name="remoting_desktop.exe"
+              Vital="yes"/>
+      </Component>
+
+      <Component Id="remoting_native_messaging_host" Guid="*">
+        <File Id="remoting_native_messaging_host.exe"
+              DiskId="1"
+              KeyPath="yes"
+              Name="remoting_native_messaging_host.exe"
+              Vital="yes"/>
+      </Component>
+
+      <Component Id="remote_assistance_host" Guid="*">
+        <File Id="remote_assistance_host.exe"
+              DiskId="1"
+              KeyPath="yes"
+              Name="remote_assistance_host.exe"
+              Vital="yes"/>
+      </Component>
+
+      <Component Id="native_messaging_host_manifest" Guid="*">
+        <File Id="com.google.chrome.remote_desktop.json"
+              DiskId="1"
+              KeyPath="yes"
+              Name="com.google.chrome.remote_desktop.json"
+              Vital="yes"/>
+      </Component>
+
+      <Component Id="remote_assistance_host_manifest" Guid="*">
+        <File Id="com.google.chrome.remote_assistance.json"
+              DiskId="1"
+              KeyPath="yes"
+              Name="com.google.chrome.remote_assistance.json"
+              Vital="yes"/>
+      </Component>
+
+      <Component Id="icudtl" Guid="*">
+        <File Id="icudtl.dat"
+              DiskId="1"
+              KeyPath="yes"
+              Name="icudtl.dat"
+              Vital="yes"/>
+      </Component>
+
+      <Component Id="remoting_host" Guid="*">
+        <File Id="remoting_host.exe"
+              DiskId="1"
+              Name="remoting_host.exe"
               Vital="yes"/>
 
         <ServiceInstall Id="install_service"
@@ -159,32 +243,28 @@
                         Name="$(var.ServiceName)"
                         DisplayName="[chromoting_service_display_name]"
                         Description="[chromoting_service_description]"
-                        Arguments="--host-config=&quot;[config_files]host.json&quot;"
+                        Arguments="--type=daemon --host-config=&quot;[config_files]host.json&quot;"
                         Start="demand"
                         Account="LocalSystem"
                         ErrorControl="ignore"
-                        Interactive="no" />
+                        Interactive="no">
+          <!-- Configure the service to restart after one minute when it
+               crashes.
+          -->
+          <util:ServiceConfig
+              xmlns:util="http://schemas.microsoft.com/wix/UtilExtension"
+              FirstFailureActionType="restart"
+              ResetPeriodInDays="1"
+              RestartServiceDelayInSeconds="60"
+              SecondFailureActionType="restart"
+              ThirdFailureActionType="restart"/>
+        </ServiceInstall>
 
         <ServiceControl Id="start_service"
                         Stop="both"
                         Remove="uninstall"
                         Name="$(var.ServiceName)"
                         Wait="yes" />
-      </Component>
-
-      <Component Id="remoting_host" Guid="*">
-        <File Id="remoting_host.exe"
-              DiskId="1"
-              Name="remoting_host.exe"
-              Vital="yes"/>
-        <util:EventSource xmlns:util="http://schemas.microsoft.com/wix/UtilExtension"
-                          Name="$(var.EventSourceName)"
-                          Log="Application"
-                          CategoryCount="1"
-                          CategoryMessageFile="[#remoting_host.exe]"
-                          EventMessageFile="[#remoting_host.exe]"
-                          SupportsErrors="yes"
-                          SupportsInformationals="yes"/>
 
         <fire:FirewallException xmlns:fire="http://schemas.microsoft.com/wix/FirewallExtension"
                                 Id="me2me_firewall_exception"
@@ -212,28 +292,29 @@
         </Component>
       <?endif?>
 
-      <Component Id="remoting_controller" Guid="*">
-        <File Id="$(var.ControllerBinary)"
-              DiskId="1"
-              Name="$(var.ControllerBinary)"
-              Vital="yes"/>
-
+      <Component Id="remoting_lib" Guid="*">
         <RegistryKey Root="HKLM"
                      Key="SOFTWARE\Classes">
           <RegistryKey Key="AppId">
             <RegistryKey Key="$(var.ControllerAppid)" Action="create">
               <RegistryValue Type="string"
                              Value="ChromotingElevatedController"/>
-              <RegistryValue Name="AccessPermission"
-                             Type="binary"
-                             Value="$(var.ControllerSd)"/>
             </RegistryKey>
 
-            <RegistryKey Key="$(var.ControllerBinary)" Action="create">
+            <RegistryKey Key="$(var.RdpAppid)" Action="create">
               <RegistryValue Type="string"
-                             Name="AppID"
-                             Value="$(var.ControllerAppid)"/>
+                             Value="ChromotingRdpDesktopSession"/>
+              <RegistryValue Name="AccessPermission"
+                             Type="binary"
+                             Value="$(var.RdpSd)"/>
+              <RegistryValue Name="LaunchPermission"
+                             Type="binary"
+                             Value="$(var.RdpSd)"/>
+              <RegistryValue Name="RunAs"
+                             Type="string"
+                             Value="NT AUTHORITY\LocalService"/>
             </RegistryKey>
+
           </RegistryKey>
 
           <RegistryKey Key="$(var.ControllerProgid)" Action="create">
@@ -273,11 +354,11 @@
 
               <RegistryValue Type="string"
                              Name="LocalizedString"
-                             Value="@[#$(var.ControllerBinary)],-100"/>
+                             Value="@[binaries]$(var.CoreBinary),-103"/>
 
               <RegistryKey Key="LocalServer32" Action="create">
                 <RegistryValue Type="string"
-                               Value="[#$(var.ControllerBinary)]"/>
+                               Value="[binaries]$(var.HostBinary) --type=controller"/>
               </RegistryKey>
 
               <RegistryKey Key="ProgID" Action="create">
@@ -287,7 +368,7 @@
 
               <RegistryKey Key="TypeLib" Action="create">
                 <RegistryValue Type="string"
-                               Value="$(var.ControllerTypelib)"/>
+                               Value="$(var.ChromotingTypelib)"/>
               </RegistryKey>
 
               <RegistryKey Key="VersionIndependentProgID" Action="create">
@@ -301,12 +382,55 @@
                                Value="1"/>
                 <RegistryValue Type="string"
                                Name="IconReference"
-                               Value="@[#$(var.ControllerBinary)],-101"/>
+                               Value="@[binaries]$(var.CoreBinary),-104"/>
+              </RegistryKey>
+            </RegistryKey>
+            <RegistryKey Key="$(var.RdpDesktopSessionClsid)" Action="create">
+              <RegistryValue Type="string"
+                             Value="RdpDesktopSession Class"/>
+
+              <RegistryValue Type="string"
+                             Name="AppID"
+                             Value="$(var.RdpAppid)"/>
+
+              <RegistryKey Key="LocalServer32" Action="create">
+                <RegistryValue Type="string"
+                               Value="[binaries]$(var.HostBinary) --type=rdp_desktop_session"/>
+              </RegistryKey>
+
+              <RegistryKey Key="TypeLib" Action="create">
+                <RegistryValue Type="string"
+                               Value="$(var.ChromotingTypelib)"/>
+              </RegistryKey>
+            </RegistryKey>
+
+            <!-- IRdpDesktopSession PSFactory -->
+            <RegistryKey Key="$(var.IRdpDesktopSessionId)"
+                         Action="create">
+              <RegistryValue Type="string"
+                             Value="IRdpDesktopSession PSFactory"/>
+
+              <RegistryKey Key="InprocServer32" Action="create">
+                <RegistryValue Type="string"
+                               Value="[binaries]$(var.CoreBinary)"/>
+              </RegistryKey>
+            </RegistryKey>
+
+            <!-- IRdpDesktopSessionEventHandler PSFactory -->
+            <RegistryKey Key="$(var.IRdpDesktopSessionEventHandlerId)"
+                         Action="create">
+              <RegistryValue Type="string"
+                             Value="IRdpDesktopSessionEventHandler PSFactory"/>
+
+              <RegistryKey Key="InprocServer32" Action="create">
+                <RegistryValue Type="string"
+                               Value="[binaries]$(var.CoreBinary)"/>
               </RegistryKey>
             </RegistryKey>
           </RegistryKey>
 
           <RegistryKey Key="Interface">
+            <!-- IDaemonControl2 interface -->
             <RegistryKey Key="{655bd819-c08c-4b04-80c2-f160739ff6ef}"
                          Action="create">
               <RegistryKey Key="ProxyStubClsid32" Action="create">
@@ -316,10 +440,11 @@
 
               <RegistryKey Key="TypeLib" Action="create">
                 <RegistryValue Type="string"
-                               Value="$(var.ControllerTypelib)"/>
+                               Value="$(var.ChromotingTypelib)"/>
               </RegistryKey>
             </RegistryKey>
 
+            <!-- IDaemonControl interface -->
             <RegistryKey Key="{e051a481-6345-4ba1-bdb1-cf7929955268}"
                          Action="create">
               <RegistryKey Key="ProxyStubClsid32" Action="create">
@@ -329,18 +454,47 @@
 
               <RegistryKey Key="TypeLib" Action="create">
                 <RegistryValue Type="string"
-                               Value="$(var.ControllerTypelib)"/>
+                               Value="$(var.ChromotingTypelib)"/>
+              </RegistryKey>
+            </RegistryKey>
+
+            <!-- IRdpDesktopSession interface -->
+            <RegistryKey Key="$(var.IRdpDesktopSessionId)"
+                         Action="create">
+              <RegistryValue Type="string"
+                             Value="IRdpDesktopSession"/>
+              <RegistryKey Key="ProxyStubClsid32" Action="create">
+                <RegistryValue Type="string"
+                               Value="$(var.IRdpDesktopSessionId)"/>
+              </RegistryKey>
+            </RegistryKey>
+
+            <!-- IRdpDesktopSessionEventHandler interface -->
+            <RegistryKey Key="$(var.IRdpDesktopSessionEventHandlerId)"
+                         Action="create">
+              <RegistryValue Type="string"
+                             Value="IRdpDesktopSessionEventHandler"/>
+              <RegistryKey Key="ProxyStubClsid32" Action="create">
+                <RegistryValue Type="string"
+                               Value="$(var.IRdpDesktopSessionEventHandlerId)"/>
+              </RegistryKey>
+
+              <RegistryKey Key="TypeLib" Action="create">
+                <RegistryValue Type="string"
+                               Value="$(var.ChromotingTypelib)"/>
               </RegistryKey>
             </RegistryKey>
           </RegistryKey>
 
           <RegistryKey Key="Typelib">
-            <RegistryKey Key="$(var.ControllerTypelib)" Action="create">
-              <RegistryKey Key="1.1" Action="create">
+            <RegistryKey Key="$(var.ChromotingTypelib)" Action="create">
+              <RegistryKey Key="1.0" Action="create">
+                <RegistryValue Type="string"
+                               Value="Chromoting 1.0 Type Library"/>
                 <RegistryKey Key="0" Action="create">
                   <RegistryKey Key="win32" Action="create">
                     <RegistryValue Type="string"
-                                   Value="[#$(var.ControllerBinary)]"/>
+                                   Value="[binaries]$(var.CoreBinary)"/>
                   </RegistryKey>
                 </RegistryKey>
 
@@ -358,6 +512,59 @@
           </RegistryKey>
         </RegistryKey>
 
+      </Component>
+
+      <!-- Creates the pairing registry store and protect it with an ACL. -->
+      <Component Id="remoting_pairing_registry" Guid="960bc7eb-a816-428b-90e8-ad13336955d5">
+        <RegistryKey Root="HKLM"
+                     Key="SOFTWARE\$(var.ChromotingKeyPath)\paired-clients"
+                     Action="create">
+          <RegistryKey Key="clients" Action="create"/>
+          <RegistryKey Key="secrets" Action="create">
+            <!-- Gives full access to SYSTEM only. -->
+            <!-- Cannot use the builtin PermissionEx element because it maps
+                 to the MsiLockPermissionsEx table which is not supported on
+                 Windows Installer version 4.5 or lower. Also Cannot use
+                 PermissionEx in WixUtilExtension because it automatically
+                 inherits all the ACLs from the parent. -->
+            <Permission User="[WIX_ACCOUNT_LOCALSYSTEM]"
+                        GenericAll="yes"
+                        ChangePermission="yes"
+                        TakeOwnership="yes"/>
+            <Permission User="[WIX_ACCOUNT_ADMINISTRATORS]"
+                        GenericAll="yes"
+                        ChangePermission="yes"
+                        TakeOwnership="yes"/>
+          </RegistryKey>
+        </RegistryKey>
+        <CreateFolder/>
+      </Component>
+
+      <Component Id="native_messaging_host_registry" Guid="*">
+        <RegistryKey Root="HKLM"
+                     Key="SOFTWARE\Google\chrome\NativeMessagingHosts"
+                     Action="create">
+          <RegistryKey Key="com.google.chrome.remote_desktop" Action="create">
+            <RegistryValue
+                Type="string"
+                Value="[binaries]com.google.chrome.remote_desktop.json"/>
+          </RegistryKey>
+        </RegistryKey>
+        <CreateFolder/>
+      </Component>
+
+      <Component Id="remote_assistance_host_registry" Guid="*">
+        <RegistryKey Root="HKLM"
+                     Key="SOFTWARE\Google\chrome\NativeMessagingHosts"
+                     Action="create">
+          <RegistryKey Key="com.google.chrome.remote_assistance"
+                       Action="create">
+            <RegistryValue
+                Type="string"
+                Value="[binaries]com.google.chrome.remote_assistance.json"/>
+          </RegistryKey>
+        </RegistryKey>
+        <CreateFolder/>
       </Component>
 
       <!-- Register with Sawbuck. See http://code.google.com/p/sawbuck/. -->
@@ -437,10 +644,10 @@
 
     <CustomAction Id="set_service_display_name"
                   Property="chromoting_service_display_name"
-                  Value="@[binaries]remoting_daemon.exe,-101" />
+                  Value="@[binaries]$(var.CoreBinary),-101" />
     <CustomAction Id="set_service_description"
                   Property="chromoting_service_description"
-                  Value="@[binaries]remoting_daemon.exe,-102" />
+                  Value="@[binaries]$(var.CoreBinary),-102" />
 
     <!-- XP does not support MUI strings in the service name and description, so
          we fall back to plain strings on XP. -->
@@ -459,12 +666,18 @@
       <?if $(var.OfficialBuild) != 0 ?>
         <ComponentRef Id="omaha_registration"/>
       <?endif?>
-      <ComponentRef Id="remoting_controller"/>
-      <ComponentRef Id="remoting_daemon"/>
-      <?if $(var.RemotingMultiProcess) != 0 ?>
-        <ComponentRef Id="remoting_desktop"/>
-      <?endif?>
+      <ComponentRef Id="icudtl"/>
+      <ComponentRef Id="native_messaging_host_manifest"/>
+      <ComponentRef Id="native_messaging_host_registry"/>
+      <ComponentRef Id="remote_assistance_host"/>
+      <ComponentRef Id="remote_assistance_host_manifest"/>
+      <ComponentRef Id="remote_assistance_host_registry"/>
+      <ComponentRef Id="remoting_native_messaging_host"/>
+      <ComponentRef Id="remoting_core"/>
+      <ComponentRef Id="remoting_desktop"/>
       <ComponentRef Id="remoting_host"/>
+      <ComponentRef Id="remoting_lib"/>
+      <ComponentRef Id="remoting_pairing_registry"/>
       <ComponentRef Id="sas"/>
       <ComponentRef Id="sawbuck_provider"/>
     </Feature>

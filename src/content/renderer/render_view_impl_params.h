@@ -7,52 +7,55 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "content/common/view_message_enums.h"
 
-namespace WebKit {
-struct WebScreenInfo;
-}
-
-namespace webkit_glue {
 struct WebPreferences;
+
+namespace blink {
+struct WebScreenInfo;
 }
 
 namespace content {
 
 struct RendererPreferences;
-typedef base::RefCountedData<int> SharedRenderViewCounter;
 
 // Container for all parameters passed to RenderViewImpl's constructor.
 struct CONTENT_EXPORT RenderViewImplParams {
   RenderViewImplParams(int32 opener_id,
+                       bool window_was_created_with_opener,
                        const RendererPreferences& renderer_prefs,
-                       const webkit_glue::WebPreferences& webkit_prefs,
-                       SharedRenderViewCounter* counter,
+                       const WebPreferences& webkit_prefs,
                        int32 routing_id,
+                       int32 main_frame_routing_id,
                        int32 surface_id,
                        int64 session_storage_namespace_id,
-                       const string16& frame_name,
+                       const base::string16& frame_name,
                        bool is_renderer_created,
                        bool swapped_out,
+                       bool hidden,
+                       bool never_visible,
                        int32 next_page_id,
-                       const WebKit::WebScreenInfo& screen_info,
+                       const blink::WebScreenInfo& screen_info,
                        AccessibilityMode accessibility_mode);
   ~RenderViewImplParams();
 
   int32 opener_id;
+  bool window_was_created_with_opener;
   const RendererPreferences& renderer_prefs;
-  const webkit_glue::WebPreferences& webkit_prefs;
-  SharedRenderViewCounter* counter;
+  const WebPreferences& webkit_prefs;
   int32 routing_id;
+  int32 main_frame_routing_id;
   int32 surface_id;
   int64 session_storage_namespace_id;
-  const string16& frame_name;
+  const base::string16& frame_name;
   bool is_renderer_created;
   bool swapped_out;
+  bool hidden;
+  bool never_visible;
   int32 next_page_id;
-  const WebKit::WebScreenInfo& screen_info;
+  const blink::WebScreenInfo& screen_info;
   AccessibilityMode accessibility_mode;
 };
 

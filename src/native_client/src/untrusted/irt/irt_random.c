@@ -6,8 +6,8 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <sys/nacl_name_service.h>
 
+#include "native_client/src/public/name_service.h"
 #include "native_client/src/untrusted/irt/irt.h"
 #include "native_client/src/untrusted/irt/irt_private.h"
 #include "native_client/src/untrusted/nacl/syscall_bindings_trampoline.h"

@@ -5,10 +5,12 @@
 #import <Cocoa/Cocoa.h>
 
 #include "base/file_util.h"
+#include "base/files/scoped_file.h"
 #include "base/logging.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "content/common/sandbox_mac.h"
 #include "content/common/sandbox_mac_unittest_helper.h"
+#include "crypto/nss_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace content {
@@ -20,9 +22,9 @@ class MacSandboxedClipboardTestCase : public MacSandboxTestCase {
   MacSandboxedClipboardTestCase();
   virtual ~MacSandboxedClipboardTestCase();
 
-  virtual bool SandboxedTest();
+  virtual bool SandboxedTest() OVERRIDE;
 
-  virtual void SetTestData(const char* test_data);
+  virtual void SetTestData(const char* test_data) OVERRIDE;
  private:
   NSString* clipboard_name_;
 };
@@ -69,7 +71,7 @@ TEST_F(MacSandboxTest, ClipboardAccess) {
 
   std::string pasteboard_name = base::SysNSStringToUTF8([pb name]);
   EXPECT_TRUE(RunTestInAllSandboxTypes("MacSandboxedClipboardTestCase",
-                  pasteboard_name.c_str()));
+                                       pasteboard_name.c_str()));
 
   // After executing the test, the clipboard should still be empty.
   EXPECT_EQ([[pb types] count], 0U);
@@ -79,15 +81,14 @@ TEST_F(MacSandboxTest, ClipboardAccess) {
 // Test case for checking sandboxing of filesystem apis.
 class MacSandboxedFileAccessTestCase : public MacSandboxTestCase {
  public:
-  virtual bool SandboxedTest();
+  virtual bool SandboxedTest() OVERRIDE;
 };
 
 REGISTER_SANDBOX_TEST_CASE(MacSandboxedFileAccessTestCase);
 
 bool MacSandboxedFileAccessTestCase::SandboxedTest() {
-  int fdes = open("/etc/passwd", O_RDONLY);
-  file_util::ScopedFD file_closer(&fdes);
-  return fdes == -1;
+  base::ScopedFD fdes(HANDLE_EINTR(open("/etc/passwd", O_RDONLY)));
+  return !fdes.is_valid();
 }
 
 TEST_F(MacSandboxTest, FileAccess) {
@@ -95,44 +96,49 @@ TEST_F(MacSandboxTest, FileAccess) {
 }
 
 //--------------------- /dev/urandom Sandboxing ----------------------
-// /dev/urandom is available to ppapi sandbox only.
+// /dev/urandom is available to any sandboxed process.
 class MacSandboxedUrandomTestCase : public MacSandboxTestCase {
  public:
-  virtual bool SandboxedTest();
+  virtual bool SandboxedTest() OVERRIDE;
 };
 
 REGISTER_SANDBOX_TEST_CASE(MacSandboxedUrandomTestCase);
 
 bool MacSandboxedUrandomTestCase::SandboxedTest() {
-  int fdes = open("/dev/urandom", O_RDONLY);
-  file_util::ScopedFD file_closer(&fdes);
+  base::ScopedFD fdes(HANDLE_EINTR(open("/dev/urandom", O_RDONLY)));
 
-  // Open succeeds under ppapi sandbox, else it is not permitted.
-  if (test_data_ == "ppapi") {
-    if (fdes == -1)
-      return false;
+  // Opening /dev/urandom succeeds under the sandbox.
+  if (!fdes.is_valid())
+    return false;
 
-    char buf[16];
-    int rc = read(fdes, buf, sizeof(buf));
-    return rc == sizeof(buf);
-  } else {
-    return fdes == -1 && errno == EPERM;
-  }
+  char buf[16];
+  int rc = HANDLE_EINTR(read(fdes.get(), buf, sizeof(buf)));
+  return rc == sizeof(buf);
 }
 
 TEST_F(MacSandboxTest, UrandomAccess) {
-  // Similar to RunTestInAllSandboxTypes(), except changing
-  // |test_data| for the ppapi case.  Passing "" in the non-ppapi case
-  // to overwrite the test data (NULL means not to change it).
-  for (SandboxType i = SANDBOX_TYPE_FIRST_TYPE;
-       i < SANDBOX_TYPE_AFTER_LAST_TYPE; ++i) {
-    if (i == SANDBOX_TYPE_PPAPI) {
-      EXPECT_TRUE(RunTestInSandbox(i, "MacSandboxedUrandomTestCase", "ppapi"));
-    } else {
-      EXPECT_TRUE(RunTestInSandbox(i, "MacSandboxedUrandomTestCase", ""))
-          << "for sandbox type " << i;
-    }
-  }
+  EXPECT_TRUE(RunTestInAllSandboxTypes("MacSandboxedUrandomTestCase", NULL));
+}
+
+//--------------------- NSS Sandboxing ----------------------
+// Test case for checking sandboxing of NSS initialization.
+class MacSandboxedNSSTestCase : public MacSandboxTestCase {
+ public:
+  virtual bool SandboxedTest() OVERRIDE;
+};
+
+REGISTER_SANDBOX_TEST_CASE(MacSandboxedNSSTestCase);
+
+bool MacSandboxedNSSTestCase::SandboxedTest() {
+  // If NSS cannot read from /dev/urandom, NSS initialization will call abort(),
+  // which will cause this test case to fail.
+  crypto::ForceNSSNoDBInit();
+  crypto::EnsureNSSInit();
+  return true;
+}
+
+TEST_F(MacSandboxTest, NSSAccess) {
+  EXPECT_TRUE(RunTestInAllSandboxTypes("MacSandboxedNSSTestCase", NULL));
 }
 
 }  // namespace content

@@ -6,7 +6,6 @@
 #define PPAPI_PROXY_PPP_INPUT_EVENT_PROXY_H_
 
 #include "ppapi/c/pp_instance.h"
-#include "ppapi/c/pp_time.h"
 #include "ppapi/c/ppp_input_event.h"
 #include "ppapi/proxy/interface_proxy.h"
 
@@ -21,7 +20,7 @@ class PPP_InputEvent_Proxy : public InterfaceProxy {
   PPP_InputEvent_Proxy(Dispatcher* dispatcher);
   virtual ~PPP_InputEvent_Proxy();
 
-  static const Info* GetInfo();
+  static const PPP_InputEvent* GetProxyInterface();
 
   // InterfaceProxy implementation.
   virtual bool OnMessageReceived(const IPC::Message& msg);
@@ -33,8 +32,6 @@ class PPP_InputEvent_Proxy : public InterfaceProxy {
   void OnMsgHandleFilteredInputEvent(PP_Instance instance,
                                      const ppapi::InputEventData& data,
                                      PP_Bool* result);
-
-  void HandleInputEventAck(PP_Instance instance, PP_TimeTicks timestamp);
 
   // When this proxy is in the plugin side, this value caches the interface
   // pointer so we don't have to retrieve it from the dispatcher each time.

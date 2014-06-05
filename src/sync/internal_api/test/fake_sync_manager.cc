@@ -30,7 +30,8 @@ FakeSyncManager::FakeSyncManager(ModelTypeSet initial_sync_ended_types,
                                  ModelTypeSet configure_fail_types) :
     initial_sync_ended_types_(initial_sync_ended_types),
     progress_marker_types_(progress_marker_types),
-    configure_fail_types_(configure_fail_types) {
+    configure_fail_types_(configure_fail_types),
+    last_configure_reason_(CONFIGURE_REASON_UNKNOWN) {
   fake_encryption_handler_.reset(new FakeSyncEncryptionHandler());
 }
 
@@ -54,24 +55,10 @@ ModelTypeSet FakeSyncManager::GetAndResetEnabledTypes() {
   return enabled_types;
 }
 
-void FakeSyncManager::Invalidate(
-    const ObjectIdInvalidationMap& invalidation_map,
-    IncomingInvalidationSource source) {
-  if (!sync_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&FakeSyncManager::InvalidateOnSyncThread,
-                 base::Unretained(this), invalidation_map, source))) {
-    NOTREACHED();
-  }
-}
-
-void FakeSyncManager::UpdateInvalidatorState(InvalidatorState state) {
-  if (!sync_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&FakeSyncManager::UpdateInvalidatorStateOnSyncThread,
-                 base::Unretained(this), state))) {
-    NOTREACHED();
-  }
+ConfigureReason FakeSyncManager::GetAndResetConfigureReason() {
+  ConfigureReason reason = last_configure_reason_;
+  last_configure_reason_ = CONFIGURE_REASON_UNKNOWN;
+  return reason;
 }
 
 void FakeSyncManager::WaitForSyncThread() {
@@ -87,24 +74,24 @@ void FakeSyncManager::WaitForSyncThread() {
 }
 
 void FakeSyncManager::Init(
-    const FilePath& database_location,
+    const base::FilePath& database_location,
     const WeakHandle<JsEventHandler>& event_handler,
     const std::string& sync_server_and_path,
     int sync_server_port,
     bool use_ssl,
     scoped_ptr<HttpPostProviderFactory> post_factory,
-    const std::vector<ModelSafeWorker*>& workers,
-    ExtensionsActivityMonitor* extensions_activity_monitor,
+    const std::vector<scoped_refptr<ModelSafeWorker> >& workers,
+    ExtensionsActivity* extensions_activity,
     ChangeDelegate* change_delegate,
     const SyncCredentials& credentials,
-    scoped_ptr<Invalidator> invalidator,
+    const std::string& invalidator_client_id,
     const std::string& restored_key_for_bootstrapping,
     const std::string& restored_keystore_key_for_bootstrapping,
-    scoped_ptr<InternalComponentsFactory> internal_components_factory,
+    InternalComponentsFactory* internal_components_factory,
     Encryptor* encryptor,
-    UnrecoverableErrorHandler* unrecoverable_error_handler,
-    ReportUnrecoverableErrorFunction
-        report_unrecoverable_error_function) {
+    scoped_ptr<UnrecoverableErrorHandler> unrecoverable_error_handler,
+    ReportUnrecoverableErrorFunction report_unrecoverable_error_function,
+    CancelationSignal* cancelation_signal) {
   sync_task_runner_ = base::ThreadTaskRunnerHandle::Get();
   PurgePartiallySyncedTypes();
 
@@ -153,26 +140,6 @@ void FakeSyncManager::UpdateCredentials(const SyncCredentials& credentials) {
   NOTIMPLEMENTED();
 }
 
-void FakeSyncManager::UpdateEnabledTypes(ModelTypeSet types) {
-  enabled_types_ = types;
-}
-
-void FakeSyncManager::RegisterInvalidationHandler(
-    InvalidationHandler* handler) {
-  registrar_.RegisterHandler(handler);
-}
-
-void FakeSyncManager::UpdateRegisteredInvalidationIds(
-    InvalidationHandler* handler,
-    const ObjectIdSet& ids) {
-  registrar_.UpdateRegisteredIds(handler, ids);
-}
-
-void FakeSyncManager::UnregisterInvalidationHandler(
-    InvalidationHandler* handler) {
-  registrar_.UnregisterHandler(handler);
-}
-
 void FakeSyncManager::StartSyncingNormally(
       const ModelSafeRoutingInfo& routing_info) {
   // Do nothing.
@@ -180,23 +147,27 @@ void FakeSyncManager::StartSyncingNormally(
 
 void FakeSyncManager::ConfigureSyncer(
     ConfigureReason reason,
-    ModelTypeSet types_to_config,
+    ModelTypeSet to_download,
+    ModelTypeSet to_purge,
+    ModelTypeSet to_journal,
+    ModelTypeSet to_unapply,
     const ModelSafeRoutingInfo& new_routing_info,
     const base::Closure& ready_task,
     const base::Closure& retry_task) {
-  ModelTypeSet enabled_types = GetRoutingInfoTypes(new_routing_info);
-  ModelTypeSet disabled_types = Difference(
-      ModelTypeSet::All(), enabled_types);
-  ModelTypeSet success_types = types_to_config;
+  last_configure_reason_ = reason;
+  enabled_types_ = GetRoutingInfoTypes(new_routing_info);
+  ModelTypeSet success_types = to_download;
   success_types.RemoveAll(configure_fail_types_);
 
   DVLOG(1) << "Faking configuration. Downloading: "
            << ModelTypeSetToString(success_types) << ". Cleaning: "
-           << ModelTypeSetToString(disabled_types);
+           << ModelTypeSetToString(to_purge);
 
   // Update our fake directory by clearing and fake-downloading as necessary.
   UserShare* share = GetUserShare();
-  share->directory->PurgeEntriesWithTypeIn(disabled_types);
+  share->directory->PurgeEntriesWithTypeIn(to_purge,
+                                           to_journal,
+                                           to_unapply);
   for (ModelTypeSet::Iterator it = success_types.First(); it.Good(); it.Inc()) {
     // We must be careful to not create the same root node twice.
     if (!initial_sync_ended_types_.Has(it.Get())) {
@@ -208,9 +179,9 @@ void FakeSyncManager::ConfigureSyncer(
   // TODO(sync): consider only cleaning those types that were recently disabled,
   // if this isn't the first cleanup, which more accurately reflects the
   // behavior of the real cleanup logic.
-  initial_sync_ended_types_.RemoveAll(disabled_types);
-  progress_marker_types_.RemoveAll(disabled_types);
-  cleaned_types_.PutAll(disabled_types);
+  initial_sync_ended_types_.RemoveAll(to_purge);
+  progress_marker_types_.RemoveAll(to_purge);
+  cleaned_types_.PutAll(to_purge);
 
   // Now simulate the actual configuration for those types that successfully
   // download + apply.
@@ -238,12 +209,6 @@ void FakeSyncManager::SaveChanges() {
   // Do nothing.
 }
 
-void FakeSyncManager::StopSyncingForShutdown(const base::Closure& callback) {
-  if (!sync_task_runner_->PostTask(FROM_HERE, callback)) {
-    NOTREACHED();
-  }
-}
-
 void FakeSyncManager::ShutdownOnSyncThread() {
   DCHECK(sync_task_runner_->RunsTasksOnCurrentThread());
   test_user_share_.TearDown();
@@ -251,6 +216,10 @@ void FakeSyncManager::ShutdownOnSyncThread() {
 
 UserShare* FakeSyncManager::GetUserShare() {
   return test_user_share_.user_share();
+}
+
+syncer::SyncCoreProxy* FakeSyncManager::GetSyncCoreProxy() {
+  return &null_sync_core_proxy_;
 }
 
 const std::string FakeSyncManager::cache_guid() {
@@ -270,17 +239,46 @@ SyncEncryptionHandler* FakeSyncManager::GetEncryptionHandler() {
   return fake_encryption_handler_.get();
 }
 
-void FakeSyncManager::InvalidateOnSyncThread(
-    const ObjectIdInvalidationMap& invalidation_map,
-    IncomingInvalidationSource source) {
-  DCHECK(sync_task_runner_->RunsTasksOnCurrentThread());
-  registrar_.DispatchInvalidationsToHandlers(invalidation_map, source);
+ScopedVector<syncer::ProtocolEvent>
+FakeSyncManager::GetBufferedProtocolEvents() {
+  return ScopedVector<syncer::ProtocolEvent>();
 }
 
-void FakeSyncManager::UpdateInvalidatorStateOnSyncThread(
-    InvalidatorState state) {
-  DCHECK(sync_task_runner_->RunsTasksOnCurrentThread());
-  registrar_.UpdateInvalidatorState(state);
+scoped_ptr<base::ListValue> FakeSyncManager::GetAllNodesForType(
+    syncer::ModelType type) {
+  return scoped_ptr<base::ListValue>(new base::ListValue());
 }
+
+void FakeSyncManager::RefreshTypes(ModelTypeSet types) {
+  last_refresh_request_types_ = types;
+}
+
+void FakeSyncManager::RegisterDirectoryTypeDebugInfoObserver(
+    syncer::TypeDebugInfoObserver* observer) {}
+
+void FakeSyncManager::UnregisterDirectoryTypeDebugInfoObserver(
+    syncer::TypeDebugInfoObserver* observer) {}
+
+bool FakeSyncManager::HasDirectoryTypeDebugInfoObserver(
+    syncer::TypeDebugInfoObserver* observer) {
+  return false;
+}
+
+void FakeSyncManager::RequestEmitDebugInfo() {}
+
+void FakeSyncManager::OnIncomingInvalidation(
+      const ObjectIdInvalidationMap& invalidation_map) {
+  // Do nothing.
+}
+
+ModelTypeSet FakeSyncManager::GetLastRefreshRequestTypes() {
+  return last_refresh_request_types_;
+}
+
+void FakeSyncManager::OnInvalidatorStateChange(InvalidatorState state) {
+  // Do nothing.
+}
+
+std::string FakeSyncManager::GetOwnerName() const { return "FakeSyncManager"; }
 
 }  // namespace syncer

@@ -6,8 +6,8 @@
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/android/tab_android.h"
 #include "chrome/browser/ui/android/chrome_http_auth_handler.h"
 #include "chrome/browser/ui/login/login_prompt.h"
@@ -28,18 +28,19 @@ class LoginHandlerAndroid : public LoginHandler {
   // LoginHandler methods:
 
   virtual void OnAutofillDataAvailable(
-      const string16& username,
-      const string16& password) OVERRIDE {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+      const base::string16& username,
+      const base::string16& password) OVERRIDE {
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
     DCHECK(chrome_http_auth_handler_.get() != NULL);
     chrome_http_auth_handler_->OnAutofillDataAvailable(
         username, password);
   }
+  virtual void OnLoginModelDestroying() OVERRIDE {}
 
   virtual void BuildViewForPasswordManager(
-      PasswordManager* manager,
-      const string16& explanation) OVERRIDE {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+      password_manager::PasswordManager* manager,
+      const base::string16& explanation) OVERRIDE {
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
     // Get pointer to TabAndroid
     content::WebContents* web_contents = GetWebContentsForLogin();
@@ -54,8 +55,8 @@ class LoginHandlerAndroid : public LoginHandler {
 
       tab_android->OnReceivedHttpAuthRequest(
           chrome_http_auth_handler_.get()->GetJavaObject(),
-          ASCIIToUTF16(auth_info()->challenger.ToString()),
-          UTF8ToUTF16(auth_info()->realm));
+          base::ASCIIToUTF16(auth_info()->challenger.ToString()),
+          base::UTF8ToUTF16(auth_info()->realm));
 
       // Register to receive a callback to OnAutofillDataAvailable().
       SetModel(manager);
@@ -69,6 +70,8 @@ class LoginHandlerAndroid : public LoginHandler {
 
  protected:
   virtual ~LoginHandlerAndroid() {}
+
+  virtual void CloseDialog() OVERRIDE {}
 
  private:
   scoped_ptr<ChromeHttpAuthHandler> chrome_http_auth_handler_;

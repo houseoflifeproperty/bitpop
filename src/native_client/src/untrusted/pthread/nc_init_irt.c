@@ -7,17 +7,11 @@
 #include "native_client/src/untrusted/nacl/nacl_irt.h"
 #include "native_client/src/untrusted/pthread/pthread_internal.h"
 
-struct nacl_irt_mutex __nc_irt_mutex;
-struct nacl_irt_cond __nc_irt_cond;
-struct nacl_irt_sem __nc_irt_sem;
+struct nacl_irt_futex __nc_irt_futex;
 
 void __nc_initialize_interfaces(struct nacl_irt_thread *irt_thread) {
   __libnacl_mandatory_irt_query(NACL_IRT_THREAD_v0_1,
                                 irt_thread, sizeof(*irt_thread));
-  __libnacl_mandatory_irt_query(NACL_IRT_MUTEX_v0_1,
-                                &__nc_irt_mutex, sizeof(__nc_irt_mutex));
-  __libnacl_mandatory_irt_query(NACL_IRT_COND_v0_1,
-                                &__nc_irt_cond, sizeof(__nc_irt_cond));
-  __libnacl_mandatory_irt_query(NACL_IRT_SEM_v0_1,
-                                &__nc_irt_sem, sizeof(__nc_irt_sem));
+  __libnacl_mandatory_irt_query(NACL_IRT_FUTEX_v0_1,
+                                &__nc_irt_futex, sizeof(__nc_irt_futex));
 }

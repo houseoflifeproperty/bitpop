@@ -9,8 +9,8 @@
 #include "base/basictypes.h"
 #include "base/format_macros.h"
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "dbus/object_path.h"
 
 #if defined(USE_SYSTEM_PROTOBUF)
@@ -87,7 +87,7 @@ std::string Message::GetMessageTypeAsString() {
       return "MESSAGE_ERROR";
   }
   NOTREACHED();
-  return "";
+  return std::string();
 }
 
 std::string Message::ToStringInternal(const std::string& indent,
@@ -172,8 +172,8 @@ std::string Message::ToStringInternal(const std::string& indent,
           output += indent + "string \"" + value + "\"\n";
         } else {
           std::string truncated;
-          TruncateUTF8ToByteSize(value, kTruncateLength, &truncated);
-          base::StringAppendF(&truncated, "... (%"PRIuS" bytes in total)",
+          base::TruncateUTF8ToByteSize(value, kTruncateLength, &truncated);
+          base::StringAppendF(&truncated, "... (%" PRIuS " bytes in total)",
                               value.size());
           output += indent + "string \"" + truncated + "\"\n";
         }
@@ -251,7 +251,7 @@ std::string Message::ToStringInternal(const std::string& indent,
 // ...
 std::string Message::ToString() {
   if (!raw_message_)
-    return "";
+    return std::string();
 
   // Generate headers first.
   std::string headers;
@@ -268,7 +268,7 @@ std::string Message::ToString() {
 
   // Generate the payload.
   MessageReader reader(this);
-  return headers + "\n" + ToStringInternal("", &reader);
+  return headers + "\n" + ToStringInternal(std::string(), &reader);
 }
 
 bool Message::SetDestination(const std::string& destination) {
@@ -400,26 +400,27 @@ Signal* Signal::FromRawMessage(DBusMessage* raw_message) {
 Response::Response() : Message() {
 }
 
-Response* Response::FromRawMessage(DBusMessage* raw_message) {
+scoped_ptr<Response> Response::FromRawMessage(DBusMessage* raw_message) {
   DCHECK_EQ(DBUS_MESSAGE_TYPE_METHOD_RETURN,
             dbus_message_get_type(raw_message));
 
-  Response* response = new Response;
+  scoped_ptr<Response> response(new Response);
   response->Init(raw_message);
-  return response;
+  return response.Pass();
 }
 
-Response* Response::FromMethodCall(MethodCall* method_call) {
-  Response* response = new Response;
+scoped_ptr<Response> Response::FromMethodCall(MethodCall* method_call) {
+  scoped_ptr<Response> response(new Response);
   response->Init(dbus_message_new_method_return(method_call->raw_message()));
-  return response;
+  return response.Pass();
 }
 
-Response* Response::CreateEmpty() {
-  Response* response = new Response;
+scoped_ptr<Response> Response::CreateEmpty() {
+  scoped_ptr<Response> response(new Response);
   response->Init(dbus_message_new(DBUS_MESSAGE_TYPE_METHOD_RETURN));
-  return response;
+  return response.Pass();
 }
+
 //
 // ErrorResponse implementation.
 //
@@ -427,32 +428,33 @@ Response* Response::CreateEmpty() {
 ErrorResponse::ErrorResponse() : Response() {
 }
 
-ErrorResponse* ErrorResponse::FromRawMessage(DBusMessage* raw_message) {
+scoped_ptr<ErrorResponse> ErrorResponse::FromRawMessage(
+    DBusMessage* raw_message) {
   DCHECK_EQ(DBUS_MESSAGE_TYPE_ERROR, dbus_message_get_type(raw_message));
 
-  ErrorResponse* response = new ErrorResponse;
+  scoped_ptr<ErrorResponse> response(new ErrorResponse);
   response->Init(raw_message);
-  return response;
+  return response.Pass();
 }
 
-ErrorResponse* ErrorResponse::FromMethodCall(
+scoped_ptr<ErrorResponse> ErrorResponse::FromMethodCall(
     MethodCall* method_call,
     const std::string& error_name,
     const std::string& error_message) {
-  ErrorResponse* response = new ErrorResponse;
+  scoped_ptr<ErrorResponse> response(new ErrorResponse);
   response->Init(dbus_message_new_error(method_call->raw_message(),
                                         error_name.c_str(),
                                         error_message.c_str()));
-  return response;
+  return response.Pass();
 }
 
 //
 // MessageWriter implementation.
 //
 
-MessageWriter::MessageWriter(Message* message) :
-    message_(message),
-    container_is_open_(false) {
+MessageWriter::MessageWriter(Message* message)
+    : message_(message),
+      container_is_open_(false) {
   memset(&raw_message_iter_, 0, sizeof(raw_message_iter_));
   if (message)
     dbus_message_iter_init_append(message_->raw_message(), &raw_message_iter_);
@@ -505,7 +507,7 @@ void MessageWriter::AppendDouble(double value) {
 
 void MessageWriter::AppendString(const std::string& value) {
   // D-Bus Specification (0.19) says a string "must be valid UTF-8".
-  CHECK(IsStringUTF8(value));
+  CHECK(base::IsStringUTF8(value));
   const char* pointer = value.c_str();
   AppendBasic(DBUS_TYPE_STRING, &pointer);
   // TODO(satorux): It may make sense to return an error here, as the
@@ -805,7 +807,7 @@ bool MessageReader::PopVariant(MessageReader* sub_reader) {
   return PopContainer(DBUS_TYPE_VARIANT, sub_reader);
 }
 
-bool MessageReader::PopArrayOfBytes(uint8** bytes, size_t* length) {
+bool MessageReader::PopArrayOfBytes(const uint8** bytes, size_t* length) {
   MessageReader array_reader(message_);
   if (!PopArray(&array_reader))
       return false;
@@ -827,9 +829,10 @@ bool MessageReader::PopArrayOfBytes(uint8** bytes, size_t* length) {
 
 bool MessageReader::PopArrayOfStrings(
     std::vector<std::string> *strings) {
+  strings->clear();
   MessageReader array_reader(message_);
   if (!PopArray(&array_reader))
-      return false;
+    return false;
   while (array_reader.HasMoreData()) {
     std::string string;
     if (!array_reader.PopString(&string))
@@ -841,9 +844,10 @@ bool MessageReader::PopArrayOfStrings(
 
 bool MessageReader::PopArrayOfObjectPaths(
     std::vector<ObjectPath> *object_paths) {
+  object_paths->clear();
   MessageReader array_reader(message_);
   if (!PopArray(&array_reader))
-      return false;
+    return false;
   while (array_reader.HasMoreData()) {
     ObjectPath object_path;
     if (!array_reader.PopObjectPath(&object_path))
@@ -856,9 +860,10 @@ bool MessageReader::PopArrayOfObjectPaths(
 bool MessageReader::PopArrayOfBytesAsProto(
     google::protobuf::MessageLite* protobuf) {
   DCHECK(protobuf != NULL);
-  char* serialized_buf = NULL;
+  const char* serialized_buf = NULL;
   size_t buf_size = 0;
-  if (!PopArrayOfBytes(reinterpret_cast<uint8**>(&serialized_buf), &buf_size)) {
+  if (!PopArrayOfBytes(
+          reinterpret_cast<const uint8**>(&serialized_buf), &buf_size)) {
     LOG(ERROR) << "Error reading array of bytes";
     return false;
   }
@@ -964,7 +969,7 @@ bool MessageReader::PopContainer(int dbus_type, MessageReader* sub_reader) {
 }
 
 bool MessageReader::PopVariantOfBasic(int dbus_type, void* value) {
-  dbus::MessageReader variant_reader(message_);
+  MessageReader variant_reader(message_);
   if (!PopVariant(&variant_reader))
     return false;
   return variant_reader.PopBasic(dbus_type, value);

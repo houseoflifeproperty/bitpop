@@ -10,7 +10,7 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "chromeos/chromeos_export.h"
-#include "chromeos/dbus/dbus_client_implementation_type.h"
+#include "chromeos/dbus/dbus_client.h"
 
 namespace base {
 class DictionaryValue;
@@ -18,7 +18,6 @@ class ListValue;
 }
 
 namespace dbus {
-class Bus;
 class ObjectPath;
 }
 
@@ -28,7 +27,7 @@ namespace chromeos {
 // org.freedesktop.ModemManager.Modem.Gsm.SMS service.
 // All methods should be called from the origin thread (UI thread) which
 // initializes the DBusThreadManager instance.
-class CHROMEOS_EXPORT GsmSMSClient {
+class CHROMEOS_EXPORT GsmSMSClient : public DBusClient {
  public:
   typedef base::Callback<void(uint32 index, bool complete)> SmsReceivedHandler;
   typedef base::Callback<void()> DeleteCallback;
@@ -39,8 +38,7 @@ class CHROMEOS_EXPORT GsmSMSClient {
 
   // Factory function, creates a new instance and returns ownership.
   // For normal usage, access the singleton via DBusThreadManager::Get().
-  static GsmSMSClient* Create(DBusClientImplementationType type,
-                              dbus::Bus* bus);
+  static GsmSMSClient* Create();
 
   // Sets SmsReceived signal handler.
   virtual void SetSmsReceivedHandler(const std::string& service_name,
@@ -74,6 +72,8 @@ class CHROMEOS_EXPORT GsmSMSClient {
                              const dbus::ObjectPath& object_path) = 0;
 
  protected:
+  friend class GsmSMSClientTest;
+
   // Create() should be used instead.
   GsmSMSClient();
 

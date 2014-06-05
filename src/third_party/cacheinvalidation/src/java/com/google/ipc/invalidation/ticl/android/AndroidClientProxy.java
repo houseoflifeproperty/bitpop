@@ -33,12 +33,12 @@ import com.google.ipc.invalidation.external.client.types.Invalidation;
 import com.google.ipc.invalidation.external.client.types.ObjectId;
 import com.google.ipc.invalidation.ticl.InvalidationClientCore;
 import com.google.ipc.invalidation.ticl.InvalidationClientImpl;
-import com.google.ipc.invalidation.ticl.android.c2dm.C2DMManager;
 import com.google.protos.ipc.invalidation.AndroidState.ClientMetadata;
 import com.google.protos.ipc.invalidation.ClientProtocol.ClientConfigP;
 
 import android.accounts.Account;
 import android.content.Context;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.net.http.AndroidHttpClient;
 
@@ -185,21 +185,18 @@ class AndroidClientProxy implements AndroidInvalidationClient {
    * Creates a new client proxy instance.
    *
    * @param service the service within which the client proxy is executing.
-   * @param c2dmRegistrationId the c2dm registration ID for the application (or {@code null} if not
-   *        yet acquired.
    * @param storage the storage instance that contains client metadata and can be used to read or
    *        write client properties.
    */
-  AndroidClientProxy(AndroidInvalidationService service, String c2dmRegistrationId,
-      AndroidStorage storage, ClientConfigP config) {
+  AndroidClientProxy(AndroidInvalidationService service, AndroidStorage storage,
+      ClientConfigP config) {
     this.service = service;
     this.metadata = storage.getClientMetadata();
     this.clientKey = metadata.getClientKey();
     this.listener = new AndroidListenerProxy();
     this.httpClient =  AndroidChannel.getDefaultHttpClient(service);
 
-    this.channel =
-        new AndroidChannel(this, httpClient, c2dmRegistrationId);
+    this.channel = new AndroidChannel(this, httpClient, service);
     this.resources =
         AndroidResourcesFactory.createResourcesBuilder(clientKey, channel, storage).build();
     String applicationName = getApplicationNameWithVersion(service,
@@ -216,7 +213,9 @@ class AndroidClientProxy implements AndroidInvalidationClient {
   static String getApplicationNameWithVersion(Context context, String listenerPackage) {
     String appVersion = "unknown";
     try {
-      String retrievedVersion = C2DMManager.getCurrentApplicationVersion(context);
+      PackageInfo packageInfo =
+          context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
+      String retrievedVersion = packageInfo.versionName;
       if (retrievedVersion != null) {
         appVersion = retrievedVersion;
       }

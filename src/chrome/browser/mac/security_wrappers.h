@@ -13,8 +13,6 @@
 #include "base/memory/scoped_ptr.h"
 
 namespace chrome {
-namespace browser {
-namespace mac {
 
 // Wraps SecKeychainSetUserInteractionAllowed, restoring the previous setting
 // on destruction.
@@ -47,8 +45,8 @@ class CrSKeychainItemAndAccess {
   SecAccessRef access() const { return access_; }
 
  private:
-  base::mac::ScopedCFTypeRef<SecKeychainItemRef> item_;
-  base::mac::ScopedCFTypeRef<SecAccessRef> access_;
+  base::ScopedCFTypeRef<SecKeychainItemRef> item_;
+  base::ScopedCFTypeRef<SecAccessRef> access_;
 };
 
 // Holds the return value from CrSACLCopySimpleContents and an argument to
@@ -58,8 +56,8 @@ struct CrSACLSimpleContents {
   CrSACLSimpleContents();
   ~CrSACLSimpleContents();
 
-  base::mac::ScopedCFTypeRef<CFArrayRef> application_list;
-  base::mac::ScopedCFTypeRef<CFStringRef> description;
+  base::ScopedCFTypeRef<CFArrayRef> application_list;
+  base::ScopedCFTypeRef<CFStringRef> description;
   CSSM_ACL_KEYCHAIN_PROMPT_SELECTOR prompt_selector;
 };
 
@@ -229,8 +227,6 @@ SecKeychainItemRef CrSKeychainItemCreateFromContent(
     SecKeychainRef keychain,
     SecAccessRef access);
 
-}  // namespace mac
-}  // namespace browser
 }  // namespace chrome
 
 #endif  // CHROME_BROWSER_MAC_SECURITY_WRAPPERS_H_

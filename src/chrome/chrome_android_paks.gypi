@@ -5,9 +5,9 @@
   'variables': {
     'chrome_android_pak_output_folder': '<@(PRODUCT_DIR)/../assets/<(package_name)',
     'chrome_android_pak_input_resources': [
-      '<(PRODUCT_DIR)/chrome.pak',
       '<(PRODUCT_DIR)/resources.pak',
       '<(PRODUCT_DIR)/chrome_100_percent.pak',
+      '<(PRODUCT_DIR)/locales/am.pak',
       '<(PRODUCT_DIR)/locales/ar.pak',
       '<(PRODUCT_DIR)/locales/bg.pak',
       '<(PRODUCT_DIR)/locales/ca.pak',
@@ -44,6 +44,7 @@
       '<(PRODUCT_DIR)/locales/sl.pak',
       '<(PRODUCT_DIR)/locales/sr.pak',
       '<(PRODUCT_DIR)/locales/sv.pak',
+      '<(PRODUCT_DIR)/locales/sw.pak',
       '<(PRODUCT_DIR)/locales/th.pak',
       '<(PRODUCT_DIR)/locales/tr.pak',
       '<(PRODUCT_DIR)/locales/uk.pak',
@@ -52,9 +53,9 @@
       '<(PRODUCT_DIR)/locales/zh-TW.pak',
     ],
     'chrome_android_pak_output_resources': [
-      '<(chrome_android_pak_output_folder)/chrome.pak',
       '<(chrome_android_pak_output_folder)/resources.pak',
       '<(chrome_android_pak_output_folder)/chrome_100_percent.pak',
+      '<(chrome_android_pak_output_folder)/am.pak',
       '<(chrome_android_pak_output_folder)/ar.pak',
       '<(chrome_android_pak_output_folder)/bg.pak',
       '<(chrome_android_pak_output_folder)/ca.pak',
@@ -91,12 +92,23 @@
       '<(chrome_android_pak_output_folder)/sl.pak',
       '<(chrome_android_pak_output_folder)/sr.pak',
       '<(chrome_android_pak_output_folder)/sv.pak',
+      '<(chrome_android_pak_output_folder)/sw.pak',
       '<(chrome_android_pak_output_folder)/th.pak',
       '<(chrome_android_pak_output_folder)/tr.pak',
       '<(chrome_android_pak_output_folder)/uk.pak',
       '<(chrome_android_pak_output_folder)/vi.pak',
       '<(chrome_android_pak_output_folder)/zh-CN.pak',
       '<(chrome_android_pak_output_folder)/zh-TW.pak',
+    ],
+    'conditions': [
+      ['icu_use_data_file_flag==1', {
+        'chrome_android_pak_input_resources': [
+          '<(PRODUCT_DIR)/icudtl.dat',
+	],
+        'chrome_android_pak_output_resources': [
+          '<(chrome_android_pak_output_folder)/icudtl.dat',
+	],
+      }],
     ],
   },
 }

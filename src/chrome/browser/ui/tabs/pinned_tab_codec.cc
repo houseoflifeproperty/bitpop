@@ -4,18 +4,21 @@
 
 #include "chrome/browser/ui/tabs/pinned_tab_codec.h"
 
+#include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/tab_helper.h"
-#include "chrome/browser/prefs/pref_service.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/extension.h"
 
 using content::NavigationEntry;
 
@@ -36,20 +39,20 @@ static bool HasPinnedTabs(Browser* browser) {
 }
 
 // Adds a DictionaryValue to |values| representing |tab|.
-static void EncodeTab(const StartupTab& tab, ListValue* values) {
-  scoped_ptr<DictionaryValue> value(new DictionaryValue);
+static void EncodeTab(const StartupTab& tab, base::ListValue* values) {
+  scoped_ptr<base::DictionaryValue> value(new base::DictionaryValue);
   value->SetString(kURL, tab.url.spec());
   if (tab.is_app)
     value->SetString(kAppID, tab.app_id);
   values->Append(value.release());
 }
 
-// Adds a DictionaryValue to |values| representing the pinned tab at the
+// Adds a base::DictionaryValue to |values| representing the pinned tab at the
 // specified index.
 static void EncodePinnedTab(TabStripModel* model,
                             int index,
-                            ListValue* values) {
-  scoped_ptr<DictionaryValue> value(new DictionaryValue());
+                            base::ListValue* values) {
+  scoped_ptr<base::DictionaryValue> value(new base::DictionaryValue());
 
   content::WebContents* web_contents = model->GetWebContentsAt(index);
   if (model->IsAppTab(index)) {
@@ -60,7 +63,8 @@ static void EncodePinnedTab(TabStripModel* model,
     // For apps we use the launch url. We do this because the user is
     // effectively restarting the app, so returning them to the app's launch
     // page seems closest to what they expect.
-    value->SetString(kURL, extension->GetFullLaunchURL().spec());
+    value->SetString(
+        kURL, extensions::AppLaunchInfo::GetFullLaunchURL(extension).spec());
     values->Append(value.release());
   } else {
     NavigationEntry* entry = web_contents->GetController().GetActiveEntry();
@@ -74,7 +78,7 @@ static void EncodePinnedTab(TabStripModel* model,
 }
 
 // Invokes EncodePinnedTab for each pinned tab in browser.
-static void EncodePinnedTabs(Browser* browser, ListValue* values) {
+static void EncodePinnedTabs(Browser* browser, base::ListValue* values) {
   TabStripModel* tab_model = browser->tab_strip_model();
   for (int i = 0; i < tab_model->count() && tab_model->IsTabPinned(i); ++i)
     EncodePinnedTab(tab_model, i, values);
@@ -82,7 +86,7 @@ static void EncodePinnedTabs(Browser* browser, ListValue* values) {
 
 // Decodes the previously written values in |value| to |tab|, returning true
 // on success.
-static bool DecodeTab(const DictionaryValue& value, StartupTab* tab) {
+static bool DecodeTab(const base::DictionaryValue& value, StartupTab* tab) {
   tab->is_app = false;
 
   std::string url_string;
@@ -97,8 +101,10 @@ static bool DecodeTab(const DictionaryValue& value, StartupTab* tab) {
 }
 
 // static
-void PinnedTabCodec::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterListPref(prefs::kPinnedTabs, PrefService::UNSYNCABLE_PREF);
+void PinnedTabCodec::RegisterProfilePrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterListPref(prefs::kPinnedTabs,
+                             user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 // static
@@ -107,10 +113,9 @@ void PinnedTabCodec::WritePinnedTabs(Profile* profile) {
   if (!prefs)
     return;
 
-  ListValue values;
-  for (BrowserList::const_iterator i = BrowserList::begin();
-       i != BrowserList::end(); ++i) {
-    Browser* browser = *i;
+  base::ListValue values;
+  for (chrome::BrowserIterator it; !it.done(); it.Next()) {
+    Browser* browser = *it;
     if (browser->is_type_tabbed() &&
         browser->profile() == profile && HasPinnedTabs(browser)) {
       EncodePinnedTabs(browser, &values);
@@ -127,7 +132,7 @@ void PinnedTabCodec::WritePinnedTabs(Profile* profile,
     return;
 
   ListPrefUpdate update(prefs, prefs::kPinnedTabs);
-  ListValue* values = update.Get();
+  base::ListValue* values = update.Get();
   values->Clear();
   for (StartupTabs::const_iterator i = tabs.begin(); i != tabs.end(); ++i)
     EncodeTab(*i, values);

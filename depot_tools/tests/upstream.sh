@@ -17,9 +17,9 @@ setup_gitsvn
   set -e
   cd git-svn
 
-  git config rietveld.server localhost:8080
+  git config rietveld.server localhost:10000
 
-  for ref in refs/remotes/trunk refs/remotes/some_branch; do
+  for ref in refs/remotes/origin/trunk refs/remotes/origin/some_branch; do
     git branch -f --set-upstream feature_branch $ref
     git checkout -q feature_branch
     test_expect_success "Guessing upstream branch for $ref" \

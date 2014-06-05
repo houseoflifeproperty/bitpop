@@ -10,12 +10,13 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_vector.h"
 #include "base/stl_util.h"
-#include "base/time.h"
+#include "base/task/cancelable_task_tracker.h"
+#include "base/time/time.h"
 #include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/base_session_service.h"
@@ -23,7 +24,6 @@
 #include "chrome/browser/sessions/session_service.h"
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
-#include "chrome/common/cancelable_task_tracker.h"
 #include "content/public/browser/session_storage_namespace.h"
 
 namespace {
@@ -228,26 +228,24 @@ class PersistentTabRestoreService::Delegate
   // Results from previously closed tabs/sessions is first added here. When the
   // results from both us and the session restore service have finished loading
   // LoadStateChanged is invoked, which adds these entries to entries_.
-  std::vector<Entry*> staging_entries_;
+  ScopedVector<Entry> staging_entries_;
 
   // Used when loading previous tabs/session and open tabs/session.
-  CancelableTaskTracker cancelable_task_tracker_;
+  base::CancelableTaskTracker cancelable_task_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(Delegate);
 };
 
 PersistentTabRestoreService::Delegate::Delegate(Profile* profile)
     : BaseSessionService(BaseSessionService::TAB_RESTORE, profile,
-                         FilePath()),
+                         base::FilePath()),
       tab_restore_service_helper_(NULL),
       entries_to_write_(0),
       entries_written_(0),
       load_state_(NOT_LOADED) {
 }
 
-PersistentTabRestoreService::Delegate::~Delegate() {
-  STLDeleteElements(&staging_entries_);
-}
+PersistentTabRestoreService::Delegate::~Delegate() {}
 
 void PersistentTabRestoreService::Delegate::Save() {
   const Entries& entries = tab_restore_service_helper_->entries();
@@ -320,9 +318,16 @@ void PersistentTabRestoreService::Delegate::OnAddEntry() {
 }
 
 void PersistentTabRestoreService::Delegate::LoadTabsFromLastSession() {
-  if (load_state_ != NOT_LOADED ||
-      tab_restore_service_helper_->entries().size() == kMaxEntries)
+  if (load_state_ != NOT_LOADED)
     return;
+
+  if (tab_restore_service_helper_->entries().size() == kMaxEntries) {
+    // We already have the max number of entries we can take. There is no point
+    // in attempting to load since we'll just drop the results. Skip to loaded.
+    load_state_ = (LOADING | LOADED_LAST_SESSION | LOADED_LAST_TABS);
+    LoadStateChanged();
+    return;
+  }
 
 #if !defined(ENABLE_SESSION_SERVICE)
   // If sessions are not stored in the SessionService, default to
@@ -416,7 +421,8 @@ void PersistentTabRestoreService::Delegate::ScheduleCommandsForWindow(
 void PersistentTabRestoreService::Delegate::ScheduleCommandsForTab(
     const Tab& tab,
     int selected_index) {
-  const std::vector<TabNavigation>& navigations = tab.navigations;
+  const std::vector<sessions::SerializedNavigationEntry>& navigations =
+      tab.navigations;
   int max_index = static_cast<int>(navigations.size());
 
   // Determine the first navigation we'll persist.
@@ -517,7 +523,8 @@ PersistentTabRestoreService::Delegate::CreateRestoredEntryCommand(
 
 int PersistentTabRestoreService::Delegate::GetSelectedNavigationIndexToPersist(
     const Tab& tab) {
-  const std::vector<TabNavigation>& navigations = tab.navigations;
+  const std::vector<sessions::SerializedNavigationEntry>& navigations =
+      tab.navigations;
   int selected_index = tab.current_navigation_index;
   int max_index = static_cast<int>(navigations.size());
 
@@ -817,7 +824,8 @@ void PersistentTabRestoreService::Delegate::LoadStateChanged() {
 
   const Entries& entries = tab_restore_service_helper_->entries();
   if (staging_entries_.empty() || entries.size() >= kMaxEntries) {
-    STLDeleteElements(&staging_entries_);
+    staging_entries_.clear();
+    tab_restore_service_helper_->NotifyLoaded();
     return;
   }
 
@@ -828,9 +836,6 @@ void PersistentTabRestoreService::Delegate::LoadStateChanged() {
     int surplus = kMaxEntries - entries.size();
     CHECK_LE(0, surplus);
     CHECK_GE(static_cast<int>(staging_entries_.size()), surplus);
-    STLDeleteContainerPointers(
-        staging_entries_.begin() + (kMaxEntries - entries.size()),
-        staging_entries_.end());
     staging_entries_.erase(
         staging_entries_.begin() + (kMaxEntries - entries.size()),
         staging_entries_.end());
@@ -844,7 +849,7 @@ void PersistentTabRestoreService::Delegate::LoadStateChanged() {
 
   // AddEntry takes ownership of the entry, need to clear out entries so that
   // it doesn't delete them.
-  staging_entries_.clear();
+  staging_entries_.weak_clear();
 
   // Make it so we rewrite all the tabs. We need to do this otherwise we won't
   // correctly write out the entries when Save is invoked (Save starts from
@@ -853,6 +858,8 @@ void PersistentTabRestoreService::Delegate::LoadStateChanged() {
 
   tab_restore_service_helper_->PruneEntries();
   tab_restore_service_helper_->NotifyTabsChanged();
+
+  tab_restore_service_helper_->NotifyLoaded();
 }
 
 void PersistentTabRestoreService::Delegate::RemoveEntryByID(
@@ -895,8 +902,7 @@ PersistentTabRestoreService::PersistentTabRestoreService(
     Profile* profile,
     TimeFactory* time_factory)
     : delegate_(new Delegate(profile)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          helper_(this, delegate_.get(), profile, time_factory)) {
+      helper_(this, delegate_.get(), profile, time_factory) {
   delegate_->set_tab_restore_service_helper(&helper_);
 }
 
@@ -936,9 +942,11 @@ const TabRestoreService::Entries& PersistentTabRestoreService::entries() const {
   return helper_.entries();
 }
 
-void PersistentTabRestoreService::RestoreMostRecentEntry(
-    TabRestoreServiceDelegate* delegate) {
-  helper_.RestoreMostRecentEntry(delegate);
+std::vector<content::WebContents*>
+PersistentTabRestoreService::RestoreMostRecentEntry(
+    TabRestoreServiceDelegate* delegate,
+    chrome::HostDesktopType host_desktop_type) {
+  return helper_.RestoreMostRecentEntry(delegate, host_desktop_type);
 }
 
 TabRestoreService::Tab* PersistentTabRestoreService::RemoveTabEntryById(
@@ -946,11 +954,13 @@ TabRestoreService::Tab* PersistentTabRestoreService::RemoveTabEntryById(
   return helper_.RemoveTabEntryById(id);
 }
 
-void PersistentTabRestoreService::RestoreEntryById(
-    TabRestoreServiceDelegate* delegate,
-    SessionID::id_type id,
-    WindowOpenDisposition disposition) {
-  helper_.RestoreEntryById(delegate, id, disposition);
+std::vector<content::WebContents*>
+    PersistentTabRestoreService::RestoreEntryById(
+      TabRestoreServiceDelegate* delegate,
+      SessionID::id_type id,
+      chrome::HostDesktopType host_desktop_type,
+      WindowOpenDisposition disposition) {
+  return helper_.RestoreEntryById(delegate, id, host_desktop_type, disposition);
 }
 
 bool PersistentTabRestoreService::IsLoaded() const {
@@ -977,7 +987,7 @@ void PersistentTabRestoreService::PruneEntries() {
   helper_.PruneEntries();
 }
 
-ProfileKeyedService* TabRestoreServiceFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
-  return new PersistentTabRestoreService(profile, NULL);
+KeyedService* TabRestoreServiceFactory::BuildServiceInstanceFor(
+    content::BrowserContext* profile) const {
+  return new PersistentTabRestoreService(static_cast<Profile*>(profile), NULL);
 }

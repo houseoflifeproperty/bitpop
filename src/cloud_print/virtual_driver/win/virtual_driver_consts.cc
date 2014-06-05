@@ -7,9 +7,11 @@
 #include "cloud_print/virtual_driver/win/virtual_driver_helpers.h"
 
 namespace cloud_print {
+
 const wchar_t kPortName[] = L"GCP:";
 const size_t kPortNameSize = sizeof(kPortName);
-const wchar_t kKeyLocation[] =
-  L"SOFTWARE\\Google\\Update\\Clients\\{9B13FA92-1F73-4761-AB78-2C6ADAC3660D}";
-}
+const wchar_t kGoogleUpdateProductId[] =
+    L"{9B13FA92-1F73-4761-AB78-2C6ADAC3660D}";
+
+}  // namespace cloud_print
 

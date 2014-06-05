@@ -7,15 +7,22 @@
 *.gypcmd
 *.Makefile
 *.mk
+*.props
 *.pyc
 *.pyc-2.4
 *.pyo
 *.pyo-2.4
 *.rules
+*.sdf
 *.sln
 *.slo
 *.swp
+*.suo
+*.targets
+*.user
 *.vcproj
+*.vcxproj
+*.vcxproj.filters
 *.xcodeproj/
 testserver.log
 
@@ -27,6 +34,11 @@ testserver.log
 hg/
 toolchain/hg-build/
 toolchain/hg-log/
+
+# toolchain_build/toolchain_build.py creates these.
+toolchain_build/cache/
+toolchain_build/out/
+toolchain_build/src/
 
 # Ignore these absolute directories (relative to native_client directory)
 /build/Debug/

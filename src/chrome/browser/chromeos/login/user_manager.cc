@@ -4,66 +4,129 @@
 
 #include "chrome/browser/chromeos/login/user_manager.h"
 
+#include "base/command_line.h"
+#include "base/prefs/pref_registry_simple.h"
+#include "chrome/browser/browser_process.h"
+#include "chrome/browser/browser_process_platform_part_chromeos.h"
 #include "chrome/browser/chromeos/login/user_manager_impl.h"
-#include "content/public/browser/browser_thread.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
+#include "chrome/common/chrome_switches.h"
 
 namespace chromeos {
 
 // static
 const char UserManager::kStubUser[] = "stub-user@example.com";
 
-// Class that is holds pointer to UserManager instance.
-// One could set UserManager mock instance through it (see UserManager::Set).
-class UserManagerImplWrapper {
- public:
-  static UserManagerImplWrapper* GetInstance() {
-    return Singleton<UserManagerImplWrapper>::get();
-  }
+// static
+const char UserManager::kSignInUser[] = "sign-in-user-id";
 
- protected:
-  ~UserManagerImplWrapper() {
-  }
+// static
+// Should match cros constant in platform/libchromeos/chromeos/cryptohome.h
+const char UserManager::kGuestUserName[] = "$guest";
 
-  UserManager* get() {
-    if (!ptr_.get())
-      reset(new UserManagerImpl);
-    return ptr_.get();
-  }
+// static
+const char UserManager::kLocallyManagedUserDomain[] =
+    "locally-managed.localhost";
 
-  void reset(UserManager* ptr) {
-    ptr_.reset(ptr);
-  }
 
-  UserManager* release() {
-    return ptr_.release();
-  }
+// static
+const char UserManager::kRetailModeUserName[] = "demouser@";
+static UserManager* g_user_manager = NULL;
 
- private:
-  friend struct DefaultSingletonTraits<UserManagerImplWrapper>;
+UserManager::Observer::~Observer() {
+}
 
-  friend class UserManager;
+void UserManager::Observer::LocalStateChanged(UserManager* user_manager) {
+}
 
-  UserManagerImplWrapper() {
-  }
+void UserManager::UserSessionStateObserver::ActiveUserChanged(
+    const User* active_user) {
+}
 
-  scoped_ptr<UserManager> ptr_;
+void UserManager::UserSessionStateObserver::UserAddedToSession(
+    const User* active_user) {
+}
 
-  DISALLOW_COPY_AND_ASSIGN(UserManagerImplWrapper);
-};
+void UserManager::UserSessionStateObserver::ActiveUserHashChanged(
+    const std::string& hash) {
+}
+
+void UserManager::UserSessionStateObserver::
+PendingUserSessionsRestoreFinished() {
+}
+
+UserManager::UserSessionStateObserver::~UserSessionStateObserver() {
+}
+
+UserManager::UserAccountData::UserAccountData(const base::string16& display_name,
+                                              const base::string16& given_name,
+                                              const std::string& locale)
+    : display_name_(display_name),
+      given_name_(given_name),
+      locale_(locale) {
+}
+
+UserManager::UserAccountData::~UserAccountData() {}
+
+// static
+void UserManager::Initialize() {
+  CHECK(!g_user_manager);
+  g_user_manager = new UserManagerImpl();
+}
+
+// static
+bool UserManager::IsInitialized() {
+  return g_user_manager;
+}
+
+void UserManager::Destroy() {
+  DCHECK(g_user_manager);
+  delete g_user_manager;
+  g_user_manager = NULL;
+}
 
 // static
 UserManager* UserManager::Get() {
-  return UserManagerImplWrapper::GetInstance()->get();
+  CHECK(g_user_manager);
+  return g_user_manager;
 }
 
 // static
-UserManager* UserManager::Set(UserManager* mock) {
-  UserManager* old_manager = UserManagerImplWrapper::GetInstance()->release();
-  UserManagerImplWrapper::GetInstance()->reset(mock);
-  return old_manager;
+bool UserManager::IsMultipleProfilesAllowed() {
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+      ::switches::kMultiProfiles);
 }
 
 UserManager::~UserManager() {
+}
+
+// static
+UserManager* UserManager::SetForTesting(UserManager* user_manager) {
+  UserManager* previous_user_manager = g_user_manager;
+  g_user_manager = user_manager;
+  return previous_user_manager;
+}
+
+ScopedUserManagerEnabler::ScopedUserManagerEnabler(UserManager* user_manager)
+    : previous_user_manager_(UserManager::SetForTesting(user_manager)) {
+}
+
+ScopedUserManagerEnabler::~ScopedUserManagerEnabler() {
+  UserManager::Get()->Shutdown();
+  UserManager::Destroy();
+  UserManager::SetForTesting(previous_user_manager_);
+}
+
+ScopedTestUserManager::ScopedTestUserManager() {
+  UserManager::Initialize();
+
+  // ProfileHelper has to be initialized after UserManager instance is created.
+  g_browser_process->platform_part()->profile_helper()->Initialize();
+}
+
+ScopedTestUserManager::~ScopedTestUserManager() {
+  UserManager::Get()->Shutdown();
+  UserManager::Destroy();
 }
 
 }  // namespace chromeos

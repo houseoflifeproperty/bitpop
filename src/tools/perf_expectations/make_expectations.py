@@ -33,7 +33,7 @@ USAGE = ''
 
 def ReadFile(filename):
   try:
-    file = open(filename, 'r')
+    file = open(filename, 'rb')
   except IOError, e:
     print >> sys.stderr, ('I/O Error reading file %s(%s): %s' %
                           (filename, e.errno, e.strerror))
@@ -101,10 +101,10 @@ def GetRowDigest(rowdata, key):
   return sha1.hexdigest()[0:8]
 
 
-def WriteJson(filename, data, keys):
+def WriteJson(filename, data, keys, calculate_sha1=True):
   """Write a list of |keys| in |data| to the file specified in |filename|."""
   try:
-    file = open(filename, 'w')
+    file = open(filename, 'wb')
   except IOError, e:
     print >> sys.stderr, ('I/O Error writing file %s(%s): %s' %
                           (filename, e.errno, e.strerror))
@@ -112,8 +112,12 @@ def WriteJson(filename, data, keys):
   jsondata = []
   for key in keys:
     rowdata = GetRowData(data, key)
-    # Include an updated checksum.
-    rowdata.append('"sha1": "%s"' % GetRowDigest(rowdata, key))
+    if calculate_sha1:
+      # Include an updated checksum.
+      rowdata.append('"sha1": "%s"' % GetRowDigest(rowdata, key))
+    else:
+      if 'sha1' in data[key]:
+        rowdata.append('"sha1": "%s"' % (data[key]['sha1']))
     jsondata.append('"%s": {%s}' % (key, ', '.join(rowdata)))
   jsondata.append('"load": true')
   jsontext = '{%s\n}' % ',\n '.join(jsondata)
@@ -237,6 +241,11 @@ def Main(args):
     scanning = False
     for line in summarylist:
       jsondata = ConvertJsonIntoDict(line)
+
+      # TODO(iannucci): Remove this once http://crbug.com/336471 is resolved.
+      if 'Force the Chro' in jsondata['rev']:
+        continue
+
       if int(jsondata['rev']) <= revb:
         scanning = True
       if int(jsondata['rev']) < reva:

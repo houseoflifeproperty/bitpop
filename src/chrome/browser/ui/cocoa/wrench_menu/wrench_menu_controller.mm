@@ -7,8 +7,8 @@
 #include "base/basictypes.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
-#include "base/string16.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #import "chrome/browser/app_controller_mac.h"
 #include "chrome/browser/profiles/profile.h"
@@ -16,25 +16,26 @@
 #include "chrome/browser/ui/browser_window.h"
 #import "chrome/browser/ui/cocoa/accelerators_cocoa.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_menu_bridge.h"
+#import "chrome/browser/ui/cocoa/bookmarks/bookmark_menu_cocoa_controller.h"
 #import "chrome/browser/ui/cocoa/encoding_menu_controller_delegate_mac.h"
+#import "chrome/browser/ui/cocoa/l10n_util.h"
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
 #import "chrome/browser/ui/cocoa/wrench_menu/menu_tracked_root_view.h"
 #import "chrome/browser/ui/cocoa/wrench_menu/recent_tabs_menu_model_delegate.h"
 #include "chrome/browser/ui/toolbar/recent_tabs_sub_menu_model.h"
 #include "chrome/browser/ui/toolbar/wrench_menu_model.h"
-#include "content/public/browser/host_zoom_map.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_source.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/browser/user_metrics.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/menu_model.h"
 
+namespace wrench_menu_controller {
+const CGFloat kWrenchBubblePointOffsetY = 6;
+}
+
+using base::UserMetricsAction;
 using content::HostZoomMap;
-using content::UserMetricsAction;
 
 @interface WrenchMenuController (Private)
 - (void)createModel;
@@ -43,6 +44,7 @@ using content::UserMetricsAction;
 - (NSButton*)zoomDisplay;
 - (void)removeAllItems:(NSMenu*)menu;
 - (NSMenu*)recentTabsSubmenu;
+- (RecentTabsSubMenuModel*)recentTabsMenuModel;
 - (int)maxWidthForMenuModel:(ui::MenuModel*)model
                  modelIndex:(int)modelIndex;
 @end
@@ -53,7 +55,7 @@ namespace WrenchMenuControllerInternal {
 class AcceleratorDelegate : public ui::AcceleratorProvider {
  public:
   virtual bool GetAcceleratorForCommandId(int command_id,
-      ui::Accelerator* out_accelerator) {
+      ui::Accelerator* out_accelerator) OVERRIDE {
     AcceleratorsCocoa* keymap = AcceleratorsCocoa::GetInstance();
     const ui::Accelerator* accelerator =
         keymap->GetAcceleratorForCommand(command_id);
@@ -64,35 +66,34 @@ class AcceleratorDelegate : public ui::AcceleratorProvider {
   }
 };
 
-class ZoomLevelObserver : public content::NotificationObserver {
+class ZoomLevelObserver {
  public:
-  explicit ZoomLevelObserver(WrenchMenuController* controller)
-      : controller_(controller) {
-    registrar_.Add(
-        this, content::NOTIFICATION_ZOOM_LEVEL_CHANGED,
-        content::NotificationService::AllBrowserContextsAndSources());
+  ZoomLevelObserver(WrenchMenuController* controller,
+                    content::HostZoomMap* map)
+      : controller_(controller),
+        map_(map) {
+    subscription_ = map_->AddZoomLevelChangedCallback(
+        base::Bind(&ZoomLevelObserver::OnZoomLevelChanged,
+                   base::Unretained(this)));
   }
 
-  void Observe(int type,
-               const content::NotificationSource& source,
-               const content::NotificationDetails& details) {
-    DCHECK_EQ(type, content::NOTIFICATION_ZOOM_LEVEL_CHANGED);
-    WrenchMenuModel* wrenchMenuModel = [controller_ wrenchMenuModel];
-    if (HostZoomMap::GetForBrowserContext(
-            wrenchMenuModel->browser()->profile()) !=
-        content::Source<HostZoomMap>(source).ptr()) {
-      return;
-    }
+  ~ZoomLevelObserver() {}
 
+ private:
+  void OnZoomLevelChanged(const HostZoomMap::ZoomLevelChange& change) {
+    WrenchMenuModel* wrenchMenuModel = [controller_ wrenchMenuModel];
     wrenchMenuModel->UpdateZoomControls();
-    const string16 level =
+    const base::string16 level =
         wrenchMenuModel->GetLabelForCommandId(IDC_ZOOM_PERCENT_DISPLAY);
     [[controller_ zoomDisplay] setTitle:SysUTF16ToNSString(level)];
   }
 
- private:
-  content::NotificationRegistrar registrar_;
+  scoped_ptr<content::HostZoomMap::Subscription> subscription_;
+
   WrenchMenuController* controller_;  // Weak; owns this.
+  content::HostZoomMap* map_;  // Weak.
+
+  DISALLOW_COPY_AND_ASSIGN(ZoomLevelObserver);
 };
 
 }  // namespace WrenchMenuControllerInternal
@@ -102,7 +103,8 @@ class ZoomLevelObserver : public content::NotificationObserver {
 - (id)initWithBrowser:(Browser*)browser {
   if ((self = [super init])) {
     browser_ = browser;
-    observer_.reset(new WrenchMenuControllerInternal::ZoomLevelObserver(self));
+    observer_.reset(new WrenchMenuControllerInternal::ZoomLevelObserver(
+        self, content::HostZoomMap::GetForBrowserContext(browser->profile())));
     acceleratorDelegate_.reset(
         new WrenchMenuControllerInternal::AcceleratorDelegate());
     [self createModel];
@@ -112,24 +114,20 @@ class ZoomLevelObserver : public content::NotificationObserver {
 
 - (void)addItemToMenu:(NSMenu*)menu
               atIndex:(NSInteger)index
-            fromModel:(ui::MenuModel*)model
-           modelIndex:(int)modelIndex {
+            fromModel:(ui::MenuModel*)model {
   // Non-button item types should be built as normal items.
-  ui::MenuModel::ItemType type = model->GetTypeAt(modelIndex);
+  ui::MenuModel::ItemType type = model->GetTypeAt(index);
   if (type != ui::MenuModel::TYPE_BUTTON_ITEM) {
     [super addItemToMenu:menu
                  atIndex:index
-               fromModel:model
-              modelIndex:modelIndex];
+               fromModel:model];
     return;
   }
 
   // Handle the special-cased menu items.
-  int command_id = model->GetCommandIdAt(modelIndex);
-  scoped_nsobject<NSMenuItem> customItem(
-      [[NSMenuItem alloc] initWithTitle:@""
-                                 action:nil
-                          keyEquivalent:@""]);
+  int command_id = model->GetCommandIdAt(index);
+  base::scoped_nsobject<NSMenuItem> customItem(
+      [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""]);
   MenuTrackedRootView* view;
   switch (command_id) {
     case IDC_EDIT_MENU:
@@ -150,6 +148,44 @@ class ZoomLevelObserver : public content::NotificationObserver {
   }
   [self adjustPositioning];
   [menu insertItem:customItem.get() atIndex:index];
+}
+
+- (BOOL)validateUserInterfaceItem:(id<NSValidatedUserInterfaceItem>)item {
+  const BOOL enabled = [super validateUserInterfaceItem:item];
+
+  NSMenuItem* menuItem = (id)item;
+  ui::MenuModel* model =
+      static_cast<ui::MenuModel*>(
+          [[menuItem representedObject] pointerValue]);
+
+  // The section headers in the recent tabs submenu should be bold and black if
+  // a font list is specified for the items (bold is already applied in the
+  // |MenuController| as the font list returned by |GetLabelFontListAt| is
+  // bold).
+  if (model && model == [self recentTabsMenuModel]) {
+    if (model->GetLabelFontListAt([item tag])) {
+      DCHECK([menuItem attributedTitle]);
+      base::scoped_nsobject<NSMutableAttributedString> title(
+          [[NSMutableAttributedString alloc]
+              initWithAttributedString:[menuItem attributedTitle]]);
+      [title addAttribute:NSForegroundColorAttributeName
+                    value:[NSColor blackColor]
+                    range:NSMakeRange(0, [title length])];
+      [menuItem setAttributedTitle:title.get()];
+    } else {
+      // Not a section header. Add a tooltip with the title and the URL.
+      std::string url;
+      base::string16 title;
+      if ([self recentTabsMenuModel]->GetURLAndTitleForItemAtIndex(
+              [item tag], &url, &title)) {
+        [menuItem setToolTip:
+            cocoa_l10n_util::TooltipForURLAndTitle(
+                base::SysUTF8ToNSString(url), base::SysUTF16ToNSString(title))];
+       }
+    }
+  }
+
+  return enabled;
 }
 
 - (NSMenu*)bookmarkSubMenu {
@@ -232,7 +268,7 @@ class ZoomLevelObserver : public content::NotificationObserver {
 
 // Used to perform the actual dispatch on the outermost runloop.
 - (void)performCommandDispatch:(NSNumber*)tag {
-  [self wrenchMenuModel]->ExecuteCommand([tag intValue]);
+  [self wrenchMenuModel]->ExecuteCommand([tag intValue], 0);
 }
 
 - (WrenchMenuModel*)wrenchMenuModel {
@@ -241,10 +277,8 @@ class ZoomLevelObserver : public content::NotificationObserver {
 }
 
 - (void)updateRecentTabsSubmenu {
-  ui::MenuModel* model = [self wrenchMenuModel];
-  int index = 0;
-  if (ui::MenuModel::GetModelAndIndexForCommandId(
-          IDC_RESTORE_TAB, &model, &index)) {
+  ui::MenuModel* model = [self recentTabsMenuModel];
+  if (model) {
     recentTabsMenuModelDelegate_.reset(
         new RecentTabsMenuModelDelegate(model, [self recentTabsSubmenu]));
   }
@@ -253,7 +287,7 @@ class ZoomLevelObserver : public content::NotificationObserver {
 - (void)createModel {
   recentTabsMenuModelDelegate_.reset();
   wrenchMenuModel_.reset(
-      new WrenchMenuModel(acceleratorDelegate_.get(), browser_, false, false));
+      new WrenchMenuModel(acceleratorDelegate_.get(), browser_, false));
   [self setModel:wrenchMenuModel_.get()];
 
   buttonViewController_.reset(
@@ -323,18 +357,33 @@ class ZoomLevelObserver : public content::NotificationObserver {
   return [[[self menu] itemWithTitle:title] submenu];
 }
 
+// The recent tabs menu model is recognized by the existence of either the
+// kRecentlyClosedHeaderCommandId or the kDisabledRecentlyClosedHeaderCommandId.
+- (RecentTabsSubMenuModel*)recentTabsMenuModel {
+  int index = 0;
+  // Start searching at the wrench menu model level, |model| will be updated
+  // only if the command we're looking for is found in one of the [sub]menus.
+  ui::MenuModel* model = [self wrenchMenuModel];
+  if (ui::MenuModel::GetModelAndIndexForCommandId(
+          RecentTabsSubMenuModel::kRecentlyClosedHeaderCommandId, &model,
+          &index)) {
+    return static_cast<RecentTabsSubMenuModel*>(model);
+  }
+  if (ui::MenuModel::GetModelAndIndexForCommandId(
+          RecentTabsSubMenuModel::kDisabledRecentlyClosedHeaderCommandId,
+          &model, &index)) {
+    return static_cast<RecentTabsSubMenuModel*>(model);
+  }
+  return NULL;
+}
+
 // This overrdies the parent class to return a custom width for recent tabs
 // menu.
 - (int)maxWidthForMenuModel:(ui::MenuModel*)model
                  modelIndex:(int)modelIndex {
-  int index = 0;
-  ui::MenuModel* recentTabsMenuModel = [self wrenchMenuModel];
-  if (ui::MenuModel::GetModelAndIndexForCommandId(
-          IDC_RESTORE_TAB, &recentTabsMenuModel, &index)) {
-    if (recentTabsMenuModel == model) {
-      return static_cast<RecentTabsSubMenuModel*>(
-          recentTabsMenuModel)->GetMaxWidthForItemAtIndex(modelIndex);
-    }
+  RecentTabsSubMenuModel* recentTabsMenuModel = [self recentTabsMenuModel];
+  if (recentTabsMenuModel && recentTabsMenuModel == model) {
+    return recentTabsMenuModel->GetMaxWidthForItemAtIndex(modelIndex);
   }
   return -1;
 }

@@ -17,13 +17,21 @@ Usage is detailed with -h.
 
 import optparse
 import re
+import os
 import sys
 import time
 
-from slave import builder_utils
-from slave import runbuild_utils
+# Bootstrap PYTHONPATH from runit
+SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
+BASE_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, '..', '..'))
+sys.path.insert(0, os.path.join(BASE_DIR, 'scripts'))
+from tools import runit
+runit.add_build_paths(sys.path)
+
 from common import master_cfg_utils
 from common import chromium_utils
+from slave import builder_utils
+from slave import runbuild_utils
 
 
 def get_args():
@@ -46,7 +54,11 @@ def get_args():
                     help='list steps in factory, but don\'t execute them')
   parser.add_option('--show-commands', action='store_true',
                     help='when listing steps, also show the generated output'
-                         ' command')
+                         ' command. Also enables --list-steps and '
+                         '--override-brdostep.')
+  parser.add_option('--override-brdostep', action='store_true',
+                    help='process all steps, even those with '
+                         'brDoStepIf=False or None.')
   parser.add_option('--stepfilter', help='only run steps that match the '
                     'stepfilter regex')
   parser.add_option('--stepreject', help='reject any steps that match the '
@@ -84,6 +96,8 @@ def get_args():
   parser.add_option('--test-config', action='store_true',
                     help='Attempt to parse all builders and steps without '
                     'executing them. Returns 0 on success.')
+  parser.add_option('--fail-fast', action='store_true',
+                    help='Exit on first step error instead of continuing.')
 
   return parser.parse_args()
 
@@ -142,6 +156,10 @@ def args_ok(inoptions, pos_args):
 
   if inoptions.list_builders:
     return True
+
+  if inoptions.show_commands:
+    inoptions.override_brdostep = True
+    inoptions.list_steps = True
 
   if inoptions.test_config:
     inoptions.spec = {}
@@ -258,6 +276,8 @@ def execute(options):
 
   mastername = config['BuildmasterConfig']['properties']['mastername']
   builders = config['BuildmasterConfig']['builders']
+  options.build_properties.update(config['BuildmasterConfig'].get(
+      'properties', {}))
 
   if options.list_builders:
     master_cfg_utils.PrettyPrintBuilders(builders, mastername)
@@ -286,11 +306,10 @@ def execute_builder(my_builder, mastername, options):
   if not my_builder:
     return 2
 
-  if options.build_properties:
-    buildsetup = options.build_properties
-  else:
-    buildsetup = {}
+  buildsetup = options.build_properties
+  if 'revision' not in buildsetup:
     buildsetup['revision'] = '%d' % options.revision
+  if 'branch' not in buildsetup:
     buildsetup['branch'] = 'src'
 
   steplist, build = builder_utils.MockBuild(my_builder, buildsetup, mastername,
@@ -315,6 +334,10 @@ def execute_builder(my_builder, mastername, options):
   if options.test_config:
     return 0
 
+  if options.override_brdostep:
+    for command in commands:
+      command['doStep'] = True
+
   filtered_commands = runbuild_utils.FilterCommands(commands,
                                                     options.step_regex,
                                                     options.stepreject_regex)
@@ -324,8 +347,13 @@ def execute_builder(my_builder, mastername, options):
     print 'listing steps in %s/%s:' % (mastername, my_builder['name'])
     print
     for skip, cmd in filtered_commands:
-      if skip:
+      if 'command' not in cmd:
+        print '-', cmd['name'], '[skipped] (custom step type: %s)' % (
+            cmd['stepclass'])
+      elif skip:
         print '-', cmd['name'], '[skipped]'
+      elif skip is None:
+        print '-', cmd['name'], '[skipped] (not under buildrunner)'
       else:
         print '*', cmd['name'],
         if options.show_commands:
@@ -333,6 +361,8 @@ def execute_builder(my_builder, mastername, options):
         print
     return 0
 
+  # Only execute commands that can be executed.
+  filtered_commands = [(s, c) for s, c in filtered_commands if 'command' in c]
 
   if not options.annotate:
     print >>sys.stderr, 'using %s builder \'%s\'' % (mastername,
@@ -340,7 +370,7 @@ def execute_builder(my_builder, mastername, options):
 
   start_time = time.clock()
   commands_executed, err = runbuild_utils.Execute(filtered_commands,
-      options.annotate, options.log)
+      options.annotate, options.log, fail_fast=options.fail_fast)
   end_time = time.clock()
 
   if err:
@@ -371,9 +401,7 @@ def main():
             or opts.list_steps or opts.test_config):
       print >>sys.stderr, 'build completed successfully'
   else:
-    if opts.annotate:
-      print >>opts.log, '@@@BUILD_FAILURE@@@'
-    else:
+    if not opts.annotate:
       print >>sys.stderr, 'build error encountered! aborting build'
 
   return retcode

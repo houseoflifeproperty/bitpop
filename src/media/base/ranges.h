@@ -11,7 +11,7 @@
 
 #include "base/basictypes.h"
 #include "base/logging.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "media/base/media_export.h"
 
 namespace media {
@@ -104,8 +104,9 @@ size_t Ranges<T>::Add(T start, T end) {
 }
 
 template<>
-void Ranges<base::TimeDelta>::DCheckLT(const base::TimeDelta& lhs,
-                                       const base::TimeDelta& rhs) const;
+MEDIA_EXPORT void
+    Ranges<base::TimeDelta>::DCheckLT(const base::TimeDelta& lhs,
+                                      const base::TimeDelta& rhs) const;
 
 template<class T>
 void Ranges<T>::DCheckLT(const T& lhs, const T& rhs) const {

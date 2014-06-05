@@ -3,16 +3,27 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# Script to install arm choot image for cross building of arm chrome on linux.
-# This script can be run manually but is more often run as part of gclient
-# hooks. When run from hooks this script should be a no-op on non-linux
-# platforms.
+"""Script to install ARM root image for cross building of ARM chrome on linux.
+This script can be run manually but is more often run as part of gclient
+hooks. When run from hooks this script should be a no-op on non-linux
+platforms.
 
-# The sysroot image could be constructed from scratch based on the current
-# state or precise/arm but for consistency we currently use a pre-built root
-# image which was originally designed for building trusted NaCl code. The image
-# will normally need to be rebuilt every time chrome's build dependancies are
-# changed.
+The sysroot image could be constructed from scratch based on the current
+state or precise/arm but for consistency we currently use a pre-built root
+image which was originally designed for building trusted NaCl code. The image
+will normally need to be rebuilt every time chrome's build dependancies are
+changed.
+
+Steps to rebuild the arm sysroot image:
+
+- cd $SRC/native_client
+- ./tools/trusted_cross_toolchains/trusted-toolchain-creator.armel.precise.sh \
+    UpdatePackageLists
+- ./tools/trusted_cross_toolchains/trusted-toolchain-creator.armel.precise.sh \
+    BuildJail $SRC/out/arm-sysroot.tar.gz
+- gsutil cp -a public-read $SRC/out/arm-sysroot.tar.gz \
+    nativeclient-archive2/toolchain/$NACL_REV/sysroot-arm-trusted.tgz
+"""
 
 import os
 import shutil
@@ -21,9 +32,10 @@ import sys
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-URL_PREFIX = 'https://commondatastorage.googleapis.com/nativeclient-archive2/toolchain'
-REVISION = 8003
-
+URL_PREFIX = 'https://storage.googleapis.com'
+URL_PATH = 'nativeclient-archive2/toolchain'
+REVISION = 13035
+TARBALL = 'sysroot-arm-trusted.tgz'
 
 def main(args):
   if '--linux-only' in args:
@@ -38,7 +50,7 @@ def main(args):
 
   src_root = os.path.dirname(os.path.dirname(SCRIPT_DIR))
   sysroot = os.path.join(src_root, 'arm-sysroot')
-  url = "%s/%s/naclsdk_linux_arm-trusted.tgz" % (URL_PREFIX, REVISION)
+  url = "%s/%s/%s/%s" % (URL_PREFIX, URL_PATH, REVISION, TARBALL)
 
   stamp = os.path.join(sysroot, ".stamp")
   if os.path.exists(stamp):
@@ -51,8 +63,13 @@ def main(args):
   if os.path.isdir(sysroot):
     shutil.rmtree(sysroot)
   os.mkdir(sysroot)
-  tarball = os.path.join(sysroot, 'naclsdk_linux_arm-trusted.tgz')
-  subprocess.check_call(['curl', '-L', url, '-o', tarball])
+  tarball = os.path.join(sysroot, TARBALL)
+  curl = ['curl', '--fail', '-L', url, '-o', tarball]
+  if os.isatty(sys.stdout.fileno()):
+    curl.append('--progress')
+  else:
+    curl.append('--silent')
+  subprocess.check_call(curl)
   subprocess.check_call(['tar', 'xf', tarball, '-C', sysroot])
   os.remove(tarball)
 

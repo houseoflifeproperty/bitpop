@@ -41,14 +41,14 @@ namespace OT {
 
 struct maxp
 {
-  static const hb_tag_t Tag	= HB_OT_TAG_maxp;
+  static const hb_tag_t tableTag	= HB_OT_TAG_maxp;
 
   inline unsigned int get_num_glyphs (void) const {
     return numGlyphs;
   }
 
   inline bool sanitize (hb_sanitize_context_t *c) {
-    TRACE_SANITIZE ();
+    TRACE_SANITIZE (this);
     return TRACE_RETURN (c->check_struct (this) &&
 			 likely (version.major == 1 || (version.major == 0 && version.minor == 0x5000)));
   }
@@ -63,7 +63,7 @@ struct maxp
 };
 
 
-} // namespace OT
+} /* namespace OT */
 
 
 #endif /* HB_OT_MAXP_TABLE_HH */

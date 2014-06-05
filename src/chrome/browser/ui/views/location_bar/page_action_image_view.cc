@@ -4,9 +4,8 @@
 
 #include "chrome/browser/ui/views/location_bar/page_action_image_view.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/api/commands/command_service.h"
-#include "chrome/browser/extensions/api/commands/command_service_factory.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_icon_factory.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
@@ -22,14 +21,11 @@
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/webui/extensions/extension_info_ui.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/extension_resource.h"
-#include "ui/base/accessibility/accessible_view_state.h"
-#include "ui/base/events/event.h"
+#include "extensions/common/extension.h"
+#include "ui/accessibility/ax_view_state.h"
+#include "ui/events/event.h"
 #include "ui/gfx/canvas.h"
-#include "ui/views/controls/menu/menu_item_view.h"
-#include "ui/views/controls/menu/menu_model_adapter.h"
+#include "ui/gfx/image/image.h"
 #include "ui/views/controls/menu/menu_runner.h"
 
 using content::WebContents;
@@ -44,24 +40,20 @@ PageActionImageView::PageActionImageView(LocationBarView* owner,
       browser_(browser),
       current_tab_id_(-1),
       preview_enabled_(false),
-      popup_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(scoped_icon_animation_observer_(
-          page_action->GetIconAnimation(
-              SessionID::IdForTab(owner->GetWebContents())),
-          this)) {
+      popup_(NULL) {
   const Extension* extension = owner_->profile()->GetExtensionService()->
       GetExtensionById(page_action->extension_id(), false);
   DCHECK(extension);
 
   icon_factory_.reset(
-      new ExtensionActionIconFactory(extension, page_action, this));
+      new ExtensionActionIconFactory(
+          owner_->profile(), extension, page_action, this));
 
-  set_accessibility_focusable(true);
+  SetAccessibilityFocusable(true);
   set_context_menu_controller(this);
 
   extensions::CommandService* command_service =
-      extensions::CommandServiceFactory::GetForProfile(
-          browser_->profile());
+      extensions::CommandService::Get(browser_->profile());
   extensions::Command page_action_command;
   if (command_service->GetPageActionCommand(
           extension->id(),
@@ -75,20 +67,6 @@ PageActionImageView::PageActionImageView(LocationBarView* owner,
         ui::AcceleratorManager::kHighPriority,
         this);
   }
-
-  extensions::Command script_badge_command;
-  if (command_service->GetScriptBadgeCommand(
-          extension->id(),
-          extensions::CommandService::ACTIVE_ONLY,
-          &script_badge_command,
-          NULL)) {
-    script_badge_keybinding_.reset(
-        new ui::Accelerator(script_badge_command.accelerator()));
-    owner_->GetFocusManager()->RegisterAccelerator(
-        *script_badge_keybinding_.get(),
-        ui::AcceleratorManager::kHighPriority,
-        this);
-  }
 }
 
 PageActionImageView::~PageActionImageView() {
@@ -96,11 +74,6 @@ PageActionImageView::~PageActionImageView() {
     if (page_action_keybinding_.get()) {
       owner_->GetFocusManager()->UnregisterAccelerator(
           *page_action_keybinding_.get(), this);
-    }
-
-    if (script_badge_keybinding_.get()) {
-      owner_->GetFocusManager()->UnregisterAccelerator(
-          *script_badge_keybinding_.get(), this);
     }
   }
 
@@ -135,17 +108,12 @@ void PageActionImageView::ExecuteAction(
       // mouse button through to the LocationBarController.
       NOTREACHED();
       break;
-
-    case LocationBarController::ACTION_SHOW_SCRIPT_POPUP:
-      ShowPopupWithURL(ExtensionInfoUI::GetURL(page_action_->extension_id()),
-                       show_action);
-      break;
   }
 }
 
-void PageActionImageView::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_PUSHBUTTON;
-  state->name = UTF8ToUTF16(tooltip_);
+void PageActionImageView::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_BUTTON;
+  state->name = base::UTF8ToUTF16(tooltip_);
 }
 
 bool PageActionImageView::OnMousePressed(const ui::MouseEvent& event) {
@@ -177,8 +145,10 @@ bool PageActionImageView::OnKeyPressed(const ui::KeyEvent& event) {
   return false;
 }
 
-void PageActionImageView::ShowContextMenuForView(View* source,
-                                                 const gfx::Point& point) {
+void PageActionImageView::ShowContextMenuForView(
+    View* source,
+    const gfx::Point& point,
+    ui::MenuSourceType source_type) {
   const Extension* extension = owner_->profile()->GetExtensionService()->
       GetExtensionById(page_action()->extension_id(), false);
   if (!extension->ShowConfigureContextMenus())
@@ -186,15 +156,19 @@ void PageActionImageView::ShowContextMenuForView(View* source,
 
   scoped_refptr<ExtensionContextMenuModel> context_menu_model(
       new ExtensionContextMenuModel(extension, browser_, this));
-  views::MenuModelAdapter menu_model_adapter(context_menu_model.get());
-  menu_runner_.reset(new views::MenuRunner(menu_model_adapter.CreateMenu()));
+  menu_runner_.reset(new views::MenuRunner(context_menu_model.get()));
   gfx::Point screen_loc;
   views::View::ConvertPointToScreen(this, &screen_loc);
-  if (menu_runner_->RunMenuAt(GetWidget(), NULL, gfx::Rect(screen_loc, size()),
-          views::MenuItemView::TOPLEFT, views::MenuRunner::HAS_MNEMONICS |
-          views::MenuRunner::CONTEXT_MENU) ==
-      views::MenuRunner::MENU_DELETED)
+  if (menu_runner_->RunMenuAt(
+          GetWidget(),
+          NULL,
+          gfx::Rect(screen_loc, size()),
+          views::MENU_ANCHOR_TOPLEFT,
+          source_type,
+          views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU) ==
+      views::MenuRunner::MENU_DELETED) {
     return;
+  }
 }
 
 bool PageActionImageView::AcceleratorPressed(
@@ -215,7 +189,8 @@ void PageActionImageView::UpdateVisibility(WebContents* contents,
                                            const GURL& url) {
   // Save this off so we can pass it back to the extension when the action gets
   // executed. See PageActionImageView::OnMousePressed.
-  current_tab_id_ = contents ? ExtensionTabUtil::GetTabId(contents) : -1;
+  current_tab_id_ =
+      contents ? extensions::ExtensionTabUtil::GetTabId(contents) : -1;
   current_url_ = url;
 
   if (!contents ||
@@ -226,7 +201,7 @@ void PageActionImageView::UpdateVisibility(WebContents* contents,
 
   // Set the tooltip.
   tooltip_ = page_action_->GetTitle(current_tab_id_);
-  SetTooltipText(UTF8ToUTF16(tooltip_));
+  SetTooltipText(base::UTF8ToUTF16(tooltip_));
 
   // Set the image.
   gfx::Image icon = icon_factory_->GetIcon(current_tab_id_);
@@ -240,7 +215,7 @@ void PageActionImageView::InspectPopup(ExtensionAction* action) {
   ExecuteAction(ExtensionPopup::SHOW_AND_INSPECT);
 }
 
-void PageActionImageView::OnWidgetClosing(views::Widget* widget) {
+void PageActionImageView::OnWidgetDestroying(views::Widget* widget) {
   DCHECK_EQ(popup_->GetWidget(), widget);
   popup_->GetWidget()->RemoveObserver(this);
   popup_ = NULL;
@@ -250,10 +225,6 @@ void PageActionImageView::OnIconUpdated() {
   WebContents* web_contents = owner_->GetWebContents();
   if (web_contents)
     UpdateVisibility(web_contents, current_url_);
-}
-
-void PageActionImageView::OnIconChanged() {
-  OnIconUpdated();
 }
 
 void PageActionImageView::PaintChildren(gfx::Canvas* canvas) {
@@ -274,10 +245,10 @@ void PageActionImageView::ShowPopupWithURL(
   if (popup_showing)
     return;
 
-  views::BubbleBorder::ArrowLocation arrow_location = base::i18n::IsRTL() ?
+  views::BubbleBorder::Arrow arrow = base::i18n::IsRTL() ?
       views::BubbleBorder::TOP_LEFT : views::BubbleBorder::TOP_RIGHT;
 
-  popup_ = ExtensionPopup::ShowPopup(popup_url, browser_, this, arrow_location,
+  popup_ = ExtensionPopup::ShowPopup(popup_url, browser_, this, arrow,
                                      show_action);
   popup_->GetWidget()->AddObserver(this);
 }

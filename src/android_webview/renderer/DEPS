@@ -3,8 +3,19 @@ include_rules = [
   "+android_webview/common",
   "+android_webview/renderer",
 
+  "+components/autofill/content/renderer",
+  "+components/cdm/renderer",
+  "+components/visitedlink/renderer",
+
   "+content/public/renderer",
- 
-  "+third_party/WebKit/Source/WebKit/chromium/public",
-  "+third_party/WebKit/Source/Platform/chromium/public",
+
+  "+printing",
+
+  "+third_party/WebKit/public/platform",
+  "+third_party/WebKit/public/web",
+
+  "+third_party/widevine/cdm/widevine_cdm_common.h",
+
+  "+ui/gfx",
+  "+ui/gl/gpu_memory_buffer.h",
 ]

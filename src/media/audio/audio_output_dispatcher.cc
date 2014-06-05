@@ -4,23 +4,25 @@
 
 #include "media/audio/audio_output_dispatcher.h"
 
-#include "base/message_loop.h"
+#include "base/single_thread_task_runner.h"
 
 namespace media {
 
 AudioOutputDispatcher::AudioOutputDispatcher(
     AudioManager* audio_manager,
-    const AudioParameters& params)
+    const AudioParameters& params,
+    const std::string& device_id)
     : audio_manager_(audio_manager),
-      message_loop_(MessageLoop::current()),
-      params_(params) {
+      task_runner_(audio_manager->GetTaskRunner()),
+      params_(params),
+      device_id_(device_id) {
   // We expect to be instantiated on the audio thread.  Otherwise the
-  // message_loop_ member will point to the wrong message loop!
-  DCHECK(audio_manager->GetMessageLoop()->BelongsToCurrentThread());
+  // |task_runner_| member will point to the wrong message loop!
+  DCHECK(audio_manager->GetTaskRunner()->BelongsToCurrentThread());
 }
 
 AudioOutputDispatcher::~AudioOutputDispatcher() {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(task_runner_->BelongsToCurrentThread());
 }
 
 }  // namespace media

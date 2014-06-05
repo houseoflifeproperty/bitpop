@@ -6,7 +6,9 @@
 
 #include "base/logging.h"
 #include "content/common/socket_stream.h"
+#include "content/public/browser/content_browser_client.h"
 #include "net/socket_stream/socket_stream_job.h"
+#include "net/url_request/url_request_context.h"
 
 namespace content {
 namespace {
@@ -27,18 +29,21 @@ class SocketStreamId : public net::SocketStream::UserData {
 
 SocketStreamHost::SocketStreamHost(
     net::SocketStream::Delegate* delegate,
-    int render_view_id,
+    int child_id,
+    int render_frame_id,
     int socket_id)
     : delegate_(delegate),
-      render_view_id_(render_view_id),
+      child_id_(child_id),
+      render_frame_id_(render_frame_id),
       socket_id_(socket_id) {
   DCHECK_NE(socket_id_, kNoSocketId);
-  VLOG(1) << "SocketStreamHost: render_view_id=" << render_view_id
+  VLOG(1) << "SocketStreamHost: render_frame_id=" << render_frame_id
           << " socket_id=" << socket_id_;
 }
 
 /* static */
-int SocketStreamHost::SocketIdFromSocketStream(net::SocketStream* socket) {
+int SocketStreamHost::SocketIdFromSocketStream(
+    const net::SocketStream* socket) {
   net::SocketStream::UserData* d = socket->GetUserData(kSocketIdKey);
   if (d) {
     SocketStreamId* socket_stream_id = static_cast<SocketStreamId*>(d);
@@ -49,51 +54,54 @@ int SocketStreamHost::SocketIdFromSocketStream(net::SocketStream* socket) {
 
 SocketStreamHost::~SocketStreamHost() {
   VLOG(1) << "SocketStreamHost destructed socket_id=" << socket_id_;
-  socket_->DetachDelegate();
+  job_->DetachContext();
+  job_->DetachDelegate();
 }
 
 void SocketStreamHost::Connect(const GURL& url,
                                net::URLRequestContext* request_context) {
   VLOG(1) << "SocketStreamHost::Connect url=" << url;
-  socket_ = net::SocketStreamJob::CreateSocketStreamJob(
+  job_ = net::SocketStreamJob::CreateSocketStreamJob(
       url, delegate_, request_context->transport_security_state(),
-      request_context->ssl_config_service());
-  socket_->set_context(request_context);
-  socket_->SetUserData(kSocketIdKey, new SocketStreamId(socket_id_));
-  socket_->Connect();
+      request_context->ssl_config_service(),
+      request_context,
+      GetContentClient()->browser()->OverrideCookieStoreForRenderProcess(
+          child_id_));
+  job_->SetUserData(kSocketIdKey, new SocketStreamId(socket_id_));
+  job_->Connect();
 }
 
 bool SocketStreamHost::SendData(const std::vector<char>& data) {
   VLOG(1) << "SocketStreamHost::SendData";
-  return socket_ && socket_->SendData(&data[0], data.size());
+  return job_.get() && job_->SendData(&data[0], data.size());
 }
 
 void SocketStreamHost::Close() {
   VLOG(1) << "SocketStreamHost::Close";
-  if (!socket_)
+  if (!job_.get())
     return;
-  socket_->Close();
+  job_->Close();
 }
 
 void SocketStreamHost::CancelWithError(int error) {
   VLOG(1) << "SocketStreamHost::CancelWithError: error=" << error;
-  if (!socket_)
+  if (!job_.get())
     return;
-  socket_->CancelWithError(error);
+  job_->CancelWithError(error);
 }
 
 void SocketStreamHost::CancelWithSSLError(const net::SSLInfo& ssl_info) {
   VLOG(1) << "SocketStreamHost::CancelWithSSLError";
-  if (!socket_)
+  if (!job_.get())
     return;
-  socket_->CancelWithSSLError(ssl_info);
+  job_->CancelWithSSLError(ssl_info);
 }
 
 void SocketStreamHost::ContinueDespiteError() {
   VLOG(1) << "SocketStreamHost::ContinueDespiteError";
-  if (!socket_)
+  if (!job_.get())
     return;
-  socket_->ContinueDespiteError();
+  job_->ContinueDespiteError();
 }
 
 }  // namespace content

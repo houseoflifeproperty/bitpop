@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,11 +10,12 @@
 #include "chrome/browser/extensions/api/serial/serial_api.h"
 #include "chrome/browser/extensions/api/serial/serial_connection.h"
 #include "chrome/browser/extensions/extension_apitest.h"
-#include "chrome/browser/extensions/extension_function.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/common/extensions/api/serial.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/extension_function.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 using testing::_;
@@ -33,38 +34,43 @@ class SerialApiTest : public ExtensionApiTest {
 
 namespace extensions {
 
-class FakeSerialGetPortsFunction : public AsyncExtensionFunction {
+class FakeSerialGetDevicesFunction : public AsyncExtensionFunction {
  public:
-  virtual bool RunImpl() {
-    ListValue* ports = new ListValue();
-    ports->Append(Value::CreateStringValue("/dev/fakeserial"));
-    ports->Append(Value::CreateStringValue("\\\\COM800\\"));
-    SetResult(ports);
+  virtual bool RunAsync() OVERRIDE {
+    base::ListValue* devices = new base::ListValue();
+    base::DictionaryValue* device0 = new base::DictionaryValue();
+    device0->SetString("path", "/dev/fakeserial");
+    base::DictionaryValue* device1 = new base::DictionaryValue();
+    device1->SetString("path", "\\\\COM800\\");
+    devices->Append(device0);
+    devices->Append(device1);
+    SetResult(devices);
     SendResponse(true);
     return true;
   }
  protected:
-  virtual ~FakeSerialGetPortsFunction() {}
+  virtual ~FakeSerialGetDevicesFunction() {}
 };
 
 class FakeEchoSerialConnection : public SerialConnection {
  public:
   explicit FakeEchoSerialConnection(
       const std::string& port,
-      int bitrate,
       const std::string& owner_extension_id)
-      : SerialConnection(port, bitrate, owner_extension_id),
-        opened_(true) {
-    Flush();
-    opened_ = false;
+      : SerialConnection(port, owner_extension_id),
+        opened_(false) {
   }
 
   virtual ~FakeEchoSerialConnection() {
   }
 
-  virtual bool Open() {
+  virtual void Open(const OpenCompleteCallback& callback) {
     DCHECK(!opened_);
     opened_ = true;
+    callback.Run(true);
+  }
+
+  virtual bool Configure(const api::serial::ConnectionOptions& options) {
     return true;
   }
 
@@ -72,77 +78,76 @@ class FakeEchoSerialConnection : public SerialConnection {
     DCHECK(opened_);
   }
 
-  virtual void Flush() {
-    DCHECK(opened_);
-    buffer_.clear();
+  virtual bool Receive(const ReceiveCompleteCallback& callback) {
+    read_callback_ = callback;
+    return true;
   }
 
-  virtual int Read(scoped_refptr<net::IOBufferWithSize> io_buffer) {
-    DCHECK(io_buffer->data());
-
-    if (buffer_.empty()) {
-      return 0;
+  virtual bool Send(const std::string& data,
+                    const SendCompleteCallback& callback) {
+    callback.Run(data.length(), api::serial::SEND_ERROR_NONE);
+    if (!read_callback_.is_null()) {
+      read_callback_.Run(data, api::serial::RECEIVE_ERROR_NONE);
     }
-    char *data = io_buffer->data();
-    int bytes_to_copy = io_buffer->size();
-    while (bytes_to_copy-- && !buffer_.empty()) {
-      *data++ = buffer_.front();
-      buffer_.pop_front();
-    }
-    return io_buffer->size();
+    return true;
   }
 
-  virtual int Write(scoped_refptr<net::IOBuffer> io_buffer, int byte_count) {
-    DCHECK(io_buffer.get());
-    DCHECK(byte_count >= 0);
-
-    char *data = io_buffer->data();
-    int count = byte_count;
-    while (count--)
-      buffer_.push_back(*data++);
-    return byte_count;
+  virtual bool GetControlSignals(api::serial::DeviceControlSignals* signals)
+      const {
+    signals->dcd = true;
+    signals->cts = true;
+    signals->ri = true;
+    signals->dsr = true;
+    return true;
   }
 
-  MOCK_METHOD1(GetControlSignals, bool(ControlSignals &));
-  MOCK_METHOD1(SetControlSignals, bool(const ControlSignals &));
+  virtual bool GetInfo(api::serial::ConnectionInfo* info) const {
+    info->paused = false;
+    info->persistent = false;
+    info->buffer_size = 4096;
+    info->receive_timeout = 0;
+    info->send_timeout = 0;
+    info->bitrate.reset(new int(9600));
+    info->data_bits = api::serial::DATA_BITS_EIGHT;
+    info->parity_bit = api::serial::PARITY_BIT_NO;
+    info->stop_bits = api::serial::STOP_BITS_ONE;
+    info->cts_flow_control.reset(new bool(false));
+    return true;
+  }
+
+  MOCK_METHOD1(SetControlSignals, bool(const api::serial::HostControlSignals&));
 
  private:
   bool opened_;
-  std::deque<char> buffer_;
+  ReceiveCompleteCallback read_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeEchoSerialConnection);
 };
 
-class FakeSerialOpenFunction : public SerialOpenFunction {
+class FakeSerialConnectFunction : public api::SerialConnectFunction {
  protected:
   virtual SerialConnection* CreateSerialConnection(
       const std::string& port,
-      int bitrate,
-      const std::string& owner_extension_id) OVERRIDE {
+      const std::string& owner_extension_id) const OVERRIDE {
     FakeEchoSerialConnection* serial_connection =
-        new FakeEchoSerialConnection(port, bitrate, owner_extension_id);
-    EXPECT_CALL(*serial_connection, GetControlSignals(_)).
-        Times(1).WillOnce(Return(true));
+        new FakeEchoSerialConnection(port, owner_extension_id);
     EXPECT_CALL(*serial_connection, SetControlSignals(_)).
         Times(1).WillOnce(Return(true));
     return serial_connection;
   }
-  virtual bool DoesPortExist(const std::string& port) OVERRIDE {
-    return true;
-  }
 
  protected:
-  virtual ~FakeSerialOpenFunction() {}
+  virtual ~FakeSerialConnectFunction() {}
 };
 
 }  // namespace extensions
 
-ExtensionFunction* FakeSerialGetPortsFunctionFactory() {
-  return new extensions::FakeSerialGetPortsFunction();
+ExtensionFunction* FakeSerialGetDevicesFunctionFactory() {
+  return new extensions::FakeSerialGetDevicesFunction();
 }
 
-ExtensionFunction* FakeSerialOpenFunctionFactory() {
-  return new extensions::FakeSerialOpenFunction();
+ExtensionFunction* FakeSerialConnectFunctionFactory() {
+  return new extensions::FakeSerialConnectFunction();
 }
 
 // Disable SIMULATE_SERIAL_PORTS only if all the following are true:
@@ -170,12 +175,10 @@ IN_PROC_BROWSER_TEST_F(SerialApiTest, SerialFakeHardware) {
   catcher.RestrictToProfile(browser()->profile());
 
 #if SIMULATE_SERIAL_PORTS
-  ASSERT_TRUE(ExtensionFunctionDispatcher::OverrideFunction(
-      "serial.getPorts",
-      FakeSerialGetPortsFunctionFactory));
-  ASSERT_TRUE(ExtensionFunctionDispatcher::OverrideFunction(
-      "serial.open",
-      FakeSerialOpenFunctionFactory));
+  ASSERT_TRUE(extensions::ExtensionFunctionDispatcher::OverrideFunction(
+      "serial.getDevices", FakeSerialGetDevicesFunctionFactory));
+  ASSERT_TRUE(extensions::ExtensionFunctionDispatcher::OverrideFunction(
+      "serial.connect", FakeSerialConnectFunctionFactory));
 #endif
 
   ASSERT_TRUE(RunExtensionTest("serial/api")) << message_;

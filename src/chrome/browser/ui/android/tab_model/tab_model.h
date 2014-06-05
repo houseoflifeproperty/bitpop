@@ -7,6 +7,9 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/sessions/session_id.h"
+#include "chrome/browser/sync/glue/synced_window_delegate.h"
+#include "chrome/browser/ui/toolbar/toolbar_model.h"
+#include "chrome/browser/ui/toolbar/toolbar_model_delegate.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
@@ -20,6 +23,7 @@ class WebContents;
 }
 
 class Profile;
+class TabAndroid;
 
 // Abstract representation of a Tab Model for Android.  Since Android does
 // not use Browser/BrowserList, this is required to allow Chrome to interact
@@ -27,9 +31,6 @@ class Profile;
 class TabModel : public content::NotificationObserver {
  public:
   explicit TabModel(Profile* profile);
-  // Deprecated: This constructor is deprecated and should be removed once
-  // downstream Android uses new constructor. See crbug.com/159704.
-  TabModel();
   virtual ~TabModel();
 
   virtual Profile* GetProfile() const;
@@ -40,10 +41,18 @@ class TabModel : public content::NotificationObserver {
   virtual int GetTabCount() const = 0;
   virtual int GetActiveIndex() const = 0;
   virtual content::WebContents* GetWebContentsAt(int index) const = 0;
-  virtual SessionID::id_type GetTabIdAt(int index) const = 0;
+  virtual TabAndroid* GetTabAt(int index) const = 0;
+
+  virtual void SetActiveIndex(int index) = 0;
+  virtual void CloseTabAt(int index) = 0;
 
   // Used for restoring tabs from synced foreign sessions.
-  virtual void CreateTab(content::WebContents* web_contents) = 0;
+  virtual void CreateTab(content::WebContents* web_contents,
+                         int parent_tab_id) = 0;
+
+  // Used by Developer Tools to create a new tab with a given URL.
+  // Replaces CreateTabForTesting.
+  virtual content::WebContents* CreateNewTabForDevTools(const GURL& url) = 0;
 
   // Return true if we are currently restoring sessions asynchronously.
   virtual bool IsSessionRestoreInProgress() const = 0;
@@ -54,6 +63,8 @@ class TabModel : public content::NotificationObserver {
   // Instructs the TabModel to broadcast a notification that all tabs are now
   // loaded from storage.
   void BroadcastSessionRestoreComplete();
+
+  ToolbarModel* GetToolbarModel();
 
  private:
   // Determines how TabModel will interact with the profile.

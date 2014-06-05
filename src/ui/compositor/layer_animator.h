@@ -12,19 +12,19 @@
 #include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/observer_list.h"
-#include "base/time.h"
-#include "ui/base/animation/animation_container_element.h"
-#include "ui/base/animation/tween.h"
+#include "base/time/time.h"
 #include "ui/compositor/compositor_export.h"
 #include "ui/compositor/layer_animation_element.h"
+#include "ui/gfx/animation/animation_container_element.h"
+#include "ui/gfx/animation/tween.h"
 
 namespace gfx {
+class Animation;
 class Rect;
 class Transform;
 }
 
 namespace ui {
-class Animation;
 class Layer;
 class LayerAnimationSequence;
 class LayerAnimationDelegate;
@@ -41,7 +41,8 @@ class ScopedLayerAnimationSettings;
 // by holding a reference to itself for the duration of methods for which it
 // must guarantee that |this| is valid.
 class COMPOSITOR_EXPORT LayerAnimator
-    : public AnimationContainerElement, public base::RefCounted<LayerAnimator> {
+    : public gfx::AnimationContainerElement,
+      public base::RefCounted<LayerAnimator> {
  public:
   enum PreemptionStrategy {
     IMMEDIATELY_SET_NEW_TARGET,
@@ -87,6 +88,10 @@ class COMPOSITOR_EXPORT LayerAnimator
   virtual void SetColor(SkColor color);
   SkColor GetTargetColor() const;
 
+  // Returns the default length of animations, including adjustment for slow
+  // animation mode if set.
+  base::TimeDelta GetTransitionDuration() const;
+
   // Sets the layer animation delegate the animator is associated with. The
   // animator does not own the delegate. The layer animator expects a non-NULL
   // delegate for most of its operations, so do not call any methods without
@@ -113,22 +118,27 @@ class COMPOSITOR_EXPORT LayerAnimator
   // of this animation sequence.
   void ScheduleAnimation(LayerAnimationSequence* animation);
 
-  // Starts the animations to be run together. Obviously will not work if
-  // they animate any common properties. The animator takes ownership of the
+  // Starts the animations to be run together, ensuring that the first elements
+  // in these sequences have the same effective start time even when some of
+  // them start on the compositor thread (but there is no such guarantee for
+  // the effective start time of subsequent elements). Obviously will not work
+  // if they animate any common properties. The animator takes ownership of the
   // animation sequences. Takes PreemptionStrategy into account.
   void StartTogether(const std::vector<LayerAnimationSequence*>& animations);
 
-  // Schedules the animations to be run together. Obviously will not work if
-  // they animate any common properties. The animator takes ownership of the
-  // animation sequences.
+  // Schedules the animations to be run together, ensuring that the first
+  // elements in these sequences have the same effective start time even when
+  // some of them start on the compositor thread (but there is no such guarantee
+  // for the effective start time of subsequent elements). Obviously will not
+  // work if they animate any common properties. The animator takes ownership
+  // of the animation sequences.
   void ScheduleTogether(const std::vector<LayerAnimationSequence*>& animations);
 
   // Schedules a pause for length |duration| of all the specified properties.
   // End the list with -1.
   void SchedulePauseForProperties(
       base::TimeDelta duration,
-      LayerAnimationElement::AnimatableProperty property,
-      ...);
+      LayerAnimationElement::AnimatableProperties properties_to_pause);
 
   // Returns true if there is an animation in the queue (animations remain in
   // the queue until they complete, so this includes running animations).
@@ -159,11 +169,14 @@ class COMPOSITOR_EXPORT LayerAnimator
   void AddObserver(LayerAnimationObserver* observer);
   void RemoveObserver(LayerAnimationObserver* observer);
 
+  // Called when a threaded animation is actually started.
+  void OnThreadedAnimationStarted(const cc::AnimationEvent& event);
+
   // This determines how implicit animations will be tweened. This has no
   // effect on animations that are explicitly started or scheduled. The default
   // is Tween::LINEAR.
-  void set_tween_type(Tween::Type tween_type) { tween_type_ = tween_type; }
-  Tween::Type tween_type() const { return tween_type_; }
+  void set_tween_type(gfx::Tween::Type tween_type) { tween_type_ = tween_type; }
+  gfx::Tween::Type tween_type() const { return tween_type_; }
 
   // For testing purposes only.
   void set_disable_timer_for_test(bool disable_timer) {
@@ -174,29 +187,6 @@ class COMPOSITOR_EXPORT LayerAnimator
     last_step_time_ = time;
   }
   base::TimeTicks last_step_time() const { return last_step_time_; }
-
-  // When set all animations play slowly for visual debugging.
-  static void set_slow_animation_mode(bool slow) {
-    slow_animation_mode_ = slow;
-  }
-  static bool slow_animation_mode() { return slow_animation_mode_; }
-
-  // When in slow animation mode, animation durations are scaled by this value.
-  static void set_slow_animation_scale_factor(int factor) {
-    slow_animation_scale_factor_ = factor;
-  }
-  static int slow_animation_scale_factor() {
-    return slow_animation_scale_factor_;
-  }
-
-  // When set to true, all animations complete immediately.
-  static void set_disable_animations_for_test(bool disable_animations) {
-    disable_animations_for_test_ = disable_animations;
-  }
-
-  static bool disable_animations_for_test() {
-    return disable_animations_for_test_;
-  }
 
  protected:
   virtual ~LayerAnimator();
@@ -216,13 +206,14 @@ class COMPOSITOR_EXPORT LayerAnimator
  private:
   friend class base::RefCounted<LayerAnimator>;
   friend class ScopedLayerAnimationSettings;
+  friend class LayerAnimatorTestController;
 
   class RunningAnimation {
    public:
     RunningAnimation(const base::WeakPtr<LayerAnimationSequence>& sequence);
     ~RunningAnimation();
 
-    bool is_sequence_alive() const { return !!sequence_; }
+    bool is_sequence_alive() const { return !!sequence_.get(); }
     LayerAnimationSequence* sequence() const { return sequence_.get(); }
 
    private:
@@ -306,9 +297,8 @@ class COMPOSITOR_EXPORT LayerAnimator
   // starting the animation or adding to the queue.
   void OnScheduled(LayerAnimationSequence* sequence);
 
-  // Returns the default length of animations, including adjustment for slow
-  // animation mode if set.
-  base::TimeDelta GetTransitionDuration() const;
+  // Sets |transition_duration_| unless |is_transition_duration_locked_| is set.
+  void SetTransitionDuration(base::TimeDelta duration);
 
   // Clears the animation queues and notifies any running animations that they
   // have been aborted.
@@ -329,11 +319,15 @@ class COMPOSITOR_EXPORT LayerAnimator
   // Determines how animations are replaced.
   PreemptionStrategy preemption_strategy_;
 
+  // Whether the length of animations is locked. While it is locked
+  // SetTransitionDuration does not set |transition_duration_|.
+  bool is_transition_duration_locked_;
+
   // The default length of animations.
   base::TimeDelta transition_duration_;
 
   // The default tween type for implicit transitions
-  Tween::Type tween_type_;
+  gfx::Tween::Type tween_type_;
 
   // Used for coordinating the starting of animations.
   base::TimeTicks last_step_time_;
@@ -348,15 +342,6 @@ class COMPOSITOR_EXPORT LayerAnimator
   // Prevents timer adjustments in case when we start multiple animations
   // with preemption strategies that discard previous animations.
   bool adding_animations_;
-
-  // This causes all animations to complete immediately.
-  static bool disable_animations_for_test_;
-
-  // Slows down all animations for visual debugging.
-  static bool slow_animation_mode_;
-
-  // Amount to slow animations for debugging.
-  static int slow_animation_scale_factor_;
 
   // Observers are notified when layer animations end, are scheduled or are
   // aborted.

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,17 +9,26 @@
 #include <string>
 
 #include "chrome/browser/extensions/pending_extension_info.h"
-#include "chrome/common/extensions/extension.h"
+#include "extensions/common/manifest.h"
 
 class ExtensionServiceInterface;
 class GURL;
-class PendingExtensionManager;
+
+namespace base {
 class Version;
+}
+
+namespace content {
+class BrowserContext;
+}
 
 FORWARD_DECLARE_TEST(ExtensionServiceTest,
                      UpdatePendingExtensionAlreadyInstalled);
 
 namespace extensions {
+class Extension;
+class PendingExtensionManager;
+
 class ExtensionUpdaterTest;
 void SetupPendingExtensionManagerForTest(
     int count, const GURL& update_url,
@@ -38,7 +47,8 @@ class PendingExtensionManager {
   // extensions we are managing. The service creates an instance of
   // this class on construction, and destroys it on destruction.
   // The service remains valid over the entire lifetime of this class.
-  explicit PendingExtensionManager(const ExtensionServiceInterface& service);
+  explicit PendingExtensionManager(const ExtensionServiceInterface& service,
+                                   content::BrowserContext* context);
   ~PendingExtensionManager();
 
   // TODO(skerner): Many of these methods can be private once code in
@@ -76,19 +86,30 @@ class PendingExtensionManager {
       PendingExtensionInfo::ShouldAllowInstallPredicate should_allow_install,
       bool install_silently);
 
+  // Adds an extension that was depended on by another extension.
+  bool AddFromExtensionImport(
+      const std::string& id,
+      const GURL& update_url,
+      PendingExtensionInfo::ShouldAllowInstallPredicate should_allow_install);
+
   // Given an extension id and an update URL, schedule the extension
   // to be fetched, installed, and activated.
   bool AddFromExternalUpdateUrl(const std::string& id,
+                                const std::string& install_parameter,
                                 const GURL& update_url,
-                                Extension::Location location);
+                                Manifest::Location location,
+                                int creation_flags,
+                                bool mark_acknowledged);
 
   // Add a pending extension record for an external CRX file.
   // Return true if the CRX should be installed, false if an existing
   // pending record overrides it.
   bool AddFromExternalFile(
       const std::string& id,
-      Extension::Location location,
-      const Version& version);
+      Manifest::Location location,
+      const base::Version& version,
+      int creation_flags,
+      bool mark_acknowledged);
 
   // Get the list of pending IDs that should be installed from an update URL.
   // Pending extensions that will be installed from local files will not be
@@ -103,12 +124,15 @@ class PendingExtensionManager {
   // Return true if the extension was added.
   bool AddExtensionImpl(
       const std::string& id,
+      const std::string& install_parameter,
       const GURL& update_url,
-      const Version& version,
+      const base::Version& version,
       PendingExtensionInfo::ShouldAllowInstallPredicate should_allow_install,
       bool is_from_sync,
       bool install_silently,
-      Extension::Location install_source);
+      Manifest::Location install_source,
+      int creation_flags,
+      bool mark_acknowledged);
 
   // Add a pending extension record directly.  Used for unit tests that need
   // to set an inital state. Use friendship to allow the tests to call this
@@ -120,6 +144,9 @@ class PendingExtensionManager {
   // and destroyed with |service_|. We only use methods from the interface
   // ExtensionServiceInterface.
   const ExtensionServiceInterface& service_;
+
+  // The BrowserContext with which the manager is associated.
+  content::BrowserContext* context_;
 
   PendingExtensionList pending_extension_list_;
 

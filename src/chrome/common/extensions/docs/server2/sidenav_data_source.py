@@ -3,64 +3,104 @@
 # found in the LICENSE file.
 
 import copy
-import json
 import logging
+import posixpath
 
-import compiled_file_system as compiled_fs
-from file_system import FileNotFoundError
-from third_party.json_schema_compiler.model import UnixName
+from compiled_file_system import SingleFile, Unicode
+from data_source import DataSource
+from extensions_paths import JSON_TEMPLATES
+from future import Future
+from third_party.json_schema_compiler.json_parse import Parse
 
-class SidenavDataSource(object):
-  """This class reads in and caches a JSON file representing the side navigation
-  menu.
-  """
-  class Factory(object):
-    def __init__(self, cache_factory, json_path):
-      self._cache = cache_factory.Create(self._CreateSidenavDict,
-                                         compiled_fs.SIDENAV)
-      self._json_path = json_path
 
-    def Create(self, path):
-      """Create a SidenavDataSource, binding it to |path|. |path| is the url
-      of the page that is being rendered. It is used to determine which item
-      in the sidenav should be highlighted.
-      """
-      return SidenavDataSource(self._cache, self._json_path, path)
+def _AddLevels(items, level):
+  '''Add a 'level' key to each item in |items|. 'level' corresponds to how deep
+  in |items| an item is. |level| sets the starting depth.
+  '''
+  for item in items:
+    item['level'] = level
+    if 'items' in item:
+      _AddLevels(item['items'], level + 1)
 
-    def _AddLevels(self, items, level):
-      """Levels represent how deeply this item is nested in the sidenav. We
-      start at 2 because the top <ul> is the only level 1 element.
-      """
-      for item in items:
-        item['level'] = level
-        if 'items' in item:
-          self._AddLevels(item['items'], level + 1)
 
-    def _CreateSidenavDict(self, json_str):
-      items = json.loads(json_str)
-      self._AddLevels(items, 2);
-      return items
-
-  def __init__(self, cache, json_path, path):
-    self._cache = cache
-    self._json_path = json_path
-    self._file_name = path.split('/')[-1]
-
-  def _AddSelected(self, items):
-    for item in items:
-      if item.get('fileName', '') == self._file_name:
-        item['selected'] = True
+def _AddAnnotations(items, path, parent=None):
+  '''Add 'selected', 'child_selected' and 'related' properties to 
+  |items| so that the sidenav can be expanded to show which menu item has 
+  been selected and the related pages section can be drawn. 'related'
+  is added to all items with the same parent as the selected item.
+  If more than one item exactly matches the path, the deepest one is considered 
+  'selected'. A 'parent' property is added to the selected path.
+  
+  Returns True if an item was marked 'selected'.
+  '''
+  for item in items:
+    if 'items' in item:
+      if _AddAnnotations(item['items'], path, item):
+        item['child_selected'] = True
         return True
+
+    if item.get('href', '') == path:
+      item['selected'] = True
+      if parent:
+        item['parent'] = { 'title': parent.get('title', None), 
+                          'href': parent.get('href', None) }
+      
+      for sibling in items:
+        sibling['related'] = True
+        
+      return True
+
+  return False
+
+
+class SidenavDataSource(DataSource):
+  '''Provides templates with access to JSON files used to create the side
+  navigation bar.
+  '''
+  def __init__(self, server_instance, request):
+    self._cache = server_instance.compiled_fs_factory.Create(
+        server_instance.host_file_system_provider.GetTrunk(),
+        self._CreateSidenavDict,
+        SidenavDataSource)
+    self._server_instance = server_instance
+    self._request = request
+
+  @SingleFile
+  @Unicode
+  def _CreateSidenavDict(self, _, content):
+    items = Parse(content)
+    # Start at level 2, the top <ul> element is level 1.
+    _AddLevels(items, level=2)
+    self._QualifyHrefs(items)
+    return items
+
+  def _QualifyHrefs(self, items):
+    '''Force hrefs in |items| to either be absolute (http://...) or qualified
+    (beginning with /, in which case it will be moved relative to |base_path|).
+    Relative hrefs emit a warning and should be updated.
+    '''
+    for item in items:
       if 'items' in item:
-        if self._AddSelected(item['items']):
-          item['child_selected'] = True
-    return False
+        self._QualifyHrefs(item['items'])
+
+      href = item.get('href')
+      if href is not None and not href.startswith(('http://', 'https://')):
+        if not href.startswith('/'):
+          logging.warn('Paths in sidenav must be qualified. %s is not.' % href)
+        else:
+          href = href.lstrip('/')
+        item['href'] = self._server_instance.base_path + href
+
+  def Cron(self):
+    return self._cache.GetFromFile(
+        posixpath.join(JSON_TEMPLATES, 'chrome_sidenav.json'))
 
   def get(self, key):
-    try:
-      sidenav = copy.deepcopy(self._cache.GetFromFile(
-          '%s/%s_sidenav.json' % (self._json_path, key)))
-      self._AddSelected(sidenav)
-      return sidenav
-    except FileNotFoundError as e:
-      logging.error('%s: Error reading sidenav "%s".' % (e, key))
+    # TODO(mangini/kalman): Use |key| to decide which sidenav to use,
+    # which will require a more complex Cron method.
+    sidenav = self._cache.GetFromFile(
+        posixpath.join(JSON_TEMPLATES, 'chrome_sidenav.json')).Get()
+    sidenav = copy.deepcopy(sidenav)
+    _AddAnnotations(sidenav,
+                    self._server_instance.base_path + self._request.path)
+    return sidenav

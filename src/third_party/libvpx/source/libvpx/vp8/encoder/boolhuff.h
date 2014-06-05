@@ -16,11 +16,15 @@
 *   Description  :     Bool Coder header file.
 *
 ****************************************************************************/
-#ifndef __INC_BOOLHUFF_H
-#define __INC_BOOLHUFF_H
+#ifndef VP8_ENCODER_BOOLHUFF_H_
+#define VP8_ENCODER_BOOLHUFF_H_
 
 #include "vpx_ports/mem.h"
 #include "vpx/internal/vpx_codec_internal.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef struct
 {
@@ -67,7 +71,7 @@ static void vp8_encode_bool(BOOL_CODER *br, int bit, int probability)
     unsigned int lowvalue = br->lowvalue;
     register unsigned int shift;
 
-#ifdef ENTROPY_STATS
+#ifdef VP8_ENTROPY_STATS
 #if defined(SECTIONBITS_OUTPUT)
 
     if (bit)
@@ -125,4 +129,8 @@ static void vp8_encode_bool(BOOL_CODER *br, int bit, int probability)
     br->range = range;
 }
 
+#ifdef __cplusplus
+}  // extern "C"
 #endif
+
+#endif  // VP8_ENCODER_BOOLHUFF_H_

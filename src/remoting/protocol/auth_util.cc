@@ -6,7 +6,7 @@
 
 #include "base/base64.h"
 #include "base/logging.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "crypto/hmac.h"
 #include "crypto/sha2.h"
 #include "net/base/net_errors.h"
@@ -26,9 +26,7 @@ std::string GenerateSupportAuthToken(const std::string& jid,
                                      const std::string& access_code) {
   std::string sha256 = crypto::SHA256HashString(jid + " " + access_code);
   std::string sha256_base64;
-  if (!base::Base64Encode(sha256, &sha256_base64)) {
-    LOG(FATAL) << "Failed to encode auth token";
-  }
+  base::Base64Encode(sha256, &sha256_base64);
   return sha256_base64;
 }
 

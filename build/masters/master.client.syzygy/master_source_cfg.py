@@ -4,6 +4,8 @@
 
 from buildbot.changes import svnpoller
 
+from common import chromium_utils
+
 from master import build_utils
 
 def SyzygyFileSplitter(path):
@@ -16,6 +18,7 @@ def Update(config, active_master, c):
   syzygy_revlinktmpl = config.Master.googlecode_revlinktmpl % ('sawbuck', '%s')
 
   syzygy_poller = svnpoller.SVNPoller(svnurl=syzygy_url,
+                                      svnbin=chromium_utils.SVN_BIN,
                                       split_file=SyzygyFileSplitter,
                                       pollinterval=30,
                                       revlinktmpl=syzygy_revlinktmpl)

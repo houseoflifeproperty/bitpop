@@ -7,10 +7,10 @@
 #include "base/file_util.h"
 #include "base/format_macros.h"
 #include "base/path_service.h"
-#include "base/stringprintf.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/string_split.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/net_errors.h"
 #include "net/ftp/ftp_directory_listing_parser.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -24,7 +24,7 @@ class FtpDirectoryListingParserTest
 };
 
 TEST_P(FtpDirectoryListingParserTest, Parse) {
-  FilePath test_dir;
+  base::FilePath test_dir;
   PathService::Get(base::DIR_SOURCE_ROOT, &test_dir);
   test_dir = test_dir.AppendASCII("net");
   test_dir = test_dir.AppendASCII("data");
@@ -42,8 +42,8 @@ TEST_P(FtpDirectoryListingParserTest, Parse) {
   SCOPED_TRACE(base::StringPrintf("Test case: %s", GetParam()));
 
   std::string test_listing;
-  EXPECT_TRUE(file_util::ReadFileToString(test_dir.AppendASCII(GetParam()),
-                                          &test_listing));
+  EXPECT_TRUE(base::ReadFileToString(test_dir.AppendASCII(GetParam()),
+                                     &test_listing));
 
   std::vector<FtpDirectoryListingEntry> entries;
   EXPECT_EQ(OK, ParseFtpDirectoryListing(test_listing,
@@ -51,7 +51,7 @@ TEST_P(FtpDirectoryListingParserTest, Parse) {
                                          &entries));
 
   std::string expected_listing;
-  ASSERT_TRUE(file_util::ReadFileToString(
+  ASSERT_TRUE(base::ReadFileToString(
                   test_dir.AppendASCII(std::string(GetParam()) + ".expected"),
                   &expected_listing));
 
@@ -91,7 +91,7 @@ TEST_P(FtpDirectoryListingParserTest, Parse) {
       ADD_FAILURE() << "invalid gold test data: " << type;
     }
 
-    EXPECT_EQ(UTF8ToUTF16(name), entry.name);
+    EXPECT_EQ(base::UTF8ToUTF16(name), entry.name);
     EXPECT_EQ(size, entry.size);
 
     base::Time::Exploded time_exploded;
@@ -141,6 +141,7 @@ const char* kTestFiles[] = {
   "dir-listing-ls-29",
   "dir-listing-ls-30",
   "dir-listing-ls-31",
+  "dir-listing-ls-32",  // busybox
 
   "dir-listing-netware-1",
   "dir-listing-netware-2",

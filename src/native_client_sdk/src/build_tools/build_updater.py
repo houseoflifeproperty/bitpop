@@ -10,7 +10,7 @@ tool users run to download new bundles, update existing bundles, etc.
 """
 
 import buildbot_common
-import build_utils
+import build_version
 import glob
 import optparse
 import os
@@ -44,8 +44,8 @@ UPDATER_FILES = [
   ('build_tools/sdk_tools/third_party/*.py', 'nacl_sdk/sdk_tools/third_party/'),
   ('build_tools/sdk_tools/third_party/fancy_urllib/*.py',
       'nacl_sdk/sdk_tools/third_party/fancy_urllib/'),
-  ('build_tools/sdk_tools/third_party/fancy_urllib/README',
-      'nacl_sdk/sdk_tools/third_party/fancy_urllib/README'),
+  ('build_tools/sdk_tools/third_party/fancy_urllib/README.chromium',
+      'nacl_sdk/sdk_tools/third_party/fancy_urllib/README.chromium'),
   ('build_tools/manifest_util.py', 'nacl_sdk/sdk_tools/manifest_util.py'),
   ('LICENSE', 'nacl_sdk/sdk_tools/LICENSE'),
   (CYGTAR, 'nacl_sdk/sdk_tools/cygtar.py'),
@@ -125,7 +125,7 @@ def UpdateRevisionNumber(out_dir, revision_number):
         current Chrome revision (as retrieved through svn/git).
   """
   if revision_number is None:
-    revision_number = build_utils.ChromeRevision()
+    revision_number = build_version.ChromeRevision()
 
   SDK_UPDATE_MAIN = os.path.join(out_dir,
       'nacl_sdk/sdk_tools/sdk_update_main.py')
@@ -178,7 +178,7 @@ def BuildUpdater(out_dir, revision_number=None):
 def main(args):
   parser = optparse.OptionParser()
   parser.add_option('-o', '--out', help='output directory',
-      dest='out_dir', default='out')
+      dest='out_dir', default=os.path.join(SRC_DIR, 'out'))
   parser.add_option('-r', '--revision', help='revision number of this updater',
       dest='revision', default=None)
   options, args = parser.parse_args(args[1:])

@@ -9,9 +9,9 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
-class PrefService;
+class PrefRegistrySimple;
 class Profile;
 class TemplateURL;
 class TemplateURLService;
@@ -22,20 +22,20 @@ class KeywordEditorController {
   explicit KeywordEditorController(Profile* profile);
   ~KeywordEditorController();
 
-  static void RegisterPrefs(PrefService* prefs);
+  static void RegisterPrefs(PrefRegistrySimple* registry);
 
   // Invoked when the user succesfully fills out the add keyword dialog.
   // Propagates the change to the TemplateURLService and updates the table
   // model.  Returns the index of the added URL.
-  int AddTemplateURL(const string16& title,
-                     const string16& keyword,
+  int AddTemplateURL(const base::string16& title,
+                     const base::string16& keyword,
                      const std::string& url);
 
   // Invoked when the user modifies a TemplateURL. Updates the
   // TemplateURLService and table model appropriately.
   void ModifyTemplateURL(TemplateURL* template_url,
-                         const string16& title,
-                         const string16& keyword,
+                         const base::string16& title,
+                         const base::string16& keyword,
                          const std::string& url);
 
   // Return true if the given |url| can be edited.

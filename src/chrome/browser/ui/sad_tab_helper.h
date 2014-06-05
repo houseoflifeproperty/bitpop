@@ -8,8 +8,6 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
 
@@ -17,22 +15,13 @@ namespace chrome {
 class SadTab;
 }
 
-#if defined(TOOLKIT_VIEWS)
-namespace views {
-class Widget;
-}
-#endif
-
 // Per-tab class to manage sad tab views.
 class SadTabHelper : public content::WebContentsObserver,
-                     public content::NotificationObserver,
                      public content::WebContentsUserData<SadTabHelper> {
  public:
   virtual ~SadTabHelper();
 
-#if defined(TOOLKIT_VIEWS)
-  views::Widget* sad_tab() { return sad_tab_.get(); }
-#endif
+  chrome::SadTab* sad_tab() { return sad_tab_.get(); }
 
  private:
   friend class content::WebContentsUserData<SadTabHelper>;
@@ -42,21 +31,10 @@ class SadTabHelper : public content::WebContentsObserver,
   void InstallSadTab(base::TerminationStatus status);
 
   // Overridden from content::WebContentsObserver:
-  virtual void RenderViewGone(base::TerminationStatus status) OVERRIDE;
+  virtual void RenderViewReady() OVERRIDE;
+  virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
 
-  // Overridden from content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
-  // Used to get notifications about renderers coming and going.
-  content::NotificationRegistrar registrar_;
-
-#if defined(TOOLKIT_VIEWS)
-  scoped_ptr<views::Widget> sad_tab_;
-#elif defined(TOOLKIT_GTK) || defined(OS_MACOSX)
   scoped_ptr<chrome::SadTab> sad_tab_;
-#endif
 
   DISALLOW_COPY_AND_ASSIGN(SadTabHelper);
 };

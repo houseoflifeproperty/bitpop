@@ -12,10 +12,13 @@
 #include "base/callback.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
+#include "chrome/common/content_settings.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
 
+class HostContentSettingsMap;
 class DownloadRequestInfoBarDelegate;
 
 namespace content {
@@ -67,6 +70,7 @@ class DownloadRequestLimiter
   // TabDownloadState prompts the user with an infobar as necessary.
   // TabDownloadState deletes itself (by invoking
   // DownloadRequestLimiter::Remove) as necessary.
+  // TODO(gbillock): just make this class implement PermissionBubbleRequest.
   class TabDownloadState : public content::NotificationObserver,
                            public content::WebContentsObserver {
    public:
@@ -98,28 +102,28 @@ class DownloadRequestLimiter
     }
 
     // Promote protected accessor to public.
-    content::WebContents* web_contents() {
+    content::WebContents* web_contents() const {
       return content::WebContentsObserver::web_contents();
     }
 
     // content::WebContentsObserver overrides.
+    virtual void AboutToNavigateRenderView(
+        content::RenderViewHost* render_view_host) OVERRIDE;
     // Invoked when a user gesture occurs (mouse click, enter or space). This
     // may result in invoking Remove on DownloadRequestLimiter.
     virtual void DidGetUserGesture() OVERRIDE;
+    virtual void WebContentsDestroyed() OVERRIDE;
 
     // Asks the user if they really want to allow the download.
     // See description above CanDownloadOnIOThread for details on lifetime of
     // callback.
     void PromptUserForDownload(
-        content::WebContents* tab,
         const DownloadRequestLimiter::Callback& callback);
-
-    // Are we showing a prompt to the user?
-    bool is_showing_prompt() const { return (infobar_ != NULL); }
 
     // Invoked from DownloadRequestDialogDelegate. Notifies the delegates and
     // changes the status appropriately. Virtual for testing.
     virtual void Cancel();
+    virtual void CancelOnce();
     virtual void Accept();
 
    protected:
@@ -127,14 +131,24 @@ class DownloadRequestLimiter
     TabDownloadState();
 
    private:
+    // Are we showing a prompt to the user?  Determined by whether
+    // we have an outstanding weak pointer--weak pointers are only
+    // given to the info bar delegate or permission bubble request.
+    bool is_showing_prompt() const;
+
     // content::NotificationObserver method.
     virtual void Observe(int type,
                          const content::NotificationSource& source,
                          const content::NotificationDetails& details) OVERRIDE;
 
+    // Remember to either block or allow automatic downloads from this origin.
+    void SetContentSetting(ContentSetting setting);
+
     // Notifies the callbacks as to whether the download is allowed or not.
     // Updates status_ appropriately.
     void NotifyCallbacks(bool allow);
+
+    content::WebContents* web_contents_;
 
     DownloadRequestLimiter* host_;
 
@@ -154,11 +168,16 @@ class DownloadRequestLimiter
     // Used to remove observers installed on NavigationController.
     content::NotificationRegistrar registrar_;
 
-    // Handles showing the infobar to the user, may be null.
-    DownloadRequestInfoBarDelegate* infobar_;
+    // Weak pointer factory for generating a weak pointer to pass to the
+    // infobar.  User responses to the throttling prompt will be returned
+    // through this channel, and it can be revoked if the user prompt result
+    // becomes moot.
+    base::WeakPtrFactory<DownloadRequestLimiter::TabDownloadState> factory_;
 
     DISALLOW_COPY_AND_ASSIGN(TabDownloadState);
   };
+
+  static void SetContentSettingsForTesting(HostContentSettingsMap* settings);
 
   DownloadRequestLimiter();
 
@@ -181,16 +200,6 @@ class DownloadRequestLimiter
   friend class TabDownloadState;
 
   ~DownloadRequestLimiter();
-
-  // For unit tests. If non-null this is used instead of creating a dialog.
-  class TestingDelegate {
-   public:
-    virtual bool ShouldAllowDownload() = 0;
-
-   protected:
-    virtual ~TestingDelegate() {}
-  };
-  static void SetTestingDelegate(TestingDelegate* delegate);
 
   // Gets the download state for the specified controller. If the
   // TabDownloadState does not exist and |create| is true, one is created.
@@ -219,6 +228,14 @@ class DownloadRequestLimiter
                        const std::string& request_method,
                        const Callback& callback);
 
+  // Invoked when decision to download has been made.
+  void OnCanDownloadDecided(int render_process_host_id,
+                            int render_view_id,
+                            int request_id,
+                            const std::string& request_method,
+                            const Callback& orig_callback,
+                            bool allow);
+
   // Invoked on the UI thread. Schedules a call to NotifyCallback on the io
   // thread.
   void ScheduleNotification(const Callback& callback, bool allow);
@@ -226,7 +243,11 @@ class DownloadRequestLimiter
   // Removes the specified TabDownloadState from the internal map and deletes
   // it. This has the effect of resetting the status for the tab to
   // ALLOW_ONE_DOWNLOAD.
-  void Remove(TabDownloadState* state);
+  void Remove(TabDownloadState* state, content::WebContents* contents);
+
+  static HostContentSettingsMap* content_settings_;
+  static HostContentSettingsMap* GetContentSettings(
+      content::WebContents* contents);
 
   // Maps from tab to download state. The download state for a tab only exists
   // if the state is other than ALLOW_ONE_DOWNLOAD. Similarly once the state
@@ -235,7 +256,9 @@ class DownloadRequestLimiter
   typedef std::map<content::WebContents*, TabDownloadState*> StateMap;
   StateMap state_map_;
 
-  static TestingDelegate* delegate_;
+  // Weak ptr factory used when |CanDownload| asks the delegate asynchronously
+  // about the download.
+  base::WeakPtrFactory<DownloadRequestLimiter> factory_;
 
   DISALLOW_COPY_AND_ASSIGN(DownloadRequestLimiter);
 };

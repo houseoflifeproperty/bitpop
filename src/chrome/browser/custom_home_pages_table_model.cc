@@ -7,23 +7,24 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/i18n/rtl.h"
-#include "base/utf_string_conversions.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_contents.h"
-#include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
 #include "grit/ui_resources.h"
 #include "net/base/net_util.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/table_model_observer.h"
 #include "ui/gfx/codec/png_codec.h"
+#include "url/gurl.h"
 
 namespace {
 
@@ -33,10 +34,10 @@ bool ShouldAddPage(const GURL& url) {
   if (url.is_empty())
     return false;
 
-  if (url.SchemeIs(chrome::kChromeDevToolsScheme))
+  if (url.SchemeIs(content::kChromeDevToolsScheme))
     return false;
 
-  if (url.SchemeIs(chrome::kChromeUIScheme)) {
+  if (url.SchemeIs(content::kChromeUIScheme)) {
     if (url.host() == chrome::kChromeUISettingsHost)
       return false;
 
@@ -60,7 +61,7 @@ struct CustomHomePagesTableModel::Entry {
   GURL url;
 
   // Page title.  If this is empty, we'll display the URL as the entry.
-  string16 title;
+  base::string16 title;
 
   // If non-zero, indicates we're loading the title for the page.
   HistoryService::Handle title_handle;
@@ -95,11 +96,8 @@ void CustomHomePagesTableModel::SetURLs(const std::vector<GURL>& urls) {
  */
 void CustomHomePagesTableModel::MoveURLs(int insert_before,
                                          const std::vector<int>& index_list) {
-  // Was causing crashes when just a DCHECK(), see http://crbug.com/136576.
-  if (index_list.empty() || insert_before < 0 || insert_before > RowCount()) {
-    NOTREACHED();
-    return;
-  }
+  if (index_list.empty()) return;
+  DCHECK(insert_before >= 0 && insert_before <= RowCount());
 
   // The range of elements that needs to be reshuffled is [ |first|, |last| ).
   int first = std::min(insert_before, index_list.front());
@@ -120,7 +118,7 @@ void CustomHomePagesTableModel::MoveURLs(int insert_before,
     if (skip_count < index_list.size() && index_list[skip_count] == i)
       skip_count++;
     else
-      entries_[i - skip_count]=entries_[i];
+      entries_[i - skip_count] = entries_[i];
   }
 
   // Moving items down created a gap. We start compacting up after it.
@@ -179,14 +177,16 @@ void CustomHomePagesTableModel::SetToCurrentlyOpenPages() {
 
   // And add all tabs for all open browsers with our profile.
   int add_index = 0;
-  for (BrowserList::const_iterator browser_i = BrowserList::begin();
-       browser_i != BrowserList::end(); ++browser_i) {
-    Browser* browser = *browser_i;
+  for (chrome::BrowserIterator it; !it.done(); it.Next()) {
+    Browser* browser = *it;
     if (browser->profile() != profile_)
       continue;  // Skip incognito browsers.
 
-    for (int tab_index = 0; tab_index < browser->tab_count(); ++tab_index) {
-      const GURL url = chrome::GetWebContentsAt(browser, tab_index)->GetURL();
+    for (int tab_index = 0;
+         tab_index < browser->tab_strip_model()->count();
+         ++tab_index) {
+      const GURL url =
+          browser->tab_strip_model()->GetWebContentsAt(tab_index)->GetURL();
       if (ShouldAddPage(url))
         Add(add_index++, url);
     }
@@ -204,14 +204,14 @@ int CustomHomePagesTableModel::RowCount() {
   return static_cast<int>(entries_.size());
 }
 
-string16 CustomHomePagesTableModel::GetText(int row, int column_id) {
+base::string16 CustomHomePagesTableModel::GetText(int row, int column_id) {
   DCHECK(column_id == 0);
   DCHECK(row >= 0 && row < RowCount());
   return entries_[row].title.empty() ? FormattedURL(row) : entries_[row].title;
 }
 
-string16 CustomHomePagesTableModel::GetTooltip(int row) {
-  return entries_[row].title.empty() ? string16() :
+base::string16 CustomHomePagesTableModel::GetTooltip(int row) {
+  return entries_[row].title.empty() ? base::string16() :
       l10n_util::GetStringFUTF16(IDS_OPTIONS_STARTUP_PAGE_TOOLTIP,
                                  entries_[row].title, FormattedURL(row));
 }
@@ -264,10 +264,10 @@ CustomHomePagesTableModel::Entry*
   return NULL;
 }
 
-string16 CustomHomePagesTableModel::FormattedURL(int row) const {
+base::string16 CustomHomePagesTableModel::FormattedURL(int row) const {
   std::string languages =
       profile_->GetPrefs()->GetString(prefs::kAcceptLanguages);
-  string16 url = net::FormatUrl(entries_[row].url, languages);
+  base::string16 url = net::FormatUrl(entries_[row].url, languages);
   url = base::i18n::GetDisplayStringInLTRDirectionality(url);
   return url;
 }

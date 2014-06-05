@@ -9,10 +9,9 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/memory/aligned_memory.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread_restrictions.h"
-#include "media/audio/audio_util.h"
 #include "media/base/audio_bus.h"
 
 using base::PlatformThread;
@@ -29,7 +28,8 @@ class AudioDeviceThread::Thread
  public:
   Thread(AudioDeviceThread::Callback* callback,
          base::SyncSocket::Handle socket,
-         const char* thread_name);
+         const char* thread_name,
+         bool synchronized_buffers);
 
   void Start();
 
@@ -37,7 +37,7 @@ class AudioDeviceThread::Thread
   // a task to join (close) the thread handle later instead of waiting for
   // the thread.  If loop_for_join is NULL, then the function waits
   // synchronously for the thread to terminate.
-  void Stop(MessageLoop* loop_for_join);
+  void Stop(base::MessageLoop* loop_for_join);
 
  private:
   friend class base::RefCountedThreadSafe<AudioDeviceThread::Thread>;
@@ -55,6 +55,7 @@ class AudioDeviceThread::Thread
   base::CancelableSyncSocket socket_;
   base::Lock callback_lock_;
   const char* thread_name_;
+  const bool synchronized_buffers_;
 
   DISALLOW_COPY_AND_ASSIGN(Thread);
 };
@@ -64,22 +65,22 @@ class AudioDeviceThread::Thread
 AudioDeviceThread::AudioDeviceThread() {
 }
 
-AudioDeviceThread::~AudioDeviceThread() {
-  DCHECK(!thread_);
-}
+AudioDeviceThread::~AudioDeviceThread() { DCHECK(!thread_.get()); }
 
 void AudioDeviceThread::Start(AudioDeviceThread::Callback* callback,
                               base::SyncSocket::Handle socket,
-                              const char* thread_name) {
+                              const char* thread_name,
+                              bool synchronized_buffers) {
   base::AutoLock auto_lock(thread_lock_);
-  CHECK(thread_ == NULL);
-  thread_ = new AudioDeviceThread::Thread(callback, socket, thread_name);
+  CHECK(!thread_);
+  thread_ = new AudioDeviceThread::Thread(
+      callback, socket, thread_name, synchronized_buffers);
   thread_->Start();
 }
 
-void AudioDeviceThread::Stop(MessageLoop* loop_for_join) {
+void AudioDeviceThread::Stop(base::MessageLoop* loop_for_join) {
   base::AutoLock auto_lock(thread_lock_);
-  if (thread_) {
+  if (thread_.get()) {
     thread_->Stop(loop_for_join);
     thread_ = NULL;
   }
@@ -87,38 +88,40 @@ void AudioDeviceThread::Stop(MessageLoop* loop_for_join) {
 
 bool AudioDeviceThread::IsStopped() {
   base::AutoLock auto_lock(thread_lock_);
-  return thread_ == NULL;
+  return !thread_;
 }
 
 // AudioDeviceThread::Thread implementation
 AudioDeviceThread::Thread::Thread(AudioDeviceThread::Callback* callback,
                                   base::SyncSocket::Handle socket,
-                                  const char* thread_name)
-    : thread_(base::kNullThreadHandle),
+                                  const char* thread_name,
+                                  bool synchronized_buffers)
+    : thread_(),
       callback_(callback),
       socket_(socket),
-      thread_name_(thread_name) {
+      thread_name_(thread_name),
+      synchronized_buffers_(synchronized_buffers) {
 }
 
 AudioDeviceThread::Thread::~Thread() {
-  DCHECK_EQ(thread_, base::kNullThreadHandle) << "Stop wasn't called";
+  DCHECK(thread_.is_null());
 }
 
 void AudioDeviceThread::Thread::Start() {
   base::AutoLock auto_lock(callback_lock_);
-  DCHECK_EQ(thread_, base::kNullThreadHandle);
+  DCHECK(thread_.is_null());
   // This reference will be released when the thread exists.
   AddRef();
 
   PlatformThread::CreateWithPriority(0, this, &thread_,
                                      base::kThreadPriority_RealtimeAudio);
-  CHECK(thread_ != base::kNullThreadHandle);
+  CHECK(!thread_.is_null());
 }
 
-void AudioDeviceThread::Thread::Stop(MessageLoop* loop_for_join) {
+void AudioDeviceThread::Thread::Stop(base::MessageLoop* loop_for_join) {
   socket_.Shutdown();
 
-  base::PlatformThreadHandle thread = base::kNullThreadHandle;
+  base::PlatformThreadHandle thread = base::PlatformThreadHandle();
 
   {  // NOLINT
     base::AutoLock auto_lock(callback_lock_);
@@ -126,7 +129,7 @@ void AudioDeviceThread::Thread::Stop(MessageLoop* loop_for_join) {
     std::swap(thread, thread_);
   }
 
-  if (thread != base::kNullThreadHandle) {
+  if (!thread.is_null()) {
     if (loop_for_join) {
       loop_for_join->PostTask(FROM_HERE,
           base::Bind(&base::PlatformThread::Join, thread));
@@ -159,6 +162,7 @@ void AudioDeviceThread::Thread::ThreadMain() {
 }
 
 void AudioDeviceThread::Thread::Run() {
+  uint32 buffer_index = 0;
   while (true) {
     int pending_data = 0;
     size_t bytes_read = socket_.Receive(&pending_data, sizeof(pending_data));
@@ -167,9 +171,21 @@ void AudioDeviceThread::Thread::Run() {
       break;
     }
 
-    base::AutoLock auto_lock(callback_lock_);
-    if (callback_)
-      callback_->Process(pending_data);
+    {
+      base::AutoLock auto_lock(callback_lock_);
+      if (callback_)
+        callback_->Process(pending_data);
+    }
+
+    // Let the other end know which buffer we just filled.  The buffer index is
+    // used to ensure the other end is getting the buffer it expects.  For more
+    // details on how this works see AudioSyncReader::WaitUntilDataIsReady().
+    if (synchronized_buffers_) {
+      ++buffer_index;
+      size_t bytes_sent = socket_.Send(&buffer_index, sizeof(buffer_index));
+      if (bytes_sent != sizeof(buffer_index))
+        break;
+    }
   }
 }
 
@@ -177,25 +193,29 @@ void AudioDeviceThread::Thread::Run() {
 
 AudioDeviceThread::Callback::Callback(
     const AudioParameters& audio_parameters,
-    int input_channels,
-    base::SharedMemoryHandle memory, int memory_length)
+    base::SharedMemoryHandle memory,
+    int memory_length,
+    int total_segments)
     : audio_parameters_(audio_parameters),
-      input_channels_(input_channels),
       samples_per_ms_(audio_parameters.sample_rate() / 1000),
       bytes_per_ms_(audio_parameters.channels() *
                     (audio_parameters_.bits_per_sample() / 8) *
                     samples_per_ms_),
       shared_memory_(memory, false),
-      memory_length_(memory_length) {
+      memory_length_(memory_length),
+      total_segments_(total_segments) {
   CHECK_NE(bytes_per_ms_, 0);  // Catch division by zero early.
   CHECK_NE(samples_per_ms_, 0);
+  CHECK_GT(total_segments_, 0);
+  CHECK_EQ(memory_length_ % total_segments_, 0);
+  segment_length_ = memory_length_ / total_segments_;
 }
 
 AudioDeviceThread::Callback::~Callback() {}
 
 void AudioDeviceThread::Callback::InitializeOnAudioThread() {
   MapSharedMemory();
-  DCHECK(shared_memory_.memory() != NULL);
+  CHECK(shared_memory_.memory());
 }
 
 }  // namespace media.

@@ -30,6 +30,7 @@
 #include "talk/base/openssldigest.h"
 
 #include "talk/base/common.h"
+#include "talk/base/openssl.h"
 
 namespace talk_base {
 
@@ -78,7 +79,6 @@ bool OpenSSLDigest::GetDigestEVP(const std::string& algorithm,
     md = EVP_md5();
   } else if (algorithm == DIGEST_SHA_1) {
     md = EVP_sha1();
-#if OPENSSL_VERSION_NUMBER >= 0x00908000L
   } else if (algorithm == DIGEST_SHA_224) {
     md = EVP_sha224();
   } else if (algorithm == DIGEST_SHA_256) {
@@ -87,7 +87,6 @@ bool OpenSSLDigest::GetDigestEVP(const std::string& algorithm,
     md = EVP_sha384();
   } else if (algorithm == DIGEST_SHA_512) {
     md = EVP_sha512();
-#endif
   } else {
     return false;
   }
@@ -95,6 +94,32 @@ bool OpenSSLDigest::GetDigestEVP(const std::string& algorithm,
   // Can't happen
   ASSERT(EVP_MD_size(md) >= 16);
   *mdp = md;
+  return true;
+}
+
+bool OpenSSLDigest::GetDigestName(const EVP_MD* md,
+                                  std::string* algorithm) {
+  ASSERT(md != NULL);
+  ASSERT(algorithm != NULL);
+
+  int md_type = EVP_MD_type(md);
+  if (md_type == NID_md5) {
+    *algorithm = DIGEST_MD5;
+  } else if (md_type == NID_sha1) {
+    *algorithm = DIGEST_SHA_1;
+  } else if (md_type == NID_sha224) {
+    *algorithm = DIGEST_SHA_224;
+  } else if (md_type == NID_sha256) {
+    *algorithm = DIGEST_SHA_256;
+  } else if (md_type == NID_sha384) {
+    *algorithm = DIGEST_SHA_384;
+  } else if (md_type == NID_sha512) {
+    *algorithm = DIGEST_SHA_512;
+  } else {
+    algorithm->clear();
+    return false;
+  }
+
   return true;
 }
 

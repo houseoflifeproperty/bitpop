@@ -8,13 +8,27 @@ import cpp_util
 import schema_util
 
 class HGenerator(object):
+  def __init__(self, type_generator, cpp_namespace):
+    self._type_generator = type_generator
+    self._cpp_namespace = cpp_namespace
+
+  def Generate(self, namespace):
+    return _Generator(namespace,
+                      self._type_generator,
+                      self._cpp_namespace).Generate()
+
+
+class _Generator(object):
   """A .h generator for a namespace.
   """
-  def __init__(self, namespace, cpp_type_generator):
-    self._cpp_type_generator = cpp_type_generator
+  def __init__(self, namespace, cpp_type_generator, cpp_namespace):
     self._namespace = namespace
+    self._type_helper = cpp_type_generator
+    self._cpp_namespace = cpp_namespace
     self._target_namespace = (
-        self._cpp_type_generator.GetCppNamespaceName(self._namespace))
+        self._type_helper.GetCppNamespaceName(self._namespace))
+    self._generate_error_messages = namespace.compiler_options.get(
+        'generate_error_messages', False)
 
   def Generate(self):
     """Generates a Code object with the .h for a single namespace.
@@ -31,6 +45,7 @@ class HGenerator(object):
     (c.Append('#ifndef %s' % ifndef_name)
       .Append('#define %s' % ifndef_name)
       .Append()
+      .Append('#include <map>')
       .Append('#include <string>')
       .Append('#include <vector>')
       .Append()
@@ -39,24 +54,23 @@ class HGenerator(object):
       .Append('#include "base/memory/linked_ptr.h"')
       .Append('#include "base/memory/scoped_ptr.h"')
       .Append('#include "base/values.h"')
-      .Append('#include "tools/json_schema_compiler/any.h"')
+      .Cblock(self._type_helper.GenerateIncludes())
       .Append()
     )
 
-    c.Concat(self._cpp_type_generator.GetRootNamespaceStart())
+    c.Concat(cpp_util.OpenNamespace(self._cpp_namespace))
     # TODO(calamity): These forward declarations should be #includes to allow
     # $ref types from other files to be used as required params. This requires
     # some detangling of windows and tabs which will currently lead to circular
     # #includes.
     forward_declarations = (
-        self._cpp_type_generator.GenerateForwardDeclarations())
+        self._type_helper.GenerateForwardDeclarations())
     if not forward_declarations.IsEmpty():
       (c.Append()
-        .Concat(forward_declarations)
-        .Append()
+        .Cblock(forward_declarations)
       )
 
-    c.Concat(self._cpp_type_generator.GetNamespaceStart())
+    c.Concat(self._type_helper.GetNamespaceStart())
     c.Append()
     if self._namespace.properties:
       (c.Append('//')
@@ -65,21 +79,20 @@ class HGenerator(object):
         .Append()
       )
       for property in self._namespace.properties.values():
-        property_code = self._cpp_type_generator.GeneratePropertyValues(
+        property_code = self._type_helper.GeneratePropertyValues(
             property,
             'extern const %(type)s %(name)s;')
         if property_code:
-          c.Concat(property_code).Append()
+          c.Cblock(property_code)
     if self._namespace.types:
       (c.Append('//')
         .Append('// Types')
         .Append('//')
         .Append()
+        .Cblock(self._GenerateTypes(self._FieldDependencyOrder(),
+                                    is_toplevel=True,
+                                    generate_typedefs=True))
       )
-      for type_ in self._FieldDependencyOrder():
-        (c.Concat(self._GenerateType(type_))
-          .Append()
-        )
     if self._namespace.functions:
       (c.Append('//')
         .Append('// Functions')
@@ -87,9 +100,7 @@ class HGenerator(object):
         .Append()
       )
       for function in self._namespace.functions.values():
-        (c.Concat(self._GenerateFunction(function))
-          .Append()
-        )
+        c.Cblock(self._GenerateFunction(function))
     if self._namespace.events:
       (c.Append('//')
         .Append('// Events')
@@ -97,12 +108,9 @@ class HGenerator(object):
         .Append()
       )
       for event in self._namespace.events.values():
-        (c.Concat(self._GenerateEvent(event))
-          .Append()
-        )
-    (c.Concat(self._cpp_type_generator.GetNamespaceEnd())
-      .Concat(self._cpp_type_generator.GetRootNamespaceEnd())
-      .Append()
+        c.Cblock(self._GenerateEvent(event))
+    (c.Concat(self._type_helper.GetNamespaceEnd())
+      .Concat(cpp_util.CloseNamespace(self._cpp_namespace))
       .Append('#endif  // %s' % ifndef_name)
       .Append()
     )
@@ -129,124 +137,166 @@ class HGenerator(object):
       ExpandType([], type_)
     return dependency_order
 
-  def _GenerateEnumDeclaration(self, enum_name, prop, values):
-    """Generate the declaration of a C++ enum for the given property and
-    values.
+  def _GenerateEnumDeclaration(self, enum_name, type_):
+    """Generate a code object with the  declaration of a C++ enum.
     """
     c = Code()
     c.Sblock('enum %s {' % enum_name)
-    c.Append(self._cpp_type_generator.GetEnumNoneValue(prop) + ',')
-    for value in values:
-      c.Append(self._cpp_type_generator.GetEnumValue(prop, value) + ',')
-    (c.Eblock('};')
-      .Append()
-    )
+    c.Append(self._type_helper.GetEnumNoneValue(type_) + ',')
+    for value in type_.enum_values:
+      current_enum_string = self._type_helper.GetEnumValue(type_, value)
+      c.Append(current_enum_string + ',')
+    c.Append('%s = %s,' % (
+        self._type_helper.GetEnumLastValue(type_), current_enum_string))
+    c.Eblock('};')
     return c
 
   def _GenerateFields(self, props):
     """Generates the field declarations when declaring a type.
     """
     c = Code()
-    # Generate the enums needed for any fields with "choices"
+    needs_blank_line = False
     for prop in props:
-      if prop.type_ == PropertyType.CHOICES:
-        enum_name = self._cpp_type_generator.GetChoicesEnumType(prop)
-        c.Append('%s %s_type;' % (enum_name, prop.unix_name))
+      if needs_blank_line:
         c.Append()
-
-    for prop in self._cpp_type_generator.ExpandParams(props):
+      needs_blank_line = True
       if prop.description:
         c.Comment(prop.description)
+      # ANY is a base::Value which is abstract and cannot be a direct member, so
+      # we always need to wrap it in a scoped_ptr.
+      is_ptr = prop.optional or prop.type_.property_type == PropertyType.ANY
       (c.Append('%s %s;' % (
-           self._cpp_type_generator.GetCompiledType(prop, wrap_optional=True),
+           self._type_helper.GetCppType(prop.type_, is_ptr=is_ptr),
            prop.unix_name))
-        .Append()
       )
     return c
 
-  def _GenerateType(self, type_):
-    """Generates a struct for a type.
+  def _GenerateType(self, type_, is_toplevel=False, generate_typedefs=False):
+    """Generates a struct for |type_|.
+
+    |is_toplevel|       implies that the type was declared in the "types" field
+                        of an API schema. This determines the correct function
+                        modifier(s).
+    |generate_typedefs| controls whether primitive types should be generated as
+                        a typedef. This may not always be desired. If false,
+                        primitive types are ignored.
     """
-    classname = cpp_util.Classname(schema_util.StripSchemaNamespace(type_.name))
+    classname = cpp_util.Classname(schema_util.StripNamespace(type_.name))
     c = Code()
 
     if type_.functions:
-      c.Sblock('namespace %(classname)s {')
-      for function in type_.functions.values():
-        (c.Concat(self._GenerateFunction(function))
-          .Append()
-        )
-      c.Eblock('}')
-    elif type_.type_ == PropertyType.ARRAY:
-      if type_.description:
-        c.Comment(type_.description)
-      c.Append('typedef std::vector<%(item_type)s> %(classname)s;')
-      c.Substitute({'classname': classname, 'item_type':
-          self._cpp_type_generator.GetCompiledType(type_.item_type,
-                                                   wrap_optional=True)})
-    elif type_.type_ == PropertyType.STRING:
-      if type_.description:
-        c.Comment(type_.description)
-      c.Append('typedef std::string %(classname)s;')
-    elif type_.type_ == PropertyType.ENUM:
-      if type_.description:
-        c.Comment(type_.description)
-      c.Sblock('enum %(classname)s {')
-      c.Append('%s,' % self._cpp_type_generator.GetEnumNoneValue(type_))
-      for value in type_.enum_values:
-        c.Append('%s,' % self._cpp_type_generator.GetEnumValue(type_, value))
-      (c.Eblock('};')
+      # Wrap functions within types in the type's namespace.
+      (c.Append('namespace %s {' % classname)
         .Append()
-        .Append('scoped_ptr<base::Value> CreateEnumValue(%s %s);' %
-                (classname, classname.lower()))
-        .Append('std::string ToString(%s enum_param);' % classname)
-        .Append('%s From%sString(const std::string& enum_string);' %
-            (classname, classname))
       )
-    else:
+      for function in type_.functions.values():
+        c.Cblock(self._GenerateFunction(function))
+      c.Append('}  // namespace %s' % classname)
+    elif type_.property_type == PropertyType.ARRAY:
+      if generate_typedefs and type_.description:
+        c.Comment(type_.description)
+      c.Cblock(self._GenerateType(type_.item_type))
+      if generate_typedefs:
+        (c.Append('typedef std::vector<%s > %s;' % (
+                       self._type_helper.GetCppType(type_.item_type),
+                       classname))
+        )
+    elif type_.property_type == PropertyType.STRING:
+      if generate_typedefs:
+        if type_.description:
+          c.Comment(type_.description)
+        c.Append('typedef std::string %(classname)s;')
+    elif type_.property_type == PropertyType.ENUM:
+      if type_.description:
+        c.Comment(type_.description)
+      c.Cblock(self._GenerateEnumDeclaration(classname, type_));
+      # Top level enums are in a namespace scope so the methods shouldn't be
+      # static. On the other hand, those declared inline (e.g. in an object) do.
+      maybe_static = '' if is_toplevel else 'static '
+      (c.Append()
+        .Append('%sstd::string %sToString(%s as_enum);' %
+                (maybe_static, classname, classname))
+        .Append('%sstd::string ToString(%s as_enum);' %
+                (maybe_static, classname))
+        .Append('%s%s Parse%s(const std::string& as_string);' %
+                (maybe_static, classname, classname))
+      )
+    elif type_.property_type in (PropertyType.CHOICES,
+                                 PropertyType.OBJECT):
       if type_.description:
         c.Comment(type_.description)
       (c.Sblock('struct %(classname)s {')
-          .Append('~%(classname)s();')
           .Append('%(classname)s();')
-          .Append()
-          .Concat(self._GeneratePropertyStructures(type_.properties.values()))
-          .Concat(self._GenerateFields(type_.properties.values()))
+          .Append('~%(classname)s();')
       )
-      if type_.from_json:
-        (c.Comment('Populates a %s object from a base::Value. Returns'
+      if type_.origin.from_json:
+        (c.Append()
+          .Comment('Populates a %s object from a base::Value. Returns'
                    ' whether |out| was successfully populated.' % classname)
-          .Append('static bool Populate(const base::Value& value, '
-                  '%(classname)s* out);')
-          .Append()
+          .Append('static bool Populate(%s);' % self._GenerateParams(
+              ('const base::Value& value', '%s* out' % classname)))
         )
-
-      if type_.from_client:
-        (c.Comment('Returns a new base::DictionaryValue representing the'
-                   ' serialized form of this %s object. Passes '
-                   'ownership to caller.' % classname)
-          .Append('scoped_ptr<base::DictionaryValue> ToValue() const;')
+        if is_toplevel:
+          (c.Append()
+            .Comment('Creates a %s object from a base::Value, or NULL on '
+                     'failure.' % classname)
+            .Append('static scoped_ptr<%s> FromValue(%s);' % (
+                classname, self._GenerateParams(('const base::Value& value',))))
+          )
+      if type_.origin.from_client:
+        value_type = ('base::Value'
+                      if type_.property_type is PropertyType.CHOICES else
+                      'base::DictionaryValue')
+        (c.Append()
+          .Comment('Returns a new %s representing the serialized form of this '
+                   '%s object.' % (value_type, classname))
+          .Append('scoped_ptr<%s> ToValue() const;' % value_type)
         )
-
+      if type_.property_type == PropertyType.CHOICES:
+        # Choices are modelled with optional fields for each choice. Exactly one
+        # field of the choice is guaranteed to be set by the compiler.
+        c.Cblock(self._GenerateTypes(type_.choices))
+        c.Append('// Choices:')
+        for choice_type in type_.choices:
+          c.Append('%s as_%s;' % (
+              self._type_helper.GetCppType(choice_type, is_ptr=True),
+              choice_type.unix_name))
+      else:
+        properties = type_.properties.values()
+        (c.Append()
+          .Cblock(self._GenerateTypes(p.type_ for p in properties))
+          .Cblock(self._GenerateFields(properties)))
+        if type_.additional_properties is not None:
+          # Most additionalProperties actually have type "any", which is better
+          # modelled as a DictionaryValue rather than a map of string -> Value.
+          if type_.additional_properties.property_type == PropertyType.ANY:
+            c.Append('base::DictionaryValue additional_properties;')
+          else:
+            (c.Cblock(self._GenerateType(type_.additional_properties))
+              .Append('std::map<std::string, %s> additional_properties;' %
+                  cpp_util.PadForGenerics(
+                      self._type_helper.GetCppType(type_.additional_properties,
+                                                   is_in_container=True)))
+            )
       (c.Eblock()
+        .Append()
         .Sblock(' private:')
-          .Concat(self._GeneratePrivatePropertyStructures(
-              type_.properties.values()))
-          .Append()
           .Append('DISALLOW_COPY_AND_ASSIGN(%(classname)s);')
         .Eblock('};')
       )
-    c.Substitute({'classname': classname})
-    return c
+    return c.Substitute({'classname': classname})
 
   def _GenerateEvent(self, event):
     """Generates the namespaces for an event.
     """
     c = Code()
-    (c.Sblock('namespace %s {' % cpp_util.Classname(event.name))
-        .Concat(self._GenerateCreateCallbackArguments(event,
-                                                      generate_to_json=True))
-      .Eblock('};')
+    # TODO(kalman): use event.unix_name not Classname.
+    event_namespace = cpp_util.Classname(event.name)
+    (c.Append('namespace %s {' % event_namespace)
+      .Append()
+      .Concat(self._GenerateEventNameConstant(event))
+      .Concat(self._GenerateCreateCallbackArguments(event))
+      .Eblock('}  // namespace %s' % event_namespace)
     )
     return c
 
@@ -254,125 +304,101 @@ class HGenerator(object):
     """Generates the namespaces and structs for a function.
     """
     c = Code()
-    (c.Sblock('namespace %s {' % cpp_util.Classname(function.name))
-        .Concat(self._GenerateFunctionParams(function))
-        .Append()
+    # TODO(kalman): Use function.unix_name not Classname here.
+    function_namespace = cpp_util.Classname(function.name)
+    # Windows has a #define for SendMessage, so to avoid any issues, we need
+    # to not use the name.
+    if function_namespace == 'SendMessage':
+      function_namespace = 'PassMessage'
+    (c.Append('namespace %s {' % function_namespace)
+      .Append()
+      .Cblock(self._GenerateFunctionParams(function))
     )
     if function.callback:
-      (c.Concat(self._GenerateFunctionResults(function.callback))
-        .Append()
-      )
-    c.Eblock('};')
-
+      c.Cblock(self._GenerateFunctionResults(function.callback))
+    c.Append('}  // namespace %s' % function_namespace)
     return c
 
   def _GenerateFunctionParams(self, function):
     """Generates the struct for passing parameters from JSON to a function.
     """
+    if not function.params:
+      return Code()
+
     c = Code()
-
-    if function.params:
-      (c.Sblock('struct Params {')
-          .Concat(self._GeneratePropertyStructures(function.params))
-          .Concat(self._GenerateFields(function.params))
-          .Append('~Params();')
-          .Append()
-          .Append('static scoped_ptr<Params> Create('
-                  'const base::ListValue& args);')
-        .Eblock()
-        .Sblock(' private:')
-          .Append('Params();')
-          .Append()
-          .Append('DISALLOW_COPY_AND_ASSIGN(Params);')
-        .Eblock('};')
-      )
-
+    (c.Sblock('struct Params {')
+      .Append('static scoped_ptr<Params> Create(%s);' % self._GenerateParams(
+          ('const base::ListValue& args',)))
+      .Append('~Params();')
+      .Append()
+      .Cblock(self._GenerateTypes(p.type_ for p in function.params))
+      .Cblock(self._GenerateFields(function.params))
+      .Eblock()
+      .Append()
+      .Sblock(' private:')
+        .Append('Params();')
+        .Append()
+        .Append('DISALLOW_COPY_AND_ASSIGN(Params);')
+      .Eblock('};')
+    )
     return c
 
-  def _GeneratePropertyStructures(self, props):
+  def _GenerateTypes(self, types, is_toplevel=False, generate_typedefs=False):
     """Generate the structures required by a property such as OBJECT classes
     and enums.
     """
     c = Code()
-    for prop in props:
-      if prop.type_ == PropertyType.OBJECT:
-        c.Concat(self._GenerateType(prop))
-        c.Append()
-      elif prop.type_ == PropertyType.ARRAY:
-        c.Concat(self._GeneratePropertyStructures([prop.item_type]))
-        c.Append()
-      elif prop.type_ == PropertyType.CHOICES:
-        c.Concat(self._GenerateEnumDeclaration(
-            self._cpp_type_generator.GetChoicesEnumType(prop),
-            prop,
-            [choice.type_.name for choice in prop.choices.values()]))
-        c.Concat(self._GeneratePropertyStructures(prop.choices.values()))
-      elif prop.type_ == PropertyType.ENUM:
-        enum_name = self._cpp_type_generator.GetCompiledType(prop)
-        c.Concat(self._GenerateEnumDeclaration(
-            enum_name,
-            prop,
-            prop.enum_values))
-        create_enum_value = ('scoped_ptr<base::Value> CreateEnumValue(%s %s);' %
-                            (enum_name, prop.unix_name))
-        enum_to_string = 'std::string ToString(%s enum_param);' % enum_name
-        enum_from_string = ('%s From%sString(const std::string& enum_string);' %
-            (enum_name, enum_name))
-        # If the property is from the UI then we're in a struct so this function
-        # should be static. If it's from the client, then we're just in a
-        # namespace so we can't have the static keyword.
-        if prop.from_json:
-          create_enum_value = 'static %s' % create_enum_value
-          enum_to_string = 'static %s' % enum_to_string
-          enum_from_string = 'static %s' % enum_from_string
-        (c.Append(create_enum_value)
-          .Append(enum_to_string)
-          .Append(enum_from_string))
+    for type_ in types:
+      c.Cblock(self._GenerateType(type_,
+                                  is_toplevel=is_toplevel,
+                                  generate_typedefs=generate_typedefs))
     return c
 
-  def _GeneratePrivatePropertyStructures(self, props):
-    """Generate the private structures required by a property such as OBJECT
-    classes and enums.
-    """
-    c = Code()
-    for prop in props:
-      if prop.type_ == PropertyType.ARRAY:
-        c.Concat(self._GeneratePrivatePropertyStructures([prop.item_type]))
-        c.Append()
-      elif prop.type_ == PropertyType.CHOICES:
-        # We only need GetChoiceValue() if there is a ToValue() method.
-        if prop.from_client:
-          c.Append('scoped_ptr<base::Value> Get%sChoiceValue() const;' % (
-              cpp_util.Classname(prop.name)))
-    return c
-
-  def _GenerateCreateCallbackArguments(self, function, generate_to_json=False):
-    """Generates functions for passing paramaters to a callback.
+  def _GenerateCreateCallbackArguments(self, function):
+    """Generates functions for passing parameters to a callback.
     """
     c = Code()
     params = function.params
-    c.Concat(self._GeneratePropertyStructures(params))
+    c.Cblock(self._GenerateTypes((p.type_ for p in params), is_toplevel=True))
 
-    param_lists = self._cpp_type_generator.GetAllPossibleParameterLists(params)
-    for param_list in param_lists:
-      declaration_list = []
-      for param in param_list:
-        if param.description:
-          c.Comment(param.description)
-        declaration_list.append('const %s' % cpp_util.GetParameterDeclaration(
-            param, self._cpp_type_generator.GetCompiledType(param)))
-      c.Append('scoped_ptr<base::ListValue> Create(%s);' %
-               ', '.join(declaration_list))
-      if generate_to_json:
-        c.Append('std::string ToJson(%s);' % ', '.join(declaration_list))
+    declaration_list = []
+    for param in params:
+      if param.description:
+        c.Comment(param.description)
+      declaration_list.append(cpp_util.GetParameterDeclaration(
+          param, self._type_helper.GetCppType(param.type_)))
+    c.Append('scoped_ptr<base::ListValue> Create(%s);' %
+             ', '.join(declaration_list))
+    return c
+
+  def _GenerateEventNameConstant(self, event):
+    """Generates a constant string array for the event name.
+    """
+    c = Code()
+    c.Append('extern const char kEventName[];  // "%s.%s"' % (
+                 self._namespace.name, event.name))
+    c.Append()
     return c
 
   def _GenerateFunctionResults(self, callback):
     """Generates namespace for passing a function's result back.
     """
     c = Code()
-    (c.Sblock('namespace Results {')
-        .Concat(self._GenerateCreateCallbackArguments(callback))
-      .Eblock('};')
+    (c.Append('namespace Results {')
+      .Append()
+      .Concat(self._GenerateCreateCallbackArguments(callback))
+      .Append('}  // namespace Results')
     )
     return c
+
+  def _GenerateParams(self, params):
+    """Builds the parameter list for a function, given an array of parameters.
+    """
+    # |error| is populated with warnings and/or errors found during parsing.
+    # |error| being set does not necessarily imply failure and may be
+    # recoverable.
+    # For example, optional properties may have failed to parse, but the
+    # parser was able to continue.
+    if self._generate_error_messages:
+      params += ('base::string16* error',)
+    return ', '.join(str(p) for p in params)

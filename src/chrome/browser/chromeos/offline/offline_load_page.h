@@ -10,8 +10,8 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "content/public/browser/interstitial_page_delegate.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/network_change_notifier.h"
+#include "url/gurl.h"
 
 namespace base {
 class DictionaryValue;
@@ -67,18 +67,6 @@ class OfflineLoadPage
   // net::NetworkChangeNotifier::ConnectionTypeObserver overrides.
   virtual void OnConnectionTypeChanged(
       net::NetworkChangeNotifier::ConnectionType type) OVERRIDE;
-
-  // Retrieves template strings of the offline page for app and
-  // normal site.
-  void GetAppOfflineStrings(const extensions::Extension* app,
-                            const string16& faield_url,
-                            base::DictionaryValue* strings) const;
-  void GetNormalOfflineStrings(const string16& faield_url,
-                               base::DictionaryValue* strings) const;
-
-  // True if there is a mobile network is available but
-  // has not been activated.
-  bool ShowActivationMessage();
 
   CompletionCallback callback_;
 

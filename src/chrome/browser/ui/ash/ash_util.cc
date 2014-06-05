@@ -7,7 +7,7 @@
 #include "ash/shell.h"
 #include "chrome/browser/ui/ash/ash_init.h"
 #include "chrome/browser/ui/host_desktop.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 
 namespace chrome {
 
@@ -20,10 +20,10 @@ bool IsNativeViewInAsh(gfx::NativeView native_view) {
   if (!ash::Shell::HasInstance())
     return false;
 
-  ash::Shell::RootWindowList root_windows =
+  aura::Window::Windows root_windows =
       ash::Shell::GetInstance()->GetAllRootWindows();
 
-  for (ash::Shell::RootWindowList::const_iterator it = root_windows.begin();
+  for (aura::Window::Windows::const_iterator it = root_windows.begin();
        it != root_windows.end(); ++it) {
     if ((*it)->Contains(native_view))
       return true;
@@ -40,7 +40,6 @@ void ToggleAshDesktop() {
   if (chrome::HOST_DESKTOP_TYPE_ASH == chrome::HOST_DESKTOP_TYPE_NATIVE)
     return;
 
-  ScopedForceDesktopType force(chrome::HOST_DESKTOP_TYPE_ASH);
   if (!ash::Shell::HasInstance())
     OpenAsh();
   else

@@ -14,9 +14,9 @@
 
 #include "base/md5.h"
 #include "base/rand_util.h"
-#include "base/string_util.h"
-#include "base/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "net/base/zap.h"
@@ -70,12 +70,10 @@ namespace net {
  *
  * ***** END LICENSE BLOCK ***** */
 
-// Discover the endianness by testing processor architecture.
-#if defined(ARCH_CPU_X86) || defined(ARCH_CPU_X86_64)\
- || defined(ARCH_CPU_ARMEL) || defined(ARCH_CPU_MIPSEL)
+#if defined(ARCH_CPU_LITTLE_ENDIAN)
 #define IS_LITTLE_ENDIAN 1
 #undef  IS_BIG_ENDIAN
-#elif defined(ARCH_CPU_MIPSEB)
+#elif defined(ARCH_CPU_BIG_ENDIAN)
 #define IS_BIG_ENDIAN 1
 #undef  IS_LITTLE_ENDIAN
 #else
@@ -211,7 +209,8 @@ static void* WriteSecBuf(void* buf, uint16 length, uint32 offset) {
  * to pass the same buffer as both input and output, which is a handy way to
  * convert the unicode buffer to little-endian on big-endian platforms.
  */
-static void* WriteUnicodeLE(void* buf, const char16* str, uint32 str_len) {
+static void* WriteUnicodeLE(
+    void* buf, const base::char16* str, uint32 str_len) {
   // Convert input string from BE to LE.
   uint8* cursor = static_cast<uint8*>(buf);
   const uint8* input  = reinterpret_cast<const uint8*>(str);
@@ -252,12 +251,12 @@ static uint32 ReadUint32(const uint8*& buf) {
 //
 // Note: This function is not being used because our SendLM() function always
 // returns false.
-static void LM_Hash(const string16& password, uint8* hash) {
+static void LM_Hash(const base::string16& password, uint8* hash) {
   static const uint8 LM_MAGIC[] = "KGS!@#$%";
 
   // Convert password to OEM character set.  We'll just use the native
   // filesystem charset.
-  std::string passbuf = base::SysWideToNativeMB(UTF16ToWide(password));
+  std::string passbuf = base::SysWideToNativeMB(base::UTF16ToWide(password));
   StringToUpperASCII(&passbuf);
   passbuf.resize(14, '\0');
 
@@ -277,7 +276,7 @@ static void LM_Hash(const string16& password, uint8* hash) {
 //       null-terminated unicode password.
 // param hash
 //       16-byte result buffer
-static void NTLM_Hash(const string16& password, uint8* hash) {
+static void NTLM_Hash(const base::string16& password, uint8* hash) {
 #ifdef IS_BIG_ENDIAN
   uint32 len = password.length();
   uint8* passbuf;
@@ -438,9 +437,9 @@ static void GenerateRandom(uint8* output, size_t n) {
 }
 
 // Returns OK or a network error code.
-static int GenerateType3Msg(const string16& domain,
-                            const string16& username,
-                            const string16& password,
+static int GenerateType3Msg(const base::string16& domain,
+                            const base::string16& username,
+                            const base::string16& password,
                             const std::string& hostname,
                             const void* rand_8_bytes,
                             const void* in_buf,
@@ -460,9 +459,9 @@ static int GenerateType3Msg(const string16& domain,
 
   // Temporary buffers for unicode strings
 #ifdef IS_BIG_ENDIAN
-  string16 ucs_domain_buf, ucs_user_buf;
+  base::string16 ucs_domain_buf, ucs_user_buf;
 #endif
-  string16 ucs_host_buf;
+  base::string16 ucs_host_buf;
   // Temporary buffers for oem strings
   std::string oem_domain_buf, oem_user_buf;
   // Pointers and lengths for the string buffers; encoding is unicode if
@@ -480,14 +479,15 @@ static int GenerateType3Msg(const string16& domain,
     ucs_domain_buf = domain;
     domain_ptr = ucs_domain_buf.data();
     domain_len = ucs_domain_buf.length() * 2;
-    WriteUnicodeLE(const_cast<void*>(domain_ptr), (const char16*) domain_ptr,
+    WriteUnicodeLE(const_cast<void*>(domain_ptr),
+                   (const base::char16*) domain_ptr,
                    ucs_domain_buf.length());
 #else
     domain_ptr = domain.data();
     domain_len = domain.length() * 2;
 #endif
   } else {
-    oem_domain_buf = base::SysWideToNativeMB(UTF16ToWide(domain));
+    oem_domain_buf = base::SysWideToNativeMB(base::UTF16ToWide(domain));
     domain_ptr = oem_domain_buf.data();
     domain_len = oem_domain_buf.length();
   }
@@ -500,14 +500,14 @@ static int GenerateType3Msg(const string16& domain,
     ucs_user_buf = username;
     user_ptr = ucs_user_buf.data();
     user_len = ucs_user_buf.length() * 2;
-    WriteUnicodeLE(const_cast<void*>(user_ptr), (const char16*) user_ptr,
+    WriteUnicodeLE(const_cast<void*>(user_ptr), (const base::char16*) user_ptr,
                    ucs_user_buf.length());
 #else
     user_ptr = username.data();
     user_len = username.length() * 2;
 #endif
   } else {
-    oem_user_buf = base::SysWideToNativeMB(UTF16ToWide(username));
+    oem_user_buf = base::SysWideToNativeMB(base::UTF16ToWide(username));
     user_ptr = oem_user_buf.data();
     user_len = oem_user_buf.length();
   }
@@ -521,7 +521,7 @@ static int GenerateType3Msg(const string16& domain,
     host_ptr = ucs_host_buf.data();
     host_len = ucs_host_buf.length() * 2;
 #ifdef IS_BIG_ENDIAN
-    WriteUnicodeLE(const_cast<void*>(host_ptr), (const char16*) host_ptr,
+    WriteUnicodeLE(const_cast<void*>(host_ptr), (const base::char16*) host_ptr,
                    ucs_host_buf.length());
 #endif
   } else {
@@ -707,7 +707,7 @@ int HttpAuthHandlerNTLM::GetNextToken(const void* in_token,
 }
 
 int HttpAuthHandlerNTLM::Factory::CreateAuthHandler(
-    HttpAuth::ChallengeTokenizer* challenge,
+    HttpAuthChallengeTokenizer* challenge,
     HttpAuth::Target target,
     const GURL& origin,
     CreateReason reason,

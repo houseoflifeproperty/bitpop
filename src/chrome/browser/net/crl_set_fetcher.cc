@@ -6,23 +6,25 @@
 
 #include "base/bind.h"
 #include "base/file_util.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/path_service.h"
 #include "base/rand_util.h"
-#include "base/string_number_conversions.h"
-#include "base/time.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/time/time.h"
 #include "chrome/browser/component_updater/component_updater_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "content/public/browser/browser_thread.h"
-#include "net/base/crl_set.h"
-#include "net/base/ssl_config_service.h"
+#include "net/cert/crl_set.h"
+#include "net/ssl/ssl_config_service.h"
 
+using component_updater::ComponentUpdateService;
 using content::BrowserThread;
 
 CRLSetFetcher::CRLSetFetcher() : cus_(NULL) {}
 
-bool CRLSetFetcher::GetCRLSetFilePath(FilePath* path) const {
+bool CRLSetFetcher::GetCRLSetFilePath(base::FilePath* path) const {
   bool ok = PathService::Get(chrome::DIR_USER_DATA, path);
   if (!ok) {
     NOTREACHED();
@@ -47,7 +49,7 @@ void CRLSetFetcher::StartInitialLoad(ComponentUpdateService* cus) {
 void CRLSetFetcher::DoInitialLoadFromDisk() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
 
-  FilePath crl_set_file_path;
+  base::FilePath crl_set_file_path;
   if (!GetCRLSetFilePath(&crl_set_file_path))
     return;
 
@@ -69,12 +71,12 @@ void CRLSetFetcher::DoInitialLoadFromDisk() {
   }
 }
 
-void CRLSetFetcher::LoadFromDisk(FilePath path,
+void CRLSetFetcher::LoadFromDisk(base::FilePath path,
                                  scoped_refptr<net::CRLSet>* out_crl_set) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
 
   std::string crl_set_bytes;
-  if (!file_util::ReadFileToString(path, &crl_set_bytes))
+  if (!base::ReadFileToString(path, &crl_set_bytes))
     return;
 
   if (!net::CRLSet::Parse(crl_set_bytes, out_crl_set)) {
@@ -120,12 +122,13 @@ static const uint8 kPublicKeySHA256[32] = {
 void CRLSetFetcher::RegisterComponent(uint32 sequence_of_loaded_crl) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  CrxComponent component;
+  component_updater::CrxComponent component;
   component.pk_hash.assign(kPublicKeySHA256,
                            kPublicKeySHA256 + sizeof(kPublicKeySHA256));
   component.installer = this;
   component.name = "CRLSet";
   component.version = Version(base::UintToString(sequence_of_loaded_crl));
+  component.allow_background_download = false;
   if (!component.version.IsValid()) {
     NOTREACHED();
     component.version = Version("0");
@@ -142,17 +145,16 @@ void CRLSetFetcher::OnUpdateError(int error) {
                << " from component installer";
 }
 
-bool CRLSetFetcher::Install(base::DictionaryValue* manifest,
-                            const FilePath& unpack_path) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-
-  FilePath crl_set_file_path = unpack_path.Append(FILE_PATH_LITERAL("crl-set"));
-  FilePath save_to;
+bool CRLSetFetcher::Install(const base::DictionaryValue& manifest,
+                            const base::FilePath& unpack_path) {
+  base::FilePath crl_set_file_path =
+      unpack_path.Append(FILE_PATH_LITERAL("crl-set"));
+  base::FilePath save_to;
   if (!GetCRLSetFilePath(&save_to))
     return true;
 
   std::string crl_set_bytes;
-  if (!file_util::ReadFileToString(crl_set_file_path, &crl_set_bytes)) {
+  if (!base::ReadFileToString(crl_set_file_path, &crl_set_bytes)) {
     LOG(WARNING) << "Failed to find crl-set file inside CRX";
     return false;
   }
@@ -168,8 +170,8 @@ bool CRLSetFetcher::Install(base::DictionaryValue* manifest,
       LOG(WARNING) << "Failed to parse CRL set from update CRX";
       return false;
     }
-    if (!file_util::WriteFile(save_to, crl_set_bytes.data(),
-                              crl_set_bytes.size())) {
+    int size = base::checked_cast<int>(crl_set_bytes.size());
+    if (base::WriteFile(save_to, crl_set_bytes.data(), size) != size) {
       LOG(WARNING) << "Failed to save new CRL set to disk";
       // We don't return false here because we can still use this CRL set. When
       // we restart we might revert to an older version, then we'll
@@ -184,8 +186,8 @@ bool CRLSetFetcher::Install(base::DictionaryValue* manifest,
     VLOG(1) << "Applied CRL set delta #" << crl_set_->sequence()
             << "->#" << new_crl_set->sequence();
     const std::string new_crl_set_bytes = new_crl_set->Serialize();
-    if (!file_util::WriteFile(save_to, new_crl_set_bytes.data(),
-                              new_crl_set_bytes.size())) {
+    int size = base::checked_cast<int>(new_crl_set_bytes.size());
+    if (base::WriteFile(save_to, new_crl_set_bytes.data(), size) != size) {
       LOG(WARNING) << "Failed to save new CRL set to disk";
       // We don't return false here because we can still use this CRL set. When
       // we restart we might revert to an older version, then we'll
@@ -202,6 +204,11 @@ bool CRLSetFetcher::Install(base::DictionaryValue* manifest,
   }
 
   return true;
+}
+
+bool CRLSetFetcher::GetInstalledFile(
+    const std::string& file, base::FilePath* installed_file) {
+  return false;
 }
 
 CRLSetFetcher::~CRLSetFetcher() {}

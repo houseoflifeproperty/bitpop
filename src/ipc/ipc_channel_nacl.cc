@@ -6,22 +6,21 @@
 
 #include <errno.h>
 #include <stddef.h>
-#include <sys/nacl_imc_api.h>
-#include <sys/nacl_syscalls.h>
 #include <sys/types.h>
 
 #include <algorithm>
 
 #include "base/bind.h"
-#include "base/file_util.h"
 #include "base/logging.h"
-#include "base/message_loop_proxy.h"
-#include "base/process_util.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/synchronization/lock.h"
 #include "base/task_runner_util.h"
 #include "base/threading/simple_thread.h"
 #include "ipc/file_descriptor_set_posix.h"
+#include "ipc/ipc_listener.h"
 #include "ipc/ipc_logging.h"
+#include "native_client/src/public/imc_syscalls.h"
+#include "native_client/src/public/imc_types.h"
 
 namespace IPC {
 
@@ -40,8 +39,10 @@ bool ReadDataOnReaderThread(int pipe, MessageContents* contents) {
   contents->data.resize(Channel::kReadBufferSize);
   contents->fds.resize(FileDescriptorSet::kMaxDescriptorsPerMessage);
 
-  NaClImcMsgIoVec iov = { &contents->data[0], contents->data.size() };
-  NaClImcMsgHdr msg = { &iov, 1, &contents->fds[0], contents->fds.size() };
+  NaClAbiNaClImcMsgIoVec iov = { &contents->data[0], contents->data.size() };
+  NaClAbiNaClImcMsgHdr msg = {
+    &iov, 1, &contents->fds[0], contents->fds.size()
+  };
 
   int bytes_read = imc_recvmsg(pipe, &msg, 0);
 
@@ -107,7 +108,7 @@ void Channel::ChannelImpl::ReaderThreadRunner::Run() {
     bool success = ReadDataOnReaderThread(pipe_, msg_contents.get());
     if (success) {
       main_message_loop_->PostTask(FROM_HERE,
-          base::Bind(data_read_callback_, base::Passed(msg_contents.Pass())));
+          base::Bind(data_read_callback_, base::Passed(&msg_contents)));
     } else {
       main_message_loop_->PostTask(FROM_HERE, failure_callback_);
       // Because the read failed, we know we're going to quit. Don't bother
@@ -125,7 +126,7 @@ Channel::ChannelImpl::ChannelImpl(const IPC::ChannelHandle& channel_handle,
       waiting_connect_(true),
       pipe_(-1),
       pipe_name_(channel_handle.name),
-      weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      weak_ptr_factory_(this) {
   if (!CreatePipe(channel_handle)) {
     // The pipe may have been closed already.
     const char *modestr = (mode_ & MODE_SERVER_FLAG) ? "server" : "client";
@@ -138,9 +139,15 @@ Channel::ChannelImpl::~ChannelImpl() {
   Close();
 }
 
+base::ProcessId Channel::ChannelImpl::peer_pid() const {
+  // This shouldn't actually get used in the untrusted side of the proxy, and we
+  // don't have the real pid anyway.
+  return -1;
+}
+
 bool Channel::ChannelImpl::Connect() {
   if (pipe_ == -1) {
-    DLOG(INFO) << "Channel creation failed: " << pipe_name_;
+    DLOG(WARNING) << "Channel creation failed: " << pipe_name_;
     return false;
   }
 
@@ -164,6 +171,10 @@ bool Channel::ChannelImpl::Connect() {
   waiting_connect_ = false;
   // If there were any messages queued before connection, send them.
   ProcessOutgoingMessages();
+  base::MessageLoopProxy::current()->PostTask(FROM_HERE,
+      base::Bind(&Channel::ChannelImpl::CallOnChannelConnected,
+                 weak_ptr_factory_.GetWeakPtr()));
+
   return true;
 }
 
@@ -265,8 +276,10 @@ bool Channel::ChannelImpl::ProcessOutgoingMessages() {
     DCHECK(num_fds <= FileDescriptorSet::kMaxDescriptorsPerMessage);
     msg->file_descriptor_set()->GetDescriptors(fds);
 
-    NaClImcMsgIoVec iov = { const_cast<void*>(msg->data()), msg->size() };
-    NaClImcMsgHdr msgh = { &iov, 1, fds, num_fds };
+    NaClAbiNaClImcMsgIoVec iov = {
+      const_cast<void*>(msg->data()), msg->size()
+    };
+    NaClAbiNaClImcMsgHdr msgh = { &iov, 1, fds, num_fds };
     ssize_t bytes_written = imc_sendmsg(pipe_, &msgh, 0);
 
     DCHECK(bytes_written);  // The trusted side shouldn't return 0.
@@ -289,6 +302,10 @@ bool Channel::ChannelImpl::ProcessOutgoingMessages() {
              << " on fd " << pipe_;
   }
   return true;
+}
+
+void Channel::ChannelImpl::CallOnChannelConnected() {
+  listener()->OnChannelConnected(peer_pid());
 }
 
 Channel::ChannelImpl::ReadState Channel::ChannelImpl::ReadData(
@@ -342,7 +359,7 @@ bool Channel::ChannelImpl::DidEmptyInputBuffers() {
   return input_fds_.empty();
 }
 
-void Channel::ChannelImpl::HandleHelloMessage(const Message& msg) {
+void Channel::ChannelImpl::HandleInternalMessage(const Message& msg) {
   // The trusted side IPC::Channel should handle the "hello" handshake; we
   // should not receive the "Hello" message.
   NOTREACHED();
@@ -369,14 +386,8 @@ void Channel::Close() {
   channel_impl_->Close();
 }
 
-void Channel::set_listener(Listener* listener) {
-  channel_impl_->set_listener(listener);
-}
-
 base::ProcessId Channel::peer_pid() const {
-  // This shouldn't actually get used in the untrusted side of the proxy, and we
-  // don't have the real pid anyway.
-  return -1;
+  return channel_impl_->peer_pid();
 }
 
 bool Channel::Send(Message* message) {

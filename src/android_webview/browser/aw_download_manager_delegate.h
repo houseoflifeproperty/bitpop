@@ -7,10 +7,6 @@
 
 #include "content/public/browser/download_manager_delegate.h"
 
-namespace content {
-class DownloadItem;
-}  // namespace content
-
 namespace android_webview {
 
 // Android WebView does not use Chromium downloads, so implement methods here to
@@ -29,8 +25,9 @@ class AwDownloadManagerDelegate : public content::DownloadManagerDelegate {
   virtual bool ShouldOpenDownload(
       content::DownloadItem* item,
       const content::DownloadOpenDelayedCallback& callback) OVERRIDE;
+  virtual void GetNextId(const content::DownloadIdCallback& callback) OVERRIDE;
 };
 
-}  // anemspace android_webview
+}  // namespace android_webview
 
 #endif  // ANDROID_WEBVIEW_BROWSER_AW_DOWNLOAD_MANAGER_DELEGATE_H_

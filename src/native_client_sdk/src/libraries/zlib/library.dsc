@@ -1,5 +1,6 @@
 {
-  'TOOLS': ['newlib', 'glibc', 'linux', 'win'],
+  'DISABLE': True,
+  'TOOLS': ['bionic', 'newlib', 'glibc', 'linux', 'win'],
   'SEARCH': [
     '../../../../third_party/zlib',
   ],

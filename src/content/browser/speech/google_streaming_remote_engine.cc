@@ -7,24 +7,23 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/rand_util.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/time.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "content/browser/speech/audio_buffer.h"
 #include "content/browser/speech/proto/google_streaming_api.pb.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/speech_recognition_error.h"
 #include "content/public/common/speech_recognition_result.h"
 #include "google_apis/google_api_keys.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
+#include "net/url_request/http_user_agent_settings.h"
 #include "net/url_request/url_fetcher.h"
-#include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_context.h"
+#include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_status.h"
 
 using net::URLFetcher;
@@ -36,10 +35,9 @@ const char kWebServiceBaseUrl[] =
     "https://www.google.com/speech-api/full-duplex/v1";
 const char kDownstreamUrl[] = "/down?";
 const char kUpstreamUrl[] = "/up?";
-const int kAudioPacketIntervalMs = 100;
 const AudioEncoder::Codec kDefaultAudioCodec = AudioEncoder::CODEC_FLAC;
 
-// This mathces the maximum maxAlternatives value supported by the server.
+// This matches the maximum maxAlternatives value supported by the server.
 const uint32 kMaxMaxAlternatives = 30;
 
 // TODO(hans): Remove this and other logging when we don't need it anymore.
@@ -70,37 +68,21 @@ void DumpResponse(const std::string& response) {
   }
 }
 
-std::string GetAPIKey() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kSpeechRecognitionWebserviceKey)) {
-    DVLOG(1) << "GetAPIKey() used key from command-line.";
-    return command_line.GetSwitchValueASCII(
-        switches::kSpeechRecognitionWebserviceKey);
-  }
-
-  std::string api_key = google_apis::GetAPIKey();
-  if (api_key.empty())
-    DVLOG(1) << "GetAPIKey() returned empty string!";
-
-  return api_key;
-}
-
 }  // namespace
 
-const int GoogleStreamingRemoteEngine::kUpstreamUrlFetcherIdForTests = 0;
-const int GoogleStreamingRemoteEngine::kDownstreamUrlFetcherIdForTests = 1;
+const int GoogleStreamingRemoteEngine::kAudioPacketIntervalMs = 100;
+const int GoogleStreamingRemoteEngine::kUpstreamUrlFetcherIdForTesting = 0;
+const int GoogleStreamingRemoteEngine::kDownstreamUrlFetcherIdForTesting = 1;
 const int GoogleStreamingRemoteEngine::kWebserviceStatusNoError = 0;
 const int GoogleStreamingRemoteEngine::kWebserviceStatusErrorNoMatch = 5;
 
 GoogleStreamingRemoteEngine::GoogleStreamingRemoteEngine(
     net::URLRequestContextGetter* context)
     : url_context_(context),
-      encoder_(NULL),
       previous_response_length_(0),
       got_last_definitive_result_(false),
       is_dispatching_event_(false),
-      state_(STATE_IDLE) {
-}
+      state_(STATE_IDLE) {}
 
 GoogleStreamingRemoteEngine::~GoogleStreamingRemoteEngine() {}
 
@@ -319,7 +301,7 @@ GoogleStreamingRemoteEngine::ConnectBothStreams(const FSMEventArgs&) {
   // Setup downstream fetcher.
   std::vector<std::string> downstream_args;
   downstream_args.push_back(
-      "key=" + net::EscapeQueryParamValue(GetAPIKey(), true));
+      "key=" + net::EscapeQueryParamValue(google_apis::GetAPIKey(), true));
   downstream_args.push_back("pair=" + request_key);
   downstream_args.push_back("output=pb");
   GURL downstream_url(std::string(kWebServiceBaseUrl) +
@@ -327,8 +309,9 @@ GoogleStreamingRemoteEngine::ConnectBothStreams(const FSMEventArgs&) {
                       JoinString(downstream_args, '&'));
 
   downstream_fetcher_.reset(URLFetcher::Create(
-      kDownstreamUrlFetcherIdForTests, downstream_url, URLFetcher::GET, this));
-  downstream_fetcher_->SetRequestContext(url_context_);
+      kDownstreamUrlFetcherIdForTesting, downstream_url, URLFetcher::GET,
+      this));
+  downstream_fetcher_->SetRequestContext(url_context_.get());
   downstream_fetcher_->SetLoadFlags(net::LOAD_DO_NOT_SAVE_COOKIES |
                                     net::LOAD_DO_NOT_SEND_COOKIES |
                                     net::LOAD_DO_NOT_SEND_AUTH_DATA);
@@ -338,7 +321,7 @@ GoogleStreamingRemoteEngine::ConnectBothStreams(const FSMEventArgs&) {
   // TODO(hans): Support for user-selected grammars.
   std::vector<std::string> upstream_args;
   upstream_args.push_back("key=" +
-      net::EscapeQueryParamValue(GetAPIKey(), true));
+      net::EscapeQueryParamValue(google_apis::GetAPIKey(), true));
   upstream_args.push_back("pair=" + request_key);
   upstream_args.push_back("output=pb");
   upstream_args.push_back(
@@ -366,9 +349,9 @@ GoogleStreamingRemoteEngine::ConnectBothStreams(const FSMEventArgs&) {
                     JoinString(upstream_args, '&'));
 
   upstream_fetcher_.reset(URLFetcher::Create(
-      kUpstreamUrlFetcherIdForTests, upstream_url, URLFetcher::POST, this));
+      kUpstreamUrlFetcherIdForTesting, upstream_url, URLFetcher::POST, this));
   upstream_fetcher_->SetChunkedUpload(encoder_->mime_type());
-  upstream_fetcher_->SetRequestContext(url_context_);
+  upstream_fetcher_->SetRequestContext(url_context_.get());
   upstream_fetcher_->SetReferrer(config_.origin_url);
   upstream_fetcher_->SetLoadFlags(net::LOAD_DO_NOT_SAVE_COOKIES |
                                   net::LOAD_DO_NOT_SEND_COOKIES |
@@ -383,7 +366,7 @@ GoogleStreamingRemoteEngine::TransmitAudioUpstream(
     const FSMEventArgs& event_args) {
   DCHECK(upstream_fetcher_.get());
   DCHECK(event_args.audio_data.get());
-  const AudioChunk& audio = *(event_args.audio_data);
+  const AudioChunk& audio = *(event_args.audio_data.get());
 
   DCHECK_EQ(audio.bytes_per_sample(), config_.audio_num_bits_per_sample / 8);
   encoder_->Encode(audio);
@@ -411,7 +394,7 @@ GoogleStreamingRemoteEngine::ProcessDownstreamResponse(
   }
 
   if (ws_event.has_status()) {
-    switch(ws_event.status()) {
+    switch (ws_event.status()) {
       case proto::SpeechRecognitionEvent::STATUS_SUCCESS:
         break;
       case proto::SpeechRecognitionEvent::STATUS_NO_SPEECH:
@@ -457,7 +440,7 @@ GoogleStreamingRemoteEngine::ProcessDownstreamResponse(
       DCHECK(ws_alternative.has_transcript());
       // TODO(hans): Perhaps the transcript should be required in the proto?
       if (ws_alternative.has_transcript())
-        hypothesis.utterance = UTF8ToUTF16(ws_alternative.transcript());
+        hypothesis.utterance = base::UTF8ToUTF16(ws_alternative.transcript());
 
       result.hypotheses.push_back(hypothesis);
     }
@@ -495,7 +478,7 @@ GoogleStreamingRemoteEngine::CloseUpstreamAndWaitForResults(
       new AudioChunk(reinterpret_cast<uint8*>(&samples[0]),
                      samples.size() * sizeof(short),
                      encoder_->bits_per_sample() / 8);
-  encoder_->Encode(*dummy_chunk);
+  encoder_->Encode(*dummy_chunk.get());
   encoder_->Flush();
   scoped_refptr<AudioChunk> encoded_dummy_data =
       encoder_->GetEncodedDataAndClear();
@@ -555,7 +538,7 @@ GoogleStreamingRemoteEngine::NotFeasible(const FSMEventArgs& event_args) {
 
 std::string GoogleStreamingRemoteEngine::GetAcceptedLanguages() const {
   std::string langs = config_.language;
-  if (langs.empty() && url_context_) {
+  if (langs.empty() && url_context_.get()) {
     // If no language is provided then we use the first from the accepted
     // language list. If this list is empty then it defaults to "en-US".
     // Example of the contents of this list: "es,en-GB;q=0.8", ""
@@ -565,10 +548,13 @@ std::string GoogleStreamingRemoteEngine::GetAcceptedLanguages() const {
     // TODO(pauljensen): GoogleStreamingRemoteEngine should be constructed with
     // a reference to the HttpUserAgentSettings rather than accessing the
     // accept language through the URLRequestContext.
-    std::string accepted_language_list = request_context->GetAcceptLanguage();
-    size_t separator = accepted_language_list.find_first_of(",;");
-    if (separator != std::string::npos)
-      langs = accepted_language_list.substr(0, separator);
+    if (request_context->http_user_agent_settings()) {
+      std::string accepted_language_list =
+          request_context->http_user_agent_settings()->GetAcceptLanguage();
+      size_t separator = accepted_language_list.find_first_of(",;");
+      if (separator != std::string::npos)
+        langs = accepted_language_list.substr(0, separator);
+    }
   }
   if (langs.empty())
     langs = "en-US";
@@ -577,8 +563,8 @@ std::string GoogleStreamingRemoteEngine::GetAcceptedLanguages() const {
 
 // TODO(primiano): Is there any utility in the codebase that already does this?
 std::string GoogleStreamingRemoteEngine::GenerateRequestKey() const {
-  const int64 kKeepLowBytes = GG_LONGLONG(0x00000000FFFFFFFF);
-  const int64 kKeepHighBytes = GG_LONGLONG(0xFFFFFFFF00000000);
+  const int64 kKeepLowBytes = 0x00000000FFFFFFFFLL;
+  const int64 kKeepHighBytes = 0xFFFFFFFF00000000LL;
 
   // Just keep the least significant bits of timestamp, in order to reduce
   // probability of collisions.

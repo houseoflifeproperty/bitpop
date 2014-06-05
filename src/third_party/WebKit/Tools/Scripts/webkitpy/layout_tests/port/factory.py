@@ -39,34 +39,26 @@ def platform_options(use_globs=False):
     return [
         optparse.make_option('--platform', action='store',
             help=('Glob-style list of platform/ports to use (e.g., "mac*")' if use_globs else 'Platform to use (e.g., "mac-lion")')),
+
+        # FIXME: Update run_webkit_tests.sh, any other callers to no longer pass --chromium, then remove this flag.
         optparse.make_option('--chromium', action='store_const', dest='platform',
             const=('chromium*' if use_globs else 'chromium'),
             help=('Alias for --platform=chromium*' if use_globs else 'Alias for --platform=chromium')),
-        optparse.make_option('--chromium-android', action='store_const', dest='platform',
-            const=('chromium-android*' if use_globs else 'chromium-android'),
-            help=('Alias for --platform=chromium-android*' if use_globs else 'Alias for --platform=chromium')),
-        optparse.make_option('--efl', action='store_const', dest='platform',
-            const=('efl*' if use_globs else 'efl'),
-            help=('Alias for --platform=efl*' if use_globs else 'Alias for --platform=efl')),
-        optparse.make_option('--gtk', action='store_const', dest='platform',
-            const=('gtk*' if use_globs else 'gtk'),
-            help=('Alias for --platform=gtk*' if use_globs else 'Alias for --platform=gtk')),
-        optparse.make_option('--qt', action='store_const', dest="platform",
-            const=('qt*' if use_globs else 'qt'),
-            help=('Alias for --platform=qt' if use_globs else 'Alias for --platform=qt')),
+
+        optparse.make_option('--android', action='store_const', dest='platform',
+            const=('android*' if use_globs else 'android'),
+            help=('Alias for --platform=android*' if use_globs else 'Alias for --platform=android')),
         ]
 
 
 def configuration_options():
     return [
-        optparse.make_option("-t", "--target", dest="configuration", help="(DEPRECATED)"),
-        # FIXME: --help should display which configuration is default.
+        optparse.make_option("-t", "--target", dest="configuration",
+                             help="specify the target configuration to use (Debug/Release)"),
         optparse.make_option('--debug', action='store_const', const='Debug', dest="configuration",
             help='Set the configuration to Debug'),
         optparse.make_option('--release', action='store_const', const='Release', dest="configuration",
             help='Set the configuration to Release'),
-        optparse.make_option('--32-bit', action='store_const', const='x86', default=None, dest="architecture",
-            help='use 32-bit binaries by default (x86 instead of x86_64)'),
         ]
 
 
@@ -75,22 +67,17 @@ def _builder_options(builder_name):
     configuration = "Debug" if re.search(r"[d|D](ebu|b)g", builder_name) else "Release"
     is_webkit2 = builder_name.find("WK2") != -1
     builder_name = builder_name
-    return optparse.Values({'builder_name': builder_name, 'configuration': configuration, 'webkit_test_runner': is_webkit2})
+    return optparse.Values({'builder_name': builder_name, 'configuration': configuration})
 
 
 class PortFactory(object):
     PORT_CLASSES = (
-        'chromium_android.ChromiumAndroidPort',
-        'chromium_linux.ChromiumLinuxPort',
-        'chromium_mac.ChromiumMacPort',
-        'chromium_win.ChromiumWinPort',
-        'efl.EflPort',
-        'gtk.GtkPort',
+        'android.AndroidPort',
+        'linux.LinuxPort',
         'mac.MacPort',
-        'mock_drt.MockDRTPort',
-        'qt.QtPort',
-        'test.TestPort',
         'win.WinPort',
+        'mock_drt.MockDRTPort',
+        'test.TestPort',
     )
 
     def __init__(self, host):
@@ -99,7 +86,7 @@ class PortFactory(object):
     def _default_port(self, options):
         platform = self._host.platform
         if platform.is_linux() or platform.is_freebsd():
-            return 'chromium-linux'
+            return 'linux'
         elif platform.is_mac():
             return 'mac'
         elif platform.is_win():
@@ -112,11 +99,10 @@ class PortFactory(object):
         appropriate port on this platform."""
         port_name = port_name or self._default_port(options)
 
-        # FIXME(dpranke): We special-case '--platform chromium' so that it can co-exist
-        # with '--platform chromium-mac' and '--platform chromium-linux' properly (we
-        # can't look at the port_name prefix in this case).
+        # FIXME(steveblock): There's no longer any need to pass '--platform
+        # chromium' on the command line so we can remove this logic.
         if port_name == 'chromium':
-            port_name = 'chromium-' + self._host.platform.os_name
+            port_name = self._host.platform.os_name
 
         for port_class in self.PORT_CLASSES:
             module_name, class_name = port_class.rsplit('.', 1)

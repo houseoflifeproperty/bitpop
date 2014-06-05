@@ -7,12 +7,11 @@
 #include <vector>
 
 #include "base/values.h"
-#include "chrome/common/extensions/extension_messages.h"
-#include "chrome/common/print_messages.h"
 #include "chrome/renderer/mock_printer.h"
+#include "extensions/common/extension_messages.h"
 #include "ipc/ipc_sync_message.h"
-#include "printing/print_job_constants.h"
 #include "printing/page_range.h"
+#include "printing/print_job_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_CHROMEOS)
@@ -21,14 +20,31 @@
 #include "base/file_util.h"
 #endif
 
+#if defined(ENABLE_PRINTING)
+#include "chrome/common/print_messages.h"
+#endif
+
 ChromeMockRenderThread::ChromeMockRenderThread()
+#if defined(ENABLE_PRINTING)
     : printer_(new MockPrinter),
       print_dialog_user_response_(true),
       print_preview_cancel_page_number_(-1),
-      print_preview_pages_remaining_(0) {
+      print_preview_pages_remaining_(0)
+#endif
+{
 }
 
 ChromeMockRenderThread::~ChromeMockRenderThread() {
+}
+
+scoped_refptr<base::MessageLoopProxy>
+ChromeMockRenderThread::GetIOMessageLoopProxy() {
+  return io_message_loop_proxy_;
+}
+
+void ChromeMockRenderThread::set_io_message_loop_proxy(
+    const scoped_refptr<base::MessageLoopProxy>& proxy) {
+  io_message_loop_proxy_ = proxy;
 }
 
 bool ChromeMockRenderThread::OnMessageReceived(const IPC::Message& msg) {
@@ -40,7 +56,8 @@ bool ChromeMockRenderThread::OnMessageReceived(const IPC::Message& msg) {
   bool msg_is_ok = true;
   IPC_BEGIN_MESSAGE_MAP_EX(ChromeMockRenderThread, msg, msg_is_ok)
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_OpenChannelToExtension,
-                        OnMsgOpenChannelToExtension)
+                        OnOpenChannelToExtension)
+#if defined(ENABLE_PRINTING)
     IPC_MESSAGE_HANDLER(PrintHostMsg_GetDefaultPrintSettings,
                         OnGetDefaultPrintSettings)
     IPC_MESSAGE_HANDLER(PrintHostMsg_ScriptedPrint, OnScriptedPrint)
@@ -60,30 +77,33 @@ bool ChromeMockRenderThread::OnMessageReceived(const IPC::Message& msg) {
                         OnAllocateTempFileForPrinting)
     IPC_MESSAGE_HANDLER(PrintHostMsg_TempFileForPrintingWritten,
                         OnTempFileForPrintingWritten)
-#endif
+#endif  // defined(OS_CHROMEOS)
+#endif  // defined(ENABLE_PRINTING)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP_EX()
   return handled;
 }
 
-void ChromeMockRenderThread::OnMsgOpenChannelToExtension(
+void ChromeMockRenderThread::OnOpenChannelToExtension(
     int routing_id,
-    const std::string& source_extension_id,
-    const std::string& target_extension_id,
+    const ExtensionMsg_ExternalConnectionInfo& info,
     const std::string& channel_name,
+    bool include_tls_channel_id,
     int* port_id) {
   *port_id = 0;
 }
 
+#if defined(ENABLE_PRINTING)
 #if defined(OS_CHROMEOS)
 void ChromeMockRenderThread::OnAllocateTempFileForPrinting(
+    int render_view_id,
     base::FileDescriptor* renderer_fd,
     int* browser_fd) {
   renderer_fd->fd = *browser_fd = -1;
   renderer_fd->auto_close = false;
 
-  FilePath path;
-  if (file_util::CreateTemporaryFile(&path)) {
+  base::FilePath path;
+  if (base::CreateTemporaryFile(&path)) {
     int fd = open(path.value().c_str(), O_WRONLY);
     DCHECK_GE(fd, 0);
     renderer_fd->fd = *browser_fd = fd;
@@ -163,7 +183,7 @@ void ChromeMockRenderThread::OnUpdatePrintSettings(
   }
 
   // Just return the default settings.
-  const ListValue* page_range_array;
+  const base::ListValue* page_range_array;
   printing::PageRanges new_ranges;
   if (job_settings.GetList(printing::kSettingPageRange, &page_range_array)) {
     for (size_t index = 0; index < page_range_array->GetSize(); ++index) {
@@ -184,6 +204,11 @@ void ChromeMockRenderThread::OnUpdatePrintSettings(
   }
   std::vector<int> pages(printing::PageRange::GetPages(new_ranges));
   printer_->UpdateSettings(document_cookie, params, pages, margins_type);
+
+  job_settings.GetBoolean(printing::kSettingShouldPrintSelectionOnly,
+                          &params->params.selection_only);
+  job_settings.GetBoolean(printing::kSettingShouldPrintBackgrounds,
+                          &params->params.should_print_backgrounds);
 }
 
 MockPrinter* ChromeMockRenderThread::printer() {
@@ -201,3 +226,4 @@ void ChromeMockRenderThread::set_print_preview_cancel_page_number(int page) {
 int ChromeMockRenderThread::print_preview_pages_remaining() const {
   return print_preview_pages_remaining_;
 }
+#endif  // defined(ENABLE_PRINTING)

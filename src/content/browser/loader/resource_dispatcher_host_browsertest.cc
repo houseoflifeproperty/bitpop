@@ -2,25 +2,30 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/browser/download/download_manager_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/content_browser_test.h"
+#include "content/public/test/content_browser_test_utils.h"
 #include "content/public/test/test_utils.h"
-#include "content/shell/shell.h"
-#include "content/test/content_browser_test.h"
-#include "content/test/content_browser_test_utils.h"
+#include "content/shell/browser/shell.h"
+#include "content/shell/browser/shell_content_browser_client.h"
+#include "content/shell/browser/shell_network_delegate.h"
 #include "content/test/net/url_request_failed_job.h"
 #include "content/test/net/url_request_mock_http_job.h"
 #include "net/base/net_errors.h"
-#include "net/test/test_server.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
+#include "net/test/embedded_test_server/http_request.h"
+#include "net/test/embedded_test_server/http_response.h"
+
+using base::ASCIIToUTF16;
 
 namespace content {
 
@@ -31,7 +36,7 @@ class ResourceDispatcherHostBrowserTest : public ContentBrowserTest,
 
  protected:
   virtual void SetUpOnMainThread() OVERRIDE {
-    FilePath path = GetTestFilePath("", "");
+    base::FilePath path = GetTestFilePath("", "");
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
         base::Bind(&URLRequestMockHTTPJob::AddUrlHandler, path));
@@ -47,29 +52,26 @@ class ResourceDispatcherHostBrowserTest : public ContentBrowserTest,
       got_downloads_ = !!manager->InProgressCount();
   }
 
-  RenderViewHost* render_view_host() {
-    return shell()->web_contents()->GetRenderViewHost();
-  }
-
   GURL GetMockURL(const std::string& file) {
-    return URLRequestMockHTTPJob::GetMockUrl(FilePath().AppendASCII(file));
+    return URLRequestMockHTTPJob::GetMockUrl(
+        base::FilePath().AppendASCII(file));
   }
 
   void CheckTitleTest(const GURL& url,
                       const std::string& expected_title) {
-    string16 expected_title16(ASCIIToUTF16(expected_title));
+    base::string16 expected_title16(ASCIIToUTF16(expected_title));
     TitleWatcher title_watcher(shell()->web_contents(), expected_title16);
     NavigateToURL(shell(), url);
     EXPECT_EQ(expected_title16, title_watcher.WaitAndGetTitle());
   }
 
-  bool GetPopupTitle(const GURL& url, string16* title) {
+  bool GetPopupTitle(const GURL& url, base::string16* title) {
     NavigateToURL(shell(), url);
 
     ShellAddedObserver new_shell_observer;
 
     // Create dynamic popup.
-    if (!ExecuteJavaScript(render_view_host(), L"", L"OpenPopup();"))
+    if (!ExecuteScript(shell()->web_contents(), "OpenPopup();"))
       return false;
 
     Shell* new_shell = new_shell_observer.GetShell();
@@ -91,10 +93,10 @@ class ResourceDispatcherHostBrowserTest : public ContentBrowserTest,
 // Test title for content created by javascript window.open().
 // See http://crbug.com/5988
 IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest, DynamicTitle1) {
-  ASSERT_TRUE(test_server()->Start());
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
-  GURL url(test_server()->GetURL("files/dynamic1.html"));
-  string16 title;
+  GURL url(embedded_test_server()->GetURL("/dynamic1.html"));
+  base::string16 title;
   ASSERT_TRUE(GetPopupTitle(url, &title));
   EXPECT_TRUE(StartsWith(title, ASCIIToUTF16("My Popup Title"), true))
       << "Actual title: " << title;
@@ -103,10 +105,10 @@ IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest, DynamicTitle1) {
 // Test title for content created by javascript window.open().
 // See http://crbug.com/5988
 IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest, DynamicTitle2) {
-  ASSERT_TRUE(test_server()->Start());
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
-  GURL url(test_server()->GetURL("files/dynamic2.html"));
-  string16 title;
+  GURL url(embedded_test_server()->GetURL("/dynamic2.html"));
+  base::string16 title;
   ASSERT_TRUE(GetPopupTitle(url, &title));
   EXPECT_TRUE(StartsWith(title, ASCIIToUTF16("My Dynamic Title"), true))
       << "Actual title: " << title;
@@ -159,16 +161,15 @@ IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
 
 // Test for bug #1091358.
 IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest, SyncXMLHttpRequest) {
-  ASSERT_TRUE(test_server()->Start());
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
   NavigateToURL(
-      shell(), test_server()->GetURL("files/sync_xmlhttprequest.html"));
+      shell(), embedded_test_server()->GetURL("/sync_xmlhttprequest.html"));
 
   // Let's check the XMLHttpRequest ran successfully.
   bool success = false;
-  EXPECT_TRUE(ExecuteJavaScriptAndExtractBool(
-      shell()->web_contents()->GetRenderViewHost(),
-      L"",
-      L"window.domAutomationController.send(DidSyncRequestSucceed());",
+  EXPECT_TRUE(ExecuteScriptAndExtractBool(
+      shell()->web_contents(),
+      "window.domAutomationController.send(DidSyncRequestSucceed());",
       &success));
   EXPECT_TRUE(success);
 }
@@ -176,17 +177,16 @@ IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest, SyncXMLHttpRequest) {
 // If this flakes, use http://crbug.com/62776.
 IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
                        SyncXMLHttpRequest_Disallowed) {
-  ASSERT_TRUE(test_server()->Start());
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
   NavigateToURL(
       shell(),
-      test_server()->GetURL("files/sync_xmlhttprequest_disallowed.html"));
+      embedded_test_server()->GetURL("/sync_xmlhttprequest_disallowed.html"));
 
   // Let's check the XMLHttpRequest ran successfully.
   bool success = false;
-  EXPECT_TRUE(ExecuteJavaScriptAndExtractBool(
-      shell()->web_contents()->GetRenderViewHost(),
-      L"",
-      L"window.domAutomationController.send(DidSucceed());",
+  EXPECT_TRUE(ExecuteScriptAndExtractBool(
+      shell()->web_contents(),
+      "window.domAutomationController.send(DidSucceed());",
       &success));
   EXPECT_TRUE(success);
 }
@@ -194,21 +194,27 @@ IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
 // Test for bug #1159553 -- A synchronous xhr (whose content-type is
 // downloadable) would trigger download and hang the renderer process,
 // if executed while navigating to a new page.
-// If this flakes, use http://crbug.com/56264.
+// Disabled on Mac: see http://crbug.com/56264
+#if defined(OS_MACOSX)
+#define MAYBE_SyncXMLHttpRequest_DuringUnload \
+  DISABLED_SyncXMLHttpRequest_DuringUnload
+#else
+#define MAYBE_SyncXMLHttpRequest_DuringUnload SyncXMLHttpRequest_DuringUnload
+#endif
 IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
-                       SyncXMLHttpRequest_DuringUnload) {
-  ASSERT_TRUE(test_server()->Start());
+                       MAYBE_SyncXMLHttpRequest_DuringUnload) {
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
   BrowserContext::GetDownloadManager(
       shell()->web_contents()->GetBrowserContext())->AddObserver(this);
 
   CheckTitleTest(
-      test_server()->GetURL("files/sync_xmlhttprequest_during_unload.html"),
+      embedded_test_server()->GetURL("/sync_xmlhttprequest_during_unload.html"),
       "sync xhr on unload");
 
   // Navigate to a new page, to dispatch unload event and trigger xhr.
   // (the bug would make this step hang the renderer).
   CheckTitleTest(
-      test_server()->GetURL("files/title2.html"), "Title Of Awesomeness");
+      embedded_test_server()->GetURL("/title2.html"), "Title Of Awesomeness");
 
   ASSERT_FALSE(got_downloads());
 }
@@ -216,9 +222,9 @@ IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
 // Tests that onunload is run for cross-site requests.  (Bug 1114994)
 IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
                        CrossSiteOnunloadCookie) {
-  ASSERT_TRUE(test_server()->Start());
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
-  GURL url = test_server()->GetURL("files/onunload_cookie.html");
+  GURL url = embedded_test_server()->GetURL("/onunload_cookie.html");
   CheckTitleTest(url, "set cookie on unload");
 
   // Navigate to a new cross-site page, to dispatch unload event and set the
@@ -235,31 +241,51 @@ IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
 // without network loads (e.g., about:blank, data URLs).
 IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
                        DISABLED_CrossSiteImmediateLoadOnunloadCookie) {
-  ASSERT_TRUE(test_server()->Start());
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
-  GURL url = test_server()->GetURL("files/onunload_cookie.html");
+  GURL url = embedded_test_server()->GetURL("/onunload_cookie.html");
   CheckTitleTest(url, "set cookie on unload");
 
   // Navigate to a cross-site page that loads immediately without making a
   // network request.  The unload event should still be run.
-  NavigateToURL(shell(), GURL("about:blank"));
+  NavigateToURL(shell(), GURL(kAboutBlankURL));
 
   // Check that the cookie was set.
   EXPECT_EQ("onunloadCookie=foo", GetCookies(url));
 }
 
+namespace {
+
+// Handles |request| by serving a redirect response.
+scoped_ptr<net::test_server::HttpResponse> NoContentResponseHandler(
+    const std::string& path,
+    const net::test_server::HttpRequest& request) {
+  if (!StartsWithASCII(path, request.relative_url, true))
+    return scoped_ptr<net::test_server::HttpResponse>();
+
+  scoped_ptr<net::test_server::BasicHttpResponse> http_response(
+      new net::test_server::BasicHttpResponse);
+  http_response->set_code(net::HTTP_NO_CONTENT);
+  return http_response.PassAs<net::test_server::HttpResponse>();
+}
+
+}  // namespace
+
 // Tests that the unload handler is not run for 204 responses.
 // If this flakes use http://crbug.com/80596.
 IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
                        CrossSiteNoUnloadOn204) {
-  ASSERT_TRUE(test_server()->Start());
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
   // Start with a URL that sets a cookie in its unload handler.
-  GURL url = test_server()->GetURL("files/onunload_cookie.html");
+  GURL url = embedded_test_server()->GetURL("/onunload_cookie.html");
   CheckTitleTest(url, "set cookie on unload");
 
   // Navigate to a cross-site URL that returns a 204 No Content response.
-  NavigateToURL(shell(), test_server()->GetURL("nocontent"));
+  const char kNoContentPath[] = "/nocontent";
+  embedded_test_server()->RegisterRequestHandler(
+      base::Bind(&NoContentResponseHandler, kNoContentPath));
+  NavigateToURL(shell(), embedded_test_server()->GetURL(kNoContentPath));
 
   // Check that the unload cookie was not set.
   EXPECT_EQ("", GetCookies(url));
@@ -275,11 +301,14 @@ IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
 // complete and isn't conducive to quick turnarounds. As we don't currently
 // strip the app on the build bots, this is bad times.
 IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest, CrossSiteAfterCrash) {
+  // Make sure we have a live process before trying to kill it.
+  NavigateToURL(shell(), GURL("about:blank"));
+
   // Cause the renderer to crash.
-  WindowedNotificationObserver crash_observer(
-      NOTIFICATION_RENDERER_PROCESS_CLOSED,
-      NotificationService::AllSources());
-  NavigateToURL(shell(), GURL(chrome::kChromeUICrashURL));
+  RenderProcessHostWatcher crash_observer(
+      shell()->web_contents(),
+      RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT);
+  NavigateToURL(shell(), GURL(kChromeUICrashURL));
   // Wait for browser to notice the renderer crash.
   crash_observer.Wait();
 
@@ -310,9 +339,9 @@ IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
 // Flaky: http://crbug.com/100823
 IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
                        CrossSiteNavigationErrorPage) {
-  ASSERT_TRUE(test_server()->Start());
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
-  GURL url(test_server()->GetURL("files/onunload_cookie.html"));
+  GURL url(embedded_test_server()->GetURL("/onunload_cookie.html"));
   CheckTitleTest(url, "set cookie on unload");
 
   // Navigate to a new cross-site URL that results in an error.
@@ -338,25 +367,26 @@ IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
   // URLs are prohibited by policy from interacting with sensitive chrome
   // pages of which the error page is one.  Instead, use automation to kick
   // off the navigation, and wait to see that the tab loads.
-  string16 expected_title16(ASCIIToUTF16("Title Of Awesomeness"));
+  base::string16 expected_title16(ASCIIToUTF16("Title Of Awesomeness"));
   TitleWatcher title_watcher(shell()->web_contents(), expected_title16);
 
   bool success;
-  GURL test_url(test_server()->GetURL("files/title2.html"));
+  GURL test_url(embedded_test_server()->GetURL("/title2.html"));
   std::string redirect_script = "window.location='" +
       test_url.possibly_invalid_spec() + "';" +
       "window.domAutomationController.send(true);";
-  EXPECT_TRUE(ExecuteJavaScriptAndExtractBool(
-      shell()->web_contents()->GetRenderViewHost(),
-      L"", ASCIIToWide(redirect_script), &success));
+  EXPECT_TRUE(ExecuteScriptAndExtractBool(
+      shell()->web_contents(),
+      redirect_script,
+      &success));
   EXPECT_EQ(expected_title16, title_watcher.WaitAndGetTitle());
 }
 
 IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
                        CrossSiteNavigationErrorPage2) {
-  ASSERT_TRUE(test_server()->Start());
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
-  GURL url(test_server()->GetURL("files/title2.html"));
+  GURL url(embedded_test_server()->GetURL("/title2.html"));
   CheckTitleTest(url, "Title Of Awesomeness");
 
   // Navigate to a new cross-site URL that results in an error.
@@ -400,6 +430,41 @@ IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
   // Visit a URL that fails without calling ResourceDispatcherHost::Read.
   GURL broken_url("chrome://theme");
   NavigateToURL(shell(), broken_url);
+}
+
+namespace {
+
+scoped_ptr<net::test_server::HttpResponse> HandleRedirectRequest(
+    const std::string& request_path,
+    const net::test_server::HttpRequest& request) {
+  if (!StartsWithASCII(request.relative_url, request_path, true))
+    return scoped_ptr<net::test_server::HttpResponse>();
+
+  scoped_ptr<net::test_server::BasicHttpResponse> http_response(
+      new net::test_server::BasicHttpResponse);
+  http_response->set_code(net::HTTP_FOUND);
+  http_response->AddCustomHeader(
+      "Location", request.relative_url.substr(request_path.length()));
+  return http_response.PassAs<net::test_server::HttpResponse>();
+}
+
+}  // namespace
+
+// Test that we update the cookie policy URLs correctly when transferring
+// navigations.
+IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest, CookiePolicy) {
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+  embedded_test_server()->RegisterRequestHandler(
+      base::Bind(&HandleRedirectRequest, "/redirect?"));
+
+  std::string set_cookie_url(base::StringPrintf(
+      "http://localhost:%d/set_cookie.html", embedded_test_server()->port()));
+  GURL url(embedded_test_server()->GetURL("/redirect?" + set_cookie_url));
+
+  ShellContentBrowserClient::SetSwapProcessesForRedirect(true);
+  ShellNetworkDelegate::SetAcceptAllCookies(false);
+
+  CheckTitleTest(url, "cookie set");
 }
 
 }  // namespace content

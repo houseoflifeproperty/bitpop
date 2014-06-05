@@ -7,36 +7,36 @@
 
 #include <string>
 
-#include "base/basictypes.h"
-#include "base/compiler_specific.h"
-#include "ui/views/controls/button/radio_button.h"
+#include "base/macros.h"
+#include "ui/views/controls/button/button.h"
 #include "ui/views/examples/example_base.h"
 
-namespace events {
-class TextButton;
-}
-
 namespace views {
+
+class LabelButton;
+class RadioButton;
+
 namespace examples {
 
-class RadioButtonExample : public ExampleBase, public ButtonListener {
+class VIEWS_EXAMPLES_EXPORT RadioButtonExample : public ExampleBase,
+                                                 public ButtonListener {
  public:
   RadioButtonExample();
   virtual ~RadioButtonExample();
 
-  // Overridden from ExampleBase:
+  // ExampleBase:
   virtual void CreateExampleView(View* container) OVERRIDE;
 
  private:
-  // Overridden from ButtonListener:
+  // ButtonListener:
   virtual void ButtonPressed(Button* sender, const ui::Event& event) OVERRIDE;
 
   // Group of 3 radio buttons.
   RadioButton* radio_buttons_[3];
 
   // Control button to select radio buttons, and show the status of buttons.
-  TextButton* select_;
-  TextButton* status_;
+  LabelButton* select_;
+  LabelButton* status_;
 
   // The number of times the button is pressed.
   int count_;

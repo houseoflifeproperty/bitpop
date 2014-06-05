@@ -11,7 +11,10 @@
 #ifndef WEBRTC_MODULES_AUDIO_CODING_MAIN_INTERFACE_AUDIO_CODING_MODULE_TYPEDEFS_H_
 #define WEBRTC_MODULES_AUDIO_CODING_MAIN_INTERFACE_AUDIO_CODING_MODULE_TYPEDEFS_H_
 
-#include "typedefs.h"
+#include <map>
+
+#include "webrtc/modules/interface/module_common_types.h"
+#include "webrtc/typedefs.h"
 
 namespace webrtc {
 
@@ -34,11 +37,14 @@ namespace webrtc {
 //                conference participant, a webinar, or a streaming application,
 //                this mode can be used to improve the jitter robustness at
 //                the cost of increased delay.
+// -off         : Turns off most of NetEQ's features. Stuffs zeros for lost
+//                packets and during buffer increases.
 //
 enum AudioPlayoutMode {
   voice = 0,
   fax = 1,
-  streaming = 2
+  streaming = 2,
+  off = 3,
 };
 
 ///////////////////////////////////////////////////////////////////////////
@@ -162,20 +168,22 @@ enum ACMAMRPackingFormat {
 // -medianWaitingTimeMs    : median packet waiting time in the buffer
 // -minWaitingTimeMs       : min packet waiting time in the buffer
 // -maxWaitingTimeMs       : max packet waiting time in the buffer
+// -addedSamples           : samples inserted because of packet loss in off mode
 typedef struct {
-  WebRtc_UWord16 currentBufferSize;
-  WebRtc_UWord16 preferredBufferSize;
+  uint16_t currentBufferSize;
+  uint16_t preferredBufferSize;
   bool jitterPeaksFound;
-  WebRtc_UWord16 currentPacketLossRate;
-  WebRtc_UWord16 currentDiscardRate;
-  WebRtc_UWord16 currentExpandRate;
-  WebRtc_UWord16 currentPreemptiveRate;
-  WebRtc_UWord16 currentAccelerateRate;
+  uint16_t currentPacketLossRate;
+  uint16_t currentDiscardRate;
+  uint16_t currentExpandRate;
+  uint16_t currentPreemptiveRate;
+  uint16_t currentAccelerateRate;
   int32_t clockDriftPPM;
   int meanWaitingTimeMs;
   int medianWaitingTimeMs;
   int minWaitingTimeMs;
   int maxWaitingTimeMs;
+  int addedSamples;
 } ACMNetworkStatistics;
 
 ///////////////////////////////////////////////////////////////////////////

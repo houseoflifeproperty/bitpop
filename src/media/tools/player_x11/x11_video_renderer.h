@@ -12,8 +12,6 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 
-class MessageLoop;
-
 namespace media {
 class VideoFrame;
 }
@@ -22,13 +20,12 @@ class X11VideoRenderer : public base::RefCountedThreadSafe<X11VideoRenderer> {
  public:
   X11VideoRenderer(Display* display, Window window);
 
-  void Paint(media::VideoFrame* video_frame);
+  void Paint(const scoped_refptr<media::VideoFrame>& video_frame);
 
- protected:
+ private:
   friend class base::RefCountedThreadSafe<X11VideoRenderer>;
   ~X11VideoRenderer();
 
- private:
   // Initializes X11 rendering for the given dimensions.
   void Initialize(gfx::Size coded_size, gfx::Rect visible_rect);
 

@@ -4,21 +4,22 @@
 
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/external_protocol/external_protocol_handler.h"
-#include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/profiles/profile_io_data.h"
+#include "chrome/common/net/url_fixer_upper.h"
 #include "content/public/common/url_constants.h"
-#include "googleurl/src/url_canon_ip.h"
 #include "net/base/net_util.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
+#include "url/url_canon_ip.h"
+#include "url/url_util.h"
 
 namespace {
 
 void AdjustCursorPositionIfNecessary(size_t num_leading_chars_removed,
                                      size_t* cursor_position) {
-  if (*cursor_position == string16::npos)
+  if (*cursor_position == base::string16::npos)
     return;
   if (num_leading_chars_removed < *cursor_position)
     *cursor_position -= num_leading_chars_removed;
@@ -29,31 +30,39 @@ void AdjustCursorPositionIfNecessary(size_t num_leading_chars_removed,
 }  // namespace
 
 AutocompleteInput::AutocompleteInput()
-    : cursor_position_(string16::npos),
+    : cursor_position_(base::string16::npos),
+      current_page_classification_(AutocompleteInput::INVALID_SPEC),
       type_(INVALID),
       prevent_inline_autocomplete_(false),
       prefer_keyword_(false),
       allow_exact_keyword_match_(true),
-      matches_requested_(ALL_MATCHES) {
+      want_asynchronous_matches_(true) {
 }
 
-AutocompleteInput::AutocompleteInput(const string16& text,
-                                     size_t cursor_position,
-                                     const string16& desired_tld,
-                                     bool prevent_inline_autocomplete,
-                                     bool prefer_keyword,
-                                     bool allow_exact_keyword_match,
-                                     MatchesRequested matches_requested)
+AutocompleteInput::AutocompleteInput(
+    const base::string16& text,
+    size_t cursor_position,
+    const base::string16& desired_tld,
+    const GURL& current_url,
+    AutocompleteInput::PageClassification current_page_classification,
+    bool prevent_inline_autocomplete,
+    bool prefer_keyword,
+    bool allow_exact_keyword_match,
+    bool want_asynchronous_matches)
     : cursor_position_(cursor_position),
-      desired_tld_(desired_tld),
+      current_url_(current_url),
+      current_page_classification_(current_page_classification),
       prevent_inline_autocomplete_(prevent_inline_autocomplete),
       prefer_keyword_(prefer_keyword),
       allow_exact_keyword_match_(allow_exact_keyword_match),
-      matches_requested_(matches_requested) {
-  DCHECK(cursor_position <= text.length() || cursor_position == string16::npos);
+      want_asynchronous_matches_(want_asynchronous_matches) {
+  DCHECK(cursor_position <= text.length() ||
+         cursor_position == base::string16::npos)
+      << "Text: '" << text << "', cp: " << cursor_position;
   // None of the providers care about leading white space so we always trim it.
   // Providers that care about trailing white space handle trimming themselves.
-  if ((TrimWhitespace(text, TRIM_LEADING, &text_) & TRIM_LEADING) != 0)
+  if ((base::TrimWhitespace(text, base::TRIM_LEADING, &text_) &
+       base::TRIM_LEADING) != 0)
     AdjustCursorPositionIfNecessary(text.length() - text_.length(),
                                     &cursor_position_);
 
@@ -63,7 +72,7 @@ AutocompleteInput::AutocompleteInput(const string16& text,
   if (type_ == INVALID)
     return;
 
-  if (((type_ == UNKNOWN) || (type_ == REQUESTED_URL) || (type_ == URL)) &&
+  if (((type_ == UNKNOWN) || (type_ == URL)) &&
       canonicalized_url.is_valid() &&
       (!canonicalized_url.IsStandard() || canonicalized_url.SchemeIsFile() ||
        canonicalized_url.SchemeIsFileSystem() ||
@@ -72,14 +81,25 @@ AutocompleteInput::AutocompleteInput(const string16& text,
 
   size_t chars_removed = RemoveForcedQueryStringIfNecessary(type_, &text_);
   AdjustCursorPositionIfNecessary(chars_removed, &cursor_position_);
+  if (chars_removed) {
+    // Remove spaces between opening question mark and first actual character.
+    base::string16 trimmed_text;
+    if ((base::TrimWhitespace(text_, base::TRIM_LEADING, &trimmed_text) &
+         base::TRIM_LEADING) != 0) {
+      AdjustCursorPositionIfNecessary(text_.length() - trimmed_text.length(),
+                                      &cursor_position_);
+      text_ = trimmed_text;
+    }
+  }
 }
 
 AutocompleteInput::~AutocompleteInput() {
 }
 
 // static
-size_t AutocompleteInput::RemoveForcedQueryStringIfNecessary(Type type,
-                                                             string16* text) {
+size_t AutocompleteInput::RemoveForcedQueryStringIfNecessary(
+    Type type,
+    base::string16* text) {
   if (type != FORCED_QUERY || text->empty() || (*text)[0] != L'?')
     return 0;
   // Drop the leading '?'.
@@ -92,7 +112,6 @@ std::string AutocompleteInput::TypeToString(Type type) {
   switch (type) {
     case INVALID:       return "invalid";
     case UNKNOWN:       return "unknown";
-    case REQUESTED_URL: return "requested-url";
     case URL:           return "url";
     case QUERY:         return "query";
     case FORCED_QUERY:  return "forced-query";
@@ -105,13 +124,13 @@ std::string AutocompleteInput::TypeToString(Type type) {
 
 // static
 AutocompleteInput::Type AutocompleteInput::Parse(
-    const string16& text,
-    const string16& desired_tld,
-    url_parse::Parsed* parts,
-    string16* scheme,
+    const base::string16& text,
+    const base::string16& desired_tld,
+    url::Parsed* parts,
+    base::string16* scheme,
     GURL* canonicalized_url) {
-  const size_t first_non_white = text.find_first_not_of(kWhitespaceUTF16, 0);
-  if (first_non_white == string16::npos)
+  size_t first_non_white = text.find_first_not_of(base::kWhitespaceUTF16, 0);
+  if (first_non_white == base::string16::npos)
     return INVALID;  // All whitespace.
 
   if (text.at(first_non_white) == L'?') {
@@ -124,30 +143,29 @@ AutocompleteInput::Type AutocompleteInput::Parse(
   // use the URLFixerUpper here because we want to be smart about what we
   // consider a scheme.  For example, we shouldn't consider www.google.com:80
   // to have a scheme.
-  url_parse::Parsed local_parts;
+  url::Parsed local_parts;
   if (!parts)
     parts = &local_parts;
-  const string16 parsed_scheme(URLFixerUpper::SegmentURL(text, parts));
+  const base::string16 parsed_scheme(URLFixerUpper::SegmentURL(text, parts));
   if (scheme)
     *scheme = parsed_scheme;
-  if (canonicalized_url) {
-    *canonicalized_url = URLFixerUpper::FixupURL(UTF16ToUTF8(text),
-                                                 UTF16ToUTF8(desired_tld));
-  }
 
-  if (LowerCaseEqualsASCII(parsed_scheme, chrome::kFileScheme)) {
+  // If we can't canonicalize the user's input, the rest of the autocomplete
+  // system isn't going to be able to produce a navigable URL match for it.
+  // So we just return QUERY immediately in these cases.
+  GURL placeholder_canonicalized_url;
+  if (!canonicalized_url)
+    canonicalized_url = &placeholder_canonicalized_url;
+  *canonicalized_url = URLFixerUpper::FixupURL(base::UTF16ToUTF8(text),
+                                               base::UTF16ToUTF8(desired_tld));
+  if (!canonicalized_url->is_valid())
+    return QUERY;
+
+  if (LowerCaseEqualsASCII(parsed_scheme, content::kFileScheme)) {
     // A user might or might not type a scheme when entering a file URL.  In
     // either case, |parsed_scheme| will tell us that this is a file URL, but
     // |parts->scheme| might be empty, e.g. if the user typed "C:\foo".
     return URL;
-  }
-
-  if (LowerCaseEqualsASCII(parsed_scheme, chrome::kFileSystemScheme)) {
-    // This could theoretically be a strange search, but let's check.
-    // If it's got an inner_url with a scheme, it's a URL, whether it's valid or
-    // not.
-    if (parts->inner_parsed() && parts->inner_parsed()->scheme.is_valid())
-      return URL;
   }
 
   // If the user typed a scheme, and it's HTTP or HTTPS, we know how to parse it
@@ -157,29 +175,31 @@ AutocompleteInput::Type AutocompleteInput::Parse(
   // (e.g. "ftp" or "view-source") but I'll wait to spend the effort on that
   // until I run into some cases that really need it.
   if (parts->scheme.is_nonempty() &&
-      !LowerCaseEqualsASCII(parsed_scheme, chrome::kHttpScheme) &&
-      !LowerCaseEqualsASCII(parsed_scheme, chrome::kHttpsScheme)) {
-    // See if we know how to handle the URL internally.
-    if (ProfileIOData::IsHandledProtocol(UTF16ToASCII(parsed_scheme)))
+      !LowerCaseEqualsASCII(parsed_scheme, url::kHttpScheme) &&
+      !LowerCaseEqualsASCII(parsed_scheme, url::kHttpsScheme)) {
+    // See if we know how to handle the URL internally.  There are some schemes
+    // that we convert to other things before they reach the renderer or else
+    // the renderer handles internally without reaching the net::URLRequest
+    // logic.  They thus won't be listed as "handled protocols", but we should
+    // still claim to handle them.
+    if (ProfileIOData::IsHandledProtocol(base::UTF16ToASCII(parsed_scheme)) ||
+        LowerCaseEqualsASCII(parsed_scheme, content::kViewSourceScheme) ||
+        LowerCaseEqualsASCII(parsed_scheme, content::kJavaScriptScheme) ||
+        LowerCaseEqualsASCII(parsed_scheme, content::kDataScheme))
       return URL;
 
-    // There are also some schemes that we convert to other things before they
-    // reach the renderer or else the renderer handles internally without
-    // reaching the net::URLRequest logic.  We thus won't catch these above, but
-    // we should still claim to handle them.
-    if (LowerCaseEqualsASCII(parsed_scheme, chrome::kViewSourceScheme) ||
-        LowerCaseEqualsASCII(parsed_scheme, chrome::kJavaScriptScheme) ||
-        LowerCaseEqualsASCII(parsed_scheme, chrome::kDataScheme))
-      return URL;
-
-    // Finally, check and see if the user has explicitly opened this scheme as
-    // a URL before, or if the "scheme" is actually a username.  We need to do
-    // this last because some schemes (e.g. "javascript") may be treated as
-    // "blocked" by the external protocol handler because we don't want pages to
-    // open them, but users still can.
-    // TODO(viettrungluu): get rid of conversion.
+    // Not an internal protocol.  Check and see if the user has explicitly
+    // opened this scheme as a URL before, or if the "scheme" is actually a
+    // username.  We need to do this after the check above because some
+    // handlable schemes (e.g. "javascript") may be treated as "blocked" by the
+    // external protocol handler because we don't want pages to open them, but
+    // users still can.
+    // Note that the protocol handler needs to be informed that omnibox input
+    // should always be considered "user gesture-triggered", lest it always
+    // return BLOCK.
     ExternalProtocolHandler::BlockState block_state =
-        ExternalProtocolHandler::GetBlockState(UTF16ToUTF8(parsed_scheme));
+        ExternalProtocolHandler::GetBlockState(
+            base::UTF16ToUTF8(parsed_scheme), true);
     switch (block_state) {
       case ExternalProtocolHandler::DONT_BLOCK:
         return URL;
@@ -192,24 +212,24 @@ AutocompleteInput::Type AutocompleteInput::Parse(
       default: {
         // We don't know about this scheme.  It might be that the user typed a
         // URL of the form "username:password@foo.com".
-        const string16 http_scheme_prefix =
-            ASCIIToUTF16(std::string(chrome::kHttpScheme) +
-                         content::kStandardSchemeSeparator);
-        url_parse::Parsed http_parts;
-        string16 http_scheme;
+        const base::string16 http_scheme_prefix =
+            base::ASCIIToUTF16(std::string(url::kHttpScheme) +
+                               content::kStandardSchemeSeparator);
+        url::Parsed http_parts;
+        base::string16 http_scheme;
         GURL http_canonicalized_url;
         Type http_type = Parse(http_scheme_prefix + text, desired_tld,
                                &http_parts, &http_scheme,
                                &http_canonicalized_url);
-        DCHECK_EQ(std::string(chrome::kHttpScheme), UTF16ToUTF8(http_scheme));
+        DCHECK_EQ(std::string(url::kHttpScheme),
+                  base::UTF16ToUTF8(http_scheme));
 
-        if ((http_type == URL || http_type == REQUESTED_URL) &&
-            http_parts.username.is_nonempty() &&
+        if ((http_type == URL) && http_parts.username.is_nonempty() &&
             http_parts.password.is_nonempty()) {
           // Manually re-jigger the parsed parts to match |text| (without the
           // http scheme added).
           http_parts.scheme.reset();
-          url_parse::Component* components[] = {
+          url::Component* components[] = {
             &http_parts.username,
             &http_parts.password,
             &http_parts.host,
@@ -226,10 +246,9 @@ AutocompleteInput::Type AutocompleteInput::Parse(
           *parts = http_parts;
           if (scheme)
             scheme->clear();
-          if (canonicalized_url)
-            *canonicalized_url = http_canonicalized_url;
+          *canonicalized_url = http_canonicalized_url;
 
-          return http_type;
+          return URL;
         }
 
         // We don't know about this scheme and it doesn't look like the user
@@ -247,28 +266,40 @@ AutocompleteInput::Type AutocompleteInput::Parse(
   // between an HTTP URL and a query, or the scheme is HTTP or HTTPS, in which
   // case we should reject invalid formulations.
 
-  // If we have an empty host it can't be a URL.
+  // If we have an empty host it can't be a valid HTTP[S] URL.  (This should
+  // only trigger for input that begins with a colon, which GURL will parse as a
+  // valid, non-standard URL; for standard URLs, an empty host would have
+  // resulted in an invalid |canonicalized_url| above.)
   if (!parts->host.is_nonempty())
     return QUERY;
 
+  // Sanity-check: GURL should have failed to canonicalize this URL if it had an
+  // invalid port.
+  DCHECK_NE(url::PORT_INVALID, url::ParsePort(text.c_str(), parts->port));
+
   // Likewise, the RCDS can reject certain obviously-invalid hosts.  (We also
   // use the registry length later below.)
-  const string16 host(text.substr(parts->host.begin, parts->host.len));
+  const base::string16 host(text.substr(parts->host.begin, parts->host.len));
   const size_t registry_length =
-      net::RegistryControlledDomainService::GetRegistryLength(UTF16ToUTF8(host),
-                                                              false);
+      net::registry_controlled_domains::GetRegistryLength(
+          base::UTF16ToUTF8(host),
+          net::registry_controlled_domains::EXCLUDE_UNKNOWN_REGISTRIES,
+          net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES);
   if (registry_length == std::string::npos) {
     // Try to append the desired_tld.
     if (!desired_tld.empty()) {
-      string16 host_with_tld(host);
+      base::string16 host_with_tld(host);
       if (host[host.length() - 1] != '.')
         host_with_tld += '.';
       host_with_tld += desired_tld;
-      if (net::RegistryControlledDomainService::GetRegistryLength(
-          UTF16ToUTF8(host_with_tld), false) != std::string::npos)
-        return REQUESTED_URL;  // Something like "99999999999" that looks like a
-                               // bad IP address, but becomes valid on attaching
-                               // a TLD.
+      const size_t tld_length =
+          net::registry_controlled_domains::GetRegistryLength(
+              base::UTF16ToUTF8(host_with_tld),
+              net::registry_controlled_domains::EXCLUDE_UNKNOWN_REGISTRIES,
+              net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES);
+      if (tld_length != std::string::npos)
+        return URL;  // Something like "99999999999" that looks like a bad IP
+                     // address, but becomes valid on attaching a TLD.
     }
     return QUERY;  // Could be a broken IP address, etc.
   }
@@ -278,12 +309,12 @@ AutocompleteInput::Type AutocompleteInput::Parse(
   // many other characters (perhaps for weird intranet machines), it's extremely
   // unlikely that a user would be trying to type those in for anything other
   // than a search query.
-  url_canon::CanonHostInfo host_info;
-  const std::string canonicalized_host(net::CanonicalizeHost(UTF16ToUTF8(host),
-                                                             &host_info));
-  if ((host_info.family == url_canon::CanonHostInfo::NEUTRAL) &&
+  url::CanonHostInfo host_info;
+  const std::string canonicalized_host(net::CanonicalizeHost(
+      base::UTF16ToUTF8(host), &host_info));
+  if ((host_info.family == url::CanonHostInfo::NEUTRAL) &&
       !net::IsCanonicalizedHostCompliant(canonicalized_host,
-                                         UTF16ToUTF8(desired_tld))) {
+                                         base::UTF16ToUTF8(desired_tld))) {
     // Invalid hostname.  There are several possible cases:
     // * Our checker is too strict and the user pasted in a real-world URL
     //   that's "invalid" but resolves.  To catch these, we return UNKNOWN when
@@ -303,19 +334,9 @@ AutocompleteInput::Type AutocompleteInput::Parse(
     //   TLD
     // These are rare, though probably possible in intranets.
     return (parts->scheme.is_nonempty() ||
-           ((registry_length != 0) && (host.find(' ') == string16::npos))) ?
-        UNKNOWN : QUERY;
+           ((registry_length != 0) &&
+            (host.find(' ') == base::string16::npos))) ? UNKNOWN : QUERY;
   }
-
-  // A port number is a good indicator that this is a URL.  However, it might
-  // also be a query like "1.66:1" that looks kind of like an IP address and
-  // port number. So here we only check for "port numbers" that are illegal and
-  // thus mean this can't be navigated to (e.g. "1.2.3.4:garbage"), and we save
-  // handling legal port numbers until after the "IP address" determination
-  // below.
-  if (url_parse::ParsePort(text.c_str(), parts->port) ==
-      url_parse::PORT_INVALID)
-    return QUERY;
 
   // Now that we've ruled out all schemes other than http or https and done a
   // little more sanity checking, the presence of a scheme means this is likely
@@ -324,7 +345,7 @@ AutocompleteInput::Type AutocompleteInput::Parse(
     return URL;
 
   // See if the host is an IP address.
-  if (host_info.family == url_canon::CanonHostInfo::IPV6)
+  if (host_info.family == url::CanonHostInfo::IPV6)
     return URL;
   // If the user originally typed a host that looks like an IP address (a
   // dotted quad), they probably want to open it.  If the original input was
@@ -336,7 +357,7 @@ AutocompleteInput::Type AutocompleteInput::Parse(
   // this reason we only check the dotted-quad case here, and save the "other
   // IP addresses" case for after we check the number of non-host components
   // below.
-  if ((host_info.family == url_canon::CanonHostInfo::IPV4) &&
+  if ((host_info.family == url::CanonHostInfo::IPV4) &&
       (host_info.num_ipv4_components == 4))
     return URL;
 
@@ -369,8 +390,8 @@ AutocompleteInput::Type AutocompleteInput::Parse(
   //   likely an email address than an HTTP auth attempt.  Hence, we search by
   //   default and let users correct us on a case-by-case basis.
   // Note that we special-case "localhost" as a known hostname.
-  if ((host_info.family != url_canon::CanonHostInfo::IPV4) &&
-      ((registry_length != 0) || (host == ASCIIToUTF16("localhost") ||
+  if ((host_info.family != url::CanonHostInfo::IPV4) &&
+      ((registry_length != 0) || (host == base::ASCIIToUTF16("localhost") ||
        parts->port.is_nonempty())))
     return parts->username.is_nonempty() ? UNKNOWN : URL;
 
@@ -378,7 +399,7 @@ AutocompleteInput::Type AutocompleteInput::Parse(
   // the user wishes to add a desired_tld, the fixup code will oblige; thus this
   // is a URL.
   if (!desired_tld.empty())
-    return REQUESTED_URL;
+    return URL;
 
   // No scheme, password, port, path, and no known TLD on the host.
   // This could be:
@@ -401,14 +422,12 @@ AutocompleteInput::Type AutocompleteInput::Parse(
 }
 
 // static
-void AutocompleteInput::ParseForEmphasizeComponents(
-    const string16& text,
-    const string16& desired_tld,
-    url_parse::Component* scheme,
-    url_parse::Component* host) {
-  url_parse::Parsed parts;
-  string16 scheme_str;
-  Parse(text, desired_tld, &parts, &scheme_str, NULL);
+void AutocompleteInput::ParseForEmphasizeComponents(const base::string16& text,
+                                                    url::Component* scheme,
+                                                    url::Component* host) {
+  url::Parsed parts;
+  base::string16 scheme_str;
+  Parse(text, base::string16(), &parts, &scheme_str, NULL);
 
   *scheme = parts.scheme;
   *host = parts.host;
@@ -416,51 +435,49 @@ void AutocompleteInput::ParseForEmphasizeComponents(
   int after_scheme_and_colon = parts.scheme.end() + 1;
   // For the view-source scheme, we should emphasize the scheme and host of the
   // URL qualified by the view-source prefix.
-  if (LowerCaseEqualsASCII(scheme_str, chrome::kViewSourceScheme) &&
+  if (LowerCaseEqualsASCII(scheme_str, content::kViewSourceScheme) &&
       (static_cast<int>(text.length()) > after_scheme_and_colon)) {
     // Obtain the URL prefixed by view-source and parse it.
-    string16 real_url(text.substr(after_scheme_and_colon));
-    url_parse::Parsed real_parts;
-    AutocompleteInput::Parse(real_url, desired_tld, &real_parts, NULL,
-                             NULL);
+    base::string16 real_url(text.substr(after_scheme_and_colon));
+    url::Parsed real_parts;
+    AutocompleteInput::Parse(real_url, base::string16(), &real_parts, NULL, NULL);
     if (real_parts.scheme.is_nonempty() || real_parts.host.is_nonempty()) {
       if (real_parts.scheme.is_nonempty()) {
-        *scheme = url_parse::Component(
+        *scheme = url::Component(
             after_scheme_and_colon + real_parts.scheme.begin,
             real_parts.scheme.len);
       } else {
         scheme->reset();
       }
       if (real_parts.host.is_nonempty()) {
-        *host = url_parse::Component(
-            after_scheme_and_colon + real_parts.host.begin,
-            real_parts.host.len);
+        *host = url::Component(after_scheme_and_colon + real_parts.host.begin,
+                               real_parts.host.len);
       } else {
         host->reset();
       }
     }
-  } else if (LowerCaseEqualsASCII(scheme_str, chrome::kFileSystemScheme) &&
+  } else if (LowerCaseEqualsASCII(scheme_str, content::kFileSystemScheme) &&
              parts.inner_parsed() && parts.inner_parsed()->scheme.is_valid()) {
     *host = parts.inner_parsed()->host;
   }
 }
 
 // static
-string16 AutocompleteInput::FormattedStringWithEquivalentMeaning(
+base::string16 AutocompleteInput::FormattedStringWithEquivalentMeaning(
     const GURL& url,
-    const string16& formatted_url) {
+    const base::string16& formatted_url) {
   if (!net::CanStripTrailingSlash(url))
     return formatted_url;
-  const string16 url_with_path(formatted_url + char16('/'));
-  return (AutocompleteInput::Parse(formatted_url, string16(), NULL, NULL,
+  const base::string16 url_with_path(formatted_url + base::char16('/'));
+  return (AutocompleteInput::Parse(formatted_url, base::string16(), NULL, NULL,
                                    NULL) ==
-          AutocompleteInput::Parse(url_with_path, string16(), NULL, NULL,
+          AutocompleteInput::Parse(url_with_path, base::string16(), NULL, NULL,
                                    NULL)) ?
       formatted_url : url_with_path;
 }
 
 // static
-int AutocompleteInput::NumNonHostComponents(const url_parse::Parsed& parts) {
+int AutocompleteInput::NumNonHostComponents(const url::Parsed& parts) {
   int num_nonhost_components = 0;
   if (parts.scheme.is_nonempty())
     ++num_nonhost_components;
@@ -479,33 +496,39 @@ int AutocompleteInput::NumNonHostComponents(const url_parse::Parsed& parts) {
   return num_nonhost_components;
 }
 
-void AutocompleteInput::UpdateText(const string16& text,
+// static
+bool AutocompleteInput::HasHTTPScheme(const base::string16& input) {
+  std::string utf8_input(base::UTF16ToUTF8(input));
+  url::Component scheme;
+  if (url::FindAndCompareScheme(utf8_input, content::kViewSourceScheme,
+                                &scheme)) {
+    utf8_input.erase(0, scheme.end() + 1);
+  }
+  return url::FindAndCompareScheme(utf8_input, url::kHttpScheme, NULL);
+}
+
+void AutocompleteInput::UpdateText(const base::string16& text,
                                    size_t cursor_position,
-                                   const url_parse::Parsed& parts) {
-  DCHECK(cursor_position <= text.length() || cursor_position == string16::npos);
+                                   const url::Parsed& parts) {
+  DCHECK(cursor_position <= text.length() ||
+         cursor_position == base::string16::npos)
+      << "Text: '" << text << "', cp: " << cursor_position;
   text_ = text;
   cursor_position_ = cursor_position;
   parts_ = parts;
 }
 
-bool AutocompleteInput::Equals(const AutocompleteInput& other) const {
-  return (text_ == other.text_) &&
-         (cursor_position_ == other.cursor_position_) &&
-         (type_ == other.type_) &&
-         (desired_tld_ == other.desired_tld_) &&
-         (scheme_ == other.scheme_) &&
-         (prevent_inline_autocomplete_ == other.prevent_inline_autocomplete_) &&
-         (prefer_keyword_ == other.prefer_keyword_) &&
-         (matches_requested_ == other.matches_requested_);
-}
-
 void AutocompleteInput::Clear() {
   text_.clear();
-  cursor_position_ = string16::npos;
+  cursor_position_ = base::string16::npos;
+  current_url_ = GURL();
+  current_page_classification_ = AutocompleteInput::INVALID_SPEC;
   type_ = INVALID;
-  parts_ = url_parse::Parsed();
+  parts_ = url::Parsed();
   scheme_.clear();
-  desired_tld_.clear();
+  canonicalized_url_ = GURL();
   prevent_inline_autocomplete_ = false;
   prefer_keyword_ = false;
+  allow_exact_keyword_match_ = false;
+  want_asynchronous_matches_ = true;
 }

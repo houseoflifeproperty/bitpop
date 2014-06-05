@@ -4,24 +4,31 @@
 
 #include "net/base/net_util.h"
 
+#include <set>
 #include <sys/types.h>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/posix/eintr_wrapper.h"
-#include "base/string_tokenizer.h"
-#include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_tokenizer.h"
+#include "base/strings/string_util.h"
 #include "base/threading/thread_restrictions.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/escape.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
+#include "url/gurl.h"
 
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) && !defined(OS_NACL)
 #include <ifaddrs.h>
-#endif
 #include <net/if.h>
 #include <netinet/in.h>
+#endif
+
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+#include <net/if_media.h>
+#include <netinet/in_var.h>
+#include <sys/ioctl.h>
+#endif
 
 #if defined(OS_ANDROID)
 #include "net/android/network_library.h"
@@ -29,72 +36,133 @@
 
 namespace net {
 
-bool FileURLToFilePath(const GURL& url, FilePath* path) {
-  *path = FilePath();
-  std::string& file_path_str = const_cast<std::string&>(path->value());
-  file_path_str.clear();
+namespace {
 
-  if (!url.is_valid())
-    return false;
+#if !defined(OS_ANDROID)
 
-  // Firefox seems to ignore the "host" of a file url if there is one. That is,
-  // file://foo/bar.txt maps to /bar.txt.
-  // TODO(dhg): This should probably take into account UNCs which could
-  // include a hostname other than localhost or blank
-  std::string old_path = url.path();
+struct NetworkInterfaceInfo {
+  NetworkInterfaceInfo() : permanent(true) { }
 
-  if (old_path.empty())
-    return false;
+  bool permanent;  // IPv6 has notion of temporary address. If the address is
+                   // IPv6 and it's temporary this field will be false.
+  NetworkInterface interface;
+};
 
-  // GURL stores strings as percent-encoded 8-bit, this will undo if possible.
-  old_path = UnescapeURLComponent(old_path,
-      UnescapeRule::SPACES | UnescapeRule::URL_SPECIAL_CHARS);
+// This method will remove permanent IPv6 addresses if a temporary address
+// is available for same network interface.
+void RemovePermanentIPv6AddressesWhereTemporaryExists(
+    std::vector<NetworkInterfaceInfo>* infos) {
+  if (!infos || infos->empty())
+    return;
 
-  // Collapse multiple path slashes into a single path slash.
-  std::string new_path;
-  do {
-    new_path = old_path;
-    ReplaceSubstringsAfterOffset(&new_path, 0, "//", "/");
-    old_path.swap(new_path);
-  } while (new_path != old_path);
+  // Build a set containing the names of interfaces with a temp IPv6 address
+  std::set<std::string> ifaces_with_temp_addrs;
+  std::vector<NetworkInterfaceInfo>::iterator i;
+  for (i = infos->begin(); i != infos->end(); ++i) {
+    if (!i->permanent && i->interface.address.size() == kIPv6AddressSize) {
+      ifaces_with_temp_addrs.insert(i->interface.name);
+    }
+  }
 
-  file_path_str.assign(old_path);
+  // If there are no such interfaces then there's no further work.
+  if (ifaces_with_temp_addrs.empty())
+    return;
 
-  return !file_path_str.empty();
+  // Search for permenent addresses belonging to same network interface.
+  for (i = infos->begin(); i != infos->end(); ) {
+    // If the address is IPv6 and it's permanent and there is temporary
+    // address for it, then we can remove this address.
+    if ((i->interface.address.size() == kIPv6AddressSize) && i->permanent &&
+        (ifaces_with_temp_addrs.find(i->interface.name) !=
+            ifaces_with_temp_addrs.end())) {
+      i = infos->erase(i);
+    } else {
+      ++i;
+    }
+  }
 }
 
-bool GetNetworkList(NetworkInterfaceList* networks) {
-#if defined(OS_ANDROID)
+#endif
+
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+
+NetworkChangeNotifier::ConnectionType GetNetworkInterfaceType(
+    int addr_family, const std::string& interface_name) {
+  NetworkChangeNotifier::ConnectionType type =
+      NetworkChangeNotifier::CONNECTION_UNKNOWN;
+
+  struct ifmediareq ifmr = {};
+  strncpy(ifmr.ifm_name, interface_name.c_str(), sizeof(ifmr.ifm_name) - 1);
+
+  int s = socket(addr_family, SOCK_DGRAM, 0);
+  if (s == -1) {
+    return type;
+  }
+
+  if (ioctl(s, SIOCGIFMEDIA, &ifmr) != -1) {
+    if (ifmr.ifm_current & IFM_IEEE80211) {
+      type = NetworkChangeNotifier::CONNECTION_WIFI;
+    } else if (ifmr.ifm_current & IFM_ETHER) {
+      type = NetworkChangeNotifier::CONNECTION_ETHERNET;
+    }
+  }
+  close(s);
+  return type;
+}
+
+#endif
+
+}  // namespace
+
+bool GetNetworkList(NetworkInterfaceList* networks, int policy) {
+#if defined(OS_NACL)
+  NOTIMPLEMENTED();
+  return false;
+#elif defined(OS_ANDROID)
   std::string network_list = android::GetNetworkList();
-  StringTokenizer network_interfaces(network_list, ";");
+  base::StringTokenizer network_interfaces(network_list, "\n");
   while (network_interfaces.GetNext()) {
     std::string network_item = network_interfaces.token();
-    StringTokenizer network_tokenizer(network_item, ",");
-    std::string name;
-    if (!network_tokenizer.GetNext())
-      continue;
-    name = network_tokenizer.token();
+    base::StringTokenizer network_tokenizer(network_item, "\t");
+    CHECK(network_tokenizer.GetNext());
+    std::string name = network_tokenizer.token();
 
-    std::string literal_address;
-    if (!network_tokenizer.GetNext())
-      continue;
-    literal_address = network_tokenizer.token();
-
+    CHECK(network_tokenizer.GetNext());
+    std::string interface_address = network_tokenizer.token();
     IPAddressNumber address;
-    if (!ParseIPLiteralToNumber(literal_address, &address))
-      continue;
-    networks->push_back(NetworkInterface(name, address));
+    size_t network_prefix = 0;
+    CHECK(ParseCIDRBlock(network_tokenizer.token(),
+                         &address,
+                         &network_prefix));
+
+    CHECK(network_tokenizer.GetNext());
+    uint32 index = 0;
+    CHECK(base::StringToUint(network_tokenizer.token(), &index));
+
+    networks->push_back(
+        NetworkInterface(name, name, index,
+                         NetworkChangeNotifier::CONNECTION_UNKNOWN,
+                         address, network_prefix));
   }
   return true;
 #else
   // getifaddrs() may require IO operations.
   base::ThreadRestrictions::AssertIOAllowed();
 
+  int ioctl_socket = -1;
+  if (policy & INCLUDE_ONLY_TEMP_IPV6_ADDRESS_IF_POSSIBLE) {
+    // we need a socket to query information about temporary address.
+    ioctl_socket = socket(AF_INET6, SOCK_DGRAM, 0);
+    DCHECK_GT(ioctl_socket, 0);
+  }
+
   ifaddrs *interfaces;
   if (getifaddrs(&interfaces) < 0) {
     PLOG(ERROR) << "getifaddrs";
     return false;
   }
+
+  std::vector<NetworkInterfaceInfo> network_infos;
 
   // Enumerate the addresses assigned to network interfaces which are up.
   for (ifaddrs *interface = interfaces;
@@ -109,36 +177,99 @@ bool GetNetworkList(NetworkInterfaceList* networks) {
     struct sockaddr* addr = interface->ifa_addr;
     if (!addr)
       continue;
-    // Skip loopback addresses configured on non-loopback interfaces.
+
+    // Skip unspecified addresses (i.e. made of zeroes) and loopback addresses
+    // configured on non-loopback interfaces.
     int addr_size = 0;
     if (addr->sa_family == AF_INET6) {
       struct sockaddr_in6* addr_in6 =
           reinterpret_cast<struct sockaddr_in6*>(addr);
       struct in6_addr* sin6_addr = &addr_in6->sin6_addr;
       addr_size = sizeof(*addr_in6);
-      if (IN6_IS_ADDR_LOOPBACK(sin6_addr))
+      if (IN6_IS_ADDR_LOOPBACK(sin6_addr) ||
+          IN6_IS_ADDR_UNSPECIFIED(sin6_addr)) {
         continue;
+      }
     } else if (addr->sa_family == AF_INET) {
       struct sockaddr_in* addr_in =
           reinterpret_cast<struct sockaddr_in*>(addr);
       addr_size = sizeof(*addr_in);
-      if (addr_in->sin_addr.s_addr == INADDR_LOOPBACK)
+      if (addr_in->sin_addr.s_addr == INADDR_LOOPBACK ||
+          addr_in->sin_addr.s_addr == 0) {
         continue;
+      }
     } else {
       // Skip non-IP addresses.
       continue;
     }
+
+    const std::string& name = interface->ifa_name;
+    // Filter out VMware interfaces, typically named vmnet1 and vmnet8.
+    if ((policy & EXCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES) &&
+        ((name.find("vmnet") != std::string::npos) ||
+         (name.find("vnic") != std::string::npos))) {
+      continue;
+    }
+
+    NetworkInterfaceInfo network_info;
+    NetworkChangeNotifier::ConnectionType connection_type =
+        NetworkChangeNotifier::CONNECTION_UNKNOWN;
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+    // Check if this is a temporary address. Currently this is only supported
+    // on Mac.
+    if ((policy & INCLUDE_ONLY_TEMP_IPV6_ADDRESS_IF_POSSIBLE) &&
+        ioctl_socket >= 0 && addr->sa_family == AF_INET6) {
+      struct in6_ifreq ifr = {};
+      strncpy(ifr.ifr_name, interface->ifa_name, sizeof(ifr.ifr_name) - 1);
+      memcpy(&ifr.ifr_ifru.ifru_addr, interface->ifa_addr,
+             interface->ifa_addr->sa_len);
+      int rv = ioctl(ioctl_socket, SIOCGIFAFLAG_IN6, &ifr);
+      if (rv >= 0) {
+        network_info.permanent = !(ifr.ifr_ifru.ifru_flags & IN6_IFF_TEMPORARY);
+      }
+    }
+
+    connection_type = GetNetworkInterfaceType(addr->sa_family, name);
+#endif
+
     IPEndPoint address;
-    std::string name = interface->ifa_name;
     if (address.FromSockAddr(addr, addr_size)) {
-      networks->push_back(NetworkInterface(name, address.address()));
+      uint8 net_mask = 0;
+      if (interface->ifa_netmask) {
+        // If not otherwise set, assume the same sa_family as ifa_addr.
+        if (interface->ifa_netmask->sa_family == 0) {
+          interface->ifa_netmask->sa_family = addr->sa_family;
+        }
+        IPEndPoint netmask;
+        if (netmask.FromSockAddr(interface->ifa_netmask, addr_size)) {
+          net_mask = MaskPrefixLength(netmask.address());
+        }
+      }
+      network_info.interface = NetworkInterface(
+          name, name, if_nametoindex(name.c_str()),
+          connection_type, address.address(), net_mask);
+
+      network_infos.push_back(NetworkInterfaceInfo(network_info));
     }
   }
-
   freeifaddrs(interfaces);
+  if (ioctl_socket >= 0) {
+    close(ioctl_socket);
+  }
 
+  if (policy & INCLUDE_ONLY_TEMP_IPV6_ADDRESS_IF_POSSIBLE) {
+    RemovePermanentIPv6AddressesWhereTemporaryExists(&network_infos);
+  }
+
+  for (size_t i = 0; i < network_infos.size(); ++i) {
+    networks->push_back(network_infos[i].interface);
+  }
   return true;
 #endif
+}
+
+WifiPHYLayerProtocol GetWifiPHYLayerProtocol() {
+  return WIFI_PHY_LAYER_PROTOCOL_UNKNOWN;
 }
 
 }  // namespace net

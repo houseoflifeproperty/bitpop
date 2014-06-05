@@ -5,7 +5,7 @@
 #ifndef CONTENT_COMMON_INTER_PROCESS_TIME_TICKS_CONVERTER_H_
 #define CONTENT_COMMON_INTER_PROCESS_TIME_TICKS_CONVERTER_H_
 
-#include "base/time.h"
+#include "base/time/time.h"
 #include "content/common/content_export.h"
 
 namespace content {
@@ -55,16 +55,18 @@ class CONTENT_EXPORT InterProcessTimeTicksConverter {
 
   // Returns the value within the local's bounds that correlates to
   // |remote_ms|.
-  LocalTimeTicks ToLocalTimeTicks(const RemoteTimeTicks& remote_ms);
+  LocalTimeTicks ToLocalTimeTicks(const RemoteTimeTicks& remote_ms) const;
 
   // Returns the equivalent delta after applying remote-to-local scaling to
   // |remote_delta|.
-  LocalTimeDelta ToLocalTimeDelta(const RemoteTimeDelta& remote_delta);
+  LocalTimeDelta ToLocalTimeDelta(const RemoteTimeDelta& remote_delta) const;
 
  private:
-  int64 Convert(int64 value);
+  int64 Convert(int64 value) const;
 
-  int64 offset_;
+  // The local time which |remote_lower_bound_| is mapped to.
+  int64 local_base_time_;
+
   int64 numerator_;
   int64 denominator_;
 

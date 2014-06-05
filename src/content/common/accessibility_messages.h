@@ -6,7 +6,6 @@
 // Multiply-included message file, hence no include guard.
 
 #include "base/basictypes.h"
-#include "content/common/accessibility_node_data.h"
 #include "content/common/content_export.h"
 #include "content/common/view_message_enums.h"
 #include "content/public/common/common_param_traits.h"
@@ -14,100 +13,27 @@
 #include "ipc/ipc_message_utils.h"
 #include "ipc/ipc_param_traits.h"
 #include "ipc/param_traits_macros.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebPoint.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebRect.h"
+#include "third_party/WebKit/public/web/WebAXEnums.h"
+#include "ui/accessibility/ax_node_data.h"
+#include "ui/accessibility/ax_tree_update.h"
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
 
 #define IPC_MESSAGE_START AccessibilityMsgStart
 
-#ifndef CONTENT_COMMON_ACCESSIBILITY_MESSAGES_H_
-#define CONTENT_COMMON_ACCESSIBILITY_MESSAGES_H_
+IPC_ENUM_TRAITS_MAX_VALUE(ui::AXEvent, ui::AX_EVENT_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(ui::AXRole, ui::AX_ROLE_LAST)
 
-enum AccessibilityNotification {
-  // The active descendant of a node has changed.
-  AccessibilityNotificationActiveDescendantChanged,
+IPC_ENUM_TRAITS_MAX_VALUE(ui::AXBoolAttribute, ui::AX_BOOL_ATTRIBUTE_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(ui::AXFloatAttribute, ui::AX_FLOAT_ATTRIBUTE_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(ui::AXIntAttribute, ui::AX_INT_ATTRIBUTE_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(ui::AXIntListAttribute,
+                          ui::AX_INT_LIST_ATTRIBUTE_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(ui::AXStringAttribute, ui::AX_STRING_ATTRIBUTE_LAST)
 
-  // An alert appeared.
-  AccessibilityNotificationAlert,
-
-  // A node has lost focus.
-  AccessibilityNotificationBlur,
-
-  // The node checked state has changed.
-  AccessibilityNotificationCheckStateChanged,
-
-  // The node tree structure has changed.
-  AccessibilityNotificationChildrenChanged,
-
-  // The node in focus has changed.
-  AccessibilityNotificationFocusChanged,
-
-  // Page layout has completed.
-  AccessibilityNotificationLayoutComplete,
-
-  // Content within a part of the page marked as a live region changed.
-  AccessibilityNotificationLiveRegionChanged,
-
-  // The document node has loaded.
-  AccessibilityNotificationLoadComplete,
-
-  // A menu list selection changed.
-  AccessibilityNotificationMenuListItemSelected,
-
-  // A menu list value changed.
-  AccessibilityNotificationMenuListValueChanged,
-
-  // An object was shown.
-  AccessibilityNotificationObjectShow,
-
-  // An object was hidden.
-  AccessibilityNotificationObjectHide,
-
-  // The number of rows in a grid or tree control changed.
-  AccessibilityNotificationRowCountChanged,
-
-  // A row in a grid or tree control was collapsed.
-  AccessibilityNotificationRowCollapsed,
-
-  // A row in a grid or tree control was expanded.
-  AccessibilityNotificationRowExpanded,
-
-  // The document was scrolled to an anchor node.
-  AccessibilityNotificationScrolledToAnchor,
-
-  // One or more selected children of this node have changed.
-  AccessibilityNotificationSelectedChildrenChanged,
-
-  // The text cursor or selection changed.
-  AccessibilityNotificationSelectedTextChanged,
-
-  // Text was inserted in a node with text content.
-  AccessibilityNotificationTextInserted,
-
-  // Text was removed in a node with text content.
-  AccessibilityNotificationTextRemoved,
-
-  // The node value has changed.
-  AccessibilityNotificationValueChanged,
-};
-
-#endif  // CONTENT_COMMON_ACCESSIBILITY_MESSAGES_H_
-
-IPC_ENUM_TRAITS(AccessibilityNotification)
-
-IPC_ENUM_TRAITS(content::AccessibilityNodeData::BoolAttribute)
-IPC_ENUM_TRAITS(content::AccessibilityNodeData::FloatAttribute)
-IPC_ENUM_TRAITS(content::AccessibilityNodeData::IntAttribute)
-IPC_ENUM_TRAITS(content::AccessibilityNodeData::Role)
-IPC_ENUM_TRAITS(content::AccessibilityNodeData::State)
-IPC_ENUM_TRAITS(content::AccessibilityNodeData::StringAttribute)
-
-IPC_STRUCT_TRAITS_BEGIN(content::AccessibilityNodeData)
+IPC_STRUCT_TRAITS_BEGIN(ui::AXNodeData)
   IPC_STRUCT_TRAITS_MEMBER(id)
-  IPC_STRUCT_TRAITS_MEMBER(name)
-  IPC_STRUCT_TRAITS_MEMBER(value)
   IPC_STRUCT_TRAITS_MEMBER(role)
   IPC_STRUCT_TRAITS_MEMBER(state)
   IPC_STRUCT_TRAITS_MEMBER(location)
@@ -115,27 +41,34 @@ IPC_STRUCT_TRAITS_BEGIN(content::AccessibilityNodeData)
   IPC_STRUCT_TRAITS_MEMBER(int_attributes)
   IPC_STRUCT_TRAITS_MEMBER(float_attributes)
   IPC_STRUCT_TRAITS_MEMBER(bool_attributes)
-  IPC_STRUCT_TRAITS_MEMBER(children)
-  IPC_STRUCT_TRAITS_MEMBER(indirect_child_ids)
+  IPC_STRUCT_TRAITS_MEMBER(intlist_attributes)
   IPC_STRUCT_TRAITS_MEMBER(html_attributes)
-  IPC_STRUCT_TRAITS_MEMBER(line_breaks)
-  IPC_STRUCT_TRAITS_MEMBER(cell_ids)
-  IPC_STRUCT_TRAITS_MEMBER(unique_cell_ids)
+  IPC_STRUCT_TRAITS_MEMBER(child_ids)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_BEGIN(AccessibilityHostMsg_NotificationParams)
-  // Type of notification.
-  IPC_STRUCT_MEMBER(AccessibilityNotification, notification_type)
+IPC_STRUCT_TRAITS_BEGIN(ui::AXTreeUpdate)
+  IPC_STRUCT_TRAITS_MEMBER(node_id_to_clear)
+  IPC_STRUCT_TRAITS_MEMBER(nodes)
+IPC_STRUCT_TRAITS_END()
 
-  // ID of the node that the notification applies to.
+IPC_STRUCT_BEGIN(AccessibilityHostMsg_EventParams)
+  // The tree update.
+  IPC_STRUCT_MEMBER(ui::AXTreeUpdate, update)
+
+  // Type of event.
+  IPC_STRUCT_MEMBER(ui::AXEvent, event_type)
+
+  // ID of the node that the event applies to.
+  IPC_STRUCT_MEMBER(int, id)
+IPC_STRUCT_END()
+
+IPC_STRUCT_BEGIN(AccessibilityHostMsg_LocationChangeParams)
+  // ID of the object whose location is changing.
   IPC_STRUCT_MEMBER(int, id)
 
-  // The accessibility node tree.
-  IPC_STRUCT_MEMBER(content::AccessibilityNodeData, acc_tree)
-
-  // Whether children are included in this tree, otherwise it's just an
-  // update to this one node and existing children are left in place.
-  IPC_STRUCT_MEMBER(bool, includes_children)
+  // The object's new location, in frame-relative coordinates (same
+  // as the coordinates in AccessibilityNodeData).
+  IPC_STRUCT_MEMBER(gfx::Rect, new_location)
 IPC_STRUCT_END()
 
 // Messages sent from the browser to the renderer.
@@ -172,14 +105,23 @@ IPC_MESSAGE_ROUTED3(AccessibilityMsg_SetTextSelection,
                     int /* New start offset */,
                     int /* New end offset */)
 
-// Tells the render view that a AccessibilityHostMsg_Notifications
-// message was processed and it can send addition notifications.
-IPC_MESSAGE_ROUTED0(AccessibilityMsg_Notifications_ACK)
+// Tells the render view that a AccessibilityHostMsg_Events
+// message was processed and it can send addition events.
+IPC_MESSAGE_ROUTED0(AccessibilityMsg_Events_ACK)
+
+
+// Kill the renderer because we got a fatal error in the accessibility tree.
+IPC_MESSAGE_ROUTED0(AccessibilityMsg_FatalError)
 
 // Messages sent from the renderer to the browser.
 
-// Sent to notify the browser about renderer accessibility notifications.
-// The browser responds with a AccessibilityMsg_Notifications_ACK.
+// Sent to notify the browser about renderer accessibility events.
+// The browser responds with a AccessibilityMsg_Events_ACK.
 IPC_MESSAGE_ROUTED1(
-    AccessibilityHostMsg_Notifications,
-    std::vector<AccessibilityHostMsg_NotificationParams>)
+    AccessibilityHostMsg_Events,
+    std::vector<AccessibilityHostMsg_EventParams>)
+
+// Sent to update the browser of the location of accessibility objects.
+IPC_MESSAGE_ROUTED1(
+    AccessibilityHostMsg_LocationChanges,
+    std::vector<AccessibilityHostMsg_LocationChangeParams>)

@@ -10,12 +10,12 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/singleton.h"
-#include "base/prefs/public/pref_change_registrar.h"
+#include "base/prefs/pref_change_registrar.h"
 #include "base/synchronization/lock.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
-#include "chrome/browser/profiles/refcounted_profile_keyed_service.h"
-#include "chrome/browser/profiles/refcounted_profile_keyed_service_factory.h"
 #include "chrome/common/content_settings.h"
+#include "components/keyed_service/content/refcounted_browser_context_keyed_service.h"
+#include "components/keyed_service/content/refcounted_browser_context_keyed_service_factory.h"
 
 class ContentSettingsPattern;
 class CookieSettingsWrapper;
@@ -26,9 +26,7 @@ class Profile;
 // A frontend to the cookie settings of |HostContentSettingsMap|. Handles
 // cookie-specific logic such as blocking third-party cookies. Written on the UI
 // thread and read on any thread. One instance per profile.
-
-class CookieSettings
-    : public RefcountedProfileKeyedService {
+class CookieSettings : public RefcountedBrowserContextKeyedService {
  public:
   CookieSettings(
       HostContentSettingsMap* host_content_settings_map,
@@ -101,9 +99,9 @@ class CookieSettings
       bool setting_cookie,
       content_settings::SettingSource* source) const;
 
-  static void RegisterUserPrefs(PrefService* prefs);
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
-  class Factory : public RefcountedProfileKeyedServiceFactory {
+  class Factory : public RefcountedBrowserContextKeyedServiceFactory {
    public:
     // Returns the |CookieSettings| associated with the |profile|.
     //
@@ -118,11 +116,14 @@ class CookieSettings
     Factory();
     virtual ~Factory();
 
-    // |ProfileKeyedBaseFactory| methods:
-    virtual void RegisterUserPrefs(PrefService* user_prefs) OVERRIDE;
-    virtual bool ServiceRedirectedInIncognito() const OVERRIDE;
-    virtual scoped_refptr<RefcountedProfileKeyedService>
-        BuildServiceInstanceFor(Profile* profile) const OVERRIDE;
+    // |BrowserContextKeyedBaseFactory| methods:
+    virtual void RegisterProfilePrefs(
+        user_prefs::PrefRegistrySyncable* registry) OVERRIDE;
+    virtual content::BrowserContext* GetBrowserContextToUse(
+        content::BrowserContext* context) const OVERRIDE;
+    virtual scoped_refptr<RefcountedBrowserContextKeyedService>
+        BuildServiceInstanceFor(
+            content::BrowserContext* context) const OVERRIDE;
   };
 
  private:

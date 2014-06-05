@@ -70,15 +70,8 @@ class MEDIA_EXPORT AudioOutputStream {
     // There was an error while playing a buffer. Audio source cannot be
     // destroyed yet. No direct action needed by the AudioStream, but it is
     // a good place to stop accumulating sound data since is is likely that
-    // playback will not continue. |code| is an error code that is platform
-    // specific.
-    virtual void OnError(AudioOutputStream* stream, int code) = 0;
-
-    // Deprecated.  DO NOT USE.  Waits until data becomes available.  Used only
-    // by Windows' WaveOut clients which may be extremely laggy.  Will yield the
-    // current thread until the renderer client has written its audio data or
-    // 1.5 seconds have elapsed.
-    virtual void WaitTillDataReady() {}
+    // playback will not continue.
+    virtual void OnError(AudioOutputStream* stream) = 0;
 
    protected:
     virtual ~AudioSourceCallback() {}
@@ -124,16 +117,11 @@ class MEDIA_EXPORT AudioInputStream {
                         uint32 size, uint32 hardware_delay_bytes,
                         double volume) = 0;
 
-    // The stream is done with this callback, the last call received by this
-    // audio sink.
-    virtual void OnClose(AudioInputStream* stream) = 0;
-
     // There was an error while recording audio. The audio sink cannot be
     // destroyed yet. No direct action needed by the AudioInputStream, but it
     // is a good place to stop accumulating sound data since is is likely that
-    // recording will not continue. |code| is an error code that is platform
-    // specific.
-    virtual void OnError(AudioInputStream* stream, int code) = 0;
+    // recording will not continue.
+    virtual void OnError(AudioInputStream* stream) = 0;
 
    protected:
     virtual ~AudioInputCallback() {}

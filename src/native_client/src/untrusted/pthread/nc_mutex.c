@@ -11,8 +11,8 @@
 #include <errno.h>
 #include <unistd.h>
 
+#include "native_client/src/include/nacl_compiler_annotations.h"
 #include "native_client/src/untrusted/nacl/nacl_irt.h"
-#include "native_client/src/untrusted/pthread/futex.h"
 #include "native_client/src/untrusted/pthread/pthread.h"
 #include "native_client/src/untrusted/pthread/pthread_internal.h"
 #include "native_client/src/untrusted/pthread/pthread_types.h"
@@ -88,16 +88,21 @@ int pthread_mutex_destroy(pthread_mutex_t *mutex) {
   return 0;
 }
 
-static int mutex_lock_nonrecursive(pthread_mutex_t *mutex, int try_only) {
+static int mutex_lock_nonrecursive(pthread_mutex_t *mutex, int try_only,
+                                   struct timespec *abstime) {
   /*
    * Try to claim the mutex.  This compare-and-swap executes the full
    * memory barrier that pthread_mutex_lock() is required to execute.
    */
   int old_state = __sync_val_compare_and_swap(&mutex->mutex_state, UNLOCKED,
                                               LOCKED_WITHOUT_WAITERS);
-  if (old_state != UNLOCKED) {
+  if (NACL_UNLIKELY(old_state != UNLOCKED)) {
     if (try_only) {
       return EBUSY;
+    }
+    if (abstime != NULL &&
+        (abstime->tv_nsec < 0 || 1000000000 <= abstime->tv_nsec)) {
+      return EINVAL;
     }
     do {
       /*
@@ -108,7 +113,10 @@ static int mutex_lock_nonrecursive(pthread_mutex_t *mutex, int try_only) {
           __sync_val_compare_and_swap(&mutex->mutex_state,
                                       LOCKED_WITHOUT_WAITERS,
                                       LOCKED_WITH_WAITERS) != UNLOCKED) {
-        __nc_futex_wait(&mutex->mutex_state, LOCKED_WITH_WAITERS, NULL);
+        int rc = __nc_irt_futex.futex_wait_abs(&mutex->mutex_state,
+                                               LOCKED_WITH_WAITERS, abstime);
+        if (abstime != NULL && rc == ETIMEDOUT)
+          return ETIMEDOUT;
       }
       /*
        * Try again to claim the mutex.  On this try, we must set
@@ -123,23 +131,24 @@ static int mutex_lock_nonrecursive(pthread_mutex_t *mutex, int try_only) {
   return 0;
 }
 
-static int mutex_lock(pthread_mutex_t *mutex, int try_only) {
-  if (mutex->mutex_type == PTHREAD_MUTEX_FAST_NP) {
-    return mutex_lock_nonrecursive(mutex, try_only);
+static int mutex_lock(pthread_mutex_t *mutex, int try_only,
+                      struct timespec *abstime) {
+  if (NACL_LIKELY(mutex->mutex_type == PTHREAD_MUTEX_FAST_NP)) {
+    return mutex_lock_nonrecursive(mutex, try_only, abstime);
   }
 
   /*
-   * Checking mutex's owner_thread_id without synchronization is safe:
-   * - We are checking whether the owner's id is equal to the current thread id,
-   * and this can happen only if the current thread is actually the owner,
-   * otherwise the owner id will hold an illegal value or an id of a different
-   * thread.
-   * - The value we read from the owner id cannot be a combination of two
-   * values, since properly aligned 32-bit values are updated
-   * by a single machine instruction, so the current thread can only read
-   * a value that it or some other thread wrote.
-   * - Cache is not an issue since a thread will always update its own cache
-   * when unlocking a mutex (see pthread_mutex_unlock implementation).
+   * Reading owner_thread_id here must be done atomically, because
+   * this read may be concurrent with pthread_mutex_unlock()'s write.
+   * PNaCl's memory model requires these accesses to be declared as
+   * atomic, which under PNaCl is achieved by declaring
+   * owner_thread_id as "volatile".
+   *
+   * Checking the mutex's owner_thread_id without further
+   * synchronization is safe.  We are checking whether the owner's id
+   * is equal to the current thread id, and this can happen only if
+   * the current thread is actually the owner, otherwise the owner id
+   * will hold an illegal value or an id of a different thread.
    */
   pthread_t self = pthread_self();
   if (mutex->owner_thread_id == self) {
@@ -151,7 +160,7 @@ static int mutex_lock(pthread_mutex_t *mutex, int try_only) {
       return 0;
     }
   }
-  int err = mutex_lock_nonrecursive(mutex, try_only);
+  int err = mutex_lock_nonrecursive(mutex, try_only, abstime);
   if (err != 0)
     return err;
   mutex->owner_thread_id = self;
@@ -160,15 +169,20 @@ static int mutex_lock(pthread_mutex_t *mutex, int try_only) {
 }
 
 int pthread_mutex_trylock(pthread_mutex_t *mutex) {
-  return mutex_lock(mutex, 1);
+  return mutex_lock(mutex, 1, NULL);
 }
 
 int pthread_mutex_lock(pthread_mutex_t *mutex) {
-  return mutex_lock(mutex, 0);
+  return mutex_lock(mutex, 0, NULL);
+}
+
+int pthread_mutex_timedlock(pthread_mutex_t *mutex,
+                            struct timespec *abstime) {
+  return mutex_lock(mutex, 0, abstime);
 }
 
 int pthread_mutex_unlock(pthread_mutex_t *mutex) {
-  if (mutex->mutex_type != PTHREAD_MUTEX_FAST_NP) {
+  if (NACL_UNLIKELY(mutex->mutex_type != PTHREAD_MUTEX_FAST_NP)) {
     if ((PTHREAD_MUTEX_RECURSIVE_NP == mutex->mutex_type) &&
         (0 != (--mutex->recursion_counter))) {
       /*
@@ -183,6 +197,7 @@ int pthread_mutex_unlock(pthread_mutex_t *mutex) {
       /* Error - releasing a mutex that's free or owned by another thread. */
       return EPERM;
     }
+    /* Writing to owner_thread_id here must be done atomically. */
     mutex->owner_thread_id = NACL_PTHREAD_ILLEGAL_THREAD_ID;
     mutex->recursion_counter = 0;
   }
@@ -193,7 +208,7 @@ int pthread_mutex_unlock(pthread_mutex_t *mutex) {
    * execute.
    */
   int old_state = __sync_fetch_and_sub(&mutex->mutex_state, 1);
-  if (old_state != LOCKED_WITHOUT_WAITERS) {
+  if (NACL_UNLIKELY(old_state != LOCKED_WITHOUT_WAITERS)) {
     if (old_state == UNLOCKED) {
       /*
        * The mutex was not locked.  mutex_state is now -1 and the
@@ -210,10 +225,15 @@ int pthread_mutex_unlock(pthread_mutex_t *mutex) {
      * modification of mutex_state.  The full memory barrier from the
      * atomic decrement acts as a release memory barrier for the
      * following modification.
+     *
+     * TODO(mseaborn): Change the following store to use an atomic
+     * store builtin when this is available in all the NaCl
+     * toolchains.  For now, PNaCl converts the volatile store to an
+     * atomic store.
      */
     mutex->mutex_state = UNLOCKED;
     int woken;
-    __nc_futex_wake(&mutex->mutex_state, 1, &woken);
+    __nc_irt_futex.futex_wake(&mutex->mutex_state, 1, &woken);
   }
   return 0;
 }

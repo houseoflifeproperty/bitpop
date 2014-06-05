@@ -55,6 +55,7 @@ struct ogg_codec {
      * Number of expected headers
      */
     int nb_header;
+    void (*cleanup)(AVFormatContext *s, int idx);
 };
 
 struct ogg_stream {
@@ -83,6 +84,7 @@ struct ogg_stream {
     int got_start;
     int got_data;   ///< 1 if the stream got some data (non-initial packets), 0 otherwise
     int nb_header; ///< set to the number of parsed headers
+    int end_trimming; ///< set the number of packets to drop from the end
     void *private;
 };
 
@@ -99,6 +101,7 @@ struct ogg {
     int nstreams;
     int headers;
     int curidx;
+    int64_t page_pos;                   ///< file offset of the current page
     struct ogg_state *state;
 };
 

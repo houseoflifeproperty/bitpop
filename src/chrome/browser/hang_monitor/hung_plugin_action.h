@@ -5,7 +5,7 @@
 #ifndef CHROME_BROWSER_HANG_MONITOR_HUNG_PLUGIN_ACTION_H__
 #define CHROME_BROWSER_HANG_MONITOR_HUNG_PLUGIN_ACTION_H__
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/hang_monitor/hung_window_detector.h"
 
 // This class provides an implementation the
@@ -39,8 +39,8 @@ class HungPluginAction : public HungWindowDetector::HungWindowNotification {
  protected:
   bool GetPluginNameAndVersion(HWND plugin_window,
                                DWORD browser_process_id,
-                               string16* plugin_name,
-                               string16* plugin_version);
+                               base::string16* plugin_name,
+                               base::string16* plugin_version);
   // The currently hung plugin window that we are prompting the user about
   HWND current_hung_plugin_window_;
 };

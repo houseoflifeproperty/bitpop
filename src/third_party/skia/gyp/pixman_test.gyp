@@ -118,16 +118,14 @@
         '../../../pixman/pixman/pixman.h',
       ],
       'dependencies': [
-        'skia_base_libs.gyp:skia_base_libs',
-        'effects.gyp:effects',
+        'skia_lib.gyp:skia_lib',
         'experimental.gyp:experimental',
-        'images.gyp:images',
         'pdf.gyp:pdf',
         'views.gyp:views',
         'xml.gyp:xml',
       ],
       'conditions': [
-        [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris"]', {
+        [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "chromeos"]', {
         }],
         [ 'skia_os == "win"', {
         }],
@@ -169,9 +167,3 @@
     },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

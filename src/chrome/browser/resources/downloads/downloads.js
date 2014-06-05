@@ -23,18 +23,6 @@ function showInlineBlock(node, isShow) {
 }
 
 /**
- * Creates an element of a specified type with a specified class name.
- * @param {string} type The node type.
- * @param {string} className The class name to use.
- * @return {Element} The created element.
- */
-function createElementWithClassName(type, className) {
-  var elm = document.createElement(type);
-  elm.className = className;
-  return elm;
-}
-
-/**
  * Creates a link with a specified onclick handler and content.
  * @param {function()} onclick The onclick handler.
  * @param {string} value The link text.
@@ -137,6 +125,14 @@ Downloads.prototype.updateSummary = function() {
     hasDownloads = true;
     break;
   }
+};
+
+/**
+ * Returns the number of downloads in the model. Used by tests.
+ * @return {integer} Returns the number of downloads shown on the page.
+ */
+Downloads.prototype.size = function() {
+  return Object.keys(this.downloads_).length;
 };
 
 /**
@@ -270,10 +266,6 @@ function Download(download) {
     this.nodeProgressForeground_.height = Download.Progress.height;
     this.canvasProgress_ = this.nodeProgressForeground_.getContext('2d');
 
-    this.canvasProgressForegroundImage_ = new Image();
-    this.canvasProgressForegroundImage_.src =
-        'chrome://theme/IDR_DOWNLOAD_PROGRESS_FOREGROUND_32@' +
-        window.devicePixelRatio + 'x';
     this.safe_.appendChild(this.nodeProgressForeground_);
   }
 
@@ -318,38 +310,73 @@ function Download(download) {
   }
 
   this.controlRetry_ = document.createElement('a');
+  this.controlRetry_.download = '';
   this.controlRetry_.textContent = loadTimeData.getString('control_retry');
   this.nodeControls_.appendChild(this.controlRetry_);
 
   // Pause/Resume are a toggle.
-  this.controlPause_ = createLink(this.togglePause_.bind(this),
+  this.controlPause_ = createLink(this.pause_.bind(this),
       loadTimeData.getString('control_pause'));
   this.nodeControls_.appendChild(this.controlPause_);
 
-  this.controlResume_ = createLink(this.togglePause_.bind(this),
+  this.controlResume_ = createLink(this.resume_.bind(this),
       loadTimeData.getString('control_resume'));
   this.nodeControls_.appendChild(this.controlResume_);
 
-  this.controlRemove_ = createLink(this.remove_.bind(this),
-      loadTimeData.getString('control_removefromlist'));
+  // Anchors <a> don't support the "disabled" property.
+  if (loadTimeData.getBoolean('allow_deleting_history')) {
+    this.controlRemove_ = createLink(this.remove_.bind(this),
+        loadTimeData.getString('control_removefromlist'));
+    this.controlRemove_.classList.add('control-remove-link');
+  } else {
+    this.controlRemove_ = document.createElement('span');
+    this.controlRemove_.classList.add('disabled-link');
+    var text = document.createTextNode(
+        loadTimeData.getString('control_removefromlist'));
+    this.controlRemove_.appendChild(text);
+  }
+  if (!loadTimeData.getBoolean('show_delete_history'))
+    this.controlRemove_.hidden = true;
+
   this.nodeControls_.appendChild(this.controlRemove_);
 
   this.controlCancel_ = createLink(this.cancel_.bind(this),
       loadTimeData.getString('control_cancel'));
   this.nodeControls_.appendChild(this.controlCancel_);
 
+  this.controlByExtension_ = document.createElement('span');
+  this.nodeControls_.appendChild(this.controlByExtension_);
+
   // Container for 'unsafe download' UI.
   this.danger_ = createElementWithClassName('div', 'show-dangerous');
   this.node.appendChild(this.danger_);
 
+  this.dangerNodeImg_ = createElementWithClassName('img', 'icon');
+  this.danger_.appendChild(this.dangerNodeImg_);
+
   this.dangerDesc_ = document.createElement('div');
   this.danger_.appendChild(this.dangerDesc_);
 
-  this.dangerSave_ = createButton(this.saveDangerous_.bind(this),
+  // Buttons for the malicious case.
+  this.malwareNodeControls_ = createElementWithClassName('div', 'controls');
+  this.malwareSave_ = createLink(
+      this.saveDangerous_.bind(this),
+      loadTimeData.getString('danger_restore'));
+  this.malwareNodeControls_.appendChild(this.malwareSave_);
+  this.malwareDiscard_ = createLink(
+      this.discardDangerous_.bind(this),
+      loadTimeData.getString('control_removefromlist'));
+  this.malwareNodeControls_.appendChild(this.malwareDiscard_);
+  this.danger_.appendChild(this.malwareNodeControls_);
+
+  // Buttons for the dangerous but not malicious case.
+  this.dangerSave_ = createButton(
+      this.saveDangerous_.bind(this),
       loadTimeData.getString('danger_save'));
   this.danger_.appendChild(this.dangerSave_);
 
-  this.dangerDiscard_ = createButton(this.discardDangerous_.bind(this),
+  this.dangerDiscard_ = createButton(
+      this.discardDangerous_.bind(this),
       loadTimeData.getString('danger_discard'));
   this.danger_.appendChild(this.dangerDiscard_);
 
@@ -378,25 +405,64 @@ Download.DangerType = {
   DANGEROUS_FILE: 'DANGEROUS_FILE',
   DANGEROUS_URL: 'DANGEROUS_URL',
   DANGEROUS_CONTENT: 'DANGEROUS_CONTENT',
-  UNCOMMON_CONTENT: 'UNCOMMON_CONTENT'
+  UNCOMMON_CONTENT: 'UNCOMMON_CONTENT',
+  DANGEROUS_HOST: 'DANGEROUS_HOST',
+  POTENTIALLY_UNWANTED: 'POTENTIALLY_UNWANTED',
 };
 
 /**
- * Constants for the progress meter.
+ * @param {number} a Some float.
+ * @param {number} b Some float.
+ * @param {number} opt_pct Percent of min(a,b).
+ * @return {boolean} true if a is within opt_pct percent of b.
  */
+function floatEq(a, b, opt_pct) {
+  return Math.abs(a - b) < (Math.min(a, b) * (opt_pct || 1.0) / 100.0);
+}
 
-Download.Progress = (function() {
-  var scale = window.devicePixelRatio;
-  return {
-    width: 48 * scale,
-    height: 48 * scale,
-    radius: 24 * scale,
-    centerX: 24 * scale,
-    centerY: 24 * scale,
-    base: -0.5 * Math.PI,
-    dir: false,
-  };
-})();
+/**
+ * Constants and "constants" for the progress meter.
+ */
+Download.Progress = {
+  START_ANGLE: -0.5 * Math.PI,
+  SIDE: 48,
+};
+
+/***/
+Download.Progress.HALF = Download.Progress.SIDE / 2;
+
+function computeDownloadProgress() {
+  if (floatEq(Download.Progress.scale, window.devicePixelRatio)) {
+    // Zooming in or out multiple times then typing Ctrl+0 resets the zoom level
+    // directly to 1x, which fires the matchMedia event multiple times.
+    return;
+  }
+  Download.Progress.scale = window.devicePixelRatio;
+  Download.Progress.width = Download.Progress.SIDE * Download.Progress.scale;
+  Download.Progress.height = Download.Progress.SIDE * Download.Progress.scale;
+  Download.Progress.radius = Download.Progress.HALF * Download.Progress.scale;
+  Download.Progress.centerX = Download.Progress.HALF * Download.Progress.scale;
+  Download.Progress.centerY = Download.Progress.HALF * Download.Progress.scale;
+}
+computeDownloadProgress();
+
+// Listens for when device-pixel-ratio changes between any zoom level.
+[0.3, 0.4, 0.6, 0.7, 0.8, 0.95, 1.05, 1.2, 1.4, 1.6, 1.9, 2.2, 2.7, 3.5, 4.5
+].forEach(function(scale) {
+  matchMedia('(-webkit-min-device-pixel-ratio:' + scale + ')').addListener(
+    function() {
+      computeDownloadProgress();
+  });
+});
+
+var ImageCache = {};
+function getCachedImage(src) {
+  if (!ImageCache[src]) {
+    ImageCache[src] = new Image();
+    ImageCache[src].src = src;
+  }
+  return ImageCache[src];
+}
 
 /**
  * Updates the download to reflect new data.
@@ -412,6 +478,8 @@ Download.prototype.update = function(download) {
   this.fileExternallyRemoved_ = download.file_externally_removed;
   this.dangerType_ = download.danger_type;
   this.lastReasonDescription_ = download.last_reason_text;
+  this.byExtensionId_ = download.by_ext_id;
+  this.byExtensionName_ = download.by_ext_name;
 
   this.since_ = download.since_string;
   this.date_ = download.date_string;
@@ -422,20 +490,7 @@ Download.prototype.update = function(download) {
   this.received_ = download.received;
 
   if (this.state_ == Download.States.DANGEROUS) {
-    if (this.dangerType_ == Download.DangerType.DANGEROUS_FILE) {
-      this.dangerDesc_.textContent = loadTimeData.getStringF('danger_file_desc',
-                                                             this.fileName_);
-    } else if (this.dangerType_ == Download.DangerType.DANGEROUS_URL) {
-      this.dangerDesc_.textContent = loadTimeData.getString('danger_url_desc');
-    } else if (this.dangerType_ == Download.DangerType.DANGEROUS_CONTENT) {
-      this.dangerDesc_.textContent = loadTimeData.getStringF(
-          'danger_content_desc', this.fileName_);
-    } else if (this.dangerType_ == Download.DangerType.UNCOMMON_CONTENT) {
-      this.dangerDesc_.textContent = loadTimeData.getStringF(
-          'danger_uncommon_desc', this.fileName_);
-    }
-    this.danger_.style.display = 'block';
-    this.safe_.style.display = 'none';
+    this.updateDangerousFile();
   } else {
     downloads.scheduleIconLoad(this.nodeImg_,
                                'chrome://fileicon/' +
@@ -450,8 +505,11 @@ Download.prototype.update = function(download) {
     } else if (this.nodeFileName_.textContent != this.fileName_) {
       this.nodeFileName_.textContent = this.fileName_;
     }
-    if (this.state_ == Download.States.INTERRUPTED)
+    if (this.state_ == Download.States.INTERRUPTED) {
       this.nodeFileName_.classList.add('interrupted');
+    } else if (this.nodeFileName_.classList.contains('interrupted')) {
+      this.nodeFileName_.classList.remove('interrupted');
+    }
 
     showInline(this.nodeFileLink_,
                this.state_ == Download.States.COMPLETE &&
@@ -467,10 +525,22 @@ Download.prototype.update = function(download) {
     if (this.state_ == Download.States.IN_PROGRESS) {
       this.nodeProgressForeground_.style.display = 'block';
       this.nodeProgressBackground_.style.display = 'block';
+      this.nodeProgressForeground_.width = Download.Progress.width;
+      this.nodeProgressForeground_.height = Download.Progress.height;
+
+      var foregroundImage = getCachedImage(
+          'chrome://theme/IDR_DOWNLOAD_PROGRESS_FOREGROUND_32@' +
+          window.devicePixelRatio + 'x');
 
       // Draw a pie-slice for the progress.
       this.canvasProgress_.globalCompositeOperation = 'copy';
-      this.canvasProgress_.drawImage(this.canvasProgressForegroundImage_, 0, 0);
+      this.canvasProgress_.drawImage(
+          foregroundImage,
+          0, 0,  // sx, sy
+          foregroundImage.width,
+          foregroundImage.height,
+          0, 0,  // x, y
+          Download.Progress.width, Download.Progress.height);
       this.canvasProgress_.globalCompositeOperation = 'destination-in';
       this.canvasProgress_.beginPath();
       this.canvasProgress_.moveTo(Download.Progress.centerX,
@@ -480,8 +550,8 @@ Download.prototype.update = function(download) {
       this.canvasProgress_.arc(Download.Progress.centerX,
                                Download.Progress.centerY,
                                Download.Progress.radius,
-                               Download.Progress.base,
-                               Download.Progress.base + Math.PI * 0.02 *
+                               Download.Progress.START_ANGLE,
+                               Download.Progress.START_ANGLE + Math.PI * 0.02 *
                                Number(this.percent_),
                                false);
 
@@ -499,14 +569,31 @@ Download.prototype.update = function(download) {
                  this.state_ == Download.States.COMPLETE &&
                      !this.fileExternallyRemoved_);
     }
-    showInline(this.controlRetry_, this.state_ == Download.States.CANCELLED);
+    showInline(this.controlRetry_, download.retry);
     this.controlRetry_.href = this.url_;
     showInline(this.controlPause_, this.state_ == Download.States.IN_PROGRESS);
-    showInline(this.controlResume_, this.state_ == Download.States.PAUSED);
+    showInline(this.controlResume_, download.resume);
     var showCancel = this.state_ == Download.States.IN_PROGRESS ||
                      this.state_ == Download.States.PAUSED;
     showInline(this.controlCancel_, showCancel);
     showInline(this.controlRemove_, !showCancel);
+
+    if (this.byExtensionId_ && this.byExtensionName_) {
+      // Format 'control_by_extension' with a link instead of plain text by
+      // splitting the formatted string into pieces.
+      var slug = 'XXXXX';
+      var formatted = loadTimeData.getStringF('control_by_extension', slug);
+      var slugIndex = formatted.indexOf(slug);
+      this.controlByExtension_.textContent = formatted.substr(0, slugIndex);
+      this.controlByExtensionLink_ = document.createElement('a');
+      this.controlByExtensionLink_.href =
+          'chrome://extensions#' + this.byExtensionId_;
+      this.controlByExtensionLink_.textContent = this.byExtensionName_;
+      this.controlByExtension_.appendChild(this.controlByExtensionLink_);
+      if (slugIndex < (formatted.length - slug.length))
+        this.controlByExtension_.appendChild(document.createTextNode(
+            formatted.substr(slugIndex + 1)));
+    }
 
     this.nodeSince_.textContent = this.since_;
     this.nodeDate_.textContent = this.date_;
@@ -524,6 +611,68 @@ Download.prototype.update = function(download) {
 };
 
 /**
+ * Decorates the icons, strings, and buttons for a download to reflect the
+ * danger level of a file. Dangerous & malicious files are treated differently.
+ */
+Download.prototype.updateDangerousFile = function() {
+  switch (this.dangerType_) {
+    case Download.DangerType.DANGEROUS_FILE: {
+      this.dangerDesc_.textContent = loadTimeData.getStringF(
+          'danger_file_desc', this.fileName_);
+      break;
+    }
+    case Download.DangerType.DANGEROUS_URL: {
+      this.dangerDesc_.textContent = loadTimeData.getString('danger_url_desc');
+      break;
+    }
+    case Download.DangerType.DANGEROUS_CONTENT:  // Fall through.
+    case Download.DangerType.DANGEROUS_HOST: {
+      this.dangerDesc_.textContent = loadTimeData.getStringF(
+          'danger_content_desc', this.fileName_);
+      break;
+    }
+    case Download.DangerType.UNCOMMON_CONTENT: {
+      this.dangerDesc_.textContent = loadTimeData.getStringF(
+          'danger_uncommon_desc', this.fileName_);
+      break;
+    }
+    case Download.DangerType.POTENTIALLY_UNWANTED: {
+      this.dangerDesc_.textContent = loadTimeData.getStringF(
+          'danger_settings_desc', this.fileName_);
+      break;
+    }
+  }
+
+  if (this.dangerType_ == Download.DangerType.DANGEROUS_FILE) {
+    downloads.scheduleIconLoad(
+        this.dangerNodeImg_,
+        'chrome://theme/IDR_WARNING?scale=' + window.devicePixelRatio + 'x');
+  } else {
+    downloads.scheduleIconLoad(
+        this.dangerNodeImg_,
+        'chrome://theme/IDR_SAFEBROWSING_WARNING?scale=' +
+            window.devicePixelRatio + 'x');
+    this.dangerDesc_.className = 'malware-description';
+  }
+
+  if (this.dangerType_ == Download.DangerType.DANGEROUS_CONTENT ||
+      this.dangerType_ == Download.DangerType.DANGEROUS_HOST ||
+      this.dangerType_ == Download.DangerType.DANGEROUS_URL ||
+      this.dangerType_ == Download.DangerType.POTENTIALLY_UNWANTED) {
+    this.malwareNodeControls_.style.display = 'block';
+    this.dangerDiscard_.style.display = 'none';
+    this.dangerSave_.style.display = 'none';
+  } else {
+    this.malwareNodeControls_.style.display = 'none';
+    this.dangerDiscard_.style.display = 'inline';
+    this.dangerSave_.style.display = 'inline';
+  }
+
+  this.danger_.style.display = 'block';
+  this.safe_.style.display = 'none';
+};
+
+/**
  * Removes applicable bits from the DOM in preparation for deletion.
  */
 Download.prototype.clear = function() {
@@ -536,6 +685,9 @@ Download.prototype.clear = function() {
   this.controlPause_.onclick = null;
   this.controlResume_.onclick = null;
   this.dangerDiscard_.onclick = null;
+  this.dangerSave_.onclick = null;
+  this.malwareDiscard_.onclick = null;
+  this.malwareSave_.onclick = null;
 
   this.node.innerHTML = '';
 };
@@ -623,8 +775,18 @@ Download.prototype.show_ = function() {
  * @return {boolean} Returns false to prevent the default action.
  * @private
  */
-Download.prototype.togglePause_ = function() {
-  chrome.send('togglepause', [this.id_.toString()]);
+Download.prototype.pause_ = function() {
+  chrome.send('pause', [this.id_.toString()]);
+  return false;
+};
+
+/**
+ * Tells the backend to resume this download.
+ * @return {boolean} Returns false to prevent the default action.
+ * @private
+ */
+Download.prototype.resume_ = function() {
+  chrome.send('resume', [this.id_.toString()]);
   return false;
 };
 
@@ -634,7 +796,9 @@ Download.prototype.togglePause_ = function() {
  * @private
  */
  Download.prototype.remove_ = function() {
-  chrome.send('remove', [this.id_.toString()]);
+   if (loadTimeData.getBoolean('allow_deleting_history')) {
+    chrome.send('remove', [this.id_.toString()]);
+  }
   return false;
 };
 
@@ -661,18 +825,31 @@ var downloads, resultsTimeout;
  * on the download page. It is guaranteed that the updates in this array
  * are reflected to the download page in a FIFO order.
 */
-var fifo_results;
+var fifoResults;
 
 function load() {
   chrome.send('onPageLoaded');
-  fifo_results = new Array();
+  fifoResults = [];
   downloads = new Downloads();
   $('term').focus();
   setSearch('');
 
-  var clearAllLink = $('clear-all');
-  clearAllLink.onclick = clearAll;
-  clearAllLink.oncontextmenu = function() { return false; };
+  var clearAllHolder = $('clear-all-holder');
+  var clearAllElement;
+  if (loadTimeData.getBoolean('allow_deleting_history')) {
+    clearAllElement = createLink(clearAll, loadTimeData.getString('clear_all'));
+    clearAllElement.classList.add('clear-all-link');
+    clearAllHolder.classList.remove('disabled-link');
+  } else {
+    clearAllElement = document.createTextNode(
+        loadTimeData.getString('clear_all'));
+    clearAllHolder.classList.add('disabled-link');
+  }
+  if (!loadTimeData.getBoolean('show_delete_history'))
+    clearAllHolder.hidden = true;
+
+  clearAllHolder.appendChild(clearAllElement);
+  clearAllElement.oncontextmenu = function() { return false; };
 
   // TODO(jhawkins): Use a link-button here.
   var openDownloadsFolderLink = $('open-downloads-folder');
@@ -694,13 +871,28 @@ function load() {
 }
 
 function setSearch(searchText) {
-  fifo_results.length = 0;
+  fifoResults.length = 0;
   downloads.setSearchText(searchText);
-  chrome.send('getDownloads', [searchText.toString()]);
+  searchText = searchText.toString().match(/(?:[^\s"]+|"[^"]*")+/g);
+  if (searchText) {
+    searchText = searchText.map(function(term) {
+      // strip quotes
+      return (term.match(/\s/) &&
+              term[0].match(/["']/) &&
+              term[term.length - 1] == term[0]) ?
+        term.substr(1, term.length - 2) : term;
+    });
+  } else {
+    searchText = [];
+  }
+  chrome.send('getDownloads', searchText);
 }
 
 function clearAll() {
-  fifo_results.length = 0;
+  if (!loadTimeData.getBoolean('allow_deleting_history'))
+    return;
+
+  fifoResults.length = 0;
   downloads.clear();
   downloads.setSearchText('');
   chrome.send('clearAll');
@@ -717,7 +909,7 @@ function downloadsList(results) {
   if (downloads && downloads.isUpdateNeeded(results)) {
     if (resultsTimeout)
       clearTimeout(resultsTimeout);
-    fifo_results.length = 0;
+    fifoResults.length = 0;
     downloads.clear();
     downloadUpdated(results);
   }
@@ -733,7 +925,7 @@ function downloadUpdated(results) {
   if (!downloads)
     return;
 
-  fifo_results = fifo_results.concat(results);
+  fifoResults = fifoResults.concat(results);
   tryDownloadUpdatedPeriodically();
 }
 
@@ -743,8 +935,8 @@ function downloadUpdated(results) {
  */
 function tryDownloadUpdatedPeriodically() {
   var start = Date.now();
-  while (fifo_results.length) {
-    var result = fifo_results.shift();
+  while (fifoResults.length) {
+    var result = fifoResults.shift();
     downloads.updated(result);
     // Do as much as we can in 50ms.
     if (Date.now() - start > 50) {

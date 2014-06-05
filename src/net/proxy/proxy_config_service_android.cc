@@ -16,12 +16,13 @@
 #include "base/memory/ref_counted.h"
 #include "base/observer_list.h"
 #include "base/sequenced_task_runner.h"
-#include "base/string_tokenizer.h"
-#include "base/string_util.h"
-#include "googleurl/src/url_parse.h"
+#include "base/strings/string_tokenizer.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "jni/ProxyChangeListener_jni.h"
 #include "net/base/host_port_pair.h"
 #include "net/proxy/proxy_config.h"
+#include "url/url_parse.h"
 
 using base::android::AttachCurrentThread;
 using base::android::ConvertUTF8ToJavaString;
@@ -38,10 +39,9 @@ typedef ProxyConfigServiceAndroid::GetPropertyCallback GetPropertyCallback;
 
 // Returns whether the provided string was successfully converted to a port.
 bool ConvertStringToPort(const std::string& port, int* output) {
-  url_parse::Component component(0, port.size());
-  int result = url_parse::ParsePort(port.c_str(), component);
-  if (result == url_parse::PORT_INVALID ||
-      result == url_parse::PORT_UNSPECIFIED)
+  url::Component component(0, port.size());
+  int result = url::ParsePort(port.c_str(), component);
+  if (result == url::PORT_INVALID || result == url::PORT_UNSPECIFIED)
     return false;
   *output = result;
   return true;
@@ -101,11 +101,11 @@ void AddBypassRules(const std::string& scheme,
       get_property.Run(scheme + ".nonProxyHosts");
   if (non_proxy_hosts.empty())
     return;
-  StringTokenizer tokenizer(non_proxy_hosts, "|");
+  base::StringTokenizer tokenizer(non_proxy_hosts, "|");
   while (tokenizer.GetNext()) {
     std::string token = tokenizer.token();
     std::string pattern;
-    TrimWhitespaceASCII(token, TRIM_ALL, &pattern);
+    base::TrimWhitespaceASCII(token, base::TRIM_ALL, &pattern);
     if (pattern.empty())
       continue;
     // '?' is not one of the specified pattern characters above.
@@ -124,21 +124,22 @@ bool GetProxyRules(const GetPropertyCallback& get_property,
   // On the opposite, Java spec suggests to use HTTPS port (443) by default (the
   // default value of https.proxyPort).
   rules->type = ProxyConfig::ProxyRules::TYPE_PROXY_PER_SCHEME;
-  rules->proxy_for_http = LookupProxy("http", get_property,
-                                      ProxyServer::SCHEME_HTTP);
-  rules->proxy_for_https = LookupProxy("https", get_property,
-                                       ProxyServer::SCHEME_HTTP);
-  rules->proxy_for_ftp = LookupProxy("ftp", get_property,
-                                     ProxyServer::SCHEME_HTTP);
-  rules->fallback_proxy = LookupSocksProxy(get_property);
+  rules->proxies_for_http.SetSingleProxyServer(
+      LookupProxy("http", get_property, ProxyServer::SCHEME_HTTP));
+  rules->proxies_for_https.SetSingleProxyServer(
+      LookupProxy("https", get_property, ProxyServer::SCHEME_HTTP));
+  rules->proxies_for_ftp.SetSingleProxyServer(
+      LookupProxy("ftp", get_property, ProxyServer::SCHEME_HTTP));
+  rules->fallback_proxies.SetSingleProxyServer(LookupSocksProxy(get_property));
   rules->bypass_rules.Clear();
   AddBypassRules("ftp", get_property, &rules->bypass_rules);
   AddBypassRules("http", get_property, &rules->bypass_rules);
   AddBypassRules("https", get_property, &rules->bypass_rules);
-  return rules->proxy_for_http.is_valid() ||
-      rules->proxy_for_https.is_valid() ||
-      rules->proxy_for_ftp.is_valid() ||
-      rules->fallback_proxy.is_valid();
+  // We know a proxy was found if not all of the proxy lists are empty.
+  return !(rules->proxies_for_http.IsEmpty() &&
+      rules->proxies_for_https.IsEmpty() &&
+      rules->proxies_for_ftp.IsEmpty() &&
+      rules->fallback_proxies.IsEmpty());
 };
 
 void GetLatestProxyConfigInternal(const GetPropertyCallback& get_property,
@@ -158,6 +159,16 @@ std::string GetJavaProperty(const std::string& property) {
       std::string() : ConvertJavaStringToUTF8(env, result.obj());
 }
 
+void CreateStaticProxyConfig(const std::string& host, int port,
+                             ProxyConfig* config) {
+  if (port != 0) {
+    std::string rules = base::StringPrintf("%s:%d", host.c_str(), port);
+    config->proxy_rules().ParseFromString(rules);
+  } else {
+    *config = ProxyConfig::CreateDirect();
+  }
+}
+
 }  // namespace
 
 class ProxyConfigServiceAndroid::Delegate
@@ -166,7 +177,7 @@ class ProxyConfigServiceAndroid::Delegate
   Delegate(base::SequencedTaskRunner* network_task_runner,
            base::SequencedTaskRunner* jni_task_runner,
            const GetPropertyCallback& get_property_callback)
-      : ALLOW_THIS_IN_INITIALIZER_LIST(jni_delegate_(this)),
+      : jni_delegate_(this),
         network_task_runner_(network_task_runner),
         jni_task_runner_(jni_task_runner),
         get_property_callback_(get_property_callback) {
@@ -184,7 +195,7 @@ class ProxyConfigServiceAndroid::Delegate
     Java_ProxyChangeListener_start(
         env,
         java_proxy_change_listener_.obj(),
-        reinterpret_cast<jint>(&jni_delegate_));
+        reinterpret_cast<intptr_t>(&jni_delegate_));
   }
 
   void FetchInitialConfig() {
@@ -236,6 +247,17 @@ class ProxyConfigServiceAndroid::Delegate
             &Delegate::SetNewConfigOnNetworkThread, this, proxy_config));
   }
 
+  // Called on the JNI thread.
+  void ProxySettingsChangedTo(const std::string& host, int port) {
+    DCHECK(OnJNIThread());
+    ProxyConfig proxy_config;
+    CreateStaticProxyConfig(host, port, &proxy_config);
+    network_task_runner_->PostTask(
+        FROM_HERE,
+        base::Bind(
+            &Delegate::SetNewConfigOnNetworkThread, this, proxy_config));
+  }
+
  private:
   friend class base::RefCountedThreadSafe<Delegate>;
 
@@ -244,7 +266,13 @@ class ProxyConfigServiceAndroid::Delegate
     explicit JNIDelegateImpl(Delegate* delegate) : delegate_(delegate) {}
 
     // ProxyConfigServiceAndroid::JNIDelegate overrides.
-    virtual void ProxySettingsChanged(JNIEnv*, jobject) OVERRIDE {
+    virtual void ProxySettingsChangedTo(JNIEnv* env, jobject jself,
+                                      jstring jhost, jint jport) OVERRIDE {
+      std::string host = ConvertJavaStringToUTF8(env, jhost);
+      delegate_->ProxySettingsChangedTo(host, jport);
+    }
+
+    virtual void ProxySettingsChanged(JNIEnv* env, jobject self) OVERRIDE {
       delegate_->ProxySettingsChanged();
     }
 

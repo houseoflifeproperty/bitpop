@@ -10,7 +10,6 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 
-class BaseWindow;
 class Browser;  // TODO(stevenjb) eliminate this dependency.
 class GURL;
 class Profile;
@@ -22,6 +21,10 @@ class DictionaryValue;
 
 namespace gfx {
 class Rect;
+}
+
+namespace ui {
+class BaseWindow;
 }
 
 namespace extensions {
@@ -38,10 +41,10 @@ class WindowController {
     REASON_NOT_EDITABLE,
   };
 
-  WindowController(BaseWindow* window, Profile* profile);
+  WindowController(ui::BaseWindow* window, Profile* profile);
   virtual ~WindowController();
 
-  BaseWindow* window() const { return window_; }
+  ui::BaseWindow* window() const { return window_; }
 
   Profile* profile() const { return profile_; }
 
@@ -59,6 +62,9 @@ class WindowController {
   // Populates a dictionary for the Window object, including a list of tabs.
   virtual base::DictionaryValue* CreateWindowValueWithTabs(
       const extensions::Extension* extension) const = 0;
+
+  virtual base::DictionaryValue* CreateTabValue(
+      const extensions::Extension* extension, int tab_index) const = 0;
 
   // Returns false if the window is in a state where closing the window is not
   // permitted and sets |reason| if not NULL.
@@ -78,7 +84,7 @@ class WindowController {
   virtual bool IsVisibleToExtension(const Extension* extension) const = 0;
 
  private:
-  BaseWindow* window_;
+  ui::BaseWindow* window_;
   Profile* profile_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowController);

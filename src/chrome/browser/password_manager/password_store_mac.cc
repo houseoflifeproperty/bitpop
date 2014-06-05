@@ -8,24 +8,27 @@
 #include <CoreServices/CoreServices.h>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/callback.h"
 #include "base/logging.h"
 #include "base/mac/mac_logging.h"
 #include "base/mac/mac_util.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/password_manager/login_database.h"
-#include "chrome/browser/password_manager/password_store_change.h"
-#include "chrome/common/chrome_notification_types.h"
-#include "content/public/browser/notification_service.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/mac/security_wrappers.h"
+#include "components/password_manager/core/browser/login_database.h"
+#include "components/password_manager/core/browser/password_store_change.h"
+#include "content/public/browser/browser_thread.h"
 #include "crypto/apple_keychain.h"
 
+using autofill::PasswordForm;
 using crypto::AppleKeychain;
-using content::PasswordForm;
+using password_manager::PasswordStoreChange;
+using password_manager::PasswordStoreChangeList;
 
 // Utility class to handle the details of constructing and running a keychain
 // search from a set of attributes.
@@ -233,7 +236,8 @@ PasswordForm::Scheme SchemeForAuthType(SecAuthenticationType auth_type) {
 
 bool FillPasswordFormFromKeychainItem(const AppleKeychain& keychain,
                                       const SecKeychainItemRef& keychain_item,
-                                      PasswordForm* form) {
+                                      PasswordForm* form,
+                                      bool extract_password_data) {
   DCHECK(form);
 
   SecKeychainAttributeInfo attrInfo;
@@ -252,11 +256,18 @@ bool FillPasswordFormFromKeychainItem(const AppleKeychain& keychain,
 
   SecKeychainAttributeList *attrList;
   UInt32 password_length;
-  void* password_data;
+
+  // If |extract_password_data| is false, do not pass in a reference to
+  // |password_data|. ItemCopyAttributesAndData will then extract only the
+  // attributes of |keychain_item| (doesn't require OS authorization), and not
+  // attempt to extract its password data (requires OS authorization).
+  void* password_data = NULL;
+  void** password_data_ref = extract_password_data ? &password_data : NULL;
+
   OSStatus result = keychain.ItemCopyAttributesAndData(keychain_item, &attrInfo,
                                                        NULL, &attrList,
                                                        &password_length,
-                                                       &password_data);
+                                                       password_data_ref);
 
   if (result != noErr) {
     // We don't log errSecAuthFailed because that just means that the user
@@ -267,8 +278,10 @@ bool FillPasswordFormFromKeychainItem(const AppleKeychain& keychain,
     return false;
   }
 
-  UTF8ToUTF16(static_cast<const char *>(password_data), password_length,
-              &(form->password_value));
+  if (extract_password_data) {
+    base::UTF8ToUTF16(static_cast<const char *>(password_data), password_length,
+                      &(form->password_value));
+  }
 
   int port = kAnyPort;
   std::string server;
@@ -281,8 +294,8 @@ bool FillPasswordFormFromKeychainItem(const AppleKeychain& keychain,
     }
     switch (attr.tag) {
       case kSecAccountItemAttr:
-        UTF8ToUTF16(static_cast<const char *>(attr.data), attr.length,
-                    &(form->username_value));
+        base::UTF8ToUTF16(static_cast<const char *>(attr.data), attr.length,
+                          &(form->username_value));
         break;
       case kSecServerItemAttr:
         server.assign(static_cast<const char *>(attr.data), attr.length);
@@ -330,7 +343,8 @@ bool FillPasswordFormFromKeychainItem(const AppleKeychain& keychain,
   // kSecNegativeItemAttr doesn't seem to actually be in widespread use. In
   // practice, other browsers seem to use a "" or " " password (and a special
   // user name) to indicated blacklist entries.
-  if (form->password_value.empty() || EqualsASCII(form->password_value, " ")) {
+  if (extract_password_data && (form->password_value.empty() ||
+                                EqualsASCII(form->password_value, " "))) {
     form->blacklisted_by_user = true;
   }
 
@@ -345,18 +359,23 @@ bool FillPasswordFormFromKeychainItem(const AppleKeychain& keychain,
 }
 
 bool FormsMatchForMerge(const PasswordForm& form_a,
-                        const PasswordForm& form_b) {
+                        const PasswordForm& form_b,
+                        FormMatchStrictness strictness) {
   // We never merge blacklist entries between our store and the keychain.
   if (form_a.blacklisted_by_user || form_b.blacklisted_by_user) {
     return false;
   }
-  return form_a.scheme == form_b.scheme &&
-         form_a.signon_realm == form_b.signon_realm &&
+  bool equal_realm = form_a.signon_realm == form_b.signon_realm;
+  if (strictness == FUZZY_FORM_MATCH) {
+    equal_realm |= (!form_a.original_signon_realm.empty()) &&
+                   form_a.original_signon_realm == form_b.signon_realm;
+  }
+  return form_a.scheme == form_b.scheme && equal_realm &&
          form_a.username_value == form_b.username_value;
 }
 
-// Returns an the best match for |form| from |keychain_forms|, or NULL if there
-// is no suitable match.
+// Returns an the best match for |base_form| from |keychain_forms|, or NULL if
+// there is no suitable match.
 PasswordForm* BestKeychainFormForForm(
     const PasswordForm& base_form,
     const std::vector<PasswordForm*>* keychain_forms) {
@@ -366,7 +385,7 @@ PasswordForm* BestKeychainFormForForm(
     // TODO(stuartmorgan): We should really be scoring path matches and picking
     // the best, rather than just checking exact-or-not (although in practice
     // keychain items with paths probably came from us).
-    if (FormsMatchForMerge(base_form, *(*i))) {
+    if (FormsMatchForMerge(base_form, *(*i), FUZZY_FORM_MATCH)) {
       if (base_form.origin == (*i)->origin) {
         return *i;
       } else if (!partial_match) {
@@ -443,17 +462,50 @@ void MergePasswordForms(std::vector<PasswordForm*>* keychain_forms,
   DeleteVectorElementsInSet(keychain_forms, used_keychain_forms);
 }
 
+std::vector<ItemFormPair> ExtractAllKeychainItemAttributesIntoPasswordForms(
+    std::vector<SecKeychainItemRef>* keychain_items,
+    const AppleKeychain& keychain) {
+  DCHECK(keychain_items);
+  MacKeychainPasswordFormAdapter keychain_adapter(&keychain);
+  *keychain_items = keychain_adapter.GetAllPasswordFormKeychainItems();
+  std::vector<ItemFormPair> item_form_pairs;
+  for (std::vector<SecKeychainItemRef>::iterator i = keychain_items->begin();
+       i != keychain_items->end(); ++i) {
+    PasswordForm* form_without_password = new PasswordForm();
+    internal_keychain_helpers::FillPasswordFormFromKeychainItem(
+        keychain,
+        *i,
+        form_without_password,
+        false);  // Load password attributes, but not password data.
+    item_form_pairs.push_back(std::make_pair(&(*i), form_without_password));
+  }
+  return item_form_pairs;
+}
+
 std::vector<PasswordForm*> GetPasswordsForForms(
     const AppleKeychain& keychain,
     std::vector<PasswordForm*>* database_forms) {
-  MacKeychainPasswordFormAdapter keychain_adapter(&keychain);
+  // First load the attributes of all items in the keychain without loading
+  // their password data, and then match items in |database_forms| against them.
+  // This avoids individually searching through the keychain for passwords
+  // matching each form in |database_forms|, and results in a significant
+  // performance gain, replacing O(N) keychain search operations with a single
+  // operation that loads all keychain items, and then selective reads of only
+  // the relevant passwords. See crbug.com/263685.
+  std::vector<SecKeychainItemRef> keychain_items;
+  std::vector<ItemFormPair> item_form_pairs =
+      ExtractAllKeychainItemAttributesIntoPasswordForms(&keychain_items,
+                                                        keychain);
 
+  // Next, compare the attributes of the PasswordForms in |database_forms|
+  // against those in |item_form_pairs|, and extract password data for each
+  // matching PasswordForm using its corresponding SecKeychainItemRef.
   std::vector<PasswordForm*> merged_forms;
   for (std::vector<PasswordForm*>::iterator i = database_forms->begin();
        i != database_forms->end();) {
     std::vector<PasswordForm*> db_form_container(1, *i);
     std::vector<PasswordForm*> keychain_matches =
-        keychain_adapter.PasswordsMergeableWithForm(**i);
+        ExtractPasswordsMergeableWithForm(keychain, item_form_pairs, **i);
     MergePasswordForms(&keychain_matches, &db_form_container, &merged_forms);
     if (db_form_container.empty()) {
       i = database_forms->erase(i);
@@ -462,7 +514,80 @@ std::vector<PasswordForm*> GetPasswordsForForms(
     }
     STLDeleteElements(&keychain_matches);
   }
+
+  // Clean up temporary PasswordForms and SecKeychainItemRefs.
+  STLDeleteContainerPairSecondPointers(item_form_pairs.begin(),
+                                       item_form_pairs.end());
+  for (std::vector<SecKeychainItemRef>::iterator i = keychain_items.begin();
+       i != keychain_items.end(); ++i) {
+    keychain.Free(*i);
+  }
   return merged_forms;
+}
+
+// TODO(stuartmorgan): signon_realm for proxies is not yet supported.
+bool ExtractSignonRealmComponents(
+    const std::string& signon_realm, std::string* server, int* port,
+    bool* is_secure, std::string* security_domain) {
+  // The signon_realm will be the Origin portion of a URL for an HTML form,
+  // and the same but with the security domain as a path for HTTP auth.
+  GURL realm_as_url(signon_realm);
+  if (!realm_as_url.is_valid()) {
+    return false;
+  }
+
+  if (server)
+    *server = realm_as_url.host();
+  if (is_secure)
+    *is_secure = realm_as_url.SchemeIsSecure();
+  if (port)
+    *port = realm_as_url.has_port() ? atoi(realm_as_url.port().c_str()) : 0;
+  if (security_domain) {
+    // Strip the leading '/' off of the path to get the security domain.
+    if (realm_as_url.path().length() > 0)
+      *security_domain = realm_as_url.path().substr(1);
+    else
+      security_domain->clear();
+  }
+  return true;
+}
+
+bool FormIsValidAndMatchesOtherForm(const PasswordForm& query_form,
+                                    const PasswordForm& other_form) {
+  std::string server;
+  std::string security_domain;
+  int port;
+  bool is_secure;
+  if (!ExtractSignonRealmComponents(query_form.signon_realm, &server, &port,
+                                    &is_secure, &security_domain)) {
+    return false;
+  }
+  return internal_keychain_helpers::FormsMatchForMerge(
+      query_form, other_form, STRICT_FORM_MATCH);
+}
+
+std::vector<PasswordForm*> ExtractPasswordsMergeableWithForm(
+    const AppleKeychain& keychain,
+    const std::vector<ItemFormPair>& item_form_pairs,
+    const PasswordForm& query_form) {
+  std::vector<PasswordForm*> matches;
+  for (std::vector<ItemFormPair>::const_iterator i = item_form_pairs.begin();
+       i != item_form_pairs.end(); ++i) {
+    if (FormIsValidAndMatchesOtherForm(query_form, *(i->second))) {
+      // Create a new object, since the caller is responsible for deleting the
+      // returned forms.
+      scoped_ptr<PasswordForm> form_with_password(new PasswordForm());
+      internal_keychain_helpers::FillPasswordFormFromKeychainItem(
+          keychain,
+          *(i->first),
+          form_with_password.get(),
+          true);  // Load password attributes and data.
+      // Do not include blacklisted items found in the keychain.
+      if (!form_with_password->blacklisted_by_user)
+        matches.push_back(form_with_password.release());
+    }
+  }
+  return matches;
 }
 
 }  // namespace internal_keychain_helpers
@@ -474,23 +599,11 @@ MacKeychainPasswordFormAdapter::MacKeychainPasswordFormAdapter(
     : keychain_(keychain), finds_only_owned_(false) {
 }
 
-std::vector<PasswordForm*>
-    MacKeychainPasswordFormAdapter::PasswordsFillingForm(
-        const PasswordForm& query_form) {
+std::vector<PasswordForm*> MacKeychainPasswordFormAdapter::PasswordsFillingForm(
+    const std::string& signon_realm,
+    PasswordForm::Scheme scheme) {
   std::vector<SecKeychainItemRef> keychain_items =
-      MatchingKeychainItems(query_form.signon_realm, query_form.scheme,
-                            NULL, NULL);
-
-  return ConvertKeychainItemsToForms(&keychain_items);
-}
-
-std::vector<PasswordForm*>
-    MacKeychainPasswordFormAdapter::PasswordsMergeableWithForm(
-        const PasswordForm& query_form) {
-  std::string username = UTF16ToUTF8(query_form.username_value);
-  std::vector<SecKeychainItemRef> keychain_items =
-      MatchingKeychainItems(query_form.signon_realm, query_form.scheme,
-                            NULL, username.c_str());
+      MatchingKeychainItems(signon_realm, scheme, NULL, NULL);
 
   return ConvertKeychainItemsToForms(&keychain_items);
 }
@@ -502,7 +615,8 @@ PasswordForm* MacKeychainPasswordFormAdapter::PasswordExactlyMatchingForm(
     PasswordForm* form = new PasswordForm();
     internal_keychain_helpers::FillPasswordFormFromKeychainItem(*keychain_,
                                                                 keychain_item,
-                                                                form);
+                                                                form,
+                                                                true);
     keychain_->Free(keychain_item);
     return form;
   }
@@ -511,7 +625,7 @@ PasswordForm* MacKeychainPasswordFormAdapter::PasswordExactlyMatchingForm(
 
 bool MacKeychainPasswordFormAdapter::HasPasswordsMergeableWithForm(
     const PasswordForm& query_form) {
-  std::string username = UTF16ToUTF8(query_form.username_value);
+  std::string username = base::UTF16ToUTF8(query_form.username_value);
   std::vector<SecKeychainItemRef> matches =
       MatchingKeychainItems(query_form.signon_realm, query_form.scheme,
                             NULL, username.c_str());
@@ -523,8 +637,8 @@ bool MacKeychainPasswordFormAdapter::HasPasswordsMergeableWithForm(
   return !matches.empty();
 }
 
-std::vector<PasswordForm*>
-    MacKeychainPasswordFormAdapter::GetAllPasswordFormPasswords() {
+std::vector<SecKeychainItemRef>
+    MacKeychainPasswordFormAdapter::GetAllPasswordFormKeychainItems() {
   SecAuthenticationType supported_auth_types[] = {
     kSecAuthenticationTypeHTMLForm,
     kSecAuthenticationTypeHTTPBasic,
@@ -538,8 +652,13 @@ std::vector<PasswordForm*>
                          NULL, NULL, NULL, CreatorCodeForSearch());
     keychain_search.FindMatchingItems(&matches);
   }
+  return matches;
+}
 
-  return ConvertKeychainItemsToForms(&matches);
+std::vector<PasswordForm*>
+    MacKeychainPasswordFormAdapter::GetAllPasswordFormPasswords() {
+  std::vector<SecKeychainItemRef> items = GetAllPasswordFormKeychainItems();
+  return ConvertKeychainItemsToForms(&items);
 }
 
 bool MacKeychainPasswordFormAdapter::AddPassword(const PasswordForm& form) {
@@ -550,12 +669,12 @@ bool MacKeychainPasswordFormAdapter::AddPassword(const PasswordForm& form) {
   std::string security_domain;
   int port;
   bool is_secure;
-  if (!ExtractSignonRealmComponents(form.signon_realm, &server, &port,
-                                    &is_secure, &security_domain)) {
+  if (!internal_keychain_helpers::ExtractSignonRealmComponents(
+           form.signon_realm, &server, &port, &is_secure, &security_domain)) {
     return false;
   }
-  std::string username = UTF16ToUTF8(form.username_value);
-  std::string password = UTF16ToUTF8(form.password_value);
+  std::string username = base::UTF16ToUTF8(form.username_value);
+  std::string password = base::UTF16ToUTF8(form.password_value);
   std::string path = form.origin.path();
   SecProtocolType protocol = is_secure ? kSecProtocolTypeHTTPS
                                        : kSecProtocolTypeHTTP;
@@ -607,8 +726,8 @@ std::vector<PasswordForm*>
   for (std::vector<SecKeychainItemRef>::const_iterator i = items->begin();
        i != items->end(); ++i) {
     PasswordForm* form = new PasswordForm();
-    if (internal_keychain_helpers::FillPasswordFormFromKeychainItem(*keychain_,
-                                                                    *i, form)) {
+    if (internal_keychain_helpers::FillPasswordFormFromKeychainItem(
+            *keychain_, *i, form, true)) {
       keychain_forms.push_back(form);
     }
     keychain_->Free(*i);
@@ -626,7 +745,7 @@ SecKeychainItemRef MacKeychainPasswordFormAdapter::KeychainItemForForm(
   }
 
   std::string path = form.origin.path();
-  std::string username = UTF16ToUTF8(form.username_value);
+  std::string username = base::UTF16ToUTF8(form.username_value);
   std::vector<SecKeychainItemRef> matches = MatchingKeychainItems(
       form.signon_realm, form.scheme, path.c_str(), username.c_str());
 
@@ -644,7 +763,7 @@ SecKeychainItemRef MacKeychainPasswordFormAdapter::KeychainItemForForm(
 std::vector<SecKeychainItemRef>
     MacKeychainPasswordFormAdapter::MatchingKeychainItems(
         const std::string& signon_realm,
-        content::PasswordForm::Scheme scheme,
+        autofill::PasswordForm::Scheme scheme,
         const char* path, const char* username) {
   std::vector<SecKeychainItemRef> matches;
 
@@ -652,8 +771,8 @@ std::vector<SecKeychainItemRef>
   std::string security_domain;
   int port;
   bool is_secure;
-  if (!ExtractSignonRealmComponents(signon_realm, &server, &port,
-                                    &is_secure, &security_domain)) {
+  if (!internal_keychain_helpers::ExtractSignonRealmComponents(
+           signon_realm, &server, &port, &is_secure, &security_domain)) {
     // TODO(stuartmorgan): Proxies will currently fail here, since their
     // signon_realm is not a URL. We need to detect the proxy case and handle
     // it specially.
@@ -669,33 +788,6 @@ std::vector<SecKeychainItemRef>
                        auth_domain, path, username, CreatorCodeForSearch());
   keychain_search.FindMatchingItems(&matches);
   return matches;
-}
-
-// TODO(stuartmorgan): signon_realm for proxies is not yet supported.
-bool MacKeychainPasswordFormAdapter::ExtractSignonRealmComponents(
-    const std::string& signon_realm, std::string* server, int* port,
-    bool* is_secure, std::string* security_domain) {
-  // The signon_realm will be the Origin portion of a URL for an HTML form,
-  // and the same but with the security domain as a path for HTTP auth.
-  GURL realm_as_url(signon_realm);
-  if (!realm_as_url.is_valid()) {
-    return false;
-  }
-
-  if (server)
-    *server = realm_as_url.host();
-  if (is_secure)
-    *is_secure = realm_as_url.SchemeIsSecure();
-  if (port)
-    *port = realm_as_url.has_port() ? atoi(realm_as_url.port().c_str()) : 0;
-  if (security_domain) {
-    // Strip the leading '/' off of the path to get the security domain.
-    if (realm_as_url.path().length() > 0)
-      *security_domain = realm_as_url.path().substr(1);
-    else
-      security_domain->clear();
-  }
-  return true;
 }
 
 // Returns the Keychain SecAuthenticationType type corresponding to |scheme|.
@@ -735,79 +827,82 @@ OSType MacKeychainPasswordFormAdapter::CreatorCodeForSearch() {
 
 #pragma mark -
 
-PasswordStoreMac::PasswordStoreMac(AppleKeychain* keychain,
-                                   LoginDatabase* login_db)
-    : keychain_(keychain), login_metadata_db_(login_db) {
+PasswordStoreMac::PasswordStoreMac(
+    scoped_refptr<base::SingleThreadTaskRunner> main_thread_runner,
+    scoped_refptr<base::SingleThreadTaskRunner> db_thread_runner,
+    AppleKeychain* keychain,
+    password_manager::LoginDatabase* login_db)
+    : password_manager::PasswordStore(main_thread_runner, db_thread_runner),
+      keychain_(keychain),
+      login_metadata_db_(login_db) {
   DCHECK(keychain_.get());
   DCHECK(login_metadata_db_.get());
 }
 
-PasswordStoreMac::~PasswordStoreMac() {
-  if (thread_.get()) {
-    thread_->message_loop()->DeleteSoon(FROM_HERE,
-                                        notification_service_.release());
-  }
-}
+PasswordStoreMac::~PasswordStoreMac() {}
 
-bool PasswordStoreMac::Init() {
+bool PasswordStoreMac::Init(
+    const syncer::SyncableService::StartSyncFlare& flare) {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   thread_.reset(new base::Thread("Chrome_PasswordStore_Thread"));
 
   if (!thread_->Start()) {
     thread_.reset(NULL);
     return false;
   }
-  ScheduleTask(base::Bind(&PasswordStoreMac::CreateNotificationService, this));
-  return PasswordStore::Init();
+  return password_manager::PasswordStore::Init(flare);
 }
 
-void PasswordStoreMac::ShutdownOnUIThread() {
+void PasswordStoreMac::Shutdown() {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  password_manager::PasswordStore::Shutdown();
+  thread_->Stop();
 }
 
 // Mac stores passwords in the system keychain, which can block for an
 // arbitrarily long time (most notably, it can block on user confirmation
-// from a dialog). Use a dedicated thread to avoid blocking DB thread.
-bool PasswordStoreMac::ScheduleTask(const base::Closure& task) {
-  if (thread_.get()) {
-    thread_->message_loop()->PostTask(FROM_HERE, task);
-    return true;
-  }
-  return false;
+// from a dialog). Run tasks on a dedicated thread to avoid blocking the DB
+// thread.
+scoped_refptr<base::SingleThreadTaskRunner>
+PasswordStoreMac::GetBackgroundTaskRunner() {
+  return (thread_.get()) ? thread_->message_loop_proxy() : NULL;
 }
 
 void PasswordStoreMac::ReportMetricsImpl() {
   login_metadata_db_->ReportMetrics();
 }
 
-void PasswordStoreMac::AddLoginImpl(const PasswordForm& form) {
+PasswordStoreChangeList PasswordStoreMac::AddLoginImpl(
+    const PasswordForm& form) {
+  DCHECK(thread_->message_loop() == base::MessageLoop::current());
+  PasswordStoreChangeList changes;
   if (AddToKeychainIfNecessary(form)) {
     if (login_metadata_db_->AddLogin(form)) {
-      PasswordStoreChangeList changes;
       changes.push_back(PasswordStoreChange(PasswordStoreChange::ADD, form));
-      content::NotificationService::current()->Notify(
-          chrome::NOTIFICATION_LOGINS_CHANGED,
-          content::Source<PasswordStore>(this),
-          content::Details<PasswordStoreChangeList>(&changes));
     }
   }
+  return changes;
 }
 
-void PasswordStoreMac::UpdateLoginImpl(const PasswordForm& form) {
+PasswordStoreChangeList PasswordStoreMac::UpdateLoginImpl(
+    const PasswordForm& form) {
+  DCHECK(thread_->message_loop() == base::MessageLoop::current());
+  PasswordStoreChangeList changes;
   int update_count = 0;
   if (!login_metadata_db_->UpdateLogin(form, &update_count))
-    return;
+    return changes;
 
   MacKeychainPasswordFormAdapter keychain_adapter(keychain_.get());
   if (update_count == 0 &&
       !keychain_adapter.HasPasswordsMergeableWithForm(form)) {
     // If the password isn't in either the DB or the keychain, then it must have
     // been deleted after autofill happened, and should not be re-added.
-    return;
+    return changes;
   }
 
   // The keychain add will update if there is a collision and add if there
   // isn't, which is the behavior we want, so there's no separate update call.
   if (AddToKeychainIfNecessary(form)) {
-    PasswordStoreChangeList changes;
     if (update_count == 0) {
       if (login_metadata_db_->AddLogin(form)) {
         changes.push_back(PasswordStoreChange(PasswordStoreChange::ADD,
@@ -817,16 +912,14 @@ void PasswordStoreMac::UpdateLoginImpl(const PasswordForm& form) {
       changes.push_back(PasswordStoreChange(PasswordStoreChange::UPDATE,
                                             form));
     }
-    if (!changes.empty()) {
-      content::NotificationService::current()->Notify(
-          chrome::NOTIFICATION_LOGINS_CHANGED,
-          content::Source<PasswordStore>(this),
-          content::Details<PasswordStoreChangeList>(&changes));
-    }
   }
+  return changes;
 }
 
-void PasswordStoreMac::RemoveLoginImpl(const PasswordForm& form) {
+PasswordStoreChangeList PasswordStoreMac::RemoveLoginImpl(
+    const PasswordForm& form) {
+  DCHECK(thread_->message_loop() == base::MessageLoop::current());
+  PasswordStoreChangeList changes;
   if (login_metadata_db_->RemoveLogin(form)) {
     // See if we own a Keychain item associated with this item. We can do an
     // exact search rather than messing around with trying to do fuzzy matching
@@ -847,17 +940,14 @@ void PasswordStoreMac::RemoveLoginImpl(const PasswordForm& form) {
       }
     }
 
-    PasswordStoreChangeList changes;
     changes.push_back(PasswordStoreChange(PasswordStoreChange::REMOVE, form));
-    content::NotificationService::current()->Notify(
-        chrome::NOTIFICATION_LOGINS_CHANGED,
-        content::Source<PasswordStore>(this),
-        content::Details<PasswordStoreChangeList>(&changes));
   }
+  return changes;
 }
 
-void PasswordStoreMac::RemoveLoginsCreatedBetweenImpl(
+PasswordStoreChangeList PasswordStoreMac::RemoveLoginsCreatedBetweenImpl(
     const base::Time& delete_begin, const base::Time& delete_end) {
+  PasswordStoreChangeList changes;
   std::vector<PasswordForm*> forms;
   if (login_metadata_db_->GetLoginsCreatedBetween(delete_begin, delete_end,
                                                   &forms)) {
@@ -877,29 +967,53 @@ void PasswordStoreMac::RemoveLoginsCreatedBetweenImpl(
       RemoveKeychainForms(orphan_keychain_forms);
       STLDeleteElements(&orphan_keychain_forms);
 
-      PasswordStoreChangeList changes;
       for (std::vector<PasswordForm*>::const_iterator it = forms.begin();
            it != forms.end(); ++it) {
         changes.push_back(PasswordStoreChange(PasswordStoreChange::REMOVE,
                                               **it));
       }
-      content::NotificationService::current()->Notify(
-          chrome::NOTIFICATION_LOGINS_CHANGED,
-          content::Source<PasswordStore>(this),
-          content::Details<PasswordStoreChangeList>(&changes));
+      LogStatsForBulkDeletion(changes.size());
     }
   }
+  return changes;
 }
 
 void PasswordStoreMac::GetLoginsImpl(
-    const content::PasswordForm& form,
+    const autofill::PasswordForm& form,
+    AuthorizationPromptPolicy prompt_policy,
     const ConsumerCallbackRunner& callback_runner) {
-  MacKeychainPasswordFormAdapter keychain_adapter(keychain_.get());
-  std::vector<PasswordForm*> keychain_forms =
-      keychain_adapter.PasswordsFillingForm(form);
+  chrome::ScopedSecKeychainSetUserInteractionAllowed user_interaction_allowed(
+      prompt_policy == ALLOW_PROMPT);
 
   std::vector<PasswordForm*> database_forms;
   login_metadata_db_->GetLogins(form, &database_forms);
+
+  // Let's gather all signon realms we want to match with keychain entries.
+  std::set<std::string> realm_set;
+  realm_set.insert(form.signon_realm);
+  for (std::vector<PasswordForm*>::const_iterator db_form =
+           database_forms.begin();
+       db_form != database_forms.end();
+       ++db_form) {
+    // TODO(vabr): We should not be getting different schemes here.
+    // http://crbug.com/340112
+    if (form.scheme != (*db_form)->scheme)
+      continue;  // Forms with different schemes never match.
+    const std::string& original_singon_realm((*db_form)->original_signon_realm);
+    if (!original_singon_realm.empty())
+      realm_set.insert(original_singon_realm);
+  }
+  std::vector<PasswordForm*> keychain_forms;
+  for (std::set<std::string>::const_iterator realm = realm_set.begin();
+       realm != realm_set.end();
+       ++realm) {
+    MacKeychainPasswordFormAdapter keychain_adapter(keychain_.get());
+    std::vector<PasswordForm*> temp_keychain_forms =
+        keychain_adapter.PasswordsFillingForm(*realm, form.scheme);
+    keychain_forms.insert(keychain_forms.end(),
+                          temp_keychain_forms.begin(),
+                          temp_keychain_forms.end());
+  }
 
   std::vector<PasswordForm*> matched_forms;
   internal_keychain_helpers::MergePasswordForms(&keychain_forms,
@@ -924,18 +1038,18 @@ void PasswordStoreMac::GetLoginsImpl(
 }
 
 void PasswordStoreMac::GetBlacklistLoginsImpl(GetLoginsRequest* request) {
-  FillBlacklistLogins(&request->value);
+  FillBlacklistLogins(request->result());
   ForwardLoginsResult(request);
 }
 
 void PasswordStoreMac::GetAutofillableLoginsImpl(GetLoginsRequest* request) {
-  FillAutofillableLogins(&request->value);
+  FillAutofillableLogins(request->result());
   ForwardLoginsResult(request);
 }
 
 bool PasswordStoreMac::FillAutofillableLogins(
          std::vector<PasswordForm*>* forms) {
-  DCHECK(thread_->message_loop() == MessageLoop::current());
+  DCHECK(thread_->message_loop() == base::MessageLoop::current());
 
   std::vector<PasswordForm*> database_forms;
   login_metadata_db_->GetAutofillableLogins(&database_forms);
@@ -954,7 +1068,7 @@ bool PasswordStoreMac::FillAutofillableLogins(
 
 bool PasswordStoreMac::FillBlacklistLogins(
          std::vector<PasswordForm*>* forms) {
-  DCHECK(thread_->message_loop() == MessageLoop::current());
+  DCHECK(thread_->message_loop() == base::MessageLoop::current());
   return login_metadata_db_->GetBlacklistLogins(forms);
 }
 
@@ -967,13 +1081,17 @@ bool PasswordStoreMac::AddToKeychainIfNecessary(const PasswordForm& form) {
 }
 
 bool PasswordStoreMac::DatabaseHasFormMatchingKeychainForm(
-    const content::PasswordForm& form) {
+    const autofill::PasswordForm& form) {
   bool has_match = false;
   std::vector<PasswordForm*> database_forms;
   login_metadata_db_->GetLogins(form, &database_forms);
   for (std::vector<PasswordForm*>::iterator i = database_forms.begin();
        i != database_forms.end(); ++i) {
-    if (internal_keychain_helpers::FormsMatchForMerge(form, **i) &&
+    // Below we filter out forms with non-empty original_signon_realm, because
+    // those signal fuzzy matches, and we are only interested in exact ones.
+    if ((*i)->original_signon_realm.empty() &&
+        internal_keychain_helpers::FormsMatchForMerge(
+            form, **i, internal_keychain_helpers::STRICT_FORM_MATCH) &&
         (*i)->origin == form.origin) {
       has_match = true;
       break;
@@ -1020,8 +1138,4 @@ void PasswordStoreMac::RemoveKeychainForms(
        i != forms.end(); ++i) {
     owned_keychain_adapter.RemovePassword(**i);
   }
-}
-
-void PasswordStoreMac::CreateNotificationService() {
-  notification_service_.reset(content::NotificationService::Create());
 }

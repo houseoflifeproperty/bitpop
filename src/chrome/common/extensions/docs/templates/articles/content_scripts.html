@@ -66,7 +66,8 @@ using the <code>content_scripts</code> field,
 as in the following example.
 </p>
 
-<pre>{
+<pre data-filename="manifest.json">
+{
   "name": "My extension",
   ...
   <b>"content_scripts": [
@@ -77,23 +78,26 @@ as in the following example.
     }
   ]</b>,
   ...
-}</pre>
+}
+</pre>
 
 <p>
 If you want to inject the code only sometimes,
 use the
-<a href="manifest.html#permissions"><code>permissions</code></a> field instead,
+<a href="declare_permissions.html"><code>permissions</code></a> field instead,
 as described in <a href="#pi">Programmatic injection</a>.
 </p>
 
-<pre>{
+<pre data-filename="manifest.json">
+{
   "name": "My extension",
   ...
   <b>"permissions": [
     "tabs", "http://www.google.com/*"
   ]</b>,
   ...
-}</pre>
+}
+</pre>
 
 <p>
 Using the <code>content_scripts</code> field,
@@ -246,15 +250,15 @@ for the page.
 It also must be able to use the <code>chrome.tabs</code> module.
 You can get both kinds of permission
 using the manifest file's
-<a href="manifest.html#permissions">permissions</a> field.
+<a href="declare_permissions.html">permissions</a> field.
 </p>
 
 <p>
 Once you have permissions set up,
 you can inject JavaScript into a page by calling
-$ref:tabs.executeScript.
+$(ref:tabs.executeScript).
 To inject CSS, use
-$ref:tabs.insertCSS.
+$(ref:tabs.insertCSS).
 </p>
 
 <p>
@@ -266,16 +270,16 @@ by inserting JavaScript into the current tab's page
 and executing the script.
 </p>
 
-<pre>
-<em>/* in background.html */</em>
+<pre data-filename="background.html">
 chrome.browserAction.onClicked.addListener(function(tab) {
-  chrome.tabs.executeScript(null,
-                           {code:"document.body.bgColor='red'"});
+  chrome.tabs.executeScript({
+    code: 'document.body.style.backgroundColor="red"'
+  });
 });
-
-<em>/* in manifest.json */</em>
+</pre>
+<pre data-filename="manifest.json">
 "permissions": [
-  "tabs", "http://*/*"
+  "activeTab"
 ],
 </pre>
 
@@ -303,8 +307,7 @@ You inject the file's contents like this:
 
 <p>For example, consider this simple page:
 
-<pre>hello.html
-==========
+<pre data-filename="hello.html">
 &lt;html&gt;
   &lt;button id="mybutton"&gt;click me&lt;/button&gt;
   &lt;script&gt;
@@ -315,12 +318,12 @@ You inject the file's contents like this:
       alert(greeting + button.person_name + ".");
     }, false);
   &lt;/script&gt;
-&lt;/html&gt;</pre>
+&lt;/html&gt;
+</pre>
 
 <p>Now, suppose this content script was injected into hello.html:
 
-<pre>contentscript.js
-================
+<pre data-filename="contentscript.js">
 var greeting = "hola, ";
 var button = document.getElementById("mybutton");
 button.person_name = "Roberto";
@@ -335,29 +338,30 @@ button.addEventListener("click", function() {
 
 <p>Another important benefit of isolated worlds is that they completely separate the JavaScript on the page from the JavaScript in extensions. This allows us to offer extra functionality to content scripts that should not be accessible from web pages without worrying about web pages accessing it.
 
+<p>It's worth noting what happens with JavaScript objects that are shared by the page and the extension - for example, the <code>window.onload</code> event. Each isolated world sees its own version of the object. Assigning to the object affects your independent copy of the object. For example, both the page and extension can assign to <code>window.onload</code>, but neither one can read the other's event handler. The event handlers are called in the order in which they were assigned.
 
 <h2 id="host-page-communication">Communication with the embedding page</h2>
 
 <p>Although the execution environments of content scripts and the pages that host them are isolated from each other, they share access to the page's DOM. If the page wishes to communicate with the content script (or with the extension via the content script), it must do so through the shared DOM.</p>
 <p>An example can be accomplished using window.postMessage (or window.webkitPostMessage for Transferable objects):</p>
-<pre>contentscript.js
-================
-var port = chrome.extension.connect();
+<pre data-filename="contentscript.js">
+var port = chrome.runtime.connect();
 
 window.addEventListener("message", function(event) {
-    // We only accept messages from ourselves
-    if (event.source != window)
-      return;
+  // We only accept messages from ourselves
+  if (event.source != window)
+    return;
 
-    if (event.data.type &amp;&amp; (event.data.type == "FROM_PAGE")) {
-      console.log("Content script received: " + event.data.text);
-      port.postMessage(event.data.text);
-    }
-}, false);</pre>
-<pre>http://foo.com/example.html
-===========================
-document.getElementById("theButton").addEventListener("click", function() {
-    window.postMessage({ type: "FROM_PAGE", text: "Hello from the webpage!" }, "*");
+  if (event.data.type &amp;&amp; (event.data.type == "FROM_PAGE")) {
+    console.log("Content script received: " + event.data.text);
+    port.postMessage(event.data.text);
+  }
+}, false);
+</pre>
+<pre data-filename="http://foo.com/example.html">
+document.getElementById("theButton").addEventListener("click",
+    function() {
+  window.postMessage({ type: "FROM_PAGE", text: "Hello from the webpage!" }, "*");
 }, false);</pre>
 <p>In the above example, example.html (which is not a part of the extension) posts messages to itself, which are intercepted and inspected by the content script, and then posted to the extension process. In this way, the page establishes a line of communication to the extension process. The reverse is possible through similar means.</p>
 
@@ -367,7 +371,7 @@ document.getElementById("theButton").addEventListener("click", function() {
 First, be careful not to introduce security vulnerabilities into the web site
 your content script is injected into.  For example, if your content script
 receives content from another web site (for example, by making an <a
-href="messaging.html">XMLHttpRequest</a>),
+href="xhr.html">XMLHttpRequest</a>),
 be careful to filter that content for <a
 href="http://en.wikipedia.org/wiki/Cross-site_scripting">cross-site
 scripting</a> attacks before injecting the content into the current page.
@@ -381,27 +385,23 @@ if the user is on a hostile network.</p>
 some protection from the web page, a malicious web page might still be able
 to attack your content script if you use content from the web page
 indiscriminately.  For example, the following patterns are dangerous:
-<pre>contentscript.js
-================
+<pre data-filename="contentscript.js">
 var data = document.getElementById("json-data")
 // WARNING! Might be evaluating an evil script!
 var parsed = eval("(" + data + ")")
-
-contentscript.js
-================
+</pre>
+<pre data-filename="contentscript.js">
 var elmt_id = ...
 // WARNING! elmt_id might be "); ... evil script ... //"!
 window.setTimeout("animate(" + elmt_id + ")", 200);
 </pre>
 <p>Instead, prefer safer APIs that do not run scripts:</p>
-<pre>contentscript.js
-================
+<pre data-filename="contentscript.js">
 var data = document.getElementById("json-data")
 // JSON.parse does not evaluate the attacker's scripts.
-var parsed = JSON.parse(data)
-
-contentscript.js
-================
+var parsed = JSON.parse(data);
+</pre>
+<pre data-filename="contentscript.js">
 var elmt_id = ...
 // The closure form of setTimeout does not evaluate scripts.
 window.setTimeout(function() {
@@ -432,9 +432,9 @@ document.getElementById("someImage").src = imgURL;
 You can find many
 <a href="samples.html#script">examples that use content scripts</a>.
 A simple example of communication via messages is in the
-<a href="samples.html#51a83d2ba3a32e3ff1bdb624d4e18ccec4c4038e">timer sample</a>.
-See <a href="samples.html#ede3c47b7757245be42ec33fd5ca63df4b490066">make_page_red</a> and
-<a href="samples.html#028eb5364924344029bcbe1d527f132fc72b34e5">email_this_page</a>
+<a href="samples.html#message-timer">Message Timer</a>.
+See <a href="samples.html#page-redder">Page Redder</a> and
+<a href="samples.html#email-this-page-(by-google)">Email This Page</a>
 for examples of programmatic injection.
 </p>
 
@@ -447,7 +447,7 @@ The first video describes content scripts and isolated worlds.
 </p>
 
 <p>
-<iframe title="YouTube video player" width="640" height="390" src="http://www.youtube.com/embed/laLudeUmXHM?rel=0" frameborder="0" allowfullscreen></iframe>
+<iframe title="YouTube video player" width="640" height="390" src="//www.youtube.com/embed/laLudeUmXHM?rel=0" frameborder="0" allowfullscreen></iframe>
 </p>
 
 <p>
@@ -457,5 +457,5 @@ sending a request to its parent extension.
 </p>
 
 <p>
-<iframe title="YouTube video player" width="640" height="390" src="http://www.youtube.com/embed/B4M_a7xejYI?rel=0" frameborder="0" allowfullscreen></iframe>
+<iframe title="YouTube video player" width="640" height="390" src="//www.youtube.com/embed/B4M_a7xejYI?rel=0" frameborder="0" allowfullscreen></iframe>
 </p>

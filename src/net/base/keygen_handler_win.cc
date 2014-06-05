@@ -17,9 +17,9 @@
 #include "base/base64.h"
 #include "base/basictypes.h"
 #include "base/logging.h"
-#include "base/string_piece.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_piece.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "crypto/capi_util.h"
 #include "crypto/scoped_capi_types.h"
 
@@ -64,7 +64,7 @@ bool GetSubjectPublicKeyInfo(HCRYPTPROV prov, std::vector<BYTE>* output) {
 bool GetSignedPublicKeyAndChallenge(HCRYPTPROV prov,
                                     const std::string& challenge,
                                     std::string* output) {
-  std::wstring wide_challenge = ASCIIToWide(challenge);
+  std::wstring wide_challenge = base::ASCIIToWide(challenge);
   std::vector<BYTE> spki;
 
   if (!GetSubjectPublicKeyInfo(prov, &spki))
@@ -211,10 +211,7 @@ std::string KeygenHandler::GenKeyAndSignChallenge() {
     }
 
     std::string result;
-    if (!base::Base64Encode(spkac, &result)) {
-      LOG(ERROR) << "Keygen failed: Couldn't convert signed key into base64";
-      return std::string();
-    }
+    base::Base64Encode(spkac, &result);
 
     VLOG(1) << "Keygen succeeded";
     return result;

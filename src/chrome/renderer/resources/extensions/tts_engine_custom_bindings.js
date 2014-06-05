@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Custom bindings for the ttsEngine API.
+// Custom binding for the ttsEngine API.
 
-var chromeHidden = requireNative('chrome_hidden').GetChromeHidden();
+var binding = require('binding').Binding.create('ttsEngine');
 
-chromeHidden.Event.registerArgumentMassager('ttsEngine.onSpeak',
+var eventBindings = require('event_bindings');
+
+eventBindings.registerArgumentMassager('ttsEngine.onSpeak',
     function(args, dispatch) {
   var text = args[0];
   var options = args[1];
@@ -16,3 +18,5 @@ chromeHidden.Event.registerArgumentMassager('ttsEngine.onSpeak',
   };
   dispatch([text, options, sendTtsEvent]);
 });
+
+exports.binding = binding.generate();

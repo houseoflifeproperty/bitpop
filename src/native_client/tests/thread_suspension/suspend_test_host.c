@@ -8,30 +8,33 @@
 
 #include "native_client/src/include/nacl_assert.h"
 #include "native_client/src/include/portability_io.h"
-#include "native_client/src/shared/gio/gio.h"
 #include "native_client/src/shared/platform/nacl_check.h"
 #include "native_client/src/shared/platform/nacl_exit.h"
 #include "native_client/src/shared/platform/nacl_log.h"
 #include "native_client/src/shared/platform/nacl_sync_checked.h"
 #include "native_client/src/trusted/service_runtime/include/bits/mman.h"
 #include "native_client/src/trusted/service_runtime/include/bits/nacl_syscalls.h"
+#include "native_client/src/trusted/service_runtime/load_file.h"
 #include "native_client/src/trusted/service_runtime/nacl_all_modules.h"
 #include "native_client/src/trusted/service_runtime/nacl_app.h"
 #include "native_client/src/trusted/service_runtime/nacl_app_thread.h"
 #include "native_client/src/trusted/service_runtime/nacl_copy.h"
 #include "native_client/src/trusted/service_runtime/nacl_signal.h"
 #include "native_client/src/trusted/service_runtime/nacl_syscall_common.h"
-#include "native_client/src/trusted/service_runtime/nacl_valgrind_hooks.h"
 #include "native_client/src/trusted/service_runtime/sel_ldr.h"
+#include "native_client/src/trusted/service_runtime/sys_memory.h"
 #include "native_client/src/trusted/service_runtime/thread_suspension.h"
 #include "native_client/tests/common/register_set.h"
 
 
 /*
- * These tests mirror thread_suspension_test.cc, but they operate on
- * threads running real untrusted code rather than on mock untrusted
- * threads.
+ * Some of these tests mirror thread_suspension_test.cc, but they
+ * operate on threads running real untrusted code rather than on mock
+ * untrusted threads.
  */
+
+static int g_simple_syscall_should_exit;
+static volatile int g_simple_syscall_called;
 
 /* This must be called with the mutex nap->threads_mu held. */
 static struct NaClAppThread *GetOnlyThread(struct NaClApp *nap) {
@@ -74,7 +77,7 @@ static struct SuspendTestShm *StartGuestWithSharedMemory(
    * to the guest program so that it can write to it, so that we can
    * observe its writes.
    */
-  mmap_addr = NaClCommonSysMmapIntern(
+  mmap_addr = NaClSysMmapIntern(
       nap, NULL, sizeof(struct SuspendTestShm),
       NACL_ABI_PROT_READ | NACL_ABI_PROT_WRITE,
       NACL_ABI_MAP_PRIVATE | NACL_ABI_MAP_ANONYMOUS,
@@ -134,13 +137,17 @@ static void TrySuspendingMutatorThread(struct NaClApp *nap) {
   CHECK(NaClWaitForMainThreadToExit(nap) == 0);
 }
 
-/* This implements a NaCl syscall. */
-static int32_t SuspendTestSyscall(struct NaClAppThread *natp) {
+/*
+ * This implements a NaCl syscall.  This syscall will spin until told
+ * by the (trusted) test code to return.  This is used for testing
+ * suspension of a thread that's inside a syscall.
+ */
+static int32_t SpinWaitTestSyscall(struct NaClAppThread *natp) {
   uint32_t test_shm_uptr;
   struct SuspendTestShm *test_shm;
   uint32_t next_val = 0;
 
-  NaClCopyInDropLock(natp->nap);
+  NaClCopyDropLock(natp->nap);
   CHECK(NaClCopyInFromUser(natp->nap, &test_shm_uptr, natp->usr_syscall_args,
                            sizeof(test_shm_uptr)));
   test_shm = (struct SuspendTestShm *) NaClUserToSysAddrRange(
@@ -207,7 +214,8 @@ static void TrySuspendingSyscall(struct NaClApp *nap) {
  * in thread_suspension_test.cc, which is for testing
  * http://code.google.com/p/nativeclient/issues/detail?id=2569.
  */
-static void TrySuspendingSyscallInvokerThread(struct NaClApp *nap) {
+static void TrySuspendingSyscallInvokerThread(struct NaClApp *nap,
+                                              int reset_registers) {
   int iteration;
   struct SuspendTestShm *test_shm;
 
@@ -219,7 +227,21 @@ static void TrySuspendingSyscallInvokerThread(struct NaClApp *nap) {
   for (iteration = 0; iteration < 1000; iteration++) {
     uint32_t snapshot;
 
-    NaClUntrustedThreadsSuspendAll(nap, /* save_registers= */ 0);
+    NaClUntrustedThreadsSuspendAll(nap, /* save_registers= */ reset_registers);
+    if (reset_registers) {
+      /*
+       * Additionally, we can stress-test setting the registers to
+       * their current state, since the debug stub does this.  This is
+       * supposed to be idempotent, but it was failing on Mac (see
+       * https://code.google.com/p/nativeclient/issues/detail?id=3243)
+       * because of the workaround we use for restoring segment
+       * registers on x86-32.
+       */
+      struct NaClAppThread *natp = GetOnlyThread(nap);
+      struct NaClSignalContext regs;
+      NaClAppThreadGetSuspendedRegisters(natp, &regs);
+      NaClAppThreadSetSuspendedRegisters(natp, &regs);
+    }
     NaClUntrustedThreadsResumeAll(nap);
 
     /* Wait for guest program to make some progress. */
@@ -317,6 +339,38 @@ static void TestGettingRegisterSnapshot(struct NaClApp *nap) {
   regs.r12 = 0x1234000c;
   /* Leave sp (r13) and lr (r14) alone for now. */
   regs.prog_ctr = test_shm->continue_after_suspension_func;
+#elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_mips
+  /* Skip setting zero register because it's read-only. */
+  regs.at = 0x12340001;
+  regs.v0 = 0x12340002;
+  regs.v1 = 0x12340003;
+  regs.a0 = 0x12340004;
+  regs.a1 = 0x12340005;
+  regs.a2 = 0x12340006;
+  regs.a3 = 0x12340007;
+  regs.t0 = 0x12340008;
+  regs.t1 = 0x12340009;
+  regs.t2 = 0x12340010;
+  regs.t3 = 0x12340011;
+  regs.t4 = 0x12340012;
+  regs.t5 = 0x12340013;
+  /* Skip setting t6 and t7 because those are mask registers. */
+  regs.s0 = 0x12340014;
+  regs.s1 = 0x12340015;
+  regs.s2 = 0x12340016;
+  regs.s3 = 0x12340017;
+  regs.s4 = 0x12340018;
+  regs.s5 = 0x12340019;
+  regs.s6 = 0x12340020;
+  regs.s7 = 0x12340021;
+  /* Skip setting t8 because it holds thread pointer. */
+  regs.t9 = 0x12340022;
+  /* Skip setting k0 and k1 registers, they are used by kernel. */
+  regs.global_ptr  = 0x12340023;
+  /* Skip setting sp also. */
+  regs.frame_ptr   = 0x12340025;
+  regs.return_addr = 0x12340026;
+  regs.prog_ctr = test_shm->continue_after_suspension_func;
 #else
 # error Unsupported architecture
 #endif
@@ -356,9 +410,70 @@ static void TestGettingRegisterSnapshotInSyscall(struct NaClApp *nap) {
   RegsAssertEqual(&regs, &test_shm->expected_regs);
 }
 
+/*
+ * This implements a NaCl syscall.  This is called in an infinite loop
+ * in order to test getting the register state of a thread during
+ * trusted/untrusted context switches.
+ */
+static int32_t SimpleTestSyscall(struct NaClAppThread *natp) {
+  NaClCopyDropLock(natp->nap);
+  g_simple_syscall_called = 1;
+  if (g_simple_syscall_should_exit) {
+    NaClAppThreadTeardown(natp);
+  }
+  return 0;
+}
+
+/*
+ * Test getting the register state of a thread suspended during a
+ * trusted/untrusted context switch.  In this test, untrusted code
+ * calls a syscall in an infinite loop; we should get the same
+ * register state regardless of when this thread is interrupted.  This
+ * is a stress test; see tests/signal_handler_single_step for a
+ * non-stress test which covers the unwinding logic.
+ */
+static void TestGettingRegisterSnapshotInSyscallContextSwitch(
+    struct NaClApp *nap) {
+  struct SuspendTestShm *test_shm;
+  struct NaClAppThread *natp;
+  struct NaClSignalContext regs;
+  int iteration;
+
+  g_simple_syscall_should_exit = 0;
+  g_simple_syscall_called = 0;
+  test_shm = StartGuestWithSharedMemory(nap, "SyscallRegisterSetterLoopThread");
+  /*
+   * Wait until the syscall is called, otherwise
+   * test_shm->expected_regs won't have been filled out by untrusted
+   * code yet.
+   */
+  while (!g_simple_syscall_called) { /* do nothing */ }
+
+  for (iteration = 0; iteration < 10000; iteration++) {
+    NaClUntrustedThreadsSuspendAll(nap, /* save_registers= */ 1);
+    natp = GetOnlyThread(nap);
+    NaClAppThreadGetSuspendedRegisters(natp, &regs);
+
+    /*
+     * Only compare prog_ctr if the thread is inside the syscall,
+     * otherwise there is a small set of instructions that untrusted
+     * code executes.
+     */
+    if (!NaClAppThreadIsSuspendedInSyscall(natp)) {
+      regs.prog_ctr = test_shm->expected_regs.prog_ctr;
+      RegsUnsetNonCalleeSavedRegisters(&regs);
+    }
+    RegsAssertEqual(&regs, &test_shm->expected_regs);
+
+    NaClUntrustedThreadsResumeAll(nap);
+  }
+
+  g_simple_syscall_should_exit = 1;
+  WaitForThreadToExitFully(nap);
+}
+
 int main(int argc, char **argv) {
   struct NaClApp app;
-  struct GioMemoryFileSnapshot gio_file;
 
   NaClHandleBootstrapArgs(&argc, &argv);
 
@@ -376,14 +491,12 @@ int main(int argc, char **argv) {
     NaClLog(LOG_FATAL, "Expected 1 argument: executable filename\n");
   }
 
-  NaClFileNameForValgrind(argv[1]);
-  CHECK(GioMemoryFileSnapshotCtor(&gio_file, argv[1]));
   CHECK(NaClAppCtor(&app));
-  CHECK(NaClAppLoadFile((struct Gio *) &gio_file, &app) == LOAD_OK);
+  CHECK(NaClAppLoadFileFromFilename(&app, argv[1]) == LOAD_OK);
   NaClAppInitialDescriptorHookup(&app);
-  CHECK(NaClAppPrepareToLaunch(&app) == LOAD_OK);
 
-  NaClAddSyscall(NACL_sys_test_syscall_1, SuspendTestSyscall);
+  NaClAddSyscall(NACL_sys_test_syscall_1, SpinWaitTestSyscall);
+  NaClAddSyscall(NACL_sys_test_syscall_2, SimpleTestSyscall);
 
   /*
    * We reuse the same sandbox for both tests.
@@ -400,14 +513,22 @@ int main(int argc, char **argv) {
   printf("Running TrySuspendingSyscall...\n");
   TrySuspendingSyscall(&app);
 
-  printf("Running TrySuspendingSyscallInvokerThread...\n");
-  TrySuspendingSyscallInvokerThread(&app);
+  printf("Running TrySuspendingSyscallInvokerThread"
+         " (reset_registers=0)...\n");
+  TrySuspendingSyscallInvokerThread(&app, /* reset_registers= */ 0);
+
+  printf("Running TrySuspendingSyscallInvokerThread"
+         " (reset_registers=1)...\n");
+  TrySuspendingSyscallInvokerThread(&app, /* reset_registers= */ 1);
 
   printf("Running TestGettingRegisterSnapshot...\n");
   TestGettingRegisterSnapshot(&app);
 
   printf("Running TestGettingRegisterSnapshotInSyscall...\n");
   TestGettingRegisterSnapshotInSyscall(&app);
+
+  printf("Running TestGettingRegisterSnapshotInSyscallContextSwitch...\n");
+  TestGettingRegisterSnapshotInSyscallContextSwitch(&app);
 
   /*
    * Avoid calling exit() because it runs process-global destructors

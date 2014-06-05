@@ -4,10 +4,8 @@
 
 #include "chrome/browser/ui/cocoa/constrained_window/constrained_window_mac.h"
 
-#include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
@@ -15,8 +13,8 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "content/public/browser/web_contents.h"
-#include "googleurl/src/gurl.h"
 #include "testing/gmock/include/gmock/gmock.h"
+#include "url/gurl.h"
 
 using ::testing::NiceMock;
 
@@ -46,6 +44,7 @@ class ConstrainedWindowMacTest : public InProcessBrowserTest {
     [sheet_window_ setReleasedWhenClosed:NO];
     sheet_.reset([[CustomConstrainedWindowSheet alloc]
         initWithCustomWindow:sheet_window_]);
+    [sheet_ hideSheet];
   }
 
   virtual void SetUpOnMainThread() OVERRIDE {
@@ -64,8 +63,8 @@ class ConstrainedWindowMacTest : public InProcessBrowserTest {
   }
 
  protected:
-  scoped_nsobject<CustomConstrainedWindowSheet> sheet_;
-  scoped_nsobject<NSWindow> sheet_window_;
+  base::scoped_nsobject<CustomConstrainedWindowSheet> sheet_;
+  base::scoped_nsobject<NSWindow> sheet_window_;
   content::WebContents* tab0_;
   content::WebContents* tab1_;
   BrowserWindowController* controller_;
@@ -85,7 +84,7 @@ IN_PROC_BROWSER_TEST_F(ConstrainedWindowMacTest, ShowInInactiveTab) {
   browser()->tab_strip_model()->ActivateTabAt(0, true);
   EXPECT_EQ(1.0, [sheet_window_ alphaValue]);
 
-  dialog.CloseConstrainedWindow();
+  dialog.CloseWebContentsModalDialog();
 }
 
 // If a tab has never been shown then the associated tab view for the web
@@ -113,7 +112,7 @@ IN_PROC_BROWSER_TEST_F(ConstrainedWindowMacTest, ShowInUninitializedTab) {
   EXPECT_TRUE([sheet_window_ isVisible]);
   EXPECT_EQ(1.0, [sheet_window_ alphaValue]);
 
-  dialog.CloseConstrainedWindow();
+  dialog.CloseWebContentsModalDialog();
 }
 
 // Test that adding a sheet disables tab dragging.
@@ -125,7 +124,7 @@ IN_PROC_BROWSER_TEST_F(ConstrainedWindowMacTest, TabDragging) {
   EXPECT_TRUE([controller_ isTabDraggable:tab_view0_]);
   EXPECT_FALSE([controller_ isTabDraggable:tab_view1_]);
 
-  dialog.CloseConstrainedWindow();
+  dialog.CloseWebContentsModalDialog();
 }
 
 // Test that closing a browser window with a sheet works.
@@ -135,7 +134,7 @@ IN_PROC_BROWSER_TEST_F(ConstrainedWindowMacTest, BrowserWindowClose) {
   EXPECT_EQ(1.0, [sheet_window_ alphaValue]);
 
   // Close the browser window.
-  scoped_nsobject<NSWindow> browser_window(
+  base::scoped_nsobject<NSWindow> browser_window(
       [browser()->window()->GetNativeWindow() retain]);
   EXPECT_TRUE([browser_window isVisible]);
   [browser()->window()->GetNativeWindow() performClose:nil];
@@ -149,21 +148,9 @@ IN_PROC_BROWSER_TEST_F(ConstrainedWindowMacTest, TabClose) {
   EXPECT_EQ(1.0, [sheet_window_ alphaValue]);
 
   // Close the tab.
-  EXPECT_EQ(2, browser()->tab_count());
-  EXPECT_TRUE(browser()->tab_strip_model()->CloseWebContentsAt(
-      1, TabStripModel::CLOSE_USER_GESTURE));
-  EXPECT_EQ(1, browser()->tab_count());
-}
-
-// Test that adding a sheet disables fullscreen.
-IN_PROC_BROWSER_TEST_F(ConstrainedWindowMacTest, Fullscreen) {
-  EXPECT_TRUE(chrome::IsCommandEnabled(browser(), IDC_FULLSCREEN));
-
-  // Dialog will delete it self when closed.
-  NiceMock<ConstrainedWindowDelegateMock> delegate;
-  ConstrainedWindowMac dialog(&delegate, tab1_, sheet_);
-
-  EXPECT_FALSE(chrome::IsCommandEnabled(browser(), IDC_FULLSCREEN));
-
-  dialog.CloseConstrainedWindow();
+  TabStripModel* tab_strip = browser()->tab_strip_model();
+  EXPECT_EQ(2, tab_strip->count());
+  EXPECT_TRUE(tab_strip->CloseWebContentsAt(1,
+                                            TabStripModel::CLOSE_USER_GESTURE));
+  EXPECT_EQ(1, tab_strip->count());
 }

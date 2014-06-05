@@ -4,7 +4,6 @@
 
 #include "android_webview/native/intercepted_request_data_impl.h"
 
-#include "android_webview/browser/net/android_stream_reader_url_request_job.h"
 #include "android_webview/native/input_stream_impl.h"
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
@@ -15,43 +14,6 @@
 using base::android::ScopedJavaLocalRef;
 
 namespace android_webview {
-
-namespace {
-
-class StreamReaderJobDelegateImpl :
-    public AndroidStreamReaderURLRequestJob::Delegate {
- public:
-    StreamReaderJobDelegateImpl(
-        const InterceptedRequestDataImpl* intercepted_request_data)
-        : intercepted_request_data_impl_(intercepted_request_data) {
-      DCHECK(intercepted_request_data_impl_);
-    }
-
-    virtual scoped_ptr<InputStream> OpenInputStream(
-        JNIEnv* env,
-        net::URLRequest* request) OVERRIDE {
-      return intercepted_request_data_impl_->GetInputStream(env).Pass();
-    }
-
-    virtual bool GetMimeType(JNIEnv* env,
-                             net::URLRequest* request,
-                             android_webview::InputStream* stream,
-                             std::string* mime_type) OVERRIDE {
-      return intercepted_request_data_impl_->GetMimeType(env, mime_type);
-    }
-
-    virtual bool GetCharset(JNIEnv* env,
-                            net::URLRequest* request,
-                            android_webview::InputStream* stream,
-                            std::string* charset) OVERRIDE {
-      return intercepted_request_data_impl_->GetCharset(env, charset);
-    }
-
- private:
-    const InterceptedRequestDataImpl* intercepted_request_data_impl_;
-};
-
-} // namespace
 
 InterceptedRequestDataImpl::InterceptedRequestDataImpl(
     const base::android::JavaRef<jobject>& obj)
@@ -92,15 +54,6 @@ bool InterceptedRequestDataImpl::GetCharset(
 
 bool RegisterInterceptedRequestData(JNIEnv* env) {
   return RegisterNativesImpl(env);
-}
-
-net::URLRequestJob* InterceptedRequestDataImpl::CreateJobFor(
-    net::URLRequest* request,
-    net::NetworkDelegate* network_delegate) const {
-  scoped_ptr<AndroidStreamReaderURLRequestJob::Delegate>
-      stream_reader_job_delegate_impl(new StreamReaderJobDelegateImpl(this));
-  return new AndroidStreamReaderURLRequestJob(
-      request, network_delegate, stream_reader_job_delegate_impl.Pass());
 }
 
 } // namespace android_webview

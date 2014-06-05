@@ -7,16 +7,24 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chrome_browser_main_extra_parts.h"
+
+namespace wm {
+class WMState;
+}
 
 class ChromeBrowserMainExtraPartsViews : public ChromeBrowserMainExtraParts {
  public:
   ChromeBrowserMainExtraPartsViews();
+  virtual ~ChromeBrowserMainExtraPartsViews();
 
   // Overridden from ChromeBrowserMainExtraParts:
   virtual void ToolkitInitialized() OVERRIDE;
 
  private:
+  scoped_ptr<wm::WMState> wm_state_;
+
   DISALLOW_COPY_AND_ASSIGN(ChromeBrowserMainExtraPartsViews);
 };
 

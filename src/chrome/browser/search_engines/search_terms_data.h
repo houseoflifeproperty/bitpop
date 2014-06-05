@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
 class Profile;
 
@@ -34,26 +34,29 @@ class SearchTermsData {
 
   // Returns the value for the Chrome Omnibox rlz.  This implementation returns
   // the empty string.
-  virtual string16 GetRlzParameterValue() const;
+  virtual base::string16 GetRlzParameterValue(bool from_app_list) const;
 
   // The optional client parameter passed with Google search requests.  This
   // implementation returns the empty string.
   virtual std::string GetSearchClient() const;
 
-  // Returns a string indicating whether Instant (in the visible-preview mode)
-  // is enabled, suitable for adding as a query string param to the homepage
-  // (instant_url) request. Returns an empty string if Instant is disabled, or
-  // if it's only active in a hidden field trial mode, or if InstantExtended is
-  // enabled (since that supercedes regular Instant). Determining this requires
-  // accessing the Profile, so this can only ever be non-empty for
-  // UIThreadSearchTermsData.
-  virtual std::string InstantEnabledParam() const;
+  // The suggest client parameter ("client") passed with Google suggest
+  // requests.  See GetSuggestRequestIdentifier() for more details.
+  // This implementation returns the empty string.
+  virtual std::string GetSuggestClient() const;
 
-  // Returns a string indicating whether InstantExtended is enabled, suitable
-  // for adding as a query string param to the homepage or search requests.
-  // Returns an empty string otherwise.  Determining this requires accessing the
-  // Profile, so this can only ever be non-empty for UIThreadSearchTermsData.
-  virtual std::string InstantExtendedEnabledParam() const;
+  // The suggest request identifier parameter ("gs_ri") passed with Google
+  // suggest requests.   Along with suggestclient (See GetSuggestClient()),
+  // this parameter controls what suggestion results are returned.
+  // This implementation returns the empty string.
+  virtual std::string GetSuggestRequestIdentifier() const;
+
+  // Returns a string indicating whether a non-default theme is active,
+  // suitable for adding as a query string param to the homepage.  This only
+  // applies if Instant Extended is enabled.  Returns an empty string otherwise.
+  // Determining this requires accessing the Profile, so this can only ever be
+  // non-empty for UIThreadSearchTermsData.
+  virtual std::string NTPIsThemedParam() const;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SearchTermsData);
@@ -63,16 +66,17 @@ class SearchTermsData {
 class UIThreadSearchTermsData : public SearchTermsData {
  public:
   // If |profile_| is NULL, the Google base URL accessors will return default
-  // values, and InstantEnabledParam() and InstantExtendedEnabledParam() will
-  // return the empty string.
+  // values, and NTPIsThemedParam() will return an empty string.
   explicit UIThreadSearchTermsData(Profile* profile);
 
   virtual std::string GoogleBaseURLValue() const OVERRIDE;
   virtual std::string GetApplicationLocale() const OVERRIDE;
-  virtual string16 GetRlzParameterValue() const OVERRIDE;
+  virtual base::string16 GetRlzParameterValue(bool from_app_list) const
+      OVERRIDE;
   virtual std::string GetSearchClient() const OVERRIDE;
-  virtual std::string InstantEnabledParam() const OVERRIDE;
-  virtual std::string InstantExtendedEnabledParam() const OVERRIDE;
+  virtual std::string GetSuggestClient() const OVERRIDE;
+  virtual std::string GetSuggestRequestIdentifier() const OVERRIDE;
+  virtual std::string NTPIsThemedParam() const OVERRIDE;
 
   // Used by tests to override the value for the Google base URL.  Passing the
   // empty string cancels this override.

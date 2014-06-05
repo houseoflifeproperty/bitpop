@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/utf_string_conversions.h"
+#include "ui/views/controls/menu/menu_model_adapter.h"
+
+#include "base/strings/utf_string_conversions.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/menu_model.h"
 #include "ui/base/models/menu_model_delegate.h"
 #include "ui/views/controls/menu/menu_item_view.h"
-#include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/controls/menu/submenu_view.h"
 #include "ui/views/test/views_test_base.h"
@@ -17,10 +18,6 @@ namespace {
 // Base command id for test menu and its submenu.
 const int kRootIdBase = 100;
 const int kSubmenuIdBase = 200;
-
-// Offset to return for GetFirstItemIndex().  This is an arbitrary
-// number to ensure that we aren't assuming it is 0.
-const int kFirstItemIndex = 25;
 
 class MenuModelBase : public ui::MenuModel {
  public:
@@ -38,16 +35,12 @@ class MenuModelBase : public ui::MenuModel {
     return false;
   }
 
-  virtual int GetFirstItemIndex(gfx::NativeMenu native_menu) const OVERRIDE {
-    return kFirstItemIndex;
-  }
-
   virtual int GetItemCount() const OVERRIDE {
     return static_cast<int>(items_.size());
   }
 
   virtual ItemType GetTypeAt(int index) const OVERRIDE {
-    return items_[index - GetFirstItemIndex(NULL)].type;
+    return items_[index].type;
   }
 
   virtual ui::MenuSeparatorType GetSeparatorTypeAt(
@@ -56,18 +49,18 @@ class MenuModelBase : public ui::MenuModel {
   }
 
   virtual int GetCommandIdAt(int index) const OVERRIDE {
-    return index - GetFirstItemIndex(NULL) + command_id_base_;
+    return index + command_id_base_;
   }
 
-  string16 GetLabelAt(int index) const OVERRIDE {
-    return items_[index - GetFirstItemIndex(NULL)].label;
+  virtual base::string16 GetLabelAt(int index) const OVERRIDE {
+    return items_[index].label;
   }
 
   virtual bool IsItemDynamicAt(int index) const OVERRIDE {
     return false;
   }
 
-  virtual const gfx::Font* GetLabelFontAt(int index) const OVERRIDE {
+  virtual const gfx::FontList* GetLabelFontListAt(int index) const OVERRIDE {
     return NULL;
   }
 
@@ -102,7 +95,7 @@ class MenuModelBase : public ui::MenuModel {
   }
 
   virtual MenuModel* GetSubmenuModelAt(int index) const OVERRIDE {
-    return items_[index - GetFirstItemIndex(NULL)].submenu;
+    return items_[index].submenu;
   }
 
   virtual void HighlightChangedTo(int index) OVERRIDE {
@@ -136,12 +129,12 @@ class MenuModelBase : public ui::MenuModel {
          const std::string& item_label,
          ui::MenuModel* item_submenu)
         : type(item_type),
-          label(ASCIIToUTF16(item_label)),
+          label(base::ASCIIToUTF16(item_label)),
           submenu(item_submenu) {
     }
 
     ItemType type;
-    string16 label;
+    base::string16 label;
     ui::MenuModel* submenu;
   };
 
@@ -257,7 +250,7 @@ TEST_F(MenuModelAdapterTest, BasicTest) {
 
     // Check activation.
     static_cast<views::MenuDelegate*>(&delegate)->ExecuteCommand(id);
-    EXPECT_EQ(i + kFirstItemIndex, model.last_activation());
+    EXPECT_EQ(i, model.last_activation());
     model.set_last_activation(-1);
   }
 
@@ -268,7 +261,7 @@ TEST_F(MenuModelAdapterTest, BasicTest) {
 
   for (int i = 0; i < subitem_container->child_count(); ++i) {
     MenuModelBase* submodel = static_cast<MenuModelBase*>(
-        model.GetSubmenuModelAt(3 + kFirstItemIndex));
+        model.GetSubmenuModelAt(3));
     EXPECT_TRUE(submodel);
 
     const MenuModelBase::Item& model_item = submodel->GetItemDefinition(i);
@@ -304,7 +297,7 @@ TEST_F(MenuModelAdapterTest, BasicTest) {
 
     // Check activation.
     static_cast<views::MenuDelegate*>(&delegate)->ExecuteCommand(id);
-    EXPECT_EQ(i + kFirstItemIndex, submodel->last_activation());
+    EXPECT_EQ(i, submodel->last_activation());
     submodel->set_last_activation(-1);
   }
 

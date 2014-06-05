@@ -7,9 +7,12 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/stl_util.h"
-#include "base/time.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "base/values.h"
+#include "chrome/browser/chromeos/system/input_device_settings.h"
+#include "chrome/common/chrome_constants.h"
+#include "chromeos/chromeos_constants.h"
 #include "content/public/browser/web_ui.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -28,7 +31,7 @@ ProxyHandler::~ProxyHandler() {
 }
 
 void ProxyHandler::GetLocalizedValues(
-    DictionaryValue* localized_strings) {
+    base::DictionaryValue* localized_strings) {
   DCHECK(localized_strings);
 
   // Proxy page - ChromeOS
@@ -42,8 +45,7 @@ void ProxyHandler::GetLocalizedValues(
     { "ftpProxy", IDS_PROXY_FTP_PROXY },
     { "socksHost", IDS_PROXY_SOCKS_HOST },
     { "proxyAutomatic", IDS_PROXY_AUTOMATIC },
-    { "proxyConfigUrl", IDS_PROXY_CONFIG_URL },
-    { "advancedProxyConfig", IDS_PROXY_ADVANCED_CONFIG },
+    { "proxyUseConfigUrl", IDS_PROXY_USE_AUTOCONFIG_URL },
     { "addHost", IDS_PROXY_ADD_HOST },
     { "removeHost", IDS_PROXY_REMOVE_HOST },
     { "proxyPort", IDS_PROXY_PORT },
@@ -61,6 +63,17 @@ void ProxyHandler::GetLocalizedValues(
       l10n_util::GetStringFUTF16(
           IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_PROXY_ENABLE_SHARED_HINT,
           l10n_util::GetStringUTF16(IDS_OPTIONS_SETTINGS_USE_SHARED_PROXIES)));
+}
+
+void ProxyHandler::InitializePage() {
+  ::options::OptionsPageUIHandler::InitializePage();
+
+  bool keyboard_driven_oobe =
+      system::InputDeviceSettings::Get()->ForceKeyboardDrivenUINavigation();
+  if (keyboard_driven_oobe) {
+    web_ui()->CallJavascriptFunction(
+        "DetailsInternetPage.initializeKeyboardFlow");
+  }
 }
 
 }  // namespace options

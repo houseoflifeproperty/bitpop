@@ -10,7 +10,7 @@
 #include "ash/ash_export.h"
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "ui/aura/window_observer.h"
 #include "ui/gfx/rect.h"
 #include "ui/views/mouse_watcher.h"
@@ -24,8 +24,6 @@ class Widget;
 }
 
 namespace ash {
-namespace internal {
-
 class MultiWindowResizeControllerTest;
 class WorkspaceWindowResizer;
 
@@ -134,7 +132,7 @@ class ASH_EXPORT MultiWindowResizeController :
   void Resize(const gfx::Point& location_in_screen, int event_flags);
 
   // Completes the resize.
-  void CompleteResize(int event_flags);
+  void CompleteResize();
 
   // Cancels the resize.
   void CancelResize();
@@ -180,7 +178,6 @@ class ASH_EXPORT MultiWindowResizeController :
   DISALLOW_COPY_AND_ASSIGN(MultiWindowResizeController);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_WM_WORKSPACE_MULTI_WINDOW_RESIZE_CONTROLLER_H_

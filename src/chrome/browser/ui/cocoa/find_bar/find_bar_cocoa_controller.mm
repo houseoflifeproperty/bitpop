@@ -4,10 +4,14 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include "base/auto_reset.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
+#include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
+#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/find_bar/find_bar_bridge.h"
 #import "chrome/browser/ui/cocoa/find_bar/find_bar_cocoa_controller.h"
@@ -20,8 +24,7 @@
 #include "chrome/browser/ui/find_bar/find_tab_helper.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
-#import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMNSAnimation+Duration.h"
 #import "ui/base/cocoa/find_pasteboard.h"
 #import "ui/base/cocoa/focus_tracker.h"
 
@@ -31,6 +34,7 @@ const float kFindBarOpenDuration = 0.2;
 const float kFindBarCloseDuration = 0.15;
 const float kFindBarMoveDuration = 0.15;
 const float kRightEdgeOffset = 25;
+
 
 @interface FindBarCocoaController (PrivateMethods) <NSAnimationDelegate>
 // Returns the appropriate frame for a hidden find bar.
@@ -55,14 +59,23 @@ const float kRightEdgeOffset = 25;
 // current find result.
 - (void)moveFindBarIfNecessary:(BOOL)animate;
 
-// Optionally stops the current search, puts |text| into the find bar, and
-// enables the buttons, but doesn't start a new search for |text|.
-- (void)prepopulateText:(NSString*)text stopSearch:(BOOL)stopSearch;
+// Puts |text| into the find bar and enables the buttons, but doesn't start a
+// new search for |text|.
+- (void)prepopulateText:(NSString*)text;
+
+// Clears the find results for all tabs in browser associated with this find
+// bar. If |suppressPboardUpdateActions_| is true then the current tab is not
+// cleared.
+- (void)clearFindResultsForCurrentBrowser;
+
+- (BrowserWindowController*)browserWindowController;
 @end
 
 @implementation FindBarCocoaController
 
-- (id)init {
+@synthesize findBarView = findBarView_;
+
+- (id)initWithBrowser:(Browser*)browser {
   if ((self = [super initWithNibName:@"FindBar"
                               bundle:base::mac::FrameworkBundle()])) {
     [[NSNotificationCenter defaultCenter]
@@ -70,6 +83,7 @@ const float kRightEdgeOffset = 25;
            selector:@selector(findPboardUpdated:)
                name:kFindPasteboardChangedNotification
              object:[FindPasteboard sharedInstance]];
+    browser_ = browser;
   }
   return self;
 }
@@ -87,28 +101,20 @@ const float kRightEdgeOffset = 25;
   findBarBridge_ = findBarBridge;
 }
 
-- (void)setBrowserWindowController:(BrowserWindowController*)controller {
-  DCHECK(!browserWindowController_); // should only be called once.
-  browserWindowController_ = controller;
-}
-
 - (void)awakeFromNib {
-  [[closeButton_ cell] setImageID:IDR_CLOSE_BAR
+  [[closeButton_ cell] setImageID:IDR_CLOSE_1
                    forButtonState:image_button_cell::kDefaultState];
-  [[closeButton_ cell] setImageID:IDR_CLOSE_BAR_H
+  [[closeButton_ cell] setImageID:IDR_CLOSE_1_H
                    forButtonState:image_button_cell::kHoverState];
-  [[closeButton_ cell] setImageID:IDR_CLOSE_BAR_P
+  [[closeButton_ cell] setImageID:IDR_CLOSE_1_P
                    forButtonState:image_button_cell::kPressedState];
-  [[closeButton_ cell] setImageID:IDR_CLOSE_BAR
+  [[closeButton_ cell] setImageID:IDR_CLOSE_1
                    forButtonState:image_button_cell::kDisabledState];
 
   [findBarView_ setFrame:[self hiddenFindBarFrame]];
   defaultWidth_ = NSWidth([findBarView_ frame]);
 
-  // Stopping the search requires a findbar controller, which isn't valid yet
-  // during setup. Furthermore, there is no active search yet anyway.
-  [self prepopulateText:[[FindPasteboard sharedInstance] findText]
-             stopSearch:NO];
+  [self prepopulateText:[[FindPasteboard sharedInstance] findText]];
 }
 
 - (IBAction)close:(id)sender {
@@ -116,6 +122,11 @@ const float kRightEdgeOffset = 25;
     findBarBridge_->GetFindBarController()->EndFindSession(
         FindBarController::kKeepSelectionOnPage,
         FindBarController::kKeepResultsInFindBox);
+
+  // Turn off hover state on close button else the button will remain
+  // hovered when we bring the find bar back up.
+  // crbug.com/227424
+  [[closeButton_ cell] setIsMouseInside:NO];
 }
 
 - (IBAction)previousResult:(id)sender {
@@ -139,10 +150,9 @@ const float kRightEdgeOffset = 25;
 }
 
 - (void)findPboardUpdated:(NSNotification*)notification {
-  if (suppressPboardUpdateActions_)
-    return;
-  [self prepopulateText:[[FindPasteboard sharedInstance] findText]
-             stopSearch:YES];
+  if (!suppressPboardUpdateActions_)
+    [self prepopulateText:[[FindPasteboard sharedInstance] findText]];
+  [self clearFindResultsForCurrentBrowser];
 }
 
 - (void)positionFindBarViewAtMaxY:(CGFloat)maxY maxWidth:(CGFloat)maxWidth {
@@ -172,6 +182,11 @@ const float kRightEdgeOffset = 25;
   }
 }
 
+- (BOOL)isOffTheRecordProfile {
+  return browser_ && browser_->profile() &&
+         browser_->profile()->IsOffTheRecord();
+}
+
 // NSControl delegate method.
 - (void)controlTextDidChange:(NSNotification*)aNotification {
   if (!findBarBridge_)
@@ -184,9 +199,10 @@ const float kRightEdgeOffset = 25;
   FindTabHelper* findTabHelper = FindTabHelper::FromWebContents(webContents);
 
   NSString* findText = [findText_ stringValue];
-  suppressPboardUpdateActions_ = YES;
-  [[FindPasteboard sharedInstance] setFindText:findText];
-  suppressPboardUpdateActions_ = NO;
+  if (![self isOffTheRecordProfile]) {
+    base::AutoReset<BOOL> suppressReset(&suppressPboardUpdateActions_, YES);
+    [[FindPasteboard sharedInstance] setFindText:findText];
+  }
 
   if ([findText length] > 0) {
     findTabHelper->
@@ -195,7 +211,7 @@ const float kRightEdgeOffset = 25;
     // The textbox is empty so we reset.
     findTabHelper->StopFinding(FindBarController::kClearSelectionOnPage);
     [self updateUIForFindResult:findTabHelper->find_result()
-                       withText:string16()];
+                       withText:base::string16()];
   }
 }
 
@@ -268,8 +284,7 @@ const float kRightEdgeOffset = 25;
 
   // The browser window might have changed while the FindBar was hidden.
   // Update its position now.
-  if (browserWindowController_)
-    [browserWindowController_ layoutSubviews];
+  [[self browserWindowController] layoutSubviews];
 
   // Move to the correct horizontal position first, to prevent the FindBar
   // from jumping around when switching tabs.
@@ -279,7 +294,7 @@ const float kRightEdgeOffset = 25;
 
   // Animate the view into place.
   NSRect frame = [findBarView_ frame];
-  frame.origin = NSMakePoint(0, 0);
+  frame.origin = NSZeroPoint;
   [self setFindBarFrame:frame animate:animate duration:kFindBarOpenDuration];
 }
 
@@ -317,22 +332,61 @@ const float kRightEdgeOffset = 25;
   focusTracker_.reset(nil);
 }
 
-- (void)setFindText:(NSString*)findText {
+- (void)setFindText:(NSString*)findText
+      selectedRange:(const NSRange&)selectedRange {
   [findText_ setStringValue:findText];
 
-  // Make sure the text in the find bar always ends up in the find pasteboard
-  // (and, via notifications, in the other find bars too).
-  [[FindPasteboard sharedInstance] setFindText:findText];
+  if (![self isOffTheRecordProfile]) {
+    // Make sure the text in the find bar always ends up in the find pasteboard
+    // (and, via notifications, in the other find bars too).
+    base::AutoReset<BOOL> suppressReset(&suppressPboardUpdateActions_, YES);
+    [[FindPasteboard sharedInstance] setFindText:findText];
+  }
+
+  NSText* editor = [findText_ currentEditor];
+  if (selectedRange.location != NSNotFound)
+    [editor setSelectedRange:selectedRange];
+}
+
+- (NSString*)findText {
+  return [findText_ stringValue];
+}
+
+- (NSRange)selectedRange {
+  NSText* editor = [findText_ currentEditor];
+  return (editor != nil) ? [editor selectedRange] : NSMakeRange(NSNotFound, 0);
+}
+
+- (NSString*)matchCountText {
+  return [[findText_ findBarTextFieldCell] resultsString];
+}
+
+- (void)updateFindBarForChangedWebContents {
+  content::WebContents* contents =
+      findBarBridge_->GetFindBarController()->web_contents();
+  if (!contents)
+    return;
+  FindTabHelper* findTabHelper = FindTabHelper::FromWebContents(contents);
+
+  // If the find UI is visible but the results are cleared then also clear
+  // the results label and update the buttons.
+  if (findTabHelper->find_ui_active() &&
+      findTabHelper->previous_find_text().empty()) {
+    BOOL buttonsEnabled = [[findText_ stringValue] length] > 0 ? YES : NO;
+    [previousButton_ setEnabled:buttonsEnabled];
+    [nextButton_ setEnabled:buttonsEnabled];
+    [[findText_ findBarTextFieldCell] clearResults];
+  }
 }
 
 - (void)clearResults:(const FindNotificationDetails&)results {
   // Just call updateUIForFindResult, which will take care of clearing
   // the search text and the results label.
-  [self updateUIForFindResult:results withText:string16()];
+  [self updateUIForFindResult:results withText:base::string16()];
 }
 
 - (void)updateUIForFindResult:(const FindNotificationDetails&)result
-                     withText:(const string16&)findText {
+                     withText:(const base::string16&)findText {
   // If we don't have any results and something was passed in, then
   // that means someone pressed Cmd-G while the Find box was
   // closed. In that case we need to repopulate the Find box with what
@@ -396,6 +450,7 @@ const float kRightEdgeOffset = 25;
   // If the find bar is not visible, make it actually hidden, so it'll no longer
   // respond to key events.
   [findBarView_ setHidden:![self isFindBarVisible]];
+  [[self browserWindowController] onFindBarVisibilityChanged];
 }
 
 - (gfx::Point)findBarWindowPosition {
@@ -410,6 +465,7 @@ const float kRightEdgeOffset = 25;
 - (int)findBarWidth {
   return NSWidth([[self view] frame]);
 }
+
 @end
 
 @implementation FindBarCocoaController (PrivateMethods)
@@ -450,6 +506,7 @@ const float kRightEdgeOffset = 25;
   if (!animate) {
     [findBarView_ setFrame:endFrame];
     [findBarView_ setHidden:![self isFindBarVisible]];
+    [[self browserWindowController] onFindBarVisibilityChanged];
     showHideAnimation_.reset(nil);
     return;
   }
@@ -457,9 +514,12 @@ const float kRightEdgeOffset = 25;
   // If animating, ensure that the find bar is not hidden. Hidden status will be
   // updated at the end of the animation.
   [findBarView_ setHidden:NO];
+  //[[self browserWindowController] onFindBarVisibilityChanged];
 
   // Reset the frame to what was saved above.
   [findBarView_ setFrame:startFrame];
+
+  [[self browserWindowController] onFindBarVisibilityChanged];
 
   showHideAnimation_.reset([self createAnimationForView:findBarView_
                                                 toFrame:endFrame
@@ -480,7 +540,7 @@ const float kRightEdgeOffset = 25;
     return frame.origin.x;
 
   // Get the size of the container.
-  gfx::Rect containerRect(contents->GetView()->GetContainerSize());
+  gfx::Rect containerRect(contents->GetContainerBounds().size());
 
   // Position the FindBar on the top right corner.
   viewRect.set_x(
@@ -531,26 +591,39 @@ const float kRightEdgeOffset = 25;
   }
 }
 
-- (void)prepopulateText:(NSString*)text stopSearch:(BOOL)stopSearch{
-  [self setFindText:text];
-
-  // End the find session, hide the "x of y" text and disable the
-  // buttons, but do not close the find bar or raise the window here.
-  if (stopSearch && findBarBridge_) {
-    content::WebContents* contents =
-        findBarBridge_->GetFindBarController()->web_contents();
-    if (contents) {
-      FindTabHelper* findTabHelper =
-          FindTabHelper::FromWebContents(contents);
-      findTabHelper->StopFinding(FindBarController::kClearSelectionOnPage);
-      findBarBridge_->ClearResults(findTabHelper->find_result());
-    }
-  }
+- (void)prepopulateText:(NSString*)text {
+  [self setFindText:text selectedRange:NSMakeRange(NSNotFound, 0)];
 
   // Has to happen after |ClearResults()| above.
   BOOL buttonsEnabled = [text length] > 0 ? YES : NO;
   [previousButton_ setEnabled:buttonsEnabled];
   [nextButton_ setEnabled:buttonsEnabled];
+}
+
+- (void)clearFindResultsForCurrentBrowser {
+  if (!browser_)
+    return;
+
+  content::WebContents* activeWebContents =
+      findBarBridge_->GetFindBarController()->web_contents();
+
+  TabStripModel* tabStripModel = browser_->tab_strip_model();
+  for (int i = 0; i < tabStripModel->count(); ++i) {
+    content::WebContents* webContents = tabStripModel->GetWebContentsAt(i);
+    if (suppressPboardUpdateActions_ && activeWebContents == webContents)
+      continue;
+    FindTabHelper* findTabHelper =
+        FindTabHelper::FromWebContents(webContents);
+    findTabHelper->StopFinding(FindBarController::kClearSelectionOnPage);
+    findBarBridge_->ClearResults(findTabHelper->find_result());
+  }
+}
+
+- (BrowserWindowController*)browserWindowController {
+  if (!browser_)
+    return nil;
+  return [BrowserWindowController
+      browserWindowControllerForWindow:browser_->window()->GetNativeWindow()];
 }
 
 @end

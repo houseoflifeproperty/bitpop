@@ -5,9 +5,13 @@
 import os
 import sys
 
-import perf_tools
-from telemetry import record_wpr
+# Add telemetry to sys.path so that it can be imported below
+# Relative path from this file is ../telemetry
+_perf_dir = os.path.dirname(__file__)
+_telemetry_path = os.path.join(_perf_dir, os.pardir, 'telemetry')
+sys.path.append(_telemetry_path)
+
+from telemetry.page import record_wpr
 
 if __name__ == '__main__':
-  benchmark_dir = os.path.join(os.path.dirname(__file__), 'perf_tools')
-  sys.exit(record_wpr.Main(benchmark_dir))
+  sys.exit(record_wpr.Main(_perf_dir))

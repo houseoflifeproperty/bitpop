@@ -9,12 +9,13 @@
 #include <cerrno>
 
 #include "base/compiler_specific.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/channel_layout.h"
 #include "media/base/media_export.h"
-#include "media/base/video_frame.h"
 #include "media/base/video_decoder_config.h"
+#include "media/base/video_frame.h"
+#include "media/ffmpeg/ffmpeg_deleters.h"
 
 // Include FFmpeg header files.
 extern "C" {
@@ -37,26 +38,31 @@ namespace media {
 class AudioDecoderConfig;
 class VideoDecoderConfig;
 
-// Wraps FFmpeg's av_free() in a class that can be passed as a template argument
-// to scoped_ptr_malloc.
-class ScopedPtrAVFree {
- public:
-  inline void operator()(void* x) const {
-    av_free(x);
-  }
-};
+// The following implement the deleters declared in ffmpeg_deleters.h (which
+// contains the declarations needed for use with |scoped_ptr| without #include
+// "pollution").
 
-// This assumes that the AVPacket being captured was allocated outside of
-// FFmpeg via the new operator.  Do not use this with AVPacket instances that
-// are allocated via malloc() or av_malloc().
-class ScopedPtrAVFreePacket {
- public:
-  inline void operator()(void* x) const {
-    AVPacket* packet = static_cast<AVPacket*>(x);
-    av_free_packet(packet);
-    delete packet;
-  }
-};
+inline void ScopedPtrAVFree::operator()(void* x) const {
+  av_free(x);
+}
+
+inline void ScopedPtrAVFreePacket::operator()(void* x) const {
+  AVPacket* packet = static_cast<AVPacket*>(x);
+  av_free_packet(packet);
+  delete packet;
+}
+
+inline void ScopedPtrAVFreeContext::operator()(void* x) const {
+  AVCodecContext* codec_context = static_cast<AVCodecContext*>(x);
+  av_free(codec_context->extradata);
+  avcodec_close(codec_context);
+  av_free(codec_context);
+}
+
+inline void ScopedPtrAVFreeFrame::operator()(void* x) const {
+  AVFrame* frame = static_cast<AVFrame*>(x);
+  avcodec_free_frame(&frame);
+}
 
 // Converts an int64 timestamp in |time_base| units to a base::TimeDelta.
 // For example if |timestamp| equals 11025 and |time_base| equals {1, 44100}
@@ -72,37 +78,49 @@ MEDIA_EXPORT base::TimeDelta ConvertFromTimeBase(const AVRational& time_base,
 MEDIA_EXPORT int64 ConvertToTimeBase(const AVRational& time_base,
                                      const base::TimeDelta& timestamp);
 
-void AVCodecContextToAudioDecoderConfig(
-    const AVCodecContext* codec_context,
-    AudioDecoderConfig* config);
+void AVStreamToAudioDecoderConfig(
+    const AVStream* stream,
+    AudioDecoderConfig* config,
+    bool record_stats);
 void AudioDecoderConfigToAVCodecContext(
     const AudioDecoderConfig& config,
     AVCodecContext* codec_context);
 
 void AVStreamToVideoDecoderConfig(
     const AVStream* stream,
-    VideoDecoderConfig* config);
+    VideoDecoderConfig* config,
+    bool record_stats);
 void VideoDecoderConfigToAVCodecContext(
     const VideoDecoderConfig& config,
     AVCodecContext* codec_context);
 
+MEDIA_EXPORT void AVCodecContextToAudioDecoderConfig(
+    const AVCodecContext* codec_context,
+    bool is_encrypted,
+    AudioDecoderConfig* config,
+    bool record_stats);
+
 // Converts FFmpeg's channel layout to chrome's ChannelLayout.  |channels| can
 // be used when FFmpeg's channel layout is not informative in order to make a
 // good guess about the plausible channel layout based on number of channels.
-ChannelLayout ChannelLayoutToChromeChannelLayout(int64_t layout,
-                                                 int channels);
+MEDIA_EXPORT ChannelLayout ChannelLayoutToChromeChannelLayout(int64_t layout,
+                                                              int channels);
+
+// Converts FFmpeg's audio sample format to Chrome's SampleFormat.
+MEDIA_EXPORT SampleFormat
+    AVSampleFormatToSampleFormat(AVSampleFormat sample_format);
 
 // Converts FFmpeg's pixel formats to its corresponding supported video format.
-VideoFrame::Format PixelFormatToVideoFormat(PixelFormat pixel_format);
+MEDIA_EXPORT VideoFrame::Format PixelFormatToVideoFormat(
+    PixelFormat pixel_format);
 
 // Converts video formats to its corresponding FFmpeg's pixel formats.
 PixelFormat VideoFormatToPixelFormat(VideoFrame::Format video_format);
 
-// Converts an FFmpeg video codec ID into its corresponding supported codec id.
-VideoCodec CodecIDToVideoCodec(CodecID codec_id);
-
-// Converts an FFmpeg audio codec ID into its corresponding supported codec id.
-AudioCodec CodecIDToAudioCodec(CodecID codec_id);
+// Convert FFmpeg UTC representation (YYYY-MM-DD HH:MM:SS) to base::Time.
+// Returns true and sets |*out| if |date_utc| contains a valid
+// date string. Otherwise returns fals and timeline_offset is unmodified.
+MEDIA_EXPORT bool FFmpegUTCDateToTime(const char* date_utc, base::Time* out);
 
 }  // namespace media
 

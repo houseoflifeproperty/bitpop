@@ -7,36 +7,31 @@
 
 #include <vector>
 
-#include "base/basictypes.h"
-#include "base/string16.h"
+#include "base/logging.h"
+#include "base/strings/string16.h"
 #include "content/common/content_export.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBKeyPath.h"
+#include "third_party/WebKit/public/platform/WebIDBTypes.h"
 
 namespace content {
 
 class CONTENT_EXPORT IndexedDBKeyPath {
  public:
-  IndexedDBKeyPath();  // Defaults to WebKit::WebIDBKeyPath::NullType.
-  explicit IndexedDBKeyPath(const WebKit::WebIDBKeyPath& keyPath);
+  IndexedDBKeyPath();  // Defaults to blink::WebIDBKeyPathTypeNull.
+  explicit IndexedDBKeyPath(const base::string16&);
+  explicit IndexedDBKeyPath(const std::vector<base::string16>&);
   ~IndexedDBKeyPath();
 
-  void SetNull();
-  void SetArray(const std::vector<string16>& array);
-  void SetString(const string16& string);
-  void Set(const WebKit::WebIDBKeyPath& key);
+  bool IsNull() const { return type_ == blink::WebIDBKeyPathTypeNull; }
+  bool operator==(const IndexedDBKeyPath& other) const;
 
-  bool IsValid() const;
-
-  WebKit::WebIDBKeyPath::Type type() const { return type_; }
-  const std::vector<string16>& array() const { return array_; }
-  const string16& string() const { return string_; }
-
-  operator WebKit::WebIDBKeyPath() const;
+  blink::WebIDBKeyPathType type() const { return type_; }
+  const std::vector<base::string16>& array() const;
+  const base::string16& string() const;
 
  private:
-  WebKit::WebIDBKeyPath::Type type_;
-  std::vector<string16> array_;
-  string16 string_;
+  blink::WebIDBKeyPathType type_;
+  base::string16 string_;
+  std::vector<base::string16> array_;
 };
 
 }  // namespace content

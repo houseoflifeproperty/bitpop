@@ -1,0 +1,5 @@
+@@@BUILD_STEP Test Step 1@@@
+@@@STEP_CURSOR Test Step 1@@@
+@@@STEP_STARTED@@@
+@@@STEP_CLOSED@@@
+@@@BUILD_STEP Test Step 2@@@

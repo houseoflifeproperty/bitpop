@@ -4,22 +4,24 @@
 
 #include "chrome/browser/ui/views/status_icons/status_icon_win.h"
 
-#include "base/string_number_conversions.h"
-#include "base/win/metro.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/win/windows_version.h"
+#include "chrome/browser/ui/views/status_icons/status_tray_win.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/icon_util.h"
 #include "ui/gfx/point.h"
-#include "ui/views/controls/menu/menu_item_view.h"
-#include "ui/views/controls/menu/menu_model_adapter.h"
+#include "ui/gfx/rect.h"
 #include "ui/views/controls/menu/menu_runner.h"
-#include "win8/util/win8_util.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 // StatusIconWin, public:
 
-StatusIconWin::StatusIconWin(UINT id, HWND window, UINT message)
-    : icon_id_(id),
+StatusIconWin::StatusIconWin(StatusTrayWin* tray,
+                             UINT id,
+                             HWND window,
+                             UINT message)
+    : tray_(tray),
+      icon_id_(id),
       window_(window),
       message_id_(message),
       menu_model_(NULL) {
@@ -57,12 +59,19 @@ void StatusIconWin::HandleClickEvent(const gfx::Point& cursor_pos,
   if (!SetForegroundWindow(window_))
     return;
 
-  views::MenuModelAdapter adapter(menu_model_);
-  menu_runner_.reset(new views::MenuRunner(adapter.CreateMenu()));
+  menu_runner_.reset(new views::MenuRunner(menu_model_));
 
-  ignore_result(menu_runner_->RunMenuAt(NULL, NULL,
-      gfx::Rect(cursor_pos, gfx::Size()), views::MenuItemView::TOPLEFT,
-      views::MenuRunner::HAS_MNEMONICS));
+  ignore_result(menu_runner_->RunMenuAt(NULL,
+                                        NULL,
+                                        gfx::Rect(cursor_pos, gfx::Size()),
+                                        views::MENU_ANCHOR_TOPLEFT,
+                                        ui::MENU_SOURCE_MOUSE,
+                                        views::MenuRunner::HAS_MNEMONICS));
+}
+
+void StatusIconWin::HandleBalloonClickEvent() {
+  if (HasObservers())
+    DispatchBalloonClickEvent();
 }
 
 void StatusIconWin::ResetIcon() {
@@ -101,7 +110,7 @@ void StatusIconWin::SetPressedImage(const gfx::ImageSkia& image) {
   // pressed status icons.
 }
 
-void StatusIconWin::SetToolTip(const string16& tool_tip) {
+void StatusIconWin::SetToolTip(const base::string16& tool_tip) {
   // Create the icon.
   NOTIFYICONDATA icon_data;
   InitIconData(&icon_data);
@@ -113,8 +122,8 @@ void StatusIconWin::SetToolTip(const string16& tool_tip) {
 }
 
 void StatusIconWin::DisplayBalloon(const gfx::ImageSkia& icon,
-                                   const string16& title,
-                                   const string16& contents) {
+                                   const base::string16& title,
+                                   const base::string16& contents) {
   NOTIFYICONDATA icon_data;
   InitIconData(&icon_data);
   icon_data.uFlags = NIF_INFO;
@@ -141,10 +150,17 @@ void StatusIconWin::DisplayBalloon(const gfx::ImageSkia& icon,
     LOG(WARNING) << "Unable to create status tray balloon.";
 }
 
+void StatusIconWin::ForceVisible() {
+  tray_->UpdateIconVisibilityInBackground(this);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // StatusIconWin, private:
 
-void StatusIconWin::UpdatePlatformContextMenu(ui::MenuModel* menu) {
+void StatusIconWin::UpdatePlatformContextMenu(StatusIconMenuModel* menu) {
+  // |menu_model_| is about to be destroyed. Destroy the menu (which closes it)
+  // so that it doesn't attempt to continue using |menu_model_|.
+  menu_runner_.reset();
   DCHECK(menu);
   menu_model_ = menu;
 }
@@ -161,51 +177,3 @@ void StatusIconWin::InitIconData(NOTIFYICONDATA* icon_data) {
   icon_data->hWnd = window_;
   icon_data->uID = icon_id_;
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// StatusIconMetro
-
-StatusIconMetro::StatusIconMetro(UINT id)
-    : id_(id) {
-  DCHECK(win8::IsSingleWindowMetroMode());
-}
-
-StatusIconMetro::~StatusIconMetro() {
-}
-
-void StatusIconMetro::SetImage(const gfx::ImageSkia& image) {
-  DVLOG(1) << __FUNCTION__;
-}
-
-void StatusIconMetro::SetPressedImage(const gfx::ImageSkia& image) {
-  DVLOG(1) << __FUNCTION__;
-}
-
-void StatusIconMetro::SetToolTip(const string16& tool_tip) {
-  DVLOG(1) << __FUNCTION__;
-  tool_tip_ = tool_tip;
-}
-
-void StatusIconMetro::DisplayBalloon(const gfx::ImageSkia& icon,
-                                     const string16& title,
-                                     const string16& contents) {
-  DVLOG(1) << __FUNCTION__;
-
-  HMODULE metro_module = base::win::GetMetroModule();
-  DCHECK(metro_module);
-
-  if (metro_module) {
-    base::win::MetroNotification notification =
-        reinterpret_cast<base::win::MetroNotification>(
-            ::GetProcAddress(metro_module, "DisplayNotification"));
-    DCHECK(notification);
-    notification("", "", title.c_str(), contents.c_str(), L"",
-                 base::IntToString(id_).c_str(), NULL, NULL);
-  }
-}
-
-void StatusIconMetro::UpdatePlatformContextMenu(ui::MenuModel* menu) {
-  DVLOG(1) << __FUNCTION__
-           << " This functionality is not supported in Windows 8 metro";
-}
-

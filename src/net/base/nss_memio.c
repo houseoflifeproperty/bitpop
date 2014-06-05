@@ -55,6 +55,10 @@ struct PRFilePrivate {
 
     /* if set, empty I/O returns EOF instead of EWOULDBLOCK */
     int eof;
+
+    /* if set, the number of bytes requested from readbuf that were not
+     * fulfilled (due to readbuf being empty) */
+    int read_requested;
 };
 
 /*--------------- private memio_buffer functions ---------------------*/
@@ -96,6 +100,7 @@ static void memio_buffer_destroy(struct memio_buffer *mb)
 {
     free(mb->buf);
     mb->buf = NULL;
+    mb->bufsize = 0;
     mb->head = 0;
     mb->tail = 0;
 }
@@ -145,7 +150,7 @@ static int memio_buffer_put(struct memio_buffer *mb, const char *buf, int n)
             mb->tail += len;
             if (mb->tail == mb->bufsize)
                 mb->tail = 0;
-                transferred += len;
+            transferred += len;
         }
     }
 
@@ -173,11 +178,11 @@ static int memio_buffer_get(struct memio_buffer *mb, char *buf, int n)
         /* Handle part after wrap */
         len = PR_MIN(n, memio_buffer_used_contiguous(mb));
         if (len) {
-        memcpy(buf, &mb->buf[mb->head], len);
-        mb->head += len;
+            memcpy(buf, &mb->buf[mb->head], len);
+            mb->head += len;
             if (mb->head == mb->bufsize)
                 mb->head = 0;
-                transferred += len;
+            transferred += len;
         }
     }
 
@@ -223,13 +228,24 @@ static int PR_CALLBACK memio_Recv(PRFileDesc *fd, void *buf, PRInt32 len,
     PR_ASSERT(mb->bufsize);
     rv = memio_buffer_get(mb, buf, len);
     if (rv == 0 && !secret->eof) {
+        secret->read_requested = len;
+        /* If there is no more data in the buffer, report any pending errors
+         * that were previously observed. Note that both the readbuf and the
+         * writebuf are checked for errors, since the application may have
+         * encountered a socket error while writing that would otherwise not
+         * be reported until the application attempted to write again - which
+         * it may never do.
+         */
         if (mb->last_err)
             PR_SetError(mb->last_err, 0);
+        else if (secret->writebuf.last_err)
+            PR_SetError(secret->writebuf.last_err, 0);
         else
             PR_SetError(PR_WOULD_BLOCK_ERROR, 0);
         return -1;
     }
 
+    secret->read_requested = 0;
     return rv;
 }
 
@@ -250,6 +266,11 @@ static int PR_CALLBACK memio_Send(PRFileDesc *fd, const void *buf, PRInt32 len,
     mb = &secret->writebuf;
     PR_ASSERT(mb->bufsize);
 
+    /* Note that the read error state is not reported, because it cannot be
+     * reported until all buffered data has been read. If there is an error
+     * with the next layer, attempting to call Send again will report the
+     * error appropriately.
+     */
     if (mb->last_err) {
         PR_SetError(mb->last_err, 0);
         return -1;
@@ -382,6 +403,11 @@ memio_Private *memio_GetSecret(PRFileDesc *fd)
     return (memio_Private *)secret;
 }
 
+int memio_GetReadRequest(memio_Private *secret)
+{
+    return ((PRFilePrivate *)secret)->read_requested;
+}
+
 int memio_GetReadParams(memio_Private *secret, char **buf)
 {
     struct memio_buffer* mb = &((PRFilePrivate *)secret)->readbuf;
@@ -389,6 +415,14 @@ int memio_GetReadParams(memio_Private *secret, char **buf)
 
     *buf = &mb->buf[mb->tail];
     return memio_buffer_unused_contiguous(mb);
+}
+
+int memio_GetReadableBufferSize(memio_Private *secret)
+{
+    struct memio_buffer* mb = &((PRFilePrivate *)secret)->readbuf;
+    PR_ASSERT(mb->bufsize);
+
+    return memio_buffer_used_contiguous(mb);
 }
 
 void memio_PutReadResult(memio_Private *secret, int bytes_read)

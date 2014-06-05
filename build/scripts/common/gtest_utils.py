@@ -3,7 +3,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import json
+import os
 import re
+import tempfile
 
 
 class GTestLogParser(object):
@@ -116,6 +119,10 @@ class GTestLogParser(object):
     """Clears the currently stored parsing errors."""
     self._internal_error_lines = ['Cleared.']
 
+  def PassedTests(self):
+    """Returns list of tests that passed."""
+    return self._TestsByStatus('OK', False, False)
+
   def FailedTests(self, include_fails=False, include_flaky=False):
     """Returns list of tests that failed, timed out, or didn't finish
     (crashed).
@@ -177,6 +184,38 @@ class GTestLogParser(object):
 
     # Track line number for error messages.
     self._line_number += 1
+
+    # Some tests (net_unittests in particular) run subprocesses which can write
+    # stuff to shared stdout buffer. Sometimes such output appears between new
+    # line and gtest directives ('[  RUN  ]', etc) which breaks the parser.
+    # Code below tries to detect such cases and recognize a mixed line as two
+    # separate lines.
+
+    # List of regexps that parses expects to find at the start of a line but
+    # which can be somewhere in the middle.
+    gtest_regexps = [
+      self._test_start,
+      self._test_ok,
+      self._test_fail,
+      self._test_passed,
+    ]
+
+    for regexp in gtest_regexps:
+      match = regexp.search(line)
+      if match:
+        break
+
+    if not match or match.start() == 0:
+      self._ProcessLine(line)
+    else:
+      self._ProcessLine(line[:match.start()])
+      self._ProcessLine(line[match.start():])
+
+  def _ProcessLine(self, line):
+    """Parses the line and changes the state of parsed tests accordingly.
+
+    Will recognize newly started tests, OK or FAILED statuses, timeouts, etc.
+    """
 
     # Note: When sharding, the number of disabled and flaky tests will be read
     # multiple times, so this will only show the most recent values (but they
@@ -352,3 +391,110 @@ class GTestLogParser(object):
         self._parsing_failures = False
     elif line.startswith('Failing tests:'):
       self._parsing_failures = True
+
+
+class GTestJSONParser(object):
+  def __init__(self):
+    self.json_file_path = None
+    self.delete_json_file = False
+
+    self.disabled_tests = set()
+    self.passed_tests = set()
+    self.failed_tests = set()
+    self.flaky_tests = set()
+    self.test_logs = {}
+
+    self.parsing_errors = []
+
+    self.master_name = None
+
+  def ProcessLine(self, line):
+    # Deliberately do nothing - we parse out-of-band JSON summary
+    # instead of in-band stdout.
+    pass
+
+  def PassedTests(self):
+    return sorted(self.passed_tests)
+
+  def FailedTests(self, include_fails=False, include_flaky=False):
+    return sorted(self.failed_tests)
+
+  def FailureDescription(self, test):
+    return self.test_logs.get(test, [])
+
+  @staticmethod
+  def SuppressionHashes():
+    return []
+
+  def ParsingErrors(self):
+    return self.parsing_errors
+
+  def ClearParsingErrors(self):
+    self.parsing_errors = ['Cleared.']
+
+  def DisabledTests(self):
+    return len(self.disabled_tests)
+
+  def FlakyTests(self):
+    return len(self.flaky_tests)
+
+  @staticmethod
+  def RunningTests():
+    return []
+
+  def PrepareJSONFile(self, cmdline_path):
+    if cmdline_path:
+      self.json_file_path = cmdline_path
+      # If the caller requested JSON summary, do not delete it.
+      self.delete_json_file = False
+    else:
+      fd, self.json_file_path = tempfile.mkstemp()
+      os.close(fd)
+      # When we create the file ourselves, delete it to avoid littering.
+      self.delete_json_file = True
+    return self.json_file_path
+
+  def ProcessJSONFile(self):
+    if not self.json_file_path:
+      return
+
+    with open(self.json_file_path) as json_file:
+      try:
+        json_output = json_file.read()
+        json_data = json.loads(json_output)
+      except ValueError:
+        # Only signal parsing error if the file is non-empty. Empty file
+        # most likely means the binary doesn't support JSON output.
+        if json_output:
+          self.parsing_errors = json_output.split('\n')
+      else:
+        self.ProcessJSONData(json_data)
+
+    if self.delete_json_file:
+      os.remove(self.json_file_path)
+
+  def ProcessJSONData(self, json_data):
+    # TODO(phajdan.jr): Require disabled_tests to be present (May 2014).
+    self.disabled_tests.update(json_data.get('disabled_tests', []))
+
+    for iteration_data in json_data['per_iteration_data']:
+      for test_name, test_runs in iteration_data.iteritems():
+        if test_runs[-1]['status'] == 'SUCCESS':
+          self.passed_tests.add(test_name)
+        else:
+          self.failed_tests.add(test_name)
+
+        if len(test_runs) > 1:
+          self.flaky_tests.add(test_name)
+
+        self.test_logs.setdefault(test_name, [])
+        for run_index, run_data in enumerate(test_runs, start=1):
+          run_lines = ['%s (run #%d):' % (test_name, run_index)]
+          # Make sure the annotations are ASCII to avoid character set related
+          # errors. They are mostly informational anyway, and more detailed
+          # info can be obtained from the original JSON output.
+          ascii_lines = run_data['output_snippet'].encode('ascii',
+                                                          errors='replace')
+          decoded_lines = ascii_lines.decode('string_escape')
+          run_lines.extend(decoded_lines.split('\n'))
+          self.test_logs[test_name].extend(run_lines)

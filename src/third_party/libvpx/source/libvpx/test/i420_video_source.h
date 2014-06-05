@@ -11,6 +11,7 @@
 #define TEST_I420_VIDEO_SOURCE_H_
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 
 #include "test/video_source.h"
 
@@ -34,7 +35,6 @@ class I420VideoSource : public VideoSource {
         height_(0),
         framerate_numerator_(rate_numerator),
         framerate_denominator_(rate_denominator) {
-
     // This initializes raw_sz_, width_, height_ and allocates an img.
     SetSize(width, height);
   }
@@ -49,10 +49,10 @@ class I420VideoSource : public VideoSource {
     if (input_file_)
       fclose(input_file_);
     input_file_ = OpenTestDataFile(file_name_);
-    ASSERT_TRUE(input_file_) << "Input file open failed. Filename: "
+    ASSERT_TRUE(input_file_ != NULL) << "Input file open failed. Filename: "
         << file_name_;
     if (start_) {
-      fseek(input_file_, raw_sz_ * start_, SEEK_SET);
+      fseek(input_file_, static_cast<unsigned>(raw_sz_) * start_, SEEK_SET);
     }
 
     frame_ = start_;
@@ -83,7 +83,7 @@ class I420VideoSource : public VideoSource {
   void SetSize(unsigned int width, unsigned int height) {
     if (width != width_ || height != height_) {
       vpx_img_free(img_);
-      img_ = vpx_img_alloc(NULL, VPX_IMG_FMT_VPXI420, width, height, 1);
+      img_ = vpx_img_alloc(NULL, VPX_IMG_FMT_I420, width, height, 1);
       ASSERT_TRUE(img_ != NULL);
       width_ = width;
       height_ = height;
@@ -92,6 +92,7 @@ class I420VideoSource : public VideoSource {
   }
 
   virtual void FillFrame() {
+    ASSERT_TRUE(input_file_ != NULL);
     // Read a frame from input_file.
     if (fread(img_->img_data, raw_sz_, 1, input_file_) == 0) {
       limit_ = frame_;
@@ -108,8 +109,8 @@ class I420VideoSource : public VideoSource {
   unsigned int frame_;
   unsigned int width_;
   unsigned int height_;
-  unsigned int framerate_numerator_;
-  unsigned int framerate_denominator_;
+  int framerate_numerator_;
+  int framerate_denominator_;
 };
 
 }  // namespace libvpx_test

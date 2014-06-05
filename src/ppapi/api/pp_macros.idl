@@ -4,7 +4,7 @@
  */
 
 /**
- * Defines the API ...
+ * Defines the common macros such as assert, inline, ...
  */
 
 #inline c
@@ -108,4 +108,3 @@ PP_COMPILE_ASSERT_SIZE_IN_BYTES_IMPL(NAME, enum NAME, SIZE)
  */
 
 #endinl
-

@@ -89,12 +89,12 @@ class ObserverListBase
     }
 
     ~Iterator() {
-      if (list_ && --list_->notify_depth_ == 0)
+      if (list_.get() && --list_->notify_depth_ == 0)
         list_->Compact();
     }
 
     ObserverType* GetNext() {
-      if (!list_)
+      if (!list_.get())
         return NULL;
       ListType& observers = list_->observers_;
       // Advance if the current element is null
@@ -157,9 +157,9 @@ class ObserverListBase
     }
   }
 
+ protected:
   size_t size() const { return observers_.size(); }
 
- protected:
   void Compact() {
     observers_.erase(
         std::remove(observers_.begin(), observers_.end(),
@@ -203,14 +203,15 @@ class ObserverList : public ObserverListBase<ObserverType> {
   }
 };
 
-#define FOR_EACH_OBSERVER(ObserverType, observer_list, func)         \
-  do {                                                               \
-    if ((observer_list).might_have_observers()) {                    \
-      ObserverListBase<ObserverType>::Iterator it(observer_list);    \
-      ObserverType* obs;                                             \
-      while ((obs = it.GetNext()) != NULL)                           \
-        obs->func;                                                   \
-    }                                                                \
+#define FOR_EACH_OBSERVER(ObserverType, observer_list, func)               \
+  do {                                                                     \
+    if ((observer_list).might_have_observers()) {                          \
+      ObserverListBase<ObserverType>::Iterator                             \
+          it_inside_observer_macro(observer_list);                         \
+      ObserverType* obs;                                                   \
+      while ((obs = it_inside_observer_macro.GetNext()) != NULL)           \
+        obs->func;                                                         \
+    }                                                                      \
   } while (0)
 
 #endif  // BASE_OBSERVER_LIST_H__

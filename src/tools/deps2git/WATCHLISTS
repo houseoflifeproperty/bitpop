@@ -17,7 +17,7 @@
   },
 
   'WATCHLISTS': {
-    'all': ['cmp+cc@chromium.org'],
+    'all': ['cmp-cc@chromium.org'],
   },
 
 }

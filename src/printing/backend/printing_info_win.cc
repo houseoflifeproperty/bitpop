@@ -16,7 +16,7 @@ uint8* GetDriverInfo(HANDLE printer, int level) {
   if (size == 0) {
     return NULL;
   }
-  scoped_array<uint8> buffer(new uint8[size]);
+  scoped_ptr<uint8[]> buffer(new uint8[size]);
   memset(buffer.get(), 0, size);
   if (!::GetPrinterDriver(printer, NULL, level, buffer.get(), size, &size)) {
     return NULL;
@@ -32,7 +32,7 @@ uint8* GetPrinterInfo(HANDLE printer, int level) {
                     ", error = " << GetLastError();
     return NULL;
   }
-  scoped_array<uint8> buffer(new uint8[size]);
+  scoped_ptr<uint8[]> buffer(new uint8[size]);
   memset(buffer.get(), 0, size);
   if (!::GetPrinter(printer, level, buffer.get(), size, &size)) {
     LOG(WARNING) << "Failed to get PRINTER_INFO_" << level <<
@@ -43,24 +43,5 @@ uint8* GetPrinterInfo(HANDLE printer, int level) {
 }
 
 }  // namespace internal
-
-UserDefaultDevMode::UserDefaultDevMode() : dev_mode_(NULL) {
-}
-
-bool UserDefaultDevMode::Init(HANDLE printer) {
-  if (info_9_.Init(printer))
-    dev_mode_ = info_9_.get()->pDevMode;
-
-  if (!dev_mode_ && info_8_.Init(printer))
-    dev_mode_ = info_8_.get()->pDevMode;
-
-  if (!dev_mode_ && info_2_.Init(printer))
-    dev_mode_ = info_2_.get()->pDevMode;
-
-  return dev_mode_ != NULL;
-}
-
-UserDefaultDevMode::~UserDefaultDevMode() {
-}
 
 }  // namespace printing

@@ -49,6 +49,9 @@
 
 #ifdef _WIN32
 
+#ifndef NOMINMAX
+#define NOMINMAX             /* Do not define min and max macros. */
+#endif
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN  /* We always want minimal includes */
 #endif
@@ -430,6 +433,7 @@ inline int nanosleep(const struct timespec *req, struct timespec *rem) {
 }
 
 #ifndef __MINGW32__
+#if _MSC_VER < 1800  // Not required >= VS2013.
 inline long long int strtoll(const char *nptr, char **endptr, int base) {
     return _strtoi64(nptr, endptr, base);
 }
@@ -440,6 +444,7 @@ inline unsigned long long int strtoull(const char *nptr, char **endptr,
 inline long long int strtoq(const char *nptr, char **endptr, int base) {
     return _strtoi64(nptr, endptr, base);
 }
+#endif
 inline unsigned long long int strtouq(const char *nptr, char **endptr,
                                       int base) {
     return _strtoui64(nptr, endptr, base);

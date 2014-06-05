@@ -44,16 +44,16 @@ cr.define('options', function() {
 
       var urlField = $('homepage-url-field');
       urlField.addEventListener('keydown', function(event) {
-        // Focus the 'OK' button when the user hits enter since people expect
-        // feedback indicating that they are done editing.
-        if (event.keyIdentifier == 'Enter' && self.autocompleteList_.hidden)
-          $('home-page-confirm').focus();
+        // Don't auto-submit when the user selects something from the
+        // auto-complete list.
+        if (event.keyIdentifier == 'Enter' && !self.autocompleteList_.hidden)
+          event.stopPropagation();
       });
       urlField.addEventListener('change', this.updateFavicon_.bind(this));
 
       var suggestionList = new cr.ui.AutocompleteList();
       suggestionList.autoExpands = true;
-      suggestionList.suggestionUpdateRequestCallback =
+      suggestionList.requestSuggestions =
           this.requestAutocompleteSuggestions_.bind(this);
       $('home-page-overlay').appendChild(suggestionList);
       this.autocompleteList_ = suggestionList;
@@ -63,12 +63,6 @@ cr.define('options', function() {
       });
       urlField.addEventListener('blur', function(event) {
         self.autocompleteList_.detach();
-      });
-
-      // Text fields may change widths when the window changes size, so make
-      // sure the suggestion list stays in sync.
-      window.addEventListener('resize', function() {
-        self.autocompleteList_.syncWidthToInput();
       });
     },
 
@@ -99,7 +93,7 @@ cr.define('options', function() {
      */
     updateFavicon_: function() {
       var urlField = $('homepage-url-field');
-      urlField.style.backgroundImage = url(getFaviconURL(urlField.value));
+      urlField.style.backgroundImage = getFaviconImageSet(urlField.value);
     },
 
     /**

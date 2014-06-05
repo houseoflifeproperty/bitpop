@@ -60,6 +60,7 @@ PrintPreviewWebUITest.prototype = {
         __proto__: cr.EventTarget.prototype,
         startGetInitialSettings: function() {},
         startGetLocalDestinations: function() {},
+        startGetPrivetDestinations: function() {},
         startGetLocalDestinationCapabilities: function(destinationId) {}
       };
       var oldNativeLayerEventType = print_preview.NativeLayer.EventType;
@@ -79,9 +80,9 @@ PrintPreviewWebUITest.prototype = {
       cloudprint.CloudPrintInterface = CloudPrintInterfaceStub;
       cloudprint.CloudPrintInterface.EventType = oldCpInterfaceEventType;
 
-      print_preview.PreviewArea.prototype.checkPluginCompatibility_ =
+      print_preview.PreviewArea.prototype.getPluginType_ =
           function() {
-        return false;
+        return print_preview.PreviewArea.PluginType_.NONE;
       };
     }.bind(this));
   },
@@ -102,13 +103,17 @@ PrintPreviewWebUITest.prototype = {
 
     this.initialSettings_ = new print_preview.NativeInitialSettings(
       false /*isInKioskAutoPrintMode*/,
+      false /*hidePrintWithSystemDialogLink*/,
       ',' /*thousandsDelimeter*/,
       '.' /*decimalDelimeter*/,
       1 /*unitType*/,
       true /*isDocumentModifiable*/,
       'title' /*documentTitle*/,
+      true /*documentHasSelection*/,
+      false /*selectionOnly*/,
       'FooDevice' /*systemDefaultDestinationId*/,
-      null /*serializedAppStateStr*/);
+      null /*serializedAppStateStr*/,
+      false /*documentHasSelection*/);
     this.localDestinationInfos_ = [
       { printerName: 'FooName', deviceName: 'FooDevice' },
       { printerName: 'BarName', deviceName: 'BarDevice' }
@@ -122,12 +127,12 @@ GEN('#include "chrome/test/data/webui/print_preview.h"');
 // Test some basic assumptions about the print preview WebUI.
 TEST_F('PrintPreviewWebUITest', 'TestPrinterList', function() {
   var initialSettingsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
+      new Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
   initialSettingsSetEvent.initialSettings = this.initialSettings_;
   this.nativeLayer_.dispatchEvent(initialSettingsSetEvent);
 
   var localDestsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
+      new Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
   localDestsSetEvent.destinationInfos = this.localDestinationInfos_;
   this.nativeLayer_.dispatchEvent(localDestsSetEvent);
 
@@ -156,22 +161,22 @@ TEST_F('PrintPreviewWebUITest', 'TestPrinterList', function() {
 // addCloudPrinters with an empty list.
 TEST_F('PrintPreviewWebUITest', 'TestPrinterListCloudEmpty', function() {
   var initialSettingsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
+      new Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
   initialSettingsSetEvent.initialSettings = this.initialSettings_;
   this.nativeLayer_.dispatchEvent(initialSettingsSetEvent);
 
   var localDestsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
+      new Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
   localDestsSetEvent.destinationInfos = this.localDestinationInfos_;
   this.nativeLayer_.dispatchEvent(localDestsSetEvent);
 
   var cloudPrintEnableEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.CLOUD_PRINT_ENABLE);
+      new Event(print_preview.NativeLayer.EventType.CLOUD_PRINT_ENABLE);
   cloudPrintEnableEvent.baseCloudPrintUrl = 'cloudprint url';
   this.nativeLayer_.dispatchEvent(cloudPrintEnableEvent);
 
   var searchDoneEvent =
-      new cr.Event(cloudprint.CloudPrintInterface.EventType.SEARCH_DONE);
+      new Event(cloudprint.CloudPrintInterface.EventType.SEARCH_DONE);
   searchDoneEvent.printers = [];
   searchDoneEvent.isRecent = true;
   searchDoneEvent.email = 'foo@chromium.org';
@@ -221,33 +226,33 @@ function checkElementDisplayed(el, isDisplayed) {
 
 // Test that disabled settings hide the disabled sections.
 TEST_F('PrintPreviewWebUITest', 'TestSectionsDisabled', function() {
+  checkSectionVisible($('layout-settings'), false);
+  checkSectionVisible($('color-settings'), false);
+  checkSectionVisible($('copies-settings'), false);
+
   var initialSettingsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
+      new Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
   initialSettingsSetEvent.initialSettings = this.initialSettings_;
   this.nativeLayer_.dispatchEvent(initialSettingsSetEvent);
 
   var localDestsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
+      new Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
   localDestsSetEvent.destinationInfos = this.localDestinationInfos_;
   this.nativeLayer_.dispatchEvent(localDestsSetEvent);
 
-  checkSectionVisible($('layout-settings'), true);
-  checkSectionVisible($('color-settings'), true);
-  checkSectionVisible($('copies-settings'), true);
-
   var capsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
+      new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
   capsSetEvent.settingsInfo = {
     'printerId': 'FooDevice',
     'disableColorOption': true,
     'setColorAsDefault': true,
     'disableCopiesOption': true,
-    'disableLandscapeOption': true,
+    'disableLandscapeOption': false,
     'printerDefaultDuplexValue': 0
   };
   this.nativeLayer_.dispatchEvent(capsSetEvent);
 
-  checkSectionVisible($('layout-settings'), false);
+  checkSectionVisible($('layout-settings'), true);
   checkSectionVisible($('color-settings'), false);
   checkSectionVisible($('copies-settings'), false);
 });
@@ -264,17 +269,17 @@ TEST_F('PrintPreviewWebUITest',
       {printerName: 'Save as PDF', deviceName: 'Save as PDF'});
 
   var initialSettingsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
+      new Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
   initialSettingsSetEvent.initialSettings = this.initialSettings_;
   this.nativeLayer_.dispatchEvent(initialSettingsSetEvent);
 
   var localDestsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
+      new Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
   localDestsSetEvent.destinationInfos = this.localDestinationInfos_;
   this.nativeLayer_.dispatchEvent(localDestsSetEvent);
 
   var capsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
+      new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
   capsSetEvent.settingsInfo = {
     'printerId': 'FooDevice',
     'disableColorOption': false,
@@ -293,17 +298,17 @@ TEST_F('PrintPreviewWebUITest',
 // When the source is 'HTML', we always hide the fit to page option.
 TEST_F('PrintPreviewWebUITest', 'SourceIsHTMLHideFitToPageOption', function() {
   var initialSettingsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
+      new Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
   initialSettingsSetEvent.initialSettings = this.initialSettings_;
   this.nativeLayer_.dispatchEvent(initialSettingsSetEvent);
 
   var localDestsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
+      new Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
   localDestsSetEvent.destinationInfos = this.localDestinationInfos_;
   this.nativeLayer_.dispatchEvent(localDestsSetEvent);
 
   var capsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
+      new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
   capsSetEvent.settingsInfo = {
     'printerId': 'FooDevice',
     'disableColorOption': false,
@@ -325,17 +330,17 @@ TEST_F('PrintPreviewWebUITest', 'SourceIsPDFShowFitToPageOption', function() {
   this.initialSettings_.isDocumentModifiable_ = false;
 
   var initialSettingsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
+      new Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
   initialSettingsSetEvent.initialSettings = this.initialSettings_;
   this.nativeLayer_.dispatchEvent(initialSettingsSetEvent);
 
   var localDestsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
+      new Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
   localDestsSetEvent.destinationInfos = this.localDestinationInfos_;
   this.nativeLayer_.dispatchEvent(localDestsSetEvent);
 
   var capsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
+      new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
   capsSetEvent.settingsInfo = {
     'printerId': 'FooDevice',
     'disableColorOption': false,
@@ -360,17 +365,17 @@ TEST_F('PrintPreviewWebUITest', 'PrintScalingDisabledForPlugin', function() {
   this.initialSettings_.isDocumentModifiable_ = false;
 
   var initialSettingsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
+      new Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
   initialSettingsSetEvent.initialSettings = this.initialSettings_;
   this.nativeLayer_.dispatchEvent(initialSettingsSetEvent);
 
   var localDestsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
+      new Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
   localDestsSetEvent.destinationInfos = this.localDestinationInfos_;
   this.nativeLayer_.dispatchEvent(localDestsSetEvent);
 
   var capsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
+      new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
   capsSetEvent.settingsInfo = {
     'printerId': 'FooDevice',
     'disableColorOption': false,
@@ -398,17 +403,17 @@ TEST_F('PrintPreviewWebUITest',
        'PageLayoutHasNoMarginsHideHeaderFooter',
        function() {
   var initialSettingsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
+      new Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
   initialSettingsSetEvent.initialSettings = this.initialSettings_;
   this.nativeLayer_.dispatchEvent(initialSettingsSetEvent);
 
   var localDestsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
+      new Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
   localDestsSetEvent.destinationInfos = this.localDestinationInfos_;
   this.nativeLayer_.dispatchEvent(localDestsSetEvent);
 
   var capsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
+      new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
   capsSetEvent.settingsInfo = {
     'printerId': 'FooDevice',
     'disableColorOption': false,
@@ -423,9 +428,9 @@ TEST_F('PrintPreviewWebUITest',
       $('other-options-settings').querySelector('.header-footer-container'),
       true);
 
-  printPreview.printTicketStore_.updateMarginsType(
+  printPreview.printTicketStore_.marginsType.updateValue(
       print_preview.ticket_items.MarginsType.Value.CUSTOM);
-  printPreview.printTicketStore_.updateCustomMargins(
+  printPreview.printTicketStore_.customMargins.updateValue(
       new print_preview.Margins(0, 0, 0, 0));
 
   checkElementDisplayed(
@@ -438,17 +443,17 @@ TEST_F('PrintPreviewWebUITest',
        'PageLayoutHasMarginsShowHeaderFooter',
        function() {
   var initialSettingsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
+      new Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
   initialSettingsSetEvent.initialSettings = this.initialSettings_;
   this.nativeLayer_.dispatchEvent(initialSettingsSetEvent);
 
   var localDestsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
+      new Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
   localDestsSetEvent.destinationInfos = this.localDestinationInfos_;
   this.nativeLayer_.dispatchEvent(localDestsSetEvent);
 
   var capsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
+      new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
   capsSetEvent.settingsInfo = {
     'printerId': 'FooDevice',
     'disableColorOption': false,
@@ -463,9 +468,9 @@ TEST_F('PrintPreviewWebUITest',
       $('other-options-settings').querySelector('.header-footer-container'),
       true);
 
-  printPreview.printTicketStore_.updateMarginsType(
+  printPreview.printTicketStore_.marginsType.updateValue(
       print_preview.ticket_items.MarginsType.Value.CUSTOM);
-  printPreview.printTicketStore_.updateCustomMargins(
+  printPreview.printTicketStore_.customMargins.updateValue(
       new print_preview.Margins(36, 36, 36, 36));
 
   checkElementDisplayed(
@@ -478,17 +483,17 @@ TEST_F('PrintPreviewWebUITest',
        'ZeroTopAndBottomMarginsHideHeaderFooter',
        function() {
   var initialSettingsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
+      new Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
   initialSettingsSetEvent.initialSettings = this.initialSettings_;
   this.nativeLayer_.dispatchEvent(initialSettingsSetEvent);
 
   var localDestsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
+      new Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
   localDestsSetEvent.destinationInfos = this.localDestinationInfos_;
   this.nativeLayer_.dispatchEvent(localDestsSetEvent);
 
   var capsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
+      new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
   capsSetEvent.settingsInfo = {
     'printerId': 'FooDevice',
     'disableColorOption': false,
@@ -503,9 +508,9 @@ TEST_F('PrintPreviewWebUITest',
       $('other-options-settings').querySelector('.header-footer-container'),
       true);
 
-  printPreview.printTicketStore_.updateMarginsType(
+  printPreview.printTicketStore_.marginsType.updateValue(
       print_preview.ticket_items.MarginsType.Value.CUSTOM);
-  printPreview.printTicketStore_.updateCustomMargins(
+  printPreview.printTicketStore_.customMargins.updateValue(
       new print_preview.Margins(0, 36, 0, 36));
 
   checkElementDisplayed(
@@ -519,17 +524,17 @@ TEST_F('PrintPreviewWebUITest',
        'ZeroTopAndNonZeroBottomMarginShowHeaderFooter',
        function() {
   var initialSettingsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
+      new Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
   initialSettingsSetEvent.initialSettings = this.initialSettings_;
   this.nativeLayer_.dispatchEvent(initialSettingsSetEvent);
 
   var localDestsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
+      new Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
   localDestsSetEvent.destinationInfos = this.localDestinationInfos_;
   this.nativeLayer_.dispatchEvent(localDestsSetEvent);
 
   var capsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
+      new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
   capsSetEvent.settingsInfo = {
     'printerId': 'FooDevice',
     'disableColorOption': false,
@@ -544,9 +549,9 @@ TEST_F('PrintPreviewWebUITest',
       $('other-options-settings').querySelector('.header-footer-container'),
       true);
 
-  printPreview.printTicketStore_.updateMarginsType(
+  printPreview.printTicketStore_.marginsType.updateValue(
       print_preview.ticket_items.MarginsType.Value.CUSTOM);
-  printPreview.printTicketStore_.updateCustomMargins(
+  printPreview.printTicketStore_.customMargins.updateValue(
       new print_preview.Margins(0, 36, 36, 36));
 
   checkElementDisplayed(
@@ -557,19 +562,17 @@ TEST_F('PrintPreviewWebUITest',
 // Test that the color settings are set according to the printer capabilities.
 TEST_F('PrintPreviewWebUITest', 'TestColorSettingsTrue', function() {
   var initialSettingsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
+      new Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
   initialSettingsSetEvent.initialSettings = this.initialSettings_;
   this.nativeLayer_.dispatchEvent(initialSettingsSetEvent);
 
   var localDestsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
+      new Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
   localDestsSetEvent.destinationInfos = this.localDestinationInfos_;
   this.nativeLayer_.dispatchEvent(localDestsSetEvent);
 
-  checkSectionVisible($('color-settings'), true);
-
   var capsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
+      new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
   capsSetEvent.settingsInfo = {
     'printerId': 'FooDevice',
     'disableColorOption': false,
@@ -582,10 +585,8 @@ TEST_F('PrintPreviewWebUITest', 'TestColorSettingsTrue', function() {
 
   checkSectionVisible($('color-settings'), true);
 
-  var colorOption = $('color-settings').getElementsByClassName(
-      'color-settings-color-option')[0];
-  var bwOption = $('color-settings').getElementsByClassName(
-      'color-settings-bw-option')[0];
+  var colorOption = $('color-settings').querySelector('.color-option');
+  var bwOption = $('color-settings').querySelector('.bw-option');
   expectTrue(colorOption.checked);
   expectFalse(bwOption.checked);
 });
@@ -593,19 +594,17 @@ TEST_F('PrintPreviewWebUITest', 'TestColorSettingsTrue', function() {
 //Test that the color settings are set according to the printer capabilities.
 TEST_F('PrintPreviewWebUITest', 'TestColorSettingsFalse', function() {
   var initialSettingsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
+      new Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
   initialSettingsSetEvent.initialSettings = this.initialSettings_;
   this.nativeLayer_.dispatchEvent(initialSettingsSetEvent);
 
   var localDestsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
+      new Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
   localDestsSetEvent.destinationInfos = this.localDestinationInfos_;
   this.nativeLayer_.dispatchEvent(localDestsSetEvent);
 
-  checkSectionVisible($('color-settings'), true);
-
   var capsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
+      new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
   capsSetEvent.settingsInfo = {
     'printerId': 'FooDevice',
     'disableColorOption': true,
@@ -618,10 +617,8 @@ TEST_F('PrintPreviewWebUITest', 'TestColorSettingsFalse', function() {
 
   checkSectionVisible($('color-settings'), false);
 
-  var colorOption = $('color-settings').getElementsByClassName(
-      'color-settings-color-option')[0];
-  var bwOption = $('color-settings').getElementsByClassName(
-      'color-settings-bw-option')[0];
+  var colorOption = $('color-settings').querySelector('.color-option');
+  var bwOption = $('color-settings').querySelector('.bw-option');
   expectFalse(colorOption.checked);
   expectTrue(bwOption.checked);
 });
@@ -630,12 +627,12 @@ TEST_F('PrintPreviewWebUITest', 'TestColorSettingsFalse', function() {
 // capabilities.
 TEST_F('PrintPreviewWebUITest', 'TestDuplexSettingsTrue', function() {
   var initialSettingsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
+      new Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
   initialSettingsSetEvent.initialSettings = this.initialSettings_;
   this.nativeLayer_.dispatchEvent(initialSettingsSetEvent);
 
   var localDestsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
+      new Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
   localDestsSetEvent.destinationInfos = this.localDestinationInfos_;
   this.nativeLayer_.dispatchEvent(localDestsSetEvent);
 
@@ -644,7 +641,7 @@ TEST_F('PrintPreviewWebUITest', 'TestDuplexSettingsTrue', function() {
   var duplexCheckbox = otherOptionsDiv.querySelector('.duplex-checkbox');
 
   var capsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
+      new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
   capsSetEvent.settingsInfo = {
     'printerId': 'FooDevice',
     'disableColorOption': false,
@@ -665,12 +662,12 @@ TEST_F('PrintPreviewWebUITest', 'TestDuplexSettingsTrue', function() {
 //capabilities.
 TEST_F('PrintPreviewWebUITest', 'TestDuplexSettingsFalse', function() {
   var initialSettingsSetEvent =
-     new cr.Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
+     new Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
   initialSettingsSetEvent.initialSettings = this.initialSettings_;
   this.nativeLayer_.dispatchEvent(initialSettingsSetEvent);
 
   var localDestsSetEvent =
-     new cr.Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
+     new Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
   localDestsSetEvent.destinationInfos = this.localDestinationInfos_;
   this.nativeLayer_.dispatchEvent(localDestsSetEvent);
 
@@ -678,7 +675,7 @@ TEST_F('PrintPreviewWebUITest', 'TestDuplexSettingsFalse', function() {
   var duplexDiv = otherOptionsDiv.querySelector('.duplex-container');
 
   var capsSetEvent =
-     new cr.Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
+     new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
   capsSetEvent.settingsInfo = {
    'printerId': 'FooDevice',
    'disableColorOption': false,
@@ -698,17 +695,17 @@ TEST_F('PrintPreviewWebUITest', 'TestDuplexSettingsFalse', function() {
 TEST_F('PrintPreviewWebUITest', 'TestPrinterChangeUpdatesPreview', function() {
 
   var initialSettingsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
+      new Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
   initialSettingsSetEvent.initialSettings = this.initialSettings_;
   this.nativeLayer_.dispatchEvent(initialSettingsSetEvent);
 
   var localDestsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
+      new Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
   localDestsSetEvent.destinationInfos = this.localDestinationInfos_;
   this.nativeLayer_.dispatchEvent(localDestsSetEvent);
 
   var capsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
+      new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
   capsSetEvent.settingsInfo = {
     'printerId': 'FooDevice',
     'disableColorOption': false,
@@ -721,10 +718,10 @@ TEST_F('PrintPreviewWebUITest', 'TestPrinterChangeUpdatesPreview', function() {
 
   var previewGenerator = mock(print_preview.PreviewGenerator);
   printPreview.previewArea_.previewGenerator_ = previewGenerator.proxy();
-  previewGenerator.expects(once()).requestPreview();
+  previewGenerator.expects(exactly(6)).requestPreview();
 
   var barDestination;
-  var destinations = printPreview.destinationStore_.destinations;
+  var destinations = printPreview.destinationStore_.destinations();
   for (var destination, i = 0; destination = destinations[i]; i++) {
     if (destination.id == 'BarDevice') {
       barDestination = destination;
@@ -735,7 +732,7 @@ TEST_F('PrintPreviewWebUITest', 'TestPrinterChangeUpdatesPreview', function() {
   printPreview.destinationStore_.selectDestination(barDestination);
 
   var capsSetEvent =
-      new cr.Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
+      new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
   capsSetEvent.settingsInfo = {
     'printerId': 'BarDevice',
     'disableColorOption': true,

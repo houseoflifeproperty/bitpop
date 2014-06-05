@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2012 The Chromium Authors. All rights reserved.
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file.
+ * */
+
 body {
   margin-bottom:50px;
 }
@@ -150,6 +156,12 @@ td.idle, td.waiting, td.offline, td.building {
   border-top-right-radius: 5px;
   -webkit-border-top-right-radius: 5px;
   -moz-border-radius-topright: 5px;
+}
+
+.BuildProperties td.middle {
+  max-width: 250px;
+  text-overflow: ellipsis;
+  overflow: hidden;
 }
 
 /* Console view styles */
@@ -463,6 +475,12 @@ td.Project a:hover, td.start a:hover {
   border:4px solid red;
 }
 
+/* column container */
+div.column {
+    margin: 0 2em 2em 0;
+    float: left;
+}
+
 /* grid styles */
 
 table.Grid {
@@ -498,6 +516,43 @@ div.data {
   font-family: "Courier New", courier, monotype;
 }
 
+/* info tables */
+table.info {
+  border-spacing: 1px;
+}
+
+table.info td {
+  padding: 0.1em 1em 0.1em 1em;
+  text-align: center;
+}
+
+table.info th {
+  padding: 0.2em 1.5em 0.2em 1.5em;
+  text-align: center;
+}
+
+table.info td.left {
+  text-align: left
+}
+
+.alt {
+  background-color: #eee;
+}
+
+li {
+  padding: 0.1em 1em 0.1em 1em;
+}
+
+.result {
+  padding: 0.3em 1em 0.3em 1em;
+}
+
+/* log view */
+.log * {
+  vlink: #800080;
+  font-family: "Courier New", courier, monotype, monospace;
+}
+
 span.stdout, span.stderr, span.header {
   font-family: "Courier New", courier, monotype;
   font-size: 16px;
@@ -510,4 +565,28 @@ span.stderr {
 
 span.header {
   color: blue;
+}
+span.ansi30 {
+  color: black;
+}
+span.ansi31 {
+  color: red;
+}
+span.ansi32 {
+  color: green;
+}
+span.ansi33 {
+  color: orange;
+}
+span.ansi34 {
+  color: yellow;
+}
+span.ansi35 {
+  color: purple;
+}
+span.ansi36 {
+  color: blue;
+}
+span.ansi37 {
+  color: white;
 }

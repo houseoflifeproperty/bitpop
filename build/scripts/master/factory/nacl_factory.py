@@ -68,7 +68,8 @@ class NativeClientFactory(gclient_factory.GClientFactory):
     # Initialize the factory with the basic steps.
     factory = self.BaseFactory(gclient_spec,
                                official_release=official_release,
-                               factory_properties=factory_properties)
+                               factory_properties=factory_properties,
+                               slave_type=slave_type)
     # Get the factory command object to create new steps to the factory.
     nacl_cmd_obj = nacl_commands.NativeClientCommands(factory,
                                                       self._build_dir,
@@ -89,61 +90,3 @@ class NativeClientFactory(gclient_factory.GClientFactory):
     self._AddTriggerTests(nacl_cmd_obj, tests)
 
     return factory
-
-  def ModularBuildFactory(self, modular_build_type,
-                          target='Release',
-                          tests=None, slave_type='BuilderTester',
-                          compile_timeout=1200,
-                          official_release=False, factory_properties=None):
-    factory_properties = factory_properties or {}
-    tests = tests or []
-    # Create the spec for the solutions
-    gclient_spec = self.BuildGClientSpec(tests)
-    # Initialize the factory with the basic steps.
-    factory = self.BaseFactory(gclient_spec,
-                               official_release=official_release,
-                               factory_properties=factory_properties)
-    # Get the factory command object to create new steps to the factory.
-    nacl_cmd_obj = nacl_commands.NativeClientCommands(factory,
-                                                      self._build_dir,
-                                                      self._target_platform)
-    nacl_cmd_obj.AddModularBuildStep(modular_build_type,
-                                     timeout=compile_timeout)
-    return factory
-
-
-# Get NaCl Performance Testing factory properties.
-# Base the perf_id on the |id_prefix| and |builder_name|.
-# The test_name is based on |test_name|.
-# Enables graphing as well as perf expectations uploading/checking.
-def NaClPerfFactoryProperties(id_prefix, builder_name, test_name):
-  return {
-      'test_name': test_name,
-      'perf_id': '%s-%s' % (id_prefix, builder_name),
-      'show_perf_results': True,
-      'expectations': True,
-  }
-
-# Helper to initialize a list of builder factories, assuming it is of
-# the form:
-# [
-#   ['builder-name', 'section|closer', FACTORY_INIT_INLINE()],
-#   # or
-#   ['builder-name', 'section|closer', FACTORY_FUNC, 'test_name'],
-#   # e.g.,
-#   # coverage (12)
-#    ['mac10.6-newlib-coverage', '12coverage|closer', F_NACL()],
-#   # BARE METAL BOTS (mixed)
-#    ['xp-bare-newlib-opt', '01xp|closer', F_NACL_WIN, 'nacl-perf'],
-# ]
-def InitFactoryListWithProperties(factories, id_prefix):
-  for f in factories:
-    if len(f) == 3:
-      # Factory was instantiated inline, skip this.
-      continue
-    # Instantiate the factory with the perf factory properties.
-    builder_name = f[0]
-    perf_test_name = f[3]
-    factory_func = f[2]
-    props = NaClPerfFactoryProperties(id_prefix, builder_name, perf_test_name)
-    f[2] = factory_func(factory_properties=props)

@@ -6,10 +6,20 @@
 #define CONTENT_PUBLIC_BROWSER_BROWSER_CONTEXT_H_
 
 #include "base/callback_forward.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/supports_user_data.h"
 #include "content/common/content_export.h"
+
+class GURL;
+
+namespace base {
+class FilePath;
+}
+
+namespace fileapi {
+class ExternalMountPoints;
+}
 
 namespace net {
 class URLRequestContextGetter;
@@ -19,18 +29,15 @@ namespace quota {
 class SpecialStoragePolicy;
 }
 
-class FilePath;
-class GURL;
-
 namespace content {
 
+class BrowserPluginGuestManagerDelegate;
 class DownloadManager;
 class DownloadManagerDelegate;
 class GeolocationPermissionContext;
 class IndexedDBContext;
 class ResourceContext;
 class SiteInstance;
-class SpeechRecognitionPreferences;
 class StoragePartition;
 
 // This class holds the context needed for a browsing session.
@@ -38,16 +45,18 @@ class StoragePartition;
 // thread.
 class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
  public:
-  // Used in ForEachStoragePartition(). The first argument is the partition id.
-  // The second argument is the StoragePartition object for that partition id.
-  typedef base::Callback<void(StoragePartition*)> StoragePartitionCallback;
-
   static DownloadManager* GetDownloadManager(BrowserContext* browser_context);
+
+  // Returns BrowserContext specific external mount points. It may return NULL
+  // if the context doesn't have any BrowserContext specific external mount
+  // points. Currenty, non-NULL value is returned only on ChromeOS.
+  static fileapi::ExternalMountPoints* GetMountPoints(BrowserContext* context);
 
   static content::StoragePartition* GetStoragePartition(
       BrowserContext* browser_context, SiteInstance* site_instance);
   static content::StoragePartition* GetStoragePartitionForSite(
       BrowserContext* browser_context, const GURL& site);
+  typedef base::Callback<void(StoragePartition*)> StoragePartitionCallback;
   static void ForEachStoragePartition(
       BrowserContext* browser_context,
       const StoragePartitionCallback& callback);
@@ -60,7 +69,7 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // ownership of the pointer.
   static void GarbageCollectStoragePartitions(
       BrowserContext* browser_context,
-      scoped_ptr<base::hash_set<FilePath> > active_paths,
+      scoped_ptr<base::hash_set<base::FilePath> > active_paths,
       const base::Closure& done);
 
   // DON'T USE THIS. GetDefaultStoragePartition() is going away.
@@ -79,16 +88,12 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // across the next restart.
   static void SaveSessionState(BrowserContext* browser_context);
 
-  // Tells the HTML5 objects on this context to purge any uneeded memory.
-  static void PurgeMemory(BrowserContext* browser_context);
-
   virtual ~BrowserContext();
 
   // Returns the path of the directory where this context's data is stored.
-  virtual FilePath GetPath() = 0;
+  virtual base::FilePath GetPath() const = 0;
 
   // Return whether this context is incognito. Default is false.
-  // This doesn't belong here; http://crbug.com/89628
   virtual bool IsOffTheRecord() const = 0;
 
   // Returns the request context information associated with this context.  Call
@@ -99,14 +104,10 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
 
   // Returns the request context appropriate for the given renderer. If the
   // renderer process doesn't have an associated installed app, or if the
-  // installed app's is_storage_isolated() returns false, this is equivalent to
-  // calling GetRequestContext().
+  // installed app doesn't have isolated storage, this is equivalent to calling
+  // GetRequestContext().
   virtual net::URLRequestContextGetter* GetRequestContextForRenderProcess(
       int renderer_child_id) = 0;
-
-  virtual net::URLRequestContextGetter* GetRequestContextForStoragePartition(
-      const FilePath& partition_path,
-      bool in_memory) = 0;
 
   // Returns the default request context for media resources associated with
   // this context.
@@ -119,8 +120,43 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
       int renderer_child_id) = 0;
   virtual net::URLRequestContextGetter*
       GetMediaRequestContextForStoragePartition(
-          const FilePath& partition_path,
+          const base::FilePath& partition_path,
           bool in_memory) = 0;
+
+  typedef base::Callback<void(bool)> MidiSysExPermissionCallback;
+
+  // Requests a permission to use system exclusive messages in MIDI events.
+  // |callback| will be invoked when the request is resolved.
+  virtual void RequestMidiSysExPermission(
+      int render_process_id,
+      int render_view_id,
+      int bridge_id,
+      const GURL& requesting_frame,
+      bool user_gesture,
+      const MidiSysExPermissionCallback& callback) = 0;
+
+  // Cancels a pending MIDI permission request.
+  virtual void CancelMidiSysExPermissionRequest(
+      int render_process_id,
+      int render_view_id,
+      int bridge_id,
+      const GURL& requesting_frame) = 0;
+
+  typedef base::Callback<void(bool)> ProtectedMediaIdentifierPermissionCallback;
+
+  // Request permission to access protected media identifier. The callback will
+  // tell whether it's permitted.
+  virtual void RequestProtectedMediaIdentifierPermission(
+      int render_process_id,
+      int render_view_id,
+      int bridge_id,
+      int group_id,
+      const GURL& requesting_frame,
+      const ProtectedMediaIdentifierPermissionCallback& callback) = 0;
+
+  // Cancels pending protected media identifier permission requests.
+  virtual void CancelProtectedMediaIdentifierPermissionRequests(
+      int group_id) = 0;
 
   // Returns the resource context.
   virtual ResourceContext* GetResourceContext() = 0;
@@ -134,10 +170,9 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // return NULL, in which case geolocation requests will always be allowed.
   virtual GeolocationPermissionContext* GetGeolocationPermissionContext() = 0;
 
-  // Returns the speech input preferences. SpeechRecognitionPreferences is a
-  // ref counted class, so callers should take a reference if needed. It's valid
-  // to return NULL.
-  virtual SpeechRecognitionPreferences* GetSpeechRecognitionPreferences() = 0;
+  // Returns the guest manager delegate for this context.
+  virtual content::BrowserPluginGuestManagerDelegate*
+      GetGuestManagerDelegate() = 0;
 
   // Returns a special storage policy implementation, or NULL.
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() = 0;

@@ -14,23 +14,29 @@ cr.define('print_preview.ticket_items', function() {
    * @extends {print_preview.ticket_items.TicketItem}
    */
   function PageRange(documentInfo) {
-    print_preview.ticket_items.TicketItem.call(this);
-
-    /**
-     * Information about the document to print.
-     * @type {!print_preview.DocumentInfo}
-     * @private
-     */
-    this.documentInfo_ = documentInfo;
+    print_preview.ticket_items.TicketItem.call(
+        this,
+        null /*appState*/,
+        null /*field*/,
+        null /*destinationStore*/,
+        documentInfo);
   };
+
+  /**
+   * Impossibly large page number.
+   * @type {number}
+   * @const
+   * @private
+   */
+  PageRange.MAX_PAGE_NUMBER_ = 1000000000;
 
   PageRange.prototype = {
     __proto__: print_preview.ticket_items.TicketItem.prototype,
 
     /** @override */
     wouldValueBeValid: function(value) {
-      return value == '' ||
-          isPageRangeTextValid(value, this.documentInfo_.pageCount);
+      return null != pageRangeTextToPageRanges(
+          value, this.getDocumentInfoInternal().pageCount);
     },
 
     /**
@@ -38,13 +44,9 @@ cr.define('print_preview.ticket_items', function() {
      *     page range string.
      */
     getPageNumberSet: function() {
-      if (this.isValid()) {
-        return print_preview.PageNumberSet.parse(
-            this.getValue(), this.documentInfo_.pageCount);
-      } else {
-        return print_preview.PageNumberSet.parse(
-            this.getDefaultValueInternal(), this.documentInfo_.pageCount);
-      }
+      var pageNumberList = pageRangeTextToPageList(
+          this.getValue(), this.getDocumentInfoInternal().pageCount);
+      return new print_preview.PageNumberSet(pageNumberList);
     },
 
     /** @override */
@@ -60,7 +62,27 @@ cr.define('print_preview.ticket_items', function() {
     /** @override */
     getCapabilityNotAvailableValueInternal: function() {
       return '';
-    }
+    },
+
+    /**
+     * @return {!Array.<Object.<{from: number, to: number}>>} A list of page
+     *     ranges.
+     */
+    getPageRanges: function() {
+      return pageRangeTextToPageRanges(this.getValue()) || [];
+    },
+
+    /**
+     * @return {!Array.<object.<{from: number, to: number}>>} A list of page
+     *     ranges suitable for use in the native layer.
+     * TODO(vitalybuka): this should be removed when native layer switched to
+     *     page ranges.
+     */
+    getDocumentPageRanges: function() {
+      var pageRanges = pageRangeTextToPageRanges(
+          this.getValue(), this.getDocumentInfoInternal().pageCount);
+      return pageRanges || [];
+    },
   };
 
   // Export

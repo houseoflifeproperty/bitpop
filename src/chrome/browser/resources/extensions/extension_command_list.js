@@ -13,6 +13,34 @@ cr.define('options', function() {
    */
   var ExtensionCommandList = cr.ui.define('div');
 
+  /** @const */ var keyComma = 188;
+  /** @const */ var keyDel = 46;
+  /** @const */ var keyDown = 40;
+  /** @const */ var keyEnd = 35;
+  /** @const */ var keyEscape = 27;
+  /** @const */ var keyHome = 36;
+  /** @const */ var keyIns = 45;
+  /** @const */ var keyLeft = 37;
+  /** @const */ var keyMediaNextTrack = 176;
+  /** @const */ var keyMediaPlayPause = 179;
+  /** @const */ var keyMediaPrevTrack = 177;
+  /** @const */ var keyMediaStop = 178;
+  /** @const */ var keyPageDown = 34;
+  /** @const */ var keyPageUp = 33;
+  /** @const */ var keyPeriod = 190;
+  /** @const */ var keyRight = 39;
+  /** @const */ var keyTab = 9;
+  /** @const */ var keyUp = 38;
+
+  /**
+   * Enum for whether we require modifiers of a keycode.
+   * @enum {number}
+   */
+  var Modifiers = {
+    ARE_NOT_ALLOWED: 0,
+    ARE_REQUIRED: 1
+  };
+
   /**
    * Returns whether the passed in |keyCode| is a valid extension command
    * char or not. This is restricted to A-Z and 0-9 (ignoring modifiers) at
@@ -21,7 +49,24 @@ cr.define('options', function() {
    * @return {boolean} Returns whether the char is valid.
    */
   function validChar(keyCode) {
-    return (keyCode >= 'A'.charCodeAt(0) && keyCode <= 'Z'.charCodeAt(0)) ||
+    return keyCode == keyComma ||
+           keyCode == keyDel ||
+           keyCode == keyDown ||
+           keyCode == keyEnd ||
+           keyCode == keyHome ||
+           keyCode == keyIns ||
+           keyCode == keyLeft ||
+           keyCode == keyMediaNextTrack ||
+           keyCode == keyMediaPlayPause ||
+           keyCode == keyMediaPrevTrack ||
+           keyCode == keyMediaStop ||
+           keyCode == keyPageDown ||
+           keyCode == keyPageUp ||
+           keyCode == keyPeriod ||
+           keyCode == keyRight ||
+           keyCode == keyTab ||
+           keyCode == keyUp ||
+           (keyCode >= 'A'.charCodeAt(0) && keyCode <= 'Z'.charCodeAt(0)) ||
            (keyCode >= '0'.charCodeAt(0) && keyCode <= '9'.charCodeAt(0));
   }
 
@@ -41,9 +86,85 @@ cr.define('options', function() {
       output += 'Alt+';
     if (event.shiftKey)
       output += 'Shift+';
-    if (validChar(event.keyCode))
-      output += String.fromCharCode('A'.charCodeAt(0) + event.keyCode - 65);
+
+    var keyCode = event.keyCode;
+    if (validChar(keyCode)) {
+      if ((keyCode >= 'A'.charCodeAt(0) && keyCode <= 'Z'.charCodeAt(0)) ||
+          (keyCode >= '0'.charCodeAt(0) && keyCode <= '9'.charCodeAt(0))) {
+        output += String.fromCharCode('A'.charCodeAt(0) + keyCode - 65);
+      } else {
+        switch (keyCode) {
+          case keyComma:
+            output += 'Comma'; break;
+          case keyDel:
+            output += 'Delete'; break;
+          case keyDown:
+            output += 'Down'; break;
+          case keyEnd:
+            output += 'End'; break;
+          case keyHome:
+            output += 'Home'; break;
+          case keyIns:
+            output += 'Insert'; break;
+          case keyLeft:
+            output += 'Left'; break;
+          case keyMediaNextTrack:
+            output += 'MediaNextTrack'; break;
+          case keyMediaPlayPause:
+            output += 'MediaPlayPause'; break;
+          case keyMediaPrevTrack:
+            output += 'MediaPrevTrack'; break;
+          case keyMediaStop:
+            output += 'MediaStop'; break;
+          case keyPageDown:
+            output += 'PageDown'; break;
+          case keyPageUp:
+            output += 'PageUp'; break;
+          case keyPeriod:
+            output += 'Period'; break;
+          case keyRight:
+            output += 'Right'; break;
+          case keyTab:
+            output += 'Tab'; break;
+          case keyUp:
+            output += 'Up'; break;
+        }
+      }
+    }
+
     return output;
+  }
+
+  /**
+   * Returns whether the passed in |keyCode| require modifiers. Currently only
+   * "MediaNextTrack", "MediaPrevTrack", "MediaStop", "MediaPlayPause" are
+   * required to be used without any modifier.
+   * @param {int} keyCode The keycode to consider.
+   * @return {Modifiers} Returns whether the keycode require modifiers.
+   */
+  function modifiers(keyCode) {
+    switch (keyCode) {
+      case keyMediaNextTrack:
+      case keyMediaPlayPause:
+      case keyMediaPrevTrack:
+      case keyMediaStop:
+        return Modifiers.ARE_NOT_ALLOWED;
+      default:
+        return Modifiers.ARE_REQUIRED;
+    }
+  }
+
+  /**
+   * Return true if the specified keyboard event has any one of following
+   * modifiers: "Ctrl", "Alt", "Cmd" on Mac, and "Shift" when the
+   * countShiftAsModifier is true.
+   * @param {Event} event The keyboard event to consider.
+   * @param {boolean} countShiftAsModifier Whether the 'ShiftKey' should be
+   *     counted as modifier.
+   */
+  function hasModifier(event, countShiftAsModifier) {
+    return event.ctrlKey || event.altKey || (cr.isMac && event.metaKey) ||
+           (countShiftAsModifier && event.shiftKey);
   }
 
   ExtensionCommandList.prototype = {
@@ -122,7 +243,8 @@ cr.define('options', function() {
       var shortcutNode = node.querySelector('.command-shortcut-text');
       shortcutNode.addEventListener('mouseup',
                                     this.startCapture_.bind(this));
-      shortcutNode.addEventListener('blur', this.endCapture_.bind(this));
+      shortcutNode.addEventListener('focus', this.handleFocus_.bind(this));
+      shortcutNode.addEventListener('blur', this.handleBlur_.bind(this));
       shortcutNode.addEventListener('keydown',
                                     this.handleKeyDown_.bind(this));
       shortcutNode.addEventListener('keyup', this.handleKeyUp_.bind(this));
@@ -141,6 +263,32 @@ cr.define('options', function() {
           'clear', command.extension_id, command.command_name);
       commandClear.title = loadTimeData.getString('extensionCommandsDelete');
       commandClear.addEventListener('click', this.handleClear_.bind(this));
+
+      if (command.scope_ui_visible) {
+        var select = node.querySelector('.command-scope');
+        select.id = this.createElementId_(
+            'setCommandScope', command.extension_id, command.command_name);
+        select.hidden = false;
+        // Add the 'In Chrome' option.
+        var option = document.createElement('option');
+        option.textContent = loadTimeData.getString('extensionCommandsRegular');
+        select.appendChild(option);
+        if (command.extension_action) {
+          // Extension actions cannot be global, so we might as well disable the
+          // combo box, to signify that.
+          select.disabled = true;
+        } else {
+          // Add the 'Global' option.
+          option = document.createElement('option');
+          option.textContent =
+              loadTimeData.getString('extensionCommandsGlobal');
+          select.appendChild(option);
+          select.selectedIndex = command.global ? 1 : 0;
+
+          select.addEventListener(
+              'change', this.handleSetCommandScope_.bind(this));
+        }
+      }
 
       this.appendChild(node);
     },
@@ -191,8 +339,9 @@ cr.define('options', function() {
       // When the capture ends, the user may have not given a complete and valid
       // input (or even no input at all). Only a valid key event followed by a
       // valid key combination will cause a shortcut selection to be activated.
-      // If no valid selection was made, howver, revert back to what the textbox
-      // had before to indicate that the shortcut registration was cancelled.
+      // If no valid selection was made, however, revert back to what the
+      // textbox had before to indicate that the shortcut registration was
+      // canceled.
       if (!this.currentKeyEvent_ || !validChar(this.currentKeyEvent_.keyCode))
         shortcutNode.textContent = this.oldValue_;
 
@@ -211,11 +360,49 @@ cr.define('options', function() {
     },
 
     /**
+     * Handles focus event and adds visual indication for active shortcut.
+     * @param {Event} event to consider.
+     * @private
+     */
+    handleFocus_: function(event) {
+      var commandShortcut = event.target.parentElement;
+      commandShortcut.classList.add('focused');
+    },
+
+    /**
+     * Handles lost focus event and removes visual indication of active shortcut
+     * also stops capturing on focus lost.
+     * @param {Event} event to consider.
+     * @private
+     */
+    handleBlur_: function(event) {
+      this.endCapture_(event);
+      var commandShortcut = event.target.parentElement;
+      commandShortcut.classList.remove('focused');
+    },
+
+    /**
      * The KeyDown handler.
      * @param {Event} event The keyboard event to consider.
      * @private
      */
     handleKeyDown_: function(event) {
+      if (event.keyCode == keyEscape) {
+        // Escape cancels capturing.
+        this.endCapture_(event);
+        var parsed = this.parseElementId_('clear',
+            event.target.parentElement.querySelector('.command-clear').id);
+        chrome.send('setExtensionCommandShortcut',
+            [parsed.extensionId, parsed.commandName, '']);
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (event.keyCode == keyTab) {
+        // Allow tab propagation for keyboard navigation.
+        return;
+      }
+
       if (!this.capturingElement_)
         this.startCapture_(event);
 
@@ -228,6 +415,11 @@ cr.define('options', function() {
      * @private
      */
     handleKeyUp_: function(event) {
+      if (event.keyCode == keyTab) {
+        // Allow tab propagation for keyboard navigation.
+        return;
+      }
+
       // We want to make it easy to change from Ctrl+Shift+ to just Ctrl+ by
       // releasing Shift, but we also don't want it to be easy to lose for
       // example Ctrl+Shift+F to Ctrl+ just because you didn't release Ctrl
@@ -260,13 +452,22 @@ cr.define('options', function() {
       event.preventDefault();
       event.stopPropagation();
 
-      if (!event.ctrlKey && !event.altKey && (!cr.isMac || !event.metaKey))
-        return;  // Ctrl or Alt is a must (or Cmd on Mac).
+      if (modifiers(event.keyCode) == Modifiers.ARE_REQUIRED &&
+          !hasModifier(event, false)) {
+        // Ctrl or Alt (or Cmd on Mac) is a must for most shortcuts.
+        return;
+      }
+
+      if (modifiers(event.keyCode) == Modifiers.ARE_NOT_ALLOWED &&
+          hasModifier(event, true)) {
+        return;
+      }
 
       var shortcutNode = this.capturingElement_;
       var keystroke = keystrokeToString(event);
       shortcutNode.textContent = keystroke;
       event.target.classList.add('contains-chars');
+      this.currentKeyEvent_ = event;
 
       if (validChar(event.keyCode)) {
         var node = event.target;
@@ -275,12 +476,13 @@ cr.define('options', function() {
 
         this.oldValue_ = keystroke;  // Forget what the old value was.
         var parsed = this.parseElementId_('command', node.id);
+
+        // Ending the capture must occur before calling
+        // setExtensionCommandShortcut to ensure the shortcut is set.
+        this.endCapture_(event);
         chrome.send('setExtensionCommandShortcut',
                     [parsed.extensionId, parsed.commandName, keystroke]);
-        this.endCapture_(event);
       }
-
-      this.currentKeyEvent_ = event;
     },
 
     /**
@@ -292,6 +494,19 @@ cr.define('options', function() {
       var parsed = this.parseElementId_('clear', event.target.id);
       chrome.send('setExtensionCommandShortcut',
           [parsed.extensionId, parsed.commandName, '']);
+    },
+
+    /**
+     * A handler for the setting the scope of the command.
+     * @param {Event} event The mouse event to consider.
+     * @private
+     */
+    handleSetCommandScope_: function(event) {
+      var parsed = this.parseElementId_('setCommandScope', event.target.id);
+      var element = document.getElementById(
+          'setCommandScope-' + parsed.extensionId + '-' + parsed.commandName);
+      chrome.send('setCommandScope',
+          [parsed.extensionId, parsed.commandName, element.selectedIndex == 1]);
     },
 
     /**

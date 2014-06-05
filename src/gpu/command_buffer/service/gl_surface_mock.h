@@ -20,12 +20,12 @@ class GLSurfaceMock : public gfx::GLSurface {
   MOCK_METHOD0(IsOffscreen, bool());
   MOCK_METHOD0(SwapBuffers, bool());
   MOCK_METHOD4(PostSubBuffer, bool(int x, int y, int width, int height));
-  MOCK_METHOD0(GetExtensions, std::string());
+  MOCK_METHOD0(SupportsPostSubBuffer, bool());
   MOCK_METHOD0(GetSize, gfx::Size());
   MOCK_METHOD0(GetHandle, void*());
   MOCK_METHOD0(GetBackingFrameBufferObject, unsigned int());
   MOCK_METHOD1(OnMakeCurrent, bool(gfx::GLContext* context));
-  MOCK_METHOD1(SetBackbufferAllocation, void(bool allocated));
+  MOCK_METHOD1(SetBackbufferAllocation, bool(bool allocated));
   MOCK_METHOD1(SetFrontbufferAllocation, void(bool allocated));
   MOCK_METHOD0(GetShareHandle, void*());
   MOCK_METHOD0(GetDisplay, void*());

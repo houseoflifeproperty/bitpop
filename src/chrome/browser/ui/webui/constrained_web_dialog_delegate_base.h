@@ -29,7 +29,6 @@ class ConstrainedWebDialogDelegateBase
       WebDialogWebContentsDelegate* tab_delegate);
   virtual ~ConstrainedWebDialogDelegateBase();
 
-  void set_window(ConstrainedWindow* window);
   bool closed_via_webui() const;
 
   // ConstrainedWebDialogDelegate interface.
@@ -38,7 +37,7 @@ class ConstrainedWebDialogDelegateBase
   virtual ui::WebDialogDelegate* GetWebDialogDelegate() OVERRIDE;
   virtual void OnDialogCloseFromWebUI() OVERRIDE;
   virtual void ReleaseWebContentsOnDialogClose() OVERRIDE;
-  virtual ConstrainedWindow* GetWindow() OVERRIDE;
+  virtual web_modal::NativeWebContentsModalDialog GetNativeDialog() OVERRIDE;
   virtual content::WebContents* GetWebContents() OVERRIDE;
 
   // WebDialogWebContentsDelegate interface.
@@ -46,15 +45,8 @@ class ConstrainedWebDialogDelegateBase
       content::WebContents* source,
       const content::NativeWebKeyboardEvent& event) OVERRIDE;
 
- protected:
-  void set_override_tab_delegate(
-      WebDialogWebContentsDelegate* override_tab_delegate);
-
  private:
   scoped_ptr<ui::WebDialogDelegate> web_dialog_delegate_;
-
-  // The constrained window that owns |this|. Saved so we can close it later.
-  ConstrainedWindow* window_;
 
   // Holds the HTML to display in the constrained dialog.
   scoped_ptr<content::WebContents> web_contents_;

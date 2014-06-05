@@ -4,61 +4,65 @@
 
 #include "remoting/host/ipc_video_frame_capturer.h"
 
-#include "remoting/base/capture_data.h"
 #include "remoting/host/desktop_session_proxy.h"
-#include "remoting/proto/control.pb.h"
+#include "third_party/webrtc/modules/desktop_capture/desktop_frame.h"
+#include "third_party/webrtc/modules/desktop_capture/mouse_cursor_shape.h"
 
 namespace remoting {
 
 IpcVideoFrameCapturer::IpcVideoFrameCapturer(
     scoped_refptr<DesktopSessionProxy> desktop_session_proxy)
-    : delegate_(NULL),
+    : callback_(NULL),
+      mouse_shape_observer_(NULL),
       desktop_session_proxy_(desktop_session_proxy),
-      size_most_recent_(SkISize::Make(0, 0)) {
+      capture_pending_(false),
+      weak_factory_(this) {
 }
 
 IpcVideoFrameCapturer::~IpcVideoFrameCapturer() {
 }
 
-void IpcVideoFrameCapturer::Start(Delegate* delegate) {
-  delegate_ = delegate;
-  desktop_session_proxy_->StartVideoCapturer(this);
+void IpcVideoFrameCapturer::Start(Callback* callback) {
+  DCHECK(!callback_);
+  DCHECK(callback);
+  callback_ = callback;
+  desktop_session_proxy_->SetVideoCapturer(weak_factory_.GetWeakPtr());
 }
 
-void IpcVideoFrameCapturer::Stop() {
-  desktop_session_proxy_->StopVideoCapturer();
-  delegate_ = NULL;
+void IpcVideoFrameCapturer::SetMouseShapeObserver(
+      MouseShapeObserver* mouse_shape_observer) {
+  DCHECK(!mouse_shape_observer_);
+  DCHECK(mouse_shape_observer);
+  mouse_shape_observer_ = mouse_shape_observer;
 }
 
-media::VideoFrame::Format IpcVideoFrameCapturer::pixel_format() const {
-  return media::VideoFrame::RGB32;
+bool IpcVideoFrameCapturer::GetScreenList(ScreenList* screens) {
+  NOTIMPLEMENTED();
+  return false;
 }
 
-void IpcVideoFrameCapturer::InvalidateRegion(const SkRegion& invalid_region) {
-  desktop_session_proxy_->InvalidateRegion(invalid_region);
+bool IpcVideoFrameCapturer::SelectScreen(webrtc::ScreenId id) {
+  NOTIMPLEMENTED();
+  return false;
 }
 
-void IpcVideoFrameCapturer::CaptureFrame() {
+void IpcVideoFrameCapturer::Capture(const webrtc::DesktopRegion& region) {
+  DCHECK(!capture_pending_);
+  capture_pending_ = true;
   desktop_session_proxy_->CaptureFrame();
 }
 
-const SkISize& IpcVideoFrameCapturer::size_most_recent() const {
-  return size_most_recent_;
-}
-
 void IpcVideoFrameCapturer::OnCaptureCompleted(
-    scoped_refptr<CaptureData> capture_data) {
-  if (capture_data)
-    size_most_recent_ = capture_data->size();
-
-  if (delegate_)
-    delegate_->OnCaptureCompleted(capture_data);
+    scoped_ptr<webrtc::DesktopFrame> frame) {
+  DCHECK(capture_pending_);
+  capture_pending_ = false;
+  callback_->OnCaptureCompleted(frame.release());
 }
 
 void IpcVideoFrameCapturer::OnCursorShapeChanged(
-    scoped_ptr<protocol::CursorShapeInfo> cursor_shape) {
-  if (delegate_)
-    delegate_->OnCursorShapeChanged(cursor_shape.Pass());
+    scoped_ptr<webrtc::MouseCursorShape> cursor_shape) {
+  if (mouse_shape_observer_)
+    mouse_shape_observer_->OnCursorShapeChanged(cursor_shape.release());
 }
 
 }  // namespace remoting

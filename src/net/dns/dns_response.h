@@ -9,8 +9,8 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
-#include "base/string_piece.h"
-#include "base/time.h"
+#include "base/strings/string_piece.h"
+#include "base/time/time.h"
 #include "net/base/net_export.h"
 #include "net/base/net_util.h"
 
@@ -67,6 +67,9 @@ class NET_EXPORT_PRIVATE DnsRecordParser {
   // Parses the next resource record into |record|. Returns true if succeeded.
   bool ReadRecord(DnsResourceRecord* record);
 
+  // Skip a question section, returns true if succeeded.
+  bool SkipQuestion();
+
  private:
   const char* packet_;
   size_t length_;
@@ -95,21 +98,29 @@ class NET_EXPORT_PRIVATE DnsResponse {
     DNS_PARSE_RESULT_MAX,      // Bounding value for histograms.
   };
 
-  // Constructs an object with an IOBuffer large enough to read
-  // one byte more than largest possible response, to detect malformed
-  // responses.
+  // Constructs a response buffer large enough to store one byte more than
+  // largest possible response, to detect malformed responses.
   DnsResponse();
-  // Constructs response from |data|. Used for testing purposes only!
+
+  // Constructs a response buffer of given length. Used for TCP transactions.
+  explicit DnsResponse(size_t length);
+
+  // Constructs a response from |data|. Used for testing purposes only!
   DnsResponse(const void* data, size_t length, size_t answer_offset);
+
   ~DnsResponse();
 
   // Internal buffer accessor into which actual bytes of response will be
   // read.
   IOBufferWithSize* io_buffer() { return io_buffer_.get(); }
 
-  // Returns false if the packet is shorter than the header or does not match
-  // |query| id or question.
+  // Assuming the internal buffer holds |nbytes| bytes, returns true iff the
+  // packet matches the |query| id and question.
   bool InitParse(int nbytes, const DnsQuery& query);
+
+  // Assuming the internal buffer holds |nbytes| bytes, initialize the parser
+  // without matching it against an existing query.
+  bool InitParseWithoutQuery(int nbytes);
 
   // Returns true if response is valid, that is, after successful InitParse.
   bool IsValid() const;
@@ -119,7 +130,9 @@ class NET_EXPORT_PRIVATE DnsResponse {
   // Accessors for the header.
   uint16 flags() const;  // excluding rcode
   uint8 rcode() const;
+
   unsigned answer_count() const;
+  unsigned additional_answer_count() const;
 
   // Accessors to the question. The qname is unparsed.
   base::StringPiece qname() const;

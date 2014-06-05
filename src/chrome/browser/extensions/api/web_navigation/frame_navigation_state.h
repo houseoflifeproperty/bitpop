@@ -9,7 +9,7 @@
 #include <set>
 
 #include "base/compiler_specific.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace content {
 class RenderViewHost;
@@ -54,7 +54,11 @@ class FrameNavigationState {
                   FrameID parent_frame_id,
                   const GURL& url,
                   bool is_main_frame,
-                  bool is_error_page);
+                  bool is_error_page,
+                  bool is_iframe_srcdoc);
+
+  // Marks the frame as detached and stops tracking it.
+  void FrameDetached(FrameID frame_id);
 
   // Stops tracking all frames but the frame with |id_to_skip| for a given
   // RenderViewHost.
@@ -95,6 +99,12 @@ class FrameNavigationState {
   // True if the frame is currently not navigating.
   bool GetNavigationCompleted(FrameID frame_id) const;
 
+  // Marks a frame as having finished parsing.
+  void SetParsingFinished(FrameID frame_id);
+
+  // True if the frame has finished parsing.
+  bool GetParsingFinished(FrameID frame_id) const;
+
   // Marks a frame as having committed its navigation, i.e. the onCommitted
   // event was fired for this frame.
   void SetNavigationCommitted(FrameID frame_id);
@@ -116,11 +126,15 @@ class FrameNavigationState {
 
  private:
   struct FrameState {
+    FrameState();
+
     bool error_occurred;  // True if an error has occurred in this frame.
     bool is_main_frame;  // True if this is a main frame.
+    bool is_iframe_srcdoc;  // True if the frame is displaying its srcdoc.
     bool is_navigating;  // True if there is a navigation going on.
     bool is_committed;  // True if the navigation is already committed.
     bool is_server_redirected;  // True if a server redirect happened.
+    bool is_parsing;  // True if the frame is still parsing.
     int64 parent_frame_num;
     GURL url;  // URL of this frame.
   };

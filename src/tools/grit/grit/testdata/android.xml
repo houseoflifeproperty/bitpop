@@ -18,4 +18,7 @@
 
   <!-- A second simple string. -->
   <string name="simple2"> Another simple string. </string>
+
+  <!-- A non-translatable string. -->
+  <string name="constant" translatable="false">Do not translate me.</string>
 </resources>

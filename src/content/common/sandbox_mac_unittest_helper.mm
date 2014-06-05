@@ -10,9 +10,10 @@ extern "C" {
 
 #include <map>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/process/kill.h"
 #include "content/common/sandbox_mac.h"
 #include "content/test/test_content_client.h"
 #include "testing/multiprocess_func_list.h"
@@ -77,8 +78,7 @@ bool MacSandboxTest::RunTestInSandbox(SandboxType sandbox_type,
   if (test_data)
     setenv(kTestDataKey, test_data, 1);
 
-  base::ProcessHandle child_process = SpawnChild("mac_sandbox_test_runner",
-                                                 false);
+  base::ProcessHandle child_process = SpawnChild("mac_sandbox_test_runner");
   if (child_process == base::kNullProcessHandle) {
     LOG(WARNING) << "SpawnChild failed";
     return false;
@@ -139,7 +139,7 @@ MULTIPROCESS_TEST_MAIN(mac_sandbox_test_runner) {
   // Find Test Function to run;
   scoped_ptr<MacSandboxTestCase>
       test_case(SandboxTestForName(sandbox_test_name));
-  if (!test_case.get()) {
+  if (!test_case) {
     LOG(ERROR) << "Invalid sandbox test name (" << sandbox_test_name << ")";
     return -1;
   }
@@ -154,7 +154,7 @@ MULTIPROCESS_TEST_MAIN(mac_sandbox_test_runner) {
 
   Sandbox::SandboxWarmup(sandbox_type);
 
-  if (!Sandbox::EnableSandbox(sandbox_type, FilePath())) {
+  if (!Sandbox::EnableSandbox(sandbox_type, base::FilePath())) {
     LOG(ERROR) << "Failed to initialize sandbox " << sandbox_type;
     return -1;
   }

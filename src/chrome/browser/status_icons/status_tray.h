@@ -8,6 +8,11 @@
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_vector.h"
+#include "base/strings/string16.h"
+
+namespace gfx {
+class ImageSkia;
+}
 
 class StatusIcon;
 
@@ -15,6 +20,14 @@ class StatusIcon;
 // APIs to add/remove icons to the tray and attach context menus.
 class StatusTray {
  public:
+  enum StatusIconType {
+    NOTIFICATION_TRAY_ICON = 0,
+    MEDIA_STREAM_CAPTURE_ICON,
+    BACKGROUND_MODE_ICON,
+    OTHER_ICON,
+    NAMED_STATUS_ICON_COUNT
+  };
+
   // Static factory method that is implemented separately for each platform to
   // produce the appropriate platform-specific instance. Returns NULL if this
   // platform does not support status icons.
@@ -24,7 +37,9 @@ class StatusTray {
 
   // Creates a new StatusIcon. The StatusTray retains ownership of the
   // StatusIcon. Returns NULL if the StatusIcon could not be created.
-  StatusIcon* CreateStatusIcon();
+  StatusIcon* CreateStatusIcon(StatusIconType type,
+                               const gfx::ImageSkia& image,
+                               const base::string16& tool_tip);
 
   // Removes |icon| from this status tray.
   void RemoveStatusIcon(StatusIcon* icon);
@@ -35,14 +50,15 @@ class StatusTray {
   StatusTray();
 
   // Factory method for creating a status icon for this platform.
-  virtual StatusIcon* CreatePlatformStatusIcon() = 0;
+  virtual StatusIcon* CreatePlatformStatusIcon(
+      StatusIconType type,
+      const gfx::ImageSkia& image,
+      const base::string16& tool_tip) = 0;
 
   // Returns the list of active status icons so subclasses can operate on them.
   const StatusIcons& status_icons() const { return status_icons_; }
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(StatusTrayTest, CreateRemove);
-
   // List containing all active StatusIcons. The icons are owned by this
   // StatusTray.
   StatusIcons status_icons_;

@@ -8,21 +8,20 @@
 //
 // DownloadHistory decides whether and when to add items to, remove items from,
 // and update items in the database. DownloadHistory uses DownloadHistoryData to
-// store per-DownloadItem data such as its db_handle, whether the item is being
-// added and waiting for its db_handle, and the last history::DownloadRow
-// that was passed to the database.  When the DownloadManager and its delegate
-// (ChromeDownloadManagerDelegate) are initialized, DownloadHistory is created
-// and queries the HistoryService. When the HistoryService calls back from
-// QueryDownloads() to QueryCallback(), DownloadHistory uses
-// DownloadManager::CreateDownloadItem() to inform DownloadManager of these
-// persisted DownloadItems. CreateDownloadItem() internally calls
-// OnDownloadCreated(), which normally adds items to the database, so
-// QueryCallback() uses |loading_db_handle_| to disable adding these items to
-// the database as it matches them up with their db_handles.  If a download is
-// removed via OnDownloadRemoved() while the item is still being added to the
-// database, DownloadHistory uses |removed_while_adding_| to remember to remove
-// the item when its ItemAdded() callback is called.  All callbacks are bound
-// with a weak pointer to DownloadHistory to prevent use-after-free bugs.
+// store per-DownloadItem data such as whether the item is persisted or being
+// persisted, and the last history::DownloadRow that was passed to the database.
+// When the DownloadManager and its delegate (ChromeDownloadManagerDelegate) are
+// initialized, DownloadHistory is created and queries the HistoryService. When
+// the HistoryService calls back from QueryDownloads() to QueryCallback(),
+// DownloadHistory uses DownloadManager::CreateDownloadItem() to inform
+// DownloadManager of these persisted DownloadItems. CreateDownloadItem()
+// internally calls OnDownloadCreated(), which normally adds items to the
+// database, so QueryCallback() uses |loading_id_| to disable adding these items
+// to the database.  If a download is removed via OnDownloadRemoved() while the
+// item is still being added to the database, DownloadHistory uses
+// |removed_while_adding_| to remember to remove the item when its ItemAdded()
+// callback is called.  All callbacks are bound with a weak pointer to
+// DownloadHistory to prevent use-after-free bugs.
 // ChromeDownloadManagerDelegate owns DownloadHistory, and deletes it in
 // Shutdown(), which is called by DownloadManagerImpl::Shutdown() after all
 // DownloadItems are destroyed.
@@ -33,10 +32,14 @@
 #include "chrome/browser/download/download_crx_util.h"
 #include "chrome/browser/history/download_database.h"
 #include "chrome/browser/history/download_row.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
+
+#if !defined(OS_ANDROID)
+#include "chrome/browser/extensions/api/downloads/downloads_api.h"
+#endif
 
 namespace {
 
@@ -48,33 +51,28 @@ namespace {
 // have no control over when DownloadItems are destroyed.
 class DownloadHistoryData : public base::SupportsUserData::Data {
  public:
+  enum PersistenceState {
+    NOT_PERSISTED,
+    PERSISTING,
+    PERSISTED,
+  };
+
   static DownloadHistoryData* Get(content::DownloadItem* item) {
     base::SupportsUserData::Data* data = item->GetUserData(kKey);
     return (data == NULL) ? NULL :
       static_cast<DownloadHistoryData*>(data);
   }
 
-  DownloadHistoryData(content::DownloadItem* item, int64 handle)
-    : is_adding_(false),
-      db_handle_(handle),
-      info_(NULL) {
+  explicit DownloadHistoryData(content::DownloadItem* item)
+    : state_(NOT_PERSISTED) {
     item->SetUserData(kKey, this);
   }
 
   virtual ~DownloadHistoryData() {
   }
 
-  // Whether this item is currently being added to the database.
-  bool is_adding() const { return is_adding_; }
-  void set_is_adding(bool a) { is_adding_ = a; }
-
-  // Whether this item is already persisted in the database.
-  bool is_persisted() const {
-    return db_handle_ != history::DownloadDatabase::kUninitializedHandle;
-  }
-
-  int64 db_handle() const { return db_handle_; }
-  void set_db_handle(int64 h) { db_handle_ = h; }
+  PersistenceState state() const { return state_; }
+  void SetState(PersistenceState s) { state_ = s; }
 
   // This allows DownloadHistory::OnDownloadUpdated() to see what changed in a
   // DownloadItem if anything, in order to prevent writing to the database
@@ -91,8 +89,7 @@ class DownloadHistoryData : public base::SupportsUserData::Data {
  private:
   static const char kKey[];
 
-  bool is_adding_;
-  int64 db_handle_;
+  PersistenceState state_;
   scoped_ptr<history::DownloadRow> info_;
 
   DISALLOW_COPY_AND_ASSIGN(DownloadHistoryData);
@@ -103,32 +100,53 @@ const char DownloadHistoryData::kKey[] =
 
 history::DownloadRow GetDownloadRow(
     content::DownloadItem* item) {
-  // TODO(asanka): Persist GetTargetFilePath() as well.
-  DownloadHistoryData* data = DownloadHistoryData::Get(item);
+  std::string by_ext_id, by_ext_name;
+#if !defined(OS_ANDROID)
+  extensions::DownloadedByExtension* by_ext =
+      extensions::DownloadedByExtension::Get(item);
+  if (by_ext) {
+    by_ext_id = by_ext->id();
+    by_ext_name = by_ext->name();
+  }
+#endif
+
   return history::DownloadRow(
       item->GetFullPath(),
-      item->GetURL(),
+      item->GetTargetFilePath(),
+      item->GetUrlChain(),
       item->GetReferrerUrl(),
       item->GetStartTime(),
       item->GetEndTime(),
+      item->GetETag(),
+      item->GetLastModifiedTime(),
       item->GetReceivedBytes(),
       item->GetTotalBytes(),
       item->GetState(),
-      ((data != NULL) ? data->db_handle()
-       : history::DownloadDatabase::kUninitializedHandle),
-      item->GetOpened());
+      item->GetDangerType(),
+      item->GetLastReason(),
+      item->GetId(),
+      item->GetOpened(),
+      by_ext_id,
+      by_ext_name);
 }
 
 bool ShouldUpdateHistory(const history::DownloadRow* previous,
                          const history::DownloadRow& current) {
-  // Ignore url, referrer, start_time, db_handle, which don't change.
+  // Ignore url, referrer, start_time, id, which don't change.
   return ((previous == NULL) ||
-          (previous->path != current.path) ||
+          (previous->current_path != current.current_path) ||
+          (previous->target_path != current.target_path) ||
           (previous->end_time != current.end_time) ||
           (previous->received_bytes != current.received_bytes) ||
           (previous->total_bytes != current.total_bytes) ||
+          (previous->etag != current.etag) ||
+          (previous->last_modified != current.last_modified) ||
           (previous->state != current.state) ||
-          (previous->opened != current.opened));
+          (previous->danger_type != current.danger_type) ||
+          (previous->interrupt_reason != current.interrupt_reason) ||
+          (previous->opened != current.opened) ||
+          (previous->by_ext_id != current.by_ext_id) ||
+          (previous->by_ext_name != current.by_ext_name));
 }
 
 typedef std::vector<history::DownloadRow> InfoVector;
@@ -157,8 +175,8 @@ void DownloadHistory::HistoryAdapter::UpdateDownload(
 }
 
 void DownloadHistory::HistoryAdapter::RemoveDownloads(
-    const std::set<int64>& db_handles) {
-  history_->RemoveDownloads(db_handles);
+    const std::set<uint32>& ids) {
+  history_->RemoveDownloads(ids);
 }
 
 
@@ -167,17 +185,16 @@ DownloadHistory::Observer::~Observer() {}
 
 bool DownloadHistory::IsPersisted(content::DownloadItem* item) {
   DownloadHistoryData* data = DownloadHistoryData::Get(item);
-  return data && data->is_persisted();
+  return data && (data->state() == DownloadHistoryData::PERSISTED);
 }
 
-DownloadHistory::DownloadHistory(
-    content::DownloadManager* manager,
-    scoped_ptr<HistoryAdapter> history)
-  : ALLOW_THIS_IN_INITIALIZER_LIST(notifier_(manager, this)),
+DownloadHistory::DownloadHistory(content::DownloadManager* manager,
+                                 scoped_ptr<HistoryAdapter> history)
+  : notifier_(manager, this),
     history_(history.Pass()),
-    loading_db_handle_(history::DownloadDatabase::kUninitializedHandle),
+    loading_id_(content::DownloadItem::kInvalidId),
     history_size_(0),
-    ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+    weak_ptr_factory_(this) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   content::DownloadManager::DownloadVector items;
   notifier_.GetManager()->GetAllDownloads(&items);
@@ -212,30 +229,32 @@ void DownloadHistory::QueryCallback(scoped_ptr<InfoVector> infos) {
     return;
   for (InfoVector::const_iterator it = infos->begin();
        it != infos->end(); ++it) {
-    // OnDownloadCreated() is called inside DM::CreateDownloadItem(), so set
-    // loading_db_handle_ to match up the created item with its db_handle.  All
-    // methods run on the UI thread and CreateDownloadItem() is synchronous.
-    loading_db_handle_ = it->db_handle;
-    content::DownloadItem* download_item =
-      notifier_.GetManager()->CreateDownloadItem(
-        it->path,
-        it->url,
+    loading_id_ = it->id;
+    content::DownloadItem* item = notifier_.GetManager()->CreateDownloadItem(
+        loading_id_,
+        it->current_path,
+        it->target_path,
+        it->url_chain,
         it->referrer_url,
         it->start_time,
         it->end_time,
+        it->etag,
+        it->last_modified,
         it->received_bytes,
         it->total_bytes,
         it->state,
+        it->danger_type,
+        it->interrupt_reason,
         it->opened);
-    DownloadHistoryData* data = DownloadHistoryData::Get(download_item);
-
-    // If this DCHECK fails, then you probably added an Observer that
-    // synchronously creates a DownloadItem in response to
-    // DownloadManager::OnDownloadCreated(), and your observer runs before
-    // DownloadHistory, and DownloadManager creates items synchronously. Just
-    // bounce your DownloadItem creation off the message loop to flush
-    // DownloadHistory::OnDownloadCreated.
-    DCHECK_EQ(it->db_handle, data->db_handle());
+#if !defined(OS_ANDROID)
+    if (!it->by_ext_id.empty() && !it->by_ext_name.empty()) {
+      new extensions::DownloadedByExtension(
+          item, it->by_ext_id, it->by_ext_name);
+      item->UpdateObservers();
+    }
+#endif
+    DCHECK_EQ(DownloadHistoryData::Get(item)->state(),
+              DownloadHistoryData::PERSISTED);
     ++history_size_;
   }
   notifier_.GetManager()->CheckForHistoryFilesRemoval();
@@ -244,20 +263,18 @@ void DownloadHistory::QueryCallback(scoped_ptr<InfoVector> infos) {
 void DownloadHistory::MaybeAddToHistory(content::DownloadItem* item) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
-  int32 download_id = item->GetId();
+  uint32 download_id = item->GetId();
   DownloadHistoryData* data = DownloadHistoryData::Get(item);
-  bool removing = (removing_handles_.find(data->db_handle()) !=
-                   removing_handles_.end());
+  bool removing = removing_ids_.find(download_id) != removing_ids_.end();
 
   // TODO(benjhayden): Remove IsTemporary().
   if (download_crx_util::IsExtensionDownload(*item) ||
       item->IsTemporary() ||
-      data->is_adding() ||
-      data->is_persisted() ||
+      (data->state() != DownloadHistoryData::NOT_PERSISTED) ||
       removing)
     return;
 
-  data->set_is_adding(true);
+  data->SetState(DownloadHistoryData::PERSISTING);
   if (data->info() == NULL) {
     // Keep the info here regardless of whether the item is in progress so that,
     // when ItemAdded() calls OnDownloadUpdated(), it can decide whether to
@@ -268,13 +285,16 @@ void DownloadHistory::MaybeAddToHistory(content::DownloadItem* item) {
   history_->CreateDownload(*data->info(), base::Bind(
       &DownloadHistory::ItemAdded, weak_ptr_factory_.GetWeakPtr(),
       download_id));
+  FOR_EACH_OBSERVER(Observer, observers_, OnDownloadStored(
+      item, *data->info()));
 }
 
-void DownloadHistory::ItemAdded(int32 download_id, int64 db_handle) {
+void DownloadHistory::ItemAdded(uint32 download_id, bool success) {
   if (removed_while_adding_.find(download_id) !=
       removed_while_adding_.end()) {
     removed_while_adding_.erase(download_id);
-    ScheduleRemoveDownload(download_id, db_handle);
+    if (success)
+      ScheduleRemoveDownload(download_id);
     return;
   }
 
@@ -292,25 +312,16 @@ void DownloadHistory::ItemAdded(int32 download_id, int64 db_handle) {
   }
 
   DownloadHistoryData* data = DownloadHistoryData::Get(item);
-  data->set_is_adding(false);
 
   // The sql INSERT statement failed. Avoid an infinite loop: don't
   // automatically retry. Retry adding the next time the item is updated by
-  // unsetting is_adding.
-  if (db_handle == history::DownloadDatabase::kUninitializedHandle) {
+  // resetting the state to NOT_PERSISTED.
+  if (!success) {
     DVLOG(20) << __FUNCTION__ << " INSERT failed id=" << download_id;
+    data->SetState(DownloadHistoryData::NOT_PERSISTED);
     return;
   }
-
-  data->set_db_handle(db_handle);
-
-  // Send to observers the actual history::DownloadRow that was sent to
-  // the db, plus the db_handle, instead of completely regenerating the
-  // history::DownloadRow, in order to accurately reflect the contents of
-  // the database.
-  data->info()->db_handle = db_handle;
-  FOR_EACH_OBSERVER(Observer, observers_, OnDownloadStored(
-      item, *data->info()));
+  data->SetState(DownloadHistoryData::PERSISTED);
 
   UMA_HISTOGRAM_CUSTOM_COUNTS("Download.HistorySize2",
                               history_size_,
@@ -321,8 +332,8 @@ void DownloadHistory::ItemAdded(int32 download_id, int64 db_handle) {
 
   // In case the item changed or became temporary while it was being added.
   // Don't just update all of the item's observers because we're the only
-  // observer that can also see db_handle, which is the only thing that
-  // ItemAdded changed.
+  // observer that can also see data->state(), which is the only thing that
+  // ItemAdded() changed.
   OnDownloadUpdated(notifier_.GetManager(), item);
 }
 
@@ -332,8 +343,11 @@ void DownloadHistory::OnDownloadCreated(
 
   // All downloads should pass through OnDownloadCreated exactly once.
   CHECK(!DownloadHistoryData::Get(item));
-  DownloadHistoryData* data = new DownloadHistoryData(item, loading_db_handle_);
-  loading_db_handle_ = history::DownloadDatabase::kUninitializedHandle;
+  DownloadHistoryData* data = new DownloadHistoryData(item);
+  if (item->GetId() == loading_id_) {
+    data->SetState(DownloadHistoryData::PERSISTED);
+    loading_id_ = content::DownloadItem::kInvalidId;
+  }
   if (item->GetState() == content::DownloadItem::IN_PROGRESS) {
     data->set_info(GetDownloadRow(item));
   }
@@ -345,7 +359,7 @@ void DownloadHistory::OnDownloadUpdated(
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
   DownloadHistoryData* data = DownloadHistoryData::Get(item);
-  if (!data->is_persisted()) {
+  if (data->state() == DownloadHistoryData::NOT_PERSISTED) {
     MaybeAddToHistory(item);
     return;
   }
@@ -380,44 +394,40 @@ void DownloadHistory::OnDownloadRemoved(
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
   DownloadHistoryData* data = DownloadHistoryData::Get(item);
-  if (!data->is_persisted()) {
-    if (data->is_adding()) {
+  if (data->state() != DownloadHistoryData::PERSISTED) {
+    if (data->state() == DownloadHistoryData::PERSISTING) {
       // ScheduleRemoveDownload will be called when history_ calls ItemAdded().
       removed_while_adding_.insert(item->GetId());
     }
     return;
   }
-  ScheduleRemoveDownload(item->GetId(), data->db_handle());
-  data->set_db_handle(history::DownloadDatabase::kUninitializedHandle);
+  ScheduleRemoveDownload(item->GetId());
+  // This is important: another OnDownloadRemoved() handler could do something
+  // that synchronously fires an OnDownloadUpdated().
+  data->SetState(DownloadHistoryData::NOT_PERSISTED);
   // ItemAdded increments history_size_ only if the item wasn't
   // removed_while_adding_, so the next line does not belong in
   // ScheduleRemoveDownload().
   --history_size_;
 }
 
-void DownloadHistory::ScheduleRemoveDownload(
-    int32 download_id, int64 db_handle) {
+void DownloadHistory::ScheduleRemoveDownload(uint32 download_id) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  if (db_handle == history::DownloadDatabase::kUninitializedHandle)
-    return;
 
   // For database efficiency, batch removals together if they happen all at
   // once.
-  if (removing_handles_.empty()) {
+  if (removing_ids_.empty()) {
     content::BrowserThread::PostTask(content::BrowserThread::UI, FROM_HERE,
         base::Bind(&DownloadHistory::RemoveDownloadsBatch,
                    weak_ptr_factory_.GetWeakPtr()));
   }
-  removing_handles_.insert(db_handle);
   removing_ids_.insert(download_id);
 }
 
 void DownloadHistory::RemoveDownloadsBatch() {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  HandleSet remove_handles;
   IdSet remove_ids;
-  removing_handles_.swap(remove_handles);
   removing_ids_.swap(remove_ids);
-  history_->RemoveDownloads(remove_handles);
+  history_->RemoveDownloads(remove_ids);
   FOR_EACH_OBSERVER(Observer, observers_, OnDownloadsRemoved(remove_ids));
 }

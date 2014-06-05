@@ -90,7 +90,7 @@ def CompressUsingLZMA(build_dir, compressed_file, input_file):
 
 
 def CopyAllFilesToStagingDir(config, distribution, staging_dir, build_dir,
-                             enable_hidpi, enable_touch_ui):
+                             enable_hidpi):
   """Copies the files required for installer archive.
   Copies all common files required for various distributions of Chromium and
   also files for the specific Chromium build specified by distribution.
@@ -103,8 +103,6 @@ def CopyAllFilesToStagingDir(config, distribution, staging_dir, build_dir,
                                  staging_dir, build_dir)
   if enable_hidpi == '1':
     CopySectionFilesToStagingDir(config, 'HIDPI', staging_dir, build_dir)
-  if enable_touch_ui == '1':
-    CopySectionFilesToStagingDir(config, 'TOUCH', staging_dir, build_dir)
 
 
 def CopySectionFilesToStagingDir(config, section, staging_dir, src_dir):
@@ -325,9 +323,8 @@ def CreateResourceInputFile(
 # |insert_before|.
 def CopyAndAugmentManifest(build_dir, output_dir, manifest_name,
                            inserted_string, insert_before):
-  manifest_file = open(os.path.join(build_dir, manifest_name), 'r')
-  manifest_lines = manifest_file.readlines()
-  manifest_file.close()
+  with open(os.path.join(build_dir, manifest_name), 'r') as f:
+    manifest_lines = f.readlines()
 
   insert_line = -1
   insert_pos = -1
@@ -340,54 +337,87 @@ def CopyAndAugmentManifest(build_dir, output_dir, manifest_name,
     raise ValueError('Could not find {0} in the manifest:\n{1}'.format(
         insert_before, ''.join(manifest_lines)))
   old = manifest_lines[insert_line]
-  manifest_lines[insert_line] = (old[:insert_pos] + inserted_string +
-                                 old[insert_pos:])
+  manifest_lines[insert_line] = (old[:insert_pos] + '\n' + inserted_string +
+                                 '\n' + old[insert_pos:])
 
-  modified_manifest_file = open(
-      os.path.join(output_dir, manifest_name), 'w')
-  modified_manifest_file.write(''.join(manifest_lines))
-  modified_manifest_file.close()
+  with open(os.path.join(output_dir, manifest_name), 'w') as f :
+    f.write(''.join(manifest_lines))
+
+
+def CopyIfChanged(src, target_dir):
+  """Copy specified |src| file to |target_dir|, but only write to target if
+  the file has changed. This avoids a problem during packaging where parts of
+  the build have not completed and have the runtime DLL locked when we try to
+  copy over it. See http://crbug.com/305877 for details."""
+  assert os.path.isdir(target_dir)
+  dest = os.path.join(target_dir, os.path.basename(src))
+  if os.path.exists(dest):
+    # We assume the files are OK to buffer fully into memory since we know
+    # they're only 1-2M.
+    with open(src, 'rb') as fsrc:
+      src_data = fsrc.read()
+    with open(dest, 'rb') as fdest:
+      dest_data = fdest.read()
+    if src_data != dest_data:
+      # This may still raise if we get here, but this really should almost
+      # never happen (it would mean that the contents of e.g. msvcr100d.dll
+      # had been changed).
+      shutil.copyfile(src, dest)
+  else:
+    shutil.copyfile(src, dest)
 
 
 # Copy the relevant CRT DLLs to |build_dir|. We copy DLLs from all versions
 # of VS installed to make sure we have the correct CRT version, unused DLLs
 # should not conflict with the others anyways.
-def CopyVisualStudioRuntimeDLLs(build_dir):
-  is_debug = os.path.basename(build_dir) == 'Debug'
-  if not is_debug and os.path.basename(build_dir) != 'Release':
+def CopyVisualStudioRuntimeDLLs(target_arch, build_dir):
+  is_debug = os.path.basename(build_dir).startswith('Debug')
+  if not is_debug and not os.path.basename(build_dir).startswith('Release'):
     print ("Warning: could not determine build configuration from "
            "output directory, assuming Release build.")
 
   crt_dlls = []
+  sys_dll_dir = None
   if is_debug:
     crt_dlls = glob.glob(
         "C:/Program Files (x86)/Microsoft Visual Studio */VC/redist/"
-        "Debug_NonRedist/x86/Microsoft.*.DebugCRT/*.dll")
+        "Debug_NonRedist/" + target_arch + "/Microsoft.*.DebugCRT/*.dll")
   else:
     crt_dlls = glob.glob(
-        "C:/Program Files (x86)/Microsoft Visual Studio */VC/redist/x86/"
-        "Microsoft.*.CRT/*.dll")
+        "C:/Program Files (x86)/Microsoft Visual Studio */VC/redist/" +
+        target_arch + "/Microsoft.*.CRT/*.dll")
 
   # Also handle the case where someone is building using only winsdk and
   # doesn't have Visual Studio installed.
   if not crt_dlls:
-    # On a 64-bit system, 32-bit dlls are in SysWOW64 (don't ask).
-    if os.access("C:/Windows/SysWOW64", os.F_OK):
-      sys_dll_dir = "C:/Windows/SysWOW64"
+    if target_arch == 'x64':
+      # check we are are on a 64bit system by existence of WOW64 dir
+      if os.access("C:/Windows/SysWOW64", os.F_OK):
+        sys_dll_dir = "C:/Windows/System32"
+      else:
+        # only support packaging of 64bit installer on 64bit system
+        # but this just as bad as not finding DLLs at all so we
+        # don't abort here to mirror behavior below
+        print ("Warning: could not find x64 CRT DLLs on x86 system.")
     else:
-      sys_dll_dir = "C:/Windows/System32"
+      # On a 64-bit system, 32-bit dlls are in SysWOW64 (don't ask).
+      if os.access("C:/Windows/SysWOW64", os.F_OK):
+        sys_dll_dir = "C:/Windows/SysWOW64"
+      else:
+        sys_dll_dir = "C:/Windows/System32"
 
-    if is_debug:
-      crt_dlls = glob.glob(os.path.join(sys_dll_dir, "msvc*0d.dll"))
-    else:
-      crt_dlls = glob.glob(os.path.join(sys_dll_dir, "msvc*0.dll"))
+    if sys_dll_dir is not None:
+      if is_debug:
+        crt_dlls = glob.glob(os.path.join(sys_dll_dir, "msvc*0d.dll"))
+      else:
+        crt_dlls = glob.glob(os.path.join(sys_dll_dir, "msvc*0.dll"))
 
   if not crt_dlls:
     print ("Warning: could not find CRT DLLs to copy to build dir - target "
            "may not run on a system that doesn't have those DLLs.")
 
   for dll in crt_dlls:
-    shutil.copy(dll, build_dir)
+    CopyIfChanged(dll, build_dir)
 
 
 # Copies component build DLLs and generates required config files and manifests
@@ -395,7 +425,7 @@ def CopyVisualStudioRuntimeDLLs(build_dir):
 # run-time.
 # This is meant for developer builds only and should never be used to package
 # an official build.
-def DoComponentBuildTasks(staging_dir, build_dir, current_version):
+def DoComponentBuildTasks(staging_dir, build_dir, target_arch, current_version):
   # Get the required directories for the upcoming operations.
   chrome_dir = os.path.join(staging_dir, CHROME_DIR)
   version_dir = os.path.join(chrome_dir, current_version)
@@ -408,82 +438,53 @@ def DoComponentBuildTasks(staging_dir, build_dir, current_version):
   # Copy the VS CRT DLLs to |build_dir|. This must be done before the general
   # copy step below to ensure the CRT DLLs are added to the archive and marked
   # as a dependency in the exe manifests generated below.
-  CopyVisualStudioRuntimeDLLs(build_dir)
+  CopyVisualStudioRuntimeDLLs(target_arch, build_dir)
 
-  # Copy all the DLLs in |build_dir| to the version directory. Simultaneously
-  # build a list of their names to mark them as dependencies of chrome.exe and
-  # setup.exe later.
-  dlls = glob.glob(os.path.join(build_dir, '*.dll'))
-  dll_names = []
-  for dll in dlls:
-    shutil.copy(dll, version_dir)
-    dll_names.append(os.path.splitext(os.path.basename(dll))[0])
+  # Explicitly list the component DLLs setup.exe depends on (this list may
+  # contain wildcards). These will be copied to |installer_dir| in the archive.
+  setup_component_dll_globs = [ 'base.dll',
+                                'crcrypto.dll',
+                                'crnspr.dll',
+                                'crnss.dll',
+                                'icui18n.dll',
+                                'icuuc.dll',
+                                'msvc*.dll' ]
+  for setup_component_dll_glob in setup_component_dll_globs:
+    setup_component_dlls = glob.glob(os.path.join(build_dir,
+                                                  setup_component_dll_glob))
+    for setup_component_dll in setup_component_dlls:
+      shutil.copy(setup_component_dll, installer_dir)
 
-  exe_config = (
-      "<configuration>\n"
-      "  <windows>\n"
-      "    <assemblyBinding xmlns='urn:schemas-microsoft-com:asm.v1'>\n"
-      "        <probing privatePath='{rel_path}'/>\n"
-      "    </assemblyBinding>\n"
-      "  </windows>\n"
-      "</configuration>")
+  # Stage all the component DLLs found in |build_dir| to the |version_dir| (for
+  # the version assembly to be able to refer to them below and make sure
+  # chrome.exe can find them at runtime). The component DLLs are considered to
+  # be all the DLLs which have not already been added to the |version_dir| by
+  # virtue of chrome.release.
+  build_dlls = glob.glob(os.path.join(build_dir, '*.dll'))
+  staged_dll_basenames = [os.path.basename(staged_dll) for staged_dll in \
+                          glob.glob(os.path.join(version_dir, '*.dll'))]
+  component_dll_filenames = []
+  for component_dll in [dll for dll in build_dlls if \
+                        os.path.basename(dll) not in staged_dll_basenames]:
+    component_dll_name = os.path.basename(component_dll)
+    # remoting_*.dll's don't belong in the archive (it doesn't depend on them
+    # in gyp). Trying to copy them causes a build race when creating the
+    # installer archive in component mode. See: crbug.com/180996
+    if component_dll_name.startswith('remoting_'):
+      continue
+    component_dll_filenames.append(component_dll_name)
+    shutil.copy(component_dll, version_dir)
 
-  # Write chrome.exe.config to point to the version directory.
-  chrome_exe_config_file = open(
-      os.path.join(chrome_dir, 'chrome.exe.config'), 'w')
-  chrome_exe_config_file.write(exe_config.format(rel_path=current_version))
-  chrome_exe_config_file.close()
-
-  # Write setup.exe.config to point to the version directory (which is one
-  # level up from setup.exe post-install).
-  setup_exe_config_file = open(
-      os.path.join(installer_dir, 'setup.exe.config'), 'w')
-  setup_exe_config_file.write(exe_config.format(rel_path='..'))
-  setup_exe_config_file.close()
-
-  # Add a dependency for each DLL in |dlls| to the existing manifests for
-  # chrome.exe and setup.exe. Some of these DLLs are not actually used by
-  # either process, but listing them all as dependencies doesn't hurt as it
-  # only makes them visible to the exes, just like they already are in the
-  # build output directory.
-  exe_manifest_dependencies_list = []
-  for name in dll_names:
-    exe_manifest_dependencies_list.append(
-        "<dependency>"
-        "<dependentAssembly>"
-        "<assemblyIdentity type='win32' name='chrome.{dll_name}' "
-        "version='0.0.0.0' processorArchitecture='x86' language='*'/>"
-        "</dependentAssembly>"
-        "</dependency>".format(dll_name=name))
-
-  exe_manifest_dependencies = ''.join(exe_manifest_dependencies_list)
-
-  # Write a modified chrome.exe.manifest beside chrome.exe.
-  CopyAndAugmentManifest(build_dir, chrome_dir, 'chrome.exe.manifest',
-                         exe_manifest_dependencies, '</assembly>')
-
-  # Write a modified setup.exe.manifest beside setup.exe in
-  # |version_dir|/Installer.
-  CopyAndAugmentManifest(build_dir, installer_dir, 'setup.exe.manifest',
-                         exe_manifest_dependencies, '</assembly>')
-
-  # Generate assembly manifests for each DLL in |dlls|. These do not interfere
-  # with the private manifests potentially embedded in each DLL. They simply
-  # allow chrome.exe and setup.exe to see those DLLs although they are in a
-  # separate directory post-install.
-  for name in dll_names:
-    dll_manifest = (
-        "<assembly\n"
-        "    xmlns='urn:schemas-microsoft-com:asm.v1' manifestVersion='1.0'>\n"
-        "  <assemblyIdentity name='chrome.{dll_name}' version='0.0.0.0'\n"
-        "      type='win32' processorArchitecture='x86'/>\n"
-        "  <file name='{dll_name}.dll'/>\n"
-        "</assembly>".format(dll_name=name))
-
-    dll_manifest_file = open(os.path.join(
-        version_dir, "chrome.{dll_name}.manifest".format(dll_name=name)), 'w')
-    dll_manifest_file.write(dll_manifest)
-    dll_manifest_file.close()
+  # Augment {version}.manifest to include all component DLLs as part of the
+  # assembly it constitutes, which will allow dependents of this assembly to
+  # find these DLLs.
+  version_assembly_dll_additions = []
+  for dll_filename in component_dll_filenames:
+    version_assembly_dll_additions.append("  <file name='%s'/>" % dll_filename)
+  CopyAndAugmentManifest(build_dir, version_dir,
+                         '%s.manifest' % current_version,
+                         '\n'.join(version_assembly_dll_additions),
+                         '</assembly>')
 
 
 def main(options):
@@ -506,15 +507,16 @@ def main(options):
   if options.build_dir != options.output_dir:
     CopyAllFilesToStagingDir(config, options.distribution,
                              staging_dir, options.output_dir,
-                             options.enable_hidpi, options.enable_touch_ui)
+                             options.enable_hidpi)
 
   # Now copy the remainder of the files from the build dir.
   CopyAllFilesToStagingDir(config, options.distribution,
                            staging_dir, options.build_dir,
-                           options.enable_hidpi, options.enable_touch_ui)
+                           options.enable_hidpi)
 
   if options.component_build == '1':
-    DoComponentBuildTasks(staging_dir, options.build_dir, current_version)
+    DoComponentBuildTasks(staging_dir, options.build_dir,
+                          options.target_arch, current_version)
 
   version_numbers = current_version.split('.')
   current_build_number = version_numbers[2] + '.' + version_numbers[3]
@@ -568,13 +570,14 @@ def _ParseOptions():
       help='Name used to prefix names of generated archives.')
   parser.add_option('--enable_hidpi', default='0',
       help='Whether to include HiDPI resource files.')
-  parser.add_option('--enable_touch_ui', default='0',
-      help='Whether to include resource files from the "TOUCH" section of the '
-           'input file.')
   parser.add_option('--component_build', default='0',
       help='Whether this archive is packaging a component build. This will '
            'also turn off compression of chrome.7z into chrome.packed.7z and '
            'helpfully delete any old chrome.packed.7z in |output_dir|.')
+  parser.add_option('--target_arch', default='x86',
+      help='Specify the target architecture for installer - this is used '
+           'to determine which CRT runtime files to pull and package '
+           'with the installer archive {x86|x64}.')
 
   options, _ = parser.parse_args()
   if not options.build_dir:

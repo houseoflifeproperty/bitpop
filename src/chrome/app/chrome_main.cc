@@ -7,6 +7,8 @@
 #include "content/public/app/content_main.h"
 
 #if defined(OS_WIN)
+#include "base/win/win_util.h"
+
 #define DLLEXPORT __declspec(dllexport)
 
 // We use extern C for the prototype DLLEXPORT to avoid C++ name mangling.
@@ -24,11 +26,28 @@ int ChromeMain(int argc, const char** argv);
 #if defined(OS_WIN)
 DLLEXPORT int __cdecl ChromeMain(HINSTANCE instance,
                                  sandbox::SandboxInterfaceInfo* sandbox_info) {
-  ChromeMainDelegate chrome_main_delegate;
-  return content::ContentMain(instance, sandbox_info, &chrome_main_delegate);
 #elif defined(OS_POSIX)
 int ChromeMain(int argc, const char** argv) {
-  ChromeMainDelegate chrome_main_delegate;
-  return content::ContentMain(argc, argv, &chrome_main_delegate);
 #endif
+  ChromeMainDelegate chrome_main_delegate;
+  content::ContentMainParams params(&chrome_main_delegate);
+
+#if defined(OS_WIN)
+  // The process should crash when going through abnormal termination.
+  base::win::SetShouldCrashOnProcessDetach(true);
+  base::win::SetAbortBehaviorForCrashReporting();
+  params.instance = instance;
+  params.sandbox_info = sandbox_info;
+#else
+  params.argc = argc;
+  params.argv = argv;
+#endif
+
+  int rv = content::ContentMain(params);
+
+#if defined(OS_WIN)
+  base::win::SetShouldCrashOnProcessDetach(false);
+#endif
+
+  return rv;
 }

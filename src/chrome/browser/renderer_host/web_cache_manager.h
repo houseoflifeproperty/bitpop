@@ -8,29 +8,29 @@
 #ifndef CHROME_BROWSER_RENDERER_HOST_WEB_CACHE_MANAGER_H_
 #define CHROME_BROWSER_RENDERER_HOST_WEB_CACHE_MANAGER_H_
 
-#include <map>
 #include <list>
+#include <map>
 #include <set>
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCache.h"
+#include "third_party/WebKit/public/web/WebCache.h"
 
 template<typename Type>
 struct DefaultSingletonTraits;
-class PrefService;
+class PrefRegistrySimple;
 
 class WebCacheManager : public content::NotificationObserver {
   friend class WebCacheManagerTest;
   FRIEND_TEST_ALL_PREFIXES(WebCacheManagerBrowserTest, CrashOnceOnly);
 
  public:
-  static void RegisterPrefs(PrefService* prefs);
+  static void RegisterPrefs(PrefRegistrySimple* registry);
 
   // Gets the singleton WebCacheManager object.  The first time this method
   // is called, a WebCacheManager object is constructed and returned.
@@ -58,7 +58,7 @@ class WebCacheManager : public content::NotificationObserver {
   // statistics.  The more up-to-date the cache manager's statistics, the
   // better it can allocate cache resources.
   void ObserveStats(
-      int renderer_id, const WebKit::WebCache::UsageStats& stats);
+      int renderer_id, const blink::WebCache::UsageStats& stats);
 
   // The global limit on the number of bytes in all the in-memory caches.
   size_t global_size_limit() const { return global_size_limit_; }
@@ -87,7 +87,7 @@ class WebCacheManager : public content::NotificationObserver {
   static const int kRendererInactiveThresholdMinutes = 5;
 
   // Keep track of some renderer information.
-  struct RendererInfo : WebKit::WebCache::UsageStats {
+  struct RendererInfo : blink::WebCache::UsageStats {
     // The access time for this renderer.
     base::Time access;
   };
@@ -149,13 +149,13 @@ class WebCacheManager : public content::NotificationObserver {
   // Add up all the stats from the given set of renderers and place the result
   // in |stats|.
   void GatherStats(const std::set<int>& renderers,
-                   WebKit::WebCache::UsageStats* stats);
+                   blink::WebCache::UsageStats* stats);
 
   // Get the amount of memory that would be required to implement |tactic|
   // using the specified allocation tactic.  This function defines the
   // semantics for each of the tactics.
   static size_t GetSize(AllocationTactic tactic,
-                        const WebKit::WebCache::UsageStats& stats);
+                        const blink::WebCache::UsageStats& stats);
 
   // Attempt to use the specified tactics to compute an allocation strategy
   // and place the result in |strategy|.  |active_stats| and |inactive_stats|
@@ -165,9 +165,9 @@ class WebCacheManager : public content::NotificationObserver {
   // Returns |true| on success and |false| on failure.  Does not modify
   // |strategy| on failure.
   bool AttemptTactic(AllocationTactic active_tactic,
-                     const WebKit::WebCache::UsageStats& active_stats,
+                     const blink::WebCache::UsageStats& active_stats,
                      AllocationTactic inactive_tactic,
-                     const WebKit::WebCache::UsageStats& inactive_stats,
+                     const blink::WebCache::UsageStats& inactive_stats,
                      AllocationStrategy* strategy);
 
   // For each renderer in |renderers|, computes its allocation according to
@@ -191,7 +191,7 @@ class WebCacheManager : public content::NotificationObserver {
   };
 
   // Inform all |renderers| to clear their cache.
-  void ClearRendederCache(const std::set<int>& renderers,
+  void ClearRendererCache(const std::set<int>& renderers,
                           ClearCacheOccasion occation);
 
   // Check to see if any active renderers have fallen inactive.

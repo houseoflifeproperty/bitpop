@@ -10,6 +10,7 @@
 #include "GrTemplates.h"
 #include "SkGr.h"
 #include "SkDescriptor.h"
+#include "SkDistanceFieldGen.h"
 #include "SkGlyphCache.h"
 
 class SkGrDescKey : public GrKey {
@@ -52,7 +53,7 @@ bool SkGrDescKey::lt(const GrKey& rh) const {
     const SkDescriptor* srcDesc = ((const SkGrDescKey*)&rh)->fDesc;
     size_t lenLH = fDesc->getLength();
     size_t lenRH = srcDesc->getLength();
-    int cmp = memcmp(fDesc, srcDesc, SkMin32(lenLH, lenRH));
+    int cmp = memcmp(fDesc, srcDesc, SkTMin<size_t>(lenLH, lenRH));
     if (0 == cmp) {
         return lenLH < lenRH;
     } else {
@@ -73,7 +74,7 @@ SkGrFontScaler::SkGrFontScaler(SkGlyphCache* strike) {
 }
 
 SkGrFontScaler::~SkGrFontScaler() {
-    GrSafeUnref(fKey);
+    SkSafeUnref(fKey);
 }
 
 GrMaskFormat SkGrFontScaler::getMaskFormat() {
@@ -87,8 +88,10 @@ GrMaskFormat SkGrFontScaler::getMaskFormat() {
             return kA565_GrMaskFormat;
         case SkMask::kLCD32_Format:
             return kA888_GrMaskFormat;
+        case SkMask::kARGB32_Format:
+            return kARGB_GrMaskFormat;
         default:
-            GrAssert(!"unsupported SkMask::Format");
+            SkDEBUGFAIL("unsupported SkMask::Format");
             return kA8_GrMaskFormat;
     }
 }
@@ -100,14 +103,23 @@ const GrKey* SkGrFontScaler::getKey() {
     return fKey;
 }
 
-bool SkGrFontScaler::getPackedGlyphBounds(GrGlyph::PackedID packed,
-                                          GrIRect* bounds) {
+bool SkGrFontScaler::getPackedGlyphBounds(GrGlyph::PackedID packed, SkIRect* bounds) {
     const SkGlyph& glyph = fStrike->getGlyphIDMetrics(GrGlyph::UnpackID(packed),
-                                              GrGlyph::UnpackFixedX(packed),
-                                              GrGlyph::UnpackFixedY(packed));
+                                                      GrGlyph::UnpackFixedX(packed),
+                                                      GrGlyph::UnpackFixedY(packed));
     bounds->setXYWH(glyph.fLeft, glyph.fTop, glyph.fWidth, glyph.fHeight);
-    return true;
 
+    return true;
+}
+
+bool SkGrFontScaler::getPackedGlyphDFBounds(GrGlyph::PackedID packed, SkIRect* bounds) {
+    const SkGlyph& glyph = fStrike->getGlyphIDMetrics(GrGlyph::UnpackID(packed),
+                                                      GrGlyph::UnpackFixedX(packed),
+                                                      GrGlyph::UnpackFixedY(packed));
+    bounds->setXYWH(glyph.fLeft, glyph.fTop, glyph.fWidth, glyph.fHeight);
+    bounds->outset(SK_DistanceFieldPad, SK_DistanceFieldPad);
+
+    return true;
 }
 
 namespace {
@@ -140,10 +152,10 @@ bool SkGrFontScaler::getPackedGlyphImage(GrGlyph::PackedID packed,
                                          int width, int height,
                                          int dstRB, void* dst) {
     const SkGlyph& glyph = fStrike->getGlyphIDMetrics(GrGlyph::UnpackID(packed),
-                                              GrGlyph::UnpackFixedX(packed),
-                                              GrGlyph::UnpackFixedY(packed));
-    GrAssert(glyph.fWidth == width);
-    GrAssert(glyph.fHeight == height);
+                                                      GrGlyph::UnpackFixedX(packed),
+                                                      GrGlyph::UnpackFixedY(packed));
+    SkASSERT(glyph.fWidth == width);
+    SkASSERT(glyph.fHeight == height);
     const void* src = fStrike->findImage(glyph);
     if (NULL == src) {
         return false;
@@ -172,8 +184,8 @@ bool SkGrFontScaler::getPackedGlyphImage(GrGlyph::PackedID packed,
                 expand_bits(rgba8888, bits, width, height, dstRB, srcRB);
                 break;
             }
-           default:
-             GrCrash("Unknown GrMaskFormat");
+            default:
+                SkFAIL("Invalid GrMaskFormat");
         }
     } else if (srcRB == dstRB) {
         memcpy(dst, src, dstRB * height);
@@ -188,6 +200,24 @@ bool SkGrFontScaler::getPackedGlyphImage(GrGlyph::PackedID packed,
     return true;
 }
 
+bool SkGrFontScaler::getPackedGlyphDFImage(GrGlyph::PackedID packed,
+                                           int width, int height,
+                                           void* dst) {
+    const SkGlyph& glyph = fStrike->getGlyphIDMetrics(GrGlyph::UnpackID(packed),
+                                                      GrGlyph::UnpackFixedX(packed),
+                                                      GrGlyph::UnpackFixedY(packed));
+    SkASSERT(glyph.fWidth + 2*SK_DistanceFieldPad == width);
+    SkASSERT(glyph.fHeight + 2*SK_DistanceFieldPad == height);
+    const void* src = fStrike->findDistanceField(glyph);
+    if (NULL == src) {
+        return false;
+    }
+
+    memcpy(dst, src, width * height);
+
+    return true;
+}
+
 // we should just return const SkPath* (NULL means false)
 bool SkGrFontScaler::getGlyphPath(uint16_t glyphID, SkPath* path) {
 
@@ -199,6 +229,3 @@ bool SkGrFontScaler::getGlyphPath(uint16_t glyphID, SkPath* path) {
     }
     return false;
 }
-
-
-

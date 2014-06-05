@@ -4,21 +4,32 @@
 
 #include "chrome/browser/chromeos/input_method/input_method_configuration.h"
 #include "chrome/browser/chromeos/input_method/mock_input_method_manager.h"
+#include "content/public/browser/browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace chromeos {
 namespace input_method {
 
 TEST(InputMethodConfigurationTest, TestInitialize) {
-  Initialize();
-  InputMethodManager* manager = GetInputMethodManager();
+  InputMethodManager* manager = InputMethodManager::Get();
+  EXPECT_FALSE(manager);
+
+  Initialize(
+      content::BrowserThread::GetMessageLoopProxyForThread(
+          content::BrowserThread::UI),
+      content::BrowserThread::GetMessageLoopProxyForThread(
+          content::BrowserThread::FILE));
+  manager = InputMethodManager::Get();
   EXPECT_TRUE(manager);
   Shutdown();
 }
 
 TEST(InputMethodConfigurationTest, TestInitializeForTesting) {
+  InputMethodManager* manager = InputMethodManager::Get();
+  EXPECT_FALSE(manager);
+
   InitializeForTesting(new MockInputMethodManager);
-  InputMethodManager* manager = GetInputMethodManager();
+  manager = InputMethodManager::Get();
   EXPECT_TRUE(manager);
   Shutdown();
 }

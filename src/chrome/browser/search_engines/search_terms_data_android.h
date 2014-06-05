@@ -8,11 +8,11 @@
 #include <string>
 
 #include "base/lazy_instance.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
 // Additional data needed by TemplateURLRef::ReplaceSearchTerms on Android.
 struct SearchTermsDataAndroid {
-  static base::LazyInstance<string16>::Leaky rlz_parameter_value_;
+  static base::LazyInstance<base::string16>::Leaky rlz_parameter_value_;
   static base::LazyInstance<std::string>::Leaky search_client_;
 };
 

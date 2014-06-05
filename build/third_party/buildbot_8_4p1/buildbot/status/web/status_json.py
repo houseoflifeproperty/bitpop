@@ -16,6 +16,7 @@
 
 """Simple JSON exporter."""
 
+import collections
 import datetime
 import os
 import re
@@ -635,21 +636,41 @@ class SlaveJsonResource(JsonResource):
                     self.builders.append(builderName)
         return self.builders
 
-    def asDict(self, request):
-        results = self.slave_status.asDict()
-        # Enhance it by adding more informations.
-        results['builders'] = {}
+    def getSlaveBuildMap(self, buildcache, buildercache):
         for builderName in self.getBuilders():
-            builds = []
-            builder_status = self.status.getBuilder(builderName)
-            for i in range(1, builder_status.buildCacheSize - 1):
-                build_status = builder_status.getBuild(-i)
-                if not build_status or not build_status.isFinished():
-                    # If not finished, it will appear in runningBuilds.
-                    break
-                if build_status.getSlavename() == self.name:
-                    builds.append(build_status.getNumber())
-            results['builders'][builderName] = builds
+            if builderName not in buildercache:
+                buildercache.add(builderName)
+                builder_status = self.status.getBuilder(builderName)
+
+                buildnums = range(-1, -(builder_status.buildCacheSize - 1), -1)
+                builds = builder_status.getBuilds(buildnums)
+
+                for build_status in builds:
+                    if not build_status or not build_status.isFinished():
+                        # If not finished, it will appear in runningBuilds.
+                        break
+                    slave = buildcache[build_status.getSlavename()]
+                    slave.setdefault(builderName, []).append(
+                            build_status.getNumber())
+        return buildcache[self.name]
+
+    def asDict(self, request):
+        if not hasattr(request, 'custom_data'):
+            request.custom_data = {}
+        if 'buildcache' not in request.custom_data:
+            # buildcache is used to cache build information across multiple
+            # invocations of SlaveJsonResource. It should be set to an empty
+            # collections.defaultdict(dict).
+            request.custom_data['buildcache'] = collections.defaultdict(dict)
+
+            # Tracks which builders have been stored in the buildcache.
+            request.custom_data['buildercache'] = set()
+
+        results = self.slave_status.asDict()
+        # Enhance it by adding more information.
+        results['builders'] = self.getSlaveBuildMap(
+                request.custom_data['buildcache'],
+                request.custom_data['buildercache'])
         return results
 
 

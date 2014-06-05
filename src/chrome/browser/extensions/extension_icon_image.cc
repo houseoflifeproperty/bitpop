@@ -6,9 +6,11 @@
 
 #include <vector>
 
-#include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/extensions/extension.h"
+#include "base/bind.h"
+#include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/extensions/image_loader.h"
 #include "content/public/browser/notification_service.h"
+#include "extensions/common/extension.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/canvas_image_source.h"
 #include "ui/gfx/image/image.h"
@@ -25,36 +27,29 @@
 //   the image representation, the default icon's representation for the
 //   requested scale factor is returned by ImageSkiaSource.
 // - If the extension has the resource, IconImage tries to load it using
-//   ImageLoadingTracker.
-// - |ImageLoadingTracker| may return both synchronously and asynchronously.
-// 1. |ImageLoadingTracker| is synchronous.
-//  - If image representation resource is successfully loaded, the
-//    representation returned by ImageSkiaSource is created from the loaded
-//    bitmap.
-//  - If resource loading fails, ImageSkiaSource returns default icon's
-//    representation.
-// 2. |ImageLoadingTracker| is asynchronous.
+//   ImageLoader.
+// - |ImageLoader| is asynchronous.
 //  - ImageSkiaSource will initially return transparent image resource of the
 //    desired size.
 //  - The image will be updated with an appropriate image representation when
-//    the |ImageLoadingTracker| finishes. The image representation is chosen
-//    the same way as in the synchronous case. The observer is notified of the
-//    image change, unless the added image representation is transparent (in
-//    which case the image had already contained the appropriate image
+//    the |ImageLoader| finishes. The image representation is chosen the same
+//    way as in the synchronous case. The observer is notified of the image
+//    change, unless the added image representation is transparent (in which
+//    case the image had already contained the appropriate image
 //    representation).
 
 namespace {
 
 const int kMatchBiggerTreshold = 32;
 
-ExtensionResource GetExtensionIconResource(
+extensions::ExtensionResource GetExtensionIconResource(
     const extensions::Extension* extension,
     const ExtensionIconSet& icons,
     int size,
     ExtensionIconSet::MatchType match_type) {
   std::string path = icons.Get(size, match_type);
   if (path.empty())
-    return ExtensionResource();
+    return extensions::ExtensionResource();
 
   return extension->GetResource(path);
 }
@@ -91,8 +86,7 @@ class IconImage::Source : public gfx::ImageSkiaSource {
 
  private:
   // gfx::ImageSkiaSource overrides:
-  virtual gfx::ImageSkiaRep GetImageForScale(
-      ui::ScaleFactor scale_factor) OVERRIDE;
+  virtual gfx::ImageSkiaRep GetImageForScale(float scale) OVERRIDE;
 
   // Used to load images, possibly asynchronously. NULLed out when the IconImage
   // is destroyed.
@@ -117,28 +111,31 @@ void IconImage::Source::ResetHost() {
   host_ = NULL;
 }
 
-gfx::ImageSkiaRep IconImage::Source::GetImageForScale(
-    ui::ScaleFactor scale_factor) {
+gfx::ImageSkiaRep IconImage::Source::GetImageForScale(float scale) {
   gfx::ImageSkiaRep representation;
-  if (host_)
-    representation = host_->LoadImageForScaleFactor(scale_factor);
+  if (host_) {
+    representation =
+        host_->LoadImageForScaleFactor(ui::GetSupportedScaleFactor(scale));
+  }
 
   if (!representation.is_null())
     return representation;
 
-  return blank_image_.GetRepresentation(scale_factor);
+  return blank_image_.GetRepresentation(scale);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // IconImage
 
 IconImage::IconImage(
+    content::BrowserContext* context,
     const Extension* extension,
     const ExtensionIconSet& icon_set,
     int resource_size_in_dip,
     const gfx::ImageSkia& default_icon,
     Observer* observer)
-    : extension_(extension),
+    : browser_context_(context),
+      extension_(extension),
       icon_set_(icon_set),
       resource_size_in_dip_(resource_size_in_dip),
       observer_(observer),
@@ -147,12 +144,13 @@ IconImage::IconImage(
           default_icon,
           skia::ImageOperations::RESIZE_BEST,
           gfx::Size(resource_size_in_dip, resource_size_in_dip))),
-      ALLOW_THIS_IN_INITIALIZER_LIST(tracker_(this)) {
+      weak_ptr_factory_(this) {
   gfx::Size resource_size(resource_size_in_dip, resource_size_in_dip);
   source_ = new Source(this, resource_size);
   image_skia_ = gfx::ImageSkia(source_, resource_size);
 
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_REMOVED,
                  content::NotificationService::AllSources());
 }
 
@@ -166,11 +164,11 @@ gfx::ImageSkiaRep IconImage::LoadImageForScaleFactor(
   if (!extension_)
     return gfx::ImageSkiaRep();
 
-  const float scale = ui::GetScaleFactorScale(scale_factor);
+  const float scale = ui::GetImageScale(scale_factor);
   const int resource_size_in_pixel =
       static_cast<int>(resource_size_in_dip_ * scale);
 
-  ExtensionResource resource;
+  extensions::ExtensionResource resource;
 
   // Find extension resource for non bundled component extensions.
   // We try loading bigger image only if resource size is >= 32.
@@ -187,45 +185,27 @@ gfx::ImageSkiaRep IconImage::LoadImageForScaleFactor(
 
   // If there is no resource found, return default icon.
   if (resource.empty())
-    return default_icon_.GetRepresentation(scale_factor);
+    return default_icon_.GetRepresentation(scale);
 
-  int id = tracker_.next_id();
-  load_map_[id].scale_factor = scale_factor;
-  load_map_[id].is_async = false;
-
-  std::vector<ImageLoadingTracker::ImageRepresentation> info_list;
-  info_list.push_back(ImageLoadingTracker::ImageRepresentation(
+  std::vector<ImageLoader::ImageRepresentation> info_list;
+  info_list.push_back(ImageLoader::ImageRepresentation(
       resource,
-      ImageLoadingTracker::ImageRepresentation::ALWAYS_RESIZE,
+      ImageLoader::ImageRepresentation::ALWAYS_RESIZE,
       gfx::ToFlooredSize(gfx::ScaleSize(
           gfx::Size(resource_size_in_dip_, resource_size_in_dip_), scale)),
       scale_factor));
-  tracker_.LoadImages(extension_, info_list, ImageLoadingTracker::DONT_CACHE);
 
-  // If we have not received |OnImageLoaded|, image load request is
-  // asynchronous.
-  if (load_map_.find(id) != load_map_.end())
-    load_map_[id].is_async = true;
-
-  // If LoadImages returned synchronously and the requested image rep is cached
-  // in the extension, return the cached image rep.
-  if (image_skia_.HasRepresentation(scale_factor))
-    return image_skia_.GetRepresentation(scale_factor);
+  extensions::ImageLoader* loader =
+      extensions::ImageLoader::Get(browser_context_);
+  loader->LoadImagesAsync(extension_, info_list,
+                          base::Bind(&IconImage::OnImageLoaded,
+                                     weak_ptr_factory_.GetWeakPtr(),
+                                     scale));
 
   return gfx::ImageSkiaRep();
 }
 
-void IconImage::OnImageLoaded(const gfx::Image& image_in,
-                              const std::string& extension_id,
-                              int index) {
-  LoadMap::iterator load_map_it = load_map_.find(index);
-  DCHECK(load_map_it != load_map_.end());
-
-  ui::ScaleFactor scale_factor = load_map_it->second.scale_factor;
-  bool is_async = load_map_it->second.is_async;
-
-  load_map_.erase(load_map_it);
-
+void IconImage::OnImageLoaded(float scale, const gfx::Image& image_in) {
   const gfx::ImageSkia* image =
       image_in.IsEmpty() ? &default_icon_ : image_in.ToImageSkia();
 
@@ -233,28 +213,24 @@ void IconImage::OnImageLoaded(const gfx::Image& image_in,
   if (image->isNull())
     return;
 
-  gfx::ImageSkiaRep rep = image->GetRepresentation(scale_factor);
+  gfx::ImageSkiaRep rep = image->GetRepresentation(scale);
   DCHECK(!rep.is_null());
-  DCHECK_EQ(scale_factor, rep.scale_factor());
+  DCHECK_EQ(scale, rep.scale());
 
   // Remove old representation if there is one.
-  image_skia_.RemoveRepresentation(rep.scale_factor());
+  image_skia_.RemoveRepresentation(scale);
   image_skia_.AddRepresentation(rep);
 
-  // If |tracker_| called us synchronously the image did not really change from
-  // the observer's perspective, since the initial image representation is
-  // returned synchronously.
-  if (is_async && observer_)
+  if (observer_)
     observer_->OnExtensionIconImageChanged(this);
 }
 
 void IconImage::Observe(int type,
                         const content::NotificationSource& source,
                         const content::NotificationDetails& details) {
-  DCHECK_EQ(type, chrome::NOTIFICATION_EXTENSION_UNLOADED);
+  DCHECK_EQ(type, chrome::NOTIFICATION_EXTENSION_REMOVED);
 
-  const Extension* extension =
-      content::Details<extensions::UnloadedExtensionInfo>(details)->extension;
+  const Extension* extension = content::Details<const Extension>(details).ptr();
 
   if (extension_ == extension)
     extension_ = NULL;

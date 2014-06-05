@@ -10,9 +10,9 @@
 #include <vector>
 
 #include "base/memory/ref_counted.h"
-#include "base/string16.h"
 #include "printing/print_job_constants.h"
 #include "printing/printing_export.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace base {
 class DictionaryValue;
@@ -38,12 +38,33 @@ struct PRINTING_EXPORT PrinterSemanticCapsAndDefaults {
   PrinterSemanticCapsAndDefaults();
   ~PrinterSemanticCapsAndDefaults();
 
-  // Capabilities.
-  bool color_capable;
-  bool duplex_capable;
-
-  // Current defaults.
+  bool color_changeable;
   bool color_default;
+
+#if defined(USE_CUPS)
+  ColorModel color_model;
+  ColorModel bw_model;
+#endif
+
+#if defined(OS_WIN)
+  bool collate_capable;
+  bool collate_default;
+
+  bool copies_capable;
+
+  struct Paper {
+    std::string name;
+    gfx::Size size_um;
+  };
+
+  std::vector<Paper> papers;
+  Paper default_paper;
+
+  std::vector<gfx::Size> dpis;
+  gfx::Size default_dpi;
+#endif
+
+  bool duplex_capable;
   DuplexMode duplex_default;
 };
 
@@ -92,9 +113,6 @@ class PRINTING_EXPORT PrintBackend
 
   // Returns true if printer_name points to a valid printer.
   virtual bool IsValidPrinter(const std::string& printer_name) = 0;
-
-  // Simplify title to resolve issue with some drivers.
-  static string16 SimplifyDocumentTitle(const string16& title);
 
   // Allocate a print backend. If |print_backend_settings| is NULL, default
   // settings will be used.

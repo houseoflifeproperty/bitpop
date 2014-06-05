@@ -6,12 +6,12 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_ui.h"
 
-using content::UserMetricsAction;
+using base::UserMetricsAction;
 
 namespace chromeos {
 namespace options {
@@ -21,7 +21,7 @@ StatsOptionsHandler::StatsOptionsHandler() {
 
 // OptionsPageUIHandler implementation.
 void StatsOptionsHandler::GetLocalizedValues(
-    DictionaryValue* localized_strings) {
+    base::DictionaryValue* localized_strings) {
 }
 
 // WebUIMessageHandler implementation.
@@ -32,9 +32,9 @@ void StatsOptionsHandler::RegisterMessages() {
 }
 
 void StatsOptionsHandler::HandleMetricsReportingCheckbox(
-    const ListValue* args) {
+    const base::ListValue* args) {
 #if defined(GOOGLE_CHROME_BUILD)
-  const std::string checked_str = UTF16ToUTF8(ExtractStringValue(args));
+  const std::string checked_str = base::UTF16ToUTF8(ExtractStringValue(args));
   const bool enabled = (checked_str == "true");
   content::RecordAction(
       enabled ?

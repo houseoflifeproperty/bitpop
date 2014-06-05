@@ -25,7 +25,9 @@ class Constants {
   /* Major version of the client library. */
   static const int kClientMajorVersion;
 
-  /* Minor version of the client library. */
+ /* Minor version of the client library, defined to be equal to the datestamp
+  * of the build (e.g. 20130401).
+  */
   static const int kClientMinorVersion;
 
   /* Major version of the protocol between the client and the server. */

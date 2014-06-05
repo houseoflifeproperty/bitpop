@@ -13,15 +13,7 @@
 #include "native_client/src/trusted/service_runtime/nacl_app_thread.h"
 #include "native_client/src/trusted/service_runtime/nacl_globals.h"
 #include "native_client/src/trusted/service_runtime/nacl_switch_to_app.h"
-#include "native_client/src/trusted/validator/x86/nacl_cpuid.h"
-
-#if NACL_WINDOWS
-# define NORETURN_PTR
-#else
-# define NORETURN_PTR NORETURN
-#endif
-
-static NORETURN_PTR void (*NaClSwitch)(struct NaClThreadContext *context);
+#include "native_client/src/trusted/cpu_features/arch/x86/cpu_x86.h"
 
 void NaClInitSwitchToApp(struct NaClApp *nap) {
   /* TODO(jfb) Use a safe cast here. */
@@ -72,18 +64,9 @@ NORETURN void NaClStartThreadInApp(struct NaClAppThread *natp,
 
   nap = natp->nap;
   context = &natp->user;
-  context->spring_addr = NaClSysToUser(nap,
-                                       nap->mem_start + nap->springboard_addr);
+  context->spring_addr = nap->syscall_return_springboard.start_addr;
   context->new_prog_ctr = new_prog_ctr;
   context->sysret = 0; /* %eax not used to return */
 
   NaClSwitch(context);
-}
-
-
-/*
- * syscall return
- */
-NORETURN void NaClSwitchToApp(struct NaClAppThread *natp) {
-  NaClSwitch(&natp->user);
 }

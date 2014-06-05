@@ -25,6 +25,7 @@
 #include <stdint.h>
 
 #include "config.h"
+#include "libavutil/attributes.h"
 #include "libswscale/swscale_internal.h"
 
 #if defined(__FDPIC__) && CONFIG_SRAM
@@ -168,27 +169,27 @@ static int bfin_yuv420_bgr565(SwsContext *c, const uint8_t **in, int *instrides,
                            outstrides, ff_bfin_yuv2rgb565_line, 0, 565);
 }
 
-SwsFunc ff_yuv2rgb_get_func_ptr_bfin(SwsContext *c)
+av_cold SwsFunc ff_yuv2rgb_init_bfin(SwsContext *c)
 {
     SwsFunc f;
 
     switch (c->dstFormat) {
-    case PIX_FMT_RGB555:
+    case AV_PIX_FMT_RGB555:
         f = bfin_yuv420_rgb555;
         break;
-    case PIX_FMT_BGR555:
+    case AV_PIX_FMT_BGR555:
         f = bfin_yuv420_bgr555;
         break;
-    case PIX_FMT_RGB565:
+    case AV_PIX_FMT_RGB565:
         f = bfin_yuv420_rgb565;
         break;
-    case PIX_FMT_BGR565:
+    case AV_PIX_FMT_BGR565:
         f = bfin_yuv420_bgr565;
         break;
-    case PIX_FMT_RGB24:
+    case AV_PIX_FMT_RGB24:
         f = bfin_yuv420_rgb24;
         break;
-    case PIX_FMT_BGR24:
+    case AV_PIX_FMT_BGR24:
         f = bfin_yuv420_bgr24;
         break;
     default:

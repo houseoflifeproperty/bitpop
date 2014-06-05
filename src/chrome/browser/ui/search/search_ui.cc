@@ -4,12 +4,27 @@
 
 #include "chrome/browser/ui/search/search_ui.h"
 
-namespace chrome {
-namespace search {
+#include "chrome/browser/themes/theme_properties.h"
+#include "chrome/browser/themes/theme_service.h"
+#include "grit/theme_resources.h"
 
-SkColor GetBookmarkBarNoThemeSeparatorColor() {
-  return SkColorSetARGB(25, 0, 0, 0);  // 10% black
+namespace chrome {
+
+SkColor GetDetachedBookmarkBarBackgroundColor(ThemeService* theme_service) {
+  if (!theme_service->UsingDefaultTheme())
+    return theme_service->GetColor(ThemeProperties::COLOR_TOOLBAR);
+  return SkColorSetARGB(0xFF, 0xF1, 0xF1, 0xF1);
 }
 
-}  // namespace search
+SkColor GetDetachedBookmarkBarSeparatorColor(ThemeService* theme_service) {
+  if (theme_service->UsingDefaultTheme()) {
+    return ThemeProperties::GetDefaultColor(
+        ThemeProperties::COLOR_TOOLBAR_SEPARATOR);
+  }
+
+  // Use 50% of bookmark text color as separator color.
+  return SkColorSetA(
+      theme_service->GetColor(ThemeProperties::COLOR_BOOKMARK_TEXT), 128);
+}
+
 }  // namespace chrome

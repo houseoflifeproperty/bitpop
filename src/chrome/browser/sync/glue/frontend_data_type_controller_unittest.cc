@@ -8,16 +8,16 @@
 #include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/tracked_objects.h"
-#include "chrome/browser/sync/glue/change_processor_mock.h"
-#include "chrome/browser/sync/glue/data_type_controller_mock.h"
 #include "chrome/browser/sync/glue/frontend_data_type_controller.h"
 #include "chrome/browser/sync/glue/frontend_data_type_controller_mock.h"
-#include "chrome/browser/sync/glue/model_associator_mock.h"
 #include "chrome/browser/sync/profile_sync_components_factory_mock.h"
 #include "chrome/browser/sync/profile_sync_service_mock.h"
 #include "chrome/test/base/profile_mock.h"
+#include "components/sync_driver/change_processor_mock.h"
+#include "components/sync_driver/data_type_controller_mock.h"
+#include "components/sync_driver/model_associator_mock.h"
 #include "content/public/test/test_browser_thread.h"
 
 using browser_sync::ChangeProcessorMock;
@@ -42,14 +42,16 @@ class FrontendDataTypeControllerFake : public FrontendDataTypeController {
       Profile* profile,
       ProfileSyncService* sync_service,
       FrontendDataTypeControllerMock* mock)
-      : FrontendDataTypeController(profile_sync_factory,
+      : FrontendDataTypeController(base::MessageLoopProxy::current(),
+                                   base::Closure(),
+                                   profile_sync_factory,
                                    profile,
                                    sync_service),
         mock_(mock) {}
-  virtual syncer::ModelType type() const { return syncer::BOOKMARKS; }
+  virtual syncer::ModelType type() const OVERRIDE { return syncer::BOOKMARKS; }
 
  private:
-  virtual void CreateSyncComponents() {
+  virtual void CreateSyncComponents() OVERRIDE {
     ProfileSyncComponentsFactory::SyncComponents sync_components =
         profile_sync_factory_->
             CreateBookmarkSyncComponents(sync_service_, this);
@@ -59,21 +61,22 @@ class FrontendDataTypeControllerFake : public FrontendDataTypeController {
 
   // We mock the following methods because their default implementations do
   // nothing, but we still want to make sure they're called appropriately.
-  virtual bool StartModels() {
+  virtual bool StartModels() OVERRIDE {
     return mock_->StartModels();
   }
-  virtual void CleanUpState() {
+  virtual void CleanUpState() OVERRIDE {
     mock_->CleanUpState();
   }
   virtual void RecordUnrecoverableError(
       const tracked_objects::Location& from_here,
-      const std::string& message) {
+      const std::string& message) OVERRIDE {
     mock_->RecordUnrecoverableError(from_here, message);
   }
-  virtual void RecordAssociationTime(base::TimeDelta time) {
+  virtual void RecordAssociationTime(base::TimeDelta time) OVERRIDE {
     mock_->RecordAssociationTime(time);
   }
-  virtual void RecordStartFailure(DataTypeController::StartResult result) {
+  virtual void RecordStartFailure(
+      DataTypeController::StartResult result) OVERRIDE {
     mock_->RecordStartFailure(result);
   }
  private:
@@ -84,7 +87,8 @@ class FrontendDataTypeControllerFake : public FrontendDataTypeController {
 class SyncFrontendDataTypeControllerTest : public testing::Test {
  public:
   SyncFrontendDataTypeControllerTest()
-      : ui_thread_(BrowserThread::UI, &message_loop_) {}
+      : ui_thread_(BrowserThread::UI, &message_loop_),
+        service_(&profile_) {}
 
   virtual void SetUp() {
     profile_sync_factory_.reset(new ProfileSyncComponentsFactoryMock());
@@ -98,7 +102,7 @@ class SyncFrontendDataTypeControllerTest : public testing::Test {
 
  protected:
   void SetStartExpectations() {
-    EXPECT_CALL(*dtc_mock_, StartModels()).WillOnce(Return(true));
+    EXPECT_CALL(*dtc_mock_.get(), StartModels()).WillOnce(Return(true));
     EXPECT_CALL(model_load_callback_, Run(_, _));
     model_associator_ = new ModelAssociatorMock();
     change_processor_ = new ChangeProcessorMock();
@@ -114,16 +118,15 @@ class SyncFrontendDataTypeControllerTest : public testing::Test {
         WillOnce(DoAll(SetArgumentPointee<0>(true), Return(true)));
     EXPECT_CALL(*model_associator_, AssociateModels(_, _)).
         WillOnce(Return(syncer::SyncError()));
-    EXPECT_CALL(*dtc_mock_, RecordAssociationTime(_));
+    EXPECT_CALL(*dtc_mock_.get(), RecordAssociationTime(_));
   }
 
   void SetActivateExpectations(DataTypeController::StartResult result) {
-    EXPECT_CALL(service_, ActivateDataType(_, _, _));
     EXPECT_CALL(start_callback_, Run(result, _, _));
   }
 
   void SetStopExpectations() {
-    EXPECT_CALL(*dtc_mock_, CleanUpState());
+    EXPECT_CALL(*dtc_mock_.get(), CleanUpState());
     EXPECT_CALL(service_, DeactivateDataType(_));
     EXPECT_CALL(*model_associator_, DisassociateModels()).
                 WillOnce(Return(syncer::SyncError()));
@@ -131,9 +134,9 @@ class SyncFrontendDataTypeControllerTest : public testing::Test {
 
   void SetStartFailExpectations(DataTypeController::StartResult result) {
     if (DataTypeController::IsUnrecoverableResult(result))
-      EXPECT_CALL(*dtc_mock_, RecordUnrecoverableError(_, _));
-    EXPECT_CALL(*dtc_mock_, CleanUpState());
-    EXPECT_CALL(*dtc_mock_, RecordStartFailure(result));
+      EXPECT_CALL(*dtc_mock_.get(), RecordUnrecoverableError(_, _));
+    EXPECT_CALL(*dtc_mock_.get(), CleanUpState());
+    EXPECT_CALL(*dtc_mock_.get(), RecordStartFailure(result));
     EXPECT_CALL(start_callback_, Run(result, _, _));
   }
 
@@ -150,7 +153,7 @@ class SyncFrontendDataTypeControllerTest : public testing::Test {
     message_loop_.RunUntilIdle();
   }
 
-  MessageLoopForUI message_loop_;
+  base::MessageLoopForUI message_loop_;
   content::TestBrowserThread ui_thread_;
   scoped_refptr<FrontendDataTypeControllerFake> frontend_dtc_;
   scoped_ptr<ProfileSyncComponentsFactoryMock> profile_sync_factory_;
@@ -180,7 +183,7 @@ TEST_F(SyncFrontendDataTypeControllerTest, StartFirstRun) {
       WillOnce(DoAll(SetArgumentPointee<0>(false), Return(true)));
   EXPECT_CALL(*model_associator_, AssociateModels(_, _)).
       WillOnce(Return(syncer::SyncError()));
-  EXPECT_CALL(*dtc_mock_, RecordAssociationTime(_));
+  EXPECT_CALL(*dtc_mock_.get(), RecordAssociationTime(_));
   SetActivateExpectations(DataTypeController::OK_FIRST_RUN);
   EXPECT_EQ(DataTypeController::NOT_RUNNING, frontend_dtc_->state());
   Start();
@@ -188,8 +191,8 @@ TEST_F(SyncFrontendDataTypeControllerTest, StartFirstRun) {
 }
 
 TEST_F(SyncFrontendDataTypeControllerTest, AbortDuringStartModels) {
-  EXPECT_CALL(*dtc_mock_, StartModels()).WillOnce(Return(false));
-  EXPECT_CALL(*dtc_mock_, CleanUpState());
+  EXPECT_CALL(*dtc_mock_.get(), StartModels()).WillOnce(Return(false));
+  EXPECT_CALL(*dtc_mock_.get(), CleanUpState());
   EXPECT_CALL(model_load_callback_, Run(_, _));
   EXPECT_EQ(DataTypeController::NOT_RUNNING, frontend_dtc_->state());
   frontend_dtc_->LoadModels(
@@ -208,10 +211,11 @@ TEST_F(SyncFrontendDataTypeControllerTest, StartAssociationFailed) {
       WillOnce(DoAll(SetArgumentPointee<0>(true), Return(true)));
   EXPECT_CALL(*model_associator_, AssociateModels(_, _)).
       WillOnce(Return(syncer::SyncError(FROM_HERE,
-                                "error",
-                                syncer::BOOKMARKS)));
+                                        syncer::SyncError::DATATYPE_ERROR,
+                                        "error",
+                                        syncer::BOOKMARKS)));
 
-  EXPECT_CALL(*dtc_mock_, RecordAssociationTime(_));
+  EXPECT_CALL(*dtc_mock_.get(), RecordAssociationTime(_));
   SetStartFailExpectations(DataTypeController::ASSOCIATION_FAILED);
   // Set up association to fail with an association failed error.
   EXPECT_EQ(DataTypeController::NOT_RUNNING, frontend_dtc_->state());
@@ -260,10 +264,10 @@ TEST_F(SyncFrontendDataTypeControllerTest, OnSingleDatatypeUnrecoverableError) {
   SetStartExpectations();
   SetAssociateExpectations();
   SetActivateExpectations(DataTypeController::OK);
-  EXPECT_CALL(*dtc_mock_, RecordUnrecoverableError(_, "Test"));
-  EXPECT_CALL(service_, DisableBrokenDatatype(_,_,_)).
-      WillOnce(InvokeWithoutArgs(frontend_dtc_.get(),
-                                 &FrontendDataTypeController::Stop));
+  EXPECT_CALL(*dtc_mock_.get(), RecordUnrecoverableError(_, "Test"));
+  EXPECT_CALL(service_, DisableBrokenDatatype(_, _, _))
+      .WillOnce(InvokeWithoutArgs(frontend_dtc_.get(),
+                                  &FrontendDataTypeController::Stop));
   SetStopExpectations();
   EXPECT_EQ(DataTypeController::NOT_RUNNING, frontend_dtc_->state());
   Start();

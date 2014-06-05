@@ -14,6 +14,18 @@ enum ViewID {
   // BROWSER WINDOW VIEWS
   // ------------------------------------------------------
 
+  // Views which make up the skyline. These are used only
+  // on views.
+  VIEW_ID_MINIMIZE_BUTTON,
+  VIEW_ID_MAXIMIZE_BUTTON,
+  VIEW_ID_RESTORE_BUTTON,
+  VIEW_ID_CLOSE_BUTTON,
+  VIEW_ID_WINDOW_ICON,
+  VIEW_ID_WINDOW_TITLE,
+  VIEW_ID_AVATAR_LABEL,
+  VIEW_ID_AVATAR_BUTTON,
+  VIEW_ID_NEW_AVATAR_BUTTON,
+
   // Tabs within a window/tab strip, counting from the left.
   VIEW_ID_TAB_0,
   VIEW_ID_TAB_1,
@@ -39,13 +51,12 @@ enum ViewID {
   VIEW_ID_RELOAD_BUTTON,
   VIEW_ID_HOME_BUTTON,
   VIEW_ID_STAR_BUTTON,
-  VIEW_ID_LOCATION_BAR,
   VIEW_ID_APP_MENU,
-  VIEW_ID_AUTOCOMPLETE,
   VIEW_ID_BROWSER_ACTION_TOOLBAR,
   VIEW_ID_FEEDBACK_BUTTON,
   VIEW_ID_OMNIBOX,
   VIEW_ID_SCRIPT_BUBBLE,
+  VIEW_ID_TRANSLATE_BUTTON,
 
   // The Bookmark Bar.
   VIEW_ID_BOOKMARK_BAR,
@@ -55,7 +66,6 @@ enum ViewID {
 
   // Find in page.
   VIEW_ID_FIND_IN_PAGE_TEXT_FIELD,
-  VIEW_ID_FIND_IN_PAGE,
 
   // Tab Container window.
   VIEW_ID_TAB_CONTAINER,
@@ -78,7 +88,16 @@ enum ViewID {
   VIEW_ID_ZOOM_BUTTON,
 #endif
 
-  // Used in chrome/browser/ui/gtk/view_id_util_browsertests.cc
+// TODO(npentrel): change the passwords decoration to an NSImageView.
+#if !defined(OS_MACOSX)
+  // The manage passwords icon in the location bar.
+  VIEW_ID_MANAGE_PASSWORDS_ICON_BUTTON,
+#endif
+
+  // The omnibox icon to do voice-based search.
+  VIEW_ID_MIC_SEARCH_BUTTON,
+
+  // Used in chrome/browser/ui/gtk/view_id_util_browsertest.cc
   // If you add new ids, make sure the above test passes.
   VIEW_ID_PREDEFINED_COUNT,
 
@@ -87,4 +106,3 @@ enum ViewID {
 };
 
 #endif  // CHROME_BROWSER_UI_VIEW_IDS_H_
-

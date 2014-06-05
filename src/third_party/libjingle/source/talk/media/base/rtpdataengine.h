@@ -32,13 +32,11 @@
 #include <vector>
 
 #include "talk/base/timing.h"
+#include "talk/media/base/constants.h"
 #include "talk/media/base/mediachannel.h"
 #include "talk/media/base/mediaengine.h"
 
 namespace cricket {
-
-static const int kGoogleDataCodecId = 101;
-static const char kGoogleDataCodecName[] = "google-data";
 
 struct DataCodec;
 
@@ -46,7 +44,7 @@ class RtpDataEngine : public DataEngineInterface {
  public:
   RtpDataEngine();
 
-  virtual DataMediaChannel* CreateChannel();
+  virtual DataMediaChannel* CreateChannel(DataChannelType data_channel_type);
 
   virtual const std::vector<DataCodec>& data_codecs() {
     return data_codecs_;
@@ -98,7 +96,8 @@ class RtpDataMediaChannel : public DataMediaChannel {
     timing_ = timing;
   }
 
-  virtual bool SetSendBandwidth(bool autobw, int bps);
+  virtual bool SetStartSendBandwidth(int bps) { return true; }
+  virtual bool SetMaxSendBandwidth(int bps);
   virtual bool SetRecvRtpHeaderExtensions(
       const std::vector<RtpHeaderExtension>& extensions) { return true; }
   virtual bool SetSendRtpHeaderExtensions(
@@ -117,10 +116,15 @@ class RtpDataMediaChannel : public DataMediaChannel {
     receiving_ = receive;
     return true;
   }
-  virtual void OnPacketReceived(talk_base::Buffer* packet);
-  virtual void OnRtcpReceived(talk_base::Buffer* packet) {}
+  virtual void OnPacketReceived(talk_base::Buffer* packet,
+                                const talk_base::PacketTime& packet_time);
+  virtual void OnRtcpReceived(talk_base::Buffer* packet,
+                              const talk_base::PacketTime& packet_time) {}
+  virtual void OnReadyToSend(bool ready) {}
   virtual bool SendData(
-      const SendDataParams& params, const std::string& data);
+    const SendDataParams& params,
+    const talk_base::Buffer& payload,
+    SendDataResult* result);
 
  private:
   void Construct(talk_base::Timing* timing);

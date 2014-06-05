@@ -8,7 +8,7 @@
 
 #include "base/command_line.h"
 #include "base/logging.h"
-#include "base/process_util.h"
+#include "base/process/launch.h"
 #include "base/win/registry.h"
 #include "chrome/installer/util/chrome_app_host_operations.h"
 #include "chrome/installer/util/chrome_binaries_operations.h"
@@ -62,11 +62,7 @@ void Product::InitializeFromUninstallCommand(
   operations_->ReadOptions(uninstall_command, &options_);
 }
 
-void Product::GetUserDataPaths(std::vector<FilePath>* paths) const {
-  GetChromeUserDataPaths(distribution_, paths);
-}
-
-bool Product::LaunchChrome(const FilePath& application_path) const {
+bool Product::LaunchChrome(const base::FilePath& application_path) const {
   bool success = !application_path.empty();
   if (success) {
     CommandLine cmd(application_path.Append(installer::kChromeExe));
@@ -75,7 +71,7 @@ bool Product::LaunchChrome(const FilePath& application_path) const {
   return success;
 }
 
-bool Product::LaunchChromeAndWait(const FilePath& application_path,
+bool Product::LaunchChromeAndWait(const base::FilePath& application_path,
                                   const CommandLine& options,
                                   int32* exit_code) const {
   if (application_path.empty())
@@ -136,11 +132,11 @@ bool Product::ShouldCreateUninstallEntry() const {
   return operations_->ShouldCreateUninstallEntry(options_);
 }
 
-void Product::AddKeyFiles(std::vector<FilePath>* key_files) const {
+void Product::AddKeyFiles(std::vector<base::FilePath>* key_files) const {
   operations_->AddKeyFiles(options_, key_files);
 }
 
-void Product::AddComDllList(std::vector<FilePath>* com_dll_list) const {
+void Product::AddComDllList(std::vector<base::FilePath>* com_dll_list) const {
   operations_->AddComDllList(options_, com_dll_list);
 }
 
@@ -157,10 +153,22 @@ bool Product::SetChannelFlags(bool set, ChannelInfo* channel_info) const {
 }
 
 void Product::AddDefaultShortcutProperties(
-    const FilePath& target_exe,
+    const base::FilePath& target_exe,
     ShellUtil::ShortcutProperties* properties) const {
   return operations_->AddDefaultShortcutProperties(
       distribution_, target_exe, properties);
+}
+
+void Product::LaunchUserExperiment(const base::FilePath& setup_path,
+                                   InstallStatus status,
+                                   bool system_level) const {
+  if (distribution_->HasUserExperiments()) {
+    VLOG(1) << "LaunchUserExperiment status: " << status << " product: "
+            << distribution_->GetDisplayName()
+            << " system_level: " << system_level;
+    operations_->LaunchUserExperiment(
+        setup_path, options_, status, system_level);
+  }
 }
 
 }  // namespace installer

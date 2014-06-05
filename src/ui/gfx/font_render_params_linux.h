@@ -5,12 +5,12 @@
 #ifndef UI_GFX_FONT_RENDER_PARAMS_LINUX_H_
 #define UI_GFX_FONT_RENDER_PARAMS_LINUX_H_
 
-#include "ui/base/ui_export.h"
+#include "ui/gfx/gfx_export.h"
 
 namespace gfx {
 
 // A collection of parameters describing how text should be rendered on Linux.
-struct UI_EXPORT FontRenderParams {
+struct GFX_EXPORT FontRenderParams {
   // No constructor to avoid static initialization.
 
   // Level of hinting to be applied.
@@ -54,10 +54,16 @@ struct UI_EXPORT FontRenderParams {
 };
 
 // Returns the system's default parameters for font rendering.
-UI_EXPORT const FontRenderParams& GetDefaultFontRenderParams();
+GFX_EXPORT const FontRenderParams& GetDefaultFontRenderParams();
 
 // Returns the system's default parameters for WebKit font rendering.
-UI_EXPORT const FontRenderParams& GetDefaultWebKitFontRenderParams();
+GFX_EXPORT const FontRenderParams& GetDefaultWebKitFontRenderParams();
+
+// Returns the system's default parameters for WebKit subpixel positioning.
+// Subpixel positioning is special since neither GTK nor FontConfig currently
+// track it as a preference.
+// See https://bugs.freedesktop.org/show_bug.cgi?id=50736
+GFX_EXPORT bool GetDefaultWebkitSubpixelPositioning();
 
 }  // namespace gfx
 

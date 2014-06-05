@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "chrome/browser/chromeos/input_method/input_method_delegate.h"
+#include "chromeos/ime/input_method_delegate.h"
 
 namespace chromeos {
 namespace input_method {
@@ -19,10 +19,15 @@ namespace input_method {
 class InputMethodDelegateImpl : public InputMethodDelegate {
  public:
   InputMethodDelegateImpl();
+  virtual ~InputMethodDelegateImpl();
 
   // InputMethodDelegate implementation.
-  virtual std::string GetHardwareKeyboardLayout() const OVERRIDE;
-  virtual std::string GetActiveLocale() const OVERRIDE;
+  virtual std::string GetHardwareKeyboardLayouts() const OVERRIDE;
+  virtual base::string16 GetLocalizedString(int resource_id) const OVERRIDE;
+  virtual base::string16 GetDisplayLanguageName(
+      const std::string& language_code) const OVERRIDE;
+  virtual void SetHardwareKeyboardLayoutForTesting(
+      const std::string& layout) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(InputMethodDelegateImpl);

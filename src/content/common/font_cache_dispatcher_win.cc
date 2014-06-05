@@ -4,16 +4,17 @@
 
 #include "content/common/font_cache_dispatcher_win.h"
 
-#include <vector>
 #include <map>
+#include <vector>
 
 #include "base/logging.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "content/common/child_process_messages.h"
+#include "ipc/ipc_channel.h"
 
 namespace content {
 namespace {
-typedef std::vector<string16> FontNameVector;
+typedef std::vector<base::string16> FontNameVector;
 typedef std::map<FontCacheDispatcher*, FontNameVector> DispatcherToFontNames;
 
 class FontCache {
@@ -23,7 +24,7 @@ class FontCache {
   }
 
   void PreCacheFont(const LOGFONT& font, FontCacheDispatcher* dispatcher) {
-    typedef std::map<string16, FontCache::CacheElement> FontNameToElement;
+    typedef std::map<base::string16, FontCache::CacheElement> FontNameToElement;
 
     base::AutoLock lock(mutex_);
 
@@ -41,7 +42,7 @@ class FontCache {
     BOOL ret = GetTextMetrics(hdc, &tm);
     DCHECK(ret);
 
-    string16 font_name = font.lfFaceName;
+    base::string16 font_name = font.lfFaceName;
     int ref_count_inc = 1;
     FontNameVector::iterator it =
         std::find(dispatcher_font_map_[dispatcher].begin(),
@@ -68,7 +69,7 @@ class FontCache {
   }
 
   void ReleaseCachedFonts(FontCacheDispatcher* dispatcher) {
-    typedef std::map<string16, FontCache::CacheElement> FontNameToElement;
+    typedef std::map<base::string16, FontCache::CacheElement> FontNameToElement;
 
     base::AutoLock lock(mutex_);
 
@@ -125,7 +126,7 @@ class FontCache {
   FontCache() {
   }
 
-  std::map<string16, CacheElement> cache_;
+  std::map<base::string16, CacheElement> cache_;
   DispatcherToFontNames dispatcher_font_map_;
   base::Lock mutex_;
 

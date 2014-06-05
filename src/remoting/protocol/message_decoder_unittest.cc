@@ -6,11 +6,11 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "remoting/proto/event.pb.h"
 #include "remoting/proto/internal.pb.h"
 #include "remoting/protocol/message_decoder.h"
-#include "remoting/protocol/util.h"
+#include "remoting/protocol/message_serialization.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace remoting {
@@ -50,7 +50,7 @@ void SimulateReadSequence(const int read_sequence[], int sequence_size) {
   int size;
   uint8* test_data;
   PrepareData(&test_data, &size);
-  scoped_array<uint8> memory_deleter(test_data);
+  scoped_ptr<uint8[]> memory_deleter(test_data);
 
   // Then simulate using MessageDecoder to decode variable
   // size of encoded data.

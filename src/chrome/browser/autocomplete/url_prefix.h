@@ -7,7 +7,8 @@
 
 #include <vector>
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
+#include "chrome/browser/autocomplete/autocomplete_input.h"
 
 struct URLPrefix;
 typedef std::vector<URLPrefix> URLPrefixes;
@@ -15,22 +16,44 @@ typedef std::vector<URLPrefix> URLPrefixes;
 // A URL prefix; combinations of schemes and (least significant) domain labels
 // that may be inferred from certain URL-like input strings.
 struct URLPrefix {
-  URLPrefix(const string16& prefix, size_t num_components);
+  URLPrefix(const base::string16& prefix, size_t num_components);
 
   // Returns a vector of URL prefixes sorted by descending number of components.
   static const URLPrefixes& GetURLPrefixes();
 
   // Returns if the argument is a valid URL prefix.
-  static bool IsURLPrefix(const string16& prefix);
+  static bool IsURLPrefix(const base::string16& prefix);
 
-  // Returns the prefix with the most components that begins |text|, or NULL.
+  // Returns the URL prefix of |text| with the most components, or NULL.
   // |prefix_suffix| (which may be empty) is appended to every attempted prefix,
   // which is useful for finding the innermost match of user input in a URL.
   // Performs case insensitive string comparison.
-  static const URLPrefix* BestURLPrefix(const string16& text,
-                                        const string16& prefix_suffix);
+  static const URLPrefix* BestURLPrefix(const base::string16& text,
+                                        const base::string16& prefix_suffix);
 
-  string16 prefix;
+  // A helper function for BestURLPrefix().  Returns true if |text| starts
+  // with |prefix| which is then followed by |prefix_suffix|.
+  // Performs case insensitive string comparison.
+  static bool PrefixMatch(const URLPrefix& prefix,
+                          const base::string16& text,
+                          const base::string16& prefix_suffix);
+
+  // Sees if |text| is inlineable against either |input| or |fixed_up_input|,
+  // returning the appropriate inline autocomplete offset or
+  // base::string16::npos if |text| is not inlineable.
+  // |allow_www_prefix_without_scheme| says whether to consider an input such
+  // as "foo" to be allowed to match against text "www.foo.com".  This is
+  // needed because sometimes the string we're matching against here can come
+  // from a match's fill_into_edit, which can start with "www." without having
+  // a protocol at the beginning, and we want to allow these matches to be
+  // inlineable.  ("www." is not otherwise on the default prefix list.)
+  static size_t GetInlineAutocompleteOffset(
+      const AutocompleteInput& input,
+      const AutocompleteInput& fixed_up_input,
+      const bool allow_www_prefix_without_scheme,
+      const base::string16& text);
+
+  base::string16 prefix;
 
   // The number of URL components (scheme, domain label, etc.) in the prefix.
   // For example, "http://foo.com" and "www.bar.com" each have one component,

@@ -17,6 +17,13 @@ py_test(
   browsers = [ "ff" ])
 
 py_test(
+  name = "phantomjs_test",
+  gd_specific_tests = [ "test/selenium/webdriver/phantomjs/*_tests.py" ],
+  deps = [ ":test_phantomjs" ],
+  browsers = [ "phantomjs" ])
+
+
+py_test(
   name = "chrome_test",
   chrome_specific_tests = [ "test/selenium/webdriver/chrome/*_tests.py" ],
   deps = [ ":test_chrome" ],
@@ -31,17 +38,12 @@ py_test(
 py_test(
   name = "ie_test",
   deps = [ ":test_ie" ],
-  resources = [
-    {"//cpp:ie_win32_dll" : "selenium\\webdriver\\ie\\win32\\IEDriver.dll"},
-    {"//cpp:ie_x64_dll" : "selenium\\webdriver\\ie\\x64\\IEDriver.dll"}
-  ],
-
   browsers = [ "ie" ])
 
 py_test(
   name = "remote_firefox_test",
   remote_firefox_specific_tests = [ "test/selenium/webdriver/remote/*_tests.py" ],
-  deps = [ ":test_remote" ],
+  deps = [ ":test_remote_firefox" ],
   browsers = [ "remote_firefox" ])
 
 py_env(
@@ -63,6 +65,7 @@ py_test(
     "chrome",
     "ff",
     "ie",
+    "phantomjs",
     "remote_firefox",
     "opera"
   ])

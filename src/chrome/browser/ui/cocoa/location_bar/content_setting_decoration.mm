@@ -6,10 +6,10 @@
 
 #include <algorithm>
 
-#include "base/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_content_setting_bubble_model_delegate.h"
 #include "chrome/browser/ui/browser_list.h"
@@ -20,7 +20,9 @@
 #include "chrome/browser/ui/content_settings/content_setting_image_model.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/web_contents.h"
+#include "grit/theme_resources.h"
 #include "net/base/net_util.h"
+#include "ui/base/cocoa/appkit_utils.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
@@ -30,9 +32,9 @@ using content::WebContents;
 
 namespace {
 
-// How far to offset up from the bottom of the view to get the top
-// border of the popup 2px below the bottom of the Omnibox.
-const CGFloat kPopupPointYOffset = 2.0;
+// The bubble point should look like it points to the bottom of the respective
+// icon. The offset should be 2px.
+const CGFloat kPageBubblePointYOffset = 2.0;
 
 // Duration of animation, 3 seconds. The ContentSettingAnimationState breaks
 // this up into different states of varying lengths.
@@ -228,15 +230,19 @@ CGFloat ContentSettingDecoration::MeasureTextWidth() {
   return [animated_text_ size].width;
 }
 
-scoped_nsobject<NSAttributedString>
-    ContentSettingDecoration::CreateAnimatedText() {
+base::scoped_nsobject<NSAttributedString>
+ContentSettingDecoration::CreateAnimatedText() {
   NSString* text =
       l10n_util::GetNSString(
           content_setting_image_model_->explanatory_string_id());
-  NSDictionary* attributes =
-      [NSDictionary dictionaryWithObject:[NSFont labelFontOfSize:14]
-                                  forKey:NSFontAttributeName];
-  return scoped_nsobject<NSAttributedString>(
+  base::scoped_nsobject<NSMutableParagraphStyle> style(
+      [[NSMutableParagraphStyle alloc] init]);
+  // Set line break mode to clip the text, otherwise drawInRect: won't draw a
+  // word if it doesn't fit in the bounding box.
+  [style setLineBreakMode:NSLineBreakByClipping];
+  NSDictionary* attributes = @{ NSFontAttributeName : GetFont(),
+                                NSParagraphStyleAttributeName : style };
+  return base::scoped_nsobject<NSAttributedString>(
       [[NSAttributedString alloc] initWithString:text attributes:attributes]);
 }
 
@@ -250,7 +256,7 @@ NSPoint ContentSettingDecoration::GetBubblePointInFrame(NSRect frame) {
 
   const NSRect draw_frame = GetDrawRectInFrame(frame);
   return NSMakePoint(NSMidX(draw_frame),
-                     NSMaxY(draw_frame) - kPopupPointYOffset);
+                     NSMaxY(draw_frame) + kPageBubblePointYOffset);
 }
 
 bool ContentSettingDecoration::AcceptsMousePress() {
@@ -326,47 +332,25 @@ CGFloat ContentSettingDecoration::GetWidthForSpace(CGFloat width) {
 
 void ContentSettingDecoration::DrawInFrame(NSRect frame, NSView* control_view) {
   if ([animation_ animationState] != kNoAnimation) {
-    // Draw the background. Cache the gradient.
-    if (!gradient_) {
-      // Colors chosen to match Windows code.
-      NSColor* start_color =
-          [NSColor colorWithCalibratedRed:1.0 green:0.97 blue:0.83 alpha:1.0];
-      NSColor* end_color =
-          [NSColor colorWithCalibratedRed:1.0 green:0.90 blue:0.68 alpha:1.0];
-      NSArray* color_array =
-          [NSArray arrayWithObjects:start_color, end_color, nil];
-      gradient_.reset([[NSGradient alloc] initWithColors:color_array]);
-    }
-
-    gfx::ScopedNSGraphicsContextSaveGState scopedGState;
-
-    NSRectClip(frame);
-
-    frame = NSInsetRect(frame, 0.0, kBorderPadding);
-    [gradient_ drawInRect:frame angle:90.0];
-    NSColor* border_color =
-        [NSColor colorWithCalibratedRed:0.91 green:0.73 blue:0.4 alpha:1.0];
-    [border_color set];
-    NSFrameRect(frame);
+    NSRect background_rect = NSInsetRect(frame, 0.0, kBorderPadding);
+    const ui::NinePartImageIds image_ids =
+        IMAGE_GRID(IDR_OMNIBOX_CONTENT_SETTING_BUBBLE);
+    ui::DrawNinePartImage(
+        background_rect, image_ids, NSCompositeSourceOver, 1.0, true);
 
     // Draw the icon.
     NSImage* icon = GetImage();
-    NSRect icon_rect = frame;
+    NSRect icon_rect = background_rect;
     if (icon) {
       icon_rect.origin.x += kIconMarginPadding;
       icon_rect.size.width = [icon size].width;
       ImageDecoration::DrawInFrame(icon_rect, control_view);
     }
 
-    // Draw the text, clipped to fit on the right. While handling clipping,
-    // NSAttributedString's drawInRect: won't draw a word if it doesn't fit
-    // in the bounding box so instead use drawAtPoint: with a manual clip
-    // rect.
     NSRect remainder = frame;
     remainder.origin.x = NSMaxX(icon_rect);
-    NSInsetRect(remainder, kTextMarginPadding, kTextMarginPadding);
-    // .get() needed to fix compiler warning (confusion with NSImageRep).
-    [animated_text_.get() drawAtPoint:remainder.origin];
+    remainder.size.width = NSMaxX(background_rect) - NSMinX(remainder);
+    DrawAttributedString(animated_text_, remainder);
   } else {
     // No animation, draw the image as normal.
     ImageDecoration::DrawInFrame(frame, control_view);

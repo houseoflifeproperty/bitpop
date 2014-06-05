@@ -4,61 +4,72 @@
 
 #include "chrome/browser/ui/views/infobars/translate_infobar_base.h"
 
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/infobars/infobar.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/translate/translate_infobar_delegate.h"
+#include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/views/infobars/after_translate_infobar.h"
 #include "chrome/browser/ui/views/infobars/before_translate_infobar.h"
 #include "chrome/browser/ui/views/infobars/translate_message_infobar.h"
+#include "components/infobars/core/infobar.h"
 #include "grit/theme_resources.h"
-#include "ui/base/animation/slide_animation.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/label.h"
 
+
 // TranslateInfoBarDelegate ---------------------------------------------------
 
-InfoBar* TranslateInfoBarDelegate::CreateInfoBar(InfoBarService* owner) {
-  InfoBarTabHelper* helper = static_cast<InfoBarTabHelper*>(owner);
-  if (type_ == BEFORE_TRANSLATE)
-    return new BeforeTranslateInfoBar(helper, this);
-  if (type_ == AFTER_TRANSLATE)
-    return new AfterTranslateInfoBar(helper, this);
-  return new TranslateMessageInfoBar(helper, this);
+// static
+scoped_ptr<infobars::InfoBar> TranslateInfoBarDelegate::CreateInfoBar(
+    scoped_ptr<TranslateInfoBarDelegate> delegate) {
+  if (delegate->translate_step() ==
+      translate::TRANSLATE_STEP_BEFORE_TRANSLATE) {
+    return scoped_ptr<infobars::InfoBar>(
+        new BeforeTranslateInfoBar(delegate.Pass()));
+  }
+  if (delegate->translate_step() ==
+      translate::TRANSLATE_STEP_AFTER_TRANSLATE) {
+    return scoped_ptr<infobars::InfoBar>(
+        new AfterTranslateInfoBar(delegate.Pass()));
+  }
+  return scoped_ptr<infobars::InfoBar>(
+      new TranslateMessageInfoBar(delegate.Pass()));
 }
+
 
 // TranslateInfoBarBase -------------------------------------------------------
 
 // static
 const int TranslateInfoBarBase::kButtonInLabelSpacing = 5;
 
-TranslateInfoBarBase::TranslateInfoBarBase(InfoBarTabHelper* owner,
-                                           TranslateInfoBarDelegate* delegate)
-    : InfoBarView(owner, delegate),
-      error_background_(GetInfoBarTopColor(InfoBarDelegate::WARNING_TYPE),
-                        GetInfoBarBottomColor(InfoBarDelegate::WARNING_TYPE)) {
+void TranslateInfoBarBase::UpdateLanguageButtonText(
+    views::MenuButton* button,
+    const base::string16& text) {
+  DCHECK(button);
+  button->SetText(text);
+  button->ClearMaxTextSize();
+  button->SizeToPreferredSize();
+  Layout();
+  SchedulePaint();
+}
+
+TranslateInfoBarBase::TranslateInfoBarBase(
+    scoped_ptr<TranslateInfoBarDelegate> delegate)
+    : InfoBarView(delegate.PassAs<infobars::InfoBarDelegate>()),
+      error_background_(infobars::InfoBarDelegate::WARNING_TYPE) {
 }
 
 TranslateInfoBarBase::~TranslateInfoBarBase() {
 }
 
-void TranslateInfoBarBase::UpdateLanguageButtonText(views::MenuButton* button,
-                                                    const string16& text) {
-  DCHECK(button);
-  button->SetText(text);
-  // The button may have to grow to show the new text.
-  Layout();
-  SchedulePaint();
-}
-
-void TranslateInfoBarBase::ViewHierarchyChanged(bool is_add,
-                                                View* parent,
-                                                View* child) {
-  if (is_add && (child == this) && (background_color_animation_ == NULL)) {
-    background_color_animation_.reset(new ui::SlideAnimation(this));
-    background_color_animation_->SetTweenType(ui::Tween::LINEAR);
+void TranslateInfoBarBase::ViewHierarchyChanged(
+    const ViewHierarchyChangedDetails& details) {
+  if (details.is_add && (details.child == this) &&
+      (background_color_animation_ == NULL)) {
+    background_color_animation_.reset(new gfx::SlideAnimation(this));
+    background_color_animation_->SetTweenType(gfx::Tween::LINEAR);
     background_color_animation_->SetSlideDuration(500);
     TranslateInfoBarDelegate::BackgroundAnimationType animation =
         GetDelegate()->background_animation_type();
@@ -73,7 +84,7 @@ void TranslateInfoBarBase::ViewHierarchyChanged(bool is_add,
 
   // This must happen after adding all other children so InfoBarView can ensure
   // the close button is the last child.
-  InfoBarView::ViewHierarchyChanged(is_add, parent, child);
+  InfoBarView::ViewHierarchyChanged(details);
 }
 
 TranslateInfoBarDelegate* TranslateInfoBarBase::GetDelegate() {
@@ -83,7 +94,7 @@ TranslateInfoBarDelegate* TranslateInfoBarBase::GetDelegate() {
 void TranslateInfoBarBase::OnPaintBackground(gfx::Canvas* canvas) {
   // We need to set the separator color for |error_background_| like
   // InfoBarView::Layout() does for the normal background.
-  const InfoBarContainer::Delegate* delegate = container_delegate();
+  const infobars::InfoBarContainer::Delegate* delegate = container_delegate();
   if (delegate)
     error_background_.set_separator_color(delegate->GetInfoBarSeparatorColor());
 
@@ -99,7 +110,8 @@ void TranslateInfoBarBase::OnPaintBackground(gfx::Canvas* canvas) {
                  error_background_);
 }
 
-void TranslateInfoBarBase::AnimationProgressed(const ui::Animation* animation) {
+void TranslateInfoBarBase::AnimationProgressed(
+    const gfx::Animation* animation) {
   if (animation == background_color_animation_.get())
     SchedulePaint();  // That'll trigger a PaintBackgroud.
   else
@@ -107,7 +119,7 @@ void TranslateInfoBarBase::AnimationProgressed(const ui::Animation* animation) {
 }
 
 const views::Background& TranslateInfoBarBase::GetBackground() {
-  return GetDelegate()->IsError() ? error_background_ : *background();
+  return GetDelegate()->is_error() ? error_background_ : *background();
 }
 
 void TranslateInfoBarBase::FadeBackground(gfx::Canvas* canvas,

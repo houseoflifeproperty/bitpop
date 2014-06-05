@@ -50,17 +50,29 @@ void TabStripModelObserverBridge::TabDetachedAt(WebContents* contents,
   }
 }
 
+void TabStripModelObserverBridge::TabDeactivated(WebContents* contents) {
+  if ([controller_ respondsToSelector:@selector(tabDeactivatedWithContents:)])
+    [controller_ tabDeactivatedWithContents:contents];
+}
+
 void TabStripModelObserverBridge::ActiveTabChanged(WebContents* old_contents,
                                                    WebContents* new_contents,
                                                    int index,
-                                                   bool user_gesture) {
-  if ([controller_ respondsToSelector:
-          @selector(activateTabWithContents:previousContents:atIndex:
-                    userGesture:)]) {
+                                                   int reason) {
+  if ([controller_ respondsToSelector:@selector(
+          activateTabWithContents:previousContents:atIndex:reason:)]) {
     [controller_ activateTabWithContents:new_contents
                         previousContents:old_contents
                                  atIndex:index
-                             userGesture:user_gesture];
+                                  reason:reason];
+  }
+}
+
+void TabStripModelObserverBridge::TabSelectionChanged(
+    TabStripModel* tab_strip_model,
+    const ui::ListSelectionModel& old_model) {
+  if ([controller_ respondsToSelector:@selector(tabSelectionChanged)]) {
+    [controller_ tabSelectionChanged];
   }
 }
 

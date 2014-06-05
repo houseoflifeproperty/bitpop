@@ -11,8 +11,10 @@
 StatusTray::~StatusTray() {
 }
 
-StatusIcon* StatusTray::CreateStatusIcon() {
-  StatusIcon* icon = CreatePlatformStatusIcon();
+StatusIcon* StatusTray::CreateStatusIcon(StatusIconType type,
+                                         const gfx::ImageSkia& image,
+                                         const base::string16& tool_tip) {
+  StatusIcon* icon = CreatePlatformStatusIcon(type, image, tool_tip);
   if (icon)
     status_icons_.push_back(icon);
   return icon;

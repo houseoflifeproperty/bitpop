@@ -11,14 +11,17 @@
  * The SFI validator, and some utility classes it uses.
  */
 
+#include <limits>
 #include <stdlib.h>
 #include <vector>
 
+#include "native_client/src/include/nacl_compiler_annotations.h"
 #include "native_client/src/include/nacl_string.h"
 #include "native_client/src/include/portability.h"
+#include "native_client/src/shared/platform/nacl_check.h"
 #include "native_client/src/trusted/validator/ncvalidate.h"
 #include "native_client/src/trusted/validator_arm/address_set.h"
-#include "native_client/src/trusted/validator_arm/cpuid_arm.h"
+#include "native_client/src/trusted/cpu_features/arch/arm/cpu_arm.h"
 #include "native_client/src/trusted/validator_arm/gen/arm32_decode.h"
 #include "native_client/src/trusted/validator_arm/inst_classes.h"
 #include "native_client/src/trusted/validator_arm/model.h"
@@ -42,9 +45,9 @@ class Bundle {
   uint32_t begin_addr() const { return virtual_base_; }
   uint32_t end_addr() const { return virtual_base_ + size_; }
 
-  bool operator!=(const Bundle& other) const {
+  bool operator==(const Bundle& other) const {
     // Note that all Bundles are currently assumed to be the same size.
-    return virtual_base_ != other.virtual_base_;
+    return virtual_base_ == other.virtual_base_;
   }
 
  private:
@@ -90,7 +93,29 @@ class SfiValidator {
   // ProblemSink.
   //
   // Returns true iff no problems were found.
-  bool validate(const std::vector<CodeSegment>& segments, ProblemSink* out);
+  bool validate(const std::vector<CodeSegment>& segments, ProblemSink* out) {
+    return find_violations(segments, out) == nacl_arm_dec::kNoViolations;
+  }
+
+  // Returns true if validation did not depend on the code's base address.
+  bool is_position_independent() {
+    return is_position_independent_;
+  }
+
+  // Alternate validator entry point. Validates the provided
+  // CodeSegments, which must be in sorted order, reporting any
+  // problems through the ProblemSink.
+  //
+  // Returns the violation set of found violations. Note: if problem
+  // sink short ciruits the validation of all code (via method
+  // should_continue), this set may not contain all types of
+  // violations found. All that this method guarantees is if the code
+  // has validation violations, the returned set will be non-empty.
+  //
+  // Note: This version of validating is useful for testing, when one
+  // might want to know why the code did not validate.
+  nacl_arm_dec::ViolationSet find_violations(
+      const std::vector<CodeSegment>& segments, ProblemSink* out);
 
   // Entry point for validation of dynamic code replacement. Allows
   // micromodifications of dynamically generated code in form of
@@ -134,7 +159,9 @@ class SfiValidator {
 
   // Checks whether the given Register always holds a valid data region address.
   // This implies that the register is safe to use in unguarded stores.
-  bool is_data_address_register(nacl_arm_dec::Register) const;
+  bool is_data_address_register(nacl_arm_dec::Register r) const {
+    return data_address_registers_.Contains(r);
+  }
 
   // Number of A32 instructions per bundle.
   uint32_t InstructionsPerBundle() const {
@@ -170,18 +197,35 @@ class SfiValidator {
   }
 
   // Returns the Bundle containing a given address.
-  const Bundle bundle_for_address(uint32_t) const;
+  inline const Bundle bundle_for_address(uint32_t address) const;
+
+  // Returns true if both addresses are in the same bundle.
+  inline bool in_same_bundle(const DecodedInstruction& first,
+                             const DecodedInstruction& second) const;
+
+  // Checks that both instructions can be in the same bundle,
+  // add updates the critical set to include the second instruction,
+  // since it can't be safely jumped to. If the instruction crosses
+  // a bundle, a set with the given violation will be returned.
+  inline nacl_arm_dec::ViolationSet validate_instruction_pair_allowed(
+      const DecodedInstruction& first,
+      const DecodedInstruction& second,
+      AddressSet* critical,
+      nacl_arm_dec::Violation violation) const;
 
   // Copy the given validator state.
   SfiValidator& operator=(const SfiValidator& v);
+
+  // Returns true if address is the first address of a bundle.
+  bool is_bundle_head(uint32_t address) const {
+    return (address & (bytes_per_bundle_ - 1)) == 0;
+  };
 
  private:
   // The SfiValidator constructor could have been given invalid values.
   // Returns true the values were bad, and send the details to the ProblemSink.
   // This method should be called from every public validation method.
   bool ConstructionFailed(ProblemSink* out);
-
-  bool is_bundle_head(uint32_t address) const;
 
   // Validates a straight-line execution of the code, applying patterns.  This
   // is the first validation pass, which fills out the AddressSets for
@@ -190,39 +234,26 @@ class SfiValidator {
   //   critical - gets filled in with every address that isn't safe to jump to,
   //       because it would split an otherwise-safe pseudo-op.
   //
-  // Returns true iff no problems were found.
-  bool validate_fallthrough(const CodeSegment& segment, ProblemSink* out,
+  // Returns the violation set of found violations. Note: if problem
+  // sink short ciruits the validation of all code (via method
+  // should_continue), this set may not contain all types of
+  // violations found. All that this method guarantees is if the code
+  // has validation violations, the returned set will be non-empty.
+  nacl_arm_dec::ViolationSet validate_fallthrough(
+      const CodeSegment& segment, ProblemSink* out,
       AddressSet* branches, AddressSet* critical);
 
-  // Factor of validate_fallthrough, above.  Checks a single instruction using
-  // the instruction patterns defined in the .cc file, with two possible
-  // results:
-  //   1. No patterns matched, or all were safe: nothing happens.
-  //   2. Patterns matched and were unsafe: problems get sent to 'out'.
-  bool apply_patterns(const DecodedInstruction& inst, ProblemSink* out);
-
-  // Factor of validate_fallthrough, above.  Checks a pair of instructions using
-  // the instruction patterns defined in the .cc file, with three possible
-  // results:
-  //   1. No patterns matched: nothing happens.
-  //   2. Patterns matched and were safe: the addresses are filled into
-  //      'critical' for use by the second pass.
-  //   3. Patterns matched and were unsafe: problems get sent to 'out'.
-  //
-  // Note: Can be used to parse both one and two instruction patterns. This
-  // allows precondition checks to be shared. See comments in the implementation
-  // of this (in validator.cc) to see specifics on how to implement both single
-  // instruction and two instruction pattern testers.
-  bool apply_patterns(const DecodedInstruction& first,
-                      const DecodedInstruction& second, AddressSet* critical,
-                      ProblemSink* out);
-
-  // Validates all branches found by a previous pass, checking destinations.
-  // Returns true iff no problems were found.
-  bool validate_branches(const std::vector<CodeSegment>& segments,
+  // Validates all branches found by a previous pass, checking
+  // destinations.  Returns the violation set of found branch
+  // violations. Note: if problem sink short ciruits the validation of
+  // all code (via method should_continue), this set may not contain
+  // all types of violations found. All that this method guarantees is
+  // if the code has validation violations, the returned set will be
+  // non-empty.
+  nacl_arm_dec::ViolationSet validate_branches(
+      const std::vector<CodeSegment>& segments,
       const AddressSet& branches, const AddressSet& critical,
       ProblemSink* out);
-
 
   NaClCPUFeaturesArm cpu_features_;
   uint32_t bytes_per_bundle_;
@@ -236,6 +267,8 @@ class SfiValidator {
   const nacl_arm_dec::Arm32DecoderState decode_state_;
   // True if construction failed and further validation should be prevented.
   bool construction_failed_;
+  // True if validation did not depend on the code's base address.
+  bool is_position_independent_;
 };
 
 
@@ -251,7 +284,15 @@ class SfiValidator {
 class DecodedInstruction {
  public:
   DecodedInstruction(uint32_t vaddr, nacl_arm_dec::Instruction inst,
-      const nacl_arm_dec::ClassDecoder& decoder);
+                     const nacl_arm_dec::ClassDecoder& decoder)
+      // We eagerly compute both safety and defs here, because it turns out to
+      // be faster by 10% than doing either lazily and memoizing the result.
+      : vaddr_(vaddr),
+        inst_(inst),
+        decoder_(&decoder),
+        safety_(decoder.safety(inst_)),
+        defs_(decoder.defs(inst_))
+  {}
 
   uint32_t addr() const { return vaddr_; }
 
@@ -262,9 +303,7 @@ class DecodedInstruction {
   // This is important if 'this' produces a sandboxed value that 'other'
   // must consume.
   //
-  // Note: This function is conservative in that if it isn't sure
-  // whether 'this' instruction changes the condition, it assumes that
-  // it does. Similarly, if the conditions of the two instructions do
+  // Note: If the conditions of the two instructions do
   // not statically infer that the conditional execution is correct,
   // we assume that it is not.
   //
@@ -275,7 +314,6 @@ class DecodedInstruction {
     nacl_arm_dec::Instruction::Condition cond1 = inst_.GetCondition();
     nacl_arm_dec::Instruction::Condition cond2 = other.inst_.GetCondition();
     return !defines(nacl_arm_dec::Register::Conditions()) &&
-        !defines(nacl_arm_dec::Register::CondsDontCareFlag()) &&
         // TODO(jfb) Put back mixed-condition handling. See issue #3221.
         //           SfiValidator::condition_implies[cond2][cond1];
         ((cond1 == nacl_arm_dec::Instruction::AL) || (cond1 == cond2));
@@ -288,9 +326,7 @@ class DecodedInstruction {
   // This is important if 'other' produces an unsafe value that 'this'
   // fixes before it can leak out.
   //
-  // Note: This function is conservative in that if it isn't sure
-  // whether the 'other' instruction changes the condition, it assumes
-  // that it does. Similarly, if the conditions of the two
+  // Note: if the conditions of the two
   // instructions do not statically infer that the conditional
   // execution is correct, we assume that it is not.
   //
@@ -301,7 +337,6 @@ class DecodedInstruction {
     nacl_arm_dec::Instruction::Condition cond1 = other.inst_.GetCondition();
     nacl_arm_dec::Instruction::Condition cond2 = inst_.GetCondition();
     return !other.defines(nacl_arm_dec::Register::Conditions()) &&
-        !other.defines(nacl_arm_dec::Register::CondsDontCareFlag()) &&
         // TODO(jfb) Put back mixed-condition handling. See issue #3221.
         //           SfiValidator::condition_implies[cond1][cond2];
         ((cond2 == nacl_arm_dec::Instruction::AL) || (cond1 == cond2));
@@ -412,7 +447,12 @@ class DecodedInstruction {
 class CodeSegment {
  public:
   CodeSegment(const uint8_t* base, uint32_t start_addr, size_t size)
-      : base_(base), start_addr_(start_addr), size_(size) {}
+      : base_(base),
+        start_addr_(start_addr),
+        size_(static_cast<uint32_t>(size)) {
+    CHECK(size <= std::numeric_limits<uint32_t>::max());
+    CHECK(start_addr <= std::numeric_limits<uint32_t>::max() - size_);
+  }
 
   uint32_t begin_addr() const { return start_addr_; }
   uint32_t end_addr() const { return start_addr_ + size_; }
@@ -438,212 +478,60 @@ class CodeSegment {
  private:
   const uint8_t* base_;
   uint32_t start_addr_;
-  size_t size_;
+  uint32_t size_;
 };
 
-// Enumerated type of possible problems reported by the validator.
-// Specific problems are identified by this enumerated type, and
-// the corresponding call to report problem in class ProblemSink (below).
-typedef enum {
-  // An instruction is unsafe -- more information in the SafetyLevel.
-  // Generated by:
-  //    ReportProblemSafety
-  kProblemUnsafe,
-  // A branch would break a pseudo-operation pattern.
-  // Generated by:
-  //    ReprotProblemAddress
-  kProblemBranchSplitsPattern,
-  // A branch targets an invalid code address (out of segment).
-  // Generated by:
-  //    ReportProblemAddress
-  kProblemBranchInvalidDest,
-  // An load/store uses an unsafe (non-masked) base address.
-  // Generated by:
-  //    ReportProblemRegisterInstructionPair - atomic issues.
-  //    ReportProblemRegister - masking issues.
-  kProblemUnsafeLoadStore,
-  // A load/store on PC that doesn't increment with a valid immediate
-  // address.
-  // Generated by:
-  //    ReportProblem
-  kProblemIllegalPcLoadStore,
-  // A branch uses an unsafe (non-masked) destination address.
-  // Generated by:
-  //    ReportProblemRegisterInstructionPair - atomic issues.
-  //    ReportProblemRegister - masking issues.
-  kProblemUnsafeBranch,
-  // An instruction updates a data-address register(s) (e.g. SP)
-  // without masking.
-  // Generated by:
-  //    ReportProblemRegisterListInstructionPair - atomic issues.
-  //    ReportProblemRegisterList - masking issues.
-  kProblemUnsafeDataWrite,
-  // An instruction updates a read-only register(s) (e.g. r9).
-  // Generated by:
-  //    ReportProblemRegisterList
-  kProblemReadOnlyRegister,
-  // A pseudo-op pattern crosses a bundle boundary.
-  // Generated by:
-  //    ReportRegisterInstructionPair
-  kProblemPatternCrossesBundle,
-  // A linking branch instruction is not in the last bundle slot.
-  // Generated by:
-  //    ReportProblem
-  kProblemMisalignedCall,
-  // Construction of the SfiValidator failed because its arguments were invalid.
-  kProblemConstructionFailed,
-  // Code uses thread pointer in non-load TLS pointer situation.
-  kProblemIllegalUseOfThreadPointer,
-  // Special constant defining the number of elements in this list.
-  kValidatorProblemSize
-} ValidatorProblem;
-
-// Defines types of two instruction failures.
-typedef enum {
-  // No specific known reason for instruction pair failing.
-  kNoSpecificPairProblem,
-  // First instruction does not model conditions flags, and hence,
-  // can't be used in multiple instruction patterns.
-  kFirstNotAllowsInInstructionPairs,
-  // First instruction sets conditions flags, and hence, can't
-  // guarantee that the next instruction will always be executed.
-  kFirstSetsConditionFlags,
-  // Conditions on instructions don't guarantee that instructions
-  // will run atomically.
-  kConditionsOnPairNotSafe,
-  // Second is dependent on eq being set by first instruction.
-  kEqConditionalOn,
-  // TST+LDR or TST+STR was used, but it's disallowed on this CPU.
-  kTstMemDisallowed,
-  // Instruction pair crosses bundle boundary.
-  kPairCrossesBundle
-} ValidatorInstructionPairProblem;
-
-// Defines the maximum number of data elements assocated with validator
-// problem user data.
-static const size_t kValidatorProblemUserDataSize = 6;
-
-// Defines array used to hold user data associated with a problem.
-typedef uint32_t ValidatorProblemUserData[kValidatorProblemUserDataSize];
-
-// Defines Which ReportProblem... function was called to generate
-// user data associated with the problem.
-typedef enum {
-  kReportProblemSafety,
-  kReportProblem,
-  kReportProblemAddress,
-  kReportProblemInstructionPair,
-  kReportProblemRegister,
-  kReportProblemRegisterInstructionPair,
-  kReportProblemRegisterList,
-  kReportProblemRegisterListInstructionPair
-} ValidatorProblemMethod;
-
-// A class that consumes reports of validation problems, and may decide whether
-// to continue validating, or early-exit.
+// A class that consumes reports of validation problems.
 //
-// In a sel_ldr context, we early-exit at the first problem we find.  In an SDK
-// context, however, we collect more reports to give the developer feedback;
-// even then it may be desirable to exit after the first, say, 200 reports.
+// Default implementation to be used with sel_ldr. All methods are
+// just placeholders, so that code to generate diagnostics will link.
+// If you want to generate error messages, use derived class ProblemReporter
+// in problem_reporter.h
 class ProblemSink {
  public:
   ProblemSink() {}
   virtual ~ProblemSink() {}
 
-  // Helper function for reporting safety level issues.
-  //    vaddr - the virtual address where the problem occurred.
-  //    safety - the (unsafe) safety level being reported.
-  void ReportProblemSafety(uint32_t vaddr, nacl_arm_dec::SafetyLevel safety);
-
-  // Helper function for reporting a simple problem with no user data.
-  //    vaddr - the virtual address where the problem occurred.
-  //    problem - The problem being reported.
-  void ReportProblem(uint32_t vaddr, ValidatorProblem problem);
-
-  // Helper function for reporting a problem with a specific instruction
-  // address.
-  void ReportProblemAddress(uint32_t vaddr, ValidatorProblem problem,
-                            uint32_t problem_vaddr);
-
-  // Helper function for reporting a problem with a pair of instructions.
-  //    vaddr - the virtual address where the problem occurred.
-  //    problem - The problem being reported.
-  //    first - The first instruction of the instruction pair.
-  //    second - The second instruction of the instruction pair.
-  void ReportProblemInstructionPair(
-      uint32_t vaddr, ValidatorProblem problem,
-      ValidatorInstructionPairProblem pair_problem,
-      const DecodedInstruction& first, const DecodedInstruction& second);
-
-  // Helper function for reporting problems associated with a register.
-  //    vaddr - the virtual address where the problem occurred.
-  //    problem - The problem being reported.
-  //    reg - The register associated with the problem.
-  void ReportProblemRegister(uint32_t vaddr, ValidatorProblem problem,
-                             nacl_arm_dec::Register reg);
-
-  // Helper function for reporting an instruction pair that has
-  // issues with how a register is set.
-  //    vaddr - the virtual address where the problem occurred.
-  //    problem - The problem being reported.
-  //    reg - The register associated with the problem.
-  //    first - The first instruction of the instruction pair.
-  //    second - The second instruction of the instruction pair.
-  void ReportProblemRegisterInstructionPair(
-      uint32_t vaddr, ValidatorProblem problem,
-      ValidatorInstructionPairProblem pair_problem,
-      nacl_arm_dec::Register reg,
-      const DecodedInstruction& first, const DecodedInstruction& second);
-
-  // Helper function for reporting problems associated with a register list.
-  //    vaddr - the virtual address where the problem occurred.
-  //    problem - The problem being reported.
-  //    registers - The register list associated with the problem.
-  void ReportProblemRegisterList(uint32_t vaddr, ValidatorProblem problem,
-                                 nacl_arm_dec::RegisterList registers);
-
-  // Helper function for reporting an instruction pair that has
-  // isseus with how a register list is set.
-  //    vaddr - the virtual address where the problem occurred.
-  //    problem - The problem being reported.
-  //    registers - The register list associated with the problem.
-  //    first - The first instruction of the instruction pair.
-  //    second - The second instruction of the instruction pair.
-  void ReportProblemRegisterListInstructionPair(
-      uint32_t vaddr, ValidatorProblem problem,
-      ValidatorInstructionPairProblem pair_problem,
-      nacl_arm_dec::RegisterList registers,
-      const DecodedInstruction& first, const DecodedInstruction& second);
-
-  // Called after each invocation of report_problem.  If this returns false,
-  // the validator exits.
-  virtual bool should_continue() { return false; }
-
-
- protected:
-  // Reports a problem in untrusted code. All public report problem functions
-  // are automatically converted to a call to this function.
-  //  vaddr - the virtual address where the problem occurred.  Note that this is
-  //      probably not the address of memory that contains the offending
-  //      instruction, since we allow CodeSegments to lie about their base
-  //      addresses.
-  //  problem - An enumerated type defining the type of problem found.
-  //  method - The reporting method used to generate user data.
-  //  user_data - An array of additional information about the instruction.
+  // Helper function for reporting generic error messages using a
+  // printf style. How the corresponding data is used is left to
+  // the derived class.
   //
-  // Default implementation does nothing!
-  virtual void ReportProblemInternal(uint32_t vaddr,
-                                     ValidatorProblem problem,
-                                     ValidatorProblemMethod method,
-                                     ValidatorProblemUserData user_data);
-
-  // Returns the number of elements in user_data, for the given method.
-  // Used so that we can blindly copy/compare user data.
-  static size_t UserDataSize(ValidatorProblemMethod method);
+  // Arguments are:
+  //    violation - The type of violation being reported.
+  //    vaddr - The address of the instruction associated with the violation.
+  //    format - The format string to print out the corresponding diagnostic
+  //             message.
+  //     ... - Arguments to use with the format.
+  virtual void ReportProblemDiagnostic(nacl_arm_dec::Violation violation,
+                                       uint32_t vaddr,
+                                       const char* format, ...)
+               // Note: format is the 4th argument because of implicit this.
+               ATTRIBUTE_FORMAT_PRINTF(4, 5) = 0;
 
  private:
   NACL_DISALLOW_COPY_AND_ASSIGN(ProblemSink);
 };
+
+const Bundle SfiValidator::bundle_for_address(uint32_t address) const {
+  uint32_t base = address & ~(bytes_per_bundle_ - 1);
+  return Bundle(base, bytes_per_bundle_);
+}
+
+bool SfiValidator::in_same_bundle(const DecodedInstruction& first,
+                                  const DecodedInstruction& second) const {
+  return bundle_for_address(first.addr()) == bundle_for_address(second.addr());
+}
+
+nacl_arm_dec::ViolationSet SfiValidator::validate_instruction_pair_allowed(
+    const DecodedInstruction& first,
+    const DecodedInstruction& second,
+    AddressSet* critical,
+    nacl_arm_dec::Violation violation) const {
+  if (!in_same_bundle(first, second))
+    return nacl_arm_dec::ViolationBit(violation);
+  critical->add(second.addr());
+  return nacl_arm_dec::kNoViolations;
+}
 
 }  // namespace nacl_arm_val
 

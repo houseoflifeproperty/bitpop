@@ -4,11 +4,11 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
-#include "base/string16.h"
+#include "base/mac/scoped_nsobject.h"
+#include "base/strings/string16.h"
 #include "ui/gfx/point.h"
 
-@class BrowserWindowController;
+class Browser;
 class FindBarBridge;
 @class FindBarTextField;
 class FindNotificationDetails;
@@ -31,22 +31,21 @@ class FindNotificationDetails;
   // Needed to call methods on FindBarController.
   FindBarBridge* findBarBridge_;  // weak
 
-  // Needed to request a layout of the FindBar view.
-  BrowserWindowController* browserWindowController_;  // weak
+  Browser* browser_;
 
-  scoped_nsobject<FocusTracker> focusTracker_;
+  base::scoped_nsobject<FocusTracker> focusTracker_;
 
   // The show/hide animation. This is defined to be non-nil if the
   // animation is running, and is always nil otherwise.  The
   // FindBarCocoaController should not be deallocated while an animation is
   // running (stopAnimation is currently called before the last tab in a
   // window is removed).
-  scoped_nsobject<NSViewAnimation> showHideAnimation_;
+  base::scoped_nsobject<NSViewAnimation> showHideAnimation_;
 
   // The horizontal-moving animation, to avoid occluding find results. This
   // is nil when the animation is not running, and is also stopped by
   // stopAnimation.
-  scoped_nsobject<NSViewAnimation> moveAnimation_;
+  base::scoped_nsobject<NSViewAnimation> moveAnimation_;
 
   // If YES, do nothing as a result of find pasteboard update notifications.
   BOOL suppressPboardUpdateActions_;
@@ -58,11 +57,12 @@ class FindNotificationDetails;
   CGFloat defaultWidth_;
 };
 
+@property (readonly, nonatomic) NSView* findBarView;
+
 // Initializes a new FindBarCocoaController.
-- (id)init;
+- (id)initWithBrowser:(Browser*)browser;
 
 - (void)setFindBarBridge:(FindBarBridge*)findBar;
-- (void)setBrowserWindowController:(BrowserWindowController*)controller;
 
 - (IBAction)close:(id)sender;
 
@@ -82,11 +82,16 @@ class FindNotificationDetails;
 - (void)stopAnimation;
 - (void)setFocusAndSelection;
 - (void)restoreSavedFocus;
-- (void)setFindText:(NSString*)findText;
+- (void)setFindText:(NSString*)findText
+      selectedRange:(const NSRange&)selectedRange;
+- (NSString*)findText;
+- (NSRange)selectedRange;
+- (NSString*)matchCountText;
+- (void)updateFindBarForChangedWebContents;
 
 - (void)clearResults:(const FindNotificationDetails&)results;
 - (void)updateUIForFindResult:(const FindNotificationDetails&)results
-                     withText:(const string16&)findText;
+                     withText:(const base::string16&)findText;
 - (BOOL)isFindBarVisible;
 - (BOOL)isFindBarAnimating;
 

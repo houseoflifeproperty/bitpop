@@ -4,11 +4,12 @@
 
 #include "chrome/browser/extensions/api/page_capture/page_capture_api.h"
 
+#include <limits>
+
 #include "base/bind.h"
 #include "base/file_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
-#include "chrome/common/extensions/extension_messages.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
@@ -16,8 +17,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-
-#include <limits>
+#include "extensions/common/extension_messages.h"
 
 using content::BrowserThread;
 using content::ChildProcessSecurityPolicy;
@@ -29,11 +29,10 @@ namespace SaveAsMHTML = extensions::api::page_capture::SaveAsMHTML;
 
 namespace {
 
-// Error messages.
-const char* const kFileTooBigError = "The MHTML file generated is too big.";
-const char* const kMHTMLGenerationFailedError = "Failed to generate MHTML.";
-const char* const kTemporaryFileError = "Failed to create a temporary file.";
-const char* const kTabClosedError = "Cannot find the tab for thie request.";
+const char kFileTooBigError[] = "The MHTML file generated is too big.";
+const char kMHTMLGenerationFailedError[] = "Failed to generate MHTML.";
+const char kTemporaryFileError[] = "Failed to create a temporary file.";
+const char kTabClosedError[] = "Cannot find the tab for thie request.";
 
 }  // namespace
 
@@ -55,7 +54,7 @@ void PageCaptureSaveAsMHTMLFunction::SetTestDelegate(TestDelegate* delegate) {
   test_delegate_ = delegate;
 }
 
-bool PageCaptureSaveAsMHTMLFunction::RunImpl() {
+bool PageCaptureSaveAsMHTMLFunction::RunAsync() {
   params_ = SaveAsMHTML::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params_.get());
 
@@ -67,7 +66,7 @@ bool PageCaptureSaveAsMHTMLFunction::RunImpl() {
   return true;
 }
 
-bool PageCaptureSaveAsMHTMLFunction::OnMessageReceivedFromRenderView(
+bool PageCaptureSaveAsMHTMLFunction::OnMessageReceived(
     const IPC::Message& message) {
   if (message.type() != ExtensionHostMsg_ResponseAck::ID)
     return false;
@@ -90,8 +89,8 @@ bool PageCaptureSaveAsMHTMLFunction::OnMessageReceivedFromRenderView(
 }
 
 void PageCaptureSaveAsMHTMLFunction::CreateTemporaryFile() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-  bool success = file_util::CreateTemporaryFile(&mhtml_path_);
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
+  bool success = base::CreateTemporaryFile(&mhtml_path_);
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
       base::Bind(&PageCaptureSaveAsMHTMLFunction::TemporaryFileCreated, this,
@@ -104,8 +103,10 @@ void PageCaptureSaveAsMHTMLFunction::TemporaryFileCreated(bool success) {
       // Setup a ShareableFileReference so the temporary file gets deleted
       // once it is no longer used.
       mhtml_file_ = ShareableFileReference::GetOrCreate(
-          mhtml_path_, ShareableFileReference::DELETE_ON_FINAL_RELEASE,
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE));
+          mhtml_path_,
+          ShareableFileReference::DELETE_ON_FINAL_RELEASE,
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE)
+              .get());
     }
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
@@ -114,7 +115,7 @@ void PageCaptureSaveAsMHTMLFunction::TemporaryFileCreated(bool success) {
     return;
   }
 
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (!success) {
     ReturnFailure(kTemporaryFileError);
     return;
@@ -134,9 +135,8 @@ void PageCaptureSaveAsMHTMLFunction::TemporaryFileCreated(bool success) {
       base::Bind(&PageCaptureSaveAsMHTMLFunction::MHTMLGenerated, this));
 }
 
-void PageCaptureSaveAsMHTMLFunction::MHTMLGenerated(const FilePath& file_path,
-                                                    int64 mhtml_file_size) {
-  DCHECK(mhtml_path_ == file_path);
+void PageCaptureSaveAsMHTMLFunction::MHTMLGenerated(
+    int64 mhtml_file_size) {
   if (mhtml_file_size <= 0) {
     ReturnFailure(kMHTMLGenerationFailedError);
     return;
@@ -151,7 +151,7 @@ void PageCaptureSaveAsMHTMLFunction::MHTMLGenerated(const FilePath& file_path,
 }
 
 void PageCaptureSaveAsMHTMLFunction::ReturnFailure(const std::string& error) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   error_ = error;
 
@@ -161,7 +161,7 @@ void PageCaptureSaveAsMHTMLFunction::ReturnFailure(const std::string& error) {
 }
 
 void PageCaptureSaveAsMHTMLFunction::ReturnSuccess(int64 file_size) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   WebContents* web_contents = GetWebContents();
   if (!web_contents || !render_view_host()) {
@@ -173,7 +173,7 @@ void PageCaptureSaveAsMHTMLFunction::ReturnSuccess(int64 file_size) {
   ChildProcessSecurityPolicy::GetInstance()->GrantReadFile(
       child_id, mhtml_path_);
 
-  DictionaryValue* dict = new DictionaryValue();
+  base::DictionaryValue* dict = new base::DictionaryValue();
   SetResult(dict);
   dict->SetString("mhtmlFilePath", mhtml_path_.value());
   dict->SetInteger("mhtmlFileLength", file_size);
@@ -181,17 +181,21 @@ void PageCaptureSaveAsMHTMLFunction::ReturnSuccess(int64 file_size) {
   SendResponse(true);
 
   // Note that we'll wait for a response ack message received in
-  // OnMessageReceivedFromRenderView before we call Release() (to prevent the
-  // blob file from being deleted).
+  // OnMessageReceived before we call Release() (to prevent the blob file from
+  // being deleted).
 }
 
 WebContents* PageCaptureSaveAsMHTMLFunction::GetWebContents() {
   Browser* browser = NULL;
   content::WebContents* web_contents = NULL;
 
-  if (!ExtensionTabUtil::GetTabById(params_->details.tab_id, profile(),
-                                    include_incognito(), &browser, NULL,
-                                    &web_contents, NULL)) {
+  if (!ExtensionTabUtil::GetTabById(params_->details.tab_id,
+                                    GetProfile(),
+                                    include_incognito(),
+                                    &browser,
+                                    NULL,
+                                    &web_contents,
+                                    NULL)) {
     return NULL;
   }
   return web_contents;

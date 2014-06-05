@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_UI_TABS_PINNED_TAB_SERVICE_H_
 
 #include "base/compiler_specific.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
@@ -16,7 +16,7 @@ class Profile;
 // pinned tabs to restore at startup. PinnedTabService listens for the
 // appropriate set of notifications to know it should update preferences.
 class PinnedTabService : public content::NotificationObserver,
-                         public ProfileKeyedService {
+                         public KeyedService {
  public:
   explicit PinnedTabService(Profile* profile);
 

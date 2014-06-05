@@ -5,18 +5,18 @@
 #include "remoting/protocol/it2me_host_authenticator_factory.h"
 
 #include "base/logging.h"
-#include "crypto/rsa_private_key.h"
-#include "remoting/protocol/negotiating_authenticator.h"
+#include "remoting/base/rsa_key_pair.h"
+#include "remoting/protocol/negotiating_host_authenticator.h"
 
 namespace remoting {
 namespace protocol {
 
 It2MeHostAuthenticatorFactory::It2MeHostAuthenticatorFactory(
     const std::string& local_cert,
-    const crypto::RSAPrivateKey& local_private_key,
+    scoped_refptr<RsaKeyPair> key_pair,
     const std::string& shared_secret)
     : local_cert_(local_cert),
-      local_private_key_(local_private_key.Copy()),
+      key_pair_(key_pair),
       shared_secret_(shared_secret) {
 }
 
@@ -27,9 +27,8 @@ scoped_ptr<Authenticator> It2MeHostAuthenticatorFactory::CreateAuthenticator(
     const std::string& local_jid,
     const std::string& remote_jid,
     const buzz::XmlElement* first_message) {
-  return NegotiatingAuthenticator::CreateForHost(
-      local_cert_, *local_private_key_, shared_secret_,
-      AuthenticationMethod::NONE);
+  return NegotiatingHostAuthenticator::CreateWithSharedSecret(
+      local_cert_, key_pair_, shared_secret_, AuthenticationMethod::NONE, NULL);
 }
 
 }  // namespace protocol

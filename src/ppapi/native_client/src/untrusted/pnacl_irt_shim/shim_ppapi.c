@@ -4,16 +4,14 @@
  * found in the LICENSE file.
  */
 
-#include "native_client/src/untrusted/pnacl_irt_shim/shim_ppapi.h"
+#include "ppapi/native_client/src/untrusted/pnacl_irt_shim/shim_ppapi.h"
 
 #include <string.h>
-#include "native_client/src/shared/ppapi_proxy/ppruntime.h"
 #include "native_client/src/untrusted/irt/irt.h"
-#include "native_client/src/untrusted/irt/irt_ppapi.h"
-#include "ppapi/generators/pnacl_shim.h"
-
-/* The PNaCl PPAPI shims are only needed on x86-64 and arm. */
-#if defined(__x86_64__) || defined(__arm__)
+#include "ppapi/nacl_irt/public/irt_ppapi.h"
+#include "ppapi/native_client/src/shared/ppapi_proxy/ppruntime.h"
+#include "ppapi/native_client/src/untrusted/pnacl_irt_shim/irt_shim_ppapi.h"
+#include "ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_shim.h"
 
 /* Use local strcmp to avoid dependency on libc. */
 static int mystrcmp(const char* s1, const char *s2) {
@@ -21,60 +19,9 @@ static int mystrcmp(const char* s1, const char *s2) {
   return *(--s1) - *(--s2);
 }
 
-TYPE_nacl_irt_query __pnacl_real_irt_interface;
+TYPE_nacl_irt_query __pnacl_real_irt_query_func = NULL;
 
-/*
- * These remember the interface pointers the user registers by calling the
- * IRT entry point.
- */
-static struct PP_StartFunctions user_start_functions;
-
-static int32_t wrap_PPPInitializeModule(PP_Module module_id,
-                                        PPB_GetInterface get_browser_intf) {
-  __set_real_Pnacl_PPBGetInterface(get_browser_intf);
-  /*
-   * Calls from user code to the PPB interfaces pass through here and may
-   * require shims to convert the ABI.
-   */
-  return (*user_start_functions.PPP_InitializeModule)(module_id,
-                                                      &__Pnacl_PPBGetInterface);
-}
-
-static void wrap_PPPShutdownModule() {
-  (*user_start_functions.PPP_ShutdownModule)();
-}
-
-static const struct PP_StartFunctions wrapped_ppapi_methods = {
-  wrap_PPPInitializeModule,
-  wrap_PPPShutdownModule,
-  /*
-   * Calls from the IRT to the user plugin pass through here and may require
-   * shims to convert the ABI.
-   */
-  __Pnacl_PPPGetInterface
-};
-
-static struct nacl_irt_ppapihook real_irt_ppapi_hook;
-
-static int wrap_ppapi_start(const struct PP_StartFunctions *funcs) {
-  /*
-   * Save the user's real bindings for the start functions.
-   */
-  user_start_functions = *funcs;
-  __set_real_Pnacl_PPPGetInterface(user_start_functions.PPP_GetInterface);
-
-  /*
-   * Invoke the IRT's ppapi_start interface with the wrapped interface.
-   */
-  return (*real_irt_ppapi_hook.ppapi_start)(&wrapped_ppapi_methods);
-}
-
-static struct nacl_irt_ppapihook ppapi_hook = {
-  wrap_ppapi_start,
-  NULL
-};
-
-size_t __pnacl_irt_interface_wrapper(const char *interface_ident,
+size_t __pnacl_wrap_irt_query_func(const char *interface_ident,
                                      void *table, size_t tablesize) {
   /*
    * Note there is a benign race in initializing the wrapper.
@@ -87,27 +34,39 @@ size_t __pnacl_irt_interface_wrapper(const char *interface_ident,
     /*
      * The interface is not wrapped, so use the real interface.
      */
-    return (*__pnacl_real_irt_interface)(interface_ident, table, tablesize);
+    return (*__pnacl_real_irt_query_func)(interface_ident, table, tablesize);
   }
-  if ((*__pnacl_real_irt_interface)(NACL_IRT_PPAPIHOOK_v0_1,
-                                    &real_irt_ppapi_hook,
-                                    sizeof real_irt_ppapi_hook) !=
-      sizeof real_irt_ppapi_hook) {
-    return -1;
-  }
+#ifndef PNACL_SHIM_AOT
   /*
-   * Copy the portion of the ppapihook interface that is not wrapped.
+   * For PNaCl in-the-browser, redirect to using
+   * NACL_IRT_PPAPIHOOK_PNACL_PRIVATE_v0_1 instead of NACL_IRT_PPAPIHOOK_v0_1.
    */
-  ppapi_hook.ppapi_register_thread_creator =
-      real_irt_ppapi_hook.ppapi_register_thread_creator;
+  return (*__pnacl_real_irt_query_func)(NACL_IRT_PPAPIHOOK_PNACL_PRIVATE_v0_1,
+                                        table, tablesize);
+#else
+  /*
+   * For offline generated nexes, avoid depending on the private
+   * NACL_IRT_PPAPIHOOK_PNACL_PRIVATE_v0_1 interface, and just do the
+   * overriding here manually.
+   */
+  struct nacl_irt_ppapihook real_irt_ppapi_hook;
+  if ((*__pnacl_real_irt_query_func)(NACL_IRT_PPAPIHOOK_v0_1,
+                                     &real_irt_ppapi_hook,
+                                     sizeof real_irt_ppapi_hook) !=
+      sizeof real_irt_ppapi_hook) {
+    return 0;
+  }
+  real_irt_ppapi_start = real_irt_ppapi_hook.ppapi_start;
   /*
    * Copy the interface structure into the client.
    */
-  if (sizeof ppapi_hook <= tablesize) {
-    memcpy(table, &ppapi_hook, sizeof ppapi_hook);
-    return sizeof ppapi_hook;
+  struct nacl_irt_ppapihook *dest = table;
+  if (sizeof *dest <= tablesize) {
+    dest->ppapi_start = irt_shim_ppapi_start;
+    dest->ppapi_register_thread_creator =
+        real_irt_ppapi_hook.ppapi_register_thread_creator;
+    return sizeof *dest;
   }
   return 0;
-}
-
 #endif
+}

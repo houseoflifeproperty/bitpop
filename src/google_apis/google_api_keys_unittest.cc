@@ -10,7 +10,10 @@
 // This is a little unorthodox, but it lets us test the behavior as
 // close to unmodified as possible.
 
+#include "google_apis/google_api_keys.h"
+
 #include "build/build_config.h"
+#include "google_apis/gaia/gaia_switches.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 // The Win builders fail (with a linker crash) when trying to link
@@ -21,18 +24,22 @@
 // since there are no platform-specific bits in this code.
 #if defined(OS_LINUX) || defined(OS_MACOSX)
 
-// We need to include this once at global scope so things like STL and
-// classes from base do not get defined again within the different
-// namespaces below.
-#include "google_apis/google_api_keys.cc"
+// We need to include everything included by google_api_keys.cc once
+// at global scope so that things like STL and classes from base don't
+// get defined when we re-include the google_api_keys.cc file
+// below. We used to include that file in its entirety here, but that
+// can cause problems if the linker decides the version of symbols
+// from that file included here is the "right" version.
+#include <string>
+#include "base/command_line.h"
+#include "base/environment.h"
+#include "base/lazy_instance.h"
+#include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/strings/stringize_macros.h"
 
-// These are the (temporary) default values for OAuth IDs and secrets.
-static const char kDefaultNonOfficialAPIKey[] =
-    "AIzaSyBHDrl33hwRp4rMQY0ziRbj8K9LPA6vUCY";
-static const char kDefaultNonOfficialClientID[] =
-    "609716072145.apps.googleusercontent.com";
-static const char kDefaultNonOfficialClientSecret[] =
-    "WF4uG3gJzEH0KLpS7OuFBDux";
+// This is the default baked-in value for OAuth IDs and secrets.
+static const char kDummyToken[] = "dummytoken";
 
 struct EnvironmentCache {
  public:
@@ -53,11 +60,13 @@ class GoogleAPIKeysTest : public testing::Test {
     env_cache_[4].variable_name = "GOOGLE_CLIENT_SECRET_CLOUD_PRINT";
     env_cache_[5].variable_name = "GOOGLE_CLIENT_ID_REMOTING";
     env_cache_[6].variable_name = "GOOGLE_CLIENT_SECRET_REMOTING";
-    env_cache_[7].variable_name = "GOOGLE_DEFAULT_CLIENT_ID";
-    env_cache_[8].variable_name = "GOOGLE_DEFAULT_CLIENT_SECRET";
+    env_cache_[7].variable_name = "GOOGLE_CLIENT_ID_REMOTING_HOST";
+    env_cache_[8].variable_name = "GOOGLE_CLIENT_SECRET_REMOTING_HOST";
+    env_cache_[9].variable_name = "GOOGLE_DEFAULT_CLIENT_ID";
+    env_cache_[10].variable_name = "GOOGLE_DEFAULT_CLIENT_SECRET";
   }
 
-  void SetUp() {
+  virtual void SetUp() {
     // Unset all environment variables that can affect these tests,
     // for the duration of the tests.
     for (size_t i = 0; i < arraysize(env_cache_); ++i) {
@@ -71,7 +80,7 @@ class GoogleAPIKeysTest : public testing::Test {
     }
   }
 
-  void TearDown() {
+  virtual void TearDown() {
     // Restore environment.
     for (size_t i = 0; i < arraysize(env_cache_); ++i) {
       EnvironmentCache& cache = env_cache_[i];
@@ -108,6 +117,8 @@ namespace official_build {
 #undef GOOGLE_CLIENT_SECRET_CLOUD_PRINT
 #undef GOOGLE_CLIENT_ID_REMOTING
 #undef GOOGLE_CLIENT_SECRET_REMOTING
+#undef GOOGLE_CLIENT_ID_REMOTING_HOST
+#undef GOOGLE_CLIENT_SECRET_REMOTING_HOST
 #undef GOOGLE_DEFAULT_CLIENT_ID
 #undef GOOGLE_DEFAULT_CLIENT_SECRET
 
@@ -126,6 +137,8 @@ namespace official_build {
 TEST_F(GoogleAPIKeysTest, OfficialKeys) {
   namespace testcase = official_build::google_apis;
 
+  EXPECT_TRUE(testcase::HasKeysConfigured());
+
   std::string api_key = testcase::g_api_key_cache.Get().api_key();
   std::string id_main = testcase::g_api_key_cache.Get().GetClientID(
       testcase::CLIENT_MAIN);
@@ -142,36 +155,49 @@ TEST_F(GoogleAPIKeysTest, OfficialKeys) {
   std::string secret_remoting =
       testcase::g_api_key_cache.Get().GetClientSecret(
           testcase::CLIENT_REMOTING);
+  std::string id_remoting_host = testcase::g_api_key_cache.Get().GetClientID(
+      testcase::CLIENT_REMOTING_HOST);
+  std::string secret_remoting_host =
+      testcase::g_api_key_cache.Get().GetClientSecret(
+          testcase::CLIENT_REMOTING_HOST);
 
   EXPECT_NE(0u, api_key.size());
   EXPECT_NE(DUMMY_API_TOKEN, api_key);
   EXPECT_NE("bogus api_key", api_key);
-  EXPECT_NE(kDefaultNonOfficialAPIKey, api_key);
+  EXPECT_NE(kDummyToken, api_key);
 
   EXPECT_NE(0u, id_main.size());
   EXPECT_NE(DUMMY_API_TOKEN, id_main);
   EXPECT_NE("bogus client_id_main", id_main);
-  EXPECT_NE(kDefaultNonOfficialClientID, id_main);
+  EXPECT_NE(kDummyToken, id_main);
 
   EXPECT_NE(0u, secret_main.size());
   EXPECT_NE(DUMMY_API_TOKEN, secret_main);
-  EXPECT_NE(kDefaultNonOfficialClientSecret, secret_main);
+  EXPECT_NE(kDummyToken, secret_main);
 
   EXPECT_NE(0u, id_cloud_print.size());
   EXPECT_NE(DUMMY_API_TOKEN, id_cloud_print);
-  EXPECT_NE(kDefaultNonOfficialClientID, id_cloud_print);
+  EXPECT_NE(kDummyToken, id_cloud_print);
 
   EXPECT_NE(0u, secret_cloud_print.size());
   EXPECT_NE(DUMMY_API_TOKEN, secret_cloud_print);
-  EXPECT_NE(kDefaultNonOfficialClientSecret, secret_cloud_print);
+  EXPECT_NE(kDummyToken, secret_cloud_print);
 
   EXPECT_NE(0u, id_remoting.size());
   EXPECT_NE(DUMMY_API_TOKEN, id_remoting);
-  EXPECT_NE(kDefaultNonOfficialClientID, id_remoting);
+  EXPECT_NE(kDummyToken, id_remoting);
 
   EXPECT_NE(0u, secret_remoting.size());
   EXPECT_NE(DUMMY_API_TOKEN, secret_remoting);
-  EXPECT_NE(kDefaultNonOfficialClientSecret, secret_remoting);
+  EXPECT_NE(kDummyToken, secret_remoting);
+
+  EXPECT_NE(0u, id_remoting_host.size());
+  EXPECT_NE(DUMMY_API_TOKEN, id_remoting_host);
+  EXPECT_NE(kDummyToken, id_remoting_host);
+
+  EXPECT_NE(0u, secret_remoting_host.size());
+  EXPECT_NE(DUMMY_API_TOKEN, secret_remoting_host);
+  EXPECT_NE(kDummyToken, secret_remoting_host);
 }
 #endif  // defined(GOOGLE_CHROME_BUILD) || defined(USE_OFFICIAL_GOOGLE_API_KEYS)
 
@@ -193,6 +219,8 @@ namespace default_keys {
 #undef GOOGLE_CLIENT_SECRET_CLOUD_PRINT
 #undef GOOGLE_CLIENT_ID_REMOTING
 #undef GOOGLE_CLIENT_SECRET_REMOTING
+#undef GOOGLE_CLIENT_ID_REMOTING_HOST
+#undef GOOGLE_CLIENT_SECRET_REMOTING_HOST
 #undef GOOGLE_DEFAULT_CLIENT_ID
 #undef GOOGLE_DEFAULT_CLIENT_SECRET
 
@@ -205,6 +233,8 @@ namespace default_keys {
 
 TEST_F(GoogleAPIKeysTest, DefaultKeys) {
   namespace testcase = default_keys::google_apis;
+
+  EXPECT_FALSE(testcase::HasKeysConfigured());
 
   std::string api_key = testcase::g_api_key_cache.Get().api_key();
   std::string id_main = testcase::g_api_key_cache.Get().GetClientID(
@@ -222,14 +252,21 @@ TEST_F(GoogleAPIKeysTest, DefaultKeys) {
   std::string secret_remoting =
       testcase::g_api_key_cache.Get().GetClientSecret(
           testcase::CLIENT_REMOTING);
+  std::string id_remoting_host = testcase::g_api_key_cache.Get().GetClientID(
+      testcase::CLIENT_REMOTING_HOST);
+  std::string secret_remoting_host =
+      testcase::g_api_key_cache.Get().GetClientSecret(
+          testcase::CLIENT_REMOTING_HOST);
 
-  EXPECT_EQ(kDefaultNonOfficialAPIKey, api_key);
-  EXPECT_EQ(kDefaultNonOfficialClientID, id_main);
-  EXPECT_EQ(kDefaultNonOfficialClientSecret, secret_main);
-  EXPECT_EQ(kDefaultNonOfficialClientID, id_cloud_print);
-  EXPECT_EQ(kDefaultNonOfficialClientSecret, secret_cloud_print);
-  EXPECT_EQ(kDefaultNonOfficialClientID, id_remoting);
-  EXPECT_EQ(kDefaultNonOfficialClientSecret, secret_remoting);
+  EXPECT_EQ(kDummyToken, api_key);
+  EXPECT_EQ(kDummyToken, id_main);
+  EXPECT_EQ(kDummyToken, secret_main);
+  EXPECT_EQ(kDummyToken, id_cloud_print);
+  EXPECT_EQ(kDummyToken, secret_cloud_print);
+  EXPECT_EQ(kDummyToken, id_remoting);
+  EXPECT_EQ(kDummyToken, secret_remoting);
+  EXPECT_EQ(kDummyToken, id_remoting_host);
+  EXPECT_EQ(kDummyToken, secret_remoting_host);
 }
 
 // Override a couple of keys, leave the rest default.
@@ -245,6 +282,8 @@ namespace override_some_keys {
 #undef GOOGLE_CLIENT_SECRET_CLOUD_PRINT
 #undef GOOGLE_CLIENT_ID_REMOTING
 #undef GOOGLE_CLIENT_SECRET_REMOTING
+#undef GOOGLE_CLIENT_ID_REMOTING_HOST
+#undef GOOGLE_CLIENT_SECRET_REMOTING_HOST
 #undef GOOGLE_DEFAULT_CLIENT_ID
 #undef GOOGLE_DEFAULT_CLIENT_SECRET
 
@@ -261,6 +300,8 @@ namespace override_some_keys {
 TEST_F(GoogleAPIKeysTest, OverrideSomeKeys) {
   namespace testcase = override_some_keys::google_apis;
 
+  EXPECT_FALSE(testcase::HasKeysConfigured());
+
   std::string api_key = testcase::g_api_key_cache.Get().api_key();
   std::string id_main = testcase::g_api_key_cache.Get().GetClientID(
       testcase::CLIENT_MAIN);
@@ -277,14 +318,21 @@ TEST_F(GoogleAPIKeysTest, OverrideSomeKeys) {
   std::string secret_remoting =
       testcase::g_api_key_cache.Get().GetClientSecret(
           testcase::CLIENT_REMOTING);
+  std::string id_remoting_host = testcase::g_api_key_cache.Get().GetClientID(
+      testcase::CLIENT_REMOTING_HOST);
+  std::string secret_remoting_host =
+      testcase::g_api_key_cache.Get().GetClientSecret(
+          testcase::CLIENT_REMOTING_HOST);
 
   EXPECT_EQ("API_KEY override", api_key);
-  EXPECT_EQ(kDefaultNonOfficialClientID, id_main);
-  EXPECT_EQ(kDefaultNonOfficialClientSecret, secret_main);
-  EXPECT_EQ(kDefaultNonOfficialClientID, id_cloud_print);
-  EXPECT_EQ(kDefaultNonOfficialClientSecret, secret_cloud_print);
+  EXPECT_EQ(kDummyToken, id_main);
+  EXPECT_EQ(kDummyToken, secret_main);
+  EXPECT_EQ(kDummyToken, id_cloud_print);
+  EXPECT_EQ(kDummyToken, secret_cloud_print);
   EXPECT_EQ("CLIENT_ID_REMOTING override", id_remoting);
-  EXPECT_EQ(kDefaultNonOfficialClientSecret, secret_remoting);
+  EXPECT_EQ(kDummyToken, secret_remoting);
+  EXPECT_EQ(kDummyToken, id_remoting_host);
+  EXPECT_EQ(kDummyToken, secret_remoting_host);
 }
 
 // Override all keys.
@@ -300,6 +348,8 @@ namespace override_all_keys {
 #undef GOOGLE_CLIENT_SECRET_CLOUD_PRINT
 #undef GOOGLE_CLIENT_ID_REMOTING
 #undef GOOGLE_CLIENT_SECRET_REMOTING
+#undef GOOGLE_CLIENT_ID_REMOTING_HOST
+#undef GOOGLE_CLIENT_SECRET_REMOTING_HOST
 #undef GOOGLE_DEFAULT_CLIENT_ID
 #undef GOOGLE_DEFAULT_CLIENT_SECRET
 
@@ -310,6 +360,8 @@ namespace override_all_keys {
 #define GOOGLE_CLIENT_SECRET_CLOUD_PRINT "SECRET_CLOUD_PRINT"
 #define GOOGLE_CLIENT_ID_REMOTING "ID_REMOTING"
 #define GOOGLE_CLIENT_SECRET_REMOTING "SECRET_REMOTING"
+#define GOOGLE_CLIENT_ID_REMOTING_HOST "ID_REMOTING_HOST"
+#define GOOGLE_CLIENT_SECRET_REMOTING_HOST "SECRET_REMOTING_HOST"
 
 // Undef include guard so things get defined again, within this namespace.
 #undef GOOGLE_APIS_GOOGLE_API_KEYS_H_
@@ -320,6 +372,8 @@ namespace override_all_keys {
 
 TEST_F(GoogleAPIKeysTest, OverrideAllKeys) {
   namespace testcase = override_all_keys::google_apis;
+
+  EXPECT_TRUE(testcase::HasKeysConfigured());
 
   std::string api_key = testcase::g_api_key_cache.Get().api_key();
   std::string id_main = testcase::g_api_key_cache.Get().GetClientID(
@@ -337,6 +391,11 @@ TEST_F(GoogleAPIKeysTest, OverrideAllKeys) {
   std::string secret_remoting =
       testcase::g_api_key_cache.Get().GetClientSecret(
           testcase::CLIENT_REMOTING);
+  std::string id_remoting_host = testcase::g_api_key_cache.Get().GetClientID(
+      testcase::CLIENT_REMOTING_HOST);
+  std::string secret_remoting_host =
+      testcase::g_api_key_cache.Get().GetClientSecret(
+          testcase::CLIENT_REMOTING_HOST);
 
   EXPECT_EQ("API_KEY", api_key);
   EXPECT_EQ("ID_MAIN", id_main);
@@ -345,6 +404,8 @@ TEST_F(GoogleAPIKeysTest, OverrideAllKeys) {
   EXPECT_EQ("SECRET_CLOUD_PRINT", secret_cloud_print);
   EXPECT_EQ("ID_REMOTING", id_remoting);
   EXPECT_EQ("SECRET_REMOTING", secret_remoting);
+  EXPECT_EQ("ID_REMOTING_HOST", id_remoting_host);
+  EXPECT_EQ("SECRET_REMOTING_HOST", secret_remoting_host);
 }
 
 // Override all keys using both preprocessor defines and environment
@@ -361,6 +422,8 @@ namespace override_all_keys_env {
 #undef GOOGLE_CLIENT_SECRET_CLOUD_PRINT
 #undef GOOGLE_CLIENT_ID_REMOTING
 #undef GOOGLE_CLIENT_SECRET_REMOTING
+#undef GOOGLE_CLIENT_ID_REMOTING_HOST
+#undef GOOGLE_CLIENT_SECRET_REMOTING_HOST
 #undef GOOGLE_DEFAULT_CLIENT_ID
 #undef GOOGLE_DEFAULT_CLIENT_SECRET
 
@@ -371,6 +434,8 @@ namespace override_all_keys_env {
 #define GOOGLE_CLIENT_SECRET_CLOUD_PRINT "SECRET_CLOUD_PRINT"
 #define GOOGLE_CLIENT_ID_REMOTING "ID_REMOTING"
 #define GOOGLE_CLIENT_SECRET_REMOTING "SECRET_REMOTING"
+#define GOOGLE_CLIENT_ID_REMOTING_HOST "ID_REMOTING_HOST"
+#define GOOGLE_CLIENT_SECRET_REMOTING_HOST "SECRET_REMOTING_HOST"
 
 // Undef include guard so things get defined again, within this namespace.
 #undef GOOGLE_APIS_GOOGLE_API_KEYS_H_
@@ -387,9 +452,13 @@ TEST_F(GoogleAPIKeysTest, OverrideAllKeysUsingEnvironment) {
   env->SetVar("GOOGLE_CLIENT_ID_MAIN", "env-ID_MAIN");
   env->SetVar("GOOGLE_CLIENT_ID_CLOUD_PRINT", "env-ID_CLOUD_PRINT");
   env->SetVar("GOOGLE_CLIENT_ID_REMOTING", "env-ID_REMOTING");
+  env->SetVar("GOOGLE_CLIENT_ID_REMOTING_HOST", "env-ID_REMOTING_HOST");
   env->SetVar("GOOGLE_CLIENT_SECRET_MAIN", "env-SECRET_MAIN");
   env->SetVar("GOOGLE_CLIENT_SECRET_CLOUD_PRINT", "env-SECRET_CLOUD_PRINT");
   env->SetVar("GOOGLE_CLIENT_SECRET_REMOTING", "env-SECRET_REMOTING");
+  env->SetVar("GOOGLE_CLIENT_SECRET_REMOTING_HOST", "env-SECRET_REMOTING_HOST");
+
+  EXPECT_TRUE(testcase::HasKeysConfigured());
 
   // It's important that the first call to Get() only happen after the
   // environment variables have been set.
@@ -409,6 +478,11 @@ TEST_F(GoogleAPIKeysTest, OverrideAllKeysUsingEnvironment) {
   std::string secret_remoting =
       testcase::g_api_key_cache.Get().GetClientSecret(
           testcase::CLIENT_REMOTING);
+  std::string id_remoting_host = testcase::g_api_key_cache.Get().GetClientID(
+      testcase::CLIENT_REMOTING_HOST);
+  std::string secret_remoting_host =
+      testcase::g_api_key_cache.Get().GetClientSecret(
+          testcase::CLIENT_REMOTING_HOST);
 
   EXPECT_EQ("env-API_KEY", api_key);
   EXPECT_EQ("env-ID_MAIN", id_main);
@@ -417,6 +491,8 @@ TEST_F(GoogleAPIKeysTest, OverrideAllKeysUsingEnvironment) {
   EXPECT_EQ("env-SECRET_CLOUD_PRINT", secret_cloud_print);
   EXPECT_EQ("env-ID_REMOTING", id_remoting);
   EXPECT_EQ("env-SECRET_REMOTING", secret_remoting);
+  EXPECT_EQ("env-ID_REMOTING_HOST", id_remoting_host);
+  EXPECT_EQ("env-SECRET_REMOTING_HOST", secret_remoting_host);
 }
 
 #endif  // defined(OS_LINUX) || defined(OS_MACOSX)

@@ -2,24 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ui/views/corewm/window_modality_controller.h"
+#include "ui/wm/core/window_modality_controller.h"
 
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/wm/window_util.h"
 #include "ui/aura/client/aura_constants.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/views/test/capture_tracking_view.h"
 #include "ui/views/test/child_modal_window.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/core/window_util.h"
 
 namespace ash {
-namespace internal {
 
 typedef test::AshTestBase WindowModalityControllerTest;
 
@@ -50,14 +50,14 @@ TEST_F(WindowModalityControllerTest, BasicActivation) {
   scoped_ptr<aura::Window> w12(
       CreateTestWindowInShellWithDelegate(&d, -12, gfx::Rect()));
 
-  w1->AddTransientChild(w11.get());
+  ::wm::AddTransientChild(w1.get(), w11.get());
   wm::ActivateWindow(w1.get());
   EXPECT_TRUE(wm::IsActiveWindow(w1.get()));
   wm::ActivateWindow(w11.get());
   EXPECT_TRUE(wm::IsActiveWindow(w11.get()));
 
   w12->SetProperty(aura::client::kModalKey, ui::MODAL_TYPE_WINDOW);
-  w1->AddTransientChild(w12.get());
+  ::wm::AddTransientChild(w1.get(), w12.get());
   wm::ActivateWindow(w12.get());
   EXPECT_TRUE(wm::IsActiveWindow(w12.get()));
 
@@ -97,8 +97,8 @@ TEST_F(WindowModalityControllerTest, NestedModals) {
   scoped_ptr<aura::Window> w2(
       CreateTestWindowInShellWithDelegate(&d, -2, gfx::Rect()));
 
-  w1->AddTransientChild(w11.get());
-  w11->AddTransientChild(w111.get());
+  ::wm::AddTransientChild(w1.get(), w11.get());
+  ::wm::AddTransientChild(w11.get(), w111.get());
 
   wm::ActivateWindow(w1.get());
   EXPECT_TRUE(wm::IsActiveWindow(w1.get()));
@@ -151,8 +151,8 @@ TEST_F(WindowModalityControllerTest, NestedModalsOuterClosed) {
   scoped_ptr<aura::Window> w2(
       CreateTestWindowInShellWithDelegate(&d, -2, gfx::Rect()));
 
-  w1->AddTransientChild(w11.get());
-  w11->AddTransientChild(w111);
+  ::wm::AddTransientChild(w1.get(), w11.get());
+  ::wm::AddTransientChild(w11.get(), w111);
 
   wm::ActivateWindow(w1.get());
   EXPECT_TRUE(wm::IsActiveWindow(w1.get()));
@@ -185,7 +185,7 @@ TEST_F(WindowModalityControllerTest, Events) {
   scoped_ptr<aura::Window> w11(CreateTestWindowInShellWithDelegate(&d, -11,
       gfx::Rect(20, 20, 50, 50)));
 
-  w1->AddTransientChild(w11.get());
+  ::wm::AddTransientChild(w1.get(), w11.get());
 
   {
     // Clicking a point within w1 should activate that window.
@@ -206,6 +206,30 @@ TEST_F(WindowModalityControllerTest, Events) {
   }
 }
 
+// Events on modal parent activate.
+TEST_F(WindowModalityControllerTest, EventsForEclipsedWindows) {
+  aura::test::TestWindowDelegate d;
+  scoped_ptr<aura::Window> w1(CreateTestWindowInShellWithDelegate(&d, -1,
+      gfx::Rect(0, 0, 100, 100)));
+  scoped_ptr<aura::Window> w11(CreateTestWindowInShellWithDelegate(&d, -11,
+      gfx::Rect(20, 20, 50, 50)));
+  ::wm::AddTransientChild(w1.get(), w11.get());
+  scoped_ptr<aura::Window> w2(CreateTestWindowInShellWithDelegate(&d, -2,
+      gfx::Rect(0, 0, 50, 50)));
+
+  w11->SetProperty(aura::client::kModalKey, ui::MODAL_TYPE_WINDOW);
+
+  // Partially eclipse w1 with w2.
+  wm::ActivateWindow(w2.get());
+  {
+    // Clicking a point on w1 that is not eclipsed by w2.
+    aura::test::EventGenerator generator(Shell::GetPrimaryRootWindow(),
+                                         gfx::Point(90, 90));
+    generator.ClickLeftButton();
+    EXPECT_TRUE(wm::IsActiveWindow(w11.get()));
+  }
+}
+
 // Creates windows w1 and non activatiable child w11. Creates transient window
 // w2 and adds it as a transeint child of w1. Ensures that w2 is parented to
 // the parent of w1, and that GetModalTransient(w11) returns w2.
@@ -220,21 +244,21 @@ TEST_F(WindowModalityControllerTest, GetModalTransient) {
   w2->SetProperty(aura::client::kModalKey, ui::MODAL_TYPE_WINDOW);
 
   aura::Window* wt;
-  wt = views::corewm::GetModalTransient(w1.get());
+  wt = ::wm::GetModalTransient(w1.get());
   ASSERT_EQ(static_cast<aura::Window*>(NULL), wt);
 
   // Parent w2 to w1. It should get parented to the parent of w1.
-  w1->AddTransientChild(w2.get());
+  ::wm::AddTransientChild(w1.get(), w2.get());
   ASSERT_EQ(2U, w1->parent()->children().size());
   EXPECT_EQ(-2, w1->parent()->children().at(1)->id());
 
   // Request the modal transient window for w1, it should be w2.
-  wt = views::corewm::GetModalTransient(w1.get());
+  wt = ::wm::GetModalTransient(w1.get());
   ASSERT_NE(static_cast<aura::Window*>(NULL), wt);
   EXPECT_EQ(-2, wt->id());
 
   // Request the modal transient window for w11, it should also be w2.
-  wt = views::corewm::GetModalTransient(w11.get());
+  wt = ::wm::GetModalTransient(w11.get());
   ASSERT_NE(static_cast<aura::Window*>(NULL), wt);
   EXPECT_EQ(-2, wt->id());
 }
@@ -287,23 +311,30 @@ TEST_F(WindowModalityControllerTest, ChangeCapture) {
 
 class TouchTrackerWindowDelegate : public aura::test::TestWindowDelegate {
  public:
-  TouchTrackerWindowDelegate() : received_touch_(false) {}
+  TouchTrackerWindowDelegate()
+      : received_touch_(false),
+        last_event_type_(ui::ET_UNKNOWN) {
+  }
   virtual ~TouchTrackerWindowDelegate() {}
 
   void reset() {
     received_touch_ = false;
+    last_event_type_ = ui::ET_UNKNOWN;
   }
 
   bool received_touch() const { return received_touch_; }
+  ui::EventType last_event_type() const { return last_event_type_; }
 
  private:
   // Overridden from aura::test::TestWindowDelegate.
   virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE {
     received_touch_ = true;
+    last_event_type_ = event->type();
     aura::test::TestWindowDelegate::OnTouchEvent(event);
   }
 
   bool received_touch_;
+  ui::EventType last_event_type_;
 
   DISALLOW_COPY_AND_ASSIGN(TouchTrackerWindowDelegate);
 };
@@ -316,32 +347,31 @@ TEST_F(WindowModalityControllerTest, TouchEvent) {
   TouchTrackerWindowDelegate d11;
   scoped_ptr<aura::Window> w11(CreateTestWindowInShellWithDelegate(&d11,
       -11, gfx::Rect(20, 20, 50, 50)));
+  aura::test::EventGenerator generator(Shell::GetPrimaryRootWindow(),
+                                       gfx::Point(10, 10));
 
-  w1->AddTransientChild(w11.get());
+  ::wm::AddTransientChild(w1.get(), w11.get());
   d1.reset();
   d11.reset();
 
   {
     // Clicking a point within w1 should activate that window.
-    aura::test::EventGenerator generator(Shell::GetPrimaryRootWindow(),
-                                         gfx::Point(10, 10));
     generator.PressMoveAndReleaseTouchTo(gfx::Point(10, 10));
     EXPECT_TRUE(wm::IsActiveWindow(w1.get()));
     EXPECT_TRUE(d1.received_touch());
     EXPECT_FALSE(d11.received_touch());
   }
 
-  w11->SetProperty(aura::client::kModalKey, ui::MODAL_TYPE_WINDOW);
-  d1.reset();
-  d11.reset();
-
   {
-    // Clicking a point within w1 should activate w11.
-    aura::test::EventGenerator generator(Shell::GetPrimaryRootWindow(),
-                                         gfx::Point(10, 10));
-    generator.PressMoveAndReleaseTouchTo(gfx::Point(10, 10));
-    EXPECT_TRUE(wm::IsActiveWindow(w11.get()));
-    EXPECT_FALSE(d1.received_touch());
+    // Adding a modal window while a touch is down should fire a touch cancel.
+    generator.PressTouch();
+    generator.MoveTouch(gfx::Point(10, 10));
+    d1.reset();
+    d11.reset();
+
+    w11->SetProperty(aura::client::kModalKey, ui::MODAL_TYPE_WINDOW);
+    EXPECT_TRUE(d1.received_touch());
+    EXPECT_EQ(ui::ET_TOUCH_CANCELLED, d1.last_event_type());
     EXPECT_FALSE(d11.received_touch());
   }
 }
@@ -362,9 +392,10 @@ TEST_F(WindowModalityControllerTest, TouchEvent) {
 //   |child| window.
 // - Focus should follow the active window.
 TEST_F(WindowModalityControllerTest, ChildModal) {
-  views::test::ChildModalParent* delegate = new views::test::ChildModalParent;
-  views::Widget* widget = views::Widget::CreateWindowWithBounds(
-      delegate, gfx::Rect(0, 0, 400, 400));
+  views::test::ChildModalParent* delegate =
+      new views::test::ChildModalParent(CurrentContext());
+  views::Widget* widget = views::Widget::CreateWindowWithContextAndBounds(
+      delegate, CurrentContext(), gfx::Rect(0, 0, 400, 400));
   widget->Show();
 
   aura::Window* parent = widget->GetNativeView();
@@ -421,9 +452,10 @@ TEST_F(WindowModalityControllerTest, ChildModal) {
 // Same as |ChildModal| test, but using |EventGenerator| rather than bypassing
 // it by calling |ActivateWindow|.
 TEST_F(WindowModalityControllerTest, ChildModalEventGenerator) {
-  views::test::ChildModalParent* delegate = new views::test::ChildModalParent;
-  views::Widget* widget = views::Widget::CreateWindowWithBounds(
-      delegate, gfx::Rect(0, 0, 400, 400));
+  views::test::ChildModalParent* delegate =
+      new views::test::ChildModalParent(CurrentContext());
+  views::Widget* widget = views::Widget::CreateWindowWithContextAndBounds(
+      delegate, CurrentContext(), gfx::Rect(0, 0, 400, 400));
   widget->Show();
 
   aura::Window* parent = widget->GetNativeView();
@@ -507,7 +539,7 @@ TEST_F(WindowModalityControllerTest, WindowModalAncestor) {
   scoped_ptr<aura::Window> w4(
       CreateTestWindowInShellWithDelegate(&d, -2, gfx::Rect()));
   w4->SetProperty(aura::client::kModalKey, ui::MODAL_TYPE_WINDOW);
-  w1->AddTransientChild(w4.get());
+  ::wm::AddTransientChild(w1.get(), w4.get());
 
   wm::ActivateWindow(w1.get());
   EXPECT_TRUE(wm::IsActiveWindow(w4.get()));
@@ -535,8 +567,8 @@ TEST_F(WindowModalityControllerTest, ChildModalAncestor) {
   scoped_ptr<aura::Window> w4(
       CreateTestWindowInShellWithDelegate(&d, -2, gfx::Rect()));
   w4->SetProperty(aura::client::kModalKey, ui::MODAL_TYPE_CHILD);
-  views::corewm::SetModalParent(w4.get(), w2.get());
-  w1->AddTransientChild(w4.get());
+  ::wm::SetModalParent(w4.get(), w2.get());
+  ::wm::AddTransientChild(w1.get(), w4.get());
 
   wm::ActivateWindow(w1.get());
   EXPECT_TRUE(wm::IsActiveWindow(w1.get()));
@@ -551,5 +583,4 @@ TEST_F(WindowModalityControllerTest, ChildModalAncestor) {
   EXPECT_TRUE(wm::IsActiveWindow(w4.get()));
 }
 
-}  // namespace internal
 }  // namespace ash

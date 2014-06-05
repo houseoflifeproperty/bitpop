@@ -10,13 +10,17 @@
 
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "chrome/browser/favicon/favicon_service.h"
-#include "chrome/common/cancelable_task_tracker.h"
 #include "ui/base/models/menu_model.h"
-#include "webkit/glue/window_open_disposition.h"
+#include "ui/base/window_open_disposition.h"
 
 class Browser;
+
+namespace favicon_base {
+struct FaviconImageResult;
+}
 
 namespace content {
 class NavigationEntry;
@@ -56,7 +60,7 @@ class BackForwardMenuModel : public ui::MenuModel {
   virtual ItemType GetTypeAt(int index) const OVERRIDE;
   virtual ui::MenuSeparatorType GetSeparatorTypeAt(int index) const OVERRIDE;
   virtual int GetCommandIdAt(int index) const OVERRIDE;
-  virtual string16 GetLabelAt(int index) const OVERRIDE;
+  virtual base::string16 GetLabelAt(int index) const OVERRIDE;
   virtual bool IsItemDynamicAt(int index) const OVERRIDE;
   virtual bool GetAcceleratorAt(int index,
                                 ui::Accelerator* accelerator) const OVERRIDE;
@@ -98,7 +102,7 @@ class BackForwardMenuModel : public ui::MenuModel {
   // Callback from the favicon service.
   void OnFavIconDataAvailable(
       int navigation_entry_unique_id,
-      const history::FaviconImageResult& image_result);
+      const favicon_base::FaviconImageResult& image_result);
 
   // Allows the unit test to use its own dummy tab contents.
   void set_test_web_contents(content::WebContents* test_web_contents) {
@@ -169,7 +173,7 @@ class BackForwardMenuModel : public ui::MenuModel {
   bool ItemHasIcon(int index) const;
 
   // Allow the unit test to use the "Show Full History" label.
-  string16 GetShowFullHistoryLabel() const;
+  base::string16 GetShowFullHistoryLabel() const;
 
   // Looks up a NavigationEntry by menu id.
   content::NavigationEntry* GetNavigationEntry(int index) const;
@@ -200,7 +204,7 @@ class BackForwardMenuModel : public ui::MenuModel {
   std::set<int> requested_favicons_;
 
   // Used for loading favicons.
-  CancelableTaskTracker cancelable_task_tracker_;
+  base::CancelableTaskTracker cancelable_task_tracker_;
 
   // Used for receiving notifications when an icon is changed.
   ui::MenuModelDelegate* menu_model_delegate_;

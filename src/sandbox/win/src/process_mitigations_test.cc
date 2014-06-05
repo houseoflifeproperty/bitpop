@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/win/scoped_handle.h"
 
 #include "base/win/windows_version.h"
@@ -10,7 +10,6 @@
 #include "sandbox/win/src/process_mitigations.h"
 #include "sandbox/win/src/sandbox.h"
 #include "sandbox/win/src/sandbox_factory.h"
-#include "sandbox/win/src/sandbox_utils.h"
 #include "sandbox/win/src/target_services.h"
 #include "sandbox/win/src/win_utils.h"
 #include "sandbox/win/tests/common/controller.h"
@@ -140,7 +139,6 @@ TEST(ProcessMitigationsTest, CheckWin8) {
 
 
 SBOX_TESTS_COMMAND int CheckDep(int argc, wchar_t **argv) {
-#if !defined(_WIN64)  // DEP is always enabled on 64-bit.
   GetProcessDEPPolicyFunction get_process_dep_policy =
       reinterpret_cast<GetProcessDEPPolicyFunction>(
           ::GetProcAddress(::GetModuleHandleW(L"kernel32.dll"),
@@ -183,13 +181,13 @@ SBOX_TESTS_COMMAND int CheckDep(int argc, wchar_t **argv) {
       return SBOX_TEST_FOURTH_ERROR;
     }
   }
-#endif
 
   return SBOX_TEST_SUCCEEDED;
 }
 
+#if !defined(_WIN64)  // DEP is always enabled on 64-bit.
 TEST(ProcessMitigationsTest, CheckDep) {
-  if (!IsXPSP2OrLater() || base::win::GetVersion() > base::win::VERSION_WIN7)
+  if (base::win::GetVersion() > base::win::VERSION_WIN7)
     return;
 
   TestRunner runner;
@@ -202,6 +200,7 @@ TEST(ProcessMitigationsTest, CheckDep) {
             SBOX_ALL_OK);
   EXPECT_EQ(SBOX_TEST_SUCCEEDED, runner.RunTest(L"CheckDep"));
 }
+#endif
 
 }  // namespace sandbox
 

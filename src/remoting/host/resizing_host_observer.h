@@ -5,39 +5,50 @@
 #ifndef REMOTING_HOST_RESIZING_HOST_OBSERVER_H_
 #define REMOTING_HOST_RESIZING_HOST_OBSERVER_H_
 
-#include <string>
-
-#include "remoting/host/host_status_observer.h"
-#include "remoting/host/chromoting_host.h"
-
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/compiler_specific.h"
-#include "third_party/skia/include/core/SkSize.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
+#include "remoting/host/screen_controls.h"
+#include "remoting/host/screen_resolution.h"
 
 namespace remoting {
 
 class DesktopResizer;
 
-// Use the specified DesktopResizer to match host desktop size to the client
-// view size as closely as is possible. When the connection closes, restore
+// TODO(alexeypa): Rename this class to reflect that it is not
+// HostStatusObserver any more.
+
+// Uses the specified DesktopResizer to match host desktop size to the client
+// view size as closely as is possible. When the connection closes, restores
 // the original desktop size.
-class ResizingHostObserver : public HostStatusObserver {
+class ResizingHostObserver : public ScreenControls {
  public:
-  ResizingHostObserver(DesktopResizer* desktop_resizer, ChromotingHost* host);
+  explicit ResizingHostObserver(scoped_ptr<DesktopResizer> desktop_resizer);
   virtual ~ResizingHostObserver();
 
-  // HostStatusObserver interface
-  virtual void OnClientAuthenticated(const std::string& jid) OVERRIDE;
-  virtual void OnClientDisconnected(const std::string& jid) OVERRIDE;
-  virtual void OnClientDimensionsChanged(const std::string& jid,
-                                         const SkISize& size) OVERRIDE;
+  // ScreenControls interface.
+  virtual void SetScreenResolution(const ScreenResolution& resolution) OVERRIDE;
+
+  // Provide a replacement for base::Time::Now so that this class can be
+  // unit-tested in a timely manner. This function will be called exactly
+  // once for each call to SetScreenResolution.
+  void SetNowFunctionForTesting(
+      const base::Callback<base::Time(void)>& now_function);
 
  private:
-  DesktopResizer* const desktop_resizer_;
-  scoped_refptr<ChromotingHost> host_;
-  SkISize original_size_;
-  SkISize previous_size_;
-  std::string client_jid_;
+  scoped_ptr<DesktopResizer> desktop_resizer_;
+  ScreenResolution original_resolution_;
+
+  // State to manage rate-limiting of desktop resizes.
+  base::OneShotTimer<ResizingHostObserver> deferred_resize_timer_;
+  base::Time previous_resize_time_;
+  base::Callback<base::Time(void)> now_function_;
+
+  base::WeakPtrFactory<ResizingHostObserver> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ResizingHostObserver);
 };

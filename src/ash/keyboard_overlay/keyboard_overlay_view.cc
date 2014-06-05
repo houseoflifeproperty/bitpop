@@ -6,11 +6,11 @@
 
 #include "ash/keyboard_overlay/keyboard_overlay_delegate.h"
 #include "ash/shell.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/public/browser/browser_context.h"
 #include "grit/ash_strings.h"
-#include "ui/base/events/event.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/events/event.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/widget/widget.h"
 #include "ui/web_dialogs/web_dialog_delegate.h"

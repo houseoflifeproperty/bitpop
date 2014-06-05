@@ -4,11 +4,11 @@
 
 #include "chrome/browser/ui/views/critical_notification_bubble_view.h"
 
-#include "base/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/upgrade_detector.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/user_metrics.h"
@@ -16,18 +16,18 @@
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "grit/theme_resources.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/accelerators/accelerator.h"
-#include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/views/controls/button/text_button.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/layout/layout_constants.h"
 #include "ui/views/widget/widget.h"
 
-using content::UserMetricsAction;
+using base::UserMetricsAction;
 
 namespace {
 
@@ -57,7 +57,6 @@ CriticalNotificationBubbleView::CriticalNotificationBubbleView(
       restart_button_(NULL),
       dismiss_button_(NULL) {
   set_close_on_deactivate(false);
-  set_move_with_anchor(true);
 }
 
 CriticalNotificationBubbleView::~CriticalNotificationBubbleView() {
@@ -97,7 +96,7 @@ void CriticalNotificationBubbleView::OnCountdown() {
     content::RecordAction(
         UserMetricsAction("CriticalNotification_AutoRestart"));
     refresh_timer_.Stop();
-    browser::AttemptRestart();
+    chrome::AttemptRestart();
   }
 
   // Update the counter. It may seem counter-intuitive to update the message
@@ -114,9 +113,8 @@ void CriticalNotificationBubbleView::ButtonPressed(
   UpgradeDetector::GetInstance()->acknowledge_critical_update();
 
   if (sender == restart_button_) {
-    content::RecordAction(
-        UserMetricsAction("CriticalNotification_Restart"));
-    browser::AttemptRestart();
+    content::RecordAction(UserMetricsAction("CriticalNotification_Restart"));
+    chrome::AttemptRestart();
   } else if (sender == dismiss_button_) {
     content::RecordAction(UserMetricsAction("CriticalNotification_Ignore"));
     // If the counter reaches 0, we set a restart flag that must be cleared if
@@ -137,16 +135,14 @@ void CriticalNotificationBubbleView::WindowClosing() {
 }
 
 void CriticalNotificationBubbleView::GetAccessibleState(
-    ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_ALERT;
+    ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_ALERT;
 }
 
 void CriticalNotificationBubbleView::ViewHierarchyChanged(
-    bool is_add, View* parent, View* child) {
-  if (is_add && child == this) {
-    GetWidget()->NotifyAccessibilityEvent(
-        this, ui::AccessibilityTypes::EVENT_ALERT, true);
-  }
+    const ViewHierarchyChangedDetails& details) {
+  if (details.is_add && details.child == this)
+    NotifyAccessibilityEvent(ui::AX_EVENT_ALERT, true);
 }
 
 bool CriticalNotificationBubbleView::AcceleratorPressed(
@@ -176,11 +172,11 @@ void CriticalNotificationBubbleView::Init() {
   layout->StartRow(0, top_column_set_id);
 
   views::ImageView* image = new views::ImageView();
-  image->SetImage(rb.GetImageSkiaNamed(IDR_UPDATE_MENU3));
+  image->SetImage(rb.GetImageSkiaNamed(IDR_UPDATE_MENU_SEVERITY_HIGH));
   layout->AddView(image);
 
   headline_ = new views::Label();
-  headline_->SetFont(rb.GetFont(ui::ResourceBundle::MediumFont));
+  headline_->SetFontList(rb.GetFontList(ui::ResourceBundle::MediumFont));
   UpdateBubbleHeadline(GetRemainingTime());
   layout->AddView(headline_);
 
@@ -211,12 +207,14 @@ void CriticalNotificationBubbleView::Init() {
   layout->StartRowWithPadding(0, bottom_column_set_id,
                               0, kMessageBubblePadding);
 
-  restart_button_ = new views::NativeTextButton(this,
+  restart_button_ = new views::LabelButton(this,
       l10n_util::GetStringUTF16(IDS_CRITICAL_NOTIFICATION_RESTART));
+  restart_button_->SetStyle(views::Button::STYLE_BUTTON);
   restart_button_->SetIsDefault(true);
   layout->AddView(restart_button_);
-  dismiss_button_ = new views::NativeTextButton(this,
+  dismiss_button_ = new views::LabelButton(this,
       l10n_util::GetStringUTF16(IDS_CRITICAL_NOTIFICATION_DISMISS));
+  dismiss_button_->SetStyle(views::Button::STYLE_BUTTON);
   layout->AddView(dismiss_button_);
 
   refresh_timer_.Start(FROM_HERE,

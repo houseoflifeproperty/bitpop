@@ -1,29 +1,6 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef V8_INCREMENTAL_MARKING_H_
 #define V8_INCREMENTAL_MARKING_H_
@@ -75,7 +52,9 @@ class IncrementalMarking {
 
   bool WorthActivating();
 
-  void Start();
+  enum CompactionFlag { ALLOW_COMPACTION, PREVENT_COMPACTION };
+
+  void Start(CompactionFlag flag = ALLOW_COMPACTION);
 
   void Stop();
 
@@ -98,7 +77,7 @@ class IncrementalMarking {
   // Do some marking every time this much memory has been allocated or that many
   // heavy (color-checking) write barriers have been invoked.
   static const intptr_t kAllocatedThreshold = 65536;
-  static const intptr_t kWriteBarriersInvokedThreshold = 65536;
+  static const intptr_t kWriteBarriersInvokedThreshold = 32768;
   // Start off by marking this many times more memory than has been allocated.
   static const intptr_t kInitialMarkingSpeed = 1;
   // But if we are promoting a lot of data we need to mark faster to keep up
@@ -110,10 +89,7 @@ class IncrementalMarking {
   static const intptr_t kMarkingSpeedAccelleration = 2;
   static const intptr_t kMaxMarkingSpeed = 1000;
 
-  void OldSpaceStep(intptr_t allocated) {
-    Step(allocated * kFastMarking / kInitialMarkingSpeed,
-         GC_VIA_STACK_GUARD);
-  }
+  void OldSpaceStep(intptr_t allocated);
 
   void Step(intptr_t allocated, CompletionAction action);
 
@@ -129,10 +105,6 @@ class IncrementalMarking {
   static void RecordWriteFromCode(HeapObject* obj,
                                   Object** slot,
                                   Isolate* isolate);
-
-  static void RecordWriteForEvacuationFromCode(HeapObject* obj,
-                                               Object** slot,
-                                               Isolate* isolate);
 
   // Record a slot for compaction.  Returns false for objects that are
   // guaranteed to be rescanned or not guaranteed to survive.
@@ -221,12 +193,14 @@ class IncrementalMarking {
 
   void UncommitMarkingDeque();
 
+  void NotifyIncompleteScanOfObject(int unscanned_bytes) {
+    unscanned_bytes_of_large_object_ = unscanned_bytes;
+  }
+
  private:
   int64_t SpaceLeftInOldSpace();
 
   void ResetStepCounters();
-
-  enum CompactionFlag { ALLOW_COMPACTION, PREVENT_COMPACTION };
 
   void StartMarking(CompactionFlag flag);
 
@@ -276,6 +250,8 @@ class IncrementalMarking {
   intptr_t write_barriers_invoked_since_last_step_;
 
   int no_marking_scope_depth_;
+
+  int unscanned_bytes_of_large_object_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(IncrementalMarking);
 };

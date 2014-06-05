@@ -6,14 +6,14 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 
 HoverTabSelector::HoverTabSelector(
     TabStripModel* tab_strip_model)
     : tab_strip_model_(tab_strip_model),
       tab_transition_tab_index_(-1),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
   DCHECK(tab_strip_model_);
 }
 
@@ -35,9 +35,10 @@ void HoverTabSelector::StartTabTransition(int index) {
     const base::TimeDelta kHoverTransitionDelay =
         base::TimeDelta::FromMilliseconds(500);
     tab_transition_tab_index_ = index;
-    MessageLoop::current()->PostDelayedTask(
-        FROM_HERE, base::Bind(&HoverTabSelector::PerformTabTransition,
-                              weak_factory_.GetWeakPtr()),
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&HoverTabSelector::PerformTabTransition,
+                   weak_factory_.GetWeakPtr()),
         kHoverTransitionDelay);
   }
 }

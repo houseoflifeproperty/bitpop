@@ -6,9 +6,9 @@
 
 #include <string>
 
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/time.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/time/time.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_util.h"
@@ -21,27 +21,29 @@
 namespace net {
 
 bool SpdyHeadersToHttpResponse(const SpdyHeaderBlock& headers,
-                               int protocol_version,
+                               SpdyMajorVersion protocol_version,
                                HttpResponseInfo* response) {
-  std::string status_key = (protocol_version >= 3) ? ":status" : "status";
-  std::string version_key = (protocol_version >= 3) ? ":version" : "version";
+  std::string status_key = (protocol_version >= SPDY3) ? ":status" : "status";
+  std::string version_key =
+      (protocol_version >= SPDY3) ? ":version" : "version";
   std::string version;
   std::string status;
 
-  // The "status" and "version" headers are required.
+  // The "status" header is required. "version" is required below SPDY4.
   SpdyHeaderBlock::const_iterator it;
   it = headers.find(status_key);
   if (it == headers.end())
     return false;
   status = it->second;
 
-  it = headers.find(version_key);
-  if (it == headers.end())
-    return false;
-  version = it->second;
-
-  response->response_time = base::Time::Now();
-
+  if (protocol_version >= SPDY4) {
+    version = "HTTP/1.1";
+  } else {
+    it = headers.find(version_key);
+    if (it == headers.end())
+      return false;
+    version = it->second;
+  }
   std::string raw_headers(version);
   raw_headers.push_back(' ');
   raw_headers.append(status);
@@ -84,14 +86,14 @@ bool SpdyHeadersToHttpResponse(const SpdyHeaderBlock& headers,
 void CreateSpdyHeadersFromHttpRequest(const HttpRequestInfo& info,
                                       const HttpRequestHeaders& request_headers,
                                       SpdyHeaderBlock* headers,
-                                      int protocol_version,
+                                      SpdyMajorVersion protocol_version,
                                       bool direct) {
 
   HttpRequestHeaders::Iterator it(request_headers);
   while (it.GetNext()) {
     std::string name = StringToLowerASCII(it.name());
     if (name == "connection" || name == "proxy-connection" ||
-        name == "transfer-encoding") {
+        name == "transfer-encoding" || name == "host") {
       continue;
     }
     if (headers->find(name) == headers->end()) {
@@ -105,7 +107,7 @@ void CreateSpdyHeadersFromHttpRequest(const HttpRequestInfo& info,
   }
   static const char kHttpProtocolVersion[] = "HTTP/1.1";
 
-  if (protocol_version < 3) {
+  if (protocol_version < SPDY3) {
     (*headers)["version"] = kHttpProtocolVersion;
     (*headers)["method"] = info.method;
     (*headers)["host"] = GetHostAndOptionalPort(info.url);
@@ -115,14 +117,16 @@ void CreateSpdyHeadersFromHttpRequest(const HttpRequestInfo& info,
     else
       (*headers)["url"] = HttpUtil::SpecForRequest(info.url);
   } else {
-    (*headers)[":version"] = kHttpProtocolVersion;
+    if (protocol_version < SPDY4) {
+      (*headers)[":version"] = kHttpProtocolVersion;
+      (*headers)[":host"] = GetHostAndOptionalPort(info.url);
+    } else {
+      (*headers)[":authority"] = GetHostAndOptionalPort(info.url);
+    }
     (*headers)[":method"] = info.method;
-    (*headers)[":host"] = GetHostAndOptionalPort(info.url);
     (*headers)[":scheme"] = info.url.scheme();
     (*headers)[":path"] = HttpUtil::PathForRequest(info.url);
-    headers->erase("host"); // this is kinda insane, spdy 3 spec.
   }
-
 }
 
 COMPILE_ASSERT(HIGHEST - LOWEST < 4 &&
@@ -131,10 +135,10 @@ COMPILE_ASSERT(HIGHEST - LOWEST < 4 &&
 
 SpdyPriority ConvertRequestPriorityToSpdyPriority(
     const RequestPriority priority,
-    int protocol_version) {
+    SpdyMajorVersion protocol_version) {
   DCHECK_GE(priority, MINIMUM_PRIORITY);
-  DCHECK_LT(priority, NUM_PRIORITIES);
-  if (protocol_version == 2) {
+  DCHECK_LE(priority, MAXIMUM_PRIORITY);
+  if (protocol_version == SPDY2) {
     // SPDY 2 only has 2 bits of priority, but we have 5 RequestPriorities.
     // Map IDLE => 3, LOWEST => 2, LOW => 2, MEDIUM => 1, HIGHEST => 0.
     if (priority > LOWEST) {
@@ -147,11 +151,21 @@ SpdyPriority ConvertRequestPriorityToSpdyPriority(
   }
 }
 
+NET_EXPORT_PRIVATE RequestPriority ConvertSpdyPriorityToRequestPriority(
+    SpdyPriority priority,
+    SpdyMajorVersion protocol_version) {
+  // Handle invalid values gracefully, and pick LOW to map 2 back
+  // to for SPDY/2.
+  SpdyPriority idle_cutoff = (protocol_version == SPDY2) ? 3 : 5;
+  return (priority >= idle_cutoff) ?
+      IDLE : static_cast<RequestPriority>(HIGHEST - priority);
+}
+
 GURL GetUrlFromHeaderBlock(const SpdyHeaderBlock& headers,
-                           int protocol_version,
+                           SpdyMajorVersion protocol_version,
                            bool pushed) {
   // SPDY 2 server push urls are specified in a single "url" header.
-  if (pushed && protocol_version == 2) {
+  if (pushed && protocol_version == SPDY2) {
       std::string url;
       SpdyHeaderBlock::const_iterator it;
       it = headers.find("url");
@@ -160,9 +174,10 @@ GURL GetUrlFromHeaderBlock(const SpdyHeaderBlock& headers,
       return GURL(url);
   }
 
-  const char* scheme_header = protocol_version >= 3 ? ":scheme" : "scheme";
-  const char* host_header = protocol_version >= 3 ? ":host" : "host";
-  const char* path_header = protocol_version >= 3 ? ":path" : "url";
+  const char* scheme_header = protocol_version >= SPDY3 ? ":scheme" : "scheme";
+  const char* host_header = protocol_version >= SPDY4 ? ":authority" :
+      (protocol_version >= SPDY3 ? ":host" : "host");
+  const char* path_header = protocol_version >= SPDY3 ? ":path" : "url";
 
   std::string scheme;
   std::string host_port;
@@ -178,8 +193,9 @@ GURL GetUrlFromHeaderBlock(const SpdyHeaderBlock& headers,
   if (it != headers.end())
     path = it->second;
 
-  std::string url =  (scheme.empty() || host_port.empty() || path.empty())
-      ? "" : scheme + "://" + host_port + path;
+  std::string url = (scheme.empty() || host_port.empty() || path.empty())
+                        ? std::string()
+                        : scheme + "://" + host_port + path;
   return GURL(url);
 }
 

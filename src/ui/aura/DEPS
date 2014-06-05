@@ -1,10 +1,13 @@
 include_rules = [
-  "+grit/ui_resources.h",
-  "+grit/ui_strings.h",
   "+skia/ext",
-  "-ui/aura/desktop", # Main aura code can't depend on desktop implementations
-  "-ui/aura/shared",  # Main aura code can't include shared code.
+  "+third_party/skia",
   "+ui/base",
+  "+ui/compositor",
+  "+ui/events",
   "+ui/gfx",
-  "+ui/ui_controls",  # this should probably move into a DEPS file under test.
+  "+ui/metro_viewer",  # TODO(beng): investigate moving remote_root_window_host
+                       #             to ui/metro_viewer.
+  "+ui/ozone",
+  "+ui/wm/public",
 ]
+

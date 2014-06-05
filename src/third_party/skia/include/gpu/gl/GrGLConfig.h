@@ -39,7 +39,7 @@
  * GR_GL_LOG_CALLS is 1. Defaults to 0.
  *
  * GR_GL_CHECK_ERROR: if enabled Gr can do a glGetError() after every GL call.
- * Defaults to 1 if GR_DEBUG is set, otherwise 0. When GR_GL_CHECK_ERROR is 1
+ * Defaults to 1 if SK_DEBUG is set, otherwise 0. When GR_GL_CHECK_ERROR is 1
  * this can be toggled in a debugger using the gCheckErrorGL global. The initial
  * value of gCheckErrorGL is controlled by by GR_GL_CHECK_ERROR_START.
  *
@@ -93,13 +93,21 @@
  * stencil formats as attachments. If the FBO is complete we will assume
  * subsequent attachments with the same formats are complete as well.
  *
- * GR_GL_USE_NV_PATH_RENDERING: Enable experimental support for
- * GL_NV_path_rendering. There are known issues with clipping, non-AA paths, and
- * perspective.
+ * GR_GL_MUST_USE_VBO: Indicates that all vertices and indices must be rendered
+ * from VBOs. Chromium's command buffer doesn't allow glVertexAttribArray with
+ * ARARY_BUFFER 0 bound or glDrawElements with ELEMENT_ARRAY_BUFFER 0 bound.
+ *
+ * GR_GL_USE_NEW_SHADER_SOURCE_SIGNATURE is for compatibility with the new version
+ * of the OpenGLES2.0 headers from Khronos.  glShaderSource now takes a const char * const *,
+ * instead of a const char
  */
 
 #if !defined(GR_GL_LOG_CALLS)
-    #define GR_GL_LOG_CALLS                             GR_DEBUG
+    #ifdef SK_DEBUG
+        #define GR_GL_LOG_CALLS 1
+    #else
+        #define GR_GL_LOG_CALLS 0
+    #endif
 #endif
 
 #if !defined(GR_GL_LOG_CALLS_START)
@@ -107,7 +115,11 @@
 #endif
 
 #if !defined(GR_GL_CHECK_ERROR)
-    #define GR_GL_CHECK_ERROR                           GR_DEBUG
+    #ifdef SK_DEBUG
+        #define GR_GL_CHECK_ERROR 1
+    #else
+        #define GR_GL_CHECK_ERROR 0
+    #endif
 #endif
 
 #if !defined(GR_GL_CHECK_ERROR_START)
@@ -142,8 +154,12 @@
     #define GR_GL_CHECK_FBO_STATUS_ONCE_PER_FORMAT      0
 #endif
 
-#if !defined(GR_GL_USE_NV_PATH_RENDERING)
-    #define GR_GL_USE_NV_PATH_RENDERING                 0
+#if !defined(GR_GL_MUST_USE_VBO)
+    #define GR_GL_MUST_USE_VBO                          0
+#endif
+
+#if !defined(GR_GL_USE_NEW_SHADER_SOURCE_SIGNATURE)
+    #define GR_GL_USE_NEW_SHADER_SOURCE_SIGNATURE       0
 #endif
 
 /**
@@ -172,7 +188,7 @@
  * OS/driver level fix.
  */
 #define GR_GL_MAC_BUFFER_OBJECT_PERFOMANCE_WORKAROUND   \
-    (GR_MAC_BUILD &&                                    \
+    (defined(SK_BUILD_FOR_MAC) &&                       \
      !GR_GL_USE_BUFFER_DATA_NULL_HINT)
 
 #endif

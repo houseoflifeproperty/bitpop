@@ -11,14 +11,14 @@
 #include "ui/gfx/size.h"
 #include "ui/views/view.h"
 
-class LocationBarView;
+class Profile;
 
 namespace gfx {
-class Font;
+class FontList;
 }
 
-class Profile;
 namespace views {
+class ImageView;
 class Label;
 }
 
@@ -32,32 +32,32 @@ class Label;
 // couldn't bring myself to use such a long name.
 class KeywordHintView : public views::View {
  public:
-  KeywordHintView(Profile* profile, const LocationBarView* location_bar_view);
+  KeywordHintView(Profile* profile,
+                  const gfx::FontList& font_list,
+                  SkColor text_color,
+                  SkColor background_color);
   virtual ~KeywordHintView();
 
-  void SetFont(const gfx::Font& font);
+  void SetKeyword(const base::string16& keyword);
+  base::string16 keyword() const { return keyword_; }
 
-  void SetKeyword(const string16& keyword);
-  string16 keyword() const { return keyword_; }
-
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual gfx::Size GetPreferredSize() OVERRIDE;
   // The minimum size is just big enough to show the tab.
   virtual gfx::Size GetMinimumSize() OVERRIDE;
   virtual void Layout() OVERRIDE;
 
  private:
-  views::Label* CreateLabel(const LocationBarView* location_bar_view);
-
-  views::Label* leading_label_;
-  views::Label* trailing_label_;
-
-  // The keyword.
-  string16 keyword_;
+  views::Label* CreateLabel(const gfx::FontList& font_list,
+                            SkColor text_color,
+                            SkColor background_color);
 
   Profile* profile_;
+  views::Label* leading_label_;
+  views::ImageView* tab_image_;
+  views::Label* trailing_label_;
+  base::string16 keyword_;
 
-  DISALLOW_IMPLICIT_CONSTRUCTORS(KeywordHintView);
+  DISALLOW_COPY_AND_ASSIGN(KeywordHintView);
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_LOCATION_BAR_KEYWORD_HINT_VIEW_H_

@@ -4,9 +4,9 @@
 
 #import "chrome/browser/ui/cocoa/l10n_util.h"
 
-#include "base/string_util.h"
-#include "base/sys_string_conversions.h"
-#import "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
+#include "base/strings/string_util.h"
+#include "base/strings/sys_string_conversions.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 
 namespace cocoa_l10n_util {
 
@@ -67,12 +67,21 @@ CGFloat VerticallyReflowGroup(NSArray* views) {
 }
 
 NSString* ReplaceNSStringPlaceholders(NSString* formatString,
-                                      const string16& a,
+                                      const base::string16& a,
                                       size_t* offset) {
   return base::SysUTF16ToNSString(
       ReplaceStringPlaceholders(base::SysNSStringToUTF16(formatString),
                                 a,
                                 offset));
+}
+
+NSString* TooltipForURLAndTitle(NSString* url, NSString* title) {
+  if ([title length] == 0)
+    return url;
+  else if ([url length] == 0 || [url isEqualToString:title])
+    return title;
+  else
+    return [NSString stringWithFormat:@"%@\n%@", title, url];
 }
 
 }  // namespace cocoa_l10n_util

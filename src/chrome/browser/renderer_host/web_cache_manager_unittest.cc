@@ -4,7 +4,7 @@
 
 #include <string>
 
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "chrome/browser/renderer_host/web_cache_manager.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -12,7 +12,7 @@
 using base::Time;
 using base::TimeDelta;
 using content::BrowserThread;
-using WebKit::WebCache;
+using blink::WebCache;
 
 class WebCacheManagerTest : public testing::Test {
  protected:
@@ -93,7 +93,7 @@ class WebCacheManagerTest : public testing::Test {
 
  private:
   WebCacheManager manager_;
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   content::TestBrowserThread ui_thread_;
 };
 
@@ -256,7 +256,7 @@ TEST_F(WebCacheManagerTest, AttemptTacticTest) {
     else if (iter->first == kRendererID2)
       EXPECT_LE(kStats2.liveSize, iter->second);
     else
-      EXPECT_FALSE("Unexpected entry in strategy");
+      ADD_FAILURE();   // Unexpected entry in strategy.
     ++iter;
   }
 
@@ -296,7 +296,7 @@ TEST_F(WebCacheManagerTest, AddToStrategyTest) {
     else if (iter->first == kRendererID2)
       EXPECT_LE(kStats2.liveSize + kStats2.deadSize, iter->second);
     else
-      EXPECT_FALSE("Unexpected entry in strategy");
+      ADD_FAILURE();  // Unexpected entry in strategy.
     ++iter;
   }
 

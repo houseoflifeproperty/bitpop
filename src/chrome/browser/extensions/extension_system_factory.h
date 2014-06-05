@@ -6,21 +6,19 @@
 #define CHROME_BROWSER_EXTENSIONS_EXTENSION_SYSTEM_FACTORY_H_
 
 #include "base/memory/singleton.h"
-#include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
-
-class Profile;
-class ProfileKeyedService;
+#include "chrome/browser/extensions/extension_system_impl.h"
+#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
+#include "extensions/browser/extension_system_provider.h"
 
 namespace extensions {
 class ExtensionSystem;
 
-// ProfileKeyedServiceFactory for ExtensionSystemImpl::Shared.
+// BrowserContextKeyedServiceFactory for ExtensionSystemImpl::Shared.
 // Should not be used except by ExtensionSystem(Factory).
-class ExtensionSystemSharedFactory : public ProfileKeyedServiceFactory {
+class ExtensionSystemSharedFactory : public BrowserContextKeyedServiceFactory {
  public:
-  static ExtensionSystemImpl::Shared* GetForProfile(
-      Profile* profile);
+  static ExtensionSystemImpl::Shared* GetForBrowserContext(
+      content::BrowserContext* context);
 
   static ExtensionSystemSharedFactory* GetInstance();
 
@@ -30,16 +28,22 @@ class ExtensionSystemSharedFactory : public ProfileKeyedServiceFactory {
   ExtensionSystemSharedFactory();
   virtual ~ExtensionSystemSharedFactory();
 
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
-  virtual bool ServiceRedirectedInIncognito() const OVERRIDE;
+  // BrowserContextKeyedServiceFactory implementation:
+  virtual KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* context) const OVERRIDE;
+  virtual content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const OVERRIDE;
+
+  DISALLOW_COPY_AND_ASSIGN(ExtensionSystemSharedFactory);
 };
 
-// ProfileKeyedServiceFactory for ExtensionSystem.
-class ExtensionSystemFactory : public ProfileKeyedServiceFactory {
+// BrowserContextKeyedServiceFactory for ExtensionSystemImpl.
+// TODO(yoz): Rename to ExtensionSystemImplFactory.
+class ExtensionSystemFactory : public ExtensionSystemProvider {
  public:
-  // ProfileKeyedServiceFactory implementation:
-  static ExtensionSystem* GetForProfile(Profile* profile);
+  // ExtensionSystem provider implementation:
+  virtual ExtensionSystem* GetForBrowserContext(
+      content::BrowserContext* context) OVERRIDE;
 
   static ExtensionSystemFactory* GetInstance();
 
@@ -49,10 +53,14 @@ class ExtensionSystemFactory : public ProfileKeyedServiceFactory {
   ExtensionSystemFactory();
   virtual ~ExtensionSystemFactory();
 
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
-  virtual bool ServiceHasOwnInstanceInIncognito() const OVERRIDE;
-  virtual bool ServiceIsCreatedWithProfile() const OVERRIDE;
+  // BrowserContextKeyedServiceFactory implementation:
+  virtual KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* context) const OVERRIDE;
+  virtual content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const OVERRIDE;
+  virtual bool ServiceIsCreatedWithBrowserContext() const OVERRIDE;
+
+  DISALLOW_COPY_AND_ASSIGN(ExtensionSystemFactory);
 };
 
 }  // namespace extensions

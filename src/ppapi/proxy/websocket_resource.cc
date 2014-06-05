@@ -5,6 +5,7 @@
 #include "ppapi/proxy/websocket_resource.h"
 
 #include <set>
+#include <string>
 #include <vector>
 
 #include "base/bind.h"
@@ -14,7 +15,6 @@
 #include "ppapi/shared_impl/ppapi_globals.h"
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/shared_impl/var_tracker.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSocket.h"
 
 namespace {
 
@@ -89,7 +89,7 @@ int32_t WebSocketResource::Connect(
 
   // Get the URL.
   url_ = StringVar::FromPPVar(url);
-  if (!url_)
+  if (!url_.get())
     return PP_ERROR_BADARGUMENT;
 
   // Get the protocols.
@@ -100,7 +100,7 @@ int32_t WebSocketResource::Connect(
     scoped_refptr<StringVar> protocol(StringVar::FromPPVar(protocols[i]));
 
     // Check invalid and empty entries.
-    if (!protocol || !protocol->value().length())
+    if (!protocol.get() || !protocol->value().length())
       return PP_ERROR_BADARGUMENT;
 
     // Check duplicated protocol entries.
@@ -136,17 +136,10 @@ int32_t WebSocketResource::Close(uint16_t code,
   // Validate |code| and |reason|.
   scoped_refptr<StringVar> reason_string_var;
   std::string reason_string;
-  WebKit::WebSocket::CloseEventCode event_code =
-      static_cast<WebKit::WebSocket::CloseEventCode>(code);
-  if (code == PP_WEBSOCKETSTATUSCODE_NOT_SPECIFIED) {
-    // PP_WEBSOCKETSTATUSCODE_NOT_SPECIFIED and CloseEventCodeNotSpecified are
-    // assigned to different values. A conversion is needed if
-    // PP_WEBSOCKETSTATUSCODE_NOT_SPECIFIED is specified.
-    event_code = WebKit::WebSocket::CloseEventCodeNotSpecified;
-  } else {
-    if (!(code == PP_WEBSOCKETSTATUSCODE_NORMAL_CLOSURE ||
-        (PP_WEBSOCKETSTATUSCODE_USER_REGISTERED_MIN <= code &&
-        code <= PP_WEBSOCKETSTATUSCODE_USER_PRIVATE_MAX)))
+  if (code != PP_WEBSOCKETSTATUSCODE_NOT_SPECIFIED) {
+    if (code != PP_WEBSOCKETSTATUSCODE_NORMAL_CLOSURE &&
+        (code < PP_WEBSOCKETSTATUSCODE_USER_REGISTERED_MIN ||
+        code > PP_WEBSOCKETSTATUSCODE_USER_PRIVATE_MAX))
       // RFC 6455 limits applications to use reserved connection close code in
       // section 7.4.2.. The WebSocket API (http://www.w3.org/TR/websockets/)
       // defines this out of range error as InvalidAccessError in JavaScript.
@@ -157,7 +150,7 @@ int32_t WebSocketResource::Close(uint16_t code,
     if (reason.type != PP_VARTYPE_UNDEFINED) {
       // Validate |reason|.
       reason_string_var = StringVar::FromPPVar(reason);
-      if (!reason_string_var ||
+      if (!reason_string_var.get() ||
           reason_string_var->value().size() > kMaxReasonSizeInBytes)
         return PP_ERROR_BADARGUMENT;
       reason_string = reason_string_var->value();
@@ -194,7 +187,7 @@ int32_t WebSocketResource::Close(uint16_t code,
 
   // Close connection.
   state_ = PP_WEBSOCKETREADYSTATE_CLOSING;
-  PpapiHostMsg_WebSocket_Close msg(static_cast<int32_t>(event_code),
+  PpapiHostMsg_WebSocket_Close msg(static_cast<int32_t>(code),
                                    reason_string);
   Call<PpapiPluginMsg_WebSocket_CloseReply>(RENDERER, msg,
       base::Bind(&WebSocketResource::OnPluginMsgCloseReply, this));
@@ -246,12 +239,12 @@ int32_t WebSocketResource::SendMessage(const PP_Var& message) {
     uint64_t payload_size = 0;
     if (message.type == PP_VARTYPE_STRING) {
       scoped_refptr<StringVar> message_string = StringVar::FromPPVar(message);
-      if (message_string)
+      if (message_string.get())
         payload_size += message_string->value().length();
     } else if (message.type == PP_VARTYPE_ARRAY_BUFFER) {
       scoped_refptr<ArrayBufferVar> message_array_buffer =
           ArrayBufferVar::FromPPVar(message);
-      if (message_array_buffer)
+      if (message_array_buffer.get())
         payload_size += message_array_buffer->ByteLength();
     } else {
       // TODO(toyoshim): Support Blob.
@@ -268,14 +261,14 @@ int32_t WebSocketResource::SendMessage(const PP_Var& message) {
   if (message.type == PP_VARTYPE_STRING) {
     // Convert message to std::string, then send it.
     scoped_refptr<StringVar> message_string = StringVar::FromPPVar(message);
-    if (!message_string)
+    if (!message_string.get())
       return PP_ERROR_BADARGUMENT;
     Post(RENDERER, PpapiHostMsg_WebSocket_SendText(message_string->value()));
   } else if (message.type == PP_VARTYPE_ARRAY_BUFFER) {
     // Convert message to std::vector<uint8_t>, then send it.
     scoped_refptr<ArrayBufferVar> message_arraybuffer =
         ArrayBufferVar::FromPPVar(message);
-    if (!message_arraybuffer)
+    if (!message_arraybuffer.get())
       return PP_ERROR_BADARGUMENT;
     uint8_t* message_data = static_cast<uint8_t*>(message_arraybuffer->Map());
     uint32 message_length = message_arraybuffer->ByteLength();
@@ -298,7 +291,7 @@ uint16_t WebSocketResource::GetCloseCode() {
 }
 
 PP_Var WebSocketResource::GetCloseReason() {
-  if (!close_reason_)
+  if (!close_reason_.get())
     return empty_string_->GetPPVar();
   return close_reason_->GetPPVar();
 }
@@ -312,7 +305,7 @@ PP_Var WebSocketResource::GetExtensions() {
 }
 
 PP_Var WebSocketResource::GetProtocol() {
-  if (!protocol_)
+  if (!protocol_.get())
     return empty_string_->GetPPVar();
   return protocol_->GetPPVar();
 }
@@ -322,7 +315,7 @@ PP_WebSocketReadyState WebSocketResource::GetReadyState() {
 }
 
 PP_Var WebSocketResource::GetURL() {
-  if (!url_)
+  if (!url_.get())
     return empty_string_->GetPPVar();
   return url_->GetPPVar();
 }
@@ -362,8 +355,10 @@ void WebSocketResource::OnPluginMsgConnectReply(
     const ResourceMessageReplyParams& params,
     const std::string& url,
     const std::string& protocol) {
-  if (!TrackedCallback::IsPending(connect_callback_))
+  if (!TrackedCallback::IsPending(connect_callback_) ||
+      TrackedCallback::IsScheduledToRun(connect_callback_)) {
     return;
+  }
 
   int32_t result = params.result();
   if (result == PP_OK) {
@@ -389,12 +384,14 @@ void WebSocketResource::OnPluginMsgCloseReply(
 
   if (TrackedCallback::IsPending(receive_callback_)) {
     receive_callback_var_ = NULL;
-    receive_callback_->PostRun(PP_ERROR_FAILED);
+    if (!TrackedCallback::IsScheduledToRun(receive_callback_))
+      receive_callback_->PostRun(PP_ERROR_FAILED);
     receive_callback_ = NULL;
   }
 
   if (TrackedCallback::IsPending(close_callback_)) {
-    close_callback_->PostRun(params.result());
+    if (!TrackedCallback::IsScheduledToRun(close_callback_))
+      close_callback_->PostRun(params.result());
     close_callback_ = NULL;
   }
 }
@@ -409,8 +406,10 @@ void WebSocketResource::OnPluginMsgReceiveTextReply(
   // Append received data to queue.
   received_messages_.push(scoped_refptr<Var>(new StringVar(message)));
 
-  if (!TrackedCallback::IsPending(receive_callback_))
+  if (!TrackedCallback::IsPending(receive_callback_) ||
+      TrackedCallback::IsScheduledToRun(receive_callback_)) {
     return;
+  }
 
   receive_callback_->Run(DoReceive());
 }
@@ -423,14 +422,16 @@ void WebSocketResource::OnPluginMsgReceiveBinaryReply(
     return;
 
   // Append received data to queue.
-  scoped_refptr<Var> message_var(ArrayBufferVar::FromPPVar(
-      PpapiGlobals::Get()->GetVarTracker()->MakeArrayBufferPPVar(
+  scoped_refptr<Var> message_var(
+      PpapiGlobals::Get()->GetVarTracker()->MakeArrayBufferVar(
           message.size(),
-          &message.front())));
+          &message.front()));
   received_messages_.push(message_var);
 
-  if (!TrackedCallback::IsPending(receive_callback_))
+  if (!TrackedCallback::IsPending(receive_callback_) ||
+      TrackedCallback::IsScheduledToRun(receive_callback_)) {
     return;
+  }
 
   receive_callback_->Run(DoReceive());
 }
@@ -439,8 +440,10 @@ void WebSocketResource::OnPluginMsgErrorReply(
     const ResourceMessageReplyParams& params) {
   error_was_received_ = true;
 
-  if (!TrackedCallback::IsPending(receive_callback_))
+  if (!TrackedCallback::IsPending(receive_callback_) ||
+      TrackedCallback::IsScheduledToRun(receive_callback_)) {
     return;
+  }
 
   // No more text or binary messages will be received. If there is ongoing
   // ReceiveMessage(), we must invoke the callback with error code here.

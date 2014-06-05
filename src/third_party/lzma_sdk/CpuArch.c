@@ -39,7 +39,8 @@ static UInt32 CheckFlag(UInt32 flag)
     "push %%EDX\n\t"
     "popf\n\t"
     "andl %%EAX, %0\n\t":
-    "=c" (flag) : "c" (flag));
+    "=c" (flag) : "c" (flag):
+    "%eax", "%edx" );
   #endif
   return flag;
 }
@@ -72,6 +73,20 @@ static void MyCPUID(UInt32 function, UInt32 *a, UInt32 *b, UInt32 *c, UInt32 *d)
 
   #else
 
+  #if defined(MY_CPU_AMD64)
+
+  __asm__ __volatile__ (
+    "mov %%rbx, %%rdi\n"
+    "cpuid\n"
+    "xchg %%rdi, %%rbx\n"
+    : "=a" (*a) ,
+      "=D" (*b) ,
+      "=c" (*c) ,
+      "=d" (*d)
+    : "0" (function)) ;
+
+  #else
+
   __asm__ __volatile__ (
     "mov %%ebx, %%edi\n"
     "cpuid\n"
@@ -81,6 +96,8 @@ static void MyCPUID(UInt32 function, UInt32 *a, UInt32 *b, UInt32 *c, UInt32 *d)
       "=c" (*c) ,
       "=d" (*d)
     : "0" (function)) ;
+
+  #endif
 
   #endif
   

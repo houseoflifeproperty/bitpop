@@ -5,25 +5,25 @@
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
 
 #include "base/logging.h"
+#include "content/common/dom_storage/dom_storage_types.h"
 #include "content/renderer/dom_storage/webstoragearea_impl.h"
-#include "googleurl/src/gurl.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
-#include "webkit/dom_storage/dom_storage_types.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "url/gurl.h"
 
-using WebKit::WebStorageArea;
-using WebKit::WebStorageNamespace;
-using WebKit::WebString;
+using blink::WebStorageArea;
+using blink::WebStorageNamespace;
+using blink::WebString;
 
 namespace content {
 
 WebStorageNamespaceImpl::WebStorageNamespaceImpl()
-    : namespace_id_(dom_storage::kLocalStorageNamespaceId) {
+    : namespace_id_(kLocalStorageNamespaceId) {
 }
 
 WebStorageNamespaceImpl::WebStorageNamespaceImpl(
     int64 namespace_id)
     : namespace_id_(namespace_id) {
-  DCHECK_NE(dom_storage::kInvalidSessionStorageNamespaceId, namespace_id);
+  DCHECK_NE(kInvalidSessionStorageNamespaceId, namespace_id);
 }
 
 WebStorageNamespaceImpl::~WebStorageNamespaceImpl() {

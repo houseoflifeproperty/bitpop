@@ -9,15 +9,16 @@
 #include <map>
 
 #include "base/atomic_sequence_num.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
-#include "base/process.h"
+#include "base/process/process.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
+#include "content/public/browser/global_request_id.h"
 #include "content/public/common/window_container_type.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupType.h"
+#include "third_party/WebKit/public/web/WebPopupType.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/surface/transport_dib.h"
 
@@ -125,19 +126,13 @@ class RenderWidgetHelper
   // These three functions provide the backend implementation of the
   // corresponding functions in RenderProcessHost. See those declarations
   // for documentation.
-  void CancelResourceRequests(int render_widget_id);
-  void SimulateSwapOutACK(const ViewMsg_SwapOut_Params& params);
+  void ResumeDeferredNavigation(const GlobalRequestID& request_id);
   bool WaitForBackingStoreMsg(int render_widget_id,
                               const base::TimeDelta& max_delay,
                               IPC::Message* msg);
   // Called to resume the requests for a view after it's ready. The view was
   // created by CreateNewWindow which initially blocked the requests.
   void ResumeRequestsForView(int route_id);
-
-#if defined(OS_MACOSX)
-  // Given the id of a transport DIB, return a mapping to it or NULL on error.
-  TransportDIB* MapTransportDIB(TransportDIB::Id dib_id);
-#endif
 
   // IO THREAD ONLY -----------------------------------------------------------
 
@@ -149,21 +144,22 @@ class RenderWidgetHelper
       bool no_javascript_access,
       base::ProcessHandle render_process,
       int* route_id,
+      int* main_frame_route_id,
       int* surface_id,
       SessionStorageNamespace* session_storage_namespace);
   void CreateNewWidget(int opener_id,
-                       WebKit::WebPopupType popup_type,
+                       blink::WebPopupType popup_type,
                        int* route_id,
                        int* surface_id);
   void CreateNewFullscreenWidget(int opener_id, int* route_id, int* surface_id);
 
-#if defined(OS_MACOSX)
+#if defined(OS_POSIX)
   // Called on the IO thread to handle the allocation of a TransportDIB.  If
   // |cache_in_browser| is |true|, then a copy of the shmem is kept by the
   // browser, and it is the caller's repsonsibility to call
   // FreeTransportDIB().  In all cases, the caller is responsible for deleting
   // the resulting TransportDIB.
-  void AllocTransportDIB(size_t size,
+  void AllocTransportDIB(uint32 size,
                          bool cache_in_browser,
                          TransportDIB::Handle* result);
 
@@ -197,6 +193,7 @@ class RenderWidgetHelper
   void OnCreateWindowOnUI(
       const ViewHostMsg_CreateWindow_Params& params,
       int route_id,
+      int main_frame_route_id,
       SessionStorageNamespace* session_storage_namespace);
 
   // Called on the IO thread after a window was created on the UI thread.
@@ -205,23 +202,20 @@ class RenderWidgetHelper
   // Called on the UI thread to finish creating a widget.
   void OnCreateWidgetOnUI(int opener_id,
                           int route_id,
-                          WebKit::WebPopupType popup_type);
+                          blink::WebPopupType popup_type);
 
   // Called on the UI thread to create a fullscreen widget.
   void OnCreateFullscreenWidgetOnUI(int opener_id, int route_id);
 
-  // Called on the IO thread to cancel resource requests for the render widget.
-  void OnCancelResourceRequests(int render_widget_id);
+  // Called on the IO thread to resume a paused navigation in the network
+  // stack without transferring it to a new renderer process.
+  void OnResumeDeferredNavigation(const GlobalRequestID& request_id);
 
-  // Called on the IO thread to resume a cross-site response, if the ack is
-  // not received as expected.
-  void OnSimulateSwapOutACK(const ViewMsg_SwapOut_Params& params);
-
-#if defined(OS_MACOSX)
+#if defined(OS_POSIX)
   // Called on destruction to release all allocated transport DIBs
   void ClearAllocatedDIBs();
 
-  // On OSX we keep file descriptors to all the allocated DIBs around until
+  // On POSIX we keep file descriptors to all the allocated DIBs around until
   // the renderer frees them.
   base::Lock allocated_dibs_lock_;
   std::map<TransportDIB::Id, int> allocated_dibs_;

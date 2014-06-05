@@ -4,13 +4,14 @@
 
 #include "chrome/browser/extensions/extension_error_ui_android.h"
 
-ExtensionErrorUIAndroid::ExtensionErrorUIAndroid(
-    ExtensionService* extension_service)
-    : ExtensionErrorUI(extension_service) {
-}
+#include "base/logging.h"
 
-ExtensionErrorUIAndroid::~ExtensionErrorUIAndroid() {
-}
+namespace extensions {
+
+ExtensionErrorUIAndroid::ExtensionErrorUIAndroid(
+    ExtensionErrorUI::Delegate* delegate) : ExtensionErrorUI(delegate) {}
+
+ExtensionErrorUIAndroid::~ExtensionErrorUIAndroid() {}
 
 // ExtensionErrorUI implementation:
 bool ExtensionErrorUIAndroid::ShowErrorInBubbleView() {
@@ -22,9 +23,14 @@ void ExtensionErrorUIAndroid::ShowExtensions() {
   NOTIMPLEMENTED();
 }
 
-// static
-ExtensionErrorUI* ExtensionErrorUI::Create(
-    ExtensionService* extension_service) {
-  return new ExtensionErrorUIAndroid(extension_service);
+void ExtensionErrorUIAndroid::Close() {
+  NOTIMPLEMENTED();
 }
 
+// static
+ExtensionErrorUI* ExtensionErrorUI::Create(
+    ExtensionErrorUI::Delegate* delegate) {
+  return new ExtensionErrorUIAndroid(delegate);
+}
+
+}  // namespace extensions

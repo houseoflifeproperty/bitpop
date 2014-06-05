@@ -4,11 +4,18 @@
 
 #include "chrome/renderer/page_load_histograms.h"
 
+#include <string>
+
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
-#include "base/time.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/renderer/chrome_content_renderer_client.h"
 #include "content/public/common/content_constants.h"
@@ -16,17 +23,20 @@
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
 #include "extensions/common/url_pattern.h"
-#include "googleurl/src/gurl.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLResponse.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPerformance.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "net/base/url_util.h"
+#include "net/http/http_response_headers.h"
+#include "third_party/WebKit/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/public/platform/WebURLResponse.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebPerformance.h"
+#include "third_party/WebKit/public/web/WebView.h"
+#include "url/gurl.h"
 
-using WebKit::WebDataSource;
-using WebKit::WebFrame;
-using WebKit::WebPerformance;
-using WebKit::WebString;
+using blink::WebDataSource;
+using blink::WebFrame;
+using blink::WebPerformance;
+using blink::WebString;
 using base::Time;
 using base::TimeDelta;
 using content::DocumentState;
@@ -35,6 +45,13 @@ const size_t kPLTCount = 100;
 
 namespace {
 
+// ID indicating that no GWS-Chrome joint experiment is active.
+const int kNoExperiment = 0;
+
+// Max ID of GWS-Chrome joint experiment. If you change this value, please
+// update PLT_HISTOGRAM_WITH_GWS_VARIANT accordingly.
+const int kMaxExperimentID = 20;
+
 TimeDelta kPLTMin() {
   return TimeDelta::FromMilliseconds(10);
 }
@@ -42,8 +59,104 @@ TimeDelta kPLTMax() {
   return TimeDelta::FromMinutes(10);
 }
 
+// This function corresponds to PLT_HISTOGRAM macro invocation without caching.
+// Use this for PLT histograms with dynamically generated names, which
+// otherwise can't use the caching PLT_HISTOGRAM macro without code duplication.
+void PltHistogramWithNoMacroCaching(const std::string& name,
+                                    const TimeDelta& sample) {
+  // The parameters should exacly match the parameters in
+  // UMA_HISTOGRAM_CUSTOM_TIMES macro.
+  base::HistogramBase* histogram_pointer = base::Histogram::FactoryTimeGet(
+      name, kPLTMin(), kPLTMax(), kPLTCount,
+      base::HistogramBase::kUmaTargetedHistogramFlag);
+  histogram_pointer->AddTime(sample);
+}
+
+// Various preview applicability states.
+enum GwsPreviewState {
+  PREVIEW_NONE,
+  // Instant search clicks [not] applied, data reduction proxy used,
+  // from web search.
+  PREVIEW_NOT_USED,
+  // Instant search clicks applied, data reduction proxy [not] used,
+  // from web search
+  PREVIEW,
+  // Instant search clicks applied, data reduction proxy used,
+  // [not] from web search
+  PREVIEW_WAS_SHOWN,
+};
+
+// This records UMA corresponding to the PLT_HISTOGRAM macro without caching.
+void PltHistogramWithGwsPreview(const char* name,
+                                const TimeDelta& sample,
+                                GwsPreviewState preview_state,
+                                int preview_experiment_id) {
+  std::string preview_suffix;
+  switch (preview_state) {
+    case PREVIEW_WAS_SHOWN:
+      preview_suffix = "_WithPreview";
+      break;
+    case PREVIEW:
+      preview_suffix = "_Preview";
+      break;
+    case PREVIEW_NOT_USED:
+      preview_suffix = "_NoPreview";
+      break;
+    default:
+      return;
+  }
+  PltHistogramWithNoMacroCaching(name + preview_suffix, sample);
+
+  if (preview_experiment_id != kNoExperiment) {
+    std::string name_with_experiment_id = base::StringPrintf(
+          "%s%s_Experiment%d", name, preview_suffix.c_str(),
+          preview_experiment_id);
+    PltHistogramWithNoMacroCaching(name_with_experiment_id, sample);
+  }
+}
+
 #define PLT_HISTOGRAM(name, sample) \
     UMA_HISTOGRAM_CUSTOM_TIMES(name, sample, kPLTMin(), kPLTMax(), kPLTCount);
+
+#define PLT_HISTOGRAM_WITH_GWS_VARIANT(                                        \
+    name, sample, came_from_websearch, websearch_chrome_joint_experiment_id,   \
+    preview_state, preview_experiment_id) {                                    \
+  PLT_HISTOGRAM(name, sample);                                                 \
+  if (came_from_websearch) {                                                   \
+    PLT_HISTOGRAM(base::StringPrintf("%s_FromGWS", name), sample)              \
+    if (websearch_chrome_joint_experiment_id != kNoExperiment) {               \
+      std::string name_with_experiment_id = base::StringPrintf(                \
+          "%s_FromGWS_Experiment%d",                                           \
+          name, websearch_chrome_joint_experiment_id);                         \
+      PltHistogramWithNoMacroCaching(name_with_experiment_id, sample);         \
+    }                                                                          \
+  }                                                                            \
+  PltHistogramWithGwsPreview(name, sample, preview_state,                      \
+                             preview_experiment_id);                           \
+}
+
+// In addition to PLT_HISTOGRAM, add the *_DataReductionProxy variant
+// conditionally. This macro runs only in one thread.
+#define PLT_HISTOGRAM_DRP(name, sample, data_reduction_proxy_was_used) \
+  do {                                                                  \
+    static base::HistogramBase* counter(NULL);                          \
+    static base::HistogramBase* drp_counter(NULL);                      \
+    if (!counter) {                                                     \
+      DCHECK(drp_counter == NULL);                                      \
+      counter = base::Histogram::FactoryTimeGet(                        \
+          name, kPLTMin(), kPLTMax(), kPLTCount,                        \
+          base::Histogram::kUmaTargetedHistogramFlag);                  \
+    }                                                                   \
+    counter->AddTime(sample);                                           \
+    if (!data_reduction_proxy_was_used) break;                          \
+    if (!drp_counter) {                                                 \
+      drp_counter = base::Histogram::FactoryTimeGet(                    \
+          std::string(name) + "_DataReductionProxy",                    \
+          kPLTMin(), kPLTMax(), kPLTCount,                              \
+          base::Histogram::kUmaTargetedHistogramFlag);                  \
+    }                                                                   \
+    drp_counter->AddTime(sample);                                       \
+  } while (0)
 
 // Returns the scheme type of the given URL if its type is one for which we
 // dump page load histograms. Otherwise returns NULL.
@@ -55,20 +168,158 @@ URLPattern::SchemeMasks GetSupportedSchemeType(const GURL& url) {
   return static_cast<URLPattern::SchemeMasks>(0);
 }
 
+// Helper function to check for string in 'via' header. Returns true if
+// |via_value| is one of the values listed in the Via header and the response
+// was fetched via a proxy.
+bool ViaHeaderContains(WebFrame* frame, const std::string& via_value) {
+  const char kViaHeaderName[] = "Via";
+
+  DocumentState* document_state =
+      DocumentState::FromDataSource(frame->dataSource());
+  if (!document_state->was_fetched_via_proxy())
+    return false;
+
+  std::vector<std::string> values;
+  // Multiple via headers have already been coalesced and hence each value
+  // separated by a comma corresponds to a proxy. The value added by a proxy is
+  // not expected to contain any commas.
+  // Example., Via: 1.0 Compression proxy, 1.1 Google Instant Proxy Preview
+  base::SplitString(
+      frame->dataSource()->response().httpHeaderField(kViaHeaderName).utf8(),
+      ',', &values);
+  return std::find(values.begin(), values.end(), via_value) != values.end();
+}
+
+// Returns true if the data reduction proxy was used. Note, this function will
+// produce a false positive if a page is fetched using SPDY and using a proxy,
+// and the data reduction proxy's via value is added to the Via header.
+// TODO(bengr): Plumb the hostname of the proxy and check if it matches
+// |SPDY_PROXY_AUTH_ORIGIN|.
+bool DataReductionProxyWasUsed(WebFrame* frame) {
+  DocumentState* document_state =
+      DocumentState::FromDataSource(frame->dataSource());
+  if (!document_state->was_fetched_via_proxy())
+    return false;
+
+  std::string via_header =
+      base::UTF16ToUTF8(frame->dataSource()->response().httpHeaderField("Via"));
+
+  if (via_header.empty())
+    return false;
+  std::string headers = "HTTP/1.1 200 OK\nVia: " + via_header + "\n\n";
+  // Produce raw headers, expected by the |HttpResponseHeaders| constructor.
+  std::replace(headers.begin(), headers.end(), '\n', '\0');
+  scoped_refptr<net::HttpResponseHeaders> response_headers(
+      new net::HttpResponseHeaders(headers));
+  return response_headers->IsDataReductionProxyResponse();
+}
+
+// Returns true if the provided URL is a referrer string that came from
+// a Google Web Search results page. This is a little non-deterministic
+// because desktop and mobile websearch differ and sometimes just provide
+// http://www.google.com/ as the referrer. In the case of /url we can be sure
+// that it came from websearch but we will be generous and allow for cases
+// where a non-Google URL was provided a bare Google URL as a referrer.
+// The domain validation matches the code used by the prerenderer for similar
+// purposes.
+// TODO(pmeenan): Remove the fuzzy logic when the referrer is reliable
+bool IsFromGoogleSearchResult(const GURL& url, const GURL& referrer) {
+  if (!StartsWithASCII(referrer.host(), "www.google.", true))
+    return false;
+  if (StartsWithASCII(referrer.path(), "/url", true))
+    return true;
+  bool is_possible_search_referrer =
+      referrer.path().empty() ||
+      referrer.path() == "/" ||
+      StartsWithASCII(referrer.path(), "/search", true) ||
+      StartsWithASCII(referrer.path(), "/webhp", true);
+  if (is_possible_search_referrer &&
+      !StartsWithASCII(url.host(), "www.google", true))
+    return true;
+  return false;
+}
+
+// Extracts a Google Web Search and Chrome joint experiment ID from a referrer
+// that came from a Google Web Search results page. An experiment ID is embedded
+// in a query string as a "gcjeid=" parameter value.
+int GetQueryStringBasedExperiment(const GURL& referrer) {
+  std::string value;
+  if (!net::GetValueForKeyInQuery(referrer, "gcjeid", &value))
+    return kNoExperiment;
+
+  int experiment_id;
+  if (!base::StringToInt(value, &experiment_id))
+    return kNoExperiment;
+  if (0 < experiment_id && experiment_id <= kMaxExperimentID)
+    return experiment_id;
+  return kNoExperiment;
+}
+
+// Returns preview state by looking at url and referer url.
+void GetPreviewState(WebFrame* frame,
+                     bool came_from_websearch,
+                     bool data_reduction_proxy_was_used,
+                     GwsPreviewState* preview_state,
+                     int* preview_experiment_id) {
+  // Conditions for GWS preview are,
+  // 1. Data reduction proxy was used.
+  // Determine the preview state (PREVIEW, PREVIEW_WAS_SHOWN, PREVIEW_NOT_USED)
+  // by inspecting the Via header.
+  if (data_reduction_proxy_was_used) {
+    if (came_from_websearch) {
+      *preview_state = ViaHeaderContains(
+          frame,
+          "1.1 Google Instant Proxy Preview") ? PREVIEW : PREVIEW_NOT_USED;
+    } else if (ViaHeaderContains(frame, "1.1 Google Instant Proxy")) {
+      *preview_state = PREVIEW_WAS_SHOWN;
+      *preview_experiment_id = GetQueryStringBasedExperiment(
+          GURL(frame->document().referrer()));
+    }
+  }
+}
+
 void DumpPerformanceTiming(const WebPerformance& performance,
-                           DocumentState* document_state) {
+                           DocumentState* document_state,
+                           bool data_reduction_proxy_was_used,
+                           bool came_from_websearch,
+                           int websearch_chrome_joint_experiment_id,
+                           GwsPreviewState preview_state,
+                           int preview_experiment_id) {
   Time request = document_state->request_time();
 
   Time navigation_start = Time::FromDoubleT(performance.navigationStart());
+  Time redirect_start = Time::FromDoubleT(performance.redirectStart());
+  Time redirect_end = Time::FromDoubleT(performance.redirectEnd());
+  Time fetch_start = Time::FromDoubleT(performance.fetchStart());
+  Time domain_lookup_start = Time::FromDoubleT(performance.domainLookupStart());
+  Time domain_lookup_end = Time::FromDoubleT(performance.domainLookupEnd());
+  Time connect_start = Time::FromDoubleT(performance.connectStart());
+  Time connect_end = Time::FromDoubleT(performance.connectEnd());
   Time request_start = Time::FromDoubleT(performance.requestStart());
   Time response_start = Time::FromDoubleT(performance.responseStart());
+  Time response_end = Time::FromDoubleT(performance.responseEnd());
+  Time dom_loading = Time::FromDoubleT(performance.domLoading());
+  Time dom_interactive = Time::FromDoubleT(performance.domInteractive());
+  Time dom_content_loaded_start =
+      Time::FromDoubleT(performance.domContentLoadedEventStart());
+  Time dom_content_loaded_end =
+      Time::FromDoubleT(performance.domContentLoadedEventEnd());
   Time load_event_start = Time::FromDoubleT(performance.loadEventStart());
   Time load_event_end = Time::FromDoubleT(performance.loadEventEnd());
   Time begin = (request.is_null() ? navigation_start : request_start);
 
   DCHECK(!navigation_start.is_null());
-  DCHECK(!request_start.is_null());
-  DCHECK(!response_start.is_null());
+
+  // It is possible for a document to have navigation_start time, but no
+  // request_start. An example is doing a window.open, which synchronously
+  // loads "about:blank", then using document.write add a meta http-equiv
+  // refresh tag, which causes a navigation. In such case, we will arrive at
+  // this function with no request/response timing data and identical load
+  // start/end values. Avoid logging this case, as it doesn't add any
+  // meaningful information to the histogram.
+  if (request_start.is_null())
+    return;
+
   // TODO(dominich): Investigate conditions under which |load_event_start| and
   // |load_event_end| may be NULL as in the non-PT_ case below. Examples in
   // http://crbug.com/112006.
@@ -79,27 +330,175 @@ void DumpPerformanceTiming(const WebPerformance& performance,
     return;
   document_state->set_web_timing_histograms_recorded(true);
 
+  if (!redirect_start.is_null() && !redirect_end.is_null()) {
+    PLT_HISTOGRAM_DRP("PLT.NT_Redirect", redirect_end - redirect_start,
+                      data_reduction_proxy_was_used);
+    PLT_HISTOGRAM_DRP(
+        "PLT.NT_DelayBeforeFetchRedirect",
+        (fetch_start - navigation_start) - (redirect_end - redirect_start),
+        data_reduction_proxy_was_used);
+  } else {
+    PLT_HISTOGRAM_DRP("PLT.NT_DelayBeforeFetch",
+                      fetch_start - navigation_start,
+                      data_reduction_proxy_was_used);
+  }
+  PLT_HISTOGRAM_DRP("PLT.NT_DelayBeforeDomainLookup",
+                    domain_lookup_start - fetch_start,
+                    data_reduction_proxy_was_used);
+  PLT_HISTOGRAM_DRP("PLT.NT_DomainLookup",
+                    domain_lookup_end - domain_lookup_start,
+                    data_reduction_proxy_was_used);
+  PLT_HISTOGRAM_DRP("PLT.NT_DelayBeforeConnect",
+                    connect_start - domain_lookup_end,
+                    data_reduction_proxy_was_used);
+  PLT_HISTOGRAM_DRP("PLT.NT_Connect", connect_end - connect_start,
+                    data_reduction_proxy_was_used);
+  PLT_HISTOGRAM_DRP("PLT.NT_DelayBeforeRequest",
+                    request_start - connect_end,
+                    data_reduction_proxy_was_used);
+  PLT_HISTOGRAM_DRP("PLT.NT_Request", response_start - request_start,
+                    data_reduction_proxy_was_used);
+  PLT_HISTOGRAM_DRP("PLT.NT_Response", response_end - response_start,
+                    data_reduction_proxy_was_used);
+
+  if (!dom_loading.is_null()) {
+    PLT_HISTOGRAM_DRP("PLT.NT_DelayBeforeDomLoading",
+                      dom_loading - response_start,
+                      data_reduction_proxy_was_used);
+  }
+  if (!dom_interactive.is_null() && !dom_loading.is_null()) {
+    PLT_HISTOGRAM_DRP("PLT.NT_DomLoading",
+                      dom_interactive - dom_loading,
+                      data_reduction_proxy_was_used);
+  }
+  if (!dom_content_loaded_start.is_null() && !dom_interactive.is_null()) {
+    PLT_HISTOGRAM_DRP("PLT.NT_DomInteractive",
+                      dom_content_loaded_start - dom_interactive,
+                      data_reduction_proxy_was_used);
+  }
+  if (!dom_content_loaded_start.is_null() &&
+      !dom_content_loaded_end.is_null() ) {
+    PLT_HISTOGRAM_DRP("PLT.NT_DomContentLoaded",
+                      dom_content_loaded_end - dom_content_loaded_start,
+                      data_reduction_proxy_was_used);
+  }
+  if (!dom_content_loaded_end.is_null() && !load_event_start.is_null()) {
+    PLT_HISTOGRAM_DRP("PLT.NT_DelayBeforeLoadEvent",
+                      load_event_start - dom_content_loaded_end,
+                      data_reduction_proxy_was_used);
+  }
+
   // TODO(simonjam): There is no way to distinguish between abandonment and
   // intentional Javascript navigation before the load event fires.
   // TODO(dominich): Load type breakdown
   if (!load_event_start.is_null()) {
-    PLT_HISTOGRAM("PLT.PT_BeginToFinishDoc", load_event_start - begin);
-    PLT_HISTOGRAM("PLT.PT_CommitToFinishDoc",
-                  load_event_start - response_start);
+    PLT_HISTOGRAM_WITH_GWS_VARIANT("PLT.PT_BeginToFinishDoc",
+                                   load_event_start - begin,
+                                   came_from_websearch,
+                                   websearch_chrome_joint_experiment_id,
+                                   preview_state, preview_experiment_id);
+    PLT_HISTOGRAM_WITH_GWS_VARIANT("PLT.PT_CommitToFinishDoc",
+                                   load_event_start - response_start,
+                                   came_from_websearch,
+                                   websearch_chrome_joint_experiment_id,
+                                   preview_state, preview_experiment_id);
+    PLT_HISTOGRAM_WITH_GWS_VARIANT("PLT.PT_RequestToFinishDoc",
+                                   load_event_start - navigation_start,
+                                   came_from_websearch,
+                                   websearch_chrome_joint_experiment_id,
+                                   preview_state, preview_experiment_id);
+    if (data_reduction_proxy_was_used) {
+      PLT_HISTOGRAM("PLT.PT_BeginToFinishDoc_DataReductionProxy",
+                    load_event_start - begin);
+      PLT_HISTOGRAM("PLT.PT_CommitToFinishDoc_DataReductionProxy",
+                    load_event_start - response_start);
+      PLT_HISTOGRAM("PLT.PT_RequestToFinishDoc_DataReductionProxy",
+                    load_event_start - navigation_start);
+    }
   }
   if (!load_event_end.is_null()) {
-    PLT_HISTOGRAM("PLT.PT_BeginToFinish", load_event_end - begin);
-    PLT_HISTOGRAM("PLT.PT_CommitToFinish", load_event_end - response_start);
-    PLT_HISTOGRAM("PLT.PT_RequestToFinish", load_event_end - navigation_start);
-    PLT_HISTOGRAM("PLT.PT_StartToFinish", load_event_end - request_start);
+    PLT_HISTOGRAM_WITH_GWS_VARIANT("PLT.PT_BeginToFinish",
+                                   load_event_end - begin,
+                                   came_from_websearch,
+                                   websearch_chrome_joint_experiment_id,
+                                   preview_state, preview_experiment_id);
+    PLT_HISTOGRAM_WITH_GWS_VARIANT("PLT.PT_CommitToFinish",
+                                   load_event_end - response_start,
+                                   came_from_websearch,
+                                   websearch_chrome_joint_experiment_id,
+                                   preview_state, preview_experiment_id);
+    PLT_HISTOGRAM_WITH_GWS_VARIANT("PLT.PT_RequestToFinish",
+                                   load_event_end - navigation_start,
+                                   came_from_websearch,
+                                   websearch_chrome_joint_experiment_id,
+                                   preview_state, preview_experiment_id);
+    PLT_HISTOGRAM_WITH_GWS_VARIANT("PLT.PT_StartToFinish",
+                                   load_event_end - request_start,
+                                   came_from_websearch,
+                                   websearch_chrome_joint_experiment_id,
+                                   preview_state, preview_experiment_id);
+    if (data_reduction_proxy_was_used) {
+      PLT_HISTOGRAM("PLT.PT_BeginToFinish_DataReductionProxy",
+                    load_event_end - begin);
+      PLT_HISTOGRAM("PLT.PT_CommitToFinish_DataReductionProxy",
+                    load_event_end - response_start);
+      PLT_HISTOGRAM("PLT.PT_RequestToFinish_DataReductionProxy",
+                    load_event_end - navigation_start);
+      PLT_HISTOGRAM("PLT.PT_StartToFinish_DataReductionProxy",
+                    load_event_end - request_start);
+    }
   }
   if (!load_event_start.is_null() && !load_event_end.is_null()) {
     PLT_HISTOGRAM("PLT.PT_FinishDocToFinish",
                   load_event_end - load_event_start);
+    PLT_HISTOGRAM_DRP("PLT.NT_LoadEvent",
+                      load_event_end - load_event_start,
+                      data_reduction_proxy_was_used);
+
+    if (data_reduction_proxy_was_used)
+      PLT_HISTOGRAM("PLT.PT_FinishDocToFinish_DataReductionProxy",
+                    load_event_end - load_event_start);
   }
-  PLT_HISTOGRAM("PLT.PT_BeginToCommit", response_start - begin);
-  PLT_HISTOGRAM("PLT.PT_RequestToStart", request_start - navigation_start);
-  PLT_HISTOGRAM("PLT.PT_StartToCommit", response_start - request_start);
+  if (!dom_content_loaded_start.is_null()) {
+    PLT_HISTOGRAM_WITH_GWS_VARIANT("PLT.PT_RequestToDomContentLoaded",
+                                   dom_content_loaded_start - navigation_start,
+                                   came_from_websearch,
+                                   websearch_chrome_joint_experiment_id,
+                                   preview_state, preview_experiment_id);
+    if (data_reduction_proxy_was_used)
+      PLT_HISTOGRAM("PLT.PT_RequestToDomContentLoaded_DataReductionProxy",
+                    dom_content_loaded_start - navigation_start);
+  }
+  PLT_HISTOGRAM_WITH_GWS_VARIANT("PLT.PT_BeginToCommit",
+                                 response_start - begin,
+                                 came_from_websearch,
+                                 websearch_chrome_joint_experiment_id,
+                                 preview_state, preview_experiment_id);
+  PLT_HISTOGRAM_WITH_GWS_VARIANT("PLT.PT_RequestToStart",
+                                 request_start - navigation_start,
+                                 came_from_websearch,
+                                 websearch_chrome_joint_experiment_id,
+                                 preview_state, preview_experiment_id);
+  PLT_HISTOGRAM_WITH_GWS_VARIANT("PLT.PT_StartToCommit",
+                                 response_start - request_start,
+                                 came_from_websearch,
+                                 websearch_chrome_joint_experiment_id,
+                                 preview_state, preview_experiment_id);
+  PLT_HISTOGRAM_WITH_GWS_VARIANT("PLT.PT_RequestToCommit",
+                                 response_start - navigation_start,
+                                 came_from_websearch,
+                                 websearch_chrome_joint_experiment_id,
+                                 preview_state, preview_experiment_id);
+  if (data_reduction_proxy_was_used) {
+    PLT_HISTOGRAM("PLT.PT_BeginToCommit_DataReductionProxy",
+                  response_start - begin);
+    PLT_HISTOGRAM("PLT.PT_RequestToStart_DataReductionProxy",
+                  request_start - navigation_start);
+    PLT_HISTOGRAM("PLT.PT_StartToCommit_DataReductionProxy",
+                  response_start - request_start);
+    PLT_HISTOGRAM("PLT.PT_RequestToCommit_DataReductionProxy",
+                  response_start - navigation_start);
+  }
 }
 
 enum MissingStartType {
@@ -144,12 +543,31 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
   DocumentState* document_state =
       DocumentState::FromDataSource(frame->dataSource());
 
+  bool data_reduction_proxy_was_used = DataReductionProxyWasUsed(frame);
+  bool came_from_websearch =
+      IsFromGoogleSearchResult(frame->document().url(),
+                               GURL(frame->document().referrer()));
+  int websearch_chrome_joint_experiment_id = kNoExperiment;
+  if (came_from_websearch) {
+    websearch_chrome_joint_experiment_id =
+        GetQueryStringBasedExperiment(GURL(frame->document().referrer()));
+  }
+
+  GwsPreviewState preview_state = PREVIEW_NONE;
+  int preview_experiment_id = websearch_chrome_joint_experiment_id;
+  GetPreviewState(frame, came_from_websearch, data_reduction_proxy_was_used,
+                  &preview_state, &preview_experiment_id);
+
   // Times based on the Web Timing metrics.
   // http://www.w3.org/TR/navigation-timing/
   // TODO(tonyg, jar): We are in the process of vetting these metrics against
   // the existing ones. Once we understand any differences, we will standardize
   // on a single set of metrics.
-  DumpPerformanceTiming(frame->performance(), document_state);
+  DumpPerformanceTiming(frame->performance(), document_state,
+                        data_reduction_proxy_was_used,
+                        came_from_websearch,
+                        websearch_chrome_joint_experiment_id,
+                        preview_state, preview_experiment_id);
 
   // If we've already dumped, do nothing.
   // This simple bool works because we only dump for the main frame.
@@ -252,11 +670,19 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
     // See bug http://crbug.com/125273 for details.
     if (begin <= first_paint) {
       begin_to_first_paint.reset(new TimeDelta(first_paint - begin));
-      PLT_HISTOGRAM("PLT.BeginToFirstPaint", *begin_to_first_paint);
+      PLT_HISTOGRAM_WITH_GWS_VARIANT("PLT.BeginToFirstPaint",
+                                     *begin_to_first_paint,
+                                     came_from_websearch,
+                                     websearch_chrome_joint_experiment_id,
+                                     preview_state, preview_experiment_id);
     }
     DCHECK(commit <= first_paint);
     commit_to_first_paint.reset(new TimeDelta(first_paint - commit));
-    PLT_HISTOGRAM("PLT.CommitToFirstPaint", *commit_to_first_paint);
+    PLT_HISTOGRAM_WITH_GWS_VARIANT("PLT.CommitToFirstPaint",
+                                   *commit_to_first_paint,
+                                   came_from_websearch,
+                                   websearch_chrome_joint_experiment_id,
+                                   preview_state, preview_experiment_id);
   }
   if (!first_paint_after_load.is_null()) {
     // 'first_paint_after_load' can be before 'begin' for an unknown reason.
@@ -272,8 +698,14 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
     PLT_HISTOGRAM("PLT.FinishToFirstPaintAfterLoad",
         first_paint_after_load - finish_all_loads);
   }
-  PLT_HISTOGRAM("PLT.BeginToFinishDoc", begin_to_finish_doc);
-  PLT_HISTOGRAM("PLT.BeginToFinish", begin_to_finish_all_loads);
+  PLT_HISTOGRAM_WITH_GWS_VARIANT("PLT.BeginToFinishDoc", begin_to_finish_doc,
+                                 came_from_websearch,
+                                 websearch_chrome_joint_experiment_id,
+                                 preview_state, preview_experiment_id);
+  PLT_HISTOGRAM_WITH_GWS_VARIANT("PLT.BeginToFinish", begin_to_finish_all_loads,
+                                 came_from_websearch,
+                                 websearch_chrome_joint_experiment_id,
+                                 preview_state, preview_experiment_id);
 
   // Load type related histograms.
   switch (load_type) {
@@ -321,122 +753,36 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
       break;
   }
 
-  if (document_state->was_fetched_via_proxy() &&
-      document_state->was_fetched_via_spdy() &&
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kSpdyProxyOrigin)) {
+  if (data_reduction_proxy_was_used) {
     UMA_HISTOGRAM_ENUMERATION(
         "PLT.Abandoned_SpdyProxy", abandoned_page ? 1 : 0, 2);
     PLT_HISTOGRAM("PLT.BeginToFinishDoc_SpdyProxy", begin_to_finish_doc);
     PLT_HISTOGRAM("PLT.BeginToFinish_SpdyProxy", begin_to_finish_all_loads);
   }
 
-  // Histograms to determine if prefetch & prerender has an impact on PLT.
-  static const bool prefetching_fieldtrial =
-      base::FieldTrialList::TrialExists("Prefetch");
-  if (prefetching_fieldtrial) {
-    if (document_state->was_prefetcher()) {
-      PLT_HISTOGRAM(base::FieldTrial::MakeName(
-          "PLT.BeginToFinishDoc_ContentPrefetcher", "Prefetch"),
-          begin_to_finish_doc);
-      PLT_HISTOGRAM(base::FieldTrial::MakeName(
-          "PLT.BeginToFinish_ContentPrefetcher", "Prefetch"),
-          begin_to_finish_all_loads);
-    }
-    if (document_state->was_referred_by_prefetcher()) {
-      PLT_HISTOGRAM(base::FieldTrial::MakeName(
-          "PLT.BeginToFinishDoc_ContentPrefetcherReferrer", "Prefetch"),
-          begin_to_finish_doc);
-      PLT_HISTOGRAM(base::FieldTrial::MakeName(
-          "PLT.BeginToFinish_ContentPrefetcherReferrer", "Prefetch"),
-          begin_to_finish_all_loads);
-    }
-    UMA_HISTOGRAM_ENUMERATION(base::FieldTrial::MakeName(
-        "PLT.Abandoned", "Prefetch"),
-        abandoned_page ? 1 : 0, 2);
-    PLT_HISTOGRAM(base::FieldTrial::MakeName(
-        "PLT.BeginToFinishDoc", "Prefetch"),
-        begin_to_finish_doc);
-    PLT_HISTOGRAM(base::FieldTrial::MakeName(
-        "PLT.BeginToFinish", "Prefetch"),
-        begin_to_finish_all_loads);
+  if (document_state->was_prefetcher()) {
+    PLT_HISTOGRAM("PLT.BeginToFinishDoc_ContentPrefetcher",
+                  begin_to_finish_doc);
+    PLT_HISTOGRAM("PLT.BeginToFinish_ContentPrefetcher",
+                  begin_to_finish_all_loads);
   }
-
-  static const bool prerendering_fieldtrial =
-      base::FieldTrialList::TrialExists("Prerender");
-  if (prerendering_fieldtrial) {
-    if (document_state->was_prefetcher()) {
-      PLT_HISTOGRAM(base::FieldTrial::MakeName(
-          "PLT.BeginToFinishDoc_ContentPrefetcher", "Prerender"),
-          begin_to_finish_doc);
-      PLT_HISTOGRAM(base::FieldTrial::MakeName(
-          "PLT.BeginToFinish_ContentPrefetcher", "Prerender"),
-          begin_to_finish_all_loads);
-    }
-    if (document_state->was_referred_by_prefetcher()) {
-      PLT_HISTOGRAM(base::FieldTrial::MakeName(
-          "PLT.BeginToFinishDoc_ContentPrefetcherReferrer", "Prerender"),
-          begin_to_finish_doc);
-      PLT_HISTOGRAM(base::FieldTrial::MakeName(
-          "PLT.BeginToFinish_ContentPrefetcherReferrer", "Prerender"),
-          begin_to_finish_all_loads);
-    }
-    UMA_HISTOGRAM_ENUMERATION(base::FieldTrial::MakeName(
-        "PLT.Abandoned", "Prerender"),
-        abandoned_page ? 1 : 0, 2);
-    PLT_HISTOGRAM(base::FieldTrial::MakeName(
-        "PLT.BeginToFinishDoc", "Prerender"),
-        begin_to_finish_doc);
-    PLT_HISTOGRAM(base::FieldTrial::MakeName(
-        "PLT.BeginToFinish", "Prerender"),
-        begin_to_finish_all_loads);
+  if (document_state->was_referred_by_prefetcher()) {
+    PLT_HISTOGRAM("PLT.BeginToFinishDoc_ContentPrefetcherReferrer",
+                  begin_to_finish_doc);
+    PLT_HISTOGRAM("PLT.BeginToFinish_ContentPrefetcherReferrer",
+                  begin_to_finish_all_loads);
   }
-
-  // Histograms to determine if SDCH has an impact.
-  // TODO(jar): Consider removing per-link load types and the enumeration.
-  static const bool use_sdch_histogram =
-      base::FieldTrialList::TrialExists("GlobalSdch");
-  if (use_sdch_histogram) {
-    UMA_HISTOGRAM_ENUMERATION(
-        base::FieldTrial::MakeName("PLT.LoadType", "GlobalSdch"),
-        load_type, DocumentState::kLoadTypeMax);
-    switch (load_type) {
-      case DocumentState::NORMAL_LOAD:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_NormalLoad", "GlobalSdch"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_NORMAL:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadNormal", "GlobalSdch"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_RELOAD:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadReload", "GlobalSdch"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_CACHE_STALE_OK:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadStaleOk", "GlobalSdch"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_CACHE_ONLY:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadCacheOnly", "GlobalSdch"),
-            begin_to_finish_all_loads);
-        break;
-      default:
-        break;
-    }
+  if (document_state->was_after_preconnect_request()) {
+    PLT_HISTOGRAM("PLT.BeginToFinishDoc_AfterPreconnectRequest",
+                  begin_to_finish_doc);
+    PLT_HISTOGRAM("PLT.BeginToFinish_AfterPreconnectRequest",
+                  begin_to_finish_all_loads);
   }
 
   // TODO(mpcomplete): remove the extension-related histograms after we collect
   // enough data. http://crbug.com/100411
-  chrome::ChromeContentRendererClient* client =
-      static_cast<chrome::ChromeContentRendererClient*>(
-          content::GetContentClient()->renderer());
-
-  const bool use_adblock_histogram = client->IsAdblockInstalled();
+  const bool use_adblock_histogram =
+      ChromeContentRendererClient::IsAdblockInstalled();
   if (use_adblock_histogram) {
     UMA_HISTOGRAM_ENUMERATION(
         "PLT.Abandoned_ExtensionAdblock",
@@ -467,7 +813,8 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
     }
   }
 
-  const bool use_adblockplus_histogram = client->IsAdblockPlusInstalled();
+  const bool use_adblockplus_histogram =
+      ChromeContentRendererClient::IsAdblockPlusInstalled();
   if (use_adblockplus_histogram) {
     UMA_HISTOGRAM_ENUMERATION(
         "PLT.Abandoned_ExtensionAdblockPlus",
@@ -499,7 +846,7 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
   }
 
   const bool use_webrequest_adblock_histogram =
-      client->IsAdblockWithWebRequestInstalled();
+      ChromeContentRendererClient::IsAdblockWithWebRequestInstalled();
   if (use_webrequest_adblock_histogram) {
     UMA_HISTOGRAM_ENUMERATION(
         "PLT.Abandoned_ExtensionWebRequestAdblock",
@@ -531,7 +878,8 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
   }
 
   const bool use_webrequest_adblockplus_histogram =
-      client->IsAdblockPlusWithWebRequestInstalled();
+      ChromeContentRendererClient::
+          IsAdblockPlusWithWebRequestInstalled();
   if (use_webrequest_adblockplus_histogram) {
     UMA_HISTOGRAM_ENUMERATION(
         "PLT.Abandoned_ExtensionWebRequestAdblockPlus",
@@ -563,7 +911,8 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
   }
 
   const bool use_webrequest_other_histogram =
-      client->IsOtherExtensionWithWebRequestInstalled();
+      ChromeContentRendererClient::
+          IsOtherExtensionWithWebRequestInstalled();
   if (use_webrequest_other_histogram) {
     UMA_HISTOGRAM_ENUMERATION(
         "PLT.Abandoned_ExtensionWebRequestOther",
@@ -594,137 +943,24 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
     }
   }
 
-  // For the SPDY field trials, we need to verify that the page loaded was
-  // the type we requested:
-  //   if we asked for a SPDY request, we got a SPDY request
-  //   if we asked for a HTTP request, we got a HTTP request
-  // Due to spdy version mismatches, it is possible that we ask for SPDY
-  // but didn't get SPDY.
-  static const bool use_spdy_histogram =
-      base::FieldTrialList::TrialExists("SpdyImpact");
-  if (use_spdy_histogram) {
-    // We take extra effort to only compute these once.
-    static bool in_spdy_trial = base::FieldTrialList::Find(
-        "SpdyImpact")->group_name() == "npn_with_spdy";
-    static bool in_http_trial = base::FieldTrialList::Find(
-        "SpdyImpact")->group_name() == "npn_with_http";
-
-    bool spdy_trial_success = document_state->was_fetched_via_spdy() ?
-        in_spdy_trial : in_http_trial;
-    if (spdy_trial_success) {
-      // Histograms to determine if SPDY has an impact for https traffic.
-      // TODO(mbelshe): After we've seen the difference between BeginToFinish
-      //                and StartToFinish, consider removing one or the other.
-      if (scheme_type == URLPattern::SCHEME_HTTPS &&
-          document_state->was_npn_negotiated()) {
-        UMA_HISTOGRAM_ENUMERATION(
-            base::FieldTrial::MakeName("PLT.Abandoned", "SpdyImpact"),
-            abandoned_page ? 1 : 0, 2);
-        switch (load_type) {
-          case DocumentState::LINK_LOAD_NORMAL:
-            PLT_HISTOGRAM(base::FieldTrial::MakeName(
-                "PLT.BeginToFinish_LinkLoadNormal", "SpdyImpact"),
-                begin_to_finish_all_loads);
-            PLT_HISTOGRAM(base::FieldTrial::MakeName(
-                "PLT.StartToFinish_LinkLoadNormal", "SpdyImpact"),
-                start_to_finish_all_loads);
-            PLT_HISTOGRAM(base::FieldTrial::MakeName(
-                "PLT.StartToCommit_LinkLoadNormal", "SpdyImpact"),
-                start_to_commit);
-            break;
-          case DocumentState::NORMAL_LOAD:
-            PLT_HISTOGRAM(base::FieldTrial::MakeName(
-                "PLT.BeginToFinish_NormalLoad", "SpdyImpact"),
-                begin_to_finish_all_loads);
-            PLT_HISTOGRAM(base::FieldTrial::MakeName(
-                "PLT.StartToFinish_NormalLoad", "SpdyImpact"),
-                start_to_finish_all_loads);
-            PLT_HISTOGRAM(base::FieldTrial::MakeName(
-                "PLT.StartToCommit_NormalLoad", "SpdyImpact"),
-                start_to_commit);
-            break;
-          default:
-            break;
-        }
-      }
-
-      // Histograms to compare the impact of alternate protocol over http
-      // traffic: when spdy is used vs. when http is used.
-      if (scheme_type == URLPattern::SCHEME_HTTP &&
-          document_state->was_alternate_protocol_available()) {
-        if (!document_state->was_npn_negotiated()) {
-          // This means that even there is alternate protocols for npn_http or
-          // npn_spdy, they are not taken (due to the base::FieldTrial).
-          switch (load_type) {
-            case DocumentState::LINK_LOAD_NORMAL:
-              PLT_HISTOGRAM(
-                  "PLT.StartToFinish_LinkLoadNormal_AlternateProtocol_http",
-                  start_to_finish_all_loads);
-              PLT_HISTOGRAM(
-                  "PLT.StartToCommit_LinkLoadNormal_AlternateProtocol_http",
-                  start_to_commit);
-              break;
-            case DocumentState::NORMAL_LOAD:
-              PLT_HISTOGRAM(
-                  "PLT.StartToFinish_NormalLoad_AlternateProtocol_http",
-                  start_to_finish_all_loads);
-              PLT_HISTOGRAM(
-                  "PLT.StartToCommit_NormalLoad_AlternateProtocol_http",
-                  start_to_commit);
-              break;
-            default:
-              break;
-          }
-        } else if (document_state->was_fetched_via_spdy()) {
-          switch (load_type) {
-            case DocumentState::LINK_LOAD_NORMAL:
-              PLT_HISTOGRAM(
-                  "PLT.StartToFinish_LinkLoadNormal_AlternateProtocol_spdy",
-                  start_to_finish_all_loads);
-              PLT_HISTOGRAM(
-                  "PLT.StartToCommit_LinkLoadNormal_AlternateProtocol_spdy",
-                  start_to_commit);
-              break;
-            case DocumentState::NORMAL_LOAD:
-              PLT_HISTOGRAM(
-                  "PLT.StartToFinish_NormalLoad_AlternateProtocol_spdy",
-                  start_to_finish_all_loads);
-              PLT_HISTOGRAM(
-                  "PLT.StartToCommit_NormalLoad_AlternateProtocol_spdy",
-                  start_to_commit);
-              break;
-            default:
-              break;
-          }
-        }
-      }
-    }
-  }
-
-  // Record SpdyCwnd field trial results.
+  // Record SpdyCwnd results.
   if (document_state->was_fetched_via_spdy()) {
     switch (load_type) {
       case DocumentState::LINK_LOAD_NORMAL:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadNormal", "SpdyCwnd"),
-            begin_to_finish_all_loads);
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.StartToFinish_LinkLoadNormal", "SpdyCwnd"),
-            start_to_finish_all_loads);
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.StartToCommit_LinkLoadNormal", "SpdyCwnd"),
-            start_to_commit);
+        PLT_HISTOGRAM("PLT.BeginToFinish_LinkLoadNormal_cwndDynamic",
+                      begin_to_finish_all_loads);
+        PLT_HISTOGRAM("PLT.StartToFinish_LinkLoadNormal_cwndDynamic",
+                      start_to_finish_all_loads);
+        PLT_HISTOGRAM("PLT.StartToCommit_LinkLoadNormal_cwndDynamic",
+                      start_to_commit);
         break;
       case DocumentState::NORMAL_LOAD:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_NormalLoad", "SpdyCwnd"),
-            begin_to_finish_all_loads);
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.StartToFinish_NormalLoad", "SpdyCwnd"),
-            start_to_finish_all_loads);
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.StartToCommit_NormalLoad", "SpdyCwnd"),
-            start_to_commit);
+        PLT_HISTOGRAM("PLT.BeginToFinish_NormalLoad_cwndDynamic",
+                      begin_to_finish_all_loads);
+        PLT_HISTOGRAM("PLT.StartToFinish_NormalLoad_cwndDynamic",
+                      start_to_finish_all_loads);
+        PLT_HISTOGRAM("PLT.StartToCommit_NormalLoad_cwndDynamic",
+                      start_to_commit);
         break;
       default:
         break;
@@ -758,43 +994,6 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
     }
   }
 
-  // Histograms to determine if disabling overlapped TCP reads
-  // has an impact on PLT.
-  static const bool use_overlapped_read_histogram =
-      base::FieldTrialList::TrialExists("OverlappedReadImpact");
-  if (use_overlapped_read_histogram) {
-    UMA_HISTOGRAM_ENUMERATION(
-        base::FieldTrial::MakeName("PLT.Abandoned", "OverlappedReadImpact"),
-        abandoned_page ? 1 : 0, 2);
-    UMA_HISTOGRAM_ENUMERATION(
-        base::FieldTrial::MakeName("PLT.LoadType", "OverlappedReadImpact"),
-        load_type, DocumentState::kLoadTypeMax);
-    switch (load_type) {
-      case DocumentState::NORMAL_LOAD:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_NormalLoad", "OverlappedReadImpact"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_NORMAL:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadNormal", "OverlappedReadImpact"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_RELOAD:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadReload", "OverlappedReadImpact"),
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_CACHE_STALE_OK:
-        PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadStaleOk", "OverlappedReadImpact"),
-            begin_to_finish_all_loads);
-        break;
-      default:
-        break;
-    }
-  }
-
   // Site isolation metrics.
   UMA_HISTOGRAM_COUNTS("SiteIsolation.PageLoadsWithCrossSiteFrameAccess",
                        cross_origin_access_count_);
@@ -803,28 +1002,6 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
 
   // Log the PLT to the info log.
   LogPageLoadTime(document_state, frame->dataSource());
-
-  // Record histograms for cache sensitivity analysis.
-  static const bool cache_sensitivity_histogram =
-      base::FieldTrialList::TrialExists("CacheSensitivityAnalysis");
-  if (cache_sensitivity_histogram) {
-    PLT_HISTOGRAM(base::FieldTrial::MakeName(
-        "PLT.BeginToFinishDoc_CacheSensitivity", "CacheSensitivityAnalysis"),
-                  begin_to_finish_doc);
-    PLT_HISTOGRAM(base::FieldTrial::MakeName(
-        "PLT.BeginToFinish_CacheSensitivity", "CacheSensitivityAnalysis"),
-                  begin_to_finish_all_loads);
-    if (begin_to_first_paint.get()) {
-    PLT_HISTOGRAM(base::FieldTrial::MakeName(
-        "PLT.BeginToFirstPaint_CacheSensitivity", "CacheSensitivityAnalysis"),
-                  *begin_to_first_paint);
-    }
-    if (commit_to_first_paint.get()) {
-      PLT_HISTOGRAM(base::FieldTrial::MakeName(
-        "PLT.CommitToFirstPaint_CacheSensitivity", "CacheSensitivityAnalysis"),
-                    *commit_to_first_paint);
-    }
-  }
 
   // Since there are currently no guarantees that renderer histograms will be
   // sent to the browser, we initiate a PostTask here to be sure that we send

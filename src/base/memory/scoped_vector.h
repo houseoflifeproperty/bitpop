@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/logging.h"
 #include "base/move.h"
 #include "base/stl_util.h"
 
@@ -41,8 +42,8 @@ class ScopedVector {
     return *this;
   }
 
-  T*& operator[](size_t index) { return v_[index]; }
-  const T* operator[](size_t index) const { return v_[index]; }
+  reference operator[](size_t index) { return v_[index]; }
+  const_reference operator[](size_t index) const { return v_[index]; }
 
   bool empty() const { return v_.empty(); }
   size_t size() const { return v_.size(); }
@@ -63,6 +64,12 @@ class ScopedVector {
   reference back() { return v_.back(); }
 
   void push_back(T* elem) { v_.push_back(elem); }
+
+  void pop_back() {
+    DCHECK(!empty());
+    delete v_.back();
+    v_.pop_back();
+  }
 
   std::vector<T*>& get() { return v_; }
   const std::vector<T*>& get() const { return v_; }

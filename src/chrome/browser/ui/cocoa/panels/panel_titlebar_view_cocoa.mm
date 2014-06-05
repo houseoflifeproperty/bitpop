@@ -8,34 +8,24 @@
 
 #include "base/logging.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
-#include "chrome/browser/themes/theme_service.h"
-#import "chrome/browser/ui/cocoa/hover_image_button.h"
 #import "chrome/browser/ui/cocoa/nsview_additions.h"
 #import "chrome/browser/ui/cocoa/panels/panel_window_controller_cocoa.h"
-#import "chrome/browser/ui/cocoa/themed_window.h"
-#import "chrome/browser/ui/cocoa/tracking_area.h"
 #import "chrome/browser/ui/panels/panel_constants.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#import "third_party/GTM/AppKit/GTMNSBezierPath+RoundRect.h"
-#import "third_party/GTM/AppKit/GTMNSColor+Luminance.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMNSBezierPath+RoundRect.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMNSColor+Luminance.h"
 #include "ui/base/l10n/l10n_util_mac.h"
+#import "ui/base/cocoa/hover_image_button.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/mac/nsimage_cache.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 #include "ui/gfx/image/image.h"
 
-const int kButtonPadding = 8;
-const int kIconAndTextPadding = 5;
-
-// 'Glint' is a speck of light that moves across the titlebar to attract a bit
-// more attention using movement in addition to color of the titlebar.
-// It initially moves fast, then starts to slow down to avoid being annoying
-// if the user chooses not to react on it.
-const double kGlintAnimationDuration = 0.6;
-const double kStartGlintRepeatIntervalSeconds = 0.1;
-const double kFinalGlintRepeatIntervalSeconds = 2.0;
-const double kGlintRepeatIntervalIncreaseFactor = 1.5;
+// 'Glint' is a glowing light animation on the titlebar to attract user's
+// attention. Numbers are arbitrary, based on several tries.
+const double kGlintAnimationDuration = 1.5;
+const double kGlintRepeatIntervalSeconds = 1.0;
+const int kNumberOfGlintRepeats = 4;  // 5 total, including initial flash.
 
 // Used to implement TestingAPI
 static NSEvent* MakeMouseEvent(NSEventType type,
@@ -145,82 +135,27 @@ static NSEvent* MakeMouseEvent(NSEventType type,
 }
 
 - (void)drawRect:(NSRect)rect {
-  ThemeService* theme =
-      static_cast<ThemeService*>([[self window] themeProvider]);
-
-  NSColor* titleColor = nil;
-
   if (isDrawingAttention_) {
-    // Use system highlight color for DrawAttention state.
-    NSColor* attentionColor = [NSColor selectedTextBackgroundColor];
+    NSColor* attentionColor = [NSColor colorWithCalibratedRed:0x53/255.0
+                                                        green:0xa9/255.0
+                                                         blue:0x3f/255.0
+                                                        alpha:1.0];
     [attentionColor set];
     NSRectFillUsingOperation([self bounds], NSCompositeSourceOver);
-    // Cover it with semitransparent gradient for better look.
-    NSColor* startColor = [NSColor colorWithCalibratedWhite:1.0 alpha:0.2];
-    NSColor* endColor = [NSColor colorWithCalibratedWhite:0.0 alpha:0.2];
-    scoped_nsobject<NSGradient> gradient(
-      [[NSGradient alloc] initWithStartingColor:startColor
-                                    endingColor:endColor]);
-    [gradient drawInRect:[self bounds] angle:270.0];
-
-    titleColor = [attentionColor gtm_legibleTextColor];
 
     if ([glintAnimation_ isAnimating]) {
-      scoped_nsobject<NSGradient> glint([NSGradient alloc]);
-      NSColor* gold =
-          [NSColor colorWithCalibratedRed:0.8 green:0.8 blue:0.0 alpha:1.0];
-      [glint initWithColorsAndLocations:gold, 0.0,
-           [NSColor colorWithCalibratedWhite:1.0 alpha:0.4], 0.3,
-           [NSColor colorWithCalibratedWhite:1.0 alpha:0.0], 1.0,
-           nil];
+      base::scoped_nsobject<NSGradient> glint([NSGradient alloc]);
+      float currentAlpha = 0.8 * [glintAnimation_ currentValue];
+      NSColor* startColor = [NSColor colorWithCalibratedWhite:1.0
+                                                        alpha:currentAlpha];
+      NSColor* endColor = [NSColor colorWithCalibratedWhite:1.0
+                                                      alpha:0.0];
+      [glint initWithColorsAndLocations:
+           startColor, 0.0, startColor, 0.3, endColor, 1.0, nil];
       NSRect bounds = [self bounds];
-      NSPoint point = bounds.origin;
-      // The size and position values are experimentally choosen to create
-      // a "speck of light attached to the top edge" effect.
-      int gradientRadius = NSHeight(bounds) * 2;
-      point.y += gradientRadius / 2;
-      double rangeOfMotion = NSWidth(bounds) + 4 * gradientRadius;
-      double startPoint = - 2 * gradientRadius;
-      point.x = startPoint + rangeOfMotion * [glintAnimation_ currentValue];
-      [glint drawFromCenter:point
-                     radius:0.0
-                   toCenter:point
-                     radius:gradientRadius
-                    options:NSGradientDrawsBeforeStartingLocation];
+      [glint drawInRect:bounds relativeCenterPosition:NSZeroPoint];
     }
-  } else if (theme && !theme->UsingDefaultTheme()) {
-    NSColor* backgroundColor = nil;
-    if ([[self window] isMainWindow]) {
-      backgroundColor = theme->GetNSImageColorNamed(IDR_THEME_TOOLBAR, true);
-    } else {
-      // Based on -[TabView drawRect:], we need to check if the theme has an
-      // IDR_THEME_TAB_BACKGROUND or IDR_THEME_FRAME resource; otherwise,
-      // we'll potentially end up with a bizarre looking blue background for
-      // inactive tabs, which looks really out of place on a Mac.
-      if (theme->HasCustomImage(IDR_THEME_TAB_BACKGROUND) ||
-          theme->HasCustomImage(IDR_THEME_FRAME)) {
-        backgroundColor =
-            theme->GetNSImageColorNamed(IDR_THEME_TAB_BACKGROUND, true);
-      } else {
-        backgroundColor = [[self window] backgroundColor];  // Fallback.
-      }
-    }
-    // Fill with white to avoid bleeding the system titlebar through
-    // semitransparent theme images.
-    [[NSColor whiteColor] set];
-    NSRectFill([self bounds]);
-
-    NSPoint phase = [[self window] themePatternPhase];
-    [[NSGraphicsContext currentContext] setPatternPhase:phase];
-    DCHECK(backgroundColor);
-    [backgroundColor set];
-    NSRectFillUsingOperation([self bounds], NSCompositeSourceOver);
-
-    titleColor = [[self window] isMainWindow]
-        ? theme->GetNSColor(ThemeService::COLOR_TAB_TEXT, true)
-        : theme->GetNSColor(ThemeService::COLOR_BACKGROUND_TAB_TEXT, true);
   } else {
-    // Default theme or no theme.
     BOOL isActive = [[self window] isMainWindow];
 
     // If titlebar is close to minimized state or is at minimized state and only
@@ -257,14 +192,12 @@ static NSEvent* MakeMouseEvent(NSEventType type,
       [backgroundColor set];
       NSRectFill([self bounds]);
     }
-
-    titleColor = [NSColor colorWithCalibratedRed:0xf9/255.0
-                                           green:0xf9/255.0
-                                            blue:0xf9/255.0
-                                           alpha:1.0];
   }
 
-  DCHECK(titleColor);
+  NSColor* titleColor = [NSColor colorWithCalibratedRed:0xf9/255.0
+                                                  green:0xf9/255.0
+                                                   blue:0xf9/255.0
+                                                  alpha:1.0];
   [title_ setTextColor:titleColor];
 }
 
@@ -333,11 +266,6 @@ static NSEvent* MakeMouseEvent(NSEventType type,
 
   [[NSNotificationCenter defaultCenter]
       addObserver:self
-         selector:@selector(didChangeTheme:)
-             name:kBrowserThemeDidChangeNotification
-           object:nil];
-  [[NSNotificationCenter defaultCenter]
-      addObserver:self
          selector:@selector(didChangeFrame:)
              name:NSViewFrameDidChangeNotification
            object:self];
@@ -359,11 +287,8 @@ static NSEvent* MakeMouseEvent(NSEventType type,
                  pressedImage:(NSImage*)pressedImage
                       toolTip:(NSString*)toolTip {
   [button setDefaultImage:image];
-  [button setDefaultOpacity:1.0];
   [button setHoverImage:hoverImage];
-  [button setHoverOpacity:1.0];
   [button setPressedImage:pressedImage];
-  [button setPressedOpacity:1.0];
   [button setToolTip:toolTip];
   [[button cell] setHighlightsBy:NSNoCellMask];
 }
@@ -398,15 +323,19 @@ static NSEvent* MakeMouseEvent(NSEventType type,
 - (void)updateCustomButtonsLayout {
   NSRect bounds = [self bounds];
   NSRect closeButtonFrame = [customCloseButton_ frame];
+  closeButtonFrame.size.width = panel::kPanelButtonSize;
+  closeButtonFrame.size.height = panel::kPanelButtonSize;
   closeButtonFrame.origin.x =
-      NSWidth(bounds) - NSWidth(closeButtonFrame) - kButtonPadding;
+      NSWidth(bounds) - NSWidth(closeButtonFrame) - panel::kButtonPadding;
   closeButtonFrame.origin.y =
       (NSHeight(bounds) - NSHeight(closeButtonFrame)) / 2;
   [customCloseButton_ setFrame:closeButtonFrame];
 
   NSRect buttonFrame = [minimizeButton_ frame];
+  buttonFrame.size.width = panel::kPanelButtonSize;
+  buttonFrame.size.height = panel::kPanelButtonSize;
   buttonFrame.origin.x =
-      closeButtonFrame.origin.x - NSWidth(buttonFrame) - kButtonPadding;
+      closeButtonFrame.origin.x - NSWidth(buttonFrame) - panel::kButtonPadding;
   buttonFrame.origin.y = (NSHeight(bounds) - NSHeight(buttonFrame)) / 2;
   [minimizeButton_ setFrame:buttonFrame];
   [restoreButton_ setFrame:buttonFrame];
@@ -426,18 +355,20 @@ static NSEvent* MakeMouseEvent(NSEventType type,
   // Place the icon and title at the left edge of the titlebar.
   int iconWidth = NSWidth(iconFrame);
   int titleWidth = NSWidth(titleFrame);
-  int availableWidth = minimizeRestoreButtonFrame.origin.x - kButtonPadding;
+  int availableWidth = minimizeRestoreButtonFrame.origin.x -
+      panel::kTitleAndButtonPadding;
 
-  if (2 * kIconAndTextPadding + iconWidth + titleWidth > availableWidth)
-    titleWidth = availableWidth - iconWidth - 2 * kIconAndTextPadding;
+  int paddings = panel::kTitlebarLeftPadding + panel::kIconAndTitlePadding;
+  if (paddings + iconWidth + titleWidth > availableWidth)
+    titleWidth = availableWidth - iconWidth - paddings;
   if (titleWidth < 0)
     titleWidth = 0;
 
-  iconFrame.origin.x = kIconAndTextPadding;
+  iconFrame.origin.x = panel::kTitlebarLeftPadding;
   iconFrame.origin.y = (NSHeight(bounds) - NSHeight(iconFrame)) / 2;
   [icon_ setFrame:iconFrame];
 
-  titleFrame.origin.x = 2 * kIconAndTextPadding + iconWidth;
+  titleFrame.origin.x = paddings + iconWidth;
   // In bottom-heavy text labels, let's compensate for occasional integer
   // rounding to avoid text label to feel too low.
   titleFrame.origin.y = (NSHeight(bounds) - NSHeight(titleFrame)) / 2 + 2;
@@ -460,10 +391,6 @@ static NSEvent* MakeMouseEvent(NSEventType type,
   [self updateIconAndTitleLayout];
 }
 
-- (void)didChangeTheme:(NSNotification*)notification {
-  [self setNeedsDisplay:YES];
-}
-
 - (void)didChangeMainWindow:(NSNotification*)notification {
   [self setNeedsDisplay:YES];
 }
@@ -477,6 +404,8 @@ static NSEvent* MakeMouseEvent(NSEventType type,
 
   if ([event clickCount] == 1)
     [controller_ onTitlebarMouseClicked:[event modifierFlags]];
+  else if ([event clickCount] == 2)
+    [controller_ onTitlebarDoubleClicked:[event modifierFlags]];
 }
 
 - (void)mouseDragged:(NSEvent*)event {
@@ -531,7 +460,7 @@ static NSEvent* MakeMouseEvent(NSEventType type,
 }
 
 - (void)startGlintAnimation {
-  glintInterval_ = kStartGlintRepeatIntervalSeconds;
+  glintCounter_ = 0;
   [self restartGlintAnimation:nil];
 }
 
@@ -554,19 +483,32 @@ static NSEvent* MakeMouseEvent(NSEventType type,
   [glintAnimation_ startAnimation];
 }
 
+// NSAnimationDelegate method.
 - (void)animationDidEnd:(NSAnimation*)animation {
-  if (animation == glintAnimation_.get()) {  // Restart after a timeout.
-    glintAnimationTimer_.reset([[NSTimer
-        scheduledTimerWithTimeInterval:glintInterval_
-                                target:self
-                              selector:@selector(restartGlintAnimation:)
-                              userInfo:nil
-                               repeats:NO] retain]);
-    // Gradually reduce the frequency of repeating the animation,
-    // calming it down if user decides not to act upon it.
-    if (glintInterval_ < kFinalGlintRepeatIntervalSeconds)
-      glintInterval_ *= kGlintRepeatIntervalIncreaseFactor;
-  }
+  if (animation != glintAnimation_.get())
+    return;
+  if (glintCounter_ >= kNumberOfGlintRepeats)
+    return;
+  glintCounter_++;
+  // Restart after a timeout.
+  glintAnimationTimer_.reset([[NSTimer
+      scheduledTimerWithTimeInterval:kGlintRepeatIntervalSeconds
+                              target:self
+                            selector:@selector(restartGlintAnimation:)
+                            userInfo:nil
+                             repeats:NO] retain]);
+}
+
+// NSAnimationDelegate method.
+- (float)animation:(NSAnimation *)animation
+  valueForProgress:(NSAnimationProgress)progress {
+  if (animation != glintAnimation_.get())
+    return progress;
+
+  // Converts 0..1 progression into a sharper raise/fall.
+  float result = progress < 0.5 ? progress : 1.0 - progress;
+  result = 4.0 * result * result;
+  return result;
 }
 
 // (Private/TestingAPI)

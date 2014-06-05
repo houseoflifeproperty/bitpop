@@ -12,15 +12,13 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "base/string16.h"
-#include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "chrome/browser/autocomplete/history_provider_util.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/common/cancelable_request.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_db_task.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/history/in_memory_url_index_types.h"
 #include "chrome/browser/history/scored_history_match.h"
@@ -101,7 +99,7 @@ class InMemoryURLIndex : public content::NotificationObserver,
   // journals will be stored. |languages| gives a list of language encodings by
   // which URLs and omnibox searches are broken down into words and characters.
   InMemoryURLIndex(Profile* profile,
-                   const FilePath& history_dir,
+                   const base::FilePath& history_dir,
                    const std::string& languages);
   virtual ~InMemoryURLIndex();
 
@@ -117,8 +115,11 @@ class InMemoryURLIndex : public content::NotificationObserver,
   // Scans the history index and returns a vector with all scored, matching
   // history items. This entry point simply forwards the call on to the
   // URLIndexPrivateData class. For a complete description of this function
-  // refer to that class.
-  ScoredHistoryMatches HistoryItemsForTerms(const string16& term_string);
+  // refer to that class.  If |cursor_position| is base::string16::npos, the
+  // function doesn't do anything special with the cursor; this is equivalent
+  // to the cursor being at the end.
+  ScoredHistoryMatches HistoryItemsForTerms(const base::string16& term_string,
+                                            size_t cursor_position);
 
   // Deletes the index entry, if any, for the given |url|.
   void DeleteURL(const GURL& url);
@@ -179,7 +180,7 @@ class InMemoryURLIndex : public content::NotificationObserver,
   // the history database is kept and saves that path to |file_path|. Returns
   // true if |file_path| can be successfully constructed. (This function
   // provided as a hook for unit testing.)
-  bool GetCacheFilePath(FilePath* file_path);
+  bool GetCacheFilePath(base::FilePath* file_path);
 
   // Restores the index's private data from the cache file stored in the
   // profile directory.
@@ -207,8 +208,7 @@ class InMemoryURLIndex : public content::NotificationObserver,
   // successful, sets the private data and notifies any
   // |restore_cache_observer_|. Otherwise, kicks off a rebuild from the history
   // database.
-  void OnCacheLoadDone(
-    scoped_refptr<URLIndexPrivateData> private_data_ptr);
+  void OnCacheLoadDone(scoped_refptr<URLIndexPrivateData> private_data_ptr);
 
   // Callback function that sets the private data from the just-restored-from-
   // file |private_data|. Notifies any |restore_cache_observer_| that the
@@ -221,7 +221,7 @@ class InMemoryURLIndex : public content::NotificationObserver,
 
   // Saves private_data_ to the given |path|. Runs on the UI thread.
   // Provided for unit testing so that a test cache file can be used.
-  void DoSaveToCacheFile(const FilePath& path);
+  void DoSaveToCacheFile(const base::FilePath& path);
 
   // Notifies the observer, if any, of the success of the private data caching.
   // |succeeded| is true on a successful save.
@@ -239,7 +239,9 @@ class InMemoryURLIndex : public content::NotificationObserver,
 
   // Sets the directory wherein the cache file will be maintained.
   // For unit test usage only.
-  void set_history_dir(const FilePath& dir_path) { history_dir_ = dir_path; }
+  void set_history_dir(const base::FilePath& dir_path) {
+    history_dir_ = dir_path;
+  }
 
   // Returns a pointer to our private data. For unit testing only.
   URLIndexPrivateData* private_data() { return private_data_.get(); }
@@ -253,7 +255,7 @@ class InMemoryURLIndex : public content::NotificationObserver,
   // Directory where cache file resides. This is, except when unit testing,
   // the same directory in which the profile's history database is found. It
   // should never be empty.
-  FilePath history_dir_;
+  base::FilePath history_dir_;
 
   // Languages used during the word-breaking process during indexing.
   std::string languages_;

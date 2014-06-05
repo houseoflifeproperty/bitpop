@@ -29,6 +29,7 @@
 #include "internal.h"
 #include "network.h"
 #include "os_support.h"
+#include "rtpproto.h"
 #include "rtsp.h"
 #include "rdt.h"
 #include "url.h"
@@ -76,8 +77,8 @@ static inline int read_line(AVFormatContext *s, char *rbuf, const int rbufsize,
 
     do {
         ret = ffurl_read_complete(rt->rtsp_hd, rbuf + idx, 1);
-        if (ret < 0)
-            return ret;
+        if (ret <= 0)
+            return ret ? ret : AVERROR_EOF;
         if (rbuf[idx] == '\r') {
             /* Ignore */
         } else if (rbuf[idx] == '\n') {
@@ -436,7 +437,7 @@ static inline int parse_command_line(AVFormatContext *s, const char *line,
         if (*methodcode == ANNOUNCE) {
             av_log(s, AV_LOG_INFO,
                    "Updating control URI to %s\n", uri);
-            strcpy(rt->control_uri, uri);
+            av_strlcpy(rt->control_uri, uri, sizeof(rt->control_uri));
         }
     }
 
@@ -621,6 +622,10 @@ static int rtsp_listen(AVFormatContext *s)
     /* ff_url_join. No authorization by now (NULL) */
     ff_url_join(rt->control_uri, sizeof(rt->control_uri), "rtsp", NULL, host,
                 port, "%s", path);
+
+    if (port < 0)
+        port = RTSP_DEFAULT_PORT;
+
     /* Create TCP connection */
     ff_url_join(tcpname, sizeof(tcpname), "tcp", NULL, host, port,
                 "?listen&listen_timeout=%d", rt->initial_timeout * 1000);
@@ -764,7 +769,7 @@ static int resetup_tcp(AVFormatContext *s)
 
     av_url_split(NULL, 0, NULL, 0, host, sizeof(host), &port, NULL, 0,
                  s->filename);
-    ff_rtsp_undo_setup(s);
+    ff_rtsp_undo_setup(s, 0);
     return ff_rtsp_make_setup_request(s, host, port, RTSP_LOWER_TRANSPORT_TCP,
                                       rt->real_challenge);
 }

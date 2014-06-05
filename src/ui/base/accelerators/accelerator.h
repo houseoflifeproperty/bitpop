@@ -12,11 +12,11 @@
 #define UI_BASE_ACCELERATORS_ACCELERATOR_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "ui/base/accelerators/platform_accelerator.h"
-#include "ui/base/events/event_constants.h"
-#include "ui/base/keycodes/keyboard_codes.h"
-#include "ui/base/ui_export.h"
+#include "ui/base/ui_base_export.h"
+#include "ui/events/event_constants.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 
 namespace ui {
 
@@ -24,7 +24,7 @@ class PlatformAccelerator;
 
 // This is a cross-platform class for accelerator keys used in menus.
 // |platform_accelerator| should be used to store platform specific data.
-class UI_EXPORT Accelerator {
+class UI_BASE_EXPORT Accelerator {
  public:
   Accelerator();
   Accelerator(ui::KeyboardCode keycode, int modifiers);
@@ -56,7 +56,7 @@ class UI_EXPORT Accelerator {
   bool IsCmdDown() const;
 
   // Returns a string with the localized shortcut if any.
-  string16 GetShortcutText() const;
+  base::string16 GetShortcutText() const;
 
   void set_platform_accelerator(scoped_ptr<PlatformAccelerator> p) {
     platform_accelerator_ = p.Pass();
@@ -84,7 +84,7 @@ class UI_EXPORT Accelerator {
 
 // An interface that classes that want to register for keyboard accelerators
 // should implement.
-class UI_EXPORT AcceleratorTarget {
+class UI_BASE_EXPORT AcceleratorTarget {
  public:
   // Should return true if the accelerator was processed.
   virtual bool AcceleratorPressed(const Accelerator& accelerator) = 0;

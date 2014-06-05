@@ -8,10 +8,10 @@
 #include "base/bind_helpers.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/values.h"
-#include "net/base/net_errors.h"
 #include "net/base/host_port_pair.h"
-#include "net/base/ssl_cert_request_info.h"
+#include "net/base/net_errors.h"
 #include "net/http/http_proxy_client_socket.h"
 #include "net/http/http_proxy_client_socket_pool.h"
 #include "net/socket/client_socket_factory.h"
@@ -19,62 +19,86 @@
 #include "net/socket/socks_client_socket_pool.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/socket/transport_client_socket_pool.h"
+#include "net/ssl/ssl_cert_request_info.h"
+#include "net/ssl/ssl_connection_status_flags.h"
+#include "net/ssl/ssl_info.h"
 
 namespace net {
 
 SSLSocketParams::SSLSocketParams(
-    const scoped_refptr<TransportSocketParams>& transport_params,
-    const scoped_refptr<SOCKSSocketParams>& socks_params,
+    const scoped_refptr<TransportSocketParams>& direct_params,
+    const scoped_refptr<SOCKSSocketParams>& socks_proxy_params,
     const scoped_refptr<HttpProxySocketParams>& http_proxy_params,
-    ProxyServer::Scheme proxy,
     const HostPortPair& host_and_port,
     const SSLConfig& ssl_config,
+    PrivacyMode privacy_mode,
     int load_flags,
     bool force_spdy_over_ssl,
     bool want_spdy_over_npn)
-    : transport_params_(transport_params),
+    : direct_params_(direct_params),
+      socks_proxy_params_(socks_proxy_params),
       http_proxy_params_(http_proxy_params),
-      socks_params_(socks_params),
-      proxy_(proxy),
       host_and_port_(host_and_port),
       ssl_config_(ssl_config),
+      privacy_mode_(privacy_mode),
       load_flags_(load_flags),
       force_spdy_over_ssl_(force_spdy_over_ssl),
       want_spdy_over_npn_(want_spdy_over_npn),
       ignore_limits_(false) {
-  switch (proxy_) {
-    case ProxyServer::SCHEME_DIRECT:
-      DCHECK(transport_params_.get() != NULL);
-      DCHECK(http_proxy_params_.get() == NULL);
-      DCHECK(socks_params_.get() == NULL);
-      ignore_limits_ = transport_params_->ignore_limits();
-      break;
-    case ProxyServer::SCHEME_HTTP:
-    case ProxyServer::SCHEME_HTTPS:
-      DCHECK(transport_params_.get() == NULL);
-      DCHECK(http_proxy_params_.get() != NULL);
-      DCHECK(socks_params_.get() == NULL);
-      ignore_limits_ = http_proxy_params_->ignore_limits();
-      break;
-    case ProxyServer::SCHEME_SOCKS4:
-    case ProxyServer::SCHEME_SOCKS5:
-      DCHECK(transport_params_.get() == NULL);
-      DCHECK(http_proxy_params_.get() == NULL);
-      DCHECK(socks_params_.get() != NULL);
-      ignore_limits_ = socks_params_->ignore_limits();
-      break;
-    default:
-      LOG(DFATAL) << "unknown proxy type";
-      break;
+  if (direct_params_) {
+    DCHECK(!socks_proxy_params_);
+    DCHECK(!http_proxy_params_);
+    ignore_limits_ = direct_params_->ignore_limits();
+  } else if (socks_proxy_params_) {
+    DCHECK(!http_proxy_params_);
+    ignore_limits_ = socks_proxy_params_->ignore_limits();
+  } else {
+    DCHECK(http_proxy_params_);
+    ignore_limits_ = http_proxy_params_->ignore_limits();
   }
 }
 
 SSLSocketParams::~SSLSocketParams() {}
 
+SSLSocketParams::ConnectionType SSLSocketParams::GetConnectionType() const {
+  if (direct_params_) {
+    DCHECK(!socks_proxy_params_);
+    DCHECK(!http_proxy_params_);
+    return DIRECT;
+  }
+
+  if (socks_proxy_params_) {
+    DCHECK(!http_proxy_params_);
+    return SOCKS_PROXY;
+  }
+
+  DCHECK(http_proxy_params_);
+  return HTTP_PROXY;
+}
+
+const scoped_refptr<TransportSocketParams>&
+SSLSocketParams::GetDirectConnectionParams() const {
+  DCHECK_EQ(GetConnectionType(), DIRECT);
+  return direct_params_;
+}
+
+const scoped_refptr<SOCKSSocketParams>&
+SSLSocketParams::GetSocksProxyConnectionParams() const {
+  DCHECK_EQ(GetConnectionType(), SOCKS_PROXY);
+  return socks_proxy_params_;
+}
+
+const scoped_refptr<HttpProxySocketParams>&
+SSLSocketParams::GetHttpProxyConnectionParams() const {
+  DCHECK_EQ(GetConnectionType(), HTTP_PROXY);
+  return http_proxy_params_;
+}
+
 // Timeout for the SSL handshake portion of the connect.
 static const int kSSLHandshakeTimeoutInSeconds = 30;
 
 SSLConnectJob::SSLConnectJob(const std::string& group_name,
+                             RequestPriority priority,
                              const scoped_refptr<SSLSocketParams>& params,
                              const base::TimeDelta& timeout_duration,
                              TransportClientSocketPool* transport_pool,
@@ -85,7 +109,10 @@ SSLConnectJob::SSLConnectJob(const std::string& group_name,
                              const SSLClientSocketContext& context,
                              Delegate* delegate,
                              NetLog* net_log)
-    : ConnectJob(group_name, timeout_duration, delegate,
+    : ConnectJob(group_name,
+                 timeout_duration,
+                 priority,
+                 delegate,
                  BoundNetLog::Make(net_log, NetLog::SOURCE_CONNECT_JOB)),
       params_(params),
       transport_pool_(transport_pool),
@@ -93,10 +120,15 @@ SSLConnectJob::SSLConnectJob(const std::string& group_name,
       http_proxy_pool_(http_proxy_pool),
       client_socket_factory_(client_socket_factory),
       host_resolver_(host_resolver),
-      context_(context),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          callback_(base::Bind(&SSLConnectJob::OnIOComplete,
-                               base::Unretained(this)))) {}
+      context_(context.cert_verifier,
+               context.server_bound_cert_service,
+               context.transport_security_state,
+               context.cert_transparency_verifier,
+               (params->privacy_mode() == PRIVACY_MODE_ENABLED
+                    ? "pm/" + context.ssl_session_cache_shard
+                    : context.ssl_session_cache_shard)),
+      callback_(base::Bind(&SSLConnectJob::OnIOComplete,
+                           base::Unretained(this))) {}
 
 SSLConnectJob::~SSLConnectJob() {}
 
@@ -124,12 +156,12 @@ LoadState SSLConnectJob::GetLoadState() const {
 void SSLConnectJob::GetAdditionalErrorState(ClientSocketHandle* handle) {
   // Headers in |error_response_info_| indicate a proxy tunnel setup
   // problem. See DoTunnelConnectComplete.
-  if (error_response_info_.headers) {
+  if (error_response_info_.headers.get()) {
     handle->set_pending_http_proxy_connection(
         transport_socket_handle_.release());
   }
   handle->set_ssl_error_response_info(error_response_info_);
-  if (!ssl_connect_start_time_.is_null())
+  if (!connect_timing_.ssl_start.is_null())
     handle->set_is_ssl_error(true);
 }
 
@@ -190,12 +222,14 @@ int SSLConnectJob::DoTransportConnect() {
 
   next_state_ = STATE_TRANSPORT_CONNECT_COMPLETE;
   transport_socket_handle_.reset(new ClientSocketHandle());
-  scoped_refptr<TransportSocketParams> transport_params =
-      params_->transport_params();
-  return transport_socket_handle_->Init(
-      group_name(), transport_params,
-      transport_params->destination().priority(), callback_, transport_pool_,
-      net_log());
+  scoped_refptr<TransportSocketParams> direct_params =
+      params_->GetDirectConnectionParams();
+  return transport_socket_handle_->Init(group_name(),
+                                        direct_params,
+                                        priority(),
+                                        callback_,
+                                        transport_pool_,
+                                        net_log());
 }
 
 int SSLConnectJob::DoTransportConnectComplete(int result) {
@@ -209,10 +243,14 @@ int SSLConnectJob::DoSOCKSConnect() {
   DCHECK(socks_pool_);
   next_state_ = STATE_SOCKS_CONNECT_COMPLETE;
   transport_socket_handle_.reset(new ClientSocketHandle());
-  scoped_refptr<SOCKSSocketParams> socks_params = params_->socks_params();
-  return transport_socket_handle_->Init(
-      group_name(), socks_params, socks_params->destination().priority(),
-      callback_, socks_pool_, net_log());
+  scoped_refptr<SOCKSSocketParams> socks_proxy_params =
+      params_->GetSocksProxyConnectionParams();
+  return transport_socket_handle_->Init(group_name(),
+                                        socks_proxy_params,
+                                        priority(),
+                                        callback_,
+                                        socks_pool_,
+                                        net_log());
 }
 
 int SSLConnectJob::DoSOCKSConnectComplete(int result) {
@@ -228,11 +266,13 @@ int SSLConnectJob::DoTunnelConnect() {
 
   transport_socket_handle_.reset(new ClientSocketHandle());
   scoped_refptr<HttpProxySocketParams> http_proxy_params =
-      params_->http_proxy_params();
-  return transport_socket_handle_->Init(
-      group_name(), http_proxy_params,
-      http_proxy_params->destination().priority(), callback_, http_proxy_pool_,
-      net_log());
+      params_->GetHttpProxyConnectionParams();
+  return transport_socket_handle_->Init(group_name(),
+                                        http_proxy_params,
+                                        priority(),
+                                        callback_,
+                                        http_proxy_pool_,
+                                        net_log());
 }
 
 int SSLConnectJob::DoTunnelConnectComplete(int result) {
@@ -259,15 +299,34 @@ int SSLConnectJob::DoSSLConnect() {
   next_state_ = STATE_SSL_CONNECT_COMPLETE;
   // Reset the timeout to just the time allowed for the SSL handshake.
   ResetTimer(base::TimeDelta::FromSeconds(kSSLHandshakeTimeoutInSeconds));
-  ssl_connect_start_time_ = base::TimeTicks::Now();
 
-  ssl_socket_.reset(client_socket_factory_->CreateSSLClientSocket(
-      transport_socket_handle_.release(), params_->host_and_port(),
-      params_->ssl_config(), context_));
+  // If the handle has a fresh socket, get its connect start and DNS times.
+  // This should always be the case.
+  const LoadTimingInfo::ConnectTiming& socket_connect_timing =
+      transport_socket_handle_->connect_timing();
+  if (!transport_socket_handle_->is_reused() &&
+      !socket_connect_timing.connect_start.is_null()) {
+    // Overwriting |connect_start| serves two purposes - it adjusts timing so
+    // |connect_start| doesn't include dns times, and it adjusts the time so
+    // as not to include time spent waiting for an idle socket.
+    connect_timing_.connect_start = socket_connect_timing.connect_start;
+    connect_timing_.dns_start = socket_connect_timing.dns_start;
+    connect_timing_.dns_end = socket_connect_timing.dns_end;
+  }
+
+  connect_timing_.ssl_start = base::TimeTicks::Now();
+
+  ssl_socket_ = client_socket_factory_->CreateSSLClientSocket(
+      transport_socket_handle_.Pass(),
+      params_->host_and_port(),
+      params_->ssl_config(),
+      context_);
   return ssl_socket_->Connect(callback_);
 }
 
 int SSLConnectJob::DoSSLConnectComplete(int result) {
+  connect_timing_.ssl_end = base::TimeTicks::Now();
+
   SSLClientSocket::NextProtoStatus status =
       SSLClientSocket::kNextProtoUnsupported;
   std::string proto;
@@ -284,12 +343,11 @@ int SSLConnectJob::DoSSLConnectComplete(int result) {
     NextProto protocol_negotiated =
         SSLClientSocket::NextProtoFromString(proto);
     ssl_socket_->set_protocol_negotiated(protocol_negotiated);
-    // If we negotiated either version of SPDY, we must have
-    // advertised it, so allow it.
-    // TODO(mbelshe): verify it was a protocol we advertised?
-    if (protocol_negotiated == kProtoSPDY1 ||
-        protocol_negotiated == kProtoSPDY2 ||
-        protocol_negotiated == kProtoSPDY3) {
+    // If we negotiated a SPDY version, it must have been present in
+    // SSLConfig::next_protos.
+    // TODO(mbelshe): Verify this.
+    if (protocol_negotiated >= kProtoSPDYMinimumVersion &&
+        protocol_negotiated <= kProtoSPDYMaximumVersion) {
       ssl_socket_->set_was_spdy_negotiated(true);
     }
   }
@@ -302,25 +360,41 @@ int SSLConnectJob::DoSSLConnectComplete(int result) {
 
   if (result == OK ||
       ssl_socket_->IgnoreCertError(result, params_->load_flags())) {
-    DCHECK(ssl_connect_start_time_ != base::TimeTicks());
+    DCHECK(!connect_timing_.ssl_start.is_null());
     base::TimeDelta connect_duration =
-        base::TimeTicks::Now() - ssl_connect_start_time_;
+        connect_timing_.ssl_end - connect_timing_.ssl_start;
     if (using_spdy) {
-      UMA_HISTOGRAM_CUSTOM_TIMES("Net.SpdyConnectionLatency",
+      UMA_HISTOGRAM_CUSTOM_TIMES("Net.SpdyConnectionLatency_2",
                                  connect_duration,
                                  base::TimeDelta::FromMilliseconds(1),
-                                 base::TimeDelta::FromMinutes(10),
+                                 base::TimeDelta::FromMinutes(1),
                                  100);
     }
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
+    bool using_data_reduction_proxy = params_->host_and_port().Equals(
+        HostPortPair::FromURL(GURL(SPDY_PROXY_AUTH_ORIGIN)));
+    if (using_data_reduction_proxy) {
+      UMA_HISTOGRAM_CUSTOM_TIMES(
+          "Net.SSL_Connection_Latency_DataReductionProxy",
+          connect_duration,
+          base::TimeDelta::FromMilliseconds(1),
+          base::TimeDelta::FromMinutes(1),
+          100);
+    }
+#endif
 
-    UMA_HISTOGRAM_CUSTOM_TIMES("Net.SSL_Connection_Latency",
+    UMA_HISTOGRAM_CUSTOM_TIMES("Net.SSL_Connection_Latency_2",
                                connect_duration,
                                base::TimeDelta::FromMilliseconds(1),
-                               base::TimeDelta::FromMinutes(10),
+                               base::TimeDelta::FromMinutes(1),
                                100);
 
     SSLInfo ssl_info;
     ssl_socket_->GetSSLInfo(&ssl_info);
+
+    UMA_HISTOGRAM_SPARSE_SLOWLY("Net.SSL_CipherSuite",
+                                SSLConnectionStatusToCipherSuite(
+                                    ssl_info.connection_status));
 
     if (ssl_info.handshake_type == SSLInfo::HANDSHAKE_RESUME) {
       UMA_HISTOGRAM_CUSTOM_TIMES("Net.SSL_Connection_Latency_Resume_Handshake",
@@ -341,10 +415,10 @@ int SSLConnectJob::DoSSLConnectComplete(int result) {
                      (host.size() > 11 &&
                       host.rfind(".google.com") == host.size() - 11);
     if (is_google) {
-      UMA_HISTOGRAM_CUSTOM_TIMES("Net.SSL_Connection_Latency_Google",
+      UMA_HISTOGRAM_CUSTOM_TIMES("Net.SSL_Connection_Latency_Google2",
                                  connect_duration,
                                  base::TimeDelta::FromMilliseconds(1),
-                                 base::TimeDelta::FromMinutes(10),
+                                 base::TimeDelta::FromMinutes(1),
                                  100);
       if (ssl_info.handshake_type == SSLInfo::HANDSHAKE_RESUME) {
         UMA_HISTOGRAM_CUSTOM_TIMES("Net.SSL_Connection_Latency_Google_"
@@ -365,32 +439,32 @@ int SSLConnectJob::DoSSLConnectComplete(int result) {
   }
 
   if (result == OK || IsCertificateError(result)) {
-    set_socket(ssl_socket_.release());
+    SetSocket(ssl_socket_.PassAs<StreamSocket>());
   } else if (result == ERR_SSL_CLIENT_AUTH_CERT_NEEDED) {
     error_response_info_.cert_request_info = new SSLCertRequestInfo;
-    ssl_socket_->GetSSLCertRequestInfo(error_response_info_.cert_request_info);
+    ssl_socket_->GetSSLCertRequestInfo(
+        error_response_info_.cert_request_info.get());
   }
 
   return result;
 }
 
-int SSLConnectJob::ConnectInternal() {
-  switch (params_->proxy()) {
-    case ProxyServer::SCHEME_DIRECT:
-      next_state_ = STATE_TRANSPORT_CONNECT;
-      break;
-    case ProxyServer::SCHEME_HTTP:
-    case ProxyServer::SCHEME_HTTPS:
-      next_state_ = STATE_TUNNEL_CONNECT;
-      break;
-    case ProxyServer::SCHEME_SOCKS4:
-    case ProxyServer::SCHEME_SOCKS5:
-      next_state_ = STATE_SOCKS_CONNECT;
-      break;
-    default:
-      NOTREACHED() << "unknown proxy type";
-      break;
+SSLConnectJob::State SSLConnectJob::GetInitialState(
+    SSLSocketParams::ConnectionType connection_type) {
+  switch (connection_type) {
+    case SSLSocketParams::DIRECT:
+      return STATE_TRANSPORT_CONNECT;
+    case SSLSocketParams::HTTP_PROXY:
+      return STATE_TUNNEL_CONNECT;
+    case SSLSocketParams::SOCKS_PROXY:
+      return STATE_SOCKS_CONNECT;
   }
+  NOTREACHED();
+  return STATE_NONE;
+}
+
+int SSLConnectJob::ConnectInternal() {
+  next_state_ = GetInitialState(params_->GetConnectionType());
   return DoLoop(OK);
 }
 
@@ -435,6 +509,7 @@ SSLClientSocketPool::SSLClientSocketPool(
     CertVerifier* cert_verifier,
     ServerBoundCertService* server_bound_cert_service,
     TransportSecurityState* transport_security_state,
+    CTVerifier* cert_transparency_verifier,
     const std::string& ssl_session_cache_shard,
     ClientSocketFactory* client_socket_factory,
     TransportClientSocketPool* transport_pool,
@@ -445,7 +520,7 @@ SSLClientSocketPool::SSLClientSocketPool(
     : transport_pool_(transport_pool),
       socks_pool_(socks_pool),
       http_proxy_pool_(http_proxy_pool),
-      base_(max_sockets, max_sockets_per_group, histograms,
+      base_(this, max_sockets, max_sockets_per_group, histograms,
             ClientSocketPool::unused_idle_socket_timeout(),
             ClientSocketPool::used_idle_socket_timeout(),
             new SSLConnectJobFactory(transport_pool,
@@ -457,38 +532,35 @@ SSLClientSocketPool::SSLClientSocketPool(
                                          cert_verifier,
                                          server_bound_cert_service,
                                          transport_security_state,
+                                         cert_transparency_verifier,
                                          ssl_session_cache_shard),
                                      net_log)),
       ssl_config_service_(ssl_config_service) {
-  if (ssl_config_service_)
+  if (ssl_config_service_.get())
     ssl_config_service_->AddObserver(this);
   if (transport_pool_)
-    transport_pool_->AddLayeredPool(this);
+    base_.AddLowerLayeredPool(transport_pool_);
   if (socks_pool_)
-    socks_pool_->AddLayeredPool(this);
+    base_.AddLowerLayeredPool(socks_pool_);
   if (http_proxy_pool_)
-    http_proxy_pool_->AddLayeredPool(this);
+    base_.AddLowerLayeredPool(http_proxy_pool_);
 }
 
 SSLClientSocketPool::~SSLClientSocketPool() {
-  if (http_proxy_pool_)
-    http_proxy_pool_->RemoveLayeredPool(this);
-  if (socks_pool_)
-    socks_pool_->RemoveLayeredPool(this);
-  if (transport_pool_)
-    transport_pool_->RemoveLayeredPool(this);
-  if (ssl_config_service_)
+  if (ssl_config_service_.get())
     ssl_config_service_->RemoveObserver(this);
 }
 
-ConnectJob* SSLClientSocketPool::SSLConnectJobFactory::NewConnectJob(
+scoped_ptr<ConnectJob>
+SSLClientSocketPool::SSLConnectJobFactory::NewConnectJob(
     const std::string& group_name,
     const PoolBase::Request& request,
     ConnectJob::Delegate* delegate) const {
-  return new SSLConnectJob(group_name, request.params(), ConnectionTimeout(),
-                           transport_pool_, socks_pool_, http_proxy_pool_,
-                           client_socket_factory_, host_resolver_,
-                           context_, delegate, net_log_);
+  return scoped_ptr<ConnectJob>(
+      new SSLConnectJob(group_name, request.priority(), request.params(),
+                        ConnectionTimeout(), transport_pool_, socks_pool_,
+                        http_proxy_pool_, client_socket_factory_,
+                        host_resolver_, context_, delegate, net_log_));
 }
 
 base::TimeDelta
@@ -526,19 +598,13 @@ void SSLClientSocketPool::CancelRequest(const std::string& group_name,
 }
 
 void SSLClientSocketPool::ReleaseSocket(const std::string& group_name,
-                                        StreamSocket* socket, int id) {
-  base_.ReleaseSocket(group_name, socket, id);
+                                        scoped_ptr<StreamSocket> socket,
+                                        int id) {
+  base_.ReleaseSocket(group_name, socket.Pass(), id);
 }
 
 void SSLClientSocketPool::FlushWithError(int error) {
   base_.FlushWithError(error);
-}
-
-bool SSLClientSocketPool::IsStalled() const {
-  return base_.IsStalled() ||
-      (transport_pool_ && transport_pool_->IsStalled()) ||
-      (socks_pool_ && socks_pool_->IsStalled()) ||
-      (http_proxy_pool_ && http_proxy_pool_->IsStalled());
 }
 
 void SSLClientSocketPool::CloseIdleSockets() {
@@ -559,21 +625,13 @@ LoadState SSLClientSocketPool::GetLoadState(
   return base_.GetLoadState(group_name, handle);
 }
 
-void SSLClientSocketPool::AddLayeredPool(LayeredPool* layered_pool) {
-  base_.AddLayeredPool(layered_pool);
-}
-
-void SSLClientSocketPool::RemoveLayeredPool(LayeredPool* layered_pool) {
-  base_.RemoveLayeredPool(layered_pool);
-}
-
-DictionaryValue* SSLClientSocketPool::GetInfoAsValue(
+base::DictionaryValue* SSLClientSocketPool::GetInfoAsValue(
     const std::string& name,
     const std::string& type,
     bool include_nested_pools) const {
-  DictionaryValue* dict = base_.GetInfoAsValue(name, type);
+  base::DictionaryValue* dict = base_.GetInfoAsValue(name, type);
   if (include_nested_pools) {
-    ListValue* list = new ListValue();
+    base::ListValue* list = new base::ListValue();
     if (transport_pool_) {
       list->Append(transport_pool_->GetInfoAsValue("transport_socket_pool",
                                                    "transport_socket_pool",
@@ -602,14 +660,27 @@ ClientSocketPoolHistograms* SSLClientSocketPool::histograms() const {
   return base_.histograms();
 }
 
-void SSLClientSocketPool::OnSSLConfigChanged() {
-  FlushWithError(ERR_NETWORK_CHANGED);
+bool SSLClientSocketPool::IsStalled() const {
+  return base_.IsStalled();
+}
+
+void SSLClientSocketPool::AddHigherLayeredPool(HigherLayeredPool* higher_pool) {
+  base_.AddHigherLayeredPool(higher_pool);
+}
+
+void SSLClientSocketPool::RemoveHigherLayeredPool(
+    HigherLayeredPool* higher_pool) {
+  base_.RemoveHigherLayeredPool(higher_pool);
 }
 
 bool SSLClientSocketPool::CloseOneIdleConnection() {
   if (base_.CloseOneIdleSocket())
     return true;
-  return base_.CloseOneIdleConnectionInLayeredPool();
+  return base_.CloseOneIdleConnectionInHigherLayeredPool();
+}
+
+void SSLClientSocketPool::OnSSLConfigChanged() {
+  FlushWithError(ERR_NETWORK_CHANGED);
 }
 
 }  // namespace net

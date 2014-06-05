@@ -8,88 +8,88 @@
 #include <list>
 
 #include "base/callback.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/time/time.h"
 #include "media/base/audio_decoder.h"
 #include "media/base/demuxer_stream.h"
+#include "media/base/media_log.h"
+#include "media/base/sample_format.h"
+#include "media/ffmpeg/ffmpeg_deleters.h"
 
 struct AVCodecContext;
 struct AVFrame;
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 }
 
 namespace media {
 
-class AudioTimestampHelper;
-class DataBuffer;
+class AudioDiscardHelper;
 class DecoderBuffer;
-struct QueuedAudioBuffer;
 
 class MEDIA_EXPORT FFmpegAudioDecoder : public AudioDecoder {
  public:
-  explicit FFmpegAudioDecoder(
-      const scoped_refptr<base::MessageLoopProxy>& message_loop);
-
-  // AudioDecoder implementation.
-  virtual void Initialize(const scoped_refptr<DemuxerStream>& stream,
-                          const PipelineStatusCB& status_cb,
-                          const StatisticsCB& statistics_cb) OVERRIDE;
-  virtual void Read(const ReadCB& read_cb) OVERRIDE;
-  virtual int bits_per_channel() OVERRIDE;
-  virtual ChannelLayout channel_layout() OVERRIDE;
-  virtual int samples_per_second() OVERRIDE;
-  virtual void Reset(const base::Closure& closure) OVERRIDE;
-
- protected:
+  FFmpegAudioDecoder(
+      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+      const LogCB& log_cb);
   virtual ~FFmpegAudioDecoder();
 
+  // AudioDecoder implementation.
+  virtual void Initialize(const AudioDecoderConfig& config,
+                          const PipelineStatusCB& status_cb) OVERRIDE;
+  virtual void Decode(const scoped_refptr<DecoderBuffer>& buffer,
+                      const DecodeCB& decode_cb) OVERRIDE;
+  virtual scoped_refptr<AudioBuffer> GetDecodeOutput() OVERRIDE;
+  virtual void Reset(const base::Closure& closure) OVERRIDE;
+  virtual void Stop() OVERRIDE;
+
  private:
-  // Methods running on decoder thread.
-  void DoInitialize(const scoped_refptr<DemuxerStream>& stream,
-                    const PipelineStatusCB& status_cb,
-                    const StatisticsCB& statistics_cb);
-  void DoReset(const base::Closure& closure);
-  void DoRead(const ReadCB& read_cb);
-  void DoDecodeBuffer(DemuxerStream::Status status,
-                      const scoped_refptr<DecoderBuffer>& input);
+  enum DecoderState {
+    kUninitialized,
+    kNormal,
+    kFlushCodec,
+    kDecodeFinished,
+    kError
+  };
 
-  // Reads from the demuxer stream with corresponding callback method.
-  void ReadFromDemuxerStream();
+  // Reset decoder and call |reset_cb_|.
+  void DoReset();
 
+  // Handles decoding an unencrypted encoded buffer.
+  void DecodeBuffer(const scoped_refptr<DecoderBuffer>& buffer,
+                    const DecodeCB& decode_cb);
+  bool FFmpegDecode(const scoped_refptr<DecoderBuffer>& buffer);
+
+  // Handles (re-)initializing the decoder with a (new) config.
+  // Returns true if initialization was successful.
   bool ConfigureDecoder();
+
+  // Releases resources associated with |codec_context_| and |av_frame_|
+  // and resets them to NULL.
   void ReleaseFFmpegResources();
   void ResetTimestampState();
-  void RunDecodeLoop(const scoped_refptr<DecoderBuffer>& input,
-                     bool skip_eos_append);
 
-  scoped_refptr<base::MessageLoopProxy> message_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
-  scoped_refptr<DemuxerStream> demuxer_stream_;
-  StatisticsCB statistics_cb_;
-  AVCodecContext* codec_context_;
+  DecoderState state_;
 
-  // Decoded audio format.
-  int bits_per_channel_;
-  ChannelLayout channel_layout_;
-  int samples_per_second_;
+  // FFmpeg structures owned by this object.
+  scoped_ptr<AVCodecContext, ScopedPtrAVFreeContext> codec_context_;
+  scoped_ptr<AVFrame, ScopedPtrAVFreeFrame> av_frame_;
 
-  // Used for computing output timestamps.
-  scoped_ptr<AudioTimestampHelper> output_timestamp_helper_;
-  int bytes_per_frame_;
-  base::TimeDelta last_input_timestamp_;
+  AudioDecoderConfig config_;
 
-  // Number of output sample bytes to drop before generating
-  // output buffers.
-  int output_bytes_to_drop_;
+  // AVSampleFormat initially requested; not Chrome's SampleFormat.
+  int av_sample_format_;
 
-  // Holds decoded audio.
-  AVFrame* av_frame_;
-
-  ReadCB read_cb_;
+  scoped_ptr<AudioDiscardHelper> discard_helper_;
 
   // Since multiple frames may be decoded from the same packet we need to queue
-  // them up and hand them out as we receive Read() calls.
-  std::list<QueuedAudioBuffer> queued_audio_;
+  // them up.
+  std::list<scoped_refptr<AudioBuffer> > queued_audio_;
+
+  LogCB log_cb_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(FFmpegAudioDecoder);
 };

@@ -3,15 +3,14 @@
 // found in the LICENSE file.
 
 #include "base/basictypes.h"
-#include "base/stringprintf.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/sync/test/integration/performance/sync_timing_helper.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/browser/sync/test/integration/typed_urls_helper.h"
 #include "sync/sessions/sync_session_context.h"
 
 using typed_urls_helper::AddUrlToHistory;
-using typed_urls_helper::AssertAllProfilesHaveSameURLsAsVerifier;
 using typed_urls_helper::DeleteUrlsFromHistory;
 using typed_urls_helper::GetTypedUrlsFromClient;
 
@@ -91,7 +90,7 @@ GURL TypedUrlsSyncPerfTest::NextURL() {
 }
 
 GURL TypedUrlsSyncPerfTest::IntToURL(int n) {
-  return GURL(StringPrintf("http://history%d.google.com/", n));
+  return GURL(base::StringPrintf("http://history%d.google.com/", n));
 }
 
 IN_PROC_BROWSER_TEST_F(TypedUrlsSyncPerfTest, P0) {

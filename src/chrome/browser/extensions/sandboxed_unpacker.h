@@ -7,12 +7,14 @@
 
 #include <string>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
-#include "chrome/common/extensions/extension.h"
-#include "content/public/browser/browser_thread.h"
+#include "base/time/time.h"
 #include "content/public/browser/utility_process_host_client.h"
+#include "extensions/common/manifest.h"
+
+class SkBitmap;
 
 namespace base {
 class DictionaryValue;
@@ -20,6 +22,7 @@ class SequencedTaskRunner;
 }
 
 namespace extensions {
+class Extension;
 
 class SandboxedUnpackerClient
     : public base::RefCountedThreadSafe<SandboxedUnpackerClient> {
@@ -34,11 +37,14 @@ class SandboxedUnpackerClient
   //
   // extension - The extension that was unpacked. The client is responsible
   // for deleting this memory.
-  virtual void OnUnpackSuccess(const FilePath& temp_dir,
-                               const FilePath& extension_root,
+  //
+  // install_icon - The icon we will display in the installation UI, if any.
+  virtual void OnUnpackSuccess(const base::FilePath& temp_dir,
+                               const base::FilePath& extension_root,
                                const base::DictionaryValue* original_manifest,
-                               const Extension* extension) = 0;
-  virtual void OnUnpackFailure(const string16& error) = 0;
+                               const Extension* extension,
+                               const SkBitmap& install_icon) = 0;
+  virtual void OnUnpackFailure(const base::string16& error) = 0;
 
  protected:
   friend class base::RefCountedThreadSafe<SandboxedUnpackerClient>;
@@ -69,15 +75,13 @@ class SandboxedUnpackerClient
 // NOTE: This class should only be used on the file thread.
 class SandboxedUnpacker : public content::UtilityProcessHostClient {
  public:
-
   // Unpacks the extension in |crx_path| into a temporary directory and calls
   // |client| with the result. If |run_out_of_process| is provided, unpacking
   // is done in a sandboxed subprocess. Otherwise, it is done in-process.
-  SandboxedUnpacker(const FilePath& crx_path,
-                    bool run_out_of_process,
-                    Extension::Location location,
+  SandboxedUnpacker(const base::FilePath& crx_path,
+                    Manifest::Location location,
                     int creation_flags,
-                    const FilePath& extensions_dir,
+                    const base::FilePath& extensions_dir,
                     base::SequencedTaskRunner* unpacker_io_task_runner,
                     SandboxedUnpackerClient* client);
 
@@ -134,6 +138,7 @@ class SandboxedUnpacker : public content::UtilityProcessHostClient {
     INVALID_PATH_FOR_BITMAP_IMAGE,
     ERROR_RE_ENCODING_THEME_IMAGE,
     ERROR_SAVING_THEME_IMAGE,
+    ABORTED_DUE_TO_SHUTDOWN,
 
     // SandboxedUnpacker::RewriteCatalogFiles()
     COULD_NOT_READ_CATALOG_DATA_FROM_DISK,
@@ -166,7 +171,7 @@ class SandboxedUnpacker : public content::UtilityProcessHostClient {
   bool ValidateSignature();
 
   // Starts the utility process that unpacks our extension.
-  void StartProcessOnIOThread(const FilePath& temp_crx_path);
+  void StartProcessOnIOThread(const base::FilePath& temp_crx_path);
 
   // UtilityProcessHostClient
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
@@ -174,10 +179,11 @@ class SandboxedUnpacker : public content::UtilityProcessHostClient {
 
   // IPC message handlers.
   void OnUnpackExtensionSucceeded(const base::DictionaryValue& manifest);
-  void OnUnpackExtensionFailed(const string16& error_message);
+  void OnUnpackExtensionFailed(const base::string16& error_message);
 
-  void ReportFailure(FailureReason reason, const string16& message);
-  void ReportSuccess(const base::DictionaryValue& original_manifest);
+  void ReportFailure(FailureReason reason, const base::string16& message);
+  void ReportSuccess(const base::DictionaryValue& original_manifest,
+                     const SkBitmap& install_icon);
 
   // Overwrites original manifest with safe result from utility process.
   // Returns NULL on error. Caller owns the returned object.
@@ -186,29 +192,26 @@ class SandboxedUnpacker : public content::UtilityProcessHostClient {
 
   // Overwrites original files with safe results from utility process.
   // Reports error and returns false if it fails.
-  bool RewriteImageFiles();
+  bool RewriteImageFiles(SkBitmap* install_icon);
   bool RewriteCatalogFiles();
 
   // Cleans up temp directory artifacts.
   void Cleanup();
 
   // The path to the CRX to unpack.
-  FilePath crx_path_;
-
-  // True if unpacking should be done by the utility process.
-  bool run_out_of_process_;
+  base::FilePath crx_path_;
 
   // Our client.
   scoped_refptr<SandboxedUnpackerClient> client_;
 
   // The Extensions directory inside the profile.
-  FilePath extensions_dir_;
+  base::FilePath extensions_dir_;
 
   // A temporary directory to use for unpacking.
   base::ScopedTempDir temp_dir_;
 
   // The root directory of the unpacked extension. This is a child of temp_dir_.
-  FilePath extension_root_;
+  base::FilePath extension_root_;
 
   // Represents the extension we're unpacking.
   scoped_refptr<Extension> extension_;
@@ -227,7 +230,7 @@ class SandboxedUnpacker : public content::UtilityProcessHostClient {
   base::TimeTicks unpack_start_time_;
 
   // Location to use for the unpacked extension.
-  Extension::Location location_;
+  Manifest::Location location_;
 
   // Creation flags to use for the extension.  These flags will be used
   // when calling Extenion::Create() by the crx installer.

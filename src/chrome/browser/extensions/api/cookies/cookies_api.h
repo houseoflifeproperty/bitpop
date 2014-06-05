@@ -13,15 +13,15 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/extensions/event_router.h"
-#include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/net/chrome_cookie_notification_details.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/common/extensions/api/cookies.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
-#include "googleurl/src/gurl.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
+#include "extensions/browser/event_router.h"
 #include "net/cookies/canonical_cookie.h"
+#include "url/gurl.h"
 
 namespace net {
 class URLRequestContextGetter;
@@ -33,7 +33,7 @@ namespace extensions {
 // extension system.
 class CookiesEventRouter : public content::NotificationObserver {
  public:
-  explicit CookiesEventRouter(Profile* profile);
+  explicit CookiesEventRouter(content::BrowserContext* context);
   virtual ~CookiesEventRouter();
 
  private:
@@ -47,7 +47,7 @@ class CookiesEventRouter : public content::NotificationObserver {
   void CookieChanged(Profile* profile, ChromeCookieDetails* details);
 
   // This method dispatches events to the extension message service.
-  void DispatchEvent(Profile* context,
+  void DispatchEvent(content::BrowserContext* context,
                      const std::string& event_name,
                      scoped_ptr<base::ListValue> event_args,
                      GURL& cookie_domain);
@@ -60,44 +60,18 @@ class CookiesEventRouter : public content::NotificationObserver {
   DISALLOW_COPY_AND_ASSIGN(CookiesEventRouter);
 };
 
-// Serves as a base class for all cookies API functions, and defines some
-// common functionality for parsing cookies API function arguments.
-// Note that all of the functions in this file derive from
-// AsyncExtensionFunction, and are not threadsafe, so they should not be
-// concurrently accessed from multiple threads. They modify |result_| and other
-// member variables directly.
-// See chrome/browser/extensions/extension_function.h for more information.
-class CookiesFunction : public AsyncExtensionFunction {
- protected:
-  virtual ~CookiesFunction() {}
-
-  // Constructs a GURL from the given url string. Returns false and assigns the
-  // internal error_ value if the URL is invalid. If |check_host_permissions| is
-  // true, the URL is also checked against the extension's host permissions, and
-  // if there is no permission for the URL, this function returns false.
-  bool ParseUrl(const std::string& url_string, GURL* url,
-                bool check_host_permissions);
-
-  // Gets the store identified by |store_id| and returns it in |context|.
-  // If |store_id| contains an empty string, retrieves the current execution
-  // context's store. In this case, |store_id| is populated with the found
-  // store, and |context| can be NULL if the caller only wants |store_id|.
-  bool ParseStoreContext(std::string* store_id,
-                         net::URLRequestContextGetter** context);
-};
-
 // Implements the cookies.get() extension function.
-class GetCookieFunction : public CookiesFunction {
+class CookiesGetFunction : public ChromeAsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("cookies.get")
+  DECLARE_EXTENSION_FUNCTION("cookies.get", COOKIES_GET)
 
-  GetCookieFunction();
+  CookiesGetFunction();
 
  protected:
-  virtual ~GetCookieFunction();
+  virtual ~CookiesGetFunction();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   void GetCookieOnIOThread();
@@ -105,22 +79,22 @@ class GetCookieFunction : public CookiesFunction {
   void GetCookieCallback(const net::CookieList& cookie_list);
 
   GURL url_;
-  scoped_refptr<net::URLRequestContextGetter> store_context_;
+  scoped_refptr<net::URLRequestContextGetter> store_browser_context_;
   scoped_ptr<extensions::api::cookies::Get::Params> parsed_args_;
 };
 
 // Implements the cookies.getAll() extension function.
-class GetAllCookiesFunction : public CookiesFunction {
+class CookiesGetAllFunction : public ChromeAsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("cookies.getAll")
+  DECLARE_EXTENSION_FUNCTION("cookies.getAll", COOKIES_GETALL)
 
-  GetAllCookiesFunction();
+  CookiesGetAllFunction();
 
  protected:
-  virtual ~GetAllCookiesFunction();
+  virtual ~CookiesGetAllFunction();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   void GetAllCookiesOnIOThread();
@@ -128,20 +102,20 @@ class GetAllCookiesFunction : public CookiesFunction {
   void GetAllCookiesCallback(const net::CookieList& cookie_list);
 
   GURL url_;
-  scoped_refptr<net::URLRequestContextGetter> store_context_;
+  scoped_refptr<net::URLRequestContextGetter> store_browser_context_;
   scoped_ptr<extensions::api::cookies::GetAll::Params> parsed_args_;
 };
 
 // Implements the cookies.set() extension function.
-class SetCookieFunction : public CookiesFunction {
+class CookiesSetFunction : public ChromeAsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("cookies.set")
+  DECLARE_EXTENSION_FUNCTION("cookies.set", COOKIES_SET)
 
-  SetCookieFunction();
+  CookiesSetFunction();
 
  protected:
-  virtual ~SetCookieFunction();
-  virtual bool RunImpl() OVERRIDE;
+  virtual ~CookiesSetFunction();
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   void SetCookieOnIOThread();
@@ -151,22 +125,22 @@ class SetCookieFunction : public CookiesFunction {
 
   GURL url_;
   bool success_;
-  scoped_refptr<net::URLRequestContextGetter> store_context_;
+  scoped_refptr<net::URLRequestContextGetter> store_browser_context_;
   scoped_ptr<extensions::api::cookies::Set::Params> parsed_args_;
 };
 
 // Implements the cookies.remove() extension function.
-class RemoveCookieFunction : public CookiesFunction {
+class CookiesRemoveFunction : public ChromeAsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("cookies.remove")
+  DECLARE_EXTENSION_FUNCTION("cookies.remove", COOKIES_REMOVE)
 
-  RemoveCookieFunction();
+  CookiesRemoveFunction();
 
  protected:
-  virtual ~RemoveCookieFunction();
+  virtual ~CookiesRemoveFunction();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   void RemoveCookieOnIOThread();
@@ -174,42 +148,54 @@ class RemoveCookieFunction : public CookiesFunction {
   void RemoveCookieCallback();
 
   GURL url_;
-  scoped_refptr<net::URLRequestContextGetter> store_context_;
+  scoped_refptr<net::URLRequestContextGetter> store_browser_context_;
   scoped_ptr<extensions::api::cookies::Remove::Params> parsed_args_;
 };
 
 // Implements the cookies.getAllCookieStores() extension function.
-class GetAllCookieStoresFunction : public CookiesFunction {
+class CookiesGetAllCookieStoresFunction : public ChromeSyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("cookies.getAllCookieStores")
+  DECLARE_EXTENSION_FUNCTION("cookies.getAllCookieStores",
+                             COOKIES_GETALLCOOKIESTORES)
 
  protected:
-  virtual ~GetAllCookieStoresFunction() {}
+  virtual ~CookiesGetAllCookieStoresFunction() {}
 
   // ExtensionFunction:
-  // GetAllCookieStoresFunction is sync.
-  virtual void Run() OVERRIDE;
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
-class CookiesAPI : public ProfileKeyedService,
+class CookiesAPI : public BrowserContextKeyedAPI,
                    public extensions::EventRouter::Observer {
  public:
-  explicit CookiesAPI(Profile* profile);
+  explicit CookiesAPI(content::BrowserContext* context);
   virtual ~CookiesAPI();
 
-  // ProfileKeyedService implementation.
+  // KeyedService implementation.
   virtual void Shutdown() OVERRIDE;
+
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<CookiesAPI>* GetFactoryInstance();
 
   // EventRouter::Observer implementation.
   virtual void OnListenerAdded(const extensions::EventListenerInfo& details)
       OVERRIDE;
 
  private:
-  Profile* profile_;
+  friend class BrowserContextKeyedAPIFactory<CookiesAPI>;
+
+  content::BrowserContext* browser_context_;
+
+  // BrowserContextKeyedAPI implementation.
+  static const char* service_name() {
+    return "CookiesAPI";
+  }
+  static const bool kServiceIsNULLWhileTesting = true;
 
   // Created lazily upon OnListenerAdded.
   scoped_ptr<CookiesEventRouter> cookies_event_router_;
+
+  DISALLOW_COPY_AND_ASSIGN(CookiesAPI);
 };
 
 }  // namespace extensions

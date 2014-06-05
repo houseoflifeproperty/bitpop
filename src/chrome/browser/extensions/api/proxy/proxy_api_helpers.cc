@@ -15,9 +15,9 @@
 
 #include "base/base64.h"
 #include "base/basictypes.h"
-#include "base/string_tokenizer.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_tokenizer.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/proxy/proxy_api_constants.h"
 #include "chrome/browser/prefs/proxy_config_dictionary.h"
@@ -35,8 +35,7 @@ bool CreateDataURLFromPACScript(const std::string& pac_script,
                                 std::string* pac_script_url_base64_encoded) {
   // Encode pac_script in base64.
   std::string pac_script_base64_encoded;
-  if (!base::Base64Encode(pac_script, &pac_script_base64_encoded))
-    return false;
+  base::Base64Encode(pac_script, &pac_script_base64_encoded);
 
   // Make it a correct data url.
   *pac_script_url_base64_encoded =
@@ -58,7 +57,7 @@ bool CreatePACScriptFromDataURL(
 
 // Extension Pref -> Browser Pref conversion.
 
-bool GetProxyModeFromExtensionPref(const DictionaryValue* proxy_config,
+bool GetProxyModeFromExtensionPref(const base::DictionaryValue* proxy_config,
                                    ProxyPrefs::ProxyMode* out,
                                    std::string* error,
                                    bool* bad_message) {
@@ -75,11 +74,11 @@ bool GetProxyModeFromExtensionPref(const DictionaryValue* proxy_config,
   return true;
 }
 
-bool GetPacMandatoryFromExtensionPref(const DictionaryValue* proxy_config,
+bool GetPacMandatoryFromExtensionPref(const base::DictionaryValue* proxy_config,
                                       bool* out,
                                       std::string* error,
                                       bool* bad_message){
-  const DictionaryValue* pac_dict = NULL;
+  const base::DictionaryValue* pac_dict = NULL;
   proxy_config->GetDictionary(keys::kProxyConfigPacScript, &pac_dict);
   if (!pac_dict)
     return true;
@@ -96,58 +95,58 @@ bool GetPacMandatoryFromExtensionPref(const DictionaryValue* proxy_config,
   return true;
 }
 
-bool GetPacUrlFromExtensionPref(const DictionaryValue* proxy_config,
+bool GetPacUrlFromExtensionPref(const base::DictionaryValue* proxy_config,
                                 std::string* out,
                                 std::string* error,
                                 bool* bad_message) {
-  const DictionaryValue* pac_dict = NULL;
+  const base::DictionaryValue* pac_dict = NULL;
   proxy_config->GetDictionary(keys::kProxyConfigPacScript, &pac_dict);
   if (!pac_dict)
     return true;
 
   // TODO(battre): Handle UTF-8 URLs (http://crbug.com/72692).
-  string16 pac_url16;
+  base::string16 pac_url16;
   if (pac_dict->HasKey(keys::kProxyConfigPacScriptUrl) &&
       !pac_dict->GetString(keys::kProxyConfigPacScriptUrl, &pac_url16)) {
     LOG(ERROR) << "'pacScript.url' could not be parsed.";
     *bad_message = true;
     return false;
   }
-  if (!IsStringASCII(pac_url16)) {
+  if (!base::IsStringASCII(pac_url16)) {
     *error = "'pacScript.url' supports only ASCII URLs "
              "(encode URLs in Punycode format).";
     return false;
   }
-  *out = UTF16ToASCII(pac_url16);
+  *out = base::UTF16ToASCII(pac_url16);
   return true;
 }
 
-bool GetPacDataFromExtensionPref(const DictionaryValue* proxy_config,
+bool GetPacDataFromExtensionPref(const base::DictionaryValue* proxy_config,
                                  std::string* out,
                                  std::string* error,
                                  bool* bad_message) {
-  const DictionaryValue* pac_dict = NULL;
+  const base::DictionaryValue* pac_dict = NULL;
   proxy_config->GetDictionary(keys::kProxyConfigPacScript, &pac_dict);
   if (!pac_dict)
     return true;
 
-  string16 pac_data16;
+  base::string16 pac_data16;
   if (pac_dict->HasKey(keys::kProxyConfigPacScriptData) &&
       !pac_dict->GetString(keys::kProxyConfigPacScriptData, &pac_data16)) {
     LOG(ERROR) << "'pacScript.data' could not be parsed.";
     *bad_message = true;
     return false;
   }
-  if (!IsStringASCII(pac_data16)) {
+  if (!base::IsStringASCII(pac_data16)) {
     *error = "'pacScript.data' supports only ASCII code"
              "(encode URLs in Punycode format).";
     return false;
   }
-  *out = UTF16ToASCII(pac_data16);
+  *out = base::UTF16ToASCII(pac_data16);
   return true;
 }
 
-bool GetProxyServer(const DictionaryValue* proxy_server,
+bool GetProxyServer(const base::DictionaryValue* proxy_server,
                     net::ProxyServer::Scheme default_scheme,
                     net::ProxyServer* out,
                     std::string* error,
@@ -164,20 +163,20 @@ bool GetProxyServer(const DictionaryValue* proxy_server,
     scheme = default_scheme;
 
   // TODO(battre): handle UTF-8 in hostnames (http://crbug.com/72692).
-  string16 host16;
+  base::string16 host16;
   if (!proxy_server->GetString(keys::kProxyConfigRuleHost, &host16)) {
     LOG(ERROR) << "Could not parse a 'rules.*.host' entry.";
     *bad_message = true;
     return false;
   }
-  if (!IsStringASCII(host16)) {
+  if (!base::IsStringASCII(host16)) {
     *error = ErrorUtils::FormatErrorMessage(
         "Invalid 'rules.???.host' entry '*'. 'host' field supports only ASCII "
         "URLs (encode URLs in Punycode format).",
-        UTF16ToUTF8(host16));
+        base::UTF16ToUTF8(host16));
     return false;
   }
-  std::string host = UTF16ToASCII(host16);
+  std::string host = base::UTF16ToASCII(host16);
 
   int port;  // optional.
   if (!proxy_server->GetInteger(keys::kProxyConfigRulePort, &port))
@@ -188,11 +187,12 @@ bool GetProxyServer(const DictionaryValue* proxy_server,
   return true;
 }
 
-bool GetProxyRulesStringFromExtensionPref(const DictionaryValue* proxy_config,
-                                          std::string* out,
-                                          std::string* error,
-                                          bool* bad_message) {
-  const DictionaryValue* proxy_rules = NULL;
+bool GetProxyRulesStringFromExtensionPref(
+    const base::DictionaryValue* proxy_config,
+    std::string* out,
+    std::string* error,
+    bool* bad_message) {
+  const base::DictionaryValue* proxy_rules = NULL;
   proxy_config->GetDictionary(keys::kProxyConfigRules, &proxy_rules);
   if (!proxy_rules)
     return true;
@@ -207,7 +207,7 @@ bool GetProxyRulesStringFromExtensionPref(const DictionaryValue* proxy_config,
   // singleProxy that will supersede per-URL proxies, but it's worth it to keep
   // the code simple and extensible.
   for (size_t i = 0; i <= keys::SCHEME_MAX; ++i) {
-    const DictionaryValue* proxy_dict = NULL;
+    const base::DictionaryValue* proxy_dict = NULL;
     has_proxy[i] = proxy_rules->GetDictionary(keys::field_name[i],
                                               &proxy_dict);
     if (has_proxy[i]) {
@@ -255,7 +255,7 @@ bool GetProxyRulesStringFromExtensionPref(const DictionaryValue* proxy_config,
   return true;
 }
 
-bool JoinUrlList(const ListValue* list,
+bool JoinUrlList(const base::ListValue* list,
                  const std::string& joiner,
                  std::string* out,
                  std::string* error,
@@ -266,28 +266,28 @@ bool JoinUrlList(const ListValue* list,
       result.append(joiner);
 
     // TODO(battre): handle UTF-8 (http://crbug.com/72692).
-    string16 entry;
+    base::string16 entry;
     if (!list->GetString(i, &entry)) {
       LOG(ERROR) << "'rules.bypassList' could not be parsed.";
       *bad_message = true;
       return false;
     }
-    if (!IsStringASCII(entry)) {
+    if (!base::IsStringASCII(entry)) {
       *error = "'rules.bypassList' supports only ASCII URLs "
                "(encode URLs in Punycode format).";
       return false;
     }
-    result.append(UTF16ToASCII(entry));
+    result.append(base::UTF16ToASCII(entry));
   }
   *out = result;
   return true;
 }
 
-bool GetBypassListFromExtensionPref(const DictionaryValue* proxy_config,
+bool GetBypassListFromExtensionPref(const base::DictionaryValue* proxy_config,
                                     std::string* out,
                                     std::string* error,
                                     bool* bad_message) {
-  const DictionaryValue* proxy_rules = NULL;
+  const base::DictionaryValue* proxy_rules = NULL;
   proxy_config->GetDictionary(keys::kProxyConfigRules, &proxy_rules);
   if (!proxy_rules)
     return true;
@@ -296,7 +296,7 @@ bool GetBypassListFromExtensionPref(const DictionaryValue* proxy_config,
     *out = "";
     return true;
   }
-  const ListValue* bypass_list = NULL;
+  const base::ListValue* bypass_list = NULL;
   if (!proxy_rules->GetList(keys::kProxyConfigBypassList, &bypass_list)) {
     LOG(ERROR) << "'rules.bypassList' could not be parsed.";
     *bad_message = true;
@@ -306,14 +306,15 @@ bool GetBypassListFromExtensionPref(const DictionaryValue* proxy_config,
   return JoinUrlList(bypass_list, ",", out, error, bad_message);
 }
 
-DictionaryValue* CreateProxyConfigDict(ProxyPrefs::ProxyMode mode_enum,
-                                       bool pac_mandatory,
-                                       const std::string& pac_url,
-                                       const std::string& pac_data,
-                                       const std::string& proxy_rules_string,
-                                       const std::string& bypass_list,
-                                       std::string* error) {
-  DictionaryValue* result_proxy_config = NULL;
+base::DictionaryValue* CreateProxyConfigDict(
+    ProxyPrefs::ProxyMode mode_enum,
+    bool pac_mandatory,
+    const std::string& pac_url,
+    const std::string& pac_data,
+    const std::string& proxy_rules_string,
+    const std::string& bypass_list,
+    std::string* error) {
+  base::DictionaryValue* result_proxy_config = NULL;
   switch (mode_enum) {
     case ProxyPrefs::MODE_DIRECT:
       result_proxy_config = ProxyConfigDictionary::CreateDirect();
@@ -357,12 +358,13 @@ DictionaryValue* CreateProxyConfigDict(ProxyPrefs::ProxyMode mode_enum,
   return result_proxy_config;
 }
 
-DictionaryValue* CreateProxyRulesDict(
+base::DictionaryValue* CreateProxyRulesDict(
     const ProxyConfigDictionary& proxy_config) {
   ProxyPrefs::ProxyMode mode;
   CHECK(proxy_config.GetMode(&mode) && mode == ProxyPrefs::MODE_FIXED_SERVERS);
 
-  scoped_ptr<DictionaryValue> extension_proxy_rules(new DictionaryValue);
+  scoped_ptr<base::DictionaryValue> extension_proxy_rules(
+      new base::DictionaryValue);
 
   std::string proxy_servers;
   if (!proxy_config.GetProxyServer(&proxy_servers)) {
@@ -377,28 +379,32 @@ DictionaryValue* CreateProxyRulesDict(
     case net::ProxyConfig::ProxyRules::TYPE_NO_RULES:
       return NULL;
     case net::ProxyConfig::ProxyRules::TYPE_SINGLE_PROXY:
-      if (rules.single_proxy.is_valid()) {
-        extension_proxy_rules->Set(keys::field_name[keys::SCHEME_ALL],
-                                   CreateProxyServerDict(rules.single_proxy));
+      if (!rules.single_proxies.IsEmpty()) {
+        extension_proxy_rules->Set(
+            keys::field_name[keys::SCHEME_ALL],
+            CreateProxyServerDict(rules.single_proxies.Get()));
       }
       break;
     case net::ProxyConfig::ProxyRules::TYPE_PROXY_PER_SCHEME:
-      if (rules.proxy_for_http.is_valid()) {
-        extension_proxy_rules->Set(keys::field_name[keys::SCHEME_HTTP],
-                                   CreateProxyServerDict(rules.proxy_for_http));
+      if (!rules.proxies_for_http.IsEmpty()) {
+        extension_proxy_rules->Set(
+            keys::field_name[keys::SCHEME_HTTP],
+            CreateProxyServerDict(rules.proxies_for_http.Get()));
       }
-      if (rules.proxy_for_https.is_valid()) {
+      if (!rules.proxies_for_https.IsEmpty()) {
         extension_proxy_rules->Set(
             keys::field_name[keys::SCHEME_HTTPS],
-            CreateProxyServerDict(rules.proxy_for_https));
+            CreateProxyServerDict(rules.proxies_for_https.Get()));
       }
-      if (rules.proxy_for_ftp.is_valid()) {
-        extension_proxy_rules->Set(keys::field_name[keys::SCHEME_FTP],
-                                   CreateProxyServerDict(rules.proxy_for_ftp));
+      if (!rules.proxies_for_ftp.IsEmpty()) {
+        extension_proxy_rules->Set(
+            keys::field_name[keys::SCHEME_FTP],
+            CreateProxyServerDict(rules.proxies_for_ftp.Get()));
       }
-      if (rules.fallback_proxy.is_valid()) {
-        extension_proxy_rules->Set(keys::field_name[keys::SCHEME_FALLBACK],
-                                   CreateProxyServerDict(rules.fallback_proxy));
+      if (!rules.fallback_proxies.IsEmpty()) {
+        extension_proxy_rules->Set(
+            keys::field_name[keys::SCHEME_FALLBACK],
+            CreateProxyServerDict(rules.fallback_proxies.Get()));
       }
       break;
   }
@@ -413,21 +419,25 @@ DictionaryValue* CreateProxyRulesDict(
       LOG(ERROR) << "Invalid bypassList in configuration.";
       return NULL;
     }
-    ListValue* bypass_list = TokenizeToStringList(bypass_list_string, ",;");
+    base::ListValue* bypass_list =
+        TokenizeToStringList(bypass_list_string, ",;");
     extension_proxy_rules->Set(keys::kProxyConfigBypassList, bypass_list);
   }
 
   return extension_proxy_rules.release();
 }
 
-DictionaryValue* CreateProxyServerDict(const net::ProxyServer& proxy) {
-  scoped_ptr<DictionaryValue> out(new DictionaryValue);
+base::DictionaryValue* CreateProxyServerDict(const net::ProxyServer& proxy) {
+  scoped_ptr<base::DictionaryValue> out(new base::DictionaryValue);
   switch (proxy.scheme()) {
     case net::ProxyServer::SCHEME_HTTP:
       out->SetString(keys::kProxyConfigRuleScheme, "http");
       break;
     case net::ProxyServer::SCHEME_HTTPS:
       out->SetString(keys::kProxyConfigRuleScheme, "https");
+      break;
+    case net::ProxyServer::SCHEME_QUIC:
+      out->SetString(keys::kProxyConfigRuleScheme, "quic");
       break;
     case net::ProxyServer::SCHEME_SOCKS4:
       out->SetString(keys::kProxyConfigRuleScheme, "socks4");
@@ -445,12 +455,12 @@ DictionaryValue* CreateProxyServerDict(const net::ProxyServer& proxy) {
   return out.release();
 }
 
-DictionaryValue* CreatePacScriptDict(
+base::DictionaryValue* CreatePacScriptDict(
     const ProxyConfigDictionary& proxy_config) {
   ProxyPrefs::ProxyMode mode;
   CHECK(proxy_config.GetMode(&mode) && mode == ProxyPrefs::MODE_PAC_SCRIPT);
 
-  scoped_ptr<DictionaryValue> pac_script_dict(new DictionaryValue);
+  scoped_ptr<base::DictionaryValue> pac_script_dict(new base::DictionaryValue);
   std::string pac_url;
   if (!proxy_config.GetPacUrl(&pac_url)) {
     LOG(ERROR) << "Invalid proxy configuration. Missing PAC URL.";
@@ -477,12 +487,12 @@ DictionaryValue* CreatePacScriptDict(
   return pac_script_dict.release();
 }
 
-ListValue* TokenizeToStringList(const std::string& in,
+base::ListValue* TokenizeToStringList(const std::string& in,
                                 const std::string& delims) {
-  ListValue* out = new ListValue;
-  StringTokenizer entries(in, delims);
+  base::ListValue* out = new base::ListValue;
+  base::StringTokenizer entries(in, delims);
   while (entries.GetNext())
-    out->Append(Value::CreateStringValue(entries.token()));
+    out->Append(new base::StringValue(entries.token()));
   return out;
 }
 

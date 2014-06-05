@@ -29,6 +29,8 @@ RETCODE=0
 readonly SCONS_EVERYTHING=""
 readonly SCONS_S_M="small_tests medium_tests"
 readonly SCONS_S_M_IRT="small_tests_irt medium_tests_irt"
+# TODO(mseaborn): Enable more tests for Non-SFI Mode when they pass.
+readonly SCONS_NONSFI="nonsfi_nacl=1 run_hello_world_test_irt"
 # subset of tests used on toolchain builders
 readonly SCONS_TC_TESTS="small_tests medium_tests"
 
@@ -36,19 +38,32 @@ readonly SCONS_COMMON="./scons --verbose bitcode=1"
 readonly UP_DOWN_LOAD="buildbot/file_up_down_load.sh"
 # This script is used by toolchain bots (i.e. tc-xxx functions)
 readonly PNACL_BUILD="pnacl/build.sh"
-readonly LLVM_TEST="pnacl/scripts/llvm-test.sh"
-readonly ACCEPTABLE_TOOLCHAIN_SIZE_MB=50
+readonly LLVM_TEST="pnacl/scripts/llvm-test.py"
+readonly DRIVER_TESTS="pnacl/driver/tests/driver_tests.py"
+readonly ACCEPTABLE_TOOLCHAIN_SIZE_MB=80
+
+setup-goma() {
+  echo "@@@BUILD_STEP goma_setup@@@"
+  if /b/build/goma/goma_ctl.sh ensure_start ; then
+    PATH=/b/build/goma:$PATH
+    export PNACL_CONCURRENCY_HOST=100
+  else
+    # For now, don't make the bot go red if goma fails to start, just fall back
+    echo "@@@STEP_WARNINGS@@@"
+  fi
+}
 
 tc-clobber() {
-  local label=$1
-  local clobber_translators=$2
+  local toolchain_dir=$1
+  local toolchain_name=$2
+  local clobber_translators=$3
 
   echo @@@BUILD_STEP tc_clobber@@@
-  rm -rf toolchain/${label}
-  rm -rf toolchain/test-log
+  rm -rf ${toolchain_dir}/${toolchain_name}
+  rm -rf ${toolchain_dir}/test-log
   rm -rf pnacl*.tgz pnacl/pnacl*.tgz
   if ${clobber_translators} ; then
-      rm -rf toolchain/pnacl_translator
+      rm -rf ${toolchain_dir}/pnacl_translator
   fi
 }
 
@@ -61,12 +76,16 @@ tc-compile-toolchain() {
   local build_fat=$1
   echo @@@BUILD_STEP compile_toolchain@@@
   ${PNACL_BUILD} clean
+  # Instead of using build.sh's sync-sources, the sources are now synced by
+  # toolchain_build_pnacl.py.
+  ${PNACL_BUILD} llvm-link-clang
+  ${PNACL_BUILD} newlib-nacl-headers
   if ${build_fat}; then
-    HOST_ARCH=x86_32 ${PNACL_BUILD} everything
+    HOST_ARCH=x86_32 ${PNACL_BUILD} build-all
     HOST_ARCH=x86_64 ${PNACL_BUILD} build-host
     HOST_ARCH=x86_64 ${PNACL_BUILD} driver
   else
-    ${PNACL_BUILD} everything
+    ${PNACL_BUILD} build-all
   fi
   ${PNACL_BUILD} tarball pnacl-toolchain.tgz
   chmod a+r pnacl-toolchain.tgz
@@ -86,15 +105,14 @@ tc-compile-toolchain() {
 }
 
 tc-untar-toolchain() {
-  local label=$1
+  local toolchain_dir=$1
+  local toolchain_name=$2
   echo @@@BUILD_STEP untar_toolchain@@@
   # Untar to ensure we can and to place the toolchain where the main build
   # expects it to be.
-  rm -rf toolchain/${label}
-  mkdir -p toolchain/${label}
-  pushd toolchain/${label}
-  tar xfz ../../pnacl-toolchain.tgz
-  popd
+  rm -rf ${toolchain_dir}/${toolchain_name}
+  mkdir -p ${toolchain_dir}/${toolchain_name}
+  tar xfz pnacl-toolchain.tgz -C "${toolchain_dir}/${toolchain_name}"
 }
 
 tc-build-translator() {
@@ -103,25 +121,20 @@ tc-build-translator() {
   ${PNACL_BUILD} translator-all
 }
 
-tc-add-glibc-support() {
-  echo @@@BUILD_STEP add_glibc_support@@@
-  ${PNACL_BUILD} glibc-all
-}
-
 tc-archive() {
   local label=$1
   echo @@@BUILD_STEP archive_toolchain@@@
-  ${UP_DOWN_LOAD} UploadPnaclToolchains ${BUILDBOT_GOT_REVISION} \
+  ${UP_DOWN_LOAD} UploadToolchainTarball ${BUILDBOT_GOT_REVISION} \
     ${label} pnacl-toolchain.tgz
-}
 
-tc-archive-translator-pexes() {
-  echo @@@BUILD_STEP archive_translator_pexe@@@
-  # NOTE: the build script needs an absolute pathname
-  local tarball="$(pwd)/pnacl-translator-pexe.tar.bz2"
-  ${PNACL_BUILD} translator-archive-pexes ${tarball}
-  ${UP_DOWN_LOAD} UploadArchivedPexesTranslator \
-      ${BUILDBOT_GOT_REVISION} ${tarball}
+  echo @@@BUILD_STEP upload_pnacl_toolchain_package_info@@@
+  ${NATIVE_PYTHON} build/package_version/package_version.py archive \
+      --archive-package=pnacl_newlib \
+      pnacl-toolchain.tgz@https://storage.googleapis.com/nativeclient-archive2/toolchain/${BUILDBOT_GOT_REVISION}/naclsdk_${label}.tgz
+
+   ${NATIVE_PYTHON} build/package_version/package_version.py --annotate \
+     --cloud-bucket nativeclient-archive2/pnacl_buildsh upload \
+     --upload-package=pnacl_newlib --revision=${BUILDBOT_GOT_REVISION}
 }
 
 tc-prune-translator-pexes() {
@@ -132,15 +145,24 @@ tc-prune-translator-pexes() {
 tc-archive-translator() {
   echo @@@BUILD_STEP archive_translator@@@
   ${PNACL_BUILD} translator-tarball pnacl-translator.tgz
-  ${UP_DOWN_LOAD} UploadPnaclToolchains ${BUILDBOT_GOT_REVISION} \
+  ${UP_DOWN_LOAD} UploadToolchainTarball ${BUILDBOT_GOT_REVISION} \
       pnacl_translator pnacl-translator.tgz
+
+  echo @@@BUILD_STEP upload_translator_package_info@@@
+  ${NATIVE_PYTHON} build/package_version/package_version.py archive \
+      --archive-package=pnacl_translator \
+      pnacl-translator.tgz@https://storage.googleapis.com/nativeclient-archive2/toolchain/${BUILDBOT_GOT_REVISION}/naclsdk_pnacl_translator.tgz
+
+  ${NATIVE_PYTHON} build/package_version/package_version.py --annotate upload \
+      --upload-package=pnacl_translator --revision=${BUILDBOT_GOT_REVISION}
 }
 
 tc-build-all() {
-  local label=$1
-  local is_try=$2
-  local build_translator=$3
-  local build_glibc=$3
+  local toolchain_dir=$1
+  local toolchain_name=$2
+  local label=$3
+  local is_try=$4
+  local build_translator=$5
 
   # Tell build.sh and test.sh that we're a bot.
   export PNACL_BUILDBOT=true
@@ -148,12 +170,18 @@ tc-build-all() {
   export PNACL_PRUNE=true
 
   clobber
-  tc-clobber ${label} ${build_translator}
+  tc-clobber ${toolchain_dir} ${toolchain_name} ${build_translator}
+
+  # Run checkdeps so that the PNaCl toolchain trybots catch mistakes
+  # that would cause the normal NaCl bots to fail.
+  echo "@@@BUILD_STEP checkdeps @@@"
+  ${NATIVE_PYTHON} tools/checkdeps/checkdeps.py
+
   tc-show-config
   # For now only linux64 (which also builds the translator) builds a fat
   # toolchain, so just use build_translator to control fat toolchain build
   tc-compile-toolchain ${build_translator}
-  tc-untar-toolchain ${label}
+  tc-untar-toolchain ${toolchain_dir} ${toolchain_name}
   if ! ${is_try} ; then
     tc-archive ${label}
   fi
@@ -162,14 +190,9 @@ tc-build-all() {
   if ${build_translator} ; then
     tc-build-translator
     if ! ${is_try} ; then
-      tc-archive-translator-pexes
       tc-prune-translator-pexes
       tc-archive-translator
     fi
-  fi
-
-  if ${build_glibc} ; then
-    tc-add-glibc-support
   fi
 
 }
@@ -179,9 +202,6 @@ tc-build-all() {
 relevant() {
   for i in "$@" ; do
     case $i in
-      nacl_pic=1)
-        echo -n "pic "
-        ;;
       use_sandboxed_translator=1)
         echo -n "sbtc "
         ;;
@@ -190,6 +210,9 @@ relevant() {
         ;;
       pnacl_generate_pexe=0)
         echo -n "no_pexe "
+        ;;
+      translate_fast=1)
+        echo -n "fast "
         ;;
       --nacl_glibc)
         echo -n "glibc "
@@ -211,7 +234,7 @@ handle-error() {
 # Clear out object, and temporary directories.
 clobber() {
   echo "@@@BUILD_STEP clobber@@@"
-  rm -rf scons-out ../xcodebuild ../sconsbuild ../out
+  rm -rf scons-out ../xcodebuild ../out
 }
 
 # Generate filenames for arm bot uploads and downloads
@@ -286,7 +309,7 @@ gyp-arm-build() {
   if [ "${BUILD_MODE_HOST}" = "DEBUG" ] ; then
       gypmode="Debug"
   fi
-  local toolchain_dir=native_client/toolchain/linux_arm-trusted
+  local toolchain_dir=native_client/toolchain/linux_x86/arm_trusted
   local extra="-isystem ${toolchain_dir}/usr/include \
                -Wl,-rpath-link=${toolchain_dir}/lib/arm-linux-gnueabi \
                -L${toolchain_dir}/lib \
@@ -297,9 +320,9 @@ gyp-arm-build() {
 
   export AR=arm-linux-gnueabi-ar
   export AS=arm-linux-gnueabi-as
-  export CC="arm-linux-gnueabi-gcc-4.5 ${extra} "
-  export CXX="arm-linux-gnueabi-g++-4.5 ${extra} "
-  export LD="arm-linux-gnueabi-g++-4.5 ${extra} "
+  export CC="arm-linux-gnueabi-gcc ${extra} "
+  export CXX="arm-linux-gnueabi-g++ ${extra} "
+  export LD="arm-linux-gnueabi-g++ ${extra} "
   export RANLIB=arm-linux-gnueabi-ranlib
   export SYSROOT
   export GYP_DEFINES="target_arch=arm \
@@ -360,65 +383,17 @@ scons-stage-noirt() {
 
 llvm-regression() {
   echo "@@@BUILD_STEP llvm_regression@@@"
-  ${LLVM_TEST} llvm-regression || handle-error
-}
-
-# This function is shared between x86-32 and x86-64. All building and testing
-# is done on the same bot. Try runs are identical to buildbot runs
-#
-# Note: unlike its arm counterparts we do not run trusted tests on these bots.
-# Trusted tests get plenty of coverage by other bots, e.g. nacl-gcc bots.
-# We make the assumption here that there are no "exotic tests" which
-# are trusted in nature but are somehow depedent on the untrusted TC.
-mode-buildbot-x86() {
-  local arch="x86-$1"
-  FAIL_FAST=false
-  clobber
-
-  local flags_build="skip_trusted_tests=1 -k -j8 do_not_run_tests=1"
-  local flags_run="skip_trusted_tests=1 -k -j4"
-  # Normal pexe tests. Build all targets, then run (-j4 is a compromise to try
-  # to reduce cycle times without making output too difficult to follow)
-  # We also intentionally build more than we run for "coverage".
-  # specifying "" as the target which means "build everything"
-
-  scons-stage-noirt "${arch}" "${flags_build}" "${SCONS_EVERYTHING}"
-  scons-stage-noirt "${arch}" "${flags_run}"   "${SCONS_S_M}"
-  # Large tests cannot be run in parallel
-  scons-stage-noirt "${arch}" "${flags_run} -j1"  "large_tests"
-
-  # non-pexe tests (Do the build-everything step just to make sure it all still
-  # builds as non-pexe)
-  scons-stage-noirt "${arch}" "${flags_build} pnacl_generate_pexe=0" \
-      "${SCONS_EVERYTHING}"
-  scons-stage-noirt "${arch}" "${flags_run} pnacl_generate_pexe=0" \
-      "nonpexe_tests"
-
-  # also run some tests with the irt
-  scons-stage-irt "${arch}" "${flags_run}" "${SCONS_S_M_IRT}"
-
-  # PIC
-  scons-stage-noirt "${arch}" "${flags_build} nacl_pic=1 pnacl_generate_pexe=0" \
-      "${SCONS_EVERYTHING}"
-  scons-stage-noirt "${arch}" "${flags_run} nacl_pic=1 pnacl_generate_pexe=0" \
-      "${SCONS_S_M}"
-
-  # sandboxed translation
-  build-sbtc-prerequisites ${arch}
-  scons-stage-noirt "${arch}" "${flags_build} use_sandboxed_translator=1" \
-      "${SCONS_EVERYTHING}"
-  scons-stage-irt "${arch}" "${flags_run} use_sandboxed_translator=1" \
-      "${SCONS_S_M_IRT}"
-  # translator memory consumption regression test
-  scons-stage-irt "${arch}" "${flags_run} use_sandboxed_translator=1" \
-      "large_code"
+  ${LLVM_TEST} --llvm-regression \
+    --llvm-buildpath="pnacl/build/llvm_${HOST_ARCH}" || handle-error
 }
 
 # QEMU upload bot runs this function, and the hardware download bot runs
 # mode-buildbot-arm-hw
 mode-buildbot-arm() {
   FAIL_FAST=false
-  local qemuflags="-j8 -k do_not_run_tests=1"
+  # "force_emulator=" disables use of QEMU, which enables building
+  # tests which don't work under QEMU.
+  local qemuflags="-j8 -k do_not_run_tests=1 force_emulator="
 
   clobber
 
@@ -442,19 +417,21 @@ mode-buildbot-arm() {
   # also run some tests with the irt
   scons-stage-irt "arm" "${qemuflags}" "${SCONS_S_M_IRT}"
 
-  # PIC
-  # Don't bother to build everything here, just the tests we want to run
-  scons-stage-noirt "arm" "${qemuflags} nacl_pic=1 pnacl_generate_pexe=0" \
-    "${SCONS_S_M}"
-
   # non-pexe-mode tests
   scons-stage-noirt "arm" "${qemuflags} pnacl_generate_pexe=0" "nonpexe_tests"
 
   build-sbtc-prerequisites "arm"
 
-  scons-stage-noirt "arm" \
+  scons-stage-irt "arm" \
     "${qemuflags} use_sandboxed_translator=1 translate_in_build_step=0" \
     "toolchain_tests"
+  scons-stage-irt "arm" \
+    "${qemuflags} use_sandboxed_translator=1 translate_fast=1 \
+       translate_in_build_step=0" \
+    "toolchain_tests"
+
+  # Test Non-SFI Mode.
+  scons-stage-irt "arm" "${qemuflags}" "${SCONS_NONSFI}"
 }
 
 mode-buildbot-arm-hw() {
@@ -464,16 +441,21 @@ mode-buildbot-arm-hw() {
   scons-stage-noirt "arm" "${hwflags}" "${SCONS_S_M}"
   # Large tests cannot be run in parallel
   scons-stage-noirt "arm" "${hwflags} -j1" "large_tests"
-  scons-stage-noirt "arm" "${hwflags} nacl_pic=1 pnacl_generate_pexe=0" \
-    "${SCONS_S_M}"
 
   # also run some tests with the irt
   scons-stage-irt "arm" "${hwflags}" "${SCONS_S_M_IRT}"
 
   scons-stage-noirt "arm" "${hwflags} pnacl_generate_pexe=0" "nonpexe_tests"
-  scons-stage-noirt "arm" \
+  scons-stage-irt "arm" \
     "${hwflags} use_sandboxed_translator=1 translate_in_build_step=0" \
     "toolchain_tests"
+  scons-stage-irt "arm" \
+    "${hwflags} use_sandboxed_translator=1 translate_fast=1 \
+       translate_in_build_step=0" \
+    "toolchain_tests"
+
+  # Test Non-SFI Mode.
+  scons-stage-irt "arm" "${hwflags}" "${SCONS_NONSFI}"
 }
 
 mode-trybot-qemu() {
@@ -492,13 +474,11 @@ mode-trybot-qemu() {
   # also run some tests with the irt
   scons-stage-irt "arm" "${qemuflags}" "${SCONS_S_M_IRT}"
 
-  scons-stage-noirt "arm" "${qemuflags} nacl_pic=1 pnacl_generate_pexe=0" \
-      "${SCONS_EVERYTHING}"
-  scons-stage-noirt "arm" "${qemuflags} -j1 nacl_pic=1 pnacl_generate_pexe=0" \
-      "${SCONS_S_M}"
-
   # non-pexe tests
   scons-stage-noirt "arm" "${qemuflags} pnacl_generate_pexe=0" "nonpexe_tests"
+
+  # Test Non-SFI Mode.
+  scons-stage-irt "arm" "${qemuflags}" "${SCONS_NONSFI}"
 }
 
 mode-buildbot-arm-dbg() {
@@ -535,128 +515,150 @@ mode-buildbot-arm-hw-try() {
   mode-buildbot-arm-hw
 }
 
-# These are also suitable for local TC sanity testing
+# These 2 functions are also suitable for local TC sanity testing.
 tc-tests-all() {
   local is_try=$1
 
-  local label="pnaclsdk_mode=custom:toolchain/${PNACL_TOOLCHAIN_LABEL}"
+  local label="pnacl_newlib_dir=toolchain/${PNACL_TOOLCHAIN_DIR}"
   local scons_flags="-k skip_trusted_tests=1 -j8 ${label}"
 
   llvm-regression
 
   # newlib
-  scons-stage-noirt "x86-32" "${scons_flags}" "${SCONS_TC_TESTS}"
-  # Large tests cannot be run in parallel
-  scons-stage-noirt "x86-32" "${scons_flags} -j1" "large_tests"
-  scons-stage-noirt "x86-64" "${scons_flags}" "${SCONS_TC_TESTS}"
-  scons-stage-noirt "x86-64" "${scons_flags} -j1" "large_tests"
-  scons-stage-noirt "arm"    "${scons_flags}" "${SCONS_TC_TESTS}"
-  scons-stage-noirt "arm"    "${scons_flags} -j1" "large_tests"
+  for arch in x86-32 x86-64 arm; do
+    ${DRIVER_TESTS} --platform="$arch"
+    scons-stage-noirt "$arch" "${scons_flags}" "${SCONS_TC_TESTS}"
+    # Large tests cannot be run in parallel
+    scons-stage-noirt "$arch" "${scons_flags} -j1" "large_tests"
+    scons-stage-noirt "$arch" "${scons_flags} pnacl_generate_pexe=0" \
+        "nonpexe_tests"
+  done
 
-  # small set of sbtc tests
-  scons-stage-noirt "x86-32" "${scons_flags} use_sandboxed_translator=1" \
+  # Small set of sbtc tests w/ and without translate_fast=1.
+  scons-stage-irt "x86-32" "${scons_flags} use_sandboxed_translator=1" \
     "toolchain_tests"
-  scons-stage-noirt "x86-64" "${scons_flags} use_sandboxed_translator=1" \
+  scons-stage-irt "x86-32" \
+    "${scons_flags} use_sandboxed_translator=1 translate_fast=1" \
     "toolchain_tests"
-  # smaller set of sbtc tests for ARM because qemu is flaky.
-  scons-stage-noirt "arm"    "${scons_flags} use_sandboxed_translator=1" \
-    "run_hello_world_test run_eh_catch_many_opt_noframe_test"
+  scons-stage-irt "x86-64" "${scons_flags} use_sandboxed_translator=1" \
+    "toolchain_tests"
+  scons-stage-irt "x86-64" \
+    "${scons_flags} use_sandboxed_translator=1 translate_fast=1" \
+    "toolchain_tests"
+  # Smaller set of sbtc tests for ARM because qemu is flaky.
+  scons-stage-irt "arm" "${scons_flags} use_sandboxed_translator=1" \
+    "run_hello_world_test"
+  scons-stage-irt "arm" \
+    "${scons_flags} use_sandboxed_translator=1 translate_fast=1" \
+    "run_hello_world_test"
 
-  # glibc
-  scons-stage-noirt "x86-32" \
-    "${scons_flags} --nacl_glibc pnacl_generate_pexe=0" \
-    "${SCONS_TC_TESTS}"
-  scons-stage-noirt "x86-64" \
-    "${scons_flags} --nacl_glibc pnacl_generate_pexe=0" \
-    "${SCONS_TC_TESTS}"
+  # Test Non-SFI Mode.
+  scons-stage-irt "x86-32" "${scons_flags}" "${SCONS_NONSFI}"
+  scons-stage-irt "arm" "${scons_flags}" "${SCONS_NONSFI}"
+
+  # Run the GCC torture tests just for x86-32.  Testing a single
+  # architecture gives good coverage without taking too long.  We
+  # don't test x86-64 here because some of the torture tests fail on
+  # the x86-64 toolchain trybot (though not the buildbots, apparently
+  # due to a hardware difference:
+  # https://code.google.com/p/nativeclient/issues/detail?id=3697).
+  # Build the SDK libs first so that linking will succeed.
+  echo "@@@BUILD_STEP sdk libs @@@"
+  ${PNACL_BUILD} sdk
+
+  echo "@@@BUILD_STEP torture_tests x86-32 @@@"
+  tools/toolchain_tester/torture_test.py pnacl x86-32 --verbose \
+      --concurrency=8 || handle-error
 }
 
 tc-tests-fast() {
+  local arch="$1"
+  local scons_flags="-k skip_trusted_tests=1"
+
   llvm-regression
-  scons-stage-noirt "$1" "-j8 -k" "${SCONS_TC_TESTS}"
+  ${DRIVER_TESTS} --platform="$arch"
+
+  scons-stage-noirt "${arch}" "${scons_flags} -j8" "${SCONS_TC_TESTS}"
   # Large tests cannot be run in parallel
-  scons-stage-noirt "$1" "-j1 -k" "large_tests"
+  scons-stage-noirt "${arch}" "${scons_flags} -j1" "large_tests"
+  scons-stage-noirt "${arch}" "${scons_flags} -j8 pnacl_generate_pexe=0" \
+    "nonpexe_tests"
 }
 
 mode-buildbot-tc-x8664-linux() {
+  setup-goma
   local is_try=$1
   FAIL_FAST=false
+  export PNACL_TOOLCHAIN_DIR=linux_x86/pnacl_newlib
   export PNACL_TOOLCHAIN_LABEL=pnacl_linux_x86
-  tc-build-all ${PNACL_TOOLCHAIN_LABEL} ${is_try} true true
-  tc-tests-all ${is_try}
+  tc-build-all toolchain/linux_x86 pnacl_newlib \
+      ${PNACL_TOOLCHAIN_LABEL} ${is_try} true
+  HOST_ARCH=x86_64 tc-tests-all ${is_try}
 }
 
 mode-buildbot-tc-x8632-linux() {
+  setup-goma
   local is_try=$1
   FAIL_FAST=false
+  export PNACL_TOOLCHAIN_DIR=linux_x86/pnacl_newlib
   export PNACL_TOOLCHAIN_LABEL=pnacl_linux_x86
   # For now, just use this bot to test a pure 32 bit build but don't upload
-  tc-build-all ${PNACL_TOOLCHAIN_LABEL} true false false
-  tc-tests-fast "x86-32"
+  tc-build-all toolchain/linux_x86 pnacl_newlib \
+      ${PNACL_TOOLCHAIN_LABEL} true false
+  HOST_ARCH=x86_32 tc-tests-fast "x86-32"
+
+  echo "@@@BUILD_STEP test unsandboxed mode@@@"
+  # Test translation to an unsandboxed executable.
+  # TODO(mseaborn): Run more tests here when they pass.
+  ./scons bitcode=1 pnacl_unsandboxed=1 \
+    --mode=nacl_irt_test platform=x86-32 -j8 \
+    run_hello_world_test_irt \
+    run_irt_futex_test_irt \
+    run_thread_test_irt \
+    run_float_test_irt \
+    run_malloc_realloc_calloc_free_test_irt \
+    run_dup_test_irt \
+    run_cond_timedwait_test_irt \
+    run_syscall_test_irt \
+    run_getpid_test_irt
+
+  # Test Non-SFI Mode.
+  scons-stage-irt "x86-32" "-j8 -k" "${SCONS_NONSFI}"
 }
 
 mode-buildbot-tc-x8632-mac() {
   local is_try=$1
   FAIL_FAST=false
+  export PNACL_TOOLCHAIN_DIR=mac_x86/pnacl_newlib
   export PNACL_TOOLCHAIN_LABEL=pnacl_mac_x86
+  tc-build-all toolchain/mac_x86 pnacl_newlib \
+      ${PNACL_TOOLCHAIN_LABEL} ${is_try} false
   # We can't test ARM because we do not have QEMU for Mac.
-  # We can't test X86-64 because NaCl X86-64 Mac support is not in good shape.
-  tc-build-all ${PNACL_TOOLCHAIN_LABEL} ${is_try} false false
-  tc-tests-fast "x86-32"
+  HOST_ARCH=x86_64 tc-tests-fast "x86-32"
+  HOST_ARCH=x86_64 tc-tests-fast "x86-64"
+
+  echo "@@@BUILD_STEP test unsandboxed mode@@@"
+  # Test translation to an unsandboxed executable.
+  # TODO(mseaborn): Use the same test list as on Linux when the
+  # threading tests pass for Mac.
+  ./scons bitcode=1 pnacl_unsandboxed=1 \
+    --mode=nacl_irt_test platform=x86-32 -j8 run_hello_world_test_irt
 }
 
 mode-buildbot-tc-x8664-win() {
   local is_try=$1
   FAIL_FAST=false
   # NOTE: this is a 64bit bot but the TC generated is 32bit
+  export PNACL_TOOLCHAIN_DIR=win_x86_pnacl/pnacl_newlib
   export PNACL_TOOLCHAIN_LABEL=pnacl_win_x86
-  tc-build-all ${PNACL_TOOLCHAIN_LABEL} ${is_try} false false
+  tc-build-all toolchain/win_x86_pnacl pnacl_newlib \
+      ${PNACL_TOOLCHAIN_LABEL} ${is_try} false
 
   # We can't test ARM because we do not have QEMU for Win.
-  tc-tests-fast "x86-64"
+  HOST_ARCH=x86_32 tc-tests-fast "x86-64"
 }
 
 
-
-mode-test-all() {
-  test-all-newlib "$@"
-  test-all-glibc "$@"
-}
-
-# NOTE: clobber and toolchain setup to be done manually, since this is for
-# testing a locally built toolchain.
-# This runs tests concurrently, so may be more difficult to parse logs.
-test-all-newlib() {
-  local concur=$1
-
-  # turn verbose mode off
-  set +o xtrace
-
-  llvm-regression
-
-  # At least clobber scons-out before building and running the tests though.
-  echo "@@@BUILD_STEP clobber@@@"
-  rm -rf scons-out
-
-  # First build everything.
-  echo "@@@BUILD_STEP scons build @@@"
-  local scons_flags="skip_trusted_tests=1 -j${concur}"
-  scons-stage-noirt "arm"    "${scons_flags}" "${SCONS_EVERYTHING}"
-  scons-stage-noirt "x86-32" "${scons_flags}" "${SCONS_EVERYTHING}"
-  scons-stage-noirt "x86-64" "${scons_flags}" "${SCONS_EVERYTHING}"
-  # Then run the tests. smoke_tests can be run in parallel but not large_tests
-  echo "@@@BUILD_STEP scons smoke_tests @@@"
-  scons-stage-noirt "arm"    "${scons_flags}" "smoke_tests"
-  scons-stage-noirt "arm"    "${scons_flags} -j1" "large_tests"
-  scons-stage-noirt "x86-32" "${scons_flags}" "smoke_tests"
-  scons-stage-noirt "x86-32"    "${scons_flags} -j1" "large_tests"
-  scons-stage-noirt "x86-64" "${scons_flags}" "smoke_tests"
-  scons-stage-noirt "x86-64"    "${scons_flags} -j1" "large_tests"
-}
-
-test-all-glibc() {
-  echo "TODO(pdox): Add GlibC tests"
-}
 
 ######################################################################
 # On Windows, this script is invoked from a batch file.

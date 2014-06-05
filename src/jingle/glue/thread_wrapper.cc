@@ -31,9 +31,9 @@ base::LazyInstance<base::ThreadLocalPointer<JingleThreadWrapper> >
 // static
 void JingleThreadWrapper::EnsureForCurrentMessageLoop() {
   if (JingleThreadWrapper::current() == NULL) {
-    MessageLoop* message_loop = MessageLoop::current();
-    g_jingle_thread_wrapper.Get().Set(new JingleThreadWrapper(
-        message_loop->message_loop_proxy()));
+    base::MessageLoop* message_loop = base::MessageLoop::current();
+    g_jingle_thread_wrapper.Get()
+        .Set(new JingleThreadWrapper(message_loop->message_loop_proxy()));
     message_loop->AddDestructionObserver(current());
   }
 
@@ -52,11 +52,11 @@ JingleThreadWrapper::JingleThreadWrapper(
       send_allowed_(false),
       last_task_id_(0),
       pending_send_event_(true, false),
-      weak_ptr_factory_(this),
-      weak_ptr_(weak_ptr_factory_.GetWeakPtr()) {
+      weak_ptr_factory_(this) {
   DCHECK(task_runner->BelongsToCurrentThread());
   DCHECK(!talk_base::Thread::Current());
-  talk_base::MessageQueueManager::Instance()->Add(this);
+  weak_ptr_ = weak_ptr_factory_.GetWeakPtr();
+  talk_base::MessageQueueManager::Add(this);
   WrapCurrent();
 }
 
@@ -69,7 +69,7 @@ void JingleThreadWrapper::WillDestroyCurrentMessageLoop() {
   UnwrapCurrent();
   g_jingle_thread_wrapper.Get().Set(NULL);
   talk_base::ThreadManager::Instance()->SetCurrentThread(NULL);
-  talk_base::MessageQueueManager::Instance()->Remove(this);
+  talk_base::MessageQueueManager::Remove(this);
   talk_base::SocketServer* ss = socketserver();
   delete this;
   delete ss;

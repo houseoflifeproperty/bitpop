@@ -5,28 +5,31 @@
 #ifndef UI_GFX_TRANSFORM_UTIL_H_
 #define UI_GFX_TRANSFORM_UTIL_H_
 
-#include "ui/base/ui_export.h"
+#include "ui/gfx/gfx_export.h"
 #include "ui/gfx/transform.h"
 
 namespace gfx {
 
 class Point;
+class Rect;
 
 // Returns a scale transform at |anchor| point.
-UI_EXPORT Transform GetScaleTransform(const Point& anchor, float scale);
+GFX_EXPORT Transform GetScaleTransform(const Point& anchor, float scale);
 
 // Contains the components of a factored transform. These components may be
 // blended and recomposed.
-struct UI_EXPORT DecomposedTransform {
+struct GFX_EXPORT DecomposedTransform {
   // The default constructor initializes the components in such a way that
   // if used with Compose below, will produce the identity transform.
   DecomposedTransform();
 
-  double translate[3];
-  double scale[3];
-  double skew[3];
-  double perspective[4];
-  double quaternion[4];
+  SkMScalar translate[3];
+  SkMScalar scale[3];
+  SkMScalar skew[3];
+  SkMScalar perspective[4];
+  SkMScalar quaternion[4];
+
+  std::string ToString() const;
 
   // Copy and assign are allowed.
 };
@@ -35,21 +38,25 @@ struct UI_EXPORT DecomposedTransform {
 // routines described in http://www.w3.org/TR/css3-3d-transform/.
 // |progress| is in the range [0, 1] (0 leaves |out| unchanged, and 1
 // assigns |from| to |out|).
-UI_EXPORT bool BlendDecomposedTransforms(DecomposedTransform* out,
-                                         const DecomposedTransform& to,
-                                         const DecomposedTransform& from,
-                                         double progress);
+GFX_EXPORT bool BlendDecomposedTransforms(DecomposedTransform* out,
+                                          const DecomposedTransform& to,
+                                          const DecomposedTransform& from,
+                                          double progress);
 
 // Decomposes this transform into its translation, scale, skew, perspective,
 // and rotation components following the routines detailed in this spec:
 // http://www.w3.org/TR/css3-3d-transforms/.
-UI_EXPORT bool DecomposeTransform(DecomposedTransform* out,
-                                  const Transform& transform);
+GFX_EXPORT bool DecomposeTransform(DecomposedTransform* out,
+                                   const Transform& transform);
 
 // Composes a transform from the given translation, scale, skew, prespective,
 // and rotation components following the routines detailed in this spec:
 // http://www.w3.org/TR/css3-3d-transforms/.
-UI_EXPORT Transform ComposeTransform(const DecomposedTransform& decomp);
+GFX_EXPORT Transform ComposeTransform(const DecomposedTransform& decomp);
+
+GFX_EXPORT bool SnapTransform(Transform* out,
+                              const Transform& transform,
+                              const Rect& viewport);
 
 }  // namespace gfx
 

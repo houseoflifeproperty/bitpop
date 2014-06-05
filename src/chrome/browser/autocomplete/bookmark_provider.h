@@ -10,10 +10,10 @@
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
-#include "chrome/browser/history/snippet.h"
+#include "components/query_parser/snippet.h"
 
 class BookmarkModel;
+struct BookmarkMatch;
 class Profile;
 
 // This class is an autocomplete provider which quickly (and synchronously)
@@ -40,28 +40,37 @@ class BookmarkProvider : public AutocompleteProvider {
   }
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(BookmarkProviderTest, InlineAutocompletion);
+
   virtual ~BookmarkProvider();
 
   // Performs the actual matching of |input| over the bookmarks and fills in
-  // |matches_|. If |best_match| then only suggest the single best match,
-  // otherwise suggest the top |kMaxMatches| matches.
-  void DoAutocomplete(const AutocompleteInput& input, bool best_match);
+  // |matches_|.
+  void DoAutocomplete(const AutocompleteInput& input);
 
-  // Compose an AutocompleteMatch based on |title_match| that has 1) the URL of
-  // title_match's bookmark, and 2) the bookmark's title, not the URL's page
-  // title, as the description.
-  AutocompleteMatch TitleMatchToACMatch(
-      const bookmark_utils::TitleMatch& title_match);
+  // Compose an AutocompleteMatch based on |match| that has 1) the URL of
+  // |match|'s bookmark, and 2) the bookmark's title, not the URL's page
+  // title, as the description.  |input| is used to compute the match's
+  // inline_autocompletion.  |fixed_up_input| is used in that way as well;
+  // it's passed separately so this function doesn't have to compute it.
+  AutocompleteMatch BookmarkMatchToACMatch(
+      const AutocompleteInput& input,
+      const AutocompleteInput& fixed_up_input,
+      const BookmarkMatch& match);
 
   // Converts |positions| into ACMatchClassifications and returns the
   // classifications. |text_length| is used to determine the need to add an
   // 'unhighlighted' classification span so the tail of the source string
   // properly highlighted.
   static ACMatchClassifications ClassificationsFromMatch(
-      const Snippet::MatchPositions& positions,
-      size_t text_length);
+      const query_parser::Snippet::MatchPositions& positions,
+      size_t text_length,
+      bool is_url);
 
   BookmarkModel* bookmark_model_;
+
+  // True if we should use matches in the URL for scoring.
+  const bool score_using_url_matches_;
 
   // Languages used during the URL formatting.
   std::string languages_;

@@ -300,10 +300,10 @@ class ConsoleStatusResource(HtmlResource):
                         logname = log.getName()
                         logurl = request.childLink(
                           "../builders/%s/builds/%s/steps/%s/logs/%s" % 
-                            (urllib.quote(builderName),
+                            (urllib.quote(builderName, safe=''),
                              build.getNumber(),
-                             urllib.quote(name),
-                             urllib.quote(logname)))
+                             urllib.quote(name, safe=''),
+                             urllib.quote(logname, safe='')))
                         logs.append(dict(url=logurl, name=logname))
         return details
 
@@ -579,8 +579,9 @@ class ConsoleStatusResource(HtmlResource):
                 current_details = {}
                 if introducedIn:
                     current_details = introducedIn.details or ""
-                    url = "./buildstatus?builder=%s&number=%s" % (urllib.quote(builder),
-                                                                  introducedIn.number)
+                    url = "./buildstatus?builder=%s&number=%s" % (
+                        urllib.quote(builder, safe=''),
+                        introducedIn.number)
                     pageTitle += " "
                     pageTitle += urllib.quote(' '.join(introducedIn.text), ' \n\\/:')
 

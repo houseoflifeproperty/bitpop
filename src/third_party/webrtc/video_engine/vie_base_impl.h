@@ -11,13 +11,14 @@
 #ifndef WEBRTC_VIDEO_ENGINE_VIE_BASE_IMPL_H_
 #define WEBRTC_VIDEO_ENGINE_VIE_BASE_IMPL_H_
 
-#include "video_engine/include/vie_base.h"
-#include "video_engine/vie_defines.h"
-#include "video_engine/vie_ref_count.h"
-#include "video_engine/vie_shared_data.h"
+#include "webrtc/video_engine/include/vie_base.h"
+#include "webrtc/video_engine/vie_defines.h"
+#include "webrtc/video_engine/vie_ref_count.h"
+#include "webrtc/video_engine/vie_shared_data.h"
 
 namespace webrtc {
 
+class Config;
 class Module;
 class VoiceEngine;
 
@@ -30,7 +31,18 @@ class ViEBaseImpl
   // Implements ViEBase.
   virtual int Init();
   virtual int SetVoiceEngine(VoiceEngine* voice_engine);
+  virtual int RegisterCpuOveruseObserver(int channel,
+                                         CpuOveruseObserver* observer);
+  virtual int SetCpuOveruseOptions(int channel,
+                                   const CpuOveruseOptions& options);
+  virtual int CpuOveruseMeasures(int channel,
+                                 int* capture_jitter_ms,
+                                 int* avg_encode_time_ms,
+                                 int* encode_usage_percent,
+                                 int* capture_queue_delay_ms_per_s);
   virtual int CreateChannel(int& video_channel);  // NOLINT
+  virtual int CreateChannel(int& video_channel,  // NOLINT
+                            const Config* config);
   virtual int CreateChannel(int& video_channel,  // NOLINT
                             int original_channel);
   virtual int CreateReceiveChannel(int& video_channel,  // NOLINT
@@ -47,16 +59,16 @@ class ViEBaseImpl
   virtual int LastError();
 
  protected:
-  ViEBaseImpl();
+  explicit ViEBaseImpl(const Config& config);
   virtual ~ViEBaseImpl();
 
   ViESharedData* shared_data() { return &shared_data_; }
 
  private:
   // Version functions.
-  WebRtc_Word32 AddViEVersion(char* str) const;
-  WebRtc_Word32 AddBuildInfo(char* str) const;
-  WebRtc_Word32 AddExternalTransportBuild(char* str) const;
+  int32_t AddViEVersion(char* str) const;
+  int32_t AddBuildInfo(char* str) const;
+  int32_t AddExternalTransportBuild(char* str) const;
 
   int CreateChannel(int& video_channel, int original_channel,  // NOLINT
                     bool sender);

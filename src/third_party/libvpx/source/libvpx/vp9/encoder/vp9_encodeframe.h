@@ -12,10 +12,28 @@
 #ifndef VP9_ENCODER_VP9_ENCODEFRAME_H_
 #define VP9_ENCODER_VP9_ENCODEFRAME_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct macroblock;
+struct yv12_buffer_config;
+struct VP9_COMP;
 
-extern void vp9_build_block_offsets(struct macroblock *x);
+typedef struct {
+  unsigned int sse;
+  int sum;
+  unsigned int var;
+} diff;
 
-extern void vp9_setup_block_ptrs(struct macroblock *x);
+void vp9_setup_src_planes(struct macroblock *x,
+                          const struct yv12_buffer_config *src,
+                          int mi_row, int mi_col);
 
-#endif  // __INC_ENCODEFRAME_H
+void vp9_encode_frame(struct VP9_COMP *cpi);
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
+
+#endif  // VP9_ENCODER_VP9_ENCODEFRAME_H_

@@ -19,9 +19,6 @@ class CrashesUI : public content::WebUIController {
   static base::RefCountedMemory* GetFaviconResourceBytes(
       ui::ScaleFactor scale_factor);
 
-  // Whether crash reporting has been enabled.
-  static bool CrashReportingEnabled();
-
  private:
   DISALLOW_COPY_AND_ASSIGN(CrashesUI);
 };

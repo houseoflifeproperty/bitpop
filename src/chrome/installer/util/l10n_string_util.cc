@@ -12,8 +12,8 @@
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/installer/util/language_selector.h"
 
 namespace {
@@ -55,6 +55,13 @@ std::wstring GetLocalizedString(int base_message_id) {
   return localized_string;
 }
 
+base::string16 GetLocalizedStringF(int base_message_id,
+                                   const base::string16& a) {
+  return ReplaceStringPlaceholders(GetLocalizedString(base_message_id),
+                                   std::vector<base::string16>(1, a),
+                                   NULL);
+}
+
 // Here we generate the url spec with the Microsoft res:// scheme which is
 // explained here : http://support.microsoft.com/kb/220830
 std::wstring GetLocalizedEulaResource() {
@@ -83,7 +90,7 @@ std::wstring GetLocalizedEulaResource() {
   // (see the definition of full_exe_path and resource).
   DCHECK(kuint32max > (url_path.size() * 3));
   DWORD count = static_cast<DWORD>(url_path.size() * 3);
-  scoped_array<wchar_t> url_canon(new wchar_t[count]);
+  scoped_ptr<wchar_t[]> url_canon(new wchar_t[count]);
   HRESULT hr = ::UrlCanonicalizeW(url_path.c_str(), url_canon.get(),
                                   &count, URL_ESCAPE_UNSAFE);
   if (SUCCEEDED(hr))

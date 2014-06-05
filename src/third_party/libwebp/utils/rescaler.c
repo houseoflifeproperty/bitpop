@@ -1,8 +1,10 @@
 // Copyright 2012 Google Inc. All Rights Reserved.
 //
-// This code is licensed under the same terms as WebM:
-//  Software License Agreement:  http://www.webmproject.org/license/software/
-//  Additional IP Rights Grant:  http://www.webmproject.org/license/additional/
+// Use of this source code is governed by a BSD-style license
+// that can be found in the COPYING file in the root of the source
+// tree. An additional intellectual property rights grant can be found
+// in the file PATENTS. All contributing project authors may
+// be found in the AUTHORS file in the root of the source tree.
 // -----------------------------------------------------------------------------
 //
 // Rescaling functions
@@ -15,12 +17,8 @@
 
 //------------------------------------------------------------------------------
 
-#if defined(__cplusplus) || defined(c_plusplus)
-extern "C" {
-#endif
-
 #define RFIX 30
-#define MULT_FIX(x,y) (((int64_t)(x) * (y) + (1 << (RFIX - 1))) >> RFIX)
+#define MULT_FIX(x, y) (((int64_t)(x) * (y) + (1 << (RFIX - 1))) >> RFIX)
 
 void WebPRescalerInit(WebPRescaler* const wrk, int src_width, int src_height,
                       uint8_t* const dst, int dst_width, int dst_height,
@@ -121,6 +119,11 @@ uint8_t* WebPRescalerExportRow(WebPRescaler* const wrk) {
 //------------------------------------------------------------------------------
 // all-in-one calls
 
+int WebPRescaleNeededLines(const WebPRescaler* const wrk, int max_num_lines) {
+  const int num_lines = (wrk->y_accum + wrk->y_sub - 1) / wrk->y_sub;
+  return (num_lines > max_num_lines) ? max_num_lines : num_lines;
+}
+
 int WebPRescalerImport(WebPRescaler* const wrk, int num_lines,
                        const uint8_t* src, int src_stride) {
   int total_imported = 0;
@@ -147,6 +150,3 @@ int WebPRescalerExport(WebPRescaler* const rescaler) {
 
 //------------------------------------------------------------------------------
 
-#if defined(__cplusplus) || defined(c_plusplus)
-}    // extern "C"
-#endif

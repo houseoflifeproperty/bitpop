@@ -5,7 +5,7 @@
 #ifndef CC_TEST_FAKE_TILE_MANAGER_CLIENT_H_
 #define CC_TEST_FAKE_TILE_MANAGER_CLIENT_H_
 
-#include "cc/tile_manager.h"
+#include "cc/resources/tile_manager.h"
 
 namespace cc {
 
@@ -14,8 +14,8 @@ class FakeTileManagerClient : public TileManagerClient {
   virtual ~FakeTileManagerClient() {}
 
   // TileManagerClient implementation.
-  virtual void ScheduleManageTiles() OVERRIDE {}
-  virtual void ScheduleCheckForCompletedSetPixels() OVERRIDE {}
+  virtual void NotifyReadyToActivate() OVERRIDE {}
+  virtual void NotifyTileInitialized(const Tile* tile) OVERRIDE {}
 };
 
 }  // namespace cc

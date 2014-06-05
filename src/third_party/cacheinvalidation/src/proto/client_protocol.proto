@@ -192,19 +192,21 @@ message InvalidationP {
   // Whether the object's Trickle is restarting at this version.
   //  sets this value to true to inform Trickle API clients that it may
   // have dropped invalidations prior to "version", or, if is_known_version is
-  // false, prior to the current backend version.
-  optional bool is_trickle_restart = 6 [default = false];
+  // false, prior to the current backend version. This field is logically
+  // required and is always set by current code. The default is true because
+  // old Android invalidation clients strip this field when acking
+  // invalidations due to ProtoLite limitations; true is the correct default
+  // because invalidation clients logically ack all current versions and
+  // because old persisted invalidations are all restarted.
+  optional bool is_trickle_restart = 6 [default = true];
 
   // Optional payload associated with this invalidation.
   optional bytes payload = 4;
 
-  // The time when the bridge created this invalidation, in milliseconds.
-  // This is expressed as ms since 00:00:00 UTC, 1 January 1970
-  // (i.e., the UNIX epoch). If the client associated with this is offline,
-  // this will be cleared in the registrar.  This field should be ignored when
-  // comparing two InvalidationP's to see if they represent the same
-  // invalidation.
-  optional int64 bridge_arrival_time_ms = 5;
+  // DEPRECATED: bridge arrival time is now maintained by
+  // InvalidationMetadataP in the SourcedInvalidation, InvalidationContents and
+  // ClientInvalidation containers.
+  optional int64 bridge_arrival_time_ms_deprecated = 5  [deprecated=true];
 }
 
 // Specifies the intention to change a registration on a specific object.  To
@@ -282,6 +284,10 @@ message ClientHeader {
 
   // Message id to identify the message -for debugging/monitoring purposes.
   optional string message_id = 6;
+
+  // Client typecode (as in the InitializeMessage, below). This field may or
+  // may not be set.
+  optional int32 client_type = 7;
 }
 
 // A message from the client to the server.
@@ -566,6 +572,13 @@ message ClientConfigP {
   // comes online, unless it had already sent a message more recently than this
   // threshold.
   optional int32 offline_heartbeat_threshold_ms = 12 [default = 60000];
+
+  // Whether the client allows suppression. If true (the default), then
+  // both continuous and restarted invalidations result in an invalidate()
+  // upcall, which is appropriate for invalidation clients. If false,
+  // then restarted invalidations result in an invalidateUnknownVersion()
+  // upcall, which provides correct semantics for Trickles clients.
+  optional bool allow_suppression = 13 [default = true];
 }
 
 // A message asking the client to change its configuration parameters

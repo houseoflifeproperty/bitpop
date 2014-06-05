@@ -12,8 +12,8 @@
 #include "base/threading/thread.h"
 #include "chrome/service/cloud_print/cloud_print_url_fetcher.h"
 #include "chrome/service/cloud_print/print_system.h"
-#include "googleurl/src/gurl.h"
 #include "net/url_request/url_request_status.h"
+#include "url/gurl.h"
 
 namespace cloud_print {
 
@@ -53,10 +53,15 @@ class JobStatusUpdater : public base::RefCountedThreadSafe<JobStatusUpdater>,
   virtual CloudPrintURLFetcher::ResponseAction OnRequestAuthError() OVERRIDE;
   virtual std::string GetAuthHeader() OVERRIDE;
 
+  base::Time start_time() const {
+    return start_time_;
+  }
+
  private:
   friend class base::RefCountedThreadSafe<JobStatusUpdater>;
   virtual ~JobStatusUpdater();
 
+  base::Time start_time_;
   std::string printer_name_;
   std::string job_id_;
   PlatformJobId local_job_id_;

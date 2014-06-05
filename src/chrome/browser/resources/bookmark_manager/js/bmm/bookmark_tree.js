@@ -4,6 +4,13 @@
 
 
 cr.define('bmm', function() {
+  /**
+   * The id of the bookmark root.
+   * @type {string}
+   * @const
+   */
+  var ROOT_ID = '0';
+
   /** @const */ var Tree = cr.ui.Tree;
   /** @const */ var TreeItem = cr.ui.TreeItem;
 
@@ -102,13 +109,6 @@ cr.define('bmm', function() {
   BookmarkTreeItem.prototype = {
     __proto__: TreeItem.prototype,
 
-    /** @override */
-    remove: function(child) {
-      TreeItem.prototype.remove.call(this, child);
-      if (child.bookmarkNode)
-        delete treeLookup[child.bookmarkNode.id];
-    },
-
     /**
      * The ID of the bookmark this tree item represents.
      * @type {string}
@@ -162,6 +162,7 @@ cr.define('bmm', function() {
       Tree.prototype.decorate.call(this);
       this.addEventListener('expand', expandedManager);
       this.addEventListener('collapse', expandedManager);
+
       bmm.tree = this;
     },
 
@@ -233,6 +234,15 @@ cr.define('bmm', function() {
     },
 
     /**
+      * Returns the selected bookmark folder node as an array.
+      * @type {!Array} Array of bookmark nodes.
+      */
+    get selectedFolders() {
+       return this.selectedItem && this.selectedItem.bookmarkNode ?
+           [this.selectedItem.bookmarkNode] : [];
+     },
+
+     /**
      * Fetches the bookmark items and builds the tree control.
      */
     reload: function() {
@@ -291,6 +301,7 @@ cr.define('bmm', function() {
     BookmarkTree: BookmarkTree,
     BookmarkTreeItem: BookmarkTreeItem,
     treeLookup: treeLookup,
-    tree: tree
+    tree: tree,
+    ROOT_ID: ROOT_ID
   };
 });

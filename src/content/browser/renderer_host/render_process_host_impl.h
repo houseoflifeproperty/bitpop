@@ -10,29 +10,50 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/process.h"
-#include "base/synchronization/waitable_event.h"
-#include "base/timer.h"
+#include "base/observer_list.h"
+#include "base/process/process.h"
+#include "base/timer/timer.h"
 #include "content/browser/child_process_launcher.h"
+#include "content/browser/geolocation/geolocation_dispatcher_host.h"
+#include "content/browser/power_monitor_message_broadcaster.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/gpu_data_manager_observer.h"
 #include "content/public/browser/render_process_host.h"
 #include "ipc/ipc_channel_proxy.h"
-#include "ui/surface/transport_dib.h"
+#include "ipc/ipc_platform_file.h"
+#include "mojo/public/cpp/bindings/interface_ptr.h"
 
+struct ViewHostMsg_CompositorSurfaceBuffersSwapped_Params;
+
+namespace base {
 class CommandLine;
+class MessageLoop;
+}
 
 namespace gfx {
 class Size;
 }
 
 namespace content {
+class AudioRendererHost;
+class BrowserDemuxerAndroid;
+class GeolocationDispatcherHost;
 class GpuMessageFilter;
+class MessagePortMessageFilter;
+class MojoApplicationHost;
+class PeerConnectionTrackerHost;
 class RendererMainThread;
+class RenderProcessHostMojoImpl;
 class RenderWidgetHelper;
 class RenderWidgetHost;
 class RenderWidgetHostImpl;
+class RenderWidgetHostViewFrameSubscriber;
+class ScreenOrientationDispatcherHost;
 class StoragePartition;
 class StoragePartitionImpl;
+
+typedef base::Thread* (*RendererMainThreadFactoryFunction)(
+    const std::string& id);
 
 // Implements a concrete RenderProcessHost for the browser process for talking
 // to actual renderer processes (as opposed to mocks).
@@ -55,7 +76,8 @@ class StoragePartitionImpl;
 // to access the partition they are assigned to.
 class CONTENT_EXPORT RenderProcessHostImpl
     : public RenderProcessHost,
-      public ChildProcessLauncher::Client {
+      public ChildProcessLauncher::Client,
+      public GpuDataManagerObserver {
  public:
   RenderProcessHostImpl(BrowserContext* browser_context,
                         StoragePartitionImpl* storage_partition_impl,
@@ -66,9 +88,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual void EnableSendQueue() OVERRIDE;
   virtual bool Init() OVERRIDE;
   virtual int GetNextRoutingID() OVERRIDE;
-  virtual void CancelResourceRequests(int render_widget_id) OVERRIDE;
-  virtual void SimulateSwapOutACK(const ViewMsg_SwapOut_Params& params)
-      OVERRIDE;
+  virtual void AddRoute(int32 routing_id, IPC::Listener* listener) OVERRIDE;
+  virtual void RemoveRoute(int32 routing_id) OVERRIDE;
+  virtual void AddObserver(RenderProcessHostObserver* observer) OVERRIDE;
+  virtual void RemoveObserver(RenderProcessHostObserver* observer) OVERRIDE;
   virtual bool WaitForBackingStoreMsg(int render_widget_id,
                                       const base::TimeDelta& max_delay,
                                       IPC::Message* msg) OVERRIDE;
@@ -80,32 +103,35 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual StoragePartition* GetStoragePartition() const OVERRIDE;
   virtual bool FastShutdownIfPossible() OVERRIDE;
   virtual void DumpHandles() OVERRIDE;
-  virtual base::ProcessHandle GetHandle() OVERRIDE;
-  virtual TransportDIB* GetTransportDIB(TransportDIB::Id dib_id) OVERRIDE;
+  virtual base::ProcessHandle GetHandle() const OVERRIDE;
   virtual BrowserContext* GetBrowserContext() const OVERRIDE;
   virtual bool InSameStoragePartition(
       StoragePartition* partition) const OVERRIDE;
   virtual int GetID() const OVERRIDE;
   virtual bool HasConnection() const OVERRIDE;
-  virtual RenderWidgetHost* GetRenderWidgetHostByID(int routing_id)
-      OVERRIDE;
   virtual void SetIgnoreInputEvents(bool ignore_input_events) OVERRIDE;
   virtual bool IgnoreInputEvents() const OVERRIDE;
-  virtual void Attach(RenderWidgetHost* host, int routing_id)
-      OVERRIDE;
-  virtual void Release(int routing_id) OVERRIDE;
   virtual void Cleanup() OVERRIDE;
   virtual void AddPendingView() OVERRIDE;
   virtual void RemovePendingView() OVERRIDE;
   virtual void SetSuddenTerminationAllowed(bool enabled) OVERRIDE;
   virtual bool SuddenTerminationAllowed() const OVERRIDE;
   virtual IPC::ChannelProxy* GetChannel() OVERRIDE;
-  virtual RenderWidgetHostsIterator GetRenderWidgetHostsIterator() OVERRIDE;
+  virtual void AddFilter(BrowserMessageFilter* filter) OVERRIDE;
   virtual bool FastShutdownForPageCount(size_t count) OVERRIDE;
   virtual bool FastShutdownStarted() const OVERRIDE;
   virtual base::TimeDelta GetChildProcessIdleTime() const OVERRIDE;
-  virtual void SurfaceUpdated(int32 surface_id) OVERRIDE;
   virtual void ResumeRequestsForView(int route_id) OVERRIDE;
+  virtual void FilterURL(bool empty_allowed, GURL* url) OVERRIDE;
+#if defined(ENABLE_WEBRTC)
+  virtual void EnableAecDump(const base::FilePath& file) OVERRIDE;
+  virtual void DisableAecDump() OVERRIDE;
+  virtual void SetWebRtcLogMessageCallback(
+      base::Callback<void(const std::string&)> callback) OVERRIDE;
+#endif
+  virtual void ResumeDeferredNavigation(const GlobalRequestID& request_id)
+      OVERRIDE;
+  virtual void NotifyTimezoneChange() OVERRIDE;
 
   // IPC::Sender via RenderProcessHost.
   virtual bool Send(IPC::Message* msg) OVERRIDE;
@@ -118,6 +144,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // ChildProcessLauncher::Client implementation.
   virtual void OnProcessLaunched() OVERRIDE;
 
+  scoped_refptr<AudioRendererHost> audio_renderer_host() const;
+
   // Call this function when it is evident that the child process is actively
   // performing some operation, for example if we just received an IPC message.
   void mark_child_process_activity_time() {
@@ -128,22 +156,39 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // any RenderViewHosts that are swapped out.
   int GetActiveViewCount();
 
+  // Start and end frame subscription for a specific renderer.
+  // This API only supports subscription to accelerated composited frames.
+  void BeginFrameSubscription(
+      int route_id,
+      scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber);
+  void EndFrameSubscription(int route_id);
+
+  scoped_refptr<GeolocationDispatcherHost>
+      geolocation_dispatcher_host() const {
+    return make_scoped_refptr(geolocation_dispatcher_host_);
+  }
+
+#if defined(ENABLE_WEBRTC)
+  // Fires the webrtc log message callback with |message|, if callback is set.
+  void WebRtcLogMessage(const std::string& message);
+#endif
+
+  scoped_refptr<ScreenOrientationDispatcherHost>
+      screen_orientation_dispatcher_host() const;
+
   // Register/unregister the host identified by the host id in the global host
   // list.
   static void RegisterHost(int host_id, RenderProcessHost* host);
   static void UnregisterHost(int host_id);
+
+  // Implementation of FilterURL below that can be shared with the mock class.
+  static void FilterURL(RenderProcessHost* rph, bool empty_allowed, GURL* url);
 
   // Returns true if |host| is suitable for launching a new view with |site_url|
   // in the given |browser_context|.
   static bool IsSuitableHost(RenderProcessHost* host,
                              BrowserContext* browser_context,
                              const GURL& site_url);
-
-  // Returns whether the process-per-site model is in use (globally or just for
-  // the current site), in which case we should ensure there is only one
-  // RenderProcessHost per site for the entire browser context.
-  static bool ShouldUseProcessPerSite(BrowserContext* browser_context,
-                                      const GURL& url);
 
   // Returns an existing RenderProcessHost for |url| in |browser_context|,
   // if one exists.  Otherwise a new RenderProcessHost should be created and
@@ -165,20 +210,62 @@ class CONTENT_EXPORT RenderProcessHostImpl
       RenderProcessHost* process,
       const GURL& url);
 
+  static base::MessageLoop* GetInProcessRendererThreadForTesting();
+
+  // This forces a renderer that is running "in process" to shut down.
+  static void ShutDownInProcessRenderer();
+
+  static void RegisterRendererMainThreadFactory(
+      RendererMainThreadFactoryFunction create);
+
+#if defined(OS_ANDROID)
+  const scoped_refptr<BrowserDemuxerAndroid>& browser_demuxer_android() {
+    return browser_demuxer_android_;
+  }
+#endif
+
+  MessagePortMessageFilter* message_port_message_filter() const {
+    return message_port_message_filter_;
+  }
+
+  void SetIsGuestForTesting(bool is_guest) {
+    is_guest_ = is_guest;
+  }
+
+  // Called when the existence of the other renderer process which is connected
+  // to the Worker in this renderer process has changed.
+  // It is only called when "enable-embedded-shared-worker" flag is set.
+  void IncrementWorkerRefCount();
+  void DecrementWorkerRefCount();
+
+  // Establish a connection to a renderer-provided service. See
+  // content/common/mojo/mojo_service_names.h for a list of services.
+  void ConnectTo(const base::StringPiece& service_name,
+                 mojo::ScopedMessagePipeHandle handle);
+
+  template <typename Interface>
+  void ConnectTo(const base::StringPiece& service_name,
+                 mojo::InterfacePtr<Interface>* ptr) {
+    mojo::MessagePipe pipe;
+    ptr->Bind(pipe.handle0.Pass());
+    ConnectTo(service_name, pipe.handle1.Pass());
+  }
+
  protected:
   // A proxy for our IPC::Channel that lives on the IO thread (see
   // browser_process.h)
   scoped_ptr<IPC::ChannelProxy> channel_;
-
-  // The registered render widget hosts. When this list is empty or all NULL,
-  // we should delete ourselves
-  IDMap<RenderWidgetHost> render_widget_hosts_;
 
   // True if fast shutdown has been performed on this RPH.
   bool fast_shutdown_started_;
 
   // True if we've posted a DeleteTask and will be deleted soon.
   bool deleting_soon_;
+
+#ifndef NDEBUG
+  // True if this object has deleted itself.
+  bool is_self_deleted_;
+#endif
 
   // The count of currently swapped out but pending RenderViews.  We have
   // started to swap these in, so the renderer process should not exit if
@@ -187,6 +274,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
  private:
   friend class VisitRelayingRenderProcessHost;
+
+  void MaybeActivateMojo();
 
   // Creates and adds the IO thread message filters.
   void CreateMessageFilters();
@@ -199,27 +288,40 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void OnSavedPageAsMHTML(int job_id, int64 mhtml_file_size);
 
   // CompositorSurfaceBuffersSwapped handler when there's no RWH.
-  void OnCompositorSurfaceBuffersSwappedNoHost(int32 surface_id,
-                                               uint64 surface_handle,
-                                               int32 route_id,
-                                               const gfx::Size& size,
-                                               int32 gpu_process_host_id);
+  void OnCompositorSurfaceBuffersSwappedNoHost(
+      const ViewHostMsg_CompositorSurfaceBuffersSwapped_Params& params);
 
   // Generates a command line to be used to spawn a renderer and appends the
   // results to |*command_line|.
-  void AppendRendererCommandLine(CommandLine* command_line) const;
+  void AppendRendererCommandLine(base::CommandLine* command_line) const;
 
   // Copies applicable command line switches from the given |browser_cmd| line
   // flags to the output |renderer_cmd| line flags. Not all switches will be
   // copied over.
-  void PropagateBrowserCommandLineToRenderer(const CommandLine& browser_cmd,
-                                             CommandLine* renderer_cmd) const;
+  void PropagateBrowserCommandLineToRenderer(
+      const base::CommandLine& browser_cmd,
+      base::CommandLine* renderer_cmd) const;
 
   // Callers can reduce the RenderProcess' priority.
   void SetBackgrounded(bool backgrounded);
 
   // Handle termination of our process.
   void ProcessDied(bool already_dead);
+
+  virtual void OnGpuSwitching() OVERRIDE;
+
+#if defined(ENABLE_WEBRTC)
+  // Sends |file_for_transit| to the render process.
+  void SendAecDumpFileToRenderer(IPC::PlatformFileForTransit file_for_transit);
+  void SendDisableAecDumpToRenderer();
+#endif
+
+  scoped_ptr<MojoApplicationHost> mojo_application_host_;
+  bool mojo_activation_required_;
+
+  // The registered IPC listener objects. When this list is empty, we should
+  // delete ourselves.
+  IDMap<IPC::Listener> listeners_;
 
   // The count of currently visible widgets.  Since the host can be a container
   // for multiple widgets, it uses this count to determine when it should be
@@ -241,23 +343,11 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // it's valid if non-NULL.
   GpuMessageFilter* gpu_message_filter_;
 
-  // A map of transport DIB ids to cached TransportDIBs
-  std::map<TransportDIB::Id, TransportDIB*> cached_dibs_;
-
-  enum {
-    // This is the maximum size of |cached_dibs_|
-    MAX_MAPPED_TRANSPORT_DIBS = 3,
-  };
-
-  // Map a transport DIB from its Id and return it. Returns NULL on error.
-  TransportDIB* MapTransportDIB(TransportDIB::Id dib_id);
-
-  void ClearTransportDIBCache();
-  // This is used to clear our cache five seconds after the last use.
-  base::DelayTimer<RenderProcessHostImpl> cached_dibs_cleaner_;
+  // The filter for MessagePort messages coming from the renderer.
+  scoped_refptr<MessagePortMessageFilter> message_port_message_filter_;
 
   // Used in single-process mode.
-  scoped_ptr<RendererMainThread> in_process_renderer_;
+  scoped_ptr<base::Thread> in_process_renderer_;
 
   // True after Init() has been called. We can't just check channel_ because we
   // also reset that in the case of process termination.
@@ -280,6 +370,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // Owned by |browser_context_|.
   StoragePartitionImpl* storage_partition_impl_;
 
+  // The observers watching our lifetime.
+  ObserverList<RenderProcessHostObserver> observers_;
+
   // True if the process can be shut down suddenly.  If this is true, then we're
   // sure that all the RenderViews in the process can be shutdown suddenly.  If
   // it's false, then specific RenderViews might still be allowed to be shutdown
@@ -295,18 +388,51 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // Records the last time we regarded the child process active.
   base::TimeTicks child_process_activity_time_;
 
-#if defined(OS_ANDROID)
-  // Android WebView needs to use a SyncChannel to block the browser process
-  // for synchronous find-in-page API support. In that case the shutdown event
-  // makes no sense as the Android port doesn't shutdown, but gets killed.
-  // SyncChannel still expects a shutdown event, so create a dummy one that
-  // will never will be signaled.
-  base::WaitableEvent dummy_shutdown_event_;
-#endif
-
   // Indicates whether this is a RenderProcessHost of a Browser Plugin guest
   // renderer.
   bool is_guest_;
+
+  // Forwards messages between WebRTCInternals in the browser process
+  // and PeerConnectionTracker in the renderer process.
+  scoped_refptr<PeerConnectionTrackerHost> peer_connection_tracker_host_;
+
+  // Prevents the class from being added as a GpuDataManagerImpl observer more
+  // than once.
+  bool gpu_observer_registered_;
+
+  // Set if a call to Cleanup is required once the RenderProcessHostImpl is no
+  // longer within the RenderProcessHostObserver::RenderProcessExited callbacks.
+  bool delayed_cleanup_needed_;
+
+  // Indicates whether RenderProcessHostImpl is currently iterating and calling
+  // through RenderProcessHostObserver::RenderProcessExited.
+  bool within_process_died_observer_;
+
+  // Forwards power state messages to the renderer process.
+  PowerMonitorMessageBroadcaster power_monitor_broadcaster_;
+
+  scoped_refptr<AudioRendererHost> audio_renderer_host_;
+
+#if defined(OS_ANDROID)
+  scoped_refptr<BrowserDemuxerAndroid> browser_demuxer_android_;
+#endif
+
+  // Message filter for geolocation messages.
+  GeolocationDispatcherHost* geolocation_dispatcher_host_;
+
+#if defined(ENABLE_WEBRTC)
+  base::Callback<void(const std::string&)> webrtc_log_message_callback_;
+#endif
+
+  // Message filter and dispatcher for screen orientation.
+  ScreenOrientationDispatcherHost* screen_orientation_dispatcher_host_;
+
+  int worker_ref_count_;
+
+  // Records the time when the process starts surviving for workers for UMA.
+  base::TimeTicks survive_for_worker_start_time_;
+
+  base::WeakPtrFactory<RenderProcessHostImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderProcessHostImpl);
 };

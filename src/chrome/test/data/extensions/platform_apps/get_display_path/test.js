@@ -3,19 +3,18 @@
 // found in the LICENSE file.
 
 chrome.app.runtime.onLaunched.addListener(function (launchData) {
-  // Test that there is a launchData.intent, it is set up proerly, and that the
-  // FileEntry in launchData.intent.data can be read.
+  // Test that the isKioskSession field is |false| and the items field is
+  // populated correctly in the launch data and that the FileEntry in
+  // launchData.items[0].entry can have its display path gotten.
   chrome.test.runTests([
     function testGetDisplayPath() {
       chrome.test.assertFalse(!launchData, "No launchData");
-      chrome.test.assertFalse(!launchData.intent, "No launchData.intent");
-      chrome.test.assertEq(launchData.intent.action,
-          "http://webintents.org/view");
-      chrome.test.assertEq(launchData.intent.type,
-          "chrome-extension://fileentry");
-      chrome.test.assertFalse(!launchData.intent.data,
-          "No launchData.intent.data");
-      var entry = launchData.intent.data;
+      chrome.test.assertFalse(launchData.isKioskSession,
+          "launchData.isKioskSession incorrect");
+      chrome.test.assertFalse(!launchData.items[0], "No launchData.items[0]");
+      chrome.test.assertFalse(!launchData.items[0].entry,
+                              "No launchData.items[0].entry");
+      var entry = launchData.items[0].entry;
       chrome.fileSystem.getDisplayPath(entry,
           chrome.test.callbackPass(function(path) {
         chrome.test.assertFalse(path.indexOf('test.txt') == -1);

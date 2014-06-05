@@ -30,6 +30,9 @@ def MassCopy(src_path, dst_uri, jobs):
   # Find base path.
   base = os.path.abspath(src_path)
 
+  # Remove a trailing '/' from the dst_uri if one is included.
+  dst_uri = dst_uri.rstrip('/')
+
   # Get the list of objects.
   if os.path.isfile(src_path):
     # Handle individual files as a special case (as walk returns []).
@@ -43,13 +46,17 @@ def MassCopy(src_path, dst_uri, jobs):
   try:
     while running or objects:
       while len(running) < jobs and objects:
+        # Get the absolute path to the file and remove the base. This leaves
+        # a leading path separator on |ot|.
         o = objects.pop(0)
         ot = os.path.abspath(o)[len(base):]
 
-        # Construct the destination URL, and clean up the slashes to all
-        # point forward - the Windows file system produces backslashes.
+        # Clean up the slashes to all point forward - the Windows file system
+        # produces backslashes.
+        ot = ot.replace(os.path.sep, '/')
+
+        # Construct the destination URL.
         dst = '%s%s' % (dst_uri, ot)
-        dst = dst.replace(os.path.sep, '/')
 
         cmd = [_GSUTIL, 'cp', '-t', '-a', 'public-read', o, dst]
         p = subprocess.Popen(cmd, shell=True)

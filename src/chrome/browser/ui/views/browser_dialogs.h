@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_BROWSER_DIALOGS_H_
 #define CHROME_BROWSER_UI_VIEWS_BROWSER_DIALOGS_H_
 
+#include "base/callback_forward.h"
 #include "ui/gfx/native_widget_types.h"
 
 // This file contains functions for running a variety of browser dialogs and
@@ -14,61 +15,16 @@
 // TODO: Make as many of these methods as possible cross platform, and move them
 // into chrome/browser/ui/browser_dialogs.h.
 
-class BookmarkBubbleViewObserver;
-class Browser;
 class BrowserView;
 class EditSearchEngineControllerDelegate;
 class FindBar;
-class GURL;
 class Profile;
 class TemplateURL;
 
-namespace content {
-class PageNavigator;
-class WebContents;
-struct SSLStatus;
-}
-
-namespace extensions {
-class Extension;
-}
-
-namespace views {
-class View;
-}
-
 namespace chrome {
-
-// Shows or hides the bookmark bubble anchored to the supplied view.
-void ShowBookmarkBubbleView(views::View* anchor_view,
-                            BookmarkBubbleViewObserver* observer,
-                            Profile* profile,
-                            const GURL& url,
-                            bool newly_bookmarked);
-void HideBookmarkBubbleView();
-bool IsBookmarkBubbleViewShowing();
-
-// Shows or hides the Chrome To Mobile bubble anchored to the supplied view.
-void ShowChromeToMobileBubbleView(views::View* anchor_view, Browser* browser);
-void HideChromeToMobileBubbleView();
-bool IsChromeToMobileBubbleViewShowing();
-
-// Shows the page info bubble anchored to the supplied view.
-void ShowPageInfoBubble(views::View* anchor_view,
-                        content::WebContents* web_contents,
-                        const GURL& url,
-                        const content::SSLStatus& ssl,
-                        bool show_history,
-                        content::PageNavigator* navigator);
 
 // Creates and returns a find bar for the given browser window. See FindBarWin.
 FindBar* CreateFindBar(BrowserView* browser_view);
-
-// Shows the Task Manager.
-void ShowTaskManager();
-
-// Shows the Task Manager, highlighting the background pages.
-void ShowBackgroundPages();
 
 // Shows a dialog box that allows a search engine to be edited. |template_url|
 // is the search engine being edited. If it is NULL, then the dialog will add a
@@ -79,11 +35,6 @@ void EditSearchEngine(gfx::NativeWindow parent,
                       TemplateURL* template_url,
                       EditSearchEngineControllerDelegate* delegate,
                       Profile* profile);
-
-// Shows the create chrome app shortcut dialog box.
-void ShowCreateChromeAppShortcutsDialog(gfx::NativeWindow parent_window,
-                                        Profile* profile,
-                                        const extensions::Extension* app);
 
 }  // namespace chrome
 

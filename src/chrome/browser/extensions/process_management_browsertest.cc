@@ -2,25 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/automation/automation_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_apitest.h"
-#include "chrome/browser/extensions/extension_host.h"
-#include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/common/chrome_switches.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
-#include "net/base/mock_host_resolver.h"
+#include "extensions/browser/extension_host.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/browser/process_manager.h"
+#include "extensions/common/switches.h"
+#include "net/dns/mock_host_resolver.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
 
 using content::NavigationController;
 using content::WebContents;
@@ -30,23 +30,32 @@ namespace {
 class ProcessManagementTest : public ExtensionBrowserTest {
  private:
   // This is needed for testing isolated apps, which are still experimental.
-  virtual void SetUpCommandLine(CommandLine* command_line) {
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     ExtensionBrowserTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(switches::kEnableExperimentalExtensionApis);
+    command_line->AppendSwitch(
+        extensions::switches::kEnableExperimentalExtensionApis);
   }
 };
 
 }  // namespace
 
+
+// TODO(nasko): crbug.com/173137
+#if defined(OS_WIN)
+#define MAYBE_ProcessOverflow DISABLED_ProcessOverflow
+#else
+#define MAYBE_ProcessOverflow ProcessOverflow
+#endif
+
 // Ensure that an isolated app never shares a process with WebUIs, non-isolated
 // extensions, and normal webpages.  None of these should ever comingle
 // RenderProcessHosts even if we hit the process limit.
-IN_PROC_BROWSER_TEST_F(ProcessManagementTest, ProcessOverflow) {
+IN_PROC_BROWSER_TEST_F(ProcessManagementTest, MAYBE_ProcessOverflow) {
   // Set max renderers to 1 to force running out of processes.
   content::RenderProcessHost::SetMaxRendererProcessCount(1);
 
   host_resolver()->AddRule("*", "127.0.0.1");
-  ASSERT_TRUE(test_server()->Start());
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
   ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII("isolated_apps/app1")));
   ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII("isolated_apps/app2")));
@@ -56,8 +65,8 @@ IN_PROC_BROWSER_TEST_F(ProcessManagementTest, ProcessOverflow) {
 
   // The app under test acts on URLs whose host is "localhost",
   // so the URLs we navigate to must have host "localhost".
-  GURL base_url = test_server()->GetURL(
-      "files/extensions/");
+  GURL base_url = embedded_test_server()->GetURL(
+      "/extensions/");
   GURL::Replacements replace_host;
   std::string host_str("localhost");  // Must stay in scope with replace_host.
   replace_host.SetHostStr(host_str);
@@ -108,30 +117,30 @@ IN_PROC_BROWSER_TEST_F(ProcessManagementTest, ProcessOverflow) {
   GURL extension2_url = extension2->url();
 
   // Get tab processes.
-  ASSERT_EQ(9, browser()->tab_count());
+  ASSERT_EQ(9, browser()->tab_strip_model()->count());
   content::RenderProcessHost* isolated1_host =
-      chrome::GetWebContentsAt(browser(), 0)->GetRenderProcessHost();
+      browser()->tab_strip_model()->GetWebContentsAt(0)->GetRenderProcessHost();
   content::RenderProcessHost* ntp1_host =
-      chrome::GetWebContentsAt(browser(), 1)->GetRenderProcessHost();
+      browser()->tab_strip_model()->GetWebContentsAt(1)->GetRenderProcessHost();
   content::RenderProcessHost* hosted1_host =
-      chrome::GetWebContentsAt(browser(), 2)->GetRenderProcessHost();
+      browser()->tab_strip_model()->GetWebContentsAt(2)->GetRenderProcessHost();
   content::RenderProcessHost* web1_host =
-      chrome::GetWebContentsAt(browser(), 3)->GetRenderProcessHost();
+      browser()->tab_strip_model()->GetWebContentsAt(3)->GetRenderProcessHost();
 
   content::RenderProcessHost* isolated2_host =
-      chrome::GetWebContentsAt(browser(), 4)->GetRenderProcessHost();
+      browser()->tab_strip_model()->GetWebContentsAt(4)->GetRenderProcessHost();
   content::RenderProcessHost* ntp2_host =
-      chrome::GetWebContentsAt(browser(), 5)->GetRenderProcessHost();
+      browser()->tab_strip_model()->GetWebContentsAt(5)->GetRenderProcessHost();
   content::RenderProcessHost* hosted2_host =
-      chrome::GetWebContentsAt(browser(), 6)->GetRenderProcessHost();
+      browser()->tab_strip_model()->GetWebContentsAt(6)->GetRenderProcessHost();
   content::RenderProcessHost* web2_host =
-      chrome::GetWebContentsAt(browser(), 7)->GetRenderProcessHost();
+      browser()->tab_strip_model()->GetWebContentsAt(7)->GetRenderProcessHost();
 
   content::RenderProcessHost* second_isolated1_host =
-      chrome::GetWebContentsAt(browser(), 8)->GetRenderProcessHost();
+      browser()->tab_strip_model()->GetWebContentsAt(8)->GetRenderProcessHost();
 
   // Get extension processes.
-  ExtensionProcessManager* process_manager =
+  extensions::ProcessManager* process_manager =
       extensions::ExtensionSystem::Get(browser()->profile())->
           process_manager();
   content::RenderProcessHost* extension1_host =
@@ -173,20 +182,26 @@ IN_PROC_BROWSER_TEST_F(ProcessManagementTest, ProcessOverflow) {
   EXPECT_EQ(extension1_host, extension2_host);
 }
 
+// See
+#if defined(OS_WIN)
+#define MAYBE_ExtensionProcessBalancing DISABLED_ExtensionProcessBalancing
+#else
+#define MAYBE_ExtensionProcessBalancing ExtensionProcessBalancing
+#endif
 // Test to verify that the policy of maximum share of extension processes is
 // properly enforced.
-IN_PROC_BROWSER_TEST_F(ProcessManagementTest, ExtensionProcessBalancing) {
+IN_PROC_BROWSER_TEST_F(ProcessManagementTest, MAYBE_ExtensionProcessBalancing) {
   // Set max renderers to 6 so we can expect 2 extension processes to be
   // allocated.
   content::RenderProcessHost::SetMaxRendererProcessCount(6);
 
   host_resolver()->AddRule("*", "127.0.0.1");
-  ASSERT_TRUE(test_server()->Start());
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
   // The app under test acts on URLs whose host is "localhost",
   // so the URLs we navigate to must have host "localhost".
-  GURL base_url = test_server()->GetURL(
-      "files/extensions/");
+  GURL base_url = embedded_test_server()->GetURL(
+      "/extensions/");
   GURL::Replacements replace_host;
   std::string host_str("localhost");  // Must stay in scope with replace_host.
   replace_host.SetHostStr(host_str);
@@ -217,9 +232,9 @@ IN_PROC_BROWSER_TEST_F(ProcessManagementTest, ExtensionProcessBalancing) {
 
   std::set<int> process_ids;
   Profile* profile = browser()->profile();
-  ExtensionProcessManager* epm = extensions::ExtensionSystem::Get(profile)->
+  extensions::ProcessManager* epm = extensions::ExtensionSystem::Get(profile)->
       process_manager();
-  for (ExtensionProcessManager::const_iterator iter =
+  for (extensions::ProcessManager::const_iterator iter =
            epm->background_hosts().begin();
        iter != epm->background_hosts().end(); ++iter) {
     process_ids.insert((*iter)->render_process_host()->GetID());
@@ -228,9 +243,8 @@ IN_PROC_BROWSER_TEST_F(ProcessManagementTest, ExtensionProcessBalancing) {
   // We've loaded 5 extensions with background pages, 1 extension without
   // background page, and one isolated app. We expect only 2 unique processes
   // hosting those extensions.
-  ExtensionService* service =
-      extensions::ExtensionSystem::Get(profile)->extension_service();
+  extensions::ProcessMap* process_map = extensions::ProcessMap::Get(profile);
 
-  EXPECT_GE((size_t) 6, service->process_map()->size());
+  EXPECT_GE((size_t) 6, process_map->size());
   EXPECT_EQ((size_t) 2, process_ids.size());
 }

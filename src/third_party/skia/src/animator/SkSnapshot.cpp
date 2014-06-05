@@ -41,6 +41,10 @@ bool SkSnapshot::draw(SkAnimateMaker& maker) {
     SkASSERT(type >= 0);
     SkASSERT(filename.size() > 0);
     SkImageEncoder* encoder = SkImageEncoder::Create((SkImageEncoder::Type) type);
+    if (!encoder) {
+        return false;
+    }
+    SkAutoTDelete<SkImageEncoder> ad(encoder);
 
     SkString name(filename);
     if (sequence) {
@@ -58,7 +62,6 @@ bool SkSnapshot::draw(SkAnimateMaker& maker) {
         name.append(".png");
     encoder->encodeFile(name.c_str(),
                         maker.fCanvas->getDevice()->accessBitmap(false),
-                        SkScalarFloor(quality));
+                        SkScalarFloorToInt(quality));
     return false;
 }
-

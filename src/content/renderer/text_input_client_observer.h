@@ -8,10 +8,10 @@
 #include "base/basictypes.h"
 #include "build/build_config.h"
 #include "content/public/renderer/render_view_observer.h"
-#include "ui/base/range/range.h"
 #include "ui/gfx/point.h"
+#include "ui/gfx/range/range.h"
 
-namespace WebKit {
+namespace blink {
 class WebView;
 }
 
@@ -32,12 +32,13 @@ class TextInputClientObserver : public RenderViewObserver {
 
  private:
   // Returns the WebView of the RenderView.
-  WebKit::WebView* webview();
+  blink::WebView* webview();
 
   // IPC Message handlers:
+  void OnStringAtPoint(gfx::Point point);
   void OnCharacterIndexForPoint(gfx::Point point);
-  void OnFirstRectForCharacterRange(ui::Range range);
-  void OnStringForRange(ui::Range range);
+  void OnFirstRectForCharacterRange(gfx::Range range);
+  void OnStringForRange(gfx::Range range);
 
   RenderViewImpl* const render_view_impl_;
 

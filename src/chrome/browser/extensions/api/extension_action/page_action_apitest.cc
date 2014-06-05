@@ -2,23 +2,27 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/extensions/browser_event_router.h"
+#include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_icon_factory.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
-#include "chrome/common/extensions/extension.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/test/browser_test_utils.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/extension.h"
+
+using content::WebContents;
 
 namespace extensions {
 namespace {
@@ -46,7 +50,7 @@ IN_PROC_BROWSER_TEST_F(PageActionApiTest, Basic) {
 
   // Test that we received the changes.
   int tab_id = SessionTabHelper::FromWebContents(
-      chrome::GetActiveWebContents(browser()))->session_id().id();
+      browser()->tab_strip_model()->GetActiveWebContents())->session_id().id();
   ExtensionAction* action = GetPageAction(*extension);
   ASSERT_TRUE(action);
   EXPECT_EQ("Modified", action->GetTitle(tab_id));
@@ -54,12 +58,10 @@ IN_PROC_BROWSER_TEST_F(PageActionApiTest, Basic) {
   {
     // Simulate the page action being clicked.
     ResultCatcher catcher;
-    int tab_id =
-        ExtensionTabUtil::GetTabId(chrome::GetActiveWebContents(browser()));
-    ExtensionService* service = extensions::ExtensionSystem::Get(
-        browser()->profile())->extension_service();
-    service->browser_event_router()->PageActionExecuted(
-        browser()->profile(), *action, tab_id, "", 0);
+    int tab_id = ExtensionTabUtil::GetTabId(
+        browser()->tab_strip_model()->GetActiveWebContents());
+    ExtensionActionAPI::PageActionExecuted(
+        browser()->profile(), *action, tab_id, std::string(), 0);
     EXPECT_TRUE(catcher.GetNextResult());
   }
 
@@ -73,11 +75,11 @@ IN_PROC_BROWSER_TEST_F(PageActionApiTest, Basic) {
 
   // We should not be creating icons asynchronously, so we don't need an
   // observer.
-  ExtensionActionIconFactory icon_factory(extension, action, NULL);
+  ExtensionActionIconFactory icon_factory(profile(), extension, action, NULL);
 
   // Test that we received the changes.
   tab_id = SessionTabHelper::FromWebContents(
-      chrome::GetActiveWebContents(browser()))->session_id().id();
+      browser()->tab_strip_model()->GetActiveWebContents())->session_id().id();
   EXPECT_FALSE(icon_factory.GetIcon(tab_id).IsEmpty());
 }
 
@@ -89,7 +91,7 @@ IN_PROC_BROWSER_TEST_F(PageActionApiTest, AddPopup) {
   ASSERT_TRUE(extension) << message_;
 
   int tab_id = ExtensionTabUtil::GetTabId(
-      chrome::GetActiveWebContents(browser()));
+      browser()->tab_strip_model()->GetActiveWebContents());
 
   ExtensionAction* page_action = GetPageAction(*extension);
   ASSERT_TRUE(page_action)
@@ -101,10 +103,8 @@ IN_PROC_BROWSER_TEST_F(PageActionApiTest, AddPopup) {
   // install a page action popup.
   {
     ResultCatcher catcher;
-    ExtensionService* service = extensions::ExtensionSystem::Get(
-        browser()->profile())->extension_service();
-    service->browser_event_router()->PageActionExecuted(
-        browser()->profile(), *page_action, tab_id, "", 1);
+    ExtensionActionAPI::PageActionExecuted(
+        browser()->profile(), *page_action, tab_id, std::string(), 1);
     ASSERT_TRUE(catcher.GetNextResult());
   }
 
@@ -137,7 +137,7 @@ IN_PROC_BROWSER_TEST_F(PageActionApiTest, RemovePopup) {
   ASSERT_TRUE(extension) << message_;
 
   int tab_id = ExtensionTabUtil::GetTabId(
-      chrome::GetActiveWebContents(browser()));
+      browser()->tab_strip_model()->GetActiveWebContents());
 
   ExtensionAction* page_action = GetPageAction(*extension);
   ASSERT_TRUE(page_action)
@@ -178,13 +178,11 @@ IN_PROC_BROWSER_TEST_F(PageActionApiTest, OldPageActions) {
   // Simulate the page action being clicked.
   {
     ResultCatcher catcher;
-    int tab_id =
-        ExtensionTabUtil::GetTabId(chrome::GetActiveWebContents(browser()));
-    ExtensionService* service = extensions::ExtensionSystem::Get(
-        browser()->profile())->extension_service();
+    int tab_id = ExtensionTabUtil::GetTabId(
+        browser()->tab_strip_model()->GetActiveWebContents());
     ExtensionAction* page_action = GetPageAction(*extension);
-    service->browser_event_router()->PageActionExecuted(
-        browser()->profile(), *page_action, tab_id, "", 1);
+    ExtensionActionAPI::PageActionExecuted(
+        browser()->profile(), *page_action, tab_id, std::string(), 1);
     EXPECT_TRUE(catcher.GetNextResult());
   }
 }
@@ -229,6 +227,46 @@ IN_PROC_BROWSER_TEST_F(PageActionApiTest, Getters) {
   ui_test_utils::NavigateToURL(browser(),
       GURL(extension->GetResourceURL("update.html")));
   ASSERT_TRUE(catcher.GetNextResult());
+}
+
+// Verify triggering page action.
+IN_PROC_BROWSER_TEST_F(PageActionApiTest, TestTriggerPageAction) {
+  ASSERT_TRUE(test_server()->Start());
+
+  ASSERT_TRUE(RunExtensionTest("trigger_actions/page_action")) << message_;
+  const Extension* extension = GetSingleLoadedExtension();
+  ASSERT_TRUE(extension) << message_;
+
+  // Page action icon is displayed when a tab is created.
+  ui_test_utils::NavigateToURL(browser(),
+                               test_server()->GetURL("files/simple.html"));
+  chrome::NewTab(browser());
+  browser()->tab_strip_model()->ActivateTabAt(0, true);
+
+  ExtensionAction* page_action = GetPageAction(*extension);
+  ASSERT_TRUE(page_action);
+
+  {
+    // Simulate the page action being clicked.
+    ResultCatcher catcher;
+    int tab_id = ExtensionTabUtil::GetTabId(
+        browser()->tab_strip_model()->GetActiveWebContents());
+    ExtensionActionAPI::PageActionExecuted(
+        browser()->profile(), *page_action, tab_id, std::string(), 0);
+    EXPECT_TRUE(catcher.GetNextResult());
+  }
+
+  WebContents* tab =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  EXPECT_TRUE(tab != NULL);
+
+  // Verify that the browser action turned the background color red.
+  const std::string script =
+      "window.domAutomationController.send(document.body.style."
+      "backgroundColor);";
+  std::string result;
+  EXPECT_TRUE(content::ExecuteScriptAndExtractString(tab, script, &result));
+  EXPECT_EQ(result, "red");
 }
 
 }  // namespace

@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_BROWSER_RENDERER_HOST_SAVE_FILE_RESOURCE_HANDLER_H_
-#define CONTENT_BROWSER_RENDERER_HOST_SAVE_FILE_RESOURCE_HANDLER_H_
+#ifndef CONTENT_BROWSER_DOWNLOAD_SAVE_FILE_RESOURCE_HANDLER_H_
+#define CONTENT_BROWSER_DOWNLOAD_SAVE_FILE_RESOURCE_HANDLER_H_
 
 #include <string>
 
+#include "base/memory/ref_counted.h"
 #include "content/browser/loader/resource_handler.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace content {
 class SaveFileManager;
@@ -44,10 +45,15 @@ class SaveFileResourceHandler : public ResourceHandler {
                            const GURL& url,
                            bool* defer) OVERRIDE;
 
+  // Pass-through implementation.
+  virtual bool OnBeforeNetworkStart(int request_id,
+                                    const GURL& url,
+                                    bool* defer) OVERRIDE;
+
   // Creates a new buffer, which will be handed to the download thread for file
   // writing and deletion.
   virtual bool OnWillRead(int request_id,
-                          net::IOBuffer** buf,
+                          scoped_refptr<net::IOBuffer>* buf,
                           int* buf_size,
                           int min_size) OVERRIDE;
 
@@ -55,9 +61,13 @@ class SaveFileResourceHandler : public ResourceHandler {
   virtual bool OnReadCompleted(int request_id, int bytes_read,
                                bool* defer) OVERRIDE;
 
-  virtual bool OnResponseCompleted(int request_id,
+  virtual void OnResponseCompleted(int request_id,
                                    const net::URLRequestStatus& status,
-                                   const std::string& security_info) OVERRIDE;
+                                   const std::string& security_info,
+                                   bool* defer) OVERRIDE;
+
+  // N/A to this flavor of SaveFileResourceHandler.
+  virtual void OnDataDownloaded(int request_id, int bytes_downloaded) OVERRIDE;
 
   // If the content-length header is not present (or contains something other
   // than numbers), StringToInt64 returns 0, which indicates 'unknown size' and
@@ -86,4 +96,4 @@ class SaveFileResourceHandler : public ResourceHandler {
 
 }  // namespace content
 
-#endif  // CONTENT_BROWSER_RENDERER_HOST_SAVE_FILE_RESOURCE_HANDLER_H_
+#endif  // CONTENT_BROWSER_DOWNLOAD_SAVE_FILE_RESOURCE_HANDLER_H_

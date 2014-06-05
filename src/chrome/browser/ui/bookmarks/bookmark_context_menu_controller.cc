@@ -4,27 +4,31 @@
 
 #include "chrome/browser/ui/bookmarks/bookmark_context_menu_controller.h"
 
+#include "base/command_line.h"
 #include "base/compiler_specific.h"
-#include "base/prefs/public/pref_service_base.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/bookmarks/bookmark_editor.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/bookmarks/bookmark_editor.h"
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/chrome_pages.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/undo/bookmark_undo_service.h"
+#include "chrome/browser/undo/bookmark_undo_service_factory.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/core/browser/bookmark_utils.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/user_metrics.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
+using base::UserMetricsAction;
 using content::PageNavigator;
-using content::UserMetricsAction;
 
 BookmarkContextMenuController::BookmarkContextMenuController(
     gfx::NativeWindow parent_window,
@@ -43,7 +47,7 @@ BookmarkContextMenuController::BookmarkContextMenuController(
       selection_(selection),
       model_(BookmarkModelFactory::GetForProfile(profile)) {
   DCHECK(profile_);
-  DCHECK(model_->IsLoaded());
+  DCHECK(model_->loaded());
   menu_model_.reset(new ui::SimpleMenuModel(this));
   model_->AddObserver(this);
 
@@ -85,6 +89,11 @@ void BookmarkContextMenuController::BuildMenu() {
 
   AddSeparator();
   AddItem(IDC_BOOKMARK_BAR_REMOVE, IDS_BOOKMARK_BAR_REMOVE);
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableBookmarkUndo)) {
+    AddItem(IDC_BOOKMARK_BAR_UNDO, IDS_BOOKMARK_BAR_UNDO);
+    AddItem(IDC_BOOKMARK_BAR_REDO, IDS_BOOKMARK_BAR_REDO);
+  }
 
   AddSeparator();
   AddItem(IDC_BOOKMARK_BAR_ADD_NEW_BOOKMARK, IDS_BOOKMARK_BAR_ADD_NEW_BOOKMARK);
@@ -92,6 +101,14 @@ void BookmarkContextMenuController::BuildMenu() {
 
   AddSeparator();
   AddItem(IDC_BOOKMARK_MANAGER, IDS_BOOKMARK_MANAGER);
+  // Use the native host desktop type in tests.
+  if (chrome::IsAppsShortcutEnabled(
+          profile_,
+          browser_ ? browser_->host_desktop_type()
+                   : chrome::HOST_DESKTOP_TYPE_NATIVE)) {
+    AddCheckboxItem(IDC_BOOKMARK_BAR_SHOW_APPS_SHORTCUT,
+                    IDS_BOOKMARK_BAR_SHOW_APPS_SHORTCUT);
+  }
   AddCheckboxItem(IDC_BOOKMARK_BAR_ALWAYS_SHOW, IDS_SHOW_BOOKMARK_BAR);
 }
 
@@ -108,9 +125,9 @@ void BookmarkContextMenuController::AddCheckboxItem(int id,
   menu_model_->AddCheckItemWithStringId(id, localization_id);
 }
 
-void BookmarkContextMenuController::ExecuteCommand(int id) {
+void BookmarkContextMenuController::ExecuteCommand(int id, int event_flags) {
   if (delegate_)
-    delegate_->WillExecuteCommand();
+    delegate_->WillExecuteCommand(id, selection_);
 
   switch (id) {
     case IDC_BOOKMARK_BAR_OPEN_ALL:
@@ -153,6 +170,22 @@ void BookmarkContextMenuController::ExecuteCommand(int id) {
                                     BookmarkEditor::NO_TREE);
       break;
 
+    case IDC_BOOKMARK_BAR_UNDO: {
+      content::RecordAction(
+          UserMetricsAction("BookmarkBar_ContextMenu_Undo"));
+      BookmarkUndoServiceFactory::GetForProfile(profile_)->undo_manager()->
+          Undo();
+      break;
+    }
+
+    case IDC_BOOKMARK_BAR_REDO: {
+      content::RecordAction(
+          UserMetricsAction("BookmarkBar_ContextMenu_Redo"));
+      BookmarkUndoServiceFactory::GetForProfile(profile_)->undo_manager()->
+          Redo();
+      break;
+    }
+
     case IDC_BOOKMARK_BAR_REMOVE: {
       content::RecordAction(
           UserMetricsAction("BookmarkBar_ContextMenu_Remove"));
@@ -174,9 +207,10 @@ void BookmarkContextMenuController::ExecuteCommand(int id) {
       const BookmarkNode* parent =
           bookmark_utils::GetParentForNewNodes(parent_, selection_, &index);
       GURL url;
-      string16 title;
-      chrome::GetURLAndTitleToBookmark(chrome::GetActiveWebContents(browser_),
-                                       &url, &title);
+      base::string16 title;
+      chrome::GetURLAndTitleToBookmark(
+          browser_->tab_strip_model()->GetActiveWebContents(),
+          &url, &title);
       BookmarkEditor::Show(parent_window_,
                            profile_,
                            BookmarkEditor::EditDetails::AddNodeInFolder(
@@ -204,6 +238,14 @@ void BookmarkContextMenuController::ExecuteCommand(int id) {
       chrome::ToggleBookmarkBarWhenVisible(profile_);
       break;
 
+    case IDC_BOOKMARK_BAR_SHOW_APPS_SHORTCUT: {
+      PrefService* prefs = profile_->GetPrefs();
+      prefs->SetBoolean(
+          prefs::kShowAppsShortcutInBookmarkBar,
+          !prefs->GetBoolean(prefs::kShowAppsShortcutInBookmarkBar));
+      break;
+    }
+
     case IDC_BOOKMARK_MANAGER: {
       content::RecordAction(UserMetricsAction("ShowBookmarkManager"));
       if (selection_.size() != 1)
@@ -216,7 +258,6 @@ void BookmarkContextMenuController::ExecuteCommand(int id) {
         chrome::ShowBookmarkManager(browser_);
       break;
     }
-
 
     case IDC_CUT:
       bookmark_utils::CopyToClipboard(model_, selection_, true);
@@ -242,30 +283,55 @@ void BookmarkContextMenuController::ExecuteCommand(int id) {
   }
 
   if (delegate_)
-    delegate_->DidExecuteCommand();
+    delegate_->DidExecuteCommand(id);
+}
+
+bool BookmarkContextMenuController::IsItemForCommandIdDynamic(int command_id)
+    const {
+  return command_id == IDC_BOOKMARK_BAR_UNDO ||
+         command_id == IDC_BOOKMARK_BAR_REDO;
+}
+
+base::string16 BookmarkContextMenuController::GetLabelForCommandId(
+    int command_id) const {
+  if (command_id == IDC_BOOKMARK_BAR_UNDO) {
+    return BookmarkUndoServiceFactory::GetForProfile(profile_)->
+        undo_manager()->GetUndoLabel();
+  }
+  if (command_id == IDC_BOOKMARK_BAR_REDO) {
+    return BookmarkUndoServiceFactory::GetForProfile(profile_)->
+        undo_manager()->GetRedoLabel();
+  }
+
+  NOTREACHED();
+  return base::string16();
 }
 
 bool BookmarkContextMenuController::IsCommandIdChecked(int command_id) const {
-  DCHECK(command_id == IDC_BOOKMARK_BAR_ALWAYS_SHOW);
-  PrefServiceBase* prefs = PrefServiceBase::FromBrowserContext(profile_);
-  return prefs->GetBoolean(prefs::kShowBookmarkBar);
+  PrefService* prefs = profile_->GetPrefs();
+  if (command_id == IDC_BOOKMARK_BAR_ALWAYS_SHOW)
+    return prefs->GetBoolean(prefs::kShowBookmarkBar);
+
+  DCHECK_EQ(IDC_BOOKMARK_BAR_SHOW_APPS_SHORTCUT, command_id);
+  return prefs->GetBoolean(prefs::kShowAppsShortcutInBookmarkBar);
 }
 
 bool BookmarkContextMenuController::IsCommandIdEnabled(int command_id) const {
-  PrefServiceBase* prefs = PrefServiceBase::FromBrowserContext(profile_);
+  PrefService* prefs = profile_->GetPrefs();
 
   bool is_root_node = selection_.size() == 1 &&
                       selection_[0]->parent() == model_->root_node();
   bool can_edit = prefs->GetBoolean(prefs::kEditBookmarksEnabled);
   IncognitoModePrefs::Availability incognito_avail =
-      IncognitoModePrefs::GetAvailability(profile_->GetPrefs());
+      IncognitoModePrefs::GetAvailability(prefs);
   switch (command_id) {
     case IDC_BOOKMARK_BAR_OPEN_INCOGNITO:
       return !profile_->IsOffTheRecord() &&
              incognito_avail != IncognitoModePrefs::DISABLED;
 
     case IDC_BOOKMARK_BAR_OPEN_ALL_INCOGNITO:
-      return chrome::HasBookmarkURLs(selection_) &&
+      return chrome::HasBookmarkURLsAllowedInIncognitoMode(selection_, profile_)
+             &&
              !profile_->IsOffTheRecord() &&
              incognito_avail != IncognitoModePrefs::DISABLED;
 
@@ -279,6 +345,16 @@ bool BookmarkContextMenuController::IsCommandIdEnabled(int command_id) const {
     case IDC_BOOKMARK_BAR_EDIT:
       return selection_.size() == 1 && !is_root_node && can_edit;
 
+    case IDC_BOOKMARK_BAR_UNDO:
+      return can_edit &&
+          BookmarkUndoServiceFactory::GetForProfile(profile_)->
+              undo_manager()->undo_count() > 0;
+
+    case IDC_BOOKMARK_BAR_REDO:
+      return can_edit &&
+          BookmarkUndoServiceFactory::GetForProfile(profile_)->
+              undo_manager()->redo_count() > 0;
+
     case IDC_BOOKMARK_BAR_REMOVE:
       return !selection_.empty() && !is_root_node && can_edit;
 
@@ -289,6 +365,9 @@ bool BookmarkContextMenuController::IsCommandIdEnabled(int command_id) const {
 
     case IDC_BOOKMARK_BAR_ALWAYS_SHOW:
       return !prefs->IsManagedPreference(prefs::kShowBookmarkBar);
+
+    case IDC_BOOKMARK_BAR_SHOW_APPS_SHORTCUT:
+      return !prefs->IsManagedPreference(prefs::kShowAppsShortcutInBookmarkBar);
 
     case IDC_COPY:
     case IDC_CUT:

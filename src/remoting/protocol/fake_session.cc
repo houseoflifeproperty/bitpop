@@ -5,7 +5,7 @@
 #include "remoting/protocol/fake_session.h"
 
 #include "base/bind.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "net/base/address_list.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -26,16 +26,16 @@ FakeSocket::FakeSocket()
       read_pending_(false),
       read_buffer_size_(0),
       input_pos_(0),
-      message_loop_(MessageLoop::current()),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      message_loop_(base::MessageLoop::current()),
+      weak_factory_(this) {
 }
 
 FakeSocket::~FakeSocket() {
-  EXPECT_EQ(message_loop_, MessageLoop::current());
+  EXPECT_EQ(message_loop_, base::MessageLoop::current());
 }
 
 void FakeSocket::AppendInputData(const std::vector<char>& data) {
-  EXPECT_EQ(message_loop_, MessageLoop::current());
+  EXPECT_EQ(message_loop_, base::MessageLoop::current());
   input_data_.insert(input_data_.end(), data.begin(), data.end());
   // Complete pending read if any.
   if (read_pending_) {
@@ -52,14 +52,14 @@ void FakeSocket::AppendInputData(const std::vector<char>& data) {
 }
 
 void FakeSocket::PairWith(FakeSocket* peer_socket) {
-  EXPECT_EQ(message_loop_, MessageLoop::current());
+  EXPECT_EQ(message_loop_, base::MessageLoop::current());
   peer_socket_ = peer_socket->weak_factory_.GetWeakPtr();
   peer_socket->peer_socket_ = weak_factory_.GetWeakPtr();
 }
 
 int FakeSocket::Read(net::IOBuffer* buf, int buf_len,
                      const net::CompletionCallback& callback) {
-  EXPECT_EQ(message_loop_, MessageLoop::current());
+  EXPECT_EQ(message_loop_, base::MessageLoop::current());
 
   if (next_read_error_ != net::OK) {
     int r = next_read_error_;
@@ -84,7 +84,7 @@ int FakeSocket::Read(net::IOBuffer* buf, int buf_len,
 
 int FakeSocket::Write(net::IOBuffer* buf, int buf_len,
                       const net::CompletionCallback& callback) {
-  EXPECT_EQ(message_loop_, MessageLoop::current());
+  EXPECT_EQ(message_loop_, base::MessageLoop::current());
   EXPECT_FALSE(write_pending_);
 
   if (write_limit_ > 0)
@@ -119,7 +119,7 @@ void FakeSocket::DoAsyncWrite(scoped_refptr<net::IOBuffer> buf, int buf_len,
     return;
   }
 
-  DoWrite(buf, buf_len);
+  DoWrite(buf.get(), buf_len);
   callback.Run(buf_len);
 }
 
@@ -127,24 +127,27 @@ void FakeSocket::DoWrite(net::IOBuffer* buf, int buf_len) {
   written_data_.insert(written_data_.end(),
                        buf->data(), buf->data() + buf_len);
 
-  if (peer_socket_) {
-    message_loop_->PostTask(FROM_HERE, base::Bind(
-        &FakeSocket::AppendInputData, peer_socket_,
-        std::vector<char>(buf->data(), buf->data() + buf_len)));
+  if (peer_socket_.get()) {
+    message_loop_->PostTask(
+        FROM_HERE,
+        base::Bind(&FakeSocket::AppendInputData,
+                   peer_socket_,
+                   std::vector<char>(buf->data(), buf->data() + buf_len)));
   }
 }
 
-bool FakeSocket::SetReceiveBufferSize(int32 size) {
+int FakeSocket::SetReceiveBufferSize(int32 size) {
   NOTIMPLEMENTED();
-  return false;
+  return net::ERR_NOT_IMPLEMENTED;
 }
-bool FakeSocket::SetSendBufferSize(int32 size) {
+
+int FakeSocket::SetSendBufferSize(int32 size) {
   NOTIMPLEMENTED();
-  return false;
+  return net::ERR_NOT_IMPLEMENTED;
 }
 
 int FakeSocket::Connect(const net::CompletionCallback& callback) {
-  EXPECT_EQ(message_loop_, MessageLoop::current());
+  EXPECT_EQ(message_loop_, base::MessageLoop::current());
   return net::OK;
 }
 
@@ -153,7 +156,7 @@ void FakeSocket::Disconnect() {
 }
 
 bool FakeSocket::IsConnected() const {
-  EXPECT_EQ(message_loop_, MessageLoop::current());
+  EXPECT_EQ(message_loop_, base::MessageLoop::current());
   return true;
 }
 
@@ -170,11 +173,11 @@ int FakeSocket::GetPeerAddress(net::IPEndPoint* address) const {
 
 int FakeSocket::GetLocalAddress(net::IPEndPoint* address) const {
   NOTIMPLEMENTED();
-  return net::ERR_FAILED;
+  return net::ERR_NOT_IMPLEMENTED;
 }
 
 const net::BoundNetLog& FakeSocket::NetLog() const {
-  EXPECT_EQ(message_loop_, MessageLoop::current());
+  EXPECT_EQ(message_loop_, base::MessageLoop::current());
   return net_log_;
 }
 
@@ -196,16 +199,6 @@ bool FakeSocket::UsingTCPFastOpen() const {
   return true;
 }
 
-int64 FakeSocket::NumBytesRead() const {
-  NOTIMPLEMENTED();
-  return 0;
-}
-
-base::TimeDelta FakeSocket::GetConnectTimeMicros() const {
-  NOTIMPLEMENTED();
-  return base::TimeDelta();
-}
-
 bool FakeSocket::WasNpnNegotiated() const {
   return false;
 }
@@ -222,15 +215,15 @@ bool FakeSocket::GetSSLInfo(net::SSLInfo* ssl_info) {
 FakeUdpSocket::FakeUdpSocket()
     : read_pending_(false),
       input_pos_(0),
-      message_loop_(MessageLoop::current()) {
+      message_loop_(base::MessageLoop::current()) {
 }
 
 FakeUdpSocket::~FakeUdpSocket() {
-  EXPECT_EQ(message_loop_, MessageLoop::current());
+  EXPECT_EQ(message_loop_, base::MessageLoop::current());
 }
 
 void FakeUdpSocket::AppendInputPacket(const char* data, int data_size) {
-  EXPECT_EQ(message_loop_, MessageLoop::current());
+  EXPECT_EQ(message_loop_, base::MessageLoop::current());
   input_packets_.push_back(std::string());
   input_packets_.back().assign(data, data + data_size);
 
@@ -247,7 +240,7 @@ void FakeUdpSocket::AppendInputPacket(const char* data, int data_size) {
 
 int FakeUdpSocket::Read(net::IOBuffer* buf, int buf_len,
                         const net::CompletionCallback& callback) {
-  EXPECT_EQ(message_loop_, MessageLoop::current());
+  EXPECT_EQ(message_loop_, base::MessageLoop::current());
   if (input_pos_ < static_cast<int>(input_packets_.size())) {
     int result = std::min(
         buf_len, static_cast<int>(input_packets_[input_pos_].size()));
@@ -265,31 +258,32 @@ int FakeUdpSocket::Read(net::IOBuffer* buf, int buf_len,
 
 int FakeUdpSocket::Write(net::IOBuffer* buf, int buf_len,
                          const net::CompletionCallback& callback) {
-  EXPECT_EQ(message_loop_, MessageLoop::current());
+  EXPECT_EQ(message_loop_, base::MessageLoop::current());
   written_packets_.push_back(std::string());
   written_packets_.back().assign(buf->data(), buf->data() + buf_len);
   return buf_len;
 }
 
-bool FakeUdpSocket::SetReceiveBufferSize(int32 size) {
+int FakeUdpSocket::SetReceiveBufferSize(int32 size) {
   NOTIMPLEMENTED();
-  return false;
+  return net::ERR_NOT_IMPLEMENTED;
 }
-bool FakeUdpSocket::SetSendBufferSize(int32 size) {
+
+int FakeUdpSocket::SetSendBufferSize(int32 size) {
   NOTIMPLEMENTED();
-  return false;
+  return net::ERR_NOT_IMPLEMENTED;
 }
 
 FakeSession::FakeSession()
     : event_handler_(NULL),
       candidate_config_(CandidateSessionConfig::CreateDefault()),
       config_(SessionConfig::ForTest()),
-      message_loop_(MessageLoop::current()),
+      message_loop_(base::MessageLoop::current()),
       async_creation_(false),
       jid_(kTestJid),
       error_(OK),
       closed_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
 }
 
 FakeSession::~FakeSession() { }

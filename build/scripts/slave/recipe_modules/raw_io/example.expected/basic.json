@@ -1,0 +1,37 @@
+[
+  {
+    "cmd": [
+      "echo",
+      "Hello World"
+    ],
+    "name": "echo",
+    "stderr": "/path/to/tmp/",
+    "stdout": "/path/to/tmp/"
+  },
+  {
+    "cmd": [
+      "cat"
+    ],
+    "name": "cat",
+    "stdin": "hello",
+    "stdout": "/path/to/tmp/out"
+  },
+  {
+    "cmd": [
+      "echo",
+      "huh"
+    ],
+    "name": "automock",
+    "stdout": "/path/to/tmp/out"
+  },
+  {
+    "cmd": [
+      "bash",
+      "-c",
+      "echo blah && echo fail 1>&2"
+    ],
+    "name": "automock (fail)",
+    "stderr": "/path/to/tmp/err",
+    "stdout": "/path/to/tmp/out"
+  }
+]

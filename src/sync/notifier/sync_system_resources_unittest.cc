@@ -9,10 +9,11 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 
 #include "google/cacheinvalidation/include/types.h"
 #include "jingle/notifier/listener/fake_push_client.h"
+#include "sync/notifier/push_client_channel.h"
 #include "sync/notifier/state_writer.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -49,9 +50,9 @@ class MockStorageCallback {
 class SyncSystemResourcesTest : public testing::Test {
  protected:
   SyncSystemResourcesTest()
-      : sync_system_resources_(
-          scoped_ptr<notifier::PushClient>(new notifier::FakePushClient()),
-          &mock_state_writer_) {}
+      : push_client_channel_(
+            scoped_ptr<notifier::PushClient>(new notifier::FakePushClient())),
+        sync_system_resources_(&push_client_channel_, &mock_state_writer_) {}
 
   virtual ~SyncSystemResourcesTest() {}
 
@@ -83,8 +84,9 @@ class SyncSystemResourcesTest : public testing::Test {
   }
 
   // Needed by |sync_system_resources_|.
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   MockStateWriter mock_state_writer_;
+  PushClientChannel push_client_channel_;
   SyncSystemResources sync_system_resources_;
 
  private:
@@ -168,9 +170,79 @@ TEST_F(SyncSystemResourcesTest, WriteState) {
   EXPECT_CALL(mock_storage_callback, Run(_))
       .WillOnce(SaveArg<0>(&results));
   sync_system_resources_.storage()->WriteKey(
-      "", "state", mock_storage_callback.CreateCallback());
+      std::string(), "state", mock_storage_callback.CreateCallback());
   message_loop_.RunUntilIdle();
-  EXPECT_EQ(invalidation::Status(invalidation::Status::SUCCESS, ""), results);
+  EXPECT_EQ(invalidation::Status(invalidation::Status::SUCCESS, std::string()),
+            results);
+}
+
+class TestSyncNetworkChannel : public SyncNetworkChannel {
+ public:
+  TestSyncNetworkChannel() {}
+  virtual ~TestSyncNetworkChannel() {}
+
+  using SyncNetworkChannel::NotifyStateChange;
+  using SyncNetworkChannel::DeliverIncomingMessage;
+
+  virtual void SendMessage(const std::string& message) OVERRIDE {
+  }
+
+  virtual void UpdateCredentials(const std::string& email,
+      const std::string& token) OVERRIDE {
+  }
+
+  virtual int GetInvalidationClientType() OVERRIDE {
+    return 0;
+  }
+
+  virtual void RequestDetailedStatus(
+      base::Callback<void(const base::DictionaryValue&)> callback) OVERRIDE {
+    base::DictionaryValue value;
+    callback.Run(value);
+  }
+};
+
+class SyncNetworkChannelTest
+    : public testing::Test,
+      public SyncNetworkChannel::Observer {
+ protected:
+  SyncNetworkChannelTest()
+      : last_invalidator_state_(DEFAULT_INVALIDATION_ERROR),
+        connected_(false) {
+    network_channel_.AddObserver(this);
+    network_channel_.AddNetworkStatusReceiver(
+        invalidation::NewPermanentCallback(
+            this, &SyncNetworkChannelTest::OnNetworkStatusChange));
+  }
+
+  virtual ~SyncNetworkChannelTest() {
+    network_channel_.RemoveObserver(this);
+  }
+
+  virtual void OnNetworkChannelStateChanged(
+      InvalidatorState invalidator_state) OVERRIDE {
+    last_invalidator_state_ = invalidator_state;
+  }
+
+  void OnNetworkStatusChange(bool connected) {
+    connected_ = connected;
+  }
+
+  TestSyncNetworkChannel network_channel_;
+  InvalidatorState last_invalidator_state_;
+  bool connected_;
+};
+
+// Simulate network channel state change. It should propagate to observer.
+TEST_F(SyncNetworkChannelTest, OnNetworkChannelStateChanged) {
+  EXPECT_EQ(DEFAULT_INVALIDATION_ERROR, last_invalidator_state_);
+  EXPECT_FALSE(connected_);
+  network_channel_.NotifyStateChange(INVALIDATIONS_ENABLED);
+  EXPECT_EQ(INVALIDATIONS_ENABLED, last_invalidator_state_);
+  EXPECT_TRUE(connected_);
+  network_channel_.NotifyStateChange(INVALIDATION_CREDENTIALS_REJECTED);
+  EXPECT_EQ(INVALIDATION_CREDENTIALS_REJECTED, last_invalidator_state_);
+  EXPECT_FALSE(connected_);
 }
 
 }  // namespace

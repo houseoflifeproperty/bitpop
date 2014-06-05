@@ -150,11 +150,12 @@ class AndroidListenerIntents {
   }
 
   /** Creates a 'start-client' intent. */
-  static Intent createStartIntent(Context context, int clientType, byte[] clientName) {
+  static Intent createStartIntent(Context context, int clientType, byte[] clientName,
+      boolean allowSuppression) {
     Intent intent = new Intent();
     // Create proto for the start command.
     StartCommand command = AndroidListenerProtos.newStartCommand(clientType,
-        ByteString.copyFrom(clientName));
+        ByteString.copyFrom(clientName), allowSuppression);
     intent.putExtra(EXTRA_START, command.toByteArray());
     return setAndroidListenerClass(context, intent);
   }

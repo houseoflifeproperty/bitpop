@@ -8,10 +8,11 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#import "base/memory/scoped_nsobject.h"
+#import "base/mac/scoped_nsobject.h"
 #include "base/memory/weak_ptr.h"
 #import "chrome/browser/ui/cocoa/browser_window_cocoa.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
+#import "chrome/browser/ui/cocoa/one_click_signin_view_controller.h"
 #include "chrome/browser/ui/sync/one_click_signin_sync_starter.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -24,22 +25,26 @@ using ::testing::_;
 class OneClickSigninBubbleControllerTest : public CocoaProfileTest {
  public:
   OneClickSigninBubbleControllerTest()
-      : weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+      : weak_ptr_factory_(this),
         start_sync_callback_(
             base::Bind(&OneClickSigninBubbleControllerTest::OnStartSync,
                        weak_ptr_factory_.GetWeakPtr())) {}
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     CocoaProfileTest::SetUp();
     BrowserWindowCocoa* browser_window =
         static_cast<BrowserWindowCocoa*>(browser()->window());
-    controller_.reset(
-        [[OneClickSigninBubbleController alloc]
+    controller_.reset([[OneClickSigninBubbleController alloc]
             initWithBrowserWindowController:browser_window->cocoa_controller()
-                           start_sync_callback:start_sync_callback_]);
+                                webContents:nil
+                               errorMessage:nil
+                                   callback:start_sync_callback_]);
+    [controller_ showWindow:nil];
+    EXPECT_NSEQ(@"OneClickSigninBubble",
+                [[controller_ viewController] nibName]);
   }
 
-  virtual void TearDown() {
+  virtual void TearDown() OVERRIDE {
     controller_.reset();
     CocoaProfileTest::TearDown();
   }
@@ -49,55 +54,32 @@ class OneClickSigninBubbleControllerTest : public CocoaProfileTest {
  protected:
   base::WeakPtrFactory<OneClickSigninBubbleControllerTest> weak_ptr_factory_;
   BrowserWindow::StartSyncCallback start_sync_callback_;
-  scoped_nsobject<OneClickSigninBubbleController> controller_;
+  base::scoped_nsobject<OneClickSigninBubbleController> controller_;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(OneClickSigninBubbleControllerTest);
 };
 
-// Test that the dialog loads from its nib properly.
-TEST_F(OneClickSigninBubbleControllerTest, NibLoad) {
-  EXPECT_CALL(*this, OnStartSync(_)).Times(0);
-
-  // Force nib load.
-  [controller_ window];
-  EXPECT_NSEQ(@"OneClickSigninBubble", [controller_ windowNibName]);
-}
-
-// Test that the dialog calls the callback if the OK button is clicked.
-// Callback should be called to setup sync with default settings.
-TEST_F(OneClickSigninBubbleControllerTest, ShowAndOK) {
+// Test that the bubble does not sync if the OK button is clicked.
+TEST_F(OneClickSigninBubbleControllerTest, OK) {
   EXPECT_CALL(*this, OnStartSync(
-      OneClickSigninSyncStarter::SYNC_WITH_DEFAULT_SETTINGS)).Times(1);
-
-  [controller_ showWindow:nil];
-  [controller_.release() ok:nil];
+      OneClickSigninSyncStarter::SYNC_WITH_DEFAULT_SETTINGS)).Times(0);
+  [[controller_ viewController] ok:nil];
 }
 
-// Test that the dialog doesn't call the callback if the Undo button
-// is clicked.
-TEST_F(OneClickSigninBubbleControllerTest, ShowAndUndo) {
-  EXPECT_CALL(*this, OnStartSync(_)).Times(0);
-
-  [controller_ showWindow:nil];
-  [controller_.release() onClickUndo:nil];
-}
-
-// Test that the advanced callback is run if its corresponding button
-// is clicked.
-TEST_F(OneClickSigninBubbleControllerTest, ShowAndClickAdvanced) {
+// Test that the bubble does not sync if the Undo button
+// is clicked. Callback should be called to abort the sync.
+TEST_F(OneClickSigninBubbleControllerTest, Undo) {
   EXPECT_CALL(*this, OnStartSync(
-      OneClickSigninSyncStarter::CONFIGURE_SYNC_FIRST)).Times(1);
-
-  [controller_ showWindow:nil];
-  [controller_.release() onClickAdvancedLink:nil];
+      OneClickSigninSyncStarter::UNDO_SYNC)).Times(0);
+  [[controller_ viewController] onClickUndo:nil];
 }
 
-// Test that the dialog calls the callback if the bubble is closed.
-// Callback should be called to setup sync with default settings.
-TEST_F(OneClickSigninBubbleControllerTest, ShowAndClose) {
+// Test that the bubble does not sync if the bubble is closed.
+TEST_F(OneClickSigninBubbleControllerTest, Close) {
   EXPECT_CALL(*this, OnStartSync(
-      OneClickSigninSyncStarter::SYNC_WITH_DEFAULT_SETTINGS)).Times(1);
-
-  [controller_ showWindow:nil];
-  [controller_.release() close];
+      OneClickSigninSyncStarter::SYNC_WITH_DEFAULT_SETTINGS)).Times(0);
+  [controller_ close];
 }
 
 }  // namespace

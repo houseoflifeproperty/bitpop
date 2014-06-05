@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/file_util.h"
+#include "base/files/important_file_writer.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/location.h"
@@ -14,7 +15,7 @@
 
 namespace remoting {
 
-JsonHostConfig::JsonHostConfig(const FilePath& filename)
+JsonHostConfig::JsonHostConfig(const base::FilePath& filename)
     : filename_(filename) {
 }
 
@@ -25,7 +26,7 @@ bool JsonHostConfig::Read() {
 
   // TODO(sergeyu): Implement better error handling here.
   std::string file_content;
-  if (!file_util::ReadFileToString(filename_, &file_content)) {
+  if (!base::ReadFileToString(filename_, &file_content)) {
     LOG(WARNING) << "Failed to read " << filename_.value();
     return false;
   }
@@ -36,11 +37,8 @@ bool JsonHostConfig::Read() {
 bool JsonHostConfig::Save() {
   DCHECK(CalledOnValidThread());
 
-  std::string file_content = GetSerializedData();
-  // TODO(sergeyu): Move ImportantFileWriter to base and use it here.
-  int result = file_util::WriteFile(filename_, file_content.data(),
-                                    file_content.size());
-  return result == static_cast<int>(file_content.size());
+  return base::ImportantFileWriter::WriteFileAtomically(filename_,
+                                                        GetSerializedData());
 }
 
 std::string JsonHostConfig::GetSerializedData() {
@@ -50,14 +48,15 @@ std::string JsonHostConfig::GetSerializedData() {
 }
 
 bool JsonHostConfig::SetSerializedData(const std::string& config) {
-  scoped_ptr<Value> value(
+  scoped_ptr<base::Value> value(
       base::JSONReader::Read(config, base::JSON_ALLOW_TRAILING_COMMAS));
-  if (value.get() == NULL || !value->IsType(Value::TYPE_DICTIONARY)) {
+  if (value.get() == NULL || !value->IsType(base::Value::TYPE_DICTIONARY)) {
     LOG(WARNING) << "Failed to parse " << filename_.value();
     return false;
   }
 
-  DictionaryValue* dictionary = static_cast<DictionaryValue*>(value.release());
+  base::DictionaryValue* dictionary =
+      static_cast<base::DictionaryValue*>(value.release());
   values_.reset(dictionary);
   return true;
 }

@@ -8,9 +8,9 @@
 #include "net/socket/stream_socket.h"
 #include "remoting/base/constants.h"
 #include "remoting/proto/audio.pb.h"
+#include "remoting/protocol/message_serialization.h"
 #include "remoting/protocol/session.h"
 #include "remoting/protocol/session_config.h"
-#include "remoting/protocol/util.h"
 
 namespace remoting {
 namespace protocol {
@@ -36,7 +36,7 @@ void AudioWriter::ProcessAudioPacket(scoped_ptr<AudioPacket> packet,
 // static
 scoped_ptr<AudioWriter> AudioWriter::Create(const SessionConfig& config) {
   if (!config.is_audio_enabled())
-    return scoped_ptr<AudioWriter>(NULL);
+    return scoped_ptr<AudioWriter>();
   // TODO(kxing): Support different session configurations.
   return scoped_ptr<AudioWriter>(new AudioWriter());
 }

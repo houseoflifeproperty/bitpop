@@ -1,5 +1,5 @@
 /* C++ code produced by gperf version 3.0.3 */
-/* Command-line: gperf -a -L C++ -C -c -o -t -k '*' -NFindDomain -ZPerfect_Hash_Test1 -D effective_tld_names_unittest1.gperf  */
+/* Command-line: gperf -a -L C++ -C -c -o -t -k '*' -NFindDomain -ZPerfect_Hash_Test1 -P -K name_offset -Q stringpool1 -D effective_tld_names_unittest1.gperf  */
 
 #if !((' ' == 32) && ('!' == 33) && ('"' == 34) && ('#' == 35) \
       && ('%' == 37) && ('&' == 38) && ('\'' == 39) && ('(' == 40) \
@@ -35,20 +35,20 @@
 // found in the LICENSE file.
 // Test file used by registry_controlled_domain_unittest.
 // We edit this file manually, then run
-// gperf -a -L "C++" -C -c -o -t -k '*' -NFindDomain -ZPerfect_Hash_Test1 -D effective_tld_names_unittest1.gperf >  effective_tld_names_unittest1.cc
+// gperf -a -L "C++" -C -c -o -t -k '*' -NFindDomain -ZPerfect_Hash_Test1 -P -K name_offset -Q stringpool1 -D effective_tld_names_unittest1.gperf >  effective_tld_names_unittest1.cc
 // to generate the perfect hashmap.
 #line 10 "effective_tld_names_unittest1.gperf"
 struct DomainRule {
-  const char *name;
-  int type;  // 1: exception, 2: wildcard
+  int name_offset;
+  int type;  // 1: exception, 2: wildcard, 4: private
 };
 
-#define TOTAL_KEYWORDS 8
+#define TOTAL_KEYWORDS 11
 #define MIN_WORD_LENGTH 1
 #define MAX_WORD_LENGTH 11
 #define MIN_HASH_VALUE 1
-#define MAX_HASH_VALUE 16
-/* maximum key range = 16, duplicates = 0 */
+#define MAX_HASH_VALUE 17
+/* maximum key range = 17, duplicates = 0 */
 
 class Perfect_Hash_Test1
 {
@@ -63,32 +63,32 @@ Perfect_Hash_Test1::hash (register const char *str, register unsigned int len)
 {
   static const unsigned char asso_values[] =
     {
-      17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
-      17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
-      17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
-      17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
-      17, 17, 17, 17, 17, 17,  0, 17, 17, 17,
-      17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
-      17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
-      17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
-      17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
-      17, 17, 17, 17, 17, 17, 17,  0,  0,  0,
-      17,  5,  0, 17, 17, 17,  0, 17, 17,  0,
-      17,  0,  0, 17,  0, 17, 17, 17, 17, 17,
-      17, 17,  0, 17, 17, 17, 17, 17, 17, 17,
-      17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
-      17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
-      17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
-      17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
-      17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
-      17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
-      17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
-      17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
-      17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
-      17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
-      17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
-      17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
-      17, 17, 17, 17, 17, 17
+      18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+      18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+      18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+      18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+      18, 18, 18, 18, 18, 18,  0, 18, 18, 18,
+      18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+      18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+      18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+      18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+      18, 18, 18, 18, 18, 18, 18,  0,  0,  0,
+      18,  5,  0, 18, 18,  0,  0, 18, 18,  0,
+       5,  0,  0, 18,  0, 18,  5, 18,  0, 18,
+      18, 18,  0, 18, 18, 18, 18, 18, 18, 18,
+      18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+      18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+      18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+      18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+      18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+      18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+      18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+      18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+      18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+      18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+      18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+      18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+      18, 18, 18, 18, 18, 18
     };
   register int hval = len;
 
@@ -131,33 +131,68 @@ Perfect_Hash_Test1::hash (register const char *str, register unsigned int len)
   return hval;
 }
 
+struct stringpool1_t
+  {
+    char stringpool1_str0[sizeof("c")];
+    char stringpool1_str1[sizeof("jp")];
+    char stringpool1_str2[sizeof("b.c")];
+    char stringpool1_str3[sizeof("ac.jp")];
+    char stringpool1_str4[sizeof("bar.jp")];
+    char stringpool1_str5[sizeof("no")];
+    char stringpool1_str6[sizeof("baz.bar.jp")];
+    char stringpool1_str7[sizeof("bar.baz.com")];
+    char stringpool1_str8[sizeof("priv.no")];
+    char stringpool1_str9[sizeof("pref.bar.jp")];
+    char stringpool1_str10[sizeof("private")];
+  };
+static const struct stringpool1_t stringpool1_contents =
+  {
+    "c",
+    "jp",
+    "b.c",
+    "ac.jp",
+    "bar.jp",
+    "no",
+    "baz.bar.jp",
+    "bar.baz.com",
+    "priv.no",
+    "pref.bar.jp",
+    "private"
+  };
+#define stringpool1 ((const char *) &stringpool1_contents)
 const struct DomainRule *
 Perfect_Hash_Test1::FindDomain (register const char *str, register unsigned int len)
 {
   static const struct DomainRule wordlist[] =
     {
 #line 21 "effective_tld_names_unittest1.gperf"
-      {"c", 2},
+      {(int)(long)&((struct stringpool1_t *)0)->stringpool1_str0, 2},
 #line 15 "effective_tld_names_unittest1.gperf"
-      {"jp", 0},
+      {(int)(long)&((struct stringpool1_t *)0)->stringpool1_str1, 0},
 #line 22 "effective_tld_names_unittest1.gperf"
-      {"b.c", 1},
+      {(int)(long)&((struct stringpool1_t *)0)->stringpool1_str2, 1},
 #line 16 "effective_tld_names_unittest1.gperf"
-      {"ac.jp", 0},
+      {(int)(long)&((struct stringpool1_t *)0)->stringpool1_str3, 0},
 #line 17 "effective_tld_names_unittest1.gperf"
-      {"bar.jp", 2},
+      {(int)(long)&((struct stringpool1_t *)0)->stringpool1_str4, 2},
+#line 23 "effective_tld_names_unittest1.gperf"
+      {(int)(long)&((struct stringpool1_t *)0)->stringpool1_str5, 0},
 #line 18 "effective_tld_names_unittest1.gperf"
-      {"baz.bar.jp", 2},
+      {(int)(long)&((struct stringpool1_t *)0)->stringpool1_str6, 2},
 #line 20 "effective_tld_names_unittest1.gperf"
-      {"bar.baz.com", 0},
+      {(int)(long)&((struct stringpool1_t *)0)->stringpool1_str7, 0},
+#line 24 "effective_tld_names_unittest1.gperf"
+      {(int)(long)&((struct stringpool1_t *)0)->stringpool1_str8, 4},
 #line 19 "effective_tld_names_unittest1.gperf"
-      {"pref.bar.jp", 1}
+      {(int)(long)&((struct stringpool1_t *)0)->stringpool1_str9, 1},
+#line 25 "effective_tld_names_unittest1.gperf"
+      {(int)(long)&((struct stringpool1_t *)0)->stringpool1_str10, 4}
     };
 
   static const signed char lookup[] =
     {
-      -1,  0,  1,  2, -1,  3,  4, -1, -1, -1,  5,  6, -1, -1,
-      -1, -1,  7
+      -1,  0,  1,  2, -1,  3,  4,  5, -1, -1,  6,  7,  8, -1,
+      -1, -1,  9, 10
     };
 
   if (len <= MAX_WORD_LENGTH && len >= MIN_WORD_LENGTH)
@@ -170,7 +205,7 @@ Perfect_Hash_Test1::FindDomain (register const char *str, register unsigned int 
 
           if (index >= 0)
             {
-              register const char *s = wordlist[index].name;
+              register const char *s = wordlist[index].name_offset + stringpool1;
 
               if (*str == *s && !strncmp (str + 1, s + 1, len - 1) && s[len] == '\0')
                 return &wordlist[index];
@@ -179,5 +214,5 @@ Perfect_Hash_Test1::FindDomain (register const char *str, register unsigned int 
     }
   return 0;
 }
-#line 23 "effective_tld_names_unittest1.gperf"
+#line 26 "effective_tld_names_unittest1.gperf"
 

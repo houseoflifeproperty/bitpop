@@ -4,80 +4,48 @@
 
 #include "chrome/browser/extensions/api/sync_file_system/extension_sync_event_observer.h"
 
-#include "chrome/browser/extensions/event_names.h"
-#include "chrome/browser/extensions/event_router.h"
-#include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
+#include "base/lazy_instance.h"
+#include "chrome/browser/extensions/api/sync_file_system/sync_file_system_api_helpers.h"
 #include "chrome/browser/sync_file_system/sync_event_observer.h"
 #include "chrome/browser/sync_file_system/sync_file_system_service.h"
+#include "chrome/browser/sync_file_system/sync_file_system_service_factory.h"
+#include "chrome/browser/sync_file_system/syncable_file_system_util.h"
 #include "chrome/common/extensions/api/sync_file_system.h"
-#include "webkit/fileapi/file_system_url.h"
-#include "webkit/fileapi/syncable/sync_operation_result.h"
+#include "content/public/browser/browser_context.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system_provider.h"
+#include "extensions/browser/extensions_browser_client.h"
+#include "extensions/common/extension_set.h"
+#include "webkit/browser/fileapi/file_system_url.h"
+#include "webkit/common/fileapi/file_system_util.h"
 
 using sync_file_system::SyncEventObserver;
 
 namespace extensions {
 
-namespace {
+static base::LazyInstance<
+    BrowserContextKeyedAPIFactory<ExtensionSyncEventObserver> > g_factory =
+    LAZY_INSTANCE_INITIALIZER;
 
-api::sync_file_system::SyncStateStatus SyncServiceStateEnumToExtensionEnum(
-    SyncEventObserver::SyncServiceState state) {
-  switch (state) {
-    case SyncEventObserver::SYNC_SERVICE_RUNNING:
-      return api::sync_file_system::SYNC_FILE_SYSTEM_SYNC_STATE_STATUS_RUNNING;
-    case SyncEventObserver::SYNC_SERVICE_AUTHENTICATION_REQUIRED:
-      return api::sync_file_system::
-          SYNC_FILE_SYSTEM_SYNC_STATE_STATUS_AUTHENTICATION_REQUIRED;
-    case SyncEventObserver::SYNC_SERVICE_TEMPORARY_UNAVAILABLE:
-      return api::sync_file_system::
-          SYNC_FILE_SYSTEM_SYNC_STATE_STATUS_TEMPORARY_UNAVAILABLE;
-    case SyncEventObserver::SYNC_SERVICE_DISABLED:
-      return api::sync_file_system::SYNC_FILE_SYSTEM_SYNC_STATE_STATUS_DISABLED;
-  }
-  NOTREACHED();
-  return api::sync_file_system::SYNC_FILE_SYSTEM_SYNC_STATE_STATUS_NONE;
+// static
+BrowserContextKeyedAPIFactory<ExtensionSyncEventObserver>*
+ExtensionSyncEventObserver::GetFactoryInstance() {
+  return g_factory.Pointer();
 }
-
-api::sync_file_system::SyncOperationResult SyncOperationResultToExtensionEnum(
-    fileapi::SyncOperationResult operation_result) {
-  switch (operation_result) {
-    case fileapi::SYNC_OPERATION_NONE:
-      return api::sync_file_system::
-          SYNC_FILE_SYSTEM_SYNC_OPERATION_RESULT_NONE;
-    case fileapi::SYNC_OPERATION_ADDED:
-      return api::sync_file_system::
-          SYNC_FILE_SYSTEM_SYNC_OPERATION_RESULT_ADDED;
-    case fileapi::SYNC_OPERATION_UPDATED:
-      return api::sync_file_system::
-          SYNC_FILE_SYSTEM_SYNC_OPERATION_RESULT_UPDATED;
-    case fileapi::SYNC_OPERATION_DELETED:
-      return api::sync_file_system::
-          SYNC_FILE_SYSTEM_SYNC_OPERATION_RESULT_DELETED;
-    case fileapi::SYNC_OPERATION_CONFLICTED:
-      return api::sync_file_system::
-          SYNC_FILE_SYSTEM_SYNC_OPERATION_RESULT_CONFLICTED;
-  }
-  NOTREACHED();
-  return api::sync_file_system::SYNC_FILE_SYSTEM_SYNC_OPERATION_RESULT_NONE;
-}
-
-}  // namespace
 
 ExtensionSyncEventObserver::ExtensionSyncEventObserver(
-    Profile* profile)
-    : profile_(profile),
-      sync_service_(NULL) {}
+    content::BrowserContext* context)
+    : browser_context_(context), sync_service_(NULL) {}
 
 void ExtensionSyncEventObserver::InitializeForService(
-    sync_file_system::SyncFileSystemService* sync_service,
-    const std::string& service_name) {
+    sync_file_system::SyncFileSystemService* sync_service) {
   DCHECK(sync_service);
   if (sync_service_ != NULL) {
     DCHECK_EQ(sync_service_, sync_service);
     return;
   }
   sync_service_ = sync_service;
-  service_name_ = service_name;
   sync_service_->AddSyncEventObserver(this);
 }
 
@@ -88,45 +56,64 @@ void ExtensionSyncEventObserver::Shutdown() {
     sync_service_->RemoveSyncEventObserver(this);
 }
 
-const std::string& ExtensionSyncEventObserver::GetExtensionId(
+std::string ExtensionSyncEventObserver::GetExtensionId(
     const GURL& app_origin) {
-  const Extension* app = ExtensionSystem::Get(profile_)->extension_service()->
-      GetInstalledApp(app_origin);
-  DCHECK(app);
+  const Extension* app = ExtensionRegistry::Get(browser_context_)
+      ->enabled_extensions().GetAppByURL(app_origin);
+  if (!app) {
+    // The app is uninstalled or disabled.
+    return std::string();
+  }
   return app->id();
 }
 
 void ExtensionSyncEventObserver::OnSyncStateUpdated(
     const GURL& app_origin,
-    sync_file_system::SyncEventObserver::SyncServiceState state,
+    sync_file_system::SyncServiceState state,
     const std::string& description) {
   // Convert state and description into SyncState Object.
-  api::sync_file_system::SyncState sync_state;
-  sync_state.service_name = service_name_;
-  sync_state.state = SyncServiceStateEnumToExtensionEnum(state);
-  sync_state.description = description;
+  api::sync_file_system::ServiceInfo service_info;
+  service_info.state = SyncServiceStateToExtensionEnum(state);
+  service_info.description = description;
   scoped_ptr<base::ListValue> params(
-      api::sync_file_system::OnSyncStateChanged::Create(sync_state));
+      api::sync_file_system::OnServiceStatusChanged::Create(service_info));
 
-  BroadcastOrDispatchEvent(app_origin,
-                           event_names::kOnSyncStateChanged,
-                           params.Pass());
+  BroadcastOrDispatchEvent(
+      app_origin,
+      api::sync_file_system::OnServiceStatusChanged::kEventName,
+      params.Pass());
 }
 
 void ExtensionSyncEventObserver::OnFileSynced(
     const fileapi::FileSystemURL& url,
-    fileapi::SyncOperationResult result) {
-  // TODO(calvinlo):Convert filePath from string to Webkit FileEntry.
-  const api::sync_file_system::SyncOperationResult sync_operation_result =
-      SyncOperationResultToExtensionEnum(result);
-  const std::string filePath = url.path().AsUTF8Unsafe();
-  scoped_ptr<base::ListValue> params(
-      api::sync_file_system::OnFileSynced::Create(filePath,
-                                                  sync_operation_result));
+    sync_file_system::SyncFileStatus status,
+    sync_file_system::SyncAction action,
+    sync_file_system::SyncDirection direction) {
+  scoped_ptr<base::ListValue> params(new base::ListValue());
 
-  BroadcastOrDispatchEvent(url.origin(),
-                           event_names::kOnFileSynced,
-                           params.Pass());
+  // For now we always assume events come only for files (not directories).
+  scoped_ptr<base::DictionaryValue> entry(
+      CreateDictionaryValueForFileSystemEntry(
+          url, sync_file_system::SYNC_FILE_TYPE_FILE));
+  if (!entry)
+    return;
+  params->Append(entry.release());
+
+  // Status, SyncAction and any optional notes to go here.
+  api::sync_file_system::FileStatus status_enum =
+      SyncFileStatusToExtensionEnum(status);
+  api::sync_file_system::SyncAction action_enum =
+      SyncActionToExtensionEnum(action);
+  api::sync_file_system::SyncDirection direction_enum =
+      SyncDirectionToExtensionEnum(direction);
+  params->AppendString(api::sync_file_system::ToString(status_enum));
+  params->AppendString(api::sync_file_system::ToString(action_enum));
+  params->AppendString(api::sync_file_system::ToString(direction_enum));
+
+  BroadcastOrDispatchEvent(
+      url.origin(),
+      api::sync_file_system::OnFileStatusChanged::kEventName,
+      params.Pass());
 }
 
 void ExtensionSyncEventObserver::BroadcastOrDispatchEvent(
@@ -136,11 +123,11 @@ void ExtensionSyncEventObserver::BroadcastOrDispatchEvent(
   // Check to see whether the event should be broadcasted to all listening
   // extensions or sent to a specific extension ID.
   bool broadcast_mode = app_origin.is_empty();
-  EventRouter* event_router = ExtensionSystem::Get(profile_)->event_router();
+  EventRouter* event_router = EventRouter::Get(browser_context_);
   DCHECK(event_router);
 
   scoped_ptr<Event> event(new Event(event_name, values.Pass()));
-  event->restrict_to_profile = profile_;
+  event->restrict_to_browser_context = browser_context_;
 
   // No app_origin, broadcast to all listening extensions for this event name.
   if (broadcast_mode) {
@@ -150,7 +137,16 @@ void ExtensionSyncEventObserver::BroadcastOrDispatchEvent(
 
   // Dispatch to single extension ID.
   const std::string extension_id = GetExtensionId(app_origin);
+  if (extension_id.empty())
+    return;
   event_router->DispatchEventToExtension(extension_id, event.Pass());
+}
+
+template <>
+void BrowserContextKeyedAPIFactory<
+    ExtensionSyncEventObserver>::DeclareFactoryDependencies() {
+  DependsOn(sync_file_system::SyncFileSystemServiceFactory::GetInstance());
+  DependsOn(ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
 }
 
 }  // namespace extensions

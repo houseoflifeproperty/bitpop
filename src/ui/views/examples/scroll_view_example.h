@@ -7,34 +7,37 @@
 
 #include <string>
 
-#include "base/basictypes.h"
-#include "base/compiler_specific.h"
-#include "ui/views/controls/button/text_button.h"
+#include "base/macros.h"
+#include "ui/views/controls/button/button.h"
 #include "ui/views/controls/scroll_view.h"
 #include "ui/views/examples/example_base.h"
 
 namespace views {
+
+class LabelButton;
+
 namespace examples {
 
-class ScrollViewExample : public ExampleBase, public ButtonListener {
+class VIEWS_EXAMPLES_EXPORT ScrollViewExample : public ExampleBase,
+                                                public ButtonListener {
  public:
   ScrollViewExample();
   virtual ~ScrollViewExample();
 
-  // Overridden from ExampleBase:
+  // ExampleBase:
   virtual void CreateExampleView(View* container) OVERRIDE;
 
  private:
-  // Overridden from ButtonListener:
+  // ButtonListener:
   virtual void ButtonPressed(Button* sender, const ui::Event& event) OVERRIDE;
 
   // Control buttons to change the size of scrollable and jump to
   // predefined position.
-  TextButton* wide_;
-  TextButton* tall_;
-  TextButton* big_square_;
-  TextButton* small_square_;
-  TextButton* scroll_to_;
+  LabelButton* wide_;
+  LabelButton* tall_;
+  LabelButton* big_square_;
+  LabelButton* small_square_;
+  LabelButton* scroll_to_;
 
   class ScrollableView;
   // The content of the scroll view.

@@ -7,51 +7,48 @@
 #include "build/build_config.h"
 
 #include "base/logging.h"
-#include "base/utf_string_conversions.h"
-#include "ui/base/accessibility/accessible_view_state.h"
-#include "ui/base/events/event.h"
-#include "ui/base/keycodes/keyboard_codes.h"
-#include "ui/gfx/color_utils.h"
-#include "ui/gfx/font.h"
-#include "ui/views/controls/link_listener.h"
-
-#if defined(USE_AURA)
+#include "base/strings/utf_string_conversions.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/cursor/cursor.h"
-#endif
+#include "ui/events/event.h"
+#include "ui/events/keycodes/keyboard_codes.h"
+#include "ui/gfx/canvas.h"
+#include "ui/gfx/color_utils.h"
+#include "ui/gfx/font_list.h"
+#include "ui/views/controls/link_listener.h"
+#include "ui/views/native_cursor.h"
 
 namespace views {
 
-const char Link::kViewClassName[] = "views/Link";
+const char Link::kViewClassName[] = "Link";
 
-Link::Link() : Label(string16()) {
+Link::Link() : Label(base::string16()) {
   Init();
 }
 
-Link::Link(const string16& title) : Label(title) {
+Link::Link(const base::string16& title) : Label(title) {
   Init();
 }
 
 Link::~Link() {
 }
 
-void Link::OnEnabledChanged() {
-  RecalculateFont();
-  View::OnEnabledChanged();
+SkColor Link::GetDefaultEnabledColor() {
+#if defined(OS_WIN)
+  return color_utils::GetSysSkColor(COLOR_HOTLIGHT);
+#else
+  return SkColorSetRGB(0, 51, 153);
+#endif
 }
 
-std::string Link::GetClassName() const {
+const char* Link::GetClassName() const {
   return kViewClassName;
 }
 
 gfx::NativeCursor Link::GetCursor(const ui::MouseEvent& event) {
   if (!enabled())
     return gfx::kNullCursor;
-#if defined(USE_AURA)
-  return ui::kCursorHand;
-#elif defined(OS_WIN)
-  static HCURSOR g_hand_cursor = LoadCursor(NULL, IDC_HAND);
-  return g_hand_cursor;
-#endif
+  return GetNativeHandCursor();
 }
 
 bool Link::HitTestRect(const gfx::Rect& rect) const {
@@ -111,17 +108,6 @@ bool Link::OnKeyPressed(const ui::KeyEvent& event) {
   return true;
 }
 
-bool Link::SkipDefaultKeyEventProcessing(const ui::KeyEvent& event) {
-  // Make sure we don't process space or enter as accelerators.
-  return (event.key_code() == ui::VKEY_SPACE) ||
-      (event.key_code() == ui::VKEY_RETURN);
-}
-
-void Link::GetAccessibleState(ui::AccessibleViewState* state) {
-  Label::GetAccessibleState(state);
-  state->role = ui::AccessibilityTypes::ROLE_LINK;
-}
-
 void Link::OnGestureEvent(ui::GestureEvent* event) {
   if (!enabled())
     return;
@@ -139,9 +125,45 @@ void Link::OnGestureEvent(ui::GestureEvent* event) {
   event->SetHandled();
 }
 
-void Link::SetFont(const gfx::Font& font) {
-  Label::SetFont(font);
+bool Link::SkipDefaultKeyEventProcessing(const ui::KeyEvent& event) {
+  // Make sure we don't process space or enter as accelerators.
+  return (event.key_code() == ui::VKEY_SPACE) ||
+      (event.key_code() == ui::VKEY_RETURN);
+}
+
+void Link::GetAccessibleState(ui::AXViewState* state) {
+  Label::GetAccessibleState(state);
+  state->role = ui::AX_ROLE_LINK;
+}
+
+void Link::OnEnabledChanged() {
   RecalculateFont();
+  View::OnEnabledChanged();
+}
+
+void Link::OnFocus() {
+  Label::OnFocus();
+  // We render differently focused.
+  SchedulePaint();
+}
+
+void Link::OnBlur() {
+  Label::OnBlur();
+  // We render differently focused.
+  SchedulePaint();
+}
+
+void Link::SetFontList(const gfx::FontList& font_list) {
+  Label::SetFontList(font_list);
+  RecalculateFont();
+}
+
+void Link::SetText(const base::string16& text) {
+  Label::SetText(text);
+  // Disable focusability for empty links.  Otherwise Label::GetInsets() will
+  // give them an unconditional 1-px. inset on every side to allow for a focus
+  // border, when in this case we probably wanted zero width.
+  SetFocusable(!text.empty());
 }
 
 void Link::SetEnabledColor(SkColor color) {
@@ -164,33 +186,25 @@ void Link::SetUnderline(bool underline) {
 }
 
 void Link::Init() {
-  static bool initialized = false;
-  static SkColor kDefaultEnabledColor;
-  static SkColor kDefaultDisabledColor;
-  static SkColor kDefaultPressedColor;
-  if (!initialized) {
-#if defined(OS_WIN)
-    kDefaultEnabledColor = color_utils::GetSysSkColor(COLOR_HOTLIGHT);
-    kDefaultDisabledColor = color_utils::GetSysSkColor(COLOR_WINDOWTEXT);
-    kDefaultPressedColor = SkColorSetRGB(200, 0, 0);
-#else
-    // TODO(beng): source from theme provider.
-    kDefaultEnabledColor = SkColorSetRGB(0, 51, 153);
-    kDefaultDisabledColor = SK_ColorBLACK;
-    kDefaultPressedColor = SK_ColorRED;
-#endif
-
-    initialized = true;
-  }
-
   listener_ = NULL;
   pressed_ = false;
   underline_ = true;
-  SetEnabledColor(kDefaultEnabledColor);
-  SetDisabledColor(kDefaultDisabledColor);
-  SetPressedColor(kDefaultPressedColor);
+  SetEnabledColor(GetDefaultEnabledColor());
+#if defined(OS_WIN)
+  SetDisabledColor(color_utils::GetSysSkColor(COLOR_WINDOWTEXT));
+  SetPressedColor(SkColorSetRGB(200, 0, 0));
+#else
+  // TODO(beng): source from theme provider.
+  SetDisabledColor(SK_ColorBLACK);
+  SetPressedColor(SK_ColorRED);
+#endif
   RecalculateFont();
-  set_focusable(true);
+
+  // Label::Init() calls SetText(), but if that's being called from Label(), our
+  // SetText() override will not be reached (because the constructed class is
+  // only a Label at the moment, not yet a Link).  So so the set_focusable()
+  // call explicitly here.
+  SetFocusable(!text().empty());
 }
 
 void Link::SetPressed(bool pressed) {
@@ -204,14 +218,12 @@ void Link::SetPressed(bool pressed) {
 }
 
 void Link::RecalculateFont() {
-  // The font should be underlined iff the link is enabled and |underline_| is
-  // true.
-  if ((enabled() && underline_) ==
-      !(font().GetStyle() & gfx::Font::UNDERLINED)) {
-    Label::SetFont(font().DeriveFont(0, enabled() && underline_ ?
-        (font().GetStyle() | gfx::Font::UNDERLINED) :
-        (font().GetStyle() & ~gfx::Font::UNDERLINED)));
-  }
+  // Underline the link iff it is enabled and |underline_| is true.
+  const int style = font_list().GetFontStyle();
+  const int intended_style = (enabled() && underline_) ?
+      (style | gfx::Font::UNDERLINE) : (style & ~gfx::Font::UNDERLINE);
+  if (style != intended_style)
+    Label::SetFontList(font_list().DeriveWithStyle(intended_style));
 }
 
 }  // namespace views

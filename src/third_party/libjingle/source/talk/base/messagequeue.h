@@ -28,8 +28,9 @@
 #ifndef TALK_BASE_MESSAGEQUEUE_H_
 #define TALK_BASE_MESSAGEQUEUE_H_
 
+#include <string.h>
+
 #include <algorithm>
-#include <cstring>
 #include <list>
 #include <queue>
 #include <vector>
@@ -53,15 +54,25 @@ class MessageQueue;
 
 class MessageQueueManager {
  public:
-  static MessageQueueManager* Instance();
+  static void Add(MessageQueue *message_queue);
+  static void Remove(MessageQueue *message_queue);
+  static void Clear(MessageHandler *handler);
 
-  void Add(MessageQueue *message_queue);
-  void Remove(MessageQueue *message_queue);
-  void Clear(MessageHandler *handler);
+  // For testing purposes, we expose whether or not the MessageQueueManager
+  // instance has been initialized. It has no other use relative to the rest of
+  // the functions of this class, which auto-initialize the underlying
+  // MessageQueueManager instance when necessary.
+  static bool IsInitialized();
 
  private:
+  static MessageQueueManager* Instance();
+
   MessageQueueManager();
   ~MessageQueueManager();
+
+  void AddInternal(MessageQueue *message_queue);
+  void RemoveInternal(MessageQueue *message_queue);
+  void ClearInternal(MessageHandler *handler);
 
   static MessageQueueManager* instance_;
   // This list contains 'active' MessageQueues.

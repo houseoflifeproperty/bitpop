@@ -93,27 +93,11 @@ class BasicPortAllocator : public PortAllocator {
     relays_.push_back(relay);
   }
 
-  // Returns the best (highest priority) phase that has produced a port that
-  // produced a writable connection.  If no writable connections have been
-  // produced, this returns -1.
-  int best_writable_phase() const;
-
   virtual PortAllocatorSession* CreateSessionInternal(
       const std::string& content_name,
       int component,
       const std::string& ice_ufrag,
       const std::string& ice_pwd);
-
-  // Called whenever a connection becomes writable with the argument being the
-  // phase that the corresponding port was created in.
-  void AddWritablePhase(int phase);
-
-  bool allow_tcp_listen() const {
-    return allow_tcp_listen_;
-  }
-  void set_allow_tcp_listen(bool allow_tcp_listen) {
-    allow_tcp_listen_ = allow_tcp_listen;
-  }
 
  private:
   void Construct();
@@ -122,7 +106,6 @@ class BasicPortAllocator : public PortAllocator {
   talk_base::PacketSocketFactory* socket_factory_;
   const talk_base::SocketAddress stun_address_;
   std::vector<RelayServerConfig> relays_;
-  int best_writable_phase_;
   bool allow_tcp_listen_;
 };
 
@@ -143,10 +126,9 @@ class BasicPortAllocatorSession : public PortAllocatorSession,
   talk_base::Thread* network_thread() { return network_thread_; }
   talk_base::PacketSocketFactory* socket_factory() { return socket_factory_; }
 
-  virtual void GetInitialPorts();
-  virtual void StartGetAllPorts();
-  virtual void StopGetAllPorts();
-  virtual bool IsGettingAllPorts() { return running_; }
+  virtual void StartGettingPorts();
+  virtual void StopGettingPorts();
+  virtual bool IsGettingPorts() { return running_; }
 
  protected:
   // Starts the process of getting the port configurations.
@@ -160,6 +142,43 @@ class BasicPortAllocatorSession : public PortAllocatorSession,
   virtual void OnMessage(talk_base::Message *message);
 
  private:
+  class PortData {
+   public:
+    PortData() : port_(NULL), sequence_(NULL), state_(STATE_INIT) {}
+    PortData(Port* port, AllocationSequence* seq)
+    : port_(port), sequence_(seq), state_(STATE_INIT) {
+    }
+
+    Port* port() { return port_; }
+    AllocationSequence* sequence() { return sequence_; }
+    bool ready() const { return state_ == STATE_READY; }
+    bool complete() const {
+      // Returns true if candidate allocation has completed one way or another.
+      return ((state_ == STATE_COMPLETE) || (state_ == STATE_ERROR));
+    }
+
+    void set_ready() { ASSERT(state_ == STATE_INIT); state_ = STATE_READY; }
+    void set_complete() {
+      ASSERT(state_ == STATE_READY);
+      state_ = STATE_COMPLETE;
+    }
+    void set_error() {
+      ASSERT(state_ == STATE_INIT || state_ == STATE_READY);
+      state_ = STATE_ERROR;
+    }
+
+   private:
+    enum State {
+      STATE_INIT,      // No candidates allocated yet.
+      STATE_READY,     // At least one candidate is ready for process.
+      STATE_COMPLETE,  // All candidates allocated and ready for process.
+      STATE_ERROR      // Error in gathering candidates.
+    };
+    Port* port_;
+    AllocationSequence* sequence_;
+    State state_;
+  };
+
   void OnConfigReady(PortConfiguration* config);
   void OnConfigStop();
   void AllocatePorts();
@@ -170,53 +189,27 @@ class BasicPortAllocatorSession : public PortAllocatorSession,
   void DisableEquivalentPhases(talk_base::Network* network,
                                PortConfiguration* config, uint32* flags);
   void AddAllocatedPort(Port* port, AllocationSequence* seq,
-                        bool prepare_address = true);
+                        bool prepare_address);
   void OnCandidateReady(Port* port, const Candidate& c);
-  void OnPortReady(Port* port);
+  void OnPortComplete(Port* port);
+  void OnPortError(Port* port);
   void OnProtocolEnabled(AllocationSequence* seq, ProtocolType proto);
   void OnPortDestroyed(PortInterface* port);
-  void OnAddressError(Port* port);
-  void OnConnectionCreated(Port* port, Connection* conn);
-  void OnConnectionStateChange(Connection* conn);
   void OnShake();
   void MaybeSignalCandidatesAllocationDone();
   void OnPortAllocationComplete(AllocationSequence* seq);
+  PortData* FindPort(Port* port);
 
   BasicPortAllocator* allocator_;
   talk_base::Thread* network_thread_;
   talk_base::scoped_ptr<talk_base::PacketSocketFactory> owned_socket_factory_;
   talk_base::PacketSocketFactory* socket_factory_;
-  bool configuration_done_;
   bool allocation_started_;
   bool network_manager_started_;
   bool running_;  // set when StartGetAllPorts is called
   bool allocation_sequences_created_;
   std::vector<PortConfiguration*> configs_;
   std::vector<AllocationSequence*> sequences_;
-
-  enum PortState {
-    STATE_INIT,   // No candidates allocated yet.
-    STATE_READY,  // All candidates allocated and ready for process.
-    STATE_ERROR   // Error in gathering candidates.
-  };
-
-  struct PortData {
-    PortData() : port(NULL), sequence(NULL), state(STATE_INIT) {}
-    PortData(Port* port, AllocationSequence* seq)
-        : port(port), sequence(seq), state(STATE_INIT) {
-    }
-
-    Port* port;
-    AllocationSequence* sequence;
-    PortState state;
-
-    bool operator==(Port* rhs) const { return (port == rhs); }
-    bool ready() const { return state == STATE_READY; }
-    bool allocation_complete() const {
-      // Returns true if candidates allocation is success or failure.
-      return ((state == STATE_READY) || (state == STATE_ERROR));
-    }
-  };
   std::vector<PortData> ports_;
 
   friend class AllocationSequence;
@@ -239,8 +232,9 @@ struct PortConfiguration : public talk_base::MessageData {
   void AddRelay(const RelayServerConfig& config);
 
   // Determines whether the given relay server supports the given protocol.
-  static bool SupportsProtocol(const RelayServerConfig& relay,
-                               ProtocolType type);
+  bool SupportsProtocol(const RelayServerConfig& relay,
+                        ProtocolType type) const;
+  bool SupportsProtocol(const RelayType turn_type, ProtocolType type) const;
 };
 
 }  // namespace cricket

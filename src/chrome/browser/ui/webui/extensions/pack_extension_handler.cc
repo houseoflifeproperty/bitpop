@@ -4,15 +4,17 @@
 
 #include "chrome/browser/ui/webui/extensions/pack_extension_handler.h"
 
+#include "base/bind.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_creator.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
-#include "base/bind.h"
-#include "base/utf_string_conversions.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_data_source.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+
+namespace extensions {
 
 PackExtensionHandler::PackExtensionHandler() {
 }
@@ -20,7 +22,7 @@ PackExtensionHandler::PackExtensionHandler() {
 PackExtensionHandler::~PackExtensionHandler() {
   // There may be pending file dialogs, we need to tell them that we've gone
   // away so they don't try and call back to us.
-  if (load_extension_dialog_)
+  if (load_extension_dialog_.get())
     load_extension_dialog_->ListenerDestroyed();
 
   if (pack_job_.get())
@@ -28,29 +30,27 @@ PackExtensionHandler::~PackExtensionHandler() {
 }
 
 void PackExtensionHandler::GetLocalizedValues(
-    DictionaryValue* localized_strings) {
-  DCHECK(localized_strings);
-
-  localized_strings->SetString("packExtensionOverlay",
+    content::WebUIDataSource* source) {
+  source->AddString("packExtensionOverlay",
       l10n_util::GetStringUTF16(IDS_EXTENSION_PACK_DIALOG_TITLE));
-  localized_strings->SetString("packExtensionHeading",
+  source->AddString("packExtensionHeading",
       l10n_util::GetStringUTF16(IDS_EXTENSION_PACK_DIALOG_HEADING));
-  localized_strings->SetString("packExtensionCommit",
+  source->AddString("packExtensionCommit",
       l10n_util::GetStringUTF16(IDS_EXTENSION_PACK_BUTTON));
-  localized_strings->SetString("ok", l10n_util::GetStringUTF16(IDS_OK));
-  localized_strings->SetString("cancel", l10n_util::GetStringUTF16(IDS_CANCEL));
-  localized_strings->SetString("packExtensionRootDir",
+  source->AddString("ok", l10n_util::GetStringUTF16(IDS_OK));
+  source->AddString("cancel", l10n_util::GetStringUTF16(IDS_CANCEL));
+  source->AddString("packExtensionRootDir",
       l10n_util::GetStringUTF16(
           IDS_EXTENSION_PACK_DIALOG_ROOT_DIRECTORY_LABEL));
-  localized_strings->SetString("packExtensionPrivateKey",
+  source->AddString("packExtensionPrivateKey",
       l10n_util::GetStringUTF16(IDS_EXTENSION_PACK_DIALOG_PRIVATE_KEY_LABEL));
-  localized_strings->SetString("packExtensionBrowseButton",
+  source->AddString("packExtensionBrowseButton",
       l10n_util::GetStringUTF16(IDS_EXTENSION_PACK_DIALOG_BROWSE));
-  localized_strings->SetString("packExtensionProceedAnyway",
+  source->AddString("packExtensionProceedAnyway",
       l10n_util::GetStringUTF16(IDS_EXTENSION_PROCEED_ANYWAY));
-  localized_strings->SetString("packExtensionWarningTitle",
+  source->AddString("packExtensionWarningTitle",
       l10n_util::GetStringUTF16(IDS_EXTENSION_PACK_WARNING_TITLE));
-  localized_strings->SetString("packExtensionErrorTitle",
+  source->AddString("packExtensionErrorTitle",
       l10n_util::GetStringUTF16(IDS_EXTENSION_PACK_ERROR_TITLE));
 }
 
@@ -65,63 +65,65 @@ void PackExtensionHandler::RegisterMessages() {
                  base::Unretained(this)));
 }
 
-void PackExtensionHandler::OnPackSuccess(const FilePath& crx_file,
-                                         const FilePath& pem_file) {
-  ListValue arguments;
-  arguments.Append(Value::CreateStringValue(
-      UTF16ToUTF8(extensions::PackExtensionJob::StandardSuccessMessage(
+void PackExtensionHandler::OnPackSuccess(const base::FilePath& crx_file,
+                                         const base::FilePath& pem_file) {
+  base::ListValue arguments;
+  arguments.Append(base::Value::CreateStringValue(
+      base::UTF16ToUTF8(PackExtensionJob::StandardSuccessMessage(
           crx_file, pem_file))));
   web_ui()->CallJavascriptFunction(
-      "PackExtensionOverlay.showSuccessMessage", arguments);
+      "extensions.PackExtensionOverlay.showSuccessMessage", arguments);
 }
 
-void PackExtensionHandler::OnPackFailure(
-    const std::string& error,
-    extensions::ExtensionCreator::ErrorType type) {
-  if (type == extensions::ExtensionCreator::kCRXExists) {
+void PackExtensionHandler::OnPackFailure(const std::string& error,
+                                         ExtensionCreator::ErrorType type) {
+  if (type == ExtensionCreator::kCRXExists) {
     base::StringValue error_str(error);
-    base::StringValue extension_path_str(extension_path_);
-    base::StringValue key_path_str(private_key_path_);
-    base::FundamentalValue overwrite_flag(
-        extensions::ExtensionCreator::kOverwriteCRX);
+    base::StringValue extension_path_str(extension_path_.value());
+    base::StringValue key_path_str(private_key_path_.value());
+    base::FundamentalValue overwrite_flag(ExtensionCreator::kOverwriteCRX);
 
     web_ui()->CallJavascriptFunction(
-        "ExtensionSettings.askToOverrideWarning", error_str, extension_path_str,
-            key_path_str, overwrite_flag);
+        "extensions.ExtensionSettings.askToOverrideWarning",
+        error_str, extension_path_str, key_path_str, overwrite_flag);
   } else {
     ShowAlert(error);
   }
 }
 
-void PackExtensionHandler::FileSelected(const FilePath& path, int index,
+void PackExtensionHandler::FileSelected(const base::FilePath& path, int index,
                                         void* params) {
-  ListValue results;
-  results.Append(Value::CreateStringValue(path.value()));
+  base::ListValue results;
+  results.Append(base::Value::CreateStringValue(path.value()));
   web_ui()->CallJavascriptFunction("window.handleFilePathSelected", results);
 }
 
 void PackExtensionHandler::MultiFilesSelected(
-    const std::vector<FilePath>& files, void* params) {
+    const std::vector<base::FilePath>& files, void* params) {
   NOTREACHED();
 }
 
-void PackExtensionHandler::HandlePackMessage(const ListValue* args) {
-
+void PackExtensionHandler::HandlePackMessage(const base::ListValue* args) {
   DCHECK_EQ(3U, args->GetSize());
 
-  if (!args->GetString(0, &extension_path_) ||
-      !args->GetString(1, &private_key_path_))
-    NOTREACHED();
-
   double flags_double = 0.0;
-  if (!args->GetDouble(2, &flags_double))
+  base::FilePath::StringType extension_path_str;
+  base::FilePath::StringType private_key_path_str;
+  if (!args->GetString(0, &extension_path_str) ||
+      !args->GetString(1, &private_key_path_str) ||
+      !args->GetDouble(2, &flags_double)) {
     NOTREACHED();
+    return;
+  }
+
+  extension_path_ = base::FilePath(extension_path_str);
+  private_key_path_ = base::FilePath(private_key_path_str);
 
   int run_flags = static_cast<int>(flags_double);
 
-  FilePath root_directory =
-      FilePath::FromWStringHack(UTF8ToWide(extension_path_));
-  FilePath key_file = FilePath::FromWStringHack(UTF8ToWide(private_key_path_));
+  base::FilePath root_directory = extension_path_;
+  base::FilePath key_file = private_key_path_;
+  last_used_path_ = extension_path_;
 
   if (root_directory.empty()) {
     if (extension_path_.empty()) {
@@ -141,13 +143,12 @@ void PackExtensionHandler::HandlePackMessage(const ListValue* args) {
     return;
   }
 
-  pack_job_ = new extensions::PackExtensionJob(
-      this, root_directory, key_file, run_flags);
+  pack_job_ = new PackExtensionJob(this, root_directory, key_file, run_flags);
   pack_job_->Start();
 }
 
 void PackExtensionHandler::HandleSelectFilePathMessage(
-    const ListValue* args) {
+    const base::ListValue* args) {
   DCHECK_EQ(2U, args->GetSize());
 
   std::string select_type;
@@ -161,16 +162,19 @@ void PackExtensionHandler::HandleSelectFilePathMessage(
   ui::SelectFileDialog::Type type = ui::SelectFileDialog::SELECT_FOLDER;
   ui::SelectFileDialog::FileTypeInfo info;
   int file_type_index = 0;
-  if (select_type == "file")
+  base::FilePath path_to_use = last_used_path_;
+  if (select_type == "file") {
     type = ui::SelectFileDialog::SELECT_OPEN_FILE;
+    path_to_use = base::FilePath();
+  }
 
-  string16 select_title;
+  base::string16 select_title;
   if (operation == "load") {
     select_title = l10n_util::GetStringUTF16(IDS_EXTENSION_LOAD_FROM_DIRECTORY);
   } else if (operation == "pem") {
     select_title = l10n_util::GetStringUTF16(
         IDS_EXTENSION_PACK_DIALOG_SELECT_KEY);
-    info.extensions.push_back(std::vector<FilePath::StringType>());
+    info.extensions.push_back(std::vector<base::FilePath::StringType>());
         info.extensions.front().push_back(FILE_PATH_LITERAL("pem"));
         info.extension_description_overrides.push_back(
             l10n_util::GetStringUTF16(
@@ -184,14 +188,21 @@ void PackExtensionHandler::HandleSelectFilePathMessage(
   load_extension_dialog_ = ui::SelectFileDialog::Create(
       this, new ChromeSelectFilePolicy(web_ui()->GetWebContents()));
   load_extension_dialog_->SelectFile(
-      type, select_title, FilePath(), &info, file_type_index,
-      FILE_PATH_LITERAL(""),
-      web_ui()->GetWebContents()->GetView()->GetTopLevelNativeWindow(),
+      type,
+      select_title,
+      path_to_use,
+      &info,
+      file_type_index,
+      base::FilePath::StringType(),
+      web_ui()->GetWebContents()->GetTopLevelNativeWindow(),
       NULL);
 }
 
 void PackExtensionHandler::ShowAlert(const std::string& message) {
-  ListValue arguments;
-  arguments.Append(Value::CreateStringValue(message));
-  web_ui()->CallJavascriptFunction("PackExtensionOverlay.showError", arguments);
+  base::ListValue arguments;
+  arguments.Append(base::Value::CreateStringValue(message));
+  web_ui()->CallJavascriptFunction(
+      "extensions.PackExtensionOverlay.showError", arguments);
 }
+
+}  // namespace extensions

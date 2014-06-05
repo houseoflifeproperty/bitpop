@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 #include "base/debug/debugger.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
+#include "base/metrics/statistics_recorder.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/service_process_util.h"
 #include "chrome/service/service_process.h"
@@ -13,8 +14,6 @@
 #if defined(OS_WIN)
 #include "content/public/common/sandbox_init.h"
 #include "sandbox/win/src/sandbox_types.h"
-#elif defined(OS_MACOSX)
-#include "chrome/service/chrome_service_application_mac.h"
 #endif  // defined(OS_WIN)
 
 // Mainline routine for running as the service process.
@@ -23,11 +22,7 @@ int ServiceProcessMain(const content::MainFunctionParams& parameters) {
   // cookies should go through the browser process.
   net::URLRequest::SetDefaultCookiePolicyToBlock();
 
-#if defined(OS_MACOSX)
-  chrome_service_application_mac::RegisterServiceApp();
-#endif
-
-  MessageLoopForUI main_message_loop;
+  base::MessageLoopForUI main_message_loop;
   main_message_loop.set_thread_name("MainThread");
   if (parameters.command_line.HasSwitch(switches::kWaitForDebugger)) {
     base::debug::WaitForDebugger(60, true);
@@ -37,6 +32,7 @@ int ServiceProcessMain(const content::MainFunctionParams& parameters) {
           << parameters.command_line.GetCommandLineString();
 
   base::PlatformThread::SetName("CrServiceMain");
+  base::StatisticsRecorder::Initialize();
 
   // If there is already a service process running, quit now.
   scoped_ptr<ServiceProcessState> state(new ServiceProcessState);
@@ -47,7 +43,7 @@ int ServiceProcessMain(const content::MainFunctionParams& parameters) {
   if (service_process.Initialize(&main_message_loop,
                                  parameters.command_line,
                                  state.release())) {
-    MessageLoop::current()->Run();
+    base::MessageLoop::current()->Run();
   } else {
     LOG(ERROR) << "Service process failed to initialize";
   }

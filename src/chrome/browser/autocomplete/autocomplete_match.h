@@ -11,8 +11,9 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/search_engines/template_url.h"
+#include "chrome/common/autocomplete_match_type.h"
 #include "content/public/common/page_transition_types.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 class AutocompleteProvider;
 class Profile;
@@ -21,6 +22,10 @@ class TemplateURL;
 namespace base {
 class Time;
 }  // namespace base
+
+const char kACMatchPropertyInputText[] = "input text";
+const char kACMatchPropertyContentsPrefix[] = "match contents prefix";
+const char kACMatchPropertyContentsStartIndex[] = "match contents start index";
 
 // AutocompleteMatch ----------------------------------------------------------
 
@@ -74,29 +79,11 @@ struct AutocompleteMatch {
   typedef std::map<std::string, std::string> AdditionalInfo;
 
   // The type of this match.
-  enum Type {
-    URL_WHAT_YOU_TYPED = 0,  // The input as a URL.
-    HISTORY_URL,             // A past page whose URL contains the input.
-    HISTORY_TITLE,           // A past page whose title contains the input.
-    HISTORY_BODY,            // A past page whose body contains the input.
-    HISTORY_KEYWORD,         // A past page whose keyword contains the input.
-    NAVSUGGEST,              // A suggested URL.
-    SEARCH_WHAT_YOU_TYPED,   // The input as a search query (with the default
-                             // engine).
-    SEARCH_HISTORY,          // A past search (with the default engine)
-                             // containing the input.
-    SEARCH_SUGGEST,          // A suggested search (with the default engine).
-    SEARCH_OTHER_ENGINE,     // A search with a non-default engine.
-    EXTENSION_APP,           // An Extension App with a title/url that contains
-                             // the input.
-    CONTACT,                 // One of the user's contacts.
-    BOOKMARK_TITLE,          // A bookmark whose title contains the input.
-    NUM_TYPES,
-  };
+  typedef AutocompleteMatchType::Type Type;
 
   // Null-terminated array of characters that are not valid within |contents|
   // and |description| strings.
-  static const char16 kInvalidChars[];
+  static const base::char16 kInvalidChars[];
 
   AutocompleteMatch();
   AutocompleteMatch(AutocompleteProvider* provider,
@@ -108,9 +95,6 @@ struct AutocompleteMatch {
 
   // Converts |type| to a string representation.  Used in logging and debugging.
   AutocompleteMatch& operator=(const AutocompleteMatch& match);
-
-  // Converts |type| to a string representation.  Used in logging.
-  static std::string TypeToString(Type type);
 
   // Converts |type| to a resource identifier for the appropriate icon for this
   // type to show in the completion popup.
@@ -124,12 +108,10 @@ struct AutocompleteMatch {
   static bool MoreRelevant(const AutocompleteMatch& elem1,
                            const AutocompleteMatch& elem2);
 
-  // Comparison functions for removing matches with duplicate destinations.
+  // Comparison function for removing matches with duplicate destinations.
   // Destinations are compared using |stripped_destination_url|.  Pairs of
   // matches with empty destinations are treated as differing, since empty
   // destinations are expected for non-navigable matches.
-  static bool DestinationSortFunc(const AutocompleteMatch& elem1,
-                                  const AutocompleteMatch& elem2);
   static bool DestinationsEqual(const AutocompleteMatch& elem1,
                                 const AutocompleteMatch& elem2);
 
@@ -137,8 +119,8 @@ struct AutocompleteMatch {
   // Fills in the classifications for |text|, using |style| as the base style
   // and marking the first instance of |find_text| as a match.  (This match
   // will also not be dimmed, if |style| has DIM set.)
-  static void ClassifyMatchInString(const string16& find_text,
-                                    const string16& text,
+  static void ClassifyMatchInString(const base::string16& find_text,
+                                    const base::string16& text,
                                     int style,
                                     ACMatchClassifications* classifications);
 
@@ -176,11 +158,15 @@ struct AutocompleteMatch {
   // Removes invalid characters from |text|. Should be called on strings coming
   // from external sources (such as extensions) before assigning to |contents|
   // or |description|.
-  static string16 SanitizeString(const string16& text);
+  static base::string16 SanitizeString(const base::string16& text);
 
   // Convenience function to check if |type| is a search (as opposed to a URL or
   // an extension).
   static bool IsSearchType(Type type);
+
+  // Convenience function to check if |type| is a special search suggest type -
+  // like entity, personalized, profile or postfix.
+  static bool IsSpecializedSearchType(Type type);
 
   // Copies the destination_url with "www." stripped off to
   // |stripped_destination_url| and also converts https protocol to
@@ -207,7 +193,7 @@ struct AutocompleteMatch {
   // represent searches using the default search engine.  See also
   // GetSubstitutingExplicitlyInvokedKeyword().
   void GetKeywordUIState(Profile* profile,
-                         string16* keyword,
+                         base::string16* keyword,
                          bool* is_keyword_hint) const;
 
   // Returns |keyword|, but only if it represents a substituting keyword that
@@ -216,7 +202,8 @@ struct AutocompleteMatch {
   // invoke its keyword), this returns the empty string.  The result is that
   // this function returns a non-empty string in the same cases as when the UI
   // should show up as being "in keyword mode".
-  string16 GetSubstitutingExplicitlyInvokedKeyword(Profile* profile) const;
+  base::string16 GetSubstitutingExplicitlyInvokedKeyword(
+      Profile* profile) const;
 
   // Returns the TemplateURL associated with this match.  This may be NULL if
   // the match has no keyword OR if the keyword no longer corresponds to a valid
@@ -233,6 +220,24 @@ struct AutocompleteMatch {
   void RecordAdditionalInfo(const std::string& property, int value);
   void RecordAdditionalInfo(const std::string& property,
                             const base::Time& value);
+
+  // Returns the value recorded for |property| in the |additional_info|
+  // dictionary.  Returns the empty string if no such value exists.
+  std::string GetAdditionalInfo(const std::string& property) const;
+
+  // Returns whether this match is a "verbatim" match: a URL navigation directly
+  // to the user's input, a search for the user's input with the default search
+  // engine, or a "keyword mode" search for the query portion of the user's
+  // input.  Note that rare or unusual types that could be considered verbatim,
+  // such as keyword engine matches or extension-provided matches, aren't
+  // detected by this IsVerbatimType, as the user will not be able to infer
+  // what will happen when he or she presses enter in those cases if the match
+  // is not shown.
+  bool IsVerbatimType() const;
+
+  // Returns whether this match or any duplicate of this match can be deleted.
+  // This is used to decide whether we should call DeleteMatch().
+  bool SupportsDeletion() const;
 
   // The provider of this match, used to remember which provider the user had
   // selected when the input changes. This may be NULL, in which case there is
@@ -260,12 +265,22 @@ struct AutocompleteMatch {
   // This string is loaded into the location bar when the item is selected
   // by pressing the arrow keys. This may be different than a URL, for example,
   // for search suggestions, this would just be the search terms.
-  string16 fill_into_edit;
+  base::string16 fill_into_edit;
 
-  // The position within fill_into_edit from which we'll display the inline
-  // autocomplete string.  This will be string16::npos if this match should
-  // not be inline autocompleted.
-  size_t inline_autocomplete_offset;
+  // The inline autocompletion to display after the user's typing in the
+  // omnibox, if this match becomes the default match.  It may be empty.
+  base::string16 inline_autocompletion;
+
+  // If false, the omnibox should prevent this match from being the
+  // default match.  Providers should set this to true only if the
+  // user's input, plus any inline autocompletion on this match, would
+  // lead the user to expect a navigation to this match's destination.
+  // For example, with input "foo", a search for "bar" or navigation
+  // to "bar.com" should not set this flag; a navigation to "foo.com"
+  // should only set this flag if ".com" will be inline autocompleted;
+  // and a navigation to "foo/" (an intranet host) or search for "foo"
+  // should set this flag.
+  bool allowed_to_be_default_match;
 
   // The URL to actually load when the autocomplete item is selected. This URL
   // should be canonical so we can compare URLs with strcmp to avoid dupes.
@@ -276,11 +291,11 @@ struct AutocompleteMatch {
   GURL stripped_destination_url;
 
   // The main text displayed in the address bar dropdown.
-  string16 contents;
+  base::string16 contents;
   ACMatchClassifications contents_class;
 
   // Additional helper text for each entry, such as a title or description.
-  string16 description;
+  base::string16 description;
   ACMatchClassifications description_class;
 
   // The transition type to use when the user opens this match.  By default
@@ -311,7 +326,7 @@ struct AutocompleteMatch {
   // modified while the AutocompleteMatch is alive.  This means anyone who
   // accesses it must perform any necessary sanity checks before blindly using
   // it!
-  string16 keyword;
+  base::string16 keyword;
 
   // True if the user has starred the destination URL.
   bool starred;
@@ -332,13 +347,17 @@ struct AutocompleteMatch {
   // property and associated value and which is presented in chrome://omnibox.
   AdditionalInfo additional_info;
 
+  // A list of matches culled during de-duplication process, retained to
+  // ensure if a match is deleted, the duplicates are deleted as well.
+  std::vector<AutocompleteMatch> duplicate_matches;
+
 #ifndef NDEBUG
   // Does a data integrity check on this match.
   void Validate() const;
 
   // Checks one text/classifications pair for valid values.
   void ValidateClassifications(
-      const string16& text,
+      const base::string16& text,
       const ACMatchClassifications& classifications) const;
 #endif
 };

@@ -5,13 +5,13 @@
 #include "chrome/browser/ui/cocoa/content_settings/cookie_details.h"
 
 #import "base/i18n/time_formatting.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/browsing_data/cookies_tree_model.h"
 #include "grit/generated_resources.h"
 #include "net/cookies/canonical_cookie.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/base/text/bytes_formatting.h"
-#include "webkit/appcache/appcache_service.h"
+#include "webkit/browser/appcache/appcache_service.h"
 
 #pragma mark Cocoa Cookie Details
 
@@ -201,8 +201,8 @@
 }
 
 - (id)initWithDatabase:(const std::string&)domain
-          databaseName:(const string16&)databaseName
-   databaseDescription:(const string16&)databaseDescription
+          databaseName:(const base::string16&)databaseName
+   databaseDescription:(const base::string16&)databaseDescription
               fileSize:(unsigned long)fileSize {
   if ((self = [super init])) {
     type_ = kCocoaCookieDetailsTypePromptDatabase;
@@ -218,8 +218,8 @@
 }
 
 - (id)initWithLocalStorage:(const std::string&)domain
-                       key:(const string16&)key
-                     value:(const string16&)value {
+                       key:(const base::string16&)key
+                     value:(const base::string16&)value {
   if ((self = [super init])) {
     type_ = kCocoaCookieDetailsTypePromptLocalStorage;
     canEditExpiration_ = NO;
@@ -240,17 +240,17 @@
 }
 
 - (id)initWithIndexedDBInfo:
-    (const BrowsingDataIndexedDBHelper::IndexedDBInfo*)indexedDBInfo {
+    (const content::IndexedDBInfo*)indexedDBInfo {
   if ((self = [super init])) {
     type_ = kCocoaCookieDetailsTypeTreeIndexedDB;
     canEditExpiration_ = NO;
     domain_.reset([base::SysUTF8ToNSString(
-        indexedDBInfo->origin.spec()) retain]);
+        indexedDBInfo->origin_.spec()) retain]);
     fileSize_.reset([base::SysUTF16ToNSString(
-        ui::FormatBytes(indexedDBInfo->size)) retain]);
+        ui::FormatBytes(indexedDBInfo->size_)) retain]);
     lastModified_.reset([base::SysUTF16ToNSString(
         base::TimeFormatFriendlyDateAndTime(
-            indexedDBInfo->last_modified)) retain]);
+            indexedDBInfo->last_modified_)) retain]);
   }
   return self;
 }

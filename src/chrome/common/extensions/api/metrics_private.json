@@ -5,7 +5,7 @@
 [
   {
     "namespace": "metricsPrivate",
-    "nodoc": true,
+    "description": "none",
     "types": [
       {
         "id": "MetricType",
@@ -25,6 +25,57 @@
       }
     ],
     "functions": [
+      {
+        "name": "getIsCrashReportingEnabled",
+        "description": "Returns true if the user opted in to sending crash reports.",
+        "type": "function",
+        "parameters": [
+          {
+            "name": "callback",
+            "type": "function",
+            "optional": false,
+            "parameters": [
+              { "name": "is_enabled", "type": "boolean" }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "getFieldTrial",
+        "description": "Returns the group name chosen for the named trial, or the empty string if the trial does not exist or is not enabled.",
+        "type": "function",
+        "parameters": [
+          {"name": "name", "type": "string"},
+          {
+            "name": "callback",
+            "type": "function",
+            "optional": false,
+            "parameters": [
+              { "name": "group", "type": "string" }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "getVariationParams",
+        "description": "Returns variation parameters for the named trial if available, or undefined otherwise.",
+        "type": "function",
+        "parameters": [
+          {"name": "name", "type": "string"},
+          {
+            "name": "callback",
+            "type": "function",
+            "optional": false,
+            "parameters": [
+              {
+                "name": "params",
+                "type": "object",
+                "additionalProperties": { "type": "string" }
+              }
+            ]
+          }
+        ]
+      },
       {
         "name": "recordUserAction",
         "type": "function",
@@ -91,6 +142,15 @@
         "name": "recordLongTime",
         "type": "function",
         "description": "Records an elapsed time of no more than 1 hour.  The sample value is specified in milliseconds.",
+        "parameters": [
+          {"name": "metricName", "type": "string"},
+          {"name": "value", "type": "integer"}
+        ]
+      },
+      {
+        "name": "recordSparseValue",
+        "type": "function",
+        "description": "Increments the count associated with |value| in the sparse histogram defined by the |metricName|.",
         "parameters": [
           {"name": "metricName", "type": "string"},
           {"name": "value", "type": "integer"}

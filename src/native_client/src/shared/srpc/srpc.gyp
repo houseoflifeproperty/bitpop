@@ -53,6 +53,8 @@
         'nso_target': 'libsrpc.so',
         'build_glibc': 1,
         'build_newlib': 1,
+        'build_pnacl_newlib': 1,
+        'build_irt': 1,
         'sources': [
           'invoke.c',
           'module_init_fini.c',
@@ -74,7 +76,7 @@
     },
   ],
   'conditions': [
-    ['OS=="win"', {
+    ['OS=="win" and target_arch=="ia32"', {
       'targets': [
         {
           'target_name': 'nonnacl_srpc64',

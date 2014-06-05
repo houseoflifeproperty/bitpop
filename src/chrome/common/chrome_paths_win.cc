@@ -10,20 +10,21 @@
 #include <shlobj.h>
 #include <shobjidl.h>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/path_service.h"
 #include "base/win/metro.h"
 #include "base/win/scoped_co_mem.h"
 #include "chrome/common/chrome_constants.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/installer/util/browser_distribution.h"
-#include "content/public/common/content_switches.h"
+#include "components/nacl/common/nacl_switches.h"
 
 namespace chrome {
 
 namespace {
 
 // Generic function to call SHGetFolderPath().
-bool GetUserDirectory(int csidl_folder, FilePath* result) {
+bool GetUserDirectory(int csidl_folder, base::FilePath* result) {
   // We need to go compute the value. It would be nice to support paths
   // with names longer than MAX_PATH, but the system functions don't seem
   // to be designed for it either, with the exception of GetTempPath
@@ -35,13 +36,13 @@ bool GetUserDirectory(int csidl_folder, FilePath* result) {
                              SHGFP_TYPE_CURRENT, path_buf))) {
     return false;
   }
-  *result = FilePath(path_buf);
+  *result = base::FilePath(path_buf);
   return true;
 }
 
 }  // namespace
 
-bool GetDefaultUserDataDirectory(FilePath* result) {
+bool GetDefaultUserDataDirectory(base::FilePath* result) {
   if (!PathService::Get(base::DIR_LOCAL_APP_DATA, result))
     return false;
   BrowserDistribution* dist = BrowserDistribution::GetDistribution();
@@ -50,22 +51,13 @@ bool GetDefaultUserDataDirectory(FilePath* result) {
   return true;
 }
 
-bool GetChromeFrameUserDataDirectory(FilePath* result) {
-  if (!PathService::Get(base::DIR_LOCAL_APP_DATA, result))
-    return false;
-  BrowserDistribution* dist = BrowserDistribution::GetSpecificDistribution(
-      BrowserDistribution::CHROME_FRAME);
-  *result = result->Append(dist->GetInstallSubDir());
-  *result = result->Append(chrome::kUserDataDirname);
-  return true;
-}
-
-void GetUserCacheDirectory(const FilePath& profile_dir, FilePath* result) {
+void GetUserCacheDirectory(const base::FilePath& profile_dir,
+                           base::FilePath* result) {
   // This function does more complicated things on Mac/Linux.
   *result = profile_dir;
 }
 
-bool GetUserDocumentsDirectory(FilePath* result) {
+bool GetUserDocumentsDirectory(base::FilePath* result) {
   return GetUserDirectory(CSIDL_MYDOCUMENTS, result);
 }
 
@@ -73,7 +65,7 @@ bool GetUserDocumentsDirectory(FilePath* result) {
 // We just use 'Downloads' under DIR_USER_DOCUMENTS. Localizing
 // 'downloads' is not a good idea because Chrome's UI language
 // can be changed.
-bool GetUserDownloadsDirectorySafe(FilePath* result) {
+bool GetUserDownloadsDirectorySafe(base::FilePath* result) {
   if (!GetUserDocumentsDirectory(result))
     return false;
 
@@ -84,28 +76,28 @@ bool GetUserDownloadsDirectorySafe(FilePath* result) {
 // On Vista and higher, use the downloads known folder. Since it can be
 // relocated to point to a "dangerous" folder, callers should validate that the
 // returned path is not dangerous before using it.
-bool GetUserDownloadsDirectory(FilePath* result) {
+bool GetUserDownloadsDirectory(base::FilePath* result) {
   typedef HRESULT (WINAPI *GetKnownFolderPath)(
       REFKNOWNFOLDERID, DWORD, HANDLE, PWSTR*);
   GetKnownFolderPath f = reinterpret_cast<GetKnownFolderPath>(
       GetProcAddress(GetModuleHandle(L"shell32.dll"), "SHGetKnownFolderPath"));
   base::win::ScopedCoMem<wchar_t> path_buf;
   if (f && SUCCEEDED(f(FOLDERID_Downloads, 0, NULL, &path_buf))) {
-    *result = FilePath(std::wstring(path_buf));
+    *result = base::FilePath(std::wstring(path_buf));
     return true;
   }
   return GetUserDownloadsDirectorySafe(result);
 }
 
-bool GetUserMusicDirectory(FilePath* result) {
+bool GetUserMusicDirectory(base::FilePath* result) {
   return GetUserDirectory(CSIDL_MYMUSIC, result);
 }
 
-bool GetUserPicturesDirectory(FilePath* result) {
+bool GetUserPicturesDirectory(base::FilePath* result) {
   return GetUserDirectory(CSIDL_MYPICTURES, result);
 }
 
-bool GetUserVideosDirectory(FilePath* result) {
+bool GetUserVideosDirectory(base::FilePath* result) {
   return GetUserDirectory(CSIDL_MYVIDEO, result);
 }
 
@@ -113,13 +105,18 @@ bool ProcessNeedsProfileDir(const std::string& process_type) {
   // On windows we don't want subprocesses other than the browser process and
   // service processes to be able to use the profile directory because if it
   // lies on a network share the sandbox will prevent us from accessing it.
-  // TODO(pastarmovj): For now plugin broker processes are whitelisted too
-  // because they do use the profile dir in some way and are not sandboxed.
-  return process_type.empty() ||
-         process_type == switches::kServiceProcess ||
-         process_type == switches::kNaClBrokerProcess ||
-         process_type == switches::kNaClLoaderProcess ||
-         process_type == switches::kPpapiBrokerProcess;
+
+  if (process_type.empty() || process_type == switches::kServiceProcess)
+    return true;
+
+#if !defined(DISABLE_NACL)
+  if (process_type == switches::kNaClBrokerProcess ||
+      process_type == switches::kNaClLoaderProcess) {
+    return true;
+  }
+#endif
+
+  return false;
 }
 
 }  // namespace chrome

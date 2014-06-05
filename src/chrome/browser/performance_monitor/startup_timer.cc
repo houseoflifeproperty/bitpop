@@ -6,10 +6,10 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/performance_monitor/database.h"
 #include "chrome/browser/performance_monitor/performance_monitor.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
@@ -90,20 +90,25 @@ void StartupTimer::Observe(int type,
                            const content::NotificationDetails& details) {
   CHECK(type == chrome::NOTIFICATION_PERFORMANCE_MONITOR_INITIALIZED);
   performance_monitor_initialized_ = true;
-  if (elapsed_startup_time_ != base::TimeDelta())
-    InsertElapsedStartupTime();
-  if (elapsed_session_restore_times_.size())
-    InsertElapsedSessionRestoreTime();
+
+  if (PerformanceMonitor::GetInstance()->database_logging_enabled()) {
+    if (elapsed_startup_time_ != base::TimeDelta())
+      InsertElapsedStartupTime();
+    if (elapsed_session_restore_times_.size())
+      InsertElapsedSessionRestoreTime();
+  }
 }
 
 // static
 void StartupTimer::SetElapsedSessionRestoreTime(
     const base::TimeDelta& elapsed_session_restore_time) {
-  g_startup_timer_->elapsed_session_restore_times_.push_back(
-      elapsed_session_restore_time);
+  if (PerformanceMonitor::GetInstance()->database_logging_enabled()) {
+    g_startup_timer_->elapsed_session_restore_times_.push_back(
+        elapsed_session_restore_time);
 
-  if (g_startup_timer_->performance_monitor_initialized_)
-    g_startup_timer_->InsertElapsedSessionRestoreTime();
+    if (g_startup_timer_->performance_monitor_initialized_)
+      g_startup_timer_->InsertElapsedSessionRestoreTime();
+  }
 }
 
 void StartupTimer::InsertElapsedStartupTime() {

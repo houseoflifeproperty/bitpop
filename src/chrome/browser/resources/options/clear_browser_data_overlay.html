@@ -1,6 +1,9 @@
-<div id="clear-browser-data-overlay" class="page" hidden>
+<div id="clear-browser-data-overlay" class="page not-resizable" hidden>
   <div class="close-button"></div>
   <h1 i18n-content="clearBrowserDataOverlay"></h1>
+  <div id="clear-browser-data-info-banner" hidden>
+    <span i18n-content="clearBrowserDataInfoBar"></span>
+  </div>
   <div id="cbd-content-area" class="content-area">
     <span i18n-content="clearBrowserDataLabel"></span>
     <select id="clear-browser-data-time-period"
@@ -9,28 +12,21 @@
         data-type="number">
     </select>
     <div id="clear-data-checkboxes">
-      <div class="checkbox">
+      <div id="delete-browsing-history-container" class="checkbox">
         <label>
           <input id="delete-browsing-history-checkbox"
               pref="browser.clear_data.browsing_history" type="checkbox">
           <span i18n-content="deleteBrowsingHistoryCheckbox"></span>
         </label>
       </div>
-      <div class="checkbox">
+      <div id="delete-download-history-container" class="checkbox">
         <label>
           <input id="delete-download-history-checkbox"
               pref="browser.clear_data.download_history" type="checkbox">
           <span i18n-content="deleteDownloadHistoryCheckbox"></span>
         </label>
       </div>
-      <div class="checkbox">
-        <label>
-          <input id="delete-cache-checkbox"
-              pref="browser.clear_data.cache" type="checkbox">
-          <span i18n-content="deleteCacheCheckbox"></span>
-        </label>
-      </div>
-      <div class="checkbox">
+      <div id="delete-cookies-container" class="checkbox">
         <label>
           <input id="delete-cookies-checkbox"
               pref="browser.clear_data.cookies" type="checkbox">
@@ -40,28 +36,36 @@
               class="clear-plugin-lso-data-disabled"></span>
         </label>
       </div>
-      <div class="checkbox">
+      <div id="delete-cache-container" class="checkbox">
+        <label>
+          <input id="delete-cache-checkbox"
+              pref="browser.clear_data.cache" type="checkbox">
+          <span i18n-content="deleteCacheCheckbox"></span>
+        </label>
+      </div>
+      <div id="delete-passwords-container" class="checkbox">
         <label>
           <input id="delete-passwords-checkbox"
               pref="browser.clear_data.passwords" type="checkbox">
           <span i18n-content="deletePasswordsCheckbox"></span>
         </label>
       </div>
-      <div class="checkbox">
+      <div id="delete-form-data-container" class="checkbox">
         <label>
           <input id="delete-form-data-checkbox"
               pref="browser.clear_data.form_data" type="checkbox">
           <span i18n-content="deleteFormDataCheckbox"></span>
         </label>
       </div>
-      <div class="checkbox">
+      <div id="delete-hosted-apps-data-container" class="checkbox">
         <label>
           <input id="delete-hosted-apps-data-checkbox"
               pref="browser.clear_data.hosted_apps_data" type="checkbox">
           <span i18n-content="deleteHostedAppsDataCheckbox"></span>
         </label>
       </div>
-      <div class="checkbox pepper-flash-settings">
+      <div id="deauthorize-content-licenses-container"
+          class="checkbox pepper-flash-settings">
         <label>
           <input id="deauthorize-content-licenses-checkbox"
               pref="browser.clear_data.content_licenses" type="checkbox">
@@ -83,10 +87,13 @@
       <div id="cbd-throbber" class="throbber"></div>
       <div class="button-strip">
         <button id="clear-browser-data-dismiss" i18n-content="cancel"></button>
-        <button id="clear-browser-data-commit"
+        <button id="clear-browser-data-commit" class="default-button"
             i18n-content="clearBrowserDataCommit">
         </button>
       </div>
     </div>
+  </div>
+  <div id="some-stuff-remains-footer" class="gray-bottom-bar">
+    <p><!--This is filled by JavaScript--></p>
   </div>
 </div>

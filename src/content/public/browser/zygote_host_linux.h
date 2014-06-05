@@ -7,7 +7,7 @@
 
 #include <unistd.h>
 
-#include "base/process.h"
+#include "base/process/process.h"
 #include "content/common/content_export.h"
 
 namespace content {
@@ -20,6 +20,8 @@ class ZygoteHost {
  public:
   // Returns the singleton instance.
   CONTENT_EXPORT static ZygoteHost* GetInstance();
+
+  virtual ~ZygoteHost() {}
 
   // Returns the pid of the Zygote process.
   virtual pid_t GetPid() const = 0;
@@ -36,12 +38,6 @@ class ZygoteHost {
   // likely to be killed by the OOM killer.
   virtual void AdjustRendererOOMScore(base::ProcessHandle process_handle,
                                       int score) = 0;
-
-  // Adjust the point at which the low memory notifier in the kernel tells
-  // us that we're low on memory.  When there is less than |margin_mb| left,
-  // then the notifier will notify us.  Set |margin_mb| to -1 to turn off
-  // low memory notification altogether.
-  virtual void AdjustLowMemoryMargin(int64 margin_mb) = 0;
 };
 
 }  // namespace content

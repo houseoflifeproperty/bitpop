@@ -66,7 +66,7 @@ typedef struct {
    * mutex_state is either UNLOCKED (0), LOCKED_WITHOUT_WAITERS (1) or
    * LOCKED_WITH_WAITERS (2).  See "enum MutexState".
    */
-  int mutex_state;
+  volatile int mutex_state;
 
   /**
    * The kind of mutex:
@@ -75,8 +75,12 @@ typedef struct {
    */
   int mutex_type;
 
-  /** ID of the thread that owns the mutex */
-  struct __nc_basic_thread_data *owner_thread_id;
+  /**
+   * ID of the thread that owns the mutex.  This is volatile because
+   * it is accessed concurrently, and "volatile" is a way to make
+   * loads and stores atomic in PNaCl.
+   */
+  struct __nc_basic_thread_data *volatile owner_thread_id;
 
   /** Recursion depth counter for recursive mutexes */
   uint32_t recursion_counter;
@@ -201,13 +205,9 @@ extern int pthread_mutex_trylock(pthread_mutex_t *mutex);
 */
 extern int pthread_mutex_lock(pthread_mutex_t *mutex);
 
-/* TODO(gregoryd) - depends on implementation */
-#if 0
 /* Wait until lock becomes available, or specified time passes. */
-/* TODO(gregoryd): consider implementing this function. */
 extern int pthread_mutex_timedlock(pthread_mutex_t *mutex,
                                    struct timespec *abstime);
-#endif
 
 /** @nqPosix
 * Unlocks a mutex.
@@ -570,6 +570,23 @@ extern int pthread_attr_setstacksize(pthread_attr_t *attr,
 */
 extern int pthread_attr_getstacksize(pthread_attr_t *attr,
                                      size_t *stacksize);
+
+/** @nqPosix
+ * Gets the maximum address of the stack (assuming stacks grow
+ * downwards) of the given thread.
+ *
+ * If the given thread exits concurrently with the call to this
+ * function, the behaviour is undefined.
+ *
+ * Note that in the future this may be removed and replaced with an
+ * implementation of pthread_getattr_np(), for consistency with Linux
+ * glibc.  pthread_getattr_np() + pthread_attr_getstack() return the
+ * stack base (minimum) address and stack size.  However, that is
+ * currently unimplementable under NaCl, because NaCl does not provide
+ * a way to determine the initial thread's stack size.  See:
+ * https://code.google.com/p/nativeclient/issues/detail?id=3431
+ */
+extern int pthread_get_stack_end_np(pthread_t tid, void **stack_end);
 
 /* Functions for handling thread-specific data.  */
 

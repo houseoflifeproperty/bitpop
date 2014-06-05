@@ -18,14 +18,17 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/sequenced_task_runner_helpers.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/browser/safe_browsing/ui_manager.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
+#include "webkit/common/resource_type.h"
+
 
 class HistoryService;
 
@@ -34,13 +37,33 @@ class WebContents;
 }
 
 namespace safe_browsing {
+class ClientMalwareRequest;
 class ClientPhishingRequest;
-class ClientSideDetectionService;
+class ClientSideDetectionHost;
+
+struct IPUrlInfo {
+  // The url on the bad IP address.
+  std::string url;
+  std::string method;
+  std::string referrer;
+  ResourceType::Type resource_type;
+
+  IPUrlInfo(const std::string& url,
+            const std::string& method,
+            const std::string& referrer,
+            const ResourceType::Type& resource_type);
+  ~IPUrlInfo();
+};
+
+typedef std::map<std::string, std::vector<IPUrlInfo> > IPUrlMap;
 
 struct BrowseInfo {
+  // The URL we're currently browsing.
+  GURL url;
+
   // List of IPv4 and IPv6 addresses from which content was requested
-  // while browsing to the |url|.
-  std::set<std::string> ips;
+  // together with the hosts on it, while browsing to the |url|.
+  IPUrlMap ips;
 
   // If a SafeBrowsing interstitial was shown for the current URL
   // this will contain the UnsafeResource struct for that URL.
@@ -52,8 +75,14 @@ struct BrowseInfo {
   std::vector<GURL> host_redirects;
   std::vector<GURL> url_redirects;
 
+  // URL of the referrer of this URL load.
+  GURL referrer;
+
   // The HTTP status code from this navigation.
   int http_status_code;
+
+  // The page ID of the navigation.  This comes from FrameNavigateParams.
+  int32 page_id;
 
   BrowseInfo();
   ~BrowseInfo();
@@ -68,12 +97,14 @@ class BrowserFeatureExtractor {
   // phishing request which was modified by the feature extractor.  The
   // DoneCallback takes ownership of the request object.
   typedef base::Callback<void(bool, ClientPhishingRequest*)> DoneCallback;
+  typedef base::Callback<void(bool, scoped_ptr<ClientMalwareRequest>)>
+      MalwareDoneCallback;
 
-  // The caller keeps ownership of the tab and service objects and is
+  // The caller keeps ownership of the tab and host objects and is
   // responsible for ensuring that they stay valid for the entire
   // lifetime of this object.
   BrowserFeatureExtractor(content::WebContents* tab,
-                          ClientSideDetectionService* service);
+                          ClientSideDetectionHost* host);
 
   // The destructor will cancel any pending requests.
   virtual ~BrowserFeatureExtractor();
@@ -87,6 +118,15 @@ class BrowserFeatureExtractor {
   virtual void ExtractFeatures(const BrowseInfo* info,
                                ClientPhishingRequest* request,
                                const DoneCallback& callback);
+
+  // Begins extraction of the malware related features.  We take ownership
+  // of the request object until |callback| is called.  Once feature extraction
+  // is complete, |callback| will run on the UI thread.  |info| is not expected
+  // to stay valid after ExtractMalwareFeatures returns.  All IPs stored in
+  // |info| will be cleared by calling this function.
+  virtual void ExtractMalwareFeatures(BrowseInfo* info,
+                                      ClientMalwareRequest* request,
+                                      const MalwareDoneCallback& callback);
 
  private:
   friend class base::DeleteHelper<BrowserFeatureExtractor>;
@@ -149,8 +189,14 @@ class BrowserFeatureExtractor {
   // is set it will return true and false otherwise.
   bool GetHistoryService(HistoryService** history);
 
+  // Helper function which is called when we're done filtering out benign IPs
+  // on the IO thread.  This function is called on the UI thread.
+  void FinishExtractMalwareFeatures(scoped_ptr<IPUrlMap> bad_ips,
+                                    MalwareDoneCallback callback,
+                                    scoped_ptr<ClientMalwareRequest> request);
+
   content::WebContents* tab_;
-  ClientSideDetectionService* service_;
+  ClientSideDetectionHost* host_;
   CancelableRequestConsumer request_consumer_;
   base::WeakPtrFactory<BrowserFeatureExtractor> weak_factory_;
 

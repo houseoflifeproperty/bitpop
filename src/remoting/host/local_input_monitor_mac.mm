@@ -9,71 +9,72 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/lazy_instance.h"
+#include "base/location.h"
 #include "base/logging.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/memory/ref_counted.h"
+#include "base/single_thread_task_runner.h"
 #include "base/synchronization/lock.h"
-#include "remoting/host/mouse_move_observer.h"
-#include "third_party/skia/include/core/SkPoint.h"
-#import "third_party/GTM/AppKit/GTMCarbonEvent.h"
+#include "base/threading/non_thread_safe.h"
+#include "remoting/host/client_session_control.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMCarbonEvent.h"
+#include "third_party/webrtc/modules/desktop_capture/desktop_geometry.h"
 
 // Esc Key Code is 53.
 // http://boredzo.org/blog/wp-content/uploads/2007/05/IMTx-virtual-keycodes.pdf
 static const NSUInteger kEscKeyCode = 53;
 
 namespace remoting {
-
 namespace {
 
-class LocalInputMonitorMac : public LocalInputMonitor {
+class LocalInputMonitorMac : public base::NonThreadSafe,
+                             public LocalInputMonitor {
  public:
-  LocalInputMonitorMac() : mouse_move_observer_(NULL) {}
-  virtual ~LocalInputMonitorMac();
-  virtual void Start(MouseMoveObserver* mouse_move_observer,
-                     const base::Closure& disconnect_callback) OVERRIDE;
-  virtual void Stop() OVERRIDE;
+  // Invoked by LocalInputMonitorManager.
+  class EventHandler {
+   public:
+    virtual ~EventHandler() {}
 
-  void OnLocalMouseMoved(const SkIPoint& new_pos);
-  void OnDisconnectShortcut();
+    virtual void OnLocalMouseMoved(const webrtc::DesktopVector& position) = 0;
+    virtual void OnDisconnectShortcut() = 0;
+  };
+
+  LocalInputMonitorMac(
+      scoped_refptr<base::SingleThreadTaskRunner> caller_task_runner,
+      scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
+      base::WeakPtr<ClientSessionControl> client_session_control);
+  virtual ~LocalInputMonitorMac();
 
  private:
-  MouseMoveObserver* mouse_move_observer_;
-  base::Closure disconnect_callback_;
+  // The actual implementation resides in LocalInputMonitorMac::Core class.
+  class Core;
+  scoped_refptr<Core> core_;
+
   DISALLOW_COPY_AND_ASSIGN(LocalInputMonitorMac);
 };
 
-typedef std::set<remoting::LocalInputMonitorMac*> LocalInputMonitors;
-
 }  // namespace
-
 }  // namespace remoting
 
 @interface LocalInputMonitorManager : NSObject {
  @private
   GTMCarbonHotKey* hotKey_;
   CFRunLoopSourceRef mouseRunLoopSource_;
-  base::mac::ScopedCFTypeRef<CFMachPortRef> mouseMachPort_;
-  base::Lock lock_;
-  remoting::LocalInputMonitors monitors_;
+  base::ScopedCFTypeRef<CFMachPortRef> mouseMachPort_;
+  remoting::LocalInputMonitorMac::EventHandler* monitor_;
 }
+
+- (id)initWithMonitor:(remoting::LocalInputMonitorMac::EventHandler*)monitor;
 
 // Called when the hotKey is hit.
 - (void)hotKeyHit:(GTMCarbonHotKey*)hotKey;
 
 // Called when the local mouse moves
-- (void)localMouseMoved:(const SkIPoint&)mousePos;
+- (void)localMouseMoved:(const webrtc::DesktopVector&)mousePos;
 
 // Must be called when the LocalInputMonitorManager is no longer to be used.
 // Similar to NSTimer in that more than a simple release is required.
 - (void)invalidate;
-
-// Called to add a monitor.
-- (void)addMonitor:(remoting::LocalInputMonitorMac*)monitor;
-
-// Called to remove a monitor. Returns true if it was the last
-// monitor, in which case the object should be destroyed.
-- (bool)removeMonitor:(remoting::LocalInputMonitorMac*)monitor;
 
 @end
 
@@ -82,7 +83,7 @@ static CGEventRef LocalMouseMoved(CGEventTapProxy proxy, CGEventType type,
   int64_t pid = CGEventGetIntegerValueField(event, kCGEventSourceUnixProcessID);
   if (pid == 0) {
     CGPoint cgMousePos = CGEventGetLocation(event);
-    SkIPoint mousePos = SkIPoint::Make(cgMousePos.x, cgMousePos.y);
+    webrtc::DesktopVector mousePos(cgMousePos.x, cgMousePos.y);
     [static_cast<LocalInputMonitorManager*>(context) localMouseMoved:mousePos];
   }
   return NULL;
@@ -90,8 +91,10 @@ static CGEventRef LocalMouseMoved(CGEventTapProxy proxy, CGEventType type,
 
 @implementation LocalInputMonitorManager
 
-- (id)init {
+- (id)initWithMonitor:(remoting::LocalInputMonitorMac::EventHandler*)monitor {
   if ((self = [super init])) {
+    monitor_ = monitor;
+
     GTMCarbonEventDispatcherHandler* handler =
         [GTMCarbonEventDispatcherHandler sharedEventDispatcherHandler];
     hotKey_ = [handler registerHotKey:kEscKeyCode
@@ -123,19 +126,11 @@ static CGEventRef LocalMouseMoved(CGEventTapProxy proxy, CGEventType type,
 }
 
 - (void)hotKeyHit:(GTMCarbonHotKey*)hotKey {
-  base::AutoLock lock(lock_);
-  for (remoting::LocalInputMonitors::const_iterator i = monitors_.begin();
-       i != monitors_.end(); ++i) {
-    (*i)->OnDisconnectShortcut();
-  }
+  monitor_->OnDisconnectShortcut();
 }
 
-- (void)localMouseMoved:(const SkIPoint&)mousePos {
-  base::AutoLock lock(lock_);
-  for (remoting::LocalInputMonitors::const_iterator i = monitors_.begin();
-       i != monitors_.end(); ++i) {
-    (*i)->OnLocalMouseMoved(mousePos);
-  }
+- (void)localMouseMoved:(const webrtc::DesktopVector&)mousePos {
+  monitor_->OnLocalMouseMoved(mousePos);
 }
 
 - (void)invalidate {
@@ -155,63 +150,141 @@ static CGEventRef LocalMouseMoved(CGEventTapProxy proxy, CGEventType type,
   }
 }
 
-- (void)addMonitor:(remoting::LocalInputMonitorMac*)monitor {
-  base::AutoLock lock(lock_);
-  monitors_.insert(monitor);
-}
-
-- (bool)removeMonitor:(remoting::LocalInputMonitorMac*)monitor {
-  base::AutoLock lock(lock_);
-  monitors_.erase(monitor);
-  return monitors_.empty();
-}
-
 @end
 
 namespace remoting {
-
 namespace {
 
-base::LazyInstance<base::Lock>::Leaky g_monitor_lock =
-    LAZY_INSTANCE_INITIALIZER;
-LocalInputMonitorManager* g_local_input_monitor_manager = NULL;
+class LocalInputMonitorMac::Core
+    : public base::RefCountedThreadSafe<Core>,
+      public EventHandler {
+ public:
+  Core(scoped_refptr<base::SingleThreadTaskRunner> caller_task_runner,
+       scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
+       base::WeakPtr<ClientSessionControl> client_session_control);
+
+  void Start();
+  void Stop();
+
+ private:
+  friend class base::RefCountedThreadSafe<Core>;
+  virtual ~Core();
+
+  void StartOnUiThread();
+  void StopOnUiThread();
+
+  // EventHandler interface.
+  virtual void OnLocalMouseMoved(
+      const webrtc::DesktopVector& position) OVERRIDE;
+  virtual void OnDisconnectShortcut() OVERRIDE;
+
+  // Task runner on which public methods of this class must be called.
+  scoped_refptr<base::SingleThreadTaskRunner> caller_task_runner_;
+
+  // Task runner on which |window_| is created.
+  scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner_;
+
+  LocalInputMonitorManager* manager_;
+
+  // Invoked in the |caller_task_runner_| thread to report local mouse events
+  // and session disconnect requests.
+  base::WeakPtr<ClientSessionControl> client_session_control_;
+
+  webrtc::DesktopVector mouse_position_;
+
+  DISALLOW_COPY_AND_ASSIGN(Core);
+};
+
+LocalInputMonitorMac::LocalInputMonitorMac(
+    scoped_refptr<base::SingleThreadTaskRunner> caller_task_runner,
+    scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
+    base::WeakPtr<ClientSessionControl> client_session_control)
+    : core_(new Core(caller_task_runner,
+                     ui_task_runner,
+                     client_session_control)) {
+  core_->Start();
+}
 
 LocalInputMonitorMac::~LocalInputMonitorMac() {
-  Stop();
+  core_->Stop();
 }
 
-void LocalInputMonitorMac::Start(MouseMoveObserver* mouse_move_observer,
-                                 const base::Closure& disconnect_callback) {
-  base::AutoLock lock(g_monitor_lock.Get());
-  if (!g_local_input_monitor_manager)
-    g_local_input_monitor_manager = [[LocalInputMonitorManager alloc] init];
-  CHECK(g_local_input_monitor_manager);
-  mouse_move_observer_ = mouse_move_observer;
-  disconnect_callback_ = disconnect_callback;
-  [g_local_input_monitor_manager addMonitor:this];
+LocalInputMonitorMac::Core::Core(
+    scoped_refptr<base::SingleThreadTaskRunner> caller_task_runner,
+    scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
+    base::WeakPtr<ClientSessionControl> client_session_control)
+    : caller_task_runner_(caller_task_runner),
+      ui_task_runner_(ui_task_runner),
+      manager_(nil),
+      client_session_control_(client_session_control) {
+  DCHECK(client_session_control_);
 }
 
-void LocalInputMonitorMac::Stop() {
-  base::AutoLock lock(g_monitor_lock.Get());
-  if ([g_local_input_monitor_manager removeMonitor:this]) {
-    [g_local_input_monitor_manager invalidate];
-    [g_local_input_monitor_manager release];
-    g_local_input_monitor_manager = nil;
+void LocalInputMonitorMac::Core::Start() {
+  DCHECK(caller_task_runner_->BelongsToCurrentThread());
+
+  ui_task_runner_->PostTask(FROM_HERE,
+                            base::Bind(&Core::StartOnUiThread, this));
+}
+
+void LocalInputMonitorMac::Core::Stop() {
+  DCHECK(caller_task_runner_->BelongsToCurrentThread());
+
+  ui_task_runner_->PostTask(FROM_HERE, base::Bind(&Core::StopOnUiThread, this));
+}
+
+LocalInputMonitorMac::Core::~Core() {
+  DCHECK(manager_ == nil);
+}
+
+void LocalInputMonitorMac::Core::StartOnUiThread() {
+  DCHECK(ui_task_runner_->BelongsToCurrentThread());
+
+  manager_ = [[LocalInputMonitorManager alloc] initWithMonitor:this];
+}
+
+void LocalInputMonitorMac::Core::StopOnUiThread() {
+  DCHECK(ui_task_runner_->BelongsToCurrentThread());
+
+  [manager_ invalidate];
+  [manager_ release];
+  manager_ = nil;
+}
+
+void LocalInputMonitorMac::Core::OnLocalMouseMoved(
+    const webrtc::DesktopVector& position) {
+  // In some cases OS may emit bogus mouse-move events even when cursor is not
+  // actually moving. To handle this case properly verify that mouse position
+  // has changed. See crbug.com/360912 .
+  if (position.equals(mouse_position_)) {
+    return;
   }
+
+  mouse_position_ = position;
+
+  caller_task_runner_->PostTask(
+      FROM_HERE, base::Bind(&ClientSessionControl::OnLocalMouseMoved,
+                            client_session_control_,
+                            position));
 }
 
-void LocalInputMonitorMac::OnLocalMouseMoved(const SkIPoint& new_pos) {
-  mouse_move_observer_->OnLocalMouseMoved(new_pos);
-}
-
-void LocalInputMonitorMac::OnDisconnectShortcut() {
-  disconnect_callback_.Run();
+void LocalInputMonitorMac::Core::OnDisconnectShortcut() {
+  caller_task_runner_->PostTask(
+      FROM_HERE, base::Bind(&ClientSessionControl::DisconnectSession,
+                            client_session_control_));
 }
 
 }  // namespace
 
-scoped_ptr<LocalInputMonitor> LocalInputMonitor::Create() {
-  return scoped_ptr<LocalInputMonitor>(new LocalInputMonitorMac());
+scoped_ptr<LocalInputMonitor> LocalInputMonitor::Create(
+    scoped_refptr<base::SingleThreadTaskRunner> caller_task_runner,
+    scoped_refptr<base::SingleThreadTaskRunner> input_task_runner,
+    scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
+    base::WeakPtr<ClientSessionControl> client_session_control) {
+  return scoped_ptr<LocalInputMonitor>(
+      new LocalInputMonitorMac(caller_task_runner,
+                               ui_task_runner,
+                               client_session_control));
 }
 
 }  // namespace remoting

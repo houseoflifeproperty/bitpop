@@ -7,9 +7,9 @@
 #include <algorithm>
 
 #include "base/command_line.h"
-#include "base/file_path.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/files/file_path.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
@@ -28,7 +28,8 @@ TEST(DelegateExecuteUtil, CommandLineFromParametersTest) {
 
   // Parameters with a switch are parsed properly.
   cl = delegate_execute::CommandLineFromParameters(
-      base::StringPrintf(L"--%ls", ASCIIToWide(kSomeSwitch).c_str()).c_str());
+      base::StringPrintf(L"--%ls",
+                         base::ASCIIToWide(kSomeSwitch).c_str()).c_str());
   EXPECT_EQ(std::wstring(), cl.GetProgram().value());
   EXPECT_TRUE(cl.HasSwitch(kSomeSwitch));
 }
@@ -36,44 +37,48 @@ TEST(DelegateExecuteUtil, CommandLineFromParametersTest) {
 TEST(DelegateExecuteUtil, MakeChromeCommandLineTest) {
   static const wchar_t kSomeArgument[] = L"http://some.url/";
   static const wchar_t kOtherArgument[] = L"http://some.other.url/";
-  const FilePath this_exe(CommandLine::ForCurrentProcess()->GetProgram());
+  const base::FilePath this_exe(CommandLine::ForCurrentProcess()->GetProgram());
 
   CommandLine cl(CommandLine::NO_PROGRAM);
 
   // Empty params and argument contains only the exe.
   cl = delegate_execute::MakeChromeCommandLine(
-      this_exe, delegate_execute::CommandLineFromParameters(NULL), string16());
+      this_exe,
+      delegate_execute::CommandLineFromParameters(NULL),
+      base::string16());
   EXPECT_EQ(1, cl.argv().size());
   EXPECT_EQ(this_exe.value(), cl.GetProgram().value());
 
   // Empty params with arg contains the arg.
   cl = delegate_execute::MakeChromeCommandLine(
       this_exe, delegate_execute::CommandLineFromParameters(NULL),
-      string16(kSomeArgument));
+      base::string16(kSomeArgument));
   EXPECT_EQ(2, cl.argv().size());
   EXPECT_EQ(this_exe.value(), cl.GetProgram().value());
   EXPECT_EQ(1, cl.GetArgs().size());
-  EXPECT_EQ(string16(kSomeArgument), cl.GetArgs()[0]);
+  EXPECT_EQ(base::string16(kSomeArgument), cl.GetArgs()[0]);
 
   // Params with switchs and args plus arg contains the arg.
   cl = delegate_execute::MakeChromeCommandLine(
       this_exe, delegate_execute::CommandLineFromParameters(
-          base::StringPrintf(L"--%ls -- %ls", ASCIIToWide(kSomeSwitch).c_str(),
+          base::StringPrintf(L"--%ls -- %ls",
+                             base::ASCIIToWide(kSomeSwitch).c_str(),
                              kOtherArgument).c_str()),
-      string16(kSomeArgument));
+      base::string16(kSomeArgument));
   EXPECT_EQ(5, cl.argv().size());
   EXPECT_EQ(this_exe.value(), cl.GetProgram().value());
   EXPECT_TRUE(cl.HasSwitch(kSomeSwitch));
   CommandLine::StringVector args(cl.GetArgs());
   EXPECT_EQ(2, args.size());
+  EXPECT_NE(
+      args.end(),
+      std::find(args.begin(), args.end(), base::string16(kOtherArgument)));
   EXPECT_NE(args.end(),
-            std::find(args.begin(), args.end(), string16(kOtherArgument)));
-  EXPECT_NE(args.end(),
-            std::find(args.begin(), args.end(), string16(kSomeArgument)));
+            std::find(args.begin(), args.end(), base::string16(kSomeArgument)));
 }
 
 TEST(DelegateExecuteUtil, ParametersFromSwitchTest) {
-  EXPECT_EQ(string16(), delegate_execute::ParametersFromSwitch(NULL));
-  EXPECT_EQ(string16(L"--some-switch"),
+  EXPECT_EQ(base::string16(), delegate_execute::ParametersFromSwitch(NULL));
+  EXPECT_EQ(base::string16(L"--some-switch"),
             delegate_execute::ParametersFromSwitch(kSomeSwitch));
 }

@@ -1,10 +1,11 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef SYNC_SYNCABLE_ENTRY_H_
 #define SYNC_SYNCABLE_ENTRY_H_
 
+#include "sync/base/sync_export.h"
 #include "sync/syncable/entry_kernel.h"
 
 namespace syncer {
@@ -41,7 +42,7 @@ enum GetByHandle {
   GET_BY_HANDLE
 };
 
-class Entry {
+class SYNC_EXPORT Entry {
  public:
   // After constructing, you must check good() to test whether the Get
   // succeeded.
@@ -55,54 +56,171 @@ class Entry {
   BaseTransaction* trans() const { return basetrans_; }
 
   // Field accessors.
-  inline int64 Get(MetahandleField field) const {
+  int64 GetMetahandle() const {
     DCHECK(kernel_);
-    return kernel_->ref(field);
+    return kernel_->ref(META_HANDLE);
   }
-  inline Id Get(IdField field) const {
+
+  int64 GetBaseVersion() const {
     DCHECK(kernel_);
-    return kernel_->ref(field);
+    return kernel_->ref(BASE_VERSION);
   }
-  inline int64 Get(Int64Field field) const {
+
+  int64 GetServerVersion() const {
     DCHECK(kernel_);
-    return kernel_->ref(field);
+    return kernel_->ref(SERVER_VERSION);
   }
-  inline const base::Time& Get(TimeField field) const {
+
+  int64 GetLocalExternalId() const {
     DCHECK(kernel_);
-    return kernel_->ref(field);
+    return kernel_->ref(LOCAL_EXTERNAL_ID);
   }
-  inline int64 Get(BaseVersion field) const {
+
+  int64 GetTransactionVersion() const {
     DCHECK(kernel_);
-    return kernel_->ref(field);
+    return kernel_->ref(TRANSACTION_VERSION);
   }
-  inline bool Get(IndexedBitField field) const {
+
+  const base::Time& GetMtime() const {
     DCHECK(kernel_);
-    return kernel_->ref(field);
+    return kernel_->ref(MTIME);
   }
-  inline bool Get(IsDelField field) const {
+
+  const base::Time& GetServerMtime() const {
     DCHECK(kernel_);
-    return kernel_->ref(field);
+    return kernel_->ref(SERVER_MTIME);
   }
-  inline bool Get(BitField field) const {
+
+  const base::Time& GetCtime() const {
     DCHECK(kernel_);
-    return kernel_->ref(field);
+    return kernel_->ref(CTIME);
   }
-  const std::string& Get(StringField field) const;
-  inline const sync_pb::EntitySpecifics& Get(ProtoField field) const {
+
+  const base::Time& GetServerCtime() const {
     DCHECK(kernel_);
-    return kernel_->ref(field);
+    return kernel_->ref(SERVER_CTIME);
   }
-  inline const NodeOrdinal& Get(OrdinalField field) const {
+
+  Id GetId() const {
     DCHECK(kernel_);
-    return kernel_->ref(field);
+    return kernel_->ref(ID);
   }
-  inline bool Get(BitTemp field) const {
+
+  Id GetParentId() const {
     DCHECK(kernel_);
-    return kernel_->ref(field);
+    return kernel_->ref(PARENT_ID);
+  }
+
+  Id GetServerParentId() const {
+    DCHECK(kernel_);
+    return kernel_->ref(SERVER_PARENT_ID);
+  }
+
+  bool GetIsUnsynced() const {
+    DCHECK(kernel_);
+    return kernel_->ref(IS_UNSYNCED);
+  }
+
+  bool GetIsUnappliedUpdate() const {
+    DCHECK(kernel_);
+    return kernel_->ref(IS_UNAPPLIED_UPDATE);
+  }
+
+  bool GetIsDel() const {
+    DCHECK(kernel_);
+    return kernel_->ref(IS_DEL);
+  }
+
+  bool GetIsDir() const {
+    DCHECK(kernel_);
+    return kernel_->ref(IS_DIR);
+  }
+
+  bool GetServerIsDir() const {
+    DCHECK(kernel_);
+    return kernel_->ref(SERVER_IS_DIR);
+  }
+
+  bool GetServerIsDel() const {
+    DCHECK(kernel_);
+    return kernel_->ref(SERVER_IS_DEL);
+  }
+
+  const std::string& GetNonUniqueName() const {
+    DCHECK(kernel_);
+    return kernel_->ref(NON_UNIQUE_NAME);
+  }
+
+  const std::string& GetServerNonUniqueName() const {
+    DCHECK(kernel_);
+    return kernel_->ref(SERVER_NON_UNIQUE_NAME);
+  }
+
+  const std::string& GetUniqueServerTag() const {
+    DCHECK(kernel_);
+    return kernel_->ref(UNIQUE_SERVER_TAG);
+  }
+
+  const std::string& GetUniqueClientTag() const {
+    DCHECK(kernel_);
+    return kernel_->ref(UNIQUE_CLIENT_TAG);
+  }
+
+  const std::string& GetUniqueBookmarkTag() const {
+    DCHECK(kernel_);
+    return kernel_->ref(UNIQUE_BOOKMARK_TAG);
+  }
+
+  const sync_pb::EntitySpecifics& GetSpecifics() const {
+    DCHECK(kernel_);
+    return kernel_->ref(SPECIFICS);
+  }
+
+  const sync_pb::EntitySpecifics& GetServerSpecifics() const {
+    DCHECK(kernel_);
+    return kernel_->ref(SERVER_SPECIFICS);
+  }
+
+  const sync_pb::EntitySpecifics& GetBaseServerSpecifics() const {
+    DCHECK(kernel_);
+    return kernel_->ref(BASE_SERVER_SPECIFICS);
+  }
+
+  const UniquePosition& GetServerUniquePosition() const {
+    DCHECK(kernel_);
+    return kernel_->ref(SERVER_UNIQUE_POSITION);
+  }
+
+  const UniquePosition& GetUniquePosition() const {
+    DCHECK(kernel_);
+    return kernel_->ref(UNIQUE_POSITION);
+  }
+
+  const sync_pb::AttachmentMetadata& GetAttachmentMetadata() const {
+    DCHECK(kernel_);
+    return kernel_->ref(ATTACHMENT_METADATA);
+  }
+
+  bool GetSyncing() const {
+    DCHECK(kernel_);
+    return kernel_->ref(SYNCING);
   }
 
   ModelType GetServerModelType() const;
   ModelType GetModelType() const;
+
+  Id GetPredecessorId() const;
+  Id GetSuccessorId() const;
+  Id GetFirstChildId() const;
+  int GetTotalNodeCount() const;
+
+  int GetPositionIndex() const;
+
+  // Returns a vector of this node's children's handles.
+  // Clears |result| if there are no children.  If this node is of a type that
+  // supports user-defined ordering then the resulting vector will be in the
+  // proper order.
+  void GetChildHandles(std::vector<int64>* result) const;
 
   inline bool ExistsOnClientBecauseNameIsNonEmpty() const {
     DCHECK(kernel_);
@@ -114,17 +232,15 @@ class Entry {
     return kernel_->ref(ID).IsRoot();
   }
 
+  // Returns true if this is an entry that is expected to maintain a certain
+  // sort ordering relative to its siblings under the same parent.
+  bool ShouldMaintainPosition() const;
+
   Directory* dir() const;
 
   const EntryKernel GetKernelCopy() const {
     return *kernel_;
   }
-
-  // Compute a local predecessor position for |update_item|, based on its
-  // absolute server position.  The returned ID will be a valid predecessor
-  // under SERVER_PARENT_ID that is consistent with the
-  // SERVER_POSITION_IN_PARENT ordering.
-  Id ComputePrevIdFromServerPosition(const Id& parent_id) const;
 
   // Dumps all entry info into a DictionaryValue and returns it.
   // Transfers ownership of the DictionaryValue to the caller.

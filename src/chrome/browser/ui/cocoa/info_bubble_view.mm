@@ -5,8 +5,7 @@
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
 
 #include "base/logging.h"
-#include "base/memory/scoped_nsobject.h"
-#import "third_party/GTM/AppKit/GTMNSBezierPath+RoundRect.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMNSBezierPath+RoundRect.h"
 
 @implementation InfoBubbleView
 
@@ -54,6 +53,9 @@
       dX = NSWidth(bounds) - info_bubble::kBubbleArrowXOffset -
           info_bubble::kBubbleArrowWidth;
       break;
+    case info_bubble::kTopCenter:
+      dX = NSMidX(bounds) - info_bubble::kBubbleArrowWidth / 2.0;
+      break;
     case info_bubble::kNoArrow:
       break;
     default:
@@ -80,9 +82,21 @@
   NSRect bounds = [self bounds];
   CGFloat tipXOffset =
       info_bubble::kBubbleArrowXOffset + info_bubble::kBubbleArrowWidth / 2.0;
-  CGFloat xOffset =
-      (arrowLocation_ == info_bubble::kTopRight) ? NSMaxX(bounds) - tipXOffset :
-                                                   NSMinX(bounds) + tipXOffset;
+  CGFloat xOffset = 0.0;
+  switch(arrowLocation_) {
+    case info_bubble::kTopRight:
+      xOffset = NSMaxX(bounds) - tipXOffset;
+      break;
+    case info_bubble::kTopLeft:
+      xOffset = NSMinX(bounds) + tipXOffset;
+      break;
+    case info_bubble::kTopCenter:
+      xOffset = NSMidX(bounds);
+      break;
+    default:
+      NOTREACHED();
+      break;
+  }
   NSPoint arrowTip = NSMakePoint(xOffset, NSMaxY(bounds));
   return arrowTip;
 }

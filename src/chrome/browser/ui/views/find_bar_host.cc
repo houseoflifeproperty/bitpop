@@ -13,9 +13,8 @@
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
-#include "ui/base/events/event.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/event.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/views/focus/external_focus_tracker.h"
 #include "ui/views/focus/view_storage.h"
 #include "ui/views/widget/root_view.h"
@@ -39,7 +38,7 @@ FindBarHost::FindBarHost(BrowserView* browser_view)
     : DropdownBarHost(browser_view),
       find_bar_controller_(NULL) {
   FindBarView* find_bar_view = new FindBarView(this);
-  Init(find_bar_view, find_bar_view);
+  Init(browser_view->find_bar_host_view(), find_bar_view, find_bar_view);
 }
 
 FindBarHost::~FindBarHost() {
@@ -75,7 +74,7 @@ bool FindBarHost::MaybeForwardKeyEventToWebpage(
 
   // Make sure we don't have a text field element interfering with keyboard
   // input. Otherwise Up and Down arrow key strokes get eaten. "Nom Nom Nom".
-  render_view_host->ClearFocusedNode();
+  render_view_host->ClearFocusedElement();
   NativeWebKeyboardEvent event = GetKeyboardEvent(contents, key_event);
   render_view_host->ForwardKeyboardEvent(event);
   return true;
@@ -102,7 +101,7 @@ void FindBarHost::SetFocusAndSelection() {
 }
 
 void FindBarHost::ClearResults(const FindNotificationDetails& results) {
-  find_bar_view()->UpdateForResult(results, string16());
+  find_bar_view()->UpdateForResult(results, base::string16());
 }
 
 void FindBarHost::StopAnimation() {
@@ -130,12 +129,22 @@ void FindBarHost::MoveWindowIfNecessary(const gfx::Rect& selection_rect,
   view()->SchedulePaint();
 }
 
-void FindBarHost::SetFindText(const string16& find_text) {
-  find_bar_view()->SetFindText(find_text);
+void FindBarHost::SetFindTextAndSelectedRange(
+    const base::string16& find_text,
+    const gfx::Range& selected_range) {
+  find_bar_view()->SetFindTextAndSelectedRange(find_text, selected_range);
+}
+
+base::string16 FindBarHost::GetFindText() {
+  return find_bar_view()->GetFindText();
+}
+
+gfx::Range FindBarHost::GetSelectedRange() {
+  return find_bar_view()->GetSelectedRange();
 }
 
 void FindBarHost::UpdateUIForFindResult(const FindNotificationDetails& result,
-                                        const string16& find_text) {
+                                        const base::string16& find_text) {
   // Make sure match count is clear. It may get set again in UpdateForResult
   // if enough data is available.
   find_bar_view()->ClearMatchCount();
@@ -163,6 +172,13 @@ void FindBarHost::RestoreSavedFocus() {
   } else {
     focus_tracker()->FocusLastFocusedExternalView();
   }
+}
+
+bool FindBarHost::HasGlobalFindPasteboard() {
+  return false;
+}
+
+void FindBarHost::UpdateFindBarForChangedWebContents() {
 }
 
 FindBarTesting* FindBarHost::GetFindBarTesting() {
@@ -228,15 +244,11 @@ bool FindBarHost::GetFindBarWindowInfo(gfx::Point* position,
   return true;
 }
 
-string16 FindBarHost::GetFindText() {
-  return find_bar_view()->GetFindText();
-}
-
-string16 FindBarHost::GetFindSelectedText() {
+base::string16 FindBarHost::GetFindSelectedText() {
   return find_bar_view()->GetFindSelectedText();
 }
 
-string16 FindBarHost::GetMatchCountText() {
+base::string16 FindBarHost::GetMatchCountText() {
   return find_bar_view()->GetMatchCountText();
 }
 
@@ -260,6 +272,10 @@ gfx::Rect FindBarHost::GetDialogPosition(gfx::Rect avoid_overlapping_rect) {
   // Limit width to the available area.
   if (widget_bounds.width() < prefsize.width())
     prefsize.set_width(widget_bounds.width());
+
+  // Don't show the find bar if |widget_bounds| is not tall enough.
+  if (widget_bounds.height() < prefsize.height())
+    return gfx::Rect();
 
   // Place the view in the top right corner of the widget boundaries (top left
   // for RTL languages).
@@ -301,6 +317,12 @@ void FindBarHost::SetDialogPosition(const gfx::Rect& new_pos, bool no_redraw) {
   UpdateWindowEdges(new_pos);
 
   SetWidgetPositionNative(new_pos, no_redraw);
+
+  // Tell the immersive mode controller about the find bar's new bounds. The
+  // immersive mode controller uses the bounds to keep the top-of-window views
+  // revealed when the mouse is hovered over the find bar.
+  browser_view()->immersive_mode_controller()->OnFindBarVisibleBoundsChanged(
+      host()->GetWindowBoundsInScreen());
 }
 
 void FindBarHost::GetWidgetBounds(gfx::Rect* bounds) {
@@ -327,17 +349,23 @@ void FindBarHost::UnregisterAccelerators() {
   DropdownBarHost::UnregisterAccelerators();
 }
 
+void FindBarHost::OnVisibilityChanged() {
+  // Tell the immersive mode controller about the find bar's bounds. The
+  // immersive mode controller uses the bounds to keep the top-of-window views
+  // revealed when the mouse is hovered over the find bar.
+  gfx::Rect visible_bounds;
+  if (IsVisible())
+    visible_bounds = host()->GetWindowBoundsInScreen();
+  browser_view()->immersive_mode_controller()->OnFindBarVisibleBoundsChanged(
+      visible_bounds);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // private:
 
 void FindBarHost::GetWidgetPositionNative(gfx::Rect* avoid_overlapping_rect) {
   gfx::Rect frame_rect = host()->GetTopLevelWidget()->GetWindowBoundsInScreen();
-  content::WebContentsView* tab_view =
-      find_bar_controller_->web_contents()->GetView();
-  gfx::Rect webcontents_rect = tab_view->GetViewBounds();
+  gfx::Rect webcontents_rect =
+      find_bar_controller_->web_contents()->GetViewBounds();
   avoid_overlapping_rect->Offset(0, webcontents_rect.y() - frame_rect.y());
-}
-
-FindBarView* FindBarHost::find_bar_view() {
-  return static_cast<FindBarView*>(view());
 }

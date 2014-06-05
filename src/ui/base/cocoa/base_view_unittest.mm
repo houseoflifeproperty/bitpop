@@ -4,11 +4,11 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 #include "ui/base/cocoa/base_view.h"
-#import "ui/base/test/ui_cocoa_test_helper.h"
+#import "ui/gfx/test/ui_cocoa_test_helper.h"
 
 namespace {
 
@@ -16,7 +16,8 @@ class BaseViewTest : public ui::CocoaTest {
  public:
   BaseViewTest() {
     NSRect frame = NSMakeRect(0, 0, 100, 100);
-    scoped_nsobject<BaseView> view([[BaseView alloc] initWithFrame:frame]);
+    base::scoped_nsobject<BaseView> view(
+        [[BaseView alloc] initWithFrame:frame]);
     view_ = view.get();
     [[test_window() contentView] addSubview:view_];
   }

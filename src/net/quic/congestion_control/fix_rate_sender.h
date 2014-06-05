@@ -11,6 +11,7 @@
 #include "base/compiler_specific.h"
 #include "net/base/net_export.h"
 #include "net/quic/quic_clock.h"
+#include "net/quic/quic_connection_stats.h"
 #include "net/quic/quic_time.h"
 #include "net/quic/congestion_control/leaky_bucket.h"
 #include "net/quic/congestion_control/paced_sender.h"
@@ -18,32 +19,49 @@
 
 namespace net {
 
+class RttStats;
+
 class NET_EXPORT_PRIVATE FixRateSender : public SendAlgorithmInterface {
  public:
-  explicit FixRateSender(const QuicClock* clock);
+  explicit FixRateSender(const RttStats* rtt_stats);
+  virtual ~FixRateSender();
 
   // Start implementation of SendAlgorithmInterface.
+  virtual void SetFromConfig(const QuicConfig& config, bool is_server) OVERRIDE;
   virtual void OnIncomingQuicCongestionFeedbackFrame(
-      const QuicCongestionFeedbackFrame& feedback) OVERRIDE;
-  virtual void OnIncomingAck(QuicPacketSequenceNumber acked_sequence_number,
-                             size_t acked_bytes,
-                             QuicTime::Delta rtt) OVERRIDE;
-  virtual void OnIncomingLoss(int number_of_lost_packets) OVERRIDE;
-  virtual void SentPacket(QuicPacketSequenceNumber equence_number,
-                          size_t bytes,
-                          bool retransmit) OVERRIDE;
-  virtual QuicTime::Delta TimeUntilSend(bool retransmit) OVERRIDE;
-  virtual size_t AvailableCongestionWindow() OVERRIDE;
-  virtual int BandwidthEstimate() OVERRIDE;
+      const QuicCongestionFeedbackFrame& feedback,
+      QuicTime feedback_receive_time) OVERRIDE;
+  virtual void OnCongestionEvent(bool rtt_updated,
+                                 QuicByteCount bytes_in_flight,
+                                 const CongestionMap& acked_packets,
+                                 const CongestionMap& lost_packets) OVERRIDE;
+  virtual bool OnPacketSent(
+      QuicTime sent_time,
+      QuicByteCount bytes_in_flight,
+      QuicPacketSequenceNumber sequence_number,
+      QuicByteCount bytes,
+      HasRetransmittableData has_retransmittable_data) OVERRIDE;
+  virtual void OnRetransmissionTimeout(bool packets_retransmitted) OVERRIDE;
+  virtual QuicTime::Delta TimeUntilSend(
+      QuicTime now,
+      QuicByteCount bytes_in_flight,
+      HasRetransmittableData has_retransmittable_data) OVERRIDE;
+  virtual QuicBandwidth BandwidthEstimate() const OVERRIDE;
+  virtual QuicTime::Delta RetransmissionDelay() const OVERRIDE;
+  virtual QuicByteCount GetCongestionWindow() const OVERRIDE;
   // End implementation of SendAlgorithmInterface.
 
  private:
-  size_t CongestionWindow();
+  QuicByteCount CongestionWindow();
 
-  uint32 bitrate_in_bytes_per_s_;
+  const RttStats* rtt_stats_;
+  QuicBandwidth bitrate_;
+  QuicByteCount max_segment_size_;
   LeakyBucket fix_rate_leaky_bucket_;
   PacedSender paced_sender_;
-  size_t bytes_in_flight_;
+  QuicTime::Delta latest_rtt_;
+
+  DISALLOW_COPY_AND_ASSIGN(FixRateSender);
 };
 
 }  // namespace net

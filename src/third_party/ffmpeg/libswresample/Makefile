@@ -12,4 +12,10 @@ OBJS = audioconvert.o                        \
        resample.o                            \
        swresample.o                          \
 
+OBJS-$(CONFIG_LIBSOXR) += soxr_resample.o
+OBJS-$(CONFIG_SHARED)  += log2_tab.o
+
+# Windows resource file
+SLIBOBJS-$(HAVE_GNU_WINDRES) += swresampleres.o
+
 TESTPROGS = swresample

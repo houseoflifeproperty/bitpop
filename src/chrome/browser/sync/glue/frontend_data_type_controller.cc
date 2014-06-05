@@ -6,11 +6,11 @@
 
 #include "base/logging.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sync/glue/change_processor.h"
 #include "chrome/browser/sync/glue/chrome_report_unrecoverable_error.h"
-#include "chrome/browser/sync/glue/model_associator.h"
 #include "chrome/browser/sync/profile_sync_components_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
+#include "components/sync_driver/change_processor.h"
+#include "components/sync_driver/model_associator.h"
 #include "content/public/browser/browser_thread.h"
 #include "sync/api/sync_error.h"
 #include "sync/internal_api/public/base/model_type.h"
@@ -21,10 +21,13 @@ using content::BrowserThread;
 namespace browser_sync {
 
 FrontendDataTypeController::FrontendDataTypeController(
+    scoped_refptr<base::MessageLoopProxy> ui_thread,
+    const base::Closure& error_callback,
     ProfileSyncComponentsFactory* profile_sync_factory,
     Profile* profile,
     ProfileSyncService* sync_service)
-    : profile_sync_factory_(profile_sync_factory),
+    : DataTypeController(ui_thread, error_callback),
+      profile_sync_factory_(profile_sync_factory),
       profile_(profile),
       sync_service_(sync_service),
       state_(NOT_RUNNING) {
@@ -40,7 +43,9 @@ void FrontendDataTypeController::LoadModels(
   DCHECK(!model_load_callback.is_null());
 
   if (state_ != NOT_RUNNING) {
-    model_load_callback.Run(type(), syncer::SyncError(FROM_HERE,
+    model_load_callback.Run(type(),
+                            syncer::SyncError(FROM_HERE,
+                                              syncer::SyncError::DATATYPE_ERROR,
                                               "Model already running",
                                               type()));
     return;
@@ -82,8 +87,9 @@ void FrontendDataTypeController::StartAssociating(
   start_callback_ = start_callback;
   state_ = ASSOCIATING;
   if (!Associate()) {
-    // We failed to associate and are aborting.
-    DCHECK(state_ == DISABLED || state_ == NOT_RUNNING);
+    // It's possible StartDone(..) resulted in a Stop() call, or that
+    // association failed, so we just verify that the state has moved forward.
+    DCHECK_NE(state_, ASSOCIATING);
     return;
   }
   DCHECK_EQ(state_, RUNNING);
@@ -141,7 +147,8 @@ void FrontendDataTypeController::OnSingleDatatypeUnrecoverableError(
 }
 
 FrontendDataTypeController::FrontendDataTypeController()
-    : profile_sync_factory_(NULL),
+    : DataTypeController(base::MessageLoopProxy::current(), base::Closure()),
+      profile_sync_factory_(NULL),
       profile_(NULL),
       sync_service_(NULL),
       state_(NOT_RUNNING) {
@@ -170,7 +177,10 @@ bool FrontendDataTypeController::Associate() {
 
   bool sync_has_nodes = false;
   if (!model_associator()->SyncModelHasUserCreatedNodes(&sync_has_nodes)) {
-    syncer::SyncError error(FROM_HERE, "Failed to load sync nodes", type());
+    syncer::SyncError error(FROM_HERE,
+                            syncer::SyncError::UNRECOVERABLE_ERROR,
+                            "Failed to load sync nodes",
+                            type());
     local_merge_result.set_error(error);
     StartDone(UNRECOVERABLE_ERROR, local_merge_result, syncer_merge_result);
     return false;
@@ -190,8 +200,6 @@ bool FrontendDataTypeController::Associate() {
     return false;
   }
 
-  sync_service_->ActivateDataType(type(), model_safe_group(),
-                                  change_processor());
   state_ = RUNNING;
   // FinishStart() invokes the DataTypeManager callback, which can lead to a
   // call to Stop() if one of the other data types being started generates an
@@ -223,7 +231,9 @@ void FrontendDataTypeController::AbortModelLoad() {
   state_ = NOT_RUNNING;
   ModelLoadCallback model_load_callback = model_load_callback_;
   model_load_callback_.Reset();
-  model_load_callback.Run(type(), syncer::SyncError(FROM_HERE,
+  model_load_callback.Run(type(),
+                          syncer::SyncError(FROM_HERE,
+                                            syncer::SyncError::DATATYPE_ERROR,
                                             "Aborted",
                                             type()));
 }
@@ -264,7 +274,8 @@ void FrontendDataTypeController::RecordAssociationTime(base::TimeDelta time) {
 
 void FrontendDataTypeController::RecordStartFailure(StartResult result) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  UMA_HISTOGRAM_ENUMERATION("Sync.DataTypeStartFailures", type(),
+  UMA_HISTOGRAM_ENUMERATION("Sync.DataTypeStartFailures",
+                            ModelTypeToHistogramInt(type()),
                             syncer::MODEL_TYPE_COUNT);
 #define PER_DATA_TYPE_MACRO(type_str) \
     UMA_HISTOGRAM_ENUMERATION("Sync." type_str "StartFailure", result, \
@@ -282,7 +293,7 @@ void FrontendDataTypeController::set_model_associator(
   model_associator_.reset(model_associator);
 }
 
-ChangeProcessor* FrontendDataTypeController::change_processor() const {
+ChangeProcessor* FrontendDataTypeController::GetChangeProcessor() const {
   return change_processor_.get();
 }
 

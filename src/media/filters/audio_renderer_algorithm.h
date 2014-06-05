@@ -7,28 +7,31 @@
 // requests data from the buffer via FillBuffer(). The owner also sets the
 // playback rate, and the AudioRendererAlgorithm will stretch or compress the
 // buffered audio as necessary to match the playback rate when fulfilling
-// FillBuffer() requests. AudioRendererAlgorithm can request more data to be
-// buffered via a read callback passed in during initialization.
+// FillBuffer() requests.
 //
 // This class is *not* thread-safe. Calls to enqueue and retrieve data must be
 // locked if called from multiple threads.
 //
-// AudioRendererAlgorithm uses a simple pitch-preservation algorithm to
-// stretch and compress audio data to meet playback speeds less than and
-// greater than the natural playback of the audio stream.
+// AudioRendererAlgorithm uses the Waveform Similarity Overlap and Add (WSOLA)
+// algorithm to stretch or compress audio data to meet playback speeds less than
+// or greater than the natural playback of the audio stream. The algorithm
+// preserves local properties of the audio, therefore, pitch and harmonics are
+// are preserved. See audio_renderer_algorith.cc for a more elaborate
+// description of the algorithm.
 //
-// Audio at very low or very high playback rates are muted to preserve quality.
 
 #ifndef MEDIA_FILTERS_AUDIO_RENDERER_ALGORITHM_H_
 #define MEDIA_FILTERS_AUDIO_RENDERER_ALGORITHM_H_
 
-#include "base/callback.h"
+#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "media/audio/audio_parameters.h"
-#include "media/base/seekable_buffer.h"
+#include "media/base/audio_buffer.h"
+#include "media/base/audio_buffer_queue.h"
 
 namespace media {
 
-class Buffer;
+class AudioBus;
 
 class MEDIA_EXPORT AudioRendererAlgorithm {
  public:
@@ -36,11 +39,7 @@ class MEDIA_EXPORT AudioRendererAlgorithm {
   ~AudioRendererAlgorithm();
 
   // Initializes this object with information about the audio stream.
-  // |request_read_cb| is called to request more data from the client, requests
-  // that are fulfilled through calls to EnqueueBuffer().
-  void Initialize(float initial_playback_rate,
-                  const AudioParameters& params,
-                  const base::Closure& request_read_cb);
+  void Initialize(float initial_playback_rate, const AudioParameters& params);
 
   // Tries to fill |requested_frames| frames into |dest| with possibly scaled
   // data from our |audio_buffer_|. Data is scaled based on the playback rate,
@@ -48,9 +47,9 @@ class MEDIA_EXPORT AudioRendererAlgorithm {
   //
   // Data from |audio_buffer_| is consumed in proportion to the playback rate.
   //
-  // Returns the number of frames copied into |dest|.
-  // May request more reads via |request_read_cb_| before returning.
-  int FillBuffer(uint8* dest, int requested_frames);
+  // Returns the number of frames copied into |dest|. May request more reads via
+  // |request_read_cb_| before returning.
+  int FillBuffer(AudioBus* dest, int requested_frames);
 
   // Clears |audio_buffer_|.
   void FlushBuffers();
@@ -61,87 +60,68 @@ class MEDIA_EXPORT AudioRendererAlgorithm {
 
   // Enqueues a buffer. It is called from the owner of the algorithm after a
   // read completes.
-  void EnqueueBuffer(Buffer* buffer_in);
+  void EnqueueBuffer(const scoped_refptr<AudioBuffer>& buffer_in);
 
   float playback_rate() const { return playback_rate_; }
   void SetPlaybackRate(float new_rate);
 
-  // Returns whether the algorithm has enough data at the current playback rate
-  // such that it can write data on the next call to FillBuffer().
-  bool CanFillBuffer();
-
   // Returns true if |audio_buffer_| is at or exceeds capacity.
   bool IsQueueFull();
 
-  // Returns the capacity of |audio_buffer_|.
-  int QueueCapacity();
+  // Returns the capacity of |audio_buffer_| in frames.
+  int QueueCapacity() const { return capacity_; }
 
   // Increase the capacity of |audio_buffer_| if possible.
   void IncreaseQueueCapacity();
 
-  // Returns the number of bytes left in |audio_buffer_|, which may be larger
-  // than QueueCapacity() in the event that a read callback delivered more data
+  // Returns the number of frames left in |audio_buffer_|, which may be larger
+  // than QueueCapacity() in the event that EnqueueBuffer() delivered more data
   // than |audio_buffer_| was intending to hold.
-  int bytes_buffered() { return audio_buffer_.forward_bytes(); }
+  int frames_buffered() { return audio_buffer_.frames(); }
 
-  int bytes_per_frame() { return bytes_per_frame_; }
-
-  int bytes_per_channel() { return bytes_per_channel_; }
-
+  // Returns the samples per second for this audio stream.
   int samples_per_second() { return samples_per_second_; }
 
-  bool is_muted() { return muted_; }
-
  private:
-  // Fills |dest| with one frame of audio data at normal speed. Returns true if
-  // a frame was rendered, false otherwise.
-  bool OutputNormalPlayback(uint8* dest);
+  // Within |search_block_|, find the block of data that is most similar to
+  // |target_block_|, and write it in |optimal_block_|. This method assumes that
+  // there is enough data to perform a search, i.e. |search_block_| and
+  // |target_block_| can be extracted from the available frames.
+  void GetOptimalBlock();
 
-  // Fills |dest| with one frame of audio data at faster than normal speed.
-  // Returns true if a frame was rendered, false otherwise.
-  //
-  // When the audio playback is > 1.0, we use a variant of Overlap-Add to squish
-  // audio output while preserving pitch. Essentially, we play a bit of audio
-  // data at normal speed, then we "fast forward" by dropping the next bit of
-  // audio data, and then we stich the pieces together by crossfading from one
-  // audio chunk to the next.
-  bool OutputFasterPlayback(uint8* dest, int input_step, int output_step);
+  // Read a maximum of |requested_frames| frames from |wsola_output_|. Returns
+  // number of frames actually read.
+  int WriteCompletedFramesTo(
+      int requested_frames, int output_offset, AudioBus* dest);
 
-  // Fills |dest| with one frame of audio data at slower than normal speed.
-  // Returns true if a frame was rendered, false otherwise.
-  //
-  // When the audio playback is < 1.0, we use a variant of Overlap-Add to
-  // stretch audio output while preserving pitch. This works by outputting a
-  // segment of audio data at normal speed. The next audio segment then starts
-  // by repeating some of the audio data from the previous audio segment.
-  // Segments are stiched together by crossfading from one audio chunk to the
-  // next.
-  bool OutputSlowerPlayback(uint8* dest, int input_step, int output_step);
+  // Fill |dest| with frames from |audio_buffer_| starting from frame
+  // |read_offset_frames|. |dest| is expected to have the same number of
+  // channels as |audio_buffer_|. A negative offset, i.e.
+  // |read_offset_frames| < 0, is accepted assuming that |audio_buffer| is zero
+  // for negative indices. This might happen for few first frames. This method
+  // assumes there is enough frames to fill |dest|, i.e. |read_offset_frames| +
+  // |dest->frames()| does not extend to future.
+  void PeekAudioWithZeroPrepend(int read_offset_frames, AudioBus* dest);
 
-  // Resets the window state to the start of a new window.
-  void ResetWindow();
+  // Run one iteration of WSOLA, if there are sufficient frames. This will
+  // overlap-and-add one block to |wsola_output_|, hence, |num_complete_frames_|
+  // is incremented by |ola_hop_size_|.
+  bool RunOneWsolaIteration();
 
-  // Copies a raw frame from |audio_buffer_| into |dest| without progressing
-  // |audio_buffer_|'s internal "current" cursor. Optionally peeks at a forward
-  // byte |offset|.
-  void CopyWithoutAdvance(uint8* dest);
-  void CopyWithoutAdvance(uint8* dest, int offset);
+  // Seek |audio_buffer_| forward to remove frames from input that are not used
+  // any more. State of the WSOLA will be updated accordingly.
+  void RemoveOldInputFrames();
 
-  // Copies a raw frame from |audio_buffer_| into |dest| and progresses the
-  // |audio_buffer_| forward.
-  void CopyWithAdvance(uint8* dest);
+  // Update |output_time_| by |time_change|. In turn |search_block_index_| is
+  // updated.
+  void UpdateOutputTime(double time_change);
 
-  // Moves the |audio_buffer_| forward by one frame.
-  void DropFrame();
+  // Is |target_block_| fully within |search_block_|? If so, we don't need to
+  // perform the search.
+  bool TargetIsWithinSearchRegion() const;
 
-  // Does a linear crossfade from |intro| into |outtro| for one frame.
-  // Assumes pointers are valid and are at least size of |bytes_per_frame_|.
-  void OutputCrossfadedFrame(uint8* outtro, const uint8* intro);
-  template <class Type>
-  void CrossfadeFrame(uint8* outtro, const uint8* intro);
-
-  // Rounds |*value| down to the nearest frame boundary.
-  void AlignToFrameBoundary(int* value);
+  // Do we have enough data to perform one round of WSOLA?
+  bool CanPerformWsola() const;
 
   // Number of channels in audio stream.
   int channels_;
@@ -149,42 +129,78 @@ class MEDIA_EXPORT AudioRendererAlgorithm {
   // Sample rate of audio stream.
   int samples_per_second_;
 
-  // Byte depth of audio.
-  int bytes_per_channel_;
-
   // Used by algorithm to scale output.
   float playback_rate_;
 
-  // Used to request more data.
-  base::Closure request_read_cb_;
-
   // Buffered audio data.
-  SeekableBuffer audio_buffer_;
+  AudioBufferQueue audio_buffer_;
 
-  // Length for crossfade in bytes.
-  int bytes_in_crossfade_;
+  // How many frames to have in the queue before we report the queue is full.
+  int capacity_;
 
-  // Length of frame in bytes.
-  int bytes_per_frame_;
+  // Book keeping of the current time of generated audio, in frames. This
+  // should be appropriately updated when out samples are generated, regardless
+  // of whether we push samples out when FillBuffer() is called or we store
+  // audio in |wsola_output_| for the subsequent calls to FillBuffer().
+  // Furthermore, if samples from |audio_buffer_| are evicted then this
+  // member variable should be updated based on |playback_rate_|.
+  // Note that this member should be updated ONLY by calling UpdateOutputTime(),
+  // so that |search_block_index_| is update accordingly.
+  double output_time_;
 
-  // The current location in the audio window, between 0 and |window_size_|.
-  // When |index_into_window_| reaches |window_size_|, the window resets.
-  // Indexed by byte.
-  int index_into_window_;
+  // The offset of the center frame of |search_block_| w.r.t. its first frame.
+  int search_block_center_offset_;
 
-  // The frame number in the crossfade.
-  int crossfade_frame_number_;
+  // Index of the beginning of the |search_block_|, in frames.
+  int search_block_index_;
 
-  // True if the audio should be muted.
-  bool muted_;
+  // Number of Blocks to search to find the most similar one to the target
+  // frame.
+  int num_candidate_blocks_;
 
-  bool needs_more_data_;
+  // Index of the beginning of the target block, counted in frames.
+  int target_block_index_;
 
-  // Temporary buffer to hold crossfade data.
-  scoped_array<uint8> crossfade_buffer_;
+  // Overlap-and-add window size in frames.
+  int ola_window_size_;
 
-  // Window size, in bytes (calculated from audio properties).
-  int window_size_;
+  // The hop size of overlap-and-add in frames. This implementation assumes 50%
+  // overlap-and-add.
+  int ola_hop_size_;
+
+  // Number of frames in |wsola_output_| that overlap-and-add is completed for
+  // them and can be copied to output if FillBuffer() is called. It also
+  // specifies the index where the next WSOLA window has to overlap-and-add.
+  int num_complete_frames_;
+
+  // This stores a part of the output that is created but couldn't be rendered.
+  // Output is generated frame-by-frame which at some point might exceed the
+  // number of requested samples. Furthermore, due to overlap-and-add,
+  // the last half-window of the output is incomplete, which is stored in this
+  // buffer.
+  scoped_ptr<AudioBus> wsola_output_;
+
+  // Overlap-and-add window.
+  scoped_ptr<float[]> ola_window_;
+
+  // Transition window, used to update |optimal_block_| by a weighted sum of
+  // |optimal_block_| and |target_block_|.
+  scoped_ptr<float[]> transition_window_;
+
+  // Auxiliary variables to avoid allocation in every iteration.
+
+  // Stores the optimal block in every iteration. This is the most
+  // similar block to |target_block_| within |search_block_| and it is
+  // overlap-and-added to |wsola_output_|.
+  scoped_ptr<AudioBus> optimal_block_;
+
+  // A block of data that search is performed over to find the |optimal_block_|.
+  scoped_ptr<AudioBus> search_block_;
+
+  // Stores the target block, denoted as |target| above. |search_block_| is
+  // searched for a block (|optimal_block_|) that is most similar to
+  // |target_block_|.
+  scoped_ptr<AudioBus> target_block_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioRendererAlgorithm);
 };

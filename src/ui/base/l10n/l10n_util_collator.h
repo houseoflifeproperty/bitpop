@@ -10,25 +10,19 @@
 #include <string>
 #include <vector>
 
+#include "base/i18n/string_compare.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/utf_string_conversions.h"
-#include "ui/base/ui_export.h"
-#include "unicode/coll.h"
+#include "third_party/icu/source/i18n/unicode/coll.h"
+#include "ui/base/ui_base_export.h"
 
 namespace l10n_util {
-
-// Compares the two strings using the specified collator.
-UI_EXPORT UCollationResult CompareString16WithCollator(
-    const icu::Collator* collator,
-    const string16& lhs,
-    const string16& rhs);
 
 // Used by SortStringsUsingMethod. Invokes a method on the objects passed to
 // operator (), comparing the string results using a collator.
 template <class T, class Method>
 class StringMethodComparatorWithCollator
-    : public std::binary_function<const string16&,
-                                  const string16&,
+    : public std::binary_function<const base::string16&,
+                                  const base::string16&,
                                   bool> {
  public:
   StringMethodComparatorWithCollator(icu::Collator* collator, Method method)
@@ -37,8 +31,8 @@ class StringMethodComparatorWithCollator
 
   // Returns true if lhs preceeds rhs.
   bool operator() (T* lhs_t, T* rhs_t) {
-    return CompareString16WithCollator(collator_, (lhs_t->*method_)(),
-                                       (rhs_t->*method_)()) == UCOL_LESS;
+    return base::i18n::CompareString16WithCollator(collator_,
+        (lhs_t->*method_)(), (rhs_t->*method_)()) == UCOL_LESS;
   }
 
  private:
@@ -49,9 +43,10 @@ class StringMethodComparatorWithCollator
 // Used by SortStringsUsingMethod. Invokes a method on the objects passed to
 // operator (), comparing the string results using <.
 template <class T, class Method>
-class StringMethodComparator : public std::binary_function<const string16&,
-                                                           const string16&,
-                                                           bool> {
+class StringMethodComparator
+    : public std::binary_function<const base::string16&,
+                                  const base::string16&,
+                                  bool> {
  public:
   explicit StringMethodComparator(Method method) : method_(method) { }
 
@@ -87,7 +82,7 @@ void SortStringsUsingMethod(const std::string& locale,
 // Compares two elements' string keys and returns true if the first element's
 // string key is less than the second element's string key. The Element must
 // have a method like the follow format to return the string key.
-// const string16& GetStringKey() const;
+// const base::string16& GetStringKey() const;
 // This uses the locale specified in the constructor.
 template <class Element>
 class StringComparator : public std::binary_function<const Element&,
@@ -99,10 +94,10 @@ class StringComparator : public std::binary_function<const Element&,
 
   // Returns true if lhs precedes rhs.
   bool operator()(const Element& lhs, const Element& rhs) {
-    const string16& lhs_string_key = lhs.GetStringKey();
-    const string16& rhs_string_key = rhs.GetStringKey();
+    const base::string16& lhs_string_key = lhs.GetStringKey();
+    const base::string16& rhs_string_key = rhs.GetStringKey();
 
-    return StringComparator<string16>(collator_)(lhs_string_key,
+    return StringComparator<base::string16>(collator_)(lhs_string_key,
                                                  rhs_string_key);
   }
 
@@ -110,10 +105,10 @@ class StringComparator : public std::binary_function<const Element&,
   icu::Collator* collator_;
 };
 
-// Specialization of operator() method for string16 version.
-template <> UI_EXPORT
-bool StringComparator<string16>::operator()(const string16& lhs,
-                                            const string16& rhs);
+// Specialization of operator() method for base::string16 version.
+template <> UI_BASE_EXPORT
+bool StringComparator<base::string16>::operator()(const base::string16& lhs,
+                                                  const base::string16& rhs);
 
 // In place sorting of |elements| of a vector according to the string key of
 // each element in the vector by using collation rules for |locale|.

@@ -6,7 +6,7 @@
  * TestFixture for cookies view WebUI testing.
  * @extends {testing.Test}
  * @constructor
- **/
+ */
 function CookiesViewWebUITest() {}
 
 CookiesViewWebUITest.prototype = {
@@ -14,11 +14,23 @@ CookiesViewWebUITest.prototype = {
 
   /**
    * Browse to the cookies view.
-   **/
+   */
   browsePreload: 'chrome://settings-frame/cookies',
 };
 
 // Test opening the cookies view has correct location.
-TEST_F('CookiesViewWebUITest', 'testOpenCookiesView', function() {
+TEST_F('CookiesViewWebUITest', 'DISABLED_testOpenCookiesView', function() {
   assertEquals(this.browsePreload, document.location.href);
+});
+
+TEST_F('CookiesViewWebUITest', 'testNoCloseOnSearchEnter', function() {
+  var cookiesView = CookiesView.getInstance();
+  assertTrue(cookiesView.visible);
+  var searchBox = cookiesView.pageDiv.querySelector('.cookies-search-box');
+  searchBox.dispatchEvent(new KeyboardEvent('keydown', {
+    'bubbles': true,
+    'cancelable': true,
+    'keyIdentifier': 'Enter'
+  }));
+  assertTrue(cookiesView.visible);
 });

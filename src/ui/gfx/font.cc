@@ -4,7 +4,7 @@
 
 #include "ui/gfx/font.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "ui/gfx/platform_font.h"
 
 namespace gfx {
@@ -18,7 +18,7 @@ Font::Font() : platform_font_(PlatformFont::CreateDefault()) {
 Font::Font(const Font& other) : platform_font_(other.platform_font_) {
 }
 
-gfx::Font& Font::operator=(const Font& other) {
+Font& Font::operator=(const Font& other) {
   platform_font_ = other.platform_font_;
   return *this;
 }
@@ -38,11 +38,7 @@ Font::Font(const std::string& font_name, int font_size)
 Font::~Font() {
 }
 
-Font Font::DeriveFont(int size_delta) const {
-  return DeriveFont(size_delta, GetStyle());
-}
-
-Font Font::DeriveFont(int size_delta, int style) const {
+Font Font::Derive(int size_delta, int style) const {
   return platform_font_->DeriveFont(size_delta, style);
 }
 
@@ -54,12 +50,8 @@ int Font::GetBaseline() const {
   return platform_font_->GetBaseline();
 }
 
-int Font::GetAverageCharacterWidth() const {
-  return platform_font_->GetAverageCharacterWidth();
-}
-
-int Font::GetStringWidth(const string16& text) const {
-  return platform_font_->GetStringWidth(text);
+int Font::GetCapHeight() const {
+  return platform_font_->GetCapHeight();
 }
 
 int Font::GetExpectedTextWidth(int length) const {
@@ -72,6 +64,10 @@ int Font::GetStyle() const {
 
 std::string Font::GetFontName() const {
   return platform_font_->GetFontName();
+}
+
+std::string Font::GetActualFontNameForTesting() const {
+  return platform_font_->GetActualFontNameForTesting();
 }
 
 int Font::GetFontSize() const {

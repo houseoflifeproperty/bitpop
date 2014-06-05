@@ -2,61 +2,66 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CHROME_BROWSER_EXTENSIONS_API_CONTENT_SETTINGS_CONTENT_SETTINGS_API_H__
-#define CHROME_BROWSER_EXTENSIONS_API_CONTENT_SETTINGS_CONTENT_SETTINGS_API_H__
+#ifndef CHROME_BROWSER_EXTENSIONS_API_CONTENT_SETTINGS_CONTENT_SETTINGS_API_H_
+#define CHROME_BROWSER_EXTENSIONS_API_CONTENT_SETTINGS_CONTENT_SETTINGS_API_H_
 
-#include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
 
 class PluginFinder;
 
-namespace webkit {
+namespace content {
 struct WebPluginInfo;
 }
 
 namespace extensions {
 
-class ClearContentSettingsFunction : public SyncExtensionFunction {
+class ContentSettingsContentSettingClearFunction
+    : public ChromeSyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("contentSettings.clear")
+  DECLARE_EXTENSION_FUNCTION("contentSettings.clear", CONTENTSETTINGS_CLEAR)
 
  protected:
-  virtual ~ClearContentSettingsFunction() {}
+  virtual ~ContentSettingsContentSettingClearFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
-class GetContentSettingFunction : public SyncExtensionFunction {
+class ContentSettingsContentSettingGetFunction
+    : public ChromeSyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("contentSettings.get")
+  DECLARE_EXTENSION_FUNCTION("contentSettings.get", CONTENTSETTINGS_GET)
 
  protected:
-  virtual ~GetContentSettingFunction() {}
+  virtual ~ContentSettingsContentSettingGetFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
-class SetContentSettingFunction : public SyncExtensionFunction {
+class ContentSettingsContentSettingSetFunction
+    : public ChromeSyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("contentSettings.set")
+  DECLARE_EXTENSION_FUNCTION("contentSettings.set", CONTENTSETTINGS_SET)
 
  protected:
-  virtual ~SetContentSettingFunction() {}
+  virtual ~ContentSettingsContentSettingSetFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
-class GetResourceIdentifiersFunction : public AsyncExtensionFunction {
+class ContentSettingsContentSettingGetResourceIdentifiersFunction
+    : public ChromeAsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("contentSettings.getResourceIdentifiers")
+  DECLARE_EXTENSION_FUNCTION("contentSettings.getResourceIdentifiers",
+                             CONTENTSETTINGS_GETRESOURCEIDENTIFIERS)
 
  protected:
-  virtual ~GetResourceIdentifiersFunction() {}
+  virtual ~ContentSettingsContentSettingGetResourceIdentifiersFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(ExtensionApiTest,
@@ -64,13 +69,9 @@ class GetResourceIdentifiersFunction : public AsyncExtensionFunction {
 
   // Callback method that gets executed when |plugins|
   // are asynchronously fetched.
-  void OnGotPlugins(const std::vector<webkit::WebPluginInfo>& plugins);
-
-  // Used to override the global plugin list in tests.
-  static void SetPluginsForTesting(
-      const std::vector<webkit::WebPluginInfo>* plugins);
+  void OnGotPlugins(const std::vector<content::WebPluginInfo>& plugins);
 };
 
 }  // namespace extensions
 
-#endif  // CHROME_BROWSER_EXTENSIONS_API_CONTENT_SETTINGS_CONTENT_SETTINGS_API_H__
+#endif  // CHROME_BROWSER_EXTENSIONS_API_CONTENT_SETTINGS_CONTENT_SETTINGS_API_H_

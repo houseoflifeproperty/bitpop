@@ -6,7 +6,8 @@
 
 #import "chrome/browser/ui/cocoa/location_bar/page_action_decoration.h"
 
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
@@ -16,18 +17,18 @@
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
-#import "chrome/browser/ui/cocoa/extensions/extension_action_context_menu.h"
+#import "chrome/browser/ui/cocoa/extensions/extension_action_context_menu_controller.h"
 #import "chrome/browser/ui/cocoa/extensions/extension_popup_controller.h"
 #include "chrome/browser/ui/cocoa/last_active_browser_cocoa.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_bar_view_mac.h"
 #include "chrome/browser/ui/omnibox/location_bar_util.h"
 #include "chrome/browser/ui/webui/extensions/extension_info_ui.h"
-#include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/extensions/extension_resource.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/manifest_handlers/icons_handler.h"
 #include "skia/ext/skia_utils_mac.h"
 #include "ui/gfx/canvas_skia_paint.h"
+#include "ui/gfx/image/image.h"
 
 using content::WebContents;
 using extensions::Extension;
@@ -51,23 +52,17 @@ PageActionDecoration::PageActionDecoration(
       browser_(browser),
       page_action_(page_action),
       current_tab_id_(-1),
-      preview_enabled_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(scoped_icon_animation_observer_(
-          page_action->GetIconAnimation(
-              SessionID::IdForTab(owner->GetWebContents())),
-          this)) {
+      preview_enabled_(false) {
   const Extension* extension = browser->profile()->GetExtensionService()->
       GetExtensionById(page_action->extension_id(), false);
   DCHECK(extension);
 
-  icon_factory_.reset(
-      new ExtensionActionIconFactory(extension, page_action, this));
+  icon_factory_.reset(new ExtensionActionIconFactory(
+      browser_->profile(), extension, page_action, this));
 
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_HOST_VIEW_SHOULD_CLOSE,
       content::Source<Profile>(browser_->profile()));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_COMMAND_PAGE_ACTION_MAC,
-      content::Source<Profile>(browser_->profile()));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_COMMAND_SCRIPT_BADGE_MAC,
       content::Source<Profile>(browser_->profile()));
 
   // We set the owner last of all so that we can determine whether we are in
@@ -80,27 +75,7 @@ PageActionDecoration::~PageActionDecoration() {}
 // Always |kPageActionIconMaxSize| wide.  |ImageDecoration| draws the
 // image centered.
 CGFloat PageActionDecoration::GetWidthForSpace(CGFloat width) {
-  return Extension::kPageActionIconMaxSize;
-}
-
-void PageActionDecoration::DrawWithBackgroundInFrame(NSRect background_frame,
-                                                     NSRect frame,
-                                                     NSView* control_view) {
-  {
-    gfx::Rect bounds(NSRectToCGRect(background_frame));
-    gfx::CanvasSkiaPaint canvas(background_frame, /*opaque=*/false);
-    // set_composite_alpha(true) makes the extension action paint on top of the
-    // location bar instead of whatever's behind the Chrome window.
-    canvas.set_composite_alpha(true);
-    location_bar_util::PaintExtensionActionBackground(
-        *page_action_, current_tab_id_,
-        &canvas, bounds,
-        SK_ColorBLACK, SK_ColorWHITE);
-    // Destroying |canvas| draws the background.
-  }
-
-  ImageDecoration::DrawWithBackgroundInFrame(
-      background_frame, frame, control_view);
+  return ExtensionAction::kPageActionIconMaxSize;
 }
 
 bool PageActionDecoration::AcceptsMousePress() {
@@ -111,6 +86,10 @@ bool PageActionDecoration::AcceptsMousePress() {
 // Action.
 bool PageActionDecoration::OnMousePressed(NSRect frame) {
   return ActivatePageAction(frame);
+}
+
+void PageActionDecoration::ActivatePageAction() {
+  ActivatePageAction(owner_->GetPageActionFrame(page_action_));
 }
 
 bool PageActionDecoration::ActivatePageAction(NSRect frame) {
@@ -141,10 +120,6 @@ bool PageActionDecoration::ActivatePageAction(NSRect frame) {
       // mouse button through to the LocationBarController.
       NOTREACHED();
       break;
-
-    case LocationBarController::ACTION_SHOW_SCRIPT_POPUP:
-      ShowPopup(frame, ExtensionInfoUI::GetURL(page_action_->extension_id()));
-      break;
   }
 
   return true;
@@ -163,7 +138,8 @@ void PageActionDecoration::UpdateVisibility(WebContents* contents,
                                             const GURL& url) {
   // Save this off so we can pass it back to the extension when the action gets
   // executed. See PageActionDecoration::OnMousePressed.
-  current_tab_id_ = contents ? ExtensionTabUtil::GetTabId(contents) : -1;
+  current_tab_id_ =
+      contents ? extensions::ExtensionTabUtil::GetTabId(contents) : -1;
   current_url_ = url;
 
   bool visible = contents &&
@@ -176,8 +152,9 @@ void PageActionDecoration::UpdateVisibility(WebContents* contents,
     if (!icon.IsEmpty()) {
       SetImage(icon.ToNSImage());
     } else if (!GetImage()) {
-      const NSSize default_size = NSMakeSize(Extension::kPageActionIconMaxSize,
-                                             Extension::kPageActionIconMaxSize);
+      const NSSize default_size = NSMakeSize(
+          ExtensionAction::kPageActionIconMaxSize,
+          ExtensionAction::kPageActionIconMaxSize);
       SetImage([[[NSImage alloc] initWithSize:default_size] autorelease]);
     }
   }
@@ -211,7 +188,7 @@ NSPoint PageActionDecoration::GetBubblePointInFrame(NSRect frame) {
   // easier (the middle of the centered image is the middle of the
   // frame).
   const CGFloat delta_height =
-      NSHeight(frame) - Extension::kPageActionIconMaxSize;
+      NSHeight(frame) - ExtensionAction::kPageActionIconMaxSize;
   const CGFloat bottom_inset = std::ceil(delta_height / 2.0);
 
   // Return a point just below the bottom of the maximal drawing area.
@@ -226,14 +203,17 @@ NSMenu* PageActionDecoration::GetMenu() {
   const Extension* extension = service->GetExtensionById(
       page_action_->extension_id(), false);
   DCHECK(extension);
-  if (!extension)
+  if (!extension || !extension->ShowConfigureContextMenus())
     return nil;
-  menu_.reset([[ExtensionActionContextMenu alloc]
+
+  contextMenuController_.reset([[ExtensionActionContextMenuController alloc]
       initWithExtension:extension
                 browser:browser_
         extensionAction:page_action_]);
 
-  return menu_.get();
+  base::scoped_nsobject<NSMenu> contextMenu([[NSMenu alloc] initWithTitle:@""]);
+  [contextMenuController_ populateMenu:contextMenu];
+  return contextMenu.autorelease();
 }
 
 void PageActionDecoration::ShowPopup(const NSRect& frame,
@@ -250,11 +230,6 @@ void PageActionDecoration::ShowPopup(const NSRect& frame,
                             devMode:NO];
 }
 
-void PageActionDecoration::OnIconChanged() {
-  UpdateVisibility(owner_->GetWebContents(), current_url_);
-  owner_->RedrawDecoration(this);
-}
-
 void PageActionDecoration::Observe(
     int type,
     const content::NotificationSource& source,
@@ -267,8 +242,7 @@ void PageActionDecoration::Observe(
 
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_COMMAND_PAGE_ACTION_MAC:
-    case chrome::NOTIFICATION_EXTENSION_COMMAND_SCRIPT_BADGE_MAC: {
+    case chrome::NOTIFICATION_EXTENSION_COMMAND_PAGE_ACTION_MAC: {
       std::pair<const std::string, gfx::NativeWindow>* payload =
       content::Details<std::pair<const std::string, gfx::NativeWindow> >(
           details).ptr();
@@ -279,7 +253,7 @@ void PageActionDecoration::Observe(
       if (extension_id != page_action_->extension_id())
         break;
       if (IsVisible())
-        ActivatePageAction(owner_->GetPageActionFrame(page_action_));
+        ActivatePageAction();
       break;
     }
 

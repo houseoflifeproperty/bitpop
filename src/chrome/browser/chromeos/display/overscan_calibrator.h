@@ -29,8 +29,15 @@ class OverscanCalibrator : public ui::LayerDelegate {
   // Commits the current insets data to the system.
   void Commit();
 
+  // Reset the overscan insets to default value.  If the display has
+  // overscan, the default value is the display's default overscan
+  // value. Otherwise, the default value is the old |initial_insets_|.
+  void Reset();
+
   // Updates the insets and redraw the visual feedback.
   void UpdateInsets(const gfx::Insets& insets);
+
+  const gfx::Insets& insets() const { return insets_; }
 
  private:
   // ui::LayerDelegate overrides:

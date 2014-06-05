@@ -5,7 +5,7 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_CRX_INSTALLER_ERROR_H_
 #define CHROME_BROWSER_EXTENSIONS_CRX_INSTALLER_ERROR_H_
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
 namespace extensions {
 
@@ -22,21 +22,21 @@ class CrxInstallerError {
   CrxInstallerError() : type_(ERROR_NONE) {
   }
 
-  explicit CrxInstallerError(const string16& message)
+  explicit CrxInstallerError(const base::string16& message)
       : type_(message.empty() ? ERROR_NONE : ERROR_OTHER),
         message_(message) {
   }
 
-  CrxInstallerError(Type type, const string16& message)
+  CrxInstallerError(Type type, const base::string16& message)
       : type_(type), message_(message) {
   }
 
   Type type() const { return type_; }
-  const string16& message() const { return message_; }
+  const base::string16& message() const { return message_; }
 
  private:
   Type type_;
-  string16 message_;
+  base::string16 message_;
 };
 
 }  // namespace extensions

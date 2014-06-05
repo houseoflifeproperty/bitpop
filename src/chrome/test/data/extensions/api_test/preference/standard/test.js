@@ -26,7 +26,6 @@ var preferences_to_test = [
     preferences: [
       'alternateErrorPagesEnabled',
       'autofillEnabled',
-      'instantEnabled',
       'safeBrowsingEnabled',
       'searchSuggestEnabled',
       'spellingServiceEnabled',
@@ -50,8 +49,8 @@ function expectFalse(pref) {
 
 function prefGetter(pref) {
   if (pref === 'protectedContentEnabled' && !this[pref]) {
-    // `protectedContentEnabled` is ChromeOS only, so it might not exist when
-    // this test runs, and that's pretty much OK.
+    // `protectedContentEnabled` is Windows/ChromeOS only, so it might not exist
+    // when this test runs, and that's pretty much OK.
     return true;
   }
   this[pref].get({}, expectFalse(pref));
@@ -59,8 +58,8 @@ function prefGetter(pref) {
 
 function prefSetter(pref) {
   if (pref === 'protectedContentEnabled' && !this[pref]) {
-    // `protectedContentEnabled` is ChromeOS only, so it might not exist when
-    // this test runs, and that's pretty much OK.
+    // `protectedContentEnabled` is Windows/ChromeOS only, so it might not exist
+    // when this test runs, and that's pretty much OK.
     return true;
   }
   this[pref].set({value: true}, chrome.test.callbackPass());

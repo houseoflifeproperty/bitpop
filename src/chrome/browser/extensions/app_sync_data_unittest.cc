@@ -11,16 +11,10 @@
 
 namespace extensions {
 
-namespace {
-
 const char kValidId[] = "abcdefghijklmnopabcdefghijklmnop";
 const char kName[] = "MyExtension";
 const char kValidVersion[] = "0.0.0.0";
-const char kValidUpdateUrl[] =
-    "http://clients2.google.com/service/update2/crx";
-const char kOAuthClientId[] = "1234abcd";
-
-}  // namespace
+const char kValidUpdateUrl[] = "http://clients2.google.com/service/update2/crx";
 
 class AppSyncDataTest : public testing::Test {
  public:
@@ -34,6 +28,7 @@ class AppSyncDataTest : public testing::Test {
     extension_specifics->set_version(kValidVersion);
     extension_specifics->set_enabled(false);
     extension_specifics->set_incognito_enabled(true);
+    extension_specifics->set_remote_install(false);
     extension_specifics->set_name(kName);
   }
 };
@@ -45,10 +40,6 @@ TEST_F(AppSyncDataTest, SyncDataToExtensionSyncDataForApp) {
       syncer::StringOrdinal::CreateInitialOrdinal().ToInternalValue());
   app_specifics->set_page_ordinal(
       syncer::StringOrdinal::CreateInitialOrdinal().ToInternalValue());
-  sync_pb::AppNotificationSettings* notif_settings =
-      app_specifics->mutable_notification_settings();
-  notif_settings->set_oauth_client_id(kOAuthClientId);
-  notif_settings->set_disabled(true);
 
   SetRequiredExtensionValues(app_specifics->mutable_extension());
 
@@ -60,10 +51,6 @@ TEST_F(AppSyncDataTest, SyncDataToExtensionSyncDataForApp) {
             app_sync_data.app_launch_ordinal().ToInternalValue());
   EXPECT_EQ(app_specifics->page_ordinal(),
             app_sync_data.page_ordinal().ToInternalValue());
-  EXPECT_EQ(notif_settings->oauth_client_id(),
-            app_sync_data.notifications_client_id());
-  EXPECT_EQ(notif_settings->disabled(),
-            app_sync_data.notifications_disabled());
 }
 
 
@@ -75,10 +62,6 @@ TEST_F(AppSyncDataTest, ExtensionSyncDataToSyncDataForApp) {
       syncer::StringOrdinal::CreateInitialOrdinal().ToInternalValue());
   input_specifics->set_page_ordinal(
       syncer::StringOrdinal::CreateInitialOrdinal().ToInternalValue());
-  sync_pb::AppNotificationSettings* notif_settings =
-      input_specifics->mutable_notification_settings();
-  notif_settings->set_oauth_client_id(kOAuthClientId);
-  notif_settings->set_disabled(true);
 
   SetRequiredExtensionValues(input_specifics->mutable_extension());
 
@@ -101,11 +84,6 @@ TEST_F(AppSyncDataTest, ExtensionSyncDataInvalidOrdinal) {
   // Set the ordinals as invalid.
   app_specifics->set_app_launch_ordinal("");
   app_specifics->set_page_ordinal("");
-
-  sync_pb::AppNotificationSettings* notif_settings =
-      app_specifics->mutable_notification_settings();
-  notif_settings->set_oauth_client_id(kOAuthClientId);
-  notif_settings->set_disabled(true);
 
   SetRequiredExtensionValues(app_specifics->mutable_extension());
 

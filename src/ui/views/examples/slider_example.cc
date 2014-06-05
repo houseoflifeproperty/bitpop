@@ -4,8 +4,8 @@
 
 #include "ui/views/examples/slider_example.h"
 
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/view.h"
@@ -37,7 +37,7 @@ void SliderExample::SliderValueChanged(Slider* sender,
                                        float value,
                                        float old_value,
                                        SliderChangeReason reason) {
-  label_->SetText(ASCIIToUTF16(base::StringPrintf("%.3lf", value)));
+  label_->SetText(base::ASCIIToUTF16(base::StringPrintf("%.3lf", value)));
 }
 
 }  // namespace examples

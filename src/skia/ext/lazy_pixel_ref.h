@@ -14,7 +14,7 @@ namespace skia {
 // thread.
 class SK_API LazyPixelRef : public SkPixelRef {
  public:
-  LazyPixelRef();
+  explicit LazyPixelRef(const SkImageInfo& info);
   virtual ~LazyPixelRef();
 
   struct PrepareParams {
@@ -25,6 +25,10 @@ class SK_API LazyPixelRef : public SkPixelRef {
   // Request the ImageDecodingStore to prepare image decoding for the
   // given clipping rect. Returns true is succeeded, or false otherwise.
   virtual bool PrepareToDecode(const PrepareParams& params) = 0;
+
+  // Returns true if this pixel ref is already in the ImageDecodingStore's
+  // cache, false otherwise. Much cheaper than PrepareToDecode().
+  virtual bool MaybeDecoded() = 0;
 
   // Start decoding the image.
   virtual void Decode() = 0;

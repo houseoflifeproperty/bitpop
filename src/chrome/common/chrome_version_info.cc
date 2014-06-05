@@ -6,9 +6,8 @@
 
 #include "base/basictypes.h"
 #include "base/file_version_info.h"
-#include "base/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -16,6 +15,12 @@
 #include "ui/base/resource/resource_bundle.h"
 
 namespace chrome {
+
+std::string VersionInfo::ProductNameAndVersionForUserAgent() const {
+  if (!is_valid())
+    return std::string();
+  return "Chrome/" + Version();
+}
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
 // On Windows and Mac, we get the Chrome version info by querying
@@ -37,19 +42,19 @@ bool VersionInfo::is_valid() const {
 std::string VersionInfo::Name() const {
   if (!is_valid())
     return std::string();
-  return UTF16ToUTF8(version_info_->product_name());
+  return base::UTF16ToUTF8(version_info_->product_name());
 }
 
 std::string VersionInfo::Version() const {
   if (!is_valid())
     return std::string();
-  return UTF16ToUTF8(version_info_->product_version());
+  return base::UTF16ToUTF8(version_info_->product_version());
 }
 
 std::string VersionInfo::LastChange() const {
   if (!is_valid())
     return std::string();
-  return UTF16ToUTF8(version_info_->last_change());
+  return base::UTF16ToUTF8(version_info_->last_change());
 }
 
 bool VersionInfo::IsOfficialBuild() const {
@@ -118,10 +123,11 @@ std::string VersionInfo::OSType() const {
 #elif defined(OS_MACOSX)
   return "Mac OS X";
 #elif defined(OS_CHROMEOS)
-  if (ui::ResourceBundle::HasSharedInstance())
-    return UTF16ToASCII(l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_OS_NAME));
-  else
+  #if defined(GOOGLE_CHROME_BUILD)
+    return "Chrome OS";
+  #else
     return "Chromium OS";
+  #endif
 #elif defined(OS_ANDROID)
   return "Android";
 #elif defined(OS_LINUX)

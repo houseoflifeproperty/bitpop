@@ -7,66 +7,57 @@
 
 #include <map>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/pickle.h"
-#include "googleurl/src/gurl.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/vector2d.h"
+#include "url/gurl.h"
 
 namespace ui {
 
 class Clipboard;
 
 // OSExchangeData::Provider implementation for aura on linux.
-class UI_EXPORT OSExchangeDataProviderAura : public OSExchangeData::Provider {
+class UI_BASE_EXPORT OSExchangeDataProviderAura
+    : public OSExchangeData::Provider {
  public:
   OSExchangeDataProviderAura();
   virtual ~OSExchangeDataProviderAura();
 
   // Overridden from OSExchangeData::Provider:
-  virtual void SetString(const string16& data) OVERRIDE;
-  virtual void SetURL(const GURL& url, const string16& title) OVERRIDE;
-  virtual void SetFilename(const FilePath& path) OVERRIDE;
-  virtual void SetFilenames(
-      const std::vector<OSExchangeData::FileInfo>& filenames) OVERRIDE;
-  virtual void SetPickledData(OSExchangeData::CustomFormat format,
+  virtual Provider* Clone() const OVERRIDE;
+  virtual void MarkOriginatedFromRenderer() OVERRIDE;
+  virtual bool DidOriginateFromRenderer() const OVERRIDE;
+  virtual void SetString(const base::string16& data) OVERRIDE;
+  virtual void SetURL(const GURL& url, const base::string16& title) OVERRIDE;
+  virtual void SetFilename(const base::FilePath& path) OVERRIDE;
+  virtual void SetFilenames(const std::vector<FileInfo>& filenames) OVERRIDE;
+  virtual void SetPickledData(const OSExchangeData::CustomFormat& format,
                               const Pickle& data) OVERRIDE;
-  virtual bool GetString(string16* data) const OVERRIDE;
-  virtual bool GetURLAndTitle(GURL* url, string16* title) const OVERRIDE;
-  virtual bool GetFilename(FilePath* path) const OVERRIDE;
-  virtual bool GetFilenames(
-      std::vector<OSExchangeData::FileInfo>* filenames) const OVERRIDE;
-  virtual bool GetPickledData(OSExchangeData::CustomFormat format,
+  virtual bool GetString(base::string16* data) const OVERRIDE;
+  virtual bool GetURLAndTitle(OSExchangeData::FilenameToURLPolicy policy,
+                              GURL* url,
+                              base::string16* title) const OVERRIDE;
+  virtual bool GetFilename(base::FilePath* path) const OVERRIDE;
+  virtual bool GetFilenames(std::vector<FileInfo>* filenames) const OVERRIDE;
+  virtual bool GetPickledData(const OSExchangeData::CustomFormat& format,
                               Pickle* data) const OVERRIDE;
   virtual bool HasString() const OVERRIDE;
-  virtual bool HasURL() const OVERRIDE;
+  virtual bool HasURL(OSExchangeData::FilenameToURLPolicy policy) const
+      OVERRIDE;
   virtual bool HasFile() const OVERRIDE;
-  virtual bool HasCustomFormat(
-      OSExchangeData::CustomFormat format) const OVERRIDE;
-#if defined(OS_WIN)
-  virtual void SetFileContents(const FilePath& filename,
-                               const std::string& file_contents) OVERRIDE;
-  virtual bool GetFileContents(FilePath* filename,
-                               std::string* file_contents) const OVERRIDE;
-  virtual bool HasFileContents() const OVERRIDE;
-  virtual void SetDownloadFileInfo(
-      const OSExchangeData::DownloadFileInfo& download) OVERRIDE;
-#endif
+  virtual bool HasCustomFormat(const OSExchangeData::CustomFormat& format) const
+      OVERRIDE;
 
-  virtual void SetHtml(const string16& html, const GURL& base_url) OVERRIDE;
-  virtual bool GetHtml(string16* html, GURL* base_url) const OVERRIDE;
+  virtual void SetHtml(const base::string16& html,
+                       const GURL& base_url) OVERRIDE;
+  virtual bool GetHtml(base::string16* html, GURL* base_url) const OVERRIDE;
   virtual bool HasHtml() const OVERRIDE;
-
-  void set_drag_image(const gfx::ImageSkia& drag_image) {
-      drag_image_ = drag_image;
-  }
-
-  const gfx::ImageSkia& drag_image() const { return drag_image_; }
-  void set_drag_image_offset(const gfx::Vector2d& drag_image_offset) {
-    drag_image_offset_ = drag_image_offset;
-  }
-  const gfx::Vector2d& drag_image_offset() const { return drag_image_offset_; }
+  virtual void SetDragImage(const gfx::ImageSkia& image,
+                            const gfx::Vector2d& cursor_offset) OVERRIDE;
+  virtual const gfx::ImageSkia& GetDragImage() const OVERRIDE;
+  virtual const gfx::Vector2d& GetDragImageOffset() const OVERRIDE;
 
  private:
   typedef std::map<OSExchangeData::CustomFormat, Pickle>  PickleData;
@@ -80,14 +71,14 @@ class UI_EXPORT OSExchangeDataProviderAura : public OSExchangeData::Provider {
   int formats_;
 
   // String contents.
-  string16 string_;
+  base::string16 string_;
 
   // URL contents.
   GURL url_;
-  string16 title_;
+  base::string16 title_;
 
   // File name.
-  std::vector<OSExchangeData::FileInfo> filenames_;
+  std::vector<FileInfo> filenames_;
 
   // PICKLED_DATA contents.
   PickleData pickle_data_;
@@ -97,7 +88,7 @@ class UI_EXPORT OSExchangeDataProviderAura : public OSExchangeData::Provider {
   gfx::Vector2d drag_image_offset_;
 
   // For HTML format
-  string16 html_;
+  base::string16 html_;
   GURL base_url_;
 
   DISALLOW_COPY_AND_ASSIGN(OSExchangeDataProviderAura);

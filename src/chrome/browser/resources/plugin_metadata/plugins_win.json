@@ -1,4 +1,5 @@
 {
+  "x-version": 12,
   "google-talk": {
     "mime_types": [
     ],
@@ -53,18 +54,9 @@
     ],
     "versions": [
       {
-        "version": "6.0.370",
+        "version": "10.45",
         "status": "requires_authorization",
-        "comment": "Java SE 6 Update 37. '370' is not a typo."
-      },
-      {
-        "version": "7",
-        "status": "out_of_date"
-      },
-      {
-        "version": "10.11",
-        "status": "requires_authorization",
-        "comment": "Java SE 7u11"
+        "comment": "Java SE 7u45"
       }
     ],
     "lang": "en-US",
@@ -163,9 +155,9 @@
     ],
     "versions": [
       {
-        "version": "11.6.8.638",
+        "version": "12.0.4.144",
         "status": "requires_authorization",
-        "reference": "http://www.adobe.com/support/security/bulletins/apsb12-23.html"
+        "reference": "https://www.adobe.com/support/security/bulletins/apsb13-23.html"
       }
     ],
     "lang": "en-US",
@@ -185,33 +177,24 @@
     ],
     "versions": [
       {
-        "version": "9.5.3",
+        "version": "10.1.8",
         "status": "requires_authorization",
-        "reference": "http://www.adobe.com/support/security/bulletins/apsb13-02.html"
-      },
-      {
-        "version": "10",
-        "status": "out_of_date"
-      },
-      {
-        "version": "10.1.5",
-        "status": "requires_authorization",
-        "reference": "http://www.adobe.com/support/security/bulletins/apsb13-02.html"
+        "reference": "https://www.adobe.com/support/security/bulletins/apsb13-22.html"
       },
       {
         "version": "11",
         "status": "out_of_date"
       },
       {
-        "version": "11.0.1",
-        "status": "up_to_date",
-        "reference": "http://www.adobe.com/support/security/bulletins/apsb13-02.html"
+        "version": "11.0.5",
+        "status": "requires_authorization",
+        "reference": "https://www.adobe.com/support/security/bulletins/apsb13-25.html"
       }
     ],
     "lang": "en-US",
     "name": "Adobe Reader",
     "help_url": "https://support.google.com/chrome/?p=plugin_pdf",
-    "url": "http://ardownload.adobe.com/pub/adobe/reader/win/11.x/11.0.01/en_US/AdbeRdr11001_en_US.exe",
+    "url": "http://www.adobe.com/support/downloads/detail.jsp?ftpID=5674",
     "group_name_matcher": "*Adobe Acrobat*"
   },
   "apple-quicktime": {
@@ -322,9 +305,9 @@
     ],
     "versions": [
       {
-        "version": "4.1.10111.0",
+        "version": "5.1.20125.0",
         "status": "up_to_date",
-        "reference": "http://support.microsoft.com/kb/2668562"
+        "reference": "https://support.microsoft.com/kb/2814124"
       }
     ],
     "lang": "en-US",
@@ -370,5 +353,50 @@
     ],
     "name": "Chrome PDF Viewer",
     "group_name_matcher": "*Chrome PDF Viewer*"
+  },
+  "google-update": {
+    "mime-types": [
+    ],
+    "versions": [
+      {
+        "version": "0",
+        "status": "requires_authorization",
+        "comment": "Google Update plug-in is versioned but kept automatically up-to-date"
+      }
+    ],
+    "name": "Google Update",
+    "group_name_matcher": "Google Update"
+  },
+  "facebook-video-calling": {
+    "mime_types": [
+      "application/skypesdk-plugin"
+    ],
+    "versions": [
+      {
+        "version": "0",
+        "status": "up_to_date",
+        "comment": "We do not track version information for the Facebook Video Calling Plugin."
+      }
+    ],
+    "lang": "en-US",
+    "name": "Facebook Video Calling",
+    "url": "https://www.facebook.com/chat/video/videocalldownload.php",
+    "group_name_matcher": "*Facebook Video*"
+  },
+  "google-earth": {
+    "mime_types": [
+      "application/geplugin"
+    ],
+    "versions": [
+      {
+        "version": "0",
+        "status": "up_to_date",
+        "comment": "We do not track version information for the Google Earth Plugin."
+      }
+    ],
+    "lang": "en-US",
+    "name": "Google Earth",
+    "url": "http://www.google.com/earth/explore/products/plugin.html",
+    "group_name_matcher": "*Google Earth*"
   }
 }

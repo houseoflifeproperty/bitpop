@@ -7,23 +7,33 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "content/public/browser/web_contents_observer.h"
+#include "ui/views/accessibility/native_view_accessibility.h"
 #include "ui/views/controls/webview/webview_export.h"
 #include "ui/views/view.h"
-
-namespace content {
-class SiteInstance;
-}
 
 namespace views {
 
 class NativeViewHost;
 
+// Provides a view of a WebContents instance.  WebView can be used standalone,
+// creating and displaying an internally-owned WebContents; or within a full
+// browser where the browser swaps its own WebContents instances in/out (e.g.,
+// for browser tabs).
+//
+// WebView creates and owns a single child view, a NativeViewHost, which will
+// hold and display the native view provided by a WebContents.
+//
+// EmbedFullscreenWidgetMode: When enabled, WebView will observe for WebContents
+// fullscreen changes and automatically swap the normal native view with the
+// fullscreen native view (if different).  In addition, if the WebContents is
+// being screen-captured, the view will be centered within WebView, sized to
+// the aspect ratio of the capture video resolution, and scaling will be avoided
+// whenever possible.
 class WEBVIEW_EXPORT WebView : public View,
-                               public content::NotificationObserver,
-                               public content::WebContentsDelegate {
+                               public content::WebContentsDelegate,
+                               public content::WebContentsObserver {
  public:
   static const char kViewClassName[];
 
@@ -34,15 +44,19 @@ class WEBVIEW_EXPORT WebView : public View,
   // WebView owns this implicitly created WebContents.
   content::WebContents* GetWebContents();
 
-  // Creates a WebContents if none is yet assocaited with this WebView, with the
-  // specified site instance. The WebView owns this WebContents.
-  void CreateWebContentsWithSiteInstance(content::SiteInstance* site_instance);
-
   // WebView does not assume ownership of WebContents set via this method, only
   // those it implicitly creates via GetWebContents() above.
   void SetWebContents(content::WebContents* web_contents);
 
-  content::WebContents* web_contents() { return web_contents_; }
+  // If |mode| is true, WebView will register itself with WebContents as a
+  // WebContentsObserver, monitor for the showing/destruction of fullscreen
+  // render widgets, and alter its child view hierarchy to embed the fullscreen
+  // widget or restore the normal WebContentsView.
+  void SetEmbedFullscreenWidgetMode(bool mode);
+
+  content::WebContents* web_contents() const {
+    return content::WebContentsObserver::web_contents();
+  }
 
   content::BrowserContext* browser_context() { return browser_context_; }
 
@@ -79,49 +93,62 @@ class WEBVIEW_EXPORT WebView : public View,
   void SetPreferredSize(const gfx::Size& preferred_size);
 
   // Overridden from View:
-  virtual std::string GetClassName() const OVERRIDE;
+  virtual const char* GetClassName() const OVERRIDE;
+  virtual ui::TextInputClient* GetTextInputClient() OVERRIDE;
 
- private:
+ protected:
   // Overridden from View:
   virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE;
-  virtual void ViewHierarchyChanged(bool is_add,
-                                    View* parent,
-                                    View* child) OVERRIDE;
+  virtual void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) OVERRIDE;
   virtual bool SkipDefaultKeyEventProcessing(
       const ui::KeyEvent& event) OVERRIDE;
   virtual bool IsFocusable() const OVERRIDE;
   virtual void OnFocus() OVERRIDE;
   virtual void AboutToRequestFocusFromTabTraversal(bool reverse) OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   virtual gfx::NativeViewAccessible GetNativeViewAccessible() OVERRIDE;
   virtual gfx::Size GetPreferredSize() OVERRIDE;
 
-  // Overridden from content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
   // Overridden from content::WebContentsDelegate:
   virtual void WebContentsFocused(content::WebContents* web_contents) OVERRIDE;
+  virtual bool EmbedsFullscreenWidget() const OVERRIDE;
 
+  // Overridden from content::WebContentsObserver:
+  virtual void RenderViewDeleted(
+      content::RenderViewHost* render_view_host) OVERRIDE;
+  virtual void RenderViewHostChanged(
+      content::RenderViewHost* old_host,
+      content::RenderViewHost* new_host) OVERRIDE;
+  virtual void DidShowFullscreenWidget(int routing_id) OVERRIDE;
+  virtual void DidDestroyFullscreenWidget(int routing_id) OVERRIDE;
+  virtual void DidToggleFullscreenModeForTab(bool entered_fullscreen) OVERRIDE;
+  // Workaround for MSVC++ linker bug/feature that requires
+  // instantiation of the inline IPC::Listener methods in all translation units.
+  virtual void OnChannelConnected(int32 peer_id) OVERRIDE {}
+  virtual void OnChannelError() OVERRIDE {}
+
+ private:
   void AttachWebContents();
   void DetachWebContents();
-
-  void RenderViewHostChanged(content::RenderViewHost* old_host,
-                             content::RenderViewHost* new_host);
-  void WebContentsDestroyed(content::WebContents* web_contents);
+  void ReattachForFullscreenChange(bool enter_fullscreen);
+  void NotifyMaybeTextInputClientChanged();
 
   // Create a regular or test web contents (based on whether we're running
   // in a unit test or not).
   content::WebContents* CreateWebContents(
-      content::BrowserContext* browser_context,
-      content::SiteInstance* site_instance);
+      content::BrowserContext* browser_context);
 
-  NativeViewHost* wcv_holder_;
+  NativeViewHost* const holder_;
+  // Non-NULL if |web_contents()| was created and is owned by this WebView.
   scoped_ptr<content::WebContents> wc_owner_;
-  content::WebContents* web_contents_;
+  // When true, WebView auto-embeds fullscreen widgets as a child view.
+  bool embed_fullscreen_widget_mode_enabled_;
+  // Set to true while WebView is embedding a fullscreen widget view as a child
+  // view instead of the normal WebContentsView render view. Note: This will be
+  // false in the case of non-Flash fullscreen.
+  bool is_embedding_fullscreen_widget_;
   content::BrowserContext* browser_context_;
-  content::NotificationRegistrar registrar_;
   bool allow_accelerators_;
   gfx::Size preferred_size_;
 

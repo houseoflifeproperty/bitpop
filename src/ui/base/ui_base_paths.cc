@@ -5,8 +5,8 @@
 #include "ui/base/ui_base_paths.h"
 
 #include "base/command_line.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/path_service.h"
 
@@ -16,12 +16,12 @@
 
 namespace ui {
 
-bool PathProvider(int key, FilePath* result) {
+bool PathProvider(int key, base::FilePath* result) {
   // Assume that we will not need to create the directory if it does not exist.
   // This flag can be set to true for the cases where we want to create it.
   bool create_dir = false;
 
-  FilePath cur;
+  base::FilePath cur;
   switch (key) {
     case ui::DIR_LOCALES:
       if (!PathService::Get(base::DIR_MODULE, &cur))
@@ -48,7 +48,7 @@ bool PathProvider(int key, FilePath* result) {
       cur = cur.Append(FILE_PATH_LITERAL("app"));
       cur = cur.Append(FILE_PATH_LITERAL("test"));
       cur = cur.Append(FILE_PATH_LITERAL("data"));
-      if (!file_util::PathExists(cur))  // we don't want to create this
+      if (!base::PathExists(cur))  // we don't want to create this
         return false;
       break;
 #if defined(OS_ANDROID)
@@ -62,8 +62,8 @@ bool PathProvider(int key, FilePath* result) {
       return false;
   }
 
-  if (create_dir && !file_util::PathExists(cur) &&
-      !file_util::CreateDirectory(cur))
+  if (create_dir && !base::PathExists(cur) &&
+      !base::CreateDirectory(cur))
     return false;
 
   *result = cur;

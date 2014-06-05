@@ -71,8 +71,8 @@ void SortSyncedSessions(SyncedSessionVector* sessions);
 
 // Compares two tab navigations base on the parameters we sync.
 // (Namely, we don't sync state or type mask)
-bool NavigationEquals(const TabNavigation& expected,
-                      const TabNavigation& actual);
+bool NavigationEquals(const sessions::SerializedNavigationEntry& expected,
+                      const sessions::SerializedNavigationEntry& actual);
 
 // Verifies that two SessionWindows match.
 // Returns:
@@ -92,6 +92,12 @@ bool WindowsMatch(const SessionWindowMap& win1,
 bool CheckForeignSessionsAgainst(
     int index,
     const std::vector<ScopedWindowMap>& windows);
+
+// Retrieves the foreign sessions for a particular profile and compares them
+// to the reference windows using CheckForeignSessionsAgains. Returns true if
+// they match and doesn't time out.
+bool AwaitCheckForeignSessionsAgainst(
+    int index, const std::vector<ScopedWindowMap>& windows);
 
 // Open a single tab and block until the session model associator is aware
 // of it. Returns true upon success, false otherwise.

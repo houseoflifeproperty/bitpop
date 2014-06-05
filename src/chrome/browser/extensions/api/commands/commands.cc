@@ -5,28 +5,28 @@
 #include "chrome/browser/extensions/api/commands/commands.h"
 
 #include "chrome/browser/extensions/api/commands/command_service.h"
-#include "chrome/browser/extensions/api/commands/command_service_factory.h"
+#include "chrome/browser/profiles/profile.h"
 
 namespace {
 
 base::DictionaryValue* CreateCommandValue(
     const extensions::Command& command, bool active) {
-  DictionaryValue* result = new DictionaryValue();
+  base::DictionaryValue* result = new base::DictionaryValue();
   result->SetString("name", command.command_name());
   result->SetString("description", command.description());
   result->SetString("shortcut",
                     active ? command.accelerator().GetShortcutText() :
-                             string16());
+                             base::string16());
   return result;
 }
 
 }  // namespace
 
-bool GetAllCommandsFunction::RunImpl() {
-  ListValue* command_list = new ListValue();
+bool GetAllCommandsFunction::RunSync() {
+  base::ListValue* command_list = new base::ListValue();
 
   extensions::CommandService* command_service =
-      extensions::CommandServiceFactory::GetForProfile(profile_);
+      extensions::CommandService::Get(GetProfile());
 
   extensions::Command browser_action;
   bool active = false;
@@ -45,24 +45,17 @@ bool GetAllCommandsFunction::RunImpl() {
     command_list->Append(CreateCommandValue(page_action, active));
   }
 
-  extensions::Command script_badge;
-  if (command_service->GetScriptBadgeCommand(extension_->id(),
-          extensions::CommandService::ALL,
-          &script_badge,
-          &active)) {
-    command_list->Append(CreateCommandValue(script_badge, active));
-  }
-
   extensions::CommandMap named_commands;
   command_service->GetNamedCommands(extension_->id(),
                                     extensions::CommandService::ALL,
+                                    extensions::CommandService::ANY_SCOPE,
                                     &named_commands);
 
   for (extensions::CommandMap::const_iterator iter = named_commands.begin();
        iter != named_commands.end(); ++iter) {
-    ui::Accelerator shortcut_assigned =
-        command_service->FindShortcutForCommand(
-            extension_->id(), iter->second.command_name());
+    extensions::Command command = command_service->FindCommandByName(
+        extension_->id(), iter->second.command_name());
+    ui::Accelerator shortcut_assigned = command.accelerator();
     active = (shortcut_assigned.key_code() != ui::VKEY_UNKNOWN);
 
     command_list->Append(CreateCommandValue(iter->second, active));

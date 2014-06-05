@@ -4,9 +4,10 @@
 
 #include <vector>
 
+#include "base/file_util.h"
 #include "base/format_macros.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/history/history_unittest_base.h"
 #include "sql/connection.h"
 
@@ -15,10 +16,10 @@ namespace history {
 HistoryUnitTestBase::~HistoryUnitTestBase() {
 }
 
-void HistoryUnitTestBase::ExecuteSQLScript(const FilePath& sql_path,
-                                           const FilePath& db_path) {
+void HistoryUnitTestBase::ExecuteSQLScript(const base::FilePath& sql_path,
+                                           const base::FilePath& db_path) {
   std::string sql;
-  ASSERT_TRUE(file_util::ReadFileToString(sql_path, &sql));
+  ASSERT_TRUE(base::ReadFileToString(sql_path, &sql));
 
   // Replace the 'last_visit_time', 'visit_time', 'time_slot' values in this
   // SQL with the current time.

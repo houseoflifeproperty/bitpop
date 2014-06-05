@@ -1,5 +1,0 @@
-TSan waterfall sources are hosted in the TSan SVN so this directory only
-contains slaves.cfg
-
-The TSan buildbot sources are hosted at:
-http://code.google.com/p/data-race-test/source/browse/#svn%2Fbuildbot

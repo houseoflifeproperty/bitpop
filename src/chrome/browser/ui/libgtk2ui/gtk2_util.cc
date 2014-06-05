@@ -4,23 +4,29 @@
 
 #include "chrome/browser/ui/libgtk2ui/gtk2_util.h"
 
+#include <gdk/gdk.h>
+#include <gdk/gdkx.h>
 #include <gtk/gtk.h>
 
 #include "base/command_line.h"
-#include "base/logging.h"
+#include "base/environment.h"
 #include "base/memory/scoped_ptr.h"
-#include "skia/ext/platform_canvas.h"
-#include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/gfx/canvas.h"
+#include "ui/aura/window.h"
+#include "ui/aura/window_tree_host.h"
+#include "ui/base/accelerators/accelerator.h"
+#include "ui/events/event_constants.h"
+#include "ui/events/keycodes/keyboard_code_conversion_x.h"
 #include "ui/gfx/size.h"
 
 namespace {
+
+const char kAuraTransientParent[] = "aura-transient-parent";
 
 void CommonInitFromCommandLine(const CommandLine& command_line,
                                void (*init_func)(gint*, gchar***)) {
   const std::vector<std::string>& args = command_line.argv();
   int argc = args.size();
-  scoped_array<char *> argv(new char *[argc + 1]);
+  scoped_ptr<char *[]> argv(new char *[argc + 1]);
   for (size_t i = 0; i < args.size(); ++i) {
     // TODO(piman@google.com): can gtk_init modify argv? Just being safe
     // here.
@@ -43,60 +49,84 @@ void GtkInitFromCommandLine(const CommandLine& command_line) {
   CommonInitFromCommandLine(command_line, gtk_init);
 }
 
-const SkBitmap GdkPixbufToImageSkia(GdkPixbuf* pixbuf) {
-  // TODO(erg): What do we do in the case where the pixbuf fails these dchecks?
-  // I would prefer to use our gtk based canvas, but that would require
-  // recompiling half of our skia extensions with gtk support, which we can't
-  // do in this build.
-  DCHECK_EQ(GDK_COLORSPACE_RGB, gdk_pixbuf_get_colorspace(pixbuf));
+// TODO(erg): This method was copied out of shell_integration_linux.cc. Because
+// of how this library is structured as a stand alone .so, we can't call code
+// from browser and above.
+std::string GetDesktopName(base::Environment* env) {
+#if defined(GOOGLE_CHROME_BUILD)
+  return "google-chrome.desktop";
+#else  // CHROMIUM_BUILD
+  // Allow $CHROME_DESKTOP to override the built-in value, so that development
+  // versions can set themselves as the default without interfering with
+  // non-official, packaged versions using the built-in value.
+  std::string name;
+  if (env->GetVar("CHROME_DESKTOP", &name) && !name.empty())
+    return name;
+  return "chromium-browser.desktop";
+#endif
+}
 
-  int n_channels = gdk_pixbuf_get_n_channels(pixbuf);
-  int w = gdk_pixbuf_get_width(pixbuf);
-  int h = gdk_pixbuf_get_height(pixbuf);
+void SetAlwaysShowImage(GtkWidget* image_menu_item) {
+  gtk_image_menu_item_set_always_show_image(
+      GTK_IMAGE_MENU_ITEM(image_menu_item), TRUE);
+}
 
-  SkBitmap ret;
-  ret.setConfig(SkBitmap::kARGB_8888_Config, w, h);
-  ret.allocPixels();
-  ret.eraseColor(0);
+guint GetGdkKeyCodeForAccelerator(const ui::Accelerator& accelerator) {
+  // The second parameter is false because accelerator keys are expressed in
+  // terms of the non-shift-modified key.
+  return XKeysymForWindowsKeyCode(accelerator.key_code(), false);
+}
 
-  uint32_t* skia_data = static_cast<uint32_t*>(ret.getAddr(0, 0));
+GdkModifierType GetGdkModifierForAccelerator(
+    const ui::Accelerator& accelerator) {
+  int event_flag = accelerator.modifiers();
+  int modifier = 0;
+  if (event_flag & ui::EF_SHIFT_DOWN)
+    modifier |= GDK_SHIFT_MASK;
+  if (event_flag & ui::EF_CONTROL_DOWN)
+    modifier |= GDK_CONTROL_MASK;
+  if (event_flag & ui::EF_ALT_DOWN)
+    modifier |= GDK_MOD1_MASK;
+  return static_cast<GdkModifierType>(modifier);
+}
 
-  if (n_channels == 4) {
-    int total_length = w * h;
-    guchar* gdk_pixels = gdk_pixbuf_get_pixels(pixbuf);
+int EventFlagsFromGdkState(guint state) {
+  int flags = ui::EF_NONE;
+  flags |= (state & GDK_LOCK_MASK) ? ui::EF_CAPS_LOCK_DOWN : ui::EF_NONE;
+  flags |= (state & GDK_CONTROL_MASK) ? ui::EF_CONTROL_DOWN : ui::EF_NONE;
+  flags |= (state & GDK_SHIFT_MASK) ? ui::EF_SHIFT_DOWN : ui::EF_NONE;
+  flags |= (state & GDK_MOD1_MASK) ? ui::EF_ALT_DOWN : ui::EF_NONE;
+  flags |= (state & GDK_BUTTON1_MASK) ? ui::EF_LEFT_MOUSE_BUTTON : ui::EF_NONE;
+  flags |=
+      (state & GDK_BUTTON2_MASK) ? ui::EF_MIDDLE_MOUSE_BUTTON : ui::EF_NONE;
+  flags |= (state & GDK_BUTTON3_MASK) ? ui::EF_RIGHT_MOUSE_BUTTON : ui::EF_NONE;
+  return flags;
+}
 
-    // Now here's the trick: we need to convert the gdk data (which is RGBA and
-    // isn't premultiplied) to skia (which can be anything and premultiplied).
-    for (int i = 0; i < total_length; ++i, gdk_pixels += 4) {
-      const unsigned char& red = gdk_pixels[0];
-      const unsigned char& green = gdk_pixels[1];
-      const unsigned char& blue = gdk_pixels[2];
-      const unsigned char& alpha = gdk_pixels[3];
+// Set |dialog| as transient for |parent|, which will keep it on top and center
+// it above |parent|.
+void SetGtkTransientForAura(GtkWidget* dialog, aura::Window* parent) {
+  gtk_widget_realize(dialog);
+  GdkWindow* gdk_window = gtk_widget_get_window(dialog);
 
-      skia_data[i] = SkPreMultiplyARGB(alpha, red, green, blue);
-    }
-  } else if (n_channels == 3) {
-    // Because GDK makes rowstrides word aligned, we need to do something a bit
-    // more complex when a pixel isn't perfectly a word of memory.
-    int rowstride = gdk_pixbuf_get_rowstride(pixbuf);
-    guchar* gdk_pixels = gdk_pixbuf_get_pixels(pixbuf);
-    for (int y = 0; y < h; ++y) {
-      int row = y * rowstride;
+  // TODO(erg): Check to make sure we're using X11 if wayland or some other
+  // display server ever happens. Otherwise, this will crash.
+  XSetTransientForHint(GDK_WINDOW_XDISPLAY(gdk_window),
+                       GDK_WINDOW_XID(gdk_window),
+                       parent->GetHost()->GetAcceleratedWidget());
 
-      for (int x = 0; x < w; ++x) {
-        guchar* pixel = gdk_pixels + row + (x * 3);
-        const unsigned char& red = pixel[0];
-        const unsigned char& green = pixel[1];
-        const unsigned char& blue = pixel[2];
+  // We also set the |parent| as a property of |dialog|, so that we can unlink
+  // the two later.
+  g_object_set_data(G_OBJECT(dialog), kAuraTransientParent, parent);
+}
 
-        skia_data[y * w + x] = SkPreMultiplyARGB(255, red, green, blue);
-      }
-    }
-  } else {
-    NOTREACHED();
-  }
+aura::Window* GetAuraTransientParent(GtkWidget* dialog) {
+  return reinterpret_cast<aura::Window*>(
+      g_object_get_data(G_OBJECT(dialog), kAuraTransientParent));
+}
 
-  return ret;
+void ClearAuraTransientParent(GtkWidget* dialog) {
+  g_object_set_data(G_OBJECT(dialog), kAuraTransientParent, NULL);
 }
 
 }  // namespace libgtk2ui

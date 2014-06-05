@@ -8,9 +8,9 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "before_initialization_fixture.h"
+#include "webrtc/voice_engine/test/auto_test/fixtures/before_initialization_fixture.h"
 
-#include "voice_engine_defines.h"
+#include "webrtc/system_wrappers/interface/sleep.h"
 
 BeforeInitializationFixture::BeforeInitializationFixture()
     : voice_engine_(webrtc::VoiceEngine::Create()) {
@@ -25,10 +25,8 @@ BeforeInitializationFixture::BeforeInitializationFixture()
   voe_network_ = webrtc::VoENetwork::GetInterface(voice_engine_);
   voe_file_ = webrtc::VoEFile::GetInterface(voice_engine_);
   voe_vsync_ = webrtc::VoEVideoSync::GetInterface(voice_engine_);
-  voe_encrypt_ = webrtc::VoEEncryption::GetInterface(voice_engine_);
   voe_hardware_ = webrtc::VoEHardware::GetInterface(voice_engine_);
   voe_xmedia_ = webrtc::VoEExternalMedia::GetInterface(voice_engine_);
-  voe_call_report_ = webrtc::VoECallReport::GetInterface(voice_engine_);
   voe_neteq_stats_ = webrtc::VoENetEqStats::GetInterface(voice_engine_);
 }
 
@@ -42,17 +40,13 @@ BeforeInitializationFixture::~BeforeInitializationFixture() {
   voe_network_->Release();
   voe_file_->Release();
   voe_vsync_->Release();
-  voe_encrypt_->Release();
   voe_hardware_->Release();
   voe_xmedia_->Release();
-  voe_call_report_->Release();
   voe_neteq_stats_->Release();
 
   EXPECT_TRUE(webrtc::VoiceEngine::Delete(voice_engine_));
 }
 
 void BeforeInitializationFixture::Sleep(long milliseconds) {
-  // Implementation note: This method is used to reduce usage of the macro and
-  // avoid ugly errors in Eclipse (its parser can't deal with the sleep macro).
-  SLEEP(milliseconds);
+  webrtc::SleepMs(milliseconds);
 }

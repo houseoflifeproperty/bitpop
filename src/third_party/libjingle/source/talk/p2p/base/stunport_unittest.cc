@@ -25,10 +25,13 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "talk/base/basicpacketsocketfactory.h"
 #include "talk/base/gunit.h"
 #include "talk/base/helpers.h"
+#include "talk/base/physicalsocketserver.h"
+#include "talk/base/scoped_ptr.h"
 #include "talk/base/socketaddress.h"
+#include "talk/base/virtualsocketserver.h"
+#include "talk/p2p/base/basicpacketsocketfactory.h"
 #include "talk/p2p/base/stunport.h"
 #include "talk/p2p/base/teststunserver.h"
 
@@ -40,6 +43,8 @@ static const SocketAddress kBadAddr("0.0.0.1", 5000);
 static const SocketAddress kStunHostnameAddr("localhost", 5000);
 static const SocketAddress kBadHostnameAddr("not-a-real-hostname", 5000);
 static const int kTimeoutMs = 10000;
+// stun prio = 100 << 24 | 30 (IPV4) << 8 | 256 - 0
+static const uint32 kStunCandidatePriority = 1677729535;
 
 // Tests connecting a StunPort to a fake STUN server (cricket::StunServer)
 // TODO: Use a VirtualSocketServer here. We have to use a
@@ -48,11 +53,14 @@ class StunPortTest : public testing::Test,
                      public sigslot::has_slots<> {
  public:
   StunPortTest()
-      : network_("unittest", "unittest", talk_base::IPAddress(INADDR_ANY), 32),
+      : pss_(new talk_base::PhysicalSocketServer),
+        ss_(new talk_base::VirtualSocketServer(pss_.get())),
+        ss_scope_(ss_.get()),
+        network_("unittest", "unittest", talk_base::IPAddress(INADDR_ANY), 32),
         socket_factory_(talk_base::Thread::Current()),
         stun_server_(new cricket::TestStunServer(
           talk_base::Thread::Current(), kStunAddr)),
-        done_(false), error_(false) {
+        done_(false), error_(false), stun_keepalive_delay_(0) {
   }
 
   const cricket::Port* port() const { return stun_port_.get(); }
@@ -64,14 +72,45 @@ class StunPortTest : public testing::Test,
         talk_base::Thread::Current(), &socket_factory_, &network_,
         kLocalAddr.ipaddr(), 0, 0, talk_base::CreateRandomString(16),
         talk_base::CreateRandomString(22), server_addr));
-    stun_port_->SignalAddressReady.connect(this,
-        &StunPortTest::OnAddressReady);
-    stun_port_->SignalAddressError.connect(this,
-        &StunPortTest::OnAddressError);
+    stun_port_->set_stun_keepalive_delay(stun_keepalive_delay_);
+    stun_port_->SignalPortComplete.connect(this,
+        &StunPortTest::OnPortComplete);
+    stun_port_->SignalPortError.connect(this,
+        &StunPortTest::OnPortError);
+  }
+
+  void CreateSharedStunPort(const talk_base::SocketAddress& server_addr) {
+    socket_.reset(socket_factory_.CreateUdpSocket(
+        talk_base::SocketAddress(kLocalAddr.ipaddr(), 0), 0, 0));
+    ASSERT_TRUE(socket_ != NULL);
+    socket_->SignalReadPacket.connect(this, &StunPortTest::OnReadPacket);
+    stun_port_.reset(cricket::UDPPort::Create(
+        talk_base::Thread::Current(), &socket_factory_,
+        &network_, socket_.get(),
+        talk_base::CreateRandomString(16), talk_base::CreateRandomString(22)));
+    ASSERT_TRUE(stun_port_ != NULL);
+    stun_port_->set_server_addr(server_addr);
+    stun_port_->SignalPortComplete.connect(this,
+        &StunPortTest::OnPortComplete);
+    stun_port_->SignalPortError.connect(this,
+        &StunPortTest::OnPortError);
   }
 
   void PrepareAddress() {
     stun_port_->PrepareAddress();
+  }
+
+  void OnReadPacket(talk_base::AsyncPacketSocket* socket, const char* data,
+                    size_t size, const talk_base::SocketAddress& remote_addr,
+                    const talk_base::PacketTime& packet_time) {
+    stun_port_->HandleIncomingPacket(
+        socket, data, size, remote_addr, talk_base::PacketTime());
+  }
+
+  void SendData(const char* data, size_t len) {
+    stun_port_->HandleIncomingPacket(
+        socket_.get(), data, len, talk_base::SocketAddress("22.22.22.22", 0),
+        talk_base::PacketTime());
   }
 
  protected:
@@ -80,22 +119,30 @@ class StunPortTest : public testing::Test,
     talk_base::InitRandom(NULL, 0);
   }
 
-  void OnAddressReady(cricket::Port* port) {
+  void OnPortComplete(cricket::Port* port) {
     done_ = true;
     error_ = false;
   }
-  void OnAddressError(cricket::Port* port) {
+  void OnPortError(cricket::Port* port) {
     done_ = true;
     error_ = true;
   }
+  void SetKeepaliveDelay(int delay) {
+    stun_keepalive_delay_ = delay;
+  }
 
  private:
+  talk_base::scoped_ptr<talk_base::PhysicalSocketServer> pss_;
+  talk_base::scoped_ptr<talk_base::VirtualSocketServer> ss_;
+  talk_base::SocketServerScope ss_scope_;
   talk_base::Network network_;
   talk_base::BasicPacketSocketFactory socket_factory_;
-  talk_base::scoped_ptr<cricket::StunPort> stun_port_;
+  talk_base::scoped_ptr<cricket::UDPPort> stun_port_;
   talk_base::scoped_ptr<cricket::TestStunServer> stun_server_;
+  talk_base::scoped_ptr<talk_base::AsyncPacketSocket> socket_;
   bool done_;
   bool error_;
+  int stun_keepalive_delay_;
 };
 
 // Test that we can create a STUN port
@@ -133,6 +180,7 @@ TEST_F(StunPortTest, TestPrepareAddressHostname) {
   EXPECT_TRUE_WAIT(done(), kTimeoutMs);
   ASSERT_EQ(1U, port()->Candidates().size());
   EXPECT_TRUE(kLocalAddr.EqualIPs(port()->Candidates()[0].address()));
+  EXPECT_EQ(kStunCandidatePriority, port()->Candidates()[0].priority());
 }
 
 // Test that we handle hostname lookup failures properly.
@@ -142,4 +190,45 @@ TEST_F(StunPortTest, TestPrepareAddressHostnameFail) {
   EXPECT_TRUE_WAIT(done(), kTimeoutMs);
   EXPECT_TRUE(error());
   EXPECT_EQ(0U, port()->Candidates().size());
+}
+
+// This test verifies keepalive response messages don't result in
+// additional candidate generation.
+TEST_F(StunPortTest, TestKeepAliveResponse) {
+  SetKeepaliveDelay(500);  // 500ms of keepalive delay.
+  CreateStunPort(kStunHostnameAddr);
+  PrepareAddress();
+  EXPECT_TRUE_WAIT(done(), kTimeoutMs);
+  ASSERT_EQ(1U, port()->Candidates().size());
+  EXPECT_TRUE(kLocalAddr.EqualIPs(port()->Candidates()[0].address()));
+  // Waiting for 1 seond, which will allow us to process
+  // response for keepalive binding request. 500 ms is the keepalive delay.
+  talk_base::Thread::Current()->ProcessMessages(1000);
+  ASSERT_EQ(1U, port()->Candidates().size());
+}
+
+// Test that a local candidate can be generated using a shared socket.
+TEST_F(StunPortTest, TestSharedSocketPrepareAddress) {
+  CreateSharedStunPort(kStunAddr);
+  PrepareAddress();
+  EXPECT_TRUE_WAIT(done(), kTimeoutMs);
+  ASSERT_EQ(1U, port()->Candidates().size());
+  EXPECT_TRUE(kLocalAddr.EqualIPs(port()->Candidates()[0].address()));
+}
+
+// Test that we still a get a local candidate with invalid stun server hostname.
+// Also verifing that UDPPort can receive packets when stun address can't be
+// resolved.
+TEST_F(StunPortTest, TestSharedSocketPrepareAddressInvalidHostname) {
+  CreateSharedStunPort(kBadHostnameAddr);
+  PrepareAddress();
+  EXPECT_TRUE_WAIT(done(), kTimeoutMs);
+  ASSERT_EQ(1U, port()->Candidates().size());
+  EXPECT_TRUE(kLocalAddr.EqualIPs(port()->Candidates()[0].address()));
+
+  // Send data to port after it's ready. This is to make sure, UDP port can
+  // handle data with unresolved stun server address.
+  std::string data = "some random data, sending to cricket::Port.";
+  SendData(data.c_str(), data.length());
+  // No crash is success.
 }

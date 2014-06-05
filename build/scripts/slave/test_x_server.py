@@ -12,15 +12,17 @@ import sys
 # pylint: disable=W0403
 import xvfb
 
+from slave import build_directory
+
 def main():
   parser = optparse.OptionParser(usage='%prog [options] slavename')
 
-  parser.add_option('--build-dir',
-                    help='The directory where the binaries are produced')
+  parser.add_option('--build-dir', help='ignored')
   parser.add_option('--start', action='store_true', help='Start xvfb')
   parser.add_option('--stop', action='store_true', help='Stop xvfb')
 
   options, args = parser.parse_args()
+  options.build_dir = build_directory.GetBuildOutputDirectory()
 
   if len(args) != 1:
     parser.error('Please specify the slave name')

@@ -14,16 +14,16 @@
 #include <stdio.h>
 
 #include "base/at_exit.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/i18n/icu_util.h"
 #include "base/logging.h"
-#include "base/process_util.h"
-#include "base/string_util.h"
-#include "third_party/hunspell/google/bdict_reader.h"
-#include "third_party/hunspell/google/bdict_writer.h"
+#include "base/process/memory.h"
+#include "base/strings/string_util.h"
 #include "chrome/tools/convert_dict/aff_reader.h"
 #include "chrome/tools/convert_dict/dic_reader.h"
+#include "third_party/hunspell/google/bdict_reader.h"
+#include "third_party/hunspell/google/bdict_writer.h"
 
 namespace {
 
@@ -93,11 +93,12 @@ int main(int argc, char* argv[]) {
     return PrintHelp();
 
   base::AtExitManager exit_manager;
-  icu_util::Initialize();
+  base::i18n::InitializeICU();
 
-  FilePath file_base = FilePath(argv[1]);
+  base::FilePath file_base = base::FilePath(argv[1]);
 
-  FilePath aff_path = file_base.ReplaceExtension(FILE_PATH_LITERAL(".aff"));
+  base::FilePath aff_path =
+      file_base.ReplaceExtension(FILE_PATH_LITERAL(".aff"));
   printf("Reading %" PRFilePath " ...\n", aff_path.value().c_str());
   convert_dict::AffReader aff_reader(aff_path);
   if (!aff_reader.Read()) {
@@ -105,7 +106,8 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  FilePath dic_path = file_base.ReplaceExtension(FILE_PATH_LITERAL(".dic"));
+  base::FilePath dic_path =
+      file_base.ReplaceExtension(FILE_PATH_LITERAL(".dic"));
   printf("Reading %" PRFilePath " ...\n", dic_path.value().c_str());
   // DicReader will also read the .dic_delta file.
   convert_dict::DicReader dic_reader(dic_path);
@@ -131,16 +133,17 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  FilePath out_path = file_base.ReplaceExtension(FILE_PATH_LITERAL(".bdic"));
+  base::FilePath out_path =
+      file_base.ReplaceExtension(FILE_PATH_LITERAL(".bdic"));
   printf("Writing %" PRFilePath " ...\n", out_path.value().c_str());
-  FILE* out_file = file_util::OpenFile(out_path, "wb");
+  FILE* out_file = base::OpenFile(out_path, "wb");
   if (!out_file) {
     printf("ERROR writing file\n");
     return 1;
   }
   size_t written = fwrite(&serialized[0], 1, serialized.size(), out_file);
   CHECK(written == serialized.size());
-  file_util::CloseFile(out_file);
+  base::CloseFile(out_file);
 
   return 0;
 }

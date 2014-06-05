@@ -12,44 +12,41 @@
 
 namespace switches {
 
-#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SOLARIS)
-extern const char kAlsaOutputDevice[];
-extern const char kAlsaInputDevice[];
+MEDIA_EXPORT extern const char kAudioBufferSize[];
+
+MEDIA_EXPORT extern const char kVideoThreads[];
+
+MEDIA_EXPORT extern const char kEnableADTSStreamParser[];
+
+#if defined(OS_ANDROID)
+MEDIA_EXPORT extern const char kDisableInfobarForProtectedMediaIdentifier[];
+MEDIA_EXPORT extern const char kMediaDrmEnableNonCompositing[];
 #endif
 
-MEDIA_EXPORT extern const char kAudioBufferSize[];
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SOLARIS)
+MEDIA_EXPORT extern const char kAlsaInputDevice[];
+MEDIA_EXPORT extern const char kAlsaOutputDevice[];
+#endif
+
+#if defined(OS_MACOSX)
+MEDIA_EXPORT extern const char kEnableAVFoundation[];
+MEDIA_EXPORT extern const char kForceQTKit[];
+#endif
+
+#if defined(OS_WIN)
+MEDIA_EXPORT extern const char kEnableExclusiveAudio[];
+MEDIA_EXPORT extern const char kForceDirectShowVideoCapture[];
+MEDIA_EXPORT extern const char kForceMediaFoundationVideoCapture[];
+MEDIA_EXPORT extern const char kForceWaveAudio[];
+MEDIA_EXPORT extern const char kTrySupportedChannelLayouts[];
+MEDIA_EXPORT extern const char kWaveOutBuffers[];
+#endif
 
 #if defined(USE_CRAS)
 MEDIA_EXPORT extern const char kUseCras[];
 #endif
 
-#if defined(USE_PULSEAUDIO)
-MEDIA_EXPORT extern const char kUsePulseAudio[];
-#endif
-
-#if defined(OS_WIN)
-MEDIA_EXPORT extern const char kEnableExclusiveAudio[];
-#endif
-
-MEDIA_EXPORT extern const char kDisableAudioFallback[];
-
-MEDIA_EXPORT extern const char kDisableAudioOutputResampler[];
-
-#if defined(OS_WIN) || defined(OS_MACOSX)
-MEDIA_EXPORT extern const char kDisableRendererSideMixing[];
-#else
-MEDIA_EXPORT extern const char kEnableRendererSideMixing[];
-#endif
-
-MEDIA_EXPORT extern const char kEnableAudioMixer[];
-
-MEDIA_EXPORT extern const char kEnableWebAudioInput[];
-
-MEDIA_EXPORT extern const char kVideoThreads[];
-
-MEDIA_EXPORT extern const char kEnableEncryptedMedia[];
-
-MEDIA_EXPORT extern const char kEnableOpusPlayback[];
+MEDIA_EXPORT extern const char kUseFileForFakeVideoCapture[];
 
 }  // namespace switches
 

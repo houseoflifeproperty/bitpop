@@ -7,10 +7,12 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "chrome/browser/spellchecker/spelling_service_client.h"
 #include "content/public/browser/browser_message_filter.h"
 
+class SpellCheckMarker;
+class SpellcheckService;
 struct SpellCheckResult;
-class SpellingServiceClient;
 
 // A message filter implementation that receives spell checker requests from
 // SpellCheckProvider.
@@ -26,22 +28,27 @@ class SpellCheckMessageFilter : public content::BrowserMessageFilter {
                                  bool* message_was_ok) OVERRIDE;
 
  private:
+  friend class TestingSpellCheckMessageFilter;
+
   virtual ~SpellCheckMessageFilter();
 
   void OnSpellCheckerRequestDictionary();
-  void OnNotifyChecked(const string16& word, bool misspelled);
+  void OnNotifyChecked(const base::string16& word, bool misspelled);
+  void OnRespondDocumentMarkers(const std::vector<uint32>& markers);
 #if !defined(OS_MACOSX)
   void OnCallSpellingService(int route_id,
                              int identifier,
-                             int document_tag,
-                             const string16& text);
+                             const base::string16& text,
+                             std::vector<SpellCheckMarker> markers);
 
   // A callback function called when the Spelling service finishes checking
-  // text. We send the given results to a renderer.
+  // text. Sends the given results to a renderer.
   void OnTextCheckComplete(
-      int tag,
+      int route_id,
+      int identifier,
+      const std::vector<SpellCheckMarker>& markers,
       bool success,
-      const string16& text,
+      const base::string16& text,
       const std::vector<SpellCheckResult>& results);
 
   // Checks the user profile and sends a JSON-RPC request to the Spelling
@@ -50,21 +57,20 @@ class SpellCheckMessageFilter : public content::BrowserMessageFilter {
   // OnTextCheckComplete. When this function is called before we receive a
   // response for the previous request, this function cancels the previous
   // request and sends a new one.
-  bool CallSpellingService(int route_id,
-                           int identifier,
-                           int document_tag,
-                           const string16& text);
+  void CallSpellingService(
+      const base::string16& text,
+      int route_id,
+      int identifier,
+      const std::vector<SpellCheckMarker>& markers);
 #endif
+
+  // Can be overridden for testing.
+  virtual SpellcheckService* GetSpellcheckService() const;
 
   int render_process_id_;
 
   // A JSON-RPC client that calls the Spelling service in the background.
   scoped_ptr<SpellingServiceClient> client_;
-
-#if !defined(OS_MACOSX)
-  int route_id_;
-  int identifier_;
-#endif
 };
 
 #endif  // CHROME_BROWSER_SPELLCHECKER_SPELLCHECK_MESSAGE_FILTER_H_

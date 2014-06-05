@@ -2,26 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "content/test/content_test_suite.h"
+#include "base/bind.h"
+#include "base/test/launcher/unit_test_launcher.h"
 #include "content/public/test/unittest_test_suite.h"
-
-#if defined(OS_ANDROID)
-#include "base/android/jni_android.h"
-#include "content/browser/android/browser_jni_registrar.h"
-#include "content/common/android/common_jni_registrar.h"
-#include "net/android/net_jni_registrar.h"
-#endif
+#include "content/test/content_test_suite.h"
 
 int main(int argc, char** argv) {
+  content::UnitTestTestSuite test_suite(
+      new content::ContentTestSuite(argc, argv));
 
-#if defined(OS_ANDROID)
-  // Register JNI bindings for android.
-  JNIEnv* env = base::android::AttachCurrentThread();
-  content::android::RegisterCommonJni(env);
-  content::android::RegisterBrowserJni(env);
-  net::android::RegisterJni(env);
-#endif
-
-  return content::UnitTestTestSuite(
-      new content::ContentTestSuite(argc, argv)).Run();
+  return base::LaunchUnitTests(
+      argc, argv, base::Bind(&content::UnitTestTestSuite::Run,
+                             base::Unretained(&test_suite)));
 }

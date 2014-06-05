@@ -14,7 +14,7 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
-#include "webkit/glue/resource_type.h"
+#include "webkit/common/resource_type.h"
 
 class GURL;
 class Profile;
@@ -26,8 +26,6 @@ namespace content {
 namespace net {
 class SSLInfo;
 }
-
-namespace captive_portal {
 
 class CaptivePortalLoginDetector;
 class CaptivePortalTabReloader;
@@ -65,16 +63,21 @@ class CaptivePortalTabHelper
   virtual ~CaptivePortalTabHelper();
 
   // content::WebContentsObserver:
+  virtual void RenderViewDeleted(
+      content::RenderViewHost* render_view_host) OVERRIDE;
+
   virtual void DidStartProvisionalLoadForFrame(
       int64 frame_id,
       int64 parent_frame_id,
       bool is_main_frame,
       const GURL& validated_url,
       bool is_error_page,
+      bool is_iframe_srcdoc,
       content::RenderViewHost* render_view_host) OVERRIDE;
 
   virtual void DidCommitProvisionalLoadForFrame(
       int64 frame_id,
+      const base::string16& frame_unique_name,
       bool is_main_frame,
       const GURL& url,
       content::PageTransition transition_type,
@@ -82,10 +85,11 @@ class CaptivePortalTabHelper
 
   virtual void DidFailProvisionalLoad(
       int64 frame_id,
+      const base::string16& frame_unique_name,
       bool is_main_frame,
       const GURL& validated_url,
       int error_code,
-      const string16& error_description,
+      const base::string16& error_description,
       content::RenderViewHost* render_view_host) OVERRIDE;
 
   virtual void DidStopLoading(
@@ -117,7 +121,9 @@ class CaptivePortalTabHelper
                   const GURL& new_url);
 
   // Called by Observe in response to the corresponding event.
-  void OnCaptivePortalResults(Result previous_result, Result result);
+  void OnCaptivePortalResults(
+      captive_portal::CaptivePortalResult previous_result,
+      captive_portal::CaptivePortalResult result);
 
   void OnLoadAborted();
 
@@ -160,7 +166,5 @@ class CaptivePortalTabHelper
 
   DISALLOW_COPY_AND_ASSIGN(CaptivePortalTabHelper);
 };
-
-}  // namespace captive_portal
 
 #endif  // CHROME_BROWSER_CAPTIVE_PORTAL_CAPTIVE_PORTAL_TAB_HELPER_H_

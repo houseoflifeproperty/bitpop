@@ -9,20 +9,20 @@
 #define CHROME_BROWSER_SAFE_BROWSING_DATABASE_MANAGER_H_
 
 #include <deque>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
 
 #include "base/callback.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/safe_browsing/protocol_manager.h"
 #include "chrome/browser/safe_browsing/safe_browsing_util.h"
-#include "content/public/browser/browser_thread.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 class SafeBrowsingService;
 class SafeBrowsingDatabase;
@@ -48,20 +48,33 @@ class SafeBrowsingDatabaseManager
  public:
   class Client;
 
-  // Bundle of SafeBrowsing state for one URL or hash prefix check.
+  // Bundle of SafeBrowsing state while performing a URL or hash prefix check.
   struct SafeBrowsingCheck {
-    SafeBrowsingCheck();
+    // |check_type| should correspond to the type of item that is being
+    // checked, either a URL or a binary hash/URL. We store this for two
+    // purposes: to know which of Client's methods to call when a result is
+    // known, and for logging purposes. It *isn't* used to predict the response
+    // list type, that is information that the server gives us.
+    SafeBrowsingCheck(const std::vector<GURL>& urls,
+                      const std::vector<SBFullHash>& full_hashes,
+                      Client* client,
+                      safe_browsing_util::ListType check_type,
+                      const std::vector<SBThreatType>& expected_threats);
     ~SafeBrowsingCheck();
 
-    // Either |urls| or |prefix| is used to lookup database.
+    // Either |urls| or |full_hashes| is used to lookup database. |*_results|
+    // are parallel vectors containing the results. They are initialized to
+    // contain SB_THREAT_TYPE_SAFE.
     std::vector<GURL> urls;
-    scoped_ptr<SBFullHash> full_hash;
+    std::vector<SBThreatType> url_results;
+    std::vector<SBFullHash> full_hashes;
+    std::vector<SBThreatType> full_hash_results;
 
     Client* client;
     bool need_get_hash;
     base::TimeTicks start;  // When check was sent to SB service.
-    SBThreatType threat_type;
-    bool is_download;  // If this check for download url or hash.
+    safe_browsing_util::ListType check_type;  // See comment in constructor.
+    std::vector<SBThreatType> expected_threats;
     std::vector<SBPrefix> prefix_hits;
     std::vector<SBFullHashResult> full_hits;
 
@@ -93,9 +106,9 @@ class SafeBrowsingDatabaseManager
     virtual void OnCheckDownloadUrlResult(const std::vector<GURL>& url_chain,
                                           SBThreatType threat_type) {}
 
-    // Called when the result of checking a download binary hash is known.
-    virtual void OnCheckDownloadHashResult(const std::string& hash,
-                                           SBThreatType threat_type) {}
+    // Called when the result of checking a set of extensions is known.
+    virtual void OnCheckExtensionsResult(
+        const std::set<std::string>& threats) {}
   };
 
   // Creates the safe browsing service.  Need to initialize before using.
@@ -121,9 +134,18 @@ class SafeBrowsingDatabaseManager
   virtual bool CheckDownloadUrl(const std::vector<GURL>& url_chain,
                                 Client* client);
 
-  // Check if the prefix for |full_hash| is in safebrowsing binhash add lists.
-  // Result will be passed to callback in |client|.
-  virtual bool CheckDownloadHash(const std::string& full_hash, Client* client);
+  // Check which prefixes in |extension_ids| are in the safebrowsing blacklist.
+  // Returns true if not, false if further checks need to be made in which case
+  // the result will be passed to |client|.
+  virtual bool CheckExtensionIDs(const std::set<std::string>& extension_ids,
+                                 Client* client);
+
+  // Check if the given url is on the side-effect free whitelist.
+  // Can be called on any thread. Returns false if the check cannot be performed
+  // (e.g. because we are disabled or because of an invalid scheme in the URL).
+  // Otherwise, returns true if the URL is on the whitelist based on matching
+  // the hash prefix only (so there may be false positives).
+  virtual bool CheckSideEffectFreeWhitelistUrl(const GURL& url);
 
   // Check if the |url| matches any of the full-length hashes from the
   // client-side phishing detection whitelist.  Returns true if there was a
@@ -131,6 +153,10 @@ class SafeBrowsingDatabaseManager
   // true if an error occurs. This method is expected to be called on the IO
   // thread.
   virtual bool MatchCsdWhitelistUrl(const GURL& url);
+
+  // Check if the given IP address (either IPv4 or IPv6) matches the malware
+  // IP blacklist.
+  virtual bool MatchMalwareIP(const std::string& ip_address);
 
   // Check if the |url| matches any of the full-length hashes from the
   // download whitelist.  Returns true if there was a match and false otherwise.
@@ -144,6 +170,9 @@ class SafeBrowsingDatabaseManager
   // This method is expected to be called on the IO thread.
   virtual bool MatchDownloadWhitelistString(const std::string& str);
 
+  // Check if the CSD malware IP matching kill switch is turned on.
+  virtual bool IsMalwareKillSwitchOn();
+
   // Called on the IO thread to cancel a pending check if the result is no
   // longer needed.
   void CancelCheck(Client* client);
@@ -154,9 +183,6 @@ class SafeBrowsingDatabaseManager
       SafeBrowsingCheck* check,
       const std::vector<SBFullHashResult>& full_hashes,
       bool can_cache);
-
-  // Called on the IO thread to release memory.
-  void PurgeMemory();
 
   // Log the user perceived delay caused by SafeBrowsing. This delay is the time
   // delta starting from when we would have started reading data from the
@@ -177,11 +203,15 @@ class SafeBrowsingDatabaseManager
  protected:
   virtual ~SafeBrowsingDatabaseManager();
 
+  // protected for tests.
+  void NotifyDatabaseUpdateFinished(bool update_succeeded);
+
  private:
   friend class base::RefCountedThreadSafe<SafeBrowsingDatabaseManager>;
   friend class SafeBrowsingServerTest;
   friend class SafeBrowsingServiceTest;
   friend class SafeBrowsingServiceTestHelper;
+  friend class SafeBrowsingDatabaseManagerTest;
 
   typedef std::set<SafeBrowsingCheck*> CurrentChecks;
   typedef std::vector<SafeBrowsingCheck*> GetHashRequestors;
@@ -189,8 +219,16 @@ class SafeBrowsingDatabaseManager
 
   // Clients that we've queued up for checking later once the database is ready.
   struct QueuedCheck {
+    QueuedCheck(const safe_browsing_util::ListType check_type,
+                Client* client,
+                const GURL& url,
+                const std::vector<SBThreatType>& expected_threats,
+                const base::TimeTicks& start);
+    ~QueuedCheck();
+    safe_browsing_util::ListType check_type;
     Client* client;
     GURL url;
+    std::vector<SBThreatType> expected_threats;
     base::TimeTicks start;  // When check was queued.
   };
 
@@ -209,14 +247,6 @@ class SafeBrowsingDatabaseManager
   // db thread can call GetDatabase() directly.
   bool MakeDatabaseAvailable();
 
-  // Called on the IO thread to try to close the database, freeing the memory
-  // associated with it.  The database will be automatically reopened as needed.
-  //
-  // NOTE: Actual database closure is asynchronous, and until it happens, the IO
-  // thread is not allowed to access it; may not actually trigger a close if one
-  // is already pending or doing so would cause problems.
-  void CloseDatabase();
-
   // Should only be called on db thread as SafeBrowsingDatabase is not
   // threadsafe.
   SafeBrowsingDatabase* GetDatabase();
@@ -233,7 +263,7 @@ class SafeBrowsingDatabaseManager
                                   GetChunksCallback callback);
 
   // Called on the IO thread after the database reports that it added a chunk.
-  void OnChunkInserted();
+  void OnAddChunksComplete(AddChunksCallback callback);
 
   // Notification that the database is done loading its bloom filter.  We may
   // have had to queue checks until the database is ready, and if so, this
@@ -242,18 +272,14 @@ class SafeBrowsingDatabaseManager
 
   // Called on the database thread to add/remove chunks and host keys.
   // Callee will free the data when it's done.
-  void HandleChunkForDatabase(const std::string& list,
-                              SBChunkList* chunks);
+  void AddDatabaseChunks(const std::string& list, SBChunkList* chunks,
+                         AddChunksCallback callback);
 
   void DeleteDatabaseChunks(std::vector<SBChunkDelete>* chunk_deletes);
-
-  static SBThreatType GetThreatTypeFromListname(const std::string& list_name);
 
   void NotifyClientBlockingComplete(Client* client, bool proceed);
 
   void DatabaseUpdateFinished(bool update_succeeded);
-
-  void NotifyDatabaseUpdateFinished(bool update_succeeded);
 
   // Called on the db thread to close the database.  See CloseDatabase().
   void OnCloseDatabase();
@@ -275,9 +301,6 @@ class SafeBrowsingDatabaseManager
   bool HandleOneCheck(SafeBrowsingCheck* check,
                       const std::vector<SBFullHashResult>& full_hashes);
 
-  // Checks the download hash on safe_browsing_thread_.
-  void CheckDownloadHashOnSBThread(SafeBrowsingCheck* check);
-
   // Invoked by CheckDownloadUrl. It checks the download URL on
   // safe_browsing_thread_.
   void CheckDownloadUrlOnSBThread(SafeBrowsingCheck* check);
@@ -289,26 +312,25 @@ class SafeBrowsingDatabaseManager
   // Calls the Client's callback on IO thread after CheckDownloadUrl finishes.
   void CheckDownloadUrlDone(SafeBrowsingCheck* check);
 
-  // Calls the Client's callback on IO thread after CheckDownloadHash finishes.
-  void CheckDownloadHashDone(SafeBrowsingCheck* check);
+  // Checks all extension ID hashes on safe_browsing_thread_.
+  void CheckExtensionIDsOnSBThread(SafeBrowsingCheck* check);
 
   // Helper function that calls safe browsing client and cleans up |checks_|.
   void SafeBrowsingCheckDone(SafeBrowsingCheck* check);
 
   // Helper function to set |check| with default values and start a safe
-  // browsing check with timeout of |timeout_ms|. |task| will be called upon
+  // browsing check with timeout of |timeout|. |task| will be called on
   // success, otherwise TimeoutCallback will be called.
-  void StartDownloadCheck(SafeBrowsingCheck* check,
-                          Client* client,
-                          const base::Closure& task,
-                          int64 timeout_ms);
+  void StartSafeBrowsingCheck(SafeBrowsingCheck* check,
+                              const base::Closure& task);
 
   // SafeBrowsingProtocolManageDelegate override
   virtual void ResetDatabase() OVERRIDE;
   virtual void UpdateStarted() OVERRIDE;
   virtual void UpdateFinished(bool success) OVERRIDE;
   virtual void GetChunks(GetChunksCallback callback) OVERRIDE;
-  virtual void AddChunks(const std::string& list, SBChunkList* chunks) OVERRIDE;
+  virtual void AddChunks(const std::string& list, SBChunkList* chunks,
+                         AddChunksCallback callback) OVERRIDE;
   virtual void DeleteChunks(
       std::vector<SBChunkDelete>* delete_chunks) OVERRIDE;
 
@@ -341,6 +363,15 @@ class SafeBrowsingDatabaseManager
   // Indicate if the download whitelist should be enabled or not.
   bool enable_download_whitelist_;
 
+  // Indicate if the extension blacklist should be enabled.
+  bool enable_extension_blacklist_;
+
+  // Indicate if the side effect free whitelist should be enabled.
+  bool enable_side_effect_free_whitelist_;
+
+  // Indicate if the csd malware IP blacklist should be enabled.
+  bool enable_ip_blacklist_;
+
   // The SafeBrowsing thread that runs database operations.
   //
   // Note: Functions that run on this thread should run synchronously and return
@@ -361,12 +392,8 @@ class SafeBrowsingDatabaseManager
 
   std::deque<QueuedCheck> queued_checks_;
 
-  // When download url check takes this long, client's callback will be called
-  // without waiting for the result.
-  int64 download_urlcheck_timeout_ms_;
-
-  // Similar to |download_urlcheck_timeout_ms_|, but for download hash checks.
-  int64 download_hashcheck_timeout_ms_;
+  // Timeout to use for safe browsing checks.
+  base::TimeDelta check_timeout_;
 
   DISALLOW_COPY_AND_ASSIGN(SafeBrowsingDatabaseManager);
 };

@@ -4,18 +4,23 @@
 
 #include "chrome/browser/chromeos/login/captive_portal_view.h"
 
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/chromeos/cros/cros_library.h"
-#include "chrome/browser/chromeos/cros/network_library.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chromeos/login/captive_portal_window_proxy.h"
+#include "chromeos/network/network_handler.h"
+#include "chromeos/network/network_state.h"
+#include "chromeos/network/network_state_handler.h"
+#include "components/captive_portal/captive_portal_detector.h"
 #include "content/public/browser/web_contents.h"
-#include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/views/window/dialog_delegate.h"
+#include "url/gurl.h"
 
 namespace {
 
-const char kCaptivePortalStartURL[] = "http://client3.google.com/generate_204";
+const char* CaptivePortalStartURL() {
+  return captive_portal::CaptivePortalDetector::kDefaultURL;
+}
 
 }  // namespace
 
@@ -32,7 +37,7 @@ CaptivePortalView::~CaptivePortalView() {
 }
 
 void CaptivePortalView::StartLoad() {
-  SimpleWebViewDialog::StartLoad(GURL(kCaptivePortalStartURL));
+  SimpleWebViewDialog::StartLoad(GURL(CaptivePortalStartURL()));
 }
 
 bool CaptivePortalView::CanResize() const {
@@ -43,14 +48,17 @@ ui::ModalType CaptivePortalView::GetModalType() const {
   return ui::MODAL_TYPE_SYSTEM;
 }
 
-string16 CaptivePortalView::GetWindowTitle() const {
-  string16 network_name;
-  const Network* active_network =
-      CrosLibrary::Get()->GetNetworkLibrary()->active_network();
-  if (active_network) {
-    network_name = ASCIIToUTF16(active_network->name());
+base::string16 CaptivePortalView::GetWindowTitle() const {
+  base::string16 network_name;
+  const NetworkState* default_network =
+      NetworkHandler::Get()->network_state_handler()->DefaultNetwork();
+  std::string default_network_name =
+      default_network ? default_network->name() : std::string();
+  if (!default_network_name.empty()) {
+    network_name = base::ASCIIToUTF16(default_network_name);
   } else {
-    DLOG(ERROR) << "No active network, but captive portal window is shown.";
+    DLOG(ERROR)
+        << "No active/default network, but captive portal window is shown.";
   }
 
   return l10n_util::GetStringFUTF16(IDS_LOGIN_CAPTIVE_PORTAL_WINDOW_TITLE,
@@ -61,24 +69,29 @@ bool CaptivePortalView::ShouldShowWindowTitle() const {
   return true;
 }
 
+views::NonClientFrameView* CaptivePortalView::CreateNonClientFrameView(
+    views::Widget* widget) {
+  return views::DialogDelegate::CreateDialogFrameView(widget);
+}
+
 void CaptivePortalView::NavigationStateChanged(
     const content::WebContents* source, unsigned changed_flags) {
   SimpleWebViewDialog::NavigationStateChanged(source, changed_flags);
 
   // Naive way to determine the redirection. This won't be needed after portal
   // detection will be done on the Chrome side.
-  GURL url = source->GetURL();
+  GURL url = source->GetLastCommittedURL();
   // Note, |url| will be empty for "client3.google.com/generate_204" page.
   if (!redirected_  && url != GURL::EmptyGURL() &&
-      url != GURL(kCaptivePortalStartURL)) {
-    DLOG(INFO) << kCaptivePortalStartURL << " vs " << url.spec();
+      url != GURL(CaptivePortalStartURL())) {
     redirected_ = true;
     proxy_->OnRedirected();
   }
 }
 
-void CaptivePortalView::LoadingStateChanged(content::WebContents* source) {
-  SimpleWebViewDialog::LoadingStateChanged(source);
+void CaptivePortalView::LoadingStateChanged(content::WebContents* source,
+    bool to_different_document) {
+  SimpleWebViewDialog::LoadingStateChanged(source, to_different_document);
   // TODO(nkostylev): Fix case of no connectivity, check HTTP code returned.
   // Disable this heuristic as it has false positives.
   // Relying on just shill portal check to close dialog is fine.

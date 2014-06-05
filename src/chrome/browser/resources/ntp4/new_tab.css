@@ -80,8 +80,8 @@ html[dir='rtl'] #notification-container {
   background-color: transparent;
   /* TODO(estade): this should animate between states. */
   background-image: -webkit-image-set(
-      url('../../../../ui/resources/default_100_percent/close_bar.png') 1x,
-      url('../../../../ui/resources/default_200_percent/close_bar.png') 2x);
+      url('../../../../ui/resources/default_100_percent/close_2.png') 1x,
+      url('../../../../ui/resources/default_200_percent/close_2.png') 2x);
   border: 0;
   cursor: default;
   display: inline-block;
@@ -93,17 +93,15 @@ html[dir='rtl'] #notification-container {
 .close-button:hover,
 .close-button:focus {
   background-image: -webkit-image-set(
-      url('../../../../ui/resources/default_100_percent/close_bar_hover.png')
-          1x,
-      url('../../../../ui/resources/default_200_percent/close_bar_hover.png')
-          2x);
+      url('../../../../ui/resources/default_100_percent/close_2_hover.png') 1x,
+      url('../../../../ui/resources/default_200_percent/close_2_hover.png') 2x);
 }
 
 .close-button:active {
   background-image: -webkit-image-set(
-      url('../../../../ui/resources/default_100_percent/close_bar_pressed.png')
+      url('../../../../ui/resources/default_100_percent/close_2_pressed.png')
           1x,
-      url('../../../../ui/resources/default_200_percent/close_bar_pressed.png')
+      url('../../../../ui/resources/default_200_percent/close_2_pressed.png')
           2x);
 }
 
@@ -160,7 +158,7 @@ html[dir='rtl'] #attribution {
 }
 
 #footer {
-  background-image: -webkit-linear-gradient(
+  background-image: linear-gradient(
       rgba(242, 242, 242, 0.9), rgba(222, 222, 222, 0.9));
   bottom: 0;
   color: #7F7F7F;
@@ -180,8 +178,9 @@ html[dir='rtl'] #attribution {
 }
 
 #footer-content {
-  -webkit-box-align: center;
-  display: -webkit-box;
+  -webkit-align-items: center;
+  -webkit-justify-content: space-between;
+  display: -webkit-flex;
   height: 49px;
 }
 
@@ -192,6 +191,7 @@ html[dir='rtl'] #attribution {
 #logo-img {
   display: inline-block;
   margin-top: 4px;
+  overflow: hidden;
   position: relative;
 }
 
@@ -385,7 +385,10 @@ html[dir='rtl'] #footer.showing-trash-mode #trash.drag-target .lid {
   z-index: 5;
 }
 
+/* Footer buttons. ************************************************************/
+
 #chrome-web-store-link {
+  -webkit-order: 3;
   -webkit-padding-end: 12px;
   /* Match transition delay of recently closed button. */
   -webkit-transition-delay: 100ms;
@@ -414,6 +417,7 @@ html[dir='rtl'] #chrome-web-store-title {
 }
 
 #vertical-separator {
+  -webkit-order: 2;
   background-color: rgb(178, 178, 178);
   display: none;
   height: 20px;
@@ -423,12 +427,12 @@ html[dir='rtl'] #chrome-web-store-title {
 }
 
 /* Show the separator only if one of the menus is visible. */
-.footer-menu-button:not([hidden]) ~ #vertical-separator {
-  display: block;
+.footer-menu-button:not([hidden]) ~ #chrome-web-store-link:not([hidden])
+                                  ~ #vertical-separator {
+  display: inline-block;
 }
 
 /* In trash mode, hide the menus and web store link. */
-#footer.showing-trash-mode #chrome-web-store-link,
 #footer.showing-trash-mode .menu-container {
   -webkit-transition-delay: 0;
   opacity: 0;
@@ -436,11 +440,22 @@ html[dir='rtl'] #chrome-web-store-title {
 }
 
 #footer .menu-container {
-  -webkit-box-align: center;
+  -webkit-align-items: center;
+  -webkit-flex-direction: row;
+  -webkit-justify-content: flex-end;
   /* Put menus in a box so the order can easily be swapped. */
-  display: -webkit-box;
+  display: -webkit-flex;
   height: 100%;
   margin: 0;
+  min-width: -webkit-min-content;
+}
+
+#recently-closed-menu-button {
+  -webkit-order: 1;
+}
+
+#other-sessions-menu-button {
+  -webkit-order: 0;
 }
 
 .other-sessions-promo-message {

@@ -4,7 +4,6 @@
 
 #include "ppapi/tests/test_input_event.h"
 
-#include "ppapi/c/dev/ppb_testing_dev.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/ppb_input_event.h"
 #include "ppapi/cpp/input_event.h"
@@ -18,6 +17,7 @@ namespace {
 
 const uint32_t kSpaceChar = 0x20;
 const char* kSpaceString = " ";
+const char* kSpaceCode = "Space";
 
 #define FINISHED_WAITING_MESSAGE "TEST_INPUT_EVENT_FINISHED_WAITING"
 
@@ -32,20 +32,16 @@ pp::Point GetCenter(const pp::Rect& rect) {
 void TestInputEvent::RunTests(const std::string& filter) {
   RUN_TEST(Events, filter);
 
-// Like RUN_TEST, but does an exact match with the filter (which means it does
-// not run the test if filter is empty).
-#define RUN_TEST_EXACT_MATCH(name, test_filter) \
-  if (test_filter == #name) { \
-    set_callback_type(PP_OPTIONAL); \
-    instance_->LogTest(#name, CheckResourcesAndVars(Test##name())); \
+  // The AcceptTouchEvent_N tests should not be run when the filter is empty;
+  // they can only be run one at a time.
+  // TODO(dmichael): Figure out a way to make these run in the same test fixture
+  //                 instance.
+  if (!ShouldRunAllTests(filter)) {
+    RUN_TEST(AcceptTouchEvent_1, filter);
+    RUN_TEST(AcceptTouchEvent_2, filter);
+    RUN_TEST(AcceptTouchEvent_3, filter);
+    RUN_TEST(AcceptTouchEvent_4, filter);
   }
-
-  RUN_TEST_EXACT_MATCH(AcceptTouchEvent_1, filter);
-  RUN_TEST_EXACT_MATCH(AcceptTouchEvent_2, filter);
-  RUN_TEST_EXACT_MATCH(AcceptTouchEvent_3, filter);
-  RUN_TEST_EXACT_MATCH(AcceptTouchEvent_4, filter);
-
-#undef RUN_TEST_EXACT_MATCH
 }
 
 TestInputEvent::TestInputEvent(TestingInstance* instance)
@@ -55,6 +51,7 @@ TestInputEvent::TestInputEvent(TestingInstance* instance)
       wheel_input_event_interface_(NULL),
       keyboard_input_event_interface_(NULL),
       touch_input_event_interface_(NULL),
+      nested_event_(instance->pp_instance()),
       view_rect_(),
       expected_input_event_(0),
       received_expected_event_(false),
@@ -144,14 +141,16 @@ pp::InputEvent TestInputEvent::CreateWheelEvent() {
 }
 
 pp::InputEvent TestInputEvent::CreateKeyEvent(PP_InputEvent_Type type,
-                                              uint32_t key_code) {
+                                              uint32_t key_code,
+                                              const std::string& code) {
   return pp::KeyboardInputEvent(
       instance_,
       type,
       100,  // time_stamp
       0,  // modifiers
       key_code,
-      pp::Var());
+      pp::Var(),
+      pp::Var(code));
 }
 
 pp::InputEvent TestInputEvent::CreateCharEvent(const std::string& text) {
@@ -161,7 +160,8 @@ pp::InputEvent TestInputEvent::CreateCharEvent(const std::string& text) {
       100,  // time_stamp
       0,  // modifiers
       0,  // keycode
-      pp::Var(text));
+      pp::Var(text),
+      pp::Var());
 }
 
 pp::InputEvent TestInputEvent::CreateTouchEvent(PP_InputEvent_Type type,
@@ -177,18 +177,23 @@ pp::InputEvent TestInputEvent::CreateTouchEvent(PP_InputEvent_Type type,
   return touch_event;
 }
 
+void TestInputEvent::PostMessageBarrier() {
+  received_finish_message_ = false;
+  instance_->PostMessage(pp::Var(FINISHED_WAITING_MESSAGE));
+  testing_interface_->RunMessageLoop(instance_->pp_instance());
+  nested_event_.Wait();
+}
+
 // Simulates the input event and calls PostMessage to let us know when
 // we have received all resulting events from the browser.
 bool TestInputEvent::SimulateInputEvent(
     const pp::InputEvent& input_event) {
   expected_input_event_ = pp::InputEvent(input_event.pp_resource());
   received_expected_event_ = false;
-  received_finish_message_ = false;
   testing_interface_->SimulateInputEvent(instance_->pp_instance(),
                                          input_event.pp_resource());
-  instance_->PostMessage(pp::Var(FINISHED_WAITING_MESSAGE));
-  testing_interface_->RunMessageLoop(instance_->pp_instance());
-  return received_finish_message_ && received_expected_event_;
+  PostMessageBarrier();
+  return received_expected_event_;
 }
 
 bool TestInputEvent::AreEquivalentEvents(PP_Resource received,
@@ -308,6 +313,7 @@ void TestInputEvent::HandleMessage(const pp::Var& message_data) {
       (message_data.AsString() == FINISHED_WAITING_MESSAGE)) {
     testing_interface_->QuitMessageLoop(instance_->pp_instance());
     received_finish_message_ = true;
+    nested_event_.Signal();
   }
 }
 
@@ -322,6 +328,8 @@ std::string TestInputEvent::TestEvents() {
                                              PP_INPUTEVENT_CLASS_WHEEL |
                                              PP_INPUTEVENT_CLASS_KEYBOARD |
                                              PP_INPUTEVENT_CLASS_TOUCH);
+  PostMessageBarrier();
+
   // Send the events and check that we received them.
   ASSERT_TRUE(
       SimulateInputEvent(CreateMouseEvent(PP_INPUTEVENT_TYPE_MOUSEDOWN,
@@ -330,7 +338,7 @@ std::string TestInputEvent::TestEvents() {
       SimulateInputEvent(CreateWheelEvent()));
   ASSERT_TRUE(
       SimulateInputEvent(CreateKeyEvent(PP_INPUTEVENT_TYPE_KEYDOWN,
-                                        kSpaceChar)));
+                                        kSpaceChar, kSpaceCode)));
   ASSERT_TRUE(
       SimulateInputEvent(CreateCharEvent(kSpaceString)));
   ASSERT_TRUE(SimulateInputEvent(CreateTouchEvent(PP_INPUTEVENT_TYPE_TOUCHSTART,
@@ -339,6 +347,8 @@ std::string TestInputEvent::TestEvents() {
   input_event_interface_->ClearInputEventRequest(instance_->pp_instance(),
                                                  PP_INPUTEVENT_CLASS_WHEEL |
                                                  PP_INPUTEVENT_CLASS_KEYBOARD);
+  PostMessageBarrier();
+
   // Check that we only receive mouse events.
   ASSERT_TRUE(
       SimulateInputEvent(CreateMouseEvent(PP_INPUTEVENT_TYPE_MOUSEDOWN,
@@ -347,7 +357,7 @@ std::string TestInputEvent::TestEvents() {
       SimulateInputEvent(CreateWheelEvent()));
   ASSERT_FALSE(
       SimulateInputEvent(CreateKeyEvent(PP_INPUTEVENT_TYPE_KEYDOWN,
-                                        kSpaceChar)));
+                                        kSpaceChar, kSpaceCode)));
   ASSERT_FALSE(
       SimulateInputEvent(CreateCharEvent(kSpaceString)));
 
@@ -411,4 +421,3 @@ std::string TestInputEvent::TestAcceptTouchEvent_4() {
                                              PP_INPUTEVENT_CLASS_TOUCH);
   PASS();
 }
-

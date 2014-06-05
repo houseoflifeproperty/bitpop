@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2010 Google Inc.
  *
@@ -6,15 +5,13 @@
  * found in the LICENSE file.
  */
 
-
-
 #ifndef GrGlyph_DEFINED
 #define GrGlyph_DEFINED
 
 #include "GrRect.h"
 #include "SkPath.h"
 
-class GrAtlas;
+class GrPlot;
 
 /*  Need this to be quad-state:
     - complete w/ image
@@ -25,14 +22,14 @@ class GrAtlas;
 struct GrGlyph {
     typedef uint32_t PackedID;
 
-    GrAtlas*    fAtlas;
+    GrPlot*     fPlot;
     SkPath*     fPath;
     PackedID    fPackedID;
     GrIRect16   fBounds;
     GrIPoint16  fAtlasLocation;
 
-    void init(GrGlyph::PackedID packed, const GrIRect& bounds) {
-        fAtlas = NULL;
+    void init(GrGlyph::PackedID packed, const SkIRect& bounds) {
+        fPlot = NULL;
         fPath = NULL;
         fPackedID = packed;
         fBounds.set(bounds);
@@ -53,22 +50,22 @@ struct GrGlyph {
 
     ///////////////////////////////////////////////////////////////////////////
 
-    static inline unsigned ExtractSubPixelBitsFromFixed(GrFixed pos) {
+    static inline unsigned ExtractSubPixelBitsFromFixed(SkFixed pos) {
         // two most significant fraction bits from fixed-point
         return (pos >> 14) & 3;
     }
 
-    static inline PackedID Pack(uint16_t glyphID, GrFixed x, GrFixed y) {
+    static inline PackedID Pack(uint16_t glyphID, SkFixed x, SkFixed y) {
         x = ExtractSubPixelBitsFromFixed(x);
         y = ExtractSubPixelBitsFromFixed(y);
         return (x << 18) | (y << 16) | glyphID;
     }
 
-    static inline GrFixed UnpackFixedX(PackedID packed) {
+    static inline SkFixed UnpackFixedX(PackedID packed) {
         return ((packed >> 18) & 3) << 14;
     }
 
-    static inline GrFixed UnpackFixedY(PackedID packed) {
+    static inline SkFixed UnpackFixedY(PackedID packed) {
         return ((packed >> 16) & 3) << 14;
     }
 
@@ -79,4 +76,3 @@ struct GrGlyph {
 
 
 #endif
-

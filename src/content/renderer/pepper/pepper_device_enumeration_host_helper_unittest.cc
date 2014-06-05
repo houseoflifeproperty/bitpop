@@ -18,24 +18,22 @@
 #include "ppapi/proxy/resource_message_test_sink.h"
 #include "ppapi/shared_impl/ppapi_permissions.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/plugins/ppapi/mock_plugin_delegate.h"
+#include "url/gurl.h"
 
 namespace content {
 
 namespace {
 
-class TestPluginDelegate : public webkit::ppapi::MockPluginDelegate {
+class TestDelegate : public PepperDeviceEnumerationHostHelper::Delegate {
  public:
-  TestPluginDelegate() : last_used_id_(0) {
-  }
+  TestDelegate() : last_used_id_(0) {}
 
-  virtual ~TestPluginDelegate() {
-    CHECK(callbacks_.empty());
-  }
+  virtual ~TestDelegate() { CHECK(callbacks_.empty()); }
 
-  virtual int EnumerateDevices(
-      PP_DeviceType_Dev /* type */,
-      const EnumerateDevicesCallback& callback) OVERRIDE {
+  virtual int EnumerateDevices(PP_DeviceType_Dev /* type */,
+                               const GURL& /* document_url */,
+                               const EnumerateDevicesCallback& callback)
+      OVERRIDE {
     last_used_id_++;
     callbacks_[last_used_id_] = callback;
     return last_used_id_;
@@ -51,14 +49,13 @@ class TestPluginDelegate : public webkit::ppapi::MockPluginDelegate {
   // Returns false if |request_id| is not found.
   bool SimulateEnumerateResult(
       int request_id,
-      bool succeeded,
       const std::vector<ppapi::DeviceRefData>& devices) {
     std::map<int, EnumerateDevicesCallback>::iterator iter =
         callbacks_.find(request_id);
     if (iter == callbacks_.end())
       return false;
 
-    iter->second.Run(request_id, succeeded, devices);
+    iter->second.Run(request_id, devices);
     return true;
   }
 
@@ -70,40 +67,18 @@ class TestPluginDelegate : public webkit::ppapi::MockPluginDelegate {
   std::map<int, EnumerateDevicesCallback> callbacks_;
   int last_used_id_;
 
-  DISALLOW_COPY_AND_ASSIGN(TestPluginDelegate);
-};
-
-class TestResourceHost : public ppapi::host::ResourceHost,
-                         public PepperDeviceEnumerationHostHelper::Delegate {
- public:
-  TestResourceHost(ppapi::host::PpapiHost* host,
-                   PP_Instance instance,
-                   PP_Resource resource,
-                   webkit::ppapi::PluginDelegate* delegate)
-      : ResourceHost(host, instance, resource),
-        delegate_(delegate) {
-  }
-
-  virtual ~TestResourceHost() {}
-
-  virtual webkit::ppapi::PluginDelegate* GetPluginDelegate() OVERRIDE {
-    return delegate_;
-  }
-
- private:
-  webkit::ppapi::PluginDelegate* delegate_;
-
-  DISALLOW_COPY_AND_ASSIGN(TestResourceHost);
+  DISALLOW_COPY_AND_ASSIGN(TestDelegate);
 };
 
 class PepperDeviceEnumerationHostHelperTest : public testing::Test {
  protected:
   PepperDeviceEnumerationHostHelperTest()
       : ppapi_host_(&sink_, ppapi::PpapiPermissions()),
-        resource_host_(&ppapi_host_, 12345, 67890, &delegate_),
-        device_enumeration_(&resource_host_, &resource_host_,
-                            PP_DEVICETYPE_DEV_AUDIOCAPTURE) {
-  }
+        resource_host_(&ppapi_host_, 12345, 67890),
+        device_enumeration_(&resource_host_,
+                            &delegate_,
+                            PP_DEVICETYPE_DEV_AUDIOCAPTURE,
+                            GURL("http://example.com")) {}
 
   virtual ~PepperDeviceEnumerationHostHelperTest() {}
 
@@ -113,8 +88,8 @@ class PepperDeviceEnumerationHostHelperTest : public testing::Test {
         resource_host_.pp_resource(), 123);
     ppapi::host::HostMessageContext context(call_params);
     int32_t result = PP_ERROR_FAILED;
-    ASSERT_TRUE(device_enumeration_.HandleResourceMessage(
-        msg, &context, &result));
+    ASSERT_TRUE(
+        device_enumeration_.HandleResourceMessage(msg, &context, &result));
     EXPECT_EQ(PP_OK, result);
   }
 
@@ -125,7 +100,8 @@ class PepperDeviceEnumerationHostHelperTest : public testing::Test {
     IPC::Message reply_msg;
     ASSERT_TRUE(sink_.GetFirstResourceReplyMatching(
         PpapiPluginMsg_DeviceEnumeration_NotifyDeviceChange::ID,
-        &reply_params, &reply_msg));
+        &reply_params,
+        &reply_msg));
     sink_.ClearMessages();
 
     EXPECT_EQ(PP_OK, reply_params.result());
@@ -134,15 +110,15 @@ class PepperDeviceEnumerationHostHelperTest : public testing::Test {
     std::vector<ppapi::DeviceRefData> reply_data;
     ASSERT_TRUE(ppapi::UnpackMessage<
         PpapiPluginMsg_DeviceEnumeration_NotifyDeviceChange>(
-            reply_msg, &reply_callback_id, &reply_data));
+        reply_msg, &reply_callback_id, &reply_data));
     EXPECT_EQ(callback_id, reply_callback_id);
     EXPECT_EQ(expected, reply_data);
   }
 
-  TestPluginDelegate delegate_;
+  TestDelegate delegate_;
   ppapi::proxy::ResourceMessageTestSink sink_;
   ppapi::host::PpapiHost ppapi_host_;
-  TestResourceHost resource_host_;
+  ppapi::host::ResourceHost resource_host_;
   PepperDeviceEnumerationHostHelper device_enumeration_;
 
  private:
@@ -157,8 +133,8 @@ TEST_F(PepperDeviceEnumerationHostHelperTest, EnumerateDevices) {
       resource_host_.pp_resource(), 123);
   ppapi::host::HostMessageContext context(call_params);
   int32_t result = PP_ERROR_FAILED;
-  ASSERT_TRUE(device_enumeration_.HandleResourceMessage(msg, &context,
-                                                        &result));
+  ASSERT_TRUE(
+      device_enumeration_.HandleResourceMessage(msg, &context, &result));
   EXPECT_EQ(PP_OK_COMPLETIONPENDING, result);
 
   EXPECT_EQ(1U, delegate_.GetRegisteredCallbackCount());
@@ -174,7 +150,7 @@ TEST_F(PepperDeviceEnumerationHostHelperTest, EnumerateDevices) {
   data_item.name = "name_2";
   data_item.id = "id_2";
   data.push_back(data_item);
-  ASSERT_TRUE(delegate_.SimulateEnumerateResult(request_id, true, data));
+  ASSERT_TRUE(delegate_.SimulateEnumerateResult(request_id, data));
 
   // StopEnumerateDevices() should have been called since the EnumerateDevices
   // message is not a persistent request.
@@ -185,15 +161,16 @@ TEST_F(PepperDeviceEnumerationHostHelperTest, EnumerateDevices) {
   IPC::Message reply_msg;
   ASSERT_TRUE(sink_.GetFirstResourceReplyMatching(
       PpapiPluginMsg_DeviceEnumeration_EnumerateDevicesReply::ID,
-      &reply_params, &reply_msg));
+      &reply_params,
+      &reply_msg));
 
   EXPECT_EQ(call_params.sequence(), reply_params.sequence());
   EXPECT_EQ(PP_OK, reply_params.result());
 
   std::vector<ppapi::DeviceRefData> reply_data;
   ASSERT_TRUE(ppapi::UnpackMessage<
-      PpapiPluginMsg_DeviceEnumeration_EnumerateDevicesReply>(
-          reply_msg, &reply_data));
+      PpapiPluginMsg_DeviceEnumeration_EnumerateDevicesReply>(reply_msg,
+                                                              &reply_data));
   EXPECT_EQ(data, reply_data);
 }
 
@@ -205,7 +182,7 @@ TEST_F(PepperDeviceEnumerationHostHelperTest, MonitorDeviceChange) {
   int request_id = delegate_.last_used_id();
 
   std::vector<ppapi::DeviceRefData> data;
-  ASSERT_TRUE(delegate_.SimulateEnumerateResult(request_id, true, data));
+  ASSERT_TRUE(delegate_.SimulateEnumerateResult(request_id, data));
 
   // StopEnumerateDevices() shouldn't be called because the MonitorDeviceChange
   // message is a persistent request.
@@ -222,7 +199,7 @@ TEST_F(PepperDeviceEnumerationHostHelperTest, MonitorDeviceChange) {
   data_item.name = "name_2";
   data_item.id = "id_2";
   data.push_back(data_item);
-  ASSERT_TRUE(delegate_.SimulateEnumerateResult(request_id, true, data));
+  ASSERT_TRUE(delegate_.SimulateEnumerateResult(request_id, data));
   EXPECT_EQ(1U, delegate_.GetRegisteredCallbackCount());
 
   CheckNotifyDeviceChangeMessage(callback_id, data);
@@ -238,7 +215,7 @@ TEST_F(PepperDeviceEnumerationHostHelperTest, MonitorDeviceChange) {
   data_item.name = "name_3";
   data_item.id = "id_3";
   data.push_back(data_item);
-  ASSERT_TRUE(delegate_.SimulateEnumerateResult(request_id2, true, data));
+  ASSERT_TRUE(delegate_.SimulateEnumerateResult(request_id2, data));
 
   CheckNotifyDeviceChangeMessage(callback_id2, data);
 
@@ -247,8 +224,8 @@ TEST_F(PepperDeviceEnumerationHostHelperTest, MonitorDeviceChange) {
       resource_host_.pp_resource(), 123);
   ppapi::host::HostMessageContext context(call_params);
   int32_t result = PP_ERROR_FAILED;
-  ASSERT_TRUE(device_enumeration_.HandleResourceMessage(
-      msg, &context, &result));
+  ASSERT_TRUE(
+      device_enumeration_.HandleResourceMessage(msg, &context, &result));
   EXPECT_EQ(PP_OK, result);
 
   EXPECT_EQ(0U, delegate_.GetRegisteredCallbackCount());

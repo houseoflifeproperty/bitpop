@@ -95,8 +95,7 @@ def CheckChangeLintsClean(input_api, output_api, source_file_filter=None):
   _RE_IS_TEST = input_api.re.compile(r'.*tests?.(cc|h)$')
   result = []
 
-  # Initialize cpplint.
-  import cpplint
+  cpplint = input_api.cpplint
   # Access to a protected member _XX of a client class
   # pylint: disable=W0212
   cpplint._cpplint_state.ResetErrorCounts()
@@ -229,7 +228,7 @@ def CheckChangeHasNoCrAndHasOnlyOneEol(input_api, output_api,
 
 def _ReportErrorFileAndLine(filename, line_num, dummy_line):
   """Default error formatter for _FindNewViolationsOfRule."""
-  return '%s, line %s' % (filename, line_num)
+  return '%s:%s' % (filename, line_num)
 
 
 def _FindNewViolationsOfRule(callable_rule, input_api, source_file_filter=None,
@@ -312,23 +311,38 @@ def CheckChangeHasNoStrayWhitespace(input_api, output_api,
   return []
 
 
-def CheckLongLines(input_api, output_api, maxlen=80, source_file_filter=None):
+def CheckLongLines(input_api, output_api, maxlen, source_file_filter=None):
   """Checks that there aren't any lines longer than maxlen characters in any of
   the text files to be submitted.
   """
   maxlens = {
       'java': 100,
+      # This is specifically for Android's handwritten makefiles (Android.mk).
+      'mk': 200,
       '': maxlen,
   }
-  # Note: these are C++ specific but processed on all languages. :(
-  MACROS = ('#define', '#include', '#import', '#pragma', '#if', '#endif')
 
-  # Special java statements.
-  SPECIAL_JAVA_STARTS = ('package ', 'import ')
+  # Language specific exceptions to max line length.
+  # '.h' is considered an obj-c file extension, since OBJC_EXCEPTIONS are a
+  # superset of CPP_EXCEPTIONS.
+  CPP_FILE_EXTS = ('c', 'cc')
+  CPP_EXCEPTIONS = ('#define', '#endif', '#if', '#include', '#pragma')
+  JAVA_FILE_EXTS = ('java',)
+  JAVA_EXCEPTIONS = ('import ', 'package ')
+  OBJC_FILE_EXTS = ('h', 'm', 'mm')
+  OBJC_EXCEPTIONS = ('#define', '#endif', '#if', '#import', '#include',
+                     '#pragma')
+
+  LANGUAGE_EXCEPTIONS = [
+    (CPP_FILE_EXTS, CPP_EXCEPTIONS),
+    (JAVA_FILE_EXTS, JAVA_EXCEPTIONS),
+    (OBJC_FILE_EXTS, OBJC_EXCEPTIONS),
+  ]
 
   def no_long_lines(file_extension, line):
-    # Allow special java statements to be as long as neccessary.
-    if file_extension == 'java' and line.startswith(SPECIAL_JAVA_STARTS):
+    # Check for language specific exceptions.
+    if any(file_extension in exts and line.startswith(exceptions)
+           for exts, exceptions in LANGUAGE_EXCEPTIONS):
       return True
 
     file_maxlen = maxlens.get(file_extension, maxlens[''])
@@ -345,8 +359,7 @@ def CheckLongLines(input_api, output_api, maxlen=80, source_file_filter=None):
       return False
 
     return (
-        line.startswith(MACROS) or
-        any((url in line) for url in ('http://', 'https://')) or
+      any((url in line) for url in ('file://', 'http://', 'https://')) or
         input_api.re.match(
           r'.*[A-Za-z][A-Za-z_0-9]{%d,}.*' % long_symbol, line))
 
@@ -482,12 +495,11 @@ def CheckTreeIsOpen(input_api, output_api,
                                       long_text=str(e))]
   return []
 
-
-def RunUnitTestsInDirectory(
-    input_api, output_api, directory, whitelist=None, blacklist=None):
+def GetUnitTestsInDirectory(
+    input_api, output_api, directory, whitelist=None, blacklist=None, env=None):
   """Lists all files in a directory and runs them. Doesn't recurse.
 
-  It's mainly a wrapper for RunUnitTests. USe whitelist and blacklist to filter
+  It's mainly a wrapper for RunUnitTests. Use whitelist and blacklist to filter
   tests accordingly.
   """
   unit_tests = []
@@ -516,10 +528,10 @@ def RunUnitTestsInDirectory(
           'Out of %d files, found none that matched w=%r, b=%r in directory %s'
           % (found, whitelist, blacklist, directory))
     ]
-  return RunUnitTests(input_api, output_api, unit_tests)
+  return GetUnitTests(input_api, output_api, unit_tests, env)
 
 
-def RunUnitTests(input_api, output_api, unit_tests):
+def GetUnitTests(input_api, output_api, unit_tests, env=None):
   """Runs all unit tests in a directory.
 
   On Windows, sys.executable is used for unit tests ending with ".py".
@@ -538,22 +550,19 @@ def RunUnitTests(input_api, output_api, unit_tests):
       cmd = [input_api.python_executable]
     cmd.append(unit_test)
     if input_api.verbose:
-      print('Running %s' % unit_test)
       cmd.append('--verbose')
-    try:
-      if input_api.verbose:
-        input_api.subprocess.check_call(cmd, cwd=input_api.PresubmitLocalPath())
-      else:
-        input_api.subprocess.check_output(
-            cmd,
-            stderr=input_api.subprocess.STDOUT,
-            cwd=input_api.PresubmitLocalPath())
-    except (OSError, input_api.subprocess.CalledProcessError), e:
-      results.append(message_type('%s failed!\n%s' % (unit_test, e)))
+    kwargs = {'cwd': input_api.PresubmitLocalPath()}
+    if env:
+      kwargs['env'] = env
+    results.append(input_api.Command(
+        name=unit_test,
+        cmd=cmd,
+        kwargs=kwargs,
+        message=message_type))
   return results
 
 
-def RunPythonUnitTests(input_api, output_api, unit_tests):
+def GetPythonUnitTests(input_api, output_api, unit_tests):
   """Run the unit tests out of process, capture the output and use the result
   code to determine success.
 
@@ -589,12 +598,40 @@ def RunPythonUnitTests(input_api, output_api, unit_tests):
         backpath.append(env.get('PYTHONPATH'))
       env['PYTHONPATH'] = input_api.os_path.pathsep.join((backpath))
     cmd = [input_api.python_executable, '-m', '%s' % unit_test]
-    try:
-      input_api.subprocess.check_output(
-          cmd, stderr=input_api.subprocess.STDOUT, cwd=cwd, env=env)
-    except (OSError, input_api.subprocess.CalledProcessError), e:
-      results.append(message_type('%s failed!\n%s' % (unit_test_name, e)))
+    results.append(input_api.Command(
+        name=unit_test_name,
+        cmd=cmd,
+        kwargs={'env': env, 'cwd': cwd},
+        message=message_type))
   return results
+
+
+def RunUnitTestsInDirectory(input_api, *args, **kwargs):
+  """Run tests in a directory serially.
+
+  For better performance, use GetUnitTestsInDirectory and then
+  pass to input_api.RunTests.
+  """
+  return input_api.RunTests(
+      GetUnitTestsInDirectory(input_api, *args, **kwargs), False)
+
+
+def RunUnitTests(input_api, *args, **kwargs):
+  """Run tests serially.
+
+  For better performance, use GetUnitTests and then pass to
+  input_api.RunTests.
+  """
+  return input_api.RunTests(GetUnitTests(input_api, *args, **kwargs), False)
+
+
+def RunPythonUnitTests(input_api, *args, **kwargs):
+  """Run python tests in a directory serially.
+
+  DEPRECATED
+  """
+  return input_api.RunTests(
+      GetPythonUnitTests(input_api, *args, **kwargs), False)
 
 
 def _FetchAllFiles(input_api, white_list, black_list):
@@ -625,22 +662,40 @@ def _FetchAllFiles(input_api, white_list, black_list):
   return files
 
 
-def RunPylint(input_api, output_api, white_list=None, black_list=None,
-              disabled_warnings=None):
+def GetPylint(input_api, output_api, white_list=None, black_list=None,
+              disabled_warnings=None, extra_paths_list=None):
   """Run pylint on python files.
 
   The default white_list enforces looking only at *.py files.
   """
   white_list = tuple(white_list or ('.*\.py$',))
   black_list = tuple(black_list or input_api.DEFAULT_BLACK_LIST)
+  extra_paths_list = extra_paths_list or []
+
   if input_api.is_committing:
     error_type = output_api.PresubmitError
   else:
     error_type = output_api.PresubmitPromptWarning
 
   # Only trigger if there is at least one python file affected.
-  src_filter = lambda x: input_api.FilterSourceFile(x, white_list, black_list)
+  def rel_path(regex):
+    """Modifies a regex for a subject to accept paths relative to root."""
+    def samefile(a, b):
+      # Default implementation for platforms lacking os.path.samefile
+      # (like Windows).
+      return input_api.os_path.abspath(a) == input_api.os_path.abspath(b)
+    samefile = getattr(input_api.os_path, 'samefile', samefile)
+    if samefile(input_api.PresubmitLocalPath(),
+                input_api.change.RepositoryRoot()):
+      return regex
+
+    prefix = input_api.os_path.join(input_api.os_path.relpath(
+        input_api.PresubmitLocalPath(), input_api.change.RepositoryRoot()), '')
+    return input_api.re.escape(prefix) + regex
+  src_filter = lambda x: input_api.FilterSourceFile(
+      x, map(rel_path, white_list), map(rel_path, black_list))
   if not input_api.AffectedSourceFiles(src_filter):
+    input_api.logging.info('Skipping pylint: no matching changes.')
     return []
 
   extra_args = ['--rcfile=%s' % input_api.os_path.join(_HERE, 'pylintrc')]
@@ -650,54 +705,55 @@ def RunPylint(input_api, output_api, white_list=None, black_list=None,
   files = _FetchAllFiles(input_api, white_list, black_list)
   if not files:
     return []
+  files.sort()
 
+  input_api.logging.info('Running pylint on %d files', len(files))
+  input_api.logging.debug('Running pylint on: %s', files)
   # Copy the system path to the environment so pylint can find the right
   # imports.
   env = input_api.environ.copy()
   import sys
-  env['PYTHONPATH'] = input_api.os_path.pathsep.join(sys.path)
+  env['PYTHONPATH'] = input_api.os_path.pathsep.join(
+      extra_paths_list + sys.path).encode('utf8')
 
-  def run_lint(files):
-    # We can't import pylint directly due to licensing issues, so we run
-    # it in another process. Windows needs help running python files so we
-    # explicitly specify the interpreter to use. It also has limitations on
-    # the size of the command-line, so we pass arguments via a pipe.
-    command = [input_api.python_executable,
-               input_api.os_path.join(_HERE, 'third_party', 'pylint.py'),
-               '--args-on-stdin']
-    try:
-      child = input_api.subprocess.Popen(command, env=env,
-          stdin=input_api.subprocess.PIPE)
+  def GetPylintCmd(files):
+    # Windows needs help running python files so we explicitly specify
+    # the interpreter to use. It also has limitations on the size of
+    # the command-line, so we pass arguments via a pipe.
+    if len(files) == 1:
+      description = files[0]
+    else:
+      description = '%s files' % len(files)
 
-      # Dump the arguments to the child process via a pipe.
-      for filename in files:
-        child.stdin.write(filename + '\n')
-      for arg in extra_args:
-        child.stdin.write(arg + '\n')
-      child.stdin.close()
+    return input_api.Command(
+        name='Pylint (%s)' % description,
+        cmd=[input_api.python_executable,
+             input_api.os_path.join(_HERE, 'third_party', 'pylint.py'),
+             '--args-on-stdin'],
+        kwargs={'env': env, 'stdin': '\n'.join(files + extra_args)},
+        message=error_type)
 
-      child.communicate()
-      return child.returncode
-    except OSError:
-      return 'Pylint failed!'
-
-  result = None
   # Always run pylint and pass it all the py files at once.
   # Passing py files one at time is slower and can produce
   # different results.  input_api.verbose used to be used
   # to enable this behaviour but differing behaviour in
   # verbose mode is not desirable.
+  # Leave this unreachable code in here so users can make
+  # a quick local edit to diagnose pylint issues more
+  # easily.
   if True:
-    result = run_lint(sorted(files))
+    return [GetPylintCmd(files)]
   else:
-    for filename in sorted(files):
-      print('Running pylint on %s' % filename)
-      result = run_lint([filename]) or result
-  if isinstance(result, basestring):
-    return [error_type(result)]
-  elif result:
-    return [error_type('Fix pylint errors first.')]
-  return []
+    return map(GetPylintCmd, files)
+
+
+def RunPylint(input_api, *args, **kwargs):
+  """Legacy presubmit function.
+
+  For better performance, get all tests and then pass to
+  input_api.RunTests.
+  """
+  return input_api.RunTests(GetPylint(input_api, *args, **kwargs), False)
 
 
 # TODO(dpranke): Get the host_url from the input_api instead
@@ -742,7 +798,8 @@ def CheckBuildbotPendingBuilds(input_api, output_api, url, max_pendings,
   return []
 
 
-def CheckOwners(input_api, output_api, source_file_filter=None):
+def CheckOwners(input_api, output_api, source_file_filter=None,
+                author_counts_as_owner=True):
   if input_api.is_committing:
     if input_api.tbr:
       return [output_api.PresubmitNotifyResult(
@@ -765,25 +822,24 @@ def CheckOwners(input_api, output_api, source_file_filter=None):
       owners_db.email_regexp,
       approval_needed=input_api.is_committing)
 
-  if owner_email:
-    message = ''
-    reviewers_plus_owner = reviewers.union(set([owner_email]))
-  else:
-    message = ('\nUntil the issue is uploaded, this list will include '
-               'directories for which you \nare an OWNER.')
-    owner_email = ''
-    reviewers_plus_owner = set()
+  owner_email = owner_email or input_api.change.author_email
 
-  missing_directories = owners_db.directories_not_covered_by(affected_files,
-      reviewers_plus_owner)
-  if missing_directories:
+  if author_counts_as_owner and owner_email:
+    reviewers_plus_owner = set([owner_email]).union(reviewers)
+    missing_files = owners_db.files_not_covered_by(affected_files,
+        reviewers_plus_owner)
+  else:
+    missing_files = owners_db.files_not_covered_by(affected_files, reviewers)
+
+  if missing_files:
     output_list = [
-        output('Missing %s for files in these directories:\n    %s%s' %
-               (needed, '\n    '.join(missing_directories), message))]
+        output('Missing %s for these files:\n    %s' %
+               (needed, '\n    '.join(sorted(missing_files))))]
     if not input_api.is_committing:
-      suggested_owners = owners_db.reviewers_for(affected_files)
-      output_list.append(output('Suggested OWNERS:\n    %s' %
-                                ('\n    '.join(suggested_owners))))
+      suggested_owners = owners_db.reviewers_for(missing_files, owner_email)
+      output_list.append(output('Suggested OWNERS: ' +
+          '(Use "git-cl owners" to interactively select owners.)\n    %s' %
+          ('\n    '.join(suggested_owners or []))))
     return output_list
 
   if input_api.is_committing and not reviewers:
@@ -799,6 +855,18 @@ def _GetRietveldIssueProps(input_api, messages):
         issue=int(issue), messages=messages)
 
 
+def _ReviewersFromChange(change):
+  """Return the reviewers specified in the |change|, if any."""
+  reviewers = set()
+  if change.R:
+    reviewers.update(set([r.strip() for r in change.R.split(',')]))
+  if change.TBR:
+    reviewers.update(set([r.strip() for r in change.TBR.split(',')]))
+
+  # Drop reviewers that aren't specified in email address format.
+  return set(reviewer for reviewer in reviewers if '@' in reviewer)
+
+
 def _RietveldOwnerAndReviewers(input_api, email_regexp, approval_needed=False):
   """Return the owner and reviewers of a change, if any.
 
@@ -807,7 +875,10 @@ def _RietveldOwnerAndReviewers(input_api, email_regexp, approval_needed=False):
   """
   issue_props = _GetRietveldIssueProps(input_api, True)
   if not issue_props:
-    return None, None
+    reviewers = set()
+    if not approval_needed:
+      reviewers = _ReviewersFromChange(input_api.change)
+    return None, reviewers
 
   if not approval_needed:
     return issue_props['owner_email'], set(issue_props['reviewers'])
@@ -877,7 +948,7 @@ def CheckSingletonInHeaders(input_api, output_api, source_file_filter=None):
 def PanProjectChecks(input_api, output_api,
                      excluded_paths=None, text_files=None,
                      license_header=None, project_name=None,
-                     owners_check=True):
+                     owners_check=True, maxlen=80):
   """Checks that ALL chromium orbit projects should use.
 
   These are checks to be run on all Chromium orbit project, including:
@@ -903,11 +974,11 @@ def PanProjectChecks(input_api, output_api,
   project_name = project_name or 'Chromium'
 
   # Accept any year number from 2006 to the current year, or the special
-  # 2006-2008 string used on the oldest files. 2006-2008 is deprecated, but
-  # tolerate it until it's removed from all files.
+  # 2006-20xx string used on the oldest files. 2006-20xx is deprecated, but
+  # tolerated on old files.
   current_year = int(input_api.time.strftime('%Y'))
   allowed_years = (str(s) for s in reversed(xrange(2006, current_year + 1)))
-  years_re = '(' + '|'.join(allowed_years) + '|2006-2008)'
+  years_re = '(' + '|'.join(allowed_years) + '|2006-2008|2006-2009|2006-2010)'
 
   # The (c) is deprecated, but tolerate it until it's removed from all files.
   license_header = license_header or (
@@ -949,7 +1020,7 @@ def PanProjectChecks(input_api, output_api,
 
   snapshot("checking long lines")
   results.extend(input_api.canned_checks.CheckLongLines(
-      input_api, output_api, source_file_filter=sources))
+      input_api, output_api, maxlen, source_file_filter=sources))
   snapshot( "checking tabs")
   results.extend(input_api.canned_checks.CheckChangeHasNoTabs(
       input_api, output_api, source_file_filter=sources))
@@ -988,3 +1059,15 @@ def PanProjectChecks(input_api, output_api,
         input_api, output_api))
   snapshot("done")
   return results
+
+
+def CheckPatchFormatted(input_api, output_api):
+  import git_cl
+  cmd = ['cl', 'format', '--dry-run', input_api.PresubmitLocalPath()]
+  code, _ = git_cl.RunGitWithCode(cmd, suppress_stderr=True)
+  if code == 2:
+    return [output_api.PresubmitPromptWarning(
+      'Your patch is not formatted, please run git cl format.')]
+  # As this is just a warning, ignore all other errors if the user
+  # happens to have a broken clang-format, doesn't use git, etc etc.
+  return []

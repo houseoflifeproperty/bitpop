@@ -60,7 +60,7 @@ class VIEWS_EXPORT ScrollBar : public View {
   virtual ~ScrollBar();
 
   // Overridden from View:
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
   // Returns whether this scrollbar is horizontal.
   bool IsHorizontal() const;
@@ -85,6 +85,13 @@ class VIEWS_EXPORT ScrollBar : public View {
   // For a vertical scrollbar, this is the width of the scrollbar, likewise it
   // is the height for a horizontal scrollbar.
   virtual int GetLayoutSize() const = 0;
+
+  // Get the width or height for this scrollbar which overlaps with the content.
+  // Default is 0.
+  virtual int GetContentOverlapSize() const;
+
+  virtual void OnMouseEnteredScrollView(const ui::MouseEvent& event);
+  virtual void OnMouseExitedScrollView(const ui::MouseEvent& event);
 
  protected:
   // Create new scrollbar, either horizontal or vertical. These are protected

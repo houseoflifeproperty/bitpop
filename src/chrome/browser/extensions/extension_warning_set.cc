@@ -4,12 +4,12 @@
 
 #include "chrome/browser/extensions/extension_warning_set.h"
 
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/browser_process.h"
-#include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_set.h"
+#include "base/files/file_path.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
@@ -158,14 +158,43 @@ ExtensionWarning ExtensionWarning::CreateRepeatedCacheFlushesWarning(
       message_parameters);
 }
 
+// static
+ExtensionWarning ExtensionWarning::CreateDownloadFilenameConflictWarning(
+    const std::string& losing_extension_id,
+    const std::string& winning_extension_id,
+    const base::FilePath& losing_filename,
+    const base::FilePath& winning_filename) {
+  std::vector<std::string> message_parameters;
+  message_parameters.push_back(base::UTF16ToUTF8(
+      losing_filename.LossyDisplayName()));
+  message_parameters.push_back(kTranslate + winning_extension_id);
+  message_parameters.push_back(base::UTF16ToUTF8(
+      winning_filename.LossyDisplayName()));
+  return ExtensionWarning(
+      kDownloadFilenameConflict,
+      losing_extension_id,
+      IDS_EXTENSION_WARNINGS_DOWNLOAD_FILENAME_CONFLICT,
+      message_parameters);
+}
+
+// static
+ExtensionWarning ExtensionWarning::CreateReloadTooFrequentWarning(
+    const std::string& extension_id) {
+  std::vector<std::string> message_parameters;
+  return ExtensionWarning(kReloadTooFrequent,
+                          extension_id,
+                          IDS_EXTENSION_WARNING_RELOAD_TOO_FREQUENT,
+                          message_parameters);
+}
+
 std::string ExtensionWarning::GetLocalizedMessage(
     const ExtensionSet* extensions) const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // These parameters may be unsafe (URLs and Extension names) and need
   // to be HTML-escaped before being embedded in the UI. Also extension IDs
   // are translated to full extension names.
-  std::vector<string16> final_parameters;
+  std::vector<base::string16> final_parameters;
   for (size_t i = 0; i < message_parameters_.size(); ++i) {
     std::string message = message_parameters_[i];
     if (StartsWithASCII(message, kTranslate, true)) {
@@ -174,7 +203,7 @@ std::string ExtensionWarning::GetLocalizedMessage(
           extensions->GetByID(extension_id);
       message = extension ? extension->name() : extension_id;
     }
-    final_parameters.push_back(UTF8ToUTF16(net::EscapeForHTML(message)));
+    final_parameters.push_back(base::UTF8ToUTF16(net::EscapeForHTML(message)));
   }
 
   COMPILE_ASSERT(kMaxNumberOfParameters == 4u, YouNeedToAddMoreCaseStatements);

@@ -39,31 +39,8 @@ namespace cricket {
 
 struct CapturedFrame;
 
-// Class that takes ownership of the frame passed to it.
-class FrameBuffer {
- public:
-  FrameBuffer();
-  explicit FrameBuffer(size_t length);
-  ~FrameBuffer();
-
-  void SetData(char* data, size_t length);
-  void ReturnData(char** data, size_t* length);
-  char* data();
-  size_t length() const;
-
-  webrtc::VideoFrame* frame();
-  const webrtc::VideoFrame* frame() const;
-
- private:
-  talk_base::scoped_array<char> data_;
-  size_t length_;
-  webrtc::VideoFrame video_frame_;
-};
-
 class WebRtcVideoFrame : public VideoFrame {
  public:
-  typedef talk_base::RefCountedObject<FrameBuffer> RefCountedBuffer;
-
   WebRtcVideoFrame();
   ~WebRtcVideoFrame();
 
@@ -71,30 +48,33 @@ class WebRtcVideoFrame : public VideoFrame {
   // "h" can be negative indicating a vertically flipped image.
   // "dh" is destination height if cropping is desired and is always positive.
   // Returns "true" if successful.
-  bool Init(uint32 format, int w, int h, int dw, int dh,
-            uint8* sample, size_t sample_size,
-            size_t pixel_width, size_t pixel_height,
+  bool Init(uint32 format, int w, int h, int dw, int dh, uint8* sample,
+            size_t sample_size, size_t pixel_width, size_t pixel_height,
             int64 elapsed_time, int64 time_stamp, int rotation);
 
   bool Init(const CapturedFrame* frame, int dw, int dh);
 
+  // Aliases this WebRtcVideoFrame to a CapturedFrame. |frame| must outlive
+  // this WebRtcVideoFrame.
+  bool Alias(const CapturedFrame* frame, int dw, int dh);
+
   bool InitToBlack(int w, int h, size_t pixel_width, size_t pixel_height,
                    int64 elapsed_time, int64 time_stamp);
 
-  void Attach(uint8* buffer, size_t buffer_size, int w, int h,
-              size_t pixel_width, size_t pixel_height,
-              int64 elapsed_time, int64 time_stamp, int rotation);
+  // Aliases this WebRtcVideoFrame to a memory buffer. |buffer| must outlive
+  // this WebRtcVideoFrame.
+  void Alias(uint8* buffer, size_t buffer_size, int w, int h,
+             size_t pixel_width, size_t pixel_height, int64 elapsed_time,
+             int64 time_stamp, int rotation);
 
-  void Detach(uint8** data, size_t* length);
-  bool AddWatermark();
-  webrtc::VideoFrame* frame() { return video_buffer_->frame(); }
-  webrtc::VideoFrame* frame() const { return video_buffer_->frame(); }
+  webrtc::VideoFrame* frame();
+  const webrtc::VideoFrame* frame() const;
 
   // From base class VideoFrame.
-  virtual bool Reset(uint32 format, int w, int h, int dw, int dh,
-                   uint8* sample, size_t sample_size,
-                   size_t pixel_width, size_t pixel_height,
-                   int64 elapsed_time, int64 time_stamp, int rotation);
+  virtual bool Reset(uint32 format, int w, int h, int dw, int dh, uint8* sample,
+                     size_t sample_size, size_t pixel_width,
+                     size_t pixel_height, int64 elapsed_time, int64 time_stamp,
+                     int rotation);
 
   virtual size_t GetWidth() const;
   virtual size_t GetHeight() const;
@@ -107,6 +87,7 @@ class WebRtcVideoFrame : public VideoFrame {
   virtual int32 GetYPitch() const { return frame()->Width(); }
   virtual int32 GetUPitch() const { return (frame()->Width() + 1) / 2; }
   virtual int32 GetVPitch() const { return (frame()->Width() + 1) / 2; }
+  virtual void* GetNativeHandle() const { return NULL; }
 
   virtual size_t GetPixelWidth() const { return pixel_width_; }
   virtual size_t GetPixelHeight() const { return pixel_height_; }
@@ -115,9 +96,7 @@ class WebRtcVideoFrame : public VideoFrame {
   virtual void SetElapsedTime(int64 elapsed_time) {
     elapsed_time_ = elapsed_time;
   }
-  virtual void SetTimeStamp(int64 time_stamp) {
-    time_stamp_ = time_stamp;
-  }
+  virtual void SetTimeStamp(int64 time_stamp) { time_stamp_ = time_stamp; }
 
   virtual int GetRotation() const { return rotation_; }
 
@@ -128,20 +107,21 @@ class WebRtcVideoFrame : public VideoFrame {
                                     size_t size, int stride_rgb) const;
 
  private:
-  void Attach(RefCountedBuffer* video_buffer,
-              size_t buffer_size, int w, int h,
-              size_t pixel_width, size_t pixel_height,
-              int64 elapsed_time, int64 time_stamp, int rotation);
+  class FrameBuffer;
+  typedef talk_base::RefCountedObject<FrameBuffer> RefCountedBuffer;
 
-  virtual VideoFrame* CreateEmptyFrame(int w, int h,
-                                       size_t pixel_width, size_t pixel_height,
-                                       int64 elapsed_time,
+  void Attach(RefCountedBuffer* video_buffer, size_t buffer_size, int w, int h,
+              size_t pixel_width, size_t pixel_height, int64 elapsed_time,
+              int64 time_stamp, int rotation);
+
+  virtual VideoFrame* CreateEmptyFrame(int w, int h, size_t pixel_width,
+                                       size_t pixel_height, int64 elapsed_time,
                                        int64 time_stamp) const;
-  void InitToEmptyBuffer(int w, int h,
-                         size_t pixel_width, size_t pixel_height,
+  void InitToEmptyBuffer(int w, int h, size_t pixel_width, size_t pixel_height,
                          int64 elapsed_time, int64 time_stamp);
 
   talk_base::scoped_refptr<RefCountedBuffer> video_buffer_;
+  bool is_black_;
   size_t pixel_width_;
   size_t pixel_height_;
   int64 elapsed_time_;

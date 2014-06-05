@@ -7,13 +7,13 @@
 #include "base/logging.h"
 #include "base/mac/bundle_locations.h"
 #import "base/mac/mac_util.h"
-#include "base/string16.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
-#include "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
+#include "third_party/google_toolbox_for_mac/src/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
@@ -120,8 +120,9 @@ void ShiftOriginY(NSView* view, CGFloat amount) {
 
 - (IBAction)save:(id)sender {
   DCHECK([self validateFields]);
-  string16 title = base::SysNSStringToUTF16([nameField_ stringValue]);
-  string16 keyword = base::SysNSStringToUTF16([keywordField_ stringValue]);
+  base::string16 title = base::SysNSStringToUTF16([nameField_ stringValue]);
+  base::string16 keyword =
+      base::SysNSStringToUTF16([keywordField_ stringValue]);
   std::string url = base::SysNSStringToUTF8([urlField_ stringValue]);
   controller_->AcceptAddOrEdit(title, keyword, url);
   [self doClose];
@@ -159,14 +160,15 @@ void ShiftOriginY(NSView* view, CGFloat amount) {
 // This sets the image state for all the controls and enables or disables the
 // done button. Returns YES if all the fields are valid.
 - (BOOL)validateFields {
-  string16 title = base::SysNSStringToUTF16([nameField_ stringValue]);
+  base::string16 title = base::SysNSStringToUTF16([nameField_ stringValue]);
   BOOL titleValid = controller_->IsTitleValid(title);
   [self setIsValid:titleValid
            toolTip:IDS_SEARCH_ENGINES_INVALID_TITLE_TT
       forImageView:nameImage_
          textField:nameField_];
 
-  string16 keyword = base::SysNSStringToUTF16([keywordField_ stringValue]);
+  base::string16 keyword =
+      base::SysNSStringToUTF16([keywordField_ stringValue]);
   BOOL keywordValid = controller_->IsKeywordValid(keyword);
   [self setIsValid:keywordValid
            toolTip:IDS_SEARCH_ENGINES_INVALID_KEYWORD_TT

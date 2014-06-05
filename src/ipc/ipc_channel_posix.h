@@ -10,11 +10,12 @@
 #include <sys/socket.h>  // for CMSG macros
 
 #include <queue>
+#include <set>
 #include <string>
 #include <vector>
 
-#include "base/message_loop.h"
-#include "base/process.h"
+#include "base/message_loop/message_loop.h"
+#include "base/process/process.h"
 #include "ipc/file_descriptor_set_posix.h"
 #include "ipc/ipc_channel_reader.h"
 
@@ -49,7 +50,7 @@
 namespace IPC {
 
 class Channel::ChannelImpl : public internal::ChannelReader,
-                             public MessageLoopForIO::Watcher {
+                             public base::MessageLoopForIO::Watcher {
  public:
   // Mirror methods of Channel, see ipc_channel.h for description.
   ChannelImpl(const IPC::ChannelHandle& channel_handle, Mode mode,
@@ -63,7 +64,7 @@ class Channel::ChannelImpl : public internal::ChannelReader,
   void CloseClientFileDescriptor();
   bool AcceptsConnections() const;
   bool HasAcceptedConnection() const;
-  bool GetClientEuid(uid_t* client_euid) const;
+  bool GetPeerEuid(uid_t* peer_euid) const;
   void ResetToAcceptingConnectionState();
   base::ProcessId peer_pid() const { return peer_pid_; }
   static bool IsNamedServerInitialized(const std::string& channel_id);
@@ -80,6 +81,8 @@ class Channel::ChannelImpl : public internal::ChannelReader,
   void ClosePipeOnError();
   int GetHelloMessageProcId();
   void QueueHelloMessage();
+  void CloseFileDescriptors(Message* msg);
+  void QueueCloseFDMessage(int fd, int hops);
 
   // ChannelReader implementation.
   virtual ReadState ReadData(char* buffer,
@@ -87,7 +90,7 @@ class Channel::ChannelImpl : public internal::ChannelReader,
                              int* bytes_read) OVERRIDE;
   virtual bool WillDispatchInputMessage(Message* msg) OVERRIDE;
   virtual bool DidEmptyInputBuffers() OVERRIDE;
-  virtual void HandleHelloMessage(const Message& msg) OVERRIDE;
+  virtual void HandleInternalMessage(const Message& msg) OVERRIDE;
 
 #if defined(IPC_USES_READWRITE)
   // Reads the next message from the fd_pipe_ and appends them to the
@@ -118,9 +121,10 @@ class Channel::ChannelImpl : public internal::ChannelReader,
 
   // After accepting one client connection on our server socket we want to
   // stop listening.
-  MessageLoopForIO::FileDescriptorWatcher server_listen_connection_watcher_;
-  MessageLoopForIO::FileDescriptorWatcher read_watcher_;
-  MessageLoopForIO::FileDescriptorWatcher write_watcher_;
+  base::MessageLoopForIO::FileDescriptorWatcher
+  server_listen_connection_watcher_;
+  base::MessageLoopForIO::FileDescriptorWatcher read_watcher_;
+  base::MessageLoopForIO::FileDescriptorWatcher write_watcher_;
 
   // Indicates whether we're currently blocked waiting for a write to complete.
   bool is_blocked_on_write_;
@@ -183,6 +187,13 @@ class Channel::ChannelImpl : public internal::ChannelReader,
   // implementation!
   std::vector<int> input_fds_;
 
+#if defined(OS_MACOSX)
+  // On OSX, sent FDs must not be closed until we get an ack.
+  // Keep track of sent FDs here to make sure the remote is not
+  // trying to bamboozle us.
+  std::set<int> fds_to_close_;
+#endif
+
   // True if we are responsible for unlinking the unix domain socket file.
   bool must_unlink_;
 
@@ -193,12 +204,6 @@ class Channel::ChannelImpl : public internal::ChannelReader,
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(ChannelImpl);
 };
-
-// The maximum length of the name of a pipe for MODE_NAMED_SERVER or
-// MODE_NAMED_CLIENT if you want to pass in your own socket.
-// The standard size on linux is 108, mac is 104. To maintain consistency
-// across platforms we standardize on the smaller value.
-static const size_t kMaxPipeNameLength = 104;
 
 }  // namespace IPC
 

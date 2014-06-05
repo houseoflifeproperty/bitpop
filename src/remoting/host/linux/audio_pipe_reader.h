@@ -7,12 +7,14 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/observer_list_threadsafe.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 
+namespace base {
 class FilePath;
+}
 
 namespace remoting {
 
@@ -23,7 +25,7 @@ struct AudioPipeReaderTraits;
 // all registered observers.
 class AudioPipeReader
   : public base::RefCountedThreadSafe<AudioPipeReader, AudioPipeReaderTraits>,
-      public MessageLoopForIO::Watcher {
+      public base::MessageLoopForIO::Watcher {
  public:
   class StreamObserver {
    public:
@@ -33,7 +35,7 @@ class AudioPipeReader
   // |task_runner| specifies the IO thread to use to read data from the pipe.
   static scoped_refptr<AudioPipeReader> Create(
       scoped_refptr<base::SingleThreadTaskRunner> task_runner,
-      const FilePath& pipe_name);
+      const base::FilePath& pipe_name);
 
   // Register or unregister an observer. Each observer receives data on the
   // thread on which it was registered and guaranteed not to be called after
@@ -53,7 +55,7 @@ class AudioPipeReader
   AudioPipeReader(scoped_refptr<base::SingleThreadTaskRunner> task_runner);
   virtual ~AudioPipeReader();
 
-  void StartOnAudioThread(const FilePath& pipe_name);
+  void StartOnAudioThread(const base::FilePath& pipe_name);
   void StartTimer();
   void DoCapture();
   void WaitForPipeReadable();
@@ -75,7 +77,7 @@ class AudioPipeReader
   // Bytes left from the previous read.
   std::string left_over_bytes_;
 
-  MessageLoopForIO::FileDescriptorWatcher file_descriptor_watcher_;
+  base::MessageLoopForIO::FileDescriptorWatcher file_descriptor_watcher_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioPipeReader);
 };

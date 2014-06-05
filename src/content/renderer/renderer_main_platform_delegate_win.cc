@@ -7,21 +7,35 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
+#include "base/win/scoped_comptr.h"
 #include "base/win/win_util.h"
+#include "base/win/windows_version.h"
+#include "content/common/sandbox_win.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/injection_test_win.h"
+#include "content/public/renderer/render_font_warmup_win.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/renderer/render_thread_impl.h"
 #include "sandbox/win/src/sandbox.h"
-#include "skia/ext/skia_sandbox_support_win.h"
 #include "skia/ext/vector_platform_device_emf_win.h"
-#include "unicode/timezone.h"
+#include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
+#include "third_party/WebKit/public/web/win/WebFontRendering.h"
+#include "third_party/icu/source/i18n/unicode/timezone.h"
+#include "third_party/skia/include/ports/SkFontMgr.h"
+#include "third_party/skia/include/ports/SkTypeface_win.h"
+
+#ifdef ENABLE_VTUNE_JIT_INTERFACE
+#include "v8/src/third_party/vtune/v8-vtune.h"
+#endif
+
+#include <dwrite.h>
 
 namespace content {
 namespace {
 
 // Windows-only skia sandbox support
+// These are used for GDI-path rendering.
 void SkiaPreCacheFont(const LOGFONT& logfont) {
   RenderThread* render_thread = RenderThread::Get();
   if (render_thread) {
@@ -32,20 +46,20 @@ void SkiaPreCacheFont(const LOGFONT& logfont) {
 void SkiaPreCacheFontCharacters(const LOGFONT& logfont,
                                 const wchar_t* text,
                                 unsigned int text_length) {
-  content::RenderThreadImpl* render_thread_impl =
-      content::RenderThreadImpl::current();
+  RenderThreadImpl* render_thread_impl = RenderThreadImpl::current();
   if (render_thread_impl) {
-    render_thread_impl->PreCacheFontCharacters(logfont,
-                                               string16(text, text_length));
+    render_thread_impl->PreCacheFontCharacters(
+        logfont,
+        base::string16(text, text_length));
   }
 }
 
-void InitExitInterceptions() {
-  // If code subsequently tries to exit using exit(), _exit(), abort(), or
-  // ExitProcess(), force a crash (since otherwise these would be silent
-  // terminations and fly under the radar).
-  base::win::SetShouldCrashOnProcessDetach(true);
-  base::win::SetAbortBehaviorForCrashReporting();
+void WarmupDirectWrite() {
+  // The objects used here are intentionally not freed as we want the Skia
+  // code to use these objects after warmup.
+  SkTypeface* typeface =
+      GetPreSandboxWarmupFontMgr()->legacyCreateTypeface("Times New Roman", 0);
+  DoPreSandboxWarmupForTypeface(typeface);
 }
 
 }  // namespace
@@ -60,13 +74,18 @@ RendererMainPlatformDelegate::~RendererMainPlatformDelegate() {
 }
 
 void RendererMainPlatformDelegate::PlatformInitialize() {
-  InitExitInterceptions();
+  const CommandLine& command_line = parameters_.command_line;
+
+#ifdef ENABLE_VTUNE_JIT_INTERFACE
+  if (command_line.HasSwitch(switches::kEnableVtune))
+    vTune::InitializeVtuneForV8();
+#endif
 
   // Be mindful of what resources you acquire here. They can be used by
   // malicious code if the renderer gets compromised.
-  const CommandLine& command_line = parameters_.command_line;
   bool no_sandbox = command_line.HasSwitch(switches::kNoSandbox);
 
+  bool use_direct_write = ShouldUseDirectWrite();
   if (!no_sandbox) {
     // ICU DateFormat class (used in base/time_format.cc) needs to get the
     // Olson timezone ID by accessing the registry keys under
@@ -75,16 +94,22 @@ void RendererMainPlatformDelegate::PlatformInitialize() {
     // cached and there's no more need to access the registry. If the sandbox
     // is disabled, we don't have to make this dummy call.
     scoped_ptr<icu::TimeZone> zone(icu::TimeZone::createDefault());
-    SetSkiaEnsureTypefaceAccessible(SkiaPreCacheFont);
-    skia::SetSkiaEnsureTypefaceCharactersAccessible(
-        SkiaPreCacheFontCharacters);
+
+    if (use_direct_write) {
+      WarmupDirectWrite();
+    } else {
+      SkTypeface_SetEnsureLOGFONTAccessibleProc(SkiaPreCacheFont);
+      skia::SetSkiaEnsureTypefaceCharactersAccessible(
+          SkiaPreCacheFontCharacters);
+    }
+  }
+  blink::WebFontRendering::setUseDirectWrite(use_direct_write);
+  if (use_direct_write) {
+    blink::WebRuntimeFeatures::enableSubpixelFontScaling(true);
   }
 }
 
 void RendererMainPlatformDelegate::PlatformUninitialize() {
-  // At this point we are shutting down in a normal code path, so undo our
-  // hack to crash on exit.
-  base::win::SetShouldCrashOnProcessDetach(false);
 }
 
 bool RendererMainPlatformDelegate::InitSandboxTests(bool no_sandbox) {

@@ -5,13 +5,13 @@
 #include "chrome/browser/extensions/requirements_checker.h"
 
 #include "base/bind.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/gpu/gpu_feature_checker.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/manifest.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/common/gpu_feature_type.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest.h"
+#include "extensions/common/manifest_handlers/requirements_info.h"
+#include "gpu/config/gpu_feature_type.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -30,10 +30,11 @@ RequirementsChecker::~RequirementsChecker() {
 
 void RequirementsChecker::Check(scoped_refptr<const Extension> extension,
     base::Callback<void(std::vector<std::string> errors)> callback) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   callback_ = callback;
-  const Extension::Requirements& requirements = extension->requirements();
+  const RequirementsInfo& requirements =
+      RequirementsInfo::GetRequirements(extension.get());
 
   if (requirements.npapi) {
 #if defined(OS_CHROMEOS)
@@ -48,19 +49,18 @@ void RequirementsChecker::Check(scoped_refptr<const Extension> extension,
 #endif  // defined(OS_WIN)
   }
 
+  if (requirements.window_shape) {
+#if !defined(USE_AURA)
+    errors_.push_back(
+        l10n_util::GetStringUTF8(IDS_EXTENSION_WINDOW_SHAPE_NOT_SUPPORTED));
+#endif  // !defined(USE_AURA)
+  }
+
   if (requirements.webgl) {
     ++pending_requirement_checks_;
     webgl_checker_ = new GPUFeatureChecker(
-      content::GPU_FEATURE_TYPE_WEBGL,
+      gpu::GPU_FEATURE_TYPE_WEBGL,
       base::Bind(&RequirementsChecker::SetWebGLAvailability,
-                 AsWeakPtr()));
-  }
-
-  if (requirements.css3d) {
-    ++pending_requirement_checks_;
-    css3d_checker_ = new GPUFeatureChecker(
-      content::GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING,
-      base::Bind(&RequirementsChecker::SetCSS3DAvailability,
                  AsWeakPtr()));
   }
 
@@ -75,22 +75,12 @@ void RequirementsChecker::Check(scoped_refptr<const Extension> extension,
   // from the use of pending_requirement_checks_.
   if (webgl_checker_.get())
     webgl_checker_->CheckGPUFeatureAvailability();
-  if (css3d_checker_.get())
-    css3d_checker_->CheckGPUFeatureAvailability();
 }
 
 void RequirementsChecker::SetWebGLAvailability(bool available) {
   if (!available) {
     errors_.push_back(
         l10n_util::GetStringUTF8(IDS_EXTENSION_WEBGL_NOT_SUPPORTED));
-  }
-  MaybeRunCallback();
-}
-
-void RequirementsChecker::SetCSS3DAvailability(bool available) {
-  if (!available) {
-    errors_.push_back(
-        l10n_util::GetStringUTF8(IDS_EXTENSION_CSS3D_NOT_SUPPORTED));
   }
   MaybeRunCallback();
 }

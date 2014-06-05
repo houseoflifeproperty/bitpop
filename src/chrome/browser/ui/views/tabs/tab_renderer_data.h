@@ -5,13 +5,15 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_TABS_TAB_RENDERER_DATA_H_
 #define CHROME_BROWSER_UI_VIEWS_TABS_TAB_RENDERER_DATA_H_
 
-#include "base/process_util.h"
-#include "base/string16.h"
-#include "googleurl/src/gurl.h"
+#include "base/process/kill.h"
+#include "base/strings/string16.h"
+#include "chrome/browser/ui/tabs/tab_utils.h"
+#include "chrome/browser/ui/views/chrome_views_export.h"
 #include "ui/gfx/image/image_skia.h"
+#include "url/gurl.h"
 
 // Wraps the state needed by the renderers.
-struct TabRendererData {
+struct CHROME_VIEWS_EXPORT TabRendererData {
   // Different types of network activity for a tab. The NetworkState of a tab
   // may be used to alter the UI (e.g. show different kinds of loading
   // animations).
@@ -19,14 +21,6 @@ struct TabRendererData {
     NETWORK_STATE_NONE,     // no network activity.
     NETWORK_STATE_WAITING,  // waiting for a connection.
     NETWORK_STATE_LOADING,  // connected, transferring data.
-  };
-
-  // Capture state of this tab. If a WebRTC media stream is active, then it is
-  // recording. If tab capturing is active then it is projecting.
-  enum CaptureState {
-    CAPTURE_STATE_NONE,
-    CAPTURE_STATE_RECORDING,
-    CAPTURE_STATE_PROJECTING
   };
 
   TabRendererData();
@@ -46,7 +40,7 @@ struct TabRendererData {
 
   gfx::ImageSkia favicon;
   NetworkState network_state;
-  string16 title;
+  base::string16 title;
   GURL url;
   bool loading;
   base::TerminationStatus crashed_status;
@@ -55,7 +49,7 @@ struct TabRendererData {
   bool mini;
   bool blocked;
   bool app;
-  CaptureState capture_state;
+  TabMediaState media_state;
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_TABS_TAB_RENDERER_DATA_H_

@@ -4,18 +4,18 @@
 
 #include "chrome/browser/sync_file_system/sync_file_system_test_util.h"
 
-#include "base/bind.h"
-#include "base/message_loop_proxy.h"
 #include "base/run_loop.h"
-#include "base/single_thread_task_runner.h"
-#include "base/threading/thread.h"
-#include "content/public/test/test_browser_thread.h"
-#include "webkit/fileapi/syncable/sync_status_code.h"
+#include "chrome/browser/sync_file_system/sync_status_code.h"
+#include "content/public/test/test_utils.h"
+#include "google_apis/drive/gdata_errorcode.h"
 
 using content::BrowserThread;
-using content::TestBrowserThread;
 
 namespace sync_file_system {
+
+namespace drive_backend {
+class MetadataDatabase;
+}  // drive_backend
 
 template <typename R>
 void AssignAndQuit(base::RunLoop* run_loop, R* result_out, R result) {
@@ -30,49 +30,29 @@ AssignAndQuitCallback(base::RunLoop* run_loop, R* result) {
   return base::Bind(&AssignAndQuit<R>, run_loop, base::Unretained(result));
 }
 
+template <typename Arg, typename Param>
+void ReceiveResult1(bool* done, Arg* arg_out, Param arg) {
+  EXPECT_FALSE(*done);
+  *done = true;
+  *arg_out = base::internal::CallbackForward(arg);
+}
+
+template <typename Arg>
+base::Callback<void(typename TypeTraits<Arg>::ParamType)>
+CreateResultReceiver(Arg* arg_out) {
+  typedef typename TypeTraits<Arg>::ParamType Param;
+  return base::Bind(&ReceiveResult1<Arg, Param>,
+                    base::Owned(new bool(false)), arg_out);
+}
+
 // Instantiate versions we know callers will need.
-template base::Callback<void(fileapi::SyncStatusCode)>
-AssignAndQuitCallback(base::RunLoop*, fileapi::SyncStatusCode*);
+template base::Callback<void(SyncStatusCode)>
+AssignAndQuitCallback(base::RunLoop*, SyncStatusCode*);
 
-MultiThreadTestHelper::MultiThreadTestHelper()
-    : file_thread_(new base::Thread("File_Thread")),
-      io_thread_(new base::Thread("IO_Thread")) {}
-
-MultiThreadTestHelper::~MultiThreadTestHelper() {}
-
-void MultiThreadTestHelper::SetUp() {
-  file_thread_->Start();
-  io_thread_->StartWithOptions(
-      base::Thread::Options(MessageLoop::TYPE_IO, 0));
-
-  browser_ui_thread_.reset(
-      new TestBrowserThread(BrowserThread::UI,
-                            MessageLoop::current()));
-  browser_file_thread_.reset(
-      new TestBrowserThread(BrowserThread::FILE,
-                            file_thread_->message_loop()));
-  browser_io_thread_.reset(
-      new TestBrowserThread(BrowserThread::IO,
-                            io_thread_->message_loop()));
-
-  ui_task_runner_ =
-      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI);
-  file_task_runner_ =
-      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE);
-  io_task_runner_ =
-      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO);
-}
-
-void MultiThreadTestHelper::TearDown() {
-  // Make sure we give some more time to finish tasks on the FILE thread
-  // before stopping IO/FILE threads.
-  base::RunLoop run_loop;
-  file_task_runner_->PostTaskAndReply(
-      FROM_HERE, base::Bind(&base::DoNothing), run_loop.QuitClosure());
-  run_loop.Run();
-
-  io_thread_->Stop();
-  file_thread_->Stop();
-}
+#define INSTANTIATE_RECEIVER(type)                                  \
+  template base::Callback<void(type)> CreateResultReceiver(type*);
+INSTANTIATE_RECEIVER(SyncStatusCode);
+INSTANTIATE_RECEIVER(google_apis::GDataErrorCode);
+#undef INSTANTIATE_RECEIVER
 
 }  // namespace sync_file_system

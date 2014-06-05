@@ -7,29 +7,16 @@
 
 #include "third_party/skia/include/core/SkColor.h"
 
+class ThemeService;
+
 namespace chrome {
-namespace search {
 
-// The minimum height of the content view for which the detached bookmark bar
-// should be visible. This value is calculated from the
-// chrome/browser/resources/ntp_search/ tile_page.js
-// HEIGHT_FOR_BOTTOM_PANEL constant.
-static const int kMinContentHeightForBottomBookmarkBar = 531;
+// Returns the color to use to draw the detached bookmark bar background.
+SkColor GetDetachedBookmarkBarBackgroundColor(ThemeService* theme_service);
 
-// The maximum width of the detached bookmark bar.
-static const int kMaxWidthForBottomBookmarkBar = 720;
+// Returns the color to use to draw the detached bookmark bar separator.
+SkColor GetDetachedBookmarkBarSeparatorColor(ThemeService* theme_service);
 
-// The left and right padding of the detached bookmark bar.
-static const int kHorizontalPaddingForBottomBookmarkBar = 130;
-
-// The alpha used to draw the bookmark bar background when themed.
-// This value ranges from 0.0 (fully transparent) to 1.0 (fully opaque).
-static const float kBookmarkBarThemeBackgroundAlphaFactor = 0.8f;
-
-// Returns the color to use to draw the bookmark bar separator when not themed.
-SkColor GetBookmarkBarNoThemeSeparatorColor();
-
-}  // namespace search
 }  // namespace chrome
 
 #endif  // CHROME_BROWSER_UI_SEARCH_SEARCH_UI_H_

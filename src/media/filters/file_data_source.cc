@@ -15,19 +15,15 @@ FileDataSource::FileDataSource()
       force_streaming_(false) {
 }
 
-bool FileDataSource::Initialize(const FilePath& file_path) {
-  DCHECK(!file_.IsValid());
-
-  if (!file_.Initialize(file_path))
-    return false;
-
-  UpdateHostBytes();
-  return true;
+FileDataSource::FileDataSource(base::File file)
+    : force_read_errors_(false),
+      force_streaming_(false) {
+  file_.Initialize(file.Pass());
 }
 
-void FileDataSource::set_host(DataSourceHost* host) {
-  DataSource::set_host(host);
-  UpdateHostBytes();
+bool FileDataSource::Initialize(const base::FilePath& file_path) {
+  DCHECK(!file_.IsValid());
+  return file_.Initialize(file_path);
 }
 
 void FileDataSource::Stop(const base::Closure& callback) {
@@ -67,12 +63,5 @@ bool FileDataSource::IsStreaming() {
 void FileDataSource::SetBitrate(int bitrate) {}
 
 FileDataSource::~FileDataSource() {}
-
-void FileDataSource::UpdateHostBytes() {
-  if (host() && file_.IsValid()) {
-    host()->SetTotalBytes(file_.length());
-    host()->AddBufferedByteRange(0, file_.length());
-  }
-}
 
 }  // namespace media

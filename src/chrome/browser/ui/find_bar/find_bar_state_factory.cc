@@ -4,20 +4,21 @@
 
 #include "chrome/browser/ui/find_bar/find_bar_state_factory.h"
 
+#include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/ui/find_bar/find_bar_state.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 
 // static
 FindBarState* FindBarStateFactory::GetForProfile(Profile* profile) {
   return static_cast<FindBarState*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
-string16 FindBarStateFactory::GetLastPrepopulateText(Profile* p) {
+base::string16 FindBarStateFactory::GetLastPrepopulateText(Profile* p) {
   FindBarState* state = GetForProfile(p);
-  string16 text = state->last_prepopulate_text();
+  base::string16 text = state->last_prepopulate_text();
 
   if (text.empty() && p->IsOffTheRecord()) {
     // Fall back to the original profile.
@@ -34,17 +35,19 @@ FindBarStateFactory* FindBarStateFactory::GetInstance() {
 }
 
 FindBarStateFactory::FindBarStateFactory()
-    : ProfileKeyedServiceFactory("FindBarState",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "FindBarState",
+        BrowserContextDependencyManager::GetInstance()) {
 }
 
 FindBarStateFactory::~FindBarStateFactory() {}
 
-ProfileKeyedService* FindBarStateFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
+KeyedService* FindBarStateFactory::BuildServiceInstanceFor(
+    content::BrowserContext* profile) const {
   return new FindBarState;
 }
 
-bool FindBarStateFactory::ServiceHasOwnInstanceInIncognito() const {
-  return true;
+content::BrowserContext* FindBarStateFactory::GetBrowserContextToUse(
+    content::BrowserContext* context) const {
+  return chrome::GetBrowserContextOwnInstanceInIncognito(context);
 }

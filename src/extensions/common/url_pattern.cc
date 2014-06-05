@@ -4,14 +4,14 @@
 
 #include "extensions/common/url_pattern.h"
 
-#include "base/string_number_conversions.h"
-#include "base/string_piece.h"
-#include "base/string_split.h"
-#include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_piece.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "content/public/common/url_constants.h"
 #include "extensions/common/constants.h"
-#include "googleurl/src/gurl.h"
-#include "googleurl/src/url_util.h"
+#include "url/gurl.h"
+#include "url/url_util.h"
 
 const char URLPattern::kAllUrlsPattern[] = "<all_urls>";
 
@@ -20,13 +20,13 @@ namespace {
 // TODO(aa): What about more obscure schemes like data: and javascript: ?
 // Note: keep this array in sync with kValidSchemeMasks.
 const char* kValidSchemes[] = {
-  chrome::kHttpScheme,
-  chrome::kHttpsScheme,
-  chrome::kFileScheme,
-  chrome::kFtpScheme,
-  chrome::kChromeUIScheme,
-  extensions::kExtensionScheme,
-  chrome::kFileSystemScheme,
+    url::kHttpScheme,
+    url::kHttpsScheme,
+    content::kFileScheme,
+    content::kFtpScheme,
+    content::kChromeUIScheme,
+    extensions::kExtensionScheme,
+    content::kFileSystemScheme,
 };
 
 const int kValidSchemeMasks[] = {
@@ -73,8 +73,8 @@ bool IsStandardScheme(const std::string& scheme) {
   if (scheme == "*")
     return true;
 
-  return url_util::IsStandard(scheme.c_str(),
-      url_parse::Component(0, static_cast<int>(scheme.length())));
+  return url::IsStandard(scheme.c_str(),
+                         url::Component(0, static_cast<int>(scheme.length())));
 }
 
 bool IsValidPortForScheme(const std::string& scheme, const std::string& port) {
@@ -82,15 +82,29 @@ bool IsValidPortForScheme(const std::string& scheme, const std::string& port) {
     return true;
 
   // Only accept non-wildcard ports if the scheme uses ports.
-  if (url_canon::DefaultPortForScheme(scheme.c_str(), scheme.length()) ==
-      url_parse::PORT_UNSPECIFIED) {
+  if (url::DefaultPortForScheme(scheme.c_str(), scheme.length()) ==
+      url::PORT_UNSPECIFIED) {
     return false;
   }
 
-  int parsed_port = url_parse::PORT_UNSPECIFIED;
+  int parsed_port = url::PORT_UNSPECIFIED;
   if (!base::StringToInt(port, &parsed_port))
     return false;
   return (parsed_port >= 0) && (parsed_port < 65536);
+}
+
+// Returns |path| with the trailing wildcard stripped if one existed.
+//
+// The functions that rely on this (OverlapsWith and Contains) are only
+// called for the patterns inside URLPatternSet. In those cases, we know that
+// the path will have only a single wildcard at the end. This makes figuring
+// out overlap much easier. It seems like there is probably a computer-sciency
+// way to solve the general case, but we don't need that yet.
+std::string StripTrailingWildcard(const std::string& path) {
+  size_t wildcard_index = path.find('*');
+  size_t path_last = path.size() - 1;
+  DCHECK(wildcard_index == std::string::npos || wildcard_index == path_last);
+  return wildcard_index == path_last ? path.substr(0, path_last) : path;
 }
 
 }  // namespace
@@ -114,8 +128,9 @@ URLPattern::URLPattern(int valid_schemes, const std::string& pattern)
       match_all_urls_(false),
       match_subdomains_(false),
       port_("*") {
-  if (PARSE_SUCCESS != Parse(pattern))
-    NOTREACHED() << "URLPattern is invalid: " << pattern;
+  ParseResult result = Parse(pattern);
+  if (PARSE_SUCCESS != result)
+    NOTREACHED() << "URLPattern invalid: " << pattern << " result " << result;
 }
 
 URLPattern::~URLPattern() {
@@ -123,6 +138,10 @@ URLPattern::~URLPattern() {
 
 bool URLPattern::operator<(const URLPattern& other) const {
   return GetAsString() < other.GetAsString();
+}
+
+bool URLPattern::operator>(const URLPattern& other) const {
+  return GetAsString() > other.GetAsString();
 }
 
 bool URLPattern::operator==(const URLPattern& other) const {
@@ -173,7 +192,7 @@ URLPattern::ParseResult URLPattern::Parse(const std::string& pattern) {
 
   if (!standard_scheme) {
     path_start_pos = host_start_pos;
-  } else if (scheme_ == chrome::kFileScheme) {
+  } else if (scheme_ == content::kFileScheme) {
     size_t host_end_pos = pattern.find(kPathSeparator, host_start_pos);
     if (host_end_pos == std::string::npos) {
       // Allow hostname omission.
@@ -346,7 +365,7 @@ bool URLPattern::MatchesScheme(const std::string& test) const {
 }
 
 bool URLPattern::MatchesHost(const std::string& host) const {
-  std::string test(chrome::kHttpScheme);
+  std::string test(url::kHttpScheme);
   test += content::kStandardSchemeSeparator;
   test += host;
   test += "/";
@@ -385,19 +404,13 @@ bool URLPattern::MatchesHost(const GURL& test) const {
 }
 
 bool URLPattern::MatchesPath(const std::string& test) const {
-  if (!MatchPattern(test, path_escaped_))
-    return false;
+  // Make the behaviour of OverlapsWith consistent with MatchesURL, which is
+  // need to match hosted apps on e.g. 'google.com' also run on 'google.com/'.
+  if (test + "/*" == path_escaped_)
+    return true;
 
-  return true;
+  return MatchPattern(test, path_escaped_);
 }
-
-bool URLPattern::MatchesPort(int port) const {
-  if (port == url_parse::PORT_INVALID)
-    return false;
-
-  return port_ == "*" || port_ == base::IntToString(port);
-}
-
 
 const std::string& URLPattern::GetAsString() const {
   if (!spec_.empty())
@@ -413,7 +426,7 @@ const std::string& URLPattern::GetAsString() const {
   std::string spec = scheme_ +
       (standard_scheme ? content::kStandardSchemeSeparator : ":");
 
-  if (scheme_ != chrome::kFileScheme && standard_scheme) {
+  if (scheme_ != content::kFileScheme && standard_scheme) {
     if (match_subdomains_) {
       spec += "*";
       if (!host_.empty())
@@ -437,30 +450,23 @@ const std::string& URLPattern::GetAsString() const {
 }
 
 bool URLPattern::OverlapsWith(const URLPattern& other) const {
-  if (!MatchesAnyScheme(other.GetExplicitSchemes()) &&
-      !other.MatchesAnyScheme(GetExplicitSchemes())) {
-    return false;
-  }
+  if (match_all_urls() || other.match_all_urls())
+    return true;
+  return (MatchesAnyScheme(other.GetExplicitSchemes()) ||
+          other.MatchesAnyScheme(GetExplicitSchemes()))
+      && (MatchesHost(other.host()) || other.MatchesHost(host()))
+      && (MatchesPortPattern(other.port()) || other.MatchesPortPattern(port()))
+      && (MatchesPath(StripTrailingWildcard(other.path())) ||
+          other.MatchesPath(StripTrailingWildcard(path())));
+}
 
-  if (!MatchesHost(other.host()) && !other.MatchesHost(host_))
-    return false;
-
-  if (port_ != "*" && other.port() != "*" && port_ != other.port())
-    return false;
-
-  // We currently only use OverlapsWith() for the patterns inside
-  // URLPatternSet. In those cases, we know that the path will have only a
-  // single wildcard at the end. This makes figuring out overlap much easier. It
-  // seems like there is probably a computer-sciency way to solve the general
-  // case, but we don't need that yet.
-  DCHECK(path_.find('*') == path_.size() - 1);
-  DCHECK(other.path().find('*') == other.path().size() - 1);
-
-  if (!MatchesPath(other.path().substr(0, other.path().size() - 1)) &&
-      !other.MatchesPath(path_.substr(0, path_.size() - 1)))
-    return false;
-
-  return true;
+bool URLPattern::Contains(const URLPattern& other) const {
+  if (match_all_urls())
+    return true;
+  return MatchesAllSchemes(other.GetExplicitSchemes())
+      && MatchesHost(other.host())
+      && MatchesPortPattern(other.port())
+      && MatchesPath(StripTrailingWildcard(other.path()));
 }
 
 bool URLPattern::MatchesAnyScheme(
@@ -474,15 +480,30 @@ bool URLPattern::MatchesAnyScheme(
   return false;
 }
 
+bool URLPattern::MatchesAllSchemes(
+    const std::vector<std::string>& schemes) const {
+  for (std::vector<std::string>::const_iterator i = schemes.begin();
+       i != schemes.end(); ++i) {
+    if (!MatchesScheme(*i))
+      return false;
+  }
+
+  return true;
+}
+
 bool URLPattern::MatchesSecurityOriginHelper(const GURL& test) const {
   // Ignore hostname if scheme is file://.
-  if (scheme_ != chrome::kFileScheme && !MatchesHost(test))
+  if (scheme_ != content::kFileScheme && !MatchesHost(test))
     return false;
 
-  if (!MatchesPort(test.EffectiveIntPort()))
+  if (!MatchesPortPattern(base::IntToString(test.EffectiveIntPort())))
     return false;
 
   return true;
+}
+
+bool URLPattern::MatchesPortPattern(const std::string& port) const {
+  return port_ == "*" || port_ == port;
 }
 
 std::vector<std::string> URLPattern::GetExplicitSchemes() const {

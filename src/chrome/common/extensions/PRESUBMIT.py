@@ -25,6 +25,8 @@ LOCAL_PUBLIC_TEMPLATES_PATH = os.path.join('docs',
                                            'templates',
                                            'public')
 
+EXTENSIONS_TO_REMOVE_FOR_CLEAN_URLS = ('.md', '.html')
+
 def _ReadFile(filename):
   with open(filename) as f:
     return f.read()
@@ -48,7 +50,13 @@ def _FindMatchingTemplates(template_name, template_path_list):
   unix_name = _UnixName(template_name)
   for template in template_path_list:
     if unix_name == _UnixName(template.split(os.sep)[-1]):
-      matches.append(template)
+      basename, ext = os.path.splitext(template)
+      # The docserver expects clean (extensionless) template URLs, so we
+      # strip some extensions here when generating the list of matches.
+      if ext in EXTENSIONS_TO_REMOVE_FOR_CLEAN_URLS:
+        matches.append(basename)
+      else:
+        matches.append(template)
   return matches
 
 def _SanitizeAPIName(name, api_path):
@@ -82,6 +90,8 @@ def _CheckHeadingIDs(input_api):
   headings_re = re.compile('<h[23].*?>')
   bad_files = []
   for name in input_api.AbsoluteLocalPaths():
+    if not os.path.exists(name):
+      continue
     if (fnmatch.fnmatch(name, '*%s*' % INTROS_PATH) or
         fnmatch.fnmatch(name, '*%s*' % ARTICLES_PATH)):
       contents = input_api.ReadFile(name)
@@ -90,28 +100,12 @@ def _CheckHeadingIDs(input_api):
         bad_files.append(name)
   return bad_files
 
-def _CheckVersions(input_api, output_api, results):
-  version = '_VERSION ='
-  for affected_file in input_api.AffectedFiles():
-    local_path = affected_file.LocalPath()
-    if not fnmatch.fnmatch(local_path, '%s*' % SERVER2_PATH):
-      continue
-    if local_path.endswith('PRESUBMIT.py'):
-      continue
-    if any(version in line for line in affected_file.NewContents()):
-      found = False
-      for _, text in affected_file.ChangedContents():
-        if version in text:
-          found = True
-          break
-      if not found:
-        results.append(output_api.PresubmitPromptWarning(
-            '_VERSION of %s needs to be incremented.' % affected_file))
-
 def _CheckLinks(input_api, output_api, results):
   for affected_file in input_api.AffectedFiles():
     name = affected_file.LocalPath()
     absolute_path = affected_file.AbsoluteLocalPath()
+    if not os.path.exists(absolute_path):
+      continue
     if (fnmatch.fnmatch(name, '%s*' % PUBLIC_TEMPLATES_PATH) or
         fnmatch.fnmatch(name, '%s*' % INTROS_PATH) or
         fnmatch.fnmatch(name, '%s*' % ARTICLES_PATH) or
@@ -126,7 +120,8 @@ def _CheckLinks(input_api, output_api, results):
                    absolute_path])
       output = input_api.subprocess.check_output(
           args,
-          cwd=input_api.PresubmitLocalPath())
+          cwd=input_api.PresubmitLocalPath(),
+          universal_newlines=True)
       if output != contents:
         changes = ''
         for i, (line1, line2) in enumerate(
@@ -157,12 +152,19 @@ def _CheckChange(input_api, output_api):
                                     cwd=input_api.PresubmitLocalPath())
   except input_api.subprocess.CalledProcessError:
     results.append(output_api.PresubmitError('IntegrationTest failed!'))
-  _CheckVersions(input_api, output_api, results)
-  _CheckLinks(input_api, output_api, results)
+
+  # TODO(kalman): Re-enable this check, or decide to delete it forever. Now
+  # that we have multiple directories it no longer works.
+  # See http://crbug.com/297178.
+  #_CheckLinks(input_api, output_api, results)
+
   return results
 
 def CheckChangeOnUpload(input_api, output_api):
-  return _CheckChange(input_api, output_api)
+  results = []
+  results += input_api.canned_checks.CheckPatchFormatted(input_api, output_api)
+  results += _CheckChange(input_api, output_api)
+  return results
 
 def CheckChangeOnCommit(input_api, output_api):
   return _CheckChange(input_api, output_api)

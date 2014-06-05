@@ -12,8 +12,9 @@
 #include "chrome/browser/extensions/api/cookies/cookies_helpers.h"
 #include "chrome/common/extensions/api/cookies.h"
 #include "chrome/test/base/testing_profile.h"
-#include "googleurl/src/gurl.h"
 #include "net/cookies/canonical_cookie.h"
+#include "net/cookies/cookie_constants.h"
+#include "url/gurl.h"
 
 using extensions::api::cookies::Cookie;
 using extensions::api::cookies::CookieStore;
@@ -32,90 +33,54 @@ struct DomainMatchCase {
   const bool matches;
 };
 
-// A test profile that supports linking with another profile for incognito
-// support.
-class OtrTestingProfile : public TestingProfile {
- public:
-  OtrTestingProfile() : linked_profile_(NULL) {}
-  virtual Profile* GetOriginalProfile() {
-    if (IsOffTheRecord())
-      return linked_profile_;
-    else
-      return this;
-  }
-
-  virtual Profile* GetOffTheRecordProfile() {
-    if (IsOffTheRecord())
-      return this;
-    else
-      return linked_profile_;
-  }
-
-  virtual bool HasOffTheRecordProfile() {
-    return (!IsOffTheRecord() && linked_profile_);
-  }
-
-  static void LinkProfiles(OtrTestingProfile* profile1,
-                           OtrTestingProfile* profile2) {
-    profile1->set_linked_profile(profile2);
-    profile2->set_linked_profile(profile1);
-  }
-
-  void set_linked_profile(OtrTestingProfile* profile) {
-    linked_profile_ = profile;
-  }
-
- private:
-  OtrTestingProfile* linked_profile_;
-};
-
 }  // namespace
 
 class ExtensionCookiesTest : public testing::Test {
 };
 
 TEST_F(ExtensionCookiesTest, StoreIdProfileConversion) {
-  OtrTestingProfile profile, otrProfile;
-  otrProfile.set_incognito(true);
-  OtrTestingProfile::LinkProfiles(&profile, &otrProfile);
+  TestingProfile::Builder profile_builder;
+  scoped_ptr<TestingProfile> profile = profile_builder.Build();
+  // Trigger early creation of off-the-record profile.
+  EXPECT_TRUE(profile->GetOffTheRecordProfile());
 
   EXPECT_EQ(std::string("0"),
-            cookies_helpers::GetStoreIdFromProfile(&profile));
-  EXPECT_EQ(&profile,
+            cookies_helpers::GetStoreIdFromProfile(profile.get()));
+  EXPECT_EQ(profile.get(),
             cookies_helpers::ChooseProfileFromStoreId(
-                "0", &profile, true));
-  EXPECT_EQ(&profile,
+                "0", profile.get(), true));
+  EXPECT_EQ(profile.get(),
             cookies_helpers::ChooseProfileFromStoreId(
-                "0", &profile, false));
-  EXPECT_EQ(&otrProfile,
+                "0", profile.get(), false));
+  EXPECT_EQ(profile->GetOffTheRecordProfile(),
             cookies_helpers::ChooseProfileFromStoreId(
-                "1", &profile, true));
+                "1", profile.get(), true));
   EXPECT_EQ(NULL,
             cookies_helpers::ChooseProfileFromStoreId(
-                "1", &profile, false));
+                "1", profile.get(), false));
 
   EXPECT_EQ(std::string("1"),
-            cookies_helpers::GetStoreIdFromProfile(&otrProfile));
+            cookies_helpers::GetStoreIdFromProfile(
+                profile->GetOffTheRecordProfile()));
   EXPECT_EQ(NULL,
             cookies_helpers::ChooseProfileFromStoreId(
-                "0", &otrProfile, true));
+                "0", profile->GetOffTheRecordProfile(), true));
   EXPECT_EQ(NULL,
             cookies_helpers::ChooseProfileFromStoreId(
-                "0", &otrProfile, false));
-  EXPECT_EQ(&otrProfile,
+                "0", profile->GetOffTheRecordProfile(), false));
+  EXPECT_EQ(profile->GetOffTheRecordProfile(),
             cookies_helpers::ChooseProfileFromStoreId(
-                "1", &otrProfile, true));
-  EXPECT_EQ(&otrProfile,
+                "1", profile->GetOffTheRecordProfile(), true));
+  EXPECT_EQ(profile->GetOffTheRecordProfile(),
             cookies_helpers::ChooseProfileFromStoreId(
-                "1", &otrProfile, false));
+                "1", profile->GetOffTheRecordProfile(), false));
 }
 
 TEST_F(ExtensionCookiesTest, ExtensionTypeCreation) {
   net::CanonicalCookie canonical_cookie1(
       GURL(), "ABC", "DEF", "www.foobar.com", "/",
-      std::string(), std::string(),
       base::Time(), base::Time(), base::Time(),
-      false, false);
+      false, false, net::COOKIE_PRIORITY_DEFAULT);
   scoped_ptr<Cookie> cookie1(
       cookies_helpers::CreateCookie(
           canonical_cookie1, "some cookie store"));
@@ -131,9 +96,9 @@ TEST_F(ExtensionCookiesTest, ExtensionTypeCreation) {
   EXPECT_EQ("some cookie store", cookie1->store_id);
 
   net::CanonicalCookie canonical_cookie2(
-      GURL(), "ABC", "DEF", ".foobar.com", "/", std::string(), std::string(),
+      GURL(), "ABC", "DEF", ".foobar.com", "/",
       base::Time(), base::Time::FromDoubleT(10000), base::Time(),
-      false, false);
+      false, false, net::COOKIE_PRIORITY_DEFAULT);
   scoped_ptr<Cookie> cookie2(
       cookies_helpers::CreateCookie(
           canonical_cookie2, "some cookie store"));
@@ -143,7 +108,7 @@ TEST_F(ExtensionCookiesTest, ExtensionTypeCreation) {
   EXPECT_EQ(10000, *cookie2->expiration_date);
 
   TestingProfile profile;
-  ListValue* tab_ids_list = new ListValue();
+  base::ListValue* tab_ids_list = new base::ListValue();
   std::vector<int> tab_ids;
   scoped_ptr<CookieStore> cookie_store(
       cookies_helpers::CreateCookieStore(&profile, tab_ids_list));
@@ -153,26 +118,22 @@ TEST_F(ExtensionCookiesTest, ExtensionTypeCreation) {
 
 TEST_F(ExtensionCookiesTest, GetURLFromCanonicalCookie) {
   net::CanonicalCookie cookie1(
-      GURL(), "ABC", "DEF", "www.foobar.com", "/",
-      std::string(), std::string(),
-      base::Time(), base::Time(), base::Time(),
-      false, false);
+      GURL(), "ABC", "DEF", "www.foobar.com", "/", base::Time(), base::Time(),
+      base::Time(), false, false, net::COOKIE_PRIORITY_DEFAULT);
   EXPECT_EQ("http://www.foobar.com/",
             cookies_helpers::GetURLFromCanonicalCookie(
                 cookie1).spec());
 
   net::CanonicalCookie cookie2(
-      GURL(), "ABC", "DEF", ".helloworld.com", "/",
-      std::string(), std::string(),
-      base::Time(), base::Time(), base::Time(),
-      true, false);
+      GURL(), "ABC", "DEF", ".helloworld.com", "/", base::Time(), base::Time(),
+      base::Time(), true, false, net::COOKIE_PRIORITY_DEFAULT);
   EXPECT_EQ("https://helloworld.com/",
             cookies_helpers::GetURLFromCanonicalCookie(
                 cookie2).spec());
 }
 
 TEST_F(ExtensionCookiesTest, EmptyDictionary) {
-  DictionaryValue dict;
+  base::DictionaryValue dict;
   GetAll::Params::Details details;
   bool rv = GetAll::Params::Details::Populate(dict, &details);
   ASSERT_TRUE(rv);
@@ -194,30 +155,45 @@ TEST_F(ExtensionCookiesTest, DomainMatching) {
 
   for (size_t i = 0; i < arraysize(tests); ++i) {
     // Build up the Params struct.
-    ListValue args;
-    DictionaryValue* dict = new DictionaryValue();
+    base::ListValue args;
+    base::DictionaryValue* dict = new base::DictionaryValue();
     dict->SetString(keys::kDomainKey, std::string(tests[i].filter));
     args.Set(0, dict);
     scoped_ptr<GetAll::Params> params(GetAll::Params::Create(args));
 
     cookies_helpers::MatchFilter filter(&params->details);
-    net::CanonicalCookie cookie(GURL(), "", "", tests[i].domain,
-                                               "", "", "", base::Time(),
-                                               base::Time(), base::Time(),
-                                               false, false);
+    net::CanonicalCookie cookie(GURL(),
+                                std::string(),
+                                std::string(),
+                                tests[i].domain,
+                                std::string(),
+                                base::Time(),
+                                base::Time(),
+                                base::Time(),
+                                false,
+                                false,
+                                net::COOKIE_PRIORITY_DEFAULT);
     EXPECT_EQ(tests[i].matches, filter.MatchesCookie(cookie));
   }
 }
 
 TEST_F(ExtensionCookiesTest, DecodeUTF8WithErrorHandling) {
-  net::CanonicalCookie canonical_cookie(
-      GURL(), "", "011Q255bNX_1!yd\203e+", "test.com", "/path\203", "", "",
-      base::Time(), base::Time(), base::Time(), false, false);
+  net::CanonicalCookie canonical_cookie(GURL(),
+                                        std::string(),
+                                        "011Q255bNX_1!yd\203e+",
+                                        "test.com",
+                                        "/path\203",
+                                        base::Time(),
+                                        base::Time(),
+                                        base::Time(),
+                                        false,
+                                        false,
+                                        net::COOKIE_PRIORITY_DEFAULT);
   scoped_ptr<Cookie> cookie(
       cookies_helpers::CreateCookie(
           canonical_cookie, "some cookie store"));
   EXPECT_EQ(std::string("011Q255bNX_1!yd\xEF\xBF\xBD" "e+"), cookie->value);
-  EXPECT_EQ(std::string(""), cookie->path);
+  EXPECT_EQ(std::string(), cookie->path);
 }
 
 }  // namespace extensions

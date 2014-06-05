@@ -41,6 +41,7 @@ var img = null;
 function getIconData(callback) {
   if (cachedIcon) {
     callback(cachedIcon);
+    return;
   }
   var canvas = document.createElement("canvas");
   canvas.style.display = "none";
@@ -68,4 +69,56 @@ function getManifest(alternativePath) {
            false);
   xhr.send(null);
   return xhr.responseText;
+}
+
+// Installs the extension with the given |installOptions|, calls
+// |whileInstalled| and then uninstalls the extension.
+function installAndCleanUp(installOptions, whileInstalled) {
+  // Begin installing.
+  chrome.webstorePrivate.beginInstallWithManifest3(
+      installOptions,
+      callbackPass(function(result) {
+        assertNoLastError();
+        assertEq("", result);
+
+        // Now complete the installation.
+        chrome.webstorePrivate.completeInstall(
+            extensionId,
+            callbackPass(function(result) {
+              assertNoLastError();
+              assertEq(undefined, result);
+
+              whileInstalled();
+
+              chrome.test.runWithUserGesture(callbackPass(function() {
+                chrome.management.uninstall(extensionId, {}, callbackPass());
+              }));
+            }));
+      }));
+}
+
+function getContinueUrl(callback) {
+  chrome.test.getConfig(function(config) {
+    callback('http://www.example.com:PORT/continue'
+                 .replace(/PORT/, config.spawnedTestServer.port));
+  });
+}
+
+function expectSignInFailure(error, forced_continue_url) {
+  getContinueUrl(function(continue_url) {
+    if (forced_continue_url !== undefined)
+      continue_url = forced_continue_url;
+
+    chrome.test.runWithUserGesture(function() {
+      chrome.webstorePrivate.signIn(continue_url, callbackFail(error));
+    });
+  });
+}
+
+function expectUserIsAlreadySignedIn() {
+  getContinueUrl(function(continue_url) {
+    chrome.test.runWithUserGesture(function() {
+      chrome.webstorePrivate.signIn(continue_url, callbackPass());
+    });
+  });
 }

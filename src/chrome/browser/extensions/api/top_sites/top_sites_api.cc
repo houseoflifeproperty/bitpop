@@ -12,29 +12,29 @@
 
 namespace extensions {
 
-GetTopSitesFunction::GetTopSitesFunction()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {}
+TopSitesGetFunction::TopSitesGetFunction()
+    : weak_ptr_factory_(this) {}
 
-GetTopSitesFunction::~GetTopSitesFunction() {}
+TopSitesGetFunction::~TopSitesGetFunction() {}
 
-bool GetTopSitesFunction::RunImpl() {
-  history::TopSites* ts = profile()->GetTopSites();
+bool TopSitesGetFunction::RunAsync() {
+  history::TopSites* ts = GetProfile()->GetTopSites();
   if (!ts)
     return false;
 
   ts->GetMostVisitedURLs(
-      base::Bind(&GetTopSitesFunction::OnMostVisitedURLsAvailable,
-                 weak_ptr_factory_.GetWeakPtr()));
+      base::Bind(&TopSitesGetFunction::OnMostVisitedURLsAvailable,
+                 weak_ptr_factory_.GetWeakPtr()), false);
   return true;
 }
 
-void GetTopSitesFunction::OnMostVisitedURLsAvailable(
+void TopSitesGetFunction::OnMostVisitedURLsAvailable(
     const history::MostVisitedURLList& data) {
-  scoped_ptr<base::ListValue> pages_value(new ListValue);
+  scoped_ptr<base::ListValue> pages_value(new base::ListValue);
   for (size_t i = 0; i < data.size(); i++) {
     const history::MostVisitedURL& url = data[i];
     if (!url.url.is_empty()) {
-      DictionaryValue* page_value = new DictionaryValue();
+      base::DictionaryValue* page_value = new base::DictionaryValue();
       page_value->SetString("url", url.url.spec());
       if (url.title.empty())
         page_value->SetString("title", url.url.spec());

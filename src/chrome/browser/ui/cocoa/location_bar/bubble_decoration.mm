@@ -10,39 +10,23 @@
 
 namespace {
 
+// This is used to increase the right margin of this decoration.
+const CGFloat kRightSideMargin = 1.0;
+
 // Padding between the icon/label and bubble edges.
 const CGFloat kBubblePadding = 3.0;
-
-// The image needs to be in the same position as for the location
-// icon, which implies that the bubble's padding in the Omnibox needs
-// to differ from the location icon's.  Indeed, that's how the views
-// implementation handles the problem.  This draws the bubble edge a
-// little bit further left, which is easier but no less hacky.
-const CGFloat kLeftSideOverdraw = 2.0;
-
-// Omnibox corner radius is |4.0|, this needs to look tight WRT that.
-const CGFloat kBubbleCornerRadius = 2.0;
-
-// How far to inset the bubble from the top and bottom of the drawing
-// frame.
-// TODO(shess): Would be nicer to have the drawing code factor out the
-// space outside the border, and perhaps the border.  Then this could
-// reflect the single pixel space w/in that.
-const CGFloat kBubbleYInset = 4.0;
 
 // Padding between the icon and label.
 const CGFloat kIconLabelPadding = 4.0;
 
+// Inset for the background.
+const CGFloat kBackgroundYInset = 4.0;
+
 }  // namespace
 
-BubbleDecoration::BubbleDecoration(NSFont* font) {
-  DCHECK(font);
-  if (font) {
-    NSDictionary* attributes =
-        [NSDictionary dictionaryWithObject:font
-                                    forKey:NSFontAttributeName];
-    attributes_.reset([attributes retain]);
-  }
+BubbleDecoration::BubbleDecoration() {
+  attributes_.reset([[NSMutableDictionary alloc] init]);
+  [attributes_ setObject:GetFont() forKey:NSFontAttributeName];
 }
 
 BubbleDecoration::~BubbleDecoration() {
@@ -66,7 +50,7 @@ CGFloat BubbleDecoration::GetWidthForImageAndLabel(NSImage* image,
 }
 
 NSRect BubbleDecoration::GetImageRectInFrame(NSRect frame) {
-  NSRect imageRect = NSInsetRect(frame, 0.0, kBubbleYInset);
+  NSRect imageRect = NSInsetRect(frame, 0.0, kBackgroundYInset);
   if (image_) {
     // Center the image vertically.
     const NSSize imageSize = [image_ size];
@@ -90,31 +74,14 @@ CGFloat BubbleDecoration::GetWidthForSpace(CGFloat width) {
 }
 
 void BubbleDecoration::DrawInFrame(NSRect frame, NSView* control_view) {
-  const NSRect decorationFrame = NSInsetRect(frame, 0.0, kBubbleYInset);
-
-  // The inset is to put the border down the middle of the pixel.
-  NSRect bubbleFrame = NSInsetRect(decorationFrame, 0.5, 0.5);
-  bubbleFrame.origin.x -= kLeftSideOverdraw;
-  bubbleFrame.size.width += kLeftSideOverdraw;
-  NSBezierPath* path =
-      [NSBezierPath bezierPathWithRoundedRect:bubbleFrame
-                                      xRadius:kBubbleCornerRadius
-                                      yRadius:kBubbleCornerRadius];
-
-  [background_color_ setFill];
-  [path fill];
-
-  [border_color_ setStroke];
-  [path setLineWidth:1.0];
-  [path stroke];
-
-  CGFloat textOffset = NSMinX(decorationFrame);
+  const NSRect decoration_frame = NSInsetRect(frame, 0.0, kBackgroundYInset);
+  CGFloat textOffset = NSMinX(decoration_frame);
   if (image_) {
     // Center the image vertically.
     const NSSize imageSize = [image_ size];
-    NSRect imageRect = decorationFrame;
+    NSRect imageRect = decoration_frame;
     imageRect.origin.y +=
-        std::floor((NSHeight(decorationFrame) - imageSize.height) / 2.0);
+        std::floor((NSHeight(decoration_frame) - imageSize.height) / 2.0);
     imageRect.size = imageSize;
     [image_ drawInRect:imageRect
               fromRect:NSZeroRect  // Entire image
@@ -126,11 +93,22 @@ void BubbleDecoration::DrawInFrame(NSRect frame, NSView* control_view) {
   }
 
   if (label_) {
-    NSRect textRect = decorationFrame;
+    NSRect textRect = frame;
     textRect.origin.x = textOffset;
-    textRect.size.width = NSMaxX(decorationFrame) - NSMinX(textRect);
-    [label_ drawInRect:textRect withAttributes:attributes_];
+    textRect.size.width = NSMaxX(decoration_frame) - NSMinX(textRect);
+    DrawLabel(label_, attributes_, textRect);
   }
+}
+
+void BubbleDecoration::DrawWithBackgroundInFrame(NSRect background_frame,
+                                                 NSRect frame,
+                                                 NSView* control_view) {
+  NSRect rect = NSInsetRect(background_frame, 0, 1);
+  rect.size.width -= kRightSideMargin;
+  ui::DrawNinePartImage(
+      rect, GetBubbleImageIds(), NSCompositeSourceOver, 1.0, true);
+
+  DrawInFrame(frame, control_view);
 }
 
 NSImage* BubbleDecoration::GetImage() {
@@ -149,13 +127,6 @@ void BubbleDecoration::SetLabel(NSString* label) {
     label_.reset([label copy]);
 }
 
-void BubbleDecoration::SetColors(NSColor* border_color,
-                                 NSColor* background_color,
-                                 NSColor* text_color) {
-  border_color_.reset([border_color retain]);
-  background_color_.reset([background_color retain]);
-
-  scoped_nsobject<NSMutableDictionary> attributes([attributes_ mutableCopy]);
-  [attributes setObject:text_color forKey:NSForegroundColorAttributeName];
-  attributes_.reset([attributes copy]);
+void BubbleDecoration::SetTextColor(NSColor* text_color) {
+  [attributes_ setObject:text_color forKey:NSForegroundColorAttributeName];
 }

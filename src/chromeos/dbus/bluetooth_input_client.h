@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,100 +6,68 @@
 #define CHROMEOS_DBUS_BLUETOOTH_INPUT_CLIENT_H_
 
 #include <string>
+#include <vector>
 
 #include "base/callback.h"
 #include "base/observer_list.h"
-#include "base/values.h"
 #include "chromeos/chromeos_export.h"
-#include "chromeos/dbus/bluetooth_property.h"
-#include "chromeos/dbus/dbus_client_implementation_type.h"
+#include "chromeos/dbus/dbus_client.h"
 #include "dbus/object_path.h"
-
-namespace dbus {
-class Bus;
-}  // namespace dbus
+#include "dbus/property.h"
 
 namespace chromeos {
 
-class BluetoothAdapterClient;
-
-// BluetoothInputClient is used to communicate with the Input interface
-// of a bluetooth device, rather than the generic device interface. Input
-// devices are those conforming to the Bluetooth SIG HID (Human Interface
-// Device) Profile such as keyboards, mice, trackpads and joysticks.
-class CHROMEOS_EXPORT BluetoothInputClient {
+// BluetoothInputClient is used to communicate with objects representing
+// Bluetooth Input (HID) devices.
+class CHROMEOS_EXPORT BluetoothInputClient : public DBusClient {
  public:
   // Structure of properties associated with bluetooth input devices.
-  struct Properties : public BluetoothPropertySet {
-    // Indicates that the device is currently connected. Read-only.
-    dbus::Property<bool> connected;
+  struct Properties : public dbus::PropertySet {
+    // The Bluetooth input device reconnect mode. Read-only.
+    dbus::Property<std::string> reconnect_mode;
 
     Properties(dbus::ObjectProxy* object_proxy,
+               const std::string& interface_name,
                const PropertyChangedCallback& callback);
     virtual ~Properties();
   };
 
-  // Interface for observing changes from a bluetooth input device.
+  // Interface for observing changes from a remote bluetooth input device.
   class Observer {
    public:
     virtual ~Observer() {}
 
+    // Called when the remote device with object path |object_path| implementing
+    // the Input interface is added to the set of known devices or an already
+    // known device implements the Input interface.
+    virtual void InputAdded(const dbus::ObjectPath& object_path) {}
+
+    // Called when the remote device with object path |object_path| is removed
+    // from the set of known devices or does not implement the Input interface
+    // anymore.
+    virtual void InputRemoved(const dbus::ObjectPath& object_path) {}
+
     // Called when the device with object path |object_path| has a
-    // change in value of the input property named |property_name|.
+    // change in value of the property named |property_name| of its Input
+    // interface.
     virtual void InputPropertyChanged(const dbus::ObjectPath& object_path,
                                       const std::string& property_name) {}
   };
 
   virtual ~BluetoothInputClient();
 
-  // Adds and removes observers for events on all bluetooth input
+  // Adds and removes observers for events on all remote bluetooth input
   // devices. Check the |object_path| parameter of observer methods to
   // determine which device is issuing the event.
   virtual void AddObserver(Observer* observer) = 0;
   virtual void RemoveObserver(Observer* observer) = 0;
 
-  // Obtain the input properties for the device with object path |object_path|,
+  // Obtain the properties for the device with object path |object_path|,
   // any values should be copied if needed.
   virtual Properties* GetProperties(const dbus::ObjectPath& object_path) = 0;
 
-  // The InputCallback is used for input device methods that only return to
-  // indicate success. It receives two arguments, the |object_path| of the
-  // input device the call was made on and |success| which indicates whether
-  // or not the request succeeded.
-  typedef base::Callback<void(const dbus::ObjectPath&, bool)> InputCallback;
-
-  // The ConnectCallback is used for the Connect input device method to
-  // indicate success. It receives a single argument, the |object_path| of
-  // the input device the call was made on.
-  typedef base::Callback<void(const dbus::ObjectPath&)> ConnectCallback;
-
-  // The ConnectErrorCallback is used for the Connect input device method
-  // to indicate failure. It receives three arguments, the |object_path| of
-  // the input device the call was made on, the name of the error in
-  // |error_name| and an optional message in |error_message|.
-  typedef base::Callback<void(const dbus::ObjectPath& object_path,
-                              const std::string& error_name,
-                              const std::string& error_message)>
-      ConnectErrorCallback;
-
-  // Connects the input subsystem to the device with object path
-  // |object_path|, which should already be a known device on the adapter.
-  virtual void Connect(const dbus::ObjectPath& object_path,
-                       const ConnectCallback& callback,
-                       const ConnectErrorCallback& error_callback) = 0;
-
-  // Disconnects the input subsystem from the device with object path
-  // |object_path| without terminating the low-level ACL connection,
-  virtual void Disconnect(const dbus::ObjectPath& object_path,
-                          const InputCallback& callback) = 0;
-
   // Creates the instance.
-  static BluetoothInputClient* Create(DBusClientImplementationType type,
-                                      dbus::Bus* bus,
-                                      BluetoothAdapterClient* adapter_client);
-
-  // Constants used to indicate exceptional error conditions.
-  static const char kNoResponseError[];
+  static BluetoothInputClient* Create();
 
  protected:
   BluetoothInputClient();

@@ -27,6 +27,7 @@
  *   http://www.csse.monash.edu.au/~timf/
  */
 
+#include "libavutil/channel_layout.h"
 #include "libavutil/intreadwrite.h"
 #include "avformat.h"
 #include "internal.h"
@@ -144,6 +145,8 @@ static int roq_read_packet(AVFormatContext *s,
             break;
 
         case RoQ_QUAD_CODEBOOK:
+            if (roq->video_stream_index < 0)
+                return AVERROR_INVALIDDATA;
             /* packet needs to contain both this codebook and next VQ chunk */
             codebook_offset = avio_tell(pb) - RoQ_CHUNK_PREAMBLE_SIZE;
             codebook_size = chunk_size;
@@ -178,7 +181,14 @@ static int roq_read_packet(AVFormatContext *s,
                 st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
                 st->codec->codec_id = AV_CODEC_ID_ROQ_DPCM;
                 st->codec->codec_tag = 0;  /* no tag */
-                st->codec->channels = roq->audio_channels = chunk_type == RoQ_SOUND_STEREO ? 2 : 1;
+                if (chunk_type == RoQ_SOUND_STEREO) {
+                    st->codec->channels       = 2;
+                    st->codec->channel_layout = AV_CH_LAYOUT_STEREO;
+                } else {
+                    st->codec->channels       = 1;
+                    st->codec->channel_layout = AV_CH_LAYOUT_MONO;
+                }
+                roq->audio_channels    = st->codec->channels;
                 st->codec->sample_rate = RoQ_AUDIO_SAMPLE_RATE;
                 st->codec->bits_per_coded_sample = 16;
                 st->codec->bit_rate = st->codec->channels * st->codec->sample_rate *
@@ -186,6 +196,11 @@ static int roq_read_packet(AVFormatContext *s,
                 st->codec->block_align = st->codec->channels * st->codec->bits_per_coded_sample;
             }
         case RoQ_QUAD_VQ:
+            if (chunk_type == RoQ_QUAD_VQ) {
+                if (roq->video_stream_index < 0)
+                    return AVERROR_INVALIDDATA;
+            }
+
             /* load up the packet */
             if (av_new_packet(pkt, chunk_size + RoQ_CHUNK_PREAMBLE_SIZE))
                 return AVERROR(EIO);

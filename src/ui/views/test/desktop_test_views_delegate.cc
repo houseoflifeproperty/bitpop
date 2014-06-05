@@ -4,8 +4,11 @@
 
 #include "ui/views/test/desktop_test_views_delegate.h"
 
-#include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
 #include "ui/views/widget/native_widget_aura.h"
+
+#if !defined(OS_CHROMEOS)
+#include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
+#endif
 
 namespace views {
 
@@ -13,20 +16,21 @@ DesktopTestViewsDelegate::DesktopTestViewsDelegate() {}
 
 DesktopTestViewsDelegate::~DesktopTestViewsDelegate() {}
 
-NativeWidget* DesktopTestViewsDelegate::CreateNativeWidget(
-    Widget::InitParams::Type type,
-    internal::NativeWidgetDelegate* delegate,
-    gfx::NativeView parent,
-    gfx::NativeView context) {
-#if defined(USE_AURA) && !defined(OS_CHROMEOS)
-  if (parent && type != views::Widget::InitParams::TYPE_MENU)
-    return new views::NativeWidgetAura(delegate);
+void DesktopTestViewsDelegate::OnBeforeWidgetInit(
+    Widget::InitParams* params,
+    internal::NativeWidgetDelegate* delegate) {
+#if !defined(OS_CHROMEOS)
+  // If we already have a native_widget, we don't have to try to come
+  // up with one.
+  if (params->native_widget)
+    return;
 
-  if (!parent && !context)
-    return new views::DesktopNativeWidgetAura(delegate);
+  if (params->parent && params->type != views::Widget::InitParams::TYPE_MENU) {
+    params->native_widget = new views::NativeWidgetAura(delegate);
+  } else if (!params->parent && !params->context) {
+    params->native_widget = new views::DesktopNativeWidgetAura(delegate);
+  }
 #endif
-
-  return NULL;
 }
 
 }  // namespace views

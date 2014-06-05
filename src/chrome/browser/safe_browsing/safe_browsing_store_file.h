@@ -11,7 +11,8 @@
 #include "chrome/browser/safe_browsing/safe_browsing_store.h"
 
 #include "base/callback.h"
-#include "base/file_util.h"
+#include "base/files/file_path.h"
+#include "base/files/scoped_file.h"
 
 // Implement SafeBrowsingStore in terms of a flat file.  The file
 // format is pretty literal:
@@ -20,38 +21,60 @@
 // int32 version;           // format version
 //
 // // Counts for the various data which follows the header.
-// uint32 add_chunk_count;   // Chunks seen, including empties.
-// uint32 sub_chunk_count;   // Ditto.
-// uint32 add_prefix_count;
-// uint32 sub_prefix_count;
-// uint32 add_hash_count;
-// uint32 sub_hash_count;
-//
+// uint32 add_chunk_count;  // Chunks seen, including empties.
+// uint32 sub_chunk_count;  // Ditto.
+// uint32 shard_stride;     // SBPrefix space covered per shard.
+//                          // 0==entire space in one shard.
+// // Sorted by chunk_id.
 // array[add_chunk_count] {
 //   int32 chunk_id;
 // }
+// // Sorted by chunk_id.
 // array[sub_chunk_count] {
 //   int32 chunk_id;
 // }
-// array[add_prefix_count] {
-//   int32 chunk_id;
-//   int32 prefix;
+// MD5Digest header_checksum;  // Checksum over preceeding data.
+//
+// // Sorted by prefix, then add chunk_id, then hash, both within shards and
+// // overall.
+// array[from 0 to wraparound to 0 by shard_stride] {
+//   uint32 add_prefix_count;
+//   uint32 sub_prefix_count;
+//   uint32 add_hash_count;
+//   uint32 sub_hash_count;
+//   array[add_prefix_count] {
+//     int32 chunk_id;
+//     uint32 prefix;
+//   }
+//   array[sub_prefix_count] {
+//     int32 chunk_id;
+//     int32 add_chunk_id;
+//     uint32 add_prefix;
+//   }
+//   array[add_hash_count] {
+//     int32 chunk_id;
+//     int32 received_time;     // From base::Time::ToTimeT().
+//     char[32] full_hash;
+//   }
+//   array[sub_hash_count] {
+//     int32 chunk_id;
+//     int32 add_chunk_id;
+//     char[32] add_full_hash;
+//   }
 // }
-// array[sub_prefix_count] {
-//   int32 chunk_id;
-//   int32 add_chunk_id;
-//   int32 add_prefix;
-// }
-// array[add_hash_count] {
-//   int32 chunk_id;
-//   int32 received_time;     // From base::Time::ToTimeT().
-//   char[32] full_hash;
-// array[sub_hash_count] {
-//   int32 chunk_id;
-//   int32 add_chunk_id;
-//   char[32] add_full_hash;
-// }
-// MD5Digest checksum;      // Checksum over preceeding data.
+// MD5Digest checksum;      // Checksum over entire file.
+//
+// The checksums are used to allow writing the file without doing an expensive
+// fsync().  Since the data can be re-fetched, failing the checksum is not
+// catastrophic.  Histograms indicate that file corruption here is pretty
+// uncommon.
+//
+// The |header_checksum| is present to guarantee valid header and chunk data for
+// updates.  Only that part of the file needs to be read to post the update.
+//
+// |shard_stride| breaks the file into approximately-equal portions, allowing
+// updates to stream from one file to another with modest memory usage.  It is
+// dynamic to adjust to different file sizes without adding excessive overhead.
 //
 // During the course of an update, uncommitted data is stored in a
 // temporary file (which is later re-used to commit).  This is an
@@ -66,12 +89,12 @@
 //   uint32 sub_hash_count;
 //   array[add_prefix_count] {
 //     int32 chunk_id;
-//     int32 prefix;
+//     uint32 prefix;
 //   }
 //   array[sub_prefix_count] {
 //     int32 chunk_id;
 //     int32 add_chunk_id;
-//     int32 add_prefix;
+//     uint32 add_prefix;
 //   }
 //   array[add_hash_count] {
 //     int32 chunk_id;
@@ -90,25 +113,21 @@
 // - Open a temp file for storing new chunk info.
 // - Write new chunks to the temp file.
 // - When the transaction is finished:
-//   - Read the rest of the original file's data into buffers.
-//   - Rewind the temp file and merge the new data into buffers.
-//   - Process buffers for deletions and apply subs.
-//   - Rewind and write the buffers out to temp file.
+//   - Read the update data from the temp file into memory.
+//   - Overwrite the temp file with new header data.
+//   - Until done:
+//     - Read shards of the original file's data into memory.
+//     - Merge from the update data.
+//     - Write shards to the temp file.
 //   - Delete original file.
 //   - Rename temp file to original filename.
-
-// TODO(shess): By using a checksum, this code can avoid doing an
-// fsync(), at the possible cost of more frequently retrieving the
-// full dataset.  Measure how often this occurs, and if it occurs too
-// often, consider retaining the last known-good file for recovery
-// purposes, rather than deleting it.
 
 class SafeBrowsingStoreFile : public SafeBrowsingStore {
  public:
   SafeBrowsingStoreFile();
   virtual ~SafeBrowsingStoreFile();
 
-  virtual void Init(const FilePath& filename,
+  virtual void Init(const base::FilePath& filename,
                     const base::Closure& corruption_callback) OVERRIDE;
 
   // Delete any on-disk files, including the permanent storage.
@@ -124,7 +143,6 @@ class SafeBrowsingStoreFile : public SafeBrowsingStore {
 
   virtual bool WriteAddPrefix(int32 chunk_id, SBPrefix prefix) OVERRIDE;
   virtual bool WriteAddHash(int32 chunk_id,
-                            base::Time receive_time,
                             const SBFullHash& full_hash) OVERRIDE;
   virtual bool WriteSubPrefix(int32 chunk_id,
                               int32 add_chunk_id, SBPrefix prefix) OVERRIDE;
@@ -133,12 +151,8 @@ class SafeBrowsingStoreFile : public SafeBrowsingStore {
   virtual bool FinishChunk() OVERRIDE;
 
   virtual bool BeginUpdate() OVERRIDE;
-  // Store updates with pending add full hashes in file store and
-  // return |add_prefixes_result| and |add_full_hashes_result|.
   virtual bool FinishUpdate(
-      const std::vector<SBAddFullHash>& pending_adds,
-      const std::set<SBPrefix>& prefix_misses,
-      SBAddPrefixes* add_prefixes_result,
+      safe_browsing::PrefixSetBuilder* builder,
       std::vector<SBAddFullHash>* add_full_hashes_result) OVERRIDE;
   virtual bool CancelUpdate() OVERRIDE;
 
@@ -158,62 +172,26 @@ class SafeBrowsingStoreFile : public SafeBrowsingStore {
 
   // Returns the name of the temporary file used to buffer data for
   // |filename|.  Exported for unit tests.
-  static const FilePath TemporaryFileForFilename(const FilePath& filename) {
-    return FilePath(filename.value() + FILE_PATH_LITERAL("_new"));
+  static const base::FilePath TemporaryFileForFilename(
+      const base::FilePath& filename) {
+    return base::FilePath(filename.value() + FILE_PATH_LITERAL("_new"));
   }
 
+  // Delete any on-disk files, including the permanent storage.
+  static bool DeleteStore(const base::FilePath& basename);
+
  private:
-  // Update store file with pending full hashes.
-  virtual bool DoUpdate(const std::vector<SBAddFullHash>& pending_adds,
-                        const std::set<SBPrefix>& prefix_misses,
-                        SBAddPrefixes* add_prefixes_result,
+  // Does the actual update for FinishUpdate(), so that FinishUpdate() can clean
+  // up correctly in case of error.
+  virtual bool DoUpdate(safe_browsing::PrefixSetBuilder* builder,
                         std::vector<SBAddFullHash>* add_full_hashes_result);
-
-  // Enumerate different format-change events for histogramming
-  // purposes.  DO NOT CHANGE THE ORDERING OF THESE VALUES.
-  // TODO(shess): Remove this once the format change is complete.
-  enum FormatEventType {
-    // Corruption detected, broken down by file format.
-    FORMAT_EVENT_FILE_CORRUPT,
-    FORMAT_EVENT_SQLITE_CORRUPT,  // Obsolete
-
-    // The type of format found in the file.  The expected case (new
-    // file format) is intentionally not covered.
-    FORMAT_EVENT_FOUND_SQLITE,
-    FORMAT_EVENT_FOUND_UNKNOWN,
-
-    // The number of SQLite-format files deleted should be the same as
-    // FORMAT_EVENT_FOUND_SQLITE.  It can differ if the delete fails,
-    // or if a failure prevents the update from succeeding.
-    FORMAT_EVENT_SQLITE_DELETED,  // Obsolete
-    FORMAT_EVENT_SQLITE_DELETE_FAILED,  // Obsolete
-
-    // Found and deleted (or failed to delete) the ancient "Safe
-    // Browsing" file.
-    FORMAT_EVENT_DELETED_ORIGINAL,
-    FORMAT_EVENT_DELETED_ORIGINAL_FAILED,
-
-    // The checksum did not check out in CheckValidity() or in
-    // FinishUpdate().  This most likely indicates that the machine
-    // crashed before the file was fully sync'ed to disk.
-    FORMAT_EVENT_VALIDITY_CHECKSUM_FAILURE,
-    FORMAT_EVENT_UPDATE_CHECKSUM_FAILURE,
-
-    // Memory space for histograms is determined by the max.  ALWAYS
-    // ADD NEW VALUES BEFORE THIS ONE.
-    FORMAT_EVENT_MAX
-  };
-
-  // Helper to record an event related to format conversion from
-  // SQLite to file.
-  static void RecordFormatEvent(FormatEventType event_type);
 
   // Some very lucky users have an original-format file still in their
   // profile.  Check for it and delete, recording a histogram for the
   // result (no histogram for not-found).  Logically this
   // would make more sense at the SafeBrowsingDatabase level, but
   // practically speaking that code doesn't touch files directly.
-  static void CheckForOriginalAndDelete(const FilePath& filename);
+  static void CheckForOriginalAndDelete(const base::FilePath& filename);
 
   // Close all files and clear all buffers.
   bool Close();
@@ -233,7 +211,7 @@ class SafeBrowsingStoreFile : public SafeBrowsingStore {
     // pre-reserved space is probably reasonable between each chunk
     // collected.
     SBAddPrefixes().swap(add_prefixes_);
-    std::vector<SBSubPrefix>().swap(sub_prefixes_);
+    SBSubPrefixes().swap(sub_prefixes_);
     std::vector<SBAddFullHash>().swap(add_hashes_);
     std::vector<SBSubFullHash>().swap(sub_hashes_);
     return true;
@@ -252,7 +230,7 @@ class SafeBrowsingStoreFile : public SafeBrowsingStore {
   // Buffers for collecting data between BeginChunk() and
   // FinishChunk().
   SBAddPrefixes add_prefixes_;
-  std::vector<SBSubPrefix> sub_prefixes_;
+  SBSubPrefixes sub_prefixes_;
   std::vector<SBAddFullHash> add_hashes_;
   std::vector<SBSubFullHash> sub_hashes_;
 
@@ -260,12 +238,12 @@ class SafeBrowsingStoreFile : public SafeBrowsingStore {
   int chunks_written_;
 
   // Name of the main database file.
-  FilePath filename_;
+  base::FilePath filename_;
 
   // Handles to the main and scratch files.  |empty_| is true if the
   // main file didn't exist when the update was started.
-  file_util::ScopedFILE file_;
-  file_util::ScopedFILE new_file_;
+  base::ScopedFILE file_;
+  base::ScopedFILE new_file_;
   bool empty_;
 
   // Cache of chunks which have been seen.  Loaded from the database

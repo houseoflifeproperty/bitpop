@@ -6,12 +6,13 @@
 #define UI_VIEWS_CONTROLS_LABEL_H_
 
 #include <string>
+#include <vector>
 
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/gfx/font.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/text_constants.h"
 #include "ui/views/view.h"
 
@@ -42,24 +43,32 @@ class VIEWS_EXPORT Label : public View {
   };
 
   enum ElideBehavior {
-    NO_ELIDE,         // Do not elide the label text; truncate as needed.
-    ELIDE_IN_MIDDLE,  // Add ellipsis in the middle of the string as needed.
-    ELIDE_AT_END,     // Add ellipsis at the end of the string as needed.
-    ELIDE_AS_EMAIL,   // Elide while retaining username/domain chars as needed.
+    NO_ELIDE,            // Do not elide the label text; truncate as needed.
+    ELIDE_AT_BEGINNING,  // Add ellipsis at the start of the string as needed.
+    ELIDE_IN_MIDDLE,     // Add ellipsis in the middle of the string as needed.
+    ELIDE_AT_END,        // Add ellipsis at the end of the string as needed.
+    ELIDE_AS_EMAIL,      // Elide while retaining username/domain chars
+                         // as needed.
   };
 
+  // Internal class name.
+  static const char kViewClassName[];
+
+  // The padding for the focus border when rendering focused text.
+  static const int kFocusBorderPadding;
+
   Label();
-  explicit Label(const string16& text);
-  Label(const string16& text, const gfx::Font& font);
+  explicit Label(const base::string16& text);
+  Label(const base::string16& text, const gfx::FontList& font_list);
   virtual ~Label();
 
-  // Get or set the font used by this label.
-  const gfx::Font& font() const { return font_; }
-  virtual void SetFont(const gfx::Font& font);
+  // Gets or sets the fonts used by this label.
+  const gfx::FontList& font_list() const { return font_list_; }
+  virtual void SetFontList(const gfx::FontList& font_list);
 
   // Get or set the label text.
-  const string16& text() const { return text_; }
-  void SetText(const string16& text);
+  const base::string16& text() const { return text_; }
+  virtual void SetText(const base::string16& text);
 
   // Enables or disables auto-color-readability (enabled by default).  If this
   // is enabled, then calls to set any foreground or background color will
@@ -84,6 +93,9 @@ class VIEWS_EXPORT Label : public View {
 
   // Sets the drop shadow's offset from the text.
   void SetShadowOffset(int x, int y);
+
+  // Sets the shadow blur. Default is zero.
+  void set_shadow_blur(double shadow_blur) { shadow_blur_ = shadow_blur; }
 
   // Disables shadows.
   void ClearEmbellishing();
@@ -113,16 +125,30 @@ class VIEWS_EXPORT Label : public View {
     return directionality_mode_;
   }
 
+  // Get or set the distance in pixels between baselines of multi-line text.
+  // Default is 0, indicating the distance between lines should be the standard
+  // one for the label's text, font list, and platform.
+  int line_height() const { return line_height_; }
+  void SetLineHeight(int height);
+
   // Get or set if the label text can wrap on multiple lines; default is false.
   bool is_multi_line() const { return is_multi_line_; }
   void SetMultiLine(bool multi_line);
+
+  // Get or set if the label text should be obscured before rendering (e.g.
+  // should "Password!" display as "*********"); default is false.
+  bool is_obscured() const { return is_obscured_; }
+  void SetObscured(bool obscured);
+
+  // Get the text as displayed to the user, respecting the 'obscured' flag.
+  const base::string16& layout_text() const { return layout_text_; }
 
   // Sets whether the label text can be split on words.
   // Default is false. This only works when is_multi_line is true.
   void SetAllowCharacterBreak(bool allow_character_break);
 
   // Sets whether the label text should be elided in the middle or end (if
-  // necessary). The default is to not elide at all.
+  // necessary). The default is to elide at the end.
   // NOTE: Eliding in the middle is not supported for multi-line strings.
   void SetElideBehavior(ElideBehavior elide_behavior);
 
@@ -130,7 +156,7 @@ class VIEWS_EXPORT Label : public View {
   // show the full text if it is wider than its bounds.  Calling this overrides
   // the default behavior and lets you set a custom tooltip.  To revert to
   // default behavior, call this with an empty string.
-  void SetTooltipText(const string16& tooltip_text);
+  void SetTooltipText(const base::string16& tooltip_text);
 
   // Resizes the label so its width is set to the width of the longest line and
   // its height deduced accordingly.
@@ -146,32 +172,33 @@ class VIEWS_EXPORT Label : public View {
   void set_collapse_when_hidden(bool value) { collapse_when_hidden_ = value; }
   bool collapse_when_hidden() const { return collapse_when_hidden_; }
 
-  void SetHasFocusBorder(bool has_focus_border);
-
   // Overridden from View:
   virtual gfx::Insets GetInsets() const OVERRIDE;
   virtual int GetBaseline() const OVERRIDE;
   // Overridden to compute the size required to display this label.
   virtual gfx::Size GetPreferredSize() OVERRIDE;
+  // Returns the width of an ellipsis if the label is non-empty, or 0 otherwise.
+  virtual gfx::Size GetMinimumSize() OVERRIDE;
   // Returns the height necessary to display this label with the provided width.
   // This method is used to layout multi-line labels. It is equivalent to
   // GetPreferredSize().height() if the receiver is not multi-line.
   virtual int GetHeightForWidth(int w) OVERRIDE;
-  virtual std::string GetClassName() const OVERRIDE;
+  virtual const char* GetClassName() const OVERRIDE;
+  virtual View* GetTooltipHandlerForPoint(const gfx::Point& point) OVERRIDE;
   virtual bool HitTestRect(const gfx::Rect& rect) const OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   // Gets the tooltip text for labels that are wider than their bounds, except
   // when the label is multiline, in which case it just returns false (no
   // tooltip).  If a custom tooltip has been specified with SetTooltipText()
   // it is returned instead.
   virtual bool GetTooltipText(const gfx::Point& p,
-                              string16* tooltip) const OVERRIDE;
+                              base::string16* tooltip) const OVERRIDE;
 
  protected:
   // Called by Paint to paint the text.  Override this to change how
   // text is painted.
   virtual void PaintText(gfx::Canvas* canvas,
-                         const string16& text,
+                         const base::string16& text,
                          const gfx::Rect& text_bounds,
                          int flags);
 
@@ -197,9 +224,11 @@ class VIEWS_EXPORT Label : public View {
   // Calls ComputeDrawStringFlags().
   FRIEND_TEST_ALL_PREFIXES(LabelTest, DisableSubpixelRendering);
 
-  static gfx::Font GetDefaultFont();
+  // Sets both |text_| and |layout_text_| to appropriate values, taking
+  // the label's 'obscured' status into account.
+  void SetTextInternal(const base::string16& text);
 
-  void Init(const string16& text, const gfx::Font& font);
+  void Init(const base::string16& text, const gfx::FontList& font_list);
 
   void RecalculateColors();
 
@@ -211,15 +240,22 @@ class VIEWS_EXPORT Label : public View {
   gfx::Rect GetAvailableRect() const;
 
   // Returns parameters to be used for the DrawString call.
-  void CalculateDrawStringParams(string16* paint_text,
+  void CalculateDrawStringParams(base::string16* paint_text,
                                  gfx::Rect* text_bounds,
                                  int* flags) const;
 
   // Updates any colors that have not been explicitly set from the theme.
   void UpdateColorsFromTheme(const ui::NativeTheme* theme);
 
-  string16 text_;
-  gfx::Font font_;
+  // Resets |cached_heights_| and |cached_heights_cursor_| and mark
+  // |text_size_valid_| as false.
+  void ResetCachedSize();
+
+  bool ShouldShowDefaultTooltip() const;
+
+  base::string16 text_;
+  base::string16 layout_text_;
+  gfx::FontList font_list_;
   SkColor requested_enabled_color_;
   SkColor actual_enabled_color_;
   SkColor requested_disabled_color_;
@@ -234,21 +270,21 @@ class VIEWS_EXPORT Label : public View {
   bool auto_color_readability_;
   mutable gfx::Size text_size_;
   mutable bool text_size_valid_;
+  // Indicates the level of shadow blurring. Default is zero.
+  double shadow_blur_;
+  int line_height_;
   bool is_multi_line_;
+  bool is_obscured_;
   bool allow_character_break_;
   ElideBehavior elide_behavior_;
   gfx::HorizontalAlignment horizontal_alignment_;
-  string16 tooltip_text_;
+  base::string16 tooltip_text_;
   // Whether to collapse the label when it's not visible.
   bool collapse_when_hidden_;
   // The following member variable is used to control whether the
   // directionality is auto-detected based on first strong directionality
   // character or is determined by chrome UI's locale.
   DirectionalityMode directionality_mode_;
-  // When embedded in a larger control that is focusable, setting this flag
-  // allows this view to reserve space for a focus border that it otherwise
-  // might not have because it is not itself focusable.
-  bool has_focus_border_;
 
   // Colors for shadow.
   SkColor enabled_shadow_color_;
@@ -259,6 +295,10 @@ class VIEWS_EXPORT Label : public View {
 
   // Should a shadow be drawn behind the text?
   bool has_shadow_;
+
+  // The cached heights to avoid recalculation in GetHeightForWidth().
+  std::vector<gfx::Size> cached_heights_;
+  int cached_heights_cursor_;
 
   DISALLOW_COPY_AND_ASSIGN(Label);
 };

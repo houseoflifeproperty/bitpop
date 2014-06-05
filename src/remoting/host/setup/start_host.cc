@@ -8,13 +8,15 @@
 #include "base/at_exit.h"
 #include "base/command_line.h"
 #include "base/run_loop.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/threading/thread.h"
+#include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "remoting/base/url_request_context.h"
+#include "remoting/host/service_urls.h"
 #include "remoting/host/setup/host_starter.h"
 #include "remoting/host/setup/oauth_helper.h"
 #include "remoting/host/setup/pin_validator.h"
-#include "remoting/host/url_request_context.h"
 
 // A simple command-line app that registers and starts a host.
 
@@ -24,7 +26,7 @@ using remoting::HostStarter;
 bool g_started = false;
 
 // The main message loop.
-MessageLoop* g_message_loop = NULL;
+base::MessageLoop* g_message_loop = NULL;
 
 // Lets us hide the PIN that a user types.
 void SetEcho(bool echo) {
@@ -50,7 +52,7 @@ std::string ReadString(bool no_echo) {
     SetEcho(true);
   }
   if (!result)
-    return "";
+    return std::string();
   size_t newline_index = str.find('\n');
   if (newline_index != std::string::npos)
     str[newline_index] = '\0';
@@ -60,7 +62,7 @@ std::string ReadString(bool no_echo) {
 
 // Called when the HostStarter has finished.
 void OnDone(HostStarter::Result result) {
-  if (MessageLoop::current() != g_message_loop) {
+  if (base::MessageLoop::current() != g_message_loop) {
     g_message_loop->PostTask(FROM_HERE, base::Bind(&OnDone, result));
     return;
   }
@@ -140,20 +142,21 @@ int main(int argc, char** argv) {
   base::AtExitManager exit_manager;
 
   // Provide message loops and threads for the URLRequestContextGetter.
-  MessageLoop message_loop;
+  base::MessageLoop message_loop;
   g_message_loop = &message_loop;
   base::Thread io_thread("IO thread");
-  base::Thread::Options io_thread_options(MessageLoop::TYPE_IO, 0);
+  base::Thread::Options io_thread_options(base::MessageLoop::TYPE_IO, 0);
   io_thread.StartWithOptions(io_thread_options);
 
   scoped_refptr<net::URLRequestContextGetter> url_request_context_getter(
-      new remoting::URLRequestContextGetter(
-          g_message_loop->message_loop_proxy(),
-          io_thread.message_loop_proxy()));
+      new remoting::URLRequestContextGetter(io_thread.message_loop_proxy()));
+
+  net::URLFetcher::SetIgnoreCertificateRequests(true);
 
   // Start the host.
-  scoped_ptr<HostStarter> host_starter(
-      HostStarter::Create(url_request_context_getter));
+  scoped_ptr<HostStarter> host_starter(HostStarter::Create(
+      remoting::ServiceUrls::GetInstance()->directory_hosts_url(),
+      url_request_context_getter.get()));
   if (redirect_url.empty()) {
     redirect_url = remoting::GetDefaultOauthRedirectUrl();
   }

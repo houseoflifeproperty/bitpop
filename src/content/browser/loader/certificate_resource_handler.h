@@ -13,8 +13,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/browser/loader/resource_handler.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/mime_util.h"
+#include "url/gurl.h"
 
 namespace net {
 class IOBuffer;
@@ -31,9 +31,7 @@ namespace content {
 //
 class CertificateResourceHandler : public ResourceHandler {
  public:
-  CertificateResourceHandler(net::URLRequest* request,
-                             int render_process_host_id,
-                             int render_view_id);
+  explicit CertificateResourceHandler(net::URLRequest* request);
   virtual ~CertificateResourceHandler();
 
   virtual bool OnUploadProgress(int request_id,
@@ -56,9 +54,14 @@ class CertificateResourceHandler : public ResourceHandler {
                            const GURL& url,
                            bool* defer) OVERRIDE;
 
+  // Pass-through implementation.
+  virtual bool OnBeforeNetworkStart(int request_id,
+                                    const GURL& url,
+                                    bool* defer) OVERRIDE;
+
   // Create a new buffer to store received data.
   virtual bool OnWillRead(int request_id,
-                          net::IOBuffer** buf,
+                          scoped_refptr<net::IOBuffer>* buf,
                           int* buf_size,
                           int min_size) OVERRIDE;
 
@@ -68,9 +71,13 @@ class CertificateResourceHandler : public ResourceHandler {
                                bool* defer) OVERRIDE;
 
   // Done downloading the certificate.
-  virtual bool OnResponseCompleted(int request_id,
+  virtual void OnResponseCompleted(int request_id,
                                    const net::URLRequestStatus& urs,
-                                   const std::string& sec_info) OVERRIDE;
+                                   const std::string& sec_info,
+                                   bool* defer) OVERRIDE;
+
+  // N/A to cert downloading.
+  virtual void OnDataDownloaded(int request_id, int bytes_downloaded) OVERRIDE;
 
  private:
   typedef std::vector<std::pair<scoped_refptr<net::IOBuffer>,
@@ -79,15 +86,10 @@ class CertificateResourceHandler : public ResourceHandler {
   void AssembleResource();
 
   GURL url_;
-  net::URLRequest* request_;
   size_t content_length_;
   ContentVector buffer_;
   scoped_refptr<net::IOBuffer> read_buffer_;
   scoped_refptr<net::IOBuffer> resource_buffer_;  // Downloaded certificate.
-  // The id of the |RenderProcessHost| which started the download.
-  int render_process_host_id_;
-  // The id of the |RenderView| which started the download.
-  int render_view_id_;
   net::CertificateMimeType cert_type_;
   DISALLOW_COPY_AND_ASSIGN(CertificateResourceHandler);
 };

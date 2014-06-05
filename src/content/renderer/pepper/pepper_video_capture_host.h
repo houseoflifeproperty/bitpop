@@ -7,24 +7,27 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
+#include "content/common/media/video_capture.h"
 #include "content/public/renderer/renderer_ppapi_host.h"
 #include "content/renderer/pepper/pepper_device_enumeration_host_helper.h"
-#include "media/video/capture/video_capture.h"
+#include "content/renderer/pepper/ppb_buffer_impl.h"
 #include "media/video/capture/video_capture_types.h"
 #include "ppapi/c/dev/ppp_video_capture_dev.h"
 #include "ppapi/host/host_message_context.h"
 #include "ppapi/host/resource_host.h"
-#include "webkit/plugins/ppapi/plugin_delegate.h"
-#include "webkit/plugins/ppapi/ppb_buffer_impl.h"
+
+namespace media {
+class VideoFrame;
+}  // namespace media
 
 namespace content {
+class PepperPlatformVideoCapture;
+class RendererPpapiHostImpl;
 
-class PepperVideoCaptureHost
-  : public ppapi::host::ResourceHost,
-    public webkit::ppapi::PluginDelegate::PlatformVideoCaptureEventHandler,
-    public PepperDeviceEnumerationHostHelper::Delegate {
+class PepperVideoCaptureHost : public ppapi::host::ResourceHost {
  public:
-  PepperVideoCaptureHost(RendererPpapiHost* host,
+  PepperVideoCaptureHost(RendererPpapiHostImpl* host,
                          PP_Instance instance,
                          PP_Resource resource);
 
@@ -36,23 +39,28 @@ class PepperVideoCaptureHost
       const IPC::Message& msg,
       ppapi::host::HostMessageContext* context) OVERRIDE;
 
-  // PluginDelegate::PlatformVideoCaptureEventHandler
-  virtual void OnInitialized(media::VideoCapture* capture,
-                             bool succeeded) OVERRIDE;
-  virtual void OnStarted(media::VideoCapture* capture) OVERRIDE;
-  virtual void OnStopped(media::VideoCapture* capture) OVERRIDE;
-  virtual void OnPaused(media::VideoCapture* capture) OVERRIDE;
-  virtual void OnError(media::VideoCapture* capture, int error_code) OVERRIDE;
-  virtual void OnRemoved(media::VideoCapture* capture) OVERRIDE;
-  virtual void OnBufferReady(
-      media::VideoCapture* capture,
-      scoped_refptr<media::VideoCapture::VideoFrameBuffer> buffer) OVERRIDE;
-  virtual void OnDeviceInfoReceived(
-      media::VideoCapture* capture,
-      const media::VideoCaptureParams& device_info) OVERRIDE;
+  // These methods are called by PepperPlatformVideoCapture only.
 
-  // PepperDeviceEnumerationHostHelper::Delegate implementation.
-  virtual webkit::ppapi::PluginDelegate* GetPluginDelegate() OVERRIDE;
+  // Called when video capture is initialized. We can start
+  // video capture if |succeeded| is true.
+  void OnInitialized(bool succeeded);
+
+  // Called when video capture has started successfully.
+  void OnStarted();
+
+  // Called when video capture has stopped. There will be no more
+  // frames delivered.
+  void OnStopped();
+
+  // Called when video capture has paused.
+  void OnPaused();
+
+  // Called when video capture cannot be started because of an error.
+  void OnError();
+
+  // Called when a video frame is ready.
+  void OnFrameReady(const scoped_refptr<media::VideoFrame>& frame,
+                    media::VideoCaptureFormat format);
 
  private:
   int32_t OnOpen(ppapi::host::HostMessageContext* context,
@@ -67,6 +75,8 @@ class PepperVideoCaptureHost
 
   int32_t StopCapture();
   int32_t Close();
+  void PostErrorReply();
+  void AllocBuffers(const gfx::Size& resolution, int frame_rate);
   void ReleaseBuffers();
   void SendStatus();
 
@@ -77,8 +87,7 @@ class PepperVideoCaptureHost
 
   bool SetStatus(PP_VideoCaptureStatus_Dev status, bool forced);
 
-  scoped_refptr<webkit::ppapi::PluginDelegate::PlatformVideoCapture>
-      platform_video_capture_;
+  scoped_ptr<PepperPlatformVideoCapture> platform_video_capture_;
 
   // Buffers of video frame.
   struct BufferInfo {
@@ -87,15 +96,16 @@ class PepperVideoCaptureHost
 
     bool in_use;
     void* data;
-    scoped_refptr<webkit::ppapi::PPB_Buffer_Impl> buffer;
+    scoped_refptr<PPB_Buffer_Impl> buffer;
   };
 
-  RendererPpapiHost* renderer_ppapi_host_;
+  RendererPpapiHostImpl* renderer_ppapi_host_;
 
+  gfx::Size alloc_size_;
   std::vector<BufferInfo> buffers_;
   size_t buffer_count_hint_;
 
-  media::VideoCaptureCapability capability_;
+  media::VideoCaptureParams video_capture_params_;
 
   PP_VideoCaptureStatus_Dev status_;
 

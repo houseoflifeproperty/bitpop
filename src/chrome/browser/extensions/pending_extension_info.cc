@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,27 +10,34 @@ namespace extensions {
 
 PendingExtensionInfo::PendingExtensionInfo(
     const std::string& id,
+    const std::string& install_parameter,
     const GURL& update_url,
     const Version& version,
     ShouldAllowInstallPredicate should_allow_install,
     bool is_from_sync,
     bool install_silently,
-    Extension::Location install_source)
+    Manifest::Location install_source,
+    int creation_flags,
+    bool mark_acknowledged)
     : id_(id),
       update_url_(update_url),
       version_(version),
+      install_parameter_(install_parameter),
       should_allow_install_(should_allow_install),
       is_from_sync_(is_from_sync),
       install_silently_(install_silently),
-      install_source_(install_source) {}
+      install_source_(install_source),
+      creation_flags_(creation_flags),
+      mark_acknowledged_(mark_acknowledged) {}
 
 PendingExtensionInfo::PendingExtensionInfo()
-    : id_(""),
-      update_url_(),
+    : update_url_(),
       should_allow_install_(NULL),
       is_from_sync_(true),
       install_silently_(false),
-      install_source_(Extension::INVALID) {}
+      install_source_(Manifest::INVALID_LOCATION) {}
+
+PendingExtensionInfo::~PendingExtensionInfo() {}
 
 bool PendingExtensionInfo::operator==(const PendingExtensionInfo& rhs) const {
   return id_ == rhs.id_;
@@ -55,8 +62,8 @@ int PendingExtensionInfo::CompareTo(const PendingExtensionInfo& other) const {
 
   // Different install sources; |this| has higher precedence if
   // |install_source_| is the higher priority source.
-  Extension::Location higher_priority_source =
-      Extension::GetHigherPriorityLocation(
+  Manifest::Location higher_priority_source =
+      Manifest::GetHigherPriorityLocation(
           install_source_, other.install_source_);
 
   return higher_priority_source == install_source_ ? 1 : -1;

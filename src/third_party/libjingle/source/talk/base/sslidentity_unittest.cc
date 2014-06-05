@@ -32,6 +32,8 @@
 #include "talk/base/ssladapter.h"
 #include "talk/base/sslidentity.h"
 
+using talk_base::SSLIdentity;
+
 const char kTestCertificate[] = "-----BEGIN CERTIFICATE-----\n"
     "MIIB6TCCAVICAQYwDQYJKoZIhvcNAQEEBQAwWzELMAkGA1UEBhMCQVUxEzARBgNV\n"
     "BAgTClF1ZWVuc2xhbmQxGjAYBgNVBAoTEUNyeXB0U29mdCBQdHkgTHRkMRswGQYD\n"
@@ -55,7 +57,7 @@ const unsigned char kTestCertSha1[] = {0xA6, 0xC8, 0x59, 0xEA,
 class SSLIdentityTest : public testing::Test {
  public:
   SSLIdentityTest() :
-      identity1_(NULL), identity2_(NULL) {
+      identity1_(), identity2_() {
   }
 
   ~SSLIdentityTest() {
@@ -65,16 +67,36 @@ class SSLIdentityTest : public testing::Test {
     talk_base::InitializeSSL();
   }
 
+  static void TearDownTestCase() {
+    talk_base::CleanupSSL();
+  }
+
   virtual void SetUp() {
-    identity1_.reset(talk_base::SSLIdentity::Generate("test1"));
-    identity2_.reset(talk_base::SSLIdentity::Generate("test2"));
+    identity1_.reset(SSLIdentity::Generate("test1"));
+    identity2_.reset(SSLIdentity::Generate("test2"));
 
     ASSERT_TRUE(identity1_);
     ASSERT_TRUE(identity2_);
 
     test_cert_.reset(
-        talk_base::SSLCertificate::FromPEMString(kTestCertificate, 0));
+        talk_base::SSLCertificate::FromPEMString(kTestCertificate));
     ASSERT_TRUE(test_cert_);
+  }
+
+  void TestGetSignatureDigestAlgorithm() {
+    std::string digest_algorithm;
+    // Both NSSIdentity::Generate and OpenSSLIdentity::Generate are
+    // hard-coded to generate RSA-SHA1 certificates.
+    ASSERT_TRUE(identity1_->certificate().GetSignatureDigestAlgorithm(
+        &digest_algorithm));
+    ASSERT_EQ(talk_base::DIGEST_SHA_1, digest_algorithm);
+    ASSERT_TRUE(identity2_->certificate().GetSignatureDigestAlgorithm(
+        &digest_algorithm));
+    ASSERT_EQ(talk_base::DIGEST_SHA_1, digest_algorithm);
+
+    // The test certificate has an MD5-based signature.
+    ASSERT_TRUE(test_cert_->GetSignatureDigestAlgorithm(&digest_algorithm));
+    ASSERT_EQ(talk_base::DIGEST_MD5, digest_algorithm);
   }
 
   void TestDigest(const std::string &algorithm, size_t expected_len,
@@ -122,8 +144,8 @@ class SSLIdentityTest : public testing::Test {
   }
 
  private:
-  talk_base::scoped_ptr<talk_base::SSLIdentity> identity1_;
-  talk_base::scoped_ptr<talk_base::SSLIdentity> identity2_;
+  talk_base::scoped_ptr<SSLIdentity> identity1_;
+  talk_base::scoped_ptr<SSLIdentity> identity2_;
   talk_base::scoped_ptr<talk_base::SSLCertificate> test_cert_;
 };
 
@@ -150,4 +172,55 @@ TEST_F(SSLIdentityTest, DigestSHA384) {
 
 TEST_F(SSLIdentityTest, DigestSHA512) {
   TestDigest(talk_base::DIGEST_SHA_512, 64);
+}
+
+TEST_F(SSLIdentityTest, FromPEMStrings) {
+  static const char kRSA_PRIVATE_KEY_PEM[] =
+      "-----BEGIN RSA PRIVATE KEY-----\n"
+      "MIICdwIBADANBgkqhkiG9w0BAQEFAASCAmEwggJdAgEAAoGBAMYRkbhmI7kVA/rM\n"
+      "czsZ+6JDhDvnkF+vn6yCAGuRPV03zuRqZtDy4N4to7PZu9PjqrRl7nDMXrG3YG9y\n"
+      "rlIAZ72KjcKKFAJxQyAKLCIdawKRyp8RdK3LEySWEZb0AV58IadqPZDTNHHRX8dz\n"
+      "5aTSMsbbkZ+C/OzTnbiMqLL/vg6jAgMBAAECgYAvgOs4FJcgvp+TuREx7YtiYVsH\n"
+      "mwQPTum2z/8VzWGwR8BBHBvIpVe1MbD/Y4seyI2aco/7UaisatSgJhsU46/9Y4fq\n"
+      "2TwXH9QANf4at4d9n/R6rzwpAJOpgwZgKvdQjkfrKTtgLV+/dawvpxUYkRH4JZM1\n"
+      "CVGukMfKNrSVH4Ap4QJBAOJmGV1ASPnB4r4nc99at7JuIJmd7fmuVUwUgYi4XgaR\n"
+      "WhScBsgYwZ/JoywdyZJgnbcrTDuVcWG56B3vXbhdpMsCQQDf9zeJrjnPZ3Cqm79y\n"
+      "kdqANep0uwZciiNiWxsQrCHztywOvbFhdp8iYVFG9EK8DMY41Y5TxUwsHD+67zao\n"
+      "ZNqJAkEA1suLUP/GvL8IwuRneQd2tWDqqRQ/Td3qq03hP7e77XtF/buya3Ghclo5\n"
+      "54czUR89QyVfJEC6278nzA7n2h1uVQJAcG6mztNL6ja/dKZjYZye2CY44QjSlLo0\n"
+      "MTgTSjdfg/28fFn2Jjtqf9Pi/X+50LWI/RcYMC2no606wRk9kyOuIQJBAK6VSAim\n"
+      "1pOEjsYQn0X5KEIrz1G3bfCbB848Ime3U2/FWlCHMr6ch8kCZ5d1WUeJD3LbwMNG\n"
+      "UCXiYxSsu20QNVw=\n"
+      "-----END RSA PRIVATE KEY-----\n";
+
+  static const char kCERT_PEM[] =
+      "-----BEGIN CERTIFICATE-----\n"
+      "MIIBmTCCAQKgAwIBAgIEbzBSAjANBgkqhkiG9w0BAQsFADARMQ8wDQYDVQQDEwZX\n"
+      "ZWJSVEMwHhcNMTQwMTAyMTgyNDQ3WhcNMTQwMjAxMTgyNDQ3WjARMQ8wDQYDVQQD\n"
+      "EwZXZWJSVEMwgZ8wDQYJKoZIhvcNAQEBBQADgY0AMIGJAoGBAMYRkbhmI7kVA/rM\n"
+      "czsZ+6JDhDvnkF+vn6yCAGuRPV03zuRqZtDy4N4to7PZu9PjqrRl7nDMXrG3YG9y\n"
+      "rlIAZ72KjcKKFAJxQyAKLCIdawKRyp8RdK3LEySWEZb0AV58IadqPZDTNHHRX8dz\n"
+      "5aTSMsbbkZ+C/OzTnbiMqLL/vg6jAgMBAAEwDQYJKoZIhvcNAQELBQADgYEAUflI\n"
+      "VUe5Krqf5RVa5C3u/UTAOAUJBiDS3VANTCLBxjuMsvqOG0WvaYWP3HYPgrz0jXK2\n"
+      "LJE/mGw3MyFHEqi81jh95J+ypl6xKW6Rm8jKLR87gUvCaVYn/Z4/P3AqcQTB7wOv\n"
+      "UD0A8qfhfDM+LK6rPAnCsVN0NRDY3jvd6rzix9M=\n"
+      "-----END CERTIFICATE-----\n";
+
+  talk_base::scoped_ptr<SSLIdentity> identity(
+      SSLIdentity::FromPEMStrings(kRSA_PRIVATE_KEY_PEM, kCERT_PEM));
+  EXPECT_TRUE(identity);
+  EXPECT_EQ(kCERT_PEM, identity->certificate().ToPEMString());
+}
+
+TEST_F(SSLIdentityTest, PemDerConversion) {
+  std::string der;
+  EXPECT_TRUE(SSLIdentity::PemToDer("CERTIFICATE", kTestCertificate, &der));
+
+  EXPECT_EQ(kTestCertificate, SSLIdentity::DerToPem(
+      "CERTIFICATE",
+      reinterpret_cast<const unsigned char*>(der.data()), der.length()));
+}
+
+TEST_F(SSLIdentityTest, GetSignatureDigestAlgorithm) {
+  TestGetSignatureDigestAlgorithm();
 }

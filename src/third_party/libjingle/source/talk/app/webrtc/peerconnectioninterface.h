@@ -72,9 +72,12 @@
 #include <vector>
 
 #include "talk/app/webrtc/datachannelinterface.h"
+#include "talk/app/webrtc/dtmfsenderinterface.h"
 #include "talk/app/webrtc/jsep.h"
-#include "talk/app/webrtc/statstypes.h"
 #include "talk/app/webrtc/mediastreaminterface.h"
+#include "talk/app/webrtc/statstypes.h"
+#include "talk/app/webrtc/umametrics.h"
+#include "talk/base/fileutils.h"
 #include "talk/base/socketaddress.h"
 
 namespace talk_base {
@@ -83,53 +86,29 @@ class Thread;
 
 namespace cricket {
 class PortAllocator;
+class WebRtcVideoDecoderFactory;
+class WebRtcVideoEncoderFactory;
 }
 
 namespace webrtc {
 class AudioDeviceModule;
+class MediaConstraintsInterface;
 
 // MediaStream container interface.
 class StreamCollectionInterface : public talk_base::RefCountInterface {
  public:
+  // TODO(ronghuawu): Update the function names to c++ style, e.g. find -> Find.
   virtual size_t count() = 0;
   virtual MediaStreamInterface* at(size_t index) = 0;
   virtual MediaStreamInterface* find(const std::string& label) = 0;
+  virtual MediaStreamTrackInterface* FindAudioTrack(
+      const std::string& id) = 0;
+  virtual MediaStreamTrackInterface* FindVideoTrack(
+      const std::string& id) = 0;
 
  protected:
   // Dtor protected as objects shouldn't be deleted via this interface.
   ~StreamCollectionInterface() {}
-};
-
-// PeerConnection callback interface. Application should implement these
-// methods.
-class PeerConnectionObserver : public IceCandidateObserver {
- public:
-  enum StateType {
-    kReadyState,
-    kIceState,
-  };
-
-  virtual void OnError() = 0;
-
-  // Triggered when ReadyState, SdpState or IceState have changed.
-  virtual void OnStateChange(StateType state_changed) = 0;
-
-  // Triggered when media is received on a new stream from remote peer.
-  virtual void OnAddStream(MediaStreamInterface* stream) = 0;
-
-  // Triggered when a remote peer close a stream.
-  virtual void OnRemoveStream(MediaStreamInterface* stream) = 0;
-
-  // Triggered when a remote peer open a data channel.
-  // TODO(perkj): Make pure virtual.
-  virtual void OnDataChannel(DataChannelInterface* data_channel) {}
-
-  // Triggered when renegotation is needed, for example the ICE has restarted.
-  virtual void OnRenegotiationNeeded() {}
-
- protected:
-  // Dtor protected as objects shouldn't be deleted via this interface.
-  ~PeerConnectionObserver() {}
 };
 
 class StatsObserver : public talk_base::RefCountInterface {
@@ -140,17 +119,29 @@ class StatsObserver : public talk_base::RefCountInterface {
   virtual ~StatsObserver() {}
 };
 
-class PeerConnectionInterface : public JsepInterface,
-                                public talk_base::RefCountInterface {
+class UMAObserver : public talk_base::RefCountInterface {
  public:
-  enum ReadyState {
-    kNew,
-    kOpening,
-    kActive,
-    kClosing,
+  virtual void IncrementCounter(UMAMetricsCounter type) = 0;
+  virtual void AddHistogramSample(UMAMetricsName type, int value) = 0;
+
+ protected:
+  virtual ~UMAObserver() {}
+};
+
+class PeerConnectionInterface : public talk_base::RefCountInterface {
+ public:
+  // See http://dev.w3.org/2011/webrtc/editor/webrtc.html#state-definitions .
+  enum SignalingState {
+    kStable,
+    kHaveLocalOffer,
+    kHaveLocalPrAnswer,
+    kHaveRemoteOffer,
+    kHaveRemotePrAnswer,
     kClosed,
   };
 
+  // TODO(bemasc): Remove IceState when callers are changed to
+  // IceConnection/GatheringState.
   enum IceState {
     kIceNew,
     kIceGathering,
@@ -160,6 +151,53 @@ class PeerConnectionInterface : public JsepInterface,
     kIceCompleted,
     kIceFailed,
     kIceClosed,
+  };
+
+  enum IceGatheringState {
+    kIceGatheringNew,
+    kIceGatheringGathering,
+    kIceGatheringComplete
+  };
+
+  enum IceConnectionState {
+    kIceConnectionNew,
+    kIceConnectionChecking,
+    kIceConnectionConnected,
+    kIceConnectionCompleted,
+    kIceConnectionFailed,
+    kIceConnectionDisconnected,
+    kIceConnectionClosed,
+  };
+
+  struct IceServer {
+    std::string uri;
+    std::string username;
+    std::string password;
+  };
+  typedef std::vector<IceServer> IceServers;
+
+  enum IceTransportsType {
+    kNone,
+    kRelay,
+    kNoHost,
+    kAll
+  };
+
+  struct RTCConfiguration {
+    IceTransportsType type;
+    IceServers servers;
+
+    RTCConfiguration() : type(kAll) {}
+    explicit RTCConfiguration(IceTransportsType type) : type(type) {}
+  };
+
+  // Used by GetStats to decide which stats to include in the stats reports.
+  // |kStatsOutputLevelStandard| includes the standard stats for Javascript API;
+  // |kStatsOutputLevelDebug| includes both the standard stats and additional
+  // stats for debugging purposes.
+  enum StatsOutputLevel {
+    kStatsOutputLevelStandard,
+    kStatsOutputLevelDebug,
   };
 
   // Accessor methods to active local streams.
@@ -181,41 +219,122 @@ class PeerConnectionInterface : public JsepInterface,
   // remote peer is notified.
   virtual void RemoveStream(MediaStreamInterface* stream) = 0;
 
+  // Returns pointer to the created DtmfSender on success.
+  // Otherwise returns NULL.
+  virtual talk_base::scoped_refptr<DtmfSenderInterface> CreateDtmfSender(
+      AudioTrackInterface* track) = 0;
+
   virtual bool GetStats(StatsObserver* observer,
-                        MediaStreamTrackInterface* track) = 0;
-
-  // Returns true if the |track| is capable of sending DTMF. Otherwise returns
-  // false.
-  virtual bool CanSendDtmf(const AudioTrackInterface* track) = 0;
-
-  // Queues a task that sends the DTMF |tones| using |send_track|.
-  // If the |play_track| is specified, play out an appropriate audio feedback
-  // signal using this track.
-  // The |tones| parameter is treated as a series of characters.
-  // The characters 0 to 9, A to D, #, and * generated the associated DTMF
-  // tones. The characters a to d are equivalent to A to D.
-  // The character, indicates a an delay of 2 seconds before processing the next
-  // character in the tones parameter. Unrecognized characters are ignored.
-  // If SendDtmf is called on the same object while an existing task for this
-  // object to generate DTMF is still running, the previous task is canceled.
-  // The duration can not be more than 6000 or less than 70.
-  virtual bool SendDtmf(const AudioTrackInterface* send_track,
-                        const std::string& tones, int duration,
-                        const AudioTrackInterface* play_track) = 0;
+                        MediaStreamTrackInterface* track,
+                        StatsOutputLevel level) = 0;
 
   virtual talk_base::scoped_refptr<DataChannelInterface> CreateDataChannel(
       const std::string& label,
       const DataChannelInit* config) = 0;
 
-  // Returns the current ReadyState.
-  virtual ReadyState ready_state() = 0;
+  virtual const SessionDescriptionInterface* local_description() const = 0;
+  virtual const SessionDescriptionInterface* remote_description() const = 0;
 
+  // Create a new offer.
+  // The CreateSessionDescriptionObserver callback will be called when done.
+  virtual void CreateOffer(CreateSessionDescriptionObserver* observer,
+                           const MediaConstraintsInterface* constraints) = 0;
+  // Create an answer to an offer.
+  // The CreateSessionDescriptionObserver callback will be called when done.
+  virtual void CreateAnswer(CreateSessionDescriptionObserver* observer,
+                            const MediaConstraintsInterface* constraints) = 0;
+  // Sets the local session description.
+  // JsepInterface takes the ownership of |desc| even if it fails.
+  // The |observer| callback will be called when done.
+  virtual void SetLocalDescription(SetSessionDescriptionObserver* observer,
+                                   SessionDescriptionInterface* desc) = 0;
+  // Sets the remote session description.
+  // JsepInterface takes the ownership of |desc| even if it fails.
+  // The |observer| callback will be called when done.
+  virtual void SetRemoteDescription(SetSessionDescriptionObserver* observer,
+                                    SessionDescriptionInterface* desc) = 0;
+  // Restarts or updates the ICE Agent process of gathering local candidates
+  // and pinging remote candidates.
+  virtual bool UpdateIce(const IceServers& configuration,
+                         const MediaConstraintsInterface* constraints) = 0;
+  // Provides a remote candidate to the ICE Agent.
+  // A copy of the |candidate| will be created and added to the remote
+  // description. So the caller of this method still has the ownership of the
+  // |candidate|.
+  // TODO(ronghuawu): Consider to change this so that the AddIceCandidate will
+  // take the ownership of the |candidate|.
+  virtual bool AddIceCandidate(const IceCandidateInterface* candidate) = 0;
+
+  virtual void RegisterUMAObserver(UMAObserver* observer) = 0;
+
+  // Returns the current SignalingState.
+  virtual SignalingState signaling_state() = 0;
+
+  // TODO(bemasc): Remove ice_state when callers are changed to
+  // IceConnection/GatheringState.
   // Returns the current IceState.
   virtual IceState ice_state() = 0;
+  virtual IceConnectionState ice_connection_state() = 0;
+  virtual IceGatheringState ice_gathering_state() = 0;
+
+  // Terminates all media and closes the transport.
+  virtual void Close() = 0;
 
  protected:
   // Dtor protected as objects shouldn't be deleted via this interface.
   ~PeerConnectionInterface() {}
+};
+
+// PeerConnection callback interface. Application should implement these
+// methods.
+class PeerConnectionObserver {
+ public:
+  enum StateType {
+    kSignalingState,
+    kIceState,
+  };
+
+  virtual void OnError() = 0;
+
+  // Triggered when the SignalingState changed.
+  virtual void OnSignalingChange(
+     PeerConnectionInterface::SignalingState new_state) {}
+
+  // Triggered when SignalingState or IceState have changed.
+  // TODO(bemasc): Remove once callers transition to OnSignalingChange.
+  virtual void OnStateChange(StateType state_changed) {}
+
+  // Triggered when media is received on a new stream from remote peer.
+  virtual void OnAddStream(MediaStreamInterface* stream) = 0;
+
+  // Triggered when a remote peer close a stream.
+  virtual void OnRemoveStream(MediaStreamInterface* stream) = 0;
+
+  // Triggered when a remote peer open a data channel.
+  // TODO(perkj): Make pure virtual.
+  virtual void OnDataChannel(DataChannelInterface* data_channel) {}
+
+  // Triggered when renegotiation is needed, for example the ICE has restarted.
+  virtual void OnRenegotiationNeeded() = 0;
+
+  // Called any time the IceConnectionState changes
+  virtual void OnIceConnectionChange(
+      PeerConnectionInterface::IceConnectionState new_state) {}
+
+  // Called any time the IceGatheringState changes
+  virtual void OnIceGatheringChange(
+      PeerConnectionInterface::IceGatheringState new_state) {}
+
+  // New Ice candidate have been found.
+  virtual void OnIceCandidate(const IceCandidateInterface* candidate) = 0;
+
+  // TODO(bemasc): Remove this once callers transition to OnIceGatheringChange.
+  // All Ice candidates have been found.
+  virtual void OnIceComplete() {}
+
+ protected:
+  // Dtor protected as objects shouldn't be deleted via this interface.
+  ~PeerConnectionObserver() {}
 };
 
 // Factory class used for creating cricket::PortAllocator that is used
@@ -233,13 +352,19 @@ class PortAllocatorFactoryInterface : public talk_base::RefCountInterface {
     TurnConfiguration(const std::string& address,
                       int port,
                       const std::string& username,
-                      const std::string& password)
+                      const std::string& password,
+                      const std::string& transport_type,
+                      bool secure)
         : server(address, port),
           username(username),
-          password(password) {}
+          password(password),
+          transport_type(transport_type),
+          secure(secure) {}
     talk_base::SocketAddress server;
     std::string username;
     std::string password;
+    std::string transport_type;
+    bool secure;
   };
 
   virtual cricket::PortAllocator* CreatePortAllocator(
@@ -249,6 +374,47 @@ class PortAllocatorFactoryInterface : public talk_base::RefCountInterface {
  protected:
   PortAllocatorFactoryInterface() {}
   ~PortAllocatorFactoryInterface() {}
+};
+
+// Used to receive callbacks of DTLS identity requests.
+class DTLSIdentityRequestObserver : public talk_base::RefCountInterface {
+ public:
+  virtual void OnFailure(int error) = 0;
+  virtual void OnSuccess(const std::string& der_cert,
+                         const std::string& der_private_key) = 0;
+ protected:
+  virtual ~DTLSIdentityRequestObserver() {}
+};
+
+class DTLSIdentityServiceInterface {
+ public:
+  // Asynchronously request a DTLS identity, including a self-signed certificate
+  // and the private key used to sign the certificate, from the identity store
+  // for the given identity name.
+  // DTLSIdentityRequestObserver::OnSuccess will be called with the identity if
+  // the request succeeded; DTLSIdentityRequestObserver::OnFailure will be
+  // called with an error code if the request failed.
+  //
+  // Only one request can be made at a time. If a second request is called
+  // before the first one completes, RequestIdentity will abort and return
+  // false.
+  //
+  // |identity_name| is an internal name selected by the client to identify an
+  // identity within an origin. E.g. an web site may cache the certificates used
+  // to communicate with differnent peers under different identity names.
+  //
+  // |common_name| is the common name used to generate the certificate. If the
+  // certificate already exists in the store, |common_name| is ignored.
+  //
+  // |observer| is the object to receive success or failure callbacks.
+  //
+  // Returns true if either OnFailure or OnSuccess will be called.
+  virtual bool RequestIdentity(
+      const std::string& identity_name,
+      const std::string& common_name,
+      DTLSIdentityRequestObserver* observer) = 0;
+
+  virtual ~DTLSIdentityServiceInterface() {}
 };
 
 // PeerConnectionFactoryInterface is the factory interface use for creating
@@ -262,17 +428,52 @@ class PortAllocatorFactoryInterface : public talk_base::RefCountInterface {
 // argument.
 class PeerConnectionFactoryInterface : public talk_base::RefCountInterface {
  public:
+  class Options {
+   public:
+    Options() :
+      disable_encryption(false),
+      disable_sctp_data_channels(false) {
+    }
+    bool disable_encryption;
+    bool disable_sctp_data_channels;
+  };
+
+  virtual void SetOptions(const Options& options) = 0;
+
   virtual talk_base::scoped_refptr<PeerConnectionInterface>
-      CreatePeerConnection(const JsepInterface::IceServers& configuration,
-                           const MediaConstraintsInterface* constraints,
-                           PeerConnectionObserver* observer) = 0;
-  virtual talk_base::scoped_refptr<PeerConnectionInterface>
-      CreatePeerConnection(const JsepInterface::IceServers& configuration,
-                           const MediaConstraintsInterface* constraints,
-                           PortAllocatorFactoryInterface* allocator_factory,
-                           PeerConnectionObserver* observer) = 0;
-  virtual talk_base::scoped_refptr<LocalMediaStreamInterface>
+      CreatePeerConnection(
+          const PeerConnectionInterface::RTCConfiguration& configuration,
+          const MediaConstraintsInterface* constraints,
+          PortAllocatorFactoryInterface* allocator_factory,
+          DTLSIdentityServiceInterface* dtls_identity_service,
+          PeerConnectionObserver* observer) = 0;
+
+  // TODO(mallinath) : Remove below versions after clients are updated
+  // to above method.
+  // In latest W3C WebRTC draft, PC constructor will take RTCConfiguration,
+  // and not IceServers. RTCConfiguration is made up of ice servers and
+  // ice transport type.
+  // http://dev.w3.org/2011/webrtc/editor/webrtc.html
+  inline talk_base::scoped_refptr<PeerConnectionInterface>
+      CreatePeerConnection(
+          const PeerConnectionInterface::IceServers& configuration,
+          const MediaConstraintsInterface* constraints,
+          PortAllocatorFactoryInterface* allocator_factory,
+          DTLSIdentityServiceInterface* dtls_identity_service,
+          PeerConnectionObserver* observer) {
+      PeerConnectionInterface::RTCConfiguration rtc_config;
+      rtc_config.servers = configuration;
+      return CreatePeerConnection(rtc_config, constraints, allocator_factory,
+                                  dtls_identity_service, observer);
+  }
+
+  virtual talk_base::scoped_refptr<MediaStreamInterface>
       CreateLocalMediaStream(const std::string& label) = 0;
+
+  // Creates a AudioSourceInterface.
+  // |constraints| decides audio processing settings but can be NULL.
+  virtual talk_base::scoped_refptr<AudioSourceInterface> CreateAudioSource(
+      const MediaConstraintsInterface* constraints) = 0;
 
   // Creates a VideoSourceInterface. The new source take ownership of
   // |capturer|. |constraints| decides video resolution and frame rate but can
@@ -292,15 +493,12 @@ class PeerConnectionFactoryInterface : public talk_base::RefCountInterface {
       CreateAudioTrack(const std::string& label,
                        AudioSourceInterface* source) = 0;
 
-  // Deprecated: Please use the version that take a source as input.
-  virtual talk_base::scoped_refptr<LocalVideoTrackInterface>
-      CreateLocalVideoTrack(const std::string& label,
-                            cricket::VideoCapturer* video_device) = 0;
-
-  // Deprecated: Please use the version that take a source as input.
-  virtual talk_base::scoped_refptr<LocalAudioTrackInterface>
-      CreateLocalAudioTrack(const std::string& label,
-                            AudioDeviceModule* audio_device) = 0;
+  // Starts AEC dump using existing file. Takes ownership of |file| and passes
+  // it on to VoiceEngine (via other objects) immediately, which will take
+  // the ownerhip. If the operation fails, the file will be closed.
+  // TODO(grunell): Remove when Chromium has started to use AEC in each source.
+  // http://crbug.com/264611.
+  virtual bool StartAecDump(talk_base::PlatformFile file) = 0;
 
  protected:
   // Dtor and ctor protected as objects shouldn't be created or deleted via
@@ -314,12 +512,15 @@ talk_base::scoped_refptr<PeerConnectionFactoryInterface>
 CreatePeerConnectionFactory();
 
 // Create a new instance of PeerConnectionFactoryInterface.
-// Ownership of |factory| and |default_adm| is transferred to the returned
-// factory.
+// Ownership of |factory|, |default_adm|, and optionally |encoder_factory| and
+// |decoder_factory| transferred to the returned factory.
 talk_base::scoped_refptr<PeerConnectionFactoryInterface>
-CreatePeerConnectionFactory(talk_base::Thread* worker_thread,
-                            talk_base::Thread* signaling_thread,
-                            AudioDeviceModule* default_adm);
+CreatePeerConnectionFactory(
+    talk_base::Thread* worker_thread,
+    talk_base::Thread* signaling_thread,
+    AudioDeviceModule* default_adm,
+    cricket::WebRtcVideoEncoderFactory* encoder_factory,
+    cricket::WebRtcVideoDecoderFactory* decoder_factory);
 
 }  // namespace webrtc
 

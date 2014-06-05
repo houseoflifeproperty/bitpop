@@ -34,16 +34,22 @@ public:
         GrAlwaysAssert(!fMapped);
     }
 
-    void setMapped()             { fMapped = true; }
+    void setMapped(GrGLintptr offset, GrGLsizeiptr length) {
+        fMapped = true;
+        fMappedOffset = offset;
+        fMappedLength = length;
+    }
     void resetMapped()           { fMapped = false; }
     bool getMapped() const       { return fMapped; }
+    GrGLsizei getMappedOffset() const { return fMappedOffset; }
+    GrGLsizei getMappedLength() const { return fMappedLength; }
 
     void setBound()              { fBound = true; }
     void resetBound()            { fBound = false; }
     bool getBound() const        { return fBound; }
 
-    void allocate(GrGLint size, const GrGLchar *dataPtr);
-    GrGLint getSize() const      { return fSize; }
+    void allocate(GrGLsizeiptr size, const GrGLchar *dataPtr);
+    GrGLsizeiptr getSize() const { return fSize; }
     GrGLchar *getDataPtr()       { return fDataPtr; }
 
     void setUsage(GrGLint usage) { fUsage = usage; }
@@ -54,13 +60,15 @@ public:
 protected:
 private:
 
-    GrGLchar*   fDataPtr;
-    bool        fMapped;       // is the buffer object mapped via "glMapBuffer"?
-    bool        fBound;        // is the buffer object bound via "glBindBuffer"?
-    GrGLint     fSize;         // size in bytes
-    GrGLint     fUsage;        // one of: GL_STREAM_DRAW,
-                               //         GL_STATIC_DRAW,
-                               //         GL_DYNAMIC_DRAW
+    GrGLchar*    fDataPtr;
+    bool         fMapped;       // is the buffer object mapped via "glMapBuffer[Range]"?
+    GrGLintptr   fMappedOffset; // the offset of the buffer range that is mapped
+    GrGLsizeiptr fMappedLength; // the size of the buffer range that is mapped
+    bool         fBound;        // is the buffer object bound via "glBindBuffer"?
+    GrGLsizeiptr fSize;         // size in bytes
+    GrGLint      fUsage;        // one of: GL_STREAM_DRAW,
+                                //         GL_STATIC_DRAW,
+                                //         GL_DYNAMIC_DRAW
 
     typedef GrFakeRefObj INHERITED;
 };

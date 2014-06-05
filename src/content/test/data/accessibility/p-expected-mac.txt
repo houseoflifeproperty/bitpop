@@ -1,1 +1,7 @@
-#<skip -- not interesting on mac>
+AXWebArea
+    AXGroup
+        AXStaticText AXValue='Before'
+    AXGroup
+        AXStaticText AXValue='Paragraph'
+    AXGroup
+        AXStaticText AXValue='After'

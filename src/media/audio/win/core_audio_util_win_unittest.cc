@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 #include "base/memory/scoped_ptr.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/win/scoped_co_mem.h"
 #include "base/win/scoped_com_initializer.h"
 #include "base/win/scoped_handle.h"
 #include "media/audio/win/core_audio_util_win.h"
@@ -140,6 +142,33 @@ TEST_F(CoreAudioUtilWinTest, GetDefaultDeviceName) {
   }
 }
 
+TEST_F(CoreAudioUtilWinTest, GetAudioControllerID) {
+  if (!CanRunAudioTest())
+    return;
+
+  ScopedComPtr<IMMDeviceEnumerator> enumerator(
+      CoreAudioUtil::CreateDeviceEnumerator());
+  ASSERT_TRUE(enumerator);
+
+  // Enumerate all active input and output devices and fetch the ID of
+  // the associated device.
+  EDataFlow flows[] = { eRender , eCapture };
+  for (int i = 0; i < arraysize(flows); ++i) {
+    ScopedComPtr<IMMDeviceCollection> collection;
+    ASSERT_TRUE(SUCCEEDED(enumerator->EnumAudioEndpoints(flows[i],
+        DEVICE_STATE_ACTIVE, collection.Receive())));
+    UINT count = 0;
+    collection->GetCount(&count);
+    for (UINT j = 0; j < count; ++j) {
+      ScopedComPtr<IMMDevice> device;
+      collection->Item(j, device.Receive());
+      std::string controller_id(CoreAudioUtil::GetAudioControllerID(
+          device, enumerator));
+      EXPECT_FALSE(controller_id.empty());
+    }
+  }
+}
+
 TEST_F(CoreAudioUtilWinTest, GetFriendlyName) {
   if (!CanRunAudioTest())
     return;
@@ -232,6 +261,33 @@ TEST_F(CoreAudioUtilWinTest, GetSharedModeMixFormat) {
   EXPECT_EQ(format.Format.wFormatTag, WAVE_FORMAT_EXTENSIBLE);
 }
 
+TEST_F(CoreAudioUtilWinTest, IsChannelLayoutSupported) {
+  if (!CanRunAudioTest())
+    return;
+
+  // The preferred channel layout should always be supported. Being supported
+  // means that it is possible to initialize a shared mode stream with the
+  // particular channel layout.
+  AudioParameters mix_params;
+  HRESULT hr = CoreAudioUtil::GetPreferredAudioParameters(eRender, eConsole,
+                                                          &mix_params);
+  EXPECT_TRUE(SUCCEEDED(hr));
+  EXPECT_TRUE(mix_params.IsValid());
+  EXPECT_TRUE(CoreAudioUtil::IsChannelLayoutSupported(
+      std::string(), eRender, eConsole, mix_params.channel_layout()));
+
+  // Check if it is possible to modify the channel layout to stereo for a
+  // device which reports that it prefers to be openen up in an other
+  // channel configuration.
+  if (mix_params.channel_layout() != CHANNEL_LAYOUT_STEREO) {
+    ChannelLayout channel_layout = CHANNEL_LAYOUT_STEREO;
+    // TODO(henrika): it might be too pessimistic to assume false as return
+    // value here.
+    EXPECT_FALSE(CoreAudioUtil::IsChannelLayoutSupported(
+        std::string(), eRender, eConsole, channel_layout));
+  }
+}
+
 TEST_F(CoreAudioUtilWinTest, GetDevicePeriod) {
   if (!CanRunAudioTest())
     return;
@@ -288,7 +344,7 @@ TEST_F(CoreAudioUtilWinTest, SharedModeInitialize) {
                                                               &format)));
 
   // Perform a shared-mode initialization without event-driven buffer handling.
-  size_t endpoint_buffer_size = 0;
+  uint32 endpoint_buffer_size = 0;
   HRESULT hr = CoreAudioUtil::SharedModeInitialize(client, &format, NULL,
                                                    &endpoint_buffer_size);
   EXPECT_TRUE(SUCCEEDED(hr));
@@ -345,7 +401,7 @@ TEST_F(CoreAudioUtilWinTest, CreateRenderAndCaptureClients) {
   EDataFlow data[] = {eRender, eCapture};
 
   WAVEFORMATPCMEX format;
-  size_t endpoint_buffer_size = 0;
+  uint32 endpoint_buffer_size = 0;
 
   for (int i = 0; i < arraysize(data); ++i) {
     ScopedComPtr<IAudioClient> client;
@@ -384,6 +440,83 @@ TEST_F(CoreAudioUtilWinTest, CreateRenderAndCaptureClients) {
   }
 }
 
-//
+TEST_F(CoreAudioUtilWinTest, FillRenderEndpointBufferWithSilence) {
+  if (!CanRunAudioTest())
+    return;
+
+  // Create default clients using the default mixing format for shared mode.
+  ScopedComPtr<IAudioClient> client(
+      CoreAudioUtil::CreateDefaultClient(eRender, eConsole));
+  EXPECT_TRUE(client);
+
+  WAVEFORMATPCMEX format;
+  uint32 endpoint_buffer_size = 0;
+  EXPECT_TRUE(SUCCEEDED(CoreAudioUtil::GetSharedModeMixFormat(client,
+                                                              &format)));
+  CoreAudioUtil::SharedModeInitialize(client, &format, NULL,
+                                      &endpoint_buffer_size);
+  EXPECT_GT(endpoint_buffer_size, 0u);
+
+  ScopedComPtr<IAudioRenderClient> render_client(
+      CoreAudioUtil::CreateRenderClient(client));
+  EXPECT_TRUE(render_client);
+
+  // The endpoint audio buffer should not be filled up by default after being
+  // created.
+  UINT32 num_queued_frames = 0;
+  client->GetCurrentPadding(&num_queued_frames);
+  EXPECT_EQ(num_queued_frames, 0u);
+
+  // Fill it up with zeros and verify that the buffer is full.
+  // It is not possible to verify that the actual data consists of zeros
+  // since we can't access data that has already been sent to the endpoint
+  // buffer.
+  EXPECT_TRUE(CoreAudioUtil::FillRenderEndpointBufferWithSilence(
+                  client, render_client));
+  client->GetCurrentPadding(&num_queued_frames);
+  EXPECT_EQ(num_queued_frames, endpoint_buffer_size);
+}
+
+// This test can only succeed on a machine that has audio hardware
+// that has both input and output devices.  Currently this is the case
+// with our test bots and the CanRunAudioTest() method should make sure
+// that the test won't run in unsupported environments, but be warned.
+TEST_F(CoreAudioUtilWinTest, GetMatchingOutputDeviceID) {
+  if (!CanRunAudioTest())
+    return;
+
+  bool found_a_pair = false;
+
+  ScopedComPtr<IMMDeviceEnumerator> enumerator(
+      CoreAudioUtil::CreateDeviceEnumerator());
+  ASSERT_TRUE(enumerator);
+
+  // Enumerate all active input and output devices and fetch the ID of
+  // the associated device.
+  ScopedComPtr<IMMDeviceCollection> collection;
+  ASSERT_TRUE(SUCCEEDED(enumerator->EnumAudioEndpoints(eCapture,
+      DEVICE_STATE_ACTIVE, collection.Receive())));
+  UINT count = 0;
+  collection->GetCount(&count);
+  for (UINT i = 0; i < count && !found_a_pair; ++i) {
+    ScopedComPtr<IMMDevice> device;
+    collection->Item(i, device.Receive());
+    base::win::ScopedCoMem<WCHAR> wide_id;
+    device->GetId(&wide_id);
+    std::string id;
+    base::WideToUTF8(wide_id, wcslen(wide_id), &id);
+    found_a_pair = !CoreAudioUtil::GetMatchingOutputDeviceID(id).empty();
+  }
+
+  EXPECT_TRUE(found_a_pair);
+}
+
+TEST_F(CoreAudioUtilWinTest, GetDefaultOutputDeviceID) {
+  if (!CanRunAudioTest())
+    return;
+
+  std::string default_device_id(CoreAudioUtil::GetDefaultOutputDeviceID());
+  EXPECT_FALSE(default_device_id.empty());
+}
 
 }  // namespace media

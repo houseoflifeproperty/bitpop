@@ -8,11 +8,11 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
-#include "net/base/ssl_cert_request_info.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/x509_certificate.h"
+#include "net/ssl/ssl_cert_request_info.h"
 
 using content::BrowserThread;
 
@@ -39,7 +39,7 @@ void SSLClientAuthObserver::CertificateSelected(
   StopObserving();
 
   CertDetails details;
-  details.first = cert_request_info_;
+  details.first = cert_request_info_.get();
   details.second = certificate;
   content::NotificationService* service =
       content::NotificationService::current();
@@ -60,7 +60,8 @@ void SSLClientAuthObserver::Observe(
   DCHECK(type == chrome::NOTIFICATION_SSL_CLIENT_AUTH_CERT_SELECTED);
 
   CertDetails* cert_details = content::Details<CertDetails>(details).ptr();
-  if (cert_details->first->host_and_port != cert_request_info_->host_and_port)
+  if (!cert_details->first->host_and_port.Equals(
+           cert_request_info_->host_and_port))
     return;
 
   VLOG(1) << this << " got matching notification and selecting cert "

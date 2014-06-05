@@ -35,7 +35,7 @@ class FileIO : public Resource {
 
   /// The copy constructor for <code>FileIO</code>.
   ///
-  /// @param[in] other A pointer to a <code>FileIO</code>.
+  /// @param[in] other A reference to a <code>FileIO</code>.
   FileIO(const FileIO& other);
 
   /// Open() opens the specified regular file for I/O according to the given
@@ -71,7 +71,9 @@ class FileIO : public Resource {
   /// @param[in] result_buf The <code>PP_FileInfo</code> structure representing
   /// all information about the file.
   /// @param[in] cc A <code>CompletionCallback</code> to be called upon
-  /// completion of Query().
+  /// completion of Query(). <code>result_buf</code> must remain valid until
+  /// after the callback runs. If you pass a blocking callback,
+  /// <code>result_buf</code> must remain valid until after Query() returns.
   ///
   /// @return An int32_t containing an error code from
   /// <code>pp_errors.h</code>.
@@ -117,7 +119,7 @@ class FileIO : public Resource {
   /// where a copy of your FileIO resource could outlive your class, the
   /// callback will still be pending when your class goes out of scope, creating
   /// the possibility of writing into invalid memory. So it's recommended to
-  /// keep your FileIO resource and any oubput buffers tightly controlled in
+  /// keep your FileIO resource and any output buffers tightly controlled in
   /// the same scope.
   ///
   /// <strong>Caveat:</strong> This Read() is potentially unsafe if you're using
@@ -138,7 +140,9 @@ class FileIO : public Resource {
   /// @param[in] bytes_to_read The number of bytes to read from
   /// <code>offset</code>.
   /// @param[in] cc A <code>CompletionCallback</code> to be called upon
-  /// completion of Read().
+  /// completion of Read(). <code>buffer</code> must remain valid until after
+  /// the callback runs. If you pass a blocking callback, <code>buffer</code>
+  /// must remain valid until after Read() returns.
   ///
   /// @return An The number of bytes read an error code from
   /// <code>pp_errors.h</code>. If the return value is 0, then end-of-file was
@@ -229,7 +233,7 @@ class FileIO : public Resource {
     PP_CompletionCallback original_callback;
   };
 
-  // Provide backwards-compatability for older Read versions. Converts the
+  // Provide backwards-compatibility for older Read versions. Converts the
   // old-style "char*" output buffer of 1.0 to the new "PP_ArrayOutput"
   // interface in 1.1.
   //

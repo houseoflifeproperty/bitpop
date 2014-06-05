@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/message_loop.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/threading/thread.h"
 #include "media/audio/audio_manager.h"
 #include "media/audio/simple_sources.h"
 #include "media/audio/virtual_audio_input_stream.h"
@@ -15,12 +17,19 @@ using ::testing::_;
 
 namespace media {
 
+namespace {
+const AudioParameters kParams(
+    AudioParameters::AUDIO_PCM_LOW_LATENCY, CHANNEL_LAYOUT_MONO, 8000, 8, 128);
+}
+
 class MockVirtualAudioInputStream : public VirtualAudioInputStream {
  public:
-  MockVirtualAudioInputStream(AudioManagerBase* manager,
-                              AudioParameters params,
-                              base::MessageLoopProxy* message_loop)
-      : VirtualAudioInputStream(manager, params, message_loop) {}
+  explicit MockVirtualAudioInputStream(
+      const scoped_refptr<base::SingleThreadTaskRunner>& worker_task_runner)
+      : VirtualAudioInputStream(
+            kParams,
+            worker_task_runner,
+            base::Bind(&base::DeletePointer<VirtualAudioInputStream>)) {}
   ~MockVirtualAudioInputStream() {}
 
   MOCK_METHOD2(AddOutputStream, void(VirtualAudioOutputStream* stream,
@@ -39,91 +48,73 @@ class MockAudioDeviceListener : public AudioManager::AudioDeviceListener {
 
 class VirtualAudioOutputStreamTest : public testing::Test {
  public:
-  void ListenAndCreateVirtualOnAudioThread(
-      AudioManager* manager, AudioManager::AudioDeviceListener* listener) {
-    manager->AddOutputDeviceChangeListener(listener);
-
-    AudioParameters params(
-        AudioParameters::AUDIO_VIRTUAL, CHANNEL_LAYOUT_MONO, 8000, 8, 128);
-    AudioInputStream* stream = manager->MakeAudioInputStream(params, "1");
-    stream->Close();
-    signal_.Signal();
+  VirtualAudioOutputStreamTest()
+      : audio_thread_(new base::Thread("AudioThread")) {
+    audio_thread_->Start();
+    audio_task_runner_ = audio_thread_->message_loop_proxy();
   }
 
-  void RemoveListenerOnAudioThread(
-      AudioManager* manager, AudioManager::AudioDeviceListener* listener) {
-    manager->RemoveOutputDeviceChangeListener(listener);
-    signal_.Signal();
+  const scoped_refptr<base::SingleThreadTaskRunner>& audio_task_runner() const {
+    return audio_task_runner_;
   }
 
- protected:
-  VirtualAudioOutputStreamTest() : signal_(false, false) {}
-
-  base::WaitableEvent signal_;
+  void SyncWithAudioThread() {
+    base::WaitableEvent done(false, false);
+    audio_task_runner()->PostTask(
+        FROM_HERE, base::Bind(&base::WaitableEvent::Signal,
+                              base::Unretained(&done)));
+    done.Wait();
+  }
 
  private:
+  scoped_ptr<base::Thread> audio_thread_;
+  scoped_refptr<base::SingleThreadTaskRunner> audio_task_runner_;
+
   DISALLOW_COPY_AND_ASSIGN(VirtualAudioOutputStreamTest);
 };
 
 TEST_F(VirtualAudioOutputStreamTest, StartStopStartStop) {
-  scoped_ptr<AudioManager> audio_manager(AudioManager::Create());
+  static const int kCycles = 3;
 
-  MessageLoop message_loop;
+  MockVirtualAudioInputStream* const input_stream =
+      new MockVirtualAudioInputStream(audio_task_runner());
+  audio_task_runner()->PostTask(
+      FROM_HERE, base::Bind(
+          base::IgnoreResult(&MockVirtualAudioInputStream::Open),
+          base::Unretained(input_stream)));
 
-  AudioParameters params(
-      AudioParameters::AUDIO_VIRTUAL, CHANNEL_LAYOUT_MONO, 8000, 8, 128);
-  AudioParameters output_params(
-      AudioParameters::AUDIO_PCM_LINEAR, CHANNEL_LAYOUT_MONO, 8000, 8, 128);
+  VirtualAudioOutputStream* const output_stream = new VirtualAudioOutputStream(
+      kParams,
+      input_stream,
+      base::Bind(&base::DeletePointer<VirtualAudioOutputStream>));
 
-  MockVirtualAudioInputStream input_stream(
-      static_cast<AudioManagerBase*>(audio_manager.get()),
-      params,
-      message_loop.message_loop_proxy());
+  EXPECT_CALL(*input_stream, AddOutputStream(output_stream, _))
+      .Times(kCycles);
+  EXPECT_CALL(*input_stream, RemoveOutputStream(output_stream, _))
+      .Times(kCycles);
 
-  EXPECT_CALL(input_stream, AddOutputStream(_, _)).Times(2);
-  EXPECT_CALL(input_stream, RemoveOutputStream(_, _)).Times(2);
-
-  scoped_ptr<VirtualAudioOutputStream> output_stream(
-      VirtualAudioOutputStream::MakeStream(
-          static_cast<AudioManagerBase*>(audio_manager.get()),
-          output_params,
-          message_loop.message_loop_proxy(),
-          &input_stream));
-
+  audio_task_runner()->PostTask(
+      FROM_HERE, base::Bind(base::IgnoreResult(&VirtualAudioOutputStream::Open),
+                            base::Unretained(output_stream)));
   SineWaveAudioSource source(CHANNEL_LAYOUT_STEREO, 200.0, 128);
-  output_stream->Start(&source);
-  output_stream->Stop();
-  output_stream->Start(&source);
-  output_stream->Stop();
-  // Can't Close() here because we didn't create this output stream is not owned
-  // by the audio manager.
-}
+  for (int i = 0; i < kCycles; ++i) {
+    audio_task_runner()->PostTask(
+        FROM_HERE, base::Bind(&VirtualAudioOutputStream::Start,
+                              base::Unretained(output_stream),
+                              &source));
+    audio_task_runner()->PostTask(
+        FROM_HERE, base::Bind(&VirtualAudioOutputStream::Stop,
+                              base::Unretained(output_stream)));
+  }
+  audio_task_runner()->PostTask(
+      FROM_HERE, base::Bind(&VirtualAudioOutputStream::Close,
+                            base::Unretained(output_stream)));
 
-// Tests that we get notifications to reattach output streams when we create a
-// VirtualAudioInputStream.
-TEST_F(VirtualAudioOutputStreamTest, OutputStreamsNotified) {
-  scoped_ptr<AudioManager> audio_manager(AudioManager::Create());
+  audio_task_runner()->PostTask(
+      FROM_HERE, base::Bind(&MockVirtualAudioInputStream::Close,
+                            base::Unretained(input_stream)));
 
-  MockAudioDeviceListener mock_listener;
-  EXPECT_CALL(mock_listener, OnDeviceChange()).Times(2);
-
-  audio_manager->GetMessageLoop()->PostTask(
-      FROM_HERE, base::Bind(
-          &VirtualAudioOutputStreamTest::ListenAndCreateVirtualOnAudioThread,
-          base::Unretained(this),
-          audio_manager.get(),
-          &mock_listener));
-
-  signal_.Wait();
-
-  audio_manager->GetMessageLoop()->PostTask(
-      FROM_HERE, base::Bind(
-          &VirtualAudioOutputStreamTest::RemoveListenerOnAudioThread,
-          base::Unretained(this),
-          audio_manager.get(),
-          &mock_listener));
-
-  signal_.Wait();
+  SyncWithAudioThread();
 }
 
 }  // namespace media

@@ -9,6 +9,7 @@ include_rules = [
   # For bridge/c/c_utility.h in npruntime_util.cc
   "+bridge",
   "+cc",
+  "-cc/surfaces",
   "+grit",  # For generated headers
   "+skia",
   "+third_party/angle",
@@ -17,8 +18,8 @@ include_rules = [
   "+third_party/skia",
   "+third_party/sqlite",
   "+third_party/tcmalloc",
-  "+third_party/WebKit/Source/Platform/chromium",
-  "+third_party/WebKit/Source/WebKit/chromium",
+  "+third_party/WebKit/public/platform",
+  "+third_party/WebKit/public/web",
   "+v8",
 
   # For databases/
@@ -27,25 +28,18 @@ include_rules = [
   # For gpu/
   "+ui/gfx",
   "+ui/gl",
+  "+gpu/GLES2",
   "+gpu/command_buffer/client",
   "+gpu/command_buffer/common",
   "+gpu/command_buffer/service",
+  "+gpu/skia_bindings",
   "+third_party/khronos/GLES2",
 
-  # For shared USB keycode conversion tables used by ppapi plugin code.
-  "+ui/base/keycodes",
-
   # TODO(brettw) - review these; move up if it's ok, or remove the dependency
-  "+crypto",
-  "+net/base",
-  "+net/cookies",
-  "+net/ftp",
-  "+net/http",
-  "+net/proxy",
-  "+net/socket",
-  "+net/socket_stream",
-  "+net/test",
-  "+net/url_request",
-  "+net/websockets",
+  "+net",
   "+third_party/npapi/bindings",
+
+  # webkit/support is only test support code, nothing outside of webkit/support
+  # should pull it in.
+  "-webkit/support",
 ]

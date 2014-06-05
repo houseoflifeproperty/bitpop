@@ -6,7 +6,7 @@
 
 #include "base/command_line.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_switches.h"
+#include "chrome/browser/ui/tabs/tab_strip_model_delegate.h"
 #include "grit/generated_resources.h"
 
 TabMenuModel::TabMenuModel(ui::SimpleMenuModel::Delegate* delegate,
@@ -48,15 +48,10 @@ void TabMenuModel::Build(TabStripModel* tab_strip, int index) {
   AddItemWithStringId(TabStripModel::CommandCloseTabsToRight,
                       IDS_TAB_CXMENU_CLOSETABSTORIGHT);
   AddSeparator(ui::NORMAL_SEPARATOR);
-  AddItemWithStringId(TabStripModel::CommandRestoreTab, IDS_RESTORE_TAB);
+  const bool is_window = tab_strip->delegate()->GetRestoreTabType() ==
+      TabStripModelDelegate::RESTORE_WINDOW;
+  AddItemWithStringId(TabStripModel::CommandRestoreTab,
+                      is_window ? IDS_RESTORE_WINDOW : IDS_RESTORE_TAB);
   AddItemWithStringId(TabStripModel::CommandBookmarkAllTabs,
                       IDS_TAB_CXMENU_BOOKMARK_ALL_TABS);
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableTabGroupsContextMenu)) {
-    AddSeparator(ui::NORMAL_SEPARATOR);
-    AddItemWithStringId(TabStripModel::CommandSelectByDomain,
-                        IDS_TAB_CXMENU_SELECT_BY_DOMAIN);
-    AddItemWithStringId(TabStripModel::CommandSelectByOpener,
-                        IDS_TAB_CXMENU_SELECT_BY_OPENER);
-  }
 }

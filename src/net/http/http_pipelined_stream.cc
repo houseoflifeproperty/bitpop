@@ -5,7 +5,7 @@
 #include "net/http/http_pipelined_stream.h"
 
 #include "base/logging.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_pipelined_connection_impl.h"
 #include "net/http/http_request_headers.h"
@@ -27,6 +27,7 @@ HttpPipelinedStream::~HttpPipelinedStream() {
 
 int HttpPipelinedStream::InitializeStream(
     const HttpRequestInfo* request_info,
+    RequestPriority priority,
     const BoundNetLog& net_log,
     const CompletionCallback& callback) {
   request_info_ = request_info;
@@ -86,10 +87,6 @@ bool HttpPipelinedStream::CanFindEndOfResponse() const {
   return pipeline_->CanFindEndOfResponse(pipeline_id_);
 }
 
-bool HttpPipelinedStream::IsMoreDataBuffered() const {
-  return pipeline_->IsMoreDataBuffered(pipeline_id_);
-}
-
 bool HttpPipelinedStream::IsConnectionReused() const {
   return pipeline_->IsConnectionReused(pipeline_id_);
 }
@@ -100,6 +97,15 @@ void HttpPipelinedStream::SetConnectionReused() {
 
 bool HttpPipelinedStream::IsConnectionReusable() const {
   return pipeline_->usable();
+}
+
+int64 HttpPipelinedStream::GetTotalReceivedBytes() const {
+  return pipeline_->GetTotalReceivedBytes(pipeline_id_);
+}
+
+bool HttpPipelinedStream::GetLoadTimingInfo(
+    LoadTimingInfo* load_timing_info) const {
+  return pipeline_->GetLoadTimingInfo(pipeline_id_, load_timing_info);
 }
 
 void HttpPipelinedStream::GetSSLInfo(SSLInfo* ssl_info) {
@@ -115,12 +121,13 @@ bool HttpPipelinedStream::IsSpdyHttpStream() const {
   return false;
 }
 
-void HttpPipelinedStream::LogNumRttVsBytesMetrics() const {
-  // TODO(simonjam): I don't want to copy & paste this from http_basic_stream.
-}
-
 void HttpPipelinedStream::Drain(HttpNetworkSession* session) {
   pipeline_->Drain(this, session);
+}
+
+void HttpPipelinedStream::SetPriority(RequestPriority priority) {
+  // TODO(akalin): Plumb this through to |pipeline_| and its
+  // underlying ClientSocketHandle.
 }
 
 const SSLConfig& HttpPipelinedStream::used_ssl_config() const {

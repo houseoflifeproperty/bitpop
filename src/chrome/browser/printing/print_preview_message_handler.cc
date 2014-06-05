@@ -9,10 +9,10 @@
 #include "base/bind.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/shared_memory.h"
+#include "base/memory/shared_memory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/printing/print_job_manager.h"
-#include "chrome/browser/printing/print_preview_tab_controller.h"
+#include "chrome/browser/printing/print_preview_dialog_controller.h"
 #include "chrome/browser/printing/print_view_manager.h"
 #include "chrome/browser/printing/printer_query.h"
 #include "chrome/browser/ui/webui/print_preview/print_preview_ui.h"
@@ -27,22 +27,21 @@
 using content::BrowserThread;
 using content::WebContents;
 
-DEFINE_WEB_CONTENTS_USER_DATA_KEY(printing::PrintPreviewMessageHandler)
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(printing::PrintPreviewMessageHandler);
 
 namespace {
 
 void StopWorker(int document_cookie) {
   if (document_cookie <= 0)
     return;
-
-  printing::PrintJobManager* print_job_manager =
-      g_browser_process->print_job_manager();
-  scoped_refptr<printing::PrinterQuery> printer_query;
-  print_job_manager->PopPrinterQuery(document_cookie, &printer_query);
-  if (printer_query.get()) {
-    BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        base::Bind(&printing::PrinterQuery::StopWorker, printer_query.get()));
+  scoped_refptr<printing::PrintQueriesQueue> queue =
+      g_browser_process->print_job_manager()->queue();
+  scoped_refptr<printing::PrinterQuery> printer_query =
+      queue->PopPrinterQuery(document_cookie);
+  if (printer_query) {
+    BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
+                            base::Bind(&printing::PrinterQuery::StopWorker,
+                                       printer_query));
   }
 }
 
@@ -55,9 +54,8 @@ base::RefCountedBytes* GetDataFromHandle(base::SharedMemoryHandle handle,
     return NULL;
   }
 
-  char* preview_data = static_cast<char*>(shared_buf->memory());
-  std::vector<unsigned char> data(data_size);
-  memcpy(&data[0], preview_data, data_size);
+  unsigned char* data_begin = static_cast<unsigned char*>(shared_buf->memory());
+  std::vector<unsigned char> data(data_begin, data_begin + data_size);
   return base::RefCountedBytes::TakeVector(&data);
 }
 
@@ -74,31 +72,29 @@ PrintPreviewMessageHandler::PrintPreviewMessageHandler(
 PrintPreviewMessageHandler::~PrintPreviewMessageHandler() {
 }
 
-WebContents* PrintPreviewMessageHandler::GetPrintPreviewTab() {
-  PrintPreviewTabController* tab_controller =
-      PrintPreviewTabController::GetInstance();
-  if (!tab_controller)
+WebContents* PrintPreviewMessageHandler::GetPrintPreviewDialog() {
+  PrintPreviewDialogController* dialog_controller =
+      PrintPreviewDialogController::GetInstance();
+  if (!dialog_controller)
     return NULL;
-
-  return tab_controller->GetPrintPreviewForTab(web_contents());
+  return dialog_controller->GetPrintPreviewForContents(web_contents());
 }
 
 PrintPreviewUI* PrintPreviewMessageHandler::GetPrintPreviewUI() {
-  WebContents* tab = GetPrintPreviewTab();
-  if (!tab || !tab->GetWebUI())
+  WebContents* dialog = GetPrintPreviewDialog();
+  if (!dialog || !dialog->GetWebUI())
     return NULL;
-  return static_cast<PrintPreviewUI*>(tab->GetWebUI()->GetController());
+  return static_cast<PrintPreviewUI*>(dialog->GetWebUI()->GetController());
 }
 
 void PrintPreviewMessageHandler::OnRequestPrintPreview(
-    bool source_is_modifiable, bool webnode_only) {
-  if (webnode_only) {
+    const PrintHostMsg_RequestPrintPreview_Params& params) {
+  if (params.webnode_only) {
     printing::PrintViewManager::FromWebContents(web_contents())->
         PrintPreviewForWebNode();
   }
-  PrintPreviewTabController::PrintPreview(web_contents());
-  PrintPreviewUI::SetSourceIsModifiable(GetPrintPreviewTab(),
-                                        source_is_modifiable);
+  PrintPreviewDialogController::PrintPreview(web_contents());
+  PrintPreviewUI::SetInitialParams(GetPrintPreviewDialog(), params);
 }
 
 void PrintPreviewMessageHandler::OnDidGetPreviewPageCount(
@@ -150,24 +146,12 @@ void PrintPreviewMessageHandler::OnMetafileReadyForPrinting(
   if (!print_preview_ui)
     return;
 
-  if (params.reuse_existing_data) {
-    // Need to match normal rendering where we are expected to send this.
-    PrintHostMsg_DidGetPreviewPageCount_Params temp_params;
-    temp_params.page_count = params.expected_pages_count;
-    temp_params.document_cookie = params.document_cookie;
-    temp_params.is_modifiable = params.modifiable;
-    temp_params.preview_request_id = params.preview_request_id;
-    print_preview_ui->OnDidGetPreviewPageCount(temp_params);
-    print_preview_ui->OnReusePreviewData(params.preview_request_id);
-    return;
-  }
-
   // TODO(joth): This seems like a good match for using RefCountedStaticMemory
   // to avoid the memory copy, but the SetPrintPreviewData call chain below
   // needs updating to accept the RefCountedMemory* base class.
   base::RefCountedBytes* data_bytes =
       GetDataFromHandle(params.metafile_data_handle, params.data_size);
-  if (!data_bytes)
+  if (!data_bytes || !data_bytes->size())
     return;
 
   print_preview_ui->SetPrintPreviewDataForIndex(COMPLETE_PREVIEW_DOCUMENT_INDEX,

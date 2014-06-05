@@ -9,7 +9,10 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "net/base/capturing_net_log.h"
 #include "net/base/io_buffer.h"
+#include "net/base/load_timing_info.h"
+#include "net/base/load_timing_info_test_util.h"
 #include "net/base/net_errors.h"
 #include "net/base/request_priority.h"
 #include "net/http/http_pipelined_stream.h"
@@ -25,16 +28,34 @@ using testing::StrEq;
 
 namespace net {
 
-class DummySocketParams : public base::RefCounted<DummySocketParams> {
- private:
-  friend class base::RefCounted<DummySocketParams>;
-  ~DummySocketParams() {}
-};
-
-REGISTER_SOCKET_PARAMS_FOR_POOL(MockTransportClientSocketPool,
-                                DummySocketParams);
-
 namespace {
+
+// Tests the load timing of a stream that's connected and is not the first
+// request sent on a connection.
+void TestLoadTimingReused(const HttpStream& stream) {
+  LoadTimingInfo load_timing_info;
+  EXPECT_TRUE(stream.GetLoadTimingInfo(&load_timing_info));
+
+  EXPECT_TRUE(load_timing_info.socket_reused);
+  EXPECT_NE(NetLog::Source::kInvalidId, load_timing_info.socket_log_id);
+
+  ExpectConnectTimingHasNoTimes(load_timing_info.connect_timing);
+  ExpectLoadTimingHasOnlyConnectionTimes(load_timing_info);
+}
+
+// Tests the load timing of a stream that's connected and using a fresh
+// connection.
+void TestLoadTimingNotReused(const HttpStream& stream) {
+  LoadTimingInfo load_timing_info;
+  EXPECT_TRUE(stream.GetLoadTimingInfo(&load_timing_info));
+
+  EXPECT_FALSE(load_timing_info.socket_reused);
+  EXPECT_NE(NetLog::Source::kInvalidId, load_timing_info.socket_log_id);
+
+  ExpectConnectTimingHasTimes(load_timing_info.connect_timing,
+                              CONNECT_TIMING_HAS_DNS_TIMES);
+  ExpectLoadTimingHasOnlyConnectionTimes(load_timing_info);
+}
 
 class MockPipelineDelegate : public HttpPipelinedConnection::Delegate {
  public:
@@ -44,22 +65,22 @@ class MockPipelineDelegate : public HttpPipelinedConnection::Delegate {
       HttpPipelinedConnection::Feedback feedback));
 };
 
-class SuddenCloseObserver : public MessageLoop::TaskObserver {
+class SuddenCloseObserver : public base::MessageLoop::TaskObserver {
  public:
   SuddenCloseObserver(HttpStream* stream, int close_before_task)
       : stream_(stream),
         close_before_task_(close_before_task),
         current_task_(0) { }
 
-  virtual void WillProcessTask(base::TimeTicks) OVERRIDE {
+  virtual void WillProcessTask(const base::PendingTask& pending_task) OVERRIDE {
     ++current_task_;
     if (current_task_ == close_before_task_) {
       stream_->Close(false);
-      MessageLoop::current()->RemoveTaskObserver(this);
+      base::MessageLoop::current()->RemoveTaskObserver(this);
     }
   }
 
-  virtual void DidProcessTask(base::TimeTicks) OVERRIDE { }
+  virtual void DidProcessTask(const base::PendingTask& pending_task) OVERRIDE {}
 
  private:
   HttpStream* stream_;
@@ -76,7 +97,7 @@ class HttpPipelinedConnectionImplTest : public testing::Test {
   }
 
   void TearDown() {
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
   }
 
   void Initialize(MockRead* reads, size_t reads_count,
@@ -88,10 +109,14 @@ class HttpPipelinedConnectionImplTest : public testing::Test {
       data_->StopAfter(reads_count + writes_count);
     }
     factory_.AddSocketDataProvider(data_.get());
-    scoped_refptr<DummySocketParams> params;
+    scoped_refptr<MockTransportSocketParams> params;
     ClientSocketHandle* connection = new ClientSocketHandle;
+    // Only give the connection a real NetLog to make sure that LoadTiming uses
+    // the connection's ID, rather than the pipeline's.  Since pipelines are
+    // destroyed when they've responded to all requests, but the connection
+    // lives on, this is an important behavior.
     connection->Init("a", params, MEDIUM, CompletionCallback(), &pool_,
-                     BoundNetLog());
+                     net_log_.bound());
     pipeline_.reset(new HttpPipelinedConnectionImpl(
         connection, &delegate_, origin_, ssl_config_, proxy_info_,
         BoundNetLog(), false, kProtoUnknown));
@@ -109,7 +134,7 @@ class HttpPipelinedConnectionImplTest : public testing::Test {
     HttpStream* stream = pipeline_->CreateNewStream();
     HttpRequestInfo* request_info = GetRequestInfo(filename);
     int rv = stream->InitializeStream(
-        request_info, BoundNetLog(), CompletionCallback());
+        request_info, DEFAULT_PRIORITY, BoundNetLog(), CompletionCallback());
     DCHECK_EQ(OK, rv);
     return stream;
   }
@@ -145,6 +170,7 @@ class HttpPipelinedConnectionImplTest : public testing::Test {
     stream->Close(false);
   }
 
+  CapturingBoundNetLog net_log_;
   DeterministicMockClientSocketFactory factory_;
   ClientSocketPoolHistograms histograms_;
   MockTransportClientSocketPool pool_;
@@ -176,7 +202,9 @@ TEST_F(HttpPipelinedConnectionImplTest, StreamBoundButNotUsed) {
 
   scoped_ptr<HttpStream> stream(NewTestStream("ok.html"));
 
+  TestLoadTimingNotReused(*stream);
   stream->Close(false);
+  TestLoadTimingNotReused(*stream);
 }
 
 TEST_F(HttpPipelinedConnectionImplTest, SyncSingleRequest) {
@@ -191,7 +219,9 @@ TEST_F(HttpPipelinedConnectionImplTest, SyncSingleRequest) {
   Initialize(reads, arraysize(reads), writes, arraysize(writes));
 
   scoped_ptr<HttpStream> stream(NewTestStream("ok.html"));
+  TestLoadTimingNotReused(*stream);
   TestSyncRequest(stream, "ok.html");
+  TestLoadTimingNotReused(*stream);
 }
 
 TEST_F(HttpPipelinedConnectionImplTest, AsyncSingleRequest) {
@@ -213,12 +243,15 @@ TEST_F(HttpPipelinedConnectionImplTest, AsyncSingleRequest) {
                                                 callback_.callback()));
   data_->RunFor(1);
   EXPECT_LE(OK, callback_.WaitForResult());
+  TestLoadTimingNotReused(*stream);
 
   EXPECT_EQ(ERR_IO_PENDING, stream->ReadResponseHeaders(callback_.callback()));
   data_->RunFor(2);
   EXPECT_LE(OK, callback_.WaitForResult());
+  TestLoadTimingNotReused(*stream);
 
   ExpectResponse("ok.html", stream, true);
+  TestLoadTimingNotReused(*stream);
 
   stream->Close(false);
 }
@@ -245,11 +278,13 @@ TEST_F(HttpPipelinedConnectionImplTest, LockStepAsyncRequests) {
   HttpResponseInfo response1;
   EXPECT_EQ(ERR_IO_PENDING, stream1->SendRequest(headers1, &response1,
                                                  callback_.callback()));
+  TestLoadTimingNotReused(*stream1);
 
   HttpRequestHeaders headers2;
   HttpResponseInfo response2;
   EXPECT_EQ(ERR_IO_PENDING, stream2->SendRequest(headers2, &response2,
                                                  callback_.callback()));
+  TestLoadTimingReused(*stream2);
 
   data_->RunFor(1);
   EXPECT_LE(OK, callback_.WaitForResult());
@@ -264,6 +299,9 @@ TEST_F(HttpPipelinedConnectionImplTest, LockStepAsyncRequests) {
 
   ExpectResponse("ok.html", stream1, true);
 
+  TestLoadTimingNotReused(*stream1);
+  LoadTimingInfo load_timing_info1;
+  EXPECT_TRUE(stream1->GetLoadTimingInfo(&load_timing_info1));
   stream1->Close(false);
 
   data_->RunFor(2);
@@ -271,6 +309,11 @@ TEST_F(HttpPipelinedConnectionImplTest, LockStepAsyncRequests) {
 
   ExpectResponse("ko.html", stream2, true);
 
+  TestLoadTimingReused(*stream2);
+  LoadTimingInfo load_timing_info2;
+  EXPECT_TRUE(stream2->GetLoadTimingInfo(&load_timing_info2));
+  EXPECT_EQ(load_timing_info1.socket_log_id,
+            load_timing_info2.socket_log_id);
   stream2->Close(false);
 }
 
@@ -331,6 +374,8 @@ TEST_F(HttpPipelinedConnectionImplTest, SendOrderSwapped) {
 
   TestSyncRequest(stream2, "ko.html");
   TestSyncRequest(stream1, "ok.html");
+  TestLoadTimingNotReused(*stream1);
+  TestLoadTimingReused(*stream2);
 }
 
 TEST_F(HttpPipelinedConnectionImplTest, ReadOrderSwapped) {
@@ -574,6 +619,8 @@ TEST_F(HttpPipelinedConnectionImplTest, ConnectionSuddenlyClosedAfterResponse) {
   MockRead reads[] = {
     MockRead(SYNCHRONOUS, 3, "HTTP/1.1 200 OK\r\n\r\n"),
     MockRead(SYNCHRONOUS, 4, "ok.html"),
+    MockRead(ASYNC, OK, 6),  // Connection closed message.  Not read before the
+                             // ERR_SOCKET_NOT_CONNECTED.
   };
   Initialize(reads, arraysize(reads), writes, arraysize(writes));
 
@@ -688,7 +735,7 @@ TEST_F(HttpPipelinedConnectionImplTest, AbortWhileSendingSecondRequest) {
 
   data_->RunFor(1);
   EXPECT_LE(OK, ok_callback.WaitForResult());
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
   aborted_stream->Close(true);
   EXPECT_EQ(ERR_PIPELINE_EVICTION, evicted_callback.WaitForResult());
   evicted_stream->Close(true);
@@ -933,27 +980,32 @@ TEST_F(HttpPipelinedConnectionImplTest, CloseCalledBeforeReadCallback) {
   // 1. DoReadHeadersLoop, which will post:
   // 2. InvokeUserCallback
   SuddenCloseObserver observer(evicted_stream.get(), 2);
-  MessageLoop::current()->AddTaskObserver(&observer);
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->AddTaskObserver(&observer);
+  base::MessageLoop::current()->RunUntilIdle();
   EXPECT_FALSE(evicted_callback.have_result());
 }
 
 class StreamDeleter {
  public:
-  StreamDeleter(HttpStream* stream) :
-      stream_(stream),
-      ALLOW_THIS_IN_INITIALIZER_LIST(callback_(
-          base::Bind(&StreamDeleter::OnIOComplete, base::Unretained(this)))) {
+  StreamDeleter(HttpStream* stream)
+      : stream_(stream),
+        callback_(base::Bind(&StreamDeleter::OnIOComplete,
+                             base::Unretained(this))) {
+  }
+
+  ~StreamDeleter() {
+    EXPECT_FALSE(stream_);
   }
 
   const CompletionCallback& callback() { return callback_; }
 
  private:
   void OnIOComplete(int result) {
-    delete stream_;
+    stream_->Close(true);
+    stream_.reset();
   }
 
-  HttpStream* stream_;
+  scoped_ptr<HttpStream> stream_;
   CompletionCallback callback_;
 };
 
@@ -1080,7 +1132,7 @@ TEST_F(HttpPipelinedConnectionImplTest, CloseBeforeSendCallbackRuns) {
   close_stream.reset();
   close_callback.reset();
 
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 }
 
 TEST_F(HttpPipelinedConnectionImplTest, CloseBeforeReadCallbackRuns) {
@@ -1114,7 +1166,7 @@ TEST_F(HttpPipelinedConnectionImplTest, CloseBeforeReadCallbackRuns) {
   close_stream.reset();
   close_callback.reset();
 
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 }
 
 TEST_F(HttpPipelinedConnectionImplTest, AbortWhileSendQueued) {
@@ -1516,7 +1568,7 @@ TEST_F(HttpPipelinedConnectionImplTest, OnPipelineHasCapacity) {
                                     &response, callback_.callback()));
 
   EXPECT_CALL(delegate_, OnPipelineHasCapacity(pipeline_.get())).Times(0);
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   stream->Close(false);
   EXPECT_CALL(delegate_, OnPipelineHasCapacity(pipeline_.get())).Times(1);
@@ -1533,7 +1585,7 @@ TEST_F(HttpPipelinedConnectionImplTest, OnPipelineHasCapacityWithoutSend) {
   scoped_ptr<HttpStream> stream(NewTestStream("ok.html"));
 
   EXPECT_CALL(delegate_, OnPipelineHasCapacity(pipeline_.get())).Times(1);
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   stream->Close(false);
   EXPECT_CALL(delegate_, OnPipelineHasCapacity(pipeline_.get())).Times(1);

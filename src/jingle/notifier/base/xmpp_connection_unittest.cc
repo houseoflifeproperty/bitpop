@@ -10,11 +10,11 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "jingle/glue/mock_task.h"
 #include "jingle/glue/task_pump.h"
 #include "jingle/notifier/base/weak_xmpp_client.h"
-#include "net/base/cert_verifier.h"
+#include "net/cert/cert_verifier.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_test_util.h"
 #include "talk/xmpp/prexmppauth.h"
@@ -86,7 +86,7 @@ class XmppConnectionTest : public testing::Test {
   }
 
   // Needed by XmppConnection.
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   MockXmppConnectionDelegate mock_xmpp_connection_delegate_;
   scoped_ptr<MockPreXmppAuth> mock_pre_xmpp_auth_;
   scoped_refptr<net::TestURLRequestContextGetter> url_request_context_getter_;

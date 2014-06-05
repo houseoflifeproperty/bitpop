@@ -11,23 +11,29 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/sequenced_task_runner_helpers.h"
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/common/custom_handlers/protocol_handler.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_job.h"
 #include "net/url_request/url_request_job_factory.h"
 
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
+
 // This is where handlers for protocols registered with
 // navigator.registerProtocolHandler() are registered. Each Profile owns an
 // instance of this class, which is initialized on browser start through
 // Profile::InitRegisteredProtocolHandlers(), and they should be the only
 // instances of this class.
-class ProtocolHandlerRegistry : public ProfileKeyedService {
+class ProtocolHandlerRegistry : public KeyedService {
 
  public:
   // Provides notification of when the OS level user agent settings
@@ -82,6 +88,45 @@ class ProtocolHandlerRegistry : public ProfileKeyedService {
         ProtocolHandlerRegistry* registry);
   };
 
+  // Forward declaration of the internal implementation class.
+  class IOThreadDelegate;
+
+  // JobInterceptorFactory intercepts URLRequestJob creation for URLRequests the
+  // ProtocolHandlerRegistry is registered to handle.  When no handler is
+  // registered, the URLRequest is passed along to the chained
+  // URLRequestJobFactory (set with |JobInterceptorFactory::Chain|).
+  // JobInterceptorFactory's are created via
+  // |ProtocolHandlerRegistry::CreateJobInterceptorFactory|.
+  class JobInterceptorFactory : public net::URLRequestJobFactory {
+   public:
+    // |io_thread_delegate| is used to perform actual job creation work.
+    explicit JobInterceptorFactory(IOThreadDelegate* io_thread_delegate);
+    virtual ~JobInterceptorFactory();
+
+    // |job_factory| is set as the URLRequestJobFactory where requests are
+    // forwarded if JobInterceptorFactory decides to pass on them.
+    void Chain(scoped_ptr<net::URLRequestJobFactory> job_factory);
+
+    // URLRequestJobFactory implementation.
+    virtual net::URLRequestJob* MaybeCreateJobWithProtocolHandler(
+        const std::string& scheme,
+        net::URLRequest* request,
+        net::NetworkDelegate* network_delegate) const OVERRIDE;
+    virtual bool IsHandledProtocol(const std::string& scheme) const OVERRIDE;
+    virtual bool IsHandledURL(const GURL& url) const OVERRIDE;
+    virtual bool IsSafeRedirectTarget(const GURL& location) const OVERRIDE;
+
+   private:
+    // When JobInterceptorFactory decides to pass on particular requests,
+    // they're forwarded to the chained URLRequestJobFactory, |job_factory_|.
+    scoped_ptr<URLRequestJobFactory> job_factory_;
+    // |io_thread_delegate_| performs the actual job creation decisions by
+    // mirroring the ProtocolHandlerRegistry on the IO thread.
+    scoped_refptr<IOThreadDelegate> io_thread_delegate_;
+
+    DISALLOW_COPY_AND_ASSIGN(JobInterceptorFactory);
+  };
+
   typedef std::map<std::string, ProtocolHandler> ProtocolHandlerMap;
   typedef std::vector<ProtocolHandler> ProtocolHandlerList;
   typedef std::map<std::string, ProtocolHandlerList> ProtocolHandlerMultiMap;
@@ -91,10 +136,9 @@ class ProtocolHandlerRegistry : public ProfileKeyedService {
   ProtocolHandlerRegistry(Profile* profile, Delegate* delegate);
   virtual ~ProtocolHandlerRegistry();
 
-  // Returns a net::URLRequestJobFactory::Interceptor suitable
-  // for use on the IO thread, but is initialized on the UI thread.
-  // Callers assume responsibility for deleting this object.
-  net::URLRequestJobFactory::Interceptor* CreateURLInterceptor();
+  // Returns a net::URLRequestJobFactory suitable for use on the IO thread, but
+  // is initialized on the UI thread.
+  scoped_ptr<JobInterceptorFactory> CreateJobInterceptorFactory();
 
   // Called when a site tries to register as a protocol handler. If the request
   // can be handled silently by the registry - either to ignore the request
@@ -191,7 +235,7 @@ class ProtocolHandlerRegistry : public ProfileKeyedService {
   virtual void Shutdown() OVERRIDE;
 
   // Registers the preferences that we store registered protocol handlers in.
-  static void RegisterPrefs(PrefService* prefService);
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
   bool enabled() const { return enabled_; }
 
@@ -209,10 +253,6 @@ class ProtocolHandlerRegistry : public ProfileKeyedService {
 
   friend class ProtocolHandlerRegistryTest;
   friend class RegisterProtocolHandlerBrowserTest;
-
-  // Forward declaration of the internal implementation classes.
-  class Core;
-  class URLInterceptor;
 
   // Puts the given handler at the top of the list of handlers for its
   // protocol.
@@ -237,11 +277,11 @@ class ProtocolHandlerRegistry : public ProfileKeyedService {
 
   // Returns a JSON list of protocol handlers. The caller is responsible for
   // deleting this Value.
-  Value* EncodeRegisteredHandlers();
+  base::Value* EncodeRegisteredHandlers();
 
   // Returns a JSON list of ignored protocol handlers. The caller is
   // responsible for deleting this Value.
-  Value* EncodeIgnoredHandlers();
+  base::Value* EncodeIgnoredHandlers();
 
   // Sends a notification of the given type to the NotificationService.
   void NotifyChanged();
@@ -251,7 +291,7 @@ class ProtocolHandlerRegistry : public ProfileKeyedService {
 
   // Get the DictionaryValues stored under the given pref name that are valid
   // ProtocolHandler values.
-  std::vector<const DictionaryValue*> GetHandlersFromPref(
+  std::vector<const base::DictionaryValue*> GetHandlersFromPref(
       const char* pref_name) const;
 
   // Ignores future requests to register the given protocol handler.
@@ -285,7 +325,7 @@ class ProtocolHandlerRegistry : public ProfileKeyedService {
 
   // Copy of registry data for use on the IO thread. Changes to the registry
   // are posted to the IO thread where updates are applied to this object.
-  scoped_refptr<Core> core_;
+  scoped_refptr<IOThreadDelegate> io_thread_delegate_;
 
   DefaultClientObserverList default_client_observers_;
 

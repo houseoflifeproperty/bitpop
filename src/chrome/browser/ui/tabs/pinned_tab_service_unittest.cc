@@ -18,8 +18,8 @@
 
 namespace {
 
-ProfileKeyedService* BuildPinnedTabService(Profile* profile) {
-  return new PinnedTabService(profile);
+KeyedService* BuildPinnedTabService(content::BrowserContext* profile) {
+  return new PinnedTabService(static_cast<Profile*>(profile));
 }
 
 PinnedTabService* BuildForProfile(Profile* profile) {
@@ -30,7 +30,7 @@ PinnedTabService* BuildForProfile(Profile* profile) {
 
 class PinnedTabServiceTest : public BrowserWithTestWindowTest {
  public:
-  PinnedTabServiceTest() {}
+  PinnedTabServiceTest() : pinned_tab_service_(NULL) {}
 
  protected:
   virtual TestingProfile* CreateProfile() OVERRIDE {
@@ -52,7 +52,8 @@ TEST_F(PinnedTabServiceTest, Popup) {
   browser()->tab_strip_model()->SetTabPinned(0, true);
 
   // Create a popup.
-  Browser::CreateParams params(Browser::TYPE_POPUP, profile());
+  Browser::CreateParams params(Browser::TYPE_POPUP, profile(),
+                               browser()->host_desktop_type());
   scoped_ptr<Browser> popup(
       chrome::CreateBrowserWithTestWindowForParams(&params));
 

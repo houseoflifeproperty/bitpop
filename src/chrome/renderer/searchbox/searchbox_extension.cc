@@ -5,24 +5,36 @@
 #include "chrome/renderer/searchbox/searchbox_extension.h"
 
 #include "base/i18n/rtl.h"
-#include "base/string_number_conversions.h"
-#include "base/stringprintf.h"
-#include "chrome/common/extensions/extension.h"
+#include "base/json/string_escape.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/common/autocomplete_match_type.h"
+#include "chrome/common/instant_types.h"
+#include "chrome/common/ntp_logging_events.h"
+#include "chrome/common/url_constants.h"
 #include "chrome/renderer/searchbox/searchbox.h"
+#include "content/public/common/url_constants.h"
 #include "content/public/renderer/render_view.h"
+#include "extensions/common/extension.h"
 #include "grit/renderer_resources.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptSource.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "third_party/WebKit/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
+#include "third_party/WebKit/public/web/WebScriptSource.h"
+#include "third_party/WebKit/public/web/WebView.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/base/window_open_disposition.h"
+#include "ui/events/keycodes/keyboard_codes.h"
+#include "url/gurl.h"
 #include "v8/include/v8.h"
 
 namespace {
 
-const char kCSSBackgroundImageFormat[] =
-    "-webkit-image-set(url(chrome://theme/IDR_THEME_BACKGROUND?%s) 1x)";
+const char kCSSBackgroundImageFormat[] = "-webkit-image-set("
+    "url(chrome-search://theme/IDR_THEME_NTP_BACKGROUND?%s) 1x, "
+    "url(chrome-search://theme/IDR_THEME_NTP_BACKGROUND@2x?%s) 2x)";
 
 const char kCSSBackgroundColorFormat[] = "rgba(%d,%d,%d,%s)";
 
@@ -37,154 +49,288 @@ const char kCSSBackgroundRepeatX[] = "repeat-x";
 const char kCSSBackgroundRepeatY[] = "repeat-y";
 const char kCSSBackgroundRepeat[] = "repeat";
 
+const char kThemeAttributionFormat[] = "-webkit-image-set("
+    "url(chrome-search://theme/IDR_THEME_NTP_ATTRIBUTION?%s) 1x, "
+    "url(chrome-search://theme/IDR_THEME_NTP_ATTRIBUTION@2x?%s) 2x)";
+
+const char kLTRHtmlTextDirection[] = "ltr";
+const char kRTLHtmlTextDirection[] = "rtl";
+
 // Converts a V8 value to a string16.
-string16 V8ValueToUTF16(v8::Handle<v8::Value> v) {
+base::string16 V8ValueToUTF16(v8::Handle<v8::Value> v) {
   v8::String::Value s(v);
-  return string16(reinterpret_cast<const char16*>(*s), s.length());
+  return base::string16(reinterpret_cast<const base::char16*>(*s), s.length());
 }
 
 // Converts string16 to V8 String.
-v8::Handle<v8::String> UTF16ToV8String(const string16& s) {
-  return v8::String::New(reinterpret_cast<const uint16_t*>(s.data()), s.size());
+v8::Handle<v8::String> UTF16ToV8String(v8::Isolate* isolate,
+                                       const base::string16& s) {
+  return v8::String::NewFromTwoByte(isolate,
+                                    reinterpret_cast<const uint16_t*>(s.data()),
+                                    v8::String::kNormalString,
+                                    s.size());
 }
 
 // Converts std::string to V8 String.
-v8::Handle<v8::String> UTF8ToV8String(const std::string& s) {
-  return v8::String::New(s.data(), s.size());
+v8::Handle<v8::String> UTF8ToV8String(v8::Isolate* isolate,
+                                      const std::string& s) {
+  return v8::String::NewFromUtf8(
+      isolate, s.data(), v8::String::kNormalString, s.size());
 }
 
-void Dispatch(WebKit::WebFrame* frame, const WebKit::WebString& script) {
+void Dispatch(blink::WebFrame* frame, const blink::WebString& script) {
   if (!frame) return;
-  frame->executeScript(WebKit::WebScriptSource(script));
+  frame->executeScript(blink::WebScriptSource(script));
+}
+
+v8::Handle<v8::String> GenerateThumbnailURL(
+    v8::Isolate* isolate,
+    int render_view_id,
+    InstantRestrictedID most_visited_item_id) {
+  return UTF8ToV8String(
+      isolate,
+      base::StringPrintf(
+          "chrome-search://thumb/%d/%d", render_view_id, most_visited_item_id));
+}
+
+// Populates a Javascript MostVisitedItem object from |mv_item|.
+// NOTE: Includes "url", "title" and "domain" which are private data, so should
+// not be returned to the Instant page. These should be erased before returning
+// the object. See GetMostVisitedItemsWrapper() in searchbox_api.js.
+v8::Handle<v8::Object> GenerateMostVisitedItem(
+    v8::Isolate* isolate,
+    int render_view_id,
+    InstantRestrictedID restricted_id,
+    const InstantMostVisitedItem& mv_item) {
+  // We set the "dir" attribute of the title, so that in RTL locales, a LTR
+  // title is rendered left-to-right and truncated from the right. For
+  // example, the title of http://msdn.microsoft.com/en-us/default.aspx is
+  // "MSDN: Microsoft developer network". In RTL locales, in the New Tab
+  // page, if the "dir" of this title is not specified, it takes Chrome UI's
+  // directionality. So the title will be truncated as "soft developer
+  // network". Setting the "dir" attribute as "ltr" renders the truncated
+  // title as "MSDN: Microsoft D...". As another example, the title of
+  // http://yahoo.com is "Yahoo!". In RTL locales, in the New Tab page, the
+  // title will be rendered as "!Yahoo" if its "dir" attribute is not set to
+  // "ltr".
+  std::string direction;
+  if (base::i18n::StringContainsStrongRTLChars(mv_item.title))
+    direction = kRTLHtmlTextDirection;
+  else
+    direction = kLTRHtmlTextDirection;
+
+  base::string16 title = mv_item.title;
+  if (title.empty())
+    title = base::UTF8ToUTF16(mv_item.url.spec());
+
+  v8::Handle<v8::Object> obj = v8::Object::New(isolate);
+  obj->Set(v8::String::NewFromUtf8(isolate, "renderViewId"),
+           v8::Int32::New(isolate, render_view_id));
+  obj->Set(v8::String::NewFromUtf8(isolate, "rid"),
+           v8::Int32::New(isolate, restricted_id));
+  obj->Set(v8::String::NewFromUtf8(isolate, "thumbnailUrl"),
+           GenerateThumbnailURL(isolate, render_view_id, restricted_id));
+  obj->Set(v8::String::NewFromUtf8(isolate, "title"),
+           UTF16ToV8String(isolate, title));
+  obj->Set(v8::String::NewFromUtf8(isolate, "domain"),
+           UTF8ToV8String(isolate, mv_item.url.host()));
+  obj->Set(v8::String::NewFromUtf8(isolate, "direction"),
+           UTF8ToV8String(isolate, direction));
+  obj->Set(v8::String::NewFromUtf8(isolate, "url"),
+           UTF8ToV8String(isolate, mv_item.url.spec()));
+  return obj;
+}
+
+// Returns the render view for the current JS context if it matches |origin|,
+// otherwise returns NULL. Used to restrict methods that access suggestions and
+// most visited data to pages with origin chrome-search://most-visited and
+// chrome-search://suggestions.
+content::RenderView* GetRenderViewWithCheckedOrigin(const GURL& origin) {
+  blink::WebLocalFrame* webframe =
+      blink::WebLocalFrame::frameForCurrentContext();
+  if (!webframe)
+    return NULL;
+  blink::WebView* webview = webframe->view();
+  if (!webview)
+    return NULL;  // Can happen during closing.
+  content::RenderView* render_view = content::RenderView::FromWebView(webview);
+  if (!render_view)
+    return NULL;
+
+  GURL url(webframe->document().url());
+  if (url.GetOrigin() != origin.GetOrigin())
+    return NULL;
+
+  return render_view;
+}
+
+// Returns the current URL.
+GURL GetCurrentURL(content::RenderView* render_view) {
+  blink::WebView* webview = render_view->GetWebView();
+  return webview ? GURL(webview->mainFrame()->document().url()) : GURL();
 }
 
 }  // namespace
 
+namespace internal {  // for testing.
+
+// Returns an array with the RGBA color components.
+v8::Handle<v8::Value> RGBAColorToArray(v8::Isolate* isolate,
+                                       const RGBAColor& color) {
+  v8::Handle<v8::Array> color_array = v8::Array::New(isolate, 4);
+  color_array->Set(0, v8::Int32::New(isolate, color.r));
+  color_array->Set(1, v8::Int32::New(isolate, color.g));
+  color_array->Set(2, v8::Int32::New(isolate, color.b));
+  color_array->Set(3, v8::Int32::New(isolate, color.a));
+  return color_array;
+}
+
+// Resolves a possibly relative URL using the current URL.
+GURL ResolveURL(const GURL& current_url,
+                const base::string16& possibly_relative_url) {
+  if (current_url.is_valid() && !possibly_relative_url.empty())
+    return current_url.Resolve(possibly_relative_url);
+  return GURL(possibly_relative_url);
+}
+
+}  // namespace internal
+
 namespace extensions_v8 {
 
-static const char kSearchBoxExtensionName[] = "v8/SearchBox";
-
-static const char kDispatchChangeEventScript[] =
-    "if (window.chrome &&"
-    "    window.chrome.searchBox &&"
-    "    window.chrome.searchBox.onchange &&"
-    "    typeof window.chrome.searchBox.onchange == 'function') {"
-    "  window.chrome.searchBox.onchange();"
-    "  true;"
-    "}";
-
-static const char kDispatchSubmitEventScript[] =
-    "if (window.chrome &&"
-    "    window.chrome.searchBox &&"
-    "    window.chrome.searchBox.onsubmit &&"
-    "    typeof window.chrome.searchBox.onsubmit == 'function') {"
-    "  window.chrome.searchBox.onsubmit();"
-    "  true;"
-    "}";
-
-static const char kDispatchCancelEventScript[] =
-    "if (window.chrome &&"
-    "    window.chrome.searchBox &&"
-    "    window.chrome.searchBox.oncancel &&"
-    "    typeof window.chrome.searchBox.oncancel == 'function') {"
-    "  window.chrome.searchBox.oncancel();"
-    "  true;"
-    "}";
-
-static const char kDispatchResizeEventScript[] =
-    "if (window.chrome &&"
-    "    window.chrome.searchBox &&"
-    "    window.chrome.searchBox.onresize &&"
-    "    typeof window.chrome.searchBox.onresize == 'function') {"
-    "  window.chrome.searchBox.onresize();"
-    "  true;"
-    "}";
+static const char kSearchBoxExtensionName[] = "v8/EmbeddedSearch";
 
 // We first send this script down to determine if the page supports instant.
 static const char kSupportsInstantScript[] =
     "if (window.chrome &&"
-    "    window.chrome.searchBox &&"
-    "    window.chrome.searchBox.onsubmit &&"
-    "    typeof window.chrome.searchBox.onsubmit == 'function') {"
+    "    window.chrome.embeddedSearch &&"
+    "    window.chrome.embeddedSearch.searchBox &&"
+    "    window.chrome.embeddedSearch.searchBox.onsubmit &&"
+    "    typeof window.chrome.embeddedSearch.searchBox.onsubmit =="
+    "        'function') {"
     "  true;"
     "} else {"
     "  false;"
     "}";
 
-// Extended API.
-
-// Per-context initialization.
-static const char kDispatchOnWindowReady[] =
+static const char kDispatchChromeIdentityCheckResult[] =
     "if (window.chrome &&"
-    "    window.chrome.searchBox &&"
-    "    window.chrome.searchBoxOnWindowReady &&"
-    "    typeof window.chrome.searchBoxOnWindowReady == 'function') {"
-    "  window.chrome.searchBoxOnWindowReady();"
-    "}";
-
-static const char kDispatchAutocompleteResultsEventScript[] =
-    "if (window.chrome &&"
-    "    window.chrome.searchBox &&"
-    "    window.chrome.searchBox.onnativesuggestions &&"
-    "    typeof window.chrome.searchBox.onnativesuggestions == 'function') {"
-    "  window.chrome.searchBox.onnativesuggestions();"
+    "    window.chrome.embeddedSearch &&"
+    "    window.chrome.embeddedSearch.newTabPage &&"
+    "    window.chrome.embeddedSearch.newTabPage.onsignedincheckdone &&"
+    "    typeof window.chrome.embeddedSearch.newTabPage"
+    "        .onsignedincheckdone === 'function') {"
+    "  window.chrome.embeddedSearch.newTabPage.onsignedincheckdone(%s, %s);"
     "  true;"
     "}";
 
-// Takes two printf-style replaceable values: count, key_code.
-static const char kDispatchUpOrDownKeyPressEventScript[] =
+
+static const char kDispatchFocusChangedScript[] =
     "if (window.chrome &&"
-    "    window.chrome.searchBox &&"
-    "    window.chrome.searchBox.onkeypress &&"
-    "    typeof window.chrome.searchBox.onkeypress == 'function') {"
-    "  for (var i = 0; i < %d; ++i)"
-    "    window.chrome.searchBox.onkeypress({keyCode: %d});"
+    "    window.chrome.embeddedSearch &&"
+    "    window.chrome.embeddedSearch.searchBox &&"
+    "    window.chrome.embeddedSearch.searchBox.onfocuschange &&"
+    "    typeof window.chrome.embeddedSearch.searchBox.onfocuschange =="
+    "         'function') {"
+    "  window.chrome.embeddedSearch.searchBox.onfocuschange();"
+    "  true;"
+    "}";
+
+static const char kDispatchInputCancelScript[] =
+    "if (window.chrome &&"
+    "    window.chrome.embeddedSearch &&"
+    "    window.chrome.embeddedSearch.newTabPage &&"
+    "    window.chrome.embeddedSearch.newTabPage.oninputcancel &&"
+    "    typeof window.chrome.embeddedSearch.newTabPage.oninputcancel =="
+    "         'function') {"
+    "  window.chrome.embeddedSearch.newTabPage.oninputcancel();"
+    "  true;"
+    "}";
+
+static const char kDispatchInputStartScript[] =
+    "if (window.chrome &&"
+    "    window.chrome.embeddedSearch &&"
+    "    window.chrome.embeddedSearch.newTabPage &&"
+    "    window.chrome.embeddedSearch.newTabPage.oninputstart &&"
+    "    typeof window.chrome.embeddedSearch.newTabPage.oninputstart =="
+    "         'function') {"
+    "  window.chrome.embeddedSearch.newTabPage.oninputstart();"
     "  true;"
     "}";
 
 static const char kDispatchKeyCaptureChangeScript[] =
     "if (window.chrome &&"
-    "    window.chrome.searchBox &&"
-    "    window.chrome.searchBox.onkeycapturechange &&"
-    "    typeof window.chrome.searchBox.onkeycapturechange == 'function') {"
-    "  window.chrome.searchBox.onkeycapturechange();"
-    "  true;"
-    "}";
-
-static const char kDispatchContextChangeEventScript[] =
-    "if (window.chrome &&"
-    "    window.chrome.searchBox &&"
-    "    window.chrome.searchBox.oncontextchange &&"
-    "    typeof window.chrome.searchBox.oncontextchange == 'function') {"
-    "  window.chrome.searchBox.oncontextchange();"
-    "  true;"
-    "}";
-
-static const char kDispatchThemeChangeEventScript[] =
-    "if (window.chrome &&"
-    "    window.chrome.searchBox &&"
-    "    window.chrome.searchBox.onthemechange &&"
-    "    typeof window.chrome.searchBox.onthemechange == 'function') {"
-    "  window.chrome.searchBox.onthemechange();"
-    "  true;"
-    "}";
-
-static const char kDispatchThemeAreaHeightChangeEventScript[] =
-    "if (window.chrome &&"
-    "    window.chrome.searchBox &&"
-    "    window.chrome.searchBox.onthemeareaheightchange &&"
-    "    typeof window.chrome.searchBox.onthemeareaheightchange =="
+    "    window.chrome.embeddedSearch &&"
+    "    window.chrome.embeddedSearch.searchBox &&"
+    "    window.chrome.embeddedSearch.searchBox.onkeycapturechange &&"
+    "    typeof window.chrome.embeddedSearch.searchBox.onkeycapturechange =="
     "        'function') {"
-    "  window.chrome.searchBox.onthemeareaheightchange();"
+    "  window.chrome.embeddedSearch.searchBox.onkeycapturechange();"
     "  true;"
     "}";
 
 static const char kDispatchMarginChangeEventScript[] =
     "if (window.chrome &&"
-    "    window.chrome.searchBox &&"
-    "    window.chrome.searchBox.onmarginchange &&"
-    "    typeof window.chrome.searchBox.onmarginchange == 'function') {"
-    "  window.chrome.searchBox.onmarginchange();"
+    "    window.chrome.embeddedSearch &&"
+    "    window.chrome.embeddedSearch.searchBox &&"
+    "    window.chrome.embeddedSearch.searchBox.onmarginchange &&"
+    "    typeof window.chrome.embeddedSearch.searchBox.onmarginchange =="
+    "        'function') {"
+    "  window.chrome.embeddedSearch.searchBox.onmarginchange();"
+    "  true;"
+    "}";
+
+static const char kDispatchMostVisitedChangedScript[] =
+    "if (window.chrome &&"
+    "    window.chrome.embeddedSearch &&"
+    "    window.chrome.embeddedSearch.newTabPage &&"
+    "    window.chrome.embeddedSearch.newTabPage.onmostvisitedchange &&"
+    "    typeof window.chrome.embeddedSearch.newTabPage.onmostvisitedchange =="
+    "         'function') {"
+    "  window.chrome.embeddedSearch.newTabPage.onmostvisitedchange();"
+    "  true;"
+    "}";
+
+static const char kDispatchSubmitEventScript[] =
+    "if (window.chrome &&"
+    "    window.chrome.embeddedSearch &&"
+    "    window.chrome.embeddedSearch.searchBox &&"
+    "    window.chrome.embeddedSearch.searchBox.onsubmit &&"
+    "    typeof window.chrome.embeddedSearch.searchBox.onsubmit =="
+    "        'function') {"
+    "  window.chrome.embeddedSearch.searchBox.onsubmit();"
+    "  true;"
+    "}";
+
+static const char kDispatchSuggestionChangeEventScript[] =
+    "if (window.chrome &&"
+    "    window.chrome.embeddedSearch &&"
+    "    window.chrome.embeddedSearch.searchBox &&"
+    "    window.chrome.embeddedSearch.searchBox.onsuggestionchange &&"
+    "    typeof window.chrome.embeddedSearch.searchBox.onsuggestionchange =="
+    "        'function') {"
+    "  window.chrome.embeddedSearch.searchBox.onsuggestionchange();"
+    "  true;"
+    "}";
+
+static const char kDispatchThemeChangeEventScript[] =
+    "if (window.chrome &&"
+    "    window.chrome.embeddedSearch &&"
+    "    window.chrome.embeddedSearch.newTabPage &&"
+    "    window.chrome.embeddedSearch.newTabPage.onthemechange &&"
+    "    typeof window.chrome.embeddedSearch.newTabPage.onthemechange =="
+    "        'function') {"
+    "  window.chrome.embeddedSearch.newTabPage.onthemechange();"
+    "  true;"
+    "}";
+
+static const char kDispatchToggleVoiceSearchScript[] =
+    "if (window.chrome &&"
+    "    window.chrome.embeddedSearch &&"
+    "    window.chrome.embeddedSearch.searchBox &&"
+    "    window.chrome.embeddedSearch.searchBox.ontogglevoicesearch &&"
+    "    typeof window.chrome.embeddedSearch.searchBox.ontogglevoicesearch =="
+    "         'function') {"
+    "  window.chrome.embeddedSearch.searchBox.ontogglevoicesearch();"
     "  true;"
     "}";
 
@@ -196,399 +342,520 @@ class SearchBoxExtensionWrapper : public v8::Extension {
 
   // Allows v8's javascript code to call the native functions defined
   // in this class for window.chrome.
-  virtual v8::Handle<v8::FunctionTemplate> GetNativeFunction(
-      v8::Handle<v8::String> name);
+  virtual v8::Handle<v8::FunctionTemplate> GetNativeFunctionTemplate(
+      v8::Isolate*,
+      v8::Handle<v8::String> name) OVERRIDE;
 
   // Helper function to find the RenderView. May return NULL.
   static content::RenderView* GetRenderView();
 
-  // Gets the value of the user's search query.
-  static v8::Handle<v8::Value> GetQuery(const v8::Arguments& args);
+  // Sends a Chrome identity check to the browser.
+  static void CheckIsUserSignedInToChromeAs(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
 
-  // Gets whether the |value| should be considered final -- as opposed to a
-  // partial match. This may be set if the user clicks a suggestion, presses
-  // forward delete, or in other cases where Chrome overrides.
-  static v8::Handle<v8::Value> GetVerbatim(const v8::Arguments& args);
+  // Deletes a Most Visited item.
+  static void DeleteMostVisitedItem(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
 
-  // Gets the start of the selection in the search box.
-  static v8::Handle<v8::Value> GetSelectionStart(const v8::Arguments& args);
+  // Focuses the omnibox.
+  static void Focus(const v8::FunctionCallbackInfo<v8::Value>& args);
 
-  // Gets the end of the selection in the search box.
-  static v8::Handle<v8::Value> GetSelectionEnd(const v8::Arguments& args);
+  // Gets whether or not the app launcher is enabled.
+  static void GetAppLauncherEnabled(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
 
-  // Gets the x coordinate (relative to |window|) of the left edge of the
-  // region of the search box that overlaps the window.
-  static v8::Handle<v8::Value> GetX(const v8::Arguments& args);
+  // Gets the desired navigation behavior from a click event.
+  static void GetDispositionFromClick(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
 
-  // Gets the y coordinate (relative to |window|) of the right edge of the
-  // region of the search box that overlaps the window.
-  static v8::Handle<v8::Value> GetY(const v8::Arguments& args);
+  // Gets Most Visited Items.
+  static void GetMostVisitedItems(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
 
-  // Gets the width of the region of the search box that overlaps the window.
-  static v8::Handle<v8::Value> GetWidth(const v8::Arguments& args);
+  // Gets the raw data for a most visited item including its raw URL.
+  // GetRenderViewWithCheckedOrigin() enforces that only code in the origin
+  // chrome-search://most-visited can call this function.
+  static void GetMostVisitedItemData(
+    const v8::FunctionCallbackInfo<v8::Value>& args);
 
-  // Gets the height of the region of the search box that overlaps the window.
-  static v8::Handle<v8::Value> GetHeight(const v8::Arguments& args);
-
-  // Gets the width of the margin from the start-edge of the page to the start
-  // of the suggestions dropdown.
-  static v8::Handle<v8::Value> GetStartMargin(const v8::Arguments& args);
-
-  // Gets the width of the margin from the end-edge of the page to the end of
-  // the suggestions dropdown.
-  static v8::Handle<v8::Value> GetEndMargin(const v8::Arguments& args);
+  // Gets the submitted value of the user's search query.
+  static void GetQuery(const v8::FunctionCallbackInfo<v8::Value>& args);
 
   // Returns true if the Searchbox itself is oriented right-to-left.
-  static v8::Handle<v8::Value> GetRightToLeft(const v8::Arguments& args);
+  static void GetRightToLeft(const v8::FunctionCallbackInfo<v8::Value>& args);
 
-  // Gets the autocomplete results from search box.
-  static v8::Handle<v8::Value> GetAutocompleteResults(
-      const v8::Arguments& args);
+  // Gets the start-edge margin to use with extended Instant.
+  static void GetStartMargin(const v8::FunctionCallbackInfo<v8::Value>& args);
 
-  // Gets the current session context.
-  static v8::Handle<v8::Value> GetContext(const v8::Arguments& args);
-
-  // Gets whether to display Instant results.
-  static v8::Handle<v8::Value> GetDisplayInstantResults(
-      const v8::Arguments& args);
+  // Gets the current top suggestion to prefetch search results.
+  static void GetSuggestionToPrefetch(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
 
   // Gets the background info of the theme currently adopted by browser.
   // Call only when overlay is showing NTP page.
-  static v8::Handle<v8::Value> GetThemeBackgroundInfo(
-      const v8::Arguments& args);
+  static void GetThemeBackgroundInfo(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
 
-  // Gets the theme area height that the entire theme background image should
-  // fill up.
-  // Call only when overlay is showing NTP page and GetThemeBackgroundInfo
-  // returns a non-empty image_url and an image_vertical_alignment that is not
-  // "top".
-  static v8::Handle<v8::Value> GetThemeAreaHeight(const v8::Arguments& args);
+  // Gets whether the omnibox has focus or not.
+  static void IsFocused(const v8::FunctionCallbackInfo<v8::Value>& args);
+
+  // Gets whether user input is in progress.
+  static void IsInputInProgress(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
 
   // Gets whether the browser is capturing key strokes.
-  static v8::Handle<v8::Value> IsKeyCaptureEnabled(const v8::Arguments& args);
+  static void IsKeyCaptureEnabled(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
 
-  // Gets the font family of the text in the omnibox.
-  static v8::Handle<v8::Value> GetFont(const v8::Arguments& args);
+  // Logs information from the iframes/titles on the NTP.
+  static void LogEvent(const v8::FunctionCallbackInfo<v8::Value>& args);
 
-  // Gets the font size of the text in the omnibox.
-  static v8::Handle<v8::Value> GetFontSize(const v8::Arguments& args);
+  // Logs an impression on one of the Most Visited tile on the NTP.
+  static void LogMostVisitedImpression(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
+
+  // Logs a navigation on one of the Most Visited tile on the NTP.
+  static void LogMostVisitedNavigation(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
 
   // Navigates the window to a URL represented by either a URL string or a
   // restricted ID.
-  static v8::Handle<v8::Value> NavigateContentWindow(const v8::Arguments& args);
+  static void NavigateContentWindow(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
 
-  // Sets ordered suggestions. Valid for current |value|.
-  static v8::Handle<v8::Value> SetSuggestions(const v8::Arguments& args);
+  // Pastes provided value or clipboard's content into the omnibox.
+  static void Paste(const v8::FunctionCallbackInfo<v8::Value>& args);
 
-  // Sets the text to be autocompleted into the search box.
-  static v8::Handle<v8::Value> SetQuerySuggestion(const v8::Arguments& args);
-
-  // Like |SetQuerySuggestion| but uses a restricted ID to identify the text.
-  static v8::Handle<v8::Value> SetQuerySuggestionFromAutocompleteResult(
-      const v8::Arguments& args);
-
-  // Sets the search box text, completely replacing what the user typed.
-  static v8::Handle<v8::Value> SetQuery(const v8::Arguments& args);
-
-  // Like |SetQuery| but uses a restricted ID to identify the text.
-  static v8::Handle<v8::Value> SetQueryFromAutocompleteResult(
-      const v8::Arguments& args);
-
-  // Requests the preview be shown with the specified contents and height.
-  static v8::Handle<v8::Value> Show(const v8::Arguments& args);
+  // Indicates whether the page supports voice search.
+  static void SetVoiceSearchSupported(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
 
   // Start capturing user key strokes.
-  static v8::Handle<v8::Value> StartCapturingKeyStrokes(
-      const v8::Arguments& args);
+  static void StartCapturingKeyStrokes(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
 
   // Stop capturing user key strokes.
-  static v8::Handle<v8::Value> StopCapturingKeyStrokes(
-      const v8::Arguments& args);
+  static void StopCapturingKeyStrokes(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
+
+  // Undoes the deletion of all Most Visited itens.
+  static void UndoAllMostVisitedDeletions(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
+
+  // Undoes the deletion of a Most Visited item.
+  static void UndoMostVisitedDeletion(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
+
+  // Indicates whether the page supports Instant.
+  static void GetDisplayInstantResults(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SearchBoxExtensionWrapper);
 };
+
+// static
+v8::Extension* SearchBoxExtension::Get() {
+  return new SearchBoxExtensionWrapper(ResourceBundle::GetSharedInstance().
+      GetRawDataResource(IDR_SEARCHBOX_API));
+}
+
+// static
+bool SearchBoxExtension::PageSupportsInstant(blink::WebFrame* frame) {
+  if (!frame) return false;
+  v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
+  v8::Handle<v8::Value> v = frame->executeScriptAndReturnValue(
+      blink::WebScriptSource(kSupportsInstantScript));
+  return !v.IsEmpty() && v->BooleanValue();
+}
+
+// static
+void SearchBoxExtension::DispatchChromeIdentityCheckResult(
+    blink::WebFrame* frame,
+    const base::string16& identity,
+    bool identity_match) {
+  std::string escaped_identity = base::GetQuotedJSONString(identity);
+  blink::WebString script(base::UTF8ToUTF16(base::StringPrintf(
+      kDispatchChromeIdentityCheckResult,
+      escaped_identity.c_str(),
+      identity_match ? "true" : "false")));
+  Dispatch(frame, script);
+}
+
+// static
+void SearchBoxExtension::DispatchFocusChange(blink::WebFrame* frame) {
+  Dispatch(frame, kDispatchFocusChangedScript);
+}
+
+// static
+void SearchBoxExtension::DispatchInputCancel(blink::WebFrame* frame) {
+  Dispatch(frame, kDispatchInputCancelScript);
+}
+
+// static
+void SearchBoxExtension::DispatchInputStart(blink::WebFrame* frame) {
+  Dispatch(frame, kDispatchInputStartScript);
+}
+
+// static
+void SearchBoxExtension::DispatchKeyCaptureChange(blink::WebFrame* frame) {
+  Dispatch(frame, kDispatchKeyCaptureChangeScript);
+}
+
+// static
+void SearchBoxExtension::DispatchMarginChange(blink::WebFrame* frame) {
+  Dispatch(frame, kDispatchMarginChangeEventScript);
+}
+
+// static
+void SearchBoxExtension::DispatchMostVisitedChanged(
+    blink::WebFrame* frame) {
+  Dispatch(frame, kDispatchMostVisitedChangedScript);
+}
+
+// static
+void SearchBoxExtension::DispatchSubmit(blink::WebFrame* frame) {
+  Dispatch(frame, kDispatchSubmitEventScript);
+}
+
+// static
+void SearchBoxExtension::DispatchSuggestionChange(blink::WebFrame* frame) {
+  Dispatch(frame, kDispatchSuggestionChangeEventScript);
+}
+
+// static
+void SearchBoxExtension::DispatchThemeChange(blink::WebFrame* frame) {
+  Dispatch(frame, kDispatchThemeChangeEventScript);
+}
+
+// static
+void SearchBoxExtension::DispatchToggleVoiceSearch(
+    blink::WebFrame* frame) {
+  Dispatch(frame, kDispatchToggleVoiceSearchScript);
+}
 
 SearchBoxExtensionWrapper::SearchBoxExtensionWrapper(
     const base::StringPiece& code)
     : v8::Extension(kSearchBoxExtensionName, code.data(), 0, 0, code.size()) {
 }
 
-v8::Handle<v8::FunctionTemplate> SearchBoxExtensionWrapper::GetNativeFunction(
+v8::Handle<v8::FunctionTemplate>
+SearchBoxExtensionWrapper::GetNativeFunctionTemplate(
+    v8::Isolate* isolate,
     v8::Handle<v8::String> name) {
-  if (name->Equals(v8::String::New("GetQuery")))
-    return v8::FunctionTemplate::New(GetQuery);
-  if (name->Equals(v8::String::New("GetVerbatim")))
-    return v8::FunctionTemplate::New(GetVerbatim);
-  if (name->Equals(v8::String::New("GetSelectionStart")))
-    return v8::FunctionTemplate::New(GetSelectionStart);
-  if (name->Equals(v8::String::New("GetSelectionEnd")))
-    return v8::FunctionTemplate::New(GetSelectionEnd);
-  if (name->Equals(v8::String::New("GetX")))
-    return v8::FunctionTemplate::New(GetX);
-  if (name->Equals(v8::String::New("GetY")))
-    return v8::FunctionTemplate::New(GetY);
-  if (name->Equals(v8::String::New("GetWidth")))
-    return v8::FunctionTemplate::New(GetWidth);
-  if (name->Equals(v8::String::New("GetHeight")))
-    return v8::FunctionTemplate::New(GetHeight);
-  if (name->Equals(v8::String::New("GetStartMargin")))
-    return v8::FunctionTemplate::New(GetStartMargin);
-  if (name->Equals(v8::String::New("GetEndMargin")))
-    return v8::FunctionTemplate::New(GetEndMargin);
-  if (name->Equals(v8::String::New("GetRightToLeft")))
-    return v8::FunctionTemplate::New(GetRightToLeft);
-  if (name->Equals(v8::String::New("GetAutocompleteResults")))
-    return v8::FunctionTemplate::New(GetAutocompleteResults);
-  if (name->Equals(v8::String::New("GetContext")))
-    return v8::FunctionTemplate::New(GetContext);
-  if (name->Equals(v8::String::New("GetDisplayInstantResults")))
-    return v8::FunctionTemplate::New(GetDisplayInstantResults);
-  if (name->Equals(v8::String::New("GetThemeBackgroundInfo")))
-    return v8::FunctionTemplate::New(GetThemeBackgroundInfo);
-  if (name->Equals(v8::String::New("GetThemeAreaHeight")))
-    return v8::FunctionTemplate::New(GetThemeAreaHeight);
-  if (name->Equals(v8::String::New("IsKeyCaptureEnabled")))
-    return v8::FunctionTemplate::New(IsKeyCaptureEnabled);
-  if (name->Equals(v8::String::New("GetFont")))
-    return v8::FunctionTemplate::New(GetFont);
-  if (name->Equals(v8::String::New("GetFontSize")))
-    return v8::FunctionTemplate::New(GetFontSize);
-  if (name->Equals(v8::String::New("NavigateContentWindow")))
-    return v8::FunctionTemplate::New(NavigateContentWindow);
-  if (name->Equals(v8::String::New("SetSuggestions")))
-    return v8::FunctionTemplate::New(SetSuggestions);
-  if (name->Equals(v8::String::New("SetQuerySuggestion")))
-    return v8::FunctionTemplate::New(SetQuerySuggestion);
-  if (name->Equals(v8::String::New("SetQuerySuggestionFromAutocompleteResult")))
-    return v8::FunctionTemplate::New(SetQuerySuggestionFromAutocompleteResult);
-  if (name->Equals(v8::String::New("SetQuery")))
-    return v8::FunctionTemplate::New(SetQuery);
-  if (name->Equals(v8::String::New("SetQueryFromAutocompleteResult")))
-    return v8::FunctionTemplate::New(SetQueryFromAutocompleteResult);
-  if (name->Equals(v8::String::New("Show")))
-    return v8::FunctionTemplate::New(Show);
-  if (name->Equals(v8::String::New("StartCapturingKeyStrokes")))
-    return v8::FunctionTemplate::New(StartCapturingKeyStrokes);
-  if (name->Equals(v8::String::New("StopCapturingKeyStrokes")))
-    return v8::FunctionTemplate::New(StopCapturingKeyStrokes);
+  if (name->Equals(
+          v8::String::NewFromUtf8(isolate, "CheckIsUserSignedInToChromeAs")))
+    return v8::FunctionTemplate::New(isolate, CheckIsUserSignedInToChromeAs);
+  if (name->Equals(v8::String::NewFromUtf8(isolate, "DeleteMostVisitedItem")))
+    return v8::FunctionTemplate::New(isolate, DeleteMostVisitedItem);
+  if (name->Equals(v8::String::NewFromUtf8(isolate, "Focus")))
+    return v8::FunctionTemplate::New(isolate, Focus);
+  if (name->Equals(v8::String::NewFromUtf8(isolate, "GetAppLauncherEnabled")))
+    return v8::FunctionTemplate::New(isolate, GetAppLauncherEnabled);
+  if (name->Equals(v8::String::NewFromUtf8(isolate, "GetDispositionFromClick")))
+    return v8::FunctionTemplate::New(isolate, GetDispositionFromClick);
+  if (name->Equals(v8::String::NewFromUtf8(isolate, "GetMostVisitedItems")))
+    return v8::FunctionTemplate::New(isolate, GetMostVisitedItems);
+  if (name->Equals(v8::String::NewFromUtf8(isolate, "GetMostVisitedItemData")))
+    return v8::FunctionTemplate::New(isolate, GetMostVisitedItemData);
+  if (name->Equals(v8::String::NewFromUtf8(isolate, "GetQuery")))
+    return v8::FunctionTemplate::New(isolate, GetQuery);
+  if (name->Equals(v8::String::NewFromUtf8(isolate, "GetRightToLeft")))
+    return v8::FunctionTemplate::New(isolate, GetRightToLeft);
+  if (name->Equals(v8::String::NewFromUtf8(isolate, "GetStartMargin")))
+    return v8::FunctionTemplate::New(isolate, GetStartMargin);
+  if (name->Equals(v8::String::NewFromUtf8(isolate, "GetSuggestionToPrefetch")))
+    return v8::FunctionTemplate::New(isolate, GetSuggestionToPrefetch);
+  if (name->Equals(v8::String::NewFromUtf8(isolate, "GetThemeBackgroundInfo")))
+    return v8::FunctionTemplate::New(isolate, GetThemeBackgroundInfo);
+  if (name->Equals(v8::String::NewFromUtf8(isolate, "IsFocused")))
+    return v8::FunctionTemplate::New(isolate, IsFocused);
+  if (name->Equals(v8::String::NewFromUtf8(isolate, "IsInputInProgress")))
+    return v8::FunctionTemplate::New(isolate, IsInputInProgress);
+  if (name->Equals(v8::String::NewFromUtf8(isolate, "IsKeyCaptureEnabled")))
+    return v8::FunctionTemplate::New(isolate, IsKeyCaptureEnabled);
+  if (name->Equals(v8::String::NewFromUtf8(isolate, "LogEvent")))
+    return v8::FunctionTemplate::New(isolate, LogEvent);
+  if (name->Equals(
+          v8::String::NewFromUtf8(isolate, "LogMostVisitedImpression"))) {
+    return v8::FunctionTemplate::New(isolate, LogMostVisitedImpression);
+  }
+  if (name->Equals(
+          v8::String::NewFromUtf8(isolate, "LogMostVisitedNavigation"))) {
+    return v8::FunctionTemplate::New(isolate, LogMostVisitedNavigation);
+  }
+  if (name->Equals(v8::String::NewFromUtf8(isolate, "NavigateContentWindow")))
+    return v8::FunctionTemplate::New(isolate, NavigateContentWindow);
+  if (name->Equals(v8::String::NewFromUtf8(isolate, "Paste")))
+    return v8::FunctionTemplate::New(isolate, Paste);
+  if (name->Equals(v8::String::NewFromUtf8(isolate, "SetVoiceSearchSupported")))
+    return v8::FunctionTemplate::New(isolate, SetVoiceSearchSupported);
+  if (name->Equals(
+          v8::String::NewFromUtf8(isolate, "StartCapturingKeyStrokes")))
+    return v8::FunctionTemplate::New(isolate, StartCapturingKeyStrokes);
+  if (name->Equals(v8::String::NewFromUtf8(isolate, "StopCapturingKeyStrokes")))
+    return v8::FunctionTemplate::New(isolate, StopCapturingKeyStrokes);
+  if (name->Equals(
+          v8::String::NewFromUtf8(isolate, "UndoAllMostVisitedDeletions")))
+    return v8::FunctionTemplate::New(isolate, UndoAllMostVisitedDeletions);
+  if (name->Equals(v8::String::NewFromUtf8(isolate, "UndoMostVisitedDeletion")))
+    return v8::FunctionTemplate::New(isolate, UndoMostVisitedDeletion);
+  if (name->Equals(
+          v8::String::NewFromUtf8(isolate, "GetDisplayInstantResults")))
+    return v8::FunctionTemplate::New(isolate, GetDisplayInstantResults);
   return v8::Handle<v8::FunctionTemplate>();
 }
 
 // static
 content::RenderView* SearchBoxExtensionWrapper::GetRenderView() {
-  WebKit::WebFrame* webframe = WebKit::WebFrame::frameForCurrentContext();
+  blink::WebLocalFrame* webframe =
+      blink::WebLocalFrame::frameForCurrentContext();
   if (!webframe) return NULL;
 
-  WebKit::WebView* webview = webframe->view();
+  blink::WebView* webview = webframe->view();
   if (!webview) return NULL;  // can happen during closing
 
   return content::RenderView::FromWebView(webview);
 }
 
 // static
-v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetQuery(
-    const v8::Arguments& args) {
+void SearchBoxExtensionWrapper::CheckIsUserSignedInToChromeAs(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   content::RenderView* render_view = GetRenderView();
-  if (!render_view) return v8::Undefined();
+  if (!render_view || args.Length() == 0 || args[0]->IsUndefined()) return;
 
-  DVLOG(1) << render_view << " GetQuery: '"
-           << SearchBox::Get(render_view)->query() << "'";
-  return UTF16ToV8String(SearchBox::Get(render_view)->query());
+  DVLOG(1) << render_view << " CheckIsUserSignedInToChromeAs";
+
+  SearchBox::Get(render_view)->CheckIsUserSignedInToChromeAs(
+      V8ValueToUTF16(args[0]));
 }
 
 // static
-v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetVerbatim(
-    const v8::Arguments& args) {
+void SearchBoxExtensionWrapper::DeleteMostVisitedItem(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   content::RenderView* render_view = GetRenderView();
-  if (!render_view) return v8::Undefined();
+  if (!render_view || !args.Length()) return;
 
-  DVLOG(1) << render_view << " GetVerbatim: "
-           << SearchBox::Get(render_view)->verbatim();
-  return v8::Boolean::New(SearchBox::Get(render_view)->verbatim());
+  DVLOG(1) << render_view << " DeleteMostVisitedItem";
+  SearchBox::Get(render_view)->DeleteMostVisitedItem(args[0]->IntegerValue());
 }
 
 // static
-v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetSelectionStart(
-    const v8::Arguments& args) {
+void SearchBoxExtensionWrapper::Focus(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   content::RenderView* render_view = GetRenderView();
-  if (!render_view) return v8::Undefined();
+  if (!render_view) return;
 
-  return v8::Uint32::New(SearchBox::Get(render_view)->selection_start());
+  DVLOG(1) << render_view << " Focus";
+  SearchBox::Get(render_view)->Focus();
 }
 
 // static
-v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetSelectionEnd(
-    const v8::Arguments& args) {
+void SearchBoxExtensionWrapper::GetAppLauncherEnabled(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   content::RenderView* render_view = GetRenderView();
-  if (!render_view) return v8::Undefined();
+  if (!render_view) return;
 
-  return v8::Uint32::New(SearchBox::Get(render_view)->selection_end());
+  args.GetReturnValue().Set(
+      SearchBox::Get(render_view)->app_launcher_enabled());
 }
 
 // static
-v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetX(
-    const v8::Arguments& args) {
+void SearchBoxExtensionWrapper::GetDispositionFromClick(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   content::RenderView* render_view = GetRenderView();
-  if (!render_view) return v8::Undefined();
+  if (!render_view || args.Length() != 5) return;
 
-  return v8::Int32::New(SearchBox::Get(render_view)->GetPopupBounds().x());
+  bool middle_button = args[0]->BooleanValue();
+  bool alt_key = args[1]->BooleanValue();
+  bool ctrl_key = args[2]->BooleanValue();
+  bool meta_key = args[3]->BooleanValue();
+  bool shift_key = args[4]->BooleanValue();
+
+  WindowOpenDisposition disposition = ui::DispositionFromClick(middle_button,
+                                                               alt_key,
+                                                               ctrl_key,
+                                                               meta_key,
+                                                               shift_key);
+  v8::Isolate* isolate = args.GetIsolate();
+  args.GetReturnValue().Set(v8::Int32::New(isolate, disposition));
 }
 
 // static
-v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetY(
-    const v8::Arguments& args) {
+void SearchBoxExtensionWrapper::GetMostVisitedItems(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   content::RenderView* render_view = GetRenderView();
-  if (!render_view) return v8::Undefined();
+  if (!render_view)
+    return;
+  DVLOG(1) << render_view << " GetMostVisitedItems";
 
-  return v8::Int32::New(SearchBox::Get(render_view)->GetPopupBounds().y());
-}
+  const SearchBox* search_box = SearchBox::Get(render_view);
 
-// static
-v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetWidth(
-    const v8::Arguments& args) {
-  content::RenderView* render_view = GetRenderView();
-  if (!render_view) return v8::Undefined();
-
-  return v8::Int32::New(SearchBox::Get(render_view)->GetPopupBounds().width());
-}
-
-// static
-v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetHeight(
-    const v8::Arguments& args) {
-  content::RenderView* render_view = GetRenderView();
-  if (!render_view) return v8::Undefined();
-
-  return v8::Int32::New(SearchBox::Get(render_view)->GetPopupBounds().height());
-}
-
-// static
-v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetStartMargin(
-    const v8::Arguments& args) {
-  content::RenderView* render_view = GetRenderView();
-  if (!render_view) return v8::Undefined();
-  return v8::Int32::New(SearchBox::Get(render_view)->GetStartMargin());
-}
-
-// static
-v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetEndMargin(
-    const v8::Arguments& args) {
-  content::RenderView* render_view = GetRenderView();
-  if (!render_view) return v8::Undefined();
-  return v8::Int32::New(SearchBox::Get(render_view)->GetEndMargin());
-}
-
-// static
-v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetRightToLeft(
-    const v8::Arguments& args) {
-  return v8::Boolean::New(base::i18n::IsRTL());
-}
-
-// static
-v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetAutocompleteResults(
-    const v8::Arguments& args) {
-  content::RenderView* render_view = GetRenderView();
-  if (!render_view) return v8::Undefined();
-
-  DVLOG(1) << render_view << " GetAutocompleteResults";
-  const std::vector<InstantAutocompleteResult>& results =
-      SearchBox::Get(render_view)->GetAutocompleteResults();
-  size_t results_base = SearchBox::Get(render_view)->results_base();
-
-  v8::Handle<v8::Array> results_array = v8::Array::New(results.size());
-  for (size_t i = 0; i < results.size(); ++i) {
-    v8::Handle<v8::Object> result = v8::Object::New();
-    result->Set(v8::String::New("provider"),
-                UTF16ToV8String(results[i].provider));
-    result->Set(v8::String::New("type"), UTF16ToV8String(results[i].type));
-    result->Set(v8::String::New("contents"),
-                UTF16ToV8String(results[i].description));
-    result->Set(v8::String::New("destination_url"),
-                UTF16ToV8String(results[i].destination_url));
-    result->Set(v8::String::New("rid"), v8::Uint32::New(results_base + i));
-
-    v8::Handle<v8::Object> ranking_data = v8::Object::New();
-    ranking_data->Set(v8::String::New("relevance"),
-                      v8::Int32::New(results[i].relevance));
-    result->Set(v8::String::New("rankingData"), ranking_data);
-
-    results_array->Set(i, result);
+  std::vector<InstantMostVisitedItemIDPair> instant_mv_items;
+  search_box->GetMostVisitedItems(&instant_mv_items);
+  v8::Isolate* isolate = args.GetIsolate();
+  v8::Handle<v8::Array> v8_mv_items =
+      v8::Array::New(isolate, instant_mv_items.size());
+  for (size_t i = 0; i < instant_mv_items.size(); ++i) {
+    v8_mv_items->Set(i,
+                     GenerateMostVisitedItem(isolate,
+                                             render_view->GetRoutingID(),
+                                             instant_mv_items[i].first,
+                                             instant_mv_items[i].second));
   }
-  return results_array;
+  args.GetReturnValue().Set(v8_mv_items);
 }
 
 // static
-v8::Handle<v8::Value> SearchBoxExtensionWrapper::IsKeyCaptureEnabled(
-    const v8::Arguments& args) {
-  content::RenderView* render_view = GetRenderView();
-  if (!render_view) return v8::Undefined();
+void SearchBoxExtensionWrapper::GetMostVisitedItemData(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  content::RenderView* render_view = GetRenderViewWithCheckedOrigin(
+      GURL(chrome::kChromeSearchMostVisitedUrl));
+  if (!render_view) return;
 
-  return v8::Boolean::New(SearchBox::Get(render_view)->
-                          is_key_capture_enabled());
+  // Need an rid argument.
+  if (args.Length() < 1 || !args[0]->IsNumber())
+    return;
+
+  DVLOG(1) << render_view << " GetMostVisitedItem";
+  InstantRestrictedID restricted_id = args[0]->IntegerValue();
+  InstantMostVisitedItem mv_item;
+  if (!SearchBox::Get(render_view)->GetMostVisitedItemWithID(
+          restricted_id, &mv_item)) {
+    return;
+  }
+  v8::Isolate* isolate = args.GetIsolate();
+  args.GetReturnValue().Set(GenerateMostVisitedItem(
+      isolate, render_view->GetRoutingID(), restricted_id, mv_item));
 }
 
 // static
-v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetContext(
-    const v8::Arguments& args) {
+void SearchBoxExtensionWrapper::GetQuery(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   content::RenderView* render_view = GetRenderView();
-  if (!render_view) return v8::Undefined();
-
-  const chrome::search::Mode& mode = SearchBox::Get(render_view)->mode();
-  DVLOG(1) << render_view << " GetContext: " << mode.origin << ":" << mode.mode;
-  v8::Handle<v8::Object> context = v8::Object::New();
-  context->Set(v8::String::New("isNewTabPage"),
-               v8::Boolean::New(mode.is_ntp()));
-  return context;
+  if (!render_view) return;
+  const base::string16& query = SearchBox::Get(render_view)->query();
+  DVLOG(1) << render_view << " GetQuery: '" << query << "'";
+  v8::Isolate* isolate = args.GetIsolate();
+  args.GetReturnValue().Set(UTF16ToV8String(isolate, query));
 }
 
 // static
-v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetDisplayInstantResults(
-    const v8::Arguments& args) {
-  content::RenderView* render_view = GetRenderView();
-  if (!render_view) return v8::Undefined();
-
-  bool display_instant_results =
-      SearchBox::Get(render_view)->display_instant_results();
-  DVLOG(1) << render_view << " "
-           << "GetDisplayInstantResults: " << display_instant_results;
-  return v8::Boolean::New(display_instant_results);
+void SearchBoxExtensionWrapper::GetRightToLeft(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  args.GetReturnValue().Set(base::i18n::IsRTL());
 }
 
 // static
-v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetThemeBackgroundInfo(
-    const v8::Arguments& args) {
+void SearchBoxExtensionWrapper::GetStartMargin(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   content::RenderView* render_view = GetRenderView();
-  if (!render_view) return v8::Undefined();
+  if (!render_view) return;
+  args.GetReturnValue().Set(static_cast<int32_t>(
+      SearchBox::Get(render_view)->start_margin()));
+}
+
+// static
+void SearchBoxExtensionWrapper::GetSuggestionToPrefetch(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  content::RenderView* render_view = GetRenderView();
+  if (!render_view) return;
+
+  const InstantSuggestion& suggestion =
+      SearchBox::Get(render_view)->suggestion();
+  v8::Isolate* isolate = args.GetIsolate();
+  v8::Handle<v8::Object> data = v8::Object::New(isolate);
+  data->Set(v8::String::NewFromUtf8(isolate, "text"),
+            UTF16ToV8String(isolate, suggestion.text));
+  data->Set(v8::String::NewFromUtf8(isolate, "metadata"),
+            UTF8ToV8String(isolate, suggestion.metadata));
+  args.GetReturnValue().Set(data);
+}
+
+// static
+void SearchBoxExtensionWrapper::GetThemeBackgroundInfo(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  content::RenderView* render_view = GetRenderView();
+  if (!render_view) return;
 
   DVLOG(1) << render_view << " GetThemeBackgroundInfo";
   const ThemeBackgroundInfo& theme_info =
       SearchBox::Get(render_view)->GetThemeBackgroundInfo();
-  v8::Handle<v8::Object> info = v8::Object::New();
+  v8::Isolate* isolate = args.GetIsolate();
+  v8::Handle<v8::Object> info = v8::Object::New(isolate);
+
+  info->Set(v8::String::NewFromUtf8(isolate, "usingDefaultTheme"),
+            v8::Boolean::New(isolate, theme_info.using_default_theme));
 
   // The theme background color is in RGBA format "rgba(R,G,B,A)" where R, G and
   // B are between 0 and 255 inclusive, and A is a double between 0 and 1
   // inclusive.
   // This is the CSS "background-color" format.
   // Value is always valid.
-  info->Set(v8::String::New("colorRgba"), UTF8ToV8String(
-      // Convert the alpha using DoubleToString because StringPrintf will use
-      // locale specific formatters (e.g., use , instead of . in German).
-      base::StringPrintf(
-          kCSSBackgroundColorFormat,
-          theme_info.color_r,
-          theme_info.color_g,
-          theme_info.color_b,
-          base::DoubleToString(theme_info.color_a / 255.0).c_str())));
+  // TODO(jfweitz): Remove this field after GWS is modified to use the new
+  // backgroundColorRgba field.
+  info->Set(
+      v8::String::NewFromUtf8(isolate, "colorRgba"),
+      UTF8ToV8String(
+          isolate,
+          // Convert the alpha using DoubleToString because StringPrintf will
+          // use
+          // locale specific formatters (e.g., use , instead of . in German).
+          base::StringPrintf(
+              kCSSBackgroundColorFormat,
+              theme_info.background_color.r,
+              theme_info.background_color.g,
+              theme_info.background_color.b,
+              base::DoubleToString(theme_info.background_color.a / 255.0)
+                  .c_str())));
 
-  // The theme background image url is of format
-  // "-webkit-image-set(url(chrome://theme/IDR_THEME_BACKGROUND?<theme_id>) 1x)"
-  // where <theme_id> is the id that identifies the theme.
+  // Theme color for background as an array with the RGBA components in order.
+  // Value is always valid.
+  info->Set(v8::String::NewFromUtf8(isolate, "backgroundColorRgba"),
+            internal::RGBAColorToArray(isolate, theme_info.background_color));
+
+  // Theme color for text as an array with the RGBA components in order.
+  // Value is always valid.
+  info->Set(v8::String::NewFromUtf8(isolate, "textColorRgba"),
+            internal::RGBAColorToArray(isolate, theme_info.text_color));
+
+  // Theme color for links as an array with the RGBA components in order.
+  // Value is always valid.
+  info->Set(v8::String::NewFromUtf8(isolate, "linkColorRgba"),
+            internal::RGBAColorToArray(isolate, theme_info.link_color));
+
+  // Theme color for light text as an array with the RGBA components in order.
+  // Value is always valid.
+  info->Set(v8::String::NewFromUtf8(isolate, "textColorLightRgba"),
+            internal::RGBAColorToArray(isolate, theme_info.text_color_light));
+
+  // Theme color for header as an array with the RGBA components in order.
+  // Value is always valid.
+  info->Set(v8::String::NewFromUtf8(isolate, "headerColorRgba"),
+            internal::RGBAColorToArray(isolate, theme_info.header_color));
+
+  // Theme color for section border as an array with the RGBA components in
+  // order. Value is always valid.
+  info->Set(
+      v8::String::NewFromUtf8(isolate, "sectionBorderColorRgba"),
+      internal::RGBAColorToArray(isolate, theme_info.section_border_color));
+
+  // The theme alternate logo value indicates a white logo when TRUE and a
+  // colorful one when FALSE.
+  info->Set(v8::String::NewFromUtf8(isolate, "alternateLogo"),
+            v8::Boolean::New(isolate, theme_info.logo_alternate));
+
+  // The theme background image url is of format kCSSBackgroundImageFormat
+  // where both instances of "%s" are replaced with the id that identifies the
+  // theme.
   // This is the CSS "background-image" format.
   // Value is only valid if there's a custom theme background image.
   if (extensions::Extension::IdIsValid(theme_info.theme_id)) {
-    info->Set(v8::String::New("imageUrl"), UTF8ToV8String(
-        base::StringPrintf(kCSSBackgroundImageFormat,
-                           theme_info.theme_id.c_str())));
+    info->Set(v8::String::NewFromUtf8(isolate, "imageUrl"),
+              UTF8ToV8String(isolate,
+                             base::StringPrintf(kCSSBackgroundImageFormat,
+                                                theme_info.theme_id.c_str(),
+                                                theme_info.theme_id.c_str())));
 
     // The theme background image horizontal alignment is one of "left",
     // "right", "center".
@@ -602,8 +869,8 @@ v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetThemeBackgroundInfo(
                    THEME_BKGRND_IMAGE_ALIGN_RIGHT) {
       alignment = kCSSBackgroundPositionRight;
     }
-    info->Set(v8::String::New("imageHorizontalAlignment"),
-              UTF8ToV8String(alignment));
+    info->Set(v8::String::NewFromUtf8(isolate, "imageHorizontalAlignment"),
+              UTF8ToV8String(isolate, alignment));
 
     // The theme background image vertical alignment is one of "top", "bottom",
     // "center".
@@ -617,8 +884,8 @@ v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetThemeBackgroundInfo(
     } else {
       alignment = kCSSBackgroundPositionCenter;
     }
-    info->Set(v8::String::New("imageVerticalAlignment"),
-              UTF8ToV8String(alignment));
+    info->Set(v8::String::NewFromUtf8(isolate, "imageVerticalAlignment"),
+              UTF8ToV8String(isolate, alignment));
 
     // The tiling of the theme background image is one of "no-repeat",
     // "repeat-x", "repeat-y", "repeat".
@@ -639,329 +906,223 @@ v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetThemeBackgroundInfo(
         tiling = kCSSBackgroundRepeat;
         break;
     }
-    info->Set(v8::String::New("imageTiling"), UTF8ToV8String(tiling));
+    info->Set(v8::String::NewFromUtf8(isolate, "imageTiling"),
+              UTF8ToV8String(isolate, tiling));
 
     // The theme background image height is only valid if |imageUrl| is valid.
-    info->Set(v8::String::New("imageHeight"),
-              v8::Int32::New(theme_info.image_height));
+    info->Set(v8::String::NewFromUtf8(isolate, "imageHeight"),
+              v8::Int32::New(isolate, theme_info.image_height));
+
+    // The attribution URL is only valid if the theme has attribution logo.
+    if (theme_info.has_attribution) {
+      info->Set(
+          v8::String::NewFromUtf8(isolate, "attributionUrl"),
+          UTF8ToV8String(isolate,
+                         base::StringPrintf(kThemeAttributionFormat,
+                                            theme_info.theme_id.c_str(),
+                                            theme_info.theme_id.c_str())));
+    }
   }
 
-  return info;
+  args.GetReturnValue().Set(info);
 }
 
 // static
-v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetThemeAreaHeight(
-    const v8::Arguments& args) {
+void SearchBoxExtensionWrapper::IsFocused(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   content::RenderView* render_view = GetRenderView();
-  if (!render_view) return v8::Undefined();
+  if (!render_view) return;
 
-  DVLOG(1) << render_view << " GetThemeAreaHeight: "
-           << SearchBox::Get(render_view)->GetThemeAreaHeight();
-  return v8::Int32::New(SearchBox::Get(render_view)->GetThemeAreaHeight());
+  bool is_focused = SearchBox::Get(render_view)->is_focused();
+  DVLOG(1) << render_view << " IsFocused: " << is_focused;
+  args.GetReturnValue().Set(is_focused);
 }
 
 // static
-v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetFont(
-    const v8::Arguments& args) {
+void SearchBoxExtensionWrapper::IsInputInProgress(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   content::RenderView* render_view = GetRenderView();
-  if (!render_view) return v8::Undefined();
+  if (!render_view) return;
 
-  return UTF16ToV8String(SearchBox::Get(render_view)->omnibox_font());
+  bool is_input_in_progress =
+      SearchBox::Get(render_view)->is_input_in_progress();
+  DVLOG(1) << render_view << " IsInputInProgress: " << is_input_in_progress;
+  args.GetReturnValue().Set(is_input_in_progress);
 }
 
 // static
-v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetFontSize(
-    const v8::Arguments& args) {
+void SearchBoxExtensionWrapper::IsKeyCaptureEnabled(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   content::RenderView* render_view = GetRenderView();
-  if (!render_view) return v8::Undefined();
+  if (!render_view) return;
 
-  return v8::Uint32::New(SearchBox::Get(render_view)->omnibox_font_size());
+  args.GetReturnValue().Set(SearchBox::Get(render_view)->
+                            is_key_capture_enabled());
 }
 
 // static
-v8::Handle<v8::Value> SearchBoxExtensionWrapper::NavigateContentWindow(
-    const v8::Arguments& args) {
+void SearchBoxExtensionWrapper::LogEvent(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  content::RenderView* render_view = GetRenderViewWithCheckedOrigin(
+      GURL(chrome::kChromeSearchMostVisitedUrl));
+  if (!render_view) return;
+
+  if (args.Length() < 1 || !args[0]->IsNumber())
+    return;
+
+  DVLOG(1) << render_view << " LogEvent";
+
+  if (args[0]->Uint32Value() < NTP_NUM_EVENT_TYPES) {
+    NTPLoggingEventType event =
+        static_cast<NTPLoggingEventType>(args[0]->Uint32Value());
+    SearchBox::Get(render_view)->LogEvent(event);
+  }
+}
+
+// static
+void SearchBoxExtensionWrapper::LogMostVisitedImpression(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  content::RenderView* render_view = GetRenderViewWithCheckedOrigin(
+      GURL(chrome::kChromeSearchMostVisitedUrl));
+  if (!render_view) return;
+
+  if (args.Length() < 2 || !args[0]->IsNumber() || args[1]->IsUndefined())
+    return;
+
+  DVLOG(1) << render_view << " LogMostVisitedImpression";
+
+  SearchBox::Get(render_view)->LogMostVisitedImpression(
+      args[0]->IntegerValue(), V8ValueToUTF16(args[1]));
+}
+
+// static
+void SearchBoxExtensionWrapper::LogMostVisitedNavigation(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  content::RenderView* render_view = GetRenderViewWithCheckedOrigin(
+      GURL(chrome::kChromeSearchMostVisitedUrl));
+  if (!render_view) return;
+
+  if (args.Length() < 2 || !args[0]->IsNumber() || args[1]->IsUndefined())
+    return;
+
+  DVLOG(1) << render_view << " LogMostVisitedNavigation";
+
+  SearchBox::Get(render_view)->LogMostVisitedNavigation(
+      args[0]->IntegerValue(), V8ValueToUTF16(args[1]));
+}
+
+// static
+void SearchBoxExtensionWrapper::NavigateContentWindow(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   content::RenderView* render_view = GetRenderView();
-  if (!render_view || !args.Length()) return v8::Undefined();
+  if (!render_view || !args.Length()) return;
 
   GURL destination_url;
-  content::PageTransition transition = content::PAGE_TRANSITION_TYPED;
+  bool is_most_visited_item_url = false;
+  // Check if the url is a rid
   if (args[0]->IsNumber()) {
-    const InstantAutocompleteResult* result = SearchBox::Get(render_view)->
-        GetAutocompleteResultWithId(args[0]->Uint32Value());
-    if (result) {
-      destination_url = GURL(result->destination_url);
-      transition = result->transition;
+    InstantMostVisitedItem item;
+    if (SearchBox::Get(render_view)->GetMostVisitedItemWithID(
+            args[0]->IntegerValue(), &item)) {
+      destination_url = item.url;
+      is_most_visited_item_url = true;
     }
   } else {
-    destination_url = GURL(V8ValueToUTF16(args[0]));
+    // Resolve the URL
+    const base::string16& possibly_relative_url = V8ValueToUTF16(args[0]);
+  GURL current_url = GetCurrentURL(render_view);
+    destination_url = internal::ResolveURL(current_url, possibly_relative_url);
   }
+
+  DVLOG(1) << render_view << " NavigateContentWindow: " << destination_url;
 
   // Navigate the main frame.
-  if (destination_url.is_valid())
-    SearchBox::Get(render_view)->NavigateToURL(destination_url, transition);
-
-  return v8::Undefined();
-}
-
-// static
-v8::Handle<v8::Value> SearchBoxExtensionWrapper::SetSuggestions(
-    const v8::Arguments& args) {
-  content::RenderView* render_view = GetRenderView();
-  if (!render_view || !args.Length()) return v8::Undefined();
-
-  DVLOG(1) << render_view << " SetSuggestions";
-  v8::Handle<v8::Object> suggestion_json = args[0]->ToObject();
-
-  InstantCompleteBehavior behavior = INSTANT_COMPLETE_NOW;
-  InstantSuggestionType type = INSTANT_SUGGESTION_SEARCH;
-  v8::Handle<v8::Value> complete_value =
-      suggestion_json->Get(v8::String::New("complete_behavior"));
-  if (complete_value->Equals(v8::String::New("now"))) {
-    behavior = INSTANT_COMPLETE_NOW;
-  } else if (complete_value->Equals(v8::String::New("never"))) {
-    behavior = INSTANT_COMPLETE_NEVER;
-  } else if (complete_value->Equals(v8::String::New("replace"))) {
-    behavior = INSTANT_COMPLETE_REPLACE;
-  }
-
-  std::vector<InstantSuggestion> suggestions;
-
-  v8::Handle<v8::Value> suggestions_field =
-      suggestion_json->Get(v8::String::New("suggestions"));
-  if (suggestions_field->IsArray()) {
-    v8::Handle<v8::Array> suggestions_array = suggestions_field.As<v8::Array>();
-    for (size_t i = 0; i < suggestions_array->Length(); i++) {
-      string16 text = V8ValueToUTF16(
-          suggestions_array->Get(i)->ToObject()->Get(v8::String::New("value")));
-      suggestions.push_back(InstantSuggestion(text, behavior, type));
+  if (destination_url.is_valid() &&
+      !destination_url.SchemeIs(content::kJavaScriptScheme)) {
+    WindowOpenDisposition disposition = CURRENT_TAB;
+    if (args[1]->IsNumber()) {
+      disposition = (WindowOpenDisposition) args[1]->Uint32Value();
     }
+    SearchBox::Get(render_view)->NavigateToURL(destination_url, disposition,
+                                               is_most_visited_item_url);
   }
-
-  SearchBox::Get(render_view)->SetSuggestions(suggestions);
-
-  return v8::Undefined();
 }
 
 // static
-v8::Handle<v8::Value> SearchBoxExtensionWrapper::SetQuerySuggestion(
-    const v8::Arguments& args) {
+void SearchBoxExtensionWrapper::Paste(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   content::RenderView* render_view = GetRenderView();
-  if (!render_view || args.Length() < 2) return v8::Undefined();
+  if (!render_view) return;
 
-  DVLOG(1) << render_view << " SetQuerySuggestion";
-  string16 text = V8ValueToUTF16(args[0]);
-  InstantCompleteBehavior behavior = INSTANT_COMPLETE_NOW;
-  InstantSuggestionType type = INSTANT_SUGGESTION_URL;
+  base::string16 text;
+  if (!args[0]->IsUndefined())
+    text = V8ValueToUTF16(args[0]);
 
-  if (args[1]->Uint32Value() == 2) {
-    behavior = INSTANT_COMPLETE_NEVER;
-    type = INSTANT_SUGGESTION_SEARCH;
-  }
-
-  std::vector<InstantSuggestion> suggestions;
-  suggestions.push_back(InstantSuggestion(text, behavior, type));
-  SearchBox::Get(render_view)->SetSuggestions(suggestions);
-
-  return v8::Undefined();
+  DVLOG(1) << render_view << " Paste: " << text;
+  SearchBox::Get(render_view)->Paste(text);
 }
 
 // static
-v8::Handle<v8::Value>
-    SearchBoxExtensionWrapper::SetQuerySuggestionFromAutocompleteResult(
-        const v8::Arguments& args) {
+void SearchBoxExtensionWrapper::StartCapturingKeyStrokes(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   content::RenderView* render_view = GetRenderView();
-  if (!render_view || !args.Length()) return v8::Undefined();
-
-  DVLOG(1) << render_view << " SetQuerySuggestionFromAutocompleteResult";
-  const InstantAutocompleteResult* result = SearchBox::Get(render_view)->
-      GetAutocompleteResultWithId(args[0]->Uint32Value());
-  if (!result) return v8::Undefined();
-
-  // We only support selecting autocomplete results that are URLs.
-  string16 text = result->destination_url;
-  InstantCompleteBehavior behavior = INSTANT_COMPLETE_NOW;
-  InstantSuggestionType type = INSTANT_SUGGESTION_URL;
-
-  std::vector<InstantSuggestion> suggestions;
-  suggestions.push_back(InstantSuggestion(text, behavior, type));
-  SearchBox::Get(render_view)->SetSuggestions(suggestions);
-
-  return v8::Undefined();
-}
-
-// static
-v8::Handle<v8::Value> SearchBoxExtensionWrapper::SetQuery(
-    const v8::Arguments& args) {
-  content::RenderView* render_view = GetRenderView();
-  if (!render_view || args.Length() < 2) return v8::Undefined();
-
-  DVLOG(1) << render_view << " SetQuery";
-  string16 text = V8ValueToUTF16(args[0]);
-  InstantCompleteBehavior behavior = INSTANT_COMPLETE_REPLACE;
-  InstantSuggestionType type = INSTANT_SUGGESTION_SEARCH;
-
-  if (args[1]->Uint32Value() == 1)
-    type = INSTANT_SUGGESTION_URL;
-
-  std::vector<InstantSuggestion> suggestions;
-  suggestions.push_back(InstantSuggestion(text, behavior, type));
-  SearchBox::Get(render_view)->SetSuggestions(suggestions);
-
-  return v8::Undefined();
-}
-
-v8::Handle<v8::Value>
-    SearchBoxExtensionWrapper::SetQueryFromAutocompleteResult(
-        const v8::Arguments& args) {
-  content::RenderView* render_view = GetRenderView();
-  if (!render_view || !args.Length()) return v8::Undefined();
-
-  DVLOG(1) << render_view << " SetQueryFromAutocompleteResult";
-  const InstantAutocompleteResult* result = SearchBox::Get(render_view)->
-      GetAutocompleteResultWithId(args[0]->Uint32Value());
-  if (!result) return v8::Undefined();
-
-  // We only support selecting autocomplete results that are URLs.
-  string16 text = result->destination_url;
-  InstantCompleteBehavior behavior = INSTANT_COMPLETE_REPLACE;
-  // TODO(jered): Distinguish between history URLs and search provider
-  // navsuggest URLs so that we can do proper accounting on history URLs.
-  InstantSuggestionType type = INSTANT_SUGGESTION_URL;
-
-  std::vector<InstantSuggestion> suggestions;
-  suggestions.push_back(InstantSuggestion(text, behavior, type));
-  SearchBox::Get(render_view)->SetSuggestions(suggestions);
-
-  return v8::Undefined();
-}
-
-// static
-v8::Handle<v8::Value> SearchBoxExtensionWrapper::Show(
-    const v8::Arguments& args) {
-  content::RenderView* render_view = GetRenderView();
-  if (!render_view || args.Length() < 2) return v8::Undefined();
-
-  DVLOG(1) << render_view << " ShowInstantPreview";
-  InstantShownReason reason = INSTANT_SHOWN_NOT_SPECIFIED;
-  switch (args[0]->Uint32Value()) {
-    case 1: reason = INSTANT_SHOWN_CUSTOM_NTP_CONTENT; break;
-    case 2: reason = INSTANT_SHOWN_QUERY_SUGGESTIONS; break;
-    case 3: reason = INSTANT_SHOWN_ZERO_SUGGESTIONS; break;
-    case 4: reason = INSTANT_SHOWN_CLICKED_QUERY_SUGGESTION; break;
-  }
-
-  int height = 100;
-  InstantSizeUnits units = INSTANT_SIZE_PERCENT;
-  if (args[1]->IsInt32()) {
-    height = args[1]->Int32Value();
-    units = INSTANT_SIZE_PIXELS;
-  }
-
-  SearchBox::Get(render_view)->ShowInstantPreview(reason, height, units);
-
-  return v8::Undefined();
-}
-
-// static
-void SearchBoxExtension::DispatchOnWindowReady(WebKit::WebFrame* frame) {
-  Dispatch(frame, kDispatchOnWindowReady);
-}
-
-// static
-v8::Handle<v8::Value> SearchBoxExtensionWrapper::StartCapturingKeyStrokes(
-    const v8::Arguments& args) {
-  content::RenderView* render_view = GetRenderView();
-  if (!render_view) return v8::Undefined();
+  if (!render_view) return;
 
   DVLOG(1) << render_view << " StartCapturingKeyStrokes";
   SearchBox::Get(render_view)->StartCapturingKeyStrokes();
-  return v8::Undefined();
 }
 
 // static
-v8::Handle<v8::Value> SearchBoxExtensionWrapper::StopCapturingKeyStrokes(
-    const v8::Arguments& args) {
+void SearchBoxExtensionWrapper::StopCapturingKeyStrokes(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   content::RenderView* render_view = GetRenderView();
-  if (!render_view) return v8::Undefined();
+  if (!render_view) return;
 
   DVLOG(1) << render_view << " StopCapturingKeyStrokes";
   SearchBox::Get(render_view)->StopCapturingKeyStrokes();
-  return v8::Undefined();
 }
 
 // static
-void SearchBoxExtension::DispatchChange(WebKit::WebFrame* frame) {
-  Dispatch(frame, kDispatchChangeEventScript);
+void SearchBoxExtensionWrapper::SetVoiceSearchSupported(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  content::RenderView* render_view = GetRenderView();
+  if (!render_view || args.Length() < 1) return;
+
+  DVLOG(1) << render_view << " SetVoiceSearchSupported";
+  SearchBox::Get(render_view)->SetVoiceSearchSupported(args[0]->BooleanValue());
 }
 
 // static
-void SearchBoxExtension::DispatchSubmit(WebKit::WebFrame* frame) {
-  Dispatch(frame, kDispatchSubmitEventScript);
+void SearchBoxExtensionWrapper::UndoAllMostVisitedDeletions(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  content::RenderView* render_view = GetRenderView();
+  if (!render_view) return;
+
+  DVLOG(1) << render_view << " UndoAllMostVisitedDeletions";
+  SearchBox::Get(render_view)->UndoAllMostVisitedDeletions();
 }
 
 // static
-void SearchBoxExtension::DispatchCancel(WebKit::WebFrame* frame) {
-  Dispatch(frame, kDispatchCancelEventScript);
+void SearchBoxExtensionWrapper::UndoMostVisitedDeletion(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  content::RenderView* render_view = GetRenderView();
+  if (!render_view || !args.Length()) return;
+
+  DVLOG(1) << render_view << " UndoMostVisitedDeletion";
+  SearchBox::Get(render_view)->UndoMostVisitedDeletion(args[0]->IntegerValue());
 }
 
 // static
-void SearchBoxExtension::DispatchResize(WebKit::WebFrame* frame) {
-  Dispatch(frame, kDispatchResizeEventScript);
-}
+void SearchBoxExtensionWrapper::GetDisplayInstantResults(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  content::RenderView* render_view = GetRenderView();
+  if (!render_view) return;
 
-// static
-bool SearchBoxExtension::PageSupportsInstant(WebKit::WebFrame* frame) {
-  if (!frame) return false;
-
-  v8::Handle<v8::Value> v = frame->executeScriptAndReturnValue(
-      WebKit::WebScriptSource(kSupportsInstantScript));
-  return !v.IsEmpty() && v->BooleanValue();
-}
-
-// static
-void SearchBoxExtension::DispatchAutocompleteResults(WebKit::WebFrame* frame) {
-  Dispatch(frame, kDispatchAutocompleteResultsEventScript);
-}
-
-// static
-void SearchBoxExtension::DispatchUpOrDownKeyPress(WebKit::WebFrame* frame,
-                                                  int count) {
-  Dispatch(frame, WebKit::WebString::fromUTF8(
-      base::StringPrintf(kDispatchUpOrDownKeyPressEventScript, abs(count),
-                         count < 0 ? ui::VKEY_UP : ui::VKEY_DOWN)));
-}
-
-// static
-void SearchBoxExtension::DispatchKeyCaptureChange(WebKit::WebFrame* frame) {
-  Dispatch(frame, kDispatchKeyCaptureChangeScript);
-}
-
-// static
-void SearchBoxExtension::DispatchContextChange(WebKit::WebFrame* frame) {
-  Dispatch(frame, kDispatchContextChangeEventScript);
-}
-
-// static
-void SearchBoxExtension::DispatchThemeChange(WebKit::WebFrame* frame) {
-  Dispatch(frame, kDispatchThemeChangeEventScript);
-}
-
-// static
-void SearchBoxExtension::DispatchMarginChange(WebKit::WebFrame* frame) {
-  Dispatch(frame, kDispatchMarginChangeEventScript);
-}
-
-// static
-void SearchBoxExtension::DispatchThemeAreaHeightChange(
-    WebKit::WebFrame* frame) {
-  Dispatch(frame, kDispatchThemeAreaHeightChangeEventScript);
-}
-
-// static
-v8::Extension* SearchBoxExtension::Get() {
-  return new SearchBoxExtensionWrapper(ResourceBundle::GetSharedInstance().
-      GetRawDataResource(IDR_SEARCHBOX_API));
+  bool display_instant_results =
+      SearchBox::Get(render_view)->display_instant_results();
+  DVLOG(1) << render_view << " GetDisplayInstantResults" <<
+      display_instant_results;
+  args.GetReturnValue().Set(display_instant_results);
 }
 
 }  // namespace extensions_v8

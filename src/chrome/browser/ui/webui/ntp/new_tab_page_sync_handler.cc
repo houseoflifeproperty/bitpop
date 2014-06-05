@@ -8,15 +8,15 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/string_split.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/net/chrome_url_request_context.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/browser.h"
@@ -25,19 +25,13 @@
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/common/pref_names.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_ui.h"
 #include "grit/generated_resources.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/url_request/url_request_context.h"
 #include "ui/base/l10n/l10n_util.h"
-
-// Default URL for the sync web interface.
-//
-// TODO(idana): when we figure out how we are going to allow third parties to
-// plug in their own sync engine, we should allow this value to be
-// configurable.
-static const char kSyncDefaultViewOnlineUrl[] = "http://docs.google.com";
 
 NewTabPageSyncHandler::NewTabPageSyncHandler() : sync_service_(NULL),
   waiting_for_initial_page_load_(true) {
@@ -67,9 +61,13 @@ NewTabPageSyncHandler::MessageType
 void NewTabPageSyncHandler::RegisterMessages() {
   sync_service_ = ProfileSyncServiceFactory::GetInstance()->GetForProfile(
       Profile::FromWebUI(web_ui()));
-  DCHECK(sync_service_);  // This shouldn't get called by an incognito NTP.
-  DCHECK(!sync_service_->IsManaged());  // And neither if sync is managed.
-  sync_service_->AddObserver(this);
+  if (sync_service_)
+    sync_service_->AddObserver(this);
+  profile_pref_registrar_.Init(Profile::FromWebUI(web_ui())->GetPrefs());
+  profile_pref_registrar_.Add(
+      prefs::kSigninAllowed,
+      base::Bind(&NewTabPageSyncHandler::OnSigninAllowedPrefChange,
+                 base::Unretained(this)));
 
   web_ui()->RegisterMessageCallback("GetSyncMessage",
       base::Bind(&NewTabPageSyncHandler::HandleGetSyncMessage,
@@ -79,7 +77,7 @@ void NewTabPageSyncHandler::RegisterMessages() {
                  base::Unretained(this)));
 }
 
-void NewTabPageSyncHandler::HandleGetSyncMessage(const ListValue* args) {
+void NewTabPageSyncHandler::HandleGetSyncMessage(const base::ListValue* args) {
   waiting_for_initial_page_load_ = false;
   BuildAndSendSyncStatus();
 }
@@ -90,9 +88,14 @@ void NewTabPageSyncHandler::HideSyncStatusSection() {
 
 void NewTabPageSyncHandler::BuildAndSendSyncStatus() {
   DCHECK(!waiting_for_initial_page_load_);
+  SigninManagerBase* signin = SigninManagerFactory::GetForProfile(
+      Profile::FromWebUI(web_ui()));
 
   // Hide the sync status section if sync is managed or disabled entirely.
-  if (!sync_service_ || sync_service_->IsManaged()) {
+  if (!sync_service_ ||
+      sync_service_->IsManaged() ||
+      !signin ||
+      !signin->IsSigninAllowed()) {
     HideSyncStatusSection();
     return;
   }
@@ -108,10 +111,8 @@ void NewTabPageSyncHandler::BuildAndSendSyncStatus() {
   // "Sync error", when we can't authenticate or establish a connection with
   //               the sync server (appropriate information appended to
   //               message).
-  string16 status_msg;
-  string16 link_text;
-  SigninManager* signin = SigninManagerFactory::GetForProfile(
-      Profile::FromWebUI(web_ui()));
+  base::string16 status_msg;
+  base::string16 link_text;
 
   sync_ui_util::MessageType type =
       sync_ui_util::GetStatusLabelsForNewTabPage(sync_service_,
@@ -119,24 +120,24 @@ void NewTabPageSyncHandler::BuildAndSendSyncStatus() {
                                                  &status_msg,
                                                  &link_text);
   SendSyncMessageToPage(FromSyncStatusMessageType(type),
-                        UTF16ToUTF8(status_msg), UTF16ToUTF8(link_text));
+                        base::UTF16ToUTF8(status_msg),
+                        base::UTF16ToUTF8(link_text));
 }
 
-void NewTabPageSyncHandler::HandleSyncLinkClicked(const ListValue* args) {
+void NewTabPageSyncHandler::HandleSyncLinkClicked(const base::ListValue* args) {
   DCHECK(!waiting_for_initial_page_load_);
-  DCHECK(sync_service_);
-  if (!sync_service_->IsSyncEnabled())
+  if (!sync_service_ || !sync_service_->IsSyncEnabled())
     return;
   Browser* browser =
       chrome::FindBrowserWithWebContents(web_ui()->GetWebContents());
   if (!browser || browser->IsAttemptingToCloseBrowser())
     return;
-  chrome::ShowSyncSetup(browser, SyncPromoUI::SOURCE_NTP_LINK);
+  chrome::ShowBrowserSignin(browser, signin::SOURCE_NTP_LINK);
 
   if (sync_service_->HasSyncSetupCompleted()) {
-    string16 user = UTF8ToUTF16(SigninManagerFactory::GetForProfile(
+    base::string16 user = base::UTF8ToUTF16(SigninManagerFactory::GetForProfile(
         Profile::FromWebUI(web_ui()))->GetAuthenticatedUsername());
-    DictionaryValue value;
+    base::DictionaryValue value;
     value.SetString("syncEnabledMessage",
                     l10n_util::GetStringFUTF16(IDS_SYNC_NTP_SYNCED_TO,
                     user));
@@ -153,10 +154,17 @@ void NewTabPageSyncHandler::OnStateChanged() {
   BuildAndSendSyncStatus();
 }
 
+void NewTabPageSyncHandler::OnSigninAllowedPrefChange() {
+  // Don't do anything if the page has not yet loaded.
+  if (waiting_for_initial_page_load_)
+    return;
+  BuildAndSendSyncStatus();
+}
+
 void NewTabPageSyncHandler::SendSyncMessageToPage(
     MessageType type, std::string msg,
     std::string linktext) {
-  DictionaryValue value;
+  base::DictionaryValue value;
   std::string user;
   std::string title;
   std::string linkurl;

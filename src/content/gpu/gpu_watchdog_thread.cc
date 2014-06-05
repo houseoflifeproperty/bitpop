@@ -12,8 +12,9 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
-#include "base/process_util.h"
-#include "base/process.h"
+#include "base/file_util.h"
+#include "base/power_monitor/power_monitor.h"
+#include "base/process/process.h"
 #include "build/build_config.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
@@ -21,19 +22,24 @@
 namespace content {
 namespace {
 const int64 kCheckPeriodMs = 2000;
+#if defined(OS_CHROMEOS)
+const base::FilePath::CharType
+    kTtyFilePath[] = FILE_PATH_LITERAL("/sys/class/tty/tty0/active");
+#endif
 }  // namespace
 
 GpuWatchdogThread::GpuWatchdogThread(int timeout)
     : base::Thread("Watchdog"),
-      watched_message_loop_(MessageLoop::current()),
+      watched_message_loop_(base::MessageLoop::current()),
       timeout_(base::TimeDelta::FromMilliseconds(timeout)),
       armed_(false),
 #if defined(OS_WIN)
       watched_thread_handle_(0),
       arm_cpu_time_(),
 #endif
-      ALLOW_THIS_IN_INITIALIZER_LIST(task_observer_(this)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      task_observer_(this),
+      weak_factory_(this),
+      suspended_(false) {
   DCHECK(timeout >= 0);
 
 #if defined(OS_WIN)
@@ -50,6 +56,9 @@ GpuWatchdogThread::GpuWatchdogThread(int timeout)
   DCHECK(result);
 #endif
 
+#if defined(OS_CHROMEOS)
+  tty_file_ = base::OpenFile(base::FilePath(kTtyFilePath), "r");
+#endif
   watched_message_loop_->AddTaskObserver(&task_observer_);
 }
 
@@ -71,7 +80,7 @@ void GpuWatchdogThread::CheckArmed() {
 
 void GpuWatchdogThread::Init() {
   // Schedule the first check.
-  OnCheck();
+  OnCheck(false);
 }
 
 void GpuWatchdogThread::CleanUp() {
@@ -87,12 +96,12 @@ GpuWatchdogThread::GpuWatchdogTaskObserver::~GpuWatchdogTaskObserver() {
 }
 
 void GpuWatchdogThread::GpuWatchdogTaskObserver::WillProcessTask(
-    base::TimeTicks time_posted) {
+    const base::PendingTask& pending_task) {
   watchdog_->CheckArmed();
 }
 
 void GpuWatchdogThread::GpuWatchdogTaskObserver::DidProcessTask(
-    base::TimeTicks time_posted) {
+    const base::PendingTask& pending_task) {
   watchdog_->CheckArmed();
 }
 
@@ -105,10 +114,21 @@ GpuWatchdogThread::~GpuWatchdogThread() {
   CloseHandle(watched_thread_handle_);
 #endif
 
+  base::PowerMonitor* power_monitor = base::PowerMonitor::Get();
+  if (power_monitor)
+    power_monitor->RemoveObserver(this);
+
+#if defined(OS_CHROMEOS)
+  if (tty_file_)
+    fclose(tty_file_);
+#endif
+
   watched_message_loop_->RemoveTaskObserver(&task_observer_);
 }
 
 void GpuWatchdogThread::OnAcknowledge() {
+  CHECK(base::PlatformThread::CurrentId() == thread_id());
+
   // The check has already been acknowledged and another has already been
   // scheduled by a previous call to OnAcknowledge. It is normal for a
   // watched thread to see armed_ being true multiple times before
@@ -120,15 +140,27 @@ void GpuWatchdogThread::OnAcknowledge() {
   weak_factory_.InvalidateWeakPtrs();
   armed_ = false;
 
+  if (suspended_)
+    return;
+
+  // If it took a long time for the acknowledgement, assume the computer was
+  // recently suspended.
+  bool was_suspended = (base::Time::Now() > suspension_timeout_);
+
   // The monitored thread has responded. Post a task to check it again.
   message_loop()->PostDelayedTask(
       FROM_HERE,
-      base::Bind(&GpuWatchdogThread::OnCheck, weak_factory_.GetWeakPtr()),
+      base::Bind(&GpuWatchdogThread::OnCheck, weak_factory_.GetWeakPtr(),
+          was_suspended),
       base::TimeDelta::FromMilliseconds(kCheckPeriodMs));
 }
 
-void GpuWatchdogThread::OnCheck() {
-  if (armed_)
+void GpuWatchdogThread::OnCheck(bool after_suspend) {
+  CHECK(base::PlatformThread::CurrentId() == thread_id());
+
+  // Do not create any new termination tasks if one has already been created
+  // or the system is suspended.
+  if (armed_ || suspended_)
     return;
 
   // Must set armed before posting the task. This task might be the only task
@@ -140,7 +172,10 @@ void GpuWatchdogThread::OnCheck() {
   arm_cpu_time_ = GetWatchedThreadTime();
 #endif
 
-  arm_absolute_time_ = base::Time::Now();
+  // Immediately after the computer is woken up from being suspended it might
+  // be pretty sluggish, so allow some extra time before the next timeout.
+  base::TimeDelta timeout = timeout_ * (after_suspend ? 3 : 1);
+  suspension_timeout_ = base::Time::Now() + timeout * 2;
 
   // Post a task to the monitored thread that does nothing but wake up the
   // TaskObserver. Any other tasks that are pending on the watched thread will
@@ -156,11 +191,14 @@ void GpuWatchdogThread::OnCheck() {
       base::Bind(
           &GpuWatchdogThread::DeliberatelyTerminateToRecoverFromHang,
           weak_factory_.GetWeakPtr()),
-      timeout_);
+      timeout);
 }
 
 // Use the --disable-gpu-watchdog command line switch to disable this.
 void GpuWatchdogThread::DeliberatelyTerminateToRecoverFromHang() {
+  // Should not get here while the system is suspended.
+  DCHECK(!suspended_);
+
 #if defined(OS_WIN)
   // Defer termination until a certain amount of CPU time has elapsed on the
   // watched thread.
@@ -180,9 +218,9 @@ void GpuWatchdogThread::DeliberatelyTerminateToRecoverFromHang() {
   // the watchdog check. This is to prevent the watchdog thread from terminating
   // when a machine wakes up from sleep or hibernation, which would otherwise
   // appear to be a hang.
-  if (base::Time::Now() - arm_absolute_time_ > timeout_ * 2) {
+  if (base::Time::Now() > suspension_timeout_) {
     armed_ = false;
-    OnCheck();
+    OnCheck(true);
     return;
   }
 
@@ -198,25 +236,55 @@ void GpuWatchdogThread::DeliberatelyTerminateToRecoverFromHang() {
     return;
 #endif
 
+#if defined(OS_CHROMEOS)
+  // Don't crash if we're not on tty1. This avoids noise in the GPU process
+  // crashes caused by people who use VT2 but still enable crash reporting.
+  char tty_string[8] = {0};
+  if (tty_file_ &&
+      !fseek(tty_file_, 0, SEEK_SET) &&
+      fread(tty_string, 1, 7, tty_file_)) {
+    int tty_number = -1;
+    int num_res = sscanf(tty_string, "tty%d", &tty_number);
+    if (num_res == 1 && tty_number != 1)
+      return;
+  }
+#endif
+
   LOG(ERROR) << "The GPU process hung. Terminating after "
              << timeout_.InMilliseconds() << " ms.";
 
-  bool should_crash =
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kCrashOnGpuHang);
-
-#if defined(OS_WIN)
-  should_crash = true;
-#endif
-
-  if (should_crash) {
-    // Deliberately crash the process to create a crash dump.
-    *((volatile int*)0) = 0x1337;
-  } else {
-    base::Process current_process(base::GetCurrentProcessHandle());
-    current_process.Terminate(RESULT_CODE_HUNG);
-  }
+  // Deliberately crash the process to create a crash dump.
+  *((volatile int*)0) = 0x1337;
 
   terminated = true;
+}
+
+void GpuWatchdogThread::AddPowerObserver() {
+  message_loop()->PostTask(
+      FROM_HERE,
+      base::Bind(&GpuWatchdogThread::OnAddPowerObserver, this));
+}
+
+void GpuWatchdogThread::OnAddPowerObserver() {
+  base::PowerMonitor* power_monitor = base::PowerMonitor::Get();
+  DCHECK(power_monitor);
+  power_monitor->AddObserver(this);
+}
+
+void GpuWatchdogThread::OnSuspend() {
+  suspended_ = true;
+
+  // When suspending force an acknowledgement to cancel any pending termination
+  // tasks.
+  OnAcknowledge();
+}
+
+void GpuWatchdogThread::OnResume() {
+  suspended_ = false;
+
+  // After resuming jump-start the watchdog again.
+  armed_ = false;
+  OnCheck(true);
 }
 
 #if defined(OS_WIN)

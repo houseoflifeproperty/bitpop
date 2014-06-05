@@ -5,18 +5,85 @@
 #include "ui/views/window/dialog_delegate.h"
 
 #include "base/logging.h"
-#include "ui/views/controls/button/text_button.h"
+#include "grit/ui_strings.h"
+#include "ui/base/l10n/l10n_util.h"
+#include "ui/views/bubble/bubble_border.h"
+#include "ui/views/bubble/bubble_frame_view.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/widget/widget.h"
+#include "ui/views/widget/widget_observer.h"
 #include "ui/views/window/dialog_client_view.h"
+#include "ui/wm/core/shadow_types.h"
 
 namespace views {
 
 ////////////////////////////////////////////////////////////////////////////////
 // DialogDelegate:
 
-DialogDelegate* DialogDelegate::AsDialogDelegate() { return this; }
-
 DialogDelegate::~DialogDelegate() {
+}
+
+// static
+Widget* DialogDelegate::CreateDialogWidget(DialogDelegate* dialog,
+                                           gfx::NativeView context,
+                                           gfx::NativeView parent) {
+  views::Widget* widget = new views::Widget;
+  views::Widget::InitParams params;
+  params.delegate = dialog;
+  if (!dialog || dialog->UseNewStyleForThisDialog()) {
+    params.opacity = Widget::InitParams::TRANSLUCENT_WINDOW;
+    params.remove_standard_frame = true;
+  }
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  // Dialogs on Linux always have custom frames.
+  params.remove_standard_frame = true;
+#endif
+  params.context = context;
+  params.parent = parent;
+  params.top_level = true;
+  widget->Init(params);
+  return widget;
+}
+
+View* DialogDelegate::CreateExtraView() {
+  return NULL;
+}
+
+View* DialogDelegate::CreateTitlebarExtraView() {
+  return NULL;
+}
+
+View* DialogDelegate::CreateFootnoteView() {
+  return NULL;
+}
+
+bool DialogDelegate::Cancel() {
+  return true;
+}
+
+bool DialogDelegate::Accept(bool window_closing) {
+  return Accept();
+}
+
+bool DialogDelegate::Accept() {
+  return true;
+}
+
+bool DialogDelegate::Close() {
+  int buttons = GetDialogButtons();
+  if ((buttons & ui::DIALOG_BUTTON_CANCEL) ||
+      (buttons == ui::DIALOG_BUTTON_NONE)) {
+    return Cancel();
+  }
+  return Accept(true);
+}
+
+base::string16 DialogDelegate::GetDialogLabel() const {
+  return base::string16();
+}
+
+base::string16 DialogDelegate::GetDialogTitle() const {
+  return GetWindowTitle();
 }
 
 int DialogDelegate::GetDialogButtons() const {
@@ -31,45 +98,24 @@ int DialogDelegate::GetDefaultDialogButton() const {
   return ui::DIALOG_BUTTON_NONE;
 }
 
-string16 DialogDelegate::GetDialogButtonLabel(ui::DialogButton button) const {
-  // Empty string results in defaults for
-  // ui::DIALOG_BUTTON_OK or ui::DIALOG_BUTTON_CANCEL.
-  return string16();
+bool DialogDelegate::ShouldDefaultButtonBeBlue() const {
+  return false;
+}
+
+base::string16 DialogDelegate::GetDialogButtonLabel(
+    ui::DialogButton button) const {
+  if (button == ui::DIALOG_BUTTON_OK)
+    return l10n_util::GetStringUTF16(IDS_APP_OK);
+  if (button == ui::DIALOG_BUTTON_CANCEL) {
+    if (GetDialogButtons() & ui::DIALOG_BUTTON_OK)
+      return l10n_util::GetStringUTF16(IDS_APP_CANCEL);
+    return l10n_util::GetStringUTF16(IDS_APP_CLOSE);
+  }
+  NOTREACHED();
+  return base::string16();
 }
 
 bool DialogDelegate::IsDialogButtonEnabled(ui::DialogButton button) const {
-  return true;
-}
-
-bool DialogDelegate::IsDialogButtonVisible(ui::DialogButton button) const {
-  return true;
-}
-
-bool DialogDelegate::UseChromeStyle() const {
-  return false;
-}
-
-bool DialogDelegate::AreAcceleratorsEnabled(ui::DialogButton button) {
-  return true;
-}
-
-View* DialogDelegate::GetExtraView() {
-  return NULL;
-}
-
-bool DialogDelegate::GetSizeExtraViewHeightToButtons() {
-  return false;
-}
-
-bool DialogDelegate::Cancel() {
-  return true;
-}
-
-bool DialogDelegate::Accept(bool window_closing) {
-  return Accept();
-}
-
-bool DialogDelegate::Accept() {
   return true;
 }
 
@@ -93,12 +139,40 @@ View* DialogDelegate::GetInitiallyFocusedView() {
   return NULL;
 }
 
-ClientView* DialogDelegate::CreateClientView(Widget* widget) {
-  DialogClientView::StyleParams params = UseChromeStyle() ?
-      DialogClientView::GetChromeStyleParams() :
-      DialogClientView::StyleParams();
+DialogDelegate* DialogDelegate::AsDialogDelegate() {
+  return this;
+}
 
-  return new DialogClientView(widget, GetContentsView(), params);
+ClientView* DialogDelegate::CreateClientView(Widget* widget) {
+  return new DialogClientView(widget, GetContentsView());
+}
+
+NonClientFrameView* DialogDelegate::CreateNonClientFrameView(Widget* widget) {
+  if (UseNewStyleForThisDialog())
+    return CreateDialogFrameView(widget);
+  return WidgetDelegate::CreateNonClientFrameView(widget);
+}
+
+// static
+NonClientFrameView* DialogDelegate::CreateDialogFrameView(Widget* widget) {
+  BubbleFrameView* frame = new BubbleFrameView(gfx::Insets());
+  scoped_ptr<BubbleBorder> border(new BubbleBorder(
+      BubbleBorder::FLOAT, BubbleBorder::SMALL_SHADOW, SK_ColorRED));
+  border->set_use_theme_background_color(true);
+  frame->SetBubbleBorder(border.Pass());
+  DialogDelegate* delegate = widget->widget_delegate()->AsDialogDelegate();
+  if (delegate) {
+    View* titlebar_view = delegate->CreateTitlebarExtraView();
+    if (titlebar_view)
+      frame->SetTitlebarExtraView(titlebar_view);
+  }
+  // TODO(msw): Add a matching shadow type and remove the bubble frame border?
+  wm::SetShadowType(widget->GetNativeWindow(), wm::SHADOW_TYPE_NONE);
+  return frame;
+}
+
+bool DialogDelegate::UseNewStyleForThisDialog() const {
+  return true;
 }
 
 const DialogClientView* DialogDelegate::GetDialogClientView() const {
@@ -109,17 +183,22 @@ DialogClientView* DialogDelegate::GetDialogClientView() {
   return GetWidget()->client_view()->AsDialogClientView();
 }
 
-ui::AccessibilityTypes::Role DialogDelegate::GetAccessibleWindowRole() const {
-  return ui::AccessibilityTypes::ROLE_DIALOG;
+ui::AXRole DialogDelegate::GetAccessibleWindowRole() const {
+  return ui::AX_ROLE_DIALOG;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // DialogDelegateView:
 
 DialogDelegateView::DialogDelegateView() {
+  // A WidgetDelegate should be deleted on DeleteDelegate.
+  set_owned_by_client();
 }
 
-DialogDelegateView::~DialogDelegateView() {
+DialogDelegateView::~DialogDelegateView() {}
+
+void DialogDelegateView::DeleteDelegate() {
+  delete this;
 }
 
 Widget* DialogDelegateView::GetWidget() {
@@ -128,6 +207,10 @@ Widget* DialogDelegateView::GetWidget() {
 
 const Widget* DialogDelegateView::GetWidget() const {
   return View::GetWidget();
+}
+
+View* DialogDelegateView::GetContentsView() {
+  return this;
 }
 
 }  // namespace views

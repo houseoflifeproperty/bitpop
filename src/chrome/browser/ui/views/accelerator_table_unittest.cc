@@ -7,7 +7,7 @@
 #include "base/basictypes.h"
 #include "chrome/browser/ui/views/accelerator_table.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/base/events/event_constants.h"
+#include "ui/events/event_constants.h"
 
 #if defined(USE_ASH)
 #include "ash/accelerators/accelerator_table.h"
@@ -31,8 +31,10 @@ struct Cmp {
 
 TEST(AcceleratorTableTest, CheckDuplicatedAccelerators) {
   std::set<AcceleratorMapping, Cmp> acclerators;
-  for (size_t i = 0; i < kAcceleratorMapLength; ++i) {
-    const AcceleratorMapping& entry = kAcceleratorMap[i];
+  const std::vector<AcceleratorMapping> accelerator_list(GetAcceleratorList());
+  for (std::vector<AcceleratorMapping>::const_iterator it =
+           accelerator_list.begin(); it != accelerator_list.end(); ++it) {
+    const AcceleratorMapping& entry = *it;
     EXPECT_TRUE(acclerators.insert(entry).second)
         << "Duplicated accelerator: " << entry.keycode << ", "
         << (entry.modifiers & ui::EF_SHIFT_DOWN) << ", "
@@ -44,14 +46,20 @@ TEST(AcceleratorTableTest, CheckDuplicatedAccelerators) {
 #if defined(USE_ASH) && !defined(OS_WIN)
 TEST(AcceleratorTableTest, CheckDuplicatedAcceleratorsAsh) {
   std::set<AcceleratorMapping, Cmp> acclerators;
-  for (size_t i = 0; i < kAcceleratorMapLength; ++i) {
-    const AcceleratorMapping& entry = kAcceleratorMap[i];
+  const std::vector<AcceleratorMapping> accelerator_list(GetAcceleratorList());
+  for (std::vector<AcceleratorMapping>::const_iterator it =
+           accelerator_list.begin(); it != accelerator_list.end(); ++it) {
+    const AcceleratorMapping& entry = *it;
     acclerators.insert(entry);
   }
   for (size_t i = 0; i < ash::kAcceleratorDataLength; ++i) {
     const ash::AcceleratorData& ash_entry = ash::kAcceleratorData[i];
     if (!ash_entry.trigger_on_press)
       continue;  // kAcceleratorMap does not have any release accelerators.
+    // The shortcut to toggle minimized state is defined on both ends
+    // by design. (see crbug.com/309915 and CL)
+    if (ash_entry.action == ash::WINDOW_MINIMIZE)
+      continue;
     AcceleratorMapping entry;
     entry.keycode = ash_entry.keycode;
     entry.modifiers = ash_entry.modifiers;

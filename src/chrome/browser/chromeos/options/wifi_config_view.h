@@ -10,9 +10,13 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
-#include "chrome/browser/chromeos/cros/cert_library.h"
+#include "base/memory/weak_ptr.h"
+#include "base/strings/string16.h"
+#include "chrome/browser/chromeos/options/cert_library.h"
 #include "chrome/browser/chromeos/options/network_config_view.h"
+#include "chrome/browser/chromeos/options/network_property_ui_data.h"
+#include "chromeos/network/network_state_handler_observer.h"
+#include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/base/models/combobox_model.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/combobox/combobox_listener.h"
@@ -27,6 +31,9 @@ class ToggleImageButton;
 
 namespace chromeos {
 
+class NetworkState;
+class PassphraseTextfield;
+
 namespace internal {
 class EAPMethodComboboxModel;
 class Phase2AuthComboboxModel;
@@ -35,58 +42,75 @@ class ServerCACertComboboxModel;
 class UserCertComboboxModel;
 }
 
-// A dialog box for showing a password textfield.
+// A dialog box for configuring Wifi and Ethernet networks
+
 class WifiConfigView : public ChildNetworkConfigView,
                        public views::TextfieldController,
                        public views::ButtonListener,
                        public views::ComboboxListener,
-                       public CertLibrary::Observer {
+                       public CertLibrary::Observer,
+                       public NetworkStateHandlerObserver {
  public:
-  // Wifi login dialog for wifi network |wifi|. |wifi| must be a non NULL
-  // pointer to a WifiNetwork in NetworkLibrary.
-  WifiConfigView(NetworkConfigView* parent, WifiNetwork* wifi);
-  // Wifi login dialog for "Joining other network..."
-  WifiConfigView(NetworkConfigView* parent, bool show_8021x);
+  // If |service_path| is not empty it identifies the network to be configured.
+  // Otherwise |show_8021x| determines whether or not to show the 'advanced'
+  // 8021x configuration UI for a hidden WiFi network.
+  WifiConfigView(NetworkConfigView* parent,
+                 const std::string& service_path,
+                 bool show_8021x);
   virtual ~WifiConfigView();
 
-  // views::TextfieldController:
+  // views::TextfieldController
   virtual void ContentsChanged(views::Textfield* sender,
-                               const string16& new_contents) OVERRIDE;
+                               const base::string16& new_contents) OVERRIDE;
   virtual bool HandleKeyEvent(views::Textfield* sender,
                               const ui::KeyEvent& key_event) OVERRIDE;
 
-  // views::ButtonListener:
+  // views::ButtonListener
   virtual void ButtonPressed(views::Button* sender,
                              const ui::Event& event) OVERRIDE;
 
-  // views::ComboboxListener:
-  virtual void OnSelectedIndexChanged(views::Combobox* combobox) OVERRIDE;
+  // views::ComboboxListener
+  virtual void OnPerformAction(views::Combobox* combobox) OVERRIDE;
 
-  // CertLibrary::Observer:
+  // CertLibrary::Observer
   virtual void OnCertificatesLoaded(bool initial_load) OVERRIDE;
 
-  // ChildNetworkConfigView:
+  // ChildNetworkConfigView
+  virtual base::string16 GetTitle() const OVERRIDE;
   virtual views::View* GetInitiallyFocusedView() OVERRIDE;
   virtual bool CanLogin() OVERRIDE;
   virtual bool Login() OVERRIDE;
   virtual void Cancel() OVERRIDE;
   virtual void InitFocus() OVERRIDE;
+  virtual bool IsConfigureDialog() OVERRIDE;
 
-  // Parses a WiFi UI |property| from the ONC associated with |network|. |key|
-  // is the property name within the ONC WiFi dictionary.
-  static void ParseWiFiUIProperty(NetworkPropertyUIData* property_ui_data,
-                                  Network* network,
-                                  const std::string& key);
+  // NetworkStateHandlerObserver
+  virtual void NetworkPropertiesUpdated(const NetworkState* network) OVERRIDE;
 
-  // Parses a WiFi EAP UI |property| from the ONC associated with |network|.
-  // |key| is the property name within the ONC WiFi.EAP dictionary.
-  static void ParseWiFiEAPUIProperty(NetworkPropertyUIData* property_ui_data,
-                                     Network* network,
-                                     const std::string& key);
+  // Parses a UI |property| from the ONC associated with |network|. |key|
+  // is the property name within the ONC dictionary.
+  static void ParseUIProperty(NetworkPropertyUIData* property_ui_data,
+                              const NetworkState* network,
+                              const std::string& key);
+
+  // Parses an EAP UI |property| from the ONC associated with |network|.
+  // |key| is the property name within the ONC EAP dictionary.
+  static void ParseEAPUIProperty(NetworkPropertyUIData* property_ui_data,
+                                 const NetworkState* network,
+                                 const std::string& key);
 
  private:
-  // Initializes UI.  If |show_8021x| includes 802.1x config options.
-  void Init(WifiNetwork* wifi, bool show_8021x);
+  friend class internal::UserCertComboboxModel;
+
+  // This will initialize the view depending on whether an existing network
+  // is being configured, the type of network, and the security model (i.e.
+  // simple password encryption or 802.1x).
+  void Init(bool show_8021x);
+
+  // Callback to initialize fields from uncached network properties.
+  void InitFromProperties(bool show_8021x,
+                          const std::string& service_path,
+                          const base::DictionaryValue& dictionary);
 
   // Get input values.
   std::string GetSsid() const;
@@ -95,13 +119,17 @@ class WifiConfigView : public ChildNetworkConfigView,
   bool GetShareNetwork(bool share_default) const;
 
   // Get various 802.1X EAP values from the widgets.
-  EAPMethod GetEapMethod() const;
-  EAPPhase2Auth GetEapPhase2Auth() const;
-  std::string GetEapServerCaCertNssNickname() const;
+  std::string GetEapMethod() const;
+  std::string GetEapPhase2Auth() const;
+  std::string GetEapServerCaCertPEM() const;
   bool GetEapUseSystemCas() const;
+  std::string GetEapSubjectMatch() const;
   std::string GetEapClientCertPkcs11Id() const;
   std::string GetEapIdentity() const;
   std::string GetEapAnonymousIdentity() const;
+
+  // Fill in |properties| with the appropriate values.
+  void SetEapProperties(base::DictionaryValue* properties);
 
   // Returns true if the EAP method requires a user certificate.
   bool UserCertRequired() const;
@@ -136,7 +164,9 @@ class WifiConfigView : public ChildNetworkConfigView,
   // Updates the error text label.
   void UpdateErrorLabel();
 
-  CertLibrary* cert_library_;
+  // Helper method, returns NULL if |service_path_| is empty, otherwise returns
+  // the NetworkState* associated with |service_path_| or NULL if none exists.
+  const NetworkState* GetNetworkState() const;
 
   NetworkPropertyUIData eap_method_ui_data_;
   NetworkPropertyUIData phase_2_auth_ui_data_;
@@ -160,6 +190,8 @@ class WifiConfigView : public ChildNetworkConfigView,
   scoped_ptr<internal::ServerCACertComboboxModel>
       server_ca_cert_combobox_model_;
   views::Combobox* server_ca_cert_combobox_;
+  views::Label* subject_match_label_;
+  views::Textfield* subject_match_textfield_;
   views::Label* identity_label_;
   views::Textfield* identity_textfield_;
   views::Label* identity_anonymous_label_;
@@ -170,9 +202,11 @@ class WifiConfigView : public ChildNetworkConfigView,
   scoped_ptr<internal::SecurityComboboxModel> security_combobox_model_;
   views::Combobox* security_combobox_;
   views::Label* passphrase_label_;
-  views::Textfield* passphrase_textfield_;
+  PassphraseTextfield* passphrase_textfield_;
   views::ToggleImageButton* passphrase_visible_button_;
   views::Label* error_label_;
+
+  base::WeakPtrFactory<WifiConfigView> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(WifiConfigView);
 };

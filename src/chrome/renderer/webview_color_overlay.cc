@@ -9,7 +9,7 @@
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkRect.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/web/WebView.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/skia_util.h"
 
@@ -25,7 +25,7 @@ WebViewColorOverlay::~WebViewColorOverlay() {
     render_view_->GetWebView()->removePageOverlay(this);
 }
 
-void WebViewColorOverlay::paintPageOverlay(WebKit::WebCanvas* canvas) {
+void WebViewColorOverlay::paintPageOverlay(blink::WebCanvas* canvas) {
   SkRect rect = gfx::RectToSkRect(gfx::Rect(render_view_->GetSize()));
   SkPaint paint;
   paint.setColor(color_);

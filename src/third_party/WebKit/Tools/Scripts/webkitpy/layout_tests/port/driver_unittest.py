@@ -26,7 +26,7 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import unittest
+import webkitpy.thirdparty.unittest2 as unittest
 
 from webkitpy.common.system.systemhost_mock import MockSystemHost
 
@@ -39,51 +39,10 @@ from webkitpy.layout_tests.port.port_testcase import TestWebKitPort
 from webkitpy.tool.mocktool import MockOptions
 
 
-class DriverOutputTest(unittest.TestCase):
-    def test_strip_metrics(self):
-        patterns = [
-            ('RenderView at (0,0) size 800x600', 'RenderView '),
-            ('text run at (0,0) width 100: "some text"', '"some text"'),
-            ('RenderBlock {HTML} at (0,0) size 800x600', 'RenderBlock {HTML} '),
-            ('RenderBlock {INPUT} at (29,3) size 12x12 [color=#000000]', 'RenderBlock {INPUT}'),
-
-            ('RenderBlock (floating) {DT} at (5,5) size 79x310 [border: (5px solid #000000)]',
-            'RenderBlock (floating) {DT} [border: px solid #000000)]'),
-
-            ('\n    "truncate text    "\n', '\n    "truncate text"\n'),
-
-            ('RenderText {#text} at (0,3) size 41x12\n    text run at (0,3) width 41: "whimper "\n',
-            'RenderText {#text} \n    "whimper"\n'),
-
-            ("""text run at (0,0) width 109: ".one {color: green;}"
-          text run at (109,0) width 0: " "
-          text run at (0,17) width 81: ".1 {color: red;}"
-          text run at (81,17) width 0: " "
-          text run at (0,34) width 102: ".a1 {color: green;}"
-          text run at (102,34) width 0: " "
-          text run at (0,51) width 120: "P.two {color: purple;}"
-          text run at (120,51) width 0: " "\n""",
-            '".one {color: green;}  .1 {color: red;}  .a1 {color: green;}  P.two {color: purple;}"\n'),
-
-            ('text-- other text', 'text--other text'),
-
-            (' some output   "truncate trailing spaces at end of line after text"   \n',
-            ' some output   "truncate trailing spaces at end of line after text"\n'),
-
-            (r'scrollWidth 120', r'scrollWidth'),
-            (r'scrollHeight 120', r'scrollHeight'),
-        ]
-
-        for pattern in patterns:
-            driver_output = DriverOutput(pattern[0], None, None, None)
-            driver_output.strip_metrics()
-            self.assertEqual(driver_output.text, pattern[1])
-
-
 class DriverTest(unittest.TestCase):
     def make_port(self):
         port = Port(MockSystemHost(), 'test', MockOptions(configuration='Release'))
-        port._config.build_directory = lambda configuration: '/mock-build'
+        port._config.build_directory = lambda configuration: '/mock-checkout/out/' + configuration
         return port
 
     def _assert_wrapper(self, wrapper_string, expected_wrapper):
@@ -123,6 +82,7 @@ class DriverTest(unittest.TestCase):
             "#EOF",
         ])
         content_block = driver._read_block(0)
+        self.assertEqual(content_block.content, '')
         self.assertEqual(content_block.content_type, 'my_type')
         self.assertEqual(content_block.encoding, 'none')
         self.assertEqual(content_block.content_hash, 'foobar')
@@ -166,9 +126,9 @@ class DriverTest(unittest.TestCase):
 
     def test_no_timeout(self):
         port = TestWebKitPort()
-        port._config.build_directory = lambda configuration: '/mock-build'
+        port._config.build_directory = lambda configuration: '/mock-checkout/out/' + configuration
         driver = Driver(port, 0, pixel_tests=True, no_timeout=True)
-        self.assertEqual(driver.cmd_line(True, []), ['/mock-build/DumpRenderTree', '--no-timeout', '-'])
+        self.assertEqual(driver.cmd_line(True, []), ['/mock-checkout/out/Release/content_shell', '--no-timeout', '--dump-render-tree', '-'])
 
     def test_check_for_driver_crash(self):
         port = TestWebKitPort()
@@ -187,14 +147,15 @@ class DriverTest(unittest.TestCase):
             def has_crashed(self):
                 return self.crashed
 
-            def stop(self, timeout):
+            def stop(self, timeout=0.0):
                 pass
 
-        def assert_crash(driver, error_line, crashed, name, pid, unresponsive=False):
+        def assert_crash(driver, error_line, crashed, name, pid, unresponsive=False, leaked=False):
             self.assertEqual(driver._check_for_driver_crash(error_line), crashed)
             self.assertEqual(driver._crashed_process_name, name)
             self.assertEqual(driver._crashed_pid, pid)
             self.assertEqual(driver._subprocess_was_unresponsive, unresponsive)
+            self.assertEqual(driver._check_for_leak(error_line), leaked)
             driver.stop()
 
         driver._server_process = FakeServerProcess(False)
@@ -204,36 +165,49 @@ class DriverTest(unittest.TestCase):
         driver._crashed_pid = None
         driver._server_process = FakeServerProcess(False)
         driver._subprocess_was_unresponsive = False
+        driver._leaked = False
         assert_crash(driver, '#CRASHED\n', True, 'FakeServerProcess', 1234)
 
         driver._crashed_process_name = None
         driver._crashed_pid = None
         driver._server_process = FakeServerProcess(False)
         driver._subprocess_was_unresponsive = False
+        driver._leaked = False
         assert_crash(driver, '#CRASHED - WebProcess\n', True, 'WebProcess', None)
 
         driver._crashed_process_name = None
         driver._crashed_pid = None
         driver._server_process = FakeServerProcess(False)
         driver._subprocess_was_unresponsive = False
+        driver._leaked = False
         assert_crash(driver, '#CRASHED - WebProcess (pid 8675)\n', True, 'WebProcess', 8675)
 
         driver._crashed_process_name = None
         driver._crashed_pid = None
         driver._server_process = FakeServerProcess(False)
         driver._subprocess_was_unresponsive = False
+        driver._leaked = False
         assert_crash(driver, '#PROCESS UNRESPONSIVE - WebProcess (pid 8675)\n', True, 'WebProcess', 8675, True)
 
         driver._crashed_process_name = None
         driver._crashed_pid = None
         driver._server_process = FakeServerProcess(False)
         driver._subprocess_was_unresponsive = False
+        driver._leaked = False
         assert_crash(driver, '#CRASHED - renderer (pid 8675)\n', True, 'renderer', 8675)
+
+        driver._crashed_process_name = None
+        driver._crashed_pid = None
+        driver._server_process = FakeServerProcess(False)
+        driver._subprocess_was_unresponsive = False
+        driver._leaked = False
+        assert_crash(driver, '#LEAK - renderer pid 8675 ({"numberOfLiveDocuments":[2,3]})\n', False, None, None, False, True)
 
         driver._crashed_process_name = None
         driver._crashed_pid = None
         driver._server_process = FakeServerProcess(True)
         driver._subprocess_was_unresponsive = False
+        driver._leaked = False
         assert_crash(driver, '', True, 'FakeServerProcess', 1234)
 
     def test_creating_a_port_does_not_write_to_the_filesystem(self):

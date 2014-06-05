@@ -4,28 +4,29 @@
 
 #include "chrome/common/extensions/manifest_tests/extension_manifest_test.h"
 
+#include "extensions/common/manifest_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 using extensions::Extension;
 
-namespace errors = extension_manifest_errors;
+namespace errors = extensions::manifest_errors;
 
 TEST_F(ExtensionManifestTest, ManifestVersionError) {
-  scoped_ptr<DictionaryValue> manifest1(new DictionaryValue());
+  scoped_ptr<base::DictionaryValue> manifest1(new base::DictionaryValue());
   manifest1->SetString("name", "Miles");
   manifest1->SetString("version", "0.55");
 
-  scoped_ptr<DictionaryValue> manifest2(manifest1->DeepCopy());
+  scoped_ptr<base::DictionaryValue> manifest2(manifest1->DeepCopy());
   manifest2->SetInteger("manifest_version", 1);
 
-  scoped_ptr<DictionaryValue> manifest3(manifest1->DeepCopy());
+  scoped_ptr<base::DictionaryValue> manifest3(manifest1->DeepCopy());
   manifest3->SetInteger("manifest_version", 2);
 
   struct {
     const char* test_name;
     bool require_modern_manifest_version;
-    DictionaryValue* manifest;
+    base::DictionaryValue* manifest;
     bool expect_error;
   } test_data[] = {
     { "require_modern_with_default", true, manifest1.get(), true },
@@ -45,12 +46,12 @@ TEST_F(ExtensionManifestTest, ManifestVersionError) {
             Manifest(test_data[i].manifest,
                      test_data[i].test_name),
             errors::kInvalidManifestVersionOld,
-            Extension::LOAD,
+            extensions::Manifest::UNPACKED,
             create_flags);
     } else {
       LoadAndExpectSuccess(Manifest(test_data[i].manifest,
                                     test_data[i].test_name),
-                           Extension::LOAD,
+                           extensions::Manifest::UNPACKED,
                            create_flags);
     }
   }

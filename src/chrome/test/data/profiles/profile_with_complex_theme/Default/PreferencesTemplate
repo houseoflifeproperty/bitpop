@@ -51,7 +51,8 @@
       },
       "theme": {
          "id": "mblmlcbknbnfebdfjnolmcapmdofhmme",
-         "pack": "$1/Default/Extensions/mblmlcbknbnfebdfjnolmcapmdofhmme/1.1/Cached Theme.pak"
+         "pack": "$1/Default/Extensions/mblmlcbknbnfebdfjnolmcapmdofhmme/1.1/Cached Theme.pak",
+         "use_system": false
       }
    },
    "profile": {
@@ -61,7 +62,7 @@
       "nickname": "not-signed-in"
    },
    "session": {
-      "urls_to_restore_on_startup": [  ]
+      "startup_urls": [  ]
    },
    "spellcheck": {
       "dictionary": "en-US"

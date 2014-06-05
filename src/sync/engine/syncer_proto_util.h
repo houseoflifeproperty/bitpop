@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,7 @@
 #include <string>
 
 #include "base/gtest_prod_util.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "sync/base/sync_export.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/util/syncer_error.h"
@@ -26,7 +26,6 @@ class SyncEntity;
 
 namespace syncer {
 
-class ThrottledDataTypeTracker;
 class ServerConnectionManager;
 
 namespace sessions {
@@ -47,7 +46,7 @@ SYNC_EXPORT_PRIVATE ModelTypeSet GetTypesToMigrate(
 SYNC_EXPORT_PRIVATE SyncProtocolError ConvertErrorPBToLocalType(
     const sync_pb::ClientToServerResponse_Error& error);
 
-class SyncerProtoUtil {
+class SYNC_EXPORT_PRIVATE SyncerProtoUtil {
  public:
   // Posts the given message and fills the buffer with the returned value.
   // Returns true on success.  Also handles store birthday verification: will
@@ -59,15 +58,7 @@ class SyncerProtoUtil {
       sync_pb::ClientToServerResponse* response,
       sessions::SyncSession* session);
 
-  // Compares a syncable Entry to SyncEntity, returns true iff the data is
-  // identical.
-  //
-  // TODO(sync): The places where this function is used are arguable big causes
-  // of the fragility, because there's a tendency to freak out the moment the
-  // local and server values diverge. However, this almost always indicates a
-  // sync bug somewhere earlier in the sync cycle.
-  static bool Compare(const syncable::Entry& local_entry,
-                      const sync_pb::SyncEntity& server_entry);
+  static bool ShouldMaintainPosition(const sync_pb::SyncEntity& sync_entity);
 
   // Utility methods for converting between syncable::Blobs and protobuf byte
   // fields.
@@ -128,6 +119,10 @@ class SyncerProtoUtil {
       const sync_pb::ClientToServerResponse& response,
       syncable::Directory* dir);
 
+  // Returns true if sync is disabled by admin for a dasher account.
+  static bool IsSyncDisabledByAdmin(
+      const sync_pb::ClientToServerResponse& response);
+
   // Post the message using the scm, and do some processing on the returned
   // headers. Decode the server response.
   static bool PostAndProcessHeaders(ServerConnectionManager* scm,
@@ -138,15 +133,10 @@ class SyncerProtoUtil {
   static base::TimeDelta GetThrottleDelay(
       const sync_pb::ClientToServerResponse& response);
 
-  static void HandleThrottleError(
-      const SyncProtocolError& error,
-      const base::TimeTicks& throttled_until,
-      ThrottledDataTypeTracker* tracker,
-      sessions::SyncSession::Delegate* delegate);
-
   friend class SyncerProtoUtilTest;
   FRIEND_TEST_ALL_PREFIXES(SyncerProtoUtilTest, AddRequestBirthday);
   FRIEND_TEST_ALL_PREFIXES(SyncerProtoUtilTest, PostAndProcessHeaders);
+  FRIEND_TEST_ALL_PREFIXES(SyncerProtoUtilTest, VerifyDisabledByAdmin);
   FRIEND_TEST_ALL_PREFIXES(SyncerProtoUtilTest, VerifyResponseBirthday);
   FRIEND_TEST_ALL_PREFIXES(SyncerProtoUtilTest, HandleThrottlingNoDatatypes);
   FRIEND_TEST_ALL_PREFIXES(SyncerProtoUtilTest, HandleThrottlingWithDatatypes);

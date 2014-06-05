@@ -8,6 +8,7 @@
 """
 
 import csv
+import fnmatch
 import glob
 import optparse
 import os
@@ -18,32 +19,34 @@ import sys
 import tempfile
 
 from common import chromium_utils
+from slave import build_directory
 from slave import slave_utils
 
 class StagingError(Exception): pass
 
 
-def ASANFilter(path):
-  """Takes a path to a file and returns the path to its asan'd counterpart.
+class SyzyASanWinFilter():
+  def __init__(self, build_dir, target):
+    self.root = os.path.abspath(os.path.join(build_dir, target))
 
-  Returns None if path is already an asan'd file.
-  Returns the original path otherwise.
-  """
-  head, tail = os.path.split(path)
-  parts = tail.split('.', 1)
-  if len(parts) == 1:
+  def __call__(self, path):
+    """Takes a path to a file and returns the path to its asanified counterpart.
+
+    Returns None if path is already an asanified file (to skip it's archival).
+    Returns the original path otherwise.
+    """
+    syzygy_root = os.path.join(self.root, 'syzygy')
+    if syzygy_root in path:
+      return None
+    asan_root = os.path.join(syzygy_root, 'asan')
+    asaned_file = path.replace(self.root, asan_root)
+    if os.path.isfile(asaned_file):
+      return asaned_file
     return path
-  if parts[-1].startswith('asan'):  # skip 'foo.asan.exe' entirely
-    return None
-  parts.insert(1, 'asan')
-  asan_path = os.path.join(head, '.'.join(parts))
-  if os.path.exists(asan_path):
-    return asan_path
-  return path
 
 
 PATH_FILTERS = {
-    'asan': ASANFilter,
+    'syzyasan_win': SyzyASanWinFilter,
 }
 
 
@@ -58,7 +61,7 @@ def CopyDebugCRT(build_dir):
     shutil.copy(dll, build_dir)
 
 
-def GetRecentBuildsByBuildNumber(zip_list, zip_base, zip_ext):
+def GetRecentBuildsByBuildNumber(zip_list, zip_base, zip_ext, prune_limit):
   # Build an ordered list of build numbers we have zip files for.
   regexp = re.compile(zip_base + '_([0-9]+)(_old)?' + zip_ext)
   build_list = []
@@ -70,9 +73,10 @@ def GetRecentBuildsByBuildNumber(zip_list, zip_base, zip_ext):
   # to a list to get an order list of build numbers.
   build_list = list(set(build_list))
   build_list.sort()
-  # Only keep the last 10 number (that means we could have 20 due to _old files
-  # if someone forced a respin of every single one)
-  saved_build_list = build_list[-10:]
+  # Only keep the last prune_limit number (that means we could have
+  # 2*prune_limit due to _old files if someone forced a respin of
+  # every single one)
+  saved_build_list = build_list[-prune_limit:]
   ordered_asc_by_build_number_list = []
   for saved_build in saved_build_list:
     recent_name = zip_base + ('_%d' % saved_build) + zip_ext
@@ -82,8 +86,8 @@ def GetRecentBuildsByBuildNumber(zip_list, zip_base, zip_ext):
   return ordered_asc_by_build_number_list
 
 
-def GetRecentBuildsByModificationTime(zip_list):
-  """Return the 10 most recent builds by modification time."""
+def GetRecentBuildsByModificationTime(zip_list, prune_limit):
+  """Return the prune_limit most recent builds by modification time."""
   # Get the modification times for all of the entries in zip_list.
   mtimes_to_files = {}
   for zip_file in zip_list:
@@ -97,26 +101,7 @@ def GetRecentBuildsByModificationTime(zip_list):
   for key in mtimes_to_files_keys:
     ordered_asc_by_mtime_list.extend(mtimes_to_files[key])
   # Return the most recent 10 builds.
-  return ordered_asc_by_mtime_list[-10:]
-
-
-def GetRealBuildDirectory(build_dir, target, factory_properties):
-  """Return the build directory."""
-  if chromium_utils.IsWindows():
-    path_list = [build_dir, target]
-  elif chromium_utils.IsLinux():
-    path_list = [os.path.dirname(build_dir), 'out', target]
-  elif chromium_utils.IsMac():
-    is_make_or_ninja = (factory_properties.get('gclient_env', {})
-                        .get('GYP_GENERATORS') in ('ninja', 'make'))
-    if is_make_or_ninja:
-      path_list = [os.path.dirname(build_dir), 'out', target]
-    else:
-      path_list = [os.path.dirname(build_dir), 'xcodebuild', target]
-  else:
-    raise NotImplementedError('%s is not supported.' % sys.platform)
-
-  return os.path.abspath(os.path.join(*path_list))
+  return ordered_asc_by_mtime_list[-prune_limit:]
 
 
 def FileRegexWhitelist(options):
@@ -126,7 +111,6 @@ def FileRegexWhitelist(options):
     # TODO(nsylvain): This should really be defined somewhere else.
     return (r'^(chrome[_.]dll|chrome[_.]exe'
             # r'|browser_test.+|unit_tests'
-            # r'|chrome_frame_.*tests'
             r')\.pdb$')
 
   return '$NO_FILTER^'
@@ -135,11 +119,12 @@ def FileRegexWhitelist(options):
 def FileRegexBlacklist(options):
   if chromium_utils.IsWindows():
     # Remove all .ilk/.7z and maybe PDB files
-    include_pdbs = options.factory_properties.get('package_pdb_files', False)
+    # TODO(phajdan.jr): Remove package_pdb_files when nobody uses it.
+    include_pdbs = options.factory_properties.get('package_pdb_files', True)
     if include_pdbs:
-      return r'^.+\.(ilk|7z|(precompile\.h\.pch.*))$'
+      return r'^.+\.(rc|res|lib|exp|ilk|7z|([pP]recompile\.h\.pch.*))$'
     else:
-      return r'^.+\.(ilk|pdb|7z|(precompile\.h\.pch.*))$'
+      return r'^.+\.(rc|res|lib|exp|ilk|pdb|7z|([pP]recompile\.h\.pch.*))$'
   if chromium_utils.IsMac():
     # The static libs are just built as intermediate targets, and we don't
     # need to pull the dSYMs over to the testers most of the time (except for
@@ -157,11 +142,11 @@ def FileRegexBlacklist(options):
 
 
 def FileExclusions():
-  all_platforms = ['.landmines', 'obj', 'lib', 'gen']
+  all_platforms = ['.landmines', 'obj', 'gen', '.ninja_deps', '.ninja_log']
   # Skip files that the testers don't care about. Mostly directories.
   if chromium_utils.IsWindows():
     # Remove obj or lib dir entries
-    return all_platforms + ['cfinstaller_archive', 'installer_archive']
+    return all_platforms + ['cfinstaller_archive', 'lib', 'installer_archive']
   if chromium_utils.IsMac():
     return all_platforms + [
       # We don't need the arm bits v8 builds.
@@ -179,12 +164,13 @@ def FileExclusions():
       # copy outside the app.
       'Chromium Helper.app',
       'Google Chrome Helper.app',
-      '.deps', 'obj.host', 'obj.target',
+      'App Shim Socket',
+      '.deps', 'obj.host', 'obj.target', 'lib'
     ]
   if chromium_utils.IsLinux():
     return all_platforms + [
       # intermediate build directories (full of .o, .d, etc.).
-      'appcache', 'glue', 'googleurl', 'lib.host', 'obj.host',
+      'appcache', 'glue', 'lib.host', 'obj.host',
       'obj.target', 'src', '.deps',
       # scons build cruft
       '.sconsign.dblite',
@@ -195,21 +181,53 @@ def FileExclusions():
   return all_platforms
 
 
+def MojomJSFiles(build_dir):
+  """Lists all mojom JavaScript files that need to be included in the archive.
+
+  Args:
+    build_dir: The build directory.
+
+  Returns:
+    A list of mojom JavaScript file paths which are relative to the build
+    directory.
+  """
+  walk_dirs = [
+    'gen/mojo',
+    'gen/content/test/data',
+  ]
+  mojom_js_files = []
+  for walk_dir in walk_dirs:
+    walk_dir = os.path.join(build_dir, walk_dir)
+    for path, _, files in os.walk(walk_dir):
+      rel_path = os.path.relpath(path, build_dir)
+      for mojom_js_file in fnmatch.filter(files, '*.mojom.js'):
+        mojom_js_files.append(os.path.join(rel_path, mojom_js_file))
+  return mojom_js_files
+
+
 def WriteRevisionFile(dirname, build_revision):
   """Writes a file containing revision number to given directory.
-  Replaces the target file in place."""
+  Replaces the target file in place.
+
+  Args:
+    dirname: Directory to write the file in.
+    build_revision: Revision number or hash.
+
+  Returns: The path of the written file.
+  """
   try:
     # Script only works on python 2.6
     # pylint: disable=E1123
     tmp_revision_file = tempfile.NamedTemporaryFile(
         mode='w', dir=dirname,
         delete=False)
-    tmp_revision_file.write('%d' % build_revision)
+    tmp_revision_file.write('%s' % build_revision)
     tmp_revision_file.close()
     chromium_utils.MakeWorldReadable(tmp_revision_file.name)
     dest_path = os.path.join(dirname,
                              chromium_utils.FULL_BUILD_REVISION_FILENAME)
     shutil.move(tmp_revision_file.name, dest_path)
+    return dest_path
   except IOError:
     print 'Writing to revision file in %s failed.' % dirname
 
@@ -239,7 +257,10 @@ def MakeUnversionedArchive(build_dir, staging_dir, zip_file_list,
 
 def MakeVersionedArchive(zip_file, file_suffix, options):
   """Takes a file name, e.g. /foo/bar.zip and an extra suffix, e.g. _baz,
-  and copies (or hardlinks) the file to /foo/bar_baz.zip."""
+  and copies (or hardlinks) the file to /foo/bar_baz.zip.
+
+  Returns: A tuple containing three elements: the base filename, the extension
+     and the full versioned filename."""
   zip_template = os.path.basename(zip_file)
   zip_base, zip_ext = os.path.splitext(zip_template)
   # Create a versioned copy of the file.
@@ -254,19 +275,35 @@ def MakeVersionedArchive(zip_file, file_suffix, options):
   else:
     os.link(zip_file, versioned_file)
   chromium_utils.MakeWorldReadable(versioned_file)
-  build_url = options.factory_properties.get('build_url', '')
-  if build_url.startswith('gs://'):
-    if slave_utils.GSUtilCopyFile(versioned_file, build_url):
-      raise chromium_utils.ExternalError('gsutil returned non-zero status!')
   print 'Created versioned archive', versioned_file
-  return (zip_base, zip_ext)
+  return (zip_base, zip_ext, versioned_file)
 
 
-def PruneOldArchives(staging_dir, zip_base, zip_ext):
+def UploadToGoogleStorage(versioned_file, revision_file, build_url, gs_acl):
+  if slave_utils.GSUtilCopyFile(versioned_file, build_url, gs_acl=gs_acl):
+    raise chromium_utils.ExternalError(
+        'gsutil returned non-zero status when uploading %s to %s!' %
+        (versioned_file, build_url))
+  print 'Successfully uploaded %s to %s' % (versioned_file, build_url)
+
+  # The file showing the latest uploaded revision must be named LAST_CHANGE
+  # locally since that filename is used in the GS bucket as well.
+  last_change_file = os.path.join(os.path.dirname(revision_file), 'LAST_CHANGE')
+  shutil.copy(revision_file, last_change_file)
+  if slave_utils.GSUtilCopyFile(last_change_file, build_url, gs_acl=gs_acl):
+    raise chromium_utils.ExternalError(
+        'gsutil returned non-zero status when uploading %s to %s!' %
+        (last_change_file, build_url))
+  print 'Successfully uploaded %s to %s' % (last_change_file, build_url)
+  os.remove(last_change_file)
+
+
+def PruneOldArchives(staging_dir, zip_base, zip_ext, prune_limit):
   """Removes old archives so that we don't exceed disk space."""
   zip_list = glob.glob(os.path.join(staging_dir, zip_base + '_*' + zip_ext))
-  saved_zip_list = GetRecentBuildsByBuildNumber(zip_list, zip_base, zip_ext)
-  saved_mtime_list = GetRecentBuildsByModificationTime(zip_list)
+  saved_zip_list = GetRecentBuildsByBuildNumber(
+      zip_list, zip_base, zip_ext, prune_limit)
+  saved_mtime_list = GetRecentBuildsByModificationTime(zip_list, prune_limit)
 
   # Prune zip files not matched by the whitelists above.
   for zip_file in zip_list:
@@ -286,13 +323,16 @@ class PathMatcher(object):
 
     self.regex_whitelist = FileRegexWhitelist(options)
     self.regex_blacklist = FileRegexBlacklist(options)
+    self.exclude_unmatched = options.exclude_unmatched
 
   def __str__(self):
-    return '\n  '.join(['Zip rules',
-                        'Inclusions: %s' % self.inclusions,
-                        'Exclusions: %s' % self.exclusions,
-                        "Whitelist regex: '%s'" % self.regex_whitelist,
-                        "Blacklist regex: '%s'" % self.regex_blacklist])
+    return '\n  '.join([
+        'Zip rules',
+        'Inclusions: %s' % self.inclusions,
+        'Exclusions: %s' % self.exclusions,
+        "Whitelist regex: '%s'" % self.regex_whitelist,
+        "Blacklist regex: '%s'" % self.regex_blacklist,
+        'Zip unmatched files: %s' % (not self.exclude_unmatched)])
 
   def Match(self, filename):
     if filename in self.inclusions:
@@ -303,29 +343,43 @@ class PathMatcher(object):
       return True
     if re.match(self.regex_blacklist, filename):
       return False
-    return True
+    return not self.exclude_unmatched
 
 
 def Archive(options):
-  src_dir = os.path.abspath(options.src_dir)
-  build_dir = GetRealBuildDirectory(options.build_dir, options.target,
-                                    options.factory_properties)
+  build_dir = build_directory.GetBuildOutputDirectory(options.src_dir)
+  build_dir = os.path.abspath(os.path.join(build_dir, options.target))
 
-  staging_dir = slave_utils.GetStagingDir(src_dir)
+  staging_dir = slave_utils.GetStagingDir(options.src_dir)
   chromium_utils.MakeParentDirectoriesWorldReadable(staging_dir)
 
-  webkit_dir = None
-  if options.webkit_dir:
-    webkit_dir = os.path.join(src_dir, options.webkit_dir)
+  if not options.build_revision:
+    (build_revision, webkit_revision) = slave_utils.GetBuildRevisions(
+        options.src_dir, options.webkit_dir, options.revision_dir)
+  else:
+    build_revision = options.build_revision
+    webkit_revision = options.webkit_revision
+
+  append_deps_patch_sha = options.factory_properties.get(
+      'append_deps_patch_sha')
 
   unversioned_base_name, version_suffix = slave_utils.GetZipFileNames(
-      options.build_properties, options.build_dir, webkit_dir)
+      options.build_properties, build_revision, webkit_revision,
+      use_try_buildnumber=(not append_deps_patch_sha))
+
+  if append_deps_patch_sha:
+    deps_sha = os.path.join('src', 'DEPS.sha')
+    if os.path.exists(deps_sha):
+      sha = open(deps_sha).read()
+      version_suffix = '%s_%s' % (version_suffix, sha.strip())
+      print 'Appending sha of the patch: %s' % sha
+    else:
+      print 'DEPS.sha file not found, not appending sha.'
 
   print 'Full Staging in %s' % staging_dir
   print 'Build Directory %s' % build_dir
 
   # Include the revision file in tarballs
-  build_revision = slave_utils.SubversionRevision(src_dir)
   WriteRevisionFile(build_dir, build_revision)
 
   # Copy the crt files if necessary.
@@ -334,22 +388,50 @@ def Archive(options):
 
   # Build the list of files to archive.
   root_files = os.listdir(build_dir)
+
+  # Remove initial\chrome.ilk. The filtering is only done on toplevel files,
+  # and we can't exclude everything in initial since initial\chrome.dll.pdb is
+  # needed in the archive. (And we can't delete it on disk because that would
+  # slow down the next incremental build).
+  if 'initial' in root_files:
+    # Expand 'initial' directory by its contents, so that initial\chrome.ilk
+    # will be filtered out by the blacklist.
+    index = root_files.index('initial')
+    root_files[index:index+1] = [os.path.join('initial', f)
+        for f in os.listdir(os.path.join(build_dir, 'initial'))]
+
   path_filter = PathMatcher(options)
   print path_filter
   print ('\nActually excluded: %s' %
          [f for f in root_files if not path_filter.Match(f)])
 
   zip_file_list = [f for f in root_files if path_filter.Match(f)]
+
+  # TODO(yzshen): Once we have swarming support ready, we could use it to
+  # archive run time dependencies of tests and remove this step.
+  mojom_js_files = MojomJSFiles(build_dir)
+  print 'Include mojom JavaScript files: %s' % mojom_js_files
+  zip_file_list.extend(mojom_js_files)
+
   zip_file = MakeUnversionedArchive(build_dir, staging_dir, zip_file_list,
                                     unversioned_base_name, options.path_filter)
 
-  zip_base, zip_ext = MakeVersionedArchive(zip_file, version_suffix, options)
-  PruneOldArchives(staging_dir, zip_base, zip_ext)
+  zip_base, zip_ext, versioned_file = MakeVersionedArchive(
+      zip_file, version_suffix, options)
+
+  prune_limit = max(0, int(options.factory_properties.get('prune_limit', 10)))
+  PruneOldArchives(staging_dir, zip_base, zip_ext, prune_limit=prune_limit)
 
   # Update the latest revision file in the staging directory
   # to allow testers to figure out the latest packaged revision
   # without downloading tarballs.
-  WriteRevisionFile(staging_dir, build_revision)
+  revision_file = WriteRevisionFile(staging_dir, build_revision)
+
+  build_url = (options.build_url or
+               options.factory_properties.get('build_url', ''))
+  if build_url.startswith('gs://'):
+    gs_acl = options.factory_properties.get('gs_acl')
+    UploadToGoogleStorage(versioned_file, revision_file, build_url, gs_acl)
 
   return 0
 
@@ -360,20 +442,33 @@ def main(argv):
                            help='build target to archive (Debug or Release)')
   option_parser.add_option('--src-dir', default='src',
                            help='path to the top-level sources directory')
-  option_parser.add_option('--build-dir', default='chrome',
-                           help=('path to main build directory (the parent of '
-                                 'the Release or Debug directory)'))
+  option_parser.add_option('--build-dir', help='ignored')
   option_parser.add_option('--exclude-files', default='',
-                           help=('Comma separated list of files that should '
-                                 'always be excluded from the zip.'))
+                           help='Comma separated list of files that should '
+                                'always be excluded from the zip.')
   option_parser.add_option('--include-files', default='',
-                           help=('Comma separated list of files that should '
-                                 'always be included in the zip.'))
+                           help='Comma separated list of files that should '
+                                'always be included in the zip.')
   option_parser.add_option('--webkit-dir',
                            help='webkit directory path, relative to --src-dir')
+  option_parser.add_option('--revision-dir',
+                           help='Directory path that shall be used to decide '
+                                'the revision number for the archive, '
+                                'relative to --src-dir')
+  option_parser.add_option('--build_revision',
+                           help='The revision the archive should be at. '
+                                'Overrides the revision found on disk.')
+  option_parser.add_option('--webkit_revision',
+                           help='The revision of webkit the build is at. '
+                                'Overrides the revision found on disk.')
   option_parser.add_option('--path-filter',
                            help='Filter to use to transform build zip '
                                 '(avail: %r).' % list(PATH_FILTERS.keys()))
+  option_parser.add_option('--exclude-unmatched', action='store_true',
+                           help='Exclude all files not matched by a whitelist')
+  option_parser.add_option('--build-url', default='',
+                           help=('Optional URL to which to upload build '
+                                 '(overrides build_url factory property)'))
   chromium_utils.AddPropertiesOptions(option_parser)
 
   options, args = option_parser.parse_args(argv)
@@ -382,6 +477,10 @@ def main(argv):
     options.target = options.factory_properties.get('target', 'Release')
   if not options.webkit_dir:
     options.webkit_dir = options.factory_properties.get('webkit_dir')
+  if not options.revision_dir:
+    options.revision_dir = options.factory_properties.get('revision_dir')
+  options.src_dir = (options.factory_properties.get('zip_build_src_dir')
+                     or options.src_dir)
 
   # When option_parser is passed argv as a list, it can return the caller as
   # first unknown arg.  So throw a warning if we have two or more unknown
@@ -389,9 +488,14 @@ def main(argv):
   if args[1:]:
     print 'Warning -- unknown arguments' % args[1:]
 
-  if options.path_filter is None and options.factory_properties.get('asan'):
-    options.path_filter = 'asan'
-  options.path_filter = PATH_FILTERS.get(options.path_filter)
+  if (options.path_filter is None
+      and options.factory_properties.get('syzyasan')
+      and chromium_utils.IsWindows()):
+    options.path_filter = 'syzyasan_win'
+
+  if options.path_filter:
+    options.path_filter = PATH_FILTERS[options.path_filter](
+        build_directory.GetBuildOutputDirectory(), options.target)
 
   return Archive(options)
 

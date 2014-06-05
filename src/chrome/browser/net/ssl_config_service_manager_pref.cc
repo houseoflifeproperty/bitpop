@@ -9,16 +9,17 @@
 
 #include "base/basictypes.h"
 #include "base/bind.h"
-#include "base/prefs/public/pref_change_registrar.h"
-#include "base/prefs/public/pref_member.h"
+#include "base/prefs/pref_change_registrar.h"
+#include "base/prefs/pref_member.h"
+#include "base/prefs/pref_registry_simple.h"
+#include "base/prefs/pref_service.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
-#include "chrome/browser/prefs/pref_service.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/content_settings.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
-#include "net/base/ssl_cipher_suite_names.h"
-#include "net/base/ssl_config_service.h"
+#include "net/ssl/ssl_cipher_suite_names.h"
+#include "net/ssl/ssl_config_service.h"
 
 using content::BrowserThread;
 
@@ -26,11 +27,11 @@ namespace {
 
 // Converts a ListValue of StringValues into a vector of strings. Any Values
 // which cannot be converted will be skipped.
-std::vector<std::string> ListValueToStringVector(const ListValue* value) {
+std::vector<std::string> ListValueToStringVector(const base::ListValue* value) {
   std::vector<std::string> results;
   results.reserve(value->GetSize());
   std::string s;
-  for (ListValue::const_iterator it = value->begin(); it != value->end();
+  for (base::ListValue::const_iterator it = value->begin(); it != value->end();
        ++it) {
     if (!(*it)->GetAsString(&s))
       continue;
@@ -108,7 +109,7 @@ class SSLConfigServicePref : public net::SSLConfigService {
   SSLConfigServicePref() {}
 
   // Store SSL config settings in |config|. Must only be called from IO thread.
-  virtual void GetSSLConfig(net::SSLConfig* config);
+  virtual void GetSSLConfig(net::SSLConfig* config) OVERRIDE;
 
  private:
   // Allow the pref watcher to update our internal state.
@@ -144,19 +145,18 @@ void SSLConfigServicePref::SetNewSSLConfig(
 class SSLConfigServiceManagerPref
     : public SSLConfigServiceManager {
  public:
-  SSLConfigServiceManagerPref(PrefService* local_state,
-                              PrefService* user_prefs);
+  explicit SSLConfigServiceManagerPref(PrefService* local_state);
   virtual ~SSLConfigServiceManagerPref() {}
 
   // Register local_state SSL preferences.
-  static void RegisterPrefs(PrefService* local_state);
+  static void RegisterPrefs(PrefRegistrySimple* registry);
 
-  virtual net::SSLConfigService* Get();
+  virtual net::SSLConfigService* Get() OVERRIDE;
 
  private:
   // Callback for preference changes.  This will post the changes to the IO
   // thread with SetNewSSLConfig.
-  void OnPreferenceChanged(PrefServiceBase* prefs,
+  void OnPreferenceChanged(PrefService* prefs,
                            const std::string& pref_name);
 
   // Store SSL config settings in |config|, directly from the preferences. Must
@@ -165,32 +165,19 @@ class SSLConfigServiceManagerPref
 
   // Processes changes to the disabled cipher suites preference, updating the
   // cached list of parsed SSL/TLS cipher suites that are disabled.
-  void OnDisabledCipherSuitesChange(PrefServiceBase* local_state);
-
-  // Processes changes to the default cookie settings.
-  void OnDefaultContentSettingsChange(PrefServiceBase* user_prefs);
+  void OnDisabledCipherSuitesChange(PrefService* local_state);
 
   PrefChangeRegistrar local_state_change_registrar_;
-  PrefChangeRegistrar user_prefs_change_registrar_;
 
   // The local_state prefs (should only be accessed from UI thread)
   BooleanPrefMember rev_checking_enabled_;
+  BooleanPrefMember rev_checking_required_local_anchors_;
   StringPrefMember ssl_version_min_;
   StringPrefMember ssl_version_max_;
-  BooleanPrefMember channel_id_enabled_;
   BooleanPrefMember ssl_record_splitting_disabled_;
 
   // The cached list of disabled SSL cipher suites.
   std::vector<uint16> disabled_cipher_suites_;
-
-  // The user_prefs prefs (should only be accessed from UI thread).
-  // |have_user_prefs_| will be false if no user_prefs are associated with this
-  // instance.
-  bool have_user_prefs_;
-  BooleanPrefMember block_third_party_cookies_;
-
-  // Cached value of if cookies are disabled by default.
-  bool cookies_disabled_;
 
   scoped_refptr<SSLConfigServicePref> ssl_config_service_;
 
@@ -198,9 +185,8 @@ class SSLConfigServiceManagerPref
 };
 
 SSLConfigServiceManagerPref::SSLConfigServiceManagerPref(
-    PrefService* local_state, PrefService* user_prefs)
-    : have_user_prefs_(!!user_prefs),
-      ssl_config_service_(new SSLConfigServicePref()) {
+    PrefService* local_state)
+    : ssl_config_service_(new SSLConfigServicePref()) {
   DCHECK(local_state);
 
   PrefChangeRegistrar::NamedChangeCallback local_state_callback = base::Bind(
@@ -210,12 +196,14 @@ SSLConfigServiceManagerPref::SSLConfigServiceManagerPref(
 
   rev_checking_enabled_.Init(
       prefs::kCertRevocationCheckingEnabled, local_state, local_state_callback);
+  rev_checking_required_local_anchors_.Init(
+      prefs::kCertRevocationCheckingRequiredLocalAnchors,
+      local_state,
+      local_state_callback);
   ssl_version_min_.Init(
       prefs::kSSLVersionMin, local_state, local_state_callback);
   ssl_version_max_.Init(
       prefs::kSSLVersionMax, local_state, local_state_callback);
-  channel_id_enabled_.Init(
-      prefs::kEnableOriginBoundCerts, local_state, local_state_callback);
   ssl_record_splitting_disabled_.Init(
       prefs::kDisableSSLRecordSplitting, local_state, local_state_callback);
 
@@ -225,56 +213,41 @@ SSLConfigServiceManagerPref::SSLConfigServiceManagerPref(
 
   OnDisabledCipherSuitesChange(local_state);
 
-  if (user_prefs) {
-    PrefChangeRegistrar::NamedChangeCallback user_prefs_callback = base::Bind(
-        &SSLConfigServiceManagerPref::OnPreferenceChanged,
-        base::Unretained(this),
-        user_prefs);
-    block_third_party_cookies_.Init(
-        prefs::kBlockThirdPartyCookies, user_prefs, user_prefs_callback);
-    user_prefs_change_registrar_.Init(user_prefs);
-    user_prefs_change_registrar_.Add(
-        prefs::kDefaultContentSettings, user_prefs_callback);
-
-    OnDefaultContentSettingsChange(user_prefs);
-  }
-
   // Initialize from UI thread.  This is okay as there shouldn't be anything on
   // the IO thread trying to access it yet.
   GetSSLConfigFromPrefs(&ssl_config_service_->cached_config_);
 }
 
 // static
-void SSLConfigServiceManagerPref::RegisterPrefs(PrefService* local_state) {
+void SSLConfigServiceManagerPref::RegisterPrefs(PrefRegistrySimple* registry) {
   net::SSLConfig default_config;
-  local_state->RegisterBooleanPref(prefs::kCertRevocationCheckingEnabled,
-                                   default_config.rev_checking_enabled);
+  registry->RegisterBooleanPref(prefs::kCertRevocationCheckingEnabled,
+                                default_config.rev_checking_enabled);
+  registry->RegisterBooleanPref(
+      prefs::kCertRevocationCheckingRequiredLocalAnchors,
+      default_config.rev_checking_required_local_anchors);
   std::string version_min_str =
       SSLProtocolVersionToString(default_config.version_min);
   std::string version_max_str =
       SSLProtocolVersionToString(default_config.version_max);
-  local_state->RegisterStringPref(prefs::kSSLVersionMin, version_min_str);
-  local_state->RegisterStringPref(prefs::kSSLVersionMax, version_max_str);
-  local_state->RegisterBooleanPref(prefs::kEnableOriginBoundCerts,
-                                   default_config.channel_id_enabled);
-  local_state->RegisterBooleanPref(prefs::kDisableSSLRecordSplitting,
-                                   !default_config.false_start_enabled);
-  local_state->RegisterListPref(prefs::kCipherSuiteBlacklist);
+  registry->RegisterStringPref(prefs::kSSLVersionMin, version_min_str);
+  registry->RegisterStringPref(prefs::kSSLVersionMax, version_max_str);
+  registry->RegisterBooleanPref(prefs::kDisableSSLRecordSplitting,
+                                !default_config.false_start_enabled);
+  registry->RegisterListPref(prefs::kCipherSuiteBlacklist);
 }
 
 net::SSLConfigService* SSLConfigServiceManagerPref::Get() {
-  return ssl_config_service_;
+  return ssl_config_service_.get();
 }
 
 void SSLConfigServiceManagerPref::OnPreferenceChanged(
-    PrefServiceBase* prefs,
+    PrefService* prefs,
     const std::string& pref_name_in) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(prefs);
   if (pref_name_in == prefs::kCipherSuiteBlacklist)
     OnDisabledCipherSuitesChange(prefs);
-  else if (pref_name_in == prefs::kDefaultContentSettings)
-    OnDefaultContentSettingsChange(prefs);
 
   net::SSLConfig new_config;
   GetSSLConfigFromPrefs(&new_config);
@@ -292,11 +265,18 @@ void SSLConfigServiceManagerPref::OnPreferenceChanged(
 
 void SSLConfigServiceManagerPref::GetSSLConfigFromPrefs(
     net::SSLConfig* config) {
-  config->rev_checking_enabled = rev_checking_enabled_.GetValue();
+  // rev_checking_enabled was formerly a user-settable preference, but now
+  // it is managed-only.
+  if (rev_checking_enabled_.IsManaged())
+    config->rev_checking_enabled = rev_checking_enabled_.GetValue();
+  else
+    config->rev_checking_enabled = false;
+  config->rev_checking_required_local_anchors =
+      rev_checking_required_local_anchors_.GetValue();
   std::string version_min_str = ssl_version_min_.GetValue();
   std::string version_max_str = ssl_version_max_.GetValue();
-  config->version_min = net::SSLConfigService::default_version_min();
-  config->version_max = net::SSLConfigService::default_version_max();
+  config->version_min = net::kDefaultSSLVersionMin;
+  config->version_max = net::kDefaultSSLVersionMax;
   uint16 version_min = SSLProtocolVersionFromString(version_min_str);
   uint16 version_max = SSLProtocolVersionFromString(version_max_str);
   if (version_min) {
@@ -314,32 +294,15 @@ void SSLConfigServiceManagerPref::GetSSLConfigFromPrefs(
     config->version_max = std::min(supported_version_max, version_max);
   }
   config->disabled_cipher_suites = disabled_cipher_suites_;
-  config->channel_id_enabled = channel_id_enabled_.GetValue();
-  if (have_user_prefs_ &&
-      (cookies_disabled_ || block_third_party_cookies_.GetValue()))
-    config->channel_id_enabled = false;
   // disabling False Start also happens to disable record splitting.
   config->false_start_enabled = !ssl_record_splitting_disabled_.GetValue();
-  SSLConfigServicePref::SetSSLConfigFlags(config);
 }
 
 void SSLConfigServiceManagerPref::OnDisabledCipherSuitesChange(
-    PrefServiceBase* local_state) {
-  const ListValue* value = local_state->GetList(prefs::kCipherSuiteBlacklist);
+    PrefService* local_state) {
+  const base::ListValue* value =
+      local_state->GetList(prefs::kCipherSuiteBlacklist);
   disabled_cipher_suites_ = ParseCipherSuites(ListValueToStringVector(value));
-}
-
-void SSLConfigServiceManagerPref::OnDefaultContentSettingsChange(
-    PrefServiceBase* user_prefs) {
-  const DictionaryValue* value = user_prefs->GetDictionary(
-      prefs::kDefaultContentSettings);
-  int default_cookie_settings = -1;
-  cookies_disabled_ = (
-      value &&
-      value->GetInteger(
-          content_settings::GetTypeName(CONTENT_SETTINGS_TYPE_COOKIES),
-          &default_cookie_settings) &&
-      default_cookie_settings == CONTENT_SETTING_BLOCK);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -347,11 +310,11 @@ void SSLConfigServiceManagerPref::OnDefaultContentSettingsChange(
 
 // static
 SSLConfigServiceManager* SSLConfigServiceManager::CreateDefaultManager(
-    PrefService* local_state, PrefService* user_prefs) {
-  return new SSLConfigServiceManagerPref(local_state, user_prefs);
+    PrefService* local_state) {
+  return new SSLConfigServiceManagerPref(local_state);
 }
 
 // static
-void SSLConfigServiceManager::RegisterPrefs(PrefService* prefs) {
-  SSLConfigServiceManagerPref::RegisterPrefs(prefs);
+void SSLConfigServiceManager::RegisterPrefs(PrefRegistrySimple* registry) {
+  SSLConfigServiceManagerPref::RegisterPrefs(registry);
 }

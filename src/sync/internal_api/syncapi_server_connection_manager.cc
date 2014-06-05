@@ -38,8 +38,8 @@ bool SyncAPIBridgedConnection::Init(const char* path,
   http->SetURL(connection_url.c_str(), sync_server_port);
 
   if (!auth_token.empty()) {
-    const std::string& headers =
-        "Authorization: GoogleLogin auth=" + auth_token;
+    std::string headers;
+    headers = "Authorization: Bearer " + auth_token;
     http->SetExtraRequestHeaders(headers.c_str());
   }
 
@@ -70,9 +70,6 @@ bool SyncAPIBridgedConnection::Init(const char* path,
   else
     response->server_status = HttpResponse::SYNC_SERVER_ERROR;
 
-  response->update_client_auth_header =
-      http->GetResponseHeaderValue("Update-Client-Auth");
-
   // Write the content into our buffer.
   buffer_.assign(http->GetResponseContent(), http->GetResponseContentLength());
   return true;
@@ -87,8 +84,12 @@ SyncAPIServerConnectionManager::SyncAPIServerConnectionManager(
     const std::string& server,
     int port,
     bool use_ssl,
-    HttpPostProviderFactory* factory)
-    : ServerConnectionManager(server, port, use_ssl),
+    HttpPostProviderFactory* factory,
+    CancelationSignal* cancelation_signal)
+    : ServerConnectionManager(server,
+                              port,
+                              use_ssl,
+                              cancelation_signal),
       post_provider_factory_(factory) {
   DCHECK(post_provider_factory_.get());
 }

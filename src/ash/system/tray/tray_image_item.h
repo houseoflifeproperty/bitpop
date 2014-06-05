@@ -12,8 +12,6 @@ class ImageView;
 }
 
 namespace ash {
-namespace internal {
-
 class TrayItemView;
 
 class TrayImageItem : public SystemTrayItem {
@@ -41,13 +39,15 @@ class TrayImageItem : public SystemTrayItem {
       ShelfAlignment alignment) OVERRIDE;
 
  private:
+  // Set the alignment of the image depending on the shelf alignment.
+  void SetItemAlignment(ShelfAlignment alignment);
+
   int resource_id_;
   TrayItemView* tray_view_;
 
   DISALLOW_COPY_AND_ASSIGN(TrayImageItem);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_SYSTEM_TRAY_TRAY_IMAGE_ITEM_H_

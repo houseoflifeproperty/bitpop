@@ -4,8 +4,8 @@
 
 #include "ash/system/chromeos/network/tray_sms.h"
 
-#include "ash/ash_switches.h"
 #include "ash/shell.h"
+#include "ash/system/tray/fixed_sized_scroll_view.h"
 #include "ash/system/tray/system_tray.h"
 #include "ash/system/tray/system_tray_bubble.h"
 #include "ash/system/tray/system_tray_notifier.h"
@@ -14,10 +14,10 @@
 #include "ash/system/tray/tray_item_more.h"
 #include "ash/system/tray/tray_item_view.h"
 #include "ash/system/tray/tray_notification_view.h"
-#include "ash/system/tray/tray_views.h"
-#include "base/command_line.h"
-#include "base/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chromeos/network/network_event_log.h"
+#include "chromeos/network/network_handler.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -37,12 +37,15 @@ const int kMessageListMinHeight = 200;
 // Top/bottom padding of the text items.
 const int kPaddingVertical = 10;
 
+const char kSmsNumberKey[] = "number";
+const char kSmsTextKey[] = "text";
+
 bool GetMessageFromDictionary(const base::DictionaryValue* message,
                               std::string* number,
                               std::string* text) {
-  if (!message->GetStringWithoutPathExpansion(ash::kSmsNumberKey, number))
+  if (!message->GetStringWithoutPathExpansion(kSmsNumberKey, number))
     return false;
-  if (!message->GetStringWithoutPathExpansion(ash::kSmsTextKey, text))
+  if (!message->GetStringWithoutPathExpansion(kSmsTextKey, text))
     return false;
   return true;
 }
@@ -50,13 +53,12 @@ bool GetMessageFromDictionary(const base::DictionaryValue* message,
 }  // namespace
 
 namespace ash {
-namespace internal {
 
 class TraySms::SmsDefaultView : public TrayItemMore {
  public:
   explicit SmsDefaultView(TraySms* owner)
       : TrayItemMore(owner, true) {
-    SetImage(ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+    SetImage(ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
         IDR_AURA_UBER_TRAY_SMS));
     Update();
   }
@@ -65,7 +67,7 @@ class TraySms::SmsDefaultView : public TrayItemMore {
 
   void Update() {
     int message_count = static_cast<TraySms*>(owner())->messages().GetSize();
-    string16 label = l10n_util::GetStringFUTF16(
+    base::string16 label = l10n_util::GetStringFUTF16(
         IDS_ASH_STATUS_TRAY_SMS_MESSAGES, base::IntToString16(message_count));
     SetLabel(label);
     SetAccessibleName(label);
@@ -93,12 +95,12 @@ class TraySms::SmsMessageView : public views::View,
         index_(index) {
     number_label_ = new views::Label(
         l10n_util::GetStringFUTF16(IDS_ASH_STATUS_TRAY_SMS_NUMBER,
-                                   UTF8ToUTF16(number)));
+                                   base::UTF8ToUTF16(number)),
+        ui::ResourceBundle::GetSharedInstance().GetFontList(
+            ui::ResourceBundle::BoldFont));
     number_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-    number_label_->SetFont(
-        number_label_->font().DeriveFont(0, gfx::Font::BOLD));
 
-    message_label_ = new views::Label(UTF8ToUTF16(message));
+    message_label_ = new views::Label(base::UTF8ToUTF16(message));
     message_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
     message_label_->SetMultiLine(true);
 
@@ -121,9 +123,10 @@ class TraySms::SmsMessageView : public views::View,
  private:
   void LayoutDetailedView() {
     views::ImageButton* close_button = new views::ImageButton(this);
-    close_button->SetImage(views::CustomButton::STATE_NORMAL,
-        ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
-            IDR_AURA_WINDOW_CLOSE));
+    close_button->SetImage(
+        views::CustomButton::STATE_NORMAL,
+        ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+            IDR_AURA_UBER_TRAY_SMS_DISMISS));
     const int msg_width = owner_->system_tray()->GetSystemBubble()->
         bubble_view()->GetPreferredSize().width() -
             (kNotificationIconWidth + kTrayPopupPaddingHorizontal * 2);
@@ -197,7 +200,7 @@ class TraySms::SmsDetailedView : public TrayDetailsView,
   }
 
   // Overridden from views::View.
-  gfx::Size GetPreferredSize() {
+  virtual gfx::Size GetPreferredSize() OVERRIDE {
     gfx::Size preferred_size = TrayDetailsView::GetPreferredSize();
     if (preferred_size.height() < kMessageListMinHeight)
       preferred_size.set_height(kMessageListMinHeight);
@@ -229,9 +232,9 @@ class TraySms::SmsDetailedView : public TrayDetailsView,
   }
 
   // Overridden from ViewClickListener.
-  virtual void ClickedOn(views::View* sender) OVERRIDE {
+  virtual void OnViewClicked(views::View* sender) OVERRIDE {
     if (sender == footer()->content())
-      owner()->system_tray()->ShowDefaultView(BUBBLE_USE_EXISTING);
+      TransitionToDefaultView();
   }
 
   DISALLOW_COPY_AND_ASSIGN(SmsDetailedView);
@@ -283,11 +286,18 @@ TraySms::TraySms(SystemTray* system_tray)
       default_(NULL),
       detailed_(NULL),
       notification_(NULL) {
-  Shell::GetInstance()->system_tray_notifier()->AddSmsObserver(this);
+  // TODO(armansito): SMS could be a special case for cellular that requires a
+  // user (perhaps the owner) to be logged in. If that is the case, then an
+  // additional check should be done before subscribing for SMS notifications.
+  if (chromeos::NetworkHandler::IsInitialized())
+    chromeos::NetworkHandler::Get()->network_sms_handler()->AddObserver(this);
 }
 
 TraySms::~TraySms() {
-  Shell::GetInstance()->system_tray_notifier()->RemoveSmsObserver(this);
+  if (chromeos::NetworkHandler::IsInitialized()) {
+    chromeos::NetworkHandler::Get()->network_sms_handler()->RemoveObserver(
+        this);
+  }
 }
 
 views::View* TraySms::CreateDefaultView(user::LoginStatus status) {
@@ -308,6 +318,8 @@ views::View* TraySms::CreateDetailedView(user::LoginStatus status) {
 
 views::View* TraySms::CreateNotificationView(user::LoginStatus status) {
   CHECK(notification_ == NULL);
+  if (detailed_)
+    return NULL;
   size_t index;
   std::string number, text;
   if (GetLatestMessage(&index, &number, &text))
@@ -327,8 +339,35 @@ void TraySms::DestroyNotificationView() {
   notification_ = NULL;
 }
 
-void TraySms::AddMessage(const base::DictionaryValue& message) {
-  messages_.Append(message.DeepCopy());
+void TraySms::MessageReceived(const base::DictionaryValue& message) {
+
+  std::string message_text;
+  if (!message.GetStringWithoutPathExpansion(
+          chromeos::NetworkSmsHandler::kTextKey, &message_text)) {
+    NET_LOG_ERROR("SMS message contains no content.", "");
+    return;
+  }
+  // TODO(armansito): A message might be due to a special "Message Waiting"
+  // state that the message is in. Once SMS handling moves to shill, such
+  // messages should be filtered there so that this check becomes unnecessary.
+  if (message_text.empty()) {
+    NET_LOG_DEBUG("SMS has empty content text. Ignoring.", "");
+    return;
+  }
+  std::string message_number;
+  if (!message.GetStringWithoutPathExpansion(
+          chromeos::NetworkSmsHandler::kNumberKey, &message_number)) {
+    NET_LOG_DEBUG("SMS contains no number. Ignoring.", "");
+    return;
+  }
+
+  NET_LOG_DEBUG("Received SMS from: " + message_number + " with text: " +
+                message_text, "");
+
+  base::DictionaryValue* dict = new base::DictionaryValue();
+  dict->SetString(kSmsNumberKey, message_number);
+  dict->SetString(kSmsTextKey, message_text);
+  messages_.Append(dict);
   Update(true);
 }
 
@@ -337,7 +376,7 @@ bool TraySms::GetLatestMessage(size_t* index,
                                std::string* text) {
   if (messages_.empty())
     return false;
-  DictionaryValue* message;
+  base::DictionaryValue* message;
   size_t message_index = messages_.GetSize() - 1;
   if (!messages_.GetDictionary(message_index, &message))
     return false;
@@ -377,5 +416,4 @@ void TraySms::Update(bool notify) {
   }
 }
 
-}  // namespace internal
 }  // namespace ash

@@ -8,29 +8,33 @@
 #include <string>
 
 #include "base/command_line.h"
-#include "base/compiler_specific.h"
-#include "base/file_path.h"
+
+#include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
-#include "chrome/browser/extensions/extension_host.h"
-#include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/extension_test_notification_observer.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/feature_switch.h"
-#include "chrome/common/extensions/features/feature.h"
+#include "chrome/common/extensions/features/feature_channel.h"
 #include "chrome/test/base/in_process_browser_test.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/extension_host.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/feature_switch.h"
+#include "extensions/common/manifest.h"
 
 class ExtensionService;
-class ExtensionProcessManager;
 class Profile;
+
+namespace extensions {
+class ExtensionCacheFake;
+class ExtensionSet;
+class ProcessManager;
+}
 
 // Base class for extension browser tests. Provides utilities for loading,
 // unloading, and installing extensions.
-class ExtensionBrowserTest : virtual public InProcessBrowserTest,
-                             public content::NotificationObserver {
+class ExtensionBrowserTest : virtual public InProcessBrowserTest {
  protected:
   // Flags used to configure how the tests are run.
   enum Flags {
@@ -55,93 +59,147 @@ class ExtensionBrowserTest : virtual public InProcessBrowserTest,
   virtual ~ExtensionBrowserTest();
 
   // Useful accessors.
-  Profile* profile() { return browser()->profile(); }
   ExtensionService* extension_service() {
     return extensions::ExtensionSystem::Get(profile())->extension_service();
   }
 
+  const std::string& last_loaded_extension_id() {
+    return observer_->last_loaded_extension_id();
+  }
+
+  // Get the profile to use.
+  virtual Profile* profile();
+
+  static const extensions::Extension* GetExtensionByPath(
+      const extensions::ExtensionSet* extensions, const base::FilePath& path);
+
   // InProcessBrowserTest
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE;
+  virtual void SetUp() OVERRIDE;
+  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
+  virtual void SetUpOnMainThread() OVERRIDE;
 
-  const extensions::Extension* LoadExtension(const FilePath& path);
+  const extensions::Extension* LoadExtension(const base::FilePath& path);
 
-  // Same as above, but enables the extension in incognito mode first.
-  const extensions::Extension* LoadExtensionIncognito(const FilePath& path);
+  // Load extension and enable it in incognito mode.
+  const extensions::Extension* LoadExtensionIncognito(
+      const base::FilePath& path);
 
+  // Load extension from the |path| folder. |flags| is bit mask of values from
+  // |Flags| enum.
   const extensions::Extension* LoadExtensionWithFlags(
-      const FilePath& path, int flags);
+      const base::FilePath& path, int flags);
 
-  // Loads extension and imitates that it is a component extension.
-  const extensions::Extension* LoadExtensionAsComponent(const FilePath& path);
+  // Same as above, but sets the installation parameter to the extension
+  // preferences.
+  const extensions::Extension* LoadExtensionWithInstallParam(
+      const base::FilePath& path,
+      int flags,
+      const std::string& install_param);
+
+  // Loads unpacked extension from |path| with manifest |manifest_relative_path|
+  // and imitates that it is a component extension.
+  // |manifest_relative_path| is relative to |path|.
+  const extensions::Extension* LoadExtensionAsComponentWithManifest(
+      const base::FilePath& path,
+      const base::FilePath::CharType* manifest_relative_path);
+
+  // Loads unpacked extension from |path| and imitates that it is a component
+  // extension. Equivalent to
+  // LoadExtensionAsComponentWithManifest(path, extensions::kManifestFilename).
+  const extensions::Extension* LoadExtensionAsComponent(
+      const base::FilePath& path);
 
   // Pack the extension in |dir_path| into a crx file and return its path.
   // Return an empty FilePath if there were errors.
-  FilePath PackExtension(const FilePath& dir_path);
+  base::FilePath PackExtension(const base::FilePath& dir_path);
 
   // Pack the extension in |dir_path| into a crx file at |crx_path|, using the
   // key |pem_path|. If |pem_path| does not exist, create a new key at
   // |pem_out_path|.
   // Return the path to the crx file, or an empty FilePath if there were errors.
-  FilePath PackExtensionWithOptions(const FilePath& dir_path,
-                                    const FilePath& crx_path,
-                                    const FilePath& pem_path,
-                                    const FilePath& pem_out_path);
+  base::FilePath PackExtensionWithOptions(const base::FilePath& dir_path,
+                                          const base::FilePath& crx_path,
+                                          const base::FilePath& pem_path,
+                                          const base::FilePath& pem_out_path);
 
   // |expected_change| indicates how many extensions should be installed (or
   // disabled, if negative).
   // 1 means you expect a new install, 0 means you expect an upgrade, -1 means
   // you expect a failed upgrade.
-  const extensions::Extension* InstallExtension(const FilePath& path,
+  const extensions::Extension* InstallExtension(const base::FilePath& path,
                                                 int expected_change) {
-    return InstallOrUpdateExtension("", path, INSTALL_UI_TYPE_NONE,
-                                    expected_change);
+    return InstallOrUpdateExtension(
+        std::string(), path, INSTALL_UI_TYPE_NONE, expected_change);
   }
 
-  // Same as above, but an install source other than Extension::INTERNAL can be
+  // Same as above, but an install source other than Manifest::INTERNAL can be
   // specified.
   const extensions::Extension* InstallExtension(
-      const FilePath& path,
+      const base::FilePath& path,
       int expected_change,
-      extensions::Extension::Location install_source) {
-    return InstallOrUpdateExtension("", path, INSTALL_UI_TYPE_NONE,
-                                    expected_change, install_source);
+      extensions::Manifest::Location install_source) {
+    return InstallOrUpdateExtension(std::string(),
+                                    path,
+                                    INSTALL_UI_TYPE_NONE,
+                                    expected_change,
+                                    install_source);
   }
 
   // Installs extension as if it came from the Chrome Webstore.
   const extensions::Extension* InstallExtensionFromWebstore(
-      const FilePath& path, int expected_change);
+      const base::FilePath& path, int expected_change);
 
   // Same as above but passes an id to CrxInstaller and does not allow a
   // privilege increase.
   const extensions::Extension* UpdateExtension(const std::string& id,
-                                               const FilePath& path,
+                                               const base::FilePath& path,
                                                int expected_change) {
     return InstallOrUpdateExtension(id, path, INSTALL_UI_TYPE_NONE,
                                     expected_change);
   }
 
+  // Same as UpdateExtension but waits for the extension to be idle first.
+  const extensions::Extension* UpdateExtensionWaitForIdle(
+      const std::string& id, const base::FilePath& path, int expected_change);
+
   // Same as |InstallExtension| but with the normal extension UI showing up
   // (for e.g. info bar on success).
-  const extensions::Extension* InstallExtensionWithUI(const FilePath& path,
-                                                      int expected_change) {
-    return InstallOrUpdateExtension("", path, INSTALL_UI_TYPE_NORMAL,
-                                    expected_change);
+  const extensions::Extension* InstallExtensionWithUI(
+      const base::FilePath& path,
+      int expected_change) {
+    return InstallOrUpdateExtension(
+        std::string(), path, INSTALL_UI_TYPE_NORMAL, expected_change);
   }
 
   const extensions::Extension* InstallExtensionWithUIAutoConfirm(
-      const FilePath& path,
+      const base::FilePath& path,
       int expected_change,
       Browser* browser) {
-    return InstallOrUpdateExtension("", path, INSTALL_UI_TYPE_AUTO_CONFIRM,
-                                    expected_change, browser, false);
+    return InstallOrUpdateExtension(std::string(),
+                                    path,
+                                    INSTALL_UI_TYPE_AUTO_CONFIRM,
+                                    expected_change,
+                                    browser,
+                                    extensions::Extension::NO_FLAGS);
+  }
+
+  const extensions::Extension* InstallExtensionWithSourceAndFlags(
+      const base::FilePath& path,
+      int expected_change,
+      extensions::Manifest::Location install_source,
+      extensions::Extension::InitFromValueFlags creation_flags) {
+    return InstallOrUpdateExtension(std::string(), path, INSTALL_UI_TYPE_NONE,
+        expected_change, install_source, browser(), creation_flags, false);
   }
 
   // Begins install process but simulates a user cancel.
-  const extensions::Extension* StartInstallButCancel(const FilePath& path) {
-    return InstallOrUpdateExtension("", path, INSTALL_UI_TYPE_CANCEL, 0);
+  const extensions::Extension* StartInstallButCancel(
+      const base::FilePath& path) {
+    return InstallOrUpdateExtension(
+        std::string(), path, INSTALL_UI_TYPE_CANCEL, 0);
   }
 
-  void ReloadExtension(const std::string& extension_id);
+  void ReloadExtension(const std::string extension_id);
 
   void UnloadExtension(const std::string& extension_id);
 
@@ -152,32 +210,58 @@ class ExtensionBrowserTest : virtual public InProcessBrowserTest,
   void EnableExtension(const std::string& extension_id);
 
   // Wait for the total number of page actions to change to |count|.
-  bool WaitForPageActionCountChangeTo(int count);
+  bool WaitForPageActionCountChangeTo(int count) {
+    return observer_->WaitForPageActionCountChangeTo(count);
+  }
 
   // Wait for the number of visible page actions to change to |count|.
-  bool WaitForPageActionVisibilityChangeTo(int count);
+  bool WaitForPageActionVisibilityChangeTo(int count) {
+    return observer_->WaitForPageActionVisibilityChangeTo(count);
+  }
 
   // Waits until an extension is installed and loaded. Returns true if an
   // install happened before timeout.
-  bool WaitForExtensionInstall();
+  bool WaitForExtensionInstall() {
+    return observer_->WaitForExtensionInstall();
+  }
 
   // Wait for an extension install error to be raised. Returns true if an
   // error was raised.
-  bool WaitForExtensionInstallError();
+  bool WaitForExtensionInstallError() {
+    return observer_->WaitForExtensionInstallError();
+  }
+
+  // Waits until an extension is loaded and all view have loaded.
+  void WaitForExtensionAndViewLoad() {
+    return observer_->WaitForExtensionAndViewLoad();
+  }
 
   // Waits until an extension is loaded.
-  void WaitForExtensionLoad();
+  void WaitForExtensionLoad() {
+    return observer_->WaitForExtensionLoad();
+  }
 
   // Waits for an extension load error. Returns true if the error really
   // happened.
-  bool WaitForExtensionLoadError();
+  bool WaitForExtensionLoadError() {
+    return observer_->WaitForExtensionLoadError();
+  }
 
   // Wait for the specified extension to crash. Returns true if it really
   // crashed.
-  bool WaitForExtensionCrash(const std::string& extension_id);
+  bool WaitForExtensionCrash(const std::string& extension_id) {
+    return observer_->WaitForExtensionCrash(extension_id);
+  }
 
   // Wait for the crx installer to be done. Returns true if it really is done.
-  bool WaitForCrxInstallerDone();
+  bool WaitForCrxInstallerDone() {
+    return observer_->WaitForCrxInstallerDone();
+  }
+
+  // Wait for all extension views to load.
+  bool WaitForExtensionViewsToLoad() {
+    return observer_->WaitForExtensionViewsToLoad();
+  }
 
   // Simulates a page calling window.open on an URL and waits for the
   // navigation.
@@ -193,24 +277,36 @@ class ExtensionBrowserTest : virtual public InProcessBrowserTest,
   // Looks for an ExtensionHost whose URL has the given path component
   // (including leading slash).  Also verifies that the expected number of hosts
   // are loaded.
-  extensions::ExtensionHost* FindHostWithPath(ExtensionProcessManager* manager,
-                                              const std::string& path,
-                                              int expected_hosts);
+  extensions::ExtensionHost* FindHostWithPath(
+      extensions::ProcessManager* manager,
+      const std::string& path,
+      int expected_hosts);
 
-  // content::NotificationObserver
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // Returns
+  // extensions::browsertest_util::ExecuteScriptInBackgroundPage(profile(),
+  // extension_id, script).
+  std::string ExecuteScriptInBackgroundPage(const std::string& extension_id,
+                                            const std::string& script);
+
+  // Returns
+  // extensions::browsertest_util::ExecuteScriptInBackgroundPageNoWait(
+  // profile(), extension_id, script).
+  bool ExecuteScriptInBackgroundPageNoWait(const std::string& extension_id,
+                                           const std::string& script);
 
   bool loaded_;
   bool installed_;
 
+#if defined(OS_CHROMEOS)
+  // True if the command line should be tweaked as if ChromeOS user is
+  // already logged in.
+  bool set_chromeos_user_;
+#endif
+
   // test_data/extensions.
-  FilePath test_data_dir_;
-  std::string last_loaded_extension_id_;
-  int extension_installs_observed_;
-  int extension_load_errors_observed_;
-  int crx_installers_done_observed_;
+  base::FilePath test_data_dir_;
+
+  scoped_ptr<ExtensionTestNotificationObserver> observer_;
 
  private:
   // Temporary directory for testing.
@@ -225,51 +321,46 @@ class ExtensionBrowserTest : virtual public InProcessBrowserTest,
     INSTALL_UI_TYPE_AUTO_CONFIRM,
   };
 
-  const extensions::Extension* InstallOrUpdateExtension(const std::string& id,
-                                                        const FilePath& path,
-                                                        InstallUIType ui_type,
-                                                        int expected_change);
-  const extensions::Extension* InstallOrUpdateExtension(const std::string& id,
-                                                        const FilePath& path,
-                                                        InstallUIType ui_type,
-                                                        int expected_change,
-                                                        Browser* browser,
-                                                        bool from_webstore);
   const extensions::Extension* InstallOrUpdateExtension(
       const std::string& id,
-      const FilePath& path,
+      const base::FilePath& path,
       InstallUIType ui_type,
-      int expected_change,
-      extensions::Extension::Location install_source);
+      int expected_change);
   const extensions::Extension* InstallOrUpdateExtension(
       const std::string& id,
-      const FilePath& path,
+      const base::FilePath& path,
       InstallUIType ui_type,
       int expected_change,
-      extensions::Extension::Location install_source,
       Browser* browser,
-      bool from_webstore);
-
-  bool WaitForExtensionViewsToLoad();
-
-  // When waiting for page action count to change, we wait until it reaches this
-  // value.
-  int target_page_action_count_;
-
-  // When waiting for visible page action count to change, we wait until it
-  // reaches this value.
-  int target_visible_page_action_count_;
+      extensions::Extension::InitFromValueFlags creation_flags);
+  const extensions::Extension* InstallOrUpdateExtension(
+      const std::string& id,
+      const base::FilePath& path,
+      InstallUIType ui_type,
+      int expected_change,
+      extensions::Manifest::Location install_source);
+  const extensions::Extension* InstallOrUpdateExtension(
+      const std::string& id,
+      const base::FilePath& path,
+      InstallUIType ui_type,
+      int expected_change,
+      extensions::Manifest::Location install_source,
+      Browser* browser,
+      extensions::Extension::InitFromValueFlags creation_flags,
+      bool wait_for_idle);
 
   // Make the current channel "dev" for the duration of the test.
-  extensions::Feature::ScopedCurrentChannel current_channel_;
+  extensions::ScopedCurrentChannel current_channel_;
 
   // Disable external install UI.
   extensions::FeatureSwitch::ScopedOverride
       override_prompt_for_external_extensions_;
 
-  // Disable the sideload wipeout UI.
-  extensions::FeatureSwitch::ScopedOverride
-      override_sideload_wipeout_;
+  // The default profile to be used.
+  Profile* profile_;
+
+  // Cache cache implementation.
+  scoped_ptr<extensions::ExtensionCacheFake> test_extension_cache_;
 };
 
 #endif  // CHROME_BROWSER_EXTENSIONS_EXTENSION_BROWSERTEST_H_

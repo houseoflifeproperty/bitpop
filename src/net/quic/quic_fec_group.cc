@@ -6,6 +6,7 @@
 
 #include <limits>
 
+#include "base/basictypes.h"
 #include "base/logging.h"
 
 using base::StringPiece;
@@ -21,12 +22,14 @@ const QuicPacketSequenceNumber kNoSequenceNumber = kuint64max;
 QuicFecGroup::QuicFecGroup()
     : min_protected_packet_(kNoSequenceNumber),
       max_protected_packet_(kNoSequenceNumber),
-      parity_len_(0) {
+      payload_parity_len_(0),
+      effective_encryption_level_(NUM_ENCRYPTION_LEVELS) {
 }
 
 QuicFecGroup::~QuicFecGroup() {}
 
-bool QuicFecGroup::Update(const QuicPacketHeader& header,
+bool QuicFecGroup::Update(EncryptionLevel encryption_level,
+                          const QuicPacketHeader& header,
                           StringPiece decrypted_payload) {
   if (received_packets_.count(header.packet_sequence_number) != 0) {
     return false;
@@ -43,19 +46,22 @@ bool QuicFecGroup::Update(const QuicPacketHeader& header,
     return false;
   }
   received_packets_.insert(header.packet_sequence_number);
+  if (encryption_level < effective_encryption_level_) {
+    effective_encryption_level_ = encryption_level;
+  }
   return true;
 }
 
 bool QuicFecGroup::UpdateFec(
+    EncryptionLevel encryption_level,
     QuicPacketSequenceNumber fec_packet_sequence_number,
     const QuicFecData& fec) {
   if (min_protected_packet_ != kNoSequenceNumber) {
     return false;
   }
-  set<QuicPacketSequenceNumber>::const_iterator it = received_packets_.begin();
+  SequenceNumberSet::const_iterator it = received_packets_.begin();
   while (it != received_packets_.end()) {
-    if ((*it < fec.min_protected_packet_sequence_number) ||
-        (*it >= fec_packet_sequence_number)) {
+    if ((*it < fec.fec_group) || (*it >= fec_packet_sequence_number)) {
       DLOG(ERROR) << "FEC group does not cover received packet: " << *it;
       return false;
     }
@@ -64,8 +70,11 @@ bool QuicFecGroup::UpdateFec(
   if (!UpdateParity(fec.redundancy)) {
     return false;
   }
-  min_protected_packet_ = fec.min_protected_packet_sequence_number;
+  min_protected_packet_ = fec.fec_group;
   max_protected_packet_ = fec_packet_sequence_number - 1;
+  if (encryption_level < effective_encryption_level_) {
+    effective_encryption_level_ = encryption_level;
+  }
   return true;
 }
 
@@ -98,23 +107,26 @@ size_t QuicFecGroup::Revive(QuicPacketHeader* header,
   }
   DCHECK_NE(kNoSequenceNumber, missing);
 
-  DCHECK_LE(parity_len_, decrypted_payload_len);
-  if (parity_len_ > decrypted_payload_len) {
+  DCHECK_LE(payload_parity_len_, decrypted_payload_len);
+  if (payload_parity_len_ > decrypted_payload_len) {
     return 0;
   }
-  for (size_t i = 0; i < parity_len_; ++i) {
-    decrypted_payload[i] = parity_[i];
+  for (size_t i = 0; i < payload_parity_len_; ++i) {
+    decrypted_payload[i] = payload_parity_[i];
   }
+
   header->packet_sequence_number = missing;
+  header->entropy_flag = false;  // Unknown entropy.
+
   received_packets_.insert(missing);
-  return parity_len_;
+  return payload_parity_len_;
 }
 
 bool QuicFecGroup::ProtectsPacketsBefore(QuicPacketSequenceNumber num) const {
   if (max_protected_packet_ != kNoSequenceNumber) {
     return max_protected_packet_ < num;
   }
-  // Since we might not yet have recevied the FEC packet, we must check
+  // Since we might not yet have received the FEC packet, we must check
   // the packets we have received.
   return *received_packets_.begin() < num;
 }
@@ -125,17 +137,17 @@ bool QuicFecGroup::UpdateParity(StringPiece payload) {
     DLOG(ERROR) << "Illegal payload size: " << payload.size();
     return false;
   }
-  if (parity_len_ < payload.size()) {
-    parity_len_ = payload.size();
+  if (payload_parity_len_ < payload.size()) {
+    payload_parity_len_ = payload.size();
   }
   DCHECK_LE(payload.size(), kMaxPacketSize);
-  if (received_packets_.size() == 0 &&
+  if (received_packets_.empty() &&
       min_protected_packet_ == kNoSequenceNumber) {
     // Initialize the parity to the value of this payload
-    memcpy(parity_, payload.data(), payload.size());
+    memcpy(payload_parity_, payload.data(), payload.size());
     if (payload.size() < kMaxPacketSize) {
       // TODO(rch): expand as needed.
-      memset(parity_ + payload.size(), 0,
+      memset(payload_parity_ + payload.size(), 0,
              kMaxPacketSize - payload.size());
     }
     return true;
@@ -143,7 +155,7 @@ bool QuicFecGroup::UpdateParity(StringPiece payload) {
   // Update the parity by XORing in the data (padding with 0s if necessary).
   for (size_t i = 0; i < kMaxPacketSize; ++i) {
     uint8 byte = i < payload.size() ? payload[i] : 0x00;
-    parity_[i] ^= byte;
+    payload_parity_[i] ^= byte;
   }
   return true;
 }

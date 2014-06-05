@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 #include "base/memory/scoped_vector.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/sessions/session_service.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sessions_helper.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 
-using sessions_helper::CheckForeignSessionsAgainst;
+using sessions_helper::AwaitCheckForeignSessionsAgainst;
 using sessions_helper::CheckInitialState;
 using sessions_helper::OpenTabAndGetLocalWindows;
 using sessions_helper::ScopedWindowMap;
@@ -46,17 +46,14 @@ IN_PROC_BROWSER_TEST_F(MultipleClientSessionsSyncTest, MAYBE_AllChanged) {
   for (int i = 0; i < num_clients(); ++i) {
     SessionWindowMap windows;
     ASSERT_TRUE(OpenTabAndGetLocalWindows(
-        i, GURL(StringPrintf("http://127.0.0.1/bubba%i", i)), &windows));
+        i, GURL(base::StringPrintf("http://127.0.0.1/bubba%i", i)), &windows));
     client_windows[i].Reset(&windows);
   }
-
-  // Wait for sync.
-  ASSERT_TRUE(AwaitQuiescence());
 
   // Get foreign session data from all clients and check it against all
   // client_windows.
   for (int i = 0; i < num_clients(); ++i) {
-    ASSERT_TRUE(CheckForeignSessionsAgainst(i, client_windows));
+    ASSERT_TRUE(AwaitCheckForeignSessionsAgainst(i, client_windows));
   }
 }
 
@@ -70,7 +67,7 @@ IN_PROC_BROWSER_TEST_F(MultipleClientSessionsSyncTest,
   }
 
   // Enable encryption on client 0, should propagate to all other clients.
-  ASSERT_TRUE(EnableEncryption(0, syncer::SESSIONS));
+  ASSERT_TRUE(EnableEncryption(0));
 
   // Wait for sync.
   // TODO(zea): Fix sync completion detection so we don't need this. For now,
@@ -82,17 +79,14 @@ IN_PROC_BROWSER_TEST_F(MultipleClientSessionsSyncTest,
   for (int i = 0; i < num_clients(); ++i) {
     SessionWindowMap windows;
     ASSERT_TRUE(OpenTabAndGetLocalWindows(
-        i, GURL(StringPrintf("http://127.0.0.1/bubba%i", i)), &windows));
+        i, GURL(base::StringPrintf("http://127.0.0.1/bubba%i", i)), &windows));
     client_windows[i].Reset(&windows);
   }
-
-  // Wait for sync.
-  ASSERT_TRUE(AwaitQuiescence());
 
   // Get foreign session data from all clients and check it against all
   // client_windows.
   for (int i = 0; i < num_clients(); ++i) {
-    ASSERT_TRUE(IsEncrypted(i, syncer::SESSIONS));
-    ASSERT_TRUE(CheckForeignSessionsAgainst(i, client_windows));
+    ASSERT_TRUE(AwaitCheckForeignSessionsAgainst(i, client_windows));
+    ASSERT_TRUE(IsEncryptionComplete(i));
   }
 }

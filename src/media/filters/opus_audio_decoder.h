@@ -6,85 +6,60 @@
 #define MEDIA_FILTERS_OPUS_AUDIO_DECODER_H_
 
 #include "base/callback.h"
+#include "base/time/time.h"
 #include "media/base/audio_decoder.h"
 #include "media/base/demuxer_stream.h"
+#include "media/base/sample_format.h"
 
 struct OpusMSDecoder;
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 }
 
 namespace media {
 
-class AudioTimestampHelper;
-class DataBuffer;
+class AudioBuffer;
+class AudioDiscardHelper;
 class DecoderBuffer;
 struct QueuedAudioBuffer;
 
 class MEDIA_EXPORT OpusAudioDecoder : public AudioDecoder {
  public:
   explicit OpusAudioDecoder(
-      const scoped_refptr<base::MessageLoopProxy>& message_loop);
-
-  // AudioDecoder implementation.
-  virtual void Initialize(const scoped_refptr<DemuxerStream>& stream,
-                          const PipelineStatusCB& status_cb,
-                          const StatisticsCB& statistics_cb) OVERRIDE;
-  virtual void Read(const ReadCB& read_cb) OVERRIDE;
-  virtual int bits_per_channel() OVERRIDE;
-  virtual ChannelLayout channel_layout() OVERRIDE;
-  virtual int samples_per_second() OVERRIDE;
-  virtual void Reset(const base::Closure& closure) OVERRIDE;
-
- protected:
+      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner);
   virtual ~OpusAudioDecoder();
 
- private:
-  // Methods running on decoder thread.
-  void DoInitialize(const scoped_refptr<DemuxerStream>& stream,
-                    const PipelineStatusCB& status_cb,
-                    const StatisticsCB& statistics_cb);
-  void DoReset(const base::Closure& closure);
-  void DoRead(const ReadCB& read_cb);
-  void DoDecodeBuffer(DemuxerStream::Status status,
-                      const scoped_refptr<DecoderBuffer>& input);
+  // AudioDecoder implementation.
+  virtual void Initialize(const AudioDecoderConfig& config,
+                          const PipelineStatusCB& status_cb) OVERRIDE;
+  virtual void Decode(const scoped_refptr<DecoderBuffer>& buffer,
+                      const DecodeCB& decode_cb) OVERRIDE;
+  virtual void Reset(const base::Closure& closure) OVERRIDE;
+  virtual void Stop() OVERRIDE;
 
+ private:
   // Reads from the demuxer stream with corresponding callback method.
   void ReadFromDemuxerStream();
+  void DecodeBuffer(const scoped_refptr<DecoderBuffer>& input,
+                    const DecodeCB& decode_cb);
 
   bool ConfigureDecoder();
   void CloseDecoder();
   void ResetTimestampState();
   bool Decode(const scoped_refptr<DecoderBuffer>& input,
-              bool skip_eos_append,
-              scoped_refptr<DataBuffer>* output_buffer);
+              scoped_refptr<AudioBuffer>* output_buffer);
 
-  scoped_refptr<base::MessageLoopProxy> message_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
-  scoped_refptr<DemuxerStream> demuxer_stream_;
-  StatisticsCB statistics_cb_;
+  AudioDecoderConfig config_;
   OpusMSDecoder* opus_decoder_;
 
-  // Decoded audio format.
-  int bits_per_channel_;
-  ChannelLayout channel_layout_;
-  int samples_per_second_;
+  // When the input timestamp is |start_input_timestamp_| the decoder needs to
+  // drop |config_.codec_delay()| frames.
+  base::TimeDelta start_input_timestamp_;
 
-  // Used for computing output timestamps.
-  scoped_ptr<AudioTimestampHelper> output_timestamp_helper_;
-  base::TimeDelta last_input_timestamp_;
-
-  // Number of output sample bytes to drop before generating
-  // output buffers.
-  int output_bytes_to_drop_;
-
-  ReadCB read_cb_;
-
-  int skip_samples_;
-
-  // Buffer for output from libopus.
-  scoped_array<int16> output_buffer_;
+  scoped_ptr<AudioDiscardHelper> discard_helper_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(OpusAudioDecoder);
 };

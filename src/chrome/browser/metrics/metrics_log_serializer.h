@@ -5,16 +5,18 @@
 #ifndef CHROME_BROWSER_METRICS_METRICS_LOG_SERIALIZER_H_
 #define CHROME_BROWSER_METRICS_METRICS_LOG_SERIALIZER_H_
 
+#include <vector>
+
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
-#include "chrome/common/metrics/metrics_log_manager.h"
+#include "components/metrics/metrics_log_manager.h"
 
 namespace base {
 class ListValue;
 }
 
 // Serializer for persisting metrics logs to prefs.
-class MetricsLogSerializer : public MetricsLogManager::LogSerializer {
+class MetricsLogSerializer : public metrics::MetricsLogManager::LogSerializer {
  public:
   // Used to produce a histogram that keeps track of the status of recalling
   // persisted per logs.
@@ -29,42 +31,39 @@ class MetricsLogSerializer : public MetricsLogManager::LogSerializer {
     CHECKSUM_STRING_CORRUPTION,  // Failed to recover checksum string using
                                  // GetAsString().
     DECODE_FAIL,            // Failed to decode log.
-    XML_PROTO_MISMATCH,     // The XML and protobuf logs have inconsistent data.
+    DEPRECATED_XML_PROTO_MISMATCH,  // The XML and protobuf logs have
+                                    // inconsistent data.
     END_RECALL_STATUS       // Number of bins to use to create the histogram.
   };
 
   MetricsLogSerializer();
   virtual ~MetricsLogSerializer();
 
-  // Implementation of MetricsLogManager::LogSerializer
+  // Implementation of metrics::MetricsLogManager::LogSerializer
   virtual void SerializeLogs(
-      const std::vector<MetricsLogManager::SerializedLog>& logs,
-      MetricsLogManager::LogType log_type) OVERRIDE;
+      const std::vector<metrics::MetricsLogManager::SerializedLog>& logs,
+      metrics::MetricsLogManager::LogType log_type) OVERRIDE;
   virtual void DeserializeLogs(
-      MetricsLogManager::LogType log_type,
-      std::vector<MetricsLogManager::SerializedLog>* logs) OVERRIDE;
+      metrics::MetricsLogManager::LogType log_type,
+      std::vector<metrics::MetricsLogManager::SerializedLog>* logs) OVERRIDE;
 
  private:
   // Encodes the textual log data from |local_list| and writes it to the given
-  // pref list, along with list size and checksum.  If |is_xml| is true, writes
-  // the XML data from |local_list|; otherwise writes the protobuf data.
-  // Logs will be stored starting with the most recent, and working backward
-  // until at least |list_length_limit| logs and |byte_limit| bytes of logs have
-  // been stored. At least one of those two arguments must be non-zero.
+  // pref list, along with list size and checksum.  Logs will be stored starting
+  // with the most recent, and working backward until at least
+  // |list_length_limit| logs and |byte_limit| bytes of logs have been
+  // stored. At least one of those two arguments must be non-zero.
   static void WriteLogsToPrefList(
-      const std::vector<MetricsLogManager::SerializedLog>& local_list,
-      bool is_xml,
+      const std::vector<metrics::MetricsLogManager::SerializedLog>& local_list,
       size_t list_length_limit,
       size_t byte_limit,
       base::ListValue* list);
 
   // Decodes and verifies the textual log data from |list|, populating
-  // |local_list| and returning a status code.  If |is_xml| is true, populates
-  // the XML data in |local_list|; otherwise populates the protobuf data.
+  // |local_list| and returning a status code.
   static LogReadStatus ReadLogsFromPrefList(
       const base::ListValue& list,
-      bool is_xml,
-      std::vector<MetricsLogManager::SerializedLog>* local_list);
+      std::vector<metrics::MetricsLogManager::SerializedLog>* local_list);
 
   FRIEND_TEST_ALL_PREFIXES(MetricsLogSerializerTest, EmptyLogList);
   FRIEND_TEST_ALL_PREFIXES(MetricsLogSerializerTest, SingleElementLogList);

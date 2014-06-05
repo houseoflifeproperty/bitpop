@@ -7,8 +7,8 @@
 
 #include "base/gtest_prod_util.h"
 #include "skia/ext/image_operations.h"
-#include "ui/base/ui_export.h"
 #include "ui/gfx/color_utils.h"
+#include "ui/gfx/gfx_export.h"
 #include "ui/gfx/shadow_value.h"
 #include "ui/gfx/skbitmap_operations.h"
 
@@ -17,7 +17,7 @@ class ImageSkia;
 class Rect;
 class Size;
 
-class UI_EXPORT ImageSkiaOperations {
+class GFX_EXPORT ImageSkiaOperations {
  public:
   // Create an image that is a blend of two others. The alpha argument
   // specifies the opacity of the second imag. The provided image must

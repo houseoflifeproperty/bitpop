@@ -13,6 +13,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "ui/aura/layout_manager.h"
 #include "ui/aura/window_observer.h"
+#include "ui/keyboard/keyboard_controller_observer.h"
 
 namespace aura {
 class Window;
@@ -26,12 +27,14 @@ class Widget;
 }
 
 namespace ash {
-namespace internal {
 
 // LayoutManager for the modal window container.
+// System modal windows which are centered on the screen will be kept centered
+// when the container size changes.
 class ASH_EXPORT SystemModalContainerLayoutManager
     : public aura::LayoutManager,
-      public aura::WindowObserver {
+      public aura::WindowObserver,
+      public keyboard::KeyboardControllerObserver {
  public:
   explicit SystemModalContainerLayoutManager(aura::Window* container);
   virtual ~SystemModalContainerLayoutManager();
@@ -54,6 +57,9 @@ class ASH_EXPORT SystemModalContainerLayoutManager
                                        intptr_t old) OVERRIDE;
   virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
 
+  // Overridden from keyboard::KeyboardControllerObserver:
+  virtual void OnKeyboardBoundsChanging(const gfx::Rect& new_bounds) OVERRIDE;
+
   // Can a given |window| receive and handle input events?
   bool CanWindowReceiveEvents(aura::Window* window);
 
@@ -75,6 +81,19 @@ class ASH_EXPORT SystemModalContainerLayoutManager
   void AddModalWindow(aura::Window* window);
   void RemoveModalWindow(aura::Window* window);
 
+  // Reposition the dialogs to become visible after the work area changes.
+  void PositionDialogsAfterWorkAreaResize();
+
+  // Get the usable bounds rectangle for enclosed dialogs.
+  gfx::Rect GetUsableDialogArea();
+
+  // Gets the new bounds for a |window| to use which are either centered (if the
+  // window was previously centered) or fitted to the screen.
+  gfx::Rect GetCenteredAndOrFittedBounds(const aura::Window* window);
+
+  // Returns true if |window_bounds| is centered.
+  bool DialogIsCentered(const gfx::Rect& window_bounds);
+
   aura::Window* modal_window() {
     return !modal_windows_.empty() ? modal_windows_.back() : NULL;
   }
@@ -92,7 +111,6 @@ class ASH_EXPORT SystemModalContainerLayoutManager
   DISALLOW_COPY_AND_ASSIGN(SystemModalContainerLayoutManager);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_WM_SYSTEM_MODAL_CONTAINER_LAYOUT_MANAGER_H_

@@ -13,8 +13,8 @@
 #include <map>
 #include "native_client/src/include/nacl_macros.h"
 #include "native_client/src/include/nacl_string.h"
-#include "native_client/src/trusted/plugin/utility.h"
 #include "native_client/src/shared/srpc/nacl_srpc.h"
+#include "ppapi/native_client/src/trusted/plugin/utility.h"
 
 namespace nacl {
 class DescWrapper;
@@ -40,7 +40,6 @@ class SrpcClient {
   //  The destructor closes the connection to sel_ldr.
   ~SrpcClient();
 
-  bool StartJSObjectProxy(Plugin* plugin, ErrorInfo* error_info);
   //  Test whether the SRPC service has a given method.
   bool HasMethod(const nacl::string& method_name);
   //  Invoke an SRPC method.

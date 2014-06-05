@@ -7,7 +7,7 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "jingle/glue/task_pump.h"
 #include "talk/base/sigslot.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -60,7 +60,7 @@ class WeakXmppClientTest : public testing::Test {
   }
 
   // Needed by TaskPump.
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
 
   scoped_ptr<jingle_glue::TaskPump> task_pump_;
   MockXmppDelegate mock_xmpp_delegate_;

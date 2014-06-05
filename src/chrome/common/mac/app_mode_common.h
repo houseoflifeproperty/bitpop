@@ -7,13 +7,57 @@
 
 #import <Foundation/Foundation.h>
 
-#include "base/file_path.h"
-#include "base/string16.h"
+#include "base/files/file_path.h"
+#include "base/strings/string16.h"
 
 // This file contains constants, interfaces, etc. which are common to the
 // browser application and the app mode loader (a.k.a. shim).
 
 namespace app_mode {
+
+// These are keys for an Apple Event ping that the app shim process sends to
+// Chrome to get confirmation that Chrome is alive. The main Chrome process
+// doesn't need to register any handlers for them -- the event is just sent for
+// the empty reply that's automatically returned by the system.
+const AEEventClass kAEChromeAppClass = 'cApp';
+const AEEventID kAEChromeAppPing = 'ping';
+
+// The IPC socket used to communicate between app shims and Chrome will be
+// created under a temporary directory with this name.
+extern const char kAppShimSocketShortName[];
+// A symlink to allow the app shim to find the socket will be created under the
+// user data dir with this name.
+extern const char kAppShimSocketSymlinkName[];
+
+// Special app mode id used for the App Launcher.
+extern const char kAppListModeId[];
+
+// The process ID of the Chrome process that launched the app shim.
+// The presence of this switch instructs the app shim to send LaunchApp with
+// launch_now = false. This associates the shim without launching the app.
+extern const char kLaunchedByChromeProcessId[];
+
+// Path to an app shim bundle. Indicates to Chrome that this shim attempted to
+// launch but failed.
+extern const char kAppShimError[];
+
+// Keys for specifying the file types handled by an app.
+extern NSString* const kCFBundleDocumentTypesKey;
+extern NSString* const kCFBundleTypeExtensionsKey;
+extern NSString* const kCFBundleTypeIconFileKey;
+extern NSString* const kCFBundleTypeNameKey;
+extern NSString* const kCFBundleTypeMIMETypesKey;
+extern NSString* const kCFBundleTypeRoleKey;
+extern NSString* const kBundleTypeRoleViewer;
+
+// The display name of the bundle as shown in Finder and the Dock. For localized
+// bundles, this overrides the bundle's file name.
+extern NSString* const kCFBundleDisplayNameKey;
+
+// The key specifying whether the display name should be localized. This makes
+// Finder look in localization folders in the app bundle for a display name.
+// (e.g. Content/Resources/en.lproj/)
+extern NSString* const kLSHasLocalizedDisplayNameKey;
 
 // The key under which the browser's bundle ID will be stored in the
 // app mode launcher bundle's Info.plist.
@@ -32,7 +76,10 @@ extern NSString* const kCrAppModeShortcutURLKey;
 extern NSString* const kCrAppModeUserDataDirKey;
 
 // Key for the app's extension path.
-extern NSString* const kCrAppModeExtensionPathKey;
+extern NSString* const kCrAppModeProfileDirKey;
+
+// Key for the app's profile display name.
+extern NSString* const kCrAppModeProfileNameKey;
 
 // When the Chrome browser is run, it stores its location in the defaults
 // system using this key.
@@ -47,7 +94,7 @@ extern NSString* const kShortcutBrowserBundleIDPlaceholder;
 
 // Current major/minor version numbers of |ChromeAppModeInfo| (defined below).
 const unsigned kCurrentChromeAppModeInfoMajorVersion = 1;
-const unsigned kCurrentChromeAppModeInfoMinorVersion = 0;
+const unsigned kCurrentChromeAppModeInfoMinorVersion = 1;
 
 // The structure used to pass information from the app mode loader to the
 // (browser) framework. This is versioned using major and minor version numbers,
@@ -69,32 +116,36 @@ struct ChromeAppModeInfo {
   char** argv;  // Required: v1.0
 
   // Versioned path to the browser which is being loaded.
-  FilePath chrome_versioned_path;  // Required: v1.0
+  base::FilePath chrome_versioned_path;  // Required: v1.0
 
   // Path to Chrome app bundle.
-  FilePath chrome_outer_bundle_path;  // Required: v1.0
+  base::FilePath chrome_outer_bundle_path;  // Required: v1.0
 
   // Information about the App Mode shortcut:
 
   // Path to the App Mode Loader application bundle that launched the process.
-  FilePath app_mode_bundle_path;  // Optional: v1.0
+  base::FilePath app_mode_bundle_path;  // Optional: v1.0
 
   // Short ID string, preferably derived from |app_mode_short_name|. Should be
   // safe for the file system.
   std::string app_mode_id;  // Required: v1.0
 
   // Unrestricted (e.g., several-word) UTF8-encoded name for the shortcut.
-  string16 app_mode_name;  // Optional: v1.0
+  base::string16 app_mode_name;  // Optional: v1.0
 
   // URL for the shortcut. Must be a valid URL.
   std::string app_mode_url;  // Required: v1.0
 
   // Path to the app's user data directory.
-  FilePath user_data_dir;
+  base::FilePath user_data_dir;
 
-  // Path to the app's extension.
-  FilePath extension_path;
+  // Directory of the profile associated with the app.
+  base::FilePath profile_dir;
 };
+
+// Check that the socket and its parent directory have the correct permissions
+// and are owned by the user.
+void VerifySocketPermissions(const base::FilePath& socket_path);
 
 }  // namespace app_mode
 

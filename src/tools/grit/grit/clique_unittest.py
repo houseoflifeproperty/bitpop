@@ -204,6 +204,48 @@ class MessageCliqueUnittest(unittest.TestCase):
     c = factory.MakeClique(message, translateable=True)
     self.failUnless(c.IsTranslateable())
 
+  def testEachCliqueKeptSorted(self):
+    factory = clique.UberClique()
+    msg_a = tclib.Message(text='hello', description='a')
+    msg_b = tclib.Message(text='hello', description='b')
+    msg_c = tclib.Message(text='hello', description='c')
+    # Insert out of order
+    clique_b = factory.MakeClique(msg_b, translateable=True)
+    clique_a = factory.MakeClique(msg_a, translateable=True)
+    clique_c = factory.MakeClique(msg_c, translateable=True)
+    clique_list = factory.cliques_[clique_a.GetId()]
+    self.failUnless(len(clique_list) == 3)
+    self.failUnless(clique_list[0] == clique_a)
+    self.failUnless(clique_list[1] == clique_b)
+    self.failUnless(clique_list[2] == clique_c)
+
+  def testBestCliqueSortIsStable(self):
+    factory = clique.UberClique()
+    text = 'hello'
+    msg_no_description = tclib.Message(text=text)
+    msg_id_description_a = tclib.Message(text=text, description='ID: a')
+    msg_id_description_b = tclib.Message(text=text, description='ID: b')
+    msg_description_x = tclib.Message(text=text, description='x')
+    msg_description_y = tclib.Message(text=text, description='y')
+    clique_id = msg_no_description.GetId()
+
+    # Insert in an order that tests all outcomes.
+    clique_no_description = factory.MakeClique(msg_no_description,
+                                               translateable=True)
+    self.failUnless(factory.BestClique(clique_id) == clique_no_description)
+    clique_id_description_b = factory.MakeClique(msg_id_description_b,
+                                                 translateable=True)
+    self.failUnless(factory.BestClique(clique_id) == clique_id_description_b)
+    clique_id_description_a = factory.MakeClique(msg_id_description_a,
+                                                 translateable=True)
+    self.failUnless(factory.BestClique(clique_id) == clique_id_description_a)
+    clique_description_y = factory.MakeClique(msg_description_y,
+                                              translateable=True)
+    self.failUnless(factory.BestClique(clique_id) == clique_description_y)
+    clique_description_x = factory.MakeClique(msg_description_x,
+                                              translateable=True)
+    self.failUnless(factory.BestClique(clique_id) == clique_description_x)
+
 
 class DummyCustomType(clique.CustomType):
   def Validate(self, message):

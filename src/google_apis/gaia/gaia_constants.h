@@ -18,12 +18,17 @@ extern const char kGaiaService[];  // uber token
 extern const char kPicasaService[];
 extern const char kSyncService[];
 extern const char kRemotingService[];
-extern const char kCloudPrintService[];
-extern const char kDeviceManagementService[];
+
+// OAuth2 scopes.
+extern const char kOAuth1LoginScope[];
+extern const char kOAuthWrapBridgeUserInfoScope[];
 extern const char kDeviceManagementServiceOAuth[];
-extern const char kCWSService[];
-extern const char kCWSNotificationScope[];
-extern const char kLSOService[];
+extern const char kAnyApiOAuth2Scope[];
+extern const char kChromeSyncOAuth2Scope[];
+extern const char kChromeSyncManagedOAuth2Scope[];
+extern const char kGoogleTalkOAuth2Scope[];
+extern const char kGoogleUserInfoEmail[];
+extern const char kGoogleUserInfoProfile[];
 
 // Used with uber auth tokens when needed.
 extern const char kGaiaSid[];
@@ -32,24 +37,12 @@ extern const char kGaiaOAuthToken[];
 extern const char kGaiaOAuthSecret[];
 extern const char kGaiaOAuthDuration[];
 extern const char kGaiaOAuth2LoginRefreshToken[];
-extern const char kGaiaOAuth2LoginAccessToken[];
 
 // Used to construct a channel ID for push messaging.
 extern const char kObfuscatedGaiaId[];
 
-// Used to build ClientOAuth requests.  These are the names of keys used in
-// the json dictionaries that are sent in the protocol.
+// Used by wallet sign in helper.
 extern const char kClientOAuthEmailKey[];
-extern const char kClientOAuthPasswordKey[];
-extern const char kClientOAuthScopesKey[];
-extern const char kClientOAuthOAuth2ClientIdKey[];
-extern const char kClientOAuthFriendlyDeviceNameKey[];
-extern const char kClientOAuthAcceptsChallengesKey[];
-extern const char kClientOAuthLocaleKey[];
-extern const char kClientOAuthFallbackNameKey[];
-extern const char kClientOAuthNameKey[];
-extern const char kClientOAuthChallengeTokenKey[];
-extern const char kClientOAuthchallengeReplyKey[];
 
 }  // namespace GaiaConstants
 

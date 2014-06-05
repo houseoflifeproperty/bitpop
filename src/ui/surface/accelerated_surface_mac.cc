@@ -11,8 +11,8 @@
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface.h"
+#include "ui/gl/io_surface_support_mac.h"
 #include "ui/gl/scoped_make_current.h"
-#include "ui/surface/io_surface_support_mac.h"
 
 AcceleratedSurface::AcceleratedSurface()
     : io_surface_id_(0),
@@ -29,9 +29,8 @@ bool AcceleratedSurface::Initialize(
     gfx::GpuPreference gpu_preference) {
   allocate_fbo_ = allocate_fbo;
 
-  // Ensure GL is initialized before trying to create an offscreen GL context.
-  if (!gfx::GLSurface::InitializeOneOff())
-    return false;
+  // GL should be initialized by content::SupportsCoreAnimationPlugins().
+  DCHECK_NE(gfx::GetGLImplementation(), gfx::kGLImplementationNone);
 
   // Drawing to IOSurfaces via OpenGL only works with Apple's GL and
   // not with the OSMesa software renderer.
@@ -39,8 +38,7 @@ bool AcceleratedSurface::Initialize(
       gfx::GetGLImplementation() != gfx::kGLImplementationAppleGL)
     return false;
 
-  gl_surface_ = gfx::GLSurface::CreateOffscreenGLSurface(
-      false, gfx::Size(1, 1));
+  gl_surface_ = gfx::GLSurface::CreateOffscreenGLSurface(gfx::Size(1, 1));
   if (!gl_surface_.get()) {
     Destroy();
     return false;
@@ -69,13 +67,6 @@ void AcceleratedSurface::Destroy() {
   // and any other contexts sharing resources with it, is. We don't want to
   // make the context current one last time here just in order to delete
   // these objects.
-
-  // Release the old TransportDIB in the browser.
-  if (!dib_free_callback_.is_null() && transport_dib_.get()) {
-    dib_free_callback_.Run(transport_dib_->id());
-  }
-  transport_dib_.reset();
-
   gl_context_ = NULL;
   gl_surface_ = NULL;
 }
@@ -111,23 +102,6 @@ void AcceleratedSurface::SwapBuffers() {
       // rendering results are seen by the other process.
       glFlush();
     }
-  } else if (transport_dib_.get() != NULL) {
-    // Pre-Mac OS X 10.6, fetch the rendered image from the current frame
-    // buffer and copy it into the TransportDIB.
-    // TODO(dspringer): There are a couple of options that can speed this up.
-    // First is to use async reads into a PBO, second is to use SPI that
-    // allows many tasks to access the same CGSSurface.
-    void* pixel_memory = transport_dib_->memory();
-    if (pixel_memory) {
-      // Note that glReadPixels does an implicit glFlush().
-      glReadPixels(0,
-                   0,
-                   real_surface_size_.width(),
-                   real_surface_size_.height(),
-                   GL_BGRA,  // This pixel format should have no conversion.
-                   GL_UNSIGNED_INT_8_8_8_8_REV,
-                   pixel_memory);
-    }
   }
 }
 
@@ -141,7 +115,7 @@ static void AddBooleanValue(CFMutableDictionaryRef dictionary,
 static void AddIntegerValue(CFMutableDictionaryRef dictionary,
                             const CFStringRef key,
                             int32 value) {
-  base::mac::ScopedCFTypeRef<CFNumberRef> number(
+  base::ScopedCFTypeRef<CFNumberRef> number(
       CFNumberCreate(NULL, kCFNumberSInt32Type, &value));
   CFDictionaryAddValue(dictionary, key, number.get());
 }
@@ -220,7 +194,7 @@ uint32 AcceleratedSurface::SetSurfaceSize(const gfx::Size& size) {
 
   IOSurfaceSupport* io_surface_support = IOSurfaceSupport::Initialize();
   if (!io_surface_support)
-    return 0;  // Caller can try using SetWindowSizeForTransportDIB().
+    return 0;
 
   ui::ScopedMakeCurrent make_current(gl_context_.get(), gl_surface_.get());
   if (!make_current.Succeeded())
@@ -240,7 +214,7 @@ uint32 AcceleratedSurface::SetSurfaceSize(const gfx::Size& size) {
 
   // Allocate a new IOSurface, which is the GPU resource that can be
   // shared across processes.
-  base::mac::ScopedCFTypeRef<CFMutableDictionaryRef> properties;
+  base::ScopedCFTypeRef<CFMutableDictionaryRef> properties;
   properties.reset(CFDictionaryCreateMutable(kCFAllocatorDefault,
                                              0,
                                              &kCFTypeDictionaryKeyCallBacks,
@@ -297,67 +271,4 @@ uint32 AcceleratedSurface::SetSurfaceSize(const gfx::Size& size) {
 
 uint32 AcceleratedSurface::GetSurfaceId() {
   return io_surface_id_;
-}
-
-TransportDIB::Handle AcceleratedSurface::SetTransportDIBSize(
-    const gfx::Size& size) {
-  if (surface_size_ == size) {
-    // Return an invalid handle to indicate to the caller that no new backing
-    // store allocation occurred.
-    return TransportDIB::DefaultHandleValue();
-  }
-  surface_size_ = size;
-  gfx::Size clamped_size = ClampToValidDimensions(size);
-  real_surface_size_ = clamped_size;
-
-  // Release the old TransportDIB in the browser.
-  if (!dib_free_callback_.is_null() && transport_dib_.get()) {
-    dib_free_callback_.Run(transport_dib_->id());
-  }
-  transport_dib_.reset();
-
-  // Ask the renderer to create a TransportDIB.
-  size_t dib_size =
-      clamped_size.width() * 4 * clamped_size.height();  // 4 bytes per pixel.
-  TransportDIB::Handle dib_handle;
-  if (!dib_alloc_callback_.is_null()) {
-    dib_alloc_callback_.Run(dib_size, &dib_handle);
-  }
-  if (!TransportDIB::is_valid_handle(dib_handle)) {
-    // If the allocator fails, it means the DIB was not created in the browser,
-    // so there is no need to run the deallocator here.
-    return TransportDIB::DefaultHandleValue();
-  }
-  transport_dib_.reset(TransportDIB::Map(dib_handle));
-  if (transport_dib_.get() == NULL) {
-    // TODO(dspringer): if the Map() fails, should the deallocator be run so
-    // that the DIB is deallocated in the browser?
-    return TransportDIB::DefaultHandleValue();
-  }
-
-  if (allocate_fbo_) {
-    DCHECK(gl_context_->IsCurrent(gl_surface_.get()));
-    // Set up the render buffers and reserve enough space on the card for the
-    // framebuffer texture.
-    GLenum target = GL_TEXTURE_RECTANGLE_ARB;
-    AllocateRenderBuffers(target, clamped_size);
-    glTexImage2D(target,
-                 0,  // mipmap level 0
-                 GL_RGBA8,  // internal pixel format
-                 clamped_size.width(),
-                 clamped_size.height(),
-                 0,  // 0 border
-                 GL_BGRA,  // Used for consistency
-                 GL_UNSIGNED_INT_8_8_8_8_REV,
-                 NULL);  // No data, just reserve room on the card.
-    SetupFrameBufferObject(target);
-  }
-  return transport_dib_->handle();
-}
-
-void AcceleratedSurface::SetTransportDIBAllocAndFree(
-    const base::Callback<void(size_t, TransportDIB::Handle*)>& allocator,
-    const base::Callback<void(TransportDIB::Id)>& deallocator) {
-  dib_alloc_callback_ = allocator;
-  dib_free_callback_ = deallocator;
 }

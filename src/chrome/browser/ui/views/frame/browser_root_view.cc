@@ -4,23 +4,20 @@
 
 #include "chrome/browser/ui/views/frame/browser_root_view.h"
 
-#include "base/auto_reset.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
+#include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
+#include "chrome/browser/defaults.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/omnibox/location_bar.h"
+#include "chrome/browser/ui/browser_commands.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/views/frame/browser_frame.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
-#include "chrome/browser/ui/views/immersive_mode_controller.h"
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
-#include "chrome/common/chrome_notification_types.h"
-#include "grit/chromium_strings.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "chrome/browser/ui/views/touch_uma/touch_uma.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
-#include "ui/base/l10n/l10n_util.h"
 
 // static
 const char BrowserRootView::kViewClassName[] =
@@ -30,7 +27,6 @@ BrowserRootView::BrowserRootView(BrowserView* browser_view,
                                  views::Widget* widget)
     : views::internal::RootView(widget),
       browser_view_(browser_view),
-      scheduling_immersive_reveal_painting_(false),
       forwarding_to_tab_strip_(false) { }
 
 bool BrowserRootView::GetDropFormats(
@@ -52,7 +48,7 @@ bool BrowserRootView::CanDrop(const ui::OSExchangeData& data) {
     return false;
 
   // If there is a URL, we'll allow the drop.
-  if (data.HasURL())
+  if (data.HasURL(ui::OSExchangeData::CONVERT_FILENAMES))
     return true;
 
   // If there isn't a URL, see if we can 'paste and go'.
@@ -99,17 +95,19 @@ int BrowserRootView::OnPerformDrop(const ui::DropTargetEvent& event) {
   // do this as the TabStrip doesn't know about the autocomplete edit and needs
   // to know about it to handle 'paste and go'.
   GURL url;
-  string16 title;
+  base::string16 title;
   ui::OSExchangeData mapped_data;
-  if (!event.data().GetURLAndTitle(&url, &title) || !url.is_valid()) {
+  if (!event.data().GetURLAndTitle(
+           ui::OSExchangeData::CONVERT_FILENAMES, &url, &title) ||
+      !url.is_valid()) {
     // The url isn't valid. Use the paste and go url.
     if (GetPasteAndGoURL(event.data(), &url))
-      mapped_data.SetURL(url, string16());
+      mapped_data.SetURL(url, base::string16());
     // else case: couldn't extract a url or 'paste and go' url. This ends up
     // passing through an ui::OSExchangeData with nothing in it. We need to do
     // this so that the tab strip cleans up properly.
   } else {
-    mapped_data.SetURL(url, string16());
+    mapped_data.SetURL(url, base::string16());
   }
   forwarding_to_tab_strip_ = false;
   scoped_ptr<ui::DropTargetEvent> mapped_event(
@@ -117,34 +115,47 @@ int BrowserRootView::OnPerformDrop(const ui::DropTargetEvent& event) {
   return tabstrip()->OnPerformDrop(*mapped_event);
 }
 
-void BrowserRootView::GetAccessibleState(ui::AccessibleViewState* state) {
-  views::internal::RootView::GetAccessibleState(state);
-  state->name = l10n_util::GetStringUTF16(IDS_PRODUCT_NAME);
-}
-
-std::string BrowserRootView::GetClassName() const {
+const char* BrowserRootView::GetClassName() const {
   return kViewClassName;
 }
 
-void BrowserRootView::SchedulePaintInRect(const gfx::Rect& rect) {
-  views::internal::RootView::SchedulePaintInRect(rect);
+bool BrowserRootView::OnMouseWheel(const ui::MouseWheelEvent& event) {
+  if (browser_defaults::kScrollEventChangesTab) {
+    // Switch to the left/right tab if the wheel-scroll happens over the
+    // tabstrip, or the empty space beside the tabstrip.
+    views::View* hit_view = GetEventHandlerForPoint(event.location());
+    views::NonClientView* non_client = GetWidget()->non_client_view();
+    if (tabstrip()->Contains(hit_view) ||
+        hit_view == non_client->frame_view()) {
+      int scroll_offset = abs(event.y_offset()) > abs(event.x_offset()) ?
+          event.y_offset() : -event.x_offset();
+      Browser* browser = browser_view_->browser();
+      TabStripModel* model = browser->tab_strip_model();
+      // Switch to the next tab only if not at the end of the tab-strip.
+      if (scroll_offset < 0 && model->active_index() + 1 < model->count()) {
+        chrome::SelectNextTab(browser);
+        return true;
+      }
 
-  // This function becomes reentrant when redirecting a paint-request to the
-  // reveal-view in immersive mode (because paint-requests all bubble up to the
-  // root-view). So return early in such cases.
-  if (scheduling_immersive_reveal_painting_)
-    return;
-
-  if (browser_view_ &&
-      browser_view_->immersive_mode_controller() &&
-      browser_view_->immersive_mode_controller()->IsRevealed()) {
-    views::View* reveal =
-        browser_view_->immersive_mode_controller()->reveal_view();
-    if (reveal) {
-      base::AutoReset<bool> reset(&scheduling_immersive_reveal_painting_, true);
-      reveal->SchedulePaintInRect(rect);
+      // Switch to the previous tab only if not at the beginning of the
+      // tab-strip.
+      if (scroll_offset > 0 && model->active_index() > 0) {
+        chrome::SelectPreviousTab(browser);
+        return true;
+      }
     }
   }
+  return RootView::OnMouseWheel(event);
+}
+
+void BrowserRootView::DispatchGestureEvent(ui::GestureEvent* event) {
+  if (event->type() == ui::ET_GESTURE_TAP &&
+      event->location().y() <= 0 &&
+      event->location().x() <= browser_view_->GetBounds().width()) {
+    TouchUMA::RecordGestureAction(TouchUMA::GESTURE_ROOTVIEWTOP_TAP);
+  }
+
+  RootView::DispatchGestureEvent(event);
 }
 
 bool BrowserRootView::ShouldForwardToTabStrip(
@@ -177,15 +188,15 @@ bool BrowserRootView::GetPasteAndGoURL(const ui::OSExchangeData& data,
   if (!data.HasString())
     return false;
 
-  string16 text;
+  base::string16 text;
   if (!data.GetString(&text) || text.empty())
     return false;
   text = AutocompleteMatch::SanitizeString(text);
 
   AutocompleteMatch match;
   AutocompleteClassifierFactory::GetForProfile(
-      browser_view_->browser()->profile())->Classify(text, string16(), false,
-                                                     false, &match, NULL);
+      browser_view_->browser()->profile())->Classify(
+          text, false, false, AutocompleteInput::INVALID_SPEC, &match, NULL);
   if (!match.destination_url.is_valid())
     return false;
 

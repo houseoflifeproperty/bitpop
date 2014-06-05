@@ -55,7 +55,7 @@ typedef struct {
     int64_t apetag_start;
 } MPCContext;
 
-static inline int64_t bs_get_v(uint8_t **bs)
+static inline int64_t bs_get_v(const uint8_t **bs)
 {
     int64_t v = 0;
     int br = 0;
@@ -75,8 +75,8 @@ static inline int64_t bs_get_v(uint8_t **bs)
 
 static int mpc8_probe(AVProbeData *p)
 {
-    uint8_t *bs = p->buf + 4;
-    uint8_t *bs_end = bs + p->buf_size;
+    const uint8_t *bs = p->buf + 4;
+    const uint8_t *bs_end = bs + p->buf_size;
     int64_t size;
 
     if (p->buf_size < 16)
@@ -92,7 +92,7 @@ static int mpc8_probe(AVProbeData *p)
         if (size < 2)
             return 0;
         if (bs + size - 2 >= bs_end)
-            return AVPROBE_SCORE_MAX / 4 - 1; //seems to be valid MPC but no header yet
+            return AVPROBE_SCORE_EXTENSION - 1; // seems to be valid MPC but no header yet
         if (header_found) {
             if (size < 11 || size > 28)
                 return 0;
@@ -139,10 +139,19 @@ static void mpc8_parse_seektable(AVFormatContext *s, int64_t off)
     int i, t, seekd;
     GetBitContext gb;
 
+    if (s->nb_streams == 0) {
+        av_log(s, AV_LOG_ERROR, "No stream added before parsing seek table\n");
+        return;
+    }
+
     avio_seek(s->pb, off, SEEK_SET);
     mpc8_get_chunk_header(s->pb, &tag, &size);
     if(tag != TAG_SEEKTABLE){
         av_log(s, AV_LOG_ERROR, "No seek table at given position\n");
+        return;
+    }
+    if (size > INT_MAX/10 || size<=0) {
+        av_log(s, AV_LOG_ERROR, "Bad seek table size\n");
         return;
     }
     if(!(buf = av_malloc(size + FF_INPUT_BUFFER_PADDING_SIZE)))
@@ -232,8 +241,8 @@ static int mpc8_read_header(AVFormatContext *s)
     st->codec->codec_id = AV_CODEC_ID_MUSEPACK8;
     st->codec->bits_per_coded_sample = 16;
 
-    st->codec->extradata_size = 2;
-    st->codec->extradata = av_mallocz(st->codec->extradata_size + FF_INPUT_BUFFER_PADDING_SIZE);
+    if (ff_alloc_extradata(st->codec, 2))
+        return AVERROR(ENOMEM);
     avio_read(pb, st->codec->extradata, st->codec->extradata_size);
 
     st->codec->channels = (st->codec->extradata[1] >> 4) + 1;

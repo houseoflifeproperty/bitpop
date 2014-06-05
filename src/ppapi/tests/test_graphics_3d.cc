@@ -10,11 +10,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "ppapi/c/dev/ppb_testing_dev.h"
 #include "ppapi/c/ppb_opengles2.h"
 #include "ppapi/cpp/graphics_3d.h"
 #include "ppapi/cpp/module.h"
 #include "ppapi/lib/gl/gles2/gl2ext_ppapi.h"
+#include "ppapi/tests/test_case.h"
 #include "ppapi/tests/test_utils.h"
 #include "ppapi/tests/testing_instance.h"
 
@@ -30,9 +30,10 @@ bool TestGraphics3D::Init() {
 }
 
 void TestGraphics3D::RunTests(const std::string& filter) {
-  RUN_TEST(FramePPAPI, filter);
-  RUN_TEST(FrameGL, filter);
-  RUN_TEST(ExtensionsGL, filter);
+  RUN_CALLBACK_TEST(TestGraphics3D, FramePPAPI, filter);
+  RUN_CALLBACK_TEST(TestGraphics3D, FrameGL, filter);
+  RUN_CALLBACK_TEST(TestGraphics3D, ExtensionsGL, filter);
+  RUN_CALLBACK_TEST(TestGraphics3D, BadResource, filter);
 }
 
 std::string TestGraphics3D::TestFramePPAPI() {
@@ -58,7 +59,7 @@ std::string TestGraphics3D::TestFramePPAPI() {
     return error;
 
   int32_t rv = SwapBuffersSync(&context);
-  ASSERT_EQ(rv, PP_OK);
+  ASSERT_EQ(PP_OK, rv);
 
   PASS();
 }
@@ -86,7 +87,7 @@ std::string TestGraphics3D::TestFrameGL() {
     return error;
 
   int32_t rv = SwapBuffersSync(&context);
-  ASSERT_EQ(rv, PP_OK);
+  ASSERT_EQ(PP_OK, rv);
 
   PASS();
 }
@@ -110,13 +111,13 @@ std::string TestGraphics3D::TestExtensionsGL() {
   // available, try a couple of trivial calls.  This test is not intended
   // to be exhaustive; check the source can compile, link, and run without
   // crashing.
-  ASSERT_NE(glGetString(GL_VERSION), NULL);
+  ASSERT_NE(NULL, glGetString(GL_VERSION));
   const char* ext = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
   if (strstr(ext, "GL_EXT_occlusion_query_boolean")) {
     GLuint a_query;
     GLboolean is_a_query;
     glGenQueriesEXT(1, &a_query);
-    ASSERT_NE(a_query, 0);
+    ASSERT_NE(0, a_query);
     glBeginQueryEXT(GL_ANY_SAMPLES_PASSED_EXT, a_query);
     is_a_query = glIsQueryEXT(a_query);
     ASSERT_EQ(is_a_query, GL_TRUE);
@@ -129,18 +130,15 @@ std::string TestGraphics3D::TestExtensionsGL() {
   glSetCurrentContextPPAPI(kInvalidContext);
 
   int32_t rv = SwapBuffersSync(&context);
-  ASSERT_EQ(rv, PP_OK);
+  ASSERT_EQ(PP_OK, rv);
 
   PASS();
 }
 
 int32_t TestGraphics3D::SwapBuffersSync(pp::Graphics3D* context) {
-  TestCompletionCallback callback(instance_->pp_instance(), true);
-  int32_t rv = context->SwapBuffers(callback);
-  if (rv != PP_OK_COMPLETIONPENDING)
-    return rv;
-
-  return callback.WaitForResult();
+  TestCompletionCallback callback(instance_->pp_instance(), callback_type());
+  callback.WaitForResult(context->SwapBuffers(callback.GetCallback()));
+  return callback.result();
 }
 
 std::string TestGraphics3D::CheckPixelPPAPI(
@@ -166,6 +164,35 @@ std::string TestGraphics3D::CheckPixelGL(
   ASSERT_EQ(pixel_color[1], expected_color[1]);
   ASSERT_EQ(pixel_color[2], expected_color[2]);
   ASSERT_EQ(pixel_color[3], expected_color[3]);
+  PASS();
+}
+
+std::string TestGraphics3D::TestBadResource() {
+  // The point of this test is mostly just to make sure that we don't crash and
+  // provide reasonable (error) results when the resource is bad.
+  const PP_Resource kBadResource = 123;
+
+  // Access OpenGLES API through the PPAPI interface.
+  opengl_es2_->ClearColor(kBadResource, 0.0f, 0.0f, 0.0f, 0.0f);
+  opengl_es2_->Clear(kBadResource, GL_COLOR_BUFFER_BIT);
+  ASSERT_EQ(0, opengl_es2_->GetError(kBadResource));
+  ASSERT_EQ(NULL, opengl_es2_->GetString(kBadResource, GL_VERSION));
+  ASSERT_EQ(-1, opengl_es2_->GetUniformLocation(kBadResource, 0, NULL));
+  ASSERT_EQ(GL_FALSE, opengl_es2_->IsBuffer(kBadResource, 0));
+  ASSERT_EQ(0, opengl_es2_->CheckFramebufferStatus(kBadResource,
+                                                   GL_DRAW_FRAMEBUFFER));
+
+  glSetCurrentContextPPAPI(kBadResource);
+  glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+  glClear(GL_COLOR_BUFFER_BIT);
+  ASSERT_EQ(0, glGetError());
+  ASSERT_EQ(NULL, glGetString(GL_VERSION));
+  ASSERT_EQ(-1, glGetUniformLocation(0, NULL));
+  ASSERT_EQ(GL_FALSE, glIsBuffer(0));
+  ASSERT_EQ(0, glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER));
+  glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+  glClear(GL_COLOR_BUFFER_BIT);
+
   PASS();
 }
 

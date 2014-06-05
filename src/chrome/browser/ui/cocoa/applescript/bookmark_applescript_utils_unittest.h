@@ -5,14 +5,13 @@
 #ifndef CHROME_BROWSER_UI_COCOA_APPLESCRIPT_BOOKMARK_APPLESCRIPT_UTILS_UNITTEST_H_
 #define CHROME_BROWSER_UI_COCOA_APPLESCRIPT_BOOKMARK_APPLESCRIPT_UTILS_UNITTEST_H_
 
-#import <objc/objc-runtime.h>
 #import <Cocoa/Cocoa.h>
+#import <objc/objc-runtime.h>
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #import "chrome/browser/app_controller_mac.h"
 #import "chrome/browser/ui/cocoa/applescript/bookmark_folder_applescript.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
-#include "chrome/test/base/model_test_utils.h"
 #include "testing/platform_test.h"
 
 class BookmarkModel;
@@ -43,11 +42,10 @@ class BookmarkAppleScriptTest : public CocoaProfileTest {
   virtual ~BookmarkAppleScriptTest();
   virtual void SetUp() OVERRIDE;
  private:
-  scoped_nsobject<FakeAppDelegate> appDelegate_;
+  base::scoped_nsobject<FakeAppDelegate> appDelegate_;
+
  protected:
-  scoped_nsobject<BookmarkFolderAppleScript> bookmarkBar_;
-  BookmarkModel& model();
+  base::scoped_nsobject<BookmarkFolderAppleScript> bookmarkBar_;
 };
 
-#endif
-// CHROME_BROWSER_UI_COCOA_APPLESCRIPT_BOOKMARK_APPLESCRIPT_UTILS_UNITTEST_H_
+#endif  // CHROME_BROWSER_UI_COCOA_APPLESCRIPT_BOOKMARK_APPLESCRIPT_UTILS_UNITTEST_H_

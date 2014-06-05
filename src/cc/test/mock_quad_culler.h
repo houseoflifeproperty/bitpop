@@ -6,31 +6,53 @@
 #define CC_TEST_MOCK_QUAD_CULLER_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "cc/draw_quad.h"
-#include "cc/quad_sink.h"
-#include "cc/render_pass.h"
+#include "cc/layers/quad_sink.h"
+#include "cc/quads/draw_quad.h"
+#include "cc/quads/render_pass.h"
 
 namespace cc {
 
 class MockQuadCuller : public QuadSink {
-public:
-    MockQuadCuller();
-    virtual ~MockQuadCuller();
+ public:
+  MockQuadCuller();
+  virtual ~MockQuadCuller();
 
-    MockQuadCuller(QuadList& externalQuadList, SharedQuadStateList& externalSharedQuadStateList);
+  explicit MockQuadCuller(RenderPass* external_render_pass);
 
-    virtual bool append(scoped_ptr<DrawQuad> newQuad, AppendQuadsData&) OVERRIDE;
+  // QuadSink interface.
+  virtual SharedQuadState* CreateSharedQuadState() OVERRIDE;
+  virtual gfx::Rect UnoccludedContentRect(const gfx::Rect& content_rect,
+                                          const gfx::Transform& draw_transform)
+      OVERRIDE;
+  virtual gfx::Rect UnoccludedContributingSurfaceContentRect(
+      const gfx::Rect& content_rect,
+      const gfx::Transform& draw_transform) OVERRIDE;
+  virtual void Append(scoped_ptr<DrawQuad> draw_quad) OVERRIDE;
 
-    virtual SharedQuadState* useSharedQuadState(scoped_ptr<SharedQuadState> passSharedQuadState) OVERRIDE;
+  const QuadList& quad_list() const { return active_render_pass_->quad_list; }
+  const SharedQuadStateList& shared_quad_state_list() const {
+    return active_render_pass_->shared_quad_state_list;
+  }
 
-    const QuadList& quadList() const { return m_activeQuadList; };
-    const SharedQuadStateList& sharedQuadStateList() const { return m_activeSharedQuadStateList; };
+  void set_occluded_target_rect(const gfx::Rect& occluded) {
+    occluded_target_rect_ = occluded;
+  }
 
-private:
-    QuadList& m_activeQuadList;
-    QuadList m_quadListStorage;
-    SharedQuadStateList& m_activeSharedQuadStateList;
-    SharedQuadStateList m_sharedQuadStateStorage;
+  void set_occluded_target_rect_for_contributing_surface(
+      const gfx::Rect& occluded) {
+    occluded_target_rect_for_contributing_surface_ = occluded;
+  }
+
+  void clear_lists() {
+    active_render_pass_->quad_list.clear();
+    active_render_pass_->shared_quad_state_list.clear();
+  }
+
+ private:
+  scoped_ptr<RenderPass> render_pass_storage_;
+  RenderPass* active_render_pass_;
+  gfx::Rect occluded_target_rect_;
+  gfx::Rect occluded_target_rect_for_contributing_surface_;
 };
 
 }  // namespace cc

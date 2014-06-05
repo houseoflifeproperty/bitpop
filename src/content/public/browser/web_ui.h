@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "content/public/common/page_transition_types.h"
 #include "ui/base/layout.h"
@@ -41,7 +41,7 @@ class CONTENT_EXPORT WebUI {
 
   // Returns JavaScript code that, when executed, calls the function specified
   // by |function_name| with the arguments specified in |arg_list|.
-  static string16 GetJavascriptCall(
+  static base::string16 GetJavascriptCall(
       const std::string& function_name,
       const std::vector<const base::Value*>& arg_list);
 
@@ -57,26 +57,11 @@ class CONTENT_EXPORT WebUI {
   // Javascript.
   virtual ui::ScaleFactor GetDeviceScaleFactor() const = 0;
 
-  // Returns true if the favicon should be hidden for the current tab.
-  virtual bool ShouldHideFavicon() const = 0;
-  virtual void HideFavicon() = 0;
-
-  // Returns true if the location bar should be focused by default rather than
-  // the page contents. Some pages will want to use this to encourage the user
-  // to type in the URL bar.
-  virtual bool ShouldFocusLocationBarByDefault() const = 0;
-  virtual void FocusLocationBarByDefault() = 0;
-
-  // Returns true if the page's URL should be hidden. Some Web UI pages
-  // like the new tab page will want to hide it.
-  virtual bool ShouldHideURL() const = 0;
-  virtual void HideURL() = 0;
-
   // Gets a custom tab title provided by the Web UI. If there is no title
   // override, the string will be empty which should trigger the default title
   // behavior for the tab.
-  virtual const string16& GetOverriddenTitle() const = 0;
-  virtual void OverrideTitle(const string16& title) = 0;
+  virtual const base::string16& GetOverriddenTitle() const = 0;
+  virtual void OverrideTitle(const base::string16& title) = 0;
 
   // Returns the transition type that should be used for link clicks on this
   // Web UI. This will default to LINK but may be overridden.
@@ -88,8 +73,10 @@ class CONTENT_EXPORT WebUI {
   virtual int GetBindings() const = 0;
   virtual void SetBindings(int bindings) = 0;
 
-  // Sets the path for the iframe if this WebUI is embedded in a page.
-  virtual void SetFrameXPath(const std::string& xpath) = 0;
+  // Overrides which frame gets JavaScript messages; this is useful if this
+  // WebUI is embedded in a page. If no override is set, the main frame will
+  // receive the JavaScript messages.
+  virtual void OverrideJavaScriptFrame(const std::string& frame_name) = 0;
 
   // Takes ownership of |handler|, which will be destroyed when the WebUI is.
   virtual void AddMessageHandler(WebUIMessageHandler* handler) = 0;

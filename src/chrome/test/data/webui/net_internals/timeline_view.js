@@ -407,7 +407,7 @@ TEST_F('NetInternalsTest', 'netInternalsTimelineViewDegenerate', function() {
 TEST_F('NetInternalsTest', 'netInternalsTimelineViewNoEvents', function() {
   // Click the button to clear all the captured events, and then switch to
   // timeline
-  $(CaptureStatusView.RESET_BUTTON_ID).click();
+  $(CaptureView.RESET_BUTTON_ID).click();
   NetInternalsTest.switchToView('timeline');
 
   // Set startTime/endTime for sanity checks.

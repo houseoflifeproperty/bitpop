@@ -4,24 +4,23 @@
 
 #include "win8/metro_driver/stdafx.h"
 #include "win8/metro_driver/chrome_app_view.h"
-#include "win8/metro_driver/direct3d_helper.h"
 
-#include <algorithm>
+#include <corewindow.h>
 #include <windows.applicationModel.datatransfer.h>
 #include <windows.foundation.h>
 
+#include <algorithm>
+
 #include "base/bind.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/win/metro.h"
-
-#include "ui/gfx/native_widget_types.h"
-#include "ui/metro_viewer/metro_viewer_messages.h"
-
 // This include allows to send WM_SYSCOMMANDs to chrome.
 #include "chrome/app/chrome_command_ids.h"
+#include "ui/base/ui_base_switches.h"
+#include "ui/gfx/native_widget_types.h"
+#include "ui/metro_viewer/metro_viewer_messages.h"
 #include "win8/metro_driver/metro_driver.h"
 #include "win8/metro_driver/winrt_utils.h"
-#include "ui/base/ui_base_switches.h"
 
 typedef winfoundtn::ITypedEventHandler<
     winapp::Core::CoreApplicationView*,
@@ -150,12 +149,13 @@ void SendMnemonic(WORD mnemonic_char, Modifier modifiers, bool extended,
 // ICoreApplicationExit::Exit function in a background delayed task which
 // ensures that chrome exits.
 void MetroExit(bool send_alt_f4_mnemonic) {
-  if (send_alt_f4_mnemonic && globals.core_window == ::GetForegroundWindow()) {
+  if (send_alt_f4_mnemonic && globals.view &&
+      globals.view->core_window_hwnd() == ::GetForegroundWindow()) {
     DVLOG(1) << "We are in the foreground. Exiting via Alt F4";
     SendMnemonic(VK_F4, ALT, false, false);
     DWORD core_window_process_id = 0;
     DWORD core_window_thread_id = GetWindowThreadProcessId(
-        globals.core_window, &core_window_process_id);
+        globals.view->core_window_hwnd(), &core_window_process_id);
     if (core_window_thread_id != ::GetCurrentThreadId()) {
       globals.appview_msg_loop->PostDelayedTask(
         FROM_HERE,
@@ -164,13 +164,12 @@ void MetroExit(bool send_alt_f4_mnemonic) {
     }
   } else {
     globals.app_exit->Exit();
-    globals.core_window = NULL;
   }
 }
 
 void AdjustToFitWindow(HWND hwnd, int flags) {
   RECT rect = {0};
-  ::GetWindowRect(globals.core_window, &rect);
+  ::GetWindowRect(globals.view->core_window_hwnd() , &rect);
   int cx = rect.right - rect.left;
   int cy = rect.bottom - rect.top;
 
@@ -220,9 +219,9 @@ void AdjustFrameWindowStyleForMetro(HWND hwnd) {
 
   // Subclass the wndproc of the frame window, if it's not already there.
   if (::GetProp(hwnd, kChromeSubclassWindowProp) == NULL) {
-    WNDPROC old_chrome_proc = reinterpret_cast<WNDPROC>(
-        ::SetWindowLong(hwnd, GWL_WNDPROC,
-                        reinterpret_cast<long>(ChromeWindowProc)));
+    WNDPROC old_chrome_proc =
+        reinterpret_cast<WNDPROC>(::SetWindowLongPtr(
+            hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(ChromeWindowProc)));
     ::SetProp(hwnd, kChromeSubclassWindowProp, old_chrome_proc);
   }
   AdjustToFitWindow(hwnd, SWP_FRAMECHANGED | SWP_NOACTIVATE);
@@ -436,7 +435,7 @@ void MetroUnsnap() {
 extern "C" __declspec(dllexport)
 HWND GetRootWindow() {
   DVLOG(1) << __FUNCTION__;
-  return globals.core_window;
+  return globals.view->core_window_hwnd();
 }
 
 extern "C" __declspec(dllexport)
@@ -637,9 +636,10 @@ DWORD WINAPI HostMainThreadProc(void*) {
   globals.metro_command_line_switches =
       winrt_utils::ReadArgumentsFromPinnedTaskbarShortcut();
 
-  globals.g_core_proc = reinterpret_cast<WNDPROC>(
-      ::SetWindowLong(globals.core_window, GWL_WNDPROC,
-                      reinterpret_cast<long>(ChromeAppView::CoreWindowProc)));
+  globals.g_core_proc =
+      reinterpret_cast<WNDPROC>(::SetWindowLongPtr(
+          globals.view->core_window_hwnd(), GWLP_WNDPROC,
+          reinterpret_cast<LONG_PTR>(ChromeAppView::CoreWindowProc)));
   DWORD exit_code = globals.host_main(globals.host_context);
 
   DVLOG(1) << "host thread done, exit_code=" << exit_code;
@@ -649,7 +649,8 @@ DWORD WINAPI HostMainThreadProc(void*) {
 
 ChromeAppView::ChromeAppView()
     : osk_visible_notification_received_(false),
-      osk_offset_adjustment_(0) {
+      osk_offset_adjustment_(0),
+      core_window_hwnd_(NULL) {
   globals.previous_state =
       winapp::Activation::ApplicationExecutionState_NotRunning;
 }
@@ -662,7 +663,6 @@ IFACEMETHODIMP
 ChromeAppView::Initialize(winapp::Core::ICoreApplicationView* view) {
   view_ = view;
   DVLOG(1) << __FUNCTION__;
-  globals.main_thread_id = ::GetCurrentThreadId();
 
   HRESULT hr = view_->add_Activated(mswr::Callback<ActivatedHandler>(
       this, &ChromeAppView::OnActivate).Get(),
@@ -676,7 +676,14 @@ ChromeAppView::SetWindow(winui::Core::ICoreWindow* window) {
   window_ = window;
   DVLOG(1) << __FUNCTION__;
 
-  HRESULT hr = url_launch_handler_.Initialize();
+  // Retrieve the native window handle via the interop layer.
+  mswr::ComPtr<ICoreWindowInterop> interop;
+  HRESULT hr = window->QueryInterface(interop.GetAddressOf());
+  CheckHR(hr);
+  hr = interop->get_WindowHandle(&core_window_hwnd_);
+  CheckHR(hr);
+
+  hr = url_launch_handler_.Initialize();
   CheckHR(hr, "Failed to initialize url launch handler.");
   // Register for size notifications.
   hr = window_->add_SizeChanged(mswr::Callback<SizeChangedHandler>(
@@ -746,7 +753,7 @@ ChromeAppView::Load(HSTRING entryPoint) {
 void RunMessageLoop(winui::Core::ICoreDispatcher* dispatcher) {
   // We're entering a nested message loop, let's allow dispatching
   // tasks while we're in there.
-  MessageLoop::current()->SetNestableTasksAllowed(true);
+  base::MessageLoop::current()->SetNestableTasksAllowed(true);
 
   // Enter main core message loop. There are several ways to exit it
   // Nicely:
@@ -758,7 +765,7 @@ void RunMessageLoop(winui::Core::ICoreDispatcher* dispatcher) {
           ::CoreProcessEventsOption_ProcessUntilQuit);
 
   // Wind down the thread's chrome message loop.
-  MessageLoop::current()->Quit();
+  base::MessageLoop::current()->Quit();
 }
 
 void ChromeAppView::CheckForOSKActivation() {
@@ -770,7 +777,7 @@ void ChromeAppView::CheckForOSKActivation() {
   // process. If yes then fire the notification once for when the OSK is shown
   // and once for when it is hidden.
   // TODO(ananta)
-  // Take this out when the documented input pane notifcation issues are
+  // Take this out when the documented input pane notification issues are
   // addressed.
   HWND osk = ::FindWindow(kOSKClassName, NULL);
   if (::IsWindow(osk)) {
@@ -791,10 +798,9 @@ void ChromeAppView::CheckForOSKActivation() {
       }
     }
   }
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
-      base::Bind(&ChromeAppView::CheckForOSKActivation,
-                 base::Unretained(this)),
+      base::Bind(&ChromeAppView::CheckForOSKActivation, base::Unretained(this)),
       base::TimeDelta::FromMilliseconds(kCheckOSKDelayMs));
 }
 
@@ -813,7 +819,7 @@ ChromeAppView::Run() {
   }
 
   // Create a message loop to allow message passing into this thread.
-  MessageLoop msg_loop(MessageLoop::TYPE_UI);
+  base::MessageLoopForUI msg_loop;
 
   // Announce our message loop to the world.
   globals.appview_msg_loop = msg_loop.message_loop_proxy();
@@ -919,11 +925,6 @@ HRESULT ChromeAppView::OnActivate(winapp::Core::ICoreApplicationView*,
     return S_OK;
   }
 
-  globals.core_window =
-      winrt_utils::FindCoreWindow(globals.main_thread_id, 10);
-
-  DVLOG(1) << "CoreWindow found: " << std::hex << globals.core_window;
-
   if (!globals.host_thread) {
     DWORD chrome_ui_thread_id = 0;
     globals.host_thread =
@@ -936,7 +937,7 @@ HRESULT ChromeAppView::OnActivate(winapp::Core::ICoreApplicationView*,
     }
   }
 
-  if (RegisterHotKey(globals.core_window, kFlipWindowsHotKeyId,
+  if (RegisterHotKey(core_window_hwnd_, kFlipWindowsHotKeyId,
                      MOD_CONTROL, VK_F12)) {
     DVLOG(1) << "Registered flip window hotkey.";
   } else {
@@ -1087,8 +1088,8 @@ HRESULT ChromeAppView::OnShareDataRequested(
     return E_FAIL;
   }
 
-  string16 current_title(current_tab_info.title);
-  string16 current_url(current_tab_info.url);
+  base::string16 current_title(current_tab_info.title);
+  base::string16 current_url(current_tab_info.url);
 
   LocalFree(current_tab_info.title);
   LocalFree(current_tab_info.url);

@@ -15,8 +15,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
-#include "base/string16.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browsing_data/browsing_data_appcache_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_database_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_file_system_helper.h"
@@ -25,8 +25,7 @@
 #include "chrome/browser/browsing_data/browsing_data_quota_helper.h"
 #include "chrome/browser/browsing_data/local_data_container.h"
 #include "chrome/common/content_settings.h"
-#include "chrome/common/extensions/extension_set.h"
-#include "net/base/server_bound_cert_store.h"
+#include "net/ssl/server_bound_cert_store.h"
 #include "ui/base/models/tree_node_model.h"
 
 class BrowsingDataCookieHelper;
@@ -53,6 +52,10 @@ class CookieTreeServerBoundCertsNode;
 class CookieTreeSessionStorageNode;
 class CookieTreeSessionStoragesNode;
 class ExtensionSpecialStoragePolicy;
+
+namespace extensions {
+class ExtensionSet;
+}
 
 namespace net {
 class CanonicalCookie;
@@ -110,7 +113,7 @@ class CookieTreeNode : public ui::TreeNode<CookieTreeNode> {
     DetailedInfo& InitAppCache(const GURL& origin,
                                const appcache::AppCacheInfo* appcache_info);
     DetailedInfo& InitIndexedDB(
-        const BrowsingDataIndexedDBHelper::IndexedDBInfo* indexed_db_info);
+        const content::IndexedDBInfo* indexed_db_info);
     DetailedInfo& InitFileSystem(
         const BrowsingDataFileSystemHelper::FileSystemInfo* file_system_info);
     DetailedInfo& InitQuota(
@@ -127,7 +130,7 @@ class CookieTreeNode : public ui::TreeNode<CookieTreeNode> {
     const BrowsingDataLocalStorageHelper::LocalStorageInfo*
         session_storage_info;
     const appcache::AppCacheInfo* appcache_info;
-    const BrowsingDataIndexedDBHelper::IndexedDBInfo* indexed_db_info;
+    const content::IndexedDBInfo* indexed_db_info;
     const BrowsingDataFileSystemHelper::FileSystemInfo* file_system_info;
     const BrowsingDataQuotaHelper::QuotaInfo* quota_info;
     const net::ServerBoundCertStore::ServerBoundCert* server_bound_cert;
@@ -135,7 +138,7 @@ class CookieTreeNode : public ui::TreeNode<CookieTreeNode> {
   };
 
   CookieTreeNode() {}
-  explicit CookieTreeNode(const string16& title)
+  explicit CookieTreeNode(const base::string16& title)
       : ui::TreeNode<CookieTreeNode>(title) {}
   virtual ~CookieTreeNode() {}
 
@@ -180,7 +183,7 @@ class CookieTreeRootNode : public CookieTreeNode {
 class CookieTreeHostNode : public CookieTreeNode {
  public:
   // Returns the host node's title to use for a given URL.
-  static string16 TitleForUrl(const GURL& url);
+  static base::string16 TitleForUrl(const GURL& url);
 
   explicit CookieTreeHostNode(const GURL& url);
   virtual ~CookieTreeHostNode();
@@ -475,7 +478,7 @@ class CookieTreeIndexedDBNode : public CookieTreeNode {
   // indexed_db_info should remain valid at least as long as the
   // CookieTreeIndexedDBNode is valid.
   explicit CookieTreeIndexedDBNode(
-      std::list<BrowsingDataIndexedDBHelper::IndexedDBInfo>::iterator
+      std::list<content::IndexedDBInfo>::iterator
           indexed_db_info);
   virtual ~CookieTreeIndexedDBNode();
 
@@ -486,7 +489,7 @@ class CookieTreeIndexedDBNode : public CookieTreeNode {
  private:
   // indexed_db_info_ is expected to remain valid as long as the
   // CookieTreeIndexedDBNode is valid.
-  std::list<BrowsingDataIndexedDBHelper::IndexedDBInfo>::iterator
+  std::list<content::IndexedDBInfo>::iterator
       indexed_db_info_;
 
   DISALLOW_COPY_AND_ASSIGN(CookieTreeIndexedDBNode);
@@ -635,13 +638,13 @@ class CookiesTreeModel : public ui::TreeNodeModel<CookieTreeNode> {
   void DeleteCookieNode(CookieTreeNode* cookie_node);
 
   // Filter the origins to only display matched results.
-  void UpdateSearchResults(const string16& filter);
+  void UpdateSearchResults(const base::string16& filter);
 
   // Returns the set of extensions which protect the data item represented by
   // this node from deletion.
   // Returns NULL if the node doesn't represent a protected data item or the
   // special storage policy is NULL.
-  const ExtensionSet* ExtensionsProtectingNode(
+  const extensions::ExtensionSet* ExtensionsProtectingNode(
       const CookieTreeNode& cookie_node);
 
   // Manages CookiesTreeModel::Observers. This will also call
@@ -681,35 +684,35 @@ class CookiesTreeModel : public ui::TreeNodeModel<CookieTreeNode> {
 
   void PopulateAppCacheInfoWithFilter(LocalDataContainer* container,
                                       ScopedBatchUpdateNotifier* notifier,
-                                      const string16& filter);
+                                      const base::string16& filter);
   void PopulateCookieInfoWithFilter(LocalDataContainer* container,
                                     ScopedBatchUpdateNotifier* notifier,
-                                    const string16& filter);
+                                    const base::string16& filter);
   void PopulateDatabaseInfoWithFilter(LocalDataContainer* container,
                                       ScopedBatchUpdateNotifier* notifier,
-                                      const string16& filter);
+                                      const base::string16& filter);
   void PopulateLocalStorageInfoWithFilter(LocalDataContainer* container,
                                           ScopedBatchUpdateNotifier* notifier,
-                                          const string16& filter);
+                                          const base::string16& filter);
   void PopulateSessionStorageInfoWithFilter(LocalDataContainer* container,
                                             ScopedBatchUpdateNotifier* notifier,
-                                            const string16& filter);
+                                            const base::string16& filter);
   void PopulateIndexedDBInfoWithFilter(LocalDataContainer* container,
                                        ScopedBatchUpdateNotifier* notifier,
-                                       const string16& filter);
+                                       const base::string16& filter);
   void PopulateFileSystemInfoWithFilter(LocalDataContainer* container,
                                         ScopedBatchUpdateNotifier* notifier,
-                                        const string16& filter);
+                                        const base::string16& filter);
   void PopulateQuotaInfoWithFilter(LocalDataContainer* container,
                                    ScopedBatchUpdateNotifier* notifier,
-                                   const string16& filter);
+                                   const base::string16& filter);
   void PopulateServerBoundCertInfoWithFilter(
       LocalDataContainer* container,
       ScopedBatchUpdateNotifier* notifier,
-      const string16& filter);
+      const base::string16& filter);
   void PopulateFlashLSOInfoWithFilter(LocalDataContainer* container,
                                       ScopedBatchUpdateNotifier* notifier,
-                                      const string16& filter);
+                                      const base::string16& filter);
 
   // Map of app ids to LocalDataContainer objects to use when retrieving
   // locally stored data.

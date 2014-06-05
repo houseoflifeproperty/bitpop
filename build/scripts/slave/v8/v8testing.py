@@ -29,6 +29,9 @@ def main():
 
   option_parser = optparse.OptionParser()
 
+  option_parser.add_option("--asan",
+                           help="Regard test expectations for ASAN",
+                           default=False, action="store_true")
   option_parser.add_option('', '--testname',
                            default=None,
                            help='The test to run'
@@ -52,44 +55,75 @@ def main():
                            help='Specify shard count [default: %%default]')
   option_parser.add_option('--shell_flags',
                            default=None,
-                           help="Specify shell flags passed tools/test.py")
+                           help='Specify shell flags passed tools/run-test.py')
+  option_parser.add_option('--command_prefix',
+                           default=None,
+                           help='Command prefix passed tools/run-test.py')
   option_parser.add_option('--isolates',
                            default=None,
-                           help="Run isolates tests")
-
+                           help='Run isolates tests')
+  option_parser.add_option('--buildbot',
+                           default='True',
+                           help='Resolve paths to executables for buildbots')
+  option_parser.add_option('--no-presubmit',
+                           default=False, action='store_true',
+                           help='Skip presubmit checks')
+  option_parser.add_option("--no-i18n", "--noi18n",
+                           default=False, action='store_true',
+                           help='Skip internationalization tests')
+  option_parser.add_option("--no-snap", "--nosnap",
+                           default=False, action="store_true",
+                           help='Test a build compiled without snapshot.')
+  option_parser.add_option("--no-variants",
+                           default=False, action='store_true',
+                           help='Skip testing variants')
+  option_parser.add_option('--flaky-tests',
+                           help=('Regard tests marked as flaky '
+                                 '(run|skip|dontcare)'))
+  option_parser.add_option("--gc-stress",
+                           default=False, action='store_true',
+                           help='Switch on GC stress mode')
+  option_parser.add_option("--quickcheck",
+                           default=False, action='store_true',
+                           help='Quick check mode (skip slow/flaky tests)')
 
   options, args = option_parser.parse_args()
   if args:
     option_parser.error('Unsupported arguments: %s' % args)
 
-  simultaneous = '-j8'
-  if options.platform in ('arm'):
-    simultaneous = '-j1'
-
   os.environ['LD_LIBRARY_PATH'] = os.environ.get('PWD')
 
-  if options.testname == 'leak':
-    cmd = ['python', 'tools/test.py', '--no-build', '--mode',
-           'debug', '--progress', 'verbose', '--timeout', '180',
-           '--time', '-Snapshot=on', '--special-command',
-           '"@ --nopreallocate-message-memory"',
-           '--valgrind', 'mjsunit/leakcheck',
-           'mjsunit/regress/regress-1134697', 'mjsunit/number-tostring-small']
-  elif options.testname == 'presubmit':
+  if options.testname == 'presubmit':
     cmd = ['python', 'tools/presubmit.py']
   else:
-    cmd = ['python', 'tools/test-wrapper-gypbuild.py',
-           simultaneous,
+    cmd = ['python', 'tools/run-tests.py',
            '--progress=verbose',
-           '--buildbot',
            '--outdir=' + outdir,
            '--arch=' + options.arch,
            '--mode=' + options.target]
     if options.testname:
-      cmd.extend([options.testname])
-    if options.testname == 'test262':
+      # Make testname hold a list of tests.
+      options.testname = options.testname.split(' ')
+      cmd.extend(options.testname)
+    else:
+      options.testname = []
+    if options.asan:
+      cmd.extend(['--asan'])
+    if options.buildbot == 'True':
+      cmd.extend(['--buildbot'])
+    if options.no_presubmit:
+      cmd.extend(['--no-presubmit'])
+    if options.no_i18n:
+      cmd.extend(['--no-i18n'])
+    if options.no_snap:
+      cmd.extend(['--no-snap'])
+    if options.no_variants:
+      cmd.extend(['--no-variants'])
+    if 'benchmarks' in options.testname:
       cmd.extend(['--download-data'])
-    if options.testname == 'mozilla':
+    if 'test262' in options.testname:
+      cmd.extend(['--download-data'])
+    if 'mozilla' in options.testname:
       # Mozilla tests requires a number of tests to timeout, set it a bit lower.
       if options.arch in ('arm', 'mipsel'):
         cmd.extend(['--timeout=180'])
@@ -98,9 +132,9 @@ def main():
     elif options.shell_flags and '--gc-interval' in options.shell_flags:
       # GC Stress testing takes much longer, set generous timeout.
       if options.arch in ('arm', 'mipsel'):
-        cmd.extend(['--timeout=900'])
+        cmd.extend(['--timeout=1200'])
       else:
-        cmd.extend(['--timeout=600'])
+        cmd.extend(['--timeout=900'])
     else:
       if options.arch in ('arm', 'mipsel'):
         cmd.extend(['--timeout=600'])
@@ -109,9 +143,15 @@ def main():
     if options.isolates:
       cmd.extend(['--isolates'])
     if options.shell_flags:
-      cmd.extend(["--special-command", options.shell_flags.replace("\"", "")])
-
-
+      cmd.extend(['--extra-flags', options.shell_flags.replace("\"", "")])
+    if options.command_prefix:
+      cmd.extend(['--command-prefix', options.command_prefix])
+    if options.flaky_tests:
+      cmd.extend(['--flaky-tests', options.flaky_tests])
+    if options.gc_stress:
+      cmd.extend(['--gc-stress'])
+    if options.quickcheck:
+      cmd.extend(['--quickcheck'])
 
   if options.shard_count > 1:
     cmd.extend(['--shard-count=%s' % options.shard_count,

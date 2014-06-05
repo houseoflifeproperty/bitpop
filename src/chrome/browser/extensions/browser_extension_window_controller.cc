@@ -10,9 +10,9 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/common/extensions/extension.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "extensions/common/extension.h"
 
 BrowserExtensionWindowController::BrowserExtensionWindowController(
     Browser* browser)
@@ -34,8 +34,6 @@ namespace keys = extensions::tabs_constants;
 std::string BrowserExtensionWindowController::GetWindowTypeText() const {
   if (browser_->is_type_popup())
     return keys::kWindowTypeValuePopup;
-  if (browser_->is_type_panel())
-    return keys::kWindowTypeValuePanel;
   if (browser_->is_app())
     return keys::kWindowTypeValueApp;
   return keys::kWindowTypeValueNormal;
@@ -43,18 +41,27 @@ std::string BrowserExtensionWindowController::GetWindowTypeText() const {
 
 base::DictionaryValue*
 BrowserExtensionWindowController::CreateWindowValue() const {
-  DictionaryValue* result = extensions::WindowController::CreateWindowValue();
+  base::DictionaryValue* result =
+      extensions::WindowController::CreateWindowValue();
   return result;
 }
 
 base::DictionaryValue*
 BrowserExtensionWindowController::CreateWindowValueWithTabs(
     const extensions::Extension* extension) const {
-  DictionaryValue* result = CreateWindowValue();
+  base::DictionaryValue* result = CreateWindowValue();
 
-  result->Set(keys::kTabsKey, ExtensionTabUtil::CreateTabList(browser_,
-                                                              extension));
+  result->Set(keys::kTabsKey,
+              extensions::ExtensionTabUtil::CreateTabList(browser_, extension));
 
+  return result;
+}
+
+base::DictionaryValue* BrowserExtensionWindowController::CreateTabValue(
+    const extensions::Extension* extension, int tab_index) const {
+  TabStripModel* tab_strip = browser_->tab_strip_model();
+  base::DictionaryValue* result = extensions::ExtensionTabUtil::CreateTabValue(
+      tab_strip->GetWebContentsAt(tab_index), tab_strip, tab_index);
   return result;
 }
 

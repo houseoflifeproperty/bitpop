@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,9 +7,10 @@
 #include "sync/syncable/directory.h"
 #include "sync/syncable/entry.h"
 #include "sync/syncable/mutable_entry.h"
-#include "sync/syncable/read_transaction.h"
 #include "sync/syncable/syncable_id.h"
-#include "sync/syncable/write_transaction.h"
+#include "sync/syncable/syncable_read_transaction.h"
+#include "sync/syncable/syncable_util.h"
+#include "sync/syncable/syncable_write_transaction.h"
 #include "sync/test/engine/test_id_factory.h"
 
 using std::string;
@@ -35,14 +36,33 @@ int64 TestEntryFactory::CreateUnappliedNewItemWithParent(
   MutableEntry entry(&trans, syncable::CREATE_NEW_UPDATE_ITEM,
       Id::CreateFromServerId(item_id));
   DCHECK(entry.good());
-  entry.Put(syncable::SERVER_VERSION, GetNextRevision());
-  entry.Put(syncable::IS_UNAPPLIED_UPDATE, true);
+  entry.PutServerVersion(GetNextRevision());
+  entry.PutIsUnappliedUpdate(true);
 
-  entry.Put(syncable::SERVER_NON_UNIQUE_NAME, item_id);
-  entry.Put(syncable::SERVER_PARENT_ID, Id::CreateFromServerId(parent_id));
-  entry.Put(syncable::SERVER_IS_DIR, true);
-  entry.Put(syncable::SERVER_SPECIFICS, specifics);
-  return entry.Get(syncable::META_HANDLE);
+  entry.PutServerNonUniqueName(item_id);
+  entry.PutServerParentId(Id::CreateFromServerId(parent_id));
+  entry.PutServerIsDir(true);
+  entry.PutServerSpecifics(specifics);
+  return entry.GetMetahandle();
+}
+
+int64 TestEntryFactory::CreateUnappliedNewBookmarkItemWithParent(
+    const string& item_id,
+    const sync_pb::EntitySpecifics& specifics,
+    const string& parent_id) {
+  WriteTransaction trans(FROM_HERE, UNITTEST, directory_);
+  MutableEntry entry(&trans, syncable::CREATE_NEW_UPDATE_ITEM,
+      Id::CreateFromServerId(item_id));
+  DCHECK(entry.good());
+  entry.PutServerVersion(GetNextRevision());
+  entry.PutIsUnappliedUpdate(true);
+
+  entry.PutServerNonUniqueName(item_id);
+  entry.PutServerParentId(Id::CreateFromServerId(parent_id));
+  entry.PutServerIsDir(true);
+  entry.PutServerSpecifics(specifics);
+
+  return entry.GetMetahandle();
 }
 
 int64 TestEntryFactory::CreateUnappliedNewItem(
@@ -53,17 +73,17 @@ int64 TestEntryFactory::CreateUnappliedNewItem(
   MutableEntry entry(&trans, syncable::CREATE_NEW_UPDATE_ITEM,
       Id::CreateFromServerId(item_id));
   DCHECK(entry.good());
-  entry.Put(syncable::SERVER_VERSION, GetNextRevision());
-  entry.Put(syncable::IS_UNAPPLIED_UPDATE, true);
-  entry.Put(syncable::SERVER_NON_UNIQUE_NAME, item_id);
-  entry.Put(syncable::SERVER_PARENT_ID, syncable::GetNullId());
-  entry.Put(syncable::SERVER_IS_DIR, is_unique);
-  entry.Put(syncable::SERVER_SPECIFICS, specifics);
+  entry.PutServerVersion(GetNextRevision());
+  entry.PutIsUnappliedUpdate(true);
+  entry.PutServerNonUniqueName(item_id);
+  entry.PutServerParentId(syncable::GetNullId());
+  entry.PutServerIsDir(is_unique);
+  entry.PutServerSpecifics(specifics);
   if (is_unique) { // For top-level nodes.
-    entry.Put(syncable::UNIQUE_SERVER_TAG,
+    entry.PutUniqueServerTag(
               ModelTypeToRootTag(GetModelTypeFromSpecifics(specifics)));
   }
-  return entry.Get(syncable::META_HANDLE);
+  return entry.GetMetahandle();
 }
 
 void TestEntryFactory::CreateUnsyncedItem(
@@ -73,40 +93,41 @@ void TestEntryFactory::CreateUnsyncedItem(
     bool is_folder,
     ModelType model_type,
     int64* metahandle_out) {
+  if (is_folder) {
+    DCHECK_EQ(model_type, BOOKMARKS);
+  }
+
   WriteTransaction trans(FROM_HERE, UNITTEST, directory_);
-  Id predecessor_id;
-  DCHECK(
-      directory_->GetLastChildIdForTest(&trans, parent_id, &predecessor_id));
-  MutableEntry entry(&trans, syncable::CREATE, parent_id, name);
+
+  MutableEntry entry(&trans, syncable::CREATE, model_type, parent_id, name);
   DCHECK(entry.good());
-  entry.Put(syncable::ID, item_id);
-  entry.Put(syncable::BASE_VERSION,
+  entry.PutId(item_id);
+  entry.PutBaseVersion(
       item_id.ServerKnows() ? GetNextRevision() : 0);
-  entry.Put(syncable::IS_UNSYNCED, true);
-  entry.Put(syncable::IS_DIR, is_folder);
-  entry.Put(syncable::IS_DEL, false);
-  entry.Put(syncable::PARENT_ID, parent_id);
-  CHECK(entry.PutPredecessor(predecessor_id));
+  entry.PutIsUnsynced(true);
+  entry.PutIsDir(is_folder);
+  entry.PutIsDel(false);
+  entry.PutParentId(parent_id);
   sync_pb::EntitySpecifics default_specifics;
   AddDefaultFieldValue(model_type, &default_specifics);
-  entry.Put(syncable::SPECIFICS, default_specifics);
+  entry.PutSpecifics(default_specifics);
+
   if (item_id.ServerKnows()) {
-    entry.Put(syncable::SERVER_SPECIFICS, default_specifics);
-    entry.Put(syncable::SERVER_IS_DIR, is_folder);
-    entry.Put(syncable::SERVER_PARENT_ID, parent_id);
-    entry.Put(syncable::SERVER_IS_DEL, false);
+    entry.PutServerSpecifics(default_specifics);
+    entry.PutServerIsDir(false);
+    entry.PutServerParentId(parent_id);
+    entry.PutServerIsDel(false);
   }
   if (metahandle_out)
-    *metahandle_out = entry.Get(syncable::META_HANDLE);
+    *metahandle_out = entry.GetMetahandle();
 }
 
-int64 TestEntryFactory::CreateUnappliedAndUnsyncedItem(
-    const string& name,
-    ModelType model_type) {
+int64 TestEntryFactory::CreateUnappliedAndUnsyncedBookmarkItem(
+    const string& name) {
   int64 metahandle = 0;
   CreateUnsyncedItem(
       TestIdFactory::MakeServer(name), TestIdFactory::root(),
-      name, false, model_type, &metahandle);
+      name, false, BOOKMARKS, &metahandle);
 
   WriteTransaction trans(FROM_HERE, UNITTEST, directory_);
   MutableEntry entry(&trans, syncable::GET_BY_HANDLE, metahandle);
@@ -115,8 +136,8 @@ int64 TestEntryFactory::CreateUnappliedAndUnsyncedItem(
     return syncable::kInvalidMetaHandle;
   }
 
-  entry.Put(syncable::IS_UNAPPLIED_UPDATE, true);
-  entry.Put(syncable::SERVER_VERSION, GetNextRevision());
+  entry.PutIsUnappliedUpdate(true);
+  entry.PutServerVersion(GetNextRevision());
 
   return metahandle;
 }
@@ -129,39 +150,29 @@ int64 TestEntryFactory::CreateSyncedItem(
   syncable::Id item_id(TestIdFactory::MakeServer(name));
   int64 version = GetNextRevision();
 
-  sync_pb::EntitySpecifics default_specifics;
-  AddDefaultFieldValue(model_type, &default_specifics);
-
-  MutableEntry entry(&trans, syncable::CREATE, parent_id, name);
+  MutableEntry entry(&trans, syncable::CREATE, model_type, parent_id, name);
   if (!entry.good()) {
     NOTREACHED();
     return syncable::kInvalidMetaHandle;
   }
 
-  entry.Put(syncable::ID, item_id);
-  entry.Put(syncable::BASE_VERSION, version);
-  entry.Put(syncable::IS_UNSYNCED, false);
-  entry.Put(syncable::NON_UNIQUE_NAME, name);
-  entry.Put(syncable::IS_DIR, is_folder);
-  entry.Put(syncable::IS_DEL, false);
-  entry.Put(syncable::PARENT_ID, parent_id);
+  entry.PutId(item_id);
+  entry.PutBaseVersion(version);
+  entry.PutIsUnsynced(false);
+  entry.PutNonUniqueName(name);
+  entry.PutIsDir(is_folder);
+  entry.PutIsDel(false);
+  entry.PutParentId(parent_id);
 
-  if (!entry.PutPredecessor(TestIdFactory::root())) {
-    NOTREACHED();
-    return syncable::kInvalidMetaHandle;
-  }
-  entry.Put(syncable::SPECIFICS, default_specifics);
+  entry.PutServerVersion(GetNextRevision());
+  entry.PutIsUnappliedUpdate(false);
+  entry.PutServerNonUniqueName(name);
+  entry.PutServerParentId(parent_id);
+  entry.PutServerIsDir(is_folder);
+  entry.PutServerIsDel(false);
+  entry.PutServerSpecifics(entry.GetSpecifics());
 
-  entry.Put(syncable::SERVER_VERSION, GetNextRevision());
-  entry.Put(syncable::IS_UNAPPLIED_UPDATE, true);
-  entry.Put(syncable::SERVER_NON_UNIQUE_NAME, "X");
-  entry.Put(syncable::SERVER_PARENT_ID, TestIdFactory::MakeServer("Y"));
-  entry.Put(syncable::SERVER_IS_DIR, is_folder);
-  entry.Put(syncable::SERVER_IS_DEL, false);
-  entry.Put(syncable::SERVER_SPECIFICS, default_specifics);
-  entry.Put(syncable::SERVER_PARENT_ID, parent_id);
-
-  return entry.Get(syncable::META_HANDLE);
+  return entry.GetMetahandle();
 }
 
 int64 TestEntryFactory::CreateUnappliedRootNode(
@@ -176,14 +187,14 @@ int64 TestEntryFactory::CreateUnappliedRootNode(
   // Make it look like sort of like a pending creation from the server.
   // The SERVER_PARENT_ID and UNIQUE_CLIENT_TAG aren't quite right, but
   // it's good enough for our purposes.
-  entry.Put(syncable::SERVER_VERSION, 1);
-  entry.Put(syncable::IS_UNAPPLIED_UPDATE, true);
-  entry.Put(syncable::SERVER_IS_DIR, false);
-  entry.Put(syncable::SERVER_PARENT_ID, TestIdFactory::root());
-  entry.Put(syncable::SERVER_SPECIFICS, specifics);
-  entry.Put(syncable::NON_UNIQUE_NAME, "xyz");
+  entry.PutServerVersion(1);
+  entry.PutIsUnappliedUpdate(true);
+  entry.PutServerIsDir(false);
+  entry.PutServerParentId(TestIdFactory::root());
+  entry.PutServerSpecifics(specifics);
+  entry.PutNonUniqueName("xyz");
 
-  return entry.Get(syncable::META_HANDLE);
+  return entry.GetMetahandle();
 }
 
 bool TestEntryFactory::SetServerSpecificsForItem(
@@ -194,8 +205,8 @@ bool TestEntryFactory::SetServerSpecificsForItem(
   if (!entry.good()) {
     return false;
   }
-  entry.Put(syncable::SERVER_SPECIFICS, specifics);
-  entry.Put(syncable::IS_UNAPPLIED_UPDATE, true);
+  entry.PutServerSpecifics(specifics);
+  entry.PutIsUnappliedUpdate(true);
   return true;
 }
 
@@ -207,8 +218,8 @@ bool TestEntryFactory::SetLocalSpecificsForItem(
   if (!entry.good()) {
     return false;
   }
-  entry.Put(syncable::SPECIFICS, specifics);
-  entry.Put(syncable::IS_UNSYNCED, true);
+  entry.PutSpecifics(specifics);
+  entry.PutIsUnsynced(true);
   return true;
 }
 
@@ -217,7 +228,7 @@ const sync_pb::EntitySpecifics& TestEntryFactory::GetServerSpecificsForItem(
   syncable::ReadTransaction trans(FROM_HERE, directory_);
   syncable::Entry entry(&trans, syncable::GET_BY_HANDLE, meta_handle);
   DCHECK(entry.good());
-  return entry.Get(syncable::SERVER_SPECIFICS);
+  return entry.GetServerSpecifics();
 }
 
 const sync_pb::EntitySpecifics& TestEntryFactory::GetLocalSpecificsForItem(
@@ -225,7 +236,7 @@ const sync_pb::EntitySpecifics& TestEntryFactory::GetLocalSpecificsForItem(
   syncable::ReadTransaction trans(FROM_HERE, directory_);
   syncable::Entry entry(&trans, syncable::GET_BY_HANDLE, meta_handle);
   DCHECK(entry.good());
-  return entry.Get(syncable::SPECIFICS);
+  return entry.GetSpecifics();
 }
 
 bool TestEntryFactory::GetIsUnsyncedForItem(int64 meta_handle) const {
@@ -235,7 +246,7 @@ bool TestEntryFactory::GetIsUnsyncedForItem(int64 meta_handle) const {
     NOTREACHED();
     return false;
   }
-  return entry.Get(syncable::IS_UNSYNCED);
+  return entry.GetIsUnsynced();
 }
 
 bool TestEntryFactory::GetIsUnappliedForItem(int64 meta_handle) const {
@@ -245,7 +256,7 @@ bool TestEntryFactory::GetIsUnappliedForItem(int64 meta_handle) const {
     NOTREACHED();
     return false;
   }
-  return entry.Get(syncable::IS_UNAPPLIED_UPDATE);
+  return entry.GetIsUnappliedUpdate();
 }
 
 int64 TestEntryFactory::GetNextRevision() {

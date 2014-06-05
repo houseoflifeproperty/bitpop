@@ -26,20 +26,19 @@ class FrameConsumerProxy
  public:
   // Constructs a proxy for |frame_consumer| which will trampoline invocations
   // to |frame_consumer_message_loop|.
-  FrameConsumerProxy(scoped_refptr<base::SingleThreadTaskRunner> task_runner);
+  FrameConsumerProxy(scoped_refptr<base::SingleThreadTaskRunner> task_runner,
+                     const base::WeakPtr<FrameConsumer>& frame_consumer);
 
   // FrameConsumer implementation.
-  virtual void ApplyBuffer(const SkISize& view_size,
-                           const SkIRect& clip_area,
-                           pp::ImageData* buffer,
-                           const SkRegion& region) OVERRIDE;
-  virtual void ReturnBuffer(pp::ImageData* buffer) OVERRIDE;
-  virtual void SetSourceSize(const SkISize& source_size,
-                             const SkIPoint& dpi) OVERRIDE;
-
-  // Attaches to |frame_consumer_|.
-  // This must only be called from |frame_consumer_message_loop_|.
-  void Attach(const base::WeakPtr<FrameConsumer>& frame_consumer);
+  virtual void ApplyBuffer(const webrtc::DesktopSize& view_size,
+                           const webrtc::DesktopRect& clip_area,
+                           webrtc::DesktopFrame* buffer,
+                           const webrtc::DesktopRegion& region,
+                           const webrtc::DesktopRegion& shape) OVERRIDE;
+  virtual void ReturnBuffer(webrtc::DesktopFrame* buffer) OVERRIDE;
+  virtual void SetSourceSize(const webrtc::DesktopSize& source_size,
+                             const webrtc::DesktopVector& dpi) OVERRIDE;
+  virtual PixelFormat GetPixelFormat() OVERRIDE;
 
  private:
   friend class base::RefCountedThreadSafe<FrameConsumerProxy>;
@@ -47,6 +46,8 @@ class FrameConsumerProxy
 
   base::WeakPtr<FrameConsumer> frame_consumer_;
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
+
+  PixelFormat pixel_format_;
 
   DISALLOW_COPY_AND_ASSIGN(FrameConsumerProxy);
 };

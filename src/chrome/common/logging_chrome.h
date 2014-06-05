@@ -9,10 +9,12 @@
 #include <vector>
 
 #include "base/logging.h"
-#include "base/time.h"
+#include "base/time/time.h"
 
+namespace base {
 class CommandLine;
 class FilePath;
+}
 
 namespace logging {
 
@@ -29,22 +31,22 @@ namespace logging {
 // normally appear for assertions and crashes, and makes any catchable
 // errors (namely assertions) available via GetSilencedErrorCount()
 // and GetSilencedError().
-void InitChromeLogging(const CommandLine& command_line,
+void InitChromeLogging(const base::CommandLine& command_line,
                        OldFileDeletionState delete_old_log_file);
 
 #if defined(OS_CHROMEOS)
 // Get the log file location.
-FilePath GetSessionLogFile(const CommandLine& command_line);
+base::FilePath GetSessionLogFile(const base::CommandLine& command_line);
 
 // Redirects chrome logging to the appropriate session log dir.
-void RedirectChromeLogging(const CommandLine& command_line);
+void RedirectChromeLogging(const base::CommandLine& command_line);
 #endif
 
 // Call when done using logging for Chrome.
 void CleanupChromeLogging();
 
 // Returns the fully-qualified name of the log file.
-FilePath GetLogFileName();
+base::FilePath GetLogFileName();
 
 // Returns true when error/assertion dialogs are to be shown,
 // false otherwise.
@@ -62,19 +64,10 @@ typedef std::vector<std::wstring> AssertionList;
 // the program writing the log has terminated.
 size_t GetFatalAssertions(AssertionList* assertions);
 
-// Handler to silently dump the current process without crashing.
-void DumpWithoutCrashing();
-
-#if defined(USE_LINUX_BREAKPAD) || defined(OS_MACOSX)
-// Sets a function that'll be invoked to dump the current process when
-// DumpWithoutCrashing() is called.
-void SetDumpWithoutCrashingFunction(void (*function)());
-#endif
-
 // Inserts timestamp before file extension in the format
 // "_yymmdd-hhmmss".
-FilePath GenerateTimestampedName(const FilePath& base_path,
-                                 base::Time timestamp);
+base::FilePath GenerateTimestampedName(const base::FilePath& base_path,
+                                       base::Time timestamp);
 }  // namespace logging
 
 #endif  // CHROME_COMMON_LOGGING_CHROME_H_

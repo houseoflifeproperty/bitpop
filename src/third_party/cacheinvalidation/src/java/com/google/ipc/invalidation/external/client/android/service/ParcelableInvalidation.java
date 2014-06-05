@@ -60,12 +60,14 @@ class ParcelableInvalidation implements Parcelable {
     // Read parcelable object id from parcel using the application class loader
     ParcelableObjectId objectId = in.readParcelable(getClass().getClassLoader());
     long version = in.readLong();
+    boolean isTrickleRestart = in.createBooleanArray()[0];
     boolean[] values = in.createBooleanArray();
     byte[] payload = null;
     if (values[0]) { // hasPayload
       payload = in.createByteArray();
     }
-    this.invalidation = Invalidation.newInstance(objectId.objectId, version, payload);
+    this.invalidation = Invalidation.newInstance(objectId.objectId, version, payload,
+        isTrickleRestart);
     this.includePayload = payload != null;
   }
 
@@ -80,10 +82,12 @@ class ParcelableInvalidation implements Parcelable {
     // Data written to parcel is:
     // 1. object id (as ParcelableObjectId)
     // 2. long version
-    // 3. boolean [] { hasPayload }
-    // 4. byte array for payload (if hasPayload)
+    // 3. boolean [] { isTrickleRestart }
+    // 4. boolean [] { hasPayload }
+    // 5. byte array for payload (if hasPayload)
     parcel.writeParcelable(new ParcelableObjectId(invalidation.getObjectId()), 0);
     parcel.writeLong(invalidation.getVersion());
+    parcel.writeBooleanArray(new boolean[] {invalidation.getIsTrickleRestartForInternalUse()});
     byte[] payload = invalidation.getPayload();
     if (includePayload && payload != null) {
       parcel.writeBooleanArray(new boolean[] {true});

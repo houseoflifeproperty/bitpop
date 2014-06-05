@@ -8,8 +8,9 @@
 #include <vector>
 
 #include "base/memory/ref_counted.h"
-#include "base/process_util.h"
-#include "base/string16.h"
+#include "base/process/process_metrics.h"
+#include "base/strings/string16.h"
+#include "chrome/browser/site_details.h"
 #include "content/public/common/process_type.h"
 
 // We collect data about each browser process.  A browser may
@@ -25,13 +26,12 @@ struct ProcessMemoryInformation {
     RENDERER_EXTENSION,     // chrome-extension://
     RENDERER_DEVTOOLS,      // Web inspector
     RENDERER_INTERSTITIAL,  // malware/phishing interstitial
-    RENDERER_NOTIFICATION,  // HTML notification bubble
     RENDERER_BACKGROUND_APP // hosted app background page
   };
 
   static std::string GetRendererTypeNameInEnglish(RendererProcessType type);
   static std::string GetFullTypeNameInEnglish(
-      content::ProcessType type,
+      int process_type,
       RendererProcessType rtype);
 
   ProcessMemoryInformation();
@@ -47,9 +47,9 @@ struct ProcessMemoryInformation {
   // The committed bytes.
   base::CommittedKBytes committed;
   // The process version
-  string16 version;
+  base::string16 version;
   // The process product name.
-  string16 product_name;
+  base::string16 product_name;
   // The number of processes which this memory represents.
   int num_processes;
   // A process is a diagnostics process if it is rendering about:memory.
@@ -57,11 +57,11 @@ struct ProcessMemoryInformation {
   // results.
   bool is_diagnostics;
   // If this is a child process of Chrome, what type (i.e. plugin) it is.
-  content::ProcessType type;
+  int process_type;
   // If this is a renderer process, what type it is.
   RendererProcessType renderer_type;
   // A collection of titles used, i.e. for a tab it'll show all the page titles.
-  std::vector<string16> titles;
+  std::vector<base::string16> titles;
 };
 
 typedef std::vector<ProcessMemoryInformation> ProcessMemoryInformationList;
@@ -73,9 +73,13 @@ struct ProcessData {
   ~ProcessData();
   ProcessData& operator=(const ProcessData& rhs);
 
-  string16 name;
-  string16 process_name;
+  base::string16 name;
+  base::string16 process_name;
   ProcessMemoryInformationList processes;
+
+  // Track site data for predicting process counts with out-of-process iframes.
+  // See site_details.h.
+  BrowserContextSiteDataMap site_data;
 };
 
 #if defined(OS_MACOSX)
@@ -171,12 +175,20 @@ class MemoryDetails : public base::RefCountedThreadSafe<MemoryDetails> {
   // Updates the global histograms for tracking memory usage.
   void UpdateHistograms();
 
+#if defined(OS_CHROMEOS)
+  void UpdateSwapHistograms();
+#endif
+
   // Returns a pointer to the ProcessData structure for Chrome.
   ProcessData* ChromeBrowser();
 
   std::vector<ProcessData> process_data_;
 
   UserMetricsMode user_metrics_mode_;
+
+#if defined(OS_CHROMEOS)
+  base::SwapInfo swap_info_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(MemoryDetails);
 };

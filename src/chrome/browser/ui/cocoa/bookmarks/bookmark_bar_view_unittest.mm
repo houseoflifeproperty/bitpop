@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/memory/scoped_nsobject.h"
-#include "base/string16.h"
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
+#include "base/mac/scoped_nsobject.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_controller.h"
@@ -16,6 +15,9 @@
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #import "chrome/browser/ui/cocoa/url_drop_target.h"
+#include "chrome/test/base/testing_profile.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/core/test/bookmark_test_helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 #import "third_party/mozilla/NSPasteboard+Utils.h"
@@ -200,7 +202,7 @@ class BookmarkBarViewTest : public CocoaProfileTest {
     view_.reset([[BookmarkBarView alloc] init]);
   }
 
-  scoped_nsobject<BookmarkBarView> view_;
+  base::scoped_nsobject<BookmarkBarView> view_;
 };
 
 TEST_F(BookmarkBarViewTest, CanDragWindow) {
@@ -208,8 +210,8 @@ TEST_F(BookmarkBarViewTest, CanDragWindow) {
 }
 
 TEST_F(BookmarkBarViewTest, BookmarkButtonDragAndDrop) {
-  scoped_nsobject<FakeBookmarkDraggingInfo>
-      info([[FakeBookmarkDraggingInfo alloc] init]);
+  base::scoped_nsobject<FakeBookmarkDraggingInfo> info(
+      [[FakeBookmarkDraggingInfo alloc] init]);
   [view_ setController:info.get()];
   [info reset];
 
@@ -218,15 +220,16 @@ TEST_F(BookmarkBarViewTest, BookmarkButtonDragAndDrop) {
   const BookmarkNode* node =
       bookmark_model->AddURL(bookmark_model->bookmark_bar_node(),
                              0,
-                             ASCIIToUTF16("Test Bookmark"),
+                             base::ASCIIToUTF16("Test Bookmark"),
                              GURL("http://www.exmaple.com"));
 
-  scoped_nsobject<BookmarkButtonCell> button_cell(
+  base::scoped_nsobject<BookmarkButtonCell> button_cell(
       [[BookmarkButtonCell buttonCellForNode:node
-                                 contextMenu:nil
-                                    cellText:nil
-                                   cellImage:nil] retain]);
-  scoped_nsobject<BookmarkButton> dragged_button([[BookmarkButton alloc] init]);
+                                        text:nil
+                                       image:nil
+                              menuController:nil] retain]);
+  base::scoped_nsobject<BookmarkButton> dragged_button(
+      [[BookmarkButton alloc] init]);
   [dragged_button setCell:button_cell];
   [info setDraggingSource:dragged_button.get()];
   [info setDragDataType:kBookmarkButtonDragType];
@@ -242,8 +245,8 @@ TEST_F(BookmarkBarViewTest, BookmarkButtonDragAndDrop) {
 
 // When dragging bookmarks across profiles, we should always copy, never move.
 TEST_F(BookmarkBarViewTest, BookmarkButtonDragAndDropAcrossProfiles) {
-  scoped_nsobject<FakeBookmarkDraggingInfo>
-  info([[FakeBookmarkDraggingInfo alloc] init]);
+  base::scoped_nsobject<FakeBookmarkDraggingInfo> info(
+      [[FakeBookmarkDraggingInfo alloc] init]);
   [view_ setController:info.get()];
   [info reset];
 
@@ -251,22 +254,24 @@ TEST_F(BookmarkBarViewTest, BookmarkButtonDragAndDropAcrossProfiles) {
   TestingProfile* other_profile =
       testing_profile_manager()->CreateTestingProfile("other");
   other_profile->CreateBookmarkModel(true);
-  other_profile->BlockUntilBookmarkModelLoaded();
 
   BookmarkModel* bookmark_model =
       BookmarkModelFactory::GetForProfile(profile());
+  test::WaitForBookmarkModelToLoad(bookmark_model);
+
   const BookmarkNode* node =
       bookmark_model->AddURL(bookmark_model->bookmark_bar_node(),
                              0,
-                             ASCIIToUTF16("Test Bookmark"),
+                             base::ASCIIToUTF16("Test Bookmark"),
                              GURL("http://www.exmaple.com"));
 
-  scoped_nsobject<BookmarkButtonCell> button_cell(
+  base::scoped_nsobject<BookmarkButtonCell> button_cell(
       [[BookmarkButtonCell buttonCellForNode:node
-                                 contextMenu:nil
-                                    cellText:nil
-                                   cellImage:nil] retain]);
-  scoped_nsobject<BookmarkButton> dragged_button([[BookmarkButton alloc] init]);
+                                        text:nil
+                                       image:nil
+                              menuController:nil] retain]);
+  base::scoped_nsobject<BookmarkButton> dragged_button(
+      [[BookmarkButton alloc] init]);
   [dragged_button setCell:button_cell];
   [info setDraggingSource:dragged_button.get()];
   [info setDragDataType:kBookmarkButtonDragType];
@@ -281,8 +286,8 @@ TEST_F(BookmarkBarViewTest, BookmarkButtonDragAndDropAcrossProfiles) {
 }
 
 TEST_F(BookmarkBarViewTest, URLDragAndDrop) {
-  scoped_nsobject<FakeBookmarkDraggingInfo>
-      info([[FakeBookmarkDraggingInfo alloc] init]);
+  base::scoped_nsobject<FakeBookmarkDraggingInfo> info(
+      [[FakeBookmarkDraggingInfo alloc] init]);
   [view_ setController:info.get()];
   [info reset];
 
@@ -299,12 +304,13 @@ TEST_F(BookmarkBarViewTest, URLDragAndDrop) {
 }
 
 TEST_F(BookmarkBarViewTest, BookmarkButtonDropIndicator) {
-  scoped_nsobject<FakeBookmarkDraggingInfo>
-      info([[FakeBookmarkDraggingInfo alloc] init]);
+  base::scoped_nsobject<FakeBookmarkDraggingInfo> info(
+      [[FakeBookmarkDraggingInfo alloc] init]);
   [view_ setController:info.get()];
   [info reset];
 
-  scoped_nsobject<BookmarkButton> dragged_button([[BookmarkButton alloc] init]);
+  base::scoped_nsobject<BookmarkButton> dragged_button(
+      [[BookmarkButton alloc] init]);
   [info setDraggingSource:dragged_button.get()];
   [info setDragDataType:kBookmarkButtonDragType];
   EXPECT_FALSE([info draggingEnteredCalled]);

@@ -6,7 +6,7 @@
 
 #include "base/base64.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "jingle/notifier/listener/xml_element_util.h"
 #include "talk/xmpp/jid.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -36,7 +36,7 @@ TEST_F(PushNotificationsSendUpdateTaskTest, MakeUpdateMessage) {
   notification.data = "test_data";
 
   std::string base64_data;
-  EXPECT_TRUE(base::Base64Encode(notification.data, &base64_data));
+  base::Base64Encode(notification.data, &base64_data);
 
   scoped_ptr<buzz::XmlElement> message(
       PushNotificationsSendUpdateTask::MakeUpdateMessage(

@@ -1,0 +1,9 @@
+Scripts in this directory acts as the liason (a buffer) between the master and
+the swarming_client code.
+
+This helps with master restarts and when swarming_client is updated. It helps
+support older versions of the client code, without having to complexify the
+master code.
+
+So scripts in this directory should be called from the master, which then can
+defer to the relevant script.

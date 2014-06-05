@@ -90,10 +90,14 @@ class Target {
   // true a request to continue (or step) is processed.
   bool ProcessPacket(Packet *pktIn, Packet *pktOut);
 
+  void EmitFileError(Packet *pktOut, int code);
+  void ProcessFilePacket(Packet *pktIn, Packet *pktOut, ErrDef *err);
+
   void SetStopReply(Packet *pktOut) const;
 
   void Destroy();
   void Detach();
+  void Kill();
 
   bool GetFirstThreadId(uint32_t *id);
   bool GetNextThreadId(uint32_t *id);
@@ -106,12 +110,18 @@ class Target {
   bool RemoveBreakpoint(uint32_t user_address);
   void CopyFaultSignalFromAppThread(port::IThread *thread);
   void RemoveInitialBreakpoint();
+  bool IsInitialBreakpointActive();
   void EraseBreakpointsFromCopyOfMemory(uint32_t user_address,
                                         uint8_t *data, uint32_t size);
 
   void SuspendAllThreads();
   void ResumeAllThreads();
   void UnqueueAnyFaultedThread(uint32_t *thread_id, int8_t *signal);
+
+  void Resume();
+  void ProcessCommands();
+  void WaitForDebugEvent();
+  void ProcessDebugEvent();
 
  private:
   struct NaClApp *nap_;
@@ -147,6 +157,15 @@ class Target {
   // Thread that is stepping over a breakpoint while other threads remain
   // suspended.
   uint32_t step_over_breakpoint_thread_;
+
+  // Whether all threads are currently suspended.
+  bool all_threads_suspended_;
+
+  // Whether we are about to detach.
+  bool detaching_;
+
+  // Whether we are about to exit (from kill).
+  bool should_exit_;
 };
 
 

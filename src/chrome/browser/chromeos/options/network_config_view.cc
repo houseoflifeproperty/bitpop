@@ -6,9 +6,12 @@
 
 #include <algorithm>
 
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/chromeos/login/base_login_display_host.h"
+#include "ash/shell.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/chromeos/login/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/user.h"
+#include "chrome/browser/chromeos/options/network_property_ui_data.h"
 #include "chrome/browser/chromeos/options/vpn_config_view.h"
 #include "chrome/browser/chromeos/options/wifi_config_view.h"
 #include "chrome/browser/chromeos/options/wimax_config_view.h"
@@ -17,29 +20,34 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/host_desktop.h"
+#include "chromeos/login/login_state.h"
+#include "chromeos/network/network_state.h"
+#include "chromeos/network/network_state_handler.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "grit/theme_resources.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/rect.h"
-#include "ui/views/controls/button/text_button.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/image_view.h"
-#include "ui/views/layout/grid_layout.h"
 #include "ui/views/layout/layout_constants.h"
 #include "ui/views/widget/widget.h"
 
+using views::Widget;
+
 namespace {
 
-gfx::NativeWindow GetDialogParent() {
-  if (chromeos::BaseLoginDisplayHost::default_host()) {
-    return chromeos::BaseLoginDisplayHost::default_host()->GetNativeWindow();
+gfx::NativeWindow GetParentForUnhostedDialog() {
+  if (chromeos::LoginDisplayHostImpl::default_host()) {
+    return chromeos::LoginDisplayHostImpl::default_host()->GetNativeWindow();
   } else {
-    Browser* browser = browser::FindTabbedBrowser(
-        ProfileManager::GetDefaultProfileOrOffTheRecord(),
+    Browser* browser = chrome::FindTabbedBrowser(
+        ProfileManager::GetPrimaryUserProfile(),
         true,
         chrome::HOST_DESKTOP_TYPE_ASH);
     if (browser)
@@ -69,42 +77,41 @@ namespace chromeos {
 // static
 const int ChildNetworkConfigView::kInputFieldMinWidth = 270;
 
-NetworkConfigView::NetworkConfigView(Network* network)
-    : delegate_(NULL),
-      advanced_button_(NULL),
-      advanced_button_container_(NULL) {
+NetworkConfigView::NetworkConfigView()
+    : child_config_view_(NULL),
+      delegate_(NULL),
+      advanced_button_(NULL) {
   DCHECK(GetActiveDialog() == NULL);
   SetActiveDialog(this);
-  if (network->type() == TYPE_WIFI) {
-    child_config_view_ =
-        new WifiConfigView(this, static_cast<WifiNetwork*>(network));
-  } else if (network->type() == TYPE_WIMAX) {
-    child_config_view_ =
-        new WimaxConfigView(this, static_cast<WimaxNetwork*>(network));
-  } else if (network->type() == TYPE_VPN) {
-    child_config_view_ =
-        new VPNConfigView(this, static_cast<VirtualNetwork*>(network));
-  } else {
-    NOTREACHED();
-    child_config_view_ = NULL;
-  }
 }
 
-NetworkConfigView::NetworkConfigView(ConnectionType type)
-    : delegate_(NULL),
-      advanced_button_(NULL),
-      advanced_button_container_(NULL) {
-  DCHECK(GetActiveDialog() == NULL);
-  SetActiveDialog(this);
-  if (type == TYPE_WIFI) {
-    child_config_view_ = new WifiConfigView(this, false /* show_8021x */);
-    CreateAdvancedButton();
-  } else if (type == TYPE_VPN) {
-    child_config_view_ = new VPNConfigView(this);
-  } else {
-    NOTREACHED();
-    child_config_view_ = NULL;
+bool NetworkConfigView::InitWithNetworkState(const NetworkState* network) {
+  DCHECK(network);
+  std::string service_path = network->path();
+  if (network->type() == shill::kTypeWifi ||
+      network->type() == shill::kTypeEthernet) {
+    child_config_view_ = new WifiConfigView(this, service_path, false);
+  } else if (network->type() == shill::kTypeWimax) {
+    child_config_view_ = new WimaxConfigView(this, service_path);
+  } else if (network->type() == shill::kTypeVPN) {
+    child_config_view_ = new VPNConfigView(this, service_path);
   }
+  return child_config_view_ != NULL;
+}
+
+bool NetworkConfigView::InitWithType(const std::string& type) {
+  if (type == shill::kTypeWifi) {
+    child_config_view_ = new WifiConfigView(this,
+                                            "" /* service_path */,
+                                            false /* show_8021x */);
+    advanced_button_ = new views::LabelButton(this, l10n_util::GetStringUTF16(
+        IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_ADVANCED_BUTTON));
+    advanced_button_->SetStyle(views::Button::STYLE_BUTTON);
+  } else if (type == shill::kTypeVPN) {
+    child_config_view_ = new VPNConfigView(this,
+                                           "" /* service_path */);
+  }
+  return child_config_view_ != NULL;
 }
 
 NetworkConfigView::~NetworkConfigView() {
@@ -113,41 +120,53 @@ NetworkConfigView::~NetworkConfigView() {
 }
 
 // static
-bool NetworkConfigView::Show(Network* network, gfx::NativeWindow parent) {
+void NetworkConfigView::Show(const std::string& service_path,
+                             gfx::NativeWindow parent) {
   if (GetActiveDialog() != NULL)
-    return false;
-  NetworkConfigView* view = new NetworkConfigView(network);
-  if (parent == NULL)
-    parent = GetDialogParent();
-  views::Widget* window = views::Widget::CreateWindowWithParent(view, parent);
-  window->SetAlwaysOnTop(true);
-  window->Show();
-  return true;
+    return;
+  NetworkConfigView* view = new NetworkConfigView();
+  const NetworkState* network = NetworkHandler::Get()->network_state_handler()->
+      GetNetworkState(service_path);
+  if (!network) {
+    LOG(ERROR) << "NetworkConfigView::Show called with invalid service_path";
+    return;
+  }
+  if (!view->InitWithNetworkState(network)) {
+    LOG(ERROR) << "NetworkConfigView::Show called with invalid network type: "
+               << network->type();
+    delete view;
+    return;
+  }
+  view->ShowDialog(parent);
 }
 
 // static
-bool NetworkConfigView::ShowForType(ConnectionType type,
+void NetworkConfigView::ShowForType(const std::string& type,
                                     gfx::NativeWindow parent) {
   if (GetActiveDialog() != NULL)
-    return false;
-  NetworkConfigView* view = new NetworkConfigView(type);
-  if (parent == NULL)
-    parent = GetDialogParent();
-  views::Widget* window = views::Widget::CreateWindowWithParent(view, parent);
-  window->SetAlwaysOnTop(true);
-  window->Show();
-  return true;
+    return;
+  NetworkConfigView* view = new NetworkConfigView();
+  if (!view->InitWithType(type)) {
+    LOG(ERROR) << "NetworkConfigView::ShowForType called with invalid type: "
+               << type;
+    delete view;
+    return;
+  }
+  view->ShowDialog(parent);
 }
 
 gfx::NativeWindow NetworkConfigView::GetNativeWindow() const {
   return GetWidget()->GetNativeWindow();
 }
 
-string16 NetworkConfigView::GetDialogButtonLabel(
+base::string16 NetworkConfigView::GetDialogButtonLabel(
     ui::DialogButton button) const {
-  if (button == ui::DIALOG_BUTTON_OK)
+  if (button == ui::DIALOG_BUTTON_OK) {
+    if (child_config_view_->IsConfigureDialog())
+      return l10n_util::GetStringUTF16(IDS_OPTIONS_SETTINGS_CONFIGURE);
     return l10n_util::GetStringUTF16(IDS_OPTIONS_SETTINGS_CONNECT);
-  return string16();
+  }
+  return views::DialogDelegateView::GetDialogButtonLabel(button);
 }
 
 bool NetworkConfigView::IsDialogButtonEnabled(ui::DialogButton button) const {
@@ -174,26 +193,27 @@ bool NetworkConfigView::Accept() {
   return result;
 }
 
-views::View* NetworkConfigView::GetExtraView() {
-  return advanced_button_container_;
+views::View* NetworkConfigView::CreateExtraView() {
+  return advanced_button_;
 }
 
 views::View* NetworkConfigView::GetInitiallyFocusedView() {
   return child_config_view_->GetInitiallyFocusedView();
 }
 
+base::string16 NetworkConfigView::GetWindowTitle() const {
+  DCHECK(!child_config_view_->GetTitle().empty());
+  return child_config_view_->GetTitle();
+}
+
 ui::ModalType NetworkConfigView::GetModalType() const {
   return ui::MODAL_TYPE_SYSTEM;
 }
 
-views::View* NetworkConfigView::GetContentsView() {
-  return this;
-}
-
-void NetworkConfigView::GetAccessibleState(ui::AccessibleViewState* state) {
+void NetworkConfigView::GetAccessibleState(ui::AXViewState* state) {
   state->name =
       l10n_util::GetStringUTF16(IDS_OPTIONS_SETTINGS_OTHER_WIFI_NETWORKS);
-  state->role = ui::AccessibilityTypes::ROLE_DIALOG;
+  state->role = ui::AX_ROLE_DIALOG;
 }
 
 void NetworkConfigView::ButtonPressed(views::Button* sender,
@@ -209,7 +229,9 @@ void NetworkConfigView::ShowAdvancedView() {
   RemoveChildView(child_config_view_);
   delete child_config_view_;
   // For now, there is only an advanced view for Wi-Fi 802.1X.
-  child_config_view_ = new WifiConfigView(this, true /* show_8021x */);
+  child_config_view_ = new WifiConfigView(this,
+                                          "" /* service_path */,
+                                          true /* show_8021x */);
   AddChildView(child_config_view_);
   // Resize the window to be able to hold the new widgets.
   gfx::Size size = views::Widget::GetLocalizedContentsSize(
@@ -242,31 +264,52 @@ gfx::Size NetworkConfigView::GetPreferredSize() {
 }
 
 void NetworkConfigView::ViewHierarchyChanged(
-    bool is_add, views::View* parent, views::View* child) {
+    const ViewHierarchyChangedDetails& details) {
   // Can't init before we're inserted into a Container, because we require
   // a HWND to parent native child controls to.
-  if (is_add && child == this) {
+  if (details.is_add && details.child == this) {
     AddChildView(child_config_view_);
   }
 }
 
-void NetworkConfigView::CreateAdvancedButton() {
-  advanced_button_ = new views::NativeTextButton(this,
-      l10n_util::GetStringUTF16(
-          IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_ADVANCED_BUTTON));
-
-  // Wrap the advanced button in a grid layout in order to left-align it.
-  advanced_button_container_ = new views::View();
-  views::GridLayout* layout = new views::GridLayout(advanced_button_container_);
-  advanced_button_container_->SetLayoutManager(layout);
-
-  int column_set_id = 0;
-  views::ColumnSet* column_set = layout->AddColumnSet(column_set_id);
-  column_set->AddColumn(views::GridLayout::LEADING, views::GridLayout::LEADING,
-                        0, views::GridLayout::USE_PREF, 0, 0);
-  layout->StartRow(0, column_set_id);
-  layout->AddView(advanced_button_);
+void NetworkConfigView::ShowDialog(gfx::NativeWindow parent) {
+  if (parent == NULL)
+    parent = GetParentForUnhostedDialog();
+  // Failed connections may result in a pop-up with no natural parent window,
+  // so provide a fallback context on the primary display. This is necessary
+  // becase one of parent or context must be non NULL.
+  gfx::NativeWindow context =
+      parent ? NULL : ash::Shell::GetPrimaryRootWindow();
+  Widget* window = DialogDelegate::CreateDialogWidget(this, context, parent);
+  window->SetAlwaysOnTop(true);
+  window->Show();
 }
+
+// ChildNetworkConfigView
+
+ChildNetworkConfigView::ChildNetworkConfigView(
+    NetworkConfigView* parent,
+    const std::string& service_path)
+    : parent_(parent),
+      service_path_(service_path) {
+}
+
+ChildNetworkConfigView::~ChildNetworkConfigView() {
+}
+
+bool ChildNetworkConfigView::IsConfigureDialog() {
+  return false;
+}
+
+// static
+void ChildNetworkConfigView::GetShareStateForLoginState(bool* default_value,
+                                                        bool* modifiable) {
+  *default_value = !LoginState::Get()->UserHasNetworkProfile();
+  // Allow only authenticated user to change the share state.
+  *modifiable = LoginState::Get()->IsUserAuthenticated();
+}
+
+// ControlledSettingIndicatorView
 
 ControlledSettingIndicatorView::ControlledSettingIndicatorView()
     : managed_(false),
@@ -286,10 +329,10 @@ ControlledSettingIndicatorView::~ControlledSettingIndicatorView() {}
 
 void ControlledSettingIndicatorView::Update(
     const NetworkPropertyUIData& ui_data) {
-  if (managed_ == ui_data.managed())
+  if (managed_ == ui_data.IsManaged())
     return;
 
-  managed_ = ui_data.managed();
+  managed_ = ui_data.IsManaged();
   PreferredSizeChanged();
 }
 
@@ -302,25 +345,13 @@ void ControlledSettingIndicatorView::Layout() {
   image_view_->SetBounds(0, 0, width(), height());
 }
 
-void ControlledSettingIndicatorView::OnMouseEntered(
-    const ui::MouseEvent& event) {
-  image_view_->SetImage(color_image_);
-}
-
-void ControlledSettingIndicatorView::OnMouseExited(
-    const ui::MouseEvent& event) {
-  image_view_->SetImage(gray_image_);
-}
-
 void ControlledSettingIndicatorView::Init() {
-  color_image_ = ResourceBundle::GetSharedInstance().GetImageNamed(
+  image_ = ResourceBundle::GetSharedInstance().GetImageNamed(
       IDR_CONTROLLED_SETTING_MANDATORY).ToImageSkia();
-  gray_image_ = ResourceBundle::GetSharedInstance().GetImageNamed(
-      IDR_CONTROLLED_SETTING_MANDATORY_GRAY).ToImageSkia();
   image_view_ = new views::ImageView();
   // Disable |image_view_| so mouse events propagate to the parent.
   image_view_->SetEnabled(false);
-  image_view_->SetImage(gray_image_);
+  image_view_->SetImage(image_);
   image_view_->SetTooltipText(
       l10n_util::GetStringUTF16(IDS_OPTIONS_CONTROLLED_SETTING_POLICY));
   AddChildView(image_view_);

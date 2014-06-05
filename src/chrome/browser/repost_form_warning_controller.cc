@@ -4,72 +4,46 @@
 
 #include "chrome/browser/repost_form_warning_controller.h"
 
-#if defined(TOOLKIT_GTK)
-#include <gtk/gtk.h>
-#endif
-
-#include "base/bind.h"
-#include "base/bind_helpers.h"
 #include "content/public/browser/navigation_controller.h"
-#include "content/public/browser/notification_source.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
-using content::NavigationController;
-using content::WebContents;
-
 RepostFormWarningController::RepostFormWarningController(
-    WebContents* web_contents)
+    content::WebContents* web_contents)
     : TabModalConfirmDialogDelegate(web_contents),
-      navigation_controller_(&web_contents->GetController()) {
-  registrar_.Add(this, content::NOTIFICATION_REPOST_WARNING_SHOWN,
-                 content::Source<NavigationController>(
-                    navigation_controller_));
+      content::WebContentsObserver(web_contents) {
 }
 
 RepostFormWarningController::~RepostFormWarningController() {
 }
 
-string16 RepostFormWarningController::GetTitle() {
+base::string16 RepostFormWarningController::GetTitle() {
   return l10n_util::GetStringUTF16(IDS_HTTP_POST_WARNING_TITLE);
 }
 
-string16 RepostFormWarningController::GetMessage() {
+base::string16 RepostFormWarningController::GetDialogMessage() {
   return l10n_util::GetStringUTF16(IDS_HTTP_POST_WARNING);
 }
 
-string16 RepostFormWarningController::GetAcceptButtonTitle() {
+base::string16 RepostFormWarningController::GetAcceptButtonTitle() {
   return l10n_util::GetStringUTF16(IDS_HTTP_POST_WARNING_RESEND);
 }
 
-#if defined(TOOLKIT_GTK)
-const char* RepostFormWarningController::GetAcceptButtonIcon() {
-  return GTK_STOCK_REFRESH;
-}
-
-const char* RepostFormWarningController::GetCancelButtonIcon() {
-  return GTK_STOCK_CANCEL;
-}
-#endif  // defined(TOOLKIT_GTK)
-
 void RepostFormWarningController::OnAccepted() {
-  navigation_controller_->ContinuePendingReload();
+  web_contents()->GetController().ContinuePendingReload();
 }
 
 void RepostFormWarningController::OnCanceled() {
-  navigation_controller_->CancelPendingReload();
+  web_contents()->GetController().CancelPendingReload();
 }
 
-void RepostFormWarningController::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
+void RepostFormWarningController::OnClosed() {
+  web_contents()->GetController().CancelPendingReload();
+}
+
+void RepostFormWarningController::BeforeFormRepostWarningShow() {
   // Close the dialog if we show an additional dialog, to avoid them
   // stacking up.
-  if (type == content::NOTIFICATION_REPOST_WARNING_SHOWN)
-    Cancel();
-  else
-    TabModalConfirmDialogDelegate::Observe(type, source, details);
+  Cancel();
 }

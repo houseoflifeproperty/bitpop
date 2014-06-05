@@ -12,6 +12,7 @@
 #include "SkPoint.h"
 
 class SkPath;
+class SkMatrix;
 
 // Path forward:
 //   core work
@@ -25,15 +26,9 @@ class SkPath;
 //      use growToInclude to fit skp round rects & generate stats (RRs vs. real paths)
 //      check on # of rectorus's the RRs could handle
 //   rendering work
-//      add entry points (clipRRect, drawRRect) - plumb down to SkDevice
-//      update SkPath.addRRect() to take an SkRRect - only use quads
-//          -- alternatively add addRRectToPath here
+//      update SkPath.addRRect() to only use quads
 //      add GM and bench
-//   clipping opt
-//      update SkClipStack to perform logic with RRs
 //   further out
-//      add RR rendering shader to Ganesh (akin to cicle drawing code)
-//          - only for simple RRs
 //      detect and triangulate RRectorii rather than falling back to SW in Ganesh
 //
 
@@ -76,6 +71,14 @@ public:
         //!< the curves) nor a rect (i.e., both radii are non-zero)
         kSimple_Type,
 
+        //!< The RR is non-empty and the two left x radii are equal, the two top
+        //!< y radii are equal, and the same for the right and bottom but it is
+        //!< neither an rect, oval, nor a simple RR. It is called "nine patch"
+        //!< because the centers of the corner ellipses form an axis aligned
+        //!< rect with edges that divide the RR into an 9 rectangular patches:
+        //!< an interior patch, four edge patches, and four corner patches.
+        kNinePatch_Type,
+
         //!< A fully general (non-empty) RR. Some of the x and/or y radii are
         //!< different from the others and there must be one corner where
         //!< both radii are non-zero.
@@ -101,7 +104,16 @@ public:
     inline bool isRect() const { return kRect_Type == this->getType(); }
     inline bool isOval() const { return kOval_Type == this->getType(); }
     inline bool isSimple() const { return kSimple_Type == this->getType(); }
+    inline bool isSimpleCircular() const {
+        return this->isSimple() && fRadii[0].fX == fRadii[0].fY;
+    }
+    inline bool isNinePatch() const { return kNinePatch_Type == this->getType(); }
     inline bool isComplex() const { return kComplex_Type == this->getType(); }
+
+    bool allCornersCircular() const;
+
+    SkScalar width() const { return fRect.width(); }
+    SkScalar height() const { return fRect.height(); }
 
     /**
      * Set this RR to the empty rectangle (0,0,0,0) with 0 x & y radii.
@@ -158,6 +170,12 @@ public:
     void setRectXY(const SkRect& rect, SkScalar xRad, SkScalar yRad);
 
     /**
+     * Initialize the rr with one radius per-side.
+     */
+    void setNinePatch(const SkRect& rect, SkScalar leftRad, SkScalar topRad,
+                      SkScalar rightRad, SkScalar bottomRad);
+
+    /**
      * Initialize the RR with potentially different radii for all four corners.
      */
     void setRectRadii(const SkRect& rect, const SkVector radii[4]);
@@ -185,37 +203,57 @@ public:
 
     friend bool operator==(const SkRRect& a, const SkRRect& b) {
         return a.fRect == b.fRect &&
-               SkScalarsEqual((SkScalar*) a.fRadii, (SkScalar*) b.fRadii, 8);
+               SkScalarsEqual(a.fRadii[0].asScalars(),
+                              b.fRadii[0].asScalars(), 8);
     }
 
     friend bool operator!=(const SkRRect& a, const SkRRect& b) {
         return a.fRect != b.fRect ||
-               !SkScalarsEqual((SkScalar*) a.fRadii, (SkScalar*) b.fRadii, 8);
+               !SkScalarsEqual(a.fRadii[0].asScalars(),
+                               b.fRadii[0].asScalars(), 8);
     }
 
     /**
-     *  Returns true if (p.fX,p.fY) is inside the RR, and the RR
-     *  is not empty.
+     *  Call inset on the bounds, and adjust the radii to reflect what happens
+     *  in stroking: If the corner is sharp (no curvature), leave it alone,
+     *  otherwise we grow/shrink the radii by the amount of the inset. If a
+     *  given radius becomes negative, it is pinned to 0.
      *
-     *  Contains treats the left and top differently from the right and bottom.
-     *  The left and top coordinates of the RR are themselves considered
-     *  to be inside, while the right and bottom are not. All the points on the
-     *  edges of the corners are considered to be inside.
+     *  It is valid for dst == this.
      */
-    bool contains(const SkPoint& p) const {
-        return contains(p.fX, p.fY);
+    void inset(SkScalar dx, SkScalar dy, SkRRect* dst) const;
+
+    void inset(SkScalar dx, SkScalar dy) {
+        this->inset(dx, dy, this);
     }
 
     /**
-     *  Returns true if (x,y) is inside the RR, and the RR
-     *  is not empty.
+     *  Call outset on the bounds, and adjust the radii to reflect what happens
+     *  in stroking: If the corner is sharp (no curvature), leave it alone,
+     *  otherwise we grow/shrink the radii by the amount of the inset. If a
+     *  given radius becomes negative, it is pinned to 0.
      *
-     *  Contains treats the left and top differently from the right and bottom.
-     *  The left and top coordinates of the RR are themselves considered
-     *  to be inside, while the right and bottom are not. All the points on the
-     *  edges of the corners are considered to be inside.
+     *  It is valid for dst == this.
      */
-    bool contains(SkScalar x, SkScalar y) const;
+    void outset(SkScalar dx, SkScalar dy, SkRRect* dst) const {
+        this->inset(-dx, -dy, dst);
+    }
+    void outset(SkScalar dx, SkScalar dy) {
+        this->inset(-dx, -dy, this);
+    }
+
+    /**
+     * Translate the rrect by (dx, dy).
+     */
+    void offset(SkScalar dx, SkScalar dy) {
+        fRect.offset(dx, dy);
+    }
+
+    /**
+     *  Returns true if 'rect' is wholy inside the RR, and both
+     *  are not empty.
+     */
+    bool contains(const SkRect& rect) const;
 
     SkDEBUGCODE(void validate() const;)
 
@@ -228,14 +266,31 @@ public:
      *  write kSizeInMemory bytes, and that value is guaranteed to always be
      *  a multiple of 4. Return kSizeInMemory.
      */
-    uint32_t writeToMemory(void* buffer) const;
+    size_t writeToMemory(void* buffer) const;
 
     /**
-     *  Read the rrect from the specified buffer. This is guaranteed to always
-     *  read kSizeInMemory bytes, and that value is guaranteed to always be
-     *  a multiple of 4. Return kSizeInMemory.
+     * Reads the rrect from the specified buffer
+     *
+     * If the specified buffer is large enough, this will read kSizeInMemory bytes,
+     * and that value is guaranteed to always be a multiple of 4.
+     *
+     * @param buffer Memory to read from
+     * @param length Amount of memory available in the buffer
+     * @return number of bytes read (must be a multiple of 4) or
+     *         0 if there was not enough memory available
      */
-    uint32_t readFromMemory(const void* buffer);
+    size_t readFromMemory(const void* buffer, size_t length);
+
+    /**
+     *  Transform by the specified matrix, and put the result in dst.
+     *
+     *  @param matrix SkMatrix specifying the transform. Must only contain
+     *      scale and/or translate, or this call will fail.
+     *  @param dst SkRRect to store the result. It is an error to use this,
+     *      which would make this function no longer const.
+     *  @return true on success, false on failure. If false, dst is unmodified.
+     */
+    bool transform(const SkMatrix& matrix, SkRRect* dst) const;
 
 private:
     SkRect fRect;
@@ -246,6 +301,7 @@ private:
     // uninitialized data
 
     void computeType() const;
+    bool checkCornerContainment(SkScalar x, SkScalar y) const;
 
     // to access fRadii directly
     friend class SkPath;

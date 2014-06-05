@@ -20,25 +20,32 @@ Call tool.SetupEnvironment().
 Run the test as usual.
 Call tool.CleanUpEnvironment().
 """
+# pylint: disable=R0201
 
+import glob
 import os.path
+import subprocess
 import sys
 
-from constants import CHROME_DIR
+from pylib.constants import DIR_SOURCE_ROOT
 
 
-def SetChromeTimeoutScale(adb, scale):
+def SetChromeTimeoutScale(device, scale):
   """Sets the timeout scale in /data/local/tmp/chrome_timeout_scale to scale."""
   path = '/data/local/tmp/chrome_timeout_scale'
   if not scale or scale == 1.0:
     # Delete if scale is None/0.0/1.0 since the default timeout scale is 1.0
-    adb.RunShellCommand('rm %s' % path)
+    device.old_interface.RunShellCommand('rm %s' % path)
   else:
-    adb.SetFileContents(path, '%f' % scale)
+    device.old_interface.SetProtectedFileContents(path, '%f' % scale)
 
 
 class BaseTool(object):
   """A tool that does nothing."""
+
+  def __init__(self):
+    """Does nothing."""
+    pass
 
   def GetTestWrapper(self):
     """Returns a string that is to be prepended to the test command line."""
@@ -84,27 +91,37 @@ class BaseTool(object):
 class AddressSanitizerTool(BaseTool):
   """AddressSanitizer tool."""
 
-  TMP_DIR = '/data/local/tmp/asan'
-  WRAPPER_NAME = 'asanwrapper.sh'
+  WRAPPER_NAME = '/system/bin/asanwrapper'
+  # Disable memcmp overlap check.There are blobs (gl drivers)
+  # on some android devices that use memcmp on overlapping regions,
+  # nothing we can do about that.
+  EXTRA_OPTIONS = 'strict_memcmp=0,use_sigaltstack=1'
 
-  def __init__(self, adb):
-    self._adb = adb
-    self._wrap_properties = ['wrap.com.google.android.apps.ch',
-                             'wrap.org.chromium.native_test']
+  def __init__(self, device):
+    super(AddressSanitizerTool, self).__init__()
+    self._device = device
+    # Configure AndroidCommands to run utils (such as md5sum_bin) under ASan.
+    # This is required because ASan is a compiler-based tool, and md5sum
+    # includes instrumented code from base.
+    device.old_interface.SetUtilWrapper(self.GetUtilWrapper())
+    libs = glob.glob(os.path.join(DIR_SOURCE_ROOT,
+                                  'third_party/llvm-build/Release+Asserts/',
+                                  'lib/clang/*/lib/linux/',
+                                  'libclang_rt.asan-arm-android.so'))
+    assert len(libs) == 1
+    self._lib = libs[0]
 
   def CopyFiles(self):
     """Copies ASan tools to the device."""
-    files = ['tools/android/asan/asanwrapper.sh',
-             'third_party/llvm-build/Release+Asserts/lib/clang/3.2/lib/linux/' +
-                 'libclang_rt.asan-arm-android.so']
-    for f in files:
-      self._adb.PushIfNeeded(os.path.join(CHROME_DIR, f),
-                             os.path.join(AddressSanitizerTool.TMP_DIR,
-                                          os.path.basename(f)))
+    subprocess.call([os.path.join(DIR_SOURCE_ROOT,
+                                  'tools/android/asan/asan_device_setup.sh'),
+                     '--device', self._device.old_interface.GetDevice(),
+                     '--lib', self._lib,
+                     '--extra-options', AddressSanitizerTool.EXTRA_OPTIONS])
+    self._device.old_interface.WaitForDevicePm()
 
   def GetTestWrapper(self):
-    return os.path.join(AddressSanitizerTool.TMP_DIR,
-                        AddressSanitizerTool.WRAPPER_NAME)
+    return AddressSanitizerTool.WRAPPER_NAME
 
   def GetUtilWrapper(self):
     """Returns the wrapper for utilities, such as forwarder.
@@ -115,16 +132,11 @@ class AddressSanitizerTool(BaseTool):
     return self.GetTestWrapper()
 
   def SetupEnvironment(self):
-    self._adb.EnableAdbRoot()
-    for prop in self._wrap_properties:
-      self._adb.RunShellCommand('setprop %s "logwrapper %s"' % (
-          prop, self.GetTestWrapper()))
-    SetChromeTimeoutScale(self._adb, self.GetTimeoutScale())
+    self._device.old_interface.EnableAdbRoot()
+    SetChromeTimeoutScale(self._device, self.GetTimeoutScale())
 
   def CleanUpEnvironment(self):
-    for prop in self._wrap_properties:
-      self._adb.RunShellCommand('setprop %s ""' % (prop,))
-    SetChromeTimeoutScale(self._adb, None)
+    SetChromeTimeoutScale(self._device, None)
 
   def GetTimeoutScale(self):
     # Very slow startup.
@@ -137,38 +149,40 @@ class ValgrindTool(BaseTool):
   VG_DIR = '/data/local/tmp/valgrind'
   VGLOGS_DIR = '/data/local/tmp/vglogs'
 
-  def __init__(self, adb):
-    self._adb = adb
+  def __init__(self, device):
+    super(ValgrindTool, self).__init__()
+    self._device = device
     # exactly 31 chars, SystemProperties::PROP_NAME_MAX
     self._wrap_properties = ['wrap.com.google.android.apps.ch',
                              'wrap.org.chromium.native_test']
 
   def CopyFiles(self):
     """Copies Valgrind tools to the device."""
-    self._adb.RunShellCommand('rm -r %s; mkdir %s' %
-                              (ValgrindTool.VG_DIR, ValgrindTool.VG_DIR))
-    self._adb.RunShellCommand('rm -r %s; mkdir %s' %
-                              (ValgrindTool.VGLOGS_DIR,
-                               ValgrindTool.VGLOGS_DIR))
+    self._device.old_interface.RunShellCommand(
+        'rm -r %s; mkdir %s' % (ValgrindTool.VG_DIR, ValgrindTool.VG_DIR))
+    self._device.old_interface.RunShellCommand(
+        'rm -r %s; mkdir %s' % (ValgrindTool.VGLOGS_DIR,
+                                ValgrindTool.VGLOGS_DIR))
     files = self.GetFilesForTool()
     for f in files:
-      self._adb.PushIfNeeded(os.path.join(CHROME_DIR, f),
-                             os.path.join(ValgrindTool.VG_DIR,
-                                          os.path.basename(f)))
+      self._device.old_interface.PushIfNeeded(
+          os.path.join(DIR_SOURCE_ROOT, f),
+          os.path.join(ValgrindTool.VG_DIR, os.path.basename(f)))
 
   def SetupEnvironment(self):
     """Sets up device environment."""
-    self._adb.RunShellCommand('chmod 777 /data/local/tmp')
+    self._device.old_interface.RunShellCommand('chmod 777 /data/local/tmp')
+    self._device.old_interface.RunShellCommand('setenforce 0')
     for prop in self._wrap_properties:
-      self._adb.RunShellCommand('setprop %s "logwrapper %s"' % (
-          prop, self.GetTestWrapper()))
-    SetChromeTimeoutScale(self._adb, self.GetTimeoutScale())
+      self._device.old_interface.RunShellCommand(
+          'setprop %s "logwrapper %s"' % (prop, self.GetTestWrapper()))
+    SetChromeTimeoutScale(self._device, self.GetTimeoutScale())
 
   def CleanUpEnvironment(self):
     """Cleans up device environment."""
     for prop in self._wrap_properties:
-      self._adb.RunShellCommand('setprop %s ""' % (prop,))
-    SetChromeTimeoutScale(self._adb, None)
+      self._device.old_interface.RunShellCommand('setprop %s ""' % (prop,))
+    SetChromeTimeoutScale(self._device, None)
 
   def GetFilesForTool(self):
     """Returns a list of file names for the tool."""
@@ -186,8 +200,8 @@ class ValgrindTool(BaseTool):
 class MemcheckTool(ValgrindTool):
   """Memcheck tool."""
 
-  def __init__(self, adb):
-    super(MemcheckTool, self).__init__(adb)
+  def __init__(self, device):
+    super(MemcheckTool, self).__init__(device)
 
   def GetFilesForTool(self):
     """Returns a list of file names for the tool."""
@@ -207,8 +221,8 @@ class MemcheckTool(ValgrindTool):
 class TSanTool(ValgrindTool):
   """ThreadSanitizer tool. See http://code.google.com/p/data-race-test ."""
 
-  def __init__(self, adb):
-    super(TSanTool, self).__init__(adb)
+  def __init__(self, device):
+    super(TSanTool, self).__init__(device)
 
   def GetFilesForTool(self):
     """Returns a list of file names for the tool."""
@@ -227,20 +241,20 @@ class TSanTool(ValgrindTool):
 
 
 TOOL_REGISTRY = {
-    'memcheck': lambda x: MemcheckTool(x),
-    'memcheck-renderer': lambda x: MemcheckTool(x),
-    'tsan': lambda x: TSanTool(x),
-    'tsan-renderer': lambda x: TSanTool(x),
-    'asan': lambda x: AddressSanitizerTool(x),
+    'memcheck': MemcheckTool,
+    'memcheck-renderer': MemcheckTool,
+    'tsan': TSanTool,
+    'tsan-renderer': TSanTool,
+    'asan': AddressSanitizerTool,
 }
 
 
-def CreateTool(tool_name, adb):
+def CreateTool(tool_name, device):
   """Creates a tool with the specified tool name.
 
   Args:
     tool_name: Name of the tool to create.
-    adb: ADB interface the tool will use.
+    device: A DeviceUtils instance.
   Returns:
     A tool for the specified tool_name.
   """
@@ -249,7 +263,7 @@ def CreateTool(tool_name, adb):
 
   ctor = TOOL_REGISTRY.get(tool_name)
   if ctor:
-    return ctor(adb)
+    return ctor(device)
   else:
     print 'Unknown tool %s, available tools: %s' % (
         tool_name, ', '.join(sorted(TOOL_REGISTRY.keys())))

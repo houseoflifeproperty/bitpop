@@ -8,14 +8,17 @@
 #include "ash/shell_window_ids.h"
 #include "ash/wm/window_animations.h"
 #include "base/command_line.h"
-#include "chrome/common/chrome_switches.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 
 namespace chromeos {
 
 LockWindow* LockWindow::Create() {
-  return new LockWindowAura();
+  LockWindowAura* lock_window = new LockWindowAura();
+  // Cancel existing touch events when screen is locked.
+  ui::GestureRecognizer::Get()->TransferEventsTo(
+      lock_window->GetNativeWindow(), NULL);
+  return lock_window;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -44,16 +47,14 @@ void LockWindowAura::Init() {
   views::Widget::InitParams params(
       views::Widget::InitParams::TYPE_WINDOW_FRAMELESS);
   params.show_state = ui::SHOW_STATE_FULLSCREEN;
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableNewOobe))
-    params.transparent = true;
+  params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   // TODO(oshima): move the lock screen harness to ash.
   params.parent =
-      ash::Shell::GetContainer(
-          ash::Shell::GetPrimaryRootWindow(),
-          ash::internal::kShellWindowId_LockScreenContainer);
+      ash::Shell::GetContainer(ash::Shell::GetPrimaryRootWindow(),
+                               ash::kShellWindowId_LockScreenContainer);
   views::Widget::Init(params);
-  views::corewm::SetWindowVisibilityAnimationTransition(
-      GetNativeView(), views::corewm::ANIMATE_NONE);
+  wm::SetWindowVisibilityAnimationTransition(
+      GetNativeView(), wm::ANIMATE_NONE);
 }
 
 }  // namespace chromeos

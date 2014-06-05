@@ -8,8 +8,8 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "ui/aura/aura_export.h"
-#include "ui/base/events/event_constants.h"
-#include "ui/base/events/event_handler.h"
+#include "ui/events/event_constants.h"
+#include "ui/events/event_handler.h"
 #include "ui/gfx/native_widget_types.h"
 
 namespace gfx {
@@ -23,6 +23,7 @@ class Size;
 namespace ui {
 class GestureEvent;
 class KeyEvent;
+class Layer;
 class MouseEvent;
 class Texture;
 class TouchEvent;
@@ -72,13 +73,17 @@ class AURA_EXPORT WindowDelegate : public ui::EventHandler {
   // Called from Window's destructor before OnWindowDestroyed and before the
   // children have been destroyed and the window has been removed from its
   // parent.
-  virtual void OnWindowDestroying() = 0;
+  // This method takes the window because the delegate implementation may no
+  // longer have a route back to the window by the time this method is called.
+  virtual void OnWindowDestroying(Window* window) = 0;
 
   // Called when the Window has been destroyed (i.e. from its destructor). This
   // is called after OnWindowDestroying and after the children have been
   // deleted and the window has been removed from its parent.
   // The delegate can use this as an opportunity to delete itself if necessary.
-  virtual void OnWindowDestroyed() = 0;
+  // This method takes the window because the delegate implementation may no
+  // longer have a route back to the window by the time this method is called.
+  virtual void OnWindowDestroyed(Window* window) = 0;
 
   // Called when the TargetVisibility() of a Window changes. |visible|
   // corresponds to the target visibility of the window. See
@@ -94,10 +99,6 @@ class AURA_EXPORT WindowDelegate : public ui::EventHandler {
   // Called from Window::HitTest to retrieve hit test mask when HasHitTestMask
   // above returns true.
   virtual void GetHitTestMask(gfx::Path* mask) const = 0;
-
-  // Called from RecreateLayer() if the layer the window is associated with has
-  // an external texture.
-  virtual scoped_refptr<ui::Texture> CopyTexture() = 0;
 
  protected:
   virtual ~WindowDelegate() {}

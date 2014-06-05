@@ -5,57 +5,48 @@
 from master import master_config
 from master.factory import chromium_factory
 
+import master_site_config
+
+ActiveMaster = master_site_config.ChromiumWebkit
+
 defaults = {}
 
 helper = master_config.Helper(defaults)
 B = helper.Builder
-D = helper.Dependent
 F = helper.Factory
-S = helper.Scheduler
 
-def linux(): return chromium_factory.ChromiumFactory('src/build', 'linux2')
+def linux():
+  return chromium_factory.ChromiumFactory('src/out', 'linux2')
 
+defaults['category'] = 'deps'
 
 ################################################################################
 ## Release
 ################################################################################
 
-defaults['category'] = '3webkit linux deps'
-
-#
-# Main release scheduler for chromium
-#
-S('s3_chromium_rel', branch='src', treeStableTimer=60)
-
 #
 # Linux Rel Builder
 #
-B('WebKit Linux (deps)', 'f_webkit_linux_rel', scheduler='s3_chromium_rel')
+B('WebKit Linux (deps)', 'f_webkit_linux_rel', scheduler='global_scheduler')
 F('f_webkit_linux_rel', linux().ChromiumFactory(
-    tests=[
-        'test_shell',
-        'webkit',
-        'webkit_lint',
-        'webkit_unit',
-    ],
+    tests=chromium_factory.blink_tests,
     options=[
         '--build-tool=ninja',
         '--compiler=goma',
         '--',
-        'DumpRenderTree',
-        'test_shell',
-        'test_shell_tests',
-        'webkit_unit_tests',
+        'blink_tests',
     ],
     factory_properties={
-        'additional_expectations_files': [
+        'additional_expectations': [
             ['webkit', 'tools', 'layout_tests', 'test_expectations.txt' ],
         ],
-        'archive_webkit_results': True,
+        'archive_webkit_results': ActiveMaster.is_production_host,
+        'gclient_env': {
+            'GYP_GENERATORS':'ninja',
+        },
         'generate_gtest_json': True,
         'test_results_server': 'test-results.appspot.com',
-        'gclient_env': { 'GYP_GENERATORS': 'ninja' },
     }))
 
-def Update(config, active_master, c):
+def Update(_config, _active_master, c):
   return helper.Update(c)

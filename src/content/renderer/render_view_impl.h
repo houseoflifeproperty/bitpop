@@ -5,7 +5,11 @@
 #ifndef CONTENT_RENDERER_RENDER_VIEW_IMPL_H_
 #define CONTENT_RENDERER_RENDER_VIEW_IMPL_H_
 
+#include <deque>
+#include <map>
 #include <set>
+#include <string>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
@@ -13,47 +17,51 @@
 #include "base/memory/linked_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
-#include "base/timer.h"
-#include "base/values.h"
+#include "base/process/process.h"
+#include "base/strings/string16.h"
+#include "base/timer/timer.h"
 #include "build/build_config.h"
+#include "cc/input/top_controls_state.h"
+#include "cc/resources/shared_bitmap.h"
 #include "content/common/content_export.h"
 #include "content/common/drag_event_source_info.h"
 #include "content/common/edit_command.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/navigation_gesture.h"
 #include "content/common/view_message_enums.h"
-#include "content/public/common/javascript_message_type.h"
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/referrer.h"
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/common/stop_find_action.h"
+#include "content/public/common/top_controls_state.h"
 #include "content/public/renderer/render_view.h"
 #include "content/renderer/mouse_lock_dispatcher.h"
-#include "content/renderer/render_view_pepper_helper.h"
+#include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_widget.h"
-#include "content/renderer/renderer_webcookiejar_impl.h"
+#include "content/renderer/renderer_date_time_picker.h"
+#include "content/renderer/stats_collection_observer.h"
 #include "ipc/ipc_platform_file.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrameClient.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebHistoryItem.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIconURL.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNavigationType.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNode.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPageSerializerClient.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPageVisibilityState.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebViewClient.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebFileSystem.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/web/WebAXObject.h"
+#include "third_party/WebKit/public/web/WebConsoleMessage.h"
+#include "third_party/WebKit/public/web/WebDataSource.h"
+#include "third_party/WebKit/public/web/WebElement.h"
+#include "third_party/WebKit/public/web/WebHistoryItem.h"
+#include "third_party/WebKit/public/web/WebIconURL.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebNavigationType.h"
+#include "third_party/WebKit/public/web/WebNode.h"
+#include "third_party/WebKit/public/web/WebPageSerializerClient.h"
+#include "third_party/WebKit/public/web/WebPageVisibilityState.h"
+#include "third_party/WebKit/public/web/WebSecurityOrigin.h"
+#include "third_party/WebKit/public/web/WebViewClient.h"
+#include "ui/base/window_open_disposition.h"
 #include "ui/surface/transport_dib.h"
-#include "webkit/glue/webpreferences.h"
-#include "webkit/media/webmediaplayer_delegate.h"
-#include "webkit/plugins/npapi/webplugin_page_delegate.h"
+#include "webkit/common/webpreferences.h"
 
 #if defined(OS_ANDROID)
 #include "content/renderer/android/content_detector.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebContentDetectionResult.h"
+#include "third_party/WebKit/public/web/WebContentDetectionResult.h"
 #endif
 
 #if defined(COMPILER_MSVC)
@@ -63,44 +71,24 @@
 #pragma warning(disable: 4250)
 #endif
 
-class CommandLine;
 class PepperDeviceTest;
 class SkBitmap;
 struct PP_NetAddress_Private;
-struct ViewMsg_Navigate_Params;
+struct FrameMsg_Navigate_Params;
 struct ViewMsg_PostMessage_Params;
 struct ViewMsg_StopFinding_Params;
-struct ViewMsg_SwapOut_Params;
-struct WebDropData;
+
+namespace base {
+class CommandLine;
+}
 
 namespace ui {
 struct SelectedFileInfo;
 }  // namespace ui
 
-namespace webkit {
-
-namespace ppapi {
-class PluginInstance;
-}  // namespace ppapi
-
-}  // namespace webkit
-
-namespace webkit_glue {
-class ImageResourceFetcher;
-class ResourceFetcher;
-}
-
-#if defined(OS_ANDROID)
-namespace webkit_media {
-class MediaPlayerBridgeManagerImpl;
-class WebMediaPlayerManagerAndroid;
-}
-#endif
-
-namespace WebKit {
+namespace blink {
 class WebApplicationCacheHost;
 class WebApplicationCacheHostClient;
-class WebCompositorOutputSurface;
 class WebDOMMessageEvent;
 class WebDataSource;
 class WebDateTimeChooserCompletion;
@@ -111,19 +99,14 @@ class WebIconURL;
 class WebImage;
 class WebPeerConnection00Handler;
 class WebPeerConnection00HandlerClient;
-class WebMediaPlayer;
-class WebMediaPlayerClient;
 class WebMouseEvent;
 class WebPeerConnectionHandler;
 class WebPeerConnectionHandlerClient;
 class WebSocketStreamHandle;
-class WebSpeechInputController;
-class WebSpeechInputListener;
 class WebSpeechRecognizer;
 class WebStorageNamespace;
 class WebTouchEvent;
 class WebURLRequest;
-class WebUserMediaClient;
 struct WebActiveWheelFlingParameters;
 struct WebDateTimeChooserParams;
 struct WebFileChooserParams;
@@ -138,54 +121,44 @@ class WebHitTestResult;
 #endif
 }
 
+namespace webkit_glue {
+class WebURLResponseExtraDataImpl;
+}
+
 namespace content {
 class BrowserPluginManager;
 class DeviceOrientationDispatcher;
 class DevToolsAgent;
 class DocumentState;
-class DomAutomationController;
 class ExternalPopupMenu;
 class FaviconHelper;
 class GeolocationDispatcher;
-class InputTagSpeechDispatcher;
-class JavaBridgeDispatcher;
+class HistoryController;
+class HistoryEntry;
+class ImageResourceFetcher;
 class LoadProgressTracker;
+class MidiDispatcher;
 class MediaStreamDispatcher;
-class MediaStreamImpl;
 class MouseLockDispatcher;
 class NavigationState;
-class NotificationProvider;
+class PepperPluginInstanceImpl;
+class PushMessagingDispatcher;
 class RenderViewObserver;
 class RenderViewTest;
 class RendererAccessibility;
 class RendererDateTimePicker;
-class RendererPpapiHost;
 class RendererWebColorChooserImpl;
-class RenderWidgetFullscreenPepper;
 class SpeechRecognitionDispatcher;
-class WebIntentsHost;
 class WebPluginDelegateProxy;
-struct CustomContextMenuContext;
+struct DropData;
+struct FaviconURL;
 struct FileChooserParams;
 struct RenderViewImplParams;
 
 #if defined(OS_ANDROID)
-class WebMediaPlayerProxyImplAndroid;
+class RendererMediaPlayerManager;
+class WebMediaPlayerProxyAndroid;
 #endif
-
-// We need to prevent a page from trying to create infinite popups. It is not
-// as simple as keeping a count of the number of immediate children
-// popups. Having an html file that window.open()s itself would create
-// an unlimited chain of RenderViews who only have one RenderView child.
-//
-// Therefore, each new top level RenderView creates a new counter and shares it
-// with all its children and grandchildren popup RenderViewImpls created with
-// createView() to have a sort of global limit for the page so no more than
-// kMaximumNumberOfPopups popups are created.
-//
-// This is a RefCounted holder of an int because I can't say
-// scoped_refptr<int>.
-typedef base::RefCountedData<int> SharedRenderViewCounter;
 
 //
 // RenderView is an object that manages a WebView object, and provides a
@@ -193,33 +166,31 @@ typedef base::RefCountedData<int> SharedRenderViewCounter;
 //
 class CONTENT_EXPORT RenderViewImpl
     : public RenderWidget,
-      NON_EXPORTED_BASE(public WebKit::WebViewClient),
-      NON_EXPORTED_BASE(public WebKit::WebFrameClient),
-      NON_EXPORTED_BASE(public WebKit::WebPageSerializerClient),
+      NON_EXPORTED_BASE(public blink::WebViewClient),
+      NON_EXPORTED_BASE(public blink::WebPageSerializerClient),
       public RenderView,
-      NON_EXPORTED_BASE(public webkit::npapi::WebPluginPageDelegate),
-      NON_EXPORTED_BASE(public webkit_media::WebMediaPlayerDelegate),
-      NON_EXPORTED_BASE(public WebGraphicsContext3DSwapBuffersClient),
       public base::SupportsWeakPtr<RenderViewImpl> {
  public:
-  // Creates a new RenderView. If this is a blocked popup or as a new tab,
-  // opener_id is the routing ID of the RenderView responsible for creating this
-  // RenderView. |counter| is either a currently initialized counter, or NULL
-  // (in which case we treat this RenderView as a top level window).
-  static RenderViewImpl* Create(
-      int32 opener_id,
-      const RendererPreferences& renderer_prefs,
-      const webkit_glue::WebPreferences& webkit_prefs,
-      SharedRenderViewCounter* counter,
-      int32 routing_id,
-      int32 surface_id,
-      int64 session_storage_namespace_id,
-      const string16& frame_name,
-      bool is_renderer_created,
-      bool swapped_out,
-      int32 next_page_id,
-      const WebKit::WebScreenInfo& screen_info,
-      AccessibilityMode accessibility_mode);
+  // Creates a new RenderView. |opener_id| is the routing ID of the RenderView
+  // responsible for creating this RenderView. Note that if the original opener
+  // has been closed, |window_was_created_with_opener| will be true and
+  // |opener_id| will be MSG_ROUTING_NONE.
+  static RenderViewImpl* Create(int32 opener_id,
+                                bool window_was_created_with_opener,
+                                const RendererPreferences& renderer_prefs,
+                                const WebPreferences& webkit_prefs,
+                                int32 routing_id,
+                                int32 main_frame_routing_id,
+                                int32 surface_id,
+                                int64 session_storage_namespace_id,
+                                const base::string16& frame_name,
+                                bool is_renderer_created,
+                                bool swapped_out,
+                                bool hidden,
+                                bool never_visible,
+                                int32 next_page_id,
+                                const blink::WebScreenInfo& screen_info,
+                                AccessibilityMode accessibility_mode);
 
   // Used by content_layouttest_support to hook into the creation of
   // RenderViewImpls.
@@ -227,56 +198,63 @@ class CONTENT_EXPORT RenderViewImpl
       RenderViewImpl* (*create_render_view_impl)(RenderViewImplParams*));
 
   // Returns the RenderViewImpl containing the given WebView.
-  static RenderViewImpl* FromWebView(WebKit::WebView* webview);
+  static RenderViewImpl* FromWebView(blink::WebView* webview);
 
   // Returns the RenderViewImpl for the given routing ID.
   static RenderViewImpl* FromRoutingID(int routing_id);
 
   // May return NULL when the view is closing.
-  WebKit::WebView* webview() const;
-
-  // WebGraphicsContext3DSwapBuffersClient implementation.
-
-  // Called by a GraphicsContext associated with this view when swapbuffers
-  // is posted, completes or is aborted.
-  virtual void OnViewContextSwapBuffersPosted() OVERRIDE;
-  virtual void OnViewContextSwapBuffersComplete() OVERRIDE;
-  virtual void OnViewContextSwapBuffersAborted() OVERRIDE;
+  blink::WebView* webview() const;
 
   int history_list_offset() const { return history_list_offset_; }
 
-  const webkit_glue::WebPreferences& webkit_preferences() const {
+  const WebPreferences& webkit_preferences() const {
     return webkit_preferences_;
   }
 
-  bool enable_do_not_track() const {
-    return renderer_preferences_.enable_do_not_track;
+  const RendererPreferences& renderer_preferences() const {
+    return renderer_preferences_;
   }
 
   void set_send_content_state_immediately(bool value) {
     send_content_state_immediately_ = value;
   }
 
+  RenderFrameImpl* main_render_frame() { return main_render_frame_.get(); }
+
+  // TODO(jam): move to RenderFrameImpl
   MediaStreamDispatcher* media_stream_dispatcher() {
     return media_stream_dispatcher_;
+  }
+
+  AccessibilityMode accessibility_mode() {
+    return accessibility_mode_;
+  }
+
+  RendererAccessibility* renderer_accessibility() {
+    return renderer_accessibility_;
   }
 
   MouseLockDispatcher* mouse_lock_dispatcher() {
     return mouse_lock_dispatcher_;
   }
 
-#if defined(OS_ANDROID)
-  webkit_media::WebMediaPlayerManagerAndroid* media_player_manager() {
-    return media_player_manager_.get();
+  HistoryController* history_controller() {
+    return history_controller_.get();
   }
-#endif
 
   // Lazily initialize this view's BrowserPluginManager and return it.
-  BrowserPluginManager* browser_plugin_manager();
+  BrowserPluginManager* GetBrowserPluginManager();
 
   // Functions to add and remove observers for this object.
   void AddObserver(RenderViewObserver* observer);
   void RemoveObserver(RenderViewObserver* observer);
+
+  // Returns the StatsCollectionObserver associated with this view, or NULL
+  // if one wasn't created;
+  StatsCollectionObserver* GetStatsCollectionObserver() {
+    return stats_collection_observer_.get();
+  }
 
   // Adds the given file chooser request to the file_chooser_completion_ queue
   // (see that var for more) and requests the chooser be displayed if there are
@@ -285,52 +263,45 @@ class CONTENT_EXPORT RenderViewImpl
   // Returns true if the chooser was successfully scheduled. False means we
   // didn't schedule anything.
   bool ScheduleFileChooser(const FileChooserParams& params,
-                           WebKit::WebFileChooserCompletion* completion);
+                           blink::WebFileChooserCompletion* completion);
 
-  void LoadNavigationErrorPage(
-      WebKit::WebFrame* frame,
-      const WebKit::WebURLRequest& failed_request,
-      const WebKit::WebURLError& error,
-      const std::string& html,
-      bool replace);
+#if defined(OS_ANDROID)
+  void DismissDateTimeDialog();
+#endif
+#if defined(OS_MACOSX) || defined(OS_ANDROID)
+  void DidHideExternalPopupMenu();
+#endif
+
+  bool is_loading() const { return frames_in_progress_ != 0; }
+
+  void FrameDidStartLoading(blink::WebFrame* frame);
+  void FrameDidStopLoading(blink::WebFrame* frame);
+
+  void FrameDidChangeLoadProgress(blink::WebFrame* frame,
+                                  double load_progress);
+  void FrameDidCommitProvisionalLoad(blink::WebLocalFrame* frame,
+                                     bool is_new_navigation);
 
   // Plugin-related functions --------------------------------------------------
-  // (See also WebPluginPageDelegate implementation.)
 
-  // Notification that the given plugin has crashed.
-  void PluginCrashed(const FilePath& plugin_path);
+#if defined(ENABLE_PLUGINS)
+  // Get/set the plugin which will be used as to handle document find requests.
+  void set_plugin_find_handler(PepperPluginInstanceImpl* plugin) {
+    plugin_find_handler_ = plugin;
+  }
+  PepperPluginInstanceImpl* plugin_find_handler() {
+    return plugin_find_handler_;
+  }
 
-  // Creates a fullscreen container for a pepper plugin instance.
-  RenderWidgetFullscreenPepper* CreatePepperFullscreenContainer(
-      webkit::ppapi::PluginInstance* plugin);
-
-  // Informs the render view that a PPAPI plugin has gained or lost focus.
-  void PpapiPluginFocusChanged();
-
-  // Informs the render view that a PPAPI plugin has changed text input status.
-  void PpapiPluginTextInputTypeChanged();
-  void PpapiPluginCaretPositionChanged();
-
-  // Cancels current composition.
-  void PpapiPluginCancelComposition();
-
-  // Informs the render view that a PPAPI plugin has changed selection.
-  void PpapiPluginSelectionChanged();
-
-  // Notification that a PPAPI plugin has been created.
-  void PpapiPluginCreated(RendererPpapiHost* host);
-
-  // Retrieves the current caret position if a PPAPI plugin has focus.
-  bool GetPpapiPluginCaretBounds(gfx::Rect* rect);
-
-  // Simulates IME events for testing purpose.
-  void SimulateImeSetComposition(
-      const string16& text,
-      const std::vector<WebKit::WebCompositionUnderline>& underlines,
-      int selection_start,
-      int selection_end);
-  void SimulateImeConfirmComposition(const string16& text,
-                                     const ui::Range& replacement_range);
+  PepperPluginInstanceImpl* focused_pepper_plugin() {
+    return focused_pepper_plugin_;
+  }
+  PepperPluginInstanceImpl* pepper_last_mouse_event_target() {
+    return pepper_last_mouse_event_target_;
+  }
+  void set_pepper_last_mouse_event_target(PepperPluginInstanceImpl* plugin) {
+    pepper_last_mouse_event_target_ = plugin;
+  }
 
 #if defined(OS_MACOSX) || defined(OS_WIN)
   // Informs the render view that the given plugin has gained or lost focus.
@@ -340,42 +311,25 @@ class CONTENT_EXPORT RenderViewImpl
 #if defined(OS_MACOSX)
   // Starts plugin IME.
   void StartPluginIme();
-
-  // Helper routines for accelerated plugin support. Used by the
-  // WebPluginDelegateProxy, which has a pointer to the RenderView.
-  gfx::PluginWindowHandle AllocateFakePluginWindowHandle(bool opaque,
-                                                         bool root);
-  void DestroyFakePluginWindowHandle(gfx::PluginWindowHandle window);
-  void AcceleratedSurfaceSetIOSurface(gfx::PluginWindowHandle window,
-                                      int32 width,
-                                      int32 height,
-                                      uint64 io_surface_identifier);
-  TransportDIB::Handle AcceleratedSurfaceAllocTransportDIB(size_t size);
-  void AcceleratedSurfaceFreeTransportDIB(TransportDIB::Id dib_id);
-  void AcceleratedSurfaceSetTransportDIB(gfx::PluginWindowHandle window,
-                                         int32 width,
-                                         int32 height,
-                                         TransportDIB::Handle transport_dib);
-  void AcceleratedSurfaceBuffersSwapped(gfx::PluginWindowHandle window,
-                                        uint64 surface_id);
 #endif
+
+  // Indicates that the given instance has been created.
+  void PepperInstanceCreated(PepperPluginInstanceImpl* instance);
+
+  // Indicates that the given instance is being destroyed. This is called from
+  // the destructor, so it's important that the instance is not dereferenced
+  // from this call.
+  void PepperInstanceDeleted(PepperPluginInstanceImpl* instance);
+
+  // Notification that the given plugin is focused or unfocused.
+  void PepperFocusChanged(PepperPluginInstanceImpl* instance, bool focused);
 
   void RegisterPluginDelegate(WebPluginDelegateProxy* delegate);
   void UnregisterPluginDelegate(WebPluginDelegateProxy* delegate);
-
-  // Helper function to retrieve information about a plugin for a URL and mime
-  // type. Returns false if no plugin was found.
-  // |actual_mime_type| is the actual mime type supported by the
-  // plugin found that match the URL given (one for each item in
-  // |info|).
-  bool GetPluginInfo(const GURL& url,
-                     const GURL& page_url,
-                     const std::string& mime_type,
-                     webkit::WebPluginInfo* plugin_info,
-                     std::string* actual_mime_type);
+#endif  // ENABLE_PLUGINS
 
   void TransferActiveWheelFlingAnimation(
-      const WebKit::WebActiveWheelFlingParameters& params);
+      const blink::WebActiveWheelFlingParameters& params);
 
   // Returns true if the focused element is editable text from the perspective
   // of IME support (also used for on-screen keyboard). Works correctly inside
@@ -389,368 +343,179 @@ class CONTENT_EXPORT RenderViewImpl
 
   void GetWindowSnapshot(const WindowSnapshotCallback& callback);
 
+  // Dispatches the current navigation state to the browser. Called on a
+  // periodic timer so we don't send too many messages.
+  void SyncNavigationState();
+
+  // Returns the length of the session history of this RenderView. Note that
+  // this only coincides with the actual length of the session history if this
+  // RenderView is the currently active RenderView of a WebContents.
+  unsigned GetLocalSessionHistoryLengthForTesting() const;
+
+  // Invokes OnSetFocus and marks the widget as active depending on the value
+  // of |enable|. This is used for layout tests that need to control the focus
+  // synchronously from the renderer.
+  void SetFocusAndActivateForTesting(bool enable);
+
+  // Change the device scale factor and force the compositor to resize.
+  void SetDeviceScaleFactorForTesting(float factor);
+
+  // Change the device ICC color profile while running a layout test.
+  void SetDeviceColorProfileForTesting(const std::vector<char>& color_profile);
+
+  // Used to force the size of a window when running layout tests.
+  void ForceResizeForTesting(const gfx::Size& new_size);
+
+  void UseSynchronousResizeModeForTesting(bool enable);
+
+  // Control autoresize mode.
+  void EnableAutoResizeForTesting(const gfx::Size& min_size,
+                                  const gfx::Size& max_size);
+  void DisableAutoResizeForTesting(const gfx::Size& new_size);
+
   // IPC::Listener implementation ----------------------------------------------
 
   virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
 
-  // WebKit::WebWidgetClient implementation ------------------------------------
+  // blink::WebWidgetClient implementation ------------------------------------
 
   // Most methods are handled by RenderWidget.
   virtual void didFocus();
   virtual void didBlur();
-  virtual void show(WebKit::WebNavigationPolicy policy);
+  virtual void show(blink::WebNavigationPolicy policy);
   virtual void runModal();
   virtual bool enterFullScreen();
   virtual void exitFullScreen();
   virtual bool requestPointerLock();
   virtual void requestPointerUnlock();
   virtual bool isPointerLocked();
-  virtual void didActivateCompositor(int input_handler_identifier);
+  virtual void didActivateCompositor() OVERRIDE;
+  virtual void didHandleGestureEvent(const blink::WebGestureEvent& event,
+                                     bool event_cancelled) OVERRIDE;
+  virtual void initializeLayerTreeView() OVERRIDE;
 
-  // WebKit::WebViewClient implementation --------------------------------------
+  // blink::WebViewClient implementation --------------------------------------
 
-  virtual WebKit::WebView* createView(
-      WebKit::WebFrame* creator,
-      const WebKit::WebURLRequest& request,
-      const WebKit::WebWindowFeatures& features,
-      const WebKit::WebString& frame_name,
-      WebKit::WebNavigationPolicy policy);
-  virtual WebKit::WebWidget* createPopupMenu(WebKit::WebPopupType popup_type);
-  virtual WebKit::WebExternalPopupMenu* createExternalPopupMenu(
-      const WebKit::WebPopupMenuInfo& popup_menu_info,
-      WebKit::WebExternalPopupMenuClient* popup_menu_client);
-  virtual WebKit::WebStorageNamespace* createSessionStorageNamespace(
-      unsigned quota);
-  virtual WebKit::WebCompositorOutputSurface* createOutputSurface() OVERRIDE;
-  virtual void didAddMessageToConsole(
-      const WebKit::WebConsoleMessage& message,
-      const WebKit::WebString& source_name,
-      unsigned source_line);
-  virtual void printPage(WebKit::WebFrame* frame);
-  virtual WebKit::WebNotificationPresenter* notificationPresenter();
+  virtual blink::WebView* createView(blink::WebLocalFrame* creator,
+                                     const blink::WebURLRequest& request,
+                                     const blink::WebWindowFeatures& features,
+                                     const blink::WebString& frame_name,
+                                     blink::WebNavigationPolicy policy,
+                                     bool suppress_opener);
+  virtual blink::WebWidget* createPopupMenu(blink::WebPopupType popup_type);
+  virtual blink::WebExternalPopupMenu* createExternalPopupMenu(
+      const blink::WebPopupMenuInfo& popup_menu_info,
+      blink::WebExternalPopupMenuClient* popup_menu_client);
+  virtual blink::WebStorageNamespace* createSessionStorageNamespace();
+  virtual void printPage(blink::WebLocalFrame* frame);
   virtual bool enumerateChosenDirectory(
-      const WebKit::WebString& path,
-      WebKit::WebFileChooserCompletion* chooser_completion);
-  virtual void initializeHelperPluginWebFrame(WebKit::WebHelperPlugin*);
-  virtual void didStartLoading();
-  virtual void didStopLoading();
-  virtual void didChangeLoadProgress(WebKit::WebFrame* frame,
-                                     double load_progress);
-  virtual bool isSmartInsertDeleteEnabled();
-  virtual bool isSelectTrailingWhitespaceEnabled();
-  virtual void didChangeSelection(bool is_selection_empty);
-  virtual void didExecuteCommand(const WebKit::WebString& command_name);
+      const blink::WebString& path,
+      blink::WebFileChooserCompletion* chooser_completion);
+  virtual void didCancelCompositionOnSelectionChange();
+  virtual void didExecuteCommand(const blink::WebString& command_name);
   virtual bool handleCurrentKeyboardEvent();
-  virtual void didHandleGestureEvent(const WebKit::WebGestureEvent& event,
-                                     bool event_swallowed) OVERRIDE;
-  virtual WebKit::WebColorChooser* createColorChooser(
-      WebKit::WebColorChooserClient*, const WebKit::WebColor& initial_color);
   virtual bool runFileChooser(
-      const WebKit::WebFileChooserParams& params,
-      WebKit::WebFileChooserCompletion* chooser_completion);
-  virtual void runModalAlertDialog(WebKit::WebFrame* frame,
-                                   const WebKit::WebString& message);
-  virtual bool runModalConfirmDialog(WebKit::WebFrame* frame,
-                                     const WebKit::WebString& message);
-  virtual bool runModalPromptDialog(WebKit::WebFrame* frame,
-                                    const WebKit::WebString& message,
-                                    const WebKit::WebString& default_value,
-                                    WebKit::WebString* actual_value);
-  virtual bool runModalBeforeUnloadDialog(WebKit::WebFrame* frame,
-                                          const WebKit::WebString& message);
-  virtual void showContextMenu(WebKit::WebFrame* frame,
-                               const WebKit::WebContextMenuData& data);
-  virtual void setStatusText(const WebKit::WebString& text);
-  virtual void setMouseOverURL(const WebKit::WebURL& url);
-  virtual void setKeyboardFocusURL(const WebKit::WebURL& url);
-  virtual void startDragging(WebKit::WebFrame* frame,
-                             const WebKit::WebDragData& data,
-                             WebKit::WebDragOperationsMask mask,
-                             const WebKit::WebImage& image,
-                             const WebKit::WebPoint& imageOffset);
+      const blink::WebFileChooserParams& params,
+      blink::WebFileChooserCompletion* chooser_completion);
+  virtual void showValidationMessage(const blink::WebRect& anchor_in_root_view,
+                                     const blink::WebString& main_text,
+                                     const blink::WebString& sub_text,
+                                     blink::WebTextDirection hint) OVERRIDE;
+  virtual void hideValidationMessage() OVERRIDE;
+  virtual void moveValidationMessage(
+      const blink::WebRect& anchor_in_root_view) OVERRIDE;
+  virtual void setStatusText(const blink::WebString& text);
+  virtual void setMouseOverURL(const blink::WebURL& url);
+  virtual void setKeyboardFocusURL(const blink::WebURL& url);
+  virtual void startDragging(blink::WebLocalFrame* frame,
+                             const blink::WebDragData& data,
+                             blink::WebDragOperationsMask mask,
+                             const blink::WebImage& image,
+                             const blink::WebPoint& imageOffset);
   virtual bool acceptsLoadDrops();
   virtual void focusNext();
   virtual void focusPrevious();
-  virtual void focusedNodeChanged(const WebKit::WebNode& node);
+  virtual void focusedNodeChanged(const blink::WebNode& node);
   virtual void numberOfWheelEventHandlersChanged(unsigned num_handlers);
-  virtual void hasTouchEventHandlers(bool has_handlers);
   virtual void didUpdateLayout();
 #if defined(OS_ANDROID)
   virtual bool didTapMultipleTargets(
-      const WebKit::WebGestureEvent& event,
-      const WebKit::WebVector<WebKit::WebRect>& target_rects);
+      const blink::WebGestureEvent& event,
+      const blink::WebVector<blink::WebRect>& target_rects);
 #endif
+  virtual blink::WebString acceptLanguages();
   virtual void navigateBackForwardSoon(int offset);
   virtual int historyBackListCount();
   virtual int historyForwardListCount();
-  virtual void postAccessibilityNotification(
-      const WebKit::WebAccessibilityObject& obj,
-      WebKit::WebAccessibilityNotification notification);
-  virtual void didUpdateInspectorSetting(const WebKit::WebString& key,
-                                         const WebKit::WebString& value);
-  virtual WebKit::WebGeolocationClient* geolocationClient();
-  virtual WebKit::WebSpeechInputController* speechInputController(
-      WebKit::WebSpeechInputListener* listener);
-  virtual WebKit::WebSpeechRecognizer* speechRecognizer();
-  virtual WebKit::WebDeviceOrientationClient* deviceOrientationClient();
+  virtual void postAccessibilityEvent(
+      const blink::WebAXObject& obj, blink::WebAXEvent event);
+  virtual void didUpdateInspectorSetting(const blink::WebString& key,
+                                         const blink::WebString& value);
+  virtual blink::WebGeolocationClient* geolocationClient();
+  virtual blink::WebSpeechRecognizer* speechRecognizer();
   virtual void zoomLimitsChanged(double minimum_level, double maximum_level);
   virtual void zoomLevelChanged();
-  virtual void registerProtocolHandler(const WebKit::WebString& scheme,
-                                       const WebKit::WebString& base_url,
-                                       const WebKit::WebString& url,
-                                       const WebKit::WebString& title);
-  virtual WebKit::WebPageVisibilityState visibilityState() const;
-  virtual WebKit::WebUserMediaClient* userMediaClient();
+  virtual double zoomLevelToZoomFactor(double zoom_level) const;
+  virtual double zoomFactorToZoomLevel(double factor) const;
+  virtual void registerProtocolHandler(const blink::WebString& scheme,
+                                       const blink::WebURL& base_url,
+                                       const blink::WebURL& url,
+                                       const blink::WebString& title);
+  virtual blink::WebPageVisibilityState visibilityState() const;
+  virtual blink::WebMIDIClient* webMIDIClient();
+  virtual blink::WebPushClient* webPushClient();
   virtual void draggableRegionsChanged();
 
 #if defined(OS_ANDROID)
-  virtual void scheduleContentIntent(const WebKit::WebURL& intent);
+  virtual void scheduleContentIntent(const blink::WebURL& intent);
   virtual void cancelScheduledContentIntents();
-  virtual WebKit::WebContentDetectionResult detectContentAround(
-      const WebKit::WebHitTestResult& touch_hit);
+  virtual blink::WebContentDetectionResult detectContentAround(
+      const blink::WebHitTestResult& touch_hit);
 
   // Only used on Android since all other platforms implement
   // date and time input fields using MULTIPLE_FIELDS_UI
-  virtual bool openDateTimeChooser(const WebKit::WebDateTimeChooserParams&,
-                                   WebKit::WebDateTimeChooserCompletion*);
+  virtual bool openDateTimeChooser(const blink::WebDateTimeChooserParams&,
+                                   blink::WebDateTimeChooserCompletion*);
+  virtual void didScrollWithKeyboard(const blink::WebSize& delta);
 #endif
 
-  // WebKit::WebFrameClient implementation -------------------------------------
-
-  virtual WebKit::WebPlugin* createPlugin(
-      WebKit::WebFrame* frame,
-      const WebKit::WebPluginParams& params);
-  virtual WebKit::WebSharedWorker* createSharedWorker(
-      WebKit::WebFrame* frame, const WebKit::WebURL& url,
-      const WebKit::WebString& name, unsigned long long documentId);
-  virtual WebKit::WebMediaPlayer* createMediaPlayer(
-      WebKit::WebFrame* frame,
-      const WebKit::WebURL& url,
-      WebKit::WebMediaPlayerClient* client);
-  virtual WebKit::WebApplicationCacheHost* createApplicationCacheHost(
-      WebKit::WebFrame* frame,
-      WebKit::WebApplicationCacheHostClient* client);
-  virtual WebKit::WebCookieJar* cookieJar(WebKit::WebFrame* frame);
-  virtual void didCreateFrame(WebKit::WebFrame* parent,
-                              WebKit::WebFrame* child);
-  virtual void didDisownOpener(WebKit::WebFrame* frame);
-  virtual void frameDetached(WebKit::WebFrame* frame);
-  virtual void willClose(WebKit::WebFrame* frame);
-  virtual void loadURLExternally(WebKit::WebFrame* frame,
-                                 const WebKit::WebURLRequest& request,
-                                 WebKit::WebNavigationPolicy policy);
-  virtual void loadURLExternally(WebKit::WebFrame* frame,
-                                 const WebKit::WebURLRequest& request,
-                                 WebKit::WebNavigationPolicy policy,
-                                 const WebKit::WebString& suggested_name);
-  virtual WebKit::WebNavigationPolicy decidePolicyForNavigation(
-      WebKit::WebFrame* frame,
-      const WebKit::WebURLRequest& request,
-      WebKit::WebNavigationType type,
-      const WebKit::WebNode&,
-      WebKit::WebNavigationPolicy default_policy,
-      bool is_redirect);
-  virtual bool canHandleRequest(WebKit::WebFrame* frame,
-                                const WebKit::WebURLRequest& request);
-  virtual WebKit::WebURLError cannotHandleRequestError(
-      WebKit::WebFrame* frame,
-      const WebKit::WebURLRequest& request);
-  virtual WebKit::WebURLError cancelledError(
-      WebKit::WebFrame* frame,
-      const WebKit::WebURLRequest& request);
-  virtual void unableToImplementPolicyWithError(
-      WebKit::WebFrame* frame,
-      const WebKit::WebURLError& error);
-  virtual void willSendSubmitEvent(WebKit::WebFrame* frame,
-                                   const WebKit::WebFormElement& form);
-  virtual void willSubmitForm(WebKit::WebFrame* frame,
-                              const WebKit::WebFormElement& form);
-  virtual void willPerformClientRedirect(WebKit::WebFrame* frame,
-                                         const WebKit::WebURL& from,
-                                         const WebKit::WebURL& to,
-                                         double interval,
-                                         double fire_time);
-  virtual void didCancelClientRedirect(WebKit::WebFrame* frame);
-  virtual void didCompleteClientRedirect(WebKit::WebFrame* frame,
-                                         const WebKit::WebURL& from);
-  virtual void didCreateDataSource(WebKit::WebFrame* frame,
-                                   WebKit::WebDataSource* datasource);
-  virtual void didStartProvisionalLoad(WebKit::WebFrame* frame);
-  virtual void didReceiveServerRedirectForProvisionalLoad(
-      WebKit::WebFrame* frame);
-  virtual void didFailProvisionalLoad(WebKit::WebFrame* frame,
-                                      const WebKit::WebURLError& error);
-  virtual void didReceiveDocumentData(WebKit::WebFrame* frame,
-                                      const char* data, size_t length,
-                                      bool& prevent_default);
-  virtual void didCommitProvisionalLoad(WebKit::WebFrame* frame,
-                                        bool is_new_navigation);
-  virtual void didClearWindowObject(WebKit::WebFrame* frame);
-  virtual void didCreateDocumentElement(WebKit::WebFrame* frame);
-  virtual void didReceiveTitle(WebKit::WebFrame* frame,
-                               const WebKit::WebString& title,
-                               WebKit::WebTextDirection direction);
-  virtual void didChangeIcon(WebKit::WebFrame*,
-                             WebKit::WebIconURL::Type) OVERRIDE;
-  virtual void didFinishDocumentLoad(WebKit::WebFrame* frame);
-  virtual void didHandleOnloadEvents(WebKit::WebFrame* frame);
-  virtual void didFailLoad(WebKit::WebFrame* frame,
-                           const WebKit::WebURLError& error);
-  virtual void didFinishLoad(WebKit::WebFrame* frame);
-  virtual void didNavigateWithinPage(WebKit::WebFrame* frame,
-                                     bool is_new_navigation);
-  virtual void didUpdateCurrentHistoryItem(WebKit::WebFrame* frame);
-  virtual void assignIdentifierToRequest(WebKit::WebFrame* frame,
-                                         unsigned identifier,
-                                         const WebKit::WebURLRequest& request);
-  virtual void willSendRequest(WebKit::WebFrame* frame,
-                               unsigned identifier,
-                               WebKit::WebURLRequest& request,
-                               const WebKit::WebURLResponse& redirect_response);
-  virtual void didReceiveResponse(WebKit::WebFrame* frame,
-                                  unsigned identifier,
-                                  const WebKit::WebURLResponse& response);
-  virtual void didFinishResourceLoad(WebKit::WebFrame* frame,
-                                     unsigned identifier);
-  virtual void didFailResourceLoad(WebKit::WebFrame* frame,
-                                   unsigned identifier,
-                                   const WebKit::WebURLError& error);
-  virtual void didLoadResourceFromMemoryCache(
-      WebKit::WebFrame* frame,
-      const WebKit::WebURLRequest& request,
-      const WebKit::WebURLResponse&);
-  virtual void didDisplayInsecureContent(WebKit::WebFrame* frame);
-  virtual void didRunInsecureContent(
-      WebKit::WebFrame* frame,
-      const WebKit::WebSecurityOrigin& origin,
-      const WebKit::WebURL& target);
-  virtual void didExhaustMemoryAvailableForScript(WebKit::WebFrame* frame);
-  virtual void didCreateScriptContext(WebKit::WebFrame* frame,
-                                      v8::Handle<v8::Context>,
-                                      int extension_group,
-                                      int world_id);
-  virtual void willReleaseScriptContext(WebKit::WebFrame* frame,
-                                        v8::Handle<v8::Context>,
-                                        int world_id);
-  virtual void didChangeScrollOffset(WebKit::WebFrame* frame);
-#if defined(OS_ANDROID)
-  virtual void didFirstVisuallyNonEmptyLayout(WebKit::WebFrame*) OVERRIDE;
-#endif
-  virtual void didChangeContentsSize(WebKit::WebFrame* frame,
-                                     const WebKit::WebSize& size);
-  virtual void reportFindInPageMatchCount(int request_id,
-                                          int count,
-                                          bool final_update);
-  virtual void reportFindInPageSelection(int request_id,
-                                         int active_match_ordinal,
-                                         const WebKit::WebRect& sel);
-  virtual void openFileSystem(WebKit::WebFrame* frame,
-                              WebKit::WebFileSystem::Type type,
-                              long long size,
-                              bool create,
-                              WebKit::WebFileSystemCallbacks* callbacks);
-  virtual void deleteFileSystem(WebKit::WebFrame* frame,
-                                WebKit::WebFileSystem::Type type,
-                                WebKit::WebFileSystemCallbacks* callbacks);
-  virtual void queryStorageUsageAndQuota(
-      WebKit::WebFrame* frame,
-      WebKit::WebStorageQuotaType type,
-      WebKit::WebStorageQuotaCallbacks* callbacks);
-  virtual void requestStorageQuota(
-      WebKit::WebFrame* frame,
-      WebKit::WebStorageQuotaType type,
-      unsigned long long requested_size,
-      WebKit::WebStorageQuotaCallbacks* callbacks);
-  virtual void registerIntentService(
-      WebKit::WebFrame* frame,
-      const WebKit::WebIntentServiceInfo& service);
-  virtual void dispatchIntent(WebKit::WebFrame* frame,
-                              const WebKit::WebIntentRequest& intentRequest);
-  virtual void willOpenSocketStream(
-      WebKit::WebSocketStreamHandle* handle);
-  virtual void willStartUsingPeerConnectionHandler(WebKit::WebFrame* frame,
-      WebKit::WebRTCPeerConnectionHandler* handler) OVERRIDE;
-  virtual bool willCheckAndDispatchMessageEvent(
-      WebKit::WebFrame* sourceFrame,
-      WebKit::WebFrame* targetFrame,
-      WebKit::WebSecurityOrigin targetOrigin,
-      WebKit::WebDOMMessageEvent event) OVERRIDE;
-  virtual WebKit::WebString userAgentOverride(
-      WebKit::WebFrame* frame,
-      const WebKit::WebURL& url) OVERRIDE;
-  virtual bool allowWebGL(WebKit::WebFrame* frame, bool default_value) OVERRIDE;
-  virtual void didLoseWebGLContext(
-      WebKit::WebFrame* frame,
-      int arb_robustness_status_code) OVERRIDE;
-
-  // WebKit::WebPageSerializerClient implementation ----------------------------
+  // blink::WebPageSerializerClient implementation ----------------------------
 
   virtual void didSerializeDataForFrame(
-      const WebKit::WebURL& frame_url,
-      const WebKit::WebCString& data,
+      const blink::WebURL& frame_url,
+      const blink::WebCString& data,
       PageSerializationStatus status) OVERRIDE;
 
   // RenderView implementation -------------------------------------------------
 
   virtual bool Send(IPC::Message* message) OVERRIDE;
+  virtual RenderFrame* GetMainRenderFrame() OVERRIDE;
   virtual int GetRoutingID() const OVERRIDE;
   virtual int GetPageId() const OVERRIDE;
   virtual gfx::Size GetSize() const OVERRIDE;
-  virtual webkit_glue::WebPreferences& GetWebkitPreferences() OVERRIDE;
-  virtual void SetWebkitPreferences(
-      const webkit_glue::WebPreferences& preferences) OVERRIDE;
-  virtual WebKit::WebView* GetWebView() OVERRIDE;
-  virtual WebKit::WebNode GetFocusedNode() const OVERRIDE;
-  virtual WebKit::WebNode GetContextMenuNode() const OVERRIDE;
-  virtual bool IsEditableNode(const WebKit::WebNode& node) const OVERRIDE;
-  virtual WebKit::WebPlugin* CreatePlugin(
-      WebKit::WebFrame* frame,
-      const webkit::WebPluginInfo& info,
-      const WebKit::WebPluginParams& params) OVERRIDE;
-  virtual void EvaluateScript(const string16& frame_xpath,
-                              const string16& jscript,
-                              int id,
-                              bool notify_result) OVERRIDE;
+  virtual WebPreferences& GetWebkitPreferences() OVERRIDE;
+  virtual void SetWebkitPreferences(const WebPreferences& preferences) OVERRIDE;
+  virtual blink::WebView* GetWebView() OVERRIDE;
+  virtual blink::WebElement GetFocusedElement() const OVERRIDE;
+  virtual bool IsEditableNode(const blink::WebNode& node) const OVERRIDE;
   virtual bool ShouldDisplayScrollbars(int width, int height) const OVERRIDE;
   virtual int GetEnabledBindings() const OVERRIDE;
   virtual bool GetContentStateImmediately() const OVERRIDE;
   virtual float GetFilteredTimePerFrame() const OVERRIDE;
-  virtual int ShowContextMenu(ContextMenuClient* client,
-                              const ContextMenuParams& params) OVERRIDE;
-  virtual void CancelContextMenu(int request_id) OVERRIDE;
-  virtual WebKit::WebPageVisibilityState GetVisibilityState() const OVERRIDE;
-  virtual void RunModalAlertDialog(WebKit::WebFrame* frame,
-                                   const WebKit::WebString& message) OVERRIDE;
-  virtual void LoadURLExternally(
-      WebKit::WebFrame* frame,
-      const WebKit::WebURLRequest& request,
-      WebKit::WebNavigationPolicy policy) OVERRIDE;
+  virtual blink::WebPageVisibilityState GetVisibilityState() const OVERRIDE;
+  virtual void DidStartLoading() OVERRIDE;
+  virtual void DidStopLoading() OVERRIDE;
   virtual void Repaint(const gfx::Size& size) OVERRIDE;
   virtual void SetEditCommandForNextKeyEvent(const std::string& name,
                                              const std::string& value) OVERRIDE;
   virtual void ClearEditCommands() OVERRIDE;
-  virtual SSLStatus GetSSLStatusOfFrame(WebKit::WebFrame* frame) const OVERRIDE;
-
-  // webkit_glue::WebPluginPageDelegate implementation -------------------------
-
-  virtual webkit::npapi::WebPluginDelegate* CreatePluginDelegate(
-      const FilePath& file_path,
-      const std::string& mime_type) OVERRIDE;
-  virtual WebKit::WebPlugin* CreatePluginReplacement(
-      const FilePath& file_path) OVERRIDE;
-  virtual void CreatedPluginWindow(gfx::PluginWindowHandle handle) OVERRIDE;
-  virtual void WillDestroyPluginWindow(gfx::PluginWindowHandle handle) OVERRIDE;
-  virtual void DidMovePlugin(
-      const webkit::npapi::WebPluginGeometry& move) OVERRIDE;
-  virtual void DidStartLoadingForPlugin() OVERRIDE;
-  virtual void DidStopLoadingForPlugin() OVERRIDE;
-  virtual WebKit::WebCookieJar* GetCookieJar() OVERRIDE;
-
-  // webkit_media::WebMediaPlayerDelegate implementation -----------------------
-
-  virtual void DidPlay(WebKit::WebMediaPlayer* player) OVERRIDE;
-  virtual void DidPause(WebKit::WebMediaPlayer* player) OVERRIDE;
-  virtual void PlayerGone(WebKit::WebMediaPlayer* player) OVERRIDE;
+  virtual SSLStatus GetSSLStatusOfFrame(blink::WebFrame* frame) const OVERRIDE;
+  virtual const std::string& GetAcceptLanguages() const OVERRIDE;
+#if defined(OS_ANDROID)
+  virtual void UpdateTopControlsState(TopControlsState constraints,
+                                      TopControlsState current,
+                                      bool animate) OVERRIDE;
+#endif
 
   // Please do not add your stuff randomly to the end here. If there is an
   // appropriate section, add it there. If not, there are some random functions
@@ -758,55 +523,64 @@ class CONTENT_EXPORT RenderViewImpl
 
   // Cannot use std::set unfortunately since linked_ptr<> does not support
   // operator<.
-  typedef std::vector<linked_ptr<webkit_glue::ImageResourceFetcher> >
+  typedef std::vector<linked_ptr<ImageResourceFetcher> >
       ImageResourceFetcherList;
 
  protected:
   // RenderWidget overrides:
   virtual void Close() OVERRIDE;
-  virtual void OnResize(const gfx::Size& new_size,
-                        const gfx::Rect& resizer_rect,
-                        bool is_fullscreen) OVERRIDE;
-  virtual void WillInitiatePaint() OVERRIDE;
+  virtual void OnResize(const ViewMsg_Resize_Params& params) OVERRIDE;
   virtual void DidInitiatePaint() OVERRIDE;
   virtual void DidFlushPaint() OVERRIDE;
-  virtual webkit::ppapi::PluginInstance* GetBitmapForOptimizedPluginPaint(
-      const gfx::Rect& paint_bounds,
-      TransportDIB** dib,
-      gfx::Rect* location,
-      gfx::Rect* clip,
-      float* scale_factor) OVERRIDE;
   virtual gfx::Vector2d GetScrollOffset() OVERRIDE;
   virtual void DidHandleKeyEvent() OVERRIDE;
   virtual bool WillHandleMouseEvent(
-      const WebKit::WebMouseEvent& event) OVERRIDE;
+      const blink::WebMouseEvent& event) OVERRIDE;
   virtual bool WillHandleGestureEvent(
-      const WebKit::WebGestureEvent& event) OVERRIDE;
-  virtual void DidHandleMouseEvent(const WebKit::WebMouseEvent& event) OVERRIDE;
-  virtual void DidHandleTouchEvent(const WebKit::WebTouchEvent& event) OVERRIDE;
+      const blink::WebGestureEvent& event) OVERRIDE;
+  virtual void DidHandleMouseEvent(const blink::WebMouseEvent& event) OVERRIDE;
+  virtual void DidHandleTouchEvent(const blink::WebTouchEvent& event) OVERRIDE;
   virtual bool HasTouchEventHandlersAt(const gfx::Point& point) const OVERRIDE;
   virtual void OnSetFocus(bool enable) OVERRIDE;
   virtual void OnWasHidden() OVERRIDE;
   virtual void OnWasShown(bool needs_repainting) OVERRIDE;
-  virtual bool SupportsAsynchronousSwapBuffers() OVERRIDE;
+  virtual GURL GetURLForGraphicsContext3D() OVERRIDE;
   virtual bool ForceCompositingModeEnabled() OVERRIDE;
   virtual void OnImeSetComposition(
-      const string16& text,
-      const std::vector<WebKit::WebCompositionUnderline>& underlines,
+      const base::string16& text,
+      const std::vector<blink::WebCompositionUnderline>& underlines,
       int selection_start,
       int selection_end) OVERRIDE;
-  virtual void OnImeConfirmComposition(
-      const string16& text, const ui::Range& replacement_range) OVERRIDE;
+  virtual void OnImeConfirmComposition(const base::string16& text,
+                                       const gfx::Range& replacement_range,
+                                       bool keep_selection) OVERRIDE;
   virtual void SetDeviceScaleFactor(float device_scale_factor) OVERRIDE;
+  virtual void OnOrientationChange() OVERRIDE;
   virtual ui::TextInputType GetTextInputType() OVERRIDE;
   virtual void GetSelectionBounds(gfx::Rect* start, gfx::Rect* end) OVERRIDE;
+#if defined(OS_MACOSX) || defined(USE_AURA)
   virtual void GetCompositionCharacterBounds(
       std::vector<gfx::Rect>* character_bounds) OVERRIDE;
+  virtual void GetCompositionRange(gfx::Range* range) OVERRIDE;
+#endif
   virtual bool CanComposeInline() OVERRIDE;
-  virtual bool WebWidgetHandlesCompositorScheduling() const OVERRIDE;
+  virtual void DidCommitCompositorFrame() OVERRIDE;
+  virtual void InstrumentWillBeginFrame(int frame_id) OVERRIDE;
+  virtual void InstrumentDidBeginFrame() OVERRIDE;
+  virtual void InstrumentDidCancelFrame() OVERRIDE;
+  virtual void InstrumentWillComposite() OVERRIDE;
+#if defined(OS_ANDROID)
+  virtual void UpdateSelectionRootBounds() OVERRIDE;
+#endif
 
  protected:
-  RenderViewImpl(RenderViewImplParams* params);
+  explicit RenderViewImpl(RenderViewImplParams* params);
+
+  void Initialize(RenderViewImplParams* params);
+  virtual void SetScreenMetricsEmulationParameters(
+      float device_scale_factor,
+      const gfx::Point& root_layer_offset,
+      float root_layer_scale) OVERRIDE;
 
   // Do not delete directly.  This class is reference counted.
   virtual ~RenderViewImpl();
@@ -816,27 +590,33 @@ class CONTENT_EXPORT RenderViewImpl
   friend class ExternalPopupMenuTest;
   friend class PepperDeviceTest;
   friend class RendererAccessibilityTest;
-  friend class WebIntentsHostTest;
   friend class RenderViewTest;
+
+  // TODO(nasko): Temporarily friend RenderFrameImpl, so we don't duplicate
+  // utility functions needed in both classes, while we move frame specific
+  // code away from this class.
+  friend class RenderFrameImpl;
 
   FRIEND_TEST_ALL_PREFIXES(ExternalPopupMenuRemoveTest, RemoveOnChange);
   FRIEND_TEST_ALL_PREFIXES(ExternalPopupMenuTest, NormalCase);
   FRIEND_TEST_ALL_PREFIXES(ExternalPopupMenuTest, ShowPopupThenNavigate);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, DecideNavigationPolicyForWebUI);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
+                           DidFailProvisionalLoadWithErrorForError);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
+                           DidFailProvisionalLoadWithErrorForCancellation);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
                            DontIgnoreBackAfterNavEntryLimit);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, ImeComposition);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, InsertCharacters);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, JSBlockSentAfterPageLoad);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, LastCommittedUpdateState);
-  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnExtendSelectionAndDelete);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnHandleKeyboardEvent);
-  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnImeStateChanged);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnImeTypeChanged);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnNavStateChanged);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnSetAccessibilityMode);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnSetTextDirection);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnUpdateWebPreferences);
-  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, SendSwapOutACK);
-  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, ReloadWhileSwappedOut);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
                            SetEditableSelectionAndComposition);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, StaleNavigationsIgnored);
@@ -844,11 +624,21 @@ class CONTENT_EXPORT RenderViewImpl
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
                            GetCompositionCharacterBoundsTest);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnNavigationHttpPost);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
+                           DecideNavigationPolicyHandlesAllTopLevel);
 #if defined(OS_MACOSX)
   FRIEND_TEST_ALL_PREFIXES(RenderViewTest, MacTestCmdUp);
 #endif
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, SetHistoryLengthAndPrune);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, ZoomLimit);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, NavigateFrame);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, BasicRenderFrame);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, TextInputTypeWithPepper);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
+                           MessageOrderInDidChangeSelection);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, SendCandidateWindowEvents);
+  FRIEND_TEST_ALL_PREFIXES(SuppressErrorPageTest, Suppresses);
+  FRIEND_TEST_ALL_PREFIXES(SuppressErrorPageTest, DoesNotSuppress);
 
   typedef std::map<GURL, double> HostZoomLevels;
 
@@ -858,11 +648,36 @@ class CONTENT_EXPORT RenderViewImpl
     CONNECTION_ERROR,
   };
 
-  void UpdateURL(WebKit::WebFrame* frame);
-  void UpdateTitle(WebKit::WebFrame* frame, const string16& title,
-                   WebKit::WebTextDirection title_direction);
-  void UpdateSessionHistory(WebKit::WebFrame* frame);
-  void SendUpdateState(const WebKit::WebHistoryItem& item);
+  // Old WebFrameClient implementations ----------------------------------------
+
+  // RenderViewImpl used to be a WebFrameClient, but now RenderFrameImpl is the
+  // WebFrameClient. However, many implementations of WebFrameClient methods
+  // still live here and are called from RenderFrameImpl. These implementations
+  // are to be moved to RenderFrameImpl <http://crbug.com/361761>.
+
+  void didCreateDataSource(blink::WebLocalFrame* frame,
+                           blink::WebDataSource* datasource);
+  void didClearWindowObject(blink::WebLocalFrame* frame, int world_id);
+  void didReceiveTitle(blink::WebLocalFrame* frame,
+                       const blink::WebString& title,
+                       blink::WebTextDirection direction);
+  void didChangeIcon(blink::WebLocalFrame*, blink::WebIconURL::Type);
+  void didUpdateCurrentHistoryItem(blink::WebLocalFrame* frame);
+  void didChangeScrollOffset(blink::WebLocalFrame* frame);
+
+  static bool IsReload(const FrameMsg_Navigate_Params& params);
+
+  static Referrer GetReferrerFromRequest(
+      blink::WebFrame* frame,
+      const blink::WebURLRequest& request);
+
+  static WindowOpenDisposition NavigationPolicyToDisposition(
+      blink::WebNavigationPolicy policy);
+
+  void UpdateTitle(blink::WebFrame* frame, const base::string16& title,
+                   blink::WebTextDirection title_direction);
+  void UpdateSessionHistory(blink::WebFrame* frame);
+  void SendUpdateState(HistoryEntry* entry);
 
   // Update current main frame's encoding and send it to browser window.
   // Since we want to let users see the right encoding info from menu
@@ -877,169 +692,112 @@ class CONTENT_EXPORT RenderViewImpl
   // c) function:DidFinishDocumentLoadForFrame. When this function is
   // called, that means we have got whole html page. In here we should
   // finally get right encoding of page.
-  void UpdateEncoding(WebKit::WebFrame* frame,
+  void UpdateEncoding(blink::WebFrame* frame,
                       const std::string& encoding_name);
-
-  void OpenURL(WebKit::WebFrame* frame,
-               const GURL& url,
-               const Referrer& referrer,
-               WebKit::WebNavigationPolicy policy);
-
-  bool RunJavaScriptMessage(JavaScriptMessageType type,
-                            const string16& message,
-                            const string16& default_value,
-                            const GURL& frame_url,
-                            string16* result);
 
   // Sends a message and runs a nested message loop.
   bool SendAndRunNestedMessageLoop(IPC::SyncMessage* message);
 
   // Called when the "pinned to left/right edge" state needs to be updated.
-  void UpdateScrollState(WebKit::WebFrame* frame);
+  void UpdateScrollState(blink::WebFrame* frame);
 
   // IPC message handlers ------------------------------------------------------
   //
   // The documentation for these functions should be in
-  // render_messages_internal.h for the message that the function is handling.
-
+  // content/common/*_messages.h for the message that the function is handling.
+  void OnExecuteEditCommand(const std::string& name, const std::string& value);
+  void OnMoveCaret(const gfx::Point& point);
+  void OnScrollFocusedEditableNodeIntoRect(const gfx::Rect& rect);
+  void OnSetEditCommandsForNextKeyEvent(const EditCommands& edit_commands);
   void OnAllowBindings(int enabled_bindings_flags);
   void OnAllowScriptToClose(bool script_can_close);
-  void OnAsyncFileOpened(base::PlatformFileError error_code,
-                         IPC::PlatformFileForTransit file_for_transit,
-                         int message_id);
-  void OnPpapiBrokerChannelCreated(int request_id,
-                                   base::ProcessId broker_pid,
-                                   const IPC::ChannelHandle& handle);
-  void OnPpapiBrokerPermissionResult(int request_id, bool result);
   void OnCancelDownload(int32 download_id);
-  void OnClearFocusedNode();
+  void OnClearFocusedElement();
   void OnClosePage();
-  void OnContextMenuClosed(const CustomContextMenuContext& custom_context);
-  void OnCopy();
+  void OnShowContextMenu(const gfx::Point& location);
   void OnCopyImageAt(int x, int y);
-  void OnCut();
-  void OnCSSInsertRequest(const string16& frame_xpath,
-                          const std::string& css);
-  void OnCustomContextMenuAction(const CustomContextMenuContext& custom_context,
-      unsigned action);
-  void OnDelete();
+  void OnSaveImageAt(int x, int y);
+  void OnSetName(const std::string& name);
   void OnDeterminePageLanguage();
   void OnDisableScrollbarsForSmallWindows(
       const gfx::Size& disable_scrollbars_size_limit);
-  void OnDisassociateFromPopupCount();
-  void OnDragSourceEndedOrMoved(const gfx::Point& client_point,
-                                const gfx::Point& screen_point,
-                                bool ended,
-                                WebKit::WebDragOperation drag_operation);
+  void OnDragSourceEnded(const gfx::Point& client_point,
+                         const gfx::Point& screen_point,
+                         blink::WebDragOperation drag_operation);
   void OnDragSourceSystemDragEnded();
   void OnDragTargetDrop(const gfx::Point& client_pt,
                         const gfx::Point& screen_pt,
                         int key_modifiers);
-  void OnDragTargetDragEnter(const WebDropData& drop_data,
+  void OnDragTargetDragEnter(const DropData& drop_data,
                              const gfx::Point& client_pt,
                              const gfx::Point& screen_pt,
-                             WebKit::WebDragOperationsMask operations_allowed,
+                             blink::WebDragOperationsMask operations_allowed,
                              int key_modifiers);
   void OnDragTargetDragLeave();
   void OnDragTargetDragOver(const gfx::Point& client_pt,
                             const gfx::Point& screen_pt,
-                            WebKit::WebDragOperationsMask operations_allowed,
+                            blink::WebDragOperationsMask operations_allowed,
                             int key_modifiers);
   void OnEnablePreferredSizeChangedMode();
   void OnEnableAutoResize(const gfx::Size& min_size, const gfx::Size& max_size);
   void OnDisableAutoResize(const gfx::Size& new_size);
-  void OnEnumerateDirectoryResponse(int id, const std::vector<FilePath>& paths);
-  void OnExecuteEditCommand(const std::string& name, const std::string& value);
-  void OnExtendSelectionAndDelete(int before, int after);
+  void OnEnumerateDirectoryResponse(int id,
+                                    const std::vector<base::FilePath>& paths);
   void OnFileChooserResponse(
       const std::vector<ui::SelectedFileInfo>& files);
-  void OnFind(int request_id, const string16&, const WebKit::WebFindOptions&);
+  void OnFind(int request_id,
+              const base::string16&,
+              const blink::WebFindOptions&);
   void OnGetAllSavableResourceLinksForCurrentPage(const GURL& page_url);
   void OnGetSerializedHtmlDataForCurrentPageWithLocalLinks(
       const std::vector<GURL>& links,
-      const std::vector<FilePath>& local_paths,
-      const FilePath& local_directory_name);
+      const std::vector<base::FilePath>& local_paths,
+      const base::FilePath& local_directory_name);
   void OnMediaPlayerActionAt(const gfx::Point& location,
-                             const WebKit::WebMediaPlayerAction& action);
-
-  // Screen has rotated. 0 = default (portrait), 90 = one turn right, and so on.
-  void OnOrientationChangeEvent(int orientation);
-
+                             const blink::WebMediaPlayerAction& action);
   void OnPluginActionAt(const gfx::Point& location,
-                        const WebKit::WebPluginAction& action);
+                        const blink::WebPluginAction& action);
   void OnMoveOrResizeStarted();
-  void OnNavigate(const ViewMsg_Navigate_Params& params);
-  void OnPaste();
-  void OnPasteAndMatchStyle();
   void OnPostMessageEvent(const ViewMsg_PostMessage_Params& params);
-  void OnRedo();
-  void OnReleaseDisambiguationPopupDIB(TransportDIB::Handle dib_handle);
-  void OnReloadFrame();
-  void OnReplace(const string16& text);
+  void OnReleaseDisambiguationPopupBitmap(const cc::SharedBitmapId& id);
   void OnResetPageEncodingToDefault();
-  void OnScriptEvalRequest(const string16& frame_xpath,
-                           const string16& jscript,
-                           int id,
-                           bool notify_result);
-  void OnSelectAll();
-  void OnSelectRange(const gfx::Point& start, const gfx::Point& end);
-  void OnMoveCaret(const gfx::Point& point);
   void OnSetAccessibilityMode(AccessibilityMode new_mode);
   void OnSetActive(bool active);
-  void OnSetAltErrorPageURL(const GURL& gurl);
   void OnSetBackground(const SkBitmap& background);
-  void OnSetCompositionFromExistingText(
-      int start, int end,
-      const std::vector<WebKit::WebCompositionUnderline>& underlines);
-  void OnSetEditableSelectionOffsets(int start, int end);
-  void OnSetNavigationStartTime(
-      const base::TimeTicks& browser_navigation_start);
-  void OnSetWebUIProperty(const std::string& name, const std::string& value);
-  void OnSetEditCommandsForNextKeyEvent(const EditCommands& edit_commands);
+  void OnExitFullscreen();
   void OnSetHistoryLengthAndPrune(int history_length, int32 minimum_page_id);
   void OnSetInitialFocus(bool reverse);
-  void OnScrollFocusedEditableNodeIntoRect(const gfx::Rect& rect);
   void OnSetPageEncoding(const std::string& encoding_name);
   void OnSetRendererPrefs(const RendererPreferences& renderer_prefs);
+  void OnSetWebUIProperty(const std::string& name, const std::string& value);
   void OnSetZoomLevel(double zoom_level);
   void OnSetZoomLevelForLoadingURL(const GURL& url, double zoom_level);
-  void OnExitFullscreen();
-  void OnShouldClose();
   void OnStop();
   void OnStopFinding(StopFindAction action);
-  void OnSwapOut(const ViewMsg_SwapOut_Params& params);
+  void OnSuppressDialogsUntilSwapOut();
   void OnThemeChanged();
-  void OnUndo();
   void OnUpdateTargetURLAck();
-  void OnUpdateTimezone();
-  void OnUpdateWebPreferences(const webkit_glue::WebPreferences& prefs);
-  void OnUnselect();
-
+  void OnUpdateWebPreferences(const WebPreferences& prefs);
   void OnZoom(PageZoom zoom);
-  void OnZoomFactor(PageZoom zoom, int zoom_center_x, int zoom_center_y);
-
   void OnEnableViewSourceMode();
-
-  void OnJavaBridgeInit();
-
   void OnDisownOpener();
-  void OnUpdatedFrameTree(int process_id,
-                          int route_id,
-                          const std::string& frame_tree);
-
+  void OnWindowSnapshotCompleted(const int snapshot_id,
+      const gfx::Size& size, const std::vector<unsigned char>& png);
 #if defined(OS_ANDROID)
   void OnActivateNearestFindResult(int request_id, float x, float y);
   void OnFindMatchRects(int current_version);
   void OnSelectPopupMenuItems(bool canceled,
                               const std::vector<int>& selected_indices);
-  void OnSynchronousFind(int request_id,
-                         const string16& search_string,
-                         const WebKit::WebFindOptions& options,
-                         IPC::Message* reply_msg);
   void OnUndoScrollFocusedEditableNodeIntoRect();
+  void OnUpdateTopControlsState(bool enable_hiding,
+                                bool enable_showing,
+                                bool animate);
+  void OnPauseVideo();
+  void OnExtractSmartClipData(const gfx::Rect& rect);
+  void GetSelectionRootBounds(gfx::Rect* bounds) const;
 #elif defined(OS_MACOSX)
-  void OnCopyToFindPboard();
-  void OnPluginImeCompositionCompleted(const string16& text, int plugin_id);
+  void OnPluginImeCompositionCompleted(const base::string16& text,
+                                       int plugin_id);
   void OnSelectPopupMenuItem(int selected_index);
   void OnSetInLiveResize(bool in_live_resize);
   void OnSetWindowVisibility(bool visible);
@@ -1047,54 +805,17 @@ class CONTENT_EXPORT RenderViewImpl
                             const gfx::Rect& view_frame);
 #endif
 
-  void OnWindowSnapshotCompleted(const int snapshot_id,
-      const gfx::Size& size, const std::vector<unsigned char>& png);
-
-
   // Adding a new message handler? Please add it in alphabetical order above
   // and put it in the same position in the .cc file.
 
   // Misc private functions ----------------------------------------------------
-  void ZoomFactorHelper(PageZoom zoom, int zoom_center_x, int zoom_center_y,
-                        float scaling_increment);
-
-  void AltErrorPageFinished(WebKit::WebFrame* frame,
-                            const WebKit::WebURLError& original_error,
-                            const std::string& html);
-
   // Check whether the preferred size has changed.
   void CheckPreferredSize();
-
-  WebKit::WebGraphicsContext3D* CreateGraphicsContext3D(
-      const WebKit::WebGraphicsContext3D::Attributes& attributes);
-
-  // This method walks the entire frame tree for this RenderView and sends an
-  // update to the browser process as described in the
-  // ViewHostMsg_FrameTreeUpdated comments. If |exclude_frame_subtree|
-  // frame is non-NULL, the subtree starting at that frame not included in the
-  // serialized form.
-  // This is used when a frame is going to be removed from the tree.
-  void SendUpdatedFrameTree(WebKit::WebFrame* exclude_frame_subtree);
-
-  // Recursively creates a DOM frame tree starting with |frame|, based on
-  // |frame_tree|. For each node, the frame is navigated to the swapped out URL,
-  // the name (if present) is set on it, and all the subframes are created
-  // and added to the DOM.
-  void CreateFrameTree(WebKit::WebFrame* frame, DictionaryValue* frame_tree);
-
-  // If this is a swapped out RenderView, which maintains a copy of the frame
-  // tree of an active RenderView, we keep a map from frame ids in this view to
-  // the frame ids of the active view for each corresponding frame.
-  // This method returns the frame in this RenderView that corresponds to the
-  // frame in the active RenderView specified by |remote_frame_id|.
-  WebKit::WebFrame* GetFrameByRemoteID(int remote_frame_id);
-
-  void EnsureMediaStreamImpl();
 
   // This callback is triggered when DownloadFavicon completes, either
   // succesfully or with a failure. See DownloadFavicon for more
   // details.
-  void DidDownloadFavicon(webkit_glue::ImageResourceFetcher* fetcher,
+  void DidDownloadFavicon(ImageResourceFetcher* fetcher,
                           const SkBitmap& image);
 
   // Requests to download a favicon image. When done, the RenderView is notified
@@ -1105,34 +826,25 @@ class CONTENT_EXPORT RenderViewImpl
   // doesn't have a frame at the specified size, the first is returned.
   bool DownloadFavicon(int id, const GURL& image_url, int image_size);
 
-  // Starts a new find-in-page search or looks for the next match.
-  void Find(int request_id,
-            const string16& search_text,
-            const WebKit::WebFindOptions& options);
-
-  GURL GetAlternateErrorPageURL(const GURL& failed_url,
-                                ErrorPageType error_type);
-
-  // Locates a sub frame with given xpath
-  WebKit::WebFrame* GetChildFrame(const string16& frame_xpath) const;
-
   // Returns the URL being loaded by the given frame's request.
-  GURL GetLoadingUrl(WebKit::WebFrame* frame) const;
+  GURL GetLoadingUrl(blink::WebFrame* frame) const;
 
-  // Should only be called if this object wraps a PluginDocument.
-  WebKit::WebPlugin* GetWebPluginFromPluginDocument();
+  // Called to get the WebPlugin to handle find requests in the document.
+  // Returns NULL if there is no such WebPlugin.
+  blink::WebPlugin* GetWebPluginForFind();
 
   // Returns true if the |params| navigation is to an entry that has been
   // cropped due to a recent navigation the browser did not know about.
-  bool IsBackForwardToStaleEntry(const ViewMsg_Navigate_Params& params,
+  bool IsBackForwardToStaleEntry(const FrameMsg_Navigate_Params& params,
                                  bool is_reload);
 
-  bool MaybeLoadAlternateErrorPage(WebKit::WebFrame* frame,
-                                   const WebKit::WebURLError& error,
-                                   bool replace);
+  // TODO(nasko): Remove this method when code is migrated to use
+  // RenderFrameObserver.
+  void OnNavigate(const FrameMsg_Navigate_Params& params);
 
-  // Make this RenderView show an empty, unscriptable page.
-  void NavigateToSwappedOutURL(WebKit::WebFrame* frame);
+  // Make the given |frame| show an empty, unscriptable page.
+  // TODO(creis): Move this to RenderFrame.
+  void NavigateToSwappedOutURL(blink::WebFrame* frame);
 
   // If we initiated a navigation, this function will populate |document_state|
   // with the navigation information saved in OnNavigate().
@@ -1142,21 +854,13 @@ class CONTENT_EXPORT RenderViewImpl
   // saved in OnNavigate().
   NavigationState* CreateNavigationStateFromPending();
 
-  // Processes the command-line flags --enable-viewport and
-  // --enable-fixed-layout[=w,h].
-  void ProcessViewLayoutFlags(const CommandLine& command_line);
-
-  // Processes the command-line flags --enable-pinch and
-  // --enable-pinch-in-compositor
-  void ProcessAcceleratedPinchZoomFlags(const CommandLine& command_line);
+  // Processes the command-line flags --enable-viewport,
+  // --enable-fixed-layout[=w,h] and --enable-pinch.
+  void ProcessViewLayoutFlags(const base::CommandLine& command_line);
 
 #if defined(OS_ANDROID)
   // Launch an Android content intent with the given URL.
   void LaunchAndroidContentIntent(const GURL& intent_url, size_t request_id);
-
-  // Send ViewHostMsg_UpdateFrameInfo to report scale/scroll/size changes.
-  void ScheduleUpdateFrameInfo();
-  void SendUpdateFrameInfo();
 #endif
 
   // Sends a reply to the current find operation handling if it was a
@@ -1164,24 +868,11 @@ class CONTENT_EXPORT RenderViewImpl
   void SendFindReply(int request_id,
                      int match_count,
                      int ordinal,
-                     const WebKit::WebRect& selection_rect,
+                     const blink::WebRect& selection_rect,
                      bool final_status_update);
 
   // Starts nav_state_sync_timer_ if it isn't already running.
   void StartNavStateSyncTimerIfNecessary();
-
-  // Stops the current find-in-page search.
-  void StopFinding(StopFindAction action);
-
-  // Dispatches the current navigation state to the browser. Called on a
-  // periodic timer so we don't send too many messages.
-  void SyncNavigationState();
-
-  // Dispatches the current state of selection on the webpage to the browser if
-  // it has changed.
-  // TODO(varunjain): delete this method once we figure out how to keep
-  // selection handles in sync with the webpage.
-  void SyncSelectionIfRequired();
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   void UpdateFontRenderingFromRendererPrefs();
@@ -1193,6 +884,39 @@ class CONTENT_EXPORT RenderViewImpl
   // If |url| is empty, show |fallback_url|.
   void UpdateTargetURL(const GURL& url, const GURL& fallback_url);
 
+  // Tells the browser what the new list of favicons for the webpage is.
+  void SendUpdateFaviconURL(const std::vector<FaviconURL>& urls);
+
+  // Invoked from DidStopLoading(). Sends the current list of loaded favicons to
+  // the browser.
+  void DidStopLoadingIcons();
+
+  // Coordinate conversion -----------------------------------------------------
+
+  gfx::RectF ClientRectToPhysicalWindowRect(const gfx::RectF& rect) const;
+
+  // RenderFrameImpl accessible state ------------------------------------------
+  // The following section is the set of methods that RenderFrameImpl needs
+  // to access RenderViewImpl state. The set of state variables are page-level
+  // specific, so they don't belong in RenderFrameImpl and should remain in
+  // this object.
+  ObserverList<RenderViewObserver>& observers() {
+    return observers_;
+  }
+
+  // TODO(nasko): Remove this method when we move to frame proxy objects, since
+  // the concept of swapped out will be eliminated.
+  void set_is_swapped_out(bool swapped_out) {
+    is_swapped_out_ = swapped_out;
+  }
+
+  NavigationGesture navigation_gesture() {
+    return navigation_gesture_;
+  }
+  void set_navigation_gesture(NavigationGesture gesture) {
+    navigation_gesture_ = gesture;
+  }
+
   // ---------------------------------------------------------------------------
   // ADDING NEW FUNCTIONS? Please keep private functions alphabetized and put
   // it in the same order in the .cc file as it was in the header.
@@ -1200,7 +924,7 @@ class CONTENT_EXPORT RenderViewImpl
 
   // Settings ------------------------------------------------------------------
 
-  webkit_glue::WebPreferences webkit_preferences_;
+  WebPreferences webkit_preferences_;
   RendererPreferences renderer_preferences_;
 
   HostZoomLevels host_zoom_levels_;
@@ -1213,9 +937,6 @@ class CONTENT_EXPORT RenderViewImpl
   // Bitwise-ORed set of extra bindings that have been enabled.  See
   // BindingsPolicy for details.
   int enabled_bindings_;
-
-  // The alternate error page URL, if one exists.
-  GURL alternate_error_page_url_;
 
   // If true, we send IPC messages when |preferred_size_| changes.
   bool send_preferred_size_changes_;
@@ -1233,10 +954,8 @@ class CONTENT_EXPORT RenderViewImpl
 
   // Loading state -------------------------------------------------------------
 
-  // True if the top level frame is currently being loaded.
-  bool is_loading_;
-
   // The gesture that initiated the current navigation.
+  // TODO(nasko): Move to RenderFrame, as this is per-frame state.
   NavigationGesture navigation_gesture_;
 
   // Used for popups.
@@ -1247,17 +966,17 @@ class CONTENT_EXPORT RenderViewImpl
   // decidePolicyForNavigation for details.
   bool opener_suppressed_;
 
-  // If we are handling a top-level client-side redirect, this tracks the URL
-  // of the page that initiated it. Specifically, when a load is committed this
-  // is used to determine if that load originated from a client-side redirect.
-  // It is empty if there is no top-level client-side redirect.
-  Referrer completed_client_redirect_src_;
+  // Whether we must stop creating nested message loops for modal dialogs until
+  // OnSwapOut is called.  This is necessary because modal dialogs have a
+  // PageGroupLoadDeferrer on the stack that interferes with swapping out.
+  bool suppress_dialogs_until_swap_out_;
 
   // Holds state pertaining to a navigation that we initiated.  This is held by
   // the WebDataSource::ExtraData attribute.  We use pending_navigation_state_
   // as a temporary holder for the state until the WebDataSource corresponding
   // to the new navigation is created.  See DidCreateDataSource.
-  scoped_ptr<ViewMsg_Navigate_Params> pending_navigation_params_;
+  // TODO(nasko): Move to RenderFrame, as this is per-frame state.
+  scoped_ptr<FrameMsg_Navigate_Params> pending_navigation_params_;
 
   // Timer used to delay the updating of nav state (see SyncNavigationState).
   base::OneShotTimer<RenderViewImpl> nav_state_sync_timer_;
@@ -1286,6 +1005,12 @@ class CONTENT_EXPORT RenderViewImpl
   // processes.  We won't know about them until the next navigation in this
   // process.
   int history_list_length_;
+
+  // Counter to track how many frames have sent start notifications but not
+  // stop notifications.
+  // TODO(japhet): This state will need to move to the browser process
+  // (probably WebContents) for site isolation.
+  int frames_in_progress_;
 
   // The list of page IDs for each history item this RenderView knows about.
   // Some entries may be -1 if they were rendered by other processes or were
@@ -1329,23 +1054,11 @@ class CONTENT_EXPORT RenderViewImpl
   // The next target URL we want to send to the browser.
   GURL pending_target_url_;
 
-  // The text selection the last time DidChangeSelection got called.
-  string16 selection_text_;
-  size_t selection_text_offset_;
-  ui::Range selection_range_;
-
-  // External context menu requests we're waiting for. "Internal"
-  // (WebKit-originated) context menu events will have an ID of 0 and will not
-  // be in this map.
-  //
-  // We don't want to add internal ones since some of the "special" page
-  // handlers in the browser process just ignore the context menu requests so
-  // avoid showing context menus, and so this will cause right clicks to leak
-  // entries in this map. Most users of the custom context menu (e.g. Pepper
-  // plugins) are normally only on "regular" pages and the regular pages will
-  // always respond properly to the request, so we don't have to worry so
-  // much about leaks.
-  IDMap<ContextMenuClient, IDMapExternalPointer> pending_context_menus_;
+#if defined(OS_ANDROID)
+  // Cache the old top controls state constraints. Used when updating
+  // current value only without altering the constraints.
+  cc::TopControlsState top_controls_constraints_;
+#endif
 
   // View ----------------------------------------------------------------------
 
@@ -1362,36 +1075,24 @@ class CONTENT_EXPORT RenderViewImpl
   bool cached_is_main_frame_pinned_to_left_;
   bool cached_is_main_frame_pinned_to_right_;
 
-  // These store the "has scrollbars" state last sent to the browser.
-  bool cached_has_main_frame_horizontal_scrollbar_;
-  bool cached_has_main_frame_vertical_scrollbar_;
-
-#if defined(OS_MACOSX)
-  // Track the fake plugin window handles allocated on the browser side for
-  // the accelerated compositor and (currently) accelerated plugins so that
-  // we can discard them when the view goes away.
-  std::set<gfx::PluginWindowHandle> fake_plugin_window_handles_;
-#endif
+  // Bookkeeping to suppress redundant scroll and focus requests for an already
+  // scrolled and focused editable node.
+  bool has_scrolled_focused_editable_node_into_rect_;
+  gfx::Rect rect_for_scrolled_focused_editable_node_;
 
   // Helper objects ------------------------------------------------------------
 
-  RendererWebCookieJarImpl cookie_jar_;
+  scoped_ptr<RenderFrameImpl> main_render_frame_;
 
   // The next group of objects all implement RenderViewObserver, so are deleted
   // along with the RenderView automatically.  This is why we just store
   // weak references.
 
-  // Holds a reference to the service which provides desktop notifications.
-  NotificationProvider* notification_provider_;
+  // The push messaging dispatcher attached to this view, lazily initialized.
+  PushMessagingDispatcher* push_messaging_dispatcher_;
 
   // The geolocation dispatcher attached to this view, lazily initialized.
   GeolocationDispatcher* geolocation_dispatcher_;
-
-  // The intents host attached to this view. Not lazily initialized.
-  WebIntentsHost* intents_host_;
-
-  // The speech dispatcher attached to this view, lazily initialized.
-  InputTagSpeechDispatcher* input_tag_speech_dispatcher_;
 
   // The speech recognition dispatcher attached to this view, lazily
   // initialized.
@@ -1406,8 +1107,8 @@ class CONTENT_EXPORT RenderViewImpl
   // BrowserPluginManager attached to this view; lazily initialized.
   scoped_refptr<BrowserPluginManager> browser_plugin_manager_;
 
-  // MediaStreamImpl attached to this view; lazily initialized.
-  MediaStreamImpl* media_stream_impl_;
+  // MidiClient attached to this view; lazily initialized.
+  MidiDispatcher* midi_dispatcher_;
 
   DevToolsAgent* devtools_agent_;
 
@@ -1418,25 +1119,13 @@ class CONTENT_EXPORT RenderViewImpl
   // AccessibilityModeOff.
   RendererAccessibility* renderer_accessibility_;
 
-  // Java Bridge dispatcher attached to this view; lazily initialized.
-  JavaBridgeDispatcher* java_bridge_dispatcher_;
-
   // Mouse Lock dispatcher attached to this view.
   MouseLockDispatcher* mouse_lock_dispatcher_;
 
-  // Helper class to handle favicon changes.
-  FaviconHelper* favicon_helper_;
+  scoped_ptr<HistoryController> history_controller_;
 
 #if defined(OS_ANDROID)
   // Android Specific ---------------------------------------------------------
-
-  // The background color of the document body element. This is used as the
-  // default background color for filling the screen areas for which we don't
-  // have the actual content.
-  SkColor body_background_color_;
-
-  // True if SendUpdateFrameInfo is pending.
-  bool update_frame_info_scheduled_;
 
   // Expected id of the next content intent launched. Used to prevent scheduled
   // intents to be launched if aborted.
@@ -1446,86 +1135,13 @@ class CONTENT_EXPORT RenderViewImpl
   typedef std::vector< linked_ptr<ContentDetector> > ContentDetectorList;
   ContentDetectorList content_detectors_;
 
-  // Proxy class for WebMediaPlayer to communicate with the real media player
-  // objects in browser process.
-  WebMediaPlayerProxyImplAndroid* media_player_proxy_;
-
-  // The media player manager for managing all the media players on this view.
-  scoped_ptr<webkit_media::WebMediaPlayerManagerAndroid> media_player_manager_;
-
-  // Resource manager for all the android media player objects if they are
-  // created in the renderer process.
-  scoped_ptr<webkit_media::MediaPlayerBridgeManagerImpl> media_bridge_manager_;
-
-  // Holds the message used to return find results to the browser during
-  // synchronous find-in-page requests. Only non-null during these requests.
-  scoped_ptr<IPC::Message> synchronous_find_reply_message_;
-
-  // The active find-in-page match ordinal during synchronous requests.
-  // Needed to be remembered across WebKit callbacks.
-  int synchronous_find_active_match_ordinal_;
+  // The media player manager for managing all the media players on this view
+  // for communicating with the real media player objects in browser process.
+  RendererMediaPlayerManager* media_player_manager_;
 
   // A date/time picker object for date and time related input elements.
   scoped_ptr<RendererDateTimePicker> date_time_picker_client_;
 #endif
-
-  // Misc ----------------------------------------------------------------------
-
-  // The current and pending file chooser completion objects. If the queue is
-  // nonempty, the first item represents the currently running file chooser
-  // callback, and the remaining elements are the other file chooser completion
-  // still waiting to be run (in order).
-  struct PendingFileChooser;
-  std::deque< linked_ptr<PendingFileChooser> > file_chooser_completions_;
-
-  // The current directory enumeration callback
-  std::map<int, WebKit::WebFileChooserCompletion*> enumeration_completions_;
-  int enumeration_completion_id_;
-
-  // Reports load progress to the browser.
-  scoped_ptr<LoadProgressTracker> load_progress_tracker_;
-
-  // The SessionStorage namespace that we're assigned to has an ID, and that ID
-  // is passed to us upon creation.  WebKit asks for this ID upon first use and
-  // uses it whenever asking the browser process to allocate new storage areas.
-  int64 session_storage_namespace_id_;
-
-  // The total number of unrequested popups that exist and can be followed back
-  // to a common opener. This count is shared among all RenderViews created with
-  // createView(). All popups are treated as unrequested until specifically
-  // instructed otherwise by the Browser process.
-  scoped_refptr<SharedRenderViewCounter> shared_popup_counter_;
-
-  // Whether this is a top level window (instead of a popup). Top level windows
-  // shouldn't count against their own |shared_popup_counter_|.
-  bool decrement_shared_popup_at_destruction_;
-
-  // Stores edit commands associated to the next key event.
-  // Shall be cleared as soon as the next key event is processed.
-  EditCommands edit_commands_;
-
-  // The external popup for the currently showing select popup.
-  scoped_ptr<ExternalPopupMenu> external_popup_menu_;
-
-  // The node that the context menu was pressed over.
-  WebKit::WebNode context_menu_node_;
-
-  // All the registered observers.  We expect this list to be small, so vector
-  // is fine.
-  ObserverList<RenderViewObserver> observers_;
-
-  // Used to inform didChangeSelection() when it is called in the context
-  // of handling a ViewMsg_SelectRange IPC.
-  bool handling_select_range_;
-
-  // Wraps the |webwidget_| as a MouseLockDispatcher::LockTarget interface.
-  scoped_ptr<MouseLockDispatcher::LockTarget> webwidget_mouse_lock_target_;
-
-  // State associated with the GetWindowSnapshot function.
-  int next_snapshot_id_;
-  typedef std::map<int, WindowSnapshotCallback>
-      PendingSnapshotMap;
-  PendingSnapshotMap pending_snapshots_;
 
   // Plugins -------------------------------------------------------------------
 
@@ -1539,46 +1155,80 @@ class CONTENT_EXPORT RenderViewImpl
   int focused_plugin_id_;
 #endif
 
-  // Allows JS to access DOM automation. The JS object is only exposed when the
-  // DOM automation bindings are enabled.
-  scoped_ptr<DomAutomationController> dom_automation_controller_;
+#if defined(ENABLE_PLUGINS)
+  PepperPluginInstanceImpl* plugin_find_handler_;
 
-  // Boolean indicating whether we are in the process of creating the frame
-  // tree for this renderer in response to ViewMsg_UpdateFrameTree.  If true,
-  // we won't be sending ViewHostMsg_FrameTreeUpdated messages back to the
-  // browser, as those will be redundant.
-  bool updating_frame_tree_;
+  typedef std::set<PepperPluginInstanceImpl*> PepperPluginSet;
+  PepperPluginSet active_pepper_instances_;
 
-  // Boolean indicating that the frame tree has changed, but a message has not
-  // been sent to the browser because a page has been loading. This helps
-  // avoid extra messages being sent to the browser when navigating away from a
-  // page with subframes, which will be destroyed. Instead, a single message
-  // is sent when the load is stopped with the final state of the frame tree.
-  //
-  // TODO(nasko): Relying on the is_loading_ means that frame tree updates will
-  // not be sent until *all* subframes have completed loading. This can cause
-  // JavaScript calls to fail, if they occur prior to the first update message
-  // being sent. This will be fixed by bug http://crbug.com/145014.
-  bool pending_frame_tree_update_;
+  // TODO(jam): these belong on RenderFrame, once the browser knows which frame
+  // is focused and sends the IPCs which use these to the correct frame. Until
+  // then, we must store these on RenderView as that's the one place that knows
+  // about all the RenderFrames for a page.
 
-  // If this render view is a swapped out "mirror" of an active render view in a
-  // different process, we record the process id and route id for the active RV.
-  // For further details, see the comments on ViewHostMsg_FrameTreeUpdated.
-  int target_process_id_;
-  int target_routing_id_;
+  // Whether or not the focus is on a PPAPI plugin
+  PepperPluginInstanceImpl* focused_pepper_plugin_;
 
-  // A map of the current process's frame ids to ids in the remote active render
-  // view, if this is a swapped out render view.
-  std::map<int, int> active_frame_id_map_;
+  // The plugin instance that received the last mouse event. It is set to NULL
+  // if the last mouse event went to elements other than Pepper plugins.
+  // |pepper_last_mouse_event_target_| is not owned by this class. We depend on
+  // the RenderFrameImpl to NULL it out when it destructs.
+  PepperPluginInstanceImpl* pepper_last_mouse_event_target_;
+#endif
+
+  // Misc ----------------------------------------------------------------------
+
+  // The current and pending file chooser completion objects. If the queue is
+  // nonempty, the first item represents the currently running file chooser
+  // callback, and the remaining elements are the other file chooser completion
+  // still waiting to be run (in order).
+  struct PendingFileChooser;
+  std::deque< linked_ptr<PendingFileChooser> > file_chooser_completions_;
+
+  // The current directory enumeration callback
+  std::map<int, blink::WebFileChooserCompletion*> enumeration_completions_;
+  int enumeration_completion_id_;
+
+  // Reports load progress to the browser.
+  scoped_ptr<LoadProgressTracker> load_progress_tracker_;
+
+  // The SessionStorage namespace that we're assigned to has an ID, and that ID
+  // is passed to us upon creation.  WebKit asks for this ID upon first use and
+  // uses it whenever asking the browser process to allocate new storage areas.
+  int64 session_storage_namespace_id_;
+
+  // Stores edit commands associated to the next key event.
+  // Shall be cleared as soon as the next key event is processed.
+  EditCommands edit_commands_;
+
+#if defined(OS_MACOSX) || defined(OS_ANDROID)
+  // The external popup for the currently showing select popup.
+  scoped_ptr<ExternalPopupMenu> external_popup_menu_;
+#endif
+
+  // All the registered observers.  We expect this list to be small, so vector
+  // is fine.
+  ObserverList<RenderViewObserver> observers_;
+
+  // Wraps the |webwidget_| as a MouseLockDispatcher::LockTarget interface.
+  scoped_ptr<MouseLockDispatcher::LockTarget> webwidget_mouse_lock_target_;
+
+  // State associated with the GetWindowSnapshot function.
+  int next_snapshot_id_;
+  typedef std::map<int, WindowSnapshotCallback> PendingSnapshotMap;
+  PendingSnapshotMap pending_snapshots_;
 
   // This field stores drag/drop related info for the event that is currently
   // being handled. If the current event results in starting a drag/drop
   // session, this info is sent to the browser along with other drag/drop info.
   DragEventSourceInfo possible_drag_event_info_;
 
-  // NOTE: pepper_helper_ should be last member because its constructor calls
-  // AddObservers method of RenderViewImpl from c-tor.
-  scoped_ptr<RenderViewPepperHelper> pepper_helper_;
+  // NOTE: stats_collection_observer_ should be the last members because their
+  // constructors call the AddObservers method of RenderViewImpl.
+  scoped_ptr<StatsCollectionObserver> stats_collection_observer_;
+
+  typedef std::map<cc::SharedBitmapId, cc::SharedBitmap*> BitmapMap;
+  BitmapMap disambiguation_bitmaps_;
 
   // ---------------------------------------------------------------------------
   // ADDING NEW DATA? Please see if it fits appropriately in one of the above

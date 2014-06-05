@@ -17,9 +17,7 @@
 
 @class BookmarkBarView;
 
-namespace ui {
-class ThemeProvider;
-}
+class ThemeService;
 
 // An interface to allow mocking of a BookmarkBarController by the
 // BookmarkBarToolbarView.
@@ -29,15 +27,8 @@ class ThemeProvider;
 // background image is joined.
 - (int)currentTabContentsHeight;
 
-// Current theme provider, passed to the cross platform NtpBackgroundUtil class.
-- (ui::ThemeProvider*)themeProvider;
-
-// Returns YES if the bookmark bar should be shown at the bottom of the content
-// view when detached.
-- (BOOL)shouldShowAtBottomWhenDetached;
-
-// Returns YES if the bookmark bar has no bookmarks.
-- (BOOL)isEmpty;
+// Current theme service, passed to the cross platform NtpBackgroundUtil class.
+- (ThemeService*)themeService;
 
 @end
 

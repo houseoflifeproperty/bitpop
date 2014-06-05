@@ -25,7 +25,6 @@ import com.google.ipc.invalidation.ticl.InvalidationClientCore;
 
 import android.content.Context;
 
-import java.io.DataInput;
 import java.io.DataInputStream;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -47,7 +46,7 @@ public class AndroidStorage implements Storage {
 
   private final Context context;
 
-  AndroidStorage(Context context) {
+  public AndroidStorage(Context context) {
     this.context = Preconditions.checkNotNull(context);
   }
 
@@ -63,18 +62,27 @@ public class AndroidStorage implements Storage {
       return;
     }
     // Write the data.
+    FileOutputStream outstream = null;
+    Status status = null;
     try {
-      FileOutputStream outstream = context.openFileOutput(STATE_FILENAME, Context.MODE_PRIVATE);
+      outstream = context.openFileOutput(STATE_FILENAME, Context.MODE_PRIVATE);
       outstream.write(value);
-      outstream.close();
-      done.accept(Status.newInstance(Status.Code.SUCCESS, ""));
+      status = Status.newInstance(Status.Code.SUCCESS, "");
     } catch (FileNotFoundException exception) {
-      done.accept(
-          Status.newInstance(Status.Code.PERMANENT_FAILURE, "File not found: " + exception));
+      status = Status.newInstance(Status.Code.PERMANENT_FAILURE, "File not found: " + exception);
     } catch (IOException exception) {
-      done.accept(
-          Status.newInstance(Status.Code.TRANSIENT_FAILURE, "IO exception: " + exception));
+      status = Status.newInstance(Status.Code.PERMANENT_FAILURE, "File not found: " + exception);
+    } finally {
+      if (outstream != null) {
+        try {
+          outstream.close();
+        } catch (IOException exception) {
+          status = Status.newInstance(
+              Status.Code.PERMANENT_FAILURE, "Failed to close file: " + exception);
+        }
+      }
     }
+    done.accept(status);
   }
 
   @Override
@@ -86,28 +94,42 @@ public class AndroidStorage implements Storage {
       return;
     }
     // Read and return the data.
+    FileInputStream instream = null;
+    SimplePair<Status, byte[]> result = null;
     try {
-      FileInputStream instream = context.openFileInput(STATE_FILENAME);
+      instream = context.openFileInput(STATE_FILENAME);
       long fileSizeBytes = instream.getChannel().size();
       if (fileSizeBytes > MAX_STATE_FILE_SIZE_BYTES) {
         Status status =
             Status.newInstance(Status.Code.PERMANENT_FAILURE, "File too big: " + fileSizeBytes);
-        done.accept(SimplePair.of(status, (byte[]) null));
+        result = SimplePair.of(status, (byte[]) null);
       }
       // Cast to int must be safe due to the above size check.
-      DataInput input = new DataInputStream(instream);
+      DataInputStream input = new DataInputStream(instream);
       byte[] fileData = new byte[(int) fileSizeBytes];
       input.readFully(fileData);
-      done.accept(SimplePair.of(Status.newInstance(Status.Code.SUCCESS, ""), fileData));
+      result = SimplePair.of(Status.newInstance(Status.Code.SUCCESS, ""), fileData);
     } catch (FileNotFoundException exception) {
       Status status =
           Status.newInstance(Status.Code.PERMANENT_FAILURE, "File not found: " + exception);
-      done.accept(SimplePair.of(status, (byte[]) null));
+      result = SimplePair.of(status, (byte[]) null);
     } catch (IOException exception) {
       Status status =
           Status.newInstance(Status.Code.TRANSIENT_FAILURE, "IO exception: " + exception);
-      done.accept(SimplePair.of(status, (byte[]) null));
+      result = SimplePair.of(status, (byte[]) null);
+    } finally {
+      if (instream != null) {
+        try {
+          instream.close();
+        } catch (IOException exception) {
+          Status status =
+              Status.newInstance(
+                  Status.Code.TRANSIENT_FAILURE, "Failed to close file: " + exception);
+          result = SimplePair.of(status, (byte[]) null);
+        }
+      }
     }
+    done.accept(result);
   }
 
   @Override

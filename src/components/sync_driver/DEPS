@@ -1,0 +1,5 @@
+include_rules = [
+  "+components/os_crypt",
+  "+components/user_prefs/pref_registry_syncable.h",
+  "+sync",
+]

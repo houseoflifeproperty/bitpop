@@ -6,8 +6,8 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
-#include "base/string_number_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/string_number_conversions.h"
 #include "net/base/net_errors.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_filter.h"
@@ -32,11 +32,12 @@ int GetErrorCode(net::URLRequest* request) {
   return net::ERR_UNEXPECTED;
 }
 
-GURL GetMockUrl(const std::string& scheme, int net_error) {
+GURL GetMockUrl(const std::string& scheme,
+                const std::string& hostname,
+                int net_error) {
   CHECK_LT(net_error, 0);
   CHECK_NE(net_error, net::ERR_IO_PENDING);
-  return GURL(scheme + "://" + kMockHostname + "/" +
-              base::IntToString(net_error));
+  return GURL(scheme + "://" + hostname + "/" + base::IntToString(net_error));
 }
 
 }  // namespace
@@ -46,36 +47,51 @@ URLRequestFailedJob::URLRequestFailedJob(net::URLRequest* request,
                                          int net_error)
     : net::URLRequestJob(request, network_delegate),
       net_error_(net_error),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {}
-
-URLRequestFailedJob::~URLRequestFailedJob() {}
+      weak_factory_(this) {}
 
 void URLRequestFailedJob::Start() {
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
-      base::Bind(&URLRequestFailedJob::StartAsync,
-                 weak_factory_.GetWeakPtr()));
+      base::Bind(&URLRequestFailedJob::StartAsync, weak_factory_.GetWeakPtr()));
 }
 
 // static
 void URLRequestFailedJob::AddUrlHandler() {
-  // Add kMockHostname to net::URLRequestFilter for HTTP and HTTPS.
+  return AddUrlHandlerForHostname(kMockHostname);
+}
+
+// static
+void URLRequestFailedJob::AddUrlHandlerForHostname(
+    const std::string& hostname) {
+  // Add |hostname| to net::URLRequestFilter for HTTP and HTTPS.
   net::URLRequestFilter* filter = net::URLRequestFilter::GetInstance();
-  filter->AddHostnameHandler("http", kMockHostname,
-                             URLRequestFailedJob::Factory);
-  filter->AddHostnameHandler("https", kMockHostname,
-                             URLRequestFailedJob::Factory);
+  filter->AddHostnameHandler("http", hostname, URLRequestFailedJob::Factory);
+  filter->AddHostnameHandler("https", hostname, URLRequestFailedJob::Factory);
 }
 
 // static
 GURL URLRequestFailedJob::GetMockHttpUrl(int net_error) {
-  return GetMockUrl("http", net_error);
+  return GetMockHttpUrlForHostname(net_error, kMockHostname);
 }
 
 // static
 GURL URLRequestFailedJob::GetMockHttpsUrl(int net_error) {
-  return GetMockUrl("https", net_error);
+  return GetMockHttpsUrlForHostname(net_error, kMockHostname);
 }
+
+// static
+GURL URLRequestFailedJob::GetMockHttpUrlForHostname(
+    int net_error, const std::string& hostname) {
+  return GetMockUrl("http", hostname, net_error);
+}
+
+// static
+GURL URLRequestFailedJob::GetMockHttpsUrlForHostname(
+    int net_error, const std::string& hostname) {
+  return GetMockUrl("https", hostname, net_error);
+}
+
+URLRequestFailedJob::~URLRequestFailedJob() {}
 
 // static
 net::URLRequestJob* URLRequestFailedJob::Factory(

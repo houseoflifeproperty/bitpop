@@ -38,6 +38,7 @@ import com.google.protos.ipc.invalidation.AndroidService.ListenerUpcall.Registra
 import com.google.protos.ipc.invalidation.AndroidService.ListenerUpcall.ReissueRegistrationsUpcall;
 import com.google.protos.ipc.invalidation.Client.AckHandleP;
 import com.google.protos.ipc.invalidation.ClientProtocol.ClientConfigP;
+import com.google.protos.ipc.invalidation.ClientProtocol.InvalidationMessage;
 import com.google.protos.ipc.invalidation.ClientProtocol.InvalidationP;
 import com.google.protos.ipc.invalidation.ClientProtocol.ObjectIdP;
 import com.google.protos.ipc.invalidation.ClientProtocol.Version;
@@ -67,6 +68,9 @@ public class ProtocolIntents {
 
   /** Key of Intent byte[] extra holding an outbound message protocol buffer. */
   public static final String OUTBOUND_MESSAGE_KEY = "ipcinv-outbound-message";
+
+  /** Key of Intent byte[] extra holding an invalidation message protocol buffer. */
+  public static final String BACKGROUND_INVALIDATION_KEY = "ipcinv-background-inv";
 
   /** Intents corresponding to calls on {@code InvalidationClient}. */
   public static class ClientDowncalls {
@@ -280,6 +284,12 @@ public class ProtocolIntents {
         .setVersion(ANDROID_PROTOCOL_VERSION_VALUE)
         .setMessage(ByteString.copyFrom(message)).build().toByteArray();
     return new Intent().putExtra(OUTBOUND_MESSAGE_KEY, payloadBytes);
+  }
+
+  /** Returns a new intent encoding background invalidation messages. */
+  public static Intent newBackgroundInvalidationIntent(InvalidationMessage invalidationMessage) {
+    byte[] payloadBytes = invalidationMessage.toByteArray();
+    return new Intent().putExtra(BACKGROUND_INVALIDATION_KEY, payloadBytes);
   }
 
   private ProtocolIntents() {

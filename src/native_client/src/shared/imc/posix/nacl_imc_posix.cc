@@ -5,10 +5,12 @@
  */
 
 
-// NaCl inter-module communication primitives.
-//
-// This file implements common parts of IMC for "unix like systems" (i.e. not
-// used on Windows).
+/*
+ * NaCl inter-module communication primitives.
+ *
+ * This file implements common parts of IMC for "UNIX like systems" (i.e. not
+ * used on Windows).
+ */
 
 #include <assert.h>
 #include <ctype.h>
@@ -28,26 +30,25 @@
 
 #include "native_client/src/include/atomic_ops.h"
 
-#include "native_client/src/shared/imc/nacl_imc.h"
 #include "native_client/src/shared/imc/nacl_imc_c.h"
 #include "native_client/src/shared/platform/nacl_check.h"
 
 
-namespace {
+#if NACL_LINUX && defined(NACL_ENABLE_TMPFS_REDIRECT_VAR)
+static const char kNaClTempPrefixVar[] = "NACL_TMPFS_PREFIX";
+#endif
 
-const char kNaClTempPrefixVar[] = "NACL_TMPFS_PREFIX";
+/*
+ * The pathname or SHM-namespace prefixes for memory objects created
+ * by CreateMemoryObject().
+ */
+static const char kShmTempPrefix[] = "/tmp/google-nacl-shm-";
+static const char kShmOpenPrefix[] = "/google-nacl-shm-";
 
-// The pathname or SHM-namespace prefixes for memory objects created
-// by CreateMemoryObject().
-const char kShmTempPrefix[] = "/tmp/google-nacl-shm-";
-const char kShmOpenPrefix[] = "/google-nacl-shm-";
-
-NaClCreateMemoryObjectFunc g_create_memory_object_func = NULL;
-
-}  // namespace
+static NaClCreateMemoryObjectFunc g_create_memory_object_func = NULL;
 
 
-// Duplicate a file descriptor.
+/* Duplicate a file descriptor. */
 NaClHandle NaClDuplicateNaClHandle(NaClHandle handle) {
   return dup(handle);
 }
@@ -55,8 +56,6 @@ NaClHandle NaClDuplicateNaClHandle(NaClHandle handle) {
 void NaClSetCreateMemoryObjectFunc(NaClCreateMemoryObjectFunc func) {
   g_create_memory_object_func = func;
 }
-
-namespace nacl {
 
 #if NACL_ANDROID
 #define ASHMEM_DEVICE "/dev/ashmem"
@@ -77,18 +76,21 @@ static int AshmemCreateRegion(size_t size) {
 }
 #endif
 
-bool WouldBlock() {
-  return (errno == EAGAIN) ? true : false;
+int NaClWouldBlock(void) {
+  return errno == EAGAIN;
 }
 
-int GetLastErrorString(char* buffer, size_t length) {
+int NaClGetLastErrorString(char* buffer, size_t length) {
 #if NACL_LINUX && !NACL_ANDROID
-  // Note some Linux distributions provide only GNU version of strerror_r().
+  char* message;
+  /*
+   * Note some Linux distributions provide only GNU version of strerror_r().
+   */
   if (buffer == NULL || length == 0) {
     errno = ERANGE;
     return -1;
   }
-  char* message = strerror_r(errno, buffer, length);
+  message = strerror_r(errno, buffer, length);
   if (message != buffer) {
     size_t message_bytes = strlen(message) + 1;
     length = std::min(message_bytes, length);
@@ -105,20 +107,25 @@ int GetLastErrorString(char* buffer, size_t length) {
 static Atomic32 memory_object_count = 0;
 
 static int TryShmOrTempOpen(size_t length, const char* prefix, bool use_temp) {
+  char name[PATH_MAX];
   if (0 == length) {
     return -1;
   }
 
-  char name[PATH_MAX];
   for (;;) {
+    int m;
     snprintf(name, sizeof name, "%s-%u.%u", prefix,
              getpid(),
-             static_cast<uint32_t>(AtomicIncrement(&memory_object_count, 1)));
-    int m;
+             (int) AtomicIncrement(&memory_object_count, 1));
     if (use_temp) {
       m = open(name, O_RDWR | O_CREAT | O_EXCL, 0);
     } else {
-      m = shm_open(name, O_RDWR | O_CREAT | O_EXCL, 0);
+      /*
+       * Using 0 for the mode causes shm_unlink to fail with EACCES on Mac
+       * OS X 10.8. As of 10.8, the kernel requires the user to have write
+       * permission to successfully shm_unlink.
+       */
+      m = shm_open(name, O_RDWR | O_CREAT | O_EXCL, S_IWUSR);
     }
     if (0 <= m) {
       if (use_temp) {
@@ -137,16 +144,17 @@ static int TryShmOrTempOpen(size_t length, const char* prefix, bool use_temp) {
     if (errno != EEXIST) {
       return -1;
     }
-    // Retry only if we got EEXIST.
+    /* Retry only if we got EEXIST. */
   }
 }
 #endif
 
-Handle CreateMemoryObject(size_t length, bool executable) {
+NaClHandle NaClCreateMemoryObject(size_t length, int executable) {
+  int fd;
+
   if (0 == length) {
     return -1;
   }
-  int fd;
 
   if (g_create_memory_object_func != NULL) {
     fd = g_create_memory_object_func(length, executable);
@@ -157,10 +165,12 @@ Handle CreateMemoryObject(size_t length, bool executable) {
 #if NACL_ANDROID
   return AshmemCreateRegion(length);
 #else
-  // /dev/shm is not always available on Linux.
-  // Sometimes it's mounted as noexec.
-  // To handle this case, sel_ldr can take a path
-  // to tmpfs from the environment.
+  /*
+   * /dev/shm is not always available on Linux.
+   * Sometimes it's mounted as noexec.
+   * To handle this case, sel_ldr can take a path
+   * to tmpfs from the environment.
+   */
 #if NACL_LINUX && defined(NACL_ENABLE_TMPFS_REDIRECT_VAR)
   if (NACL_ENABLE_TMPFS_REDIRECT_VAR) {
     const char* prefix = getenv(kNaClTempPrefixVar);
@@ -174,22 +184,22 @@ Handle CreateMemoryObject(size_t length, bool executable) {
 #endif
 
   if (NACL_OSX && executable) {
-    // On Mac OS X, shm_open() gives us file descriptors that the OS
-    // won't mmap() with PROT_EXEC, which is no good for the dynamic
-    // code region, so we must use /tmp instead.
+    /*
+     * On Mac OS X, shm_open() gives us file descriptors that the OS
+     * won't mmap() with PROT_EXEC, which is no good for the dynamic
+     * code region, so we must use /tmp instead.
+     */
     return TryShmOrTempOpen(length, kShmTempPrefix, true);
   }
 
-  // Try shm_open().
+  /* Try shm_open(). */
   return TryShmOrTempOpen(length, kShmOpenPrefix, false);
-#endif  // !NACL_ANDROID
+#endif  /* !NACL_ANDROID */
 }
 
-void* Map(struct NaClDescEffector* effp,
-          void* start, size_t length, int prot, int flags,
-          Handle memory, off_t offset) {
-  UNREFERENCED_PARAMETER(effp);
-
+void* NaClMap(struct NaClDescEffector* effp,
+              void* start, size_t length, int prot, int flags,
+              NaClHandle memory, off_t offset) {
   static const int kPosixProt[] = {
     PROT_NONE,
     PROT_READ,
@@ -200,22 +210,21 @@ void* Map(struct NaClDescEffector* effp,
     PROT_WRITE | PROT_EXEC,
     PROT_READ | PROT_WRITE | PROT_EXEC
   };
-
   int adjusted = 0;
-  if (flags & kMapShared) {
+  UNREFERENCED_PARAMETER(effp);
+
+  if (flags & NACL_MAP_SHARED) {
     adjusted |= MAP_SHARED;
   }
-  if (flags & kMapPrivate) {
+  if (flags & NACL_MAP_PRIVATE) {
     adjusted |= MAP_PRIVATE;
   }
-  if (flags & kMapFixed) {
+  if (flags & NACL_MAP_FIXED) {
     adjusted |= MAP_FIXED;
   }
   return mmap(start, length, kPosixProt[prot & 7], adjusted, memory, offset);
 }
 
-int Unmap(void* start, size_t length) {
+int NaClUnmap(void* start, size_t length) {
   return munmap(start, length);
 }
-
-}  // namespace nacl

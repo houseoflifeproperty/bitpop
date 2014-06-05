@@ -6,31 +6,40 @@
 
 #include "base/command_line.h"
 #include "base/logging.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_set.h"
+#include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/common/page_transition_types.h"
 #include "extensions/common/constants.h"
-#include "googleurl/src/gurl.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
+#include "extensions/common/manifest_handlers/icons_handler.h"
+#include "extensions/common/manifest_handlers/web_accessible_resources_info.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/web/WebConsoleMessage.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "url/gurl.h"
 
 namespace extensions {
+
+// This method does a security check whether chrome-extension:// URLs can be
+// requested by the renderer. Since this is in an untrusted process, the browser
+// has a similar check to enforce the policy, in case this process is exploited.
+// If you are changing this function, ensure equivalent checks are added to
+// extension_protocols.cc's AllowExtensionResourceLoad.
 
 // static
 bool ResourceRequestPolicy::CanRequestResource(
     const GURL& resource_url,
-    WebKit::WebFrame* frame,
+    blink::WebFrame* frame,
     content::PageTransition transition_type,
     const ExtensionSet* loaded_extensions) {
   CHECK(resource_url.SchemeIs(extensions::kExtensionScheme));
 
   const Extension* extension =
-      loaded_extensions->GetExtensionOrAppByURL(ExtensionURLInfo(resource_url));
+      loaded_extensions->GetExtensionOrAppByURL(resource_url);
   if (!extension) {
     // Allow the load in the case of a non-existent extension. We'll just get a
     // 404 from the browser process.
@@ -42,17 +51,20 @@ bool ResourceRequestPolicy::CanRequestResource(
   // some extensions want to be able to do things like create their own
   // launchers.
   std::string resource_root_relative_path =
-      resource_url.path().empty() ? "" : resource_url.path().substr(1);
+      resource_url.path().empty() ? std::string()
+                                  : resource_url.path().substr(1);
   if (extension->is_hosted_app() &&
-      !extension->icons().ContainsPath(resource_root_relative_path)) {
+      !IconsInfo::GetIcons(extension)
+          .ContainsPath(resource_root_relative_path)) {
     LOG(ERROR) << "Denying load of " << resource_url.spec() << " from "
                << "hosted app.";
     return false;
   }
 
-  // Disallow loading of extension resources which are not explicitely listed
+  // Disallow loading of extension resources which are not explicitly listed
   // as web accessible if the manifest version is 2 or greater.
-  if (!extension->IsResourceWebAccessible(resource_url.path()) &&
+  if (!WebAccessibleResourcesInfo::IsResourceWebAccessible(
+          extension, resource_url.path()) &&
       !CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableExtensionsResourceWhitelist)) {
     GURL frame_url = frame->document().url();
@@ -67,8 +79,8 @@ bool ResourceRequestPolicy::CanRequestResource(
         page_url.GetOrigin() == extension->url();
     // - devtools (chrome-extension:// URLs are loaded into frames of devtools
     //     to support the devtools extension APIs)
-    bool is_dev_tools = page_url.SchemeIs(chrome::kChromeDevToolsScheme) &&
-        !extension->devtools_url().is_empty();
+    bool is_dev_tools = page_url.SchemeIs(content::kChromeDevToolsScheme) &&
+                        !ManifestURL::GetDevToolsPage(extension).is_empty();
     bool transition_allowed =
         !content::PageTransitionIsWebTriggerable(transition_type);
     // - unreachable web page error page (to allow showing the icon of the
@@ -83,8 +95,8 @@ bool ResourceRequestPolicy::CanRequestResource(
           "pages outside the extension.",
           resource_url.spec().c_str());
       frame->addMessageToConsole(
-          WebKit::WebConsoleMessage(WebKit::WebConsoleMessage::LevelError,
-                                    WebKit::WebString::fromUTF8(message)));
+          blink::WebConsoleMessage(blink::WebConsoleMessage::LevelError,
+                                    blink::WebString::fromUTF8(message)));
       return false;
     }
   }
@@ -95,8 +107,8 @@ bool ResourceRequestPolicy::CanRequestResource(
 // static
 bool ResourceRequestPolicy::CanRequestExtensionResourceScheme(
     const GURL& resource_url,
-    WebKit::WebFrame* frame) {
-  CHECK(resource_url.SchemeIs(chrome::kExtensionResourceScheme));
+    blink::WebFrame* frame) {
+  CHECK(resource_url.SchemeIs(extensions::kExtensionResourceScheme));
 
   GURL frame_url = frame->document().url();
   if (!frame_url.is_empty() &&
@@ -106,8 +118,8 @@ bool ResourceRequestPolicy::CanRequestExtensionResourceScheme(
         "loaded from extensions.",
       resource_url.spec().c_str());
     frame->addMessageToConsole(
-        WebKit::WebConsoleMessage(WebKit::WebConsoleMessage::LevelError,
-                                  WebKit::WebString::fromUTF8(message)));
+        blink::WebConsoleMessage(blink::WebConsoleMessage::LevelError,
+                                  blink::WebString::fromUTF8(message)));
     return false;
   }
 

@@ -52,7 +52,7 @@ enum PP_FlashSetting {
   PP_FLASHSETTING_3DENABLED = 1,
 
   /**
-   * Specifies if the given instance is in private/inconito/off-the-record mode
+   * Specifies if the given instance is in private/incognito/off-the-record mode
    * (returns true) or "regular" mode (returns false). Returns an undefined
    * PP_Var on invalid instance.
    */
@@ -84,7 +84,15 @@ enum PP_FlashSetting {
    * Specifies restrictions on how flash should handle LSOs. The result is an
    * int from <code>PP_FlashLSORestrictions</code>.
    */
-  PP_FLASHSETTING_LSORESTRICTIONS = 6
+  PP_FLASHSETTING_LSORESTRICTIONS = 6,
+
+  /**
+   * Specifies if the driver is reliable enough to use Shader Model 3 commands
+   * with it.
+   *
+   * This should only be enabled if PP_FLASHSETTING_STAGE3DENABLED is true.
+   */
+  PP_FLASHSETTING_STAGE3DBASELINEENABLED = 7
 };
 
 /**
@@ -95,7 +103,12 @@ enum PP_FlashCrashKey {
   /**
    * Specifies the document URL which contains the flash instance.
    */
-  PP_FLASHCRASHKEY_URL = 1
+  PP_FLASHCRASHKEY_URL = 1,
+
+  /**
+   * Specifies the URL of the current swf.
+   */
+  PP_FLASHCRASHKEY_RESOURCE_URL = 2
 };
 
 /**
@@ -179,7 +192,7 @@ interface PPB_Flash {
       [in] PP_Module module);
 
   /**
-   * Loads the given font in a more priviledged process on Windows. Call this if
+   * Loads the given font in a more privileged process on Windows. Call this if
    * Windows is giving errors for font calls. See
    * content/renderer/font_cache_dispatcher_win.cc
    *

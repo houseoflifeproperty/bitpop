@@ -39,25 +39,28 @@ class FileNode(base.Node):
       return
 
     root = self.GetRoot()
-    defs = {}
-    if hasattr(root, 'defines'):
-      defs = root.defines
+    defs = getattr(root, 'defines', {})
+    target_platform = getattr(root, 'target_platform', '')
 
     xtb_file = open(self.ToRealPath(self.GetInputPath()))
     try:
       lang = xtb_reader.Parse(xtb_file,
                               self.UberClique().GenerateXtbParserCallback(
-                                self.attrs['lang'], debug=debug),
-                              defs=defs)
+                                  self.attrs['lang'], debug=debug),
+                              defs=defs,
+                              target_platform=target_platform)
     except:
       print "Exception during parsing of %s" % self.GetInputPath()
       raise
-    # We special case 'he' and 'iw' because the translation console uses 'iw'
-    # and we use 'he'.
+    # Translation console uses non-standard language codes 'iw' and 'no' for
+    # Hebrew and Norwegian Bokmal instead of 'he' and 'nb' used in Chrome.
+    # Note that some Chrome's .grd still use 'no' instead of 'nb', but 'nb' is
+    # always used for generated .pak files.
+    ALTERNATIVE_LANG_CODE_MAP = { 'he': 'iw', 'nb': 'no' }
     assert (lang == self.attrs['lang'] or
-            (lang == 'iw' and self.attrs['lang'] == 'he')), ('The XTB file you '
-            'reference must contain messages in the language specified\n'
-            'by the \'lang\' attribute.')
+            lang == ALTERNATIVE_LANG_CODE_MAP[self.attrs['lang']]), (
+            'The XTB file you reference must contain messages in the language '
+            'specified\nby the \'lang\' attribute.')
 
   def GetInputPath(self):
     return os.path.expandvars(self.attrs['path'])

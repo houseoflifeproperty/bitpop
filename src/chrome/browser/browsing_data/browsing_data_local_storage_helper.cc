@@ -5,12 +5,11 @@
 #include "chrome/browser/browsing_data/browsing_data_local_storage_helper.h"
 
 #include "base/bind.h"
-#include "base/message_loop.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/local_storage_usage_info.h"
 #include "content/public/browser/storage_partition.h"
-#include "webkit/dom_storage/dom_storage_types.h"
 
 using content::BrowserContext;
 using content::BrowserThread;
@@ -53,12 +52,12 @@ void BrowsingDataLocalStorageHelper::DeleteOrigin(const GURL& origin) {
 }
 
 void BrowsingDataLocalStorageHelper::GetUsageInfoCallback(
-    const std::vector<dom_storage::LocalStorageUsageInfo>& infos) {
+    const std::vector<content::LocalStorageUsageInfo>& infos) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   for (size_t i = 0; i < infos.size(); ++i) {
     // Non-websafe state is not considered browsing data.
-    const dom_storage::LocalStorageUsageInfo& info = infos[i];
+    const content::LocalStorageUsageInfo& info = infos[i];
     if (BrowsingDataHelper::HasWebScheme(info.origin)) {
       local_storage_info_.push_back(
           LocalStorageInfo(info.origin, info.data_size, info.last_modified));
@@ -121,31 +120,23 @@ CannedBrowsingDataLocalStorageHelper::GetLocalStorageInfo() const {
 
 void CannedBrowsingDataLocalStorageHelper::StartFetching(
     const base::Callback<void(const std::list<LocalStorageInfo>&)>& callback) {
-  DCHECK(!is_fetching_);
-  DCHECK_EQ(false, callback.is_null());
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
 
-  is_fetching_ = true;
-  completion_callback_ = callback;
+  std::list<LocalStorageInfo> result;
+  for (std::set<GURL>::iterator iter = pending_local_storage_info_.begin();
+       iter != pending_local_storage_info_.end(); ++iter) {
+    result.push_back(
+        LocalStorageInfo(*iter, 0,  base::Time()));
+  }
 
-  // We post a task to emulate async fetching behavior.
-  MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&CannedBrowsingDataLocalStorageHelper::
-          ConvertPendingInfo, this));
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE, base::Bind(callback, result));
+}
+
+void CannedBrowsingDataLocalStorageHelper::DeleteOrigin(const GURL& origin) {
+  pending_local_storage_info_.erase(origin);
+  BrowsingDataLocalStorageHelper::DeleteOrigin(origin);
 }
 
 CannedBrowsingDataLocalStorageHelper::~CannedBrowsingDataLocalStorageHelper() {}
-
-void CannedBrowsingDataLocalStorageHelper::ConvertPendingInfo() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  local_storage_info_.clear();
-  for (std::set<GURL>::iterator iter = pending_local_storage_info_.begin();
-       iter != pending_local_storage_info_.end(); ++iter) {
-    local_storage_info_.push_back(
-        LocalStorageInfo(*iter, 0,  base::Time()));
-  }
-  MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&CannedBrowsingDataLocalStorageHelper::CallCompletionCallback,
-                 this));
-}

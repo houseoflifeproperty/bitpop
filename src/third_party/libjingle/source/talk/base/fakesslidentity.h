@@ -28,6 +28,9 @@
 #ifndef TALK_BASE_FAKESSLIDENTITY_H_
 #define TALK_BASE_FAKESSLIDENTITY_H_
 
+#include <algorithm>
+#include <vector>
+
 #include "talk/base/messagedigest.h"
 #include "talk/base/sslidentity.h"
 
@@ -35,27 +38,66 @@ namespace talk_base {
 
 class FakeSSLCertificate : public talk_base::SSLCertificate {
  public:
-  explicit FakeSSLCertificate(const std::string& data) : data_(data) {}
+  // SHA-1 is the default digest algorithm because it is available in all build
+  // configurations used for unit testing.
+  explicit FakeSSLCertificate(const std::string& data)
+      : data_(data), digest_algorithm_(DIGEST_SHA_1) {}
+  explicit FakeSSLCertificate(const std::vector<std::string>& certs)
+      : data_(certs.front()), digest_algorithm_(DIGEST_SHA_1) {
+    std::vector<std::string>::const_iterator it;
+    // Skip certs[0].
+    for (it = certs.begin() + 1; it != certs.end(); ++it) {
+      certs_.push_back(FakeSSLCertificate(*it));
+    }
+  }
   virtual FakeSSLCertificate* GetReference() const {
     return new FakeSSLCertificate(*this);
   }
   virtual std::string ToPEMString() const {
     return data_;
   }
-  virtual bool ComputeDigest(const std::string &algorithm,
-                             unsigned char *digest, std::size_t size,
-                             std::size_t *length) const {
+  virtual void ToDER(Buffer* der_buffer) const {
+    std::string der_string;
+    VERIFY(SSLIdentity::PemToDer(kPemTypeCertificate, data_, &der_string));
+    der_buffer->SetData(der_string.c_str(), der_string.size());
+  }
+  void set_digest_algorithm(const std::string& algorithm) {
+    digest_algorithm_ = algorithm;
+  }
+  virtual bool GetSignatureDigestAlgorithm(std::string* algorithm) const {
+    *algorithm = digest_algorithm_;
+    return true;
+  }
+  virtual bool ComputeDigest(const std::string& algorithm,
+                             unsigned char* digest,
+                             size_t size,
+                             size_t* length) const {
     *length = talk_base::ComputeDigest(algorithm, data_.c_str(), data_.size(),
                                        digest, size);
     return (*length != 0);
   }
+  virtual bool GetChain(SSLCertChain** chain) const {
+    if (certs_.empty())
+      return false;
+    std::vector<SSLCertificate*> new_certs(certs_.size());
+    std::transform(certs_.begin(), certs_.end(), new_certs.begin(), DupCert);
+    *chain = new SSLCertChain(new_certs);
+    return true;
+  }
+
  private:
+  static FakeSSLCertificate* DupCert(FakeSSLCertificate cert) {
+    return cert.GetReference();
+  }
   std::string data_;
+  std::vector<FakeSSLCertificate> certs_;
+  std::string digest_algorithm_;
 };
 
 class FakeSSLIdentity : public talk_base::SSLIdentity {
  public:
   explicit FakeSSLIdentity(const std::string& data) : cert_(data) {}
+  explicit FakeSSLIdentity(const FakeSSLCertificate& cert) : cert_(cert) {}
   virtual FakeSSLIdentity* GetReference() const {
     return new FakeSSLIdentity(*this);
   }

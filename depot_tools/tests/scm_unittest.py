@@ -73,6 +73,7 @@ class RootTestCase(BaseSCMTestCase):
 class GitWrapperTestCase(BaseSCMTestCase):
   def testMembersChanged(self):
     members = [
+        'ApplyEnvVars',
         'AssertVersion',
         'Capture',
         'CaptureStatus',
@@ -85,13 +86,16 @@ class GitWrapperTestCase(BaseSCMTestCase):
         'GetCheckoutRoot',
         'GetDifferentFiles',
         'GetEmail',
+        'GetGitDir',
         'GetGitSvnHeadRev',
         'GetPatchName',
         'GetSha1ForSvnRev',
         'GetSVNBranch',
         'GetUpstreamBranch',
         'IsGitSvn',
+        'IsInsideWorkTree',
         'IsValidRevision',
+        'IsWorkTreeDirty',
         'MatchSvnGlob',
         'ParseGitSvnSha1',
         'ShortBranchName',
@@ -169,6 +173,18 @@ class RealGitSvnTest(fake_repos.FakeReposTestBase):
     self._capture(['reset', '--hard', 'HEAD^'])
     self.assertEquals(scm.GIT.GetGitSvnHeadRev(cwd=self.clone_dir), 1)
 
+  def testIsGitSvn(self):
+    if not self.enabled:
+      return
+    # Git-svn
+    self.assertTrue(scm.GIT.IsGitSvn(self.clone_dir))
+    # Pure git
+    git_dir = scm.os.path.join(self.FAKE_REPOS.git_root, 'repo_1')
+    self.assertFalse(scm.GIT.IsGitSvn(git_dir))
+    # Pure svn
+    svn_dir = scm.os.path.join(self.FAKE_REPOS.svn_checkout, 'trunk')
+    self.assertFalse(scm.GIT.IsGitSvn(svn_dir))
+
   def testParseGitSvnSha1(self):
     test_sha1 = 'a5c63ce8671922e5c59c0dea49ef4f9d4a3020c9'
     expected_output = test_sha1 + '\n'
@@ -204,7 +220,6 @@ class SVNTestCase(BaseSCMTestCase):
         'CaptureRevision',
         'CaptureStatus',
         'current_version',
-        'DiffItem',
         'GenerateDiff',
         'GetCheckoutRoot',
         'GetEmail',

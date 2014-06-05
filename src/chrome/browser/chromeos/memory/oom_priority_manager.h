@@ -8,16 +8,18 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/containers/hash_tables.h"
 #include "base/gtest_prod_util.h"
-#include "base/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/process.h"
-#include "base/string16.h"
+#include "base/process/process.h"
+#include "base/strings/string16.h"
 #include "base/synchronization/lock.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+
+class GURL;
 
 namespace chromeos {
 
@@ -40,12 +42,15 @@ class OomPriorityManager : public content::NotificationObserver {
   // Number of discard events since Chrome started.
   int discard_count() const { return discard_count_; }
 
+  // See member comment.
+  bool recent_tab_discard() const { return recent_tab_discard_; }
+
   void Start();
   void Stop();
 
   // Returns list of tab titles sorted from most interesting (don't kill)
   // to least interesting (OK to kill).
-  std::vector<string16> GetTabTitles();
+  std::vector<base::string16> GetTabTitles();
 
   // Discards a tab to free the memory occupied by its renderer.
   // Tab still exists in the tab-strip; clicking on it will reload it.
@@ -58,21 +63,30 @@ class OomPriorityManager : public content::NotificationObserver {
   void LogMemoryAndDiscardTab();
 
  private:
+  friend class OomMemoryDetails;
   FRIEND_TEST_ALL_PREFIXES(OomPriorityManagerTest, Comparator);
+  FRIEND_TEST_ALL_PREFIXES(OomPriorityManagerTest, IsReloadableUI);
+  FRIEND_TEST_ALL_PREFIXES(OomPriorityManagerTest, GetProcessHandles);
 
   struct TabStats {
     TabStats();
     ~TabStats();
     bool is_app;  // browser window is an app
+    bool is_reloadable_ui;  // Reloadable web UI page, like NTP or Settings.
+    bool is_playing_audio;
     bool is_pinned;
     bool is_selected;  // selected in the currently active browser window
     bool is_discarded;
-    base::TimeTicks last_selected;
+    base::TimeTicks last_active;
     base::ProcessHandle renderer_handle;
-    string16 title;
+    base::string16 title;
     int64 tab_contents_id;  // unique ID per WebContents
   };
   typedef std::vector<TabStats> TabStatsList;
+
+  // Returns true if the |url| represents an internal Chrome web UI page that
+  // can be easily reloaded and hence makes a good choice to discard.
+  static bool IsReloadableUI(const GURL& url);
 
   // Discards a tab with the given unique ID.  Returns true if discard occurred.
   bool DiscardTabById(int64 target_web_contents_id);
@@ -82,6 +96,13 @@ class OomPriorityManager : public content::NotificationObserver {
   // to manually test the system.
   void RecordDiscardStatistics();
 
+  // Record whether we ran out of memory during a recent time interval.
+  // This allows us to normalize low memory statistics versus usage.
+  void RecordRecentTabDiscard();
+
+  // Purges data structures in the browser that can be easily recomputed.
+  void PurgeBrowserMemory();
+
   // Returns the number of tabs open in all browser instances.
   int GetTabCount() const;
 
@@ -89,6 +110,12 @@ class OomPriorityManager : public content::NotificationObserver {
 
   // Called when the timer fires, sets oom_adjust_score for all renderers.
   void AdjustOomPriorities();
+
+  // Returns a list of unique process handles from |stats_list|. If multiple
+  // tabs use the same process, returns the first process handle. This implies
+  // that the processes are selected based on their "most important" tab.
+  static std::vector<base::ProcessHandle> GetProcessHandles(
+      const TabStatsList& stats_list);
 
   // Called by AdjustOomPriorities.
   void AdjustOomPrioritiesOnFileThread(TabStatsList stats_list);
@@ -107,6 +134,7 @@ class OomPriorityManager : public content::NotificationObserver {
 
   base::RepeatingTimer<OomPriorityManager> timer_;
   base::OneShotTimer<OomPriorityManager> focus_tab_score_adjust_timer_;
+  base::RepeatingTimer<OomPriorityManager> recent_tab_discard_timer_;
   content::NotificationRegistrar registrar_;
 
   // This lock is for pid_to_oom_score_ and focus_tab_pid_.
@@ -134,9 +162,13 @@ class OomPriorityManager : public content::NotificationObserver {
   // Number of times we have discarded a tab, for statistics.
   int discard_count_;
 
+  // Whether a tab discard event has occurred during the last time interval,
+  // used for statistics normalized by usage.
+  bool recent_tab_discard_;
+
   DISALLOW_COPY_AND_ASSIGN(OomPriorityManager);
 };
 
-}  // namespace chrome
+}  // namespace chromeos
 
 #endif  // CHROME_BROWSER_CHROMEOS_MEMORY_OOM_PRIORITY_MANAGER_H_

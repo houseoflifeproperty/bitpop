@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/perftimer.h"
-#include "googleurl/src/gurl.h"
-#include "googleurl/src/url_canon.h"
-#include "googleurl/src/url_canon_stdstring.h"
-#include "googleurl/src/url_parse.h"
+#include "base/test/perf_time_logger.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
+#include "url/url_canon.h"
+#include "url/url_canon_stdstring.h"
+#include "url/url_parse.h"
 
 // TODO(darin): chrome code should not depend on WebCore innards
 #if 0
@@ -18,19 +18,19 @@
 #include "webkit/third_party/WebCore/platform/CString.h"
 
 #define KURL WebKitKURL
-#include "KURL.h"
 #include "KURL.cpp"
+#include "KURL.h"
 #pragma warning(pop)
 
 TEST(URLParse, FullURL) {
   const char url[] = "http://me:pass@host/foo/bar.html;param?query=yes#ref";
   int url_len = static_cast<int>(strlen(url));
 
-  url_parse::Parsed parsed;
-  PerfTimeLogger timer("Full_URL_Parse_AMillion");
+  url::Parsed parsed;
+  base::PerfTimeLogger timer("Full_URL_Parse_AMillion");
 
   for (int i = 0; i < 1000000; i++)
-    url_parse::ParseStandardURL(url, url_len, &parsed);
+    url::ParseStandardURL(url, url_len, &parsed);
   timer.Done();
 }
 
@@ -45,46 +45,46 @@ int typical_url2_len = static_cast<int>(strlen(typical_url2));
 const char typical_url3[] = "http://store.apple.com/1-800-MY-APPLE/WebObjects/AppleStore.woa/wa/RSLID?nnmm=browse&mco=578E9744&node=home/desktop/mac_pro";
 int typical_url3_len = static_cast<int>(strlen(typical_url3));
 
-}
+}  // namespace
 
 TEST(URLParse, TypicalURLParse) {
-  url_parse::Parsed parsed1;
-  url_parse::Parsed parsed2;
-  url_parse::Parsed parsed3;
+  url::Parsed parsed1;
+  url::Parsed parsed2;
+  url::Parsed parsed3;
 
   // Do this 1/3 of a million times since we do 3 different URLs.
-  PerfTimeLogger parse_timer("Typical_URL_Parse_AMillion");
+  base::PerfTimeLogger parse_timer("Typical_URL_Parse_AMillion");
   for (int i = 0; i < 333333; i++) {
-    url_parse::ParseStandardURL(typical_url1, typical_url1_len, &parsed1);
-    url_parse::ParseStandardURL(typical_url2, typical_url2_len, &parsed2);
-    url_parse::ParseStandardURL(typical_url3, typical_url3_len, &parsed3);
+    url::ParseStandardURL(typical_url1, typical_url1_len, &parsed1);
+    url::ParseStandardURL(typical_url2, typical_url2_len, &parsed2);
+    url::ParseStandardURL(typical_url3, typical_url3_len, &parsed3);
   }
   parse_timer.Done();
 }
 
 // Includes both parsing and canonicalization with no mallocs.
 TEST(URLParse, TypicalURLParseCanon) {
-  url_parse::Parsed parsed1;
-  url_parse::Parsed parsed2;
-  url_parse::Parsed parsed3;
+  url::Parsed parsed1;
+  url::Parsed parsed2;
+  url::Parsed parsed3;
 
-  PerfTimeLogger canon_timer("Typical_Parse_Canon_AMillion");
-  url_parse::Parsed out_parsed;
-  url_canon::RawCanonOutput<1024> output;
+  base::PerfTimeLogger canon_timer("Typical_Parse_Canon_AMillion");
+  url::Parsed out_parsed;
+  url::RawCanonOutput<1024> output;
   for (int i = 0; i < 333333; i++) {  // divide by 3 so we get 1M
-    url_parse::ParseStandardURL(typical_url1, typical_url1_len, &parsed1);
+    url::ParseStandardURL(typical_url1, typical_url1_len, &parsed1);
     output.set_length(0);
-    url_canon::CanonicalizeStandardURL(typical_url1, typical_url1_len, parsed1,
+    url::CanonicalizeStandardURL(typical_url1, typical_url1_len, parsed1,
                                        NULL, &output, &out_parsed);
 
-    url_parse::ParseStandardURL(typical_url2, typical_url2_len, &parsed2);
+    url::ParseStandardURL(typical_url2, typical_url2_len, &parsed2);
     output.set_length(0);
-    url_canon::CanonicalizeStandardURL(typical_url2, typical_url2_len, parsed2,
+    url::CanonicalizeStandardURL(typical_url2, typical_url2_len, parsed2,
                                        NULL, &output, &out_parsed);
 
-    url_parse::ParseStandardURL(typical_url3, typical_url3_len, &parsed3);
+    url::ParseStandardURL(typical_url3, typical_url3_len, &parsed3);
     output.set_length(0);
-    url_canon::CanonicalizeStandardURL(typical_url3, typical_url3_len, parsed3,
+    url::CanonicalizeStandardURL(typical_url3, typical_url3_len, parsed3,
                                        NULL, &output, &out_parsed);
   }
   canon_timer.Done();
@@ -92,29 +92,29 @@ TEST(URLParse, TypicalURLParseCanon) {
 
 // Includes both parsing and canonicalization, and mallocs for the output.
 TEST(URLParse, TypicalURLParseCanonStdString) {
-  url_parse::Parsed parsed1;
-  url_parse::Parsed parsed2;
-  url_parse::Parsed parsed3;
+  url::Parsed parsed1;
+  url::Parsed parsed2;
+  url::Parsed parsed3;
 
-  PerfTimeLogger canon_timer("Typical_Parse_Canon_AMillion");
-  url_parse::Parsed out_parsed;
+  base::PerfTimeLogger canon_timer("Typical_Parse_Canon_AMillion");
+  url::Parsed out_parsed;
   for (int i = 0; i < 333333; i++) {  // divide by 3 so we get 1M
-    url_parse::ParseStandardURL(typical_url1, typical_url1_len, &parsed1);
+    url::ParseStandardURL(typical_url1, typical_url1_len, &parsed1);
     std::string out1;
-    url_canon::StdStringCanonOutput output1(&out1);
-    url_canon::CanonicalizeStandardURL(typical_url1, typical_url1_len, parsed1,
+    url::StdStringCanonOutput output1(&out1);
+    url::CanonicalizeStandardURL(typical_url1, typical_url1_len, parsed1,
                                        NULL, &output1, &out_parsed);
 
-    url_parse::ParseStandardURL(typical_url2, typical_url2_len, &parsed2);
+    url::ParseStandardURL(typical_url2, typical_url2_len, &parsed2);
     std::string out2;
-    url_canon::StdStringCanonOutput output2(&out2);
-    url_canon::CanonicalizeStandardURL(typical_url2, typical_url2_len, parsed2,
+    url::StdStringCanonOutput output2(&out2);
+    url::CanonicalizeStandardURL(typical_url2, typical_url2_len, parsed2,
                                        NULL, &output2, &out_parsed);
 
-    url_parse::ParseStandardURL(typical_url3, typical_url3_len, &parsed3);
+    url::ParseStandardURL(typical_url3, typical_url3_len, &parsed3);
     std::string out3;
-    url_canon::StdStringCanonOutput output3(&out3);
-    url_canon::CanonicalizeStandardURL(typical_url3, typical_url3_len, parsed3,
+    url::StdStringCanonOutput output3(&out3);
+    url::CanonicalizeStandardURL(typical_url3, typical_url3_len, parsed3,
                                        NULL, &output3, &out_parsed);
   }
   canon_timer.Done();
@@ -126,7 +126,7 @@ TEST(URLParse, GURL) {
   std::string stdurl2(typical_url2);
   std::string stdurl3(typical_url3);
 
-  PerfTimeLogger gurl_timer("Typical_GURL_AMillion");
+  base::PerfTimeLogger gurl_timer("Typical_GURL_AMillion");
   for (int i = 0; i < 333333; i++) {  // divide by 3 so we get 1M
     GURL gurl1(stdurl1);
     GURL gurl2(stdurl2);
@@ -137,7 +137,7 @@ TEST(URLParse, GURL) {
 
 // TODO(darin): chrome code should not depend on WebCore innards
 TEST(URLParse, KURL) {
-  PerfTimeLogger timer_kurl("Typical_KURL_AMillion");
+  base::PerfTimeLogger timer_kurl("Typical_KURL_AMillion");
   for (int i = 0; i < 333333; i++) {  // divide by 3 so we get 1M
     WebCore::WebKitKURL kurl1(typical_url1);
     WebCore::WebKitKURL kurl2(typical_url2);

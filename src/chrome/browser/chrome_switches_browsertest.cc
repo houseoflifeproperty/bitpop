@@ -4,19 +4,19 @@
 
 #include "base/command_line.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
-#include "net/test/test_server.h"
+#include "net/test/spawned_test_server/spawned_test_server.h"
 
 class HostRulesTest : public InProcessBrowserTest {
  protected:
   HostRulesTest() {}
 
-  virtual void SetUpCommandLine(CommandLine* command_line) {
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     ASSERT_TRUE(test_server()->Start());
 
     // Map all hosts to our local server.
@@ -39,10 +39,9 @@ IN_PROC_BROWSER_TEST_F(HostRulesTest, TestMap) {
   ui_test_utils::NavigateToURL(browser(), test_url);
 
   std::string html;
-  EXPECT_TRUE(content::ExecuteJavaScriptAndExtractString(
-      chrome::GetActiveWebContents(browser())->GetRenderViewHost(),
-      L"",
-      L"window.domAutomationController.send(document.body.outerHTML);",
+  EXPECT_TRUE(content::ExecuteScriptAndExtractString(
+      browser()->tab_strip_model()->GetActiveWebContents(),
+      "window.domAutomationController.send(document.body.outerHTML);",
       &html));
 
   EXPECT_STREQ("<body></body>", html.c_str());

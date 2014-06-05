@@ -24,12 +24,12 @@ ProxyResolvingClientSocket::ProxyResolvingClientSocket(
     const scoped_refptr<net::URLRequestContextGetter>& request_context_getter,
     const net::SSLConfig& ssl_config,
     const net::HostPortPair& dest_host_port_pair)
-        : ALLOW_THIS_IN_INITIALIZER_LIST(proxy_resolve_callback_(
+        : proxy_resolve_callback_(
               base::Bind(&ProxyResolvingClientSocket::ProcessProxyResolveDone,
-                         base::Unretained(this)))),
-          ALLOW_THIS_IN_INITIALIZER_LIST(connect_callback_(
+                         base::Unretained(this))),
+          connect_callback_(
               base::Bind(&ProxyResolvingClientSocket::ProcessConnectDone,
-                         base::Unretained(this)))),
+                         base::Unretained(this))),
           ssl_config_(ssl_config),
           pac_request_(NULL),
           dest_host_port_pair_(dest_host_port_pair),
@@ -41,8 +41,8 @@ ProxyResolvingClientSocket::ProxyResolvingClientSocket(
               net::BoundNetLog::Make(
                   request_context_getter->GetURLRequestContext()->net_log(),
                   net::NetLog::SOURCE_SOCKET)),
-          ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
-  DCHECK(request_context_getter);
+          weak_factory_(this) {
+  DCHECK(request_context_getter.get());
   net::URLRequestContext* request_context =
       request_context_getter->GetURLRequestContext();
   DCHECK(request_context);
@@ -54,10 +54,10 @@ ProxyResolvingClientSocket::ProxyResolvingClientSocket(
   session_params.client_socket_factory = socket_factory;
   session_params.host_resolver = request_context->host_resolver();
   session_params.cert_verifier = request_context->cert_verifier();
+  session_params.transport_security_state =
+      request_context->transport_security_state();
   // TODO(rkn): This is NULL because ServerBoundCertService is not thread safe.
   session_params.server_bound_cert_service = NULL;
-  // transport_security_state is NULL because it's not thread safe.
-  session_params.transport_security_state = NULL;
   session_params.proxy_service = request_context->proxy_service();
   session_params.ssl_config_service = request_context->ssl_config_service();
   session_params.http_auth_handler_factory =
@@ -107,18 +107,18 @@ int ProxyResolvingClientSocket::Write(
   return net::ERR_SOCKET_NOT_CONNECTED;
 }
 
-bool ProxyResolvingClientSocket::SetReceiveBufferSize(int32 size) {
+int ProxyResolvingClientSocket::SetReceiveBufferSize(int32 size) {
   if (transport_.get() && transport_->socket())
     return transport_->socket()->SetReceiveBufferSize(size);
   NOTREACHED();
-  return false;
+  return net::ERR_SOCKET_NOT_CONNECTED;
 }
 
-bool ProxyResolvingClientSocket::SetSendBufferSize(int32 size) {
+int ProxyResolvingClientSocket::SetSendBufferSize(int32 size) {
   if (transport_.get() && transport_->socket())
     return transport_->socket()->SetSendBufferSize(size);
   NOTREACHED();
-  return false;
+  return net::ERR_SOCKET_NOT_CONNECTED;
 }
 
 int ProxyResolvingClientSocket::Connect(
@@ -138,7 +138,7 @@ int ProxyResolvingClientSocket::Connect(
     // We defer execution of ProcessProxyResolveDone instead of calling it
     // directly here for simplicity. From the caller's point of view,
     // the connect always happens asynchronously.
-    MessageLoop* message_loop = MessageLoop::current();
+    base::MessageLoop* message_loop = base::MessageLoop::current();
     CHECK(message_loop);
     message_loop->PostTask(
         FROM_HERE,
@@ -192,7 +192,8 @@ void ProxyResolvingClientSocket::ProcessProxyResolveDone(int status) {
   // Now that we have resolved the proxy, we need to connect.
   status = net::InitSocketHandleForRawConnect(
       dest_host_port_pair_, network_session_.get(), proxy_info_, ssl_config_,
-      ssl_config_, bound_net_log_, transport_.get(), connect_callback_);
+      ssl_config_, net::PRIVACY_MODE_DISABLED, bound_net_log_, transport_.get(),
+      connect_callback_);
   if (status != net::ERR_IO_PENDING) {
     // Since this method is always called asynchronously. it is OK to call
     // ProcessConnectDone synchronously.
@@ -265,7 +266,7 @@ int ProxyResolvingClientSocket::ReconsiderProxyAfterError(int error) {
 
   if (proxy_info_.is_https() && ssl_config_.send_client_cert) {
     network_session_->ssl_client_auth_cache()->Remove(
-        proxy_info_.proxy_server().host_port_pair().ToString());
+        proxy_info_.proxy_server().host_port_pair());
   }
 
   int rv = network_session_->proxy_service()->ReconsiderProxyAfterError(
@@ -284,7 +285,7 @@ int ProxyResolvingClientSocket::ReconsiderProxyAfterError(int error) {
   // In both cases we want to post ProcessProxyResolveDone (in the error case
   // we might still want to fall back a direct connection).
   if (rv != net::ERR_IO_PENDING) {
-    MessageLoop* message_loop = MessageLoop::current();
+    base::MessageLoop* message_loop = base::MessageLoop::current();
     CHECK(message_loop);
     message_loop->PostTask(
         FROM_HERE,
@@ -371,20 +372,6 @@ bool ProxyResolvingClientSocket::UsingTCPFastOpen() const {
     return transport_->socket()->UsingTCPFastOpen();
   NOTREACHED();
   return false;
-}
-
-int64 ProxyResolvingClientSocket::NumBytesRead() const {
-  if (transport_.get() && transport_->socket())
-    return transport_->socket()->NumBytesRead();
-  NOTREACHED();
-  return -1;
-}
-
-base::TimeDelta ProxyResolvingClientSocket::GetConnectTimeMicros() const {
-  if (transport_.get() && transport_->socket())
-    return transport_->socket()->GetConnectTimeMicros();
-  NOTREACHED();
-  return base::TimeDelta::FromMicroseconds(-1);
 }
 
 bool ProxyResolvingClientSocket::WasNpnNegotiated() const {

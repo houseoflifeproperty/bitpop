@@ -7,58 +7,62 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/single_thread_task_runner.h"
-#include "ppapi/cpp/image_data.h"
+#include "third_party/webrtc/modules/desktop_capture/desktop_frame.h"
+#include "third_party/webrtc/modules/desktop_capture/desktop_geometry.h"
+#include "third_party/webrtc/modules/desktop_capture/desktop_region.h"
 
 namespace remoting {
 
 FrameConsumerProxy::FrameConsumerProxy(
-    scoped_refptr<base::SingleThreadTaskRunner> task_runner)
-    : task_runner_(task_runner) {
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner,
+    const base::WeakPtr<FrameConsumer>& frame_consumer)
+    : frame_consumer_(frame_consumer),
+      task_runner_(task_runner) {
+  pixel_format_ = frame_consumer_->GetPixelFormat();
 }
 
-void FrameConsumerProxy::ApplyBuffer(const SkISize& view_size,
-                                     const SkIRect& clip_area,
-                                     pp::ImageData* buffer,
-                                     const SkRegion& region) {
+void FrameConsumerProxy::ApplyBuffer(const webrtc::DesktopSize& view_size,
+                                     const webrtc::DesktopRect& clip_area,
+                                     webrtc::DesktopFrame* buffer,
+                                     const webrtc::DesktopRegion& region,
+                                     const webrtc::DesktopRegion& shape) {
   if (!task_runner_->BelongsToCurrentThread()) {
     task_runner_->PostTask(FROM_HERE, base::Bind(
         &FrameConsumerProxy::ApplyBuffer, this,
-        view_size, clip_area, buffer, region));
+        view_size, clip_area, buffer, region, shape));
     return;
   }
 
-  if (frame_consumer_)
-    frame_consumer_->ApplyBuffer(view_size, clip_area, buffer, region);
+  if (frame_consumer_.get())
+    frame_consumer_->ApplyBuffer(view_size, clip_area, buffer, region, shape);
 }
 
-void FrameConsumerProxy::ReturnBuffer(pp::ImageData* buffer) {
+void FrameConsumerProxy::ReturnBuffer(webrtc::DesktopFrame* buffer) {
   if (!task_runner_->BelongsToCurrentThread()) {
     task_runner_->PostTask(FROM_HERE, base::Bind(
         &FrameConsumerProxy::ReturnBuffer, this, buffer));
     return;
   }
 
-  if (frame_consumer_)
+  if (frame_consumer_.get())
     frame_consumer_->ReturnBuffer(buffer);
 }
 
-void FrameConsumerProxy::SetSourceSize(const SkISize& source_size,
-                                       const SkIPoint& source_dpi) {
+void FrameConsumerProxy::SetSourceSize(
+    const webrtc::DesktopSize& source_size,
+    const webrtc::DesktopVector& source_dpi) {
   if (!task_runner_->BelongsToCurrentThread()) {
     task_runner_->PostTask(FROM_HERE, base::Bind(
         &FrameConsumerProxy::SetSourceSize, this, source_size, source_dpi));
     return;
   }
 
-  if (frame_consumer_)
+  if (frame_consumer_.get())
     frame_consumer_->SetSourceSize(source_size, source_dpi);
 }
 
-void FrameConsumerProxy::Attach(
-    const base::WeakPtr<FrameConsumer>& frame_consumer) {
-  DCHECK(task_runner_->BelongsToCurrentThread());
-  DCHECK(frame_consumer_ == NULL);
-  frame_consumer_ = frame_consumer;
+FrameConsumer::PixelFormat FrameConsumerProxy::GetPixelFormat() {
+  return pixel_format_;
 }
 
 FrameConsumerProxy::~FrameConsumerProxy() {

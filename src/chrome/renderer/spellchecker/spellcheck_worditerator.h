@@ -11,11 +11,10 @@
 
 #include <string>
 
-#include "unicode/ubrk.h"
-#include "unicode/uscript.h"
-
 #include "base/basictypes.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
+#include "third_party/icu/source/common/unicode/ubrk.h"
+#include "third_party/icu/source/common/unicode/uscript.h"
 
 // A class which encapsulates language-specific operations used by
 // SpellcheckWordIterator. When we set the spellchecker language, this class
@@ -38,11 +37,11 @@ class SpellcheckCharAttribute {
   // can split a concaticated word (e.g. "seven-year-old") into words (e.g.
   // "seven", "year", and "old") and check their spellings. The result stirng is
   // encoded in UTF-16 since ICU needs UTF-16 strings.
-  string16 GetRuleSet(bool allow_contraction) const;
+  base::string16 GetRuleSet(bool allow_contraction) const;
 
   // Outputs a character only if it is a word character. (Please read the
   // comments in CreateRuleSets() why we need this function.)
-  bool OutputChar(UChar c, string16* output) const;
+  bool OutputChar(UChar c, base::string16* output) const;
 
  private:
   // Creates the rule-sets that return words possibly used by the given
@@ -54,16 +53,16 @@ class SpellcheckCharAttribute {
 
   // Outputs a character only if it is one used by the given language. These
   // functions are called from OutputChar().
-  bool OutputArabic(UChar c, string16* output) const;
-  bool OutputHangul(UChar c, string16* output) const;
-  bool OutputHebrew(UChar c, string16* output) const;
-  bool OutputDefault(UChar c, string16* output) const;
+  bool OutputArabic(UChar c, base::string16* output) const;
+  bool OutputHangul(UChar c, base::string16* output) const;
+  bool OutputHebrew(UChar c, base::string16* output) const;
+  bool OutputDefault(UChar c, base::string16* output) const;
 
   // The custom rule-set strings used by ICU break iterator. Since it is not so
   // easy to create custom rule-sets from an ISO language code, this class
   // saves these rule-set strings created when we set the language.
-  string16 ruleset_allow_contraction_;
-  string16 ruleset_disallow_contraction_;
+  base::string16 ruleset_allow_contraction_;
+  base::string16 ruleset_disallow_contraction_;
 
   // The script code used by this language.
   UScriptCode script_code_;
@@ -94,11 +93,11 @@ class SpellcheckCharAttribute {
 //   // Set up a SpellcheckWordIterator object which extracts English words,
 //   // and retrieve them.
 //   SpellcheckWordIterator iterator;
-//   string16 text(UTF8ToUTF16("this is a test."));
+//   base::string16 text(base::UTF8ToUTF16("this is a test."));
 //   iterator.Initialize(&attribute, true);
 //   iterator.SetText(text.c_str(), text_.length());
 //
-//   string16 word;
+//   base::string16 word;
 //   int offset;
 //   int length;
 //   while (iterator.GetNextWord(&word, &offset, &length)) {
@@ -123,7 +122,7 @@ class SpellcheckWordIterator {
   // Set text to be iterated. (This text does not have to be NULL-terminated.)
   // This function also resets internal state so we can reuse this iterator
   // without calling Initialize().
-  bool SetText(const char16* text, size_t length);
+  bool SetText(const base::char16* text, size_t length);
 
   // Retrieves a word (or a contraction), stores its copy to 'word_string', and
   // stores the position and the length for input word to 'word_start'. Since
@@ -135,7 +134,7 @@ class SpellcheckWordIterator {
   //   while(iterator.GetNextWord(&word, &offset, &length))
   //     text.replace(offset, length, word);
   //
-  bool GetNextWord(string16* word_string,
+  bool GetNextWord(base::string16* word_string,
                    int* word_start,
                    int* word_length);
 
@@ -152,10 +151,10 @@ class SpellcheckWordIterator {
   // characters.
   bool Normalize(int input_start,
                  int input_length,
-                 string16* output_string) const;
+                 base::string16* output_string) const;
 
   // The pointer to the input string from which we are extracting words.
-  const char16* text_;
+  const base::char16* text_;
 
   // The length of the original string.
   int length_;

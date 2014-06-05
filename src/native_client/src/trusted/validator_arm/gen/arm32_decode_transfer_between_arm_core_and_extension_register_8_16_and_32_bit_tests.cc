@@ -1,5 +1,5 @@
 /*
- * Copyright 2012 The Native Client Authors.  All rights reserved.
+ * Copyright 2013 The Native Client Authors.  All rights reserved.
  * Use of this source code is governed by a BSD-style license that can
  * be found in the LICENSE file.
  */
@@ -13,9 +13,8 @@
 
 #include "gtest/gtest.h"
 #include "native_client/src/trusted/validator_arm/actual_vs_baseline.h"
-#include "native_client/src/trusted/validator_arm/actual_classes.h"
-#include "native_client/src/trusted/validator_arm/baseline_classes.h"
-#include "native_client/src/trusted/validator_arm/inst_classes_testers.h"
+#include "native_client/src/trusted/validator_arm/arm_helpers.h"
+#include "native_client/src/trusted/validator_arm/gen/arm32_decode_named_bases.h"
 
 using nacl_arm_dec::Instruction;
 using nacl_arm_dec::ClassDecoder;
@@ -31,248 +30,386 @@ namespace nacl_arm_test {
 //  due to row checks, or restrictions specified by the row restrictions.
 
 
-// Neutral case:
-// inst(20)=0 & inst(8)=0 & inst(23:21)=000 & inst(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxx00x0000
-//    = {baseline: 'MoveVfpRegisterOp',
-//       constraints: }
-//
-// Representaive case:
 // L(20)=0 & C(8)=0 & A(23:21)=000 & $pattern(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxx00x0000
-//    = {baseline: MoveVfpRegisterOp,
-//       constraints: }
-class MoveVfpRegisterOpTesterCase0
-    : public MoveVfpRegisterOpTester {
+//    = {None: 32,
+//       Pc: 15,
+//       Rt: Rt(15:12),
+//       actual: Actual_VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000onnnntttt1010n0010000_case_1,
+//       baseline: VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000onnnntttt1010n0010000_case_0,
+//       defs: {Rt
+//            if to_arm_register
+//            else None},
+//       fields: [op(20), Rt(15:12)],
+//       op: op(20),
+//       pattern: cccc1110000onnnntttt1010n0010000,
+//       rule: VMOV_between_ARM_core_register_and_single_precision_register,
+//       safety: [t  ==
+//               Pc => UNPREDICTABLE],
+//       t: Rt,
+//       to_arm_register: op(20)=1,
+//       uses: {Rt
+//            if not to_arm_register
+//            else None}}
+class VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000onnnntttt1010n0010000_case_0TesterCase0
+    : public Arm32DecoderTester {
  public:
-  MoveVfpRegisterOpTesterCase0(const NamedClassDecoder& decoder)
-    : MoveVfpRegisterOpTester(decoder) {}
+  VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000onnnntttt1010n0010000_case_0TesterCase0(const NamedClassDecoder& decoder)
+    : Arm32DecoderTester(decoder) {}
   virtual bool PassesParsePreconditions(
       nacl_arm_dec::Instruction inst,
       const NamedClassDecoder& decoder);
 };
 
-bool MoveVfpRegisterOpTesterCase0
+bool VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000onnnntttt1010n0010000_case_0TesterCase0
 ::PassesParsePreconditions(
      nacl_arm_dec::Instruction inst,
      const NamedClassDecoder& decoder) {
 
   // Check that row patterns apply to pattern being checked.'
-  if ((inst.Bits() & 0x00100000) != 0x00000000 /* L(20)=~0 */) return false;
-  if ((inst.Bits() & 0x00000100) != 0x00000000 /* C(8)=~0 */) return false;
-  if ((inst.Bits() & 0x00E00000) != 0x00000000 /* A(23:21)=~000 */) return false;
-  if ((inst.Bits() & 0x0000006F) != 0x00000000 /* $pattern(31:0)=~xxxxxxxxxxxxxxxxxxxxxxxxx00x0000 */) return false;
+  // L(20)=~0
+  if ((inst.Bits() & 0x00100000)  !=
+          0x00000000) return false;
+  // C(8)=~0
+  if ((inst.Bits() & 0x00000100)  !=
+          0x00000000) return false;
+  // A(23:21)=~000
+  if ((inst.Bits() & 0x00E00000)  !=
+          0x00000000) return false;
+  // $pattern(31:0)=~xxxxxxxxxxxxxxxxxxxxxxxxx00x0000
+  if ((inst.Bits() & 0x0000006F)  !=
+          0x00000000) return false;
+
+  // if cond(31:28)=1111, don't test instruction.
+  if ((inst.Bits() & 0xF0000000) == 0xF0000000) return false;
 
   // Check other preconditions defined for the base decoder.
-  return MoveVfpRegisterOpTester::
+  return Arm32DecoderTester::
       PassesParsePreconditions(inst, decoder);
 }
 
-// Neutral case:
-// inst(20)=0 & inst(8)=0 & inst(23:21)=111 & inst(31:0)=xxxxxxxxxxxx0001xxxxxxxx000x0000
-//    = {baseline: 'VfpUsesRegOp',
-//       constraints: }
-//
-// Representaive case:
 // L(20)=0 & C(8)=0 & A(23:21)=111 & $pattern(31:0)=xxxxxxxxxxxx0001xxxxxxxx000x0000
-//    = {baseline: VfpUsesRegOp,
-//       constraints: }
-class VfpUsesRegOpTesterCase1
-    : public VfpUsesRegOpTester {
+//    = {Pc: 15,
+//       Rt: Rt(15:12),
+//       actual: Actual_VMSR_cccc111011100001tttt101000010000_case_1,
+//       baseline: VMSR_cccc111011100001tttt101000010000_case_0,
+//       defs: {},
+//       fields: [Rt(15:12)],
+//       pattern: cccc111011100001tttt101000010000,
+//       rule: VMSR,
+//       safety: [t  ==
+//               Pc => UNPREDICTABLE],
+//       t: Rt,
+//       uses: {Rt}}
+class VMSR_cccc111011100001tttt101000010000_case_0TesterCase1
+    : public Arm32DecoderTester {
  public:
-  VfpUsesRegOpTesterCase1(const NamedClassDecoder& decoder)
-    : VfpUsesRegOpTester(decoder) {}
+  VMSR_cccc111011100001tttt101000010000_case_0TesterCase1(const NamedClassDecoder& decoder)
+    : Arm32DecoderTester(decoder) {}
   virtual bool PassesParsePreconditions(
       nacl_arm_dec::Instruction inst,
       const NamedClassDecoder& decoder);
 };
 
-bool VfpUsesRegOpTesterCase1
+bool VMSR_cccc111011100001tttt101000010000_case_0TesterCase1
 ::PassesParsePreconditions(
      nacl_arm_dec::Instruction inst,
      const NamedClassDecoder& decoder) {
 
   // Check that row patterns apply to pattern being checked.'
-  if ((inst.Bits() & 0x00100000) != 0x00000000 /* L(20)=~0 */) return false;
-  if ((inst.Bits() & 0x00000100) != 0x00000000 /* C(8)=~0 */) return false;
-  if ((inst.Bits() & 0x00E00000) != 0x00E00000 /* A(23:21)=~111 */) return false;
-  if ((inst.Bits() & 0x000F00EF) != 0x00010000 /* $pattern(31:0)=~xxxxxxxxxxxx0001xxxxxxxx000x0000 */) return false;
+  // L(20)=~0
+  if ((inst.Bits() & 0x00100000)  !=
+          0x00000000) return false;
+  // C(8)=~0
+  if ((inst.Bits() & 0x00000100)  !=
+          0x00000000) return false;
+  // A(23:21)=~111
+  if ((inst.Bits() & 0x00E00000)  !=
+          0x00E00000) return false;
+  // $pattern(31:0)=~xxxxxxxxxxxx0001xxxxxxxx000x0000
+  if ((inst.Bits() & 0x000F00EF)  !=
+          0x00010000) return false;
+
+  // if cond(31:28)=1111, don't test instruction.
+  if ((inst.Bits() & 0xF0000000) == 0xF0000000) return false;
 
   // Check other preconditions defined for the base decoder.
-  return VfpUsesRegOpTester::
+  return Arm32DecoderTester::
       PassesParsePreconditions(inst, decoder);
 }
 
-// Neutral case:
-// inst(20)=0 & inst(8)=1 & inst(23:21)=0xx & inst(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxxxxx0000
-//    = {baseline: 'MoveVfpRegisterOpWithTypeSel',
-//       constraints: }
-//
-// Representaive case:
 // L(20)=0 & C(8)=1 & A(23:21)=0xx & $pattern(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxxxxx0000
-//    = {baseline: MoveVfpRegisterOpWithTypeSel,
-//       constraints: }
-class MoveVfpRegisterOpWithTypeSelTesterCase2
-    : public MoveVfpRegisterOpWithTypeSelTester {
+//    = {Pc: 15,
+//       Rt: Rt(15:12),
+//       actual: Actual_VMOV_ARM_core_register_to_scalar_cccc11100ii0ddddtttt1011dii10000_case_1,
+//       baseline: VMOV_ARM_core_register_to_scalar_cccc11100ii0ddddtttt1011dii10000_case_0,
+//       defs: {},
+//       fields: [opc1(22:21), Rt(15:12), opc2(6:5)],
+//       opc1: opc1(22:21),
+//       opc2: opc2(6:5),
+//       pattern: cccc11100ii0ddddtttt1011dii10000,
+//       rule: VMOV_ARM_core_register_to_scalar,
+//       safety: [opc1:opc2(3:0)=0x10 => UNDEFINED,
+//         t  ==
+//               Pc => UNPREDICTABLE],
+//       t: Rt,
+//       uses: {Rt}}
+class VMOV_ARM_core_register_to_scalar_cccc11100ii0ddddtttt1011dii10000_case_0TesterCase2
+    : public Arm32DecoderTester {
  public:
-  MoveVfpRegisterOpWithTypeSelTesterCase2(const NamedClassDecoder& decoder)
-    : MoveVfpRegisterOpWithTypeSelTester(decoder) {}
+  VMOV_ARM_core_register_to_scalar_cccc11100ii0ddddtttt1011dii10000_case_0TesterCase2(const NamedClassDecoder& decoder)
+    : Arm32DecoderTester(decoder) {}
   virtual bool PassesParsePreconditions(
       nacl_arm_dec::Instruction inst,
       const NamedClassDecoder& decoder);
 };
 
-bool MoveVfpRegisterOpWithTypeSelTesterCase2
+bool VMOV_ARM_core_register_to_scalar_cccc11100ii0ddddtttt1011dii10000_case_0TesterCase2
 ::PassesParsePreconditions(
      nacl_arm_dec::Instruction inst,
      const NamedClassDecoder& decoder) {
 
   // Check that row patterns apply to pattern being checked.'
-  if ((inst.Bits() & 0x00100000) != 0x00000000 /* L(20)=~0 */) return false;
-  if ((inst.Bits() & 0x00000100) != 0x00000100 /* C(8)=~1 */) return false;
-  if ((inst.Bits() & 0x00800000) != 0x00000000 /* A(23:21)=~0xx */) return false;
-  if ((inst.Bits() & 0x0000000F) != 0x00000000 /* $pattern(31:0)=~xxxxxxxxxxxxxxxxxxxxxxxxxxxx0000 */) return false;
+  // L(20)=~0
+  if ((inst.Bits() & 0x00100000)  !=
+          0x00000000) return false;
+  // C(8)=~1
+  if ((inst.Bits() & 0x00000100)  !=
+          0x00000100) return false;
+  // A(23:21)=~0xx
+  if ((inst.Bits() & 0x00800000)  !=
+          0x00000000) return false;
+  // $pattern(31:0)=~xxxxxxxxxxxxxxxxxxxxxxxxxxxx0000
+  if ((inst.Bits() & 0x0000000F)  !=
+          0x00000000) return false;
+
+  // if cond(31:28)=1111, don't test instruction.
+  if ((inst.Bits() & 0xF0000000) == 0xF0000000) return false;
 
   // Check other preconditions defined for the base decoder.
-  return MoveVfpRegisterOpWithTypeSelTester::
+  return Arm32DecoderTester::
       PassesParsePreconditions(inst, decoder);
 }
 
-// Neutral case:
-// inst(20)=0 & inst(8)=1 & inst(23:21)=1xx & inst(6:5)=0x & inst(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxxxxx0000
-//    = {baseline: 'DuplicateToAdvSIMDRegisters',
-//       constraints: }
-//
-// Representaive case:
 // L(20)=0 & C(8)=1 & A(23:21)=1xx & B(6:5)=0x & $pattern(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxxxxx0000
-//    = {baseline: DuplicateToAdvSIMDRegisters,
-//       constraints: }
-class DuplicateToAdvSIMDRegistersTesterCase3
-    : public DuplicateToAdvSIMDRegistersTester {
+//    = {B: B(22),
+//       E: E(5),
+//       Pc: 15,
+//       Q: Q(21),
+//       Rt: Rt(15:12),
+//       Vd: Vd(19:16),
+//       actual: Actual_VDUP_ARM_core_register_cccc11101bq0ddddtttt1011d0e10000_case_1,
+//       baseline: VDUP_ARM_core_register_cccc11101bq0ddddtttt1011d0e10000_case_0,
+//       cond: cond(31:28),
+//       cond_AL: 14,
+//       defs: {},
+//       fields: [cond(31:28), B(22), Q(21), Vd(19:16), Rt(15:12), E(5)],
+//       pattern: cccc11101bq0ddddtttt1011d0e10000,
+//       rule: VDUP_ARM_core_register,
+//       safety: [cond  !=
+//               cond_AL => DEPRECATED,
+//         Q(21)=1 &&
+//            Vd(0)=1 => UNDEFINED,
+//         B:E(1:0)=11 => UNDEFINED,
+//         t  ==
+//               Pc => UNPREDICTABLE],
+//       t: Rt,
+//       uses: {Rt}}
+class VDUP_ARM_core_register_cccc11101bq0ddddtttt1011d0e10000_case_0TesterCase3
+    : public Arm32DecoderTester {
  public:
-  DuplicateToAdvSIMDRegistersTesterCase3(const NamedClassDecoder& decoder)
-    : DuplicateToAdvSIMDRegistersTester(decoder) {}
+  VDUP_ARM_core_register_cccc11101bq0ddddtttt1011d0e10000_case_0TesterCase3(const NamedClassDecoder& decoder)
+    : Arm32DecoderTester(decoder) {}
   virtual bool PassesParsePreconditions(
       nacl_arm_dec::Instruction inst,
       const NamedClassDecoder& decoder);
 };
 
-bool DuplicateToAdvSIMDRegistersTesterCase3
+bool VDUP_ARM_core_register_cccc11101bq0ddddtttt1011d0e10000_case_0TesterCase3
 ::PassesParsePreconditions(
      nacl_arm_dec::Instruction inst,
      const NamedClassDecoder& decoder) {
 
   // Check that row patterns apply to pattern being checked.'
-  if ((inst.Bits() & 0x00100000) != 0x00000000 /* L(20)=~0 */) return false;
-  if ((inst.Bits() & 0x00000100) != 0x00000100 /* C(8)=~1 */) return false;
-  if ((inst.Bits() & 0x00800000) != 0x00800000 /* A(23:21)=~1xx */) return false;
-  if ((inst.Bits() & 0x00000040) != 0x00000000 /* B(6:5)=~0x */) return false;
-  if ((inst.Bits() & 0x0000000F) != 0x00000000 /* $pattern(31:0)=~xxxxxxxxxxxxxxxxxxxxxxxxxxxx0000 */) return false;
+  // L(20)=~0
+  if ((inst.Bits() & 0x00100000)  !=
+          0x00000000) return false;
+  // C(8)=~1
+  if ((inst.Bits() & 0x00000100)  !=
+          0x00000100) return false;
+  // A(23:21)=~1xx
+  if ((inst.Bits() & 0x00800000)  !=
+          0x00800000) return false;
+  // B(6:5)=~0x
+  if ((inst.Bits() & 0x00000040)  !=
+          0x00000000) return false;
+  // $pattern(31:0)=~xxxxxxxxxxxxxxxxxxxxxxxxxxxx0000
+  if ((inst.Bits() & 0x0000000F)  !=
+          0x00000000) return false;
+
+  // if cond(31:28)=1111, don't test instruction.
+  if ((inst.Bits() & 0xF0000000) == 0xF0000000) return false;
 
   // Check other preconditions defined for the base decoder.
-  return DuplicateToAdvSIMDRegistersTester::
+  return Arm32DecoderTester::
       PassesParsePreconditions(inst, decoder);
 }
 
-// Neutral case:
-// inst(20)=1 & inst(8)=0 & inst(23:21)=000 & inst(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxx00x0000
-//    = {baseline: 'MoveVfpRegisterOp',
-//       constraints: }
-//
-// Representaive case:
 // L(20)=1 & C(8)=0 & A(23:21)=000 & $pattern(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxx00x0000
-//    = {baseline: MoveVfpRegisterOp,
-//       constraints: }
-class MoveVfpRegisterOpTesterCase4
-    : public MoveVfpRegisterOpTester {
+//    = {None: 32,
+//       Pc: 15,
+//       Rt: Rt(15:12),
+//       actual: Actual_VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000onnnntttt1010n0010000_case_1,
+//       baseline: VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000xnnnntttt1010n0010000_case_0,
+//       defs: {Rt
+//            if to_arm_register
+//            else None},
+//       fields: [op(20), Rt(15:12)],
+//       op: op(20),
+//       pattern: cccc1110000xnnnntttt1010n0010000,
+//       rule: VMOV_between_ARM_core_register_and_single_precision_register,
+//       safety: [t  ==
+//               Pc => UNPREDICTABLE],
+//       t: Rt,
+//       to_arm_register: op(20)=1,
+//       uses: {Rt
+//            if not to_arm_register
+//            else None}}
+class VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000xnnnntttt1010n0010000_case_0TesterCase4
+    : public Arm32DecoderTester {
  public:
-  MoveVfpRegisterOpTesterCase4(const NamedClassDecoder& decoder)
-    : MoveVfpRegisterOpTester(decoder) {}
+  VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000xnnnntttt1010n0010000_case_0TesterCase4(const NamedClassDecoder& decoder)
+    : Arm32DecoderTester(decoder) {}
   virtual bool PassesParsePreconditions(
       nacl_arm_dec::Instruction inst,
       const NamedClassDecoder& decoder);
 };
 
-bool MoveVfpRegisterOpTesterCase4
+bool VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000xnnnntttt1010n0010000_case_0TesterCase4
 ::PassesParsePreconditions(
      nacl_arm_dec::Instruction inst,
      const NamedClassDecoder& decoder) {
 
   // Check that row patterns apply to pattern being checked.'
-  if ((inst.Bits() & 0x00100000) != 0x00100000 /* L(20)=~1 */) return false;
-  if ((inst.Bits() & 0x00000100) != 0x00000000 /* C(8)=~0 */) return false;
-  if ((inst.Bits() & 0x00E00000) != 0x00000000 /* A(23:21)=~000 */) return false;
-  if ((inst.Bits() & 0x0000006F) != 0x00000000 /* $pattern(31:0)=~xxxxxxxxxxxxxxxxxxxxxxxxx00x0000 */) return false;
+  // L(20)=~1
+  if ((inst.Bits() & 0x00100000)  !=
+          0x00100000) return false;
+  // C(8)=~0
+  if ((inst.Bits() & 0x00000100)  !=
+          0x00000000) return false;
+  // A(23:21)=~000
+  if ((inst.Bits() & 0x00E00000)  !=
+          0x00000000) return false;
+  // $pattern(31:0)=~xxxxxxxxxxxxxxxxxxxxxxxxx00x0000
+  if ((inst.Bits() & 0x0000006F)  !=
+          0x00000000) return false;
+
+  // if cond(31:28)=1111, don't test instruction.
+  if ((inst.Bits() & 0xF0000000) == 0xF0000000) return false;
 
   // Check other preconditions defined for the base decoder.
-  return MoveVfpRegisterOpTester::
+  return Arm32DecoderTester::
       PassesParsePreconditions(inst, decoder);
 }
 
-// Neutral case:
-// inst(20)=1 & inst(8)=0 & inst(23:21)=111 & inst(31:0)=xxxxxxxxxxxx0001xxxxxxxx000x0000
-//    = {baseline: 'VfpMrsOp',
-//       constraints: }
-//
-// Representaive case:
 // L(20)=1 & C(8)=0 & A(23:21)=111 & $pattern(31:0)=xxxxxxxxxxxx0001xxxxxxxx000x0000
-//    = {baseline: VfpMrsOp,
-//       constraints: }
-class VfpMrsOpTesterCase5
-    : public VfpMrsOpTester {
+//    = {NZCV: 16,
+//       Pc: 15,
+//       Rt: Rt(15:12),
+//       actual: Actual_VMRS_cccc111011110001tttt101000010000_case_1,
+//       baseline: VMRS_cccc111011110001tttt101000010000_case_0,
+//       defs: {NZCV
+//            if t  ==
+//               Pc
+//            else Rt},
+//       fields: [Rt(15:12)],
+//       pattern: cccc111011110001tttt101000010000,
+//       rule: VMRS,
+//       t: Rt}
+class VMRS_cccc111011110001tttt101000010000_case_0TesterCase5
+    : public Arm32DecoderTester {
  public:
-  VfpMrsOpTesterCase5(const NamedClassDecoder& decoder)
-    : VfpMrsOpTester(decoder) {}
+  VMRS_cccc111011110001tttt101000010000_case_0TesterCase5(const NamedClassDecoder& decoder)
+    : Arm32DecoderTester(decoder) {}
   virtual bool PassesParsePreconditions(
       nacl_arm_dec::Instruction inst,
       const NamedClassDecoder& decoder);
 };
 
-bool VfpMrsOpTesterCase5
+bool VMRS_cccc111011110001tttt101000010000_case_0TesterCase5
 ::PassesParsePreconditions(
      nacl_arm_dec::Instruction inst,
      const NamedClassDecoder& decoder) {
 
   // Check that row patterns apply to pattern being checked.'
-  if ((inst.Bits() & 0x00100000) != 0x00100000 /* L(20)=~1 */) return false;
-  if ((inst.Bits() & 0x00000100) != 0x00000000 /* C(8)=~0 */) return false;
-  if ((inst.Bits() & 0x00E00000) != 0x00E00000 /* A(23:21)=~111 */) return false;
-  if ((inst.Bits() & 0x000F00EF) != 0x00010000 /* $pattern(31:0)=~xxxxxxxxxxxx0001xxxxxxxx000x0000 */) return false;
+  // L(20)=~1
+  if ((inst.Bits() & 0x00100000)  !=
+          0x00100000) return false;
+  // C(8)=~0
+  if ((inst.Bits() & 0x00000100)  !=
+          0x00000000) return false;
+  // A(23:21)=~111
+  if ((inst.Bits() & 0x00E00000)  !=
+          0x00E00000) return false;
+  // $pattern(31:0)=~xxxxxxxxxxxx0001xxxxxxxx000x0000
+  if ((inst.Bits() & 0x000F00EF)  !=
+          0x00010000) return false;
+
+  // if cond(31:28)=1111, don't test instruction.
+  if ((inst.Bits() & 0xF0000000) == 0xF0000000) return false;
 
   // Check other preconditions defined for the base decoder.
-  return VfpMrsOpTester::
+  return Arm32DecoderTester::
       PassesParsePreconditions(inst, decoder);
 }
 
-// Neutral case:
-// inst(20)=1 & inst(8)=1 & inst(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxxxxx0000
-//    = {baseline: 'MoveVfpRegisterOpWithTypeSel',
-//       constraints: }
-//
-// Representaive case:
 // L(20)=1 & C(8)=1 & $pattern(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxxxxx0000
-//    = {baseline: MoveVfpRegisterOpWithTypeSel,
-//       constraints: }
-class MoveVfpRegisterOpWithTypeSelTesterCase6
-    : public MoveVfpRegisterOpWithTypeSelTester {
+//    = {Pc: 15,
+//       Rt: Rt(15:12),
+//       U: U(23),
+//       actual: Actual_MOVE_scalar_to_ARM_core_register_cccc1110iii1nnnntttt1011nii10000_case_1,
+//       baseline: MOVE_scalar_to_ARM_core_register_cccc1110iii1nnnntttt1011nii10000_case_0,
+//       defs: {Rt},
+//       fields: [U(23), opc1(22:21), Rt(15:12), opc2(6:5)],
+//       opc1: opc1(22:21),
+//       opc2: opc2(6:5),
+//       pattern: cccc1110iii1nnnntttt1011nii10000,
+//       rule: MOVE_scalar_to_ARM_core_register,
+//       safety: [sel in bitset {'10x00', 'x0x10'} => UNDEFINED,
+//         t  ==
+//               Pc => UNPREDICTABLE],
+//       sel: U:opc1:opc2,
+//       t: Rt}
+class MOVE_scalar_to_ARM_core_register_cccc1110iii1nnnntttt1011nii10000_case_0TesterCase6
+    : public Arm32DecoderTester {
  public:
-  MoveVfpRegisterOpWithTypeSelTesterCase6(const NamedClassDecoder& decoder)
-    : MoveVfpRegisterOpWithTypeSelTester(decoder) {}
+  MOVE_scalar_to_ARM_core_register_cccc1110iii1nnnntttt1011nii10000_case_0TesterCase6(const NamedClassDecoder& decoder)
+    : Arm32DecoderTester(decoder) {}
   virtual bool PassesParsePreconditions(
       nacl_arm_dec::Instruction inst,
       const NamedClassDecoder& decoder);
 };
 
-bool MoveVfpRegisterOpWithTypeSelTesterCase6
+bool MOVE_scalar_to_ARM_core_register_cccc1110iii1nnnntttt1011nii10000_case_0TesterCase6
 ::PassesParsePreconditions(
      nacl_arm_dec::Instruction inst,
      const NamedClassDecoder& decoder) {
 
   // Check that row patterns apply to pattern being checked.'
-  if ((inst.Bits() & 0x00100000) != 0x00100000 /* L(20)=~1 */) return false;
-  if ((inst.Bits() & 0x00000100) != 0x00000100 /* C(8)=~1 */) return false;
-  if ((inst.Bits() & 0x0000000F) != 0x00000000 /* $pattern(31:0)=~xxxxxxxxxxxxxxxxxxxxxxxxxxxx0000 */) return false;
+  // L(20)=~1
+  if ((inst.Bits() & 0x00100000)  !=
+          0x00100000) return false;
+  // C(8)=~1
+  if ((inst.Bits() & 0x00000100)  !=
+          0x00000100) return false;
+  // $pattern(31:0)=~xxxxxxxxxxxxxxxxxxxxxxxxxxxx0000
+  if ((inst.Bits() & 0x0000000F)  !=
+          0x00000000) return false;
+
+  // if cond(31:28)=1111, don't test instruction.
+  if ((inst.Bits() & 0xF0000000) == 0xF0000000) return false;
 
   // Check other preconditions defined for the base decoder.
-  return MoveVfpRegisterOpWithTypeSelTester::
+  return Arm32DecoderTester::
       PassesParsePreconditions(inst, decoder);
 }
 
@@ -281,143 +418,190 @@ bool MoveVfpRegisterOpWithTypeSelTesterCase6
 // a default constructor that automatically initializes the expected decoder
 // to the corresponding instance in the generated DecoderState.
 
-// Neutral case:
-// inst(20)=0 & inst(8)=0 & inst(23:21)=000 & inst(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxx00x0000
-//    = {baseline: 'MoveVfpRegisterOp',
-//       constraints: ,
-//       rule: 'Vmov_Rule_330_A1_P648'}
-//
-// Representative case:
 // L(20)=0 & C(8)=0 & A(23:21)=000 & $pattern(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxx00x0000
-//    = {baseline: MoveVfpRegisterOp,
-//       constraints: ,
-//       rule: Vmov_Rule_330_A1_P648}
-class MoveVfpRegisterOpTester_Case0
-    : public MoveVfpRegisterOpTesterCase0 {
+//    = {None: 32,
+//       Pc: 15,
+//       Rt: Rt(15:12),
+//       actual: Actual_VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000onnnntttt1010n0010000_case_1,
+//       baseline: VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000onnnntttt1010n0010000_case_0,
+//       defs: {Rt
+//            if to_arm_register
+//            else None},
+//       fields: [op(20), Rt(15:12)],
+//       op: op(20),
+//       pattern: cccc1110000onnnntttt1010n0010000,
+//       rule: VMOV_between_ARM_core_register_and_single_precision_register,
+//       safety: [t  ==
+//               Pc => UNPREDICTABLE],
+//       t: Rt,
+//       to_arm_register: op(20)=1,
+//       uses: {Rt
+//            if not to_arm_register
+//            else None}}
+class VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000onnnntttt1010n0010000_case_0Tester_Case0
+    : public VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000onnnntttt1010n0010000_case_0TesterCase0 {
  public:
-  MoveVfpRegisterOpTester_Case0()
-    : MoveVfpRegisterOpTesterCase0(
-      state_.MoveVfpRegisterOp_Vmov_Rule_330_A1_P648_instance_)
+  VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000onnnntttt1010n0010000_case_0Tester_Case0()
+    : VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000onnnntttt1010n0010000_case_0TesterCase0(
+      state_.VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000onnnntttt1010n0010000_case_0_VMOV_between_ARM_core_register_and_single_precision_register_instance_)
   {}
 };
 
-// Neutral case:
-// inst(20)=0 & inst(8)=0 & inst(23:21)=111 & inst(31:0)=xxxxxxxxxxxx0001xxxxxxxx000x0000
-//    = {baseline: 'VfpUsesRegOp',
-//       constraints: ,
-//       rule: 'Vmsr_Rule_336_A1_P660'}
-//
-// Representative case:
 // L(20)=0 & C(8)=0 & A(23:21)=111 & $pattern(31:0)=xxxxxxxxxxxx0001xxxxxxxx000x0000
-//    = {baseline: VfpUsesRegOp,
-//       constraints: ,
-//       rule: Vmsr_Rule_336_A1_P660}
-class VfpUsesRegOpTester_Case1
-    : public VfpUsesRegOpTesterCase1 {
+//    = {Pc: 15,
+//       Rt: Rt(15:12),
+//       actual: Actual_VMSR_cccc111011100001tttt101000010000_case_1,
+//       baseline: VMSR_cccc111011100001tttt101000010000_case_0,
+//       defs: {},
+//       fields: [Rt(15:12)],
+//       pattern: cccc111011100001tttt101000010000,
+//       rule: VMSR,
+//       safety: [t  ==
+//               Pc => UNPREDICTABLE],
+//       t: Rt,
+//       uses: {Rt}}
+class VMSR_cccc111011100001tttt101000010000_case_0Tester_Case1
+    : public VMSR_cccc111011100001tttt101000010000_case_0TesterCase1 {
  public:
-  VfpUsesRegOpTester_Case1()
-    : VfpUsesRegOpTesterCase1(
-      state_.VfpUsesRegOp_Vmsr_Rule_336_A1_P660_instance_)
+  VMSR_cccc111011100001tttt101000010000_case_0Tester_Case1()
+    : VMSR_cccc111011100001tttt101000010000_case_0TesterCase1(
+      state_.VMSR_cccc111011100001tttt101000010000_case_0_VMSR_instance_)
   {}
 };
 
-// Neutral case:
-// inst(20)=0 & inst(8)=1 & inst(23:21)=0xx & inst(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxxxxx0000
-//    = {baseline: 'MoveVfpRegisterOpWithTypeSel',
-//       constraints: ,
-//       rule: 'Vmov_Rule_328_A1_P644'}
-//
-// Representative case:
 // L(20)=0 & C(8)=1 & A(23:21)=0xx & $pattern(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxxxxx0000
-//    = {baseline: MoveVfpRegisterOpWithTypeSel,
-//       constraints: ,
-//       rule: Vmov_Rule_328_A1_P644}
-class MoveVfpRegisterOpWithTypeSelTester_Case2
-    : public MoveVfpRegisterOpWithTypeSelTesterCase2 {
+//    = {Pc: 15,
+//       Rt: Rt(15:12),
+//       actual: Actual_VMOV_ARM_core_register_to_scalar_cccc11100ii0ddddtttt1011dii10000_case_1,
+//       baseline: VMOV_ARM_core_register_to_scalar_cccc11100ii0ddddtttt1011dii10000_case_0,
+//       defs: {},
+//       fields: [opc1(22:21), Rt(15:12), opc2(6:5)],
+//       opc1: opc1(22:21),
+//       opc2: opc2(6:5),
+//       pattern: cccc11100ii0ddddtttt1011dii10000,
+//       rule: VMOV_ARM_core_register_to_scalar,
+//       safety: [opc1:opc2(3:0)=0x10 => UNDEFINED,
+//         t  ==
+//               Pc => UNPREDICTABLE],
+//       t: Rt,
+//       uses: {Rt}}
+class VMOV_ARM_core_register_to_scalar_cccc11100ii0ddddtttt1011dii10000_case_0Tester_Case2
+    : public VMOV_ARM_core_register_to_scalar_cccc11100ii0ddddtttt1011dii10000_case_0TesterCase2 {
  public:
-  MoveVfpRegisterOpWithTypeSelTester_Case2()
-    : MoveVfpRegisterOpWithTypeSelTesterCase2(
-      state_.MoveVfpRegisterOpWithTypeSel_Vmov_Rule_328_A1_P644_instance_)
+  VMOV_ARM_core_register_to_scalar_cccc11100ii0ddddtttt1011dii10000_case_0Tester_Case2()
+    : VMOV_ARM_core_register_to_scalar_cccc11100ii0ddddtttt1011dii10000_case_0TesterCase2(
+      state_.VMOV_ARM_core_register_to_scalar_cccc11100ii0ddddtttt1011dii10000_case_0_VMOV_ARM_core_register_to_scalar_instance_)
   {}
 };
 
-// Neutral case:
-// inst(20)=0 & inst(8)=1 & inst(23:21)=1xx & inst(6:5)=0x & inst(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxxxxx0000
-//    = {baseline: 'DuplicateToAdvSIMDRegisters',
-//       constraints: ,
-//       rule: 'Vdup_Rule_303_A1_P594'}
-//
-// Representative case:
 // L(20)=0 & C(8)=1 & A(23:21)=1xx & B(6:5)=0x & $pattern(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxxxxx0000
-//    = {baseline: DuplicateToAdvSIMDRegisters,
-//       constraints: ,
-//       rule: Vdup_Rule_303_A1_P594}
-class DuplicateToAdvSIMDRegistersTester_Case3
-    : public DuplicateToAdvSIMDRegistersTesterCase3 {
+//    = {B: B(22),
+//       E: E(5),
+//       Pc: 15,
+//       Q: Q(21),
+//       Rt: Rt(15:12),
+//       Vd: Vd(19:16),
+//       actual: Actual_VDUP_ARM_core_register_cccc11101bq0ddddtttt1011d0e10000_case_1,
+//       baseline: VDUP_ARM_core_register_cccc11101bq0ddddtttt1011d0e10000_case_0,
+//       cond: cond(31:28),
+//       cond_AL: 14,
+//       defs: {},
+//       fields: [cond(31:28), B(22), Q(21), Vd(19:16), Rt(15:12), E(5)],
+//       pattern: cccc11101bq0ddddtttt1011d0e10000,
+//       rule: VDUP_ARM_core_register,
+//       safety: [cond  !=
+//               cond_AL => DEPRECATED,
+//         Q(21)=1 &&
+//            Vd(0)=1 => UNDEFINED,
+//         B:E(1:0)=11 => UNDEFINED,
+//         t  ==
+//               Pc => UNPREDICTABLE],
+//       t: Rt,
+//       uses: {Rt}}
+class VDUP_ARM_core_register_cccc11101bq0ddddtttt1011d0e10000_case_0Tester_Case3
+    : public VDUP_ARM_core_register_cccc11101bq0ddddtttt1011d0e10000_case_0TesterCase3 {
  public:
-  DuplicateToAdvSIMDRegistersTester_Case3()
-    : DuplicateToAdvSIMDRegistersTesterCase3(
-      state_.DuplicateToAdvSIMDRegisters_Vdup_Rule_303_A1_P594_instance_)
+  VDUP_ARM_core_register_cccc11101bq0ddddtttt1011d0e10000_case_0Tester_Case3()
+    : VDUP_ARM_core_register_cccc11101bq0ddddtttt1011d0e10000_case_0TesterCase3(
+      state_.VDUP_ARM_core_register_cccc11101bq0ddddtttt1011d0e10000_case_0_VDUP_ARM_core_register_instance_)
   {}
 };
 
-// Neutral case:
-// inst(20)=1 & inst(8)=0 & inst(23:21)=000 & inst(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxx00x0000
-//    = {baseline: 'MoveVfpRegisterOp',
-//       constraints: ,
-//       rule: 'Vmov_Rule_330_A1_P648'}
-//
-// Representative case:
 // L(20)=1 & C(8)=0 & A(23:21)=000 & $pattern(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxx00x0000
-//    = {baseline: MoveVfpRegisterOp,
-//       constraints: ,
-//       rule: Vmov_Rule_330_A1_P648}
-class MoveVfpRegisterOpTester_Case4
-    : public MoveVfpRegisterOpTesterCase4 {
+//    = {None: 32,
+//       Pc: 15,
+//       Rt: Rt(15:12),
+//       actual: Actual_VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000onnnntttt1010n0010000_case_1,
+//       baseline: VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000xnnnntttt1010n0010000_case_0,
+//       defs: {Rt
+//            if to_arm_register
+//            else None},
+//       fields: [op(20), Rt(15:12)],
+//       op: op(20),
+//       pattern: cccc1110000xnnnntttt1010n0010000,
+//       rule: VMOV_between_ARM_core_register_and_single_precision_register,
+//       safety: [t  ==
+//               Pc => UNPREDICTABLE],
+//       t: Rt,
+//       to_arm_register: op(20)=1,
+//       uses: {Rt
+//            if not to_arm_register
+//            else None}}
+class VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000xnnnntttt1010n0010000_case_0Tester_Case4
+    : public VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000xnnnntttt1010n0010000_case_0TesterCase4 {
  public:
-  MoveVfpRegisterOpTester_Case4()
-    : MoveVfpRegisterOpTesterCase4(
-      state_.MoveVfpRegisterOp_Vmov_Rule_330_A1_P648_instance_)
+  VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000xnnnntttt1010n0010000_case_0Tester_Case4()
+    : VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000xnnnntttt1010n0010000_case_0TesterCase4(
+      state_.VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000xnnnntttt1010n0010000_case_0_VMOV_between_ARM_core_register_and_single_precision_register_instance_)
   {}
 };
 
-// Neutral case:
-// inst(20)=1 & inst(8)=0 & inst(23:21)=111 & inst(31:0)=xxxxxxxxxxxx0001xxxxxxxx000x0000
-//    = {baseline: 'VfpMrsOp',
-//       constraints: ,
-//       rule: 'Vmrs_Rule_335_A1_P658'}
-//
-// Representative case:
 // L(20)=1 & C(8)=0 & A(23:21)=111 & $pattern(31:0)=xxxxxxxxxxxx0001xxxxxxxx000x0000
-//    = {baseline: VfpMrsOp,
-//       constraints: ,
-//       rule: Vmrs_Rule_335_A1_P658}
-class VfpMrsOpTester_Case5
-    : public VfpMrsOpTesterCase5 {
+//    = {NZCV: 16,
+//       Pc: 15,
+//       Rt: Rt(15:12),
+//       actual: Actual_VMRS_cccc111011110001tttt101000010000_case_1,
+//       baseline: VMRS_cccc111011110001tttt101000010000_case_0,
+//       defs: {NZCV
+//            if t  ==
+//               Pc
+//            else Rt},
+//       fields: [Rt(15:12)],
+//       pattern: cccc111011110001tttt101000010000,
+//       rule: VMRS,
+//       t: Rt}
+class VMRS_cccc111011110001tttt101000010000_case_0Tester_Case5
+    : public VMRS_cccc111011110001tttt101000010000_case_0TesterCase5 {
  public:
-  VfpMrsOpTester_Case5()
-    : VfpMrsOpTesterCase5(
-      state_.VfpMrsOp_Vmrs_Rule_335_A1_P658_instance_)
+  VMRS_cccc111011110001tttt101000010000_case_0Tester_Case5()
+    : VMRS_cccc111011110001tttt101000010000_case_0TesterCase5(
+      state_.VMRS_cccc111011110001tttt101000010000_case_0_VMRS_instance_)
   {}
 };
 
-// Neutral case:
-// inst(20)=1 & inst(8)=1 & inst(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxxxxx0000
-//    = {baseline: 'MoveVfpRegisterOpWithTypeSel',
-//       constraints: ,
-//       rule: 'Vmov_Rule_329_A1_P646'}
-//
-// Representative case:
 // L(20)=1 & C(8)=1 & $pattern(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxxxxx0000
-//    = {baseline: MoveVfpRegisterOpWithTypeSel,
-//       constraints: ,
-//       rule: Vmov_Rule_329_A1_P646}
-class MoveVfpRegisterOpWithTypeSelTester_Case6
-    : public MoveVfpRegisterOpWithTypeSelTesterCase6 {
+//    = {Pc: 15,
+//       Rt: Rt(15:12),
+//       U: U(23),
+//       actual: Actual_MOVE_scalar_to_ARM_core_register_cccc1110iii1nnnntttt1011nii10000_case_1,
+//       baseline: MOVE_scalar_to_ARM_core_register_cccc1110iii1nnnntttt1011nii10000_case_0,
+//       defs: {Rt},
+//       fields: [U(23), opc1(22:21), Rt(15:12), opc2(6:5)],
+//       opc1: opc1(22:21),
+//       opc2: opc2(6:5),
+//       pattern: cccc1110iii1nnnntttt1011nii10000,
+//       rule: MOVE_scalar_to_ARM_core_register,
+//       safety: [sel in bitset {'10x00', 'x0x10'} => UNDEFINED,
+//         t  ==
+//               Pc => UNPREDICTABLE],
+//       sel: U:opc1:opc2,
+//       t: Rt}
+class MOVE_scalar_to_ARM_core_register_cccc1110iii1nnnntttt1011nii10000_case_0Tester_Case6
+    : public MOVE_scalar_to_ARM_core_register_cccc1110iii1nnnntttt1011nii10000_case_0TesterCase6 {
  public:
-  MoveVfpRegisterOpWithTypeSelTester_Case6()
-    : MoveVfpRegisterOpWithTypeSelTesterCase6(
-      state_.MoveVfpRegisterOpWithTypeSel_Vmov_Rule_329_A1_P646_instance_)
+  MOVE_scalar_to_ARM_core_register_cccc1110iii1nnnntttt1011nii10000_case_0Tester_Case6()
+    : MOVE_scalar_to_ARM_core_register_cccc1110iii1nnnntttt1011nii10000_case_0TesterCase6(
+      state_.MOVE_scalar_to_ARM_core_register_cccc1110iii1nnnntttt1011nii10000_case_0_MOVE_scalar_to_ARM_core_register_instance_)
   {}
 };
 
@@ -430,153 +614,184 @@ class Arm32DecoderStateTests : public ::testing::Test {
 // The following functions test each pattern specified in parse
 // decoder tables.
 
-// Neutral case:
-// inst(20)=0 & inst(8)=0 & inst(23:21)=000 & inst(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxx00x0000
-//    = {actual: 'MoveVfpRegisterOp',
-//       baseline: 'MoveVfpRegisterOp',
-//       constraints: ,
-//       pattern: 'cccc11100000nnnntttt1010n0010000',
-//       rule: 'Vmov_Rule_330_A1_P648'}
-//
-// Representaive case:
 // L(20)=0 & C(8)=0 & A(23:21)=000 & $pattern(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxx00x0000
-//    = {actual: MoveVfpRegisterOp,
-//       baseline: MoveVfpRegisterOp,
-//       constraints: ,
-//       pattern: cccc11100000nnnntttt1010n0010000,
-//       rule: Vmov_Rule_330_A1_P648}
+//    = {None: 32,
+//       Pc: 15,
+//       Rt: Rt(15:12),
+//       actual: Actual_VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000onnnntttt1010n0010000_case_1,
+//       baseline: VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000onnnntttt1010n0010000_case_0,
+//       defs: {Rt
+//            if to_arm_register
+//            else None},
+//       fields: [op(20), Rt(15:12)],
+//       op: op(20),
+//       pattern: cccc1110000onnnntttt1010n0010000,
+//       rule: VMOV_between_ARM_core_register_and_single_precision_register,
+//       safety: [t  ==
+//               Pc => UNPREDICTABLE],
+//       t: Rt,
+//       to_arm_register: op(20)=1,
+//       uses: {Rt
+//            if not to_arm_register
+//            else None}}
 TEST_F(Arm32DecoderStateTests,
-       MoveVfpRegisterOpTester_Case0_TestCase0) {
-  MoveVfpRegisterOpTester_Case0 tester;
-  tester.Test("cccc11100000nnnntttt1010n0010000");
+       VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000onnnntttt1010n0010000_case_0Tester_Case0_TestCase0) {
+  VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000onnnntttt1010n0010000_case_0Tester_Case0 baseline_tester;
+  NamedActual_VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000onnnntttt1010n0010000_case_1_VMOV_between_ARM_core_register_and_single_precision_register actual;
+  ActualVsBaselineTester a_vs_b_tester(actual, baseline_tester);
+  a_vs_b_tester.Test("cccc1110000onnnntttt1010n0010000");
 }
 
-// Neutral case:
-// inst(20)=0 & inst(8)=0 & inst(23:21)=111 & inst(31:0)=xxxxxxxxxxxx0001xxxxxxxx000x0000
-//    = {actual: 'DontCareInstRdNotPc',
-//       baseline: 'VfpUsesRegOp',
-//       constraints: ,
-//       pattern: 'cccc111011100001tttt101000010000',
-//       rule: 'Vmsr_Rule_336_A1_P660'}
-//
-// Representative case:
 // L(20)=0 & C(8)=0 & A(23:21)=111 & $pattern(31:0)=xxxxxxxxxxxx0001xxxxxxxx000x0000
-//    = {actual: DontCareInstRdNotPc,
-//       baseline: VfpUsesRegOp,
-//       constraints: ,
+//    = {Pc: 15,
+//       Rt: Rt(15:12),
+//       actual: Actual_VMSR_cccc111011100001tttt101000010000_case_1,
+//       baseline: VMSR_cccc111011100001tttt101000010000_case_0,
+//       defs: {},
+//       fields: [Rt(15:12)],
 //       pattern: cccc111011100001tttt101000010000,
-//       rule: Vmsr_Rule_336_A1_P660}
+//       rule: VMSR,
+//       safety: [t  ==
+//               Pc => UNPREDICTABLE],
+//       t: Rt,
+//       uses: {Rt}}
 TEST_F(Arm32DecoderStateTests,
-       VfpUsesRegOpTester_Case1_TestCase1) {
-  VfpUsesRegOpTester_Case1 baseline_tester;
-  NamedDontCareInstRdNotPc_Vmsr_Rule_336_A1_P660 actual;
+       VMSR_cccc111011100001tttt101000010000_case_0Tester_Case1_TestCase1) {
+  VMSR_cccc111011100001tttt101000010000_case_0Tester_Case1 baseline_tester;
+  NamedActual_VMSR_cccc111011100001tttt101000010000_case_1_VMSR actual;
   ActualVsBaselineTester a_vs_b_tester(actual, baseline_tester);
   a_vs_b_tester.Test("cccc111011100001tttt101000010000");
 }
 
-// Neutral case:
-// inst(20)=0 & inst(8)=1 & inst(23:21)=0xx & inst(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxxxxx0000
-//    = {actual: 'MoveVfpRegisterOpWithTypeSel',
-//       baseline: 'MoveVfpRegisterOpWithTypeSel',
-//       constraints: ,
-//       pattern: 'cccc11100ii0ddddtttt1011dii10000',
-//       rule: 'Vmov_Rule_328_A1_P644'}
-//
-// Representaive case:
 // L(20)=0 & C(8)=1 & A(23:21)=0xx & $pattern(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxxxxx0000
-//    = {actual: MoveVfpRegisterOpWithTypeSel,
-//       baseline: MoveVfpRegisterOpWithTypeSel,
-//       constraints: ,
+//    = {Pc: 15,
+//       Rt: Rt(15:12),
+//       actual: Actual_VMOV_ARM_core_register_to_scalar_cccc11100ii0ddddtttt1011dii10000_case_1,
+//       baseline: VMOV_ARM_core_register_to_scalar_cccc11100ii0ddddtttt1011dii10000_case_0,
+//       defs: {},
+//       fields: [opc1(22:21), Rt(15:12), opc2(6:5)],
+//       opc1: opc1(22:21),
+//       opc2: opc2(6:5),
 //       pattern: cccc11100ii0ddddtttt1011dii10000,
-//       rule: Vmov_Rule_328_A1_P644}
+//       rule: VMOV_ARM_core_register_to_scalar,
+//       safety: [opc1:opc2(3:0)=0x10 => UNDEFINED,
+//         t  ==
+//               Pc => UNPREDICTABLE],
+//       t: Rt,
+//       uses: {Rt}}
 TEST_F(Arm32DecoderStateTests,
-       MoveVfpRegisterOpWithTypeSelTester_Case2_TestCase2) {
-  MoveVfpRegisterOpWithTypeSelTester_Case2 tester;
-  tester.Test("cccc11100ii0ddddtttt1011dii10000");
+       VMOV_ARM_core_register_to_scalar_cccc11100ii0ddddtttt1011dii10000_case_0Tester_Case2_TestCase2) {
+  VMOV_ARM_core_register_to_scalar_cccc11100ii0ddddtttt1011dii10000_case_0Tester_Case2 baseline_tester;
+  NamedActual_VMOV_ARM_core_register_to_scalar_cccc11100ii0ddddtttt1011dii10000_case_1_VMOV_ARM_core_register_to_scalar actual;
+  ActualVsBaselineTester a_vs_b_tester(actual, baseline_tester);
+  a_vs_b_tester.Test("cccc11100ii0ddddtttt1011dii10000");
 }
 
-// Neutral case:
-// inst(20)=0 & inst(8)=1 & inst(23:21)=1xx & inst(6:5)=0x & inst(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxxxxx0000
-//    = {actual: 'DuplicateToAdvSIMDRegisters',
-//       baseline: 'DuplicateToAdvSIMDRegisters',
-//       constraints: ,
-//       pattern: 'cccc11101bq0ddddtttt1011d0e10000',
-//       rule: 'Vdup_Rule_303_A1_P594'}
-//
-// Representaive case:
 // L(20)=0 & C(8)=1 & A(23:21)=1xx & B(6:5)=0x & $pattern(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxxxxx0000
-//    = {actual: DuplicateToAdvSIMDRegisters,
-//       baseline: DuplicateToAdvSIMDRegisters,
-//       constraints: ,
+//    = {B: B(22),
+//       E: E(5),
+//       Pc: 15,
+//       Q: Q(21),
+//       Rt: Rt(15:12),
+//       Vd: Vd(19:16),
+//       actual: Actual_VDUP_ARM_core_register_cccc11101bq0ddddtttt1011d0e10000_case_1,
+//       baseline: VDUP_ARM_core_register_cccc11101bq0ddddtttt1011d0e10000_case_0,
+//       cond: cond(31:28),
+//       cond_AL: 14,
+//       defs: {},
+//       fields: [cond(31:28), B(22), Q(21), Vd(19:16), Rt(15:12), E(5)],
 //       pattern: cccc11101bq0ddddtttt1011d0e10000,
-//       rule: Vdup_Rule_303_A1_P594}
+//       rule: VDUP_ARM_core_register,
+//       safety: [cond  !=
+//               cond_AL => DEPRECATED,
+//         Q(21)=1 &&
+//            Vd(0)=1 => UNDEFINED,
+//         B:E(1:0)=11 => UNDEFINED,
+//         t  ==
+//               Pc => UNPREDICTABLE],
+//       t: Rt,
+//       uses: {Rt}}
 TEST_F(Arm32DecoderStateTests,
-       DuplicateToAdvSIMDRegistersTester_Case3_TestCase3) {
-  DuplicateToAdvSIMDRegistersTester_Case3 tester;
-  tester.Test("cccc11101bq0ddddtttt1011d0e10000");
+       VDUP_ARM_core_register_cccc11101bq0ddddtttt1011d0e10000_case_0Tester_Case3_TestCase3) {
+  VDUP_ARM_core_register_cccc11101bq0ddddtttt1011d0e10000_case_0Tester_Case3 baseline_tester;
+  NamedActual_VDUP_ARM_core_register_cccc11101bq0ddddtttt1011d0e10000_case_1_VDUP_ARM_core_register actual;
+  ActualVsBaselineTester a_vs_b_tester(actual, baseline_tester);
+  a_vs_b_tester.Test("cccc11101bq0ddddtttt1011d0e10000");
 }
 
-// Neutral case:
-// inst(20)=1 & inst(8)=0 & inst(23:21)=000 & inst(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxx00x0000
-//    = {actual: 'MoveVfpRegisterOp',
-//       baseline: 'MoveVfpRegisterOp',
-//       constraints: ,
-//       pattern: 'cccc11100001nnnntttt1010n0010000',
-//       rule: 'Vmov_Rule_330_A1_P648'}
-//
-// Representaive case:
 // L(20)=1 & C(8)=0 & A(23:21)=000 & $pattern(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxx00x0000
-//    = {actual: MoveVfpRegisterOp,
-//       baseline: MoveVfpRegisterOp,
-//       constraints: ,
-//       pattern: cccc11100001nnnntttt1010n0010000,
-//       rule: Vmov_Rule_330_A1_P648}
+//    = {None: 32,
+//       Pc: 15,
+//       Rt: Rt(15:12),
+//       actual: Actual_VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000onnnntttt1010n0010000_case_1,
+//       baseline: VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000xnnnntttt1010n0010000_case_0,
+//       defs: {Rt
+//            if to_arm_register
+//            else None},
+//       fields: [op(20), Rt(15:12)],
+//       op: op(20),
+//       pattern: cccc1110000xnnnntttt1010n0010000,
+//       rule: VMOV_between_ARM_core_register_and_single_precision_register,
+//       safety: [t  ==
+//               Pc => UNPREDICTABLE],
+//       t: Rt,
+//       to_arm_register: op(20)=1,
+//       uses: {Rt
+//            if not to_arm_register
+//            else None}}
 TEST_F(Arm32DecoderStateTests,
-       MoveVfpRegisterOpTester_Case4_TestCase4) {
-  MoveVfpRegisterOpTester_Case4 tester;
-  tester.Test("cccc11100001nnnntttt1010n0010000");
+       VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000xnnnntttt1010n0010000_case_0Tester_Case4_TestCase4) {
+  VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000xnnnntttt1010n0010000_case_0Tester_Case4 baseline_tester;
+  NamedActual_VMOV_between_ARM_core_register_and_single_precision_register_cccc1110000onnnntttt1010n0010000_case_1_VMOV_between_ARM_core_register_and_single_precision_register actual;
+  ActualVsBaselineTester a_vs_b_tester(actual, baseline_tester);
+  a_vs_b_tester.Test("cccc1110000xnnnntttt1010n0010000");
 }
 
-// Neutral case:
-// inst(20)=1 & inst(8)=0 & inst(23:21)=111 & inst(31:0)=xxxxxxxxxxxx0001xxxxxxxx000x0000
-//    = {actual: 'VfpMrsOp',
-//       baseline: 'VfpMrsOp',
-//       constraints: ,
-//       pattern: 'cccc111011110001tttt101000010000',
-//       rule: 'Vmrs_Rule_335_A1_P658'}
-//
-// Representaive case:
 // L(20)=1 & C(8)=0 & A(23:21)=111 & $pattern(31:0)=xxxxxxxxxxxx0001xxxxxxxx000x0000
-//    = {actual: VfpMrsOp,
-//       baseline: VfpMrsOp,
-//       constraints: ,
+//    = {NZCV: 16,
+//       Pc: 15,
+//       Rt: Rt(15:12),
+//       actual: Actual_VMRS_cccc111011110001tttt101000010000_case_1,
+//       baseline: VMRS_cccc111011110001tttt101000010000_case_0,
+//       defs: {NZCV
+//            if t  ==
+//               Pc
+//            else Rt},
+//       fields: [Rt(15:12)],
 //       pattern: cccc111011110001tttt101000010000,
-//       rule: Vmrs_Rule_335_A1_P658}
+//       rule: VMRS,
+//       t: Rt}
 TEST_F(Arm32DecoderStateTests,
-       VfpMrsOpTester_Case5_TestCase5) {
-  VfpMrsOpTester_Case5 tester;
-  tester.Test("cccc111011110001tttt101000010000");
+       VMRS_cccc111011110001tttt101000010000_case_0Tester_Case5_TestCase5) {
+  VMRS_cccc111011110001tttt101000010000_case_0Tester_Case5 baseline_tester;
+  NamedActual_VMRS_cccc111011110001tttt101000010000_case_1_VMRS actual;
+  ActualVsBaselineTester a_vs_b_tester(actual, baseline_tester);
+  a_vs_b_tester.Test("cccc111011110001tttt101000010000");
 }
 
-// Neutral case:
-// inst(20)=1 & inst(8)=1 & inst(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxxxxx0000
-//    = {actual: 'MoveVfpRegisterOpWithTypeSel',
-//       baseline: 'MoveVfpRegisterOpWithTypeSel',
-//       constraints: ,
-//       pattern: 'cccc1110iii1nnnntttt1011nii10000',
-//       rule: 'Vmov_Rule_329_A1_P646'}
-//
-// Representaive case:
 // L(20)=1 & C(8)=1 & $pattern(31:0)=xxxxxxxxxxxxxxxxxxxxxxxxxxxx0000
-//    = {actual: MoveVfpRegisterOpWithTypeSel,
-//       baseline: MoveVfpRegisterOpWithTypeSel,
-//       constraints: ,
+//    = {Pc: 15,
+//       Rt: Rt(15:12),
+//       U: U(23),
+//       actual: Actual_MOVE_scalar_to_ARM_core_register_cccc1110iii1nnnntttt1011nii10000_case_1,
+//       baseline: MOVE_scalar_to_ARM_core_register_cccc1110iii1nnnntttt1011nii10000_case_0,
+//       defs: {Rt},
+//       fields: [U(23), opc1(22:21), Rt(15:12), opc2(6:5)],
+//       opc1: opc1(22:21),
+//       opc2: opc2(6:5),
 //       pattern: cccc1110iii1nnnntttt1011nii10000,
-//       rule: Vmov_Rule_329_A1_P646}
+//       rule: MOVE_scalar_to_ARM_core_register,
+//       safety: [sel in bitset {'10x00', 'x0x10'} => UNDEFINED,
+//         t  ==
+//               Pc => UNPREDICTABLE],
+//       sel: U:opc1:opc2,
+//       t: Rt}
 TEST_F(Arm32DecoderStateTests,
-       MoveVfpRegisterOpWithTypeSelTester_Case6_TestCase6) {
-  MoveVfpRegisterOpWithTypeSelTester_Case6 tester;
-  tester.Test("cccc1110iii1nnnntttt1011nii10000");
+       MOVE_scalar_to_ARM_core_register_cccc1110iii1nnnntttt1011nii10000_case_0Tester_Case6_TestCase6) {
+  MOVE_scalar_to_ARM_core_register_cccc1110iii1nnnntttt1011nii10000_case_0Tester_Case6 baseline_tester;
+  NamedActual_MOVE_scalar_to_ARM_core_register_cccc1110iii1nnnntttt1011nii10000_case_1_MOVE_scalar_to_ARM_core_register actual;
+  ActualVsBaselineTester a_vs_b_tester(actual, baseline_tester);
+  a_vs_b_tester.Test("cccc1110iii1nnnntttt1011nii10000");
 }
 
 }  // namespace nacl_arm_test

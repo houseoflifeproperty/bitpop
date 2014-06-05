@@ -24,7 +24,7 @@
 
 #include <string>
 
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace base {
 class DictionaryValue;
@@ -33,8 +33,8 @@ class DictionaryValue;
 class GoogleServiceAuthError {
  public:
   //
-  // These enumerations are referenced by integer value in HTML login code.
-  // Do not change the numeric values.
+  // These enumerations are referenced by integer value in HTML login code and
+  // in UMA histograms. Do not change the numeric values.
   //
   enum State {
     // The user is authenticated.
@@ -78,8 +78,16 @@ class GoogleServiceAuthError {
     // a GOOGLE account.
     HOSTED_NOT_ALLOWED = 10,
 
+    // Indicates the service responded to a request, but we cannot
+    // interpret the response.
+    UNEXPECTED_SERVICE_RESPONSE = 11,
+
+    // Indicates the service responded and response carried details of the
+    // application error.
+    SERVICE_ERROR = 12,
+
     // The number of known error states.
-    NUM_STATES = 11,
+    NUM_STATES = 13,
   };
 
   // Additional data for CAPTCHA_REQUIRED errors.
@@ -145,30 +153,20 @@ class GoogleServiceAuthError {
       const GURL& captcha_image_url,
       const GURL& captcha_unlock_url);
 
-  // Construct a CAPTCHA_REQUIRED error with CAPTCHA challenge data from the
-  // ClientOAuth endpoint.
-  static GoogleServiceAuthError FromCaptchaChallenge(
-      const std::string& captcha_token,
-      const GURL& captcha_audio_url,
-      const GURL& captcha_image_url,
-      int image_width,
-      int image_height);
+  // Construct a SERVICE_ERROR error, e.g. invalid client ID, with an
+  // |error_message| which provides more information about the service error.
+  static GoogleServiceAuthError FromServiceError(
+      const std::string& error_message);
 
-  // Construct a TWO_FACTOR error with second-factor challenge data.
-  static GoogleServiceAuthError FromSecondFactorChallenge(
-      const std::string& captcha_token,
-      const std::string& prompt_text,
-      const std::string& alternate_text,
-      int field_length);
-
-  // Construct an INVALID_GAIA_CREDENTIALS error from a ClientOAuth response.
-  // |data| is the JSON response from the server explaning the error.
-  static GoogleServiceAuthError FromClientOAuthError(const std::string& data);
+  // Construct an UNEXPECTED_SERVICE_RESPONSE error, with an |error_message|
+  // detailing the problems with the response.
+  static GoogleServiceAuthError FromUnexpectedServiceResponse(
+      const std::string& error_message);
 
   // Provided for convenience for clients needing to reset an instance to NONE.
   // (avoids err_ = GoogleServiceAuthError(GoogleServiceAuthError::NONE), due
   // to explicit class and State enum relation. Note: shouldn't be inlined!
-  static GoogleServiceAuthError None();
+  static GoogleServiceAuthError AuthErrorNone();
 
   // The error information.
   State state() const;
@@ -188,7 +186,8 @@ class GoogleServiceAuthError {
  private:
   GoogleServiceAuthError(State s, int error);
 
-  explicit GoogleServiceAuthError(const std::string& error_message);
+  // Construct a GoogleServiceAuthError from |state| and |error_message|.
+  GoogleServiceAuthError(State state, const std::string& error_message);
 
   GoogleServiceAuthError(State s, const std::string& captcha_token,
                          const GURL& captcha_audio_url,
@@ -196,11 +195,6 @@ class GoogleServiceAuthError {
                          const GURL& captcha_unlock_url,
                          int image_width,
                          int image_height);
-
-  GoogleServiceAuthError(State s, const std::string& captcha_token,
-                         const std::string& prompt_text,
-                         const std::string& alternate_text,
-                         int field_length);
 
   State state_;
   Captcha captcha_;

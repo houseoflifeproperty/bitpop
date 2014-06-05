@@ -38,10 +38,8 @@ static void
 parse_space (const char **pp, const char *end)
 {
   char c;
-#define ISSPACE(c) ((c)==' '||(c)=='\f'||(c)=='\n'||(c)=='\r'||(c)=='\t'||(c)=='\v')
   while (*pp < end && (c = **pp, ISSPACE (c)))
     (*pp)++;
-#undef ISSPACE
 }
 
 static hb_bool_t
@@ -60,16 +58,19 @@ static hb_bool_t
 parse_uint (const char **pp, const char *end, unsigned int *pv)
 {
   char buf[32];
-  strncpy (buf, *pp, end - *pp);
-  buf[ARRAY_LENGTH (buf) - 1] = '\0';
+  unsigned int len = MIN (ARRAY_LENGTH (buf) - 1, (unsigned int) (end - *pp));
+  strncpy (buf, *pp, len);
+  buf[len] = '\0';
 
   char *p = buf;
   char *pend = p;
   unsigned int v;
 
+  /* Intentionally use strtol instead of strtoul, such that
+   * -1 turns into "big number"... */
+  errno = 0;
   v = strtol (p, &pend, 0);
-
-  if (p == pend)
+  if (errno || p == pend)
     return false;
 
   *pv = v;
@@ -152,6 +153,18 @@ parse_one_feature (const char **pp, const char *end, hb_feature_t *feature)
 	 *pp == end;
 }
 
+/**
+ * hb_feature_from_string:
+ * @str: (array length=len):
+ * @len: 
+ * @feature: (out):
+ *
+ * 
+ *
+ * Return value: 
+ *
+ * Since: 1.0
+ **/
 hb_bool_t
 hb_feature_from_string (const char *str, int len,
 			hb_feature_t *feature)
@@ -162,6 +175,16 @@ hb_feature_from_string (const char *str, int len,
   return parse_one_feature (&str, str + len, feature);
 }
 
+/**
+ * hb_feature_to_string:
+ * @feature: 
+ * @buf: (array length=size):
+ * @size: 
+ *
+ * 
+ *
+ * Since: 1.0
+ **/
 void
 hb_feature_to_string (hb_feature_t *feature,
 		      char *buf, unsigned int size)
@@ -176,38 +199,47 @@ hb_feature_to_string (hb_feature_t *feature,
   len += 4;
   while (len && s[len - 1] == ' ')
     len--;
-  if (feature->start != 0 || feature->start != (unsigned int) -1)
+  if (feature->start != 0 || feature->end != (unsigned int) -1)
   {
     s[len++] = '[';
     if (feature->start)
-      len += snprintf (s + len, ARRAY_LENGTH (s) - len, "%d", feature->start);
+      len += MAX (0, snprintf (s + len, ARRAY_LENGTH (s) - len, "%d", feature->start));
     if (feature->end != feature->start + 1) {
       s[len++] = ':';
       if (feature->end != (unsigned int) -1)
-	len += snprintf (s + len, ARRAY_LENGTH (s) - len, "%d", feature->end);
+	len += MAX (0, snprintf (s + len, ARRAY_LENGTH (s) - len, "%d", feature->end));
     }
     s[len++] = ']';
   }
   if (feature->value > 1)
   {
     s[len++] = '=';
-    len += snprintf (s + len, ARRAY_LENGTH (s) - len, "%d", feature->value);
+    len += MAX (0, snprintf (s + len, ARRAY_LENGTH (s) - len, "%d", feature->value));
   }
   assert (len < ARRAY_LENGTH (s));
   len = MIN (len, size - 1);
   memcpy (buf, s, len);
-  s[len] = '\0';
+  buf[len] = '\0';
 }
 
 
 static const char **static_shaper_list;
 
-static
+static inline
 void free_static_shaper_list (void)
 {
   free (static_shaper_list);
 }
 
+/**
+ * hb_shape_list_shapers:
+ *
+ * 
+ *
+ * Return value: (transfer none):
+ *
+ * Since: 1.0
+ **/
 const char **
 hb_shape_list_shapers (void)
 {
@@ -243,6 +275,20 @@ retry:
 }
 
 
+/**
+ * hb_shape_full:
+ * @font: a font.
+ * @buffer: a buffer.
+ * @features: (array length=num_features):
+ * @num_features: 
+ * @shaper_list: (array zero-terminated=1):
+ *
+ * 
+ *
+ * Return value: 
+ *
+ * Since: 1.0
+ **/
 hb_bool_t
 hb_shape_full (hb_font_t          *font,
 	       hb_buffer_t        *buffer,
@@ -255,8 +301,6 @@ hb_shape_full (hb_font_t          *font,
 
   assert (buffer->content_type == HB_BUFFER_CONTENT_TYPE_UNICODE);
 
-  buffer->guess_properties ();
-
   hb_shape_plan_t *shape_plan = hb_shape_plan_create_cached (font->face, &buffer->props, features, num_features, shaper_list);
   hb_bool_t res = hb_shape_plan_execute (shape_plan, font, buffer, features, num_features);
   hb_shape_plan_destroy (shape_plan);
@@ -266,6 +310,17 @@ hb_shape_full (hb_font_t          *font,
   return res;
 }
 
+/**
+ * hb_shape:
+ * @font: a font.
+ * @buffer: a buffer.
+ * @features: (array length=num_features):
+ * @num_features: 
+ *
+ * 
+ *
+ * Since: 1.0
+ **/
 void
 hb_shape (hb_font_t           *font,
 	  hb_buffer_t         *buffer,

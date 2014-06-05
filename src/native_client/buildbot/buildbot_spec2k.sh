@@ -17,7 +17,6 @@ readonly SCONS_NACL="./scons --mode=opt-host,nacl -j8"
 readonly SPEC_HARNESS=${SPEC_HARNESS:-${HOME}/cpu2000-redhat64-ia32}/
 
 readonly TRYBOT_TESTS="176.gcc 179.art 181.mcf 197.parser 252.eon 254.gap"
-readonly TRYBOT_TRANSLATOR_TESTS="176.gcc"
 readonly TRYBOT_X86_64_ZERO_BASED_SANDBOX_TESTS="176.gcc"
 
 readonly BUILDBOT_PNACL="buildbot/buildbot_pnacl.sh"
@@ -31,7 +30,7 @@ readonly NAME_ARM_TRY_DOWNLOAD=$(${BUILDBOT_PNACL} NAME_ARM_TRY_DOWNLOAD)
 readonly NAME_ARM_UPLOAD=$(${BUILDBOT_PNACL} NAME_ARM_UPLOAD)
 readonly NAME_ARM_DOWNLOAD=$(${BUILDBOT_PNACL} NAME_ARM_DOWNLOAD)
 
-readonly QEMU_TOOL="$(pwd)/toolchain/linux_arm-trusted/run_under_qemu_arm"
+readonly QEMU_TOOL="$(pwd)/toolchain/linux_x86/arm_trusted/run_under_qemu_arm"
 
 # Note: the tool for updating the canned nexes lives at:
 #        tools/canned_nexe_tool.sh
@@ -170,19 +169,20 @@ download-validator-test-nexes() {
 get-validator() {
   local arch="$1"
   if [[ ${arch} == "x86-32" ]] ; then
-    echo "$(pwd)/scons-out/opt-linux-x86-32/staging/ncval"
+    echo "$(pwd)/scons-out/opt-linux-x86-32/staging/ncval_new"
   elif [[ ${arch} == "x86-64" ]] ; then
-    echo "$(pwd)/scons-out/opt-linux-x86-64/staging/ncval"
+    echo "$(pwd)/scons-out/opt-linux-x86-64/staging/ncval_new"
   elif [[ ${arch} == "arm" ]] ; then
     echo "$(pwd)/scons-out/opt-linux-arm/staging/arm-ncval-core"
   else
     echo "ERROR: unknown arch"
+    exit 1
   fi
 }
 
 LogTimeHelper() {
   # This format is recognized by the buildbot system
-  echo "RESULT $1_$2: $3= $(bc) secs"
+  echo "RESULT $1_$2: $3= $(bc) seconds"
 }
 
 LogTimedRun() {
@@ -206,8 +206,13 @@ build-validator() {
   if [[ ${arch} == "arm" ]] ; then
     # TODO(robertm): build the validator
     echo "NYI"
+  elif [[ ${arch} == "x86-32" ]] ; then
+    ${SCONS_NACL} platform=${arch} ncval_new
+  elif [[ ${arch} == "x86-64" ]] ; then
+    ${SCONS_NACL} platform=${arch} ncval_new
   else
-    ${SCONS_NACL} platform=${arch} ncval
+    echo "ERROR: unknown arch"
+    exit 1
   fi
 }
 
@@ -237,15 +242,6 @@ measure-validator-speed() {
 
 ######################################################################
 # NOTE: trybots only runs a subset of the the spec2k tests
-# TODO: elminate this long running bot in favor per arch sharded bots
-pnacl-trybot-arm-qemu() {
-  clobber
-  build-prerequisites "arm" "bitcode"
-  build-tests SetupPnaclArmOpt "${TRYBOT_TESTS}" 1 1
-  run-tests SetupPnaclArmOpt "${TRYBOT_TESTS}" 1 1
-  build-tests SetupPnaclTranslatorFastArmOpt "${TRYBOT_TRANSLATOR_TESTS}" 1 1
-  run-tests SetupPnaclTranslatorFastArmOpt "${TRYBOT_TRANSLATOR_TESTS}" 1 1
-}
 
 pnacl-trybot-arm-buildonly() {
   clobber
@@ -261,12 +257,16 @@ pnacl-trybot-arm-hw() {
   download-test-binaries try
   build-tests SetupPnaclTranslatorArmOptHW "${TRYBOT_TESTS}" 1 1
   run-tests SetupPnaclTranslatorArmOptHW "${TRYBOT_TESTS}" 1 1
+  build-tests SetupPnaclTranslator1ThreadArmOptHW "${TRYBOT_TESTS}" 1 1
+  run-tests SetupPnaclTranslator1ThreadArmOptHW "${TRYBOT_TESTS}" 1 1
   pushd ${SPEC_BASE};
   ./run_all.sh TimeValidation SetupPnaclTranslatorArmOptHW "${TRYBOT_TESTS}" ||\
     handle-error
   popd
   build-tests SetupPnaclTranslatorFastArmOptHW "${TRYBOT_TESTS}" 1 1
   run-tests SetupPnaclTranslatorFastArmOptHW "${TRYBOT_TESTS}" 1 1
+  build-tests SetupPnaclTranslatorFast1ThreadArmOptHW "${TRYBOT_TESTS}" 1 1
+  run-tests SetupPnaclTranslatorFast1ThreadArmOptHW "${TRYBOT_TESTS}" 1 1
 }
 
 pnacl-trybot-x8632() {
@@ -274,10 +274,14 @@ pnacl-trybot-x8632() {
   build-prerequisites "x86-32" "bitcode"
   build-tests SetupPnaclX8632Opt "${TRYBOT_TESTS}" 1 1
   run-tests SetupPnaclX8632Opt "${TRYBOT_TESTS}" 1 1
-  build-tests SetupPnaclTranslatorX8632Opt "${TRYBOT_TRANSLATOR_TESTS}" 1 1
-  run-tests SetupPnaclTranslatorX8632Opt "${TRYBOT_TRANSLATOR_TESTS}" 1 1
-  build-tests SetupPnaclTranslatorFastX8632Opt "${TRYBOT_TRANSLATOR_TESTS}" 1 1
-  run-tests SetupPnaclTranslatorFastX8632Opt "${TRYBOT_TRANSLATOR_TESTS}" 1 1
+  build-tests SetupPnaclTranslatorX8632Opt "${TRYBOT_TESTS}" 1 1
+  run-tests SetupPnaclTranslatorX8632Opt "${TRYBOT_TESTS}" 1 1
+  build-tests SetupPnaclTranslator1ThreadX8632Opt "${TRYBOT_TESTS}" 1 1
+  run-tests SetupPnaclTranslator1ThreadX8632Opt "${TRYBOT_TESTS}" 1 1
+  build-tests SetupPnaclTranslatorFastX8632Opt "${TRYBOT_TESTS}" 1 1
+  run-tests SetupPnaclTranslatorFastX8632Opt "${TRYBOT_TESTS}" 1 1
+  build-tests SetupPnaclTranslatorFast1ThreadX8632Opt "${TRYBOT_TESTS}" 1 1
+  run-tests SetupPnaclTranslatorFast1ThreadX8632Opt "${TRYBOT_TESTS}" 1 1
   build-validator x86-32
   download-validator-test-nexes x86-32
   measure-validator-speed x86-32
@@ -298,24 +302,18 @@ pnacl-trybot-x8664() {
   build-prerequisites "x86-64" "bitcode"
   build-tests SetupPnaclX8664Opt "${TRYBOT_TESTS}" 1 1
   run-tests SetupPnaclX8664Opt "${TRYBOT_TESTS}" 1 1
-  build-tests SetupPnaclTranslatorX8664Opt "${TRYBOT_TRANSLATOR_TESTS}" 1 1
-  run-tests SetupPnaclTranslatorX8664Opt "${TRYBOT_TRANSLATOR_TESTS}" 1 1
-  build-tests SetupPnaclTranslatorFastX8664Opt "${TRYBOT_TRANSLATOR_TESTS}" 1 1
-  run-tests SetupPnaclTranslatorFastX8664Opt "${TRYBOT_TRANSLATOR_TESTS}" 1 1
+  build-tests SetupPnaclTranslatorX8664Opt "${TRYBOT_TESTS}" 1 1
+  run-tests SetupPnaclTranslatorX8664Opt "${TRYBOT_TESTS}" 1 1
+  build-tests SetupPnaclTranslator1ThreadX8664Opt "${TRYBOT_TESTS}" 1 1
+  run-tests SetupPnaclTranslator1ThreadX8664Opt "${TRYBOT_TESTS}" 1 1
+  build-tests SetupPnaclTranslatorFastX8664Opt "${TRYBOT_TESTS}" 1 1
+  run-tests SetupPnaclTranslatorFastX8664Opt "${TRYBOT_TESTS}" 1 1
+  build-tests SetupPnaclTranslatorFast1ThreadX8664Opt "${TRYBOT_TESTS}" 1 1
+  run-tests SetupPnaclTranslatorFast1ThreadX8664Opt "${TRYBOT_TESTS}" 1 1
   pnacl-x86-64-zero-based-sandbox
   build-validator x86-64
   download-validator-test-nexes x86-64
   measure-validator-speed x86-64
-}
-
-# We probably will not keep a qemu bot on the waterfall, but will keep this
-# to test locally
-pnacl-arm-qemu() {
-  clobber
-  build-prerequisites "arm" "bitcode"
-  # arm takes a long time and we do not have sandboxed tests working
-  build-tests SetupPnaclArmOpt all 1 1
-  run-tests SetupPnaclArmOpt all 1 1
 }
 
 pnacl-arm-buildonly() {
@@ -332,18 +330,28 @@ pnacl-arm-hw() {
   download-test-binaries regular
   build-tests SetupPnaclTranslatorArmOptHW all 1 1
   run-tests SetupPnaclTranslatorArmOptHW all 1 2
+  # Only run 1 thread ARM tests 1x to save some time for now.
+  # Hopefully perf infrastructure will smooth out flakes.
+  # Otherwise, we'll bump the runs up to 2x as well.
+  build-tests SetupPnaclTranslator1ThreadArmOptHW all 1 1
+  run-tests SetupPnaclTranslator1ThreadArmOptHW all 1 1
   build-tests SetupPnaclTranslatorFastArmOptHW all 1 1
   run-tests SetupPnaclTranslatorFastArmOptHW all 1 2
+  # Only run 1 thread ARM tests 1x to save some time for now.
+  # Hopefully perf infrastructure will smooth out flakes.
+  # Otherwise, we'll bump the runs up to 2x as well.
+  build-tests SetupPnaclTranslatorFast1ThreadArmOptHW all 1 1
+  run-tests SetupPnaclTranslatorFast1ThreadArmOptHW all 1 1
 }
 
 pnacl-x8664() {
   clobber
   build-prerequisites "x86-64" "bitcode"
-  local setups="SetupPnaclX8664 \
-               SetupPnaclX8664Opt \
-               SetupPnaclTranslatorX8664 \
+  local setups="SetupPnaclX8664Opt \
                SetupPnaclTranslatorX8664Opt \
-               SetupPnaclTranslatorFastX8664Opt"
+               SetupPnaclTranslator1ThreadX8664Opt \
+               SetupPnaclTranslatorFastX8664Opt \
+               SetupPnaclTranslatorFast1ThreadX8664Opt"
   build-tests "${setups}" all 1 3
   run-tests "${setups}" all 1 3
   pnacl-x86-64-zero-based-sandbox
@@ -355,11 +363,11 @@ pnacl-x8664() {
 pnacl-x8632() {
   clobber
   build-prerequisites "x86-32" "bitcode"
-  local setups="SetupPnaclX8632 \
-                SetupPnaclX8632Opt \
-                SetupPnaclTranslatorX8632 \
+  local setups="SetupPnaclX8632Opt \
                 SetupPnaclTranslatorX8632Opt \
-                SetupPnaclTranslatorFastX8632Opt"
+                SetupPnaclTranslator1ThreadX8632Opt \
+                SetupPnaclTranslatorFastX8632Opt \
+                SetupPnaclTranslatorFast1ThreadX8632Opt"
   build-tests "${setups}" all 1 3
   run-tests "${setups}" all 1 3
   build-validator x86-32

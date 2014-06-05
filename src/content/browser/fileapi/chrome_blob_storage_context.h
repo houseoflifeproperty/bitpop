@@ -9,10 +9,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/sequenced_task_runner_helpers.h"
 #include "content/common/content_export.h"
-#include "content/public/browser/browser_thread.h"
 
 namespace webkit_blob {
-class BlobStorageController;
+class BlobStorageContext;
 }
 
 namespace content {
@@ -37,8 +36,8 @@ class CONTENT_EXPORT ChromeBlobStorageContext
 
   void InitializeOnIOThread();
 
-  webkit_blob::BlobStorageController* controller() const {
-    return controller_.get();
+  webkit_blob::BlobStorageContext* context() const {
+    return context_.get();
   }
 
  protected:
@@ -52,7 +51,7 @@ class CONTENT_EXPORT ChromeBlobStorageContext
 
   void DeleteOnCorrectThread() const;
 
-  scoped_ptr<webkit_blob::BlobStorageController> controller_;
+  scoped_ptr<webkit_blob::BlobStorageContext> context_;
 };
 
 struct ChromeBlobStorageContextDeleter {

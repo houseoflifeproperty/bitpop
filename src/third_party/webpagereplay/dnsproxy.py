@@ -44,6 +44,13 @@ class RealDnsLookup(object):
     self.dns_cache_lock = threading.Lock()
     self.dns_cache = {}
 
+  def _IsIPAddress(self, hostname):
+    try:
+      socket.inet_aton(hostname)
+      return True
+    except socket.error:
+      return False
+
   def __call__(self, hostname, rdtype=dns.rdatatype.A):
     """Return real IP for a host.
 
@@ -53,6 +60,8 @@ class RealDnsLookup(object):
     Returns:
       the IP address as a string (e.g. "192.168.25.2")
     """
+    if self._IsIPAddress(hostname):
+      return hostname
     self.dns_cache_lock.acquire()
     ip = self.dns_cache.get(hostname)
     self.dns_cache_lock.release()
@@ -61,6 +70,10 @@ class RealDnsLookup(object):
     try:
       answers = self.resolver.query(hostname, rdtype)
     except dns.resolver.NXDOMAIN:
+      return None
+    except dns.resolver.NoNameservers:
+      logging.debug('_real_dns_lookup(%s) -> No nameserver.',
+                    hostname)
       return None
     except (dns.resolver.NoAnswer, dns.resolver.Timeout) as ex:
       logging.debug('_real_dns_lookup(%s) -> None (%s)',
@@ -74,7 +87,7 @@ class RealDnsLookup(object):
     return ip
 
   def ClearCache(self):
-    """Clearn the dns cache."""
+    """Clear the dns cache."""
     self.dns_cache_lock.acquire()
     self.dns_cache.clear()
     self.dns_cache_lock.release()
@@ -235,6 +248,15 @@ class UdpDnsHandler(SocketServer.DatagramRequestHandler):
 
 class DnsProxyServer(SocketServer.ThreadingUDPServer,
                      daemonserver.DaemonServer):
+  # Increase the request queue size. The default value, 5, is set in
+  # SocketServer.TCPServer (the parent of BaseHTTPServer.HTTPServer).
+  # Since we're intercepting many domains through this single server,
+  # it is quite possible to get more than 5 concurrent requests.
+  request_queue_size = 128
+
+  # Don't prevent python from exiting when there is thread activity.
+  daemon_threads = True
+
   def __init__(self, host='', port=53, dns_lookup=None):
     """Initialize DnsProxyServer.
 
@@ -253,8 +275,13 @@ class DnsProxyServer(SocketServer.ThreadingUDPServer,
             'Unable to bind DNS server on (%s:%s)' % (host, port))
       raise
     self.dns_lookup = dns_lookup or (lambda host: self.server_address[0])
-    logging.info('Started DNS server on %s...', self.server_address)
+    self.server_port = self.server_address[1]
+    logging.warning('DNS server started on %s:%d', self.server_address[0],
+                                                   self.server_address[1])
 
   def cleanup(self):
-    self.shutdown()
-    logging.info('Shutdown DNS server')
+    try:
+      self.shutdown()
+    except KeyboardInterrupt, e:
+      pass
+    logging.info('Stopped DNS server')

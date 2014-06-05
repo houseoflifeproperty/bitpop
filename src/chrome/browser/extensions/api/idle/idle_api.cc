@@ -30,14 +30,13 @@ int ClampThreshold(int threshold) {
 
 namespace extensions {
 
-bool IdleQueryStateFunction::RunImpl() {
+bool IdleQueryStateFunction::RunAsync() {
   int threshold;
   EXTENSION_FUNCTION_VALIDATE(args_->GetInteger(0, &threshold));
   threshold = ClampThreshold(threshold);
 
-  IdleManagerFactory::GetForProfile(profile())->QueryState(
-      threshold,
-      base::Bind(&IdleQueryStateFunction::IdleStateCallback, this));
+  IdleManagerFactory::GetForProfile(GetProfile())->QueryState(
+      threshold, base::Bind(&IdleQueryStateFunction::IdleStateCallback, this));
 
   // Don't send the response, it'll be sent by our callback
   return true;
@@ -48,13 +47,13 @@ void IdleQueryStateFunction::IdleStateCallback(IdleState state) {
   SendResponse(true);
 }
 
-bool IdleSetDetectionIntervalFunction::RunImpl() {
+bool IdleSetDetectionIntervalFunction::RunSync() {
   int threshold;
   EXTENSION_FUNCTION_VALIDATE(args_->GetInteger(0, &threshold));
   threshold = ClampThreshold(threshold);
 
-  IdleManagerFactory::GetForProfile(profile())->SetThreshold(extension_id(),
-                                                             threshold);
+  IdleManagerFactory::GetForProfile(GetProfile())
+      ->SetThreshold(extension_id(), threshold);
 
   return true;
 }

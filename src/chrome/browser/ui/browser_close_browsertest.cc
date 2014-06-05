@@ -5,19 +5,21 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/path_service.h"
-#include "base/stringprintf.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
-#include "chrome/browser/download/download_test_file_chooser_observer.h"
+#include "chrome/browser/download/download_test_file_activity_observer.h"
 #include "chrome/browser/net/url_request_mock_util.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/host_desktop.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -83,7 +85,7 @@ class BrowserCloseTest : public InProcessBrowserTest {
 
   // Create a second profile to work within multi-profile.
   Profile* CreateSecondProfile() {
-    FilePath user_data_dir;
+    base::FilePath user_data_dir;
     PathService::Get(chrome::DIR_USER_DATA, &user_data_dir);
 
     if (!second_profile_data_dir_.CreateUniqueTempDirUnderPath(user_data_dir))
@@ -149,7 +151,7 @@ class BrowserCloseTest : public InProcessBrowserTest {
     for (std::vector<Profile*>::const_iterator pit = profiles.begin();
          pit != profiles.end(); ++pit) {
       DownloadService* download_service =
-          DownloadServiceFactory::GetForProfile(*pit);
+          DownloadServiceFactory::GetForBrowserContext(*pit);
       if (download_service->HasCreatedDownloadManager()) {
         DownloadManager *mgr = BrowserContext::GetDownloadManager(*pit);
         scoped_refptr<content::DownloadTestFlushObserver> observer(
@@ -158,7 +160,7 @@ class BrowserCloseTest : public InProcessBrowserTest {
       }
       if ((*pit)->HasOffTheRecordProfile()) {
         DownloadService* incognito_download_service =
-          DownloadServiceFactory::GetForProfile(
+          DownloadServiceFactory::GetForBrowserContext(
               (*pit)->GetOffTheRecordProfile());
         if (incognito_download_service->HasCreatedDownloadManager()) {
           DownloadManager *mgr = BrowserContext::GetDownloadManager(
@@ -172,11 +174,14 @@ class BrowserCloseTest : public InProcessBrowserTest {
   }
 
   // Create a Browser (with associated window) on the specified profile.
-  Browser* CreateBrowserOnProfile(Profile* profile) {
-    Browser* new_browser = new Browser(Browser::CreateParams(profile));
-    chrome::AddSelectedTabWithURL(new_browser, GURL(chrome::kAboutBlankURL),
+  Browser* CreateBrowserOnProfile(Profile* profile,
+                                  chrome::HostDesktopType host_desktop_type) {
+    Browser* new_browser =
+        new Browser(Browser::CreateParams(profile, host_desktop_type));
+    chrome::AddSelectedTabWithURL(new_browser, GURL(content::kAboutBlankURL),
                                   content::PAGE_TRANSITION_AUTO_TOPLEVEL);
-    content::WaitForLoadStop(chrome::GetActiveWebContents(new_browser));
+    content::WaitForLoadStop(
+        new_browser->tab_strip_model()->GetActiveWebContents());
     new_browser->window()->Show();
     return new_browser;
   }
@@ -201,28 +206,29 @@ class BrowserCloseTest : public InProcessBrowserTest {
 
     // num_windows > 0
     Profile* profile((*base_browser)->profile());
+    chrome::HostDesktopType host_desktop_type =
+        (*base_browser)->host_desktop_type();
     for (int w = 1; w < num_windows; ++w) {
-      CreateBrowserOnProfile(profile);
+      CreateBrowserOnProfile(profile, host_desktop_type);
     }
     return true;
   }
 
   int TotalUnclosedBrowsers() {
     int count = 0;
-    for (BrowserList::const_iterator iter = BrowserList::begin();
-         iter != BrowserList::end(); ++iter)
-      if (!(*iter)->IsAttemptingToCloseBrowser()) {
+    for (chrome::BrowserIterator it; !it.done(); it.Next()) {
+      if (!it->IsAttemptingToCloseBrowser())
         count++;
-      }
+    }
     return count;
   }
 
   // Note that this is invalid to call if TotalUnclosedBrowsers() == 0.
   Browser* FirstUnclosedBrowser() {
-    for (BrowserList::const_iterator iter = BrowserList::begin();
-         iter != BrowserList::end(); ++iter)
-      if (!(*iter)->IsAttemptingToCloseBrowser())
-        return (*iter);
+    for (chrome::BrowserIterator it; !it.done(); it.Next()) {
+      if (!it->IsAttemptingToCloseBrowser())
+        return *it;
+    }
     return NULL;
   }
 
@@ -240,8 +246,8 @@ class BrowserCloseTest : public InProcessBrowserTest {
     EXPECT_TRUE(second_profile_);
     if (!second_profile_) return false;
 
-    DownloadTestFileChooserObserver(first_profile_) .EnableFileChooser(false);
-    DownloadTestFileChooserObserver(second_profile_).EnableFileChooser(false);
+    DownloadTestFileActivityObserver(first_profile_) .EnableFileChooser(false);
+    DownloadTestFileActivityObserver(second_profile_).EnableFileChooser(false);
     return true;
   }
 
@@ -249,6 +255,8 @@ class BrowserCloseTest : public InProcessBrowserTest {
   // an assertion has failed and the test should be aborted.
   bool ExecuteDownloadCloseCheckCase(size_t i) {
     const DownloadsCloseCheckCase& check_case(download_close_check_cases[i]);
+    SCOPED_TRACE(testing::Message() << "Case" << i
+                                    << ": " << check_case.DebugString());
 
     // Test invariant: so that we don't actually try and close the browser,
     // we always enter the function with a single browser window open on the
@@ -264,35 +272,35 @@ class BrowserCloseTest : public InProcessBrowserTest {
       return false;
 
     Browser* entry_browser = FirstUnclosedBrowser();
-    EXPECT_EQ(first_profile_, entry_browser->profile())
-        << "Case" << i
-        << ": " << check_case.DebugString();
+    EXPECT_EQ(first_profile_, entry_browser->profile());
     if (first_profile_ != entry_browser->profile())
       return false;
-    int total_download_count = DownloadService::DownloadCountAllProfiles();
-    EXPECT_EQ(0, total_download_count)
-        << "Case " << i
-        << ": " << check_case.DebugString();
+    int total_download_count =
+        DownloadService::NonMaliciousDownloadCountAllProfiles();
+    EXPECT_EQ(0, total_download_count);
     if (0 != total_download_count)
       return false;
-
     Profile* first_profile_incognito = first_profile_->GetOffTheRecordProfile();
     Profile* second_profile_incognito =
         second_profile_->GetOffTheRecordProfile();
-    DownloadTestFileChooserObserver(first_profile_incognito)
+    DownloadTestFileActivityObserver(first_profile_incognito)
         .EnableFileChooser(false);
-    DownloadTestFileChooserObserver(second_profile_incognito)
+    DownloadTestFileActivityObserver(second_profile_incognito)
         .EnableFileChooser(false);
 
     // For simplicty of coding, we create a window on each profile so that
     // we can easily create downloads, then we destroy or create windows
     // as necessary.
-    Browser* browser_a_regular(CreateBrowserOnProfile(first_profile_));
+    chrome::HostDesktopType host_desktop_type =
+        entry_browser->host_desktop_type();
+    Browser* browser_a_regular(CreateBrowserOnProfile(first_profile_,
+                                                      host_desktop_type));
     Browser* browser_a_incognito(
-        CreateBrowserOnProfile(first_profile_incognito));
-    Browser* browser_b_regular(CreateBrowserOnProfile(second_profile_));
+        CreateBrowserOnProfile(first_profile_incognito, host_desktop_type));
+    Browser* browser_b_regular(CreateBrowserOnProfile(second_profile_,
+                                                      host_desktop_type));
     Browser* browser_b_incognito(
-        CreateBrowserOnProfile(second_profile_incognito));
+        CreateBrowserOnProfile(second_profile_incognito, host_desktop_type));
 
     // Kill our entry browser.
     entry_browser->window()->Close();
@@ -346,25 +354,22 @@ class BrowserCloseTest : public InProcessBrowserTest {
     Browser::DownloadClosePreventionType type =
         browser_to_probe->OkToCloseWithInProgressDownloads(
             &num_downloads_blocking);
-    EXPECT_EQ(check_case.type, type) << "Case " << i
-                                     << ": " << check_case.DebugString();
+    EXPECT_EQ(check_case.type, type);
     if (type != Browser::DOWNLOAD_CLOSE_OK)
-      EXPECT_EQ(check_case.num_blocking, num_downloads_blocking)
-          << "Case " << i
-          << ": " << check_case.DebugString();
+      EXPECT_EQ(check_case.num_blocking, num_downloads_blocking);
 
     // Release all the downloads.
     CompleteAllDownloads(browser_to_probe);
 
     // Create a new main window and kill everything else.
-    entry_browser = CreateBrowserOnProfile(first_profile_);
-    for (BrowserList::const_iterator bit = BrowserList::begin();
-         bit != BrowserList::end(); ++bit) {
-      if ((*bit) != entry_browser) {
-        EXPECT_TRUE((*bit)->window());
-        if (!(*bit)->window())
+    entry_browser = CreateBrowserOnProfile(first_profile_, host_desktop_type);
+    for (chrome::BrowserIterator it; !it.done(); it.Next()) {
+      if ((*it) != entry_browser) {
+        if (!it->window()) {
+          ADD_FAILURE();
           return false;
-        (*bit)->window()->Close();
+        }
+        it->window()->Close();
       }
     }
     content::RunAllPendingInMessageLoop();

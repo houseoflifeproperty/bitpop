@@ -50,6 +50,7 @@ namespace cricket {
   X(udev_enumerate_scan_devices) \
   X(udev_enumerate_unref) \
   X(udev_list_entry_get_name) \
+  X(udev_list_entry_get_next) \
   X(udev_monitor_enable_receiving) \
   X(udev_monitor_filter_add_match_subsystem_devtype) \
   X(udev_monitor_get_fd) \
@@ -64,6 +65,14 @@ namespace cricket {
 #include "talk/base/latebindingsymboltable.h.def"
 #undef LATE_BINDING_SYMBOL_TABLE_CLASS_NAME
 #undef LATE_BINDING_SYMBOL_TABLE_SYMBOLS_LIST
+
+// libudev has changed ABIs to libudev.so.1 in recent distros and lots of users
+// and/or software (including Google Chrome) are symlinking the old to the new.
+// The entire point of ABI versions is that you can't safely do that, and
+// it has caused crashes in the wild. This function checks if the DllHandle that
+// we got back for libudev.so.0 is actually for libudev.so.1. If so, the library
+// cannot safely be used.
+bool IsWrongLibUDevAbiVersion(talk_base::DllHandle libudev_0);
 
 }  // namespace cricket
 

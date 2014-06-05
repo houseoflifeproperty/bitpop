@@ -32,7 +32,7 @@ import optparse
 import StringIO
 import sys
 import time
-import unittest
+import webkitpy.thirdparty.unittest2 as unittest
 
 from webkitpy.common.host_mock import MockHost
 
@@ -54,7 +54,29 @@ def get_options(args):
 class TestUtilityFunctions(unittest.TestCase):
     def test_print_options(self):
         options, args = get_options([])
-        self.assertTrue(options is not None)
+        self.assertIsNotNone(options)
+
+
+class FakeRunResults(object):
+    def __init__(self, total=1, expected=1, unexpected=0, fake_results=None):
+        fake_results = fake_results or []
+        self.total = total
+        self.expected = expected
+        self.expected_failures = 0
+        self.unexpected = unexpected
+        self.expected_skips = 0
+        self.results_by_name = {}
+        total_run_time = 0
+        for result in fake_results:
+            self.results_by_name[result.shard_name] = result
+            total_run_time += result.total_run_time
+        self.run_time = total_run_time + 1
+
+
+class FakeShard(object):
+    def __init__(self, shard_name, total_run_time):
+        self.shard_name = shard_name
+        self.total_run_time = total_run_time
 
 
 class  Testprinter(unittest.TestCase):
@@ -108,40 +130,65 @@ class  Testprinter(unittest.TestCase):
         printer._options.time_out_ms = 6000
         printer._options.slow_time_out_ms = 12000
         printer.print_config('/tmp')
-        self.assertTrue("Using port 'test-mac-leopard'" in err.getvalue())
-        self.assertTrue('Test configuration: <leopard, x86, release>' in err.getvalue())
-        self.assertTrue('Placing test results in /tmp' in err.getvalue())
-        self.assertTrue('Baseline search path: test-mac-leopard -> test-mac-snowleopard -> generic' in err.getvalue())
-        self.assertTrue('Using Release build' in err.getvalue())
-        self.assertTrue('Pixel tests enabled' in err.getvalue())
-        self.assertTrue('Command line:' in err.getvalue())
-        self.assertTrue('Regular timeout: ' in err.getvalue())
+        self.assertIn("Using port 'test-mac-leopard'", err.getvalue())
+        self.assertIn('Test configuration: <leopard, x86, release>', err.getvalue())
+        self.assertIn('View the test results at file:///tmp', err.getvalue())
+        self.assertIn('Baseline search path: test-mac-leopard -> test-mac-snowleopard -> generic', err.getvalue())
+        self.assertIn('Using Release build', err.getvalue())
+        self.assertIn('Pixel tests enabled', err.getvalue())
+        self.assertIn('Command line:', err.getvalue())
+        self.assertIn('Regular timeout: ', err.getvalue())
 
         self.reset(err)
         printer._options.quiet = True
         printer.print_config('/tmp')
-        self.assertFalse('Baseline search path: test-mac-leopard -> test-mac-snowleopard -> generic' in err.getvalue())
+        self.assertNotIn('Baseline search path: test-mac-leopard -> test-mac-snowleopard -> generic', err.getvalue())
+
+    def test_print_directory_timings(self):
+        printer, err = self.get_printer()
+        printer._options.debug_rwt_logging = True
+
+        run_results = FakeRunResults()
+        run_results.results_by_name = {
+            "slowShard": FakeShard("slowShard", 16),
+            "borderlineShard": FakeShard("borderlineShard", 15),
+            "fastShard": FakeShard("fastShard", 1),
+        }
+
+        printer._print_directory_timings(run_results)
+        self.assertWritten(err, ['Time to process slowest subdirectories:\n', '  slowShard took 16.0 seconds to run 1 tests.\n', '\n'])
+
+        printer, err = self.get_printer()
+        printer._options.debug_rwt_logging = True
+
+        run_results.results_by_name = {
+            "borderlineShard": FakeShard("borderlineShard", 15),
+            "fastShard": FakeShard("fastShard", 1),
+        }
+
+        printer._print_directory_timings(run_results)
+        self.assertWritten(err, [])
 
     def test_print_one_line_summary(self):
-        printer, err = self.get_printer()
-        printer._print_one_line_summary(1, 1, 0)
-        self.assertWritten(err, ["The test ran as expected.\n", "\n"])
+        def run_test(total, exp, unexp, shards, result):
+            printer, err = self.get_printer(['--timing'] if shards else None)
+            fake_results = FakeRunResults(total, exp, unexp, shards)
+            total_time = fake_results.run_time + 1
+            printer._print_one_line_summary(total_time, fake_results)
+            self.assertWritten(err, result)
 
-        printer, err = self.get_printer()
-        printer._print_one_line_summary(1, 1, 0)
-        self.assertWritten(err, ["The test ran as expected.\n", "\n"])
+        # Without times:
+        run_test(1, 1, 0, [], ["The test ran as expected.\n", "\n"])
+        run_test(2, 1, 1, [], ["\n", "1 test ran as expected, 1 didn't:\n", "\n"])
+        run_test(3, 2, 1, [], ["\n", "2 tests ran as expected, 1 didn't:\n", "\n"])
+        run_test(3, 2, 0, [], ["\n", "2 tests ran as expected (1 didn't run).\n", "\n"])
 
-        printer, err = self.get_printer()
-        printer._print_one_line_summary(2, 1, 1)
-        self.assertWritten(err, ["\n", "1 test ran as expected, 1 didn't:\n", "\n"])
-
-        printer, err = self.get_printer()
-        printer._print_one_line_summary(3, 2, 1)
-        self.assertWritten(err, ["\n", "2 tests ran as expected, 1 didn't:\n", "\n"])
-
-        printer, err = self.get_printer()
-        printer._print_one_line_summary(3, 2, 0)
-        self.assertWritten(err, ['\n', "2 tests ran as expected (1 didn't run).\n", '\n'])
+        # With times:
+        fake_shards = [FakeShard("foo", 1), FakeShard("bar", 2)]
+        run_test(1, 1, 0, fake_shards, ["The test ran as expected in 5.00s (2.00s in rwt, 1x).\n", "\n"])
+        run_test(2, 1, 1, fake_shards, ["\n", "1 test ran as expected, 1 didn't in 5.00s (2.00s in rwt, 1x):\n", "\n"])
+        run_test(3, 2, 1, fake_shards, ["\n", "2 tests ran as expected, 1 didn't in 5.00s (2.00s in rwt, 1x):\n", "\n"])
+        run_test(3, 2, 0, fake_shards, ["\n", "2 tests ran as expected (1 didn't run) in 5.00s (2.00s in rwt, 1x).\n", "\n"])
 
     def test_test_status_line(self):
         printer, _ = self.get_printer()
@@ -175,3 +222,29 @@ class  Testprinter(unittest.TestCase):
         printer.print_started_test('passes/image.html')
         printer.print_finished_test(result, expected=False, exp_str='', got_str='')
         self.assertNotEmpty(err)
+
+    def test_print_found(self):
+        printer, err = self.get_printer()
+
+        printer.print_found(100, 10, 1, 1)
+        self.assertWritten(err, ["Found 100 tests; running 10, skipping 90.\n"])
+
+        self.reset(err)
+        printer.print_found(100, 10, 2, 3)
+        self.assertWritten(err, ["Found 100 tests; running 10 (6 times each: --repeat-each=2 --iterations=3), skipping 90.\n"])
+
+    def test_debug_rwt_logging_is_throttled(self):
+        printer, err = self.get_printer(['--debug-rwt-logging'])
+
+        result = self.get_result('passes/image.html')
+        printer.print_started_test('passes/image.html')
+        printer.print_finished_test(result, expected=True, exp_str='', got_str='')
+
+        printer.print_started_test('passes/text.html')
+        result = self.get_result('passes/text.html')
+        printer.print_finished_test(result, expected=True, exp_str='', got_str='')
+
+        # Only the first test's start should be printed.
+        lines = err.buflist
+        self.assertEqual(len(lines), 1)
+        self.assertTrue(lines[0].endswith('passes/image.html\n'))

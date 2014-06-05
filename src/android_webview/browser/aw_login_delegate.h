@@ -8,13 +8,16 @@
 #include "android_webview/browser/aw_http_auth_handler_base.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
+#include "components/data_reduction_proxy/browser/data_reduction_proxy_auth_request_handler.h"
 #include "content/public/browser/resource_dispatcher_host_login_delegate.h"
 
 namespace net {
 class AuthChallengeInfo;
 class URLRequest;
 }
+
+using data_reduction_proxy::DataReductionProxyAuthRequestHandler;
 
 namespace android_webview {
 
@@ -24,7 +27,8 @@ class AwLoginDelegate :
   AwLoginDelegate(net::AuthChallengeInfo* auth_info,
                   net::URLRequest* request);
 
-  virtual void Proceed(const string16& user, const string16& password);
+  virtual void Proceed(const base::string16& user,
+                       const base::string16& password);
   virtual void Cancel();
 
   // from ResourceDispatcherHostLoginDelegate
@@ -32,15 +36,18 @@ class AwLoginDelegate :
 
  private:
   virtual ~AwLoginDelegate();
-  void HandleHttpAuthRequestOnUIThread();
+  void HandleHttpAuthRequestOnUIThread(bool first_auth_attempt);
   void CancelOnIOThread();
-  void ProceedOnIOThread(const string16& user, const string16& password);
+  void ProceedOnIOThread(const base::string16& user,
+                         const base::string16& password);
+  void DeleteAuthHandlerSoon();
 
   scoped_ptr<AwHttpAuthHandlerBase> aw_http_auth_handler_;
   scoped_refptr<net::AuthChallengeInfo> auth_info_;
   net::URLRequest* request_;
   int render_process_id_;
-  int render_view_id_;
+  int render_frame_id_;
+  scoped_ptr<DataReductionProxyAuthRequestHandler> drp_auth_handler_;
 };
 
 }  // namespace android_webview

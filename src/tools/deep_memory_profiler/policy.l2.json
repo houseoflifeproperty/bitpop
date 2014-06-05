@@ -9,6 +9,8 @@
     "unhooked-absent",
     "unhooked-anonymous",
     "unhooked-file-exec",
+    "unhooked-file-nonexec-others",
+    "unhooked-file-nonexec-group",
     "unhooked-file-nonexec",
     "unhooked-stack",
     "unhooked-other",
@@ -17,6 +19,11 @@
     "mmap-v8-heap-coderange",
     "mmap-v8-heap-pagedspace",
     "mmap-v8-other",
+    "mmap-gpu-mappedmemorymanager",
+    "mmap-gpu-command-ringbuffer",
+    "mmap-gpu-transfer-ringbuffer",
+    "mmap-gpu-gles2-createbuffer",
+    "mmap-skia-font",
     "mmap-catch-all",
     "tc-webcore-fontcache",
     "tc-skia",
@@ -45,11 +52,16 @@
     "tc-webkit-catch-all",
     "tc-v8-catch-all",
     "tc-toplevel-string",
+    "tc-std-treemap",
+    "tc-std-hashmap",
+    "tc-std-vector",
+    "tc-std-other",
     "tc-catch-all",
     "tc-unused",
     "UNTIL_HERE_FOR_TOTAL",
     "total-exclude-profiler",
     "total",
+    "absent",
     "anonymous",
     "file-exec",
     "file-nonexec",
@@ -102,28 +114,41 @@
     },
     {
       "name": "unhooked-anonymous",
-      "stacktrace": "optional",
-      "allocator": "optional"
+      "mappedpathname": "^$",
+      "allocator": "unhooked"
     },
     {
       "name": "unhooked-file-exec",
-      "stacktrace": "optional",
-      "allocator": "optional"
+      "mappedpathname": "^/.*",
+      "mappedpermission": "..x.",
+      "allocator": "unhooked"
+    },
+    {
+      "name": "unhooked-file-nonexec-others",
+      "mappedpathname": "^/.*",
+      "allocator": "unhooked",
+      "sharedwith": ["others"]
+    },
+    {
+      "name": "unhooked-file-nonexec-group",
+      "mappedpathname": "^/.*",
+      "allocator": "unhooked",
+      "sharedwith": ["group"]
     },
     {
       "name": "unhooked-file-nonexec",
-      "stacktrace": "optional",
-      "allocator": "optional"
+      "mappedpathname": "^/.*",
+      "allocator": "unhooked"
     },
     {
       "name": "unhooked-stack",
-      "stacktrace": "optional",
-      "allocator": "optional"
+      "mappedpathname": ".stack.",
+      "allocator": "unhooked"
     },
     {
       "name": "unhooked-other",
-      "stacktrace": "optional",
-      "allocator": "optional"
+      "mappedpathname": ".*",
+      "allocator": "unhooked"
     },
     {
       "name": "mmap-v8-heap-newspace",
@@ -146,13 +171,43 @@
       "allocator": "mmap"
     },
     {
+      "name": "mmap-gpu-mappedmemorymanager",
+      "stacktrace": ".*gpu::MappedMemoryManager::Alloc.*",
+      "allocator": "mmap"
+    },
+    {
+      "name": "mmap-gpu-command-ringbuffer",
+      "stacktrace": ".*gpu::CommandBufferHelper::AllocateRingBuffer.*",
+      "allocator": "mmap"
+    },
+    {
+      "name": "mmap-gpu-transfer-ringbuffer",
+      "stacktrace": ".*gpu::TransferBuffer::AllocateRingBuffer.*",
+      "allocator": "mmap"
+    },
+    {
+      "name": "mmap-gpu-gles2-createbuffer",
+      "stacktrace": ".*gpu::gles2::BufferTracker::CreateBuffer.*",
+      "allocator": "mmap"
+    },
+    {
+      "name": "mmap-skia-font",
+      "stacktrace": ".*SkTypeface::openStream.*",
+      "allocator": "mmap"
+    },
+    {
       "name": "mmap-catch-all",
       "stacktrace": ".*",
       "allocator": "mmap"
     },
     {
+      "name": "tc-webcore-cachedmatchedproperties",
+      "stacktrace": ".*WebCore::CachedMatchedProperties::(set|add).*",
+      "allocator": "malloc"
+    },
+    {
       "name": "tc-webcore-fontcache",
-      "stacktrace": ".*WebCore::FontCache::getCachedFontData.*",
+      "stacktrace": ".*WebCore::FontCache::getFontData.*",
       "allocator": "malloc"
     },
     {
@@ -252,7 +307,12 @@
     },
     {
       "name": "tc-webcore-stylepropertyset",
-      "stacktrace": ".*WebCore::StylePropertySet::create .*",
+      "stacktrace": ".*WebCore::ImmutableStylePropertySet::create .*",
+      "allocator": "malloc"
+    },
+    {
+      "name": "tc-webcore-stylepropertyset",
+      "stacktrace": ".*WebCore::MutableStylePropertySet::create .*",
       "allocator": "malloc"
     },
     {
@@ -396,6 +456,26 @@
       "allocator": "malloc"
     },
     {
+      "name": "tc-std-treemap",
+      "stacktrace": ".*::allocate std::(_Rb_tree|__1::__tree).*",
+      "allocator": "malloc"
+    },
+    {
+      "name": "tc-std-hashmap",
+      "stacktrace": ".*(std::vector::reserve __gnu_cxx::hashtable|::allocate std::_Hashtable|::allocate std::__1::__hash_table).*",
+      "allocator": "malloc"
+    },
+    {
+      "name": "tc-std-vector",
+      "stacktrace": ".*std::(_Vector_base::_M_allocate|__1::vector::allocate).*",
+      "allocator": "malloc"
+    },
+    {
+      "name": "tc-std-other",
+      "stacktrace": ".*(__gnu_cxx::new_allocator::allocate|std::__1::allocator::allocate).*",
+      "allocator": "malloc"
+    },
+    {
       "name": "tc-catch-all",
       "stacktrace": ".*",
       "allocator": "malloc"
@@ -412,6 +492,11 @@
     },
     {
       "name": "total",
+      "stacktrace": "optional",
+      "allocator": "optional"
+    },
+    {
+      "name": "absent",
       "stacktrace": "optional",
       "allocator": "optional"
     },

@@ -6,38 +6,36 @@
 #define CHROME_BROWSER_UI_VIEWS_LOCATION_BAR_LOCATION_ICON_VIEW_H_
 
 #include "chrome/browser/ui/views/location_bar/page_info_helper.h"
-#include "chrome/browser/ui/views/location_bar/touchable_location_bar_view.h"
 #include "ui/views/controls/image_view.h"
 
 class LocationBarView;
-namespace views {
-class MouseEvent;
-}
 
 // LocationIconView is used to display an icon to the left of the edit field.
 // This shows the user's current action while editing, the page security
 // status on https pages, or a globe for other URLs.
-class LocationIconView
-    : public views::ImageView,
-      public TouchableLocationBarView {
+class LocationIconView : public views::ImageView {
  public:
   explicit LocationIconView(LocationBarView* location_bar);
   virtual ~LocationIconView();
 
-  // Overridden from views::ImageView:
+  // views::ImageView:
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
+  virtual bool OnMouseDragged(const ui::MouseEvent& event) OVERRIDE;
 
-  // Overridden from ui::EventHandler:
+  // ui::EventHandler:
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
-
-  // TouchableLocationBarView.
-  virtual int GetBuiltInHorizontalPadding() const OVERRIDE;
 
   // Whether we should show the tooltip for this icon or not.
   void ShowTooltip(bool show);
 
+  PageInfoHelper* page_info_helper() { return &page_info_helper_; }
+
  private:
+  // Handles both click and gesture events by delegating to the page info
+  // helper in the appropriate circumstances.
+  void OnClickOrTap(const ui::LocatedEvent& event);
+
   PageInfoHelper page_info_helper_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(LocationIconView);

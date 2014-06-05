@@ -4,12 +4,24 @@
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* $Id: sslt.h,v 1.23 2012/06/07 02:06:19 wtc%google.com Exp $ */
 
 #ifndef __sslt_h_
 #define __sslt_h_
 
 #include "prtypes.h"
+
+/* SECItemArray is added in NSS 3.15.  Define the type if compiling
+** against an older version of NSS.
+*/
+#include "nssutil.h"
+#if NSSUTIL_VMAJOR == 3 && NSSUTIL_VMINOR < 15
+typedef struct SECItemArrayStr SECItemArray;
+
+struct SECItemArrayStr {
+    SECItem *items;
+    unsigned int len;
+};
+#endif  /* NSSUTIL_VMAJOR == 3 && NSSUTIL_VMINOR < 15 */
 
 typedef struct SSL3StatisticsStr {
     /* statistics from ssl3_SendClientHello (sch) */
@@ -79,9 +91,11 @@ typedef enum {
     ssl_calg_3des     = 4,
     ssl_calg_idea     = 5,
     ssl_calg_fortezza = 6,      /* deprecated, now unused */
-    ssl_calg_aes      = 7,      /* coming soon */
+    ssl_calg_aes      = 7,
     ssl_calg_camellia = 8,
-    ssl_calg_seed     = 9
+    ssl_calg_seed     = 9,
+    ssl_calg_aes_gcm  = 10,
+    ssl_calg_chacha20 = 11
 } SSLCipherAlgorithm;
 
 typedef enum { 
@@ -89,7 +103,9 @@ typedef enum {
     ssl_mac_md5       = 1, 
     ssl_mac_sha       = 2, 
     ssl_hmac_md5      = 3, 	/* TLS HMAC version of mac_md5 */
-    ssl_hmac_sha      = 4 	/* TLS HMAC version of mac_sha */
+    ssl_hmac_sha      = 4, 	/* TLS HMAC version of mac_sha */
+    ssl_hmac_sha256   = 5,
+    ssl_mac_aead      = 6
 } SSLMACAlgorithm;
 
 typedef enum {
@@ -145,6 +161,9 @@ typedef struct SSLCipherSuiteInfoStr {
     PRUint16             effectiveKeyBits;
 
     /* MAC info */
+    /* AEAD ciphers don't have a MAC. For an AEAD cipher, macAlgorithmName
+     * is "AEAD", macAlgorithm is ssl_mac_aead, and macBits is the length in
+     * bits of the authentication tag. */
     const char *         macAlgorithmName;
     SSLMACAlgorithm      macAlgorithm;
     PRUint16             macBits;
@@ -180,13 +199,17 @@ typedef enum {
     ssl_elliptic_curves_xtn          = 10,
     ssl_ec_point_formats_xtn         = 11,
 #endif
+    ssl_signature_algorithms_xtn     = 13,
     ssl_use_srtp_xtn                 = 14,
+    ssl_app_layer_protocol_xtn       = 16,
+    ssl_signed_certificate_timestamp_xtn = 18,   /* RFC 6962 */
+    ssl_padding_xtn                  = 21,
     ssl_session_ticket_xtn           = 35,
     ssl_next_proto_nego_xtn          = 13172,
-    ssl_channel_id_xtn               = 30031,
+    ssl_channel_id_xtn               = 30032,
     ssl_renegotiation_info_xtn       = 0xff01	/* experimental number */
 } SSLExtensionType;
 
-#define SSL_MAX_EXTENSIONS             9
+#define SSL_MAX_EXTENSIONS             12 /* doesn't include ssl_padding_xtn. */
 
 #endif /* __sslt_h_ */

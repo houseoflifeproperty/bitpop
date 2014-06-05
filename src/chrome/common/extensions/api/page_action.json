@@ -5,7 +5,7 @@
 [
   {
     "namespace": "pageAction",
-    "dependencies": [ "tabs" ],
+    "description": "Use the <code>chrome.pageAction</code> API to put icons inside the address bar. Page actions represent actions that can be taken on the current page, but that aren't applicable to all pages.",
     "types": [
       {
         "id": "ImageDataType",
@@ -50,7 +50,7 @@
       {
         "name": "getTitle",
         "type": "function",
-        "description": "Gets the title of the browser action.",
+        "description": "Gets the title of the page action.",
         "parameters": [
           {
             "name": "details",
@@ -149,7 +149,7 @@
       {
         "name": "getPopup",
         "type": "function",
-        "description": "Gets the html document set as the popup for this browser action.",
+        "description": "Gets the html document set as the popup for this page action.",
         "parameters": [
           {
             "name": "details",

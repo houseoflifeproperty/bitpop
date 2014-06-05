@@ -6,6 +6,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #if defined(_MSC_VER)
 #include <windows.h>
 #else
@@ -13,15 +14,33 @@
 #endif
 
 #include "ppapi/c/pp_errors.h"
+#include "ppapi/cpp/instance_handle.h"
 #include "ppapi/cpp/module.h"
+#include "ppapi/cpp/net_address.h"
+#include "ppapi/cpp/private/host_resolver_private.h"
+#include "ppapi/cpp/private/net_address_private.h"
 #include "ppapi/cpp/var.h"
+
+namespace {
+
+bool IsBigEndian() {
+  union {
+    uint32_t integer32;
+    uint8_t integer8[4];
+  } data = { 0x01020304 };
+
+  return data.integer8[0] == 1;
+}
+
+}  // namespace
 
 const int kActionTimeoutMs = 10000;
 
-const PPB_Testing_Dev* GetTestingInterface() {
-  static const PPB_Testing_Dev* g_testing_interface =
-      static_cast<const PPB_Testing_Dev*>(
-          pp::Module::Get()->GetBrowserInterface(PPB_TESTING_DEV_INTERFACE));
+const PPB_Testing_Private* GetTestingInterface() {
+  static const PPB_Testing_Private* g_testing_interface =
+      static_cast<const PPB_Testing_Private*>(
+          pp::Module::Get()->GetBrowserInterface(
+              PPB_TESTING_PRIVATE_INTERFACE));
   return g_testing_interface;
 }
 
@@ -45,7 +64,7 @@ bool GetLocalHostPort(PP_Instance instance, std::string* host, uint16_t* port) {
   if (!host || !port)
     return false;
 
-  const PPB_Testing_Dev* testing = GetTestingInterface();
+  const PPB_Testing_Private* testing = GetTestingInterface();
   if (!testing)
     return false;
 
@@ -71,7 +90,145 @@ bool GetLocalHostPort(PP_Instance instance, std::string* host, uint16_t* port) {
   return true;
 }
 
+uint16_t ConvertFromNetEndian16(uint16_t x) {
+  if (IsBigEndian())
+    return x;
+  else
+    return (x << 8) | (x >> 8);
+}
+
+uint16_t ConvertToNetEndian16(uint16_t x) {
+  if (IsBigEndian())
+    return x;
+  else
+    return (x << 8) | (x >> 8);
+}
+
+bool EqualNetAddress(const pp::NetAddress& addr1, const pp::NetAddress& addr2) {
+  if (addr1.GetFamily() == PP_NETADDRESS_FAMILY_UNSPECIFIED ||
+      addr2.GetFamily() == PP_NETADDRESS_FAMILY_UNSPECIFIED) {
+    return false;
+  }
+
+  if (addr1.GetFamily() == PP_NETADDRESS_FAMILY_IPV4) {
+    PP_NetAddress_IPv4 ipv4_addr1, ipv4_addr2;
+    if (!addr1.DescribeAsIPv4Address(&ipv4_addr1) ||
+        !addr2.DescribeAsIPv4Address(&ipv4_addr2)) {
+      return false;
+    }
+
+    return ipv4_addr1.port == ipv4_addr2.port &&
+           !memcmp(ipv4_addr1.addr, ipv4_addr2.addr, sizeof(ipv4_addr1.addr));
+  } else {
+    PP_NetAddress_IPv6 ipv6_addr1, ipv6_addr2;
+    if (!addr1.DescribeAsIPv6Address(&ipv6_addr1) ||
+        !addr2.DescribeAsIPv6Address(&ipv6_addr2)) {
+      return false;
+    }
+
+    return ipv6_addr1.port == ipv6_addr2.port &&
+           !memcmp(ipv6_addr1.addr, ipv6_addr2.addr, sizeof(ipv6_addr1.addr));
+  }
+}
+
+bool ResolveHost(PP_Instance instance,
+                 const std::string& host,
+                 uint16_t port,
+                 pp::NetAddress* addr) {
+  // TODO(yzshen): Change to use the public host resolver once it is supported.
+  pp::InstanceHandle instance_handle(instance);
+  pp::HostResolverPrivate host_resolver(instance_handle);
+  PP_HostResolver_Private_Hint hint =
+      { PP_NETADDRESSFAMILY_PRIVATE_UNSPECIFIED, 0 };
+
+  TestCompletionCallback callback(instance);
+  callback.WaitForResult(
+      host_resolver.Resolve(host, port, hint, callback.GetCallback()));
+
+  PP_NetAddress_Private addr_private;
+  if (callback.result() != PP_OK || host_resolver.GetSize() == 0 ||
+      !host_resolver.GetNetAddress(0, &addr_private)) {
+    return false;
+  }
+
+  switch (pp::NetAddressPrivate::GetFamily(addr_private)) {
+    case PP_NETADDRESSFAMILY_PRIVATE_IPV4: {
+      PP_NetAddress_IPv4 ipv4_addr;
+      ipv4_addr.port = ConvertToNetEndian16(
+          pp::NetAddressPrivate::GetPort(addr_private));
+      if (!pp::NetAddressPrivate::GetAddress(addr_private, ipv4_addr.addr,
+                                             sizeof(ipv4_addr.addr))) {
+        return false;
+      }
+      *addr = pp::NetAddress(instance_handle, ipv4_addr);
+      return true;
+    }
+    case PP_NETADDRESSFAMILY_PRIVATE_IPV6: {
+      PP_NetAddress_IPv6 ipv6_addr;
+      ipv6_addr.port = ConvertToNetEndian16(
+          pp::NetAddressPrivate::GetPort(addr_private));
+      if (!pp::NetAddressPrivate::GetAddress(addr_private, ipv6_addr.addr,
+                                             sizeof(ipv6_addr.addr))) {
+        return false;
+      }
+      *addr = pp::NetAddress(instance_handle, ipv6_addr);
+      return true;
+    }
+    default: {
+      return false;
+    }
+  }
+}
+
+bool ReplacePort(PP_Instance instance,
+                 const pp::NetAddress& input_addr,
+                 uint16_t port,
+                 pp::NetAddress* output_addr) {
+  switch (input_addr.GetFamily()) {
+    case PP_NETADDRESS_FAMILY_IPV4: {
+      PP_NetAddress_IPv4 ipv4_addr;
+      if (!input_addr.DescribeAsIPv4Address(&ipv4_addr))
+        return false;
+      ipv4_addr.port = ConvertToNetEndian16(port);
+      *output_addr = pp::NetAddress(pp::InstanceHandle(instance), ipv4_addr);
+      return true;
+    }
+    case PP_NETADDRESS_FAMILY_IPV6: {
+      PP_NetAddress_IPv6 ipv6_addr;
+      if (!input_addr.DescribeAsIPv6Address(&ipv6_addr))
+        return false;
+      ipv6_addr.port = ConvertToNetEndian16(port);
+      *output_addr = pp::NetAddress(pp::InstanceHandle(instance), ipv6_addr);
+      return true;
+    }
+    default: {
+      return false;
+    }
+  }
+}
+
+uint16_t GetPort(const pp::NetAddress& addr) {
+  switch (addr.GetFamily()) {
+    case PP_NETADDRESS_FAMILY_IPV4: {
+      PP_NetAddress_IPv4 ipv4_addr;
+      if (!addr.DescribeAsIPv4Address(&ipv4_addr))
+        return 0;
+      return ConvertFromNetEndian16(ipv4_addr.port);
+    }
+    case PP_NETADDRESS_FAMILY_IPV6: {
+      PP_NetAddress_IPv6 ipv6_addr;
+      if (!addr.DescribeAsIPv6Address(&ipv6_addr))
+        return 0;
+      return ConvertFromNetEndian16(ipv6_addr.port);
+    }
+    default: {
+      return 0;
+    }
+  }
+}
+
 void NestedEvent::Wait() {
+  PP_DCHECK(pp::Module::Get()->core()->IsMainThread());
   // Don't allow nesting more than once; it doesn't work with the code as-is,
   // and probably is a bad idea most of the time anyway.
   PP_DCHECK(!waiting_);
@@ -84,17 +241,35 @@ void NestedEvent::Wait() {
 }
 
 void NestedEvent::Signal() {
+  if (pp::Module::Get()->core()->IsMainThread())
+    SignalOnMainThread();
+  else
+    PostSignal(0);
+}
+
+void NestedEvent::PostSignal(int32_t wait_ms) {
+  pp::Module::Get()->core()->CallOnMainThread(
+      wait_ms,
+      pp::CompletionCallback(&SignalThunk, this),
+      0);
+}
+
+void NestedEvent::Reset() {
+  PP_DCHECK(pp::Module::Get()->core()->IsMainThread());
+  // It doesn't make sense to reset when we're still waiting.
+  PP_DCHECK(!waiting_);
+  signalled_ = false;
+}
+
+void NestedEvent::SignalOnMainThread() {
+  PP_DCHECK(pp::Module::Get()->core()->IsMainThread());
   signalled_ = true;
   if (waiting_)
     GetTestingInterface()->QuitMessageLoop(instance_);
 }
 
-void NestedEvent::Reset() {
-  // It doesn't make sense to reset when we're still waiting.
-  PP_DCHECK(!waiting_);
-  // We must have already been Signalled().
-  PP_DCHECK(signalled_);
-  signalled_ = false;
+void NestedEvent::SignalThunk(void* event, int32_t /* result */) {
+  static_cast<NestedEvent*>(event)->SignalOnMainThread();
 }
 
 TestCompletionCallback::TestCompletionCallback(PP_Instance instance)
@@ -105,7 +280,6 @@ TestCompletionCallback::TestCompletionCallback(PP_Instance instance)
       //                 what the tests currently expect.
       callback_type_(PP_OPTIONAL),
       post_quit_task_(false),
-      run_count_(0),  // TODO(dmichael): Remove when all tests are updated.
       instance_(instance),
       delegate_(NULL) {
 }
@@ -130,17 +304,6 @@ TestCompletionCallback::TestCompletionCallback(PP_Instance instance,
       post_quit_task_(false),
       instance_(instance),
       delegate_(NULL) {
-}
-
-int32_t TestCompletionCallback::WaitForResult() {
-  PP_DCHECK(!wait_for_result_called_);
-  wait_for_result_called_ = true;
-  errors_.clear();
-  if (!have_result_) {
-    post_quit_task_ = true;
-    RunMessageLoop();
-  }
-  return result_;
 }
 
 void TestCompletionCallback::WaitForResult(int32_t result) {
@@ -211,7 +374,6 @@ void TestCompletionCallback::Reset() {
   result_ = PP_OK_COMPLETIONPENDING;
   have_result_ = false;
   post_quit_task_ = false;
-  run_count_ = 0;  // TODO(dmichael): Remove when all tests are updated.
   delegate_ = NULL;
   errors_.clear();
 }
@@ -225,7 +387,6 @@ void TestCompletionCallback::Handler(void* user_data, int32_t result) {
   PP_DCHECK(!callback->have_result_);
   callback->result_ = result;
   callback->have_result_ = true;
-  callback->run_count_++;  // TODO(dmichael): Remove when all tests are updated.
   if (callback->delegate_)
     callback->delegate_->OnCallback(user_data, result);
   if (callback->post_quit_task_) {

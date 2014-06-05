@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/panels/display_settings_provider.h"
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "chrome/browser/fullscreen.h"
 #include "ui/gfx/screen.h"
@@ -21,14 +22,12 @@ DisplaySettingsProvider::DisplaySettingsProvider()
 DisplaySettingsProvider::~DisplaySettingsProvider() {
 }
 
-void DisplaySettingsProvider::AddDisplayAreaObserver(
-    DisplayAreaObserver* observer) {
-  display_area_observers_.AddObserver(observer);
+void DisplaySettingsProvider::AddDisplayObserver(DisplayObserver* observer) {
+  display_observers_.AddObserver(observer);
 }
 
-void DisplaySettingsProvider::RemoveDisplayAreaObserver(
-    DisplayAreaObserver* observer) {
-  display_area_observers_.RemoveObserver(observer);
+void DisplaySettingsProvider::RemoveDisplayObserver(DisplayObserver* observer) {
+  display_observers_.RemoveObserver(observer);
 }
 
 void DisplaySettingsProvider::AddDesktopBarObserver(
@@ -43,12 +42,16 @@ void DisplaySettingsProvider::RemoveDesktopBarObserver(
 
 void DisplaySettingsProvider::AddFullScreenObserver(
     FullScreenObserver* observer) {
+  is_full_screen_ = IsFullScreen();
+  bool already_started = full_screen_observers_.might_have_observers();
   full_screen_observers_.AddObserver(observer);
 
-  if (full_screen_observers_.size() == 1 && NeedsPeriodicFullScreenCheck()) {
+  if (!already_started && NeedsPeriodicFullScreenCheck()) {
     full_screen_mode_timer_.Start(FROM_HERE,
         base::TimeDelta::FromMilliseconds(kFullScreenModeCheckIntervalMs),
-        this, &DisplaySettingsProvider::CheckFullScreenMode);
+        base::Bind(&DisplaySettingsProvider::CheckFullScreenMode,
+                   base::Unretained(this),
+                   PERFORM_FULLSCREEN_CHECK));
   }
 }
 
@@ -56,25 +59,17 @@ void DisplaySettingsProvider::RemoveFullScreenObserver(
     FullScreenObserver* observer) {
   full_screen_observers_.RemoveObserver(observer);
 
-  if (full_screen_observers_.size() == 0)
+  if (!full_screen_observers_.might_have_observers())
     full_screen_mode_timer_.Stop();
 }
 
-gfx::Rect DisplaySettingsProvider::GetDisplayArea() {
-  // Do the first-time initialization if not yet.
-  if (adjusted_work_area_.IsEmpty())
-    OnDisplaySettingsChanged();
-
-  return adjusted_work_area_;
-}
-
 // TODO(scottmg): This should be moved to ui/.
-gfx::Rect DisplaySettingsProvider::GetPrimaryScreenArea() const {
+gfx::Rect DisplaySettingsProvider::GetPrimaryDisplayArea() const {
   // TODO(scottmg): NativeScreen is wrong. http://crbug.com/133312
   return gfx::Screen::GetNativeScreen()->GetPrimaryDisplay().bounds();
 }
 
-gfx::Rect DisplaySettingsProvider::GetWorkArea() const {
+gfx::Rect DisplaySettingsProvider::GetPrimaryWorkArea() const {
 #if defined(OS_MACOSX)
   // On OSX, panels should be dropped all the way to the bottom edge of the
   // screen (and overlap Dock). And we also want to exclude the system menu
@@ -92,30 +87,28 @@ gfx::Rect DisplaySettingsProvider::GetWorkArea() const {
   return display_area;
 #else
   // TODO(scottmg): NativeScreen is wrong. http://crbug.com/133312
-  gfx::Rect work_area =
-      gfx::Screen::GetNativeScreen()->GetPrimaryDisplay().work_area();
-  return work_area;
+  return gfx::Screen::GetNativeScreen()->GetPrimaryDisplay().work_area();
 #endif
 }
 
-void DisplaySettingsProvider::OnDisplaySettingsChanged() {
-  gfx::Rect work_area = GetWorkArea();
-  if (work_area == work_area_)
-    return;
-  work_area_ = work_area;
-
-  OnAutoHidingDesktopBarChanged();
+gfx::Rect DisplaySettingsProvider::GetDisplayAreaMatching(
+    const gfx::Rect& bounds) const {
+  // TODO(scottmg): NativeScreen is wrong. http://crbug.com/133312
+  return gfx::Screen::GetNativeScreen()->GetDisplayMatching(bounds).bounds();
 }
 
-void DisplaySettingsProvider::OnAutoHidingDesktopBarChanged() {
-  gfx::Rect old_adjusted_work_area = adjusted_work_area_;
-  AdjustWorkAreaForAutoHidingDesktopBars();
+gfx::Rect DisplaySettingsProvider::GetWorkAreaMatching(
+    const gfx::Rect& bounds) const {
+  // TODO(scottmg): NativeScreen is wrong. http://crbug.com/133312
+  gfx::Screen* screen = gfx::Screen::GetNativeScreen();
+  gfx::Display display = screen->GetDisplayMatching(bounds);
+  if (display.bounds() == screen->GetPrimaryDisplay().bounds())
+    return GetPrimaryWorkArea();
+  return display.work_area();
+}
 
-  if (old_adjusted_work_area != adjusted_work_area_) {
-    FOR_EACH_OBSERVER(DisplayAreaObserver,
-                      display_area_observers_,
-                      OnDisplayAreaChanged(adjusted_work_area_));
-  }
+void DisplaySettingsProvider::OnDisplaySettingsChanged() {
+  FOR_EACH_OBSERVER(DisplayObserver, display_observers_, OnDisplayChanged());
 }
 
 bool DisplaySettingsProvider::IsAutoHidingDesktopBarEnabled(
@@ -134,32 +127,27 @@ DisplaySettingsProvider::GetDesktopBarVisibility(
   return DESKTOP_BAR_VISIBLE;
 }
 
-void DisplaySettingsProvider::AdjustWorkAreaForAutoHidingDesktopBars() {
-  // Note that we do not care about the top desktop bar since panels could not
-  // reach so high due to size constraint. We also do not care about the bottom
-  // desktop bar since we always align the panel to the bottom of the work area.
-  adjusted_work_area_ = work_area_;
-  if (IsAutoHidingDesktopBarEnabled(
-      DisplaySettingsProvider::DESKTOP_BAR_ALIGNED_LEFT)) {
-    int space = GetDesktopBarThickness(
-        DisplaySettingsProvider::DESKTOP_BAR_ALIGNED_LEFT);
-    adjusted_work_area_.set_x(adjusted_work_area_.x() + space);
-    adjusted_work_area_.set_width(adjusted_work_area_.width() - space);
-  }
-  if (IsAutoHidingDesktopBarEnabled(
-      DisplaySettingsProvider::DESKTOP_BAR_ALIGNED_RIGHT)) {
-    int space = GetDesktopBarThickness(
-        DisplaySettingsProvider::DESKTOP_BAR_ALIGNED_RIGHT);
-    adjusted_work_area_.set_width(adjusted_work_area_.width() - space);
-  }
-}
-
 bool DisplaySettingsProvider::NeedsPeriodicFullScreenCheck() const {
   return true;
 }
 
-void DisplaySettingsProvider::CheckFullScreenMode() {
-  bool is_full_screen = IsFullScreen();
+void DisplaySettingsProvider::CheckFullScreenMode(
+    FullScreenCheckMode check_mode) {
+  bool is_full_screen = false;
+  switch (check_mode) {
+    case ASSUME_FULLSCREEN_ON:
+      is_full_screen = true;
+      break;
+    case ASSUME_FULLSCREEN_OFF:
+      is_full_screen = false;
+      break;
+    case PERFORM_FULLSCREEN_CHECK:
+      is_full_screen = IsFullScreen();
+      break;
+    default:
+      NOTREACHED();
+      break;
+  }
   if (is_full_screen == is_full_screen_)
     return;
   is_full_screen_ = is_full_screen;
@@ -169,7 +157,7 @@ void DisplaySettingsProvider::CheckFullScreenMode() {
                     OnFullScreenModeChanged(is_full_screen_));
 }
 
-bool DisplaySettingsProvider::IsFullScreen() const {
+bool DisplaySettingsProvider::IsFullScreen() {
   return IsFullScreenMode();
 }
 

@@ -16,6 +16,12 @@ Options include:
         If =bool is omitted, 'True' is assumped. Legal values for bool is
         'True' and 'False'.
   --table_remove=name - Remove table 'name' from decoder. May be repeated.
+  --auto-actual=name - Install automatically generated actuals into the
+        decoder table with the given name. May be repeated.
+  --auto-actual-sep=name - Use as separator to split up automatically
+        generated actual classes.
+  --auto-baseline-sep=name - Use as separator to split up automatically
+        generated baseline classes.
 
   name - Only generate tests for table 'name'. May be repeated.
 
@@ -32,6 +38,9 @@ import dgen_input
 import dgen_add_patterns
 import dgen_decoder_output
 import dgen_test_output
+import dgen_actuals
+import dgen_baselines
+import dgen_decoder
 
 def _localize_filename(filename):
   """ Strips off directories above 'native_client', returning
@@ -44,6 +53,22 @@ def _localize_filename(filename):
     # Don't know localized
     return filename
 
+def install_actuals_and_baselines(decoder, cl_args):
+    if not decoder.primary: raise Exception('No tables provided')
+
+    decoder = dgen_decoder.AddImplicitMethodsToDecoder(decoder)
+
+    # Generate baselines form descriptions in tables.
+    decoder = dgen_baselines.AddBaselinesToDecoder(decoder)
+
+    # Generate actuals from descriptions in tables.
+    decoder = dgen_actuals.AddAutoActualsToDecoder(
+        decoder, decoder.table_names())
+
+    print "Installed generated actuals and baselines."
+
+    return decoder
+
 def main(argv):
     table_filename = argv[1]
     output_filename = argv[2]
@@ -52,6 +77,9 @@ def main(argv):
 
     # Define default command line arguments.
     cl_args = {'add-rule-patterns': 'True',
+               'auto-actual': [],
+               'auto-actual-sep': [],
+               'auto-baseline-sep': [],
                'table_remove': [],
                'table': [],
                }
@@ -74,6 +102,10 @@ def main(argv):
         else:
           # Single valued CL arugment, update to hold value.
           cl_args[cl_name] = cl_value
+
+    # Fix separators by sorting.
+    cl_args['auto-actual-sep'] = sorted(cl_args['auto-actual-sep'])
+    cl_args['auto-baseline-sep'] = sorted(cl_args['auto-baseline-sep'])
 
     print "cl args = %s" % cl_args
 
@@ -100,6 +132,8 @@ def main(argv):
 
     print "Successful - got %d tables." % len(decoder.tables())
 
+    decoder = install_actuals_and_baselines(decoder, cl_args)
+
     print "Generating %s..." % output_filename
     f = open(output_filename, 'w')
 
@@ -108,20 +142,52 @@ def main(argv):
                                          decoder_name,
                                          f, cl_args,
                                          cl_args.get('table'))
-    elif output_filename.endswith('named_classes.h'):
+    elif output_filename.endswith('_named_classes.h'):
       dgen_test_output.generate_named_classes_h(
           decoder, decoder_name, _localize_filename(output_filename),
           f, cl_args)
-    elif output_filename.endswith('named_decoder.h'):
+    elif output_filename.endswith('_named_bases.h'):
+      dgen_test_output.generate_named_bases_h(
+          decoder, decoder_name, _localize_filename(output_filename),
+          f, cl_args)
+    elif output_filename.endswith('_named_decoder.h'):
       dgen_test_output.generate_named_decoder_h(
+          decoder, decoder_name, _localize_filename(output_filename),
+          f, cl_args)
+    elif output_filename.endswith('_actuals.h'):
+      dgen_actuals.generate_actuals_base_h(
+          decoder, decoder_name, _localize_filename(output_filename),
+          f, cl_args)
+    elif _actual_suffix_in(output_filename, 'actuals_%s.h', cl_args):
+      dgen_actuals.generate_actuals_h(
+          decoder, decoder_name, _localize_filename(output_filename),
+          f, cl_args)
+    elif output_filename.endswith('baselines.h'):
+      dgen_baselines.generate_baselines_base_h(
+          decoder, decoder_name, _localize_filename(output_filename),
+          f, cl_args)
+    elif _baseline_suffix_in(output_filename, 'baselines_%s.h', cl_args):
+      dgen_baselines.generate_baselines_h(
+          decoder, decoder_name, _localize_filename(output_filename),
+          f, cl_args)
+    elif output_filename.endswith('baselines.h'):
+      dgen_baselines.generate_baselines_h(
           decoder, decoder_name, _localize_filename(output_filename),
           f, cl_args)
     elif output_filename.endswith('.h'):
       dgen_decoder_output.generate_h(
           decoder, decoder_name, _localize_filename(output_filename),
           f, cl_args)
-    elif output_filename.endswith('named.cc'):
+    elif output_filename.endswith('_named.cc'):
       dgen_test_output.generate_named_cc(
+          decoder, decoder_name, _localize_filename(output_filename),
+          f, cl_args)
+    elif _actual_suffix_in(output_filename, 'actuals_%s.cc', cl_args):
+      dgen_actuals.generate_actuals_cc(
+          decoder, decoder_name, _localize_filename(output_filename),
+          f, cl_args)
+    elif _baseline_suffix_in(output_filename, 'baselines_%s.cc', cl_args):
+      dgen_baselines.generate_baselines_cc(
           decoder, decoder_name, _localize_filename(output_filename),
           f, cl_args)
     elif output_filename.endswith('.cc'):
@@ -134,6 +200,20 @@ def main(argv):
     print "Completed."
 
     return 0
+
+def _cl_arg_suffix_in(name, format, separators):
+  num_separators = len(separators) + 1
+  assert num_separators > 1
+  for n in range(1, num_separators + 1):
+    if name.endswith(format % n):
+      return True
+  return False
+
+def _actual_suffix_in(name, format, cl_args):
+  return _cl_arg_suffix_in(name, format, cl_args['auto-actual-sep'])
+
+def _baseline_suffix_in(name, format, cl_args):
+  return _cl_arg_suffix_in(name, format, cl_args['auto-baseline-sep'])
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))

@@ -8,11 +8,9 @@
 #include <string.h>
 #include <string>
 
-#include "ppapi/c/dev/ppb_testing_dev.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/ppb_file_io.h"
 #include "ppapi/c/ppb_url_loader.h"
-#include "ppapi/c/trusted/ppb_file_io_trusted.h"
 #include "ppapi/c/trusted/ppb_url_loader_trusted.h"
 #include "ppapi/cpp/dev/url_util_dev.h"
 #include "ppapi/cpp/file_io.h"
@@ -20,6 +18,7 @@
 #include "ppapi/cpp/file_system.h"
 #include "ppapi/cpp/instance.h"
 #include "ppapi/cpp/module.h"
+#include "ppapi/cpp/private/file_io_private.h"
 #include "ppapi/cpp/url_loader.h"
 #include "ppapi/cpp/url_request_info.h"
 #include "ppapi/cpp/url_response_info.h"
@@ -44,7 +43,7 @@ int32_t WriteEntireBuffer(PP_Instance instance,
     callback.WaitForResult(file_io->Write(write_offset,
                                           &buf[write_offset - offset],
                                           size - write_offset + offset,
-                                          callback));
+                                          callback.GetCallback()));
     if (callback.result() < 0)
       return callback.result();
     if (callback.result() == 0)
@@ -59,7 +58,7 @@ int32_t WriteEntireBuffer(PP_Instance instance,
 
 TestURLLoader::TestURLLoader(TestingInstance* instance)
     : TestCase(instance),
-      file_io_trusted_interface_(NULL),
+      file_io_private_interface_(NULL),
       url_loader_trusted_interface_(NULL) {
 }
 
@@ -74,20 +73,18 @@ bool TestURLLoader::Init() {
   if (!file_io_interface)
     instance_->AppendError("FileIO interface not available");
 
-  file_io_trusted_interface_ = static_cast<const PPB_FileIOTrusted*>(
-      pp::Module::Get()->GetBrowserInterface(PPB_FILEIOTRUSTED_INTERFACE));
+  file_io_private_interface_ = static_cast<const PPB_FileIO_Private*>(
+      pp::Module::Get()->GetBrowserInterface(PPB_FILEIO_PRIVATE_INTERFACE));
+  if (!file_io_private_interface_)
+    instance_->AppendError("FileIO_Private interface not available");
   url_loader_trusted_interface_ = static_cast<const PPB_URLLoaderTrusted*>(
       pp::Module::Get()->GetBrowserInterface(PPB_URLLOADERTRUSTED_INTERFACE));
   if (!testing_interface_->IsOutOfProcess()) {
     // Trusted interfaces are not supported under NaCl.
 #if !(defined __native_client__)
-    if (!file_io_trusted_interface_)
-      instance_->AppendError("FileIOTrusted interface not available");
     if (!url_loader_trusted_interface_)
       instance_->AppendError("URLLoaderTrusted interface not available");
 #else
-    if (file_io_trusted_interface_)
-      instance_->AppendError("FileIOTrusted interface is supported by NaCl");
     if (url_loader_trusted_interface_)
       instance_->AppendError("URLLoaderTrusted interface is supported by NaCl");
 #endif
@@ -95,7 +92,37 @@ bool TestURLLoader::Init() {
   return EnsureRunningOverHTTP();
 }
 
+/*
+ * The test order is important here, as running tests out of order may cause
+ * test timeout.
+ *
+ * Here is the environment:
+ *
+ * 1. TestServer.py only accepts one open connection at the time.
+ * 2. HTTP socket pool keeps sockets open for several seconds after last use
+ * (hoping that there will be another request that could reuse the connection).
+ * 3. HTTP socket pool is separated by host/port and privacy mode (which is
+ * based on cookies set/get permissions). So, connections to 127.0.0.1,
+ * localhost and localhost in privacy mode cannot reuse existing socket and will
+ * try to open another connection.
+ *
+ * Here is the problem:
+ *
+ * Original test order was repeatedly accessing 127.0.0.1, localhost and
+ * localhost in privacy mode, causing new sockets to open and try to connect to
+ * testserver, which they couldn't until previous connection is closed by socket
+ * pool idle socket timeout (10 seconds).
+ *
+ * Because of this the test run was taking around 45 seconds, and test was
+ * reported as 'timed out' by trybot.
+ *
+ * Re-ordering of tests provides more sequential access to 127.0.0.1, localhost
+ * and localhost in privacy mode. It decreases the number of times when socket
+ * pool doesn't have existing connection to host and has to wait, therefore
+ * reducing total test time and ensuring its completion under 30 seconds.
+ */
 void TestURLLoader::RunTests(const std::string& filter) {
+  // These tests connect to 127.0.0.1:
   RUN_CALLBACK_TEST(TestURLLoader, BasicGET, filter);
   RUN_CALLBACK_TEST(TestURLLoader, BasicPOST, filter);
   RUN_CALLBACK_TEST(TestURLLoader, BasicFilePOST, filter);
@@ -106,10 +133,6 @@ void TestURLLoader::RunTests(const std::string& filter) {
   RUN_CALLBACK_TEST(TestURLLoader, CustomRequestHeader, filter);
   RUN_CALLBACK_TEST(TestURLLoader, FailsBogusContentLength, filter);
   RUN_CALLBACK_TEST(TestURLLoader, StreamToFile, filter);
-  RUN_CALLBACK_TEST(TestURLLoader, UntrustedSameOriginRestriction, filter);
-  RUN_CALLBACK_TEST(TestURLLoader, TrustedSameOriginRestriction, filter);
-  RUN_CALLBACK_TEST(TestURLLoader, UntrustedCrossOriginRequest, filter);
-  RUN_CALLBACK_TEST(TestURLLoader, TrustedCrossOriginRequest, filter);
   RUN_CALLBACK_TEST(TestURLLoader, UntrustedJavascriptURLRestriction, filter);
   RUN_CALLBACK_TEST(TestURLLoader, TrustedJavascriptURLRestriction, filter);
   RUN_CALLBACK_TEST(TestURLLoader, UntrustedHttpRequests, filter);
@@ -119,6 +142,12 @@ void TestURLLoader::RunTests(const std::string& filter) {
   RUN_CALLBACK_TEST(TestURLLoader, AbortCalls, filter);
   RUN_CALLBACK_TEST(TestURLLoader, UntendedLoad, filter);
   RUN_CALLBACK_TEST(TestURLLoader, PrefetchBufferThreshold, filter);
+  // These tests connect to localhost with privacy mode enabled:
+  RUN_CALLBACK_TEST(TestURLLoader, UntrustedSameOriginRestriction, filter);
+  RUN_CALLBACK_TEST(TestURLLoader, UntrustedCrossOriginRequest, filter);
+  // These tests connect to localhost with privacy mode disabled:
+  RUN_CALLBACK_TEST(TestURLLoader, TrustedSameOriginRestriction, filter);
+  RUN_CALLBACK_TEST(TestURLLoader, TrustedCrossOriginRequest, filter);
 }
 
 std::string TestURLLoader::ReadEntireFile(pp::FileIO* file_io,
@@ -128,7 +157,8 @@ std::string TestURLLoader::ReadEntireFile(pp::FileIO* file_io,
   int64_t offset = 0;
 
   for (;;) {
-    callback.WaitForResult(file_io->Read(offset, buf, sizeof(buf), callback));
+    callback.WaitForResult(file_io->Read(offset, buf, sizeof(buf),
+                           callback.GetCallback()));
     if (callback.result() < 0)
       return ReportError("FileIO::Read", callback.result());
     if (callback.result() == 0)
@@ -147,7 +177,7 @@ std::string TestURLLoader::ReadEntireResponseBody(pp::URLLoader* loader,
 
   for (;;) {
     callback.WaitForResult(
-        loader->ReadResponseBody(buf, sizeof(buf), callback));
+        loader->ReadResponseBody(buf, sizeof(buf), callback.GetCallback()));
     if (callback.result() < 0)
       return ReportError("URLLoader::ReadResponseBody", callback.result());
     if (callback.result() == 0)
@@ -164,7 +194,7 @@ std::string TestURLLoader::LoadAndCompareBody(
   TestCompletionCallback callback(instance_->pp_instance(), callback_type());
 
   pp::URLLoader loader(instance_);
-  callback.WaitForResult(loader.Open(request, callback));
+  callback.WaitForResult(loader.Open(request, callback.GetCallback()));
   CHECK_CALLBACK_BEHAVIOR(callback);
   ASSERT_EQ(PP_OK, callback.result());
 
@@ -191,7 +221,7 @@ std::string TestURLLoader::LoadAndCompareBody(
 int32_t TestURLLoader::OpenFileSystem(pp::FileSystem* file_system,
                                       std::string* message) {
   TestCompletionCallback callback(instance_->pp_instance(), callback_type());
-  callback.WaitForResult(file_system->Open(1024, callback));
+  callback.WaitForResult(file_system->Open(1024, callback.GetCallback()));
   if (callback.failed()) {
     message->assign(callback.errors());
     return callback.result();
@@ -213,7 +243,7 @@ int32_t TestURLLoader::PrepareFileForPost(
                                       PP_FILEOPENFLAG_CREATE |
                                       PP_FILEOPENFLAG_TRUNCATE |
                                       PP_FILEOPENFLAG_WRITE,
-                                      callback));
+                                      callback.GetCallback()));
   if (callback.failed()) {
     message->assign(callback.errors());
     return callback.result();
@@ -297,7 +327,7 @@ int32_t TestURLLoader::Open(const pp::URLRequestInfo& request,
   if (trusted)
     url_loader_trusted_interface_->GrantUniversalAccess(loader.pp_resource());
   TestCompletionCallback callback(instance_->pp_instance(), callback_type());
-  callback.WaitForResult(loader.Open(request, callback));
+  callback.WaitForResult(loader.Open(request, callback.GetCallback()));
   return callback.result();
 }
 
@@ -374,7 +404,7 @@ std::string TestURLLoader::TestEmptyDataPOST() {
   request.SetURL("/echo");
   request.SetMethod("POST");
   request.AppendDataToBody("", 0);
-  return LoadAndCompareBody(request, "");
+  return LoadAndCompareBody(request, std::string());
 }
 
 std::string TestURLLoader::TestBinaryDataPOST() {
@@ -421,7 +451,7 @@ std::string TestURLLoader::TestStreamToFile() {
   TestCompletionCallback callback(instance_->pp_instance(), callback_type());
 
   pp::URLLoader loader(instance_);
-  callback.WaitForResult(loader.Open(request, callback));
+  callback.WaitForResult(loader.Open(request, callback.GetCallback()));
   CHECK_CALLBACK_BEHAVIOR(callback);
   ASSERT_EQ(PP_OK, callback.result());
 
@@ -436,12 +466,13 @@ std::string TestURLLoader::TestStreamToFile() {
   if (body.is_null())
     return "URLResponseInfo::GetBody returned null";
 
-  callback.WaitForResult(loader.FinishStreamingToFile(callback));
+  callback.WaitForResult(loader.FinishStreamingToFile(callback.GetCallback()));
   CHECK_CALLBACK_BEHAVIOR(callback);
   ASSERT_EQ(PP_OK, callback.result());
 
   pp::FileIO reader(instance_);
-  callback.WaitForResult(reader.Open(body, PP_FILEOPENFLAG_READ, callback));
+  callback.WaitForResult(reader.Open(body, PP_FILEOPENFLAG_READ,
+                                     callback.GetCallback()));
   CHECK_CALLBACK_BEHAVIOR(callback);
   ASSERT_EQ(PP_OK, callback.result());
 
@@ -456,15 +487,6 @@ std::string TestURLLoader::TestStreamToFile() {
   if (data != expected_body)
     return "ReadEntireFile returned unexpected content";
 
-  // FileIOTrusted is not supported by NaCl or ppapi/proxy.
-  if (!testing_interface_->IsOutOfProcess()) {
-#if !(defined __native_client__)
-    int32_t file_descriptor = file_io_trusted_interface_->GetOSFileDescriptor(
-        reader.pp_resource());
-    if (file_descriptor < 0)
-      return "FileIO::GetOSFileDescriptor() returned a bad file descriptor.";
-#endif
-  }
   PASS();
 }
 
@@ -556,39 +578,38 @@ std::string TestURLLoader::TestUntrustedHttpRequests() {
   // valid token (containing special characters like CR, LF).
   // http://www.w3.org/TR/XMLHttpRequest/
   {
-    ASSERT_EQ(OpenUntrusted("cOnNeCt", ""), PP_ERROR_NOACCESS);
-    ASSERT_EQ(OpenUntrusted("tRaCk", ""), PP_ERROR_NOACCESS);
-    ASSERT_EQ(OpenUntrusted("tRaCe", ""), PP_ERROR_NOACCESS);
-    ASSERT_EQ(OpenUntrusted("POST\x0d\x0ax-csrf-token:\x20test1234", ""),
-                            PP_ERROR_NOACCESS);
+    ASSERT_EQ(PP_ERROR_NOACCESS, OpenUntrusted("cOnNeCt", std::string()));
+    ASSERT_EQ(PP_ERROR_NOACCESS, OpenUntrusted("tRaCk", std::string()));
+    ASSERT_EQ(PP_ERROR_NOACCESS, OpenUntrusted("tRaCe", std::string()));
+    ASSERT_EQ(PP_ERROR_NOACCESS,
+        OpenUntrusted("POST\x0d\x0ax-csrf-token:\x20test1234", std::string()));
   }
   // HTTP methods are restricted only for untrusted loaders. Try all headers
   // that are forbidden by http://www.w3.org/TR/XMLHttpRequest/.
   {
-    ASSERT_EQ(OpenUntrusted("GET", "Accept-Charset:\n"), PP_ERROR_NOACCESS);
-    ASSERT_EQ(OpenUntrusted("GET", "Accept-Encoding:\n"), PP_ERROR_NOACCESS);
-    ASSERT_EQ(OpenUntrusted("GET", "Connection:\n"), PP_ERROR_NOACCESS);
-    ASSERT_EQ(OpenUntrusted("GET", "Content-Length:\n"), PP_ERROR_NOACCESS);
-    ASSERT_EQ(OpenUntrusted("GET", "Cookie:\n"), PP_ERROR_NOACCESS);
-    ASSERT_EQ(OpenUntrusted("GET", "Cookie2:\n"), PP_ERROR_NOACCESS);
-    ASSERT_EQ(OpenUntrusted(
-        "GET", "Content-Transfer-Encoding:\n"), PP_ERROR_NOACCESS);
-    ASSERT_EQ(OpenUntrusted("GET", "Date:\n"), PP_ERROR_NOACCESS);
-    ASSERT_EQ(OpenUntrusted("GET", "Expect:\n"), PP_ERROR_NOACCESS);
-    ASSERT_EQ(OpenUntrusted("GET", "Host:\n"), PP_ERROR_NOACCESS);
-    ASSERT_EQ(OpenUntrusted("GET", "Keep-Alive:\n"), PP_ERROR_NOACCESS);
-    ASSERT_EQ(OpenUntrusted("GET", "Referer:\n"), PP_ERROR_NOACCESS);
-    ASSERT_EQ(OpenUntrusted("GET", "TE:\n"), PP_ERROR_NOACCESS);
-    ASSERT_EQ(OpenUntrusted("GET", "Trailer:\n"), PP_ERROR_NOACCESS);
-    ASSERT_EQ(OpenUntrusted(
-        "GET", "Transfer-Encoding:\n"), PP_ERROR_NOACCESS);
-    ASSERT_EQ(OpenUntrusted("GET", "Upgrade:\n"), PP_ERROR_NOACCESS);
-    ASSERT_EQ(OpenUntrusted("GET", "User-Agent:\n"), PP_ERROR_NOACCESS);
-    ASSERT_EQ(OpenUntrusted("GET", "Via:\n"), PP_ERROR_NOACCESS);
-    ASSERT_EQ(OpenUntrusted(
-        "GET", "Proxy-Authorization: Basic dXNlcjpwYXNzd29yZA==:\n"),
-            PP_ERROR_NOACCESS);
-    ASSERT_EQ(OpenUntrusted("GET", "Sec-foo:\n"), PP_ERROR_NOACCESS);
+    ASSERT_EQ(PP_ERROR_NOACCESS, OpenUntrusted("GET", "Accept-Charset:\n"));
+    ASSERT_EQ(PP_ERROR_NOACCESS, OpenUntrusted("GET", "Accept-Encoding:\n"));
+    ASSERT_EQ(PP_ERROR_NOACCESS, OpenUntrusted("GET", "Connection:\n"));
+    ASSERT_EQ(PP_ERROR_NOACCESS, OpenUntrusted("GET", "Content-Length:\n"));
+    ASSERT_EQ(PP_ERROR_NOACCESS, OpenUntrusted("GET", "Cookie:\n"));
+    ASSERT_EQ(PP_ERROR_NOACCESS, OpenUntrusted("GET", "Cookie2:\n"));
+    ASSERT_EQ(PP_ERROR_NOACCESS,
+              OpenUntrusted("GET", "Content-Transfer-Encoding:\n"));
+    ASSERT_EQ(PP_ERROR_NOACCESS, OpenUntrusted("GET", "Date:\n"));
+    ASSERT_EQ(PP_ERROR_NOACCESS, OpenUntrusted("GET", "Expect:\n"));
+    ASSERT_EQ(PP_ERROR_NOACCESS, OpenUntrusted("GET", "Host:\n"));
+    ASSERT_EQ(PP_ERROR_NOACCESS, OpenUntrusted("GET", "Keep-Alive:\n"));
+    ASSERT_EQ(PP_ERROR_NOACCESS, OpenUntrusted("GET", "Referer:\n"));
+    ASSERT_EQ(PP_ERROR_NOACCESS, OpenUntrusted("GET", "TE:\n"));
+    ASSERT_EQ(PP_ERROR_NOACCESS, OpenUntrusted("GET", "Trailer:\n"));
+    ASSERT_EQ(PP_ERROR_NOACCESS,
+              OpenUntrusted("GET", "Transfer-Encoding:\n"));
+    ASSERT_EQ(PP_ERROR_NOACCESS, OpenUntrusted("GET", "Upgrade:\n"));
+    ASSERT_EQ(PP_ERROR_NOACCESS, OpenUntrusted("GET", "User-Agent:\n"));
+    ASSERT_EQ(PP_ERROR_NOACCESS, OpenUntrusted("GET", "Via:\n"));
+    ASSERT_EQ(PP_ERROR_NOACCESS, OpenUntrusted(
+        "GET", "Proxy-Authorization: Basic dXNlcjpwYXNzd29yZA==:\n"));
+    ASSERT_EQ(PP_ERROR_NOACCESS, OpenUntrusted("GET", "Sec-foo:\n"));
   }
   // Untrusted requests with custom referrer should fail.
   {
@@ -617,34 +638,34 @@ std::string TestURLLoader::TestUntrustedHttpRequests() {
 std::string TestURLLoader::TestTrustedHttpRequests() {
   // Trusted requests can use restricted methods.
   {
-    ASSERT_EQ(OpenTrusted("cOnNeCt", ""), PP_OK);
-    ASSERT_EQ(OpenTrusted("tRaCk", ""), PP_OK);
-    ASSERT_EQ(OpenTrusted("tRaCe", ""), PP_OK);
+    ASSERT_EQ(PP_OK, OpenTrusted("cOnNeCt", std::string()));
+    ASSERT_EQ(PP_OK, OpenTrusted("tRaCk", std::string()));
+    ASSERT_EQ(PP_OK, OpenTrusted("tRaCe", std::string()));
   }
   // Trusted requests can use restricted headers.
   {
-    ASSERT_EQ(OpenTrusted("GET", "Accept-Charset:\n"), PP_OK);
-    ASSERT_EQ(OpenTrusted("GET", "Accept-Encoding:\n"), PP_OK);
-    ASSERT_EQ(OpenTrusted("GET", "Connection:\n"), PP_OK);
-    ASSERT_EQ(OpenTrusted("GET", "Content-Length:\n"), PP_OK);
-    ASSERT_EQ(OpenTrusted("GET", "Cookie:\n"), PP_OK);
-    ASSERT_EQ(OpenTrusted("GET", "Cookie2:\n"), PP_OK);
-    ASSERT_EQ(OpenTrusted(
-        "GET", "Content-Transfer-Encoding:\n"), PP_OK);
-    ASSERT_EQ(OpenTrusted("GET", "Date:\n"), PP_OK);
-    ASSERT_EQ(OpenTrusted("GET", "Expect:\n"), PP_OK);
-    ASSERT_EQ(OpenTrusted("GET", "Host:\n"), PP_OK);
-    ASSERT_EQ(OpenTrusted("GET", "Keep-Alive:\n"), PP_OK);
-    ASSERT_EQ(OpenTrusted("GET", "Referer:\n"), PP_OK);
-    ASSERT_EQ(OpenTrusted("GET", "TE:\n"), PP_OK);
-    ASSERT_EQ(OpenTrusted("GET", "Trailer:\n"), PP_OK);
-    ASSERT_EQ(OpenTrusted("GET", "Transfer-Encoding:\n"), PP_OK);
-    ASSERT_EQ(OpenTrusted("GET", "Upgrade:\n"), PP_OK);
-    ASSERT_EQ(OpenTrusted("GET", "User-Agent:\n"), PP_OK);
-    ASSERT_EQ(OpenTrusted("GET", "Via:\n"), PP_OK);
-    ASSERT_EQ(OpenTrusted(
-        "GET", "Proxy-Authorization: Basic dXNlcjpwYXNzd29yZA==:\n"), PP_OK);
-    ASSERT_EQ(OpenTrusted("GET", "Sec-foo:\n"), PP_OK);
+    ASSERT_EQ(PP_OK, OpenTrusted("GET", "Accept-Charset:\n"));
+    ASSERT_EQ(PP_OK, OpenTrusted("GET", "Accept-Encoding:\n"));
+    ASSERT_EQ(PP_OK, OpenTrusted("GET", "Connection:\n"));
+    ASSERT_EQ(PP_OK, OpenTrusted("GET", "Content-Length:\n"));
+    ASSERT_EQ(PP_OK, OpenTrusted("GET", "Cookie:\n"));
+    ASSERT_EQ(PP_OK, OpenTrusted("GET", "Cookie2:\n"));
+    ASSERT_EQ(PP_OK, OpenTrusted("GET", "Content-Transfer-Encoding:\n"));
+    ASSERT_EQ(PP_OK, OpenTrusted("GET", "Date:\n"));
+    ASSERT_EQ(PP_OK, OpenTrusted("GET", "Expect:\n"));
+    ASSERT_EQ(PP_OK, OpenTrusted("GET", "Host:\n"));
+    ASSERT_EQ(PP_OK, OpenTrusted("GET", "Keep-Alive:\n"));
+    ASSERT_EQ(PP_OK, OpenTrusted("GET", "Referer:\n"));
+    ASSERT_EQ(PP_OK, OpenTrusted("GET", "TE:\n"));
+    ASSERT_EQ(PP_OK, OpenTrusted("GET", "Trailer:\n"));
+    ASSERT_EQ(PP_OK, OpenTrusted("GET", "Transfer-Encoding:\n"));
+    ASSERT_EQ(PP_OK, OpenTrusted("GET", "Upgrade:\n"));
+    ASSERT_EQ(PP_OK, OpenTrusted("GET", "User-Agent:\n"));
+    ASSERT_EQ(PP_OK, OpenTrusted("GET", "Via:\n"));
+    ASSERT_EQ(PP_OK,
+              OpenTrusted("GET",
+                  "Proxy-Authorization: Basic dXNlcjpwYXNzd29yZA==:\n"));
+    ASSERT_EQ(PP_OK, OpenTrusted("GET", "Sec-foo:\n"));
   }
   // Trusted requests with custom referrer should succeed.
   {
@@ -697,7 +718,7 @@ std::string TestURLLoader::TestAuditURLRedirect() {
   TestCompletionCallback callback(instance_->pp_instance(), callback_type());
 
   pp::URLLoader loader(instance_);
-  callback.WaitForResult(loader.Open(request, callback));
+  callback.WaitForResult(loader.Open(request, callback.GetCallback()));
   CHECK_CALLBACK_BEHAVIOR(callback);
   ASSERT_EQ(PP_OK, callback.result());
 
@@ -711,7 +732,7 @@ std::string TestURLLoader::TestAuditURLRedirect() {
     return "Response status should be 301";
 
   // Test that the paused loader can be resumed.
-  callback.WaitForResult(loader.FollowRedirect(callback));
+  callback.WaitForResult(loader.FollowRedirect(callback.GetCallback()));
   CHECK_CALLBACK_BEHAVIOR(callback);
   ASSERT_EQ(PP_OK, callback.result());
   std::string body;
@@ -734,7 +755,7 @@ std::string TestURLLoader::TestAbortCalls() {
 
   // Abort |Open()|.
   {
-    rv = pp::URLLoader(instance_).Open(request, callback);
+    rv = pp::URLLoader(instance_).Open(request, callback.GetCallback());
   }
   callback.WaitForAbortResult(rv);
   CHECK_CALLBACK_BEHAVIOR(callback);
@@ -744,11 +765,11 @@ std::string TestURLLoader::TestAbortCalls() {
     char buf[2] = { 0 };
     {
       pp::URLLoader loader(instance_);
-      callback.WaitForResult(loader.Open(request, callback));
+      callback.WaitForResult(loader.Open(request, callback.GetCallback()));
       CHECK_CALLBACK_BEHAVIOR(callback);
       ASSERT_EQ(PP_OK, callback.result());
 
-      rv = loader.ReadResponseBody(buf, sizeof(buf), callback);
+      rv = loader.ReadResponseBody(buf, sizeof(buf), callback.GetCallback());
     }  // Destroy |loader|.
     callback.WaitForAbortResult(rv);
     CHECK_CALLBACK_BEHAVIOR(callback);
@@ -773,7 +794,7 @@ std::string TestURLLoader::TestUntendedLoad() {
   TestCompletionCallback callback(instance_->pp_instance(), callback_type());
 
   pp::URLLoader loader(instance_);
-  callback.WaitForResult(loader.Open(request, callback));
+  callback.WaitForResult(loader.Open(request, callback.GetCallback()));
   CHECK_CALLBACK_BEHAVIOR(callback);
   ASSERT_EQ(PP_OK, callback.result());
 
@@ -789,15 +810,14 @@ std::string TestURLLoader::TestUntendedLoad() {
           total_bytes_to_be_received);
     if (bytes_received == total_bytes_to_be_received)
       break;
-    // TODO(dmichael): This should probably compare pp::MessageLoop::GetCurrent
-    //                 with GetForMainThread. We only need to yield on the main
-    //                 thread.
-    if (callback_type() != PP_BLOCKING) {
-      pp::Module::Get()->core()->CallOnMainThread(10, callback);
-      callback.WaitForResult();
+    // Yield if we're on the main thread, so that URLLoader can receive more
+    // data.
+    if (pp::Module::Get()->core()->IsMainThread()) {
+      NestedEvent event(instance_->pp_instance());
+      event.PostSignal(10);
+      event.Wait();
     }
   }
-
   // The loader should now have the data and have finished successfully.
   std::string body;
   std::string error = ReadEntireResponseBody(&loader, &body);

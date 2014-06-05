@@ -32,6 +32,7 @@
 
 #include <vector>
 
+#include "talk/base/timeutils.h"
 #include "talk/media/base/videocapturer.h"
 #include "talk/media/base/videocommon.h"
 #include "talk/media/base/videoframe.h"
@@ -43,10 +44,13 @@ class FakeVideoCapturer : public cricket::VideoCapturer {
  public:
   FakeVideoCapturer()
       : running_(false),
+        initial_unix_timestamp_(time(NULL) * talk_base::kNumNanosecsPerSec),
         next_timestamp_(talk_base::kNumNanosecsPerMillisec),
         is_screencast_(false) {
     // Default supported formats. Use ResetSupportedFormats to over write.
     std::vector<cricket::VideoFormat> formats;
+    formats.push_back(cricket::VideoFormat(1280, 720,
+        cricket::VideoFormat::FpsToInterval(30), cricket::FOURCC_I420));
     formats.push_back(cricket::VideoFormat(640, 480,
         cricket::VideoFormat::FpsToInterval(30), cricket::FOURCC_I420));
     formats.push_back(cricket::VideoFormat(320, 240,
@@ -80,7 +84,7 @@ class FakeVideoCapturer : public cricket::VideoCapturer {
     if (fourcc == cricket::FOURCC_ARGB) {
       size = width * 4 * height;
     } else if (fourcc == cricket::FOURCC_I420) {
-      size = cricket::VideoFrame::SizeOf(width, height);
+      size = static_cast<uint32>(cricket::VideoFrame::SizeOf(width, height));
     } else {
       return false;  // Unsupported FOURCC.
     }
@@ -93,10 +97,11 @@ class FakeVideoCapturer : public cricket::VideoCapturer {
     frame.height = height;
     frame.fourcc = fourcc;
     frame.data_size = size;
-    frame.elapsed_time = frame.time_stamp = next_timestamp_;
+    frame.elapsed_time = next_timestamp_;
+    frame.time_stamp = initial_unix_timestamp_ + next_timestamp_;
     next_timestamp_ += 33333333;  // 30 fps
 
-    talk_base::scoped_array<char> data(new char[size]);
+    talk_base::scoped_ptr<char[]> data(new char[size]);
     frame.data = data.get();
     // Copy something non-zero into the buffer so Validate wont complain that
     // the frame is all duplicate.
@@ -130,7 +135,7 @@ class FakeVideoCapturer : public cricket::VideoCapturer {
   void SetScreencast(bool is_screencast) {
     is_screencast_ = is_screencast;
   }
-  virtual bool IsScreencast() { return is_screencast_; }
+  virtual bool IsScreencast() const { return is_screencast_; }
   bool GetPreferredFourccs(std::vector<uint32>* fourccs) {
     fourccs->push_back(cricket::FOURCC_I420);
     fourccs->push_back(cricket::FOURCC_MJPG);
@@ -139,6 +144,7 @@ class FakeVideoCapturer : public cricket::VideoCapturer {
 
  private:
   bool running_;
+  int64 initial_unix_timestamp_;
   int64 next_timestamp_;
   bool is_screencast_;
 };

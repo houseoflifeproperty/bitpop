@@ -5,8 +5,9 @@
 #ifndef CONTENT_RENDERER_V8_VALUE_CONVERTER_IMPL_H_
 #define CONTENT_RENDERER_V8_VALUE_CONVERTER_IMPL_H_
 
-#include <set>
+#include <map>
 
+#include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "content/common/content_export.h"
 #include "content/public/renderer/v8_value_converter.h"
@@ -29,6 +30,7 @@ class CONTENT_EXPORT V8ValueConverterImpl : public V8ValueConverter {
   virtual void SetRegExpAllowed(bool val) OVERRIDE;
   virtual void SetFunctionAllowed(bool val) OVERRIDE;
   virtual void SetStripNullFromObjects(bool val) OVERRIDE;
+  virtual void SetStrategy(Strategy* strategy) OVERRIDE;
   virtual v8::Handle<v8::Value> ToV8Value(
       const base::Value* value,
       v8::Handle<v8::Context> context) const OVERRIDE;
@@ -37,24 +39,33 @@ class CONTENT_EXPORT V8ValueConverterImpl : public V8ValueConverter {
       v8::Handle<v8::Context> context) const OVERRIDE;
 
  private:
-  v8::Handle<v8::Value> ToV8ValueImpl(const base::Value* value) const;
-  v8::Handle<v8::Value> ToV8Array(const base::ListValue* list) const;
+  friend class ScopedAvoidIdentityHashForTesting;
+
+  class FromV8ValueState;
+
+  v8::Local<v8::Value> ToV8ValueImpl(v8::Isolate* isolate,
+                                      const base::Value* value) const;
+  v8::Handle<v8::Value> ToV8Array(v8::Isolate* isolate,
+                                  const base::ListValue* list) const;
   v8::Handle<v8::Value> ToV8Object(
+      v8::Isolate* isolate,
       const base::DictionaryValue* dictionary) const;
   v8::Handle<v8::Value> ToArrayBuffer(const base::BinaryValue* value) const;
 
-  base::Value* FromV8ValueImpl(v8::Handle<v8::Value> value,
-                               std::set<int>* unique_set) const;
+  base::Value* FromV8ValueImpl(FromV8ValueState* state,
+                               v8::Handle<v8::Value> value,
+                               v8::Isolate* isolate) const;
   base::Value* FromV8Array(v8::Handle<v8::Array> array,
-                           std::set<int>* unique_set) const;
+                           FromV8ValueState* state,
+                           v8::Isolate* isolate) const;
 
   // This will convert objects of type ArrayBuffer or any of the
-  // ArrayBufferView subclasses. The return value will be NULL if |value| is
-  // not one of these types.
-  base::BinaryValue* FromV8Buffer(v8::Handle<v8::Value> value) const;
+  // ArrayBufferView subclasses.
+  base::Value* FromV8ArrayBuffer(v8::Handle<v8::Object> val) const;
 
   base::Value* FromV8Object(v8::Handle<v8::Object> object,
-                            std::set<int>* unique_set) const;
+                            FromV8ValueState* state,
+                            v8::Isolate* isolate) const;
 
   // If true, we will convert Date JavaScript objects to doubles.
   bool date_allowed_;
@@ -68,6 +79,13 @@ class CONTENT_EXPORT V8ValueConverterImpl : public V8ValueConverter {
   // If true, undefined and null values are ignored when converting v8 objects
   // into Values.
   bool strip_null_from_objects_;
+
+  bool avoid_identity_hash_for_testing_;
+
+  // Strategy object that changes the converter's behavior.
+  Strategy* strategy_;
+
+  DISALLOW_COPY_AND_ASSIGN(V8ValueConverterImpl);
 };
 
 }  // namespace content

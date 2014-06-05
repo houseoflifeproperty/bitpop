@@ -4,111 +4,158 @@
 
 #include "chrome/browser/chromeos/drive/resource_entry_conversion.h"
 
+#include <algorithm>
+#include <string>
+
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/platform_file.h"
+#include "base/time/time.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
-#include "chrome/browser/chromeos/drive/drive_file_system_util.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
-#include "googleurl/src/gurl.h"
-#include "net/base/escape.h"
+#include "chrome/browser/chromeos/drive/file_system_util.h"
+#include "chrome/browser/drive/drive_api_util.h"
+#include "google_apis/drive/gdata_wapi_parser.h"
 
 namespace drive {
 
-DriveEntryProto ConvertResourceEntryToDriveEntryProto(
-    const google_apis::ResourceEntry& entry) {
-  DriveEntryProto entry_proto;
+namespace {
+
+const char kSharedWithMeLabel[] = "shared-with-me";
+const char kSharedLabel[] = "shared";
+
+// Checks if |entry| has a specified label.
+bool HasLabel(const google_apis::ResourceEntry& entry,
+              const std::string& label) {
+  std::vector<std::string>::const_iterator it =
+      std::find(entry.labels().begin(), entry.labels().end(), label);
+  return it != entry.labels().end();
+}
+
+}  // namespace
+
+bool ConvertToResourceEntry(const google_apis::ResourceEntry& input,
+                            ResourceEntry* out_entry,
+                            std::string* out_parent_resource_id) {
+  DCHECK(out_entry);
+  DCHECK(out_parent_resource_id);
+
+  ResourceEntry converted;
 
   // For regular files, the 'filename' and 'title' attribute in the metadata
   // may be different (e.g. due to rename). To be consistent with the web
   // interface and other client to use the 'title' attribute, instead of
   // 'filename', as the file name in the local snapshot.
-  entry_proto.set_title(UTF16ToUTF8(entry.title()));
-  entry_proto.set_base_name(util::EscapeUtf8FileName(entry_proto.title()));
+  converted.set_title(input.title());
+  converted.set_base_name(util::NormalizeFileName(converted.title()));
+  converted.set_resource_id(input.resource_id());
+  converted.set_modification_date(input.modification_date().ToInternalValue());
 
-  entry_proto.set_resource_id(entry.resource_id());
-  entry_proto.set_content_url(entry.content_url().spec());
-
-  const google_apis::Link* edit_link =
-      entry.GetLinkByType(google_apis::Link::LINK_EDIT);
-  if (edit_link)
-    entry_proto.set_edit_url(edit_link->href().spec());
-
+  // Gets parent Resource ID. On drive.google.com, a file can have multiple
+  // parents or no parent, but we are forcing a tree-shaped structure (i.e. no
+  // multi-parent or zero-parent entries). Therefore the first found "parent" is
+  // used for the entry and if the entry has no parent, we assign a special ID
+  // which represents no-parent entries. Tracked in http://crbug.com/158904.
+  std::string parent_resource_id;
   const google_apis::Link* parent_link =
-      entry.GetLinkByType(google_apis::Link::LINK_PARENT);
-  if (parent_link) {
-    entry_proto.set_parent_resource_id(
-        util::ExtractResourceIdFromUrl(parent_link->href()));
-  }
+      input.GetLinkByType(google_apis::Link::LINK_PARENT);
+  if (parent_link)
+    parent_resource_id = util::ExtractResourceIdFromUrl(parent_link->href());
 
-  entry_proto.set_deleted(entry.deleted());
-  entry_proto.set_kind(entry.kind());
+  converted.set_deleted(input.deleted());
+  converted.set_shared_with_me(HasLabel(input, kSharedWithMeLabel));
+  converted.set_shared(HasLabel(input, kSharedLabel));
 
-  PlatformFileInfoProto* file_info = entry_proto.mutable_file_info();
+  PlatformFileInfoProto* file_info = converted.mutable_file_info();
 
-  file_info->set_last_modified(entry.updated_time().ToInternalValue());
+  file_info->set_last_modified(input.updated_time().ToInternalValue());
   // If the file has never been viewed (last_viewed_time().is_null() == true),
   // then we will set the last_accessed field in the protocol buffer to 0.
-  file_info->set_last_accessed(entry.last_viewed_time().ToInternalValue());
-  file_info->set_creation_time(entry.published_time().ToInternalValue());
+  file_info->set_last_accessed(input.last_viewed_time().ToInternalValue());
+  file_info->set_creation_time(input.published_time().ToInternalValue());
 
-  if (entry.is_file() || entry.is_hosted_document()) {
-    DriveFileSpecificInfo* file_specific_info =
-        entry_proto.mutable_file_specific_info();
-    if (entry.is_file()) {
-      file_info->set_size(entry.file_size());
-      file_specific_info->set_file_md5(entry.file_md5());
+  if (input.is_file() || input.is_hosted_document()) {
+    FileSpecificInfo* file_specific_info =
+        converted.mutable_file_specific_info();
+    if (input.is_file()) {
+      file_info->set_size(input.file_size());
+      file_specific_info->set_md5(input.file_md5());
 
       // The resumable-edit-media link should only be present for regular
       // files as hosted documents are not uploadable.
-      const google_apis::Link* upload_link = entry.GetLinkByType(
-          google_apis::Link::LINK_RESUMABLE_EDIT_MEDIA);
-      if (upload_link && upload_link->href().is_valid())
-        entry_proto.set_upload_url(upload_link->href().spec());
-    } else if (entry.is_hosted_document()) {
+    } else if (input.is_hosted_document()) {
       // Attach .g<something> extension to hosted documents so we can special
       // case their handling in UI.
-      // TODO(satorux): Figure out better way how to pass entry info like kind
+      // TODO(satorux): Figure out better way how to pass input info like kind
       // to UI through the File API stack.
-      const std::string document_extension = entry.GetHostedDocumentExtension();
+      const std::string document_extension = input.GetHostedDocumentExtension();
       file_specific_info->set_document_extension(document_extension);
-      entry_proto.set_base_name(
-          util::EscapeUtf8FileName(entry_proto.title() + document_extension));
+      converted.set_base_name(
+          util::NormalizeFileName(converted.title() + document_extension));
 
       // We don't know the size of hosted docs and it does not matter since
       // is has no effect on the quota.
       file_info->set_size(0);
     }
     file_info->set_is_directory(false);
-    file_specific_info->set_content_mime_type(entry.content_mime_type());
-    file_specific_info->set_is_hosted_document(entry.is_hosted_document());
+    file_specific_info->set_content_mime_type(input.content_mime_type());
+    file_specific_info->set_is_hosted_document(input.is_hosted_document());
 
-    const google_apis::Link* thumbnail_link = entry.GetLinkByType(
-        google_apis::Link::LINK_THUMBNAIL);
-    if (thumbnail_link)
-      file_specific_info->set_thumbnail_url(thumbnail_link->href().spec());
-
-    const google_apis::Link* alternate_link = entry.GetLinkByType(
-        google_apis::Link::LINK_ALTERNATE);
+    const google_apis::Link* alternate_link =
+        input.GetLinkByType(google_apis::Link::LINK_ALTERNATE);
     if (alternate_link)
       file_specific_info->set_alternate_url(alternate_link->href().spec());
 
-    const google_apis::Link* share_link = entry.GetLinkByType(
-        google_apis::Link::LINK_SHARE);
-    if (share_link)
-      file_specific_info->set_share_url(share_link->href().spec());
-  } else if (entry.is_folder()) {
+    const int64 image_width = input.image_width();
+    if (image_width != -1)
+      file_specific_info->set_image_width(image_width);
+
+    const int64 image_height = input.image_height();
+    if (image_height != -1)
+      file_specific_info->set_image_height(image_height);
+
+    const int64 image_rotation = input.image_rotation();
+    if (image_rotation != -1)
+      file_specific_info->set_image_rotation(image_rotation);
+  } else if (input.is_folder()) {
     file_info->set_is_directory(true);
-    const google_apis::Link* upload_link = entry.GetLinkByType(
-        google_apis::Link::LINK_RESUMABLE_CREATE_MEDIA);
-    if (upload_link)
-      entry_proto.set_upload_url(upload_link->href().spec());
   } else {
-    // Some resource entries don't map into files (i.e. sites).
-    return DriveEntryProto();
+    // There are two cases to reach here.
+    // * The entry is something that doesn't map into files (i.e. sites).
+    //   We don't handle these kind of entries hence return false.
+    // * The entry is un-shared to you by other owner. In that case, we
+    //   get an entry with only deleted() and resource_id() fields are
+    //   filled. Since we want to delete such entries locally as well,
+    //   in that case we need to return true to proceed.
+    if (!input.deleted())
+      return false;
   }
 
-  return entry_proto;
+  out_entry->Swap(&converted);
+  swap(*out_parent_resource_id, parent_resource_id);
+  return true;
+}
+
+void ConvertResourceEntryToFileInfo(const ResourceEntry& entry,
+                                    base::File::Info* file_info) {
+  file_info->size = entry.file_info().size();
+  file_info->is_directory = entry.file_info().is_directory();
+  file_info->is_symbolic_link = entry.file_info().is_symbolic_link();
+  file_info->last_modified = base::Time::FromInternalValue(
+      entry.file_info().last_modified());
+  file_info->last_accessed = base::Time::FromInternalValue(
+      entry.file_info().last_accessed());
+  file_info->creation_time = base::Time::FromInternalValue(
+      entry.file_info().creation_time());
+}
+
+void SetPlatformFileInfoToResourceEntry(const base::File::Info& file_info,
+                                        ResourceEntry* entry) {
+  PlatformFileInfoProto* entry_file_info = entry->mutable_file_info();
+  entry_file_info->set_size(file_info.size);
+  entry_file_info->set_is_directory(file_info.is_directory);
+  entry_file_info->set_is_symbolic_link(file_info.is_symbolic_link);
+  entry_file_info->set_last_modified(file_info.last_modified.ToInternalValue());
+  entry_file_info->set_last_accessed(file_info.last_accessed.ToInternalValue());
+  entry_file_info->set_creation_time(file_info.creation_time.ToInternalValue());
 }
 
 }  // namespace drive

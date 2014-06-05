@@ -13,10 +13,12 @@ cr.define('print_preview', function() {
    *     state of the ticket and write document information.
    * @param {!print_preview.NativeLayer} nativeLayer Used to communicate to
    *     Chromium's preview rendering system.
+   * @param {!print_preview.DocumentInfo} documentInfo Document data model.
    * @constructor
    * @extends {cr.EventTarget}
    */
-  function PreviewGenerator(destinationStore, printTicketStore, nativeLayer) {
+  function PreviewGenerator(
+       destinationStore, printTicketStore, nativeLayer, documentInfo) {
     cr.EventTarget.call(this);
 
     /**
@@ -39,6 +41,13 @@ cr.define('print_preview', function() {
      * @private
      */
     this.nativeLayer_ = nativeLayer;
+
+    /**
+     * Document data model.
+     * @type {!print_preview.DocumentInfo}
+     * @private
+     */
+    this.documentInfo_ = documentInfo;
 
     /**
      * ID of current in-flight request. Requests that do not share this ID will
@@ -67,7 +76,7 @@ cr.define('print_preview', function() {
      * @type {boolean}
      * @private
      */
-    this.isColorEnabled_ = false;
+    this.colorValue_ = false;
 
     /**
      * Whether the document should be fitted to the page.
@@ -77,11 +86,11 @@ cr.define('print_preview', function() {
     this.isFitToPageEnabled_ = false;
 
     /**
-     * Page number set used to generate the last preview.
-     * @type {print_preview.PageNumberSet}
+     * Page ranges setting used used to generate the last preview.
+     * @type {!Array.<object.<{from: number, to: number}>>}
      * @private
      */
-    this.pageNumberSet_ = null;
+    this.pageRanges_ = null;
 
     /**
      * Margins type used to generate the last preview.
@@ -89,6 +98,13 @@ cr.define('print_preview', function() {
      * @private
      */
     this.marginsType_ = print_preview.ticket_items.MarginsType.Value.DEFAULT;
+
+    /**
+     * Whether the document should have element CSS backgrounds printed.
+     * @type {boolean}
+     * @private
+     */
+    this.isCssBackgroundEnabled_ = false;
 
     /**
      * Destination that was selected for the last preview.
@@ -137,28 +153,35 @@ cr.define('print_preview', function() {
      * @return {boolean} Whether a new preview was actually requested.
      */
     requestPreview: function() {
-      if (!this.printTicketStore_.isTicketValidForPreview()) {
+      if (!this.printTicketStore_.isTicketValidForPreview() ||
+          !this.printTicketStore_.isInitialized ||
+          !this.destinationStore_.selectedDestination) {
         return false;
       }
       if (!this.hasPreviewChanged_()) {
         // Changes to these ticket items might not trigger a new preview, but
         // they still need to be recorded.
-        this.marginsType_ = this.printTicketStore_.getMarginsType();
+        this.marginsType_ = this.printTicketStore_.marginsType.getValue();
         return false;
       }
-      this.isLandscapeEnabled_ = this.printTicketStore_.isLandscapeEnabled();
+      this.isLandscapeEnabled_ = this.printTicketStore_.landscape.getValue();
       this.isHeaderFooterEnabled_ =
-          this.printTicketStore_.isHeaderFooterEnabled();
-      this.isColorEnabled_ = this.printTicketStore_.isColorEnabled();
-      this.isFitToPageEnabled_ = this.printTicketStore_.isFitToPageEnabled();
-      this.pageNumberSet_ = this.printTicketStore_.getPageNumberSet();
-      this.marginsType_ = this.printTicketStore_.getMarginsType();
+          this.printTicketStore_.headerFooter.getValue();
+      this.colorValue_ = this.printTicketStore_.color.getValue();
+      this.isFitToPageEnabled_ = this.printTicketStore_.fitToPage.getValue();
+      this.pageRanges_ = this.printTicketStore_.pageRange.getPageRanges();
+      this.marginsType_ = this.printTicketStore_.marginsType.getValue();
+      this.isCssBackgroundEnabled_ =
+          this.printTicketStore_.cssBackground.getValue();
+      this.isSelectionOnlyEnabled_ =
+          this.printTicketStore_.selectionOnly.getValue();
       this.selectedDestination_ = this.destinationStore_.selectedDestination;
 
       this.inFlightRequestId_++;
       this.nativeLayer_.startGetPreview(
           this.destinationStore_.selectedDestination,
           this.printTicketStore_,
+          this.documentInfo_,
           this.inFlightRequestId_);
       return true;
     },
@@ -181,10 +204,6 @@ cr.define('print_preview', function() {
           this.nativeLayer_,
           print_preview.NativeLayer.EventType.PAGE_COUNT_READY,
           this.onPageCountReady_.bind(this));
-      this.tracker_.add(
-          this.nativeLayer_,
-          print_preview.NativeLayer.EventType.PREVIEW_RELOAD,
-          this.onPreviewReload_.bind(this));
       this.tracker_.add(
           this.nativeLayer_,
           print_preview.NativeLayer.EventType.PAGE_PREVIEW_READY,
@@ -211,7 +230,7 @@ cr.define('print_preview', function() {
      * @private
      */
     dispatchPageReadyEvent_: function(previewIndex, pageNumber, previewUid) {
-      var pageGenEvent = new cr.Event(PreviewGenerator.EventType.PAGE_READY);
+      var pageGenEvent = new Event(PreviewGenerator.EventType.PAGE_READY);
       pageGenEvent.previewIndex = previewIndex;
       pageGenEvent.previewUrl = 'chrome://print/' + previewUid.toString() +
           '/' + (pageNumber - 1) + '/print.pdf';
@@ -226,9 +245,9 @@ cr.define('print_preview', function() {
      * @private
      */
     dispatchPreviewStartEvent_: function(previewUid, index) {
-      var previewStartEvent = new cr.Event(
+      var previewStartEvent = new Event(
           PreviewGenerator.EventType.PREVIEW_START);
-      if (!this.printTicketStore_.isDocumentModifiable) {
+      if (!this.documentInfo_.isModifiable) {
         index = -1;
       }
       previewStartEvent.previewUrl = 'chrome://print/' +
@@ -244,18 +263,24 @@ cr.define('print_preview', function() {
     hasPreviewChanged_: function() {
       var ticketStore = this.printTicketStore_;
       return this.inFlightRequestId_ == -1 ||
-          ticketStore.isLandscapeEnabled() != this.isLandscapeEnabled_ ||
-          ticketStore.isHeaderFooterEnabled() != this.isHeaderFooterEnabled_ ||
-          ticketStore.isColorEnabled() != this.isColorEnabled_ ||
-          ticketStore.isFitToPageEnabled() != this.isFitToPageEnabled_ ||
-          !ticketStore.getPageNumberSet().equals(this.pageNumberSet_) ||
-          (ticketStore.getMarginsType() != this.marginsType_ &&
-              ticketStore.getMarginsType() !=
-                  print_preview.ticket_items.MarginsType.Value.CUSTOM) ||
-          (ticketStore.getMarginsType() ==
-              print_preview.ticket_items.MarginsType.Value.CUSTOM &&
-              !ticketStore.getCustomMargins().equals(
-                  ticketStore.getDocumentMargins())) ||
+          !ticketStore.landscape.isValueEqual(this.isLandscapeEnabled_) ||
+          !ticketStore.headerFooter.isValueEqual(this.isHeaderFooterEnabled_) ||
+          !ticketStore.color.isValueEqual(this.colorValue_) ||
+          !ticketStore.fitToPage.isValueEqual(this.isFitToPageEnabled_) ||
+          this.pageRanges_ == null ||
+          !areRangesEqual(ticketStore.pageRange.getPageRanges(),
+                          this.pageRanges_) ||
+          (!ticketStore.marginsType.isValueEqual(this.marginsType_) &&
+              !ticketStore.marginsType.isValueEqual(
+                  print_preview.ticket_items.MarginsType.Value.CUSTOM)) ||
+          (ticketStore.marginsType.isValueEqual(
+              print_preview.ticket_items.MarginsType.Value.CUSTOM) &&
+              !ticketStore.customMargins.isValueEqual(
+                  this.documentInfo_.margins)) ||
+          !ticketStore.cssBackground.isValueEqual(
+              this.isCssBackgroundEnabled_) ||
+          !ticketStore.selectionOnly.isValueEqual(
+              this.isSelectionOnlyEnabled_) ||
           (this.selectedDestination_ !=
               this.destinationStore_.selectedDestination);
     },
@@ -263,7 +288,7 @@ cr.define('print_preview', function() {
     /**
      * Called when the page layout of the document is ready. Always occurs
      * as a result of a preview request.
-     * @param {cr.Event} event Contains layout info about the document.
+     * @param {Event} event Contains layout info about the document.
      * @private
      */
     onPageLayoutReady_: function(event) {
@@ -290,7 +315,7 @@ cr.define('print_preview', function() {
           event.pageLayout.contentHeight +
               margins.get(o.TOP) + margins.get(o.BOTTOM));
 
-      this.printTicketStore_.updateDocumentPageInfo(
+      this.documentInfo_.updatePageInfo(
           new print_preview.PrintableArea(origin, size),
           pageSize,
           event.hasCustomPageSizeStyle,
@@ -300,40 +325,21 @@ cr.define('print_preview', function() {
     /**
      * Called when the document page count is received from the native layer.
      * Always occurs as a result of a preview request.
-     * @param {cr.Event} event Contains the document's page count.
+     * @param {Event} event Contains the document's page count.
      * @private
      */
     onPageCountReady_: function(event) {
       if (this.inFlightRequestId_ != event.previewResponseId) {
         return; // Ignore old response.
       }
-      this.printTicketStore_.updatePageCount(event.pageCount);
-      this.pageNumberSet_ = this.printTicketStore_.getPageNumberSet();
-    },
-
-    /**
-     * Called when the print preview should be reloaded.
-     * @param {cr.Event} event Contains the preview UID and request ID.
-     * @private
-     */
-    onPreviewReload_: function(event) {
-      if (this.inFlightRequestId_ != event.previewResponseId) {
-        return; // Ignore old response.
-      }
-      var pageNumberSet = this.printTicketStore_.getPageNumberSet();
-      this.dispatchPreviewStartEvent_(
-          event.previewUid, pageNumberSet.getPageNumberAt(0) - 1);
-      for (var i = 0; i < pageNumberSet.size; i++) {
-        var pageNumber = pageNumberSet.getPageNumberAt(i);
-        this.dispatchPageReadyEvent_(i, pageNumber, event.previewUid);
-      }
-      cr.dispatchSimpleEvent(this, PreviewGenerator.EventType.DOCUMENT_READY);
+      this.documentInfo_.updatePageCount(event.pageCount);
+      this.pageRanges_ = this.printTicketStore_.pageRange.getPageRanges();
     },
 
     /**
      * Called when a page's preview has been generated. Dispatches a
      * PAGE_READY event.
-     * @param {cr.Event} event Contains the page index and preview UID.
+     * @param {Event} event Contains the page index and preview UID.
      * @private
      */
     onPagePreviewReady_: function(event) {
@@ -341,9 +347,9 @@ cr.define('print_preview', function() {
         return; // Ignore old response.
       }
       var pageNumber = event.pageIndex + 1;
-      if (this.printTicketStore_.getPageNumberSet().hasPageNumber(pageNumber)) {
-        var previewIndex = this.printTicketStore_.getPageNumberSet()
-            .getPageNumberIndex(pageNumber);
+      var pageNumberSet = this.printTicketStore_.pageRange.getPageNumberSet();
+      if (pageNumberSet.hasPageNumber(pageNumber)) {
+        var previewIndex = pageNumberSet.getPageNumberIndex(pageNumber);
         if (previewIndex == 0) {
           this.dispatchPreviewStartEvent_(event.previewUid, event.pageIndex);
         }
@@ -355,7 +361,7 @@ cr.define('print_preview', function() {
     /**
      * Called when the preview generation is complete. Dispatches a
      * DOCUMENT_READY event.
-     * @param {cr.Event} event Contains the preview UID and response ID.
+     * @param {Event} event Contains the preview UID and response ID.
      * @private
      */
     onPreviewGenerationDone_: function(event) {
@@ -364,7 +370,7 @@ cr.define('print_preview', function() {
       }
       // Dispatch a PREVIEW_START event since non-modifiable documents don't
       // trigger PAGE_READY events.
-      if (!this.printTicketStore_.isDocumentModifiable) {
+      if (!this.documentInfo_.isModifiable) {
         this.dispatchPreviewStartEvent_(event.previewUid, 0);
       }
       cr.dispatchSimpleEvent(this, PreviewGenerator.EventType.DOCUMENT_READY);

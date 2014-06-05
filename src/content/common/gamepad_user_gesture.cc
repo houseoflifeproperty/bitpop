@@ -6,13 +6,13 @@
 
 #include <algorithm>
 
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebGamepads.h"
+#include "third_party/WebKit/public/platform/WebGamepads.h"
 
 namespace content {
 
-bool GamepadsHaveUserGesture(const WebKit::WebGamepads& gamepads) {
-  for (unsigned i = 0; i < WebKit::WebGamepads::itemsLengthCap; i++) {
-    const WebKit::WebGamepad& pad = gamepads.items[i];
+bool GamepadsHaveUserGesture(const blink::WebGamepads& gamepads) {
+  for (unsigned i = 0; i < blink::WebGamepads::itemsLengthCap; i++) {
+    const blink::WebGamepad& pad = gamepads.items[i];
 
     // If the device is physically connected, then check the primary 4 buttons
     // to see if there is currently an intentional user action.
@@ -22,7 +22,7 @@ bool GamepadsHaveUserGesture(const WebKit::WebGamepads& gamepads) {
                                            kPrimaryInteractionButtons);
       for (unsigned button_index = 0; button_index < buttons_to_check;
            button_index++) {
-        if (pad.buttons[button_index] > 0.5f)
+        if (pad.buttons[button_index].pressed)
           return true;
       }
     }

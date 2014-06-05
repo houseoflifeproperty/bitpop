@@ -14,8 +14,6 @@ class TrayBubbleView;
 }
 
 namespace ash {
-namespace internal {
-
 class TrayBackgroundView;
 class TrayEventFilter;
 
@@ -28,22 +26,23 @@ class TrayBubbleWrapper : public views::WidgetObserver {
   virtual ~TrayBubbleWrapper();
 
   // views::WidgetObserver overrides:
-  virtual void OnWidgetClosing(views::Widget* widget) OVERRIDE;
+  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE;
+  virtual void OnWidgetBoundsChanged(views::Widget* widget,
+                                     const gfx::Rect& new_bounds) OVERRIDE;
 
+  const TrayBackgroundView* tray() const { return tray_; }
   TrayBackgroundView* tray() { return tray_; }
-  views::TrayBubbleView* bubble_view() { return bubble_view_; }
-  views::Widget* bubble_widget() { return bubble_widget_; }
+  const views::TrayBubbleView* bubble_view() const { return bubble_view_; }
+  const views::Widget* bubble_widget() const { return bubble_widget_; }
 
  private:
   TrayBackgroundView* tray_;
   views::TrayBubbleView* bubble_view_;  // unowned
   views::Widget* bubble_widget_;
-  scoped_ptr<TrayEventFilter> tray_event_filter_;
 
   DISALLOW_COPY_AND_ASSIGN(TrayBubbleWrapper);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_SYSTEM_TRAY_TRAY_BUBBLE_WRAPPER_H_

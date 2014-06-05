@@ -72,6 +72,11 @@ class GaiaAuthConsumer {
   virtual void OnClientOAuthSuccess(const ClientOAuthResult& result) {}
   virtual void OnClientOAuthFailure(const GoogleServiceAuthError& error) {}
 
+  virtual void OnClientOAuthCodeSuccess(const std::string& auth_code) {}
+  virtual void OnClientOAuthCodeFailure(const GoogleServiceAuthError& error) {}
+
+  virtual void OnOAuth2RevokeTokenCompleted() {}
+
   virtual void OnGetUserInfoSuccess(const UserInfoMap& data) {}
   virtual void OnGetUserInfoFailure(const GoogleServiceAuthError& error) {}
 
@@ -80,6 +85,9 @@ class GaiaAuthConsumer {
 
   virtual void OnMergeSessionSuccess(const std::string& data) {}
   virtual void OnMergeSessionFailure(const GoogleServiceAuthError& error) {}
+
+  virtual void OnListAccountsSuccess(const std::string& data) {}
+  virtual void OnListAccountsFailure(const GoogleServiceAuthError& error) {}
 };
 
 #endif  // GOOGLE_APIS_GAIA_GAIA_AUTH_CONSUMER_H_

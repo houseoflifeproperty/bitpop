@@ -30,9 +30,10 @@ import re
 import socket
 import sys
 
+from common import archive_utils
 from common import chromium_utils
+from slave import build_directory
 from slave import slave_utils
-import config
 
 # Directory name, above the build directory, in which test results can be
 # found if no --results-dir option is given.
@@ -92,8 +93,50 @@ def _ArchiveFullLayoutTestResults(staging_dir, dest_dir, diff_file_list,
     chromium_utils.ExtractZip(full_zip_file, extract_dir)
   elif chromium_utils.IsLinux() or chromium_utils.IsMac():
     remote_zip_file = os.path.join(dest_dir, os.path.basename(full_zip_file))
-    chromium_utils.SshExtractZip(config.Archive.archive_host, remote_zip_file,
-                                 extract_dir)
+    chromium_utils.SshExtractZip(archive_utils.Config.archive_host,
+                                 remote_zip_file, extract_dir)
+
+
+def _CopyFileToArchiveHost(src, dest_dir):
+  """A wrapper method to copy files to the archive host.
+  It calls CopyFileToDir on Windows and SshCopyFiles on Linux/Mac.
+  TODO: we will eventually want to change the code to upload the
+  data to appengine.
+
+  Args:
+      src: full path to the src file.
+      dest_dir: destination directory on the host.
+  """
+  host = archive_utils.Config.archive_host
+  if not os.path.exists(src):
+    raise chromium_utils.ExternalError('Source path "%s" does not exist' % src)
+  chromium_utils.MakeWorldReadable(src)
+  if chromium_utils.IsWindows():
+    chromium_utils.CopyFileToDir(src, dest_dir)
+  elif chromium_utils.IsLinux() or chromium_utils.IsMac():
+    chromium_utils.SshCopyFiles(src, host, dest_dir)
+  else:
+    raise NotImplementedError(
+        'Platform "%s" is not currently supported.' % sys.platform)
+
+
+def _MaybeMakeDirectoryOnArchiveHost(dest_dir):
+  """A wrapper method to create a directory on the archive host.
+  It calls MaybeMakeDirectory on Windows and SshMakeDirectory on Linux/Mac.
+
+  Args:
+      dest_dir: destination directory on the host.
+  """
+  host = archive_utils.Config.archive_host
+  if chromium_utils.IsWindows():
+    chromium_utils.MaybeMakeDirectory(dest_dir)
+    print 'saving results to %s' % dest_dir
+  elif chromium_utils.IsLinux() or chromium_utils.IsMac():
+    chromium_utils.SshMakeDirectory(host, dest_dir)
+    print 'saving results to "%s" on "%s"' % (dest_dir, host)
+  else:
+    raise NotImplementedError(
+        'Platform "%s" is not currently supported.' % sys.platform)
 
 
 def archive_layout(options, args):
@@ -117,33 +160,62 @@ def archive_layout(options, args):
                                     results_dir_basename,
                                     actual_file_list,
                                     options.results_dir)[1]
+  # TODO(ojan): Stop separately uploading full_results.json once garden-o-matic
+  # switches to using failing_results.json.
   full_results_json = os.path.join(options.results_dir, 'full_results.json')
+  failing_results_json = os.path.join(options.results_dir,
+      'failing_results.json')
 
   # Extract the build name of this slave (e.g., 'chrome-release') from its
   # configuration file if not provided as a param.
   build_name = options.builder_name or slave_utils.SlaveBuildName(chrome_dir)
   build_name = re.sub('[ .()]', '_', build_name)
 
-  last_change = str(slave_utils.SubversionRevision(chrome_dir))
+  wc_dir = os.path.dirname(chrome_dir)
+  last_change = str(slave_utils.SubversionRevision(wc_dir))
+
+  # TODO(dpranke): Is it safe to assume build_number is not blank? Should we
+  # assert() this ?
+  build_number = str(options.build_number)
   print 'last change: %s' % last_change
   print 'build name: %s' % build_name
+  print 'build number: %s' % build_number
   print 'host name: %s' % socket.gethostname()
 
   # Where to save layout test results.
-  dest_parent_dir = os.path.join(config.Archive.www_dir_base,
+  dest_parent_dir = os.path.join(archive_utils.Config.www_dir_base,
       results_dir_basename.replace('-','_'), build_name)
   dest_dir = os.path.join(dest_parent_dir, last_change)
 
-  gs_bucket = options.factory_properties.get('gs_bucket', None)
-  if gs_bucket:
-    gs_base = '/'.join([gs_bucket, build_name, last_change])
-    gs_acl = options.factory_properties.get('gs_acl', None)
-    slave_utils.GSUtilCopyFile(zip_file, gs_base, gs_acl=gs_acl)
-    slave_utils.GSUtilCopyFile(full_results_json, gs_base, gs_acl=gs_acl)
+  if options.gs_bucket:
+    # Copy the results to a directory archived by build number.
+    gs_base = '/'.join([options.gs_bucket, build_name, build_number])
+    gs_acl = options.gs_acl
+    # These files never change, cache for a year.
+    cache_control = "public, max-age=31556926"
+    slave_utils.GSUtilCopyFile(zip_file, gs_base, gs_acl=gs_acl,
+      cache_control=cache_control)
+    slave_utils.GSUtilCopyDir(options.results_dir, gs_base, gs_acl=gs_acl,
+      cache_control=cache_control)
+
+    # TODO(dpranke): Remove these two lines once clients are fetching the
+    # files from the layout-test-results dir.
+    slave_utils.GSUtilCopyFile(full_results_json, gs_base, gs_acl=gs_acl,
+      cache_control=cache_control)
+    slave_utils.GSUtilCopyFile(failing_results_json, gs_base, gs_acl=gs_acl,
+      cache_control=cache_control)
+
+    # And also to the 'results' directory to provide the 'latest' results.
+    gs_base = '/'.join([options.gs_bucket, build_name, 'results'])
+    slave_utils.GSUtilCopyFile(zip_file, gs_base, gs_base, gs_acl=gs_acl,
+      cache_control=cache_control)
+    slave_utils.GSUtilCopyDir(options.results_dir, gs_base, gs_acl=gs_acl,
+      cache_control=cache_control)
   else:
-    slave_utils.MaybeMakeDirectoryOnArchiveHost(dest_dir)
-    slave_utils.CopyFileToArchiveHost(zip_file, dest_dir)
-    slave_utils.CopyFileToArchiveHost(full_results_json, dest_dir)
+    _MaybeMakeDirectoryOnArchiveHost(dest_dir)
+    _CopyFileToArchiveHost(zip_file, dest_dir)
+    _CopyFileToArchiveHost(full_results_json, dest_dir)
+    _CopyFileToArchiveHost(failing_results_json, dest_dir)
     # Not supported on Google Storage yet.
     _ArchiveFullLayoutTestResults(staging_dir, dest_parent_dir, diff_file_list,
                                   options)
@@ -152,9 +224,7 @@ def archive_layout(options, args):
 
 def main():
   option_parser = optparse.OptionParser()
-  option_parser.add_option('', '--build-dir', default='webkit',
-                           help='path to main build directory (the parent of '
-                                'the Release or Debug directory)')
+  option_parser.add_option('', '--build-dir', help='ignored')
   option_parser.add_option('', '--results-dir',
                            help='path to layout test results, relative to '
                                 'the build_dir')
@@ -165,8 +235,25 @@ def main():
                            default=None,
                            help=('The build number of the builder running'
                                  'this script.'))
+  option_parser.add_option('', '--gs-bucket',
+                           default=None,
+                           help=('The google storage bucket to upload to. '
+                                 'If provided, this script will upload to gs '
+                                 'instead of the master.'))
+  option_parser.add_option('', '--gs-acl',
+                           default=None,
+                           help=('The ACL of the google storage files.'))
   chromium_utils.AddPropertiesOptions(option_parser)
   options, args = option_parser.parse_args()
+  options.build_dir = build_directory.GetBuildOutputDirectory()
+
+  # To continue supporting buildbot, initialize these from the
+  # factory_properties if they were not supplied on the command line.
+  if not options.gs_bucket:
+    options.gs_bucket = options.factory_properties.get('gs_bucket')
+  if not options.gs_acl:
+    options.gs_acl = options.factory_properties.get('gs_acl')
+
   return archive_layout(options, args)
 
 

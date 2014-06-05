@@ -4,6 +4,12 @@
 
 #include "ui/gfx/platform_font_pango.h"
 
+#include <cairo/cairo.h>
+#include <fontconfig/fontconfig.h>
+#include <glib-object.h>
+#include <pango/pangocairo.h>
+#include <pango/pangofc-fontmap.h>
+
 #include <string>
 
 #include "base/memory/ref_counted.h"
@@ -12,16 +18,14 @@
 
 namespace gfx {
 
-// Fails on Chrome OS: http://crbug.com/124451
-#if defined(OS_CHROMEOS)
-#define MAYBE_FamilyList DISABLED_FamilyList
-#else
-#define MAYBE_FamilyList FamilyList
-#endif
-
 // Test that PlatformFontPango is able to cope with PangoFontDescriptions
 // containing multiple font families.  The first family should be preferred.
-TEST(PlatformFontPangoTest, MAYBE_FamilyList) {
+TEST(PlatformFontPangoTest, FamilyList) {
+  // Needed for GLib versions prior to 2.36, but deprecated starting 2.35.
+#if !GLIB_CHECK_VERSION(2, 35, 0)
+  g_type_init();
+#endif
+
   ScopedPangoFontDescription desc(
       pango_font_description_from_string("Arial,Times New Roman, 13px"));
   scoped_refptr<gfx::PlatformFontPango> font(
@@ -35,6 +39,12 @@ TEST(PlatformFontPangoTest, MAYBE_FamilyList) {
       new gfx::PlatformFontPango(desc2.get()));
   EXPECT_EQ("Times New Roman", font2->GetFontName());
   EXPECT_EQ(15, font2->GetFontSize());
+
+  // Free memory allocated by FontConfig (http://crbug.com/114750).
+  pango_fc_font_map_cache_clear(
+      PANGO_FC_FONT_MAP(pango_cairo_font_map_get_default()));
+  cairo_debug_reset_static_data();
+  FcFini();
 }
 
 }  // namespace gfx

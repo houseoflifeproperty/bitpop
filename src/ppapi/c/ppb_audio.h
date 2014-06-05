@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From ppb_audio.idl modified Mon Jul  9 12:03:36 2012. */
+/* From ppb_audio.idl modified Fri Jan 24 16:18:44 2014. */
 
 #ifndef PPAPI_C_PPB_AUDIO_H_
 #define PPAPI_C_PPB_AUDIO_H_
@@ -13,9 +13,11 @@
 #include "ppapi/c/pp_macros.h"
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/pp_stdint.h"
+#include "ppapi/c/pp_time.h"
 
 #define PPB_AUDIO_INTERFACE_1_0 "PPB_Audio;1.0"
-#define PPB_AUDIO_INTERFACE PPB_AUDIO_INTERFACE_1_0
+#define PPB_AUDIO_INTERFACE_1_1 "PPB_Audio;1.1"
+#define PPB_AUDIO_INTERFACE PPB_AUDIO_INTERFACE_1_1
 
 /**
  * @file
@@ -33,10 +35,21 @@
  * function used to fill the audio buffer with data. Please see the
  * Create() function in the <code>PPB_Audio</code> interface for
  * more details on this callback.
+ *
+ * @param[in] sample_buffer A buffer to fill with audio data.
+ * @param[in] buffer_size_in_bytes The size of the buffer in bytes.
+ * @param[in] latency How long before the audio data is to be presented.
+ * @param[inout] user_data An opaque pointer that was passed into
+ * <code>PPB_Audio.Create()</code>.
  */
 typedef void (*PPB_Audio_Callback)(void* sample_buffer,
                                    uint32_t buffer_size_in_bytes,
+                                   PP_TimeDelta latency,
                                    void* user_data);
+
+typedef void (*PPB_Audio_Callback_1_0)(void* sample_buffer,
+                                       uint32_t buffer_size_in_bytes,
+                                       void* user_data);
 /**
  * @}
  */
@@ -48,7 +61,7 @@ typedef void (*PPB_Audio_Callback)(void* sample_buffer,
 /**
  * The <code>PPB_Audio</code> interface contains pointers to several functions
  * for handling audio resources. Refer to the
- * <a href="/native-client/{{pepperversion}}/devguide/coding/audio">Audio</a>
+ * <a href="/native-client/devguide/coding/audio.html">Audio</a>
  * chapter in the Developer's Guide for information on using this interface.
  * Please see descriptions for each <code>PPB_Audio</code> and
  * <code>PPB_AudioConfig</code> function for more details. A C example using
@@ -78,7 +91,7 @@ typedef void (*PPB_Audio_Callback)(void* sample_buffer,
  * ...audio_callback() will now be periodically invoked on a separate thread...
  * @endcode
  */
-struct PPB_Audio_1_0 {
+struct PPB_Audio_1_1 {
   /**
    * Create() creates an audio resource. No sound will be heard until
    * StartPlayback() is called. The callback is called with the buffer address
@@ -157,7 +170,18 @@ struct PPB_Audio_1_0 {
   PP_Bool (*StopPlayback)(PP_Resource audio);
 };
 
-typedef struct PPB_Audio_1_0 PPB_Audio;
+typedef struct PPB_Audio_1_1 PPB_Audio;
+
+struct PPB_Audio_1_0 {
+  PP_Resource (*Create)(PP_Instance instance,
+                        PP_Resource config,
+                        PPB_Audio_Callback_1_0 audio_callback,
+                        void* user_data);
+  PP_Bool (*IsAudio)(PP_Resource resource);
+  PP_Resource (*GetCurrentConfig)(PP_Resource audio);
+  PP_Bool (*StartPlayback)(PP_Resource audio);
+  PP_Bool (*StopPlayback)(PP_Resource audio);
+};
 /**
  * @}
  */

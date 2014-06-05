@@ -139,11 +139,62 @@ def GenerateHeader(out, filenode, releases):
     out.Write(CommentLines(['*',' @}', '']) + '\n')
 
 
+def CheckTypedefs(filenode, releases):
+  """Checks that typedefs don't specify callbacks that take some structs.
+
+  See http://crbug.com/233439 for details.
+  """
+  cgen = CGen()
+  for node in filenode.GetListOf('Typedef'):
+    build_list = node.GetUniqueReleases(releases)
+    callnode = node.GetOneOf('Callspec')
+    if callnode:
+      for param in callnode.GetListOf('Param'):
+        if param.GetListOf('Array'):
+          continue
+        if cgen.GetParamMode(param) != 'in':
+          continue
+        t = param.GetType(build_list[0])
+        while t.IsA('Typedef'):
+          t = t.GetType(build_list[0])
+        if t.IsA('Struct') and t.GetProperty('passByValue'):
+          raise Exception('%s is a struct in callback %s. '
+                          'See http://crbug.com/233439' %
+                          (t.GetName(), node.GetName()))
+
+
+def CheckPassByValue(filenode, releases):
+  """Checks that new pass-by-value structs are not introduced.
+
+  See http://crbug.com/233439 for details.
+  """
+  cgen = CGen()
+  # DO NOT add any more entries to this whitelist.
+  # http://crbug.com/233439
+  type_whitelist = ['PP_ArrayOutput', 'PP_CompletionCallback',
+                    'PP_Ext_EventListener', 'PP_FloatPoint',
+                    'PP_Point', 'PP_TouchPoint', 'PP_Var']
+  nodes_to_check = filenode.GetListOf('Struct')
+  nodes_to_check.extend(filenode.GetListOf('Union'))
+  for node in nodes_to_check:
+    if node.GetName() in type_whitelist:
+      continue
+    build_list = node.GetUniqueReleases(releases)
+    if node.GetProperty('passByValue'):
+      raise Exception('%s is a new passByValue struct or union. '
+                      'See http://crbug.com/233439' % node.GetName())
+    if node.GetProperty('returnByValue'):
+      raise Exception('%s is a new returnByValue struct or union. '
+                      'See http://crbug.com/233439' % node.GetName())
+
+
 class HGen(GeneratorByFile):
   def __init__(self):
     Generator.__init__(self, 'C Header', 'cgen', 'Generate the C headers.')
 
   def GenerateFile(self, filenode, releases, options):
+    CheckTypedefs(filenode, releases)
+    CheckPassByValue(filenode, releases)
     savename = GetHeaderFromNode(filenode, GetOption('dstroot'))
     my_min, my_max = filenode.GetMinMax(releases)
     if my_min > releases[-1] or my_max < releases[0]:
@@ -177,7 +228,7 @@ class HGen(GeneratorByFile):
     out.Write('%s\n' % cgen.Copyright(cright_node))
 
     # Wrap the From ... modified ... comment if it would be >80 characters.
-    from_text = 'From %s' % GetPathFromNode(filenode)
+    from_text = 'From %s' % GetPathFromNode(filenode).replace(os.sep, '/')
     modified_text = 'modified %s.' % (
         filenode.GetProperty('DATETIME'))
     if len(from_text) + len(modified_text) < 74:
@@ -218,14 +269,14 @@ class HGen(GeneratorByFile):
       for struct in proto.struct_map:
         out.Write('struct %s;\n' % struct)
 
-    # If we are generating a single release, then create a macro for the highest
-    # available release number.
+    # Create a macro for the highest available release number.
     if filenode.GetProperty('NAME').endswith('pp_macros.idl'):
-      releasestr = GetOption('release')
+      releasestr = ' '.join(releases)
       if releasestr:
-        release_numbers = re.findall('\d+', releasestr)
-        if release_numbers:
-          out.Write('\n#define PPAPI_RELEASE %s\n' % release_numbers[0])
+        release_numbers = re.findall('[\d\_]+', releasestr)
+        release = re.findall('\d+', release_numbers[-1])[0]
+        if release:
+          out.Write('\n#define PPAPI_RELEASE %s\n' % release)
 
     # Generate all interface defines
     out.Write('\n')
@@ -237,12 +288,33 @@ class HGen(GeneratorByFile):
       # Skip this interface if there are no matching versions
       if not unique: continue
 
+      last_stable_ver = None
+      last_dev_rel = None
+      for rel in unique:
+        channel = node.GetProperty('FILE').release_map.GetChannel(rel)
+        if channel == 'dev':
+          last_dev_rel = rel
+
       for rel in unique:
         version = node.GetVersion(rel)
         name = cgen.GetInterfaceString(node, version)
         strver = str(version).replace('.', '_')
-        idefs += cgen.GetDefine('%s_%s' % (macro, strver), '"%s"' % name)
-      idefs += cgen.GetDefine(macro, '%s_%s' % (macro, strver)) + '\n'
+        channel = node.GetProperty('FILE').release_map.GetChannel(rel)
+        if channel == 'dev':
+          # Skip dev channel interface versions that are
+          #   Not the newest version, and
+          #   Don't have an equivalent stable version.
+          if rel != last_dev_rel and not node.DevInterfaceMatchesStable(rel):
+            continue
+          value_string = '"%s" /* dev */' % name
+        else:
+          value_string = '"%s"' % name
+          last_stable_ver = strver
+        idefs += cgen.GetDefine('%s_%s' % (macro, strver), value_string)
+      if last_stable_ver:
+        idefs += cgen.GetDefine(macro, '%s_%s' % (macro, last_stable_ver))
+        idefs += '\n'
+
       out.Write(idefs)
 
     # Generate the @file comment
@@ -286,11 +358,11 @@ def main(args):
   filenames = glob.glob(idldir)
 
   ast = ParseFiles(filenames)
-  if hgen.GenerateRange(ast, ['M13', 'M14', 'M15'], {}):
-    print "Golden file for M13-M15 failed."
+  if hgen.GenerateRange(ast, ['M13', 'M14', 'M15', 'M16', 'M17'], {}):
+    print "Golden file for M13-M17 failed."
     failed =1
   else:
-    print "Golden file for M13-M15 passed."
+    print "Golden file for M13-M17 passed."
 
   return failed
 

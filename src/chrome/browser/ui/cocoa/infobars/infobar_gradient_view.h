@@ -5,23 +5,27 @@
 #ifndef CHROME_BROWSER_UI_COCOA_INFOBARS_INFOBAR_GRADIENT_VIEW_H_
 #define CHROME_BROWSER_UI_COCOA_INFOBARS_INFOBAR_GRADIENT_VIEW_H_
 
-#include "chrome/browser/api/infobars/infobar_delegate.h"
 #import "chrome/browser/ui/cocoa/vertical_gradient_view.h"
+#include "components/infobars/core/infobar_delegate.h"
 
 #import <Cocoa/Cocoa.h>
 
 // A custom view that draws the background gradient for an infobar.
 @interface InfoBarGradientView : VerticalGradientView {
  @private
-  NSPoint tipApex_;
+  CGFloat arrowHeight_;
+  CGFloat arrowHalfWidth_;
+  CGFloat arrowX_;
+  BOOL hasTip_;
 }
 
-// The point, in window coordinates, at which the infobar tip is the highest and
-// pointing at the omnibox decoration.
-@property(assign, nonatomic) NSPoint tipApex;
+@property(assign, nonatomic) CGFloat arrowHeight;
+@property(assign, nonatomic) CGFloat arrowHalfWidth;
+@property(assign, nonatomic) CGFloat arrowX;
+@property(assign, nonatomic) BOOL hasTip;
 
 // Sets the infobar type. This will change the view's gradient.
-- (void)setInfobarType:(InfoBarDelegate::Type)infobarType;
+- (void)setInfobarType:(infobars::InfoBarDelegate::Type)infobarType;
 
 @end
 

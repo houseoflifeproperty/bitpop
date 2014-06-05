@@ -26,22 +26,21 @@
  */
 
 #define BITSTREAM_READER_LE
-#include "libavutil/audioconvert.h"
-#include "libavutil/lzo.h"
+#include "libavutil/channel_layout.h"
+#include "libavutil/mem.h"
 #include "libavutil/opt.h"
 #include "avcodec.h"
-#include "internal.h"
 #include "get_bits.h"
 #include "acelp_vectors.h"
 #include "celp_filters.h"
 #include "celp_math.h"
 #include "g723_1_data.h"
+#include "internal.h"
 
 #define CNG_RANDOM_SEED 12345
 
 typedef struct g723_1_context {
     AVClass *class;
-    AVFrame frame;
 
     G723_1_Subframe subframe[4];
     enum FrameType cur_frame_type;
@@ -91,9 +90,6 @@ static av_cold int g723_1_decode_init(AVCodecContext *avctx)
     avctx->sample_fmt     = AV_SAMPLE_FMT_S16;
     avctx->channels       = 1;
     p->pf_gain            = 1 << 12;
-
-    avcodec_get_frame_defaults(&p->frame);
-    avctx->coded_frame    = &p->frame;
 
     memcpy(p->prev_lsp, dc_lsp, LPC_ORDER * sizeof(*p->prev_lsp));
     memcpy(p->sid_lsp,  dc_lsp, LPC_ORDER * sizeof(*p->sid_lsp));
@@ -226,8 +222,10 @@ static int unpack_bitstream(G723_1_Context *p, const uint8_t *buf,
 /**
  * Bitexact implementation of sqrt(val/2).
  */
-static int16_t square_root(int val)
+static int16_t square_root(unsigned val)
 {
+    av_assert2(!(val & 0x80000000));
+
     return (ff_sqrt(val << 1) >> 1) & (~1);
 }
 
@@ -357,7 +355,7 @@ static void lsp2lpc(int16_t *lpc)
 
     /* Calculate negative cosine */
     for (j = 0; j < LPC_ORDER; j++) {
-        int index     = lpc[j] >> 7;
+        int index     = (lpc[j] >> 7) & 0x1FF;
         int offset    = lpc[j] & 0x7f;
         int temp1     = cos_tab[index] << 16;
         int temp2     = (cos_tab[index + 1] - cos_tab[index]) *
@@ -711,7 +709,7 @@ static void comp_ppf_coeff(G723_1_Context *p, int offset, int pitch_lag,
 
     scale = normalize_bits(temp1, 31);
     for (i = 0; i < 5; i++)
-        energy[i] = av_clipl_int32(energy[i] << scale) >> 16;
+        energy[i] = (energy[i] << scale) >> 16;
 
     if (fwd_lag && !back_lag) {  /* Case 1 */
         comp_ppf_gains(fwd_lag,  ppf, cur_rate, energy[0], energy[1],
@@ -1155,6 +1153,7 @@ static int g723_1_decode_frame(AVCodecContext *avctx, void *data,
                                int *got_frame_ptr, AVPacket *avpkt)
 {
     G723_1_Context *p  = avctx->priv_data;
+    AVFrame *frame     = data;
     const uint8_t *buf = avpkt->data;
     int buf_size       = avpkt->size;
     int dec_mode       = buf[0] & 3;
@@ -1184,13 +1183,11 @@ static int g723_1_decode_frame(AVCodecContext *avctx, void *data,
             p->cur_frame_type = UNTRANSMITTED_FRAME;
     }
 
-    p->frame.nb_samples = FRAME_LEN;
-    if ((ret = avctx->get_buffer(avctx, &p->frame)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    frame->nb_samples = FRAME_LEN;
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
 
-    out = (int16_t *)p->frame.data[0];
+    out = (int16_t *)frame->data[0];
 
     if (p->cur_frame_type == ACTIVE_FRAME) {
         if (!bad_frame)
@@ -1261,7 +1258,7 @@ static int g723_1_decode_frame(AVCodecContext *avctx, void *data,
                        (FRAME_LEN + PITCH_MAX) * sizeof(*p->excitation));
                 memset(p->prev_excitation, 0,
                        PITCH_MAX * sizeof(*p->excitation));
-                memset(p->frame.data[0], 0,
+                memset(frame->data[0], 0,
                        (FRAME_LEN + LPC_ORDER) * sizeof(int16_t));
             } else {
                 int16_t *buf = p->audio + LPC_ORDER;
@@ -1310,8 +1307,7 @@ static int g723_1_decode_frame(AVCodecContext *avctx, void *data,
             out[i] = av_clip_int16(p->audio[LPC_ORDER + i] << 1);
     }
 
-    *got_frame_ptr   = 1;
-    *(AVFrame *)data = p->frame;
+    *got_frame_ptr = 1;
 
     return frame_size[dec_mode];
 }
@@ -1335,12 +1331,12 @@ static const AVClass g723_1dec_class = {
 
 AVCodec ff_g723_1_decoder = {
     .name           = "g723_1",
+    .long_name      = NULL_IF_CONFIG_SMALL("G.723.1"),
     .type           = AVMEDIA_TYPE_AUDIO,
     .id             = AV_CODEC_ID_G723_1,
     .priv_data_size = sizeof(G723_1_Context),
     .init           = g723_1_decode_init,
     .decode         = g723_1_decode_frame,
-    .long_name      = NULL_IF_CONFIG_SMALL("G.723.1"),
     .capabilities   = CODEC_CAP_SUBFRAMES | CODEC_CAP_DR1,
     .priv_class     = &g723_1dec_class,
 };
@@ -2459,7 +2455,7 @@ static int g723_1_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
         offset += LPC_ORDER;
     }
 
-    if ((ret = ff_alloc_packet2(avctx, avpkt, 24)))
+    if ((ret = ff_alloc_packet2(avctx, avpkt, 24)) < 0)
         return ret;
 
     *got_packet_ptr = 1;
@@ -2469,12 +2465,12 @@ static int g723_1_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
 
 AVCodec ff_g723_1_encoder = {
     .name           = "g723_1",
+    .long_name      = NULL_IF_CONFIG_SMALL("G.723.1"),
     .type           = AVMEDIA_TYPE_AUDIO,
     .id             = AV_CODEC_ID_G723_1,
     .priv_data_size = sizeof(G723_1_Context),
     .init           = g723_1_encode_init,
     .encode2        = g723_1_encode_frame,
-    .long_name      = NULL_IF_CONFIG_SMALL("G.723.1"),
     .sample_fmts    = (const enum AVSampleFormat[]){AV_SAMPLE_FMT_S16,
                                                     AV_SAMPLE_FMT_NONE},
 };

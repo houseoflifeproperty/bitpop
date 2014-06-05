@@ -7,32 +7,40 @@
 #include <X11/extensions/XInput.h>
 
 #include "base/callback.h"
-#include "base/logging.h"
+#include "base/single_thread_task_runner.h"
+#include "remoting/base/logging.h"
+#include "remoting/host/client_session_control.h"
 
 namespace remoting {
 
 class CurtainModeLinux : public CurtainMode {
  public:
-  CurtainModeLinux(const base::Closure& on_session_activate,
-                   const base::Closure& on_error);
+  CurtainModeLinux();
 
   // Overriden from CurtainMode.
-  virtual void SetActivated(bool activated) OVERRIDE;
+  virtual bool Activate() OVERRIDE;
 
  private:
   // Returns true if the host is running under an Xvfb session.
   bool IsXvfbSession();
 
-  base::Closure on_session_activate_;
-  base::Closure on_error_;
-
   DISALLOW_COPY_AND_ASSIGN(CurtainModeLinux);
 };
 
-CurtainModeLinux::CurtainModeLinux(const base::Closure& on_session_activate,
-                                   const base::Closure& on_error)
-    : on_session_activate_(on_session_activate),
-      on_error_(on_error) {
+CurtainModeLinux::CurtainModeLinux() {
+}
+
+bool CurtainModeLinux::Activate() {
+  // We can't curtain the session in run-time in Linux.
+  // Either the session is running on Xvfb (i.e. always curtained), or it is
+  // attached to the physical console (i.e. impossible to curtain).
+  bool activated = IsXvfbSession();
+  if (!activated) {
+    LOG(ERROR) << "Curtain-mode is not supported when running on non-Xvfb "
+                  "X server";
+  }
+
+  return activated;
 }
 
 bool CurtainModeLinux::IsXvfbSession() {
@@ -60,7 +68,7 @@ bool CurtainModeLinux::IsXvfbSession() {
         found_xvfb_mouse = true;
       } else if (strcmp(device_info->name, "Virtual core XTEST pointer") != 0) {
         found_other_devices = true;
-        LOG(INFO) << "Non Xvfb mouse found: " << device_info->name;
+        HOST_LOG << "Non Xvfb mouse found: " << device_info->name;
       }
     } else if (device_info->use == IsXExtensionKeyboard) {
       if (strcmp(device_info->name, "Xvfb keyboard") == 0) {
@@ -68,21 +76,21 @@ bool CurtainModeLinux::IsXvfbSession() {
       } else if (strcmp(device_info->name,
                         "Virtual core XTEST keyboard") != 0) {
         found_other_devices = true;
-        LOG(INFO) << "Non Xvfb keyboard found: " << device_info->name;
+        HOST_LOG << "Non Xvfb keyboard found: " << device_info->name;
       }
     } else if (device_info->use == IsXPointer) {
       if (strcmp(device_info->name, "Virtual core pointer") != 0) {
         found_other_devices = true;
-        LOG(INFO) << "Non Xvfb mouse found: " << device_info->name;
+        HOST_LOG << "Non Xvfb mouse found: " << device_info->name;
       }
     } else if (device_info->use == IsXKeyboard) {
       if (strcmp(device_info->name, "Virtual core keyboard") != 0) {
         found_other_devices = true;
-        LOG(INFO) << "Non Xvfb keyboard found: " << device_info->name;
+        HOST_LOG << "Non Xvfb keyboard found: " << device_info->name;
       }
     } else {
       found_other_devices = true;
-      LOG(INFO) << "Non Xvfb device found: " << device_info->name;
+      HOST_LOG << "Non Xvfb device found: " << device_info->name;
     }
   }
   XFreeDeviceList(devices);
@@ -90,21 +98,12 @@ bool CurtainModeLinux::IsXvfbSession() {
   return found_xvfb_mouse && found_xvfb_keyboard && !found_other_devices;
 }
 
-void CurtainModeLinux::SetActivated(bool activated) {
-  // We can't curtain the session in run-time in Linux.
-  // Either the session is running on Xvfb (i.e. always curtained), or it is
-  // attached to the physical console (i.e. impossible to curtain).
-  if (activated && !IsXvfbSession()) {
-    on_error_.Run();
-  }
-}
-
 // static
 scoped_ptr<CurtainMode> CurtainMode::Create(
-    const base::Closure& on_session_activate,
-    const base::Closure& on_error) {
-  return scoped_ptr<CurtainMode>(
-      new CurtainModeLinux(on_session_activate, on_error));
+    scoped_refptr<base::SingleThreadTaskRunner> caller_task_runner,
+    scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
+    base::WeakPtr<ClientSessionControl> client_session_control) {
+  return scoped_ptr<CurtainMode>(new CurtainModeLinux());
 }
 
 }  // namespace remoting

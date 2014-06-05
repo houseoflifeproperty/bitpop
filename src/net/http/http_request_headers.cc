@@ -5,10 +5,11 @@
 #include "net/http/http_request_headers.h"
 
 #include "base/logging.h"
-#include "base/stringprintf.h"
-#include "base/string_split.h"
-#include "base/string_util.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/values.h"
+#include "net/http/http_log_util.h"
 #include "net/http/http_util.h"
 
 namespace net {
@@ -85,16 +86,16 @@ void HttpRequestHeaders::SetHeader(const base::StringPiece& key,
                                    const base::StringPiece& value) {
   HeaderVector::iterator it = FindHeader(key);
   if (it != headers_.end())
-    it->value = value.as_string();
+    it->value.assign(value.data(), value.size());
   else
-    headers_.push_back(HeaderKeyValuePair(key.as_string(), value.as_string()));
+    headers_.push_back(HeaderKeyValuePair(key, value));
 }
 
 void HttpRequestHeaders::SetHeaderIfMissing(const base::StringPiece& key,
                                             const base::StringPiece& value) {
   HeaderVector::iterator it = FindHeader(key);
   if (it == headers_.end())
-    headers_.push_back(HeaderKeyValuePair(key.as_string(), value.as_string()));
+    headers_.push_back(HeaderKeyValuePair(key, value));
 }
 
 void HttpRequestHeaders::RemoveHeader(const base::StringPiece& key) {
@@ -183,18 +184,19 @@ std::string HttpRequestHeaders::ToString() const {
   return output;
 }
 
-Value* HttpRequestHeaders::NetLogCallback(
+base::Value* HttpRequestHeaders::NetLogCallback(
     const std::string* request_line,
-    NetLog::LogLevel /* log_level */) const {
-  DictionaryValue* dict = new DictionaryValue();
+    NetLog::LogLevel log_level) const {
+  base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetString("line", *request_line);
-  ListValue* headers = new ListValue();
+  base::ListValue* headers = new base::ListValue();
   for (HeaderVector::const_iterator it = headers_.begin();
        it != headers_.end(); ++it) {
-    headers->Append(
-        new StringValue(base::StringPrintf("%s: %s",
-                                           it->key.c_str(),
-                                           it->value.c_str())));
+    std::string log_value = ElideHeaderValueForNetLog(
+        log_level, it->key, it->value);
+    headers->Append(new base::StringValue(
+        base::StringPrintf("%s: %s",
+                           it->key.c_str(), log_value.c_str())));
   }
   dict->Set("headers", headers);
   return dict;

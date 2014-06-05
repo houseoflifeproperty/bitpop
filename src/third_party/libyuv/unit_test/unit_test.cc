@@ -4,7 +4,7 @@
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
  *  tree. An additional intellectual property rights grant can be found
- *  in the file PATENTS.  All contributing project authors may
+ *  in the file PATENTS. All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
@@ -39,8 +39,14 @@ libyuvTest::libyuvTest() : rotate_max_w_(128), rotate_max_h_(128),
     if (height) {
       benchmark_height_ = atoi(height);  // NOLINT
     }
-    benchmark_pixels_div256_ = (benchmark_iterations_ * benchmark_width_ *
-        benchmark_height_ + 255) / 256;
+    benchmark_pixels_div256_ = static_cast<int>((
+        static_cast<double>(Abs(benchmark_width_)) *
+        static_cast<double>(Abs(benchmark_height_)) *
+        static_cast<double>(benchmark_iterations_)  + 255.0) / 256.0);
+    benchmark_pixels_div1280_ = static_cast<int>((
+        static_cast<double>(Abs(benchmark_width_)) *
+        static_cast<double>(Abs(benchmark_height_)) *
+        static_cast<double>(benchmark_iterations_)  + 1279.0) / 1280.0);
 }
 
 int main(int argc, char** argv) {

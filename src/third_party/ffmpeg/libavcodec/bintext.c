@@ -29,12 +29,14 @@
  */
 
 #include "libavutil/intreadwrite.h"
+#include "libavutil/xga_font_data.h"
 #include "avcodec.h"
 #include "cga_data.h"
 #include "bintext.h"
+#include "internal.h"
 
 typedef struct XbinContext {
-    AVFrame frame;
+    AVFrame *frame;
     int palette[16];
     int flags;
     int font_height;
@@ -48,7 +50,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     uint8_t *p;
     int i;
 
-    avctx->pix_fmt = PIX_FMT_PAL8;
+    avctx->pix_fmt = AV_PIX_FMT_PAL8;
     p = avctx->extradata;
     if (p) {
         s->font_height = p[0];
@@ -82,13 +84,17 @@ static av_cold int decode_init(AVCodecContext *avctx)
             av_log(avctx, AV_LOG_WARNING, "font height %i not supported\n", s->font_height);
             s->font_height = 8;
         case 8:
-            s->font = ff_cga_font;
+            s->font = avpriv_cga_font;
             break;
         case 16:
-            s->font = ff_vga16_font;
+            s->font = avpriv_vga16_font;
             break;
         }
     }
+
+    s->frame = av_frame_alloc();
+    if (!s->frame)
+        return AVERROR(ENOMEM);
 
     return 0;
 }
@@ -100,10 +106,10 @@ av_unused static void hscroll(AVCodecContext *avctx)
     if (s->y < avctx->height - s->font_height) {
         s->y += s->font_height;
     } else {
-        memmove(s->frame.data[0], s->frame.data[0] + s->font_height*s->frame.linesize[0],
-            (avctx->height - s->font_height)*s->frame.linesize[0]);
-        memset(s->frame.data[0] + (avctx->height - s->font_height)*s->frame.linesize[0],
-            DEFAULT_BG_COLOR, s->font_height * s->frame.linesize[0]);
+        memmove(s->frame->data[0], s->frame->data[0] + s->font_height*s->frame->linesize[0],
+            (avctx->height - s->font_height)*s->frame->linesize[0]);
+        memset(s->frame->data[0] + (avctx->height - s->font_height)*s->frame->linesize[0],
+            DEFAULT_BG_COLOR, s->font_height * s->frame->linesize[0]);
     }
 }
 
@@ -117,8 +123,8 @@ static void draw_char(AVCodecContext *avctx, int c, int a)
     XbinContext *s = avctx->priv_data;
     if (s->y > avctx->height - s->font_height)
         return;
-    ff_draw_pc_font(s->frame.data[0] + s->y * s->frame.linesize[0] + s->x,
-                    s->frame.linesize[0], s->font, s->font_height, c,
+    ff_draw_pc_font(s->frame->data[0] + s->y * s->frame->linesize[0] + s->x,
+                    s->frame->linesize[0], s->font, s->font_height, c,
                     a & 0x0F, a >> 4);
     s->x += FONT_WIDTH;
     if (s->x > avctx->width - FONT_WIDTH) {
@@ -128,25 +134,21 @@ static void draw_char(AVCodecContext *avctx, int c, int a)
 }
 
 static int decode_frame(AVCodecContext *avctx,
-                            void *data, int *data_size,
+                            void *data, int *got_frame,
                             AVPacket *avpkt)
 {
     XbinContext *s = avctx->priv_data;
     const uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
     const uint8_t *buf_end = buf+buf_size;
+    int ret;
 
     s->x = s->y = 0;
-    s->frame.buffer_hints = FF_BUFFER_HINTS_VALID |
-                            FF_BUFFER_HINTS_PRESERVE |
-                            FF_BUFFER_HINTS_REUSABLE;
-    if (avctx->reget_buffer(avctx, &s->frame)) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
-        return -1;
-    }
-    s->frame.pict_type           = AV_PICTURE_TYPE_I;
-    s->frame.palette_has_changed = 1;
-    memcpy(s->frame.data[1], s->palette, 16 * 4);
+    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0)
+        return ret;
+    s->frame->pict_type           = AV_PICTURE_TYPE_I;
+    s->frame->palette_has_changed = 1;
+    memcpy(s->frame->data[1], s->palette, 16 * 4);
 
     if (avctx->codec_id == AV_CODEC_ID_XBIN) {
         while (buf + 2 < buf_end) {
@@ -200,8 +202,9 @@ static int decode_frame(AVCodecContext *avctx,
         }
     }
 
-    *data_size = sizeof(AVFrame);
-    *(AVFrame*)data = s->frame;
+    if ((ret = av_frame_ref(data, s->frame)) < 0)
+        return ret;
+    *got_frame      = 1;
     return buf_size;
 }
 
@@ -209,8 +212,7 @@ static av_cold int decode_end(AVCodecContext *avctx)
 {
     XbinContext *s = avctx->priv_data;
 
-    if (s->frame.data[0])
-        avctx->release_buffer(avctx, &s->frame);
+    av_frame_free(&s->frame);
 
     return 0;
 }
@@ -218,6 +220,7 @@ static av_cold int decode_end(AVCodecContext *avctx)
 #if CONFIG_BINTEXT_DECODER
 AVCodec ff_bintext_decoder = {
     .name           = "bintext",
+    .long_name      = NULL_IF_CONFIG_SMALL("Binary text"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_BINTEXT,
     .priv_data_size = sizeof(XbinContext),
@@ -225,12 +228,12 @@ AVCodec ff_bintext_decoder = {
     .close          = decode_end,
     .decode         = decode_frame,
     .capabilities   = CODEC_CAP_DR1,
-    .long_name      = NULL_IF_CONFIG_SMALL("Binary text"),
 };
 #endif
 #if CONFIG_XBIN_DECODER
 AVCodec ff_xbin_decoder = {
     .name           = "xbin",
+    .long_name      = NULL_IF_CONFIG_SMALL("eXtended BINary text"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_XBIN,
     .priv_data_size = sizeof(XbinContext),
@@ -238,12 +241,12 @@ AVCodec ff_xbin_decoder = {
     .close          = decode_end,
     .decode         = decode_frame,
     .capabilities   = CODEC_CAP_DR1,
-    .long_name      = NULL_IF_CONFIG_SMALL("eXtended BINary text"),
 };
 #endif
 #if CONFIG_IDF_DECODER
 AVCodec ff_idf_decoder = {
     .name           = "idf",
+    .long_name      = NULL_IF_CONFIG_SMALL("iCEDraw text"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_IDF,
     .priv_data_size = sizeof(XbinContext),
@@ -251,6 +254,5 @@ AVCodec ff_idf_decoder = {
     .close          = decode_end,
     .decode         = decode_frame,
     .capabilities   = CODEC_CAP_DR1,
-    .long_name      = NULL_IF_CONFIG_SMALL("iCEDraw text"),
 };
 #endif

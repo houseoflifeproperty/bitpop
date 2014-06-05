@@ -1,9 +1,9 @@
 # Copyright (C) 2010 Google Inc. All rights reserved.
-# 
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are
 # met:
-# 
+#
 #     * Redistributions of source code must retain the above copyright
 # notice, this list of conditions and the following disclaimer.
 #     * Redistributions in binary form must reproduce the above
@@ -13,7 +13,7 @@
 #     * Neither the name of Google Inc. nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-# 
+#
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
 # "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
 # LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -45,14 +45,13 @@ class ConfirmDiff(AbstractStep):
             Options.confirm,
         ]
 
-    def _show_pretty_diff(self, diff):
+    def _show_pretty_diff(self):
         if not self._tool.user.can_open_url():
             return None
 
         try:
-            pretty_patch = PrettyPatch(self._tool.executive,
-                                       self._tool.scm().checkout_root)
-            pretty_diff_file = pretty_patch.pretty_diff_file(diff)
+            pretty_patch = PrettyPatch(self._tool.executive)
+            pretty_diff_file = pretty_patch.pretty_diff_file(self.diff())
             url = "file://%s" % urllib.quote(pretty_diff_file.name)
             self._tool.user.open_url(url)
             # We return the pretty_diff_file here because we need to keep the
@@ -63,13 +62,15 @@ class ConfirmDiff(AbstractStep):
         except OSError, e:
             _log.warning("PrettyPatch unavailable.")
 
+    def diff(self):
+        changed_files = self._tool.scm().changed_files(self._options.git_commit)
+        return self._tool.scm().create_patch(self._options.git_commit,
+            changed_files=changed_files)
+
     def run(self, state):
         if not self._options.confirm:
             return
-        diff = self.cached_lookup(state, "diff")
-        pretty_diff_file = self._show_pretty_diff(diff)
-        if not pretty_diff_file:
-            self._tool.user.page(diff)
+        pretty_diff_file = self._show_pretty_diff()
         diff_correct = self._tool.user.confirm("Was that diff correct?")
         if pretty_diff_file:
             pretty_diff_file.close()

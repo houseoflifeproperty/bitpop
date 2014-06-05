@@ -10,9 +10,9 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "chrome/common/safe_browsing/csd.pb.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/renderer/safe_browsing/feature_extractor_clock.h"
@@ -23,13 +23,13 @@
 #include "chrome/renderer/safe_browsing/scorer.h"
 #include "content/public/renderer/render_view.h"
 #include "crypto/sha2.h"
-#include "googleurl/src/gurl.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDataSource.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
+#include "third_party/WebKit/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/public/web/WebDataSource.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebView.h"
+#include "url/gurl.h"
 
 namespace safe_browsing {
 
@@ -41,7 +41,7 @@ PhishingClassifier::PhishingClassifier(content::RenderView* render_view,
     : render_view_(render_view),
       scorer_(NULL),
       clock_(clock),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
   Clear();
 }
 
@@ -78,7 +78,7 @@ bool PhishingClassifier::is_ready() const {
 }
 
 void PhishingClassifier::BeginClassification(
-    const string16* page_text,
+    const base::string16* page_text,
     const DoneCallback& done_callback) {
   DCHECK(is_ready());
 
@@ -96,20 +96,20 @@ void PhishingClassifier::BeginClassification(
   // asynchronously, rather than directly from this method.  To ensure that
   // this is the case, post a task to begin feature extraction on the next
   // iteration of the message loop.
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&PhishingClassifier::BeginFeatureExtraction,
                  weak_factory_.GetWeakPtr()));
 }
 
 void PhishingClassifier::BeginFeatureExtraction() {
-  WebKit::WebView* web_view = render_view_->GetWebView();
+  blink::WebView* web_view = render_view_->GetWebView();
   if (!web_view) {
     RunFailureCallback();
     return;
   }
 
-  WebKit::WebFrame* frame = web_view->mainFrame();
+  blink::WebFrame* frame = web_view->mainFrame();
   if (!frame) {
     RunFailureCallback();
     return;
@@ -118,12 +118,12 @@ void PhishingClassifier::BeginFeatureExtraction() {
   // Check whether the URL is one that we should classify.
   // Currently, we only classify http: URLs that are GET requests.
   GURL url(frame->document().url());
-  if (!url.SchemeIs(chrome::kHttpScheme)) {
+  if (!url.SchemeIs(url::kHttpScheme)) {
     RunFailureCallback();
     return;
   }
 
-  WebKit::WebDataSource* ds = frame->dataSource();
+  blink::WebDataSource* ds = frame->dataSource();
   if (!ds || !EqualsASCII(ds->request().httpMethod(), "GET")) {
     RunFailureCallback();
     return;
@@ -169,12 +169,12 @@ void PhishingClassifier::DOMExtractionFinished(bool success) {
 
 void PhishingClassifier::TermExtractionFinished(bool success) {
   if (success) {
-    WebKit::WebView* web_view = render_view_->GetWebView();
+    blink::WebView* web_view = render_view_->GetWebView();
     if (!web_view) {
       RunFailureCallback();
       return;
     }
-    WebKit::WebFrame* main_frame = web_view->mainFrame();
+    blink::WebFrame* main_frame = web_view->mainFrame();
     if (!main_frame) {
       RunFailureCallback();
       return;

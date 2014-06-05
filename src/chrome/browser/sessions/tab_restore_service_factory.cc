@@ -4,27 +4,28 @@
 
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
 
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 
 // static
 TabRestoreService* TabRestoreServiceFactory::GetForProfile(Profile* profile) {
   return static_cast<TabRestoreService*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
 TabRestoreService* TabRestoreServiceFactory::GetForProfileIfExisting(
     Profile* profile) {
   return static_cast<TabRestoreService*>(
-      GetInstance()->GetServiceForProfile(profile, false));
+      GetInstance()->GetServiceForBrowserContext(profile, false));
 }
 
 // static
 void TabRestoreServiceFactory::ResetForProfile(Profile* profile) {
   TabRestoreServiceFactory* factory = GetInstance();
-  factory->ProfileShutdown(profile);
-  factory->ProfileDestroyed(profile);
+  factory->BrowserContextShutdown(profile);
+  factory->BrowserContextDestroyed(profile);
 }
 
 TabRestoreServiceFactory* TabRestoreServiceFactory::GetInstance() {
@@ -32,8 +33,9 @@ TabRestoreServiceFactory* TabRestoreServiceFactory::GetInstance() {
 }
 
 TabRestoreServiceFactory::TabRestoreServiceFactory()
-    : ProfileKeyedServiceFactory("TabRestoreService",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "TabRestoreService",
+        BrowserContextDependencyManager::GetInstance()) {
 }
 
 TabRestoreServiceFactory::~TabRestoreServiceFactory() {

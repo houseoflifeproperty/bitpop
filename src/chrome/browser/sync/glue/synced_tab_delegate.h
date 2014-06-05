@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_SYNC_GLUE_SYNCED_TAB_DELEGATE_H__
 
 #include <string>
+#include <vector>
 
 #include "chrome/browser/sessions/session_id.h"
 
@@ -13,6 +14,7 @@ class Profile;
 
 namespace content {
 class NavigationEntry;
+class WebContents;
 }
 
 namespace browser_sync {
@@ -43,7 +45,22 @@ class SyncedTabDelegate {
   virtual content::NavigationEntry* GetEntryAtIndex(int i) const = 0;
   virtual content::NavigationEntry* GetActiveEntry() const = 0;
 
+  // Managed user related methods.
+
+  virtual bool ProfileIsManaged() const = 0;
+  virtual const std::vector<const content::NavigationEntry*>*
+      GetBlockedNavigations() const = 0;
+
   virtual bool IsPinned() const = 0;
+  virtual bool HasWebContents() const = 0;
+  virtual content::WebContents* GetWebContents() const = 0;
+
+  // Session sync related methods.
+  virtual int GetSyncId() const = 0;
+  virtual void SetSyncId(int sync_id) = 0;
+  // Returns the SyncedTabDelegate associated with WebContents.
+  static SyncedTabDelegate* ImplFromWebContents(
+      content::WebContents* web_contents);
 };
 
 }  // namespace browser_sync

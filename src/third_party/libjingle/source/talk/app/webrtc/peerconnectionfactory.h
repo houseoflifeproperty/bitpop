@@ -40,75 +40,92 @@ namespace webrtc {
 class PeerConnectionFactory : public PeerConnectionFactoryInterface,
                               public talk_base::MessageHandler {
  public:
-  virtual talk_base::scoped_refptr<PeerConnectionInterface>
-      CreatePeerConnection(const JsepInterface::IceServers& configuration,
-                           const MediaConstraintsInterface* constraints,
-                           PeerConnectionObserver* observer);
+  virtual void SetOptions(const Options& options) {
+    options_ = options;
+  }
 
   virtual talk_base::scoped_refptr<PeerConnectionInterface>
-      CreatePeerConnection(const JsepInterface::IceServers& configuration,
-                           const MediaConstraintsInterface* constraints,
-                           PortAllocatorFactoryInterface* allocator_factory,
-                           PeerConnectionObserver* observer);
+      CreatePeerConnection(
+          const PeerConnectionInterface::RTCConfiguration& configuration,
+          const MediaConstraintsInterface* constraints,
+          PortAllocatorFactoryInterface* allocator_factory,
+          DTLSIdentityServiceInterface* dtls_identity_service,
+          PeerConnectionObserver* observer);
+
   bool Initialize();
 
-  virtual talk_base::scoped_refptr<LocalMediaStreamInterface>
+  virtual talk_base::scoped_refptr<MediaStreamInterface>
       CreateLocalMediaStream(const std::string& label);
+
+  virtual talk_base::scoped_refptr<AudioSourceInterface> CreateAudioSource(
+      const MediaConstraintsInterface* constraints);
 
   virtual talk_base::scoped_refptr<VideoSourceInterface> CreateVideoSource(
       cricket::VideoCapturer* capturer,
       const MediaConstraintsInterface* constraints);
 
   virtual talk_base::scoped_refptr<VideoTrackInterface>
-      CreateVideoTrack(const std::string& label,
+      CreateVideoTrack(const std::string& id,
                        VideoSourceInterface* video_source);
 
   virtual talk_base::scoped_refptr<AudioTrackInterface>
-      CreateAudioTrack(const std::string& label,
+      CreateAudioTrack(const std::string& id,
                        AudioSourceInterface* audio_source);
-  // Deprecated:
-  virtual talk_base::scoped_refptr<LocalVideoTrackInterface>
-      CreateLocalVideoTrack(const std::string& label,
-                            cricket::VideoCapturer* video_device);
-  // Deprecated:
-  virtual talk_base::scoped_refptr<LocalAudioTrackInterface>
-      CreateLocalAudioTrack(const std::string& label,
-                            AudioDeviceModule* audio_device);
+
+  virtual bool StartAecDump(talk_base::PlatformFile file);
 
   virtual cricket::ChannelManager* channel_manager();
   virtual talk_base::Thread* signaling_thread();
   virtual talk_base::Thread* worker_thread();
+  const Options& options() const { return options_; }
 
  protected:
   PeerConnectionFactory();
   PeerConnectionFactory(
       talk_base::Thread* worker_thread,
       talk_base::Thread* signaling_thread,
-      AudioDeviceModule* default_adm);
+      AudioDeviceModule* default_adm,
+      cricket::WebRtcVideoEncoderFactory* video_encoder_factory,
+      cricket::WebRtcVideoDecoderFactory* video_decoder_factory);
   virtual ~PeerConnectionFactory();
-
 
  private:
   bool Initialize_s();
   void Terminate_s();
+  talk_base::scoped_refptr<AudioSourceInterface> CreateAudioSource_s(
+      const MediaConstraintsInterface* constraints);
   talk_base::scoped_refptr<VideoSourceInterface> CreateVideoSource_s(
       cricket::VideoCapturer* capturer,
       const MediaConstraintsInterface* constraints);
+
   talk_base::scoped_refptr<PeerConnectionInterface> CreatePeerConnection_s(
-      const JsepInterface::IceServers& configuration,
+      const PeerConnectionInterface::RTCConfiguration& configuration,
       const MediaConstraintsInterface* constraints,
       PortAllocatorFactoryInterface* allocator_factory,
+      DTLSIdentityServiceInterface* dtls_identity_service,
       PeerConnectionObserver* observer);
+
+  bool StartAecDump_s(talk_base::PlatformFile file);
+
   // Implements talk_base::MessageHandler.
   void OnMessage(talk_base::Message* msg);
 
   bool owns_ptrs_;
   talk_base::Thread* signaling_thread_;
   talk_base::Thread* worker_thread_;
+  Options options_;
   talk_base::scoped_refptr<PortAllocatorFactoryInterface> allocator_factory_;
   // External Audio device used for audio playback.
   talk_base::scoped_refptr<AudioDeviceModule> default_adm_;
   talk_base::scoped_ptr<cricket::ChannelManager> channel_manager_;
+  // External Video encoder factory. This can be NULL if the client has not
+  // injected any. In that case, video engine will use the internal SW encoder.
+  talk_base::scoped_ptr<cricket::WebRtcVideoEncoderFactory>
+      video_encoder_factory_;
+  // External Video decoder factory. This can be NULL if the client has not
+  // injected any. In that case, video engine will use the internal SW decoder.
+  talk_base::scoped_ptr<cricket::WebRtcVideoDecoderFactory>
+      video_decoder_factory_;
 };
 
 }  // namespace webrtc

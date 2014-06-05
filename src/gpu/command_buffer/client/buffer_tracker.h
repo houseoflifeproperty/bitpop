@@ -8,9 +8,9 @@
 #include <GLES2/gl2.h>
 
 #include <queue>
-#include "../client/hash_tables.h"
-#include "../common/gles2_cmd_format.h"
+#include "base/containers/hash_tables.h"
 #include "gles2_impl_export.h"
+#include "gpu/command_buffer/common/gles2_cmd_format.h"
 
 namespace gpu {
 
@@ -34,7 +34,9 @@ class GLES2_IMPL_EXPORT BufferTracker {
           shm_id_(shm_id),
           shm_offset_(shm_offset),
           address_(address),
-          mapped_(false) {
+          mapped_(false),
+          last_usage_token_(0),
+          last_async_upload_token_(0) {
     }
 
     GLenum id() const {
@@ -65,6 +67,22 @@ class GLES2_IMPL_EXPORT BufferTracker {
       return mapped_;
     }
 
+    void set_last_usage_token(int token) {
+      last_usage_token_ = token;
+    }
+
+    int last_usage_token() const {
+      return last_usage_token_;
+    }
+
+    void set_last_async_upload_token(uint32 async_token) {
+      last_async_upload_token_ = async_token;
+    }
+
+    GLuint last_async_upload_token() const {
+      return last_async_upload_token_;
+    }
+
    private:
     friend class BufferTracker;
     friend class BufferTrackerTest;
@@ -75,6 +93,8 @@ class GLES2_IMPL_EXPORT BufferTracker {
     uint32 shm_offset_;
     void* address_;
     bool mapped_;
+    int32 last_usage_token_;
+    GLuint last_async_upload_token_;
   };
 
   BufferTracker(MappedMemoryManager* manager);
@@ -86,10 +106,12 @@ class GLES2_IMPL_EXPORT BufferTracker {
 
   // Frees the block of memory associated with buffer, pending the passage
   // of a token.
-  void FreePendingToken(Buffer*, int32 token);
+  void FreePendingToken(Buffer* buffer, int32 token);
+  void Unmanage(Buffer* buffer);
+  void Free(Buffer* buffer);
 
  private:
-  typedef gpu::hash_map<GLuint, Buffer*> BufferMap;
+  typedef base::hash_map<GLuint, Buffer*> BufferMap;
 
   MappedMemoryManager* mapped_memory_;
   BufferMap buffers_;

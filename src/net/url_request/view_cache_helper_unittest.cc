@@ -34,7 +34,8 @@ TestURLRequestContext::TestURLRequestContext()
   set_http_transaction_factory(&cache_);
 }
 
-void WriteHeaders(disk_cache::Entry* entry, int flags, const std::string data) {
+void WriteHeaders(disk_cache::Entry* entry, int flags,
+                  const std::string& data) {
   if (data.empty())
     return;
 
@@ -49,11 +50,11 @@ void WriteHeaders(disk_cache::Entry* entry, int flags, const std::string data) {
   int len = static_cast<int>(pickle.size());
 
   net::TestCompletionCallback cb;
-  int rv = entry->WriteData(0, 0, buf, len, cb.callback(), true);
+  int rv = entry->WriteData(0, 0, buf.get(), len, cb.callback(), true);
   ASSERT_EQ(len, cb.GetResult(rv));
 }
 
-void WriteData(disk_cache::Entry* entry, int index, const std::string data) {
+void WriteData(disk_cache::Entry* entry, int index, const std::string& data) {
   if (data.empty())
     return;
 
@@ -62,13 +63,13 @@ void WriteData(disk_cache::Entry* entry, int index, const std::string data) {
   memcpy(buf->data(), data.data(), data.length());
 
   net::TestCompletionCallback cb;
-  int rv = entry->WriteData(index, 0, buf, len, cb.callback(), true);
+  int rv = entry->WriteData(index, 0, buf.get(), len, cb.callback(), true);
   ASSERT_EQ(len, cb.GetResult(rv));
 }
 
-void WriteToEntry(disk_cache::Backend* cache, const std::string key,
-                  const std::string data0, const std::string data1,
-                  const std::string data2) {
+void WriteToEntry(disk_cache::Backend* cache, const std::string& key,
+                  const std::string& data0, const std::string& data1,
+                  const std::string& data2) {
   net::TestCompletionCallback cb;
   disk_cache::Entry* entry;
   int rv = cache->CreateEntry(key, &entry, cb.callback());

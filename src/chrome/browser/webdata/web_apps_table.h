@@ -8,10 +8,11 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
-#include "chrome/browser/webdata/web_database_table.h"
+#include "components/webdata/common/web_database_table.h"
 
 class GURL;
 class SkBitmap;
+class WebDatabase;
 
 // This class manages the WebApps tables within the SQLite database passed to
 // the constructor. It expects the following schema:
@@ -30,11 +31,17 @@ class SkBitmap;
 //
 class WebAppsTable : public WebDatabaseTable {
  public:
-  WebAppsTable(sql::Connection* db, sql::MetaTable* meta_table)
-      : WebDatabaseTable(db, meta_table) {}
+  WebAppsTable() {}
   virtual ~WebAppsTable() {}
-  virtual bool Init() OVERRIDE;
+
+  // Retrieves the WebAppsTable* owned by |database|.
+  static WebAppsTable* FromWebDatabase(WebDatabase* database);
+
+  virtual WebDatabaseTable::TypeKey GetTypeKey() const OVERRIDE;
+  virtual bool CreateTablesIfNecessary() OVERRIDE;
   virtual bool IsSyncable() OVERRIDE;
+  virtual bool MigrateToVersion(int version,
+                                bool* update_compatible_version) OVERRIDE;
 
   bool SetWebAppImage(const GURL& url, const SkBitmap& image);
 

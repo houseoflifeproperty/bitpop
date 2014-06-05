@@ -4,14 +4,14 @@
 
 #include "chrome/browser/ui/ash/launcher/launcher_favicon_loader.h"
 
+#include "ash/shelf/shelf_constants.h"
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/ui/ash/launcher/browser_launcher_item_controller.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "googleurl/src/gurl.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "url/gurl.h"
 
 namespace internal {
 
@@ -19,7 +19,7 @@ const int kMaxBitmapSize = 256;
 
 ////////////////////////////////////////////////////////////////////////////////
 // FaviconBitmapHandler fetchs all bitmaps with the 'icon' (or 'shortcut icon')
-// link tag, storing the one that best matches ash::kLauncherPreferredSize.
+// link tag, storing the one that best matches ash::kShelfSize.
 // These icon bitmaps are not resized and are not cached beyond the lifetime
 // of the class. Bitmaps larger than kMaxBitmapSize are ignored.
 
@@ -30,10 +30,10 @@ class FaviconBitmapHandler : public content::WebContentsObserver {
       : content::WebContentsObserver(web_contents),
         delegate_(delegate),
         web_contents_(web_contents),
-        ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+        weak_ptr_factory_(this) {
   }
 
-  ~FaviconBitmapHandler() {}
+  virtual ~FaviconBitmapHandler() {}
 
   const SkBitmap& bitmap() const { return bitmap_; }
 
@@ -41,16 +41,15 @@ class FaviconBitmapHandler : public content::WebContentsObserver {
 
   // content::WebContentObserver implementation.
   virtual void DidUpdateFaviconURL(
-    int32 page_id,
     const std::vector<content::FaviconURL>& candidates) OVERRIDE;
 
  private:
   void DidDownloadFavicon(
       int id,
+      int http_status_code,
       const GURL& image_url,
-      bool errored,
-      int requested_size,
-      const std::vector<SkBitmap>& bitmaps);
+      const std::vector<SkBitmap>& bitmaps,
+      const std::vector<gfx::Size>& original_bitmap_sizes);
 
   void AddFavicon(const GURL& image_url, const SkBitmap& new_bitmap);
 
@@ -73,7 +72,6 @@ class FaviconBitmapHandler : public content::WebContentsObserver {
 };
 
 void FaviconBitmapHandler::DidUpdateFaviconURL(
-    int32 page_id,
     const std::vector<content::FaviconURL>& candidates) {
   // This function receives a complete list of faviocn urls for the page.
   // It may get called multiple times with the same list, and will also get
@@ -110,7 +108,10 @@ void FaviconBitmapHandler::DidUpdateFaviconURL(
     if (pending_requests_.find(*iter) != pending_requests_.end())
       continue;  // Skip already pending downloads.
     pending_requests_.insert(*iter);
-    web_contents_->DownloadFavicon(*iter, 0,
+    web_contents_->DownloadImage(
+        *iter,
+        true,  // is a favicon
+        0,     // no maximum size
         base::Bind(&FaviconBitmapHandler::DidDownloadFavicon,
                    weak_ptr_factory_.GetWeakPtr()));
   }
@@ -122,10 +123,10 @@ bool FaviconBitmapHandler::HasPendingDownloads() const {
 
 void FaviconBitmapHandler::DidDownloadFavicon(
     int id,
+    int http_status_code,
     const GURL& image_url,
-    bool errored,
-    int requested_size,
-    const std::vector<SkBitmap>& bitmaps) {
+    const std::vector<SkBitmap>& bitmaps,
+    const std::vector<gfx::Size>& original_bitmap_sizes) {
   UrlSet::iterator iter = pending_requests_.find(image_url);
   if (iter == pending_requests_.end()) {
     // Updates are received for all downloads; ignore unrequested urls.
@@ -134,7 +135,7 @@ void FaviconBitmapHandler::DidDownloadFavicon(
   pending_requests_.erase(iter);
 
   // Favicon bitmaps are ordered by decreasing width.
-  if (!errored && !bitmaps.empty())
+  if (!bitmaps.empty())
     AddFavicon(image_url, bitmaps[0]);
 }
 
@@ -144,7 +145,7 @@ void FaviconBitmapHandler::AddFavicon(const GURL& image_url,
   if (new_bitmap.height() > kMaxBitmapSize ||
       new_bitmap.width() > kMaxBitmapSize)
     return;
-  if (new_bitmap.height() < ash::kLauncherPreferredSize)
+  if (new_bitmap.height() < ash::kShelfSize)
     return;
   if (!bitmap_.isNull()) {
     // We want the smallest icon that is large enough.

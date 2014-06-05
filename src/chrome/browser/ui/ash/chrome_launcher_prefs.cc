@@ -7,17 +7,18 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 
 namespace {
 
 // App ID of default pinned apps.
 const char* kDefaultPinnedApps[] = {
-  "pjkljhegncpnkpknbcohdijeoejaedia",  // Gmail
-  "coobgpohoikkiipiblmjeljniedjpjpf",  // Search
-  "apdfllckaahabafndbhieahigkjlhalf",  // Doc
-  "blpcfgokakmgnkcojhhkbfbldkacnbeo",  // YouTube
+  extension_misc::kGmailAppId,
+  extension_misc::kGoogleSearchAppId,
+  extension_misc::kGoogleDocAppId,
+  extension_misc::kYoutubeAppId,
 };
 
 base::ListValue* CreateDefaultPinnedAppsList() {
@@ -40,30 +41,44 @@ const char kShelfAutoHideBehaviorNever[] = "Never";
 extern const char kShelfAlignmentBottom[] = "Bottom";
 extern const char kShelfAlignmentLeft[] = "Left";
 extern const char kShelfAlignmentRight[] = "Right";
+extern const char kShelfAlignmentTop[] = "Top";
 
-void RegisterChromeLauncherUserPrefs(PrefService* user_prefs) {
+void RegisterChromeLauncherUserPrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
   // TODO: If we want to support multiple profiles this will likely need to be
   // pushed to local state and we'll need to track profile per item.
-  user_prefs->RegisterListPref(prefs::kPinnedLauncherApps,
-                               CreateDefaultPinnedAppsList(),
-                               PrefService::SYNCABLE_PREF);
-  user_prefs->RegisterStringPref(prefs::kShelfAutoHideBehavior,
-                                 kShelfAutoHideBehaviorNever,
-                                 PrefService::SYNCABLE_PREF);
-  user_prefs->RegisterStringPref(prefs::kShelfAutoHideBehaviorLocal,
-                                 std::string(),
-                                 PrefService::UNSYNCABLE_PREF);
-  user_prefs->RegisterStringPref(prefs::kShelfAlignment,
-                                 kShelfAlignmentBottom,
-                                 PrefService::SYNCABLE_PREF);
-  user_prefs->RegisterStringPref(prefs::kShelfAlignmentLocal,
-                                 std::string(),
-                                 PrefService::UNSYNCABLE_PREF);
-  user_prefs->RegisterBooleanPref(prefs::kShowLogoutButtonInTray,
-                                  false,
-                                  PrefService::UNSYNCABLE_PREF);
-  user_prefs->RegisterDictionaryPref(prefs::kShelfPreferences,
-                                     PrefService::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kShelfChromeIconIndex,
+      0,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kPinnedLauncherApps,
+                             CreateDefaultPinnedAppsList(),
+                             user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kShelfAutoHideBehavior,
+                               kShelfAutoHideBehaviorNever,
+                               user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kShelfAutoHideBehaviorLocal,
+      std::string(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kShelfAlignment,
+                               kShelfAlignmentBottom,
+                               user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kShelfAlignmentLocal,
+      std::string(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterDictionaryPref(
+      prefs::kShelfPreferences,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kLogoutDialogDurationMs,
+      20000,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kShowLogoutButtonInTray,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 base::DictionaryValue* CreateAppDict(const std::string& app_id) {

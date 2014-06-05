@@ -4,9 +4,11 @@
 # found in the LICENSE file.
 
 
+import cStringIO
 import os
 import re
 import subprocess
+import sys
 import threading
 
 
@@ -14,10 +16,42 @@ import threading
 VERBOSE = False
 
 # The longest any single subprocess will be allowed to run.
-TIMEOUT = 20 * 60
+TIMEOUT = 40 * 60
+
+class AbnormalExit(Exception):
+  pass
 
 
-def GetStatusOutput(cmd, cwd=None):
+class StdioBuffer(object):
+  def __init__(self, name, out_queue):
+    self.closed = False
+    self.line_buffer = cStringIO.StringIO()
+    self.name = name
+    self.out_q = out_queue
+
+  def write(self, msg):
+    """Write into the buffer.  Only one thread should call write() at a time."""
+    assert not self.closed
+    self.line_buffer.write(msg)
+    # We can use '\n' instead of os.linesep because universal newlines is
+    # set to true below.
+    if '\n' in msg:
+      # We can assert that lines is at least 2 items if '\n' is present.
+      lines = self.line_buffer.getvalue().split('\n')
+      for line in lines[:-1]:
+        self.out_q.put('%s> %s' % (self.name, line))
+      self.line_buffer.close()
+      self.line_buffer = cStringIO.StringIO()
+      self.line_buffer.write(lines[-1])
+
+  def close(self):
+    # Empty out the line buffer.
+    self.write('\n')
+    self.out_q.put(None)
+    self.closed = True
+
+
+def GetStatusOutput(cmd, cwd=None, out_buffer=None):
   """Return (status, output) of executing cmd in a shell."""
   if VERBOSE:
     print ''
@@ -29,9 +63,25 @@ def GetStatusOutput(cmd, cwd=None):
     thr.stdout = ''
     thr.stderr = '<timeout>'
     try:
-      proc = subprocess.Popen(cmd, shell=True, universal_newlines=True, cwd=cwd,
-                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-      (stdout, _) = proc.communicate()
+      if out_buffer:
+        proc = subprocess.Popen(cmd, shell=True,
+                                cwd=cwd, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT)
+        while True:
+          buf = proc.stdout.read(1)
+          if buf == '\r':  # We want carriage returns in Linux to be newlines.
+            buf = '\n'
+          if not buf:
+            break
+          out_buffer.write(buf)
+        stdout = ''
+        proc.wait()
+        out_buffer.close()
+      else:
+        proc = subprocess.Popen(cmd, shell=True, universal_newlines=True,
+                                cwd=cwd, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT)
+        (stdout, _) = proc.communicate()
     except Exception, e:
       thr.status = -1
       thr.stdout = ''
@@ -55,39 +105,81 @@ def GetStatusOutput(cmd, cwd=None):
   return (thr.status, thr.stdout)
 
 
-def Git(git_repo, command, is_mirror=False):
+def Git(git_repo, command, is_mirror=False, out_buffer=None):
   """Execute a git command within a local git repo."""
   if is_mirror:
-    cmd = 'git --git-dir=%s %s' % (git_repo, command)
+    if git_repo:
+      cmd = 'git --git-dir=%s %s' % (git_repo, command)
+    else:
+      cmd = 'git %s' % command
     cwd = None
   else:
     cmd = 'git %s' % command
     cwd = git_repo
-  (status, output) = GetStatusOutput(cmd, cwd)
-  if status != 0:
+  (status, output) = GetStatusOutput(cmd, cwd, out_buffer)
+  # For Abnormal Exit, Windows returns -1, Posix returns 128.
+  if status in [-1, 128]:
+    raise AbnormalExit('Failed to run %s. Exited Abnormally. output %s' %
+                       (cmd, output))
+  elif status != 0:
     raise Exception('Failed to run %s. error %d. output %s' % (cmd, status,
                                                                output))
   return (status, output)
 
 
-def Clone(git_url, git_repo, is_mirror):
+def GetCacheRepoDir(git_url, cache_dir):
+  """Assuming we used git_cache to populate a cache, get the repo directory."""
+  _, out = Git(None, 'cache exists --cache-dir=%s %s' % (cache_dir, git_url),
+               is_mirror=True)
+  return out.strip()
+
+
+def Clone(git_url, git_repo, is_mirror, out_queue=None, cache_dir=None,
+          shallow=False):
   """Clone a repository."""
-  cmd = 'clone%s %s %s' % (' --mirror' if is_mirror else '', git_url, git_repo)
+  repo_name = git_url.split('/')[-1]
+  if out_queue:
+    buf = StdioBuffer(repo_name, out_queue)
+  else:
+    buf = None
+
+  if is_mirror == 'bare':
+    if shallow:
+      if 'adobe' in git_url:
+        # --shallow by default checks out 10000 revision, but for really large
+        # repos like adobe ones, we want significantly less than 10000.
+        shallow_arg = '--depth 10 '
+      else:
+        shallow_arg = '--shallow '
+    else:
+      shallow_arg = ''
+    cmd = 'cache populate -v --cache-dir %s %s%s' % (cache_dir, shallow_arg,
+                                                     git_url)
+    return Git(None, cmd, is_mirror=True, out_buffer=buf)
+
+  cmd = 'clone'
+  if is_mirror:
+    cmd += ' --mirror'
+  cmd += ' %s %s'  % (git_url, git_repo)
+
   if not is_mirror and not os.path.exists(git_repo):
     os.makedirs(git_repo)
-  return Git(git_repo, cmd, is_mirror)
+
+  return Git(None, cmd, is_mirror, buf)
 
 
 def Fetch(git_repo, git_url, is_mirror):
   """Fetch the latest objects for a given git repository."""
   # Always update the upstream url
   Git(git_repo, 'config remote.origin.url %s' % git_url)
-  Git(git_repo, 'fetch origin +refs/heads/master', is_mirror)
+  Git(git_repo, 'fetch origin', is_mirror)
 
 
-def Ping(git_repo):
+def Ping(git_repo, verbose=False):
   """Confirm that a remote repository URL is valid."""
-  status, _ = GetStatusOutput('git ls-remote ' + git_repo)
+  status, stdout = GetStatusOutput('git ls-remote ' + git_repo)
+  if status != 0 and verbose:
+    print >> sys.stderr, stdout
   return status == 0
 
 
@@ -156,16 +248,69 @@ def CreateLessThanOrEqualRegex(number):
   return regex
 
 
-def Search(git_repo, svn_rev, is_mirror):
-  """Return the Git commit id matching the given SVN revision."""
-  regex = CreateLessThanOrEqualRegex(svn_rev)
-  (_, output) = Git(git_repo, ('log -E --grep=".*git-svn-id:.*@%s " '
-                               '-1 --format=%%H FETCH_HEAD') % regex,
-                    is_mirror)
-  if output != '':
-    output = output.splitlines()[0]
+class SearchError(Exception):
+  pass
 
-  print '%s: %s <-> %s' % (git_repo, output, svn_rev)
-  if re.match('^[0-9a-fA-F]{40}$', output):
-    return output
-  raise Exception('Cannot find revision %s in %s' % (svn_rev, git_repo))
+
+def _SearchImpl(git_repo, svn_rev, is_mirror, refspec, fetch_url, regex):
+  def _FindRevForCommitish(git_repo, commitish, is_mirror):
+    _, output = Git(git_repo, 'cat-file commit %s' % commitish, is_mirror)
+    match = re.match(r'git-svn-id: [^\s@]+@(\d+) \S+$', output.splitlines()[-1])
+    if match:
+      return int(match.group(1))
+    else:
+      # The last commit isn't from svn, but maybe the repo was converted to pure
+      # git at some point, so the last svn commit is somewhere farther back.
+      _, output = Git(
+          git_repo, ('log -E --grep="^git-svn-id: [^@]*@[0-9]* [A-Za-z0-9-]*$" '
+                     '-1 --format="%%H" %s') % commitish, is_mirror)
+      assert output, 'no match on %s' % commitish
+
+  # Check if svn_rev is newer than the current refspec revision.
+  try:
+    found_rev = _FindRevForCommitish(git_repo, refspec, is_mirror)
+  # Sometimes this fails because it's looking in a branch that hasn't been
+  # fetched from upstream yet. Let it fetch and try again.
+  except AbnormalExit:
+    found_rev = None
+  if (not found_rev or found_rev < int(svn_rev)) and fetch_url:
+    if VERBOSE:
+      print 'Fetching %s %s [%s < %s]' % (git_repo, refspec, found_rev, svn_rev)
+    Fetch(git_repo, fetch_url, is_mirror)
+    found_rev = _FindRevForCommitish(git_repo, refspec, is_mirror)
+
+  # Find the first commit matching the given git-svn-id regex.
+  _, output = Git(
+      git_repo,
+      ('log -E --grep="^git-svn-id: [^@]*@%s [A-Za-z0-9-]*$" '
+       '-1 --format="%%H" %s') % (regex, refspec),
+      is_mirror)
+  output = output.strip()
+  if not re.match('^[0-9a-fA-F]{40}$', output):
+    raise SearchError('Cannot find revision %s in %s:%s' % (svn_rev, git_repo,
+                                                            refspec))
+
+  # Check if it actually matched the svn_rev that was requested.
+  found_rev = _FindRevForCommitish(git_repo, output, is_mirror)
+  found_msg = svn_rev
+  if found_rev != int(svn_rev):
+    found_msg = '%s [actual: %s]' % (svn_rev, found_rev)
+  print '%s: %s <-> %s' % (git_repo, output, found_msg)
+  return output
+
+
+def SearchExact(git_repo, svn_rev, is_mirror, refspec='FETCH_HEAD',
+    fetch_url=None):
+  """Return the Git commit id exactly matching the given SVN revision.
+
+  If fetch_url is not None, will update repo if revision is newer."""
+  regex = str(svn_rev)
+  return _SearchImpl(git_repo, svn_rev, is_mirror, refspec, fetch_url, regex)
+
+
+def Search(git_repo, svn_rev, is_mirror, refspec='FETCH_HEAD', fetch_url=None):
+  """Return the Git commit id fuzzy matching the given SVN revision.
+
+  If fetch_url is not None, will update repo if revision is newer."""
+  regex = CreateLessThanOrEqualRegex(svn_rev)
+  return _SearchImpl(git_repo, svn_rev, is_mirror, refspec, fetch_url, regex)

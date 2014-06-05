@@ -32,13 +32,21 @@ class TabContentsSyncedTabDelegate
   virtual content::NavigationEntry* GetPendingEntry() const OVERRIDE;
   virtual content::NavigationEntry* GetEntryAtIndex(int i) const OVERRIDE;
   virtual content::NavigationEntry* GetActiveEntry() const OVERRIDE;
+  virtual bool ProfileIsManaged() const OVERRIDE;
+  virtual const std::vector<const content::NavigationEntry*>*
+      GetBlockedNavigations() const OVERRIDE;
   virtual bool IsPinned() const OVERRIDE;
+  virtual bool HasWebContents() const OVERRIDE;
+  virtual content::WebContents* GetWebContents() const OVERRIDE;
+  virtual int GetSyncId() const OVERRIDE;
+  virtual void SetSyncId(int sync_id) OVERRIDE;
 
  private:
   explicit TabContentsSyncedTabDelegate(content::WebContents* web_contents);
   friend class content::WebContentsUserData<TabContentsSyncedTabDelegate>;
 
   content::WebContents* web_contents_;
+  int sync_session_id_;
 
   DISALLOW_COPY_AND_ASSIGN(TabContentsSyncedTabDelegate);
 };

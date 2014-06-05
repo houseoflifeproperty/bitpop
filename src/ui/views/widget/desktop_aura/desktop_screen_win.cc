@@ -5,10 +5,12 @@
 #include "ui/views/widget/desktop_aura/desktop_screen_win.h"
 
 #include "base/logging.h"
-#include "ui/aura/root_window.h"
-#include "ui/aura/root_window_host.h"
+#include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/gfx/display.h"
 #include "ui/views/widget/desktop_aura/desktop_screen.h"
+#include "ui/views/widget/desktop_aura/desktop_window_tree_host_win.h"
 
 namespace {
 
@@ -52,12 +54,13 @@ gfx::Display DesktopScreenWin::GetDisplayMatching(
 }
 
 HWND DesktopScreenWin::GetHWNDFromNativeView(gfx::NativeView window) const {
-  return window->GetRootWindow()->GetAcceleratedWidget();
+  aura::WindowTreeHost* host = window->GetHost();
+  return host ? host->GetAcceleratedWidget() : NULL;
 }
 
 gfx::NativeWindow DesktopScreenWin::GetNativeWindowFromHWND(HWND hwnd) const {
   return (::IsWindow(hwnd)) ?
-      aura::RootWindow::GetForAcceleratedWidget(hwnd) : NULL;
+      DesktopWindowTreeHostWin::GetContentWindowForHWND(hwnd) : NULL;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

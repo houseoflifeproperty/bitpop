@@ -6,8 +6,8 @@
 
 #include <algorithm>
 
-#include "base/utf_string_conversions.h"
-#include "ui/views/controls/button/text_button.h"
+#include "base/strings/utf_string_conversions.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/progress_bar.h"
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/view.h"
@@ -16,7 +16,7 @@ namespace {
 
 const double kStepSize = 0.1;
 
-double ClampToMin(double percent) {
+double SetToMax(double percent) {
   return std::min(std::max(percent, 0.0), 1.0);
 }
 
@@ -51,19 +51,19 @@ void ProgressBarExample::CreateExampleView(View* container) {
                         0, GridLayout::USE_PREF, 0, 0);
 
   layout->StartRow(0, 0);
-  minus_button_ = new TextButton(this, ASCIIToUTF16("-"));
+  minus_button_ = new LabelButton(this, base::ASCIIToUTF16("-"));
   layout->AddView(minus_button_);
   progress_bar_ = new ProgressBar();
   layout->AddView(progress_bar_);
-  plus_button_ = new TextButton(this, ASCIIToUTF16("+"));
+  plus_button_ = new LabelButton(this, base::ASCIIToUTF16("+"));
   layout->AddView(plus_button_);
 }
 
 void ProgressBarExample::ButtonPressed(Button* sender, const ui::Event& event) {
   if (sender == minus_button_)
-    current_percent_ = ClampToMin(current_percent_ - kStepSize);
+    current_percent_ = SetToMax(current_percent_ - kStepSize);
   else if (sender == plus_button_)
-    current_percent_ = ClampToMin(current_percent_ + kStepSize);
+    current_percent_ = SetToMax(current_percent_ + kStepSize);
 
   progress_bar_->SetValue(current_percent_);
 }

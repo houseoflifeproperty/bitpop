@@ -13,20 +13,22 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
-#include "base/process_util.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
+#include "base/process/kill.h"
+#include "base/process/launch.h"
+#include "base/process/process_handle.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
-#include "base/utf_string_conversions.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_export.h"
 #include "net/base/test_completion_callback.h"
-#include "net/disk_cache/backend_impl.h"
+#include "net/disk_cache/blockfile/backend_impl.h"
+#include "net/disk_cache/blockfile/rankings.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/disk_cache/disk_cache_test_util.h"
-#include "net/disk_cache/rankings.h"
 
 using base::Time;
 
@@ -42,7 +44,7 @@ using disk_cache::RankCrashes;
 
 // Starts a new process, to generate the files.
 int RunSlave(RankCrashes action) {
-  FilePath exe;
+  base::FilePath exe;
   PathService::Get(base::FILE_EXE, &exe);
 
   CommandLine cmdline(exe);
@@ -86,8 +88,8 @@ NET_EXPORT_PRIVATE extern RankCrashes g_rankings_crash;
 const char* kCrashEntryName = "the first key";
 
 // Creates the destinaton folder for this run, and returns it on full_path.
-bool CreateTargetFolder(const FilePath& path, RankCrashes action,
-                        FilePath* full_path) {
+bool CreateTargetFolder(const base::FilePath& path, RankCrashes action,
+                        base::FilePath* full_path) {
   const char* folders[] = {
     "",
     "insert_empty1",
@@ -118,10 +120,10 @@ bool CreateTargetFolder(const FilePath& path, RankCrashes action,
 
   *full_path = path.AppendASCII(folders[action]);
 
-  if (file_util::PathExists(*full_path))
+  if (base::PathExists(*full_path))
     return false;
 
-  return file_util::CreateDirectory(*full_path);
+  return base::CreateDirectory(*full_path);
 }
 
 // Makes sure that any pending task is processed.
@@ -133,20 +135,23 @@ void FlushQueue(disk_cache::Backend* cache) {
   cb.GetResult(rv);  // Ignore the result;
 }
 
-bool CreateCache(const FilePath& path,
+bool CreateCache(const base::FilePath& path,
                  base::Thread* thread,
                  disk_cache::Backend** cache,
                  net::TestCompletionCallback* cb) {
   int size = 1024 * 1024;
-  int rv = disk_cache::BackendImpl::CreateBackend(
-               path, false, size, net::DISK_CACHE, disk_cache::kNoRandom,
-               thread->message_loop_proxy(), NULL, cache, cb->callback());
-
+  disk_cache::BackendImpl* backend = new disk_cache::BackendImpl(
+      path, thread->message_loop_proxy().get(), NULL);
+  backend->SetMaxSize(size);
+  backend->SetType(net::DISK_CACHE);
+  backend->SetFlags(disk_cache::kNoRandom);
+  int rv = backend->Init(cb->callback());
+  *cache = backend;
   return (cb->GetResult(rv) == net::OK && !(*cache)->GetEntryCount());
 }
 
 // Generates the files for an empty and one item cache.
-int SimpleInsert(const FilePath& path, RankCrashes action,
+int SimpleInsert(const base::FilePath& path, RankCrashes action,
                  base::Thread* cache_thread) {
   net::TestCompletionCallback cb;
   disk_cache::Backend* cache;
@@ -180,7 +185,7 @@ int SimpleInsert(const FilePath& path, RankCrashes action,
 }
 
 // Generates the files for a one item cache, and removing the head.
-int SimpleRemove(const FilePath& path, RankCrashes action,
+int SimpleRemove(const base::FilePath& path, RankCrashes action,
                  base::Thread* cache_thread) {
   DCHECK(action >= disk_cache::REMOVE_ONE_1);
   DCHECK(action <= disk_cache::REMOVE_TAIL_3);
@@ -219,7 +224,7 @@ int SimpleRemove(const FilePath& path, RankCrashes action,
   return NOT_REACHED;
 }
 
-int HeadRemove(const FilePath& path, RankCrashes action,
+int HeadRemove(const base::FilePath& path, RankCrashes action,
                base::Thread* cache_thread) {
   DCHECK(action >= disk_cache::REMOVE_HEAD_1);
   DCHECK(action <= disk_cache::REMOVE_HEAD_4);
@@ -256,14 +261,14 @@ int HeadRemove(const FilePath& path, RankCrashes action,
 }
 
 // Generates the files for insertion and removals on heavy loaded caches.
-int LoadOperations(const FilePath& path, RankCrashes action,
+int LoadOperations(const base::FilePath& path, RankCrashes action,
                    base::Thread* cache_thread) {
   DCHECK(action >= disk_cache::INSERT_LOAD_1);
 
   // Work with a tiny index table (16 entries).
   disk_cache::BackendImpl* cache = new disk_cache::BackendImpl(
-      path, 0xf, cache_thread->message_loop_proxy(), NULL);
-  if (!cache || !cache->SetMaxSize(0x100000))
+      path, 0xf, cache_thread->message_loop_proxy().get(), NULL);
+  if (!cache->SetMaxSize(0x100000))
     return GENERIC;
 
   // No experiments and use a simple LRU.
@@ -315,10 +320,10 @@ int LoadOperations(const FilePath& path, RankCrashes action,
 }
 
 // Main function on the child process.
-int SlaveCode(const FilePath& path, RankCrashes action) {
-  MessageLoopForIO message_loop;
+int SlaveCode(const base::FilePath& path, RankCrashes action) {
+  base::MessageLoopForIO message_loop;
 
-  FilePath full_path;
+  base::FilePath full_path;
   if (!CreateTargetFolder(path, action, &full_path)) {
     printf("Destination folder found, please remove it.\n");
     return CRASH_OVERWRITE;
@@ -326,7 +331,7 @@ int SlaveCode(const FilePath& path, RankCrashes action) {
 
   base::Thread cache_thread("CacheThread");
   if (!cache_thread.StartWithOptions(
-          base::Thread::Options(MessageLoop::TYPE_IO, 0)))
+          base::Thread::Options(base::MessageLoop::TYPE_IO, 0)))
     return GENERIC;
 
   if (action <= disk_cache::INSERT_ONE_3)
@@ -366,7 +371,7 @@ int main(int argc, const char* argv[]) {
     return INVALID_ARGUMENT;
   }
 
-  FilePath path;
+  base::FilePath path;
   PathService::Get(base::DIR_SOURCE_ROOT, &path);
   path = path.AppendASCII("net");
   path = path.AppendASCII("data");

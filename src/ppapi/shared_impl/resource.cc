@@ -44,9 +44,7 @@ Resource::Resource(Untracked) {
   pp_resource_ = PpapiGlobals::Get()->GetResourceTracker()->AddResource(this);
 }
 
-Resource::~Resource() {
-  PpapiGlobals::Get()->GetResourceTracker()->RemoveResource(this);
-}
+Resource::~Resource() { RemoveFromResourceTracker(); }
 
 PP_Resource Resource::GetReference() {
   PpapiGlobals::Get()->GetResourceTracker()->AddRefResource(pp_resource());
@@ -59,6 +57,10 @@ void Resource::NotifyLastPluginRefWasDeleted() {
 }
 
 void Resource::NotifyInstanceWasDeleted() {
+  // Hold a reference, because InstanceWasDeleted() may cause us to be
+  // destroyed.
+  scoped_refptr<Resource> keep_alive(this);
+
   // Notify subclasses.
   InstanceWasDeleted();
 
@@ -71,8 +73,12 @@ void Resource::OnReplyReceived(const proxy::ResourceMessageReplyParams& params,
 }
 
 void Resource::Log(PP_LogLevel level, const std::string& message) {
-  PpapiGlobals::Get()->LogWithSource(pp_instance(), level, std::string(),
-                                     message);
+  PpapiGlobals::Get()->LogWithSource(
+      pp_instance(), level, std::string(), message);
+}
+
+void Resource::RemoveFromResourceTracker() {
+  PpapiGlobals::Get()->GetResourceTracker()->RemoveResource(this);
 }
 
 #define DEFINE_TYPE_GETTER(RESOURCE) \
@@ -81,4 +87,3 @@ FOR_ALL_PPAPI_RESOURCE_APIS(DEFINE_TYPE_GETTER)
 #undef DEFINE_TYPE_GETTER
 
 }  // namespace ppapi
-

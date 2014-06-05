@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// TODO(mpcomplete): We need documentation before we can release this.
-
+// Use the <code>chrome.alarms</code> API to schedule code to run
+// periodically or at a specified time in the future.
 namespace alarms {
   dictionary Alarm {
     // Name of this alarm.
@@ -40,8 +40,9 @@ namespace alarms {
     double? periodInMinutes;
   };
 
-  callback AlarmCallback = void (Alarm alarm);
+  callback AlarmCallback = void (optional Alarm alarm);
   callback AlarmListCallback = void (Alarm[] alarms);
+  callback ClearCallback = void (boolean wasCleared);
 
   interface Functions {
     // Creates an alarm.  Near the time(s) specified by <var>alarmInfo</var>,
@@ -49,9 +50,16 @@ namespace alarms {
     // the same name (or no name if none is specified), it will be cancelled and
     // replaced by this alarm.
     //
-    // Note that granularity is not guaranteed: times are more of a hint to the
-    // browser. For performance reasons, alarms may be delayed an arbitrary
-    // amount of time before firing.
+    // In order to reduce the load on the user's machine, Chrome limits alarms
+    // to at most once every 1 minute but may delay them an arbitrary amount
+    // more.  That is, setting <code>delayInMinutes</code> or
+    // <code>periodInMinutes</code> to less than <code>1</code> will not be
+    // honored and will cause a warning.  <code>when</code> can be set to less
+    // than 1 minute after "now" without warning but won't actually cause the
+    // alarm to fire for at least 1 minute.
+    //
+    // To help you debug your app or extension, when you've loaded it unpacked,
+    // there's no limit to how often the alarm can fire.
     //
     // |name|: Optional name to identify this alarm. Defaults to the empty
     // string.
@@ -74,10 +82,10 @@ namespace alarms {
 
     // Clears the alarm with the given name.
     // |name|: The name of the alarm to clear. Defaults to the empty string.
-    static void clear(optional DOMString name);
+    static void clear(optional DOMString name, optional ClearCallback callback);
 
     // Clears all alarms.
-    static void clearAll();
+    static void clearAll(optional ClearCallback callback);
   };
 
   interface Events {

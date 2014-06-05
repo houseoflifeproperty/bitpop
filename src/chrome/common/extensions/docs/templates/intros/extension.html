@@ -1,13 +1,3 @@
-<p id="classSummary">
-The <code>chrome.extension</code> module
-has utilities that can be used by any extension page.
-It includes support for exchanging messages
-between an extension and its content scripts
-or between extensions,
-as described in detail in
-<a href="messaging.html">Message Passing</a>.
-</p>
-
 <h2 id="content scripts">Support for content scripts</h2>
 <p>
 Unlike the other chrome.* APIs,
@@ -17,21 +7,21 @@ can be used by content scripts:
 
 <dl>
   <dt>
-    $ref:extension.sendMessage and
-    $ref:extension.onMessage
+    $(ref:runtime.sendMessage) and
+    $(ref:runtime.onMessage)
   </dt>
   <dd>
     Simple communication with extension pages
   </dd>
   <dt>
-    $ref:extension.connect and
-    $ref:extension.onConnect
+    $(ref:runtime.connect) and
+    $(ref:runtime.onConnect)
   </dt>
   <dd>
     Extended communication with extension pages
   </dd>
   <dt>
-    $ref:extension.getURL
+    $(ref:extension.getURL)
   </dt>
   <dd>
     Access to extension resources such as image files

@@ -26,6 +26,7 @@
  * @see http://wiki.multimedia.cx/index.php?title=BFI
  */
 
+#include "libavutil/channel_layout.h"
 #include "libavutil/intreadwrite.h"
 #include "avformat.h"
 #include "internal.h"
@@ -80,6 +81,8 @@ static int bfi_read_header(AVFormatContext * s)
     /*Load the palette to extradata */
     avio_skip(pb, 8);
     vstream->codec->extradata      = av_malloc(768);
+    if (!vstream->codec->extradata)
+        return AVERROR(ENOMEM);
     vstream->codec->extradata_size = 768;
     avio_read(pb, vstream->codec->extradata,
                vstream->codec->extradata_size);
@@ -90,12 +93,15 @@ static int bfi_read_header(AVFormatContext * s)
     avpriv_set_pts_info(vstream, 32, 1, fps);
     vstream->codec->codec_type = AVMEDIA_TYPE_VIDEO;
     vstream->codec->codec_id   = AV_CODEC_ID_BFI;
-    vstream->codec->pix_fmt    = PIX_FMT_PAL8;
+    vstream->codec->pix_fmt    = AV_PIX_FMT_PAL8;
+    vstream->nb_frames         =
+    vstream->duration          = bfi->nframes;
 
     /* Set up the audio codec now... */
     astream->codec->codec_type      = AVMEDIA_TYPE_AUDIO;
     astream->codec->codec_id        = AV_CODEC_ID_PCM_U8;
     astream->codec->channels        = 1;
+    astream->codec->channel_layout  = AV_CH_LAYOUT_MONO;
     astream->codec->bits_per_coded_sample = 8;
     astream->codec->bit_rate        =
         astream->codec->sample_rate * astream->codec->bits_per_coded_sample;
@@ -111,7 +117,7 @@ static int bfi_read_packet(AVFormatContext * s, AVPacket * pkt)
     AVIOContext *pb = s->pb;
     int ret, audio_offset, video_offset, chunk_size, audio_size = 0;
     if (bfi->nframes == 0 || url_feof(pb)) {
-        return AVERROR(EIO);
+        return AVERROR_EOF;
     }
 
     /* If all previous chunks were completely read, then find a new one... */
@@ -130,6 +136,10 @@ static int bfi_read_packet(AVFormatContext * s, AVPacket * pkt)
         video_offset    = avio_rl32(pb);
         audio_size      = video_offset - audio_offset;
         bfi->video_size = chunk_size - video_offset;
+        if (audio_size < 0 || bfi->video_size < 0) {
+            av_log(s, AV_LOG_ERROR, "Invalid audio/video offsets or chunk size\n");
+            return AVERROR_INVALIDDATA;
+        }
 
         //Tossing an audio packet at the audio decoder.
         ret = av_get_packet(pb, pkt, audio_size);
@@ -138,9 +148,7 @@ static int bfi_read_packet(AVFormatContext * s, AVPacket * pkt)
 
         pkt->pts          = bfi->audio_frame;
         bfi->audio_frame += ret;
-    }
-
-    else {
+    } else if (bfi->video_size > 0) {
 
         //Tossing a video packet at the video decoder.
         ret = av_get_packet(pb, pkt, bfi->video_size);
@@ -152,6 +160,9 @@ static int bfi_read_packet(AVFormatContext * s, AVPacket * pkt)
 
         /* One less frame to read. A cursory decrement. */
         bfi->nframes--;
+    } else {
+        /* Empty video packet */
+        ret = AVERROR(EAGAIN);
     }
 
     bfi->avflag       = !bfi->avflag;

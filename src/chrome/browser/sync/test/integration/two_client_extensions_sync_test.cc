@@ -3,8 +3,9 @@
 // found in the LICENSE file.
 
 #include "base/basictypes.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/extensions_helper.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
+#include "chrome/browser/sync/test/integration/sync_integration_test_util.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 
 using extensions_helper::AllProfilesHaveSameExtensionsAsVerifier;
@@ -16,6 +17,7 @@ using extensions_helper::IncognitoEnableExtension;
 using extensions_helper::InstallExtension;
 using extensions_helper::InstallExtensionsPendingForSync;
 using extensions_helper::UninstallExtension;
+using sync_integration_test_util::AwaitCommitActivityCompletion;
 
 class TwoClientExtensionsSyncTest : public SyncTest {
  public:
@@ -25,6 +27,16 @@ class TwoClientExtensionsSyncTest : public SyncTest {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TwoClientExtensionsSyncTest);
+};
+
+class LegacyTwoClientExtensionsSyncTest : public SyncTest {
+ public:
+  LegacyTwoClientExtensionsSyncTest() : SyncTest(TWO_CLIENT_LEGACY) {}
+
+  virtual ~LegacyTwoClientExtensionsSyncTest() {}
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(LegacyTwoClientExtensionsSyncTest);
 };
 
 IN_PROC_BROWSER_TEST_F(TwoClientExtensionsSyncTest, StartWithNoExtensions) {
@@ -240,7 +252,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientExtensionsSyncTest,
 }
 
 // TCM ID - 3732278.
-IN_PROC_BROWSER_TEST_F(TwoClientExtensionsSyncTest, DisableExtensions) {
+IN_PROC_BROWSER_TEST_F(LegacyTwoClientExtensionsSyncTest, DisableExtensions) {
   ASSERT_TRUE(SetupSync());
   ASSERT_TRUE(AllProfilesHaveSameExtensionsAsVerifier());
 
@@ -248,7 +260,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientExtensionsSyncTest, DisableExtensions) {
   InstallExtension(GetProfile(0), 1);
   InstallExtension(verifier(), 1);
   ASSERT_TRUE(
-      GetClient(0)->AwaitFullSyncCompletion("Installed an extension."));
+      AwaitCommitActivityCompletion(GetSyncService((0))));
   ASSERT_FALSE(AllProfilesHaveSameExtensionsAsVerifier());
 
   ASSERT_TRUE(GetClient(1)->EnableSyncForDatatype(syncer::EXTENSIONS));
@@ -268,7 +280,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientExtensionsSyncTest, DisableSync) {
   InstallExtension(GetProfile(0), 0);
   InstallExtension(verifier(), 0);
   ASSERT_TRUE(
-      GetClient(0)->AwaitFullSyncCompletion("Installed an extension."));
+      AwaitCommitActivityCompletion(GetSyncService((0))));
   ASSERT_TRUE(HasSameExtensionsAsVerifier(0));
   ASSERT_FALSE(HasSameExtensionsAsVerifier(1));
 

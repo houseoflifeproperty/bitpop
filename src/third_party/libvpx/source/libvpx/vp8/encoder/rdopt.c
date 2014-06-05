@@ -223,7 +223,7 @@ void vp8cx_initialize_me_consts(VP8_COMP *cpi, int QIndex)
     cpi->mb.sadperbit4  =  sad_per_bit4lut[QIndex];
 }
 
-void vp8_initialize_rd_consts(VP8_COMP *cpi, int Qvalue)
+void vp8_initialize_rd_consts(VP8_COMP *cpi, MACROBLOCK *x, int Qvalue)
 {
     int q;
     int i;
@@ -238,15 +238,15 @@ void vp8_initialize_rd_consts(VP8_COMP *cpi, int Qvalue)
     cpi->RDMULT = (int)(rdconst * (capped_q * capped_q));
 
     /* Extend rate multiplier along side quantizer zbin increases */
-    if (cpi->zbin_over_quant  > 0)
+    if (cpi->mb.zbin_over_quant  > 0)
     {
         double oq_factor;
         double modq;
 
         /* Experimental code using the same basic equation as used for Q above
-         * The units of cpi->zbin_over_quant are 1/128 of Q bin size
+         * The units of cpi->mb.zbin_over_quant are 1/128 of Q bin size
          */
-        oq_factor = 1.0 + ((double)0.0015625 * cpi->zbin_over_quant);
+        oq_factor = 1.0 + ((double)0.0015625 * cpi->mb.zbin_over_quant);
         modq = (int)((double)capped_q * oq_factor);
         cpi->RDMULT = (int)(rdconst * (modq * modq));
     }
@@ -265,6 +265,11 @@ void vp8_initialize_rd_consts(VP8_COMP *cpi, int Qvalue)
 
     vp8_set_speed_features(cpi);
 
+    for (i = 0; i < MAX_MODES; i++)
+    {
+        x->mode_test_hit_counts[i] = 0;
+    }
+
     q = (int)pow(Qvalue, 1.25);
 
     if (q < 8)
@@ -279,14 +284,14 @@ void vp8_initialize_rd_consts(VP8_COMP *cpi, int Qvalue)
         {
             if (cpi->sf.thresh_mult[i] < INT_MAX)
             {
-                cpi->rd_threshes[i] = cpi->sf.thresh_mult[i] * q / 100;
+                x->rd_threshes[i] = cpi->sf.thresh_mult[i] * q / 100;
             }
             else
             {
-                cpi->rd_threshes[i] = INT_MAX;
+                x->rd_threshes[i] = INT_MAX;
             }
 
-            cpi->rd_baseline_thresh[i] = cpi->rd_threshes[i];
+            cpi->rd_baseline_thresh[i] = x->rd_threshes[i];
         }
     }
     else
@@ -297,14 +302,14 @@ void vp8_initialize_rd_consts(VP8_COMP *cpi, int Qvalue)
         {
             if (cpi->sf.thresh_mult[i] < (INT_MAX / q))
             {
-                cpi->rd_threshes[i] = cpi->sf.thresh_mult[i] * q;
+                x->rd_threshes[i] = cpi->sf.thresh_mult[i] * q;
             }
             else
             {
-                cpi->rd_threshes[i] = INT_MAX;
+                x->rd_threshes[i] = INT_MAX;
             }
 
-            cpi->rd_baseline_thresh[i] = cpi->rd_threshes[i];
+            cpi->rd_baseline_thresh[i] = x->rd_threshes[i];
         }
     }
 
@@ -336,7 +341,7 @@ void vp8_initialize_rd_consts(VP8_COMP *cpi, int Qvalue)
 
 void vp8_auto_select_speed(VP8_COMP *cpi)
 {
-    int milliseconds_for_compress = (int)(1000000 / cpi->frame_rate);
+    int milliseconds_for_compress = (int)(1000000 / cpi->framerate);
 
     milliseconds_for_compress = milliseconds_for_compress * (16 - cpi->oxcf.cpu_used) / 16;
 
@@ -523,18 +528,15 @@ static int cost_coeffs(MACROBLOCK *mb, BLOCKD *b, int type, ENTROPY_CONTEXT *a, 
 
     VP8_COMBINEENTROPYCONTEXTS(pt, *a, *l);
 
-# define QC( I)  ( qcoeff_ptr [vp8_default_zig_zag1d[I]] )
-
+    assert(eob <= 16);
     for (; c < eob; c++)
     {
-        int v = QC(c);
-        int t = vp8_dct_value_tokens_ptr[v].Token;
+        const int v = qcoeff_ptr[vp8_default_zig_zag1d[c]];
+        const int t = vp8_dct_value_tokens_ptr[v].Token;
         cost += mb->token_costs [type] [vp8_coef_bands[c]] [pt] [t];
         cost += vp8_dct_value_cost_ptr[v];
         pt = vp8_prev_token_class[t];
     }
-
-# undef QC
 
     if (c < 16)
         cost += mb->token_costs [type] [vp8_coef_bands[c]] [pt] [DCT_EOB_TOKEN];
@@ -625,7 +627,6 @@ static void copy_predictor(unsigned char *dst, const unsigned char *predictor)
     d[12] = p[12];
 }
 static int rd_pick_intra4x4block(
-    VP8_COMP *cpi,
     MACROBLOCK *x,
     BLOCK *be,
     BLOCKD *b,
@@ -701,7 +702,7 @@ static int rd_pick_intra4x4block(
     return best_rd;
 }
 
-static int rd_pick_intra4x4mby_modes(VP8_COMP *cpi, MACROBLOCK *mb, int *Rate,
+static int rd_pick_intra4x4mby_modes(MACROBLOCK *mb, int *Rate,
                                      int *rate_y, int *Distortion, int best_rd)
 {
     MACROBLOCKD *const xd = &mb->e_mbd;
@@ -741,7 +742,7 @@ static int rd_pick_intra4x4mby_modes(VP8_COMP *cpi, MACROBLOCK *mb, int *Rate,
         }
 
         total_rd += rd_pick_intra4x4block(
-            cpi, mb, mb->block + i, xd->block + i, &best_mode, bmode_costs,
+            mb, mb->block + i, xd->block + i, &best_mode, bmode_costs,
             ta + vp8_block2above[i],
             tl + vp8_block2left[i], &r, &ry, &d);
 
@@ -766,8 +767,7 @@ static int rd_pick_intra4x4mby_modes(VP8_COMP *cpi, MACROBLOCK *mb, int *Rate,
 }
 
 
-static int rd_pick_intra16x16mby_mode(VP8_COMP *cpi,
-                                      MACROBLOCK *x,
+static int rd_pick_intra16x16mby_mode(MACROBLOCK *x,
                                       int *Rate,
                                       int *rate_y,
                                       int *Distortion)
@@ -869,7 +869,8 @@ static int rd_inter4x4_uv(VP8_COMP *cpi, MACROBLOCK *x, int *rate,
     return RDCOST(x->rdmult, x->rddiv, *rate, *distortion);
 }
 
-static void rd_pick_intra_mbuv_mode(VP8_COMP *cpi, MACROBLOCK *x, int *rate, int *rate_tokenonly, int *distortion)
+static void rd_pick_intra_mbuv_mode(MACROBLOCK *x, int *rate,
+                                    int *rate_tokenonly, int *distortion)
 {
     MB_PREDICTION_MODE mode;
     MB_PREDICTION_MODE UNINITIALIZED_IS_SAFE(mode_selected);
@@ -880,8 +881,8 @@ static void rd_pick_intra_mbuv_mode(VP8_COMP *cpi, MACROBLOCK *x, int *rate, int
 
     for (mode = DC_PRED; mode <= TM_PRED; mode++)
     {
-        int rate;
-        int distortion;
+        int this_rate;
+        int this_distortion;
         int this_rd;
 
         xd->mode_info_context->mbmi.uv_mode = mode;
@@ -903,17 +904,17 @@ static void rd_pick_intra_mbuv_mode(VP8_COMP *cpi, MACROBLOCK *x, int *rate, int
         vp8_quantize_mbuv(x);
 
         rate_to = rd_cost_mbuv(x);
-        rate = rate_to + x->intra_uv_mode_cost[xd->frame_type][xd->mode_info_context->mbmi.uv_mode];
+        this_rate = rate_to + x->intra_uv_mode_cost[xd->frame_type][xd->mode_info_context->mbmi.uv_mode];
 
-        distortion = vp8_mbuverror(x) / 4;
+        this_distortion = vp8_mbuverror(x) / 4;
 
-        this_rd = RDCOST(x->rdmult, x->rddiv, rate, distortion);
+        this_rd = RDCOST(x->rdmult, x->rddiv, this_rate, this_distortion);
 
         if (this_rd < best_rd)
         {
             best_rd = this_rd;
-            d = distortion;
-            r = rate;
+            d = this_distortion;
+            r = this_rate;
             *rate_tokenonly = rate_to;
             mode_selected = mode;
         }
@@ -931,7 +932,7 @@ int vp8_cost_mv_ref(MB_PREDICTION_MODE m, const int near_mv_ref_ct[4])
     assert(NEARESTMV <= m  &&  m <= SPLITMV);
     vp8_mv_ref_probs(p, near_mv_ref_ct);
     return vp8_cost_token(vp8_mv_ref_tree, p,
-                          vp8_mv_ref_encoding_array - NEARESTMV + m);
+                          vp8_mv_ref_encoding_array + (m - NEARESTMV));
 }
 
 void vp8_set_mbmode_and_mvs(MACROBLOCK *x, MB_PREDICTION_MODE mb, int_mv *mv)
@@ -1290,12 +1291,11 @@ static void rd_check_segment(VP8_COMP *cpi, MACROBLOCK *x,
 
                 if (bestsme < INT_MAX)
                 {
-                    int distortion;
+                    int disto;
                     unsigned int sse;
                     cpi->find_fractional_mv_step(x, c, e, &mode_mv[NEW4X4],
                         bsi->ref_mv, x->errorperbit, v_fn_ptr, x->mvcost,
-                        &distortion, &sse);
-
+                        &disto, &sse);
                 }
             } /* NEW4X4 */
 
@@ -1729,7 +1729,7 @@ void vp8_cal_sad(VP8_COMP *cpi, MACROBLOCKD *xd, MACROBLOCK *x, int recon_yoffse
     }
 }
 
-static void rd_update_mvcount(VP8_COMP *cpi, MACROBLOCK *x, int_mv *best_ref_mv)
+static void rd_update_mvcount(MACROBLOCK *x, int_mv *best_ref_mv)
 {
     if (x->e_mbd.mode_info_context->mbmi.mode == SPLITMV)
     {
@@ -1739,18 +1739,18 @@ static void rd_update_mvcount(VP8_COMP *cpi, MACROBLOCK *x, int_mv *best_ref_mv)
         {
             if (x->partition_info->bmi[i].mode == NEW4X4)
             {
-                cpi->MVcount[0][mv_max+((x->partition_info->bmi[i].mv.as_mv.row
+                x->MVcount[0][mv_max+((x->partition_info->bmi[i].mv.as_mv.row
                                           - best_ref_mv->as_mv.row) >> 1)]++;
-                cpi->MVcount[1][mv_max+((x->partition_info->bmi[i].mv.as_mv.col
+                x->MVcount[1][mv_max+((x->partition_info->bmi[i].mv.as_mv.col
                                           - best_ref_mv->as_mv.col) >> 1)]++;
             }
         }
     }
     else if (x->e_mbd.mode_info_context->mbmi.mode == NEWMV)
     {
-        cpi->MVcount[0][mv_max+((x->e_mbd.mode_info_context->mbmi.mv.as_mv.row
+        x->MVcount[0][mv_max+((x->e_mbd.mode_info_context->mbmi.mv.as_mv.row
                                           - best_ref_mv->as_mv.row) >> 1)]++;
-        cpi->MVcount[1][mv_max+((x->e_mbd.mode_info_context->mbmi.mv.as_mv.col
+        x->MVcount[1][mv_max+((x->e_mbd.mode_info_context->mbmi.mv.as_mv.col
                                           - best_ref_mv->as_mv.col) >> 1)]++;
     }
 }
@@ -2011,7 +2011,7 @@ void vp8_rd_pick_inter_mode(VP8_COMP *cpi, MACROBLOCK *x, int recon_yoffset,
 
     *returnintra = INT_MAX;
     /* Count of the number of MBs tested so far this frame */
-    cpi->mbs_tested_so_far++;
+    x->mbs_tested_so_far++;
 
     x->skip = 0;
 
@@ -2023,7 +2023,7 @@ void vp8_rd_pick_inter_mode(VP8_COMP *cpi, MACROBLOCK *x, int recon_yoffset,
         int this_ref_frame = ref_frame_map[vp8_ref_frame_order[mode_index]];
 
         /* Test best rd so far against threshold for trying this mode. */
-        if (best_mode.rd <= cpi->rd_threshes[mode_index])
+        if (best_mode.rd <= x->rd_threshes[mode_index])
             continue;
 
         if (this_ref_frame < 0)
@@ -2069,19 +2069,21 @@ void vp8_rd_pick_inter_mode(VP8_COMP *cpi, MACROBLOCK *x, int recon_yoffset,
          * max If so then prevent it from being tested and increase the
          * threshold for its testing
          */
-        if (cpi->mode_test_hit_counts[mode_index] && (cpi->mode_check_freq[mode_index] > 1))
+        if (x->mode_test_hit_counts[mode_index] && (cpi->mode_check_freq[mode_index] > 1))
         {
-            if (cpi->mbs_tested_so_far  <= cpi->mode_check_freq[mode_index] * cpi->mode_test_hit_counts[mode_index])
+            if (x->mbs_tested_so_far  <= cpi->mode_check_freq[mode_index] * x->mode_test_hit_counts[mode_index])
             {
                 /* Increase the threshold for coding this mode to make it
                  * less likely to be chosen
                  */
-                cpi->rd_thresh_mult[mode_index] += 4;
+                x->rd_thresh_mult[mode_index] += 4;
 
-                if (cpi->rd_thresh_mult[mode_index] > MAX_THRESHMULT)
-                    cpi->rd_thresh_mult[mode_index] = MAX_THRESHMULT;
+                if (x->rd_thresh_mult[mode_index] > MAX_THRESHMULT)
+                    x->rd_thresh_mult[mode_index] = MAX_THRESHMULT;
 
-                cpi->rd_threshes[mode_index] = (cpi->rd_baseline_thresh[mode_index] >> 7) * cpi->rd_thresh_mult[mode_index];
+                x->rd_threshes[mode_index] =
+                    (cpi->rd_baseline_thresh[mode_index] >> 7) *
+                    x->rd_thresh_mult[mode_index];
 
                 continue;
             }
@@ -2091,28 +2093,28 @@ void vp8_rd_pick_inter_mode(VP8_COMP *cpi, MACROBLOCK *x, int recon_yoffset,
          * current mode so increment the counter for the number of times
          * it has been tested
          */
-        cpi->mode_test_hit_counts[mode_index] ++;
+        x->mode_test_hit_counts[mode_index] ++;
 
         /* Experimental code. Special case for gf and arf zeromv modes.
          * Increase zbin size to supress noise
          */
-        if (cpi->zbin_mode_boost_enabled)
+        if (x->zbin_mode_boost_enabled)
         {
             if ( this_ref_frame == INTRA_FRAME )
-                cpi->zbin_mode_boost = 0;
+                x->zbin_mode_boost = 0;
             else
             {
                 if (vp8_mode_order[mode_index] == ZEROMV)
                 {
                     if (this_ref_frame != LAST_FRAME)
-                        cpi->zbin_mode_boost = GF_ZEROMV_ZBIN_BOOST;
+                        x->zbin_mode_boost = GF_ZEROMV_ZBIN_BOOST;
                     else
-                        cpi->zbin_mode_boost = LF_ZEROMV_ZBIN_BOOST;
+                        x->zbin_mode_boost = LF_ZEROMV_ZBIN_BOOST;
                 }
                 else if (vp8_mode_order[mode_index] == SPLITMV)
-                    cpi->zbin_mode_boost = 0;
+                    x->zbin_mode_boost = 0;
                 else
-                    cpi->zbin_mode_boost = MV_ZBIN_BOOST;
+                    x->zbin_mode_boost = MV_ZBIN_BOOST;
             }
 
             vp8_update_zbin_extra(cpi, x);
@@ -2120,7 +2122,7 @@ void vp8_rd_pick_inter_mode(VP8_COMP *cpi, MACROBLOCK *x, int recon_yoffset,
 
         if(!uv_intra_done && this_ref_frame == INTRA_FRAME)
         {
-            rd_pick_intra_mbuv_mode(cpi, x, &uv_intra_rate,
+            rd_pick_intra_mbuv_mode(x, &uv_intra_rate,
                                     &uv_intra_rate_tokenonly,
                                     &uv_intra_distortion);
             uv_intra_mode = x->e_mbd.mode_info_context->mbmi.uv_mode;
@@ -2146,7 +2148,7 @@ void vp8_rd_pick_inter_mode(VP8_COMP *cpi, MACROBLOCK *x, int recon_yoffset,
              * coding the BPRED mode: x->mbmode_cost[x->e_mbd.frame_type][BPRED]
              */
             int distortion;
-            tmp_rd = rd_pick_intra4x4mby_modes(cpi, x, &rate, &rd.rate_y, &distortion, best_mode.yrd);
+            tmp_rd = rd_pick_intra4x4mby_modes(x, &rate, &rd.rate_y, &distortion, best_mode.yrd);
             rd.rate2 += rate;
             rd.distortion2 += distortion;
 
@@ -2171,8 +2173,10 @@ void vp8_rd_pick_inter_mode(VP8_COMP *cpi, MACROBLOCK *x, int recon_yoffset,
             int this_rd_thresh;
             int distortion;
 
-            this_rd_thresh = (vp8_ref_frame_order[mode_index] == 1) ? cpi->rd_threshes[THR_NEW1] : cpi->rd_threshes[THR_NEW3];
-            this_rd_thresh = (vp8_ref_frame_order[mode_index] == 2) ? cpi->rd_threshes[THR_NEW2] : this_rd_thresh;
+            this_rd_thresh = (vp8_ref_frame_order[mode_index] == 1) ?
+                x->rd_threshes[THR_NEW1] : x->rd_threshes[THR_NEW3];
+            this_rd_thresh = (vp8_ref_frame_order[mode_index] == 2) ?
+                x->rd_threshes[THR_NEW2] : this_rd_thresh;
 
             tmp_rd = vp8_rd_pick_best_mbsegmentation(cpi, x, &best_ref_mv,
                                                      best_mode.yrd, mdcounts,
@@ -2465,8 +2469,9 @@ void vp8_rd_pick_inter_mode(VP8_COMP *cpi, MACROBLOCK *x, int recon_yoffset,
             /* Testing this mode gave rise to an improvement in best error
              * score. Lower threshold a bit for next time
              */
-            cpi->rd_thresh_mult[mode_index] = (cpi->rd_thresh_mult[mode_index] >= (MIN_THRESHMULT + 2)) ? cpi->rd_thresh_mult[mode_index] - 2 : MIN_THRESHMULT;
-            cpi->rd_threshes[mode_index] = (cpi->rd_baseline_thresh[mode_index] >> 7) * cpi->rd_thresh_mult[mode_index];
+            x->rd_thresh_mult[mode_index] =
+                (x->rd_thresh_mult[mode_index] >= (MIN_THRESHMULT + 2)) ?
+                    x->rd_thresh_mult[mode_index] - 2 : MIN_THRESHMULT;
         }
 
         /* If the mode did not help improve the best error case then raise
@@ -2474,13 +2479,14 @@ void vp8_rd_pick_inter_mode(VP8_COMP *cpi, MACROBLOCK *x, int recon_yoffset,
          */
         else
         {
-            cpi->rd_thresh_mult[mode_index] += 4;
+            x->rd_thresh_mult[mode_index] += 4;
 
-            if (cpi->rd_thresh_mult[mode_index] > MAX_THRESHMULT)
-                cpi->rd_thresh_mult[mode_index] = MAX_THRESHMULT;
-
-            cpi->rd_threshes[mode_index] = (cpi->rd_baseline_thresh[mode_index] >> 7) * cpi->rd_thresh_mult[mode_index];
+            if (x->rd_thresh_mult[mode_index] > MAX_THRESHMULT)
+                x->rd_thresh_mult[mode_index] = MAX_THRESHMULT;
         }
+        x->rd_threshes[mode_index] =
+            (cpi->rd_baseline_thresh[mode_index] >> 7) *
+                x->rd_thresh_mult[mode_index];
 
         if (x->skip)
             break;
@@ -2490,14 +2496,17 @@ void vp8_rd_pick_inter_mode(VP8_COMP *cpi, MACROBLOCK *x, int recon_yoffset,
     /* Reduce the activation RD thresholds for the best choice mode */
     if ((cpi->rd_baseline_thresh[best_mode_index] > 0) && (cpi->rd_baseline_thresh[best_mode_index] < (INT_MAX >> 2)))
     {
-        int best_adjustment = (cpi->rd_thresh_mult[best_mode_index] >> 2);
+        int best_adjustment = (x->rd_thresh_mult[best_mode_index] >> 2);
 
-        cpi->rd_thresh_mult[best_mode_index] = (cpi->rd_thresh_mult[best_mode_index] >= (MIN_THRESHMULT + best_adjustment)) ? cpi->rd_thresh_mult[best_mode_index] - best_adjustment : MIN_THRESHMULT;
-        cpi->rd_threshes[best_mode_index] = (cpi->rd_baseline_thresh[best_mode_index] >> 7) * cpi->rd_thresh_mult[best_mode_index];
+        x->rd_thresh_mult[best_mode_index] =
+            (x->rd_thresh_mult[best_mode_index] >=
+                (MIN_THRESHMULT + best_adjustment)) ?
+                    x->rd_thresh_mult[best_mode_index] - best_adjustment :
+                    MIN_THRESHMULT;
+        x->rd_threshes[best_mode_index] =
+            (cpi->rd_baseline_thresh[best_mode_index] >> 7) *
+                x->rd_thresh_mult[best_mode_index];
     }
-
-    /* Note how often each mode chosen as best */
-    cpi->mode_chosen_counts[best_mode_index] ++;
 
 #if CONFIG_TEMPORAL_DENOISING
     if (cpi->oxcf.noise_sensitivity)
@@ -2592,10 +2601,10 @@ void vp8_rd_pick_inter_mode(VP8_COMP *cpi, MACROBLOCK *x, int recon_yoffset,
         != cpi->common.ref_frame_sign_bias[xd->mode_info_context->mbmi.ref_frame])
         best_ref_mv.as_int = best_ref_mv_sb[!sign_bias].as_int;
 
-    rd_update_mvcount(cpi, x, &best_ref_mv);
+    rd_update_mvcount(x, &best_ref_mv);
 }
 
-void vp8_rd_pick_intra_mode(VP8_COMP *cpi, MACROBLOCK *x, int *rate_)
+void vp8_rd_pick_intra_mode(MACROBLOCK *x, int *rate_)
 {
     int error4x4, error16x16;
     int rate4x4, rate16x16 = 0, rateuv;
@@ -2607,15 +2616,13 @@ void vp8_rd_pick_intra_mode(VP8_COMP *cpi, MACROBLOCK *x, int *rate_)
 
     x->e_mbd.mode_info_context->mbmi.ref_frame = INTRA_FRAME;
 
-    rd_pick_intra_mbuv_mode(cpi, x, &rateuv, &rateuv_tokenonly, &distuv);
+    rd_pick_intra_mbuv_mode(x, &rateuv, &rateuv_tokenonly, &distuv);
     rate = rateuv;
 
-    error16x16 = rd_pick_intra16x16mby_mode(cpi, x,
-                                            &rate16x16, &rate16x16_tokenonly,
+    error16x16 = rd_pick_intra16x16mby_mode(x, &rate16x16, &rate16x16_tokenonly,
                                             &dist16x16);
 
-    error4x4 = rd_pick_intra4x4mby_modes(cpi, x,
-                                         &rate4x4, &rate4x4_tokenonly,
+    error4x4 = rd_pick_intra4x4mby_modes(x, &rate4x4, &rate4x4_tokenonly,
                                          &dist4x4, error16x16);
 
     if (error4x4 < error16x16)

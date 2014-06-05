@@ -277,8 +277,8 @@ list .row-delete-button {
   background-color: transparent;
   /* TODO(stuartmorgan): Replace with real images once they are available. */
   background-image: -webkit-image-set(
-      url('../../../../ui/resources/default_100_percent/close_bar.png') 1x,
-      url('../../../../ui/resources/default_200_percent/close_bar.png') 2x);
+      url('../../../../ui/resources/default_100_percent/close_2.png') 1x,
+      url('../../../../ui/resources/default_200_percent/close_2.png') 2x);
   border: none;
   display: block;
   height: 16px;
@@ -303,17 +303,15 @@ list div[role='listitem'][managedby='HostedApp'] .row-delete-button {
 
 list .row-delete-button:hover {
   background-image: -webkit-image-set(
-      url('../../../../ui/resources/default_100_percent/close_bar_hover.png')
-          1x,
-      url('../../../../ui/resources/default_200_percent/close_bar_hover.png')
-          2x);
+      url('../../../../ui/resources/default_100_percent/close_2_hover.png') 1x,
+      url('../../../../ui/resources/default_200_percent/close_2_hover.png') 2x);
 }
 
 list .row-delete-button:active {
   background-image: -webkit-image-set(
-      url('../../../../ui/resources/default_100_percent/close_bar_pressed.png')
+      url('../../../../ui/resources/default_100_percent/close_2_pressed.png')
           1x,
-      url('../../../../ui/resources/default_200_percent/close_bar_pressed.png')
+      url('../../../../ui/resources/default_200_percent/close_2_pressed.png')
           2x);
 }
 
@@ -334,7 +332,12 @@ list > :not([editing]) [displaymode='edit'] {
 }
 
 list > [editing] [displaymode='static'] {
-  display: none;
+  /* Don't use display:none because we need to keep an element focusable. */
+  left: 0;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  top: -10em;
 }
 
 list > [editing] input:invalid {
@@ -377,11 +380,8 @@ input[type='url'].favicon-cell {
   background-position-x: 4px;
 }
 
-/* TODO(jhawkins): Use something better than 99.3% when CSS3 background
- * positioning is available.
- */
 html[dir=rtl] input.favicon-cell {
-  background-position-x: 99.3%;
+  background-position-x: -webkit-calc(100% - 4px);
 }
 
 list .favicon-cell {
@@ -441,6 +441,12 @@ list.autocomplete-suggestions:not([hasElementFocus]) > [lead][selected] {
   background-color: rgb(187, 206, 233);
 }
 
+html:not(.focus-outline-visible)
+:enabled:focus:-webkit-any(input[type='checkbox'], input[type='radio']) {
+  /* Cancel border-color for :focus specified in widgets.css. */
+  border-color: rgba(0, 0, 0, 0.25);
+}
+
 html:not([hasFlashPlugin]) .flash-plugin-area,
 /* If the Flash plug-in supports the NPP_ClearSiteData API, we don't need to
  * show the link to the Flash storage settings manager:
@@ -450,126 +456,4 @@ html:not([flashPluginSupportsClearSiteData]) .clear-plugin-lso-data-enabled,
 html[flashPluginSupportsClearSiteData] .clear-plugin-lso-data-disabled,
 html:not([enablePepperFlashSettings]) .pepper-flash-settings {
   display: none;
-}
-
-/* Bubble. */
-
-.options-bubble {
-  position: fixed;
-}
-
-/* Controlled setting indicator and bubble. */
-
-.controlled-setting-with-label {
-  -webkit-box-align: center;
-  display: -webkit-box;
-  padding-bottom: 7px;
-  padding-top: 7px;
-}
-
-.controlled-setting-with-label > input + span {
-  -webkit-box-align: center;
-  -webkit-box-flex: 1;
-  -webkit-margin-start: 0.6em;
-  display: -webkit-box;
-}
-
-.controlled-setting-with-label > input:disabled + span label {
-  color: #999;
-}
-
-.controlled-setting-with-label label {
-  display: inline;
-  padding: 0;
-}
-
-.controlled-setting-indicator {
-  display: none;
-}
-
-input:-webkit-any([type='text'],[type='url'],:not([type])) +
-    .controlled-setting-indicator {
-  -webkit-margin-start: 5px;
-}
-
-.controlled-setting-indicator[controlled-by] {
-  display: inline-block;
-  height: 0;
-  line-height: 1;
-  vertical-align: middle;
-  width: 16px;
-}
-
-.controlled-setting-indicator[controlled-by] > div {
-  background-size: 16px;
-  height: 16px;
-  position: relative;
-  top: -8px;
-  width: 16px;
-}
-
-.controlled-setting-indicator[controlled-by='policy'] > div {
-  background-image:
-      url('chrome://theme/IDR_CONTROLLED_SETTING_MANDATORY_GRAY');
-}
-
-.controlled-setting-indicator[controlled-by='policy'] >
-    div:-webkit-any(:hover,.showing-bubble) {
-  background-image:
-      url('chrome://theme/IDR_CONTROLLED_SETTING_MANDATORY');
-}
-
-.controlled-setting-indicator[controlled-by='extension'] > div {
-  background-image:
-      url('chrome://theme/IDR_CONTROLLED_SETTING_EXTENSION_GRAY');
-}
-
-.controlled-setting-indicator[controlled-by='extension'] >
-    div:-webkit-any(:hover,.showing-bubble) {
-  background-image:
-      url('chrome://theme/IDR_CONTROLLED_SETTING_EXTENSION');
-}
-
-.controlled-setting-indicator:-webkit-any([controlled-by='recommended'],
-    [controlled-by='hasRecommendation']) > div {
-  background-image:
-      url('chrome://theme/IDR_CONTROLLED_SETTING_RECOMMENDED_GRAY');
-}
-
-.controlled-setting-indicator:-webkit-any([controlled-by='recommended'],
-    [controlled-by='hasRecommendation']) >
-    div:-webkit-any(:hover,.showing-bubble) {
-  background-image:
-      url('chrome://theme/IDR_CONTROLLED_SETTING_RECOMMENDED');
-}
-
-.controlled-setting-bubble-content {
-  -webkit-padding-start: 30px;
-  background-repeat: no-repeat;
-  background-size: 22px;
-  min-height: 32px;
-}
-
-.controlled-setting-bubble-content[controlled-by='policy'] {
-  background-image:
-      url('chrome://theme/IDR_CONTROLLED_SETTING_MANDATORY_LARGE');
-}
-
-.controlled-setting-bubble-content[controlled-by='extension'] {
-  background-image:
-      url('chrome://theme/IDR_CONTROLLED_SETTING_EXTENSION_LARGE');
-}
-
-.controlled-setting-bubble-content:-webkit-any([controlled-by='recommended'],
-    [controlled-by='hasRecommendation']) {
-  background-image:
-      url('chrome://theme/IDR_CONTROLLED_SETTING_RECOMMENDED_LARGE');
-}
-
-html[dir='rtl'] .controlled-setting-bubble-content {
-  background-position: right top;
-}
-
-.controlled-setting-bubble-action {
-  padding: 0 !important;
 }

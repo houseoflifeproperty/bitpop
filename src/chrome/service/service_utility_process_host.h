@@ -11,17 +11,16 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/process.h"
+#include "base/process/process.h"
 #include "content/public/common/child_process_host_delegate.h"
 #include "ipc/ipc_channel.h"
 #include "printing/pdf_render_settings.h"
 
-class CommandLine;
-
 namespace base {
+class CommandLine;
 class MessageLoopProxy;
 class ScopedTempDir;
 }  // namespace base
@@ -34,6 +33,7 @@ namespace printing {
 class Emf;
 struct PageRange;
 struct PrinterCapsAndDefaults;
+struct PrinterSemanticCapsAndDefaults;
 }  // namespace printing
 
 // Acts as the service-side host to a utility child process. A
@@ -61,15 +61,18 @@ class ServiceUtilityProcessHost : public content::ChildProcessHostDelegate {
     virtual void OnRenderPDFPagesToMetafileFailed() {}
 
     // Called when the printer capabilities and defaults have been
-    // retrieved successfully.
-    virtual void OnGetPrinterCapsAndDefaultsSucceeded(
+    // retrieved successfully or if retrieval failed.
+    virtual void OnGetPrinterCapsAndDefaults(
+        bool succedded,
         const std::string& printer_name,
         const printing::PrinterCapsAndDefaults& caps_and_defaults) {}
 
-    // Called when the printer capabilities and defaults could not be
-    // retrieved successfully.
-    virtual void OnGetPrinterCapsAndDefaultsFailed(
-        const std::string& printer_name) {}
+    // Called when the printer capabilities and defaults have been
+    // retrieved successfully or if retrieval failed.
+    virtual void OnGetPrinterSemanticCapsAndDefaults(
+        bool succedded,
+        const std::string& printer_name,
+        const printing::PrinterSemanticCapsAndDefaults& caps_and_defaults) {}
 
    protected:
     virtual ~Client() {}
@@ -79,7 +82,7 @@ class ServiceUtilityProcessHost : public content::ChildProcessHostDelegate {
     friend class ServiceUtilityProcessHost;
 
     // Invoked when a metafile file is ready.
-    void MetafileAvailable(const FilePath& metafile_path,
+    void MetafileAvailable(const base::FilePath& metafile_path,
                            int highest_rendered_page_number,
                            double scale_factor);
 
@@ -94,7 +97,7 @@ class ServiceUtilityProcessHost : public content::ChildProcessHostDelegate {
   // a metafile. Currently only implemented for Windows. If the PDF has fewer
   // pages than the specified page ranges, it will render as many as available.
   bool StartRenderPDFPagesToMetafile(
-      const FilePath& pdf_path,
+      const base::FilePath& pdf_path,
       const printing::PdfRenderSettings& render_settings,
       const std::vector<printing::PageRange>& page_ranges);
 
@@ -104,27 +107,34 @@ class ServiceUtilityProcessHost : public content::ChildProcessHostDelegate {
   // in a sandbox.
   bool StartGetPrinterCapsAndDefaults(const std::string& printer_name);
 
+  // Starts a process to get capabilities and defaults for the specified
+  // printer. Used on Windows to isolate the service process from printer driver
+  // crashes by executing this in a separate process. The process does not run
+  // in a sandbox. Returns result as printing::PrinterSemanticCapsAndDefaults.
+  bool StartGetPrinterSemanticCapsAndDefaults(const std::string& printer_name);
+
  protected:
   // Allows this method to be overridden for tests.
-  virtual FilePath GetUtilityProcessCmd();
+  virtual base::FilePath GetUtilityProcessCmd();
 
   // ChildProcessHostDelegate implementation:
   virtual void OnChildDisconnected() OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  virtual base::ProcessHandle GetHandle() const OVERRIDE;
 
  private:
   // Starts a process.  Returns true iff it succeeded. |exposed_dir| is the
   // path to the exposed to the sandbox. This is ignored if |no_sandbox| is
   // true.
-  bool StartProcess(bool no_sandbox, const FilePath& exposed_dir);
+  bool StartProcess(bool no_sandbox, const base::FilePath& exposed_dir);
 
   // Launch the child process synchronously.
   // TODO(sanjeevr): Determine whether we need to make the launch asynchronous.
   // |exposed_dir| is the path to tbe exposed to the sandbox. This is ignored
   // if |no_sandbox| is true.
-  bool Launch(CommandLine* cmd_line,
+  bool Launch(base::CommandLine* cmd_line,
               bool no_sandbox,
-              const FilePath& exposed_dir);
+              const base::FilePath& exposed_dir);
 
   base::ProcessHandle handle() const { return handle_; }
 
@@ -136,6 +146,11 @@ class ServiceUtilityProcessHost : public content::ChildProcessHostDelegate {
       const std::string& printer_name,
       const printing::PrinterCapsAndDefaults& caps_and_defaults);
   void OnGetPrinterCapsAndDefaultsFailed(const std::string& printer_name);
+  void OnGetPrinterSemanticCapsAndDefaultsSucceeded(
+      const std::string& printer_name,
+      const printing::PrinterSemanticCapsAndDefaults& caps_and_defaults);
+  void OnGetPrinterSemanticCapsAndDefaultsFailed(
+      const std::string& printer_name);
 
   scoped_ptr<content::ChildProcessHost> child_process_host_;
   base::ProcessHandle handle_;
@@ -144,9 +159,11 @@ class ServiceUtilityProcessHost : public content::ChildProcessHostDelegate {
   scoped_refptr<base::MessageLoopProxy> client_message_loop_proxy_;
   bool waiting_for_reply_;
   // The path to the temp file where the metafile will be written to.
-  FilePath metafile_path_;
+  base::FilePath metafile_path_;
   // The temporary folder created for the metafile.
   scoped_ptr<base::ScopedTempDir> scratch_metafile_dir_;
+  // Start time of operation.
+  base::Time start_time_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceUtilityProcessHost);
 };

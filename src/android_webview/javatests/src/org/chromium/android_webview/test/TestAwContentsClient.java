@@ -1,31 +1,47 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.android_webview.test;
 
+import android.graphics.Picture;
 import android.webkit.ConsoleMessage;
 
+import org.chromium.base.ThreadUtils;
 import org.chromium.content.browser.test.util.CallbackHelper;
-import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnPageStartedHelper;
-import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnPageFinishedHelper;
-import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnReceivedErrorHelper;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnEvaluateJavaScriptResultHelper;
+import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnPageFinishedHelper;
+import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnPageStartedHelper;
+import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnReceivedErrorHelper;
 
-class TestAwContentsClient extends NullContentsClient {
+/**
+ * AwContentsClient subclass used for testing.
+ */
+public class TestAwContentsClient extends NullContentsClient {
     private String mUpdatedTitle;
-    private OnPageStartedHelper mOnPageStartedHelper;
-    private OnPageFinishedHelper mOnPageFinishedHelper;
-    private OnReceivedErrorHelper mOnReceivedErrorHelper;
-    private OnEvaluateJavaScriptResultHelper mOnEvaluateJavaScriptResultHelper;
-    private AddMessageToConsoleHelper mAddMessageToConsoleHelper;
+    private final OnPageStartedHelper mOnPageStartedHelper;
+    private final OnPageFinishedHelper mOnPageFinishedHelper;
+    private final OnReceivedErrorHelper mOnReceivedErrorHelper;
+    private final OnDownloadStartHelper mOnDownloadStartHelper;
+    private final OnReceivedLoginRequestHelper mOnReceivedLoginRequestHelper;
+    private final OnEvaluateJavaScriptResultHelper mOnEvaluateJavaScriptResultHelper;
+    private final AddMessageToConsoleHelper mAddMessageToConsoleHelper;
+    private final OnScaleChangedHelper mOnScaleChangedHelper;
+    private final PictureListenerHelper mPictureListenerHelper;
+    private final ShouldOverrideUrlLoadingHelper mShouldOverrideUrlLoadingHelper;
 
     public TestAwContentsClient() {
+        super(ThreadUtils.getUiThreadLooper());
         mOnPageStartedHelper = new OnPageStartedHelper();
         mOnPageFinishedHelper = new OnPageFinishedHelper();
         mOnReceivedErrorHelper = new OnReceivedErrorHelper();
+        mOnDownloadStartHelper = new OnDownloadStartHelper();
+        mOnReceivedLoginRequestHelper = new OnReceivedLoginRequestHelper();
         mOnEvaluateJavaScriptResultHelper = new OnEvaluateJavaScriptResultHelper();
         mAddMessageToConsoleHelper = new AddMessageToConsoleHelper();
+        mOnScaleChangedHelper = new OnScaleChangedHelper();
+        mPictureListenerHelper = new PictureListenerHelper();
+        mShouldOverrideUrlLoadingHelper = new ShouldOverrideUrlLoadingHelper();
     }
 
     public OnPageStartedHelper getOnPageStartedHelper() {
@@ -40,16 +56,62 @@ class TestAwContentsClient extends NullContentsClient {
         return mOnReceivedErrorHelper;
     }
 
+    public OnDownloadStartHelper getOnDownloadStartHelper() {
+        return mOnDownloadStartHelper;
+    }
+
+    public OnReceivedLoginRequestHelper getOnReceivedLoginRequestHelper() {
+        return mOnReceivedLoginRequestHelper;
+    }
+
     public OnEvaluateJavaScriptResultHelper getOnEvaluateJavaScriptResultHelper() {
         return mOnEvaluateJavaScriptResultHelper;
+    }
+
+    public ShouldOverrideUrlLoadingHelper getShouldOverrideUrlLoadingHelper() {
+        return mShouldOverrideUrlLoadingHelper;
     }
 
     public AddMessageToConsoleHelper getAddMessageToConsoleHelper() {
         return mAddMessageToConsoleHelper;
     }
 
+    /**
+     * Callback helper for onScaleChangedScaled.
+     */
+    public static class OnScaleChangedHelper extends CallbackHelper {
+        private float mPreviousScale;
+        private float mCurrentScale;
+        public void notifyCalled(float oldScale, float newScale) {
+            mPreviousScale = oldScale;
+            mCurrentScale = newScale;
+            super.notifyCalled();
+        }
+
+        public float getOldScale() {
+            return mPreviousScale;
+        }
+
+        public float getNewScale() {
+            return mCurrentScale;
+        }
+
+        public float getLastScaleRatio() {
+            assert getCallCount() > 0;
+            return mCurrentScale / mPreviousScale;
+        }
+    }
+
+    public OnScaleChangedHelper getOnScaleChangedHelper() {
+        return mOnScaleChangedHelper;
+    }
+
+    public PictureListenerHelper getPictureListenerHelper() {
+        return mPictureListenerHelper;
+    }
+
     @Override
-    public void onUpdateTitle(String title) {
+    public void onReceivedTitle(String title) {
         mUpdatedTitle = title;
     }
 
@@ -72,43 +134,113 @@ class TestAwContentsClient extends NullContentsClient {
         mOnReceivedErrorHelper.notifyCalled(errorCode, description, failingUrl);
     }
 
+    /**
+     * CallbackHelper for OnDownloadStart.
+     */
+    public static class OnDownloadStartHelper extends CallbackHelper {
+        private String mUrl;
+        private String mUserAgent;
+        private String mContentDisposition;
+        private String mMimeType;
+        long mContentLength;
+
+        public String getUrl() {
+            assert getCallCount() > 0;
+            return mUrl;
+        }
+
+        public String getUserAgent() {
+            assert getCallCount() > 0;
+            return mUserAgent;
+        }
+
+        public String getContentDisposition() {
+            assert getCallCount() > 0;
+            return mContentDisposition;
+        }
+
+        public String getMimeType() {
+            assert getCallCount() > 0;
+            return mMimeType;
+        }
+
+        public long getContentLength() {
+            assert getCallCount() > 0;
+            return mContentLength;
+        }
+
+        public void notifyCalled(String url, String userAgent, String contentDisposition,
+                String mimeType, long contentLength) {
+            mUrl = url;
+            mUserAgent = userAgent;
+            mContentDisposition = contentDisposition;
+            mMimeType = mimeType;
+            mContentLength = contentLength;
+            notifyCalled();
+        }
+    }
+
     @Override
-    public void onEvaluateJavaScriptResult(int id, String jsonResult) {
-        super.onEvaluateJavaScriptResult(id, jsonResult);
-        mOnEvaluateJavaScriptResultHelper.notifyCalled(id, jsonResult);
+    public void onDownloadStart(String url,
+            String userAgent,
+            String contentDisposition,
+            String mimeType,
+            long contentLength) {
+        getOnDownloadStartHelper().notifyCalled(url, userAgent, contentDisposition, mimeType,
+                contentLength);
+    }
+
+    /**
+     * CallbackHelper for OnReceivedLoginRequest.
+     */
+    public static class OnReceivedLoginRequestHelper extends CallbackHelper {
+        private String mRealm;
+        private String mAccount;
+        private String mArgs;
+
+        public String getRealm() {
+            assert getCallCount() > 0;
+            return mRealm;
+        }
+
+        public String getAccount() {
+            assert getCallCount() > 0;
+            return mAccount;
+        }
+
+        public String getArgs() {
+            assert getCallCount() > 0;
+            return mArgs;
+        }
+
+        public void notifyCalled(String realm, String account, String args) {
+            mRealm = realm;
+            mAccount = account;
+            mArgs = args;
+            notifyCalled();
+        }
+    }
+
+    @Override
+    public void onReceivedLoginRequest(String realm, String account, String args) {
+        getOnReceivedLoginRequestHelper().notifyCalled(realm, account, args);
     }
 
     @Override
     public boolean onConsoleMessage(ConsoleMessage consoleMessage) {
-        mAddMessageToConsoleHelper.setLevel(consoleMessage.messageLevel().ordinal());
-        mAddMessageToConsoleHelper.setMessage(consoleMessage.message());
-        mAddMessageToConsoleHelper.setLineNumber(consoleMessage.lineNumber());
-        mAddMessageToConsoleHelper.setSourceId(consoleMessage.sourceId());
-        mAddMessageToConsoleHelper.notifyCalled();
+        mAddMessageToConsoleHelper.notifyCalled(consoleMessage.messageLevel().ordinal(),
+                consoleMessage.message(), consoleMessage.lineNumber(), consoleMessage.sourceId());
         return false;
     }
 
-    public class AddMessageToConsoleHelper extends CallbackHelper {
+    /**
+     * Callback helper for onScaleChangedScaled.
+     */
+    public static class AddMessageToConsoleHelper extends CallbackHelper {
         private int mLevel;
         private String mMessage;
         private int mLineNumber;
         private String mSourceId;
-
-        void setLevel(int level) {
-            mLevel = level;
-        }
-
-        void setMessage(String message) {
-            mMessage = message;
-        }
-
-        void setLineNumber(int lineNumber) {
-            mLineNumber = lineNumber;
-        }
-
-        void setSourceId(String sourceId) {
-            mSourceId = sourceId;
-        }
 
         public int getLevel() {
             assert getCallCount() > 0;
@@ -129,33 +261,84 @@ class TestAwContentsClient extends NullContentsClient {
             assert getCallCount() > 0;
             return mSourceId;
         }
+
+        void notifyCalled(int level, String message, int lineNumer, String sourceId) {
+            mLevel = level;
+            mMessage = message;
+            mLineNumber = lineNumer;
+            mSourceId = sourceId;
+            notifyCalled();
+        }
     }
 
-    String mLastVisitedUrl;
-    boolean mLastVisitIsReload;
-
     @Override
-    public void doUpdateVisitedHistory(String url, boolean isReload) {
-        mLastVisitedUrl = url;
-        mLastVisitIsReload = isReload;
+    public void onScaleChangedScaled(float oldScale, float newScale) {
+        mOnScaleChangedHelper.notifyCalled(oldScale, newScale);
     }
 
-    String mLastDownloadUrl;
-    String mLastDownloadUserAgent;
-    String mLastDownloadContentDisposition;
-    String mLastDownloadMimeType;
-    long mLastDownloadContentLength;
+    /**
+     * Callback helper for onScaleChangedScaled.
+     */
+    public static class PictureListenerHelper extends CallbackHelper {
+        // Generally null, depending on |invalidationOnly| in enableOnNewPicture()
+        private Picture mPicture;
+
+        public Picture getPicture() {
+            assert getCallCount() > 0;
+            return mPicture;
+        }
+
+        void notifyCalled(Picture picture) {
+            mPicture = picture;
+            notifyCalled();
+        }
+    }
 
     @Override
-    public void onDownloadStart(String url,
-                                String userAgent,
-                                String contentDisposition,
-                                String mimeType,
-                                long contentLength) {
-        mLastDownloadUrl = url;
-        mLastDownloadUserAgent = userAgent;
-        mLastDownloadContentDisposition = contentDisposition;
-        mLastDownloadMimeType = mimeType;
-        mLastDownloadContentLength = contentLength;
+    public void onNewPicture(Picture picture) {
+        mPictureListenerHelper.notifyCalled(picture);
+    }
+
+    /**
+     * Callback helper for onScaleChangedScaled.
+     */
+    public static class ShouldOverrideUrlLoadingHelper extends CallbackHelper {
+        private String mShouldOverrideUrlLoadingUrl;
+        private String mPreviousShouldOverrideUrlLoadingUrl;
+        private boolean mShouldOverrideUrlLoadingReturnValue = false;
+        void setShouldOverrideUrlLoadingUrl(String url) {
+            mShouldOverrideUrlLoadingUrl = url;
+        }
+        void setPreviousShouldOverrideUrlLoadingUrl(String url) {
+            mPreviousShouldOverrideUrlLoadingUrl = url;
+        }
+        void setShouldOverrideUrlLoadingReturnValue(boolean value) {
+            mShouldOverrideUrlLoadingReturnValue = value;
+        }
+        public String getShouldOverrideUrlLoadingUrl() {
+            assert getCallCount() > 0;
+            return mShouldOverrideUrlLoadingUrl;
+        }
+        public String getPreviousShouldOverrideUrlLoadingUrl() {
+            assert getCallCount() > 1;
+            return mPreviousShouldOverrideUrlLoadingUrl;
+        }
+        public boolean getShouldOverrideUrlLoadingReturnValue() {
+            return mShouldOverrideUrlLoadingReturnValue;
+        }
+        public void notifyCalled(String url) {
+            mPreviousShouldOverrideUrlLoadingUrl = mShouldOverrideUrlLoadingUrl;
+            mShouldOverrideUrlLoadingUrl = url;
+            notifyCalled();
+        }
+    }
+
+    @Override
+    public boolean shouldOverrideUrlLoading(String url) {
+        super.shouldOverrideUrlLoading(url);
+        boolean returnValue =
+            mShouldOverrideUrlLoadingHelper.getShouldOverrideUrlLoadingReturnValue();
+        mShouldOverrideUrlLoadingHelper.notifyCalled(url);
+        return returnValue;
     }
 }

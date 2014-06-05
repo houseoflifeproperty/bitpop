@@ -21,16 +21,16 @@
 #include <unistd.h>
 
 #include "native_client/src/include/nacl_scoped_ptr.h"
+#include "native_client/src/public/imc_syscalls.h"
+#include "native_client/src/public/name_service.h"
 #include "native_client/src/shared/srpc/nacl_srpc.h"
-#include "native_client/src/untrusted/nacl_ppapi_util/nacl_ppapi_util.h"
-#include "native_client/src/untrusted/nacl_ppapi_util/string_buffer.h"
-
-#include <sys/nacl_syscalls.h>
-#include <sys/nacl_name_service.h>
 
 #include "ppapi/cpp/instance.h"
 #include "ppapi/cpp/module.h"
 #include "ppapi/cpp/var.h"
+
+#include "ppapi/native_client/src/untrusted/nacl_ppapi_util/nacl_ppapi_util.h"
+#include "ppapi/native_client/src/untrusted/nacl_ppapi_util/string_buffer.h"
 
 #define RNG_OUTPUT_BYTES  1024
 
@@ -74,31 +74,6 @@ void dump_output(nacl::StringBuffer *sb, int d, size_t nbytes) {
   sb->Printf("\n");
 }
 
-void EnumerateNames(NaClSrpcChannel *nschan, nacl::StringBuffer *sb) {
-  char      buffer[1024];
-  uint32_t  nbytes = sizeof buffer;
-
-  if (NACL_SRPC_RESULT_OK != NaClSrpcInvokeBySignature(nschan,
-                                                       NACL_NAME_SERVICE_LIST,
-                                                       &nbytes, buffer)) {
-    sb->Printf("NaClSrpcInvokeBySignature failed\n");
-    return;
-  }
-  sb->Printf("nbytes = %u\n", (size_t) nbytes);
-  if (nbytes == sizeof buffer) {
-    sb->Printf("Insufficent space for namespace enumeration\n");
-    return;
-  }
-
-  size_t name_len;
-  for (char *p = buffer;
-       static_cast<size_t>(p - buffer) < nbytes;
-       p += name_len) {
-    name_len = strlen(p) + 1;
-    sb->Printf("%s\n", p);
-  }
-}
-
 void Initialize(const pp::Var& message_data, nacl::StringBuffer* sb) {
   if (g_ns_channel_initialized) {
     return;
@@ -116,14 +91,6 @@ void Initialize(const pp::Var& message_data, nacl::StringBuffer* sb) {
   sb->Printf("NaClSrpcClientCtor succeeded\n");
   close(ns);
   g_ns_channel_initialized = 1;
-}
-
-//
-// Return name service output
-//
-void NameServiceDump(const pp::Var& message_data, nacl::StringBuffer* sb) {
-  Initialize(message_data, sb);
-  EnumerateNames(&g_ns_channel, sb);
 }
 
 //
@@ -203,7 +170,6 @@ class MyInstance : public pp::Instance {
 void MyInstance::HandleMessage(const pp::Var& message_data) {
   static struct PostMessageHandlerDesc kMsgHandlers[] = {
     { "init", Initialize },
-    { "nameservice", NameServiceDump },
     { "rng", RngDump },
     { "manifest_test", ManifestTest },
     { reinterpret_cast<char const *>(NULL),

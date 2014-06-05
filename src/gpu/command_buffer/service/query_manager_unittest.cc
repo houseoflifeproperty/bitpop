@@ -5,6 +5,7 @@
 #include "gpu/command_buffer/service/query_manager.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
 #include "gpu/command_buffer/service/cmd_buffer_engine.h"
+#include "gpu/command_buffer/service/error_state_mock.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder_mock.h"
 #include "gpu/command_buffer/service/feature_info.h"
@@ -32,21 +33,21 @@ class QueryManagerTest : public testing::Test {
 
   QueryManagerTest() {
   }
-  ~QueryManagerTest() {
+  virtual ~QueryManagerTest() {
   }
 
  protected:
   virtual void SetUp() {
     gl_.reset(new ::testing::StrictMock< ::gfx::MockGLInterface>());
-    ::gfx::GLInterface::SetGLInterface(gl_.get());
+    ::gfx::MockGLInterface::SetGLInterface(gl_.get());
     engine_.reset(new MockCommandBufferEngine());
     decoder_.reset(new MockGLES2Decoder());
     decoder_->set_engine(engine_.get());
     TestHelper::SetupFeatureInfoInitExpectations(
         gl_.get(),
         "GL_EXT_occlusion_query_boolean");
-    FeatureInfo::Ref feature_info(new FeatureInfo());
-    feature_info->Initialize("*");
+    scoped_refptr<FeatureInfo> feature_info(new FeatureInfo());
+    feature_info->Initialize();
     manager_.reset(new QueryManager(decoder_.get(), feature_info.get()));
   }
 
@@ -55,7 +56,7 @@ class QueryManagerTest : public testing::Test {
     manager_->Destroy(false);
     manager_.reset();
     engine_.reset();
-    ::gfx::GLInterface::SetGLInterface(NULL);
+    ::gfx::MockGLInterface::SetGLInterface(NULL);
     gl_.reset();
   }
 
@@ -68,8 +69,9 @@ class QueryManagerTest : public testing::Test {
     return manager_->CreateQuery(target, client_id, shm_id, shm_offset);
   }
 
-  void QueueQuery(
-    QueryManager::Query* query, GLuint service_id, uint32 submit_count) {
+  void QueueQuery(QueryManager::Query* query,
+                  GLuint service_id,
+                  base::subtle::Atomic32 submit_count) {
     EXPECT_CALL(*gl_, BeginQueryARB(query->target(), service_id))
         .Times(1)
         .RetiresOnSaturation();
@@ -89,21 +91,24 @@ class QueryManagerTest : public testing::Test {
   class MockCommandBufferEngine : public CommandBufferEngine {
    public:
     MockCommandBufferEngine() {
-      data_.reset(new int8[kSharedBufferSize]);
+      scoped_ptr<base::SharedMemory> shared_memory(new base::SharedMemory());
+      shared_memory->CreateAndMapAnonymous(kSharedBufferSize);
+      valid_buffer_ =
+          MakeBufferFromSharedMemory(shared_memory.Pass(), kSharedBufferSize);
+      data_ = static_cast<uint8*>(valid_buffer_->memory());
       ClearSharedMemory();
-      valid_buffer_.ptr = data_.get();
-      valid_buffer_.size = kSharedBufferSize;
     }
 
     virtual ~MockCommandBufferEngine() {
     }
 
-    virtual Buffer GetSharedMemoryBuffer(int32 shm_id) OVERRIDE {
+    virtual scoped_refptr<gpu::Buffer> GetSharedMemoryBuffer(int32 shm_id)
+        OVERRIDE {
       return shm_id == kSharedMemoryId ? valid_buffer_ : invalid_buffer_;
     }
 
     void ClearSharedMemory() {
-      memset(data_.get(), kInitialMemoryValue, kSharedBufferSize);
+      memset(data_, kInitialMemoryValue, kSharedBufferSize);
     }
 
     virtual void set_token(int32 token) OVERRIDE {
@@ -128,9 +133,9 @@ class QueryManagerTest : public testing::Test {
     }
 
    private:
-    scoped_array<int8> data_;
-    Buffer valid_buffer_;
-    Buffer invalid_buffer_;
+    uint8* data_;
+    scoped_refptr<gpu::Buffer> valid_buffer_;
+    scoped_refptr<gpu::Buffer> invalid_buffer_;
   };
 
   scoped_ptr<MockCommandBufferEngine> engine_;
@@ -154,7 +159,7 @@ TEST_F(QueryManagerTest, Basic) {
 
   EXPECT_FALSE(manager_->HavePendingQueries());
   // Check we can create a Query.
-  QueryManager::Query::Ref query(
+  scoped_refptr<QueryManager::Query> query(
       CreateQuery(GL_ANY_SAMPLES_PASSED_EXT, kClient1Id,
                   kSharedMemoryId, kSharedMemoryOffset, kService1Id));
   ASSERT_TRUE(query.get() != NULL);
@@ -176,7 +181,7 @@ TEST_F(QueryManagerTest, Destroy) {
   const GLuint kService1Id = 11;
 
   // Create Query.
-  QueryManager::Query::Ref query(
+  scoped_refptr<QueryManager::Query> query(
       CreateQuery(GL_ANY_SAMPLES_PASSED_EXT, kClient1Id,
                   kSharedMemoryId, kSharedMemoryOffset, kService1Id));
   ASSERT_TRUE(query.get() != NULL);
@@ -196,7 +201,7 @@ TEST_F(QueryManagerTest, QueryBasic) {
   const GLenum kTarget = GL_ANY_SAMPLES_PASSED_EXT;
 
   // Create Query.
-  QueryManager::Query::Ref query(
+  scoped_refptr<QueryManager::Query> query(
       CreateQuery(kTarget, kClient1Id,
                   kSharedMemoryId, kSharedMemoryOffset, kService1Id));
   ASSERT_TRUE(query.get() != NULL);
@@ -213,14 +218,14 @@ TEST_F(QueryManagerTest, ProcessPendingQuery) {
   const GLuint kClient1Id = 1;
   const GLuint kService1Id = 11;
   const GLenum kTarget = GL_ANY_SAMPLES_PASSED_EXT;
-  const uint32 kSubmitCount = 123;
+  const base::subtle::Atomic32 kSubmitCount = 123;
   const GLuint kResult = 1;
 
   // Check nothing happens if there are no pending queries.
   EXPECT_TRUE(manager_->ProcessPendingQueries());
 
   // Create Query.
-  QueryManager::Query::Ref query(
+  scoped_refptr<QueryManager::Query> query(
       CreateQuery(kTarget, kClient1Id,
                   kSharedMemoryId, kSharedMemoryOffset, kService1Id));
   ASSERT_TRUE(query.get() != NULL);
@@ -244,7 +249,7 @@ TEST_F(QueryManagerTest, ProcessPendingQuery) {
       .RetiresOnSaturation();
   EXPECT_TRUE(manager_->ProcessPendingQueries());
   EXPECT_TRUE(query->pending());
-  EXPECT_EQ(0u, sync->process_count);
+  EXPECT_EQ(0, sync->process_count);
   EXPECT_EQ(0u, sync->result);
 
   // Process with return available.
@@ -276,9 +281,9 @@ TEST_F(QueryManagerTest, ProcessPendingQueries) {
   const GLuint kClient3Id = 3;
   const GLuint kService3Id = 13;
   const GLenum kTarget = GL_ANY_SAMPLES_PASSED_EXT;
-  const uint32 kSubmitCount1 = 123;
-  const uint32 kSubmitCount2 = 123;
-  const uint32 kSubmitCount3 = 123;
+  const base::subtle::Atomic32 kSubmitCount1 = 123;
+  const base::subtle::Atomic32 kSubmitCount2 = 123;
+  const base::subtle::Atomic32 kSubmitCount3 = 123;
   const GLuint kResult1 = 1;
   const GLuint kResult2 = 1;
   const GLuint kResult3 = 1;
@@ -291,15 +296,15 @@ TEST_F(QueryManagerTest, ProcessPendingQueries) {
   QuerySync* sync3 = sync2 + 1;
 
   // Create Queries.
-  QueryManager::Query::Ref query1(
+  scoped_refptr<QueryManager::Query> query1(
       CreateQuery(kTarget, kClient1Id,
                   kSharedMemoryId, kSharedMemoryOffset + sizeof(*sync1) * 0,
                   kService1Id));
-  QueryManager::Query::Ref query2(
+  scoped_refptr<QueryManager::Query> query2(
       CreateQuery(kTarget, kClient2Id,
                   kSharedMemoryId, kSharedMemoryOffset + sizeof(*sync1) * 1,
                   kService2Id));
-  QueryManager::Query::Ref query3(
+  scoped_refptr<QueryManager::Query> query3(
       CreateQuery(kTarget, kClient3Id,
                   kSharedMemoryId, kSharedMemoryOffset + sizeof(*sync1) * 2,
                   kService3Id));
@@ -354,7 +359,7 @@ TEST_F(QueryManagerTest, ProcessPendingQueries) {
   EXPECT_EQ(kSubmitCount2, sync2->process_count);
   EXPECT_EQ(kResult1, sync1->result);
   EXPECT_EQ(kResult2, sync2->result);
-  EXPECT_EQ(0u, sync3->process_count);
+  EXPECT_EQ(0, sync3->process_count);
   EXPECT_EQ(0u, sync3->result);
   EXPECT_TRUE(manager_->HavePendingQueries());
 
@@ -366,7 +371,7 @@ TEST_F(QueryManagerTest, ProcessPendingQueries) {
       .RetiresOnSaturation();
   EXPECT_TRUE(manager_->ProcessPendingQueries());
   EXPECT_TRUE(query3->pending());
-  EXPECT_EQ(0u, sync3->process_count);
+  EXPECT_EQ(0, sync3->process_count);
   EXPECT_EQ(0u, sync3->result);
   EXPECT_TRUE(manager_->HavePendingQueries());
 
@@ -391,11 +396,11 @@ TEST_F(QueryManagerTest, ProcessPendingBadSharedMemoryId) {
   const GLuint kClient1Id = 1;
   const GLuint kService1Id = 11;
   const GLenum kTarget = GL_ANY_SAMPLES_PASSED_EXT;
-  const uint32 kSubmitCount = 123;
+  const base::subtle::Atomic32 kSubmitCount = 123;
   const GLuint kResult = 1;
 
   // Create Query.
-  QueryManager::Query::Ref query(
+  scoped_refptr<QueryManager::Query> query(
       CreateQuery(kTarget, kClient1Id,
                   kInvalidSharedMemoryId, kSharedMemoryOffset, kService1Id));
   ASSERT_TRUE(query.get() != NULL);
@@ -420,11 +425,11 @@ TEST_F(QueryManagerTest, ProcessPendingBadSharedMemoryOffset) {
   const GLuint kClient1Id = 1;
   const GLuint kService1Id = 11;
   const GLenum kTarget = GL_ANY_SAMPLES_PASSED_EXT;
-  const uint32 kSubmitCount = 123;
+  const base::subtle::Atomic32 kSubmitCount = 123;
   const GLuint kResult = 1;
 
   // Create Query.
-  QueryManager::Query::Ref query(
+  scoped_refptr<QueryManager::Query> query(
       CreateQuery(kTarget, kClient1Id,
                   kSharedMemoryId, kInvalidSharedMemoryOffset, kService1Id));
   ASSERT_TRUE(query.get() != NULL);
@@ -449,10 +454,10 @@ TEST_F(QueryManagerTest, ExitWithPendingQuery) {
   const GLuint kClient1Id = 1;
   const GLuint kService1Id = 11;
   const GLenum kTarget = GL_ANY_SAMPLES_PASSED_EXT;
-  const uint32 kSubmitCount = 123;
+  const base::subtle::Atomic32 kSubmitCount = 123;
 
   // Create Query.
-  QueryManager::Query::Ref query(
+  scoped_refptr<QueryManager::Query> query(
       CreateQuery(kTarget, kClient1Id,
                   kSharedMemoryId, kSharedMemoryOffset, kService1Id));
   ASSERT_TRUE(query.get() != NULL);
@@ -467,13 +472,13 @@ TEST_F(QueryManagerTest, ARBOcclusionQuery2) {
   const GLuint kClient1Id = 1;
   const GLuint kService1Id = 11;
   const GLenum kTarget = GL_ANY_SAMPLES_PASSED_CONSERVATIVE_EXT;
-  const uint32 kSubmitCount = 123;
+  const base::subtle::Atomic32 kSubmitCount = 123;
 
   TestHelper::SetupFeatureInfoInitExpectations(
       gl_.get(),
       "GL_ARB_occlusion_query2");
-  FeatureInfo::Ref feature_info(new FeatureInfo());
-  feature_info->Initialize("*");
+  scoped_refptr<FeatureInfo> feature_info(new FeatureInfo());
+  feature_info->Initialize();
   scoped_ptr<QueryManager> manager(
       new QueryManager(decoder_.get(), feature_info.get()));
 
@@ -501,13 +506,13 @@ TEST_F(QueryManagerTest, ARBOcclusionQuery) {
   const GLuint kClient1Id = 1;
   const GLuint kService1Id = 11;
   const GLenum kTarget = GL_ANY_SAMPLES_PASSED_EXT;
-  const uint32 kSubmitCount = 123;
+  const base::subtle::Atomic32 kSubmitCount = 123;
 
   TestHelper::SetupFeatureInfoInitExpectations(
       gl_.get(),
       "GL_ARB_occlusion_query");
-  FeatureInfo::Ref feature_info(new FeatureInfo());
-  feature_info->Initialize("*");
+  scoped_refptr<FeatureInfo> feature_info(new FeatureInfo());
+  feature_info->Initialize();
   scoped_ptr<QueryManager> manager(
       new QueryManager(decoder_.get(), feature_info.get()));
 
@@ -532,11 +537,11 @@ TEST_F(QueryManagerTest, ARBOcclusionQuery) {
 TEST_F(QueryManagerTest, GetErrorQuery) {
   const GLuint kClient1Id = 1;
   const GLenum kTarget = GL_GET_ERROR_QUERY_CHROMIUM;
-  const uint32 kSubmitCount = 123;
+  const base::subtle::Atomic32 kSubmitCount = 123;
 
   TestHelper::SetupFeatureInfoInitExpectations(gl_.get(), "");
-  FeatureInfo::Ref feature_info(new FeatureInfo());
-  feature_info->Initialize("*");
+  scoped_refptr<FeatureInfo> feature_info(new FeatureInfo());
+  feature_info->Initialize();
   scoped_ptr<QueryManager> manager(
       new QueryManager(decoder_.get(), feature_info.get()));
 
@@ -552,7 +557,10 @@ TEST_F(QueryManagerTest, GetErrorQuery) {
 
   EXPECT_TRUE(manager->BeginQuery(query));
 
-  EXPECT_CALL(*decoder_.get(), GetGLError())
+  MockErrorState mock_error_state;
+  EXPECT_CALL(*decoder_.get(), GetErrorState())
+      .WillRepeatedly(Return(&mock_error_state));
+  EXPECT_CALL(mock_error_state, GetGLError())
       .WillOnce(Return(GL_INVALID_ENUM))
       .RetiresOnSaturation();
 

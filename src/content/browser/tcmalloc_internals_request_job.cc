@@ -24,7 +24,7 @@ AboutTcmallocOutputs::AboutTcmallocOutputs() {}
 AboutTcmallocOutputs::~AboutTcmallocOutputs() {}
 
 void AboutTcmallocOutputs::OnStatsForChildProcess(
-    base::ProcessId pid, ProcessType process_type,
+    base::ProcessId pid, int process_type,
     const std::string& output) {
   std::string header = GetProcessTypeNameInEnglish(process_type);
   base::StringAppendF(&header, " PID %d", static_cast<int>(pid));
@@ -74,7 +74,7 @@ void AboutTcmalloc(std::string* data) {
   data->append("<!DOCTYPE html>\n<html>\n<head>\n");
   data->append(
       "<meta http-equiv=\"Content-Security-Policy\" "
-      "content=\"object-src 'none'; script-src 'none' 'unsafe-eval'\">");
+      "content=\"object-src 'none'; script-src 'none'\">");
   data->append("<title>tcmalloc stats</title>");
   data->append("</head><body>");
 

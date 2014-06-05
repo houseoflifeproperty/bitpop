@@ -10,14 +10,15 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "chrome/browser/ui/views/extensions/extension_dialog_observer.h"
-#include "ui/base/dialogs/select_file_dialog.h"
 #include "ui/gfx/native_widget_types.h"  // gfx::NativeWindow
+#include "ui/shell_dialogs/select_file_dialog.h"
 
 class ExtensionDialog;
 class Profile;
 
 namespace content {
 class RenderViewHost;
+class WebContents;
 }
 
 namespace ui {
@@ -31,6 +32,12 @@ class SelectFileDialogExtension
     : public ui::SelectFileDialog,
       public ExtensionDialogObserver {
  public:
+  // Opaque ID type for identifying the tab spawned each dialog, unique for
+  // every WebContents.
+  typedef const void* RoutingID;
+  static RoutingID GetRoutingIDFromWebContents(
+      const content::WebContents* web_contents);
+
   static SelectFileDialogExtension* Create(
       ui::SelectFileDialog::Listener* listener,
       ui::SelectFilePolicy* policy);
@@ -43,29 +50,30 @@ class SelectFileDialogExtension
   virtual void ExtensionDialogClosing(ExtensionDialog* dialog) OVERRIDE;
   virtual void ExtensionTerminated(ExtensionDialog* dialog) OVERRIDE;
 
-  // Routes callback to appropriate SelectFileDialog::Listener based on
-  // the owning |tab_id|.
-  static void OnFileSelected(int32 tab_id,
+  // Routes callback to appropriate SelectFileDialog::Listener based on the
+  // owning |web_contents|.
+  static void OnFileSelected(RoutingID routing_id,
                              const ui::SelectedFileInfo& file,
                              int index);
   static void OnMultiFilesSelected(
-      int32 tab_id,
+      RoutingID routing_id,
       const std::vector<ui::SelectedFileInfo>& files);
-  static void OnFileSelectionCanceled(int32 tab_id);
+  static void OnFileSelectionCanceled(RoutingID routing_id);
 
   // For testing, so we can inject JavaScript into the contained view.
   content::RenderViewHost* GetRenderViewHost();
 
  protected:
   // SelectFileDialog implementation.
-  virtual void SelectFileImpl(Type type,
-                              const string16& title,
-                              const FilePath& default_path,
-                              const FileTypeInfo* file_types,
-                              int file_type_index,
-                              const FilePath::StringType& default_extension,
-                              gfx::NativeWindow owning_window,
-                              void* params) OVERRIDE;
+  virtual void SelectFileImpl(
+      Type type,
+      const base::string16& title,
+      const base::FilePath& default_path,
+      const FileTypeInfo* file_types,
+      int file_type_index,
+      const base::FilePath::StringType& default_extension,
+      gfx::NativeWindow owning_window,
+      void* params) OVERRIDE;
 
  private:
   friend class SelectFileDialogExtensionBrowserTest;
@@ -80,10 +88,10 @@ class SelectFileDialogExtension
   void NotifyListener();
 
   // Adds this to the list of pending dialogs, used for testing.
-  void AddPending(int32 tab_id);
+  void AddPending(RoutingID routing_id);
 
-  // Check if the list of pending dialogs contains dialog for |tab_id|.
-  static bool PendingExists(int32 tab_id);
+  // Check if the list of pending dialogs contains dialog for |routing_id|.
+  static bool PendingExists(RoutingID routing_id);
 
   // Returns true if the dialog has multiple file type choices.
   virtual bool HasMultipleFileTypeChoicesImpl() OVERRIDE;
@@ -94,7 +102,7 @@ class SelectFileDialogExtension
   scoped_refptr<ExtensionDialog> extension_dialog_;
 
   // ID of the tab that spawned this dialog, used to route callbacks.
-  int32 tab_id_;
+  RoutingID routing_id_;
 
   // Pointer to the profile the dialog is running in.
   Profile* profile_;

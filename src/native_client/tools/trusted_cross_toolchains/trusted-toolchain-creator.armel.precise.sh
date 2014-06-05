@@ -20,8 +20,7 @@
 #@  tools/trusted_cross_toolchains/trusted-toolchain-creator.armel.precise.sh <mode> <args>*
 #@  Available modes are shown below.
 #@
-#@
-#@ This Toolchain was tested with Ubuntu Lucid
+#@ This Toolchain was tested with Ubuntu Precise
 #@
 #@ Usage of this TC:
 #@  compile: arm-linux-gnueabi-gcc -march=armv7-a -isystem ${JAIL}/usr/include
@@ -43,9 +42,9 @@ set -o errexit
 readonly SCRIPT_DIR=$(dirname $0)
 
 # this where we create the ARMEL "jail"
-readonly INSTALL_ROOT=$(pwd)/toolchain/linux_arm-trusted
+readonly INSTALL_ROOT=$(pwd)/toolchain/linux_x86/arm_trusted
 
-readonly TMP=/tmp/arm-crosstool-precise
+readonly TMP=/tmp/armel-crosstool-precise
 
 readonly REQUIRED_TOOLS="wget"
 
@@ -61,6 +60,7 @@ readonly CROSS_ARM_TC_REPO=http://archive.ubuntu.com/ubuntu
 readonly ARMEL_REPO=http://ports.ubuntu.com/ubuntu-ports
 
 readonly PACKAGE_LIST="${ARMEL_REPO}/dists/precise/main/binary-armel/Packages.bz2"
+readonly PACKAGE_LIST2="${ARMEL_REPO}/dists/precise-security/main/binary-armel/Packages.bz2"
 
 # Packages for the host system
 # NOTE: at one point we should get rid of the 4.5 packages
@@ -113,8 +113,6 @@ readonly ARMEL_EXTRA_PACKAGES="\
   libasound2-dev \
   libatk1.0-0 \
   libatk1.0-dev \
-  libbz2-1.0 \
-  libbz2-dev \
   libcairo2 \
   libcairo2-dev \
   libcairo-gobject2 \
@@ -164,6 +162,8 @@ readonly ARMEL_EXTRA_PACKAGES="\
   libnss3-dev \
   libnss-db \
   liborbit2 \
+  libcap-dev \
+  libcap2 \
   libpam0g \
   libpam0g-dev \
   libpango1.0-0 \
@@ -177,7 +177,12 @@ readonly ARMEL_EXTRA_PACKAGES="\
   libpixman-1-dev \
   libpng12-0 \
   libpng12-dev \
+  libpulse0 \
+  libpulse-dev \
+  libpulse-mainloop-glib0 \
   libselinux1 \
+  libspeechd2 \
+  libspeechd-dev \
   libudev0 \
   libudev-dev \
   libxext-dev \
@@ -211,6 +216,7 @@ readonly ARMEL_EXTRA_PACKAGES="\
   libxss-dev \
   libxtst6 \
   libxtst-dev \
+  speech-dispatcher \
   x11proto-composite-dev \
   x11proto-damage-dev \
   x11proto-fixes-dev \
@@ -262,10 +268,12 @@ DownloadOrCopy() {
   fi
 }
 
+
 # some sanity checks to make sure this script is run from the right place
 # with the right tools
 SanityCheck() {
   Banner "Sanity Checks"
+
   if [[ $(basename $(pwd)) != "native_client" ]] ; then
     echo "ERROR: run this script from the native_client/ dir"
     exit -1
@@ -288,6 +296,13 @@ SanityCheck() {
       exit 1
     fi
   done
+}
+
+
+ChangeDirectory() {
+  # Change direcotry to top 'native_client' directory.
+  cd $(dirname ${BASH_SOURCE})
+  cd ../..
 }
 
 
@@ -342,7 +357,7 @@ InstallTrustedLinkerScript() {
 }
 
 HacksAndPatches() {
-  rel_path=toolchain/linux_arm-trusted
+  rel_path=toolchain/linux_x86/arm_trusted
   Banner "Misc Hacks & Patches"
   # these are linker scripts with absolute pathnames in them
   # which we rewrite here
@@ -435,8 +450,6 @@ CleanupJailSymlinks() {
 # So instead we chose to build 32bit shared images.
 #
 
-#readonly QEMU_TARBALL=$(readlink -f ../third_party/qemu/qemu-1.0.1.tar.gz)
-#readonly QEMU_DIR=qemu-1.0.1
 readonly QEMU_TARBALL=$(readlink -f ../third_party/qemu/qemu-1.0.1.tar.gz)
 readonly QEMU_PATCH=$(readlink -f ../third_party/qemu/qemu-1.0.1.patch_arm)
 readonly QEMU_DIR=qemu-1.0.1
@@ -446,11 +459,17 @@ BuildAndInstallQemu() {
   local tmpdir="${TMP}/qemu.nacl"
 
   Banner "Building qemu in ${tmpdir}"
+
+  if [[ -z "$QEMU_TARBALL" ]] ; then
+    echo "ERROR: missing qemu tarball: ../third_party/qemu/qemu-1.0.1.tar.gz"
+    exit 1
+  fi
+
   rm -rf ${tmpdir}
   mkdir ${tmpdir}
   cd ${tmpdir}
   SubBanner "Untaring ${QEMU_TARBALL}"
-  tar zxf  ${QEMU_TARBALL}
+  tar zxf ${QEMU_TARBALL}
   cd ${QEMU_DIR}
 
   SubBanner "Patching ${QEMU_PATCH}"
@@ -511,7 +530,7 @@ GeneratePackageList() {
   /bin/rm -f ${output_file}
   shift
   for pkg in $@ ; do
-    local pkg_full=$(grep -A 1 "${pkg}\$" ${TMP}/Packages | egrep -o "pool/.*")
+    local pkg_full=$(grep -A 1 "${pkg}\$" ${TMP}/Packages | tail -1 | egrep -o "pool/.*")
     if [[ -z ${pkg_full} ]]; then
         echo "ERROR: missing package: $pkg"
         exit 1
@@ -530,8 +549,10 @@ GeneratePackageList() {
 #@
 UpdatePackageLists() {
   local package_list="${TMP}/Packages.precise.bz2"
+  local package_list2="${TMP}/Packages.precise-security.bz2"
   DownloadOrCopy ${PACKAGE_LIST} ${package_list}
-  bzcat ${package_list} | egrep '^(Package:|Filename:)' > ${TMP}/Packages
+  DownloadOrCopy ${PACKAGE_LIST2} ${package_list2}
+  bzcat ${package_list} ${package_list2} | egrep '^(Package:|Filename:)' > ${TMP}/Packages
 
   GeneratePackageList ${ARMEL_BASE_DEP_LIST} "${ARMEL_BASE_PACKAGES}"
   GeneratePackageList ${ARMEL_EXTRA_DEP_LIST} "${ARMEL_EXTRA_PACKAGES}"
@@ -548,6 +569,7 @@ elif [[ "$(type -t $1)" != "function" ]]; then
   echo "    $0 help"
   exit 1
 else
+  ChangeDirectory
   SanityCheck
   "$@"
 fi

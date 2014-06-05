@@ -4,16 +4,28 @@
 
 #include "ui/gl/gl_surface.h"
 
+#include <dwmapi.h>
+
+#include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "third_party/mesa/include/osmesa.h"
+#include "base/win/windows_version.h"
+#include "third_party/mesa/src/include/GL/osmesa.h"
+#include "ui/gfx/frame_time.h"
+#include "ui/gfx/native_widget_types.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface_egl.h"
 #include "ui/gl/gl_surface_osmesa.h"
 #include "ui/gl/gl_surface_stub.h"
 #include "ui/gl/gl_surface_wgl.h"
+
+// From ANGLE's egl/eglext.h.
+#if !defined(EGL_D3D11_ELSE_D3D9_DISPLAY_ANGLE)
+#define EGL_D3D11_ELSE_D3D9_DISPLAY_ANGLE \
+  reinterpret_cast<EGLNativeDisplayType>(-2)
+#endif
 
 namespace gfx {
 
@@ -29,7 +41,7 @@ class NativeViewGLSurfaceOSMesa : public GLSurfaceOSMesa {
   virtual void Destroy() OVERRIDE;
   virtual bool IsOffscreen() OVERRIDE;
   virtual bool SwapBuffers() OVERRIDE;
-  virtual std::string GetExtensions() OVERRIDE;
+  virtual bool SupportsPostSubBuffer() OVERRIDE;
   virtual bool PostSubBuffer(int x, int y, int width, int height) OVERRIDE;
 
  private:
@@ -39,8 +51,47 @@ class NativeViewGLSurfaceOSMesa : public GLSurfaceOSMesa {
   DISALLOW_COPY_AND_ASSIGN(NativeViewGLSurfaceOSMesa);
 };
 
+class DWMVSyncProvider : public VSyncProvider {
+ public:
+  explicit DWMVSyncProvider() {}
+
+  virtual ~DWMVSyncProvider() {}
+
+  virtual void GetVSyncParameters(const UpdateVSyncCallback& callback) {
+    TRACE_EVENT0("gpu", "DWMVSyncProvider::GetVSyncParameters");
+    DWM_TIMING_INFO timing_info;
+    timing_info.cbSize = sizeof(timing_info);
+    HRESULT result = DwmGetCompositionTimingInfo(NULL, &timing_info);
+    if (result != S_OK)
+      return;
+
+    base::TimeTicks timebase;
+    // If FrameTime is not high resolution, we do not want to translate the
+    // QPC value provided by DWM into the low-resolution timebase, which
+    // would be error prone and jittery. As a fallback, we assume the timebase
+    // is zero.
+    if (gfx::FrameTime::TimestampsAreHighRes()) {
+      timebase = gfx::FrameTime::FromQPCValue(
+          static_cast<LONGLONG>(timing_info.qpcVBlank));
+    }
+
+    // Swap the numerator/denominator to convert frequency to period.
+    if (timing_info.rateRefresh.uiDenominator > 0 &&
+        timing_info.rateRefresh.uiNumerator > 0) {
+      base::TimeDelta interval = base::TimeDelta::FromMicroseconds(
+          timing_info.rateRefresh.uiDenominator *
+          base::Time::kMicrosecondsPerSecond /
+          timing_info.rateRefresh.uiNumerator);
+      callback.Run(timebase, interval);
+    }
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(DWMVSyncProvider);
+};
+
 // Helper routine that does one-off initialization like determining the
-// pixel format and initializing the GL bindings.
+// pixel format.
 bool GLSurface::InitializeOneOffInternal() {
   switch (GetGLImplementation()) {
     case kGLImplementationDesktopGL:
@@ -128,11 +179,8 @@ bool NativeViewGLSurfaceOSMesa::SwapBuffers() {
   return true;
 }
 
-std::string NativeViewGLSurfaceOSMesa::GetExtensions() {
-  std::string extensions = gfx::GLSurfaceOSMesa::GetExtensions();
-  extensions += extensions.empty() ? "" : " ";
-  extensions += "GL_CHROMIUM_post_sub_buffer";
-  return extensions;
+bool NativeViewGLSurfaceOSMesa::SupportsPostSubBuffer() {
+  return true;
 }
 
 bool NativeViewGLSurfaceOSMesa::PostSubBuffer(
@@ -173,7 +221,6 @@ bool NativeViewGLSurfaceOSMesa::PostSubBuffer(
 }
 
 scoped_refptr<GLSurface> GLSurface::CreateViewGLSurface(
-    bool software,
     gfx::AcceleratedWidget window) {
   TRACE_EVENT0("gpu", "GLSurface::CreateViewGLSurface");
   switch (GetGLImplementation()) {
@@ -186,16 +233,18 @@ scoped_refptr<GLSurface> GLSurface::CreateViewGLSurface(
       return surface;
     }
     case kGLImplementationEGLGLES2: {
-      scoped_refptr<GLSurface> surface(new NativeViewGLSurfaceEGL(software,
-          window));
-      if (!surface->Initialize())
+      DCHECK(window != gfx::kNullAcceleratedWidget);
+      scoped_refptr<NativeViewGLSurfaceEGL> surface(
+          new NativeViewGLSurfaceEGL(window));
+      scoped_ptr<VSyncProvider> sync_provider;
+      if (base::win::GetVersion() >= base::win::VERSION_VISTA)
+        sync_provider.reset(new DWMVSyncProvider);
+      if (!surface->Initialize(sync_provider.Pass()))
         return NULL;
 
       return surface;
     }
     case kGLImplementationDesktopGL: {
-      if (software)
-        return NULL;
       scoped_refptr<GLSurface> surface(new NativeViewGLSurfaceWGL(
           window));
       if (!surface->Initialize())
@@ -212,7 +261,6 @@ scoped_refptr<GLSurface> GLSurface::CreateViewGLSurface(
 }
 
 scoped_refptr<GLSurface> GLSurface::CreateOffscreenGLSurface(
-    bool software,
     const gfx::Size& size) {
   TRACE_EVENT0("gpu", "GLSurface::CreateOffscreenGLSurface");
   switch (GetGLImplementation()) {
@@ -225,15 +273,13 @@ scoped_refptr<GLSurface> GLSurface::CreateOffscreenGLSurface(
       return surface;
     }
     case kGLImplementationEGLGLES2: {
-      scoped_refptr<GLSurface> surface(new PbufferGLSurfaceEGL(software, size));
+      scoped_refptr<GLSurface> surface(new PbufferGLSurfaceEGL(size));
       if (!surface->Initialize())
         return NULL;
 
       return surface;
     }
     case kGLImplementationDesktopGL: {
-      if (software)
-        return NULL;
       scoped_refptr<GLSurface> surface(new PbufferGLSurfaceWGL(size));
       if (!surface->Initialize())
         return NULL;
@@ -246,6 +292,13 @@ scoped_refptr<GLSurface> GLSurface::CreateOffscreenGLSurface(
       NOTREACHED();
       return NULL;
   }
+}
+
+EGLNativeDisplayType GetPlatformDefaultEGLNativeDisplay() {
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableD3D11))
+    return EGL_D3D11_ELSE_D3D9_DISPLAY_ANGLE;
+
+  return EGL_DEFAULT_DISPLAY;
 }
 
 }  // namespace gfx

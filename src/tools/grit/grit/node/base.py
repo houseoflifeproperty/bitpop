@@ -6,8 +6,8 @@
 '''Base types for nodes in a GRIT resource tree.
 '''
 
+import ast
 import os
-import sys
 import types
 from xml.sax import saxutils
 
@@ -26,6 +26,13 @@ class Node(object):
 
   # Default nodes to not whitelist skipped
   _whitelist_marked_as_skip = False
+
+  # A class-static cache to speed up EvaluateExpression().
+  # Keys are expressions (e.g. 'is_ios and lang == "fr"'). Values are tuples
+  # (code, variables_in_expr) where code is the compiled expression and can be
+  # directly eval'd, and variables_in_expr is the list of variable and method
+  # names used in the expression (e.g. ['is_ios', 'lang']).
+  eval_expr_cache = {}
 
   def __init__(self):
     self.children = []        # A list of child elements
@@ -434,6 +441,67 @@ class Node(object):
       return [self.attrs['name']]
     return []
 
+  @classmethod
+  def EvaluateExpression(cls, expr, defs, target_platform, extra_variables={}):
+    '''Worker for EvaluateCondition (below) and conditions in XTB files.'''
+    if expr in cls.eval_expr_cache:
+      code, variables_in_expr = cls.eval_expr_cache[expr]
+    else:
+      # Get a list of all variable and method names used in the expression.
+      syntax_tree = ast.parse(expr, mode='eval')
+      variables_in_expr = [node.id for node in ast.walk(syntax_tree) if
+          isinstance(node, ast.Name) and node.id not in ('True', 'False')]
+      code = compile(syntax_tree, filename='<string>', mode='eval')
+      cls.eval_expr_cache[expr] = code, variables_in_expr
+
+    # Set values only for variables that are needed to eval the expression.
+    variable_map = {}
+    for name in variables_in_expr:
+      if name == 'os':
+        value = target_platform
+      elif name == 'defs':
+        value = defs
+
+      elif name == 'is_linux':
+        value = target_platform.startswith('linux')
+      elif name == 'is_macosx':
+        value = target_platform == 'darwin'
+      elif name == 'is_win':
+        value = target_platform in ('cygwin', 'win32')
+      elif name == 'is_android':
+        value = target_platform == 'android'
+      elif name == 'is_ios':
+        value = target_platform == 'ios'
+      elif name == 'is_bsd':
+        value = 'bsd' in target_platform
+      elif name == 'is_posix':
+        value = (target_platform in ('darwin', 'linux2', 'linux3', 'sunos5',
+                                     'android', 'ios')
+                 or 'bsd' in target_platform)
+
+      elif name == 'pp_ifdef':
+        def pp_ifdef(symbol):
+          return symbol in defs
+        value = pp_ifdef
+      elif name == 'pp_if':
+        def pp_if(symbol):
+          return defs.get(symbol, False)
+        value = pp_if
+
+      elif name in defs:
+        value = defs[name]
+      elif name in extra_variables:
+        value = extra_variables[name]
+      else:
+        # Undefined variables default to False.
+        value = False
+
+      variable_map[name] = value
+
+    eval_result = eval(code, {}, variable_map)
+    assert isinstance(eval_result, bool)
+    return eval_result
+
   def EvaluateCondition(self, expr):
     '''Returns true if and only if the Python expression 'expr' evaluates
     to true.
@@ -454,24 +522,13 @@ class Node(object):
     lang = getattr(root, 'output_language', '')
     context = getattr(root, 'output_context', '')
     defs = getattr(root, 'defines', {})
-    def pp_ifdef(symbol):
-      return symbol in defs
-    def pp_if(symbol):
-      return symbol in defs and defs[symbol]
-    variable_map = {
-        'lang' : lang,
-        'context' : context,
-        'defs' : defs,
-        'os': sys.platform,
-        'is_linux': sys.platform.startswith('linux'),
-        'is_macosx': sys.platform == 'darwin',
-        'is_win': sys.platform in ('cygwin', 'win32'),
-        'is_posix': (sys.platform in ('darwin', 'linux2', 'linux3', 'sunos5')
-                     or 'bsd' in sys.platform),
-        'pp_ifdef' : pp_ifdef,
-        'pp_if' : pp_if,
+    target_platform = getattr(root, 'target_platform', '')
+    extra_variables = {
+        'lang': lang,
+        'context': context,
     }
-    return eval(expr, {}, variable_map)
+    return Node.EvaluateExpression(
+        expr, defs, target_platform, extra_variables)
 
   def OnlyTheseTranslations(self, languages):
     '''Turns off loading of translations for languages not in the provided list.

@@ -14,26 +14,25 @@
 #ifndef CHROME_BROWSER_AUTOCOMPLETE_ZERO_SUGGEST_PROVIDER_H_
 #define CHROME_BROWSER_AUTOCOMPLETE_ZERO_SUGGEST_PROVIDER_H_
 
-#include <string>
-#include <vector>
-
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
-#include "chrome/browser/autocomplete/autocomplete_provider.h"
-#include "net/url_request/url_fetcher_delegate.h"
+#include "chrome/browser/autocomplete/base_search_provider.h"
+#include "chrome/browser/autocomplete/search_provider.h"
 
-class AutocompleteInput;
-class GURL;
 class TemplateURLService;
 
 namespace base {
+class ListValue;
 class Value;
 }
 
 namespace net {
 class URLFetcher;
+}
+
+namespace user_prefs {
+class PrefRegistrySyncable;
 }
 
 // Autocomplete provider for searches based on the current URL.
@@ -46,63 +45,86 @@ class URLFetcher;
 // TODO(jered): Consider deleting this class and building this functionality
 // into SearchProvider after dogfood and after we break the association between
 // omnibox text and suggestions.
-class ZeroSuggestProvider : public AutocompleteProvider,
-                            public net::URLFetcherDelegate {
+class ZeroSuggestProvider : public BaseSearchProvider {
  public:
-  // Creates and returns an instance of this provider if the feature is enabled.
-  // Returns NULL if not enabled.
+  // Creates and returns an instance of this provider.
   static ZeroSuggestProvider* Create(AutocompleteProviderListener* listener,
                                      Profile* profile);
 
+  // Registers a preference used to cache zero suggest results.
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
+
   // AutocompleteProvider:
   virtual void Start(const AutocompleteInput& input,
-                     bool /*minimal_changes*/) OVERRIDE;
-  virtual void Stop(bool clear_cached_results) OVERRIDE;
+                     bool minimal_changes) OVERRIDE;
+  virtual void DeleteMatch(const AutocompleteMatch& match) OVERRIDE;
 
-  // net::URLFetcherDelegate
-  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
+  // Sets |field_trial_triggered_| to false.
+  virtual void ResetSession() OVERRIDE;
 
-  // Initiates a new fetch for the given |url|, limiting suggestions to those
-  // matching |user_text|. |user_text| may be non-empty if the user previously
-  // interacted with zero-suggest suggestions and then unfocused the omnibox.
-  // TODO(jered): Rip out |user_text| once the first match is decoupled from
-  // the current typing in the omnibox.
-  void StartZeroSuggest(const GURL& url, const string16& user_text);
+ protected:
+  // BaseSearchProvider:
+  virtual void ModifyProviderInfo(
+      metrics::OmniboxEventProto_ProviderInfo* provider_info) const OVERRIDE;
 
  private:
   ZeroSuggestProvider(AutocompleteProviderListener* listener,
-                      Profile* profile,
-                      const std::string& url_prefix);
+                      Profile* profile);
 
   virtual ~ZeroSuggestProvider();
 
-  // Update matches given the user has typed |user_text|.
-  void UpdateMatches(const string16& user_text);
+  // BaseSearchProvider:
+  virtual bool StoreSuggestionResponse(const std::string& json_data,
+                                       const base::Value& parsed_data) OVERRIDE;
+  virtual const TemplateURL* GetTemplateURL(bool is_keyword) const OVERRIDE;
+  virtual const AutocompleteInput GetInput(bool is_keyword) const OVERRIDE;
+  virtual Results* GetResultsToFill(bool is_keyword) OVERRIDE;
+  virtual bool ShouldAppendExtraParams(
+      const SuggestResult& result) const OVERRIDE;
+  virtual void StopSuggest() OVERRIDE;
+  virtual void ClearAllResults() OVERRIDE;
+  virtual int GetDefaultResultRelevance() const OVERRIDE;
+  virtual void RecordDeletionResult(bool success) OVERRIDE;
+  virtual void LogFetchComplete(bool success, bool is_keyword) OVERRIDE;
+  virtual bool IsKeywordFetcher(const net::URLFetcher* fetcher) const OVERRIDE;
+  virtual void UpdateMatches() OVERRIDE;
 
-  // Fetches zero-suggest suggestions for |current_query_|.
-  void Run();
+  // Adds AutocompleteMatches for each of the suggestions in |results| to
+  // |map|.
+  void AddSuggestResultsToMap(const SuggestResults& results, MatchMap* map);
 
-  // Parses results from the zero-suggest server and updates results.
-  // Returns true if results were updated.
-  bool ParseSuggestResults(base::Value* root_val);
+  // Returns an AutocompleteMatch for a navigational suggestion |navigation|.
+  AutocompleteMatch NavigationToMatch(const NavigationResult& navigation);
+
+  // Fetches zero-suggest suggestions by sending a request using |suggest_url|.
+  void Run(const GURL& suggest_url);
 
   // Converts the parsed results to a set of AutocompleteMatches and adds them
-  // to |matches_|.
+  // to |matches_|.  Also update the histograms for how many results were
+  // received.
   void ConvertResultsToAutocompleteMatches();
 
-  // Adds a URL suggestion for the current URL. This should be in the top
-  // position so that pressing enter has the effect of reloading the page.
-  void AddMatchForCurrentURL();
+  // Returns an AutocompleteMatch for the current URL. The match should be in
+  // the top position so that pressing enter has the effect of reloading the
+  // page.
+  AutocompleteMatch MatchForCurrentURL();
 
-  // Adds a query suggestion from response position |result_index| with text
-  // |result| to |matches_|. Uses |search_provider| to build a search URL for
-  // this match.
-  void AddMatchForResult(const TemplateURL* search_provider,
-                         size_t result_index,
-                         const string16& result);
+  // When the user is in the Most Visited field trial, we ask the TopSites
+  // service for the most visited URLs during Run().  It calls back to this
+  // function to return those |urls|.
+  void OnMostVisitedUrlsAvailable(const history::MostVisitedURLList& urls);
 
-  // Prefix of the URL from which to fetch zero-suggest suggestions.
-  const std::string url_prefix_;
+  // Returns the relevance score for the verbatim result.
+  int GetVerbatimRelevance() const;
+
+  // Whether we can show zero suggest on |current_page_url| without
+  // sending |current_page_url| as a parameter to the server at |suggest_url|.
+  bool CanShowZeroSuggestWithoutSendingURL(const GURL& suggest_url,
+                                           const GURL& current_page_url) const;
+
+  // Checks whether we have a set of zero suggest results cached, and if so
+  // populates |matches_| with cached results.
+  void MaybeUseCachedSuggestions();
 
   // Used to build default search engine URLs for suggested queries.
   TemplateURLService* template_url_service_;
@@ -110,14 +132,30 @@ class ZeroSuggestProvider : public AutocompleteProvider,
   // The URL for which a suggestion fetch is pending.
   std::string current_query_;
 
-  // What the user has typed.
-  string16 user_text_;
+  // The type of page the user is viewing (a search results page doing search
+  // term replacement, an arbitrary URL, etc.).
+  AutocompleteInput::PageClassification current_page_classification_;
+
+  // Copy of OmniboxEditModel::permanent_text_.
+  base::string16 permanent_text_;
 
   // Fetcher used to retrieve results.
   scoped_ptr<net::URLFetcher> fetcher_;
 
-  // Suggestions for the most recent query.
-  std::vector<string16> results_;
+  // Suggestion for the current URL.
+  AutocompleteMatch current_url_match_;
+
+  // Contains suggest and navigation results as well as relevance parsed from
+  // the response for the most recent zero suggest input URL.
+  Results results_;
+
+  // Whether we are currently showing cached zero suggest results.
+  bool results_from_cache_;
+
+  history::MostVisitedURLList most_visited_urls_;
+
+  // For callbacks that may be run after destruction.
+  base::WeakPtrFactory<ZeroSuggestProvider> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ZeroSuggestProvider);
 };

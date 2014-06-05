@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 #include "base/android/path_utils.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -39,7 +39,8 @@ TEST_F(PathUtilsTest, TestGetNativeLibraryDirectory) {
   // the base tests shared object.
   FilePath path;
   GetNativeLibraryDirectory(&path);
-  EXPECT_TRUE(file_util::PathExists(path.Append(("libbase_unittests.so"))));
+  EXPECT_TRUE(base::PathExists(path.Append(("libbase_unittests.so"))) ||
+              base::PathExists(path.Append(("libbase_unittests.cr.so"))));
 }
 
 }  // namespace android

@@ -6,20 +6,26 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include "base/i18n/rtl.h"
 #include "base/logging.h"
-#include "base/sys_string_conversions.h"
+#import "base/mac/foundation_util.h"
+#include "base/strings/sys_string_conversions.h"
 #import "chrome/browser/chrome_browser_application_mac.h"
 #include "chrome/browser/ui/app_modal_dialogs/javascript_app_modal_dialog.h"
 #include "grit/generated_resources.h"
 #include "grit/ui_strings.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/base/ui_base_types.h"
+#include "ui/gfx/text_elider.h"
+
+const int kSlotsPerLine = 50;
+const int kMessageTextMaxSlots = 2000;
 
 // Helper object that receives the notification that the dialog/sheet is
 // going away. Is responsible for cleaning itself up.
 @interface JavaScriptAppModalDialogHelper : NSObject<NSAlertDelegate> {
  @private
-  scoped_nsobject<NSAlert> alert_;
+  base::scoped_nsobject<NSAlert> alert_;
   NSTextField* textField_;  // WEAK; owned by alert_
 }
 
@@ -53,7 +59,7 @@
         contextInfo:(void*)contextInfo {
   scoped_ptr<JavaScriptAppModalDialogCocoa> native_dialog(
       reinterpret_cast<JavaScriptAppModalDialogCocoa*>(contextInfo));
-  string16 input;
+  base::string16 input;
   if (textField_)
     input = base::SysNSStringToUTF16([textField_ stringValue]);
   bool shouldSuppress = false;
@@ -142,8 +148,30 @@ JavaScriptAppModalDialogCocoa::JavaScriptAppModalDialogCocoa(
         dialog_->default_prompt_text())];
   }
   [alert_ setDelegate:helper_];
-  [alert_ setInformativeText:base::SysUTF16ToNSString(dialog_->message_text())];
-  [alert_ setMessageText:base::SysUTF16ToNSString(dialog_->title())];
+  NSString* informative_text =
+      base::SysUTF16ToNSString(dialog_->message_text());
+
+  // Truncate long JS alerts - crbug.com/331219
+  NSCharacterSet* newline_char_set = [NSCharacterSet newlineCharacterSet];
+  for (size_t index = 0, slots_count = 0; index < informative_text.length;
+      ++index) {
+    unichar current_char = [informative_text characterAtIndex:index];
+    if ([newline_char_set characterIsMember:current_char])
+      slots_count += kSlotsPerLine;
+    else
+      slots_count++;
+    if (slots_count > kMessageTextMaxSlots) {
+      base::string16 info_text = base::SysNSStringToUTF16(informative_text);
+      informative_text = base::SysUTF16ToNSString(
+          gfx::TruncateString(info_text, index));
+      break;
+    }
+  }
+
+  [alert_ setInformativeText:informative_text];
+  NSString* message_text =
+      base::SysUTF16ToNSString(dialog_->title());
+  [alert_ setMessageText:message_text];
   [alert_ addButtonWithTitle:default_button];
   if (!one_button) {
     NSButton* other = [alert_ addButtonWithTitle:other_button];
@@ -154,6 +182,85 @@ JavaScriptAppModalDialogCocoa::JavaScriptAppModalDialogCocoa(
     NSString* suppression_title = l10n_util::GetNSStringWithFixup(
         IDS_JAVASCRIPT_MESSAGEBOX_SUPPRESS_OPTION);
     [[alert_ suppressionButton] setTitle:suppression_title];
+  }
+
+  // Fix RTL dialogs.
+  //
+  // Mac OS X will always display NSAlert strings as LTR. A workaround is to
+  // manually set the text as attributed strings in the implementing
+  // NSTextFields. This is a basic correctness issue.
+  //
+  // In addition, for readability, the overall alignment is set based on the
+  // directionality of the first strongly-directional character.
+  //
+  // If the dialog fields are selectable then they will scramble when clicked.
+  // Therefore, selectability is disabled.
+  //
+  // See http://crbug.com/70806 for more details.
+
+  bool message_has_rtl =
+      base::i18n::StringContainsStrongRTLChars(dialog_->title());
+  bool informative_has_rtl =
+      base::i18n::StringContainsStrongRTLChars(dialog_->message_text());
+
+  NSTextField* message_text_field = nil;
+  NSTextField* informative_text_field = nil;
+  if (message_has_rtl || informative_has_rtl) {
+    // Force layout of the dialog. NSAlert leaves its dialog alone once laid
+    // out; if this is not done then all the modifications that are to come will
+    // be un-done when the dialog is finally displayed.
+    [alert_ layout];
+
+    // Locate the NSTextFields that implement the text display. These are
+    // actually available as the ivars |_messageField| and |_informationField|
+    // of the NSAlert, but it is safer (and more forward-compatible) to search
+    // for them in the subviews.
+    for (NSView* view in [[[alert_ window] contentView] subviews]) {
+      NSTextField* text_field = base::mac::ObjCCast<NSTextField>(view);
+      if ([[text_field stringValue] isEqualTo:message_text])
+        message_text_field = text_field;
+      else if ([[text_field stringValue] isEqualTo:informative_text])
+        informative_text_field = text_field;
+    }
+
+    // This may fail in future OS releases, but it will still work for shipped
+    // versions of Chromium.
+    DCHECK(message_text_field);
+    DCHECK(informative_text_field);
+  }
+
+  if (message_has_rtl && message_text_field) {
+    base::scoped_nsobject<NSMutableParagraphStyle> alignment(
+        [[NSParagraphStyle defaultParagraphStyle] mutableCopy]);
+    [alignment setAlignment:NSRightTextAlignment];
+
+    NSDictionary* alignment_attributes =
+        @{ NSParagraphStyleAttributeName : alignment };
+    base::scoped_nsobject<NSAttributedString> attr_string(
+        [[NSAttributedString alloc] initWithString:message_text
+                                        attributes:alignment_attributes]);
+
+    [message_text_field setAttributedStringValue:attr_string];
+    [message_text_field setSelectable:NO];
+  }
+
+  if (informative_has_rtl && informative_text_field) {
+    base::i18n::TextDirection direction =
+        base::i18n::GetFirstStrongCharacterDirection(dialog_->message_text());
+    base::scoped_nsobject<NSMutableParagraphStyle> alignment(
+        [[NSParagraphStyle defaultParagraphStyle] mutableCopy]);
+    [alignment setAlignment:
+        (direction == base::i18n::RIGHT_TO_LEFT) ? NSRightTextAlignment
+                                                 : NSLeftTextAlignment];
+
+    NSDictionary* alignment_attributes =
+        @{ NSParagraphStyleAttributeName : alignment };
+    base::scoped_nsobject<NSAttributedString> attr_string(
+        [[NSAttributedString alloc] initWithString:informative_text
+                                        attributes:alignment_attributes]);
+
+    [informative_text_field setAttributedStringValue:attr_string];
+    [informative_text_field setSelectable:NO];
   }
 }
 

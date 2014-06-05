@@ -51,7 +51,6 @@ static const std::string kFirefoxCorruptHeader =
   "iuahueqe32164";
 
 static const std::string kProxyAddress = "proxy.net.com";
-static const int kProxyPort = 9999;
 
 // Mocking out platform specific path to firefox prefs file.
 class FirefoxPrefsFileSystem : public FakeFileSystem {
@@ -80,7 +79,7 @@ bool GetProxyInfo(const std::string prefs, ProxyInfo* info) {
                                                   kFirefoxProfilesIni));
   files.push_back(talk_base::FakeFileSystem::File("prefs.js", prefs));
   talk_base::FilesystemScope fs(new talk_base::FirefoxPrefsFileSystem(files));
-  return GetProxySettingsForUrl("Firefox", "www.google.com", *info, false);
+  return GetProxySettingsForUrl("Firefox", "www.google.com", info, false);
 }
 
 // Verifies that an empty Firefox prefs file results in no proxy detected.

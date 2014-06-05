@@ -7,21 +7,21 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/extensions/api/api_function.h"
 #include "chrome/browser/extensions/api/dial/dial_device_data.h"
 #include "chrome/browser/extensions/api/dial/dial_registry.h"
-#include "chrome/browser/extensions/event_router.h"
-#include "chrome/browser/profiles/refcounted_profile_keyed_service.h"
+#include "components/keyed_service/content/refcounted_browser_context_keyed_service.h"
+#include "extensions/browser/api/async_api_function.h"
+#include "extensions/browser/event_router.h"
 
 namespace extensions {
 
 class DialRegistry;
 
-// Dial API which is a ref-counted ProfileKeyedService that manages the DIAL
-// registry. It takes care of creating the registry on the IO thread and
-// is an observer of the registry. It makes sure devices events are sent out
+// Dial API which is a ref-counted KeyedService that manages
+// the DIAL registry. It takes care of creating the registry on the IO thread
+// and is an observer of the registry. It makes sure devices events are sent out
 // to extension listeners on the right thread.
-class DialAPI : public RefcountedProfileKeyedService,
+class DialAPI : public RefcountedBrowserContextKeyedService,
                 public EventRouter::Observer,
                 public DialRegistry::Observer {
  public:
@@ -34,11 +34,12 @@ class DialAPI : public RefcountedProfileKeyedService,
   // Called by the DialRegistry on the IO thread so that the DialAPI dispatches
   // the event to listeners on the UI thread.
   void SendEventOnUIThread(const DialRegistry::DeviceList& devices);
+  void SendErrorOnUIThread(const DialRegistry::DialErrorCode type);
 
  private:
   virtual ~DialAPI();
 
-  // RefcountedProfileKeyedService:
+  // RefcountedBrowserContextKeyedService:
   virtual void ShutdownOnUIThread() OVERRIDE;
 
   // EventRouter::Observer:
@@ -48,6 +49,7 @@ class DialAPI : public RefcountedProfileKeyedService,
   // DialRegistry::Observer:
   virtual void OnDialDeviceEvent(
       const DialRegistry::DeviceList& devices) OVERRIDE;
+  virtual void OnDialError(DialRegistry::DialErrorCode type) OVERRIDE;
 
   // Methods to notify the DialRegistry on the correct thread of new/removed
   // listeners.
@@ -81,7 +83,7 @@ class DialDiscoverNowFunction : public AsyncApiFunction {
   virtual bool Respond() OVERRIDE;
 
  private:
-  DECLARE_EXTENSION_FUNCTION_NAME("dial.discoverNow")
+  DECLARE_EXTENSION_FUNCTION("dial.discoverNow", DIAL_DISCOVERNOW)
 
   // Pointer to the DIAL API for this profile. We get this on the UI thread.
   DialAPI* dial_;

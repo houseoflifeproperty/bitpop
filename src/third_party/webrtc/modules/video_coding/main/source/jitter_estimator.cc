@@ -8,10 +8,9 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "trace.h"
-#include "internal_defines.h"
-#include "jitter_estimator.h"
-#include "rtt_filter.h"
+#include "webrtc/modules/video_coding/main/source/internal_defines.h"
+#include "webrtc/modules/video_coding/main/source/jitter_estimator.h"
+#include "webrtc/modules/video_coding/main/source/rtt_filter.h"
 
 #include <assert.h>
 #include <math.h>
@@ -20,21 +19,20 @@
 
 namespace webrtc {
 
-VCMJitterEstimator::VCMJitterEstimator(WebRtc_Word32 vcmId, WebRtc_Word32 receiverId) :
-_vcmId(vcmId),
-_receiverId(receiverId),
-_phi(0.97),
-_psi(0.9999),
-_alphaCountMax(400),
-_thetaLow(0.000001),
-_nackLimit(3),
-_numStdDevDelayOutlier(15),
-_numStdDevFrameSizeOutlier(3),
-_noiseStdDevs(2.33), // ~Less than 1% chance
-                     // (look up in normal distribution table)...
-_noiseStdDevOffset(30.0), // ...of getting 30 ms freezes
-_rttFilter(vcmId, receiverId)
-{
+VCMJitterEstimator::VCMJitterEstimator(int32_t vcmId, int32_t receiverId)
+    : _vcmId(vcmId),
+      _receiverId(receiverId),
+      _phi(0.97),
+      _psi(0.9999),
+      _alphaCountMax(400),
+      _thetaLow(0.000001),
+      _nackLimit(3),
+      _numStdDevDelayOutlier(15),
+      _numStdDevFrameSizeOutlier(3),
+      _noiseStdDevs(2.33),       // ~Less than 1% chance
+                                 // (look up in normal distribution table)...
+      _noiseStdDevOffset(30.0),  // ...of getting 30 ms freezes
+      _rttFilter() {
     Reset();
 }
 
@@ -106,13 +104,9 @@ VCMJitterEstimator::ResetNackCount()
 
 // Updates the estimates with the new measurements
 void
-VCMJitterEstimator::UpdateEstimate(WebRtc_Word64 frameDelayMS, WebRtc_UWord32 frameSizeBytes,
+VCMJitterEstimator::UpdateEstimate(int64_t frameDelayMS, uint32_t frameSizeBytes,
                                             bool incompleteFrame /* = false */)
 {
-    WEBRTC_TRACE(webrtc::kTraceDebug, webrtc::kTraceVideoCoding,
-               VCMId(_vcmId, _receiverId),
-               "Jitter estimate updated with: frameSize=%d frameDelayMS=%d",
-               frameSizeBytes, frameDelayMS);
     if (frameSizeBytes == 0)
     {
         return;
@@ -163,7 +157,7 @@ VCMJitterEstimator::UpdateEstimate(WebRtc_Word64 frameDelayMS, WebRtc_UWord32 fr
     // deviation is probably due to an incorrect line slope.
     double deviation = DeviationFromExpectedDelay(frameDelayMS, deltaFS);
 
-    if (abs(deviation) < _numStdDevDelayOutlier * sqrt(_varNoise) ||
+    if (fabs(deviation) < _numStdDevDelayOutlier * sqrt(_varNoise) ||
         frameSizeBytes > _avgFrameSize + _numStdDevFrameSizeOutlier * sqrt(_varFrameSize))
     {
         // Update the variance of the deviation from the
@@ -196,16 +190,6 @@ VCMJitterEstimator::UpdateEstimate(WebRtc_Word64 frameDelayMS, WebRtc_UWord32 fr
     {
         _startupCount++;
     }
-    WEBRTC_TRACE(webrtc::kTraceDebug, webrtc::kTraceVideoCoding, VCMId(_vcmId, _receiverId),
-               "Framesize statistics: max=%f average=%f", _maxFrameSize, _avgFrameSize);
-    WEBRTC_TRACE(webrtc::kTraceDebug, webrtc::kTraceVideoCoding, VCMId(_vcmId, _receiverId),
-               "The estimated slope is: theta=(%f, %f)", _theta[0], _theta[1]);
-    WEBRTC_TRACE(webrtc::kTraceDebug, webrtc::kTraceVideoCoding, VCMId(_vcmId, _receiverId),
-               "Random jitter: mean=%f variance=%f", _avgNoise, _varNoise);
-    WEBRTC_TRACE(webrtc::kTraceDebug, webrtc::kTraceVideoCoding, VCMId(_vcmId, _receiverId),
-               "Current jitter estimate: %f", _filterJitterEstimate);
-    WEBRTC_TRACE(webrtc::kTraceDebug, webrtc::kTraceVideoCoding, VCMId(_vcmId, _receiverId),
-               "Current max RTT: %u", _rttFilter.RttMs());
 }
 
 // Updates the nack/packet ratio
@@ -227,8 +211,8 @@ VCMJitterEstimator::FrameNacked()
 // Updates Kalman estimate of the channel
 // The caller is expected to sanity check the inputs.
 void
-VCMJitterEstimator::KalmanEstimateChannel(WebRtc_Word64 frameDelayMS,
-                                          WebRtc_Word32 deltaFSBytes)
+VCMJitterEstimator::KalmanEstimateChannel(int64_t frameDelayMS,
+                                          int32_t deltaFSBytes)
 {
     double Mh[2];
     double hMh_sigma;
@@ -258,7 +242,7 @@ VCMJitterEstimator::KalmanEstimateChannel(WebRtc_Word64 frameDelayMS,
     {
         return;
     }
-    double sigma = (300.0 * exp(-abs(static_cast<double>(deltaFSBytes)) /
+    double sigma = (300.0 * exp(-fabs(static_cast<double>(deltaFSBytes)) /
                    (1e0 * _maxFrameSize)) + 1) * sqrt(_varNoise);
     if (sigma < 1.0)
     {
@@ -305,8 +289,8 @@ VCMJitterEstimator::KalmanEstimateChannel(WebRtc_Word64 frameDelayMS,
 // Calculate difference in delay between a sample and the
 // expected delay estimated by the Kalman filter
 double
-VCMJitterEstimator::DeviationFromExpectedDelay(WebRtc_Word64 frameDelayMS,
-                                               WebRtc_Word32 deltaFSBytes) const
+VCMJitterEstimator::DeviationFromExpectedDelay(int64_t frameDelayMS,
+                                               int32_t deltaFSBytes) const
 {
     return frameDelayMS - (_theta[0] * deltaFSBytes + _theta[1]);
 }
@@ -387,13 +371,13 @@ VCMJitterEstimator::PostProcessEstimate()
 }
 
 void
-VCMJitterEstimator::UpdateRtt(WebRtc_UWord32 rttMs)
+VCMJitterEstimator::UpdateRtt(uint32_t rttMs)
 {
     _rttFilter.Update(rttMs);
 }
 
 void
-VCMJitterEstimator::UpdateMaxFrameSize(WebRtc_UWord32 frameSizeBytes)
+VCMJitterEstimator::UpdateMaxFrameSize(uint32_t frameSizeBytes)
 {
     if (_maxFrameSize < frameSizeBytes)
     {
@@ -403,19 +387,19 @@ VCMJitterEstimator::UpdateMaxFrameSize(WebRtc_UWord32 frameSizeBytes)
 
 // Returns the current filtered estimate if available,
 // otherwise tries to calculate an estimate.
-double
+int
 VCMJitterEstimator::GetJitterEstimate(double rttMultiplier)
 {
-    double jitterMS = CalculateEstimate();
+    double jitterMS = CalculateEstimate() + OPERATING_SYSTEM_JITTER;
     if (_filterJitterEstimate > jitterMS)
     {
         jitterMS = _filterJitterEstimate;
     }
     if (_nackCount >= _nackLimit)
     {
-        return jitterMS + _rttFilter.RttMs() * rttMultiplier;
+        jitterMS += _rttFilter.RttMs() * rttMultiplier;
     }
-    return jitterMS;
+    return static_cast<uint32_t>(jitterMS + 0.5);
 }
 
 }

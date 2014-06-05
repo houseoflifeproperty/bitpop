@@ -4,13 +4,15 @@
 
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
 
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "chrome/browser/profiles/incognito_helpers.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/global_error/global_error_service.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 
 // static
 GlobalErrorService* GlobalErrorServiceFactory::GetForProfile(Profile* profile) {
   return static_cast<GlobalErrorService*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
@@ -19,18 +21,20 @@ GlobalErrorServiceFactory* GlobalErrorServiceFactory::GetInstance() {
 }
 
 GlobalErrorServiceFactory::GlobalErrorServiceFactory()
-    : ProfileKeyedServiceFactory("GlobalErrorService",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "GlobalErrorService",
+        BrowserContextDependencyManager::GetInstance()) {
 }
 
 GlobalErrorServiceFactory::~GlobalErrorServiceFactory() {
 }
 
-ProfileKeyedService* GlobalErrorServiceFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
-  return new GlobalErrorService(profile);
+KeyedService* GlobalErrorServiceFactory::BuildServiceInstanceFor(
+    content::BrowserContext* profile) const {
+  return new GlobalErrorService(static_cast<Profile*>(profile));
 }
 
-bool GlobalErrorServiceFactory::ServiceRedirectedInIncognito() const {
-  return true;
+content::BrowserContext* GlobalErrorServiceFactory::GetBrowserContextToUse(
+    content::BrowserContext* context) const {
+  return chrome::GetBrowserContextRedirectedInIncognito(context);
 }

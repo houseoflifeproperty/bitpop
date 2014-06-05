@@ -5,9 +5,9 @@
 #include "content/renderer/render_view_impl.h"
 
 #include "content/public/common/renderer_preferences.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/linux/WebFontRendering.h"
+#include "third_party/WebKit/public/web/linux/WebFontRendering.h"
 
-using WebKit::WebFontRendering;
+using blink::WebFontRendering;
 
 namespace content {
 

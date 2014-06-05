@@ -5,9 +5,10 @@
 #include "net/http/http_auth_handler_mock.h"
 
 #include "base/bind.h"
-#include "base/message_loop.h"
-#include "base/string_util.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/string_util.h"
 #include "net/base/net_errors.h"
+#include "net/http/http_auth_challenge_tokenizer.h"
 #include "net/http/http_request_info.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -15,7 +16,7 @@ namespace net {
 
 HttpAuthHandlerMock::HttpAuthHandlerMock()
   : resolve_(RESOLVE_INIT),
-    ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+    weak_factory_(this),
     generate_async_(false),
     generate_rv_(OK),
     auth_token_(NULL),
@@ -59,10 +60,10 @@ int HttpAuthHandlerMock::ResolveCanonicalName(
       EXPECT_TRUE(callback_.is_null());
       rv = ERR_IO_PENDING;
       callback_ = callback;
-      MessageLoop::current()->PostTask(
-          FROM_HERE, base::Bind(
-              &HttpAuthHandlerMock::OnResolveCanonicalName,
-              weak_factory_.GetWeakPtr()));
+      base::MessageLoop::current()->PostTask(
+          FROM_HERE,
+          base::Bind(&HttpAuthHandlerMock::OnResolveCanonicalName,
+                     weak_factory_.GetWeakPtr()));
       break;
     default:
       NOTREACHED();
@@ -77,7 +78,7 @@ void HttpAuthHandlerMock::SetGenerateExpectation(bool async, int rv) {
 }
 
 HttpAuth::AuthorizationResult HttpAuthHandlerMock::HandleAnotherChallenge(
-    HttpAuth::ChallengeTokenizer* challenge) {
+    HttpAuthChallengeTokenizer* challenge) {
   // If we receive an empty challenge for a connection based scheme, or a second
   // challenge for a non connection based scheme, assume it's a rejection.
   if (!is_connection_based() || challenge->base64_param().empty())
@@ -99,7 +100,7 @@ bool HttpAuthHandlerMock::AllowsExplicitCredentials() {
   return allows_explicit_credentials_;
 }
 
-bool HttpAuthHandlerMock::Init(HttpAuth::ChallengeTokenizer* challenge) {
+bool HttpAuthHandlerMock::Init(HttpAuthChallengeTokenizer* challenge) {
   auth_scheme_ = HttpAuth::AUTH_SCHEME_MOCK;
   score_ = 1;
   properties_ = connection_based_ ? IS_CONNECTION_BASED : 0;
@@ -118,10 +119,10 @@ int HttpAuthHandlerMock::GenerateAuthTokenImpl(
     EXPECT_TRUE(auth_token_ == NULL);
     callback_ = callback;
     auth_token_ = auth_token;
-    MessageLoop::current()->PostTask(
-        FROM_HERE, base::Bind(
-            &HttpAuthHandlerMock::OnGenerateAuthToken,
-            weak_factory_.GetWeakPtr()));
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&HttpAuthHandlerMock::OnGenerateAuthToken,
+                   weak_factory_.GetWeakPtr()));
     return ERR_IO_PENDING;
   } else {
     if (generate_rv_ == OK)
@@ -164,7 +165,7 @@ void HttpAuthHandlerMock::Factory::AddMockHandler(
 }
 
 int HttpAuthHandlerMock::Factory::CreateAuthHandler(
-    HttpAuth::ChallengeTokenizer* challenge,
+    HttpAuthChallengeTokenizer* challenge,
     HttpAuth::Target target,
     const GURL& origin,
     CreateReason reason,

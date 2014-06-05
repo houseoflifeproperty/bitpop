@@ -6,26 +6,36 @@
 
 # Builds Chromium, Google Chrome and *OS FFmpeg binaries.
 #
-# For Windows it assumes being run from a MinGW shell with Visual Studio
-# environment (i.e., lib.exe and editbin.exe are in $PATH).
+# For Windows it the script must be run from either a x64 or ia32 Visual Studio
+# environment (i.e., cl.exe, lib.exe and editbin.exe are in $PATH).  Using the
+# x64 environment will build the x64 version and vice versa.
+#
+# For MIPS it assumes that cross-toolchain bin directory is in $PATH.
 #
 # Instructions for setting up a MinGW/MSYS shell can be found here:
 # http://src.chromium.org/viewvc/chrome/trunk/deps/third_party/mingw/README.chromium
 
-if [ "$3" = "" -o "$4" != "" ]; then
+if [ "$3" = "" ]; then
   echo "Usage:"
-  echo "  $0 [TARGET_OS] [TARGET_ARCH] [path/to/third_party/ffmpeg]"
+  echo "  $0 [TARGET_OS] [TARGET_ARCH] [path/to/ffmpeg] [config-only]"
   echo
-  echo "Valid combinations are linux [ia32|x64|arm|arm-neon]"
-  echo "                       win   [ia32]"
-  echo "                       mac   [ia32|x64]"
+  echo "Valid combinations are linux       [ia32|x64|mipsel|arm|arm-neon]"
+  echo "                       linux-noasm x64"
+  echo "                       win         [ia32|x64]"
+  echo "                       win-vs2013  [ia32|x64]"
+  echo "                       mac         [ia32|x64]"
   echo
   echo " linux ia32/x64 - script can be run on a normal Ubuntu box."
+  echo " linux mipsel - script can be run on a normal Ubuntu box with MIPS"
+  echo " cross-toolchain in \$PATH."
   echo " linux arm/arm-neon should be run inside of CrOS chroot."
   echo " mac and win have to be run on Mac and Windows 7 (under mingw)."
   echo
   echo " mac - ensure the Chromium (not Apple) version of clang is in the path,"
   echo " usually found under src/third_party/llvm-build/Release+Asserts/bin"
+  echo
+  echo "Specifying 'config-only' will skip the build step.  Useful when a"
+  echo "given platform is not necessary for generate_gyp.py."
   echo
   echo "The path should be absolute and point at Chromium's copy of FFmpeg."
   echo "This corresponds to:"
@@ -42,12 +52,15 @@ fi
 TARGET_OS=$1
 TARGET_ARCH=$2
 FFMPEG_PATH=$3
+CONFIG_ONLY=$4
 
 # Check TARGET_OS (TARGET_ARCH is checked during configuration).
 if [[ "$TARGET_OS" != "linux" &&
+      "$TARGET_OS" != "linux-noasm" &&
       "$TARGET_OS" != "mac" &&
-      "$TARGET_OS" != "win" ]]; then
-  echo "Valid target OSes are: linux, mac, win"
+      "$TARGET_OS" != "win" &&
+      "$TARGET_OS" != "win-vs2013" ]]; then
+  echo "Valid target OSes are: linux, linux-noasm, mac, win, win-vs2013"
   exit 1
 fi
 
@@ -59,12 +72,12 @@ fi
 
 # If configure & make works but this script doesn't, make sure to grep for
 # these.
-LIBAVCODEC_VERSION_MAJOR=54
-LIBAVFORMAT_VERSION_MAJOR=54
-LIBAVUTIL_VERSION_MAJOR=51
+LIBAVCODEC_VERSION_MAJOR=55
+LIBAVFORMAT_VERSION_MAJOR=55
+LIBAVUTIL_VERSION_MAJOR=52
 
 case $(uname -sm) in
-  Linux\ i386)
+  Linux\ i?86)
     HOST_OS=linux
     HOST_ARCH=ia32
     JOBS=$(grep processor /proc/cpuinfo | wc -l)
@@ -72,6 +85,11 @@ case $(uname -sm) in
   Linux\ x86_64)
     HOST_OS=linux
     HOST_ARCH=x64
+    JOBS=$(grep processor /proc/cpuinfo | wc -l)
+    ;;
+  Linux\ arm*)
+    HOST_OS=linux
+    HOST_ARCH=arm
     JOBS=$(grep processor /proc/cpuinfo | wc -l)
     ;;
   Darwin\ i386)
@@ -106,16 +124,8 @@ echo "JOBS        = $JOBS"
 echo "LD          = $(ld --version | head -n1)"
 echo
 
-# As of this writing gold 2.20.1-system.20100303 is unable to link FFmpeg.
-if ld --version | grep -q gold; then
-  echo "gold is unable to link FFmpeg"
-  echo
-  echo "Switch /usr/bin/ld to the regular binutils ld and try again"
-  exit 1
-fi
-
 # We want to use a sufficiently recent version of yasm on Windows.
-if [ "$TARGET_OS" == "win" ]; then
+if [[ "$TARGET_OS" == "win" || "$TARGET_OS" == "win-vs2013" ]]; then
   if !(which yasm 2>&1 > /dev/null); then
     echo "Could not find yasm in \$PATH"
     exit 1
@@ -196,7 +206,7 @@ function build {
     fi
   fi
 
-  if [ "$HOST_OS" = "$TARGET_OS" ]; then
+  if [[ "$HOST_OS" = "$TARGET_OS" && "$CONFIG_ONLY" = "" ]]; then
     # Build!
     LIBS="libavcodec/$(dso_name avcodec $LIBAVCODEC_VERSION_MAJOR)"
     LIBS="libavformat/$(dso_name avformat $LIBAVFORMAT_VERSION_MAJOR) $LIBS"
@@ -212,6 +222,8 @@ function build {
         exit 1
       fi
     done
+  elif [ ! "$CONFIG_ONLY" = "" ]; then
+    echo "Skipping build step as requested."
   else
     echo "Skipping compile as host configuration differs from target."
     echo "Please compare the generated config.h with the previous version."
@@ -236,6 +248,8 @@ add_flag_common --disable-avdevice
 add_flag_common --disable-avfilter
 add_flag_common --disable-bzlib
 add_flag_common --disable-doc
+add_flag_common --disable-ffprobe
+add_flag_common --disable-lzo
 add_flag_common --disable-network
 add_flag_common --disable-postproc
 add_flag_common --disable-swresample
@@ -244,6 +258,7 @@ add_flag_common --disable-zlib
 add_flag_common --enable-fft
 add_flag_common --enable-rdft
 add_flag_common --enable-shared
+add_flag_common --disable-iconv
 
 # Disable hardware decoding options which will sometimes turn on via autodetect.
 add_flag_common --disable-dxva2
@@ -261,12 +276,12 @@ fi
 # Common codecs.
 add_flag_common --enable-decoder=theora,vorbis,vp8
 add_flag_common --enable-decoder=pcm_u8,pcm_s16le,pcm_s24le,pcm_f32le
-add_flag_common --enable-decoder=pcm_s16be,pcm_s24be
+add_flag_common --enable-decoder=pcm_s16be,pcm_s24be,pcm_mulaw,pcm_alaw
 add_flag_common --enable-demuxer=ogg,matroska,wav
 add_flag_common --enable-parser=vp3,vorbis,vp8
 
 # Linux only.
-if [ "$TARGET_OS" = "linux" ]; then
+if [[ "$TARGET_OS" = "linux" || "$TARGET_OS" = "linux-noasm" ]]; then
   if [ "$TARGET_ARCH" = "x64" ]; then
     # Nothing to add for now.
     add_flag_common ""
@@ -276,14 +291,16 @@ if [ "$TARGET_OS" = "linux" ]; then
     add_flag_common --extra-cflags=-m32
     add_flag_common --extra-ldflags=-m32
   elif [ "$TARGET_ARCH" = "arm" ]; then
-    # This if-statement essentially is for chroot tegra2.
-    add_flag_common --enable-cross-compile
+    if [ "$HOST_ARCH" != "arm" ]; then
+      # This if-statement essentially is for chroot tegra2.
+      add_flag_common --enable-cross-compile
 
-    # Location is for CrOS chroot. If you want to use this, enter chroot
-    # and copy ffmpeg to a location that is reachable.
-    add_flag_common --cross-prefix=/usr/bin/armv7a-cros-linux-gnueabi-
-    add_flag_common --target-os=linux
-    add_flag_common --arch=arm
+      # Location is for CrOS chroot. If you want to use this, enter chroot
+      # and copy ffmpeg to a location that is reachable.
+      add_flag_common --cross-prefix=/usr/bin/armv7a-cros-linux-gnueabi-
+      add_flag_common --target-os=linux
+      add_flag_common --arch=arm
+    fi
 
     # TODO(ihf): ARM compile flags are tricky. The final options
     # overriding everything live in chroot /build/*/etc/make.conf
@@ -297,30 +314,54 @@ if [ "$TARGET_OS" = "linux" ]; then
     # CrOS settings.
     add_flag_common --enable-armv6
     add_flag_common --enable-armv6t2
-    add_flag_common --enable-armvfp
+    add_flag_common --enable-vfp
     add_flag_common --enable-thumb
     add_flag_common --disable-neon
     add_flag_common --extra-cflags=-march=armv7-a
     add_flag_common --extra-cflags=-mtune=cortex-a8
     add_flag_common --extra-cflags=-mfpu=vfpv3-d16
     # NOTE: softfp/hardfp selected at gyp time.
-    add_flag_common --extra-cflags=-mfloat-abi=softfp
+    add_flag_common --extra-cflags=-mfloat-abi=hard
   elif [ "$TARGET_ARCH" = "arm-neon" ]; then
-    # This if-statement is for chroot arm-generic.
-    add_flag_common --enable-cross-compile
-    add_flag_common --cross-prefix=/usr/bin/armv7a-cros-linux-gnueabi-
-    add_flag_common --target-os=linux
-    add_flag_common --arch=arm
+    if [ "$HOST_ARCH" != "arm" ]; then
+      # This if-statement is for chroot arm-generic.
+      add_flag_common --enable-cross-compile
+      add_flag_common --cross-prefix=/usr/bin/armv7a-cros-linux-gnueabi-
+      add_flag_common --target-os=linux
+      add_flag_common --arch=arm
+    fi
     add_flag_common --enable-armv6
     add_flag_common --enable-armv6t2
-    add_flag_common --enable-armvfp
+    add_flag_common --enable-vfp
     add_flag_common --enable-thumb
     add_flag_common --enable-neon
     add_flag_common --extra-cflags=-march=armv7-a
     add_flag_common --extra-cflags=-mtune=cortex-a8
     add_flag_common --extra-cflags=-mfpu=neon
     # NOTE: softfp/hardfp selected at gyp time.
-    add_flag_common --extra-cflags=-mfloat-abi=softfp
+    add_flag_common --extra-cflags=-mfloat-abi=hard
+  elif [ "$TARGET_ARCH" = "mipsel" ]; then
+    add_flag_common --enable-cross-compile
+    add_flag_common --cross-prefix=mips-linux-gnu-
+    add_flag_common --target-os=linux
+    add_flag_common --arch=mips
+    add_flag_common --extra-cflags=-mips32
+    add_flag_common --extra-cflags=-EL
+    add_flag_common --extra-ldflags=-mips32
+    add_flag_common --extra-ldflags=-EL
+    add_flag_common --disable-mipsfpu
+    add_flag_common --disable-mipsdspr1
+    add_flag_common --disable-mipsdspr2
+  else
+    echo "Error: Unknown TARGET_ARCH=$TARGET_ARCH for TARGET_OS=$TARGET_OS!"
+    exit 1
+  fi
+fi
+
+if [ "$TARGET_OS" = "linux-noasm" ]; then
+  if [ "$TARGET_ARCH" = "x64" ]; then
+    add_flag_common --disable-asm
+    add_flag_common --disable-inline-asm
   else
     echo "Error: Unknown TARGET_ARCH=$TARGET_ARCH for TARGET_OS=$TARGET_OS!"
     exit 1
@@ -330,14 +371,19 @@ fi
 # Should be run on Windows.
 if [ "$TARGET_OS" = "win" ]; then
   if [ "$HOST_OS" = "win" ]; then
-    if [ "$TARGET_ARCH" = "ia32" ]; then
-      add_flag_common --toolchain=msvc
-      add_flag_common --enable-yasm
-      add_flag_common --extra-cflags=-I$FFMPEG_PATH/chromium/include/win
-    else
-      echo "Error: Unknown TARGET_ARCH=$TARGET_ARCH for TARGET_OS=$TARGET_OS!"
-      exit 1
-    fi
+    add_flag_common --toolchain=msvc
+    add_flag_common --enable-yasm
+    add_flag_common --extra-cflags=-I$FFMPEG_PATH/chromium/include/win
+  else
+    echo "Script should be run on Windows host. If this is not possible try a "
+    echo "merge of config files with new linux ia32 config.h by hand."
+    exit 1
+  fi
+elif [ "$TARGET_OS" = "win-vs2013" ]; then
+  if [ "$HOST_OS" = "win" ]; then
+    add_flag_common --toolchain=msvc2013
+    add_flag_common --enable-yasm
+    add_flag_common --extra-cflags=-I$FFMPEG_PATH/chromium/include/win
   else
     echo "Script should be run on Windows host. If this is not possible try a "
     echo "merge of config files with new linux ia32 config.h by hand."
@@ -373,7 +419,9 @@ if [ "$TARGET_OS" = "mac" ]; then
 fi
 
 # Chromium & ChromiumOS specific configuration.
-# (nothing at the moment)
+# Though CONFIG_ERROR_RESILIENCE should already be disabled for Chromium[OS],
+# forcing disable here to help ensure it remains this way.
+add_flag_chromium --disable-error-resilience
 
 # Google Chrome & ChromeOS specific configuration.
 add_flag_chrome --enable-decoder=aac,h264,mp3
@@ -394,7 +442,6 @@ add_flag_chromiumos --enable-parser=flac
 add_flag_chromeos --enable-decoder=mpeg4
 add_flag_chromeos --enable-parser=h263,mpeg4video
 add_flag_chromeos --enable-demuxer=avi
-add_flag_chromeos --enable-bsf=mpeg4video_es
 # Enable playing Android 3gp files.
 add_flag_chromeos --enable-demuxer=amr
 add_flag_chromeos --enable-decoder=amrnb,amrwb
@@ -403,7 +450,6 @@ add_flag_chromeos --enable-demuxer=flac
 add_flag_chromeos --enable-decoder=flac
 add_flag_chromeos --enable-parser=flac
 # Wav files for playing phone messages.
-add_flag_chromeos --enable-decoder=pcm_mulaw
 add_flag_chromeos --enable-decoder=gsm_ms
 add_flag_chromeos --enable-demuxer=gsm
 add_flag_chromeos --enable-parser=gsm

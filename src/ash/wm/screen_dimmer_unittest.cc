@@ -9,7 +9,7 @@
 #include "ash/test/ash_test_base.h"
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/layer.h"
 
 namespace ash {
@@ -23,13 +23,13 @@ class ScreenDimmerTest : public AshTestBase {
   virtual void SetUp() OVERRIDE {
     AshTestBase::SetUp();
     dimmer_ = Shell::GetPrimaryRootWindowController()->screen_dimmer();
-    test_api_.reset(new internal::ScreenDimmer::TestApi(dimmer_));
+    test_api_.reset(new ScreenDimmer::TestApi(dimmer_));
   }
 
  protected:
-  internal::ScreenDimmer* dimmer_;  // not owned
+  ScreenDimmer* dimmer_;  // not owned
 
-  scoped_ptr<internal::ScreenDimmer::TestApi> test_api_;
+  scoped_ptr<ScreenDimmer::TestApi> test_api_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ScreenDimmerTest);
@@ -70,9 +70,9 @@ TEST_F(ScreenDimmerTest, ResizeLayer) {
 
   // When we resize the root window, the dimming layer should be resized to
   // match.
-  gfx::Size kNewSize(400, 300);
-  Shell::GetPrimaryRootWindow()->SetHostSize(kNewSize);
-  EXPECT_EQ(kNewSize.ToString(), dimming_layer->bounds().size().ToString());
+  gfx::Rect kNewBounds(400, 300);
+  Shell::GetPrimaryRootWindow()->GetHost()->SetBounds(kNewBounds);
+  EXPECT_EQ(kNewBounds.ToString(), dimming_layer->bounds().ToString());
 }
 
 }  // namespace test

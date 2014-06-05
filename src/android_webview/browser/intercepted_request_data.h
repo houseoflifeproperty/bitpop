@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "base/android/jni_android.h"
 #include "base/memory/scoped_ptr.h"
 
 namespace net {
@@ -17,19 +18,26 @@ class NetworkDelegate;
 
 namespace android_webview {
 
+class InputStream;
+
 // This class represents the Java-side data that is to be used to complete a
 // particular URLRequest.
 class InterceptedRequestData {
  public:
   virtual ~InterceptedRequestData() {}
 
+  virtual scoped_ptr<InputStream> GetInputStream(JNIEnv* env) const = 0;
+  virtual bool GetMimeType(JNIEnv* env, std::string* mime_type) const = 0;
+  virtual bool GetCharset(JNIEnv* env, std::string* charset) const = 0;
+
   // This creates a URLRequestJob for the |request| wich will read data from
   // the |intercepted_request_data| structure (instead of going to the network
   // or to the cache).
-  // The newly created job does not take ownership of |this|.
-  virtual net::URLRequestJob* CreateJobFor(
+  // The newly created job takes ownership of |intercepted_request_data|.
+  static net::URLRequestJob* CreateJobFor(
+      scoped_ptr<InterceptedRequestData> intercepted_request_data,
       net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const = 0;
+      net::NetworkDelegate* network_delegate);
 
  protected:
   InterceptedRequestData() {}

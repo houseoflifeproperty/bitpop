@@ -32,14 +32,18 @@ public:
     void* getDisplay() const { return (void*)fUnixWindow.fDisplay; }
     void* getUnixWindow() const { return (void*)&fUnixWindow; }
     void loop();
-    void post_linuxevent();
 
     enum SkBackEndTypes {
         kNone_BackEndType,
         kNativeGL_BackEndType,
     };
 
-    bool attach(SkBackEndTypes attachType, int msaaSampleCount);
+    struct AttachmentInfo {
+        int fSampleCount;
+        int fStencilBits;
+    };
+
+    bool attach(SkBackEndTypes attachType, int msaaSampleCount, AttachmentInfo*);
     void detach();
     void present();
 
@@ -49,19 +53,21 @@ public:
 
 protected:
     // Overridden from from SkWindow:
-    virtual bool onEvent(const SkEvent&) SK_OVERRIDE;
-    virtual void onHandleInval(const SkIRect&) SK_OVERRIDE;
-    virtual bool onHandleChar(SkUnichar) SK_OVERRIDE;
-    virtual bool onHandleKey(SkKey) SK_OVERRIDE;
-    virtual bool onHandleKeyUp(SkKey) SK_OVERRIDE;
     virtual void onSetTitle(const char title[]) SK_OVERRIDE;
 
 private:
+    enum NextXEventResult {
+        kContinue_NextXEventResult,
+        kQuitRequest_NextXEventResult,
+        kPaintRequest_NextXEventResult
+    };
+
+    NextXEventResult nextXEvent();
     void doPaint();
     void mapWindowAndWait();
 
     void closeWindow();
-    void initWindow(int newMSAASampleCount);
+    void initWindow(int newMSAASampleCount, AttachmentInfo* info);
 
     SkUnixWindow fUnixWindow;
 

@@ -12,7 +12,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "ipc/ipc_channel_reader.h"
 
 namespace base {
@@ -22,7 +22,7 @@ class ThreadChecker;
 namespace IPC {
 
 class Channel::ChannelImpl : public internal::ChannelReader,
-                             public MessageLoopForIO::IOHandler {
+                             public base::MessageLoopForIO::IOHandler {
  public:
   // Mirror methods of Channel, see ipc_channel.h for description.
   ChannelImpl(const IPC::ChannelHandle &channel_handle, Mode mode,
@@ -41,24 +41,26 @@ class Channel::ChannelImpl : public internal::ChannelReader,
                              int* bytes_read) OVERRIDE;
   virtual bool WillDispatchInputMessage(Message* msg) OVERRIDE;
   bool DidEmptyInputBuffers() OVERRIDE;
-  virtual void HandleHelloMessage(const Message& msg) OVERRIDE;
+  virtual void HandleInternalMessage(const Message& msg) OVERRIDE;
 
-  static const string16 PipeName(const std::string& channel_id,
-                                 int32* secret);
+  static const base::string16 PipeName(const std::string& channel_id,
+                                       int32* secret);
   bool CreatePipe(const IPC::ChannelHandle &channel_handle, Mode mode);
 
   bool ProcessConnection();
-  bool ProcessOutgoingMessages(MessageLoopForIO::IOContext* context,
+  bool ProcessOutgoingMessages(base::MessageLoopForIO::IOContext* context,
                                DWORD bytes_written);
 
   // MessageLoop::IOHandler implementation.
-  virtual void OnIOCompleted(MessageLoopForIO::IOContext* context,
-                             DWORD bytes_transfered, DWORD error);
+  virtual void OnIOCompleted(base::MessageLoopForIO::IOContext* context,
+                             DWORD bytes_transfered,
+                             DWORD error);
+
  private:
   struct State {
     explicit State(ChannelImpl* channel);
     ~State();
-    MessageLoopForIO::IOContext context;
+    base::MessageLoopForIO::IOContext context;
     bool is_pending;
   };
 

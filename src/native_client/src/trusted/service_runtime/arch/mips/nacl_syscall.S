@@ -4,6 +4,7 @@
  * found in the LICENSE file.
  */
 
+#include "native_client/src/trusted/service_runtime/arch/mips/sel_ldr_mips.h"
 #include "native_client/src/trusted/service_runtime/arch/mips/sel_rt.h"
 #include "native_client/src/trusted/service_runtime/nacl_config.h"
 
@@ -29,7 +30,7 @@
  * arg N
  */
 
-DEFINE_GLOBAL_HIDDEN_IDENTIFIER(NaClSyscallSeg):
+DEFINE_GLOBAL_HIDDEN_FUNCTION(NaClSyscallSeg):
 
   .set noreorder
 
@@ -87,45 +88,42 @@ DEFINE_GLOBAL_HIDDEN_IDENTIFIER(NaClSyscallSeg):
   sw    $t5, -8($sp)
 
   /* Load the __thread variable's offset into a3. */
-  lui   $a3, %tprel_hi(gNaClThreadIdx)
-  addiu $a3, $a3, %tprel_lo(gNaClThreadIdx)
+  lui   $a3, %tprel_hi(nacl_current_thread)
+  addiu $a3, $a3, %tprel_lo(nacl_current_thread)
 
-  /* Fetch the thread-local variable holding the thread index. */
+  /* Fetch the thread-local variable: set a0 = nacl_current_thread */
   rdhwr $v1, $29
   addu  $a3, $v1, $a3
   lw    $a0, 0($a3)
 
-  /*
-   * Load the nacl_user entry of this thread.
-   * a1 = nacl_user[a0*4]
-   */
-  lw    $a1,%got(nacl_user)($28)
-  sll   $a0, $a0, 2
-  addu  $a1, $a1, $a0
-  lw    $a1, 0($a1)
-
-DEFINE_GLOBAL_HIDDEN_IDENTIFIER(NaClSyscallThreadCaptureFault):
-  sw $s0, NACL_THREAD_CONTEXT_OFFSET_S0($a1)
-  sw $s1, NACL_THREAD_CONTEXT_OFFSET_S1($a1)
-  sw $s2, NACL_THREAD_CONTEXT_OFFSET_S2($a1)
-  sw $s3, NACL_THREAD_CONTEXT_OFFSET_S3($a1)
-  sw $s4, NACL_THREAD_CONTEXT_OFFSET_S4($a1)
-  sw $s5, NACL_THREAD_CONTEXT_OFFSET_S5($a1)
-  sw $s6, NACL_THREAD_CONTEXT_OFFSET_S6($a1)
-  sw $s7, NACL_THREAD_CONTEXT_OFFSET_S7($a1)
-  sw $t8, NACL_THREAD_CONTEXT_OFFSET_T8($a1)
-  sw $sp, NACL_THREAD_CONTEXT_OFFSET_STACK_PTR($a1)
-  sw $fp, NACL_THREAD_CONTEXT_OFFSET_FRAME_PTR($a1)
-
-  /* Restore the thread index. */
-  srl   $a0, $a0, 2
+DEFINE_GLOBAL_HIDDEN_LOCATION(NaClSyscallThreadCaptureFault):
+  sw $s0, NACL_THREAD_CONTEXT_OFFSET_S0($a0)
+  sw $s1, NACL_THREAD_CONTEXT_OFFSET_S1($a0)
+  sw $s2, NACL_THREAD_CONTEXT_OFFSET_S2($a0)
+  sw $s3, NACL_THREAD_CONTEXT_OFFSET_S3($a0)
+  sw $s4, NACL_THREAD_CONTEXT_OFFSET_S4($a0)
+  sw $s5, NACL_THREAD_CONTEXT_OFFSET_S5($a0)
+  sw $s6, NACL_THREAD_CONTEXT_OFFSET_S6($a0)
+  sw $s7, NACL_THREAD_CONTEXT_OFFSET_S7($a0)
+  sw $t8, NACL_THREAD_CONTEXT_OFFSET_T8($a0)
+  sw $sp, NACL_THREAD_CONTEXT_OFFSET_STACK_PTR($a0)
+  sw $fp, NACL_THREAD_CONTEXT_OFFSET_FRAME_PTR($a0)
+DEFINE_GLOBAL_HIDDEN_LOCATION(NaClSyscallSegRegsSaved):
 
   /* Restore the trusted stack */
-  lw $sp, NACL_THREAD_CONTEXT_OFFSET_TRUSTED_STACK_PTR($a1)
+  lw $sp, NACL_THREAD_CONTEXT_OFFSET_TRUSTED_STACK_PTR($a0)
 
   lw    $t9,%call16(NaClSyscallCSegHook)($gp)
-  jr    $t9
+  jalr  $t9
   nop
+
+  /*
+   * NaClSyscallCSegHook returned the NaClThreadContext pointer in $v0.
+   * Make that the argument (in $a0) to NaClSwitch.
+   */
+  lw    $t9,%call16(NaClSwitch)($gp)
+  jr    $t9
+  move  $a0, $v0 /* delay slot */
 
   /* NOTREACHED */
 
@@ -134,5 +132,4 @@ DEFINE_GLOBAL_HIDDEN_IDENTIFIER(NaClSyscallThreadCaptureFault):
    * by the following instruction.
    */
 
-  NACL_HALT
-
+  .word NACL_HALT_WORD

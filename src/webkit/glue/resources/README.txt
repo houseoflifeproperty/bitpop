@@ -3,18 +3,6 @@ Mozilla source tree, where they are licensed under the MPL/GPL/LGPL.  While
 binary files do not contain a license block, I have pasted the relevant
 Mozilla license block below.
 
-aliasb.cur
-broken-image.gif
-cell.cur
-col_resize.cur
-copy.cur
-grab.cur
-grabbing.cur
-row_resize.cur
-vertical_text.cur
-zoom_in.cur
-zoom_out.cur
-
 /* ***** BEGIN LICENSE BLOCK *****
  * Version: MPL 1.1/GPL 2.0/LGPL 2.1
  *
@@ -67,6 +55,29 @@ pan_south_east.cur
 pan_south_west.cur
 pan_west.cur
 textarea_resize_corner.png
+alias_cursor.png
+cell_cursor.png
+east_resize_cursor.png
+east_west_resize_cursor.png
+help_cursor.png
+link_cursor.png
+move_cursor.png
+none_cursor.png
+north_east_resize_cursor.png
+north_east_south_west_resize_cursor.png
+north_resize_cursor.png
+north_south_resize_cursor.png
+north_west_resize_cursor.png
+north_west_south_east_resize_cursor.png
+progress_cursor.png
+south_east_resize_cursor.png
+south_resize_cursor.png
+south_west_resize_cursor.png
+vertical_text_cursor.png
+wait_cursor.png
+west_resize_cursor.png
+zoom_in_cursor.png
+zoom_out_cursor.png
 
 // ***** BEGIN LICENSE BLOCK *****
 

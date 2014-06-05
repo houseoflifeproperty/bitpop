@@ -5,9 +5,9 @@
 #include "chrome/common/extensions/command.h"
 
 #include "base/memory/scoped_ptr.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -31,6 +31,26 @@ TEST(CommandTest, ExtensionCommandParsing) {
   const ui::Accelerator alt_shift_f =
       ui::Accelerator(ui::VKEY_F, ui::EF_ALT_DOWN | ui::EF_SHIFT_DOWN);
   const ui::Accelerator ctrl_1 = ui::Accelerator(ui::VKEY_1, ctrl);
+  const ui::Accelerator ctrl_comma = ui::Accelerator(ui::VKEY_OEM_COMMA, ctrl);
+  const ui::Accelerator ctrl_dot = ui::Accelerator(ui::VKEY_OEM_PERIOD, ctrl);
+  const ui::Accelerator ctrl_left = ui::Accelerator(ui::VKEY_LEFT, ctrl);
+  const ui::Accelerator ctrl_right = ui::Accelerator(ui::VKEY_RIGHT, ctrl);
+  const ui::Accelerator ctrl_up = ui::Accelerator(ui::VKEY_UP, ctrl);
+  const ui::Accelerator ctrl_down = ui::Accelerator(ui::VKEY_DOWN, ctrl);
+  const ui::Accelerator ctrl_ins = ui::Accelerator(ui::VKEY_INSERT, ctrl);
+  const ui::Accelerator ctrl_del = ui::Accelerator(ui::VKEY_DELETE, ctrl);
+  const ui::Accelerator ctrl_home = ui::Accelerator(ui::VKEY_HOME, ctrl);
+  const ui::Accelerator ctrl_end = ui::Accelerator(ui::VKEY_END, ctrl);
+  const ui::Accelerator ctrl_pgup = ui::Accelerator(ui::VKEY_PRIOR, ctrl);
+  const ui::Accelerator ctrl_pgdwn = ui::Accelerator(ui::VKEY_NEXT, ctrl);
+  const ui::Accelerator next_track =
+      ui::Accelerator(ui::VKEY_MEDIA_NEXT_TRACK, ui::EF_NONE);
+  const ui::Accelerator prev_track =
+      ui::Accelerator(ui::VKEY_MEDIA_PREV_TRACK, ui::EF_NONE);
+  const ui::Accelerator play_pause =
+      ui::Accelerator(ui::VKEY_MEDIA_PLAY_PAUSE, ui::EF_NONE);
+  const ui::Accelerator stop =
+      ui::Accelerator(ui::VKEY_MEDIA_STOP, ui::EF_NONE);
 
   const struct {
     bool expected_result;
@@ -41,10 +61,10 @@ TEST(CommandTest, ExtensionCommandParsing) {
   } kTests[] = {
     // Negative test (one or more missing required fields). We don't need to
     // test |command_name| being blank as it is used as a key in the manifest,
-    // so it can't be blank (and we CHECK() when it is).
+    // so it can't be blank (and we CHECK() when it is). A blank shortcut is
+    // permitted.
     { false, none, "command", "",       "" },
     { false, none, "command", "Ctrl+f", "" },
-    { false, none, "command", "",       "description" },
     // Ctrl+Alt is not permitted, see MSDN link in comments in Parse function.
     { false, none, "command", "Ctrl+Alt+F", "description" },
     // Unsupported shortcuts/too many, or missing modifier.
@@ -56,6 +76,7 @@ TEST(CommandTest, ExtensionCommandParsing) {
     { false, shift_f, "command", "Shift+F",       "description" },
     { false, shift_f, "command", "F+Shift",       "description" },
     // Basic tests.
+    { true, none,         "command", "",             "description" },
     { true, ctrl_f,       "command", "Ctrl+F",       "description" },
     { true, alt_f,        "command", "Alt+F",        "description" },
     { true, ctrl_shift_f, "command", "Ctrl+Shift+F", "description" },
@@ -74,11 +95,32 @@ TEST(CommandTest, ExtensionCommandParsing) {
     // Skipping description is OK for browser- and pageActions.
     { true, ctrl_f, "_execute_browser_action", "Ctrl+F", "" },
     { true, ctrl_f, "_execute_page_action",    "Ctrl+F", "" },
+    // Home, End, Arrow keys, etc.
+    { true, ctrl_comma, "_execute_browser_action", "Ctrl+Comma", "" },
+    { true, ctrl_dot, "_execute_browser_action", "Ctrl+Period", "" },
+    { true, ctrl_left, "_execute_browser_action", "Ctrl+Left", "" },
+    { true, ctrl_right, "_execute_browser_action", "Ctrl+Right", "" },
+    { true, ctrl_up, "_execute_browser_action", "Ctrl+Up", "" },
+    { true, ctrl_down, "_execute_browser_action", "Ctrl+Down", "" },
+    { true, ctrl_ins, "_execute_browser_action", "Ctrl+Insert", "" },
+    { true, ctrl_del, "_execute_browser_action", "Ctrl+Delete", "" },
+    { true, ctrl_home, "_execute_browser_action", "Ctrl+Home", "" },
+    { true, ctrl_end, "_execute_browser_action", "Ctrl+End", "" },
+    { true, ctrl_pgup, "_execute_browser_action", "Ctrl+PageUp", "" },
+    { true, ctrl_pgdwn, "_execute_browser_action", "Ctrl+PageDown", "" },
+    // Media keys.
+    { true, next_track, "command", "MediaNextTrack", "description" },
+    { true, play_pause, "command", "MediaPlayPause", "description" },
+    { true, prev_track, "command", "MediaPrevTrack", "description" },
+    { true, stop, "command", "MediaStop", "description" },
+    { false, none, "_execute_browser_action", "MediaNextTrack", "" },
+    { false, none, "_execute_page_action", "MediaPrevTrack", "" },
+    { false, none, "command", "Ctrl+Shift+MediaPrevTrack", "description" },
   };
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTests); ++i) {
     // First parse the command as a simple string.
-    scoped_ptr<DictionaryValue> input(new DictionaryValue);
+    scoped_ptr<base::DictionaryValue> input(new base::DictionaryValue);
     input->SetString("suggested_key", kTests[i].key);
     input->SetString("description", kTests[i].description);
 
@@ -88,35 +130,37 @@ TEST(CommandTest, ExtensionCommandParsing) {
                  "| index: " + base::IntToString(i));
 
     extensions::Command command;
-    string16 error;
+    base::string16 error;
     bool result =
         command.Parse(input.get(), kTests[i].command_name, i, &error);
 
     EXPECT_EQ(kTests[i].expected_result, result);
     if (result) {
       EXPECT_STREQ(kTests[i].description,
-                   UTF16ToASCII(command.description()).c_str());
+                   base::UTF16ToASCII(command.description()).c_str());
       EXPECT_STREQ(kTests[i].command_name, command.command_name().c_str());
       EXPECT_EQ(kTests[i].accelerator, command.accelerator());
     }
 
     // Now parse the command as a dictionary of multiple values.
-    input.reset(new DictionaryValue);
-    DictionaryValue* key_dict = new DictionaryValue();
-    key_dict->SetString("default", kTests[i].key);
-    key_dict->SetString("windows", kTests[i].key);
-    key_dict->SetString("mac", kTests[i].key);
-    input->Set("suggested_key", key_dict);
-    input->SetString("description", kTests[i].description);
+    if (kTests[i].key[0] != '\0') {
+      input.reset(new base::DictionaryValue);
+      base::DictionaryValue* key_dict = new base::DictionaryValue();
+      key_dict->SetString("default", kTests[i].key);
+      key_dict->SetString("windows", kTests[i].key);
+      key_dict->SetString("mac", kTests[i].key);
+      input->Set("suggested_key", key_dict);
+      input->SetString("description", kTests[i].description);
 
-    result = command.Parse(input.get(), kTests[i].command_name, i, &error);
+      result = command.Parse(input.get(), kTests[i].command_name, i, &error);
 
-    EXPECT_EQ(kTests[i].expected_result, result);
-    if (result) {
-      EXPECT_STREQ(kTests[i].description,
-                   UTF16ToASCII(command.description()).c_str());
-      EXPECT_STREQ(kTests[i].command_name, command.command_name().c_str());
-      EXPECT_EQ(kTests[i].accelerator, command.accelerator());
+      EXPECT_EQ(kTests[i].expected_result, result);
+      if (result) {
+        EXPECT_STREQ(kTests[i].description,
+                     base::UTF16ToASCII(command.description()).c_str());
+        EXPECT_STREQ(kTests[i].command_name, command.command_name().c_str());
+        EXPECT_EQ(kTests[i].accelerator, command.accelerator());
+      }
     }
   }
 }
@@ -127,8 +171,8 @@ TEST(CommandTest, ExtensionCommandParsingFallback) {
 
   // Test that platform specific keys are honored on each platform, despite
   // fallback being given.
-  scoped_ptr<DictionaryValue> input(new DictionaryValue);
-  DictionaryValue* key_dict = new DictionaryValue();
+  scoped_ptr<base::DictionaryValue> input(new base::DictionaryValue);
+  base::DictionaryValue* key_dict = new base::DictionaryValue();
   key_dict->SetString("default",  "Ctrl+Shift+D");
   key_dict->SetString("windows",  "Ctrl+Shift+W");
   key_dict->SetString("mac",      "Ctrl+Shift+M");
@@ -138,10 +182,10 @@ TEST(CommandTest, ExtensionCommandParsingFallback) {
   input->SetString("description", description);
 
   extensions::Command command;
-  string16 error;
+  base::string16 error;
   EXPECT_TRUE(command.Parse(input.get(), command_name, 0, &error));
   EXPECT_STREQ(description.c_str(),
-               UTF16ToASCII(command.description()).c_str());
+               base::UTF16ToASCII(command.description()).c_str());
   EXPECT_STREQ(command_name.c_str(), command.command_name().c_str());
 
 #if defined(OS_WIN)

@@ -6,11 +6,12 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
+#include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chrome/browser/chromeos/settings/stub_cros_settings_provider.h"
+#include "chromeos/settings/cros_settings_names.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -25,8 +26,7 @@ namespace chromeos {
 class KioskModeSettingsTest : public testing::Test {
  protected:
   KioskModeSettingsTest()
-      : message_loop_(MessageLoop::TYPE_UI),
-        ui_thread_(content::BrowserThread::UI, &message_loop_),
+      : ui_thread_(content::BrowserThread::UI, &message_loop_),
         file_thread_(content::BrowserThread::FILE, &message_loop_) {
     CrosSettings* cros_settings = CrosSettings::Get();
 
@@ -39,7 +39,7 @@ class KioskModeSettingsTest : public testing::Test {
     cros_settings->AddSettingsProvider(&stub_settings_provider_);
   }
 
-  ~KioskModeSettingsTest() {
+  virtual ~KioskModeSettingsTest() {
     // Restore the real DeviceSettingsProvider.
     CrosSettings* cros_settings = CrosSettings::Get();
     EXPECT_TRUE(
@@ -69,9 +69,12 @@ class KioskModeSettingsTest : public testing::Test {
     KioskModeSettings::Get()->set_initialized(false);
   }
 
-  MessageLoop message_loop_;
+  base::MessageLoopForUI message_loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread file_thread_;
+
+  ScopedTestDeviceSettingsService test_device_settings_service_;
+  ScopedTestCrosSettings test_cros_settings_;
 
   CrosSettingsProvider* device_settings_provider_;
   StubCrosSettingsProvider stub_settings_provider_;

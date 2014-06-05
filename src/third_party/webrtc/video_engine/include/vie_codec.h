@@ -17,7 +17,7 @@
 #ifndef WEBRTC_VIDEO_ENGINE_INCLUDE_VIE_CODEC_H_
 #define WEBRTC_VIDEO_ENGINE_INCLUDE_VIE_CODEC_H_
 
-#include "common_types.h"
+#include "webrtc/common_types.h"
 
 namespace webrtc {
 
@@ -35,6 +35,11 @@ class WEBRTC_DLLEXPORT ViEEncoderObserver {
   virtual void OutgoingRate(const int video_channel,
                             const unsigned int framerate,
                             const unsigned int bitrate) = 0;
+
+  // This method is called whenever the state of the SuspendBelowMinBitrate
+  // changes, i.e., when |is_suspended| toggles.
+  virtual void SuspendChange(int video_channel, bool is_suspended) = 0;
+
  protected:
   virtual ~ViEEncoderObserver() {}
 };
@@ -55,6 +60,16 @@ class WEBRTC_DLLEXPORT ViEDecoderObserver {
   virtual void IncomingRate(const int video_channel,
                             const unsigned int framerate,
                             const unsigned int bitrate) = 0;
+
+  // Called periodically with decoder timing information.  All values are
+  // "current" snapshots unless decorated with a min_/max_ prefix.
+  virtual void DecoderTiming(int decode_ms,
+                             int max_decode_ms,
+                             int current_delay_ms,
+                             int target_delay_ms,
+                             int jitter_buffer_ms,
+                             int min_playout_delay_ms,
+                             int render_delay_ms) = 0;
 
   // This method is called when the decoder needs a new key frame from encoder
   // on the sender.
@@ -124,6 +139,11 @@ class WEBRTC_DLLEXPORT ViECodec {
                                          unsigned int& key_frames,
                                          unsigned int& delta_frames) const = 0;
 
+  // Estimate of the min required buffer time from the expected arrival time
+  // until rendering to get smooth playback.
+  virtual int GetReceiveSideDelay(const int video_channel,
+                                  int* delay_ms) const = 0;
+
   // Gets the bitrate targeted by the video codec rate control in kbit/s.
   virtual int GetCodecTargetBitrate(const int video_channel,
                                     unsigned int* bitrate) const = 0;
@@ -165,6 +185,22 @@ class WEBRTC_DLLEXPORT ViECodec {
   // decode the incoming video stream.
   virtual int WaitForFirstKeyFrame(const int video_channel,
                                    const bool wait) = 0;
+
+  // Enables recording of debugging information.
+  virtual int StartDebugRecording(int video_channel,
+                                  const char* file_name_utf8) = 0;
+  // Disables recording of debugging information.
+  virtual int StopDebugRecording(int video_channel) = 0;
+
+  // Lets the sender suspend video when the rate drops below
+  // |threshold_bps|, and turns back on when the rate goes back up above
+  // |threshold_bps| + |window_bps|.
+  // This is under development; not tested.
+  virtual void SuspendBelowMinBitrate(int video_channel) = 0;
+
+  // TODO(holmer): Remove this default implementation when possible.
+  virtual bool GetSendSideDelay(int video_channel, int* avg_delay_ms,
+                                int* max_delay_ms) const { return false; }
 
  protected:
   ViECodec() {}

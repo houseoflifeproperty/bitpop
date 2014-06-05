@@ -6,7 +6,7 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "net/base/escape.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -50,7 +50,7 @@ ViewCacheHelper::ViewCacheHelper()
       index_(0),
       data_(NULL),
       next_state_(STATE_NONE),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
 }
 
 ViewCacheHelper::~ViewCacheHelper() {
@@ -80,7 +80,7 @@ void ViewCacheHelper::HexDump(const char *buf, size_t buf_len,
 
   const unsigned char *p;
   while (buf_len) {
-    base::StringAppendF(result, "%08x:  ", offset);
+    base::StringAppendF(result, "%08x: ", offset);
     offset += kMaxRows;
 
     p = (const unsigned char *) buf;
@@ -90,9 +90,10 @@ void ViewCacheHelper::HexDump(const char *buf, size_t buf_len,
 
     // print hex codes:
     for (i = 0; i < row_max; ++i)
-      base::StringAppendF(result, "%02x  ", *p++);
+      base::StringAppendF(result, "%02x ", *p++);
     for (i = row_max; i < kMaxRows; ++i)
-      result->append("    ");
+      result->append("   ");
+    result->append(" ");
 
     // print ASCII glyphs if possible:
     p = (const unsigned char *) buf;
@@ -288,7 +289,10 @@ int ViewCacheHelper::DoReadResponse() {
 
   buf_ = new IOBuffer(buf_len_);
   return entry_->ReadData(
-      0, 0, buf_, buf_len_,
+      0,
+      0,
+      buf_.get(),
+      buf_len_,
       base::Bind(&ViewCacheHelper::OnIOComplete, weak_factory_.GetWeakPtr()));
 }
 
@@ -296,9 +300,9 @@ int ViewCacheHelper::DoReadResponseComplete(int result) {
   if (result && result == buf_len_) {
     HttpResponseInfo response;
     bool truncated;
-    if (HttpCache::ParseResponseInfo(buf_->data(), buf_len_, &response,
-                                          &truncated) &&
-        response.headers) {
+    if (HttpCache::ParseResponseInfo(
+            buf_->data(), buf_len_, &response, &truncated) &&
+        response.headers.get()) {
       if (truncated)
         data_->append("<pre>RESPONSE_INFO_TRUNCATED</pre>");
 
@@ -333,7 +337,10 @@ int ViewCacheHelper::DoReadData() {
 
   buf_ = new IOBuffer(buf_len_);
   return entry_->ReadData(
-      index_, 0, buf_, buf_len_,
+      index_,
+      0,
+      buf_.get(),
+      buf_len_,
       base::Bind(&ViewCacheHelper::OnIOComplete, weak_factory_.GetWeakPtr()));
 }
 

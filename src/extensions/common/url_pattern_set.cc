@@ -4,16 +4,16 @@
 
 #include "extensions/common/url_pattern_set.h"
 
-#include <algorithm>
 #include <iterator>
 
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
+#include "base/stl_util.h"
 #include "base/values.h"
 #include "content/public/common/url_constants.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/url_pattern.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace extensions {
 
@@ -27,33 +27,24 @@ const char kInvalidURLPatternError[] = "Invalid url pattern '*'";
 void URLPatternSet::CreateDifference(const URLPatternSet& set1,
                                      const URLPatternSet& set2,
                                      URLPatternSet* out) {
-  out->ClearPatterns();
-  std::set_difference(set1.patterns_.begin(), set1.patterns_.end(),
-                      set2.patterns_.begin(), set2.patterns_.end(),
-                      std::inserter<std::set<URLPattern> >(
-                          out->patterns_, out->patterns_.begin()));
+  out->patterns_ = base::STLSetDifference<std::set<URLPattern> >(
+      set1.patterns_, set2.patterns_);
 }
 
 // static
 void URLPatternSet::CreateIntersection(const URLPatternSet& set1,
                                        const URLPatternSet& set2,
                                        URLPatternSet* out) {
-  out->ClearPatterns();
-  std::set_intersection(set1.patterns_.begin(), set1.patterns_.end(),
-                        set2.patterns_.begin(), set2.patterns_.end(),
-                        std::inserter<std::set<URLPattern> >(
-                            out->patterns_, out->patterns_.begin()));
+  out->patterns_ = base::STLSetIntersection<std::set<URLPattern> >(
+      set1.patterns_, set2.patterns_);
 }
 
 // static
 void URLPatternSet::CreateUnion(const URLPatternSet& set1,
                                 const URLPatternSet& set2,
                                 URLPatternSet* out) {
-  out->ClearPatterns();
-  std::set_union(set1.patterns_.begin(), set1.patterns_.end(),
-                 set2.patterns_.begin(), set2.patterns_.end(),
-                 std::inserter<std::set<URLPattern> >(
-                     out->patterns_, out->patterns_.begin()));
+  out->patterns_ = base::STLSetUnion<std::set<URLPattern> >(
+      set1.patterns_, set2.patterns_);
 }
 
 // static
@@ -129,9 +120,23 @@ void URLPatternSet::ClearPatterns() {
   patterns_.clear();
 }
 
-bool URLPatternSet::Contains(const URLPatternSet& set) const {
-  return std::includes(patterns_.begin(), patterns_.end(),
-                       set.patterns_.begin(), set.patterns_.end());
+bool URLPatternSet::Contains(const URLPatternSet& other) const {
+  for (URLPatternSet::const_iterator it = other.begin();
+       it != other.end(); ++it) {
+    if (!ContainsPattern(*it))
+      return false;
+  }
+
+  return true;
+}
+
+bool URLPatternSet::ContainsPattern(const URLPattern& pattern) const {
+  for (URLPatternSet::const_iterator it = begin();
+       it != end(); ++it) {
+    if (it->Contains(pattern))
+      return true;
+  }
+  return false;
 }
 
 bool URLPatternSet::MatchesURL(const GURL& url) const {
@@ -170,10 +175,10 @@ bool URLPatternSet::OverlapsWith(const URLPatternSet& other) const {
 }
 
 scoped_ptr<base::ListValue> URLPatternSet::ToValue() const {
-  scoped_ptr<ListValue> value(new ListValue);
+  scoped_ptr<base::ListValue> value(new base::ListValue);
   for (URLPatternSet::const_iterator i = patterns_.begin();
        i != patterns_.end(); ++i)
-    value->AppendIfNotPresent(Value::CreateStringValue(i->GetAsString()));
+    value->AppendIfNotPresent(new base::StringValue(i->GetAsString()));
   return value.Pass();
 }
 
@@ -193,7 +198,7 @@ bool URLPatternSet::Populate(const std::vector<std::string>& patterns,
       }
       return false;
     }
-    if (!allow_file_access && pattern.MatchesScheme(chrome::kFileScheme)) {
+    if (!allow_file_access && pattern.MatchesScheme(content::kFileScheme)) {
       pattern.SetValidSchemes(
           pattern.valid_schemes() & ~URLPattern::SCHEME_FILE);
     }

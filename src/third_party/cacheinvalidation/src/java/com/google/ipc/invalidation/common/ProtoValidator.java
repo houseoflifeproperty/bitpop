@@ -16,6 +16,7 @@
 package com.google.ipc.invalidation.common;
 
 import com.google.common.base.Preconditions;
+import com.google.ipc.invalidation.common.ProtoValidator.FieldInfo.Presence;
 import com.google.ipc.invalidation.util.BaseLogger;
 import com.google.ipc.invalidation.util.TypedUtil;
 import com.google.protobuf.MessageLite;
@@ -59,12 +60,14 @@ public abstract class ProtoValidator {
   }
 
   /** Describes how to validate a message. */
-  protected static class MessageInfo {
+  public static class MessageInfo {
     /** Protocol buffer descriptor for the message. */
     private final Accessor messageAccessor;
 
     /** Information about required and optional fields in this message. */
     private final Set<FieldInfo> fieldInfo = new HashSet<FieldInfo>();
+
+    private int numRequiredFields;
 
     /**
      * Constructs a message info.
@@ -86,6 +89,10 @@ public abstract class ProtoValidator {
 
         // Add the field info to the number -> info map.
         fieldInfo.add(info);
+
+        if (info.getPresence() == Presence.REQUIRED) {
+          ++numRequiredFields;
+        }
       }
       Preconditions.checkState(unusedDescriptors.isEmpty(), "Not all fields specified in %s: %s",
           messageAccessor, unusedDescriptors);
@@ -103,6 +110,11 @@ public abstract class ProtoValidator {
      */
     protected boolean postValidate(MessageLite message) {
       return true;
+    }
+
+    /** Returns the number of required fields for messages of this type. */
+    public int getNumRequiredFields() {
+      return numRequiredFields;
     }
   }
 

@@ -4,10 +4,11 @@
 
 #import "chrome/browser/ui/cocoa/bubble_view.h"
 
-#include "chrome/browser/themes/theme_service.h"
+#include "chrome/browser/themes/theme_properties.h"
 #import "chrome/browser/ui/cocoa/themed_window.h"
-#import "third_party/GTM/AppKit/GTMNSBezierPath+RoundRect.h"
-#import "third_party/GTM/AppKit/GTMNSColor+Luminance.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMNSBezierPath+RoundRect.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMNSColor+Luminance.h"
+#include "ui/base/theme_provider.h"
 
 // The roundedness of the edges of the bubble. This matches the value used on
 // Lion for window corners.
@@ -91,7 +92,7 @@ const float kWindowEdge = 0.7f;
                         bottomRightCornerRadius:bottomRightRadius];
 
   if (themeProvider)
-    [themeProvider->GetNSColor(ThemeService::COLOR_TOOLBAR, true) set];
+    [themeProvider->GetNSColor(ThemeProperties::COLOR_TOOLBAR) set];
   [border fill];
 
   [[NSColor colorWithDeviceWhite:kWindowEdge alpha:1.0f] set];
@@ -100,10 +101,9 @@ const float kWindowEdge = 0.7f;
   // Text
   NSColor* textColor = [NSColor blackColor];
   if (themeProvider)
-    textColor = themeProvider->GetNSColor(ThemeService::COLOR_TAB_TEXT,
-                                          true);
+    textColor = themeProvider->GetNSColor(ThemeProperties::COLOR_TAB_TEXT);
   NSFont* textFont = [self font];
-  scoped_nsobject<NSShadow> textShadow([[NSShadow alloc] init]);
+  base::scoped_nsobject<NSShadow> textShadow([[NSShadow alloc] init]);
   [textShadow setShadowBlurRadius:0.0f];
   [textShadow.get() setShadowColor:[textColor gtm_legibleTextColor]];
   [textShadow.get() setShadowOffset:NSMakeSize(0.0f, -1.0f)];

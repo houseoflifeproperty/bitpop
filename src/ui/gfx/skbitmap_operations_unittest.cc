@@ -63,10 +63,9 @@ SkBitmap ReferenceCreateHSLShiftedBitmap(
     color_utils::HSL hsl_shift) {
   SkBitmap shifted;
   shifted.setConfig(SkBitmap::kARGB_8888_Config, bitmap.width(),
-                    bitmap.height(), 0);
+                    bitmap.height());
   shifted.allocPixels();
   shifted.eraseARGB(0, 0, 0, 0);
-  shifted.setIsOpaque(false);
 
   SkAutoLockPixels lock_bitmap(bitmap);
   SkAutoLockPixels lock_shifted(shifted);
@@ -534,11 +533,13 @@ TEST(SkBitmapOperationsTest, RotateImage) {
   src.allocPixels();
 
   SkCanvas canvas(src);
+  src.eraseARGB(0, 0, 0, 0);
   SkRegion region;
 
   region.setRect(0, 0, src_w / 2, src_h / 2);
   canvas.setClipRegion(region);
-  canvas.drawColor(SK_ColorRED, SkXfermode::kSrc_Mode);
+  // This region is a semi-transparent red to test non-opaque pixels.
+  canvas.drawColor(0x1FFF0000, SkXfermode::kSrc_Mode);
   region.setRect(src_w / 2, 0, src_w, src_h / 2);
   canvas.setClipRegion(region);
   canvas.drawColor(SK_ColorBLUE, SkXfermode::kSrc_Mode);
@@ -572,8 +573,8 @@ TEST(SkBitmapOperationsTest, RotateImage) {
 
   for (int x=0; x < src_w; ++x) {
     for (int y=0; y < src_h; ++y) {
-      ASSERT_EQ(*src.getAddr32(x,y), *rotate90.getAddr32(y, src_w - (x+1)));
-      ASSERT_EQ(*src.getAddr32(x,y), *rotate270.getAddr32(src_h - (y+1),x));
+      ASSERT_EQ(*src.getAddr32(x,y), *rotate90.getAddr32(src_h - (y+1),x));
+      ASSERT_EQ(*src.getAddr32(x,y), *rotate270.getAddr32(y, src_w - (x+1)));
       ASSERT_EQ(*src.getAddr32(x,y),
                 *rotate180.getAddr32(src_w - (x+1), src_h - (y+1)));
     }

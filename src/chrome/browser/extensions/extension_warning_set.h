@@ -9,13 +9,17 @@
 #include <string>
 #include <vector>
 
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 // TODO(battre) Remove the Extension prefix.
 
-class ExtensionSet;
+namespace base {
+class FilePath;
+}
 
 namespace extensions {
+
+class ExtensionSet;
 
 // This class is used by the ExtensionWarningService to represent warnings if
 // extensions misbehave. Note that the ExtensionWarningService deals only with
@@ -37,6 +41,10 @@ class ExtensionWarning {
     // The extension repeatedly flushed WebKit's in-memory cache, which slows
     // down the overall performance.
     kRepeatedCacheFlushes,
+    // The extension failed to determine the filename of a download because
+    // another extension with higher precedence determined a different filename.
+    kDownloadFilenameConflict,
+    kReloadTooFrequent,
     kMaxWarningType
   };
 
@@ -68,6 +76,13 @@ class ExtensionWarning {
       const std::string& extension_id,
       const std::string& winning_extension_id);
   static ExtensionWarning CreateRepeatedCacheFlushesWarning(
+      const std::string& extension_id);
+  static ExtensionWarning CreateDownloadFilenameConflictWarning(
+      const std::string& losing_extension_id,
+      const std::string& winning_extension_id,
+      const base::FilePath& losing_filename,
+      const base::FilePath& winning_filename);
+  static ExtensionWarning CreateReloadTooFrequentWarning(
       const std::string& extension_id);
 
   // Returns the specific warning type.

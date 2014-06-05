@@ -12,32 +12,114 @@
 #include "ppapi/tests/testing_instance.h"
 #include "ppapi/tests/test_utils.h"
 
+#if defined(__native_client__)
+#include "native_client/src/untrusted/irt/irt.h"
+#include "ppapi/native_client/src/untrusted/irt_stub/thread_creator.h"
+#endif
+
 #define ARRAYSIZE_UNSAFE(a) \
   ((sizeof(a) / sizeof(*(a))) / \
    static_cast<size_t>(!(sizeof(a) % sizeof(*(a)))))
 
-REGISTER_TEST_CASE(Audio);
+#if defined(__native_client__)
+namespace {
 
-const int32_t kMagicValue = 12345;
+void GetNaClIrtPpapiHook(struct nacl_irt_ppapihook* hooks) {
+  nacl_interface_query(NACL_IRT_PPAPIHOOK_v0_1, hooks, sizeof(*hooks));
+}
+
+struct PP_ThreadFunctions g_thread_funcs = {};
+
+void ThreadFunctionsGetter(const struct PP_ThreadFunctions* thread_funcs) {
+  g_thread_funcs = *thread_funcs;
+}
+
+// In order to check if the thread_create is called, CountingThreadCreate()
+// increments this variable. Callers can check if the function is actually
+// called by looking at this value.
+int g_num_thread_create_called = 0;
+int g_num_thread_join_called = 0;
+
+int CountingThreadCreate(uintptr_t* tid,
+                         void (*func)(void* thread_argument),
+                         void* thread_argument) {
+  ++g_num_thread_create_called;
+  return g_thread_funcs.thread_create(tid, func, thread_argument);
+}
+
+int CountingThreadJoin(uintptr_t tid) {
+  ++g_num_thread_join_called;
+  return g_thread_funcs.thread_join(tid);
+}
+
+// Sets NULL for PP_ThreadFunctions to emulate the situation that
+// ppapi_register_thread_creator() is not yet called.
+void SetNullThreadFunctions() {
+  nacl_irt_ppapihook hooks;
+  GetNaClIrtPpapiHook(&hooks);
+  PP_ThreadFunctions thread_functions = {};
+  hooks.ppapi_register_thread_creator(&thread_functions);
+}
+
+void InjectCountingThreadFunctions() {
+  // First of all, we extract the system default thread functions.
+  // Internally, __nacl_register_thread_creator calls
+  // hooks.ppapi_register_thread_creator with default PP_ThreadFunctions
+  // instance. ThreadFunctionGetter stores it to g_thread_funcs.
+  nacl_irt_ppapihook hooks = { NULL, ThreadFunctionsGetter };
+  __nacl_register_thread_creator(&hooks);
+
+  // Here g_thread_funcs stores the thread functions.
+  // Inject the CountingThreadCreate.
+  PP_ThreadFunctions thread_functions = {
+    CountingThreadCreate,
+    CountingThreadJoin,
+  };
+  GetNaClIrtPpapiHook(&hooks);
+  hooks.ppapi_register_thread_creator(&thread_functions);
+}
+
+// Resets the PP_ThreadFunctions on exit from the scope.
+class ScopedThreadFunctionsResetter {
+ public:
+  ScopedThreadFunctionsResetter() {}
+  ~ScopedThreadFunctionsResetter() {
+    nacl_irt_ppapihook hooks;
+    GetNaClIrtPpapiHook(&hooks);
+    __nacl_register_thread_creator(&hooks);
+  }
+};
+
+}  // namespace
+#endif  // __native_client__
+
+REGISTER_TEST_CASE(Audio);
 
 TestAudio::TestAudio(TestingInstance* instance)
     : TestCase(instance),
       audio_callback_method_(NULL),
-      test_callback_(),
-      test_done_(false) {
+      audio_callback_event_(instance->pp_instance()),
+      test_done_(false),
+      audio_interface_(NULL),
+      audio_interface_1_0_(NULL),
+      audio_config_interface_(NULL),
+      core_interface_(NULL) {
 }
 
 TestAudio::~TestAudio() {
 }
 
 bool TestAudio::Init() {
-  audio_interface_ = static_cast<const PPB_Audio*>(
-      pp::Module::Get()->GetBrowserInterface(PPB_AUDIO_INTERFACE));
+  audio_interface_ = static_cast<const PPB_Audio_1_1*>(
+      pp::Module::Get()->GetBrowserInterface(PPB_AUDIO_INTERFACE_1_1));
+  audio_interface_1_0_ = static_cast<const PPB_Audio_1_0*>(
+      pp::Module::Get()->GetBrowserInterface(PPB_AUDIO_INTERFACE_1_0));
   audio_config_interface_ = static_cast<const PPB_AudioConfig*>(
       pp::Module::Get()->GetBrowserInterface(PPB_AUDIO_CONFIG_INTERFACE));
   core_interface_ = static_cast<const PPB_Core*>(
       pp::Module::Get()->GetBrowserInterface(PPB_CORE_INTERFACE));
-  return audio_interface_ && audio_config_interface_ && core_interface_;
+  return audio_interface_ && audio_interface_1_0_ && audio_config_interface_ &&
+         core_interface_;
 }
 
 void TestAudio::RunTests(const std::string& filter) {
@@ -47,6 +129,12 @@ void TestAudio::RunTests(const std::string& filter) {
   RUN_TEST(AudioCallback1, filter);
   RUN_TEST(AudioCallback2, filter);
   RUN_TEST(AudioCallback3, filter);
+  RUN_TEST(AudioCallback4, filter);
+
+#if defined(__native_client__)
+  RUN_TEST(AudioThreadCreatorIsRequired, filter);
+  RUN_TEST(AudioThreadCreatorIsCalled, filter);
+#endif
 }
 
 // Test creating audio resources for all guaranteed sample rates and various
@@ -118,13 +206,7 @@ std::string TestAudio::TestCreation() {
 
 // Test that releasing the resource without calling |StopPlayback()| "works".
 std::string TestAudio::TestDestroyNoStop() {
-  const PP_AudioSampleRate kSampleRate = PP_AUDIOSAMPLERATE_44100;
-  const uint32_t kRequestFrameCount = 2048;
-
-  uint32_t frame_count = audio_config_interface_->RecommendSampleFrameCount(
-      instance_->pp_instance(), kSampleRate, kRequestFrameCount);
-  PP_Resource ac = audio_config_interface_->CreateStereo16Bit(
-      instance_->pp_instance(), kSampleRate, frame_count);
+  PP_Resource ac = CreateAudioConfig(PP_AUDIOSAMPLERATE_44100, 2048);
   ASSERT_TRUE(ac);
   audio_callback_method_ = NULL;
   PP_Resource audio = audio_interface_->Create(
@@ -145,16 +227,10 @@ std::string TestAudio::TestDestroyNoStop() {
 }
 
 std::string TestAudio::TestFailures() {
-  const PP_AudioSampleRate kSampleRate = PP_AUDIOSAMPLERATE_44100;
-  const uint32_t kRequestFrameCount = 2048;
-
   // Test invalid parameters to |Create()|.
 
   // We want a valid config for some of our tests of |Create()|.
-  uint32_t frame_count = audio_config_interface_->RecommendSampleFrameCount(
-      instance_->pp_instance(), kSampleRate, kRequestFrameCount);
-  PP_Resource ac = audio_config_interface_->CreateStereo16Bit(
-      instance_->pp_instance(), kSampleRate, frame_count);
+  PP_Resource ac = CreateAudioConfig(PP_AUDIOSAMPLERATE_44100, 2048);
   ASSERT_TRUE(ac);
 
   // Failure cases should never lead to the callback being called.
@@ -187,24 +263,17 @@ std::string TestAudio::TestFailures() {
   PASS();
 }
 
-// NOTE: |TestAudioCallback1| and |TestAudioCallback2| assume that the audio
-// callback is called at least once. If the audio stream does not start up
-// correctly or is interrupted this may not be the case and these tests will
-// fail. However, in order to properly test the audio callbacks, we must have
-// a configuration where audio can successfully play, so we assume this is the
-// case on bots.
+// NOTE: |TestAudioCallbackN| assumes that the audio callback is called at least
+// once. If the audio stream does not start up correctly or is interrupted this
+// may not be the case and these tests will fail. However, in order to properly
+// test the audio callbacks, we must have a configuration where audio can
+// successfully play, so we assume this is the case on bots.
 
 // This test starts playback and verifies that:
 //  1) the audio callback is actually called;
 //  2) that |StopPlayback()| waits for the audio callback to finish.
 std::string TestAudio::TestAudioCallback1() {
-  const PP_AudioSampleRate kSampleRate = PP_AUDIOSAMPLERATE_44100;
-  const uint32_t kRequestFrameCount = 1024;
-
-  uint32_t frame_count = audio_config_interface_->RecommendSampleFrameCount(
-      instance_->pp_instance(), kSampleRate, kRequestFrameCount);
-  PP_Resource ac = audio_config_interface_->CreateStereo16Bit(
-      instance_->pp_instance(), kSampleRate, frame_count);
+  PP_Resource ac = CreateAudioConfig(PP_AUDIOSAMPLERATE_44100, 1024);
   ASSERT_TRUE(ac);
   audio_callback_method_ = NULL;
   PP_Resource audio = audio_interface_->Create(
@@ -212,30 +281,19 @@ std::string TestAudio::TestAudioCallback1() {
   core_interface_->ReleaseResource(ac);
   ac = 0;
 
-  // |AudioCallbackTest()| calls |test_callback_|, sleeps a bit, then sets
-  // |test_done_|.
-  TestCompletionCallback test_callback(instance_->pp_instance());
-  test_callback_ = static_cast<pp::CompletionCallback>(
-      test_callback).pp_completion_callback();
+  audio_callback_event_.Reset();
   test_done_ = false;
-  callback_fired_ = false;
 
   audio_callback_method_ = &TestAudio::AudioCallbackTest;
   ASSERT_TRUE(audio_interface_->StartPlayback(audio));
 
   // Wait for the audio callback to be called.
-  test_callback.WaitForResult();
-  ASSERT_EQ(kMagicValue, test_callback.result());
-
+  audio_callback_event_.Wait();
   ASSERT_TRUE(audio_interface_->StopPlayback(audio));
-
-  // |StopPlayback()| should wait for the audio callback to finish.
-  ASSERT_TRUE(callback_fired_);
   test_done_ = true;
 
   // If any more audio callbacks are generated, we should crash (which is good).
   audio_callback_method_ = NULL;
-  test_callback_ = PP_CompletionCallback();
 
   core_interface_->ReleaseResource(audio);
 
@@ -245,13 +303,7 @@ std::string TestAudio::TestAudioCallback1() {
 // This is the same as |TestAudioCallback1()|, except that instead of calling
 // |StopPlayback()|, it just releases the resource.
 std::string TestAudio::TestAudioCallback2() {
-  const PP_AudioSampleRate kSampleRate = PP_AUDIOSAMPLERATE_44100;
-  const uint32_t kRequestFrameCount = 1024;
-
-  uint32_t frame_count = audio_config_interface_->RecommendSampleFrameCount(
-      instance_->pp_instance(), kSampleRate, kRequestFrameCount);
-  PP_Resource ac = audio_config_interface_->CreateStereo16Bit(
-      instance_->pp_instance(), kSampleRate, frame_count);
+  PP_Resource ac = CreateAudioConfig(PP_AUDIOSAMPLERATE_44100, 1024);
   ASSERT_TRUE(ac);
   audio_callback_method_ = NULL;
   PP_Resource audio = audio_interface_->Create(
@@ -259,30 +311,21 @@ std::string TestAudio::TestAudioCallback2() {
   core_interface_->ReleaseResource(ac);
   ac = 0;
 
-  // |AudioCallbackTest()| calls |test_callback_|, sleeps a bit, then sets
-  // |test_done_|.
-  TestCompletionCallback test_callback(instance_->pp_instance());
-  test_callback_ = static_cast<pp::CompletionCallback>(
-      test_callback).pp_completion_callback();
+  audio_callback_event_.Reset();
   test_done_ = false;
-  callback_fired_ = false;
 
   audio_callback_method_ = &TestAudio::AudioCallbackTest;
   ASSERT_TRUE(audio_interface_->StartPlayback(audio));
 
   // Wait for the audio callback to be called.
-  test_callback.WaitForResult();
-  ASSERT_EQ(kMagicValue, test_callback.result());
+  audio_callback_event_.Wait();
 
   core_interface_->ReleaseResource(audio);
 
-  // The final release should wait for the audio callback to finish.
-  ASSERT_TRUE(callback_fired_);
   test_done_ = true;
 
   // If any more audio callbacks are generated, we should crash (which is good).
   audio_callback_method_ = NULL;
-  test_callback_ = PP_CompletionCallback();
 
   PASS();
 }
@@ -291,13 +334,7 @@ std::string TestAudio::TestAudioCallback2() {
 // round of |StartPlayback| and |StopPlayback| to make sure the callback
 // function still responds when using the same audio resource.
 std::string TestAudio::TestAudioCallback3() {
-  const PP_AudioSampleRate kSampleRate = PP_AUDIOSAMPLERATE_44100;
-  const uint32_t kRequestFrameCount = 1024;
-
-  uint32_t frame_count = audio_config_interface_->RecommendSampleFrameCount(
-      instance_->pp_instance(), kSampleRate, kRequestFrameCount);
-  PP_Resource ac = audio_config_interface_->CreateStereo16Bit(
-      instance_->pp_instance(), kSampleRate, frame_count);
+  PP_Resource ac = CreateAudioConfig(PP_AUDIOSAMPLERATE_44100, 1024);
   ASSERT_TRUE(ac);
   audio_callback_method_ = NULL;
   PP_Resource audio = audio_interface_->Create(
@@ -305,55 +342,149 @@ std::string TestAudio::TestAudioCallback3() {
   core_interface_->ReleaseResource(ac);
   ac = 0;
 
-  // |AudioCallbackTest()| calls |test_callback_|, sleeps a bit, then sets
-  // |test_done_|.
-  TestCompletionCallback test_callback_1(instance_->pp_instance());
-  test_callback_ = static_cast<pp::CompletionCallback>(
-      test_callback_1).pp_completion_callback();
+  audio_callback_event_.Reset();
   test_done_ = false;
-  callback_fired_ = false;
 
   audio_callback_method_ = &TestAudio::AudioCallbackTest;
   ASSERT_TRUE(audio_interface_->StartPlayback(audio));
 
   // Wait for the audio callback to be called.
-  test_callback_1.WaitForResult();
-  ASSERT_EQ(kMagicValue, test_callback_1.result());
+  audio_callback_event_.Wait();
 
   ASSERT_TRUE(audio_interface_->StopPlayback(audio));
-
-  // |StopPlayback()| should wait for the audio callback to finish.
-  ASSERT_TRUE(callback_fired_);
-
-  TestCompletionCallback test_callback_2(instance_->pp_instance());
-  test_callback_ = static_cast<pp::CompletionCallback>(
-      test_callback_2).pp_completion_callback();
 
   // Repeat one more |StartPlayback| & |StopPlayback| cycle, and verify again
   // that the callback function was invoked.
-  callback_fired_ = false;
+  audio_callback_event_.Reset();
   ASSERT_TRUE(audio_interface_->StartPlayback(audio));
 
   // Wait for the audio callback to be called.
-  test_callback_2.WaitForResult();
-  ASSERT_EQ(kMagicValue, test_callback_2.result());
-
+  audio_callback_event_.Wait();
   ASSERT_TRUE(audio_interface_->StopPlayback(audio));
-
-  // |StopPlayback()| should wait for the audio callback to finish.
-  ASSERT_TRUE(callback_fired_);
-
   test_done_ = true;
 
   // If any more audio callbacks are generated, we should crash (which is good).
   audio_callback_method_ = NULL;
-  test_callback_ = PP_CompletionCallback();
 
   core_interface_->ReleaseResource(audio);
 
   PASS();
 }
 
+// This is the same as |TestAudioCallback1()|, except that it uses
+// PPB_Audio_1_0.
+std::string TestAudio::TestAudioCallback4() {
+  PP_Resource ac = CreateAudioConfig(PP_AUDIOSAMPLERATE_44100, 1024);
+  ASSERT_TRUE(ac);
+  audio_callback_method_ = NULL;
+  PP_Resource audio = audio_interface_1_0_->Create(
+      instance_->pp_instance(), ac, AudioCallbackTrampoline1_0, this);
+  core_interface_->ReleaseResource(ac);
+  ac = 0;
+
+  audio_callback_event_.Reset();
+  test_done_ = false;
+
+  audio_callback_method_ = &TestAudio::AudioCallbackTest;
+  ASSERT_TRUE(audio_interface_1_0_->StartPlayback(audio));
+
+  // Wait for the audio callback to be called.
+  audio_callback_event_.Wait();
+  ASSERT_TRUE(audio_interface_1_0_->StopPlayback(audio));
+  test_done_ = true;
+
+  // If any more audio callbacks are generated, we should crash (which is good).
+  audio_callback_method_ = NULL;
+
+  core_interface_->ReleaseResource(audio);
+
+  PASS();
+}
+
+#if defined(__native_client__)
+// Tests the behavior of the thread_create functions.
+// For PPB_Audio_Shared to work properly, the user code must call
+// ppapi_register_thread_creator(). This test checks the error handling for the
+// case when user code doesn't call ppapi_register_thread_creator().
+std::string TestAudio::TestAudioThreadCreatorIsRequired() {
+  // We'll inject some thread functions in this test case.
+  // Reset them at the end of this case.
+  ScopedThreadFunctionsResetter thread_resetter;
+
+  // Set the thread functions to NULLs to emulate the situation where
+  // ppapi_register_thread_creator() is not called by user code.
+  SetNullThreadFunctions();
+
+  PP_Resource ac = CreateAudioConfig(PP_AUDIOSAMPLERATE_44100, 1024);
+  ASSERT_TRUE(ac);
+  audio_callback_method_ = NULL;
+  PP_Resource audio = audio_interface_->Create(
+      instance_->pp_instance(), ac, AudioCallbackTrampoline, this);
+  core_interface_->ReleaseResource(ac);
+  ac = 0;
+
+  // StartPlayback() fails, because no thread creating function
+  // is available.
+  ASSERT_FALSE(audio_interface_->StartPlayback(audio));
+
+  // If any more audio callbacks are generated,
+  // we should crash (which is good).
+  audio_callback_method_ = NULL;
+
+  core_interface_->ReleaseResource(audio);
+
+  PASS();
+}
+
+// Tests whether the thread functions passed from the user code are actually
+// called.
+std::string TestAudio::TestAudioThreadCreatorIsCalled() {
+  // We'll inject some thread functions in this test case.
+  // Reset them at the end of this case.
+  ScopedThreadFunctionsResetter thread_resetter;
+
+  // Inject the thread counting function. In the injected function,
+  // when called, g_num_thread_create_called is incremented.
+  g_num_thread_create_called = 0;
+  g_num_thread_join_called = 0;
+  InjectCountingThreadFunctions();
+
+  PP_Resource ac = CreateAudioConfig(PP_AUDIOSAMPLERATE_44100, 1024);
+  ASSERT_TRUE(ac);
+  audio_callback_method_ = NULL;
+  PP_Resource audio = audio_interface_->Create(
+      instance_->pp_instance(), ac, AudioCallbackTrampoline, this);
+  core_interface_->ReleaseResource(ac);
+  ac = 0;
+
+  audio_callback_event_.Reset();
+  test_done_ = false;
+
+  audio_callback_method_ = &TestAudio::AudioCallbackTest;
+  ASSERT_TRUE(audio_interface_->StartPlayback(audio));
+
+  // Wait for the audio callback to be called.
+  audio_callback_event_.Wait();
+  // Here, the injected thread_create is called, but thread_join is not yet.
+  ASSERT_EQ(1, g_num_thread_create_called);
+  ASSERT_EQ(0, g_num_thread_join_called);
+
+  ASSERT_TRUE(audio_interface_->StopPlayback(audio));
+
+  test_done_ = true;
+
+  // Here, the injected thread_join is called.
+  ASSERT_EQ(1, g_num_thread_join_called);
+
+  // If any more audio callbacks are generated,
+  // we should crash (which is good).
+  audio_callback_method_ = NULL;
+
+  core_interface_->ReleaseResource(audio);
+
+  PASS();
+}
+#endif
 
 // TODO(raymes): Test that actually playback happens correctly, etc.
 
@@ -364,30 +495,49 @@ static void Crash() {
 // static
 void TestAudio::AudioCallbackTrampoline(void* sample_buffer,
                                         uint32_t buffer_size_in_bytes,
+                                        PP_TimeDelta latency,
                                         void* user_data) {
   TestAudio* thiz = static_cast<TestAudio*>(user_data);
 
-  // Crash if not on the main thread.
+  // Crash if on the main thread.
   if (thiz->core_interface_->IsMainThread())
     Crash();
 
   AudioCallbackMethod method = thiz->audio_callback_method_;
-  (thiz->*method)(sample_buffer, buffer_size_in_bytes);
+  (thiz->*method)(sample_buffer, buffer_size_in_bytes, latency);
+}
+
+// static
+void TestAudio::AudioCallbackTrampoline1_0(void* sample_buffer,
+                                           uint32_t buffer_size_in_bytes,
+                                           void* user_data) {
+  AudioCallbackTrampoline(sample_buffer, buffer_size_in_bytes, 0.0, user_data);
 }
 
 void TestAudio::AudioCallbackTrivial(void* sample_buffer,
-                                     uint32_t buffer_size_in_bytes) {
+                                     uint32_t buffer_size_in_bytes,
+                                     PP_TimeDelta latency) {
+  if (latency < 0)
+    Crash();
+
   memset(sample_buffer, 0, buffer_size_in_bytes);
 }
 
 void TestAudio::AudioCallbackTest(void* sample_buffer,
-                                  uint32_t buffer_size_in_bytes) {
-  if (test_done_)
+                                  uint32_t buffer_size_in_bytes,
+                                  PP_TimeDelta latency) {
+  if (test_done_ || latency < 0)
     Crash();
 
-  if (!callback_fired_) {
-    memset(sample_buffer, 0, buffer_size_in_bytes);
-    core_interface_->CallOnMainThread(0, test_callback_, kMagicValue);
-    callback_fired_ = true;
-  }
+  memset(sample_buffer, 0, buffer_size_in_bytes);
+  audio_callback_event_.Signal();
+}
+
+PP_Resource TestAudio::CreateAudioConfig(
+    PP_AudioSampleRate sample_rate,
+    uint32_t requested_sample_frame_count) {
+  uint32_t frame_count = audio_config_interface_->RecommendSampleFrameCount(
+      instance_->pp_instance(), sample_rate, requested_sample_frame_count);
+  return audio_config_interface_->CreateStereo16Bit(
+      instance_->pp_instance(), sample_rate, frame_count);
 }

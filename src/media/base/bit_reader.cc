@@ -6,47 +6,29 @@
 
 namespace media {
 
-BitReader::BitReader(const uint8* data, off_t size)
-    : data_(data), bytes_left_(size), num_remaining_bits_in_curr_byte_(0) {
-  DCHECK(data_ != NULL && bytes_left_ > 0);
-
-  UpdateCurrByte();
+BitReader::BitReader(const uint8* data, int size)
+    : initial_size_(size),
+      data_(data),
+      bytes_left_(size),
+      bit_reader_core_(this) {
+  DCHECK(data != NULL);
+  DCHECK_GE(size, 0);
 }
 
 BitReader::~BitReader() {}
 
-bool BitReader::ReadBitsInternal(int num_bits, uint64* out) {
-  DCHECK_LE(num_bits, 64);
+int BitReader::GetBytes(int max_nbytes, const uint8** out) {
+  DCHECK_GE(max_nbytes, 0);
+  DCHECK(out);
 
-  *out = 0;
+  int nbytes = max_nbytes;
+  if (nbytes > bytes_left_)
+    nbytes = bytes_left_;
 
-  while (num_remaining_bits_in_curr_byte_ != 0 && num_bits != 0) {
-    int bits_to_take = std::min(num_remaining_bits_in_curr_byte_, num_bits);
-
-    *out <<= bits_to_take;
-    *out += curr_byte_ >> (num_remaining_bits_in_curr_byte_ - bits_to_take);
-    num_bits -= bits_to_take;
-    num_remaining_bits_in_curr_byte_ -= bits_to_take;
-    curr_byte_ &= (1 << num_remaining_bits_in_curr_byte_) - 1;
-
-    if (num_remaining_bits_in_curr_byte_ == 0)
-      UpdateCurrByte();
-  }
-
-  return num_bits == 0;
-}
-
-void BitReader::UpdateCurrByte() {
-  DCHECK_EQ(num_remaining_bits_in_curr_byte_, 0);
-
-  if (bytes_left_ == 0)
-    return;
-
-  // Load a new byte and advance pointers.
-  curr_byte_ = *data_;
-  ++data_;
-  --bytes_left_;
-  num_remaining_bits_in_curr_byte_ = 8;
+  *out = data_;
+  data_ += nbytes;
+  bytes_left_ -= nbytes;
+  return nbytes;
 }
 
 }  // namespace media

@@ -8,8 +8,12 @@
 #include "base/basictypes.h"
 #include "content/public/renderer/render_view_observer.h"
 
-namespace WebKit {
+namespace blink {
 class WebInputEvent;
+}
+
+namespace ui {
+struct LatencyInfo;
 }
 
 namespace content {
@@ -25,7 +29,8 @@ class IdleUserDetector : public RenderViewObserver {
   // RenderViewObserver implementation:
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
-  void OnHandleInputEvent(const WebKit::WebInputEvent* event,
+  void OnHandleInputEvent(const blink::WebInputEvent* event,
+                          const ui::LatencyInfo& latency_info,
                           bool is_keyboard_shortcut);
 
   DISALLOW_COPY_AND_ASSIGN(IdleUserDetector);

@@ -7,9 +7,8 @@
 #include <algorithm>
 
 #include "base/lazy_instance.h"
-#include "base/message_loop.h"
-#include "base/time.h"
-#include "content/public/test/test_browser_thread.h"
+#include "base/message_loop/message_loop.h"
+#include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace chrome {
@@ -29,7 +28,7 @@ class InternalAuthTest : public ::testing::Test {
   virtual void TearDown() {
   }
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   std::string long_string_;
 };
 
@@ -70,9 +69,10 @@ TEST_F(InternalAuthTest, BadGeneration) {
       token, long_string_, map));
 
   // Trying empty domain.
-  token = InternalAuthGeneration::GeneratePassport("", map);
+  token = InternalAuthGeneration::GeneratePassport(std::string(), map);
   ASSERT_TRUE(token.empty());
-  ASSERT_FALSE(InternalAuthVerification::VerifyPassport(token, "", map));
+  ASSERT_FALSE(
+      InternalAuthVerification::VerifyPassport(token, std::string(), map));
 
   std::string dummy("abcdefghij");
   for (size_t i = 1000; i--;) {
@@ -88,7 +88,7 @@ TEST_F(InternalAuthTest, BadGeneration) {
   ASSERT_FALSE(InternalAuthVerification::VerifyPassport(token, "zapata", map));
 
   map.clear();
-  map[""] = "value";
+  map[std::string()] = "value";
   // Trying empty key.
   token = InternalAuthGeneration::GeneratePassport("zapata", map);
   ASSERT_TRUE(token.empty());

@@ -25,6 +25,8 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <stdint.h>
+
 #ifdef POSIX
 #include <sys/time.h>
 #if defined(OSX) || defined(IOS)
@@ -45,7 +47,6 @@
 
 namespace talk_base {
 
-const uint32 LAST = 0xFFFFFFFF;
 const uint32 HALF = 0x80000000;
 
 uint64 TimeNanos() {
@@ -94,6 +95,59 @@ uint32 Time() {
   return static_cast<uint32>(TimeNanos() / kNumNanosecsPerMillisec);
 }
 
+uint64 TimeMicros() {
+  return static_cast<uint64>(TimeNanos() / kNumNanosecsPerMicrosec);
+}
+
+#if defined(WIN32)
+static const uint64 kFileTimeToUnixTimeEpochOffset = 116444736000000000ULL;
+
+struct timeval {
+  long tv_sec, tv_usec;  // NOLINT
+};
+
+// Emulate POSIX gettimeofday().
+// Based on breakpad/src/third_party/glog/src/utilities.cc
+static int gettimeofday(struct timeval *tv, void *tz) {
+  // FILETIME is measured in tens of microseconds since 1601-01-01 UTC.
+  FILETIME ft;
+  GetSystemTimeAsFileTime(&ft);
+
+  LARGE_INTEGER li;
+  li.LowPart = ft.dwLowDateTime;
+  li.HighPart = ft.dwHighDateTime;
+
+  // Convert to seconds and microseconds since Unix time Epoch.
+  int64 micros = (li.QuadPart - kFileTimeToUnixTimeEpochOffset) / 10;
+  tv->tv_sec = static_cast<long>(micros / kNumMicrosecsPerSec);  // NOLINT
+  tv->tv_usec = static_cast<long>(micros % kNumMicrosecsPerSec); // NOLINT
+
+  return 0;
+}
+
+// Emulate POSIX gmtime_r().
+static struct tm *gmtime_r(const time_t *timep, struct tm *result) {
+  // On Windows, gmtime is thread safe.
+  struct tm *tm = gmtime(timep);  // NOLINT
+  if (tm == NULL) {
+    return NULL;
+  }
+  *result = *tm;
+  return result;
+}
+#endif  // WIN32
+
+void CurrentTmTime(struct tm *tm, int *microseconds) {
+  struct timeval timeval;
+  if (gettimeofday(&timeval, NULL) < 0) {
+    // Incredibly unlikely code path.
+    timeval.tv_sec = timeval.tv_usec = 0;
+  }
+  time_t secs = timeval.tv_sec;
+  gmtime_r(&secs, tm);
+  *microseconds = timeval.tv_usec;
+}
+
 uint32 TimeAfter(int32 elapsed) {
   ASSERT(elapsed >= 0);
   ASSERT(static_cast<uint32>(elapsed) < HALF);
@@ -137,13 +191,13 @@ int32 TimeDiff(uint32 later, uint32 earlier) {
     if (earlier <= later) {
       return static_cast<long>(later - earlier);
     } else {
-      return static_cast<long>(later + (LAST - earlier) + 1);
+      return static_cast<long>(later + (UINT32_MAX - earlier) + 1);
     }
   } else {
     if (later <= earlier) {
       return -static_cast<long>(earlier - later);
     } else {
-      return -static_cast<long>(earlier + (LAST - later) + 1);
+      return -static_cast<long>(earlier + (UINT32_MAX - later) + 1);
     }
   }
 #endif

@@ -8,8 +8,8 @@ namespace gfx {
 
 RealOSMESAApi* g_real_osmesa;
 
-void InitializeGLBindingsOSMESA() {
-  g_driver_osmesa.InitializeBindings();
+void InitializeStaticGLBindingsOSMESA() {
+  g_driver_osmesa.InitializeStaticBindings();
   if (!g_real_osmesa) {
     g_real_osmesa = new RealOSMESAApi();
   }
@@ -17,8 +17,8 @@ void InitializeGLBindingsOSMESA() {
   g_current_osmesa_context = g_real_osmesa;
 }
 
-void InitializeGLExtensionBindingsOSMESA(GLContext* context) {
-  g_driver_osmesa.InitializeExtensionBindings(context);
+void InitializeDynamicGLBindingsOSMESA(GLContext* context) {
+  g_driver_osmesa.InitializeDynamicBindings(context);
 }
 
 void InitializeDebugGLBindingsOSMESA() {
@@ -59,6 +59,9 @@ RealOSMESAApi::~RealOSMESAApi() {
 
 void RealOSMESAApi::Initialize(DriverOSMESA* driver) {
   InitializeBase(driver);
+}
+
+TraceOSMESAApi::~TraceOSMESAApi() {
 }
 
 }  // namespace gfx

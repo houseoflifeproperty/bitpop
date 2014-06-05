@@ -7,19 +7,21 @@
 
 #include "base/compiler_specific.h"
 
+namespace base {
 class CommandLine;
 class FilePath;
+}
 
 // This is the python path variable name.
 extern const char kPythonPathEnv[];
 
 // Appends the dir to python path environment variable.
-void AppendToPythonPath(const FilePath& dir);
+void AppendToPythonPath(const base::FilePath& dir);
 
 // Return the location of the compiler-generated python protobuf.
-bool GetPyProtoPath(FilePath* dir);
+bool GetPyProtoPath(base::FilePath* dir);
 
 // Returns the command that should be used to launch Python.
-bool GetPythonCommand(CommandLine* python_cmd) WARN_UNUSED_RESULT;
+bool GetPythonCommand(base::CommandLine* python_cmd) WARN_UNUSED_RESULT;
 
 #endif  // NET_TEST_PYTHON_UTILS_H_

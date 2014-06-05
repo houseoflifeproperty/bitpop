@@ -15,12 +15,13 @@
 // Various constants common to clients and servers used in version 2 of the
 // Ticl.
 
+#include "google/cacheinvalidation/impl/build_constants.h"
 #include "google/cacheinvalidation/impl/constants.h"
 
 namespace invalidation {
 
 const int Constants::kClientMajorVersion = 3;
-const int Constants::kClientMinorVersion = 2;
+const int Constants::kClientMinorVersion = BUILD_DATESTAMP;
 const int Constants::kProtocolMajorVersion = 3;
 const int Constants::kProtocolMinorVersion = 2;
 const int Constants::kConfigMajorVersion = 3;

@@ -7,8 +7,8 @@
 
 #include <string>
 
-#include "ui/base/range/range.h"
-#include "ui/base/ui_export.h"
+#include "ui/gfx/gfx_export.h"
+#include "ui/gfx/range/range.h"
 
 namespace gfx {
 
@@ -56,7 +56,7 @@ enum LogicalCursorDirection {
 // is given by a "caret affinity" which is either CURSOR_BACKWARD (indicating
 // the trailing half of the 'c' in this case) or CURSOR_FORWARD (indicating
 // the leading half of the 'D').
-class UI_EXPORT SelectionModel {
+class GFX_EXPORT SelectionModel {
  public:
   // Create a default SelectionModel to be overwritten later.
   SelectionModel();
@@ -67,27 +67,24 @@ class UI_EXPORT SelectionModel {
   SelectionModel(size_t position, LogicalCursorDirection affinity);
   // Create a SelectionModel representing a selection (which may be empty).
   // The caret position is the end of the range.
-  SelectionModel(ui::Range selection, LogicalCursorDirection affinity);
+  SelectionModel(const Range& selection, LogicalCursorDirection affinity);
 
-  const ui::Range& selection() const { return selection_; }
+  const Range& selection() const { return selection_; }
   size_t caret_pos() const { return selection_.end(); }
   LogicalCursorDirection caret_affinity() const { return caret_affinity_; }
 
+  // WARNING: Generally the selection start should not be changed without
+  // considering the effect on the caret affinity.
+  void set_selection_start(size_t pos) { selection_.set_start(pos); }
+
   bool operator==(const SelectionModel& sel) const;
-  bool operator!=(const SelectionModel& sel) { return !(*this == sel); }
+  bool operator!=(const SelectionModel& sel) const { return !(*this == sel); }
 
   std::string ToString() const;
 
  private:
-  friend class RenderText;
-
-  // TODO(benrg): Generally the selection start should not be changed without
-  // considering the effect on the caret affinity. This setter is exposed only
-  // to RenderText to discourage misuse, and should probably be removed.
-  void set_selection_start(size_t pos) { selection_.set_start(pos); }
-
   // Logical selection. The logical caret position is the end of the selection.
-  ui::Range selection_;
+  Range selection_;
 
   // The logical direction from the caret position (selection_.end()) to the
   // character it is attached to for display purposes. This matters only when

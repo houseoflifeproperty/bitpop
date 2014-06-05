@@ -12,41 +12,37 @@
 #include <map>
 
 #include "base/basictypes.h"
+#include "base/files/file.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/platform_file.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_handle.h"
-#include "ui/base/ui_export.h"
-
-class FilePath;
+#include "ui/base/ui_base_export.h"
 
 namespace base {
-class RefCountedStaticMemory;
-}
-
-namespace file_util {
+class FilePath;
 class MemoryMappedFile;
+class RefCountedStaticMemory;
 }
 
 namespace ui {
 
-class UI_EXPORT DataPack : public ResourceHandle {
+class UI_BASE_EXPORT DataPack : public ResourceHandle {
  public:
   DataPack(ui::ScaleFactor scale_factor);
   virtual ~DataPack();
 
   // Load a pack file from |path|, returning false on error.
-  bool LoadFromPath(const FilePath& path);
+  bool LoadFromPath(const base::FilePath& path);
 
   // Loads a pack file from |file|, returning false on error.
-  bool LoadFromFile(base::PlatformFile file);
+  bool LoadFromFile(base::File file);
 
   // Writes a pack file containing |resources| to |path|. If there are any
   // text resources to be written, their encoding must already agree to the
   // |textEncodingType| specified. If no text resources are present, please
   // indicate BINARY.
-  static bool WritePack(const FilePath& path,
+  static bool WritePack(const base::FilePath& path,
                         const std::map<uint16, base::StringPiece>& resources,
                         TextEncodingType textEncodingType);
 
@@ -64,7 +60,7 @@ class UI_EXPORT DataPack : public ResourceHandle {
   bool LoadImpl();
 
   // The memory-mapped data.
-  scoped_ptr<file_util::MemoryMappedFile> mmap_;
+  scoped_ptr<base::MemoryMappedFile> mmap_;
 
   // Number of resources in the data.
   size_t resource_count_;

@@ -23,7 +23,11 @@
 #include "chrome/browser/history/android/android_urls_database.h"
 #endif
 
+namespace base {
 class FilePath;
+}
+
+class HistoryQuickProviderTest;
 
 namespace history {
 
@@ -64,11 +68,21 @@ class HistoryDatabase : public DownloadDatabase,
 
   virtual ~HistoryDatabase();
 
+  // Call before Init() to set the error callback to be used for the
+  // underlying database connection.
+  void set_error_callback(
+      const sql::Connection::ErrorCallback& error_callback) {
+    error_callback_ = error_callback;
+  }
+
   // Must call this function to complete initialization. Will return
   // sql::INIT_OK on success. Otherwise, no other function should be called. You
   // may want to call BeginExclusiveMode after this when you are ready.
-  sql::InitStatus Init(const FilePath& history_name,
-                       sql::ErrorDelegate* error_delegate);
+  sql::InitStatus Init(const base::FilePath& history_name);
+
+  // Computes and records various metrics for the database. Should only be
+  // called once and only upon successful Init.
+  void ComputeDatabaseMetrics(const base::FilePath& filename);
 
   // Call to set the mode on the database to exclusive. The default locking mode
   // is "normal" but we want to run in exclusive mode for slightly better
@@ -117,6 +131,10 @@ class HistoryDatabase : public DownloadDatabase,
   // unused space in the file. It can be VERY SLOW.
   void Vacuum();
 
+  // Try to trim the cache memory used by the database.  If |aggressively| is
+  // true try to trim all unused cache, otherwise trim by half.
+  void TrimMemory(bool aggressively);
+
   // Razes the database. Returns true if successful.
   bool Raze();
 
@@ -130,12 +148,6 @@ class HistoryDatabase : public DownloadDatabase,
   bool needs_version_17_migration() const {
     return needs_version_17_migration_;
   }
-
-  // Marks the database as no longer needing migration.
-  void ThumbnailMigrationDone();
-
-  // Returns true if thumbnails needs to be migrated.
-  bool GetNeedsThumbnailMigration();
 
   // Visit table functions ----------------------------------------------------
 
@@ -158,14 +170,11 @@ class HistoryDatabase : public DownloadDatabase,
   friend class AndroidProviderBackend;
   FRIEND_TEST_ALL_PREFIXES(AndroidURLsMigrationTest, MigrateToVersion22);
 #endif
+  friend class ::HistoryQuickProviderTest;
   friend class InMemoryURLIndexTest;
-  FRIEND_TEST_ALL_PREFIXES(IconMappingMigrationTest, TestIconMappingMigration);
 
   // Overridden from URLDatabase:
   virtual sql::Connection& GetDB() OVERRIDE;
-
-  // Overridden from DownloadDatabase:
-  virtual sql::MetaTable& GetMetaTable() OVERRIDE;
 
   // Migration -----------------------------------------------------------------
 
@@ -185,6 +194,7 @@ class HistoryDatabase : public DownloadDatabase,
 
   // ---------------------------------------------------------------------------
 
+  sql::Connection::ErrorCallback error_callback_;
   sql::Connection db_;
   sql::MetaTable meta_table_;
 

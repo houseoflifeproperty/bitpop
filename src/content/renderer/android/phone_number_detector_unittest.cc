@@ -4,7 +4,7 @@
 
 #include "content/renderer/android/phone_number_detector.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace content {
@@ -13,21 +13,21 @@ class PhoneNumberDetectorTest : public testing::Test {
  public:
   static std::string FindNumber(const std::string& content,
                                 const std::string& region) {
-    string16 content_16 = UTF8ToUTF16(content);
-    string16 result_16;
+    base::string16 content_16 = base::UTF8ToUTF16(content);
+    base::string16 result_16;
     size_t start, end;
     PhoneNumberDetector detector(region);
     std::string content_text;
     if (detector.FindContent(content_16.begin(), content_16.end(),
                              &start, &end, &content_text))
          result_16 = content_16.substr(start, end - start);
-    return UTF16ToUTF8(result_16);
+    return base::UTF16ToUTF8(result_16);
   }
 
   static std::string FindAndFormatNumber(const std::string& content,
                                          const std::string& region) {
-    string16 content_16 = UTF8ToUTF16(content);
-    string16 result_16;
+    base::string16 content_16 = base::UTF8ToUTF16(content);
+    base::string16 result_16;
     size_t start, end;
     PhoneNumberDetector detector(region);
     std::string content_text;
@@ -55,10 +55,10 @@ TEST_F(PhoneNumberDetectorTest, FindAndFormatNumber) {
   EXPECT_EQ("+16174263000",
             FindAndFormatNumber("hello 617-426-3000 blah", "us"));
   EXPECT_EQ("", FindAndFormatNumber("hello 617-426-3000 blah", "gb"));
-  EXPECT_EQ("+442076174426",
+  EXPECT_EQ("02076174426",
             FindAndFormatNumber("<div>020-7617-4426</div>", "gb"));
   EXPECT_EQ("", FindAndFormatNumber("<div>020-7617-4426</div>", "fr"));
-  EXPECT_EQ("+33238966888", FindAndFormatNumber("Tel:02.38.96.68.88", "fr"));
+  EXPECT_EQ("0238966888", FindAndFormatNumber("Tel:02.38.96.68.88", "fr"));
   EXPECT_EQ("+18008662453",
             FindAndFormatNumber("You can call this number:1-800-866-2453 for"
                                 "more information", "us"));

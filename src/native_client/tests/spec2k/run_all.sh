@@ -39,8 +39,9 @@ SPEC2K_BENCHMARKS="${LIST_FP_C} ${LIST_INT_C} ${LIST_INT_CPP}"
 # One of {./run.train.sh, ./run.ref.sh}
 SPEC2K_SCRIPT="./run.train.sh"
 
-# uncomment this to disable verification
-# verification time will be part of  overall benchmarking time
+# Uncomment this to disable verification of test results.
+# Otherwise, verification time is part of overall benchmarking time
+# (should probably separate that out).
 # export VERIFY=no
 export VERIFY=${VERIFY:-yes}
 export MAKEOPTS=${MAKEOPTS:-}
@@ -54,9 +55,7 @@ export COMPILE_REPEATER="$(pwd)/compile_repeater.sh"
 export SPEC_RUN_REPETITIONS=${SPEC_RUN_REPETITIONS:-1}
 export SPEC_COMPILE_REPETITIONS=${SPEC_COMPILE_REPETITIONS:-1}
 
-export PNACL_LIBMODE=${PNACL_LIBMODE:-newlib}
 export DASHDASH=""
-DO_SIZE=true
 
 ######################################################################
 # Helper
@@ -64,37 +63,21 @@ DO_SIZE=true
 
 readonly SCONS_OUT="${NACL_ROOT}/scons-out"
 readonly TC_ROOT="${NACL_ROOT}/toolchain"
+readonly TC_BASE="${TC_ROOT}/${SCONS_BUILD_PLATFORM}_${BUILD_ARCH_SHORT}"
 
-readonly ARM_TRUSTED_TC="${TC_ROOT}/linux_arm-trusted"
+readonly ARM_TRUSTED_TC="${TC_BASE}/arm_trusted"
 readonly QEMU_TOOL="${ARM_TRUSTED_TC}/run_under_qemu_arm"
 
-readonly PNACL_TC=\
-"${TC_ROOT}/pnacl_${BUILD_PLATFORM}_${BUILD_ARCH}/${PNACL_LIBMODE}"
-readonly ARM_LLC_NEXE=${TC_ROOT}/pnacl_translator/armv7/bin/llc.nexe
+readonly ARM_LLC_NEXE="${TC_BASE}/pnacl_translator/armv7/bin/pnacl-llc.nexe"
 
-readonly NNACL_TC="${TC_ROOT}/${SCONS_BUILD_PLATFORM}_x86"
+readonly NNACL_TC="${TC_BASE}/nacl_${BUILD_ARCH_SHORT}_glibc"
 readonly RUNNABLE_LD_X8632="${NNACL_TC}/x86_64-nacl/lib32/runnable-ld.so"
 readonly RUNNABLE_LD_X8664="${NNACL_TC}/x86_64-nacl/lib/runnable-ld.so"
 
-gnu_size() {
-  if ! ${DO_SIZE}; then
-    return 0
-  fi
-  # If the PNaCl toolchain is installed, prefer to use its "size".
-  # TODO(robertm): standardize on one of the pnacl dirs
-  if [ -d "${PNACL_TC}/../host/bin/" ] ; then
-    GNU_SIZE="${PNACL_TC}/../host/bin/arm-pc-nacl-size"
-  elif [ -d "${PNACL_TC}/../pkg/binutils/bin/" ] ; then
-    GNU_SIZE="${PNACL_TC}/../pkg/binutils/bin/arm-pc-nacl-size"
-  elif ${BUILD_PLATFORM_LINUX} ; then
-    GNU_SIZE="size"
-  else
-    # There's nothing we can run here.
-    # The system might have "size" installed, but if it is not GNU,
-    # there's no guarantee it can handle ELF.
-    return 0
-  fi
-  "${GNU_SIZE}" "$@"
+echo_file_size() {
+  local file=$1
+  echo "Uncompressed size of ${file} is $(cat ${file} | wc -c)"
+  echo "Gzipped size of ${file} is $(gzip ${file} -c | wc -c)"
 }
 
 ######################################################################
@@ -147,6 +130,63 @@ SetupGccX8664() {
 SetupGccX8664Opt() {
   PREFIX=
   SUFFIX=gcc.opt.x8664
+}
+
+#@
+#@ SetupEmcc
+#@   use Emscripten emcc compiler for Asm.js JavaScript generation
+SetupEmcc() {
+  PREFIX=../run_asmjs.sh
+  SUFFIX=emcc.html
+  VERIFY=no
+}
+
+#@
+#@ SetupLlvmX8632
+#@   use system compiler for x86-32
+SetupLlvmX8632() {
+  PREFIX=
+  SUFFIX=llvm.x8632
+}
+
+#@
+#@ SetupLlvmX8632Opt
+#@   use system compiler for x86-32 with optimization
+SetupLlvmX8632Opt() {
+  PREFIX=
+  SUFFIX=llvm.opt.x8632
+}
+
+#@
+#@ SetupLlvmX8664
+#@   use system compiler for x86-64
+SetupLlvmX8664() {
+  PREFIX=
+  SUFFIX=llvm.x8664
+}
+
+#@
+#@ SetupLlvmX8664Opt
+#@   use system compiler for x86-64 with optimization
+SetupLlvmX8664Opt() {
+  PREFIX=
+  SUFFIX=llvm.opt.x8664
+}
+
+#@
+#@ SetupLlvmArm
+#@   use system compiler for ARM
+SetupLlvmArm() {
+  PREFIX=
+  SUFFIX=llvm.hw.arm
+}
+
+#@
+#@ SetupLlvmArmOpt
+#@   use system compiler for ARM with optimization
+SetupLlvmArmOpt() {
+  PREFIX=
+  SUFFIX=llvm.opt.hw.arm
 }
 
 ######################################################################
@@ -290,28 +330,22 @@ SetupPnaclTranslatorFastX8664Opt() {
 }
 
 
-
-SetupPnaclTranslatorJITX8632Common() {
- SetupSelLdr x86-32 "" "-S" "${RUNNABLE_LD_X8632} -- --library-path ${NNACL_TC}/x86_64-nacl/lib32 ${NACL_ROOT}/toolchain/pnacl_linux_x86/glibc/tools-sb/x8632/nonsrpc/bin/lli.x8632.nexe -asm-verbose=false -march=x86 -mcpu=pentium4 -mtriple=i686-none-nacl-gnu -jit-emit-debug=false -disable-lazy-compilation"
-  DO_SIZE=false
-  DASHDASH=""
+#@
+#@ SetupPnaclTranslator1ThreadX8664Opt
+#@    use pnacl x8664 translator (with lto). Compile w/ 1 thread.
+SetupPnaclTranslator1ThreadX8664Opt() {
+  SetupPnaclX8664Common
+  SUFFIX=pnacl_translator_1thread.opt.x8664
 }
 
 #@
-#@ SetupPnaclTranslatorJITX8632
-#@    use pnacl x8632 JIT translator (no lto)
-SetupPnaclTranslatorJITX8632() {
-  SetupPnaclTranslatorJITX8632Common
-  SUFFIX=unopt.pexe
+#@ SetupPnaclTranslatorFast1ThreadX8664Opt
+#@    use pnacl x8664 translator fast mode (with lto). Compile w/ 1 thread.
+SetupPnaclTranslatorFast1ThreadX8664Opt() {
+  SetupPnaclX8664Common
+  SUFFIX=pnacl_translator_fast_1thread.opt.x8664
 }
 
-#@
-#@ SetupPnaclTranslatorJITX8632Opt
-#@    use pnacl x8632 JIT translator
-SetupPnaclTranslatorJITX8632Opt() {
-  SetupPnaclTranslatorJITX8632Common
-  SUFFIX=opt.stripped.pexe
-}
 
 SetupPnaclX8632Common() {
   SetupSelLdr x86-32
@@ -356,6 +390,22 @@ SetupPnaclTranslatorX8632Opt() {
 SetupPnaclTranslatorFastX8632Opt() {
   SetupPnaclX8632Common
   SUFFIX=pnacl_translator_fast.opt.x8632
+}
+
+#@
+#@ SetupPnaclTranslator1ThreadX8632Opt
+#@    use pnacl x8632 translator (with lto). Compile w/ 1 thread.
+SetupPnaclTranslator1ThreadX8632Opt() {
+  SetupPnaclX8632Common
+  SUFFIX=pnacl_translator_1thread.opt.x8632
+}
+
+#@
+#@ SetupPnaclTranslatorFast1ThreadX8632Opt
+#@    use pnacl x8632 translator fast mode (with lto). Compile w/ 1 thread.
+SetupPnaclTranslatorFast1ThreadX8632Opt() {
+  SetupPnaclX8632Common
+  SUFFIX=pnacl_translator_fast_1thread.opt.x8632
 }
 
 
@@ -466,6 +516,25 @@ SetupPnaclTranslatorFastArmOptHW() {
   SUFFIX=pnacl_translator_fast.opt.hw.arm
 }
 
+#@
+#@ SetupPnaclTranslator1ThreadArmOptHW
+#@    use pnacl arm translator (with lto) -- run on ARM hardware.
+#@    compile with 1 thread.
+SetupPnaclTranslator1ThreadArmOptHW() {
+  SetupPnaclArmCommonHW
+  SUFFIX=pnacl_translator_1thread.opt.hw.arm
+}
+
+#@
+#@ SetupPnaclTranslatorFast1ThreadArmOptHW
+#@    use pnacl arm translator fast mode (with lto) -- run on ARM hardware
+#@    compile with 1 thread.
+SetupPnaclTranslatorFast1ThreadArmOptHW() {
+  SetupPnaclArmCommonHW
+  SUFFIX=pnacl_translator_fast_1thread.opt.hw.arm
+}
+
+
 
 ConfigInfo() {
   SubBanner "Config Info"
@@ -530,7 +599,7 @@ GetInputSize() {
 CheckFileBuilt() {
   local depname="$1"
   local filename="$2"
-  if [[ ! -x "${filename}" ]] ; then
+  if [[ ! -f "${filename}" ]] ; then
     echo "You have not built ${depname} yet (${filename})!" 1>&2
     exit -1
   fi
@@ -551,10 +620,11 @@ SetupSelLdr() {
 
   local staging="${SCONS_OUT}/opt-${SCONS_BUILD_PLATFORM}-${arch}/staging"
   SEL_LDR="${staging}/sel_ldr"
-  SEL_LDR_BOOTSTRAP="${staging}/nacl_helper_bootstrap"
   CheckFileBuilt "sel_ldr" "${SEL_LDR}"
-  CheckFileBuilt "bootstrap" "${SEL_LDR_BOOTSTRAP}"
-
+  if [[ ${SCONS_BUILD_PLATFORM} = "linux" ]]; then
+    SEL_LDR_BOOTSTRAP="${staging}/nacl_helper_bootstrap"
+    CheckFileBuilt "bootstrap" "${SEL_LDR_BOOTSTRAP}"
+  fi
   IRT_IMAGE="${SCONS_OUT}/nacl_irt-${arch}/staging/irt_core.nexe"
   CheckFileBuilt "IRT image" "${IRT_IMAGE}"
 
@@ -566,11 +636,16 @@ SetupSelLdr() {
   # We don't CheckFileBuilt for VALIDATOR because we currently don't build
   # or use it on x86
 
-  TEMPLATE_DIGITS="XXXXXXXXXXXXXXXX"
-  PREFIX="${prefix} ${SEL_LDR_BOOTSTRAP} \
+  if [[ ${SCONS_BUILD_PLATFORM} = "linux" ]]; then
+    TEMPLATE_DIGITS="XXXXXXXXXXXXXXXX"
+    PREFIX="${prefix} ${SEL_LDR_BOOTSTRAP} \
 ${SEL_LDR} --r_debug=0x${TEMPLATE_DIGITS} \
 --reserved_at_zero=0x${TEMPLATE_DIGITS} -B ${IRT_IMAGE} \
 -a ${extra_flags} -f ${preload}"
+  else
+    PREFIX="${prefix} ${SEL_LDR} -B ${IRT_IMAGE} -a ${extra_flags} \
+-f ${preload}"
+  fi
   DASHDASH="--"
 }
 
@@ -611,7 +686,7 @@ build-libs-pnacl() {
 #@
 #@ CleanBenchmarks <benchmark>*
 #@
-#@   this is a deep clean and you have to rerun PoplateFromSpecHarness
+#@   this is a deep clean and you have to rerun PopulateFromSpecHarness
 CleanBenchmarks() {
   local list=$(GetBenchmarkList "$@")
   rm -rf bin/
@@ -642,15 +717,15 @@ BuildBenchmarks() {
   for i in ${list} ; do
     SubBanner "Building: $i"
     cd $i
+    # SPEC_COMPONENT is used for Asm.js builds in Makefile.common.
+    export SPEC_COMPONENT="${i}"
 
     make ${MAKEOPTS} measureit=${timeit} \
          PERF_LOGGER="${PERF_LOGGER}" \
          REPETITIONS="${SPEC_COMPILE_REPETITIONS}" \
          COMPILE_REPEATER="${COMPILE_REPEATER}" \
-         BUILD_PLATFORM=${BUILD_PLATFORM} \
          SCONS_BUILD_PLATFORM=${SCONS_BUILD_PLATFORM} \
-         BUILD_ARCH=${BUILD_ARCH} \
-         PNACL_LIBMODE=${PNACL_LIBMODE} \
+         BUILD_ARCH_SHORT=${BUILD_ARCH_SHORT} \
          ${i#*.}.${SUFFIX}
     cd ..
   done
@@ -661,9 +736,10 @@ BuildBenchmarks() {
 #@
 #@  Run the command under time and dump time data to file.
 TimedRunCmd() {
-  target=$1
+  target="$1"
   shift
-  /usr/bin/time -f "%U %S %e %C" --append -o ${target} "$@"
+  echo "Running: $@"
+  /usr/bin/time -f "%U %S %e %C" --append -o "${target}" "$@"
 }
 
 #@
@@ -680,11 +756,15 @@ RunBenchmarks() {
   ConfigInfo "$@"
   for i in ${list} ; do
     SubBanner "Benchmarking: $i"
-    cd $i
+    pushd $i
     target_file=./${i#*.}.${SUFFIX}
-    gnu_size ${target_file}
+    echo_file_size ${target_file}
+    # SCRIPTNAME is needed by run_asmjs.sh so that it knows
+    # which version of the prepackaged files to use.
+    export SCRIPTNAME="${script}"
+    echo "Running: ${script} ${target_file}"
     ${script} ${target_file}
-    cd ..
+    popd
   done
 }
 
@@ -709,7 +789,10 @@ RunTimedBenchmarks() {
     local benchname=${i#*.}
     local target_file=./${benchname}.${SUFFIX}
     local time_file=${target_file}.run_time
-    gnu_size  ${target_file}
+    echo_file_size  ${target_file}
+    # SCRIPTNAME is needed by run_asmjs.sh so that it knows
+    # which version of the prepackaged files to use.
+    export SCRIPTNAME="${script}"
     # Clear out the previous times.
     rm -f "${time_file}"
     echo "Running benchmark ${SPEC_RUN_REPETITIONS} times"
@@ -719,7 +802,7 @@ RunTimedBenchmarks() {
     done
     # TODO(jvoung): split runtimes by arch as well
     # i.e., pull "arch" out of SUFFIX and add to the "runtime" label.
-    "${PERF_LOGGER}" LogUserSysTime "${time_file}" "runtime" \
+    "${PERF_LOGGER}" LogRealTime "${time_file}" "runtime" \
       ${benchname} ${SUFFIX}
     popd
   done
@@ -741,13 +824,13 @@ TimeValidation() {
     do
       TimedRunCmd ${time_file} "${VALIDATOR}" ${target_file}
     done
-    "${PERF_LOGGER}" LogUserSysTime "${time_file}" "validationtime" \
+    "${PERF_LOGGER}" LogRealTime "${time_file}" "validationtime" \
       ${benchname} ${SUFFIX}
     popd
   done
   if [[ ${setup_func} =~ "Arm" ]]; then
     TimedRunCmd llc.validation_time "${VALIDATOR}" "${ARM_LLC_NEXE}"
-    "${PERF_LOGGER}" LogUserSysTime llc.validation_time "validationtime" \
+    "${PERF_LOGGER}" LogRealTime llc.validation_time "validationtime" \
       "llc" ${SUFFIX}
   fi
 }

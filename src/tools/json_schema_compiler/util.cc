@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "tools/json_schema_compiler/any.h"
 #include "tools/json_schema_compiler/util.h"
 
 #include "base/values.h"
@@ -10,61 +9,88 @@
 namespace json_schema_compiler {
 namespace util {
 
-bool GetItemFromList(const ListValue& from, int index, int* out) {
+bool GetItemFromList(const base::ListValue& from, int index, int* out) {
   return from.GetInteger(index, out);
 }
 
-bool GetItemFromList(const ListValue& from, int index, bool* out) {
+bool GetItemFromList(const base::ListValue& from, int index, bool* out) {
   return from.GetBoolean(index, out);
 }
 
-bool GetItemFromList(const ListValue& from, int index, double* out) {
+bool GetItemFromList(const base::ListValue& from, int index, double* out) {
   return from.GetDouble(index, out);
 }
 
-bool GetItemFromList(const ListValue& from, int index, std::string* out) {
+bool GetItemFromList(const base::ListValue& from, int index, std::string* out) {
   return from.GetString(index, out);
 }
 
-bool GetItemFromList(const ListValue& from, int index,
-    linked_ptr<any::Any>* out) {
-  const Value* value = NULL;
+bool GetItemFromList(const base::ListValue& from,
+                     int index,
+                     linked_ptr<base::Value>* out) {
+  const base::Value* value = NULL;
   if (!from.Get(index, &value))
     return false;
-  scoped_ptr<any::Any> any_object(new any::Any());
-  any_object->Init(*value);
-  *out = linked_ptr<any::Any>(any_object.release());
+  *out = make_linked_ptr(value->DeepCopy());
   return true;
 }
 
-bool GetItemFromList(const ListValue& from, int index,
+bool GetItemFromList(const base::ListValue& from, int index,
     linked_ptr<base::DictionaryValue>* out) {
-  const DictionaryValue* dict = NULL;
+  const base::DictionaryValue* dict = NULL;
   if (!from.GetDictionary(index, &dict))
     return false;
-  *out = linked_ptr<DictionaryValue>(dict->DeepCopy());
+  *out = make_linked_ptr(dict->DeepCopy());
   return true;
 }
 
 void AddItemToList(const int from, base::ListValue* out) {
-  out->Append(base::Value::CreateIntegerValue(from));
+  out->Append(new base::FundamentalValue(from));
 }
+
 void AddItemToList(const bool from, base::ListValue* out) {
-  out->Append(base::Value::CreateBooleanValue(from));
+  out->Append(new base::FundamentalValue(from));
 }
+
 void AddItemToList(const double from, base::ListValue* out) {
-  out->Append(base::Value::CreateDoubleValue(from));
+  out->Append(new base::FundamentalValue(from));
 }
+
 void AddItemToList(const std::string& from, base::ListValue* out) {
-  out->Append(base::Value::CreateStringValue(from));
+  out->Append(new base::StringValue(from));
 }
+
+void AddItemToList(const linked_ptr<base::Value>& from,
+                   base::ListValue* out) {
+  out->Append(from->DeepCopy());
+}
+
 void AddItemToList(const linked_ptr<base::DictionaryValue>& from,
-    base::ListValue* out) {
-  out->Append(static_cast<Value*>(from->DeepCopy()));
+                   base::ListValue* out) {
+  out->Append(static_cast<base::Value*>(from->DeepCopy()));
 }
-void AddItemToList(const linked_ptr<any::Any>& from,
-    base::ListValue* out) {
-  out->Append(from->value().DeepCopy());
+
+std::string ValueTypeToString(base::Value::Type type) {
+  switch(type) {
+    case base::Value::TYPE_NULL:
+      return "null";
+    case base::Value::TYPE_BOOLEAN:
+      return "boolean";
+    case base::Value::TYPE_INTEGER:
+      return "integer";
+    case base::Value::TYPE_DOUBLE:
+      return "number";
+    case base::Value::TYPE_STRING:
+      return "string";
+    case base::Value::TYPE_BINARY:
+      return "binary";
+    case base::Value::TYPE_DICTIONARY:
+      return "dictionary";
+    case base::Value::TYPE_LIST:
+      return "list";
+  }
+  NOTREACHED();
+  return "";
 }
 
 }  // namespace api_util

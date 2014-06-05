@@ -34,7 +34,7 @@ cr.define('options', function() {
     autocompleteList_: null,
 
     startup_pages_pref_: {
-      'name': 'session.urls_to_restore_on_startup',
+      'name': 'session.startup_urls',
       'disabled': false
     },
 
@@ -60,7 +60,7 @@ cr.define('options', function() {
 
       var suggestionList = new cr.ui.AutocompleteList();
       suggestionList.autoExpands = true;
-      suggestionList.suggestionUpdateRequestCallback =
+      suggestionList.requestSuggestions =
           this.requestAutocompleteSuggestions_.bind(this);
       $('startup-overlay').appendChild(suggestionList);
       this.autocompleteList_ = suggestionList;
@@ -71,6 +71,9 @@ cr.define('options', function() {
     handleConfirm: function() {
       SettingsDialog.prototype.handleConfirm.call(this);
       chrome.send('commitStartupPrefChanges');
+      // Set the startup behavior to "open specific set of pages" so that the
+      // pages the user selected actually get opened on startup.
+      Preferences.setIntegerPref('session.restore_on_startup', 4, true);
     },
 
     /** @override */
@@ -105,7 +108,7 @@ cr.define('options', function() {
 
     /**
      * Handles change events of the preference
-     * 'session.urls_to_restore_on_startup'.
+     * 'session.startup_urls'.
      * @param {event} preference changed event.
      * @private
      */
@@ -122,9 +125,7 @@ cr.define('options', function() {
     updateStartupPages_: function(pages) {
       var model = new ArrayDataModel(pages);
       // Add a "new page" row.
-      model.push({
-        'modelIndex': '-1'
-      });
+      model.push({modelIndex: -1});
       $('startupPagesList').dataModel = model;
     },
 

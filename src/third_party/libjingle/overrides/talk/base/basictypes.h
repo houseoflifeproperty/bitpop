@@ -14,21 +14,22 @@
 
 #ifndef INT_TYPES_DEFINED
 #define INT_TYPES_DEFINED
-#ifdef COMPILER_MSVC
-typedef __int64 int64;
-#endif /* COMPILER_MSVC */
 
 #ifdef COMPILER_MSVC
-#if _MSC_VER < 1600
+#if _MSC_VER >= 1600
+#include <stdint.h>
+#else
 typedef unsigned __int64 uint64;
 typedef __int64 int64;
-#define INT64_C(x) x ## I64
-#define UINT64_C(x) x ## UI64
-#define INT64_F "I64"
-#else
-#include <stdint.h>
 #endif
-#else
+#ifndef INT64_C
+#define INT64_C(x) x ## I64
+#endif
+#ifndef UINT64_C
+#define UINT64_C(x) x ## UI64
+#endif
+#define INT64_F "I64"
+#else  // COMPILER_MSVC
 #ifndef INT64_C
 #define INT64_C(x) x ## LL
 #endif
@@ -38,8 +39,35 @@ typedef __int64 int64;
 #ifndef INT64_F
 #define INT64_F "ll"
 #endif
-#endif /* COMPILER_MSVC */
+#endif  // COMPILER_MSVC
 #endif  // INT_TYPES_DEFINED
+
+// Detect compiler is for x86 or x64.
+#if defined(__x86_64__) || defined(_M_X64) || \
+    defined(__i386__) || defined(_M_IX86)
+#define CPU_X86 1
+#endif
+// Detect compiler is for arm.
+#if defined(__arm__) || defined(_M_ARM)
+#define CPU_ARM 1
+#endif
+#if defined(CPU_X86) && defined(CPU_ARM)
+#error CPU_X86 and CPU_ARM both defined.
+#endif
+#if !defined(ARCH_CPU_BIG_ENDIAN) && !defined(ARCH_CPU_LITTLE_ENDIAN)
+// x86, arm or GCC provided __BYTE_ORDER__ macros
+#if CPU_X86 || CPU_ARM ||  \
+  (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+#define ARCH_CPU_LITTLE_ENDIAN
+#elif defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#define ARCH_CPU_BIG_ENDIAN
+#else
+#error ARCH_CPU_BIG_ENDIAN or ARCH_CPU_LITTLE_ENDIAN should be defined.
+#endif
+#endif
+#if defined(ARCH_CPU_BIG_ENDIAN) && defined(ARCH_CPU_LITTLE_ENDIAN)
+#error ARCH_CPU_BIG_ENDIAN and ARCH_CPU_LITTLE_ENDIAN both defined.
+#endif
 
 #ifdef WIN32
 typedef int socklen_t;

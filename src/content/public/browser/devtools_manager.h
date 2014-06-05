@@ -7,8 +7,8 @@
 
 #include <string>
 
+#include "base/callback.h"
 #include "content/common/content_export.h"
-#include "content/public/common/console_message_level.h"
 
 namespace IPC {
 class Message;
@@ -28,59 +28,36 @@ class CONTENT_EXPORT DevToolsManager {
  public:
   static DevToolsManager* GetInstance();
 
+  virtual ~DevToolsManager() {}
+
   // Routes devtools message from |from| client to corresponding
   // DevToolsAgentHost.
   virtual bool DispatchOnInspectorBackend(DevToolsClientHost* from,
                                           const std::string& message) = 0;
 
-  // Invoked when contents is replaced by another contents. This is triggered by
-  // TabStripModel::ReplaceTabContentsAt.
-  virtual void ContentsReplaced(WebContents* old_contents,
-                                WebContents* new_contents) = 0;
-
-  // Closes all open developer tools windows.
+  // Disconnects all client hostst.
   virtual void CloseAllClientHosts() = 0;
 
-  // Returns client attached to the |agent_host| if there is one.
-  virtual DevToolsClientHost* GetDevToolsClientHostFor(
-      DevToolsAgentHost* agent_host) = 0;
-
-  // Returns agent that has |client_host| attachd to it if there is one.
+  // Returns agent that has |client_host| attached to it if there is one.
   virtual DevToolsAgentHost* GetDevToolsAgentHostFor(
       DevToolsClientHost* client_host) = 0;
 
-  // Registers new DevToolsClientHost for inspected |agent_host|. There must be
-  // no other DevToolsClientHosts registered for the |agent_host| at the moment.
+  // Registers new DevToolsClientHost for inspected |agent_host|. If there is
+  // another DevToolsClientHost registered for the |agent_host| at the moment
+  // it is disconnected.
   virtual void RegisterDevToolsClientHostFor(
       DevToolsAgentHost* agent_host,
       DevToolsClientHost* client_host) = 0;
-  // Unregisters given |agent_host|. DevToolsManager will notify corresponding
-  // client if one is attached.
-  virtual void UnregisterDevToolsClientHostFor(
-      DevToolsAgentHost* agent_host) = 0;
-
-  // Detaches client from |from_agent| and returns a cookie that allows to
-  // reattach that client to another agent later. Returns -1 if there is no
-  // client attached to |from_agent|.
-  virtual int DetachClientHost(DevToolsAgentHost* from_agent) = 0;
-  // Reattaches client host detached with DetachClientHost method above
-  // to |to_agent|.
-  virtual void AttachClientHost(int client_host_cookie,
-                                DevToolsAgentHost* to_agent) = 0;
 
   // This method will remove all references from the manager to the
   // DevToolsClientHost and unregister all listeners related to the
   // DevToolsClientHost. Called by closing client.
   virtual void ClientHostClosing(DevToolsClientHost* client_host) = 0;
 
-  // Starts inspecting element at position (x, y) in the specified page.
-  virtual void InspectElement(DevToolsAgentHost* agent_host, int x, int y) = 0;
+  typedef base::Callback<void(DevToolsAgentHost*, bool attached)> Callback;
 
-  // Logs given |message| on behalf of the given |agent_host|.
-  virtual void AddMessageToConsole(DevToolsAgentHost* agent_host,
-                                   ConsoleMessageLevel level,
-                                   const std::string& message) = 0;
-
+  virtual void AddAgentStateCallback(const Callback& callback) = 0;
+  virtual void RemoveAgentStateCallback(const Callback& callback) = 0;
 };
 
 }  // namespace content

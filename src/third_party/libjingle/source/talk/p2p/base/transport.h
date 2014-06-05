@@ -52,6 +52,7 @@
 #include "talk/base/criticalsection.h"
 #include "talk/base/messagequeue.h"
 #include "talk/base/sigslot.h"
+#include "talk/base/sslstreamadapter.h"
 #include "talk/p2p/base/candidate.h"
 #include "talk/p2p/base/constants.h"
 #include "talk/p2p/base/sessiondescription.h"
@@ -91,16 +92,30 @@ class TransportParser {
   // parse (indicating a failure to parse).  If the Translator is null
   // and there are no candidates to parse, then return true,
   // indicating a successful parse of 0 candidates.
-  virtual bool ParseCandidates(SignalingProtocol protocol,
-                               const buzz::XmlElement* elem,
-                               const CandidateTranslator* translator,
-                               Candidates* candidates,
-                               ParseError* error) = 0;
-  virtual bool WriteCandidates(SignalingProtocol protocol,
-                               const Candidates& candidates,
-                               const CandidateTranslator* translator,
-                               XmlElements* candidate_elems,
-                               WriteError* error) = 0;
+
+  // Parse or write a transport description, including ICE credentials and
+  // any DTLS fingerprint. Since only Jingle has transport descriptions, these
+  // functions are only used when serializing to Jingle.
+  virtual bool ParseTransportDescription(const buzz::XmlElement* elem,
+                                         const CandidateTranslator* translator,
+                                         TransportDescription* tdesc,
+                                         ParseError* error) = 0;
+  virtual bool WriteTransportDescription(const TransportDescription& tdesc,
+                                         const CandidateTranslator* translator,
+                                         buzz::XmlElement** tdesc_elem,
+                                         WriteError* error) = 0;
+
+
+  // Parse a single candidate. This must be used when parsing Gingle
+  // candidates, since there is no enclosing transport description.
+  virtual bool ParseGingleCandidate(const buzz::XmlElement* elem,
+                                    const CandidateTranslator* translator,
+                                    Candidate* candidates,
+                                    ParseError* error) = 0;
+  virtual bool WriteGingleCandidate(const Candidate& candidate,
+                                    const CandidateTranslator* translator,
+                                    buzz::XmlElement** candidate_elem,
+                                    WriteError* error) = 0;
 
   // Helper function to parse an element describing an address.  This
   // retrieves the IP and port from the given element and verifies
@@ -114,13 +129,6 @@ class TransportParser {
   virtual ~TransportParser() {}
 };
 
-// Whether our side of the call is driving the negotiation, or the other side.
-enum TransportRole {
-  ROLE_CONTROLLING = 0,
-  ROLE_CONTROLLED,
-  ROLE_UNKNOWN
-};
-
 // For "writable" and "readable", we need to differentiate between
 // none, all, and some.
 enum TransportState {
@@ -128,6 +136,58 @@ enum TransportState {
   TRANSPORT_STATE_SOME,
   TRANSPORT_STATE_ALL
 };
+
+// Stats that we can return about the connections for a transport channel.
+// TODO(hta): Rename to ConnectionStats
+struct ConnectionInfo {
+  ConnectionInfo()
+      : best_connection(false),
+        writable(false),
+        readable(false),
+        timeout(false),
+        new_connection(false),
+        rtt(0),
+        sent_total_bytes(0),
+        sent_bytes_second(0),
+        recv_total_bytes(0),
+        recv_bytes_second(0),
+        key(NULL) {}
+
+  bool best_connection;        // Is this the best connection we have?
+  bool writable;               // Has this connection received a STUN response?
+  bool readable;               // Has this connection received a STUN request?
+  bool timeout;                // Has this connection timed out?
+  bool new_connection;         // Is this a newly created connection?
+  size_t rtt;                  // The STUN RTT for this connection.
+  size_t sent_total_bytes;     // Total bytes sent on this connection.
+  size_t sent_bytes_second;    // Bps over the last measurement interval.
+  size_t recv_total_bytes;     // Total bytes received on this connection.
+  size_t recv_bytes_second;    // Bps over the last measurement interval.
+  Candidate local_candidate;   // The local candidate for this connection.
+  Candidate remote_candidate;  // The remote candidate for this connection.
+  void* key;                   // A static value that identifies this conn.
+};
+
+// Information about all the connections of a channel.
+typedef std::vector<ConnectionInfo> ConnectionInfos;
+
+// Information about a specific channel
+struct TransportChannelStats {
+  int component;
+  ConnectionInfos connection_infos;
+};
+
+// Information about all the channels of a transport.
+// TODO(hta): Consider if a simple vector is as good as a map.
+typedef std::vector<TransportChannelStats> TransportChannelStatsList;
+
+// Information about the stats of a transport.
+struct TransportStats {
+  std::string content_name;
+  TransportChannelStatsList channel_stats;
+};
+
+bool BadTransportDescription(const std::string& desc, std::string* err_desc);
 
 class Transport : public talk_base::MessageHandler,
                   public sigslot::has_slots<> {
@@ -159,6 +219,7 @@ class Transport : public talk_base::MessageHandler,
   // any_channels_readable() and any_channels_writable().
   bool readable() const { return any_channels_readable(); }
   bool writable() const { return any_channels_writable(); }
+  bool was_writable() const { return was_writable_; }
   bool any_channels_readable() const {
     return (readable_ == TRANSPORT_STATE_SOME ||
             readable_ == TRANSPORT_STATE_ALL);
@@ -175,15 +236,26 @@ class Transport : public talk_base::MessageHandler,
   }
   sigslot::signal1<Transport*> SignalReadableState;
   sigslot::signal1<Transport*> SignalWritableState;
+  sigslot::signal1<Transport*> SignalCompleted;
+  sigslot::signal1<Transport*> SignalFailed;
 
   // Returns whether the client has requested the channels to connect.
   bool connect_requested() const { return connect_requested_; }
 
-  void SetRole(TransportRole role);
-  TransportRole role() const { return role_; }
+  void SetIceRole(IceRole role);
+  IceRole ice_role() const { return ice_role_; }
 
-  void SetTiebreaker(uint64 tiebreaker) { tiebreaker_ = tiebreaker; }
-  uint64 tiebreaker() { return tiebreaker_; }
+  void SetIceTiebreaker(uint64 IceTiebreaker) { tiebreaker_ = IceTiebreaker; }
+  uint64 IceTiebreaker() { return tiebreaker_; }
+
+  // Must be called before applying local session description.
+  void SetIdentity(talk_base::SSLIdentity* identity);
+
+  // Get a copy of the local identity provided by SetIdentity.
+  bool GetIdentity(talk_base::SSLIdentity** identity);
+
+  // Get a copy of the remote certificate in use by the specified channel.
+  bool GetRemoteCertificate(talk_base::SSLCertificate** cert);
 
   TransportProtocol protocol() const { return protocol_; }
 
@@ -202,11 +274,13 @@ class Transport : public talk_base::MessageHandler,
   // Set the local TransportDescription to be used by TransportChannels.
   // This should be called before ConnectChannels().
   bool SetLocalTransportDescription(const TransportDescription& description,
-                                    ContentAction action);
+                                    ContentAction action,
+                                    std::string* error_desc);
 
   // Set the remote TransportDescription to be used by TransportChannels.
   bool SetRemoteTransportDescription(const TransportDescription& description,
-                                     ContentAction action);
+                                     ContentAction action,
+                                     std::string* error_desc);
 
   // Tells all current and future channels to start connecting.  When the first
   // channel begins connecting, the following signal is raised.
@@ -219,6 +293,8 @@ class Transport : public talk_base::MessageHandler,
 
   // Destroys every channel created so far.
   void DestroyAllChannels();
+
+  bool GetStats(TransportStats* stats);
 
   // Before any stanza is sent, the manager will request signaling.  Once
   // signaling is available, the client should call OnSignalingReady.  Once
@@ -249,9 +325,8 @@ class Transport : public talk_base::MessageHandler,
   // stanza that caused the error is available in session_msg.  If false is
   // returned, the error is considered unrecoverable, and the session is
   // terminated.
-  // TODO: Make OnTransportError take an abstract data type
-  // rather than an XmlElement.  It isn't needed yet, but it might be
-  // later for Jingle compliance.
+  // TODO(juberti): Remove these obsolete functions once Session no longer
+  // references them.
   virtual void OnTransportError(const buzz::XmlElement* error) {}
   sigslot::signal6<Transport*, const buzz::XmlElement*, const buzz::QName&,
                    const std::string&, const std::string&,
@@ -260,6 +335,8 @@ class Transport : public talk_base::MessageHandler,
 
   // Forwards the signal from TransportChannel to BaseSession.
   sigslot::signal0<> SignalRoleConflict;
+
+  virtual bool GetSslRole(talk_base::SSLRole* ssl_role) const;
 
  protected:
   // These are called by Create/DestroyChannel above in order to create or
@@ -282,24 +359,40 @@ class Transport : public talk_base::MessageHandler,
     return remote_description_.get();
   }
 
+  virtual void SetIdentity_w(talk_base::SSLIdentity* identity) {}
+
+  virtual bool GetIdentity_w(talk_base::SSLIdentity** identity) {
+    return false;
+  }
+
   // Pushes down the transport parameters from the local description, such
   // as the ICE ufrag and pwd.
   // Derived classes can override, but must call the base as well.
-  virtual bool ApplyLocalTransportDescription_w(TransportChannelImpl*
-                                                channel);
+  virtual bool ApplyLocalTransportDescription_w(TransportChannelImpl* channel,
+                                                std::string* error_desc);
+
+  // Pushes down remote ice credentials from the remote description to the
+  // transport channel.
+  virtual bool ApplyRemoteTransportDescription_w(TransportChannelImpl* ch,
+                                                 std::string* error_desc);
 
   // Negotiates the transport parameters based on the current local and remote
   // transport description, such at the version of ICE to use, and whether DTLS
   // should be activated.
   // Derived classes can negotiate their specific parameters here, but must call
   // the base as well.
-  virtual bool NegotiateTransportDescription_w(ContentAction local_role);
+  virtual bool NegotiateTransportDescription_w(ContentAction local_role,
+                                               std::string* error_desc);
 
   // Pushes down the transport parameters obtained via negotiation.
   // Derived classes can set their specific parameters here, but must call the
   // base as well.
-  virtual void ApplyNegotiatedTransportDescription_w(
-      TransportChannelImpl* channel);
+  virtual bool ApplyNegotiatedTransportDescription_w(
+      TransportChannelImpl* channel, std::string* error_desc);
+
+  virtual bool GetSslRole_w(talk_base::SSLRole* ssl_role) const {
+    return false;
+  }
 
  private:
   struct ChannelMapEntry {
@@ -350,6 +443,8 @@ class Transport : public talk_base::MessageHandler,
   void OnChannelCandidatesAllocationDone(TransportChannelImpl* channel);
   // Called when there is ICE role change.
   void OnRoleConflict(TransportChannelImpl* channel);
+  // Called when the channel removes a connection.
+  void OnChannelConnectionRemoved(TransportChannelImpl* channel);
 
   // Dispatches messages to the appropriate handler (below).
   void OnMessage(talk_base::Message* msg);
@@ -380,11 +475,19 @@ class Transport : public talk_base::MessageHandler,
 
   void OnChannelCandidateReady_s();
 
-  void SetRole_w();
+  void SetIceRole_w(IceRole role);
+  void SetRemoteIceMode_w(IceMode mode);
   bool SetLocalTransportDescription_w(const TransportDescription& desc,
-                                      ContentAction action);
+                                      ContentAction action,
+                                      std::string* error_desc);
   bool SetRemoteTransportDescription_w(const TransportDescription& desc,
-                                       ContentAction action);
+                                       ContentAction action,
+                                       std::string* error_desc);
+  bool GetStats_w(TransportStats* infos);
+  bool GetRemoteCertificate_w(talk_base::SSLCertificate** cert);
+
+  // Sends SignalCompleted if we are now in that state.
+  void MaybeCompleted_w();
 
   talk_base::Thread* signaling_thread_;
   talk_base::Thread* worker_thread_;
@@ -394,10 +497,12 @@ class Transport : public talk_base::MessageHandler,
   bool destroyed_;
   TransportState readable_;
   TransportState writable_;
+  bool was_writable_;
   bool connect_requested_;
-  TransportRole role_;
+  IceRole ice_role_;
   uint64 tiebreaker_;
   TransportProtocol protocol_;
+  IceMode remote_ice_mode_;
   talk_base::scoped_ptr<TransportDescription> local_description_;
   talk_base::scoped_ptr<TransportDescription> remote_description_;
 
@@ -410,6 +515,10 @@ class Transport : public talk_base::MessageHandler,
 
   DISALLOW_EVIL_CONSTRUCTORS(Transport);
 };
+
+// Extract a TransportProtocol from a TransportDescription.
+TransportProtocol TransportProtocolFromDescription(
+    const TransportDescription* desc);
 
 }  // namespace cricket
 

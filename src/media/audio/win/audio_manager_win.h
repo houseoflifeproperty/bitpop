@@ -18,46 +18,58 @@ class AudioDeviceListenerWin;
 // the AudioManager class.
 class MEDIA_EXPORT AudioManagerWin : public AudioManagerBase {
  public:
-  AudioManagerWin();
+  AudioManagerWin(AudioLogFactory* audio_log_factory);
 
   // Implementation of AudioManager.
   virtual bool HasAudioOutputDevices() OVERRIDE;
   virtual bool HasAudioInputDevices() OVERRIDE;
-  virtual string16 GetAudioInputDeviceModel() OVERRIDE;
-  virtual bool CanShowAudioInputSettings() OVERRIDE;
+  virtual base::string16 GetAudioInputDeviceModel() OVERRIDE;
   virtual void ShowAudioInputSettings() OVERRIDE;
-  virtual void GetAudioInputDeviceNames(media::AudioDeviceNames* device_names)
-      OVERRIDE;
+  virtual void GetAudioInputDeviceNames(
+      AudioDeviceNames* device_names) OVERRIDE;
+  virtual void GetAudioOutputDeviceNames(
+      AudioDeviceNames* device_names) OVERRIDE;
+  virtual AudioParameters GetInputStreamParameters(
+      const std::string& device_id) OVERRIDE;
+  virtual std::string GetAssociatedOutputDeviceID(
+      const std::string& input_device_id) OVERRIDE;
 
   // Implementation of AudioManagerBase.
   virtual AudioOutputStream* MakeLinearOutputStream(
       const AudioParameters& params) OVERRIDE;
   virtual AudioOutputStream* MakeLowLatencyOutputStream(
-      const AudioParameters& params) OVERRIDE;
+      const AudioParameters& params,
+      const std::string& device_id) OVERRIDE;
   virtual AudioInputStream* MakeLinearInputStream(
       const AudioParameters& params, const std::string& device_id) OVERRIDE;
   virtual AudioInputStream* MakeLowLatencyInputStream(
       const AudioParameters& params, const std::string& device_id) OVERRIDE;
-  virtual AudioParameters GetPreferredLowLatencyOutputStreamParameters(
-      const AudioParameters& input_params) OVERRIDE;
+  virtual std::string GetDefaultOutputDeviceID() OVERRIDE;
 
  protected:
   virtual ~AudioManagerWin();
 
+  virtual AudioParameters GetPreferredOutputStreamParameters(
+      const std::string& output_device_id,
+      const AudioParameters& input_params) OVERRIDE;
+
  private:
   enum EnumerationType {
-    kUninitializedEnumeration = 0,
     kMMDeviceEnumeration,
     kWaveEnumeration,
   };
 
   // Allow unit test to modify the utilized enumeration API.
-  friend class AudioInputDeviceTest;
+  friend class AudioManagerTest;
 
   EnumerationType enumeration_type_;
   EnumerationType enumeration_type() { return enumeration_type_; }
   void SetEnumerationType(EnumerationType type) {
     enumeration_type_ = type;
+  }
+
+  inline bool core_audio_supported() const {
+    return enumeration_type_ == kMMDeviceEnumeration;
   }
 
   // Returns a PCMWaveInAudioInputStream instance or NULL on failure.
@@ -69,9 +81,12 @@ class MEDIA_EXPORT AudioManagerWin : public AudioManagerBase {
       const AudioParameters& params,
       const std::string& device_id);
 
-  // Helper methods for constructing AudioDeviceListenerWin on the audio thread.
-  void CreateDeviceListener();
-  void DestroyDeviceListener();
+  // Helper methods for performing expensive initialization tasks on the audio
+  // thread instead of on the UI thread which AudioManager is constructed on.
+  void InitializeOnAudioThread();
+  void ShutdownOnAudioThread();
+
+  void GetAudioDeviceNamesImpl(bool input, AudioDeviceNames* device_names);
 
   // Listen for output device changes.
   scoped_ptr<AudioDeviceListenerWin> output_device_listener_;

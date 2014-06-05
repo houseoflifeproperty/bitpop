@@ -7,8 +7,8 @@
 #include <cstddef>
 #include <string>
 
-#include "base/message_loop.h"
-#include "base/utf_string_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/sync/profile_sync_service_mock.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
@@ -20,6 +20,8 @@
 #include "sync/js/js_test_util.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using base::ASCIIToUTF16;
 
 // Rewrite to use WebUI testing infrastructure. Current code below is mostly
 // testing how WebUI concrete class serializes function parameters, and that
@@ -48,7 +50,7 @@ class TestSyncWebUI: public WebUI {
       : WebUI(web_contents) {}
   virtual ~TestSyncWebUI() {}
 
-  MOCK_METHOD1(ExecuteJavascript, void(const string16&));
+  MOCK_METHOD1(ExecuteJavascript, void(const base::string16&));
 };
 
 // Tests with non-NULL ProfileSyncService.
@@ -76,7 +78,7 @@ class SyncInternalsUITestWithService : public ChromeRenderViewHostTestHarness {
       // Needed by |sync_internals_ui_|'s constructor.  The
       // message loop is provided by ChromeRenderViewHostTestHarness.
       content::TestBrowserThread ui_thread_(BrowserThread::UI,
-                                            MessageLoopForUI::current());
+                                            base::MessageLoopForUI::current());
       // |sync_internals_ui_|'s constructor triggers all the
       // expectations above.
       web_ui_.reset(new TestSyncWebUI(web_contents()));
@@ -119,16 +121,16 @@ TEST_F(SyncInternalsUITestWithService, HandleJsReply) {
       ExecuteJavascript(
           ASCIIToUTF16("chrome.sync.testMessage.handleReply(5,true);")));
 
-  ListValue args;
-  args.Append(Value::CreateIntegerValue(5));
-  args.Append(Value::CreateBooleanValue(true));
+  base::ListValue args;
+  args.Append(base::Value::CreateIntegerValue(5));
+  args.Append(base::Value::CreateBooleanValue(true));
   sync_internals_ui_->HandleJsReply("testMessage", JsArgList(&args));
 }
 
 TEST_F(SyncInternalsUITestWithService, OnWebUISendBasic) {
   const std::string& name = "testName";
-  ListValue args;
-  args.Append(Value::CreateIntegerValue(10));
+  base::ListValue args;
+  args.Append(base::Value::CreateIntegerValue(10));
 
   EXPECT_CALL(mock_js_controller_,
               ProcessJsMessage(name, HasArgsAsList(args), _));
@@ -156,7 +158,7 @@ class SyncInternalsUITestWithoutService
       // Needed by |sync_internals_ui_|'s constructor.  The
       // message loop is provided by ChromeRenderViewHostTestHarness.
       content::TestBrowserThread ui_thread_(BrowserThread::UI,
-                                            MessageLoopForUI::current());
+                                            base::MessageLoopForUI::current());
       // |sync_internals_ui_|'s constructor triggers all the
       // expectations above.
       web_ui_.reset(new TestSyncWebUI(web_contents()));
@@ -185,17 +187,17 @@ TEST_F(SyncInternalsUITestWithoutService, HandleJsReply) {
       ExecuteJavascript(
           ASCIIToUTF16("chrome.sync.testMessage.handleReply(5,true);")));
 
-  ListValue args;
-  args.Append(Value::CreateIntegerValue(5));
-  args.Append(Value::CreateBooleanValue(true));
+  base::ListValue args;
+  args.Append(base::Value::CreateIntegerValue(5));
+  args.Append(base::Value::CreateBooleanValue(true));
   sync_internals_ui_->HandleJsReply(
       "testMessage", JsArgList(&args));
 }
 
 TEST_F(SyncInternalsUITestWithoutService, OnWebUISendBasic) {
   const std::string& name = "testName";
-  ListValue args;
-  args.Append(Value::CreateIntegerValue(5));
+  base::ListValue args;
+  args.Append(base::Value::CreateIntegerValue(5));
 
   // Should drop the message.
   sync_internals_ui_->OverrideHandleWebUIMessage(GURL(), name, args);
@@ -209,7 +211,7 @@ TEST_F(SyncInternalsUITestWithoutService, OnWebUISendGetAboutInfo) {
   EXPECT_CALL(*web_ui_,
               ExecuteJavascript(ASCIIToUTF16(kAboutInfoCall)));
 
-  ListValue args;
+  base::ListValue args;
   sync_internals_ui_->OverrideHandleWebUIMessage(
       GURL(), "getAboutInfo", args);
 }

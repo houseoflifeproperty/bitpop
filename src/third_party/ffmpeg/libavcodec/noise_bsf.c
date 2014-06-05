@@ -32,7 +32,12 @@ static int noise(AVBitStreamFilterContext *bsfc, AVCodecContext *avctx, const ch
     int amount= args ? atoi(args) : (*state % 10001+1);
     int i;
 
+    if(amount <= 0)
+        return AVERROR(EINVAL);
+
     *poutbuf= av_malloc(buf_size + FF_INPUT_BUFFER_PADDING_SIZE);
+    if (!*poutbuf)
+        return AVERROR(ENOMEM);
 
     memcpy(*poutbuf, buf, buf_size + FF_INPUT_BUFFER_PADDING_SIZE);
     for(i=0; i<buf_size; i++){
@@ -44,7 +49,7 @@ static int noise(AVBitStreamFilterContext *bsfc, AVCodecContext *avctx, const ch
 }
 
 AVBitStreamFilter ff_noise_bsf={
-    "noise",
-    sizeof(int),
-    noise,
+    .name           = "noise",
+    .priv_data_size = sizeof(int),
+    .filter         = noise,
 };

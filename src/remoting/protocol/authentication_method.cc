@@ -19,16 +19,30 @@ AuthenticationMethod AuthenticationMethod::Invalid() {
 
 // static
 AuthenticationMethod AuthenticationMethod::Spake2(HashFunction hash_function) {
-  return AuthenticationMethod(hash_function);
+  return AuthenticationMethod(SPAKE2, hash_function);
+}
+
+// static
+AuthenticationMethod AuthenticationMethod::Spake2Pair() {
+  return AuthenticationMethod(SPAKE2_PAIR, HMAC_SHA256);
+}
+
+// static
+AuthenticationMethod AuthenticationMethod::ThirdParty() {
+  return AuthenticationMethod(THIRD_PARTY, NONE);
 }
 
 // static
 AuthenticationMethod AuthenticationMethod::FromString(
     const std::string& value) {
-  if (value == "spake2_plain") {
+  if (value == "spake2_pair") {
+    return Spake2Pair();
+  } else if (value == "spake2_plain") {
     return Spake2(NONE);
   } else if (value == "spake2_hmac") {
     return Spake2(HMAC_SHA256);
+  } else if (value == "third_party") {
+    return ThirdParty();
   } else {
     return AuthenticationMethod::Invalid();
   }
@@ -64,13 +78,15 @@ std::string AuthenticationMethod::ApplyHashFunction(
 }
 
 AuthenticationMethod::AuthenticationMethod()
-    : invalid_(true),
+    : type_(INVALID),
       hash_function_(NONE) {
 }
 
-AuthenticationMethod::AuthenticationMethod(HashFunction hash_function)
-    : invalid_(false),
+AuthenticationMethod::AuthenticationMethod(MethodType type,
+                                           HashFunction hash_function)
+    : type_(type),
       hash_function_(hash_function) {
+  DCHECK_NE(type_, INVALID);
 }
 
 AuthenticationMethod::HashFunction AuthenticationMethod::hash_function() const {
@@ -81,24 +97,34 @@ AuthenticationMethod::HashFunction AuthenticationMethod::hash_function() const {
 const std::string AuthenticationMethod::ToString() const {
   DCHECK(is_valid());
 
-  switch (hash_function_) {
-    case NONE:
-      return "spake2_plain";
-    case HMAC_SHA256:
-      return "spake2_hmac";
+  switch (type_) {
+    case INVALID:
+      NOTREACHED();
+      break;
+
+    case SPAKE2_PAIR:
+      return "spake2_pair";
+
+    case SPAKE2:
+      switch (hash_function_) {
+        case NONE:
+          return "spake2_plain";
+        case HMAC_SHA256:
+          return "spake2_hmac";
+      }
+      break;
+
+    case THIRD_PARTY:
+      return "third_party";
   }
 
-  NOTREACHED();
-  return "";
+  return "invalid";
 }
 
 bool AuthenticationMethod::operator ==(
     const AuthenticationMethod& other) const {
-  if (!is_valid())
-    return !other.is_valid();
-  if (!other.is_valid())
-    return false;
-  return hash_function_ == other.hash_function_;
+  return type_ == other.type_ &&
+      hash_function_ == other.hash_function_;
 }
 
 bool SharedSecretHash::Parse(const std::string& as_string) {

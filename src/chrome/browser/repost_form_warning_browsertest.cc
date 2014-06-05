@@ -3,19 +3,20 @@
 // found in the LICENSE file.
 
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/net/url_fixer_upper.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/constrained_window_tab_helper.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "chrome/test/ui/ui_test.h"
+#include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/test_navigation_observer.h"
-#include "net/test/test_server.h"
+#include "net/test/spawned_test_server/spawned_test_server.h"
+
+using web_modal::WebContentsModalDialogManager;
 
 typedef InProcessBrowserTest RepostFormWarningTest;
 
@@ -32,24 +33,21 @@ IN_PROC_BROWSER_TEST_F(RepostFormWarningTest, TestDoubleReload) {
       GURL("javascript:document.getElementById('form').submit()"));
 
   // Try to reload it twice, checking for repost.
-  content::WebContents* web_contents = chrome::GetActiveWebContents(browser());
+  content::WebContents* web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
   web_contents->GetController().Reload(true);
   web_contents->GetController().Reload(true);
 
   // There should only be one dialog open.
-  ConstrainedWindowTabHelper* constrained_window_tab_helper =
-      ConstrainedWindowTabHelper::FromWebContents(web_contents);
-  size_t num_constrained_windows =
-      constrained_window_tab_helper->constrained_window_count();
-  EXPECT_EQ(1u, num_constrained_windows);
+  WebContentsModalDialogManager* web_contents_modal_dialog_manager =
+      WebContentsModalDialogManager::FromWebContents(web_contents);
+  EXPECT_TRUE(web_contents_modal_dialog_manager->IsDialogActive());
 
   // Navigate away from the page (this is when the test usually crashes).
   ui_test_utils::NavigateToURL(browser(), test_server()->GetURL("bar"));
 
   // The dialog should've been closed.
-  num_constrained_windows =
-      constrained_window_tab_helper->constrained_window_count();
-  EXPECT_EQ(0u, num_constrained_windows);
+  EXPECT_FALSE(web_contents_modal_dialog_manager->IsDialogActive());
 }
 
 // If becomes flaky, disable on Windows and use http://crbug.com/47228
@@ -65,7 +63,8 @@ IN_PROC_BROWSER_TEST_F(RepostFormWarningTest, TestLoginAfterRepost) {
       GURL("javascript:document.getElementById('form').submit()"));
 
   // Try to reload it, checking for repost.
-  content::WebContents* web_contents = chrome::GetActiveWebContents(browser());
+  content::WebContents* web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
   web_contents->GetController().Reload(true);
 
   // Navigate to a page that requires authentication, bringing up another
@@ -85,8 +84,7 @@ IN_PROC_BROWSER_TEST_F(RepostFormWarningTest, TestLoginAfterRepost) {
   // Navigate away from the page. We can't use ui_test_utils:NavigateToURL
   // because that waits for the current page to stop loading first, which won't
   // happen while the auth dialog is up.
-  content::Source<content::NavigationController> source(&controller);
-  content::TestNavigationObserver navigation_observer(source);
+  content::TestNavigationObserver navigation_observer(web_contents);
   browser()->OpenURL(content::OpenURLParams(
         test_server()->GetURL("bar"), content::Referrer(), CURRENT_TAB,
         content::PAGE_TRANSITION_TYPED, false));

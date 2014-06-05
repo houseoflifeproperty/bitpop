@@ -38,7 +38,8 @@ class TestExtensionWarningBadgeService : public ExtensionWarningBadgeService {
         warning_service_(warning_service) {}
   virtual ~TestExtensionWarningBadgeService() {}
 
-  virtual const std::set<ExtensionWarning>& GetCurrentWarnings() const {
+  virtual const std::set<ExtensionWarning>&
+  GetCurrentWarnings() const OVERRIDE {
     return warning_service_->warnings();
   }
 
@@ -55,10 +56,6 @@ bool HasBadge(Profile* profile) {
 
 const char* ext1_id = "extension1";
 const char* ext2_id = "extension2";
-const ExtensionWarning::WarningType warning_1 =
-    ExtensionWarning::kNetworkDelay;
-const ExtensionWarning::WarningType warning_2 =
-    ExtensionWarning::kNetworkConflict;
 
 }  // namespace
 

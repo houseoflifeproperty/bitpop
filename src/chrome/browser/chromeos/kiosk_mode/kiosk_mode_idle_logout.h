@@ -5,22 +5,22 @@
 #ifndef CHROME_BROWSER_CHROMEOS_KIOSK_MODE_KIOSK_MODE_IDLE_LOGOUT_H_
 #define CHROME_BROWSER_CHROMEOS_KIOSK_MODE_KIOSK_MODE_IDLE_LOGOUT_H_
 
-#include "ash/wm/user_activity_observer.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "chromeos/dbus/power_manager_client.h"
+#include "base/timer/timer.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "ui/wm/core/user_activity_observer.h"
 
 namespace chromeos {
 
-class KioskModeIdleLogout : public ash::UserActivityObserver,
-                            public PowerManagerClient::Observer,
+class KioskModeIdleLogout : public wm::UserActivityObserver,
                             public content::NotificationObserver {
  public:
   static void Initialize();
 
   KioskModeIdleLogout();
+  virtual ~KioskModeIdleLogout();
 
  private:
   friend class KioskModeIdleLogoutTest;
@@ -33,16 +33,21 @@ class KioskModeIdleLogout : public ash::UserActivityObserver,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  // Overridden from PowerManagerClient::Observer:
-  virtual void IdleNotify(int64 threshold) OVERRIDE;
+  // wm::UserActivityObserver overrides:
+  virtual void OnUserActivity(const ui::Event* event) OVERRIDE;
 
-  // UserActivityObserver::Observer overrides:
-  virtual void OnUserActivity() OVERRIDE;
+  // Begins listening for user activity and calls ResetTimer().
+  void Start();
 
-  void SetupIdleNotifications();
-  void RequestNextIdleNotification();
+  // Resets |timer_| to fire when the logout dialog should be shown.
+  void ResetTimer();
+
+  // Invoked by |timer_| to display the logout dialog.
+  void OnTimeout();
 
   content::NotificationRegistrar registrar_;
+
+  base::OneShotTimer<KioskModeIdleLogout> timer_;
 
   DISALLOW_COPY_AND_ASSIGN(KioskModeIdleLogout);
 };

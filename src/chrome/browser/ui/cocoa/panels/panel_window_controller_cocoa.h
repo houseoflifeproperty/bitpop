@@ -11,13 +11,11 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #import "chrome/browser/ui/cocoa/chrome_browser_window.h"
-#import "chrome/browser/ui/cocoa/tab_contents/tab_contents_controller.h"
-#import "chrome/browser/ui/cocoa/themed_window.h"
-#import "chrome/browser/ui/cocoa/tracking_area.h"
 #include "chrome/browser/ui/panels/panel.h"
+#import "ui/base/cocoa/tracking_area.h"
 
 class PanelCocoa;
 @class PanelTitlebarViewCocoa;
@@ -32,8 +30,7 @@ class PanelCocoa;
  @private
   IBOutlet PanelTitlebarViewCocoa* titlebar_view_;
   scoped_ptr<PanelCocoa> windowShim_;
-  scoped_nsobject<NSString> pendingWindowTitle_;
-  scoped_nsobject<TabContentsController> contentsController_;
+  base::scoped_nsobject<NSString> pendingWindowTitle_;
   NSViewAnimation* boundsAnimation_;  // Lifetime controlled manually, needs
                                       // more then just |release| to terminate.
   BOOL animateOnBoundsChange_;
@@ -46,24 +43,27 @@ class PanelCocoa;
   // window over other application windows due to panels having a higher
   // priority NSWindowLevel, so we distinguish between the two scenarios.
   BOOL activationRequestedByPanel_;
-  scoped_nsobject<NSView> overlayView_;
+  // Is user resizing in progress?
+  BOOL userResizing_;
+  // Tracks the whole window in order to receive NSMouseMoved event.
+  ui::ScopedCrTrackingArea trackingArea_;
 }
 
 // Load the window nib and do any Cocoa-specific initialization.
 - (id)initWithPanel:(PanelCocoa*)window;
 
-- (ui::ThemeProvider*)themeProvider;
-- (ThemedWindowStyle)themedWindowStyle;
-- (NSPoint)themePatternPhase;
+- (Panel*)panel;
 
 - (void)webContentsInserted:(content::WebContents*)contents;
 - (void)webContentsDetached:(content::WebContents*)contents;
 
+- (void)updateWebContentsViewFrame;
+
 // Sometimes (when we animate the size of the window) we want to stop resizing
 // the WebContents's Cocoa view to avoid unnecessary rendering and issues
 // that can be caused by sizes near 0.
-- (void)disableTabContentsViewAutosizing;
-- (void)enableTabContentsViewAutosizing;
+- (void)disableWebContentsViewAutosizing;
+- (void)enableWebContentsViewAutosizing;
 
 // Shows the window for the first time. Only happens once.
 - (void)revealAnimatedWithFrame:(const NSRect&)frame;
@@ -107,6 +107,9 @@ class PanelCocoa;
 // Minimized/Restored states.
 - (void)onTitlebarMouseClicked:(int)modifierFlags;
 
+// Invoked when user double-clicks on the titlebar.
+- (void)onTitlebarDoubleClicked:(int)modifierFlags;
+
 // NSAnimationDelegate method, invoked when bounds animation is finished.
 - (void)animationDidEnd:(NSAnimation*)animation;
 // Terminates current bounds animation, if any.
@@ -131,16 +134,30 @@ class PanelCocoa;
 // Returns true if Panel requested activation of the window.
 - (BOOL)activationRequestedByPanel;
 
-- (void)ensureFullyVisible;
-
 // Adjust NSStatusWindowLevel based on whether panel is always on top
 // and whether the panel is minimized. The first version wraps the second
 // version using the current panel expanstion state.
 - (void)updateWindowLevel;
 - (void)updateWindowLevel:(BOOL)panelIsMinimized;
 
-// Turns on user-resizable corners/sides indications and enables live resize.
-- (void)enableResizeByMouse:(BOOL)enable;
+// Adjusts NSWindowCollectionBehavior based on whether panel is always on top.
+- (void)updateWindowCollectionBehavior;
+
+// Updates the tracking area per the window size change. This is needed in
+// order to receive the NSMouseMoved notification.
+- (void)updateTrackingArea;
+
+// Turns on/off shadow effect around the window shape.
+- (void)showShadow:(BOOL)show;
+
+// Minimize the window to the dock.
+- (void)miniaturize;
+// Returns true if the window is minimized to the dock.
+- (BOOL)isMiniaturized;
+
+// Returns true if the user-resizing is allowed for the edge/corner close to
+// current mouse location.
+- (BOOL)canResizeByMouseAtCurrentLocation;
 
 - (NSRect)frameRectForContentRect:(NSRect)contentRect;
 - (NSRect)contentRectForFrameRect:(NSRect)frameRect;

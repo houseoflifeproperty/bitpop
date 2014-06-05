@@ -5,17 +5,14 @@
 #include "chrome/renderer/security_filter_peer.h"
 
 #include "base/memory/scoped_ptr.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "grit/generated_resources.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
 #include "ui/base/l10n/l10n_util.h"
 
-SecurityFilterPeer::SecurityFilterPeer(
-    webkit_glue::ResourceLoaderBridge* resource_loader_bridge,
-    webkit_glue::ResourceLoaderBridge::Peer* peer)
-    : original_peer_(peer),
-      resource_loader_bridge_(resource_loader_bridge) {
+SecurityFilterPeer::SecurityFilterPeer(content::RequestPeer* peer)
+    : original_peer_(peer) {
 }
 
 SecurityFilterPeer::~SecurityFilterPeer() {
@@ -23,9 +20,9 @@ SecurityFilterPeer::~SecurityFilterPeer() {
 
 // static
 SecurityFilterPeer*
-    SecurityFilterPeer::CreateSecurityFilterPeerForDeniedRequest(
+SecurityFilterPeer::CreateSecurityFilterPeerForDeniedRequest(
     ResourceType::Type resource_type,
-    webkit_glue::ResourceLoaderBridge::Peer* peer,
+    content::RequestPeer* peer,
     int os_error) {
   // Create a filter for SSL and CERT errors.
   switch (os_error) {
@@ -40,12 +37,13 @@ SecurityFilterPeer*
     case net::ERR_CERT_INVALID:
     case net::ERR_CERT_WEAK_SIGNATURE_ALGORITHM:
     case net::ERR_CERT_WEAK_KEY:
+    case net::ERR_CERT_NAME_CONSTRAINT_VIOLATION:
     case net::ERR_INSECURE_RESPONSE:
     case net::ERR_SSL_PINNED_KEY_NOT_IN_CERT_CHAIN:
       if (ResourceType::IsFrame(resource_type))
         return CreateSecurityFilterPeerForFrame(peer, os_error);
       // Any other content is entirely filtered-out.
-      return new ReplaceContentPeer(NULL, peer, std::string(), std::string());
+      return new ReplaceContentPeer(peer, std::string(), std::string());
     default:
       // For other errors, we use our normal error handling.
       return NULL;
@@ -54,7 +52,8 @@ SecurityFilterPeer*
 
 // static
 SecurityFilterPeer* SecurityFilterPeer::CreateSecurityFilterPeerForFrame(
-    webkit_glue::ResourceLoaderBridge::Peer* peer, int os_error) {
+    content::RequestPeer* peer,
+    int os_error) {
   // TODO(jcampan): use a different message when getting a phishing/malware
   // error.
   std::string html = base::StringPrintf(
@@ -62,7 +61,7 @@ SecurityFilterPeer* SecurityFilterPeer::CreateSecurityFilterPeerForFrame(
       "<body style='background-color:#990000;color:white;'>"
       "%s</body></html>",
       l10n_util::GetStringUTF8(IDS_UNSAFE_FRAME_MESSAGE).c_str());
-  return new ReplaceContentPeer(NULL, peer, "text/html", html);
+  return new ReplaceContentPeer(peer, "text/html", html);
 }
 
 void SecurityFilterPeer::OnUploadProgress(uint64 position, uint64 size) {
@@ -92,8 +91,10 @@ void SecurityFilterPeer::OnReceivedData(const char* data,
 void SecurityFilterPeer::OnCompletedRequest(
     int error_code,
     bool was_ignored_by_handler,
+    bool stale_copy_in_cache,
     const std::string& security_info,
-    const base::TimeTicks& completion_time) {
+    const base::TimeTicks& completion_time,
+    int64 total_transfer_size) {
   NOTREACHED();
 }
 
@@ -129,13 +130,9 @@ void ProcessResponseInfo(
 ////////////////////////////////////////////////////////////////////////////////
 // BufferedPeer
 
-BufferedPeer::BufferedPeer(
-    webkit_glue::ResourceLoaderBridge* resource_loader_bridge,
-    webkit_glue::ResourceLoaderBridge::Peer* peer,
-    const std::string& mime_type)
-    : SecurityFilterPeer(resource_loader_bridge, peer),
-      mime_type_(mime_type) {
-}
+BufferedPeer::BufferedPeer(content::RequestPeer* peer,
+                           const std::string& mime_type)
+    : SecurityFilterPeer(peer), mime_type_(mime_type) {}
 
 BufferedPeer::~BufferedPeer() {
 }
@@ -153,8 +150,10 @@ void BufferedPeer::OnReceivedData(const char* data,
 
 void BufferedPeer::OnCompletedRequest(int error_code,
                                       bool was_ignored_by_handler,
+                                      bool stale_copy_in_cache,
                                       const std::string& security_info,
-                                      const base::TimeTicks& completion_time) {
+                                      const base::TimeTicks& completion_time,
+                                      int64 total_transfer_size) {
   // Make sure we delete ourselves at the end of this call.
   scoped_ptr<BufferedPeer> this_deleter(this);
 
@@ -162,8 +161,10 @@ void BufferedPeer::OnCompletedRequest(int error_code,
   if (error_code != net::OK || !DataReady()) {
     // Pretend we failed to load the resource.
     original_peer_->OnReceivedResponse(response_info_);
-    original_peer_->OnCompletedRequest(net::ERR_ABORTED, false, security_info,
-                                       completion_time);
+    original_peer_->OnCompletedRequest(net::ERR_ABORTED, false,
+                                       stale_copy_in_cache,
+                                       security_info, completion_time,
+                                       total_transfer_size);
     return;
   }
 
@@ -173,21 +174,19 @@ void BufferedPeer::OnCompletedRequest(int error_code,
                                    static_cast<int>(data_.size()),
                                    -1);
   original_peer_->OnCompletedRequest(error_code, was_ignored_by_handler,
-                                     security_info, completion_time);
+                                     stale_copy_in_cache, security_info,
+                                     completion_time, total_transfer_size);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // ReplaceContentPeer
 
-ReplaceContentPeer::ReplaceContentPeer(
-    webkit_glue::ResourceLoaderBridge* resource_loader_bridge,
-    webkit_glue::ResourceLoaderBridge::Peer* peer,
-    const std::string& mime_type,
-    const std::string& data)
-    : SecurityFilterPeer(resource_loader_bridge, peer),
+ReplaceContentPeer::ReplaceContentPeer(content::RequestPeer* peer,
+                                       const std::string& mime_type,
+                                       const std::string& data)
+    : SecurityFilterPeer(peer),
       mime_type_(mime_type),
-      data_(data) {
-}
+      data_(data) {}
 
 ReplaceContentPeer::~ReplaceContentPeer() {
 }
@@ -206,8 +205,10 @@ void ReplaceContentPeer::OnReceivedData(const char* data,
 void ReplaceContentPeer::OnCompletedRequest(
     int error_code,
     bool was_ignored_by_handler,
+    bool stale_copy_in_cache,
     const std::string& security_info,
-    const base::TimeTicks& completion_time) {
+    const base::TimeTicks& completion_time,
+    int64 total_transfer_size) {
   webkit_glue::ResourceResponseInfo info;
   ProcessResponseInfo(info, &info, mime_type_);
   info.security_info = security_info;
@@ -219,8 +220,10 @@ void ReplaceContentPeer::OnCompletedRequest(
                                    -1);
   original_peer_->OnCompletedRequest(net::OK,
                                      false,
+                                     stale_copy_in_cache,
                                      security_info,
-                                     completion_time);
+                                     completion_time,
+                                     total_transfer_size);
 
   // The request processing is complete, we must delete ourselves.
   delete this;

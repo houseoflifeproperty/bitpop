@@ -11,13 +11,13 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/address_list.h"
 #include "net/base/completion_callback.h"
-#include "net/base/host_resolver.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
+#include "net/dns/host_resolver.h"
 #include "net/socket/stream_socket.h"
+#include "url/gurl.h"
 
 namespace net {
 
@@ -28,20 +28,13 @@ class BoundNetLog;
 // Currently no SOCKSv5 authentication is supported.
 class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
  public:
-  // Takes ownership of the |transport_socket|, which should already be
-  // connected by the time Connect() is called.
-  //
   // |req_info| contains the hostname and port to which the socket above will
   // communicate to via the SOCKS layer.
   //
   // Although SOCKS 5 supports 3 different modes of addressing, we will
   // always pass it a hostname. This means the DNS resolving is done
   // proxy side.
-  SOCKS5ClientSocket(ClientSocketHandle* transport_socket,
-                     const HostResolver::RequestInfo& req_info);
-
-  // Deprecated constructor (http://crbug.com/37810) that takes a StreamSocket.
-  SOCKS5ClientSocket(StreamSocket* transport_socket,
+  SOCKS5ClientSocket(scoped_ptr<ClientSocketHandle> transport_socket,
                      const HostResolver::RequestInfo& req_info);
 
   // On destruction Disconnect() is called.
@@ -59,8 +52,6 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
   virtual void SetOmniboxSpeculation() OVERRIDE;
   virtual bool WasEverUsed() const OVERRIDE;
   virtual bool UsingTCPFastOpen() const OVERRIDE;
-  virtual int64 NumBytesRead() const OVERRIDE;
-  virtual base::TimeDelta GetConnectTimeMicros() const OVERRIDE;
   virtual bool WasNpnNegotiated() const OVERRIDE;
   virtual NextProto GetNegotiatedProtocol() const OVERRIDE;
   virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
@@ -73,8 +64,8 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
                     int buf_len,
                     const CompletionCallback& callback) OVERRIDE;
 
-  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual bool SetSendBufferSize(int32 size) OVERRIDE;
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
+  virtual int SetSendBufferSize(int32 size) OVERRIDE;
 
   virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE;
   virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE;
@@ -108,6 +99,7 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
 
   void DoCallback(int result);
   void OnIOComplete(int result);
+  void OnReadWriteComplete(const CompletionCallback& callback, int result);
 
   int DoLoop(int last_io_result);
   int DoHandshakeRead();
@@ -151,6 +143,8 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
   size_t bytes_received_;
 
   size_t read_header_size;
+
+  bool was_ever_used_;
 
   HostResolver::RequestInfo host_request_info_;
 

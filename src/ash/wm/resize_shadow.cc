@@ -4,14 +4,14 @@
 
 #include "ash/wm/resize_shadow.h"
 
-#include "base/time.h"
+#include "base/time/time.h"
 #include "grit/ash_resources.h"
 #include "ui/aura/window.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
-#include "ui/views/corewm/image_grid.h"
+#include "ui/wm/core/image_grid.h"
 
 namespace {
 
@@ -40,7 +40,6 @@ void ShowLayer(ui::Layer* layer, bool visible) {
 }  // namespace
 
 namespace ash {
-namespace internal {
 
 ResizeShadow::ResizeShadow() : last_hit_test_(HTNOWHERE) {}
 
@@ -49,7 +48,7 @@ ResizeShadow::~ResizeShadow() {}
 void ResizeShadow::Init(aura::Window* window) {
   // Set up our image grid and images.
   ResourceBundle& res = ResourceBundle::GetSharedInstance();
-  image_grid_.reset(new views::corewm::ImageGrid);
+  image_grid_.reset(new ::wm::ImageGrid);
   image_grid_->SetImages(
       &res.GetImageNamed(IDR_AURA_RESIZE_SHADOW_TOP_LEFT),
       &res.GetImageNamed(IDR_AURA_RESIZE_SHADOW_TOP),
@@ -106,5 +105,4 @@ void ResizeShadow::Layout(const gfx::Rect& content_bounds) {
   image_grid_->SetContentBounds(local_bounds);
 }
 
-}  // namespace internal
 }  // namespace ash

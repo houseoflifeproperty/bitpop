@@ -4,8 +4,8 @@
 
 #include "ppapi/proxy/ppb_testing_proxy.h"
 
-#include "base/message_loop.h"
-#include "ppapi/c/dev/ppb_testing_dev.h"
+#include "base/message_loop/message_loop.h"
+#include "ppapi/c/private/ppb_testing_private.h"
 #include "ppapi/proxy/enter_proxy.h"
 #include "ppapi/proxy/plugin_dispatcher.h"
 #include "ppapi/proxy/ppapi_messages.h"
@@ -51,16 +51,17 @@ PP_Bool ReadImageData(PP_Resource graphics_2d,
 }
 
 void RunMessageLoop(PP_Instance instance) {
-  MessageLoop::ScopedNestableTaskAllower allow(MessageLoop::current());
+  base::MessageLoop::ScopedNestableTaskAllower allow(
+      base::MessageLoop::current());
   CHECK(PpapiGlobals::Get()->GetMainThreadMessageLoop()->
-            BelongsToCurrentThread());
-  MessageLoop::current()->Run();
+      BelongsToCurrentThread());
+  base::MessageLoop::current()->Run();
 }
 
 void QuitMessageLoop(PP_Instance instance) {
   CHECK(PpapiGlobals::Get()->GetMainThreadMessageLoop()->
             BelongsToCurrentThread());
-  MessageLoop::current()->QuitNow();
+  base::MessageLoop::current()->QuitNow();
 }
 
 uint32_t GetLiveObjectsForInstance(PP_Instance instance_id) {
@@ -114,7 +115,19 @@ uint32_t GetLiveVars(PP_Var live_vars[], uint32_t array_size) {
   return vars.size();
 }
 
-const PPB_Testing_Dev testing_interface = {
+void SetMinimumArrayBufferSizeForShmem(PP_Instance instance,
+                                       uint32_t threshold) {
+  ProxyAutoLock lock;
+  RawVarDataGraph::SetMinimumArrayBufferSizeForShmemForTest(threshold);
+  PluginDispatcher* dispatcher = PluginDispatcher::GetForInstance(instance);
+  if (!dispatcher)
+    return;
+  dispatcher->Send(
+      new PpapiHostMsg_PPBTesting_SetMinimumArrayBufferSizeForShmem(
+          API_ID_PPB_TESTING, threshold));
+}
+
+const PPB_Testing_Private testing_interface = {
   &ReadImageData,
   &RunMessageLoop,
   &QuitMessageLoop,
@@ -122,12 +135,9 @@ const PPB_Testing_Dev testing_interface = {
   &IsOutOfProcess,
   &SimulateInputEvent,
   &GetDocumentURL,
-  &GetLiveVars
+  &GetLiveVars,
+  &SetMinimumArrayBufferSizeForShmem
 };
-
-InterfaceProxy* CreateTestingProxy(Dispatcher* dispatcher) {
-  return new PPB_Testing_Proxy(dispatcher);
-}
 
 }  // namespace
 
@@ -135,8 +145,8 @@ PPB_Testing_Proxy::PPB_Testing_Proxy(Dispatcher* dispatcher)
     : InterfaceProxy(dispatcher),
       ppb_testing_impl_(NULL) {
   if (!dispatcher->IsPlugin()) {
-    ppb_testing_impl_ = static_cast<const PPB_Testing_Dev*>(
-        dispatcher->local_get_interface()(PPB_TESTING_DEV_INTERFACE));
+    ppb_testing_impl_ = static_cast<const PPB_Testing_Private*>(
+        dispatcher->local_get_interface()(PPB_TESTING_PRIVATE_INTERFACE));
   }
 }
 
@@ -144,15 +154,8 @@ PPB_Testing_Proxy::~PPB_Testing_Proxy() {
 }
 
 // static
-const InterfaceProxy::Info* PPB_Testing_Proxy::GetInfo() {
-  static const Info info = {
-    &testing_interface,
-    PPB_TESTING_DEV_INTERFACE,
-    API_ID_PPB_TESTING,
-    false,
-    &CreateTestingProxy,
-  };
-  return &info;
+const PPB_Testing_Private* PPB_Testing_Proxy::GetProxyInterface() {
+  return &testing_interface;
 }
 
 bool PPB_Testing_Proxy::OnMessageReceived(const IPC::Message& msg) {
@@ -167,6 +170,9 @@ bool PPB_Testing_Proxy::OnMessageReceived(const IPC::Message& msg) {
                         OnMsgGetLiveObjectsForInstance)
     IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBTesting_SimulateInputEvent,
                         OnMsgSimulateInputEvent)
+    IPC_MESSAGE_HANDLER(
+        PpapiHostMsg_PPBTesting_SetMinimumArrayBufferSizeForShmem,
+        OnMsgSetMinimumArrayBufferSizeForShmem)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -201,6 +207,11 @@ void PPB_Testing_Proxy::OnMsgSimulateInputEvent(
       new PPB_InputEvent_Shared(OBJECT_IS_PROXY, instance, input_event));
   ppb_testing_impl_->SimulateInputEvent(instance,
                                         input_event_impl->pp_resource());
+}
+
+void PPB_Testing_Proxy::OnMsgSetMinimumArrayBufferSizeForShmem(
+    uint32_t threshold) {
+  RawVarDataGraph::SetMinimumArrayBufferSizeForShmemForTest(threshold);
 }
 
 }  // namespace proxy

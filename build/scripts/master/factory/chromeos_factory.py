@@ -9,15 +9,12 @@ import os
 from buildbot.steps import shell
 from buildbot.process.properties import Property, WithProperties
 
-from common import chromium_utils
 from master import chromium_step
 from master.factory import build_factory
 from master.factory import chromeos_build_factory
-from master.factory import commands
-from master.log_parser import process_log
 
-import config
 
+DEFAULT = object()
 
 class ChromiteFactory(object):
   """
@@ -32,7 +29,6 @@ class ChromiteFactory(object):
       b_params:  An array of StepParameters to pass to the main command.
       timeout: Timeout in seconds for the main command. Default 9000 seconds.
       branch: git branch of the chromite repo to pull.
-      crostools_repo: git repo for crostools toolset.
       chromite_repo: git repo for chromite toolset.
       factory: a factory with pre-existing steps to extend rather than start
           fresh.  Allows composing.
@@ -46,16 +42,14 @@ class ChromiteFactory(object):
           Used by external masters to prevent leaking sensitive information,
           since both external and internal slaves use internal.DEPS/.
   """
-  _default_git_base = 'http://git.chromium.org/chromiumos'
-  _default_crostools = None
+  _default_git_base = 'https://chromium.googlesource.com/chromiumos'
   _default_chromite = _default_git_base + '/chromite.git'
 
   def __init__(self, script, params=None, b_params=None, timeout=9000,
-               branch='master', crostools_repo=_default_crostools,
-               chromite_repo=_default_chromite,
+               branch='master', chromite_repo=_default_chromite,
                factory=None, use_chromeos_factory=False, slave_manager=True,
                chromite_patch=None, sleep_sync=None,
-               show_gclient_output=True):
+               show_gclient_output=True, max_time=DEFAULT):
     if chromite_patch:
       assert ('url' in chromite_patch and 'ref' in chromite_patch)
 
@@ -66,6 +60,10 @@ class ChromiteFactory(object):
     self.show_gclient_output = show_gclient_output
     self.slave_manager = slave_manager
     self.sleep_sync = sleep_sync
+    self.step_args = {}
+
+    if max_time is not DEFAULT:
+      self.step_args['maxTime'] = max_time
 
     if factory:
       self.f_cbuild = factory
@@ -75,12 +73,13 @@ class ChromiteFactory(object):
     else:
       self.f_cbuild = build_factory.BuildFactory()
 
+    self.chromite_dir = None
     self.add_bootstrap_steps()
     if script:
       self.add_chromite_step(script, params, b_params)
 
-  def _git_clear_and_checkout(self, repo, patch=None):
-    """rm -rf and clone the basename of the repo passed without .git
+  def git_clear_and_checkout(self, repo, patch=None):
+    """Clears and clones the given git repo. Returns relative path to repo.
 
     Args:
       repo: ssh: uri for the repo to be checked out
@@ -107,6 +106,8 @@ class ChromiteFactory(object):
                           name=msg,
                           description=msg,
                           haltOnFailure=True)
+
+    return git_checkout_dir
 
   def add_bootstrap_steps(self):
     """Bootstraps Chromium OS Build by syncing pre-requisite repositories.
@@ -138,17 +139,20 @@ class ChromiteFactory(object):
                             workdir='/b/build',
                             timeout=int(self.sleep_sync) + 10)
 
-    self._git_clear_and_checkout(self.chromite_repo, self.chromite_patch)
+    self.chromite_dir = self.git_clear_and_checkout(self.chromite_repo,
+                                                    self.chromite_patch)
 
-  def add_chromite_step(self, script, params, b_params):
+  def add_chromite_step(self, script, params, b_params, legacy=False):
     """Adds a step that runs a chromite command.
 
     Args:
       script:  Name of the script to run from chromite/bin.
       params:  A string containing extra parameters for the script.
       b_params:  An array of StepParameters.
+      legacy:  Use a different directory for some legacy invocations.
     """
-    cmd = ['chromite/bin/%s' % script]
+    script_subdir = 'buildbot' if legacy else 'bin'
+    cmd = ['%s/%s/%s' % (self.chromite_dir, script_subdir, script)]
     if b_params:
       cmd.extend(b_params)
     if params:
@@ -159,7 +163,8 @@ class ChromiteFactory(object):
                           timeout=self.timeout,
                           name=script,
                           description=script,
-                          usePTY=False)
+                          usePTY=False,
+                          **self.step_args)
 
   def get_factory(self):
     """Returns the produced factory."""
@@ -174,13 +179,11 @@ class CbuildbotFactory(ChromiteFactory):
       params: string of parameters to pass to the cbuildbot command.
       script: name of the cbuildbot command.  Default cbuildbot.
       buildroot: buildroot to set. Default /b/cbuild.
-      dry_run: Means cbuildbot --debug, or don't push anything (cbuildbot only)
+      dry_run: Don't push anything as we're running a test run.
       trybot: Whether this is creating builders for the trybot waterfall.
       chrome_root: The place to put or use the chrome source.
       pass_revision: to pass the chrome revision desired into the build.
-      perf_file: If set, name of the perf file to upload.
-      perf_base_url: If set, base url to build into references.
-      perf_output_dir: If set, where the perf files are to update.
+      legacy_chromite: If set, ask chromite to use an older cbuildbot directory.
       *: anything else is passed to the base Chromite class.
   """
 
@@ -192,29 +195,26 @@ class CbuildbotFactory(ChromiteFactory):
                trybot=False,
                chrome_root=None,
                pass_revision=None,
-               perf_file=None,
-               perf_base_url=None,
-               perf_output_dir=None,
+               legacy_chromite=False,
                **kwargs):
     super(CbuildbotFactory, self).__init__(None, None,
         use_chromeos_factory=not pass_revision, **kwargs)
 
-    self.buildroot = buildroot
-    self.dry_run = dry_run
     self.script = script
     self.trybot = trybot
     self.chrome_root = chrome_root
     self.pass_revision = pass_revision
+    self.legacy_chromite = legacy_chromite
+    self.buildroot = buildroot
+    self.dry_run = dry_run
 
     if params:
       self.add_cbuildbot_step(params)
 
-    if perf_file:
-      self.add_perf_step(params, perf_file, perf_base_url, perf_output_dir)
-
 
   def add_cbuildbot_step(self, params):
-    self.add_chromite_step(self.script, params, self.compute_buildbot_params())
+    self.add_chromite_step(self.script, params, self.compute_buildbot_params(),
+                           legacy=self.legacy_chromite)
 
 
   def compute_buildbot_params(self):
@@ -241,43 +241,53 @@ class CbuildbotFactory(ChromiteFactory):
     return cmd
 
 
-  def add_perf_step(self, params, perf_file, perf_base_url, perf_output_dir):
-    """Adds step for uploading perf results using the given file.
+class ChromitePlusFactory(ChromiteFactory):
+  """
+  Create a build factory that depends on chromite but runs a script from
+  another repo.
+
+  Arg Changes from Parent Class:
+     script: Instead of pointing to a chromite script, points to a script in the
+             additional repo specified. Chromite repo is also checked out and
+             included in the PYTHONPATH to called script.
+     chromite_plus_repo: Repo that script resides in.
+     buildroot: buildroot to set. Default /b/cbuild.
+     dry_run: Don't push anything as we're running a test run.
+  """
+  def __init__(self, script, chromite_plus_repo,
+               buildroot='/b/cbuild',
+               dry_run=False,
+               *args, **dargs):
+    # Initialize without running a script step similar to Cbuildbot factory.
+    super(ChromitePlusFactory, self).__init__(None, **dargs)
+    self.buildroot = buildroot
+    self.dry_run = dry_run
+
+    # Checkout and run the script.
+    plus_checkout_dir = self.git_clear_and_checkout(chromite_plus_repo, None)
+    self.add_chromite_plus_step(script, plus_checkout_dir)
+
+  def add_chromite_plus_step(self, script, plus_checkout_dir):
+    """Adds a step that runs the chromite_plus command.
 
     Args:
-      params: Extra parameters for cbuildbot.
-      perf_file: Name of the perf file to upload. Note the name of this file
-        will be used as the testname and params[0] will be used as the platform
-        name.
-      perf_base_url: If set, base url to build into references.
-      perf_output_dir: If set, where the perf files are to update.
+      script:  Name of the script to run from chromite_plus_repo.
+      plus_checkout_dir: Directory that script resides in.
     """
-    # Name of platform is always taken as the first param.
-    platform = params.split()[0]
-    # Name of the test is based off the name of the file.
-    test = os.path.splitext(perf_file)[0]
-    # Assuming all perf files will be stored in the cbuildbot log directory.
-    perf_file_path = os.path.join(self.buildroot, 'cbuildbot_logs', perf_file)
-    if not perf_base_url:
-      perf_base_url = config.Master.perf_base_url
-    if not perf_output_dir:
-      perf_output_dir = config.Master.perf_output_dir
+    cmd = [os.path.join(plus_checkout_dir, script)]
 
-    report_link = '/'.join([perf_base_url, platform, test,
-                            config.Master.perf_report_url_suffix])
-    output_dir = chromium_utils.AbsoluteCanonicalPath('/'.join([
-        perf_output_dir, platform, test]))
+    # Are we a debug build.
+    if self.dry_run:
+      cmd.extend(['--debug'])
 
-    cmd = ['cat', perf_file_path]
+    # Adds buildroot / clobber as last arg.
+    cmd.append(WithProperties('%s' + self.buildroot, 'clobber:+--clobber '))
 
-    # Hmm - I wonder how dry_run should affect this.
-    perf_class = commands.CreatePerformanceStepClass(
-        process_log.GraphingLogProcessor,
-        report_link=report_link, output_dir=output_dir,
-        factory_properties={}, perf_name=platform,
-        test_name=test)
-
-    self.f_cbuild.addStep(
-        perf_class, command=cmd, name='Upload Perf Results',
-        description='upload_perf_results')
-
+    self.f_cbuild.addStep(chromium_step.AnnotatedCommand,
+                          command=cmd,
+                          timeout=self.timeout,
+                          name=script,
+                          description=script,
+                          usePTY=False,
+                          env={'PYTHONPATH':'.'},
+                          ** self.step_args)

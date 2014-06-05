@@ -7,8 +7,7 @@
 namespace content {
 
 ShowDesktopNotificationHostMsgParams::ShowDesktopNotificationHostMsgParams()
-    : is_html(false), direction(WebKit::WebTextDirectionDefault),
-      notification_id(0) {
+    : direction(blink::WebTextDirectionDefault) {
 }
 
 ShowDesktopNotificationHostMsgParams::~ShowDesktopNotificationHostMsgParams() {

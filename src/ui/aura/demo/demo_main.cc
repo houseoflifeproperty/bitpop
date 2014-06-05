@@ -6,25 +6,29 @@
 #include "base/command_line.h"
 #include "base/i18n/icu_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "third_party/skia/include/core/SkXfermode.h"
 #include "ui/aura/client/default_capture_client.h"
-#include "ui/aura/client/stacking_client.h"
+#include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/test/test_focus_client.h"
 #include "ui/aura/test/test_screen.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
-#include "ui/base/events/event.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/base/hit_test.h"
-#include "ui/base/resource/resource_bundle.h"
-#include "ui/base/ui_base_paths.h"
-#include "ui/compositor/test/compositor_test_support.h"
+#include "ui/compositor/test/in_process_context_factory.h"
+#include "ui/events/event.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/rect.h"
+#include "ui/gl/gl_surface.h"
 
 #if defined(USE_X11)
-#include "base/message_pump_aurax11.h"
+#include "ui/gfx/x/x11_connection.h"
+#endif
+
+#if defined(OS_WIN)
+#include "ui/gfx/win/dpi.h"
 #endif
 
 namespace {
@@ -62,14 +66,11 @@ class DemoWindowDelegate : public aura::WindowDelegate {
     canvas->DrawColor(color_, SkXfermode::kSrc_Mode);
   }
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE {}
-  virtual void OnWindowDestroying() OVERRIDE {}
-  virtual void OnWindowDestroyed() OVERRIDE {}
+  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE {}
+  virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE {}
   virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE {}
   virtual bool HasHitTestMask() const OVERRIDE { return false; }
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE {}
-  scoped_refptr<ui::Texture> CopyTexture() {
-    return scoped_refptr<ui::Texture>();
-  }
 
  private:
   SkColor color_;
@@ -77,77 +78,93 @@ class DemoWindowDelegate : public aura::WindowDelegate {
   DISALLOW_COPY_AND_ASSIGN(DemoWindowDelegate);
 };
 
-class DemoStackingClient : public aura::client::StackingClient {
+class DemoWindowTreeClient : public aura::client::WindowTreeClient {
  public:
-  explicit DemoStackingClient(aura::RootWindow* root_window)
-      : root_window_(root_window) {
-    aura::client::SetStackingClient(this);
+  explicit DemoWindowTreeClient(aura::Window* window) : window_(window) {
+    aura::client::SetWindowTreeClient(window_, this);
   }
 
-  virtual ~DemoStackingClient() {
-    aura::client::SetStackingClient(NULL);
+  virtual ~DemoWindowTreeClient() {
+    aura::client::SetWindowTreeClient(window_, NULL);
   }
 
-  // Overridden from aura::client::StackingClient:
+  // Overridden from aura::client::WindowTreeClient:
   virtual aura::Window* GetDefaultParent(aura::Window* context,
                                          aura::Window* window,
                                          const gfx::Rect& bounds) OVERRIDE {
-    if (!capture_client_.get()) {
+    if (!capture_client_) {
       capture_client_.reset(
-          new aura::client::DefaultCaptureClient(root_window_));
+          new aura::client::DefaultCaptureClient(window_->GetRootWindow()));
     }
-    return root_window_;
+    return window_;
   }
 
  private:
-  aura::RootWindow* root_window_;
+  aura::Window* window_;
 
   scoped_ptr<aura::client::DefaultCaptureClient> capture_client_;
 
-  DISALLOW_COPY_AND_ASSIGN(DemoStackingClient);
+  DISALLOW_COPY_AND_ASSIGN(DemoWindowTreeClient);
 };
 
 int DemoMain() {
+#if defined(USE_X11)
+  // This demo uses InProcessContextFactory which uses X on a separate Gpu
+  // thread.
+  gfx::InitializeThreadedX11();
+#endif
+
+  gfx::GLSurface::InitializeOneOff();
+
+#if defined(OS_WIN)
+  gfx::InitDeviceScaleFactor(1.0f);
+#endif
+
+  // The ContextFactory must exist before any Compositors are created.
+  scoped_ptr<ui::InProcessContextFactory> context_factory(
+      new ui::InProcessContextFactory());
+  ui::ContextFactory::SetInstance(context_factory.get());
+
   // Create the message-loop here before creating the root window.
-  MessageLoop message_loop(MessageLoop::TYPE_UI);
-  ui::CompositorTestSupport::Initialize();
-  aura::Env::GetInstance();
-  aura::TestScreen test_screen;
-  gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, &test_screen);
-  scoped_ptr<aura::RootWindow> root_window(
-      test_screen.CreateRootWindowForPrimaryDisplay());
-  scoped_ptr<DemoStackingClient> stacking_client(new DemoStackingClient(
-      root_window.get()));
+  base::MessageLoopForUI message_loop;
+
+  aura::Env::CreateInstance(true);
+  scoped_ptr<aura::TestScreen> test_screen(aura::TestScreen::Create());
+  gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, test_screen.get());
+  scoped_ptr<aura::WindowTreeHost> host(
+      test_screen->CreateHostForPrimaryDisplay());
+  scoped_ptr<DemoWindowTreeClient> window_tree_client(
+      new DemoWindowTreeClient(host->window()));
+  aura::test::TestFocusClient focus_client;
+  aura::client::SetFocusClient(host->window(), &focus_client);
 
   // Create a hierarchy of test windows.
   DemoWindowDelegate window_delegate1(SK_ColorBLUE);
   aura::Window window1(&window_delegate1);
   window1.set_id(1);
-  window1.Init(ui::LAYER_TEXTURED);
+  window1.Init(aura::WINDOW_LAYER_TEXTURED);
   window1.SetBounds(gfx::Rect(100, 100, 400, 400));
   window1.Show();
-  window1.SetDefaultParentByRootWindow(root_window.get(), gfx::Rect());
+  aura::client::ParentWindowWithContext(&window1, host->window(), gfx::Rect());
 
   DemoWindowDelegate window_delegate2(SK_ColorRED);
   aura::Window window2(&window_delegate2);
   window2.set_id(2);
-  window2.Init(ui::LAYER_TEXTURED);
+  window2.Init(aura::WINDOW_LAYER_TEXTURED);
   window2.SetBounds(gfx::Rect(200, 200, 350, 350));
   window2.Show();
-  window2.SetDefaultParentByRootWindow(root_window.get(), gfx::Rect());
+  aura::client::ParentWindowWithContext(&window2, host->window(), gfx::Rect());
 
   DemoWindowDelegate window_delegate3(SK_ColorGREEN);
   aura::Window window3(&window_delegate3);
   window3.set_id(3);
-  window3.Init(ui::LAYER_TEXTURED);
+  window3.Init(aura::WINDOW_LAYER_TEXTURED);
   window3.SetBounds(gfx::Rect(10, 10, 50, 50));
   window3.Show();
   window2.AddChild(&window3);
 
-  root_window->ShowRootWindow();
-  MessageLoopForUI::current()->Run();
-
-  ui::CompositorTestSupport::Terminate();
+  host->Show();
+  base::MessageLoopForUI::current()->Run();
 
   return 0;
 }
@@ -160,9 +177,7 @@ int main(int argc, char** argv) {
   // The exit manager is in charge of calling the dtors of singleton objects.
   base::AtExitManager exit_manager;
 
-  ui::RegisterPathProvider();
-  icu_util::Initialize();
-  ResourceBundle::InitSharedInstanceWithLocale("en-US", NULL);
+  base::i18n::InitializeICU();
 
   return DemoMain();
 }

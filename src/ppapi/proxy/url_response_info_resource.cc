@@ -4,7 +4,7 @@
 
 #include "ppapi/proxy/url_response_info_resource.h"
 
-#include "ppapi/proxy/ppb_file_ref_proxy.h"
+#include "ppapi/proxy/file_ref_resource.h"
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/resource_creation_api.h"
@@ -67,15 +67,6 @@ PP_Resource URLResponseInfoResource::GetBodyAsFileRef() {
   PpapiGlobals::Get()->GetResourceTracker()->AddRefResource(
       body_as_file_ref_.get());
   return body_as_file_ref_.get();
-}
-
-URLResponseInfoData URLResponseInfoResource::GetData() {
-  // One ref is passed to the caller if there's a file ref.
-  if (body_as_file_ref_.get()) {
-    PpapiGlobals::Get()->GetResourceTracker()->AddRefResource(
-        body_as_file_ref_.get());
-  }
-  return data_;
 }
 
 }  // namespace proxy

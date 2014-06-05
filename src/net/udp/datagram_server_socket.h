@@ -6,6 +6,7 @@
 #define NET_UDP_DATAGRAM_SERVER_SOCKET_H_
 
 #include "net/base/completion_callback.h"
+#include "net/base/net_util.h"
 #include "net/udp/datagram_socket.h"
 
 namespace net {
@@ -55,10 +56,12 @@ class NET_EXPORT DatagramServerSocket : public DatagramSocket {
                      const CompletionCallback& callback) = 0;
 
   // Set the receive buffer size (in bytes) for the socket.
-  virtual bool SetReceiveBufferSize(int32 size) = 0;
+  // Returns a net error code.
+  virtual int SetReceiveBufferSize(int32 size) = 0;
 
   // Set the send buffer size (in bytes) for the socket.
-  virtual bool SetSendBufferSize(int32 size) = 0;
+  // Returns a net error code.
+  virtual int SetSendBufferSize(int32 size) = 0;
 
   // Allow the socket to share the local address to which the socket will
   // be bound with other processes. Should be called before Listen().
@@ -67,6 +70,44 @@ class NET_EXPORT DatagramServerSocket : public DatagramSocket {
   // Allow sending and receiving packets to and from broadcast addresses.
   // Should be called before Listen().
   virtual void AllowBroadcast() = 0;
+
+  // Join the multicast group with address |group_address|.
+  // Returns a network error code.
+  virtual int JoinGroup(const IPAddressNumber& group_address) const = 0;
+
+  // Leave the multicast group with address |group_address|.
+  // If the socket hasn't joined the group, it will be ignored.
+  // It's optional to leave the multicast group before destroying
+  // the socket. It will be done by the OS.
+  // Returns a network error code.
+  virtual int LeaveGroup(const IPAddressNumber& group_address) const = 0;
+
+  // Set interface to use for multicast. If |interface_index| set to 0, default
+  // interface is used.
+  // Should be called before Bind().
+  // Returns a network error code.
+  virtual int SetMulticastInterface(uint32 interface_index) = 0;
+
+  // Set the time-to-live option for UDP packets sent to the multicast
+  // group address. The default value of this option is 1.
+  // Cannot be negative or more than 255.
+  // Should be called before Bind().
+  // Returns a network error code.
+  virtual int SetMulticastTimeToLive(int time_to_live) = 0;
+
+  // Set the loopback flag for UDP socket. If this flag is true, the host
+  // will receive packets sent to the joined group from itself.
+  // The default value of this option is true.
+  // Should be called before Bind().
+  // Returns a network error code.
+  virtual int SetMulticastLoopbackMode(bool loopback) = 0;
+
+  // Set the Differentiated Services Code Point. May do nothing on
+  // some platforms. Returns a network error code.
+  virtual int SetDiffServCodePoint(DiffServCodePoint dscp) = 0;
+
+  // Resets the thread to be used for thread-safety checks.
+  virtual void DetachFromThread() = 0;
 };
 
 }  // namespace net

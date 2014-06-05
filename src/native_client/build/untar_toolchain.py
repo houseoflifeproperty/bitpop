@@ -21,6 +21,8 @@ def Main(args):
       dest='os')
   parser.add_option('-T', '--tmp', help='Temp directory.',
       dest='tmp')
+  parser.add_option('-f', '--fin', help='Final output directory.',
+      dest='fin')
   parser.add_option('-v', '--verbose', dest='verbose', default=False,
       help='Enable verbosity', action='store_true')
 
@@ -31,6 +33,8 @@ def Main(args):
     parser.error('Expecting OS to be specified.')
   if not options.tool:
     parser.error('Expecting which tool to untar.')
+  if not options.fin:
+    parser.error('Expecting final output directory.')
   if len(args) < 1:
     parser.error('Expecting path(s) to tarball(s).')
 
@@ -39,13 +43,12 @@ def Main(args):
     tool_path = os.path.join(untar_path, 'sdk', 'nacl-sdk')
   elif options.tool == 'x86_glibc':
     tool_path = os.path.join(untar_path, 'toolchain', options.os + '_x86')
-  elif options.tool in ('x86_pnacl', 'arm_newlib'):
+  elif options.tool in ('pnacl', 'arm_newlib'):
     tool_path = untar_path
   else:
     parser.error('Unknown tool type: ' + options.tool)
 
-  tool_name = '%s_%s' % (options.os, options.tool)
-  final_path = os.path.join(options.sdk, 'toolchain', tool_name)
+  final_path = os.path.abspath(options.fin)
   stamp_path = os.path.join(final_path, 'stamp.untar')
 
   final_path = os.path.abspath(final_path)

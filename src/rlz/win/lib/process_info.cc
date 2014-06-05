@@ -12,11 +12,10 @@
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/process_util.h"
+#include "base/process/process_handle.h"
 #include "base/win/scoped_handle.h"
 #include "base/win/windows_version.h"
 #include "rlz/lib/assert.h"
-#include "rlz/win/lib/vista_winnt.h"
 
 namespace {
 
@@ -34,14 +33,14 @@ HRESULT GetCurrentUser(std::wstring* name,
   // In which case, search for and use the process handle of a running
   // Explorer.exe.)
   HANDLE token;
-  if (!::OpenProcessToken(::GetCurrentProcess(), TOKEN_QUERY, &token))
-    return E_FAIL;
+
+  CHECK(::OpenProcessToken(::GetCurrentProcess(), TOKEN_QUERY, &token));
 
   base::win::ScopedHandle scoped_process_token(token);
 
   // (Following call will fail with ERROR_INSUFFICIENT_BUFFER and give us the
   // required size.)
-  scoped_array<char> token_user_bytes;
+  scoped_ptr<char[]> token_user_bytes;
   DWORD token_user_size;
   DWORD token_user_size2;
   BOOL result = ::GetTokenInformation(token, TokenUser, NULL, 0,
@@ -50,13 +49,10 @@ HRESULT GetCurrentUser(std::wstring* name,
   CHECK(!result && err == ERROR_INSUFFICIENT_BUFFER);
 
   token_user_bytes.reset(new char[token_user_size]);
-  if (!token_user_bytes.get())
-    return E_OUTOFMEMORY;
+  CHECK(token_user_bytes.get());
 
-  if (!::GetTokenInformation(token, TokenUser, token_user_bytes.get(),
-                             token_user_size, &token_user_size2)) {
-    return E_FAIL;
-  }
+  CHECK(::GetTokenInformation(token, TokenUser, token_user_bytes.get(),
+                              token_user_size, &token_user_size2));
 
   WCHAR user_name[UNLEN + 1];  // max username length
   WCHAR domain_name[UNLEN + 1];
@@ -65,13 +61,11 @@ HRESULT GetCurrentUser(std::wstring* name,
   SID_NAME_USE sid_type;
   TOKEN_USER* token_user =
       reinterpret_cast<TOKEN_USER*>(token_user_bytes.get());
-  if (!token_user)
-    return E_FAIL;
+  CHECK(token_user);
+
   PSID user_sid = token_user->User.Sid;
-  if (!::LookupAccountSidW(NULL, user_sid, user_name, &user_name_size,
-                           domain_name, &domain_name_size, &sid_type)) {
-    return E_FAIL;
-  }
+  CHECK(::LookupAccountSidW(NULL, user_sid, user_name, &user_name_size,
+                            domain_name, &domain_name_size, &sid_type));
 
   if (name != NULL) {
     *name = user_name;

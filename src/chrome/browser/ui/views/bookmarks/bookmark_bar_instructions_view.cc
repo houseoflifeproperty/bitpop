@@ -6,12 +6,14 @@
 
 #include <algorithm>
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/defaults.h"
-#include "chrome/browser/themes/theme_service.h"
+#include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar_instructions_delegate.h"
 #include "grit/generated_resources.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/theme_provider.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/link.h"
 
@@ -23,7 +25,7 @@ const int kViewPadding = 6;
 }  // namespace
 
 BookmarkBarInstructionsView::BookmarkBarInstructionsView(
-    chrome::BookmarkBarInstructionsDelegate* delegate)
+    BookmarkBarInstructionsDelegate* delegate)
     : delegate_(delegate),
       instructions_(NULL),
       import_link_(NULL),
@@ -38,8 +40,9 @@ BookmarkBarInstructionsView::BookmarkBarInstructionsView(
     import_link_ = new views::Link(
         l10n_util::GetStringUTF16(IDS_BOOKMARK_BAR_IMPORT_LINK));
     // We don't want the link to alter tab navigation.
-    import_link_->set_focusable(false);
+    import_link_->SetFocusable(false);
     import_link_->set_listener(this);
+    import_link_->set_context_menu_controller(this);
     import_link_->SetAutoColorReadabilityEnabled(false);
     AddChildView(import_link_);
   }
@@ -88,21 +91,28 @@ void BookmarkBarInstructionsView::OnThemeChanged() {
   UpdateColors();
 }
 
-void BookmarkBarInstructionsView::ViewHierarchyChanged(bool is_add,
-                                                       views::View* parent,
-                                                       views::View* child) {
-  if (!updated_colors_ && is_add && GetWidget())
+void BookmarkBarInstructionsView::ViewHierarchyChanged(
+    const ViewHierarchyChangedDetails& details) {
+  if (!updated_colors_ && details.is_add && GetWidget())
     UpdateColors();
 }
 
 void BookmarkBarInstructionsView::GetAccessibleState(
-    ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_GROUPING;
+    ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_GROUP;
 }
 
 void BookmarkBarInstructionsView::LinkClicked(views::Link* source,
                                               int event_flags) {
   delegate_->ShowImportDialog();
+}
+
+void BookmarkBarInstructionsView::ShowContextMenuForView(
+    views::View* source,
+    const gfx::Point& point,
+    ui::MenuSourceType source_type) {
+  // Do nothing here, we don't want to show the Bookmarks context menu when
+  // the user right clicks on the "Import bookmarks now" link.
 }
 
 void BookmarkBarInstructionsView::UpdateColors() {
@@ -112,7 +122,7 @@ void BookmarkBarInstructionsView::UpdateColors() {
     return;
   updated_colors_ = true;
   SkColor text_color =
-      theme_provider->GetColor(ThemeService::COLOR_BOOKMARK_TEXT);
+      theme_provider->GetColor(ThemeProperties::COLOR_BOOKMARK_TEXT);
   instructions_->SetEnabledColor(text_color);
   if (import_link_)
     import_link_->SetEnabledColor(text_color);

@@ -12,7 +12,12 @@
 
 namespace views {
 
+class NativeViewHostAuraTest;
 class NativeViewHostWrapper;
+
+// If a NativeViewHost's native view is a Widget, this native window
+// property is set on the widget, pointing to the owning NativeViewHost.
+extern const char kWidgetNativeViewHostKey[];
 
 // A View type that hosts a gfx::NativeView. The bounds of the native view are
 // kept in sync with the bounds of this view as it is moved and sized.
@@ -22,9 +27,6 @@ class VIEWS_EXPORT NativeViewHost : public View {
  public:
   // The NativeViewHost's class name.
   static const char kViewClassName[];
-
-  // Should views render the focus when on native controls?
-  static const bool kRenderNativeControlFocus;
 
   NativeViewHost();
   virtual ~NativeViewHost();
@@ -81,16 +83,18 @@ class VIEWS_EXPORT NativeViewHost : public View {
   virtual void VisibilityChanged(View* starting_from, bool is_visible) OVERRIDE;
   virtual void OnFocus() OVERRIDE;
   virtual gfx::NativeViewAccessible GetNativeViewAccessible() OVERRIDE;
+  virtual gfx::NativeCursor GetCursor(const ui::MouseEvent& event) OVERRIDE;
 
  protected:
   virtual bool NeedsNotificationWhenVisibleBoundsChange() const OVERRIDE;
   virtual void OnVisibleBoundsChanged() OVERRIDE;
-  virtual void ViewHierarchyChanged(bool is_add,
-                                    View* parent,
-                                    View* child) OVERRIDE;
-  virtual std::string GetClassName() const OVERRIDE;
+  virtual void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) OVERRIDE;
+  virtual const char* GetClassName() const OVERRIDE;
 
  private:
+  friend class NativeViewHostAuraTest;
+
   // Detach the native view. |destroyed| is true if the native view is
   // detached because it's being destroyed, or false otherwise.
   void Detach(bool destroyed);

@@ -20,12 +20,10 @@ class MockBrowserPluginManager : public BrowserPluginManager {
   // BrowserPluginManager implementation.
   virtual BrowserPlugin* CreateBrowserPlugin(
       RenderViewImpl* render_view,
-      WebKit::WebFrame* frame,
-      const WebKit::WebPluginParams& params) OVERRIDE;
-
-  // Iterate over all BrowserPlugins and tell them to cleanup after themselves
-  // before we blow away the MockRenderProcess.
-  void Cleanup();
+      blink::WebFrame* frame,
+      bool auto_navigate) OVERRIDE;
+  virtual void AllocateInstanceID(
+      const base::WeakPtr<BrowserPlugin>& browser_plugin) OVERRIDE;
 
   // Provides access to the messages that have been received by this thread.
   IPC::TestSink& sink() { return sink_; }
@@ -35,10 +33,15 @@ class MockBrowserPluginManager : public BrowserPluginManager {
   virtual bool Send(IPC::Message* msg) OVERRIDE;
  protected:
   virtual ~MockBrowserPluginManager();
+  void AllocateInstanceIDACK(BrowserPlugin* browser_plugin,
+                             int guest_instance_id);
+
   IPC::TestSink sink_;
 
   // The last known good deserializer for sync messages.
   scoped_ptr<IPC::MessageReplyDeserializer> reply_deserializer_;
+
+  int guest_instance_id_counter_;
 
   DISALLOW_COPY_AND_ASSIGN(MockBrowserPluginManager);
 };

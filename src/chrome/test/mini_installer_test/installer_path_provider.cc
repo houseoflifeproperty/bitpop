@@ -8,51 +8,39 @@
 
 #include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/path_service.h"
-#include "base/process_util.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "chrome/test/mini_installer_test/mini_installer_test_constants.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/test/mini_installer_test/installer_test_util.h"
+#include "chrome/test/mini_installer_test/mini_installer_test_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
 
 struct FilePathInfo {
-  file_util::FileEnumerator::FindInfo info;
-  FilePath path;
+  base::FileEnumerator::FileInfo info;
+  base::FilePath path;
 };
 
-bool CompareDate(const FilePathInfo& a,
-                 const FilePathInfo& b) {
-#if defined(OS_POSIX)
-  return a.info.stat.st_mtime > b.info.stat.st_mtime;
-#elif defined(OS_WIN)
-  if (a.info.ftLastWriteTime.dwHighDateTime ==
-      b.info.ftLastWriteTime.dwHighDateTime) {
-    return a.info.ftLastWriteTime.dwLowDateTime >
-           b.info.ftLastWriteTime.dwLowDateTime;
-  } else {
-    return a.info.ftLastWriteTime.dwHighDateTime >
-           b.info.ftLastWriteTime.dwHighDateTime;
-  }
-#endif
+bool CompareDate(const FilePathInfo& a, const FilePathInfo& b) {
+  return a.info.GetLastModifiedTime() > b.info.GetLastModifiedTime();
 }
 
 // Get list of file |type| matching |pattern| in |root|.
 // The list is sorted in last modified date order.
 // Return true if files/directories are found.
-bool FindMatchingFiles(const FilePath& root,
+bool FindMatchingFiles(const base::FilePath& root,
                        const std::string& pattern,
-                       file_util::FileEnumerator::FileType type,
-                       std::vector<FilePath>* paths) {
-  file_util::FileEnumerator files(root, false, type,
-      FilePath().AppendASCII(pattern).value());
+                       base::FileEnumerator::FileType type,
+                       std::vector<base::FilePath>* paths) {
+  base::FileEnumerator files(root, false, type,
+      base::FilePath().AppendASCII(pattern).value());
   std::vector<FilePathInfo> matches;
-  for (FilePath current = files.Next(); !current.empty();
+  for (base::FilePath current = files.Next(); !current.empty();
       current = files.Next()) {
     FilePathInfo entry;
-    files.GetFindInfo(&entry.info);
+    entry.info = files.GetInfo();
     entry.path = current;
     matches.push_back(entry);
   }
@@ -68,11 +56,11 @@ bool FindMatchingFiles(const FilePath& root,
   return true;
 }
 
-bool FindNewestMatchingFile(const FilePath& root,
+bool FindNewestMatchingFile(const base::FilePath& root,
                             const std::string& pattern,
-                            file_util::FileEnumerator::FileType type,
-                            FilePath* path) {
-  std::vector<FilePath> paths;
+                            base::FileEnumerator::FileType type,
+                            base::FilePath* path) {
+  std::vector<base::FilePath> paths;
   if (FindMatchingFiles(root, pattern, type, &paths)) {
     *path = paths[0];
     return true;
@@ -85,7 +73,7 @@ bool FindNewestMatchingFile(const FilePath& root,
 namespace installer_test {
 
 InstallerPathProvider::InstallerPathProvider() {
-  FilePath full_installer, previous_installer;
+  base::FilePath full_installer, previous_installer;
   if (!GetFullInstaller(&full_installer) ||
       !GetPreviousInstaller(&previous_installer))
     return;
@@ -97,7 +85,7 @@ InstallerPathProvider::InstallerPathProvider() {
 
 InstallerPathProvider::InstallerPathProvider(
     const std::string& build_under_test) : current_build_(build_under_test) {
-  FilePath full_installer, previous_installer;
+  base::FilePath full_installer, previous_installer;
   if (!GetFullInstaller(&full_installer) ||
       !GetPreviousInstaller(&previous_installer))
     return;
@@ -107,21 +95,21 @@ InstallerPathProvider::InstallerPathProvider(
 
 InstallerPathProvider::~InstallerPathProvider() {}
 
-bool InstallerPathProvider::GetFullInstaller(FilePath* path) {
+bool InstallerPathProvider::GetFullInstaller(base::FilePath* path) {
   std::string full_installer_pattern("*_chrome_installer*");
   return GetInstaller(full_installer_pattern, path);
 }
 
-bool InstallerPathProvider::GetDiffInstaller(FilePath* path) {
+bool InstallerPathProvider::GetDiffInstaller(base::FilePath* path) {
   std::string diff_installer_pattern("*_from_*");
   return GetInstaller(diff_installer_pattern, path);
 }
 
-bool InstallerPathProvider::GetMiniInstaller(FilePath* path) {
+bool InstallerPathProvider::GetMiniInstaller(base::FilePath* path) {
   // Use local copy of installer, else fall back to filer.
-  FilePath mini_installer = PathFromExeDir(
+  base::FilePath mini_installer = PathFromExeDir(
       mini_installer_constants::kChromeMiniInstallerExecutable);
-  if (file_util::PathExists(mini_installer)) {
+  if (base::PathExists(mini_installer)) {
     *path = mini_installer;
     return true;
   }
@@ -129,27 +117,27 @@ bool InstallerPathProvider::GetMiniInstaller(FilePath* path) {
   return GetInstaller(mini_installer_pattern, path);
 }
 
-bool InstallerPathProvider::GetPreviousInstaller(FilePath* path) {
+bool InstallerPathProvider::GetPreviousInstaller(base::FilePath* path) {
   std::string diff_installer_pattern("*_from_*");
   std::string full_installer_pattern("*_chrome_installer*");
-  FilePath diff_installer;
+  base::FilePath diff_installer;
   if (!GetInstaller(diff_installer_pattern, &diff_installer))
     return false;
 
-  FilePath previous_installer;
+  base::FilePath previous_installer;
   std::vector<std::string> tokenized_name;
   Tokenize(diff_installer.BaseName().MaybeAsASCII(),
       "_", &tokenized_name);
   std::string build_pattern = base::StringPrintf(
       "*%s", tokenized_name[2].c_str());
-  std::vector<FilePath> previous_build;
+  std::vector<base::FilePath> previous_build;
   if (FindMatchingFiles(diff_installer.DirName().DirName().DirName(),
-      build_pattern, file_util::FileEnumerator::DIRECTORIES,
+      build_pattern, base::FileEnumerator::DIRECTORIES,
       &previous_build)) {
-    FilePath windir = previous_build.at(0).Append(
+    base::FilePath windir = previous_build.at(0).Append(
         mini_installer_constants::kWinFolder);
     FindNewestMatchingFile(windir, full_installer_pattern,
-        file_util::FileEnumerator::FILES, &previous_installer);
+        base::FileEnumerator::FILES, &previous_installer);
   }
 
   if (previous_installer.empty())
@@ -158,9 +146,9 @@ bool InstallerPathProvider::GetPreviousInstaller(FilePath* path) {
   return true;
 }
 
-bool InstallerPathProvider::GetStandaloneInstaller(FilePath* path) {
+bool InstallerPathProvider::GetStandaloneInstaller(base::FilePath* path) {
   // Get standalone installer.
-  FilePath standalone_installer(
+  base::FilePath standalone_installer(
       mini_installer_constants::kChromeStandAloneInstallerLocation);
   // Get the file name.
   std::vector<std::string> tokenized_build_number;
@@ -169,7 +157,7 @@ bool InstallerPathProvider::GetStandaloneInstaller(FilePath* path) {
   Tokenize(current_build_, ".", &tokenized_build_number);
   std::string standalone_installer_filename = base::StringPrintf(
       "%s%s_%s.exe",
-      FilePath(mini_installer_constants::kUntaggedInstallerPattern)
+      base::FilePath(mini_installer_constants::kUntaggedInstallerPattern)
           .MaybeAsASCII().c_str(),
       tokenized_build_number[2].c_str(),
       tokenized_build_number[3].c_str());
@@ -177,14 +165,14 @@ bool InstallerPathProvider::GetStandaloneInstaller(FilePath* path) {
       .Append(mini_installer_constants::kWinFolder)
       .AppendASCII(standalone_installer_filename);
   *path = standalone_installer;
-  return file_util::PathExists(standalone_installer);
+  return base::PathExists(standalone_installer);
 }
 
-bool InstallerPathProvider::GetSignedStandaloneInstaller(FilePath* path) {
-  FilePath standalone_installer;
+bool InstallerPathProvider::GetSignedStandaloneInstaller(base::FilePath* path) {
+  base::FilePath standalone_installer;
   if (!GetStandaloneInstaller(&standalone_installer))
     return false;
-  FilePath tagged_installer = PathFromExeDir(
+  base::FilePath tagged_installer = PathFromExeDir(
       mini_installer_constants::kStandaloneInstaller);
   CommandLine sign_command = CommandLine::FromString(
       base::StringPrintf(L"%ls %ls %ls %ls",
@@ -200,31 +188,31 @@ bool InstallerPathProvider::GetSignedStandaloneInstaller(FilePath* path) {
   return true;
 }
 
-FilePath InstallerPathProvider::PathFromExeDir(
-    const FilePath::StringType& name) {
-  FilePath path;
+base::FilePath InstallerPathProvider::PathFromExeDir(
+    const base::FilePath::StringType& name) {
+  base::FilePath path;
   PathService::Get(base::DIR_EXE, &path);
   path = path.Append(name);
   return path;
 }
 
 bool InstallerPathProvider::GetInstaller(const std::string& pattern,
-                                         FilePath* path) {
-  FilePath installer;
+                                         base::FilePath* path) {
+  base::FilePath installer;
   // Search filer for installer binary.
-  FilePath root(mini_installer_constants::kChromeInstallersLocation);
-  std::vector<FilePath> paths;
+  base::FilePath root(mini_installer_constants::kChromeInstallersLocation);
+  std::vector<base::FilePath> paths;
   if (!FindMatchingFiles(root, current_build_,
-      file_util::FileEnumerator::DIRECTORIES, &paths)) {
+                         base::FileEnumerator::DIRECTORIES, &paths)) {
     return false;
   }
 
-  std::vector<FilePath>::const_iterator dir;
+  std::vector<base::FilePath>::const_iterator dir;
   for (dir = paths.begin(); dir != paths.end(); ++dir) {
-    FilePath windir = dir->Append(
+    base::FilePath windir = dir->Append(
         mini_installer_constants::kWinFolder);
-    if (FindNewestMatchingFile(windir, pattern,
-            file_util::FileEnumerator::FILES, &installer)) {
+    if (FindNewestMatchingFile(windir, pattern, base::FileEnumerator::FILES,
+                               &installer)) {
       break;
     }
   }

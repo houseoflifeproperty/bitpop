@@ -5,22 +5,38 @@
 #import "chrome/browser/ui/cocoa/browser/password_generation_bubble_controller.h"
 
 #include "base/logging.h"
-#include "base/sys_string_conversions.h"
-#include "chrome/browser/autofill/password_generator.h"
+#include "base/metrics/histogram_samples.h"
+#include "base/metrics/statistics_recorder.h"
+#include "base/strings/sys_string_conversions.h"
+#include "base/test/statistics_delta_reader.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
-#include "content/public/common/password_form.h"
+#include "components/autofill/core/browser/password_generator.h"
+#include "components/autofill/core/common/password_form.h"
 #include "testing/gtest_mac.h"
+
+const char kHistogramName[] = "PasswordGeneration.UserActions";
 
 class PasswordGenerationBubbleControllerTest : public CocoaProfileTest {
  public:
   PasswordGenerationBubbleControllerTest()
       : controller_(nil) {}
 
-  virtual void SetUp() {
-    CocoaTest::SetUp();
+  static void SetUpTestCase() {
+    base::StatisticsRecorder::Initialize();
+  }
 
-    content::PasswordForm form;
+  virtual void SetUp() {
+    CocoaProfileTest::SetUp();
+
     generator_.reset(new autofill::PasswordGenerator(20));
+
+    SetUpController();
+  }
+
+  PasswordGenerationBubbleController* controller() { return controller_; }
+
+  void SetUpController() {
+    autofill::PasswordForm form;
     NSRect frame = [test_window() frame];
     NSPoint point = NSMakePoint(NSMidX(frame), NSMidY(frame));
 
@@ -34,7 +50,11 @@ class PasswordGenerationBubbleControllerTest : public CocoaProfileTest {
                            forForm:form];
   }
 
-  PasswordGenerationBubbleController* controller() { return controller_; }
+  void CloseController() {
+    [controller_ close];
+    [controller_ windowWillClose:nil];
+    controller_ = nil;
+  }
 
  protected:
   // Weak.
@@ -58,4 +78,64 @@ TEST_F(PasswordGenerationBubbleControllerTest, Regenerate) {
   // about.
   NSString* after = [textfield stringValue];
   EXPECT_FALSE([before isEqualToString:after]);
+}
+
+TEST_F(PasswordGenerationBubbleControllerTest, UMALogging) {
+  base::StatisticsDeltaReader statistics_delta_reader;
+  [controller() showWindow:nil];
+
+  // Do nothing.
+  CloseController();
+
+  scoped_ptr<base::HistogramSamples> samples(
+      statistics_delta_reader.GetHistogramSamplesSinceCreation(kHistogramName));
+  EXPECT_EQ(
+      1,
+      samples->GetCount(autofill::password_generation::IGNORE_FEATURE));
+  EXPECT_EQ(
+      0,
+      samples->GetCount(autofill::password_generation::ACCEPT_AFTER_EDITING));
+  EXPECT_EQ(
+      0,
+      samples->GetCount(
+          autofill::password_generation::ACCEPT_ORIGINAL_PASSWORD));
+
+  SetUpController();
+
+  // Pretend like the user changed the password and accepted it.
+  [controller() controlTextDidChange:nil];
+  [controller() fillPassword:nil];
+  CloseController();
+
+  samples =
+      statistics_delta_reader.GetHistogramSamplesSinceCreation(kHistogramName);
+  EXPECT_EQ(
+      1,
+      samples->GetCount(autofill::password_generation::IGNORE_FEATURE));
+  EXPECT_EQ(
+      1,
+      samples->GetCount(autofill::password_generation::ACCEPT_AFTER_EDITING));
+  EXPECT_EQ(
+      0,
+      samples->GetCount(
+          autofill::password_generation::ACCEPT_ORIGINAL_PASSWORD));
+
+  SetUpController();
+
+  // Just accept the password
+  [controller() fillPassword:nil];
+  CloseController();
+
+  samples =
+      statistics_delta_reader.GetHistogramSamplesSinceCreation(kHistogramName);
+  EXPECT_EQ(
+      1,
+      samples->GetCount(autofill::password_generation::IGNORE_FEATURE));
+  EXPECT_EQ(
+      1,
+      samples->GetCount(autofill::password_generation::ACCEPT_AFTER_EDITING));
+  EXPECT_EQ(
+      1,
+      samples->GetCount(
+          autofill::password_generation::ACCEPT_ORIGINAL_PASSWORD));
 }

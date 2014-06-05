@@ -5,15 +5,17 @@
 #include "chrome/browser/extensions/api/dial/dial_api_factory.h"
 
 #include "chrome/browser/extensions/api/dial/dial_api.h"
-#include "chrome/browser/extensions/extension_system_factory.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "extensions/browser/extension_system_provider.h"
+#include "extensions/browser/extensions_browser_client.h"
 
 namespace extensions {
 
 // static
-scoped_refptr<DialAPI> DialAPIFactory::GetForProfile(Profile* profile) {
+scoped_refptr<DialAPI> DialAPIFactory::GetForBrowserContext(
+    content::BrowserContext* context) {
   return static_cast<DialAPI*>(
-      GetInstance()->GetServiceForProfile(profile, true).get());
+      GetInstance()->GetServiceForBrowserContext(context, true).get());
 }
 
 // static
@@ -21,24 +23,21 @@ DialAPIFactory* DialAPIFactory::GetInstance() {
   return Singleton<DialAPIFactory>::get();
 }
 
-DialAPIFactory::DialAPIFactory() : RefcountedProfileKeyedServiceFactory(
-    "DialAPI", ProfileDependencyManager::GetInstance()) {
-  DependsOn(ExtensionSystemFactory::GetInstance());
+DialAPIFactory::DialAPIFactory() : RefcountedBrowserContextKeyedServiceFactory(
+    "DialAPI", BrowserContextDependencyManager::GetInstance()) {
+  DependsOn(ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
 }
 
 DialAPIFactory::~DialAPIFactory() {
 }
 
-scoped_refptr<RefcountedProfileKeyedService>
-    DialAPIFactory::BuildServiceInstanceFor(Profile* profile) const {
-  return scoped_refptr<DialAPI>(new DialAPI(profile));
+scoped_refptr<RefcountedBrowserContextKeyedService>
+    DialAPIFactory::BuildServiceInstanceFor(
+        content::BrowserContext* profile) const {
+  return scoped_refptr<DialAPI>(new DialAPI(static_cast<Profile*>(profile)));
 }
 
-bool DialAPIFactory::ServiceRedirectedInIncognito() const {
-  return false;
-}
-
-bool DialAPIFactory::ServiceIsCreatedWithProfile() const {
+bool DialAPIFactory::ServiceIsCreatedWithBrowserContext() const {
   return true;
 }
 

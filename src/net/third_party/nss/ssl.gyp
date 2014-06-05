@@ -22,7 +22,8 @@
   'targets': [
     {
       'target_name': 'libssl',
-      'type': 'static_library',
+      'type': '<(component)',
+      'product_name': 'crssl',  # Don't conflict with OpenSSL's libssl
       'sources': [
         'ssl/authcert.c',
         'ssl/cmpcert.c',
@@ -66,34 +67,53 @@
         'ssl/unix_err.h',
         'ssl/win32err.c',
         'ssl/win32err.h',
-        'ssl/bodge/loader.c',
-        'ssl/bodge/loader.h',
-        'ssl/bodge/secure_memcmp.c',
+        'ssl/bodge/secitem_array.c',
       ],
       'sources!': [
         'ssl/os2_err.c',
         'ssl/os2_err.h',
       ],
       'defines': [
+        'NO_PKCS11_BYPASS',
         'NSS_ENABLE_ECC',
-        'NSS_ENABLE_ZLIB',
         'USE_UTIL_DIRECTLY',
       ],
-      'defines!': [
-        # Regrettably, NSS can't be compiled with NO_NSPR_10_SUPPORT yet.
-        'NO_NSPR_10_SUPPORT',
-      ],
-      'dependencies': [
-        '../../../third_party/zlib/zlib.gyp:zlib',
-      ],
-      'msvs_disabled_warnings': [4018, 4244],
+      'msvs_disabled_warnings': [4018, 4244, 4267],
       'conditions': [
+        ['component == "shared_library"', {
+          'conditions': [
+            ['OS == "mac" or OS == "ios"', {
+              'xcode_settings': {
+                'GCC_SYMBOLS_PRIVATE_EXTERN': 'NO',
+              },
+            }],
+            ['OS == "win"', {
+              'sources': [
+                'ssl/exports_win.def',
+              ],
+            }],
+            ['os_posix == 1 and OS != "mac" and OS != "ios"', {
+              'cflags!': ['-fvisibility=hidden'],
+            }],
+          ],
+        }],
         [ 'clang == 1', {
           'cflags': [
             # See http://crbug.com/138571#c8. In short, sslsecur.c picks up the
             # system's cert.h because cert.h isn't in chromium's repo.
             '-Wno-incompatible-pointer-types',
+
+            # There is a broken header guard in /usr/include/nss/secmod.h:
+            # https://bugzilla.mozilla.org/show_bug.cgi?id=884072
+            '-Wno-header-guard',
           ],
+        }],
+        [ 'OS == "linux"', {
+          'link_settings': {
+            'libraries': [
+              '-ldl',
+            ],
+          },
         }],
         [ 'OS == "mac" or OS == "ios"', {
           'defines': [
@@ -101,6 +121,13 @@
             'DARWIN',
             'XP_MACOSX',
           ],
+        }],
+        [ 'OS == "mac"', {
+          'link_settings': {
+            'libraries': [
+              '$(SDKROOT)/System/Library/Frameworks/Security.framework',
+            ],
+          },
         }],
         [ 'OS == "win"', {
             'sources!': [
@@ -116,14 +143,6 @@
           },
         ],
         [ 'os_posix == 1 and OS != "mac" and OS != "ios"', {
-          'defines': [
-            # These macros are needed only for compiling the files in
-            # ssl/bodge.
-            'SHLIB_PREFIX="lib"',
-            'SHLIB_SUFFIX="so"',
-            'SHLIB_VERSION="3"',
-            'SOFTOKEN_SHLIB_VERSION="3"',
-          ],
           'include_dirs': [
             'ssl/bodge',
           ],

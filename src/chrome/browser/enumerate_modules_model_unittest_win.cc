@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/enumerate_modules_model_win.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-typedef public testing::Test EnumerateModulesTest;
+typedef testing::Test EnumerateModulesTest;
 
 // Set up some constants to use as default when creating the structs.
 static const ModuleEnumerator::ModuleType kType =
@@ -19,6 +19,9 @@ static const ModuleEnumerator::ModuleStatus kStatus =
 
 static const ModuleEnumerator::RecommendedAction kAction =
     ModuleEnumerator::NONE;
+
+static const ModuleEnumerator::OperatingSystem kOs =
+    ModuleEnumerator::ALL;
 
 // This is a list of test cases to normalize.
 static const struct NormalizationEntryList {
@@ -109,87 +112,87 @@ const struct MatchingEntryList {
   {  // Matches: Name (location doesn't match) => Not enough for a match.
     ModuleEnumerator::NOT_MATCHED,
     kStandardModule,
-    { kMatchName, kNoMatchLocation, kEmpty, kEmpty, kEmpty,
+    { kMatchName, kNoMatchLocation, kEmpty, kEmpty, kEmpty, kOs,
       ModuleEnumerator::SEE_LINK }
   }, {  // Matches: Name (location not given) => Suspected match.
     ModuleEnumerator::SUSPECTED_BAD,
     kStandardModule,
-    { kMatchName, kEmpty, kEmpty, kEmpty, kEmpty,
+    { kMatchName, kEmpty, kEmpty, kEmpty, kEmpty, kOs,
       ModuleEnumerator::SEE_LINK }
   }, {  // Matches: Name, not version (location not given) => Not a match.
     ModuleEnumerator::NOT_MATCHED,
     kStandardModule,
-    { kMatchName, kEmpty, kEmpty, kVersionHigh, kVersionHigh,
+    { kMatchName, kEmpty, kEmpty, kVersionHigh, kVersionHigh, kOs,
       ModuleEnumerator::SEE_LINK }
   }, {  // Matches: Name, location => Suspected match.
     ModuleEnumerator::SUSPECTED_BAD,
     kStandardModule,
-    { kMatchName, kMatchLocation, kEmpty, kEmpty, kEmpty,
+    { kMatchName, kMatchLocation, kEmpty, kEmpty, kEmpty, kOs,
       ModuleEnumerator::SEE_LINK }
   }, {  // Matches: Name, location, (description not given) => Confirmed match.
     ModuleEnumerator::CONFIRMED_BAD,
     kStandardModuleNoDescription,  // Note: No description.
-    { kMatchName, kMatchLocation, kEmpty, kEmpty, kEmpty,
+    { kMatchName, kMatchLocation, kEmpty, kEmpty, kEmpty, kOs,
       ModuleEnumerator::SEE_LINK }
   }, {  // Matches: Name, location, (signature not given) => Confirmed match.
     ModuleEnumerator::CONFIRMED_BAD,
     kStandardModuleNoSignature,  // Note: No signature.
-    { kMatchName, kMatchLocation, kEmpty, kEmpty, kEmpty,
+    { kMatchName, kMatchLocation, kEmpty, kEmpty, kEmpty, kOs,
       ModuleEnumerator::SEE_LINK }
   }, {  // Matches: Name, location (not version) => Not a match.
     ModuleEnumerator::NOT_MATCHED,
     kStandardModule,
-    { kMatchName, kMatchLocation, kEmpty, kVersionHigh, kVersionLow,
+    { kMatchName, kMatchLocation, kEmpty, kVersionHigh, kVersionLow, kOs,
       ModuleEnumerator::SEE_LINK }
   }, {  // Matches: Name, location, signature => Confirmed match.
     ModuleEnumerator::CONFIRMED_BAD,
     kStandardModule,
-    { kMatchName, kMatchLocation, kMatchSignature, kEmpty, kEmpty,
+    { kMatchName, kMatchLocation, kMatchSignature, kEmpty, kEmpty, kOs,
       ModuleEnumerator::SEE_LINK }
   }, {  // Matches: Name, location, signature (not version) => No match.
     ModuleEnumerator::NOT_MATCHED,
     kStandardModule,
     { kMatchName, kMatchLocation, kMatchSignature,
-      kVersionLow, kVersionLow, ModuleEnumerator::SEE_LINK }
+      kVersionLow, kVersionLow, kOs, ModuleEnumerator::SEE_LINK }
   }, {  // Matches: Name, location, description => Confirmed match.
     ModuleEnumerator::CONFIRMED_BAD,
     kStandardModule,
-    { kMatchName, kMatchLocation, kMatchDesc, kEmpty, kEmpty,
+    { kMatchName, kMatchLocation, kMatchDesc, kEmpty, kEmpty, kOs,
       ModuleEnumerator::SEE_LINK }
   }, {  // Matches: Name, location, description (not version) => No match.
     ModuleEnumerator::NOT_MATCHED,
     kStandardModule,
     { kMatchName, kMatchLocation, kMatchDesc,
-      kVersionHigh, kVersionHigh, ModuleEnumerator::SEE_LINK }
+      kVersionHigh, kVersionHigh, kOs, ModuleEnumerator::SEE_LINK }
   }, {  // Matches: Name, location, signature, version => Confirmed match.
     ModuleEnumerator::CONFIRMED_BAD,
     kStandardModule,
     { kMatchName, kMatchLocation, kMatchSignature,
-      kVersionLow, kVersionHigh, ModuleEnumerator::SEE_LINK }
+      kVersionLow, kVersionHigh, kOs, ModuleEnumerator::SEE_LINK }
   }, {  // Matches: Name, location, signature, version (lower) => Confirmed.
     ModuleEnumerator::CONFIRMED_BAD,
     kStandardModule,
     { kMatchName, kMatchLocation, kMatchSignature,
-      kVersionLow, kEmpty, ModuleEnumerator::SEE_LINK }
+      kVersionLow, kEmpty, kOs, ModuleEnumerator::SEE_LINK }
   }, {  // Matches: Name, location, signature, version (upper) => Confirmed.
     ModuleEnumerator::CONFIRMED_BAD,
     kStandardModule,
     { kMatchName, kMatchLocation, kMatchSignature,
-      kEmpty, kVersionHigh, ModuleEnumerator::SEE_LINK }
+      kEmpty, kVersionHigh, kOs, ModuleEnumerator::SEE_LINK }
   }, {  // Matches: Name, Location, Version lower is inclusive => Confirmed.
     ModuleEnumerator::CONFIRMED_BAD,
     kStandardModule,
     { kMatchName, kMatchLocation, kMatchSignature,
-      "1.0", "2.0", ModuleEnumerator::SEE_LINK }
+      "1.0", "2.0", kOs, ModuleEnumerator::SEE_LINK }
   }, {  // Matches: Name, Location, Version higher is exclusive => No match.
     ModuleEnumerator::NOT_MATCHED,
     kStandardModule,
     { kMatchName, kMatchLocation, kEmpty,
-      "0.0", "1.0", ModuleEnumerator::SEE_LINK }
+      "0.0", "1.0", kOs, ModuleEnumerator::SEE_LINK }
   }, {  // All empty fields doesn't produce a match.
     ModuleEnumerator::NOT_MATCHED,
     { kType, kStatus, L"", L"", L"", L"", L""},
-    { "a.dll", "", "", "", "", ModuleEnumerator::SEE_LINK }
+    { "a.dll", "", "", "", "", kOs, ModuleEnumerator::SEE_LINK }
   },
 };
 
@@ -201,21 +204,22 @@ TEST_F(EnumerateModulesTest, MatchFunction) {
         kMatchineEntryList[i].blacklist;
 
     SCOPED_TRACE("Test case no " + base::IntToString(i) +
-                 ": '" + UTF16ToASCII(test.name) + "'");
+                 ": '" + base::UTF16ToASCII(test.name) + "'");
     EXPECT_EQ(kMatchineEntryList[i].expected_result,
               ModuleEnumerator::Match(test, blacklist));
   }
 }
 
 const struct CollapsePathList {
-  string16 expected_result;
-  string16 test_case;
+  base::string16 expected_result;
+  base::string16 test_case;
 } kCollapsePathList[] = {
   // Negative testing (should not collapse this path).
-  { ASCIIToUTF16("c:\\a\\a.dll"), ASCIIToUTF16("c:\\a\\a.dll") },
+  { base::ASCIIToUTF16("c:\\a\\a.dll"), base::ASCIIToUTF16("c:\\a\\a.dll") },
   // These two are to test that we select the maximum collapsed path.
-  { ASCIIToUTF16("%foo%\\a.dll"), ASCIIToUTF16("c:\\foo\\a.dll") },
-  { ASCIIToUTF16("%x%\\a.dll"), ASCIIToUTF16("c:\\foo\\bar\\a.dll") },
+  { base::ASCIIToUTF16("%foo%\\a.dll"), base::ASCIIToUTF16("c:\\foo\\a.dll") },
+  { base::ASCIIToUTF16("%x%\\a.dll"),
+    base::ASCIIToUTF16("c:\\foo\\bar\\a.dll") },
 };
 
 TEST_F(EnumerateModulesTest, CollapsePath) {
@@ -231,8 +235,8 @@ TEST_F(EnumerateModulesTest, CollapsePath) {
     module.location = kCollapsePathList[i].test_case;
     module_enumerator->CollapsePath(&module);
 
-    SCOPED_TRACE("Test case no " + base::IntToString(i) +
-                 ": '" + UTF16ToASCII(kCollapsePathList[i].expected_result) +
+    SCOPED_TRACE("Test case no " + base::IntToString(i) + ": '" +
+                 base::UTF16ToASCII(kCollapsePathList[i].expected_result) +
                  "'");
     EXPECT_EQ(kCollapsePathList[i].expected_result, module.location);
   }

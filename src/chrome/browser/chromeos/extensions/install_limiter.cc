@@ -9,8 +9,8 @@
 #include "base/bind.h"
 #include "base/file_util.h"
 #include "base/threading/sequenced_worker_pool.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/extensions/install_limiter_factory.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
@@ -19,14 +19,13 @@ using content::BrowserThread;
 
 namespace {
 
-// Gets the file size of |file| and stores it in |size| on the blocking pool.
-void GetFileSizeOnBlockingPool(const FilePath& file, int64* size) {
+int64 GetFileSizeOnBlockingPool(const base::FilePath& file) {
   DCHECK(BrowserThread::GetBlockingPool()->RunsTasksOnCurrentThread());
 
   // Get file size. In case of error, sets 0 as file size to let the installer
   // run and fail.
-  if (!file_util::GetFileSize(file, size))
-    *size = 0;
+  int64 size;
+  return base::GetFileSize(file, &size) ? size : 0;
 }
 
 }  // namespace
@@ -38,7 +37,7 @@ namespace extensions {
 
 InstallLimiter::DeferredInstall::DeferredInstall(
     const scoped_refptr<CrxInstaller>& installer,
-    const FilePath& path)
+    const base::FilePath& path)
     : installer(installer),
       path(path) {
 }
@@ -64,28 +63,27 @@ void InstallLimiter::DisableForTest() {
 }
 
 void InstallLimiter::Add(const scoped_refptr<CrxInstaller>& installer,
-                         const FilePath& path) {
+                         const base::FilePath& path) {
   // No deferred installs when disabled for test.
   if (disabled_for_test_) {
     installer->InstallCrx(path);
     return;
   }
 
-  int64* size = new int64(0);  // Owned by reply callback below.
-  BrowserThread::PostBlockingPoolTaskAndReply(
+  base::PostTaskAndReplyWithResult(
+      BrowserThread::GetBlockingPool(),
       FROM_HERE,
-      base::Bind(&GetFileSizeOnBlockingPool, path, size),
-      base::Bind(&InstallLimiter::AddWithSize, AsWeakPtr(),
-                 installer, path, base::Owned(size)));
+      base::Bind(&GetFileSizeOnBlockingPool, path),
+      base::Bind(&InstallLimiter::AddWithSize, AsWeakPtr(), installer, path));
 }
 
 void InstallLimiter::AddWithSize(
     const scoped_refptr<CrxInstaller>& installer,
-    const FilePath& path,
-    int64* size) {
+    const base::FilePath& path,
+    int64 size) {
   const int64 kBigAppSizeThreshold = 1048576;  // 1MB
 
-  if (*size <= kBigAppSizeThreshold) {
+  if (size <= kBigAppSizeThreshold) {
     RunInstall(installer, path);
 
     // Stop wait timer and let install notification drive deferred installs.
@@ -117,7 +115,7 @@ void InstallLimiter::CheckAndRunDeferrredInstalls() {
 }
 
 void InstallLimiter::RunInstall(const scoped_refptr<CrxInstaller>& installer,
-                                const FilePath& path) {
+                                const base::FilePath& path) {
   registrar_.Add(this,
                  chrome::NOTIFICATION_CRX_INSTALLER_DONE,
                  content::Source<CrxInstaller>(installer.get()));

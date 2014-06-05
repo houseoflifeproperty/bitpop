@@ -5,7 +5,7 @@
 #ifndef UI_GFX_DISPLAY_OBSERVER_H_
 #define UI_GFX_DISPLAY_OBSERVER_H_
 
-#include "ui/base/ui_export.h"
+#include "ui/gfx/gfx_export.h"
 
 namespace gfx {
 class Display;
@@ -13,7 +13,7 @@ class Display;
 // Observers for display configuration changes.
 // TODO(oshima): consolidate |WorkAreaWatcherObserver| and
 // |DisplaySettingsProvier|. crbug.com/122863.
-class UI_EXPORT DisplayObserver {
+class GFX_EXPORT DisplayObserver {
  public:
   // Called when the |display|'s bound has changed.
   virtual void OnDisplayBoundsChanged(const Display& display) = 0;

@@ -26,8 +26,10 @@
  */
 
 #include <string.h>
+#include "libavutil/avassert.h"
 #include "libavutil/intreadwrite.h"
 #include "libavcodec/avcodec.h"
+#include "internal.h"
 #include "rtp.h"
 #include "rtpdec.h"
 #include "rtpdec_formats.h"
@@ -103,9 +105,7 @@ static int qdm2_parse_config(PayloadContext *qdm, AVStream *st,
                 if (item_len < 30)
                     return AVERROR_INVALIDDATA;
                 av_freep(&st->codec->extradata);
-                st->codec->extradata_size = 26 + item_len;
-                if (!(st->codec->extradata = av_mallocz(st->codec->extradata_size + FF_INPUT_BUFFER_PADDING_SIZE))) {
-                    st->codec->extradata_size = 0;
+                if (ff_alloc_extradata(st->codec, 26 + item_len)) {
                     return AVERROR(ENOMEM);
                 }
                 AV_WB32(st->codec->extradata, 12);
@@ -193,7 +193,7 @@ static int qdm2_restore_block(PayloadContext *qdm, AVStream *st, AVPacket *pkt)
     for (n = 0; n < 0x80; n++)
         if (qdm->len[n] > 0)
             break;
-    assert(n < 0x80);
+    av_assert0(n < 0x80);
 
     if ((res = av_new_packet(pkt, qdm->block_size)) < 0)
         return res;
@@ -237,7 +237,8 @@ static int qdm2_restore_block(PayloadContext *qdm, AVStream *st, AVPacket *pkt)
 static int qdm2_parse_packet(AVFormatContext *s, PayloadContext *qdm,
                              AVStream *st, AVPacket *pkt,
                              uint32_t *timestamp,
-                             const uint8_t *buf, int len, int flags)
+                             const uint8_t *buf, int len, uint16_t seq,
+                             int flags)
 {
     int res = AVERROR_INVALIDDATA, n;
     const uint8_t *end = buf + len, *p = buf;

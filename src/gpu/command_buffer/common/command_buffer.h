@@ -5,9 +5,9 @@
 #ifndef GPU_COMMAND_BUFFER_COMMON_COMMAND_BUFFER_H_
 #define GPU_COMMAND_BUFFER_COMMON_COMMAND_BUFFER_H_
 
-#include "../../gpu_export.h"
-#include "../common/buffer.h"
-#include "../common/constants.h"
+#include "gpu/command_buffer/common/buffer.h"
+#include "gpu/command_buffer/common/constants.h"
+#include "gpu/gpu_export.h"
 
 namespace base {
 class SharedMemory;
@@ -18,10 +18,6 @@ namespace gpu {
 // Common interface for CommandBuffer implementations.
 class GPU_EXPORT CommandBuffer {
  public:
-  enum {
-    kMaxCommandBufferSize = 4 * 1024 * 1024
-  };
-
   struct State {
     State()
         : num_entries(0),
@@ -74,14 +70,27 @@ class GPU_EXPORT CommandBuffer {
   virtual ~CommandBuffer() {
   }
 
+  // Check if a value is between a start and end value, inclusive, allowing
+  // for wrapping if start > end.
+  static bool InRange(int32 start, int32 end, int32 value) {
+    if (start <= end)
+      return start <= value && value <= end;
+    else
+      return start <= value || value <= end;
+  }
+
   // Initialize the command buffer with the given size.
   virtual bool Initialize() = 0;
 
-  // Returns the current status.
-  virtual State GetState() = 0;
-
   // Returns the last state without synchronizing with the service.
   virtual State GetLastState() = 0;
+
+  // Returns the last token without synchronizing with the service. Note that
+  // while you could just call GetLastState().token, GetLastState needs to be
+  // fast as it is called for every command where GetLastToken is only called
+  // by code that needs to know the last token so it can be slower but more up
+  // to date than GetLastState.
+  virtual int32 GetLastToken() = 0;
 
   // The writer calls this to update its put offset. This ensures the reader
   // sees the latest added commands, and will eventually process them. On the
@@ -89,51 +98,25 @@ class GPU_EXPORT CommandBuffer {
   // subsequent Flushes on the same GpuChannel.
   virtual void Flush(int32 put_offset) = 0;
 
-  // The writer calls this to update its put offset. This function returns the
-  // reader's most recent get offset. Does not return until all pending commands
-  // have been executed.
-  virtual State FlushSync(int32 put_offset, int32 last_known_get) = 0;
+  // The writer calls this to wait until the current token is within a
+  // specific range, inclusive. Can return early if an error is generated.
+  virtual void WaitForTokenInRange(int32 start, int32 end) = 0;
+
+  // The writer calls this to wait until the current get offset is within a
+  // specific range, inclusive. Can return early if an error is generated.
+  virtual void WaitForGetOffsetInRange(int32 start, int32 end) = 0;
 
   // Sets the buffer commands are read from.
   // Also resets the get and put offsets to 0.
   virtual void SetGetBuffer(int32 transfer_buffer_id) = 0;
 
-  // Sets the current get offset. This can be called from any thread.
-  virtual void SetGetOffset(int32 get_offset) = 0;
+  // Create a transfer buffer of the given size. Returns its ID or -1 on
+  // error.
+  virtual scoped_refptr<gpu::Buffer> CreateTransferBuffer(size_t size,
+                                                          int32* id) = 0;
 
-  // Create a transfer buffer and return a handle that uniquely
-  // identifies it or -1 on error. id_request lets the caller request a
-  // specific id for the transfer buffer, or -1 if the caller does not care.
-  // If the requested id can not be fulfilled, a different id will be returned.
-  // id_request must be either -1 or between 0 and 100.
-  virtual int32 CreateTransferBuffer(size_t size, int32 id_request) = 0;
-
-  // Register an existing shared memory object and get an ID that can be used
-  // to identify it in the command buffer. Callee dups the handle until
-  // DestroyTransferBuffer is called. id_request lets the caller request a
-  // specific id for the transfer buffer, or -1 if the caller does not care.
-  // If the requested id can not be fulfilled, a different id will be returned.
-  // id_request must be either -1 or between 0 and 100.
-  virtual int32 RegisterTransferBuffer(base::SharedMemory* shared_memory,
-                                       size_t size,
-                                       int32 id_request) = 0;
-
-  // Destroy a transfer buffer and recycle the handle.
+  // Destroy a transfer buffer. The ID must be positive.
   virtual void DestroyTransferBuffer(int32 id) = 0;
-
-  // Get the transfer buffer associated with a handle.
-  virtual Buffer GetTransferBuffer(int32 handle) = 0;
-
-  // Allows the reader to update the current token value.
-  virtual void SetToken(int32 token) = 0;
-
-  // Allows the reader to set the current parse error.
-  virtual void SetParseError(error::Error) = 0;
-
-  // Allows the reader to set the current context lost reason.
-  // NOTE: if calling this in conjunction with SetParseError,
-  // call this first.
-  virtual void SetContextLostReason(error::ContextLostReason) = 0;
 
 // The NaCl Win64 build only really needs the struct definitions above; having
 // GetLastError declared would mean we'd have to also define it, and pull more

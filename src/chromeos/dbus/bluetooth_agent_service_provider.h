@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,15 +15,19 @@
 
 namespace chromeos {
 
-// BluetoothAgentServiceProvider is used to provide a D-Bus object that BlueZ
-// can communicate with during a remote device pairing request.
+// BluetoothAgentServiceProvider is used to provide a D-Bus object that
+// the bluetooth daemon can communicate with during a remote device pairing
+// request.
 //
 // Instantiate with a chosen D-Bus object path and delegate object, and pass
 // the D-Bus object path as the |agent_path| argument to the
-// chromeos::BluetoothAdapterClient::CreatePairedDevice() method. Calls made
-// to the agent by the Bluetooth daemon will be passed on to your Delegate
-// object for handling, and responses returned using the callbacks supplied
-// to those methods.
+// chromeos::BluetoothAgentManagerClient::RegisterAgent() method.
+//
+// After initiating the pairing process with a device, using the
+// chromeos::BluetoothDeviceClient::Pair() method, the Bluetooth daemon will
+// make calls to this agent object and they will be passed on to your Delegate
+// object for handling. Responses should be returned using the callbacks
+// supplied to those methods.
 class CHROMEOS_EXPORT BluetoothAgentServiceProvider {
  public:
   // Interface for reacting to agent requests.
@@ -40,17 +44,6 @@ class CHROMEOS_EXPORT BluetoothAgentServiceProvider {
       SUCCESS,
       REJECTED,
       CANCELLED
-    };
-
-    // Possible values for the |mode| parameter of the ConfirmModeChange()
-    // method. Off indicates that the adapter is to be turned off, connectable
-    // indicates that the adapter is to be turned on and accept incoming
-    // connections, and discoverable indicates the adapter is to be turned
-    // on and discoverable by remote devices.
-    enum Mode {
-      OFF,
-      CONNECTABLE,
-      DISCOVERABLE
     };
 
     // The PinCodeCallback is used for the RequestPinCode() method, it should
@@ -71,8 +64,10 @@ class CHROMEOS_EXPORT BluetoothAgentServiceProvider {
 
     // This method will be called when the agent is unregistered from the
     // Bluetooth daemon, generally at the end of a pairing request. It may be
-    // used to perform cleanup tasks.
-    virtual void Release() = 0;
+    // used to perform cleanup tasks. This corresponds to the
+    // org.bluez.Agent1.Release method and is renamed to avoid a conflict
+    // with base::Refcounted<T>.
+    virtual void Released() = 0;
 
     // This method will be called when the Bluetooth daemon requires a
     // PIN Code for authentication of the device with object path |device_path|,
@@ -83,6 +78,18 @@ class CHROMEOS_EXPORT BluetoothAgentServiceProvider {
     // for which there is no automatic pairing or special handling.
     virtual void RequestPinCode(const dbus::ObjectPath& device_path,
                                 const PinCodeCallback& callback) = 0;
+
+    // This method will be called when the Bluetooth daemon requires that the
+    // user enter the PIN code |pincode| into the device with object path
+    // |device_path| so that it may be authenticated. The Cancel() method
+    // will be called to dismiss the display once pairing is complete or
+    // cancelled.
+    //
+    // This is used for Bluetooth 2.0 and earlier keyboard devices, the
+    // |pincode| will always be a six-digit numeric in the range 000000-999999
+    // for compatibilty with later specifications.
+    virtual void DisplayPinCode(const dbus::ObjectPath& device_path,
+                                const std::string& pincode) = 0;
 
     // This method will be called when the Bluetooth daemon requires a
     // Passkey for authentication of the device with object path |device_path|,
@@ -97,18 +104,6 @@ class CHROMEOS_EXPORT BluetoothAgentServiceProvider {
                                 const PasskeyCallback& callback) = 0;
 
     // This method will be called when the Bluetooth daemon requires that the
-    // user enter the PIN code |pincode| into the device with object path
-    // |device_path| so that it may be authenticated. The Cancel() method
-    // will be called to dismiss the display once pairing is complete or
-    // cancelled.
-    //
-    // This is used for Bluetooth 2.0 and earlier keyboard devices, the
-    // |pincode| will always be a six-digit numeric in the range 000000-999999
-    // for compatibilty with later specifications.
-    virtual void DisplayPinCode(const dbus::ObjectPath& device_path,
-                                const std::string& pincode) = 0;
-
-    // This method will be called when the Bluetooth daemon requires that the
     // user enter the Passkey |passkey| into the device with object path
     // |device_path| so that it may be authenticated. The Cancel() method
     // will be called to dismiss the display once pairing is complete or
@@ -118,8 +113,11 @@ class CHROMEOS_EXPORT BluetoothAgentServiceProvider {
     // but not display, such as keyboards. The Passkey is a numeric in the
     // range 0-999999 and should be always presented zero-padded to six
     // digits.
+    //
+    // As the user enters the passkey onto the device, |entered| will be
+    // updated to reflect the number of digits entered so far.
     virtual void DisplayPasskey(const dbus::ObjectPath& device_path,
-                                uint32 passkey) = 0;
+                                uint32 passkey, uint16 entered) = 0;
 
     // This method will be called when the Bluetooth daemon requires that the
     // user confirm that the Passkey |passkey| is displayed on the screen
@@ -136,21 +134,24 @@ class CHROMEOS_EXPORT BluetoothAgentServiceProvider {
                                      uint32 passkey,
                                      const ConfirmationCallback& callback) = 0;
 
+    // This method will be called when the Bluetooth daemon requires
+    // authorization of an incoming pairing attempt from the device with object
+    // path |device_path| that would have otherwised triggered the just-works
+    // pairing model.
+    //
+    // The agent should confirm the incoming pairing with the user and call
+    // |callback| to provide their response (success, rejected or cancelled).
+    virtual void RequestAuthorization(const dbus::ObjectPath& device_path,
+                                      const ConfirmationCallback& callback) = 0;
+
     // This method will be called when the Bluetooth daemon requires that the
     // user confirm that the device with object path |object_path| is
     // authorized to connect to the service with UUID |uuid|. The agent should
     // confirm with the user and call |callback| to provide their response
     // (success, rejected or cancelled).
-    virtual void Authorize(const dbus::ObjectPath& device_path,
-                           const std::string& uuid,
-                           const ConfirmationCallback& callback) = 0;
-
-    // This method will be called when the Bluetooth daemon requires that the
-    // user confirm that the device adapter may switch to mode |mode|. The
-    // agent should confirm with the user and call |callback| to provide
-    // their response (success, rejected or cancelled).
-    virtual void ConfirmModeChange(Mode mode,
-                                   const ConfirmationCallback& callback) = 0;
+    virtual void AuthorizeService(const dbus::ObjectPath& device_path,
+                                  const std::string& uuid,
+                                  const ConfirmationCallback& callback) = 0;
 
     // This method will be called by the Bluetooth daemon to indicate that
     // the request failed before a reply was returned from the device.
@@ -164,7 +165,9 @@ class CHROMEOS_EXPORT BluetoothAgentServiceProvider {
   // and |delegate| is the object to which all method calls will be passed
   // and responses generated from.
   static BluetoothAgentServiceProvider* Create(
-      dbus::Bus* bus, const dbus::ObjectPath& object_path, Delegate* delegate);
+      dbus::Bus* bus,
+      const dbus::ObjectPath& object_path,
+      Delegate* delegate);
 
  protected:
   BluetoothAgentServiceProvider();

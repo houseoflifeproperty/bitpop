@@ -5,7 +5,7 @@
 #ifndef CHROME_BROWSER_SYNC_TEST_INTEGRATION_PREFERENCES_HELPER_H_
 #define CHROME_BROWSER_SYNC_TEST_INTEGRATION_PREFERENCES_HELPER_H_
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/values.h"
 
 #include <string>
@@ -60,14 +60,14 @@ void AppendStringPref(int index,
 // |verifier| if DisableVerifier() hasn't been called.
 void ChangeFilePathPref(int index,
                         const char* pref_name,
-                        const FilePath& new_value);
+                        const base::FilePath& new_value);
 
 // Changes the value of the list preference with name |pref_name| in the
 // profile with index |index| to |new_value|. Also changes its value in
 // |verifier| if DisableVerifier() hasn't been called.
 void ChangeListPref(int index,
                     const char* pref_name,
-                    const ListValue& new_value);
+                    const base::ListValue& new_value);
 
 // Used to verify that the boolean preference with name |pref_name| has the
 // same value across all profiles. Also checks |verifier| if DisableVerifier()
@@ -103,6 +103,10 @@ bool FilePathPrefMatches(const char* pref_name) WARN_UNUSED_RESULT;
 // same value across all profiles. Also checks |verifier| if DisableVerifier()
 // hasn't been called.
 bool ListPrefMatches(const char* pref_name) WARN_UNUSED_RESULT;
+
+// This is the version of ListPrefMatches that waits for the preference list
+// to match in all profiles. Returns false if this operation times out.
+bool AwaitListPrefMatches(const char* pref_name) WARN_UNUSED_RESULT;
 
 }  // namespace preferences_helper
 

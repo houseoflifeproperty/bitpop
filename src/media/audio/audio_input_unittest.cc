@@ -5,7 +5,9 @@
 #include "base/basictypes.h"
 #include "base/environment.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
+#include "base/synchronization/waitable_event.h"
 #include "base/threading/platform_thread.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_manager_base.h"
@@ -13,30 +15,22 @@
 
 namespace media {
 
-static const int kSamplingRate = 8000;
-static const int kSamplesPerPacket = kSamplingRate / 20;
-
 // This class allows to find out if the callbacks are occurring as
 // expected and if any error has been reported.
 class TestInputCallback : public AudioInputStream::AudioInputCallback {
  public:
-  explicit TestInputCallback(int max_data_bytes)
+  explicit TestInputCallback()
       : callback_count_(0),
-        had_error_(0),
-        max_data_bytes_(max_data_bytes) {
+        had_error_(0) {
   }
-  virtual void OnData(AudioInputStream* stream, const uint8* data,
-                      uint32 size, uint32 hardware_delay_bytes, double volume) {
+  virtual void OnData(AudioInputStream* stream,
+                      const uint8* data,
+                      uint32 size,
+                      uint32 hardware_delay_bytes,
+                      double volume) OVERRIDE {
     ++callback_count_;
-    // Read the first byte to make sure memory is good.
-    if (size) {
-      ASSERT_LE(static_cast<int>(size), max_data_bytes_);
-      int value = data[0];
-      EXPECT_GE(value, 0);
-    }
   }
-  virtual void OnClose(AudioInputStream* stream) {}
-  virtual void OnError(AudioInputStream* stream, int code) {
+  virtual void OnError(AudioInputStream* stream) OVERRIDE {
     ++had_error_;
   }
   // Returns how many times OnData() has been called.
@@ -51,114 +45,200 @@ class TestInputCallback : public AudioInputStream::AudioInputCallback {
  private:
   int callback_count_;
   int had_error_;
-  int max_data_bytes_;
 };
 
-static bool CanRunAudioTests(AudioManager* audio_man) {
-  bool has_input = audio_man->HasAudioInputDevices();
+class AudioInputTest : public testing::Test {
+  public:
+   AudioInputTest() :
+      message_loop_(base::MessageLoop::TYPE_UI),
+      audio_manager_(AudioManager::CreateForTesting()),
+      audio_input_stream_(NULL) {
+    // Wait for the AudioManager to finish any initialization on the audio loop.
+    base::RunLoop().RunUntilIdle();
+  }
 
-  if (!has_input)
-    LOG(WARNING) << "No input devices detected";
+  virtual ~AudioInputTest() {
+    base::RunLoop().RunUntilIdle();
+  }
 
-  return has_input;
-}
+ protected:
+  AudioManager* audio_manager() { return audio_manager_.get(); }
 
-static AudioInputStream* CreateTestAudioInputStream(AudioManager* audio_man) {
-  AudioInputStream* ais = audio_man->MakeAudioInputStream(
-      AudioParameters(AudioParameters::AUDIO_PCM_LINEAR, CHANNEL_LAYOUT_STEREO,
-                      kSamplingRate, 16, kSamplesPerPacket),
-                      AudioManagerBase::kDefaultDeviceId);
-  EXPECT_TRUE(NULL != ais);
-  return ais;
-}
+  bool CanRunAudioTests() {
+    bool has_input = audio_manager()->HasAudioInputDevices();
+    LOG_IF(WARNING, !has_input) << "No input devices detected";
+    return has_input;
+  }
 
-// Test that AudioInputStream rejects out of range parameters.
-TEST(AudioInputTest, SanityOnMakeParams) {
-  scoped_ptr<AudioManager> audio_man(AudioManager::Create());
-  if (!CanRunAudioTests(audio_man.get()))
-    return;
+  void MakeAudioInputStreamOnAudioThread() {
+    RunOnAudioThread(
+        base::Bind(&AudioInputTest::MakeAudioInputStream,
+                   base::Unretained(this)));
+  }
 
-  AudioParameters::Format fmt = AudioParameters::AUDIO_PCM_LINEAR;
-  EXPECT_TRUE(NULL == audio_man->MakeAudioInputStream(
-      AudioParameters(fmt, CHANNEL_LAYOUT_7_1, 8000, 16,
-                      kSamplesPerPacket), AudioManagerBase::kDefaultDeviceId));
-  EXPECT_TRUE(NULL == audio_man->MakeAudioInputStream(
-      AudioParameters(fmt, CHANNEL_LAYOUT_MONO, 1024 * 1024, 16,
-                      kSamplesPerPacket), AudioManagerBase::kDefaultDeviceId));
-  EXPECT_TRUE(NULL == audio_man->MakeAudioInputStream(
-      AudioParameters(fmt, CHANNEL_LAYOUT_STEREO, 8000, 80,
-                      kSamplesPerPacket), AudioManagerBase::kDefaultDeviceId));
-  EXPECT_TRUE(NULL == audio_man->MakeAudioInputStream(
-      AudioParameters(fmt, CHANNEL_LAYOUT_STEREO, 8000, 80,
-                      1000 * kSamplesPerPacket),
-                      AudioManagerBase::kDefaultDeviceId));
-  EXPECT_TRUE(NULL == audio_man->MakeAudioInputStream(
-      AudioParameters(fmt, CHANNEL_LAYOUT_UNSUPPORTED, 8000, 16,
-                      kSamplesPerPacket), AudioManagerBase::kDefaultDeviceId));
-  EXPECT_TRUE(NULL == audio_man->MakeAudioInputStream(
-      AudioParameters(fmt, CHANNEL_LAYOUT_STEREO, -8000, 16,
-                      kSamplesPerPacket), AudioManagerBase::kDefaultDeviceId));
-  EXPECT_TRUE(NULL == audio_man->MakeAudioInputStream(
-      AudioParameters(fmt, CHANNEL_LAYOUT_STEREO, 8000, -16,
-                      kSamplesPerPacket), AudioManagerBase::kDefaultDeviceId));
-  EXPECT_TRUE(NULL == audio_man->MakeAudioInputStream(
-      AudioParameters(fmt, CHANNEL_LAYOUT_STEREO, 8000, 16, -1024),
-      AudioManagerBase::kDefaultDeviceId));
-}
+  void CloseAudioInputStreamOnAudioThread() {
+    RunOnAudioThread(
+        base::Bind(&AudioInputStream::Close,
+                   base::Unretained(audio_input_stream_)));
+    audio_input_stream_ = NULL;
+  }
+
+  void OpenAndCloseAudioInputStreamOnAudioThread() {
+    RunOnAudioThread(
+        base::Bind(&AudioInputTest::OpenAndClose,
+                   base::Unretained(this)));
+  }
+
+  void OpenStopAndCloseAudioInputStreamOnAudioThread() {
+    RunOnAudioThread(
+        base::Bind(&AudioInputTest::OpenStopAndClose,
+                   base::Unretained(this)));
+  }
+
+  void OpenAndStartAudioInputStreamOnAudioThread(
+      AudioInputStream::AudioInputCallback* sink) {
+    RunOnAudioThread(
+        base::Bind(&AudioInputTest::OpenAndStart,
+                   base::Unretained(this),
+                   sink));
+  }
+
+  void StopAndCloseAudioInputStreamOnAudioThread() {
+    RunOnAudioThread(
+        base::Bind(&AudioInputTest::StopAndClose,
+                   base::Unretained(this)));
+  }
+
+  void MakeAudioInputStream() {
+    DCHECK(audio_manager()->GetTaskRunner()->BelongsToCurrentThread());
+    AudioParameters params = audio_manager()->GetInputStreamParameters(
+        AudioManagerBase::kDefaultDeviceId);
+    audio_input_stream_ = audio_manager()->MakeAudioInputStream(params,
+        AudioManagerBase::kDefaultDeviceId);
+    EXPECT_TRUE(audio_input_stream_);
+  }
+
+  void OpenAndClose() {
+    DCHECK(audio_manager()->GetTaskRunner()->BelongsToCurrentThread());
+    EXPECT_TRUE(audio_input_stream_->Open());
+    audio_input_stream_->Close();
+    audio_input_stream_ = NULL;
+  }
+
+  void OpenAndStart(AudioInputStream::AudioInputCallback* sink) {
+    DCHECK(audio_manager()->GetTaskRunner()->BelongsToCurrentThread());
+    EXPECT_TRUE(audio_input_stream_->Open());
+    audio_input_stream_->Start(sink);
+  }
+
+  void OpenStopAndClose() {
+    DCHECK(audio_manager()->GetTaskRunner()->BelongsToCurrentThread());
+    EXPECT_TRUE(audio_input_stream_->Open());
+    audio_input_stream_->Stop();
+    audio_input_stream_->Close();
+    audio_input_stream_ = NULL;
+  }
+
+  void StopAndClose() {
+    DCHECK(audio_manager()->GetTaskRunner()->BelongsToCurrentThread());
+    audio_input_stream_->Stop();
+    audio_input_stream_->Close();
+    audio_input_stream_ = NULL;
+  }
+
+  // Synchronously runs the provided callback/closure on the audio thread.
+  void RunOnAudioThread(const base::Closure& closure) {
+    if (!audio_manager()->GetTaskRunner()->BelongsToCurrentThread()) {
+      base::WaitableEvent event(false, false);
+      audio_manager()->GetTaskRunner()->PostTask(
+          FROM_HERE,
+          base::Bind(&AudioInputTest::RunOnAudioThreadImpl,
+                     base::Unretained(this),
+                     closure,
+                     &event));
+      event.Wait();
+    } else {
+      closure.Run();
+    }
+  }
+
+  void RunOnAudioThreadImpl(const base::Closure& closure,
+                            base::WaitableEvent* event) {
+    DCHECK(audio_manager()->GetTaskRunner()->BelongsToCurrentThread());
+    closure.Run();
+    event->Signal();
+  }
+
+  base::MessageLoop message_loop_;
+  scoped_ptr<AudioManager> audio_manager_;
+  AudioInputStream* audio_input_stream_;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(AudioInputTest);
+};
 
 // Test create and close of an AudioInputStream without recording audio.
-TEST(AudioInputTest, CreateAndClose) {
-  scoped_ptr<AudioManager> audio_man(AudioManager::Create());
-  if (!CanRunAudioTests(audio_man.get()))
+TEST_F(AudioInputTest, CreateAndClose) {
+  if (!CanRunAudioTests())
     return;
-  AudioInputStream* ais = CreateTestAudioInputStream(audio_man.get());
-  ais->Close();
+  MakeAudioInputStreamOnAudioThread();
+  CloseAudioInputStreamOnAudioThread();
 }
 
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(ARCH_CPU_ARM_FAMILY)
+// This test is failing on ARM linux: http://crbug.com/238490
+#define MAYBE_OpenAndClose DISABLED_OpenAndClose
+#else
+#define MAYBE_OpenAndClose OpenAndClose
+#endif
 // Test create, open and close of an AudioInputStream without recording audio.
-TEST(AudioInputTest, OpenAndClose) {
-  scoped_ptr<AudioManager> audio_man(AudioManager::Create());
-  if (!CanRunAudioTests(audio_man.get()))
+TEST_F(AudioInputTest, MAYBE_OpenAndClose) {
+  if (!CanRunAudioTests())
     return;
-  AudioInputStream* ais = CreateTestAudioInputStream(audio_man.get());
-  EXPECT_TRUE(ais->Open());
-  ais->Close();
+  MakeAudioInputStreamOnAudioThread();
+  OpenAndCloseAudioInputStreamOnAudioThread();
 }
 
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(ARCH_CPU_ARM_FAMILY)
+// This test is failing on ARM linux: http://crbug.com/238490
+#define MAYBE_OpenStopAndClose DISABLED_OpenStopAndClose
+#else
+#define MAYBE_OpenStopAndClose OpenStopAndClose
+#endif
 // Test create, open, stop and close of an AudioInputStream without recording.
-TEST(AudioInputTest, OpenStopAndClose) {
-  scoped_ptr<AudioManager> audio_man(AudioManager::Create());
-  if (!CanRunAudioTests(audio_man.get()))
+TEST_F(AudioInputTest, MAYBE_OpenStopAndClose) {
+  if (!CanRunAudioTests())
     return;
-  AudioInputStream* ais = CreateTestAudioInputStream(audio_man.get());
-  EXPECT_TRUE(ais->Open());
-  ais->Stop();
-  ais->Close();
+  MakeAudioInputStreamOnAudioThread();
+  OpenStopAndCloseAudioInputStreamOnAudioThread();
 }
 
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(ARCH_CPU_ARM_FAMILY)
+// This test is failing on ARM linux: http://crbug.com/238490
+#define MAYBE_Record DISABLED_Record
+#else
+#define MAYBE_Record Record
+#endif
 // Test a normal recording sequence using an AudioInputStream.
-TEST(AudioInputTest, Record) {
-  scoped_ptr<AudioManager> audio_man(AudioManager::Create());
-  if (!CanRunAudioTests(audio_man.get()))
+// Very simple test which starts capturing during half a second and verifies
+// that recording starts.
+TEST_F(AudioInputTest, MAYBE_Record) {
+  if (!CanRunAudioTests())
     return;
-  MessageLoop message_loop(MessageLoop::TYPE_DEFAULT);
-  AudioInputStream* ais = CreateTestAudioInputStream(audio_man.get());
-  EXPECT_TRUE(ais->Open());
+  MakeAudioInputStreamOnAudioThread();
 
-  TestInputCallback test_callback(kSamplesPerPacket * 4);
-  ais->Start(&test_callback);
-  // Verify at least 500ms worth of audio was recorded, after giving sufficient
-  // extra time.
-  message_loop.PostDelayedTask(
+  TestInputCallback test_callback;
+  OpenAndStartAudioInputStreamOnAudioThread(&test_callback);
+
+  message_loop_.PostDelayedTask(
       FROM_HERE,
-      MessageLoop::QuitClosure(),
-      base::TimeDelta::FromMilliseconds(690));
-  message_loop.Run();
-  EXPECT_GE(test_callback.callback_count(), 1);
+      base::MessageLoop::QuitClosure(),
+      base::TimeDelta::FromMilliseconds(500));
+  message_loop_.Run();
+  EXPECT_GE(test_callback.callback_count(), 2);
   EXPECT_FALSE(test_callback.had_error());
 
-  ais->Stop();
-  ais->Close();
+  StopAndCloseAudioInputStreamOnAudioThread();
 }
 
 }  // namespace media

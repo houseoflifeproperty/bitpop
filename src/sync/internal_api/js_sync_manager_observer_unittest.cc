@@ -6,7 +6,7 @@
 
 #include "base/basictypes.h"
 #include "base/location.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/values.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/sessions/sync_session_snapshot.h"
@@ -33,7 +33,7 @@ class JsSyncManagerObserverTest : public testing::Test {
  private:
   // This must be destroyed after the member variables below in order
   // for WeakHandles to be destroyed properly.
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
 
  protected:
   StrictMock<MockJsEventHandler> mock_js_event_handler_;
@@ -44,19 +44,8 @@ class JsSyncManagerObserverTest : public testing::Test {
   }
 };
 
-TEST_F(JsSyncManagerObserverTest, NoArgNotifiations) {
-  InSequence dummy;
-
-  EXPECT_CALL(mock_js_event_handler_,
-              HandleJsEvent("onStopSyncingPermanently",
-                            HasDetails(JsEventDetails())));
-
-  js_sync_manager_observer_.OnStopSyncingPermanently();
-  PumpLoop();
-}
-
 TEST_F(JsSyncManagerObserverTest, OnInitializationComplete) {
-  DictionaryValue expected_details;
+  base::DictionaryValue expected_details;
   syncer::ModelTypeSet restored_types;
   restored_types.Put(BOOKMARKS);
   restored_types.Put(NIGORI);
@@ -82,14 +71,13 @@ TEST_F(JsSyncManagerObserverTest, OnSyncCycleCompleted) {
       5,
       2,
       7,
-      sessions::SyncSourceInfo(),
-      std::vector<sessions::SyncSourceInfo>(),
       false,
       0,
       base::Time::Now(),
       std::vector<int>(MODEL_TYPE_COUNT, 0),
-      std::vector<int>(MODEL_TYPE_COUNT, 0));
-  DictionaryValue expected_details;
+      std::vector<int>(MODEL_TYPE_COUNT, 0),
+      sync_pb::GetUpdatesCallerInfo::UNKNOWN);
+  base::DictionaryValue expected_details;
   expected_details.Set("snapshot", snapshot.ToValue());
 
   EXPECT_CALL(mock_js_event_handler_,
@@ -104,7 +92,7 @@ TEST_F(JsSyncManagerObserverTest, OnActionableError) {
   SyncProtocolError sync_error;
   sync_error.action = CLEAR_USER_DATA_AND_RESYNC;
   sync_error.error_type = TRANSIENT_ERROR;
-  DictionaryValue expected_details;
+  base::DictionaryValue expected_details;
   expected_details.Set("syncError", sync_error.ToValue());
 
   EXPECT_CALL(mock_js_event_handler_,
@@ -118,7 +106,7 @@ TEST_F(JsSyncManagerObserverTest, OnActionableError) {
 
 TEST_F(JsSyncManagerObserverTest, OnConnectionStatusChange) {
   const ConnectionStatus kStatus = CONNECTION_AUTH_ERROR;
-  DictionaryValue expected_details;
+  base::DictionaryValue expected_details;
   expected_details.SetString("status",
                              ConnectionStatusToString(kStatus));
 
@@ -127,20 +115,6 @@ TEST_F(JsSyncManagerObserverTest, OnConnectionStatusChange) {
                             HasDetailsAsDictionary(expected_details)));
 
   js_sync_manager_observer_.OnConnectionStatusChange(kStatus);
-  PumpLoop();
-}
-
-TEST_F(JsSyncManagerObserverTest, SensitiveNotifiations) {
-  DictionaryValue redacted_token_details;
-  redacted_token_details.SetString("token", "<redacted>");
-  DictionaryValue redacted_bootstrap_token_details;
-  redacted_bootstrap_token_details.SetString("bootstrapToken", "<redacted>");
-
-  EXPECT_CALL(mock_js_event_handler_,
-              HandleJsEvent("onUpdatedToken",
-                           HasDetailsAsDictionary(redacted_token_details)));
-
-  js_sync_manager_observer_.OnUpdatedToken("sensitive_token");
   PumpLoop();
 }
 

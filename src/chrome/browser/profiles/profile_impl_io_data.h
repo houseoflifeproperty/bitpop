@@ -7,16 +7,27 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
+#include "chrome/browser/custom_handlers/protocol_handler_registry.h"
 #include "chrome/browser/profiles/profile_io_data.h"
+#include "content/public/browser/cookie_store_factory.h"
 
 namespace chrome_browser_net {
 class HttpServerPropertiesManager;
 class Predictor;
 }  // namespace chrome_browser_net
 
+namespace content {
+class CookieCryptoDelegate;
+}  // namespace content
+
+namespace domain_reliability {
+class DomainReliabilityMonitor;
+}  // namespace domain_reliability
+
 namespace net {
+class FtpTransactionFactory;
 class HttpServerProperties;
 class HttpTransactionFactory;
 }  // namespace net
@@ -32,46 +43,49 @@ class ProfileImplIOData : public ProfileIOData {
     explicit Handle(Profile* profile);
     ~Handle();
 
-    bool HasMainRequestContext() const {
-      return main_request_context_getter_ != NULL;
-    }
-
-    // Init() must be called before ~Handle(). It records all the necessary
+    // Init() must be called before ~Handle(). It records most of the
     // parameters needed to construct a ChromeURLRequestContextGetter.
-    void Init(const FilePath& cookie_path,
-              const FilePath& server_bound_cert_path,
-              const FilePath& cache_path,
+    void Init(const base::FilePath& cookie_path,
+              const base::FilePath& server_bound_cert_path,
+              const base::FilePath& cache_path,
               int cache_max_size,
-              const FilePath& media_cache_path,
+              const base::FilePath& media_cache_path,
               int media_cache_max_size,
-              const FilePath& extensions_cookie_path,
-              const FilePath& profile_path,
-              const FilePath& infinite_cache_path,
+              const base::FilePath& extensions_cookie_path,
+              const base::FilePath& profile_path,
+              const base::FilePath& infinite_cache_path,
               chrome_browser_net::Predictor* predictor,
-              PrefService* local_state,
-              IOThread* io_thread,
-              bool restore_old_session_cookies,
+              content::CookieStoreConfig::SessionCookieMode
+                  session_cookie_mode,
               quota::SpecialStoragePolicy* special_storage_policy);
 
-    base::Callback<ChromeURLDataManagerBackend*(void)>
-        GetChromeURLDataManagerBackendGetter() const;
+    // These Create*ContextGetter() functions are only exposed because the
+    // circular relationship between Profile, ProfileIOData::Handle, and the
+    // ChromeURLRequestContextGetter factories requires Profile be able to call
+    // these functions.
+    scoped_refptr<ChromeURLRequestContextGetter> CreateMainRequestContextGetter(
+        content::ProtocolHandlerMap* protocol_handlers,
+        content::ProtocolHandlerScopedVector protocol_interceptors,
+        PrefService* local_state,
+        IOThread* io_thread) const;
+    scoped_refptr<ChromeURLRequestContextGetter>
+        CreateIsolatedAppRequestContextGetter(
+            const base::FilePath& partition_path,
+            bool in_memory,
+            content::ProtocolHandlerMap* protocol_handlers,
+            content::ProtocolHandlerScopedVector protocol_interceptors) const;
+
     content::ResourceContext* GetResourceContext() const;
     // GetResourceContextNoInit() does not call LazyInitialize() so it can be
     // safely be used during initialization.
     content::ResourceContext* GetResourceContextNoInit() const;
     scoped_refptr<ChromeURLRequestContextGetter>
-        GetMainRequestContextGetter() const;
-    scoped_refptr<ChromeURLRequestContextGetter>
         GetMediaRequestContextGetter() const;
     scoped_refptr<ChromeURLRequestContextGetter>
         GetExtensionsRequestContextGetter() const;
     scoped_refptr<ChromeURLRequestContextGetter>
-        GetIsolatedAppRequestContextGetter(
-            const FilePath& partition_path,
-            bool in_memory) const;
-    scoped_refptr<ChromeURLRequestContextGetter>
         GetIsolatedMediaRequestContextGetter(
-            const FilePath& partition_path,
+            const base::FilePath& partition_path,
             bool in_memory) const;
 
     // Deletes all network related data since |time|. It deletes transport
@@ -126,58 +140,54 @@ class ProfileImplIOData : public ProfileIOData {
     ~LazyParams();
 
     // All of these parameters are intended to be read on the IO thread.
-    FilePath cookie_path;
-    FilePath server_bound_cert_path;
-    FilePath cache_path;
+    base::FilePath cookie_path;
+    base::FilePath server_bound_cert_path;
+    base::FilePath cache_path;
     int cache_max_size;
-    FilePath media_cache_path;
+    base::FilePath media_cache_path;
     int media_cache_max_size;
-    FilePath extensions_cookie_path;
-    FilePath infinite_cache_path;
-    bool restore_old_session_cookies;
+    base::FilePath extensions_cookie_path;
+    base::FilePath infinite_cache_path;
+    content::CookieStoreConfig::SessionCookieMode session_cookie_mode;
     scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy;
   };
-
-  typedef base::hash_map<std::string, net::HttpTransactionFactory* >
-      HttpTransactionFactoryMap;
 
   ProfileImplIOData();
   virtual ~ProfileImplIOData();
 
-  virtual void LazyInitializeInternal(
-      ProfileParams* profile_params) const OVERRIDE;
+  virtual void InitializeInternal(
+      ProfileParams* profile_params,
+      content::ProtocolHandlerMap* protocol_handlers,
+      content::ProtocolHandlerScopedVector protocol_interceptors)
+          const OVERRIDE;
   virtual void InitializeExtensionsRequestContext(
       ProfileParams* profile_params) const OVERRIDE;
   virtual ChromeURLRequestContext* InitializeAppRequestContext(
       ChromeURLRequestContext* main_context,
       const StoragePartitionDescriptor& partition_descriptor,
-      scoped_ptr<net::URLRequestJobFactory::Interceptor>
-          protocol_handler_interceptor) const OVERRIDE;
+      scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
+          protocol_handler_interceptor,
+      content::ProtocolHandlerMap* protocol_handlers,
+      content::ProtocolHandlerScopedVector protocol_interceptors)
+          const OVERRIDE;
   virtual ChromeURLRequestContext* InitializeMediaRequestContext(
       ChromeURLRequestContext* original_context,
       const StoragePartitionDescriptor& partition_descriptor) const OVERRIDE;
   virtual ChromeURLRequestContext*
       AcquireMediaRequestContext() const OVERRIDE;
-  virtual ChromeURLRequestContext*
-      AcquireIsolatedAppRequestContext(
-          ChromeURLRequestContext* main_context,
-          const StoragePartitionDescriptor& partition_descriptor,
-          scoped_ptr<net::URLRequestJobFactory::Interceptor>
-              protocol_handler_interceptor) const OVERRIDE;
+  virtual ChromeURLRequestContext* AcquireIsolatedAppRequestContext(
+      ChromeURLRequestContext* main_context,
+      const StoragePartitionDescriptor& partition_descriptor,
+      scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
+          protocol_handler_interceptor,
+      content::ProtocolHandlerMap* protocol_handlers,
+      content::ProtocolHandlerScopedVector protocol_interceptors)
+          const OVERRIDE;
   virtual ChromeURLRequestContext*
       AcquireIsolatedMediaRequestContext(
           ChromeURLRequestContext* app_context,
           const StoragePartitionDescriptor& partition_descriptor)
               const OVERRIDE;
-  virtual chrome_browser_net::LoadTimeStats* GetLoadTimeStats(
-      IOThread::Globals* io_thread_globals) const OVERRIDE;
-
-  void SetUpJobFactory(net::URLRequestJobFactoryImpl* job_factory,
-                       scoped_ptr<net::URLRequestJobFactory::Interceptor>
-                           protocol_handler_interceptor,
-                       net::NetworkDelegate* network_delegate,
-                       net::FtpTransactionFactory* ftp_transaction_factory,
-                       net::FtpAuthCache* ftp_auth_cache) const;
 
   // Deletes all network related data since |time|. It deletes transport
   // security state since |time| and also deletes HttpServerProperties data.
@@ -204,8 +214,11 @@ class ProfileImplIOData : public ProfileIOData {
   mutable scoped_ptr<net::URLRequestJobFactory> main_job_factory_;
   mutable scoped_ptr<net::URLRequestJobFactory> extensions_job_factory_;
 
+  mutable scoped_ptr<domain_reliability::DomainReliabilityMonitor>
+      domain_reliability_monitor_;
+
   // Parameters needed for isolated apps.
-  FilePath profile_path_;
+  base::FilePath profile_path_;
   int app_cache_max_size_;
   int app_media_cache_max_size_;
 

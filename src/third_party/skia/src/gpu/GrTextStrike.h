@@ -13,11 +13,12 @@
 
 #include "GrAllocPool.h"
 #include "GrFontScaler.h"
-#include "GrTHashCache.h"
+#include "GrTHashTable.h"
 #include "GrPoint.h"
 #include "GrGlyph.h"
+#include "GrDrawTarget.h"
+#include "GrAtlas.h"
 
-class GrAtlasMgr;
 class GrFontCache;
 class GrGpu;
 class GrFontPurgeListener;
@@ -28,8 +29,7 @@ class GrFontPurgeListener;
  */
 class GrTextStrike {
 public:
-    GrTextStrike(GrFontCache*, const GrKey* fontScalerKey, GrMaskFormat,
-                 GrAtlasMgr*);
+    GrTextStrike(GrFontCache*, const GrKey* fontScalerKey, GrMaskFormat, GrAtlasMgr*);
     ~GrTextStrike();
 
     const GrKey* getFontScalerKey() const { return fFontScalerKey; }
@@ -37,17 +37,19 @@ public:
     GrMaskFormat getMaskFormat() const { return fMaskFormat; }
 
     inline GrGlyph* getGlyph(GrGlyph::PackedID, GrFontScaler*);
-    bool getGlyphAtlas(GrGlyph*, GrFontScaler*);
+    bool addGlyphToAtlas(GrGlyph*, GrFontScaler*);
 
     // testing
     int countGlyphs() const { return fCache.getArray().count(); }
     const GrGlyph* glyphAt(int index) const {
         return fCache.getArray()[index];
     }
-    GrAtlas* getAtlas() const { return fAtlas; }
+
+    // remove any references to this plot
+    void removePlot(const GrPlot* plot);
 
 public:
-    // for LRU
+    // for easy removal from list
     GrTextStrike*   fPrev;
     GrTextStrike*   fNext;
 
@@ -59,13 +61,12 @@ private:
 
     GrFontCache*    fFontCache;
     GrAtlasMgr*     fAtlasMgr;
-    GrAtlas*        fAtlas;     // linklist
+    GrMaskFormat    fMaskFormat;
+    bool            fUseDistanceField;
 
-    GrMaskFormat fMaskFormat;
+    GrAtlas         fAtlas;
 
     GrGlyph* generateGlyph(GrGlyph::PackedID packed, GrFontScaler* scaler);
-    // returns true if after the purge, the strike is empty
-    bool purgeAtlasAtY(GrAtlas* atlas, int yCoord);
 
     friend class GrFontCache;
 };
@@ -75,11 +76,12 @@ public:
     GrFontCache(GrGpu*);
     ~GrFontCache();
 
-    inline GrTextStrike* getStrike(GrFontScaler*);
+    inline GrTextStrike* getStrike(GrFontScaler*, bool useDistanceField);
 
     void freeAll();
 
-    void purgeExceptFor(GrTextStrike*);
+    // make an unused plot available
+    bool freeUnusedPlot(GrTextStrike* preserveStrike);
 
     // testing
     int countStrikes() const { return fCache.getArray().count(); }
@@ -88,11 +90,24 @@ public:
     }
     GrTextStrike* getHeadStrike() const { return fHead; }
 
-#if GR_DEBUG
+#ifdef SK_DEBUG
     void validate() const;
 #else
     void validate() const {}
 #endif
+
+#ifdef SK_DEVELOPER
+    void dump() const;
+#endif
+
+    enum AtlasType {
+        kA8_AtlasType,   //!< 1-byte per pixel
+        k565_AtlasType,  //!< 2-bytes per pixel
+        k8888_AtlasType, //!< 4-bytes per pixel
+
+        kLast_AtlasType = k8888_AtlasType
+    };
+    static const int kAtlasCount = kLast_AtlasType + 1;
 
 private:
     friend class GrFontPurgeListener;
@@ -104,12 +119,11 @@ private:
     GrTextStrike* fTail;
 
     GrGpu*      fGpu;
-    GrAtlasMgr* fAtlasMgr;
-
+    GrAtlasMgr* fAtlasMgr[kAtlasCount];
 
     GrTextStrike* generateStrike(GrFontScaler*, const Key&);
     inline void detachStrikeFromList(GrTextStrike*);
+    void purgeStrike(GrTextStrike* strike);
 };
 
 #endif
-

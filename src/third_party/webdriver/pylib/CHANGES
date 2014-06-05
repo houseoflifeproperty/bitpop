@@ -1,3 +1,35 @@
+Selenium 2.28
+* "null" can now be passed to executeScript
+* Add transparent and extended colour keywords to color support module. Fixes issue 4866 
+
+Selenium 2.27
+* Added support for phantomjs / ghostdriver
+* Fix python client, avoid duplicate chrome option items after reusing options class. Fixes Issue 4744.
+* adding colour support to Python. fixes issue 4623
+* Adding log_path/service_log_path as named kwargs for chrome
+
+Selenium 2.26
+* Added location_when_scrolled_into_view - Bug 4357
+* Added new expected_conditions support module to be used with WebDriverWait
+
+Selenium 2.25
+* Jython 2.7 Support - Bug 3988
+* EventFiringWebDriver added to Support module - Bug 2267
+* Added IEDriverServer logging that can be accessed via desired capabilities
+* Fixed by data being passed into find_elements - bug 3735
+* Removed deprecated ChromeDriver items around desiredcapabilites in favour of chrome options
+* Added default values for a number of action_chains calls
+
+Selenium 2.24
+* Removing the ctypes approach of invoking IEDriver, you will need to download the IEDriverServer from
+  https://code.google.com/p/selenium/downloads/list
+
+Selenium 2.23
+* Support for FF13 native events
+
+Selenium 2.22
+* Moving IEDriver to be able to use IEDriverServer
+
 Selenium 2.21.3
 * Fix for File Upload to remote servers
 * Better handling of typing in input=file. Bug 3831, 3736

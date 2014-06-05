@@ -4,260 +4,91 @@
 
 #include "chrome/browser/ui/webui/chromeos/login/error_screen_handler.h"
 
-#include "base/bind.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
-#include "base/time.h"
-#include "base/values.h"
+#include "base/message_loop/message_loop.h"
+#include "base/time/time.h"
+#include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/chromeos/app_mode/app_session_lifetime.h"
+#include "chrome/browser/chromeos/app_mode/certificate_manager_dialog.h"
 #include "chrome/browser/chromeos/login/captive_portal_window_proxy.h"
-#include "chrome/browser/chromeos/login/webui_login_display_host.h"
+#include "chrome/browser/chromeos/login/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/webui_login_view.h"
+#include "chrome/browser/chromeos/net/network_portal_detector.h"
+#include "chrome/browser/chromeos/net/network_portal_detector_strategy.h"
+#include "chrome/browser/extensions/component_loader.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/webui/chromeos/login/native_window_delegate.h"
 #include "chrome/browser/ui/webui/chromeos/login/network_state_informer.h"
-#include "chrome/common/chrome_notification_types.h"
-#include "content/public/browser/web_ui.h"
+#include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/dbus/power_manager_client.h"
+#include "chromeos/dbus/session_manager_client.h"
+#include "extensions/browser/extension_system.h"
+#include "grit/browser_resources.h"
+#include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
-#include "ui/base/l10n/l10n_util.h"
-
-namespace chromeos {
+#include "grit/ui_strings.h"
 
 namespace {
 
-// Timeout to delay first notification about offline state for a
-// current network.
-const int kOfflineTimeoutSec = 5;
-
-// Timeout used to prevent infinite connecting to a flaky network.
-const int kConnectingTimeoutSec = 60;
-
-bool IsProxyError(const std::string& reason) {
-  return reason == ErrorScreenHandler::kErrorReasonProxyAuthCancelled ||
-      reason == ErrorScreenHandler::kErrorReasonProxyConnectionFailed;
-}
+const char kJsScreenPath[] = "login.ErrorMessageScreen";
 
 }  // namespace
 
-// static
-const char ErrorScreenHandler::kErrorReasonProxyAuthCancelled[] =
-    "frame error:111";
-const char ErrorScreenHandler::kErrorReasonProxyConnectionFailed[] =
-    "frame error:130";
-const char ErrorScreenHandler::kErrorReasonProxyConfigChanged[] =
-    "proxy changed";
-const char ErrorScreenHandler::kErrorReasonLoadingTimeout[] = "loading timeout";
-const char ErrorScreenHandler::kErrorReasonPortalDetected[] = "portal detected";
-const char ErrorScreenHandler::kErrorReasonNetworkChanged[] = "network changed";
-const char ErrorScreenHandler::kErrorReasonUpdate[] = "update";
+namespace chromeos {
 
 ErrorScreenHandler::ErrorScreenHandler(
     const scoped_refptr<NetworkStateInformer>& network_state_informer)
-    : is_shown_(false),
-      is_first_update_state_call_(true),
-      state_(STATE_UNKNOWN),
-      gaia_is_local_(false),
-      last_network_state_(NetworkStateInformer::UNKNOWN),
+    : BaseScreenHandler(kJsScreenPath),
+      delegate_(NULL),
       network_state_informer_(network_state_informer),
-      native_window_delegate_(NULL) {
-  DCHECK(network_state_informer_);
-  network_state_informer_->AddObserver(this);
+      show_on_init_(false) {
+  DCHECK(network_state_informer_.get());
 }
 
-ErrorScreenHandler::~ErrorScreenHandler() {
-  network_state_informer_->RemoveObserver(this);
+ErrorScreenHandler::~ErrorScreenHandler() {}
+
+void ErrorScreenHandler::SetDelegate(ErrorScreenActorDelegate* delegate) {
+  delegate_ = delegate;
 }
 
-void ErrorScreenHandler::SetNativeWindowDelegate(
-    NativeWindowDelegate* native_window_delegate) {
-  native_window_delegate_ = native_window_delegate;
-}
-
-void ErrorScreenHandler::Show() {
-  ShowOfflineMessage(true);
-  set_is_shown(true);
+void ErrorScreenHandler::Show(OobeDisplay::Screen parent_screen,
+                              base::DictionaryValue* params) {
+  if (!page_is_ready()) {
+    show_on_init_ = true;
+    return;
+  }
+  parent_screen_ = parent_screen;
+  ShowScreen(OobeUI::kScreenErrorMessage, params);
   NetworkErrorShown();
+  NetworkPortalDetector::Get()->SetStrategy(
+      PortalDetectorStrategy::STRATEGY_ID_ERROR_SCREEN);
+  if (delegate_)
+    delegate_->OnErrorShow();
+  LOG(WARNING) << "Offline message is displayed";
 }
 
 void ErrorScreenHandler::Hide() {
-  ShowOfflineMessage(false);
-  set_is_shown(false);
-}
-
-void ErrorScreenHandler::UpdateState(NetworkStateInformer::State state,
-                                     const std::string& network_name,
-                                     const std::string& reason,
-                                     ConnectionType last_network_type) {
-  UpdateStateInternal(state, network_name, reason, last_network_type, false);
-}
-
-void ErrorScreenHandler::UpdateStateInternal(NetworkStateInformer::State state,
-                                             std::string network_name,
-                                             std::string reason,
-                                             ConnectionType last_network_type,
-                                             bool force_update) {
-  // TODO (ygorshenin@): crbug.com/166433
-  LOG(WARNING) << "ErrorScreenHandler::UpdateStateInternal(): "
-               << "state=" << state << ", "
-               << "network_name=" << network_name << ", "
-               << "reason=" << reason << ", "
-               << "last_network_type=" << last_network_type;
-  update_state_closure_.Cancel();
-  if (state == NetworkStateInformer::OFFLINE && is_first_update_state_call()) {
-    set_is_first_update_state_call(false);
-    update_state_closure_.Reset(
-        base::Bind(
-            &ErrorScreenHandler::UpdateStateInternal,
-            base::Unretained(this),
-            state, network_name, reason, last_network_type, force_update));
-    MessageLoop::current()->PostDelayedTask(
-        FROM_HERE,
-        update_state_closure_.callback(),
-        base::TimeDelta::FromSeconds(kOfflineTimeoutSec));
+  if (parent_screen_ == OobeUI::SCREEN_UNKNOWN)
     return;
-  }
-  set_is_first_update_state_call(false);
-
-  // Don't show or hide error screen if we're in connecting state.
-  if (state == NetworkStateInformer::CONNECTING && !force_update) {
-    if (connecting_closure_.IsCancelled()) {
-      // First notification about CONNECTING state.
-      connecting_closure_.Reset(
-          base::Bind(&ErrorScreenHandler::UpdateStateInternal,
-                     base::Unretained(this),
-                     state, network_name, reason, last_network_type, true));
-      MessageLoop::current()->PostDelayedTask(
-          FROM_HERE,
-          connecting_closure_.callback(),
-          base::TimeDelta::FromSeconds(kConnectingTimeoutSec));
-    }
-    return;
-  }
-  connecting_closure_.Cancel();
-
-  bool is_online = (state == NetworkStateInformer::ONLINE);
-  bool is_under_captive_portal =
-      (state == NetworkStateInformer::CAPTIVE_PORTAL);
-  bool is_proxy_error = IsProxyError(reason);
-  bool is_timeout = false;
-  bool is_gaia_signin = (GetCurrentScreen() == OobeUI::SCREEN_GAIA_SIGNIN);
-  bool is_gaia_reloaded = false;
-  bool should_overlay = is_gaia_signin && !gaia_is_local();
-
-  // Reload frame if network is changed.
-  if (reason == kErrorReasonNetworkChanged) {
-    if (is_online &&
-        last_network_state() != NetworkStateInformer::ONLINE &&
-        is_gaia_signin && !is_gaia_reloaded) {
-      LOG(WARNING) << "Retry page load since network has been changed.";
-      ReloadGaiaScreen();
-      is_gaia_reloaded = true;
-    }
-  }
-  set_last_network_state(state);
-
-  if (reason == kErrorReasonProxyConfigChanged && should_overlay &&
-      is_gaia_signin && !is_gaia_reloaded) {
-    // Schedules a immediate retry.
-    LOG(WARNING) << "Retry page load since proxy settings has been changed.";
-    ReloadGaiaScreen();
-    is_gaia_reloaded = true;
-  }
-
-  // Fake portal state for loading timeout.
-  if (reason == kErrorReasonLoadingTimeout) {
-    is_online = false;
-    is_under_captive_portal = true;
-    is_timeout = true;
-  }
-
-  // Portal was detected via generate_204 redirect on Chrome side.
-  // Subsequent call to show dialog if it's already shown does nothing.
-  if (reason == kErrorReasonPortalDetected) {
-    is_online = false;
-    is_under_captive_portal = true;
-  }
-
-  if (!is_online && should_overlay) {
-    LOG(WARNING) << "Show offline message: state=" << state << ", "
-                 << "network_name=" << network_name << ", "
-                 << "reason=" << reason << ", "
-                 << "is_under_captive_portal=" << is_under_captive_portal;
-    ClearOobeErrors();
-    OnBeforeShow(last_network_type);
-
-    if (is_under_captive_portal && !is_proxy_error) {
-      // Do not bother a user with obsessive captive portal showing. This
-      // check makes captive portal being shown only once: either when error
-      // screen is shown for the first time or when switching from another
-      // error screen (offline, proxy).
-      if (!is_shown() || get_state() != STATE_CAPTIVE_PORTAL_ERROR) {
-        // In case of timeout we're suspecting that network might be
-        // a captive portal but would like to check that first.
-        // Otherwise (signal from shill / generate_204 got redirected)
-        // show dialog right away.
-        if (is_timeout)
-          FixCaptivePortal();
-        else
-          ShowCaptivePortal();
-      }
-    } else {
-      HideCaptivePortal();
-    }
-
-    if (is_under_captive_portal) {
-      if (is_proxy_error)
-        ShowProxyError();
-      else
-        ShowCaptivePortalError(network_name);
-    } else {
-      ShowOfflineError();
-    }
-    Show();
-  } else {
-    HideCaptivePortal();
-
-    if (is_shown()) {
-      LOG(WARNING) << "Hide offline message. state=" << state << ", "
-                   << "network_name=" << network_name << ", reason=" << reason;
-      OnBeforeHide();
-      Hide();
-
-      // Forces a reload for Gaia screen on hiding error message.
-      if (is_gaia_signin && !is_gaia_reloaded) {
-        ReloadGaiaScreen();
-        is_gaia_reloaded = true;
-      }
-    }
-  }
-}
-
-void ErrorScreenHandler::ReloadGaiaScreen() {
-  LOG(WARNING) << "Reload auth extension frame.";
-  web_ui()->CallJavascriptFunction("login.GaiaSigninScreen.doReload");
-}
-
-void ErrorScreenHandler::ClearOobeErrors() {
-  web_ui()->CallJavascriptFunction("cr.ui.Oobe.clearErrors");
-}
-
-void ErrorScreenHandler::OnBeforeShow(ConnectionType last_network_type) {
-  base::FundamentalValue last_network_type_value(last_network_type);
-  web_ui()->CallJavascriptFunction("login.ErrorMessageScreen.onBeforeShow",
-                                   last_network_type_value);
-}
-
-void ErrorScreenHandler::OnBeforeHide() {
-  web_ui()->CallJavascriptFunction("login.ErrorMessageScreen.onBeforeHide");
+  std::string screen_name;
+  if (GetScreenName(parent_screen_, &screen_name))
+    ShowScreen(screen_name.c_str(), NULL);
+  NetworkPortalDetector::Get()->SetStrategy(
+      PortalDetectorStrategy::STRATEGY_ID_LOGIN_SCREEN);
+  if (delegate_)
+    delegate_->OnErrorHide();
+  LOG(WARNING) << "Offline message is hidden";
 }
 
 void ErrorScreenHandler::FixCaptivePortal() {
-  if (!native_window_delegate_)
-    return;
-  // TODO (ygorshenin): move error page and captive portal window
-  // showing logic to C++ (currenly most of it is done on the JS
-  // side).
   if (!captive_portal_window_proxy_.get()) {
+    content::WebContents* web_contents =
+        LoginDisplayHostImpl::default_host()->GetWebUILoginView()->
+            GetWebContents();
     captive_portal_window_proxy_.reset(
         new CaptivePortalWindowProxy(network_state_informer_.get(),
-                                     GetNativeWindow()));
+                                     web_contents));
   }
   captive_portal_window_proxy_->ShowIfRedirected();
 }
@@ -274,6 +105,39 @@ void ErrorScreenHandler::HideCaptivePortal() {
     captive_portal_window_proxy_->Close();
 }
 
+void ErrorScreenHandler::SetUIState(ErrorScreen::UIState ui_state) {
+  show_connecting_indicator_ = false;
+  ui_state_ = ui_state;
+  if (page_is_ready())
+    CallJS("setUIState", static_cast<int>(ui_state_));
+}
+
+void ErrorScreenHandler::SetErrorState(ErrorScreen::ErrorState error_state,
+                                       const std::string& network) {
+  error_state_ = error_state;
+  network_ = network;
+  if (page_is_ready())
+    CallJS("setErrorState", static_cast<int>(error_state_), network);
+}
+
+void ErrorScreenHandler::AllowGuestSignin(bool allowed) {
+  guest_signin_allowed_ = allowed;
+  if (page_is_ready())
+    CallJS("allowGuestSignin", allowed);
+}
+
+void ErrorScreenHandler::AllowOfflineLogin(bool allowed) {
+  offline_login_allowed_ = allowed;
+  if (page_is_ready())
+    CallJS("allowOfflineLogin", allowed);
+}
+
+void ErrorScreenHandler::ShowConnectingIndicator(bool show) {
+  show_connecting_indicator_ = show;
+  if (page_is_ready())
+    CallJS("showConnectingIndicator", show);
+}
+
 void ErrorScreenHandler::NetworkErrorShown() {
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_LOGIN_NETWORK_ERROR_SHOWN,
@@ -281,121 +145,136 @@ void ErrorScreenHandler::NetworkErrorShown() {
       content::NotificationService::NoDetails());
 }
 
-void ErrorScreenHandler::ShowProxyError() {
-  web_ui()->CallJavascriptFunction("login.ErrorMessageScreen.showProxyError");
-  set_state(STATE_PROXY_ERROR);
-}
-
-void ErrorScreenHandler::ShowCaptivePortalError(const std::string& network) {
-  base::StringValue network_value(network);
-  web_ui()->CallJavascriptFunction(
-      "login.ErrorMessageScreen.showCaptivePortalError", network_value);
-  set_state(STATE_CAPTIVE_PORTAL_ERROR);
-}
-
-void ErrorScreenHandler::ShowOfflineError() {
-  web_ui()->CallJavascriptFunction("login.ErrorMessageScreen.showOfflineError");
-  set_state(STATE_OFFLINE_ERROR);
-}
-
-void ErrorScreenHandler::ShowOfflineMessage(bool visible) {
-  base::FundamentalValue visible_value(visible);
-  web_ui()->CallJavascriptFunction(
-      "login.ErrorMessageScreen.showOfflineMessage", visible_value);
-}
-
-OobeUI::Screen ErrorScreenHandler::GetCurrentScreen() {
-  OobeUI::Screen screen = OobeUI::SCREEN_UNKNOWN;
+bool ErrorScreenHandler::GetScreenName(OobeUI::Screen screen,
+                                       std::string* name) const {
   OobeUI* oobe_ui = static_cast<OobeUI*>(web_ui()->GetController());
-  if (oobe_ui)
-    screen = oobe_ui->current_screen();
-  return screen;
+  if (!oobe_ui)
+    return false;
+  *name = oobe_ui->GetScreenName(screen);
+  return true;
 }
 
-void ErrorScreenHandler::HandleFixCaptivePortal(const base::ListValue* args) {
-  FixCaptivePortal();
-}
-
-void ErrorScreenHandler::HandleShowCaptivePortal(const base::ListValue* args) {
+void ErrorScreenHandler::HandleShowCaptivePortal() {
   ShowCaptivePortal();
 }
 
-void ErrorScreenHandler::HandleHideCaptivePortal(const base::ListValue* args) {
+void ErrorScreenHandler::HandleHideCaptivePortal() {
   HideCaptivePortal();
 }
 
-void ErrorScreenHandler::HandleErrorScreenUpdate(const base::ListValue* args) {
-  UpdateStateInternal(network_state_informer_->state(),
-                      network_state_informer_->network_name(),
-                      kErrorReasonUpdate,
-                      network_state_informer_->last_network_type(),
-                      false);
+void ErrorScreenHandler::HandleLocalStateErrorPowerwashButtonClicked() {
+  chromeos::DBusThreadManager::Get()->GetSessionManagerClient()->
+      StartDeviceWipe();
 }
 
-void ErrorScreenHandler::HandleShowLoadingTimeoutError(
-    const base::ListValue* args) {
-  UpdateStateInternal(network_state_informer_->state(),
-                      network_state_informer_->network_name(),
-                      kErrorReasonLoadingTimeout,
-                      network_state_informer_->last_network_type(),
-                      false);
+void ErrorScreenHandler::HandleRebootButtonClicked() {
+  chromeos::DBusThreadManager::Get()->GetPowerManagerClient()->RequestRestart();
 }
 
-void ErrorScreenHandler::HandleUpdateGaiaIsLocal(const base::ListValue* args) {
-  DCHECK(args && args->GetSize() == 1);
+void ErrorScreenHandler::HandleDiagnoseButtonClicked() {
+  Profile* profile = ProfileManager::GetActiveUserProfile();
+  ExtensionService* extension_service =
+      extensions::ExtensionSystem::Get(profile)->extension_service();
 
-  bool gaia_is_local = false;
-  if (!args->GetBoolean(0, &gaia_is_local))
-    return;
-  set_gaia_is_local(gaia_is_local);
+  std::string extension_id =
+      extension_service->component_loader()->Add(
+          IDR_CONNECTIVITY_DIAGNOSTICS_MANIFEST,
+          base::FilePath(extension_misc::kConnectivityDiagnosticsKioskPath));
+
+  const extensions::Extension* extension = extension_service->
+      GetExtensionById(extension_id, true);
+  OpenApplication(AppLaunchParams(profile, extension,
+                                  extensions::LAUNCH_CONTAINER_WINDOW,
+                                  NEW_WINDOW));
+  InitAppSession(profile, extension_id);
+
+  UserManager::Get()->SessionStarted();
+
+  LoginDisplayHostImpl::default_host()->Finalize();
+}
+
+void ErrorScreenHandler::HandleConfigureCerts() {
+  CertificateManagerDialog* dialog =
+      new CertificateManagerDialog(ProfileManager::GetActiveUserProfile(),
+                                   NULL,
+                                   GetNativeWindow());
+  dialog->Show();
+}
+
+void ErrorScreenHandler::HandleLaunchOobeGuestSession() {
+  if (delegate_)
+    delegate_->OnLaunchOobeGuestSession();
 }
 
 void ErrorScreenHandler::RegisterMessages() {
-  web_ui()->RegisterMessageCallback("fixCaptivePortal",
-      base::Bind(&ErrorScreenHandler::HandleFixCaptivePortal,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("showCaptivePortal",
-      base::Bind(&ErrorScreenHandler::HandleShowCaptivePortal,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("hideCaptivePortal",
-      base::Bind(&ErrorScreenHandler::HandleHideCaptivePortal,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("errorScreenUpdate",
-      base::Bind(&ErrorScreenHandler::HandleErrorScreenUpdate,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("showLoadingTimeoutError",
-      base::Bind(&ErrorScreenHandler::HandleShowLoadingTimeoutError,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("updateGaiaIsLocal",
-      base::Bind(&ErrorScreenHandler::HandleUpdateGaiaIsLocal,
-                 base::Unretained(this)));
+  AddCallback("showCaptivePortal",
+              &ErrorScreenHandler::HandleShowCaptivePortal);
+  AddCallback("hideCaptivePortal",
+              &ErrorScreenHandler::HandleHideCaptivePortal);
+  AddCallback("localStateErrorPowerwashButtonClicked",
+              &ErrorScreenHandler::HandleLocalStateErrorPowerwashButtonClicked);
+  AddCallback("rebootButtonClicked",
+              &ErrorScreenHandler::HandleRebootButtonClicked);
+  AddCallback("diagnoseButtonClicked",
+              &ErrorScreenHandler::HandleDiagnoseButtonClicked);
+  AddCallback("configureCertsClicked",
+              &ErrorScreenHandler::HandleConfigureCerts);
+  AddCallback("launchOobeGuestSession",
+              &ErrorScreenHandler::HandleLaunchOobeGuestSession);
+  AddCallback("rollbackOkButtonClicked",
+              &ErrorScreenHandler::HandleRebootButtonClicked);
 }
 
-void ErrorScreenHandler::GetLocalizedStrings(
-    base::DictionaryValue* localized_strings) {
-  localized_strings->SetString("offlineMessageTitle",
-      l10n_util::GetStringUTF16(IDS_LOGIN_OFFLINE_TITLE));
-  localized_strings->SetString("offlineMessageBody",
-      l10n_util::GetStringUTF16(IDS_LOGIN_OFFLINE_MESSAGE));
-  localized_strings->SetString("captivePortalTitle",
-      l10n_util::GetStringUTF16(IDS_LOGIN_MAYBE_CAPTIVE_PORTAL_TITLE));
-  localized_strings->SetString("captivePortalMessage",
-      l10n_util::GetStringUTF16(IDS_LOGIN_MAYBE_CAPTIVE_PORTAL));
-  localized_strings->SetString("captivePortalProxyMessage",
-      l10n_util::GetStringUTF16(IDS_LOGIN_MAYBE_CAPTIVE_PORTAL_PROXY));
-  localized_strings->SetString("captivePortalNetworkSelect",
-      l10n_util::GetStringUTF16(IDS_LOGIN_MAYBE_CAPTIVE_PORTAL_NETWORK_SELECT));
-  localized_strings->SetString("proxyMessageText",
-      l10n_util::GetStringUTF16(IDS_LOGIN_PROXY_ERROR_MESSAGE));
+void ErrorScreenHandler::DeclareLocalizedValues(
+    LocalizedValuesBuilder* builder) {
+  builder->Add("loginErrorTitle", IDS_LOGIN_ERROR_TITLE);
+  builder->Add("rollbackErrorTitle", IDS_RESET_SCREEN_REVERT_ERROR);
+  builder->Add("signinOfflineMessageBody", IDS_LOGIN_OFFLINE_MESSAGE);
+  builder->Add("kioskOfflineMessageBody", IDS_KIOSK_OFFLINE_MESSAGE);
+  builder->Add("kioskOnlineTitle", IDS_LOGIN_NETWORK_RESTORED_TITLE);
+  builder->Add("kioskOnlineMessageBody", IDS_KIOSK_ONLINE_MESSAGE);
+  builder->Add("autoEnrollmentOfflineMessageBody",
+               IDS_LOGIN_AUTO_ENROLLMENT_OFFLINE_MESSAGE);
+  builder->AddF("rollbackErrorMessageBody",
+               IDS_RESET_SCREEN_REVERT_ERROR_EXPLANATION,
+               IDS_SHORT_PRODUCT_NAME);
+  builder->Add("captivePortalTitle", IDS_LOGIN_MAYBE_CAPTIVE_PORTAL_TITLE);
+  builder->Add("captivePortalMessage", IDS_LOGIN_MAYBE_CAPTIVE_PORTAL);
+  builder->Add("captivePortalProxyMessage",
+               IDS_LOGIN_MAYBE_CAPTIVE_PORTAL_PROXY);
+  builder->Add("captivePortalNetworkSelect",
+               IDS_LOGIN_MAYBE_CAPTIVE_PORTAL_NETWORK_SELECT);
+  builder->Add("signinProxyMessageText", IDS_LOGIN_PROXY_ERROR_MESSAGE);
+  builder->Add("updateOfflineMessageBody", IDS_UPDATE_OFFLINE_MESSAGE);
+  builder->Add("updateProxyMessageText", IDS_UPDATE_PROXY_ERROR_MESSAGE);
+  builder->AddF("localStateErrorText0", IDS_LOCAL_STATE_ERROR_TEXT_0,
+                IDS_SHORT_PRODUCT_NAME);
+  builder->Add("localStateErrorText1", IDS_LOCAL_STATE_ERROR_TEXT_1);
+  builder->Add("localStateErrorPowerwashButton",
+               IDS_LOCAL_STATE_ERROR_POWERWASH_BUTTON);
+  builder->Add("connectingIndicatorText", IDS_LOGIN_CONNECTING_INDICATOR_TEXT);
+  builder->Add("guestSigninFixNetwork", IDS_LOGIN_GUEST_SIGNIN_FIX_NETWORK);
+  builder->Add("rebootButton", IDS_RELAUNCH_BUTTON);
+  builder->Add("diagnoseButton", IDS_DIAGNOSE_BUTTON);
+  builder->Add("configureCertsButton", IDS_MANAGE_CERTIFICATES);
+  builder->Add("continueButton", IDS_NETWORK_SELECTION_CONTINUE_BUTTON);
+  builder->Add("okButton", IDS_APP_OK);
 }
 
 void ErrorScreenHandler::Initialize() {
-}
-
-gfx::NativeWindow ErrorScreenHandler::GetNativeWindow() {
-  if (native_window_delegate_)
-    return native_window_delegate_->GetNativeWindow();
-  return NULL;
+  if (!page_is_ready())
+    return;
+  if (show_on_init_) {
+    base::DictionaryValue params;
+    params.SetInteger("uiState", static_cast<int>(ui_state_));
+    params.SetInteger("errorState", static_cast<int>(error_state_));
+    params.SetString("network", network_);
+    params.SetBoolean("guestSigninAllowed", guest_signin_allowed_);
+    params.SetBoolean("offlineLoginAllowed", offline_login_allowed_);
+    params.SetBoolean("showConnectingIndicator", show_connecting_indicator_);
+    Show(parent_screen_, &params);
+    show_on_init_ = false;
+  }
 }
 
 }  // namespace chromeos

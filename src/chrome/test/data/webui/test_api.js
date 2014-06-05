@@ -42,7 +42,7 @@ var testing = {};
    * mimic the gtest's class names.
    * @constructor
    */
-  function Test() {}
+  function Test() {};
 
   Test.prototype = {
     /**
@@ -122,6 +122,86 @@ var testing = {};
     extraLibraries: [],
 
     /**
+     * Whether to run the accessibility checks.
+     * @type {boolean}
+     */
+    runAccessibilityChecks: true,
+
+    /**
+     * Configuration for the accessibility audit.
+     * @type {axs.AuditConfiguration}
+     */
+    accessibilityAuditConfig_: null,
+
+    /**
+     * Returns the configuration for the accessibility audit, creating it
+     * on-demand.
+     * @return {axs.AuditConfiguration}
+     */
+    get accessibilityAuditConfig() {
+      if (!this.accessibilityAuditConfig_) {
+        this.accessibilityAuditConfig_ = new axs.AuditConfiguration();
+
+        this.accessibilityAuditConfig_.auditRulesToIgnore = [
+            // The "elements with meaningful background image" accessibility
+            // audit (AX_IMAGE_01) does not apply, since Chrome doesn't
+            // disable background images in high-contrast mode like some
+            // browsers do.
+            "elementsWithMeaningfulBackgroundImage",
+
+            // Most WebUI pages are inside an IFrame, so the "web page should
+            // have a title that describes topic or purpose" test (AX_TITLE_01)
+            // generally does not apply.
+            "pageWithoutTitle",
+
+            // TODO(aboxhall): re-enable when crbug.com/267035 is fixed.
+            // Until then it's just noise.
+            "lowContrastElements",
+        ];
+      }
+      return this.accessibilityAuditConfig_;
+    },
+
+    /**
+     * Whether to treat accessibility issues (errors or warnings) as test
+     * failures. If true, any accessibility issues will cause the test to fail.
+     * If false, accessibility issues will cause a console.warn.
+     * Off by default to begin with; as we add the ability to suppress false
+     * positives, we will transition this to true.
+     * @type {boolean}
+     */
+    accessibilityIssuesAreErrors: false,
+
+    /**
+     * Holds any accessibility results found during the accessibility audit.
+     * @type {Array.<Object>}
+     */
+    a11yResults_: [],
+
+    /**
+     * Gets the list of accessibility errors found during the accessibility
+     * audit. Only for use in testing.
+     * @return {Array.<Object>}
+     */
+    getAccessibilityResults: function() {
+      return this.a11yResults_;
+    },
+
+    /**
+     * Run accessibility checks after this test completes.
+     */
+    enableAccessibilityChecks: function() {
+      this.runAccessibilityChecks = true;
+    },
+
+    /**
+     * Don't run accessibility checks after this test completes.
+     */
+    disableAccessibilityChecks: function() {
+      this.runAccessibilityChecks = false;
+    },
+
+    /**
      * Create a new class to handle |messageNames|, assign it to
      * |this.mockHandler|, register its messages and return it.
      * @return {Mock} Mock handler class assigned to |this.mockHandler|.
@@ -144,6 +224,36 @@ var testing = {};
       this.mockGlobals = mock(MockClass);
       registerMockGlobals(this.mockGlobals, MockClass);
       return this.mockGlobals;
+    },
+
+    /**
+      * Create a container of mocked standalone functions to handle
+      * '.'-separated |apiNames|, assign it to |this.mockApis|, register its API
+      * overrides and return it.
+      * @return {Mock} Mock handler class.
+      * @see makeMockFunctions
+      * @see registerMockApis
+      */
+    makeAndRegisterMockApis: function (apiNames) {
+      var apiMockNames = apiNames.map(function(name) {
+        return name.replace(/\./g, '_');
+      });
+
+      this.mockApis = makeMockFunctions(apiMockNames);
+      registerMockApis(this.mockApis);
+      return this.mockApis;
+    },
+
+    /**
+      * Create a container of mocked standalone functions to handle
+      * |functionNames|, assign it to |this.mockLocalFunctions| and return it.
+      * @param {!Array.<string>} functionNames
+      * @return {Mock} Mock handler class.
+      * @see makeMockFunctions
+      */
+    makeMockLocalFunctions: function(functionNames) {
+      this.mockLocalFunctions = makeMockFunctions(functionNames);
+      return this.mockLocalFunctions;
     },
 
     /**
@@ -175,6 +285,24 @@ var testing = {};
      */
     runTest: function(testBody) {
       testBody.call(this);
+    },
+
+    /**
+     * Called to run the accessibility audit from the perspective of this
+     * fixture.
+     */
+    runAccessibilityAudit: function() {
+      if (!this.runAccessibilityChecks || typeof document === 'undefined')
+        return;
+
+      var auditConfig = this.accessibilityAuditConfig;
+      if (!runAccessibilityAudit(this.a11yResults_, auditConfig)) {
+        var report = accessibilityAuditReport(this.a11yResults_);
+        if (this.accessibilityIssuesAreErrors)
+          throw new Error(report);
+        else
+          console.warn(report);
+      }
     },
 
     /**
@@ -294,6 +422,14 @@ var testing = {};
     runTest: function() {
       if (this.body && this.fixture)
         this.fixture.runTest(this.body);
+    },
+
+    /**
+     * Called after a test is run (in testDone) to test accessibility.
+     */
+    runAccessibilityAudit: function() {
+      if (this.fixture)
+        this.fixture.runAccessibilityAudit();
     },
 
     /**
@@ -429,6 +565,27 @@ var testing = {};
   }
 
   /**
+   * Registers the mock API call and its function.
+   * @param {string} name The '_'-separated name of the API call.
+   * @param {function(...)} theFunction Mock function for this API call.
+   */
+  function registerMockApi(name, theFunction) {
+    var path = name.split('_');
+
+    var namespace = this;
+    for(var i = 0; i < path.length - 1; i++) {
+      var fieldName = path[i];
+      if(!namespace[fieldName])
+        namespace[fieldName] = {};
+
+      namespace = namespace[fieldName];
+    }
+
+    var fieldName = path[path.length-1];
+    namespace[fieldName] = theFunction;
+  }
+
+  /**
    * Empty function for use in making mocks.
    * @const
    */
@@ -448,6 +605,31 @@ var testing = {};
   }
 
   /**
+    * Create a new class to handle |functionNames|, add method 'functions()'
+    * that returns a container of standalone functions based on the mock class
+    * members, and return it.
+    * @return {Mock} Mock handler class.
+    */
+  function makeMockFunctions(functionNames) {
+    var MockClass = makeMockClass(functionNames);
+    var mockFunctions = mock(MockClass);
+    var mockProxy = mockFunctions.proxy();
+
+    mockFunctions.functions_ = {};
+
+    for (var func in MockClass.prototype) {
+      if (typeof MockClass.prototype[func] === 'function')
+        mockFunctions.functions_[func] = mockProxy[func].bind(mockProxy);
+    }
+
+    mockFunctions.functions = function () {
+      return this.functions_;
+    };
+
+    return mockFunctions;
+  }
+
+  /**
    * Register all methods of {@code mockClass.prototype} as overrides to global
    * functions of the same name as the method, using the proxy of the
    * |mockObject| to handle the functions.
@@ -460,6 +642,19 @@ var testing = {};
     for (var func in mockClass.prototype) {
       if (typeof mockClass.prototype[func] === 'function')
         registerMockGlobal(func, mockProxy, mockProxy[func]);
+    }
+  }
+
+  /**
+   * Register all functions in |mockObject.functions()| as global API calls.
+   * @param {Mock4JS.Mock} mockObject The mock to register callbacks against.
+   * @see registerMockApi
+   */
+  function registerMockApis(mockObject) {
+    var functions = mockObject.functions();
+    for (var func in functions) {
+      if (typeof functions[func] === 'function')
+        registerMockApi(func, functions[func]);
     }
   }
 
@@ -541,7 +736,7 @@ var testing = {};
 
       // Allow pattern to match multiple lines for text wrapping.
       var callerRegExp =
-          new RegExp(stackInfo.callerName + '\\((.|\\n)*?\\);', 'g');
+          new RegExp(stackInfo.callerName + '\\((.|\\n|\\r)*?\\);', 'g');
 
       // Find all matches allowing wrap around such as when a helper function
       // calls assert/expect calls and that helper function is called multiple
@@ -607,18 +802,20 @@ var testing = {};
     if (!testIsDone) {
       testIsDone = true;
       if (currentTestCase) {
-        try {
-          currentTestCase.tearDown();
-        } catch (e) {
-          // Caught an exception in tearDown; Register the error and recreate
-          // the result if it is passed in.
-          errors.push(e);
-          if (result)
-            result = [false, errorsToMessage([e], result[1])];
-        }
+        var ok = true;
+        ok = createExpect(currentTestCase.runAccessibilityAudit.bind(
+            currentTestCase)).call(null) && ok;
+        ok = createExpect(currentTestCase.tearDown.bind(
+            currentTestCase)).call(null) && ok;
+
+        if (!ok && result)
+          result = [false, errorsToMessage(errors, result[1])];
+
         currentTestCase = null;
       }
-      chrome.send('testResult', result ? result : testResult());
+      if (!result)
+        result = testResult();
+      chrome.send('testResult', result);
       errors.splice(0, errors.length);
     } else {
       console.warn('testIsDone already');
@@ -652,9 +849,9 @@ var testing = {};
    */
   function testResult(errorsOk) {
     var result = [true, ''];
-    if (errors.length) {
+    if (errors.length)
       result = [!!errorsOk, errorsToMessage(errors)];
-    }
+
     return result;
   }
 
@@ -790,6 +987,57 @@ var testing = {};
   function assertNotReached(message) {
     helper.registerCall();
     throw new Error(helper.getCallMessage(message));
+  }
+
+  /**
+   * Run an accessibility audit on the current page state.
+   * @type {Function}
+   * @param {Array} a11yResults
+   * @param {axs.AuditConfigutarion=} opt_config
+   * @return {boolean} Whether there were any errors or warnings
+   * @private
+   */
+  function runAccessibilityAudit(a11yResults, opt_config) {
+    var auditResults = axs.Audit.run(opt_config);
+    for (var i = 0; i < auditResults.length; i++) {
+      var auditResult = auditResults[i];
+      if (auditResult.result == axs.constants.AuditResult.FAIL) {
+        var auditRule = auditResult.rule;
+        // TODO(aboxhall): more useful error messages (sadly non-trivial)
+        a11yResults.push(auditResult);
+      }
+    }
+    // TODO(aboxhall): have strict (no errors or warnings) vs non-strict
+    // (warnings ok)
+    // TODO(aboxhall): some kind of info logging for warnings only??
+    return (a11yResults.length == 0);
+  }
+
+  /**
+   * Concatenates the accessibility error messages for each result in
+   * |a11yResults| and
+   * |a11yWarnings| in to an accessibility report, appends it to the given
+   * |message| and returns the resulting message string.
+   * @param {Array.<string>} a11yResults The list of accessibility results
+   * @return {string} |message| + accessibility report.
+   */
+  function accessibilityAuditReport(a11yResults, message) {
+    message = message ? message + '\n\n' : '\n';
+    message += 'Accessibility issues found on ' + window.location.href + '\n';
+    message += axs.Audit.createReport(a11yResults);
+    return message;
+  }
+
+  /**
+   * Asserts that the current page state passes the accessibility audit.
+   * @param {Array=} opt_results Array to fill with results, if desired.
+   */
+  function assertAccessibilityOk(opt_results) {
+    helper.registerCall();
+    var a11yResults = opt_results || [];
+    var auditConfig = currentTestCase.fixture.accessibilityAuditConfig;
+    if (!runAccessibilityAudit(a11yResults, auditConfig))
+      throw new Error(accessibilityAuditReport(a11yResults));
   }
 
   /**
@@ -1365,6 +1613,109 @@ var testing = {};
                             Array.prototype.slice.call(arguments, 1));
   }
 
+  /**
+   * Syntactic sugar for use with will() on a Mock4JS.Mock.
+   * Creates an action for will() that invokes a callback that the tested code
+   * passes to a mocked function.
+   * @param {SaveMockArguments} savedArgs Arguments that will contain the
+   *     callback once the mocked function is called.
+   * @param {number} callbackParameter Index of the callback parameter in
+   *     |savedArgs|.
+   * @param {...Object} var_args Arguments to pass to the callback.
+   * @return {CallFunctionAction} Action for use in will().
+   */
+  function invokeCallback(savedArgs, callbackParameter, var_args) {
+    var callbackArguments = Array.prototype.slice.call(arguments, 2);
+    return callFunction(function() {
+      savedArgs.arguments[callbackParameter].apply(null, callbackArguments);
+
+      // Mock4JS does not clear the saved args after invocation.
+      // To allow reuse of the same SaveMockArguments for multiple
+      // invocations with similar arguments, clear them here.
+      savedArgs.arguments.splice(0, savedArgs.arguments.length);
+    });
+  }
+
+  /**
+   * Mock4JS matcher object that matches the actual argument and the expected
+   * value iff their JSON represenations are same.
+   * @param {Object} expectedValue
+   * @constructor
+   */
+  function MatchJSON(expectedValue) {
+    this.expectedValue_ = expectedValue;
+  }
+
+  MatchJSON.prototype = {
+    /**
+     * Checks that JSON represenation of the actual and expected arguments are
+     * same.
+     * @param {Object} actualArgument The argument to match.
+     * @return {boolean} Result of the comparison.
+     */
+    argumentMatches: function(actualArgument) {
+      return JSON.stringify(this.expectedValue_) ===
+          JSON.stringify(actualArgument);
+    },
+
+    /**
+     * Describes the matcher.
+     * @return {string} Description of this Mock4JS matcher.
+     */
+    describe: function() {
+      return 'eqJSON(' + JSON.stringify(this.expectedValue_) + ')';
+    },
+  };
+
+  /**
+   * Builds a MatchJSON argument matcher for a given expected value.
+   * @param {Object} expectedValue
+   * @return {MatchJSON} Resulting Mock4JS matcher.
+   */
+  function eqJSON(expectedValue) {
+    return new MatchJSON(expectedValue);
+  }
+
+  /**
+   * Mock4JS matcher object that matches the actual argument and the expected
+   * value iff the the string representation of the actual argument is equal to
+   * the expected value.
+   * @param {string} expectedValue
+   * @constructor
+   */
+  function MatchToString(expectedValue) {
+    this.expectedValue_ = expectedValue;
+  }
+
+  MatchToString.prototype = {
+    /**
+     * Checks that the the string representation of the actual argument matches
+     * the expected value.
+     * @param {*} actualArgument The argument to match.
+     * @return {boolean} Result of the comparison.
+     */
+    argumentMatches: function(actualArgument) {
+      return this.expectedValue_ === String(actualArgument);
+    },
+
+    /**
+     * Describes the matcher.
+     * @return {string} Description of this Mock4JS matcher.
+     */
+    describe: function() {
+      return 'eqToString("' + this.expectedValue_ + '")';
+    },
+  };
+
+  /**
+   * Builds a MatchToString argument matcher for a given expected value.
+   * @param {Object} expectedValue
+   * @return {MatchToString} Resulting Mock4JS matcher.
+   */
+  function eqToString(expectedValue) {
+    return new MatchToString(expectedValue);
+  }
+
   // Exports.
   testing.Test = Test;
   exports.testDone = testDone;
@@ -1377,9 +1728,12 @@ var testing = {};
   exports.assertLT = assertLT;
   exports.assertNotEquals = assertNotEquals;
   exports.assertNotReached = assertNotReached;
+  exports.assertAccessibilityOk = assertAccessibilityOk;
   exports.callFunction = callFunction;
   exports.callFunctionWithSavedArgs = callFunctionWithSavedArgs;
   exports.callGlobalWithSavedArgs = callGlobalWithSavedArgs;
+  exports.eqJSON = eqJSON;
+  exports.eqToString = eqToString;
   exports.expectTrue = createExpect(assertTrue);
   exports.expectFalse = createExpect(assertFalse);
   exports.expectGE = createExpect(assertGE);
@@ -1389,11 +1743,14 @@ var testing = {};
   exports.expectLT = createExpect(assertLT);
   exports.expectNotEquals = createExpect(assertNotEquals);
   exports.expectNotReached = createExpect(assertNotReached);
+  exports.expectAccessibilityOk = createExpect(assertAccessibilityOk);
+  exports.invokeCallback = invokeCallback;
   exports.preloadJavascriptLibraries = preloadJavascriptLibraries;
   exports.registerMessageCallback = registerMessageCallback;
   exports.registerMockGlobals = registerMockGlobals;
   exports.registerMockMessageCallbacks = registerMockMessageCallbacks;
   exports.resetTestState = resetTestState;
+  exports.runAccessibilityAudit = runAccessibilityAudit;
   exports.runAllActions = runAllActions;
   exports.runAllActionsAsync = runAllActionsAsync;
   exports.runTest = runTest;
@@ -1402,6 +1759,7 @@ var testing = {};
   exports.DUMMY_URL = DUMMY_URL;
   exports.TEST = TEST;
   exports.TEST_F = TEST_F;
+  exports.RUNTIME_TEST_F = TEST_F;
   exports.GEN = GEN;
   exports.GEN_INCLUDE = GEN_INCLUDE;
   exports.WhenTestDone = WhenTestDone;

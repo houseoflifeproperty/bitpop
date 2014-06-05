@@ -5,33 +5,30 @@
 #include "chrome/browser/ui/ash/ash_init.h"
 
 #include "ash/accelerators/accelerator_controller.h"
+#include "ash/accelerometer/accelerometer_controller.h"
 #include "ash/ash_switches.h"
 #include "ash/high_contrast/high_contrast_controller.h"
 #include "ash/magnifier/magnification_controller.h"
 #include "ash/magnifier/partial_magnification_controller.h"
 #include "ash/shell.h"
-#include "ash/wm/event_rewriter_event_filter.h"
-#include "ash/wm/property_util.h"
 #include "base/command_line.h"
-#include "chrome/browser/chromeos/accessibility/accessibility_util.h"
-#include "chrome/browser/chromeos/accessibility/magnification_manager.h"
+#include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/ui/ash/chrome_shell_delegate.h"
-#include "chrome/browser/ui/ash/event_rewriter.h"
 #include "chrome/browser/ui/ash/screenshot_taker.h"
 #include "chrome/common/chrome_switches.h"
-#include "ui/aura/aura_switches.h"
-#include "ui/aura/display_util.h"
+#include "content/public/browser/browser_thread.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
-#include "ui/compositor/compositor_setup.h"
+#include "ui/aura/window_tree_host.h"
 
 #if defined(OS_CHROMEOS)
-#include "base/chromeos/chromeos_version.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/ui/ash/brightness_controller_chromeos.h"
+#include "base/sys_info.h"
+#include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
+#include "chrome/browser/chromeos/accessibility/magnification_manager.h"
 #include "chrome/browser/ui/ash/ime_controller_chromeos.h"
 #include "chrome/browser/ui/ash/volume_controller_chromeos.h"
+#include "chromeos/chromeos_switches.h"
+#include "chromeos/login/login_state.h"
 #include "ui/base/x/x11_util.h"
 #endif
 
@@ -42,73 +39,56 @@ bool ShouldOpenAshOnStartup() {
   return true;
 #endif
   // TODO(scottmg): http://crbug.com/133312, will need this for Win8 too.
-  return false;
+  return CommandLine::ForCurrentProcess()->HasSwitch(switches::kOpenAsh);
 }
-
-#if defined(OS_CHROMEOS)
-// Returns true if the cursor should be initially hidden.
-bool ShouldInitiallyHideCursor() {
-  if (base::chromeos::IsRunningOnChromeOS())
-    return !chromeos::UserManager::Get()->IsUserLoggedIn();
-  else
-    return CommandLine::ForCurrentProcess()->HasSwitch(switches::kLoginManager);
-}
-#endif
 
 void OpenAsh() {
-  bool use_fullscreen = CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kAuraHostWindowUseFullscreen);
-
 #if defined(OS_CHROMEOS)
-  if (base::chromeos::IsRunningOnChromeOS()) {
-    use_fullscreen = true;
+#if defined(USE_X11)
+  if (base::SysInfo::IsRunningOnChromeOS()) {
     // Hides the cursor outside of the Aura root window. The cursor will be
     // drawn within the Aura root window, and it'll remain hidden after the
     // Aura window is closed.
     ui::HideHostCursor();
   }
+#endif
 
   // Hide the mouse cursor completely at boot.
-  if (ShouldInitiallyHideCursor())
+  if (!chromeos::LoginState::Get()->IsUserLoggedIn())
     ash::Shell::set_initially_hide_cursor(true);
 #endif
 
-  if (use_fullscreen)
-    aura::SetUseFullscreenHostWindow(true);
-
-  // Its easier to mark all windows as persisting and exclude the ones we care
-  // about (browser windows), rather than explicitly excluding certain windows.
-  ash::SetDefaultPersistsAcrossAllWorkspaces(true);
-
   // Shell takes ownership of ChromeShellDelegate.
   ash::Shell* shell = ash::Shell::CreateInstance(new ChromeShellDelegate);
-  shell->event_rewriter_filter()->SetEventRewriterDelegate(
-      scoped_ptr<ash::EventRewriterDelegate>(new EventRewriter).Pass());
   shell->accelerator_controller()->SetScreenshotDelegate(
       scoped_ptr<ash::ScreenshotDelegate>(new ScreenshotTaker).Pass());
+  // TODO(flackr): Investigate exposing a blocking pool task runner to chromeos.
+  shell->accelerometer_controller()->Initialize(
+      content::BrowserThread::GetBlockingPool()->
+          GetTaskRunnerWithShutdownBehavior(
+              base::SequencedWorkerPool::SKIP_ON_SHUTDOWN));
 #if defined(OS_CHROMEOS)
-  shell->accelerator_controller()->SetBrightnessControlDelegate(
-      scoped_ptr<ash::BrightnessControlDelegate>(
-          new BrightnessController).Pass());
   shell->accelerator_controller()->SetImeControlDelegate(
       scoped_ptr<ash::ImeControlDelegate>(new ImeController).Pass());
-  ash::Shell::GetInstance()->high_contrast_controller()->SetEnabled(
-      chromeos::accessibility::IsHighContrastEnabled());
+  shell->high_contrast_controller()->SetEnabled(
+      chromeos::AccessibilityManager::Get()->IsHighContrastEnabled());
 
   DCHECK(chromeos::MagnificationManager::Get());
+  bool magnifier_enabled =
+      chromeos::MagnificationManager::Get()->IsMagnifierEnabled();
   ash::MagnifierType magnifier_type =
       chromeos::MagnificationManager::Get()->GetMagnifierType();
-  ash::Shell::GetInstance()->magnification_controller()->SetEnabled(
-      magnifier_type == ash::MAGNIFIER_FULL);
-  ash::Shell::GetInstance()->partial_magnification_controller()->SetEnabled(
-      magnifier_type == ash::MAGNIFIER_PARTIAL);
+  shell->magnification_controller()->
+      SetEnabled(magnifier_enabled && magnifier_type == ash::MAGNIFIER_FULL);
+  shell->partial_magnification_controller()->
+      SetEnabled(magnifier_enabled && magnifier_type == ash::MAGNIFIER_PARTIAL);
 
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableZeroBrowsersOpenForTests)) {
-    browser::StartKeepAlive();
+    chrome::IncrementKeepAliveCount();
   }
 #endif
-  ash::Shell::GetPrimaryRootWindow()->ShowRootWindow();
+  ash::Shell::GetPrimaryRootWindow()->GetHost()->Show();
 }
 
 void CloseAsh() {

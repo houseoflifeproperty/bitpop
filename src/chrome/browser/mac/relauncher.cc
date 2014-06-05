@@ -19,29 +19,21 @@
 
 #include "base/basictypes.h"
 #include "base/file_util.h"
+#include "base/files/scoped_file.h"
 #include "base/logging.h"
 #include "base/mac/mac_logging.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/path_service.h"
 #include "base/posix/eintr_wrapper.h"
-#include "base/process_util.h"
-#include "base/stringprintf.h"
-#include "base/sys_string_conversions.h"
+#include "base/process/launch.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/mac/install_from_dmg.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
-
-// RTLD_MAIN_ONLY is supported as of Mac OS X 10.5, but <dlfcn.h> does not
-// define it in the 10.5 SDK. It is present in the 10.6 SDK and is documented
-// as working on 10.5 and later. The source code for the version of dyld that
-// shipped in 10.5, dyld-95.3/src/dyldAPIs.cpp, confirms that this feature is
-// supported. Provide a fallback definition here.
-#if MAC_OS_X_VERSION_MAX_ALLOWED == MAC_OS_X_VERSION_10_5  // 10.5 SDK
-#define RTLD_MAIN_ONLY ((void*)-5)  // Search main executable only.
-#endif
 
 namespace mac_relauncher {
 
@@ -90,7 +82,7 @@ bool RelaunchApp(const std::vector<std::string>& args) {
   // been applied. In fact, it's safer than using the updated version of the
   // helper process, because there's no guarantee that the updated version's
   // relauncher implementation will be compatible with the running version's.
-  FilePath child_path;
+  base::FilePath child_path;
   if (!PathService::Get(content::CHILD_PROCESS_EXE, &child_path)) {
     LOG(ERROR) << "No CHILD_PROCESS_EXE";
     return false;
@@ -141,8 +133,8 @@ bool RelaunchAppWithHelper(const std::string& helper,
   // write side of the pipe. In that process, the read side will be closed by
   // base::LaunchApp because it won't be present in fd_map, and the write side
   // will be remapped to kRelauncherSyncFD by fd_map.
-  file_util::ScopedFD pipe_read_fd(&pipe_fds[0]);
-  file_util::ScopedFD pipe_write_fd(&pipe_fds[1]);
+  base::ScopedFD pipe_read_fd(pipe_fds[0]);
+  base::ScopedFD pipe_write_fd(pipe_fds[1]);
 
   // Make sure kRelauncherSyncFD is a safe value. base::LaunchProcess will
   // preserve these three FDs in forked processes, so kRelauncherSyncFD should
@@ -153,7 +145,7 @@ bool RelaunchAppWithHelper(const std::string& helper,
                  kRelauncherSyncFD_must_not_conflict_with_stdio_fds);
 
   base::FileHandleMappingVector fd_map;
-  fd_map.push_back(std::make_pair(*pipe_write_fd, kRelauncherSyncFD));
+  fd_map.push_back(std::make_pair(pipe_write_fd.get(), kRelauncherSyncFD));
 
   base::LaunchOptions options;
   options.fds_to_remap = &fd_map;
@@ -169,7 +161,7 @@ bool RelaunchAppWithHelper(const std::string& helper,
 
   // Synchronize with the relauncher process.
   char read_char;
-  int read_result = HANDLE_EINTR(read(*pipe_read_fd, &read_char, 1));
+  int read_result = HANDLE_EINTR(read(pipe_read_fd.get(), &read_char, 1));
   if (read_result != 1) {
     if (read_result < 0) {
       PLOG(ERROR) << "read";
@@ -194,9 +186,7 @@ namespace {
 // situations, it can be assumed that something went wrong with the parent
 // process and the best recovery approach is to attempt relaunch anyway.
 void RelauncherSynchronizeWithParent() {
-  // file_util::ScopedFD needs something non-const to operate on.
-  int relauncher_sync_fd = kRelauncherSyncFD;
-  file_util::ScopedFD relauncher_sync_fd_closer(&relauncher_sync_fd);
+  base::ScopedFD relauncher_sync_fd(kRelauncherSyncFD);
 
   int parent_pid = getppid();
 
@@ -210,22 +200,21 @@ void RelauncherSynchronizeWithParent() {
   }
 
   // Set up a kqueue to monitor the parent process for exit.
-  int kq = kqueue();
-  if (kq < 0) {
+  base::ScopedFD kq(kqueue());
+  if (!kq.is_valid()) {
     PLOG(ERROR) << "kqueue";
     return;
   }
-  file_util::ScopedFD kq_closer(&kq);
 
   struct kevent change = { 0 };
   EV_SET(&change, parent_pid, EVFILT_PROC, EV_ADD, NOTE_EXIT, 0, NULL);
-  if (kevent(kq, &change, 1, NULL, 0, NULL) == -1) {
+  if (kevent(kq.get(), &change, 1, NULL, 0, NULL) == -1) {
     PLOG(ERROR) << "kevent (add)";
     return;
   }
 
   // Write a '\0' character to the pipe.
-  if (HANDLE_EINTR(write(relauncher_sync_fd, "", 1)) != 1) {
+  if (HANDLE_EINTR(write(relauncher_sync_fd.get(), "", 1)) != 1) {
     PLOG(ERROR) << "write";
     return;
   }
@@ -234,7 +223,7 @@ void RelauncherSynchronizeWithParent() {
   // write above to complete. The parent process is now free to exit. Wait for
   // that to happen.
   struct kevent event;
-  int events = kevent(kq, NULL, 0, &event, 1, NULL);
+  int events = kevent(kq.get(), NULL, 0, &event, 1, NULL);
   if (events != 1) {
     if (events < 0) {
       PLOG(ERROR) << "kevent (monitor)";
@@ -294,7 +283,7 @@ int RelauncherMain(const content::MainFunctionParams& main_parameters) {
   // won't contain the argv[0] of the relauncher process, the
   // RelauncherTypeArg() at argv[1], kRelauncherArgSeparator, or the
   // executable path of the process to be launched.
-  base::mac::ScopedCFTypeRef<CFMutableArrayRef> relaunch_args(
+  base::ScopedCFTypeRef<CFMutableArrayRef> relaunch_args(
       CFArrayCreateMutable(NULL, argc - 4, &kCFTypeArrayCallBacks));
   if (!relaunch_args) {
     LOG(ERROR) << "CFArrayCreateMutable";
@@ -335,7 +324,7 @@ int RelauncherMain(const content::MainFunctionParams& main_parameters) {
         relaunch_executable.assign(arg);
         seen_relaunch_executable = true;
       } else {
-        base::mac::ScopedCFTypeRef<CFStringRef> arg_cf(
+        base::ScopedCFTypeRef<CFStringRef> arg_cf(
             base::SysUTF8ToCFStringRef(arg));
         if (!arg_cf) {
           LOG(ERROR) << "base::SysUTF8ToCFStringRef failed for " << arg;

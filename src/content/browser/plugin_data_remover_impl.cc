@@ -9,20 +9,19 @@
 #include "base/bind.h"
 #include "base/metrics/histogram.h"
 #include "base/sequenced_task_runner_helpers.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
-#include "base/utf_string_conversions.h"
 #include "base/version.h"
 #include "content/browser/plugin_process_host.h"
 #include "content/browser/plugin_service_impl.h"
-#include "content/browser/renderer_host/pepper/pepper_flash_file_host.h"
+#include "content/browser/renderer_host/pepper/pepper_flash_file_message_filter.h"
 #include "content/common/child_process_host_impl.h"
-#include "content/common/plugin_messages.h"
+#include "content/common/plugin_process_messages.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/common/content_constants.h"
 #include "content/public/common/pepper_plugin_info.h"
 #include "ppapi/proxy/ppapi_messages.h"
-#include "webkit/plugins/npapi/plugin_utils.h"
-#include "webkit/plugins/plugin_constants.h"
 
 namespace content {
 
@@ -42,16 +41,16 @@ PluginDataRemover* PluginDataRemover::Create(BrowserContext* browser_context) {
 
 // static
 void PluginDataRemover::GetSupportedPlugins(
-    std::vector<webkit::WebPluginInfo>* supported_plugins) {
+    std::vector<WebPluginInfo>* supported_plugins) {
   bool allow_wildcard = false;
-  std::vector<webkit::WebPluginInfo> plugins;
+  std::vector<WebPluginInfo> plugins;
   PluginService::GetInstance()->GetPluginInfoArray(
       GURL(), kFlashPluginSwfMimeType, allow_wildcard, &plugins, NULL);
   Version min_version(kMinFlashVersion);
-  for (std::vector<webkit::WebPluginInfo>::iterator it = plugins.begin();
+  for (std::vector<WebPluginInfo>::iterator it = plugins.begin();
        it != plugins.end(); ++it) {
     Version version;
-    webkit::npapi::CreateVersionFromString(it->version, &version);
+    WebPluginInfo::CreateVersionFromString(it->version, &version);
     if (version.IsValid() && min_version.CompareTo(version) == -1)
       supported_plugins->push_back(*it);
   }
@@ -69,8 +68,7 @@ class PluginDataRemoverImpl::Context
         begin_time_(begin_time),
         is_removing_(false),
         browser_context_path_(browser_context->GetPath()),
-        resource_context_(browser_context->GetResourceContext()),
-        channel_(NULL) {
+        resource_context_(browser_context->GetResourceContext()) {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   }
 
@@ -90,10 +88,10 @@ class PluginDataRemoverImpl::Context
     PluginServiceImpl* plugin_service = PluginServiceImpl::GetInstance();
 
     // Get the plugin file path.
-    std::vector<webkit::WebPluginInfo> plugins;
+    std::vector<WebPluginInfo> plugins;
     plugin_service->GetPluginInfoArray(
         GURL(), mime_type, false, &plugins, NULL);
-    FilePath plugin_path;
+    base::FilePath plugin_path;
     if (!plugins.empty())  // May be empty for some tests.
       plugin_path = plugins[0].path;
 
@@ -109,7 +107,7 @@ class PluginDataRemoverImpl::Context
     if (pepper_info) {
       plugin_name_ = pepper_info->name;
       // Use the broker since we run this function outside the sandbox.
-      plugin_service->OpenChannelToPpapiBroker(plugin_path, this);
+      plugin_service->OpenChannelToPpapiBroker(0, plugin_path, this);
     } else {
       plugin_service->OpenChannelToNpapiPlugin(
           0, 0, GURL(), GURL(), mime_type, this);
@@ -137,7 +135,7 @@ class PluginDataRemoverImpl::Context
     return resource_context_;
   }
 
-  virtual void SetPluginInfo(const webkit::WebPluginInfo& info) OVERRIDE {}
+  virtual void SetPluginInfo(const WebPluginInfo& info) OVERRIDE {}
 
   virtual void OnFoundPluginProcessHost(PluginProcessHost* host) OVERRIDE {}
 
@@ -177,7 +175,7 @@ class PluginDataRemoverImpl::Context
   // IPC::Listener methods.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
     IPC_BEGIN_MESSAGE_MAP(Context, message)
-      IPC_MESSAGE_HANDLER(PluginHostMsg_ClearSiteDataResult,
+      IPC_MESSAGE_HANDLER(PluginProcessHostMsg_ClearSiteDataResult,
                           OnClearSiteDataResult)
       IPC_MESSAGE_HANDLER(PpapiHostMsg_ClearSiteDataResult,
                           OnPpapiClearSiteDataResult)
@@ -202,17 +200,18 @@ class PluginDataRemoverImpl::Context
   virtual ~Context() {}
 
   IPC::Message* CreatePpapiClearSiteDataMsg(uint64 max_age) {
-    FilePath profile_path =
-        PepperFlashFileHost::GetDataDirName(browser_context_path_);
+    base::FilePath profile_path =
+        PepperFlashFileMessageFilter::GetDataDirName(browser_context_path_);
     // TODO(vtl): This "duplicates" logic in webkit/plugins/ppapi/file_path.cc
     // (which prepends the plugin name to the relative part of the path
     // instead, with the absolute, profile-dependent part being enforced by
     // the browser).
 #if defined(OS_WIN)
-    FilePath plugin_data_path =
-        profile_path.Append(FilePath(UTF8ToUTF16(plugin_name_)));
+    base::FilePath plugin_data_path =
+        profile_path.Append(base::FilePath(base::UTF8ToUTF16(plugin_name_)));
 #else
-    FilePath plugin_data_path = profile_path.Append(FilePath(plugin_name_));
+    base::FilePath plugin_data_path =
+        profile_path.Append(base::FilePath(plugin_name_));
 #endif  // defined(OS_WIN)
     return new PpapiMsg_ClearSiteData(0u, plugin_data_path, std::string(),
                                       kClearAllData, max_age);
@@ -242,7 +241,8 @@ class PluginDataRemoverImpl::Context
     if (is_ppapi) {
       msg = CreatePpapiClearSiteDataMsg(max_age);
     } else {
-      msg = new PluginMsg_ClearSiteData(std::string(), kClearAllData, max_age);
+      msg = new PluginProcessMsg_ClearSiteData(
+          std::string(), kClearAllData, max_age);
     }
     if (!channel_->Send(msg)) {
       NOTREACHED() << "Couldn't send ClearSiteData message";
@@ -252,13 +252,13 @@ class PluginDataRemoverImpl::Context
   }
 
   // Handles the PpapiHostMsg_ClearSiteDataResult message by delegating to the
-  // PluginHostMsg_ClearSiteDataResult handler.
+  // PluginProcessHostMsg_ClearSiteDataResult handler.
   void OnPpapiClearSiteDataResult(uint32 request_id, bool success) {
     DCHECK_EQ(0u, request_id);
     OnClearSiteDataResult(success);
   }
 
-  // Handles the PluginHostMsg_ClearSiteDataResult message.
+  // Handles the PluginProcessHostMsg_ClearSiteDataResult message.
   void OnClearSiteDataResult(bool success) {
     LOG_IF(ERROR, !success) << "ClearSiteData returned error";
     UMA_HISTOGRAM_TIMES("ClearPluginData.time",
@@ -285,7 +285,7 @@ class PluginDataRemoverImpl::Context
 
   // Path for the current profile. Must be retrieved on the UI thread from the
   // browser context when we start so we can use it later on the I/O thread.
-  FilePath browser_context_path_;
+  base::FilePath browser_context_path_;
 
   // The resource context for the profile. Use only on the I/O thread.
   ResourceContext* resource_context_;

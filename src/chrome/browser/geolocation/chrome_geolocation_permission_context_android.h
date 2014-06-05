@@ -5,7 +5,13 @@
 #ifndef CHROME_BROWSER_GEOLOCATION_CHROME_GEOLOCATION_PERMISSION_CONTEXT_ANDROID_H_
 #define CHROME_BROWSER_GEOLOCATION_CHROME_GEOLOCATION_PERMISSION_CONTEXT_ANDROID_H_
 
+#include "chrome/browser/content_settings/permission_request_id.h"
 #include "chrome/browser/geolocation/chrome_geolocation_permission_context.h"
+#include "url/gurl.h"
+
+namespace content {
+class WebContents;
+}
 
 class GoogleLocationSettingsHelper;
 
@@ -17,23 +23,45 @@ class ChromeGeolocationPermissionContextAndroid
   explicit ChromeGeolocationPermissionContextAndroid(Profile* profile);
 
  private:
+  struct PermissionRequestInfo {
+    PermissionRequestInfo();
+
+    PermissionRequestID id;
+    GURL requesting_frame;
+    bool user_gesture;
+    GURL embedder;
+  };
+
   friend class ChromeGeolocationPermissionContext;
 
   virtual ~ChromeGeolocationPermissionContextAndroid();
 
   // ChromeGeolocationPermissionContext implementation:
-  virtual void DecidePermission(const GeolocationPermissionRequestID& id,
+  virtual void DecidePermission(content::WebContents* web_contents,
+                                const PermissionRequestID& id,
                                 const GURL& requesting_frame,
+                                bool user_gesture,
                                 const GURL& embedder,
+                                const std::string& accept_button_label,
                                 base::Callback<void(bool)> callback) OVERRIDE;
 
-  virtual void PermissionDecided(const GeolocationPermissionRequestID& id,
+  virtual void PermissionDecided(const PermissionRequestID& id,
                                  const GURL& requesting_frame,
                                  const GURL& embedder,
                                  base::Callback<void(bool)> callback,
                                  bool allowed) OVERRIDE;
 
+  void ProceedDecidePermission(content::WebContents* web_contents,
+                               const PermissionRequestInfo& info,
+                               const std::string& accept_button_label,
+                               base::Callback<void(bool)> callback);
+
   scoped_ptr<GoogleLocationSettingsHelper> google_location_settings_helper_;
+
+ private:
+  void CheckMasterLocation(content::WebContents* web_contents,
+                           const PermissionRequestInfo& info,
+                           base::Callback<void(bool)> callback);
 
   DISALLOW_COPY_AND_ASSIGN(ChromeGeolocationPermissionContextAndroid);
 };

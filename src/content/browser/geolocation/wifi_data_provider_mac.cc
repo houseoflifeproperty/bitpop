@@ -12,7 +12,7 @@
 #include <dlfcn.h>
 #include <stdio.h>
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/browser/geolocation/osx_wifi.h"
 #include "content/browser/geolocation/wifi_data_provider_common.h"
 
@@ -37,7 +37,7 @@ class Apple80211Api : public WifiDataProviderCommon::WlanApiInterface {
   bool Init();
 
   // WlanApiInterface
-  virtual bool GetAccessPointData(WifiData::AccessPointDataSet* data);
+  virtual bool GetAccessPointData(WifiData::AccessPointDataSet* data) OVERRIDE;
 
  private:
   // Handle, context and function pointers for Apple80211 library.
@@ -140,9 +140,10 @@ bool Apple80211Api::GetAccessPointData(WifiData::AccessPointDataSet* data) {
     // WirelessNetworkInfo::noise appears to be noise floor in dBm.
     access_point_data.signal_to_noise = access_point_info->signal -
                                         access_point_info->noise;
-    if (!UTF8ToUTF16(reinterpret_cast<const char*>(access_point_info->name),
-                     access_point_info->nameLen,
-                     &access_point_data.ssid)) {
+    if (!base::UTF8ToUTF16(reinterpret_cast<const char*>(
+                               access_point_info->name),
+                           access_point_info->nameLen,
+                           &access_point_data.ssid)) {
       access_point_data.ssid.clear();
     }
     data->insert(access_point_data);
@@ -158,7 +159,6 @@ bool Apple80211Api::GetAccessPointData(WifiData::AccessPointDataSet* data) {
 }  // namespace
 
 // static
-template<>
 WifiDataProviderImplBase* WifiDataProvider::DefaultFactoryFunction() {
   return new MacWifiDataProvider();
 }
@@ -185,11 +185,11 @@ MacWifiDataProvider::WlanApiInterface* MacWifiDataProvider::NewWlanApi() {
   return NULL;
 }
 
-PollingPolicyInterface* MacWifiDataProvider::NewPollingPolicy() {
-  return new GenericPollingPolicy<kDefaultPollingInterval,
-                                  kNoChangePollingInterval,
-                                  kTwoNoChangePollingInterval,
-                                  kNoWifiPollingIntervalMilliseconds>;
+WifiPollingPolicy* MacWifiDataProvider::NewPollingPolicy() {
+  return new GenericWifiPollingPolicy<kDefaultPollingInterval,
+                                      kNoChangePollingInterval,
+                                      kTwoNoChangePollingInterval,
+                                      kNoWifiPollingIntervalMilliseconds>;
 }
 
 }  // namespace content

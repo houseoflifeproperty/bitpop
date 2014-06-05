@@ -1,9 +1,9 @@
 deps = {
-  "build/scripts/command_wrapper/bin":
-    "/trunk/tools/command_wrapper/bin",
+  "build/scripts/gsd_generate_index":
+    "/trunk/tools/gsd_generate_index",
 
-  "build/third_party/lighttpd":
-    "/trunk/deps/third_party/lighttpd@58968",
+  "build/scripts/private/data/reliability":
+    "/trunk/src/chrome/test/data/reliability",
 
   "build/third_party/gsutil":
     "svn://svn.chromium.org/gsutil/trunk/src@263",
@@ -11,8 +11,11 @@ deps = {
   "build/third_party/gsutil/boto":
     "svn://svn.chromium.org/boto@7",
 
-  "build/third_party/swarm_client":
-    "/trunk/tools/swarm_client",
+  "build/third_party/lighttpd":
+    "/trunk/deps/third_party/lighttpd@58968",
+
+  "build/scripts/tools/deps2git":
+    "svn://svn.chromium.org/chrome/trunk/tools/deps2git@248305",
 
   "commit-queue":
     "/trunk/tools/commit-queue",

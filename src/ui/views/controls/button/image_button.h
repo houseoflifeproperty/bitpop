@@ -7,19 +7,24 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
+#include "ui/base/layout.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/views/controls/button/custom_button.h"
 
 namespace views {
 
+class Painter;
+
 // An image button.
 
 // Note that this type of button is not focusable by default and will not be
-// part of the focus chain.  Call set_focusable(true) to make it part of the
+// part of the focus chain.  Call SetFocusable(true) to make it part of the
 // focus chain.
 
 class VIEWS_EXPORT ImageButton : public CustomButton {
  public:
+  static const char kViewClassName[];
+
   enum HorizontalAlignment {
     ALIGN_LEFT = 0,
     ALIGN_CENTER,
@@ -35,6 +40,9 @@ class VIEWS_EXPORT ImageButton : public CustomButton {
   explicit ImageButton(ButtonListener* listener);
   virtual ~ImageButton();
 
+  // Returns the image for a given |state|.
+  virtual const gfx::ImageSkia& GetImage(ButtonState state) const;
+
   // Set the image the button should use for the provided state.
   virtual void SetImage(ButtonState state, const gfx::ImageSkia* image);
 
@@ -43,17 +51,11 @@ class VIEWS_EXPORT ImageButton : public CustomButton {
                      const gfx::ImageSkia* image,
                      const gfx::ImageSkia* mask);
 
-  // Set an |image| to draw on top of the normal / hot / pushed image.
-  // Pass NULL for no image.
-  void SetOverlayImage(const gfx::ImageSkia* image);
-
   // Sets how the image is laid out within the button's bounds.
   void SetImageAlignment(HorizontalAlignment h_align,
                          VerticalAlignment v_align);
 
-  // Overridden from View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+  void SetFocusPainter(scoped_ptr<Painter> focus_painter);
 
   // Sets preferred size, so it could be correctly positioned in layout even if
   // it is NULL.
@@ -61,7 +63,21 @@ class VIEWS_EXPORT ImageButton : public CustomButton {
     preferred_size_ = preferred_size;
   }
 
+  // Whether we should draw our images resources horizontally flipped.
+  void SetDrawImageMirrored(bool mirrored) {
+    draw_image_mirrored_ = mirrored;
+  }
+
+  // Overridden from View:
+  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual const char* GetClassName() const OVERRIDE;
+  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+
  protected:
+  // Overridden from View:
+  virtual void OnFocus() OVERRIDE;
+  virtual void OnBlur() OVERRIDE;
+
   // Returns the image to paint. This is invoked from paint and returns a value
   // from images.
   virtual gfx::ImageSkia GetImageToPaint();
@@ -69,17 +85,18 @@ class VIEWS_EXPORT ImageButton : public CustomButton {
   // Updates button background for |scale_factor|.
   void UpdateButtonBackground(ui::ScaleFactor scale_factor);
 
+  Painter* focus_painter() { return focus_painter_.get(); }
+
   // The images used to render the different states of this button.
   gfx::ImageSkia images_[STATE_COUNT];
 
   gfx::ImageSkia background_image_;
 
-  // Image to draw on top of normal / hot / pushed image.  Usually empty.
-  gfx::ImageSkia overlay_image_;
-
  private:
   FRIEND_TEST_ALL_PREFIXES(ImageButtonTest, Basics);
   FRIEND_TEST_ALL_PREFIXES(ImageButtonTest, ImagePositionWithBorder);
+  FRIEND_TEST_ALL_PREFIXES(ImageButtonTest, LeftAlignedMirrored);
+  FRIEND_TEST_ALL_PREFIXES(ImageButtonTest, RightAlignedMirrored);
 
   // Returns the correct position of the image for painting.
   gfx::Point ComputeImagePaintPosition(const gfx::ImageSkia& image);
@@ -88,6 +105,14 @@ class VIEWS_EXPORT ImageButton : public CustomButton {
   HorizontalAlignment h_alignment_;
   VerticalAlignment v_alignment_;
   gfx::Size preferred_size_;
+
+  // Whether we draw our resources horizontally flipped. This can happen in the
+  // linux titlebar, where image resources were designed to be flipped so a
+  // small curved corner in the close button designed to fit into the frame
+  // resources.
+  bool draw_image_mirrored_;
+
+  scoped_ptr<Painter> focus_painter_;
 
   DISALLOW_COPY_AND_ASSIGN(ImageButton);
 };
@@ -113,15 +138,17 @@ class VIEWS_EXPORT ToggleImageButton : public ImageButton {
   void SetToggledImage(ButtonState state, const gfx::ImageSkia* image);
 
   // Set the tooltip text displayed when the button is toggled.
-  void SetToggledTooltipText(const string16& tooltip);
+  void SetToggledTooltipText(const base::string16& tooltip);
 
   // Overridden from ImageButton:
+  virtual const gfx::ImageSkia& GetImage(ButtonState state) const OVERRIDE;
   virtual void SetImage(ButtonState state,
                         const gfx::ImageSkia* image) OVERRIDE;
 
   // Overridden from View:
   virtual bool GetTooltipText(const gfx::Point& p,
-                              string16* tooltip) const OVERRIDE;
+                              base::string16* tooltip) const OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
  private:
   // The parent class's images_ member is used for the current images,
@@ -134,7 +161,7 @@ class VIEWS_EXPORT ToggleImageButton : public ImageButton {
 
   // The parent class's tooltip_text_ is displayed when not toggled, and
   // this one is shown when toggled.
-  string16 toggled_tooltip_text_;
+  base::string16 toggled_tooltip_text_;
 
   DISALLOW_COPY_AND_ASSIGN(ToggleImageButton);
 };

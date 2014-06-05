@@ -51,7 +51,9 @@ class Call;
 
 class MediaSessionClient : public SessionClient, public sigslot::has_slots<> {
  public:
+#if !defined(DISABLE_MEDIA_ENGINE_FACTORY)
   MediaSessionClient(const buzz::Jid& jid, SessionManager *manager);
+#endif
   // Alternative constructor, allowing injection of media_engine
   // and device_manager.
   MediaSessionClient(const buzz::Jid& jid, SessionManager *manager,
@@ -68,6 +70,7 @@ class MediaSessionClient : public SessionClient, public sigslot::has_slots<> {
   const std::map<uint32, Call *>& calls() const { return calls_; }
 
   // The settings below combine with the settings on SessionManager to choose
+
   // whether SDES-SRTP, DTLS-SRTP, or no security should be used. The possible
   // combinations are shown in the following table. Note that where either DTLS
   // or SDES is possible, DTLS is preferred. Thus to require either SDES or
@@ -109,14 +112,14 @@ class MediaSessionClient : public SessionClient, public sigslot::has_slots<> {
   }
 
   bool SetAudioOptions(const std::string& in_name, const std::string& out_name,
-                       int opts) {
-    return channel_manager_->SetAudioOptions(in_name, out_name, opts);
+                       const AudioOptions& options) {
+    return channel_manager_->SetAudioOptions(in_name, out_name, options);
   }
   bool SetOutputVolume(int level) {
     return channel_manager_->SetOutputVolume(level);
   }
-  bool SetVideoOptions(const std::string& cam_device) {
-    return channel_manager_->SetVideoOptions(cam_device);
+  bool SetCaptureDevice(const std::string& cam_device) {
+    return channel_manager_->SetCaptureDevice(cam_device);
   }
 
   SessionDescription* CreateOffer(const CallOptions& options) {
@@ -149,6 +152,7 @@ class MediaSessionClient : public SessionClient, public sigslot::has_slots<> {
   void OnSessionState(BaseSession *session, BaseSession::State state);
   void OnSessionDestroy(Session *session);
   Session *CreateSession(Call *call);
+  Session *CreateSession(const std::string& id, Call* call);
   Call *FindCallByRemoteName(const std::string &remote_name);
 
   buzz::Jid jid_;

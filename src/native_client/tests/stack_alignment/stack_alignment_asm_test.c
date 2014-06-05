@@ -60,6 +60,23 @@ __asm__(
 static const int kStackAlignment = 8;
 static const int kStackPadBelowAlign = 0;
 
+#elif defined(__mips__)
+
+__asm__(
+    ".pushsection .text, \"ax\", @progbits\n"
+    ".set noreorder\n"
+    ".global ThreadStartWrapper\n"
+    "ThreadStartWrapper:\n"
+    "move $a0, $sp\n"  /* Set argument. */
+    "lui $t9, %hi(ThreadStart)\n"
+    "bal ThreadStart\n"
+    "addiu $t9, $t9, %lo(ThreadStart)\n"
+    ".set reorder\n"
+    ".popsection\n");
+
+static const int kStackAlignment = 8;
+static const int kStackPadBelowAlign = 0;
+
 #else
 # error Unsupported architecture
 #endif
@@ -86,8 +103,7 @@ int main(void) {
     g_stack_ptr = NULL;
     g_stack_in_use = 1;
     void *dummy_tls = &dummy_tls;
-    int rc = irt_thread.thread_create((void *) (uintptr_t) ThreadStartWrapper,
-                                      stack_top, dummy_tls);
+    int rc = irt_thread.thread_create(ThreadStartWrapper, stack_top, dummy_tls);
     assert(rc == 0);
     /* Spin until the thread exits. */
     while (g_stack_in_use) {

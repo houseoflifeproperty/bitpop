@@ -16,6 +16,8 @@ import cStringIO
 import difflib
 import email
 import json
+import logging
+import logging.handlers
 import manifest_util
 import optparse
 import os
@@ -28,16 +30,20 @@ import time
 import traceback
 import urllib2
 
-
 MANIFEST_BASENAME = 'naclsdk_manifest2.json'
 SCRIPT_DIR = os.path.dirname(__file__)
 REPO_MANIFEST = os.path.join(SCRIPT_DIR, 'json', MANIFEST_BASENAME)
 GS_BUCKET_PATH = 'gs://nativeclient-mirror/nacl/nacl_sdk/'
 GS_SDK_MANIFEST = GS_BUCKET_PATH + MANIFEST_BASENAME
+GS_SDK_MANIFEST_LOG = GS_BUCKET_PATH + MANIFEST_BASENAME + '.log'
 GS_MANIFEST_BACKUP_DIR = GS_BUCKET_PATH + 'manifest_backups/'
 
 CANARY_BUNDLE_NAME = 'pepper_canary'
 CANARY = 'canary'
+NACLPORTS_ARCHIVE_NAME = 'naclports.tar.bz2'
+
+
+logger = logging.getLogger(__name__)
 
 
 def SplitVersion(version_string):
@@ -67,32 +73,40 @@ def GetTimestampManifestName():
       time.gmtime())
 
 
-def GetPlatformFromArchiveUrl(url):
-  """Get the platform name given an archive url.
+def GetPlatformArchiveName(platform):
+  """Get the basename of an archive given a platform string.
 
   Args:
-    url: An archive url.
+    platform: One of ('win', 'mac', 'linux').
+
   Returns:
-    A platform name (e.g. 'linux')."""
-  match = re.match(r'naclsdk_(.*?)(?:\.tar)?\.bz2', posixpath.basename(url))
-  if not match:
-    return None
-  return match.group(1)
+    The basename of the sdk archive for that platform.
+  """
+  return 'naclsdk_%s.tar.bz2' % platform
 
 
-def GetPlatformsFromArchives(archive_urls):
-  """Get the platform names for a sequence of archive urls.
+def GetCanonicalArchiveName(url):
+  """Get the canonical name of an archive given its URL.
+
+  This will convert "naclsdk_linux.bz2" -> "naclsdk_linux.tar.bz2", and also
+  remove everything but the filename of the URL.
+
+  This is used below to determine if an expected bundle is found in an version
+  directory; the archives all have the same name, but may not exist for a given
+  version.
 
   Args:
-    archives: A sequence of archive urls.
+    url: The url to parse.
+
   Returns:
-    A list of platforms, one for each url in |archive_urls|."""
-  platforms = []
-  for url in archive_urls:
-    platform = GetPlatformFromArchiveUrl(url)
-    if platform:
-      platforms.append(platform)
-  return platforms
+    The canonical name as described above.
+  """
+  name = posixpath.basename(url)
+  match = re.match(r'naclsdk_(.*?)(?:\.tar)?\.bz2', name)
+  if match:
+    return 'naclsdk_%s.tar.bz2' % match.group(1)
+
+  return name
 
 
 class Delegate(object):
@@ -139,7 +153,7 @@ class Delegate(object):
     """Runs gsutil ls |url|
 
     Args:
-      url: The commondatastorage url to list.
+      url: The cloud storage url to list.
     Returns:
       A list of URLs, all with the gs:// schema."""
     raise NotImplementedError()
@@ -148,7 +162,7 @@ class Delegate(object):
     """Runs gsutil cat |url|
 
     Args:
-      url: The commondatastorage url to read from.
+      url: The cloud storage url to read from.
     Returns:
       A string with the contents of the file at |url|."""
     raise NotImplementedError()
@@ -163,16 +177,22 @@ class Delegate(object):
           effect is that text in stdin is copied to |dest|."""
     raise NotImplementedError()
 
-  def Print(self, *args):
-    """Print a message."""
+  def SendMail(self, subject, text):
+    """Send an email.
+
+    Args:
+      subject: The subject of the email.
+      text: The text of the email.
+    """
     raise NotImplementedError()
 
 
 class RealDelegate(Delegate):
-  def __init__(self, dryrun=False, gsutil=None, verbose=False):
+  def __init__(self, dryrun=False, gsutil=None, mailfrom=None, mailto=None):
     super(RealDelegate, self).__init__()
     self.dryrun = dryrun
-    self.verbose = verbose
+    self.mailfrom = mailfrom
+    self.mailto = mailto
     if gsutil:
       self.gsutil = gsutil
     else:
@@ -202,7 +222,7 @@ class RealDelegate(Delegate):
   def GsUtil_ls(self, url):
     """See Delegate.GsUtil_ls"""
     try:
-      stdout = self._RunGsUtil(None, 'ls', url)
+      stdout = self._RunGsUtil(None, False, 'ls', url)
     except subprocess.CalledProcessError:
       return []
 
@@ -211,34 +231,43 @@ class RealDelegate(Delegate):
 
   def GsUtil_cat(self, url):
     """See Delegate.GsUtil_cat"""
-    return self._RunGsUtil(None, 'cat', url)
+    return self._RunGsUtil(None, True, 'cat', url)
 
   def GsUtil_cp(self, src, dest, stdin=None):
     """See Delegate.GsUtil_cp"""
     if self.dryrun:
-      self.Trace("Skipping upload: %s -> %s" % (src, dest))
+      logger.info("Skipping upload: %s -> %s" % (src, dest))
+      if src == '-':
+        logger.info('  contents = """%s"""' % stdin)
       return
 
-    return self._RunGsUtil(stdin, 'cp', '-a', 'public-read', src, dest)
+    return self._RunGsUtil(stdin, True, 'cp', '-a', 'public-read', src, dest)
 
-  def Print(self, *args):
-    sys.stdout.write(' '.join(map(str, args)) + '\n')
+  def SendMail(self, subject, text):
+    """See Delegate.SendMail"""
+    if self.mailfrom and self.mailto:
+      msg = email.MIMEMultipart.MIMEMultipart()
+      msg['From'] = self.mailfrom
+      msg['To'] = ', '.join(self.mailto)
+      msg['Date'] = email.Utils.formatdate(localtime=True)
+      msg['Subject'] = subject
+      msg.attach(email.MIMEText.MIMEText(text))
+      smtp_obj = smtplib.SMTP('localhost')
+      smtp_obj.sendmail(self.mailfrom, self.mailto, msg.as_string())
+      smtp_obj.close()
 
-  def Trace(self, *args):
-    if self.verbose:
-      self.Print(*args)
-
-  def _RunGsUtil(self, stdin, *args):
+  def _RunGsUtil(self, stdin, log_errors, *args):
     """Run gsutil as a subprocess.
 
     Args:
       stdin: If non-None, used as input to the process.
+      log_errors: If True, write errors to stderr.
       *args: Arguments to pass to gsutil. The first argument should be an
           operation such as ls, cp or cat.
     Returns:
       The stdout from the process."""
     cmd = [self.gsutil] + list(args)
-    self.Trace("Running: %s" % str(cmd))
+    logger.debug("Running: %s" % str(cmd))
     if stdin:
       stdin_pipe = subprocess.PIPE
     else:
@@ -252,18 +281,60 @@ class RealDelegate(Delegate):
       raise manifest_util.Error("Unable to run '%s': %s" % (cmd[0], str(e)))
 
     if process.returncode:
-      sys.stderr.write(stderr)
+      if log_errors:
+        logger.error(stderr)
       raise subprocess.CalledProcessError(process.returncode, ' '.join(cmd))
     return stdout
 
 
-class VersionFinder(object):
-  """Finds a version of a pepper bundle that all desired platforms share."""
+class GsutilLoggingHandler(logging.handlers.BufferingHandler):
   def __init__(self, delegate):
+    logging.handlers.BufferingHandler.__init__(self, capacity=0)
+    self.delegate = delegate
+
+  def shouldFlush(self, record):
+    # BufferingHandler.shouldFlush automatically flushes if the length of the
+    # buffer is greater than self.capacity. We don't want that behavior, so
+    # return False here.
+    return False
+
+  def flush(self):
+    # Do nothing here. We want to be explicit about uploading the log.
+    pass
+
+  def upload(self):
+    output_list = []
+    for record in self.buffer:
+      output_list.append(self.format(record))
+    output = '\n'.join(output_list)
+    self.delegate.GsUtil_cp('-', GS_SDK_MANIFEST_LOG, stdin=output)
+
+    logging.handlers.BufferingHandler.flush(self)
+
+
+class NoSharedVersionException(Exception):
+  pass
+
+
+class VersionFinder(object):
+  """Finds a version of a pepper bundle that all desired platforms share.
+
+  Args:
+    delegate: See Delegate class above.
+    platforms: A sequence of platforms to consider, e.g.
+        ('mac', 'linux', 'win')
+    extra_archives: A sequence of tuples: (archive_basename, minimum_version),
+        e.g. [('foo.tar.bz2', '18.0.1000.0'), ('bar.tar.bz2', '19.0.1100.20')]
+        These archives must exist to consider a version for inclusion, as
+        long as that version is greater than the archive's minimum version.
+  """
+  def __init__(self, delegate, platforms, extra_archives=None):
     self.delegate = delegate
     self.history = delegate.GetHistory()
+    self.platforms = platforms
+    self.extra_archives = extra_archives
 
-  def GetMostRecentSharedVersion(self, major_version, platforms):
+  def GetMostRecentSharedVersion(self, major_version):
     """Returns the most recent version of a pepper bundle that exists on all
     given platforms.
 
@@ -274,43 +345,44 @@ class VersionFinder(object):
 
     Args:
       major_version: The major version of the pepper bundle, e.g. 19.
-      platforms: A sequence of platforms to consider, e.g.
-          ('mac', 'linux', 'win')
     Returns:
       A tuple (version, channel, archives). The version is a string such as
       "19.0.1084.41". The channel is one of ('stable', 'beta', or 'dev').
       |archives| is a list of archive URLs."""
-    shared_version_generator = self._FindNextSharedVersion(
-        platforms,
-        lambda platform: self._GetPlatformMajorVersionHistory(major_version,
-                                                              platform))
-    return self._DoGetMostRecentSharedVersion(platforms,
-        shared_version_generator, allow_trunk_revisions=False)
+    def GetPlatformHistory(platform):
+      return self._GetPlatformMajorVersionHistory(major_version, platform)
 
-  def GetMostRecentSharedCanary(self, platforms):
+    shared_version_generator = self._FindNextSharedVersion(self.platforms,
+                                                           GetPlatformHistory)
+    return self._DoGetMostRecentSharedVersion(shared_version_generator,
+                                              allow_trunk_revisions=False)
+
+  def GetMostRecentSharedCanary(self):
     """Returns the most recent version of a canary pepper bundle that exists on
     all given platforms.
 
     Canary is special-cased because we don't care about its major version; we
     always use the most recent canary, regardless of major version.
 
-    Args:
-      platforms: A sequence of platforms to consider, e.g.
-          ('mac', 'linux', 'win')
     Returns:
       A tuple (version, channel, archives). The version is a string such as
       "19.0.1084.41". The channel is always 'canary'. |archives| is a list of
       archive URLs."""
+    # Canary versions that differ in the last digit shouldn't be considered
+    # different; this number is typically used to represent an experiment, e.g.
+    # using ASAN or aura.
+    def CanaryKey(version):
+      return version[:-1]
+
     # We don't ship canary on Linux, so it won't appear in self.history.
     # Instead, we can use the matching Linux trunk build for that version.
     shared_version_generator = self._FindNextSharedVersion(
-        set(platforms) - set(('linux',)),
-        self._GetPlatformCanaryHistory)
-    return self._DoGetMostRecentSharedVersion(platforms,
-        shared_version_generator, allow_trunk_revisions=True)
+        set(self.platforms) - set(('linux',)),
+        self._GetPlatformCanaryHistory, CanaryKey)
+    return self._DoGetMostRecentSharedVersion(shared_version_generator,
+                                              allow_trunk_revisions=True)
 
-  def GetAvailablePlatformArchivesFor(self, version, platforms,
-                                      allow_trunk_revisions):
+  def GetAvailablePlatformArchivesFor(self, version, allow_trunk_revisions):
     """Returns a sequence of archives that exist for a given version, on the
     given platforms.
 
@@ -319,38 +391,46 @@ class VersionFinder(object):
 
     Args:
       version: The version to find archives for. (e.g. "18.0.1025.164")
-      platforms: A sequence of platforms to consider, e.g.
-          ('mac', 'linux', 'win')
       allow_trunk_revisions: If True, will search for archives using the
           trunk revision that matches the branch version.
     Returns:
-      A tuple (archives, missing_platforms). |archives| is a list of archive
-      URLs, |missing_platforms| is a list of platform names.
+      A tuple (archives, missing_archives). |archives| is a list of archive
+      URLs, |missing_archives| is a list of archive names.
     """
-    archives = self._GetAvailableArchivesFor(version)
-    missing_platforms = set(platforms) - set(GetPlatformsFromArchives(archives))
-    if allow_trunk_revisions and missing_platforms:
-      # Try to find trunk archives for platforms that are missing archives.
+    archive_urls = self._GetAvailableArchivesFor(version)
+    platform_archives = set(GetPlatformArchiveName(p) for p in self.platforms)
+    expected_archives = platform_archives
+    if self.extra_archives:
+      for extra_archive, extra_archive_min_version in self.extra_archives:
+        if SplitVersion(version) >= SplitVersion(extra_archive_min_version):
+          expected_archives.add(extra_archive)
+    found_archives = set(GetCanonicalArchiveName(a) for a in archive_urls)
+    missing_archives = expected_archives - found_archives
+    if allow_trunk_revisions and missing_archives:
+      # Try to find trunk versions of any missing archives.
       trunk_version = self.delegate.GetTrunkRevision(version)
       trunk_archives = self._GetAvailableArchivesFor(trunk_version)
-      for trunk_archive in trunk_archives:
-        trunk_archive_platform = GetPlatformFromArchiveUrl(trunk_archive)
-        if trunk_archive_platform in missing_platforms:
-          archives.append(trunk_archive)
-          missing_platforms.discard(trunk_archive_platform)
+      for trunk_archive_url in trunk_archives:
+        trunk_archive = GetCanonicalArchiveName(trunk_archive_url)
+        if trunk_archive in missing_archives:
+          archive_urls.append(trunk_archive_url)
+          missing_archives.discard(trunk_archive)
 
-    return archives, missing_platforms
+    # Only return archives that are "expected".
+    def IsExpected(url):
+      return GetCanonicalArchiveName(url) in expected_archives
 
-  def _DoGetMostRecentSharedVersion(self, platforms, shared_version_generator,
-      allow_trunk_revisions):
+    expected_archive_urls = [u for u in archive_urls if IsExpected(u)]
+    return expected_archive_urls, missing_archives
+
+  def _DoGetMostRecentSharedVersion(self, shared_version_generator,
+                                    allow_trunk_revisions):
     """Returns the most recent version of a pepper bundle that exists on all
     given platforms.
 
     This function does the real work for the public GetMostRecentShared* above.
 
     Args:
-      platforms: A sequence of platforms to consider, e.g.
-          ('mac', 'linux', 'win')
       shared_version_generator: A generator that will yield (version, channel)
           tuples in order of most recent to least recent.
       allow_trunk_revisions: If True, will search for archives using the
@@ -366,25 +446,29 @@ class VersionFinder(object):
       try:
         version, channel = shared_version_generator.next()
       except StopIteration:
-        msg = 'No shared version for platforms: %s\n' % (', '.join(platforms))
+        msg = 'No shared version for platforms: %s\n' % (
+            ', '.join(self.platforms))
         msg += 'Last version checked = %s.\n' % (version,)
         if skipped_versions:
           msg += 'Versions skipped due to missing archives:\n'
-          for version, channel, archives in skipped_versions:
-            if archives:
-              archive_msg = '(%s available)' % (', '.join(archives))
-            else:
-              archive_msg = '(none available)'
+          for version, channel, missing_archives in skipped_versions:
+            archive_msg = '(missing %s)' % (', '.join(missing_archives))
           msg += '  %s (%s) %s\n' % (version, channel, archive_msg)
-        raise Exception(msg)
+        raise NoSharedVersionException(msg)
 
-      archives, missing_platforms = self.GetAvailablePlatformArchivesFor(
-          version, platforms, allow_trunk_revisions)
+      logger.info('Found shared version: %s, channel: %s' % (
+          version, channel))
 
-      if not missing_platforms:
+      archives, missing_archives = self.GetAvailablePlatformArchivesFor(
+          version, allow_trunk_revisions)
+
+      if not missing_archives:
         return version, channel, archives
 
-      skipped_versions.append((version, channel, archives))
+      logger.info('  skipping. Missing archives: %s' % (
+          ', '.join(missing_archives)))
+
+      skipped_versions.append((version, channel, missing_archives))
 
   def _GetPlatformMajorVersionHistory(self, with_major_version, with_platform):
     """Yields Chrome history for a given platform and major version.
@@ -421,7 +505,7 @@ class VersionFinder(object):
         yield channel, version
 
 
-  def _FindNextSharedVersion(self, platforms, generator_func):
+  def _FindNextSharedVersion(self, platforms, generator_func, key_func=None):
     """Yields versions of Chrome that exist on all given platforms, in order of
        newest to oldest.
 
@@ -429,20 +513,56 @@ class VersionFinder(object):
     recently updated version will be tested first.
 
     Args:
-      platforms: A sequence of platforms to filter for. Any other platforms will
-          be ignored.
+      platforms: A sequence of platforms to consider, e.g.
+          ('mac', 'linux', 'win')
+      generator_func: A function which takes a platform and returns a
+          generator that yields (channel, version) tuples.
+      key_func: A function to convert the version into a value that should be
+          used for comparison. See python built-in sorted() or min(), for
+          an example.
     Returns:
       A generator that yields a tuple (version, channel) for each version that
       matches all platforms and the major version. The version returned is a
       string (e.g. "18.0.1025.164").
     """
+    if not key_func:
+      key_func = lambda x: x
+
     platform_generators = []
     for platform in platforms:
       platform_generators.append(generator_func(platform))
 
     shared_version = None
-    platform_versions = [(tuple(), '')] * len(platforms)
+    platform_versions = []
+    for platform_gen in platform_generators:
+      platform_versions.append(platform_gen.next())
+
     while True:
+      if logger.isEnabledFor(logging.INFO):
+        msg_info = []
+        for i, platform in enumerate(platforms):
+          msg_info.append('%s: %s' % (
+              platform, JoinVersion(platform_versions[i][1])))
+        logger.info('Checking versions: %s' % ', '.join(msg_info))
+
+      shared_version = min((v for c, v in platform_versions), key=key_func)
+
+      if all(key_func(v) == key_func(shared_version)
+             for c, v in platform_versions):
+        # The real shared_version should be the real minimum version. This will
+        # be different from shared_version above only if key_func compares two
+        # versions with different values as equal.
+        min_version = min((v for c, v in platform_versions))
+
+        # grab the channel from an arbitrary platform
+        first_platform = platform_versions[0]
+        channel = first_platform[0]
+        yield JoinVersion(min_version), channel
+
+        # force increment to next version for all platforms
+        shared_version = None
+
+      # Find the next version for any platform that isn't at the shared version.
       try:
         for i, platform_gen in enumerate(platform_generators):
           if platform_versions[i][1] != shared_version:
@@ -450,16 +570,6 @@ class VersionFinder(object):
       except StopIteration:
         return
 
-      shared_version = min(v for c, v in platform_versions)
-
-      if all(v == shared_version for c, v in platform_versions):
-        # grab the channel from an arbitrary platform
-        first_platform = platform_versions[0]
-        channel = first_platform[0]
-        yield JoinVersion(shared_version), channel
-
-        # force increment to next version for all platforms
-        shared_version = None
 
   def _GetAvailableArchivesFor(self, version_string):
     """Downloads a list of all available archives for a given version.
@@ -483,10 +593,15 @@ class VersionFinder(object):
     return filter(lambda a: a + '.json' in manifests, archives)
 
 
+class UnknownLockedBundleException(Exception):
+  pass
+
+
 class Updater(object):
   def __init__(self, delegate):
     self.delegate = delegate
     self.versions_to_update = []
+    self.locked_bundles = []
     self.online_manifest = manifest_util.SDKManifest()
     self._FetchOnlineManifest()
 
@@ -499,6 +614,18 @@ class Updater(object):
       channel: The stability of the pepper bundle, e.g. 'beta'
       archives: A sequence of archive URLs for this bundle."""
     self.versions_to_update.append((bundle_name, version, channel, archives))
+
+  def AddLockedBundle(self, bundle_name):
+    """Add a "locked" bundle to the updater.
+
+    A locked bundle is a bundle that wasn't found in the history. When this
+    happens, the bundle is now "locked" to whatever was last found. We want to
+    ensure that the online manifest has this bundle.
+
+    Args:
+      bundle_name: The name of the locked bundle.
+    """
+    self.locked_bundles.append(bundle_name)
 
   def Update(self, manifest):
     """Update a manifest and upload it.
@@ -517,8 +644,31 @@ class Updater(object):
     # Add 0 in case there are no stable versions.
     max_stable_version = max([0] + stable_major_versions)
 
+    # Ensure that all locked bundles exist in the online manifest.
+    for bundle_name in self.locked_bundles:
+      online_bundle = self.online_manifest.GetBundle(bundle_name)
+      if online_bundle:
+        manifest.SetBundle(online_bundle)
+      else:
+        msg = ('Attempted to update bundle "%s", but no shared versions were '
+            'found, and there is no online bundle with that name.')
+        raise UnknownLockedBundleException(msg % bundle_name)
+
+    if self.locked_bundles:
+      # Send a nagging email that we shouldn't be wasting time looking for
+      # bundles that are no longer in the history.
+      scriptname = os.path.basename(sys.argv[0])
+      subject = '[%s] Reminder: remove bundles from %s' % (scriptname,
+                                                           MANIFEST_BASENAME)
+      text = 'These bundles are not in the omahaproxy history anymore: ' + \
+              ', '.join(self.locked_bundles)
+      self.delegate.SendMail(subject, text)
+
+
+    # Update all versions.
+    logger.info('>>> Updating bundles...')
     for bundle_name, version, channel, archives in self.versions_to_update:
-      self.delegate.Print('Updating %s to %s...' % (bundle_name, version))
+      logger.info('Updating %s to %s...' % (bundle_name, version))
       bundle = manifest.GetBundle(bundle_name)
       for archive in archives:
         platform_bundle = self._GetPlatformArchiveBundle(archive)
@@ -528,29 +678,34 @@ class Updater(object):
         platform_bundle.name = bundle_name
         bundle.MergeWithBundle(platform_bundle)
 
-      # Check to ensure this bundle is newer than the online bundle.
-      online_bundle = self.online_manifest.GetBundle(bundle_name)
-      if online_bundle and online_bundle.revision >= bundle.revision:
-        self.delegate.Print(
-            '  Revision %s is not newer than than online revision %s. '
-            'Skipping.' % (bundle.revision, online_bundle.revision))
-
-        manifest.MergeBundle(online_bundle)
-        continue
-
+      # Fix the stability and recommended values
       major_version = SplitVersion(version)[0]
-      if major_version < max_stable_version and channel == 'stable':
+      if major_version < max_stable_version:
         bundle.stability = 'post_stable'
       else:
         bundle.stability = channel
       # We always recommend the stable version.
-      if channel == 'stable':
+      if bundle.stability == 'stable':
         bundle.recommended = 'yes'
       else:
         bundle.recommended = 'no'
-      manifest.MergeBundle(bundle)
+
+      # Check to ensure this bundle is newer than the online bundle.
+      online_bundle = self.online_manifest.GetBundle(bundle_name)
+      if online_bundle:
+        # This test used to be online_bundle.revision >= bundle.revision.
+        # That doesn't do quite what we want: sometimes the metadata changes
+        # but the revision stays the same -- we still want to push those
+        # changes.
+        if online_bundle.revision > bundle.revision or online_bundle == bundle:
+          logger.info(
+              '  Revision %s is not newer than than online revision %s. '
+              'Skipping.' % (bundle.revision, online_bundle.revision))
+
+          manifest.SetBundle(online_bundle)
+          continue
     self._UploadManifest(manifest)
-    self.delegate.Print('Done.')
+    logger.info('Done.')
 
   def _GetPlatformArchiveBundle(self, archive):
     """Downloads the manifest "snippet" for an archive, and reads it as a
@@ -569,6 +724,11 @@ class Updater(object):
     # those here.
     bundle.revision = int(bundle.revision)
     bundle.version = int(bundle.version)
+
+    # HACK. The naclports archive specifies host_os as linux. Change it to all.
+    for archive in bundle.GetArchives():
+      if NACLPORTS_ARCHIVE_NAME in archive.url:
+        archive.host_os = 'all'
     return bundle
 
   def _UploadManifest(self, manifest):
@@ -584,15 +744,16 @@ class Updater(object):
     online_manifest_string = self.online_manifest.GetDataAsString()
 
     if self.delegate.dryrun:
-      self.delegate.Print(''.join(list(difflib.unified_diff(
+      logger.info(''.join(list(difflib.unified_diff(
           online_manifest_string.splitlines(1),
           new_manifest_string.splitlines(1)))))
+      return
     else:
       online_manifest = manifest_util.SDKManifest()
       online_manifest.LoadDataFromString(online_manifest_string)
 
       if online_manifest == manifest:
-        self.delegate.Print('New manifest doesn\'t differ from online manifest.'
+        logger.info('New manifest doesn\'t differ from online manifest.'
             'Skipping upload.')
         return
 
@@ -615,13 +776,17 @@ class Updater(object):
       self.online_manifest.LoadDataFromString(online_manifest_string)
 
 
-def Run(delegate, platforms, fixed_bundle_versions=None):
+def Run(delegate, platforms, extra_archives, fixed_bundle_versions=None):
   """Entry point for the auto-updater.
 
   Args:
     delegate: The Delegate object to use for reading Urls, files, etc.
     platforms: A sequence of platforms to consider, e.g.
         ('mac', 'linux', 'win')
+      extra_archives: A sequence of tuples: (archive_basename, minimum_version),
+          e.g. [('foo.tar.bz2', '18.0.1000.0'), ('bar.tar.bz2', '19.0.1100.20')]
+          These archives must exist to consider a version for inclusion, as
+          long as that version is greater than the archive's minimum version.
     fixed_bundle_versions: A sequence of tuples (bundle_name, version_string).
         e.g. ('pepper_21', '21.0.1145.0')
   """
@@ -640,59 +805,46 @@ def Run(delegate, platforms, fixed_bundle_versions=None):
       auto_update_bundles.append(bundle)
 
   if not auto_update_bundles:
-    delegate.Print('No versions need auto-updating.')
+    logger.info('No versions need auto-updating.')
     return
 
-  version_finder = VersionFinder(delegate)
+  version_finder = VersionFinder(delegate, platforms, extra_archives)
   updater = Updater(delegate)
 
   for bundle in auto_update_bundles:
-    if bundle.name == CANARY_BUNDLE_NAME:
-      version, channel, archives = version_finder.GetMostRecentSharedCanary(
-          platforms)
-    else:
-      version, channel, archives = version_finder.GetMostRecentSharedVersion(
-          bundle.version, platforms)
+    try:
+      if bundle.name == CANARY_BUNDLE_NAME:
+        logger.info('>>> Looking for most recent pepper_canary...')
+        version, channel, archives = version_finder.GetMostRecentSharedCanary()
+      else:
+        logger.info('>>> Looking for most recent pepper_%s...' %
+            bundle.version)
+        version, channel, archives = version_finder.GetMostRecentSharedVersion(
+            bundle.version)
+    except NoSharedVersionException:
+      # If we can't find a shared version, make sure that there is an uploaded
+      # bundle with that name already.
+      updater.AddLockedBundle(bundle.name)
+      continue
 
     if bundle.name in fixed_bundle_versions:
       # Ensure this version is valid for all platforms.
       # If it is, use the channel found above (because the channel for this
       # version may not be in the history.)
       version = fixed_bundle_versions[bundle.name]
-      delegate.Print('Fixed bundle version: %s, %s' % (bundle.name, version))
+      logger.info('Fixed bundle version: %s, %s' % (bundle.name, version))
       allow_trunk_revisions = bundle.name == CANARY_BUNDLE_NAME
       archives, missing = version_finder.GetAvailablePlatformArchivesFor(
-          version, platforms, allow_trunk_revisions)
+          version, allow_trunk_revisions)
       if missing:
-        delegate.Print(
-            'An archive for version %s of bundle %s doesn\'t exist '
-            'for platform(s): %s' % (version, bundle.name, ', '.join(missing)))
+        logger.warn(
+            'Some archives for version %s of bundle %s don\'t exist: '
+            'Missing %s' % (version, bundle.name, ', '.join(missing)))
         return
 
     updater.AddVersionToUpdate(bundle.name, version, channel, archives)
 
   updater.Update(manifest)
-
-
-def SendMail(send_from, send_to, subject, text, smtp='localhost'):
-  """Send an email.
-
-  Args:
-    send_from: The sender's email address.
-    send_to: A list of addresses to send to.
-    subject: The subject of the email.
-    text: The text of the email.
-    smtp: The smtp server to use. Default is localhost.
-  """
-  msg = email.MIMEMultipart.MIMEMultipart()
-  msg['From'] = send_from
-  msg['To'] = ', '.join(send_to)
-  msg['Date'] = email.Utils.formatdate(localtime=True)
-  msg['Subject'] = subject
-  msg.attach(email.MIMEText.MIMEText(text))
-  smtp_obj = smtplib.SMTP(smtp)
-  smtp_obj.sendmail(send_from, send_to, msg.as_string())
-  smtp_obj.close()
 
 
 class CapturedFile(object):
@@ -720,8 +872,12 @@ def main(args):
   parser.add_option('--mailto', help='send error mails to...', action='append')
   parser.add_option('-n', '--dryrun', help="don't upload the manifest.",
       action='store_true')
-  parser.add_option('-v', '--verbose', help='print more diagnotic messages.',
-      action='store_true')
+  parser.add_option('-v', '--verbose', help='print more diagnotic messages. '
+      'Use more than once for more info.',
+      action='count')
+  parser.add_option('--log-file', metavar='FILE', help='log to FILE')
+  parser.add_option('--upload-log', help='Upload log alongside the manifest.',
+                    action='store_true')
   parser.add_option('--bundle-version',
       help='Manually set a bundle version. This can be passed more than once. '
       'format: --bundle-version pepper_24=24.0.1312.25', action='append')
@@ -730,8 +886,15 @@ def main(args):
   if (options.mailfrom is None) != (not options.mailto):
     options.mailfrom = None
     options.mailto = None
-    sys.stderr.write('warning: Disabling email, one of --mailto or --mailfrom '
+    logger.warning('Disabling email, one of --mailto or --mailfrom '
         'was missing.\n')
+
+  if options.verbose >= 2:
+    logging.basicConfig(level=logging.DEBUG, filename=options.log_file)
+  elif options.verbose:
+    logging.basicConfig(level=logging.INFO, filename=options.log_file)
+  else:
+    logging.basicConfig(level=logging.WARNING, filename=options.log_file)
 
   # Parse bundle versions.
   fixed_bundle_versions = {}
@@ -746,8 +909,19 @@ def main(args):
 
   try:
     try:
-      delegate = RealDelegate(options.dryrun, options.gsutil, options.verbose)
-      Run(delegate, ('mac', 'win', 'linux'), fixed_bundle_versions)
+      delegate = RealDelegate(options.dryrun, options.gsutil,
+                              options.mailfrom, options.mailto)
+
+      if options.upload_log:
+        gsutil_logging_handler = GsutilLoggingHandler(delegate)
+        logger.addHandler(gsutil_logging_handler)
+
+      # Only look for naclports archives >= 27. The old ports bundles don't
+      # include license information.
+      extra_archives = [('naclports.tar.bz2', '27.0.0.0')]
+      Run(delegate, ('mac', 'win', 'linux'), extra_archives,
+          fixed_bundle_versions)
+      return 0
     except Exception:
       if options.mailfrom and options.mailto:
         traceback.print_exc()
@@ -755,15 +929,18 @@ def main(args):
         subject = '[%s] Failed to update manifest' % (scriptname,)
         text = '%s failed.\n\nSTDERR:\n%s\n' % (scriptname,
                                                 sys.stderr.getvalue())
-        SendMail(options.mailfrom, options.mailto, subject, text)
-        sys.exit(1)
+        delegate.SendMail(subject, text)
+        return 1
       else:
         raise
+    finally:
+      if options.upload_log:
+        gsutil_logging_handler.upload()
   except manifest_util.Error as e:
     if options.debug:
       raise
-    print e
-    sys.exit(1)
+    sys.stderr.write(str(e) + '\n')
+    return 1
 
 
 if __name__ == '__main__':

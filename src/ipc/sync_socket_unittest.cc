@@ -9,20 +9,16 @@
 #include <sstream>
 
 #include "base/bind.h"
-#include "base/message_loop.h"
-#include "base/process_util.h"
+#include "base/message_loop/message_loop.h"
 #include "base/threading/thread.h"
-#include "ipc/ipc_channel_proxy.h"
-#include "ipc/ipc_multiprocess_test.h"
-#include "ipc/ipc_tests.h"
+#include "ipc/ipc_test_base.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "testing/multiprocess_func_list.h"
 
 #if defined(OS_POSIX)
 #include "base/file_descriptor_posix.h"
 #endif
 
-// IPC messages for testing ---------------------------------------------------
+// IPC messages for testing ----------------------------------------------------
 
 #define IPC_MESSAGE_IMPL
 #include "ipc/ipc_message_macros.h"
@@ -44,12 +40,12 @@ IPC_MESSAGE_CONTROL1(MsgClassResponse, std::string)
 // Message class to tell the server to shut down.
 IPC_MESSAGE_CONTROL0(MsgClassShutdown)
 
-// ----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 
 namespace {
+
 const char kHelloString[] = "Hello, SyncSocket Client";
 const size_t kHelloStringLength = arraysize(kHelloString);
-}  // namespace
 
 // The SyncSocket server listener class processes two sorts of
 // messages from the client.
@@ -62,7 +58,7 @@ class SyncSocketServerListener : public IPC::Listener {
     chan_ = chan;
   }
 
-  virtual bool OnMessageReceived(const IPC::Message& msg) {
+  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE {
     if (msg.routing_id() == MSG_ROUTING_CONTROL) {
       IPC_BEGIN_MESSAGE_MAP(SyncSocketServerListener, msg)
         IPC_MESSAGE_HANDLER(MsgClassSetHandle, OnMsgClassSetHandle)
@@ -99,7 +95,7 @@ class SyncSocketServerListener : public IPC::Listener {
   // When the client responds, it sends back a shutdown message,
   // which causes the message loop to exit.
   void OnMsgClassShutdown() {
-    MessageLoop::current()->Quit();
+    base::MessageLoop::current()->Quit();
   }
 
   IPC::Channel* chan_;
@@ -107,15 +103,17 @@ class SyncSocketServerListener : public IPC::Listener {
   DISALLOW_COPY_AND_ASSIGN(SyncSocketServerListener);
 };
 
-// Runs the fuzzing server child mode. Returns when the preset number
-// of messages have been received.
-MULTIPROCESS_IPC_TEST_MAIN(RunSyncSocketServer) {
-  MessageLoopForIO main_message_loop;
+// Runs the fuzzing server child mode. Returns when the preset number of
+// messages have been received.
+MULTIPROCESS_IPC_TEST_CLIENT_MAIN(SyncSocketServerClient) {
+  base::MessageLoopForIO main_message_loop;
   SyncSocketServerListener listener;
-  IPC::Channel chan(kSyncSocketChannel, IPC::Channel::MODE_CLIENT, &listener);
-  EXPECT_TRUE(chan.Connect());
-  listener.Init(&chan);
-  MessageLoop::current()->Run();
+  IPC::Channel channel(IPCTestBase::GetChannelName("SyncSocketServerClient"),
+                       IPC::Channel::MODE_CLIENT,
+                       &listener);
+  EXPECT_TRUE(channel.Connect());
+  listener.Init(&channel);
+  base::MessageLoop::current()->Run();
   return 0;
 }
 
@@ -131,7 +129,7 @@ class SyncSocketClientListener : public IPC::Listener {
     chan_ = chan;
   }
 
-  virtual bool OnMessageReceived(const IPC::Message& msg) {
+  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE {
     if (msg.routing_id() == MSG_ROUTING_CONTROL) {
       IPC_BEGIN_MESSAGE_MAP(SyncSocketClientListener, msg)
         IPC_MESSAGE_HANDLER(MsgClassResponse, OnMsgClassResponse)
@@ -155,7 +153,7 @@ class SyncSocketClientListener : public IPC::Listener {
     EXPECT_EQ(0U, socket_->Peek());
     IPC::Message* msg = new MsgClassShutdown();
     EXPECT_TRUE(chan_->Send(msg));
-    MessageLoop::current()->Quit();
+    base::MessageLoop::current()->Quit();
   }
 
   base::SyncSocket* socket_;
@@ -164,15 +162,15 @@ class SyncSocketClientListener : public IPC::Listener {
   DISALLOW_COPY_AND_ASSIGN(SyncSocketClientListener);
 };
 
-class SyncSocketTest : public IPCChannelTest {
+class SyncSocketTest : public IPCTestBase {
 };
 
 TEST_F(SyncSocketTest, SanityTest) {
+  Init("SyncSocketServerClient");
+
   SyncSocketClientListener listener;
-  IPC::Channel chan(kSyncSocketChannel, IPC::Channel::MODE_SERVER,
-                    &listener);
-  base::ProcessHandle server_process = SpawnChild(SYNC_SOCKET_SERVER, &chan);
-  ASSERT_TRUE(server_process);
+  CreateChannel(&listener);
+  ASSERT_TRUE(StartClient());
   // Create a pair of SyncSockets.
   base::SyncSocket pair[2];
   base::SyncSocket::CreatePair(&pair[0], &pair[1]);
@@ -181,12 +179,12 @@ TEST_F(SyncSocketTest, SanityTest) {
   EXPECT_EQ(0U, pair[1].Peek());
   base::SyncSocket::Handle target_handle;
   // Connect the channel and listener.
-  ASSERT_TRUE(chan.Connect());
-  listener.Init(&pair[0], &chan);
+  ASSERT_TRUE(ConnectChannel());
+  listener.Init(&pair[0], channel());
 #if defined(OS_WIN)
   // On windows we need to duplicate the handle into the server process.
   BOOL retval = DuplicateHandle(GetCurrentProcess(), pair[1].handle(),
-                                server_process, &target_handle,
+                                client_process(), &target_handle,
                                 0, FALSE, DUPLICATE_SAME_ACCESS);
   EXPECT_TRUE(retval);
   // Set up a message to pass the handle to the server.
@@ -197,17 +195,15 @@ TEST_F(SyncSocketTest, SanityTest) {
   base::FileDescriptor filedesc(target_handle, false);
   IPC::Message* msg = new MsgClassSetHandle(filedesc);
 #endif  // defined(OS_WIN)
-  EXPECT_TRUE(chan.Send(msg));
+  EXPECT_TRUE(sender()->Send(msg));
   // Use the current thread as the I/O thread.
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
   // Shut down.
   pair[0].Close();
   pair[1].Close();
-  EXPECT_TRUE(base::WaitForSingleProcess(
-      server_process, base::TimeDelta::FromSeconds(5)));
-  base::CloseProcessHandle(server_process);
+  EXPECT_TRUE(WaitForClientShutdown());
+  DestroyChannel();
 }
-
 
 // A blocking read operation that will block the thread until it receives
 // |length| bytes of packets or Shutdown() is called on another thread.
@@ -308,3 +304,5 @@ TEST_F(SyncSocketTest, NonBlockingWriteTest) {
   // Should be able to write more data to the buffer now.
   EXPECT_EQ(kHelloStringLength, pair[0].Send(kHelloString, kHelloStringLength));
 }
+
+}  // namespace

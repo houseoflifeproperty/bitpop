@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -35,21 +35,20 @@ public class ContentViewClient {
     }
 
     /**
-      * Lets client listen on the scaling changes on delayed, throttled
-      * and best-effort basis. Used for WebView.onScaleChanged.
-      */
-    public void onScaleChanged(float oldScale, float newScale) {
+     * Called whenever the background color of the page changes as notified by WebKit.
+     * @param color The new ARGB color of the page background.
+     */
+    public void onBackgroundColorChanged(int color) {
     }
 
     /**
      * Notifies the client that the position of the top controls has changed.
-     * @param topControlsOffsetY The Y offset of the top controls.
-     * @param contentOffsetY The Y offset of the content.
+     * @param topControlsOffsetYPix The Y offset of the top controls in physical pixels.
+     * @param contentOffsetYPix The Y offset of the content in physical pixels.
+     * @param overdrawBottomHeightPix The overdraw height.
      */
-    public void onOffsetsForFullscreenChanged(float topControlsOffsetY, float contentOffsetY) {
-    }
-
-    public void onTabCrash() {
+    public void onOffsetsForFullscreenChanged(
+            float topControlsOffsetYPix, float contentOffsetYPix, float overdrawBottomHeightPix) {
     }
 
     public boolean shouldOverrideKeyEvent(KeyEvent event) {
@@ -87,32 +86,20 @@ public class ContentViewClient {
         return false;
     }
 
-    // Called when an ImeEvent is sent to the page. Can be used to know when some text is entered
-    // in a page.
+    /**
+     * Called when an ImeEvent is sent to the page. Can be used to know when some text is entered
+     * in a page.
+     */
     public void onImeEvent() {
     }
 
     /**
-     * A callback invoked after the JavaScript code passed to evaluateJavaScript
-     * has finished execution.
-     * Used in automation tests.
-     * @hide
+     * Notified when a change to the IME was requested.
+     *
+     * @param requestShow Whether the IME was requested to be shown (may already be showing
+     *                    though).
      */
-    public void onEvaluateJavaScriptResult(int id, String jsonResult) {
-    }
-
-    // TODO (dtrainor): Should expose getScrollX/Y from ContentView or make
-    // computeHorizontalScrollOffset()/computeVerticalScrollOffset() public.
-    /**
-     * Gives the UI the chance to override each scroll event.
-     * @param dx The amount scrolled in the X direction.
-     * @param dy The amount scrolled in the Y direction.
-     * @param scrollX The current X scroll offset.
-     * @param scrollY The current Y scroll offset.
-     * @return Whether or not the UI consumed and handled this event.
-     */
-    public boolean shouldOverrideScroll(float dx, float dy, float scrollX, float scrollY) {
-        return false;
+    public void onImeStateChangeRequested(boolean requestShow) {
     }
 
     /**
@@ -136,6 +123,31 @@ public class ContentViewClient {
     }
 
     /**
+     * Perform a search on {@code searchQuery}.  This method is only called if
+     * {@link #doesPerformWebSearch()} returns {@code true}.
+     * @param searchQuery The string to search for.
+     */
+    public void performWebSearch(String searchQuery) {
+    }
+
+    /**
+     * If this returns {@code true} contextual web search attempts will be forwarded to
+     * {@link #performWebSearch(String)}.
+     * @return {@code true} iff this {@link ContentViewClient} wants to consume web search queries
+     *         and override the default intent behavior.
+     */
+    public boolean doesPerformWebSearch() {
+        return false;
+    }
+
+    /**
+     * Notification that the selection has changed.
+     * @param selection The newly established selection.
+     */
+    public void onSelectionChanged(String selection) {
+    }
+
+    /**
      * Called when a new content intent is requested to be started.
      */
     public void onStartContentIntent(Context context, String intentUrl) {
@@ -154,4 +166,18 @@ public class ContentViewClient {
             Log.w(TAG, "No application can handle " + intentUrl);
         }
     }
+
+    public ContentVideoViewClient getContentVideoViewClient() {
+        return null;
+    }
+
+    /**
+     * Called when BrowserMediaPlayerManager wants to load a media resource.
+     * @param url the URL of media resource to load.
+     * @return true to prevent the resource from being loaded.
+     */
+    public boolean shouldBlockMediaRequest(String url) {
+        return false;
+    }
+
 }

@@ -7,16 +7,16 @@
 
 #include "base/basictypes.h"
 #include "chrome/browser/extensions/external_provider_impl.h"
+#include "extensions/common/manifest.h"
 
-class PrefService;
 class Profile;
-
-namespace extensions {
-class Extension;
-}
 
 namespace base {
 class DictionaryValue;
+}
+
+namespace user_prefs {
+class PrefRegistrySyncable;
 }
 
 // Functions and types related to installing default apps.
@@ -34,7 +34,7 @@ enum InstallState {
 
 // Register preference properties used by default apps to maintain
 // install state.
-void RegisterUserPrefs(PrefService* prefs);
+void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
 // A specialization of the ExternalProviderImpl that conditionally installs apps
 // from the chrome::DIR_DEFAULT_APPS location based on a preference in the
@@ -44,8 +44,8 @@ class Provider : public extensions::ExternalProviderImpl {
   Provider(Profile* profile,
            VisitorInterface* service,
            extensions::ExternalLoader* loader,
-           extensions::Extension::Location crx_location,
-           extensions::Extension::Location download_location,
+           extensions::Manifest::Location crx_location,
+           extensions::Manifest::Location download_location,
            int creation_flags);
 
   bool ShouldInstallInProfile();

@@ -7,10 +7,12 @@
 
 #include <shlobj.h>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/win/scoped_com_initializer.h"
 #include "base/win/scoped_comptr.h"
+#include "chrome/installer/util/browser_distribution.h"
+#include "chrome/installer/util/install_util.h"
 
 void CheckHR(HRESULT hr, const char* message) {
   if (FAILED(hr)) {
@@ -21,21 +23,22 @@ void CheckHR(HRESULT hr, const char* message) {
   }
 }
 
-HSTRING MakeHString(const string16& str) {
+HSTRING MakeHString(const base::string16& str) {
   HSTRING hstr;
-  if (FAILED(::WindowsCreateString(str.c_str(), str.size(), &hstr))) {
+  if (FAILED(::WindowsCreateString(str.c_str(), static_cast<UINT32>(str.size()),
+                                   &hstr))) {
     PLOG(DFATAL) << "Hstring creation failed";
   }
   return hstr;
 }
 
-string16 MakeStdWString(HSTRING hstring) {
+base::string16 MakeStdWString(HSTRING hstring) {
   const wchar_t* str;
   UINT32 size = 0;
   str = ::WindowsGetStringRawBuffer(hstring, &size);
   if (!size)
-    return string16();
-  return string16(str, size);
+    return base::string16();
+  return base::string16(str, size);
 }
 
 namespace {
@@ -69,19 +72,6 @@ HRESULT Create ## Name ## Property(Type value, \
   else \
     *result = 0; \
   hr = S_OK
-
-
-BOOL CALLBACK CoreWindowFinder(HWND hwnd, LPARAM param) {
-  HWND* window = reinterpret_cast<HWND*>(param);
-  char classname[128];
-  if (::GetClassNameA(hwnd, classname, ARRAYSIZE(classname))) {
-    if (lstrcmpiA("Windows.UI.Core.CoreWindow", classname) == 0) {
-      *window = hwnd;
-      return FALSE;
-    }
-  }
-  return TRUE;
-}
 
 }  // namespace
 
@@ -179,8 +169,8 @@ HRESULT CompareProperties(winfoundtn::IPropertyValue* lhs,
   return hr;
 }
 
-bool GetArgumentsFromShortcut(const FilePath& shortcut,
-                              string16* arguments) {
+bool GetArgumentsFromShortcut(const base::FilePath& shortcut,
+                              base::string16* arguments) {
   HRESULT result;
   base::win::ScopedComPtr<IShellLink> i_shell_link;
   bool is_resolved = false;
@@ -210,38 +200,27 @@ bool GetArgumentsFromShortcut(const FilePath& shortcut,
   return is_resolved;
 }
 
-string16 ReadArgumentsFromPinnedTaskbarShortcut() {
+base::string16 ReadArgumentsFromPinnedTaskbarShortcut() {
   wchar_t path_buffer[MAX_PATH] = {};
 
   if (SUCCEEDED(SHGetFolderPath(NULL, CSIDL_APPDATA, NULL,
                                 SHGFP_TYPE_CURRENT, path_buffer))) {
-    FilePath shortcut(path_buffer);
+    base::FilePath shortcut(path_buffer);
     shortcut = shortcut.Append(
         L"Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar");
 
-    // TODO(robertshield): Get this stuff from BrowserDistribution.
-#if defined(GOOGLE_CHROME_BUILD)
-    shortcut = shortcut.Append(L"Google Chrome.lnk");
-#else
-    shortcut = shortcut.Append(L"Chromium.lnk");
-#endif
+    BrowserDistribution* dist = BrowserDistribution::GetDistribution();
+    base::string16 link_name = dist->GetShortcutName(
+        BrowserDistribution::SHORTCUT_CHROME) + installer::kLnkExt;
+    shortcut = shortcut.Append(link_name);
 
-    string16 arguments;
+    base::string16 arguments;
     if (GetArgumentsFromShortcut(shortcut, &arguments)) {
       return arguments;
     }
   }
 
   return L"";
-}
-
-HWND FindCoreWindow(DWORD thread_id, int wait_ms) {
-  HWND window = NULL;
-    do {
-    ::Sleep(wait_ms);
-    ::EnumThreadWindows(thread_id, &CoreWindowFinder, LPARAM(&window));
-  } while (window == NULL);
-  return window;
 }
 
 }  // namespace winrt_utils

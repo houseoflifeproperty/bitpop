@@ -19,16 +19,101 @@
 #ifndef WEBRTC_VIDEO_ENGINE_INCLUDE_VIE_BASE_H_
 #define WEBRTC_VIDEO_ENGINE_INCLUDE_VIE_BASE_H_
 
-#include "common_types.h"
+#include "webrtc/common_types.h"
+
+#if defined(ANDROID) && !defined(WEBRTC_CHROMIUM_BUILD)
+#include <jni.h>
+#endif
 
 namespace webrtc {
 
+class Config;
 class VoiceEngine;
+
+// CpuOveruseObserver is called when a system overuse is detected and
+// VideoEngine cannot keep up the encoding frequency.
+class CpuOveruseObserver {
+ public:
+  // Called as soon as an overuse is detected.
+  virtual void OveruseDetected() = 0;
+  // Called periodically when the system is not overused any longer.
+  virtual void NormalUsage() = 0;
+
+ protected:
+  virtual ~CpuOveruseObserver() {}
+};
+
+// Limits on standard deviation for under/overuse.
+#ifdef WEBRTC_ANDROID
+const float kOveruseStdDevMs = 32.0f;
+const float kNormalUseStdDevMs = 27.0f;
+#elif WEBRTC_LINUX
+const float kOveruseStdDevMs = 20.0f;
+const float kNormalUseStdDevMs = 14.0f;
+#elif WEBRTC_MAC
+const float kOveruseStdDevMs = 27.0f;
+const float kNormalUseStdDevMs = 21.0f;
+#elif WEBRTC_WIN
+const float kOveruseStdDevMs = 20.0f;
+const float kNormalUseStdDevMs = 14.0f;
+#else
+const float kOveruseStdDevMs = 30.0f;
+const float kNormalUseStdDevMs = 20.0f;
+#endif
+
+struct CpuOveruseOptions {
+  CpuOveruseOptions()
+    : enable_capture_jitter_method(true),
+      low_capture_jitter_threshold_ms(kNormalUseStdDevMs),
+      high_capture_jitter_threshold_ms(kOveruseStdDevMs),
+      enable_encode_usage_method(false),
+      low_encode_usage_threshold_percent(60),
+      high_encode_usage_threshold_percent(90),
+      frame_timeout_interval_ms(1500),
+      min_frame_samples(120),
+      min_process_count(3),
+      high_threshold_consecutive_count(2) {}
+
+  // Method based on inter-arrival jitter of captured frames.
+  bool enable_capture_jitter_method;
+  float low_capture_jitter_threshold_ms;  // Threshold for triggering underuse.
+  float high_capture_jitter_threshold_ms; // Threshold for triggering overuse.
+  // Method based on encode time of frames.
+  bool enable_encode_usage_method;
+  int low_encode_usage_threshold_percent;  // Threshold for triggering underuse.
+  int high_encode_usage_threshold_percent; // Threshold for triggering overuse.
+  // General settings.
+  int frame_timeout_interval_ms;  // The maximum allowed interval between two
+                                  // frames before resetting estimations.
+  int min_frame_samples;  // The minimum number of frames required.
+  int min_process_count;  // The number of initial process times required before
+                          // triggering an overuse/underuse.
+  int high_threshold_consecutive_count; // The number of consecutive checks
+                                        // above the high threshold before
+                                        // triggering an overuse.
+
+  bool Equals(const CpuOveruseOptions& o) const {
+    return enable_capture_jitter_method == o.enable_capture_jitter_method &&
+        low_capture_jitter_threshold_ms == o.low_capture_jitter_threshold_ms &&
+        high_capture_jitter_threshold_ms ==
+        o.high_capture_jitter_threshold_ms &&
+        enable_encode_usage_method == o.enable_encode_usage_method &&
+        low_encode_usage_threshold_percent ==
+        o.low_encode_usage_threshold_percent &&
+        high_encode_usage_threshold_percent ==
+        o.high_encode_usage_threshold_percent &&
+        frame_timeout_interval_ms == o.frame_timeout_interval_ms &&
+        min_frame_samples == o.min_frame_samples &&
+        min_process_count == o.min_process_count &&
+        high_threshold_consecutive_count == o.high_threshold_consecutive_count;
+  }
+};
 
 class WEBRTC_DLLEXPORT VideoEngine {
  public:
   // Creates a VideoEngine object, which can then be used to acquire sub‐APIs.
   static VideoEngine* Create();
+  static VideoEngine* Create(const Config& config);
 
   // Deletes a VideoEngine instance.
   static bool Delete(VideoEngine*& video_engine);
@@ -45,10 +130,10 @@ class WEBRTC_DLLEXPORT VideoEngine {
   // user receives callbacks for generated trace messages.
   static int SetTraceCallback(TraceCallback* callback);
 
+#if defined(ANDROID) && !defined(WEBRTC_CHROMIUM_BUILD)
   // Android specific.
-  // Provides VideoEngine with pointers to objects supplied by the Java
-  // applications JNI interface.
-  static int SetAndroidObjects(void* java_vm, void* java_context);
+  static int SetAndroidObjects(JavaVM* java_vm);
+#endif
 
  protected:
   VideoEngine() {}
@@ -93,6 +178,38 @@ class WEBRTC_DLLEXPORT ViEBase {
 
   // Deletes an existing channel and releases the utilized resources.
   virtual int DeleteChannel(const int video_channel) = 0;
+
+  // Registers an observer to be called when an overuse is detected, see
+  // 'CpuOveruseObserver' for details.
+  // NOTE: This is still very experimental functionality.
+  virtual int RegisterCpuOveruseObserver(int channel,
+                                         CpuOveruseObserver* observer) = 0;
+
+  // Sets options for cpu overuse detector.
+  // TODO(asapersson): Remove default implementation.
+  virtual int SetCpuOveruseOptions(int channel,
+                                   const CpuOveruseOptions& options) {
+    return -1;
+  }
+
+  // Gets cpu overuse measures.
+  // capture_jitter_ms: The current estimated jitter in ms based on incoming
+  //                    captured frames.
+  // avg_encode_time_ms: The average encode time in ms.
+  // encode_usage_percent: The average encode time divided by the average time
+  //                       difference between incoming captured frames.
+  // capture_queue_delay_ms_per_s: The current time delay between an incoming
+  //                               captured frame until the frame is being
+  //                               processed. The delay is expressed in ms
+  //                               delay per second.
+  // TODO(asapersson): Remove default implementation.
+  virtual int CpuOveruseMeasures(int channel,
+                                 int* capture_jitter_ms,
+                                 int* avg_encode_time_ms,
+                                 int* encode_usage_percent,
+                                 int* capture_queue_delay_ms_per_s) {
+    return -1;
+  }
 
   // Specifies the VoiceEngine and VideoEngine channel pair to use for
   // audio/video synchronization.

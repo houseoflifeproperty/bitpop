@@ -53,6 +53,10 @@ class RegionCode {
     return "AD";
   }
 
+  static const char* AE() {
+    return "AE";
+  }
+
   static const char* AO() {
     return "AO";
   }
@@ -77,8 +81,20 @@ class RegionCode {
     return "BS";
   }
 
+  static const char* BY() {
+    return "BY";
+  }
+
   static const char* CA() {
     return "CA";
+  }
+
+  static const char* CH() {
+    return "CH";
+  }
+
+  static const char* CL() {
+    return "CL";
   }
 
   static const char* CN() {
@@ -139,6 +155,10 @@ class RegionCode {
 
   static const char* YT() {
     return "YT";
+  }
+
+  static const char* ZW() {
+    return "ZW";
   }
 
   // Returns a region code string representing the "unknown" region.

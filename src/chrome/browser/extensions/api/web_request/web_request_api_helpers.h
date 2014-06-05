@@ -11,16 +11,16 @@
 #include <set>
 #include <string>
 
-#include "base/memory/ref_counted.h"
 #include "base/memory/linked_ptr.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/extensions/extension_warning_set.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/auth.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
-#include "webkit/glue/resource_type.h"
+#include "url/gurl.h"
+#include "webkit/common/resource_type.h"
 
 namespace base {
 class ListValue;
@@ -52,6 +52,8 @@ struct RequestCookie {
   DISALLOW_COPY_AND_ASSIGN(RequestCookie);
 };
 
+bool NullableEquals(const RequestCookie* a, const RequestCookie* b);
+
 // Data container for ResponseCookies as defined in the declarative WebRequest
 // API definition.
 struct ResponseCookie {
@@ -69,6 +71,8 @@ struct ResponseCookie {
   DISALLOW_COPY_AND_ASSIGN(ResponseCookie);
 };
 
+bool NullableEquals(const ResponseCookie* a, const ResponseCookie* b);
+
 // Data container for FilterResponseCookies as defined in the declarative
 // WebRequest API definition.
 struct FilterResponseCookie : ResponseCookie {
@@ -80,6 +84,9 @@ struct FilterResponseCookie : ResponseCookie {
  private:
   DISALLOW_COPY_AND_ASSIGN(FilterResponseCookie);
 };
+
+bool NullableEquals(const FilterResponseCookie* a,
+                    const FilterResponseCookie* b);
 
 enum CookieModificationType {
   ADD,
@@ -99,6 +106,9 @@ struct RequestCookieModification {
   DISALLOW_COPY_AND_ASSIGN(RequestCookieModification);
 };
 
+bool NullableEquals(const RequestCookieModification* a,
+                    const RequestCookieModification* b);
+
 struct ResponseCookieModification {
   ResponseCookieModification();
   ~ResponseCookieModification();
@@ -110,6 +120,9 @@ struct ResponseCookieModification {
  private:
   DISALLOW_COPY_AND_ASSIGN(ResponseCookieModification);
 };
+
+bool NullableEquals(const ResponseCookieModification* a,
+                    const ResponseCookieModification* b);
 
 typedef std::vector<linked_ptr<RequestCookieModification> >
     RequestCookieModifications;
@@ -151,6 +164,10 @@ struct EventResponseDelta {
 
   // Modifications to cookies in response headers.
   ResponseCookieModifications response_cookie_modifications;
+
+  // Messages that shall be sent to the background/event/... pages of the
+  // extension.
+  std::set<std::string> messages_to_extension;
 
   EventResponseDelta(const std::string& extension_id,
                      const base::Time& extension_install_time);
@@ -197,6 +214,7 @@ EventResponseDelta* CalculateOnHeadersReceivedDelta(
     const std::string& extension_id,
     const base::Time& extension_install_time,
     bool cancel,
+    const GURL& new_url,
     const net::HttpResponseHeaders* old_response_headers,
     ResponseHeaders* new_response_headers);
 // Destructively moves the auth credentials from |auth_credentials| to the
@@ -217,6 +235,14 @@ EventResponseDelta* CalculateOnAuthRequiredDelta(
 void MergeCancelOfResponses(
     const EventResponseDeltas& deltas,
     bool* canceled,
+    const net::BoundNetLog* net_log);
+// Stores in |*new_url| the redirect request of the extension with highest
+// precedence. Extensions that did not command to redirect the request are
+// ignored in this logic.
+void MergeRedirectUrlOfResponses(
+    const EventResponseDeltas& deltas,
+    GURL* new_url,
+    extensions::ExtensionWarningSet* conflicting_extensions,
     const net::BoundNetLog* net_log);
 // Stores in |*new_url| the redirect request of the extension with highest
 // precedence. Extensions that did not command to redirect the request are
@@ -254,10 +280,14 @@ void MergeCookiesInOnHeadersReceivedResponses(
 // Stores a copy of |original_response_header| into |override_response_headers|
 // that is modified according to |deltas|. If |deltas| does not instruct to
 // modify the response headers, |override_response_headers| remains empty.
+// Extension-initiated redirects are written to |override_response_headers|
+// (to request redirection) and |*allowed_unsafe_redirect_url| (to make sure
+// that the request is not cancelled with net::ERR_UNSAFE_REDIRECT).
 void MergeOnHeadersReceivedResponses(
     const EventResponseDeltas& deltas,
     const net::HttpResponseHeaders* original_response_headers,
     scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
+    GURL* allowed_unsafe_redirect_url,
     extensions::ExtensionWarningSet* conflicting_extensions,
     const net::BoundNetLog* net_log);
 // Merge the responses of blocked onAuthRequired handlers. The first
@@ -288,6 +318,18 @@ bool ParseResourceType(const std::string& type_str,
 
 // Triggers clearing each renderer's in-memory cache the next time it navigates.
 void ClearCacheOnNavigation();
+
+// Tells renderer processes that the web request or declarative web request
+// API has been used by |extension| in profile |profile_id| to collect
+// UMA statistics on Page Load Times. Needs to be called on the UI thread.
+void NotifyWebRequestAPIUsed(
+    void* profile_id,
+    scoped_refptr<const extensions::Extension> extension);
+
+// Whether a header is RFC 2616-compliant.
+bool IsValidHeaderName(const std::string& name);
+// Whether a header value does not contain NUL or CRLF.
+bool IsValidHeaderValue(const std::string& value);
 
 }  // namespace extension_web_request_api_helpers
 

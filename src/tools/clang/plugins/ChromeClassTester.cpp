@@ -91,6 +91,16 @@ void ChromeClassTester::CheckTag(TagDecl* tag) {
         return;
 
     CheckChromeClass(record_location, record);
+  } else if (EnumDecl* enum_decl = dyn_cast<EnumDecl>(tag)) {
+    SourceLocation enum_location = enum_decl->getInnerLocStart();
+    if (InBannedDirectory(enum_location))
+      return;
+
+    std::string base_name = enum_decl->getNameAsString();
+    if (IsIgnoredType(base_name))
+      return;
+
+    CheckChromeEnum(enum_location, enum_decl);
   }
 }
 
@@ -100,11 +110,11 @@ void ChromeClassTester::emitWarning(SourceLocation loc,
   std::string err;
   err = "[chromium-style] ";
   err += raw_error;
-  DiagnosticsEngine::Level level =
+  DiagnosticIDs::Level level =
       diagnostic().getWarningsAsErrors() ?
-      DiagnosticsEngine::Error :
-      DiagnosticsEngine::Warning;
-  unsigned id = diagnostic().getCustomDiagID(level, err);
+      DiagnosticIDs::Error :
+      DiagnosticIDs::Warning;
+  unsigned id = diagnostic().getDiagnosticIDs()->getCustomDiagID(level, err);
   DiagnosticBuilder builder = diagnostic().Report(full, id);
 }
 
@@ -138,8 +148,11 @@ bool ChromeClassTester::InImplementationFile(SourceLocation record_location) {
 void ChromeClassTester::BuildBannedLists() {
   banned_namespaces_.push_back("std");
   banned_namespaces_.push_back("__gnu_cxx");
+
+  // We're in the process of renaming WebKit to blink.
+  // TODO(abarth): Remove WebKit once the rename is complete.
   banned_namespaces_.push_back("WebKit");
-  banned_namespaces_.push_back("WebTestRunner");
+  banned_namespaces_.push_back("blink");
 
   banned_directories_.push_back("third_party/");
   banned_directories_.push_back("native_client/");
@@ -149,7 +162,6 @@ void ChromeClassTester::BuildBannedLists() {
   banned_directories_.push_back("ppapi/");
   banned_directories_.push_back("usr/");
   banned_directories_.push_back("testing/");
-  banned_directories_.push_back("googleurl/");
   banned_directories_.push_back("v8/");
   banned_directories_.push_back("dart/");
   banned_directories_.push_back("sdch/");
@@ -193,6 +205,9 @@ void ChromeClassTester::BuildBannedLists() {
   // non-pod class member. Probably harmless.
   ignored_record_names_.insert("MockTransaction");
 
+  // Enum type with _LAST members where _LAST doesn't mean last enum value.
+  ignored_record_names_.insert("ServerFieldType");
+
   // Used heavily in ui_unittests and once in views_unittests. Fixing this
   // isn't worth the overhead of an additional library.
   ignored_record_names_.insert("TestAnimationDelegate");
@@ -204,6 +219,9 @@ void ChromeClassTester::BuildBannedLists() {
   // Measured performance improvement on cc_perftests. See
   // https://codereview.chromium.org/11299290/
   ignored_record_names_.insert("QuadF");
+
+  // Enum type with _LAST members where _LAST doesn't mean last enum value.
+  ignored_record_names_.insert("ViewID");
 }
 
 std::string ChromeClassTester::GetNamespaceImpl(const DeclContext* context,

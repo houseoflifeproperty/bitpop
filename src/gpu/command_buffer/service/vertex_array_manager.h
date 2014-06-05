@@ -6,7 +6,7 @@
 #define GPU_COMMAND_BUFFER_SERVICE_VERTEX_ARRAY_MANAGER_H_
 
 #include "base/basictypes.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -28,9 +28,13 @@ class GPU_EXPORT VertexArrayManager {
   // Must call before destruction.
   void Destroy(bool have_context);
 
-  // Creates a VertexArrayInfo for the given vertex array.
-  void CreateVertexAttribManager(GLuint client_id, GLuint service_id,
-      uint32 num_vertex_attribs);
+  // Creates a VertexAttribManager and if client_visible,
+  // maps it to the client_id.
+  scoped_refptr<VertexAttribManager> CreateVertexAttribManager(
+      GLuint client_id,
+      GLuint service_id,
+      uint32 num_vertex_attribs,
+      bool client_visible);
 
   // Gets the vertex attrib manager for the given vertex array.
   VertexAttribManager* GetVertexAttribManager(GLuint client_id);

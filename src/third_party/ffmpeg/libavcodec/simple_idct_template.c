@@ -62,8 +62,9 @@
 #define MUL(a, b)    MUL16(a, b)
 #define MAC(a, b, c) MAC16(a, b, c)
 
-#elif BIT_DEPTH == 10
+#elif BIT_DEPTH == 10 || BIT_DEPTH == 12
 
+#if BIT_DEPTH == 10
 #define W1 90901
 #define W2 85627
 #define W3 77062
@@ -75,6 +76,19 @@
 #define ROW_SHIFT 15
 #define COL_SHIFT 20
 #define DC_SHIFT 1
+#else
+#define W1 45451
+#define W2 42813
+#define W3 38531
+#define W4 32767
+#define W5 25746
+#define W6 17734
+#define W7 9041
+
+#define ROW_SHIFT 16
+#define COL_SHIFT 17
+#define DC_SHIFT -1
+#endif
 
 #define MUL(a, b)    ((a) * (b))
 #define MAC(a, b, c) ((a) += (b) * (c))
@@ -85,7 +99,7 @@
 
 #endif
 
-static inline void FUNC(idctRowCondDC)(DCTELEM *row, int extra_shift)
+static inline void FUNC(idctRowCondDC)(int16_t *row, int extra_shift)
 {
     int a0, a1, a2, a3, b0, b1, b2, b3;
 
@@ -221,7 +235,7 @@ static inline void FUNC(idctRowCondDC)(DCTELEM *row, int extra_shift)
     } while (0)
 
 static inline void FUNC(idctSparseColPut)(pixel *dest, int line_size,
-                                          DCTELEM *col)
+                                          int16_t *col)
 {
     int a0, a1, a2, a3, b0, b1, b2, b3;
 
@@ -245,7 +259,7 @@ static inline void FUNC(idctSparseColPut)(pixel *dest, int line_size,
 }
 
 static inline void FUNC(idctSparseColAdd)(pixel *dest, int line_size,
-                                          DCTELEM *col)
+                                          int16_t *col)
 {
     int a0, a1, a2, a3, b0, b1, b2, b3;
 
@@ -268,7 +282,7 @@ static inline void FUNC(idctSparseColAdd)(pixel *dest, int line_size,
     dest[0] = av_clip_pixel(dest[0] + ((a0 - b0) >> COL_SHIFT));
 }
 
-static inline void FUNC(idctSparseCol)(DCTELEM *col)
+static inline void FUNC(idctSparseCol)(int16_t *col)
 {
     int a0, a1, a2, a3, b0, b1, b2, b3;
 
@@ -284,7 +298,7 @@ static inline void FUNC(idctSparseCol)(DCTELEM *col)
     col[56] = ((a0 - b0) >> COL_SHIFT);
 }
 
-void FUNC(ff_simple_idct_put)(uint8_t *dest_, int line_size, DCTELEM *block)
+void FUNC(ff_simple_idct_put)(uint8_t *dest_, int line_size, int16_t *block)
 {
     pixel *dest = (pixel *)dest_;
     int i;
@@ -298,7 +312,7 @@ void FUNC(ff_simple_idct_put)(uint8_t *dest_, int line_size, DCTELEM *block)
         FUNC(idctSparseColPut)(dest + i, line_size, block + i);
 }
 
-void FUNC(ff_simple_idct_add)(uint8_t *dest_, int line_size, DCTELEM *block)
+void FUNC(ff_simple_idct_add)(uint8_t *dest_, int line_size, int16_t *block)
 {
     pixel *dest = (pixel *)dest_;
     int i;
@@ -312,7 +326,7 @@ void FUNC(ff_simple_idct_add)(uint8_t *dest_, int line_size, DCTELEM *block)
         FUNC(idctSparseColAdd)(dest + i, line_size, block + i);
 }
 
-void FUNC(ff_simple_idct)(DCTELEM *block)
+void FUNC(ff_simple_idct)(int16_t *block)
 {
     int i;
 

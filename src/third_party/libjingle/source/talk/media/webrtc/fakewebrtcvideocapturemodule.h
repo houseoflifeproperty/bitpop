@@ -37,7 +37,7 @@ class FakeWebRtcVcmFactory;
 // Fake class for mocking out webrtc::VideoCaptureModule.
 class FakeWebRtcVideoCaptureModule : public webrtc::VideoCaptureModule {
  public:
-  FakeWebRtcVideoCaptureModule(FakeWebRtcVcmFactory* factory, WebRtc_Word32 id)
+  FakeWebRtcVideoCaptureModule(FakeWebRtcVcmFactory* factory, int32_t id)
       : factory_(factory),
         id_(id),
         callback_(NULL),
@@ -55,34 +55,37 @@ class FakeWebRtcVideoCaptureModule : public webrtc::VideoCaptureModule {
   virtual int32_t Process() {
     return 0;
   }
-  virtual WebRtc_Word32 ChangeUniqueId(const WebRtc_Word32 id) {
+  virtual int32_t ChangeUniqueId(const int32_t id) {
     id_ = id;
     return 0;
   }
-  virtual WebRtc_Word32 RegisterCaptureDataCallback(
+  virtual void RegisterCaptureDataCallback(
       webrtc::VideoCaptureDataCallback& callback) {
     callback_ = &callback;
-    return 0;
   }
-  virtual WebRtc_Word32 DeRegisterCaptureDataCallback() {
-    callback_ = NULL;
-    return 0;
+  virtual void DeRegisterCaptureDataCallback() { callback_ = NULL; }
+  virtual void RegisterCaptureCallback(webrtc::VideoCaptureFeedBack& callback) {
+    // Not implemented.
   }
-  virtual WebRtc_Word32 RegisterCaptureCallback(
-      webrtc::VideoCaptureFeedBack& callback) {
-    return -1;  // not implemented
+  virtual void DeRegisterCaptureCallback() {
+    // Not implemented.
   }
-  virtual WebRtc_Word32 DeRegisterCaptureCallback() {
-    return 0;
+  virtual void SetCaptureDelay(int32_t delay) { delay_ = delay; }
+  virtual int32_t CaptureDelay() { return delay_; }
+  virtual void EnableFrameRateCallback(const bool enable) {
+    // not implemented
   }
-  virtual WebRtc_Word32 StartCapture(
+  virtual void EnableNoPictureAlarm(const bool enable) {
+    // not implemented
+  }
+  virtual int32_t StartCapture(
       const webrtc::VideoCaptureCapability& cap) {
     if (running_) return -1;
     cap_ = cap;
     running_ = true;
     return 0;
   }
-  virtual WebRtc_Word32 StopCapture() {
+  virtual int32_t StopCapture() {
     running_ = false;
     return 0;
   }
@@ -92,32 +95,20 @@ class FakeWebRtcVideoCaptureModule : public webrtc::VideoCaptureModule {
   virtual bool CaptureStarted() {
     return running_;
   }
-  virtual WebRtc_Word32 CaptureSettings(
+  virtual int32_t CaptureSettings(
       webrtc::VideoCaptureCapability& settings) {
     if (!running_) return -1;
     settings = cap_;
     return 0;
   }
-  virtual WebRtc_Word32 SetCaptureDelay(WebRtc_Word32 delay) {
-    delay_ = delay;
-    return 0;
-  }
-  virtual WebRtc_Word32 CaptureDelay() {
-    return delay_;
-  }
-  virtual WebRtc_Word32 SetCaptureRotation(
+
+  virtual int32_t SetCaptureRotation(
       webrtc::VideoCaptureRotation rotation) {
     return -1;  // not implemented
   }
   virtual VideoCaptureEncodeInterface* GetEncodeInterface(
       const webrtc::VideoCodec& codec) {
     return NULL;  // not implemented
-  }
-  virtual WebRtc_Word32 EnableFrameRateCallback(const bool enable) {
-    return -1;  // not implemented
-  }
-  virtual WebRtc_Word32 EnableNoPictureAlarm(const bool enable) {
-    return -1;  // not implemented
   }
   virtual int32_t AddRef() {
     return 0;

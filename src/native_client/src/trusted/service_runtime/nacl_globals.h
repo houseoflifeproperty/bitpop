@@ -12,7 +12,9 @@
 #define NATIVE_CLIENT_SRC_TRUSTED_SERVICE_RUNTIME_NACL_GLOBALS_H__
 
 #include "native_client/src/include/portability.h"
+#include "native_client/src/shared/platform/nacl_check.h"
 #include "native_client/src/trusted/service_runtime/arch/sel_ldr_arch.h"
+#include "native_client/src/trusted/service_runtime/nacl_app_thread.h"
 
 EXTERN_C_BEGIN
 struct NaClThreadContext;
@@ -48,14 +50,17 @@ __declspec(dllexport) extern uint32_t nacl_thread_ids[NACL_THREAD_MAX];
  * code.
  */
 
-extern struct NaClAppThread     *nacl_thread[NACL_THREAD_MAX];
-
 void  NaClGlobalModuleInit(void);
 void  NaClGlobalModuleFini(void);
 
 /* this is defined in src/trusted/service_runtime/arch/<arch>/ sel_rt.h */
 void NaClInitGlobals(void);
 
+static INLINE struct NaClAppThread *NaClAppThreadGetFromIndex(
+    uint32_t thread_index) {
+  DCHECK(thread_index < NACL_THREAD_MAX);
+  return NaClAppThreadFromThreadContext(nacl_user[thread_index]);
+}
 
 /* hack for gdb */
 #if NACL_WINDOWS

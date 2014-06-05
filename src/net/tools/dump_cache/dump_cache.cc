@@ -10,15 +10,15 @@
 
 #include "base/at_exit.h"
 #include "base/command_line.h"
-#include "base/process_util.h"
-#include "base/string16.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "net/disk_cache/disk_format.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "net/disk_cache/blockfile/disk_format.h"
 #include "net/tools/dump_cache/dump_files.h"
 #include "net/tools/dump_cache/simple_cache_dumper.h"
 
 #if defined(OS_WIN)
+#include "base/process/launch.h"
 #include "base/win/scoped_handle.h"
 #include "net/tools/dump_cache/upgrade_win.h"
 #endif
@@ -32,6 +32,7 @@ enum Errors {
   TOOL_NOT_FOUND,
 };
 
+#if defined(OS_WIN)
 const char kUpgradeHelp[] =
     "\nIn order to use the upgrade function, a version of this tool that\n"
     "understands the file format of the files to upgrade is needed. For\n"
@@ -39,6 +40,7 @@ const char kUpgradeHelp[] =
     "a version of this program that was compiled with version 3.4 has to be\n"
     "located beside this executable, and named dump_cache_3.exe, and this\n"
     "executable should be compiled with version 5.2 being the current one.";
+#endif  // defined(OS_WIN)
 
 // Folders to read and write cache files.
 const char kInputPath[] = "input";
@@ -58,7 +60,9 @@ const char kUpgrade[] = "upgrade";
 
 // Internal use:
 const char kSlave[] = "slave";
+#if defined(OS_WIN)
 const char kPipe[] = "pipe";
+#endif  // defined(OS_WIN)
 
 int Help() {
   printf("warning: input files are modified by this tool\n");
@@ -74,13 +78,14 @@ int Help() {
 
 // Starts a new process, to generate the files.
 int LaunchSlave(CommandLine command_line,
-                const string16& pipe_number,
+                const base::string16& pipe_number,
                 int version) {
   bool do_upgrade = command_line.HasSwitch(kUpgrade);
   bool do_convert_to_text = command_line.HasSwitch(kDumpToFiles);
 
   if (do_upgrade) {
-    FilePath program(base::StringPrintf(L"%ls%d", L"dump_cache", version));
+    base::FilePath program(
+        base::StringPrintf(L"%ls%d", L"dump_cache", version));
     command_line.SetProgram(program);
   }
 
@@ -108,14 +113,14 @@ int main(int argc, const char* argv[]) {
   CommandLine::Init(argc, argv);
 
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  FilePath input_path = command_line.GetSwitchValuePath(kInputPath);
+  base::FilePath input_path = command_line.GetSwitchValuePath(kInputPath);
   if (input_path.empty())
     return Help();
 
   bool dump_to_files = command_line.HasSwitch(kDumpToFiles);
   bool upgrade = command_line.HasSwitch(kUpgrade);
 
-  FilePath output_path = command_line.GetSwitchValuePath(kOutputPath);
+  base::FilePath output_path = command_line.GetSwitchValuePath(kOutputPath);
   if ((dump_to_files || upgrade) && output_path.empty())
     return Help();
 
@@ -133,7 +138,7 @@ int main(int argc, const char* argv[]) {
   }
 
 #if defined(OS_WIN)
-  string16 pipe_number = command_line.GetSwitchValueNative(kPipe);
+  base::string16 pipe_number = command_line.GetSwitchValueNative(kPipe);
   if (command_line.HasSwitch(kSlave) && slave_required)
     return RunSlave(input_path, pipe_number);
 

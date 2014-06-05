@@ -8,14 +8,14 @@
 #include <vector>
 
 #include "base/command_line.h"
-#include "base/time.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/in_memory_database.h"
 #include "chrome/browser/history/url_database.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 
@@ -27,14 +27,14 @@ InMemoryHistoryBackend::InMemoryHistoryBackend()
 
 InMemoryHistoryBackend::~InMemoryHistoryBackend() {}
 
-bool InMemoryHistoryBackend::Init(const FilePath& history_filename,
+bool InMemoryHistoryBackend::Init(const base::FilePath& history_filename,
                                   URLDatabase* db) {
   db_.reset(new InMemoryDatabase);
   return db_->InitFromDisk(history_filename);
 }
 
 void InMemoryHistoryBackend::AttachToHistoryService(Profile* profile) {
-  if (!db_.get()) {
+  if (!db_) {
     NOTREACHED();
     return;
   }
@@ -51,12 +51,12 @@ void InMemoryHistoryBackend::AttachToHistoryService(Profile* profile) {
   // We only want notifications for the associated profile.
   content::Source<Profile> source(profile_);
   registrar_.Add(this, chrome::NOTIFICATION_HISTORY_URL_VISITED, source);
-  registrar_.Add(this, chrome::NOTIFICATION_HISTORY_URLS_MODIFIED,
-                 source);
+  registrar_.Add(this, chrome::NOTIFICATION_HISTORY_URLS_MODIFIED, source);
   registrar_.Add(this, chrome::NOTIFICATION_HISTORY_URLS_DELETED, source);
-  registrar_.Add(this,
-                 chrome::NOTIFICATION_HISTORY_KEYWORD_SEARCH_TERM_UPDATED,
-                 source);
+  registrar_.Add(
+      this, chrome::NOTIFICATION_HISTORY_KEYWORD_SEARCH_TERM_UPDATED, source);
+  registrar_.Add(
+      this, chrome::NOTIFICATION_HISTORY_KEYWORD_SEARCH_TERM_DELETED, source);
   registrar_.Add(this, chrome::NOTIFICATION_TEMPLATE_URL_REMOVED, source);
 }
 
@@ -65,32 +65,33 @@ void InMemoryHistoryBackend::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_HISTORY_URL_VISITED: {
-      content::Details<history::URLVisitedDetails> visited_details(details);
-      content::PageTransition primary_type =
-          content::PageTransitionStripQualifier(visited_details->transition);
-      if (visited_details->row.typed_count() > 0 ||
-          primary_type == content::PAGE_TRANSITION_KEYWORD ||
-          HasKeyword(visited_details->row.url())) {
-        URLsModifiedDetails modified_details;
-        modified_details.changed_urls.push_back(visited_details->row);
-        OnTypedURLsModified(modified_details);
+    case chrome::NOTIFICATION_HISTORY_URL_VISITED:
+      OnURLVisitedOrModified(content::Details<URLVisitedDetails>(details)->row);
+      break;
+    case chrome::NOTIFICATION_HISTORY_KEYWORD_SEARCH_TERM_UPDATED:
+      OnKeywordSearchTermUpdated(
+          *content::Details<KeywordSearchUpdatedDetails>(details).ptr());
+      break;
+    case chrome::NOTIFICATION_HISTORY_KEYWORD_SEARCH_TERM_DELETED:
+      OnKeywordSearchTermDeleted(
+          *content::Details<KeywordSearchDeletedDetails>(details).ptr());
+      break;
+    case chrome::NOTIFICATION_HISTORY_URLS_MODIFIED: {
+      const URLsModifiedDetails* modified_details =
+          content::Details<URLsModifiedDetails>(details).ptr();
+      URLRows::const_iterator it;
+      for (it = modified_details->changed_urls.begin();
+           it != modified_details->changed_urls.end(); ++it) {
+        OnURLVisitedOrModified(*it);
       }
       break;
     }
-    case chrome::NOTIFICATION_HISTORY_KEYWORD_SEARCH_TERM_UPDATED:
-      OnKeywordSearchTermUpdated(
-          *content::Details<history::KeywordSearchTermDetails>(details).ptr());
-      break;
-    case chrome::NOTIFICATION_HISTORY_URLS_MODIFIED:
-      OnTypedURLsModified(
-          *content::Details<history::URLsModifiedDetails>(details).ptr());
-      break;
     case chrome::NOTIFICATION_HISTORY_URLS_DELETED:
-      OnURLsDeleted(
-          *content::Details<history::URLsDeletedDetails>(details).ptr());
+      OnURLsDeleted(*content::Details<URLsDeletedDetails>(details).ptr());
       break;
     case chrome::NOTIFICATION_TEMPLATE_URL_REMOVED:
+      // For simplicity, this will not remove the corresponding URLRows, but
+      // this is okay, as the main database does not do so either.
       db_->DeleteAllSearchTermsForKeyword(
           *(content::Details<TemplateURLID>(details).ptr()));
       break;
@@ -101,30 +102,17 @@ void InMemoryHistoryBackend::Observe(
   }
 }
 
-void InMemoryHistoryBackend::OnTypedURLsModified(
-    const URLsModifiedDetails& details) {
-  DCHECK(db_.get());
-
-  // Add or update the URLs.
-  //
-  // TODO(brettw) currently the rows in the in-memory database don't match the
-  // IDs in the main database. This sucks. Instead of Add and Remove, we should
-  // have Sync(), which would take the ID if it's given and add it.
-  URLRows::const_iterator i;
-  for (i = details.changed_urls.begin();
-       i != details.changed_urls.end(); ++i) {
-    if (i->typed_count() > 0) {
-      URLID id = db_->GetRowForURL(i->url(), NULL);
-      if (id)
-        db_->UpdateURLRow(id, *i);
-      else
-        db_->AddURL(*i);
-    }
-  }
+void InMemoryHistoryBackend::OnURLVisitedOrModified(const URLRow& url_row) {
+  DCHECK(db_);
+  DCHECK(url_row.id());
+  if (url_row.typed_count() || db_->GetKeywordSearchTermRow(url_row.id(), NULL))
+    db_->InsertOrUpdateURLRowByID(url_row);
+  else
+    db_->DeleteURLRow(url_row.id());
 }
 
 void InMemoryHistoryBackend::OnURLsDeleted(const URLsDeletedDetails& details) {
-  DCHECK(db_.get());
+  DCHECK(db_);
 
   if (details.all_history) {
     // When all history is deleted, the individual URLs won't be listed. Just
@@ -138,41 +126,25 @@ void InMemoryHistoryBackend::OnURLsDeleted(const URLsDeletedDetails& details) {
   // Delete all matching URLs in our database.
   for (URLRows::const_iterator row = details.rows.begin();
        row != details.rows.end(); ++row) {
-    // We typically won't have most of them since we only have a subset of
-    // history, so ignore errors.
+    // This will also delete the corresponding keyword search term.
+    // Ignore errors, as we typically only cache a subset of URLRows.
     db_->DeleteURLRow(row->id());
   }
 }
 
 void InMemoryHistoryBackend::OnKeywordSearchTermUpdated(
-    const KeywordSearchTermDetails& details) {
-  // The url won't exist for new search terms (as the user hasn't typed it), so
-  // we force it to be added. If we end up adding a URL it won't be
-  // autocompleted as the typed count is 0.
-  URLRow url_row;
-  URLID url_id;
-  if (!db_->GetRowForURL(details.url, &url_row)) {
-    // Because this row won't have a typed count the title and other stuff
-    // doesn't matter. If the user ends up typing the url we'll update the title
-    // in OnTypedURLsModified.
-    URLRow new_row(details.url);
-    new_row.set_last_visit(base::Time::Now());
-    url_id = db_->AddURL(new_row);
-    if (!url_id)
-      return;  // Error adding.
-  } else {
-    url_id = url_row.id();
-  }
-
-  db_->SetKeywordSearchTermsForURL(url_id, details.keyword_id, details.term);
+    const KeywordSearchUpdatedDetails& details) {
+  DCHECK(details.url_row.id());
+  db_->InsertOrUpdateURLRowByID(details.url_row);
+  db_->SetKeywordSearchTermsForURL(
+      details.url_row.id(), details.keyword_id, details.term);
 }
 
-bool InMemoryHistoryBackend::HasKeyword(const GURL& url) {
-  URLID id = db_->GetRowForURL(url, NULL);
-  if (!id)
-    return false;
-
-  return db_->GetKeywordSearchTermRow(id, NULL);
+void InMemoryHistoryBackend::OnKeywordSearchTermDeleted(
+    const KeywordSearchDeletedDetails& details) {
+  // For simplicity, this will not remove the corresponding URLRow, but this is
+  // okay, as the main database does not do so either.
+  db_->DeleteKeywordSearchTermForURL(details.url_row_id);
 }
 
 }  // namespace history

@@ -6,9 +6,13 @@
 
 #include <math.h>
 
+#include <algorithm>
+
 #include "base/logging.h"
-#include "base/time.h"
+#include "net/quic/congestion_control/rtt_stats.h"
 #include "net/quic/quic_protocol.h"
+
+using std::max;
 
 namespace {
   const int kInitialBitrate = 100000;  // In bytes per second.
@@ -17,83 +21,94 @@ namespace {
 
 namespace net {
 
-FixRateSender::FixRateSender(const QuicClock* clock)
-    : bitrate_in_bytes_per_s_(kInitialBitrate),
-      fix_rate_leaky_bucket_(clock, kInitialBitrate),
-      paced_sender_(clock, kInitialBitrate),
-      bytes_in_flight_(0) {
-  DLOG(INFO) << "FixRateSender";
+FixRateSender::FixRateSender(const RttStats* rtt_stats)
+    : rtt_stats_(rtt_stats),
+      bitrate_(QuicBandwidth::FromBytesPerSecond(kInitialBitrate)),
+      max_segment_size_(kDefaultMaxPacketSize),
+      fix_rate_leaky_bucket_(bitrate_),
+      paced_sender_(bitrate_, max_segment_size_),
+      latest_rtt_(QuicTime::Delta::Zero()) {
+  DVLOG(1) << "FixRateSender";
+}
+
+FixRateSender::~FixRateSender() {
+}
+
+void FixRateSender::SetFromConfig(const QuicConfig& config, bool is_server) {
 }
 
 void FixRateSender::OnIncomingQuicCongestionFeedbackFrame(
-    const QuicCongestionFeedbackFrame& feedback) {
-  DCHECK(feedback.type == kFixRate) <<
+    const QuicCongestionFeedbackFrame& feedback,
+    QuicTime feedback_receive_time) {
+  LOG_IF(DFATAL, feedback.type != kFixRate) <<
       "Invalid incoming CongestionFeedbackType:" << feedback.type;
   if (feedback.type == kFixRate) {
-    bitrate_in_bytes_per_s_ =
-        feedback.fix_rate.bitrate_in_bytes_per_second;
-    fix_rate_leaky_bucket_.SetDrainingRate(bitrate_in_bytes_per_s_);
-    paced_sender_.UpdateBandwidthEstimate(bitrate_in_bytes_per_s_);
+    bitrate_ = feedback.fix_rate.bitrate;
+    fix_rate_leaky_bucket_.SetDrainingRate(feedback_receive_time, bitrate_);
+    paced_sender_.UpdateBandwidthEstimate(feedback_receive_time, bitrate_);
   }
   // Silently ignore invalid messages in release mode.
 }
 
-void FixRateSender::OnIncomingAck(
-    QuicPacketSequenceNumber /*acked_sequence_number*/,
-    size_t bytes_acked,
-    QuicTime::Delta /*rtt*/) {
-  bytes_in_flight_ -= bytes_acked;
+void FixRateSender::OnCongestionEvent(bool rtt_updated,
+                                      QuicByteCount bytes_in_flight,
+                                      const CongestionMap& acked_packets,
+                                      const CongestionMap& lost_packets) {
 }
 
-void FixRateSender::OnIncomingLoss(int /*number_of_lost_packets*/) {
-  // Ignore losses for fix rate sender.
+bool FixRateSender::OnPacketSent(
+    QuicTime sent_time,
+    QuicByteCount /*bytes_in_flight*/,
+    QuicPacketSequenceNumber /*sequence_number*/,
+    QuicByteCount bytes,
+    HasRetransmittableData /*has_retransmittable_data*/) {
+  fix_rate_leaky_bucket_.Add(sent_time, bytes);
+  paced_sender_.OnPacketSent(sent_time, bytes);
+
+  return true;
 }
 
-void FixRateSender::SentPacket(QuicPacketSequenceNumber /*sequence_number*/,
-                               size_t bytes,
-                               bool retransmit) {
-  fix_rate_leaky_bucket_.Add(bytes);
-  paced_sender_.SentPacket(bytes);
-  if (!retransmit) {
-    bytes_in_flight_ += bytes;
-  }
-}
+void FixRateSender::OnRetransmissionTimeout(bool packets_retransmitted) { }
 
-QuicTime::Delta FixRateSender::TimeUntilSend(bool /*retransmit*/) {
-  if (CongestionWindow() > fix_rate_leaky_bucket_.BytesPending()) {
-    if (CongestionWindow() <= bytes_in_flight_) {
+QuicTime::Delta FixRateSender::TimeUntilSend(
+    QuicTime now,
+    QuicByteCount bytes_in_flight,
+    HasRetransmittableData /*has_retransmittable_data*/) {
+  if (CongestionWindow() > fix_rate_leaky_bucket_.BytesPending(now)) {
+    if (CongestionWindow() <= bytes_in_flight) {
       // We need an ack before we send more.
       return QuicTime::Delta::Infinite();
     }
-    QuicTime::Delta zero_time;
-    return paced_sender_.TimeUntilSend(zero_time);
+    return paced_sender_.TimeUntilSend(now, QuicTime::Delta::Zero());
   }
-  QuicTime::Delta time_remaining = fix_rate_leaky_bucket_.TimeRemaining();
+  QuicTime::Delta time_remaining = fix_rate_leaky_bucket_.TimeRemaining(now);
   if (time_remaining.IsZero()) {
     // We need an ack before we send more.
     return QuicTime::Delta::Infinite();
   }
-  return paced_sender_.TimeUntilSend(time_remaining);
+  return paced_sender_.TimeUntilSend(now, time_remaining);
 }
 
-size_t FixRateSender::CongestionWindow() {
-  size_t window_size = bitrate_in_bytes_per_s_ * kWindowSizeUs /
-      base::Time::kMicrosecondsPerSecond;
+QuicByteCount FixRateSender::CongestionWindow() {
+  QuicByteCount window_size_bytes = bitrate_.ToBytesPerPeriod(
+      QuicTime::Delta::FromMicroseconds(kWindowSizeUs));
   // Make sure window size is not less than a packet.
-  return std::max(kMaxPacketSize, window_size);
+  return max(kDefaultMaxPacketSize, window_size_bytes);
 }
 
-size_t FixRateSender::AvailableCongestionWindow() {
-  size_t congestion_window = CongestionWindow();
-  if (bytes_in_flight_ >= congestion_window) {
-    return 0;
-  }
-  size_t available_congestion_window = congestion_window - bytes_in_flight_;
-  return paced_sender_.AvailableWindow(available_congestion_window);
+QuicBandwidth FixRateSender::BandwidthEstimate() const {
+  return bitrate_;
 }
 
-int FixRateSender::BandwidthEstimate() {
-  return bitrate_in_bytes_per_s_;
+
+QuicTime::Delta FixRateSender::RetransmissionDelay() const {
+  // TODO(pwestin): Calculate and return retransmission delay.
+  // Use 2 * the latest RTT for now.
+  return latest_rtt_.Add(latest_rtt_);
+}
+
+QuicByteCount FixRateSender::GetCongestionWindow() const {
+  return 0;
 }
 
 }  // namespace net

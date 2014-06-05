@@ -29,18 +29,18 @@
 
 #include "talk/base/gunit.h"
 #include "talk/examples/call/callclient.h"
-#include "talk/examples/login/xmppthread.h"
 #include "talk/media/base/filemediaengine.h"
 #include "talk/media/base/mediaengine.h"
+#include "talk/xmpp/xmppthread.h"
 
 TEST(CallClientTest, CreateCallClientWithDefaultMediaEngine) {
-  XmppPump pump;
+  buzz::XmppPump pump;
   CallClient *client = new CallClient(pump.client(), "app", "version");
   delete client;
 }
 
 TEST(CallClientTest, CreateCallClientWithFileMediaEngine) {
-  XmppPump pump;
+  buzz::XmppPump pump;
   CallClient *client = new CallClient(pump.client(), "app", "version");
   client->SetMediaEngine(new cricket::FileMediaEngine);
   delete client;

@@ -7,17 +7,11 @@
 #import <ApplicationServices/ApplicationServices.h>
 #import <Cocoa/Cocoa.h>
 
+#include <map>
+
 #include "base/logging.h"
+#include "base/mac/sdk_forward_declarations.h"
 #include "ui/gfx/display.h"
-
-#if !defined(MAC_OS_X_VERSION_10_7) || \
-    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
-
-@interface NSScreen (LionAPI)
-- (CGFloat)backingScaleFactor;
-@end
-
-#endif  // 10.7
 
 namespace {
 
@@ -50,20 +44,22 @@ NSScreen* GetMatchingScreen(const gfx::Rect& match_rect) {
   return max_screen;
 }
 
-gfx::Display GetDisplayForScreen(NSScreen* screen, bool is_primary) {
+gfx::Display GetDisplayForScreen(NSScreen* screen) {
   NSRect frame = [screen frame];
   // TODO(oshima): Implement ID and Observer.
   gfx::Display display(0, gfx::Rect(NSRectToCGRect(frame)));
 
   NSRect visible_frame = [screen visibleFrame];
+  NSScreen* primary = [[NSScreen screens] objectAtIndex:0];
 
   // Convert work area's coordinate systems.
-  if (is_primary) {
+  if ([screen isEqual:primary]) {
     gfx::Rect work_area = gfx::Rect(NSRectToCGRect(visible_frame));
     work_area.set_y(frame.size.height - visible_frame.origin.y -
                     visible_frame.size.height);
     display.set_work_area(work_area);
   } else {
+    display.set_bounds(ConvertCoordinateSystem(frame));
     display.set_work_area(ConvertCoordinateSystem(visible_frame));
   }
   CGFloat scale;
@@ -91,16 +87,27 @@ class ScreenMac : public gfx::Screen {
     return gfx::Point(mouseLocation.x, mouseLocation.y);
   }
 
-  virtual gfx::NativeWindow GetWindowAtCursorScreenPoint() OVERRIDE {
+  virtual gfx::NativeWindow GetWindowUnderCursor() OVERRIDE {
     NOTIMPLEMENTED();
     return gfx::NativeWindow();
   }
 
-  virtual int GetNumDisplays() OVERRIDE {
-    // Don't just return the number of online displays.  It includes displays
-    // that mirror other displays, which are not desired in the count.  It's
+  virtual gfx::NativeWindow GetWindowAtScreenPoint(const gfx::Point& point)
+      OVERRIDE {
+    NOTIMPLEMENTED();
+    return gfx::NativeWindow();
+  }
+
+  virtual int GetNumDisplays() const OVERRIDE {
+    return GetAllDisplays().size();
+
+  }
+
+  virtual std::vector<gfx::Display> GetAllDisplays() const OVERRIDE {
+    // Don't just return all online displays.  This would include displays
+    // that mirror other displays, which are not desired in this list.  It's
     // tempting to use the count returned by CGGetActiveDisplayList, but active
-    // displays exclude sleeping displays, and those are desired in the count.
+    // displays exclude sleeping displays, and those are desired.
 
     // It would be ridiculous to have this many displays connected, but
     // CGDirectDisplayID is just an integer, so supporting up to this many
@@ -110,33 +117,53 @@ class ScreenMac : public gfx::Screen {
     if (CGGetOnlineDisplayList(arraysize(online_displays),
                               online_displays,
                               &online_display_count) != kCGErrorSuccess) {
-      // 1 is a reasonable assumption.
-      return 1;
+      return std::vector<gfx::Display>(1, GetPrimaryDisplay());
     }
 
-    int display_count = 0;
+    typedef std::map<int64, NSScreen*> ScreenIdsToScreensMap;
+    ScreenIdsToScreensMap screen_ids_to_screens;
+    for (NSScreen* screen in [NSScreen screens]) {
+      NSDictionary* screen_device_description = [screen deviceDescription];
+      int64 screen_id = [[screen_device_description
+        objectForKey:@"NSScreenNumber"] unsignedIntValue];
+      screen_ids_to_screens[screen_id] = screen;
+    }
+
+    std::vector<gfx::Display> displays;
     for (CGDisplayCount online_display_index = 0;
         online_display_index < online_display_count;
         ++online_display_index) {
       CGDirectDisplayID online_display = online_displays[online_display_index];
       if (CGDisplayMirrorsDisplay(online_display) == kCGNullDirectDisplay) {
-        // If this display doesn't mirror any other, include it in the count.
+        // If this display doesn't mirror any other, include it in the list.
         // The primary display in a mirrored set will be counted, but those that
         // mirror it will not be.
-        ++display_count;
+        ScreenIdsToScreensMap::iterator foundScreen =
+          screen_ids_to_screens.find(online_display);
+        if (foundScreen != screen_ids_to_screens.end()) {
+            displays.push_back(GetDisplayForScreen(foundScreen->second));
+        }
       }
     }
 
-    return display_count;
+    if (!displays.size())
+      return std::vector<gfx::Display>(1, GetPrimaryDisplay());
+
+    return displays;
   }
 
   virtual gfx::Display GetDisplayNearestWindow(
       gfx::NativeView view) const OVERRIDE {
-    NSWindow* window = [view window];
+    NSWindow* window = nil;
+#if !defined(USE_AURA)
+    window = [view window];
+#endif
     if (!window)
       return GetPrimaryDisplay();
     NSScreen* match_screen = [window screen];
-    return GetDisplayForScreen(match_screen, false /* may not be primary */);
+    if (!match_screen)
+      return GetPrimaryDisplay();
+    return GetDisplayForScreen(match_screen);
   }
 
   virtual gfx::Display GetDisplayNearestPoint(
@@ -145,9 +172,10 @@ class ScreenMac : public gfx::Screen {
 
     NSArray* screens = [NSScreen screens];
     NSScreen* primary = [screens objectAtIndex:0];
+    ns_point.y = NSMaxY([primary frame]) - ns_point.y;
     for (NSScreen* screen in screens) {
       if (NSMouseInRect(ns_point, [screen frame], NO))
-        return GetDisplayForScreen(screen, screen == primary);
+        return GetDisplayForScreen(screen);
     }
     return GetPrimaryDisplay();
   }
@@ -156,7 +184,7 @@ class ScreenMac : public gfx::Screen {
   virtual gfx::Display GetDisplayMatching(
       const gfx::Rect& match_rect) const OVERRIDE {
     NSScreen* match_screen = GetMatchingScreen(match_rect);
-    return GetDisplayForScreen(match_screen, false /* may not be primary */);
+    return GetDisplayForScreen(match_screen);
   }
 
   // Returns the primary display.
@@ -164,7 +192,7 @@ class ScreenMac : public gfx::Screen {
     // Primary display is defined as the display with the menubar,
     // which is always at index 0.
     NSScreen* primary = [[NSScreen screens] objectAtIndex:0];
-    gfx::Display display = GetDisplayForScreen(primary, true /* primary */);
+    gfx::Display display = GetDisplayForScreen(primary);
     return display;
   }
 
@@ -184,8 +212,10 @@ class ScreenMac : public gfx::Screen {
 
 namespace gfx {
 
+#if !defined(USE_AURA)
 Screen* CreateNativeScreen() {
   return new ScreenMac;
 }
+#endif
 
 }

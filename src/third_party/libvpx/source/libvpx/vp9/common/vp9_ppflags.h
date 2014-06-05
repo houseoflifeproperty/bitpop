@@ -8,9 +8,13 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-
 #ifndef VP9_COMMON_VP9_PPFLAGS_H_
 #define VP9_COMMON_VP9_PPFLAGS_H_
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 enum {
   VP9D_NOFILTERING            = 0,
   VP9D_DEBLOCK                = 1 << 0,
@@ -29,10 +33,16 @@ typedef struct {
   int post_proc_flag;
   int deblocking_level;
   int noise_level;
+#if CONFIG_POSTPROC_VISUALIZER
   int display_ref_frame_flag;
   int display_mb_modes_flag;
   int display_b_modes_flag;
   int display_mv_flag;
+#endif  // CONFIG_POSTPROC_VISUALIZER
 } vp9_ppflags_t;
 
+#ifdef __cplusplus
+}  // extern "C"
 #endif
+
+#endif  // VP9_COMMON_VP9_PPFLAGS_H_

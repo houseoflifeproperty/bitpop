@@ -6,16 +6,13 @@
 #define CHROME_BROWSER_EXTENSIONS_API_IDENTITY_WEB_AUTH_FLOW_H_
 
 #include <string>
-#include <vector>
 
-#include "base/compiler_specific.h"
-#include "base/gtest_prod_util.h"
-#include "chrome/browser/ui/host_desktop.h"
+#include "apps/app_window_registry.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "googleurl/src/gurl.h"
 #include "ui/gfx/rect.h"
+#include "url/gurl.h"
 
 class Profile;
 class WebAuthFlowTest;
@@ -29,32 +26,48 @@ class WebContents;
 
 namespace extensions {
 
-// Controller class to perform an auth flow with a provider.
-// This is the class to start the auth flow and it takes care of all the
-// details. It behaves the following way:
-// Given a provider URL, load the URL and perform usual web navigation
-// until it results in redirection to a valid extension redirect URL.
-// The provider can show any UI to the user if needed before redirecting
-// to an appropriate URL.
-// TODO(munjal): Add link to the design doc here.
+// Controller class for web based auth flows. The WebAuthFlow creates
+// a dialog window in the scope approval component app by firing an
+// event. A webview embedded in the dialog will navigate to the
+// |provider_url| passed to the WebAuthFlow constructor.
+//
+// The WebAuthFlow monitors the WebContents of the webview, and
+// notifies its delegate interface any time the WebContents navigates
+// to a new URL or changes title. The delegate is expected to delete
+// the flow when navigation reaches a known target location.
+//
+// The window is not displayed until the first page load
+// completes. This allows the flow to complete without flashing a
+// window on screen if the provider immediately redirects to the
+// target URL.
+//
+// A WebAuthFlow can be started in Mode::SILENT, which never displays
+// a window. If a window would be required, the flow fails.
 class WebAuthFlow : public content::NotificationObserver,
-                    public content::WebContentsObserver {
+                    public content::WebContentsObserver,
+                    public apps::AppWindowRegistry::Observer {
  public:
   enum Mode {
     INTERACTIVE,  // Show UI to the user if necessary.
     SILENT        // No UI should be shown.
   };
 
+  enum Failure {
+    WINDOW_CLOSED,  // Window closed by user.
+    INTERACTION_REQUIRED,  // Non-redirect page load in silent mode.
+    LOAD_FAILED
+  };
+
   class Delegate {
    public:
-    // Called when the auth flow is completed successfully.
-    // |redirect_url| is the full URL the provider redirected to at the end
-    // of the flow.
-    virtual void OnAuthFlowSuccess(const std::string& redirect_url) = 0;
     // Called when the auth flow fails. This means that the flow did not result
-    // in a successful redirect to a valid redirect URL or the user canceled
+    // in a successful redirect to a valid redirect URL.
+    virtual void OnAuthFlowFailure(Failure failure) = 0;
+    // Called on redirects and other navigations to see if the URL should stop
     // the flow.
-    virtual void OnAuthFlowFailure() = 0;
+    virtual void OnAuthFlowURLChange(const GURL& redirect_url) = 0;
+    // Called when the title of the current page changes.
+    virtual void OnAuthFlowTitleChange(const std::string& title) = 0;
 
    protected:
     virtual ~Delegate() {}
@@ -64,24 +77,23 @@ class WebAuthFlow : public content::NotificationObserver,
   // Caller owns |delegate|.
   WebAuthFlow(Delegate* delegate,
               Profile* profile,
-              const std::string& extension_id,
               const GURL& provider_url,
-              Mode mode,
-              const gfx::Rect& initial_bounds,
-              chrome::HostDesktopType host_desktop_type);
+              Mode mode);
+
   virtual ~WebAuthFlow();
 
   // Starts the flow.
-  // Delegate will be called when the flow is done.
   virtual void Start();
 
- protected:
-  // Overridable for testing.
-  virtual content::WebContents* CreateWebContents();
-  virtual void ShowAuthFlowPopup();
+  // Prevents further calls to the delegate and deletes the flow.
+  void DetachDelegateAndDelete();
 
  private:
   friend class ::WebAuthFlowTest;
+
+  // ::AppWindowRegistry::Observer implementation.
+  virtual void OnAppWindowAdded(apps::AppWindow* app_window) OVERRIDE;
+  virtual void OnAppWindowRemoved(apps::AppWindow* app_window) OVERRIDE;
 
   // NotificationObserver implementation.
   virtual void Observe(int type,
@@ -89,35 +101,41 @@ class WebAuthFlow : public content::NotificationObserver,
                        const content::NotificationDetails& details) OVERRIDE;
 
   // WebContentsObserver implementation.
-  virtual void ProvisionalChangeToMainFrameUrl(
-      const GURL& url,
+  virtual void DidStopLoading(content::RenderViewHost* render_view_host)
+      OVERRIDE;
+  virtual void DidNavigateMainFrame(
+      const content::LoadCommittedDetails& details,
+      const content::FrameNavigateParams& params) OVERRIDE;
+  virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
+  virtual void DidStartProvisionalLoadForFrame(
+      int64 frame_id,
+      int64 parent_frame_id,
+      bool is_main_frame,
+      const GURL& validated_url,
+      bool is_error_page,
+      bool is_iframe_srcdoc,
       content::RenderViewHost* render_view_host) OVERRIDE;
-  virtual void DidStopLoading(
-      content::RenderViewHost* render_view_host) OVERRIDE;
-  virtual void WebContentsDestroyed(
-      content::WebContents* web_contents) OVERRIDE;
+  virtual void DidFailProvisionalLoad(int64 frame_id,
+                                      const base::string16& frame_unique_name,
+                                      bool is_main_frame,
+                                      const GURL& validated_url,
+                                      int error_code,
+                                      const base::string16& error_description,
+                                      content::RenderViewHost* render_view_host)
+      OVERRIDE;
 
-  bool BeforeUrlLoaded(const GURL& url);
+  void BeforeUrlLoaded(const GURL& url);
   void AfterUrlLoaded();
-
-  // Reports the results back to the delegate.
-  void ReportResult(const GURL& url);
-  // Checks if |url| is a valid redirect URL for the extension.
-  bool IsValidRedirectUrl(const GURL& url) const;
-  // Helper to initialize valid extensions URLs vector.
-  void InitValidRedirectUrlPrefixes(const std::string& extension_id);
 
   Delegate* delegate_;
   Profile* profile_;
   GURL provider_url_;
   Mode mode_;
-  gfx::Rect initial_bounds_;
-  chrome::HostDesktopType host_desktop_type_;
-  bool popup_shown_;
-  // List of valid redirect URL prefixes.
-  std::vector<std::string> valid_prefixes_;
 
-  content::WebContents* contents_;
+  apps::AppWindow* app_window_;
+  std::string app_window_key_;
+  bool embedded_window_created_;
+
   content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(WebAuthFlow);

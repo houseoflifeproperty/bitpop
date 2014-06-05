@@ -6,7 +6,7 @@
 #define NET_DISK_CACHE_DISK_CACHE_TEST_BASE_H_
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread.h"
@@ -26,6 +26,7 @@ class Backend;
 class BackendImpl;
 class Entry;
 class MemBackendImpl;
+class SimpleBackendImpl;
 
 }  // namespace disk_cache
 
@@ -46,11 +47,11 @@ class DiskCacheTest : public PlatformTest {
 
   virtual void TearDown() OVERRIDE;
 
-  FilePath cache_path_;
+  base::FilePath cache_path_;
 
  private:
   base::ScopedTempDir temp_dir_;
-  scoped_ptr<MessageLoop> message_loop_;
+  scoped_ptr<base::MessageLoop> message_loop_;
 };
 
 // Provides basic support for cache related tests.
@@ -58,6 +59,8 @@ class DiskCacheTestWithCache : public DiskCacheTest {
  protected:
   DiskCacheTestWithCache();
   virtual ~DiskCacheTestWithCache();
+
+  void CreateBackend(uint32 flags, base::Thread* thread);
 
   void InitCache();
   void SimulateCrash();
@@ -67,9 +70,8 @@ class DiskCacheTestWithCache : public DiskCacheTest {
     memory_only_ = true;
   }
 
-  // Use the implementation directly instead of the factory provided object.
-  void SetDirectMode() {
-    implementation_ = true;
+  void SetSimpleCacheMode() {
+    simple_cache_mode_ = true;
   }
 
   void SetMask(uint32 mask) {
@@ -85,6 +87,10 @@ class DiskCacheTestWithCache : public DiskCacheTest {
 
   void SetNewEviction() {
     new_eviction_ = true;
+  }
+
+  void DisableSimpleCacheWaitForIndex() {
+    simple_cache_wait_for_index_ = false;
   }
 
   void DisableFirstCleanup() {
@@ -140,15 +146,17 @@ class DiskCacheTestWithCache : public DiskCacheTest {
 
   // cache_ will always have a valid object, regardless of how the cache was
   // initialized. The implementation pointers can be NULL.
-  disk_cache::Backend* cache_;
+  scoped_ptr<disk_cache::Backend> cache_;
   disk_cache::BackendImpl* cache_impl_;
+  disk_cache::SimpleBackendImpl* simple_cache_impl_;
   disk_cache::MemBackendImpl* mem_cache_;
 
   uint32 mask_;
   int size_;
   net::CacheType type_;
   bool memory_only_;
-  bool implementation_;
+  bool simple_cache_mode_;
+  bool simple_cache_wait_for_index_;
   bool force_creation_;
   bool new_eviction_;
   bool first_cleanup_;
@@ -160,7 +168,6 @@ class DiskCacheTestWithCache : public DiskCacheTest {
  private:
   void InitMemoryCache();
   void InitDiskCache();
-  void InitDiskCacheImpl();
 
   base::Thread cache_thread_;
   DISALLOW_COPY_AND_ASSIGN(DiskCacheTestWithCache);

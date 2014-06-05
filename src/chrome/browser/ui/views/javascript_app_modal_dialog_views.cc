@@ -4,15 +4,20 @@
 
 #include "chrome/browser/ui/views/javascript_app_modal_dialog_views.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/app_modal_dialogs/javascript_app_modal_dialog.h"
+#include "chrome/browser/ui/views/constrained_window_views.h"
 #include "grit/generated_resources.h"
-#include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/views/controls/message_box_view.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_client_view.h"
+
+#if defined(USE_X11) && !defined(OS_CHROMEOS)
+#include "chrome/browser/ui/views/javascript_app_modal_event_blocker_x11.h"
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 // JavaScriptAppModalDialogViews, public:
@@ -50,6 +55,19 @@ int JavaScriptAppModalDialogViews::GetAppModalDialogButtons() const {
 }
 
 void JavaScriptAppModalDialogViews::ShowAppModalDialog() {
+#if defined(USE_X11) && !defined(OS_CHROMEOS)
+  // BrowserView::CanActivate() ensures that other browser windows cannot be
+  // activated for long while the dialog is visible. Block events to other
+  // browser windows so that the user cannot interact with other browser windows
+  // in the short time that the other browser windows are active. This hack is
+  // unnecessary on Windows and Chrome OS.
+  // TODO(pkotwicz): Find a better way of doing this and remove this hack.
+  if (!event_blocker_x11_.get()) {
+    event_blocker_x11_.reset(
+        new JavascriptAppModalEventBlockerX11(GetWidget()->GetNativeView()));
+  }
+#endif
+
   GetWidget()->Show();
 }
 
@@ -85,11 +103,14 @@ int JavaScriptAppModalDialogViews::GetDialogButtons() const {
   return ui::DIALOG_BUTTON_OK | ui::DIALOG_BUTTON_CANCEL;
 }
 
-string16 JavaScriptAppModalDialogViews::GetWindowTitle() const {
+base::string16 JavaScriptAppModalDialogViews::GetWindowTitle() const {
   return parent_->title();
 }
 
 void JavaScriptAppModalDialogViews::WindowClosing() {
+#if defined(USE_X11) && !defined(OS_CHROMEOS)
+  event_blocker_x11_.reset();
+#endif
 }
 
 void JavaScriptAppModalDialogViews::DeleteDelegate() {
@@ -107,7 +128,7 @@ bool JavaScriptAppModalDialogViews::Accept() {
   return true;
 }
 
-void JavaScriptAppModalDialogViews::OnClose() {
+void JavaScriptAppModalDialogViews::OnClosed() {
   parent_->OnClose();
 }
 
@@ -119,7 +140,7 @@ const views::Widget* JavaScriptAppModalDialogViews::GetWidget() const {
   return message_box_view_->GetWidget();
 }
 
-string16 JavaScriptAppModalDialogViews::GetDialogButtonLabel(
+base::string16 JavaScriptAppModalDialogViews::GetDialogButtonLabel(
     ui::DialogButton button) const {
   if (parent_->is_before_unload_dialog()) {
     if (button == ui::DIALOG_BUTTON_OK) {
@@ -162,6 +183,6 @@ NativeAppModalDialog* NativeAppModalDialog::CreateNativeJavaScriptPrompt(
     JavaScriptAppModalDialog* dialog,
     gfx::NativeWindow parent_window) {
   JavaScriptAppModalDialogViews* d = new JavaScriptAppModalDialogViews(dialog);
-  views::Widget::CreateWindowWithParent(d, parent_window);
+  CreateBrowserModalDialogViews(d, parent_window);
   return d;
 }

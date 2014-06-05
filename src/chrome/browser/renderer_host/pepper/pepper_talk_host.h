@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_RENDERER_HOST_PEPPER_PEPPER_TALK_HOST_H_
 
 #include "base/memory/weak_ptr.h"
+#include "ppapi/c/private/ppb_talk_private.h"
 #include "ppapi/host/resource_host.h"
 #include "ppapi/proxy/resource_message_params.h"
 
@@ -28,17 +29,25 @@ class PepperTalkHost : public ppapi::host::ResourceHost {
                  PP_Resource resource);
   virtual ~PepperTalkHost();
 
+ private:
   // ResourceHost override.
   virtual int32_t OnResourceMessageReceived(
       const IPC::Message& msg,
       ppapi::host::HostMessageContext* context) OVERRIDE;
 
-  // Sends the reply.
-  void GotTalkPermission(ppapi::host::ReplyMessageContext reply);
+  int32_t OnRequestPermission(ppapi::host::HostMessageContext* context,
+                              PP_TalkPermission permission);
+  int32_t OnStartRemoting(ppapi::host::HostMessageContext* context);
+  int32_t OnStopRemoting(ppapi::host::HostMessageContext* context);
+  void OnRemotingStopEvent();
 
- private:
-  base::WeakPtrFactory<PepperTalkHost> weak_factory_;
+  void OnRequestPermissionCompleted(ppapi::host::ReplyMessageContext reply);
+  void OnStartRemotingCompleted(ppapi::host::ReplyMessageContext reply);
+  void OnStopRemotingCompleted(ppapi::host::ReplyMessageContext reply);
+
   content::BrowserPpapiHost* browser_ppapi_host_;
+  bool remoting_started_;
+  base::WeakPtrFactory<PepperTalkHost> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PepperTalkHost);
 };

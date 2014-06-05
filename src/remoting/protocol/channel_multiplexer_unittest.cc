@@ -5,7 +5,8 @@
 #include "remoting/protocol/channel_multiplexer.h"
 
 #include "base/bind.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
 #include "net/base/net_errors.h"
 #include "net/socket/socket.h"
 #include "net/socket/stream_socket.h"
@@ -33,7 +34,8 @@ const char kTestChannelName2[] = "test2";
 
 
 void QuitCurrentThread() {
-  MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+  base::MessageLoop::current()->PostTask(FROM_HERE,
+                                         base::MessageLoop::QuitClosure());
 }
 
 class MockSocketCallback {
@@ -125,7 +127,7 @@ class ChannelMultiplexerTest : public testing::Test {
     return result;
   }
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
 
   FakeSession host_session_;
   FakeSession client_session_;
@@ -255,12 +257,18 @@ TEST_F(ChannelMultiplexerTest, WriteFailSync) {
   EXPECT_CALL(cb2, OnDone(_))
       .Times(0);
 
-  EXPECT_EQ(net::ERR_FAILED, host_socket1_->Write(buf, buf->size(), base::Bind(
-      &MockSocketCallback::OnDone, base::Unretained(&cb1))));
-  EXPECT_EQ(net::ERR_FAILED, host_socket2_->Write(buf, buf->size(), base::Bind(
-        &MockSocketCallback::OnDone, base::Unretained(&cb2))));
+  EXPECT_EQ(net::ERR_FAILED,
+            host_socket1_->Write(buf.get(),
+                                 buf->size(),
+                                 base::Bind(&MockSocketCallback::OnDone,
+                                            base::Unretained(&cb1))));
+  EXPECT_EQ(net::ERR_FAILED,
+            host_socket2_->Write(buf.get(),
+                                 buf->size(),
+                                 base::Bind(&MockSocketCallback::OnDone,
+                                            base::Unretained(&cb2))));
 
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 TEST_F(ChannelMultiplexerTest, WriteFailAsync) {
@@ -285,13 +293,17 @@ TEST_F(ChannelMultiplexerTest, WriteFailAsync) {
   EXPECT_CALL(cb2, OnDone(net::ERR_FAILED));
 
   EXPECT_EQ(net::ERR_IO_PENDING,
-            host_socket1_->Write(buf, buf->size(), base::Bind(
-                &MockSocketCallback::OnDone, base::Unretained(&cb1))));
+            host_socket1_->Write(buf.get(),
+                                 buf->size(),
+                                 base::Bind(&MockSocketCallback::OnDone,
+                                            base::Unretained(&cb1))));
   EXPECT_EQ(net::ERR_IO_PENDING,
-            host_socket2_->Write(buf, buf->size(), base::Bind(
-                &MockSocketCallback::OnDone, base::Unretained(&cb2))));
+            host_socket2_->Write(buf.get(),
+                                 buf->size(),
+                                 base::Bind(&MockSocketCallback::OnDone,
+                                            base::Unretained(&cb2))));
 
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 TEST_F(ChannelMultiplexerTest, DeleteWhenFailed) {
@@ -320,13 +332,17 @@ TEST_F(ChannelMultiplexerTest, DeleteWhenFailed) {
       .WillOnce(InvokeWithoutArgs(this, &ChannelMultiplexerTest::DeleteAll));
 
   EXPECT_EQ(net::ERR_IO_PENDING,
-            host_socket1_->Write(buf, buf->size(), base::Bind(
-                &MockSocketCallback::OnDone, base::Unretained(&cb1))));
+            host_socket1_->Write(buf.get(),
+                                 buf->size(),
+                                 base::Bind(&MockSocketCallback::OnDone,
+                                            base::Unretained(&cb1))));
   EXPECT_EQ(net::ERR_IO_PENDING,
-            host_socket2_->Write(buf, buf->size(), base::Bind(
-                &MockSocketCallback::OnDone, base::Unretained(&cb2))));
+            host_socket2_->Write(buf.get(),
+                                 buf->size(),
+                                 base::Bind(&MockSocketCallback::OnDone,
+                                            base::Unretained(&cb2))));
 
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 
   // Check that the sockets were destroyed.
   EXPECT_FALSE(host_mux_.get());
@@ -351,7 +367,7 @@ TEST_F(ChannelMultiplexerTest, SessionFail) {
   EXPECT_CALL(cb2, OnConnectedPtr(_))
       .Times(0);
 
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 }  // namespace protocol

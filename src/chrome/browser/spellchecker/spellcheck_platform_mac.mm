@@ -14,8 +14,8 @@
 #include "base/mac/foundation_util.h"
 #include "base/mac/scoped_nsexception_enabler.h"
 #include "base/metrics/histogram.h"
-#include "base/sys_string_conversions.h"
-#include "base/time.h"
+#include "base/strings/sys_string_conversions.h"
+#include "base/time/time.h"
 #include "chrome/common/spellcheck_common.h"
 #include "chrome/common/spellcheck_messages.h"
 #include "chrome/common/spellcheck_result.h"
@@ -38,50 +38,9 @@ const unsigned int kShortLanguageCodeSize = 2;
 // browser.
 NSSpellChecker* SharedSpellChecker() {
   return base::mac::ObjCCastStrict<NSSpellChecker>(
-      base::mac::PerformSelectorIgnoringExceptions(
-          [NSSpellChecker class],
-          @selector(sharedSpellChecker)));
-}
-
-// TextCheckingCallback is reserved for spell checking against large size
-// of text, which possible contains multiple paragrpahs.  Checking
-// that size of text might take time, and should be done as a task on
-// the FILE thread.
-//
-// The result of the check is returned back as a
-// SpellCheckMsg_RespondTextCheck message.
-void TextCheckingCallback(
-    const scoped_refptr<BrowserMessageFilter>& destination,
-    int route_id,
-    int identifier,
-    const string16& text,
-    int document_tag) {
-  // TODO(morrita): Use [NSSpellChecker requestCheckingOfString]
-  // when the build target goes up to 10.6
-  std::vector<SpellCheckResult> check_results;
-  NSString* text_to_check = base::SysUTF16ToNSString(text);
-  size_t starting_at = 0;
-  while (starting_at < text.size()) {
-    NSRange range = [SharedSpellChecker()
-                       checkSpellingOfString:text_to_check
-                                  startingAt:starting_at
-                                    language:nil
-                                        wrap:NO
-                      inSpellDocumentWithTag:document_tag
-                                   wordCount:NULL];
-    if (range.length == 0)
-      break;
-    check_results.push_back(SpellCheckResult(
-        SpellCheckResult::SPELLING,
-        range.location,
-        range.length));
-    starting_at = range.location + range.length;
-  }
-
-  destination->Send(
-      new SpellCheckMsg_RespondTextCheck(route_id,
-                                         identifier,
-                                         check_results));
+      base::mac::RunBlockIgnoringExceptions(^{
+          return [NSSpellChecker sharedSpellChecker];
+      }));
 }
 
 // A private utility function to convert hunspell language codes to OS X
@@ -183,7 +142,7 @@ void ShowSpellingPanel(bool show) {
   }
 }
 
-void UpdateSpellingPanelWithMisspelledWord(const string16& word) {
+void UpdateSpellingPanelWithMisspelledWord(const base::string16& word) {
   NSString * word_to_display = base::SysUTF16ToNSString(word);
   [SharedSpellChecker()
       performSelectorOnMainThread:
@@ -204,13 +163,17 @@ bool PlatformSupportsLanguage(const std::string& current_language) {
 }
 
 void SetLanguage(const std::string& lang_to_set) {
-  NSString* NS_lang_to_set = ConvertLanguageCodeToMac(lang_to_set);
-  [SharedSpellChecker() setLanguage:NS_lang_to_set];
+  // Do not set any language right now, since Chrome should honor the
+  // system spellcheck settings. (http://crbug.com/166046)
+  // Fix this once Chrome actually allows setting a spellcheck language
+  // in chrome://settings.
+  //  NSString* NS_lang_to_set = ConvertLanguageCodeToMac(lang_to_set);
+  //  [SharedSpellChecker() setLanguage:NS_lang_to_set];
 }
 
 static int last_seen_tag_;
 
-bool CheckSpelling(const string16& word_to_check, int tag) {
+bool CheckSpelling(const base::string16& word_to_check, int tag) {
   last_seen_tag_ = tag;
 
   // -[NSSpellChecker checkSpellingOfString] returns an NSRange that
@@ -231,8 +194,8 @@ bool CheckSpelling(const string16& word_to_check, int tag) {
   return word_correct;
 }
 
-void FillSuggestionList(const string16& wrong_word,
-                        std::vector<string16>* optional_suggestions) {
+void FillSuggestionList(const base::string16& wrong_word,
+                        std::vector<base::string16>* optional_suggestions) {
   NSString* NS_wrong_word = base::SysUTF16ToNSString(wrong_word);
   TimeTicks debug_begin_time = base::Histogram::DebugNow();
   // The suggested words for |wrong_word|.
@@ -248,12 +211,12 @@ void FillSuggestionList(const string16& wrong_word,
   }
 }
 
-void AddWord(const string16& word) {
+void AddWord(const base::string16& word) {
     NSString* word_to_add = base::SysUTF16ToNSString(word);
   [SharedSpellChecker() learnWord:word_to_add];
 }
 
-void RemoveWord(const string16& word) {
+void RemoveWord(const base::string16& word) {
   NSString *word_to_remove = base::SysUTF16ToNSString(word);
   [SharedSpellChecker() unlearnWord:word_to_remove];
 }
@@ -263,7 +226,7 @@ int GetDocumentTag() {
   return static_cast<int>(doc_tag);
 }
 
-void IgnoreWord(const string16& word) {
+void IgnoreWord(const base::string16& word) {
   [SharedSpellChecker() ignoreWord:base::SysUTF16ToNSString(word)
             inSpellDocumentWithTag:last_seen_tag_];
 }
@@ -272,14 +235,72 @@ void CloseDocumentWithTag(int tag) {
   [SharedSpellChecker() closeSpellDocumentWithTag:static_cast<NSInteger>(tag)];
 }
 
-void RequestTextCheck(int route_id,
-                      int identifier,
-                      int document_tag,
-                      const string16& text, BrowserMessageFilter* destination) {
-  BrowserThread::PostTask(
-      BrowserThread::FILE, FROM_HERE,
-      base::Bind(&TextCheckingCallback, make_scoped_refptr(destination),
-                 route_id, identifier, text, document_tag));
+void RequestTextCheck(int document_tag,
+                      const base::string16& text,
+                      TextCheckCompleteCallback callback) {
+  NSString* text_to_check = base::SysUTF16ToNSString(text);
+  NSRange range_to_check = NSMakeRange(0, [text_to_check length]);
+
+  [SharedSpellChecker()
+      requestCheckingOfString:text_to_check
+                        range:range_to_check
+                        types:NSTextCheckingTypeSpelling
+                      options:nil
+       inSpellDocumentWithTag:document_tag
+            completionHandler:^(NSInteger,
+                                NSArray *results,
+                                NSOrthography*,
+                                NSInteger) {
+          std::vector<SpellCheckResult> check_results;
+          for (NSTextCheckingResult* result in results) {
+            // Deliberately ignore non-spelling results. OSX at the very least
+            // delivers a result of NSTextCheckingTypeOrthography for the
+            // whole fragment, which underlines the entire checked range.
+            if ([result resultType] != NSTextCheckingTypeSpelling)
+              continue;
+
+            // In this use case, the spell checker should never
+            // return anything but a single range per result.
+            check_results.push_back(SpellCheckResult(
+                SpellCheckResult::SPELLING,
+                [result range].location,
+                [result range].length));
+          }
+          // TODO(groby): Verify we don't need to post from here.
+          callback.Run(check_results);
+      }];
+}
+
+class SpellcheckerStateInternal {
+ public:
+  SpellcheckerStateInternal();
+  ~SpellcheckerStateInternal();
+
+ private:
+  BOOL automaticallyIdentifiesLanguages_;
+  NSString* language_;
+};
+
+SpellcheckerStateInternal::SpellcheckerStateInternal() {
+  language_ = [SharedSpellChecker() language];
+  automaticallyIdentifiesLanguages_ =
+      [SharedSpellChecker() automaticallyIdentifiesLanguages];
+  [SharedSpellChecker() setLanguage:@"en"];
+  [SharedSpellChecker() setAutomaticallyIdentifiesLanguages:NO];
+}
+
+SpellcheckerStateInternal::~SpellcheckerStateInternal() {
+  [SharedSpellChecker() setLanguage:language_];
+  [SharedSpellChecker() setAutomaticallyIdentifiesLanguages:
+      automaticallyIdentifiesLanguages_];
+}
+
+ScopedEnglishLanguageForTest::ScopedEnglishLanguageForTest()
+    : state_(new SpellcheckerStateInternal) {
+}
+
+ScopedEnglishLanguageForTest::~ScopedEnglishLanguageForTest() {
+  delete state_;
 }
 
 }  // namespace spellcheck_mac

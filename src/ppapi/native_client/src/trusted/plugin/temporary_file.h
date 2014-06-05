@@ -9,6 +9,7 @@
 #include "native_client/src/include/nacl_string.h"
 #include "native_client/src/trusted/desc/nacl_desc_wrapper.h"
 
+#include "ppapi/c/private/pp_file_handle.h"
 #include "ppapi/cpp/completion_callback.h"
 
 namespace plugin {
@@ -40,8 +41,10 @@ class TempFile {
   explicit TempFile(Plugin* plugin);
   ~TempFile();
 
-  // Opens a writeable file IO object and descriptor referring to the file.
-  void Open(const pp::CompletionCallback& cb);
+  // Opens a temporary file object and descriptor wrapper referring to the file.
+  // If |writeable| is true, the descriptor will be opened for writing, and
+  // write_wrapper will return a valid pointer, otherwise it will return NULL.
+  void Open(const pp::CompletionCallback& cb, bool writeable);
   // Resets file position of the handle, for reuse.
   bool Reset();
 
@@ -52,6 +55,8 @@ class TempFile {
   nacl::DescWrapper* release_read_wrapper() {
     return read_wrapper_.release();
   }
+
+  PP_FileHandle* existing_handle() { return &existing_handle_; }
 
   // For quota management.
   const nacl::string identifier() const {
@@ -64,6 +69,7 @@ class TempFile {
   Plugin* plugin_;
   nacl::scoped_ptr<nacl::DescWrapper> read_wrapper_;
   nacl::scoped_ptr<nacl::DescWrapper> write_wrapper_;
+  PP_FileHandle existing_handle_;
 
   // An identifier string used for quota request processing.  The quota
   // interface needs a string that is unique per sel_ldr instance only, so

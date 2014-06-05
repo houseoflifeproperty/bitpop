@@ -218,23 +218,34 @@ class Invalidation {
  public:
   Invalidation() : is_initialized_(false) {}
 
-  /* Creates an invalidation for the given object and version. */
+  /* Creates a restarted invalidation for the given object and version. */
   Invalidation(const ObjectId& object_id, int64 version) {
-    Init(object_id, version);
+    Init(object_id, version, true);
   }
 
   /* Creates an invalidation for the given object, version, and payload. */
-  Invalidation(
-      const ObjectId& object_id, int64 version, const string& payload) {
-    Init(object_id, version, payload);
+  Invalidation(const ObjectId& object_id, int64 version,
+               const string& payload) {
+    Init(object_id, version, payload, true);
   }
 
-  void Init(const ObjectId& object_id, int64 version) {
-    Init(object_id, version, false, "");
+  /*
+   * Creates an invalidation for the given object, version, payload,
+   * and restarted flag.
+   */
+  Invalidation(const ObjectId& object_id, int64 version, const string& payload,
+               bool is_trickle_restart) {
+    Init(object_id, version, payload, is_trickle_restart);
   }
 
-  void Init(const ObjectId& object_id, int64 version, const string& payload) {
-    Init(object_id, version, true, payload);
+
+  void Init(const ObjectId& object_id, int64 version, bool is_trickle_restart) {
+    Init(object_id, version, false, "", is_trickle_restart);
+  }
+
+  void Init(const ObjectId& object_id, int64 version, const string& payload,
+            bool is_trickle_restart) {
+    Init(object_id, version, true, payload, is_trickle_restart);
   }
 
   const ObjectId& object_id() const {
@@ -253,21 +264,29 @@ class Invalidation {
     return payload_;
   }
 
+  // This method is for internal use only.
+  bool is_trickle_restart_for_internal_use() const {
+    return is_trickle_restart_;
+  }
+
   bool operator==(const Invalidation& invalidation) const {
     return (object_id() == invalidation.object_id()) &&
         (version() == invalidation.version()) &&
+        (is_trickle_restart_for_internal_use() ==
+            invalidation.is_trickle_restart_for_internal_use()) &&
         (has_payload() == invalidation.has_payload()) &&
         (payload() == invalidation.payload());
   }
 
  private:
   void Init(const ObjectId& object_id, int64 version, bool has_payload,
-            const string& payload) {
+            const string& payload, bool is_trickle_restart) {
     is_initialized_ = true;
     object_id_.Init(object_id.source(), object_id.name());
     version_ = version;
     has_payload_ = has_payload;
     payload_ = payload;
+    is_trickle_restart_ = is_trickle_restart;
   }
 
   /* Whether this invalidation has been initialized. */
@@ -284,6 +303,9 @@ class Invalidation {
 
   /* Optional payload for the client. */
   string payload_;
+
+  /* Flag whether the trickle restarts at this invalidation. */
+  bool is_trickle_restart_;
 };
 
 /* Information given to about a operation - success, temporary or permanent

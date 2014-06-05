@@ -4,7 +4,10 @@
  * found in the LICENSE file.
  */
 
-
+/*
+ * This file is based on the file "newlib/libc/include/sys/unistd.h"
+ * from newlib.
+ */
 
 #ifndef NATIVE_CLIENT_SRC_TRUSTED_SERVICE_RUNTIME_INCLUDE_SYS_UNISTD_H_
 #define NATIVE_CLIENT_SRC_TRUSTED_SERVICE_RUNTIME_INCLUDE_SYS_UNISTD_H_
@@ -88,7 +91,7 @@ char    _EXFUN(*getlogin, (void ));
 int _EXFUN(getlogin_r, (char *name, size_t namesize) );
 #endif
 char _EXFUN(*getpass, (const char *__prompt));
-size_t  _EXFUN(getpagesize, (void));
+int     _EXFUN(getpagesize, (void));
 #if defined(__CYGWIN__)
 int    _EXFUN(getpeereid, (int, uid_t *, gid_t *));
 #endif
@@ -214,14 +217,15 @@ _READ_WRITE_RETURN_TYPE _EXFUN(_write, (int __fd, const void *__buf, size_t __nb
 int     _EXFUN(_execve, (const char *__path, char * const __argv[], char * const __envp[] ));
 #endif
 
-#if defined(__CYGWIN__) || defined(__rtems__) || defined(__sh__) || defined(__SPU__)
+#if defined(__CYGWIN__) || defined(__rtems__) || defined(__sh__) \
+    || defined(__SPU__) || defined(__native_client__)
 #if !defined(__INSIDE_CYGWIN__)
 int     _EXFUN(ftruncate, (int __fd, off_t __length));
 int     _EXFUN(truncate, (const char *, off_t __length));
 #endif
 #endif
 
-#if defined(__CYGWIN__) || defined(__rtems__)
+#if defined(__CYGWIN__) || defined(__rtems__) || defined(__native_client__)
 int _EXFUN(getdtablesize, (void));
 int _EXFUN(setdtablesize, (int));
 useconds_t _EXFUN(ualarm, (useconds_t __useconds, useconds_t __interval));
@@ -241,11 +245,6 @@ int     _EXFUN(sync, (void));
 int     _EXFUN(readlink, (const char *__path, char *__buf, int __buflen));
 int     _EXFUN(symlink, (const char *__name1, const char *__name2));
 
-#define F_OK 0
-#define R_OK 4
-#define W_OK 2
-#define X_OK 1
-
 # define SEEK_SET 0
 # define SEEK_CUR 1
 # define SEEK_END 2
@@ -257,6 +256,11 @@ int     _EXFUN(symlink, (const char *__name1, const char *__name2));
 #define STDERR_FILENO   2       /* standard error file descriptor */
 
 #endif  /* __native_client__ */
+
+#define NACL_ABI_F_OK 0
+#define NACL_ABI_R_OK 4
+#define NACL_ABI_W_OK 2
+#define NACL_ABI_X_OK 1
 
 /*
  * sysconf values as supported by NativeClient
@@ -272,13 +276,23 @@ int     _EXFUN(symlink, (const char *__name1, const char *__name2));
  * is implemented.)
  */
 enum {
-  NACL_ABI__SC_SENDMSG_MAX_SIZE,
-#define NACL_ABI__SC_SENDMSG_MAX_SIZE NACL_ABI__SC_SENDMSG_MAX_SIZE
-  NACL_ABI__SC_NPROCESSORS_ONLN,
+  NACL_ABI__SC_NPROCESSORS_ONLN = 1,
 #define NACL_ABI__SC_NPROCESSORS_ONLN NACL_ABI__SC_NPROCESSORS_ONLN
-  NACL_ABI__SC_PAGESIZE,
+  NACL_ABI__SC_PAGESIZE = 2,
 #define NACL_ABI__SC_PAGESIZE NACL_ABI__SC_PAGESIZE
-  NACL_ABI__SC_LAST
+
+  /*
+   * The sysconf values below are not part of the stable ABI.
+   */
+  NACL_ABI__SC_NACL_FILE_ACCESS_ENABLED = 1000,
+#define NACL_ABI__SC_NACL_FILE_ACCESS_ENABLED \
+    NACL_ABI__SC_NACL_FILE_ACCESS_ENABLED
+  NACL_ABI__SC_NACL_LIST_MAPPINGS_ENABLED,
+#define NACL_ABI__SC_NACL_LIST_MAPPINGS_ENABLED \
+    NACL_ABI__SC_NACL_LIST_MAPPINGS_ENABLED
+  NACL_ABI__SC_NACL_PNACL_MODE,
+#define NACL_ABI__SC_NACL_PNACL_MODE \
+    NACL_ABI__SC_NACL_PNACL_MODE
 };
 
 #ifdef __native_client__

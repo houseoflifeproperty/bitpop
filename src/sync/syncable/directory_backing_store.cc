@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,15 +10,10 @@
 
 #include "base/base64.h"
 #include "base/debug/trace_event.h"
-#include "base/file_util.h"
-#include "base/hash_tables.h"
 #include "base/logging.h"
-#include "base/metrics/histogram.h"
 #include "base/rand_util.h"
-#include "base/stl_util.h"
-#include "base/string_number_conversions.h"
-#include "base/stringprintf.h"
-#include "base/time.h"
+#include "base/strings/stringprintf.h"
+#include "base/time/time.h"
 #include "sql/connection.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
@@ -27,6 +22,7 @@
 #include "sync/protocol/sync.pb.h"
 #include "sync/syncable/syncable-inl.h"
 #include "sync/syncable/syncable_columns.h"
+#include "sync/syncable/syncable_util.h"
 #include "sync/util/time.h"
 
 using std::string;
@@ -39,8 +35,7 @@ namespace syncable {
 static const string::size_type kUpdateStatementBufferSize = 2048;
 
 // Increment this version whenever updating DB tables.
-extern const int32 kCurrentDBVersion;  // Global visibility for our unittest.
-const int32 kCurrentDBVersion = 85;
+const int32 kCurrentDBVersion = 88;
 
 // Iterate over the fields of |entry| and bind each to |statement| for
 // updating.  Returns the number of args bound.
@@ -65,13 +60,19 @@ void BindFields(const EntryKernel& entry,
   for ( ; i < STRING_FIELDS_END; ++i) {
     statement->BindString(index++, entry.ref(static_cast<StringField>(i)));
   }
-  std::string temp;
   for ( ; i < PROTO_FIELDS_END; ++i) {
+    std::string temp;
     entry.ref(static_cast<ProtoField>(i)).SerializeToString(&temp);
     statement->BindBlob(index++, temp.data(), temp.length());
   }
-  for( ; i < ORDINAL_FIELDS_END; ++i) {
-    temp = entry.ref(static_cast<OrdinalField>(i)).ToInternalValue();
+  for ( ; i < UNIQUE_POSITION_FIELDS_END; ++i) {
+    std::string temp;
+    entry.ref(static_cast<UniquePositionField>(i)).SerializeToString(&temp);
+    statement->BindBlob(index++, temp.data(), temp.length());
+  }
+  for (; i < ATTACHMENT_METADATA_FIELDS_END; ++i) {
+    std::string temp;
+    entry.ref(static_cast<AttachmentMetadataField>(i)).SerializeToString(&temp);
     statement->BindBlob(index++, temp.data(), temp.length());
   }
 }
@@ -105,19 +106,22 @@ scoped_ptr<EntryKernel> UnpackEntry(sql::Statement* statement) {
     kernel->mutable_ref(static_cast<ProtoField>(i)).ParseFromArray(
         statement->ColumnBlob(i), statement->ColumnByteLength(i));
   }
-  for( ; i < ORDINAL_FIELDS_END; ++i) {
+  for ( ; i < UNIQUE_POSITION_FIELDS_END; ++i) {
     std::string temp;
     statement->ColumnBlobAsString(i, &temp);
-    NodeOrdinal unpacked_ord(temp);
 
-    // Its safe to assume that an invalid ordinal is a sign that
-    // some external corruption has occurred. Return NULL to force
-    // a re-download of the sync data.
-    if(!unpacked_ord.IsValid()) {
-      DVLOG(1) << "Unpacked invalid ordinal. Signaling that the DB is corrupt";
-      return scoped_ptr<EntryKernel>(NULL);
+    sync_pb::UniquePosition proto;
+    if (!proto.ParseFromString(temp)) {
+      DVLOG(1) << "Unpacked invalid position.  Assuming the DB is corrupt";
+      return scoped_ptr<EntryKernel>();
     }
-    kernel->mutable_ref(static_cast<OrdinalField>(i)) = unpacked_ord;
+
+    kernel->mutable_ref(static_cast<UniquePositionField>(i)) =
+        UniquePosition::FromProto(proto);
+  }
+  for (; i < ATTACHMENT_METADATA_FIELDS_END; ++i) {
+    kernel->mutable_ref(static_cast<AttachmentMetadataField>(i)).ParseFromArray(
+        statement->ColumnBlob(i), statement->ColumnByteLength(i));
   }
   return kernel.Pass();
 }
@@ -160,6 +164,9 @@ DirectoryBackingStore::DirectoryBackingStore(const string& dir_name)
   : db_(new sql::Connection()),
     dir_name_(dir_name),
     needs_column_refresh_(false) {
+  db_->set_histogram_tag("SyncDirectory");
+  db_->set_page_size(4096);
+  db_->set_cache_size(32);
 }
 
 DirectoryBackingStore::DirectoryBackingStore(const string& dir_name,
@@ -172,12 +179,24 @@ DirectoryBackingStore::DirectoryBackingStore(const string& dir_name,
 DirectoryBackingStore::~DirectoryBackingStore() {
 }
 
-bool DirectoryBackingStore::DeleteEntries(const MetahandleSet& handles) {
+bool DirectoryBackingStore::DeleteEntries(EntryTable from,
+                                          const MetahandleSet& handles) {
   if (handles.empty())
     return true;
 
-  sql::Statement statement(db_->GetCachedStatement(
+  sql::Statement statement;
+  // Call GetCachedStatement() separately to get different statements for
+  // different tables.
+  switch (from) {
+    case METAS_TABLE:
+      statement.Assign(db_->GetCachedStatement(
           SQL_FROM_HERE, "DELETE FROM metas WHERE metahandle = ?"));
+      break;
+    case DELETE_JOURNAL_TABLE:
+      statement.Assign(db_->GetCachedStatement(
+          SQL_FROM_HERE, "DELETE FROM deleted_metas WHERE metahandle = ?"));
+      break;
+  }
 
   for (MetahandleSet::const_iterator i = handles.begin(); i != handles.end();
        ++i) {
@@ -197,9 +216,9 @@ bool DirectoryBackingStore::SaveChanges(
   // Back out early if there is nothing to write.
   bool save_info =
     (Directory::KERNEL_SHARE_INFO_DIRTY == snapshot.kernel_info_status);
-  if (snapshot.dirty_metas.empty()
-      && snapshot.metahandles_to_purge.empty()
-      && !save_info) {
+  if (snapshot.dirty_metas.empty() && snapshot.metahandles_to_purge.empty() &&
+      snapshot.delete_journals.empty() &&
+      snapshot.delete_journals_to_purge.empty() && !save_info) {
     return true;
   }
 
@@ -207,14 +226,26 @@ bool DirectoryBackingStore::SaveChanges(
   if (!transaction.Begin())
     return false;
 
+  PrepareSaveEntryStatement(METAS_TABLE, &save_meta_statment_);
   for (EntryKernelSet::const_iterator i = snapshot.dirty_metas.begin();
        i != snapshot.dirty_metas.end(); ++i) {
-    DCHECK(i->is_dirty());
-    if (!SaveEntryToDB(*i))
+    DCHECK((*i)->is_dirty());
+    if (!SaveEntryToDB(&save_meta_statment_, **i))
       return false;
   }
 
-  if (!DeleteEntries(snapshot.metahandles_to_purge))
+  if (!DeleteEntries(METAS_TABLE, snapshot.metahandles_to_purge))
+    return false;
+
+  PrepareSaveEntryStatement(DELETE_JOURNAL_TABLE,
+                            &save_delete_journal_statment_);
+  for (EntryKernelSet::const_iterator i = snapshot.delete_journals.begin();
+       i != snapshot.delete_journals.end(); ++i) {
+    if (!SaveEntryToDB(&save_delete_journal_statment_, **i))
+      return false;
+  }
+
+  if (!DeleteEntries(DELETE_JOURNAL_TABLE, snapshot.delete_journals_to_purge))
     return false;
 
   if (save_info) {
@@ -224,13 +255,10 @@ bool DirectoryBackingStore::SaveChanges(
             "UPDATE share_info "
             "SET store_birthday = ?, "
             "next_id = ?, "
-            "notification_state = ?, "
             "bag_of_chips = ?"));
     s1.BindString(0, info.store_birthday);
     s1.BindInt64(1, info.next_id);
-    s1.BindBlob(2, info.notification_state.data(),
-                   info.notification_state.size());
-    s1.BindBlob(3, info.bag_of_chips.data(), info.bag_of_chips.size());
+    s1.BindBlob(2, info.bag_of_chips.data(), info.bag_of_chips.size());
 
     if (!s1.Run())
       return false;
@@ -239,17 +267,26 @@ bool DirectoryBackingStore::SaveChanges(
     sql::Statement s2(db_->GetCachedStatement(
             SQL_FROM_HERE,
             "INSERT OR REPLACE "
-            "INTO models (model_id, progress_marker, transaction_version) "
-            "VALUES (?, ?, ?)"));
+            "INTO models (model_id, "
+                         "progress_marker, "
+                         "transaction_version, "
+                         "context) "
+            "VALUES (?, ?, ?, ?)"));
 
-    for (int i = FIRST_REAL_MODEL_TYPE; i < MODEL_TYPE_COUNT; ++i) {
+    ModelTypeSet protocol_types = ProtocolTypes();
+    for (ModelTypeSet::Iterator iter = protocol_types.First(); iter.Good();
+         iter.Inc()) {
+      ModelType type = iter.Get();
       // We persist not ModelType but rather a protobuf-derived ID.
-      string model_id = ModelTypeEnumToModelId(ModelTypeFromInt(i));
+      string model_id = ModelTypeEnumToModelId(type);
       string progress_marker;
-      info.download_progress[i].SerializeToString(&progress_marker);
+      info.download_progress[type].SerializeToString(&progress_marker);
       s2.BindBlob(0, model_id.data(), model_id.length());
       s2.BindBlob(1, progress_marker.data(), progress_marker.length());
-      s2.BindInt64(2, info.transaction_version[i]);
+      s2.BindInt64(2, info.transaction_version[type]);
+      string context;
+      info.datatype_context[type].SerializeToString(&context);
+      s2.BindBlob(3, context.data(), context.length());
       if (!s2.Run())
         return false;
       DCHECK_EQ(db_->GetLastChangeCount(), 1);
@@ -377,6 +414,25 @@ bool DirectoryBackingStore::InitializeTables() {
       version_on_disk = 85;
   }
 
+  // Version 86 migration converts bookmarks to the unique positioning system.
+  // It also introduces a new field to store a unique ID for each bookmark.
+  if (version_on_disk == 85) {
+    if (MigrateVersion85To86())
+      version_on_disk = 86;
+  }
+
+  // Version 87 migration adds a collection of attachment ids per sync entry.
+  if (version_on_disk == 86) {
+    if (MigrateVersion86To87())
+      version_on_disk = 87;
+  }
+
+  // Version 88 migration adds datatype contexts to the models table.
+  if (version_on_disk == 87) {
+    if (MigrateVersion87To88())
+      version_on_disk = 88;
+  }
+
   // If one of the migrations requested it, drop columns that aren't current.
   // It's only safe to do this after migrating all the way to the current
   // version.
@@ -447,6 +503,7 @@ bool DirectoryBackingStore::RefreshColumns() {
   if (!CreateShareInfoTable(true))
     return false;
 
+  // TODO(rlarocque, 124140): Remove notification_state.
   if (!db_->Execute(
           "INSERT INTO temp_share_info (id, name, store_birthday, "
           "db_create_version, db_create_time, next_id, cache_guid,"
@@ -465,21 +522,44 @@ bool DirectoryBackingStore::RefreshColumns() {
   return true;
 }
 
-bool DirectoryBackingStore::LoadEntries(MetahandlesIndex* entry_bucket) {
+bool DirectoryBackingStore::LoadEntries(
+    Directory::MetahandlesMap* handles_map) {
   string select;
   select.reserve(kUpdateStatementBufferSize);
   select.append("SELECT ");
   AppendColumnList(&select);
-  select.append(" FROM metas ");
+  select.append(" FROM metas");
 
   sql::Statement s(db_->GetUniqueStatement(select.c_str()));
 
   while (s.Step()) {
     scoped_ptr<EntryKernel> kernel = UnpackEntry(&s);
     // A null kernel is evidence of external data corruption.
-    if (!kernel.get())
+    if (!kernel)
       return false;
-    entry_bucket->insert(kernel.release());
+
+    int64 handle = kernel->ref(META_HANDLE);
+    (*handles_map)[handle] = kernel.release();
+  }
+  return s.Succeeded();
+}
+
+bool DirectoryBackingStore::LoadDeleteJournals(
+    JournalIndex* delete_journals) {
+  string select;
+  select.reserve(kUpdateStatementBufferSize);
+  select.append("SELECT ");
+  AppendColumnList(&select);
+  select.append(" FROM deleted_metas");
+
+  sql::Statement s(db_->GetUniqueStatement(select.c_str()));
+
+  while (s.Step()) {
+    scoped_ptr<EntryKernel> kernel = UnpackEntry(&s);
+    // A null kernel is evidence of external data corruption.
+    if (!kernel)
+      return false;
+    delete_journals->insert(kernel.release());
   }
   return s.Succeeded();
 }
@@ -488,8 +568,7 @@ bool DirectoryBackingStore::LoadInfo(Directory::KernelLoadInfo* info) {
   {
     sql::Statement s(
         db_->GetUniqueStatement(
-            "SELECT store_birthday, next_id, cache_guid, notification_state, "
-            "bag_of_chips "
+            "SELECT store_birthday, next_id, cache_guid, bag_of_chips "
             "FROM share_info"));
     if (!s.Step())
       return false;
@@ -497,8 +576,7 @@ bool DirectoryBackingStore::LoadInfo(Directory::KernelLoadInfo* info) {
     info->kernel_info.store_birthday = s.ColumnString(0);
     info->kernel_info.next_id = s.ColumnInt64(1);
     info->cache_guid = s.ColumnString(2);
-    s.ColumnBlobAsString(3, &(info->kernel_info.notification_state));
-    s.ColumnBlobAsString(4, &(info->kernel_info.bag_of_chips));
+    s.ColumnBlobAsString(3, &(info->kernel_info.bag_of_chips));
 
     // Verify there was only one row returned.
     DCHECK(!s.Step());
@@ -509,7 +587,7 @@ bool DirectoryBackingStore::LoadInfo(Directory::KernelLoadInfo* info) {
     sql::Statement s(
         db_->GetUniqueStatement(
             "SELECT model_id, progress_marker, "
-            "transaction_version FROM models"));
+            "transaction_version, context FROM models"));
 
     while (s.Step()) {
       ModelType type = ModelIdToModelTypeEnum(s.ColumnBlob(0),
@@ -518,6 +596,8 @@ bool DirectoryBackingStore::LoadInfo(Directory::KernelLoadInfo* info) {
         info->kernel_info.download_progress[type].ParseFromArray(
             s.ColumnBlob(1), s.ColumnByteLength(1));
         info->kernel_info.transaction_version[type] = s.ColumnInt64(2);
+        info->kernel_info.datatype_context[type].ParseFromArray(
+            s.ColumnBlob(3), s.ColumnByteLength(3));
       }
     }
     if (!s.Succeeded())
@@ -539,38 +619,12 @@ bool DirectoryBackingStore::LoadInfo(Directory::KernelLoadInfo* info) {
   return true;
 }
 
-bool DirectoryBackingStore::SaveEntryToDB(const EntryKernel& entry) {
-  // This statement is constructed at runtime, so we can't use
-  // GetCachedStatement() to let the Connection cache it.   We will construct
-  // and cache it ourselves the first time this function is called.
-  if (!save_entry_statement_.is_valid()) {
-    string query;
-    query.reserve(kUpdateStatementBufferSize);
-    query.append("INSERT OR REPLACE INTO metas ");
-    string values;
-    values.reserve(kUpdateStatementBufferSize);
-    values.append("VALUES ");
-    const char* separator = "( ";
-    int i = 0;
-    for (i = BEGIN_FIELDS; i < FIELD_COUNT; ++i) {
-      query.append(separator);
-      values.append(separator);
-      separator = ", ";
-      query.append(ColumnName(i));
-      values.append("?");
-    }
-    query.append(" ) ");
-    values.append(" )");
-    query.append(values);
-
-    save_entry_statement_.Assign(
-        db_->GetUniqueStatement(query.c_str()));
-  } else {
-    save_entry_statement_.Reset(true);
-  }
-
-  BindFields(entry, &save_entry_statement_);
-  return save_entry_statement_.Run();
+/* static */
+bool DirectoryBackingStore::SaveEntryToDB(sql::Statement* save_statement,
+                                          const EntryKernel& entry) {
+  save_statement->Reset(true);
+  BindFields(entry, save_statement);
+  return save_statement->Run();
 }
 
 bool DirectoryBackingStore::DropDeletedEntries() {
@@ -975,7 +1029,8 @@ bool DirectoryBackingStore::MigrateVersion76To77() {
 #if defined(OS_WIN)
 // On Windows, we used to store timestamps in FILETIME format (100s of
 // ns since Jan 1, 1601).  Magic numbers taken from
-// http://stackoverflow.com/questions/5398557/java-library-for-dealing-with-win32-filetime
+// http://stackoverflow.com/questions/5398557/
+//     java-library-for-dealing-with-win32-filetime
 // .
 #define TO_UNIX_TIME_MS(x) #x " = " #x " / 10000 - 11644473600000"
 #else
@@ -1094,16 +1149,15 @@ bool DirectoryBackingStore::MigrateVersion83To84() {
   query.append(ComposeCreateTableColumnSpecs());
   if (!db_->Execute(query.c_str()))
     return false;
-
   SetVersion(84);
   return true;
 }
 
 bool DirectoryBackingStore::MigrateVersion84To85() {
-  // Version 84 removes the initial_sync_ended flag.
+  // Version 85 removes the initial_sync_ended flag.
   if (!db_->Execute("ALTER TABLE models RENAME TO temp_models"))
     return false;
-  if (!CreateModelsTable())
+  if (!CreateV81ModelsTable())
     return false;
   if (!db_->Execute("INSERT INTO models SELECT "
                     "model_id, progress_marker, transaction_version "
@@ -1113,6 +1167,152 @@ bool DirectoryBackingStore::MigrateVersion84To85() {
   SafeDropTable("temp_models");
 
   SetVersion(85);
+  return true;
+}
+
+bool DirectoryBackingStore::MigrateVersion85To86() {
+  // Version 86 removes both server ordinals and local NEXT_ID, PREV_ID and
+  // SERVER_{POSITION,ORDINAL}_IN_PARENT and replaces them with UNIQUE_POSITION
+  // and SERVER_UNIQUE_POSITION.
+  if (!db_->Execute("ALTER TABLE metas ADD COLUMN "
+                    "server_unique_position BLOB")) {
+    return false;
+  }
+  if (!db_->Execute("ALTER TABLE metas ADD COLUMN "
+                    "unique_position BLOB")) {
+    return false;
+  }
+  if (!db_->Execute("ALTER TABLE metas ADD COLUMN "
+                    "unique_bookmark_tag VARCHAR")) {
+    return false;
+  }
+
+  // Fetch the cache_guid from the DB, because we don't otherwise have access to
+  // it from here.
+  sql::Statement get_cache_guid(db_->GetUniqueStatement(
+      "SELECT cache_guid FROM share_info"));
+  if (!get_cache_guid.Step()) {
+    return false;
+  }
+  std::string cache_guid = get_cache_guid.ColumnString(0);
+  DCHECK(!get_cache_guid.Step());
+  DCHECK(get_cache_guid.Succeeded());
+
+  sql::Statement get(db_->GetUniqueStatement(
+      "SELECT "
+      "  metahandle, "
+      "  id, "
+      "  specifics, "
+      "  is_dir, "
+      "  unique_server_tag, "
+      "  server_ordinal_in_parent "
+      "FROM metas"));
+
+  // Note that we set both the local and server position based on the server
+  // position.  We wll lose any unsynced local position changes.  Unfortunately,
+  // there's nothing we can do to avoid that.  The NEXT_ID / PREV_ID values
+  // can't be translated into a UNIQUE_POSTION in a reliable way.
+  sql::Statement put(db_->GetCachedStatement(
+      SQL_FROM_HERE,
+      "UPDATE metas SET"
+      "  server_unique_position = ?,"
+      "  unique_position = ?,"
+      "  unique_bookmark_tag = ?"
+      "WHERE metahandle = ?"));
+
+  while (get.Step()) {
+    int64 metahandle = get.ColumnInt64(0);
+
+    std::string id_string;
+    get.ColumnBlobAsString(1, &id_string);
+
+    sync_pb::EntitySpecifics specifics;
+    specifics.ParseFromArray(
+        get.ColumnBlob(2), get.ColumnByteLength(2));
+
+    bool is_dir = get.ColumnBool(3);
+
+    std::string server_unique_tag = get.ColumnString(4);
+
+    std::string ordinal_string;
+    get.ColumnBlobAsString(5, &ordinal_string);
+    NodeOrdinal ordinal(ordinal_string);
+
+
+    std::string unique_bookmark_tag;
+
+    // We only maintain positions for bookmarks that are not server-defined
+    // top-level folders.
+    UniquePosition position;
+    if (GetModelTypeFromSpecifics(specifics) == BOOKMARKS
+        && !(is_dir && !server_unique_tag.empty())) {
+      if (id_string.at(0) == 'c') {
+        // We found an uncommitted item.  This is rare, but fortunate.  This
+        // means we can set the bookmark tag according to the originator client
+        // item ID and originator cache guid, because (unlike the other case) we
+        // know that this client is the originator.
+        unique_bookmark_tag = syncable::GenerateSyncableBookmarkHash(
+            cache_guid,
+            id_string.substr(1));
+      } else {
+        // If we've already committed the item, then we don't know who the
+        // originator was.  We do not have access to the originator client item
+        // ID and originator cache guid at this point.
+        //
+        // We will base our hash entirely on the server ID instead.  This is
+        // incorrect, but at least all clients that undergo this migration step
+        // will be incorrect in the same way.
+        //
+        // To get everyone back into a synced state, we will update the bookmark
+        // tag according to the originator_cache_guid and originator_item_id
+        // when we see updates for this item.  That should ensure that commonly
+        // modified items will end up with the proper tag values eventually.
+        unique_bookmark_tag = syncable::GenerateSyncableBookmarkHash(
+            std::string(), // cache_guid left intentionally blank.
+            id_string.substr(1));
+      }
+
+      int64 int_position = NodeOrdinalToInt64(ordinal);
+      position = UniquePosition::FromInt64(int_position, unique_bookmark_tag);
+    } else {
+      // Leave bookmark_tag and position at their default (invalid) values.
+    }
+
+    std::string position_blob;
+    position.SerializeToString(&position_blob);
+    put.BindBlob(0, position_blob.data(), position_blob.length());
+    put.BindBlob(1, position_blob.data(), position_blob.length());
+    put.BindBlob(2, unique_bookmark_tag.data(), unique_bookmark_tag.length());
+    put.BindInt64(3, metahandle);
+
+    if (!put.Run())
+      return false;
+    put.Reset(true);
+  }
+
+  SetVersion(86);
+  needs_column_refresh_ = true;
+  return true;
+}
+
+bool DirectoryBackingStore::MigrateVersion86To87() {
+  // Version 87 adds AttachmentMetadata proto.
+  if (!db_->Execute(
+          "ALTER TABLE metas ADD COLUMN "
+          "attachment_metadata BLOB")) {
+    return false;
+  }
+  SetVersion(87);
+  needs_column_refresh_ = true;
+  return true;
+}
+
+bool DirectoryBackingStore::MigrateVersion87To88() {
+  // Version 88 adds the datatype context to the models table.
+  if (!db_->Execute("ALTER TABLE models ADD COLUMN context blob"))
+    return false;
+
+  SetVersion(88);
   return true;
 }
 
@@ -1150,16 +1350,18 @@ bool DirectoryBackingStore::CreateTables() {
             "?, "   // db_create_time
             "-2, "  // next_id
             "?, "   // cache_guid
+            // TODO(rlarocque, 124140): Remove notification_state field.
             "?, "   // notification_state
             "?);"));  // bag_of_chips
     s.BindString(0, dir_name_);                   // id
     s.BindString(1, dir_name_);                   // name
-    s.BindString(2, "");                          // store_birthday
+    s.BindString(2, std::string());               // store_birthday
     // TODO(akalin): Remove this unused db_create_version field. (Or
     // actually use it for something.) http://crbug.com/118356
     s.BindString(3, "Unknown");                   // db_create_version
     s.BindInt(4, static_cast<int32>(time(0)));    // db_create_time
     s.BindString(5, GenerateCacheGUID());         // cache_guid
+    // TODO(rlarocque, 124140): Remove this unused notification-state field.
     s.BindBlob(6, NULL, 0);                       // notification_state
     s.BindBlob(7, NULL, 0);                       // bag_of_chips
     if (!s.Run())
@@ -1178,13 +1380,10 @@ bool DirectoryBackingStore::CreateTables() {
     const int64 now = TimeToProtoTime(base::Time::Now());
     sql::Statement s(db_->GetUniqueStatement(
             "INSERT INTO metas "
-            "( id, metahandle, is_dir, ctime, mtime, server_ordinal_in_parent) "
-            "VALUES ( \"r\", 1, 1, ?, ?, ?)"));
+            "( id, metahandle, is_dir, ctime, mtime ) "
+            "VALUES ( \"r\", 1, 1, ?, ? )"));
     s.BindInt64(0, now);
     s.BindInt64(1, now);
-    const std::string ord =
-        NodeOrdinal::CreateInitialOrdinal().ToInternalValue();
-    s.BindBlob(2, ord.data(), ord.length());
 
     if (!s.Run())
       return false;
@@ -1233,8 +1432,20 @@ bool DirectoryBackingStore::CreateV75ModelsTable() {
       "initial_sync_ended BOOLEAN default 0)");
 }
 
+bool DirectoryBackingStore::CreateV81ModelsTable() {
+  // This is an old schema for the Models table, used from versions 81 to 87.
+  return db_->Execute(
+      "CREATE TABLE models ("
+      "model_id BLOB primary key, "
+      "progress_marker BLOB, "
+      // Gets set if the syncer ever gets updates from the
+      // server and the server returns 0.  Lets us detect the
+      // end of the initial sync.
+      "transaction_version BIGINT default 0)");
+}
+
 bool DirectoryBackingStore::CreateModelsTable() {
-  // This is the current schema for the Models table, from version 81
+  // This is the current schema for the Models table, from version 88
   // onward.  If you change the schema, you'll probably want to double-check
   // the use of this function in the v84-v85 migration.
   return db_->Execute(
@@ -1244,7 +1455,8 @@ bool DirectoryBackingStore::CreateModelsTable() {
       // Gets set if the syncer ever gets updates from the
       // server and the server returns 0.  Lets us detect the
       // end of the initial sync.
-      "transaction_version BIGINT default 0)");
+      "transaction_version BIGINT default 0,"
+      "context BLOB)");
 }
 
 bool DirectoryBackingStore::CreateShareInfoTable(bool is_temporary) {
@@ -1261,6 +1473,7 @@ bool DirectoryBackingStore::CreateShareInfoTable(bool is_temporary) {
       "db_create_time INT, "
       "next_id INT default -2, "
       "cache_guid TEXT, "
+      // TODO(rlarocque, 124140): Remove notification_state field.
       "notification_state BLOB, "
       "bag_of_chips BLOB"
       ")");
@@ -1285,10 +1498,10 @@ bool DirectoryBackingStore::CreateShareInfoTableVersion71(
 }
 
 // This function checks to see if the given list of Metahandles has any nodes
-// whose PREV_ID, PARENT_ID or NEXT_ID values refer to ID values that do not
-// actually exist.  Returns true on success.
+// whose PARENT_ID values refer to ID values that do not actually exist.
+// Returns true on success.
 bool DirectoryBackingStore::VerifyReferenceIntegrity(
-    const syncable::MetahandlesIndex &index) {
+    const Directory::MetahandlesMap* handles_map) {
   TRACE_EVENT0("sync", "SyncDatabaseIntegrityCheck");
   using namespace syncable;
   typedef base::hash_set<std::string> IdsSet;
@@ -1296,23 +1509,58 @@ bool DirectoryBackingStore::VerifyReferenceIntegrity(
   IdsSet ids_set;
   bool is_ok = true;
 
-  for (MetahandlesIndex::const_iterator it = index.begin();
-       it != index.end(); ++it) {
-    EntryKernel* entry = *it;
+  for (Directory::MetahandlesMap::const_iterator it = handles_map->begin();
+       it != handles_map->end(); ++it) {
+    EntryKernel* entry = it->second;
     bool is_duplicate_id = !(ids_set.insert(entry->ref(ID).value()).second);
     is_ok = is_ok && !is_duplicate_id;
   }
 
   IdsSet::iterator end = ids_set.end();
-  for (MetahandlesIndex::const_iterator it = index.begin();
-       it != index.end(); ++it) {
-    EntryKernel* entry = *it;
-    bool prev_exists = (ids_set.find(entry->ref(PREV_ID).value()) != end);
+  for (Directory::MetahandlesMap::const_iterator it = handles_map->begin();
+       it != handles_map->end(); ++it) {
+    EntryKernel* entry = it->second;
     bool parent_exists = (ids_set.find(entry->ref(PARENT_ID).value()) != end);
-    bool next_exists = (ids_set.find(entry->ref(NEXT_ID).value()) != end);
-    is_ok = is_ok && prev_exists && parent_exists && next_exists;
+    if (!parent_exists) {
+      return false;
+    }
   }
   return is_ok;
+}
+
+void DirectoryBackingStore::PrepareSaveEntryStatement(
+    EntryTable table, sql::Statement* save_statement) {
+  if (save_statement->is_valid())
+    return;
+
+  string query;
+  query.reserve(kUpdateStatementBufferSize);
+  switch (table) {
+    case METAS_TABLE:
+      query.append("INSERT OR REPLACE INTO metas ");
+      break;
+    case DELETE_JOURNAL_TABLE:
+      query.append("INSERT OR REPLACE INTO deleted_metas ");
+      break;
+  }
+
+  string values;
+  values.reserve(kUpdateStatementBufferSize);
+  values.append(" VALUES ");
+  const char* separator = "( ";
+  int i = 0;
+  for (i = BEGIN_FIELDS; i < FIELD_COUNT; ++i) {
+    query.append(separator);
+    values.append(separator);
+    separator = ", ";
+    query.append(ColumnName(i));
+    values.append("?");
+  }
+  query.append(" ) ");
+  values.append(" )");
+  query.append(values);
+  save_statement->Assign(db_->GetUniqueStatement(
+      base::StringPrintf(query.c_str(), "metas").c_str()));
 }
 
 }  // namespace syncable

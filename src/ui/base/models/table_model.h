@@ -7,9 +7,9 @@
 
 #include <vector>
 
-#include "base/string16.h"
-#include "ui/base/ui_export.h"
-#include "unicode/coll.h"
+#include "base/strings/string16.h"
+#include "third_party/icu/source/i18n/unicode/coll.h"
+#include "ui/base/ui_base_export.h"
 
 namespace gfx {
 class ImageSkia;
@@ -20,12 +20,12 @@ namespace ui {
 class TableModelObserver;
 
 // The model driving the TableView.
-class UI_EXPORT TableModel {
+class UI_BASE_EXPORT TableModel {
  public:
   // See HasGroups, get GetGroupID for details as to how this is used.
   struct Group {
     // The title text for the group.
-    string16 title;
+    base::string16 title;
 
     // Unique id for the group.
     int id;
@@ -36,7 +36,7 @@ class UI_EXPORT TableModel {
   virtual int RowCount() = 0;
 
   // Returns the value at a particular location in text.
-  virtual string16 GetText(int row, int column_id) = 0;
+  virtual base::string16 GetText(int row, int column_id) = 0;
 
   // Returns the small icon (16x16) that should be displayed in the first
   // column before the text. This is only used when the TableView was created
@@ -47,7 +47,7 @@ class UI_EXPORT TableModel {
   // Returns the tooltip, if any, to show for a particular row.  If there are
   // multiple columns in the row, this will only be shown when hovering over
   // column zero.
-  virtual string16 GetTooltip(int row);
+  virtual base::string16 GetTooltip(int row);
 
   // If true, this row should be indented.
   virtual bool ShouldIndent(int row);
@@ -91,7 +91,7 @@ class UI_EXPORT TableModel {
 };
 
 // TableColumn specifies the title, alignment and size of a particular column.
-struct UI_EXPORT TableColumn {
+struct UI_BASE_EXPORT TableColumn {
   enum Alignment {
     LEFT, RIGHT, CENTER
   };
@@ -103,7 +103,7 @@ struct UI_EXPORT TableColumn {
   int id;
 
   // The title for the column.
-  string16 title;
+  base::string16 title;
 
   // Alignment for the content.
   Alignment alignment;

@@ -7,10 +7,11 @@
 
 #include <vector>
 
-#include "chrome/browser/history/history.h"
-#include "chrome/browser/sessions/session_types.h"
 #include "base/basictypes.h"
-#include "webkit/glue/window_open_disposition.h"
+#include "chrome/browser/history/history_service.h"
+#include "chrome/browser/sessions/session_types.h"
+#include "chrome/browser/ui/host_desktop.h"
+#include "ui/base/window_open_disposition.h"
 
 class Browser;
 class Profile;
@@ -40,30 +41,46 @@ class SessionRestore {
   // Restores the last session. |behavior| is a bitmask of Behaviors, see it
   // for details. If |browser| is non-null the tabs for the first window are
   // added to it. Returns the last active browser.
+  // Every additional browser created will be created on the desktop specified
+  // by |host_desktop_type|, if |browser| is non-null it should have the same
+  // desktop type.
   //
   // If |urls_to_open| is non-empty, a tab is added for each of the URLs.
   static Browser* RestoreSession(Profile* profile,
                                  Browser* browser,
+                                 chrome::HostDesktopType host_desktop_type,
                                  uint32 behavior,
                                  const std::vector<GURL>& urls_to_open);
 
-  // Specifically used in the restoration of a foreign session.  This method
-  // restores the given session windows to a browser.
-  static void RestoreForeignSessionWindows(
+  // Restores the last session when the last session crashed. It's a wrapper
+  // of function RestoreSession.
+  static void RestoreSessionAfterCrash(Browser* browser);
+
+  // Specifically used in the restoration of a foreign session.  This function
+  // restores the given session windows to multiple browsers all of which
+  // will be created on the desktop specified by |host_desktop_type|. Returns
+  // the created Browsers.
+  static std::vector<Browser*> RestoreForeignSessionWindows(
       Profile* profile,
+      chrome::HostDesktopType host_desktop_type,
       std::vector<const SessionWindow*>::const_iterator begin,
       std::vector<const SessionWindow*>::const_iterator end);
 
   // Specifically used in the restoration of a foreign session.  This method
   // restores the given session tab to the browser of |source_web_contents| if
-  // the disposition is not NEW_WINDOW.
-  static void RestoreForeignSessionTab(
+  // the disposition is not NEW_WINDOW. Returns the WebContents corresponding
+  // to the restored tab. If |disposition| is CURRENT_TAB, |source_web_contents|
+  // may be destroyed.
+  static content::WebContents* RestoreForeignSessionTab(
       content::WebContents* source_web_contents,
       const SessionTab& tab,
       WindowOpenDisposition disposition);
 
   // Returns true if we're in the process of restoring |profile|.
   static bool IsRestoring(const Profile* profile);
+
+  // Returns true if synchronously restoring a session.
+  static bool IsRestoringSynchronously();
 
   // The max number of non-selected tabs SessionRestore loads when restoring
   // a session. A value of 0 indicates all tabs are loaded at once.

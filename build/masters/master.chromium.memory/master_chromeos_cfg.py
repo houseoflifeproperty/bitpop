@@ -14,7 +14,7 @@ F = helper.Factory
 S = helper.Scheduler
 T = helper.Triggerable
 
-def linux(): return chromium_factory.ChromiumFactory('src/build', 'linux2')
+def linux(): return chromium_factory.ChromiumFactory('src/out', 'linux2')
 
 # CrOS ASan bots below.
 defaults['category'] = '3chromeos asan'
@@ -31,12 +31,43 @@ T('chromeos_asan_rel_trigger')
 
 chromeos_asan_archive = master_config.GetArchiveUrl(
     'ChromiumMemory',
-    'Linux Chromium OS ASAN Builder',
-    'Linux_Chromium_OS_ASAN_Builder',
+    'Linux Chromium OS ASan LSan Builder',
+    'Linux_Chromium_OS_ASan_LSan_Builder',
     'linux')
 
+# Tests that are single-machine shard-safe.
+sharded_tests = [
+  'aura_unittests',
+  'base_unittests',
+  'browser_tests',
+  'cacheinvalidation_unittests',
+  'cc_unittests',
+  'chromedriver_tests',
+  'chromedriver_unittests',
+  'components_unittests',
+  'content_browsertests',
+  'content_unittests',
+  'crypto_unittests',
+  'device_unittests',
+  'events_unittests',
+  'gcm_unit_tests',
+  'gpu_unittests',
+  'jingle_unittests',
+  'media_unittests',
+  'net_unittests',
+  'ppapi_unittests',
+  'printing_unittests',
+  'remoting_unittests',
+  'sync_integration_tests',
+  'sync_unit_tests',
+  'ui_unittests',
+  'unit_tests',
+  'views_unittests',
+  'webkit_compositor_bindings_unittests',
+]
+
 #
-# CrOS ASAN Rel Builder
+# CrOS ASan LSan Rel Builder
 #
 linux_aura_options = [
   'aura_builder',
@@ -48,18 +79,19 @@ linux_aura_options = [
   'content_browsertests',
   'content_unittests',
   'crypto_unittests',
-  'googleurl_unittests',
+  'gcm_unit_tests',
   'gpu_unittests',
   'interactive_ui_tests',
   'ipc_tests',
   'jingle_unittests',
-  'net_unittests',
   'media_unittests',
+  'net_unittests',
   'ppapi_unittests',
   'printing_unittests',
   'remoting_unittests',
   'sql_unittests',
   'ui_unittests',
+  'url_unittests',
 ]
 
 # Please do not add release_extra_cflags=-g here until the debug info section
@@ -68,11 +100,17 @@ fp_chromeos_asan = {
     'asan': True,
     'gclient_env': {
         'GYP_DEFINES': ('asan=1 '
-                        'linux_use_tcmalloc=0 '
+                        'use_allocator=none '
+                        'lsan=1 '
                         'chromeos=1 '),
-        'GYP_GENERATORS': 'ninja' }}
+        'GYP_GENERATORS': 'ninja',
+    },
+    'lsan': True,
+    'lsan_run_all_tests': True,
+    'sharded_tests': sharded_tests,
+}
 
-B('Linux Chromium OS ASAN Builder', 'chromeos_asan_rel', 'compile',
+B('Linux Chromium OS ASan LSan Builder', 'chromeos_asan_rel', 'compile',
   'chromeos_asan_rel', auto_reboot=False, notify_on_missing=True)
 F('chromeos_asan_rel', linux().ChromiumASANFactory(
     slave_type='Builder',
@@ -84,31 +122,34 @@ F('chromeos_asan_rel', linux().ChromiumASANFactory(
                             trigger='chromeos_asan_rel_trigger')))
 
 #
-# CrOS ASAN Rel testers
+# CrOS ASan LSan Rel testers
 #
 
 asan_tests_1 = [
   'ash_unittests',
   'aura',
-  'base',
+  'base_unittests',
   'browser_tests',
-  'cacheinvalidation',
+  'cacheinvalidation_unittests',
   'chromeos_unittests',
   'compositor',
   'content_browsertests',
-  'crypto',
-  'googleurl',
+  'crypto_unittests',
+  'events',
+  'gcm_unit_tests',
   'gpu',
   'jingle',
   'media',
   'ppapi_unittests',
   'printing',
   'remoting',
+  'url_unittests',
   'views',
 ]
 
 asan_tests_2 = [
   'browser_tests',
+  'interactive_ui_tests',
   'net',
 ]
 
@@ -117,8 +158,8 @@ asan_tests_3 = [
   'unit',
 ]
 
-B('Linux Chromium OS ASAN Tests (1)', 'chromeos_asan_rel_tests_1', 'testers',
-  'chromeos_asan_rel_trigger', notify_on_missing=True)
+B('Linux Chromium OS ASan LSan Tests (1)', 'chromeos_asan_rel_tests_1',
+  'testers', 'chromeos_asan_rel_trigger', notify_on_missing=True)
 F('chromeos_asan_rel_tests_1', linux().ChromiumASANFactory(
     slave_type='Tester',
     build_url=chromeos_asan_archive,
@@ -127,8 +168,8 @@ F('chromeos_asan_rel_tests_1', linux().ChromiumASANFactory(
                             browser_total_shards='3',
                             browser_shard_index='1')))
 
-B('Linux Chromium OS ASAN Tests (2)', 'chromeos_asan_rel_tests_2', 'testers',
-  'chromeos_asan_rel_trigger', notify_on_missing=True)
+B('Linux Chromium OS ASan LSan Tests (2)', 'chromeos_asan_rel_tests_2',
+  'testers', 'chromeos_asan_rel_trigger', notify_on_missing=True)
 F('chromeos_asan_rel_tests_2', linux().ChromiumASANFactory(
     slave_type='Tester',
     build_url=chromeos_asan_archive,
@@ -137,8 +178,8 @@ F('chromeos_asan_rel_tests_2', linux().ChromiumASANFactory(
                             browser_total_shards='3',
                             browser_shard_index='2')))
 
-B('Linux Chromium OS ASAN Tests (3)', 'chromeos_asan_rel_tests_3', 'testers',
-  'chromeos_asan_rel_trigger', notify_on_missing=True)
+B('Linux Chromium OS ASan LSan Tests (3)', 'chromeos_asan_rel_tests_3',
+  'testers', 'chromeos_asan_rel_trigger', notify_on_missing=True)
 F('chromeos_asan_rel_tests_3', linux().ChromiumASANFactory(
     slave_type='Tester',
     build_url=chromeos_asan_archive,
@@ -147,9 +188,10 @@ F('chromeos_asan_rel_tests_3', linux().ChromiumASANFactory(
                             browser_total_shards='3',
                             browser_shard_index='3')))
 
-B('Chromium OS (x86) ASAN',
+B('Chromium OS (x86) ASan',
   factory='x86_asan',
   builddir='chromium-tot-chromeos-x86-generic-asan',
+  gatekeeper='crosasantest',
   scheduler='chromeos_asan_rel',
   notify_on_missing=True)
 F('x86_asan', chromeos_factory.CbuildbotFactory(
@@ -157,9 +199,10 @@ F('x86_asan', chromeos_factory.CbuildbotFactory(
   pass_revision=True,
   params='x86-generic-tot-asan-informational').get_factory())
 
-B('Chromium OS (amd64) ASAN',
+B('Chromium OS (amd64) ASan',
   factory='amd64_asan',
   builddir='chromium-tot-chromeos-amd64-generic-asan',
+  gatekeeper='crosasantest',
   scheduler='chromeos_asan_rel',
   notify_on_missing=True)
 F('amd64_asan', chromeos_factory.CbuildbotFactory(

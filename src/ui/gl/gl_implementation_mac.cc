@@ -3,13 +3,14 @@
 // found in the LICENSE file.
 
 #include "base/base_paths.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/mac/foundation_util.h"
 #include "base/native_library.h"
 #include "base/path_service.h"
 #include "base/threading/thread_restrictions.h"
 #include "ui/gl/gl_bindings.h"
+#include "ui/gl/gl_context_stub_with_extensions.h"
 #include "ui/gl/gl_gl_api_implementation.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_osmesa_api_implementation.h"
@@ -26,12 +27,11 @@ void GetAllowedGLImplementations(std::vector<GLImplementation>* impls) {
   impls->push_back(kGLImplementationOSMesaGL);
 }
 
-bool InitializeGLBindings(GLImplementation implementation) {
+bool InitializeStaticGLBindings(GLImplementation implementation) {
   // Prevent reinitialization with a different implementation. Once the gpu
   // unit tests have initialized with kGLImplementationMock, we don't want to
   // later switch to another GL implementation.
-  if (GetGLImplementation() != kGLImplementationNone)
-    return true;
+  DCHECK_EQ(kGLImplementationNone, GetGLImplementation());
 
   // Allow the main thread or another to initialize these bindings
   // after instituting restrictions on I/O. Going forward they will
@@ -43,18 +43,18 @@ bool InitializeGLBindings(GLImplementation implementation) {
     case kGLImplementationOSMesaGL: {
       // osmesa.so is located in the build directory. This code path is only
       // valid in a developer build environment.
-      FilePath exe_path;
+      base::FilePath exe_path;
       if (!PathService::Get(base::FILE_EXE, &exe_path)) {
         LOG(ERROR) << "PathService::Get failed.";
         return false;
       }
-      FilePath bundle_path = base::mac::GetAppBundlePath(exe_path);
+      base::FilePath bundle_path = base::mac::GetAppBundlePath(exe_path);
       // Some unit test targets depend on osmesa but aren't built as app
       // bundles. In that case, the .so is next to the executable.
       if (bundle_path.empty())
         bundle_path = exe_path;
-      FilePath build_dir_path = bundle_path.DirName();
-      FilePath osmesa_path = build_dir_path.Append("osmesa.so");
+      base::FilePath build_dir_path = bundle_path.DirName();
+      base::FilePath osmesa_path = build_dir_path.Append("osmesa.so");
 
       // When using OSMesa, just use OSMesaGetProcAddress to find entry points.
       base::NativeLibrary library = base::LoadNativeLibrary(osmesa_path, NULL);
@@ -77,14 +77,14 @@ bool InitializeGLBindings(GLImplementation implementation) {
       AddGLNativeLibrary(library);
       SetGLImplementation(kGLImplementationOSMesaGL);
 
-      InitializeGLBindingsGL();
-      InitializeGLBindingsOSMESA();
+      InitializeStaticGLBindingsGL();
+      InitializeStaticGLBindingsOSMESA();
       break;
     }
     case kGLImplementationDesktopGL:
     case kGLImplementationAppleGL: {
       base::NativeLibrary library = base::LoadNativeLibrary(
-          FilePath(kOpenGLFrameworkPath), NULL);
+          base::FilePath(kOpenGLFrameworkPath), NULL);
       if (!library) {
         LOG(ERROR) << "OpenGL framework not found";
         return false;
@@ -93,13 +93,12 @@ bool InitializeGLBindings(GLImplementation implementation) {
       AddGLNativeLibrary(library);
       SetGLImplementation(implementation);
 
-      InitializeGLBindingsGL();
+      InitializeStaticGLBindingsGL();
       break;
     }
     case kGLImplementationMockGL: {
-      SetGLGetProcAddressProc(GetMockGLProcAddress);
       SetGLImplementation(kGLImplementationMockGL);
-      InitializeGLBindingsGL();
+      InitializeStaticGLBindingsGL();
       break;
     }
     default:
@@ -109,19 +108,25 @@ bool InitializeGLBindings(GLImplementation implementation) {
   return true;
 }
 
-bool InitializeGLExtensionBindings(GLImplementation implementation,
+bool InitializeDynamicGLBindings(GLImplementation implementation,
     GLContext* context) {
   switch (implementation) {
     case kGLImplementationOSMesaGL:
-      InitializeGLExtensionBindingsGL(context);
-      InitializeGLExtensionBindingsOSMESA(context);
+      InitializeDynamicGLBindingsGL(context);
+      InitializeDynamicGLBindingsOSMESA(context);
       break;
     case kGLImplementationDesktopGL:
     case kGLImplementationAppleGL:
-      InitializeGLExtensionBindingsGL(context);
+      InitializeDynamicGLBindingsGL(context);
       break;
     case kGLImplementationMockGL:
-      InitializeGLExtensionBindingsGL(context);
+      if (!context) {
+        scoped_refptr<GLContextStubWithExtensions> mock_context(
+            new GLContextStubWithExtensions());
+        mock_context->SetGLVersionString("3.0");
+        InitializeDynamicGLBindingsGL(mock_context.get());
+      } else
+        InitializeDynamicGLBindingsGL(context);
       break;
     default:
       return false;
@@ -141,6 +146,10 @@ void ClearGLBindings() {
   SetGLImplementation(kGLImplementationNone);
 
   UnloadGLNativeLibraries();
+}
+
+bool GetGLWindowSystemBindingInfo(GLWindowSystemBindingInfo* info) {
+  return false;
 }
 
 }  // namespace gfx

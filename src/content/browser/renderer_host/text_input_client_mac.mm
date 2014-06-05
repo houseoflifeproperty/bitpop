@@ -7,7 +7,7 @@
 #include "base/memory/singleton.h"
 #include "base/metrics/histogram.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/text_input_client_messages.h"
 
@@ -31,6 +31,24 @@ TextInputClientMac::~TextInputClientMac() {
 // static
 TextInputClientMac* TextInputClientMac::GetInstance() {
   return Singleton<TextInputClientMac>::get();
+}
+
+void TextInputClientMac::GetStringAtPoint(
+    RenderWidgetHost* rwh,
+    gfx::Point point,
+    void (^replyHandler)(NSAttributedString*, NSPoint)) {
+  DCHECK(replyHandler_.get() == nil);
+  replyHandler_.reset(replyHandler, base::scoped_policy::RETAIN);
+  RenderWidgetHostImpl* rwhi = RenderWidgetHostImpl::From(rwh);
+  rwhi->Send(new TextInputClientMsg_StringAtPoint(rwhi->GetRoutingID(), point));
+}
+
+void TextInputClientMac::GetStringAtPointReply(NSAttributedString* string,
+                                               NSPoint point) {
+  if (replyHandler_.get()) {
+    replyHandler_.get()(string, point);
+    replyHandler_.reset();
+  }
 }
 
 NSUInteger TextInputClientMac::GetCharacterIndexAtPoint(RenderWidgetHost* rwh,
@@ -61,7 +79,7 @@ NSRect TextInputClientMac::GetFirstRectForRange(RenderWidgetHost* rwh,
   RenderWidgetHostImpl* rwhi = RenderWidgetHostImpl::From(rwh);
   rwhi->Send(
       new TextInputClientMsg_FirstRectForCharacterRange(rwhi->GetRoutingID(),
-                                                        ui::Range(range)));
+                                                        gfx::Range(range)));
   // http://crbug.com/121917
   base::ThreadRestrictions::ScopedAllowWait allow_wait;
   condition_.TimedWait(base::TimeDelta::FromMilliseconds(kWaitTimeout));
@@ -82,7 +100,7 @@ NSAttributedString* TextInputClientMac::GetAttributedSubstringFromRange(
   BeforeRequest();
   RenderWidgetHostImpl* rwhi = RenderWidgetHostImpl::From(rwh);
   rwhi->Send(new TextInputClientMsg_StringForRange(rwhi->GetRoutingID(),
-                                                   ui::Range(range)));
+                                                   gfx::Range(range)));
   // http://crbug.com/121917
   base::ThreadRestrictions::ScopedAllowWait allow_wait;
   condition_.TimedWait(base::TimeDelta::FromMilliseconds(kWaitTimeout));

@@ -7,10 +7,12 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/memory/scoped_ptr.h"
 #include "skia/ext/platform_canvas.h"
 #include "ui/native_theme/native_theme.h"
 
 namespace gfx {
+class Canvas;
 class ImageSkia;
 class Rect;
 class Size;
@@ -35,6 +37,9 @@ class NATIVE_THEME_EXPORT NativeThemeBase : public NativeTheme {
   NativeThemeBase();
   virtual ~NativeThemeBase();
 
+  // Creates a gfx::Canvas wrapping an SkCanvas.
+  static scoped_ptr<gfx::Canvas> CreateCanvas(SkCanvas* sk_canvas);
+
   // Draw the arrow. Used by scrollbar and inner spin button.
   virtual void PaintArrowButton(
       SkCanvas* gc,
@@ -55,6 +60,10 @@ class NATIVE_THEME_EXPORT NativeThemeBase : public NativeTheme {
       Part part,
       State state,
       const gfx::Rect& rect) const;
+
+  virtual void PaintScrollbarCorner(SkCanvas* canvas,
+                                    State state,
+                                    const gfx::Rect& rect) const;
 
   virtual void PaintCheckbox(
       SkCanvas* canvas,
@@ -86,8 +95,10 @@ class NATIVE_THEME_EXPORT NativeThemeBase : public NativeTheme {
       const gfx::Rect& rect,
       const MenuListExtraParams& menu_list) const;
 
-  virtual void PaintMenuPopupBackground(SkCanvas* canvas,
-                                        const gfx::Size& size) const;
+  virtual void PaintMenuPopupBackground(
+      SkCanvas* canvas,
+      const gfx::Size& size,
+      const MenuBackgroundExtraParams& menu_background) const;
 
   virtual void PaintMenuItemBackground(
       SkCanvas* canvas,
@@ -119,10 +130,10 @@ class NATIVE_THEME_EXPORT NativeThemeBase : public NativeTheme {
       const gfx::Rect& rect,
       const ProgressBarExtraParams& progress_bar) const;
 
- protected:
   void set_scrollbar_button_length(unsigned int length) {
     scrollbar_button_length_ = length;
   }
+  int scrollbar_button_length() const { return scrollbar_button_length_; }
 
   bool IntersectsClipRectInt(SkCanvas* canvas,
                              int x, int y, int w, int h) const;
@@ -140,6 +151,16 @@ class NATIVE_THEME_EXPORT NativeThemeBase : public NativeTheme {
   SkColor SaturateAndBrighten(SkScalar* hsv,
                               SkScalar saturate_amount,
                               SkScalar brighten_amount) const;
+
+  // Paints the arrow used on the scrollbar and spinner.
+  void PaintArrow(SkCanvas* canvas,
+                  const gfx::Rect& rect,
+                  Part direction,
+                  SkColor color) const;
+
+  // Returns the color used to draw the arrow.
+  SkColor GetArrowColor(State state) const;
+
  private:
   void DrawVertLine(SkCanvas* canvas,
                     int x,
@@ -159,34 +180,13 @@ class NATIVE_THEME_EXPORT NativeThemeBase : public NativeTheme {
                  SkScalar max) const;
   SkColor OutlineColor(SkScalar* hsv1, SkScalar* hsv2) const;
 
-  // Returns whether the new vector-graphics based checkbox and radio button
-  // style is enabled.
-  bool IsNewCheckboxStyleEnabled(SkCanvas* canvas) const;
-
-  // Paint the common parts of the new (experimental) checkboxes and radio
-  // buttons.
+  // Paint the common parts of the checkboxes and radio buttons.
   // borderRadius specifies how rounded the corners should be.
-  SkRect PaintCheckboxRadioNewCommon(
+  SkRect PaintCheckboxRadioCommon(
       SkCanvas* canvas,
       State state,
       const gfx::Rect& rect,
       const SkScalar borderRadius) const;
-
-  // Paint an (experimental) vector-graphics based checkbox on the supplied
-  // canvas at the specified co-ordinates.
-  void PaintCheckboxNew(
-      SkCanvas* canvas,
-      State state,
-      const gfx::Rect& rect,
-      const ButtonExtraParams& button) const;
-
-  // Paint an (experimental) vector-graphics based radio button on the
-  // supplied canbas at the specified co-ordinates.
-  void PaintRadioNew(
-      SkCanvas* canvas,
-      State state,
-      const gfx::Rect& rect,
-      const ButtonExtraParams& button) const;
 
   unsigned int scrollbar_width_;
   unsigned int scrollbar_button_length_;

@@ -6,19 +6,29 @@
 
 #include <string>
 
+#include "base/metrics/histogram.h"
+#include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "base/version.h"
-#include "chrome/browser/net/url_fixer_upper.h"
-#include "chrome/browser/prefs/pref_service.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 
 #if defined(OS_MACOSX)
 #include "chrome/browser/ui/cocoa/window_restore_utils.h"
 #endif
 
 namespace {
+
+enum StartupURLsMigrationMetrics {
+  STARTUP_URLS_MIGRATION_METRICS_PERFORMED,
+  STARTUP_URLS_MIGRATION_METRICS_NOT_PRESENT,
+  STARTUP_URLS_MIGRATION_METRICS_RESET,
+  STARTUP_URLS_MIGRATION_METRICS_MAX,
+};
 
 // Converts a SessionStartupPref::Type to an integer written to prefs.
 int TypeToPrefValue(SessionStartupPref::Type type) {
@@ -44,7 +54,7 @@ void URLListToPref(const base::ListValue* url_list, SessionStartupPref* pref) {
   for (size_t i = 0; i < url_list->GetSize(); ++i) {
     std::string url_text;
     if (url_list->GetString(i, &url_text)) {
-      GURL fixed_url = URLFixerUpper::FixupURL(url_text, "");
+      GURL fixed_url = URLFixerUpper::FixupURL(url_text, std::string());
       pref->urls.push_back(fixed_url);
     }
   }
@@ -53,15 +63,24 @@ void URLListToPref(const base::ListValue* url_list, SessionStartupPref* pref) {
 }  // namespace
 
 // static
-void SessionStartupPref::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterIntegerPref(prefs::kRestoreOnStartup,
-                             TypeToPrefValue(GetDefaultStartupType()),
-                             PrefService::SYNCABLE_PREF);
-  prefs->RegisterListPref(prefs::kURLsToRestoreOnStartup,
-                          PrefService::SYNCABLE_PREF);
-  prefs->RegisterBooleanPref(prefs::kRestoreOnStartupMigrated,
-                             false,
-                             PrefService::UNSYNCABLE_PREF);
+void SessionStartupPref::RegisterProfilePrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterIntegerPref(
+      prefs::kRestoreOnStartup,
+      TypeToPrefValue(GetDefaultStartupType()),
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kURLsToRestoreOnStartup,
+                             user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kURLsToRestoreOnStartupOld,
+                             user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kRestoreOnStartupMigrated,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterInt64Pref(
+      prefs::kRestoreStartupURLsMigrationTime,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 // static
@@ -94,12 +113,12 @@ void SessionStartupPref::SetStartupPref(PrefService* prefs,
     // user changes the startup type pref.
     // Ownership of the ListValue retains with the pref service.
     ListPrefUpdate update(prefs, prefs::kURLsToRestoreOnStartup);
-    ListValue* url_pref_list = update.Get();
+    base::ListValue* url_pref_list = update.Get();
     DCHECK(url_pref_list);
     url_pref_list->Clear();
     for (size_t i = 0; i < pref.urls.size(); ++i) {
       url_pref_list->Set(static_cast<int>(i),
-                         new StringValue(pref.urls[i].spec()));
+                         new base::StringValue(pref.urls[i].spec()));
     }
   }
 }
@@ -122,7 +141,8 @@ SessionStartupPref SessionStartupPref::GetStartupPref(PrefService* prefs) {
 
   // Always load the urls, even if the pref type isn't URLS. This way the
   // preferences panels can show the user their last choice.
-  const ListValue* url_list = prefs->GetList(prefs::kURLsToRestoreOnStartup);
+  const base::ListValue* url_list =
+      prefs->GetList(prefs::kURLsToRestoreOnStartup);
   URLListToPref(url_list, &pref);
 
   return pref;
@@ -132,8 +152,56 @@ SessionStartupPref SessionStartupPref::GetStartupPref(PrefService* prefs) {
 void SessionStartupPref::MigrateIfNecessary(PrefService* prefs) {
   DCHECK(prefs);
 
+  // Check if we need to migrate the old version of the startup URLs preference
+  // to the new name, and also send metrics about the migration.
+  StartupURLsMigrationMetrics metrics_result =
+      STARTUP_URLS_MIGRATION_METRICS_MAX;
+  const base::ListValue* old_startup_urls =
+      prefs->GetList(prefs::kURLsToRestoreOnStartupOld);
+  if (!prefs->GetUserPrefValue(prefs::kRestoreStartupURLsMigrationTime)) {
+    // Record the absence of the migration timestamp, this will get overwritten
+    // below if migration occurs now.
+    metrics_result = STARTUP_URLS_MIGRATION_METRICS_NOT_PRESENT;
+
+    // Seems like we never migrated, do it if necessary.
+    if (!prefs->GetUserPrefValue(prefs::kURLsToRestoreOnStartup)) {
+      if (old_startup_urls && !old_startup_urls->empty()) {
+        prefs->Set(prefs::kURLsToRestoreOnStartup, *old_startup_urls);
+        prefs->ClearPref(prefs::kURLsToRestoreOnStartupOld);
+      }
+      metrics_result = STARTUP_URLS_MIGRATION_METRICS_PERFORMED;
+    }
+
+    prefs->SetInt64(prefs::kRestoreStartupURLsMigrationTime,
+                    base::Time::Now().ToInternalValue());
+  } else if (old_startup_urls && !old_startup_urls->empty()) {
+    // Migration needs to be reset.
+    prefs->ClearPref(prefs::kURLsToRestoreOnStartupOld);
+    base::Time last_migration_time = base::Time::FromInternalValue(
+        prefs->GetInt64(prefs::kRestoreStartupURLsMigrationTime));
+    base::Time now = base::Time::Now();
+    prefs->SetInt64(prefs::kRestoreStartupURLsMigrationTime,
+                    now.ToInternalValue());
+    if (now < last_migration_time)
+      last_migration_time = now;
+    UMA_HISTOGRAM_CUSTOM_TIMES("Settings.StartupURLsResetTime",
+                               now - last_migration_time,
+                               base::TimeDelta::FromDays(0),
+                               base::TimeDelta::FromDays(7),
+                               50);
+    metrics_result = STARTUP_URLS_MIGRATION_METRICS_RESET;
+  }
+
+  // Record a metric migration event if something interesting happened.
+  if (metrics_result != STARTUP_URLS_MIGRATION_METRICS_MAX) {
+    UMA_HISTOGRAM_ENUMERATION(
+          "Settings.StartupURLsMigration",
+          metrics_result,
+          STARTUP_URLS_MIGRATION_METRICS_MAX);
+  }
+
   if (!prefs->GetBoolean(prefs::kRestoreOnStartupMigrated)) {
-    // Read existing values
+    // Read existing values.
     const base::Value* homepage_is_new_tab_page_value =
         prefs->GetUserPrefValue(prefs::kHomePageIsNewTabPage);
     bool homepage_is_new_tab_page = true;
@@ -185,8 +253,11 @@ void SessionStartupPref::MigrateMacDefaultPrefIfNecessary(PrefService* prefs) {
   // The default startup pref used to be LAST, now it is DEFAULT. Don't change
   // the setting for existing profiles (even if the user has never changed it),
   // but make new profiles default to DEFAULT.
-  bool old_profile_version = Version(prefs->GetString(
-      prefs::kProfileCreatedByVersion)).IsOlderThan("21.0.1180.0");
+  bool old_profile_version =
+      !prefs->FindPreference(
+          prefs::kProfileCreatedByVersion)->IsDefaultValue() &&
+      Version(prefs->GetString(prefs::kProfileCreatedByVersion)).IsOlderThan(
+          "21.0.1180.0");
   if (old_profile_version && TypeIsDefault(prefs))
     prefs->SetInteger(prefs::kRestoreOnStartup, kPrefValueLast);
 #endif

@@ -18,9 +18,9 @@
 
 #include "base/basictypes.h"
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "rlz/lib/lib_values.h"
 #include "rlz/lib/machine_id.h"
 #include "rlz/lib/rlz_lib.h"
@@ -32,7 +32,7 @@
 #if defined(OS_WIN)
 #include "rlz/win/lib/machine_deal.h"
 #else
-#include "base/time.h"
+#include "base/time/time.h"
 #endif
 
 namespace {

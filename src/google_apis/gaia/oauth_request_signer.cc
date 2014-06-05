@@ -16,34 +16,32 @@
 #include "base/format_macros.h"
 #include "base/logging.h"
 #include "base/rand_util.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "base/time.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/time/time.h"
 #include "crypto/hmac.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace {
 
-static const int kHexBase = 16;
-static char kHexDigits[] = "0123456789ABCDEF";
-static const size_t kHmacDigestLength = 20;
-static const int kMaxNonceLength = 30;
-static const int kMinNonceLength = 15;
+const int kHexBase = 16;
+char kHexDigits[] = "0123456789ABCDEF";
+const size_t kHmacDigestLength = 20;
+const int kMaxNonceLength = 30;
+const int kMinNonceLength = 15;
 
-static const char kOAuthConsumerKeyLabel[] = "oauth_consumer_key";
-static const char kOAuthConsumerSecretLabel[] = "oauth_consumer_secret";
-static const char kOAuthNonceCharacters[] =
+const char kOAuthConsumerKeyLabel[] = "oauth_consumer_key";
+const char kOAuthNonceCharacters[] =
     "abcdefghijklmnopqrstuvwyz"
     "ABCDEFGHIJKLMNOPQRSTUVWYZ"
     "0123456789_";
-static const char kOAuthNonceLabel[] = "oauth_nonce";
-static const char kOAuthSignatureLabel[] = "oauth_signature";
-static const char kOAuthSignatureMethodLabel[] = "oauth_signature_method";
-static const char kOAuthTimestampLabel[] = "oauth_timestamp";
-static const char kOAuthTokenLabel[] = "oauth_token";
-static const char kOAuthTokenSecretLabel[] = "oauth_token_secret";
-static const char kOAuthVersion[] = "1.0";
-static const char kOAuthVersionLabel[] = "oauth_version";
+const char kOAuthNonceLabel[] = "oauth_nonce";
+const char kOAuthSignatureLabel[] = "oauth_signature";
+const char kOAuthSignatureMethodLabel[] = "oauth_signature_method";
+const char kOAuthTimestampLabel[] = "oauth_timestamp";
+const char kOAuthTokenLabel[] = "oauth_token";
+const char kOAuthVersion[] = "1.0";
+const char kOAuthVersionLabel[] = "oauth_version";
 
 enum ParseQueryState {
   START_STATE,
@@ -79,17 +77,17 @@ const std::string SignatureMethodName(
 std::string BuildBaseString(const GURL& request_base_url,
                             OAuthRequestSigner::HttpMethod http_method,
                             const std::string& base_parameters) {
-  return StringPrintf("%s&%s&%s",
-                      HttpMethodName(http_method).c_str(),
-                      OAuthRequestSigner::Encode(
-                          request_base_url.spec()).c_str(),
-                      OAuthRequestSigner::Encode(
-                          base_parameters).c_str());
+  return base::StringPrintf("%s&%s&%s",
+                            HttpMethodName(http_method).c_str(),
+                            OAuthRequestSigner::Encode(
+                                request_base_url.spec()).c_str(),
+                            OAuthRequestSigner::Encode(
+                                base_parameters).c_str());
 }
 
 std::string BuildBaseStringParameters(
     const OAuthRequestSigner::Parameters& parameters) {
-  std::string result = "";
+  std::string result;
   OAuthRequestSigner::Parameters::const_iterator cursor;
   OAuthRequestSigner::Parameters::const_iterator limit;
   bool first = true;
@@ -206,10 +204,12 @@ bool SignHmacSha1(const std::string& text,
   DCHECK(hmac.DigestLength() == kHmacDigestLength);
   unsigned char digest[kHmacDigestLength];
   bool result = hmac.Init(key) &&
-      hmac.Sign(text, digest, kHmacDigestLength) &&
-      base::Base64Encode(std::string(reinterpret_cast<const char*>(digest),
-                                     kHmacDigestLength),
-                         signature_return);
+      hmac.Sign(text, digest, kHmacDigestLength);
+  if (result) {
+    base::Base64Encode(
+        std::string(reinterpret_cast<const char*>(digest), kHmacDigestLength),
+        signature_return);
+  }
   return result;
 }
 
@@ -297,7 +297,7 @@ bool SignParameters(const GURL& request_base_url,
 // static
 bool OAuthRequestSigner::Decode(const std::string& text,
                                 std::string* decoded_text) {
-  std::string accumulator = "";
+  std::string accumulator;
   std::string::const_iterator cursor;
   std::string::const_iterator limit;
   for (limit = text.end(), cursor = text.begin(); cursor != limit; ++cursor) {
@@ -335,7 +335,7 @@ bool OAuthRequestSigner::Decode(const std::string& text,
 
 // static
 std::string OAuthRequestSigner::Encode(const std::string& text) {
-  std::string result = "";
+  std::string result;
   std::string::const_iterator cursor;
   std::string::const_iterator limit;
   for (limit = text.end(), cursor = text.begin(); cursor != limit; ++cursor) {
@@ -448,9 +448,10 @@ bool OAuthRequestSigner::SignAuthHeader(
       else
         signed_text += ", ";
       signed_text +=
-          StringPrintf("%s=\"%s\"",
-                       OAuthRequestSigner::Encode(param->first).c_str(),
-                       OAuthRequestSigner::Encode(param->second).c_str());
+          base::StringPrintf(
+              "%s=\"%s\"",
+              OAuthRequestSigner::Encode(param->first).c_str(),
+              OAuthRequestSigner::Encode(param->second).c_str());
     }
     *signed_text_return = signed_text;
   }

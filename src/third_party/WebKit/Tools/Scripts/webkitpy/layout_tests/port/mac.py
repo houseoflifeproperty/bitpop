@@ -1,5 +1,4 @@
-# Copyright (C) 2011 Google Inc. All rights reserved.
-# Copyright (C) 2012 Apple Inc. All rights reserved.
+# Copyright (C) 2010 Google Inc. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are
@@ -11,7 +10,7 @@
 # copyright notice, this list of conditions and the following disclaimer
 # in the documentation and/or other materials provided with the
 # distribution.
-#     * Neither the Google name nor the names of its
+#     * Neither the name of Google Inc. nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
 #
@@ -27,248 +26,105 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import logging
-import os
-import time
+"""Chromium Mac implementation of the Port interface."""
 
-from webkitpy.common.system.crashlogs import CrashLogs
-from webkitpy.common.system.executive import ScriptError
-from webkitpy.layout_tests.port.apple import ApplePort
-from webkitpy.layout_tests.port.leakdetector import LeakDetector
+import logging
+import signal
+
+from webkitpy.layout_tests.port import base
 
 
 _log = logging.getLogger(__name__)
 
 
-class MacPort(ApplePort):
-    port_name = "mac"
+class MacPort(base.Port):
+    SUPPORTED_VERSIONS = ('snowleopard', 'lion', 'retina', 'mountainlion', 'mavericks')
+    port_name = 'mac'
 
-    VERSION_FALLBACK_ORDER = ['mac-snowleopard', 'mac-lion', 'mac-mountainlion']
+    # FIXME: We treat Retina (High-DPI) devices as if they are running
+    # a different operating system version. This is lame and should be fixed.
+    # Note that the retina versions fallback to the non-retina versions and so no
+    # baselines are shared between retina versions; this keeps the fallback graph as a tree
+    # and maximizes the number of baselines we can share that way.
+    # We also currently only support Retina on 10.8; we need to either upgrade to 10.9 or support both.
 
-    ARCHITECTURES = ['x86_64', 'x86']
+    FALLBACK_PATHS = {}
+    FALLBACK_PATHS['mavericks'] = ['mac']
+    FALLBACK_PATHS['mountainlion'] = ['mac-mountainlion'] + FALLBACK_PATHS['mavericks']
+    FALLBACK_PATHS['retina'] = ['mac-retina'] + FALLBACK_PATHS['mountainlion']
+    FALLBACK_PATHS['lion'] = ['mac-lion'] + FALLBACK_PATHS['mountainlion']
+    FALLBACK_PATHS['snowleopard'] = ['mac-snowleopard'] + FALLBACK_PATHS['lion']
+
+    DEFAULT_BUILD_DIRECTORIES = ('xcodebuild', 'out')
+
+    CONTENT_SHELL_NAME = 'Content Shell'
+
+    BUILD_REQUIREMENTS_URL = 'https://code.google.com/p/chromium/wiki/MacBuildInstructions'
+
+    @classmethod
+    def determine_full_port_name(cls, host, options, port_name):
+        if port_name.endswith('mac'):
+            if host.platform.os_version in ('future',):
+                version = 'mavericks'
+            else:
+                version = host.platform.os_version
+            if host.platform.is_highdpi():
+                version = 'retina'
+            return port_name + '-' + version
+        return port_name
 
     def __init__(self, host, port_name, **kwargs):
-        ApplePort.__init__(self, host, port_name, **kwargs)
-        self._architecture = self.get_option('architecture')
+        super(MacPort, self).__init__(host, port_name, **kwargs)
+        self._version = port_name[port_name.index('mac-') + len('mac-'):]
+        assert self._version in self.SUPPORTED_VERSIONS
 
-        if not self._architecture:
-            self._architecture = 'x86_64'
+    def _modules_to_search_for_symbols(self):
+        return [self._build_path('ffmpegsumo.so')]
 
-        self._leak_detector = LeakDetector(self)
-        if self.get_option("leaks"):
-            # DumpRenderTree slows down noticably if we run more than about 1000 tests in a batch
-            # with MallocStackLogging enabled.
-            self.set_option_default("batch_size", 1000)
+    def check_build(self, needs_http, printer):
+        result = super(MacPort, self).check_build(needs_http, printer)
+        if result:
+            _log.error('For complete Mac build requirements, please see:')
+            _log.error('')
+            _log.error('    http://code.google.com/p/chromium/wiki/MacBuildInstructions')
 
-    def default_timeout_ms(self):
-        if self.get_option('guard_malloc'):
-            return 350 * 1000
-        return super(MacPort, self).default_timeout_ms()
-
-    def _build_driver_flags(self):
-        return ['ARCHS=i386'] if self.architecture() == 'x86' else []
-
-    def should_retry_crashes(self):
-        # On Apple Mac, we retry crashes due to https://bugs.webkit.org/show_bug.cgi?id=82233
-        return True
-
-    def default_baseline_search_path(self):
-        name = self._name.replace('-wk2', '')
-        if name.endswith(self.FUTURE_VERSION):
-            fallback_names = [self.port_name]
-        else:
-            fallback_names = self.VERSION_FALLBACK_ORDER[self.VERSION_FALLBACK_ORDER.index(name):-1] + [self.port_name]
-        if self.get_option('webkit_test_runner'):
-            fallback_names.insert(0, self._wk2_port_name())
-            # Note we do not add 'wk2' here, even though it's included in _skipped_search_paths().
-        return map(self._webkit_baseline_path, fallback_names)
-
-    def setup_environ_for_server(self, server_name=None):
-        env = super(MacPort, self).setup_environ_for_server(server_name)
-        if server_name == self.driver_name():
-            if self.get_option('leaks'):
-                env['MallocStackLogging'] = '1'
-            if self.get_option('guard_malloc'):
-                env['DYLD_INSERT_LIBRARIES'] = '/usr/lib/libgmalloc.dylib'
-        env['XML_CATALOG_FILES'] = ''  # work around missing /etc/catalog <rdar://problem/4292995>
-        return env
+        return result
 
     def operating_system(self):
         return 'mac'
 
-    # Belongs on a Platform object.
-    def is_snowleopard(self):
-        return self._version == "snowleopard"
+    #
+    # PROTECTED METHODS
+    #
 
-    # Belongs on a Platform object.
-    def is_lion(self):
-        return self._version == "lion"
+    def _lighttpd_path(self, *comps):
+        return self.path_from_chromium_base('third_party', 'lighttpd', 'mac', *comps)
 
-    def default_child_processes(self):
-        if self._version == "snowleopard":
-            _log.warning("Cannot run tests in parallel on Snow Leopard due to rdar://problem/10621525.")
-            return 1
+    def _wdiff_missing_message(self):
+        return 'wdiff is not installed; please install from MacPorts or elsewhere'
 
-        default_count = super(MacPort, self).default_child_processes()
+    def path_to_apache(self):
+        return '/usr/sbin/httpd'
 
-        # FIXME: https://bugs.webkit.org/show_bug.cgi?id=95906  With too many WebProcess WK2 tests get stuck in resource contention.
-        # To alleviate the issue reduce the number of running processes
-        # Anecdotal evidence suggests that a 4 core/8 core logical machine may run into this, but that a 2 core/4 core logical machine does not.
-        if self.get_option('webkit_test_runner') and default_count > 4:
-            default_count = int(.75 * default_count)
+    def path_to_apache_config_file(self):
+        return self._filesystem.join(self.layout_tests_dir(), 'http', 'conf', 'apache2-httpd.conf')
 
-        # Make sure we have enough ram to support that many instances:
-        total_memory = self.host.platform.total_bytes_memory()
-        bytes_per_drt = 256 * 1024 * 1024  # Assume each DRT needs 256MB to run.
-        overhead = 2048 * 1024 * 1024  # Assume we need 2GB free for the O/S
-        supportable_instances = max((total_memory - overhead) / bytes_per_drt, 1)  # Always use one process, even if we don't have space for it.
-        if supportable_instances < default_count:
-            _log.warning("This machine could support %s child processes, but only has enough memory for %s." % (default_count, supportable_instances))
-        return min(supportable_instances, default_count)
+    def path_to_lighttpd(self):
+        return self._lighttpd_path('bin', 'lighttpd')
 
-    def _build_java_test_support(self):
-        java_tests_path = self._filesystem.join(self.layout_tests_dir(), "java")
-        build_java = ["/usr/bin/make", "-C", java_tests_path]
-        if self._executive.run_command(build_java, return_exit_code=True):  # Paths are absolute, so we don't need to set a cwd.
-            _log.error("Failed to build Java support files: %s" % build_java)
-            return False
-        return True
+    def path_to_lighttpd_modules(self):
+        return self._lighttpd_path('lib')
 
-    def check_for_leaks(self, process_name, process_pid):
-        if not self.get_option('leaks'):
-            return
-        # We could use http://code.google.com/p/psutil/ to get the process_name from the pid.
-        self._leak_detector.check_for_leaks(process_name, process_pid)
+    def path_to_lighttpd_php(self):
+        return self._lighttpd_path('bin', 'php-cgi')
 
-    def print_leaks_summary(self):
-        if not self.get_option('leaks'):
-            return
-        # We're in the manager process, so the leak detector will not have a valid list of leak files.
-        # FIXME: This is a hack, but we don't have a better way to get this information from the workers yet.
-        # FIXME: This will include too many leaks in subsequent runs until the results directory is cleared!
-        leaks_files = self._leak_detector.leaks_files_in_directory(self.results_directory())
-        if not leaks_files:
-            return
-        total_bytes_string, unique_leaks = self._leak_detector.count_total_bytes_and_unique_leaks(leaks_files)
-        total_leaks = self._leak_detector.count_total_leaks(leaks_files)
-        _log.info("%s total leaks found for a total of %s!" % (total_leaks, total_bytes_string))
-        _log.info("%s unique leaks found!" % unique_leaks)
-
-    def _check_port_build(self):
-        return self._build_java_test_support()
-
-    def _path_to_webcore_library(self):
-        return self._build_path('WebCore.framework/Versions/A/WebCore')
-
-    def show_results_html_file(self, results_filename):
-        # We don't use self._run_script() because we don't want to wait for the script
-        # to exit and we want the output to show up on stdout in case there are errors
-        # launching the browser.
-        self._executive.popen([self.path_to_script('run-safari')] + self._arguments_for_configuration() + ['--no-saved-state', '-NSOpen', results_filename],
-            cwd=self.webkit_base(), stdout=file(os.devnull), stderr=file(os.devnull))
-
-    # FIXME: The next two routines turn off the http locking in order
-    # to work around failures on the bots caused when the slave restarts.
-    # See https://bugs.webkit.org/show_bug.cgi?id=64886 for more info.
-    # The proper fix is to make sure the slave is actually stopping NRWT
-    # properly on restart. Note that by removing the lock file and not waiting,
-    # the result should be that if there is a web server already running,
-    # it'll be killed and this one will be started in its place; this
-    # may lead to weird things happening in the other run. However, I don't
-    # think we're (intentionally) actually running multiple runs concurrently
-    # on any Mac bots.
-
-    def acquire_http_lock(self):
-        pass
-
-    def release_http_lock(self):
-        pass
-
-    def _get_crash_log(self, name, pid, stdout, stderr, newer_than, time_fn=None, sleep_fn=None, wait_for_log=True):
-        # Note that we do slow-spin here and wait, since it appears the time
-        # ReportCrash takes to actually write and flush the file varies when there are
-        # lots of simultaneous crashes going on.
-        # FIXME: Should most of this be moved into CrashLogs()?
-        time_fn = time_fn or time.time
-        sleep_fn = sleep_fn or time.sleep
-        crash_log = ''
-        crash_logs = CrashLogs(self.host)
-        now = time_fn()
-        # FIXME: delete this after we're sure this code is working ...
-        _log.debug('looking for crash log for %s:%s' % (name, str(pid)))
-        deadline = now + 5 * int(self.get_option('child_processes', 1))
-        while not crash_log and now <= deadline:
-            crash_log = crash_logs.find_newest_log(name, pid, include_errors=True, newer_than=newer_than)
-            if not wait_for_log:
-                break
-            if not crash_log or not [line for line in crash_log.splitlines() if not line.startswith('ERROR')]:
-                sleep_fn(0.1)
-                now = time_fn()
-
-        if not crash_log:
-            return (stderr, None)
-        return (stderr, crash_log)
-
-    def look_for_new_crash_logs(self, crashed_processes, start_time):
-        """Since crash logs can take a long time to be written out if the system is
-           under stress do a second pass at the end of the test run.
-
-           crashes: test_name -> pid, process_name tuple of crashed process
-           start_time: time the tests started at.  We're looking for crash
-               logs after that time.
-        """
-        crash_logs = {}
-        for (test_name, process_name, pid) in crashed_processes:
-            # Passing None for output.  This is a second pass after the test finished so
-            # if the output had any loggine we would have already collected it.
-            crash_log = self._get_crash_log(process_name, pid, None, None, start_time, wait_for_log=False)[1]
-            if not crash_log:
-                continue
-            crash_logs[test_name] = crash_log
-        return crash_logs
-
-    def sample_process(self, name, pid):
-        try:
-            hang_report = self._filesystem.join(self.results_directory(), "%s-%s.sample.txt" % (name, pid))
-            self._executive.run_command([
-                "/usr/bin/sample",
-                pid,
-                10,
-                10,
-                "-file",
-                hang_report,
-            ])
-        except ScriptError as e:
-            _log.warning('Unable to sample process:' + str(e))
+    def _path_to_driver(self, configuration=None):
+        # FIXME: make |configuration| happy with case-sensitive file systems.
+        return self._build_path_with_configuration(configuration, self.driver_name() + '.app', 'Contents', 'MacOS', self.driver_name())
 
     def _path_to_helper(self):
-        binary_name = 'LayoutTestHelper'
+        binary_name = 'layout_test_helper'
         return self._build_path(binary_name)
 
-    def start_helper(self):
-        helper_path = self._path_to_helper()
-        if helper_path:
-            _log.debug("Starting layout helper %s" % helper_path)
-            self._helper = self._executive.popen([helper_path],
-                stdin=self._executive.PIPE, stdout=self._executive.PIPE, stderr=None)
-            is_ready = self._helper.stdout.readline()
-            if not is_ready.startswith('ready'):
-                _log.error("LayoutTestHelper failed to be ready")
-
-    def stop_helper(self):
-        if self._helper:
-            _log.debug("Stopping LayoutTestHelper")
-            try:
-                self._helper.stdin.write("x\n")
-                self._helper.stdin.close()
-                self._helper.wait()
-            except IOError, e:
-                _log.debug("IOError raised while stopping helper: %s" % str(e))
-            self._helper = None
-
-    def nm_command(self):
-        try:
-            return self._executive.run_command(['xcrun', '-find', 'nm']).rstrip()
-        except ScriptError:
-            _log.warn("xcrun failed; falling back to 'nm'.")
-            return 'nm'
+    def _path_to_wdiff(self):
+        return 'wdiff'

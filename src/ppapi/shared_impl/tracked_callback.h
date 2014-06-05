@@ -9,6 +9,7 @@
 #include <set>
 
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/condition_variable.h"
@@ -84,7 +85,16 @@ class PPAPI_SHARED_EXPORT TrackedCallback
   // callback is targeted to run, it will *not* be run immediately.
   void PostRun(int32_t result);
 
-  void BlockUntilRun();
+  // A task to perform cleanup or write output parameters before the callback
+  // returns a result to the plugin. The |result| parameter has the result so
+  // far, e.g. whether the callback has been aborted. If the callback hasn't
+  // been aborted the return value of the task will become the callback result.
+  // The task is always called on the same thread as the callback to the plugin.
+  typedef base::Callback<int32_t(int32_t /* result */)> CompletionTask;
+
+  // Sets a task that is run just before calling back into the plugin. This
+  // should only be called once.
+  void set_completion_task(const CompletionTask& completion_task);
 
   // Returns the ID of the resource which "owns" the callback, or 0 if the
   // callback is not associated with any resource.
@@ -98,17 +108,26 @@ class PPAPI_SHARED_EXPORT TrackedCallback
   // completion.
   bool aborted() const { return aborted_; }
 
-  // Helper to determine if the given callback is set and not yet completed.
-  // The normal pattern is to use a scoped_refptr to hold a callback. This
-  // function tells you if the operation is currently in progress by checking
-  // both the null-ness of the scoped_refptr, as well as the completion state
-  // of the callback (which may still be out-standing via a PostAbort).
+  // Returns true if this is a blocking callback.
+  bool is_blocking() { return !callback_.func; }
+
+  MessageLoopShared* target_loop() const { return target_loop_.get(); }
+
+  // Determines if the given callback is pending. A callback is pending if it
+  // has not completed and has not been aborted. When receiving a plugin call,
+  // use this to detect if |callback| represents an operation in progress. When
+  // finishing a plugin call, use this to determine whether to write 'out'
+  // params and Run |callback|.
+  // NOTE: an aborted callback has not necessarily completed, so a false result
+  // doesn't imply that the callback has completed.
+  // As a convenience, if |callback| is null, this returns false.
   static bool IsPending(const scoped_refptr<TrackedCallback>& callback);
 
+  // Helper to determine if the given callback is scheduled to run on another
+  // message loop.
+  static bool IsScheduledToRun(const scoped_refptr<TrackedCallback>& callback);
+
  protected:
-  bool is_blocking() {
-    return !callback_.func;
-  }
   bool is_required() {
     return (callback_.func &&
             !(callback_.flags & PP_COMPLETIONCALLBACK_FLAG_OPTIONAL));
@@ -117,9 +136,7 @@ class PPAPI_SHARED_EXPORT TrackedCallback
     return (callback_.func &&
             (callback_.flags & PP_COMPLETIONCALLBACK_FLAG_OPTIONAL));
   }
-  bool has_null_target_loop() const {
-    return target_loop_ == NULL;
-  }
+  bool has_null_target_loop() const { return target_loop_.get() == NULL; }
 
  private:
   // TrackedCallback and EnterBase manage dealing with how to invoke callbacks
@@ -149,6 +166,9 @@ class PPAPI_SHARED_EXPORT TrackedCallback
   bool completed_;
   bool aborted_;
   PP_CompletionCallback callback_;
+
+  // Task to run just before calling back into the plugin.
+  CompletionTask completion_task_;
 
   // The MessageLoopShared on which this callback should be run. This will be
   // NULL if we're in-process.

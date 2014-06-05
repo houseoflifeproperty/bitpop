@@ -10,9 +10,10 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/completion_callback.h"
 #include "net/base/load_states.h"
+#include "net/base/load_timing_info.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_export.h"
 #include "net/base/net_log.h"
@@ -69,9 +70,9 @@ class NET_EXPORT ClientSocketHandle {
   //
   // Profiling information for the request is saved to |net_log| if non-NULL.
   //
-  template <typename SocketParams, typename PoolType>
+  template <typename PoolType>
   int Init(const std::string& group_name,
-           const scoped_refptr<SocketParams>& socket_params,
+           const scoped_refptr<typename PoolType::SocketParams>& socket_params,
            RequestPriority priority,
            const CompletionCallback& callback,
            PoolType* pool,
@@ -93,9 +94,15 @@ class NET_EXPORT ClientSocketHandle {
 
   bool IsPoolStalled() const;
 
-  void AddLayeredPool(LayeredPool* layered_pool);
+  // Adds a higher layered pool on top of the socket pool that |socket_| belongs
+  // to.  At most one higher layered pool can be added to a
+  // ClientSocketHandle at a time.  On destruction or reset, automatically
+  // removes the higher pool if RemoveHigherLayeredPool has not been called.
+  void AddHigherLayeredPool(HigherLayeredPool* higher_pool);
 
-  void RemoveLayeredPool(LayeredPool* layered_pool);
+  // Removes a higher layered pool from the socket pool that |socket_| belongs
+  // to.  |higher_pool| must have been added by the above function.
+  void RemoveHigherLayeredPool(HigherLayeredPool* higher_pool);
 
   // Returns true when Init() has completed successfully.
   bool is_initialized() const { return is_initialized_; }
@@ -106,9 +113,20 @@ class NET_EXPORT ClientSocketHandle {
   // Returns the time between Init() and when is_initialized() becomes true.
   base::TimeDelta setup_time() const { return setup_time_; }
 
+  // Sets the portion of LoadTimingInfo related to connection establishment, and
+  // the socket id.  |is_reused| is needed because the handle may not have full
+  // reuse information.  |load_timing_info| must have all default values when
+  // called. Returns false and makes no changes to |load_timing_info| when
+  // |socket_| is NULL.
+  bool GetLoadTimingInfo(bool is_reused,
+                         LoadTimingInfo* load_timing_info) const;
+
   // Used by ClientSocketPool to initialize the ClientSocketHandle.
-  void set_is_reused(bool is_reused) { is_reused_ = is_reused; }
-  void set_socket(StreamSocket* s) { socket_.reset(s); }
+  //
+  // SetSocket() may also be used if this handle is used as simply for
+  // socket storage (e.g., http://crbug.com/37810).
+  void SetSocket(scoped_ptr<StreamSocket> s);
+  void set_reuse_type(SocketReuseType reuse_type) { reuse_type_ = reuse_type; }
   void set_idle_time(base::TimeDelta idle_time) { idle_time_ = idle_time; }
   void set_pool_id(int id) { pool_id_ = id; }
   void set_is_ssl_error(bool is_ssl_error) { is_ssl_error_ = is_ssl_error; }
@@ -134,21 +152,23 @@ class NET_EXPORT ClientSocketHandle {
     return pending_http_proxy_connection_.release();
   }
 
+  StreamSocket* socket() { return socket_.get(); }
+
+  // SetSocket() must be called with a new socket before this handle
+  // is destroyed if is_initialized() is true.
+  scoped_ptr<StreamSocket> PassSocket();
+
   // These may only be used if is_initialized() is true.
   const std::string& group_name() const { return group_name_; }
   int id() const { return pool_id_; }
-  StreamSocket* socket() { return socket_.get(); }
-  StreamSocket* release_socket() { return socket_.release(); }
-  bool is_reused() const { return is_reused_; }
+  bool is_reused() const { return reuse_type_ == REUSED_IDLE; }
   base::TimeDelta idle_time() const { return idle_time_; }
-  SocketReuseType reuse_type() const {
-    if (is_reused()) {
-      return REUSED_IDLE;
-    } else if (idle_time() == base::TimeDelta()) {
-      return UNUSED;
-    } else {
-      return UNUSED_IDLE;
-    }
+  SocketReuseType reuse_type() const { return reuse_type_; }
+  const LoadTimingInfo::ConnectTiming& connect_timing() const {
+    return connect_timing_;
+  }
+  void set_connect_timing(const LoadTimingInfo::ConnectTiming& connect_timing) {
+    connect_timing_ = connect_timing;
   }
 
  private:
@@ -169,10 +189,10 @@ class NET_EXPORT ClientSocketHandle {
 
   bool is_initialized_;
   ClientSocketPool* pool_;
-  LayeredPool* layered_pool_;
+  HigherLayeredPool* higher_pool_;
   scoped_ptr<StreamSocket> socket_;
   std::string group_name_;
-  bool is_reused_;
+  SocketReuseType reuse_type_;
   CompletionCallback callback_;
   CompletionCallback user_callback_;
   base::TimeDelta idle_time_;
@@ -185,24 +205,24 @@ class NET_EXPORT ClientSocketHandle {
 
   NetLog::Source requesting_source_;
 
+  // Timing information is set when a connection is successfully established.
+  LoadTimingInfo::ConnectTiming connect_timing_;
+
   DISALLOW_COPY_AND_ASSIGN(ClientSocketHandle);
 };
 
 // Template function implementation:
-template <typename SocketParams, typename PoolType>
-int ClientSocketHandle::Init(const std::string& group_name,
-                             const scoped_refptr<SocketParams>& socket_params,
-                             RequestPriority priority,
-                             const CompletionCallback& callback,
-                             PoolType* pool,
-                             const BoundNetLog& net_log) {
+template <typename PoolType>
+int ClientSocketHandle::Init(
+    const std::string& group_name,
+    const scoped_refptr<typename PoolType::SocketParams>& socket_params,
+    RequestPriority priority,
+    const CompletionCallback& callback,
+    PoolType* pool,
+    const BoundNetLog& net_log) {
   requesting_source_ = net_log.source();
 
   CHECK(!group_name.empty());
-  // Note that this will result in a compile error if the SocketParams has not
-  // been registered for the PoolType via REGISTER_SOCKET_PARAMS_FOR_POOL
-  // (defined in client_socket_pool.h).
-  CheckIsValidSocketParamsForPool<PoolType, SocketParams>();
   ResetInternal(true);
   ResetErrorState();
   pool_ = pool;

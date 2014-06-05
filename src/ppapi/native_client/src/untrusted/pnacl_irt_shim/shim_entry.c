@@ -7,8 +7,8 @@
 #include "native_client/src/include/elf32.h"
 #include "native_client/src/include/elf_auxv.h"
 #include "native_client/src/include/nacl_macros.h"
-#include "native_client/src/untrusted/pnacl_irt_shim/shim_ppapi.h"
 #include "native_client/src/untrusted/nacl/nacl_startup.h"
+#include "ppapi/native_client/src/untrusted/pnacl_irt_shim/shim_ppapi.h"
 
 
 /*
@@ -16,8 +16,6 @@
  * See nacl_startup.h for the layout at the argument pointer.
  */
 void _pnacl_wrapper_start(uint32_t *info) {
-  /* The PNaCl PPAPI shims are only needed on x86-64. */
-#if defined(__x86_64__) || defined(__arm__)
   Elf32_auxv_t *auxv = nacl_startup_auxv(info);
 
   Elf32_auxv_t *entry = NULL;
@@ -30,15 +28,15 @@ void _pnacl_wrapper_start(uint32_t *info) {
 
   if (entry != NULL) {
     /*
-     * Save the real irt interface.
+     * Save the real irt interface query function.
      */
-    __pnacl_real_irt_interface = (TYPE_nacl_irt_query) entry->a_un.a_val;
+    __pnacl_real_irt_query_func = (TYPE_nacl_irt_query) entry->a_un.a_val;
 
     /*
      * Overwrite the auxv slot with the pnacl IRT shim query function.
      */
     entry->a_type = AT_SYSINFO;
-    entry->a_un.a_val = (uintptr_t) __pnacl_irt_interface_wrapper;
+    entry->a_un.a_val = (uintptr_t) __pnacl_wrap_irt_query_func;
   }
 
   /* If entry is NULL still allow startup to continue.  It may be the case
@@ -50,7 +48,6 @@ void _pnacl_wrapper_start(uint32_t *info) {
    * seems brittle (what if the bitcode link was separated from translation).
    * Thus we always wrap _start, even if there is no IRT auxv entry.
    */
-#endif
 
   /*
    * Call the user entry point function.  It should not return.

@@ -5,199 +5,103 @@
 #include "chrome/browser/ui/window_sizer/window_sizer.h"
 
 #include "ash/shell.h"
-#include "ash/wm/window_cycle_controller.h"
-#include "ash/wm/window_util.h"
-#include "base/compiler_specific.h"
-#include "chrome/browser/browser_process.h"
+#include "ash/wm/window_positioner.h"
+#include "ash/wm/window_state.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
-#include "ui/aura/window_delegate.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/gfx/screen.h"
 
-namespace {
+bool WindowSizer::GetBrowserBoundsAsh(gfx::Rect* bounds,
+                                      ui::WindowShowState* show_state) const {
+  if (!browser_ ||
+      browser_->host_desktop_type() != chrome::HOST_DESKTOP_TYPE_ASH)
+    return false;
 
-// Check if the given browser is 'valid': It is a tabbed, non minimized
-// window, which intersects with the |bounds_in_screen| area of a given screen.
-bool IsValidBrowser(Browser* browser, const gfx::Rect& bounds_in_screen) {
-  return (browser && browser->window() &&
-          !(browser->is_type_popup() || browser->is_type_panel()) &&
-          !browser->window()->IsMinimized() &&
-          browser->window()->GetNativeWindow() &&
-          bounds_in_screen.Intersects(
-              browser->window()->GetNativeWindow()->GetBoundsInScreen()));
-}
-
-// Check if the window was not created as popup or as panel, it is
-// on the screen defined by |bounds_in_screen| and visible.
-bool IsValidToplevelWindow(aura::Window* window,
-                           const gfx::Rect& bounds_in_screen) {
-  for (BrowserList::const_iterator iter = BrowserList::begin();
-       iter != BrowserList::end();
-       ++iter) {
-    Browser* browser = *iter;
-    if (browser && browser->window() &&
-        browser->window()->GetNativeWindow() == window)
-      return IsValidBrowser(browser, bounds_in_screen);
-  }
-  // A window which has no browser associated with it is probably not a window
-  // of which we want to copy the size from.
-  return false;
-}
-
-// Get the first open (non minimized) window which is on the screen defined
-// by |bounds_in_screen| and visible.
-aura::Window* GetTopWindow(const gfx::Rect& bounds_in_screen) {
-  // Get the active window.
-  aura::Window* window = ash::wm::GetActiveWindow();
-  if (window && window->type() == aura::client::WINDOW_TYPE_NORMAL &&
-      window->IsVisible() && IsValidToplevelWindow(window, bounds_in_screen))
-    return window;
-
-  // Get a list of all windows.
-  const std::vector<aura::Window*> windows =
-      ash::WindowCycleController::BuildWindowList(NULL);
-
-  if (windows.empty())
-    return NULL;
-
-  aura::Window::Windows::const_iterator iter = windows.begin();
-  // Find the index of the current window.
-  if (window)
-    iter = std::find(windows.begin(), windows.end(), window);
-
-  int index = (iter == windows.end()) ? 0 : (iter - windows.begin());
-
-  // Scan the cycle list backwards to see which is the second topmost window
-  // (and so on). Note that we might cycle a few indices twice if there is no
-  // suitable window. However - since the list is fairly small this should be
-  // very fast anyways.
-  for (int i = index + windows.size(); i >= 0; i--) {
-    aura::Window* window = windows[i % windows.size()];
-    if (window && window->type() == aura::client::WINDOW_TYPE_NORMAL &&
-        bounds_in_screen.Intersects(window->GetBoundsInScreen()) &&
-        window->IsVisible() && IsValidToplevelWindow(window, bounds_in_screen))
-      return window;
-  }
-  return NULL;
-}
-
-// Return the number of valid top level windows on the screen defined by
-// the |bounds_in_screen| rectangle.
-int GetNumberOfValidTopLevelBrowserWindows(const gfx::Rect& bounds_in_screen) {
-  int count = 0;
-  for (BrowserList::const_iterator iter = BrowserList::begin();
-       iter != BrowserList::end();
-       ++iter) {
-    if (IsValidBrowser(*iter, bounds_in_screen))
-      count++;
-  }
-  return count;
-}
-
-// Move the given |bounds_in_screen| on the available |work_area| to the
-// direction. If |move_right| is true, the rectangle gets moved to the right
-// corner. Otherwise to the left side.
-bool MoveRect(const gfx::Rect& work_area,
-              gfx::Rect& bounds_in_screen,
-              bool move_right) {
-  if (move_right) {
-    if (work_area.right() > bounds_in_screen.right()) {
-      bounds_in_screen.set_x(work_area.right() - bounds_in_screen.width());
+  if (bounds->IsEmpty()) {
+    if (browser_->is_type_tabbed()) {
+      GetTabbedBrowserBoundsAsh(bounds, show_state);
       return true;
     }
-  } else {
-    if (work_area.x() < bounds_in_screen.x()) {
-      bounds_in_screen.set_x(work_area.x());
+
+    if (browser_->is_trusted_source()) {
+      // For trusted popups (v1 apps and system windows), do not use the last
+      // active window bounds, only use saved or default bounds.
+      if (!GetSavedWindowBounds(bounds, show_state))
+        GetDefaultWindowBounds(GetTargetDisplay(gfx::Rect()), bounds);
       return true;
     }
+
+    // In Ash, prioritize the last saved |show_state|. If you have questions
+    // or comments about this behavior please contact oshima@chromium.org.
+    if (state_provider_) {
+      gfx::Rect ignored_bounds, ignored_work_area;
+      state_provider_->GetPersistentState(&ignored_bounds,
+                                          &ignored_work_area,
+                                          show_state);
+    }
+    return false;
+  }
+
+  // In case of a popup with an 'unspecified' location in ash, we are
+  // looking for a good screen location. We are interpreting (0,0) as an
+  // unspecified location.
+  if (browser_->is_type_popup() && bounds->origin().IsOrigin()) {
+    *bounds = ash::Shell::GetInstance()->window_positioner()->
+        GetPopupPosition(*bounds);
+    return true;
   }
   return false;
 }
 
-}  // namespace
-
-bool WindowSizer::GetBoundsOverrideAsh(const gfx::Rect& specified_bounds,
-                                       gfx::Rect* bounds_in_screen,
-                                       ui::WindowShowState* show_state) const {
+void WindowSizer::GetTabbedBrowserBoundsAsh(
+    gfx::Rect* bounds_in_screen,
+    ui::WindowShowState* show_state) const {
   DCHECK(show_state);
   DCHECK(bounds_in_screen);
-  *bounds_in_screen = specified_bounds;
+  DCHECK(browser_->is_type_tabbed());
   DCHECK(bounds_in_screen->IsEmpty());
 
   ui::WindowShowState passed_show_state = *show_state;
-  if (!GetSavedWindowBounds(bounds_in_screen, show_state))
-    GetDefaultWindowBounds(bounds_in_screen);
 
-  if (browser_ && browser_->is_type_tabbed()) {
-    gfx::Rect work_area =
-        monitor_info_provider_->GetMonitorWorkAreaMatching(*bounds_in_screen);
-    // This is a window / app. See if there is no window and try to place it.
-    int count = GetNumberOfValidTopLevelBrowserWindows(work_area);
-    aura::Window* top_window = GetTopWindow(work_area);
-    // The window should not be able to reflect on itself.
-    if (browser_->window() &&
-        top_window == browser_->window()->GetNativeWindow())
-      return true;
-    // If there is no valid other window we take the coordinates as is.
-    if (!count || !top_window)
-      return true;
-
-    bool maximized = ash::wm::IsWindowMaximized(top_window);
-    // We ignore the saved show state, but look instead for the top level
-    // window's show state.
-    if (passed_show_state == ui::SHOW_STATE_DEFAULT) {
-      *show_state = maximized ? ui::SHOW_STATE_MAXIMIZED :
-                                ui::SHOW_STATE_DEFAULT;
-    }
-
-    if (maximized)
-      return true;
-
-    // Use the size of the other window, and mirror the location to the
-    // opposite side. Then make sure that it is inside our work area
-    // (if possible).
-    *bounds_in_screen = top_window->GetBoundsInScreen();
-
-    bool move_right =
-        bounds_in_screen->CenterPoint().x() < work_area.CenterPoint().x();
-
-    MoveRect(work_area, *bounds_in_screen, move_right);
-    if (bounds_in_screen->bottom() > work_area.bottom())
-      bounds_in_screen->set_y(std::max(work_area.y(),
-          work_area.bottom() - bounds_in_screen->height()));
-    return true;
+  bool is_saved_bounds = GetSavedWindowBounds(bounds_in_screen, show_state);
+  gfx::Display display;
+  if (is_saved_bounds) {
+    display = screen_->GetDisplayMatching(*bounds_in_screen);
+  } else {
+    // If there is no saved bounds (hence bounds_in_screen is empty), use the
+    // target display.
+    display = target_display_provider_->GetTargetDisplay(screen_,
+                                                         *bounds_in_screen);
+    *bounds_in_screen = ash::WindowPositioner::GetDefaultWindowBounds(display);
   }
 
-  return false;
-}
+  if (browser_->is_session_restore()) {
+    // This is a fall-through case when there is no bounds recorded
+    // for restored window, and should not be used except for the case
+    // above.  The regular path is handled in
+    // |WindowSizer::DetermineWindowBoundsAndShowState|.
 
-void WindowSizer::GetDefaultWindowBoundsAsh(gfx::Rect* default_bounds) const {
-  DCHECK(default_bounds);
-  DCHECK(monitor_info_provider_.get());
-
-  gfx::Rect work_area = monitor_info_provider_->GetPrimaryDisplayWorkArea();
-
-  // There should be a 'desktop' border around the window at the left and right
-  // side.
-  int default_width = work_area.width() - 2 * kDesktopBorderSize;
-  // There should also be a 'desktop' border around the window at the top.
-  // Since the workspace excludes the tray area we only need one border size.
-  int default_height = work_area.height() - kDesktopBorderSize;
-  // We align the size to the grid size to avoid any surprise when the
-  // monitor height isn't divide-able by our alignment factor.
-  default_width -= default_width % kDesktopBorderSize;
-  default_height -= default_height % kDesktopBorderSize;
-  int offset_x = kDesktopBorderSize;
-  if (default_width > kMaximumWindowWidth) {
-    // The window should get centered on the screen and not follow the grid.
-    offset_x = (work_area.width() - kMaximumWindowWidth) / 2;
-    default_width = kMaximumWindowWidth;
+    // Note: How restore bounds/show state data are passed.
+    // The restore bounds is passed via |Browser::override_bounds()| in
+    // |chrome::GetBrowserWindowBoundsAndShowState()|.
+    // The restore state is passed via |Browser::initial_state()| in
+    // |WindowSizer::GetWindowDefaultShowState|.
+    bounds_in_screen->AdjustToFit(display.work_area());
+    return;
   }
-  default_bounds->SetRect(work_area.x() + offset_x,
-                          work_area.y() + kDesktopBorderSize,
-                          default_width,
-                          default_height);
+
+  // The |browser_window| is non NULL when this is called after
+  // browser's aura window is created.
+  aura::Window* browser_window =
+      browser_->window() ? browser_->window()->GetNativeWindow() : NULL;
+
+  ash::WindowPositioner::GetBoundsAndShowStateForNewWindow(
+      screen_,
+      browser_window,
+      is_saved_bounds,
+      passed_show_state,
+      bounds_in_screen,
+      show_state);
 }

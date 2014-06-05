@@ -7,129 +7,12 @@
 #include <stdio.h>
 
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/test/base/chrome_process_util.h"
-
-namespace {
-
-std::string ResultsToString(const std::string& measurement,
-                            const std::string& modifier,
-                            const std::string& trace,
-                            const std::string& values,
-                            const std::string& prefix,
-                            const std::string& suffix,
-                            const std::string& units,
-                            bool important) {
-  // <*>RESULT <graph_name>: <trace_name>= <value> <units>
-  // <*>RESULT <graph_name>: <trace_name>= {<mean>, <std deviation>} <units>
-  // <*>RESULT <graph_name>: <trace_name>= [<value>,value,value,...,] <units>
-  return base::StringPrintf("%sRESULT %s%s: %s= %s%s%s %s\n",
-         important ? "*" : "", measurement.c_str(), modifier.c_str(),
-         trace.c_str(), prefix.c_str(), values.c_str(), suffix.c_str(),
-         units.c_str());
-}
-
-void PrintResultsImpl(const std::string& measurement,
-                      const std::string& modifier,
-                      const std::string& trace,
-                      const std::string& values,
-                      const std::string& prefix,
-                      const std::string& suffix,
-                      const std::string& units,
-                      bool important) {
-  printf("%s", ResultsToString(measurement, modifier, trace, values,
-                               prefix, suffix, units, important).c_str());
-}
-
-}  // namespace
+#include "testing/perf/perf_test.h"
 
 namespace perf_test {
-
-void PrintResult(const std::string& measurement,
-                 const std::string& modifier,
-                 const std::string& trace,
-                 size_t value,
-                 const std::string& units,
-                 bool important) {
-  PrintResultsImpl(measurement, modifier, trace, base::UintToString(value),
-                   "", "", units, important);
-}
-
-void AppendResult(std::string& output,
-                  const std::string& measurement,
-                  const std::string& modifier,
-                  const std::string& trace,
-                  size_t value,
-                  const std::string& units,
-                  bool important) {
-  output += ResultsToString(measurement, modifier, trace,
-                            base::UintToString(value),
-                            "", "", units, important);
-}
-
-void PrintResult(const std::string& measurement,
-                 const std::string& modifier,
-                 const std::string& trace,
-                 const std::string& value,
-                 const std::string& units,
-                 bool important) {
-  PrintResultsImpl(measurement, modifier, trace, value, "", "", units,
-                   important);
-}
-
-void AppendResult(std::string& output,
-                  const std::string& measurement,
-                  const std::string& modifier,
-                  const std::string& trace,
-                  const std::string& value,
-                  const std::string& units,
-                  bool important) {
-  output += ResultsToString(measurement, modifier, trace, value, "", "", units,
-                            important);
-}
-
-void PrintResultMeanAndError(const std::string& measurement,
-                             const std::string& modifier,
-                             const std::string& trace,
-                             const std::string& mean_and_error,
-                             const std::string& units,
-                             bool important) {
-  PrintResultsImpl(measurement, modifier, trace, mean_and_error,
-                   "{", "}", units, important);
-}
-
-void AppendResultMeanAndError(std::string& output,
-                              const std::string& measurement,
-                              const std::string& modifier,
-                              const std::string& trace,
-                              const std::string& mean_and_error,
-                              const std::string& units,
-                              bool important) {
-  output += ResultsToString(measurement, modifier, trace, mean_and_error,
-                            "{", "}", units, important);
-}
-
-void PrintResultList(const std::string& measurement,
-                     const std::string& modifier,
-                     const std::string& trace,
-                     const std::string& values,
-                     const std::string& units,
-                     bool important) {
-  PrintResultsImpl(measurement, modifier, trace, values,
-                   "[", "]", units, important);
-}
-
-void AppendResultList(std::string& output,
-                      const std::string& measurement,
-                      const std::string& modifier,
-                      const std::string& trace,
-                      const std::string& values,
-                      const std::string& units,
-                      bool important) {
-  output += ResultsToString(measurement, modifier, trace, values,
-                            "[", "]", units, important);
-}
 
 void PrintIOPerfInfo(const std::string& test_name,
                      const ChromeProcessList& chrome_processes,
@@ -170,7 +53,7 @@ std::string IOPerfInfoToString(const std::string& test_name,
   ChromeProcessList::const_iterator it;
   for (it = chrome_processes.begin(); it != chrome_processes.end(); ++it) {
     base::ProcessHandle process_handle;
-    if (!base::OpenPrivilegedProcessHandle(*it, &process_handle)) {
+    if (!base::OpenProcessHandle(*it, &process_handle)) {
       NOTREACHED();
       return output;
     }
@@ -231,40 +114,120 @@ std::string IOPerfInfoToString(const std::string& test_name,
   }
 
   std::string t_name(test_name);
-  AppendResult(output, "read_op_b", "", "r_op_b" + t_name, read_op_b, "ops",
+  AppendResult(output,
+               "read_op_b",
+               std::string(),
+               "r_op_b" + t_name,
+               read_op_b,
+               "ops",
                false);
-  AppendResult(output, "write_op_b", "", "w_op_b" + t_name, write_op_b, "ops",
+  AppendResult(output,
+               "write_op_b",
+               std::string(),
+               "w_op_b" + t_name,
+               write_op_b,
+               "ops",
                false);
-  AppendResult(output, "other_op_b", "", "o_op_b" + t_name, other_op_b, "ops",
+  AppendResult(output,
+               "other_op_b",
+               std::string(),
+               "o_op_b" + t_name,
+               other_op_b,
+               "ops",
                false);
-  AppendResult(output, "total_op_b", "", "IO_op_b" + t_name, total_op_b, "ops",
+  AppendResult(output,
+               "total_op_b",
+               std::string(),
+               "IO_op_b" + t_name,
+               total_op_b,
+               "ops",
                false);
 
-  AppendResult(output, "read_byte_b", "", "r_b" + t_name, read_byte_b, "kb",
+  AppendResult(output,
+               "read_byte_b",
+               std::string(),
+               "r_b" + t_name,
+               read_byte_b,
+               "kb",
                false);
-  AppendResult(output, "write_byte_b", "", "w_b" + t_name, write_byte_b, "kb",
+  AppendResult(output,
+               "write_byte_b",
+               std::string(),
+               "w_b" + t_name,
+               write_byte_b,
+               "kb",
                false);
-  AppendResult(output, "other_byte_b", "", "o_b" + t_name, other_byte_b, "kb",
+  AppendResult(output,
+               "other_byte_b",
+               std::string(),
+               "o_b" + t_name,
+               other_byte_b,
+               "kb",
                false);
-  AppendResult(output, "total_byte_b", "", "IO_b" + t_name, total_byte_b, "kb",
+  AppendResult(output,
+               "total_byte_b",
+               std::string(),
+               "IO_b" + t_name,
+               total_byte_b,
+               "kb",
                false);
 
-  AppendResult(output, "read_op_r", "", "r_op_r" + t_name, read_op_r, "ops",
+  AppendResult(output,
+               "read_op_r",
+               std::string(),
+               "r_op_r" + t_name,
+               read_op_r,
+               "ops",
                false);
-  AppendResult(output, "write_op_r", "", "w_op_r" + t_name, write_op_r, "ops",
+  AppendResult(output,
+               "write_op_r",
+               std::string(),
+               "w_op_r" + t_name,
+               write_op_r,
+               "ops",
                false);
-  AppendResult(output, "other_op_r", "", "o_op_r" + t_name, other_op_r, "ops",
+  AppendResult(output,
+               "other_op_r",
+               std::string(),
+               "o_op_r" + t_name,
+               other_op_r,
+               "ops",
                false);
-  AppendResult(output, "total_op_r", "", "IO_op_r" + t_name, total_op_r, "ops",
+  AppendResult(output,
+               "total_op_r",
+               std::string(),
+               "IO_op_r" + t_name,
+               total_op_r,
+               "ops",
                false);
 
-  AppendResult(output, "read_byte_r", "", "r_r" + t_name, read_byte_r, "kb",
+  AppendResult(output,
+               "read_byte_r",
+               std::string(),
+               "r_r" + t_name,
+               read_byte_r,
+               "kb",
                false);
-  AppendResult(output, "write_byte_r", "", "w_r" + t_name, write_byte_r, "kb",
+  AppendResult(output,
+               "write_byte_r",
+               std::string(),
+               "w_r" + t_name,
+               write_byte_r,
+               "kb",
                false);
-  AppendResult(output, "other_byte_r", "", "o_r" + t_name, other_byte_r, "kb",
+  AppendResult(output,
+               "other_byte_r",
+               std::string(),
+               "o_r" + t_name,
+               other_byte_r,
+               "kb",
                false);
-  AppendResult(output, "total_byte_r", "", "IO_r" + t_name, total_byte_r, "kb",
+  AppendResult(output,
+               "total_byte_r",
+               std::string(),
+               "IO_r" + t_name,
+               total_byte_r,
+               "kb",
                false);
 
   return output;
@@ -306,7 +269,7 @@ std::string MemoryUsageInfoToString(const std::string& test_name,
   ChromeProcessList::const_iterator it;
   for (it = chrome_processes.begin(); it != chrome_processes.end(); ++it) {
     base::ProcessHandle process_handle;
-    if (!base::OpenPrivilegedProcessHandle(*it, &process_handle)) {
+    if (!base::OpenProcessHandle(*it, &process_handle)) {
       NOTREACHED();
       return output;
     }
@@ -390,55 +353,59 @@ std::string MemoryUsageInfoToString(const std::string& test_name,
                total_working_set_size, "bytes",
                false /* not important */);
 #elif defined(OS_LINUX) || defined(OS_MACOSX) || defined(OS_ANDROID)
-  AppendResult(output, "vm_size_final_b", "", "vm_size_f_b" + trace_name,
-               browser_virtual_size, "bytes",
+  AppendResult(output,
+               "vm_size_final_b",
+               std::string(),
+               "vm_size_f_b" + trace_name,
+               browser_virtual_size,
+               "bytes",
                false /* not important */);
-  AppendResult(output, "vm_rss_final_b", "", "vm_rss_f_b" + trace_name,
-               browser_working_set_size, "bytes",
+  AppendResult(output,
+               "vm_rss_final_b",
+               std::string(),
+               "vm_rss_f_b" + trace_name,
+               browser_working_set_size,
+               "bytes",
                false /* not important */);
-  AppendResult(output, "vm_size_final_r", "", "vm_size_f_r" + trace_name,
-               renderer_virtual_size, "bytes",
+  AppendResult(output,
+               "vm_size_final_r",
+               std::string(),
+               "vm_size_f_r" + trace_name,
+               renderer_virtual_size,
+               "bytes",
                false /* not important */);
-  AppendResult(output, "vm_rss_final_r", "", "vm_rss_f_r" + trace_name,
-               renderer_working_set_size, "bytes",
+  AppendResult(output,
+               "vm_rss_final_r",
+               std::string(),
+               "vm_rss_f_r" + trace_name,
+               renderer_working_set_size,
+               "bytes",
                false /* not important */);
-  AppendResult(output, "vm_size_final_t", "", "vm_size_f_t" + trace_name,
-               total_virtual_size, "bytes",
+  AppendResult(output,
+               "vm_size_final_t",
+               std::string(),
+               "vm_size_f_t" + trace_name,
+               total_virtual_size,
+               "bytes",
                false /* not important */);
-  AppendResult(output, "vm_rss_final_t", "", "vm_rss_f_t" + trace_name,
-               total_working_set_size, "bytes",
+  AppendResult(output,
+               "vm_rss_final_t",
+               std::string(),
+               "vm_rss_f_t" + trace_name,
+               total_working_set_size,
+               "bytes",
                false /* not important */);
 #else
   NOTIMPLEMENTED();
 #endif
-  AppendResult(output, "processes", "", "proc_" + trace_name,
-               chrome_processes.size(), "count",
+  AppendResult(output,
+               "processes",
+               std::string(),
+               "proc_" + trace_name,
+               chrome_processes.size(),
+               "count",
                false /* not important */);
 
-  return output;
-}
-
-void PrintSystemCommitCharge(const std::string& test_name,
-                             size_t charge,
-                             bool important) {
-  PrintSystemCommitCharge(stdout, test_name, charge, important);
-}
-
-void PrintSystemCommitCharge(FILE* target,
-                             const std::string& test_name,
-                             size_t charge,
-                             bool important) {
-  fprintf(target, "%s", SystemCommitChargeToString(test_name, charge,
-                                                   important).c_str());
-}
-
-std::string SystemCommitChargeToString(const std::string& test_name,
-                                       size_t charge,
-                                       bool important) {
-  std::string trace_name(test_name);
-  std::string output;
-  AppendResult(output, "commit_charge", "", "cc" + trace_name, charge, "kb",
-               important);
   return output;
 }
 

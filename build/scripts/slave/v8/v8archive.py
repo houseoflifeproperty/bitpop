@@ -15,10 +15,9 @@ import shutil
 import stat
 import sys
 
+from common import archive_utils
 from common import chromium_utils
 from slave import slave_utils
-
-import config
 
 class StagingError(Exception): pass
 
@@ -54,8 +53,7 @@ def main(options, args):
   print 'Full Staging in %s' % build_dir
 
   zip_file_list = ['out/%s/d8' % options.target,
-                   'out/%s/cctest' % options.target,
-                   'out/%s/preparser' % options.target]
+                   'out/%s/cctest' % options.target]
 
   # Write out the revision number so we can figure it out in extract_build.py.
   build_revision_file_name = 'FULL_BUILD_REVISION'
@@ -125,7 +123,7 @@ def main(options, args):
     chromium_utils.RemoveFile(stage_dir, prune_name)
     chromium_utils.RemoveFile(stage_dir, prune_name.replace('.zip', '_old.zip'))
 
-  www_dir = config.Archive.www_dir_base + 'v8_archive/' + build_version
+  www_dir = archive_utils.Config.www_dir_base + 'v8_archive/' + build_version
   archive_host = 'master3.golo.chromium.org'
   print 'SshMakeDirectory(%s, %s)' % (archive_host,
                                       www_dir)

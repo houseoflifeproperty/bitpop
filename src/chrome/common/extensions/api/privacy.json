@@ -5,7 +5,7 @@
 [
   {
     "namespace": "privacy",
-    "dependencies": [ "types" ],
+    "description": "Use the <code>chrome.privacy</code> API to control usage of the features in Chrome that can affect a user's privacy. This API relies on the <a href='types.html#ChromeSetting'>ChromeSetting prototype of the type API</a> for getting and setting Chrome's configuration.",
     "properties": {
       "network": {
         "type": "object",
@@ -33,11 +33,6 @@
             "$ref": "types.ChromeSetting",
             "value": ["autofillEnabled", {"type":"boolean"}],
             "description": "If enabled, Chrome offers to automatically fill in forms. This preference's value is a boolean, defaulting to <code>true</code>."
-          },
-          "instantEnabled": {
-            "$ref": "types.ChromeSetting",
-            "value": ["instantEnabled", {"type":"boolean"}],
-            "description": "If enabled, Chrome automatically performs and displays search requests for text you type into the Omnibox as you type it. This preference's value is a boolean, defaulting to <code>true</code>."
           },
           "safeBrowsingEnabled": {
             "$ref": "types.ChromeSetting",
@@ -84,8 +79,8 @@
           "protectedContentEnabled": {
             "$ref": "types.ChromeSetting",
             "value": ["protectedContentEnabled", {"type":"boolean"}],
-            "description": "<strong>Available on ChromeOS only</strong>: If enabled, Chrome provides a unique ID to plugins in order to run protected content. The value of this preference is of type boolean, and the default value is <code>true</code>.",
-            "platforms": ["cros", "cros touch"]
+            "description": "<strong>Available on Windows and ChromeOS only</strong>: If enabled, Chrome provides a unique ID to plugins in order to run protected content. The value of this preference is of type boolean, and the default value is <code>true</code>.",
+            "platforms": ["windows", "cros", "cros touch"]
           }
         }
       }

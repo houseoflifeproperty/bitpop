@@ -42,6 +42,7 @@ class TestHttpBridgeFactory : public syncer::HttpPostProviderFactory {
   virtual ~TestHttpBridgeFactory();
 
   // syncer::HttpPostProviderFactory:
+  virtual void Init(const std::string& user_agent) OVERRIDE;
   virtual syncer::HttpPostProviderInterface* Create() OVERRIDE;
   virtual void Destroy(syncer::HttpPostProviderInterface* http) OVERRIDE;
 };

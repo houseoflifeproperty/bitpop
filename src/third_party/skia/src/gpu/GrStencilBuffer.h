@@ -11,17 +11,14 @@
 #define GrStencilBuffer_DEFINED
 
 #include "GrClipData.h"
-#include "GrResource.h"
-#include "GrCacheID.h"
+#include "GrGpuObject.h"
 
 class GrRenderTarget;
-class GrResourceEntry;
 class GrResourceKey;
 
-class GrStencilBuffer : public GrResource {
+class GrStencilBuffer : public GrGpuObject {
 public:
     SK_DECLARE_INST_COUNT(GrStencilBuffer);
-    GR_DECLARE_RESOURCE_CACHE_TYPE()
 
     virtual ~GrStencilBuffer() {
         // TODO: allow SB to be purged and detach itself from rts
@@ -45,8 +42,7 @@ public:
     bool mustRenderClip(int32_t clipStackGenID,
                         const SkIRect& clipSpaceRect,
                         const SkIPoint clipSpaceToStencilOffset) const {
-        return SkClipStack::kInvalidGenID == clipStackGenID ||
-               fLastClipStackGenID != clipStackGenID ||
+        return fLastClipStackGenID != clipStackGenID ||
                fLastClipSpaceOffset != clipSpaceToStencilOffset ||
                !fLastClipStackRect.contains(clipSpaceRect);
     }
@@ -57,8 +53,8 @@ public:
     static GrResourceKey ComputeKey(int width, int height, int sampleCnt);
 
 protected:
-    GrStencilBuffer(GrGpu* gpu, int width, int height, int bits, int sampleCnt)
-        : GrResource(gpu)
+    GrStencilBuffer(GrGpu* gpu, bool isWrapped, int width, int height, int bits, int sampleCnt)
+        : GrGpuObject(gpu, isWrapped)
         , fWidth(width)
         , fHeight(height)
         , fBits(bits)
@@ -78,7 +74,7 @@ private:
     SkIRect     fLastClipStackRect;
     SkIPoint    fLastClipSpaceOffset;
 
-    typedef GrResource INHERITED;
+    typedef GrGpuObject INHERITED;
 };
 
 #endif

@@ -7,37 +7,37 @@
 
 #include "base/basictypes.h"
 #include "base/id_map.h"
-#include "base/process.h"
-#include "base/process_util.h"
+#include "base/process/kill.h"
+#include "base/process/process_handle.h"
+#include "base/supports_user_data.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_sender.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/surface/transport_dib.h"
 
 class GURL;
 struct ViewMsg_SwapOut_Params;
-
-namespace content {
-class BrowserContext;
-class RenderWidgetHost;
-class StoragePartition;
-}
 
 namespace base {
 class TimeDelta;
 }
 
 namespace content {
+class BrowserContext;
+class BrowserMessageFilter;
+class RenderProcessHostObserver;
+class RenderWidgetHost;
+class StoragePartition;
+struct GlobalRequestID;
 
 // Interface that represents the browser side of the browser <-> renderer
 // communication channel. There will generally be one RenderProcessHost per
 // renderer process.
 class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
-                                         public IPC::Listener {
+                                         public IPC::Listener,
+                                         public base::SupportsUserData {
  public:
   typedef IDMap<RenderProcessHost>::iterator iterator;
-  typedef IDMap<RenderWidgetHost>::const_iterator RenderWidgetHostsIterator;
 
   // Details for RENDERER_PROCESS_CLOSED notifications.
   struct RendererClosedDetails {
@@ -53,6 +53,8 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
     int exit_code;
   };
 
+  // General functions ---------------------------------------------------------
+
   virtual ~RenderProcessHost() {}
 
   // Initialize the new renderer process, returning true on success. This must
@@ -64,15 +66,18 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // Gets the next available routing id.
   virtual int GetNextRoutingID() = 0;
 
-  // Called on the UI thread to cancel any outstanding resource requests for
-  // the specified render widget.
-  virtual void CancelResourceRequests(int render_widget_id) = 0;
+  // These methods add or remove listener for a specific message routing ID.
+  // Used for refcounting, each holder of this object must AddRoute and
+  // RemoveRoute. This object should be allocated on the heap; when no
+  // listeners own it any more, it will delete itself.
+  virtual void AddRoute(int32 routing_id, IPC::Listener* listener) = 0;
+  virtual void RemoveRoute(int32 routing_id) = 0;
 
-  // Called on the UI thread to simulate a SwapOut_ACK message to the
-  // ResourceDispatcherHost.  Necessary for a cross-site request, in the case
-  // that the original RenderViewHost is not live and thus cannot run an
-  // unload handler.
-  virtual void SimulateSwapOutACK(const ViewMsg_SwapOut_Params& params) = 0;
+  // Add and remove observers for lifecycle events. The order in which
+  // notifications are sent to observers is undefined. Observers must be sure to
+  // remove the observer before they go away.
+  virtual void AddObserver(RenderProcessHostObserver* observer) = 0;
+  virtual void RemoveObserver(RenderProcessHostObserver* observer) = 0;
 
   // Called to wait for the next UpdateRect message for the specified render
   // widget.  Returns true if successful, and the msg out-param will contain a
@@ -120,16 +125,7 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // NOTE: this is not necessarily valid immediately after calling Init, as
   // Init starts the process asynchronously.  It's guaranteed to be valid after
   // the first IPC arrives.
-  virtual base::ProcessHandle GetHandle() = 0;
-
-  // Transport DIB functions ---------------------------------------------------
-
-  // Return the TransportDIB for the given id. On Linux, this can involve
-  // mapping shared memory. On Mac, the shared memory is created in the browser
-  // process and the cached metadata is returned. On Windows, this involves
-  // duplicating the handle from the remote process.  The RenderProcessHost
-  // still owns the returned DIB.
-  virtual TransportDIB* GetTransportDIB(TransportDIB::Id dib_id) = 0;
+  virtual base::ProcessHandle GetHandle() const = 0;
 
   // Returns the user browser context associated with this renderer process.
   virtual content::BrowserContext* GetBrowserContext() const = 0;
@@ -138,16 +134,15 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // |partition|.
   virtual bool InSameStoragePartition(StoragePartition* partition) const = 0;
 
-  // Returns the unique ID for this child process. This can be used later in
-  // a call to FromID() to get back to this object (this is used to avoid
+  // Returns the unique ID for this child process host. This can be used later
+  // in a call to FromID() to get back to this object (this is used to avoid
   // sending non-threadsafe pointers to other threads).
   //
-  // This ID will be unique for all child processes, including workers, plugins,
-  // etc.
+  // This ID will be unique across all child process hosts, including workers,
+  // plugins, etc.
+  //
+  // This will never return ChildProcessHost::kInvalidUniqueID.
   virtual int GetID() const = 0;
-
-  // Returns the render widget host for the routing id passed in.
-  virtual RenderWidgetHost* GetRenderWidgetHostByID(int routing_id) = 0;
 
   // Returns true iff channel_ has been set to non-NULL. Use this for checking
   // if there is connection or not. Virtual for mocking out for tests.
@@ -160,8 +155,8 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // Returns the renderer channel.
   virtual IPC::ChannelProxy* GetChannel() = 0;
 
-  // Returns the list of attached render widget hosts.
-  virtual RenderWidgetHostsIterator GetRenderWidgetHostsIterator() = 0;
+  // Adds a message filter to the IPC channel.
+  virtual void AddFilter(BrowserMessageFilter* filter) = 0;
 
   // Try to shutdown the associated render process as fast as possible
   virtual bool FastShutdownForPageCount(size_t count) = 0;
@@ -171,14 +166,6 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // part of the interface.
   virtual void SetIgnoreInputEvents(bool ignore_input_events) = 0;
   virtual bool IgnoreInputEvents() const = 0;
-
-  // Used for refcounting, each holder of this object must Attach and Release
-  // just like it would for a COM object. This object should be allocated on
-  // the heap; when no listeners own it any more, it will delete itself.
-  virtual void Attach(content::RenderWidgetHost* host, int routing_id) = 0;
-
-  // See Attach()
-  virtual void Release(int routing_id) = 0;
 
   // Schedules the host for deletion and removes it from the all_hosts list.
   virtual void Cleanup() = 0;
@@ -200,14 +187,33 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // 10 milliseconds.
   virtual base::TimeDelta GetChildProcessIdleTime() const = 0;
 
-  // Signals that a compositing surface has been updated after a lost context
-  // event, so that we can process requests from the renderer to create contexts
-  // with that surface.
-  virtual void SurfaceUpdated(int32 surface_id) = 0;
-
   // Called to resume the requests for a view created through window.open that
   // were initially blocked.
   virtual void ResumeRequestsForView(int route_id) = 0;
+
+  // Checks that the given renderer can request |url|, if not it sets it to
+  // about:blank.
+  // |empty_allowed| must be set to false for navigations for security reasons.
+  virtual void FilterURL(bool empty_allowed, GURL* url) = 0;
+
+#if defined(ENABLE_WEBRTC)
+  virtual void EnableAecDump(const base::FilePath& file) = 0;
+  virtual void DisableAecDump() = 0;
+
+  // When set, |callback| receives log messages regarding, for example, media
+  // devices (webcams, mics, etc) that were initially requested in the render
+  // process associated with this RenderProcessHost.
+  virtual void SetWebRtcLogMessageCallback(
+      base::Callback<void(const std::string&)> callback) = 0;
+#endif
+
+  // Tells the ResourceDispatcherHost to resume a deferred navigation without
+  // transferring it to a new renderer process.
+  virtual void ResumeDeferredNavigation(const GlobalRequestID& request_id) = 0;
+
+  // Notifies the renderer that the timezone configuration of the system might
+  // have changed.
+  virtual void NotifyTimezoneChange() = 0;
 
   // Static management functions -----------------------------------------------
 
@@ -231,6 +237,12 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // Returns the RenderProcessHost given its ID.  Returns NULL if the ID does
   // not correspond to a live RenderProcessHost.
   static RenderProcessHost* FromID(int render_process_id);
+
+  // Returns whether the process-per-site model is in use (globally or just for
+  // the current site), in which case we should ensure there is only one
+  // RenderProcessHost per site for the entire browser context.
+  static bool ShouldUseProcessPerSite(content::BrowserContext* browser_context,
+                                      const GURL& url);
 
   // Returns true if the caller should attempt to use an existing
   // RenderProcessHost rather than creating a new one.

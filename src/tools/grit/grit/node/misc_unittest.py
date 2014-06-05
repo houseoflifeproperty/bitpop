@@ -46,6 +46,12 @@ class GritNodeUnittest(unittest.TestCase):
     self.assertEqual({},
         id_dict.get('out/Release/obj/gen/devtools/devtools.grd', None))
 
+    src_dir, id_dict = misc._ReadFirstIdsFromFile(
+        test_resource_ids,
+        {
+          'SHARED_INTERMEDIATE_DIR': '/outside/src_dir',
+        })
+    self.assertEqual({}, id_dict.get('devtools.grd', None))
 
 class IfNodeUnittest(unittest.TestCase):
   def testIffyness(self):
@@ -68,6 +74,9 @@ class IfNodeUnittest(unittest.TestCase):
                 Good morning
               </message>
             </if>
+            <if expr="is_win">
+              <message name="IDS_ISWIN">is_win</message>
+            </if>
           </messages>
         </release>
       </grit>'''), dir='.')
@@ -76,6 +85,8 @@ class IfNodeUnittest(unittest.TestCase):
     bingo_message = messages_node.children[0].children[0]
     hello_message = messages_node.children[1].children[0]
     french_message = messages_node.children[2].children[0]
+    is_win_message = messages_node.children[3].children[0]
+
     self.assertTrue(bingo_message.name == 'message')
     self.assertTrue(hello_message.name == 'message')
     self.assertTrue(french_message.name == 'message')
@@ -100,6 +111,16 @@ class IfNodeUnittest(unittest.TestCase):
     self.failUnless(bingo_message in active)
     self.failUnless(hello_message not in active)
     self.failUnless(french_message in active)
+
+    grd.SetOutputLanguage('en')
+    grd.SetDefines({})
+    self.failUnless(grd.target_platform == sys.platform)
+    grd.SetTargetPlatform('darwin')
+    active = set(grd.ActiveDescendants())
+    self.failUnless(is_win_message not in active)
+    grd.SetTargetPlatform('win32')
+    active = set(grd.ActiveDescendants())
+    self.failUnless(is_win_message in active)
 
   def testElsiness(self):
     grd = util.ParseGrdForUnittest('''

@@ -2,17 +2,39 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Custom bindings for the app API.
+// Custom binding for the app API.
+
+var GetAvailability = requireNative('v8_context').GetAvailability;
+if (!GetAvailability('app').is_available) {
+  exports.chromeApp = {};
+  exports.onInstallStateResponse = function(){};
+  return;
+}
 
 var appNatives = requireNative('app');
+var process = requireNative('process');
+var extensionId = process.GetExtensionId();
+var logActivity = requireNative('activityLogger');
+
+function wrapForLogging(fun) {
+  if (!extensionId)
+    return fun;  // nothing interesting to log without an extension
+
+  return function() {
+    // TODO(ataly): We need to make sure we use the right prototype for
+    // fun.apply. Array slice can either be rewritten or similarly defined.
+    logActivity.LogAPICall(extensionId, "app." + fun.name,
+        $Array.slice(arguments));
+    return $Function.apply(fun, this, arguments);
+  };
+}
 
 // This becomes chrome.app
 var app = {
-  getIsInstalled: appNatives.GetIsInstalled,
-  install: appNatives.Install,
-  getDetails: appNatives.GetDetails,
-  getDetailsForFrame: appNatives.GetDetailsForFrame,
-  runningState: appNatives.GetRunningState
+  getIsInstalled: wrapForLogging(appNatives.GetIsInstalled),
+  getDetails: wrapForLogging(appNatives.GetDetails),
+  getDetailsForFrame: wrapForLogging(appNatives.GetDetailsForFrame),
+  runningState: wrapForLogging(appNatives.GetRunningState)
 };
 
 // Tricky; "getIsInstalled" is actually exposed as the getter "isInstalled",
@@ -21,54 +43,33 @@ var app = {
 //
 // So, define it manually, and let the getIsInstalled function act as its
 // documentation.
-app.__defineGetter__('isInstalled', appNatives.GetIsInstalled);
+app.__defineGetter__('isInstalled', wrapForLogging(appNatives.GetIsInstalled));
 
 // Called by app_bindings.cc.
-// This becomes chromeHidden.app
-var chromeHiddenApp = {
-  onGetAppNotifyChannelResponse: function(channelId, error, callbackId) {
-    if (callbackId) {
-      callbacks[callbackId](channelId, error);
-      delete callbacks[callbackId];
-    }
-  },
-
-  onInstallStateResponse: function(state, callbackId) {
-    if (callbackId) {
-      callbacks[callbackId](state);
-      delete callbacks[callbackId];
+function onInstallStateResponse(state, callbackId) {
+  var callback = callbacks[callbackId];
+  delete callbacks[callbackId];
+  if (typeof(callback) == 'function') {
+    try {
+      callback(state);
+    } catch (e) {
+      console.error('Exception in chrome.app.installState response handler: ' +
+                    e.stack);
     }
   }
-};
+}
 
-// appNotification stuff.
-//
 // TODO(kalman): move this stuff to its own custom bindings.
-// It will be bit tricky since I'll need to look into why there are
-// permissions defined for app notifications, yet this always sets it up?
 var callbacks = {};
 var nextCallbackId = 1;
-
-// This becomes chrome.appNotifications.
-var appNotifications = {
-  getChannel: function getChannel(clientId, callback) {
-    var callbackId = 0;
-    if (callback) {
-      callbackId = nextCallbackId++;
-      callbacks[callbackId] = callback;
-    }
-    appNatives.GetAppNotifyChannel(clientId, callbackId);
-  }
-};
 
 app.installState = function getInstallState(callback) {
   var callbackId = nextCallbackId++;
   callbacks[callbackId] = callback;
   appNatives.GetInstallState(callbackId);
 };
+if (extensionId)
+  app.installState = wrapForLogging(app.installState);
 
-// These must match the names in InstallAppBindings() in
-// chrome/renderer/extensions/dispatcher.cc.
-exports.chromeApp = app;
-exports.chromeAppNotifications = appNotifications;
-exports.chromeHiddenApp = chromeHiddenApp;
+exports.binding = app;
+exports.onInstallStateResponse = onInstallStateResponse;

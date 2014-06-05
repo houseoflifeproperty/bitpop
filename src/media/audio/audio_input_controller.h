@@ -13,7 +13,7 @@
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_manager_base.h"
 
@@ -72,17 +72,43 @@
 //
 namespace media {
 
+class UserInputMonitor;
+
 class MEDIA_EXPORT AudioInputController
     : public base::RefCountedThreadSafe<AudioInputController>,
       public AudioInputStream::AudioInputCallback {
  public:
+
+  // Error codes to make native loggin more clear. These error codes are added
+  // to generic error strings to provide a higher degree of details.
+  // Changing these values can lead to problems when matching native debug
+  // logs with the actual cause of error.
+  enum ErrorCode {
+    // An unspecified error occured.
+    UNKNOWN_ERROR = 0,
+
+    // Failed to create an audio input stream.
+    STREAM_CREATE_ERROR,  // = 1
+
+    // Failed to open an audio input stream.
+    STREAM_OPEN_ERROR,  // = 2
+
+    // Native input stream reports an error. Exact reason differs between
+    // platforms.
+    STREAM_ERROR,  // = 3
+
+    // This can happen if a capture device has been removed or disabled.
+    NO_DATA_ERROR,  // = 4
+  };
+
   // An event handler that receives events from the AudioInputController. The
   // following methods are all called on the audio thread.
   class MEDIA_EXPORT EventHandler {
    public:
     virtual void OnCreated(AudioInputController* controller) = 0;
     virtual void OnRecording(AudioInputController* controller) = 0;
-    virtual void OnError(AudioInputController* controller, int error_code) = 0;
+    virtual void OnError(AudioInputController* controller,
+                         ErrorCode error_code) = 0;
     virtual void OnData(AudioInputController* controller, const uint8* data,
                         uint32 size) = 0;
 
@@ -102,7 +128,10 @@ class MEDIA_EXPORT AudioInputController
 
     // Write certain amount of data from |data|. This method returns
     // number of written bytes.
-    virtual uint32 Write(const void* data, uint32 size, double volume) = 0;
+    virtual uint32 Write(const void* data,
+                         uint32 size,
+                         double volume,
+                         bool key_pressed) = 0;
 
     // Close this synchronous writer.
     virtual void Close() = 0;
@@ -110,11 +139,15 @@ class MEDIA_EXPORT AudioInputController
 
   // AudioInputController::Create() can use the currently registered Factory
   // to create the AudioInputController. Factory is intended for testing only.
+  // |user_input_monitor| is used for typing detection and can be NULL.
   class Factory {
    public:
-    virtual AudioInputController* Create(AudioManager* audio_manager,
-                                         EventHandler* event_handler,
-                                         AudioParameters params) = 0;
+    virtual AudioInputController* Create(
+        AudioManager* audio_manager,
+        EventHandler* event_handler,
+        AudioParameters params,
+        UserInputMonitor* user_input_monitor) = 0;
+
    protected:
     virtual ~Factory() {}
   };
@@ -122,11 +155,14 @@ class MEDIA_EXPORT AudioInputController
   // Factory method for creating an AudioInputController.
   // The audio device will be created on the audio thread, and when that is
   // done, the event handler will receive an OnCreated() call from that same
-  // thread.
+  // thread. |device_id| is the unique ID of the audio device to be opened.
+  // |user_input_monitor| is used for typing detection and can be NULL.
   static scoped_refptr<AudioInputController> Create(
       AudioManager* audio_manager,
       EventHandler* event_handler,
-      const AudioParameters& params);
+      const AudioParameters& params,
+      const std::string& device_id,
+      UserInputMonitor* user_input_monitor);
 
   // Sets the factory used by the static method Create(). AudioInputController
   // does not take ownership of |factory|. A value of NULL results in an
@@ -137,14 +173,28 @@ class MEDIA_EXPORT AudioInputController
   // Factory method for creating an AudioInputController for low-latency mode.
   // The audio device will be created on the audio thread, and when that is
   // done, the event handler will receive an OnCreated() call from that same
-  // thread.
+  // thread. |user_input_monitor| is used for typing detection and can be NULL.
   static scoped_refptr<AudioInputController> CreateLowLatency(
       AudioManager* audio_manager,
       EventHandler* event_handler,
       const AudioParameters& params,
       const std::string& device_id,
       // External synchronous writer for audio controller.
-      SyncWriter* sync_writer);
+      SyncWriter* sync_writer,
+      UserInputMonitor* user_input_monitor);
+
+  // Factory method for creating an AudioInputController for low-latency mode,
+  // taking ownership of |stream|.  The stream will be opened on the audio
+  // thread, and when that is done, the event handler will receive an
+  // OnCreated() call from that same thread. |user_input_monitor| is used for
+  // typing detection and can be NULL.
+  static scoped_refptr<AudioInputController> CreateForStream(
+      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+      EventHandler* event_handler,
+      AudioInputStream* stream,
+      // External synchronous writer for audio controller.
+      SyncWriter* sync_writer,
+      UserInputMonitor* user_input_monitor);
 
   // Starts recording using the created audio input stream.
   // This method is called on the creator thread.
@@ -172,51 +222,52 @@ class MEDIA_EXPORT AudioInputController
   // device-specific implementation.
   virtual void OnData(AudioInputStream* stream, const uint8* src, uint32 size,
                       uint32 hardware_delay_bytes, double volume) OVERRIDE;
-  virtual void OnClose(AudioInputStream* stream) OVERRIDE;
-  virtual void OnError(AudioInputStream* stream, int code) OVERRIDE;
+  virtual void OnError(AudioInputStream* stream) OVERRIDE;
 
-  bool LowLatencyMode() const { return sync_writer_ != NULL; }
+  bool SharedMemoryAndSyncSocketMode() const { return sync_writer_ != NULL; }
 
  protected:
   friend class base::RefCountedThreadSafe<AudioInputController>;
 
   // Internal state of the source.
   enum State {
-    kEmpty,
-    kCreated,
-    kRecording,
-    kClosed,
-    kError
+    CREATED,
+    RECORDING,
+    CLOSED
   };
 
-  AudioInputController(EventHandler* handler, SyncWriter* sync_writer);
+  AudioInputController(EventHandler* handler,
+                       SyncWriter* sync_writer,
+                       UserInputMonitor* user_input_monitor);
   virtual ~AudioInputController();
 
   // Methods called on the audio thread (owned by the AudioManager).
   void DoCreate(AudioManager* audio_manager, const AudioParameters& params,
                 const std::string& device_id);
+  void DoCreateForStream(AudioInputStream* stream_to_control,
+                         bool enable_nodata_timer);
   void DoRecord();
   void DoClose();
-  void DoReportError(int code);
+  void DoReportError();
   void DoSetVolume(double volume);
   void DoSetAutomaticGainControl(bool enabled);
+  void DoOnData(scoped_ptr<uint8[]> data, uint32 size);
 
   // Method which ensures that OnError() is triggered when data recording
   // times out. Called on the audio thread.
   void DoCheckForNoData();
 
   // Helper method that stops, closes, and NULL:s |*stream_|.
-  // Signals event when done if the event is not NULL.
-  void DoStopCloseAndClearStream(base::WaitableEvent* done);
+  void DoStopCloseAndClearStream();
 
   void SetDataIsActive(bool enabled);
   bool GetDataIsActive();
 
-  // Gives access to the message loop of the creating thread.
-  scoped_refptr<base::MessageLoopProxy> creator_loop_;
+  // Gives access to the task runner of the creating thread.
+  scoped_refptr<base::SingleThreadTaskRunner> creator_task_runner_;
 
-  // The message loop of audio-manager thread that this object runs on.
-  scoped_refptr<base::MessageLoopProxy> message_loop_;
+  // The task runner of audio-manager thread that this object runs on.
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
   // Contains the AudioInputController::EventHandler which receives state
   // notifications from this class.
@@ -226,8 +277,8 @@ class MEDIA_EXPORT AudioInputController
   AudioInputStream* stream_;
 
   // |no_data_timer_| is used to call OnError() when we stop receiving
-  // OnData() calls without an OnClose() call. This can occur
-  // when an audio input device is unplugged whilst recording on Windows.
+  // OnData() calls. This can occur when an audio input device is unplugged
+  // whilst recording on Windows.
   // See http://crbug.com/79936 for details.
   // This member is only touched by the audio thread.
   scoped_ptr<base::Timer> no_data_timer_;
@@ -251,6 +302,10 @@ class MEDIA_EXPORT AudioInputController
   static Factory* factory_;
 
   double max_volume_;
+
+  UserInputMonitor* user_input_monitor_;
+
+  size_t prev_key_down_count_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioInputController);
 };

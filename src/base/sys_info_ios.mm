@@ -12,7 +12,7 @@
 #include "base/logging.h"
 #include "base/mac/scoped_mach_port.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 
 namespace base {
 
@@ -76,6 +76,23 @@ int64 SysInfo::AmountOfPhysicalMemory() {
   }
   DCHECK_EQ(HOST_BASIC_INFO_COUNT, count);
   return static_cast<int64>(hostinfo.max_mem);
+}
+
+// static
+int64 SysInfo::AmountOfAvailablePhysicalMemory() {
+  base::mac::ScopedMachPort host(mach_host_self());
+  vm_statistics_data_t vm_info;
+  mach_msg_type_number_t count = HOST_VM_INFO_COUNT;
+  if (host_statistics(host.get(),
+                      HOST_VM_INFO,
+                      reinterpret_cast<host_info_t>(&vm_info),
+                      &count) != KERN_SUCCESS) {
+    NOTREACHED();
+    return 0;
+  }
+
+  return static_cast<int64>(
+      vm_info.free_count - vm_info.speculative_count) * PAGE_SIZE;
 }
 
 // static

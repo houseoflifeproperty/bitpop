@@ -8,23 +8,29 @@
  * NaCl Secure Runtime
  */
 #include "native_client/src/include/portability_string.h"
+#include "native_client/src/shared/platform/nacl_global_secure_random.h"
+#include "native_client/src/trusted/service_runtime/nacl_app_thread.h"
 #include "native_client/src/trusted/service_runtime/nacl_signal.h"
+#include "native_client/src/trusted/service_runtime/nacl_tls.h"
 #include "native_client/src/trusted/service_runtime/sel_ldr.h"
 #include "native_client/src/trusted/service_runtime/sel_rt.h"
 #include "native_client/src/trusted/service_runtime/arch/arm/sel_ldr_arm.h"
+#include "native_client/src/trusted/service_runtime/arch/arm/tramp_arm.h"
+
+
+uint32_t nacl_guard_token;
+
 
 void NaClInitGlobals(void) {
-   NaClLog(2, "NaClInitGlobals\n");
-  /* intentionally left empty */
+  NaClLog(2, "NaClInitGlobals\n");
+  nacl_guard_token = NaClGlobalSecureRngUint32();
 }
 
 
-int NaClThreadContextCtor(struct NaClThreadContext  *ntcp,
-                          struct NaClApp            *nap,
-                          nacl_reg_t                prog_ctr,
-                          nacl_reg_t                stack_ptr,
-                          nacl_reg_t                tls_idx) {
-  UNREFERENCED_PARAMETER(nap);
+int NaClAppThreadInitArchSpecific(struct NaClAppThread *natp,
+                                  nacl_reg_t           prog_ctr,
+                                  nacl_reg_t           stack_ptr) {
+  struct NaClThreadContext *ntcp = &natp->user;
 
   /*
    * We call this function so that it does not appear to be dead code,
@@ -35,8 +41,12 @@ int NaClThreadContextCtor(struct NaClThreadContext  *ntcp,
   memset((void *)ntcp, 0, sizeof(*ntcp));
   ntcp->stack_ptr = stack_ptr;
   ntcp->prog_ctr = prog_ctr;
-  ntcp->tls_idx = tls_idx;
+  ntcp->tls_idx = NaClTlsAllocate(natp);
+  if (ntcp->tls_idx == NACL_TLS_INDEX_INVALID)
+    return 0;
   ntcp->r9 = (uintptr_t) &ntcp->tls_value1;
+  ntcp->syscall_routine = (uintptr_t) NaClSyscallSeg;
+  ntcp->guard_token = nacl_guard_token;
 
   /*
    * Save the system's state of the FPSCR so we can restore
@@ -44,21 +54,11 @@ int NaClThreadContextCtor(struct NaClThreadContext  *ntcp,
    */
   __asm__ __volatile__("fmrx %0, fpscr" : "=r" (ntcp->sys_fpscr));
 
-  NaClLog(4, "user.tls_idx: 0x%08"NACL_PRIxNACL_REG"\n", tls_idx);
+  NaClLog(4, "user.tls_idx: 0x%08"NACL_PRIxNACL_REG"\n", ntcp->tls_idx);
   NaClLog(4, "user.stack_ptr: 0x%08"NACL_PRIxNACL_REG"\n", ntcp->stack_ptr);
   NaClLog(4, "user.prog_ctr: 0x%08"NACL_PRIxNACL_REG"\n", ntcp->prog_ctr);
 
   return 1;
-}
-
-
-uintptr_t NaClGetThreadCtxSp(struct NaClThreadContext  *th_ctx) {
-  return (uintptr_t) th_ctx->stack_ptr;
-}
-
-
-void NaClSetThreadCtxSp(struct NaClThreadContext  *th_ctx, uintptr_t sp) {
-  th_ctx->stack_ptr = (uint32_t) sp;
 }
 
 
@@ -80,5 +80,17 @@ void NaClThreadContextToSignalContext(const struct NaClThreadContext *th_ctx,
   sig_ctx->stack_ptr = th_ctx->stack_ptr;
   sig_ctx->lr        = 0;
   sig_ctx->prog_ctr  = th_ctx->new_prog_ctr;
+  sig_ctx->cpsr      = 0;
+}
+
+
+void NaClSignalContextUnsetClobberedRegisters(
+    struct NaClSignalContext *sig_ctx) {
+  sig_ctx->r0        = 0;
+  sig_ctx->r1        = 0;
+  sig_ctx->r2        = 0;
+  sig_ctx->r3        = 0;
+  sig_ctx->r12       = 0;
+  sig_ctx->lr        = 0;
   sig_ctx->cpsr      = 0;
 }

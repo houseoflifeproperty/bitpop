@@ -1,0 +1,99 @@
+url,V8.MemoryExternalFragmentationTotal (percent),V8.MemoryHeapSampleTotalCommitted (kb),V8.MemoryHeapSampleTotalUsed (kb),times.t (ms)
+blog.chromium.org,50.5,0.0,0.0,585
+dev.chromium.org,0.0,0.0,0.0,467
+googleblog.blogspot.com1,0.0,0.0,0.0,202
+googleblog.blogspot.com2,0.0,0.0,0.0,321
+test.blogspot.com,0.0,0.0,0.0,555
+www.igoogle.com,0.0,0.0,0.0,348
+www.techcrunch.com,0.0,0.0,0.0,527
+www.webkit.org,0.0,0.0,0.0,402
+www.yahoo.com,0.0,0.0,0.0,272
+blog.chromium.org,0.0,0.0,0.0,441
+dev.chromium.org,0.0,0.0,0.0,388
+googleblog.blogspot.com1,0.0,0.0,0.0,65
+googleblog.blogspot.com2,0.0,0.0,0.0,157
+test.blogspot.com,0.0,0.0,0.0,430
+www.igoogle.com,0.0,0.0,0.0,142
+www.techcrunch.com,0.0,0.0,0.0,189
+www.webkit.org,0.0,0.0,0.0,357
+www.yahoo.com,0.0,0.0,0.0,153
+Pages: [blog.chromium.org,dev.chromium.org,googleblog.blogspot.com1,googleblog.blogspot.com2,test.blogspot.com,www.igoogle.com,www.techcrunch.com,www.webkit.org,www.yahoo.com]
+HISTOGRAM V8.MemoryExternalFragmentationTotal_by_url: blog.chromium.org= {"count": 1, "params": {"max": 101, "bucket_count": 100, "type": "HISTOGRAM", "min": 1}, "buckets": [{"count": 1, "high": 51, "low": 50}], "flags": 1, "name": "V8.MemoryExternalFragmentationTotal"}
+Avg V8.MemoryExternalFragmentationTotal_by_url: 50.500000percent
+Sd  V8.MemoryExternalFragmentationTotal_by_url: 0.000000percent
+HISTOGRAM V8.MemoryExternalFragmentationTotal_by_url: dev.chromium.org= {"count": 0, "params": {"max": 101, "bucket_count": 100, "type": "HISTOGRAM", "min": 1}, "buckets": [], "flags": 17, "name": "V8.MemoryExternalFragmentationTotal"}
+HISTOGRAM V8.MemoryExternalFragmentationTotal_by_url: googleblog.blogspot.com1= {"count": 0, "params": {"max": 101, "bucket_count": 100, "type": "HISTOGRAM", "min": 1}, "buckets": [], "flags": 17, "name": "V8.MemoryExternalFragmentationTotal"}
+HISTOGRAM V8.MemoryExternalFragmentationTotal_by_url: googleblog.blogspot.com2= {"count": 0, "params": {"max": 101, "bucket_count": 100, "type": "HISTOGRAM", "min": 1}, "buckets": [], "flags": 17, "name": "V8.MemoryExternalFragmentationTotal"}
+HISTOGRAM V8.MemoryExternalFragmentationTotal_by_url: test.blogspot.com= {"count": 0, "params": {"max": 101, "bucket_count": 100, "type": "HISTOGRAM", "min": 1}, "buckets": [], "flags": 17, "name": "V8.MemoryExternalFragmentationTotal"}
+HISTOGRAM V8.MemoryExternalFragmentationTotal_by_url: www.igoogle.com= {"count": 0, "params": {"max": 101, "bucket_count": 100, "type": "HISTOGRAM", "min": 1}, "buckets": [], "flags": 17, "name": "V8.MemoryExternalFragmentationTotal"}
+HISTOGRAM V8.MemoryExternalFragmentationTotal_by_url: www.techcrunch.com= {"count": 0, "params": {"max": 101, "bucket_count": 100, "type": "HISTOGRAM", "min": 1}, "buckets": [], "flags": 17, "name": "V8.MemoryExternalFragmentationTotal"}
+HISTOGRAM V8.MemoryExternalFragmentationTotal_by_url: www.webkit.org= {"count": 0, "params": {"max": 101, "bucket_count": 100, "type": "HISTOGRAM", "min": 1}, "buckets": [], "flags": 17, "name": "V8.MemoryExternalFragmentationTotal"}
+HISTOGRAM V8.MemoryExternalFragmentationTotal_by_url: www.yahoo.com= {"count": 0, "params": {"max": 101, "bucket_count": 100, "type": "HISTOGRAM", "min": 1}, "buckets": [], "flags": 17, "name": "V8.MemoryExternalFragmentationTotal"}
+HISTOGRAM V8.MemoryHeapSampleTotalCommitted_by_url: blog.chromium.org= {"count": 0, "params": {"max": 500000, "bucket_count": 50, "type": "HISTOGRAM", "min": 1000}, "buckets": [], "flags": 1, "name": "V8.MemoryHeapSampleTotalCommitted"}
+HISTOGRAM V8.MemoryHeapSampleTotalCommitted_by_url: dev.chromium.org= {"count": 0, "params": {"max": 500000, "bucket_count": 50, "type": "HISTOGRAM", "min": 1000}, "buckets": [], "flags": 17, "name": "V8.MemoryHeapSampleTotalCommitted"}
+HISTOGRAM V8.MemoryHeapSampleTotalCommitted_by_url: googleblog.blogspot.com1= {"count": 0, "params": {"max": 500000, "bucket_count": 50, "type": "HISTOGRAM", "min": 1000}, "buckets": [], "flags": 17, "name": "V8.MemoryHeapSampleTotalCommitted"}
+HISTOGRAM V8.MemoryHeapSampleTotalCommitted_by_url: googleblog.blogspot.com2= {"count": 0, "params": {"max": 500000, "bucket_count": 50, "type": "HISTOGRAM", "min": 1000}, "buckets": [], "flags": 17, "name": "V8.MemoryHeapSampleTotalCommitted"}
+HISTOGRAM V8.MemoryHeapSampleTotalCommitted_by_url: test.blogspot.com= {"count": 0, "params": {"max": 500000, "bucket_count": 50, "type": "HISTOGRAM", "min": 1000}, "buckets": [], "flags": 17, "name": "V8.MemoryHeapSampleTotalCommitted"}
+HISTOGRAM V8.MemoryHeapSampleTotalCommitted_by_url: www.igoogle.com= {"count": 0, "params": {"max": 500000, "bucket_count": 50, "type": "HISTOGRAM", "min": 1000}, "buckets": [], "flags": 17, "name": "V8.MemoryHeapSampleTotalCommitted"}
+HISTOGRAM V8.MemoryHeapSampleTotalCommitted_by_url: www.techcrunch.com= {"count": 0, "params": {"max": 500000, "bucket_count": 50, "type": "HISTOGRAM", "min": 1000}, "buckets": [], "flags": 17, "name": "V8.MemoryHeapSampleTotalCommitted"}
+HISTOGRAM V8.MemoryHeapSampleTotalCommitted_by_url: www.webkit.org= {"count": 0, "params": {"max": 500000, "bucket_count": 50, "type": "HISTOGRAM", "min": 1000}, "buckets": [], "flags": 17, "name": "V8.MemoryHeapSampleTotalCommitted"}
+HISTOGRAM V8.MemoryHeapSampleTotalCommitted_by_url: www.yahoo.com= {"count": 0, "params": {"max": 500000, "bucket_count": 50, "type": "HISTOGRAM", "min": 1000}, "buckets": [], "flags": 17, "name": "V8.MemoryHeapSampleTotalCommitted"}
+HISTOGRAM V8.MemoryHeapSampleTotalUsed_by_url: blog.chromium.org= {"count": 0, "params": {"max": 500000, "bucket_count": 50, "type": "HISTOGRAM", "min": 1000}, "buckets": [], "flags": 1, "name": "V8.MemoryHeapSampleTotalUsed"}
+HISTOGRAM V8.MemoryHeapSampleTotalUsed_by_url: dev.chromium.org= {"count": 0, "params": {"max": 500000, "bucket_count": 50, "type": "HISTOGRAM", "min": 1000}, "buckets": [], "flags": 17, "name": "V8.MemoryHeapSampleTotalUsed"}
+HISTOGRAM V8.MemoryHeapSampleTotalUsed_by_url: googleblog.blogspot.com1= {"count": 0, "params": {"max": 500000, "bucket_count": 50, "type": "HISTOGRAM", "min": 1000}, "buckets": [], "flags": 17, "name": "V8.MemoryHeapSampleTotalUsed"}
+HISTOGRAM V8.MemoryHeapSampleTotalUsed_by_url: googleblog.blogspot.com2= {"count": 0, "params": {"max": 500000, "bucket_count": 50, "type": "HISTOGRAM", "min": 1000}, "buckets": [], "flags": 17, "name": "V8.MemoryHeapSampleTotalUsed"}
+HISTOGRAM V8.MemoryHeapSampleTotalUsed_by_url: test.blogspot.com= {"count": 0, "params": {"max": 500000, "bucket_count": 50, "type": "HISTOGRAM", "min": 1000}, "buckets": [], "flags": 17, "name": "V8.MemoryHeapSampleTotalUsed"}
+HISTOGRAM V8.MemoryHeapSampleTotalUsed_by_url: www.igoogle.com= {"count": 0, "params": {"max": 500000, "bucket_count": 50, "type": "HISTOGRAM", "min": 1000}, "buckets": [], "flags": 17, "name": "V8.MemoryHeapSampleTotalUsed"}
+HISTOGRAM V8.MemoryHeapSampleTotalUsed_by_url: www.techcrunch.com= {"count": 0, "params": {"max": 500000, "bucket_count": 50, "type": "HISTOGRAM", "min": 1000}, "buckets": [], "flags": 17, "name": "V8.MemoryHeapSampleTotalUsed"}
+HISTOGRAM V8.MemoryHeapSampleTotalUsed_by_url: www.webkit.org= {"count": 0, "params": {"max": 500000, "bucket_count": 50, "type": "HISTOGRAM", "min": 1000}, "buckets": [], "flags": 17, "name": "V8.MemoryHeapSampleTotalUsed"}
+HISTOGRAM V8.MemoryHeapSampleTotalUsed_by_url: www.yahoo.com= {"count": 0, "params": {"max": 500000, "bucket_count": 50, "type": "HISTOGRAM", "min": 1000}, "buckets": [], "flags": 17, "name": "V8.MemoryHeapSampleTotalUsed"}
+RESULT times_by_url: blog.chromium.org= [585,441] ms
+Avg times_by_url: 513.000000ms
+Sd  times_by_url: 101.823376ms
+RESULT times_by_url: dev.chromium.org= [467,388] ms
+Avg times_by_url: 427.500000ms
+Sd  times_by_url: 55.861436ms
+RESULT times_by_url: googleblog.blogspot.com1= [202,65] ms
+Avg times_by_url: 133.500000ms
+Sd  times_by_url: 96.873629ms
+RESULT times_by_url: googleblog.blogspot.com2= [321,157] ms
+Avg times_by_url: 239.000000ms
+Sd  times_by_url: 115.965512ms
+RESULT times_by_url: test.blogspot.com= [555,430] ms
+Avg times_by_url: 492.500000ms
+Sd  times_by_url: 88.388348ms
+RESULT times_by_url: www.igoogle.com= [348,142] ms
+Avg times_by_url: 245.000000ms
+Sd  times_by_url: 145.663997ms
+RESULT times_by_url: www.techcrunch.com= [527,189] ms
+Avg times_by_url: 358.000000ms
+Sd  times_by_url: 239.002092ms
+RESULT times_by_url: www.webkit.org= [402,357] ms
+Avg times_by_url: 379.500000ms
+Sd  times_by_url: 31.819805ms
+RESULT times_by_url: www.yahoo.com= [272,153] ms
+Avg times_by_url: 212.500000ms
+Sd  times_by_url: 84.145707ms
+*RESULT times: t= [585,467,202,321,555,348,527,402,272,441,388,65,157,430,142,189,357,153] ms
+Avg times: 333.388889ms
+Sd  times: 155.578669ms
+RESULT vm_size_final_b: vm_size_f_b= 740204544 bytes
+RESULT vm_peak_b: vm_pk_b= 741777408 bytes
+RESULT vm_rss_final_b: vm_rss_f_b= 66998272 bytes
+RESULT rss_peak_b: rss_pk_b= 67006464 bytes
+RESULT vm_size_final_r: vm_size_f_r= 2845302784 bytes
+RESULT vm_peak_r: vm_pk_r= 741777408 bytes
+RESULT vm_rss_final_r: vm_rss_f_r= 168972288 bytes
+RESULT rss_peak_r: rss_pk_r= 67006464 bytes
+RESULT vm_size_final_t: vm_size_f_t= 3585507328 bytes
+RESULT vm_rss_final_t: vm_rss_f_t= 235970560 bytes
+RESULT commit_charge: cc= 72412 kb
+RESULT processes: proc_= 6 count
+RESULT read_op_b: r_op_b= 44131 
+RESULT write_op_b: w_op_b= 29331 
+RESULT read_byte_b: r_b= 10725 kb
+RESULT write_byte_b: w_b= 16883 kb
+RESULT read_op_r: r_op_r= 19748 
+RESULT write_op_r: w_op_r= 15385 
+RESULT read_byte_r: r_r= 3263 kb
+RESULT write_byte_r: w_r= 1460 kb

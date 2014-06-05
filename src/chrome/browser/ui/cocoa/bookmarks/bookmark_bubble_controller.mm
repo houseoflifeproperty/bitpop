@@ -6,13 +6,16 @@
 
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
-#include "base/sys_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
+#include "base/strings/sys_string_conversions.h"
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_finder.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_button.h"
-#import "chrome/browser/ui/cocoa/bookmarks/bookmark_cell_single_line.h"
+#import "chrome/browser/ui/cocoa/bookmarks/bookmark_sync_promo_controller.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
+#include "chrome/browser/ui/sync/sync_promo_ui.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/core/browser/bookmark_utils.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
@@ -20,7 +23,7 @@
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 
-using content::UserMetricsAction;
+using base::UserMetricsAction;
 
 // An object to represent the ChooseAnotherFolder item in the pop up.
 @interface ChooseAnotherFolder : NSObject
@@ -51,7 +54,9 @@ using content::UserMetricsAction;
 - (id)initWithParentWindow:(NSWindow*)parentWindow
                      model:(BookmarkModel*)model
                       node:(const BookmarkNode*)node
-     alreadyBookmarked:(BOOL)alreadyBookmarked {
+         alreadyBookmarked:(BOOL)alreadyBookmarked {
+  DCHECK(model);
+  DCHECK(node);
   if ((self = [super initWithWindowNibPath:@"BookmarkBubble"
                               parentWindow:parentWindow
                                 anchoredAt:NSZeroPoint])) {
@@ -65,13 +70,30 @@ using content::UserMetricsAction;
 - (void)awakeFromNib {
   [super awakeFromNib];
 
-  // Check if NSTextFieldCell supports the method. This check is in place as
-  // only 10.6 and greater support the setUsesSingleLineMode method.
-  // TODO(kushi.p): Remove this when the project hits a 10.6+ only state.
-  NSTextFieldCell* nameFieldCell_ = [nameTextField_ cell];
-  if ([nameFieldCell_
-          respondsToSelector:@selector(setUsesSingleLineMode:)]) {
-    [nameFieldCell_ setUsesSingleLineMode:YES];
+  [[nameTextField_ cell] setUsesSingleLineMode:YES];
+
+  Browser* browser = chrome::FindBrowserWithWindow(self.parentWindow);
+  if (SyncPromoUI::ShouldShowSyncPromo(browser->profile())) {
+    syncPromoController_.reset(
+        [[BookmarkSyncPromoController alloc] initWithBrowser:browser]);
+    [syncPromoPlaceholder_ addSubview:[syncPromoController_ view]];
+
+    // Resize the sync promo and its placeholder.
+    NSRect syncPromoPlaceholderFrame = [syncPromoPlaceholder_ frame];
+    CGFloat syncPromoHeight = [syncPromoController_
+        preferredHeightForWidth:syncPromoPlaceholderFrame.size.width];
+    syncPromoPlaceholderFrame.size.height = syncPromoHeight;
+
+    [syncPromoPlaceholder_ setFrame:syncPromoPlaceholderFrame];
+    [[syncPromoController_ view] setFrame:syncPromoPlaceholderFrame];
+
+    // Adjust the height of the bubble so that the sync promo fits in it,
+    // except for its bottom border. The xib file hides the left and right
+    // borders of the sync promo.
+    NSRect bubbleFrame = [[self window] frame];
+    bubbleFrame.size.height +=
+        syncPromoHeight - [syncPromoController_ borderWidth];
+    [[self window] setFrame:bubbleFrame display:YES];
   }
 }
 
@@ -83,6 +105,7 @@ using content::UserMetricsAction;
     if ((node->parent() == model_->bookmark_bar_node()) ||
         (node == model_->other_node())) {
       pulsingBookmarkNode_ = node;
+      bookmarkObserver_->StartObservingNode(pulsingBookmarkNode_);
       NSValue *value = [NSValue valueWithPointer:node];
       NSDictionary *dict = [NSDictionary
                              dictionaryWithObjectsAndKeys:value,
@@ -104,6 +127,8 @@ using content::UserMetricsAction;
   if (!pulsingBookmarkNode_)
     return;
   NSValue *value = [NSValue valueWithPointer:pulsingBookmarkNode_];
+  if (bookmarkObserver_)
+      bookmarkObserver_->StopObservingNode(pulsingBookmarkNode_);
   pulsingBookmarkNode_ = NULL;
   NSDictionary *dict = [NSDictionary
                          dictionaryWithObjectsAndKeys:value,
@@ -128,7 +153,7 @@ using content::UserMetricsAction;
 
 - (void)windowWillClose:(NSNotification*)notification {
   // We caught a close so we don't need to watch for the parent closing.
-  bookmark_observer_.reset(NULL);
+  bookmarkObserver_.reset();
   [self stopPulsingBookmarkButton];
   [super windowWillClose:notification];
 }
@@ -170,10 +195,16 @@ using content::UserMetricsAction;
   // dialog, the bookmark bubble's cancel: means "don't add this as a
   // bookmark", not "cancel editing".  We must take extra care to not
   // touch the bookmark in this selector.
-  bookmark_observer_.reset(new BookmarkModelObserverForCocoa(
-                               node_, model_,
-                               self,
-                               @selector(dismissWithoutEditing:)));
+  bookmarkObserver_.reset(new BookmarkModelObserverForCocoa(
+      model_,
+      ^(BOOL nodeWasDeleted) {
+          // If a watched node was deleted, the pointer to the pulsing button
+          // is likely stale.
+          if (nodeWasDeleted)
+            pulsingBookmarkNode_ = NULL;
+          [self dismissWithoutEditing:nil];
+      }));
+  bookmarkObserver_->StartObservingNode(node_);
 
   // Pulse something interesting on the bookmark bar.
   [self startPulsingBookmarkButton:node_];
@@ -314,6 +345,10 @@ using content::UserMetricsAction;
 
 
 @implementation BookmarkBubbleController (ExposedForUnitTesting)
+
+- (NSView*)syncPromoPlaceholder {
+  return syncPromoPlaceholder_;
+}
 
 + (NSString*)chooseAnotherFolderString {
   return l10n_util::GetNSStringWithFixup(

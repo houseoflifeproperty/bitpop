@@ -11,10 +11,10 @@
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
 #include "base/memory/ref_counted.h"
+#include "content/public/browser/download_interrupt_reasons.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/download_url_parameters.h"
-#include "net/base/net_errors.h"
 
 namespace content {
 
@@ -49,25 +49,23 @@ class DownloadUpdatedObserver : public DownloadItem::Observer {
 };
 
 // Detects changes to the downloads after construction.
+//
 // Finishes when one of the following happens:
 //   - A specified number of downloads change to a terminal state (defined
 //     in derived classes).
-//   - Specific events, such as a select file dialog.
-// Callers may either probe for the finished state, or wait on it.
+//   - The download manager was shutdown.
 //
-// TODO(rdsmith): Detect manager going down, remove pointer to
-// DownloadManager, transition to finished.  (For right now we
-// just use a scoped_refptr<> to keep it around, but that may cause
-// timeouts on waiting if a DownloadManager::Shutdown() occurs which
-// cancels our in-progress downloads.)
+// Callers may either probe for the finished state, or wait on it.
 class DownloadTestObserver : public DownloadManager::Observer,
                              public DownloadItem::Observer {
  public:
   // Action an observer should take if a dangerous download is encountered.
   enum DangerousDownloadAction {
     ON_DANGEROUS_DOWNLOAD_ACCEPT,  // Accept the download
-    ON_DANGEROUS_DOWNLOAD_DENY,  // Deny the download
-    ON_DANGEROUS_DOWNLOAD_FAIL  // Fail if a dangerous download is seen
+    ON_DANGEROUS_DOWNLOAD_DENY,    // Deny the download
+    ON_DANGEROUS_DOWNLOAD_FAIL,    // Fail if a dangerous download is seen
+    ON_DANGEROUS_DOWNLOAD_IGNORE,  // Make it the callers problem.
+    ON_DANGEROUS_DOWNLOAD_QUIT     // Will set final state without decision.
   };
 
   // Create an object that will be considered finished when |wait_count|
@@ -78,10 +76,10 @@ class DownloadTestObserver : public DownloadManager::Observer,
 
   virtual ~DownloadTestObserver();
 
-  // Wait for the requested number of downloads to enter a terminal state.
+  // Wait for one of the finish conditions.
   void WaitForFinished();
 
-  // Return true if everything's happened that we're configured for.
+  // Return true if we reached one of the finish conditions.
   bool IsFinished() const;
 
   // DownloadItem::Observer
@@ -91,6 +89,7 @@ class DownloadTestObserver : public DownloadManager::Observer,
   // DownloadManager::Observer
   virtual void OnDownloadCreated(
       DownloadManager* manager, DownloadItem* item) OVERRIDE;
+  virtual void ManagerGoingDown(DownloadManager* manager) OVERRIDE;
 
   size_t NumDangerousDownloadsSeen() const;
 
@@ -117,8 +116,14 @@ class DownloadTestObserver : public DownloadManager::Observer,
 
   void SignalIfFinished();
 
+  // Fake user click on "Accept".
+  void AcceptDangerousDownload(uint32 download_id);
+
+  // Fake user click on "Deny".
+  void DenyDangerousDownload(uint32 download_id);
+
   // The observed download manager.
-  scoped_refptr<DownloadManager> download_manager_;
+  DownloadManager* download_manager_;
 
   // The set of DownloadItem's that have transitioned to their finished state
   // since construction of this object.  When the size of this array
@@ -156,7 +161,9 @@ class DownloadTestObserver : public DownloadManager::Observer,
   DangerousDownloadAction dangerous_download_action_;
 
   // Holds the download ids which were dangerous.
-  std::set<int32> dangerous_downloads_seen_;
+  std::set<uint32> dangerous_downloads_seen_;
+
+  base::WeakPtrFactory<DownloadTestObserver> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(DownloadTestObserver);
 };
@@ -164,10 +171,8 @@ class DownloadTestObserver : public DownloadManager::Observer,
 class DownloadTestObserverTerminal : public DownloadTestObserver {
  public:
   // Create an object that will be considered finished when |wait_count|
-  // download items have entered a terminal state (any but IN_PROGRESS).
-  // If |finish_on_select_file| is true, the object will also be
-  // considered finished if the DownloadManager raises a
-  // SelectFileDialogDisplayed() notification.
+  // download items have entered a terminal state (DownloadItem::IsDone() is
+  // true).
   DownloadTestObserverTerminal(
       DownloadManager* download_manager,
       size_t wait_count,
@@ -183,16 +188,13 @@ class DownloadTestObserverTerminal : public DownloadTestObserver {
 
 // Detects changes to the downloads after construction.
 // Finishes when a specified number of downloads change to the
-// IN_PROGRESS state, or a Select File Dialog has appeared.
+// IN_PROGRESS state, or when the download manager is destroyed.
 // Dangerous downloads are accepted.
 // Callers may either probe for the finished state, or wait on it.
 class DownloadTestObserverInProgress : public DownloadTestObserver {
  public:
   // Create an object that will be considered finished when |wait_count|
   // download items have entered state |IN_PROGRESS|.
-  // If |finish_on_select_file| is true, the object will also be
-  // considered finished if the DownloadManager raises a
-  // SelectFileDialogDisplayed() notification.
   DownloadTestObserverInProgress(
       DownloadManager* download_manager, size_t wait_count);
 
@@ -202,6 +204,23 @@ class DownloadTestObserverInProgress : public DownloadTestObserver {
   virtual bool IsDownloadInFinalState(DownloadItem* download) OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(DownloadTestObserverInProgress);
+};
+
+class DownloadTestObserverInterrupted : public DownloadTestObserver {
+ public:
+  // Create an object that will be considered finished when |wait_count|
+  // download items are interrupted.
+  DownloadTestObserverInterrupted(
+      DownloadManager* download_manager,
+      size_t wait_count,
+      DangerousDownloadAction dangerous_download_action);
+
+  virtual ~DownloadTestObserverInterrupted();
+
+ private:
+  virtual bool IsDownloadInFinalState(DownloadItem* download) OVERRIDE;
+
+  DISALLOW_COPY_AND_ASSIGN(DownloadTestObserverInterrupted);
 };
 
 // The WaitForFlush() method on this class returns after:
@@ -262,10 +281,12 @@ class DownloadTestItemCreationObserver
 
   void WaitForDownloadItemCreation();
 
-  int download_id() const { return download_id_; }
-  net::Error error() const { return error_; }
+  uint32 download_id() const { return download_id_; }
+  DownloadInterruptReason interrupt_reason() const { return interrupt_reason_; }
   bool started() const { return called_back_count_ > 0; }
-  bool succeeded() const { return started() && (error_ == net::OK); }
+  bool succeeded() const {
+    return started() && interrupt_reason_ == DOWNLOAD_INTERRUPT_REASON_NONE;
+  }
 
   const DownloadUrlParameters::OnStartedCallback callback();
 
@@ -274,11 +295,12 @@ class DownloadTestItemCreationObserver
 
   ~DownloadTestItemCreationObserver();
 
-  void DownloadItemCreationCallback(DownloadItem* item, net::Error error);
+  void DownloadItemCreationCallback(DownloadItem* item,
+                                    DownloadInterruptReason interrupt_reason);
 
   // The download creation information we received.
-  int download_id_;
-  net::Error error_;
+  uint32 download_id_;
+  DownloadInterruptReason interrupt_reason_;
 
   // Count of callbacks.
   size_t called_back_count_;

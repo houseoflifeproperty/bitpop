@@ -10,21 +10,42 @@ defaults = {}
 helper = master_config.Helper(defaults)
 B = helper.Builder
 F = helper.Factory
-S = helper.Scheduler
 T = helper.Triggerable
 
-def win(): return chromium_factory.ChromiumFactory('src/build', 'win32')
-def linux(): return chromium_factory.ChromiumFactory('src/build', 'linux2')
+def win():
+  return chromium_factory.ChromiumFactory('src/build', 'win32')
 
-defaults['category'] = '7win latest'
+defaults['category'] = 'nonlayout'
 
-# Tests that are single-machine shard-safe. For now we only use the sharding
-# supervisor for long tests (more than 30 seconds) that are known to be stable.
+# Tests that are single-machine shard-safe.
 sharded_tests = [
+  'aura_unittests',
   'base_unittests',
   'browser_tests',
+  'cacheinvalidation_unittests',
+  'cc_unittests',
+  'chromedriver_tests',
+  'chromedriver_unittests',
+  'components_unittests',
   'content_browsertests',
+  'content_unittests',
+  'crypto_unittests',
+  'device_unittests',
+  'events_unittests',
+  'gpu_unittests',
+  'jingle_unittests',
   'media_unittests',
+  'net_unittests',
+  'ppapi_unittests',
+  'printing_unittests',
+  'remoting_unittests',
+  # http://crbug.com/157234
+  #'sync_integration_tests',
+  'sync_unit_tests',
+  'ui_unittests',
+  'unit_tests',
+  'views_unittests',
+  'webkit_compositor_bindings_unittests',
 ]
 
 ################################################################################
@@ -36,12 +57,6 @@ rel_archive = master_config.GetArchiveUrl('ChromiumWebkit',
                                           'Win Builder',
                                           'win-latest-rel', 'win32')
 
-#
-# Main release scheduler for webkit
-#
-S('s7_webkit_builder_rel', branch='trunk', treeStableTimer=60)
-S('s7_webkit_rel', branch='trunk', treeStableTimer=60)
-
 # Triggerable scheduler for testers
 T('s7_webkit_builder_rel_trigger')
 
@@ -49,72 +64,47 @@ T('s7_webkit_builder_rel_trigger')
 #
 # Win Rel Builders
 #
-B('Win Builder', 'f_win_rel', scheduler='s7_webkit_builder_rel',
+B('Win Builder', 'f_win_rel', scheduler='global_scheduler',
   builddir='win-latest-rel', auto_reboot=False)
-F('f_win_rel', win().ChromiumWebkitLatestFactory(
+F('f_win_rel', win().ChromiumFactory(
     slave_type='Builder',
-    project='all.sln;chromium_builder',
+    options=['--build-tool=ninja', '--compiler=goma', 'chromium_builder'],
     factory_properties={
         'trigger': 's7_webkit_builder_rel_trigger',
-        'gclient_env': { 'GYP_DEFINES': 'fastbuild=1' },
+        'gclient_env': {
+            'GYP_DEFINES': 'fastbuild=1',
+            'GYP_GENERATORS': 'ninja',
+        },
+        'archive_build': True,
+        'blink_config': 'blink',
+        'build_name': 'Win',
+        'gs_bucket': 'gs://chromium-webkit-snapshots',
+        'gs_acl': 'public-read',
     }))
 
 #
 # Win Rel testers+builders
 #
 # TODO: Switch back to trigger, http://crbug.com/102331
-B('Win7 Perf', 'f_win_rel_perf', scheduler='s7_webkit_builder_rel')
-F('f_win_rel_perf', win().ChromiumWebkitLatestFactory(
-    # TODO: undo, http://crbug.com/102331
-    #slave_type='Tester',
-    #build_url=rel_archive,
-    project='all.sln;chromium_builder_perf',
-    tests=[
-      'dom_perf',
-      'dromaeo',
-      'page_cycler_database',
-      'page_cycler_dhtml',
-      'page_cycler_indexeddb',
-      'page_cycler_intl1',
-      'page_cycler_intl2',
-      'page_cycler_morejs',
-      'page_cycler_moz',
-      'startup',
-      'sunspider',
-    ],
-    factory_properties={'perf_id': 'chromium-rel-win7-webkit',
-                        'show_perf_results': True,
-                        'start_crash_handler': True,
-                        # TODO: Remove, http://crbug.com/102331
-                        'gclient_env': {'GYP_DEFINES': 'fastbuild=1'},
-                        }))
 
-B('Vista Tests', 'f_win_rel_tests', scheduler='s7_webkit_builder_rel_trigger')
-F('f_win_rel_tests', win().ChromiumWebkitLatestFactory(
+B('Win7 Tests', 'f_win_rel_tests', scheduler='s7_webkit_builder_rel_trigger')
+F('f_win_rel_tests', win().ChromiumFactory(
     slave_type='Tester',
     build_url=rel_archive,
     tests=[
       'installer',
+      'browser_tests',
+      'content_browsertests',
+      'telemetry_unittests',
       'unit',
     ],
-    factory_properties={'perf_id': 'chromium-rel-vista-webkit',
-                        'show_perf_results': True,
-                        'start_crash_handler': True,
-                        'test_results_server': 'test-results.appspot.com',
-                        }))
-
-B('Chrome Frame Tests', 'f_cf_rel_tests',
-  scheduler='s7_webkit_builder_rel_trigger')
-F('f_cf_rel_tests', win().ChromiumWebkitLatestFactory(
-    slave_type='Tester',
-    build_url=rel_archive,
-    tests=[
-      'chrome_frame_net_tests',
-      'chrome_frame_tests',
-      'chrome_frame_unittests',
-    ],
-    factory_properties={'process_dumps': True,
-                        'start_crash_handler': True,}))
+    factory_properties={
+        'perf_id': 'chromium-rel-win7-webkit',
+        'show_perf_results': True,
+        'start_crash_handler': True,
+        'test_results_server': 'test-results.appspot.com',
+        'blink_config': 'blink',
+    }))
 
 ################################################################################
 ## Debug
@@ -122,30 +112,30 @@ F('f_cf_rel_tests', win().ChromiumWebkitLatestFactory(
 
 
 #
-# Main debug scheduler for webkit
-#
-S('s7_webkit_builder_dbg', branch='trunk', treeStableTimer=60)
-S('s7_webkit_dbg', branch='trunk', treeStableTimer=60)
-
-#
 # Win Dbg Builder
 #
-B('Win7 (dbg)', 'f_win_dbg', scheduler='s7_webkit_builder_dbg',
+B('Win7 (dbg)', 'f_win_dbg', scheduler='global_scheduler',
   builddir='win-latest-dbg')
-F('f_win_dbg', win().ChromiumWebkitLatestFactory(
+F('f_win_dbg', win().ChromiumFactory(
     target='Debug',
-    project='all.sln;chromium_builder',
+    options=['--build-tool=ninja', '--compiler=goma', 'chromium_builder'],
     tests=[
       'browser_tests',
       'content_browsertests',
-      'interactive_ui',
+      'interactive_ui_tests',
+      'telemetry_unittests',
       'unit',
     ],
     factory_properties={
         'sharded_tests': sharded_tests,
         'start_crash_handler': True,
         'generate_gtest_json': True,
-        'gclient_env': {'GYP_DEFINES': 'fastbuild=1'}}))
+        'gclient_env': {
+             'GYP_DEFINES': 'fastbuild=1',
+             'GYP_GENERATORS': 'ninja',
+        },
+        'blink_config': 'blink',
+    }))
 
-def Update(config, active_master, c):
+def Update(_config, _active_master, c):
   return helper.Update(c)

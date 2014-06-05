@@ -14,8 +14,9 @@
 
 #include "base/basictypes.h"
 #include "base/memory/singleton.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/threading/sequenced_worker_pool.h"
+#include "base/time/time.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "rlz/lib/rlz_lib.h"
@@ -37,14 +38,19 @@ class URLRequestContextGetter;
 
 class RLZTracker : public content::NotificationObserver {
  public:
-  // Initializes the RLZ library services for use in chrome. Schedules a
-  // delayed task (delayed by |delay| seconds) that performs the ping and
-  // registers some events when 'first-run' is true.
+  // Initializes the RLZ library services for use in chrome. Schedules a delayed
+  // task that performs the ping and registers some events when 'first-run' is
+  // true.
+  //
+  // When |send_ping_immediately| is true, a financial ping should be sent
+  // immediately after a first search is recorded, without waiting for |delay|.
+  // However, we only want this behaviour on first run.
   //
   // If the chrome brand is organic (no partners) then the pings don't occur.
   static bool InitRlzFromProfileDelayed(Profile* profile,
                                         bool first_run,
-                                        int delay);
+                                        bool send_ping_immediately,
+                                        base::TimeDelta delay);
 
   // Records an RLZ event. Some events can be access point independent.
   // Returns false it the event could not be recorded. Requires write access
@@ -56,6 +62,9 @@ class RLZTracker : public content::NotificationObserver {
   // For the point parameter of RecordProductEvent.
   static const rlz_lib::AccessPoint CHROME_OMNIBOX;
   static const rlz_lib::AccessPoint CHROME_HOME_PAGE;
+#if !defined(OS_IOS)
+  static const rlz_lib::AccessPoint CHROME_APP_LIST;
+#endif
 
   // Gets the HTTP header value that can be added to requests from the
   // specific access point.  The string returned is of the form:
@@ -67,7 +76,8 @@ class RLZTracker : public content::NotificationObserver {
   // Gets the RLZ value of the access point.
   // Returns false if the rlz string could not be obtained. In some cases
   // an empty string can be returned which is not an error.
-  static bool GetAccessPointRlz(rlz_lib::AccessPoint point, string16* rlz);
+  static bool GetAccessPointRlz(rlz_lib::AccessPoint point,
+                                base::string16* rlz);
 
   // Invoked during shutdown to clean up any state created by RLZTracker.
   static void CleanupRlz();
@@ -84,6 +94,11 @@ class RLZTracker : public content::NotificationObserver {
   // Enables zero delay for InitRlzFromProfileDelayed. For testing only.
   static void EnableZeroDelayForTesting();
 
+#if !defined(OS_IOS)
+  // Records that the app list search has been used.
+  static void RecordAppListSearch();
+#endif
+
   // The following methods are made protected so that they can be used for
   // testing purposes. Production code should never need to call these.
  protected:
@@ -92,7 +107,8 @@ class RLZTracker : public content::NotificationObserver {
 
   // Called by InitRlzFromProfileDelayed with values taken from |profile|.
   static bool InitRlzDelayed(bool first_run,
-                             int delay,
+                             bool send_ping_immediately,
+                             base::TimeDelta delay,
                              bool is_google_default_search,
                              bool is_google_homepage,
                              bool is_google_in_startpages);
@@ -123,7 +139,8 @@ class RLZTracker : public content::NotificationObserver {
 
   // Implementation called from InitRlzDelayed() static method.
   bool Init(bool first_run,
-            int delay,
+            bool send_ping_immediately,
+            base::TimeDelta delay,
             bool google_default_search,
             bool google_default_homepage,
             bool is_google_in_startpages);
@@ -137,11 +154,11 @@ class RLZTracker : public content::NotificationObserver {
   void RecordFirstSearch(rlz_lib::AccessPoint point);
 
   // Implementation called from GetAccessPointRlz() static method.
-  bool GetAccessPointRlzImpl(rlz_lib::AccessPoint point, string16* rlz);
+  bool GetAccessPointRlzImpl(rlz_lib::AccessPoint point, base::string16* rlz);
 
   // Schedules the delayed initialization. This method is virtual to allow
   // tests to override how the scheduling is done.
-  virtual void ScheduleDelayedInit(int delay);
+  virtual void ScheduleDelayedInit(base::TimeDelta delay);
 
   // Schedules a call to rlz_lib::RecordProductEvent(). This method is virtual
   // to allow tests to override how the scheduling is done.
@@ -166,8 +183,8 @@ class RLZTracker : public content::NotificationObserver {
   // Sends the financial ping to the RLZ servers. This method is virtual to
   // allow tests to override.
   virtual bool SendFinancialPing(const std::string& brand,
-                                 const string16& lang,
-                                 const string16& referral);
+                                 const base::string16& lang,
+                                 const base::string16& referral);
 
 #if defined(OS_CHROMEOS)
   // Implementation called from ClearRlzState static method.
@@ -177,6 +194,10 @@ class RLZTracker : public content::NotificationObserver {
   // to allow tests to override how the scheduling is done.
   virtual bool ScheduleClearRlzState();
 #endif
+
+  // Returns a pointer to the bool corresponding to whether |point| has been
+  // used but not reported.
+  bool* GetAccessPointRecord(rlz_lib::AccessPoint point);
 
   // Tracker used for testing purposes only. If this value is non-NULL, it
   // will be returned from GetInstance() instead of the regular singleton.
@@ -193,9 +214,6 @@ class RLZTracker : public content::NotificationObserver {
   // sequentially in the blocking pool.
   base::SequencedWorkerPool::SequenceToken worker_pool_token_;
 
-  // URLRequestContextGetter used by RLZ library.
-  net::URLRequestContextGetter* url_request_context_;
-
   // Keeps track if the RLZ tracker has already performed its delayed
   // initialization.
   bool already_ran_;
@@ -204,11 +222,12 @@ class RLZTracker : public content::NotificationObserver {
   // The cache must be protected by a lock since it may be accessed from
   // the UI thread for reading and the IO thread for reading and/or writing.
   base::Lock cache_lock_;
-  std::map<rlz_lib::AccessPoint, string16> rlz_cache_;
+  std::map<rlz_lib::AccessPoint, base::string16> rlz_cache_;
 
-  // Keeps track of whether the omnibox or host page have been used.
+  // Keeps track of whether the omnibox, home page or app list have been used.
   bool omnibox_used_;
   bool homepage_used_;
+  bool app_list_used_;
 
   // Main and (optionally) reactivation brand codes, assigned on UI thread.
   std::string brand_;
@@ -217,7 +236,7 @@ class RLZTracker : public content::NotificationObserver {
   content::NotificationRegistrar registrar_;
 
   // Minimum delay before sending financial ping after initialization.
-  int min_delay_;
+  base::TimeDelta min_init_delay_;
 
   DISALLOW_COPY_AND_ASSIGN(RLZTracker);
 };

@@ -14,11 +14,15 @@ cr.define('print_preview', function() {
    *     information about how the preview should be displayed.
    * @param {!print_preview.NativeLayer} nativeLayer Needed to communicate with
    *     Chromium's preview generation system.
+   * @param {!print_preview.DocumentInfo} documentInfo Document data model.
    * @constructor
    * @extends {print_preview.Component}
    */
-  function PreviewArea(destinationStore, printTicketStore, nativeLayer) {
+  function PreviewArea(
+      destinationStore, printTicketStore, nativeLayer, documentInfo) {
     print_preview.Component.call(this);
+    // TODO(rltoscano): Understand the dependencies of printTicketStore needed
+    // here, and add only those here (not the entire print ticket store).
 
     /**
      * Used to get the currently selected destination.
@@ -42,6 +46,13 @@ cr.define('print_preview', function() {
     this.nativeLayer_ = nativeLayer;
 
     /**
+     * Document data model.
+     * @type {!print_preview.DocumentInfo}
+     * @private
+     */
+    this.documentInfo_ = documentInfo;
+
+    /**
      * Used to read generated page previews.
      * @type {print_preview.PreviewGenerator}
      * @private
@@ -60,8 +71,11 @@ cr.define('print_preview', function() {
      * @type {!print_preview.MarginControlContainer}
      * @private
      */
-    this.marginControlContainer_ =
-        new print_preview.MarginControlContainer(this.printTicketStore_);
+    this.marginControlContainer_ = new print_preview.MarginControlContainer(
+        this.documentInfo_,
+        this.printTicketStore_.marginsType,
+        this.printTicketStore_.customMargins,
+        this.printTicketStore_.measurementSystem);
     this.addChild(this.marginControlContainer_);
 
     /**
@@ -144,6 +158,8 @@ cr.define('print_preview', function() {
    */
   PreviewArea.Classes_ = {
     COMPATIBILITY_OBJECT: 'preview-area-compatibility-object',
+    OUT_OF_PROCESS_COMPATIBILITY_OBJECT:
+        'preview-area-compatibility-object-out-of-process',
     CUSTOM_MESSAGE_TEXT: 'preview-area-custom-message-text',
     MESSAGE: 'preview-area-message',
     INVISIBLE: 'invisible',
@@ -162,6 +178,19 @@ cr.define('print_preview', function() {
     CUSTOM: 'custom',
     LOADING: 'loading',
     PREVIEW_FAILED: 'preview-failed'
+  };
+
+  /**
+   * Enumeration of PDF plugin types for print preview.
+   * @enum {string}
+   * @private
+   */
+  PreviewArea.PluginType_ = {
+    // TODO(raymes): Remove all references to the IN_PROCESS plugin once it is
+    // removed.
+    IN_PROCESS: 'in-process',
+    OUT_OF_PROCESS: 'out-of-process',
+    NONE: 'none'
   };
 
   /**
@@ -272,9 +301,50 @@ cr.define('print_preview', function() {
           print_preview.PrintTicketStore.EventType.DOCUMENT_CHANGE,
           this.onTicketChange_.bind(this));
 
-      if (this.checkPluginCompatibility_()) {
+      this.tracker.add(
+          this.printTicketStore_.color,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
+          this.onTicketChange_.bind(this));
+      this.tracker.add(
+          this.printTicketStore_.cssBackground,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
+          this.onTicketChange_.bind(this));
+      this.tracker.add(
+        this.printTicketStore_.customMargins,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
+          this.onTicketChange_.bind(this));
+      this.tracker.add(
+          this.printTicketStore_.fitToPage,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
+          this.onTicketChange_.bind(this));
+      this.tracker.add(
+          this.printTicketStore_.headerFooter,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
+          this.onTicketChange_.bind(this));
+      this.tracker.add(
+          this.printTicketStore_.landscape,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
+          this.onTicketChange_.bind(this));
+      this.tracker.add(
+          this.printTicketStore_.marginsType,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
+          this.onTicketChange_.bind(this));
+      this.tracker.add(
+          this.printTicketStore_.pageRange,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
+          this.onTicketChange_.bind(this));
+      this.tracker.add(
+          this.printTicketStore_.selectionOnly,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
+          this.onTicketChange_.bind(this));
+
+      this.pluginType_ = this.getPluginType_();
+      if (this.pluginType_ != PreviewArea.PluginType_.NONE) {
         this.previewGenerator_ = new print_preview.PreviewGenerator(
-            this.destinationStore_, this.printTicketStore_, this.nativeLayer_);
+            this.destinationStore_,
+            this.printTicketStore_,
+            this.nativeLayer_,
+            this.documentInfo_);
         this.tracker.add(
             this.previewGenerator_,
             print_preview.PreviewGenerator.EventType.PREVIEW_START,
@@ -318,11 +388,17 @@ cr.define('print_preview', function() {
     /**
      * Checks to see if a suitable plugin for rendering the preview exists. If
      * one does not exist, then an error message will be displayed.
-     * @return {boolean} Whether Chromium has a suitable plugin for rendering
-     *     the preview.
+     * @return {string} A string constant indicating whether Chromium has a
+     *     plugin for rendering the preview.
+     *     PreviewArea.PluginType_.IN_PROCESS for an in-process plugin
+     *     PreviewArea.PluginType_.OUT_OF_PROCESS for an out-of-process plugin
+     *     PreviewArea.PluginType_.NONE if no plugin is available.
      * @private
      */
-    checkPluginCompatibility_: function() {
+    getPluginType_: function() {
+      // TODO(raymes): Remove the in-process check after we remove the
+      // in-process plugin. Change this function back to
+      // checkPluginCompatibility_().
       var compatObj = this.getElement().getElementsByClassName(
           PreviewArea.Classes_.COMPATIBILITY_OBJECT)[0];
       var isCompatible =
@@ -346,7 +422,20 @@ cr.define('print_preview', function() {
           compatObj.getHeight &&
           compatObj.getWidth;
       compatObj.parentElement.removeChild(compatObj);
-      return isCompatible;
+
+      // TODO(raymes): It's harder to test compatibility of the out of process
+      // plugin because it's asynchronous. We could do a better job at some
+      // point.
+      var oopCompatObj = this.getElement().getElementsByClassName(
+          PreviewArea.Classes_.OUT_OF_PROCESS_COMPATIBILITY_OBJECT)[0];
+      var isOOPCompatible = oopCompatObj.postMessage;
+      oopCompatObj.parentElement.removeChild(oopCompatObj);
+
+      if (isCompatible)
+        return PreviewArea.PluginType_.IN_PROCESS;
+      if (isOOPCompatible)
+        return PreviewArea.PluginType_.OUT_OF_PROCESS;
+      return PreviewArea.PluginType_.NONE;
     },
 
     /**
@@ -407,29 +496,48 @@ cr.define('print_preview', function() {
         console.warn('Pdf preview plugin already created');
         return;
       }
-      this.plugin_ = document.createElement('embed');
-      // NOTE: The plugin's 'id' field must be set to 'pdf-viewer' since
-      // chrome/renderer/print_web_view_helper.cc actually references it.
-      this.plugin_.setAttribute('id', 'pdf-viewer');
+
+      if (this.pluginType_ == PreviewArea.PluginType_.IN_PROCESS) {
+        this.plugin_ = document.createElement('embed');
+        this.plugin_.setAttribute(
+            'type', 'application/x-google-chrome-print-preview-pdf');
+        this.plugin_.setAttribute('src', srcUrl);
+      } else {
+        this.plugin_ = PDFCreateOutOfProcessPlugin(srcUrl);
+      }
+
       this.plugin_.setAttribute('class', 'preview-area-plugin');
-      this.plugin_.setAttribute(
-          'type', 'application/x-google-chrome-print-preview-pdf');
-      this.plugin_.setAttribute('src', srcUrl);
       this.plugin_.setAttribute('aria-live', 'polite');
       this.plugin_.setAttribute('aria-atomic', 'true');
+      // NOTE: The plugin's 'id' field must be set to 'pdf-viewer' since
+      // chrome/renderer/printing/print_web_view_helper.cc actually references
+      // it.
+      this.plugin_.setAttribute('id', 'pdf-viewer');
       this.getChildElement('.preview-area-plugin-wrapper').
           appendChild(this.plugin_);
 
-      global['onPreviewPluginLoad'] = this.onPluginLoad_.bind(this);
-      this.plugin_.onload('onPreviewPluginLoad()');
 
-      global['onPreviewPluginVisualStateChange'] =
-          this.onPreviewVisualStateChange_.bind(this);
-      this.plugin_.onScroll('onPreviewPluginVisualStateChange()');
-      this.plugin_.onPluginSizeChanged('onPreviewPluginVisualStateChange()');
+      if (this.pluginType_ == PreviewArea.PluginType_.OUT_OF_PROCESS) {
+        var pageNumbers =
+            this.printTicketStore_.pageRange.getPageNumberSet().asArray();
+        var grayscale = !this.printTicketStore_.color.getValue();
+        this.plugin_.setLoadCallback(this.onPluginLoad_.bind(this));
+        this.plugin_.setViewportChangedCallback(
+            this.onPreviewVisualStateChange_.bind(this));
+        this.plugin_.resetPrintPreviewMode(srcUrl, grayscale, pageNumbers,
+                                           this.documentInfo_.isModifiable);
+      } else {
+        global['onPreviewPluginLoad'] = this.onPluginLoad_.bind(this);
+        this.plugin_.onload('onPreviewPluginLoad()');
 
-      this.plugin_.removePrintButton();
-      this.plugin_.grayscale(!this.printTicketStore_.isColorEnabled());
+        global['onPreviewPluginVisualStateChange'] =
+            this.onPreviewVisualStateChange_.bind(this);
+        this.plugin_.onScroll('onPreviewPluginVisualStateChange()');
+        this.plugin_.onPluginSizeChanged('onPreviewPluginVisualStateChange()');
+
+        this.plugin_.removePrintButton();
+        this.plugin_.grayscale(!this.printTicketStore_.color.getValue());
+      }
     },
 
     /**
@@ -448,6 +556,13 @@ cr.define('print_preview', function() {
      * Called when the open-system-dialog button is clicked. Disables the
      * button, shows the throbber, and dispatches the OPEN_SYSTEM_DIALOG_CLICK
      * event.
+     * @param {number} pageX the x-coordinate of the page relative to the
+     *     screen.
+     * @param {number} pageY the y-coordinate of the page relative to the
+     *     screen.
+     * @param {number} pageWidth the width of the page on the screen.
+     * @param {number} viewportWidth the width of the viewport.
+     * @param {number} viewportHeight the height of the viewport.
      * @private
      */
     onOpenSystemDialogButtonClick_: function() {
@@ -465,6 +580,8 @@ cr.define('print_preview', function() {
      */
     onTicketChange_: function() {
       if (this.previewGenerator_ && this.previewGenerator_.requestPreview()) {
+        cr.dispatchSimpleEvent(
+            this, PreviewArea.EventType.PREVIEW_GENERATION_IN_PROGRESS);
         if (this.loadingTimeout_ == null) {
           this.loadingTimeout_ = setTimeout(
               this.showMessage_.bind(this, PreviewArea.MessageId_.LOADING),
@@ -477,7 +594,7 @@ cr.define('print_preview', function() {
 
     /**
      * Called when the preview generator begins loading the preview.
-     * @param {cr.Event} Contains the URL to initialize the plugin to.
+     * @param {Event} Contains the URL to initialize the plugin to.
      * @private
      */
     onPreviewStart_: function(event) {
@@ -485,11 +602,21 @@ cr.define('print_preview', function() {
       this.isPluginReloaded_ = false;
       if (!this.plugin_) {
         this.createPlugin_(event.previewUrl);
+      } else {
+        if (this.pluginType_ == PreviewArea.PluginType_.OUT_OF_PROCESS) {
+          var grayscale = !this.printTicketStore_.color.getValue();
+          var pageNumbers =
+              this.printTicketStore_.pageRange.getPageNumberSet().asArray();
+          var url = event.previewUrl;
+          this.plugin_.resetPrintPreviewMode(url, grayscale, pageNumbers,
+                                             this.documentInfo_.isModifiable);
+        } else if (this.pluginType_ == PreviewArea.PluginType_.IN_PROCESS) {
+          this.plugin_.goToPage('0');
+          this.plugin_.resetPrintPreviewUrl(event.previewUrl);
+          this.plugin_.reload();
+          this.plugin_.grayscale(!this.printTicketStore_.color.getValue());
+        }
       }
-      this.plugin_.goToPage('0');
-      this.plugin_.resetPrintPreviewUrl(event.previewUrl);
-      this.plugin_.reload();
-      this.plugin_.grayscale(!this.printTicketStore_.isColorEnabled());
       cr.dispatchSimpleEvent(
           this, PreviewArea.EventType.PREVIEW_GENERATION_IN_PROGRESS);
     },
@@ -497,7 +624,7 @@ cr.define('print_preview', function() {
     /**
      * Called when a page preview has been generated. Updates the plugin with
      * the new page.
-     * @param {cr.Event} event Contains information about the page preview.
+     * @param {Event} event Contains information about the page preview.
      * @private
      */
     onPagePreviewReady_: function(event) {
@@ -519,6 +646,10 @@ cr.define('print_preview', function() {
      * @private
      */
     onPreviewGenerationFail_: function() {
+      if (this.loadingTimeout_) {
+        clearTimeout(this.loadingTimeout_);
+        this.loadingTimeout_ = null;
+      }
       this.showMessage_(PreviewArea.MessageId_.PREVIEW_FAILED);
       cr.dispatchSimpleEvent(
           this, PreviewArea.EventType.PREVIEW_GENERATION_FAIL);
@@ -535,20 +666,23 @@ cr.define('print_preview', function() {
         clearTimeout(this.loadingTimeout_);
         this.loadingTimeout_ = null;
       }
-      // Setting the plugin's page count can only be called after the plugin is
-      // loaded and the document must be modifiable.
-      if (this.printTicketStore_.isDocumentModifiable) {
-        this.plugin_.printPreviewPageCount(
-            this.printTicketStore_.getPageNumberSet().size);
-      }
-      this.plugin_.setPageNumbers(JSON.stringify(
-          this.printTicketStore_.getPageNumberSet().asArray()));
-      if (this.zoomLevel_ != null && this.pageOffset_ != null) {
-        this.plugin_.setZoomLevel(this.zoomLevel_);
-        this.plugin_.setPageXOffset(this.pageOffset_.x);
-        this.plugin_.setPageYOffset(this.pageOffset_.y);
-      } else {
-        this.plugin_.fitToHeight();
+
+      if (this.pluginType_ == PreviewArea.PluginType_.IN_PROCESS) {
+        // Setting the plugin's page count can only be called after the plugin
+        // is loaded and the document must be modifiable.
+        if (this.documentInfo_.isModifiable) {
+          this.plugin_.printPreviewPageCount(
+              this.printTicketStore_.pageRange.getPageNumberSet().size);
+        }
+        this.plugin_.setPageNumbers(JSON.stringify(
+            this.printTicketStore_.pageRange.getPageNumberSet().asArray()));
+        if (this.zoomLevel_ != null && this.pageOffset_ != null) {
+          this.plugin_.setZoomLevel(this.zoomLevel_);
+          this.plugin_.setPageXOffset(this.pageOffset_.x);
+          this.plugin_.setPageYOffset(this.pageOffset_.y);
+        } else {
+          this.plugin_.fitToHeight();
+        }
       }
       this.hideOverlay_();
       this.isPluginReloaded_ = true;
@@ -561,31 +695,51 @@ cr.define('print_preview', function() {
      * margins component if shown.
      * @private
      */
-    onPreviewVisualStateChange_: function() {
-      if (this.isPluginReloaded_) {
-        this.zoomLevel_ = this.plugin_.getZoomLevel();
-        this.pageOffset_ = new print_preview.Coordinate2d(
-            this.plugin_.pageXOffset(), this.plugin_.pageYOffset());
+    onPreviewVisualStateChange_: function(pageX,
+                                          pageY,
+                                          pageWidth,
+                                          viewportWidth,
+                                          viewportHeight) {
+      if (this.pluginType_ == PreviewArea.PluginType_.IN_PROCESS) {
+        if (this.isPluginReloaded_) {
+          this.zoomLevel_ = this.plugin_.getZoomLevel();
+          this.pageOffset_ = new print_preview.Coordinate2d(
+              this.plugin_.pageXOffset(), this.plugin_.pageYOffset());
+        }
+
+        var pageLocationNormalizedStr =
+            this.plugin_.getPageLocationNormalized();
+        if (!pageLocationNormalizedStr) {
+          return;
+        }
+        var normalized = pageLocationNormalizedStr.split(';');
+        var pluginWidth = this.plugin_.getWidth();
+        var pluginHeight = this.plugin_.getHeight();
+        var verticalScrollbarThickness =
+            this.plugin_.getVerticalScrollbarThickness();
+        var horizontalScrollbarThickness =
+            this.plugin_.getHorizontalScrollbarThickness();
+
+        var translationTransform = new print_preview.Coordinate2d(
+            parseFloat(normalized[0]) * pluginWidth,
+            parseFloat(normalized[1]) * pluginHeight);
+        this.marginControlContainer_.updateTranslationTransform(
+            translationTransform);
+        var pageWidthInPixels = parseFloat(normalized[2]) * pluginWidth;
+        this.marginControlContainer_.updateScaleTransform(
+            pageWidthInPixels / this.documentInfo_.pageSize.width);
+        this.marginControlContainer_.updateClippingMask(
+            new print_preview.Size(
+                pluginWidth - verticalScrollbarThickness,
+                pluginHeight - horizontalScrollbarThickness));
+      } else if (this.pluginType_ == PreviewArea.PluginType_.OUT_OF_PROCESS) {
+        this.marginControlContainer_.updateTranslationTransform(
+            new print_preview.Coordinate2d(pageX, pageY));
+        this.marginControlContainer_.updateScaleTransform(
+            pageWidth / this.documentInfo_.pageSize.width);
+        this.marginControlContainer_.updateClippingMask(
+            new print_preview.Size(viewportWidth, viewportHeight));
       }
-      var pageLocationNormalizedStr = this.plugin_.getPageLocationNormalized();
-      if (!pageLocationNormalizedStr) {
-        return;
-      }
-      var normalized = pageLocationNormalizedStr.split(';');
-      var pluginWidth = this.plugin_.getWidth();
-      var pluginHeight = this.plugin_.getHeight();
-      var translationTransform = new print_preview.Coordinate2d(
-          parseFloat(normalized[0]) * pluginWidth,
-          parseFloat(normalized[1]) * pluginHeight);
-      this.marginControlContainer_.updateTranslationTransform(
-          translationTransform);
-      var pageWidthInPixels = parseFloat(normalized[2]) * pluginWidth;
-      this.marginControlContainer_.updateScaleTransform(
-          pageWidthInPixels / this.printTicketStore_.pageSize.width);
-      this.marginControlContainer_.updateClippingMask(
-          new print_preview.Size(
-              pluginWidth - this.plugin_.getVerticalScrollbarThickness(),
-              pluginHeight - this.plugin_.getHorizontalScrollbarThickness()));
     }
   };
 

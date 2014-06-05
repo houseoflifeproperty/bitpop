@@ -7,8 +7,8 @@
 /*
  * This provides a private allocator to be used only within the IRT.
  * This is distinct from the user application's allocators.  This
- * allocator cannot use sbrk (the NaCl sysbrk syscall), which is
- * reserved for the user application.
+ * allocator cannot use sbrk (the NaCl brk syscall), which is reserved
+ * for the user application.
  *
  * NOTE: However, this allocator is exposed to PPAPI applications via the
  * PPB_Core MemAlloc and MemFree function pointers.  That should go away.
@@ -32,7 +32,7 @@
 #define LACKS_TIME_H            1
 #define USE_LOCKS               1
 #define USE_SPIN_LOCKS          1
-#define HAVE_MORECORE           0
+#define HAVE_MORECORE           0  /* Don't try to use sbrk() */
 #define HAVE_MMAP               1
 #define HAVE_MREMAP             0
 #define NO_MALLINFO             1

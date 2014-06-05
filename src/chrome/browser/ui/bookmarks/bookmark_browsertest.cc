@@ -3,22 +3,23 @@
 // found in the LICENSE file.
 
 #include "base/bind.h"
-#include "base/timer.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/timer/timer.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/host_desktop.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/core/browser/bookmark_utils.h"
+#include "components/bookmarks/core/test/bookmark_test_helpers.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/browser_test_utils.h"
 
@@ -57,12 +58,7 @@ class BookmarkBrowsertest : public InProcessBrowserTest {
   BookmarkModel* WaitForBookmarkModel(Profile* profile) {
     BookmarkModel* bookmark_model =
         BookmarkModelFactory::GetForProfile(profile);
-    if (!bookmark_model->IsLoaded()) {
-      content::WindowedNotificationObserver observer(
-          chrome::NOTIFICATION_BOOKMARK_MODEL_LOADED,
-          content::NotificationService::AllSources());
-      observer.Wait();
-    }
+    test::WaitForBookmarkModelToLoad(bookmark_model);
     return bookmark_model;
   }
 };
@@ -86,10 +82,17 @@ IN_PROC_BROWSER_TEST_F(BookmarkBrowsertest, PRE_Persist) {
 
   bookmark_utils::AddIfNotBookmarked(
       bookmark_model, GURL(kPersistBookmarkURL),
-      ASCIIToUTF16(kPersistBookmarkTitle));
+      base::ASCIIToUTF16(kPersistBookmarkTitle));
 }
 
-IN_PROC_BROWSER_TEST_F(BookmarkBrowsertest, Persist) {
+#if defined(THREAD_SANITIZER)
+// BookmarkBrowsertest.Persist fails under ThreadSanitizer on Linux, see
+// http://crbug.com/340223.
+#define MAYBE_Persist DISABLED_Persist
+#else
+#define MAYBE_Persist Persist
+#endif
+IN_PROC_BROWSER_TEST_F(BookmarkBrowsertest, MAYBE_Persist) {
   BookmarkModel* bookmark_model = WaitForBookmarkModel(browser()->profile());
 
   std::vector<BookmarkService::URLAndTitle> urls;
@@ -97,7 +100,7 @@ IN_PROC_BROWSER_TEST_F(BookmarkBrowsertest, Persist) {
 
   ASSERT_EQ(1u, urls.size());
   ASSERT_EQ(GURL(kPersistBookmarkURL), urls[0].url);
-  ASSERT_EQ(ASCIIToUTF16(kPersistBookmarkTitle), urls[0].title);
+  ASSERT_EQ(base::ASCIIToUTF16(kPersistBookmarkTitle), urls[0].title);
 }
 
 #if !defined(OS_CHROMEOS)  // No multi-profile on ChromeOS.
@@ -112,14 +115,14 @@ IN_PROC_BROWSER_TEST_F(BookmarkBrowsertest, DISABLED_MultiProfile) {
 
   ui_test_utils::BrowserAddedObserver observer;
   g_browser_process->profile_manager()->CreateMultiProfileAsync(
-      string16(), string16(), ProfileManager::CreateCallback(),
-      chrome::HOST_DESKTOP_TYPE_NATIVE);
+      base::string16(), base::string16(), ProfileManager::CreateCallback(),
+      std::string());
   Browser* browser2 = observer.WaitForSingleNewBrowser();
   BookmarkModel* bookmark_model2 = WaitForBookmarkModel(browser2->profile());
 
   bookmark_utils::AddIfNotBookmarked(
       bookmark_model1, GURL(kPersistBookmarkURL),
-      ASCIIToUTF16(kPersistBookmarkTitle));
+      base::ASCIIToUTF16(kPersistBookmarkTitle));
   std::vector<BookmarkService::URLAndTitle> urls1, urls2;
   bookmark_model1->GetBookmarks(&urls1);
   bookmark_model2->GetBookmarks(&urls2);

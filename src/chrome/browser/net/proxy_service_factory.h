@@ -7,48 +7,50 @@
 
 #include "base/basictypes.h"
 
-class ChromeProxyConfigService;
-class CommandLine;
-class PrefProxyConfigTrackerImpl;
+class PrefProxyConfigTracker;
 class PrefService;
 
-#if defined(OS_CHROMEOS)
-namespace chromeos {
-class ProxyConfigServiceImpl;
+namespace base {
+class CommandLine;
 }
-#endif  // defined(OS_CHROMEOS)
 
 namespace net {
 class NetLog;
+class NetworkDelegate;
 class ProxyConfigService;
 class ProxyService;
 class URLRequestContext;
-}  // namespace net
+}
 
 class ProxyServiceFactory {
  public:
   // Creates a ProxyConfigService that delivers the system preferences
   // (or the respective ChromeOS equivalent).
-  // If |wait_for_first_update| is true, the ChromeProxyConfigService
-  // returns "pending" until it has been informed about the proxy configuration
-  // by calling its UpdateProxyConfig method.
-  static ChromeProxyConfigService* CreateProxyConfigService(
-      bool wait_for_first_update);
+  static net::ProxyConfigService* CreateProxyConfigService(
+      PrefProxyConfigTracker* tracker);
 
-#if defined(OS_CHROMEOS)
-  static chromeos::ProxyConfigServiceImpl* CreatePrefProxyConfigTracker(
-      PrefService* pref_service);
-#else
-  static PrefProxyConfigTrackerImpl* CreatePrefProxyConfigTracker(
-      PrefService* pref_service);
-#endif  // defined(OS_CHROMEOS)
+  // Creates a PrefProxyConfigTracker that tracks preferences of a
+  // profile. On ChromeOS it additionaly tracks local state for shared proxy
+  // settings. This tracker should be used if the profile's preferences should
+  // be respected. On ChromeOS's signin screen this is for example not the case.
+  static PrefProxyConfigTracker* CreatePrefProxyConfigTrackerOfProfile(
+      PrefService* profile_prefs,
+      PrefService* local_state_prefs);
+
+  // Creates a PrefProxyConfigTracker that tracks local state only. This tracker
+  // should be used for the system request context and the signin screen
+  // (ChromeOS only).
+  static PrefProxyConfigTracker* CreatePrefProxyConfigTrackerOfLocalState(
+      PrefService* local_state_prefs);
 
   // Create a proxy service according to the options on command line.
   static net::ProxyService* CreateProxyService(
       net::NetLog* net_log,
       net::URLRequestContext* context,
+      net::NetworkDelegate* network_delegate,
       net::ProxyConfigService* proxy_config_service,
-      const CommandLine& command_line);
+      const base::CommandLine& command_line,
+      bool quick_check_enabled);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(ProxyServiceFactory);

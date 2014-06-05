@@ -14,17 +14,18 @@
 #include "base/basictypes.h"
 #include "base/containers/stack_container.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/string16.h"
-#include "base/time.h"
-#include "base/values.h"
-#include "chrome/browser/history/snippet.h"
+#include "base/memory/scoped_vector.h"
+#include "base/strings/string16.h"
+#include "base/time/time.h"
 #include "chrome/browser/search_engines/template_url_id.h"
 #include "chrome/common/ref_counted_util.h"
 #include "chrome/common/thumbnail_score.h"
+#include "components/favicon_base/favicon_types.h"
+#include "components/query_parser/snippet.h"
 #include "content/public/common/page_transition_types.h"
-#include "googleurl/src/gurl.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/size.h"
+#include "url/gurl.h"
 
 class PageUsageData;
 
@@ -32,9 +33,7 @@ namespace history {
 
 // Forward declaration for friend statements.
 class HistoryBackend;
-class TextDatabase;
 class URLDatabase;
-class VisitDatabase;
 
 // Structure to hold redirect lists for URLs.  For a redirect chain
 // A -> B -> C, and entry in the map would look like "A => {B -> C}".
@@ -43,8 +42,6 @@ typedef std::map<GURL, scoped_refptr<RefCountedVector<GURL> > > RedirectMap;
 // Container for a list of URLs.
 typedef std::vector<GURL> RedirectList;
 
-typedef int64 DownloadID;   // Identifier for a download.
-typedef int64 FaviconID;  // For favicons.
 typedef int64 FaviconBitmapID; // Identifier for a bitmap in a favicon.
 typedef int64 SegmentID;  // URL segments for the most visited view.
 typedef int64 IconMappingID; // For page url and icon mapping.
@@ -88,10 +85,10 @@ class URLRow {
 
   const GURL& url() const { return url_; }
 
-  const string16& title() const {
+  const base::string16& title() const {
     return title_;
   }
-  void set_title(const string16& title) {
+  void set_title(const base::string16& title) {
     // The title is frequently set to the same thing, so we don't bother
     // updating unless the string has changed.
     if (title != title_) {
@@ -175,7 +172,7 @@ class URLRow {
   // the constructor to make a new one.
   GURL url_;
 
-  string16 title_;
+  base::string16 title_;
 
   // Total number of times this URL has been visited.
   int visit_count_;
@@ -248,13 +245,6 @@ class VisitRow {
   // If 0, the segment id is null in the table.
   SegmentID segment_id;
 
-  // True when this visit has indexed data for it. We try to keep this in sync
-  // with the full text index: when we add or remove things from there, we will
-  // update the visit table as well. However, that file could get deleted, or
-  // out of sync in various ways, so this flag should be false when things
-  // change.
-  bool is_indexed;
-
   // Record how much time a user has this visit starting from the user
   // opened this visit to the user closed or ended this visit.
   // This includes both active and inactive time as long as
@@ -294,22 +284,31 @@ class URLResult : public URLRow {
   URLResult(const GURL& url, base::Time visit_time);
   // Constructor that create a URLResult from the specified URL and title match
   // positions from title_matches.
-  URLResult(const GURL& url, const Snippet::MatchPositions& title_matches);
+  URLResult(const GURL& url,
+            const query_parser::Snippet::MatchPositions& title_matches);
+  explicit URLResult(const URLRow& url_row);
   virtual ~URLResult();
 
   base::Time visit_time() const { return visit_time_; }
   void set_visit_time(base::Time visit_time) { visit_time_ = visit_time; }
 
-  const Snippet& snippet() const { return snippet_; }
+  const query_parser::Snippet& snippet() const { return snippet_; }
+
+  bool blocked_visit() const { return blocked_visit_; }
+  void set_blocked_visit(bool blocked_visit) {
+    blocked_visit_ = blocked_visit;
+  }
 
   // If this is a title match, title_match_positions contains an entry for
   // every word in the title that matched one of the query parameters. Each
   // entry contains the start and end of the match.
-  const Snippet::MatchPositions& title_match_positions() const {
+  const query_parser::Snippet::MatchPositions& title_match_positions() const {
     return title_match_positions_;
   }
 
   void SwapResult(URLResult* other);
+
+  static bool CompareVisitTime(const URLResult& lhs, const URLResult& rhs);
 
  private:
   friend class HistoryBackend;
@@ -318,46 +317,13 @@ class URLResult : public URLRow {
   base::Time visit_time_;
 
   // These values are typically set by HistoryBackend.
-  Snippet snippet_;
-  Snippet::MatchPositions title_match_positions_;
+  query_parser::Snippet snippet_;
+  query_parser::Snippet::MatchPositions title_match_positions_;
+
+  // Whether a managed user was blocked when attempting to visit this URL.
+  bool blocked_visit_;
 
   // We support the implicit copy constructor and operator=.
-};
-
-// QueryCursor -----------------------------------------------------------------
-
-// Represents the point at which a QueryResult ended. This should be treated as
-// an opaque token by clients of the history service.
-class QueryCursor {
- public:
-  QueryCursor();
-  ~QueryCursor();
-
-  // Returns a newly-allocated Value object representing the cursor. The caller
-  // takes ownership of the value.
-  Value* ToValue() const;
-
-  // Opposite of ToValue() -- converts a Value object to a QueryCursor.
-  // Returns true if the conversion was successful.
-  static bool FromValue(const Value* value, QueryCursor* cursor);
-
-  bool empty() const {
-    return time_.is_null() && rowid_ == 0;
-  }
-
-  void Clear() {
-    time_ = base::Time();
-    rowid_ = 0;
-  }
-
- private:
-  friend class HistoryBackend;
-  friend struct QueryOptions;
-  friend class TextDatabase;
-  friend class VisitDatabase;
-
-  int64 rowid_;
-  base::Time time_;
 };
 
 // QueryResults ----------------------------------------------------------------
@@ -391,11 +357,11 @@ class QueryResults {
   void set_reached_beginning(bool reached) { reached_beginning_ = reached; }
   bool reached_beginning() { return reached_beginning_; }
 
-  void set_cursor(const QueryCursor& cursor) { cursor_ = cursor; }
-  QueryCursor cursor() { return cursor_; }
-
   size_t size() const { return results_.size(); }
   bool empty() const { return results_.empty(); }
+
+  URLResult& back() { return *results_.back(); }
+  const URLResult& back() const { return *results_.back(); }
 
   URLResult& operator[](size_t i) { return *results_[i]; }
   const URLResult& operator[](size_t i) const { return *results_[i]; }
@@ -455,27 +421,10 @@ class QueryResults {
 
   // The ordered list of results. The pointers inside this are owned by this
   // QueryResults object.
-  URLResultVector results_;
+  ScopedVector<URLResult> results_;
 
   // Maps URLs to entries in results_.
   URLToResultIndices url_to_results_;
-
-  // An opaque value representing the point at which the QueryResult begins.
-  // This value can be passed to a future query through QueryOptions::cursor,
-  // in order to fetch a set of results contiguous to, but strictly older than,
-  // the results in this object. (Just using timestamps doesn't work because
-  // multiple visits can have the same timestamp.)
-  //
-  // For example, to fetch all results, 100 at a time:
-  //
-  //   QueryOptions options;
-  //   QueryResults results;
-  //   options.max_count = 100;
-  //   do {
-  //     QueryHistory(query_text, options, &results);
-  //     options.cursor = results.cursor();
-  //   } while (results.size() > 0);
-  QueryCursor cursor_;
 
   DISALLOW_COPY_AND_ASSIGN(QueryResults);
 };
@@ -486,8 +435,7 @@ struct QueryOptions {
   QueryOptions();
 
   // The time range to search for matches in. The beginning is inclusive and
-  // the ending is exclusive. Either one (or both) may be null. If |cursor| is
-  // set, it takes precedence over end_time.
+  // the ending is exclusive. Either one (or both) may be null.
   //
   // This will match only the one recent visit of a URL. For text search
   // queries, if the URL was visited in the given time period, but has also
@@ -505,17 +453,6 @@ struct QueryOptions {
   // enough room. When 0, this will return everything (the default).
   int max_count;
 
-  // Only search within the page body if true, otherwise search all columns
-  // including url and time. Defaults to false.
-  bool body_only;
-
-  // If set, the cursor provides an alternate way to specify the end of the
-  // query range. The value should come from QueryResults::cursor() from a
-  // previous query, which means that the new query should only return results
-  // older than the ones in the previous query. Due to the possiblity of
-  // duplicate timestamps, |end_time| is not sufficient for that purpose.
-  QueryCursor cursor;
-
   enum DuplicateHandling {
     // Omit visits for which there is a more recent visit to the same URL.
     // Each URL in the results will appear only once.
@@ -524,7 +461,10 @@ struct QueryOptions {
     // Omit visits for which there is a more recent visit to the same URL on
     // the same day. Each URL will appear no more than once per day, where the
     // day is defined by the local timezone.
-    REMOVE_DUPLICATES_PER_DAY
+    REMOVE_DUPLICATES_PER_DAY,
+
+    // Return all visits without deduping.
+    KEEP_ALL_DUPLICATES
   };
 
   // Allows the caller to specify how duplicate URLs in the result set should
@@ -535,11 +475,6 @@ struct QueryOptions {
   // "unspecified".
   int EffectiveMaxCount() const;
   int64 EffectiveBeginTime() const;
-
-  // The effective end time can be determined by either |end_time| or |cursor|.
-  // If cursor is set, it takes precedence. This allows consecutive queries to
-  // re-use the same QueryOptions to fetch consecutive pages of results by
-  // simply copying the cursor from the QueryResults of the previous query.
   int64 EffectiveEndTime() const;
 };
 
@@ -551,7 +486,7 @@ struct KeywordSearchTermVisit {
   KeywordSearchTermVisit();
   ~KeywordSearchTermVisit();
 
-  string16 term;    // The search term that was used.
+  base::string16 term;    // The search term that was used.
   int visits;       // The visit count.
   base::Time time;  // The time of the most recent visit.
 };
@@ -565,7 +500,7 @@ struct KeywordSearchTermRow {
 
   TemplateURLID keyword_id;  // ID of the keyword.
   URLID url_id;              // ID of the url.
-  string16 term;             // The search term that was used.
+  base::string16 term;             // The search term that was used.
 };
 
 // MostVisitedURL --------------------------------------------------------------
@@ -573,11 +508,19 @@ struct KeywordSearchTermRow {
 // Holds the per-URL information of the most visited query.
 struct MostVisitedURL {
   MostVisitedURL();
-  MostVisitedURL(const GURL& url, const string16& title);
+  MostVisitedURL(const GURL& url, const base::string16& title);
+  MostVisitedURL(const GURL& url,
+                 const base::string16& title,
+                 const base::Time& last_forced_time);
   ~MostVisitedURL();
 
   GURL url;
-  string16 title;
+  base::string16 title;
+
+  // If this is a URL for which we want to force a thumbnail, records the last
+  // time it was forced so we can evict it when more recent URLs are requested.
+  // If it's not a forced thumbnail, keep a time of 0.
+  base::Time last_forced_time;
 
   RedirectList redirects;
 
@@ -607,7 +550,7 @@ struct FilteredURL {
   ~FilteredURL();
 
   GURL url;
-  string16 title;
+  base::string16 title;
   double score;
   ExtendedInfo extended_info;
 };
@@ -657,14 +600,12 @@ struct Images {
   Images();
   ~Images();
 
-  scoped_refptr<base::RefCountedBytes> thumbnail;
+  scoped_refptr<base::RefCountedMemory> thumbnail;
   ThumbnailScore thumbnail_score;
 
   // TODO(brettw): this will eventually store the favicon.
   // scoped_refptr<base::RefCountedBytes> favicon;
 };
-
-typedef std::vector<MostVisitedURL> MostVisitedURLList;
 
 struct MostVisitedURLWithRank {
   MostVisitedURL url;
@@ -732,18 +673,6 @@ bool RowQualifiesAsSignificant(const URLRow& row, const base::Time& threshold);
 
 // Favicons -------------------------------------------------------------------
 
-// Defines the icon types. They are also stored in icon_type field of favicons
-// table.
-// The values of the IconTypes are used to select the priority in which favicon
-// data is returned in HistoryBackend and ThumbnailDatabase. Data for the
-// largest IconType takes priority if data for multiple IconTypes is available.
-enum IconType {
-  INVALID_ICON = 0x0,
-  FAVICON = 1 << 0,
-  TOUCH_ICON = 1 << 1,
-  TOUCH_PRECOMPOSED_ICON = 1 << 2
-};
-
 // Used for the mapping between the page and icon.
 struct IconMapping {
   IconMapping();
@@ -756,76 +685,14 @@ struct IconMapping {
   GURL page_url;
 
   // The unique id of the icon.
-  FaviconID icon_id;
+  favicon_base::FaviconID icon_id;
 
   // The url of the icon.
   GURL icon_url;
 
   // The type of icon.
-  IconType icon_type;
+  favicon_base::IconType icon_type;
 };
-
-// Defines a favicon bitmap which best matches the desired DIP size and one of
-// the desired scale factors.
-struct FaviconBitmapResult {
-  FaviconBitmapResult();
-  ~FaviconBitmapResult();
-
-  // Returns true if |bitmap_data| contains a valid bitmap.
-  bool is_valid() const { return bitmap_data.get() && bitmap_data->size(); }
-
-  // Indicates whether |bitmap_data| is expired.
-  bool expired;
-
-  // The bits of the bitmap.
-  scoped_refptr<base::RefCountedMemory> bitmap_data;
-
-  // The pixel dimensions of |bitmap_data|.
-  gfx::Size pixel_size;
-
-  // The URL of the containing favicon.
-  GURL icon_url;
-
-  // The icon type of the containing favicon.
-  IconType icon_type;
-};
-
-// Define type with same structure as FaviconBitmapResult for passing data to
-// HistoryBackend::SetFavicons().
-typedef FaviconBitmapResult FaviconBitmapData;
-
-// Defines a gfx::Image of size desired_size_in_dip composed of image
-// representations for each of the desired scale factors.
-struct FaviconImageResult {
-  FaviconImageResult();
-  ~FaviconImageResult();
-
-  // The resulting image.
-  gfx::Image image;
-
-  // The URL of the favicon which contains all of the image representations of
-  // |image|.
-  // TODO(pkotwicz): Return multiple |icon_urls| to allow |image| to have
-  // representations from several favicons once content::FaviconStatus supports
-  // multiple URLs.
-  GURL icon_url;
-};
-
-// FaviconSizes represents the sizes that the thumbnail database knows a
-// favicon is available from the web. FaviconSizes has several entries
-// only if FaviconSizes is for an .ico file. FaviconSizes can be different
-// from the pixel sizes of the entries in the |favicon_bitmaps| table. For
-// instance, if a web page has a .ico favicon with bitmaps of pixel sizes
-// (16x16, 32x32), FaviconSizes will have both sizes regardless of whether
-// either of these bitmaps is cached in the favicon_bitmaps database table.
-typedef std::vector<gfx::Size> FaviconSizes;
-
-// Returns the default FaviconSizes to use if the favicon sizes for a FaviconID
-// are unknown.
-const FaviconSizes& GetDefaultFaviconSizes();
-
-// A map from an icon URL to the FaviconSizes for that URL.
-typedef std::map<GURL, FaviconSizes> IconURLSizesMap;
 
 // Defines a favicon bitmap and its associated pixel size.
 struct FaviconBitmapIDSize {
@@ -848,7 +715,7 @@ struct FaviconBitmap {
   FaviconBitmapID bitmap_id;
 
   // The id of the favicon to which the bitmap belongs to.
-  FaviconID icon_id;
+  favicon_base::FaviconID icon_id;
 
   // Time at which |bitmap_data| was last updated.
   base::Time last_updated;
@@ -858,21 +725,6 @@ struct FaviconBitmap {
 
   // The pixel dimensions of bitmap_data.
   gfx::Size pixel_size;
-};
-
-// Used by the importer to set favicons for imported bookmarks.
-struct ImportedFaviconUsage {
-  ImportedFaviconUsage();
-  ~ImportedFaviconUsage();
-
-  // The URL of the favicon.
-  GURL favicon_url;
-
-  // The raw png-encoded data.
-  std::vector<unsigned char> png_data;
-
-  // The list of URLs using this favicon.
-  std::set<GURL> urls;
 };
 
 // Abbreviated information about a visit.
@@ -887,6 +739,19 @@ class VisitDatabaseObserver {
  public:
   virtual ~VisitDatabaseObserver();
   virtual void OnAddVisit(const BriefVisitInfo& info) = 0;
+};
+
+struct ExpireHistoryArgs {
+  ExpireHistoryArgs();
+  ~ExpireHistoryArgs();
+
+  // Sets |begin_time| and |end_time| to the beginning and end of the day (in
+  // local time) on which |time| occurs.
+  void SetTimeRangeForOneDay(base::Time time);
+
+  std::set<GURL> urls;
+  base::Time begin_time;
+  base::Time end_time;
 };
 
 }  // namespace history

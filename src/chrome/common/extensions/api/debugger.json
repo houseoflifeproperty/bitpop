@@ -5,13 +5,35 @@
 [
   {
     "namespace": "debugger",
+    "description": "The <code>chrome.debugger</code> API serves as an alternate transport for Chrome's <a href='http://code.google.com/chrome/devtools/docs/remote-debugging.html'>remote debugging protocol</a>. Use <code>chrome.debugger</code> to attach to one or more tabs to instrument network interaction, debug JavaScript, mutate the DOM and CSS, etc. Use the Debuggee <code>tabId</code> to target tabs with sendCommand and route events by <code>tabId</code> from onEvent callbacks.",
     "types": [
       {
         "id": "Debuggee",
         "type": "object",
-        "description": "Debuggee identifier.",
+        "description": "Debuggee identifier. Either tabId or extensionId must be specified",
         "properties": {
-          "tabId": { "type": "integer", "description": "The id of the tab which you intend to debug." }
+          "tabId": { "type": "integer", "optional": true, "description": "The id of the tab which you intend to debug." },
+          "extensionId": { "type": "string", "optional": true, "description": "The id of the extension which you intend to debug. Attaching to an extension background page is only possible when 'enable-silent-debugging' flag is enabled on the target browser." },
+          "targetId": { "type": "string", "optional": true, "description": "The opaque id of the debug target." }
+        }
+      },
+      {
+        "id": "TargetInfo",
+        "type": "object",
+        "description": "Debug target information",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Target type.",
+            "enum" : ["page", "background_page", "worker", "other" ]
+          },
+          "id": { "type": "string", "description": "Target id." },
+          "tabId": { "type": "integer", "optional": true, "description": "The tab id, defined if type == 'page'." },
+          "extensionId": { "type": "string", "optional": true, "description": "The extension id, defined if type = 'background_page'." },
+          "attached": { "type": "boolean", "description": "True if debugger is already attached." },
+          "title": { "type": "string", "description": "Target page title." },
+          "url": { "type": "string", "description": "Target URL." },
+          "faviconUrl": { "type": "string", "optional": true, "description": "Target favicon URL." }
         }
       }
     ],
@@ -36,7 +58,7 @@
             "name": "callback",
             "optional": true,
             "parameters": [],
-            "description": "Called once the attach operation succeeds or fails. Callback receives no arguments. If the attach fails, $ref:runtime.lastError will be set to the error message."
+            "description": "Called once the attach operation succeeds or fails. Callback receives no arguments. If the attach fails, $(ref:runtime.lastError) will be set to the error message."
           }
         ]
       },
@@ -55,7 +77,7 @@
             "name": "callback",
             "optional": true,
             "parameters": [],
-            "description": "Called once the detach operation succeeds or fails. Callback receives no arguments. If the detach fails, $ref:runtime.lastError will be set to the error message."
+            "description": "Called once the detach operation succeeds or fails. Callback receives no arguments. If the detach fails, $(ref:runtime.lastError) will be set to the error message."
           }
         ]
       },
@@ -91,10 +113,29 @@
                 "name": "result",
                 "optional": true,
                 "additionalProperties": { "type": "any" },
-                "description": "JSON object with the response. Structure of the response varies depending on the method and is defined by the remote debugging protocol."
+                "description": "JSON object with the response. Structure of the response varies depending on the method name and is defined by the 'returns' attribute of the command description in the remote debugging protocol."
               }
             ],
-            "description": "Response body. If an error occurs while posting the message, the callback will be called with no arguments and $ref:runtime.lastError will be set to the error message."
+            "description": "Response body. If an error occurs while posting the message, the callback will be called with no arguments and $(ref:runtime.lastError) will be set to the error message."
+          }
+        ]
+      },
+      {
+        "name": "getTargets",
+        "type": "function",
+        "description": "Returns the list of available debug targets.",
+        "parameters": [
+          {
+            "type": "function",
+            "name": "callback",
+            "parameters": [
+              {
+                "type": "array",
+                "name": "result",
+                "items": {"$ref": "TargetInfo"},
+                "description": "Array of TargetInfo objects corresponding to the available debug targets."
+              }
+            ]
           }
         ]
       }
@@ -120,7 +161,7 @@
             "name": "params",
             "optional": true,
             "additionalProperties": { "type": "any" },
-            "description": "JSON object with the response. Structure of the response varies depending on the method and is defined by the remote debugging protocol."
+            "description": "JSON object with the parameters. Structure of the parameters varies depending on the method name and is defined by the 'parameters' attribute of the event description in the remote debugging protocol."
           }
         ]
       },

@@ -10,15 +10,21 @@
 #
 
 # Tool for reading linker scripts and searching for libraries.
+# There is still a circular dependence on filetype.IsNative/IsBitcode
+# (filetype uses IsLinkerScript from here)
+# TODO(dschuff): fix.
 
-# TODO(pdox): Refactor driver_tools so that there is no circular dependency.
-import driver_tools
 import os
-import pathtools
+
 import driver_log
+import filetype
+import pathtools
+
 
 def IsLinkerScript(filename):
-  return ParseLinkerScript(filename) is not None
+  _, ext = os.path.splitext(filename)
+  return (len(ext) > 0 and ext[1:] in ('o', 'so', 'a', 'po', 'pa', 'x') and
+      ParseLinkerScript(filename) is not None)
 
 
 class LibraryTypes(object):
@@ -160,7 +166,7 @@ def FindFirstLinkerScriptInput(inputs):
     f = inputs[i]
     if IsFlag(f):
       continue
-    if driver_tools.FileType(f) == 'ldscript':
+    if IsLinkerScript(f):
       return (i, f)
   return (None, None)
 
@@ -198,7 +204,6 @@ def IsLib(arg):
 def FindLib(arg, searchdirs, static_only, acceptable_types):
   """Returns the full pathname for the library input.
      For example, name might be "-lc" or "-lm".
-     Returns None if the library is not found.
   """
   assert(IsLib(arg))
   assert(searchdirs is not None)
@@ -207,26 +212,27 @@ def FindLib(arg, searchdirs, static_only, acceptable_types):
     driver_log.Log.Fatal("-l missing library name")
   is_whole_name = (name[0] == ':')
 
+  if static_only:
+    extensions = [ 'a' ]
+  else:
+    extensions = [ 'so', 'a' ]
+
+  if is_whole_name:
+    label = name
+  else:
+    label = arg
+
   searchnames = []
   if is_whole_name:
     # -l:filename  (search for the filename)
     name = name[1:]
     searchnames.append(name)
 
-    # .pso may exist in lieu of .so, or vice versa.
-    if '.so' in name:
-      searchnames.append(name.replace('.so', '.pso'))
-    if '.pso' in name:
-      searchnames.append(name.replace('.pso', '.so'))
     # If the real IRT shim is not found, fall back to the dummy shim
     if name == 'libpnacl_irt_shim.a':
       searchnames.append('libpnacl_irt_shim_dummy.a')
   else:
     # -lfoo
-    if static_only:
-      extensions = [ 'a' ]
-    else:
-      extensions = [ 'pso', 'so', 'a' ]
     for ext in extensions:
       searchnames.append('lib' + name + '.' + ext)
 
@@ -234,10 +240,19 @@ def FindLib(arg, searchdirs, static_only, acceptable_types):
   if foundpath:
     return foundpath
 
-  if is_whole_name:
-    label = name
-  else:
-    label = arg
+  # The driver sometimes injects pthread into the input library list
+  # when pthread_private should be used. The following is mostly okay
+  # because it's only run when the library isn't found, and only does
+  # something if pthread_private is found. The SDK doesn't ship with
+  # pthread_private, so in practice it won't be found by real SDK users,
+  # so it'll just fall through to the log Fatal.
+  if name == 'pthread':
+    for ext in extensions:
+      searchnames.append('lib' + 'pthread_private' + '.' + ext)
+    foundpath = FindFile(searchnames, searchdirs, acceptable_types)
+    if foundpath:
+      return foundpath
+
   driver_log.Log.Fatal("Cannot find '%s'", label)
 
 def FindFile(search_names, search_dirs, acceptable_types):
@@ -251,11 +266,11 @@ def FindFile(search_names, search_dirs, acceptable_types):
         if IsLinkerScript(path):
           return path
         if (acceptable_types == LibraryTypes.NATIVE and
-            driver_tools.IsNative(path)):
+            filetype.IsNative(path)):
           return path
         if (acceptable_types == LibraryTypes.BITCODE and
-            (driver_tools.IsBitcode(path) or
-             driver_tools.IsBitcodeArchive(path))):
+            (filetype.IsLLVMBitcode(path) or
+             filetype.IsBitcodeArchive(path))):
           return path
   return None
 

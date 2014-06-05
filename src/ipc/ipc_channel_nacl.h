@@ -11,7 +11,7 @@
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/process.h"
+#include "base/process/process.h"
 #include "base/threading/simple_thread.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_channel_reader.h"
@@ -40,6 +40,7 @@ class Channel::ChannelImpl : public internal::ChannelReader {
   virtual ~ChannelImpl();
 
   // Channel implementation.
+  base::ProcessId peer_pid() const;
   bool Connect();
   void Close();
   bool Send(Message* message);
@@ -53,6 +54,7 @@ class Channel::ChannelImpl : public internal::ChannelReader {
 
   bool CreatePipe(const IPC::ChannelHandle& channel_handle);
   bool ProcessOutgoingMessages();
+  void CallOnChannelConnected();
 
   // ChannelReader implementation.
   virtual ReadState ReadData(char* buffer,
@@ -60,7 +62,7 @@ class Channel::ChannelImpl : public internal::ChannelReader {
                              int* bytes_read) OVERRIDE;
   virtual bool WillDispatchInputMessage(Message* msg) OVERRIDE;
   virtual bool DidEmptyInputBuffers() OVERRIDE;
-  virtual void HandleHelloMessage(const Message& msg) OVERRIDE;
+  virtual void HandleInternalMessage(const Message& msg) OVERRIDE;
 
   Mode mode_;
   bool waiting_connect_;

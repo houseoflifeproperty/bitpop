@@ -29,9 +29,6 @@
 
 #include <math.h>
 
-#ifdef HAVE_YUV
-#include "libyuv/compare.h"
-#endif
 #include "talk/base/bytebuffer.h"
 #include "talk/base/fileutils.h"
 #include "talk/base/gunit.h"
@@ -189,9 +186,10 @@ bool RtpTestUtility::VerifyTestPacketsFromStream(
       result &= rtp_packet.ReadFromByteBuffer(&buf);
       result &= rtp_packet.SameExceptSeqNumTimestampSsrc(
           kTestRawRtpPackets[index],
-          kTestRawRtpPackets[index].sequence_number +
-              loop * GetTestPacketCount(),
-          kTestRawRtpPackets[index].timestamp + loop * kRtpTimestampIncrease,
+          static_cast<uint16>(kTestRawRtpPackets[index].sequence_number +
+                              loop * GetTestPacketCount()),
+          static_cast<uint32>(kTestRawRtpPackets[index].timestamp +
+                              loop * kRtpTimestampIncrease),
           ssrc);
     }
   }
@@ -262,27 +260,6 @@ std::string GetTestFilePath(const std::string& filename) {
   path.AppendFolder("testdata");
   path.SetFilename(filename);
   return path.pathname();
-}
-
-// PSNR formula: psnr = 10 * log10 (Peak Signal^2 / mse)
-// sse is set to a small number for identical frames or sse == 0
-double ComputePSNR(double sse, double size) {
-  if (sse <= 0.)
-    sse = 65025.0 * size / pow(10., 128./10.);  // produces max PSNR of 128
-  return 10.0 * log10(65025.0 * size / sse);
-}
-
-double ComputeSumSquareError(const uint8 *org, const uint8 *rec, int size) {
-#ifdef HAVE_YUV
-  return static_cast<double>(libyuv::ComputeSumSquareError(org, rec, size));
-#else
-  double sse = 0.;
-  for (int j = 0; j < size; ++j) {
-    const int diff = static_cast<int>(org[j]) - static_cast<int>(rec[j]);
-    sse += static_cast<double>(diff * diff);
-  }
-  return sse;
-#endif
 }
 
 // Loads the image with the specified prefix and size into |out|.
@@ -357,6 +334,32 @@ bool VideoFrameEqual(const VideoFrame* frame0, const VideoFrame* frame1) {
   }
 
   return true;
+}
+
+cricket::StreamParams CreateSimStreamParams(
+    const std::string& cname, const std::vector<uint32>& ssrcs) {
+  cricket::StreamParams sp;
+  cricket::SsrcGroup sg(cricket::kSimSsrcGroupSemantics, ssrcs);
+  sp.ssrcs = ssrcs;
+  sp.ssrc_groups.push_back(sg);
+  sp.cname = cname;
+  return sp;
+}
+
+// There should be an rtx_ssrc per ssrc.
+cricket::StreamParams CreateSimWithRtxStreamParams(
+    const std::string& cname, const std::vector<uint32>& ssrcs,
+    const std::vector<uint32>& rtx_ssrcs) {
+  cricket::StreamParams sp = CreateSimStreamParams(cname, ssrcs);
+  for (size_t i = 0; i < ssrcs.size(); ++i) {
+    sp.ssrcs.push_back(rtx_ssrcs[i]);
+    std::vector<uint32> fid_ssrcs;
+    fid_ssrcs.push_back(ssrcs[i]);
+    fid_ssrcs.push_back(rtx_ssrcs[i]);
+    cricket::SsrcGroup fid_group(cricket::kFidSsrcGroupSemantics, fid_ssrcs);
+    sp.ssrc_groups.push_back(fid_group);
+  }
+  return sp;
 }
 
 }  // namespace cricket

@@ -3,21 +3,23 @@
 // found in the LICENSE file.
 
 #include "base/basictypes.h"
-#include "base/message_loop.h"
-#include "base/utf_string_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/extension_app_provider.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/url_database.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using base::ASCIIToUTF16;
+
 class ExtensionAppProviderTest : public testing::Test {
  protected:
   struct test_data {
-    const string16 input;
+    const base::string16 input;
     const size_t num_results;
     const GURL output[3];
   };
@@ -33,7 +35,7 @@ class ExtensionAppProviderTest : public testing::Test {
                int num_cases);
 
  protected:
-  MessageLoopForUI message_loop_;
+  base::MessageLoopForUI message_loop_;
   content::TestBrowserThread ui_thread_;
   scoped_refptr<ExtensionAppProvider> app_provider_;
   scoped_ptr<TestingProfile> profile_;
@@ -42,7 +44,7 @@ class ExtensionAppProviderTest : public testing::Test {
 
 void ExtensionAppProviderTest::SetUp() {
   profile_.reset(new TestingProfile());
-  profile_->CreateHistoryService(true, false);
+  ASSERT_TRUE(profile_->CreateHistoryService(true, false));
   profile_->BlockUntilHistoryProcessesPendingRequests();
   history_service_ =
       HistoryServiceFactory::GetForProfile(profile_.get(),
@@ -75,7 +77,7 @@ void ExtensionAppProviderTest::SetUp() {
 
     // Populate the InMemoryDatabase.
     history::URLRow info(GURL(kExtensionApps[i].launch_url));
-    info.set_title(UTF8ToUTF16(kExtensionApps[i].title));
+    info.set_title(base::UTF8ToUTF16(kExtensionApps[i].title));
     info.set_typed_count(kExtensionApps[i].typed_count);
     url_db->AddURL(info);
   }
@@ -86,8 +88,10 @@ void ExtensionAppProviderTest::RunTest(
     int num_cases) {
   ACMatches matches;
   for (int i = 0; i < num_cases; ++i) {
-    AutocompleteInput input(keyword_cases[i].input, string16::npos, string16(),
-                            true, false, true, AutocompleteInput::ALL_MATCHES);
+    AutocompleteInput input(keyword_cases[i].input, base::string16::npos,
+                            base::string16(), GURL(),
+                            AutocompleteInput::INVALID_SPEC, true,
+                            false, true, true);
     app_provider_->Start(input, false);
     EXPECT_TRUE(app_provider_->done());
     matches = app_provider_->matches();
@@ -135,9 +139,11 @@ TEST_F(ExtensionAppProviderTest, CreateMatchSanitize) {
     { "Test\r\t\nTest", "TestTest" },
   };
 
-  AutocompleteInput input(ASCIIToUTF16("Test"), string16::npos, string16(),
-                          true, true, true, AutocompleteInput::BEST_MATCH);
-  string16 url(ASCIIToUTF16("http://example.com"));
+  AutocompleteInput input(ASCIIToUTF16("Test"), base::string16::npos,
+                          base::string16(), GURL(),
+                          AutocompleteInput::INVALID_SPEC, true, true,
+                          true, false);
+  base::string16 url(ASCIIToUTF16("http://example.com"));
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
     ExtensionAppProvider::ExtensionApp extension_app =
         {ASCIIToUTF16(cases[i].name), url, true};
@@ -145,7 +151,7 @@ TEST_F(ExtensionAppProviderTest, CreateMatchSanitize) {
         app_provider_->CreateAutocompleteMatch(input,
                                                extension_app,
                                                0,
-                                               string16::npos);
+                                               base::string16::npos);
     EXPECT_EQ(ASCIIToUTF16(cases[i].match_contents), match.contents);
   }
 }

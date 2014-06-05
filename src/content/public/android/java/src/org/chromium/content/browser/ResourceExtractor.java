@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,6 +14,7 @@ import android.preference.PreferenceManager;
 import android.util.Log;
 
 import org.chromium.base.PathUtils;
+import org.chromium.ui.base.LocalizationUtils;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -22,7 +23,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.HashSet;
-import java.util.Locale;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.regex.Pattern;
@@ -36,6 +36,7 @@ public class ResourceExtractor {
     private static final String LOGTAG = "ResourceExtractor";
     private static final String LAST_LANGUAGE = "Last language";
     private static final String PAK_FILENAMES = "Pak filenames";
+    private static final String ICU_DATA_FILENAME = "icudtl.dat";
 
     private static String[] sMandatoryPaks = null;
 
@@ -52,11 +53,6 @@ public class ResourceExtractor {
 
         @Override
         protected Void doInBackground(Void... unused) {
-            if (sMandatoryPaks == null) {
-                assert false : "No pak files specified.  Call setMandatoryPaksToExtract before "
-                        + "beginning the resource extractions";
-                return null;
-            }
             if (!mOutputDir.exists() && !mOutputDir.mkdirs()) {
                 Log.e(LOGTAG, "Unable to create pak resources directory!");
                 return null;
@@ -64,13 +60,15 @@ public class ResourceExtractor {
 
             String timestampFile = checkPakTimestamp();
             if (timestampFile != null) {
-                deleteFiles(mContext);
+                deleteFiles();
             }
 
             SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(mContext);
             HashSet<String> filenames = (HashSet<String>) prefs.getStringSet(
                     PAK_FILENAMES, new HashSet<String>());
-            String currentLanguage = Locale.getDefault().getLanguage();
+            String currentLocale = LocalizationUtils.getDefaultLocale();
+            String currentLanguage = currentLocale.split("-", 2)[0];
+
             if (prefs.getString(LAST_LANGUAGE, "").equals(currentLanguage)
                     &&  filenames.size() >= sMandatoryPaks.length) {
                 boolean filesPresent = true;
@@ -96,20 +94,10 @@ public class ResourceExtractor {
                 // As well as the minimum required set of .paks above, we'll also add all .paks that
                 // we have for the user's currently selected language.
 
-                // Android uses non-standard language codes for Indonesian, Hebrew, and Yiddish:
-                // http://developer.android.com/reference/java/util/Locale.html. Correct these codes
-                // so that we unpack the correct .pak file (see crbug.com/136933).
-                if (currentLanguage.equals("in")) {
-                    currentLanguage = "id";
-                } else if (currentLanguage.equals("iw")) {
-                    currentLanguage = "he";
-                } else if (currentLanguage.equals("ji")) {
-                    currentLanguage = "yi";
-                }
-
                 p.append(currentLanguage);
                 p.append("(-\\w+)?\\.pak");
             }
+
             Pattern paksToInstall = Pattern.compile(p.toString());
 
             AssetManager manager = mContext.getResources().getAssets();
@@ -123,7 +111,8 @@ public class ResourceExtractor {
                     if (!paksToInstall.matcher(file).matches()) {
                         continue;
                     }
-                    File output = new File(mOutputDir, file);
+                    boolean isICUData = file.equals(ICU_DATA_FILENAME);
+                    File output = new File(isICUData ? mAppDataDir : mOutputDir, file);
                     if (output.exists()) {
                         continue;
                     }
@@ -149,7 +138,12 @@ public class ResourceExtractor {
                             throw new IOException(file + " extracted with 0 length!");
                         }
 
-                        filenames.add(file);
+                        if (!isICUData) {
+                            filenames.add(file);
+                        } else {
+                            // icudata needs to be accessed by a renderer process.
+                            output.setReadable(true, false);
+                        }
                     } finally {
                         try {
                             if (is != null) {
@@ -168,7 +162,7 @@ public class ResourceExtractor {
                 // returning null? It might be useful to gather UMA here too to track if
                 // this happens with regularity.
                 Log.w(LOGTAG, "Exception unpacking required pak resources: " + e.getMessage());
-                deleteFiles(mContext);
+                deleteFiles();
                 return null;
             }
 
@@ -235,9 +229,10 @@ public class ResourceExtractor {
         }
     }
 
-    private Context mContext;
+    private final Context mContext;
     private ExtractTask mExtractTask;
-    private File mOutputDir;
+    private final File mAppDataDir;
+    private final File mOutputDir;
 
     private static ResourceExtractor sInstance;
 
@@ -251,7 +246,8 @@ public class ResourceExtractor {
     /**
      * Specifies the .pak files that should be extracted from the APK's asset resources directory
      * and moved to {@link #getOutputDirFromContext(Context)}.
-     * @param mandatoryPaks The list of pak files to be loaded.
+     * @param mandatoryPaks The list of pak files to be loaded. If no pak files are
+     *     required, pass a single empty string.
      */
     public static void setMandatoryPaksToExtract(String... mandatoryPaks) {
         assert (sInstance == null || sInstance.mExtractTask == null)
@@ -275,33 +271,41 @@ public class ResourceExtractor {
     }
 
     private ResourceExtractor(Context context) {
-        mContext = context;
-        mOutputDir = getOutputDirFromContext(mContext);
+        mContext = context.getApplicationContext();
+        mAppDataDir = getAppDataDir();
+        mOutputDir = getOutputDir();
     }
 
     public void waitForCompletion() {
+        if (shouldSkipPakExtraction()) {
+            return;
+        }
+
         assert mExtractTask != null;
 
         try {
             mExtractTask.get();
-        }
-        catch (CancellationException e) {
+        } catch (CancellationException e) {
             // Don't leave the files in an inconsistent state.
-            deleteFiles(mContext);
-        }
-        catch (ExecutionException e2) {
-            deleteFiles(mContext);
-        }
-        catch (InterruptedException e3) {
-            deleteFiles(mContext);
+            deleteFiles();
+        } catch (ExecutionException e2) {
+            deleteFiles();
+        } catch (InterruptedException e3) {
+            deleteFiles();
         }
     }
 
-    // This will extract the application pak resources in an
-    // AsyncTask. Call waitForCompletion() at the point resources
-    // are needed to block until the task completes.
+    /**
+     * This will extract the application pak resources in an
+     * AsyncTask. Call waitForCompletion() at the point resources
+     * are needed to block until the task completes.
+     */
     public void startExtractingResources() {
         if (mExtractTask != null) {
+            return;
+        }
+
+        if (shouldSkipPakExtraction()) {
             return;
         }
 
@@ -309,19 +313,44 @@ public class ResourceExtractor {
         mExtractTask.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
     }
 
-    public static File getOutputDirFromContext(Context context) {
-        return new File(PathUtils.getDataDirectory(context.getApplicationContext()), "paks");
+    private File getAppDataDir() {
+        return new File(PathUtils.getDataDirectory(mContext));
     }
 
-    public static void deleteFiles(Context context) {
-        File dir = getOutputDirFromContext(context);
+    private File getOutputDir() {
+        return new File(getAppDataDir(), "paks");
+    }
+
+    /**
+     * Pak files (UI strings and other resources) should be updated along with
+     * Chrome. A version mismatch can lead to a rather broken user experience.
+     * The ICU data (icudtl.dat) is less version-sensitive, but still can
+     * lead to malfunction/UX misbehavior. So, we regard failing to update them
+     * as an error.
+     */
+    private void deleteFiles() {
+        File icudata = new File(getAppDataDir(), ICU_DATA_FILENAME);
+        if (icudata.exists() && !icudata.delete()) {
+            Log.e(LOGTAG, "Unable to remove the icudata " + icudata.getName());
+        }
+        File dir = getOutputDir();
         if (dir.exists()) {
             File[] files = dir.listFiles();
             for (File file : files) {
                 if (!file.delete()) {
-                    Log.w(LOGTAG, "Unable to remove existing resource " + file.getName());
+                    Log.e(LOGTAG, "Unable to remove existing resource " + file.getName());
                 }
             }
         }
+    }
+
+    /**
+     * Pak extraction not necessarily required by the embedder; we allow them to skip
+     * this process if they call setMandatoryPaksToExtract with a single empty String.
+     */
+    private static boolean shouldSkipPakExtraction() {
+        // Must call setMandatoryPaksToExtract before beginning resource extraction.
+        assert sMandatoryPaks != null;
+        return sMandatoryPaks.length == 1 && "".equals(sMandatoryPaks[0]);
     }
 }

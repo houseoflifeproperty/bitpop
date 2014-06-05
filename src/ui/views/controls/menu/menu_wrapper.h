@@ -18,6 +18,7 @@ class MenuModel;
 
 namespace views {
 
+class MenuInsertionDelegateWin;
 class MenuListener;
 
 // An interface that wraps an object that implements a menu.
@@ -44,14 +45,14 @@ class VIEWS_EXPORT MenuWrapper {
 
   // Called when the model supplying data to this menu has changed, and the menu
   // must be rebuilt.
-  virtual void Rebuild() = 0;
+  virtual void Rebuild(MenuInsertionDelegateWin* delegate) = 0;
 
   // Called when the states of the items in the menu must be updated from the
   // model.
   virtual void UpdateStates() = 0;
 
   // Retrieve a native menu handle.
-  virtual gfx::NativeMenu GetNativeMenu() const = 0;
+  virtual HMENU GetNativeMenu() const = 0;
 
   // Get the result of the last call to RunMenuAt to determine whether an
   // item was selected, the user navigated to a next or previous menu, or

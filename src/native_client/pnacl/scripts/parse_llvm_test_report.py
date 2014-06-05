@@ -11,15 +11,17 @@ pnacl/scripts/parse_llvm_test_report.py [options]+ reportfile
 """
 
 import csv
+import logging
 import optparse
 import os
 import sys
+import StringIO
 
 # exclude these tests
 EXCLUDES = {}
 
 def ParseCommandLine(argv):
-  parser = optparse.OptionParser()
+  parser = optparse.OptionParser(prog=argv[0])
   parser.add_option('-x', '--exclude', action='append', dest='excludes',
                     default=[],
                     help='Add list of excluded tests (expected fails)')
@@ -39,7 +41,7 @@ def ParseCommandLine(argv):
   parser.add_option('-l', '--lit', action='store_true', dest='lit',
                     default=False)
 
-  options, args = parser.parse_args(argv)
+  options, args = parser.parse_args(argv[1:])
   return options, args
 
 def Fatal(text):
@@ -52,7 +54,7 @@ def IsFullname(name):
 def GetShortname(fullname):
   return fullname.split('/')[-1]
 
-def ParseTestsuiteCSV(filename):
+def ParseTestsuiteCSV(filecontents):
   ''' Parse a CSV file output by llvm testsuite with a record for each test.
       returns 2 dictionaries:
       1) a mapping from the short name of the test (without the path) to
@@ -62,7 +64,7 @@ def ParseTestsuiteCSV(filename):
   '''
   alltests = {}
   failures = {}
-  reader = csv.DictReader(open(filename, 'rb'))
+  reader = csv.DictReader(StringIO.StringIO(filecontents))
 
   testcount = 0
   for row in reader:
@@ -78,10 +80,10 @@ def ParseTestsuiteCSV(filename):
     elif row['Exec'] == '*':
       failures[fullname] = 'exec'
 
-  print testcount, 'tests,', len(failures), 'failures'
+  logging.info('%d tests, %d failures', testcount, len(failures))
   return alltests, failures
 
-def ParseLit(filename):
+def ParseLit(filecontents):
   ''' Parse the output of the LLVM regression test runner (lit/make check).
       returns a dictionary mapping test name to the type of failure
       (Clang, LLVM, LLVMUnit, etc)
@@ -89,21 +91,20 @@ def ParseLit(filename):
   alltests = {}
   failures = {}
   testcount = 0
-  with open(filename) as f:
-    for line in f:
-      l = line.split()
-      if len(l) < 4:
-        continue
-      if l[0] in ('PASS:', 'FAIL:', 'XFAIL:', 'XPASS:', 'UNSUPPORTED:'):
-        testcount += 1
-        fullname = l[3]
-        shortname = GetShortname(fullname)
-        fullnames = alltests.get(shortname, [])
-        fullnames.append(fullname)
-        alltests[shortname] = fullnames
-      if l[0] in ('FAIL:', 'XPASS:'):
-        failures[fullname] = l[1]
-  print testcount, 'tests,', len(failures), 'failures'
+  for line in filecontents.splitlines():
+    l = line.split()
+    if len(l) < 4:
+      continue
+    if l[0] in ('PASS:', 'FAIL:', 'XFAIL:', 'XPASS:', 'UNSUPPORTED:'):
+      testcount += 1
+      fullname = ''.join(l[1:4])
+      shortname = GetShortname(fullname)
+      fullnames = alltests.get(shortname, [])
+      fullnames.append(fullname)
+      alltests[shortname] = fullnames
+    if l[0] in ('FAIL:', 'XPASS:'):
+      failures[fullname] = l[1]
+  logging.info('%d tests, %d failures', testcount, len(failures))
   return alltests, failures
 
 def ParseExcludeFile(filename, config_attributes,
@@ -114,7 +115,11 @@ def ParseExcludeFile(filename, config_attributes,
       one test with the same shortname, the full name must be given.
       Errors are reported if an exclude does not match exactly one test
       in alltests, or if there are duplicate excludes.
+
+      Returns:
+        Number of failures in the exclusion file.
   '''
+  errors = 0
   f = open(filename)
   for line in f:
     line = line.strip()
@@ -129,45 +134,61 @@ def ParseExcludeFile(filename, config_attributes,
     else:
       testname = line
     if testname in EXCLUDES:
-      Fatal('ERROR: duplicate exclude: ' + line)
+      logging.error('Duplicate exclude: %s', line)
+      errors += 1
     if IsFullname(testname):
       shortname = GetShortname(testname)
       if shortname not in alltests or testname not in alltests[shortname]:
-        Fatal('ERROR: exclude ' + line + ' not found in list of tests')
+        logging.error('Exclude %s not found in list of tests', line)
+        errors += 1
       fullname = testname
     else:
       # short name is specified
       shortname = testname
       if shortname not in alltests:
-        Fatal('ERROR: exclude ' + shortname + ' not found in list of tests')
+        logging.error('Exclude %s not found in list of tests', shortname)
+        errors += 1
       if len(alltests[shortname]) > 1:
-        Fatal('ERROR: exclude ' + shortname + ' matches more than one test: ' +
-              str(alltests[shortname]) + '. Specify full name in exclude file.')
+        logging.error('Exclude %s matches more than one test: %s. ' +
+                      'Specify full name in exclude file.',
+                      shortname, str(alltests[shortname]))
+        errors += 1
       fullname = alltests[shortname][0]
 
     if fullname in EXCLUDES:
-      Fatal('ERROR: duplicate exclude ' + fullname)
+      logging.error('Duplicate exclude %s', fullname)
+      errors += 1
 
     EXCLUDES[fullname] = filename
   f.close()
-  print 'parsed', filename + ': now', len(EXCLUDES), 'total excludes'
+  logging.info('Parsed %s: now %d total excludes', filename, len(EXCLUDES))
+  return errors
 
 def DumpFileContents(name):
-  print name
-  print open(name, 'rb').read()
+  error = not os.path.exists(name)
+  logging.debug(name)
+  try:
+    logging.debug(open(name, 'rb').read())
+  except IOError:
+    error = True
+  if error:
+    logging.error("Couldn't open file: %s", name)
+    # Make the bots go red
+    logging.error('@@@STEP_FAILURE@@@')
 
-def PrintCompilationResult(path, test):
-  ''' Print the compilation and run results for the specified test.
+def PrintTestsuiteCompilationResult(path, test):
+  ''' Print the compilation and run results for the specified test in the
+      LLVM testsuite.
       These results are left in several different log files by the testsuite
       driver, and are different for MultiSource/SingleSource tests
   '''
-  print 'RESULTS for', test
+  logging.debug('RESULTS for %s', test)
   testpath = os.path.join(path, test)
   testdir, testname = os.path.split(testpath)
   outputdir = os.path.join(testdir, 'Output')
 
-  print 'COMPILE phase'
-  print 'OBJECT file phase'
+  logging.debug('COMPILE phase')
+  logging.debug('OBJECT file phase')
   if test.startswith('MultiSource'):
     for f in os.listdir(outputdir):
       if f.endswith('llvm.o.compile'):
@@ -177,46 +198,74 @@ def PrintCompilationResult(path, test):
   else:
     Fatal('ERROR: unrecognized test type ' + test)
 
-  print 'PEXE generation phase'
-  DumpFileContents(os.path.join(outputdir, testname + '.pexe.compile'))
+  logging.debug('PEXE generation phase')
+  DumpFileContents(os.path.join(outputdir,
+                                testname + '.nonfinal.pexe.compile'))
 
-  print 'TRANSLATION phase'
+  logging.debug('PEXE finalization phase')
+  DumpFileContents(os.path.join(outputdir, testname + '.final.pexe.finalize'))
+
+  logging.debug('TRANSLATION phase')
   DumpFileContents(os.path.join(outputdir, testname + '.nexe.translate'))
 
-  print 'EXECUTION phase'
-  print 'native output:'
+  logging.debug('EXECUTION phase')
+  logging.debug('native output:')
   DumpFileContents(os.path.join(outputdir, testname + '.out-nat'))
-  print 'pnacl output:'
+  logging.debug('pnacl output:')
   DumpFileContents(os.path.join(outputdir, testname + '.out-pnacl'))
 
 def main(argv):
-  options, args = ParseCommandLine(argv[1:])
+  options, args = ParseCommandLine(argv)
 
   if len(args) != 1:
     Fatal('Must specify filename to parse')
-  if options.verbose:
-    if options.buildpath is None:
-      Fatal('ERROR: must specify build path if verbose output is desired')
-
   filename = args[0]
-  failures = {}
-  if options.verbose:
-    print 'Full test results:'
+  return Report(vars(options), filename=filename)
 
+
+def Report(options, filename=None, filecontents=None):
+  loglevel = logging.INFO
+  if options['verbose']:
+    loglevel = logging.DEBUG
+  logging.basicConfig(level=loglevel, format='%(message)s')
+
+  if not (filename or filecontents):
+    Fatal('ERROR: must specify filename or filecontents')
+
+  failures = {}
+  logging.debug('Full test results:')
+
+  if not filecontents:
+    with open(filename, 'rb') as f:
+      filecontents = f.read();
   # get the set of tests and failures
-  if options.testsuite:
-    alltests, failures = ParseTestsuiteCSV(filename)
+  if options['testsuite']:
+    if options['verbose'] and options['buildpath'] is None:
+      Fatal('ERROR: must specify build path if verbose output is desired')
+    alltests, failures = ParseTestsuiteCSV(filecontents)
     check_test_names = True
-  elif options.lit:
-    alltests, failures = ParseLit(filename)
+  elif options['lit']:
+    alltests, failures = ParseLit(filecontents)
     check_test_names = True
   else:
     Fatal('Must specify either testsuite (-t) or lit (-l) output format')
 
   # get the set of excludes
-  for f in options.excludes:
-    ParseExcludeFile(f, set(options.attributes),
-                     check_test_names=check_test_names, alltests=alltests)
+  exclusion_failures = 0
+  for f in options['excludes']:
+    exclusion_failures += ParseExcludeFile(f, set(options['attributes']),
+                                           check_test_names=check_test_names,
+                                           alltests=alltests)
+
+  # Regardless of the verbose option, do a dry run of
+  # PrintTestsuiteCompilationResult so we can catch errors when intermediate
+  # filenames in the compilation pipeline change.
+  # E.g. https://code.google.com/p/nativeclient/issues/detail?id=3659
+  if len(alltests) and options['testsuite']:
+    logging.disable(logging.INFO)
+    PrintTestsuiteCompilationResult(options['buildpath'],
+                                    alltests.values()[0][0])
+    logging.disable(logging.NOTSET)
 
   # intersect them and check for unexpected fails/passes
   unexpected_failures = 0
@@ -226,19 +275,22 @@ def main(argv):
       if test in failures:
         if test not in EXCLUDES:
           unexpected_failures += 1
-          print '[  FAILED  ] ' + test + ': ' + failures[test] + ' failure'
-          if options.verbose:
-            PrintCompilationResult(options.buildpath, test)
+          logging.info('[  FAILED  ] %s: %s failure', test, failures[test])
+          if options['testsuite']:
+            PrintTestsuiteCompilationResult(options['buildpath'], test)
       elif test in EXCLUDES:
         unexpected_passes += 1
-        print test + ': ' + ' unexpected success'
+        logging.info('%s: unexpected success', test)
 
-  print unexpected_failures, 'unexpected failures',
-  print unexpected_passes, 'unexpected passes'
+  logging.info('%d unexpected failures %d unexpected passes',
+               unexpected_failures, unexpected_passes)
+  if exclusion_failures:
+    logging.info('%d problems in known_failures exclusion files',
+                 exclusion_failures)
 
-  if options.check_excludes:
-    return unexpected_failures + unexpected_passes > 0
-  return unexpected_failures > 0
+  if options['check_excludes']:
+    return unexpected_failures + unexpected_passes + exclusion_failures > 0
+  return unexpected_failures + exclusion_failures > 0
 
 if __name__ == '__main__':
   sys.exit(main(sys.argv))

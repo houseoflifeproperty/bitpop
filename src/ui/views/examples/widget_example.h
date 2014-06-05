@@ -7,9 +7,8 @@
 
 #include <string>
 
-#include "base/basictypes.h"
-#include "base/compiler_specific.h"
-#include "ui/views/controls/button/text_button.h"
+#include "base/macros.h"
+#include "ui/views/controls/button/button.h"
 #include "ui/views/examples/example_base.h"
 #include "ui/views/widget/widget.h"
 
@@ -17,34 +16,31 @@ namespace views {
 namespace examples {
 
 // WidgetExample demonstrates how to create a popup widget.
-class WidgetExample : public ExampleBase, public ButtonListener {
+class VIEWS_EXAMPLES_EXPORT WidgetExample : public ExampleBase,
+                                            public ButtonListener {
  public:
   WidgetExample();
   virtual ~WidgetExample();
 
-  // Overridden from ExampleBase:
+  // ExampleBase:
   virtual void CreateExampleView(View* container) OVERRIDE;
 
  private:
+  // Button tags used to identify various commands.
   enum Command {
-    POPUP,
-    CHILD,
-    TRANSPARENT_POPUP,
-    TRANSPARENT_CHILD,
-    CLOSE_WIDGET,
+    POPUP,        // Show a popup widget.
+    DIALOG,       // Show a dialog widget.
+    CHILD,        // Show a child widget.
+    CLOSE_WIDGET, // Close the sender button's widget.
   };
 
+  // Construct a button with the specified |label| and |tag| in |container|.
   void BuildButton(View* container, const std::string& label, int tag);
 
-  void InitWidget(Widget* widget, bool transparent);
+  // Construct a Widget for |sender|, initialize with |params|, and call Show().
+  void ShowWidget(View* sender, Widget::InitParams params);
 
-#if defined(OS_LINUX)
-  void CreateChild(View* parent, bool transparent);
-#endif
-
-  void CreatePopup(View* parent, bool transparent);
-
-  // Overridden from ButtonListener:
+  // ButtonListener:
   virtual void ButtonPressed(Button* sender, const ui::Event& event) OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(WidgetExample);

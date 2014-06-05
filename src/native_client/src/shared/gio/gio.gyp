@@ -22,6 +22,8 @@
     {
       'target_name': 'gio',
       'type': 'static_library',
+      # tls_edit relies on gio which is always built for the host platform.
+      'toolsets': ['host', 'target'],
       'sources': [
         '<@(trusted_sources)',
       ],
@@ -35,6 +37,7 @@
         'build_glibc': 1,
         'build_newlib': 1,
         'build_pnacl_newlib': 1,
+        'build_irt': 1,
         'sources': ['<@(common_sources)']
       },
       'dependencies': [
@@ -43,7 +46,7 @@
     },
   ],
   'conditions': [
-    ['OS=="win"', {
+    ['OS=="win" and target_arch=="ia32"', {
       'targets': [
         {
           'target_name': 'gio64',

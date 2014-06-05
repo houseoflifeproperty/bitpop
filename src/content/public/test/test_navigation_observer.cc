@@ -5,146 +5,142 @@
 #include "content/public/test/test_navigation_observer.h"
 
 #include "base/bind.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_types.h"
-#include "content/public/browser/render_view_host_observer.h"
-#include "content/public/test/js_injection_ready_observer.h"
-#include "content/public/test/test_utils.h"
+#include "base/stl_util.h"
+#include "content/browser/web_contents/web_contents_impl.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace content {
 
-// This class observes |render_view_host| and calls OnJsInjectionReady() of
-// |js_injection_ready_observer| when the time is right to inject JavaScript
-// into the page.
-class TestNavigationObserver::RVHOSendJS : public RenderViewHostObserver {
+class TestNavigationObserver::TestWebContentsObserver
+    : public WebContentsObserver {
  public:
-  RVHOSendJS(RenderViewHost* render_view_host,
-             JsInjectionReadyObserver* js_injection_ready_observer)
-      : RenderViewHostObserver(render_view_host),
-        js_injection_ready_observer_(js_injection_ready_observer) {
+  TestWebContentsObserver(TestNavigationObserver* parent,
+                          WebContents* web_contents)
+      : WebContentsObserver(web_contents),
+        parent_(parent) {
   }
 
  private:
-  // RenderViewHostObserver implementation.
-  virtual void RenderViewHostInitialized() OVERRIDE {
-    if (js_injection_ready_observer_)
-      js_injection_ready_observer_->OnJsInjectionReady(render_view_host());
+  // WebContentsObserver:
+  virtual void NavigationEntryCommitted(
+      const LoadCommittedDetails& load_details) OVERRIDE {
+    parent_->OnNavigationEntryCommitted(this, web_contents(), load_details);
   }
 
-  JsInjectionReadyObserver* js_injection_ready_observer_;
+  virtual void DidAttachInterstitialPage() OVERRIDE {
+    parent_->OnDidAttachInterstitialPage(web_contents());
+  }
 
-  DISALLOW_COPY_AND_ASSIGN(RVHOSendJS);
+  virtual void WebContentsDestroyed() OVERRIDE {
+    parent_->OnWebContentsDestroyed(this, web_contents());
+  }
+
+  virtual void DidStartLoading(RenderViewHost* render_view_host) OVERRIDE {
+    parent_->OnDidStartLoading(web_contents());
+  }
+
+  virtual void DidStopLoading(RenderViewHost* render_view_host) OVERRIDE {
+    parent_->OnDidStopLoading(web_contents());
+  }
+
+  TestNavigationObserver* parent_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestWebContentsObserver);
 };
 
 TestNavigationObserver::TestNavigationObserver(
-    const NotificationSource& source,
-    JsInjectionReadyObserver* js_injection_ready_observer,
+    WebContents* web_contents,
     int number_of_navigations)
     : navigation_started_(false),
       navigations_completed_(0),
       number_of_navigations_(number_of_navigations),
-      js_injection_ready_observer_(js_injection_ready_observer),
-      done_(false),
-      running_(false) {
-  // When javascript injection is requested, register for RenderViewHost
-  // creation.
-  if (js_injection_ready_observer_) {
-    registrar_.Add(this, NOTIFICATION_RENDER_VIEW_HOST_CREATED,
-                   NotificationService::AllSources());
-  }
-  RegisterAsObserver(source);
+      message_loop_runner_(new MessageLoopRunner),
+      web_contents_created_callback_(
+          base::Bind(
+              &TestNavigationObserver::OnWebContentsCreated,
+              base::Unretained(this))) {
+  if (web_contents)
+    RegisterAsObserver(web_contents);
 }
 
 TestNavigationObserver::TestNavigationObserver(
-    const NotificationSource& source)
+    WebContents* web_contents)
     : navigation_started_(false),
       navigations_completed_(0),
       number_of_navigations_(1),
-      js_injection_ready_observer_(NULL),
-      done_(false),
-      running_(false) {
-  RegisterAsObserver(source);
+      message_loop_runner_(new MessageLoopRunner),
+      web_contents_created_callback_(
+          base::Bind(
+              &TestNavigationObserver::OnWebContentsCreated,
+              base::Unretained(this))) {
+  if (web_contents)
+    RegisterAsObserver(web_contents);
 }
 
 TestNavigationObserver::~TestNavigationObserver() {
-}
+  StopWatchingNewWebContents();
 
-void TestNavigationObserver::WaitForObservation(
-    const base::Closure& wait_loop_callback,
-    const base::Closure& done_callback) {
-  if (done_)
-    return;
-
-  EXPECT_FALSE(running_);
-  running_ = true;
-  done_callback_ = done_callback;
-  wait_loop_callback.Run();
-  EXPECT_TRUE(done_);
+  STLDeleteContainerPointers(web_contents_observers_.begin(),
+                             web_contents_observers_.end());
 }
 
 void TestNavigationObserver::Wait() {
-  base::RunLoop run_loop;
-  WaitForObservation(
-      base::Bind(&base::RunLoop::Run, base::Unretained(&run_loop)),
-      GetQuitTaskForRunLoop(&run_loop));
+  message_loop_runner_->Run();
 }
 
-TestNavigationObserver::TestNavigationObserver(
-    JsInjectionReadyObserver* js_injection_ready_observer,
-    int number_of_navigations)
-    : navigation_started_(false),
-      navigations_completed_(0),
-      number_of_navigations_(number_of_navigations),
-      js_injection_ready_observer_(js_injection_ready_observer),
-      done_(false),
-      running_(false) {
-  // When javascript injection is requested, register for RenderViewHost
-  // creation.
-  if (js_injection_ready_observer_) {
-    registrar_.Add(this, NOTIFICATION_RENDER_VIEW_HOST_CREATED,
-                   NotificationService::AllSources());
-  }
+void TestNavigationObserver::StartWatchingNewWebContents() {
+  WebContentsImpl::AddCreatedCallback(web_contents_created_callback_);
 }
 
-void TestNavigationObserver::RegisterAsObserver(
-    const NotificationSource& source) {
-  // Register for events to know when we've finished loading the page and are
-  // ready to quit the current message loop to return control back to the
-  // waiting test.
-  registrar_.Add(this, NOTIFICATION_NAV_ENTRY_COMMITTED, source);
-  registrar_.Add(this, NOTIFICATION_LOAD_START, source);
-  registrar_.Add(this, NOTIFICATION_LOAD_STOP, source);
+void TestNavigationObserver::StopWatchingNewWebContents() {
+  WebContentsImpl::RemoveCreatedCallback(web_contents_created_callback_);
 }
 
-void TestNavigationObserver::Observe(
-    int type, const NotificationSource& source,
-    const NotificationDetails& details) {
-  switch (type) {
-    case NOTIFICATION_NAV_ENTRY_COMMITTED:
-    case NOTIFICATION_LOAD_START:
-      navigation_started_ = true;
-      break;
-    case NOTIFICATION_LOAD_STOP:
-      if (navigation_started_ &&
-          ++navigations_completed_ == number_of_navigations_) {
-        navigation_started_ = false;
-        done_ = true;
-        if (running_) {
-          running_ = false;
-          done_callback_.Run();
-        }
-      }
-      break;
-    case NOTIFICATION_RENDER_VIEW_HOST_CREATED:
-      rvho_send_js_.reset(new RVHOSendJS(
-          Source<RenderViewHost>(source).ptr(),
-          js_injection_ready_observer_));
-      break;
-    default:
-      NOTREACHED();
+void TestNavigationObserver::RegisterAsObserver(WebContents* web_contents) {
+  web_contents_observers_.insert(
+      new TestWebContentsObserver(this, web_contents));
+}
+
+void TestNavigationObserver::OnWebContentsCreated(WebContents* web_contents) {
+  RegisterAsObserver(web_contents);
+}
+
+void TestNavigationObserver::OnWebContentsDestroyed(
+    TestWebContentsObserver* observer,
+    WebContents* web_contents) {
+  web_contents_observers_.erase(observer);
+  delete observer;
+}
+
+void TestNavigationObserver::OnNavigationEntryCommitted(
+    TestWebContentsObserver* observer,
+    WebContents* web_contents,
+    const LoadCommittedDetails& load_details) {
+  navigation_started_ = true;
+}
+
+void TestNavigationObserver::OnDidAttachInterstitialPage(
+    WebContents* web_contents) {
+  // Going to an interstitial page does not trigger NavigationEntryCommitted,
+  // but has the same meaning for us here.
+  navigation_started_ = true;
+}
+
+void TestNavigationObserver::OnDidStartLoading(WebContents* web_contents) {
+  navigation_started_ = true;
+}
+
+void TestNavigationObserver::OnDidStopLoading(WebContents* web_contents) {
+  if (!navigation_started_)
+    return;
+
+  ++navigations_completed_;
+  if (navigations_completed_ == number_of_navigations_) {
+    navigation_started_ = false;
+    message_loop_runner_->Quit();
   }
 }
 

@@ -6,32 +6,53 @@
 #define UI_VIEWS_WIDGET_TOOLTIP_MANAGER_AURA_H_
 
 #include "base/compiler_specific.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "ui/gfx/point.h"
 #include "ui/views/widget/tooltip_manager.h"
 
+namespace aura {
+class Window;
+}
+
+namespace gfx {
+class FontList;
+}
+
 namespace views {
 
-class NativeWidgetAura;
-class View;
+class Widget;
 
 // TooltipManager implementation for Aura.
 class TooltipManagerAura : public TooltipManager {
  public:
-  explicit TooltipManagerAura(NativeWidgetAura* native_widget_aura);
+  explicit TooltipManagerAura(Widget* widget);
   virtual ~TooltipManagerAura();
 
-  // TooltipManager.
+  // If |source| has capture this finds the Widget under the mouse and invokes
+  // UpdateTooltip() on it's TooltipManager. This is necessary as when capture
+  // is held mouse events are only delivered to the Window that has capture even
+  // though we may show tooltips for the Window under the mouse.
+  static void UpdateTooltipManagerForCapture(Widget* source);
+
+  // Returns the FontList used by all TooltipManagerAuras.
+  static const gfx::FontList& GetDefaultFontList();
+
+  // TooltipManager:
+  virtual const gfx::FontList& GetFontList() const OVERRIDE;
   virtual void UpdateTooltip() OVERRIDE;
   virtual void TooltipTextChanged(View* view) OVERRIDE;
-  virtual void ShowKeyboardTooltip(View* view) OVERRIDE;
-  virtual void HideKeyboardTooltip() OVERRIDE;
 
  private:
   View* GetViewUnderPoint(const gfx::Point& point);
+  void UpdateTooltipForTarget(View* target,
+                              const gfx::Point& point,
+                              aura::Window* root_window);
 
-  NativeWidgetAura* native_widget_aura_;
-  string16 tooltip_text_;
+  // Returns the Window the tooltip text is installed on.
+  aura::Window* GetWindow();
+
+  Widget* widget_;
+  base::string16 tooltip_text_;
 
   DISALLOW_COPY_AND_ASSIGN(TooltipManagerAura);
 };

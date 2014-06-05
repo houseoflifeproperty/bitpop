@@ -16,10 +16,20 @@
 
 #include <stddef.h>
 
+#include "native_client/src/include/nacl_base.h"
 #include "native_client/src/include/nacl_compiler_annotations.h"
 #include "native_client/src/include/nacl_macros.h"
 #include "native_client/src/include/portability.h"
 #include "native_client/src/shared/platform/nacl_check.h"
+
+EXTERN_C_BEGIN
+
+void NaClDoFnstcw(uint16_t *fcw);
+void NaClDoFxsave(void *fxsave);
+void NaClDoFxrstor(void *fxsave);
+
+void NaClSyscallSeg(void);
+void NaClSyscallSegRegsSaved(void);
 
 typedef uint64_t  nacl_reg_t;  /* general purpose register type */
 
@@ -51,14 +61,10 @@ struct NaClThreadContext {
   /*          0x88 */
   nacl_reg_t  sysret;
   /*          0x90 */
-  /*
-   * TODO(mseaborn): We would like to remove the following unused
-   * field, but the incremental Window Gyp build does not know to
-   * rebuild the .S files when this header file changes.
-   * See http://code.google.com/p/nativeclient/issues/detail?id=2969
-   */
-  void        *unused_padding;
+  uint32_t    mxcsr;
   /*          0x98 */
+  uint32_t    sys_mxcsr;
+  /*          0x9c */
   uint32_t    tls_idx;
   /*          0xa0 */
   uint16_t    fcw;
@@ -72,6 +78,10 @@ struct NaClThreadContext {
   uint32_t    tls_value2;
   /*          0xb4 */
 };
+
+static INLINE uintptr_t NaClGetThreadCtxSp(struct NaClThreadContext *th_ctx) {
+  return th_ctx->rsp;
+}
 
 #endif /* !defined(__ASSEMBLER__) */
 
@@ -94,7 +104,8 @@ struct NaClThreadContext {
 #define NACL_THREAD_CONTEXT_OFFSET_PROG_CTR      0x80
 #define NACL_THREAD_CONTEXT_OFFSET_NEW_PROG_CTR  0x88
 #define NACL_THREAD_CONTEXT_OFFSET_SYSRET        0x90
-#define NACL_THREAD_CONTEXT_OFFSET_UNUSED_PADDING 0x98
+#define NACL_THREAD_CONTEXT_OFFSET_MXCSR         0x98
+#define NACL_THREAD_CONTEXT_OFFSET_SYS_MXCSR     0x9c
 #define NACL_THREAD_CONTEXT_OFFSET_TLS_IDX       0xa0
 #define NACL_THREAD_CONTEXT_OFFSET_FCW           0xa4
 #define NACL_THREAD_CONTEXT_OFFSET_SYS_FCW       0xa6
@@ -136,7 +147,8 @@ static INLINE void NaClThreadContextOffsetCheck(void) {
   NACL_CHECK_FIELD(NACL_THREAD_CONTEXT_OFFSET_PROG_CTR, prog_ctr);
   NACL_CHECK_FIELD(NACL_THREAD_CONTEXT_OFFSET_NEW_PROG_CTR, new_prog_ctr);
   NACL_CHECK_FIELD(NACL_THREAD_CONTEXT_OFFSET_SYSRET, sysret);
-  NACL_CHECK_FIELD(NACL_THREAD_CONTEXT_OFFSET_UNUSED_PADDING, unused_padding);
+  NACL_CHECK_FIELD(NACL_THREAD_CONTEXT_OFFSET_MXCSR, mxcsr);
+  NACL_CHECK_FIELD(NACL_THREAD_CONTEXT_OFFSET_SYS_MXCSR, sys_mxcsr);
   NACL_CHECK_FIELD(NACL_THREAD_CONTEXT_OFFSET_TLS_IDX, tls_idx);
   NACL_CHECK_FIELD(NACL_THREAD_CONTEXT_OFFSET_FCW, fcw);
   NACL_CHECK_FIELD(NACL_THREAD_CONTEXT_OFFSET_SYS_FCW, sys_fcw);
@@ -148,6 +160,8 @@ static INLINE void NaClThreadContextOffsetCheck(void) {
 
 #undef NACL_CHECK_FIELD
 }
+
+EXTERN_C_END
 
 #endif
 

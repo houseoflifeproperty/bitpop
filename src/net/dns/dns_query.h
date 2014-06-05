@@ -7,7 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "net/base/net_export.h"
 
 namespace net {
@@ -36,7 +36,9 @@ class NET_EXPORT_PRIVATE DnsQuery {
   base::StringPiece question() const;
 
   // IOBuffer accessor to be used for writing out the query.
-  IOBufferWithSize* io_buffer() const { return io_buffer_; }
+  IOBufferWithSize* io_buffer() const { return io_buffer_.get(); }
+
+  void set_flags(uint16 flags);
 
  private:
   DnsQuery(const DnsQuery& orig, uint16 id);

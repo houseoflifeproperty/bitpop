@@ -8,9 +8,9 @@
 #include <string>
 #include <vector>
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/predictors/predictor_table_base.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace predictors {
 
@@ -45,7 +45,7 @@ class AutocompleteActionPredictorTable : public PredictorTableBase {
 
     // Only used by unit tests.
     Row(const Id& id,
-        const string16& user_text,
+        const base::string16& user_text,
         const GURL& url,
         int number_of_hits,
         int number_of_misses);
@@ -53,7 +53,7 @@ class AutocompleteActionPredictorTable : public PredictorTableBase {
     Row(const Row& row);
 
     Id id;
-    string16 user_text;
+    base::string16 user_text;
     GURL url;
     int number_of_hits;
     int number_of_misses;

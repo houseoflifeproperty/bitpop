@@ -11,6 +11,7 @@
 #include "ppapi/c/pp_size.h"
 #include "ppapi/c/ppb_graphics_2d.h"
 #include "ppapi/proxy/dispatch_reply_message.h"
+#include "ppapi/proxy/plugin_dispatcher.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
 #include "ppapi/shared_impl/resource_tracker.h"
@@ -93,34 +94,29 @@ void Graphics2DResource::ReplaceContents(PP_Resource image_data) {
         "Graphics2DResource.PaintImageData: Bad image resource.");
     return;
   }
-  enter_image.object()->SetUsedInReplaceContents();
+  enter_image.object()->SetIsCandidateForReuse();
 
   Post(RENDERER, PpapiHostMsg_Graphics2D_ReplaceContents(
       image_object->host_resource()));
 }
 
-bool Graphics2DResource::SetScale(float scale) {
+PP_Bool Graphics2DResource::SetScale(float scale) {
   if (scale <= 0.0f)
-    return false;
-  Post(RENDERER, PpapiHostMsg_Graphics2D_Dev_SetScale(scale));
+    return PP_FALSE;
+  Post(RENDERER, PpapiHostMsg_Graphics2D_SetScale(scale));
   scale_ = scale;
-  return true;
+  return PP_TRUE;
 }
 
 float Graphics2DResource::GetScale() {
   return scale_;
 }
 
-int32_t Graphics2DResource::Flush(scoped_refptr<TrackedCallback> callback,
-                                  PP_Resource* old_image_data) {
+int32_t Graphics2DResource::Flush(scoped_refptr<TrackedCallback> callback) {
   // If host is not even created, return failure immediately.  This can happen
   // when failed to initialize (in constructor).
   if (!sent_create_to_renderer())
     return PP_ERROR_FAILED;
-
-  // We don't support this feature, it's for in-renderer only.
-  if (old_image_data)
-    *old_image_data = 0;
 
   if (TrackedCallback::IsPending(current_flush_callback_))
     return PP_ERROR_INPROGRESS;  // Can't have >1 flush pending.

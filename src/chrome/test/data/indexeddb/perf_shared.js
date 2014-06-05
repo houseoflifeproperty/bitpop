@@ -99,7 +99,7 @@ function createDatabase(
     db.onerror = function(ev) {
       console.log("db error", arguments, openRequest.webkitErrorMessage);
       errorHandler(ev);
-    }
+    };
     if (curVersion != baseVersion) {
       // This is the legacy path, which runs only in Chrome.
       var setVersionRequest = db.setVersion(baseVersion);
@@ -110,11 +110,11 @@ function createDatabase(
         var versionTransaction = setVersionRequest.result;
         versionTransaction.oncomplete = function() { handler(db); };
         versionTransaction.onerror = onError;
-      }
+      };
     } else {
       handler(db);
     }
-  }
+  };
 }
 
 // You must close all database connections before calling this.
@@ -124,8 +124,6 @@ function alterObjectStores(
   var openRequest = indexedDB.open(name, version);
   openRequest.onblocked = errorHandler;
   openRequest.onupgradeneeded = function(ev) {
-    // This is the spec-compliant path, which doesn't yet run in Chrome, but
-    // works in Firefox.
     doAlteration(ev.target.transaction);
     // onsuccess will get called after this exits.
   };
@@ -136,9 +134,9 @@ function alterObjectStores(
       console.log("error altering db", arguments,
           openRequest.webkitErrorMessage);
       errorHandler();
-    }
+    };
     if (db.version != version) {
-      // This is the legacy path, which runs only in Chrome.
+      // This is the legacy path, which runs only in Chrome before M23.
       var setVersionRequest = db.setVersion(version);
       setVersionRequest.onerror = errorHandler;
       setVersionRequest.onsuccess =
@@ -149,11 +147,11 @@ function alterObjectStores(
             versionTransaction.oncomplete = function() { handler(db); };
             versionTransaction.onerror = onError;
             doAlteration(versionTransaction);
-          }
+          };
     } else {
       handler(db);
     }
-  }
+  };
   function doAlteration(target) {
     for (var store in objectStoreNames) {
       func(target.objectStore(objectStoreNames[store]));
@@ -186,19 +184,23 @@ function getCompletionFunc(db, testName, startTime, onTestComplete) {
     onTestComplete();
   }
   return function() {
-    var duration = Date.now() - startTime;
+    var duration = window.performance.now() - startTime;
     // Ignore the cleanup time for this test.
     automation.addResult(testName, duration);
     automation.setStatus("Deleting database.");
     db.close();
     deleteDatabase(testName, onDeleted);
-  }
+  };
 }
 
 function getDisplayName(args) {
+  function functionName(f) {
+    // Function.prototype.name is nonstandard, and not implemented in IE10-
+    return f.name || f.toString().match(/^function\s*([^(\s]*)/)[1];
+  }
   // The last arg is the completion callback the test runner tacks on.
   // TODO(ericu): Make test errors delete the database automatically.
-  return getDisplayName.caller.name + (args.length > 1 ? "_" : "") +
+  return functionName(getDisplayName.caller) + (args.length > 1 ? "_" : "") +
       Array.prototype.slice.call(args, 0, args.length - 1).join("_");
 }
 
@@ -227,6 +229,10 @@ function getSimpleKey(i) {
 
 function getSimpleValue(i) {
   return "value " + padToWidth(i, 10);
+}
+
+function getIndexableValue(i) {
+  return { id: getSimpleValue(i) };
 }
 
 function getForwardIndexKey(i) {
@@ -292,7 +298,7 @@ function getRandomValues(
     if (indexName)
       source = source.index(indexName);
     for (var j = 0; j < numReads; ++j) {
-      var rand = Math.floor(Math.random() * numKeys);
+      var rand = Math.floor(random() * numKeys);
       var request = source.get(getKey(rand));
       request.onerror = onError;
       request.onsuccess = verifyResultNonNull;
@@ -309,7 +315,7 @@ function putRandomValues(
   for (var i in objectStoreNames) {
     var os = transaction.objectStore(objectStoreNames[i]);
     for (var j = 0; j < numPuts; ++j) {
-      var rand = Math.floor(Math.random() * numKeys);
+      var rand = Math.floor(random() * numKeys);
       var request = os.put(getValue(rand), getKey(rand));
       request.onerror = onError;
     }
@@ -342,7 +348,7 @@ function getValuesFromCursor(
   assert(2 * numReads < numKeys);
   if (!getKey)
     getKey = getSimpleKey;
-  var rand = Math.floor(Math.random() * (numKeys - 2 * numReads)) + numReads;
+  var rand = Math.floor(random() * (numKeys - 2 * numReads)) + numReads;
   var values = [];
   var queryObject = transaction.objectStore(inputObjectStoreName);
   assert(queryObject);
@@ -370,13 +376,13 @@ function getValuesFromCursor(
         // in case we're writing back to the same store; this way we won't
         // affect the number of keys available to the cursor, since we're always
         // outside its range.
-        oos.put(cursor.value, numKeys + Math.random());
+        oos.put(cursor.value, numKeys + random());
       values.push({key: cursor.key, value: cursor.value});
       cursor.continue();
     } else {
       assert(!numReadsLeft);
     }
-  }
+  };
   request.onerror = onError;
 }
 
@@ -406,3 +412,30 @@ function runTransactionBatch(db, count, batchFunc, objectStoreNames, mode,
   }
 }
 
+// Use random() instead of Math.random() so runs are repeatable.
+var random = (function(seed) {
+
+  // Implementation of: http://www.burtleburtle.net/bob/rand/smallprng.html
+  function uint32(x) { return x >>> 0; }
+  function rot(x, k) { return (x << k) | (x >> (32 - k)); }
+
+  function SmallPRNG(seed) {
+    seed = uint32(seed);
+    this.a = 0xf1ea5eed;
+    this.b = this.c = this.d = seed;
+    for (var i = 0; i < 20; ++i)
+      this.ranval();
+  }
+
+  SmallPRNG.prototype.ranval = function() {
+    var e = uint32(this.a - rot(this.b, 27));
+    this.a = this.b ^ rot(this.c, 17);
+    this.b = uint32(this.c + this.d);
+    this.c = uint32(this.d + e);
+    this.d = uint32(e + this.a);
+    return this.d;
+  };
+
+  var prng = new SmallPRNG(seed);
+  return function() { return prng.ranval() / 0x100000000; };
+}(0));

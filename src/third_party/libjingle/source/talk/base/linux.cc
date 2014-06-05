@@ -250,6 +250,7 @@ bool ConfigParser::ParseLine(std::string* key, std::string* value) {
   return true;
 }
 
+#if !defined(GOOGLE_CHROME_BUILD) && !defined(CHROMIUM_BUILD)
 static bool ExpectLineFromStream(FileStream* stream,
                                  std::string* out) {
   StreamResult res = stream->ReadLine(out);
@@ -331,6 +332,7 @@ std::string ReadLinuxLsbRelease() {
 
   return lsb_release_string;
 }
+#endif
 
 std::string ReadLinuxUname() {
   struct utsname buf;

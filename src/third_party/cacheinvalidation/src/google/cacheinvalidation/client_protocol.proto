@@ -161,25 +161,39 @@ message ApplicationClientIdP {
 
 // Invalidation for a given object/version.
 message InvalidationP {
-  // The id of the object being invalidted.
+  // The id of the object being invalidated.
   optional ObjectIdP object_id = 1;
 
   // Whether the invalidation is for a known version of the object as assigned
   // by an application backend (is_known_version == true) or an unknown system
-  // version synthesized by the invalidation service.
+  // version synthesized by the invalidation service. (Note that if
+  // is_known_version is false then is_trickle_restart be true or missing
+  // because an unknown version implies that invalidation versions prior to the
+  // current backend version may have been dropped.)
   optional bool is_known_version = 2;
 
   // Version being invalidated (see comment on is_known_version). If the
   // is_known_version is false, the version corresponds to an internal "system
-  // version" for *that* ojbect. An object's system version has no meaning to
+  // version" for *that* object. An object's system version has no meaning to
   // the application other than the fact that these system versions are also
   // monotonically increasing and the client must ack such an invalidation with
   // this system version (and an ack for a later system version acknowledges an
   // invalidation for all earlier system version for *that* object.
   optional int64 version = 3;
 
+  // Whether the object's Trickle is restarting at this version.
+  //  sets this value to true to inform Trickle API clients that it may
+  // have dropped invalidations prior to "version", or, if is_known_version is
+  // false, prior to the current backend version.
+  optional bool is_trickle_restart = 6 [default = false];
+
   // Optional payload associated with this invalidation.
   optional bytes payload = 4;
+
+  // DEPRECATED: bridge arrival time is now maintained by
+  // InvalidationMetadataP in the SourcedInvalidation, InvalidationContents and
+  // ClientInvalidation containers.
+  optional int64 bridge_arrival_time_ms_deprecated = 5  [deprecated=true];
 }
 
 // Specifies the intention to change a registration on a specific object.  To
@@ -257,6 +271,10 @@ message ClientHeader {
 
   // Message id to identify the message -for debugging/monitoring purposes.
   optional string message_id = 6;
+
+  // Client typecode (as in the InitializeMessage, below). This field may or
+  // may not be set.
+  optional int32 client_type = 7;
 }
 
 // A message from the client to the server.
@@ -517,6 +535,35 @@ message ClientConfigP {
 
   // Configuration for the protocol client to control batching etc.
   optional ProtocolHandlerConfigP protocol_handler_config = 10;
+
+  // Whether the channel supports delivery while the client is offline. If
+  // true, then the  servers' use of the channel is such that the
+  // following holds: if any number of messages are sent to the client while
+  // the client is unreachable, then the channel will eventually deliver at
+  // least one message to the client such that, on receiving the message, the
+  // client will send a message to the server. E.g., the channel could deliver
+  // a single invalidation or a single registration sync request. C2DM is
+  // an example of a suitable channel.
+  //
+  // When this is true, the Ticl will record in persistent storage the last
+  // time it sent a message to the server. On persistent restart, it will not
+  // send a message to the server unless the last one was sent more than a
+  // heartbeat-interval ago.  This is designed to support efficient Android
+  // clients, which will destroy and recreate the Ticl when transitioning
+  // between foreground and background states.
+  optional bool channel_supports_offline_delivery = 11 [default = false];
+
+  // If the client loses network connectivity, it will send a heartbeat after it
+  // comes online, unless it had already sent a message more recently than this
+  // threshold.
+  optional int32 offline_heartbeat_threshold_ms = 12 [default = 60000];
+
+  // Whether the client allows suppression. If true (the default), then
+  // both continuous and restarted invalidations result in an invalidate()
+  // upcall, which is appropriate for invalidation clients. If false,
+  // then restarted invalidations result in an invalidateUnknownVersion()
+  // upcall, which provides correct semantics for Trickles clients.
+  optional bool allow_suppression = 13 [default = true];
 }
 
 // A message asking the client to change its configuration parameters

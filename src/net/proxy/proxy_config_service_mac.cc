@@ -11,8 +11,8 @@
 #include "base/logging.h"
 #include "base/mac/foundation_util.h"
 #include "base/mac/scoped_cftyperef.h"
-#include "base/message_loop.h"
-#include "base/sys_string_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/sys_string_conversions.h"
 #include "net/base/net_errors.h"
 #include "net/proxy/proxy_config.h"
 #include "net/proxy/proxy_info.h"
@@ -21,8 +21,6 @@
 namespace net {
 
 namespace {
-
-const int kPollIntervalSec = 5;
 
 // Utility function to pull out a boolean value from a dictionary and return it,
 // returning a default value if the key is not present.
@@ -42,7 +40,7 @@ bool GetBoolFromDictionary(CFDictionaryRef dict,
 }
 
 void GetCurrentProxyConfig(ProxyConfig* config) {
-  base::mac::ScopedCFTypeRef<CFDictionaryRef> config_dict(
+  base::ScopedCFTypeRef<CFDictionaryRef> config_dict(
       SCDynamicStoreCopyProxies(NULL));
   DCHECK(config_dict);
 
@@ -80,7 +78,7 @@ void GetCurrentProxyConfig(ProxyConfig* config) {
     if (proxy_server.is_valid()) {
       config->proxy_rules().type =
           ProxyConfig::ProxyRules::TYPE_PROXY_PER_SCHEME;
-      config->proxy_rules().proxy_for_ftp = proxy_server;
+      config->proxy_rules().proxies_for_ftp.SetSingleProxyServer(proxy_server);
     }
   }
   if (GetBoolFromDictionary(config_dict.get(),
@@ -94,7 +92,7 @@ void GetCurrentProxyConfig(ProxyConfig* config) {
     if (proxy_server.is_valid()) {
       config->proxy_rules().type =
           ProxyConfig::ProxyRules::TYPE_PROXY_PER_SCHEME;
-      config->proxy_rules().proxy_for_http = proxy_server;
+      config->proxy_rules().proxies_for_http.SetSingleProxyServer(proxy_server);
     }
   }
   if (GetBoolFromDictionary(config_dict.get(),
@@ -108,7 +106,8 @@ void GetCurrentProxyConfig(ProxyConfig* config) {
     if (proxy_server.is_valid()) {
       config->proxy_rules().type =
           ProxyConfig::ProxyRules::TYPE_PROXY_PER_SCHEME;
-      config->proxy_rules().proxy_for_https = proxy_server;
+      config->proxy_rules().proxies_for_https.
+          SetSingleProxyServer(proxy_server);
     }
   }
   if (GetBoolFromDictionary(config_dict.get(),
@@ -122,7 +121,7 @@ void GetCurrentProxyConfig(ProxyConfig* config) {
     if (proxy_server.is_valid()) {
       config->proxy_rules().type =
           ProxyConfig::ProxyRules::TYPE_PROXY_PER_SCHEME;
-      config->proxy_rules().fallback_proxy = proxy_server;
+      config->proxy_rules().fallback_proxies.SetSingleProxyServer(proxy_server);
     }
   }
 
@@ -204,7 +203,7 @@ ProxyConfigServiceMac::ProxyConfigServiceMac(
       has_fetched_config_(false),
       helper_(new Helper(this)),
       io_thread_task_runner_(io_thread_task_runner) {
-  DCHECK(io_thread_task_runner_);
+  DCHECK(io_thread_task_runner_.get());
   config_watcher_.reset(new NetworkConfigWatcherMac(&forwarder_));
 }
 

@@ -4,25 +4,25 @@
 
 #include "cc/test/paths.h"
 
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/path_service.h"
 
 namespace cc {
 
-bool PathProvider(int key, FilePath* result) {
-  FilePath cur;
+bool PathProvider(int key, base::FilePath* result) {
+  base::FilePath cur;
   switch (key) {
     // The following are only valid in the development environment, and
     // will fail if executed from an installed executable (because the
     // generated path won't exist).
-    case DIR_TEST_DATA:
+    case CCPaths::DIR_TEST_DATA:
       if (!PathService::Get(base::DIR_SOURCE_ROOT, &cur))
         return false;
       cur = cur.Append(FILE_PATH_LITERAL("cc"));
       cur = cur.Append(FILE_PATH_LITERAL("test"));
       cur = cur.Append(FILE_PATH_LITERAL("data"));
-      if (!file_util::PathExists(cur))  // we don't want to create this
+      if (!base::PathExists(cur))  // we don't want to create this
         return false;
       break;
     default:
@@ -35,7 +35,7 @@ bool PathProvider(int key, FilePath* result) {
 
 // This cannot be done as a static initializer sadly since Visual Studio will
 // eliminate this object file if there is no direct entry point into it.
-void RegisterPathProvider() {
+void CCPaths::RegisterPathProvider() {
   PathService::RegisterProvider(PathProvider, PATH_START, PATH_END);
 }
 

@@ -31,9 +31,6 @@ public class AndroidHttpConstants {
   /** The relative URL to use to send inbound client requests to the Android frontend */
   public static final String REQUEST_URL = "/invalidation/android/request/";
 
-  /** The relative URL to use to send mailbox retrieval requests to the Android frontend */
-  public static final String MAILBOX_URL = "/invalidation/android/mailbox/";
-
   /**
    * The name of the query parameter that contains the service name that should be used to
    * validate the authentication token provided with the request.

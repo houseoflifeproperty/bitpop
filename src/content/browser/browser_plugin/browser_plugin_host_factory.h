@@ -8,7 +8,7 @@
 #include "base/base_export.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "content/common/content_export.h"
 
 struct BrowserPluginHostMsg_CreateGuest_Params;
@@ -23,14 +23,15 @@ class WebContentsImpl;
 // Factory to create BrowserPlugin embedder and guest.
 class CONTENT_EXPORT BrowserPluginHostFactory {
  public:
+  virtual BrowserPluginGuestManager* CreateBrowserPluginGuestManager(
+      BrowserContext* context) = 0;
+
   virtual BrowserPluginGuest* CreateBrowserPluginGuest(
       int instance_id,
-      WebContentsImpl* web_contents,
-      const BrowserPluginHostMsg_CreateGuest_Params& params) = 0;
+      WebContentsImpl* web_contents) = 0;
 
   virtual BrowserPluginEmbedder* CreateBrowserPluginEmbedder(
-      WebContentsImpl* web_contents,
-      RenderViewHost* render_view_host) = 0;
+      WebContentsImpl* web_contents) = 0;
 
  protected:
   virtual ~BrowserPluginHostFactory() {}

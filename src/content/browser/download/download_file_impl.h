@@ -10,10 +10,11 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
+#include "content/browser/byte_stream.h"
 #include "content/browser/download/base_file.h"
-#include "content/browser/download/byte_stream.h"
+#include "content/browser/download/rate_estimator.h"
 #include "content/public/browser/download_save_info.h"
 #include "net/base/net_log.h"
 
@@ -21,7 +22,6 @@ namespace content {
 class ByteStreamReader;
 class DownloadDestinationObserver;
 class DownloadManager;
-class PowerSaveBlocker;
 struct DownloadCreateInfo;
 
 class CONTENT_EXPORT DownloadFileImpl : virtual public DownloadFile {
@@ -36,13 +36,12 @@ class CONTENT_EXPORT DownloadFileImpl : virtual public DownloadFile {
   // DownloadDestinationObserver.
   DownloadFileImpl(
     scoped_ptr<DownloadSaveInfo> save_info,
-    const FilePath& default_downloads_directory,
+    const base::FilePath& default_downloads_directory,
     const GURL& url,
     const GURL& referrer_url,
     bool calculate_hash,
     scoped_ptr<ByteStreamReader> stream,
     const net::BoundNetLog& bound_net_log,
-    scoped_ptr<PowerSaveBlocker> power_save_blocker,
     base::WeakPtr<DownloadDestinationObserver> observer);
 
   virtual ~DownloadFileImpl();
@@ -50,19 +49,19 @@ class CONTENT_EXPORT DownloadFileImpl : virtual public DownloadFile {
   // DownloadFile functions.
   virtual void Initialize(const InitializeCallback& callback) OVERRIDE;
   virtual void RenameAndUniquify(
-      const FilePath& full_path,
+      const base::FilePath& full_path,
       const RenameCompletionCallback& callback) OVERRIDE;
   virtual void RenameAndAnnotate(
-      const FilePath& full_path,
+      const base::FilePath& full_path,
       const RenameCompletionCallback& callback) OVERRIDE;
   virtual void Detach() OVERRIDE;
   virtual void Cancel() OVERRIDE;
-  virtual FilePath FullPath() const OVERRIDE;
+  virtual base::FilePath FullPath() const OVERRIDE;
   virtual bool InProgress() const OVERRIDE;
-  virtual int64 BytesSoFar() const OVERRIDE;
   virtual int64 CurrentSpeed() const OVERRIDE;
   virtual bool GetHash(std::string* hash) OVERRIDE;
   virtual std::string GetHashState() OVERRIDE;
+  virtual void SetClientGuid(const std::string& guid) OVERRIDE;
 
  protected:
   // For test class overrides.
@@ -81,7 +80,7 @@ class CONTENT_EXPORT DownloadFileImpl : virtual public DownloadFile {
   BaseFile file_;
 
   // The default directory for creating the download file.
-  FilePath default_download_directory_;
+  base::FilePath default_download_directory_;
 
   // The stream through which data comes.
   // TODO(rdsmith): Move this into BaseFile; requires using the same
@@ -96,15 +95,13 @@ class CONTENT_EXPORT DownloadFileImpl : virtual public DownloadFile {
   size_t bytes_seen_;
   base::TimeDelta disk_writes_time_;
   base::TimeTicks download_start_;
+  RateEstimator rate_estimator_;
 
   net::BoundNetLog bound_net_log_;
 
   base::WeakPtr<DownloadDestinationObserver> observer_;
 
   base::WeakPtrFactory<DownloadFileImpl> weak_factory_;
-
-  // RAII handle to keep the system from sleeping while we're downloading.
-  scoped_ptr<PowerSaveBlocker> power_save_blocker_;
 
   DISALLOW_COPY_AND_ASSIGN(DownloadFileImpl);
 };

@@ -5,19 +5,19 @@
 #ifndef CHROME_RENDERER_EXTENSIONS_PAGE_CAPTURE_CUSTOM_BINDINGS_H_
 #define CHROME_RENDERER_EXTENSIONS_PAGE_CAPTURE_CUSTOM_BINDINGS_H_
 
-#include "chrome/renderer/extensions/chrome_v8_extension.h"
+#include "extensions/renderer/object_backed_native_handler.h"
 
 namespace extensions {
 
 // Implements custom bindings for the pageCapture API.
-class PageCaptureCustomBindings : public ChromeV8Extension {
+class PageCaptureCustomBindings : public ObjectBackedNativeHandler {
  public:
-  PageCaptureCustomBindings();
+  explicit PageCaptureCustomBindings(ScriptContext* context);
 
  private:
   // Creates a Blob with the content of the specified file.
-  static v8::Handle<v8::Value> CreateBlob(const v8::Arguments& args);
-  static v8::Handle<v8::Value> SendResponseAck(const v8::Arguments& args);
+  void CreateBlob(const v8::FunctionCallbackInfo<v8::Value>& args);
+  void SendResponseAck(const v8::FunctionCallbackInfo<v8::Value>& args);
 };
 
 }  // namespace extensions

@@ -12,7 +12,7 @@
     width: 334px;
   }
   #active-tab-after {
-    width: 265px;
+    width: 334px;
   }
 </style>
 
@@ -23,7 +23,7 @@ The <code>activeTab</code> permission gives an extension temporary access to the
 </p>
 
 <p>
-The main benefit of the <code>activeTab</code> permission is that it displays <em>no warning message</em> during installation:
+This serves as an alternative for many uses of <code>&lt;all_urls&gt;</code>, but displays <em>no warning message</em> during installation:
 </p>
 
 <table id="active-tab-images" class="simple">
@@ -41,34 +41,38 @@ The main benefit of the <code>activeTab</code> permission is that it displays <e
 
 <h2 id="example">Example</h2>
 
-<h3 id="manifest.json">manifest.json</h3>
-
 <p>
-<pre>
+See the <a href="samples.html#page-redder">Page Redder</a> sample extension:
+</p>
+
+<pre data-filename="manifest.json">
 {
-  "manifest_version": 2,
   "name": "Page Redder",
-  "version": 1,
-  <b>"permissions": ["activeTab"]</b>,
-  "browser_action": {},
+  "version": "2.0",
+  <b>"permissions": [
+    "activeTab"
+  ],</b>
   "background": {
     "scripts": ["background.js"],
     "persistent": false
-  }
+  },
+  "browser_action": {
+    "default_title": "Make this page red"
+  },
+  "manifest_version": 2
 }
 </pre>
-</p>
 
-<h3 id="background.js">background.js</h3>
-
-<p>
-<pre>
+<pre data-filename="background.js">
+// Called when the user clicks on the browser action.
 chrome.browserAction.onClicked.addListener(function(tab) {
   // No tabs or host permissions needed!
-  chrome.tabs.executeScript(tab.id, {code:"document.body.bgColor='red'"});
+  console.log('Turning ' + tab.url + ' red!');
+  chrome.tabs.executeScript({
+    code: 'document.body.style.backgroundColor="red"'
+  });
 });
 </pre>
-</p>
 
 <h2 id="motivation">Motivation</h2>
 
@@ -89,8 +93,8 @@ In contrast, an extension with the <code>activeTab</code> permission only obtain
 <p>
 While the <code>activeTab</code> permission is enabled for a tab, an extension can:
 <ul>
-  <li>Call <code>$ref:tabs.executeScript</code> or <code>$ref:tabs.insertCSS</code> on that tab.
-  <li>Get the URL, title, and favicon for that tab via an API that returns a <code>$ref:tabs.Tab</code> object (essentially, <code>activeTab</code> grants the <code><a href="tabs.html#manifest">tabs</a></code> permission temporarily).
+  <li>Call <code>$(ref:tabs.executeScript)</code> or <code>$(ref:tabs.insertCSS)</code> on that tab.
+  <li>Get the URL, title, and favicon for that tab via an API that returns a <code>$(ref:tabs.Tab)</code> object (essentially, <code>activeTab</code> grants the <code><a href="tabs.html#manifest">tabs</a></code> permission temporarily).
 </ul>
 </p>
 

@@ -5,11 +5,13 @@
 #include "net/ftp/ftp_directory_listing_parser_unittest.h"
 
 #include "base/format_macros.h"
-#include "base/string_split.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/string_split.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/ftp/ftp_directory_listing_parser_vms.h"
+
+using base::ASCIIToUTF16;
 
 namespace net {
 
@@ -54,7 +56,8 @@ TEST_F(FtpDirectoryListingParserVmsTest, Good) {
     SCOPED_TRACE(base::StringPrintf("Test[%" PRIuS "]: %s", i,
                                     good_cases[i].input));
 
-    std::vector<string16> lines(GetSingleLineTestCase(good_cases[i].input));
+    std::vector<base::string16> lines(
+        GetSingleLineTestCase(good_cases[i].input));
 
     // The parser requires a directory header before accepting regular input.
     lines.insert(lines.begin(),
@@ -108,7 +111,7 @@ TEST_F(FtpDirectoryListingParserVmsTest, Bad) {
   for (size_t i = 0; i < arraysize(bad_cases); i++) {
     SCOPED_TRACE(base::StringPrintf("Test[%" PRIuS "]: %s", i, bad_cases[i]));
 
-    std::vector<string16> lines(GetSingleLineTestCase(bad_cases[i]));
+    std::vector<base::string16> lines(GetSingleLineTestCase(bad_cases[i]));
 
     // The parser requires a directory header before accepting regular input.
     lines.insert(lines.begin(),
@@ -133,7 +136,7 @@ TEST_F(FtpDirectoryListingParserVmsTest, BadDataAfterFooter) {
   for (size_t i = 0; i < arraysize(bad_cases); i++) {
     SCOPED_TRACE(base::StringPrintf("Test[%" PRIuS "]: %s", i, bad_cases[i]));
 
-    std::vector<string16> lines(
+    std::vector<base::string16> lines(
         GetSingleLineTestCase("README.TXT;4  2  18-APR-2000 10:40:39.90"));
 
     // The parser requires a directory header before accepting regular input.

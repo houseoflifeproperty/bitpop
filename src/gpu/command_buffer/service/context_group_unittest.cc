@@ -30,25 +30,27 @@ namespace gles2 {
 
 class ContextGroupTest : public testing::Test {
  public:
-  ContextGroupTest() {
-  }
+  static const bool kBindGeneratesResource = false;
+
+  ContextGroupTest() {}
 
  protected:
   virtual void SetUp() {
     gl_.reset(new ::testing::StrictMock< ::gfx::MockGLInterface>());
-    ::gfx::GLInterface::SetGLInterface(gl_.get());
+    ::gfx::MockGLInterface::SetGLInterface(gl_.get());
     decoder_.reset(new MockGLES2Decoder());
-    group_ = ContextGroup::Ref(new ContextGroup(NULL, NULL, NULL, true));
+    group_ = scoped_refptr<ContextGroup>(
+        new ContextGroup(NULL, NULL, NULL, NULL, NULL, kBindGeneratesResource));
   }
 
   virtual void TearDown() {
-    ::gfx::GLInterface::SetGLInterface(NULL);
+    ::gfx::MockGLInterface::SetGLInterface(NULL);
     gl_.reset();
   }
 
   scoped_ptr< ::testing::StrictMock< ::gfx::MockGLInterface> > gl_;
   scoped_ptr<MockGLES2Decoder> decoder_;
-  ContextGroup::Ref group_;
+  scoped_refptr<ContextGroup> group_;
 };
 
 TEST_F(ContextGroupTest, Basic) {
@@ -69,9 +71,9 @@ TEST_F(ContextGroupTest, Basic) {
 }
 
 TEST_F(ContextGroupTest, InitializeNoExtensions) {
-  TestHelper::SetupContextGroupInitExpectations(gl_.get(),
-      DisallowedFeatures(), "");
-  group_->Initialize(decoder_.get(), DisallowedFeatures(), "");
+  TestHelper::SetupContextGroupInitExpectations(
+      gl_.get(), DisallowedFeatures(), "", "", kBindGeneratesResource);
+  group_->Initialize(decoder_.get(), DisallowedFeatures());
   EXPECT_EQ(static_cast<uint32>(TestHelper::kNumVertexAttribs),
             group_->max_vertex_attribs());
   EXPECT_EQ(static_cast<uint32>(TestHelper::kNumTextureUnits),
@@ -104,10 +106,10 @@ TEST_F(ContextGroupTest, InitializeNoExtensions) {
 
 TEST_F(ContextGroupTest, MultipleContexts) {
   scoped_ptr<MockGLES2Decoder> decoder2_(new MockGLES2Decoder());
-  TestHelper::SetupContextGroupInitExpectations(gl_.get(),
-      DisallowedFeatures(), "");
-  group_->Initialize(decoder_.get(), DisallowedFeatures(), "");
-  group_->Initialize(decoder2_.get(), DisallowedFeatures(), "");
+  TestHelper::SetupContextGroupInitExpectations(
+      gl_.get(), DisallowedFeatures(), "", "", kBindGeneratesResource);
+  group_->Initialize(decoder_.get(), DisallowedFeatures());
+  group_->Initialize(decoder2_.get(), DisallowedFeatures());
 
   EXPECT_TRUE(group_->buffer_manager() != NULL);
   EXPECT_TRUE(group_->framebuffer_manager() != NULL);

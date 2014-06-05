@@ -7,17 +7,16 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "ppapi/c/dev/ppb_text_input_dev.h"
 #include "ppapi/c/dev/ppb_url_util_dev.h"
 #include "ppapi/c/pp_bool.h"
 #include "ppapi/c/pp_completion_callback.h"
 #include "ppapi/c/pp_size.h"
-#include "ppapi/c/pp_time.h"
 #include "ppapi/c/ppb_audio_config.h"
 #include "ppapi/c/ppb_console.h"
 #include "ppapi/c/ppb_gamepad.h"
 #include "ppapi/c/ppb_instance.h"
 #include "ppapi/c/ppb_mouse_cursor.h"
+#include "ppapi/c/ppb_text_input_controller.h"
 #include "ppapi/c/private/pp_content_decryptor.h"
 #include "ppapi/c/private/ppb_instance_private.h"
 #include "ppapi/shared_impl/api_id.h"
@@ -79,22 +78,21 @@ class PPB_Instance_API {
                              PP_Var value) = 0;
 
   // Find.
+  virtual void SetPluginToHandleFindRequests(PP_Instance instance) = 0;
   virtual void NumberOfFindResultsChanged(PP_Instance instance,
                                           int32_t total,
                                           PP_Bool final_result) = 0;
   virtual void SelectedFindResultChanged(PP_Instance instance,
                                          int32_t index) = 0;
-
-  // Font.
-  virtual PP_Var GetFontFamilies(PP_Instance instance) = 0;
+  virtual void SetTickmarks(PP_Instance instance,
+                            const PP_Rect* tickmarks,
+                            uint32_t count) = 0;
 
   // Fullscreen.
+  virtual PP_Bool IsFullscreen(PP_Instance instance) = 0;
   virtual PP_Bool SetFullscreen(PP_Instance instance,
                                 PP_Bool fullscreen) = 0;
   virtual PP_Bool GetScreenSize(PP_Instance instance, PP_Size* size) = 0;
-
-  // Flash (Deprecated for Flash_Functions).
-  virtual PPB_Flash_API* GetFlashAPI() = 0;
 
   // This is an implementation-only function which grabs an instance of a
   // "singleton resource". These are used to implement instance interfaces
@@ -110,8 +108,6 @@ class PPB_Instance_API {
                                               uint32_t event_classes) = 0;
   virtual void ClearInputEventRequest(PP_Instance instance,
                                       uint32_t event_classes) = 0;
-  virtual void ClosePendingUserGesture(PP_Instance instance,
-                                       PP_TimeTicks timestamp) = 0;
 
   // Messaging.
   virtual void PostMessage(PP_Instance instance, PP_Var message) = 0;
@@ -144,29 +140,25 @@ class PPB_Instance_API {
   virtual void ZoomChanged(PP_Instance instance, double factor) = 0;
   virtual void ZoomLimitsChanged(PP_Instance instance,
                                  double minimum_factor,
-                                 double maximium_factor) = 0;
+                                 double maximum_factor) = 0;
   // Testing and URLUtil.
   virtual PP_Var GetDocumentURL(PP_Instance instance,
                                 PP_URLComponents_Dev* components) = 0;
 #if !defined(OS_NACL)
   // Content Decryptor.
-  virtual void NeedKey(PP_Instance instance,
-                       PP_Var key_system,
-                       PP_Var session_id,
-                       PP_Var init_data) = 0;
-  virtual void KeyAdded(PP_Instance instance,
-                        PP_Var key_system,
-                        PP_Var session_id) = 0;
-  virtual void KeyMessage(PP_Instance instance,
-                          PP_Var key_system,
-                          PP_Var session_id,
-                          PP_Var message,
-                          PP_Var default_url) = 0;
-  virtual void KeyError(PP_Instance instance,
-                        PP_Var key_system,
-                        PP_Var session_id,
-                        int32_t media_error,
-                        int32_t system_error) = 0;
+  virtual void SessionCreated(PP_Instance instance,
+                              uint32_t session_id,
+                              PP_Var web_session_id) = 0;
+  virtual void SessionMessage(PP_Instance instance,
+                              uint32_t session_id,
+                              PP_Var message,
+                              PP_Var destination_url) = 0;
+  virtual void SessionReady(PP_Instance instance, uint32_t session_id) = 0;
+  virtual void SessionClosed(PP_Instance instance, uint32_t session_id) = 0;
+  virtual void SessionError(PP_Instance instance,
+                            uint32_t session_id,
+                            int32_t media_error,
+                            uint32_t system_code) = 0;
   virtual void DeliverBlock(PP_Instance instance,
                             PP_Resource decrypted_block,
                             const PP_DecryptedBlockInfo* block_info) = 0;
@@ -185,7 +177,7 @@ class PPB_Instance_API {
                             const PP_DecryptedFrameInfo* frame_info) = 0;
   virtual void DeliverSamples(PP_Instance instance,
                               PP_Resource audio_frames,
-                              const PP_DecryptedBlockInfo* block_info) = 0;
+                              const PP_DecryptedSampleInfo* sample_info) = 0;
 
   // URLUtil.
   virtual PP_Var ResolveRelativeToDocument(
@@ -196,6 +188,8 @@ class PPB_Instance_API {
   virtual PP_Bool DocumentCanAccessDocument(PP_Instance instance,
                                             PP_Instance target) = 0;
   virtual PP_Var GetPluginInstanceURL(PP_Instance instance,
+                                      PP_URLComponents_Dev* components) = 0;
+  virtual PP_Var GetPluginReferrerURL(PP_Instance instance,
                                       PP_URLComponents_Dev* components) = 0;
 #endif  // !defined(OS_NACL)
 

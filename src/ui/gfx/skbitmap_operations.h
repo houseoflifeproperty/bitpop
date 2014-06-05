@@ -6,8 +6,8 @@
 #define UI_GFX_SKBITMAP_OPERATIONS_H_
 
 #include "base/gtest_prod_util.h"
-#include "ui/base/ui_export.h"
 #include "ui/gfx/color_utils.h"
+#include "ui/gfx/gfx_export.h"
 #include "ui/gfx/shadow_value.h"
 
 namespace gfx {
@@ -17,7 +17,7 @@ class Size;
 
 class SkBitmap;
 
-class UI_EXPORT SkBitmapOperations {
+class GFX_EXPORT SkBitmapOperations {
  public:
   // Enum for use in rotating images (must be in 90 degree increments),
   // see: Rotate.

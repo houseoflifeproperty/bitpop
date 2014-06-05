@@ -7,8 +7,8 @@
 
 namespace ui {
 
-// Intentionally keep sync with WebKit::WebTextInputType defined in:
-// third_party/WebKit/Source/WebKit/chromium/public/WebTextInputType.h
+// Intentionally keep sync with blink::WebTextInputType defined in:
+// third_party/WebKit/public/web/WebTextInputType.h
 enum TextInputType {
   // Input caret is not in an editable node, no input method shall be used.
   TEXT_INPUT_TYPE_NONE,
@@ -36,7 +36,12 @@ enum TextInputType {
   // Input caret is in a contenteditable node (not an INPUT field).
   TEXT_INPUT_TYPE_CONTENT_EDITABLE,
 
-  TEXT_INPUT_TYPE_MAX = TEXT_INPUT_TYPE_CONTENT_EDITABLE,
+  // The focused node is date time field. The date time field does not have
+  // input caret but it is necessary to distinguish from TEXT_INPUT_TYPE_NONE
+  // for on-screen keyboard.
+  TEXT_INPUT_TYPE_DATE_TIME_FIELD,
+
+  TEXT_INPUT_TYPE_MAX = TEXT_INPUT_TYPE_DATE_TIME_FIELD,
 };
 
 }  // namespace ui

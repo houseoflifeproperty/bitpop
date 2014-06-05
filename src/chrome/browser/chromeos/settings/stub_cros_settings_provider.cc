@@ -8,38 +8,10 @@
 #include "base/values.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
+#include "chrome/browser/chromeos/settings/device_settings_provider.h"
+#include "chromeos/settings/cros_settings_names.h"
 
 namespace chromeos {
-
-namespace {
-
-const char* kHandledSettings[] = {
-  kAccountsPrefAllowGuest,
-  kAccountsPrefAllowNewUser,
-  kAccountsPrefShowUserNamesOnSignIn,
-  kAccountsPrefUsers,
-  kAccountsPrefEphemeralUsersEnabled,
-  kAccountsPrefDeviceLocalAccounts,
-  kDeviceOwner,
-  kPolicyMissingMitigationMode,
-  kReleaseChannel,
-  kReportDeviceVersionInfo,
-  kReportDeviceActivityTimes,
-  kReportDeviceBootMode,
-  kReportDeviceLocation,
-  kSettingProxyEverywhere,
-  kSignedDataRoamingEnabled,
-  kStatsReportingPref,
-  kSystemTimezonePolicy,
-  // Kiosk mode settings.
-  kIdleLogoutTimeout,
-  kIdleLogoutWarningDuration,
-  kScreenSaverExtensionId,
-  kScreenSaverTimeout
-};
-
-}  // namespace
 
 StubCrosSettingsProvider::StubCrosSettingsProvider(
     const NotifyObserversCallback& notify_cb)
@@ -71,8 +43,7 @@ CrosSettingsProvider::TrustedStatus
 }
 
 bool StubCrosSettingsProvider::HandlesSetting(const std::string& path) const {
-  const char** end = kHandledSettings + arraysize(kHandledSettings);
-  return std::find(kHandledSettings, end, path) != end;
+  return DeviceSettingsProvider::IsDeviceSetting(path);
 }
 
 void StubCrosSettingsProvider::DoSet(const std::string& path,
@@ -85,7 +56,7 @@ void StubCrosSettingsProvider::SetDefaults() {
   values_.SetBoolean(kAccountsPrefAllowGuest, true);
   values_.SetBoolean(kAccountsPrefAllowNewUser, true);
   values_.SetBoolean(kAccountsPrefShowUserNamesOnSignIn, true);
-  values_.SetValue(kAccountsPrefDeviceLocalAccounts, new ListValue);
+  values_.SetValue(kAccountsPrefDeviceLocalAccounts, new base::ListValue);
   // |kDeviceOwner| will be set to the logged-in user by |UserManager|.
 }
 

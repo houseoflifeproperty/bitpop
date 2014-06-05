@@ -4,17 +4,18 @@
 
 #include "chrome/browser/chromeos/dbus/printer_service_provider.h"
 
+#include "ash/session/session_state_delegate.h"
+#include "ash/shell.h"
 #include "ash/wm/window_util.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/metrics/histogram.h"
-#include "base/stringprintf.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_iterator.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "content/public/browser/browser_thread.h"
@@ -38,7 +39,7 @@ enum PrinterServiceEvent {
 
 // TODO(vitalybuka): update URL with more relevant information.
 const char kCloudPrintLearnUrl[] =
-    "http://www.google.com/landing/cloudprint/index.html?vendor=%s&product=%s";
+    "https://www.google.com/landing/cloudprint/index.html";
 
 void ActivateContents(Browser* browser, content::WebContents* contents) {
   browser->tab_strip_model()->ActivateTabAt(
@@ -46,8 +47,8 @@ void ActivateContents(Browser* browser, content::WebContents* contents) {
 }
 
 Browser* ActivateAndGetBrowserForUrl(GURL url) {
-  for (TabContentsIterator it; !it.done(); ++it) {
-    if (it->GetURL() == url) {
+  for (TabContentsIterator it; !it.done(); it.Next()) {
+    if (it->GetLastCommittedURL() == url) {
       ActivateContents(it.browser(), *it);
       return it.browser();
     }
@@ -55,38 +56,29 @@ Browser* ActivateAndGetBrowserForUrl(GURL url) {
   return NULL;
 }
 
-void FindOrOpenCloudPrintPage(const std::string& vendor,
-                              const std::string& product) {
+void FindOrOpenCloudPrintPage(const std::string& /* vendor */,
+                              const std::string& /* product */) {
   UMA_HISTOGRAM_ENUMERATION("PrinterService.PrinterServiceEvent", PRINTER_ADDED,
                             PRINTER_SERVICE_EVENT_MAX);
-  if (!chromeos::UserManager::Get()->IsUserLoggedIn())
+  if (!ash::Shell::GetInstance()->session_state_delegate()->
+          IsActiveUserSessionStarted() ||
+      ash::Shell::GetInstance()->session_state_delegate()->IsScreenLocked()) {
     return;
+  }
 
   Profile* profile = ProfileManager::GetLastUsedProfile();
   if (!profile)
     return;
 
-  // Escape param just in case. Usually vendor and model should be just integer.
-  GURL url(
-      base::StringPrintf(kCloudPrintLearnUrl,
-                         net::EscapeQueryParamValue(vendor, true).c_str(),
-                         net::EscapeQueryParamValue(product, true).c_str()));
+  GURL url(kCloudPrintLearnUrl);
 
-  Browser* browser = ActivateAndGetBrowserForUrl(url);
-  if (!browser) {
-    browser = browser::FindOrCreateTabbedBrowser(profile,
-                                                 chrome::HOST_DESKTOP_TYPE_ASH);
-    if (!browser)
-      return;
+  if (!ActivateAndGetBrowserForUrl(url)) {
+    chrome::ScopedTabbedBrowserDisplayer displayer(
+        profile, chrome::HOST_DESKTOP_TYPE_ASH);
     UMA_HISTOGRAM_ENUMERATION("PrinterService.PrinterServiceEvent",
                               PAGE_DISPLAYED, PRINTER_SERVICE_EVENT_MAX);
-    chrome::AddSelectedTabWithURL(browser, url,
+    chrome::AddSelectedTabWithURL(displayer.browser(), url,
                                   content::PAGE_TRANSITION_LINK);
-  }
-  aura::Window* window = browser->window()->GetNativeWindow();
-  if (window) {
-    window->Show();
-    ash::wm::ActivateWindow(window);
   }
 }
 

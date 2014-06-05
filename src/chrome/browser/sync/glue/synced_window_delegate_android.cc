@@ -4,11 +4,11 @@
 
 #include "chrome/browser/sync/glue/synced_window_delegate_android.h"
 
+#include "chrome/browser/android/tab_android.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/sync/glue/synced_tab_delegate_android.h"
 #include "chrome/browser/ui/android/tab_model/tab_model.h"
 #include "chrome/browser/ui/android/tab_model/tab_model_list.h"
-#include "chrome/browser/ui/sync/tab_contents_synced_tab_delegate.h"
-#include "chrome/browser/sessions/session_id.h"
 #include "content/public/browser/web_contents.h"
 
 namespace browser_sync {
@@ -77,13 +77,14 @@ bool SyncedWindowDelegateAndroid::IsTabPinned(
 }
 
 SyncedTabDelegate* SyncedWindowDelegateAndroid::GetTabAt(int index) const {
-  content::WebContents* web_contents = tab_model_->GetWebContentsAt(index);
-  return web_contents ? TabContentsSyncedTabDelegate::FromWebContents(
-      web_contents) : NULL;
+  // After a restart, it is possible for the Tab to be null during startup.
+  TabAndroid* tab = tab_model_->GetTabAt(index);
+  return tab ? tab->GetSyncedTabDelegate() : NULL;
 }
 
 SessionID::id_type SyncedWindowDelegateAndroid::GetTabIdAt(int index) const {
-  return tab_model_->GetTabIdAt(index);
+  SyncedTabDelegate* tab = GetTabAt(index);
+  return tab ? tab->GetSessionId() : -1;
 }
 
 bool SyncedWindowDelegateAndroid::IsSessionRestoreInProgress() const {

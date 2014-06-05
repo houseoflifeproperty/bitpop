@@ -7,8 +7,6 @@
 
 #include "base/callback_forward.h"
 
-class ConstrainedWindow;
-
 namespace content {
 class DownloadItem;
 class WebContents;
@@ -26,8 +24,10 @@ class DownloadDangerPrompt {
   // Actions resulting from showing the danger prompt.
   enum Action {
     ACCEPT,
-    CANCEL
+    CANCEL,
+    DISMISS,
   };
+  typedef base::Callback<void(Action)> OnDone;
 
   // Return a new self-deleting DownloadDangerPrompt. |accepted| or |canceled|
   // will be run when the the respective action is invoked. |canceled| may also
@@ -35,14 +35,13 @@ class DownloadDangerPrompt {
   // progress, or if the tab corresponding to |web_contents| is
   // closing. The returned DownloadDangerPrompt* is only used for testing. The
   // caller does not own the object and receive no guarantees about lifetime.
+  // If |show_context|, then the prompt message will contain some information
+  // about the download and its danger; otherwise it won't.
   static DownloadDangerPrompt* Create(
       content::DownloadItem* item,
       content::WebContents* web_contents,
-      const base::Closure& accepted,
-      const base::Closure& canceled);
-
- protected:
-  friend class DownloadDangerPromptTest;
+      bool show_context,
+      const OnDone& done);
 
   // Only to be used by tests. Subclasses must override to manually call the
   // respective button click handler.

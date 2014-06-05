@@ -5,9 +5,17 @@
 #ifndef CONTENT_BROWSER_RENDERER_HOST_MEDIA_VIDEO_CAPTURE_CONTROLLER_EVENT_HANDLER_H_
 #define CONTENT_BROWSER_RENDERER_HOST_MEDIA_VIDEO_CAPTURE_CONTROLLER_EVENT_HANDLER_H_
 
-#include "base/shared_memory.h"
-#include "base/time.h"
+#include "base/memory/shared_memory.h"
+#include "base/time/time.h"
 #include "content/common/content_export.h"
+
+namespace gpu {
+struct MailboxHolder;
+}  // namespace gpu
+
+namespace media {
+class VideoCaptureFormat;
+}  // namespace media
 
 namespace content {
 
@@ -32,21 +40,28 @@ class CONTENT_EXPORT VideoCaptureControllerEventHandler {
   // A buffer has been newly created.
   virtual void OnBufferCreated(const VideoCaptureControllerID& id,
                                base::SharedMemoryHandle handle,
-                               int length, int buffer_id) = 0;
+                               int length,
+                               int buffer_id) = 0;
+
+  // A previously created buffer has been freed and will no longer be used.
+  virtual void OnBufferDestroyed(const VideoCaptureControllerID& id,
+                                 int buffer_id) = 0;
 
   // A buffer has been filled with I420 video.
   virtual void OnBufferReady(const VideoCaptureControllerID& id,
                              int buffer_id,
-                             base::Time timestamp) = 0;
+                             const media::VideoCaptureFormat& format,
+                             base::TimeTicks timestamp) = 0;
 
-  // The frame resolution the VideoCaptureDevice capture video in.
-  virtual void OnFrameInfo(const VideoCaptureControllerID& id,
-                           int width,
-                           int height,
-                           int frame_rate) = 0;
+  // A texture mailbox buffer has been filled with data.
+  virtual void OnMailboxBufferReady(const VideoCaptureControllerID& id,
+                                    int buffer_id,
+                                    const gpu::MailboxHolder& mailbox_holder,
+                                    const media::VideoCaptureFormat& format,
+                                    base::TimeTicks timestamp) = 0;
 
-  // The capture session has been paused. No more frame will be sent.
-  virtual void OnPaused(const VideoCaptureControllerID& id) = 0;
+  // The capture session has ended and no more frames will be sent.
+  virtual void OnEnded(const VideoCaptureControllerID& id) = 0;
 
  protected:
   virtual ~VideoCaptureControllerEventHandler() {}

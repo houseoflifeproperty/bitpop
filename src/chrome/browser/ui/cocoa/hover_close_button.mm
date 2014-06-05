@@ -4,12 +4,11 @@
 
 #import "chrome/browser/ui/cocoa/hover_close_button.h"
 
-#include "base/memory/scoped_nsobject.h"
-#include "base/memory/scoped_ptr.h"
-#import "chrome/browser/ui/cocoa/animation_utils.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#import "third_party/GTM/AppKit/GTMKeyValueAnimation.h"
+#include "grit/ui_resources.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMKeyValueAnimation.h"
+#include "ui/base/cocoa/animation_utils.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -143,16 +142,16 @@ NSString* const kFadeOutValueKeyPath = @"fadeOutValue";
 }
 
 - (NSImage*)imageForHoverState:(HoverState)hoverState {
-  int imageID = IDR_TAB_CLOSE;
+  int imageID = IDR_CLOSE_1;
   switch (hoverState) {
     case kHoverStateNone:
-      imageID = IDR_TAB_CLOSE;
+      imageID = IDR_CLOSE_1;
       break;
     case kHoverStateMouseOver:
-      imageID = IDR_TAB_CLOSE_H;
+      imageID = IDR_CLOSE_1_H;
       break;
     case kHoverStateMouseDown:
-      imageID = IDR_TAB_CLOSE_P;
+      imageID = IDR_CLOSE_1_P;
       break;
   }
   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
@@ -219,16 +218,16 @@ NSString* const kFadeOutValueKeyPath = @"fadeOutValue";
 @implementation WebUIHoverCloseButton
 
 - (NSImage*)imageForHoverState:(HoverState)hoverState {
-  int imageID = IDR_WEB_UI_CLOSE;
+  int imageID = IDR_CLOSE_DIALOG;
   switch (hoverState) {
     case kHoverStateNone:
-      imageID = IDR_WEB_UI_CLOSE;
+      imageID = IDR_CLOSE_DIALOG;
       break;
     case kHoverStateMouseOver:
-      imageID = IDR_WEB_UI_CLOSE_HOVER;
+      imageID = IDR_CLOSE_DIALOG_H;
       break;
     case kHoverStateMouseDown:
-      imageID = IDR_WEB_UI_CLOSE_PRESSED;
+      imageID = IDR_CLOSE_DIALOG_P;
       break;
   }
   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();

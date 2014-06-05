@@ -7,445 +7,582 @@
 #include <string>
 
 #include "base/file_util.h"
-#include "base/json/json_file_value_serializer.h"
+#include "base/task_runner_util.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
-#include "chrome/browser/chromeos/drive/drive_cache.h"
-#include "chrome/browser/chromeos/drive/drive_file_system_interface.h"
-#include "chrome/browser/chromeos/drive/drive_file_system_util.h"
-#include "chrome/browser/chromeos/drive/file_system/move_operation.h"
+#include "chrome/browser/chromeos/drive/file_cache.h"
+#include "chrome/browser/chromeos/drive/file_system/create_file_operation.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_observer.h"
-#include "chrome/browser/google_apis/drive_service_interface.h"
-#include "chrome/browser/google_apis/drive_upload_error.h"
-#include "chrome/browser/google_apis/drive_uploader.h"
+#include "chrome/browser/chromeos/drive/file_system_util.h"
+#include "chrome/browser/chromeos/drive/job_scheduler.h"
+#include "chrome/browser/chromeos/drive/resource_entry_conversion.h"
+#include "chrome/browser/chromeos/drive/resource_metadata.h"
+#include "chrome/browser/drive/drive_api_util.h"
 #include "content/public/browser/browser_thread.h"
-#include "net/base/mime_util.h"
+#include "google_apis/drive/drive_api_parser.h"
 
 using content::BrowserThread;
-using google_apis::ResourceEntry;
-using google_apis::GDataErrorCode;
 
 namespace drive {
 namespace file_system {
 
+struct CopyOperation::CopyParams {
+  base::FilePath src_file_path;
+  base::FilePath dest_file_path;
+  bool preserve_last_modified;
+  FileOperationCallback callback;
+  ResourceEntry src_entry;
+  ResourceEntry parent_entry;
+};
+
+// Enum for categorizing where a gdoc represented by a JSON file exists.
+enum JsonGdocLocationType {
+  NOT_IN_METADATA,
+  IS_ORPHAN,
+  HAS_PARENT,
+};
+
+struct CopyOperation::TransferJsonGdocParams {
+  TransferJsonGdocParams(const FileOperationCallback& callback,
+                         const std::string& resource_id,
+                         const ResourceEntry& parent_entry,
+                         const std::string& new_title)
+      : callback(callback),
+        resource_id(resource_id),
+        parent_resource_id(parent_entry.resource_id()),
+        parent_local_id(parent_entry.local_id()),
+        new_title(new_title),
+        location_type(NOT_IN_METADATA) {
+  }
+  // Parameters supplied or calculated from operation arguments.
+  const FileOperationCallback callback;
+  const std::string resource_id;
+  const std::string parent_resource_id;
+  const std::string parent_local_id;
+  const std::string new_title;
+
+  // Values computed during operation.
+  JsonGdocLocationType location_type;  // types where the gdoc file is located.
+  std::string local_id;  // the local_id of the file (if exists in metadata.)
+  base::FilePath changed_path;
+};
+
 namespace {
 
-const char kMimeTypeOctetStream[] = "application/octet-stream";
+FileError TryToCopyLocally(internal::ResourceMetadata* metadata,
+                           internal::FileCache* cache,
+                           CopyOperation::CopyParams* params,
+                           std::vector<std::string>* updated_local_ids,
+                           bool* directory_changed,
+                           bool* should_copy_on_server) {
+  FileError error = metadata->GetResourceEntryByPath(params->src_file_path,
+                                                     &params->src_entry);
+  if (error != FILE_ERROR_OK)
+    return error;
 
-// Copies a file from |src_file_path| to |dest_file_path| on the local
-// file system using file_util::CopyFile.
-// Returns DRIVE_FILE_OK on success or DRIVE_FILE_ERROR_FAILED otherwise.
-DriveFileError CopyLocalFileOnBlockingPool(const FilePath& src_file_path,
-                                           const FilePath& dest_file_path) {
-  return file_util::CopyFile(src_file_path, dest_file_path) ?
-      DRIVE_FILE_OK : DRIVE_FILE_ERROR_FAILED;
+  error = metadata->GetResourceEntryByPath(params->dest_file_path.DirName(),
+                                           &params->parent_entry);
+  if (error != FILE_ERROR_OK)
+    return error;
+
+  if (!params->parent_entry.file_info().is_directory())
+    return FILE_ERROR_NOT_A_DIRECTORY;
+
+  // Drive File System doesn't support recursive copy.
+  if (params->src_entry.file_info().is_directory())
+    return FILE_ERROR_NOT_A_FILE;
+
+  // Check destination.
+  ResourceEntry dest_entry;
+  error = metadata->GetResourceEntryByPath(params->dest_file_path, &dest_entry);
+  switch (error) {
+    case FILE_ERROR_OK:
+      // File API spec says it is an error to try to "copy a file to a path
+      // occupied by a directory".
+      if (dest_entry.file_info().is_directory())
+        return FILE_ERROR_INVALID_OPERATION;
+
+      // Move the existing entry to the trash.
+      dest_entry.set_parent_local_id(util::kDriveTrashDirLocalId);
+      error = metadata->RefreshEntry(dest_entry);
+      if (error != FILE_ERROR_OK)
+        return error;
+      updated_local_ids->push_back(dest_entry.local_id());
+      *directory_changed = true;
+      break;
+    case FILE_ERROR_NOT_FOUND:
+      break;
+    default:
+      return error;
+  }
+
+  // If the cache file is not present and the entry exists on the server,
+  // server side copy should be used.
+  FileCacheEntry cache_entry;
+  cache->GetCacheEntry(params->src_entry.local_id(), &cache_entry);
+  if (!cache_entry.is_present() && !params->src_entry.resource_id().empty()) {
+    *should_copy_on_server = true;
+    return FILE_ERROR_OK;
+  }
+
+  // Copy locally.
+  ResourceEntry entry;
+  const int64 now = base::Time::Now().ToInternalValue();
+  entry.set_title(params->dest_file_path.BaseName().AsUTF8Unsafe());
+  entry.set_parent_local_id(params->parent_entry.local_id());
+  entry.mutable_file_specific_info()->set_content_mime_type(
+      params->src_entry.file_specific_info().content_mime_type());
+  entry.set_metadata_edit_state(ResourceEntry::DIRTY);
+  entry.set_modification_date(base::Time::Now().ToInternalValue());
+  entry.mutable_file_info()->set_last_modified(
+      params->preserve_last_modified ?
+      params->src_entry.file_info().last_modified() : now);
+  entry.mutable_file_info()->set_last_accessed(now);
+
+  std::string local_id;
+  error = metadata->AddEntry(entry, &local_id);
+  if (error != FILE_ERROR_OK)
+    return error;
+  updated_local_ids->push_back(local_id);
+  *directory_changed = true;
+
+  if (!cache_entry.is_present()) {
+    DCHECK(params->src_entry.resource_id().empty());
+    // Locally created empty file may have no cache file.
+    return FILE_ERROR_OK;
+  }
+
+  base::FilePath cache_file_path;
+  error = cache->GetFile(params->src_entry.local_id(), &cache_file_path);
+  if (error != FILE_ERROR_OK)
+    return error;
+
+  return cache->Store(local_id, std::string(), cache_file_path,
+                      internal::FileCache::FILE_OPERATION_COPY);
 }
 
-// Checks if a local file at |local_file_path| is a JSON file referencing a
-// hosted document on blocking pool, and if so, gets the resource ID of the
-// document.
-std::string GetDocumentResourceIdOnBlockingPool(
-    const FilePath& local_file_path) {
-  std::string result;
-  if (ResourceEntry::HasHostedDocumentExtension(local_file_path)) {
-    std::string error;
-    DictionaryValue* dict_value = NULL;
-    JSONFileValueSerializer serializer(local_file_path);
-    scoped_ptr<Value> value(serializer.Deserialize(NULL, &error));
-    if (value.get() && value->GetAsDictionary(&dict_value))
-      dict_value->GetString("resource_id", &result);
+// Stores the entry returned from the server and returns its path.
+FileError UpdateLocalStateForServerSideOperation(
+    internal::ResourceMetadata* metadata,
+    scoped_ptr<google_apis::ResourceEntry> resource_entry,
+    base::FilePath* file_path) {
+  DCHECK(resource_entry);
+
+  ResourceEntry entry;
+  std::string parent_resource_id;
+  if (!ConvertToResourceEntry(*resource_entry, &entry, &parent_resource_id) ||
+      parent_resource_id.empty())
+    return FILE_ERROR_NOT_A_FILE;
+
+  std::string parent_local_id;
+  FileError error = metadata->GetIdByResourceId(parent_resource_id,
+                                                &parent_local_id);
+  if (error != FILE_ERROR_OK)
+    return error;
+  entry.set_parent_local_id(parent_local_id);
+
+  std::string local_id;
+  error = metadata->AddEntry(entry, &local_id);
+  // Depending on timing, the metadata may have inserted via change list
+  // already. So, FILE_ERROR_EXISTS is not an error.
+  if (error == FILE_ERROR_EXISTS)
+    error = metadata->GetIdByResourceId(entry.resource_id(), &local_id);
+
+  if (error == FILE_ERROR_OK)
+    *file_path = metadata->GetFilePath(local_id);
+
+  return error;
+}
+
+// Stores the file at |local_file_path| to the cache as a content of entry at
+// |remote_dest_path|, and marks it dirty.
+FileError UpdateLocalStateForScheduleTransfer(
+    internal::ResourceMetadata* metadata,
+    internal::FileCache* cache,
+    const base::FilePath& local_src_path,
+    const base::FilePath& remote_dest_path,
+    std::string* local_id) {
+  FileError error = metadata->GetIdByPath(remote_dest_path, local_id);
+  if (error != FILE_ERROR_OK)
+    return error;
+
+  ResourceEntry entry;
+  error = metadata->GetResourceEntryById(*local_id, &entry);
+  if (error != FILE_ERROR_OK)
+    return error;
+
+  return cache->Store(*local_id, std::string(), local_src_path,
+                      internal::FileCache::FILE_OPERATION_COPY);
+}
+
+// Gets the file size of the |local_path|, and the ResourceEntry for the parent
+// of |remote_path| to prepare the necessary information for transfer.
+FileError PrepareTransferFileFromLocalToRemote(
+    internal::ResourceMetadata* metadata,
+    const base::FilePath& local_src_path,
+    const base::FilePath& remote_dest_path,
+    std::string* gdoc_resource_id,
+    ResourceEntry* parent_entry) {
+  FileError error = metadata->GetResourceEntryByPath(
+      remote_dest_path.DirName(), parent_entry);
+  if (error != FILE_ERROR_OK)
+    return error;
+
+  // The destination's parent must be a directory.
+  if (!parent_entry->file_info().is_directory())
+    return FILE_ERROR_NOT_A_DIRECTORY;
+
+  // Try to parse GDoc File and extract the resource id, if necessary.
+  // Failing isn't problem. It'd be handled as a regular file, then.
+  if (util::HasGDocFileExtension(local_src_path))
+    *gdoc_resource_id = util::ReadResourceIdFromGDocFile(local_src_path);
+  return FILE_ERROR_OK;
+}
+
+// Performs local work before server-side work for transferring JSON-represented
+// gdoc files.
+FileError LocalWorkForTransferJsonGdocFile(
+    internal::ResourceMetadata* metadata,
+    CopyOperation::TransferJsonGdocParams* params) {
+  std::string local_id;
+  FileError error = metadata->GetIdByResourceId(params->resource_id, &local_id);
+  if (error != FILE_ERROR_OK) {
+    params->location_type = NOT_IN_METADATA;
+    return error == FILE_ERROR_NOT_FOUND ? FILE_ERROR_OK : error;
   }
-  return result;
+
+  ResourceEntry entry;
+  error = metadata->GetResourceEntryById(local_id, &entry);
+  if (error != FILE_ERROR_OK)
+    return error;
+  params->local_id = entry.local_id();
+
+  if (entry.parent_local_id() == util::kDriveOtherDirLocalId) {
+    params->location_type = IS_ORPHAN;
+    entry.set_title(params->new_title);
+    entry.set_parent_local_id(params->parent_local_id);
+    entry.set_metadata_edit_state(ResourceEntry::DIRTY);
+    entry.set_modification_date(base::Time::Now().ToInternalValue());
+    error = metadata->RefreshEntry(entry);
+    if (error == FILE_ERROR_OK)
+      params->changed_path = metadata->GetFilePath(local_id);
+    return error;
+  }
+
+  params->location_type = HAS_PARENT;
+  return FILE_ERROR_OK;
 }
 
 }  // namespace
 
-// CopyOperation::StartFileUploadParams implementation.
-struct CopyOperation::StartFileUploadParams {
-  StartFileUploadParams(const FilePath& in_local_file_path,
-                        const FilePath& in_remote_file_path,
-                        const FileOperationCallback& in_callback)
-      : local_file_path(in_local_file_path),
-        remote_file_path(in_remote_file_path),
-        callback(in_callback) {}
-
-  const FilePath local_file_path;
-  const FilePath remote_file_path;
-  const FileOperationCallback callback;
-};
-
-CopyOperation::CopyOperation(
-    google_apis::DriveServiceInterface* drive_service,
-    DriveFileSystemInterface* drive_file_system,
-    DriveResourceMetadata* metadata,
-    google_apis::DriveUploaderInterface* uploader,
-    scoped_refptr<base::SequencedTaskRunner> blocking_task_runner,
-    OperationObserver* observer)
-  : drive_service_(drive_service),
-    drive_file_system_(drive_file_system),
-    metadata_(metadata),
-    uploader_(uploader),
-    blocking_task_runner_(blocking_task_runner),
+CopyOperation::CopyOperation(base::SequencedTaskRunner* blocking_task_runner,
+                             OperationObserver* observer,
+                             JobScheduler* scheduler,
+                             internal::ResourceMetadata* metadata,
+                             internal::FileCache* cache,
+                             const ResourceIdCanonicalizer& id_canonicalizer)
+  : blocking_task_runner_(blocking_task_runner),
     observer_(observer),
-    move_operation_(new MoveOperation(drive_service,
-                                      metadata,
-                                      observer)),
-    weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+    scheduler_(scheduler),
+    metadata_(metadata),
+    cache_(cache),
+    id_canonicalizer_(id_canonicalizer),
+    create_file_operation_(new CreateFileOperation(blocking_task_runner,
+                                                   observer,
+                                                   metadata)),
+    weak_ptr_factory_(this) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
 CopyOperation::~CopyOperation() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
-void CopyOperation::Copy(const FilePath& src_file_path,
-                         const FilePath& dest_file_path,
+void CopyOperation::Copy(const base::FilePath& src_file_path,
+                         const base::FilePath& dest_file_path,
+                         bool preserve_last_modified,
                          const FileOperationCallback& callback) {
-  BrowserThread::CurrentlyOn(BrowserThread::UI);
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  metadata_->GetEntryInfoPairByPaths(
-      src_file_path,
-      dest_file_path.DirName(),
-      base::Bind(&CopyOperation::CopyAfterGetEntryInfoPair,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 dest_file_path,
-                 callback));
+  CopyParams* params = new CopyParams;
+  params->src_file_path = src_file_path;
+  params->dest_file_path = dest_file_path;
+  params->preserve_last_modified = preserve_last_modified;
+  params->callback = callback;
+
+  std::vector<std::string>* updated_local_ids = new std::vector<std::string>;
+  bool* directory_changed = new bool(false);
+  bool* should_copy_on_server = new bool(false);
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_.get(),
+      FROM_HERE,
+      base::Bind(&TryToCopyLocally, metadata_, cache_, params,
+                 updated_local_ids, directory_changed, should_copy_on_server),
+      base::Bind(&CopyOperation::CopyAfterTryToCopyLocally,
+                 weak_ptr_factory_.GetWeakPtr(), base::Owned(params),
+                 base::Owned(updated_local_ids), base::Owned(directory_changed),
+                 base::Owned(should_copy_on_server)));
 }
 
-void CopyOperation::TransferFileFromRemoteToLocal(
-    const FilePath& remote_src_file_path,
-    const FilePath& local_dest_file_path,
+void CopyOperation::CopyAfterTryToCopyLocally(
+    const CopyParams* params,
+    const std::vector<std::string>* updated_local_ids,
+    const bool* directory_changed,
+    const bool* should_copy_on_server,
+    FileError error) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!params->callback.is_null());
+
+  for (size_t i = 0; i < updated_local_ids->size(); ++i)
+    observer_->OnEntryUpdatedByOperation((*updated_local_ids)[i]);
+
+  if (*directory_changed)
+    observer_->OnDirectoryChangedByOperation(params->dest_file_path.DirName());
+
+  if (error != FILE_ERROR_OK || !*should_copy_on_server) {
+    params->callback.Run(error);
+    return;
+  }
+
+  base::FilePath new_title = params->dest_file_path.BaseName();
+  if (params->src_entry.file_specific_info().is_hosted_document()) {
+    // Drop the document extension, which should not be in the title.
+    // TODO(yoshiki): Remove this code with crbug.com/223304.
+    new_title = new_title.RemoveExtension();
+  }
+
+  base::Time last_modified =
+      params->preserve_last_modified ?
+      base::Time::FromInternalValue(
+          params->src_entry.file_info().last_modified()) : base::Time();
+
+  CopyResourceOnServer(
+      params->src_entry.resource_id(), params->parent_entry.resource_id(),
+      new_title.AsUTF8Unsafe(), last_modified, params->callback);
+}
+
+void CopyOperation::TransferFileFromLocalToRemote(
+    const base::FilePath& local_src_path,
+    const base::FilePath& remote_dest_path,
     const FileOperationCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  drive_file_system_->GetFileByPath(
-      remote_src_file_path,
-      base::Bind(&CopyOperation::OnGetFileCompleteForTransferFile,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 local_dest_file_path,
-                 callback),
-      google_apis::GetContentCallback());
+  std::string* gdoc_resource_id = new std::string;
+  ResourceEntry* parent_entry = new ResourceEntry;
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_.get(),
+      FROM_HERE,
+      base::Bind(
+          &PrepareTransferFileFromLocalToRemote,
+          metadata_, local_src_path, remote_dest_path,
+          gdoc_resource_id, parent_entry),
+      base::Bind(
+          &CopyOperation::TransferFileFromLocalToRemoteAfterPrepare,
+          weak_ptr_factory_.GetWeakPtr(),
+          local_src_path, remote_dest_path, callback,
+          base::Owned(gdoc_resource_id), base::Owned(parent_entry)));
 }
 
-void CopyOperation::OnGetFileCompleteForTransferFile(
-    const FilePath& local_dest_file_path,
+void CopyOperation::TransferFileFromLocalToRemoteAfterPrepare(
+    const base::FilePath& local_src_path,
+    const base::FilePath& remote_dest_path,
     const FileOperationCallback& callback,
-    DriveFileError error,
-    const FilePath& local_file_path,
-    const std::string& unused_mime_type,
-    DriveFileType file_type) {
+    std::string* gdoc_resource_id,
+    ResourceEntry* parent_entry,
+    FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  if (error != DRIVE_FILE_OK) {
+  if (error != FILE_ERROR_OK) {
     callback.Run(error);
     return;
   }
 
-  // GetFileByPath downloads the file from Drive to a local cache, which is then
-  // copied to the actual destination path on the local file system using
-  // CopyLocalFileOnBlockingPool.
+  // For regular files, schedule the transfer.
+  if (gdoc_resource_id->empty()) {
+    ScheduleTransferRegularFile(local_src_path, remote_dest_path, callback);
+    return;
+  }
+
+  // GDoc file may contain a resource ID in the old format.
+  const std::string canonicalized_resource_id =
+      id_canonicalizer_.Run(*gdoc_resource_id);
+
+  // Drop the document extension, which should not be in the title.
+  // TODO(yoshiki): Remove this code with crbug.com/223304.
+  const std::string new_title =
+      remote_dest_path.BaseName().RemoveExtension().AsUTF8Unsafe();
+
+  // This is uploading a JSON file representing a hosted document.
+  TransferJsonGdocParams* params = new TransferJsonGdocParams(
+      callback, canonicalized_resource_id, *parent_entry, new_title);
   base::PostTaskAndReplyWithResult(
-      blocking_task_runner_,
+      blocking_task_runner_.get(),
       FROM_HERE,
-      base::Bind(&CopyLocalFileOnBlockingPool,
-                 local_file_path,
-                 local_dest_file_path),
-      callback);
+      base::Bind(&LocalWorkForTransferJsonGdocFile, metadata_, params),
+      base::Bind(&CopyOperation::TransferJsonGdocFileAfterLocalWork,
+                 weak_ptr_factory_.GetWeakPtr(), base::Owned(params)));
 }
 
-void CopyOperation::TransferFileFromLocalToRemote(
-    const FilePath& local_src_file_path,
-    const FilePath& remote_dest_file_path,
-    const FileOperationCallback& callback) {
+void CopyOperation::TransferJsonGdocFileAfterLocalWork(
+    TransferJsonGdocParams* params,
+    FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
 
-  // Make sure the destination directory exists.
-  metadata_->GetEntryInfoByPath(
-      remote_dest_file_path.DirName(),
-      base::Bind(
-          &CopyOperation::TransferFileFromLocalToRemoteAfterGetEntryInfo,
-          weak_ptr_factory_.GetWeakPtr(),
-          local_src_file_path,
-          remote_dest_file_path,
-          callback));
+  if (error != FILE_ERROR_OK) {
+    params->callback.Run(error);
+    return;
+  }
+
+  switch (params->location_type) {
+    // When |resource_id| is found in the local metadata and it has a specific
+    // parent folder, we assume the user's intention is to copy the document and
+    // thus perform the server-side copy operation.
+    case HAS_PARENT:
+      CopyResourceOnServer(params->resource_id,
+                           params->parent_resource_id,
+                           params->new_title,
+                           base::Time(),
+                           params->callback);
+      break;
+    // When |resource_id| has no parent, we just set the new destination folder
+    // as the parent, for sharing the document between the original source.
+    // This reparenting is already done in LocalWorkForTransferJsonGdocFile().
+    case IS_ORPHAN:
+      DCHECK(!params->changed_path.empty());
+      observer_->OnEntryUpdatedByOperation(params->local_id);
+      observer_->OnDirectoryChangedByOperation(params->changed_path.DirName());
+      params->callback.Run(error);
+      break;
+    // When the |resource_id| is not in the local metadata, assume it to be a
+    // document just now shared on the server but not synced locally.
+    // Same as the IS_ORPHAN case, we want to deal the case by setting parent,
+    // but this time we need to resort to server side operation.
+    case NOT_IN_METADATA:
+      scheduler_->UpdateResource(
+          params->resource_id,
+          params->parent_resource_id,
+          params->new_title,
+          base::Time(),
+          base::Time(),
+          ClientContext(USER_INITIATED),
+          base::Bind(&CopyOperation::UpdateAfterServerSideOperation,
+                     weak_ptr_factory_.GetWeakPtr(),
+                     params->callback));
+      break;
+  }
 }
 
-void CopyOperation::TransferRegularFile(
-    const FilePath& local_file_path,
-    const FilePath& remote_dest_file_path,
-    const FileOperationCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  std::string* content_type = new std::string;
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner_,
-      FROM_HERE,
-      base::Bind(&net::GetMimeTypeFromFile,
-                 remote_dest_file_path,
-                 base::Unretained(content_type)),
-      base::Bind(&CopyOperation::StartFileUpload,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 StartFileUploadParams(local_file_path,
-                                       remote_dest_file_path,
-                                       callback),
-                 base::Owned(content_type)));
-}
-
-void CopyOperation::CopyHostedDocumentToDirectory(
-    const FilePath& dir_path,
+void CopyOperation::CopyResourceOnServer(
     const std::string& resource_id,
-    const FilePath::StringType& new_name,
+    const std::string& parent_resource_id,
+    const std::string& new_title,
+    const base::Time& last_modified,
     const FileOperationCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  drive_service_->CopyHostedDocument(
-      resource_id,
-      new_name,
-      base::Bind(&CopyOperation::OnCopyHostedDocumentCompleted,
+  scheduler_->CopyResource(
+      resource_id, parent_resource_id, new_title, last_modified,
+      base::Bind(&CopyOperation::UpdateAfterServerSideOperation,
                  weak_ptr_factory_.GetWeakPtr(),
-                 dir_path,
                  callback));
 }
 
-void CopyOperation::OnCopyHostedDocumentCompleted(
-    const FilePath& dir_path,
+void CopyOperation::UpdateAfterServerSideOperation(
     const FileOperationCallback& callback,
-    GDataErrorCode status,
+    google_apis::GDataErrorCode status,
     scoped_ptr<google_apis::ResourceEntry> resource_entry) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  DriveFileError error = util::GDataToDriveFileError(status);
-  if (error != DRIVE_FILE_OK) {
-    callback.Run(error);
-    return;
-  }
-  DCHECK(resource_entry);
-
-  // |entry| was added in the root directory on the server, so we should
-  // first add it to |root_| to mirror the state and then move it to the
-  // destination directory by MoveEntryFromRootDirectory().
-  metadata_->AddEntryToDirectory(
-      FilePath(kDriveRootDirectory),
-      resource_entry.Pass(),
-      base::Bind(&CopyOperation::MoveEntryFromRootDirectory,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 dir_path,
-                 callback));
-}
-
-void CopyOperation::MoveEntryFromRootDirectory(
-    const FilePath& directory_path,
-    const FileOperationCallback& callback,
-    DriveFileError error,
-    const FilePath& file_path) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-  DCHECK_EQ(kDriveRootDirectory, file_path.DirName().value());
-
-  // Return if there is an error or |dir_path| is the root directory.
-  if (error != DRIVE_FILE_OK ||
-      directory_path == FilePath(kDriveRootDirectory)) {
+  FileError error = GDataToFileError(status);
+  if (error != FILE_ERROR_OK) {
     callback.Run(error);
     return;
   }
 
-  move_operation_->Move(file_path,
-                        directory_path.Append(file_path.BaseName()),
-                        callback);
-}
-
-void CopyOperation::CopyAfterGetEntryInfoPair(
-    const FilePath& dest_file_path,
-    const FileOperationCallback& callback,
-    scoped_ptr<EntryInfoPairResult> result) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-  DCHECK(result.get());
-
-  if (result->first.error != DRIVE_FILE_OK) {
-    callback.Run(result->first.error);
-    return;
-  } else if (result->second.error != DRIVE_FILE_OK) {
-    callback.Run(result->second.error);
-    return;
-  }
-
-  scoped_ptr<DriveEntryProto> src_file_proto = result->first.proto.Pass();
-  scoped_ptr<DriveEntryProto> dest_parent_proto = result->second.proto.Pass();
-
-  if (!dest_parent_proto->file_info().is_directory()) {
-    callback.Run(DRIVE_FILE_ERROR_NOT_A_DIRECTORY);
-    return;
-  } else if (src_file_proto->file_info().is_directory()) {
-    // TODO(kochi): Implement copy for directories. In the interim,
-    // we handle recursive directory copy in the file manager.
-    // crbug.com/141596
-    callback.Run(DRIVE_FILE_ERROR_INVALID_OPERATION);
-    return;
-  }
-
-  if (src_file_proto->file_specific_info().is_hosted_document()) {
-    CopyHostedDocumentToDirectory(
-        dest_file_path.DirName(),
-        src_file_proto->resource_id(),
-        // Drop the document extension, which should not be in the title.
-        dest_file_path.BaseName().RemoveExtension().value(),
-        callback);
-    return;
-  }
-
-  // TODO(kochi): Reimplement this once the server API supports
-  // copying of regular files directly on the server side. crbug.com/138273
-  const FilePath& src_file_path = result->first.path;
-  drive_file_system_->GetFileByPath(
-      src_file_path,
-      base::Bind(&CopyOperation::OnGetFileCompleteForCopy,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 dest_file_path,
-                 callback),
-      google_apis::GetContentCallback());
-}
-
-void CopyOperation::OnGetFileCompleteForCopy(
-    const FilePath& remote_dest_file_path,
-    const FileOperationCallback& callback,
-    DriveFileError error,
-    const FilePath& local_file_path,
-    const std::string& unused_mime_type,
-    DriveFileType file_type) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  if (error != DRIVE_FILE_OK) {
-    callback.Run(error);
-    return;
-  }
-
-  // This callback is only triggered for a regular file via Copy().
-  DCHECK_EQ(REGULAR_FILE, file_type);
-  TransferRegularFile(local_file_path, remote_dest_file_path, callback);
-}
-
-void CopyOperation::StartFileUpload(const StartFileUploadParams& params,
-                                    const std::string* content_type,
-                                    bool got_content_type) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!params.callback.is_null());
-
-  // Make sure the destination directory exists.
-  metadata_->GetEntryInfoByPath(
-      params.remote_file_path.DirName(),
-      base::Bind(&CopyOperation::StartFileUploadAfterGetEntryInfo,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 params,
-                 got_content_type ? *content_type : kMimeTypeOctetStream));
-}
-
-void CopyOperation::StartFileUploadAfterGetEntryInfo(
-    const StartFileUploadParams& params,
-    const std::string& content_type,
-    DriveFileError error,
-    scoped_ptr<DriveEntryProto> entry_proto) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!params.callback.is_null());
-
-  if (entry_proto.get() && !entry_proto->file_info().is_directory())
-    error = DRIVE_FILE_ERROR_NOT_A_DIRECTORY;
-
-  if (error != DRIVE_FILE_OK) {
-    params.callback.Run(error);
-    return;
-  }
-  DCHECK(entry_proto.get());
-
-  uploader_->UploadNewFile(GURL(entry_proto->upload_url()),
-                           params.remote_file_path,
-                           params.local_file_path,
-                           params.remote_file_path.BaseName().value(),
-                           content_type,
-                           base::Bind(&CopyOperation::OnTransferCompleted,
-                                      weak_ptr_factory_.GetWeakPtr(),
-                                      params.callback));
-}
-
-void CopyOperation::OnTransferCompleted(
-    const FileOperationCallback& callback,
-    google_apis::DriveUploadError error,
-    const FilePath& drive_path,
-    const FilePath& file_path,
-    scoped_ptr<ResourceEntry> resource_entry) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  if (error == google_apis::DRIVE_UPLOAD_OK && resource_entry.get()) {
-    drive_file_system_->AddUploadedFile(drive_path.DirName(),
-                                        resource_entry.Pass(),
-                                        file_path,
-                                        callback);
-  } else {
-    callback.Run(DriveUploadErrorToDriveFileError(error));
-  }
-}
-
-void CopyOperation::TransferFileFromLocalToRemoteAfterGetEntryInfo(
-    const FilePath& local_src_file_path,
-    const FilePath& remote_dest_file_path,
-    const FileOperationCallback& callback,
-    DriveFileError error,
-    scoped_ptr<DriveEntryProto> entry_proto) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  if (error != DRIVE_FILE_OK) {
-    callback.Run(error);
-    return;
-  }
-
-  DCHECK(entry_proto.get());
-  if (!entry_proto->file_info().is_directory()) {
-    // The parent of |remote_dest_file_path| is not a directory.
-    callback.Run(DRIVE_FILE_ERROR_NOT_A_DIRECTORY);
-    return;
-  }
-
+  // The copy on the server side is completed successfully. Update the local
+  // metadata.
+  base::FilePath* file_path = new base::FilePath;
   base::PostTaskAndReplyWithResult(
-      blocking_task_runner_,
+      blocking_task_runner_.get(),
       FROM_HERE,
-      base::Bind(&GetDocumentResourceIdOnBlockingPool, local_src_file_path),
-      base::Bind(&CopyOperation::TransferFileForResourceId,
+      base::Bind(&UpdateLocalStateForServerSideOperation,
+                 metadata_, base::Passed(&resource_entry), file_path),
+      base::Bind(&CopyOperation::UpdateAfterLocalStateUpdate,
                  weak_ptr_factory_.GetWeakPtr(),
-                 local_src_file_path,
-                 remote_dest_file_path,
-                 callback));
+                 callback, base::Owned(file_path)));
 }
 
-void CopyOperation::TransferFileForResourceId(
-    const FilePath& local_file_path,
-    const FilePath& remote_dest_file_path,
+void CopyOperation::UpdateAfterLocalStateUpdate(
     const FileOperationCallback& callback,
-    const std::string& resource_id) {
+    base::FilePath* file_path,
+    FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  if (resource_id.empty()) {
-    // If |resource_id| is empty, upload the local file as a regular file.
-    TransferRegularFile(local_file_path, remote_dest_file_path, callback);
+  if (error == FILE_ERROR_OK)
+    observer_->OnDirectoryChangedByOperation(file_path->DirName());
+  callback.Run(error);
+}
+
+void CopyOperation::ScheduleTransferRegularFile(
+    const base::FilePath& local_src_path,
+    const base::FilePath& remote_dest_path,
+    const FileOperationCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  create_file_operation_->CreateFile(
+      remote_dest_path,
+      false,  // Not exclusive (OK even if a file already exists).
+      std::string(),  // no specific mime type; CreateFile should guess it.
+      base::Bind(&CopyOperation::ScheduleTransferRegularFileAfterCreate,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 local_src_path, remote_dest_path, callback));
+}
+
+void CopyOperation::ScheduleTransferRegularFileAfterCreate(
+    const base::FilePath& local_src_path,
+    const base::FilePath& remote_dest_path,
+    const FileOperationCallback& callback,
+    FileError error) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  if (error != FILE_ERROR_OK) {
+    callback.Run(error);
     return;
   }
 
-  // Otherwise, copy the document on the server side and add the new copy
-  // to the destination directory (collection).
-  CopyHostedDocumentToDirectory(
-      remote_dest_file_path.DirName(),
-      resource_id,
-      // Drop the document extension, which should not be
-      // in the document title.
-      remote_dest_file_path.BaseName().RemoveExtension().value(),
-      callback);
+  std::string* local_id = new std::string;
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_.get(),
+      FROM_HERE,
+      base::Bind(
+          &UpdateLocalStateForScheduleTransfer,
+          metadata_, cache_, local_src_path, remote_dest_path, local_id),
+      base::Bind(
+          &CopyOperation::ScheduleTransferRegularFileAfterUpdateLocalState,
+          weak_ptr_factory_.GetWeakPtr(), callback, remote_dest_path,
+          base::Owned(local_id)));
+}
+
+void CopyOperation::ScheduleTransferRegularFileAfterUpdateLocalState(
+    const FileOperationCallback& callback,
+    const base::FilePath& remote_dest_path,
+    std::string* local_id,
+    FileError error) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  if (error == FILE_ERROR_OK) {
+    observer_->OnDirectoryChangedByOperation(remote_dest_path.DirName());
+    observer_->OnEntryUpdatedByOperation(*local_id);
+  }
+  callback.Run(error);
 }
 
 }  // namespace file_system

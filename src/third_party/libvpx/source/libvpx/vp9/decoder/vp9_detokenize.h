@@ -12,18 +12,19 @@
 #ifndef VP9_DECODER_VP9_DETOKENIZE_H_
 #define VP9_DECODER_VP9_DETOKENIZE_H_
 
-#include "vp9/decoder/vp9_onyxd_int.h"
+#include "vp9/decoder/vp9_decoder.h"
+#include "vp9/decoder/vp9_reader.h"
 
-void vp9_reset_mb_tokens_context(MACROBLOCKD* const);
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-int vp9_decode_coefs_4x4(VP9D_COMP *dx, MACROBLOCKD *xd,
-                         BOOL_DECODER* const bc,
-                         PLANE_TYPE type, int i);
+int vp9_decode_block_tokens(VP9_COMMON *cm, MACROBLOCKD *xd,
+                            int plane, int block, BLOCK_SIZE plane_bsize,
+                            int x, int y, TX_SIZE tx_size, vp9_reader *r);
 
-int vp9_decode_mb_tokens(VP9D_COMP* const, MACROBLOCKD* const,
-                         BOOL_DECODER* const);
+#ifdef __cplusplus
+}  // extern "C"
+#endif
 
-int vp9_decode_mb_tokens_4x4_uv(VP9D_COMP* const dx, MACROBLOCKD* const xd,
-                                BOOL_DECODER* const bc);
-
-#endif /* DETOKENIZE_H */
+#endif  // VP9_DECODER_VP9_DETOKENIZE_H_

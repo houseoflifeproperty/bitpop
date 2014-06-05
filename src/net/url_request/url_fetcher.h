@@ -10,16 +10,18 @@
 
 #include "base/callback_forward.h"
 #include "base/memory/ref_counted.h"
-#include "base/platform_file.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/supports_user_data.h"
-#include "base/task_runner.h"
 #include "net/base/net_export.h"
+#include "net/url_request/url_request.h"
 
-class FilePath;
 class GURL;
 
 namespace base {
+class FilePath;
 class MessageLoopProxy;
+class SequencedTaskRunner;
+class TaskRunner;
 class TimeDelta;
 }
 
@@ -28,14 +30,16 @@ class HostPortPair;
 class HttpRequestHeaders;
 class HttpResponseHeaders;
 class URLFetcherDelegate;
+class URLFetcherResponseWriter;
 class URLRequestContextGetter;
 class URLRequestStatus;
 typedef std::vector<std::string> ResponseCookies;
 
 // To use this class, create an instance with the desired URL and a pointer to
 // the object to be notified when the URL has been loaded:
-//   URLFetcher* fetcher = URLFetcher::Create("http://www.google.com",
-//                                            URLFetcher::GET, this);
+//   scoped_ptr<URLFetcher> fetcher(URLFetcher::Create("http://www.google.com",
+//                                                     URLFetcher::GET,
+//                                                     this));
 //
 // You must also set a request context getter:
 //
@@ -48,6 +52,8 @@ typedef std::vector<std::string> ResponseCookies;
 // Finally, start the request:
 //   fetcher->Start();
 //
+// You may cancel the request by destroying the URLFetcher:
+//   fetcher.reset();
 //
 // The object you supply as a delegate must inherit from
 // URLFetcherDelegate; when the fetch is completed,
@@ -79,6 +85,7 @@ class NET_EXPORT URLFetcher {
     DELETE_REQUEST,   // DELETE is already taken on Windows.
                       // <winnt.h> defines a DELETE macro.
     PUT,
+    PATCH,
   };
 
   // Used by SetURLRequestUserData.  The callback should make a fresh
@@ -90,6 +97,7 @@ class NET_EXPORT URLFetcher {
   // |url| is the URL to send the request to.
   // |request_type| is the type of request to make.
   // |d| the object that will receive the callback on fetch completion.
+  // Caller is responsible for destroying the returned URLFetcher.
   static URLFetcher* Create(const GURL& url,
                             URLFetcher::RequestType request_type,
                             URLFetcherDelegate* d);
@@ -97,6 +105,7 @@ class NET_EXPORT URLFetcher {
   // Like above, but if there's a URLFetcherFactory registered with the
   // implementation it will be used. |id| may be used during testing to identify
   // who is creating the URLFetcher.
+  // Caller is responsible for destroying the returned URLFetcher.
   static URLFetcher* Create(int id,
                             const GURL& url,
                             URLFetcher::RequestType request_type,
@@ -123,11 +132,27 @@ class NET_EXPORT URLFetcher {
   static void SetIgnoreCertificateRequests(bool ignored);
 
   // Sets data only needed by POSTs.  All callers making POST requests should
-  // call this before the request is started.  |upload_content_type| is the MIME
-  // type of the content, while |upload_content| is the data to be sent (the
-  // Content-Length header value will be set to the length of this data).
+  // call one of the SetUpload* methods before the request is started.
+  // |upload_content_type| is the MIME type of the content, while
+  // |upload_content| is the data to be sent (the Content-Length header value
+  // will be set to the length of this data).
   virtual void SetUploadData(const std::string& upload_content_type,
                              const std::string& upload_content) = 0;
+
+  // Sets data only needed by POSTs.  All callers making POST requests should
+  // call one of the SetUpload* methods before the request is started.
+  // |upload_content_type| is the MIME type of the content, while
+  // |file_path| is the path to the file containing the data to be sent (the
+  // Content-Length header value will be set to the length of this file).
+  // |range_offset| and |range_length| specify the range of the part
+  // to be uploaded. To upload the whole file, (0, kuint64max) can be used.
+  // |file_task_runner| will be used for all file operations.
+  virtual void SetUploadFilePath(
+      const std::string& upload_content_type,
+      const base::FilePath& file_path,
+      uint64 range_offset,
+      uint64 range_length,
+      scoped_refptr<base::TaskRunner> file_task_runner) = 0;
 
   // Indicates that the POST data is sent via chunked transfer encoding.
   // This may only be called before calling Start().
@@ -151,6 +176,11 @@ class NET_EXPORT URLFetcher {
   // started.
   virtual void SetReferrer(const std::string& referrer) = 0;
 
+  // The referrer policy to apply when updating the referrer during redirects.
+  // The referrer policy may only be changed before Start() is called.
+  virtual void SetReferrerPolicy(
+      URLRequest::ReferrerPolicy referrer_policy) = 0;
+
   // Set extra headers on the request.  Must be called before the request
   // is started.
   // This replaces the entire extra request headers.
@@ -161,9 +191,6 @@ class NET_EXPORT URLFetcher {
   // headers.  Must be called before the request is started.
   // This appends the header to the current extra request headers.
   virtual void AddExtraRequestHeader(const std::string& header_line) = 0;
-
-  virtual void GetExtraRequestHeaders(
-      HttpRequestHeaders* headers) const = 0;
 
   // Set the URLRequestContext on the request.  Must be called before the
   // request is started.
@@ -212,8 +239,8 @@ class NET_EXPORT URLFetcher {
   // The created file is removed when the URLFetcher is deleted unless you
   // take ownership by calling GetResponseAsFilePath().
   virtual void SaveResponseToFileAtPath(
-      const FilePath& file_path,
-      scoped_refptr<base::TaskRunner> file_task_runner) = 0;
+      const base::FilePath& file_path,
+      scoped_refptr<base::SequencedTaskRunner> file_task_runner) = 0;
 
   // By default, the response is saved in a string. Call this method to save the
   // response to a temporary file instead. Must be called before Start().
@@ -221,7 +248,12 @@ class NET_EXPORT URLFetcher {
   // The created file is removed when the URLFetcher is deleted unless you
   // take ownership by calling GetResponseAsFilePath().
   virtual void SaveResponseToTemporaryFile(
-      scoped_refptr<base::TaskRunner> file_task_runner) = 0;
+      scoped_refptr<base::SequencedTaskRunner> file_task_runner) = 0;
+
+  // By default, the response is saved in a string. Call this method to use the
+  // specified writer to save the response. Must be called before Start().
+  virtual void SaveResponseWithWriter(
+      scoped_ptr<URLFetcherResponseWriter> response_writer) = 0;
 
   // Retrieve the response headers from the request.  Must only be called after
   // the OnURLFetchComplete callback has run.
@@ -254,14 +286,8 @@ class NET_EXPORT URLFetcher {
   // if an error prevented any response from being received.
   virtual int GetResponseCode() const = 0;
 
-  // Cookies recieved.
+  // Cookies received.
   virtual const ResponseCookies& GetCookies() const = 0;
-
-  // Return true if any file system operation failed.  If so, set |error_code|
-  // to the error code. File system errors are only possible if user called
-  // SaveResponseToTemporaryFile().
-  virtual bool FileErrorOccurred(
-      base::PlatformFileError* out_error_code) const = 0;
 
   // Reports that the received content was malformed.
   virtual void ReceivedContentWasMalformed() = 0;
@@ -275,8 +301,9 @@ class NET_EXPORT URLFetcher {
   // true, caller takes responsibility for the file, and it will not
   // be removed once the URLFetcher is destroyed.  User should not take
   // ownership more than once, or call this method after taking ownership.
-  virtual bool GetResponseAsFilePath(bool take_ownership,
-                                     FilePath* out_response_path) const = 0;
+  virtual bool GetResponseAsFilePath(
+      bool take_ownership,
+      base::FilePath* out_response_path) const = 0;
 };
 
 }  // namespace net

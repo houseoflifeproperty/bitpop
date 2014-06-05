@@ -14,6 +14,7 @@
 namespace media {
 
 class AudioBus;
+class AudioParameters;
 
 // ChannelMixer is for converting audio between channel layouts.  The conversion
 // matrix is built upon construction and used during each Transform() call.  The
@@ -23,35 +24,16 @@ class AudioBus;
 // input channels as defined in the matrix.
 class MEDIA_EXPORT ChannelMixer {
  public:
-  ChannelMixer(ChannelLayout input, ChannelLayout output);
+  ChannelMixer(ChannelLayout input_layout, ChannelLayout output_layout);
+  ChannelMixer(const AudioParameters& input, const AudioParameters& output);
   ~ChannelMixer();
 
   // Transforms all channels from |input| into |output| channels.
   void Transform(const AudioBus* input, AudioBus* output);
 
  private:
-  // Constructor helper methods for managing unaccounted input channels.
-  void AccountFor(Channels ch);
-  bool IsUnaccounted(Channels ch);
-
-  // Helper methods for checking if |ch| exists in either |input_layout_| or
-  // |output_layout_| respectively.
-  bool HasInputChannel(Channels ch);
-  bool HasOutputChannel(Channels ch);
-
-  // Constructor helper methods for updating |matrix_| with the proper value for
-  // mixing |input_ch| into |output_ch|.  MixWithoutAccounting() does not remove
-  // the channel from |unaccounted_inputs_|.
-  void Mix(Channels input_ch, Channels output_ch, float scale);
-  void MixWithoutAccounting(Channels input_ch, Channels output_ch, float scale);
-
-  // Input and output channel layout provided during construction.
-  ChannelLayout input_layout_;
-  ChannelLayout output_layout_;
-
-  // Helper variable for tracking which inputs are currently unaccounted, should
-  // be empty after construction completes.
-  std::vector<Channels> unaccounted_inputs_;
+  void Initialize(ChannelLayout input_layout, int input_channels,
+                  ChannelLayout output_layout, int output_channels);
 
   // 2D matrix of output channels to input channels.
   std::vector< std::vector<float> > matrix_;

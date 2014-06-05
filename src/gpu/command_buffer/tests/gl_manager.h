@@ -5,8 +5,11 @@
 #ifndef GPU_COMMAND_BUFFER_TESTS_GL_MANAGER_H_
 #define GPU_COMMAND_BUFFER_TESTS_GL_MANAGER_H_
 
+#include "base/containers/scoped_ptr_hash_map.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "gpu/command_buffer/client/gpu_control.h"
+#include "gpu/command_buffer/service/feature_info.h"
 #include "ui/gfx/size.h"
 
 namespace gfx {
@@ -20,8 +23,10 @@ class GLSurface;
 namespace gpu {
 
 class CommandBufferService;
-class TransferBuffer;
+class GpuControlService;
+class GpuMemoryBufferFactory;
 class GpuScheduler;
+class TransferBuffer;
 
 namespace gles2 {
 
@@ -30,11 +35,13 @@ class MailboxManager;
 class GLES2Decoder;
 class GLES2CmdHelper;
 class GLES2Implementation;
+class ImageFactory;
+class ImageManager;
 class ShareGroup;
 
 };
 
-class GLManager {
+class GLManager : private GpuControl {
  public:
   struct Options {
     Options();
@@ -48,16 +55,28 @@ class GLManager {
     GLManager* virtual_manager;
     // Whether or not glBindXXX generates a resource.
     bool bind_generates_resource;
+    // Whether or not the context is auto-lost when GL_OUT_OF_MEMORY occurs.
+    bool lose_context_when_out_of_memory;
     // Whether or not it's ok to lose the context.
     bool context_lost_allowed;
+    // Image manager to be used.
+    gles2::ImageManager* image_manager;
+    // GpuMemoryBuffer factory to be used.
+    GpuMemoryBufferFactory* gpu_memory_buffer_factory;
   };
   GLManager();
-  ~GLManager();
+  virtual ~GLManager();
 
   void Initialize(const Options& options);
   void Destroy();
 
   void MakeCurrent();
+
+  void SetSurface(gfx::GLSurface* surface);
+
+  gles2::GLES2Decoder* decoder() const {
+    return decoder_.get();
+  }
 
   gles2::MailboxManager* mailbox_manager() const {
     return mailbox_manager_.get();
@@ -75,13 +94,35 @@ class GLManager {
     return context_.get();
   }
 
+  const gpu::gles2::FeatureInfo::Workarounds& workarounds() const;
+
+  // GpuControl implementation.
+  virtual Capabilities GetCapabilities() OVERRIDE;
+  virtual gfx::GpuMemoryBuffer* CreateGpuMemoryBuffer(size_t width,
+                                                      size_t height,
+                                                      unsigned internalformat,
+                                                      unsigned usage,
+                                                      int32* id) OVERRIDE;
+  virtual void DestroyGpuMemoryBuffer(int32 id) OVERRIDE;
+  virtual uint32 InsertSyncPoint() OVERRIDE;
+  virtual void SignalSyncPoint(uint32 sync_point,
+                               const base::Closure& callback) OVERRIDE;
+  virtual void SignalQuery(uint32 query,
+                           const base::Closure& callback) OVERRIDE;
+  virtual void SetSurfaceVisible(bool visible) OVERRIDE;
+  virtual void SendManagedMemoryStats(const ManagedMemoryStats& stats) OVERRIDE;
+  virtual void Echo(const base::Closure& callback) OVERRIDE;
+  virtual uint32 CreateStreamTexture(uint32 texture_id) OVERRIDE;
+
  private:
   void PumpCommands();
   bool GetBufferChanged(int32 transfer_buffer_id);
+  void SetupBaseContext();
 
   scoped_refptr<gles2::MailboxManager> mailbox_manager_;
   scoped_refptr<gfx::GLShareGroup> share_group_;
   scoped_ptr<CommandBufferService> command_buffer_;
+  scoped_ptr<GpuControlService> gpu_control_service_;
   scoped_ptr<gles2::GLES2Decoder> decoder_;
   scoped_ptr<GpuScheduler> gpu_scheduler_;
   scoped_refptr<gfx::GLSurface> surface_;
@@ -90,6 +131,16 @@ class GLManager {
   scoped_ptr<TransferBuffer> transfer_buffer_;
   scoped_ptr<gles2::GLES2Implementation> gles2_implementation_;
   bool context_lost_allowed_;
+
+  // Client GpuControl implementation.
+  GpuMemoryBufferFactory* gpu_memory_buffer_factory_;
+  base::ScopedPtrHashMap<int32, gfx::GpuMemoryBuffer> memory_buffers_;
+
+  // Used on Android to virtualize GL for all contexts.
+  static int use_count_;
+  static scoped_refptr<gfx::GLShareGroup>* base_share_group_;
+  static scoped_refptr<gfx::GLSurface>* base_surface_;
+  static scoped_refptr<gfx::GLContext>* base_context_;
 };
 
 }  // namespace gpu

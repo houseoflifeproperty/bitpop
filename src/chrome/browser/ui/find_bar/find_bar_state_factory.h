@@ -7,20 +7,20 @@
 
 #include "base/basictypes.h"
 #include "base/memory/singleton.h"
-#include "base/string16.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "base/strings/string16.h"
+#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 
 class Profile;
 class FindBarState;
 
-class FindBarStateFactory : public ProfileKeyedServiceFactory {
+class FindBarStateFactory : public BrowserContextKeyedServiceFactory {
  public:
   static FindBarState* GetForProfile(Profile* profile);
 
   // Retrieves the last prepopulate text for a given Profile.  If the profile is
   // incognito and has an empty prepopulate text, falls back to the
   // prepopulate text from the normal profile.
-  static string16 GetLastPrepopulateText(Profile* profile);
+  static base::string16 GetLastPrepopulateText(Profile* profile);
 
   static FindBarStateFactory* GetInstance();
 
@@ -30,10 +30,11 @@ class FindBarStateFactory : public ProfileKeyedServiceFactory {
   FindBarStateFactory();
   virtual ~FindBarStateFactory();
 
-  // ProfileKeyedServiceFactory:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
-  virtual bool ServiceHasOwnInstanceInIncognito() const OVERRIDE;
+  // BrowserContextKeyedServiceFactory:
+  virtual KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* profile) const OVERRIDE;
+  virtual content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(FindBarStateFactory);
 };

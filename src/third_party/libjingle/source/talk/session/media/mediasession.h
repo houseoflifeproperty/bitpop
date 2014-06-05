@@ -39,6 +39,7 @@
 #include "talk/media/base/constants.h"
 #include "talk/media/base/cryptoparams.h"
 #include "talk/media/base/mediachannel.h"
+#include "talk/media/base/mediaengine.h"  // For DataChannelType
 #include "talk/media/base/streamparams.h"
 #include "talk/p2p/base/sessiondescription.h"
 #include "talk/p2p/base/transport.h"
@@ -51,15 +52,15 @@ typedef std::vector<AudioCodec> AudioCodecs;
 typedef std::vector<VideoCodec> VideoCodecs;
 typedef std::vector<DataCodec> DataCodecs;
 typedef std::vector<CryptoParams> CryptoParamsVec;
-
-// TODO(juberti): Replace SecureMediaPolicy with SecurePolicy everywhere.
-typedef SecurePolicy SecureMediaPolicy;
+typedef std::vector<RtpHeaderExtension> RtpHeaderExtensions;
 
 enum MediaType {
   MEDIA_TYPE_AUDIO,
   MEDIA_TYPE_VIDEO,
   MEDIA_TYPE_DATA
 };
+
+std::string MediaTypeToString(MediaType type);
 
 enum MediaContentDirection {
   MD_INACTIVE,
@@ -68,48 +69,83 @@ enum MediaContentDirection {
   MD_SENDRECV
 };
 
+enum CryptoType {
+  CT_NONE,
+  CT_SDES,
+  CT_DTLS
+};
+
+// RTC4585 RTP/AVPF
+extern const char kMediaProtocolAvpf[];
+// RFC5124 RTP/SAVPF
+extern const char kMediaProtocolSavpf[];
+
+extern const char kMediaProtocolRtpPrefix[];
+
+extern const char kMediaProtocolSctp[];
+extern const char kMediaProtocolDtlsSctp[];
+
 // Options to control how session descriptions are generated.
 const int kAutoBandwidth = -1;
+const int kBufferedModeDisabled = 0;
+
 struct MediaSessionOptions {
   MediaSessionOptions() :
       has_audio(true),  // Audio enabled by default.
       has_video(false),
-      has_data(false),
+      data_channel_type(DCT_NONE),
       is_muc(false),
+      vad_enabled(true),  // When disabled, removes all CN codecs from SDP.
       rtcp_mux_enabled(true),
       bundle_enabled(false),
       video_bandwidth(kAutoBandwidth),
-
       data_bandwidth(kDataMaxBandwidth) {
   }
 
-  // Add a stream with MediaType type and id name.
+  bool has_data() const { return data_channel_type != DCT_NONE; }
+
+  // Add a stream with MediaType type and id.
   // All streams with the same sync_label will get the same CNAME.
-  // All names must be unique.
+  // All ids must be unique.
   void AddStream(MediaType type,
-                 const std::string& name,
+                 const std::string& id,
                  const std::string& sync_label);
-  void RemoveStream(MediaType type, const std::string& name);
+  void AddVideoStream(const std::string& id,
+                      const std::string& sync_label,
+                      int num_sim_layers);
+  void RemoveStream(MediaType type, const std::string& id);
+
+
+  // Helper function.
+  void AddStreamInternal(MediaType type,
+                         const std::string& id,
+                         const std::string& sync_label,
+                         int num_sim_layers);
 
   bool has_audio;
   bool has_video;
-  bool has_data;
+  DataChannelType data_channel_type;
   bool is_muc;
+  bool vad_enabled;
   bool rtcp_mux_enabled;
   bool bundle_enabled;
   // bps. -1 == auto.
   int video_bandwidth;
   int data_bandwidth;
+  TransportOptions transport_options;
 
   struct Stream {
     Stream(MediaType type,
-           const std::string& name,
-           const std::string& sync_label)
-        : type(type), name(name), sync_label(sync_label) {
+           const std::string& id,
+           const std::string& sync_label,
+           int num_sim_layers)
+        : type(type), id(id), sync_label(sync_label),
+          num_sim_layers(num_sim_layers) {
     }
     MediaType type;
-    std::string name;
+    std::string id;
     std::string sync_label;
+    int num_sim_layers;
   };
 
   typedef std::vector<Stream> Streams;
@@ -122,16 +158,23 @@ class MediaContentDescription : public ContentDescription {
   MediaContentDescription()
       : rtcp_mux_(false),
         bandwidth_(kAutoBandwidth),
-        crypto_required_(false),
+        crypto_required_(CT_NONE),
         rtp_header_extensions_set_(false),
         multistream_(false),
         conference_mode_(false),
         partial_(false),
+        buffered_mode_latency_(kBufferedModeDisabled),
         direction_(MD_SENDRECV) {
   }
 
   virtual MediaType type() const = 0;
   virtual bool has_codecs() const = 0;
+
+  // |protocol| is the expected media transport protocol, such as RTP/AVPF,
+  // RTP/SAVPF or SCTP/DTLS.
+  std::string protocol() const { return protocol_; }
+  void set_protocol(const std::string& protocol) { protocol_ = protocol; }
+
   MediaContentDirection direction() const { return direction_; }
   void set_direction(MediaContentDirection direction) {
     direction_ = direction;
@@ -150,13 +193,18 @@ class MediaContentDescription : public ContentDescription {
   void set_cryptos(const std::vector<CryptoParams>& cryptos) {
     cryptos_ = cryptos;
   }
-  bool crypto_required() const { return crypto_required_; }
-  void set_crypto_required(bool crypto) {
-    crypto_required_ = crypto;
+
+  CryptoType crypto_required() const { return crypto_required_; }
+  void set_crypto_required(CryptoType type) {
+    crypto_required_ = type;
   }
 
-  const std::vector<RtpHeaderExtension>& rtp_header_extensions() const {
+  const RtpHeaderExtensions& rtp_header_extensions() const {
     return rtp_header_extensions_;
+  }
+  void set_rtp_header_extensions(const RtpHeaderExtensions& extensions) {
+    rtp_header_extensions_ = extensions;
+    rtp_header_extensions_set_ = true;
   }
   void AddRtpHeaderExtension(const RtpHeaderExtension& ext) {
     rtp_header_extensions_.push_back(ext);
@@ -225,17 +273,24 @@ class MediaContentDescription : public ContentDescription {
   void set_partial(bool partial) { partial_ = partial; }
   bool partial() const { return partial_;  }
 
+  void set_buffered_mode_latency(int latency) {
+    buffered_mode_latency_ = latency;
+  }
+  int buffered_mode_latency() const { return buffered_mode_latency_; }
+
  protected:
   bool rtcp_mux_;
   int bandwidth_;
+  std::string protocol_;
   std::vector<CryptoParams> cryptos_;
-  bool crypto_required_;
+  CryptoType crypto_required_;
   std::vector<RtpHeaderExtension> rtp_header_extensions_;
   bool rtp_header_extensions_set_;
   bool multistream_;
   StreamParamsVec streams_;
   bool conference_mode_;
   bool partial_;
+  int buffered_mode_latency_;
   MediaContentDirection direction_;
 };
 
@@ -249,8 +304,29 @@ class MediaContentDescriptionImpl : public MediaContentDescription {
   const std::vector<C>& codecs() const { return codecs_; }
   void set_codecs(const std::vector<C>& codecs) { codecs_ = codecs; }
   virtual bool has_codecs() const { return !codecs_.empty(); }
+  bool HasCodec(int id) {
+    bool found = false;
+    for (typename std::vector<C>::iterator iter = codecs_.begin();
+         iter != codecs_.end(); ++iter) {
+      if (iter->id == id) {
+        found = true;
+        break;
+      }
+    }
+    return found;
+  }
   void AddCodec(const C& codec) {
     codecs_.push_back(codec);
+  }
+  void AddOrReplaceCodec(const C& codec) {
+    for (typename std::vector<C>::iterator iter = codecs_.begin();
+         iter != codecs_.end(); ++iter) {
+      if (iter->id == codec.id) {
+        *iter = codec;
+        return;
+      }
+    }
+    AddCodec(codec);
   }
   void AddCodecs(const std::vector<C>& codecs) {
     typename std::vector<C>::const_iterator codec;
@@ -325,8 +401,20 @@ class MediaSessionDescriptionFactory {
 
   const AudioCodecs& audio_codecs() const { return audio_codecs_; }
   void set_audio_codecs(const AudioCodecs& codecs) { audio_codecs_ = codecs; }
+  void set_audio_rtp_header_extensions(const RtpHeaderExtensions& extensions) {
+    audio_rtp_extensions_ = extensions;
+  }
+  const RtpHeaderExtensions& audio_rtp_header_extensions() const {
+    return audio_rtp_extensions_;
+  }
   const VideoCodecs& video_codecs() const { return video_codecs_; }
   void set_video_codecs(const VideoCodecs& codecs) { video_codecs_ = codecs; }
+  void set_video_rtp_header_extensions(const RtpHeaderExtensions& extensions) {
+    video_rtp_extensions_ = extensions;
+  }
+  const RtpHeaderExtensions& video_rtp_header_extensions() const {
+    return video_rtp_extensions_;
+  }
   const DataCodecs& data_codecs() const { return data_codecs_; }
   void set_data_codecs(const DataCodecs& codecs) { data_codecs_ = codecs; }
   SecurePolicy secure() const { return secure_; }
@@ -346,18 +434,34 @@ class MediaSessionDescriptionFactory {
         const SessionDescription* current_description) const;
 
  private:
+  void GetCodecsToOffer(const SessionDescription* current_description,
+                        AudioCodecs* audio_codecs,
+                        VideoCodecs* video_codecs,
+                        DataCodecs* data_codecs) const;
+  void GetRtpHdrExtsToOffer(const SessionDescription* current_description,
+                            RtpHeaderExtensions* audio_extensions,
+                            RtpHeaderExtensions* video_extensions) const;
   bool AddTransportOffer(
       const std::string& content_name,
+      const TransportOptions& transport_options,
       const SessionDescription* current_desc,
       SessionDescription* offer) const;
+
+  TransportDescription* CreateTransportAnswer(
+      const std::string& content_name,
+      const SessionDescription* offer_desc,
+      const TransportOptions& transport_options,
+      const SessionDescription* current_desc) const;
+
   bool AddTransportAnswer(
       const std::string& content_name,
-      const SessionDescription* offer,
-      const SessionDescription* current_desc,
-      SessionDescription* answer) const;
+      const TransportDescription& transport_desc,
+      SessionDescription* answer_desc) const;
 
   AudioCodecs audio_codecs_;
+  RtpHeaderExtensions audio_rtp_extensions_;
   VideoCodecs video_codecs_;
+  RtpHeaderExtensions video_rtp_extensions_;
   DataCodecs data_codecs_;
   SecurePolicy secure_;
   bool add_legacy_;
@@ -385,9 +489,9 @@ const DataContentDescription* GetFirstDataContentDescription(
 bool GetStreamBySsrc(
     const SessionDescription* sdesc, MediaType media_type,
     uint32 ssrc, StreamParams* stream_out);
-bool GetStreamByNickAndName(
+bool GetStreamByIds(
     const SessionDescription* sdesc, MediaType media_type,
-    const std::string& nick, const std::string& name,
+    const std::string& groupid, const std::string& id,
     StreamParams* stream_out);
 
 // Functions for translating media candidate names.

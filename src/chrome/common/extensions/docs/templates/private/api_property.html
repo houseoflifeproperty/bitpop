@@ -1,28 +1,28 @@
-<div>
-  <h3 id="{{id}}">{{name}}</h3>
-  <div class="summary">
-    <span>chrome.{{api.name}}.{{name}}</span>
-  </div>
-  <div>
-    <dt><span class="property">{{name}}</span> {{+partials.type_name}}</dt>
-    {{?description}}<dd>
+{{#property}}
+<tr>
+  <td>{{+partials.type_name link:link type:property/}}</td>
+  <td><code id="{{id}}">{{api.namespace}}.{{name}}</code></td>
+  <td>
+    {{?deprecated +partials.warning_deprecated item:property /}}
+    {{?description}}
       {{{description}}}
-    </dd>{{/description}}
+    {{/description}}
     {{?properties}}
-    <h4 id="{{property.name}}-properties">
-      Properties of <a href="#property-{{property.name}}">{{property.name}}</a>
-    </h4>
-    <dd><dl>{{#properties}}
-      {{+partials.parameter_full}}
-    {{/}}</dl></dd>
+    <table class="innerTable">
+    <thead><th colspan="3">Properties</th></thead>
+    {{#p:properties}}
+      {{+partials.parameter_full parameter:p parentName:false/}}
+    {{/properties}}
+    </table>
     {{/properties}}
     {{?functions}}
-    <h4 id="{{property.name}}-functions">
-      Methods of <a href="#property-{{property.name}}">{{property.name}}</a>
-    </h4>
-    <dd><dl>{{#functions}}
-      {{+partials.function}}
-    {{/}}</dl></dd>
+    <table class="innerTable">
+    <thead><th colspan="3">Functions</th></thead>
+    {{#f:functions}}
+      {{+partials.function function:f parentName:false/}}
     {{/functions}}
-  </div>
-</div>
+    </table>
+    {{/functions}}
+  </td>
+</tr>
+{{/property}}

@@ -4,8 +4,10 @@
 
 #include "ui/views/window/non_client_view.h"
 
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/hit_test.h"
+#include "ui/gfx/rect_conversions.h"
+#include "ui/views/rect_based_targeting_utils.h"
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/client_view.h"
@@ -13,8 +15,6 @@
 namespace views {
 
 // static
-const int NonClientFrameView::kFrameShadowThickness = 1;
-const int NonClientFrameView::kClientEdgeThickness = 1;
 const char NonClientFrameView::kViewClassName[] =
     "ui/views/window/NonClientFrameView";
 
@@ -27,12 +27,14 @@ const char NonClientView::kViewClassName[] =
 // handling mouse messages.
 static const int kFrameViewIndex = 0;
 static const int kClientViewIndex = 1;
+// The overlay view is always on top (index == child_count() - 1).
 
 ////////////////////////////////////////////////////////////////////////////////
 // NonClientView, public:
 
 NonClientView::NonClientView()
-    : client_view_(NULL) {
+    : client_view_(NULL),
+      overlay_view_(NULL) {
 }
 
 NonClientView::~NonClientView() {
@@ -51,6 +53,18 @@ void NonClientView::SetFrameView(NonClientFrameView* frame_view) {
     AddChildViewAt(frame_view_.get(), kFrameViewIndex);
 }
 
+void NonClientView::SetOverlayView(View* view) {
+  if (overlay_view_)
+    RemoveChildView(overlay_view_);
+
+  if (!view)
+    return;
+
+  overlay_view_ = view;
+  if (parent())
+    AddChildView(overlay_view_);
+}
+
 bool NonClientView::CanClose() {
   return client_view_->CanClose();
 }
@@ -59,14 +73,12 @@ void NonClientView::WindowClosing() {
   client_view_->WidgetClosing();
 }
 
-void NonClientView::UpdateFrame(bool layout) {
+void NonClientView::UpdateFrame() {
   Widget* widget = GetWidget();
   SetFrameView(widget->CreateNonClientFrameView());
   widget->ThemeChanged();
-  if (layout) {
-    Layout();
-    SchedulePaint();
-  }
+  Layout();
+  SchedulePaint();
 }
 
 void NonClientView::SetInactiveRenderingDisabled(bool disable) {
@@ -115,7 +127,7 @@ void NonClientView::LayoutFrameView() {
   frame_view_->Layout();
 }
 
-void NonClientView::SetAccessibleName(const string16& name) {
+void NonClientView::SetAccessibleName(const base::string16& name) {
   accessible_name_ = name;
 }
 
@@ -147,32 +159,40 @@ void NonClientView::Layout() {
   // We need to manually call Layout on the ClientView as well for the same
   // reason as above.
   client_view_->Layout();
+
+  if (overlay_view_ && overlay_view_->visible())
+    overlay_view_->SetBoundsRect(GetLocalBounds());
 }
 
-void NonClientView::ViewHierarchyChanged(bool is_add, View* parent,
-                                         View* child) {
+void NonClientView::ViewHierarchyChanged(
+    const ViewHierarchyChangedDetails& details) {
   // Add our two child views here as we are added to the Widget so that if we
   // are subsequently resized all the parent-child relationships are
   // established.
-  if (is_add && GetWidget() && child == this) {
+  if (details.is_add && GetWidget() && details.child == this) {
     AddChildViewAt(frame_view_.get(), kFrameViewIndex);
     AddChildViewAt(client_view_, kClientViewIndex);
+    if (overlay_view_)
+      AddChildView(overlay_view_);
   }
 }
 
-void NonClientView::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_WINDOW;
+void NonClientView::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_CLIENT;
   state->name = accessible_name_;
 }
 
-std::string NonClientView::GetClassName() const {
+const char* NonClientView::GetClassName() const {
   return kViewClassName;
 }
 
-views::View* NonClientView::GetEventHandlerForPoint(const gfx::Point& point) {
+View* NonClientView::GetEventHandlerForRect(const gfx::Rect& rect) {
+  if (!UsePointBasedTargeting(rect))
+    return View::GetEventHandlerForRect(rect);
+
   // Because of the z-ordering of our child views (the client view is positioned
   // over the non-client frame view, if the client view ever overlaps the frame
-  // view visually (as it does for the browser window), then it will eat mouse
+  // view visually (as it does for the browser window), then it will eat
   // events for the window controls. We override this method here so that we can
   // detect this condition and re-route the events to the non-client frame view.
   // The assumption is that the frame view's implementation of HitTest will only
@@ -181,24 +201,54 @@ views::View* NonClientView::GetEventHandlerForPoint(const gfx::Point& point) {
     // During the reset of the frame_view_ it's possible to be in this code
     // after it's been removed from the view hierarchy but before it's been
     // removed from the NonClientView.
-    gfx::Point point_in_child_coords(point);
-    View::ConvertPointToTarget(this, frame_view_.get(), &point_in_child_coords);
-    if (frame_view_->HitTestPoint(point_in_child_coords))
-      return frame_view_->GetEventHandlerForPoint(point_in_child_coords);
+    gfx::RectF rect_in_child_coords_f(rect);
+    View::ConvertRectToTarget(this, frame_view_.get(), &rect_in_child_coords_f);
+    gfx::Rect rect_in_child_coords = gfx::ToEnclosingRect(
+        rect_in_child_coords_f);
+    if (frame_view_->HitTestRect(rect_in_child_coords))
+      return frame_view_->GetEventHandlerForRect(rect_in_child_coords);
   }
 
-  return View::GetEventHandlerForPoint(point);
+  return View::GetEventHandlerForRect(rect);
+}
+
+View* NonClientView::GetTooltipHandlerForPoint(const gfx::Point& point) {
+  // The same logic as for |GetEventHandlerForRect()| applies here.
+  if (frame_view_->parent() == this) {
+    // During the reset of the frame_view_ it's possible to be in this code
+    // after it's been removed from the view hierarchy but before it's been
+    // removed from the NonClientView.
+    gfx::Point point_in_child_coords(point);
+    View::ConvertPointToTarget(this, frame_view_.get(), &point_in_child_coords);
+    View* handler =
+        frame_view_->GetTooltipHandlerForPoint(point_in_child_coords);
+    if (handler)
+      return handler;
+  }
+
+  return View::GetTooltipHandlerForPoint(point);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // NonClientFrameView, public:
 
+NonClientFrameView::~NonClientFrameView() {
+}
+
 void NonClientFrameView::SetInactiveRenderingDisabled(bool disable) {
-  if (paint_as_active_ == disable)
+  if (inactive_rendering_disabled_ == disable)
     return;
 
-  paint_as_active_ = disable;
-  ShouldPaintAsActiveChanged();
+  bool should_paint_as_active_old = ShouldPaintAsActive();
+  inactive_rendering_disabled_ = disable;
+
+  // The widget schedules a paint when the activation changes.
+  if (should_paint_as_active_old != ShouldPaintAsActive())
+    SchedulePaint();
+}
+
+bool NonClientFrameView::ShouldPaintAsActive() const {
+  return inactive_rendering_disabled_ || GetWidget()->IsActive();
 }
 
 int NonClientFrameView::GetHTComponentForFrame(const gfx::Point& point,
@@ -262,25 +312,20 @@ bool NonClientFrameView::HitTestRect(const gfx::Rect& rect) const {
 ////////////////////////////////////////////////////////////////////////////////
 // NonClientFrameView, protected:
 
-bool NonClientFrameView::ShouldPaintAsActive() const {
-  return GetWidget()->IsActive() || paint_as_active_;
+void NonClientFrameView::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_CLIENT;
 }
 
-void NonClientFrameView::ShouldPaintAsActiveChanged() {
-  SchedulePaint();
-}
-
-void NonClientFrameView::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_WINDOW;
-}
-
-std::string NonClientFrameView::GetClassName() const {
+const char* NonClientFrameView::GetClassName() const {
   return kViewClassName;
 }
 
 void NonClientFrameView::OnBoundsChanged(const gfx::Rect& previous_bounds) {
   // Overridden to do nothing. The NonClientView manually calls Layout on the
   // FrameView when it is itself laid out, see comment in NonClientView::Layout.
+}
+
+NonClientFrameView::NonClientFrameView() : inactive_rendering_disabled_(false) {
 }
 
 }  // namespace views

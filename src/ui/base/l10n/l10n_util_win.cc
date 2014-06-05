@@ -10,19 +10,27 @@
 
 #include "base/i18n/rtl.h"
 #include "base/lazy_instance.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/i18n.h"
 #include "base/win/windows_version.h"
 #include "grit/app_locale_settings.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/gfx/display.h"
+#include "ui/gfx/win/dpi.h"
 
 namespace {
 
-void AdjustLogFont(const std::wstring& font_family,
+void AdjustLogFont(const base::string16& font_family,
                    double font_size_scaler,
+                   double dpi_scale,
                    LOGFONT* logfont) {
   DCHECK(font_size_scaler > 0);
   font_size_scaler = std::max(std::min(font_size_scaler, 2.0), 0.7);
+  // Font metrics are computed in pixels and scale in high-DPI mode.
+  // Normalized by the DPI scale factor in order to work in DIP with
+  // Views/Aura. Call with dpi_scale=1 to keep the size in pixels.
+  font_size_scaler /= dpi_scale;
   logfont->lfHeight = static_cast<long>(font_size_scaler *
       static_cast<double>(abs(logfont->lfHeight)) + 0.5) *
       (logfont->lfHeight > 0 ? 1 : -1);
@@ -106,7 +114,7 @@ bool IsLocaleSupportedByOS(const std::string& locale) {
       !LowerCaseEqualsASCII(locale, "am") || IsFontPresent(L"Abyssinica SIL"));
 }
 
-bool NeedOverrideDefaultUIFont(std::wstring* override_font_family,
+bool NeedOverrideDefaultUIFont(base::string16* override_font_family,
                                double* font_size_scaler) {
   // This is rather simple-minded to deal with the UI font size
   // issue for some Indian locales (ml, bn, hi) for which
@@ -123,7 +131,7 @@ bool NeedOverrideDefaultUIFont(std::wstring* override_font_family,
     ui_font_size_scaler_id = IDS_UI_FONT_SIZE_SCALER_XP;
   }
 
-  std::wstring ui_font_family = GetStringUTF16(ui_font_family_id);
+  base::string16 ui_font_family = GetStringUTF16(ui_font_family_id);
   int scaler100;
   if (!base::StringToInt(l10n_util::GetStringUTF16(ui_font_size_scaler_id),
                          &scaler100))
@@ -145,19 +153,31 @@ bool NeedOverrideDefaultUIFont(std::wstring* override_font_family,
 }
 
 void AdjustUIFont(LOGFONT* logfont) {
-  std::wstring ui_font_family;
-  double ui_font_size_scaler;
-  if (NeedOverrideDefaultUIFont(&ui_font_family, &ui_font_size_scaler))
-    AdjustLogFont(ui_font_family, ui_font_size_scaler, logfont);
+  double dpi_scale = gfx::GetDPIScale();
+  if (gfx::Display::HasForceDeviceScaleFactor()) {
+    // If the scale is forced, we don't need to adjust it here.
+    dpi_scale = 1.0;
+  }
+  AdjustUIFontForDIP(dpi_scale, logfont);
+}
+
+void AdjustUIFontForDIP(float dpi_scale, LOGFONT* logfont) {
+  base::string16 ui_font_family = L"default";
+  double ui_font_size_scaler = 1;
+  if (NeedOverrideDefaultUIFont(&ui_font_family, &ui_font_size_scaler) ||
+      dpi_scale != 1) {
+    AdjustLogFont(ui_font_family, ui_font_size_scaler, dpi_scale, logfont);
+  }
 }
 
 void AdjustUIFontForWindow(HWND hwnd) {
-  std::wstring ui_font_family;
+  base::string16 ui_font_family;
   double ui_font_size_scaler;
   if (NeedOverrideDefaultUIFont(&ui_font_family, &ui_font_size_scaler)) {
     LOGFONT logfont;
     if (GetObject(GetWindowFont(hwnd), sizeof(logfont), &logfont)) {
-      AdjustLogFont(ui_font_family, ui_font_size_scaler, &logfont);
+      double dpi_scale = 1;
+      AdjustLogFont(ui_font_family, ui_font_size_scaler, dpi_scale, &logfont);
       HFONT hfont = CreateFontIndirect(&logfont);
       if (hfont)
         SetWindowFont(hwnd, hfont, FALSE);
@@ -166,12 +186,12 @@ void AdjustUIFontForWindow(HWND hwnd) {
 }
 
 void OverrideLocaleWithUILanguageList() {
-  std::vector<std::wstring> ui_languages;
+  std::vector<base::string16> ui_languages;
   if (base::win::i18n::GetThreadPreferredUILanguageList(&ui_languages)) {
     std::vector<std::string> ascii_languages;
     ascii_languages.reserve(ui_languages.size());
     std::transform(ui_languages.begin(), ui_languages.end(),
-                   std::back_inserter(ascii_languages), &WideToASCII);
+                   std::back_inserter(ascii_languages), &base::UTF16ToASCII);
     override_locale_holder.Get().swap_value(&ascii_languages);
   } else {
     NOTREACHED() << "Failed to determine the UI language for locale override.";

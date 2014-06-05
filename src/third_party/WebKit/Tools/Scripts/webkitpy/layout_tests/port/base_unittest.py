@@ -30,7 +30,7 @@ import logging
 import optparse
 import sys
 import tempfile
-import unittest
+import webkitpy.thirdparty.unittest2 as unittest
 
 from webkitpy.common.system.executive import Executive, ScriptError
 from webkitpy.common.system import executive_mock
@@ -43,6 +43,7 @@ from webkitpy.common.system.executive_mock import MockExecutive, MockExecutive2
 from webkitpy.common.system.systemhost_mock import MockSystemHost
 
 from webkitpy.layout_tests.port import Port, Driver, DriverOutput
+from webkitpy.layout_tests.port.base import VirtualTestSuite
 from webkitpy.layout_tests.port.test import add_unit_tests_to_mock_filesystem, TestPort
 
 class PortTest(unittest.TestCase):
@@ -57,7 +58,7 @@ class PortTest(unittest.TestCase):
 
     def test_default_child_processes(self):
         port = self.make_port()
-        self.assertNotEquals(port.default_child_processes(), None)
+        self.assertIsNotNone(port.default_child_processes())
 
     def test_format_wdiff_output_as_html(self):
         output = "OUTPUT %s %s %s" % (Port._WDIFF_DEL, Port._WDIFF_ADD, Port._WDIFF_END)
@@ -109,50 +110,6 @@ class PortTest(unittest.TestCase):
         self.assertEqual(port.pretty_patch_text("patch.txt"),
                          port._pretty_patch_error_html)
 
-    def integration_test_run_wdiff(self):
-        executive = Executive()
-        # This may fail on some systems.  We could ask the port
-        # object for the wdiff path, but since we don't know what
-        # port object to use, this is sufficient for now.
-        try:
-            wdiff_path = executive.run_command(["which", "wdiff"]).rstrip()
-        except Exception, e:
-            wdiff_path = None
-
-        port = self.make_port(executive=executive)
-        port._path_to_wdiff = lambda: wdiff_path
-
-        if wdiff_path:
-            # "with tempfile.NamedTemporaryFile() as actual" does not seem to work in Python 2.5
-            actual = self._file_with_contents(u"foo")
-            expected = self._file_with_contents(u"bar")
-            wdiff = port._run_wdiff(actual.name, expected.name)
-            expected_wdiff = "<head><style>.del { background: #faa; } .add { background: #afa; }</style></head><pre><span class=del>foo</span><span class=add>bar</span></pre>"
-            self.assertEqual(wdiff, expected_wdiff)
-            # Running the full wdiff_text method should give the same result.
-            port._wdiff_available = True  # In case it's somehow already disabled.
-            wdiff = port.wdiff_text(actual.name, expected.name)
-            self.assertEqual(wdiff, expected_wdiff)
-            # wdiff should still be available after running wdiff_text with a valid diff.
-            self.assertTrue(port._wdiff_available)
-            actual.close()
-            expected.close()
-
-            # Bogus paths should raise a script error.
-            self.assertRaises(ScriptError, port._run_wdiff, "/does/not/exist", "/does/not/exist2")
-            self.assertRaises(ScriptError, port.wdiff_text, "/does/not/exist", "/does/not/exist2")
-            # wdiff will still be available after running wdiff_text with invalid paths.
-            self.assertTrue(port._wdiff_available)
-
-        # If wdiff does not exist _run_wdiff should throw an OSError.
-        port._path_to_wdiff = lambda: "/invalid/path/to/wdiff"
-        self.assertRaises(OSError, port._run_wdiff, "foo", "bar")
-
-        # wdiff_text should not throw an error if wdiff does not exist.
-        self.assertEqual(port.wdiff_text("foo", "bar"), "")
-        # However wdiff should not be available after running wdiff_text if wdiff is missing.
-        self.assertFalse(port._wdiff_available)
-
     def test_wdiff_text(self):
         port = self.make_port()
         port.wdiff_available = lambda: True
@@ -180,11 +137,11 @@ class PortTest(unittest.TestCase):
 
         # And make sure we actually get diff output.
         diff = port.diff_text('foo', 'bar', 'exp.txt', 'act.txt')
-        self.assertTrue('foo' in diff)
-        self.assertTrue('bar' in diff)
-        self.assertTrue('exp.txt' in diff)
-        self.assertTrue('act.txt' in diff)
-        self.assertFalse('nosuchthing' in diff)
+        self.assertIn('foo', diff)
+        self.assertIn('bar', diff)
+        self.assertIn('exp.txt', diff)
+        self.assertIn('act.txt', diff)
+        self.assertNotIn('nosuchthing', diff)
 
     def test_setup_test_run(self):
         port = self.make_port()
@@ -196,8 +153,8 @@ class PortTest(unittest.TestCase):
         port.host.filesystem.write_text_file(port.layout_tests_dir() + '/canvas/test', '')
         port.host.filesystem.write_text_file(port.layout_tests_dir() + '/css2.1/test', '')
         dirs = port.test_dirs()
-        self.assertTrue('canvas' in dirs)
-        self.assertTrue('css2.1' in dirs)
+        self.assertIn('canvas', dirs)
+        self.assertIn('css2.1', dirs)
 
     def test_skipped_perf_tests(self):
         port = self.make_port()
@@ -223,7 +180,7 @@ class PortTest(unittest.TestCase):
 
     def test_get_option__unset(self):
         port = self.make_port()
-        self.assertEqual(port.get_option('foo'), None)
+        self.assertIsNone(port.get_option('foo'))
 
     def test_get_option__default(self):
         port = self.make_port()
@@ -258,14 +215,14 @@ class PortTest(unittest.TestCase):
 
     def test_nonexistant_expectations(self):
         port = self.make_port(port_name='foo')
-        port.expectations_files = lambda: ['/mock-checkout/LayoutTests/platform/exists/TestExpectations', '/mock-checkout/LayoutTests/platform/nonexistant/TestExpectations']
-        port._filesystem.write_text_file('/mock-checkout/LayoutTests/platform/exists/TestExpectations', '')
-        self.assertEqual('\n'.join(port.expectations_dict().keys()), '/mock-checkout/LayoutTests/platform/exists/TestExpectations')
+        port.expectations_files = lambda: ['/mock-checkout/third_party/WebKit/LayoutTests/platform/exists/TestExpectations', '/mock-checkout/third_party/WebKit/LayoutTests/platform/nonexistant/TestExpectations']
+        port._filesystem.write_text_file('/mock-checkout/third_party/WebKit/LayoutTests/platform/exists/TestExpectations', '')
+        self.assertEqual('\n'.join(port.expectations_dict().keys()), '/mock-checkout/third_party/WebKit/LayoutTests/platform/exists/TestExpectations')
 
     def test_additional_expectations(self):
         port = self.make_port(port_name='foo')
         port.port_name = 'foo'
-        port._filesystem.write_text_file('/mock-checkout/LayoutTests/platform/foo/TestExpectations', '')
+        port._filesystem.write_text_file('/mock-checkout/third_party/WebKit/LayoutTests/platform/foo/TestExpectations', '')
         port._filesystem.write_text_file(
             '/tmp/additional-expectations-1.txt', 'content1\n')
         port._filesystem.write_text_file(
@@ -275,15 +232,15 @@ class PortTest(unittest.TestCase):
 
         port._options.additional_expectations = [
             '/tmp/additional-expectations-1.txt']
-        self.assertEqual('\n'.join(port.expectations_dict().values()), '\ncontent1\n')
+        self.assertEqual('\n'.join(port.expectations_dict().values()), 'content1\n')
 
         port._options.additional_expectations = [
             '/tmp/nonexistent-file', '/tmp/additional-expectations-1.txt']
-        self.assertEqual('\n'.join(port.expectations_dict().values()), '\ncontent1\n')
+        self.assertEqual('\n'.join(port.expectations_dict().values()), 'content1\n')
 
         port._options.additional_expectations = [
             '/tmp/additional-expectations-1.txt', '/tmp/additional-expectations-2.txt']
-        self.assertEqual('\n'.join(port.expectations_dict().values()), '\ncontent1\n\ncontent2\n')
+        self.assertEqual('\n'.join(port.expectations_dict().values()), 'content1\n\ncontent2\n')
 
     def test_additional_env_var(self):
         port = self.make_port(options=optparse.Values({'additional_env_var': ['FOO=BAR', 'BAR=FOO']}))
@@ -292,14 +249,6 @@ class PortTest(unittest.TestCase):
         self.assertTrue(('FOO' in environment) & ('BAR' in environment))
         self.assertEqual(environment['FOO'], 'BAR')
         self.assertEqual(environment['BAR'], 'FOO')
-
-    def test_uses_test_expectations_file(self):
-        port = self.make_port(port_name='foo')
-        port.port_name = 'foo'
-        port.path_to_test_expectations_file = lambda: '/mock-results/TestExpectations'
-        self.assertFalse(port.uses_test_expectations_file())
-        port._filesystem = MockFileSystem({'/mock-results/TestExpectations': ''})
-        self.assertTrue(port.uses_test_expectations_file())
 
     def test_find_no_paths_specified(self):
         port = self.make_port(with_tests=True)
@@ -320,7 +269,7 @@ class PortTest(unittest.TestCase):
     def test_find_with_skipped_directories(self):
         port = self.make_port(with_tests=True)
         tests = port.tests(['userscripts'])
-        self.assertTrue('userscripts/resources/iframe.html' not in tests)
+        self.assertNotIn('userscripts/resources/iframe.html', tests)
 
     def test_find_with_skipped_directories_2(self):
         port = self.make_port(with_tests=True)
@@ -329,23 +278,22 @@ class PortTest(unittest.TestCase):
 
     def test_is_test_file(self):
         filesystem = MockFileSystem()
-        self.assertTrue(Port._is_test_file(filesystem, '', 'foo.html'))
-        self.assertTrue(Port._is_test_file(filesystem, '', 'foo.shtml'))
-        self.assertTrue(Port._is_test_file(filesystem, '', 'foo.svg'))
-        self.assertTrue(Port._is_test_file(filesystem, '', 'test-ref-test.html'))
-        self.assertFalse(Port._is_test_file(filesystem, '', 'foo.png'))
-        self.assertFalse(Port._is_test_file(filesystem, '', 'foo-expected.html'))
-        self.assertFalse(Port._is_test_file(filesystem, '', 'foo-expected.svg'))
-        self.assertFalse(Port._is_test_file(filesystem, '', 'foo-expected.xht'))
-        self.assertFalse(Port._is_test_file(filesystem, '', 'foo-expected-mismatch.html'))
-        self.assertFalse(Port._is_test_file(filesystem, '', 'foo-expected-mismatch.svg'))
-        self.assertFalse(Port._is_test_file(filesystem, '', 'foo-expected-mismatch.xhtml'))
-        self.assertFalse(Port._is_test_file(filesystem, '', 'foo-ref.html'))
-        self.assertFalse(Port._is_test_file(filesystem, '', 'foo-notref.html'))
-        self.assertFalse(Port._is_test_file(filesystem, '', 'foo-notref.xht'))
-        self.assertFalse(Port._is_test_file(filesystem, '', 'foo-ref.xhtml'))
-        self.assertFalse(Port._is_test_file(filesystem, '', 'ref-foo.html'))
-        self.assertFalse(Port._is_test_file(filesystem, '', 'notref-foo.xhr'))
+        self.assertTrue(Port.is_test_file(filesystem, '', 'foo.html'))
+        self.assertTrue(Port.is_test_file(filesystem, '', 'foo.svg'))
+        self.assertTrue(Port.is_test_file(filesystem, '', 'test-ref-test.html'))
+        self.assertFalse(Port.is_test_file(filesystem, '', 'foo.png'))
+        self.assertFalse(Port.is_test_file(filesystem, '', 'foo-expected.html'))
+        self.assertFalse(Port.is_test_file(filesystem, '', 'foo-expected.svg'))
+        self.assertFalse(Port.is_test_file(filesystem, '', 'foo-expected.xht'))
+        self.assertFalse(Port.is_test_file(filesystem, '', 'foo-expected-mismatch.html'))
+        self.assertFalse(Port.is_test_file(filesystem, '', 'foo-expected-mismatch.svg'))
+        self.assertFalse(Port.is_test_file(filesystem, '', 'foo-expected-mismatch.xhtml'))
+        self.assertFalse(Port.is_test_file(filesystem, '', 'foo-ref.html'))
+        self.assertFalse(Port.is_test_file(filesystem, '', 'foo-notref.html'))
+        self.assertFalse(Port.is_test_file(filesystem, '', 'foo-notref.xht'))
+        self.assertFalse(Port.is_test_file(filesystem, '', 'foo-ref.xhtml'))
+        self.assertFalse(Port.is_test_file(filesystem, '', 'ref-foo.html'))
+        self.assertFalse(Port.is_test_file(filesystem, '', 'notref-foo.xhr'))
 
     def test_parse_reftest_list(self):
         port = self.make_port(with_tests=True)
@@ -355,7 +303,10 @@ class PortTest(unittest.TestCase):
         "!= test-2.html test-notref.html # more comments",
         "== test-3.html test-ref.html",
         "== test-3.html test-ref2.html",
-        "!= test-3.html test-notref.html"])
+        "!= test-3.html test-notref.html",
+        "fuzzy(80,500) == test-3 test-ref.html"])
+
+        # Note that we don't support the syntax in the last line; the code should ignore it, rather than crashing.
 
         reftest_list = Port._parse_reftest_list(port.host.filesystem, 'bar')
         self.assertEqual(reftest_list, {'bar/test.html': [('==', 'bar/test-ref.html')],
@@ -381,7 +332,7 @@ class PortTest(unittest.TestCase):
 
     def test_check_httpd_success(self):
         port = self.make_port(executive=MockExecutive2())
-        port._path_to_apache = lambda: '/usr/sbin/httpd'
+        port.path_to_apache = lambda: '/usr/sbin/httpd'
         capture = OutputCapture()
         capture.capture_output()
         self.assertTrue(port.check_httpd())
@@ -390,7 +341,7 @@ class PortTest(unittest.TestCase):
 
     def test_httpd_returns_error_code(self):
         port = self.make_port(executive=MockExecutive2(exit_code=1))
-        port._path_to_apache = lambda: '/usr/sbin/httpd'
+        port.path_to_apache = lambda: '/usr/sbin/httpd'
         capture = OutputCapture()
         capture.capture_output()
         self.assertFalse(port.check_httpd())
@@ -432,20 +383,20 @@ class PortTest(unittest.TestCase):
     def test_tests(self):
         port = self.make_port(with_tests=True)
         tests = port.tests([])
-        self.assertTrue('passes/text.html' in tests)
-        self.assertTrue('virtual/passes/text.html' in tests)
+        self.assertIn('passes/text.html', tests)
+        self.assertIn('virtual/passes/text.html', tests)
 
         tests = port.tests(['passes'])
-        self.assertTrue('passes/text.html' in tests)
-        self.assertTrue('passes/passes/test-virtual-passes.html' in tests)
-        self.assertFalse('virtual/passes/text.html' in tests)
+        self.assertIn('passes/text.html', tests)
+        self.assertIn('passes/passes/test-virtual-passes.html', tests)
+        self.assertNotIn('virtual/passes/text.html', tests)
 
         tests = port.tests(['virtual/passes'])
-        self.assertFalse('passes/text.html' in tests)
-        self.assertTrue('virtual/passes/test-virtual-passes.html' in tests)
-        self.assertTrue('virtual/passes/passes/test-virtual-passes.html' in tests)
-        self.assertFalse('virtual/passes/test-virtual-virtual/passes.html' in tests)
-        self.assertFalse('virtual/passes/virtual/passes/test-virtual-passes.html' in tests)
+        self.assertNotIn('passes/text.html', tests)
+        self.assertIn('virtual/passes/test-virtual-passes.html', tests)
+        self.assertIn('virtual/passes/passes/test-virtual-passes.html', tests)
+        self.assertNotIn('virtual/passes/test-virtual-virtual/passes.html', tests)
+        self.assertNotIn('virtual/passes/virtual/passes/test-virtual-passes.html', tests)
 
     def test_build_path(self):
         port = self.make_port(options=optparse.Values({'build_directory': '/my-build-directory/'}))
@@ -497,3 +448,23 @@ class KeyCompareTest(unittest.TestCase):
         self.assert_cmp('/ab', '/a/a/b', -1)
         self.assert_cmp('/a/a/b', '/ab', 1)
         self.assert_cmp('/foo-bar/baz', '/foo/baz', -1)
+
+
+class VirtualTestSuiteTest(unittest.TestCase):
+    def test_basic(self):
+        suite = VirtualTestSuite('suite', 'base/foo', ['--args'])
+        self.assertEqual(suite.name, 'virtual/suite/base/foo')
+        self.assertEqual(suite.base, 'base/foo')
+        self.assertEqual(suite.args, ['--args'])
+
+    def test_no_slash(self):
+        suite = VirtualTestSuite('suite/bar', 'base/foo', ['--args'])
+        self.assertFalse(hasattr(suite, 'name'))
+        self.assertFalse(hasattr(suite, 'base'))
+        self.assertFalse(hasattr(suite, 'args'))
+
+    def test_legacy(self):
+        suite = VirtualTestSuite('suite/bar', 'base/foo', ['--args'], use_legacy_naming=True)
+        self.assertEqual(suite.name, 'virtual/suite/bar')
+        self.assertEqual(suite.base, 'base/foo')
+        self.assertEqual(suite.args, ['--args'])

@@ -6,11 +6,10 @@
 
 #include "chrome/browser/history/android/visit_sql_handler.h"
 
-#include "base/file_path.h"
-#include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/history/android/urls_sql_handler.h"
 #include "chrome/browser/history/history_database.h"
 #include "chrome/common/chrome_constants.h"
@@ -27,16 +26,15 @@ class VisitSQLHandlerTest : public testing::Test {
       : urls_sql_handler_(&history_db_),
         visit_sql_handler_(&history_db_) {
   }
-  ~VisitSQLHandlerTest() {
-  }
+  virtual ~VisitSQLHandlerTest() {}
 
  protected:
   virtual void SetUp() {
     // Get a temporary directory for the test DB files.
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-    FilePath history_db_name = temp_dir_.path().AppendASCII(
+    base::FilePath history_db_name = temp_dir_.path().AppendASCII(
         chrome::kHistoryFilename);
-    ASSERT_EQ(sql::INIT_OK, history_db_.Init(history_db_name, NULL));
+    ASSERT_EQ(sql::INIT_OK, history_db_.Init(history_db_name));
   }
 
   virtual void TearDown() {
@@ -94,7 +92,7 @@ TEST_F(VisitSQLHandlerTest, InsertURLWithCreatedTime) {
   HistoryAndBookmarkRow row;
   row.set_raw_url("http://google.com");
   row.set_url(GURL("http://google.com"));
-  row.set_title(UTF8ToUTF16("Google"));
+  row.set_title(base::UTF8ToUTF16("Google"));
   row.set_created(Time::Now());
 
   ASSERT_TRUE(urls_sql_handler_.Insert(&row));
@@ -159,7 +157,7 @@ TEST_F(VisitSQLHandlerTest, UpdateVisitTimeAndVisitCount) {
   HistoryAndBookmarkRow row;
   row.set_raw_url("http://google.com");
   row.set_url(GURL("http://google.com"));
-  row.set_title(UTF8ToUTF16("Google"));
+  row.set_title(base::UTF8ToUTF16("Google"));
   row.set_visit_count(10);
   row.set_last_visit_time(Time::Now() - TimeDelta::FromDays(10));
 

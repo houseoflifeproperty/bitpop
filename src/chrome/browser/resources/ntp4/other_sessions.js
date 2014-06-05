@@ -32,7 +32,7 @@ cr.define('ntp', function() {
 
   /**
    * Record an event in the UMA histogram.
-   * @param {Number} eventId The id of the event to be recorded.
+   * @param {number} eventId The id of the event to be recorded.
    * @private
    */
   function recordUmaEvent_(eventId) {
@@ -47,6 +47,7 @@ cr.define('ntp', function() {
       MenuButton.prototype.decorate.call(this);
       this.menu = new Menu;
       cr.ui.decorate(this.menu, Menu);
+      this.menu.menuItemSelector = '[role=menuitem]';
       this.menu.classList.add('footer-menu');
       this.menu.addEventListener('contextmenu',
                                  this.onContextMenu_.bind(this), true);
@@ -116,11 +117,11 @@ cr.define('ntp', function() {
      * button.
      * @override
      */
-    showMenu: function() {
+    showMenu: function(shouldSetFocus) {
       if (this.sessions_.length == 0)
         chrome.send('getForeignSessions');
       recordUmaEvent_(HISTOGRAM_EVENT.SHOW_MENU);
-      MenuButton.prototype.showMenu.call(this);
+      MenuButton.prototype.showMenu.apply(this, arguments);
 
       // Work around https://bugs.webkit.org/show_bug.cgi?id=85884.
       this.menu.scrollTop = 0;
@@ -212,12 +213,13 @@ cr.define('ntp', function() {
           a.className = 'footer-menu-item';
           a.textContent = tab.title;
           a.href = tab.url;
-          a.style.backgroundImage = url('chrome://session-favicon/' + tab.url);
+          a.style.backgroundImage = getFaviconImageSet(tab.url);
 
           var clickHandler = this.makeClickHandler_(
               session.tag, String(window.sessionId), String(tab.sessionId));
           a.addEventListener('click', clickHandler);
           contents.appendChild(a);
+          cr.ui.decorate(a, MenuItem);
         }
       }
 
@@ -293,7 +295,7 @@ cr.define('ntp', function() {
 
     /**
      * Appends a menu item to |this.menu|.
-     * @param {String} textId The ID for the localized string that acts as
+     * @param {string} textId The ID for the localized string that acts as
      *     the item's label.
      */
     appendMenuItem_: function(textId) {

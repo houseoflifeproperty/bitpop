@@ -8,10 +8,10 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "sink_filter_ds.h"
+#include "webrtc/modules/video_capture/windows/sink_filter_ds.h"
 
-#include "trace.h"
-#include "help_functions_ds.h"
+#include "webrtc/modules/video_capture/windows/help_functions_ds.h"
+#include "webrtc/system_wrappers/interface/trace.h"
 
 #include <Dvdmedia.h> // VIDEOINFOHEADER2
 #include <initguid.h>
@@ -34,7 +34,7 @@ typedef struct tagTHREADNAME_INFO
    DWORD dwFlags;       // reserved for future use, must be zero
 } THREADNAME_INFO;
 
-CaptureInputPin::CaptureInputPin (WebRtc_Word32 moduleId,
+CaptureInputPin::CaptureInputPin (int32_t moduleId,
                             IN TCHAR * szName,
                             IN CaptureSinkFilter* pFilter,
                             IN CCritSec * pLock,
@@ -86,7 +86,7 @@ CaptureInputPin::GetMediaType (IN int iPosition, OUT CMediaType * pmt)
     pmt->SetFormatType(&FORMAT_VideoInfo);
     pmt->SetTemporalCompression(FALSE);
 
-    WebRtc_Word32 positionOffset=1;
+    int32_t positionOffset=1;
     if(_requestedCapability.codecType!=kVideoCodecUnknown)
     {
         positionOffset=0;
@@ -353,7 +353,7 @@ CaptureInputPin::Receive ( IN IMediaSample * pIMediaSample )
 
     if (SUCCEEDED (hr))
     {
-        const WebRtc_Word32 length = pIMediaSample->GetActualDataLength();
+        const int32_t length = pIMediaSample->GetActualDataLength();
 
         unsigned char* pBuffer = NULL;
         if(S_OK != pIMediaSample->GetPointer(&pBuffer))
@@ -388,7 +388,7 @@ CaptureSinkFilter::CaptureSinkFilter (IN TCHAR * tszName,
                               IN LPUNKNOWN punk,
                               OUT HRESULT * phr,
                               VideoCaptureExternal& captureObserver,
-                              WebRtc_Word32 moduleId)
+                              int32_t moduleId)
     : CBaseFilter(tszName,punk,& m_crtFilter,CLSID_SINKFILTER),
       m_pInput(NULL),
       _captureObserver(captureObserver),
@@ -437,6 +437,7 @@ CaptureSinkFilter::GetPin(IN int Index)
 
 STDMETHODIMP CaptureSinkFilter::Pause()
 {
+    LockReceive();
     LockFilter();
     if (m_State == State_Stopped)
     {
@@ -456,6 +457,7 @@ STDMETHODIMP CaptureSinkFilter::Pause()
         m_State = State_Paused;
     }
     UnlockFilter();
+    UnlockReceive();
     return S_OK;
 }
 
@@ -484,7 +486,7 @@ void CaptureSinkFilter::SetFilterGraph(IGraphBuilder* graph)
 }
 
 void CaptureSinkFilter::ProcessCapturedFrame(unsigned char* pBuffer,
-                                         WebRtc_Word32 length,
+                                         int32_t length,
                                          const VideoCaptureCapability& frameInfo)
 {
     //  we have the receiver lock
@@ -526,5 +528,5 @@ STDMETHODIMP CaptureSinkFilter::GetClassID( OUT CLSID * pCLSID )
     return S_OK;
 }
 
-} // namespace videocapturemodule
-} //namespace webrtc
+}  // namespace videocapturemodule
+}  // namespace webrtc

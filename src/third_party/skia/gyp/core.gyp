@@ -15,10 +15,13 @@
       'include_dirs': [
         '../include/config',
         '../include/core',
+        '../include/pathops',
         '../include/pipe',
         '../include/ports',
+        '../include/utils',
         '../include/xml',
         '../src/core',
+        '../src/opts',
         '../src/image',
       ],
       'sources': [
@@ -26,11 +29,7 @@
       ],
       'msvs_disabled_warnings': [4244, 4267,4345, 4390, 4554, 4800],
       'conditions': [
-        [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris"]', {
-          'cflags': [
-            '-Wno-unused',
-            '-Wno-unused-function',
-          ],
+        [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "chromeos"]', {
           'link_settings': {
             'libraries': [
               '-lpthread',
@@ -40,7 +39,6 @@
         [ 'skia_os == "mac"', {
           'include_dirs': [
             '../include/utils/mac',
-            '../third_party/freetype/include/**',
           ],
           'sources': [
             '../include/utils/mac/SkCGUtils.h',
@@ -76,37 +74,43 @@
           'include_dirs': [
             'config/win',
           ],
-          'sources!': [
-            '../include/core/SkMMapStream.h',
-            '../src/core/SkMMapStream.cpp',
-          ],
         }],
         [ 'skia_os == "android"', {
           'dependencies': [
-             'freetype.gyp:freetype',
+            'android_deps.gyp:cpu_features',
           ],
         }],
-        [ 'skia_os == "android" and skia_arch_type == "arm" and armv7 == 1', {
+        [ 'skia_android_framework', {
+            'libraries': [
+              # Required for SkAtomics_android.h
+              '-lcutils',
+            ],
+        }],
+        [ 'skia_arch_type == "arm"', {
           # The code in SkUtilsArm.cpp can be used on an ARM-based Linux system, not only Android.
           'sources': [
             '../src/core/SkUtilsArm.cpp',
             '../src/core/SkUtilsArm.h',
           ],
         }],
+        ['skia_gpu == 1', {
+          'include_dirs': [
+              '../include/gpu',
+              '../src/gpu',
+          ],
+        }],
       ],
       'direct_dependent_settings': {
         'include_dirs': [
-          'config',
           '../include/config',
           '../include/core',
+          '../include/pathops',
           '../include/pipe',
-          'ext',
         ],
         'conditions': [
           [ 'skia_os == "mac"', {
             'include_dirs': [
               '../include/utils/mac',
-              '../third_party/freetype/include/**',
             ],
           }],
           [ 'skia_os == "ios"', {
@@ -121,15 +125,6 @@
           }],
         ],
       },
-      'dependencies': [
-        'opts.gyp:opts'
-      ],
     },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

@@ -5,12 +5,14 @@
 #include "chrome/browser/chromeos/dbus/cros_dbus_service.h"
 
 #include "base/bind.h"
-#include "base/chromeos/chromeos_version.h"
 #include "base/stl_util.h"
+#include "base/sys_info.h"
 #include "base/threading/platform_thread.h"
+#include "chrome/browser/chromeos/dbus/display_power_service_provider.h"
 #include "chrome/browser/chromeos/dbus/liveness_service_provider.h"
 #include "chrome/browser/chromeos/dbus/printer_service_provider.h"
 #include "chrome/browser/chromeos/dbus/proxy_resolution_service_provider.h"
+#include "chrome/browser/chromeos/dbus/screen_lock_service_provider.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "dbus/bus.h"
 #include "dbus/exported_object.h"
@@ -48,7 +50,16 @@ class CrosDBusServiceImpl : public CrosDBusService {
     if (service_started_)
       return;
 
+    // There are some situations, described in http://crbug.com/234382#c27,
+    // where processes on Linux can wind up stuck in an uninterruptible state
+    // for tens of seconds. If this happens when Chrome is trying to exit,
+    // this unkillable process can wind up clinging to ownership of
+    // kLibCrosServiceName while the system is trying to restart the browser.
+    // This leads to a fatal situation if we don't allow the new browser
+    // instance to replace the old as the owner of kLibCrosServiceName as seen
+    // in http://crbug.com/234382. Hence, REQUIRE_PRIMARY_ALLOW_REPLACEMENT.
     bus_->RequestOwnership(kLibCrosServiceName,
+                           dbus::Bus::REQUIRE_PRIMARY_ALLOW_REPLACEMENT,
                            base::Bind(&CrosDBusServiceImpl::OnOwnership,
                                       base::Unretained(this)));
 
@@ -78,7 +89,7 @@ class CrosDBusServiceImpl : public CrosDBusService {
   // Called when an ownership request is completed.
   void OnOwnership(const std::string& service_name,
                    bool success) {
-    LOG_IF(ERROR, !success) << "Failed to own: " << service_name;
+    LOG_IF(FATAL, !success) << "Failed to own: " << service_name;
   }
 
   bool service_started_;
@@ -108,11 +119,13 @@ void CrosDBusService::Initialize() {
     return;
   }
   dbus::Bus* bus = DBusThreadManager::Get()->GetSystemBus();
-  if (base::chromeos::IsRunningOnChromeOS() && bus) {
+  if (base::SysInfo::IsRunningOnChromeOS() && bus) {
     CrosDBusServiceImpl* service = new CrosDBusServiceImpl(bus);
     service->RegisterServiceProvider(ProxyResolutionServiceProvider::Create());
+    service->RegisterServiceProvider(new DisplayPowerServiceProvider);
     service->RegisterServiceProvider(new LivenessServiceProvider);
     service->RegisterServiceProvider(new PrinterServiceProvider);
+    service->RegisterServiceProvider(new ScreenLockServiceProvider);
     g_cros_dbus_service = service;
     service->Start();
   } else {

@@ -5,6 +5,7 @@
 #ifndef UI_COMPOSITOR_COMPOSITOR_OBSERVER_H_
 #define UI_COMPOSITOR_COMPOSITOR_OBSERVER_H_
 
+#include "base/time/time.h"
 #include "ui/compositor/compositor_export.h"
 
 namespace ui {
@@ -25,7 +26,8 @@ class COMPOSITOR_EXPORT CompositorObserver {
 
   // Called when compositing started: it has taken all the layer changes into
   // account and has issued the graphics commands.
-  virtual void OnCompositingStarted(Compositor* compositor) = 0;
+  virtual void OnCompositingStarted(Compositor* compositor,
+                                    base::TimeTicks start_time) = 0;
 
   // Called when compositing completes: the present to screen has completed.
   virtual void OnCompositingEnded(Compositor* compositor) = 0;

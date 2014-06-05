@@ -8,12 +8,11 @@
 #include "base/json/json_writer.h"
 #include "base/values.h"
 #include "chrome/common/extensions/api/permissions.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/permissions/bluetooth_device_permission.h"
-#include "chrome/common/extensions/permissions/permission_set.h"
-#include "chrome/common/extensions/permissions/permissions_info.h"
-#include "chrome/common/extensions/permissions/usb_device_permission.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/permissions/permission_set.h"
+#include "extensions/common/permissions/permissions_info.h"
+#include "extensions/common/permissions/usb_device_permission.h"
 #include "extensions/common/url_pattern_set.h"
 
 using extensions::APIPermission;
@@ -36,7 +35,7 @@ const char kInvalidOrigin[] =
 const char kUnknownPermissionError[] =
     "'*' is not a recognized permission.";
 const char kUnsupportedPermissionId[] =
-    "Only the bluetoothDevices and usbDevices permissions support arguments.";
+    "Only the usbDevices permission supports arguments.";
 
 }  // namespace
 
@@ -57,6 +56,9 @@ scoped_ptr<Permissions> PackPermissionSet(const PermissionSet* set) {
     }
   }
 
+  // TODO(rpaquay): We currently don't expose manifest permissions
+  // to apps/extensions via the permissions API.
+
   permissions->origins.reset(new std::vector<std::string>());
   URLPatternSet hosts = set->explicit_hosts();
   for (URLPatternSet::const_iterator i = hosts.begin(); i != hosts.end(); ++i)
@@ -66,7 +68,10 @@ scoped_ptr<Permissions> PackPermissionSet(const PermissionSet* set) {
 }
 
 scoped_refptr<PermissionSet> UnpackPermissionSet(
-    const Permissions& permissions, std::string* error) {
+    const Permissions& permissions,
+    bool allow_file_access,
+    std::string* error) {
+  DCHECK(error);
   APIPermissionSet apis;
   std::vector<std::string>* permissions_list = permissions.permissions.get();
   if (permissions_list) {
@@ -93,14 +98,9 @@ scoped_refptr<PermissionSet> UnpackPermissionSet(
 
         // Explicitly check the permissions that accept arguments until the bug
         // referenced above is fixed.
-        const APIPermissionInfo* bluetooth_device_permission_info =
-            info->GetByID(APIPermission::kBluetoothDevice);
         const APIPermissionInfo* usb_device_permission_info =
             info->GetByID(APIPermission::kUsbDevice);
-        if (permission_name == bluetooth_device_permission_info->name()) {
-          permission = new BluetoothDevicePermission(
-              bluetooth_device_permission_info);
-        } else if (permission_name == usb_device_permission_info->name()) {
+        if (permission_name == usb_device_permission_info->name()) {
           permission = new UsbDevicePermission(usb_device_permission_info);
         } else {
           *error = kUnsupportedPermissionId;
@@ -108,7 +108,7 @@ scoped_refptr<PermissionSet> UnpackPermissionSet(
         }
 
         CHECK(permission);
-        if (!permission->FromValue(permission_json.get())) {
+        if (!permission->FromValue(permission_json.get(), NULL, NULL)) {
           *error = ErrorUtils::FormatErrorMessage(kInvalidParameter, *it);
           return NULL;
         }
@@ -125,11 +125,18 @@ scoped_refptr<PermissionSet> UnpackPermissionSet(
     }
   }
 
+  // TODO(rpaquay): We currently don't expose manifest permissions
+  // to apps/extensions via the permissions API.
+  ManifestPermissionSet manifest_permissions;
+
   URLPatternSet origins;
   if (permissions.origins.get()) {
     for (std::vector<std::string>::iterator it = permissions.origins->begin();
         it != permissions.origins->end(); ++it) {
-      URLPattern origin(Extension::kValidHostPermissionSchemes);
+      int allowed_schemes = Extension::kValidHostPermissionSchemes;
+      if (!allow_file_access)
+        allowed_schemes &= ~URLPattern::SCHEME_FILE;
+      URLPattern origin(allowed_schemes);
       URLPattern::ParseResult parse_result = origin.Parse(*it);
       if (URLPattern::PARSE_SUCCESS != parse_result) {
         *error = ErrorUtils::FormatErrorMessage(
@@ -143,8 +150,8 @@ scoped_refptr<PermissionSet> UnpackPermissionSet(
   }
 
   return scoped_refptr<PermissionSet>(
-      new PermissionSet(apis, origins, URLPatternSet()));
+      new PermissionSet(apis, manifest_permissions, origins, URLPatternSet()));
 }
 
-}  // namespace permissions_api
+}  // namespace permissions_api_helpers
 }  // namespace extensions

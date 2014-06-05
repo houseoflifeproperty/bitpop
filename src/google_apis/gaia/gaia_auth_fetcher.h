@@ -12,8 +12,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
 #include "google_apis/gaia/google_service_auth_error.h"
-#include "googleurl/src/gurl.h"
 #include "net/url_request/url_fetcher_delegate.h"
+#include "url/gurl.h"
 
 // Authenticate a user against the Google Accounts ClientLogin API
 // with various capabilities and return results to a GaiaAuthConsumer.
@@ -100,6 +100,21 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   // called on the consumer on the original thread.
   void StartLsoForOAuthLoginTokenExchange(const std::string& auth_token);
 
+  // Start a request to revoke |auth_token|.
+  //
+  // OnOAuth2RevokeTokenCompleted will be called on the consumer on the original
+  // thread.
+  void StartRevokeOAuth2Token(const std::string& auth_token);
+
+  // Start a request to exchange the cookies of a signed-in user session
+  // for an OAuth2 authorization code. In the case of a session with
+  // multiple accounts signed in, |session_index| indicate the which of accounts
+  // within the session.
+  //
+  // Either OnClientOAuthCodeSuccess or OnClientOAuthCodeFailure will be
+  // called on the consumer on the original thread.
+  void StartCookieForOAuthCodeExchange(const std::string& session_index);
+
   // Start a request to exchange the cookies of a signed-in user session
   // for an OAuthLogin-scoped oauth2 token.  In the case of a session with
   // multiple accounts signed in, |session_index| indicate the which of accounts
@@ -108,6 +123,13 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   // Either OnClientOAuthSuccess or OnClientOAuthFailure will be
   // called on the consumer on the original thread.
   void StartCookieForOAuthLoginTokenExchange(const std::string& session_index);
+
+  // Start a request to exchange the authorization code for an OAuthLogin-scoped
+  // oauth2 token.
+  //
+  // Either OnClientOAuthSuccess or OnClientOAuthFailure will be
+  // called on the consumer on the original thread.
+  void StartAuthCodeForOAuth2TokenExchange(const std::string& auth_code);
 
   // Start a request to get user info for the account identified by |lsid|.
   //
@@ -134,38 +156,6 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   // called on the consumer on the original thread.
   void StartTokenFetchForUberAuthExchange(const std::string& access_token);
 
-  // Start a request to obtain an OAuth2 token for the account identified by
-  // |username| and |password|.  |scopes| is a list of oauth scopes that
-  // indicate the access permerssions to assign to the returned token.
-  // |persistent_id| is an optional client identifier used to identify this
-  // particular chrome instances, which may reduce the chance of a challenge.
-  // |locale| will be used to format messages to be presented to the user in
-  // challenges, if needed.
-  //
-  // If the request cannot complete due to a challenge, the
-  // GoogleServiceAuthError will indicate the type of challenge required:
-  // either CAPTCHA_REQUIRED or TWO_FACTOR.
-  //
-  // Either OnClientOAuthSuccess or OnClientOAuthFailure will be
-  // called on the consumer on the original thread.
-  void StartClientOAuth(const std::string& username,
-                        const std::string& password,
-                        const std::vector<std::string>& scopes,
-                        const std::string& persistent_id,
-                        const std::string& locale);
-
-  // Start a challenge response to obtain an OAuth2 token.  This method is
-  // called after a challenge response is issued from a previous call to
-  // StartClientOAuth().  The |type| and |token| arguments come from the
-  // error response to StartClientOAuth(), while the |solution| argument
-  // represents the answer from the user for the partocular challenge.
-  //
-  // Either OnClientOAuthSuccess or OnClientOAuthFailure will be
-  // called on the consumer on the original thread.
-  void StartClientOAuthChallengeResponse(GoogleServiceAuthError::State type,
-                                         const std::string& token,
-                                         const std::string& solution);
-
   // Start a request to exchange an OAuthLogin-scoped oauth2 access token for a
   // ClientLogin-style service tokens.  The response to this request is the
   // same as the response to a ClientLogin request, except that captcha
@@ -176,6 +166,9 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   // the call will attempt to fetch uber auth token.
   void StartOAuthLogin(const std::string& access_token,
                        const std::string& service);
+
+  // Starts a request to list the accounts in the GAIA cookie.
+  void StartListAccounts();
 
   // Implementation of net::URLFetcherDelegate
   virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
@@ -209,6 +202,8 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   static const char kClientLoginToOAuth2BodyFormat[];
   // The format of the POST body to get OAuth2 token pair from auth code.
   static const char kOAuth2CodeToTokenPairBodyFormat[];
+  // The format of the POST body to revoke an OAuth2 token.
+  static const char kOAuth2RevokeTokenBodyFormat[];
   // The format of the POST body for GetUserInfo.
   static const char kGetUserInfoFormat[];
   // The format of the POST body for MergeSession.
@@ -266,6 +261,14 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
                                 const net::URLRequestStatus& status,
                                 int response_code);
 
+  void OnOAuth2RevokeTokenFetched(const std::string& data,
+                                  const net::URLRequestStatus& status,
+                                  int response_code);
+
+  void OnListAccountsFetched(const std::string& data,
+                             const net::URLRequestStatus& status,
+                             int response_code);
+
   void OnGetUserInfoFetched(const std::string& data,
                             const net::URLRequestStatus& status,
                             int response_code);
@@ -275,10 +278,6 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
                              int response_code);
 
   void OnUberAuthTokenFetch(const std::string& data,
-                            const net::URLRequestStatus& status,
-                            int response_code);
-
-  void OnClientOAuthFetched(const std::string& data,
                             const net::URLRequestStatus& status,
                             int response_code);
 
@@ -306,10 +305,6 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   static bool ParseClientLoginToOAuth2Cookie(const std::string& cookie,
                                              std::string* auth_code);
 
-  static GoogleServiceAuthError GenerateClientOAuthError(
-      const std::string& data,
-      const net::URLRequestStatus& status);
-
   // Is this a special case Gaia error for TwoFactor auth?
   static bool IsSecondFactorSuccess(const std::string& alleged_error);
 
@@ -331,6 +326,8 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   static std::string MakeGetAuthCodeBody();
   // Given auth code, create body to get OAuth2 token pair.
   static std::string MakeGetTokenPairBody(const std::string& auth_code);
+  // Given an OAuth2 token, create body to revoke the token.
+  std::string MakeRevokeTokenBody(const std::string& auth_token);
   // Supply the lsid returned from ClientLogin in order to fetch
   // user information.
   static std::string MakeGetUserInfoBody(const std::string& lsid);
@@ -342,22 +339,8 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
 
   static std::string MakeGetAuthCodeHeader(const std::string& auth_token);
 
-  static std::string MakeClientOAuthBody(const std::string& username,
-                                         const std::string& password,
-                                         const std::vector<std::string>& scopes,
-                                         const std::string& persistent_id,
-                                         const std::string& friendly_name,
-                                         const std::string& locale);
-
-  static std::string MakeClientOAuthChallengeResponseBody(
-      const std::string& name,
-      const std::string& token,
-      const std::string& solution);
-
   static std::string MakeOAuthLoginBody(const std::string& service,
                                         const std::string& source);
-
-  void StartOAuth2TokenPairFetch(const std::string& auth_code);
 
   // Create a fetcher usable for making any Gaia request.  |body| is used
   // as the body of the POST request sent to GAIA.  Any strings listed in
@@ -387,11 +370,12 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   const GURL client_login_gurl_;
   const GURL issue_auth_token_gurl_;
   const GURL oauth2_token_gurl_;
+  const GURL oauth2_revoke_gurl_;
   const GURL get_user_info_gurl_;
   const GURL merge_session_gurl_;
   const GURL uberauth_token_gurl_;
-  const GURL client_oauth_gurl_;
   const GURL oauth_login_gurl_;
+  const GURL list_accounts_gurl_;
 
   // While a fetch is going on:
   scoped_ptr<net::URLFetcher> fetcher_;
@@ -399,6 +383,9 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   std::string request_body_;
   std::string requested_service_; // Currently tracked for IssueAuthToken only.
   bool fetch_pending_;
+  // This is to distinguish between the fetch for oauth login token and that for
+  // oauth code.
+  bool fetch_code_only_;
 
   friend class GaiaAuthFetcherTest;
   FRIEND_TEST_ALL_PREFIXES(GaiaAuthFetcherTest, CaptchaParse);

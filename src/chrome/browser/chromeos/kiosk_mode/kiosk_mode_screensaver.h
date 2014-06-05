@@ -5,10 +5,10 @@
 #ifndef CHROME_BROWSER_CHROMEOS_KIOSK_MODE_KIOSK_MODE_SCREENSAVER_H_
 #define CHROME_BROWSER_CHROMEOS_KIOSK_MODE_KIOSK_MODE_SCREENSAVER_H_
 
-#include "ash/wm/user_activity_observer.h"
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/weak_ptr.h"
+#include "ui/wm/core/user_activity_observer.h"
 
 namespace extensions {
 class Extension;
@@ -16,7 +16,7 @@ class Extension;
 
 namespace chromeos {
 
-class KioskModeScreensaver : public ash::UserActivityObserver {
+class KioskModeScreensaver : public wm::UserActivityObserver {
  public:
   KioskModeScreensaver();
   virtual ~KioskModeScreensaver();
@@ -24,8 +24,8 @@ class KioskModeScreensaver : public ash::UserActivityObserver {
  private:
   friend class KioskModeScreensaverTest;
 
-  // UserActivityObserver::Observer overrides:
-  virtual void OnUserActivity() OVERRIDE;
+  // wm::UserActivityObserver overrides:
+  virtual void OnUserActivity(const ui::Event* event) OVERRIDE;
 
   // Initialization functions, in order
   // Get the screensaver path once KioskModeHelper is initialized.
@@ -33,16 +33,16 @@ class KioskModeScreensaver : public ash::UserActivityObserver {
 
   // Callback to receive the path to the screensaver extension's crx and call
   // the unpacker to unpack and load the crx.
-  void ScreensaverPathCallback(const FilePath& screensaver_crx);
+  void ScreensaverPathCallback(const base::FilePath& screensaver_crx);
 
   // Called back on the UI thread to Setup the screensaver with the now unpacked
   // and loaded extension.
   void SetupScreensaver(scoped_refptr<extensions::Extension> extension,
-                        const FilePath& extension_base_path);
+                        const base::FilePath& extension_base_path);
 
   base::WeakPtrFactory<KioskModeScreensaver> weak_ptr_factory_;
 
-  FilePath extension_base_path_;
+  base::FilePath extension_base_path_;
 
   DISALLOW_COPY_AND_ASSIGN(KioskModeScreensaver);
 };

@@ -10,6 +10,8 @@
 #include "base/compiler_specific.h"
 #include "ui/views/animation/scroll_animator.h"
 #include "ui/views/controls/menu/menu_delegate.h"
+#include "ui/views/controls/prefix_delegate.h"
+#include "ui/views/controls/prefix_selector.h"
 #include "ui/views/view.h"
 
 namespace views {
@@ -26,14 +28,14 @@ class MenuScrollViewContainer;
 // . Forwards the appropriate events to the MenuController. This allows the
 //   MenuController to update the selection as the user moves the mouse around.
 // . Renders the drop indicator during a drop operation.
-// . Shows and hides the window (a NativeWidgetWin) when the menu is shown on
+// . Shows and hides the window (a NativeWidget) when the menu is shown on
 //   screen.
 //
 // SubmenuView is itself contained in a MenuScrollViewContainer.
 // MenuScrollViewContainer handles showing as much of the SubmenuView as the
 // screen allows. If the SubmenuView is taller than the screen, scroll buttons
 // are provided that allow the user to see all the menu items.
-class VIEWS_EXPORT SubmenuView : public View,
+class VIEWS_EXPORT SubmenuView : public PrefixDelegate,
                                  public ScrollDelegate {
  public:
   // The submenu's class name.
@@ -56,7 +58,8 @@ class VIEWS_EXPORT SubmenuView : public View,
   virtual gfx::Size GetPreferredSize() OVERRIDE;
 
   // Override from View.
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
+  virtual ui::TextInputClient* GetTextInputClient() OVERRIDE;
 
   // Painting.
   virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE;
@@ -79,14 +82,18 @@ class VIEWS_EXPORT SubmenuView : public View,
   // Scrolls on menu item boundaries.
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
+  // Overridden from PrefixDelegate.
+  virtual int GetRowCount() OVERRIDE;
+  virtual int GetSelectedRow() OVERRIDE;
+  virtual void SetSelectedRow(int row) OVERRIDE;
+  virtual base::string16 GetTextForRow(int row) OVERRIDE;
+
   // Returns true if the menu is showing.
   bool IsShowing();
 
   // Shows the menu at the specified location. Coordinates are in screen
   // coordinates. max_width gives the max width the view should be.
-  void ShowAt(Widget* parent,
-              const gfx::Rect& bounds,
-              bool do_capture);
+  void ShowAt(Widget* parent, const gfx::Rect& bounds, bool do_capture);
 
   // Resets the bounds of the submenu to |bounds|.
   void Reposition(const gfx::Rect& bounds);
@@ -132,9 +139,9 @@ class VIEWS_EXPORT SubmenuView : public View,
   // references to the MenuHost as the MenuHost is about to be deleted.
   void MenuHostDestroyed();
 
-  // Max width of accelerators in child menu items. This doesn't include
-  // children's children, only direct children.
-  int max_accelerator_width() const { return max_accelerator_width_; }
+  // Max width of minor text (accelerator or subtitle) in child menu items. This
+  // doesn't include children's children, only direct children.
+  int max_minor_text_width() const { return max_minor_text_width_; }
 
   // Minimum width of menu in pixels (default 0).  This becomes the smallest
   // width returned by GetPreferredSize().
@@ -149,8 +156,8 @@ class VIEWS_EXPORT SubmenuView : public View,
   }
 
  protected:
-  // View override.
-  virtual std::string GetClassName() const OVERRIDE;
+  // Overridden from View:
+  virtual const char* GetClassName() const OVERRIDE;
 
   // View method. Overridden to schedule a paint. We do this so that when
   // scrolling occurs, everything is repainted correctly.
@@ -193,7 +200,7 @@ class VIEWS_EXPORT SubmenuView : public View,
   MenuScrollViewContainer* scroll_view_container_;
 
   // See description above getter.
-  int max_accelerator_width_;
+  int max_minor_text_width_;
 
   // Minimum width returned in GetPreferredSize().
   int minimum_preferred_width_;
@@ -203,6 +210,14 @@ class VIEWS_EXPORT SubmenuView : public View,
 
   // The submenu's scroll animator
   scoped_ptr<ScrollAnimator> scroll_animator_;
+
+  // Difference between current position and cumulative deltas passed to
+  // OnScroll.
+  // TODO(tdresser): This should be removed when raw pixel scrolling for views
+  // is enabled. See crbug.com/329354.
+  float roundoff_error_;
+
+  PrefixSelector prefix_selector_;
 
   DISALLOW_COPY_AND_ASSIGN(SubmenuView);
 };

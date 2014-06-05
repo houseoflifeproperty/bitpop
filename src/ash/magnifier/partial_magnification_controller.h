@@ -6,13 +6,9 @@
 #define ASH_MAGNIFIER_PARTIAL_MAGNIFICATION_CONTROLLER_H_
 
 #include "ui/aura/window_observer.h"
-#include "ui/base/events/event_handler.h"
+#include "ui/events/event_handler.h"
 #include "ui/gfx/point.h"
 #include "ui/views/widget/widget_observer.h"
-
-namespace aura {
-class RootWindow;
-}
 
 namespace ash {
 
@@ -49,10 +45,10 @@ class PartialMagnificationController
   //  - Remove the magnifier from the current root window.
   //  - Create a magnifier in the new root_window |new_root_window|.
   //  - Switch the target window from current window to |new_root_window|.
-  void SwitchTargetRootWindow(aura::RootWindow* new_root_window);
+  void SwitchTargetRootWindow(aura::Window* new_root_window);
 
   // Returns the root window that contains the mouse cursor.
-  aura::RootWindow* GetCurrentRootWindow();
+  aura::Window* GetCurrentRootWindow();
 
   // Return true if the magnification scale > kMinPartialMagnifiedScaleThreshold
   bool IsPartialMagnified() const;
@@ -73,7 +69,7 @@ class PartialMagnificationController
   virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
 
   // Overridden from WidgetObserver:
-  virtual void OnWidgetClosing(views::Widget* widget) OVERRIDE;
+  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE;
 
   // True if the magnified window is in motion of zooming or un-zooming effect.
   // Otherwise, false.

@@ -6,7 +6,8 @@
 #include <utility>
 
 #include "base/command_line.h"
-#include "base/string_util.h"
+#include "base/file_util.h"
+#include "base/strings/string_util.h"
 #include "base/test/test_reg_util_win.h"
 #include "base/win/registry.h"
 #include "chrome/installer/util/google_update_constants.h"
@@ -395,10 +396,11 @@ TEST_F(InstallUtilTest, ValueEquals) {
 }
 
 TEST_F(InstallUtilTest, ProgramCompare) {
-  FilePath some_long_dir(test_dir_.path().Append(L"Some Long Directory Name"));
-  FilePath expect(some_long_dir.Append(L"file.txt"));
-  FilePath expect_upcase(some_long_dir.Append(L"FILE.txt"));
-  FilePath other(some_long_dir.Append(L"otherfile.txt"));
+  base::FilePath some_long_dir(
+      test_dir_.path().Append(L"Some Long Directory Name"));
+  base::FilePath expect(some_long_dir.Append(L"file.txt"));
+  base::FilePath expect_upcase(some_long_dir.Append(L"FILE.txt"));
+  base::FilePath other(some_long_dir.Append(L"otherfile.txt"));
 
   // Tests where the expected file doesn't exist.
 
@@ -414,8 +416,8 @@ TEST_F(InstallUtilTest, ProgramCompare) {
 
   // Tests where the expected file exists.
   static const char data[] = "data";
-  ASSERT_TRUE(file_util::CreateDirectory(some_long_dir));
-  ASSERT_NE(-1, file_util::WriteFile(expect, data, arraysize(data) - 1));
+  ASSERT_TRUE(base::CreateDirectory(some_long_dir));
+  ASSERT_NE(-1, base::WriteFile(expect, data, arraysize(data) - 1));
   // Paths don't match.
   EXPECT_FALSE(InstallUtil::ProgramCompare(expect).Evaluate(
       L"\"" + other.value() + L"\""));
@@ -434,7 +436,8 @@ TEST_F(InstallUtilTest, ProgramCompare) {
   ASSERT_NE(static_cast<DWORD>(0), short_len);
   ASSERT_GT(static_cast<DWORD>(MAX_PATH), short_len);
   short_expect.resize(short_len);
-  ASSERT_FALSE(FilePath::CompareEqualIgnoreCase(expect.value(), short_expect));
+  ASSERT_FALSE(base::FilePath::CompareEqualIgnoreCase(expect.value(),
+                                                      short_expect));
   EXPECT_TRUE(InstallUtil::ProgramCompare(expect).Evaluate(
       L"\"" + short_expect + L"\""));
 }

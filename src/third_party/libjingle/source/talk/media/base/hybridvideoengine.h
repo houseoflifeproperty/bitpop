@@ -45,7 +45,6 @@ struct VideoFormat;
 class HybridVideoEngineInterface;
 class VideoCapturer;
 class VideoFrame;
-class VideoProcessor;
 class VideoRenderer;
 
 // HybridVideoMediaChannels work with a HybridVideoEngine to combine
@@ -59,8 +58,8 @@ class HybridVideoMediaChannel : public VideoMediaChannel {
 
   // VideoMediaChannel methods
   virtual void SetInterface(NetworkInterface* iface);
-  virtual bool SetOptions(int options);
-  virtual int GetOptions() const;
+  virtual bool SetOptions(const VideoOptions& options);
+  virtual bool GetOptions(VideoOptions* options) const;
   virtual bool AddSendStream(const StreamParams& sp);
   virtual bool RemoveSendStream(uint32 ssrc);
   virtual bool SetRenderer(uint32 ssrc, VideoRenderer* renderer);
@@ -76,7 +75,8 @@ class HybridVideoMediaChannel : public VideoMediaChannel {
   virtual bool SetSendStreamFormat(uint32 ssrc, const VideoFormat& format);
   virtual bool SetSendRtpHeaderExtensions(
       const std::vector<RtpHeaderExtension>& extensions);
-  virtual bool SetSendBandwidth(bool autobw, int bps);
+  virtual bool SetStartSendBandwidth(int bps);
+  virtual bool SetMaxSendBandwidth(int bps);
   virtual bool SetSend(bool send);
 
   virtual bool AddRecvStream(const StreamParams& sp);
@@ -86,10 +86,13 @@ class HybridVideoMediaChannel : public VideoMediaChannel {
   virtual bool SendIntraFrame();
   virtual bool RequestIntraFrame();
 
-  virtual bool GetStats(VideoMediaInfo* info);
+  virtual bool GetStats(const StatsOptions& options, VideoMediaInfo* info);
 
-  virtual void OnPacketReceived(talk_base::Buffer* packet);
-  virtual void OnRtcpReceived(talk_base::Buffer* packet);
+  virtual void OnPacketReceived(talk_base::Buffer* packet,
+                                const talk_base::PacketTime& packet_time);
+  virtual void OnRtcpReceived(talk_base::Buffer* packet,
+                              const talk_base::PacketTime& packet_time);
+  virtual void OnReadyToSend(bool ready);
 
   virtual void UpdateAspectRatio(int ratio_w, int ratio_h);
 
@@ -137,15 +140,21 @@ class HybridVideoEngine : public HybridVideoEngineInterface {
     codecs_ = video1_.codecs();
     codecs_.insert(codecs_.end(), video2_.codecs().begin(),
                    video2_.codecs().end());
+
+    rtp_header_extensions_ = video1_.rtp_header_extensions();
+    rtp_header_extensions_.insert(rtp_header_extensions_.end(),
+                                  video2_.rtp_header_extensions().begin(),
+                                  video2_.rtp_header_extensions().end());
+
     SignalCaptureStateChange.repeat(video2_.SignalCaptureStateChange);
   }
 
-  bool Init() {
-    if (!video1_.Init()) {
+  bool Init(talk_base::Thread* worker_thread) {
+    if (!video1_.Init(worker_thread)) {
       LOG(LS_ERROR) << "Failed to init VideoEngine1";
       return false;
     }
-    if (!video2_.Init()) {
+    if (!video2_.Init(worker_thread)) {
       LOG(LS_ERROR) << "Failed to init VideoEngine2";
       video1_.Terminate();
       return false;
@@ -177,8 +186,8 @@ class HybridVideoEngine : public HybridVideoEngineInterface {
         channel1.release(), channel2.release());
   }
 
-  bool SetOptions(int o) {
-    return video1_.SetOptions(o) && video2_.SetOptions(o);
+  bool SetOptions(const VideoOptions& options) {
+    return video1_.SetOptions(options) && video2_.SetOptions(options);
   }
   bool SetDefaultEncoderConfig(const VideoEncoderConfig& config) {
     VideoEncoderConfig conf = config;
@@ -198,24 +207,31 @@ class HybridVideoEngine : public HybridVideoEngineInterface {
     }
     return true;
   }
+  VideoEncoderConfig GetDefaultEncoderConfig() const {
+    // This looks pretty strange, but, in practice, it'll do sane things if
+    // GetDefaultEncoderConfig is only called after SetDefaultEncoderConfig,
+    // since both engines should be essentially equivalent at that point. If it
+    // hasn't been called, though, we'll use the first meaningful encoder
+    // config, or the config from the second video engine if neither are
+    // meaningful.
+    VideoEncoderConfig config = video1_.GetDefaultEncoderConfig();
+    if (config.max_codec.width != 0) {
+      return config;
+    } else {
+      return video2_.GetDefaultEncoderConfig();
+    }
+  }
   const std::vector<VideoCodec>& codecs() const {
     return codecs_;
   }
-
+  const std::vector<RtpHeaderExtension>& rtp_header_extensions() const {
+    return rtp_header_extensions_;
+  }
   void SetLogging(int min_sev, const char* filter) {
     video1_.SetLogging(min_sev, filter);
     video2_.SetLogging(min_sev, filter);
   }
 
-  bool RegisterProcessor(VideoProcessor* video_processor) {
-    return video1_.RegisterProcessor(video_processor) &&
-        video2_.RegisterProcessor(video_processor);
-  }
-
-  bool UnregisterProcessor(VideoProcessor* video_processor) {
-    return video1_.UnregisterProcessor(video_processor) &&
-        video2_.UnregisterProcessor(video_processor);
-  }
   VideoFormat GetStartCaptureFormat() const {
     return video2_.GetStartCaptureFormat();
   }
@@ -226,17 +242,11 @@ class HybridVideoEngine : public HybridVideoEngineInterface {
   bool SetCaptureDevice(const Device* device) {
     return video2_.SetCaptureDevice(device);
   }
-  bool SetVideoCapturer(VideoCapturer* capturer) {
-    return video2_.SetVideoCapturer(capturer);
-  }
   VideoCapturer* GetVideoCapturer() const {
     return video2_.GetVideoCapturer();
   }
   bool SetLocalRenderer(VideoRenderer* renderer) {
     return video2_.SetLocalRenderer(renderer);
-  }
-  bool SetCapture(bool capture) {
-    return video2_.SetCapture(capture);
   }
   sigslot::repeater2<VideoCapturer*, CaptureState> SignalCaptureStateChange;
 
@@ -268,6 +278,7 @@ class HybridVideoEngine : public HybridVideoEngineInterface {
   VIDEO1 video1_;
   VIDEO2 video2_;
   std::vector<VideoCodec> codecs_;
+  std::vector<RtpHeaderExtension> rtp_header_extensions_;
 };
 
 }  // namespace cricket

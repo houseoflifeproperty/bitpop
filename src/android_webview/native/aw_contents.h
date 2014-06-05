@@ -6,143 +6,243 @@
 #define ANDROID_WEBVIEW_NATIVE_AW_CONTENTS_H_
 
 #include <jni.h>
+#include <list>
 #include <string>
+#include <utility>
 
+#include "android_webview/browser/browser_view_renderer.h"
+#include "android_webview/browser/browser_view_renderer_client.h"
 #include "android_webview/browser/find_helper.h"
-#include "android_webview/public/browser/draw_gl.h"
+#include "android_webview/browser/gl_view_renderer_manager.h"
+#include "android_webview/browser/icon_helper.h"
+#include "android_webview/browser/renderer_host/aw_render_view_host_ext.h"
+#include "android_webview/browser/shared_renderer_state.h"
+#include "android_webview/native/permission/permission_request_handler_client.h"
+#include "base/android/jni_weak_ref.h"
 #include "base/android/scoped_java_ref.h"
-#include "base/android/jni_helper.h"
+#include "base/callback_forward.h"
 #include "base/memory/scoped_ptr.h"
-#include "content/public/browser/android/compositor.h"
-#include "content/public/browser/javascript_dialogs.h"
 
-typedef void* EGLContext;
+class SkBitmap;
 class TabContents;
-
-namespace cc {
-class Layer;
-}
+struct AwDrawGLInfo;
 
 namespace content {
-class Compositor;
 class WebContents;
 }
 
 namespace android_webview {
 
 class AwContentsContainer;
-class AwRenderViewHostExt;
+class AwContentsClientBridge;
+class AwPdfExporter;
 class AwWebContentsDelegate;
+class HardwareRenderer;
+class PermissionRequestHandler;
 
 // Native side of java-class of same name.
 // Provides the ownership of and access to browser components required for
 // WebView functionality; analogous to chrome's TabContents, but with a
 // level of indirection provided by the AwContentsContainer abstraction.
+//
+// Object lifetime:
+// For most purposes the java and native objects can be considered to have
+// 1:1 lifetime and relationship. The exception is the java instance that
+// hosts a popup will be rebound to a second native instance (carrying the
+// popup content) and discard the 'default' native instance it made on
+// construction. A native instance is only bound to at most one Java peer over
+// its entire lifetime - see Init() and SetPendingWebContentsForPopup() for the
+// construction points, and SetJavaPeers() where these paths join.
 class AwContents : public FindHelper::Listener,
-                   public content::Compositor::Client {
+                   public IconHelper::Listener,
+                   public AwRenderViewHostExtClient,
+                   public BrowserViewRendererClient,
+                   public PermissionRequestHandlerClient {
  public:
   // Returns the AwContents instance associated with |web_contents|, or NULL.
   static AwContents* FromWebContents(content::WebContents* web_contents);
 
-  AwContents(JNIEnv* env,
-             jobject obj,
-             jobject web_contents_delegate,
-             bool private_browsing);
+  // Returns the AwContents instance associated with with the given
+  // render_process_id and render_view_id, or NULL.
+  static AwContents* FromID(int render_process_id, int render_view_id);
+
+  AwContents(scoped_ptr<content::WebContents> web_contents);
   virtual ~AwContents();
 
-  void DrawGL(AwDrawGLInfo* draw_info);
-
-  void RunJavaScriptDialog(
-      content::JavaScriptMessageType message_type,
-      const GURL& origin_url,
-      const string16& message_text,
-      const string16& default_prompt_text,
-      const base::android::ScopedJavaLocalRef<jobject>& js_result);
-
-  void RunBeforeUnloadDialog(
-      const GURL& origin_url,
-      const string16& message_text,
-      const base::android::ScopedJavaLocalRef<jobject>& js_result);
-
-  void PerformLongClick();
+  AwRenderViewHostExt* render_view_host_ext() {
+    return render_view_host_ext_.get();
+  }
 
   // |handler| is an instance of
   // org.chromium.android_webview.AwHttpAuthHandler.
-  void onReceivedHttpAuthRequest(const base::android::JavaRef<jobject>& handler,
+  bool OnReceivedHttpAuthRequest(const base::android::JavaRef<jobject>& handler,
                                  const std::string& host,
                                  const std::string& realm);
 
   // Methods called from Java.
-  jint GetWebContents(JNIEnv* env, jobject obj);
-  void SetWebContents(JNIEnv* env, jobject obj, jint web_contents);
+  void SetJavaPeers(JNIEnv* env,
+                    jobject obj,
+                    jobject aw_contents,
+                    jobject web_contents_delegate,
+                    jobject contents_client_bridge,
+                    jobject io_thread_client,
+                    jobject intercept_navigation_delegate);
+  jlong GetWebContents(JNIEnv* env, jobject obj);
 
-  void DidInitializeContentViewCore(JNIEnv* env, jobject obj,
-                                    jint content_view_core);
   void Destroy(JNIEnv* env, jobject obj);
   void DocumentHasImages(JNIEnv* env, jobject obj, jobject message);
   void GenerateMHTML(JNIEnv* env, jobject obj, jstring jpath, jobject callback);
-  void SetIoThreadClient(JNIEnv* env, jobject obj, jobject client);
-  void SetInterceptNavigationDelegate(JNIEnv* env, jobject obj,
-                                      jobject delegate);
+  void CreatePdfExporter(JNIEnv* env, jobject obj, jobject pdfExporter);
+  void AddVisitedLinks(JNIEnv* env, jobject obj, jobjectArray jvisited_links);
   base::android::ScopedJavaLocalRef<jbyteArray> GetCertificate(
       JNIEnv* env, jobject obj);
   void RequestNewHitTestDataAt(JNIEnv* env, jobject obj, jint x, jint y);
   void UpdateLastHitTestData(JNIEnv* env, jobject obj);
   void OnSizeChanged(JNIEnv* env, jobject obj, int w, int h, int ow, int oh);
-  void SetWindowViewVisibility(JNIEnv* env, jobject obj,
-                               bool window_visible,
-                               bool view_visible);
+  void SetViewVisibility(JNIEnv* env, jobject obj, bool visible);
+  void SetWindowVisibility(JNIEnv* env, jobject obj, bool visible);
+  void SetIsPaused(JNIEnv* env, jobject obj, bool paused);
   void OnAttachedToWindow(JNIEnv* env, jobject obj, int w, int h);
   void OnDetachedFromWindow(JNIEnv* env, jobject obj);
   base::android::ScopedJavaLocalRef<jbyteArray> GetOpaqueState(
       JNIEnv* env, jobject obj);
   jboolean RestoreFromOpaqueState(JNIEnv* env, jobject obj, jbyteArray state);
+  void FocusFirstNode(JNIEnv* env, jobject obj);
+  void SetBackgroundColor(JNIEnv* env, jobject obj, jint color);
+  bool OnDraw(JNIEnv* env,
+              jobject obj,
+              jobject canvas,
+              jboolean is_hardware_accelerated,
+              jint scroll_x,
+              jint scroll_y,
+              jint visible_left,
+              jint visible_top,
+              jint visible_right,
+              jint visible_bottom,
+              jint clip_left,
+              jint clip_top,
+              jint clip_right,
+              jint clip_bottom);
+  jlong GetAwDrawGLViewContext(JNIEnv* env, jobject obj);
+  jlong CapturePicture(JNIEnv* env, jobject obj, int width, int height);
+  void EnableOnNewPicture(JNIEnv* env, jobject obj, jboolean enabled);
+  void ClearView(JNIEnv* env, jobject obj);
+  void SetExtraHeadersForUrl(JNIEnv* env, jobject obj,
+                             jstring url, jstring extra_headers);
+
+  void DrawGL(AwDrawGLInfo* draw_info);
+
+  // Geolocation API support
+  void ShowGeolocationPrompt(const GURL& origin, base::Callback<void(bool)>);
+  void HideGeolocationPrompt(const GURL& origin);
+  void InvokeGeolocationCallback(JNIEnv* env,
+                                 jobject obj,
+                                 jboolean value,
+                                 jstring origin);
+
+  // PermissionRequestHandlerClient implementation.
+  virtual void OnPermissionRequest(AwPermissionRequest* request) OVERRIDE;
+  virtual void OnPermissionRequestCanceled(
+      AwPermissionRequest* request) OVERRIDE;
+
+  PermissionRequestHandler* GetPermissionRequestHandler() {
+    return permission_request_handler_.get();
+  }
+
+  void PreauthorizePermission(JNIEnv* env,
+                              jobject obj,
+                              jstring origin,
+                              jlong resources);
 
   // Find-in-page API and related methods.
-  jint FindAllSync(JNIEnv* env, jobject obj, jstring search_string);
   void FindAllAsync(JNIEnv* env, jobject obj, jstring search_string);
   void FindNext(JNIEnv* env, jobject obj, jboolean forward);
   void ClearMatches(JNIEnv* env, jobject obj);
-  void ClearCache(JNIEnv* env, jobject obj, jboolean include_disk_files);
-
   FindHelper* GetFindHelper();
 
   // FindHelper::Listener implementation.
   virtual void OnFindResultReceived(int active_ordinal,
                                     int match_count,
                                     bool finished) OVERRIDE;
+  // IconHelper::Listener implementation.
+  virtual bool ShouldDownloadFavicon(const GURL& icon_url) OVERRIDE;
+  virtual void OnReceivedIcon(const GURL& icon_url,
+                              const SkBitmap& bitmap) OVERRIDE;
+  virtual void OnReceivedTouchIconUrl(const std::string& url,
+                                      const bool precomposed) OVERRIDE;
 
-  // content::Compositor::Client implementation.
-  virtual void ScheduleComposite() OVERRIDE;
-  virtual void OnSwapBuffersCompleted() OVERRIDE;
+  // AwRenderViewHostExtClient implementation.
+  virtual void OnWebLayoutPageScaleFactorChanged(
+      float page_scale_factor) OVERRIDE;
+  virtual void OnWebLayoutContentsSizeChanged(
+      const gfx::Size& contents_size) OVERRIDE;
 
+  // BrowserViewRendererClient implementation.
+  virtual bool RequestDrawGL(jobject canvas, bool wait_for_completion) OVERRIDE;
+  virtual void PostInvalidate() OVERRIDE;
+  virtual void OnNewPicture() OVERRIDE;
+  virtual gfx::Point GetLocationOnScreen() OVERRIDE;
+  virtual void SetMaxContainerViewScrollOffset(
+      gfx::Vector2d new_value) OVERRIDE;
+  virtual void ScrollContainerViewTo(gfx::Vector2d new_value) OVERRIDE;
+  virtual bool IsFlingActive() const OVERRIDE;
+  virtual void SetPageScaleFactorAndLimits(
+      float page_scale_factor,
+      float min_page_scale_factor,
+      float max_page_scale_factor) OVERRIDE;
+  virtual void SetContentsSize(gfx::SizeF contents_size_dip) OVERRIDE;
+  virtual void DidOverscroll(gfx::Vector2d overscroll_delta) OVERRIDE;
+
+  const BrowserViewRenderer* GetBrowserViewRenderer() const;
+
+  void ClearCache(JNIEnv* env, jobject obj, jboolean include_disk_files);
   void SetPendingWebContentsForPopup(scoped_ptr<content::WebContents> pending);
-  jint ReleasePopupWebContents(JNIEnv* env, jobject obj);
+  jlong ReleasePopupAwContents(JNIEnv* env, jobject obj);
+
+  void ScrollTo(JNIEnv* env, jobject obj, jint x, jint y);
+  void SetDipScale(JNIEnv* env, jobject obj, jfloat dip_scale);
+  void SetFixedLayoutSize(JNIEnv* env,
+                          jobject obj,
+                          jint width_dip,
+                          jint height_dip);
+  void SetSaveFormData(bool enabled);
+
+  // Sets the java delegate
+  void SetAwAutofillManagerDelegate(jobject delegate);
+
+  void SetJsOnlineProperty(JNIEnv* env, jobject obj, jboolean network_up);
+  void TrimMemory(JNIEnv* env, jobject obj, jint level, jboolean visible);
 
  private:
-  void Invalidate();
-  void SetWebContents(content::WebContents* web_contents);
-  void SetCompositorVisibility(bool visible);
-  void ResetCompositor();
-  void AttachWebViewLayer();
+  void InitDataReductionProxyIfNecessary();
+  void InitAutofillIfNecessary(bool enabled);
+
+  void InitializeHardwareDrawIfNeeded();
+  void InitializeHardwareDrawOnRenderThread();
+  void ReleaseHardwareDrawOnRenderThread();
 
   JavaObjectWeakGlobalRef java_ref_;
   scoped_ptr<content::WebContents> web_contents_;
   scoped_ptr<AwWebContentsDelegate> web_contents_delegate_;
+  scoped_ptr<AwContentsClientBridge> contents_client_bridge_;
   scoped_ptr<AwRenderViewHostExt> render_view_host_ext_;
   scoped_ptr<FindHelper> find_helper_;
-  scoped_ptr<content::WebContents> pending_contents_;
+  scoped_ptr<IconHelper> icon_helper_;
+  scoped_ptr<AwContents> pending_contents_;
+  SharedRendererState shared_renderer_state_;
+  BrowserViewRenderer browser_view_renderer_;
+  scoped_ptr<HardwareRenderer> hardware_renderer_;
+  scoped_ptr<AwPdfExporter> pdf_exporter_;
+  scoped_ptr<PermissionRequestHandler> permission_request_handler_;
 
-  // Compositor-specific state.
-  scoped_ptr<content::Compositor> compositor_;
-  scoped_refptr<cc::Layer> webview_layer_;
-  bool view_visible_;
-  bool compositor_visible_;
-  bool is_composite_pending_;
+  // GURL is supplied by the content layer as requesting frame.
+  // Callback is supplied by the content layer, and is invoked with the result
+  // from the permission prompt.
+  typedef std::pair<const GURL, base::Callback<void(bool)> > OriginCallback;
+  // The first element in the list is always the currently pending request.
+  std::list<OriginCallback> pending_geolocation_prompts_;
 
-  // Used only for detecting Android View System context changes.
-  // Not to be used between draw calls.
-  EGLContext last_frame_context_;
+  GLViewRendererManager::Key renderer_manager_key_;
 
   DISALLOW_COPY_AND_ASSIGN(AwContents);
 };

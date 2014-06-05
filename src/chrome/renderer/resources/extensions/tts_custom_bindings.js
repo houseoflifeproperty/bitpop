@@ -2,24 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Custom bindings for the tts API.
+// Custom binding for the tts API.
 
-var ttsNatives = requireNative('tts');
-var GetNextTTSEventId = ttsNatives.GetNextTTSEventId;
+var binding = require('binding').Binding.create('tts');
 
-var chromeHidden = requireNative('chrome_hidden').GetChromeHidden();
+var idGenerator = requireNative('id_generator');
 var sendRequest = require('sendRequest').sendRequest;
 var lazyBG = requireNative('lazy_background_page');
 
-chromeHidden.registerCustomHook('tts', function(api) {
+binding.registerCustomHook(function(api) {
   var apiFunctions = api.apiFunctions;
-
-  chromeHidden.tts = {
-    handlers: {}
-  };
+  var tts = api.compiledApi;
+  var handlers = {};
 
   function ttsEventListener(event) {
-    var eventHandler = chromeHidden.tts.handlers[event.srcId];
+    var eventHandler = handlers[event.srcId];
     if (eventHandler) {
       eventHandler({
                      type: event.type,
@@ -27,7 +24,7 @@ chromeHidden.registerCustomHook('tts', function(api) {
                      errorMessage: event.errorMessage
                    });
       if (event.isFinalEvent) {
-        delete chromeHidden.tts.handlers[event.srcId];
+        delete handlers[event.srcId];
         // Balanced in 'speak' handler.
         lazyBG.DecrementKeepaliveCount();
       }
@@ -39,15 +36,15 @@ chromeHidden.registerCustomHook('tts', function(api) {
   // add a listener to chrome.tts.onEvent will fail.
   // See http://crbug.com/122474.
   try {
-    chrome.tts.onEvent.addListener(ttsEventListener);
+    tts.onEvent.addListener(ttsEventListener);
   } catch (e) {}
 
   apiFunctions.setHandleRequest('speak', function() {
     var args = arguments;
     if (args.length > 1 && args[1] && args[1].onEvent) {
-      var id = GetNextTTSEventId();
+      var id = idGenerator.GetNextId();
       args[1].srcId = id;
-      chromeHidden.tts.handlers[id] = args[1].onEvent;
+      handlers[id] = args[1].onEvent;
       // Keep the page alive until the event finishes.
       // Balanced in eventHandler.
       lazyBG.IncrementKeepaliveCount();
@@ -56,3 +53,5 @@ chromeHidden.registerCustomHook('tts', function(api) {
     return id;
   });
 });
+
+exports.binding = binding.generate();

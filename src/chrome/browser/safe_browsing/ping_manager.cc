@@ -6,8 +6,8 @@
 
 #include "base/logging.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/common/env_vars.h"
 #include "content/public/browser/browser_thread.h"
 #include "google_apis/google_api_keys.h"
@@ -44,7 +44,6 @@ SafeBrowsingPingManager::~SafeBrowsingPingManager() {
   // Delete in-progress safebrowsing reports (hits and details).
   STLDeleteContainerPointers(safebrowsing_reports_.begin(),
                              safebrowsing_reports_.end());
-  safebrowsing_reports_.clear();
 }
 
 // net::URLFetcherDelegate implementation ----------------------------------
@@ -52,17 +51,10 @@ SafeBrowsingPingManager::~SafeBrowsingPingManager() {
 // All SafeBrowsing request responses are handled here.
 void SafeBrowsingPingManager::OnURLFetchComplete(
     const net::URLFetcher* source) {
-  scoped_ptr<const net::URLFetcher> fetcher;
-
-  std::set<const net::URLFetcher*>::iterator sit =
-      safebrowsing_reports_.find(source);
-  if (sit != safebrowsing_reports_.end()) {
-    const net::URLFetcher* report = *sit;
-    safebrowsing_reports_.erase(sit);
-    delete report;
-    return;
-  }
-  NOTREACHED();
+  Reports::iterator sit = safebrowsing_reports_.find(source);
+  DCHECK(sit != safebrowsing_reports_.end());
+  delete *sit;
+  safebrowsing_reports_.erase(sit);
 }
 
 // Sends a SafeBrowsing "hit" for UMA users.
@@ -81,7 +73,7 @@ void SafeBrowsingPingManager::ReportSafeBrowsingHit(
       post_data.empty() ? net::URLFetcher::GET : net::URLFetcher::POST,
       this);
   report->SetLoadFlags(net::LOAD_DISABLE_CACHE);
-  report->SetRequestContext(request_context_getter_);
+  report->SetRequestContext(request_context_getter_.get());
   if (!post_data.empty())
     report->SetUploadData("text/plain", post_data);
   safebrowsing_reports_.insert(report);
@@ -95,7 +87,7 @@ void SafeBrowsingPingManager::ReportMalwareDetails(
   net::URLFetcher* fetcher = net::URLFetcher::Create(
       report_url, net::URLFetcher::POST, this);
   fetcher->SetLoadFlags(net::LOAD_DISABLE_CACHE);
-  fetcher->SetRequestContext(request_context_getter_);
+  fetcher->SetRequestContext(request_context_getter_.get());
   fetcher->SetUploadData("application/octet-stream", report);
   // Don't try too hard to send reports on failures.
   fetcher->SetAutomaticallyRetryOn5xx(false);
@@ -110,10 +102,10 @@ GURL SafeBrowsingPingManager::SafeBrowsingHitUrl(
   DCHECK(threat_type == SB_THREAT_TYPE_URL_MALWARE ||
          threat_type == SB_THREAT_TYPE_URL_PHISHING ||
          threat_type == SB_THREAT_TYPE_BINARY_MALWARE_URL ||
-         threat_type == SB_THREAT_TYPE_BINARY_MALWARE_HASH ||
-         threat_type == SB_THREAT_TYPE_CLIENT_SIDE_PHISHING_URL);
+         threat_type == SB_THREAT_TYPE_CLIENT_SIDE_PHISHING_URL ||
+         threat_type == SB_THREAT_TYPE_CLIENT_SIDE_MALWARE_URL);
   std::string url = SafeBrowsingProtocolManagerHelper::ComposeUrl(
-      url_prefix_, "report", client_name_, version_, "");
+      url_prefix_, "report", client_name_, version_, std::string());
   std::string threat_list = "none";
   switch (threat_type) {
     case SB_THREAT_TYPE_URL_MALWARE:
@@ -125,11 +117,11 @@ GURL SafeBrowsingPingManager::SafeBrowsingHitUrl(
     case SB_THREAT_TYPE_BINARY_MALWARE_URL:
       threat_list = "binurlhit";
       break;
-    case SB_THREAT_TYPE_BINARY_MALWARE_HASH:
-      threat_list = "binhashhit";
-      break;
     case SB_THREAT_TYPE_CLIENT_SIDE_PHISHING_URL:
       threat_list = "phishcsdhit";
+      break;
+    case SB_THREAT_TYPE_CLIENT_SIDE_MALWARE_URL:
+      threat_list = "malcsdhit";
       break;
     default:
       NOTREACHED();

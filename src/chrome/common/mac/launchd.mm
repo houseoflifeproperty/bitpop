@@ -10,10 +10,10 @@
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
-#include "base/process_util.h"
-#include "base/stringprintf.h"
-#include "base/sys_string_conversions.h"
-#include "third_party/GTM/Foundation/GTMServiceManagement.h"
+#include "base/process/launch.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/sys_string_conversions.h"
+#include "third_party/google_toolbox_for_mac/src/Foundation/GTMServiceManagement.h"
 
 namespace {
 

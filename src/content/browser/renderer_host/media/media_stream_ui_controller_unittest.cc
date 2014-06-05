@@ -5,10 +5,10 @@
 #include <string>
 
 #include "base/bind.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "content/browser/browser_thread_impl.h"
-#include "content/browser/renderer_host/media/media_stream_ui_controller.h"
 #include "content/browser/renderer_host/media/media_stream_settings_requester.h"
+#include "content/browser/renderer_host/media/media_stream_ui_controller.h"
 #include "content/common/media/media_stream_options.h"
 #include "content/public/common/media_stream_request.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -24,14 +24,18 @@ class MediaStreamDeviceUIControllerTest
  public:
   MediaStreamDeviceUIControllerTest() {}
 
-  // Mock implementation of SettingsRequester;
+  // Mock implementation of SettingsRequester.
+  // TODO(sergeyu): Move mock SettingsRequester to a separate class.
   MOCK_METHOD2(DevicesAccepted, void(
       const std::string&, const StreamDeviceInfoArray&));
   MOCK_METHOD1(SettingsError, void(const std::string&));
+  MOCK_METHOD1(StopStreamFromUI, void(const std::string&));
   void GetAvailableDevices(MediaStreamDevices* devices) OVERRIDE {
     devices->push_back(MediaStreamDevice(MEDIA_DEVICE_AUDIO_CAPTURE,
                                          "mic",
-                                         "mic_id"));
+                                         "mic_id",
+                                         0,
+                                         0));
     devices->push_back(MediaStreamDevice(MEDIA_DEVICE_VIDEO_CAPTURE,
                                          "camera",
                                          "camera_id"));
@@ -39,7 +43,7 @@ class MediaStreamDeviceUIControllerTest
 
  protected:
   virtual void SetUp() {
-    message_loop_.reset(new MessageLoop(MessageLoop::TYPE_IO));
+    message_loop_.reset(new base::MessageLoopForIO);
     ui_thread_.reset(new BrowserThreadImpl(BrowserThread::UI,
                                            message_loop_.get()));
     io_thread_.reset(new BrowserThreadImpl(BrowserThread::IO,
@@ -54,9 +58,7 @@ class MediaStreamDeviceUIControllerTest
   void CreateDummyRequest(const std::string& label, bool audio, bool video) {
     int dummy_render_process_id = 1;
     int dummy_render_view_id = 1;
-    StreamOptions components(
-        audio ? MEDIA_DEVICE_AUDIO_CAPTURE : MEDIA_NO_SERVICE,
-        video ? MEDIA_DEVICE_VIDEO_CAPTURE : MEDIA_NO_SERVICE);
+    StreamOptions components(audio, video );
     GURL security_origin;
     ui_controller_->MakeUIRequest(label,
                                   dummy_render_process_id,
@@ -67,7 +69,7 @@ class MediaStreamDeviceUIControllerTest
                                   std::string());
   }
 
-  scoped_ptr<MessageLoop> message_loop_;
+  scoped_ptr<base::MessageLoop> message_loop_;
   scoped_ptr<BrowserThreadImpl> ui_thread_;
   scoped_ptr<BrowserThreadImpl> io_thread_;
   scoped_ptr<MediaStreamUIController> ui_controller_;
@@ -94,17 +96,21 @@ TEST_F(MediaStreamDeviceUIControllerTest, GenerateAndRemoveRequest) {
 }
 
 TEST_F(MediaStreamDeviceUIControllerTest, HandleRequestUsingFakeUI) {
-  ui_controller_->UseFakeUI();
+  ui_controller_->UseFakeUI(scoped_ptr<MediaStreamUI>());
 
   const std::string label = "label";
   CreateDummyRequest(label, true, true);
 
   // Remove the current request, it should not crash.
   EXPECT_CALL(*this, DevicesAccepted(label, _));
+
+  message_loop_->RunUntilIdle();
+
+  ui_controller_->NotifyUIIndicatorDevicesClosed(label);
 }
 
 TEST_F(MediaStreamDeviceUIControllerTest, CreateRequestsAndCancelTheFirst) {
-  ui_controller_->UseFakeUI();
+  ui_controller_->UseFakeUI(scoped_ptr<MediaStreamUI>());
 
   // Create the first audio request.
   const std::string label_1 = "label_1";
@@ -124,10 +130,15 @@ TEST_F(MediaStreamDeviceUIControllerTest, CreateRequestsAndCancelTheFirst) {
   // We should get callbacks from the rest of the requests.
   EXPECT_CALL(*this, DevicesAccepted(label_2, _));
   EXPECT_CALL(*this, DevicesAccepted(label_3, _));
+
+  message_loop_->RunUntilIdle();
+
+  ui_controller_->NotifyUIIndicatorDevicesClosed(label_2);
+  ui_controller_->NotifyUIIndicatorDevicesClosed(label_3);
 }
 
 TEST_F(MediaStreamDeviceUIControllerTest, CreateRequestsAndCancelTheLast) {
-  ui_controller_->UseFakeUI();
+  ui_controller_->UseFakeUI(scoped_ptr<MediaStreamUI>());
 
   // Create the first audio request.
   const std::string label_1 = "label_1";
@@ -147,6 +158,11 @@ TEST_F(MediaStreamDeviceUIControllerTest, CreateRequestsAndCancelTheLast) {
   // We should get callbacks from the rest of the requests.
   EXPECT_CALL(*this, DevicesAccepted(label_1, _));
   EXPECT_CALL(*this, DevicesAccepted(label_2, _));
+
+  message_loop_->RunUntilIdle();
+
+  ui_controller_->NotifyUIIndicatorDevicesClosed(label_1);
+  ui_controller_->NotifyUIIndicatorDevicesClosed(label_2);
 }
 
 }  // namespace content

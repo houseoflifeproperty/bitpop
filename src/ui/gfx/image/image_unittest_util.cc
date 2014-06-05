@@ -7,16 +7,15 @@
 
 #include "ui/gfx/image/image_unittest_util.h"
 
+#include <cmath>
+
 #include "base/memory/scoped_ptr.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/image/image_skia.h"
 
-#if defined(TOOLKIT_GTK)
-#include <gtk/gtk.h>
-#include "ui/gfx/gtk_util.h"
-#elif defined(OS_IOS)
+#if defined(OS_IOS)
 #include "base/mac/foundation_util.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "skia/ext/skia_utils_ios.h"
@@ -28,11 +27,29 @@
 namespace gfx {
 namespace test {
 
-void SetSupportedScaleFactorsTo1xAnd2x() {
-  std::vector<ui::ScaleFactor> supported_scale_factors;
-  supported_scale_factors.push_back(ui::SCALE_FACTOR_100P);
-  supported_scale_factors.push_back(ui::SCALE_FACTOR_200P);
-  ui::test::SetSupportedScaleFactors(supported_scale_factors);
+namespace {
+
+bool ColorComponentsClose(SkColor component1, SkColor component2) {
+  int c1 = static_cast<int>(component1);
+  int c2 = static_cast<int>(component2);
+  return std::abs(c1 - c2) <= 40;
+}
+
+bool ColorsClose(SkColor color1, SkColor color2) {
+  // Be tolerant of floating point rounding and lossy color space conversions.
+  return ColorComponentsClose(SkColorGetR(color1), SkColorGetR(color2)) &&
+         ColorComponentsClose(SkColorGetG(color1), SkColorGetG(color2)) &&
+         ColorComponentsClose(SkColorGetB(color1), SkColorGetB(color2)) &&
+         ColorComponentsClose(SkColorGetA(color1), SkColorGetA(color2));
+}
+
+}  // namespace
+
+std::vector<float> Get1xAnd2xScales() {
+  std::vector<float> scales;
+  scales.push_back(1.0f);
+  scales.push_back(2.0f);
+  return scales;
 }
 
 const SkBitmap CreateBitmap(int width, int height) {
@@ -41,6 +58,10 @@ const SkBitmap CreateBitmap(int width, int height) {
   bitmap.allocPixels();
   bitmap.eraseRGB(0, 255, 0);
   return bitmap;
+}
+
+gfx::ImageSkia CreateImageSkia(int width, int height) {
+  return gfx::ImageSkia::CreateFrom1xBitmap(CreateBitmap(width, height));
 }
 
 scoped_refptr<base::RefCountedMemory> CreatePNGBytes(int edge_size) {
@@ -55,7 +76,7 @@ gfx::Image CreateImage() {
 }
 
 gfx::Image CreateImage(int width, int height) {
-  return gfx::Image(CreateBitmap(width, height));
+  return gfx::Image::CreateFrom1xBitmap(CreateBitmap(width, height));
 }
 
 bool IsEqual(const gfx::Image& img1, const gfx::Image& img2) {
@@ -65,10 +86,9 @@ bool IsEqual(const gfx::Image& img1, const gfx::Image& img2) {
     return false;
 
   for (size_t i = 0; i < img1_reps.size(); ++i) {
-    ui::ScaleFactor scale_factor = img1_reps[i].scale_factor();
-    const gfx::ImageSkiaRep& image_rep2 = image_skia2.GetRepresentation(
-        scale_factor);
-    if (image_rep2.scale_factor() != scale_factor ||
+    float scale = img1_reps[i].scale();
+    const gfx::ImageSkiaRep& image_rep2 = image_skia2.GetRepresentation(scale);
+    if (image_rep2.scale() != scale ||
         !IsEqual(img1_reps[i].sk_bitmap(), image_rep2.sk_bitmap())) {
       return false;
     }
@@ -94,7 +114,7 @@ bool IsEqual(const SkBitmap& bmp1, const SkBitmap& bmp2) {
 
   for (int y = 0; y < bmp1.height(); ++y) {
     for (int x = 0; x < bmp1.width(); ++x) {
-      if (*bmp1.getAddr32(x,y) != *bmp2.getAddr32(x,y))
+      if (!ColorsClose(bmp1.getColor(x,y), bmp2.getColor(x,y)))
         return false;
     }
   }
@@ -119,31 +139,29 @@ void CheckImageIndicatesPNGDecodeFailure(const gfx::Image& image) {
   EXPECT_LE(16, bitmap.width());
   EXPECT_LE(16, bitmap.height());
   SkAutoLockPixels auto_lock(bitmap);
-  CheckColor(bitmap.getColor(10, 10), true);
+  CheckColors(bitmap.getColor(10, 10), SK_ColorRED);
 }
 
 bool ImageSkiaStructureMatches(
     const gfx::ImageSkia& image_skia,
     int width,
     int height,
-    const std::vector<ui::ScaleFactor>& scale_factors) {
+    const std::vector<float>& scales) {
   if (image_skia.isNull() ||
       image_skia.width() != width ||
       image_skia.height() != height ||
-      image_skia.image_reps().size() != scale_factors.size()) {
+      image_skia.image_reps().size() != scales.size()) {
     return false;
   }
 
-  for (size_t i = 0; i < scale_factors.size(); ++i) {
+  for (size_t i = 0; i < scales.size(); ++i) {
     gfx::ImageSkiaRep image_rep =
-        image_skia.GetRepresentation(scale_factors[i]);
-    if (image_rep.is_null() ||
-        image_rep.scale_factor() != scale_factors[i])
+        image_skia.GetRepresentation(scales[i]);
+    if (image_rep.is_null() || image_rep.scale() != scales[i])
       return false;
 
-    float scale = ui::GetScaleFactorScale(scale_factors[i]);
-    if (image_rep.pixel_width() != static_cast<int>(width * scale) ||
-        image_rep.pixel_height() != static_cast<int>(height * scale)) {
+    if (image_rep.pixel_width() != static_cast<int>(width * scales[i]) ||
+        image_rep.pixel_height() != static_cast<int>(height * scales[i])) {
       return false;
     }
   }
@@ -159,10 +177,9 @@ bool IsEmpty(const gfx::Image& image) {
 PlatformImage CreatePlatformImage() {
   const SkBitmap bitmap(CreateBitmap(25, 25));
 #if defined(OS_IOS)
-  ui::ScaleFactor scale_factor = ui::GetMaxScaleFactor();
-  float scale = ui::GetScaleFactorScale(scale_factor);
+  float scale = ImageSkia::GetMaxSupportedScale();
 
-  base::mac::ScopedCFTypeRef<CGColorSpaceRef> color_space(
+  base::ScopedCFTypeRef<CGColorSpaceRef> color_space(
       CGColorSpaceCreateDeviceRGB());
   UIImage* image =
       gfx::SkBitmapToUIImageWithColorSpace(bitmap, scale, color_space);
@@ -172,10 +189,8 @@ PlatformImage CreatePlatformImage() {
   NSImage* image = gfx::SkBitmapToNSImage(bitmap);
   base::mac::NSObjectRetain(image);
   return image;
-#elif defined(TOOLKIT_GTK)
-  return gfx::GdkPixbufFromSkBitmap(bitmap);
 #else
-  return bitmap;
+  return gfx::ImageSkia::CreateFrom1xBitmap(bitmap);
 #endif
 }
 
@@ -184,8 +199,6 @@ gfx::Image::RepresentationType GetPlatformRepresentationType() {
   return gfx::Image::kImageRepCocoaTouch;
 #elif defined(OS_MACOSX)
   return gfx::Image::kImageRepCocoa;
-#elif defined(TOOLKIT_GTK)
-  return gfx::Image::kImageRepGdk;
 #else
   return gfx::Image::kImageRepSkia;
 #endif
@@ -196,10 +209,8 @@ PlatformImage ToPlatformType(const gfx::Image& image) {
   return image.ToUIImage();
 #elif defined(OS_MACOSX)
   return image.ToNSImage();
-#elif defined(TOOLKIT_GTK)
-  return image.ToGdkPixbuf();
 #else
-  return *image.ToSkBitmap();
+  return image.AsImageSkia();
 #endif
 }
 
@@ -208,43 +219,23 @@ PlatformImage CopyPlatformType(const gfx::Image& image) {
   return image.CopyUIImage();
 #elif defined(OS_MACOSX)
   return image.CopyNSImage();
-#elif defined(TOOLKIT_GTK)
-  return image.CopyGdkPixbuf();
 #else
-  return *image.ToSkBitmap();
+  return image.AsImageSkia();
 #endif
 }
 
 #if defined(OS_MACOSX)
 // Defined in image_unittest_util_mac.mm.
-#elif defined(TOOLKIT_GTK)
-SkColor GetPlatformImageColor(PlatformImage image, int x, int y) {
-  int n_channels = gdk_pixbuf_get_n_channels(image);
-  int rowstride = gdk_pixbuf_get_rowstride(image);
-  guchar* gdk_pixels = gdk_pixbuf_get_pixels(image);
-
-  guchar* pixel = gdk_pixels + (y * rowstride) + (x * n_channels);
-  guchar alpha = gdk_pixbuf_get_has_alpha(image) ? pixel[3] : 255;
-  return SkColorSetARGB(alpha, pixel[0], pixel[1], pixel[2]);
-}
 #else
 SkColor GetPlatformImageColor(PlatformImage image, int x, int y) {
-  SkAutoLockPixels auto_lock(image);
-  return image.getColor(x, y);
+  SkBitmap bitmap = *image.bitmap();
+  SkAutoLockPixels auto_lock(bitmap);
+  return bitmap.getColor(x, y);
 }
 #endif
 
-void CheckColor(SkColor color, bool is_red) {
-  // Be tolerant of floating point rounding and lossy color space conversions.
-  if (is_red) {
-    EXPECT_GT(SkColorGetR(color) / 255.0, 0.95);
-    EXPECT_LT(SkColorGetG(color) / 255.0, 0.05);
-  } else {
-    EXPECT_GT(SkColorGetG(color) / 255.0, 0.95);
-    EXPECT_LT(SkColorGetR(color) / 255.0, 0.05);
-  }
-  EXPECT_LT(SkColorGetB(color) / 255.0, 0.05);
-  EXPECT_GT(SkColorGetA(color) / 255.0, 0.95);
+void CheckColors(SkColor color1, SkColor color2) {
+  EXPECT_TRUE(ColorsClose(color1, color2));
 }
 
 void CheckIsTransparent(SkColor color) {
@@ -252,7 +243,7 @@ void CheckIsTransparent(SkColor color) {
 }
 
 bool IsPlatformImageValid(PlatformImage image) {
-#if defined(OS_MACOSX) || defined(TOOLKIT_GTK)
+#if defined(OS_MACOSX)
   return image != NULL;
 #else
   return !image.isNull();
@@ -260,10 +251,10 @@ bool IsPlatformImageValid(PlatformImage image) {
 }
 
 bool PlatformImagesEqual(PlatformImage image1, PlatformImage image2) {
-#if defined(OS_MACOSX) || defined(TOOLKIT_GTK)
+#if defined(OS_MACOSX)
   return image1 == image2;
 #else
-  return image1.getPixels() == image2.getPixels();
+  return image1.BackedBySameObjectAs(image2);
 #endif
 }
 

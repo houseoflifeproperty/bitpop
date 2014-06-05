@@ -46,7 +46,8 @@
          * are still using a stack in untrusted memory, and we need to
          * figure out the per-thread secure stack first.
          */
-DEFINE_GLOBAL_HIDDEN_IDENTIFIER(NaClSyscallSeg):
+.macro syscallseg arg1, arg2, arg3, arg4
+DEFINE_GLOBAL_HIDDEN_LOCATION(\arg1):
         cld
         xor     %eax, %eax
         movw    %gs, %ax
@@ -69,12 +70,10 @@ DEFINE_GLOBAL_HIDDEN_IDENTIFIER(NaClSyscallSeg):
         test    %eax, %eax  /* zero is illegal (and default) */
         jz      1f
 
-        movl    0(%ecx), %edx
-        movl    0(%edx,%eax,4), %edx
+        movl    (%ecx,%eax,4), %edx
         test    %edx, %edx
         jz      1f
 
-        /* check NaClThreadContext in sel_rt_32.h for the offsets */
         movl    %ebx, NACL_THREAD_CONTEXT_OFFSET_EBX(%edx)
         movl    %esi, NACL_THREAD_CONTEXT_OFFSET_ESI(%edx)
         movl    %edi, NACL_THREAD_CONTEXT_OFFSET_EDI(%edx)
@@ -93,6 +92,16 @@ DEFINE_GLOBAL_HIDDEN_IDENTIFIER(NaClSyscallSeg):
          */
         fnstcw  NACL_THREAD_CONTEXT_OFFSET_FCW(%edx)
         fldcw   NACL_THREAD_CONTEXT_OFFSET_SYS_FCW(%edx)
+
+.if \arg2
+        /*
+         * Save the SSE control word.  Then reload the system default
+         * state to use while running trusted code.
+         */
+        stmxcsr NACL_THREAD_CONTEXT_OFFSET_MXCSR(%edx)
+        ldmxcsr NACL_THREAD_CONTEXT_OFFSET_SYS_MXCSR(%edx)
+.endif
+DEFINE_GLOBAL_HIDDEN_LOCATION(\arg3): /* NaClSyscallSegRegsSaved */
 
         /*
          * We do not save segment registers, which untrusted code is
@@ -115,12 +124,41 @@ DEFINE_GLOBAL_HIDDEN_IDENTIFIER(NaClSyscallSeg):
 
         /* 'lss' sets %ss as well as %esp */
         lss     NACL_THREAD_CONTEXT_OFFSET_TRUSTED_STACK_PTR(%edx), %esp
-        push    %eax
+        push    %edx
         call    IDENTIFIER(NaClSyscallCSegHook)
+
+        /* NaClSyscallCSegHook return value is argument to NaClSwitch. */
+        push    %eax
+
+        /*
+         * Now switch back to untrusted code.  This does not return.
+         * The first call is standard PIC magic.
+         * See nacl_switch_32.S for the definition.
+         */
+        call    __x86.get_pc_thunk.ax
+        call    *(IDENTIFIER(NaClSwitch)-.)(%eax)
+
         /*
          * If stack usage in the above code changes, modify initial %esp
          * computation -- see nacl_switch_to_app.c:NaClStartThreadInApp.
          */
-DEFINE_GLOBAL_HIDDEN_IDENTIFIER(NaClSyscallThreadCaptureFault):
+DEFINE_GLOBAL_HIDDEN_LOCATION(\arg4): /* NaClSyscallThreadCaptureFault */
 1:      hlt
         /* noret */
+.endm
+
+        /*
+         * Note that long lines are required here because "\" does not
+         * work in the Windows build.
+         */
+        syscallseg NaClSyscallSegNoSSE, 0, NaClSyscallSegRegsSavedNoSSE, NaClSyscallThreadCaptureFaultNoSSE
+        syscallseg NaClSyscallSegSSE, 1, NaClSyscallSegRegsSavedSSE, NaClSyscallThreadCaptureFaultSSE
+
+        /*
+         * This is defined here rather than in C because the assembler for
+         * MacOS cannot handle the PC-relative reference above unless the
+         * symbol is defined in the same file.
+         */
+        .data
+DEFINE_GLOBAL_HIDDEN_LOCATION(NaClSwitch):
+        .long 0

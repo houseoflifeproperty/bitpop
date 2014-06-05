@@ -5,24 +5,23 @@
 #include "chrome/browser/ui/webui/chromeos/imageburner/imageburner_ui.h"
 
 #include "base/bind.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/i18n/rtl.h"
-#include "base/string16.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/imageburner/burn_controller.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
-#include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
-#include "chrome/common/time_format.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_data_source.h"
 #include "content/public/browser/web_ui_message_handler.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
-#include "googleurl/src/gurl.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/l10n/time_format.h"
 #include "ui/base/text/bytes_formatting.h"
+#include "url/gurl.h"
 
 namespace chromeos {
 namespace imageburner {
@@ -32,16 +31,15 @@ namespace {
 const char kPropertyDevicePath[] = "devicePath";
 const char kPropertyFilePath[] = "filePath";
 const char kPropertyLabel[] = "label";
-const char kPropertyPath[] = "path";
 const char kPropertyDeviceType[] = "type";
 
 // Link displayed on imageburner ui.
 const char kMoreInfoLink[] =
     "http://www.chromium.org/chromium-os/chromiumos-design-docs/recovery-mode";
 
-ChromeWebUIDataSource* CreateImageburnerUIHTMLSource() {
-  ChromeWebUIDataSource* source =
-      new ChromeWebUIDataSource(chrome::kChromeUIImageBurnerHost);
+content::WebUIDataSource* CreateImageburnerUIHTMLSource() {
+  content::WebUIDataSource* source =
+      content::WebUIDataSource::Create(chrome::kChromeUIImageBurnerHost);
 
   source->AddLocalizedString("headerTitle", IDS_IMAGEBURN_HEADER_TITLE);
   source->AddLocalizedString("headerDescription",
@@ -78,11 +76,11 @@ ChromeWebUIDataSource* CreateImageburnerUIHTMLSource() {
   source->AddLocalizedString("confirmButton", IDS_IMAGEBURN_CONFIRM_BUTTON);
   source->AddLocalizedString("cancelButton", IDS_IMAGEBURN_CANCEL_BUTTON);
   source->AddLocalizedString("retryButton", IDS_IMAGEBURN_RETRY_BUTTON);
-  source->AddString("moreInfoLink", ASCIIToUTF16(kMoreInfoLink));
+  source->AddString("moreInfoLink", base::ASCIIToUTF16(kMoreInfoLink));
 
-  source->set_json_path("strings.js");
-  source->add_resource_path("image_burner.js", IDR_IMAGEBURNER_JS);
-  source->set_default_resource(IDR_IMAGEBURNER_HTML);
+  source->SetJsonPath("strings.js");
+  source->AddResourcePath("image_burner.js", IDR_IMAGEBURNER_JS);
+  source->SetDefaultResource(IDR_IMAGEBURNER_HTML);
   return source;
 }
 
@@ -122,14 +120,15 @@ class WebUIHandler
 
   // BurnController::Delegate override.
   virtual void OnFail(int error_message_id) OVERRIDE {
-    StringValue error_message(l10n_util::GetStringUTF16(error_message_id));
+    base::StringValue error_message(
+        l10n_util::GetStringUTF16(error_message_id));
     web_ui()->CallJavascriptFunction("browserBridge.reportFail", error_message);
   }
 
   // BurnController::Delegate override.
   virtual void OnDeviceAdded(const disks::DiskMountManager::Disk& disk)
       OVERRIDE {
-    DictionaryValue disk_value;
+    base::DictionaryValue disk_value;
     CreateDiskValue(disk, &disk_value);
     web_ui()->CallJavascriptFunction("browserBridge.deviceAdded", disk_value);
   }
@@ -137,16 +136,16 @@ class WebUIHandler
   // BurnController::Delegate override.
   virtual void OnDeviceRemoved(const disks::DiskMountManager::Disk& disk)
       OVERRIDE {
-    StringValue device_path_value(disk.device_path());
+    base::StringValue device_path_value(disk.device_path());
     web_ui()->CallJavascriptFunction("browserBridge.deviceRemoved",
                                      device_path_value);
   }
 
   // BurnController::Delegate override.
   virtual void OnDeviceTooSmall(int64 device_size) OVERRIDE {
-    string16 size;
+    base::string16 size;
     GetDataSizeText(device_size, &size);
-    StringValue device_size_text(size);
+    base::StringValue device_size_text(size);
     web_ui()->CallJavascriptFunction("browserBridge.reportDeviceTooSmall",
                                      device_size_text);
   }
@@ -155,7 +154,7 @@ class WebUIHandler
   virtual void OnProgress(ProgressType progress_type,
                           int64 amount_finished,
                           int64 amount_total) OVERRIDE {
-    const string16 time_remaining_text =
+    const base::string16 time_remaining_text =
         l10n_util::GetStringUTF16(IDS_IMAGEBURN_PROGRESS_TIME_UNKNOWN);
     SendProgressSignal(progress_type, amount_finished, amount_total,
                        time_remaining_text);
@@ -167,9 +166,10 @@ class WebUIHandler
       int64 amount_finished,
       int64 amount_total,
       const base::TimeDelta& time_remaining) OVERRIDE {
-    const string16 time_remaining_text = l10n_util::GetStringFUTF16(
+    const base::string16 time_remaining_text = l10n_util::GetStringFUTF16(
         IDS_IMAGEBURN_DOWNLOAD_TIME_REMAINING,
-        TimeFormat::TimeRemaining(time_remaining));
+        ui::TimeFormat::Simple(ui::TimeFormat::FORMAT_REMAINING,
+                               ui::TimeFormat::LENGTH_SHORT, time_remaining));
     SendProgressSignal(progress_type, amount_finished, amount_total,
                        time_remaining_text);
   }
@@ -186,8 +186,8 @@ class WebUIHandler
 
  private:
   void CreateDiskValue(const disks::DiskMountManager::Disk& disk,
-                       DictionaryValue* disk_value) {
-    string16 label = ASCIIToUTF16(disk.drive_label());
+                       base::DictionaryValue* disk_value) {
+    base::string16 label = base::ASCIIToUTF16(disk.drive_label());
     base::i18n::AdjustStringForLocaleDirection(&label);
     disk_value->SetString(std::string(kPropertyLabel), label);
     disk_value->SetString(std::string(kPropertyFilePath), disk.file_path());
@@ -197,12 +197,12 @@ class WebUIHandler
   }
 
   // Callback for the "getDevices" message.
-  void HandleGetDevices(const ListValue* args) {
+  void HandleGetDevices(const base::ListValue* args) {
     const std::vector<disks::DiskMountManager::Disk> disks
         = burn_controller_->GetBurnableDevices();
-    ListValue results_value;
+    base::ListValue results_value;
     for (size_t i = 0; i != disks.size(); ++i) {
-      DictionaryValue* disk_value = new DictionaryValue();
+      base::DictionaryValue* disk_value = new base::DictionaryValue();
       CreateDiskValue(disks[i], disk_value);
       results_value.Append(disk_value);
     }
@@ -211,23 +211,23 @@ class WebUIHandler
   }
 
   // Callback for the webuiInitialized message.
-  void HandleWebUIInitialized(const ListValue* args) {
+  void HandleWebUIInitialized(const base::ListValue* args) {
     burn_controller_->Init();
   }
 
   // Callback for the "cancelBurnImage" message.
-  void HandleCancelBurnImage(const ListValue* args) {
+  void HandleCancelBurnImage(const base::ListValue* args) {
     burn_controller_->CancelBurnImage();
   }
 
   // Callback for the "burnImage" message.
   // It may be called with NULL if there is a handler that has started burning,
   // and thus set the target paths.
-  void HandleBurnImage(const ListValue* args) {
-    FilePath target_device_path;
+  void HandleBurnImage(const base::ListValue* args) {
+    base::FilePath target_device_path;
     ExtractTargetedDevicePath(*args, 0, &target_device_path);
 
-    FilePath target_file_path;
+    base::FilePath target_file_path;
     ExtractTargetedDevicePath(*args, 1, &target_file_path);
 
     burn_controller_->StartBurnImage(target_device_path, target_file_path);
@@ -237,8 +237,8 @@ class WebUIHandler
   void SendProgressSignal(ProgressType progress_type,
                           int64 amount_finished,
                           int64 amount_total,
-                          const string16& time_remaining_text) {
-    DictionaryValue progress;
+                          const base::string16& time_remaining_text) {
+    base::DictionaryValue progress;
     int progress_message_id = 0;
     switch (progress_type) {
       case DOWNLOADING:
@@ -259,7 +259,7 @@ class WebUIHandler
     progress.SetInteger("amountFinished", amount_finished);
     progress.SetInteger("amountTotal", amount_total);
     if (amount_total != 0) {
-      string16 progress_text;
+      base::string16 progress_text;
       GetProgressText(progress_message_id, amount_finished, amount_total,
                       &progress_text);
       progress.SetString("progressText", progress_text);
@@ -272,7 +272,7 @@ class WebUIHandler
   }
 
   // size_text should be previously created.
-  void GetDataSizeText(int64 size, string16* size_text) {
+  void GetDataSizeText(int64 size, base::string16* size_text) {
     *size_text = ui::FormatBytes(size);
     base::i18n::AdjustStringForLocaleDirection(size_text);
   }
@@ -281,26 +281,24 @@ class WebUIHandler
   void GetProgressText(int message_id,
                        int64 amount_finished,
                        int64 amount_total,
-                       string16* progress_text) {
-    string16 finished;
+                       base::string16* progress_text) {
+    base::string16 finished;
     GetDataSizeText(amount_finished, &finished);
-    string16 total;
+    base::string16 total;
     GetDataSizeText(amount_total, &total);
     *progress_text = l10n_util::GetStringFUTF16(message_id, finished, total);
   }
 
   // device_path has to be previously created.
-  void ExtractTargetedDevicePath(const ListValue& list_value,
+  void ExtractTargetedDevicePath(const base::ListValue& list_value,
                                  int index,
-                                 FilePath* device_path) {
-    const Value* list_member;
+                                 base::FilePath* device_path) {
+    const base::Value* list_member;
+    std::string image_dest;
     if (list_value.Get(index, &list_member) &&
-        list_member->GetType() == Value::TYPE_STRING) {
-      const StringValue* string_value =
-          static_cast<const StringValue*>(list_member);
-      std::string image_dest;
-      string_value->GetAsString(&image_dest);
-      *device_path = FilePath(image_dest);
+        list_member->GetType() == base::Value::TYPE_STRING &&
+        list_member->GetAsString(&image_dest)) {
+      *device_path = base::FilePath(image_dest);
     } else {
       LOG(ERROR) << "Unable to get path string";
       device_path->clear();
@@ -329,6 +327,6 @@ ImageBurnUI::ImageBurnUI(content::WebUI* web_ui) : WebUIController(web_ui) {
   web_ui->AddMessageHandler(handler);
 
   Profile* profile = Profile::FromWebUI(web_ui);
-  ChromeURLDataManager::AddDataSource(profile,
-      chromeos::imageburner::CreateImageburnerUIHTMLSource());
+  content::WebUIDataSource::Add(
+      profile, chromeos::imageburner::CreateImageburnerUIHTMLSource());
 }

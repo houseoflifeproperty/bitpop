@@ -5,51 +5,14 @@
 #import <Cocoa/Cocoa.h>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/browser/accessibility/browser_accessibility_cocoa.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
+#include "content/browser/accessibility/browser_accessibility_manager_mac.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #import "testing/gtest_mac.h"
-#import "ui/base/test/ui_cocoa_test_helper.h"
-
-@interface MockAccessibilityDelegate :
-    NSView<BrowserAccessibilityDelegateCocoa>
-
-- (NSPoint)accessibilityPointInScreen:(BrowserAccessibilityCocoa*)accessibility;
-- (void)doDefaultAction:(int32)accessibilityObjectId;
-- (void)accessibilitySetTextSelection:(int32)accId
-                          startOffset:(int32)startOffset
-                            endOffset:(int32)endOffset;
-- (void)performShowMenuAction:(BrowserAccessibilityCocoa*)accessibility;
-- (void)setAccessibilityFocus:(BOOL)focus
-              accessibilityId:(int32)accessibilityObjectId;
-- (NSWindow*)window;
-
-@end
-
-@implementation MockAccessibilityDelegate
-
-- (NSPoint)accessibilityPointInScreen:
-    (BrowserAccessibilityCocoa*)accessibility {
-  return NSZeroPoint;
-}
-- (void)doDefaultAction:(int32)accessibilityObjectId {
-}
-- (void)accessibilitySetTextSelection:(int32)accId
-                          startOffset:(int32)startOffset
-                            endOffset:(int32)endOffset {
-}
-- (void)performShowMenuAction:(BrowserAccessibilityCocoa*)accessibility {
-}
-- (void)setAccessibilityFocus:(BOOL)focus
-              accessibilityId:(int32)accessibilityObjectId {
-}
-- (NSWindow*)window {
-  return nil;
-}
-
-@end
+#import "ui/gfx/test/ui_cocoa_test_helper.h"
 
 namespace content {
 
@@ -57,41 +20,44 @@ class BrowserAccessibilityTest : public ui::CocoaTest {
  public:
   virtual void SetUp() {
     CocoaTest::SetUp();
-    AccessibilityNodeData root;
+    RebuildAccessibilityTree();
+  }
+
+ protected:
+  void RebuildAccessibilityTree() {
+    ui::AXNodeData root;
     root.id = 1000;
     root.location.set_width(500);
     root.location.set_height(100);
-    root.role = AccessibilityNodeData::ROLE_WEB_AREA;
-    root.string_attributes[AccessibilityNodeData::ATTR_HELP] =
-        ASCIIToUTF16("HelpText");
+    root.role = ui::AX_ROLE_ROOT_WEB_AREA;
+    root.AddStringAttribute(ui::AX_ATTR_HELP, "HelpText");
+    root.child_ids.push_back(1001);
+    root.child_ids.push_back(1002);
 
-    AccessibilityNodeData child1;
+    ui::AXNodeData child1;
     child1.id = 1001;
-    child1.name = ASCIIToUTF16("Child1");
+    child1.SetName("Child1");
     child1.location.set_width(250);
     child1.location.set_height(100);
-    child1.role = AccessibilityNodeData::ROLE_BUTTON;
+    child1.role = ui::AX_ROLE_BUTTON;
 
-    AccessibilityNodeData child2;
+    ui::AXNodeData child2;
     child2.id = 1002;
     child2.location.set_x(250);
     child2.location.set_width(250);
     child2.location.set_height(100);
-    child2.role = AccessibilityNodeData::ROLE_HEADING;
+    child2.role = ui::AX_ROLE_HEADING;
 
-    root.children.push_back(child1);
-    root.children.push_back(child2);
-
-    delegate_.reset([[MockAccessibilityDelegate alloc] init]);
     manager_.reset(
-        BrowserAccessibilityManager::Create(delegate_, root, NULL));
+        new BrowserAccessibilityManagerMac(
+            nil,
+            MakeAXTreeUpdate(root, child1, child2),
+            NULL));
     accessibility_.reset([manager_->GetRoot()->ToBrowserAccessibilityCocoa()
         retain]);
   }
 
- protected:
-  scoped_nsobject<MockAccessibilityDelegate> delegate_;
-  scoped_nsobject<BrowserAccessibilityCocoa> accessibility_;
+  base::scoped_nsobject<BrowserAccessibilityCocoa> accessibility_;
   scoped_ptr<BrowserAccessibilityManager> manager_;
 };
 
@@ -106,7 +72,7 @@ TEST_F(BrowserAccessibilityTest, HitTestTest) {
 // Test doing a hit test on the edge of a child.
 TEST_F(BrowserAccessibilityTest, EdgeHitTest) {
   BrowserAccessibilityCocoa* firstChild =
-      [accessibility_ accessibilityHitTest:NSMakePoint(0, 0)];
+      [accessibility_ accessibilityHitTest:NSZeroPoint];
   EXPECT_NSEQ(@"Child1",
       [firstChild accessibilityAttributeValue:NSAccessibilityTitleAttribute]);
 }
@@ -132,6 +98,28 @@ TEST_F(BrowserAccessibilityTest, InvalidAttributeTest) {
   NSString* shouldBeNil = [accessibility_
       accessibilityAttributeValue:@"NSAnInvalidAttribute"];
   EXPECT_TRUE(shouldBeNil == nil);
+}
+
+TEST_F(BrowserAccessibilityTest, RetainedDetachedObjectsReturnNil) {
+  // Get the first child.
+  BrowserAccessibilityCocoa* retainedFirstChild =
+      [accessibility_ accessibilityHitTest:NSMakePoint(50, 50)];
+  EXPECT_NSEQ(@"Child1", [retainedFirstChild
+      accessibilityAttributeValue:NSAccessibilityTitleAttribute]);
+
+  // Retain it. This simulates what the system might do with an
+  // accessibility object.
+  [retainedFirstChild retain];
+
+  // Rebuild the accessibility tree, which should detach |retainedFirstChild|.
+  RebuildAccessibilityTree();
+
+  // Now any attributes we query should return nil.
+  EXPECT_EQ(nil, [retainedFirstChild
+      accessibilityAttributeValue:NSAccessibilityTitleAttribute]);
+
+  // Don't leak memory in the test.
+  [retainedFirstChild release];
 }
 
 }  // namespace content

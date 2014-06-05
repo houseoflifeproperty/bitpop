@@ -9,9 +9,9 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "build/build_config.h"
 #include "base/memory/aligned_memory.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
+#include "build/build_config.h"
 
 namespace base {
 
@@ -56,7 +56,7 @@ class StackAllocator : public std::allocator<T> {
     // constructors and destructors to be automatically called. Define a POD
     // buffer of the right size instead.
     base::AlignedMemory<sizeof(T[stack_capacity]), ALIGNOF(T)> stack_buffer_;
-#if defined(OS_ANDROID)
+#if defined(__GNUC__) && !defined(ARCH_CPU_X86_FAMILY)
     COMPILE_ASSERT(ALIGNOF(T) <= 16, crbug_115612);
 #endif
 

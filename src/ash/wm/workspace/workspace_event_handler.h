@@ -5,24 +5,22 @@
 #ifndef ASH_WM_WORKSPACE_WORKSPACE_EVENT_HANDLER_H_
 #define ASH_WM_WORKSPACE_WORKSPACE_EVENT_HANDLER_H_
 
-#include "ash/wm/toplevel_window_event_handler.h"
 #include "ash/wm/workspace/multi_window_resize_controller.h"
-
-namespace aura {
-class Window;
-}
+#include "ui/events/event_handler.h"
 
 namespace ash {
-namespace internal {
-
 class WorkspaceEventHandlerTestHelper;
 
-class WorkspaceEventHandler : public ToplevelWindowEventHandler {
+namespace wm {
+class WindowState;
+}
+
+class WorkspaceEventHandler : public ui::EventHandler {
  public:
-  explicit WorkspaceEventHandler(aura::Window* owner);
+  WorkspaceEventHandler();
   virtual ~WorkspaceEventHandler();
 
-  // Overridden from ToplevelWindowEventHandler:
+  // ui::EventHandler:
   virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
@@ -33,18 +31,21 @@ class WorkspaceEventHandler : public ToplevelWindowEventHandler {
   // bottom vertical resize edge, and if so toggles the vertical height of the
   // window between its restored state and the full available height of the
   // workspace.
-  void HandleVerticalResizeDoubleClick(aura::Window* target,
+  void HandleVerticalResizeDoubleClick(wm::WindowState* window_state,
                                        ui::MouseEvent* event);
 
   MultiWindowResizeController multi_window_resize_controller_;
 
-  // If non-NULL, set to true in the destructor.
-  bool* destroyed_;
+  // The non-client component for the target of a MouseEvent or GestureEvent.
+  // Events can be destructive to the window tree, which can cause the
+  // component of a ui::EF_IS_DOUBLE_CLICK event to no longer be the same as
+  // that of the initial click. Acting on a double click should only occur for
+  // matching components. This will be set for left clicks, and tap events.
+  int click_component_;
 
   DISALLOW_COPY_AND_ASSIGN(WorkspaceEventHandler);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_WM_WORKSPACE_WORKSPACE_EVENT_HANDLER_H_

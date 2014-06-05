@@ -5,9 +5,9 @@
 #include "net/ftp/ftp_directory_listing_parser_unittest.h"
 
 #include "base/format_macros.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/ftp/ftp_directory_listing_parser_netware.h"
 
 namespace net {
@@ -32,10 +32,11 @@ TEST_F(FtpDirectoryListingParserNetwareTest, Good) {
     SCOPED_TRACE(base::StringPrintf("Test[%" PRIuS "]: %s", i,
                                     good_cases[i].input));
 
-    std::vector<string16> lines(GetSingleLineTestCase(good_cases[i].input));
+    std::vector<base::string16> lines(
+        GetSingleLineTestCase(good_cases[i].input));
 
     // The parser requires a "total n" line before accepting regular input.
-    lines.insert(lines.begin(), ASCIIToUTF16("total 1"));
+    lines.insert(lines.begin(), base::ASCIIToUTF16("total 1"));
 
     std::vector<FtpDirectoryListingEntry> entries;
     EXPECT_TRUE(ParseFtpDirectoryListingNetware(lines,
@@ -59,10 +60,10 @@ TEST_F(FtpDirectoryListingParserNetwareTest, Bad) {
     SCOPED_TRACE(base::StringPrintf("Test[%" PRIuS "]: %s", i,
                                     bad_cases[i]));
 
-    std::vector<string16> lines(GetSingleLineTestCase(bad_cases[i]));
+    std::vector<base::string16> lines(GetSingleLineTestCase(bad_cases[i]));
 
     // The parser requires a "total n" line before accepting regular input.
-    lines.insert(lines.begin(), ASCIIToUTF16("total 1"));
+    lines.insert(lines.begin(), base::ASCIIToUTF16("total 1"));
 
     std::vector<FtpDirectoryListingEntry> entries;
     EXPECT_FALSE(ParseFtpDirectoryListingNetware(lines,

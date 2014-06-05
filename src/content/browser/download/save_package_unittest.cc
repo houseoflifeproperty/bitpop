@@ -4,18 +4,17 @@
 
 #include <string>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
-#include "content/browser/browser_thread_impl.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/browser/download/save_package.h"
-#include "content/browser/renderer_host/test_render_view_host.h"
-#include "content/browser/web_contents/test_web_contents.h"
 #include "content/test/net/url_request_mock_http_job.h"
-#include "googleurl/src/gurl.h"
+#include "content/test/test_render_view_host.h"
+#include "content/test/test_web_contents.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -47,13 +46,15 @@ std::string long_file_name(
     "6789ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz0123"
     "456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789a");
 
-bool HasOrdinalNumber(const FilePath::StringType& filename) {
-  FilePath::StringType::size_type r_paren_index = filename.rfind(FPL(')'));
-  FilePath::StringType::size_type l_paren_index = filename.rfind(FPL('('));
+bool HasOrdinalNumber(const base::FilePath::StringType& filename) {
+  base::FilePath::StringType::size_type r_paren_index =
+      filename.rfind(FPL(')'));
+  base::FilePath::StringType::size_type l_paren_index =
+      filename.rfind(FPL('('));
   if (l_paren_index >= r_paren_index)
     return false;
 
-  for (FilePath::StringType::size_type i = l_paren_index + 1;
+  for (base::FilePath::StringType::size_type i = l_paren_index + 1;
        i != r_paren_index; ++i) {
     if (!IsAsciiDigit(filename[i]))
       return false;
@@ -66,14 +67,11 @@ bool HasOrdinalNumber(const FilePath::StringType& filename) {
 
 class SavePackageTest : public RenderViewHostImplTestHarness {
  public:
-  SavePackageTest() : browser_thread_(BrowserThread::UI, &message_loop_) {
-  }
-
   bool GetGeneratedFilename(bool need_success_generate_filename,
                             const std::string& disposition,
                             const std::string& url,
                             bool need_htm_ext,
-                            FilePath::StringType* generated_name) {
+                            base::FilePath::StringType* generated_name) {
     SavePackage* save_package;
     if (need_success_generate_filename)
       save_package = save_package_success_.get();
@@ -83,11 +81,11 @@ class SavePackageTest : public RenderViewHostImplTestHarness {
                                           generated_name);
   }
 
-  FilePath EnsureHtmlExtension(const FilePath& name) {
+  base::FilePath EnsureHtmlExtension(const base::FilePath& name) {
     return SavePackage::EnsureHtmlExtension(name);
   }
 
-  FilePath EnsureMimeExtension(const FilePath& name,
+  base::FilePath EnsureMimeExtension(const base::FilePath& name,
                                const std::string& content_mime_type) {
     return SavePackage::EnsureMimeExtension(name, content_mime_type);
   }
@@ -121,22 +119,18 @@ class SavePackageTest : public RenderViewHostImplTestHarness {
   }
 
  private:
-  BrowserThreadImpl browser_thread_;
-
   // SavePackage for successfully generating file name.
   scoped_refptr<SavePackage> save_package_success_;
   // SavePackage for failed generating file name.
   scoped_refptr<SavePackage> save_package_fail_;
 
   base::ScopedTempDir temp_dir_;
-
-  DISALLOW_COPY_AND_ASSIGN(SavePackageTest);
 };
 
 static const struct {
   const char* disposition;
   const char* url;
-  const FilePath::CharType* expected_name;
+  const base::FilePath::CharType* expected_name;
   bool need_htm_ext;
 } kGeneratedFiles[] = {
   // We mainly focus on testing duplicated names here, since retrieving file
@@ -183,7 +177,7 @@ static const struct {
 
 TEST_F(SavePackageTest, TestSuccessfullyGenerateSavePackageFilename) {
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kGeneratedFiles); ++i) {
-    FilePath::StringType file_name;
+    base::FilePath::StringType file_name;
     bool ok = GetGeneratedFilename(true,
                                    kGeneratedFiles[i].disposition,
                                    kGeneratedFiles[i].url,
@@ -196,7 +190,7 @@ TEST_F(SavePackageTest, TestSuccessfullyGenerateSavePackageFilename) {
 
 TEST_F(SavePackageTest, TestUnSuccessfullyGenerateSavePackageFilename) {
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kGeneratedFiles); ++i) {
-    FilePath::StringType file_name;
+    base::FilePath::StringType file_name;
     bool ok = GetGeneratedFilename(false,
                                    kGeneratedFiles[i].disposition,
                                    kGeneratedFiles[i].url,
@@ -217,22 +211,23 @@ TEST_F(SavePackageTest, MAYBE_TestLongSavePackageFilename) {
   const std::string long_file = long_file_name + ".css";
   const std::string url = base_url + long_file;
 
-  FilePath::StringType filename;
+  base::FilePath::StringType filename;
   // Test that the filename is successfully shortened to fit.
-  ASSERT_TRUE(GetGeneratedFilename(true, "", url, false, &filename));
+  ASSERT_TRUE(GetGeneratedFilename(true, std::string(), url, false, &filename));
   EXPECT_TRUE(filename.length() < long_file.length());
   EXPECT_FALSE(HasOrdinalNumber(filename));
 
   // Test that the filename is successfully shortened to fit, and gets an
   // an ordinal appended.
-  ASSERT_TRUE(GetGeneratedFilename(true, "", url, false, &filename));
+  ASSERT_TRUE(GetGeneratedFilename(true, std::string(), url, false, &filename));
   EXPECT_TRUE(filename.length() < long_file.length());
   EXPECT_TRUE(HasOrdinalNumber(filename));
 
   // Test that the filename is successfully shortened to fit, and gets a
   // different ordinal appended.
-  FilePath::StringType filename2;
-  ASSERT_TRUE(GetGeneratedFilename(true, "", url, false, &filename2));
+  base::FilePath::StringType filename2;
+  ASSERT_TRUE(
+      GetGeneratedFilename(true, std::string(), url, false, &filename2));
   EXPECT_TRUE(filename2.length() < long_file.length());
   EXPECT_TRUE(HasOrdinalNumber(filename2));
   EXPECT_NE(filename, filename2);
@@ -245,11 +240,11 @@ TEST_F(SavePackageTest, MAYBE_TestLongSavePackageFilename) {
 #define MAYBE_TestLongSafePureFilename TestLongSafePureFilename
 #endif
 TEST_F(SavePackageTest, MAYBE_TestLongSafePureFilename) {
-  const FilePath save_dir(FPL("test_dir"));
-  const FilePath::StringType ext(FPL_HTML_EXTENSION);
-  FilePath::StringType filename =
+  const base::FilePath save_dir(FPL("test_dir"));
+  const base::FilePath::StringType ext(FPL_HTML_EXTENSION);
+  base::FilePath::StringType filename =
 #if defined(OS_WIN)
-      ASCIIToWide(long_file_name);
+      base::ASCIIToWide(long_file_name);
 #else
       long_file_name;
 #endif
@@ -262,8 +257,8 @@ TEST_F(SavePackageTest, MAYBE_TestLongSafePureFilename) {
 }
 
 static const struct {
-  const FilePath::CharType* page_title;
-  const FilePath::CharType* expected_name;
+  const base::FilePath::CharType* page_title;
+  const base::FilePath::CharType* expected_name;
 } kExtensionTestCases[] = {
   // Extension is preserved if it is already proper for HTML.
   {FPL("filename.html"), FPL("filename.html")},
@@ -288,9 +283,10 @@ static const struct {
 #endif
 TEST_F(SavePackageTest, MAYBE_TestEnsureHtmlExtension) {
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kExtensionTestCases); ++i) {
-    FilePath original = FilePath(kExtensionTestCases[i].page_title);
-    FilePath expected = FilePath(kExtensionTestCases[i].expected_name);
-    FilePath actual = EnsureHtmlExtension(original);
+    base::FilePath original = base::FilePath(kExtensionTestCases[i].page_title);
+    base::FilePath expected =
+        base::FilePath(kExtensionTestCases[i].expected_name);
+    base::FilePath actual = EnsureHtmlExtension(original);
     EXPECT_EQ(expected.value(), actual.value()) << "Failed for page title: " <<
         kExtensionTestCases[i].page_title;
   }
@@ -304,8 +300,8 @@ TEST_F(SavePackageTest, MAYBE_TestEnsureHtmlExtension) {
 #endif
 TEST_F(SavePackageTest, MAYBE_TestEnsureMimeExtension) {
   static const struct {
-    const FilePath::CharType* page_title;
-    const FilePath::CharType* expected_name;
+    const base::FilePath::CharType* page_title;
+    const base::FilePath::CharType* expected_name;
     const char* contents_mime_type;
   } kExtensionTests[] = {
     { FPL("filename.html"), FPL("filename.html"), "text/html" },
@@ -332,10 +328,10 @@ TEST_F(SavePackageTest, MAYBE_TestEnsureMimeExtension) {
     { FPL("filename"), FPL("filename"), "unknown/unknown" },
   };
   for (uint32 i = 0; i < ARRAYSIZE_UNSAFE(kExtensionTests); ++i) {
-    FilePath original = FilePath(kExtensionTests[i].page_title);
-    FilePath expected = FilePath(kExtensionTests[i].expected_name);
+    base::FilePath original = base::FilePath(kExtensionTests[i].page_title);
+    base::FilePath expected = base::FilePath(kExtensionTests[i].expected_name);
     std::string mime_type(kExtensionTests[i].contents_mime_type);
-    FilePath actual = EnsureMimeExtension(original, mime_type);
+    base::FilePath actual = EnsureMimeExtension(original, mime_type);
     EXPECT_EQ(expected.value(), actual.value()) << "Failed for page title: " <<
         kExtensionTests[i].page_title << " MIME:" << mime_type;
   }
@@ -350,44 +346,44 @@ TEST_F(SavePackageTest, MAYBE_TestEnsureMimeExtension) {
 
 static const struct SuggestedSaveNameTestCase {
   const char* page_url;
-  const string16 page_title;
-  const FilePath::CharType* expected_name;
+  const base::string16 page_title;
+  const base::FilePath::CharType* expected_name;
   bool ensure_html_extension;
 } kSuggestedSaveNames[] = {
   // Title overrides the URL.
   { "http://foo.com",
-    ASCIIToUTF16("A page title"),
+    base::ASCIIToUTF16("A page title"),
     FPL("A page title") FPL_HTML_EXTENSION,
     true
   },
   // Extension is preserved.
   { "http://foo.com",
-    ASCIIToUTF16("A page title with.ext"),
+    base::ASCIIToUTF16("A page title with.ext"),
     FPL("A page title with.ext"),
     false
   },
   // If the title matches the URL, use the last component of the URL.
   { "http://foo.com/bar",
-    ASCIIToUTF16("foo.com/bar"),
+    base::ASCIIToUTF16("foo.com/bar"),
     FPL("bar"),
     false
   },
   // If the title matches the URL, but there is no "filename" component,
   // use the domain.
   { "http://foo.com",
-    ASCIIToUTF16("foo.com"),
+    base::ASCIIToUTF16("foo.com"),
     FPL("foo.com"),
     false
   },
   // Make sure fuzzy matching works.
   { "http://foo.com/bar",
-    ASCIIToUTF16("foo.com/bar"),
+    base::ASCIIToUTF16("foo.com/bar"),
     FPL("bar"),
     false
   },
   // A URL-like title that does not match the title is respected in full.
   { "http://foo.com",
-    ASCIIToUTF16("http://www.foo.com/path/title.txt"),
+    base::ASCIIToUTF16("http://www.foo.com/path/title.txt"),
     FPL("http   www.foo.com path title.txt"),
     false
   },
@@ -402,11 +398,11 @@ static const struct SuggestedSaveNameTestCase {
 TEST_F(SavePackageTest, MAYBE_TestSuggestedSaveNames) {
   for (size_t i = 0; i < arraysize(kSuggestedSaveNames); ++i) {
     scoped_refptr<SavePackage> save_package(
-        new SavePackage(contents(), FilePath(), FilePath()));
+        new SavePackage(contents(), base::FilePath(), base::FilePath()));
     save_package->page_url_ = GURL(kSuggestedSaveNames[i].page_url);
     save_package->title_ = kSuggestedSaveNames[i].page_title;
 
-    FilePath save_name = save_package->GetSuggestedNameForSaveAs(
+    base::FilePath save_name = save_package->GetSuggestedNameForSaveAs(
         kSuggestedSaveNames[i].ensure_html_extension,
         std::string(), std::string());
     EXPECT_EQ(kSuggestedSaveNames[i].expected_name, save_name.value()) <<
@@ -414,13 +410,14 @@ TEST_F(SavePackageTest, MAYBE_TestSuggestedSaveNames) {
   }
 }
 
-static const FilePath::CharType* kTestDir = FILE_PATH_LITERAL("save_page");
+static const base::FilePath::CharType* kTestDir =
+    FILE_PATH_LITERAL("save_page");
 
 // GetUrlToBeSaved method should return correct url to be saved.
 TEST_F(SavePackageTest, TestGetUrlToBeSaved) {
-  FilePath file_name(FILE_PATH_LITERAL("a.htm"));
+  base::FilePath file_name(FILE_PATH_LITERAL("a.htm"));
   GURL url = URLRequestMockHTTPJob::GetMockUrl(
-                 FilePath(kTestDir).Append(file_name));
+                 base::FilePath(kTestDir).Append(file_name));
   NavigateAndCommit(url);
   EXPECT_EQ(url, GetUrlToBeSaved());
 }
@@ -430,14 +427,14 @@ TEST_F(SavePackageTest, TestGetUrlToBeSaved) {
 // Ex:GetUrlToBeSaved method should return http://www.google.com
 // when user types view-source:http://www.google.com
 TEST_F(SavePackageTest, TestGetUrlToBeSavedViewSource) {
-  FilePath file_name(FILE_PATH_LITERAL("a.htm"));
+  base::FilePath file_name(FILE_PATH_LITERAL("a.htm"));
   GURL view_source_url = URLRequestMockHTTPJob::GetMockViewSourceUrl(
-                             FilePath(kTestDir).Append(file_name));
+                             base::FilePath(kTestDir).Append(file_name));
   GURL actual_url = URLRequestMockHTTPJob::GetMockUrl(
-                        FilePath(kTestDir).Append(file_name));
+                        base::FilePath(kTestDir).Append(file_name));
   NavigateAndCommit(view_source_url);
   EXPECT_EQ(actual_url, GetUrlToBeSaved());
-  EXPECT_EQ(view_source_url, contents()->GetURL());
+  EXPECT_EQ(view_source_url, contents()->GetLastCommittedURL());
 }
 
 }  // namespace content

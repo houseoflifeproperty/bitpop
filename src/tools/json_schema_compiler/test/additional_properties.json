@@ -1,6 +1,7 @@
 [
   {
     "namespace": "additionalProperties",
+    "description": "The additionalProperties API.",
     "types": [
       {
         "id": "AdditionalPropertiesType",
@@ -44,7 +45,7 @@
                 "properties": {
                   "integer": {"type": "integer"}
                 },
-                "additionalProperties": {"type": "any"}
+                "additionalProperties": {"type": "string"}
               }
             ]
           }

@@ -15,6 +15,7 @@ class DictionaryValue;
 }
 
 class MockPrinter;
+struct ExtensionMsg_ExternalConnectionInfo;
 struct PrintHostMsg_DidGetPreviewPageCount_Params;
 struct PrintHostMsg_DidPreviewPage_Params;
 struct PrintHostMsg_DidPrintPage_Params;
@@ -29,9 +30,18 @@ class ChromeMockRenderThread : public content::MockRenderThread {
   ChromeMockRenderThread();
   virtual ~ChromeMockRenderThread();
 
+  // content::RenderThread overrides.
+  virtual scoped_refptr<base::MessageLoopProxy> GetIOMessageLoopProxy()
+      OVERRIDE;
+
   //////////////////////////////////////////////////////////////////////////
   // The following functions are called by the test itself.
 
+  // Set IO message loop proxy.
+  void set_io_message_loop_proxy(
+      const scoped_refptr<base::MessageLoopProxy>& proxy);
+
+#if defined(ENABLE_PRINTING)
   // Returns the pseudo-printer instance.
   MockPrinter* printer();
 
@@ -44,6 +54,7 @@ class ChromeMockRenderThread : public content::MockRenderThread {
 
   // Get the number of pages to generate for print preview.
   int print_preview_pages_remaining() const;
+#endif
 
  private:
   // Overrides base class implementation to add custom handling for
@@ -51,14 +62,16 @@ class ChromeMockRenderThread : public content::MockRenderThread {
   virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
 
   // The callee expects to be returned a valid channel_id.
-  void OnMsgOpenChannelToExtension(int routing_id,
-                                   const std::string& extension_id,
-                                   const std::string& source_extension_id,
-                                   const std::string& target_extension_id,
-                                   int* port_id);
+  void OnOpenChannelToExtension(int routing_id,
+                                const ExtensionMsg_ExternalConnectionInfo& info,
+                                const std::string& channel_name,
+                                bool include_tls_channel_id,
+                                int* port_id);
 
-#if defined(OS_CHROMEOS)
-  void OnAllocateTempFileForPrinting(base::FileDescriptor* renderer_fd,
+#if defined(ENABLE_PRINTING)
+#if defined(OS_CHROMEOS) || defined(OS_ANDROID)
+  void OnAllocateTempFileForPrinting(int render_view_id,
+                                     base::FileDescriptor* renderer_fd,
                                      int* browser_fd);
   void OnTempFileForPrintingWritten(int render_view_id, int browser_fd);
 #endif
@@ -97,6 +110,11 @@ class ChromeMockRenderThread : public content::MockRenderThread {
 
   // Number of pages to generate for print preview.
   int print_preview_pages_remaining_;
+#endif
+
+  scoped_refptr<base::MessageLoopProxy> io_message_loop_proxy_;
+
+  DISALLOW_COPY_AND_ASSIGN(ChromeMockRenderThread);
 };
 
 #endif  // CHROME_RENDERER_CHROME_MOCK_RENDER_THREAD_H_

@@ -42,24 +42,22 @@
         'ppapi_shared_target': 1,
       },
       'dependencies': [
-        'ppapi.gyp:ppapi_c',
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../build/temp_gyp/googleurl.gyp:googleurl',
         '../gpu/command_buffer/command_buffer.gyp:gles2_utils',
         '../gpu/gpu.gyp:command_buffer_client',
         '../gpu/gpu.gyp:gles2_implementation',
+        '../ipc/ipc.gyp:ipc',
         '../media/media.gyp:shared_memory_support',
         '../skia/skia.gyp:skia',
         '../third_party/icu/icu.gyp:icuuc',
-        # TODO(ananta) : The WebKit dependency needs to move to a new target for NACL.
-        '<(webkit_src_dir)/Source/WebKit/chromium/WebKit.gyp:webkit',
         '../ui/surface/surface.gyp:surface',
+        '../url/url.gyp:url_lib',
+        'ppapi.gyp:ppapi_c',
       ],
       'export_dependent_settings': [
         '../base/base.gyp:base',
-        '<(webkit_src_dir)/Source/WebKit/chromium/WebKit.gyp:webkit',
       ],
       'conditions': [
         ['OS=="mac"', {
@@ -69,7 +67,24 @@
             ],
           },
         }],
+        ['chrome_multiple_dll==1', {
+          'dependencies': [
+            '../third_party/WebKit/public/blink.gyp:blink_minimal',
+          ],
+          'export_dependent_settings': [
+            '../third_party/WebKit/public/blink.gyp:blink_minimal',
+          ],
+        }, {
+          'dependencies': [
+            '../third_party/WebKit/public/blink.gyp:blink',
+          ],
+          'export_dependent_settings': [
+            '../third_party/WebKit/public/blink.gyp:blink',
+          ],
+        }],
       ],
+      # Disable c4267 warnings until we fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],
     },
   ],
   'conditions': [
@@ -111,8 +126,7 @@
             '../ipc/ipc.gyp:ipc',
             '../skia/skia.gyp:skia',
             '../third_party/icu/icu.gyp:icuuc',
-            # TODO(ananta) : The WebKit dependency needs to move to a new target for NACL.
-            '<(webkit_src_dir)/Source/WebKit/chromium/WebKit.gyp:webkit',
+            '../third_party/icu/icu.gyp:icui18n',
             '../ui/surface/surface.gyp:surface',
             'ppapi.gyp:ppapi_c',
             'ppapi_shared',
@@ -123,6 +137,19 @@
                 '..',
             ],
           },
+          # Disable c4267 warnings until we fix size_t to int truncations.
+          'msvs_disabled_warnings': [ 4267, ],
+          'conditions': [
+            ['chrome_multiple_dll==1', {
+              'dependencies': [
+                '../third_party/WebKit/public/blink.gyp:blink_minimal',
+              ],
+            }, {
+              'dependencies': [
+                '../third_party/WebKit/public/blink.gyp:blink',
+              ],
+            }],
+          ],
         },
       ],
     },
@@ -147,8 +174,7 @@
             '../ipc/ipc.gyp:ipc',
             '../skia/skia.gyp:skia',
             '../third_party/icu/icu.gyp:icuuc',
-            # TODO(ananta) : The WebKit dependency needs to move to a new target for NACL.
-            '<(webkit_src_dir)/Source/WebKit/chromium/WebKit.gyp:webkit',
+            '../third_party/icu/icu.gyp:icui18n',
             '../ui/surface/surface.gyp:surface',
             'ppapi.gyp:ppapi_c',
             'ppapi_shared',
@@ -158,6 +184,19 @@
                 '..',
             ],
           },
+          # Disable c4267 warnings until we fix size_t to int truncations.
+          'msvs_disabled_warnings': [ 4267, ],
+          'conditions': [
+            ['chrome_multiple_dll==1', {
+              'dependencies': [
+                '../third_party/WebKit/public/blink.gyp:blink_minimal',
+              ],
+            }, {
+              'dependencies': [
+                '../third_party/WebKit/public/blink.gyp:blink',
+              ],
+            }],
+          ],
         },
         {
           # In component build, this is just a phony target that makes sure
@@ -171,7 +210,7 @@
         },
       ],
     }],
-    ['disable_nacl!=1 and OS=="win"', {
+    ['disable_nacl!=1 and OS=="win" and target_arch=="ia32"', {
       # In windows builds, we also want to define some targets to build in
       # 64-bit mode for use by nacl64.exe (the NaCl helper process for 64-bit
       # Windows).
@@ -185,14 +224,15 @@
           },
           'dependencies': [
             'ppapi.gyp:ppapi_c',
-            '../base/base.gyp:base_nacl_win64',
+            '../base/base.gyp:base_win64',
             '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations_win64',
+            '../ipc/ipc.gyp:ipc_win64',
           ],
           'defines': [
             '<@(nacl_win64_defines)',
           ],              
           'export_dependent_settings': [
-            '../base/base.gyp:base_nacl_win64',
+            '../base/base.gyp:base_win64',
           ],
           'configurations': {
             'Common_Base': {
@@ -208,7 +248,7 @@
             'ppapi_ipc_target': 1,
           },
           'dependencies': [
-            '../base/base.gyp:base_nacl_win64',
+            '../base/base.gyp:base_win64',
             '../ipc/ipc.gyp:ipc_win64',
             '../gpu/gpu.gyp:gpu_ipc_win64',
             'ppapi.gyp:ppapi_c',

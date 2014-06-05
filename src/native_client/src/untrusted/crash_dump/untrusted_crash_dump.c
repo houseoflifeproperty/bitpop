@@ -20,8 +20,7 @@
 #endif  /* __GLIBC__ */
 
 #include "native_client/src/include/portability.h"
-#include "native_client/src/trusted/service_runtime/include/sys/nacl_exception.h"
-#include "native_client/src/untrusted/irt/irt.h"
+#include "native_client/src/include/nacl/nacl_exception.h"
 
 
 #define CRASH_PAGE_CHUNK (64 * 1024)
@@ -31,7 +30,6 @@
 
 
 static pthread_key_t g_CrashStackKey;
-static struct nacl_irt_dev_exception_handling g_ExceptionHandling;
 static int g_ExceptionHandlingEnabled = 0;
 
 
@@ -66,6 +64,7 @@ static void WriteJsonString(const char *str, FILE *file) {
 static int PrintSegmentsOne(
     struct dl_phdr_info *info, size_t size, void *data) {
   int i;
+  int print_comma = 0;
   struct ProgramTableData *ptd = (struct ProgramTableData*) data;
 
   if (ptd->first) {
@@ -85,8 +84,10 @@ static int PrintSegmentsOne(
     if (info->dlpi_phdr[i].p_type != PT_LOAD) {
       continue;
     }
-    if (i != 0) {
+    if (print_comma) {
       fprintf(ptd->core, ",\n");
+    } else {
+      print_comma = 1;
     }
     fprintf(ptd->core, "{\n");
     fprintf(ptd->core, "\"p_vaddr\": %"NACL_PRIuPTR",\n",
@@ -147,12 +148,13 @@ static uintptr_t FrameLocArgs(uintptr_t fp) {
 #endif
 }
 
-static void StackWalk(FILE *core, struct NaClExceptionContext *context) {
+static void StackWalk(FILE *core,
+                      struct NaClExceptionPortableContext *pcontext) {
   uintptr_t next;
   uintptr_t i;
   int first = 1;
-  uintptr_t prog_ctr = context->prog_ctr;
-  uintptr_t frame_ptr = context->frame_ptr;
+  uintptr_t prog_ctr = pcontext->prog_ctr;
+  uintptr_t frame_ptr = pcontext->frame_ptr;
   uintptr_t args_start;
 
   fprintf(core, "\"frames\": [\n");
@@ -209,13 +211,15 @@ void CrashHandler(struct NaClExceptionContext *context) {
   PrintSegments(core);
   fprintf(core, "],\n");
 
+  struct NaClExceptionPortableContext *pcontext =
+      nacl_exception_context_get_portable(context);
   fprintf(core, "\"handler\": {\n");
-  fprintf(core, "\"prog_ctr\": %"NACL_PRIuPTR",\n", context->prog_ctr);
-  fprintf(core, "\"stack_ptr\": %"NACL_PRIuPTR",\n", context->stack_ptr);
-  fprintf(core, "\"frame_ptr\": %"NACL_PRIuPTR"\n", context->frame_ptr);
+  fprintf(core, "\"prog_ctr\": %"NACL_PRIuPTR",\n", pcontext->prog_ctr);
+  fprintf(core, "\"stack_ptr\": %"NACL_PRIuPTR",\n", pcontext->stack_ptr);
+  fprintf(core, "\"frame_ptr\": %"NACL_PRIuPTR"\n", pcontext->frame_ptr);
   fprintf(core, "},\n");
 
-  StackWalk(core, context);
+  StackWalk(core, pcontext);
 
   fprintf(core, "}\n");
 
@@ -234,14 +238,9 @@ int NaClCrashDumpInit(void) {
   int result;
 
   assert(g_ExceptionHandlingEnabled == 0);
-  if (nacl_interface_query(NACL_IRT_DEV_EXCEPTION_HANDLING_v0_1,
-                           &g_ExceptionHandling,
-                           sizeof(g_ExceptionHandling)) == 0) {
-    return 0;
-  }
   result = pthread_key_create(&g_CrashStackKey, NaClCrashDumpThreadDestructor);
   assert(result == 0);
-  if (g_ExceptionHandling.exception_handler(CrashHandler, NULL) != 0) {
+  if (nacl_exception_set_handler(CrashHandler) != 0) {
     return 0;
   }
   g_ExceptionHandlingEnabled = 1;
@@ -272,7 +271,6 @@ int NaClCrashDumpInitThread(void) {
                PROT_NONE, MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   assert(guard == stack);
   pthread_setspecific(g_CrashStackKey, stack);
-  result = g_ExceptionHandling.exception_stack(
-      stack, CRASH_STACK_COMPLETE_SIZE);
+  result = nacl_exception_set_stack(stack, CRASH_STACK_COMPLETE_SIZE);
   return result == 0;
 }

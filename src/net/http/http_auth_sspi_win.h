@@ -16,11 +16,13 @@
 
 #include <string>
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "net/base/net_export.h"
 #include "net/http/http_auth.h"
 
 namespace net {
+
+class HttpAuthChallengeTokenizer;
 
 // SSPILibrary is introduced so unit tests can mock the calls to Windows' SSPI
 // implementation. The default implementation simply passes the arguments on to
@@ -125,7 +127,7 @@ class NET_EXPORT_PRIVATE HttpAuthSSPI {
  public:
   HttpAuthSSPI(SSPILibrary* sspi_library,
                const std::string& scheme,
-               SEC_WCHAR* security_package,
+               const SEC_WCHAR* security_package,
                ULONG max_token_length);
   ~HttpAuthSSPI();
 
@@ -134,7 +136,7 @@ class NET_EXPORT_PRIVATE HttpAuthSSPI {
   bool AllowsExplicitCredentials() const;
 
   HttpAuth::AuthorizationResult ParseChallenge(
-      HttpAuth::ChallengeTokenizer* tok);
+      HttpAuthChallengeTokenizer* tok);
 
   // Generates an authentication token for the service specified by the
   // Service Principal Name |spn| and stores the value in |*auth_token|.
@@ -144,7 +146,7 @@ class NET_EXPORT_PRIVATE HttpAuthSSPI {
   // obtained using |*credentials|. If |credentials| is NULL, the credentials
   // for the currently logged in user are used instead.
   int GenerateAuthToken(const AuthCredentials* credentials,
-                        const std::wstring& spn,
+                        const std::string& spn,
                         std::string* auth_token);
 
   // Delegation is allowed on the Kerberos ticket. This allows certain servers
@@ -156,7 +158,7 @@ class NET_EXPORT_PRIVATE HttpAuthSSPI {
   int OnFirstRound(const AuthCredentials* credentials);
 
   int GetNextSecurityToken(
-      const std::wstring& spn,
+      const std::string& spn,
       const void* in_token,
       int in_token_len,
       void** out_token,
@@ -166,7 +168,7 @@ class NET_EXPORT_PRIVATE HttpAuthSSPI {
 
   SSPILibrary* library_;
   std::string scheme_;
-  SEC_WCHAR* security_package_;
+  const SEC_WCHAR* security_package_;
   std::string decoded_server_auth_token_;
   ULONG max_token_length_;
   CredHandle cred_;
@@ -180,9 +182,9 @@ class NET_EXPORT_PRIVATE HttpAuthSSPI {
 // If |combined| is of form "bar", |domain| will be empty and |user| will
 // contain "bar".
 // |domain| and |user| must be non-NULL.
-NET_EXPORT_PRIVATE void SplitDomainAndUser(const string16& combined,
-                                           string16* domain,
-                                           string16* user);
+NET_EXPORT_PRIVATE void SplitDomainAndUser(const base::string16& combined,
+                                           base::string16* domain,
+                                           base::string16* user);
 
 // Determines the maximum token length in bytes for a particular SSPI package.
 //

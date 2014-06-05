@@ -8,34 +8,37 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "remoting/codec/video_encoder.h"
 #include "remoting/host/capture_scheduler.h"
-#include "remoting/host/video_frame_capturer.h"
 #include "remoting/proto/video.pb.h"
+#include "third_party/webrtc/modules/desktop_capture/screen_capturer.h"
 
 namespace base {
 class SingleThreadTaskRunner;
 }  // namespace base
 
+namespace media {
+class ScreenCapturer;
+}  // namespace media
+
 namespace remoting {
 
-class CaptureData;
-class VideoFrameCapturer;
+class CursorShapeInfo;
 
 namespace protocol {
-class ClientStub;
 class CursorShapeInfo;
+class CursorShapeStub;
 class VideoStub;
 }  // namespace protocol
 
-// Class responsible for scheduling frame captures from a VideoFrameCapturer,
-// delivering them to a VideoEncoder to encode, and finally passing the encoded
-// video packets to the specified VideoStub to send on the network.
+// Class responsible for scheduling frame captures from a
+// webrtc::ScreenCapturer, delivering them to a VideoEncoder to encode, and
+// finally passing the encoded video packets to the specified VideoStub to send
+// on the network.
 //
 // THREADING
 //
@@ -70,32 +73,36 @@ class VideoStub;
 // too much CPU, or hogging the host's graphics subsystem.
 
 class VideoScheduler : public base::RefCountedThreadSafe<VideoScheduler>,
-                       public VideoFrameCapturer::Delegate {
+                       public webrtc::DesktopCapturer::Callback,
+                       public webrtc::ScreenCapturer::MouseShapeObserver {
  public:
   // Creates a VideoScheduler running capture, encode and network tasks on the
   // supplied TaskRunners.  Video and cursor shape updates will be pumped to
   // |video_stub| and |client_stub|, which must remain valid until Stop() is
-  // called. |capturer| is used to capture frames and must remain valid until
-  // the |done_task| supplied to Stop() is executed.
-  static scoped_refptr<VideoScheduler> Create(
+  // called. |capturer| is used to capture frames.
+  VideoScheduler(
       scoped_refptr<base::SingleThreadTaskRunner> capture_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> encode_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> network_task_runner,
-      VideoFrameCapturer* capturer,
+      scoped_ptr<webrtc::ScreenCapturer> capturer,
       scoped_ptr<VideoEncoder> encoder,
-      protocol::ClientStub* client_stub,
+      protocol::CursorShapeStub* cursor_stub,
       protocol::VideoStub* video_stub);
 
-  // VideoFrameCapturer::Delegate implementation.
-  virtual void OnCaptureCompleted(
-      scoped_refptr<CaptureData> capture_data) OVERRIDE;
-  virtual void OnCursorShapeChanged(
-      scoped_ptr<protocol::CursorShapeInfo> cursor_shape) OVERRIDE;
+  // webrtc::DesktopCapturer::Callback implementation.
+  virtual webrtc::SharedMemory* CreateSharedMemory(size_t size) OVERRIDE;
+  virtual void OnCaptureCompleted(webrtc::DesktopFrame* frame) OVERRIDE;
 
-  // Stop scheduling frame captures.  |done_task| is executed on the network
-  // thread when capturing has stopped.  This object cannot be re-used once
+  // webrtc::ScreenCapturer::MouseShapeObserver implementation.
+  virtual void OnCursorShapeChanged(
+      webrtc::MouseCursorShape* cursor_shape) OVERRIDE;
+
+  // Starts scheduling frame captures.
+  void Start();
+
+  // Stop scheduling frame captures. This object cannot be re-used once
   // it has been stopped.
-  void Stop(const base::Closure& done_task);
+  void Stop();
 
   // Pauses or resumes scheduling of frame captures.  Pausing/resuming captures
   // only affects capture scheduling and does not stop/start the capturer.
@@ -107,15 +114,6 @@ class VideoScheduler : public base::RefCountedThreadSafe<VideoScheduler>,
 
  private:
   friend class base::RefCountedThreadSafe<VideoScheduler>;
-
-  VideoScheduler(
-      scoped_refptr<base::SingleThreadTaskRunner> capture_task_runner,
-      scoped_refptr<base::SingleThreadTaskRunner> encode_task_runner,
-      scoped_refptr<base::SingleThreadTaskRunner> network_task_runner,
-      VideoFrameCapturer* capturer,
-      scoped_ptr<VideoEncoder> encoder,
-      protocol::ClientStub* client_stub,
-      protocol::VideoStub* video_stub);
   virtual ~VideoScheduler();
 
   // Capturer thread ----------------------------------------------------------
@@ -123,9 +121,8 @@ class VideoScheduler : public base::RefCountedThreadSafe<VideoScheduler>,
   // Starts the capturer on the capture thread.
   void StartOnCaptureThread();
 
-  // Stops scheduling frame captures on the capture thread, and posts
-  // |done_task| to the network thread when done.
-  void StopOnCaptureThread(const base::Closure& done_task);
+  // Stops scheduling frame captures on the capture thread.
+  void StopOnCaptureThread();
 
   // Schedules the next call to CaptureNextFrame.
   void ScheduleNextCapture();
@@ -151,13 +148,11 @@ class VideoScheduler : public base::RefCountedThreadSafe<VideoScheduler>,
   // Encoder thread -----------------------------------------------------------
 
   // Encode a frame, passing generated VideoPackets to SendVideoPacket().
-  void EncodeFrame(scoped_refptr<CaptureData> capture_data);
+  void EncodeFrame(scoped_ptr<webrtc::DesktopFrame> frame,
+                   int64 sequence_number);
 
-  void EncodedDataAvailableCallback(scoped_ptr<VideoPacket> packet);
-
-  // Used to synchronize capture and encode thread teardown, notifying the
-  // network thread when done.
-  void StopOnEncodeThread(const base::Closure& done_task);
+  void EncodedDataAvailableCallback(int64 sequence_number,
+                                    scoped_ptr<VideoPacket> packet);
 
   // Task runners used by this class.
   scoped_refptr<base::SingleThreadTaskRunner> capture_task_runner_;
@@ -165,21 +160,26 @@ class VideoScheduler : public base::RefCountedThreadSafe<VideoScheduler>,
   scoped_refptr<base::SingleThreadTaskRunner> network_task_runner_;
 
   // Used to capture frames. Always accessed on the capture thread.
-  VideoFrameCapturer* capturer_;
+  scoped_ptr<webrtc::ScreenCapturer> capturer_;
 
   // Used to encode captured frames. Always accessed on the encode thread.
   scoped_ptr<VideoEncoder> encoder_;
 
   // Interfaces through which video frames and cursor shapes are passed to the
   // client. These members are always accessed on the network thread.
-  protocol::ClientStub* cursor_stub_;
+  protocol::CursorShapeStub* cursor_stub_;
   protocol::VideoStub* video_stub_;
 
   // Timer used to schedule CaptureNextFrame().
   scoped_ptr<base::OneShotTimer<VideoScheduler> > capture_timer_;
 
-  // Count the number of recordings (i.e. capture or encode) happening.
-  int pending_captures_;
+  // The number of frames being processed, i.e. frames that we are currently
+  // capturing, encoding or sending. The value is capped at 2 to minimize
+  // latency.
+  int pending_frames_;
+
+  // Set when the capturer is capturing a frame.
+  bool capture_pending_;
 
   // True if the previous scheduled capture was skipped.
   bool did_skip_frame_;

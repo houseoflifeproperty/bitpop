@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_manager.h"
 #include "media/audio/audio_output_dispatcher.h"
@@ -40,6 +40,7 @@ class MEDIA_EXPORT AudioOutputResampler : public AudioOutputDispatcher {
   AudioOutputResampler(AudioManager* audio_manager,
                        const AudioParameters& input_params,
                        const AudioParameters& output_params,
+                       const std::string& output_device_id,
                        const base::TimeDelta& close_delay);
 
   // AudioOutputDispatcher interface.
@@ -55,6 +56,10 @@ class MEDIA_EXPORT AudioOutputResampler : public AudioOutputDispatcher {
  private:
   friend class base::RefCountedThreadSafe<AudioOutputResampler>;
   virtual ~AudioOutputResampler();
+
+  // Converts low latency based output parameters into high latency
+  // appropriate output parameters in error situations.
+  void SetupFallbackParams();
 
   // Used to initialize and reinitialize |dispatcher_|.
   void Initialize();

@@ -12,11 +12,17 @@ namespace gfx {
 // A GLImage that does nothing for unit tests.
 class GL_EXPORT GLImageStub : public GLImage {
  public:
-  // Implement GLImage.
-  virtual void Destroy() OVERRIDE;
+  GLImageStub();
+
+  // Overridden from GLImage:
+  virtual void Destroy() OVERRIDE {}
   virtual gfx::Size GetSize() OVERRIDE;
-  virtual bool BindTexImage() OVERRIDE;
-  virtual void ReleaseTexImage() OVERRIDE;
+  virtual bool BindTexImage(unsigned target) OVERRIDE;
+  virtual void ReleaseTexImage(unsigned target) OVERRIDE {}
+  virtual void WillUseTexImage() OVERRIDE {}
+  virtual void DidUseTexImage() OVERRIDE {}
+  virtual void WillModifyTexImage() OVERRIDE {}
+  virtual void DidModifyTexImage() OVERRIDE {}
 
  protected:
   virtual ~GLImageStub();

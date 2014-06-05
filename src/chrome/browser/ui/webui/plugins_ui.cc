@@ -14,31 +14,31 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
-#include "base/prefs/public/pref_member.h"
-#include "base/utf_string_conversions.h"
+#include "base/prefs/pref_member.h"
+#include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/plugins/plugin_finder.h"
 #include "chrome/browser/plugins/plugin_metadata.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
-#include "chrome/browser/prefs/pref_service.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
-#include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
 #include "chrome/common/chrome_content_client.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_data_source.h"
 #include "content/public/browser/web_ui_message_handler.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
@@ -52,8 +52,8 @@
 
 using content::PluginService;
 using content::WebContents;
+using content::WebPluginInfo;
 using content::WebUIMessageHandler;
-using webkit::WebPluginInfo;
 
 namespace {
 
@@ -62,10 +62,10 @@ void AssertPluginEnabled(bool did_enable) {
   DCHECK(did_enable);
 }
 
-ChromeWebUIDataSource* CreatePluginsUIHTMLSource() {
-  ChromeWebUIDataSource* source =
-      new ChromeWebUIDataSource(chrome::kChromeUIPluginsHost);
-  source->set_use_json_js_format_v2();
+content::WebUIDataSource* CreatePluginsUIHTMLSource(Profile* profile) {
+  content::WebUIDataSource* source =
+      content::WebUIDataSource::Create(chrome::kChromeUIPluginsHost);
+  source->SetUseJsonJSFormatV2();
 
   source->AddLocalizedString("pluginsTitle", IDS_PLUGINS_TITLE);
   source->AddLocalizedString("pluginsDetailsModeLink",
@@ -97,16 +97,16 @@ ChromeWebUIDataSource* CreatePluginsUIHTMLSource() {
   source->AddLocalizedString("alwaysAllowed", IDS_PLUGINS_ALWAYS_ALLOWED);
   source->AddLocalizedString("noPlugins", IDS_PLUGINS_NO_PLUGINS);
 
-  source->set_json_path("strings.js");
-  source->add_resource_path("plugins.js", IDR_PLUGINS_JS);
-  source->set_default_resource(IDR_PLUGINS_HTML);
+  source->SetJsonPath("strings.js");
+  source->AddResourcePath("plugins.js", IDR_PLUGINS_JS);
+  source->SetDefaultResource(IDR_PLUGINS_HTML);
 #if defined(OS_CHROMEOS)
-  chromeos::AddAccountUITweaksLocalizedValues(source);
+  chromeos::AddAccountUITweaksLocalizedValues(source, profile);
 #endif
   return source;
 }
 
-string16 PluginTypeToString(int type) {
+base::string16 PluginTypeToString(int type) {
   // The type is stored as an |int|, but doing the switch on the right
   // enumeration type gives us better build-time error checking (if someone adds
   // a new type).
@@ -119,9 +119,11 @@ string16 PluginTypeToString(int type) {
       return l10n_util::GetStringUTF16(IDS_PLUGINS_PPAPI_OUT_OF_PROCESS);
     case WebPluginInfo::PLUGIN_TYPE_PEPPER_UNSANDBOXED:
       return l10n_util::GetStringUTF16(IDS_PLUGINS_PPAPI_UNSANDBOXED);
+    case WebPluginInfo::PLUGIN_TYPE_BROWSER_PLUGIN:
+      return l10n_util::GetStringUTF16(IDS_PLUGINS_BROWSER_PLUGIN);
   }
   NOTREACHED();
-  return string16();
+  return base::string16();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -144,19 +146,19 @@ class PluginsDOMHandler : public WebUIMessageHandler,
   virtual void RegisterMessages() OVERRIDE;
 
   // Callback for the "requestPluginsData" message.
-  void HandleRequestPluginsData(const ListValue* args);
+  void HandleRequestPluginsData(const base::ListValue* args);
 
   // Callback for the "enablePlugin" message.
-  void HandleEnablePluginMessage(const ListValue* args);
+  void HandleEnablePluginMessage(const base::ListValue* args);
 
   // Callback for the "saveShowDetailsToPrefs" message.
-  void HandleSaveShowDetailsToPrefs(const ListValue* args);
+  void HandleSaveShowDetailsToPrefs(const base::ListValue* args);
 
   // Calback for the "getShowDetails" message.
-  void HandleGetShowDetails(const ListValue* args);
+  void HandleGetShowDetails(const base::ListValue* args);
 
   // Callback for the "setPluginAlwaysAllowed" message.
-  void HandleSetPluginAlwaysAllowed(const ListValue* args);
+  void HandleSetPluginAlwaysAllowed(const base::ListValue* args);
 
   // content::NotificationObserver method overrides
   virtual void Observe(int type,
@@ -167,11 +169,9 @@ class PluginsDOMHandler : public WebUIMessageHandler,
   void LoadPlugins();
 
   // Called on the UI thread when the plugin information is ready.
-  void PluginsLoaded(const std::vector<webkit::WebPluginInfo>& plugins);
+  void PluginsLoaded(const std::vector<WebPluginInfo>& plugins);
 
   content::NotificationRegistrar registrar_;
-
-  base::WeakPtrFactory<PluginsDOMHandler> weak_ptr_factory_;
 
   // Holds grouped plug-ins. The key is the group identifier and
   // the value is the list of plug-ins belonging to the group.
@@ -182,11 +182,13 @@ class PluginsDOMHandler : public WebUIMessageHandler,
   // not.
   BooleanPrefMember show_details_;
 
+  base::WeakPtrFactory<PluginsDOMHandler> weak_ptr_factory_;
+
   DISALLOW_COPY_AND_ASSIGN(PluginsDOMHandler);
 };
 
 PluginsDOMHandler::PluginsDOMHandler()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+    : weak_ptr_factory_(this) {
 }
 
 void PluginsDOMHandler::RegisterMessages() {
@@ -216,11 +218,11 @@ void PluginsDOMHandler::RegisterMessages() {
                  base::Unretained(this)));
 }
 
-void PluginsDOMHandler::HandleRequestPluginsData(const ListValue* args) {
+void PluginsDOMHandler::HandleRequestPluginsData(const base::ListValue* args) {
   LoadPlugins();
 }
 
-void PluginsDOMHandler::HandleEnablePluginMessage(const ListValue* args) {
+void PluginsDOMHandler::HandleEnablePluginMessage(const base::ListValue* args) {
   Profile* profile = Profile::FromWebUI(web_ui());
 
   // Be robust in accepting badness since plug-ins display HTML (hence
@@ -238,9 +240,9 @@ void PluginsDOMHandler::HandleEnablePluginMessage(const ListValue* args) {
   }
   bool enable = enable_str == "true";
 
-  PluginPrefs* plugin_prefs = PluginPrefs::GetForProfile(profile);
+  PluginPrefs* plugin_prefs = PluginPrefs::GetForProfile(profile).get();
   if (is_group_str == "true") {
-    string16 group_name;
+    base::string16 group_name;
     if (!args->GetString(0, &group_name)) {
       NOTREACHED();
       return;
@@ -249,28 +251,29 @@ void PluginsDOMHandler::HandleEnablePluginMessage(const ListValue* args) {
     plugin_prefs->EnablePluginGroup(enable, group_name);
     if (enable) {
       // See http://crbug.com/50105 for background.
-      string16 adobereader = ASCIIToUTF16(
+      base::string16 adobereader = base::ASCIIToUTF16(
           PluginMetadata::kAdobeReaderGroupName);
-      string16 internalpdf =
-          ASCIIToUTF16(chrome::ChromeContentClient::kPDFPluginName);
+      base::string16 internalpdf =
+          base::ASCIIToUTF16(ChromeContentClient::kPDFPluginName);
       if (group_name == adobereader)
         plugin_prefs->EnablePluginGroup(false, internalpdf);
       else if (group_name == internalpdf)
         plugin_prefs->EnablePluginGroup(false, adobereader);
     }
   } else {
-    FilePath::StringType file_path;
+    base::FilePath::StringType file_path;
     if (!args->GetString(0, &file_path)) {
       NOTREACHED();
       return;
     }
 
-    plugin_prefs->EnablePlugin(enable, FilePath(file_path),
+    plugin_prefs->EnablePlugin(enable, base::FilePath(file_path),
                                base::Bind(&AssertPluginEnabled));
   }
 }
 
-void PluginsDOMHandler::HandleSaveShowDetailsToPrefs(const ListValue* args) {
+void PluginsDOMHandler::HandleSaveShowDetailsToPrefs(
+    const base::ListValue* args) {
   std::string details_mode;
   if (!args->GetString(0, &details_mode)) {
     NOTREACHED();
@@ -279,12 +282,13 @@ void PluginsDOMHandler::HandleSaveShowDetailsToPrefs(const ListValue* args) {
   show_details_.SetValue(details_mode == "true");
 }
 
-void PluginsDOMHandler::HandleGetShowDetails(const ListValue* args) {
+void PluginsDOMHandler::HandleGetShowDetails(const base::ListValue* args) {
   base::FundamentalValue show_details(show_details_.GetValue());
   web_ui()->CallJavascriptFunction("loadShowDetailsFromPrefs", show_details);
 }
 
-void PluginsDOMHandler::HandleSetPluginAlwaysAllowed(const ListValue* args) {
+void PluginsDOMHandler::HandleSetPluginAlwaysAllowed(
+    const base::ListValue* args) {
   // Be robust in the input parameters, but crash in a Debug build.
   if (args->GetSize() != 2) {
     NOTREACHED();
@@ -329,9 +333,9 @@ void PluginsDOMHandler::LoadPlugins() {
 }
 
 void PluginsDOMHandler::PluginsLoaded(
-    const std::vector<webkit::WebPluginInfo>& plugins) {
+    const std::vector<WebPluginInfo>& plugins) {
   Profile* profile = Profile::FromWebUI(web_ui());
-  PluginPrefs* plugin_prefs = PluginPrefs::GetForProfile(profile);
+  PluginPrefs* plugin_prefs = PluginPrefs::GetForProfile(profile).get();
 
   ContentSettingsPattern wildcard = ContentSettingsPattern::Wildcard();
 
@@ -346,14 +350,14 @@ void PluginsDOMHandler::PluginsLoaded(
   }
 
   // Construct DictionaryValues to return to UI.
-  ListValue* plugin_groups_data = new ListValue();
+  base::ListValue* plugin_groups_data = new base::ListValue();
   for (PluginGroups::const_iterator it = groups.begin();
       it != groups.end(); ++it) {
     const std::vector<const WebPluginInfo*>& group_plugins = it->second;
-    ListValue* plugin_files = new ListValue();
+    base::ListValue* plugin_files = new base::ListValue();
     scoped_ptr<PluginMetadata> plugin_metadata(
         plugin_finder->GetPluginMetadata(*group_plugins[0]));
-    string16 group_name = plugin_metadata->name();
+    base::string16 group_name = plugin_metadata->name();
     std::string group_identifier = plugin_metadata->identifier();
     bool group_enabled = false;
     bool all_plugins_enabled_by_policy = true;
@@ -363,26 +367,28 @@ void PluginsDOMHandler::PluginsLoaded(
     for (size_t j = 0; j < group_plugins.size(); ++j) {
       const WebPluginInfo& group_plugin = *group_plugins[j];
 
-      DictionaryValue* plugin_file = new DictionaryValue();
+      base::DictionaryValue* plugin_file = new base::DictionaryValue();
       plugin_file->SetString("name", group_plugin.name);
       plugin_file->SetString("description", group_plugin.desc);
       plugin_file->SetString("path", group_plugin.path.value());
       plugin_file->SetString("version", group_plugin.version);
       plugin_file->SetString("type", PluginTypeToString(group_plugin.type));
 
-      ListValue* mime_types = new ListValue();
-      const std::vector<webkit::WebPluginMimeType>& plugin_mime_types =
+      base::ListValue* mime_types = new base::ListValue();
+      const std::vector<content::WebPluginMimeType>& plugin_mime_types =
           group_plugin.mime_types;
       for (size_t k = 0; k < plugin_mime_types.size(); ++k) {
-        DictionaryValue* mime_type = new DictionaryValue();
+        base::DictionaryValue* mime_type = new base::DictionaryValue();
         mime_type->SetString("mimeType", plugin_mime_types[k].mime_type);
         mime_type->SetString("description", plugin_mime_types[k].description);
 
-        ListValue* file_extensions = new ListValue();
+        base::ListValue* file_extensions = new base::ListValue();
         const std::vector<std::string>& mime_file_extensions =
             plugin_mime_types[k].file_extensions;
-        for (size_t l = 0; l < mime_file_extensions.size(); ++l)
-          file_extensions->Append(new StringValue(mime_file_extensions[l]));
+        for (size_t l = 0; l < mime_file_extensions.size(); ++l) {
+          file_extensions->Append(
+              new base::StringValue(mime_file_extensions[l]));
+        }
         mime_type->Set("fileExtensions", file_extensions);
 
         mime_types->Append(mime_type);
@@ -423,7 +429,7 @@ void PluginsDOMHandler::PluginsLoaded(
 
       plugin_files->Append(plugin_file);
     }
-    DictionaryValue* group_data = new DictionaryValue();
+    base::DictionaryValue* group_data = new base::DictionaryValue();
 
     group_data->Set("plugin_files", plugin_files);
     group_data->SetString("name", group_name);
@@ -454,15 +460,16 @@ void PluginsDOMHandler::PluginsLoaded(
 
     bool always_allowed = false;
     if (group_enabled) {
-      const DictionaryValue* whitelist = profile->GetPrefs()->GetDictionary(
-          prefs::kContentSettingsPluginWhitelist);
+      const base::DictionaryValue* whitelist =
+          profile->GetPrefs()->GetDictionary(
+              prefs::kContentSettingsPluginWhitelist);
       whitelist->GetBoolean(group_identifier, &always_allowed);
     }
     group_data->SetBoolean("alwaysAllowed", always_allowed);
 
     plugin_groups_data->Append(group_data);
   }
-  DictionaryValue results;
+  base::DictionaryValue results;
   results.Set("plugins", plugin_groups_data);
   web_ui()->CallJavascriptFunction("returnPluginsData", results);
 }
@@ -480,7 +487,7 @@ PluginsUI::PluginsUI(content::WebUI* web_ui) : WebUIController(web_ui) {
 
   // Set up the chrome://plugins/ source.
   Profile* profile = Profile::FromWebUI(web_ui);
-  ChromeURLDataManager::AddDataSource(profile, CreatePluginsUIHTMLSource());
+  content::WebUIDataSource::Add(profile, CreatePluginsUIHTMLSource(profile));
 }
 
 // static
@@ -491,10 +498,13 @@ base::RefCountedMemory* PluginsUI::GetFaviconResourceBytes(
 }
 
 // static
-void PluginsUI::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterBooleanPref(prefs::kPluginsShowDetails,
-                             false,
-                             PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterDictionaryPref(prefs::kContentSettingsPluginWhitelist,
-                                PrefService::SYNCABLE_PREF);
+void PluginsUI::RegisterProfilePrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterBooleanPref(
+      prefs::kPluginsShowDetails,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterDictionaryPref(
+      prefs::kContentSettingsPluginWhitelist,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 }

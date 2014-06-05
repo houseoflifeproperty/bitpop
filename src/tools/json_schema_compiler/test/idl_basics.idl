@@ -7,6 +7,12 @@
 [internal] namespace idl_basics {
   // Enum description
   enum EnumType {
+    // comment1
+    name1,
+    name2
+  };
+
+  [nodoc] enum EnumTypeWithNoDoc {
     name1,
     name2
   };
@@ -15,6 +21,10 @@
     // This comment tests "double-quotes".
     [legalValues=(1,2)] long x;
     DOMString y;
+    DOMString z;
+    DOMString a;
+    DOMString b;
+    DOMString c;
   };
 
   dictionary MyType2 {
@@ -70,6 +80,21 @@
     static void function17(Callback7 cb);
     // |cb|: Override callback comment.
     static void function18(Callback7 cb);
+
+    static void function20(idl_other_namespace.SomeType value);
+    static void function21(idl_other_namespace.SomeType[] values);
+    static void function22(
+        idl_other_namespace.sub_namespace.AnotherType value);
+    static void function23(
+        idl_other_namespace.sub_namespace.AnotherType[] values);
+
+    static long function24();
+    static MyType1 function25();
+    static MyType1[] function26();
+    static EnumType function27();
+    static EnumType[] function28();
+    static idl_other_namespace.SomeType function29();
+    static idl_other_namespace.SomeType[] function30();
   };
 
   interface Events {

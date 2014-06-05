@@ -5,17 +5,18 @@
 {
   'dependencies': [
     '../base/base.gyp:base',
+    '../mojo/mojo.gyp:mojo_shell_bindings',
     '../skia/skia.gyp:skia',
-    '<(webkit_src_dir)/Source/WebKit/chromium/WebKit.gyp:webkit',
+    '../third_party/WebKit/public/blink.gyp:blink',
   ],
   'sources': [
-    'worker/shared_worker_devtools_agent.cc',
-    'worker/shared_worker_devtools_agent.h',
     'worker/websharedworker_stub.cc',
     'worker/websharedworker_stub.h',
     'worker/websharedworkerclient_proxy.cc',
     'worker/websharedworkerclient_proxy.h',
     'worker/worker_main.cc',
+    'worker/shared_worker_permission_client_proxy.cc',
+    'worker/shared_worker_permission_client_proxy.h',
     'worker/worker_thread.cc',
     'worker/worker_thread.h',
     'worker/worker_webapplicationcachehost_impl.cc',

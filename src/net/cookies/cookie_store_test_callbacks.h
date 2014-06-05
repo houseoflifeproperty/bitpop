@@ -10,9 +10,8 @@
 
 #include "net/cookies/cookie_store.h"
 
-class MessageLoop;
-
 namespace base {
+class MessageLoop;
 class Thread;
 }
 
@@ -42,89 +41,53 @@ class CookieCallback {
  private:
   bool did_run_;
   base::Thread* run_in_thread_;
-  MessageLoop* run_in_loop_;
-  MessageLoop* parent_loop_;
-  MessageLoop* loop_to_quit_;
+  base::MessageLoop* run_in_loop_;
+  base::MessageLoop* parent_loop_;
+  base::MessageLoop* loop_to_quit_;
 };
 
 // Callback implementations for the asynchronous CookieStore methods.
 
-class SetCookieCallback : public CookieCallback {
+template <typename T>
+class ResultSavingCookieCallback : public CookieCallback {
  public:
-  SetCookieCallback();
-  explicit SetCookieCallback(base::Thread* run_in_thread);
+  ResultSavingCookieCallback() {
+  }
+  explicit ResultSavingCookieCallback(base::Thread* run_in_thread)
+      : CookieCallback(run_in_thread) {
+  }
 
-  void Run(bool result) {
+  void Run(T result) {
     result_ = result;
     CallbackEpilogue();
   }
 
-  bool result() { return result_; }
+  const T& result() { return result_; }
 
  private:
-  bool result_;
+  T result_;
 };
 
-class GetCookieStringCallback : public CookieCallback {
+class StringResultCookieCallback : public CookieCallback {
  public:
-  GetCookieStringCallback();
-  explicit GetCookieStringCallback(base::Thread* run_in_thread);
+  StringResultCookieCallback();
+  explicit StringResultCookieCallback(base::Thread* run_in_thread);
 
-  void Run(const std::string& cookie) {
-    cookie_ = cookie;
+  void Run(const std::string& result) {
+    result_ = result;
     CallbackEpilogue();
   }
 
-  const std::string& cookie() { return cookie_; }
+  const std::string& result() { return result_; }
 
  private:
-  std::string cookie_;
+  std::string result_;
 };
 
-class GetCookiesWithInfoCallback : public CookieCallback {
+class NoResultCookieCallback : public CookieCallback {
  public:
-  GetCookiesWithInfoCallback();
-  explicit GetCookiesWithInfoCallback(base::Thread* run_in_thread);
-  ~GetCookiesWithInfoCallback();
-
-  void Run(
-      const std::string& cookie_line,
-      const std::vector<CookieStore::CookieInfo>& cookie_info) {
-    cookie_line_ = cookie_line;
-    cookie_info_ = cookie_info;
-    CallbackEpilogue();
-  }
-
-  const std::string& cookie_line() { return cookie_line_; }
-  const std::vector<CookieStore::CookieInfo>& cookie_info() {
-    return cookie_info_;
-  }
-
- private:
-  std::string cookie_line_;
-  std::vector<CookieStore::CookieInfo> cookie_info_;
-};
-
-class DeleteCallback : public CookieCallback {
- public:
-  DeleteCallback();
-  explicit DeleteCallback(base::Thread* run_in_thread);
-
-  void Run(int num_deleted) {
-    num_deleted_ = num_deleted;
-    CallbackEpilogue();
-  }
-
-  int num_deleted() { return num_deleted_; }
-
- private:
-  int num_deleted_;
-};
-
-class DeleteCookieCallback : public CookieCallback {
- public:
-  DeleteCookieCallback();
-  explicit DeleteCookieCallback(base::Thread* run_in_thread);
+  NoResultCookieCallback();
+  explicit NoResultCookieCallback(base::Thread* run_in_thread);
 
   void Run() {
     CallbackEpilogue();

@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2011 Google Inc.
  *
@@ -6,11 +5,11 @@
  * found in the LICENSE file.
  */
 
-
 #ifndef GrPathUtils_DEFINED
 #define GrPathUtils_DEFINED
 
-#include "GrRect.h"
+#include "GrPoint.h"
+#include "SkRect.h"
 #include "SkPath.h"
 #include "SkTArray.h"
 
@@ -22,7 +21,7 @@ class SkMatrix;
 namespace GrPathUtils {
     SkScalar scaleToleranceToSrc(SkScalar devTol,
                                  const SkMatrix& viewM,
-                                 const GrRect& pathBounds);
+                                 const SkRect& pathBounds);
 
     /// Since we divide by tol if we're computing exact worst-case bounds,
     /// very small tolerances will be increased to gMinCurveTol.
@@ -32,25 +31,25 @@ namespace GrPathUtils {
 
     /// Since we divide by tol if we're computing exact worst-case bounds,
     /// very small tolerances will be increased to gMinCurveTol.
-    uint32_t quadraticPointCount(const GrPoint points[], SkScalar tol);
+    uint32_t quadraticPointCount(const SkPoint points[], SkScalar tol);
 
-    uint32_t generateQuadraticPoints(const GrPoint& p0,
-                                     const GrPoint& p1,
-                                     const GrPoint& p2,
+    uint32_t generateQuadraticPoints(const SkPoint& p0,
+                                     const SkPoint& p1,
+                                     const SkPoint& p2,
                                      SkScalar tolSqd,
-                                     GrPoint** points,
+                                     SkPoint** points,
                                      uint32_t pointsLeft);
 
     /// Since we divide by tol if we're computing exact worst-case bounds,
     /// very small tolerances will be increased to gMinCurveTol.
-    uint32_t cubicPointCount(const GrPoint points[], SkScalar tol);
+    uint32_t cubicPointCount(const SkPoint points[], SkScalar tol);
 
-    uint32_t generateCubicPoints(const GrPoint& p0,
-                                 const GrPoint& p1,
-                                 const GrPoint& p2,
-                                 const GrPoint& p3,
+    uint32_t generateCubicPoints(const SkPoint& p0,
+                                 const SkPoint& p1,
+                                 const SkPoint& p2,
+                                 const SkPoint& p3,
                                  SkScalar tolSqd,
-                                 GrPoint** points,
+                                 SkPoint** points,
                                  uint32_t pointsLeft);
 
     // A 2x3 matrix that goes from the 2d space coordinates to UV space where
@@ -60,8 +59,8 @@ namespace GrPathUtils {
     public:
         QuadUVMatrix() {};
         // Initialize the matrix from the control pts
-        QuadUVMatrix(const GrPoint controlPts[3]) { this->set(controlPts); }
-        void set(const GrPoint controlPts[3]);
+        QuadUVMatrix(const SkPoint controlPts[3]) { this->set(controlPts); }
+        void set(const SkPoint controlPts[3]);
 
         /**
          * Applies the matrix to vertex positions to compute UV coords. This
@@ -86,8 +85,8 @@ namespace GrPathUtils {
             float sy = fM[4];
             float ty = fM[5];
             for (int i = 0; i < N; ++i) {
-                const GrPoint* xy = reinterpret_cast<const GrPoint*>(xyPtr);
-                GrPoint* uv = reinterpret_cast<GrPoint*>(uvPtr);
+                const SkPoint* xy = reinterpret_cast<const SkPoint*>(xyPtr);
+                SkPoint* uv = reinterpret_cast<SkPoint*>(uvPtr);
                 uv->fX = sx * xy->fX + kx * xy->fY + tx;
                 uv->fY = ky * xy->fX + sy * xy->fY + ty;
                 xyPtr += STRIDE;
@@ -98,6 +97,15 @@ namespace GrPathUtils {
         float fM[6];
     };
 
+    // Input is 3 control points and a weight for a bezier conic. Calculates the
+    // three linear functionals (K,L,M) that represent the implicit equation of the
+    // conic, K^2 - LM.
+    //
+    // Output:
+    //  K = (klm[0], klm[1], klm[2])
+    //  L = (klm[3], klm[4], klm[5])
+    //  M = (klm[6], klm[7], klm[8])
+    void getConicKLM(const SkPoint p[3], const SkScalar weight, SkScalar klm[9]);
 
     // Converts a cubic into a sequence of quads. If working in device space
     // use tolScale = 1, otherwise set based on stretchiness of the matrix. The
@@ -111,10 +119,55 @@ namespace GrPathUtils {
     // Setting constrainWithinTangents to true enforces this property. When this
     // is true the cubic must be simple and dir must specify the orientation of
     // the cubic. Otherwise, dir is ignored.
-    void convertCubicToQuads(const GrPoint p[4],
+    void convertCubicToQuads(const SkPoint p[4],
                              SkScalar tolScale,
                              bool constrainWithinTangents,
                              SkPath::Direction dir,
                              SkTArray<SkPoint, true>* quads);
+
+    // Chops the cubic bezier passed in by src, at the double point (intersection point)
+    // if the curve is a cubic loop. If it is a loop, there will be two parametric values for
+    // the double point: ls and ms. We chop the cubic at these values if they are between 0 and 1.
+    // Return value:
+    // Value of 3: ls and ms are both between (0,1), and dst will contain the three cubics,
+    //             dst[0..3], dst[3..6], and dst[6..9] if dst is not NULL
+    // Value of 2: Only one of ls and ms are between (0,1), and dst will contain the two cubics,
+    //             dst[0..3] and dst[3..6] if dst is not NULL
+    // Value of 1: Neither ls or ms are between (0,1), and dst will contain the one original cubic,
+    //             dst[0..3] if dst is not NULL
+    //
+    // Optional KLM Calculation:
+    // The function can also return the KLM linear functionals for the chopped cubic implicit form
+    // of K^3 - LM.
+    // It will calculate a single set of KLM values that can be shared by all sub cubics, except
+    // for the subsection that is "the loop" the K and L values need to be negated.
+    // Output:
+    // klm:     Holds the values for the linear functionals as:
+    //          K = (klm[0], klm[1], klm[2])
+    //          L = (klm[3], klm[4], klm[5])
+    //          M = (klm[6], klm[7], klm[8])
+    // klm_rev: These values are flags for the corresponding sub cubic saying whether or not
+    //          the K and L values need to be flipped. A value of -1.f means flip K and L and
+    //          a value of 1.f means do nothing.
+    //          *****DO NOT FLIP M, JUST K AND L*****
+    //
+    // Notice that the klm lines are calculated in the same space as the input control points.
+    // If you transform the points the lines will also need to be transformed. This can be done
+    // by mapping the lines with the inverse-transpose of the matrix used to map the points.
+    int chopCubicAtLoopIntersection(const SkPoint src[4], SkPoint dst[10] = NULL,
+                                    SkScalar klm[9] = NULL, SkScalar klm_rev[3] = NULL);
+
+    // Input is p which holds the 4 control points of a non-rational cubic Bezier curve.
+    // Output is the coefficients of the three linear functionals K, L, & M which
+    // represent the implicit form of the cubic as f(x,y,w) = K^3 - LM. The w term
+    // will always be 1. The output is stored in the array klm, where the values are:
+    // K = (klm[0], klm[1], klm[2])
+    // L = (klm[3], klm[4], klm[5])
+    // M = (klm[6], klm[7], klm[8])
+    //
+    // Notice that the klm lines are calculated in the same space as the input control points.
+    // If you transform the points the lines will also need to be transformed. This can be done
+    // by mapping the lines with the inverse-transpose of the matrix used to map the points.
+    void getCubicKLM(const SkPoint p[4], SkScalar klm[9]);
 };
 #endif

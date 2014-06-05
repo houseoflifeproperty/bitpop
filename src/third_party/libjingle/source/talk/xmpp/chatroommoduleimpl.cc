@@ -62,7 +62,8 @@ public:
   virtual const std::string& nickname() const;
   virtual const Jid member_jid() const;
   virtual XmppReturnStatus RequestEnterChatroom(const std::string& password,
-      const std::string& client_version);
+      const std::string& client_version,
+      const std::string& locale);
   virtual XmppReturnStatus RequestExitChatroom();
   virtual XmppReturnStatus RequestConnectionStatusChange(
       XmppPresenceConnectionStatus connection_status);
@@ -273,7 +274,8 @@ std::string GetAttrValueFor(XmppPresenceConnectionStatus connection_status) {
 XmppReturnStatus
 XmppChatroomModuleImpl::RequestEnterChatroom(
     const std::string& password,
-    const std::string& client_version) {
+    const std::string& client_version,
+    const std::string& locale) {
   UNUSED(password);
   if (!engine())
     return XMPP_RETURN_BADSTATE;
@@ -299,6 +301,13 @@ XmppChatroomModuleImpl::RequestEnterChatroom(
     muc_x->AddElement(client_version_element);
   }
 
+  if (!locale.empty()) {
+    XmlElement* locale_element = new XmlElement(QN_LOCALE, false);
+
+    locale_element->SetBodyText(locale);
+    muc_x->AddElement(locale_element);
+  }
+
   XmppReturnStatus status = engine()->SendStanza(&element);
   if (status == XMPP_RETURN_OK) {
     return ClientChangeMyPresence(XMPP_CHATROOM_STATE_REQUESTED_ENTER);
@@ -311,17 +320,13 @@ XmppChatroomModuleImpl::RequestExitChatroom() {
   if (!engine())
     return XMPP_RETURN_BADSTATE;
 
-  // currently, can't leave a room unless you've entered
-  // no way to cancel a pending enter call - is that bad?
-  if (chatroom_state_ != XMPP_CHATROOM_STATE_IN_ROOM)
-    return XMPP_RETURN_BADSTATE; // $TODO - this isn't a bad state, it's a bad call,  diff error code?
-
   // exiting a chatroom is a presence request to the server
   XmlElement element(QN_PRESENCE);
   element.AddAttr(QN_TO, member_jid().Str());
   element.AddAttr(QN_TYPE, "unavailable");
   XmppReturnStatus status = engine()->SendStanza(&element);
-  if (status == XMPP_RETURN_OK) {
+  if (status == XMPP_RETURN_OK &&
+      chatroom_state_ == XMPP_CHATROOM_STATE_IN_ROOM) {
     return ClientChangeMyPresence(XMPP_CHATROOM_STATE_REQUESTED_EXIT);
   }
   return status;
@@ -504,6 +509,7 @@ XmppChatroomModuleImpl::ServerChangedOtherPresence(const XmlElement&
       FireMemberChanged(member);
     }
     else if (presence->available() == XMPP_PRESENCE_UNAVAILABLE) {
+      member->SetPresence(presence.get());
       chatroom_jid_members_.erase(pos);
       chatroom_jid_members_version_++;
       FireMemberExited(member);
@@ -628,13 +634,16 @@ XmppChatroomModuleImpl::GetEnterFailureFromXml(const XmlElement* presence) {
 XmppChatroomExitedStatus
 XmppChatroomModuleImpl::GetExitFailureFromXml(const XmlElement* presence) {
   XmppChatroomExitedStatus status = XMPP_CHATROOM_EXITED_UNSPECIFIED;
-  const XmlElement* error = presence->FirstNamed(QN_ERROR);
-  if (error != NULL && error->HasAttr(QN_CODE)) {
-    int code = atoi(error->Attr(QN_CODE).c_str());
-    switch (code) {
-      case 307: status = XMPP_CHATROOM_EXITED_KICKED; break;
-      case 322: status = XMPP_CHATROOM_EXITED_NOT_A_MEMBER; break;
-      case 332: status = XMPP_CHATROOM_EXITED_SYSTEM_SHUTDOWN; break;
+  const XmlElement* muc_user = presence->FirstNamed(QN_MUC_USER_X);
+  if (muc_user != NULL) {
+    const XmlElement* user_status = muc_user->FirstNamed(QN_MUC_USER_STATUS);
+    if (user_status != NULL && user_status->HasAttr(QN_CODE)) {
+      int code = atoi(user_status->Attr(QN_CODE).c_str());
+      switch (code) {
+        case 307: status = XMPP_CHATROOM_EXITED_KICKED; break;
+        case 322: status = XMPP_CHATROOM_EXITED_NOT_A_MEMBER; break;
+        case 332: status = XMPP_CHATROOM_EXITED_SYSTEM_SHUTDOWN; break;
+      }
     }
   }
   return status;

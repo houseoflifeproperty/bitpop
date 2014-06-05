@@ -5,11 +5,13 @@
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/path_service.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_parser.h"
 #include "chrome/common/chrome_paths.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using base::ASCIIToUTF16;
 
 // ParamFilterImpl ------------------------------------------------------------
 
@@ -18,7 +20,7 @@
 class ParamFilterImpl : public TemplateURLParser::ParameterFilter {
  public:
   ParamFilterImpl(std::string name_str, std::string value_str);
-  ~ParamFilterImpl();
+  virtual ~ParamFilterImpl();
 
   virtual bool KeepParameter(const std::string& key,
                              const std::string& value) OVERRIDE;
@@ -50,7 +52,7 @@ bool ParamFilterImpl::KeepParameter(const std::string& key,
 class TemplateURLParserTest : public testing::Test {
  protected:
   TemplateURLParserTest();
-  ~TemplateURLParserTest();
+  virtual ~TemplateURLParserTest();
 
   virtual void SetUp() OVERRIDE;
 
@@ -65,7 +67,7 @@ class TemplateURLParserTest : public testing::Test {
   scoped_ptr<TemplateURL> template_url_;
 
  private:
-  FilePath full_path_;
+  base::FilePath full_path_;
 };
 
 TemplateURLParserTest::TemplateURLParserTest() {
@@ -77,10 +79,10 @@ TemplateURLParserTest::~TemplateURLParserTest() {
 void TemplateURLParserTest::SetUp() {
   ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &full_path_));
   full_path_ = full_path_.AppendASCII("osdd");
-  if (!file_util::PathExists(full_path_)) {
+  if (!base::PathExists(full_path_)) {
     LOG(ERROR) <<
         "This test can't be run without some non-redistributable data";
-    full_path_ = FilePath();
+    full_path_ = base::FilePath();
   }
 }
 
@@ -91,14 +93,14 @@ bool TemplateURLParserTest::is_disabled() const {
 void TemplateURLParserTest::ParseFile(
     const std::string& file_name,
     TemplateURLParser::ParameterFilter* filter) {
-  FilePath full_path;
+  base::FilePath full_path;
   ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &full_path));
   full_path = full_path.AppendASCII("osdd");
   full_path = full_path.AppendASCII(file_name);
-  ASSERT_TRUE(file_util::PathExists(full_path));
+  ASSERT_TRUE(base::PathExists(full_path));
 
   std::string contents;
-  ASSERT_TRUE(file_util::ReadFileToString(full_path, &contents));
+  ASSERT_TRUE(base::ReadFileToString(full_path, &contents));
   template_url_.reset(TemplateURLParser::Parse(NULL, false, contents.data(),
                                                contents.length(), filter));
 }

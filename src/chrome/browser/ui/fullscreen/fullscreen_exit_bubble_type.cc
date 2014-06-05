@@ -4,28 +4,29 @@
 
 #include "chrome/browser/ui/fullscreen/fullscreen_exit_bubble_type.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/url_constants.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace fullscreen_bubble {
 
-string16 GetLabelTextForType(FullscreenExitBubbleType type,
-                             const GURL& url,
-                             ExtensionService* extension_service) {
-  string16 host(UTF8ToUTF16(url.host()));
+base::string16 GetLabelTextForType(FullscreenExitBubbleType type,
+                                   const GURL& url,
+                                   ExtensionService* extension_service) {
+  base::string16 host(base::UTF8ToUTF16(url.host()));
   if (extension_service) {
-    const ExtensionSet* extensions = extension_service->extensions();
+    const extensions::ExtensionSet* extensions =
+        extension_service->extensions();
     DCHECK(extensions);
     const extensions::Extension* extension =
-        extensions->GetExtensionOrAppByURL(ExtensionURLInfo(url));
+        extensions->GetExtensionOrAppByURL(url);
     if (extension) {
-      host = UTF8ToUTF16(extension->name());
+      host = base::UTF8ToUTF16(extension->name());
     } else if (url.SchemeIs(extensions::kExtensionScheme)) {
       // In this case, |host| is set to an extension ID.
       // We are not going to show it because it's human-unreadable.
@@ -56,7 +57,7 @@ string16 GetLabelTextForType(FullscreenExitBubbleType type,
             IDS_FULLSCREEN_UNKNOWN_EXTENSION_TRIGGERED_FULLSCREEN);
       default:
         NOTREACHED();
-        return string16();
+        return base::string16();
     }
   }
   switch (type) {
@@ -86,11 +87,11 @@ string16 GetLabelTextForType(FullscreenExitBubbleType type,
           IDS_FULLSCREEN_EXTENSION_TRIGGERED_FULLSCREEN, host);
     default:
       NOTREACHED();
-      return string16();
+      return base::string16();
   }
 }
 
-string16 GetDenyButtonTextForType(FullscreenExitBubbleType type) {
+base::string16 GetDenyButtonTextForType(FullscreenExitBubbleType type) {
   switch (type) {
     case FEB_TYPE_FULLSCREEN_BUTTONS:
       return l10n_util::GetStringUTF16(IDS_FULLSCREEN_EXIT_FULLSCREEN);
@@ -104,10 +105,10 @@ string16 GetDenyButtonTextForType(FullscreenExitBubbleType type) {
     case FEB_TYPE_BROWSER_FULLSCREEN_EXIT_INSTRUCTION:
     case FEB_TYPE_BROWSER_EXTENSION_FULLSCREEN_EXIT_INSTRUCTION:
       NOTREACHED();  // No button in this case.
-      return string16();
+      return base::string16();
     default:
       NOTREACHED();
-      return string16();
+      return base::string16();
   }
 }
 
@@ -130,4 +131,4 @@ void PermissionRequestedByType(FullscreenExitBubbleType type,
   }
 }
 
-}  // namespace
+}  // namespace fullscreen_bubble

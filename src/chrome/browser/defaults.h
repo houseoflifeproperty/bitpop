@@ -15,40 +15,43 @@ namespace browser_defaults {
 
 #if defined(USE_X11)
 
-// Size of the font used in the autocomplete box for normal windows, in pixels.
-extern const int kAutocompleteEditFontPixelSize;
-
-// Size of the font used in the autocomplete box for popup windows, in pixels.
-extern const int kAutocompleteEditFontPixelSizeInPopup;
-
 // Can the user toggle the system title bar?
 extern const bool kCanToggleSystemTitleBar;
 
 #endif
 
-// Width of mini-tabs.
-extern const int kMiniTabWidth;
+// Size of the font used in the omnibox, in pixels.
+extern const int kOmniboxFontPixelSize;
 
-// Should session restore restore popup windows?
-extern const bool kRestorePopups;
+// Width of mini-tabs.  Inline because other constants are computed depending
+// on this, which causes static initializers if the value isn't available in
+// all translation units that do this.
+#if defined(TOOLKIT_VIEWS)
+// Windows and Chrome OS have bigger shadows in the tab art.
+const int kMiniTabWidth = 64;
+#else
+const int kMiniTabWidth = 56;
+#endif
 
 // Can the browser be alive without any browser windows?
 extern const bool kBrowserAliveWithNoWindows;
+
+// Whether various menu items are shown.
+extern const bool kShowExitMenuItem;
+extern const bool kShowHelpMenuItemIcon;
+extern const bool kShowUpgradeMenuItem;
 
 // Should a link be shown on the bookmark bar allowing the user to import
 // bookmarks?
 extern const bool kShowImportOnBookmarkBar;
 
-// Whether various menu items are shown.
-extern const bool kShowExitMenuItem;
-extern const bool kShowFeedbackMenuItem;
-extern const bool kShowHelpMenuItemIcon;
-extern const bool kShowSyncSetupMenuItem;
-extern const bool kShowUpgradeMenuItem;
+// Should always open incognito windows when started with --incognito switch?
+extern const bool kAlwaysOpenIncognitoWindow;
 
-// Does the OS support other browsers? If not, operations such as default
-// browser check are not done.
-extern const bool kOSSupportsOtherBrowsers;
+// Indicates whether session restore should always create a new
+// tabbed browser. This is true every where except on ChromeOS
+// where we want the desktop to show through in this situation.
+extern const bool kAlwaysCreateTabbedBrowserOnSessionRestore;
 
 // Does the download page have the show in folder option?
 extern const bool kDownloadPageHasShowInFolder;
@@ -65,28 +68,14 @@ extern const bool kSyncAutoStarts;
 // Should other browsers be shown in about:memory page?
 extern const bool kShowOtherBrowsersInAboutMemory;
 
-// Should always open incognito windows when started with --incognito switch?
-extern const bool kAlwaysOpenIncognitoWindow;
-
-// Should the close button be shown in the Task Manager dialog?
-extern const bool kShowCancelButtonInTaskManager;
-
-// Preferred height of the bookmarks bar when shown on every page.
-extern const int kBookmarkBarHeight;
+// Should scroll events on the tabstrip change tabs?
+extern const bool kScrollEventChangesTab;
 
 // ChromiumOS network menu font
 extern const ui::ResourceBundle::FontStyle kAssociatedNetworkFontStyle;
 
-// Preferred infobar border padding in pixels.
-extern const int kInfoBarBorderPaddingVertical;
-
 // Last character display for passwords.
 extern const bool kPasswordEchoEnabled;
-
-// Indicates whether session restore should always create a new
-// tabbed browser. This is true every where except on ChromeOS
-// where we want the desktop to show through in this situation.
-extern const bool kAlwaysCreateTabbedBrowserOnSessionRestore;
 
 //=============================================================================
 // Runtime "const" - set only once after parsing command line option and should

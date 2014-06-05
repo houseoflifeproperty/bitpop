@@ -32,15 +32,16 @@
 #include <vector>
 
 #include "talk/base/criticalsection.h"
+#include "talk/base/fileutils.h"
 #include "talk/base/sigslotrepeater.h"
 #include "talk/base/thread.h"
+#include "talk/media/base/capturemanager.h"
 #include "talk/media/base/mediaengine.h"
 #include "talk/p2p/base/session.h"
 #include "talk/session/media/voicechannel.h"
 
 namespace cricket {
 
-class CaptureManager;
 class Soundclip;
 class VideoProcessor;
 class VoiceChannel;
@@ -57,8 +58,11 @@ class VoiceProcessor;
 class ChannelManager : public talk_base::MessageHandler,
                        public sigslot::has_slots<> {
  public:
+#if !defined(DISABLE_MEDIA_ENGINE_FACTORY)
   // Creates the channel manager, and specifies the worker thread to use.
   explicit ChannelManager(talk_base::Thread* worker);
+#endif
+
   // For testing purposes. Allows the media engine and data media
   // engine and dev manager to be mocks.  The ChannelManager takes
   // ownership of these objects.
@@ -88,7 +92,9 @@ class ChannelManager : public talk_base::MessageHandler,
   // Retrieves the list of supported audio & video codec types.
   // Can be called before starting the media engine.
   void GetSupportedAudioCodecs(std::vector<AudioCodec>* codecs) const;
+  void GetSupportedAudioRtpHeaderExtensions(RtpHeaderExtensions* ext) const;
   void GetSupportedVideoCodecs(std::vector<VideoCodec>* codecs) const;
+  void GetSupportedVideoRtpHeaderExtensions(RtpHeaderExtensions* ext) const;
   void GetSupportedDataCodecs(std::vector<DataCodec>* codecs) const;
 
   // Indicates whether the media engine is started.
@@ -113,7 +119,8 @@ class ChannelManager : public talk_base::MessageHandler,
   // Destroys a video channel created with the Create API.
   void DestroyVideoChannel(VideoChannel* video_channel);
   DataChannel* CreateDataChannel(
-      BaseSession* session, const std::string& content_name, bool rtcp);
+      BaseSession* session, const std::string& content_name,
+      bool rtcp, DataChannelType data_channel_type);
   // Destroys a data channel created with the Create API.
   void DestroyDataChannel(DataChannel* data_channel);
 
@@ -131,29 +138,34 @@ class ChannelManager : public talk_base::MessageHandler,
   // Configures the audio and video devices. A null pointer can be passed to
   // GetAudioOptions() for any parameter of no interest.
   bool GetAudioOptions(std::string* wave_in_device,
-                       std::string* wave_out_device, int* opts);
+                       std::string* wave_out_device,
+                       AudioOptions* options);
   bool SetAudioOptions(const std::string& wave_in_device,
-                       const std::string& wave_out_device, int opts);
+                       const std::string& wave_out_device,
+                       const AudioOptions& options);
   bool GetOutputVolume(int* level);
   bool SetOutputVolume(int level);
   bool IsSameCapturer(const std::string& capturer_name,
                       VideoCapturer* capturer);
-  bool GetVideoOptions(std::string* cam_device);
-  // Create capturer based on what has been set in SetVideoOptions().
+  // TODO(noahric): Nearly everything called "device" in this API is actually a
+  // device name, so this should really be GetCaptureDeviceName, and the
+  // next method should be GetCaptureDevice.
+  bool GetCaptureDevice(std::string* cam_device);
+  // Gets the current capture Device.
+  bool GetVideoCaptureDevice(Device* device);
+  // Create capturer based on what has been set in SetCaptureDevice().
   VideoCapturer* CreateVideoCapturer();
-  bool SetVideoOptions(const std::string& cam_device);
+  bool SetCaptureDevice(const std::string& cam_device);
   bool SetDefaultVideoEncoderConfig(const VideoEncoderConfig& config);
+  // RTX will be enabled/disabled in engines that support it. The supporting
+  // engines will start offering an RTX codec. Must be called before Init().
+  bool SetVideoRtxEnabled(bool enable);
 
   // Starts/stops the local microphone and enables polling of the input level.
   bool SetLocalMonitor(bool enable);
   bool monitoring() const { return monitoring_; }
   // Sets the local renderer where to renderer the local camera.
   bool SetLocalRenderer(VideoRenderer* renderer);
-  // Sets the externally provided video capturer. The ssrc is the ssrc of the
-  // (video) stream for which the video capturer should be set.
-  bool SetVideoCapturer(VideoCapturer* capturer);
-  // Starts and stops the local camera and renders it to the local renderer.
-  bool SetVideoCapture(bool capture);
   bool capturing() const { return capturing_; }
 
   // Configures the logging output of the mediaengine(s).
@@ -175,37 +187,55 @@ class ChannelManager : public talk_base::MessageHandler,
                                 VoiceProcessor* processor,
                                 MediaProcessorDirection direction);
   // The following are done in the new "CaptureManager" style that
-  // all local video capturers, processors, and managers should move
-  // to.
-  // TODO(pthatcher): Add more of the CaptureManager interface.
+  // all local video capturers, processors, and managers should move to.
+  // TODO(pthatcher): Make methods nicer by having start return a handle that
+  // can be used for stop and restart, rather than needing to pass around
+  // formats a a pseudo-handle.
   bool StartVideoCapture(VideoCapturer* video_capturer,
                          const VideoFormat& video_format);
+  // When muting, produce black frames then pause the camera.
+  // When unmuting, start the camera. Camera starts unmuted.
+  bool MuteToBlackThenPause(VideoCapturer* video_capturer, bool muted);
   bool StopVideoCapture(VideoCapturer* video_capturer,
                         const VideoFormat& video_format);
+  bool RestartVideoCapture(VideoCapturer* video_capturer,
+                           const VideoFormat& previous_format,
+                           const VideoFormat& desired_format,
+                           CaptureManager::RestartOptions options);
+
   bool AddVideoRenderer(VideoCapturer* capturer, VideoRenderer* renderer);
   bool RemoveVideoRenderer(VideoCapturer* capturer, VideoRenderer* renderer);
+  bool IsScreencastRunning() const;
 
   // The operations below occur on the main thread.
 
   bool GetAudioInputDevices(std::vector<std::string>* names);
   bool GetAudioOutputDevices(std::vector<std::string>* names);
   bool GetVideoCaptureDevices(std::vector<std::string>* names);
+  void SetVideoCaptureDeviceMaxFormat(const std::string& usb_id,
+                                      const VideoFormat& max_format);
+
+  // Starts AEC dump using existing file.
+  bool StartAecDump(talk_base::PlatformFile file);
+
   sigslot::repeater0<> SignalDevicesChange;
   sigslot::signal2<VideoCapturer*, CaptureState> SignalVideoCaptureStateChange;
 
   // Returns the current selected device. Note: Subtly different from
-  // GetVideoOptions(). See member video_device_ for more details.
+  // GetCaptureDevice(). See member video_device_ for more details.
   // This API is mainly a hook used by unittests.
   const std::string& video_device_name() const { return video_device_name_; }
 
   // TODO(hellner): Remove this function once the engine capturer has been
   // removed.
   VideoFormat GetStartCaptureFormat();
+
  protected:
   // Adds non-transient parameters which can only be changed through the
   // options store.
   bool SetAudioOptions(const std::string& wave_in_device,
-                       const std::string& wave_out_device, int opts,
+                       const std::string& wave_out_device,
+                       const AudioOptions& options,
                        int delay_offset);
   int audio_delay_offset() const { return audio_delay_offset_; }
 
@@ -220,7 +250,6 @@ class ChannelManager : public talk_base::MessageHandler,
                  DeviceManagerInterface* dm,
                  CaptureManager* cm,
                  talk_base::Thread* worker_thread);
-  bool Send(uint32 id, talk_base::MessageData* pdata);
   void Terminate_w();
   VoiceChannel* CreateVoiceChannel_w(
       BaseSession* session, const std::string& content_name, bool rtcp);
@@ -230,47 +259,22 @@ class ChannelManager : public talk_base::MessageHandler,
       VoiceChannel* voice_channel);
   void DestroyVideoChannel_w(VideoChannel* video_channel);
   DataChannel* CreateDataChannel_w(
-      BaseSession* session, const std::string& content_name, bool rtcp);
+      BaseSession* session, const std::string& content_name,
+      bool rtcp, DataChannelType data_channel_type);
   void DestroyDataChannel_w(DataChannel* data_channel);
   Soundclip* CreateSoundclip_w();
   void DestroySoundclip_w(Soundclip* soundclip);
-  bool SetAudioOptions_w(int opts, int delay_offset, const Device* in_dev,
-                         const Device* out_dev);
-  bool GetOutputVolume_w(int* level);
-  bool SetOutputVolume_w(int level);
-  bool SetLocalMonitor_w(bool enable);
-  bool SetVideoOptions_w(const Device* cam_device);
-  bool SetDefaultVideoEncoderConfig_w(const VideoEncoderConfig& config);
-  bool SetLocalRenderer_w(VideoRenderer* renderer);
-  bool SetVideoCapturer_w(VideoCapturer* capturer);
-  bool SetVideoCapture_w(bool capture);
-  void SetMediaLogging(bool video, int level, const char* filter);
-  void SetMediaLogging_w(bool video, int level, const char* filter);
+  bool SetAudioOptions_w(const AudioOptions& options, int delay_offset,
+                         const Device* in_dev, const Device* out_dev);
+  bool SetCaptureDevice_w(const Device* cam_device);
   void OnVideoCaptureStateChange(VideoCapturer* capturer,
                                  CaptureState result);
   bool RegisterVideoProcessor_w(VideoCapturer* capturer,
                                 VideoProcessor* processor);
   bool UnregisterVideoProcessor_w(VideoCapturer* capturer,
                                   VideoProcessor* processor);
-  bool RegisterVoiceProcessor_w(uint32 ssrc,
-                                VoiceProcessor* processor,
-                                MediaProcessorDirection direction);
-  bool UnregisterVoiceProcessor_w(uint32 ssrc,
-                                  VoiceProcessor* processor,
-                                  MediaProcessorDirection direction);
-  // The following are done in the new "CaptureManager" style that
-  // all local video capturers, processors, and managers should move
-  // to.
-  // TODO(pthatcher): Add more of the CaptureManager interface.
-  bool StartVideoCapture_w(VideoCapturer* video_capturer,
-                           const VideoFormat& video_format);
-  bool StopVideoCapture_w(VideoCapturer* video_capturer,
-                          const VideoFormat& video_format);
-  bool AddVideoRenderer_w(VideoCapturer* capturer, VideoRenderer* renderer);
-  bool RemoveVideoRenderer_w(VideoCapturer* capturer, VideoRenderer* renderer);
-  VideoFormat GetStartCaptureFormat_w();
-
-  void OnMessage(talk_base::Message *message);
+  bool IsScreencastRunning_w() const;
+  virtual void OnMessage(talk_base::Message *message);
 
   talk_base::scoped_ptr<MediaEngineInterface> media_engine_;
   talk_base::scoped_ptr<DataEngineInterface> data_media_engine_;
@@ -287,17 +291,16 @@ class ChannelManager : public talk_base::MessageHandler,
 
   std::string audio_in_device_;
   std::string audio_out_device_;
-  int audio_options_;
+  AudioOptions audio_options_;
   int audio_delay_offset_;
   int audio_output_volume_;
   std::string camera_device_;
   VideoEncoderConfig default_video_encoder_config_;
   VideoRenderer* local_renderer_;
+  bool enable_rtx_;
 
   bool capturing_;
   bool monitoring_;
-
-  talk_base::scoped_ptr<VideoCapturer> video_capturer_;
 
   // String containing currently set device. Note that this string is subtly
   // different from camera_device_. E.g. camera_device_ will list unplugged

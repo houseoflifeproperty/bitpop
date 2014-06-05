@@ -4,6 +4,8 @@
 
 #include "content/browser/renderer_host/p2p/socket_host_tcp_server.h"
 
+#include <list>
+
 #include "content/browser/renderer_host/p2p/socket_host_tcp.h"
 #include "content/browser/renderer_host/p2p/socket_host_test_utils.h"
 #include "net/base/completion_callback.h"
@@ -43,10 +45,6 @@ class FakeServerSocket : public net::ServerSocket {
     } else {
       incoming_sockets_.push_back(socket);
     }
-  }
-
-  // net::ServerSocket implementation.
-  virtual void AllowAddressReuse() {
   }
 
   virtual int Listen(const net::IPEndPoint& address, int backlog) OVERRIDE {
@@ -93,15 +91,19 @@ class P2PSocketHostTcpServerTest : public testing::Test {
  protected:
   virtual void SetUp() OVERRIDE {
     socket_ = new FakeServerSocket();
-    socket_host_.reset(new P2PSocketHostTcpServer(&sender_, 0));
+    socket_host_.reset(new P2PSocketHostTcpServer(
+        &sender_, 0, P2P_SOCKET_TCP_CLIENT));
     socket_host_->socket_.reset(socket_);
 
     EXPECT_CALL(sender_, Send(
         MatchMessage(static_cast<uint32>(P2PMsg_OnSocketCreated::ID))))
         .WillOnce(DoAll(DeleteArg<0>(), Return(true)));
 
+    P2PHostAndIPEndPoint dest;
+    dest.ip_address = ParseAddress(kTestIpAddress1, kTestPort1);
+
     socket_host_->Init(ParseAddress(kTestLocalIpAddress, 0),
-                       ParseAddress(kTestIpAddress1, kTestPort1));
+                       dest);
     EXPECT_TRUE(socket_->listening());
   }
 
@@ -112,7 +114,7 @@ class P2PSocketHostTcpServerTest : public testing::Test {
   }
 
   MockIPCSender sender_;
-  FakeServerSocket* socket_; // Owned by |socket_host_|.
+  FakeServerSocket* socket_;  // Owned by |socket_host_|.
   scoped_ptr<P2PSocketHostTcpServer> socket_host_;
 };
 

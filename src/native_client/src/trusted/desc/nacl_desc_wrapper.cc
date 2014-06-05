@@ -6,7 +6,8 @@
 #include <new>
 #include "native_client/src/include/portability.h"
 #include "native_client/src/include/portability_string.h"
-#include "native_client/src/shared/imc/nacl_imc.h"
+#include "native_client/src/public/imc_types.h"
+#include "native_client/src/shared/imc/nacl_imc_c.h"
 #include "native_client/src/shared/platform/nacl_check.h"
 #include "native_client/src/shared/platform/nacl_log.h"
 #include "native_client/src/shared/platform/nacl_sync_checked.h"
@@ -26,7 +27,6 @@
 #include "native_client/src/trusted/desc/nrd_xfer.h"
 #include "native_client/src/trusted/nacl_base/nacl_refcount.h"
 #include "native_client/src/trusted/service_runtime/include/sys/errno.h"
-#include "native_client/src/trusted/service_runtime/include/sys/nacl_imc_api.h"
 #include "native_client/src/trusted/service_runtime/nacl_config.h"
 
 // TODO(polina): follow the style guide and replace "nhdp" and "ndiodp" with
@@ -46,7 +46,9 @@ struct NaClDesc* OpenHostFileCommon(const char* fname, int flags, int mode) {
   }
   struct NaClDescIoDesc* ndiodp = NaClDescIoDescMake(nhdp);
   if (NULL == ndiodp) {
-    NaClHostDescClose(nhdp);
+    if (0 != NaClHostDescClose(nhdp)) {
+      NaClLog(LOG_FATAL, "OpenHostFileCommon: NaClHostDescClose failed\n");
+    }
     free(nhdp);
     return NULL;
   }
@@ -60,7 +62,9 @@ struct NaClDesc* ImportHostDescCommon(int host_os_desc, int mode) {
   }
   NaClDescIoDesc* ndiodp = NaClDescIoDescMake(nhdp);
   if (NULL == ndiodp) {
-    NaClHostDescClose(nhdp);
+    if (0 != NaClHostDescClose(nhdp)) {
+      NaClLog(LOG_FATAL, "ImportHostDescCommon: NaClHostDescClose failed\n");
+    }
     free(nhdp);
     return NULL;
   }
@@ -208,48 +212,21 @@ DescWrapper* DescWrapperFactory::MakeImcSock(NaClHandle handle) {
   return MakeGenericCleanup(reinterpret_cast<struct NaClDesc*>(desc));
 }
 
-DescWrapper* DescWrapperFactory::MakeShm(size_t size) {
-  CHECK(common_data_->is_initialized());
-  // HACK: there's an inlining issue with this.
-  // size_t rounded_size = NaClRoundAllocPage(size);
-  size_t rounded_size =
-      (size + NACL_MAP_PAGESIZE - 1) &
-      ~static_cast<size_t>(NACL_MAP_PAGESIZE - 1);
-  // TODO(sehr): fix the inlining issue.
-  NaClHandle handle = CreateMemoryObject(rounded_size, /* executable= */ false);
-  if (kInvalidHandle == handle) {
-    return NULL;
-  }
-  return ImportShmHandle(handle, size);
-}
-
 DescWrapper* DescWrapperFactory::ImportShmHandle(NaClHandle handle,
                                                  size_t size) {
-  struct NaClDescImcShm* desc =
-    reinterpret_cast<NaClDescImcShm*>(calloc(1, sizeof *desc));
-  if (NULL == desc) {
+  struct NaClDesc *desc = NaClDescImcShmMake(handle, size);
+  if (desc == NULL) {
     return NULL;
   }
-  if (!NaClDescImcShmCtor(desc, handle, size)) {
-    free(desc);
-    return NULL;
-  }
-
-  return MakeGenericCleanup(reinterpret_cast<struct NaClDesc*>(desc));
+  return MakeGenericCleanup(desc);
 }
 
 DescWrapper* DescWrapperFactory::ImportSyncSocketHandle(NaClHandle handle) {
-  struct NaClDescSyncSocket* desc =
-    static_cast<NaClDescSyncSocket*>(calloc(1, sizeof *desc));
-  if (NULL == desc) {
+  struct NaClDesc *desc = NaClDescSyncSocketMake(handle);
+  if (desc == NULL) {
     return NULL;
   }
-  if (!NaClDescSyncSocketCtor(desc, handle)) {
-    free(desc);
-    return NULL;
-  }
-
-  return MakeGenericCleanup(reinterpret_cast<struct NaClDesc*>(desc));
+  return MakeGenericCleanup(desc);
 }
 
 #if NACL_LINUX && !NACL_ANDROID
@@ -437,11 +414,6 @@ nacl_off64_t DescWrapper::Seek(nacl_off64_t offset, int whence) {
            whence);
 }
 
-int DescWrapper::Ioctl(int request, void* arg) {
-  return reinterpret_cast<struct NaClDescVtbl const *>(desc_->base.vtbl)->
-      Ioctl(desc_, request, arg);
-}
-
 int DescWrapper::Fstat(struct nacl_abi_stat* statbuf) {
   return reinterpret_cast<struct NaClDescVtbl const *>(desc_->base.vtbl)->
       Fstat(desc_, statbuf);
@@ -521,7 +493,7 @@ ssize_t DescWrapper::SendMsg(const MsgHeader* dgram, int flags) {
     header.iov[i].length = dgram->iov[i].length;
   }
   // Allocate and copy the descriptor vector, removing DescWrappers.
-  if (kHandleCountMax < dgram->ndescv_length) {
+  if (NACL_HANDLE_COUNT_MAX < dgram->ndescv_length) {
     goto cleanup;
   }
   if (NACL_ABI_SIZE_T_MAX / sizeof(header.ndescv[0]) <= ddescv_length) {
@@ -554,6 +526,7 @@ ssize_t DescWrapper::RecvMsg(MsgHeader* dgram, int flags,
   nacl_abi_size_t i;
 
   // Initialize to allow simple cleanups.
+  header.iov = NULL;
   header.ndescv = NULL;
   for (i = 0; i < dgram->ndescv_length; ++i) {
     dgram->ndescv[i] = NULL;
@@ -574,7 +547,7 @@ ssize_t DescWrapper::RecvMsg(MsgHeader* dgram, int flags,
     header.iov[i].length = dgram->iov[i].length;
   }
   // Allocate and copy the descriptor vector.
-  if (kHandleCountMax < dgram->ndescv_length) {
+  if (NACL_HANDLE_COUNT_MAX < dgram->ndescv_length) {
     goto cleanup;
   }
   if (NACL_ABI_SIZE_T_MAX / sizeof(header.ndescv[0]) <= ddescv_length) {

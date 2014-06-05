@@ -29,13 +29,17 @@ class Session {
     // Created, but not connecting yet.
     INITIALIZING,
 
-    // Sent or received session-initiate, but haven't sent or received
-    // session-accept.
-    // TODO(sergeyu): Do we really need this state?
+    // Sent session-initiate, but haven't received session-accept.
     CONNECTING,
+
+    // Received session-initiate, but haven't sent session-accept.
+    ACCEPTING,
 
     // Session has been accepted and is pending authentication.
     CONNECTED,
+
+    // Session has started authenticating.
+    AUTHENTICATING,
 
     // Session has been connected and authenticated.
     AUTHENTICATED,
@@ -53,8 +57,8 @@ class Session {
     virtual ~EventHandler() {}
 
     // Called after session state has changed. It is safe to destroy
-    // the session from within the handler if |state| is CLOSED or
-    // FAILED.
+    // the session from within the handler if |state| is AUTHENTICATING
+    // or CLOSED or FAILED.
     virtual void OnSessionStateChange(State state) = 0;
 
     // Called whenever route for the channel specified with
@@ -62,12 +66,6 @@ class Session {
     // handler of this event.
     virtual void OnSessionRouteChange(const std::string& channel_name,
                                       const TransportRoute& route) = 0;
-
-    // Called when ready state on one of the channels changes. See
-    // comments in transport.h for explanation on what this state
-    // means and how it can used.
-    virtual void OnSessionChannelReady(const std::string& channel_name,
-                                       bool ready) {}
   };
 
 

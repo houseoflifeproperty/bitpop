@@ -7,10 +7,10 @@
 #import <AppKit/AppKit.h>
 
 #include "base/logging.h"
-#include "base/sys_string_conversions.h"
-#import "chrome/browser/ui/cocoa/menu_controller.h"
+#include "base/strings/sys_string_conversions.h"
 #include "skia/ext/skia_utils_mac.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#import "ui/base/cocoa/menu_controller.h"
 #include "ui/gfx/image/image_skia.h"
 
 @interface StatusItemController : NSObject {
@@ -79,7 +79,7 @@ void StatusIconMac::SetPressedImage(const gfx::ImageSkia& image) {
   }
 }
 
-void StatusIconMac::SetToolTip(const string16& tool_tip) {
+void StatusIconMac::SetToolTip(const base::string16& tool_tip) {
   // If we have a status icon menu, make the tool tip part of the menu instead
   // of a pop-up tool tip when hovering the mouse over the image.
   toolTip_.reset([base::SysUTF16ToNSString(tool_tip) retain]);
@@ -92,8 +92,8 @@ void StatusIconMac::SetToolTip(const string16& tool_tip) {
 }
 
 void StatusIconMac::DisplayBalloon(const gfx::ImageSkia& icon,
-                                   const string16& title,
-                                   const string16& contents) {
+                                   const base::string16& title,
+                                   const base::string16& contents) {
   notification_.DisplayBalloon(icon, title, contents);
 }
 
@@ -101,7 +101,7 @@ bool StatusIconMac::HasStatusIconMenu() {
   return menu_.get() != nil;
 }
 
-void StatusIconMac::UpdatePlatformContextMenu(ui::MenuModel* model) {
+void StatusIconMac::UpdatePlatformContextMenu(StatusIconMenuModel* model) {
   if (!model) {
     menu_.reset();
   } else {

@@ -11,13 +11,6 @@
 #include "ppapi/tests/test_utils.h"
 #include "ppapi/tests/testing_instance.h"
 
-namespace {
-
-const uint16_t kPortScanFrom = 1024;
-const uint16_t kPortScanTo = 1280;
-
-}  // namespace
-
 REGISTER_TEST_CASE(TCPServerSocketPrivateDisallowed);
 
 TestTCPServerSocketPrivateDisallowed::TestTCPServerSocketPrivateDisallowed(
@@ -53,7 +46,7 @@ bool TestTCPServerSocketPrivateDisallowed::Init() {
 }
 
 void TestTCPServerSocketPrivateDisallowed::RunTests(const std::string& filter) {
-  RUN_TEST_FORCEASYNC_AND_NOT(Listen, filter);
+  RUN_CALLBACK_TEST(TestTCPServerSocketPrivateDisallowed, Listen, filter);
 }
 
 std::string TestTCPServerSocketPrivateDisallowed::TestListen() {
@@ -62,26 +55,17 @@ std::string TestTCPServerSocketPrivateDisallowed::TestListen() {
   ASSERT_TRUE(socket != 0);
   ASSERT_TRUE(tcp_server_socket_private_interface_->IsTCPServerSocket(socket));
 
-  PP_NetAddress_Private base_address, current_address;
+  PP_NetAddress_Private base_address, address;
   pp::NetAddressPrivate::GetAnyAddress(false, &base_address);
-
-  for (uint16_t port = kPortScanFrom; port < kPortScanTo; ++port) {
-    ASSERT_TRUE(pp::NetAddressPrivate::ReplacePort(base_address,
-                                                   port,
-                                                   &current_address));
-    TestCompletionCallback callback(instance_->pp_instance(), force_async_);
-    int32_t rv = tcp_server_socket_private_interface_->Listen(
-        socket,
-        &current_address,
-        1,
-        static_cast<pp::CompletionCallback>(
-            callback).pp_completion_callback());
-    if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
-      return ReportError("PPB_TCPServerSocket_Private::Listen force_async", rv);
-    if (rv == PP_OK_COMPLETIONPENDING)
-      rv = callback.WaitForResult();
-    ASSERT_NE(PP_OK, rv);
-  }
-
+  ASSERT_TRUE(pp::NetAddressPrivate::ReplacePort(
+      base_address, 0, &address));
+  TestCompletionCallback callback(instance_->pp_instance());
+  callback.WaitForResult(tcp_server_socket_private_interface_->Listen(
+      socket,
+      &address,
+      1,
+      callback.GetCallback().pp_completion_callback()));
+  CHECK_CALLBACK_BEHAVIOR(callback);
+  ASSERT_NE(PP_OK, callback.result());
   PASS();
 }

@@ -46,7 +46,7 @@
         <span class="active-tab-label"
             i18n-content="cellularDeviceTabLabel"></span>
       </span>
-      <span id="internet-nav-tab" class="tab network-details" 
+      <span id="internet-nav-tab" class="tab network-details"
           tab-contents="internet-tab">
         <span class="tab-label" i18n-content="networkTabLabel"></span>
         <span class="active-tab-label" i18n-content="networkTabLabel"></span>
@@ -214,6 +214,23 @@
     <div id="vpn-tab" class="subpages-tab-contents vpn-details">
       <section>
         <table class="option-control-table">
+          <tr class="auto-connect-network">
+            <td>
+              <div class="checkbox">
+                <span class="controlled-setting-with-label">
+                  <input id="auto-connect-network-vpn" type="checkbox">
+                  <span>
+                    <label for="auto-connect-network-vpn"
+                        i18n-content="inetAutoConnectNetwork">
+                    </label>
+                    <span class="controlled-setting-indicator"
+                        data="autoConnect" for="auto-connect-network-vpn">
+                    </span>
+                  </span>
+                </span>
+              </div>
+            </td>
+          </tr>
           <tr>
             <td class="option-name" i18n-content="inetServiceName"></td>
             <td id="inet-service-name" class="option-value"></td>
@@ -265,11 +282,11 @@
             <td class="option-name" i18n-content="restrictedPool"></td>
             <td id="restricted-pool" class="option-value"></td>
           </tr>
-          <tr class="gsm-only">
+          <tr>
             <td class="option-name" i18n-content="operatorName"></td>
             <td id="operator-name" class="option-value"></td>
           </tr>
-          <tr class="gsm-only">
+          <tr>
             <td class="option-name" i18n-content="operatorCode"></td>
             <td id="operator-code" class="option-value"></td>
           </tr>
@@ -342,7 +359,7 @@
       <section id="cellular-device-options">
         <table class="option-control-table">
           <tr>
-            <td class="option-name" i18n-content="manufacturer"></td>
+            <td class="option-name" i18n-content="cellularManufacturer"></td>
             <td id="manufacturer" class="option-value"></td>
           </tr>
           <tr>
@@ -357,13 +374,17 @@
             <td class="option-name" i18n-content="hardwareRevision"></td>
             <td id="hardware-revision" class="option-value"></td>
           </tr>
-          <tr>
+          <tr class="cdma-only">
             <td class="option-name" i18n-content="prlVersion"></td>
             <td id="prl-version" class="option-value"></td>
           </tr>
           <tr>
             <td class="option-name">MEID:</td>
             <td id="meid" class="option-value"></td>
+          </tr>
+          <tr class="gsm-only">
+            <td class="option-name">ICCID:</td>
+            <td id="iccid" class="option-value"></td>
           </tr>
           <tr>
             <td class="option-name">ESN:</td>
@@ -449,7 +470,7 @@
           <label>
             <input id="google-dns-radio" type="radio" name="dnstype"
                 value="google">
-            <span i18n-content="googleNameServers"></span>
+            <span id="google-dns-label"></span>
           </label>
         </div>
         <div id="google-dns-display" class="dns-display"></div>
@@ -462,7 +483,7 @@
         </div>
         <table id="user-dns-settings">
           <tr>
-            <td class="spacer" width="14px"></td> 
+            <td class="spacer" width="14px"></td>
             <td>
               <div id="ipconfig-dns1" i18n-placeholder-text="userNameServer1"
                   allow-empty>
@@ -518,7 +539,7 @@
     </div>
     <div id="network-proxy-tab" class="subpages-tab-contents">
       <section>
-        <div id="info-banner" hidden>
+        <div id="network-proxy-info-banner" hidden>
           <span id="banner-text" class="page-banner-text"></span>
         </div>
         <div class="radio">
@@ -530,125 +551,138 @@
         </div>
         <div class="radio">
           <label>
-            <input id="manual-proxy" type="radio" name="proxytype" value="2"
-                pref="cros.session.proxy.type">
-            <span i18n-content="proxyManual"></span>
-          </label>
-        </div>
-        <div class="checkbox">
-          <label>
-            <input id="proxy-all-protocols" type="checkbox"
-                pref="cros.session.proxy.single">
-            <span i18n-content="sameProxyProtocols"></span>
-          </label>
-        </div>
-        <div id="single-proxy">
-          <table>
-            <tr>
-              <td>
-                <span i18n-content="httpProxy"></span>
-                <input id="proxy-host-single-name" type="text" size="25"
-                    pref="cros.session.proxy.singlehttp" disabled>
-              </td>
-              <td>
-                <span i18n-content="proxyPort"></span>
-                <input id="proxy-host-single-port" type="text" data-type="number"
-                    size="4" pref="cros.session.proxy.singlehttpport" disabled>
-              </td>
-            </tr>
-          </table>
-        </div>
-        <div id="multi-proxy">
-          <table>
-            <tr>
-              <td>
-                <span i18n-content="httpProxy"></span>
-              </td>
-              <td>
-                <input id="proxy-host-name" type="text" size="25"
-                    pref="cros.session.proxy.httpurl" disabled>
-              </td>
-              <td>
-                <span i18n-content="proxyPort"></span>
-              </td>
-              <td>
-                <input id="proxy-host-port" type="text" data-type="number"
-                     size="4" pref="cros.session.proxy.httpport" disabled>
-              </td>
-            </tr>
-            <tr>
-              <td>
-                <span i18n-content="secureHttpProxy"></span>
-              </td>
-              <td>
-                <input id="secure-proxy-host-name" type="text" size="25"
-                    pref="cros.session.proxy.httpsurl" disabled>
-              </td>
-              <td>
-                <span i18n-content="proxyPort"></span>
-              </td>
-              <td>
-                <input id="secure-proxy-port" type="text" data-type="number"
-                     size="4" pref="cros.session.proxy.httpsport" disabled>
-              </td>
-            </tr>
-            <tr>
-              <td>
-                <span i18n-content="ftpProxy"></span>
-              </td>
-              <td>
-                <input id="ftp-proxy" type="text" size="25"
-                    pref="cros.session.proxy.ftpurl" disabled>
-              </td>
-              <td>
-                <span i18n-content="proxyPort"></span>
-                </td>
-              <td>
-                <input id="ftp-proxy-port" type="text" data-type="number"
-                     size="4" pref="cros.session.proxy.ftpport" disabled>
-              </td>
-            </tr>
-            <tr>
-              <td>
-                <span i18n-content="socksHost"></span>
-              </td>
-              <td>
-                <input id="socks-host" type="text" size="25"
-                    pref="cros.session.proxy.socks" disabled>
-              </td>
-              <td>
-                <span i18n-content="proxyPort"></span>
-              </td>
-              <td>
-                <input id="socks-port" type="text" data-type="number" size="4"
-                    pref="cros.session.proxy.socksport" disabled>
-              </td>
-            </tr>
-          </table>
-        </div>
-        <div class="radio">
-          <label>
             <input id="auto-proxy" type="radio" name="proxytype" value="3"
                 pref="cros.session.proxy.type">
             <span i18n-content="proxyAutomatic"></span>
           </label>
         </div>
-        <div>
+        <div class="proxy-subsection" id="auto-proxy-parms">
+          <div class="checkbox">
+            <label>
+              <input id="proxy-use-pac-url" type="checkbox"
+                  pref="cros.session.proxy.usepacurl">
+              <span i18n-content="proxyUseConfigUrl"></span>
+            </label>
+          </div>
+          <div>
+            <label>
+              <input id="proxy-pac-url" type="url" size="50"
+                  pref="cros.session.proxy.pacurl">
+            </label>
+          </div>
+        </div>
+        <div class="radio">
           <label>
-            <div i18n-content="proxyConfigUrl"></div>
-            <input id="proxy-config" type="url" size="50"
-                pref="cros.session.proxy.pacurl">
+            <input id="manual-proxy" type="radio" name="proxytype" value="2"
+                pref="cros.session.proxy.type">
+            <span i18n-content="proxyManual"></span>
           </label>
         </div>
-        <div id="advanced-config">
-          <h3 i18n-content="advancedProxyConfig"></h3>
-          <div class="option vbox flex">
-            <div i18n-content="proxyBypass"></div>
-            <list id="ignored-host-list"></list>
-            <input id="new-host" type="url" size="30">
-            <button id="add-host" i18n-content="addHost"></button>
-            <button id="remove-host" i18n-content="removeHost"></button>
+        <div class="proxy-subsection" id="manual-proxy-parms">
+          <div class="checkbox">
+            <label>
+              <input id="proxy-all-protocols" type="checkbox"
+                  pref="cros.session.proxy.single">
+              <span i18n-content="sameProxyProtocols"></span>
+            </label>
           </div>
+          <div id="single-proxy">
+            <table>
+              <tr>
+                <td>
+                  <span i18n-content="httpProxy"></span>
+                  <input id="proxy-host-single-name" type="text" size="25"
+                      pref="cros.session.proxy.singlehttp" disabled>
+                </td>
+                <td>
+                  <span i18n-content="proxyPort"></span>
+                  <input id="proxy-host-single-port" size="4"
+                      pref="cros.session.proxy.singlehttpport" disabled>
+                </td>
+              </tr>
+            </table>
+          </div>
+          <div id="multi-proxy">
+            <table>
+              <tr>
+                <td>
+                  <span i18n-content="httpProxy"></span>
+                </td>
+                <td>
+                  <input id="proxy-host-name" type="text" size="25"
+                      pref="cros.session.proxy.httpurl" disabled>
+                </td>
+                <td>
+                  <span i18n-content="proxyPort"></span>
+                </td>
+                <td>
+                  <input id="proxy-host-port" size="4"
+                      pref="cros.session.proxy.httpport" disabled>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <span i18n-content="secureHttpProxy"></span>
+                </td>
+                <td>
+                  <input id="secure-proxy-host-name" type="text" size="25"
+                      pref="cros.session.proxy.httpsurl" disabled>
+                </td>
+                <td>
+                  <span i18n-content="proxyPort"></span>
+                </td>
+                <td>
+                  <input id="secure-proxy-port" size="4"
+                      pref="cros.session.proxy.httpsport" disabled>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <span i18n-content="ftpProxy"></span>
+                </td>
+                <td>
+                  <input id="ftp-proxy" type="text" size="25"
+                      pref="cros.session.proxy.ftpurl" disabled>
+                </td>
+                <td>
+                  <span i18n-content="proxyPort"></span>
+                  </td>
+                <td>
+                  <input id="ftp-proxy-port" size="4"
+                      pref="cros.session.proxy.ftpport" disabled>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <span i18n-content="socksHost"></span>
+                </td>
+                <td>
+                  <input id="socks-host" type="text" size="25"
+                      pref="cros.session.proxy.socks" disabled>
+                </td>
+                <td>
+                  <span i18n-content="proxyPort"></span>
+                </td>
+                <td>
+                  <input id="socks-port" size="4"
+                      pref="cros.session.proxy.socksport" disabled>
+                </td>
+              </tr>
+            </table>
+          </div>
+          <div id="advanced-config">
+            <div class="option vbox flex">
+              <div i18n-content="proxyBypass"></div>
+              <list id="ignored-host-list"></list>
+              <input id="new-host" type="url" size="30">
+              <button id="add-host" i18n-content="addHost"></button>
+              <button id="remove-host" i18n-content="removeHost"></button>
+            </div>
+          </div>
+        </div>
+        <div class="proxy-subsection" id="web-proxy-auto-discovery">
+          <span i18n-content="webProxyAutoDiscoveryUrl"></span>
+          <input id="web-proxy-auto-discovery-url" type="url" disabled>
         </div>
       </section>
     </div>
@@ -656,12 +690,14 @@
   <div class="action-area">
     <div class="button-strip">
       <!-- TODO(dbeam): Clarify style guide regarding tag wrap. -->
-      <button id="details-internet-dismiss"
+      <button id="details-internet-dismiss" class="default-button"
           i18n-content="detailsInternetDismiss">
       </button>
       <button id="details-internet-login" i18n-content="connectButton">
       </button>
       <button id="details-internet-disconnect" i18n-content="disconnectButton">
+      </button>
+      <button id="details-internet-configure" i18n-content="configureButton">
       </button>
       <button id="activate-details" i18n-content="activateButton"></button>
       <button id="buyplan-details" i18n-content="buyplanButton"></button>

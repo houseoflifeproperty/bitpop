@@ -36,28 +36,36 @@
  * Once initialized, the instance is manged using other functions from
  * the vpx_codec_* family.
  */
+#ifndef VPX_VPX_CODEC_H_
+#define VPX_VPX_CODEC_H_
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#ifndef VPX_CODEC_H
-#define VPX_CODEC_H
-#include "vpx_integer.h"
-#include "vpx_image.h"
+#include "./vpx_integer.h"
+#include "./vpx_image.h"
 
   /*!\brief Decorator indicating a function is deprecated */
 #ifndef DEPRECATED
 #if defined(__GNUC__) && __GNUC__
 #define DEPRECATED          __attribute__ ((deprecated))
-#define DECLSPEC_DEPRECATED /**< \copydoc #DEPRECATED */
 #elif defined(_MSC_VER)
 #define DEPRECATED
-#define DECLSPEC_DEPRECATED __declspec(deprecated) /**< \copydoc #DEPRECATED */
 #else
 #define DEPRECATED
+#endif
+#endif  /* DEPRECATED */
+
+#ifndef DECLSPEC_DEPRECATED
+#if defined(__GNUC__) && __GNUC__
+#define DECLSPEC_DEPRECATED /**< \copydoc #DEPRECATED */
+#elif defined(_MSC_VER)
+#define DECLSPEC_DEPRECATED __declspec(deprecated) /**< \copydoc #DEPRECATED */
+#else
 #define DECLSPEC_DEPRECATED /**< \copydoc #DEPRECATED */
 #endif
-#endif
+#endif  /* DECLSPEC_DEPRECATED */
 
   /*!\brief Decorator indicating a function is potentially unused */
 #ifdef UNUSED
@@ -543,9 +551,8 @@ extern "C" {
 
   /*!@} - end defgroup cap_xma*/
   /*!@} - end defgroup codec*/
-
-
-#endif
 #ifdef __cplusplus
 }
 #endif
+#endif  // VPX_VPX_CODEC_H_
+

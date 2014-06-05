@@ -10,14 +10,12 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/password_manager/password_store_x.h"
 #include "chrome/browser/profiles/profile.h"
 
-class PrefService;
-
-namespace content {
+namespace autofill {
 struct PasswordForm;
 }
 
@@ -34,12 +32,22 @@ class GnomeKeyringLoader {
 
 // Call a given parameter with the name of each function we use from GNOME
 // Keyring. Make sure to adjust the unit test if you change these.
-#define GNOME_KEYRING_FOR_EACH_FUNC(F)          \
-  F(is_available)                               \
-  F(store_password)                             \
-  F(delete_password)                            \
-  F(find_itemsv)                                \
+// The list of functions is divided into those we plan to mock in the unittest,
+// and those which we use without mocking in the test.
+#define GNOME_KEYRING_FOR_EACH_MOCKED_FUNC(F)      \
+  F(is_available)                                  \
+  F(store_password)                                \
+  F(delete_password)                               \
+  F(find_items)                                    \
   F(result_to_message)
+#define GNOME_KEYRING_FOR_EACH_NON_MOCKED_FUNC(F)  \
+  F(attribute_list_free)                           \
+  F(attribute_list_new)                            \
+  F(attribute_list_append_string)                  \
+  F(attribute_list_append_uint32)
+#define GNOME_KEYRING_FOR_EACH_FUNC(F)             \
+  GNOME_KEYRING_FOR_EACH_NON_MOCKED_FUNC(F)        \
+  GNOME_KEYRING_FOR_EACH_MOCKED_FUNC(F)
 
 // Declare the actual function pointers that we'll use in client code.
 #define GNOME_KEYRING_DECLARE_POINTER(name) \
@@ -66,19 +74,19 @@ class GnomeKeyringLoader {
 class NativeBackendGnome : public PasswordStoreX::NativeBackend,
                            public GnomeKeyringLoader {
  public:
-  NativeBackendGnome(LocalProfileId id, PrefService* prefs);
+  explicit NativeBackendGnome(LocalProfileId id);
 
   virtual ~NativeBackendGnome();
 
   virtual bool Init() OVERRIDE;
 
   // Implements NativeBackend interface.
-  virtual bool AddLogin(const content::PasswordForm& form) OVERRIDE;
-  virtual bool UpdateLogin(const content::PasswordForm& form) OVERRIDE;
-  virtual bool RemoveLogin(const content::PasswordForm& form) OVERRIDE;
+  virtual bool AddLogin(const autofill::PasswordForm& form) OVERRIDE;
+  virtual bool UpdateLogin(const autofill::PasswordForm& form) OVERRIDE;
+  virtual bool RemoveLogin(const autofill::PasswordForm& form) OVERRIDE;
   virtual bool RemoveLoginsCreatedBetween(
       const base::Time& delete_begin, const base::Time& delete_end) OVERRIDE;
-  virtual bool GetLogins(const content::PasswordForm& form,
+  virtual bool GetLogins(const autofill::PasswordForm& form,
                          PasswordFormList* forms) OVERRIDE;
   virtual bool GetLoginsCreatedBetween(const base::Time& get_begin,
                                        const base::Time& get_end,
@@ -88,7 +96,7 @@ class NativeBackendGnome : public PasswordStoreX::NativeBackend,
 
  private:
   // Adds a login form without checking for one to replace first.
-  bool RawAddLogin(const content::PasswordForm& form);
+  bool RawAddLogin(const autofill::PasswordForm& form);
 
   // Reads PasswordForms from the keyring with the given autofillability state.
   bool GetLoginsList(PasswordFormList* forms, bool autofillable);
@@ -99,20 +107,11 @@ class NativeBackendGnome : public PasswordStoreX::NativeBackend,
   // Generates a profile-specific app string based on profile_id_.
   std::string GetProfileSpecificAppString() const;
 
-  // Migrates non-profile-specific logins to be profile-specific.
-  void MigrateToProfileSpecificLogins();
-
   // The local profile id, used to generate the app string.
   const LocalProfileId profile_id_;
 
-  // The pref service to use for persistent migration settings.
-  PrefService* prefs_;
-
   // The app string, possibly based on the local profile id.
   std::string app_string_;
-
-  // True once MigrateToProfileSpecificLogins() has been attempted.
-  bool migrate_tried_;
 
   DISALLOW_COPY_AND_ASSIGN(NativeBackendGnome);
 };

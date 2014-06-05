@@ -3,9 +3,11 @@
 // found in the LICENSE file.
 
 #include "base/logging.h"
+#include "third_party/mesa/src/include/GL/osmesa.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_surface_osmesa.h"
+#include "ui/gl/scoped_make_current.h"
 
 namespace gfx {
 
@@ -23,13 +25,18 @@ void GLSurfaceOSMesa::Destroy() {
 }
 
 bool GLSurfaceOSMesa::Resize(const gfx::Size& new_size) {
+  scoped_ptr<ui::ScopedMakeCurrent> scoped_make_current;
   GLContext* current_context = GLContext::GetCurrent();
-  bool was_current = current_context && current_context->IsCurrent(this);
-  if (was_current)
+  bool was_current =
+      current_context && current_context->IsCurrent(this);
+  if (was_current) {
+    scoped_make_current.reset(
+        new ui::ScopedMakeCurrent(current_context, this));
     current_context->ReleaseCurrent(this);
+  }
 
   // Preserve the old buffer.
-  scoped_array<int32> old_buffer(buffer_.release());
+  scoped_ptr<int32[]> old_buffer(buffer_.release());
 
   // Allocate a new one.
   buffer_.reset(new int32[new_size.GetArea()]);
@@ -47,9 +54,6 @@ bool GLSurfaceOSMesa::Resize(const gfx::Size& new_size) {
   }
 
   size_ = new_size;
-
-  if (was_current)
-    return current_context->MakeCurrent(this);
 
   return true;
 }
@@ -78,5 +82,14 @@ unsigned GLSurfaceOSMesa::GetFormat() {
 GLSurfaceOSMesa::~GLSurfaceOSMesa() {
   Destroy();
 }
+
+bool GLSurfaceOSMesaHeadless::IsOffscreen() { return false; }
+
+bool GLSurfaceOSMesaHeadless::SwapBuffers() { return true; }
+
+GLSurfaceOSMesaHeadless::GLSurfaceOSMesaHeadless()
+    : GLSurfaceOSMesa(OSMESA_BGRA, gfx::Size(1, 1)) {}
+
+GLSurfaceOSMesaHeadless::~GLSurfaceOSMesaHeadless() { Destroy(); }
 
 }  // namespace gfx

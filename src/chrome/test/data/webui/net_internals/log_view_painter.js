@@ -133,9 +133,16 @@ TEST_F('NetInternalsTest', 'netInternalsLogViewPainterPrintAsText', function() {
   function runTestCase(testCase) {
     div.innerHTML = '';
     timeutil.setTimeTickOffset(testCase.tickOffset);
-    printLogEntriesAsText(testCase.logEntries, div,
-                          testCase.privacyStripping,
-                          testCase.logCreationTime);
+
+    var baseTime = 0;
+    if (typeof testCase.baseTimeTicks != 'undefined')
+      baseTime = timeutil.convertTimeTicksToTime(testCase.baseTimeTicks);
+
+    var tablePrinter =
+        createLogEntryTablePrinter(testCase.logEntries,
+                                   testCase.privacyStripping,
+                                   baseTime, testCase.logCreationTime);
+    tablePrinter.toText(0, div);
 
     // Strip any trailing newlines, since the whitespace when using innerText
     // can be a bit unpredictable.
@@ -148,10 +155,14 @@ TEST_F('NetInternalsTest', 'netInternalsLogViewPainterPrintAsText', function() {
   runTestCase(painterTestURLRequest());
   runTestCase(painterTestURLRequestIncomplete());
   runTestCase(painterTestURLRequestIncompleteFromLoadedLog());
+  runTestCase(painterTestURLRequestIncompleteFromLoadedLogSingleEvent());
   runTestCase(painterTestNetError());
+  runTestCase(painterTestQuicError());
+  runTestCase(painterTestQuicCryptoHandshakeMessage());
   runTestCase(painterTestHexEncodedBytes());
   runTestCase(painterTestCertVerifierJob());
-  runTestCase(painterTestProxyConfig());
+  runTestCase(painterTestProxyConfigOneProxyAllSchemes());
+  runTestCase(painterTestProxyConfigTwoProxiesAllSchemes());
   runTestCase(painterTestDontStripCookiesURLRequest());
   runTestCase(painterTestStripCookiesURLRequest());
   runTestCase(painterTestDontStripCookiesSPDYSession());
@@ -162,6 +173,7 @@ TEST_F('NetInternalsTest', 'netInternalsLogViewPainterPrintAsText', function() {
   runTestCase(painterTestMissingCustomParameter());
   runTestCase(painterTestSSLVersionFallback());
   runTestCase(painterTestInProgressURLRequest());
+  runTestCase(painterTestBaseTime());
 
   testDone();
 });
@@ -189,7 +201,7 @@ function painterTestURLRequest() {
     },
     {
       'params': {
-        'load_flags': 68223104,
+        'load_flags': 136446208,
         'method': 'GET',
         'priority': 4,
         'url': 'http://www.google.com/'
@@ -213,7 +225,7 @@ function painterTestURLRequest() {
     },
     {
       'params': {
-        'load_flags': 68223104,
+        'load_flags': 136446208,
         'method': 'GET',
         'priority': 4,
         'url': 'http://www.google.com/'
@@ -311,7 +323,7 @@ function painterTestURLRequest() {
       'params': {
         'source_dependency': {
           'id': 149,
-          'type': 11
+          'type': EventSourceType.HTTP_STREAM_JOB
         }
       },
       'phase': EventPhase.PHASE_NONE,
@@ -720,14 +732,14 @@ function painterTestURLRequest() {
   testCase.expectedText =
 't=1338864633224 [st=  0] +REQUEST_ALIVE  [dt=789]\n' +
 't=1338864633238 [st= 14]    URL_REQUEST_START_JOB  [dt=8]\n' +
-'                            --> load_flags = 68223104 ' +
+'                            --> load_flags = 136446208 ' +
     '(ENABLE_LOAD_TIMING | MAIN_FRAME | MAYBE_USER_GESTURE ' +
     '| VERIFY_EV_CERT)\n' +
 '                            --> method = "GET"\n' +
 '                            --> priority = 4\n' +
 '                            --> url = "http://www.google.com/"\n' +
 't=1338864633248 [st= 24]   +URL_REQUEST_START_JOB  [dt=279]\n' +
-'                            --> load_flags = 68223104 ' +
+'                            --> load_flags = 136446208 ' +
     '(ENABLE_LOAD_TIMING | MAIN_FRAME | MAYBE_USER_GESTURE ' +
     '| VERIFY_EV_CERT)\n' +
 '                            --> method = "GET"\n' +
@@ -806,7 +818,7 @@ function painterTestURLRequestIncomplete() {
     },
     {
       'params': {
-        'load_flags': 128,
+        'load_flags': 256,
         'method': 'GET',
         'priority': 4,
         'url': 'http://www.google.com/'
@@ -833,7 +845,7 @@ function painterTestURLRequestIncomplete() {
   testCase.expectedText =
 't=1338864633224 [st=  0] +REQUEST_ALIVE  [dt=?]\n' +
 't=1338864633356 [st=132]    URL_REQUEST_START_JOB  [dt=60]\n' +
-'                            --> load_flags = 128 (ENABLE_LOAD_TIMING)\n' +
+'                            --> load_flags = 256 (ENABLE_LOAD_TIMING)\n' +
 '                            --> method = "GET"\n' +
 '                            --> priority = 4\n' +
 '                            --> url = "http://www.google.com/"';
@@ -851,10 +863,24 @@ function painterTestURLRequestIncompleteFromLoadedLog() {
   testCase.expectedText =
 't=1338864633224 [st=  0] +REQUEST_ALIVE  [dt=789+]\n' +
 't=1338864633356 [st=132]    URL_REQUEST_START_JOB  [dt=60]\n' +
-'                            --> load_flags = 128 (ENABLE_LOAD_TIMING)\n' +
+'                            --> load_flags = 256 (ENABLE_LOAD_TIMING)\n' +
 '                            --> method = "GET"\n' +
 '                            --> priority = 4\n' +
 '                            --> url = "http://www.google.com/"\n' +
+'t=1338864634013 [st=789]';
+  return testCase;
+}
+
+/**
+ * Test case for a URLRequest that was not completed that came from a loaded
+ * log file when there's only a begin event.
+ */
+function painterTestURLRequestIncompleteFromLoadedLogSingleEvent() {
+  var testCase = painterTestURLRequestIncomplete();
+  testCase.logEntries = [testCase.logEntries[0]];
+  testCase.logCreationTime = 1338864634013;
+  testCase.expectedText =
+'t=1338864633224 [st=  0] +REQUEST_ALIVE  [dt=789+]\n' +
 't=1338864634013 [st=789]';
   return testCase;
 }
@@ -879,7 +905,7 @@ function painterTestNetError() {
     },
     {
       'params': {
-        'load_flags': 68223104,
+        'load_flags': 136446208,
         'method': 'GET',
         'priority': 4,
         'url': 'http://www.doesnotexistdomain.com/'
@@ -903,7 +929,7 @@ function painterTestNetError() {
     },
     {
       'params': {
-        'load_flags': 68223104,
+        'load_flags': 136446208,
         'method': 'GET',
         'priority': 4,
         'url': 'http://www.doesnotexistdomain.com/'
@@ -1038,14 +1064,16 @@ function painterTestNetError() {
   testCase.expectedText =
 't=1338864773894 [st=  0] +REQUEST_ALIVE  [dt=475]\n' +
 't=1338864773901 [st=  7]    URL_REQUEST_START_JOB  [dt=5]\n' +
-'                            --> load_flags = 68223104 (ENABLE_LOAD_TIMING | ' +
-    'MAIN_FRAME | MAYBE_USER_GESTURE | VERIFY_EV_CERT)\n' +
+'                            --> load_flags = 136446208 (' +
+        'ENABLE_LOAD_TIMING | MAIN_FRAME | MAYBE_USER_GESTURE ' +
+        '| VERIFY_EV_CERT)\n' +
 '                            --> method = "GET"\n' +
 '                            --> priority = 4\n' +
 '                            --> url = "http://www.doesnotexistdomain.com/"\n' +
 't=1338864773906 [st= 12]   +URL_REQUEST_START_JOB  [dt=245]\n' +
-'                            --> load_flags = 68223104 (ENABLE_LOAD_TIMING | ' +
-    'MAIN_FRAME | MAYBE_USER_GESTURE | VERIFY_EV_CERT)\n' +
+'                            --> load_flags = 136446208 (' +
+        'ENABLE_LOAD_TIMING | MAIN_FRAME | MAYBE_USER_GESTURE ' +
+        '| VERIFY_EV_CERT)\n' +
 '                            --> method = "GET"\n' +
 '                            --> priority = 4\n' +
 '                            --> url = "http://www.doesnotexistdomain.com/"\n' +
@@ -1064,6 +1092,171 @@ function painterTestNetError() {
 }
 
 /**
+ * Tests the custom formatting of QUIC errors across several different event
+ * types.
+ */
+function painterTestQuicError() {
+  var testCase = {};
+  testCase.tickOffset = '1337911098446';
+
+  testCase.logEntries = [
+    {
+      'params': {
+        "host": "www.example.com"
+      },
+      'phase': EventPhase.PHASE_BEGIN,
+      'source': {
+        'id': 318,
+        'type': EventSourceType.URL_REQUEST
+      },
+      'time': '953675448',
+      'type': EventType.QUIC_SESSION
+    },
+    {
+      'params': {
+        'details': "invalid headers",
+        'quic_rst_stream_error':
+            QuicRstStreamError.QUIC_BAD_APPLICATION_PAYLOAD,
+        'stream_id': 1
+      },
+      'phase': EventPhase.PHASE_NONE,
+      'source': {
+        'id': 318,
+        'type': EventSourceType.URL_REQUEST
+      },
+      'time': '953675460',
+      'type': EventType.QUIC_SESSION_RST_STREAM_FRAME_RECEIVED
+    },
+    {
+      'params': {
+        'quic_error': QuicError.QUIC_CONNECTION_TIMED_OUT,
+      },
+      'phase': EventPhase.PHASE_NONE,
+      'source': {
+        'id': 318,
+        'type': EventSourceType.URL_REQUEST
+      },
+      'time': '953675705',
+      'type': EventType.QUIC_SESSION_CONNECTION_CLOSE_FRAME_RECEIVED
+    },
+    {
+      'params': {
+        'quic_error': QuicError.QUIC_CONNECTION_TIMED_OUT
+      },
+      'phase': EventPhase.PHASE_END,
+      'source': {
+        'id': 318,
+        'type': EventSourceType.URL_REQUEST
+      },
+      'time': '953675923',
+      'type': EventType.QUIC_SESSION
+    }
+  ];
+
+  testCase.expectedText =
+'t=1338864773894 [st=  0] +QUIC_SESSION  [dt=475]\n' +
+'                          --> host = "www.example.com"\n' +
+'t=1338864773906 [st= 12]    QUIC_SESSION_RST_STREAM_FRAME_RECEIVED\n' +
+'                            --> details = "invalid headers"\n' +
+'                            --> quic_rst_stream_error = ' +
+        QuicRstStreamError.QUIC_BAD_APPLICATION_PAYLOAD + ' (' +
+        'QUIC_BAD_APPLICATION_PAYLOAD)\n' +
+'                            --> stream_id = 1\n' +
+'t=1338864774151 [st=257]    QUIC_SESSION_CONNECTION_CLOSE_FRAME_RECEIVED\n' +
+'                            --> quic_error = ' +
+        QuicError.QUIC_CONNECTION_TIMED_OUT + ' (QUIC_CONNECTION_TIMED_OUT)\n' +
+'t=1338864774369 [st=475] -QUIC_SESSION\n' +
+'                          --> quic_error = ' +
+        QuicError.QUIC_CONNECTION_TIMED_OUT + ' (QUIC_CONNECTION_TIMED_OUT)';
+
+  return testCase;
+}
+
+/**
+ * Tests the custom formatting of QUIC crypto handshake messages.
+ */
+function painterTestQuicCryptoHandshakeMessage() {
+  var testCase = {};
+  testCase.tickOffset = '1337911098446';
+
+  testCase.logEntries = [
+    {
+      'params': {
+        "host": "www.example.com"
+      },
+      'phase': EventPhase.PHASE_BEGIN,
+      'source': {
+        'id': 318,
+        'type': EventSourceType.URL_REQUEST
+      },
+      'time': '953675448',
+      'type': EventType.QUIC_SESSION
+    },
+    {
+      'params': {
+        'quic_crypto_handshake_message':
+            "REJ <\n" +
+            "  STK : 4FDE\n" +
+            "  SNO : A228\n" +
+            "  PROF: 3045\n" +
+            "  SCFG:\n" +
+            "    SCFG<\n" +
+            "      AEAD: AESG\n" +
+            "      SCID: FED7\n" +
+            "      PDMD: CHID\n" +
+            "      PUBS: 2000\n" +
+            "      VERS: 0000\n" +
+            "      KEXS: C255,P256\n" +
+            "      OBIT: 7883764781F2DFD0\n" +
+            "      EXPY: FFEE725200000000\n" +
+            "    >\n" +
+            "  >"
+      },
+      'phase': EventPhase.PHASE_NONE,
+      'source': {
+        'id': 318,
+        'type': EventSourceType.URL_REQUEST
+      },
+      'time': '953675460',
+      'type': EventType.QUIC_SESSION_CRYPTO_HANDSHAKE_MESSAGE_SENT
+    },
+    {
+      'phase': EventPhase.PHASE_END,
+      'source': {
+        'id': 318,
+        'type': EventSourceType.URL_REQUEST
+      },
+      'time': '953675923',
+      'type': EventType.QUIC_SESSION
+    }
+  ];
+
+  testCase.expectedText =
+'t=1338864773894 [st=  0] +QUIC_SESSION  [dt=475]\n' +
+'                          --> host = "www.example.com"\n' +
+'t=1338864773906 [st= 12]    QUIC_SESSION_CRYPTO_HANDSHAKE_MESSAGE_SENT\n' +
+'                            --> REJ <\n' +
+'                                  STK : 4FDE\n' +
+'                                  SNO : A228\n' +
+'                                  PROF: 3045\n' +
+'                                  SCFG:\n' +
+'                                    SCFG<\n' +
+'                                      AEAD: AESG\n' +
+'                                      SCID: FED7\n' +
+'                                      PDMD: CHID\n' +
+'                                      PUBS: 2000\n' +
+'                                      VERS: 0000\n' +
+'                                      KEXS: C255,P256\n' +
+'                                      OBIT: 7883764781F2DFD0\n' +
+'                                      EXPY: FFEE725200000000\n' +
+'                                    >\n' +
+'                                  >\n' +
+'t=1338864774369 [st=475] -QUIC_SESSION';
+
+  return testCase;
+}
+
+/**
  * Tests the formatting of bytes sent/received as hex + ASCII. Note that the
  * test data was truncated which is why the byte_count doesn't quite match the
  * hex_encoded_bytes.
@@ -1077,7 +1270,7 @@ function painterTestHexEncodedBytes() {
       'params': {
         'source_dependency': {
           'id': 634,
-          'type': 4
+          'type': EventSourceType.CONNECT_JOB
         }
       },
       'phase': EventPhase.PHASE_BEGIN,
@@ -1139,7 +1332,7 @@ function painterTestHexEncodedBytes() {
       'params': {
         'source_dependency': {
           'id': 628,
-          'type': 11
+          'type': EventSourceType.HTTP_STREAM_JOB
         }
       },
       'phase': EventPhase.PHASE_BEGIN,
@@ -1264,9 +1457,10 @@ function painterTestCertVerifierJob() {
 }
 
 /**
- * Tests the formatting of proxy configurations.
+ * Tests the formatting of proxy configurations when using one proxy server for
+ * all URL schemes.
  */
-function painterTestProxyConfig() {
+function painterTestProxyConfigOneProxyAllSchemes() {
   var testCase = {};
   testCase.tickOffset = '1337911098481';
 
@@ -1306,6 +1500,60 @@ function painterTestProxyConfig() {
     '                               (1) Auto-detect\n' +
     '                               (2) PAC script: https://config/wpad.dat\n' +
     '                               (3) Proxy server: cache-proxy:3128\n' +
+    '                                   Bypass list: \n' +
+    '                                     *.local\n' +
+    '                                     foo\n' +
+    '                                     <local>\n' +
+    '                               Source: SYSTEM';
+
+  return testCase;
+}
+
+/**
+ * Tests the formatting of proxy configurations when using two proxy servers for
+ * all URL schemes.
+ */
+function painterTestProxyConfigTwoProxiesAllSchemes() {
+  var testCase = {};
+  testCase.tickOffset = '1337911098481';
+
+  testCase.logEntries = [
+    {
+      'params': {
+        'new_config': {
+          'auto_detect': true,
+          'bypass_list': [
+            '*.local',
+            'foo',
+            '<local>'
+          ],
+          'pac_url': 'https://config/wpad.dat',
+          'single_proxy': ['cache-proxy:3128', 'socks4://other:999'],
+          'source': 'SYSTEM'
+        },
+        'old_config': {
+          'auto_detect': true
+        }
+      },
+      'phase': EventPhase.PHASE_NONE,
+      'source': {
+        'id': 814,
+        'type': EventSourceType.NONE
+      },
+      'time': '954443578',
+      'type': EventType.PROXY_CONFIG_CHANGED
+    }
+  ];
+
+  testCase.expectedText =
+    't=1338865542059 [st=0]  PROXY_CONFIG_CHANGED\n' +
+    '                        --> old_config =\n' +
+    '                               Auto-detect\n' +
+    '                        --> new_config =\n' +
+    '                               (1) Auto-detect\n' +
+    '                               (2) PAC script: https://config/wpad.dat\n' +
+    '                               (3) Proxy server: [cache-proxy:3128, ' +
+        'socks4://other:999]\n' +
     '                                   Bypass list: \n' +
     '                                     *.local\n' +
     '                                     foo\n' +
@@ -1715,7 +1963,7 @@ function painterTestInProgressURLRequest() {
   testCase.logEntries = [
     {
       'params': {
-        'load_flags': 68223104,
+        'load_flags': 136446208,
         'load_state': LoadState.READING_RESPONSE,
         'method': 'GET',
         'url': 'http://www.MagicPonyShopper.com'
@@ -1759,15 +2007,64 @@ function painterTestInProgressURLRequest() {
 
   testCase.expectedText =
 't=1338864773994 [st=  0] +REQUEST_ALIVE  [dt=375]\n' +
-'                          --> load_flags = 68223104 ' +
+'                          --> load_flags = 136446208 ' +
     '(ENABLE_LOAD_TIMING | MAIN_FRAME | MAYBE_USER_GESTURE ' +
     '| VERIFY_EV_CERT)\n' +
-'                          --> load_state = 12 (READING_RESPONSE)\n' +
+'                          --> load_state = ' + LoadState.READING_RESPONSE +
+    ' (READING_RESPONSE)\n' +
 '                          --> method = "GET"\n' +
 '                          --> url = "http://www.MagicPonyShopper.com"\n' +
 't=1338864774145 [st=151]   -HTTP_STREAM_REQUEST\n' +
 't=1338864774151 [st=157]   -URL_REQUEST_START_JOB\n' +
 't=1338864774369 [st=375] -REQUEST_ALIVE';
+
+  return testCase;
+}
+
+/**
+  * Tests the formatting using a non-zero base time.  Also has no final event,
+  * to make sure logCreationTime is handled correctly.
+  */
+function painterTestBaseTime() {
+  var testCase = {};
+  testCase.tickOffset = '1337911098446';
+  testCase.logCreationTime = 1338864774783;
+  testCase.baseTimeTicks = '953675546';
+
+  testCase.logEntries = [
+    {
+      'phase': EventPhase.PHASE_BEGIN,
+      'source': {
+        'id': 318,
+        'type': EventSourceType.URL_REQUEST
+      },
+      'time': '953675548',
+      'type': EventType.REQUEST_ALIVE
+    },
+    {
+      'phase': EventPhase.PHASE_BEGIN,
+      'source': {
+        'id': 318,
+        'type': EventSourceType.URL_REQUEST
+      },
+      'time': '953675698',
+      'type': EventType.HTTP_STREAM_REQUEST
+    },
+    {
+      'phase': EventPhase.PHASE_END,
+      'source': {
+        'id': 318,
+        'type': EventSourceType.URL_REQUEST
+      },
+      'time': '953675699',
+      'type': EventType.HTTP_STREAM_REQUEST
+    },
+  ];
+
+  testCase.expectedText =
+'t=  2 [st=  0] +REQUEST_ALIVE  [dt=789+]\n' +
+'t=152 [st=150]    HTTP_STREAM_REQUEST  [dt=1]\n' +
+'t=791 [st=789]';
 
   return testCase;
 }

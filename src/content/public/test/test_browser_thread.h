@@ -9,9 +9,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/public/browser/browser_thread.h"
 
-class MessageLoop;
-
 namespace base {
+class MessageLoop;
 class Thread;
 }
 
@@ -19,12 +18,14 @@ namespace content {
 
 class TestBrowserThreadImpl;
 
+// DEPRECATED: use TestBrowserThreadBundle instead. See http://crbug.com/272091
 // A BrowserThread for unit tests; this lets unit tests in chrome/ create
 // BrowserThread instances.
 class TestBrowserThread {
  public:
   explicit TestBrowserThread(BrowserThread::ID identifier);
-  TestBrowserThread(BrowserThread::ID identifier, MessageLoop* message_loop);
+  TestBrowserThread(BrowserThread::ID identifier,
+                    base::MessageLoop* message_loop);
   ~TestBrowserThread();
 
   // We provide a subset of the capabilities of the Thread interface
@@ -47,10 +48,6 @@ class TestBrowserThread {
   // Returns a Thread pointer for the thread. This should not be used
   // in new tests.
   base::Thread* DeprecatedGetThreadObject();
-
-  // Sets the message loop to use for the thread. This should not be
-  // used in new tests.
-  void DeprecatedSetMessageLoop(MessageLoop* loop);
 
  private:
   scoped_ptr<TestBrowserThreadImpl> impl_;

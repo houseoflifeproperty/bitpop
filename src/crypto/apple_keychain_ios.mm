@@ -8,7 +8,7 @@
 
 #include "base/mac/foundation_util.h"
 #include "base/mac/scoped_cftyperef.h"
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 
 namespace {
 
@@ -32,7 +32,7 @@ CFDictionaryRef CreateGenericPasswordQuery(UInt32 serviceNameLength,
   CFDictionarySetValue(query, kSecClass, kSecClassGenericPassword);
 
   // Set the service name.
-  scoped_nsobject<NSString> service_name_ns(
+  base::scoped_nsobject<NSString> service_name_ns(
       [[NSString alloc] initWithBytes:serviceName
                                length:serviceNameLength
                              encoding:NSUTF8StringEncoding]);
@@ -40,7 +40,7 @@ CFDictionaryRef CreateGenericPasswordQuery(UInt32 serviceNameLength,
                        base::mac::NSToCFCast(service_name_ns));
 
   // Set the account name.
-  scoped_nsobject<NSString> account_name_ns(
+  base::scoped_nsobject<NSString> account_name_ns(
       [[NSString alloc] initWithBytes:accountName
                                length:accountNameLength
                              encoding:NSUTF8StringEncoding]);
@@ -86,7 +86,7 @@ CFDictionaryRef CreateKeychainData(UInt32 serviceNameLength,
                        kSecAttrAccessibleWhenUnlocked);
 
   // Set the service name.
-  scoped_nsobject<NSString> service_name_ns(
+  base::scoped_nsobject<NSString> service_name_ns(
       [[NSString alloc] initWithBytes:serviceName
                                length:serviceNameLength
                              encoding:NSUTF8StringEncoding]);
@@ -94,7 +94,7 @@ CFDictionaryRef CreateKeychainData(UInt32 serviceNameLength,
                        base::mac::NSToCFCast(service_name_ns));
 
   // Set the account name.
-  scoped_nsobject<NSString> account_name_ns(
+  base::scoped_nsobject<NSString> account_name_ns(
       [[NSString alloc] initWithBytes:accountName
                                length:accountNameLength
                              encoding:NSUTF8StringEncoding]);
@@ -126,16 +126,13 @@ OSStatus AppleKeychain::AddGenericPassword(SecKeychainRef keychain,
                                            UInt32 passwordLength,
                                            const void* passwordData,
                                            SecKeychainItemRef* itemRef) const {
-  base::mac::ScopedCFTypeRef<CFDictionaryRef> query(
-      CreateGenericPasswordQuery(serviceNameLength,
-                                 serviceName,
-                                 accountNameLength,
-                                 accountName));
+  base::ScopedCFTypeRef<CFDictionaryRef> query(CreateGenericPasswordQuery(
+      serviceNameLength, serviceName, accountNameLength, accountName));
   // Check that there is not already a password.
   OSStatus status = SecItemCopyMatching(query, NULL);
   if (status == errSecItemNotFound) {
     // A new entry must be created.
-    base::mac::ScopedCFTypeRef<CFDictionaryRef> keychain_data(
+    base::ScopedCFTypeRef<CFDictionaryRef> keychain_data(
         CreateKeychainData(serviceNameLength,
                            serviceName,
                            accountNameLength,
@@ -146,7 +143,7 @@ OSStatus AppleKeychain::AddGenericPassword(SecKeychainRef keychain,
     status = SecItemAdd(keychain_data, NULL);
   } else if (status == noErr) {
     // The entry must be updated.
-    base::mac::ScopedCFTypeRef<CFDictionaryRef> keychain_data(
+    base::ScopedCFTypeRef<CFDictionaryRef> keychain_data(
         CreateKeychainData(serviceNameLength,
                            serviceName,
                            accountNameLength,
@@ -170,16 +167,13 @@ OSStatus AppleKeychain::FindGenericPassword(CFTypeRef keychainOrArray,
                                             SecKeychainItemRef* itemRef) const {
   DCHECK((passwordData && passwordLength) ||
          (!passwordData && !passwordLength));
-  base::mac::ScopedCFTypeRef<CFDictionaryRef> query(
-      CreateGenericPasswordQuery(serviceNameLength,
-                                 serviceName,
-                                 accountNameLength,
-                                 accountName));
+  base::ScopedCFTypeRef<CFDictionaryRef> query(CreateGenericPasswordQuery(
+      serviceNameLength, serviceName, accountNameLength, accountName));
 
   // Get the keychain item containing the password.
   CFTypeRef resultRef = NULL;
   OSStatus status = SecItemCopyMatching(query, &resultRef);
-  base::mac::ScopedCFTypeRef<CFTypeRef> result(resultRef);
+  base::ScopedCFTypeRef<CFTypeRef> result(resultRef);
 
   if (status != noErr) {
     if (passwordData) {

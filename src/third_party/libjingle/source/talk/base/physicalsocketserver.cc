@@ -29,13 +29,14 @@
 #pragma warning(disable:4786)
 #endif
 
-#include <cassert>
+#include <assert.h>
 
 #ifdef POSIX
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/time.h>
+#include <sys/select.h>
 #include <unistd.h>
 #include <signal.h>
 #endif
@@ -78,6 +79,7 @@ typedef char* SockOptArg;
 
 namespace talk_base {
 
+#if defined(WIN32)
 // Standard MTUs, from RFC 1191
 const uint16 PACKET_MAXIMUMS[] = {
   65535,    // Theoretical maximum, Hyperchannel
@@ -105,6 +107,7 @@ static const int IP_HEADER_SIZE = 20u;
 static const int IPV6_HEADER_SIZE = 40u;
 static const int ICMP_HEADER_SIZE = 8u;
 static const int ICMP_PING_TIMEOUT_MILLIS = 10000u;
+#endif
 
 class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
  public:
@@ -200,9 +203,8 @@ class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
     if (addr.IsUnresolved()) {
       LOG(LS_VERBOSE) << "Resolving addr in PhysicalSocket::Connect";
       resolver_ = new AsyncResolver();
-      resolver_->set_address(addr);
-      resolver_->SignalWorkDone.connect(this, &PhysicalSocket::OnResolveResult);
-      resolver_->Start();
+      resolver_->SignalDone.connect(this, &PhysicalSocket::OnResolveResult);
+      resolver_->Start(addr);
       state_ = CS_CONNECTING;
       return 0;
     }
@@ -222,7 +224,7 @@ class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
     UpdateLastError();
     if (err == 0) {
       state_ = CS_CONNECTED;
-    } else if (IsBlockingError(error_)) {
+    } else if (IsBlockingError(GetError())) {
       state_ = CS_CONNECTING;
       enabled_events_ |= DE_CONNECT;
     } else {
@@ -234,10 +236,12 @@ class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
   }
 
   int GetError() const {
+    CritScope cs(&crit_);
     return error_;
   }
 
   void SetError(int error) {
+    CritScope cs(&crit_);
     error_ = error;
   }
 
@@ -287,9 +291,10 @@ class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
 #endif
         );
     UpdateLastError();
+    MaybeRemapSendError();
     // We have seen minidumps where this may be false.
     ASSERT(sent <= static_cast<int>(cb));
-    if ((sent < 0) && IsBlockingError(error_)) {
+    if ((sent < 0) && IsBlockingError(GetError())) {
       enabled_events_ |= DE_WRITE;
     }
     return sent;
@@ -308,9 +313,10 @@ class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
 #endif
         reinterpret_cast<sockaddr*>(&saddr), static_cast<int>(len));
     UpdateLastError();
+    MaybeRemapSendError();
     // We have seen minidumps where this may be false.
     ASSERT(sent <= static_cast<int>(length));
-    if ((sent < 0) && IsBlockingError(error_)) {
+    if ((sent < 0) && IsBlockingError(GetError())) {
       enabled_events_ |= DE_WRITE;
     }
     return sent;
@@ -327,16 +333,17 @@ class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
       // Must turn this back on so that the select() loop will notice the close
       // event.
       enabled_events_ |= DE_READ;
-      error_ = EWOULDBLOCK;
+      SetError(EWOULDBLOCK);
       return SOCKET_ERROR;
     }
     UpdateLastError();
-    bool success = (received >= 0) || IsBlockingError(error_);
+    int error = GetError();
+    bool success = (received >= 0) || IsBlockingError(error);
     if (udp_ || success) {
       enabled_events_ |= DE_READ;
     }
     if (!success) {
-      LOG_F(LS_VERBOSE) << "Error = " << error_;
+      LOG_F(LS_VERBOSE) << "Error = " << error;
     }
     return received;
   }
@@ -350,12 +357,13 @@ class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
     UpdateLastError();
     if ((received >= 0) && (out_addr != NULL))
       SocketAddressFromSockAddrStorage(addr_storage, out_addr);
-    bool success = (received >= 0) || IsBlockingError(error_);
+    int error = GetError();
+    bool success = (received >= 0) || IsBlockingError(error);
     if (udp_ || success) {
       enabled_events_ |= DE_READ;
     }
     if (!success) {
-      LOG_F(LS_VERBOSE) << "Error = " << error_;
+      LOG_F(LS_VERBOSE) << "Error = " << error;
     }
     return received;
   }
@@ -406,7 +414,7 @@ class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
   int EstimateMTU(uint16* mtu) {
     SocketAddress addr = GetRemoteAddress();
     if (addr.IsAny()) {
-      error_ = ENOTCONN;
+      SetError(ENOTCONN);
       return -1;
     }
 
@@ -414,7 +422,7 @@ class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
     // Gets the interface MTU (TTL=1) for the interface used to reach |addr|.
     WinPing ping;
     if (!ping.IsValid()) {
-      error_ = EINVAL; // can't think of a better error ID
+      SetError(EINVAL);  // can't think of a better error ID
       return -1;
     }
     int header_size = ICMP_HEADER_SIZE;
@@ -430,7 +438,7 @@ class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
                                              ICMP_PING_TIMEOUT_MILLIS,
                                              1, false);
       if (result == WinPing::PING_FAIL) {
-        error_ = EINVAL; // can't think of a better error ID
+        SetError(EINVAL);  // can't think of a better error ID
         return -1;
       } else if (result != WinPing::PING_TOO_LARGE) {
         *mtu = PACKET_MAXIMUMS[level];
@@ -445,7 +453,7 @@ class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
     // SIOCGIFMTU would work if we knew which interface would be used, but
     // figuring that out is pretty complicated. For now we'll return an error
     // and let the caller pick a default MTU.
-    error_ = EINVAL;
+    SetError(EINVAL);
     return -1;
 #elif defined(LINUX) || defined(ANDROID)
     // Gets the path MTU.
@@ -460,18 +468,22 @@ class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
     ASSERT((0 <= value) && (value <= 65536));
     *mtu = value;
     return 0;
+#elif defined(__native_client__)
+    // Most socket operations, including this, will fail in NaCl's sandbox.
+    error_ = EACCES;
+    return -1;
 #endif
   }
 
   SocketServer* socketserver() { return ss_; }
 
  protected:
-  void OnResolveResult(SignalThread* thread) {
-    if (thread != resolver_) {
+  void OnResolveResult(AsyncResolverInterface* resolver) {
+    if (resolver != resolver_) {
       return;
     }
 
-    int error = resolver_->error();
+    int error = resolver_->GetError();
     if (error == 0) {
       error = DoConnect(resolver_->address());
     } else {
@@ -479,13 +491,26 @@ class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
     }
 
     if (error) {
-      error_ = error;
-      SignalCloseEvent(this, error_);
+      SetError(error);
+      SignalCloseEvent(this, error);
     }
   }
 
   void UpdateLastError() {
-    error_ = LAST_SYSTEM_ERROR;
+    SetError(LAST_SYSTEM_ERROR);
+  }
+
+  void MaybeRemapSendError() {
+#if defined(OSX) || defined(IOS)
+    // https://developer.apple.com/library/mac/documentation/Darwin/
+    // Reference/ManPages/man2/sendto.2.html
+    // ENOBUFS - The output queue for a network interface is full.
+    // This generally indicates that the interface has stopped sending,
+    // but may be caused by transient congestion.
+    if (GetError() == ENOBUFS) {
+      SetError(EWOULDBLOCK);
+    }
+#endif
   }
 
   static int TranslateOption(Option opt, int* slevel, int* sopt) {
@@ -495,7 +520,7 @@ class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
         *slevel = IPPROTO_IP;
         *sopt = IP_DONTFRAGMENT;
         break;
-#elif defined(IOS) || defined(OSX) || defined(BSD)
+#elif defined(IOS) || defined(OSX) || defined(BSD) || defined(__native_client__)
         LOG(LS_WARNING) << "Socket::OPT_DONTFRAGMENT not supported.";
         return -1;
 #elif defined(POSIX)
@@ -515,6 +540,11 @@ class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
         *slevel = IPPROTO_TCP;
         *sopt = TCP_NODELAY;
         break;
+      case OPT_DSCP:
+        LOG(LS_WARNING) << "Socket::OPT_DSCP not supported.";
+        return -1;
+      case OPT_RTP_SENDTIME_EXTN_ID:
+        return -1;  // No logging is necessary as this not a OS socket option.
       default:
         ASSERT(false);
         return -1;
@@ -527,6 +557,8 @@ class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
   uint8 enabled_events_;
   bool udp_;
   int error_;
+  // Protects |error_| that is accessed from different threads.
+  mutable CriticalSection crit_;
   ConnState state_;
   AsyncResolver* resolver_;
 
@@ -1172,9 +1204,7 @@ class Signaler : public EventDispatcher {
 };
 
 PhysicalSocketServer::PhysicalSocketServer()
-    : fWait_(false),
-      last_tick_tracked_(0),
-      last_tick_dispatch_count_(0) {
+    : fWait_(false) {
   signal_wakeup_ = new Signaler(this, &fWait_);
 #ifdef WIN32
   socket_ev_ = WSACreateEvent();
@@ -1250,7 +1280,14 @@ void PhysicalSocketServer::Remove(Dispatcher *pdispatcher) {
   DispatcherList::iterator pos = std::find(dispatchers_.begin(),
                                            dispatchers_.end(),
                                            pdispatcher);
-  ASSERT(pos != dispatchers_.end());
+  // We silently ignore duplicate calls to Add, so we should silently ignore
+  // the (expected) symmetric calls to Remove. Note that this may still hide
+  // a real issue, so we at least log a warning about it.
+  if (pos == dispatchers_.end()) {
+    LOG(LS_WARNING) << "PhysicalSocketServer asked to remove a unknown "
+                    << "dispatcher, potentially from a duplicate call to Add.";
+    return;
+  }
   size_t index = pos - dispatchers_.begin();
   dispatchers_.erase(pos);
   for (IteratorList::iterator it = iterators_.begin(); it != iterators_.end();
@@ -1455,10 +1492,14 @@ bool PhysicalSocketServer::InstallSignal(int signum, void (*handler)(int)) {
     return false;
   }
   act.sa_handler = handler;
+#if !defined(__native_client__)
   // Use SA_RESTART so that our syscalls don't get EINTR, since we don't need it
   // and it's a nuisance. Though some syscalls still return EINTR and there's no
   // real standard for which ones. :(
   act.sa_flags = SA_RESTART;
+#else
+  act.sa_flags = 0;
+#endif
   if (sigaction(signum, &act, NULL) != 0) {
     LOG_ERR(LS_ERROR) << "Couldn't set sigaction";
     return false;
@@ -1472,12 +1513,6 @@ bool PhysicalSocketServer::Wait(int cmsWait, bool process_io) {
   int cmsTotal = cmsWait;
   int cmsElapsed = 0;
   uint32 msStart = Time();
-
-#if LOGGING
-  if (last_tick_dispatch_count_ == 0) {
-    last_tick_tracked_ = msStart;
-  }
-#endif
 
   fWait_ = true;
   while (fWait_) {
@@ -1528,27 +1563,10 @@ bool PhysicalSocketServer::Wait(int cmsWait, bool process_io) {
                                         cmsNext,
                                         false);
 
-#if 0  // LOGGING
-    // we track this information purely for logging purposes.
-    last_tick_dispatch_count_++;
-    if (last_tick_dispatch_count_ >= 1000) {
-      int32 elapsed = TimeSince(last_tick_tracked_);
-      LOG(INFO) << "PhysicalSocketServer took " << elapsed
-                << "ms for 1000 events";
-
-      // If we get more than 1000 events in a second, we are spinning badly
-      // (normally it should take about 8-20 seconds).
-      ASSERT(elapsed > 1000);
-
-      last_tick_tracked_ = Time();
-      last_tick_dispatch_count_ = 0;
-    }
-#endif
-
     if (dw == WSA_WAIT_FAILED) {
       // Failed?
       // TODO: need a better strategy than this!
-      int error = WSAGetLastError();
+      WSAGetLastError();
       ASSERT(false);
       return false;
     } else if (dw == WSA_WAIT_TIMEOUT) {

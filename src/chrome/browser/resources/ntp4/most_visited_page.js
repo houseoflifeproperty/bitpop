@@ -33,6 +33,7 @@ cr.define('ntp', function() {
 
       this.addEventListener('click', this.handleClick_);
       this.addEventListener('keydown', this.handleKeyDown_);
+      this.addEventListener('mouseover', this.handleMouseOver_);
     },
 
     get index() {
@@ -94,9 +95,12 @@ cr.define('ntp', function() {
       this.classList.add('focusable');
 
       var faviconDiv = this.querySelector('.favicon');
-      var faviconUrl = getFaviconURL(data.url);
-      faviconDiv.style.backgroundImage = url(faviconUrl);
-      chrome.send('getFaviconDominantColor', [faviconUrl, this.id]);
+      faviconDiv.style.backgroundImage = getFaviconImageSet(data.url);
+
+      // The favicon should have the same dominant color regardless of the
+      // device pixel ratio the favicon is requested for.
+      chrome.send('getFaviconDominantColor',
+                  [getFaviconUrlForCurrentDevicePixelRatio(data.url), this.id]);
 
       var title = this.querySelector('.title');
       title.textContent = data.title;
@@ -142,6 +146,9 @@ cr.define('ntp', function() {
         // Records the index of this tile.
         chrome.send('metricsHandler:recordInHistogram',
                     ['NewTabPage.MostVisited', this.index, 8]);
+        // Records the action. This will be available as a time-stamped stream
+        // server-side and can be used to compute time-to-long-dwell.
+        chrome.send('metricsHandler:recordAction', ['MostVisited_Clicked']);
         chrome.send('mostVisitedAction',
                     [ntp.NtpFollowAction.CLICKED_TILE]);
       }
@@ -155,6 +162,22 @@ cr.define('ntp', function() {
           cr.isMac && e.metaKey && e.keyCode == 8) { // Cmd + Backspace
         this.blacklist_();
       }
+    },
+
+    /**
+     * The mouse has entered a Most Visited tile div. Only log the first
+     * mouseover event. By doing this we solve the issue with the mouseover
+     * event listener that bubbles up to the parent, which would cause it to
+     * fire multiple times even if the mouse stays within one tile.
+     */
+    handleMouseOver_: function(e) {
+      var self = this;
+      var ancestor = findAncestor(e.relatedTarget, function(node) {
+        return node == self;
+      });
+      // If ancestor is null, mouse is entering the parent element.
+      if (ancestor == null)
+        chrome.send('metricsHandler:logMouseover');
     },
 
     /**
@@ -364,6 +387,7 @@ cr.define('ntp', function() {
       }
 
       this.updateTiles_();
+      this.updateFocusableElement();
       logEvent('mostVisited.layout: ' + (Date.now() - startTime));
     },
 

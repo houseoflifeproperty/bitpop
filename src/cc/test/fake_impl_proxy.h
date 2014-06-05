@@ -5,18 +5,18 @@
 #ifndef CC_TEST_FAKE_IMPL_PROXY_H_
 #define CC_TEST_FAKE_IMPL_PROXY_H_
 
-#include "cc/single_thread_proxy.h"
 #include "cc/test/fake_proxy.h"
+#include "cc/trees/single_thread_proxy.h"
 
 namespace cc {
 
 class FakeImplProxy : public FakeProxy {
  public:
-   FakeImplProxy()
-       : FakeProxy(scoped_ptr<Thread>()),
-         set_impl_thread_(this)
-   {
-   }
+  FakeImplProxy() : set_impl_thread_(this) {}
+
+  explicit FakeImplProxy(
+      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner)
+      : FakeProxy(impl_task_runner), set_impl_thread_(this) {}
 
  private:
   DebugScopedSetImplThread set_impl_thread_;

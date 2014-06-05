@@ -14,7 +14,6 @@
 #include "native_client/src/untrusted/nacl/syscall_bindings_trampoline.h"
 #include "native_client/src/untrusted/nacl/tls.h"
 #include "native_client/src/untrusted/nacl/tls_params.h"
-#include "native_client/src/untrusted/pthread/futex.h"
 #include "native_client/src/untrusted/pthread/pthread_internal.h"
 #include "native_client/src/untrusted/pthread/pthread_types.h"
 
@@ -31,8 +30,6 @@ static struct nc_combined_tdb *get_irt_tdb(void *thread_ptr) {
  */
 void __pthread_initialize(void) {
   struct nc_combined_tdb *tdb;
-
-  __nc_futex_init();
 
   /*
    * Allocate the area.  If malloc fails here, we'll crash before it returns.
@@ -66,7 +63,6 @@ static void nacl_irt_thread_exit(int32_t *stack_flag) {
   struct nc_combined_tdb *tdb = get_irt_tdb(__nacl_read_tp());
 
   __nc_tsd_exit();
-  __nc_futex_thread_exit();
 
   /*
    * Sanity check: Check that this function was not called on a thread
@@ -108,7 +104,7 @@ static void irt_start_thread(void) {
   while (1) *(volatile int *) 0 = 0;  /* Crash.  */
 }
 
-static int nacl_irt_thread_create(void *start_user_address, void *stack,
+static int nacl_irt_thread_create(void (*start_func)(void), void *stack,
                                   void *thread_ptr) {
   struct nc_combined_tdb *tdb;
 
@@ -135,7 +131,7 @@ static int nacl_irt_thread_create(void *start_user_address, void *stack,
    * We overload the libpthread start_func field to store a function
    * of a different type.
    */
-  tdb->tdb.start_func = (void *(*)(void *)) (uintptr_t) start_user_address;
+  tdb->tdb.start_func = (void *(*)(void *)) start_func;
 
   int error = -NACL_SYSCALL(thread_create)(
       (void *) (uintptr_t) &irt_start_thread, stack, thread_ptr, irt_tp);

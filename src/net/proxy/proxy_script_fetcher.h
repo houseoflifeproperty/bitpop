@@ -9,7 +9,7 @@
 #ifndef NET_PROXY_PROXY_SCRIPT_FETCHER_H_
 #define NET_PROXY_PROXY_SCRIPT_FETCHER_H_
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
 
@@ -44,7 +44,7 @@ class NET_EXPORT_PRIVATE ProxyScriptFetcher {
   // deleting |this|), then no callback is invoked.
   //
   // Only one fetch is allowed to be outstanding at a time.
-  virtual int Fetch(const GURL& url, string16* utf16_text,
+  virtual int Fetch(const GURL& url, base::string16* utf16_text,
                     const net::CompletionCallback& callback) = 0;
 
   // Aborts the in-progress fetch (if any).

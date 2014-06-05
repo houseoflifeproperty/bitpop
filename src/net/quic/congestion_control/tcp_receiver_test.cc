@@ -9,11 +9,11 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace net {
-namespace testing {
+namespace test {
 
 class QuicTcpReceiverTest : public ::testing::Test {
  protected:
-  void SetUp() {
+  virtual void SetUp() {
     receiver_.reset(new TcpReceiver());
   }
   scoped_ptr<TcpReceiver> receiver_;
@@ -21,18 +21,16 @@ class QuicTcpReceiverTest : public ::testing::Test {
 
 TEST_F(QuicTcpReceiverTest, SimpleReceiver) {
   QuicCongestionFeedbackFrame feedback;
-  QuicTime timestamp;
-  receiver_->RecordIncomingPacket(1, 1, timestamp, false);
+  QuicTime timestamp(QuicTime::Zero());
+  receiver_->RecordIncomingPacket(1, 1, timestamp);
   ASSERT_TRUE(receiver_->GenerateCongestionFeedback(&feedback));
   EXPECT_EQ(kTCP, feedback.type);
-  EXPECT_EQ(256000, feedback.tcp.receive_window << 4);
-  EXPECT_EQ(0, feedback.tcp.accumulated_number_of_lost_packets);
-  receiver_->RecordIncomingPacket(1, 2, timestamp, true);
+  EXPECT_EQ(256000u, feedback.tcp.receive_window);
+  receiver_->RecordIncomingPacket(1, 2, timestamp);
   ASSERT_TRUE(receiver_->GenerateCongestionFeedback(&feedback));
   EXPECT_EQ(kTCP, feedback.type);
-  EXPECT_EQ(256000, feedback.tcp.receive_window << 4);
-  EXPECT_EQ(1, feedback.tcp.accumulated_number_of_lost_packets);
+  EXPECT_EQ(256000u, feedback.tcp.receive_window);
 }
 
-}  // namespace testing
+}  // namespace test
 }  // namespace net

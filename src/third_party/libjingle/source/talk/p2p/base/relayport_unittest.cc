@@ -25,7 +25,6 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "talk/base/basicpacketsocketfactory.h"
 #include "talk/base/logging.h"
 #include "talk/base/gunit.h"
 #include "talk/base/helpers.h"
@@ -33,8 +32,10 @@
 #include "talk/base/scoped_ptr.h"
 #include "talk/base/socketadapters.h"
 #include "talk/base/socketaddress.h"
+#include "talk/base/ssladapter.h"
 #include "talk/base/thread.h"
 #include "talk/base/virtualsocketserver.h"
+#include "talk/p2p/base/basicpacketsocketfactory.h"
 #include "talk/p2p/base/relayport.h"
 #include "talk/p2p/base/relayserver.h"
 
@@ -78,7 +79,8 @@ class RelayPortTest : public testing::Test,
 
   void OnReadPacket(talk_base::AsyncPacketSocket* socket,
                     const char* data, size_t size,
-                    const talk_base::SocketAddress& remote_addr) {
+                    const talk_base::SocketAddress& remote_addr,
+                    const talk_base::PacketTime& packet_time) {
     received_packet_count_[socket]++;
   }
 
@@ -92,9 +94,13 @@ class RelayPortTest : public testing::Test,
 
  protected:
   static void SetUpTestCase() {
-    // Ensure the RNG is inited.
-    talk_base::InitRandom(NULL, 0);
+    talk_base::InitializeSSL();
   }
+
+  static void TearDownTestCase() {
+    talk_base::CleanupSSL();
+  }
+
 
   virtual void SetUp() {
     // The relay server needs an external socket to work properly.

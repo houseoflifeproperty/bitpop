@@ -5,22 +5,17 @@
 #ifndef CHROME_BROWSER_UI_SEARCH_SEARCH_MODEL_OBSERVER_H_
 #define CHROME_BROWSER_UI_SEARCH_SEARCH_MODEL_OBSERVER_H_
 
-namespace chrome {
-namespace search {
-
-struct Mode;
+#include "chrome/browser/ui/search/search_model.h"
 
 // This class defines the observer interface for the |SearchModel|.
 class SearchModelObserver {
  public:
-  // Informs the observer that the mode has changed.
-  virtual void ModeChanged(const Mode& old_mode, const Mode& new_mode) = 0;
+  // Informs the observer that the model's state has changed.
+  virtual void ModelChanged(const SearchModel::State& old_state,
+                            const SearchModel::State& new_state) = 0;
 
  protected:
   virtual ~SearchModelObserver() {}
 };
-
-}  // namespace search
-}  // namespace chrome
 
 #endif  // CHROME_BROWSER_UI_SEARCH_SEARCH_MODEL_OBSERVER_H_

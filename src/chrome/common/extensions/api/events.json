@@ -5,9 +5,44 @@
 [
   {
     "namespace": "events",
-    "internal": true,
-    "unprivileged": true,
+    "description": "The <code>chrome.events</code> namespace contains common types used by APIs dispatching events to notify you when something interesting happens.",
+    "compiler_options": {
+      "implemented_in": "chrome/browser/extensions/api/declarative/declarative_api.h"
+    },
     "types": [
+      {
+        "id": "Rule",
+        "type": "object",
+        "description": "Description of a declarative rule for handling events.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "optional": true,
+            "description": "Optional identifier that allows referencing this rule."
+          },
+          "tags": {
+            "type": "array",
+            "items": {"type": "string"},
+            "optional": true,
+            "description":  "Tags can be used to annotate rules and perform operations on sets of rules."
+          },
+          "conditions": {
+            "type": "array",
+            "items": {"type": "any"},
+            "description": "List of conditions that can trigger the actions."
+          },
+          "actions": {
+            "type": "array",
+            "items": {"type": "any"},
+            "description": "List of actions that are triggered if one of the condtions is fulfilled."
+          },
+          "priority": {
+            "type": "integer",
+            "optional": true,
+            "description": "Optional priority of this rule. Defaults to 100."
+          }
+        }
+      },
       {
         "id": "Event",
         "type": "object",
@@ -78,6 +113,12 @@
                 "description": "Name of the event this function affects."
               },
               {
+                "name": "webViewInstanceId",
+                "type": "integer",
+                "nodoc": true,
+                "description": "If provided, this is an integer that uniquely identfies the <webview> associated with this function call."
+              },
+              {
                 "name": "rules",
                 "type": "array",
                 "items": {"$ref": "Rule"},
@@ -111,8 +152,14 @@
                 "description": "Name of the event this function affects."
               },
               {
+                "name": "webViewInstanceId",
+                "type": "integer",
+                "nodoc": true,
+                "description": "If provided, this is an integer that uniquely identfies the <webview> associated with this function call."
+              },
+              {
                 "name": "ruleIdentifiers",
-                "optional": "true",
+                "optional": true,
                 "type": "array",
                 "items": {"type": "string"},
                 "description": "If an array is passed, only rules with identifiers contained in this array are returned."
@@ -144,8 +191,14 @@
                 "description": "Name of the event this function affects."
               },
               {
+                "name": "webViewInstanceId",
+                "type": "integer",
+                "nodoc": true,
+                "description": "If provided, this is an integer that uniquely identfies the <webview> associated with this function call."
+              },
+              {
                 "name": "ruleIdentifiers",
-                "optional": "true",
+                "optional": true,
                 "type": "array",
                 "items": {"type": "string"},
                 "description": "If an array is passed, only rules with identifiers contained in this array are unregistered."
@@ -162,36 +215,9 @@
         ]
       },
       {
-        "id": "Rule",
-        "type": "object",
-        "description": "Description of a declarative rule for handling events.",
-        "properties": {
-          "id": {
-            "type": "string",
-            "optional": true,
-            "description": "Optional identifier that allows referencing this rule."
-          },
-          "conditions": {
-            "type": "array",
-            "items": {"type": "any"},
-            "description": "List of conditions that can trigger the actions."
-          },
-          "actions": {
-            "type": "array",
-            "items": {"type": "any"},
-            "description": "List of actions that are triggered if one of the condtions is fulfilled."
-          },
-          "priority": {
-            "type": "integer",
-            "optional": true,
-            "description": "Optional priority of this rule. Defaults to 100."
-          }
-        }
-      },
-      {
         "id": "UrlFilter",
         "type": "object",
-        "description": "Filters URLs for various criteria. See <a href='#filtered'>event filtering</a>.",
+        "description": "Filters URLs for various criteria. See <a href='#filtered'>event filtering</a>. All criteria are case sensitive.",
         "nocompile": true,
         "properties": {
           "hostContains": {
@@ -267,6 +293,11 @@
           "urlMatches": {
             "type": "string",
             "description": "Matches if the URL (without fragment identifier) matches a specified regular expression. Port numbers are stripped from the URL if they match the default port number. The regular expressions use the <a href=\"http://code.google.com/p/re2/wiki/Syntax\">RE2 syntax</a>.",
+            "optional": true
+          },
+          "originAndPathMatches": {
+            "type": "string",
+            "description": "Matches if the URL without query segment and fragment identifier matches a specified regular expression. Port numbers are stripped from the URL if they match the default port number. The regular expressions use the <a href=\"http://code.google.com/p/re2/wiki/Syntax\">RE2 syntax</a>.",
             "optional": true
           },
           "urlPrefix": {

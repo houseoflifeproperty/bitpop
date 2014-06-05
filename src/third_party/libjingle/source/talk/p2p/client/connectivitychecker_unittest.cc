@@ -4,11 +4,11 @@
 #include <string>
 
 #include "talk/base/asynchttprequest.h"
-#include "talk/base/basicpacketsocketfactory.h"
 #include "talk/base/gunit.h"
 #include "talk/base/fakenetwork.h"
 #include "talk/base/scoped_ptr.h"
 #include "talk/base/socketaddress.h"
+#include "talk/p2p/base/basicpacketsocketfactory.h"
 #include "talk/p2p/base/relayport.h"
 #include "talk/p2p/base/stunport.h"
 #include "talk/p2p/client/connectivitychecker.h"
@@ -23,8 +23,6 @@ static const talk_base::SocketAddress kStunAddr("44.44.44.44", 4444);
 static const talk_base::SocketAddress kRelayAddr("55.55.55.55", 5555);
 static const talk_base::SocketAddress kProxyAddr("66.66.66.66", 6666);
 static const talk_base::ProxyType kProxyType = talk_base::PROXY_HTTPS;
-static const char kChannelName[] = "rtp_test";
-static const int kComponent = 1;
 static const char kRelayHost[] = "relay.google.com";
 static const char kRelayToken[] =
     "CAESFwoOb2phQGdvb2dsZS5jb20Q043h47MmGhBTB1rbfIXkhuarDCZe+xF6";
@@ -55,7 +53,7 @@ class FakeRelayPort : public RelayPort {
 
   // Just signal that we are done.
   virtual void PrepareAddress() {
-    SignalAddressReady(this);
+    SignalPortComplete(this);
   }
 };
 
@@ -75,9 +73,9 @@ class FakeStunPort : public StunPort {
 
   // Just set external address and signal that we are done.
   virtual void PrepareAddress() {
-    AddAddress(kExternalAddr, kExternalAddr, "udp",
+    AddAddress(kExternalAddr, kExternalAddr, talk_base::SocketAddress(), "udp",
                STUN_PORT_TYPE, ICE_TYPE_PREFERENCE_SRFLX, true);
-    SignalAddressReady(this);
+    SignalPortComplete(this);
   }
 };
 

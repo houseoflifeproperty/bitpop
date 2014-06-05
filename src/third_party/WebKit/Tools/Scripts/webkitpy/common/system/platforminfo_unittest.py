@@ -28,7 +28,7 @@
 
 import platform
 import sys
-import unittest
+import webkitpy.thirdparty.unittest2 as unittest
 
 from webkitpy.common.system.executive import Executive
 from webkitpy.common.system.executive_mock import MockExecutive, MockExecutive2
@@ -79,12 +79,12 @@ class TestPlatformInfo(unittest.TestCase):
         self.assertNotEquals(info.os_version, '')
         self.assertNotEquals(info.display_name(), '')
         self.assertTrue(info.is_mac() or info.is_win() or info.is_linux() or info.is_freebsd())
-        self.assertNotEquals(info.terminal_width(), None)
+        self.assertIsNotNone(info.terminal_width())
 
         if info.is_mac():
             self.assertTrue(info.total_bytes_memory() > 0)
         else:
-            self.assertEqual(info.total_bytes_memory(), None)
+            self.assertIsNone(info.total_bytes_memory())
 
     def test_os_name_and_wrappers(self):
         info = self.make_info(fake_sys('linux2'))
@@ -135,7 +135,8 @@ class TestPlatformInfo(unittest.TestCase):
         self.assertEqual(self.make_info(fake_sys('darwin'), fake_platform('10.6.1')).os_version, 'snowleopard')
         self.assertEqual(self.make_info(fake_sys('darwin'), fake_platform('10.7.1')).os_version, 'lion')
         self.assertEqual(self.make_info(fake_sys('darwin'), fake_platform('10.8.1')).os_version, 'mountainlion')
-        self.assertEqual(self.make_info(fake_sys('darwin'), fake_platform('10.9.0')).os_version, 'future')
+        self.assertEqual(self.make_info(fake_sys('darwin'), fake_platform('10.9.0')).os_version, 'mavericks')
+        self.assertEqual(self.make_info(fake_sys('darwin'), fake_platform('10.10.0')).os_version, 'future')
 
         self.assertEqual(self.make_info(fake_sys('linux2')).os_version, 'lucid')
 
@@ -172,10 +173,10 @@ class TestPlatformInfo(unittest.TestCase):
         self.assertEqual(info.total_bytes_memory(), 1234)
 
         info = self.make_info(fake_sys('win32', tuple([6, 1, 7600])))
-        self.assertEqual(info.total_bytes_memory(), None)
+        self.assertIsNone(info.total_bytes_memory())
 
         info = self.make_info(fake_sys('linux2'))
-        self.assertEqual(info.total_bytes_memory(), None)
+        self.assertIsNone(info.total_bytes_memory())
 
         info = self.make_info(fake_sys('freebsd9'))
-        self.assertEqual(info.total_bytes_memory(), None)
+        self.assertIsNone(info.total_bytes_memory())

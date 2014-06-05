@@ -7,7 +7,7 @@
 #include "base/logging.h"
 #include "chrome/renderer/prerender/prerender_extra_data.h"
 #include "content/public/renderer/render_view.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/web/WebView.h"
 
 namespace {
 static int s_last_prerender_id = 0;
@@ -26,7 +26,7 @@ PrerendererClient::~PrerendererClient() {
 }
 
 void PrerendererClient::willAddPrerender(
-    WebKit::WebPrerender* prerender) {
+    blink::WebPrerender* prerender) {
   DVLOG(3) << "PrerendererClient::willAddPrerender url = "
            << prerender->url().spec().data();
   prerender->setExtraData(new PrerenderExtraData(++s_last_prerender_id,

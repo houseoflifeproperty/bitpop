@@ -6,8 +6,8 @@
 
 #import "chrome/browser/ui/cocoa/window_size_autosaver.h"
 
-#include "chrome/browser/prefs/pref_service.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
+#include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 
 // If the window width stored in the prefs is smaller than this, the size is
 // not restored but instead cleared from the profile -- to protect users from
@@ -54,7 +54,7 @@ const int kMinWindowHeight = 17;
 
 - (void)save:(NSNotification*)notification {
   DictionaryPrefUpdate update(prefService_, path_);
-  DictionaryValue* windowPrefs = update.Get();
+  base::DictionaryValue* windowPrefs = update.Get();
   NSRect frame = [window_ frame];
   if ([window_ styleMask] & NSResizableWindowMask) {
     // Save the origin of the window.
@@ -74,7 +74,7 @@ const int kMinWindowHeight = 17;
 
 - (void)restore {
   // Get the positioning information.
-  const DictionaryValue* windowPrefs = prefService_->GetDictionary(path_);
+  const base::DictionaryValue* windowPrefs = prefService_->GetDictionary(path_);
   if ([window_ styleMask] & NSResizableWindowMask) {
     int x1, x2, y1, y2;
     if (!windowPrefs->GetInteger("left", &x1) ||
@@ -86,7 +86,7 @@ const int kMinWindowHeight = 17;
     if (x2 - x1 < kMinWindowWidth || y2 - y1 < kMinWindowHeight) {
       // Windows should never be very small.
       DictionaryPrefUpdate update(prefService_, path_);
-      DictionaryValue* mutableWindowPrefs = update.Get();
+      base::DictionaryValue* mutableWindowPrefs = update.Get();
       mutableWindowPrefs->Remove("left", NULL);
       mutableWindowPrefs->Remove("right", NULL);
       mutableWindowPrefs->Remove("top", NULL);

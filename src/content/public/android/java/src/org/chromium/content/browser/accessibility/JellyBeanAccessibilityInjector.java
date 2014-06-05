@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,6 @@ package org.chromium.content.browser.accessibility;
 import android.content.Context;
 import android.os.Bundle;
 import android.os.SystemClock;
-import android.view.View;
 import android.view.accessibility.AccessibilityNodeInfo;
 
 import org.chromium.content.browser.ContentViewCore;
@@ -16,6 +15,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.Iterator;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -75,7 +75,11 @@ class JellyBeanAccessibilityInjector extends AccessibilityInjector {
             return false;
         }
 
-        return sendActionToAndroidVox(action, arguments);
+        boolean actionSuccessful = sendActionToAndroidVox(action, arguments);
+
+        if (actionSuccessful) mContentViewCore.showImeIfNeeded();
+
+        return actionSuccessful;
     }
 
     @Override
@@ -139,13 +143,22 @@ class JellyBeanAccessibilityInjector extends AccessibilityInjector {
         }
 
         final String jsonString = mAccessibilityJSONObject.toString();
-        final String jsCode = String.format(ACCESSIBILITY_ANDROIDVOX_TEMPLATE, jsonString);
+        final String jsCode = String.format(Locale.US, ACCESSIBILITY_ANDROIDVOX_TEMPLATE,
+                jsonString);
         return mCallback.performAction(mContentViewCore, jsCode);
     }
 
     private static class CallbackHandler {
         private static final String JAVASCRIPT_ACTION_TEMPLATE =
-                "(function() { %s.onResult(%d, %s); })()";
+                "(function() {" +
+                "  retVal = false;" +
+                "  try {" +
+                "    retVal = %s;" +
+                "  } catch (e) {" +
+                "    retVal = false;" +
+                "  }" +
+                "  %s.onResult(%d, retVal);" +
+                "})()";
 
         // Time in milliseconds to wait for a result before failing.
         private static final long RESULT_TIMEOUT = 5000;
@@ -170,9 +183,9 @@ class JellyBeanAccessibilityInjector extends AccessibilityInjector {
          */
         private boolean performAction(ContentViewCore contentView, String code) {
             final int resultId = mResultIdCounter.getAndIncrement();
-            final String js = String.format(JAVASCRIPT_ACTION_TEMPLATE, mInterfaceName, resultId,
-                    code);
-            contentView.evaluateJavaScript(js);
+            final String js = String.format(Locale.US, JAVASCRIPT_ACTION_TEMPLATE, code,
+                    mInterfaceName, resultId);
+            contentView.evaluateJavaScript(js, null);
 
             return getResultAndClear(resultId);
         }
@@ -228,13 +241,13 @@ class JellyBeanAccessibilityInjector extends AccessibilityInjector {
          * request to a waiting (or potentially timed out) thread.
          *
          * @param id The result id of the request as a {@link String}.
-         * @param result The result o fa request as a {@link String}.
+         * @param result The result of a request as a {@link String}.
          */
         @JavascriptInterface
         @SuppressWarnings("unused")
         public void onResult(String id, String result) {
             final long resultId;
-             try {
+            try {
                 resultId = Long.parseLong(id);
             } catch (NumberFormatException e) {
                 return;

@@ -1,0 +1,32 @@
+[
+  {
+    "cmd": [
+      "cat"
+    ],
+    "name": "read test spec",
+    "stdout": "/path/to/tmp/json",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@null@@@",
+      "@@@STEP_LOG_END@json.output@@@"
+    ]
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/recipe_modules/isolate/resources/find_isolated_tests.py",
+      "--build-dir",
+      "[BUILD]",
+      "--output-json",
+      "/path/to/tmp/json"
+    ],
+    "name": "find isolated tests",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{}@@@",
+      "@@@STEP_LOG_END@json.output@@@",
+      "@@@STEP_WARNINGS@@@",
+      "@@@SET_BUILD_PROPERTY@swarm_hashes@{}@@@"
+    ]
+  }
+]

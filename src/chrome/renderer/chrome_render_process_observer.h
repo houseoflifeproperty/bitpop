@@ -8,17 +8,14 @@
 #include <string>
 
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/common/content_settings.h"
 #include "content/public/renderer/render_process_observer.h"
 
+class ChromeContentRendererClient;
 class GURL;
 struct ContentSettings;
-
-namespace chrome {
-class ChromeContentRendererClient;
-}
 
 namespace content {
 class ResourceDispatcherDelegate;
@@ -31,7 +28,7 @@ class ResourceDispatcherDelegate;
 class ChromeRenderProcessObserver : public content::RenderProcessObserver {
  public:
   explicit ChromeRenderProcessObserver(
-      chrome::ChromeContentRendererClient* client);
+      ChromeContentRendererClient* client);
   virtual ~ChromeRenderProcessObserver();
 
   static bool is_incognito_process() { return is_incognito_process_; }
@@ -47,6 +44,8 @@ class ChromeRenderProcessObserver : public content::RenderProcessObserver {
  private:
   // RenderProcessObserver implementation.
   virtual bool OnControlMessageReceived(const IPC::Message& message) OVERRIDE;
+  virtual void WebKitInitialized() OVERRIDE;
+  virtual void OnRenderProcessShutdown() OVERRIDE;
 
   void OnSetIsIncognitoProcess(bool is_incognito_process);
   void OnSetContentSettingsForCurrentURL(
@@ -62,15 +61,18 @@ class ChromeRenderProcessObserver : public content::RenderProcessObserver {
   void OnSetFieldTrialGroup(const std::string& fiel_trial_name,
                             const std::string& group_name);
   void OnGetV8HeapStats();
-  void OnPurgeMemory();
-  void OnToggleWebKitSharedTimer(bool suspend);
 
   static bool is_incognito_process_;
   scoped_ptr<content::ResourceDispatcherDelegate> resource_delegate_;
-  chrome::ChromeContentRendererClient* client_;
+  ChromeContentRendererClient* client_;
   // If true, the web cache shall be cleared before the next navigation event.
   bool clear_cache_pending_;
   RendererContentSettingRules content_setting_rules_;
+
+  bool webkit_initialized_;
+  size_t pending_cache_min_dead_capacity_;
+  size_t pending_cache_max_dead_capacity_;
+  size_t pending_cache_capacity_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeRenderProcessObserver);
 };

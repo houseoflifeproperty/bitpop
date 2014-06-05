@@ -50,4 +50,6 @@ RESULT artificial_graph: trace_with_three_samples_comma= [100.0,120.0,200.0,] yo
 
 # Artificial log output to test the histograms.
 
-HISTOGRAM hist1: hist1 = {"buckets":[{"low":1,"high":2,"count":10},{"low":2,"high":4,"count":40},{"low":4,"count":50}],"count":100} someunits
+HISTOGRAM hist1: hist1_trace = {"buckets":[{"low":1,"high":2,"count":10},{"low":2,"high":4,"count":40},{"low":4,"count":50}],"count":100} someunits
+
+HISTOGRAM hist_empty: hist_empty_trace = {}

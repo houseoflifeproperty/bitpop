@@ -239,6 +239,9 @@ public class C2DMManager extends IntentService {
 
   @Override
   public final void onHandleIntent(Intent intent) {
+    if (intent == null) {
+      return;
+    }
     try {
       // OK to block here (if needed) because IntentService guarantees that onHandleIntent will
       // only be called on a background thread.
@@ -255,7 +258,7 @@ public class C2DMManager extends IntentService {
       } else if (intent.getAction().equals(C2DMessaging.ACTION_UNREGISTER)) {
         unregisterObserver(intent);
       } else {
-        logger.warning("Receieved unknown action: %s", intent.getAction());
+        logger.warning("Received unknown action: %s", intent.getAction());
       }
     } finally {
       // Release the power lock, so device can get back to sleep.

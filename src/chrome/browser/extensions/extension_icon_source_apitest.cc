@@ -7,24 +7,32 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/common/chrome_switches.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
-#include "googleurl/src/gurl.h"
-#include "net/base/mock_host_resolver.h"
+#include "extensions/common/switches.h"
+#include "net/dns/mock_host_resolver.h"
+#include "url/gurl.h"
 
 class ExtensionIconSourceTest : public ExtensionApiTest {
  protected:
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     ExtensionApiTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(switches::kAllowLegacyExtensionManifests);
+    command_line->AppendSwitch(
+        extensions::switches::kAllowLegacyExtensionManifests);
   }
 };
 
-IN_PROC_BROWSER_TEST_F(ExtensionIconSourceTest, IconsLoaded) {
-  FilePath basedir = test_data_dir_.AppendASCII("icons");
+// Times out on Mac and Win. http://crbug.com/238705
+#if defined(OS_WIN) || defined(OS_MACOSX)
+#define MAYBE_IconsLoaded DISABLED_IconsLoaded
+#else
+#define MAYBE_IconsLoaded IconsLoaded
+#endif
+
+IN_PROC_BROWSER_TEST_F(ExtensionIconSourceTest, MAYBE_IconsLoaded) {
+  base::FilePath basedir = test_data_dir_.AppendASCII("icons");
   ASSERT_TRUE(LoadExtension(basedir.AppendASCII("extension_with_permission")));
   ASSERT_TRUE(LoadExtension(basedir.AppendASCII("extension_no_permission")));
   std::string result;
@@ -34,9 +42,9 @@ IN_PROC_BROWSER_TEST_F(ExtensionIconSourceTest, IconsLoaded) {
   ui_test_utils::NavigateToURL(
       browser(),
       GURL("chrome-extension://gbmgkahjioeacddebbnengilkgbkhodg/index.html"));
-  ASSERT_TRUE(content::ExecuteJavaScriptAndExtractString(
-      chrome::GetActiveWebContents(browser())->GetRenderViewHost(), L"",
-      L"window.domAutomationController.send(document.title)",
+  ASSERT_TRUE(content::ExecuteScriptAndExtractString(
+      browser()->tab_strip_model()->GetActiveWebContents(),
+      "window.domAutomationController.send(document.title)",
       &result));
   EXPECT_EQ(result, "Loaded");
 
@@ -45,15 +53,37 @@ IN_PROC_BROWSER_TEST_F(ExtensionIconSourceTest, IconsLoaded) {
   ui_test_utils::NavigateToURL(
       browser(),
       GURL("chrome-extension://apocjbpjpkghdepdngjlknfpmabcmlao/index.html"));
-  ASSERT_TRUE(content::ExecuteJavaScriptAndExtractString(
-      chrome::GetActiveWebContents(browser())->GetRenderViewHost(), L"",
-      L"window.domAutomationController.send(document.title)",
+  ASSERT_TRUE(content::ExecuteScriptAndExtractString(
+      browser()->tab_strip_model()->GetActiveWebContents(),
+      "window.domAutomationController.send(document.title)",
       &result));
   EXPECT_EQ(result, "Not Loaded");
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionIconSourceTest, IconsLoadedIncognito) {
-  FilePath basedir = test_data_dir_.AppendASCII("icons");
+IN_PROC_BROWSER_TEST_F(ExtensionIconSourceTest, InvalidURL) {
+  std::string result;
+
+  // Test that navigation to an invalid url works.
+  ui_test_utils::NavigateToURL(
+      browser(),
+      GURL("chrome://extension-icon/invalid"));
+
+  ASSERT_TRUE(content::ExecuteScriptAndExtractString(
+      browser()->tab_strip_model()->GetActiveWebContents(),
+      "window.domAutomationController.send(document.title)",
+      &result));
+  EXPECT_EQ(result, "invalid (96\xC3\x97""96)");
+}
+
+// Times out on Mac and Win. http://crbug.com/238705
+#if defined(OS_WIN) || defined(OS_MACOSX)
+#define MAYBE_IconsLoadedIncognito DISABLED_IconsLoadedIncognito
+#else
+#define MAYBE_IconsLoadedIncognito IconsLoadedIncognito
+#endif
+
+IN_PROC_BROWSER_TEST_F(ExtensionIconSourceTest, MAYBE_IconsLoadedIncognito) {
+  base::FilePath basedir = test_data_dir_.AppendASCII("icons");
   ASSERT_TRUE(LoadExtensionIncognito(
       basedir.AppendASCII("extension_with_permission")));
   ASSERT_TRUE(LoadExtensionIncognito(
@@ -65,9 +95,9 @@ IN_PROC_BROWSER_TEST_F(ExtensionIconSourceTest, IconsLoadedIncognito) {
   Browser* otr_browser = ui_test_utils::OpenURLOffTheRecord(
       browser()->profile(),
       GURL("chrome-extension://gbmgkahjioeacddebbnengilkgbkhodg/index.html"));
-  ASSERT_TRUE(content::ExecuteJavaScriptAndExtractString(
-      chrome::GetActiveWebContents(otr_browser)->GetRenderViewHost(), L"",
-      L"window.domAutomationController.send(document.title)",
+  ASSERT_TRUE(content::ExecuteScriptAndExtractString(
+      otr_browser->tab_strip_model()->GetActiveWebContents(),
+      "window.domAutomationController.send(document.title)",
       &result));
   EXPECT_EQ(result, "Loaded");
 
@@ -76,9 +106,9 @@ IN_PROC_BROWSER_TEST_F(ExtensionIconSourceTest, IconsLoadedIncognito) {
   ui_test_utils::OpenURLOffTheRecord(
       browser()->profile(),
       GURL("chrome-extension://apocjbpjpkghdepdngjlknfpmabcmlao/index.html"));
-  ASSERT_TRUE(content::ExecuteJavaScriptAndExtractString(
-      chrome::GetActiveWebContents(otr_browser)->GetRenderViewHost(), L"",
-      L"window.domAutomationController.send(document.title)",
+  ASSERT_TRUE(content::ExecuteScriptAndExtractString(
+      otr_browser->tab_strip_model()->GetActiveWebContents(),
+      "window.domAutomationController.send(document.title)",
       &result));
   EXPECT_EQ(result, "Not Loaded");
 }

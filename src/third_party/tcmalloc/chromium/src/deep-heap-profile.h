@@ -7,24 +7,24 @@
 //         Dai Mikurube
 //
 // This file contains a class DeepHeapProfile and its public function
-// DeepHeapProfile::FillOrderedProfile() which works as an alternative of
-// HeapProfileTable::FillOrderedProfile().
+// DeepHeapProfile::DumpOrderedProfile().  The function works like
+// HeapProfileTable::FillOrderedProfile(), but dumps directory to files.
 //
-// DeepHeapProfile::FillOrderedProfile() dumps more detailed information about
+// DeepHeapProfile::DumpOrderedProfile() dumps more detailed information about
 // heap usage, which includes OS-level information such as memory residency and
 // type information if the type profiler is available.
 //
-// DeepHeapProfile::FillOrderedProfile() uses data stored in HeapProfileTable.
-// Any code in DeepHeapProfile runs only when FillOrderedProfile() is called.
+// DeepHeapProfile::DumpOrderedProfile() uses data stored in HeapProfileTable.
+// Any code in DeepHeapProfile runs only when DumpOrderedProfile() is called.
 // It has overhead in dumping, but no overhead in logging.
 //
-// It currently works only on Linux.  It just delegates to HeapProfileTable in
+// It currently works only on Linux including Android.  It does nothing in
 // non-Linux environments.
 
 // Note that uint64 is used to represent addresses instead of uintptr_t, and
 // int is used to represent buffer sizes instead of size_t.
 // It's for consistency with other TCMalloc functions.  ProcMapsIterator uses
-// uint64 for addresses, and HeapProfileTable::FillOrderedProfile uses int
+// uint64 for addresses, and HeapProfileTable::DumpOrderedProfile uses int
 // for buffer sizes.
 
 #ifndef BASE_DEEP_HEAP_PROFILE_H_
@@ -36,33 +36,20 @@
 #include <typeinfo>
 #endif
 
-#if defined(__linux__)
-#define DEEP_HEAP_PROFILE 1
+#if defined(__linux__) || defined(_WIN32) || defined(_WIN64)
+#define USE_DEEP_HEAP_PROFILE 1
 #endif
 
 #include "addressmap-inl.h"
 #include "heap-profile-table.h"
+#include "memory_region_map.h"
 
 class DeepHeapProfile {
  public:
-  // Defines an interface for getting info about memory residence.
-  class MemoryResidenceInfoGetterInterface {
-   public:
-    virtual ~MemoryResidenceInfoGetterInterface();
-
-    // Initializes the instance.
-    virtual void Initialize() = 0;
-
-    // Returns the number of resident (including swapped) bytes of the given
-    // memory region from |first_address| to |last_address| inclusive.
-    virtual size_t CommittedSize(
-        uint64 first_address, uint64 last_address) const = 0;
-
-    // Creates a new platform specific MemoryResidenceInfoGetterInterface.
-    static MemoryResidenceInfoGetterInterface* Create();
-
-   protected:
-    MemoryResidenceInfoGetterInterface();
+  enum PageFrameType {
+    DUMP_NO_PAGEFRAME = 0,  // Dumps nothing about pageframes
+    DUMP_PFN = 1,           // Dumps only pageframe numbers (PFNs)
+    DUMP_PAGECOUNT = 2,     // Dumps PFNs and pagecounts
   };
 
   // Constructs a DeepHeapProfile instance.  It works as a wrapper of
@@ -72,20 +59,23 @@ class DeepHeapProfile {
   // data in |heap_profile| and forwards operations to |heap_profile| if
   // DeepHeapProfile is not available (non-Linux).
   // |prefix| is a prefix of dumped file names.
-  DeepHeapProfile(HeapProfileTable* heap_profile, const char* prefix);
+  // |pageframe_type| means what information is dumped for pageframes.
+  DeepHeapProfile(HeapProfileTable* heap_profile,
+                  const char* prefix,
+                  enum PageFrameType pageframe_type);
   ~DeepHeapProfile();
 
-  // Fills deep profile dump into |raw_buffer| of |buffer_size|, and return the
-  // actual size occupied by the dump in |raw_buffer|.  It works as an
-  // alternative of HeapProfileTable::FillOrderedProfile.  |raw_buffer| is not
-  // terminated by zero.
+  // Dumps a deep profile into |fd| with using |raw_buffer| of |buffer_size|.
   //
   // In addition, a list of buckets is dumped into a ".buckets" file in
   // descending order of allocated bytes.
-  int FillOrderedProfile(char raw_buffer[], int buffer_size);
+  void DumpOrderedProfile(const char* reason,
+                          char raw_buffer[],
+                          int buffer_size,
+                          RawFD fd);
 
  private:
-#ifdef DEEP_HEAP_PROFILE
+#ifdef USE_DEEP_HEAP_PROFILE
   typedef HeapProfileTable::Stats Stats;
   typedef HeapProfileTable::Bucket Bucket;
   typedef HeapProfileTable::AllocValue AllocValue;
@@ -116,28 +106,31 @@ class DeepHeapProfile {
     NUMBER_OF_MAPS_REGION_TYPES
   };
 
-  // Manages a buffer to keep a dumped text for FillOrderedProfile and other
-  // functions.
+  static const char* kMapsRegionTypeDict[NUMBER_OF_MAPS_REGION_TYPES];
+
+  // Manages a buffer to keep a text to be dumped to a file.
   class TextBuffer {
    public:
-    TextBuffer(char *raw_buffer, int size)
+    TextBuffer(char *raw_buffer, int size, RawFD fd)
         : buffer_(raw_buffer),
           size_(size),
-          cursor_(0) {
+          cursor_(0),
+          fd_(fd) {
     }
 
     int Size();
     int FilledBytes();
     void Clear();
-    void Write(RawFD fd);
+    void Flush();
 
-    bool AppendChar(char v);
-    bool AppendString(const char* v, int d);
-    bool AppendInt(int v, int d);
-    bool AppendLong(long v, int d);
-    bool AppendUnsignedLong(unsigned long v, int d);
-    bool AppendInt64(int64 v, int d);
-    bool AppendPtr(uint64 v, int d);
+    bool AppendChar(char value);
+    bool AppendString(const char* value, int width);
+    bool AppendInt(int value, int width, bool leading_zero);
+    bool AppendLong(long value, int width);
+    bool AppendUnsignedLong(unsigned long value, int width);
+    bool AppendInt64(int64 value, int width);
+    bool AppendBase64(uint64 value, int width);
+    bool AppendPtr(uint64 value, int width);
 
    private:
     bool ForwardCursor(int appended);
@@ -145,14 +138,100 @@ class DeepHeapProfile {
     char *buffer_;
     int size_;
     int cursor_;
+    RawFD fd_;
     DISALLOW_COPY_AND_ASSIGN(TextBuffer);
   };
 
-  struct MMapListEntry {
-    uint64 first_address;
-    uint64 last_address;
-    MapsRegionType type;
+  // Defines an interface for getting info about memory residence.
+  class MemoryResidenceInfoGetterInterface {
+   public:
+    virtual ~MemoryResidenceInfoGetterInterface();
+
+    // Initializes the instance.
+    virtual void Initialize() = 0;
+
+    // Returns the number of resident (including swapped) bytes of the given
+    // memory region from |first_address| to |last_address| inclusive.
+    virtual size_t CommittedSize(uint64 first_address,
+                                 uint64 last_address,
+                                 TextBuffer* buffer) const = 0;
+
+    // Creates a new platform specific MemoryResidenceInfoGetterInterface.
+    static MemoryResidenceInfoGetterInterface* Create(
+        PageFrameType pageframe_type);
+
+    virtual bool IsPageCountAvailable() const = 0;
+
+   protected:
+    MemoryResidenceInfoGetterInterface();
   };
+
+#if defined(_WIN32) || defined(_WIN64)
+  // TODO(peria): Implement this class.
+  class MemoryInfoGetterWindows : public MemoryResidenceInfoGetterInterface {
+   public:
+    MemoryInfoGetterWindows(PageFrameType) {}
+    virtual ~MemoryInfoGetterWindows() {}
+
+    virtual void Initialize();
+
+    virtual size_t CommittedSize(uint64 first_address,
+                                 uint64 last_address,
+                                 TextBuffer* buffer) const;
+
+    virtual bool IsPageCountAvailable() const;
+  };
+#endif  // defined(_WIN32) || defined(_WIN64)
+
+#if defined(__linux__)
+  // Implements MemoryResidenceInfoGetterInterface for Linux.
+  class MemoryInfoGetterLinux : public MemoryResidenceInfoGetterInterface {
+   public:
+    MemoryInfoGetterLinux(PageFrameType pageframe_type)
+        : pageframe_type_(pageframe_type),
+          pagemap_fd_(kIllegalRawFD),
+          kpagecount_fd_(kIllegalRawFD) {}
+    virtual ~MemoryInfoGetterLinux() {}
+
+    // Opens /proc/<pid>/pagemap and stores its file descriptor.
+    // It keeps open while the process is running.
+    //
+    // Note that file descriptors need to be refreshed after fork.
+    virtual void Initialize();
+
+    // Returns the number of resident (including swapped) bytes of the given
+    // memory region from |first_address| to |last_address| inclusive.
+    virtual size_t CommittedSize(uint64 first_address,
+                                 uint64 last_address,
+                                 TextBuffer* buffer) const;
+
+    virtual bool IsPageCountAvailable() const;
+
+   private:
+    struct State {
+      uint64 pfn;
+      bool is_committed;  // Currently, we use only this
+      bool is_present;
+      bool is_swapped;
+      bool is_shared;
+      bool is_mmap;
+    };
+
+    uint64 ReadPageCount(uint64 pfn) const;
+
+    // Seeks to the offset of the open pagemap file.
+    // It returns true if succeeded.
+    bool Seek(uint64 address) const;
+
+    // Reads a pagemap state from the current offset.
+    // It returns true if succeeded.
+    bool Read(State* state, bool get_pfn) const;
+
+    PageFrameType pageframe_type_;
+    RawFD pagemap_fd_;
+    RawFD kpagecount_fd_;
+  };
+#endif  // defined(__linux__)
 
   // Contains extended information for HeapProfileTable::Bucket.  These objects
   // are managed in a hash table (DeepBucketTable) whose key is an address of
@@ -189,13 +268,14 @@ class DeepHeapProfile {
 #endif
                        bool is_mmap);
 
-    // Writes stats of the hash table to |buffer| for FillOrderedProfile.
+    // Writes stats of the hash table to |buffer| for DumpOrderedProfile.
     void UnparseForStats(TextBuffer* buffer);
 
     // Writes all buckets for a bucket file with using |buffer|.
     void WriteForBucketFile(const char* prefix,
                             int dump_count,
-                            TextBuffer* buffer);
+                            char raw_buffer[],
+                            int buffer_size);
 
     // Resets 'committed_size' members in DeepBucket objects.
     void ResetCommittedSize();
@@ -226,14 +306,16 @@ class DeepHeapProfile {
     // Updates itself to contain the tallies of 'virtual_bytes' and
     // 'committed_bytes' in the region from |first_adress| to |last_address|
     // inclusive.
-    void Record(
+    uint64 Record(
         const MemoryResidenceInfoGetterInterface* memory_residence_info_getter,
         uint64 first_address,
-        uint64 last_address);
+        uint64 last_address,
+        TextBuffer* buffer);
 
     // Writes stats of the region into |buffer| with |name|.
     void Unparse(const char* name, TextBuffer* buffer);
 
+    size_t virtual_bytes() const { return virtual_bytes_; }
     size_t committed_bytes() const { return committed_bytes_; }
     void AddToVirtualBytes(size_t additional_virtual_bytes) {
       virtual_bytes_ += additional_virtual_bytes;
@@ -255,10 +337,10 @@ class DeepHeapProfile {
   class GlobalStats {
    public:
     // Snapshots and calculates global stats from /proc/<pid>/maps and pagemap.
-    void SnapshotProcMaps(
+    void SnapshotMaps(
         const MemoryResidenceInfoGetterInterface* memory_residence_info_getter,
-        MMapListEntry* mmap_list,
-        int mmap_list_length);
+        DeepHeapProfile* deep_profile,
+        TextBuffer* mmap_dump_buffer);
 
     // Snapshots allocations by malloc and mmap.
     void SnapshotAllocations(DeepHeapProfile* deep_profile);
@@ -267,17 +349,16 @@ class DeepHeapProfile {
     void Unparse(TextBuffer* buffer);
 
   private:
-    static bool ByFirstAddress(const MMapListEntry& a,
-                               const MMapListEntry& b);
-
     // Records both virtual and committed byte counts of malloc and mmap regions
     // as callback functions for AllocationMap::Iterate().
     static void RecordAlloc(const void* pointer,
                             AllocValue* alloc_value,
                             DeepHeapProfile* deep_profile);
-    static void RecordMMap(const void* pointer,
-                           AllocValue* alloc_value,
-                           DeepHeapProfile* deep_profile);
+
+    DeepBucket* GetInformationOfMemoryRegion(
+        const MemoryRegionMap::RegionIterator& mmap_iter,
+        const MemoryResidenceInfoGetterInterface* memory_residence_info_getter,
+        DeepHeapProfile* deep_profile);
 
     // All RegionStats members in this class contain the bytes of virtual
     // memory and committed memory.
@@ -285,7 +366,7 @@ class DeepHeapProfile {
     // for more detailed analysis.
     RegionStats all_[NUMBER_OF_MAPS_REGION_TYPES];
 
-    RegionStats nonprofiled_[NUMBER_OF_MAPS_REGION_TYPES];
+    RegionStats unhooked_[NUMBER_OF_MAPS_REGION_TYPES];
 
     // Total bytes of malloc'ed regions.
     RegionStats profiled_malloc_;
@@ -294,20 +375,14 @@ class DeepHeapProfile {
     RegionStats profiled_mmap_;
   };
 
-  // Writes reformatted /proc/<pid>/maps into a file with using |raw_buffer|
-  // of |buffer_size|.
-  //
-  // If |count| is zero, the filename will be "|prefix|.<pid>.maps".
-  // Otherwise, "|prefix|.<pid>.|count|.maps".
+  // Writes reformatted /proc/<pid>/maps into a file "|prefix|.<pid>.maps"
+  // with using |raw_buffer| of |buffer_size|.
   static void WriteProcMaps(const char* prefix,
-                            unsigned count,
-                            int buffer_size,
-                            char raw_buffer[]);
+                            char raw_buffer[],
+                            int buffer_size);
 
-  // Counts mmap allocations in |deep_profile|->num_mmap_allocations_.
-  static void CountMMap(const void* pointer,
-                        AllocValue* alloc_value,
-                        DeepHeapProfile* deep_profile);
+  // Appends the command line (/proc/pid/cmdline on Linux) into |buffer|.
+  bool AppendCommandLine(TextBuffer* buffer);
 
   MemoryResidenceInfoGetterInterface* memory_residence_info_getter_;
 
@@ -317,13 +392,12 @@ class DeepHeapProfile {
   GlobalStats stats_;      // Stats about total memory.
   int dump_count_;         // The number of dumps.
   char* filename_prefix_;  // Output file prefix.
-  char* profiler_buffer_;  // Buffer we use many times.
+  char run_id_[128];
 
   DeepBucketTable deep_table_;
-  MMapListEntry* mmap_list_;
-  int mmap_list_length_;
-  int num_mmap_allocations_;
-#endif  // DEEP_HEAP_PROFILE
+
+  enum PageFrameType pageframe_type_;
+#endif  // USE_DEEP_HEAP_PROFILE
 
   HeapProfileTable* heap_profile_;
 

@@ -32,8 +32,13 @@
 #include "talk/base/common.h"
 #include "talk/base/logging.h"
 #include "talk/base/messagequeue.h"
+#if defined(__native_client__)
+#include "talk/base/nullsocketserver.h"
+typedef talk_base::NullSocketServer DefaultSocketServer;
+#else
 #include "talk/base/physicalsocketserver.h"
-
+typedef talk_base::PhysicalSocketServer DefaultSocketServer;
+#endif
 
 namespace talk_base {
 
@@ -42,7 +47,7 @@ const uint32 kMaxMsgLatency = 150;  // 150 ms
 //------------------------------------------------------------------
 // MessageQueueManager
 
-MessageQueueManager* MessageQueueManager::instance_;
+MessageQueueManager* MessageQueueManager::instance_ = NULL;
 
 MessageQueueManager* MessageQueueManager::Instance() {
   // Note: This is not thread safe, but it is first called before threads are
@@ -52,6 +57,10 @@ MessageQueueManager* MessageQueueManager::Instance() {
   return instance_;
 }
 
+bool MessageQueueManager::IsInitialized() {
+  return instance_ != NULL;
+}
+
 MessageQueueManager::MessageQueueManager() {
 }
 
@@ -59,6 +68,9 @@ MessageQueueManager::~MessageQueueManager() {
 }
 
 void MessageQueueManager::Add(MessageQueue *message_queue) {
+  return Instance()->AddInternal(message_queue);
+}
+void MessageQueueManager::AddInternal(MessageQueue *message_queue) {
   // MessageQueueManager methods should be non-reentrant, so we
   // ASSERT that is the case.  If any of these ASSERT, please
   // contact bpm or jbeda.
@@ -68,6 +80,12 @@ void MessageQueueManager::Add(MessageQueue *message_queue) {
 }
 
 void MessageQueueManager::Remove(MessageQueue *message_queue) {
+  // If there isn't a message queue manager instance, then there isn't a queue
+  // to remove.
+  if (!instance_) return;
+  return Instance()->RemoveInternal(message_queue);
+}
+void MessageQueueManager::RemoveInternal(MessageQueue *message_queue) {
   ASSERT(!crit_.CurrentThreadIsOwner());  // See note above.
   // If this is the last MessageQueue, destroy the manager as well so that
   // we don't leak this object at program shutdown. As mentioned above, this is
@@ -91,6 +109,12 @@ void MessageQueueManager::Remove(MessageQueue *message_queue) {
 }
 
 void MessageQueueManager::Clear(MessageHandler *handler) {
+  // If there isn't a message queue manager instance, then there aren't any
+  // queues to remove this handler from.
+  if (!instance_) return;
+  return Instance()->ClearInternal(handler);
+}
+void MessageQueueManager::ClearInternal(MessageHandler *handler) {
   ASSERT(!crit_.CurrentThreadIsOwner());  // See note above.
   CritScope cs(&crit_);
   std::vector<MessageQueue *>::iterator iter;
@@ -110,7 +134,7 @@ MessageQueue::MessageQueue(SocketServer* ss)
     // server, and provide it to the MessageQueue, since the Thread controls
     // the I/O model, and MQ is agnostic to those details.  Anyway, this causes
     // messagequeue_unittest to depend on network libraries... yuck.
-    default_ss_.reset(new PhysicalSocketServer());
+    default_ss_.reset(new DefaultSocketServer());
     ss_ = default_ss_.get();
   }
   ss_->SetMessageQueue(this);
@@ -122,7 +146,7 @@ MessageQueue::~MessageQueue() {
   // is going away.
   SignalQueueDestroyed();
   if (active_) {
-    MessageQueueManager::Instance()->Remove(this);
+    MessageQueueManager::Remove(this);
     Clear(NULL);
   }
   if (ss_) {
@@ -178,46 +202,55 @@ bool MessageQueue::Get(Message *pmsg, int cmsWait, bool process_io) {
   uint32 msCurrent = msStart;
   while (true) {
     // Check for sent messages
-
     ReceiveSends();
 
-    // Check queues
-
+    // Check for posted events
     int cmsDelayNext = kForever;
-    {
-      CritScope cs(&crit_);
-
-      // Check for delayed messages that have been triggered
-      // Calc the next trigger too
-
-      while (!dmsgq_.empty()) {
-        if (TimeIsLater(msCurrent, dmsgq_.top().msTrigger_)) {
-          cmsDelayNext = TimeDiff(dmsgq_.top().msTrigger_, msCurrent);
-          break;
-        }
-        msgq_.push_back(dmsgq_.top().msg_);
-        dmsgq_.pop();
-      }
-
-      // Check for posted events
-
-      while (!msgq_.empty()) {
-        *pmsg = msgq_.front();
-        if (pmsg->ts_sensitive) {
-          long delay = TimeDiff(msCurrent, pmsg->ts_sensitive);
-          if (delay > 0) {
-            LOG_F(LS_WARNING) << "id: " << pmsg->message_id << "  delay: "
-                              << (delay + kMaxMsgLatency) << "ms";
+    bool first_pass = true;
+    while (true) {
+      // All queue operations need to be locked, but nothing else in this loop
+      // (specifically handling disposed message) can happen inside the crit.
+      // Otherwise, disposed MessageHandlers will cause deadlocks.
+      {
+        CritScope cs(&crit_);
+        // On the first pass, check for delayed messages that have been
+        // triggered and calculate the next trigger time.
+        if (first_pass) {
+          first_pass = false;
+          while (!dmsgq_.empty()) {
+            if (TimeIsLater(msCurrent, dmsgq_.top().msTrigger_)) {
+              cmsDelayNext = TimeDiff(dmsgq_.top().msTrigger_, msCurrent);
+              break;
+            }
+            msgq_.push_back(dmsgq_.top().msg_);
+            dmsgq_.pop();
           }
         }
-        msgq_.pop_front();
-        if (MQID_DISPOSE == pmsg->message_id) {
-          ASSERT(NULL == pmsg->phandler);
-          delete pmsg->pdata;
-          continue;
+        // Pull a message off the message queue, if available.
+        if (msgq_.empty()) {
+          break;
+        } else {
+          *pmsg = msgq_.front();
+          msgq_.pop_front();
         }
-        return true;
+      }  // crit_ is released here.
+
+      // Log a warning for time-sensitive messages that we're late to deliver.
+      if (pmsg->ts_sensitive) {
+        int32 delay = TimeDiff(msCurrent, pmsg->ts_sensitive);
+        if (delay > 0) {
+          LOG_F(LS_WARNING) << "id: " << pmsg->message_id << "  delay: "
+                            << (delay + kMaxMsgLatency) << "ms";
+        }
       }
+      // If this was a dispose message, delete it and skip it.
+      if (MQID_DISPOSE == pmsg->message_id) {
+        ASSERT(NULL == pmsg->phandler);
+        delete pmsg->pdata;
+        *pmsg = Message();
+        continue;
+      }
+      return true;
     }
 
     if (fStop_)
@@ -372,7 +405,7 @@ void MessageQueue::EnsureActive() {
   ASSERT(crit_.CurrentThreadIsOwner());
   if (!active_) {
     active_ = true;
-    MessageQueueManager::Instance()->Add(this);
+    MessageQueueManager::Add(this);
   }
 }
 

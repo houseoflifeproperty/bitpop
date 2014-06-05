@@ -4,15 +4,15 @@
 
 #include "content/common/resource_messages.h"
 
+#include "net/base/load_timing_info.h"
 #include "net/http/http_response_headers.h"
-#include "webkit/glue/resource_loader_bridge.h"
 
 namespace IPC {
 
 void ParamTraits<scoped_refptr<net::HttpResponseHeaders> >::Write(
     Message* m, const param_type& p) {
   WriteParam(m, p.get() != NULL);
-  if (p) {
+  if (p.get()) {
     // Do not disclose Set-Cookie headers over IPC.
     p->Persist(m, net::HttpResponseHeaders::PERSIST_SANS_COOKIES);
   }
@@ -34,31 +34,31 @@ void ParamTraits<scoped_refptr<net::HttpResponseHeaders> >::Log(
 }
 
 
-void ParamTraits<webkit_base::DataElement>::Write(
+void ParamTraits<webkit_common::DataElement>::Write(
     Message* m, const param_type& p) {
   WriteParam(m, static_cast<int>(p.type()));
   switch (p.type()) {
-    case webkit_base::DataElement::TYPE_BYTES: {
+    case webkit_common::DataElement::TYPE_BYTES: {
       m->WriteData(p.bytes(), static_cast<int>(p.length()));
       break;
     }
-    case webkit_base::DataElement::TYPE_FILE: {
+    case webkit_common::DataElement::TYPE_FILE: {
       WriteParam(m, p.path());
       WriteParam(m, p.offset());
       WriteParam(m, p.length());
       WriteParam(m, p.expected_modification_time());
       break;
     }
-    case webkit_base::DataElement::TYPE_FILE_FILESYSTEM: {
-      WriteParam(m, p.url());
+    case webkit_common::DataElement::TYPE_FILE_FILESYSTEM: {
+      WriteParam(m, p.filesystem_url());
       WriteParam(m, p.offset());
       WriteParam(m, p.length());
       WriteParam(m, p.expected_modification_time());
       break;
     }
     default: {
-      DCHECK(p.type() == webkit_base::DataElement::TYPE_BLOB);
-      WriteParam(m, p.url());
+      DCHECK(p.type() == webkit_common::DataElement::TYPE_BLOB);
+      WriteParam(m, p.blob_uuid());
       WriteParam(m, p.offset());
       WriteParam(m, p.length());
       break;
@@ -66,13 +66,13 @@ void ParamTraits<webkit_base::DataElement>::Write(
   }
 }
 
-bool ParamTraits<webkit_base::DataElement>::Read(
+bool ParamTraits<webkit_common::DataElement>::Read(
     const Message* m, PickleIterator* iter, param_type* r) {
   int type;
   if (!ReadParam(m, iter, &type))
     return false;
   switch (type) {
-    case webkit_base::DataElement::TYPE_BYTES: {
+    case webkit_common::DataElement::TYPE_BYTES: {
       const char* data;
       int len;
       if (!m->ReadData(iter, &data, &len))
@@ -80,8 +80,8 @@ bool ParamTraits<webkit_base::DataElement>::Read(
       r->SetToBytes(data, len);
       break;
     }
-    case webkit_base::DataElement::TYPE_FILE: {
-      FilePath file_path;
+    case webkit_common::DataElement::TYPE_FILE: {
+      base::FilePath file_path;
       uint64 offset, length;
       base::Time expected_modification_time;
       if (!ReadParam(m, iter, &file_path))
@@ -96,7 +96,7 @@ bool ParamTraits<webkit_base::DataElement>::Read(
                             expected_modification_time);
       break;
     }
-    case webkit_base::DataElement::TYPE_FILE_FILESYSTEM: {
+    case webkit_common::DataElement::TYPE_FILE_FILESYSTEM: {
       GURL file_system_url;
       uint64 offset, length;
       base::Time expected_modification_time;
@@ -113,25 +113,25 @@ bool ParamTraits<webkit_base::DataElement>::Read(
       break;
     }
     default: {
-      DCHECK(type == webkit_base::DataElement::TYPE_BLOB);
-      GURL blob_url;
+      DCHECK(type == webkit_common::DataElement::TYPE_BLOB);
+      std::string blob_uuid;
       uint64 offset, length;
-      if (!ReadParam(m, iter, &blob_url))
+      if (!ReadParam(m, iter, &blob_uuid))
         return false;
       if (!ReadParam(m, iter, &offset))
         return false;
       if (!ReadParam(m, iter, &length))
         return false;
-      r->SetToBlobUrlRange(blob_url, offset, length);
+      r->SetToBlobRange(blob_uuid, offset, length);
       break;
     }
   }
   return true;
 }
 
-void ParamTraits<webkit_base::DataElement>::Log(
+void ParamTraits<webkit_common::DataElement>::Log(
     const param_type& p, std::string* l) {
-  l->append("<webkit_base::DataElement>");
+  l->append("<webkit_common::DataElement>");
 }
 
 void ParamTraits<scoped_refptr<webkit_glue::ResourceDevToolsInfo> >::Write(
@@ -167,7 +167,7 @@ bool ParamTraits<scoped_refptr<webkit_glue::ResourceDevToolsInfo> >::Read(
 void ParamTraits<scoped_refptr<webkit_glue::ResourceDevToolsInfo> >::Log(
     const param_type& p, std::string* l) {
   l->append("(");
-  if (p) {
+  if (p.get()) {
     LogParam(p->request_headers, l);
     l->append(", ");
     LogParam(p->response_headers, l);
@@ -175,96 +175,101 @@ void ParamTraits<scoped_refptr<webkit_glue::ResourceDevToolsInfo> >::Log(
   l->append(")");
 }
 
-void ParamTraits<webkit_glue::ResourceLoadTimingInfo>::Write(
+void ParamTraits<net::LoadTimingInfo>::Write(
     Message* m, const param_type& p) {
-  WriteParam(m, p.base_time.is_null());
-  if (p.base_time.is_null())
+  WriteParam(m, p.socket_log_id);
+  WriteParam(m, p.socket_reused);
+  WriteParam(m, p.request_start_time.is_null());
+  if (p.request_start_time.is_null())
     return;
-  WriteParam(m, p.base_ticks);
-  WriteParam(m, p.base_time);
-  WriteParam(m, p.proxy_start);
-  WriteParam(m, p.proxy_end);
-  WriteParam(m, p.dns_start);
-  WriteParam(m, p.dns_end);
-  WriteParam(m, p.connect_start);
-  WriteParam(m, p.connect_end);
-  WriteParam(m, p.ssl_start);
-  WriteParam(m, p.ssl_end);
+  WriteParam(m, p.request_start_time);
+  WriteParam(m, p.request_start);
+  WriteParam(m, p.proxy_resolve_start);
+  WriteParam(m, p.proxy_resolve_end);
+  WriteParam(m, p.connect_timing.dns_start);
+  WriteParam(m, p.connect_timing.dns_end);
+  WriteParam(m, p.connect_timing.connect_start);
+  WriteParam(m, p.connect_timing.connect_end);
+  WriteParam(m, p.connect_timing.ssl_start);
+  WriteParam(m, p.connect_timing.ssl_end);
   WriteParam(m, p.send_start);
   WriteParam(m, p.send_end);
-  WriteParam(m, p.receive_headers_start);
   WriteParam(m, p.receive_headers_end);
 }
 
-bool ParamTraits<webkit_glue::ResourceLoadTimingInfo>::Read(
+bool ParamTraits<net::LoadTimingInfo>::Read(
     const Message* m, PickleIterator* iter, param_type* r) {
-  bool is_null;
-  if (!ReadParam(m, iter, &is_null))
+  bool has_no_times;
+  if (!ReadParam(m, iter, &r->socket_log_id) ||
+      !ReadParam(m, iter, &r->socket_reused) ||
+      !ReadParam(m, iter, &has_no_times)) {
     return false;
-  if (is_null)
+  }
+  if (has_no_times)
     return true;
 
   return
-      ReadParam(m, iter, &r->base_ticks) &&
-      ReadParam(m, iter, &r->base_time) &&
-      ReadParam(m, iter, &r->proxy_start) &&
-      ReadParam(m, iter, &r->proxy_end) &&
-      ReadParam(m, iter, &r->dns_start) &&
-      ReadParam(m, iter, &r->dns_end) &&
-      ReadParam(m, iter, &r->connect_start) &&
-      ReadParam(m, iter, &r->connect_end) &&
-      ReadParam(m, iter, &r->ssl_start) &&
-      ReadParam(m, iter, &r->ssl_end) &&
+      ReadParam(m, iter, &r->request_start_time) &&
+      ReadParam(m, iter, &r->request_start) &&
+      ReadParam(m, iter, &r->proxy_resolve_start) &&
+      ReadParam(m, iter, &r->proxy_resolve_end) &&
+      ReadParam(m, iter, &r->connect_timing.dns_start) &&
+      ReadParam(m, iter, &r->connect_timing.dns_end) &&
+      ReadParam(m, iter, &r->connect_timing.connect_start) &&
+      ReadParam(m, iter, &r->connect_timing.connect_end) &&
+      ReadParam(m, iter, &r->connect_timing.ssl_start) &&
+      ReadParam(m, iter, &r->connect_timing.ssl_end) &&
       ReadParam(m, iter, &r->send_start) &&
       ReadParam(m, iter, &r->send_end) &&
-      ReadParam(m, iter, &r->receive_headers_start) &&
       ReadParam(m, iter, &r->receive_headers_end);
 }
 
-void ParamTraits<webkit_glue::ResourceLoadTimingInfo>::Log(const param_type& p,
-                                                           std::string* l) {
+void ParamTraits<net::LoadTimingInfo>::Log(const param_type& p,
+                                           std::string* l) {
   l->append("(");
-  LogParam(p.base_ticks, l);
+  LogParam(p.socket_log_id, l);
+  l->append(",");
+  LogParam(p.socket_reused, l);
+  l->append(",");
+  LogParam(p.request_start_time, l);
   l->append(", ");
-  LogParam(p.base_time, l);
+  LogParam(p.request_start, l);
   l->append(", ");
-  LogParam(p.proxy_start, l);
+  LogParam(p.proxy_resolve_start, l);
   l->append(", ");
-  LogParam(p.proxy_end, l);
+  LogParam(p.proxy_resolve_end, l);
   l->append(", ");
-  LogParam(p.dns_start, l);
+  LogParam(p.connect_timing.dns_start, l);
   l->append(", ");
-  LogParam(p.dns_end, l);
+  LogParam(p.connect_timing.dns_end, l);
   l->append(", ");
-  LogParam(p.connect_start, l);
+  LogParam(p.connect_timing.connect_start, l);
   l->append(", ");
-  LogParam(p.connect_end, l);
+  LogParam(p.connect_timing.connect_end, l);
   l->append(", ");
-  LogParam(p.ssl_start, l);
+  LogParam(p.connect_timing.ssl_start, l);
   l->append(", ");
-  LogParam(p.ssl_end, l);
+  LogParam(p.connect_timing.ssl_end, l);
   l->append(", ");
   LogParam(p.send_start, l);
   l->append(", ");
   LogParam(p.send_end, l);
   l->append(", ");
-  LogParam(p.receive_headers_start, l);
-  l->append(", ");
   LogParam(p.receive_headers_end, l);
   l->append(")");
 }
 
-void ParamTraits<scoped_refptr<webkit_glue::ResourceRequestBody> >::Write(
+void ParamTraits<scoped_refptr<content::ResourceRequestBody> >::Write(
     Message* m,
     const param_type& p) {
   WriteParam(m, p.get() != NULL);
-  if (p) {
+  if (p.get()) {
     WriteParam(m, *p->elements());
     WriteParam(m, p->identifier());
   }
 }
 
-bool ParamTraits<scoped_refptr<webkit_glue::ResourceRequestBody> >::Read(
+bool ParamTraits<scoped_refptr<content::ResourceRequestBody> >::Read(
     const Message* m,
     PickleIterator* iter,
     param_type* r) {
@@ -273,21 +278,21 @@ bool ParamTraits<scoped_refptr<webkit_glue::ResourceRequestBody> >::Read(
     return false;
   if (!has_object)
     return true;
-  std::vector<webkit_base::DataElement> elements;
+  std::vector<webkit_common::DataElement> elements;
   if (!ReadParam(m, iter, &elements))
     return false;
   int64 identifier;
   if (!ReadParam(m, iter, &identifier))
     return false;
-  *r = new webkit_glue::ResourceRequestBody;
+  *r = new content::ResourceRequestBody;
   (*r)->swap_elements(&elements);
   (*r)->set_identifier(identifier);
   return true;
 }
 
-void ParamTraits<scoped_refptr<webkit_glue::ResourceRequestBody> >::Log(
+void ParamTraits<scoped_refptr<content::ResourceRequestBody> >::Log(
     const param_type& p, std::string* l) {
-  l->append("<webkit_glue::ResourceRequestBody>");
+  l->append("<ResourceRequestBody>");
 }
 
 }  // namespace IPC

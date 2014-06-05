@@ -37,17 +37,16 @@
  */
 enum {
   JOINING_TYPE_U		= 0,
-  JOINING_TYPE_R		= 1,
-  JOINING_TYPE_D		= 2,
+  JOINING_TYPE_L		= 1,
+  JOINING_TYPE_R		= 2,
+  JOINING_TYPE_D		= 3,
   JOINING_TYPE_C		= JOINING_TYPE_D,
-  JOINING_GROUP_ALAPH		= 3,
-  JOINING_GROUP_DALATH_RISH	= 4,
-  NUM_STATE_MACHINE_COLS	= 5,
+  JOINING_GROUP_ALAPH		= 4,
+  JOINING_GROUP_DALATH_RISH	= 5,
+  NUM_STATE_MACHINE_COLS	= 6,
 
-  /* We deliberately don't have a JOINING_TYPE_L since that's unused in Unicode. */
-
-  JOINING_TYPE_T = 6,
-  JOINING_TYPE_X = 7  /* means: use general-category to choose between U or T. */
+  JOINING_TYPE_T = 7,
+  JOINING_TYPE_X = 8  /* means: use general-category to choose between U or T. */
 };
 
 /*
@@ -64,15 +63,30 @@ static unsigned int get_joining_type (hb_codepoint_t u, hb_unicode_general_categ
       return j_type;
   }
 
-  /* Mongolian joining data is not in ArabicJoining.txt yet */
+  /* Mongolian joining data is not in ArabicJoining.txt yet. */
   if (unlikely (hb_in_range<hb_codepoint_t> (u, 0x1800, 0x18AF)))
   {
+    if (unlikely (hb_in_range<hb_codepoint_t> (u, 0x1880, 0x1886)))
+      return JOINING_TYPE_U;
+
     /* All letters, SIBE SYLLABLE BOUNDARY MARKER, and NIRUGU are D */
-    if (gen_cat == HB_UNICODE_GENERAL_CATEGORY_OTHER_LETTER || u == 0x1807 || u == 0x180A)
+    if ((FLAG(gen_cat) & (FLAG (HB_UNICODE_GENERAL_CATEGORY_OTHER_LETTER) |
+			  FLAG (HB_UNICODE_GENERAL_CATEGORY_MODIFIER_LETTER)))
+	|| u == 0x1807 || u == 0x180A)
       return JOINING_TYPE_D;
   }
 
-  if (unlikely (hb_in_range<hb_codepoint_t> (u, 0x200C, 0x200D))) {
+  /* 'Phags-pa joining data is not in ArabicJoining.txt yet. */
+  if (unlikely (hb_in_range<hb_codepoint_t> (u, 0xA840, 0xA872)))
+  {
+      if (unlikely (u == 0xA872))
+	return JOINING_TYPE_L;
+
+      return JOINING_TYPE_D;
+  }
+
+  if (unlikely (hb_in_range<hb_codepoint_t> (u, 0x200C, 0x200D)))
+  {
     return u == 0x200C ? JOINING_TYPE_U : JOINING_TYPE_C;
   }
 
@@ -117,30 +131,35 @@ static const struct arabic_state_table_entry {
 	uint16_t next_state;
 } arabic_state_table[][NUM_STATE_MACHINE_COLS] =
 {
-  /*   jt_U,          jt_R,          jt_D,          jg_ALAPH,      jg_DALATH_RISH */
+  /*   jt_U,          jt_L,          jt_R,          jt_D,          jg_ALAPH,      jg_DALATH_RISH */
 
   /* State 0: prev was U, not willing to join. */
-  { {NONE,NONE,0}, {NONE,ISOL,1}, {NONE,ISOL,2}, {NONE,ISOL,1}, {NONE,ISOL,6}, },
+  { {NONE,NONE,0}, {NONE,ISOL,2}, {NONE,ISOL,1}, {NONE,ISOL,2}, {NONE,ISOL,1}, {NONE,ISOL,6}, },
 
   /* State 1: prev was R or ISOL/ALAPH, not willing to join. */
-  { {NONE,NONE,0}, {NONE,ISOL,1}, {NONE,ISOL,2}, {NONE,FIN2,5}, {NONE,ISOL,6}, },
+  { {NONE,NONE,0}, {NONE,ISOL,2}, {NONE,ISOL,1}, {NONE,ISOL,2}, {NONE,FIN2,5}, {NONE,ISOL,6}, },
 
-  /* State 2: prev was D/ISOL, willing to join. */
-  { {NONE,NONE,0}, {INIT,FINA,1}, {INIT,FINA,3}, {INIT,FINA,4}, {INIT,FINA,6}, },
+  /* State 2: prev was D/L in ISOL form, willing to join. */
+  { {NONE,NONE,0}, {NONE,ISOL,2}, {INIT,FINA,1}, {INIT,FINA,3}, {INIT,FINA,4}, {INIT,FINA,6}, },
 
-  /* State 3: prev was D/FINA, willing to join. */
-  { {NONE,NONE,0}, {MEDI,FINA,1}, {MEDI,FINA,3}, {MEDI,FINA,4}, {MEDI,FINA,6}, },
+  /* State 3: prev was D in FINA form, willing to join. */
+  { {NONE,NONE,0}, {NONE,ISOL,2}, {MEDI,FINA,1}, {MEDI,FINA,3}, {MEDI,FINA,4}, {MEDI,FINA,6}, },
 
   /* State 4: prev was FINA ALAPH, not willing to join. */
-  { {NONE,NONE,0}, {MED2,ISOL,1}, {MED2,ISOL,2}, {MED2,FIN2,5}, {MED2,ISOL,6}, },
+  { {NONE,NONE,0}, {NONE,ISOL,2}, {MED2,ISOL,1}, {MED2,ISOL,2}, {MED2,FIN2,5}, {MED2,ISOL,6}, },
 
   /* State 5: prev was FIN2/FIN3 ALAPH, not willing to join. */
-  { {NONE,NONE,0}, {ISOL,ISOL,1}, {ISOL,ISOL,2}, {ISOL,FIN2,5}, {ISOL,ISOL,6}, },
+  { {NONE,NONE,0}, {NONE,ISOL,2}, {ISOL,ISOL,1}, {ISOL,ISOL,2}, {ISOL,FIN2,5}, {ISOL,ISOL,6}, },
 
   /* State 6: prev was DALATH/RISH, not willing to join. */
-  { {NONE,NONE,0}, {NONE,ISOL,1}, {NONE,ISOL,2}, {NONE,FIN3,5}, {NONE,ISOL,6}, }
+  { {NONE,NONE,0}, {NONE,ISOL,2}, {NONE,ISOL,1}, {NONE,ISOL,2}, {NONE,FIN3,5}, {NONE,ISOL,6}, }
 };
 
+
+static void
+nuke_joiners (const hb_ot_shape_plan_t *plan,
+	      hb_font_t *font,
+	      hb_buffer_t *buffer);
 
 static void
 arabic_fallback_shape (const hb_ot_shape_plan_t *plan,
@@ -162,25 +181,25 @@ collect_features_arabic (hb_ot_shape_planner_t *plan)
    * TODO: Add test cases for these two.
    */
 
-  map->add_bool_feature (HB_TAG('c','c','m','p'));
-  map->add_bool_feature (HB_TAG('l','o','c','l'));
+  map->add_gsub_pause (nuke_joiners);
+
+  map->add_global_bool_feature (HB_TAG('c','c','m','p'));
+  map->add_global_bool_feature (HB_TAG('l','o','c','l'));
 
   map->add_gsub_pause (NULL);
 
   for (unsigned int i = 0; i < ARABIC_NUM_FEATURES; i++)
-    map->add_bool_feature (arabic_features[i], false, i < 4); /* The first four features have fallback. */
+    map->add_feature (arabic_features[i], 1, i < 4 ? F_HAS_FALLBACK : F_NONE); /* The first four features have fallback. */
 
   map->add_gsub_pause (NULL);
 
-  map->add_bool_feature (HB_TAG('r','l','i','g'), true, true);
+  map->add_feature (HB_TAG('r','l','i','g'), 1, F_GLOBAL|F_HAS_FALLBACK);
   map->add_gsub_pause (arabic_fallback_shape);
 
-  map->add_bool_feature (HB_TAG('c','a','l','t'));
+  map->add_global_bool_feature (HB_TAG('c','a','l','t'));
   map->add_gsub_pause (NULL);
 
-  map->add_bool_feature (HB_TAG('c','s','w','h'));
-  map->add_bool_feature (HB_TAG('d','l','i','g'));
-  map->add_bool_feature (HB_TAG('m','s','e','t'));
+  map->add_global_bool_feature (HB_TAG('m','s','e','t'));
 }
 
 #include "hb-ot-shape-complex-arabic-fallback.hh"
@@ -235,17 +254,18 @@ arabic_joining (hb_buffer_t *buffer)
   HB_BUFFER_ALLOCATE_VAR (buffer, arabic_shaping_action);
 
   /* Check pre-context */
-  for (unsigned int i = 0; i < buffer->context_len[0]; i++)
-  {
-    unsigned int this_type = get_joining_type (buffer->context[0][i], buffer->unicode->general_category (buffer->context[0][i]));
+  if (!(buffer->flags & HB_BUFFER_FLAG_BOT))
+    for (unsigned int i = 0; i < buffer->context_len[0]; i++)
+    {
+      unsigned int this_type = get_joining_type (buffer->context[0][i], buffer->unicode->general_category (buffer->context[0][i]));
 
-    if (unlikely (this_type == JOINING_TYPE_T))
-      continue;
+      if (unlikely (this_type == JOINING_TYPE_T))
+	continue;
 
-    const arabic_state_table_entry *entry = &arabic_state_table[state][this_type];
-    state = entry->next_state;
-    break;
-  }
+      const arabic_state_table_entry *entry = &arabic_state_table[state][this_type];
+      state = entry->next_state;
+      break;
+    }
 
   for (unsigned int i = 0; i < count; i++)
   {
@@ -259,7 +279,8 @@ arabic_joining (hb_buffer_t *buffer)
     const arabic_state_table_entry *entry = &arabic_state_table[state][this_type];
 
     if (entry->prev_action != NONE && prev != (unsigned int) -1)
-      buffer->info[prev].arabic_shaping_action() = entry->prev_action;
+      for (; prev < i; prev++)
+	buffer->info[prev].arabic_shaping_action() = entry->prev_action;
 
     buffer->info[i].arabic_shaping_action() = entry->curr_action;
 
@@ -267,18 +288,19 @@ arabic_joining (hb_buffer_t *buffer)
     state = entry->next_state;
   }
 
-  for (unsigned int i = 0; i < buffer->context_len[1]; i++)
-  {
-    unsigned int this_type = get_joining_type (buffer->context[1][i], buffer->unicode->general_category (buffer->context[0][i]));
+  if (!(buffer->flags & HB_BUFFER_FLAG_EOT))
+    for (unsigned int i = 0; i < buffer->context_len[1]; i++)
+    {
+      unsigned int this_type = get_joining_type (buffer->context[1][i], buffer->unicode->general_category (buffer->context[1][i]));
 
-    if (unlikely (this_type == JOINING_TYPE_T))
-      continue;
+      if (unlikely (this_type == JOINING_TYPE_T))
+	continue;
 
-    const arabic_state_table_entry *entry = &arabic_state_table[state][this_type];
-    if (entry->prev_action != NONE && prev != (unsigned int) -1)
-      buffer->info[prev].arabic_shaping_action() = entry->prev_action;
-    break;
-  }
+      const arabic_state_table_entry *entry = &arabic_state_table[state][this_type];
+      if (entry->prev_action != NONE && prev != (unsigned int) -1)
+	buffer->info[prev].arabic_shaping_action() = entry->prev_action;
+      break;
+    }
 
 
   HB_BUFFER_DEALLOCATE_VAR (buffer, arabic_shaping_action);
@@ -287,7 +309,7 @@ arabic_joining (hb_buffer_t *buffer)
 static void
 setup_masks_arabic (const hb_ot_shape_plan_t *plan,
 		    hb_buffer_t              *buffer,
-		    hb_font_t                *font)
+		    hb_font_t                *font HB_UNUSED)
 {
   const arabic_shape_plan_t *arabic_plan = (const arabic_shape_plan_t *) plan->data;
 
@@ -297,6 +319,17 @@ setup_masks_arabic (const hb_ot_shape_plan_t *plan,
     buffer->info[i].mask |= arabic_plan->mask_array[buffer->info[i].arabic_shaping_action()];
 }
 
+
+static void
+nuke_joiners (const hb_ot_shape_plan_t *plan HB_UNUSED,
+	      hb_font_t *font HB_UNUSED,
+	      hb_buffer_t *buffer)
+{
+  unsigned int count = buffer->len;
+  for (unsigned int i = 0; i < count; i++)
+    if (_hb_glyph_info_is_zwj (&buffer->info[i]))
+      _hb_glyph_info_flip_joiners (&buffer->info[i]);
+}
 
 static void
 arabic_fallback_shape (const hb_ot_shape_plan_t *plan,
@@ -332,7 +365,10 @@ const hb_ot_complex_shaper_t _hb_ot_complex_shaper_arabic =
   data_create_arabic,
   data_destroy_arabic,
   NULL, /* preprocess_text_arabic */
-  NULL, /* normalization_preference */
+  HB_OT_SHAPE_NORMALIZATION_MODE_DEFAULT,
+  NULL, /* decompose */
+  NULL, /* compose */
   setup_masks_arabic,
-  true, /* zero_width_attached_marks */
+  HB_OT_SHAPE_ZERO_WIDTH_MARKS_BY_GDEF_LATE,
+  true, /* fallback_position */
 };

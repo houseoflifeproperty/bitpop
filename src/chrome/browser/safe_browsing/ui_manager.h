@@ -15,11 +15,10 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/safe_browsing/safe_browsing_util.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_observer.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 class SafeBrowsingService;
 
@@ -46,7 +45,7 @@ class SafeBrowsingUIManager
     std::vector<GURL> redirect_urls;
     bool is_subresource;
     SBThreatType threat_type;
-    UrlCheckCallback callback;
+    UrlCheckCallback callback;  // This is called back on the IO thread.
     int render_process_host_id;
     int render_view_id;
   };
@@ -55,6 +54,15 @@ class SafeBrowsingUIManager
   // was found.
   class Observer {
    public:
+    // The |resource| was classified as unsafe by SafeBrowsing.
+    // This method will be called every time an unsafe resource is
+    // loaded, even if it has already been whitelisted by the user.
+    // The |resource| must not be accessed after OnSafeBrowsingHit returns.
+    // This method will be called on the UI thread.
+    virtual void OnSafeBrowsingMatch(const UnsafeResource& resource) = 0;
+
+    // The |resource| was classified as unsafe by SafeBrowsing, and is
+    // not whitelisted.
     // The |resource| must not be accessed after OnSafeBrowsingHit returns.
     // This method will be called on the UI thread.
     virtual void OnSafeBrowsingHit(const UnsafeResource& resource) = 0;
@@ -79,22 +87,12 @@ class SafeBrowsingUIManager
   // could be reported.
   virtual bool CanReportStats() const;
 
-  // Called on the IO thread to display an interstitial page.
+  // Called on the UI thread to display an interstitial page.
   // |url| is the url of the resource that matches a safe browsing list.
   // If the request contained a chain of redirects, |url| is the last url
   // in the chain, and |original_url| is the first one (the root of the
   // chain). Otherwise, |original_url| = |url|.
-  void DisplayBlockingPage(const GURL& url,
-                           const GURL& original_url,
-                           const std::vector<GURL>& redirect_urls,
-                           bool is_subresource,
-                           SBThreatType threat_type,
-                           const UrlCheckCallback& callback,
-                           int render_process_host_id,
-                           int render_view_id);
-
-  // Same as above but gets invoked on the UI thread.
-  virtual void DoDisplayBlockingPage(const UnsafeResource& resource);
+  virtual void DisplayBlockingPage(const UnsafeResource& resource);
 
   // Returns true if we already displayed an interstitial for that resource.
   // Called on the UI thread.

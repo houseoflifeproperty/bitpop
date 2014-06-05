@@ -10,6 +10,7 @@
 
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface_cgl.h"
@@ -17,11 +18,60 @@
 
 namespace gfx {
 
+namespace {
+
+bool g_support_renderer_switching;
+
+struct CGLRendererInfoObjDeleter {
+  void operator()(CGLRendererInfoObj* x) {
+    if (x)
+      CGLDestroyRendererInfo(*x);
+  }
+};
+
+}  // namespace
+
+static CGLPixelFormatObj GetPixelFormat() {
+  static CGLPixelFormatObj format;
+  if (format)
+    return format;
+  std::vector<CGLPixelFormatAttribute> attribs;
+  // If the system supports dual gpus then allow offline renderers for every
+  // context, so that they can all be in the same share group.
+  if (ui::GpuSwitchingManager::GetInstance()->SupportsDualGpus()) {
+    attribs.push_back(kCGLPFAAllowOfflineRenderers);
+    g_support_renderer_switching = true;
+  }
+  if (GetGLImplementation() == kGLImplementationAppleGL) {
+    attribs.push_back(kCGLPFARendererID);
+    attribs.push_back((CGLPixelFormatAttribute) kCGLRendererGenericFloatID);
+    g_support_renderer_switching = false;
+  }
+  attribs.push_back((CGLPixelFormatAttribute) 0);
+
+  GLint num_virtual_screens;
+  if (CGLChoosePixelFormat(&attribs.front(),
+                           &format,
+                           &num_virtual_screens) != kCGLNoError) {
+    LOG(ERROR) << "Error choosing pixel format.";
+    return NULL;
+  }
+  if (!format) {
+    LOG(ERROR) << "format == 0.";
+    return NULL;
+  }
+  DCHECK_NE(num_virtual_screens, 0);
+  return format;
+}
+
 GLContextCGL::GLContextCGL(GLShareGroup* share_group)
-  : GLContext(share_group),
+  : GLContextReal(share_group),
     context_(NULL),
     gpu_preference_(PreferIntegratedGpu),
-    discrete_pixelformat_(NULL) {
+    discrete_pixelformat_(NULL),
+    screen_(-1),
+    renderer_id_(-1),
+    safe_to_force_gpu_switch_(false) {
 }
 
 bool GLContextCGL::Initialize(GLSurface* compatible_surface,
@@ -34,30 +84,9 @@ bool GLContextCGL::Initialize(GLSurface* compatible_surface,
   GLContextCGL* share_context = share_group() ?
       static_cast<GLContextCGL*>(share_group()->GetContext()) : NULL;
 
-  std::vector<CGLPixelFormatAttribute> attribs;
-  // If the system supports dual gpus then allow offline renderers for every
-  // context, so that they can all be in the same share group.
-  if (ui::GpuSwitchingManager::GetInstance()->SupportsDualGpus())
-    attribs.push_back(kCGLPFAAllowOfflineRenderers);
-  if (GetGLImplementation() == kGLImplementationAppleGL) {
-    attribs.push_back(kCGLPFARendererID);
-    attribs.push_back((CGLPixelFormatAttribute) kCGLRendererGenericFloatID);
-  }
-  attribs.push_back((CGLPixelFormatAttribute) 0);
-
-  CGLPixelFormatObj format;
-  GLint num_pixel_formats;
-  if (CGLChoosePixelFormat(&attribs.front(),
-                           &format,
-                           &num_pixel_formats) != kCGLNoError) {
-    LOG(ERROR) << "Error choosing pixel format.";
+  CGLPixelFormatObj format = GetPixelFormat();
+  if (!format)
     return false;
-  }
-  if (!format) {
-    LOG(ERROR) << "format == 0.";
-    return false;
-  }
-  DCHECK_NE(num_pixel_formats, 0);
 
   // If using the discrete gpu, create a pixel format requiring it before we
   // create the context.
@@ -72,6 +101,8 @@ bool GLContextCGL::Initialize(GLSurface* compatible_surface,
       LOG(ERROR) << "Error choosing pixel format.";
       return false;
     }
+    // The renderer might be switched after this, so ignore the saved ID.
+    share_group()->SetRendererID(-1);
   }
 
   CGLError res = CGLCreateContext(
@@ -79,7 +110,6 @@ bool GLContextCGL::Initialize(GLSurface* compatible_surface,
       share_context ?
           static_cast<CGLContextObj>(share_context->GetHandle()) : NULL,
       reinterpret_cast<CGLContextObj*>(&context_));
-  CGLReleasePixelFormat(format);
   if (res != kCGLNoError) {
     LOG(ERROR) << "Error creating context.";
     Destroy();
@@ -92,7 +122,12 @@ bool GLContextCGL::Initialize(GLSurface* compatible_surface,
 
 void GLContextCGL::Destroy() {
   if (discrete_pixelformat_) {
-    CGLReleasePixelFormat(discrete_pixelformat_);
+    // Delay releasing the pixel format for 10 seconds to reduce the number of
+    // unnecessary GPU switches.
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&CGLReleasePixelFormat, discrete_pixelformat_),
+        base::TimeDelta::FromSeconds(10));
     discrete_pixelformat_ = NULL;
   }
   if (context_) {
@@ -103,9 +138,47 @@ void GLContextCGL::Destroy() {
 
 bool GLContextCGL::MakeCurrent(GLSurface* surface) {
   DCHECK(context_);
+
+  // The call to CGLSetVirtualScreen can hang on some AMD drivers
+  // http://crbug.com/227228
+  if (safe_to_force_gpu_switch_) {
+    int renderer_id = share_group()->GetRendererID();
+    int screen;
+    CGLGetVirtualScreen(static_cast<CGLContextObj>(context_), &screen);
+
+    if (g_support_renderer_switching &&
+        !discrete_pixelformat_ && renderer_id != -1 &&
+        (screen != screen_ || renderer_id != renderer_id_)) {
+      // Attempt to find a virtual screen that's using the requested renderer,
+      // and switch the context to use that screen. Don't attempt to switch if
+      // the context requires the discrete GPU.
+      CGLPixelFormatObj format = GetPixelFormat();
+      int virtual_screen_count;
+      if (CGLDescribePixelFormat(format, 0, kCGLPFAVirtualScreenCount,
+                                 &virtual_screen_count) != kCGLNoError)
+        return false;
+
+      for (int i = 0; i < virtual_screen_count; ++i) {
+        int screen_renderer_id;
+        if (CGLDescribePixelFormat(format, i, kCGLPFARendererID,
+                                   &screen_renderer_id) != kCGLNoError)
+          return false;
+
+        screen_renderer_id &= kCGLRendererIDMatchingMask;
+        if (screen_renderer_id == renderer_id) {
+          CGLSetVirtualScreen(static_cast<CGLContextObj>(context_), i);
+          screen_ = i;
+          break;
+        }
+      }
+      renderer_id_ = renderer_id;
+    }
+  }
+
   if (IsCurrent(surface))
     return true;
 
+  ScopedReleaseCurrent release_current;
   TRACE_EVENT0("gpu", "GLContextCGL::MakeCurrent");
 
   if (CGLSetCurrentContext(
@@ -114,9 +187,11 @@ bool GLContextCGL::MakeCurrent(GLSurface* surface) {
     return false;
   }
 
-  SetCurrent(this, surface);
-  if (!InitializeExtensionBindings()) {
-    ReleaseCurrent(surface);
+  // Set this as soon as the context is current, since we might call into GL.
+  SetRealGLApi();
+
+  SetCurrent(surface);
+  if (!InitializeDynamicBindings()) {
     return false;
   }
 
@@ -125,7 +200,7 @@ bool GLContextCGL::MakeCurrent(GLSurface* surface) {
     return false;
   }
 
-  SetRealGLApi();
+  release_current.Cancel();
   return true;
 }
 
@@ -133,7 +208,7 @@ void GLContextCGL::ReleaseCurrent(GLSurface* surface) {
   if (!IsCurrent(surface))
     return;
 
-  SetCurrent(NULL, NULL);
+  SetCurrent(NULL);
   CGLSetCurrentContext(NULL);
 }
 
@@ -143,7 +218,7 @@ bool GLContextCGL::IsCurrent(GLSurface* surface) {
   // If our context is current then our notion of which GLContext is
   // current must be correct. On the other hand, third-party code
   // using OpenGL might change the current context.
-  DCHECK(!native_context_is_current || (GetCurrent() == this));
+  DCHECK(!native_context_is_current || (GetRealCurrent() == this));
 
   if (!native_context_is_current)
     return false;
@@ -185,7 +260,8 @@ bool GLContextCGL::GetTotalGpuMemory(size_t* bytes) {
                            &num_renderers) != kCGLNoError)
     return false;
 
-  ScopedCGLRendererInfoObj scoper(renderer_info);
+  scoped_ptr<CGLRendererInfoObj,
+      CGLRendererInfoObjDeleter> scoper(&renderer_info);
 
   for (GLint renderer_index = 0;
        renderer_index < num_renderers;
@@ -213,16 +289,17 @@ bool GLContextCGL::GetTotalGpuMemory(size_t* bytes) {
   return false;
 }
 
+void GLContextCGL::SetSafeToForceGpuSwitch() {
+  safe_to_force_gpu_switch_ = true;
+}
+
+
 GLContextCGL::~GLContextCGL() {
   Destroy();
 }
 
 GpuPreference GLContextCGL::GetGpuPreference() {
   return gpu_preference_;
-}
-
-void ScopedCGLDestroyRendererInfo::operator()(CGLRendererInfoObj x) const {
-  CGLDestroyRendererInfo(x);
 }
 
 }  // namespace gfx

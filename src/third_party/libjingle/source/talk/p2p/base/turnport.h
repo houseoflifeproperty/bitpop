@@ -32,11 +32,11 @@
 #include <string>
 #include <list>
 
+#include "talk/base/asyncpacketsocket.h"
 #include "talk/p2p/base/port.h"
 #include "talk/p2p/client/basicportallocator.h"
 
 namespace talk_base {
-class AsyncPacketSocket;
 class AsyncResolver;
 class SignalThread;
 }
@@ -52,28 +52,33 @@ class TurnPort : public Port {
   static TurnPort* Create(talk_base::Thread* thread,
                           talk_base::PacketSocketFactory* factory,
                           talk_base::Network* network,
+                          talk_base::AsyncPacketSocket* socket,
+                          const std::string& username,  // ice username.
+                          const std::string& password,  // ice password.
+                          const ProtocolAddress& server_address,
+                          const RelayCredentials& credentials) {
+    return new TurnPort(thread, factory, network, socket, username, password,
+                    server_address, credentials);
+  }
+
+  static TurnPort* Create(talk_base::Thread* thread,
+                          talk_base::PacketSocketFactory* factory,
+                          talk_base::Network* network,
                           const talk_base::IPAddress& ip,
                           int min_port, int max_port,
                           const std::string& username,  // ice username.
                           const std::string& password,  // ice password.
-                          const talk_base::SocketAddress& server_address,
+                          const ProtocolAddress& server_address,
                           const RelayCredentials& credentials) {
-    TurnPort* port = new TurnPort(thread, factory, network,
-                                  ip, min_port, max_port,
-                                  username, password,
-                                  server_address, credentials);
-    if (!port->Init()) {
-      delete port;
-      port = NULL;
-    }
-    return port;
+    return new TurnPort(thread, factory, network, ip, min_port, max_port,
+                        username, password, server_address, credentials);
   }
 
   virtual ~TurnPort();
 
-  const talk_base::SocketAddress& server_address() const {
-    return server_address_;
-  }
+  const ProtocolAddress& server_address() const { return server_address_; }
+
+  bool connected() const { return connected_; }
   const RelayCredentials& credentials() const { return credentials_; }
 
   virtual void PrepareAddress();
@@ -81,16 +86,54 @@ class TurnPort : public Port {
       const Candidate& c, PortInterface::CandidateOrigin origin);
   virtual int SendTo(const void* data, size_t size,
                      const talk_base::SocketAddress& addr,
+                     const talk_base::PacketOptions& options,
                      bool payload);
   virtual int SetOption(talk_base::Socket::Option opt, int value);
+  virtual int GetOption(talk_base::Socket::Option opt, int* value);
   virtual int GetError();
+
+  virtual bool HandleIncomingPacket(
+      talk_base::AsyncPacketSocket* socket, const char* data, size_t size,
+      const talk_base::SocketAddress& remote_addr,
+      const talk_base::PacketTime& packet_time) {
+    OnReadPacket(socket, data, size, remote_addr, packet_time);
+    return true;
+  }
   virtual void OnReadPacket(talk_base::AsyncPacketSocket* socket,
                             const char* data, size_t size,
-                            const talk_base::SocketAddress& remote_addr);
+                            const talk_base::SocketAddress& remote_addr,
+                            const talk_base::PacketTime& packet_time);
+
+  virtual void OnReadyToSend(talk_base::AsyncPacketSocket* socket);
+
+  void OnSocketConnect(talk_base::AsyncPacketSocket* socket);
+  void OnSocketClose(talk_base::AsyncPacketSocket* socket, int error);
+
 
   const std::string& hash() const { return hash_; }
+  const std::string& nonce() const { return nonce_; }
+
+  // Signal with resolved server address.
+  // Parameters are port, server address and resolved server address.
+  // This signal will be sent only if server address is resolved successfully.
+  sigslot::signal3<TurnPort*,
+                   const talk_base::SocketAddress&,
+                   const talk_base::SocketAddress&> SignalResolvedServerAddress;
+
+  // This signal is only for testing purpose.
+  sigslot::signal3<TurnPort*, const talk_base::SocketAddress&, int>
+      SignalCreatePermissionResult;
 
  protected:
+  TurnPort(talk_base::Thread* thread,
+           talk_base::PacketSocketFactory* factory,
+           talk_base::Network* network,
+           talk_base::AsyncPacketSocket* socket,
+           const std::string& username,
+           const std::string& password,
+           const ProtocolAddress& server_address,
+           const RelayCredentials& credentials);
+
   TurnPort(talk_base::Thread* thread,
            talk_base::PacketSocketFactory* factory,
            talk_base::Network* network,
@@ -98,13 +141,17 @@ class TurnPort : public Port {
            int min_port, int max_port,
            const std::string& username,
            const std::string& password,
-           const talk_base::SocketAddress& server_address,
+           const ProtocolAddress& server_address,
            const RelayCredentials& credentials);
 
-  bool Init();
-
  private:
+  enum { MSG_ERROR = MSG_FIRST_AVAILABLE };
+
   typedef std::list<TurnEntry*> EntryList;
+  typedef std::map<talk_base::Socket::Option, int> SocketOptionsMap;
+
+  virtual void OnMessage(talk_base::Message* pmsg);
+
   void set_nonce(const std::string& nonce) { nonce_ = nonce; }
   void set_realm(const std::string& realm) {
     if (realm != realm_) {
@@ -113,47 +160,58 @@ class TurnPort : public Port {
     }
   }
 
-  void ResolveTurnAddress();
-  void OnResolveResult(talk_base::SignalThread* signal_thread);
+  void ResolveTurnAddress(const talk_base::SocketAddress& address);
+  void OnResolveResult(talk_base::AsyncResolverInterface* resolver);
 
   void AddRequestAuthInfo(StunMessage* msg);
   void OnSendStunPacket(const void* data, size_t size, StunRequest* request);
   // Stun address from allocate success response.
   // Currently used only for testing.
   void OnStunAddress(const talk_base::SocketAddress& address);
-  void OnAllocateSuccess(const talk_base::SocketAddress& address);
+  void OnAllocateSuccess(const talk_base::SocketAddress& address,
+                         const talk_base::SocketAddress& stun_address);
   void OnAllocateError();
+  void OnAllocateRequestTimeout();
 
-  void HandleDataIndication(const char* data, size_t size);
-  void HandleChannelData(int channel_id, const char* data, size_t size);
+  void HandleDataIndication(const char* data, size_t size,
+                            const talk_base::PacketTime& packet_time);
+  void HandleChannelData(int channel_id, const char* data, size_t size,
+                         const talk_base::PacketTime& packet_time);
   void DispatchPacket(const char* data, size_t size,
-      const talk_base::SocketAddress& remote_addr, ProtocolType proto);
+      const talk_base::SocketAddress& remote_addr,
+      ProtocolType proto, const talk_base::PacketTime& packet_time);
 
   bool ScheduleRefresh(int lifetime);
   void SendRequest(StunRequest* request, int delay);
-  int Send(const void* data, size_t size);
+  int Send(const void* data, size_t size,
+           const talk_base::PacketOptions& options);
   void UpdateHash();
+  bool UpdateNonce(StunMessage* response);
 
   bool HasPermission(const talk_base::IPAddress& ipaddr) const;
   TurnEntry* FindEntry(const talk_base::SocketAddress& address) const;
   TurnEntry* FindEntry(int channel_id) const;
   TurnEntry* CreateEntry(const talk_base::SocketAddress& address);
   void DestroyEntry(const talk_base::SocketAddress& address);
+  void OnConnectionDestroyed(Connection* conn);
 
-  talk_base::SocketAddress server_address_;
+  ProtocolAddress server_address_;
   RelayCredentials credentials_;
 
-  talk_base::scoped_ptr<talk_base::AsyncPacketSocket> socket_;
-  talk_base::AsyncResolver* resolver_;
+  talk_base::AsyncPacketSocket* socket_;
+  SocketOptionsMap socket_options_;
+  talk_base::AsyncResolverInterface* resolver_;
   int error_;
 
   StunRequestManager request_manager_;
-  std::string realm_;       // From 401 response message.
-  std::string nonce_;       // From 401 response message.
+  std::string realm_;       // From 401/438 response message.
+  std::string nonce_;       // From 401/438 response message.
   std::string hash_;        // Digest of username:realm:password
 
   int next_channel_number_;
   EntryList entries_;
+
+  bool connected_;
 
   friend class TurnEntry;
   friend class TurnAllocateRequest;

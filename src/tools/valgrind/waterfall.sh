@@ -64,7 +64,7 @@ fetch_logs() {
     SLAVE_URL=$1/$S
     SLAVE_NAME=$(echo $S | sed -e "s/%20/ /g" -e "s/%28/(/g" -e "s/%29/)/g")
     echo -n "Fetching builds by slave '${SLAVE_NAME}'"
-    download $SLAVE_URL "$LOGS_DIR/slave_${S}"
+    download $SLAVE_URL?numbuilds=${NUMBUILDS} "$LOGS_DIR/slave_${S}"
 
     # We speed up the 'fetch' step by skipping the builds/tests which succeeded.
     # TODO(timurrrr): OTOH, we won't be able to check
@@ -82,7 +82,9 @@ fetch_logs() {
                             }
                           }
                           END {if (buf) print buf}' | \
-                     grep "Failed" | \
+                     grep "success\|failure" | \
+                     head -n $NUMBUILDS | \
+                     grep "failure" | \
                      grep -v "failed compile" | \
                      sed "s/.*\/builds\///" | sed "s/\".*//")
 
@@ -95,10 +97,10 @@ fetch_logs() {
       REPORT_FILE="$LOGS_DIR/report_${S}_${BUILD}"
       rm -f $REPORT_FILE 2>/dev/null || true  # make sure it doesn't exist
 
-      REPORT_URLS=$(grep -o "[0-9]\+/steps/\(memory\|heapcheck\).*/logs/[0-9A-F]\{16\}" \
+      REPORT_URLS=$(grep -o "[0-9]\+/steps/memory.*/logs/[0-9A-F]\{16\}" \
                     "$TMPFILE" \
                     || true)  # `true` is to succeed on empty output
-      FAILED_TESTS=$(grep -o "[0-9]\+/steps/\(memory\|heapcheck\).*/logs/[A-Za-z0-9_.]\+" \
+      FAILED_TESTS=$(grep -o "[0-9]\+/steps/memory.*/logs/[A-Za-z0-9_.]\+" \
                      "$TMPFILE" | grep -v "[0-9A-F]\{16\}" \
                      | grep -v "stdio" || true)
 
@@ -126,7 +128,7 @@ fetch_logs() {
 
 match_suppressions() {
   PYTHONPATH=$THISDIR/../python/google \
-             python "$THISDIR/test_suppressions.py" "$LOGS_DIR/report_"*
+             python "$THISDIR/test_suppressions.py" $@ "$LOGS_DIR/report_"*
 }
 
 match_gtest_excludes() {
@@ -153,21 +155,68 @@ match_gtest_excludes() {
   echo "Note: we don't print FAILS/FLAKY tests and 1200s-timeout failures"
 }
 
-if [ "$1" = "fetch" ]
-then
+usage() {
+  cat <<EOF
+usage: $0 fetch|match options
+
+This script can be used by waterfall sheriffs to fetch the status
+of Valgrind bots on the memory waterfall and test if their local
+suppressions match the reports on the waterfall.
+
+OPTIONS:
+   -h      Show this message
+   -n N    Fetch N builds from each slave.
+
+COMMANDS:
+  fetch    Fetch Valgrind logs from the memory waterfall
+  match    Test the local suppression files against the downloaded logs
+
+EOF
+}
+
+NUMBUILDS=3
+
+CMD=$1
+if [ $# != 0 ]; then
+  shift
+fi
+
+# Arguments for "match" are handled in match_suppressions
+if [ "$CMD" != "match" ]; then
+  while getopts “hn:” OPTION
+  do
+    case $OPTION in
+      h)
+        usage
+        exit
+        ;;
+      n)
+        NUMBUILDS=$OPTARG
+        ;;
+      ?)
+        usage
+        exit
+        ;;
+    esac
+  done
+  shift $((OPTIND-1))
+  if [ $# != 0 ]; then
+    usage
+    exit 1
+  fi
+fi
+
+if [ "$CMD" = "fetch" ]; then
+  echo "Fetching $NUMBUILDS builds"
   fetch_logs $WATERFALL_PAGE
   fetch_logs $WATERFALL_FYI_PAGE
-elif [ "$1" = "match" ]
-then
-  match_suppressions
+elif [ "$CMD" = "match" ]; then
+  match_suppressions $@
   match_gtest_excludes
-elif [ "$1" = "blame" ]
-then
+elif [ "$CMD" = "blame" ]; then
   echo The blame command died of bitrot. If you need it, please reimplement it.
   echo Reimplementation is blocked on http://crbug.com/82688
 else
-  THISNAME=$(basename "${0}")
-  echo "Usage: $THISNAME fetch|match"
-  echo "  fetch - Fetch Valgrind logs from the memory waterfall"
-  echo "  match - Test the local suppression files against the downloaded logs"
+  usage
+  exit 1
 fi

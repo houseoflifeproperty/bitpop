@@ -6,22 +6,23 @@
 #define CHROME_BROWSER_UI_WEBSITE_SETTINGS_WEBSITE_SETTINGS_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
-#include "base/time.h"
+#include "base/strings/string16.h"
+#include "base/time/time.h"
 #include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/common/content_settings.h"
 #include "chrome/common/content_settings_types.h"
-#include "googleurl/src/gurl.h"
+#include "content/public/common/signed_certificate_timestamp_id_and_status.h"
 #include "ui/gfx/native_widget_types.h"
+#include "url/gurl.h"
 
 namespace content {
 class CertStore;
 struct SSLStatus;
 }
 
-class InfoBarTabHelper;
+class InfoBarService;
 class HostContentSettingsMap;
 class Profile;
 class WebsiteSettingsUI;
@@ -61,6 +62,9 @@ class WebsiteSettings : public TabSpecificContentSettings::SiteDataObserver {
     SITE_IDENTITY_STATUS_ERROR,
     // The site is a trusted internal chrome page.
     SITE_IDENTITY_STATUS_INTERNAL_PAGE,
+    // The profile has accessed data using an administrator-provided
+    // certificate, so the site might be able to intercept data.
+    SITE_IDENTITY_STATUS_ADMIN_PROVIDED_CERT,
   };
 
   // Creates a WebsiteSettings for the passed |url| using the given |ssl| status
@@ -69,7 +73,7 @@ class WebsiteSettings : public TabSpecificContentSettings::SiteDataObserver {
   WebsiteSettings(WebsiteSettingsUI* ui,
                   Profile* profile,
                   TabSpecificContentSettings* tab_specific_content_settings,
-                  InfoBarTabHelper* infobar_tab_helper,
+                  InfoBarService* infobar_service,
                   const GURL& url,
                   const content::SSLStatus& ssl,
                   content::CertStore* cert_store);
@@ -98,15 +102,15 @@ class WebsiteSettings : public TabSpecificContentSettings::SiteDataObserver {
     return site_identity_status_;
   }
 
-  string16 site_connection_details() const {
+  base::string16 site_connection_details() const {
     return site_connection_details_;
   }
 
-  string16 site_identity_details() const {
+  base::string16 site_identity_details() const {
     return site_identity_details_;
   }
 
-  string16 organization_name() const {
+  base::string16 organization_name() const {
     return organization_name_;
   }
 
@@ -140,8 +144,8 @@ class WebsiteSettings : public TabSpecificContentSettings::SiteDataObserver {
   // information (identity, connection status, etc.).
   WebsiteSettingsUI* ui_;
 
-  // The infobar helper of the active tab.
-  InfoBarTabHelper* infobar_helper_;  // Owned by the active tab contents.
+  // The infobar service of the active tab.
+  InfoBarService* infobar_service_;
 
   // The flag that controls whether an infobar is displayed after the website
   // settings UI is closed or not.
@@ -157,30 +161,35 @@ class WebsiteSettings : public TabSpecificContentSettings::SiteDataObserver {
   // For secure connection |cert_id_| is set to the ID of the server
   // certificate. For non secure connections |cert_id_| is 0.
   int cert_id_;
+  // For secure connection, |signed_certificate_timestamp_ids_| is the list of
+  // all Signed Certificate Timestamps and their validation status.
+  // Empty if no SCTs accompanied the certificate
+  content::SignedCertificateTimestampIDStatusList
+      signed_certificate_timestamp_ids_;
 
   // Status of the connection to the website.
   SiteConnectionStatus site_connection_status_;
 
-  // TODO(markusheintz): Move the creation of all the string16 typed UI
+  // TODO(markusheintz): Move the creation of all the base::string16 typed UI
   // strings below to the corresponding UI code, in order to prevent
   // unnecessary UTF-8 string conversions.
 
   // Details about the website's identity. If the website's identity has been
   // verified then |site_identity_details_| contains who verified the identity.
   // This string will be displayed in the UI.
-  string16 site_identity_details_;
+  base::string16 site_identity_details_;
 
   // Details about the connection to the website. In case of an encrypted
   // connection |site_connection_details_| contains encryption details, like
   // encryption strength and ssl protocol version. This string will be
   // displayed in the UI.
-  string16 site_connection_details_;
+  base::string16 site_connection_details_;
 
   // For websites that provided an EV certificate |orgainization_name_|
   // contains the organization name of the certificate. In all other cases
   // |organization_name| is an empty string. This string will be displayed in
   // the UI.
-  string16 organization_name_;
+  base::string16 organization_name_;
 
   // The |CertStore| provides all X509Certificates.
   content::CertStore* cert_store_;

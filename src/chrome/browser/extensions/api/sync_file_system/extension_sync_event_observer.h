@@ -9,10 +9,12 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/sync_file_system/sync_event_observer.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 
-class Profile;
+namespace content {
+class BrowserContext;
+}
 
 namespace sync_file_system {
 class SyncFileSystemService;
@@ -21,44 +23,59 @@ class SyncFileSystemService;
 namespace extensions {
 
 // Observes changes in SyncFileSystem and relays events to JS Extension API.
-class ExtensionSyncEventObserver
-    : public sync_file_system::SyncEventObserver,
-      public ProfileKeyedService {
+class ExtensionSyncEventObserver : public sync_file_system::SyncEventObserver,
+                                   public BrowserContextKeyedAPI {
  public:
-  explicit ExtensionSyncEventObserver(Profile* profile);
+  static BrowserContextKeyedAPIFactory<ExtensionSyncEventObserver>*
+      GetFactoryInstance();
+
+  explicit ExtensionSyncEventObserver(content::BrowserContext* context);
   virtual ~ExtensionSyncEventObserver();
 
   void InitializeForService(
-      sync_file_system::SyncFileSystemService* sync_service,
-      const std::string& service_name);
+      sync_file_system::SyncFileSystemService* sync_service);
 
-  // ProfileKeyedService override.
+  // KeyedService override.
   virtual void Shutdown() OVERRIDE;
 
   // sync_file_system::SyncEventObserver interface implementation.
   virtual void OnSyncStateUpdated(
       const GURL& app_origin,
-      sync_file_system::SyncEventObserver::SyncServiceState state,
+      sync_file_system::SyncServiceState state,
       const std::string& description) OVERRIDE;
 
-  virtual void OnFileSynced(const fileapi::FileSystemURL& url,
-                            fileapi::SyncOperationResult result) OVERRIDE;
+  virtual void OnFileSynced(
+      const fileapi::FileSystemURL& url,
+      sync_file_system::SyncFileStatus status,
+      sync_file_system::SyncAction action,
+      sync_file_system::SyncDirection direction) OVERRIDE;
 
  private:
-   const std::string& GetExtensionId(const GURL& app_origin);
+  friend class BrowserContextKeyedAPIFactory<ExtensionSyncEventObserver>;
 
-   Profile* profile_;
+  // Returns an empty string if the extension |app_origin| cannot be found
+  // in the installed extension list.
+  std::string GetExtensionId(const GURL& app_origin);
 
-   // Not owned. If not null, then this is registered to SyncFileSystemService.
-   sync_file_system::SyncFileSystemService* sync_service_;
-   std::string service_name_;
+  // BrowserContextKeyedAPI implementation.
+  static const char* service_name() { return "ExtensionSyncEventObserver"; }
+  static const bool kServiceIsCreatedWithBrowserContext = false;
 
-   void BroadcastOrDispatchEvent(const GURL& app_origin,
-                                 const std::string& event_name,
-                                 scoped_ptr<base::ListValue> value);
+  content::BrowserContext* browser_context_;
 
-   DISALLOW_COPY_AND_ASSIGN(ExtensionSyncEventObserver);
+  // Not owned. If not null, then this is registered to SyncFileSystemService.
+  sync_file_system::SyncFileSystemService* sync_service_;
+
+  void BroadcastOrDispatchEvent(const GURL& app_origin,
+                                const std::string& event_name,
+                                scoped_ptr<base::ListValue> value);
+
+  DISALLOW_COPY_AND_ASSIGN(ExtensionSyncEventObserver);
 };
+
+template <>
+void BrowserContextKeyedAPIFactory<
+    ExtensionSyncEventObserver>::DeclareFactoryDependencies();
 
 }  // namespace extensions
 

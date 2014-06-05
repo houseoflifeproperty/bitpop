@@ -3,14 +3,14 @@
 # found in the LICENSE file.
 
 import json
-import logging
 import os
 import sys
 
 _FILE_PATH = os.path.dirname(os.path.realpath(__file__))
 _SYS_PATH = sys.path[:]
 try:
-  _COMMENT_EATER_PATH = os.path.join(_FILE_PATH, os.pardir)
+  _COMMENT_EATER_PATH = os.path.join(
+      _FILE_PATH, os.pardir, 'json_comment_eater')
   sys.path.insert(0, _COMMENT_EATER_PATH)
   import json_comment_eater
 finally:
@@ -55,6 +55,7 @@ except ImportError:
   def Parse(json_str):
     return simplejson.loads(json_comment_eater.Nom(json_str),
                             object_pairs_hook=OrderedDict)
+
 
 def IsDict(item):
   return isinstance(item, (dict, OrderedDict))

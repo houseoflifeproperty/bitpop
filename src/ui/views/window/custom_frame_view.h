@@ -52,6 +52,8 @@ class CustomFrameView : public NonClientFrameView,
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetMinimumSize() OVERRIDE;
+  virtual gfx::Size GetMaximumSize() OVERRIDE;
 
   // Overridden from ButtonListener:
   virtual void ButtonPressed(Button* sender, const ui::Event& event) OVERRIDE;
@@ -83,6 +85,10 @@ class CustomFrameView : public NonClientFrameView,
   // Returns the bounds of the titlebar icon (or where the icon would be if
   // there was one).
   gfx::Rect IconBounds() const;
+
+  // Returns true if the title bar, caption buttons, and frame border should be
+  // drawn. If false, the client view occupies the full area of this view.
+  bool ShouldShowTitleBarAndBorder() const;
 
   // Returns true if the client edge should be drawn. This is true if
   // the window is not maximized.
@@ -128,9 +134,8 @@ class CustomFrameView : public NonClientFrameView,
   ImageButton* restore_button_;
   ImageButton* close_button_;
 
-  // Should minimize and maximize buttons be shown? This is true when the
-  // window can be maximized.
-  bool should_show_minmax_buttons_;
+  // Should maximize button be shown?
+  bool should_show_maximize_button_;
 
   // Background painter for the window frame.
   scoped_ptr<FrameBackground> frame_background_;

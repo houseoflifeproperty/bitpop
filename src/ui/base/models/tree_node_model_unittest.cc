@@ -7,10 +7,12 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using base::ASCIIToUTF16;
 
 namespace ui {
 
@@ -281,7 +283,7 @@ TEST_F(TreeNodeModelTest, SetTitle) {
   TreeNodeModel<TestNode > model(root);
   model.AddObserver(this);
 
-  const string16 title(ASCIIToUTF16("root2"));
+  const base::string16 title(ASCIIToUTF16("root2"));
   model.SetTitle(root, title);
   EXPECT_EQ("added=0 removed=0 changed=1", GetObserverCountStateAndClear());
   EXPECT_EQ(title, root->GetTitle());

@@ -9,7 +9,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/shared_memory.h"
+#include "base/memory/shared_memory.h"
 #include "base/sync_socket.h"
 #include "base/threading/simple_thread.h"
 #include "ppapi/proxy/device_enumeration_resource_helper.h"
@@ -21,7 +21,6 @@ namespace ppapi {
 namespace proxy {
 
 class ResourceMessageReplyParams;
-class SerializedHandle;
 
 class AudioInputResource : public PluginResource,
                            public thunk::PPB_AudioInput_API,
@@ -36,16 +35,18 @@ class AudioInputResource : public PluginResource,
                                const IPC::Message& msg) OVERRIDE;
 
   // PPB_AudioInput_API implementation.
-  virtual int32_t EnumerateDevices0_2(
-      PP_Resource* devices,
-      scoped_refptr<TrackedCallback> callback) OVERRIDE;
   virtual int32_t EnumerateDevices(
       const PP_ArrayOutput& output,
       scoped_refptr<TrackedCallback> callback) OVERRIDE;
   virtual int32_t MonitorDeviceChange(
       PP_MonitorDeviceChangeCallback callback,
       void* user_data) OVERRIDE;
-  virtual int32_t Open(const std::string& device_id,
+  virtual int32_t Open0_3(PP_Resource device_ref,
+                          PP_Resource config,
+                          PPB_AudioInput_Callback_0_3 audio_input_callback_0_3,
+                          void* user_data,
+                          scoped_refptr<TrackedCallback> callback) OVERRIDE;
+  virtual int32_t Open(PP_Resource device_ref,
                        PP_Resource config,
                        PPB_AudioInput_Callback audio_input_callback,
                        void* user_data,
@@ -84,6 +85,13 @@ class AudioInputResource : public PluginResource,
   // Run on the audio input thread.
   virtual void Run() OVERRIDE;
 
+  int32_t CommonOpen(PP_Resource device_ref,
+                     PP_Resource config,
+                     PPB_AudioInput_Callback_0_3 audio_input_callback_0_3,
+                     PPB_AudioInput_Callback audio_input_callback,
+                     void* user_data,
+                     scoped_refptr<TrackedCallback> callback);
+
   OpenState open_state_;
 
   // True if capturing the stream.
@@ -105,6 +113,7 @@ class AudioInputResource : public PluginResource,
   scoped_ptr<base::DelegateSimpleThread> audio_input_thread_;
 
   // Callback to call when new samples are available.
+  PPB_AudioInput_Callback_0_3 audio_input_callback_0_3_;
   PPB_AudioInput_Callback audio_input_callback_;
 
   // User data pointer passed verbatim to the callback function.
@@ -119,6 +128,10 @@ class AudioInputResource : public PluginResource,
   ScopedPPResource config_;
 
   DeviceEnumerationResourceHelper enumeration_helper_;
+
+  // The data size (in bytes) of one second of audio input. Used to calculate
+  // latency.
+  size_t bytes_per_second_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioInputResource);
 };

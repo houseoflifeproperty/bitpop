@@ -5,7 +5,7 @@
 #ifndef CONTENT_COMMON_PEPPER_RENDERER_INSTANCE_DATA_H_
 #define CONTENT_COMMON_PEPPER_RENDERER_INSTANCE_DATA_H_
 
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -16,12 +16,12 @@ namespace content {
 struct PepperRendererInstanceData {
   PepperRendererInstanceData();
   PepperRendererInstanceData(int render_process,
-                             int render_view,
+                             int render_frame_id,
                              const GURL& document,
                              const GURL& plugin);
   ~PepperRendererInstanceData();
   int render_process_id;
-  int render_view_id;
+  int render_frame_id;
   GURL document_url;
   GURL plugin_url;
 };

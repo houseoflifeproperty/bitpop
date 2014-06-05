@@ -127,6 +127,27 @@ public class Statistics extends InternalBase implements Marshallable<StatisticsS
     TOKEN_TRANSIENT_FAILURE,
   }
 
+  // Names of statistics types. Do not rely on reflection to determine type names because Proguard
+  // may change them for Android clients.
+  private static final String SENT_MESSAGE_TYPE_NAME = "SentMessageType";
+  private static final String INCOMING_OPERATION_TYPE_NAME = "IncomingOperationType";
+  private static final String RECEIVED_MESSAGE_TYPE_NAME = "ReceivedMessageType";
+  private static final String LISTENER_EVENT_TYPE_NAME = "ListenerEventType";
+  private static final String CLIENT_ERROR_TYPE_NAME = "ClientErrorType";
+
+  // Map from stats enum names to values. Used in place of Enum.valueOf() because this method
+  // invokes Enum.values() via reflection, and that method may be renamed by Proguard.
+  private static final Map<String, SentMessageType> SENT_MESSAGE_TYPE_NAME_TO_VALUE_MAP =
+      createValueOfMap(SentMessageType.values());
+  private static final Map<String, IncomingOperationType>
+      INCOMING_OPERATION_TYPE_NAME_TO_VALUE_MAP = createValueOfMap(IncomingOperationType.values());
+  private static final Map<String, ReceivedMessageType> RECEIVED_MESSAGE_TYPE_NAME_TO_VALUE_MAP =
+      createValueOfMap(ReceivedMessageType.values());
+  private static final Map<String, ListenerEventType> LISTENER_EVENT_TYPE_NAME_TO_VALUE_MAP =
+      createValueOfMap(ListenerEventType.values());
+  private static final Map<String, ClientErrorType> CLIENT_ERROR_TYPE_NAME_TO_VALUE_MAP =
+      createValueOfMap(ClientErrorType.values());
+
   // Maps for each type of Statistic to keep track of how many times each event has occurred.
 
   private final Map<SentMessageType, Integer> sentMessageTypes =
@@ -209,26 +230,33 @@ public class Statistics extends InternalBase implements Marshallable<StatisticsS
    */
   public void getNonZeroStatistics(List<SimplePair<String, Integer>> performanceCounters) {
     // Add the non-zero values from the different maps to performanceCounters.
-    fillWithNonZeroStatistics(sentMessageTypes, performanceCounters);
-    fillWithNonZeroStatistics(receivedMessageTypes, performanceCounters);
-    fillWithNonZeroStatistics(incomingOperationTypes, performanceCounters);
-    fillWithNonZeroStatistics(listenerEventTypes, performanceCounters);
-    fillWithNonZeroStatistics(clientErrorTypes, performanceCounters);
+    fillWithNonZeroStatistics(sentMessageTypes, performanceCounters, SENT_MESSAGE_TYPE_NAME);
+    fillWithNonZeroStatistics(receivedMessageTypes, performanceCounters,
+        RECEIVED_MESSAGE_TYPE_NAME);
+    fillWithNonZeroStatistics(incomingOperationTypes, performanceCounters,
+        INCOMING_OPERATION_TYPE_NAME);
+    fillWithNonZeroStatistics(listenerEventTypes, performanceCounters, LISTENER_EVENT_TYPE_NAME);
+    fillWithNonZeroStatistics(clientErrorTypes, performanceCounters, CLIENT_ERROR_TYPE_NAME);
   }
 
   /** Modifies {@code result} to contain those statistics from {@code map} whose value is > 0. */
-  private static <Key> void fillWithNonZeroStatistics(Map<Key, Integer> map,
-      List<SimplePair<String, Integer>> destination) {
-    String prefix = null;
+  private static <Key extends Enum<Key>> void fillWithNonZeroStatistics(Map<Key, Integer> map,
+      List<SimplePair<String, Integer>> destination, String typeName) {
+    String prefix = typeName + ".";
     for (Map.Entry<Key, Integer> entry : map.entrySet()) {
       if (entry.getValue() > 0) {
-        // Initialize prefix if this is the first element being added.
-        if (prefix == null) {
-          prefix = entry.getKey().getClass().getSimpleName() + ".";
-        }
-        destination.add(SimplePair.of(prefix + entry.getKey(), entry.getValue()));
+        destination.add(SimplePair.of(prefix + entry.getKey().name(), entry.getValue()));
       }
     }
+  }
+
+  /** Initializes a map from enum names to values of the given {@code keys}. */
+  private static <Key extends Enum<Key>> Map<String, Key> createValueOfMap(Key[] keys) {
+    HashMap<String, Key> map = new HashMap<String, Key>();
+    for (Key key : keys) {
+      map.put(key.name(), key);
+    }
+    return map;
   }
 
   /** Increments the value of {@code map}[{@code key}] by 1. */
@@ -285,35 +313,41 @@ public class Statistics extends InternalBase implements Marshallable<StatisticsS
       int counterValue = performanceCounter.getValue();
 
       // Call the relevant method in a loop (i.e., depending on the type of the class).
-      if (TypedUtil.<String>equals(className, "SentMessageType")) {
-        SentMessageType sentMessageType = SentMessageType.valueOf(fieldName);
-        for (int i = 0; i < counterValue; i++) {
-          statistics.recordSentMessage(sentMessageType);
-        }
-      } else if (TypedUtil.<String>equals(className, "IncomingOperationType")) {
-        IncomingOperationType incomingOperationType = IncomingOperationType.valueOf(fieldName);
-        for (int i = 0; i < counterValue; i++) {
-          statistics.recordIncomingOperation(incomingOperationType);
-        }
-      } else if (TypedUtil.<String>equals(className, "ReceivedMessageType")) {
-        ReceivedMessageType receivedMessageType = ReceivedMessageType.valueOf(fieldName);
-        for (int i = 0; i < counterValue; i++) {
-          statistics.recordReceivedMessage(receivedMessageType);
-        }
-      } else if (TypedUtil.<String>equals(className, "ListenerEventType")) {
-        ListenerEventType listenerEventType = ListenerEventType.valueOf(fieldName);
-        for (int i = 0; i < counterValue; i++) {
-          statistics.recordListenerEvent(listenerEventType);
-        }
-      } else if (TypedUtil.<String>equals(className, "ClientErrorType")) {
-        ClientErrorType clientErrorType = ClientErrorType.valueOf(fieldName);
-        for (int i = 0; i < counterValue; i++) {
-          statistics.recordError(clientErrorType);
-        }
+      if (TypedUtil.<String>equals(className, SENT_MESSAGE_TYPE_NAME)) {
+        incrementPerformanceCounterValue(logger, SENT_MESSAGE_TYPE_NAME_TO_VALUE_MAP,
+            statistics.sentMessageTypes, fieldName, counterValue);
+      } else if (TypedUtil.<String>equals(className, INCOMING_OPERATION_TYPE_NAME)) {
+        incrementPerformanceCounterValue(logger, INCOMING_OPERATION_TYPE_NAME_TO_VALUE_MAP,
+            statistics.incomingOperationTypes, fieldName, counterValue);
+      } else if (TypedUtil.<String>equals(className, RECEIVED_MESSAGE_TYPE_NAME)) {
+        incrementPerformanceCounterValue(logger, RECEIVED_MESSAGE_TYPE_NAME_TO_VALUE_MAP,
+            statistics.receivedMessageTypes, fieldName, counterValue);
+      } else if (TypedUtil.<String>equals(className,  LISTENER_EVENT_TYPE_NAME)) {
+        incrementPerformanceCounterValue(logger, LISTENER_EVENT_TYPE_NAME_TO_VALUE_MAP,
+            statistics.listenerEventTypes, fieldName, counterValue);
+      } else if (TypedUtil.<String>equals(className,  CLIENT_ERROR_TYPE_NAME)) {
+        incrementPerformanceCounterValue(logger, CLIENT_ERROR_TYPE_NAME_TO_VALUE_MAP,
+            statistics.clientErrorTypes, fieldName, counterValue);
       } else {
         logger.warning("Skipping unknown enum class name %s", className);
       }
     }
     return statistics;
+  }
+
+  /**
+   * Looks for an enum value with the given {@code fieldName} in {@code valueOfMap} and increments
+   * the corresponding entry in {@code counts} by {@code counterValue}. Call to update statistics
+   * for a single performance counter.
+   */
+  private static <Key extends Enum<Key>> void incrementPerformanceCounterValue(Logger logger,
+      Map<String, Key> valueOfMap, Map<Key, Integer> counts, String fieldName, int counterValue) {
+    Key type = TypedUtil.mapGet(valueOfMap, fieldName);
+    if (type != null) {
+      int currentValue = TypedUtil.mapGet(counts, type);
+      counts.put(type, currentValue + counterValue);
+    } else {
+      logger.warning("Skipping unknown enum value name %s", fieldName);
+    }
   }
 }

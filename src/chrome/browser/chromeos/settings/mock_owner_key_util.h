@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chromeos/settings/owner_key_util.h"
 
@@ -33,10 +33,10 @@ class MockOwnerKeyUtil : public OwnerKeyUtil {
 
   // Sets the public key to use from the given private key, but doesn't
   // configure the private key.
-  void SetPublicKeyFromPrivateKey(crypto::RSAPrivateKey* key);
+  void SetPublicKeyFromPrivateKey(const crypto::RSAPrivateKey& key);
 
   // Sets the private key (also configures the public key).
-  void SetPrivateKey(crypto::RSAPrivateKey* key);
+  void SetPrivateKey(scoped_ptr<crypto::RSAPrivateKey> key);
 
  protected:
   virtual ~MockOwnerKeyUtil();

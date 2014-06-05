@@ -49,7 +49,20 @@ class IncludeNode(base.Node):
             'flattenhtml': 'false',
             'allowexternalscript': 'false',
             'relativepath': 'false',
+            'use_base_dir': 'true',
            }
+
+  def GetInputPath(self):
+    # Do not mess with absolute paths, that would make them invalid.
+    if os.path.isabs(os.path.expandvars(self.attrs['file'])):
+      return self.attrs['file']
+
+    # We have no control over code that calles ToRealPath later, so convert
+    # the path to be relative against our basedir.
+    if self.attrs.get('use_base_dir', 'true') != 'true':
+      return os.path.relpath(self.attrs['file'], self.GetRoot().GetBaseDir())
+
+    return self.attrs['file']
 
   def FileForLanguage(self, lang, output_dir):
     """Returns the file for the specified language.  This allows us to return

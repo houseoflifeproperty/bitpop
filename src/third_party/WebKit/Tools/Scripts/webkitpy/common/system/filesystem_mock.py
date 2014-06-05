@@ -96,7 +96,7 @@ class MockFileSystem(object):
         return home_directory + self.sep + parts[1]
 
     def path_to_module(self, module_name):
-        return "/mock-checkout/Tools/Scripts/" + module_name.replace('.', '/') + ".py"
+        return "/mock-checkout/third_party/WebKit/Tools/Scripts/" + module_name.replace('.', '/') + ".py"
 
     def chdir(self, path):
         path = self.normpath(path)
@@ -201,25 +201,29 @@ class MockFileSystem(object):
         return path
 
     def listdir(self, path):
-        sep = self.sep
-        if not self.isdir(path):
-            raise OSError("%s is not a directory" % path)
+        root, dirs, files = list(self.walk(path))[0]
+        return dirs + files
 
-        if not path.endswith(sep):
-            path += sep
+    def walk(self, top):
+        sep = self.sep
+        if not self.isdir(top):
+            raise OSError("%s is not a directory" % top)
+
+        if not top.endswith(sep):
+            top += sep
 
         dirs = []
         files = []
         for f in self.files:
-            if self.exists(f) and f.startswith(path):
-                remaining = f[len(path):]
+            if self.exists(f) and f.startswith(top):
+                remaining = f[len(top):]
                 if sep in remaining:
                     dir = remaining[:remaining.index(sep)]
                     if not dir in dirs:
                         dirs.append(dir)
                 else:
                     files.append(remaining)
-        return dirs + files
+        return [(top[:-1], dirs, files)]
 
     def mtime(self, path):
         if self.exists(path):
@@ -339,27 +343,32 @@ class MockFileSystem(object):
         start = self.abspath(start)
         path = self.abspath(path)
 
-        if not path.lower().startswith(start.lower()):
-            # path is outside the directory given by start; compute path from root
-            return '../' * start.count('/') + path
+        common_root = start
+        dot_dot = ''
+        while not common_root == '':
+            if path.startswith(common_root):
+                 break
+            common_root = self.dirname(common_root)
+            dot_dot += '..' + self.sep
 
-        rel_path = path[len(start):]
+        rel_path = path[len(common_root):]
 
         if not rel_path:
-            # Then the paths are the same.
-            pass
-        elif rel_path[0] == self.sep:
+            return '.'
+
+        if rel_path[0] == self.sep:
             # It is probably sufficient to remove just the first character
             # since os.path.normpath() collapses separators, but we use
             # lstrip() just to be sure.
             rel_path = rel_path.lstrip(self.sep)
-        else:
+        elif not common_root == '/':
             # We are in the case typified by the following example:
             # path = "/tmp/foobar", start = "/tmp/foo" -> rel_path = "bar"
-            # FIXME: We return a less-than-optimal result here.
-            return '../' * start.count('/') + path
+            common_root = self.dirname(common_root)
+            dot_dot += '..' + self.sep
+            rel_path = path[len(common_root) + 1:]
 
-        return rel_path
+        return dot_dot + rel_path
 
     def remove(self, path):
         if self.files[path] is None:
@@ -371,10 +380,12 @@ class MockFileSystem(object):
         path = self.normpath(path)
 
         for f in self.files:
-            if f.startswith(path):
+            # We need to add a trailing separator to path to avoid matching
+            # cases like path='/foo/b' and f='/foo/bar/baz'.
+            if f == path or f.startswith(path + self.sep):
                 self.files[f] = None
 
-        self.dirs = set(filter(lambda d: not d.startswith(path), self.dirs))
+        self.dirs = set(filter(lambda d: not (d == path or d.startswith(path + self.sep)), self.dirs))
 
     def copytree(self, source, destination):
         source = self.normpath(source)
@@ -395,7 +406,7 @@ class MockFileSystem(object):
     def splitext(self, path):
         idx = path.rfind('.')
         if idx == -1:
-            idx = 0
+            idx = len(path)
         return (path[0:idx], path[idx:])
 
 
@@ -452,7 +463,7 @@ class ReadableBinaryFileObject(object):
 
 class ReadableTextFileObject(ReadableBinaryFileObject):
     def __init__(self, fs, path, data):
-        super(ReadableTextFileObject, self).__init__(fs, path, StringIO.StringIO(data))
+        super(ReadableTextFileObject, self).__init__(fs, path, StringIO.StringIO(data.decode("utf-8")))
 
     def close(self):
         self.data.close()

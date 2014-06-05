@@ -5,14 +5,15 @@
 #include "chrome/browser/extensions/user_script_listener.h"
 
 #include "base/bind.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/manifest_handlers/content_scripts_handler.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/resource_controller.h"
 #include "content/public/browser/resource_throttle.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/url_pattern.h"
 #include "net/url_request/url_request.h"
 
@@ -37,12 +38,16 @@ class UserScriptListener::Throttle
   }
 
   // ResourceThrottle implementation:
-  virtual void WillStartRequest(bool* defer) {
+  virtual void WillStartRequest(bool* defer) OVERRIDE {
     // Only defer requests if Resume has not yet been called.
     if (should_defer_) {
       *defer = true;
       did_defer_ = true;
     }
+  }
+
+  virtual const char* GetNameForLogging() const OVERRIDE {
+    return "UserScriptListener::Throttle";
   }
 
  private:
@@ -63,11 +68,12 @@ struct UserScriptListener::ProfileData {
 
 UserScriptListener::UserScriptListener()
     : user_scripts_ready_(false) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                  content::NotificationService::AllSources());
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::NotificationService::AllSources());
   registrar_.Add(this, chrome::NOTIFICATION_USER_SCRIPTS_UPDATED,
                  content::NotificationService::AllSources());
@@ -91,7 +97,7 @@ UserScriptListener::~UserScriptListener() {
 
 bool UserScriptListener::ShouldDelayRequest(const GURL& url,
                                             ResourceType::Type resource_type) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   // If it's a frame load, then we need to check the URL against the list of
   // user scripts to see if we need to wait.
@@ -124,14 +130,14 @@ bool UserScriptListener::ShouldDelayRequest(const GURL& url,
 void UserScriptListener::StartDelayedRequests() {
   WeakThrottleList::const_iterator it;
   for (it = throttles_.begin(); it != throttles_.end(); ++it) {
-    if (*it)
+    if (it->get())
       (*it)->Resume();
   }
   throttles_.clear();
 }
 
 void UserScriptListener::CheckIfAllUserScriptsReady() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   bool was_ready = user_scripts_ready_;
 
   user_scripts_ready_ = true;
@@ -146,14 +152,14 @@ void UserScriptListener::CheckIfAllUserScriptsReady() {
 }
 
 void UserScriptListener::UserScriptsReady(void* profile_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   profile_data_[profile_id].user_scripts_ready = true;
   CheckIfAllUserScriptsReady();
 }
 
 void UserScriptListener::ProfileDestroyed(void* profile_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   profile_data_.erase(profile_id);
 
   // We may have deleted the only profile we were waiting on.
@@ -162,7 +168,7 @@ void UserScriptListener::ProfileDestroyed(void* profile_id) {
 
 void UserScriptListener::AppendNewURLPatterns(void* profile_id,
                                               const URLPatterns& new_patterns) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   user_scripts_ready_ = false;
 
@@ -175,7 +181,7 @@ void UserScriptListener::AppendNewURLPatterns(void* profile_id,
 
 void UserScriptListener::ReplaceURLPatterns(void* profile_id,
                                             const URLPatterns& patterns) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   ProfileData& data = profile_data_[profile_id];
   data.url_patterns = patterns;
@@ -183,9 +189,10 @@ void UserScriptListener::ReplaceURLPatterns(void* profile_id,
 
 void UserScriptListener::CollectURLPatterns(const Extension* extension,
                                             URLPatterns* patterns) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  const UserScriptList& scripts = extension->content_scripts();
+  const UserScriptList& scripts =
+      ContentScriptsInfo::GetContentScripts(extension);
   for (UserScriptList::const_iterator iter = scripts.begin();
        iter != scripts.end(); ++iter) {
     patterns->insert(patterns->end(),
@@ -197,14 +204,14 @@ void UserScriptListener::CollectURLPatterns(const Extension* extension,
 void UserScriptListener::Observe(int type,
                                  const content::NotificationSource& source,
                                  const content::NotificationDetails& details) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_LOADED: {
+    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED: {
       Profile* profile = content::Source<Profile>(source).ptr();
       const Extension* extension =
           content::Details<const Extension>(details).ptr();
-      if (extension->content_scripts().empty())
+      if (ContentScriptsInfo::GetContentScripts(extension).empty())
         return;  // no new patterns from this extension.
 
       URLPatterns new_patterns;
@@ -217,11 +224,11 @@ void UserScriptListener::Observe(int type,
       break;
     }
 
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
+    case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED: {
       Profile* profile = content::Source<Profile>(source).ptr();
       const Extension* unloaded_extension =
           content::Details<UnloadedExtensionInfo>(details)->extension;
-      if (unloaded_extension->content_scripts().empty())
+      if (ContentScriptsInfo::GetContentScripts(unloaded_extension).empty())
         return;  // no patterns to delete for this extension.
 
       // Clear all our patterns and reregister all the still-loaded extensions.
@@ -229,8 +236,8 @@ void UserScriptListener::Observe(int type,
       ExtensionService* service = profile->GetExtensionService();
       for (ExtensionSet::const_iterator it = service->extensions()->begin();
            it != service->extensions()->end(); ++it) {
-        if (*it != unloaded_extension)
-          CollectURLPatterns(*it, &new_patterns);
+        if (it->get() != unloaded_extension)
+          CollectURLPatterns(it->get(), &new_patterns);
       }
       BrowserThread::PostTask(BrowserThread::IO, FROM_HERE, base::Bind(
           &UserScriptListener::ReplaceURLPatterns, this,

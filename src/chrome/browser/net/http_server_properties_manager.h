@@ -11,8 +11,8 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/prefs/public/pref_change_registrar.h"
-#include "base/timer.h"
+#include "base/prefs/pref_change_registrar.h"
+#include "base/timer/timer.h"
 #include "base/values.h"
 #include "net/base/host_port_pair.h"
 #include "net/http/http_pipelined_host_capability.h"
@@ -20,6 +20,10 @@
 #include "net/http/http_server_properties_impl.h"
 
 class PrefService;
+
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
 
 namespace chrome_browser_net {
 
@@ -63,7 +67,11 @@ class HttpServerPropertiesManager
   void ShutdownOnUIThread();
 
   // Register |prefs| for properties managed here.
-  static void RegisterPrefs(PrefService* prefs);
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
+
+  // Helper function for unit tests to set the version in the dictionary.
+  static void SetVersion(base::DictionaryValue* http_server_properties_dict,
+                         int version_number);
 
   // Deletes all data. Works asynchronously, but if a |completion| callback is
   // provided, it will be fired on the UI thread when everything is done.
@@ -73,12 +81,15 @@ class HttpServerPropertiesManager
   // net::HttpServerProperties methods:
   // ----------------------------------
 
+  // Gets a weak pointer for this object.
+  virtual base::WeakPtr<net::HttpServerProperties> GetWeakPtr() OVERRIDE;
+
   // Deletes all data. Works asynchronously.
   virtual void Clear() OVERRIDE;
 
   // Returns true if |server| supports SPDY. Should only be called from IO
   // thread.
-  virtual bool SupportsSpdy(const net::HostPortPair& server) const OVERRIDE;
+  virtual bool SupportsSpdy(const net::HostPortPair& server) OVERRIDE;
 
   // Add |server| as the SPDY server which supports SPDY protocol into the
   // persisitent store. Should only be called from IO thread.
@@ -86,13 +97,12 @@ class HttpServerPropertiesManager
                                bool support_spdy) OVERRIDE;
 
   // Returns true if |server| has an Alternate-Protocol header.
-  virtual bool HasAlternateProtocol(
-      const net::HostPortPair& server) const OVERRIDE;
+  virtual bool HasAlternateProtocol(const net::HostPortPair& server) OVERRIDE;
 
   // Returns the Alternate-Protocol and port for |server|.
   // HasAlternateProtocol(server) must be true.
   virtual net::PortAlternateProtocolPair GetAlternateProtocol(
-      const net::HostPortPair& server) const OVERRIDE;
+      const net::HostPortPair& server) OVERRIDE;
 
   // Sets the Alternate-Protocol for |server|.
   virtual void SetAlternateProtocol(
@@ -104,6 +114,17 @@ class HttpServerPropertiesManager
   virtual void SetBrokenAlternateProtocol(
       const net::HostPortPair& server) OVERRIDE;
 
+  // Returns true if Alternate-Protocol for |server| was recently BROKEN.
+  virtual bool WasAlternateProtocolRecentlyBroken(
+      const net::HostPortPair& server) OVERRIDE;
+
+  // Confirms that Alternate-Protocol for |server| is working.
+  virtual void ConfirmAlternateProtocol(
+      const net::HostPortPair& server) OVERRIDE;
+
+  // Clears the Alternate-Protocol for |server|.
+  virtual void ClearAlternateProtocol(const net::HostPortPair& server) OVERRIDE;
+
   // Returns all Alternate-Protocol mappings.
   virtual const net::AlternateProtocolMap&
       alternate_protocol_map() const OVERRIDE;
@@ -111,7 +132,7 @@ class HttpServerPropertiesManager
   // Gets a reference to the SettingsMap stored for a host.
   // If no settings are stored, returns an empty SettingsMap.
   virtual const net::SettingsMap& GetSpdySettings(
-      const net::HostPortPair& host_port_pair) const OVERRIDE;
+      const net::HostPortPair& host_port_pair) OVERRIDE;
 
   // Saves an individual SPDY setting for a host. Returns true if SPDY setting
   // is to be persisted.
@@ -120,11 +141,21 @@ class HttpServerPropertiesManager
                               net::SpdySettingsFlags flags,
                               uint32 value) OVERRIDE;
 
-  // Clears all SPDY settings.
-  virtual void ClearSpdySettings() OVERRIDE;
+  // Clears all SPDY settings for a host.
+  virtual void ClearSpdySettings(
+      const net::HostPortPair& host_port_pair) OVERRIDE;
+
+  // Clears all SPDY settings for all hosts.
+  virtual void ClearAllSpdySettings() OVERRIDE;
 
   // Returns all SPDY persistent settings.
   virtual const net::SpdySettingsMap& spdy_settings_map() const OVERRIDE;
+
+  virtual void SetServerNetworkStats(const net::HostPortPair& host_port_pair,
+                                     NetworkStats stats) OVERRIDE;
+
+  virtual const NetworkStats* GetServerNetworkStats(
+      const net::HostPortPair& host_port_pair) const OVERRIDE;
 
   virtual net::HttpPipelinedHostCapability GetPipelineCapability(
       const net::HostPortPair& origin) OVERRIDE;
@@ -216,6 +247,10 @@ class HttpServerPropertiesManager
   // ---------
   // IO thread
   // ---------
+
+  // Used to get |weak_ptr_| to self on the IO thread.
+  scoped_ptr<base::WeakPtrFactory<HttpServerPropertiesManager> >
+      io_weak_ptr_factory_;
 
   // Used to post |prefs::kHttpServerProperties| pref update tasks.
   scoped_ptr<base::OneShotTimer<HttpServerPropertiesManager> >

@@ -12,16 +12,18 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/sync/glue/data_type_controller.h"
-#include "chrome/browser/sync/glue/data_type_error_handler.h"
-#include "chrome/browser/sync/glue/model_associator.h"
+#include "components/sync_driver/data_type_controller.h"
+#include "components/sync_driver/data_type_error_handler.h"
+#include "components/sync_driver/model_associator.h"
 #include "sync/internal_api/public/util/unrecoverable_error_handler.h"
 
 class BookmarkModel;
 class BookmarkNode;
+class Profile;
 
 namespace syncer {
 class BaseNode;
+class BaseTransaction;
 struct UserShare;
 }
 
@@ -40,6 +42,7 @@ class BookmarkModelAssociator
   // Should be set to true only by mobile clients.
   BookmarkModelAssociator(
       BookmarkModel* bookmark_model,
+      Profile* profile_,
       syncer::UserShare* user_share,
       DataTypeErrorHandler* unrecoverable_error_handler,
       bool expect_mobile_bookmarks_folder);
@@ -118,6 +121,10 @@ class BookmarkModelAssociator
       syncer::SyncMergeResult* local_merge_result,
       syncer::SyncMergeResult* syncer_merge_result);
 
+  // Removes bookmark nodes whose corresponding sync nodes have been deleted
+  // according to sync delete journals. Return number of deleted bookmarks.
+  int64 ApplyDeletesFromSyncJournal(syncer::BaseTransaction* trans);
+
   // Associate a top-level node of the bookmark model with a permanent node in
   // the sync domain.  Such permanent nodes are identified by a tag that is
   // well known to the server and the client, and is unique within a particular
@@ -134,9 +141,14 @@ class BookmarkModelAssociator
 
   // Check whether bookmark model and sync model are synced by comparing
   // their transaction versions.
-  void CheckModelSyncState() const;
+  // Returns a PERSISTENCE_ERROR if a transaction mismatch was detected where
+  // the native model has a newer transaction verison.
+  syncer::SyncError CheckModelSyncState(
+      syncer::SyncMergeResult* local_merge_result,
+      syncer::SyncMergeResult* syncer_merge_result) const;
 
   BookmarkModel* bookmark_model_;
+  Profile* profile_;
   syncer::UserShare* user_share_;
   DataTypeErrorHandler* unrecoverable_error_handler_;
   const bool expect_mobile_bookmarks_folder_;

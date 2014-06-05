@@ -5,10 +5,10 @@
 #include "chrome/browser/parsers/metadata_parser_filebase.h"
 
 #include "base/file_util.h"
-#include "base/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 
-FileMetadataParser::FileMetadataParser(const FilePath& path)
+FileMetadataParser::FileMetadataParser(const base::FilePath& path)
     : MetadataParser(path),
       path_(path) {
 }
@@ -18,11 +18,11 @@ FileMetadataParser::~FileMetadataParser() {}
 bool FileMetadataParser::Parse() {
   std::string value;
   int64 size;
-  if (file_util::GetFileSize(path_, &size)) {
+  if (base::GetFileSize(path_, &size)) {
     properties_[MetadataParser::kPropertyFilesize] = base::Int64ToString(size);
   }
 #if defined(OS_WIN)
-  value = WideToUTF8(path_.BaseName().value());
+  value = base::WideToUTF8(path_.BaseName().value());
   properties_[MetadataParser::kPropertyTitle] = value;
 #elif defined(OS_POSIX)
   properties_[MetadataParser::kPropertyTitle] = path_.BaseName().value();

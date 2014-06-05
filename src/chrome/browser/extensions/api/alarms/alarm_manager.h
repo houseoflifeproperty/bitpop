@@ -5,31 +5,40 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_ALARMS_ALARM_MANAGER_H__
 #define CHROME_BROWSER_EXTENSIONS_API_ALARMS_ALARM_MANAGER_H__
 
-#include <string>
 #include <map>
+#include <queue>
+#include <string>
 #include <vector>
 
+#include "base/callback.h"
 #include "base/memory/weak_ptr.h"
-#include "base/timer.h"
-#include "chrome/browser/extensions/extension_function.h"
+#include "base/timer/timer.h"
 #include "chrome/common/extensions/api/alarms.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
+#include "extensions/browser/extension_function.h"
 
 class Profile;
+
+namespace base {
+class Clock;
+}  // namespace base
+
+namespace content {
+class BrowserContext;
+}  // namespace content
 
 namespace extensions {
 
 class ExtensionAlarmsSchedulingTest;
 
 struct Alarm {
-  typedef base::Time (*TimeProvider)();
-
   Alarm();
   Alarm(const std::string& name,
         const api::alarms::AlarmCreateInfo& create_info,
         base::TimeDelta min_granularity,
-        TimeProvider now);
+        base::Time now);
   ~Alarm();
 
   linked_ptr<api::alarms::Alarm> js_alarm;
@@ -39,15 +48,17 @@ struct Alarm {
   // time.  This will always be at least as large as the min_granularity
   // constructor argument.
   base::TimeDelta granularity;
+  // The minimum granularity is the minimum allowed polling rate. This stops
+  // alarms from polling too often.
+  base::TimeDelta minimum_granularity;
 };
 
 // Manages the currently pending alarms for every extension in a profile.
 // There is one manager per virtual Profile.
-class AlarmManager
-    : public content::NotificationObserver,
-      public base::SupportsWeakPtr<AlarmManager> {
+class AlarmManager : public BrowserContextKeyedAPI,
+                     public content::NotificationObserver,
+                     public base::SupportsWeakPtr<AlarmManager> {
  public:
-  typedef base::Time (*TimeProvider)();
   typedef std::vector<Alarm> AlarmList;
 
   class Delegate {
@@ -58,47 +69,101 @@ class AlarmManager
                          const Alarm& alarm) = 0;
   };
 
-  // 'now' is usually &base::Time::Now.
-  explicit AlarmManager(Profile* profile, TimeProvider now);
+  explicit AlarmManager(content::BrowserContext* context);
   virtual ~AlarmManager();
 
   // Override the default delegate. Callee assumes onwership. Used for testing.
   void set_delegate(Delegate* delegate) { delegate_.reset(delegate); }
 
-  // Adds |alarm| for the given extension, and starts the timer.
+  typedef base::Callback<void()> AddAlarmCallback;
+  // Adds |alarm| for the given extension, and starts the timer. Invokes
+  // |callback| when done.
   void AddAlarm(const std::string& extension_id,
-                const Alarm& alarm);
+                const Alarm& alarm,
+                const AddAlarmCallback& callback);
 
-  // Returns the alarm with the given name, or NULL if none exists.
-  const Alarm* GetAlarm(const std::string& extension_id,
-                        const std::string& name);
+  typedef base::Callback<void(Alarm*)> GetAlarmCallback;
+  // Passes the alarm with the given name, or NULL if none exists, to
+  // |callback|.
+  void GetAlarm(const std::string& extension_id,
+                const std::string& name,
+                const GetAlarmCallback& callback);
 
-  // Returns the list of pending alarms for the given extension, or NULL
-  // if none exist.
-  const AlarmList* GetAllAlarms(const std::string& extension_id);
+  typedef base::Callback<void(const AlarmList*)> GetAllAlarmsCallback;
+  // Passes the list of pending alarms for the given extension, or
+  // NULL if none exist, to |callback|.
+  void GetAllAlarms(
+      const std::string& extension_id, const GetAllAlarmsCallback& callback);
 
-  // Cancels and removes the alarm with the given name.
-  bool RemoveAlarm(const std::string& extension_id,
-                   const std::string& name);
+  typedef base::Callback<void(bool)> RemoveAlarmCallback;
+  // Cancels and removes the alarm with the given name. Invokes |callback| when
+  // done.
+  void RemoveAlarm(const std::string& extension_id,
+                   const std::string& name,
+                   const RemoveAlarmCallback& callback);
 
-  // Cancels and removes all alarms for the given extension.
-  void RemoveAllAlarms(const std::string& extension_id);
+  typedef base::Callback<void()> RemoveAllAlarmsCallback;
+  // Cancels and removes all alarms for the given extension. Invokes |callback|
+  // when done.
+  void RemoveAllAlarms(
+      const std::string& extension_id, const RemoveAllAlarmsCallback& callback);
+
+  // Replaces AlarmManager's owned clock with |clock| and takes ownership of it.
+  void SetClockForTesting(base::Clock* clock);
+
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<AlarmManager>* GetFactoryInstance();
+
+  // Convenience method to get the AlarmManager for a profile.
+  static AlarmManager* Get(Profile* profile);
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(ExtensionAlarmsTest, CreateRepeating);
-  FRIEND_TEST_ALL_PREFIXES(ExtensionAlarmsTest, Clear);
+  friend void RunScheduleNextPoll(AlarmManager*);
   friend class ExtensionAlarmsSchedulingTest;
   FRIEND_TEST_ALL_PREFIXES(ExtensionAlarmsSchedulingTest, PollScheduling);
   FRIEND_TEST_ALL_PREFIXES(ExtensionAlarmsSchedulingTest,
                            ReleasedExtensionPollsInfrequently);
   FRIEND_TEST_ALL_PREFIXES(ExtensionAlarmsSchedulingTest, TimerRunning);
+  FRIEND_TEST_ALL_PREFIXES(ExtensionAlarmsSchedulingTest, MinimumGranularity);
+  FRIEND_TEST_ALL_PREFIXES(ExtensionAlarmsSchedulingTest,
+                           DifferentMinimumGranularities);
+  FRIEND_TEST_ALL_PREFIXES(ExtensionAlarmsSchedulingTest,
+                           RepeatingAlarmsScheduledPredictably);
+  friend class BrowserContextKeyedAPIFactory<AlarmManager>;
 
   typedef std::string ExtensionId;
   typedef std::map<ExtensionId, AlarmList> AlarmMap;
 
+  typedef base::Callback<void(const std::string&)> ReadyAction;
+  typedef std::queue<ReadyAction> ReadyQueue;
+  typedef std::map<ExtensionId, ReadyQueue> ReadyMap;
+
   // Iterator used to identify a particular alarm within the Map/List pair.
   // "Not found" is represented by <alarms_.end(), invalid_iterator>.
   typedef std::pair<AlarmMap::iterator, AlarmList::iterator> AlarmIterator;
+
+  // Part of AddAlarm that is executed after alarms are loaded.
+  void AddAlarmWhenReady(const Alarm& alarm,
+                         const AddAlarmCallback& callback,
+                         const std::string& extension_id);
+
+  // Part of GetAlarm that is executed after alarms are loaded.
+  void GetAlarmWhenReady(const std::string& name,
+                         const GetAlarmCallback& callback,
+                         const std::string& extension_id);
+
+  // Part of GetAllAlarms that is executed after alarms are loaded.
+  void GetAllAlarmsWhenReady(const GetAllAlarmsCallback& callback,
+                             const std::string& extension_id);
+
+  // Part of RemoveAlarm that is executed after alarms are loaded.
+  void RemoveAlarmWhenReady(const std::string& name,
+                            const RemoveAlarmCallback& callback,
+                            const std::string& extension_id);
+
+  // Part of RemoveAllAlarms that is executed after alarms are loaded.
+  void RemoveAllAlarmsWhenReady(
+      const RemoveAllAlarmsCallback& callback, const std::string& extension_id);
 
   // Helper to return the iterators within the AlarmMap and AlarmList for the
   // matching alarm, or an iterator to the end of the AlarmMap if none were
@@ -122,21 +187,35 @@ class AlarmManager
   void ReadFromStorage(const std::string& extension_id,
                        scoped_ptr<base::Value> value);
 
+  // Set the timer to go off at the specified |time|, and set |next_poll_time|
+  // appropriately.
+  void SetNextPollTime(const base::Time& time);
+
   // Schedules the next poll of alarms for when the next soonest alarm runs,
-  // but do not more often than min_period.
-  void ScheduleNextPoll(base::TimeDelta min_period);
+  // but not more often than the minimum granularity of all alarms.
+  void ScheduleNextPoll();
 
   // Polls the alarms, running any that have elapsed. After running them and
   // rescheduling repeating alarms, schedule the next poll.
   void PollAlarms();
+
+  // Executes |action| for given extension, making sure that the extension's
+  // alarm data has been synced from the storage.
+  void RunWhenReady(const std::string& extension_id, const ReadyAction& action);
 
   // NotificationObserver:
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  Profile* profile_;
-  const TimeProvider now_;
+  // BrowserContextKeyedAPI implementation.
+  static const char* service_name() {
+    return "AlarmManager";
+  }
+  static const bool kServiceHasOwnInstanceInIncognito = true;
+
+  Profile* const profile_;
+  scoped_ptr<base::Clock> clock_;
   content::NotificationRegistrar registrar_;
   scoped_ptr<Delegate> delegate_;
 
@@ -147,8 +226,14 @@ class AlarmManager
   // Invariant: None of the AlarmLists are empty.
   AlarmMap alarms_;
 
-  // The previous and next time that alarms were and will be run.
+  // A map of actions waiting for alarm data to be synced from storage, per
+  // extension.
+  ReadyMap ready_actions_;
+
+  // The previous time that alarms were run.
   base::Time last_poll_time_;
+
+  // Next poll's time.
   base::Time next_poll_time_;
 
   DISALLOW_COPY_AND_ASSIGN(AlarmManager);

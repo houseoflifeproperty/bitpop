@@ -11,15 +11,12 @@
 #include "ui/views/context_menu_controller.h"
 #include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
 
-class BrowserDesktopRootWindowHost;
+class BrowserDesktopWindowTreeHost;
 class BrowserFrame;
 class BrowserView;
 
-namespace views {
-class MenuRunner;
-namespace corewm {
+namespace wm {
 class VisibilityController;
-}
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -37,32 +34,32 @@ class DesktopBrowserFrameAura : public views::DesktopNativeWidgetAura,
   BrowserView* browser_view() const { return browser_view_; }
 
  protected:
+  virtual ~DesktopBrowserFrameAura();
+
   // Overridden from views::DesktopNativeWidgetAura:
+  virtual void OnHostClosed() OVERRIDE;
   virtual void InitNativeWidget(
       const views::Widget::InitParams& params) OVERRIDE;
-  virtual void OnWindowDestroying() OVERRIDE;
 
   // Overridden from NativeBrowserFrame:
   virtual views::NativeWidget* AsNativeWidget() OVERRIDE;
   virtual const views::NativeWidget* AsNativeWidget() const OVERRIDE;
-  virtual void InitSystemContextMenu() OVERRIDE;
+  virtual bool UsesNativeSystemMenu() const OVERRIDE;
   virtual int GetMinimizeButtonOffset() const OVERRIDE;
-  virtual void TabStripDisplayModeChanged() OVERRIDE;
+  virtual bool ShouldSaveWindowPlacement() const OVERRIDE;
+  virtual void GetWindowPlacement(
+      gfx::Rect* bounds,
+      ui::WindowShowState* show_state) const OVERRIDE;
 
  private:
-  virtual ~DesktopBrowserFrameAura();
-
   // The BrowserView is our ClientView. This is a pointer to it.
   BrowserView* browser_view_;
   BrowserFrame* browser_frame_;
 
   // Owned by the RootWindow.
-  BrowserDesktopRootWindowHost* browser_desktop_root_window_host_;
+  BrowserDesktopWindowTreeHost* browser_desktop_window_tree_host_;
 
-  // System menu.
-  scoped_ptr<views::MenuRunner> menu_runner_;
-
-  scoped_ptr<views::corewm::VisibilityController> visibility_controller_;
+  scoped_ptr<wm::VisibilityController> visibility_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(DesktopBrowserFrameAura);
 };

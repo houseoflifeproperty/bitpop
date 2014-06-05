@@ -6,23 +6,26 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
+#include "base/files/file_path.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "content/browser/appcache/chrome_appcache_service.h"
 #include "content/browser/fileapi/browser_file_system_helper.h"
 #include "content/browser/fileapi/chrome_blob_storage_context.h"
-#include "content/browser/histogram_internals_request_job.h"
 #include "content/browser/loader/resource_request_info_impl.h"
-#include "content/browser/net/view_blob_internals_job_factory.h"
-#include "content/browser/net/view_http_cache_job_factory.h"
 #include "content/browser/resource_context_impl.h"
+#include "content/browser/service_worker/service_worker_request_handler.h"
 #include "content/browser/storage_partition_impl.h"
-#include "content/browser/tcmalloc_internals_request_job.h"
+#include "content/browser/streams/stream.h"
+#include "content/browser/streams/stream_context.h"
+#include "content/browser/streams/stream_registry.h"
+#include "content/browser/streams/stream_url_request_job.h"
+#include "content/browser/webui/url_data_manager_backend.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
@@ -30,164 +33,64 @@
 #include "content/public/common/content_constants.h"
 #include "content/public/common/url_constants.h"
 #include "crypto/sha2.h"
-#include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_context.h"
-#include "webkit/appcache/view_appcache_internals_job.h"
-#include "webkit/blob/blob_data.h"
-#include "webkit/blob/blob_url_request_job_factory.h"
-#include "webkit/fileapi/file_system_url_request_job_factory.h"
+#include "net/url_request/url_request_context_getter.h"
+#include "webkit/browser/blob/blob_storage_context.h"
+#include "webkit/browser/blob/blob_url_request_job_factory.h"
+#include "webkit/browser/fileapi/file_system_url_request_job_factory.h"
+#include "webkit/common/blob/blob_data.h"
 
 using appcache::AppCacheService;
 using fileapi::FileSystemContext;
-using webkit_blob::BlobStorageController;
+using webkit_blob::BlobStorageContext;
 
 namespace content {
 
 namespace {
 
-class BlobProtocolHandler : public webkit_blob::BlobProtocolHandler {
+// A derivative that knows about Streams too.
+class BlobProtocolHandler : public net::URLRequestJobFactory::ProtocolHandler {
  public:
-  BlobProtocolHandler(
-      webkit_blob::BlobStorageController* blob_storage_controller,
-      fileapi::FileSystemContext* file_system_context,
-      base::MessageLoopProxy* loop_proxy)
-      : webkit_blob::BlobProtocolHandler(blob_storage_controller,
-                                         file_system_context,
-                                         loop_proxy) {}
-
-  virtual ~BlobProtocolHandler() {}
-
- private:
-  virtual scoped_refptr<webkit_blob::BlobData>
-      LookupBlobData(net::URLRequest* request) const {
-    const ResourceRequestInfoImpl* info =
-        ResourceRequestInfoImpl::ForRequest(request);
-    if (!info)
-      return NULL;
-    return info->requested_blob_data();
+  BlobProtocolHandler(ChromeBlobStorageContext* blob_storage_context,
+                      StreamContext* stream_context,
+                      fileapi::FileSystemContext* file_system_context)
+      : blob_storage_context_(blob_storage_context),
+        stream_context_(stream_context),
+        file_system_context_(file_system_context) {
   }
 
+  virtual ~BlobProtocolHandler() {
+  }
+
+  virtual net::URLRequestJob* MaybeCreateJob(
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const OVERRIDE {
+    scoped_refptr<Stream> stream =
+        stream_context_->registry()->GetStream(request->url());
+    if (stream.get())
+      return new StreamURLRequestJob(request, network_delegate, stream);
+
+    if (!blob_protocol_handler_) {
+      // Construction is deferred because 'this' is constructed on
+      // the main thread but we want blob_protocol_handler_ constructed
+      // on the IO thread.
+      blob_protocol_handler_.reset(
+          new webkit_blob::BlobProtocolHandler(
+              blob_storage_context_->context(),
+              file_system_context_,
+              BrowserThread::GetMessageLoopProxyForThread(
+                  BrowserThread::FILE).get()));
+    }
+    return blob_protocol_handler_->MaybeCreateJob(request, network_delegate);
+  }
+
+ private:
+  const scoped_refptr<ChromeBlobStorageContext> blob_storage_context_;
+  const scoped_refptr<StreamContext> stream_context_;
+  const scoped_refptr<fileapi::FileSystemContext> file_system_context_;
+  mutable scoped_ptr<webkit_blob::BlobProtocolHandler> blob_protocol_handler_;
   DISALLOW_COPY_AND_ASSIGN(BlobProtocolHandler);
 };
-
-// Adds a bunch of debugging urls. We use an interceptor instead of a protocol
-// handler because we want to reuse the chrome://scheme (everyone is familiar
-// with it, and no need to expose the content/chrome separation through our UI).
-class DeveloperProtocolHandler
-    : public net::URLRequestJobFactory::Interceptor {
- public:
-  DeveloperProtocolHandler(
-      AppCacheService* appcache_service,
-      BlobStorageController* blob_storage_controller)
-      : appcache_service_(appcache_service),
-        blob_storage_controller_(blob_storage_controller) {}
-  virtual ~DeveloperProtocolHandler() {}
-
-  virtual net::URLRequestJob* MaybeIntercept(
-      net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE {
-    // Check for chrome://view-http-cache/*, which uses its own job type.
-    if (ViewHttpCacheJobFactory::IsSupportedURL(request->url()))
-      return ViewHttpCacheJobFactory::CreateJobForRequest(request,
-                                                          network_delegate);
-
-    // Next check for chrome://appcache-internals/, which uses its own job type.
-    if (request->url().SchemeIs(chrome::kChromeUIScheme) &&
-        request->url().host() == chrome::kChromeUIAppCacheInternalsHost) {
-      return appcache::ViewAppCacheInternalsJobFactory::CreateJobForRequest(
-          request, network_delegate, appcache_service_);
-    }
-
-    // Next check for chrome://blob-internals/, which uses its own job type.
-    if (ViewBlobInternalsJobFactory::IsSupportedURL(request->url())) {
-      return ViewBlobInternalsJobFactory::CreateJobForRequest(
-          request, network_delegate, blob_storage_controller_);
-    }
-
-#if defined(USE_TCMALLOC)
-    // Next check for chrome://tcmalloc/, which uses its own job type.
-    if (request->url().SchemeIs(chrome::kChromeUIScheme) &&
-        request->url().host() == chrome::kChromeUITcmallocHost) {
-      return new TcmallocInternalsRequestJob(request, network_delegate);
-    }
-#endif
-
-    // Next check for chrome://histograms/, which uses its own job type.
-    if (request->url().SchemeIs(chrome::kChromeUIScheme) &&
-        request->url().host() == chrome::kChromeUIHistogramHost) {
-      return new HistogramInternalsRequestJob(request, network_delegate);
-    }
-
-    return NULL;
-  }
-
-  virtual net::URLRequestJob* MaybeInterceptRedirect(
-        const GURL& location,
-        net::URLRequest* request,
-        net::NetworkDelegate* network_delegate) const OVERRIDE {
-    return NULL;
-  }
-
-  virtual net::URLRequestJob* MaybeInterceptResponse(
-      net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE {
-    return NULL;
-  }
-
-  virtual bool WillHandleProtocol(const std::string& protocol) const {
-    return protocol == chrome::kChromeUIScheme;
-  }
-
- private:
-  AppCacheService* appcache_service_;
-  BlobStorageController* blob_storage_controller_;
-};
-
-void InitializeURLRequestContext(
-    net::URLRequestContextGetter* context_getter,
-    AppCacheService* appcache_service,
-    FileSystemContext* file_system_context,
-    ChromeBlobStorageContext* blob_storage_context) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  if (!context_getter)
-    return;  // tests.
-
-  // This code only modifies the URLRequestJobFactory on the context
-  // to handle blob: URLs, filesystem: URLs, and to let AppCache intercept
-  // the appropriate requests.  This is in addition to the slew of other
-  // initializtion that is done in during creation of the URLRequestContext.
-  // We cannot yet centralize this code because URLRequestContext needs
-  // to be created before the StoragePartition context.
-  //
-  // TODO(ajwong): Fix the ordering so all the initialization is in one spot.
-  net::URLRequestContext* context = context_getter->GetURLRequestContext();
-  net::URLRequestJobFactory* job_factory =
-      const_cast<net::URLRequestJobFactory*>(context->job_factory());
-
-  // Note: if this is called twice with 2 request contexts that share one job
-  // factory (as is the case with a media request context and its related
-  // normal request context) then this will early exit.
-  if (job_factory->IsHandledProtocol(chrome::kBlobScheme))
-    return;  // Already initialized this JobFactory.
-
-  bool set_protocol = job_factory->SetProtocolHandler(
-      chrome::kBlobScheme,
-      new BlobProtocolHandler(
-          blob_storage_context->controller(),
-          file_system_context,
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE)));
-  DCHECK(set_protocol);
-  set_protocol = job_factory->SetProtocolHandler(
-      chrome::kFileSystemScheme,
-      CreateFileSystemProtocolHandler(file_system_context));
-  DCHECK(set_protocol);
-
-  job_factory->AddInterceptor(
-      new DeveloperProtocolHandler(appcache_service,
-                                   blob_storage_context->controller()));
-
-  // TODO(jam): Add the ProtocolHandlerRegistryIntercepter here!
-}
 
 // These constants are used to create the directory structure under the profile
 // where renderers with a non-default storage partition keep their persistent
@@ -205,13 +108,13 @@ void InitializeURLRequestContext(
 // The code in GetStoragePartitionPath() constructs these path names.
 //
 // TODO(nasko): Move extension related path code out of content.
-const FilePath::CharType kStoragePartitionDirname[] =
+const base::FilePath::CharType kStoragePartitionDirname[] =
     FILE_PATH_LITERAL("Storage");
-const FilePath::CharType kExtensionsDirname[] =
+const base::FilePath::CharType kExtensionsDirname[] =
     FILE_PATH_LITERAL("ext");
-const FilePath::CharType kDefaultPartitionDirname[] =
+const base::FilePath::CharType kDefaultPartitionDirname[] =
     FILE_PATH_LITERAL("def");
-const FilePath::CharType kTrashDirname[] =
+const base::FilePath::CharType kTrashDirname[] =
     FILE_PATH_LITERAL("trash");
 
 // Because partition names are user specified, they can be arbitrarily long
@@ -246,20 +149,20 @@ const int kPartitionNameHashBytes = 6;
 
 // Needed for selecting all files in ObliterateOneDirectory() below.
 #if defined(OS_POSIX)
-const int kAllFileTypes = file_util::FileEnumerator::FILES |
-                          file_util::FileEnumerator::DIRECTORIES |
-                          file_util::FileEnumerator::SHOW_SYM_LINKS;
+const int kAllFileTypes = base::FileEnumerator::FILES |
+                          base::FileEnumerator::DIRECTORIES |
+                          base::FileEnumerator::SHOW_SYM_LINKS;
 #else
-const int kAllFileTypes = file_util::FileEnumerator::FILES |
-                          file_util::FileEnumerator::DIRECTORIES;
+const int kAllFileTypes = base::FileEnumerator::FILES |
+                          base::FileEnumerator::DIRECTORIES;
 #endif
 
-FilePath GetStoragePartitionDomainPath(
+base::FilePath GetStoragePartitionDomainPath(
     const std::string& partition_domain) {
-  CHECK(IsStringUTF8(partition_domain));
+  CHECK(base::IsStringUTF8(partition_domain));
 
-  return FilePath(kStoragePartitionDirname).Append(kExtensionsDirname)
-      .Append(FilePath::FromUTF8Unsafe(partition_domain));
+  return base::FilePath(kStoragePartitionDirname).Append(kExtensionsDirname)
+      .Append(base::FilePath::FromUTF8Unsafe(partition_domain));
 }
 
 // Helper function for doing a depth-first deletion of the data on disk.
@@ -267,18 +170,19 @@ FilePath GetStoragePartitionDomainPath(
 // delete from disk anything that is in, or isn't a parent of something in
 // |paths_to_keep|. Paths that need further expansion are added to
 // |paths_to_consider|.
-void ObliterateOneDirectory(const FilePath& current_dir,
-                            const std::vector<FilePath>& paths_to_keep,
-                            std::vector<FilePath>* paths_to_consider) {
+void ObliterateOneDirectory(const base::FilePath& current_dir,
+                            const std::vector<base::FilePath>& paths_to_keep,
+                            std::vector<base::FilePath>* paths_to_consider) {
   CHECK(current_dir.IsAbsolute());
 
-  file_util::FileEnumerator enumerator(current_dir, false, kAllFileTypes);
-  for (FilePath to_delete = enumerator.Next(); !to_delete.empty();
+  base::FileEnumerator enumerator(current_dir, false, kAllFileTypes);
+  for (base::FilePath to_delete = enumerator.Next(); !to_delete.empty();
        to_delete = enumerator.Next()) {
     // Enum tracking which of the 3 possible actions to take for |to_delete|.
     enum { kSkip, kEnqueue, kDelete } action = kDelete;
 
-    for (std::vector<FilePath>::const_iterator to_keep = paths_to_keep.begin();
+    for (std::vector<base::FilePath>::const_iterator to_keep =
+             paths_to_keep.begin();
          to_keep != paths_to_keep.end();
          ++to_keep) {
       if (to_delete == *to_keep) {
@@ -294,7 +198,7 @@ void ObliterateOneDirectory(const FilePath& current_dir,
 
     switch (action) {
       case kDelete:
-        file_util::Delete(to_delete, true);
+        base::DeleteFile(to_delete, true);
         break;
 
       case kEnqueue:
@@ -312,33 +216,33 @@ void ObliterateOneDirectory(const FilePath& current_dir,
 // disk, then it completely removes |unnormalized_root|. All paths must be
 // absolute paths.
 void BlockingObliteratePath(
-    const FilePath& unnormalized_browser_context_root,
-    const FilePath& unnormalized_root,
-    const std::vector<FilePath>& paths_to_keep,
+    const base::FilePath& unnormalized_browser_context_root,
+    const base::FilePath& unnormalized_root,
+    const std::vector<base::FilePath>& paths_to_keep,
     const scoped_refptr<base::TaskRunner>& closure_runner,
     const base::Closure& on_gc_required) {
-  // Early exit required because file_util::AbsolutePath() will fail on POSIX
+  // Early exit required because MakeAbsoluteFilePath() will fail on POSIX
   // if |unnormalized_root| does not exist. This is safe because there is
   // nothing to do in this situation anwyays.
-  if (!file_util::PathExists(unnormalized_root)) {
+  if (!base::PathExists(unnormalized_root)) {
     return;
   }
 
   // Never try to obliterate things outside of the browser context root or the
   // browser context root itself. Die hard.
-  FilePath root = unnormalized_root;
-  FilePath browser_context_root = unnormalized_browser_context_root;
-  CHECK(file_util::AbsolutePath(&root));
-  CHECK(file_util::AbsolutePath(&browser_context_root));
-  CHECK(file_util::ContainsPath(browser_context_root, root) &&
-        browser_context_root != root);
+  base::FilePath root = base::MakeAbsoluteFilePath(unnormalized_root);
+  base::FilePath browser_context_root =
+      base::MakeAbsoluteFilePath(unnormalized_browser_context_root);
+  CHECK(!root.empty());
+  CHECK(!browser_context_root.empty());
+  CHECK(browser_context_root.IsParent(root) && browser_context_root != root);
 
   // Reduce |paths_to_keep| set to those under the root and actually on disk.
-  std::vector<FilePath> valid_paths_to_keep;
-  for (std::vector<FilePath>::const_iterator it = paths_to_keep.begin();
+  std::vector<base::FilePath> valid_paths_to_keep;
+  for (std::vector<base::FilePath>::const_iterator it = paths_to_keep.begin();
        it != paths_to_keep.end();
        ++it) {
-    if (root.IsParent(*it) && file_util::PathExists(*it))
+    if (root.IsParent(*it) && base::PathExists(*it))
       valid_paths_to_keep.push_back(*it);
   }
 
@@ -346,17 +250,17 @@ void BlockingObliteratePath(
   // root and be done with it.  Otherwise, signal garbage collection and do
   // a best-effort delete of the on-disk structures.
   if (valid_paths_to_keep.empty()) {
-    file_util::Delete(root, true);
+    base::DeleteFile(root, true);
     return;
   }
   closure_runner->PostTask(FROM_HERE, on_gc_required);
 
   // Otherwise, start at the root and delete everything that is not in
   // |valid_paths_to_keep|.
-  std::vector<FilePath> paths_to_consider;
+  std::vector<base::FilePath> paths_to_consider;
   paths_to_consider.push_back(root);
   while(!paths_to_consider.empty()) {
-    FilePath path = paths_to_consider.back();
+    base::FilePath path = paths_to_consider.back();
     paths_to_consider.pop_back();
     ObliterateOneDirectory(path, valid_paths_to_keep, &paths_to_consider);
   }
@@ -380,44 +284,43 @@ void BlockingObliteratePath(
 // This function is still named BlockingGarbageCollect() because it does
 // execute a few filesystem operations synchronously.
 void BlockingGarbageCollect(
-    const FilePath& storage_root,
+    const base::FilePath& storage_root,
     const scoped_refptr<base::TaskRunner>& file_access_runner,
-    scoped_ptr<base::hash_set<FilePath> > active_paths) {
+    scoped_ptr<base::hash_set<base::FilePath> > active_paths) {
   CHECK(storage_root.IsAbsolute());
 
-  file_util::FileEnumerator enumerator(storage_root, false, kAllFileTypes);
-  FilePath trash_directory;
-  if (!file_util::CreateTemporaryDirInDir(storage_root, kTrashDirname,
-                                          &trash_directory)) {
+  base::FileEnumerator enumerator(storage_root, false, kAllFileTypes);
+  base::FilePath trash_directory;
+  if (!base::CreateTemporaryDirInDir(storage_root, kTrashDirname,
+                                     &trash_directory)) {
     // Unable to continue without creating the trash directory so give up.
     return;
   }
-  for (FilePath path = enumerator.Next(); !path.empty();
+  for (base::FilePath path = enumerator.Next(); !path.empty();
        path = enumerator.Next()) {
     if (active_paths->find(path) == active_paths->end() &&
         path != trash_directory) {
       // Since |trash_directory| is unique for each run of this function there
       // can be no colllisions on the move.
-      file_util::Move(path, trash_directory.Append(path.BaseName()));
+      base::Move(path, trash_directory.Append(path.BaseName()));
     }
   }
 
   file_access_runner->PostTask(
       FROM_HERE,
-      base::Bind(base::IgnoreResult(&file_util::Delete), trash_directory,
-                 true));
+      base::Bind(base::IgnoreResult(&base::DeleteFile), trash_directory, true));
 }
 
 }  // namespace
 
 // static
-FilePath StoragePartitionImplMap::GetStoragePartitionPath(
+base::FilePath StoragePartitionImplMap::GetStoragePartitionPath(
     const std::string& partition_domain,
     const std::string& partition_name) {
   if (partition_domain.empty())
-    return FilePath();
+    return base::FilePath();
 
-  FilePath path = GetStoragePartitionDomainPath(partition_domain);
+  base::FilePath path = GetStoragePartitionDomainPath(partition_domain);
 
   // TODO(ajwong): Mangle in-memory into this somehow, either by putting
   // it into the partition_name, or by manually adding another path component
@@ -454,15 +357,6 @@ StoragePartitionImpl* StoragePartitionImplMap::Get(
     const std::string& partition_domain,
     const std::string& partition_name,
     bool in_memory) {
-  // TODO(ajwong): ResourceContexts no longer have any storage related state.
-  // We should move this into a place where it is called once per
-  // BrowserContext creation rather than piggybacking off the default context
-  // creation.
-  if (!resource_context_initialized_) {
-    resource_context_initialized_ = true;
-    InitializeResourceContext(browser_context_);
-  }
-
   // Find the previously created partition if it's available.
   StoragePartitionConfig partition_config(
       partition_domain, partition_name, in_memory);
@@ -471,7 +365,7 @@ StoragePartitionImpl* StoragePartitionImplMap::Get(
   if (it != partitions_.end())
     return it->second;
 
-  FilePath partition_path =
+  base::FilePath partition_path =
       browser_context_->GetPath().Append(
           GetStoragePartitionPath(partition_domain, partition_name));
   StoragePartitionImpl* partition =
@@ -479,12 +373,66 @@ StoragePartitionImpl* StoragePartitionImplMap::Get(
                                    partition_path);
   partitions_[partition_config] = partition;
 
+  ChromeBlobStorageContext* blob_storage_context =
+      ChromeBlobStorageContext::GetFor(browser_context_);
+  StreamContext* stream_context = StreamContext::GetFor(browser_context_);
+  ProtocolHandlerMap protocol_handlers;
+  protocol_handlers[kBlobScheme] =
+      linked_ptr<net::URLRequestJobFactory::ProtocolHandler>(
+          new BlobProtocolHandler(blob_storage_context,
+                                  stream_context,
+                                  partition->GetFileSystemContext()));
+  protocol_handlers[kFileSystemScheme] =
+      linked_ptr<net::URLRequestJobFactory::ProtocolHandler>(
+          CreateFileSystemProtocolHandler(partition_domain,
+                                          partition->GetFileSystemContext()));
+  protocol_handlers[kChromeUIScheme] =
+      linked_ptr<net::URLRequestJobFactory::ProtocolHandler>(
+          URLDataManagerBackend::CreateProtocolHandler(
+              browser_context_->GetResourceContext(),
+              browser_context_->IsOffTheRecord(),
+              partition->GetAppCacheService(),
+              blob_storage_context));
+  std::vector<std::string> additional_webui_schemes;
+  GetContentClient()->browser()->GetAdditionalWebUISchemes(
+      &additional_webui_schemes);
+  for (std::vector<std::string>::const_iterator it =
+           additional_webui_schemes.begin();
+       it != additional_webui_schemes.end();
+       ++it) {
+    protocol_handlers[*it] =
+        linked_ptr<net::URLRequestJobFactory::ProtocolHandler>(
+            URLDataManagerBackend::CreateProtocolHandler(
+                browser_context_->GetResourceContext(),
+                browser_context_->IsOffTheRecord(),
+                partition->GetAppCacheService(),
+                blob_storage_context));
+  }
+  protocol_handlers[kChromeDevToolsScheme] =
+      linked_ptr<net::URLRequestJobFactory::ProtocolHandler>(
+          CreateDevToolsProtocolHandler(browser_context_->GetResourceContext(),
+                                        browser_context_->IsOffTheRecord()));
+
+  ProtocolHandlerScopedVector protocol_interceptors;
+  protocol_interceptors.push_back(
+      ServiceWorkerRequestHandler::CreateInterceptor().release());
+
   // These calls must happen after StoragePartitionImpl::Create().
-  partition->SetURLRequestContext(
-      partition_domain.empty() ?
-      browser_context_->GetRequestContext() :
-      browser_context_->GetRequestContextForStoragePartition(
-          partition->GetPath(), in_memory));
+  if (partition_domain.empty()) {
+    partition->SetURLRequestContext(
+        GetContentClient()->browser()->CreateRequestContext(
+            browser_context_,
+            &protocol_handlers,
+            protocol_interceptors.Pass()));
+  } else {
+    partition->SetURLRequestContext(
+        GetContentClient()->browser()->CreateRequestContextForStoragePartition(
+            browser_context_,
+            partition->GetPath(),
+            in_memory,
+            &protocol_handlers,
+            protocol_interceptors.Pass()));
+  }
   partition->SetMediaURLRequestContext(
       partition_domain.empty() ?
       browser_context_->GetMediaRequestContext() :
@@ -516,13 +464,21 @@ void StoragePartitionImplMap::AsyncObliterate(
   // remove any data they have saved. This will leave the directory structure
   // intact but it will only contain empty databases.
   std::vector<StoragePartitionImpl*> active_partitions;
-  std::vector<FilePath> paths_to_keep;
+  std::vector<base::FilePath> paths_to_keep;
   for (PartitionMap::const_iterator it = partitions_.begin();
        it != partitions_.end();
        ++it) {
     const StoragePartitionConfig& config = it->first;
     if (config.partition_domain == partition_domain) {
-      it->second->AsyncClearAllData();
+      it->second->ClearData(
+          // All except shader cache.
+          StoragePartition::REMOVE_DATA_MASK_ALL &
+            (~StoragePartition::REMOVE_DATA_MASK_SHADER_CACHE),
+          StoragePartition::QUOTA_MANAGED_STORAGE_MASK_ALL,
+          GURL(),
+          StoragePartition::OriginMatcherFunction(),
+          base::Time(), base::Time::Max(),
+          base::Bind(&base::DoNothing));
       if (!config.in_memory) {
         paths_to_keep.push_back(it->second->GetPath());
       }
@@ -533,7 +489,7 @@ void StoragePartitionImplMap::AsyncObliterate(
   // known to still be in use. This is to delete any previously created
   // StoragePartition state that just happens to not have been used during this
   // run of the browser.
-  FilePath domain_root = browser_context_->GetPath().Append(
+  base::FilePath domain_root = browser_context_->GetPath().Append(
       GetStoragePartitionDomainPath(partition_domain));
 
   BrowserThread::PostBlockingPoolTask(
@@ -544,7 +500,7 @@ void StoragePartitionImplMap::AsyncObliterate(
 }
 
 void StoragePartitionImplMap::GarbageCollect(
-    scoped_ptr<base::hash_set<FilePath> > active_paths,
+    scoped_ptr<base::hash_set<base::FilePath> > active_paths,
     const base::Closure& done) {
   // Include all paths for current StoragePartitions in the active_paths since
   // they cannot be deleted safely.
@@ -558,7 +514,7 @@ void StoragePartitionImplMap::GarbageCollect(
 
   // Find the directory holding the StoragePartitions and delete everything in
   // there that isn't considered active.
-  FilePath storage_root = browser_context_->GetPath().Append(
+  base::FilePath storage_root = browser_context_->GetPath().Append(
       GetStoragePartitionDomainPath(std::string()));
   file_access_runner_->PostTaskAndReply(
       FROM_HERE,
@@ -580,29 +536,28 @@ void StoragePartitionImplMap::ForEach(
 void StoragePartitionImplMap::PostCreateInitialization(
     StoragePartitionImpl* partition,
     bool in_memory) {
+  // TODO(ajwong): ResourceContexts no longer have any storage related state.
+  // We should move this into a place where it is called once per
+  // BrowserContext creation rather than piggybacking off the default context
+  // creation.
+  // Note: moving this into Get() before partitions_[] is set causes reentrency.
+  if (!resource_context_initialized_) {
+    resource_context_initialized_ = true;
+    InitializeResourceContext(browser_context_);
+  }
+
   // Check first to avoid memory leak in unittests.
   if (BrowserThread::IsMessageLoopValid(BrowserThread::IO)) {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
         base::Bind(&ChromeAppCacheService::InitializeOnIOThread,
                    partition->GetAppCacheService(),
-                   in_memory ? FilePath() :
+                   in_memory ? base::FilePath() :
                        partition->GetPath().Append(kAppCacheDirname),
                    browser_context_->GetResourceContext(),
                    make_scoped_refptr(partition->GetURLRequestContext()),
                    make_scoped_refptr(
                        browser_context_->GetSpecialStoragePolicy())));
-
-    // Add content's URLRequestContext's hooks.
-    BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        base::Bind(
-            &InitializeURLRequestContext,
-            make_scoped_refptr(partition->GetURLRequestContext()),
-            make_scoped_refptr(partition->GetAppCacheService()),
-            make_scoped_refptr(partition->GetFileSystemContext()),
-            make_scoped_refptr(
-                ChromeBlobStorageContext::GetFor(browser_context_))));
 
     // We do not call InitializeURLRequestContext() for media contexts because,
     // other than the HTTP cache, the media contexts share the same backing

@@ -46,8 +46,7 @@ class NativeClientSDKFactory(gclient_factory.GClientFactory):
                           self.CUSTOM_VARS_GOOGLECODE_URL,
                           self.CUSTOM_VARS_SOURCEFORGE_URL],
         custom_deps_list=[('src/pdf', None),
-                          ('src-pdf', None),
-                          ('src/third_party/WebKit/LayoutTests', None)],
+                          ('src-pdf', None)],
         needed_components=self.NEEDED_COMPONENTS)
     solutions.append(main)
 

@@ -7,16 +7,15 @@
 #include "base/logging.h"
 #include "base/rand_util.h"
 #include "base/test/test_suite.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebKitPlatformSupport.h"
-#include "webkit/compositor_bindings/web_compositor_support_impl.h"
+#include "third_party/WebKit/public/platform/Platform.h"
+#include "third_party/WebKit/public/web/WebKit.h"
 
 namespace content {
 
 #if !defined(OS_IOS)
 // A stubbed out WebKit platform support impl.
 class UnitTestTestSuite::UnitTestWebKitPlatformSupport
-    : public WebKit::WebKitPlatformSupport {
+    : public blink::Platform {
  public:
   UnitTestWebKitPlatformSupport() {}
   virtual ~UnitTestWebKitPlatformSupport() {}
@@ -30,13 +29,6 @@ class UnitTestTestSuite::UnitTestWebKitPlatformSupport
     static const unsigned char kEnabled = 0;
     return &kEnabled;
   }
-
-  virtual WebKit::WebCompositorSupport* compositorSupport() {
-    return &compositor_support_;
-  }
-
- private:
-  webkit::WebCompositorSupportImpl compositor_support_;
 };
 #endif  // !OS_IOS
 
@@ -45,13 +37,13 @@ UnitTestTestSuite::UnitTestTestSuite(base::TestSuite* test_suite)
   DCHECK(test_suite);
 #if !defined(OS_IOS)
   webkit_platform_support_.reset(new UnitTestWebKitPlatformSupport);
-  WebKit::initialize(webkit_platform_support_.get());
+  blink::initialize(webkit_platform_support_.get());
 #endif
 }
 
 UnitTestTestSuite::~UnitTestTestSuite() {
 #if !defined(OS_IOS)
-  WebKit::shutdown();
+  blink::shutdown();
 #endif
 }
 

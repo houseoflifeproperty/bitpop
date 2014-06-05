@@ -9,15 +9,15 @@
 #include "base/command_line.h"
 #include "base/path_service.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/plugin_service_filter.h"
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/test/content_browser_test.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_utils.h"
-#include "content/shell/shell.h"
-#include "content/test/content_browser_test.h"
+#include "content/shell/browser/shell.h"
 #include "testing/gmock/include/gmock/gmock.h"
-#include "webkit/plugins/npapi/plugin_list.h"
 
 namespace content {
 
@@ -35,10 +35,11 @@ void OpenChannel(PluginProcessHost::Client* client) {
 class MockPluginProcessHostClient : public PluginProcessHost::Client,
                                     public IPC::Listener {
  public:
-  MockPluginProcessHostClient(ResourceContext* context)
+  MockPluginProcessHostClient(ResourceContext* context, bool expect_fail)
       : context_(context),
         channel_(NULL),
-        set_plugin_info_called_(false) {
+        set_plugin_info_called_(false),
+        expect_fail_(expect_fail) {
   }
 
   virtual ~MockPluginProcessHostClient() {
@@ -63,7 +64,7 @@ class MockPluginProcessHostClient : public PluginProcessHost::Client,
     ASSERT_TRUE(channel_->Connect());
   }
 
-  virtual void SetPluginInfo(const webkit::WebPluginInfo& info) OVERRIDE {
+  virtual void SetPluginInfo(const WebPluginInfo& info) OVERRIDE {
     ASSERT_TRUE(info.mime_types.size());
     ASSERT_EQ(kNPAPITestPluginMimeType, info.mime_types[0].mime_type);
     set_plugin_info_called_ = true;
@@ -79,6 +80,8 @@ class MockPluginProcessHostClient : public PluginProcessHost::Client,
     return false;
   }
   virtual void OnChannelConnected(int32 peer_pid) OVERRIDE {
+    if (expect_fail_)
+      FAIL();
     QuitMessageLoop();
   }
   virtual void OnChannelError() OVERRIDE {
@@ -95,19 +98,38 @@ class MockPluginProcessHostClient : public PluginProcessHost::Client,
 
  private:
   void Fail() {
-    FAIL();
+    if (!expect_fail_)
+      FAIL();
     QuitMessageLoop();
   }
 
   void QuitMessageLoop() {
-    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                            MessageLoop::QuitClosure());
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE, base::MessageLoop::QuitClosure());
   }
 
   ResourceContext* context_;
   IPC::Channel* channel_;
   bool set_plugin_info_called_;
+  bool expect_fail_;
   DISALLOW_COPY_AND_ASSIGN(MockPluginProcessHostClient);
+};
+
+class MockPluginServiceFilter : public content::PluginServiceFilter {
+ public:
+  MockPluginServiceFilter() {}
+
+  virtual bool IsPluginAvailable(
+      int render_process_id,
+      int render_view_id,
+      const void* context,
+      const GURL& url,
+      const GURL& policy_url,
+      WebPluginInfo* plugin) OVERRIDE { return true; }
+
+  virtual bool CanLoadPlugin(
+      int render_process_id,
+      const base::FilePath& path) OVERRIDE { return false; }
 };
 
 class PluginServiceTest : public ContentBrowserTest {
@@ -118,9 +140,9 @@ class PluginServiceTest : public ContentBrowserTest {
     return shell()->web_contents()->GetBrowserContext()->GetResourceContext();
   }
 
-  virtual void SetUpCommandLine(CommandLine* command_line) {
-#ifdef OS_MACOSX
-    FilePath browser_directory;
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+#if defined(OS_MACOSX)
+    base::FilePath browser_directory;
     PathService::Get(base::DIR_MODULE, &browser_directory);
     command_line->AppendSwitchPath(switches::kExtraPluginDir,
                                    browser_directory.AppendASCII("plugins"));
@@ -137,7 +159,21 @@ class PluginServiceTest : public ContentBrowserTest {
 // Try to open a channel to the test plugin. Minimal plugin process spawning
 // test for the PluginService interface.
 IN_PROC_BROWSER_TEST_F(PluginServiceTest, OpenChannelToPlugin) {
-  MockPluginProcessHostClient mock_client(GetResourceContext());
+  if (!PluginServiceImpl::GetInstance()->NPAPIPluginsSupported())
+    return;
+  MockPluginProcessHostClient mock_client(GetResourceContext(), false);
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE,
+      base::Bind(&OpenChannel, &mock_client));
+  RunMessageLoop();
+}
+
+IN_PROC_BROWSER_TEST_F(PluginServiceTest, OpenChannelToDeniedPlugin) {
+  if (!PluginServiceImpl::GetInstance()->NPAPIPluginsSupported())
+    return;
+  MockPluginServiceFilter filter;
+  PluginServiceImpl::GetInstance()->SetFilter(&filter);
+  MockPluginProcessHostClient mock_client(GetResourceContext(), true);
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
       base::Bind(&OpenChannel, &mock_client));
@@ -165,7 +201,7 @@ class MockCanceledPluginServiceClient : public PluginProcessHost::Client {
   MOCK_METHOD1(OnFoundPluginProcessHost, void(PluginProcessHost* host));
   MOCK_METHOD0(OnSentPluginChannelRequest, void());
   MOCK_METHOD1(OnChannelOpened, void(const IPC::ChannelHandle& handle));
-  MOCK_METHOD1(SetPluginInfo, void(const webkit::WebPluginInfo& info));
+  MOCK_METHOD1(SetPluginInfo, void(const WebPluginInfo& info));
   MOCK_METHOD0(OnError, void());
 
   bool get_resource_context_called() const {
@@ -180,8 +216,8 @@ class MockCanceledPluginServiceClient : public PluginProcessHost::Client {
 };
 
 void QuitUIMessageLoopFromIOThread() {
-  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                          MessageLoop::QuitClosure());
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE, base::MessageLoop::QuitClosure());
 }
 
 void OpenChannelAndThenCancel(PluginProcessHost::Client* client) {
@@ -221,7 +257,7 @@ class MockCanceledBeforeSentPluginProcessHostClient
   virtual ~MockCanceledBeforeSentPluginProcessHostClient() {}
 
   // Client implementation.
-  virtual void SetPluginInfo(const webkit::WebPluginInfo& info) OVERRIDE {
+  virtual void SetPluginInfo(const WebPluginInfo& info) OVERRIDE {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
     ASSERT_TRUE(info.mime_types.size());
     ASSERT_EQ(kNPAPITestPluginMimeType, info.mime_types[0].mime_type);
@@ -233,13 +269,13 @@ class MockCanceledBeforeSentPluginProcessHostClient
     set_host(host);
     // This gets called right before we request the plugin<=>renderer channel,
     // so we have to post a task to cancel it.
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(&PluginProcessHost::CancelPendingRequest,
-                   base::Unretained(host), this));
-    MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&QuitUIMessageLoopFromIOThread));
+                   base::Unretained(host),
+                   this));
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE, base::Bind(&QuitUIMessageLoopFromIOThread));
   }
 
   bool set_plugin_info_called() const {
@@ -270,6 +306,8 @@ class MockCanceledBeforeSentPluginProcessHostClient
 
 IN_PROC_BROWSER_TEST_F(
     PluginServiceTest, CancelBeforeSentOpenChannelToPluginProcessHost) {
+  if (!PluginServiceImpl::GetInstance()->NPAPIPluginsSupported())
+    return;
   ::testing::StrictMock<MockCanceledBeforeSentPluginProcessHostClient>
       mock_client(GetResourceContext());
   BrowserThread::PostTask(
@@ -305,8 +343,8 @@ class MockCanceledAfterSentPluginProcessHostClient
   virtual void OnSentPluginChannelRequest() OVERRIDE {
     on_sent_plugin_channel_request_called_ = true;
     host()->CancelSentRequest(this);
-    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                            MessageLoop::QuitClosure());
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE, base::MessageLoop::QuitClosure());
   }
 
   bool on_sent_plugin_channel_request_called() const {
@@ -322,6 +360,8 @@ class MockCanceledAfterSentPluginProcessHostClient
 // Should not attempt to open a channel, since it should be canceled early on.
 IN_PROC_BROWSER_TEST_F(
     PluginServiceTest, CancelAfterSentOpenChannelToPluginProcessHost) {
+  if (!PluginServiceImpl::GetInstance()->NPAPIPluginsSupported())
+    return;
   ::testing::StrictMock<MockCanceledAfterSentPluginProcessHostClient>
       mock_client(GetResourceContext());
   BrowserThread::PostTask(

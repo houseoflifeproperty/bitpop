@@ -6,12 +6,13 @@
 
 #include "chrome/browser/extensions/extension_install_ui.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
 
 using content::NavigationController;
 using content::NavigationEntry;
@@ -52,14 +53,14 @@ void NavigationObserver::PromptToEnableExtensionIfNecessary(
   if (!in_progress_prompt_extension_id_.empty())
     return;
 
-  NavigationEntry* nav_entry = nav_controller->GetActiveEntry();
+  NavigationEntry* nav_entry = nav_controller->GetVisibleEntry();
   if (!nav_entry)
     return;
 
-  ExtensionService* extension_service =
-      extensions::ExtensionSystem::Get(profile_)->extension_service();
-  const Extension* extension = extension_service->disabled_extensions()->
-      GetExtensionOrAppByURL(ExtensionURLInfo(nav_entry->GetURL()));
+  ExtensionRegistry* registry = extensions::ExtensionRegistry::Get(profile_);
+  const Extension* extension =
+      registry->disabled_extensions().GetExtensionOrAppByURL(
+          nav_entry->GetURL());
   if (!extension)
     return;
 
@@ -68,7 +69,7 @@ void NavigationObserver::PromptToEnableExtensionIfNecessary(
     return;
   prompted_extensions_.insert(extension->id());
 
-  ExtensionPrefs* extension_prefs = extension_service->extension_prefs();
+  ExtensionPrefs* extension_prefs = ExtensionPrefs::Get(profile_);
   if (extension_prefs->DidExtensionEscalatePermissions(extension->id())) {
     // Keep track of the extension id and nav controller we're prompting for.
     // These must be reset in InstallUIProceed and InstallUIAbort.
@@ -93,12 +94,10 @@ void NavigationObserver::InstallUIProceed() {
 
   in_progress_prompt_extension_id_ = "";
   in_progress_prompt_navigation_controller_ = NULL;
-  bool record_oauth2_grant = extension_install_prompt_->record_oauth2_grant();
   extension_install_prompt_.reset();
 
   // Grant permissions, re-enable the extension, and then reload the tab.
-  extension_service->GrantPermissionsAndEnableExtension(
-      extension, record_oauth2_grant);
+  extension_service->GrantPermissionsAndEnableExtension(extension);
   nav_controller->Reload(true);
 }
 

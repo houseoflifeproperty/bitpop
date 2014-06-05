@@ -8,17 +8,16 @@
  */
 
 /**
- * Takes the |flagsExperimentsData| input argument which represents data about
- * the currently available experiments and populates the html jstemplate
+ * Takes the |experimentsData| input argument which represents data about all
+ * the current experiments and populates the html jstemplate with that data.
  * with that data. It expects an object structure like the above.
- * @param {Object} flagsExperimentsData Information about available experiments.
+ * @param {Object} experimentsData Information about all experiments.
  *     See returnFlagsExperiments() for the structure of this object.
  */
-function renderTemplate(flagsExperimentsData) {
+function renderTemplate(experimentsData) {
   // This is the javascript code that processes the template:
-  var input = new JsEvalContext(flagsExperimentsData);
-  var output = $('flagsExperimentTemplate');
-  jstProcess(input, output);
+  jstProcess(new JsEvalContext(experimentsData),
+             $('flagsExperimentTemplate'));
 
   // Add handlers to dynamically created HTML elements.
   var elements = document.getElementsByClassName('experiment-select');
@@ -49,6 +48,30 @@ function renderTemplate(flagsExperimentsData) {
   for (var i = 0; i < elements.length; ++i) {
     elements[i].onclick = restartBrowser;
   }
+
+  $('experiment-reset-all').onclick = resetAllFlags;
+
+  highlightReferencedFlag();
+}
+
+/**
+ * Highlight an element associated with the page's location's hash. We need to
+ * fake fragment navigation with '.scrollIntoView()', since the fragment IDs
+ * don't actually exist until after the template code runs; normal navigation
+ * therefore doesn't work.
+ */
+function highlightReferencedFlag() {
+  if (window.location.hash) {
+    var el = document.querySelector(window.location.hash);
+    if (el && !el.classList.contains('referenced')) {
+      // Unhighlight whatever's highlighted.
+      if (document.querySelector('.referenced'))
+        document.querySelector('.referenced').classList.remove('referenced');
+      // Highlight the referenced element.
+      el.classList.add('referenced');
+      el.scrollIntoView();
+    }
+  }
 }
 
 /**
@@ -68,12 +91,21 @@ function restartBrowser() {
 }
 
 /**
+ * Reset all flags to their default values and refresh the UI.
+ */
+function resetAllFlags() {
+  // Asks the C++ FlagsDOMHandler to reset all flags to default values.
+  chrome.send('resetAllFlags');
+  requestFlagsExperimentsData();
+}
+
+/**
  * Called by the WebUI to re-populate the page with data representing the
- * current state of installed experiments.
- * @param {Object} flagsExperimentsData Information about available experiments
+ * current state of all experiments.
+ * @param {Object} experimentsData Information about all experiments.
  *     in the following format:
  *   {
- *     flagsExperiments: [
+ *     supportedExperiments: [
  *       {
  *         internal_name: 'Experiment ID string',
  *         name: 'Experiment Name',
@@ -88,20 +120,34 @@ function restartBrowser() {
  *             selected: true
  *           }
  *         ],
- *         supported: true,
  *         supported_platforms: [
  *           'Mac',
  *           'Linux'
  *         ],
  *       }
  *     ],
- *     needsRestart: false
+ *     unsupportedExperiments: [
+ *       // Mirrors the format of |supportedExperiments| above.
+ *     ],
+ *     needsRestart: false,
+ *     showBetaChannelPromotion: false,
+ *     showDevChannelPromotion: false,
+ *     showOwnerWarning: false
  *   }
  */
-function returnFlagsExperiments(flagsExperimentsData) {
+function returnFlagsExperiments(experimentsData) {
   var bodyContainer = $('body-container');
-  renderTemplate(flagsExperimentsData);
+  renderTemplate(experimentsData);
+
+  if (experimentsData.showBetaChannelPromotion)
+    $('channel-promo-beta').hidden = false;
+  else if (experimentsData.showDevChannelPromotion)
+    $('channel-promo-dev').hidden = false;
+
   bodyContainer.style.visibility = 'visible';
+  var ownerWarningDiv = $('owner-warning');
+  if (ownerWarningDiv)
+    ownerWarningDiv.hidden = !experimentsData.showOwnerWarning;
 }
 
 /**
@@ -132,3 +178,5 @@ function handleSelectChoiceExperiment(node, index) {
 // Get data and have it displayed upon loading.
 document.addEventListener('DOMContentLoaded', requestFlagsExperimentsData);
 
+// Update the highlighted flag when the hash changes.
+window.addEventListener('hashchange', highlightReferencedFlag);

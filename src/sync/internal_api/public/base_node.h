@@ -11,11 +11,12 @@
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/time.h"
-#include "googleurl/src/gurl.h"
+#include "base/time/time.h"
+#include "sync/api/attachments/attachment.h"
 #include "sync/base/sync_export.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/protocol/sync.pb.h"
+#include "url/gurl.h"
 
 // Forward declarations of internal class types so that sync API objects
 // may have opaque pointers to these types.
@@ -161,6 +162,11 @@ class SYNC_EXPORT BaseNode {
   // data.  Can only be called if GetModelType() == EXPERIMENTS.
   const sync_pb::ExperimentsSpecifics& GetExperimentsSpecifics() const;
 
+  // Getter specific to the PRIORITY_PREFERENCE datatype. Returns protobuf
+  // data.  Can only be called if GetModelType() == PRIORITY_PREFERENCE.
+  const sync_pb::PriorityPreferenceSpecifics&
+      GetPriorityPreferenceSpecifics() const;
+
   const sync_pb::EntitySpecifics& GetEntitySpecifics() const;
 
   // Returns the local external ID associated with the node.
@@ -181,30 +187,33 @@ class SYNC_EXPORT BaseNode {
   // children, return 0.
   int64 GetFirstChildId() const;
 
+  // Returns the IDs of the children of this node.
+  // If this type supports user-defined positions the returned IDs will be in
+  // the correct order.
+  void GetChildIds(std::vector<int64>* result) const;
+
   // Returns the total number of nodes including and beneath this node.
   // Recursively iterates through all children.
   int GetTotalNodeCount() const;
+
+  // Returns this item's position within its parent.
+  // Do not call this function on items that do not support positioning
+  // (ie. non-bookmarks).
+  int GetPositionIndex() const;
+
+  // Returns this item's attachment ids.
+  const syncer::AttachmentIdList GetAttachmentIds() const;
 
   // These virtual accessors provide access to data members of derived classes.
   virtual const syncable::Entry* GetEntry() const = 0;
   virtual const BaseTransaction* GetTransaction() const = 0;
 
-  // Dumps a summary of node info into a DictionaryValue and returns it.
-  // Transfers ownership of the DictionaryValue to the caller.
-  base::DictionaryValue* GetSummaryAsValue() const;
-
-  // Dumps all node details into a DictionaryValue and returns it.
-  // Transfers ownership of the DictionaryValue to the caller.
-  base::DictionaryValue* GetDetailsAsValue() const;
+  // Returns a base::DictionaryValue serialization of this node.
+  base::DictionaryValue* ToValue() const;
 
  protected:
   BaseNode();
   virtual ~BaseNode();
-  // The server has a size limit on client tags, so we generate a fixed length
-  // hash locally. This also ensures that ModelTypes have unique namespaces.
-  static std::string GenerateSyncableHash(
-      ModelType model_type,
-      const std::string& client_tag);
 
   // Determines whether part of the entry is encrypted, and if so attempts to
   // decrypt it. Unless decryption is necessary and fails, this will always

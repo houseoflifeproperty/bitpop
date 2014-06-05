@@ -52,6 +52,8 @@ static int parse_config_ALS(GetBitContext *gb, MPEG4AudioConfig *c)
     return 0;
 }
 
+/* XXX: make sure to update the copies in the different encoders if you change
+ * this table */
 const int avpriv_mpeg4audio_sample_rates[16] = {
     96000, 88200, 64000, 48000, 44100, 32000,
     24000, 22050, 16000, 12000, 11025, 8000, 7350
@@ -82,10 +84,8 @@ int avpriv_mpeg4audio_get_config(MPEG4AudioConfig *c, const uint8_t *buf,
     GetBitContext gb;
     int specific_config_bitindex;
 
-    if(bit_size<=0)
+    if (bit_size <= 0 || init_get_bits(&gb, buf, bit_size) < 0)
         return AVERROR_INVALIDDATA;
-
-    init_get_bits(&gb, buf, bit_size);
     c->object_type = get_object_type(&gb);
     c->sample_rate = get_sample_rate(&gb, &c->sampling_index);
     c->chan_config = get_bits(&gb, 4);

@@ -6,22 +6,21 @@
 
 #include <float.h>
 
+#if NACL_WINDOWS
+/*
+ * This header declares the _mm_getcsr function.
+ */
+#include <mmintrin.h>
+#endif
+
 #include "native_client/src/shared/platform/nacl_log.h"
 #include "native_client/src/trusted/service_runtime/nacl_app_thread.h"
 #include "native_client/src/trusted/service_runtime/nacl_signal.h"
+#include "native_client/src/trusted/service_runtime/nacl_tls.h"
 #include "native_client/src/trusted/service_runtime/sel_ldr.h"
 #include "native_client/src/trusted/service_runtime/sel_rt.h"
 #include "native_client/src/trusted/service_runtime/include/sys/errno.h"
-
-
-uintptr_t NaClGetThreadCtxSp(struct NaClThreadContext  *th_ctx) {
-  return (uintptr_t) th_ctx->stack_ptr;
-}
-
-
-void NaClSetThreadCtxSp(struct NaClThreadContext  *th_ctx, uintptr_t sp) {
-  th_ctx->stack_ptr = (uint32_t) sp;
-}
+#include "native_client/src/trusted/cpu_features/arch/x86/cpu_x86.h"
 
 
 uint16_t  nacl_global_cs = 0;
@@ -41,11 +40,14 @@ uint16_t NaClGetGlobalCs(void) {
   return nacl_global_cs;
 }
 
-int NaClThreadContextCtor(struct NaClThreadContext  *ntcp,
-                          struct NaClApp            *nap,
-                          nacl_reg_t                prog_ctr,
-                          nacl_reg_t                stack_ptr,
-                          nacl_reg_t                tls_idx) {
+int NaClAppThreadInitArchSpecific(struct NaClAppThread *natp,
+                                  nacl_reg_t           prog_ctr,
+                                  nacl_reg_t           stack_ptr) {
+  struct NaClThreadContext *ntcp = &natp->user;
+  struct NaClApp *nap = natp->nap;
+  /* TODO(mcgrathr): Use a safe cast here. */
+  NaClCPUFeaturesX86 *features = (NaClCPUFeaturesX86 *) nap->cpu_features;
+
   NaClThreadContextOffsetCheck();
 
   NaClLog(4, "&nap->code_seg_sel = 0x%08"NACL_PRIxPTR"\n",
@@ -74,20 +76,47 @@ int NaClThreadContextCtor(struct NaClThreadContext  *ntcp,
 
   ntcp->es = nap->data_seg_sel;
   ntcp->fs = 0;  /* windows use this for TLS and SEH; linux does not */
-  ntcp->gs = (uint16_t) tls_idx;
+  ntcp->gs = NaClTlsAllocate(natp);
+  if (ntcp->gs == NACL_TLS_INDEX_INVALID)
+    return 0;
   ntcp->ss = nap->data_seg_sel;
 
   ntcp->fcw = NACL_X87_FCW_DEFAULT;
+  ntcp->mxcsr = NACL_MXCSR_DEFAULT;
 
   /*
    * Save the system's state of the x87 FPU control word so we can restore
    * the same state when returning to trusted code.
    */
 #if NACL_WINDOWS
-  ntcp->sys_fcw = _control87(0, 0);
+  {
+    uint16_t sys_fcw;
+    __asm {
+      fnstcw sys_fcw;
+    }
+    ntcp->sys_fcw = sys_fcw;
+  }
 #else
   __asm__ __volatile__("fnstcw %0" : "=m" (ntcp->sys_fcw));
 #endif
+
+  /*
+   * Likewise for the SSE control word, if SSE is supported.
+   */
+  if (NaClGetCPUFeatureX86(features, NaClCPUFeatureX86_SSE)) {
+#if NACL_WINDOWS
+    ntcp->sys_mxcsr = _mm_getcsr();
+#else
+    /*
+     * GCC actually defines _mm_getcsr too, in its <xmmintrin.h>.
+     * But that (and the __builtin_ia32_stmxcsr it uses) are only
+     * available when compiling with -msse, which also makes the
+     * compiler generate SSE instructions itself, which would be
+     * incompatible with systems that don't support SSE.
+     */
+    __asm__("stmxcsr %0" : "=m" (ntcp->sys_mxcsr));
+#endif
+  }
 
   NaClLog(4, "user.cs: 0x%02x\n", ntcp->cs);
   NaClLog(4, "user.fs: 0x%02x\n", ntcp->fs);
@@ -116,4 +145,13 @@ void NaClThreadContextToSignalContext(const struct NaClThreadContext *th_ctx,
   sig_ctx->es        = th_ctx->es;
   sig_ctx->fs        = th_ctx->fs;
   sig_ctx->gs        = th_ctx->gs;
+}
+
+
+void NaClSignalContextUnsetClobberedRegisters(
+    struct NaClSignalContext *sig_ctx) {
+  sig_ctx->eax       = 0;
+  sig_ctx->ecx       = 0;
+  sig_ctx->edx       = 0;
+  sig_ctx->flags     = 0;
 }

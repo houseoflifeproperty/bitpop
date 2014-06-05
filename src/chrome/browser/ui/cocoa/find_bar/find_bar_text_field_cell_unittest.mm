@@ -4,18 +4,18 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
-#import "chrome/browser/ui/cocoa/find_bar/find_bar_text_field_cell.h"
+#include "base/mac/scoped_nsobject.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
+#import "chrome/browser/ui/cocoa/find_bar/find_bar_text_field_cell.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 
 @interface FindBarTextFieldCell (ExposedForTesting)
-- (NSAttributedString*)resultsString;
+- (NSAttributedString*)resultsAttributedString;
 @end
 
 @implementation FindBarTextFieldCell (ExposedForTesting)
-- (NSAttributedString*)resultsString {
+- (NSAttributedString*)resultsAttributedString {
   return resultsString_.get();
 }
 @end
@@ -26,9 +26,6 @@ namespace {
 // the time.
 const CGFloat kWidth(300.0);
 
-// A narrow width for tests which test things that don't fit.
-const CGFloat kNarrowWidth(5.0);
-
 class FindBarTextFieldCellTest : public CocoaTest {
  public:
   FindBarTextFieldCellTest() {
@@ -36,13 +33,13 @@ class FindBarTextFieldCellTest : public CocoaTest {
     // decorations.
     const NSRect frame = NSMakeRect(0, 0, kWidth, 30);
 
-    scoped_nsobject<FindBarTextFieldCell> cell(
+    base::scoped_nsobject<FindBarTextFieldCell> cell(
         [[FindBarTextFieldCell alloc] initTextCell:@"Testing"]);
     cell_ = cell;
     [cell_ setEditable:YES];
     [cell_ setBordered:YES];
 
-    scoped_nsobject<NSTextField> view(
+    base::scoped_nsobject<NSTextField> view(
         [[NSTextField alloc] initWithFrame:frame]);
     view_ = view;
     [view_ setCell:cell_];
@@ -81,16 +78,18 @@ TEST_F(FindBarTextFieldCellTest, FocusedDisplay) {
 // appropriately.
 TEST_F(FindBarTextFieldCellTest, SetAndClearFindResults) {
   [cell_ setActiveMatch:10 of:30];
-  scoped_nsobject<NSAttributedString> tenString([[cell_ resultsString] copy]);
+  base::scoped_nsobject<NSAttributedString> tenString(
+      [[cell_ resultsAttributedString] copy]);
   EXPECT_GT([tenString length], 0U);
 
   [cell_ setActiveMatch:0 of:0];
-  scoped_nsobject<NSAttributedString> zeroString([[cell_ resultsString] copy]);
+  base::scoped_nsobject<NSAttributedString> zeroString(
+      [[cell_ resultsAttributedString] copy]);
   EXPECT_GT([zeroString length], 0U);
   EXPECT_FALSE([tenString isEqualToAttributedString:zeroString]);
 
   [cell_ clearResults];
-  EXPECT_EQ(0U, [[cell_ resultsString] length]);
+  EXPECT_EQ(0U, [[cell_ resultsAttributedString] length]);
 }
 
 TEST_F(FindBarTextFieldCellTest, TextFrame) {

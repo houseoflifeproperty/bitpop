@@ -5,19 +5,18 @@
 #include "sync/notifier/invalidation_notifier.h"
 
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "jingle/notifier/base/fake_base_task.h"
 #include "jingle/notifier/base/notifier_options.h"
 #include "jingle/notifier/listener/fake_push_client.h"
 #include "net/url_request/url_request_test_util.h"
 #include "sync/internal_api/public/base/model_type.h"
-#include "sync/internal_api/public/base/model_type_invalidation_map.h"
 #include "sync/internal_api/public/util/weak_handle.h"
 #include "sync/notifier/fake_invalidation_handler.h"
 #include "sync/notifier/fake_invalidation_state_tracker.h"
 #include "sync/notifier/invalidation_state_tracker.h"
 #include "sync/notifier/invalidator_test_template.h"
-#include "sync/notifier/object_id_invalidation_map_test_util.h"
+#include "sync/notifier/push_client_channel.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace syncer {
@@ -33,14 +32,20 @@ class InvalidationNotifierTestDelegate {
   }
 
   void CreateInvalidator(
+      const std::string& invalidator_client_id,
       const std::string& initial_state,
       const base::WeakPtr<InvalidationStateTracker>&
           invalidation_state_tracker) {
     DCHECK(!invalidator_.get());
+    scoped_ptr<notifier::PushClient> push_client(
+        new notifier::FakePushClient());
+    scoped_ptr<SyncNetworkChannel> network_channel(
+        new PushClientChannel(push_client.Pass()));
     invalidator_.reset(
         new InvalidationNotifier(
-            scoped_ptr<notifier::PushClient>(new notifier::FakePushClient()),
-            InvalidationStateMap(),
+            network_channel.Pass(),
+            invalidator_client_id,
+            UnackedInvalidationsMap(),
             initial_state,
             MakeWeakHandle(invalidation_state_tracker),
             "fake_client_info"));
@@ -69,18 +74,12 @@ class InvalidationNotifierTestDelegate {
   }
 
   void TriggerOnIncomingInvalidation(
-      const ObjectIdInvalidationMap& invalidation_map,
-      IncomingInvalidationSource source) {
-    // None of the tests actually care about |source|.
+      const ObjectIdInvalidationMap& invalidation_map) {
     invalidator_->OnInvalidate(invalidation_map);
   }
 
-  static bool InvalidatorHandlesDeprecatedState() {
-    return true;
-  }
-
  private:
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   scoped_ptr<InvalidationNotifier> invalidator_;
 };
 

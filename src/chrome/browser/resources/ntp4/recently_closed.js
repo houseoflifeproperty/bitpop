@@ -36,7 +36,6 @@ cr.define('ntp', function() {
       document.body.appendChild(this.menu);
 
       this.needsRebuild_ = true;
-      this.hidden = true;
       this.anchorType = cr.ui.AnchorType.ABOVE;
       this.invertLeftRight = true;
     },
@@ -47,14 +46,14 @@ cr.define('ntp', function() {
      * button.
      * @override
      */
-    showMenu: function() {
+    showMenu: function(shouldSetFocus) {
       if (this.needsRebuild_) {
         this.menu.textContent = '';
         this.dataItems_.forEach(this.addItem_, this);
         this.needsRebuild_ = false;
       }
 
-      MenuButton.prototype.showMenu.call(this);
+      MenuButton.prototype.showMenu.apply(this, arguments);
     },
 
     /**
@@ -83,7 +82,7 @@ cr.define('ntp', function() {
         a.title = data.tabs.map(function(tab) { return tab.title; }).join('\n');
       } else {
         a.href = data.url;
-        a.style.backgroundImage = url(getFaviconURL(data.url));
+        a.style.backgroundImage = getFaviconImageSet(data.url);
         a.textContent = data.title;
       }
 
@@ -94,20 +93,23 @@ cr.define('ntp', function() {
                      ntp.APP_LAUNCH.NTP_RECENTLY_CLOSED]);
         var index = Array.prototype.indexOf.call(a.parentNode.children, a);
         var orig = e.originalEvent;
+        var button = 0;
+        if (orig instanceof MouseEvent)
+          button = orig.button;
         var params = [data.sessionId,
                       index,
-                      orig.type == 'click' ? orig.button : 0,
+                      button,
                       orig.altKey,
                       orig.ctrlKey,
                       orig.metaKey,
                       orig.shiftKey];
         chrome.send('reopenTab', params);
 
-        // We are likely deleted by this point!
-        e.stopPropagation();
         e.preventDefault();
+        e.stopPropagation();
       }
       a.addEventListener('activate', onActivated);
+      a.addEventListener('click', function(e) { e.preventDefault(); });
 
       this.menu.appendChild(a);
       cr.ui.decorate(a, MenuItem);

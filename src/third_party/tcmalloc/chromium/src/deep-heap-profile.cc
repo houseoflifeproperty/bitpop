@@ -9,14 +9,30 @@
 
 #include "deep-heap-profile.h"
 
-#ifdef DEEP_HEAP_PROFILE
+#ifdef USE_DEEP_HEAP_PROFILE
 #include <algorithm>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <time.h>
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>  // for getpagesize and getpid
 #endif  // HAVE_UNISTD_H
+
+#if defined(__linux__)
+#include <endian.h>
+#if !defined(__LITTLE_ENDIAN__) and !defined(__BIG_ENDIAN__)
+#if __BYTE_ORDER == __BIG_ENDIAN
+#define __BIG_ENDIAN__
+#endif  // __BYTE_ORDER == __BIG_ENDIAN
+#endif  // !defined(__LITTLE_ENDIAN__) and !defined(__BIG_ENDIAN__)
+#if defined(__BIG_ENDIAN__)
+#include <byteswap.h>
+#endif  // defined(__BIG_ENDIAN__)
+#endif  // defined(__linux__)
+#if defined(COMPILER_MSVC)
+#include <Winsock2.h>  // for gethostname
+#endif  // defined(COMPILER_MSVC)
 
 #include "base/cycleclock.h"
 #include "base/sysinfo.h"
@@ -26,11 +42,14 @@ static const int kProfilerBufferSize = 1 << 20;
 static const int kHashTableSize = 179999;  // Same as heap-profile-table.cc.
 
 static const int PAGEMAP_BYTES = 8;
+static const int KPAGECOUNT_BYTES = 8;
 static const uint64 MAX_ADDRESS = kuint64max;
 
 // Tag strings in heap profile dumps.
 static const char kProfileHeader[] = "heap profile: ";
-static const char kProfileVersion[] = "DUMP_DEEP_5";
+static const char kProfileVersion[] = "DUMP_DEEP_6";
+static const char kMetaInformationHeader[] = "META:\n";
+static const char kMMapListHeader[] = "MMAP_LIST:\n";
 static const char kGlobalStatsHeader[] = "GLOBAL_STATS:\n";
 static const char kStacktraceHeader[] = "STACKTRACES:\n";
 static const char kProcSelfMapsHeader[] = "\nMAPPED_LIBRARIES:\n";
@@ -38,60 +57,91 @@ static const char kProcSelfMapsHeader[] = "\nMAPPED_LIBRARIES:\n";
 static const char kVirtualLabel[] = "virtual";
 static const char kCommittedLabel[] = "committed";
 
-namespace {
+#if defined(__linux__)
+#define OS_NAME "linux"
+#elif defined(_WIN32) || defined(_WIN64)
+#define OS_NAME "windows"
+#else
+#define OS_NAME "unknown-os"
+#endif
+
+bool DeepHeapProfile::AppendCommandLine(TextBuffer* buffer) {
+#if defined(__linux__)
+  RawFD fd;
+  char filename[100];
+  char cmdline[4096];
+  snprintf(filename, sizeof(filename), "/proc/%d/cmdline",
+           static_cast<int>(getpid()));
+  fd = open(filename, O_RDONLY);
+  if (fd == kIllegalRawFD) {
+    RAW_VLOG(0, "Failed to open /proc/self/cmdline");
+    return false;
+  }
+
+  size_t length = read(fd, cmdline, sizeof(cmdline) - 1);
+  close(fd);
+
+  for (int i = 0; i < length; ++i)
+    if (cmdline[i] == '\0')
+      cmdline[i] = ' ';
+  cmdline[length] = '\0';
+
+  buffer->AppendString("CommandLine: ", 0);
+  buffer->AppendString(cmdline, 0);
+  buffer->AppendChar('\n');
+
+  return true;
+#else
+  return false;
+#endif
+}
+
+#if defined(_WIN32) || defined(_WIN64)
+
+// TODO(peria): Implement this function.
+void DeepHeapProfile::MemoryInfoGetterWindows::Initialize() {
+}
+
+// TODO(peria): Implement this function.
+size_t DeepHeapProfile::MemoryInfoGetterWindows::CommittedSize(
+    uint64 first_address,
+    uint64 last_address,
+    TextBuffer* buffer) const {
+  return 0;
+}
+
+// TODO(peria): Implement this function.
+bool DeepHeapProfile::MemoryInfoGetterWindows::IsPageCountAvailable() const {
+  return false;
+}
+
+#endif  // defined(_WIN32) || defined(_WIN64)
 
 #if defined(__linux__)
 
-// Implements MemoryResidenceInfoGetterInterface for Linux.
-class MemoryInfoGetterLinux :
-    public DeepHeapProfile::MemoryResidenceInfoGetterInterface {
- public:
-  MemoryInfoGetterLinux(): fd_(kIllegalRawFD) {}
-  virtual ~MemoryInfoGetterLinux() {}
-
-  // Opens /proc/<pid>/pagemap and stores its file descriptor.
-  // It keeps open while the process is running.
-  //
-  // Note that file descriptors need to be refreshed after fork.
-  virtual void Initialize();
-
-  // Returns the number of resident (including swapped) bytes of the given
-  // memory region from |first_address| to |last_address| inclusive.
-  virtual size_t CommittedSize(uint64 first_address, uint64 last_address) const;
-
- private:
-  struct State {
-    bool is_committed;  // Currently, we use only this
-    bool is_present;
-    bool is_swapped;
-    bool is_shared;
-    bool is_mmap;
-  };
-
-  // Seeks to the offset of the open pagemap file.
-  // It returns true if succeeded.
-  bool Seek(uint64 address) const;
-
-  // Reads a pagemap state from the current offset.
-  // It returns true if succeeded.
-  bool Read(State* state) const;
-
-  RawFD fd_;
-};
-
-void MemoryInfoGetterLinux::Initialize() {
+void DeepHeapProfile::MemoryInfoGetterLinux::Initialize() {
   char filename[100];
   snprintf(filename, sizeof(filename), "/proc/%d/pagemap",
            static_cast<int>(getpid()));
-  fd_ = open(filename, O_RDONLY);
-  RAW_DCHECK(fd_ != -1, "Failed to open /proc/self/pagemap");
+  pagemap_fd_ = open(filename, O_RDONLY);
+  RAW_CHECK(pagemap_fd_ != -1, "Failed to open /proc/self/pagemap");
+
+  if (pageframe_type_ == DUMP_PAGECOUNT) {
+    snprintf(filename, sizeof(filename), "/proc/kpagecount");
+    kpagecount_fd_ = open(filename, O_RDONLY);
+    if (kpagecount_fd_ == -1)
+      RAW_VLOG(0, "Failed to open /proc/kpagecount");
+  }
 }
 
-size_t MemoryInfoGetterLinux::CommittedSize(
-    uint64 first_address, uint64 last_address) const {
+size_t DeepHeapProfile::MemoryInfoGetterLinux::CommittedSize(
+    uint64 first_address,
+    uint64 last_address,
+    DeepHeapProfile::TextBuffer* buffer) const {
   int page_size = getpagesize();
   uint64 page_address = (first_address / page_size) * page_size;
   size_t committed_size = 0;
+  size_t pageframe_list_length = 0;
 
   Seek(first_address);
 
@@ -100,13 +150,44 @@ size_t MemoryInfoGetterLinux::CommittedSize(
     // Read corresponding physical page.
     State state;
     // TODO(dmikurube): Read pagemap in bulk for speed.
-    if (Read(&state) == false) {
+    // TODO(dmikurube): Consider using mincore(2).
+    if (Read(&state, pageframe_type_ != DUMP_NO_PAGEFRAME) == false) {
       // We can't read the last region (e.g vsyscall).
 #ifndef NDEBUG
-      RAW_LOG(0, "pagemap read failed @ %#llx %"PRId64" bytes",
+      RAW_VLOG(0, "pagemap read failed @ %#llx %" PRId64 " bytes",
               first_address, last_address - first_address + 1);
 #endif
       return 0;
+    }
+
+    // Dump pageframes of resident pages.  Non-resident pages are just skipped.
+    if (pageframe_type_ != DUMP_NO_PAGEFRAME &&
+        buffer != NULL && state.pfn != 0) {
+      if (pageframe_list_length == 0) {
+        buffer->AppendString("  PF:", 0);
+        pageframe_list_length = 5;
+      }
+      buffer->AppendChar(' ');
+      if (page_address < first_address)
+        buffer->AppendChar('<');
+      buffer->AppendBase64(state.pfn, 4);
+      pageframe_list_length += 5;
+      if (pageframe_type_ == DUMP_PAGECOUNT && IsPageCountAvailable()) {
+        uint64 pagecount = ReadPageCount(state.pfn);
+        // Assume pagecount == 63 if the pageframe is mapped more than 63 times.
+        if (pagecount > 63)
+          pagecount = 63;
+        buffer->AppendChar('#');
+        buffer->AppendBase64(pagecount, 1);
+        pageframe_list_length += 2;
+      }
+      if (last_address < page_address - 1 + page_size)
+        buffer->AppendChar('>');
+      // Begins a new line every 94 characters.
+      if (pageframe_list_length > 94) {
+        buffer->AppendChar('\n');
+        pageframe_list_length = 0;
+      }
     }
 
     if (state.is_committed) {
@@ -131,17 +212,37 @@ size_t MemoryInfoGetterLinux::CommittedSize(
     page_address += page_size;
   }
 
+  if (pageframe_type_ != DUMP_NO_PAGEFRAME &&
+      buffer != NULL && pageframe_list_length != 0) {
+    buffer->AppendChar('\n');
+  }
+
   return committed_size;
 }
 
-bool MemoryInfoGetterLinux::Seek(uint64 address) const {
+uint64 DeepHeapProfile::MemoryInfoGetterLinux::ReadPageCount(uint64 pfn) const {
+  int64 index = pfn * KPAGECOUNT_BYTES;
+  int64 offset = lseek64(kpagecount_fd_, index, SEEK_SET);
+  RAW_DCHECK(offset == index, "Failed in seeking in kpagecount.");
+
+  uint64 kpagecount_value;
+  int result = read(kpagecount_fd_, &kpagecount_value, KPAGECOUNT_BYTES);
+  if (result != KPAGECOUNT_BYTES)
+    return 0;
+
+  return kpagecount_value;
+}
+
+bool DeepHeapProfile::MemoryInfoGetterLinux::Seek(uint64 address) const {
   int64 index = (address / getpagesize()) * PAGEMAP_BYTES;
-  int64 offset = lseek64(fd_, index, SEEK_SET);
+  RAW_DCHECK(pagemap_fd_ != -1, "Failed to seek in /proc/self/pagemap");
+  int64 offset = lseek64(pagemap_fd_, index, SEEK_SET);
   RAW_DCHECK(offset == index, "Failed in seeking.");
   return offset >= 0;
 }
 
-bool MemoryInfoGetterLinux::Read(State* state) const {
+bool DeepHeapProfile::MemoryInfoGetterLinux::Read(
+    State* state, bool get_pfn) const {
   static const uint64 U64_1 = 1;
   static const uint64 PFN_FILTER = (U64_1 << 55) - U64_1;
   static const uint64 PAGE_PRESENT = U64_1 << 63;
@@ -152,7 +253,8 @@ bool MemoryInfoGetterLinux::Read(State* state) const {
   static const uint64 FLAG_MMAP = U64_1 << 11;
 
   uint64 pagemap_value;
-  int result = read(fd_, &pagemap_value, PAGEMAP_BYTES);
+  RAW_DCHECK(pagemap_fd_ != -1, "Failed to read from /proc/self/pagemap");
+  int result = read(pagemap_fd_, &pagemap_value, PAGEMAP_BYTES);
   if (result != PAGEMAP_BYTES) {
     return false;
   }
@@ -164,12 +266,19 @@ bool MemoryInfoGetterLinux::Read(State* state) const {
   state->is_swapped = (pagemap_value & PAGE_SWAP);
   state->is_shared = false;
 
+  if (get_pfn && state->is_present && !state->is_swapped)
+    state->pfn = (pagemap_value & PFN_FILTER);
+  else
+    state->pfn = 0;
+
   return true;
 }
 
-#endif  // defined(__linux__)
+bool DeepHeapProfile::MemoryInfoGetterLinux::IsPageCountAvailable() const {
+  return kpagecount_fd_ != -1;
+}
 
-}  // anonymous namespace
+#endif  // defined(__linux__)
 
 DeepHeapProfile::MemoryResidenceInfoGetterInterface::
     MemoryResidenceInfoGetterInterface() {}
@@ -178,24 +287,28 @@ DeepHeapProfile::MemoryResidenceInfoGetterInterface::
     ~MemoryResidenceInfoGetterInterface() {}
 
 DeepHeapProfile::MemoryResidenceInfoGetterInterface*
-    DeepHeapProfile::MemoryResidenceInfoGetterInterface::Create() {
-#if defined(__linux__)
-  return new MemoryInfoGetterLinux();
+    DeepHeapProfile::MemoryResidenceInfoGetterInterface::Create(
+        PageFrameType pageframe_type) {
+#if defined(_WIN32) || defined(_WIN64)
+  return new MemoryInfoGetterWindows(pageframe_type);
+#elif defined(__linux__)
+  return new MemoryInfoGetterLinux(pageframe_type);
 #else
   return NULL;
 #endif
 }
 
 DeepHeapProfile::DeepHeapProfile(HeapProfileTable* heap_profile,
-                                 const char* prefix)
+                                 const char* prefix,
+                                 enum PageFrameType pageframe_type)
     : memory_residence_info_getter_(
-          MemoryResidenceInfoGetterInterface::Create()),
+          MemoryResidenceInfoGetterInterface::Create(pageframe_type)),
       most_recent_pid_(-1),
       stats_(),
       dump_count_(0),
       filename_prefix_(NULL),
-      profiler_buffer_(NULL),
       deep_table_(kHashTableSize, heap_profile->alloc_, heap_profile->dealloc_),
+      pageframe_type_(pageframe_type),
       heap_profile_(heap_profile) {
   // Copy filename prefix.
   const int prefix_length = strlen(prefix);
@@ -204,79 +317,107 @@ DeepHeapProfile::DeepHeapProfile(HeapProfileTable* heap_profile,
   memcpy(filename_prefix_, prefix, prefix_length);
   filename_prefix_[prefix_length] = '\0';
 
-  profiler_buffer_ =
-      reinterpret_cast<char*>(heap_profile_->alloc_(kProfilerBufferSize));
+  strncpy(run_id_, "undetermined-run-id", sizeof(run_id_));
 }
 
 DeepHeapProfile::~DeepHeapProfile() {
-  heap_profile_->dealloc_(profiler_buffer_);
   heap_profile_->dealloc_(filename_prefix_);
   delete memory_residence_info_getter_;
 }
 
 // Global malloc() should not be used in this function.
 // Use LowLevelAlloc if required.
-int DeepHeapProfile::FillOrderedProfile(char raw_buffer[], int buffer_size) {
-  TextBuffer buffer(raw_buffer, buffer_size);
-  TextBuffer global_buffer(profiler_buffer_, kProfilerBufferSize);
+void DeepHeapProfile::DumpOrderedProfile(const char* reason,
+                                         char raw_buffer[],
+                                         int buffer_size,
+                                         RawFD fd) {
+  TextBuffer buffer(raw_buffer, buffer_size, fd);
 
 #ifndef NDEBUG
   int64 starting_cycles = CycleClock::Now();
 #endif
+
+  // Get the time before starting snapshot.
+  // TODO(dmikurube): Consider gettimeofday if available.
+  time_t time_value = time(NULL);
+
   ++dump_count_;
 
   // Re-open files in /proc/pid/ if the process is newly forked one.
   if (most_recent_pid_ != getpid()) {
+    char hostname[64];
+    if (0 == gethostname(hostname, sizeof(hostname))) {
+      char* dot = strchr(hostname, '.');
+      if (dot != NULL)
+        *dot = '\0';
+    } else {
+      strcpy(hostname, "unknown");
+    }
+
     most_recent_pid_ = getpid();
 
-    memory_residence_info_getter_->Initialize();
+    snprintf(run_id_, sizeof(run_id_), "%s-" OS_NAME "-%d-%lu",
+             hostname, most_recent_pid_, time(NULL));
+
+    if (memory_residence_info_getter_)
+      memory_residence_info_getter_->Initialize();
     deep_table_.ResetIsLogged();
 
     // Write maps into "|filename_prefix_|.<pid>.maps".
-    WriteProcMaps(filename_prefix_, 0,
-                  kProfilerBufferSize, profiler_buffer_);
+    WriteProcMaps(filename_prefix_, raw_buffer, buffer_size);
   }
-  // Write maps into "|filename_prefix_|.<pid>.|dump_count_|.maps".
-  WriteProcMaps(filename_prefix_, dump_count_,
-                kProfilerBufferSize, profiler_buffer_);
 
   // Reset committed sizes of buckets.
   deep_table_.ResetCommittedSize();
 
-  // Allocate a list for mmap'ed regions.
-  num_mmap_allocations_ = 0;
-  if (heap_profile_->mmap_address_map_) {
-    heap_profile_->mmap_address_map_->Iterate(CountMMap, this);
-
-    mmap_list_length_ = 0;
-    mmap_list_ = reinterpret_cast<MMapListEntry*>(heap_profile_->alloc_(
-        sizeof(MMapListEntry) * num_mmap_allocations_));
-
-    // Touch all the allocated pages.  Touching is required to avoid new page
-    // commitment while filling the list in SnapshotProcMaps.
-    for (int i = 0;
-         i < num_mmap_allocations_;
-         i += getpagesize() / 2 / sizeof(MMapListEntry))
-      mmap_list_[i].first_address = 0;
-    mmap_list_[num_mmap_allocations_ - 1].last_address = 0;
-  }
-
-  stats_.SnapshotProcMaps(memory_residence_info_getter_, NULL, 0);
+  // Record committed sizes.
+  stats_.SnapshotAllocations(this);
 
   // TODO(dmikurube): Eliminate dynamic memory allocation caused by snprintf.
   // glibc's snprintf internally allocates memory by alloca normally, but it
   // allocates memory by malloc if large memory is required.
 
-  // Record committed sizes.
-  stats_.SnapshotAllocations(this);
-
-  // Check if committed bytes changed during SnapshotAllocations.
-  stats_.SnapshotProcMaps(
-      memory_residence_info_getter_, mmap_list_, mmap_list_length_);
-
   buffer.AppendString(kProfileHeader, 0);
   buffer.AppendString(kProfileVersion, 0);
   buffer.AppendString("\n", 0);
+
+  // Fill buffer with meta information.
+  buffer.AppendString(kMetaInformationHeader, 0);
+
+  buffer.AppendString("Time: ", 0);
+  buffer.AppendUnsignedLong(time_value, 0);
+  buffer.AppendChar('\n');
+
+  if (reason != NULL) {
+    buffer.AppendString("Reason: ", 0);
+    buffer.AppendString(reason, 0);
+    buffer.AppendChar('\n');
+  }
+
+  AppendCommandLine(&buffer);
+
+  buffer.AppendString("RunID: ", 0);
+  buffer.AppendString(run_id_, 0);
+  buffer.AppendChar('\n');
+
+  buffer.AppendString("PageSize: ", 0);
+  buffer.AppendInt(getpagesize(), 0, 0);
+  buffer.AppendChar('\n');
+
+  // Assumes the physical memory <= 64GB (PFN < 2^24).
+  if (pageframe_type_ == DUMP_PAGECOUNT && memory_residence_info_getter_ &&
+      memory_residence_info_getter_->IsPageCountAvailable()) {
+    buffer.AppendString("PageFrame: 24,Base64,PageCount", 0);
+    buffer.AppendChar('\n');
+  } else if (pageframe_type_ != DUMP_NO_PAGEFRAME) {
+    buffer.AppendString("PageFrame: 24,Base64", 0);
+    buffer.AppendChar('\n');
+  }
+
+  // Fill buffer with the global stats.
+  buffer.AppendString(kMMapListHeader, 0);
+
+  stats_.SnapshotMaps(memory_residence_info_getter_, this, &buffer);
 
   // Fill buffer with the global stats.
   buffer.AppendString(kGlobalStatsHeader, 0);
@@ -292,21 +433,17 @@ int DeepHeapProfile::FillOrderedProfile(char raw_buffer[], int buffer_size) {
   // Fill buffer.
   deep_table_.UnparseForStats(&buffer);
 
-  RAW_DCHECK(buffer.FilledBytes() < buffer_size, "");
-
-  heap_profile_->dealloc_(mmap_list_);
-  mmap_list_ = NULL;
+  buffer.Flush();
 
   // Write the bucket listing into a .bucket file.
-  deep_table_.WriteForBucketFile(filename_prefix_, dump_count_, &global_buffer);
+  deep_table_.WriteForBucketFile(
+      filename_prefix_, dump_count_, raw_buffer, buffer_size);
 
 #ifndef NDEBUG
   int64 elapsed_cycles = CycleClock::Now() - starting_cycles;
   double elapsed_seconds = elapsed_cycles / CyclesPerSecond();
-  RAW_LOG(0, "Time spent on DeepProfiler: %.3f sec\n", elapsed_seconds);
+  RAW_VLOG(0, "Time spent on DeepProfiler: %.3f sec\n", elapsed_seconds);
 #endif
-
-  return buffer.FilledBytes();
 }
 
 int DeepHeapProfile::TextBuffer::Size() {
@@ -321,73 +458,107 @@ void DeepHeapProfile::TextBuffer::Clear() {
   cursor_ = 0;
 }
 
-void DeepHeapProfile::TextBuffer::Write(RawFD fd) {
-  RawWrite(fd, buffer_, cursor_);
+void DeepHeapProfile::TextBuffer::Flush() {
+  RawWrite(fd_, buffer_, cursor_);
+  cursor_ = 0;
 }
 
 // TODO(dmikurube): These Append* functions should not use snprintf.
-bool DeepHeapProfile::TextBuffer::AppendChar(char v) {
-  return ForwardCursor(snprintf(buffer_ + cursor_, size_ - cursor_, "%c", v));
+bool DeepHeapProfile::TextBuffer::AppendChar(char value) {
+  return ForwardCursor(snprintf(buffer_ + cursor_, size_ - cursor_,
+                                "%c", value));
 }
 
-bool DeepHeapProfile::TextBuffer::AppendString(const char* s, int d) {
+bool DeepHeapProfile::TextBuffer::AppendString(const char* value, int width) {
+  char* position = buffer_ + cursor_;
+  int available = size_ - cursor_;
   int appended;
-  if (d == 0)
-    appended = snprintf(buffer_ + cursor_, size_ - cursor_, "%s", s);
+  if (width == 0)
+    appended = snprintf(position, available, "%s", value);
   else
-    appended = snprintf(buffer_ + cursor_, size_ - cursor_, "%*s", d, s);
+    appended = snprintf(position, available, "%*s",
+                        width, value);
   return ForwardCursor(appended);
 }
 
-bool DeepHeapProfile::TextBuffer::AppendInt(int v, int d) {
+bool DeepHeapProfile::TextBuffer::AppendInt(int value, int width,
+                                            bool leading_zero) {
+  char* position = buffer_ + cursor_;
+  int available = size_ - cursor_;
   int appended;
-  if (d == 0)
-    appended = snprintf(buffer_ + cursor_, size_ - cursor_, "%d", v);
+  if (width == 0)
+    appended = snprintf(position, available, "%d", value);
+  else if (leading_zero)
+    appended = snprintf(position, available, "%0*d", width, value);
   else
-    appended = snprintf(buffer_ + cursor_, size_ - cursor_, "%*d", d, v);
+    appended = snprintf(position, available, "%*d", width, value);
   return ForwardCursor(appended);
 }
 
-bool DeepHeapProfile::TextBuffer::AppendLong(long v, int d) {
+bool DeepHeapProfile::TextBuffer::AppendLong(long value, int width) {
+  char* position = buffer_ + cursor_;
+  int available = size_ - cursor_;
   int appended;
-  if (d == 0)
-    appended = snprintf(buffer_ + cursor_, size_ - cursor_, "%ld", v);
+  if (width == 0)
+    appended = snprintf(position, available, "%ld", value);
   else
-    appended = snprintf(buffer_ + cursor_, size_ - cursor_, "%*ld", d, v);
+    appended = snprintf(position, available, "%*ld", width, value);
   return ForwardCursor(appended);
 }
 
-bool DeepHeapProfile::TextBuffer::AppendUnsignedLong(unsigned long v, int d) {
+bool DeepHeapProfile::TextBuffer::AppendUnsignedLong(unsigned long value,
+                                                     int width) {
+  char* position = buffer_ + cursor_;
+  int available = size_ - cursor_;
   int appended;
-  if (d == 0)
-    appended = snprintf(buffer_ + cursor_, size_ - cursor_, "%lu", v);
+  if (width == 0)
+    appended = snprintf(position, available, "%lu", value);
   else
-    appended = snprintf(buffer_ + cursor_, size_ - cursor_, "%*lu", d, v);
+    appended = snprintf(position, available, "%*lu", width, value);
   return ForwardCursor(appended);
 }
 
-bool DeepHeapProfile::TextBuffer::AppendInt64(int64 v, int d) {
+bool DeepHeapProfile::TextBuffer::AppendInt64(int64 value, int width) {
+  char* position = buffer_ + cursor_;
+  int available = size_ - cursor_;
   int appended;
-  if (d == 0)
-    appended = snprintf(buffer_ + cursor_, size_ - cursor_, "%"PRId64, v);
+  if (width == 0)
+    appended = snprintf(position, available, "%" PRId64, value);
   else
-    appended = snprintf(buffer_ + cursor_, size_ - cursor_, "%*"PRId64, d, v);
+    appended = snprintf(position, available, "%*" PRId64, width, value);
   return ForwardCursor(appended);
 }
 
-bool DeepHeapProfile::TextBuffer::AppendPtr(uint64 v, int d) {
+bool DeepHeapProfile::TextBuffer::AppendPtr(uint64 value, int width) {
+  char* position = buffer_ + cursor_;
+  int available = size_ - cursor_;
   int appended;
-  if (d == 0)
-    appended = snprintf(buffer_ + cursor_, size_ - cursor_, "%"PRIxPTR, v);
+  if (width == 0)
+    appended = snprintf(position, available, "%" PRIx64, value);
   else
-    appended = snprintf(buffer_ + cursor_, size_ - cursor_, "%0*"PRIxPTR, d, v);
+    appended = snprintf(position, available, "%0*" PRIx64, width, value);
   return ForwardCursor(appended);
+}
+
+bool DeepHeapProfile::TextBuffer::AppendBase64(uint64 value, int width) {
+  static const char base64[65] =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+#if defined(__BIG_ENDIAN__)
+  value = bswap_64(value);
+#endif
+  for (int shift = (width - 1) * 6; shift >= 0; shift -= 6) {
+    if (!AppendChar(base64[(value >> shift) & 0x3f]))
+      return false;
+  }
+  return true;
 }
 
 bool DeepHeapProfile::TextBuffer::ForwardCursor(int appended) {
   if (appended < 0 || appended >= size_ - cursor_)
     return false;
   cursor_ += appended;
+  if (cursor_ > size_ * 4 / 5)
+    Flush();
   return true;
 }
 
@@ -396,16 +567,16 @@ void DeepHeapProfile::DeepBucket::UnparseForStats(TextBuffer* buffer) {
   buffer->AppendChar(' ');
   buffer->AppendInt64(committed_size, 10);
   buffer->AppendChar(' ');
-  buffer->AppendInt(bucket->allocs, 6);
+  buffer->AppendInt(bucket->allocs, 6, false);
   buffer->AppendChar(' ');
-  buffer->AppendInt(bucket->frees, 6);
+  buffer->AppendInt(bucket->frees, 6, false);
   buffer->AppendString(" @ ", 0);
-  buffer->AppendInt(id, 0);
+  buffer->AppendInt(id, 0, false);
   buffer->AppendString("\n", 0);
 }
 
 void DeepHeapProfile::DeepBucket::UnparseForBucketFile(TextBuffer* buffer) {
-  buffer->AppendInt(id, 0);
+  buffer->AppendInt(id, 0, false);
   buffer->AppendChar(' ');
   buffer->AppendString(is_mmap ? "mmap" : "malloc", 0);
 
@@ -519,12 +690,14 @@ void DeepHeapProfile::DeepBucketTable::UnparseForStats(TextBuffer* buffer) {
 }
 
 void DeepHeapProfile::DeepBucketTable::WriteForBucketFile(
-    const char* prefix, int dump_count, TextBuffer* buffer) {
+    const char* prefix, int dump_count, char raw_buffer[], int buffer_size) {
   char filename[100];
   snprintf(filename, sizeof(filename),
            "%s.%05d.%04d.buckets", prefix, getpid(), dump_count);
   RawFD fd = RawOpenForWriting(filename);
   RAW_DCHECK(fd != kIllegalRawFD, "");
+
+  TextBuffer buffer(raw_buffer, buffer_size, fd);
 
   for (int i = 0; i < table_size_; i++) {
     for (DeepBucket* deep_bucket = table_[i];
@@ -534,22 +707,17 @@ void DeepHeapProfile::DeepBucketTable::WriteForBucketFile(
       if (deep_bucket->is_logged) {
         continue;  // Skip the bucket if it is already logged.
       }
-      if (bucket->alloc_size - bucket->free_size <= 64) {
-        continue;  // Skip small buckets.
+      if (!deep_bucket->is_mmap &&
+          bucket->alloc_size - bucket->free_size <= 64) {
+        continue;  // Skip small malloc buckets.
       }
 
-      deep_bucket->UnparseForBucketFile(buffer);
+      deep_bucket->UnparseForBucketFile(&buffer);
       deep_bucket->is_logged = true;
-
-      // Write to file if buffer 80% full.
-      if (buffer->FilledBytes() > buffer->Size() * 0.8) {
-        buffer->Write(fd);
-        buffer->Clear();
-      }
     }
   }
 
-  buffer->Write(fd);
+  buffer.Flush();
   RawClose(fd);
 }
 
@@ -594,13 +762,19 @@ void DeepHeapProfile::RegionStats::Initialize() {
   committed_bytes_ = 0;
 }
 
-void DeepHeapProfile::RegionStats::Record(
+uint64 DeepHeapProfile::RegionStats::Record(
     const MemoryResidenceInfoGetterInterface* memory_residence_info_getter,
     uint64 first_address,
-    uint64 last_address) {
+    uint64 last_address,
+    TextBuffer* buffer) {
+  uint64 committed = 0;
   virtual_bytes_ += static_cast<size_t>(last_address - first_address + 1);
-  committed_bytes_ += memory_residence_info_getter->CommittedSize(first_address,
-                                                                  last_address);
+  if (memory_residence_info_getter)
+    committed = memory_residence_info_getter->CommittedSize(first_address,
+                                                            last_address,
+                                                            buffer);
+  committed_bytes_ += committed;
+  return committed;
 }
 
 void DeepHeapProfile::RegionStats::Unparse(const char* name,
@@ -613,33 +787,76 @@ void DeepHeapProfile::RegionStats::Unparse(const char* name,
   buffer->AppendString("\n", 0);
 }
 
+// Snapshots all virtual memory mapping stats by merging mmap(2) records from
+// MemoryRegionMap and /proc/maps, the OS-level memory mapping information.
+// Memory regions described in /proc/maps, but which are not created by mmap,
+// are accounted as "unhooked" memory regions.
+//
+// This function assumes that every memory region created by mmap is covered
+// by VMA(s) described in /proc/maps except for http://crbug.com/189114.
+// Note that memory regions created with mmap don't align with borders of VMAs
+// in /proc/maps.  In other words, a memory region by mmap can cut across many
+// VMAs.  Also, of course a VMA can include many memory regions by mmap.
+// It means that the following situation happens:
+//
+// => Virtual address
+// <----- VMA #1 -----><----- VMA #2 ----->...<----- VMA #3 -----><- VMA #4 ->
+// ..< mmap #1 >.<- mmap #2 -><- mmap #3 ->...<- mmap #4 ->..<-- mmap #5 -->..
+//
+// It can happen easily as permission can be changed by mprotect(2) for a part
+// of a memory region.  A change in permission splits VMA(s).
+//
+// To deal with the situation, this function iterates over MemoryRegionMap and
+// /proc/maps independently.  The iterator for MemoryRegionMap is initialized
+// at the top outside the loop for /proc/maps, and it goes forward inside the
+// loop while comparing their addresses.
+//
 // TODO(dmikurube): Eliminate dynamic memory allocation caused by snprintf.
-void DeepHeapProfile::GlobalStats::SnapshotProcMaps(
+void DeepHeapProfile::GlobalStats::SnapshotMaps(
     const MemoryResidenceInfoGetterInterface* memory_residence_info_getter,
-    MMapListEntry* mmap_list,
-    int mmap_list_length) {
-  ProcMapsIterator::Buffer iterator_buffer;
-  ProcMapsIterator iterator(0, &iterator_buffer);
-  uint64 first_address, last_address, offset;
-  int64 unused_inode;
+    DeepHeapProfile* deep_profile,
+    TextBuffer* mmap_dump_buffer) {
+  MemoryRegionMap::LockHolder lock_holder;
+  ProcMapsIterator::Buffer procmaps_iter_buffer;
+  ProcMapsIterator procmaps_iter(0, &procmaps_iter_buffer);
+  uint64 vma_start_addr, vma_last_addr, offset;
+  int64 inode;
   char* flags;
   char* filename;
-  int mmap_list_index = 0;
   enum MapsRegionType type;
 
   for (int i = 0; i < NUMBER_OF_MAPS_REGION_TYPES; ++i) {
     all_[i].Initialize();
-    nonprofiled_[i].Initialize();
+    unhooked_[i].Initialize();
+  }
+  profiled_mmap_.Initialize();
+
+  MemoryRegionMap::RegionIterator mmap_iter =
+      MemoryRegionMap::BeginRegionLocked();
+  DeepBucket* deep_bucket = NULL;
+  if (mmap_iter != MemoryRegionMap::EndRegionLocked()) {
+    deep_bucket = GetInformationOfMemoryRegion(
+        mmap_iter, memory_residence_info_getter, deep_profile);
   }
 
-  while (iterator.Next(&first_address, &last_address,
-                       &flags, &offset, &unused_inode, &filename)) {
-    // 'last_address' should be the last inclusive address of the region.
-    last_address -= 1;
+  while (procmaps_iter.Next(&vma_start_addr, &vma_last_addr,
+                            &flags, &offset, &inode, &filename)) {
+    if (mmap_dump_buffer) {
+      char buffer[1024];
+      int written = procmaps_iter.FormatLine(buffer, sizeof(buffer),
+                                             vma_start_addr, vma_last_addr,
+                                             flags, offset, inode, filename, 0);
+      mmap_dump_buffer->AppendString(buffer, 0);
+    }
+
+    // 'vma_last_addr' should be the last inclusive address of the region.
+    vma_last_addr -= 1;
     if (strcmp("[vsyscall]", filename) == 0) {
       continue;  // Reading pagemap will fail in [vsyscall].
     }
 
+    // TODO(dmikurube): |type| will be deprecated in the dump.
+    // See http://crbug.com/245603.
     type = ABSENT;
     if (filename[0] == '/') {
       if (flags[2] == 'x')
@@ -653,72 +870,169 @@ void DeepHeapProfile::GlobalStats::SnapshotProcMaps(
     } else {
       type = OTHER;
     }
-    all_[type].Record(
-        memory_residence_info_getter, first_address, last_address);
+    // TODO(dmikurube): This |all_| count should be removed in future soon.
+    // See http://crbug.com/245603.
+    uint64 vma_total = all_[type].Record(
+        memory_residence_info_getter, vma_start_addr, vma_last_addr, NULL);
+    uint64 vma_subtotal = 0;
 
     // TODO(dmikurube): Stop double-counting pagemap.
-    // Counts nonprofiled memory regions in /proc/<pid>/maps.
-    if (mmap_list != NULL) {
-      // It assumes that every mmap'ed region is included in one maps line.
-      uint64 cursor = first_address;
+    // It will be fixed when http://crbug.com/245603 finishes.
+    if (MemoryRegionMap::IsRecordingLocked()) {
+      uint64 cursor = vma_start_addr;
       bool first = true;
 
+      // Iterates over MemoryRegionMap until the iterator moves out of the VMA.
       do {
         if (!first) {
-          mmap_list[mmap_list_index].type = type;
-          cursor = mmap_list[mmap_list_index].last_address + 1;
-          ++mmap_list_index;
+          cursor = mmap_iter->end_addr;
+          ++mmap_iter;
+          // Don't break here even if mmap_iter == EndRegionLocked().
+
+          if (mmap_iter != MemoryRegionMap::EndRegionLocked()) {
+            deep_bucket = GetInformationOfMemoryRegion(
+                mmap_iter, memory_residence_info_getter, deep_profile);
+          }
         }
         first = false;
 
-        uint64 last_address_of_nonprofiled;
-        // If the next mmap entry is away from the current maps line.
-        if (mmap_list_index >= mmap_list_length ||
-            mmap_list[mmap_list_index].first_address > last_address) {
-          last_address_of_nonprofiled = last_address;
+        uint64 last_address_of_unhooked;
+        // If the next mmap entry is away from the current VMA.
+        if (mmap_iter == MemoryRegionMap::EndRegionLocked() ||
+            mmap_iter->start_addr > vma_last_addr) {
+          last_address_of_unhooked = vma_last_addr;
         } else {
-          last_address_of_nonprofiled =
-              mmap_list[mmap_list_index].first_address - 1;
+          last_address_of_unhooked = mmap_iter->start_addr - 1;
         }
 
-        if (last_address_of_nonprofiled + 1 > cursor) {
-          nonprofiled_[type].Record(
+        if (last_address_of_unhooked + 1 > cursor) {
+          RAW_CHECK(cursor >= vma_start_addr,
+                    "Wrong calculation for unhooked");
+          RAW_CHECK(last_address_of_unhooked <= vma_last_addr,
+                    "Wrong calculation for unhooked");
+          uint64 committed_size = unhooked_[type].Record(
               memory_residence_info_getter,
               cursor,
-              last_address_of_nonprofiled);
-          cursor = last_address_of_nonprofiled + 1;
+              last_address_of_unhooked,
+              mmap_dump_buffer);
+          vma_subtotal += committed_size;
+          if (mmap_dump_buffer) {
+            mmap_dump_buffer->AppendString("  ", 0);
+            mmap_dump_buffer->AppendPtr(cursor, 0);
+            mmap_dump_buffer->AppendString(" - ", 0);
+            mmap_dump_buffer->AppendPtr(last_address_of_unhooked + 1, 0);
+            mmap_dump_buffer->AppendString("  unhooked ", 0);
+            mmap_dump_buffer->AppendInt64(committed_size, 0);
+            mmap_dump_buffer->AppendString(" / ", 0);
+            mmap_dump_buffer->AppendInt64(
+                last_address_of_unhooked - cursor + 1, 0);
+            mmap_dump_buffer->AppendString("\n", 0);
+          }
+          cursor = last_address_of_unhooked + 1;
         }
-      } while (mmap_list_index < mmap_list_length &&
-               mmap_list[mmap_list_index].last_address <= last_address);
+
+        if (mmap_iter != MemoryRegionMap::EndRegionLocked() &&
+            mmap_iter->start_addr <= vma_last_addr &&
+            mmap_dump_buffer) {
+          bool trailing = mmap_iter->start_addr < vma_start_addr;
+          bool continued = mmap_iter->end_addr - 1 > vma_last_addr;
+          uint64 partial_first_address, partial_last_address;
+          if (trailing)
+            partial_first_address = vma_start_addr;
+          else
+            partial_first_address = mmap_iter->start_addr;
+          if (continued)
+            partial_last_address = vma_last_addr;
+          else
+            partial_last_address = mmap_iter->end_addr - 1;
+          uint64 committed_size = 0;
+          if (memory_residence_info_getter)
+            committed_size = memory_residence_info_getter->CommittedSize(
+                partial_first_address, partial_last_address, mmap_dump_buffer);
+          vma_subtotal += committed_size;
+          mmap_dump_buffer->AppendString(trailing ? " (" : "  ", 0);
+          mmap_dump_buffer->AppendPtr(mmap_iter->start_addr, 0);
+          mmap_dump_buffer->AppendString(trailing ? ")" : " ", 0);
+          mmap_dump_buffer->AppendString("-", 0);
+          mmap_dump_buffer->AppendString(continued ? "(" : " ", 0);
+          mmap_dump_buffer->AppendPtr(mmap_iter->end_addr, 0);
+          mmap_dump_buffer->AppendString(continued ? ")" : " ", 0);
+          mmap_dump_buffer->AppendString(" hooked ", 0);
+          mmap_dump_buffer->AppendInt64(committed_size, 0);
+          mmap_dump_buffer->AppendString(" / ", 0);
+          mmap_dump_buffer->AppendInt64(
+              partial_last_address - partial_first_address + 1, 0);
+          mmap_dump_buffer->AppendString(" @ ", 0);
+          if (deep_bucket != NULL) {
+            mmap_dump_buffer->AppendInt(deep_bucket->id, 0, false);
+          } else {
+            mmap_dump_buffer->AppendInt(0, 0, false);
+          }
+          mmap_dump_buffer->AppendString("\n", 0);
+        }
+      } while (mmap_iter != MemoryRegionMap::EndRegionLocked() &&
+               mmap_iter->end_addr - 1 <= vma_last_addr);
+    }
+
+    if (vma_total != vma_subtotal) {
+      char buffer[1024];
+      int written = procmaps_iter.FormatLine(buffer, sizeof(buffer),
+                                             vma_start_addr, vma_last_addr,
+                                             flags, offset, inode, filename, 0);
+      RAW_VLOG(0, "[%d] Mismatched total in VMA %" PRId64 ":"
+              "%" PRId64 " (%" PRId64 ")",
+              getpid(), vma_total, vma_subtotal, vma_total - vma_subtotal);
+      RAW_VLOG(0, "[%d]   in %s", getpid(), buffer);
     }
   }
+
+  // TODO(dmikurube): Investigate and fix http://crbug.com/189114.
+  //
+  // The total committed memory usage in all_ (from /proc/<pid>/maps) is
+  // sometimes smaller than the sum of the committed mmap'ed addresses and
+  // unhooked regions.  Within our observation, the difference was only 4KB
+  // in committed usage, zero in reserved virtual addresses
+  //
+  // A guess is that an uncommitted (but reserved) page may become committed
+  // during counting memory usage in the loop above.
+  //
+  // The difference is accounted as "ABSENT" to investigate such cases.
+  //
+  // It will be fixed when http://crbug.com/245603 finishes (no double count).
+
+  RegionStats all_total;
+  RegionStats unhooked_total;
+  for (int i = 0; i < NUMBER_OF_MAPS_REGION_TYPES; ++i) {
+    all_total.AddAnotherRegionStat(all_[i]);
+    unhooked_total.AddAnotherRegionStat(unhooked_[i]);
+  }
+
+  size_t absent_virtual = profiled_mmap_.virtual_bytes() +
+                          unhooked_total.virtual_bytes() -
+                          all_total.virtual_bytes();
+  if (absent_virtual > 0)
+    all_[ABSENT].AddToVirtualBytes(absent_virtual);
+
+  size_t absent_committed = profiled_mmap_.committed_bytes() +
+                            unhooked_total.committed_bytes() -
+                            all_total.committed_bytes();
+  if (absent_committed > 0)
+    all_[ABSENT].AddToCommittedBytes(absent_committed);
 }
 
 void DeepHeapProfile::GlobalStats::SnapshotAllocations(
     DeepHeapProfile* deep_profile) {
-  profiled_mmap_.Initialize();
   profiled_malloc_.Initialize();
 
-  // malloc allocations.
-  deep_profile->heap_profile_->alloc_address_map_->Iterate(RecordAlloc,
-                                                           deep_profile);
-
-  // mmap allocations.
-  if (deep_profile->heap_profile_->mmap_address_map_) {
-    deep_profile->heap_profile_->mmap_address_map_->Iterate(RecordMMap,
-                                                            deep_profile);
-    std::sort(deep_profile->mmap_list_,
-              deep_profile->mmap_list_ + deep_profile->mmap_list_length_,
-              ByFirstAddress);
-  }
+  deep_profile->heap_profile_->address_map_->Iterate(RecordAlloc, deep_profile);
 }
 
 void DeepHeapProfile::GlobalStats::Unparse(TextBuffer* buffer) {
   RegionStats all_total;
-  RegionStats nonprofiled_total;
+  RegionStats unhooked_total;
   for (int i = 0; i < NUMBER_OF_MAPS_REGION_TYPES; ++i) {
     all_total.AddAnotherRegionStat(all_[i]);
-    nonprofiled_total.AddAnotherRegionStat(nonprofiled_[i]);
+    unhooked_total.AddAnotherRegionStat(unhooked_[i]);
   }
 
   // "# total (%lu) %c= profiled-mmap (%lu) + nonprofiled-* (%lu)\n"
@@ -727,11 +1041,11 @@ void DeepHeapProfile::GlobalStats::Unparse(TextBuffer* buffer) {
   buffer->AppendString(") ", 0);
   buffer->AppendChar(all_total.committed_bytes() ==
                      profiled_mmap_.committed_bytes() +
-                     nonprofiled_total.committed_bytes() ? '=' : '!');
+                     unhooked_total.committed_bytes() ? '=' : '!');
   buffer->AppendString("= profiled-mmap (", 0);
   buffer->AppendUnsignedLong(profiled_mmap_.committed_bytes(), 0);
   buffer->AppendString(") + nonprofiled-* (", 0);
-  buffer->AppendUnsignedLong(nonprofiled_total.committed_bytes(), 0);
+  buffer->AppendUnsignedLong(unhooked_total.committed_bytes(), 0);
   buffer->AppendString(")\n", 0);
 
   // "                               virtual    committed"
@@ -742,26 +1056,21 @@ void DeepHeapProfile::GlobalStats::Unparse(TextBuffer* buffer) {
   buffer->AppendString("\n", 0);
 
   all_total.Unparse("total", buffer);
+  all_[ABSENT].Unparse("absent", buffer);
   all_[FILE_EXEC].Unparse("file-exec", buffer);
   all_[FILE_NONEXEC].Unparse("file-nonexec", buffer);
   all_[ANONYMOUS].Unparse("anonymous", buffer);
   all_[STACK].Unparse("stack", buffer);
   all_[OTHER].Unparse("other", buffer);
-  nonprofiled_total.Unparse("nonprofiled-total", buffer);
-  nonprofiled_[ABSENT].Unparse("nonprofiled-absent", buffer);
-  nonprofiled_[ANONYMOUS].Unparse("nonprofiled-anonymous", buffer);
-  nonprofiled_[FILE_EXEC].Unparse("nonprofiled-file-exec", buffer);
-  nonprofiled_[FILE_NONEXEC].Unparse("nonprofiled-file-nonexec", buffer);
-  nonprofiled_[STACK].Unparse("nonprofiled-stack", buffer);
-  nonprofiled_[OTHER].Unparse("nonprofiled-other", buffer);
+  unhooked_total.Unparse("nonprofiled-total", buffer);
+  unhooked_[ABSENT].Unparse("nonprofiled-absent", buffer);
+  unhooked_[ANONYMOUS].Unparse("nonprofiled-anonymous", buffer);
+  unhooked_[FILE_EXEC].Unparse("nonprofiled-file-exec", buffer);
+  unhooked_[FILE_NONEXEC].Unparse("nonprofiled-file-nonexec", buffer);
+  unhooked_[STACK].Unparse("nonprofiled-stack", buffer);
+  unhooked_[OTHER].Unparse("nonprofiled-other", buffer);
   profiled_mmap_.Unparse("profiled-mmap", buffer);
   profiled_malloc_.Unparse("profiled-malloc", buffer);
-}
-
-// static
-bool DeepHeapProfile::GlobalStats::ByFirstAddress(const MMapListEntry& a,
-                                                  const MMapListEntry& b) {
-  return a.first_address < b.first_address;
 }
 
 // static
@@ -770,7 +1079,7 @@ void DeepHeapProfile::GlobalStats::RecordAlloc(const void* pointer,
                                                DeepHeapProfile* deep_profile) {
   uint64 address = reinterpret_cast<uintptr_t>(pointer);
   size_t committed = deep_profile->memory_residence_info_getter_->CommittedSize(
-      address, address + alloc_value->bytes - 1);
+      address, address + alloc_value->bytes - 1, NULL);
 
   DeepBucket* deep_bucket = deep_profile->deep_table_.Lookup(
       alloc_value->bucket(),
@@ -783,52 +1092,43 @@ void DeepHeapProfile::GlobalStats::RecordAlloc(const void* pointer,
   deep_profile->stats_.profiled_malloc_.AddToCommittedBytes(committed);
 }
 
-// static
-void DeepHeapProfile::GlobalStats::RecordMMap(const void* pointer,
-                                              AllocValue* alloc_value,
-                                              DeepHeapProfile* deep_profile) {
-  uint64 address = reinterpret_cast<uintptr_t>(pointer);
-  size_t committed = deep_profile->memory_residence_info_getter_->CommittedSize(
-      address, address + alloc_value->bytes - 1);
+DeepHeapProfile::DeepBucket*
+    DeepHeapProfile::GlobalStats::GetInformationOfMemoryRegion(
+        const MemoryRegionMap::RegionIterator& mmap_iter,
+        const MemoryResidenceInfoGetterInterface* memory_residence_info_getter,
+        DeepHeapProfile* deep_profile) {
+  size_t committed = deep_profile->memory_residence_info_getter_->
+      CommittedSize(mmap_iter->start_addr, mmap_iter->end_addr - 1, NULL);
 
-  DeepBucket* deep_bucket = deep_profile->deep_table_.Lookup(
-      alloc_value->bucket(),
+  // TODO(dmikurube): Store a reference to the bucket in region.
+  Bucket* bucket = MemoryRegionMap::GetBucket(
+      mmap_iter->call_stack_depth, mmap_iter->call_stack);
+  DeepBucket* deep_bucket = NULL;
+  if (bucket != NULL) {
+    deep_bucket = deep_profile->deep_table_.Lookup(
+        bucket,
 #if defined(TYPE_PROFILING)
-      NULL,
+        NULL,  // No type information for memory regions by mmap.
 #endif
-      /* is_mmap */ true);
-  deep_bucket->committed_size += committed;
-  deep_profile->stats_.profiled_mmap_.AddToVirtualBytes(alloc_value->bytes);
-  deep_profile->stats_.profiled_mmap_.AddToCommittedBytes(committed);
-
-  if (deep_profile->mmap_list_length_ < deep_profile->num_mmap_allocations_) {
-    deep_profile->mmap_list_[deep_profile->mmap_list_length_].first_address =
-        address;
-    deep_profile->mmap_list_[deep_profile->mmap_list_length_].last_address =
-        address - 1 + alloc_value->bytes;
-    deep_profile->mmap_list_[deep_profile->mmap_list_length_].type = ABSENT;
-    ++deep_profile->mmap_list_length_;
-  } else {
-    RAW_LOG(0, "Unexpected number of mmap entries: %d/%d",
-            deep_profile->mmap_list_length_,
-            deep_profile->num_mmap_allocations_);
+        /* is_mmap */ true);
+    if (deep_bucket != NULL)
+      deep_bucket->committed_size += committed;
   }
+
+  profiled_mmap_.AddToVirtualBytes(
+      mmap_iter->end_addr - mmap_iter->start_addr);
+  profiled_mmap_.AddToCommittedBytes(committed);
+
+  return deep_bucket;
 }
 
 // static
 void DeepHeapProfile::WriteProcMaps(const char* prefix,
-                                    unsigned count,
-                                    int buffer_size,
-                                    char raw_buffer[]) {
+                                    char raw_buffer[],
+                                    int buffer_size) {
   char filename[100];
-  if (count > 0) {
-    snprintf(filename, sizeof(filename),
-             "%s.%05d.%04d.maps", prefix, static_cast<int>(getpid()),
-             count);
-  } else {
-    snprintf(filename, sizeof(filename),
-             "%s.%05d.maps", prefix, static_cast<int>(getpid()));
-  }
+  snprintf(filename, sizeof(filename),
+           "%s.%05d.maps", prefix, static_cast<int>(getpid()));
 
   RawFD fd = RawOpenForWriting(filename);
   RAW_DCHECK(fd != kIllegalRawFD, "");
@@ -841,25 +1141,21 @@ void DeepHeapProfile::WriteProcMaps(const char* prefix,
   RawWrite(fd, raw_buffer, length);
   RawClose(fd);
 }
-
-// static
-void DeepHeapProfile::CountMMap(const void* pointer,
-                                AllocValue* alloc_value,
-                                DeepHeapProfile* deep_profile) {
-  ++deep_profile->num_mmap_allocations_;
-}
-#else  // DEEP_HEAP_PROFILE
+#else  // USE_DEEP_HEAP_PROFILE
 
 DeepHeapProfile::DeepHeapProfile(HeapProfileTable* heap_profile,
-                                 const char* prefix)
+                                 const char* prefix,
+                                 enum PageFrameType pageframe_type)
     : heap_profile_(heap_profile) {
 }
 
 DeepHeapProfile::~DeepHeapProfile() {
 }
 
-int DeepHeapProfile::FillOrderedProfile(char raw_buffer[], int buffer_size) {
-  return heap_profile_->FillOrderedProfile(raw_buffer, buffer_size);
+void DeepHeapProfile::DumpOrderedProfile(const char* reason,
+                                         char raw_buffer[],
+                                         int buffer_size,
+                                         RawFD fd) {
 }
 
-#endif  // DEEP_HEAP_PROFILE
+#endif  // USE_DEEP_HEAP_PROFILE

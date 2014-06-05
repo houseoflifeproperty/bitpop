@@ -8,8 +8,11 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "chrome/browser/chromeos/system/input_device_settings.h"
-#include "chrome/browser/chromeos/xinput_hierarchy_changed_event_listener.h"
 #include "content/public/browser/browser_thread.h"
+
+#if defined(USE_X11)
+#include "chrome/browser/chromeos/events/xinput_hierarchy_changed_event_listener.h"
+#endif
 
 using content::BrowserThread;
 
@@ -17,17 +20,21 @@ namespace chromeos {
 namespace system {
 
 PointerDeviceObserver::PointerDeviceObserver()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+    : weak_factory_(this) {
 }
 
 PointerDeviceObserver::~PointerDeviceObserver() {
+#if defined(USE_X11)
   XInputHierarchyChangedEventListener::GetInstance()
       ->RemoveObserver(this);
+#endif
 }
 
 void PointerDeviceObserver::Init() {
+#if defined(USE_X11)
   XInputHierarchyChangedEventListener::GetInstance()
       ->AddObserver(this);
+#endif
 }
 
 void PointerDeviceObserver::CheckDevices() {
@@ -48,13 +55,13 @@ void PointerDeviceObserver::DeviceHierarchyChanged() {
 }
 
 void PointerDeviceObserver::CheckTouchpadExists() {
-  touchpad_settings::TouchpadExists(
+  InputDeviceSettings::Get()->TouchpadExists(
       base::Bind(&PointerDeviceObserver::OnTouchpadExists,
                  weak_factory_.GetWeakPtr()));
 }
 
 void PointerDeviceObserver::CheckMouseExists() {
-  mouse_settings::MouseExists(
+  InputDeviceSettings::Get()->MouseExists(
       base::Bind(&PointerDeviceObserver::OnMouseExists,
                  weak_factory_.GetWeakPtr()));
 }

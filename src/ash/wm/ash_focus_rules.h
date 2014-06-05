@@ -8,18 +8,18 @@
 #include "ash/ash_export.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "ui/views/corewm/base_focus_rules.h"
+#include "ui/wm/core/base_focus_rules.h"
 
 namespace ash {
 namespace wm {
 
-class ASH_EXPORT AshFocusRules : public views::corewm::BaseFocusRules {
+class ASH_EXPORT AshFocusRules : public ::wm::BaseFocusRules {
  public:
   AshFocusRules();
   virtual ~AshFocusRules();
 
  private:
-  // Overridden from views::corewm::BaseFocusRules:
+  // Overridden from ::wm::BaseFocusRules:
   virtual bool SupportsChildActivation(aura::Window* window) const OVERRIDE;
   virtual bool IsWindowConsideredVisibleForActivation(
       aura::Window* window) const OVERRIDE;

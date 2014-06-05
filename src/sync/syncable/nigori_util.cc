@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,7 @@
 #include "sync/syncable/nigori_handler.h"
 #include "sync/syncable/mutable_entry.h"
 #include "sync/syncable/syncable_util.h"
-#include "sync/syncable/write_transaction.h"
+#include "sync/syncable/syncable_write_transaction.h"
 #include "sync/util/cryptographer.h"
 
 namespace syncer {
@@ -37,7 +37,7 @@ bool ProcessUnsyncedChangesForEncryption(
   GetUnsyncedEntries(trans, &handles);
   for (size_t i = 0; i < handles.size(); ++i) {
     MutableEntry entry(trans, GET_BY_HANDLE, handles[i]);
-    const sync_pb::EntitySpecifics& specifics = entry.Get(SPECIFICS);
+    const sync_pb::EntitySpecifics& specifics = entry.GetSpecifics();
     // Ignore types that don't need encryption or entries that are already
     // encrypted.
     if (!SpecificsNeedsEncryption(encrypted_types, specifics))
@@ -67,7 +67,7 @@ bool VerifyUnsyncedChangesAreEncrypted(
 
 bool EntryNeedsEncryption(ModelTypeSet encrypted_types,
                           const Entry& entry) {
-  if (!entry.Get(UNIQUE_SERVER_TAG).empty())
+  if (!entry.GetUniqueServerTag().empty())
     return false;  // We don't encrypt unique server nodes.
   ModelType type = entry.GetModelType();
   if (type == PASSWORDS || IsControlType(type))
@@ -75,9 +75,9 @@ bool EntryNeedsEncryption(ModelTypeSet encrypted_types,
   // Checking NON_UNIQUE_NAME is not necessary for the correctness of encrypting
   // the data, nor for determining if data is encrypted. We simply ensure it has
   // been overwritten to avoid any possible leaks of sensitive data.
-  return SpecificsNeedsEncryption(encrypted_types, entry.Get(SPECIFICS)) ||
+  return SpecificsNeedsEncryption(encrypted_types, entry.GetSpecifics()) ||
          (encrypted_types.Has(type) &&
-          entry.Get(NON_UNIQUE_NAME) != kEncryptedString);
+          entry.GetNonUniqueName() != kEncryptedString);
 }
 
 bool SpecificsNeedsEncryption(ModelTypeSet encrypted_types,
@@ -108,12 +108,7 @@ bool VerifyDataTypeEncryptionForTest(
   }
 
   std::queue<Id> to_visit;
-  Id id_string;
-  if (!trans->directory()->GetFirstChildId(
-          trans, type_root.Get(ID), &id_string)) {
-    NOTREACHED();
-    return false;
-  }
+  Id id_string = type_root.GetFirstChildId();
   to_visit.push(id_string);
   while (!to_visit.empty()) {
     id_string = to_visit.front();
@@ -126,32 +121,27 @@ bool VerifyDataTypeEncryptionForTest(
       NOTREACHED();
       return false;
     }
-    if (child.Get(IS_DIR)) {
-      Id child_id_string;
-      if (!trans->directory()->GetFirstChildId(
-              trans, child.Get(ID), &child_id_string)) {
-        NOTREACHED();
-        return false;
-      }
+    if (child.GetIsDir()) {
+      Id child_id_string = child.GetFirstChildId();
       // Traverse the children.
       to_visit.push(child_id_string);
     }
-    const sync_pb::EntitySpecifics& specifics = child.Get(SPECIFICS);
+    const sync_pb::EntitySpecifics& specifics = child.GetSpecifics();
     DCHECK_EQ(type, child.GetModelType());
     DCHECK_EQ(type, GetModelTypeFromSpecifics(specifics));
     // We don't encrypt the server's permanent items.
-    if (child.Get(UNIQUE_SERVER_TAG).empty()) {
+    if (child.GetUniqueServerTag().empty()) {
       if (specifics.has_encrypted() != is_encrypted)
         return false;
       if (specifics.has_encrypted()) {
-        if (child.Get(NON_UNIQUE_NAME) != kEncryptedString)
+        if (child.GetNonUniqueName() != kEncryptedString)
           return false;
         if (!cryptographer->CanDecryptUsingDefaultKey(specifics.encrypted()))
           return false;
       }
     }
     // Push the successor.
-    to_visit.push(child.Get(NEXT_ID));
+    to_visit.push(child.GetSuccessorId());
   }
   return true;
 }
@@ -164,7 +154,7 @@ bool UpdateEntryWithEncryption(
   Cryptographer* cryptographer = trans->directory()->GetCryptographer(trans);
   ModelType type = GetModelTypeFromSpecifics(new_specifics);
   DCHECK_GE(type, FIRST_REAL_MODEL_TYPE);
-  const sync_pb::EntitySpecifics& old_specifics = entry->Get(SPECIFICS);
+  const sync_pb::EntitySpecifics& old_specifics = entry->GetSpecifics();
   const ModelTypeSet encrypted_types = nigori_handler->GetEncryptedTypes(trans);
   // It's possible the nigori lost the set of encrypted types. If the current
   // specifics are already encrypted, we want to ensure we continue encrypting.
@@ -182,7 +172,7 @@ bool UpdateEntryWithEncryption(
   } else {
     // Encrypt new_specifics into generated_specifics.
     if (VLOG_IS_ON(2)) {
-      scoped_ptr<DictionaryValue> value(entry->ToValue(NULL));
+      scoped_ptr<base::DictionaryValue> value(entry->ToValue(NULL));
       std::string info;
       base::JSONWriter::WriteWithOptions(value.get(),
                                          base::JSONWriter::OPTIONS_PRETTY_PRINT,
@@ -215,7 +205,7 @@ bool UpdateEntryWithEncryption(
   // It's possible this entry was encrypted but didn't properly overwrite the
   // non_unique_name (see crbug.com/96314).
   bool encrypted_without_overwriting_name = (was_encrypted &&
-      entry->Get(syncable::NON_UNIQUE_NAME) != kEncryptedString);
+      entry->GetNonUniqueName() != kEncryptedString);
 
   // If we're encrypted but the name wasn't overwritten properly we still want
   // to rewrite the entry, irrespective of whether the specifics match.
@@ -229,18 +219,18 @@ bool UpdateEntryWithEncryption(
 
   if (generated_specifics.has_encrypted()) {
     // Overwrite the possibly sensitive non-specifics data.
-    entry->Put(syncable::NON_UNIQUE_NAME, kEncryptedString);
+    entry->PutNonUniqueName(kEncryptedString);
     // For bookmarks we actually put bogus data into the unencrypted specifics,
     // else the server will try to do it for us.
     if (type == BOOKMARKS) {
       sync_pb::BookmarkSpecifics* bookmark_specifics =
           generated_specifics.mutable_bookmark();
-      if (!entry->Get(syncable::IS_DIR))
+      if (!entry->GetIsDir())
         bookmark_specifics->set_url(kEncryptedString);
       bookmark_specifics->set_title(kEncryptedString);
     }
   }
-  entry->Put(syncable::SPECIFICS, generated_specifics);
+  entry->PutSpecifics(generated_specifics);
   DVLOG(1) << "Overwriting specifics of type "
            << ModelTypeToString(type)
            << " and marking for syncing.";
@@ -252,7 +242,7 @@ void UpdateNigoriFromEncryptedTypes(ModelTypeSet encrypted_types,
                                     bool encrypt_everything,
                                     sync_pb::NigoriSpecifics* nigori) {
   nigori->set_encrypt_everything(encrypt_everything);
-  COMPILE_ASSERT(17, MODEL_TYPE_COUNT);
+  COMPILE_ASSERT(32 == MODEL_TYPE_COUNT, UpdateEncryptedTypes);
   nigori->set_encrypt_bookmarks(
       encrypted_types.Has(BOOKMARKS));
   nigori->set_encrypt_preferences(
@@ -275,6 +265,11 @@ void UpdateNigoriFromEncryptedTypes(ModelTypeSet encrypted_types,
   nigori->set_encrypt_apps(encrypted_types.Has(APPS));
   nigori->set_encrypt_app_notifications(
       encrypted_types.Has(APP_NOTIFICATIONS));
+  nigori->set_encrypt_dictionary(encrypted_types.Has(DICTIONARY));
+  nigori->set_encrypt_favicon_images(encrypted_types.Has(FAVICON_IMAGES));
+  nigori->set_encrypt_favicon_tracking(encrypted_types.Has(FAVICON_TRACKING));
+  nigori->set_encrypt_articles(encrypted_types.Has(ARTICLES));
+  nigori->set_encrypt_app_list(encrypted_types.Has(APP_LIST));
 }
 
 ModelTypeSet GetEncryptedTypesFromNigori(
@@ -283,7 +278,7 @@ ModelTypeSet GetEncryptedTypesFromNigori(
     return ModelTypeSet::All();
 
   ModelTypeSet encrypted_types;
-  COMPILE_ASSERT(17, MODEL_TYPE_COUNT);
+  COMPILE_ASSERT(32 == MODEL_TYPE_COUNT, UpdateEncryptedTypes);
   if (nigori.encrypt_bookmarks())
     encrypted_types.Put(BOOKMARKS);
   if (nigori.encrypt_preferences())
@@ -310,6 +305,16 @@ ModelTypeSet GetEncryptedTypesFromNigori(
     encrypted_types.Put(APPS);
   if (nigori.encrypt_app_notifications())
     encrypted_types.Put(APP_NOTIFICATIONS);
+  if (nigori.encrypt_dictionary())
+    encrypted_types.Put(DICTIONARY);
+  if (nigori.encrypt_favicon_images())
+    encrypted_types.Put(FAVICON_IMAGES);
+  if (nigori.encrypt_favicon_tracking())
+    encrypted_types.Put(FAVICON_TRACKING);
+  if (nigori.encrypt_articles())
+    encrypted_types.Put(ARTICLES);
+  if (nigori.encrypt_app_list())
+    encrypted_types.Put(APP_LIST);
   return encrypted_types;
 }
 

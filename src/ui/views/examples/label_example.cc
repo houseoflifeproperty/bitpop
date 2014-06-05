@@ -4,11 +4,14 @@
 
 #include "ui/views/examples/label_example.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/view.h"
+
+using base::ASCIIToUTF16;
+using base::WideToUTF16;
 
 namespace views {
 namespace examples {
@@ -21,7 +24,7 @@ class PreferredSizeLabel : public Label {
   PreferredSizeLabel();
   virtual ~PreferredSizeLabel();
 
-  // Overridden from Label:
+  // Label:
   virtual gfx::Size GetPreferredSize() OVERRIDE;
 
  private:
@@ -29,7 +32,7 @@ class PreferredSizeLabel : public Label {
 };
 
 PreferredSizeLabel::PreferredSizeLabel() : Label() {
-  set_border(Border::CreateSolidBorder(2, SK_ColorCYAN));
+  SetBorder(Border::CreateSolidBorder(2, SK_ColorCYAN));
 }
 
 PreferredSizeLabel::~PreferredSizeLabel() {}
@@ -64,7 +67,7 @@ void LabelExample::CreateExampleView(View* container) {
   container->AddChildView(label);
 
   label = new Label(ASCIIToUTF16("A Courier-18 label with a shadow."));
-  label->SetFont(gfx::Font("Courier", 18));
+  label->SetFontList(gfx::FontList("Courier, 18px"));
   label->SetShadowColors(SK_ColorGRAY, SK_ColorLTGRAY);
   label->SetShadowOffset(1, 1);
   container->AddChildView(label);
@@ -78,6 +81,10 @@ void LabelExample::CreateExampleView(View* container) {
   label->SetText(ASCIIToUTF16("A multi-line label will wrap onto subsequent "
       "lines if the text's width exceeds the label's available width."));
   label->SetMultiLine(true);
+  container->AddChildView(label);
+
+  label = new Label(WideToUTF16(L"Password!"));
+  label->SetObscured(true);
   container->AddChildView(label);
 }
 

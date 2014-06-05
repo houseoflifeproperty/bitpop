@@ -8,105 +8,110 @@
 #include "base/json/json_reader.h"
 #include "base/json/string_escape.h"
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/prefs/pref_service.h"
+#include "base/stl_util.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/prefs/pref_service.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/spellcheck_common.h"
 #include "chrome/common/spellcheck_result.h"
-#include "content/public/browser/browser_thread.h"
+#include "components/user_prefs/user_prefs.h"
+#include "content/public/browser/browser_context.h"
 #include "google_apis/google_api_keys.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/url_fetcher.h"
-#include "unicode/uloc.h"
+#include "url/gurl.h"
 
-// Use the public URL to the Spelling service on Chromium.
-#ifndef SPELLING_SERVICE_URL
-#define SPELLING_SERVICE_URL "https://www.googleapis.com/rpc"
-#endif
+namespace {
 
-SpellingServiceClient::SpellingServiceClient() : tag_(0) {
+// The URL for requesting spell checking and sending user feedback.
+const char kSpellingServiceURL[] = "https://www.googleapis.com/rpc";
+
+// The location of spellcheck suggestions in JSON response from spelling
+// service.
+const char kMisspellingsPath[] = "result.spellingCheckResponse.misspellings";
+
+// The location of error messages in JSON response from spelling service.
+const char kErrorPath[] = "error";
+
+}  // namespace
+
+SpellingServiceClient::SpellingServiceClient() {
 }
 
 SpellingServiceClient::~SpellingServiceClient() {
+  STLDeleteContainerPairPointers(spellcheck_fetchers_.begin(),
+                                 spellcheck_fetchers_.end());
 }
 
 bool SpellingServiceClient::RequestTextCheck(
-    Profile* profile,
-    int tag,
+    content::BrowserContext* context,
     ServiceType type,
-    const string16& text,
+    const base::string16& text,
     const TextCheckCompleteCallback& callback) {
   DCHECK(type == SUGGEST || type == SPELLCHECK);
-  std::string locale = profile->GetPrefs()->GetString(
-      prefs::kSpellCheckDictionary);
-  char language[ULOC_LANG_CAPACITY] = ULOC_ENGLISH;
-  const char* country = "USA";
-  if (!locale.empty()) {
-    // Create the parameters needed by Spelling API. Spelling API needs three
-    // parameters: ISO language code, ISO3 country code, and text to be checked
-    // by the service. On the other hand, Chrome uses an ISO locale ID and it
-    // may not include a country ID, e.g. "fr", "de", etc. To create the input
-    // parameters, we convert the UI locale to a full locale ID, and  convert
-    // the full locale ID to an ISO language code and and ISO3 country code.
-    // Also, we convert the given text to a JSON string, i.e. quote all its
-    // non-ASCII characters.
-    UErrorCode error = U_ZERO_ERROR;
-    char id[ULOC_LANG_CAPACITY + ULOC_SCRIPT_CAPACITY + ULOC_COUNTRY_CAPACITY];
-    uloc_addLikelySubtags(locale.c_str(), id, arraysize(id), &error);
-
-    error = U_ZERO_ERROR;
-    uloc_getLanguage(id, language, arraysize(language), &error);
-    country = uloc_getISO3Country(id);
-  }
-  if (!IsAvailable(profile, type))
+  if (!context || !IsAvailable(context, type)) {
+    callback.Run(false, text, std::vector<SpellCheckResult>());
     return false;
+  }
+
+  const PrefService* pref = user_prefs::UserPrefs::Get(context);
+  DCHECK(pref);
+
+  std::string language_code;
+  std::string country_code;
+  chrome::spellcheck_common::GetISOLanguageCountryCodeFromLocale(
+      pref->GetString(prefs::kSpellCheckDictionary),
+      &language_code,
+      &country_code);
 
   // Format the JSON request to be sent to the Spelling service.
-  std::string encoded_text;
-  base::JsonDoubleQuote(text, false, &encoded_text);
+  std::string encoded_text = base::GetQuotedJSONString(text);
 
   static const char kSpellingRequest[] =
       "{"
       "\"method\":\"spelling.check\","
       "\"apiVersion\":\"v%d\","
       "\"params\":{"
-      "\"text\":\"%s\","
+      "\"text\":%s,"
       "\"language\":\"%s\","
       "\"originCountry\":\"%s\","
-      "\"key\":\"%s\""
+      "\"key\":%s"
       "}"
       "}";
-  std::string api_key = google_apis::GetAPIKey();
+  std::string api_key = base::GetQuotedJSONString(google_apis::GetAPIKey());
   std::string request = base::StringPrintf(
       kSpellingRequest,
       type,
       encoded_text.c_str(),
-      language,
-      country,
+      language_code.c_str(),
+      country_code.c_str(),
       api_key.c_str());
 
-  static const char kSpellingServiceURL[] = SPELLING_SERVICE_URL;
   GURL url = GURL(kSpellingServiceURL);
-  fetcher_.reset(CreateURLFetcher(url));
-  fetcher_->SetRequestContext(profile->GetRequestContext());
-  fetcher_->SetUploadData("application/json", request);
-  fetcher_->SetLoadFlags(
+  net::URLFetcher* fetcher = CreateURLFetcher(url);
+  fetcher->SetRequestContext(context->GetRequestContext());
+  fetcher->SetUploadData("application/json", request);
+  fetcher->SetLoadFlags(
       net::LOAD_DO_NOT_SEND_COOKIES | net::LOAD_DO_NOT_SAVE_COOKIES);
-  fetcher_->Start();
-  tag_ = tag;
-  text_ = text;
-  callback_ = callback;
+  spellcheck_fetchers_[fetcher] = new TextCheckCallbackData(callback, text);
+  fetcher->Start();
   return true;
 }
 
-bool SpellingServiceClient::IsAvailable(Profile* profile, ServiceType type) {
-  const PrefService* pref = profile->GetPrefs();
+bool SpellingServiceClient::IsAvailable(
+    content::BrowserContext* context,
+    ServiceType type) {
+  const PrefService* pref = user_prefs::UserPrefs::Get(context);
+  DCHECK(pref);
+  // If prefs don't allow spellchecking or if the context is off the record,
+  // the spelling service should be unavailable.
   if (!pref->GetBoolean(prefs::kEnableContinuousSpellcheck) ||
-      !pref->GetBoolean(prefs::kSpellCheckUseSpellingService))
+      !pref->GetBoolean(prefs::kSpellCheckUseSpellingService) ||
+      context->IsOffTheRecord())
     return false;
 
   // If the locale for spelling has not been set, the user has not decided to
@@ -115,12 +120,6 @@ bool SpellingServiceClient::IsAvailable(Profile* profile, ServiceType type) {
   if (locale.empty())
     return false;
 
-  // If we do not have the spelling service enabled, then we are only available
-  // for SUGGEST.
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (!command_line->HasSwitch(switches::kUseSpellingService))
-    return type == SUGGEST;
-
   // Finally, if all options are available, we only enable only SUGGEST
   // if SPELLCHECK is not available for our language because SPELLCHECK results
   // are a superset of SUGGEST results.
@@ -128,29 +127,11 @@ bool SpellingServiceClient::IsAvailable(Profile* profile, ServiceType type) {
   // all languages SPELLCHECK covers.
   bool language_available = !locale.compare(0, 2, "en");
   if (language_available) {
-    // Either SUGGEST or SPELLCHECK are allowed.
-    return true;
+    return type == SPELLCHECK;
   } else {
     // Only SUGGEST is allowed.
     return type == SUGGEST;
   }
-}
-
-void SpellingServiceClient::OnURLFetchComplete(
-    const net::URLFetcher* source) {
-  scoped_ptr<net::URLFetcher> clean_up_fetcher(fetcher_.release());
-  bool success = false;
-  std::vector<SpellCheckResult> results;
-  if (source->GetResponseCode() / 100 == 2) {
-    std::string data;
-    source->GetResponseAsString(&data);
-    success = ParseResponse(data, &results);
-  }
-  callback_.Run(tag_, success, text_, results);
-}
-
-net::URLFetcher* SpellingServiceClient::CreateURLFetcher(const GURL& url) {
-  return net::URLFetcher::Create(url, net::URLFetcher::POST, this);
 }
 
 bool SpellingServiceClient::ParseResponse(
@@ -187,39 +168,52 @@ bool SpellingServiceClient::ParseResponse(
   //     }
   //   }
   // }
-  scoped_ptr<DictionaryValue> value(
-      static_cast<DictionaryValue*>(
+  // If the service is not available, the Spelling service returns JSON with an
+  // error.
+  // {
+  //   "error": {
+  //     "code": 400,
+  //     "message": "Bad Request",
+  //     "data": [...]
+  //   }
+  // }
+  scoped_ptr<base::DictionaryValue> value(
+      static_cast<base::DictionaryValue*>(
           base::JSONReader::Read(data, base::JSON_ALLOW_TRAILING_COMMAS)));
   if (!value.get() || !value->IsType(base::Value::TYPE_DICTIONARY))
+    return false;
+
+  // Check for errors from spelling service.
+  base::DictionaryValue* error = NULL;
+  if (value->GetDictionary(kErrorPath, &error))
     return false;
 
   // Retrieve the array of Misspelling objects. When the input text does not
   // have misspelled words, it returns an empty JSON. (In this case, its HTTP
   // status is 200.) We just return true for this case.
-  ListValue* misspellings = NULL;
-  const char kMisspellings[] = "result.spellingCheckResponse.misspellings";
-  if (!value->GetList(kMisspellings, &misspellings))
+  base::ListValue* misspellings = NULL;
+  if (!value->GetList(kMisspellingsPath, &misspellings))
     return true;
 
   for (size_t i = 0; i < misspellings->GetSize(); ++i) {
     // Retrieve the i-th misspelling region and put it to the given vector. When
     // the Spelling service sends two or more suggestions, we read only the
     // first one because SpellCheckResult can store only one suggestion.
-    DictionaryValue* misspelling = NULL;
+    base::DictionaryValue* misspelling = NULL;
     if (!misspellings->GetDictionary(i, &misspelling))
       return false;
 
     int start = 0;
     int length = 0;
-    ListValue* suggestions = NULL;
+    base::ListValue* suggestions = NULL;
     if (!misspelling->GetInteger("charStart", &start) ||
         !misspelling->GetInteger("charLength", &length) ||
         !misspelling->GetList("suggestions", &suggestions)) {
       return false;
     }
 
-    DictionaryValue* suggestion = NULL;
-    string16 replacement;
+    base::DictionaryValue* suggestion = NULL;
+    base::string16 replacement;
     if (!suggestions->GetDictionary(0, &suggestion) ||
         !suggestion->GetString("suggestion", &replacement)) {
       return false;
@@ -229,4 +223,38 @@ bool SpellingServiceClient::ParseResponse(
     results->push_back(result);
   }
   return true;
+}
+
+SpellingServiceClient::TextCheckCallbackData::TextCheckCallbackData(
+    TextCheckCompleteCallback callback,
+    base::string16 text)
+      : callback(callback),
+        text(text) {
+}
+
+SpellingServiceClient::TextCheckCallbackData::~TextCheckCallbackData() {
+}
+
+void SpellingServiceClient::OnURLFetchComplete(
+    const net::URLFetcher* source) {
+  DCHECK(spellcheck_fetchers_[source]);
+  scoped_ptr<const net::URLFetcher> fetcher(source);
+  scoped_ptr<TextCheckCallbackData>
+      callback_data(spellcheck_fetchers_[fetcher.get()]);
+  bool success = false;
+  std::vector<SpellCheckResult> results;
+  if (fetcher->GetResponseCode() / 100 == 2) {
+    std::string data;
+    fetcher->GetResponseAsString(&data);
+    success = ParseResponse(data, &results);
+  }
+  spellcheck_fetchers_.erase(fetcher.get());
+
+  // The callback may release the last (transitive) dependency on |this|. It
+  // MUST be the last function called.
+  callback_data->callback.Run(success, callback_data->text, results);
+}
+
+net::URLFetcher* SpellingServiceClient::CreateURLFetcher(const GURL& url) {
+  return net::URLFetcher::Create(url, net::URLFetcher::POST, this);
 }

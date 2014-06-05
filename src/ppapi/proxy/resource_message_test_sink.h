@@ -14,6 +14,7 @@ namespace proxy {
 
 class ResourceMessageCallParams;
 class ResourceMessageReplyParams;
+class SerializedHandle;
 
 // Extends IPC::TestSink to add extra capabilities for searching for and
 // decoding resource messages.
@@ -32,7 +33,7 @@ class ResourceMessageTestSink : public IPC::TestSink {
 
   // Searches the queue for the first resource call message with a nested
   // message matching the given ID. On success, returns true and populates the
-  // givem params and nested message.
+  // given params and nested message.
   bool GetFirstResourceCallMatching(
       uint32 id,
       ResourceMessageCallParams* params,
@@ -43,6 +44,17 @@ class ResourceMessageTestSink : public IPC::TestSink {
       uint32 id,
       ResourceMessageReplyParams* params,
       IPC::Message* nested_msg);
+
+  // Searches the queue for all resource call messages with a nested message
+  // matching the given ID.
+  typedef std::pair<ResourceMessageCallParams, IPC::Message> ResourceCall;
+  typedef std::vector<ResourceCall> ResourceCallVector;
+  ResourceCallVector GetAllResourceCallsMatching(uint32 id);
+
+  // Like GetAllResourceCallsMatching except for replies.
+  typedef std::pair<ResourceMessageReplyParams, IPC::Message> ResourceReply;
+  typedef std::vector<ResourceReply> ResourceReplyVector;
+  ResourceReplyVector GetAllResourceRepliesMatching(uint32 id);
 
  private:
   scoped_ptr<IPC::Message> sync_reply_msg_;
@@ -77,10 +89,17 @@ class ResourceSyncCallHandler : public IPC::Listener {
 
   IPC::Message last_handled_msg() { return last_handled_msg_; }
 
+  // Sets a handle to be appended to the ReplyParams. The pointer is owned by
+  // the caller.
+  void set_serialized_handle(const SerializedHandle* serialized_handle) {
+    serialized_handle_ = serialized_handle;
+  }
+
  private:
   ResourceMessageTestSink* test_sink_;
   uint32 incoming_type_;
   int32_t result_;
+  const SerializedHandle* serialized_handle_;  // Non-owning pointer.
   IPC::Message reply_msg_;
   IPC::Message last_handled_msg_;
 };

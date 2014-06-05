@@ -5,7 +5,6 @@
 #include "base/debug/stack_trace.h"
 
 #include <errno.h>
-#include <execinfo.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
@@ -15,10 +14,16 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <map>
 #include <ostream>
+#include <string>
+#include <vector>
 
 #if defined(__GLIBCXX__)
 #include <cxxabi.h>
+#endif
+#if !defined(__UCLIBC__)
+#include <execinfo.h>
 #endif
 
 #if defined(OS_MACOSX)
@@ -27,10 +32,14 @@
 
 #include "base/basictypes.h"
 #include "base/debug/debugger.h"
+#include "base/debug/proc_maps_linux.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/singleton.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/posix/eintr_wrapper.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "build/build_config.h"
 
 #if defined(USE_SYMBOLIZE)
 #include "base/third_party/symbolize/symbolize.h"
@@ -43,6 +52,7 @@ namespace {
 
 volatile sig_atomic_t in_signal_handler = 0;
 
+#if !defined(USE_SYMBOLIZE) && defined(__GLIBCXX__)
 // The prefix used for mangled symbols, per the Itanium C++ ABI:
 // http://www.codesourcery.com/cxx-abi/abi.html#mangling
 const char kMangledSymbolPrefix[] = "_Z";
@@ -51,6 +61,7 @@ const char kMangledSymbolPrefix[] = "_Z";
 // (('a'..'z').to_a+('A'..'Z').to_a+('0'..'9').to_a + ['_']).join
 const char kSymbolCharacters[] =
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_";
+#endif  // !defined(USE_SYMBOLIZE) && defined(__GLIBCXX__)
 
 #if !defined(USE_SYMBOLIZE)
 // Demangles C++ symbols in the given text. Example:
@@ -62,7 +73,7 @@ void DemangleSymbols(std::string* text) {
   // Note: code in this function is NOT async-signal safe (std::string uses
   // malloc internally).
 
-#if defined(__GLIBCXX__)
+#if defined(__GLIBCXX__) && !defined(__UCLIBC__)
 
   std::string::size_type search_from = 0;
   while (search_from < text->size()) {
@@ -84,7 +95,7 @@ void DemangleSymbols(std::string* text) {
 
     // Try to demangle the mangled symbol candidate.
     int status = 0;
-    scoped_ptr_malloc<char> demangled_symbol(
+    scoped_ptr<char, base::FreeDeleter> demangled_symbol(
         abi::__cxa_demangle(mangled_symbol.c_str(), NULL, 0, &status));
     if (status == 0) {  // Demangling is successful.
       // Remove the mangled symbol.
@@ -99,7 +110,7 @@ void DemangleSymbols(std::string* text) {
     }
   }
 
-#endif  // defined(__GLIBCXX__)
+#endif  // defined(__GLIBCXX__) && !defined(__UCLIBC__)
 }
 #endif  // !defined(USE_SYMBOLIZE)
 
@@ -112,22 +123,39 @@ class BacktraceOutputHandler {
 };
 
 void OutputPointer(void* pointer, BacktraceOutputHandler* handler) {
-  char buf[1024] = { '\0' };
-  handler->HandleOutput(" [0x");
-  internal::itoa_r(reinterpret_cast<intptr_t>(pointer), buf, sizeof(buf), 16);
+  // This should be more than enough to store a 64-bit number in hex:
+  // 16 hex digits + 1 for null-terminator.
+  char buf[17] = { '\0' };
+  handler->HandleOutput("0x");
+  internal::itoa_r(reinterpret_cast<intptr_t>(pointer),
+                   buf, sizeof(buf), 16, 12);
   handler->HandleOutput(buf);
-  handler->HandleOutput("]");
 }
 
+#if defined(USE_SYMBOLIZE)
+void OutputFrameId(intptr_t frame_id, BacktraceOutputHandler* handler) {
+  // Max unsigned 64-bit number in decimal has 20 digits (18446744073709551615).
+  // Hence, 30 digits should be more than enough to represent it in decimal
+  // (including the null-terminator).
+  char buf[30] = { '\0' };
+  handler->HandleOutput("#");
+  internal::itoa_r(frame_id, buf, sizeof(buf), 10, 1);
+  handler->HandleOutput(buf);
+}
+#endif  // defined(USE_SYMBOLIZE)
+
 void ProcessBacktrace(void *const *trace,
-                      int size,
+                      size_t size,
                       BacktraceOutputHandler* handler) {
   // NOTE: This code MUST be async-signal safe (it's used by in-process
   // stack dumping signal handler). NO malloc or stdio is allowed here.
 
 #if defined(USE_SYMBOLIZE)
-  for (int i = 0; i < size; ++i) {
-    handler->HandleOutput("\t");
+  for (size_t i = 0; i < size; ++i) {
+    OutputFrameId(i, handler);
+    handler->HandleOutput(" ");
+    OutputPointer(trace[i], handler);
+    handler->HandleOutput(" ");
 
     char buf[1024] = { '\0' };
 
@@ -139,18 +167,18 @@ void ProcessBacktrace(void *const *trace,
     else
       handler->HandleOutput("<unknown>");
 
-    OutputPointer(trace[i], handler);
     handler->HandleOutput("\n");
   }
-#else
+#elif !defined(__UCLIBC__)
   bool printed = false;
 
   // Below part is async-signal unsafe (uses malloc), so execute it only
   // when we are not executing the signal handler.
   if (in_signal_handler == 0) {
-    scoped_ptr_malloc<char*> trace_symbols(backtrace_symbols(trace, size));
+    scoped_ptr<char*, FreeDeleter>
+        trace_symbols(backtrace_symbols(trace, size));
     if (trace_symbols.get()) {
-      for (int i = 0; i < size; ++i) {
+      for (size_t i = 0; i < size; ++i) {
         std::string trace_symbol = trace_symbols.get()[i];
         DemangleSymbols(&trace_symbol);
         handler->HandleOutput(trace_symbol.c_str());
@@ -162,15 +190,22 @@ void ProcessBacktrace(void *const *trace,
   }
 
   if (!printed) {
-    for (int i = 0; i < size; ++i) {
+    for (size_t i = 0; i < size; ++i) {
+      handler->HandleOutput(" [");
       OutputPointer(trace[i], handler);
-      handler->HandleOutput("\n");
+      handler->HandleOutput("]\n");
     }
   }
 #endif  // defined(USE_SYMBOLIZE)
 }
 
-void StackDumpSignalHandler(int signal, siginfo_t* info, ucontext_t* context) {
+void PrintToStderr(const char* output) {
+  // NOTE: This code MUST be async-signal safe (it's used by in-process
+  // stack dumping signal handler). NO malloc or stdio is allowed here.
+  ignore_result(HANDLE_EINTR(write(STDERR_FILENO, output, strlen(output))));
+}
+
+void StackDumpSignalHandler(int signal, siginfo_t* info, void* void_context) {
   // NOTE: This code MUST be async-signal safe.
   // NO malloc or stdio is allowed here.
 
@@ -181,17 +216,150 @@ void StackDumpSignalHandler(int signal, siginfo_t* info, ucontext_t* context) {
   if (BeingDebugged())
     BreakDebugger();
 
-  char buf[1024] = "Received signal ";
-  size_t buf_len = strlen(buf);
-  internal::itoa_r(signal, buf + buf_len, sizeof(buf) - buf_len, 10);
-  RAW_LOG(ERROR, buf);
+  PrintToStderr("Received signal ");
+  char buf[1024] = { 0 };
+  internal::itoa_r(signal, buf, sizeof(buf), 10, 0);
+  PrintToStderr(buf);
+  if (signal == SIGBUS) {
+    if (info->si_code == BUS_ADRALN)
+      PrintToStderr(" BUS_ADRALN ");
+    else if (info->si_code == BUS_ADRERR)
+      PrintToStderr(" BUS_ADRERR ");
+    else if (info->si_code == BUS_OBJERR)
+      PrintToStderr(" BUS_OBJERR ");
+    else
+      PrintToStderr(" <unknown> ");
+  } else if (signal == SIGFPE) {
+    if (info->si_code == FPE_FLTDIV)
+      PrintToStderr(" FPE_FLTDIV ");
+    else if (info->si_code == FPE_FLTINV)
+      PrintToStderr(" FPE_FLTINV ");
+    else if (info->si_code == FPE_FLTOVF)
+      PrintToStderr(" FPE_FLTOVF ");
+    else if (info->si_code == FPE_FLTRES)
+      PrintToStderr(" FPE_FLTRES ");
+    else if (info->si_code == FPE_FLTSUB)
+      PrintToStderr(" FPE_FLTSUB ");
+    else if (info->si_code == FPE_FLTUND)
+      PrintToStderr(" FPE_FLTUND ");
+    else if (info->si_code == FPE_INTDIV)
+      PrintToStderr(" FPE_INTDIV ");
+    else if (info->si_code == FPE_INTOVF)
+      PrintToStderr(" FPE_INTOVF ");
+    else
+      PrintToStderr(" <unknown> ");
+  } else if (signal == SIGILL) {
+    if (info->si_code == ILL_BADSTK)
+      PrintToStderr(" ILL_BADSTK ");
+    else if (info->si_code == ILL_COPROC)
+      PrintToStderr(" ILL_COPROC ");
+    else if (info->si_code == ILL_ILLOPN)
+      PrintToStderr(" ILL_ILLOPN ");
+    else if (info->si_code == ILL_ILLADR)
+      PrintToStderr(" ILL_ILLADR ");
+    else if (info->si_code == ILL_ILLTRP)
+      PrintToStderr(" ILL_ILLTRP ");
+    else if (info->si_code == ILL_PRVOPC)
+      PrintToStderr(" ILL_PRVOPC ");
+    else if (info->si_code == ILL_PRVREG)
+      PrintToStderr(" ILL_PRVREG ");
+    else
+      PrintToStderr(" <unknown> ");
+  } else if (signal == SIGSEGV) {
+    if (info->si_code == SEGV_MAPERR)
+      PrintToStderr(" SEGV_MAPERR ");
+    else if (info->si_code == SEGV_ACCERR)
+      PrintToStderr(" SEGV_ACCERR ");
+    else
+      PrintToStderr(" <unknown> ");
+  }
+  if (signal == SIGBUS || signal == SIGFPE ||
+      signal == SIGILL || signal == SIGSEGV) {
+    internal::itoa_r(reinterpret_cast<intptr_t>(info->si_addr),
+                     buf, sizeof(buf), 16, 12);
+    PrintToStderr(buf);
+  }
+  PrintToStderr("\n");
 
-  debug::StackTrace().PrintBacktrace();
+#if !defined(__UCLIBC__)
+  debug::StackTrace().Print();
+#endif
 
-  // TODO(shess): Port to Linux.
-#if defined(OS_MACOSX)
-  // TODO(shess): Port to 64-bit.
+#if defined(OS_LINUX)
+#if ARCH_CPU_X86_FAMILY
+  ucontext_t* context = reinterpret_cast<ucontext_t*>(void_context);
+  const struct {
+    const char* label;
+    greg_t value;
+  } registers[] = {
+#if ARCH_CPU_32_BITS
+    { "  gs: ", context->uc_mcontext.gregs[REG_GS] },
+    { "  fs: ", context->uc_mcontext.gregs[REG_FS] },
+    { "  es: ", context->uc_mcontext.gregs[REG_ES] },
+    { "  ds: ", context->uc_mcontext.gregs[REG_DS] },
+    { " edi: ", context->uc_mcontext.gregs[REG_EDI] },
+    { " esi: ", context->uc_mcontext.gregs[REG_ESI] },
+    { " ebp: ", context->uc_mcontext.gregs[REG_EBP] },
+    { " esp: ", context->uc_mcontext.gregs[REG_ESP] },
+    { " ebx: ", context->uc_mcontext.gregs[REG_EBX] },
+    { " edx: ", context->uc_mcontext.gregs[REG_EDX] },
+    { " ecx: ", context->uc_mcontext.gregs[REG_ECX] },
+    { " eax: ", context->uc_mcontext.gregs[REG_EAX] },
+    { " trp: ", context->uc_mcontext.gregs[REG_TRAPNO] },
+    { " err: ", context->uc_mcontext.gregs[REG_ERR] },
+    { "  ip: ", context->uc_mcontext.gregs[REG_EIP] },
+    { "  cs: ", context->uc_mcontext.gregs[REG_CS] },
+    { " efl: ", context->uc_mcontext.gregs[REG_EFL] },
+    { " usp: ", context->uc_mcontext.gregs[REG_UESP] },
+    { "  ss: ", context->uc_mcontext.gregs[REG_SS] },
+#elif ARCH_CPU_64_BITS
+    { "  r8: ", context->uc_mcontext.gregs[REG_R8] },
+    { "  r9: ", context->uc_mcontext.gregs[REG_R9] },
+    { " r10: ", context->uc_mcontext.gregs[REG_R10] },
+    { " r11: ", context->uc_mcontext.gregs[REG_R11] },
+    { " r12: ", context->uc_mcontext.gregs[REG_R12] },
+    { " r13: ", context->uc_mcontext.gregs[REG_R13] },
+    { " r14: ", context->uc_mcontext.gregs[REG_R14] },
+    { " r15: ", context->uc_mcontext.gregs[REG_R15] },
+    { "  di: ", context->uc_mcontext.gregs[REG_RDI] },
+    { "  si: ", context->uc_mcontext.gregs[REG_RSI] },
+    { "  bp: ", context->uc_mcontext.gregs[REG_RBP] },
+    { "  bx: ", context->uc_mcontext.gregs[REG_RBX] },
+    { "  dx: ", context->uc_mcontext.gregs[REG_RDX] },
+    { "  ax: ", context->uc_mcontext.gregs[REG_RAX] },
+    { "  cx: ", context->uc_mcontext.gregs[REG_RCX] },
+    { "  sp: ", context->uc_mcontext.gregs[REG_RSP] },
+    { "  ip: ", context->uc_mcontext.gregs[REG_RIP] },
+    { " efl: ", context->uc_mcontext.gregs[REG_EFL] },
+    { " cgf: ", context->uc_mcontext.gregs[REG_CSGSFS] },
+    { " erf: ", context->uc_mcontext.gregs[REG_ERR] },
+    { " trp: ", context->uc_mcontext.gregs[REG_TRAPNO] },
+    { " msk: ", context->uc_mcontext.gregs[REG_OLDMASK] },
+    { " cr2: ", context->uc_mcontext.gregs[REG_CR2] },
+#endif
+  };
+
+#if ARCH_CPU_32_BITS
+  const int kRegisterPadding = 8;
+#elif ARCH_CPU_64_BITS
+  const int kRegisterPadding = 16;
+#endif
+
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(registers); i++) {
+    PrintToStderr(registers[i].label);
+    internal::itoa_r(registers[i].value, buf, sizeof(buf),
+                     16, kRegisterPadding);
+    PrintToStderr(buf);
+
+    if ((i + 1) % 4 == 0)
+      PrintToStderr("\n");
+  }
+  PrintToStderr("\n");
+#endif
+#elif defined(OS_MACOSX)
+  // TODO(shess): Port to 64-bit, and ARM architecture (32 and 64-bit).
 #if ARCH_CPU_X86_FAMILY && ARCH_CPU_32_BITS
+  ucontext_t* context = reinterpret_cast<ucontext_t*>(void_context);
   size_t len;
 
   // NOTE: Even |snprintf()| is not on the approved list for signal
@@ -236,10 +404,10 @@ class PrintBacktraceOutputHandler : public BacktraceOutputHandler {
  public:
   PrintBacktraceOutputHandler() {}
 
-  virtual void HandleOutput(const char* output) {
+  virtual void HandleOutput(const char* output) OVERRIDE {
     // NOTE: This code MUST be async-signal safe (it's used by in-process
     // stack dumping signal handler). NO malloc or stdio is allowed here.
-    ignore_result(HANDLE_EINTR(write(STDERR_FILENO, output, strlen(output))));
+    PrintToStderr(output);
   }
 
  private:
@@ -248,10 +416,10 @@ class PrintBacktraceOutputHandler : public BacktraceOutputHandler {
 
 class StreamBacktraceOutputHandler : public BacktraceOutputHandler {
  public:
-  StreamBacktraceOutputHandler(std::ostream* os) : os_(os) {
+  explicit StreamBacktraceOutputHandler(std::ostream* os) : os_(os) {
   }
 
-  virtual void HandleOutput(const char* output) {
+  virtual void HandleOutput(const char* output) OVERRIDE {
     (*os_) << output;
   }
 
@@ -296,42 +464,295 @@ void WarmUpBacktrace() {
 
 }  // namespace
 
-#if !defined(OS_IOS)
+#if defined(USE_SYMBOLIZE)
+
+// class SandboxSymbolizeHelper.
+//
+// The purpose of this class is to prepare and install a "file open" callback
+// needed by the stack trace symbolization code
+// (base/third_party/symbolize/symbolize.h) so that it can function properly
+// in a sandboxed process.  The caveat is that this class must be instantiated
+// before the sandboxing is enabled so that it can get the chance to open all
+// the object files that are loaded in the virtual address space of the current
+// process.
+class SandboxSymbolizeHelper {
+ public:
+  // Returns the singleton instance.
+  static SandboxSymbolizeHelper* GetInstance() {
+    return Singleton<SandboxSymbolizeHelper>::get();
+  }
+
+ private:
+  friend struct DefaultSingletonTraits<SandboxSymbolizeHelper>;
+
+  SandboxSymbolizeHelper()
+      : is_initialized_(false) {
+    Init();
+  }
+
+  ~SandboxSymbolizeHelper() {
+    UnregisterCallback();
+    CloseObjectFiles();
+  }
+
+  // Returns a O_RDONLY file descriptor for |file_path| if it was opened
+  // sucessfully during the initialization.  The file is repositioned at
+  // offset 0.
+  // IMPORTANT: This function must be async-signal-safe because it can be
+  // called from a signal handler (symbolizing stack frames for a crash).
+  int GetFileDescriptor(const char* file_path) {
+    int fd = -1;
+
+#if !defined(NDEBUG)
+    if (file_path) {
+      // The assumption here is that iterating over std::map<std::string, int>
+      // using a const_iterator does not allocate dynamic memory, hense it is
+      // async-signal-safe.
+      std::map<std::string, int>::const_iterator it;
+      for (it = modules_.begin(); it != modules_.end(); ++it) {
+        if (strcmp((it->first).c_str(), file_path) == 0) {
+          // POSIX.1-2004 requires an implementation to guarantee that dup()
+          // is async-signal-safe.
+          fd = dup(it->second);
+          break;
+        }
+      }
+      // POSIX.1-2004 requires an implementation to guarantee that lseek()
+      // is async-signal-safe.
+      if (fd >= 0 && lseek(fd, 0, SEEK_SET) < 0) {
+        // Failed to seek.
+        fd = -1;
+      }
+    }
+#endif  // !defined(NDEBUG)
+
+    return fd;
+  }
+
+  // Searches for the object file (from /proc/self/maps) that contains
+  // the specified pc.  If found, sets |start_address| to the start address
+  // of where this object file is mapped in memory, sets the module base
+  // address into |base_address|, copies the object file name into
+  // |out_file_name|, and attempts to open the object file.  If the object
+  // file is opened successfully, returns the file descriptor.  Otherwise,
+  // returns -1.  |out_file_name_size| is the size of the file name buffer
+  // (including the null terminator).
+  // IMPORTANT: This function must be async-signal-safe because it can be
+  // called from a signal handler (symbolizing stack frames for a crash).
+  static int OpenObjectFileContainingPc(uint64_t pc, uint64_t& start_address,
+                                        uint64_t& base_address, char* file_path,
+                                        int file_path_size) {
+    // This method can only be called after the singleton is instantiated.
+    // This is ensured by the following facts:
+    // * This is the only static method in this class, it is private, and
+    //   the class has no friends (except for the DefaultSingletonTraits).
+    //   The compiler guarantees that it can only be called after the
+    //   singleton is instantiated.
+    // * This method is used as a callback for the stack tracing code and
+    //   the callback registration is done in the constructor, so logically
+    //   it cannot be called before the singleton is created.
+    SandboxSymbolizeHelper* instance = GetInstance();
+
+    // The assumption here is that iterating over
+    // std::vector<MappedMemoryRegion> using a const_iterator does not allocate
+    // dynamic memory, hence it is async-signal-safe.
+    std::vector<MappedMemoryRegion>::const_iterator it;
+    bool is_first = true;
+    for (it = instance->regions_.begin(); it != instance->regions_.end();
+         ++it, is_first = false) {
+      const MappedMemoryRegion& region = *it;
+      if (region.start <= pc && pc < region.end) {
+        start_address = region.start;
+        // Don't subtract 'start_address' from the first entry:
+        // * If a binary is compiled w/o -pie, then the first entry in
+        //   process maps is likely the binary itself (all dynamic libs
+        //   are mapped higher in address space). For such a binary,
+        //   instruction offset in binary coincides with the actual
+        //   instruction address in virtual memory (as code section
+        //   is mapped to a fixed memory range).
+        // * If a binary is compiled with -pie, all the modules are
+        //   mapped high at address space (in particular, higher than
+        //   shadow memory of the tool), so the module can't be the
+        //   first entry.
+        base_address = (is_first ? 0U : start_address) - region.offset;
+        if (file_path && file_path_size > 0) {
+          strncpy(file_path, region.path.c_str(), file_path_size);
+          // Ensure null termination.
+          file_path[file_path_size - 1] = '\0';
+        }
+        return instance->GetFileDescriptor(region.path.c_str());
+      }
+    }
+    return -1;
+  }
+
+  // Parses /proc/self/maps in order to compile a list of all object file names
+  // for the modules that are loaded in the current process.
+  // Returns true on success.
+  bool CacheMemoryRegions() {
+    // Reads /proc/self/maps.
+    std::string contents;
+    if (!ReadProcMaps(&contents)) {
+      LOG(ERROR) << "Failed to read /proc/self/maps";
+      return false;
+    }
+
+    // Parses /proc/self/maps.
+    if (!ParseProcMaps(contents, &regions_)) {
+      LOG(ERROR) << "Failed to parse the contents of /proc/self/maps";
+      return false;
+    }
+
+    is_initialized_ = true;
+    return true;
+  }
+
+  // Opens all object files and caches their file descriptors.
+  void OpenSymbolFiles() {
+    // Pre-opening and caching the file descriptors of all loaded modules is
+    // not considered safe for retail builds.  Hence it is only done in debug
+    // builds.  For more details, take a look at: http://crbug.com/341966
+    // Enabling this to release mode would require approval from the security
+    // team.
+#if !defined(NDEBUG)
+    // Open the object files for all read-only executable regions and cache
+    // their file descriptors.
+    std::vector<MappedMemoryRegion>::const_iterator it;
+    for (it = regions_.begin(); it != regions_.end(); ++it) {
+      const MappedMemoryRegion& region = *it;
+      // Only interesed in read-only executable regions.
+      if ((region.permissions & MappedMemoryRegion::READ) ==
+              MappedMemoryRegion::READ &&
+          (region.permissions & MappedMemoryRegion::WRITE) == 0 &&
+          (region.permissions & MappedMemoryRegion::EXECUTE) ==
+              MappedMemoryRegion::EXECUTE) {
+        if (region.path.empty()) {
+          // Skip regions with empty file names.
+          continue;
+        }
+        if (region.path[0] == '[') {
+          // Skip pseudo-paths, like [stack], [vdso], [heap], etc ...
+          continue;
+        }
+        // Avoid duplicates.
+        if (modules_.find(region.path) == modules_.end()) {
+          int fd = open(region.path.c_str(), O_RDONLY | O_CLOEXEC);
+          if (fd >= 0) {
+            modules_.insert(std::make_pair(region.path, fd));
+          } else {
+            LOG(WARNING) << "Failed to open file: " << region.path
+                         << "\n  Error: " << strerror(errno);
+          }
+        }
+      }
+    }
+#endif  // !defined(NDEBUG)
+  }
+
+  // Initializes and installs the symbolization callback.
+  void Init() {
+    if (CacheMemoryRegions()) {
+      OpenSymbolFiles();
+      google::InstallSymbolizeOpenObjectFileCallback(
+          &OpenObjectFileContainingPc);
+    }
+  }
+
+  // Unregister symbolization callback.
+  void UnregisterCallback() {
+    if (is_initialized_) {
+      google::InstallSymbolizeOpenObjectFileCallback(NULL);
+      is_initialized_ = false;
+    }
+  }
+
+  // Closes all file descriptors owned by this instance.
+  void CloseObjectFiles() {
+#if !defined(NDEBUG)
+    std::map<std::string, int>::iterator it;
+    for (it = modules_.begin(); it != modules_.end(); ++it) {
+      int ret = IGNORE_EINTR(close(it->second));
+      DCHECK(!ret);
+      it->second = -1;
+    }
+    modules_.clear();
+#endif  // !defined(NDEBUG)
+  }
+
+  // Set to true upon successful initialization.
+  bool is_initialized_;
+
+#if !defined(NDEBUG)
+  // Mapping from file name to file descriptor.  Includes file descriptors
+  // for all successfully opened object files and the file descriptor for
+  // /proc/self/maps.  This code is not safe for release builds so
+  // this is only done for DEBUG builds.
+  std::map<std::string, int> modules_;
+#endif  // !defined(NDEBUG)
+
+  // Cache for the process memory regions.  Produced by parsing the contents
+  // of /proc/self/maps cache.
+  std::vector<MappedMemoryRegion> regions_;
+
+  DISALLOW_COPY_AND_ASSIGN(SandboxSymbolizeHelper);
+};
+#endif  // USE_SYMBOLIZE
+
+bool EnableInProcessStackDumpingForSandbox() {
+#if defined(USE_SYMBOLIZE)
+  SandboxSymbolizeHelper::GetInstance();
+#endif  // USE_SYMBOLIZE
+
+  return EnableInProcessStackDumping();
+}
+
 bool EnableInProcessStackDumping() {
   // When running in an application, our code typically expects SIGPIPE
   // to be ignored.  Therefore, when testing that same code, it should run
   // with SIGPIPE ignored as well.
-  struct sigaction action;
-  memset(&action, 0, sizeof(action));
-  action.sa_handler = SIG_IGN;
-  sigemptyset(&action.sa_mask);
-  bool success = (sigaction(SIGPIPE, &action, NULL) == 0);
+  struct sigaction sigpipe_action;
+  memset(&sigpipe_action, 0, sizeof(sigpipe_action));
+  sigpipe_action.sa_handler = SIG_IGN;
+  sigemptyset(&sigpipe_action.sa_mask);
+  bool success = (sigaction(SIGPIPE, &sigpipe_action, NULL) == 0);
 
   // Avoid hangs during backtrace initialization, see above.
   WarmUpBacktrace();
 
-  sig_t handler = reinterpret_cast<sig_t>(&StackDumpSignalHandler);
-  success &= (signal(SIGILL, handler) != SIG_ERR);
-  success &= (signal(SIGABRT, handler) != SIG_ERR);
-  success &= (signal(SIGFPE, handler) != SIG_ERR);
-  success &= (signal(SIGBUS, handler) != SIG_ERR);
-  success &= (signal(SIGSEGV, handler) != SIG_ERR);
-  success &= (signal(SIGSYS, handler) != SIG_ERR);
+  struct sigaction action;
+  memset(&action, 0, sizeof(action));
+  action.sa_flags = SA_RESETHAND | SA_SIGINFO;
+  action.sa_sigaction = &StackDumpSignalHandler;
+  sigemptyset(&action.sa_mask);
+
+  success &= (sigaction(SIGILL, &action, NULL) == 0);
+  success &= (sigaction(SIGABRT, &action, NULL) == 0);
+  success &= (sigaction(SIGFPE, &action, NULL) == 0);
+  success &= (sigaction(SIGBUS, &action, NULL) == 0);
+  success &= (sigaction(SIGSEGV, &action, NULL) == 0);
+// On Linux, SIGSYS is reserved by the kernel for seccomp-bpf sandboxing.
+#if !defined(OS_LINUX)
+  success &= (sigaction(SIGSYS, &action, NULL) == 0);
+#endif  // !defined(OS_LINUX)
 
   return success;
 }
-#endif  // !defined(OS_IOS)
 
 StackTrace::StackTrace() {
   // NOTE: This code MUST be async-signal safe (it's used by in-process
   // stack dumping signal handler). NO malloc or stdio is allowed here.
 
+#if !defined(__UCLIBC__)
   // Though the backtrace API man page does not list any possible negative
   // return values, we take no chance.
-  count_ = std::max(backtrace(trace_, arraysize(trace_)), 0);
+  count_ = base::saturated_cast<size_t>(backtrace(trace_, arraysize(trace_)));
+#else
+  count_ = 0;
+#endif
 }
 
-void StackTrace::PrintBacktrace() const {
+#if !defined(__UCLIBC__)
+void StackTrace::Print() const {
   // NOTE: This code MUST be async-signal safe (it's used by in-process
   // stack dumping signal handler). NO malloc or stdio is allowed here.
 
@@ -343,11 +764,12 @@ void StackTrace::OutputToStream(std::ostream* os) const {
   StreamBacktraceOutputHandler handler(os);
   ProcessBacktrace(trace_, count_, &handler);
 }
+#endif
 
 namespace internal {
 
 // NOTE: code from sandbox/linux/seccomp-bpf/demo.cc.
-char *itoa_r(intptr_t i, char *buf, size_t sz, int base) {
+char *itoa_r(intptr_t i, char *buf, size_t sz, int base, size_t padding) {
   // Make sure we can write at least one NUL byte.
   size_t n = 1;
   if (n > sz)
@@ -387,7 +809,10 @@ char *itoa_r(intptr_t i, char *buf, size_t sz, int base) {
     // Output the next digit.
     *ptr++ = "0123456789abcdef"[j % base];
     j /= base;
-  } while (j);
+
+    if (padding > 0)
+      padding--;
+  } while (j > 0 || padding > 0);
 
   // Terminate the output with a NUL character.
   *ptr = '\000';

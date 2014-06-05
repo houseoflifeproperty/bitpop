@@ -7,8 +7,9 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/synchronization/waitable_event.h"
+#include "ipc/ipc_channel.h"
 #include "ipc/ipc_sync_message.h"
 
 using base::MessageLoopProxy;
@@ -24,7 +25,7 @@ SyncMessageFilter::SyncMessageFilter(base::WaitableEvent* shutdown_event)
 bool SyncMessageFilter::Send(Message* message) {
   {
     base::AutoLock auto_lock(lock_);
-    if (!io_loop_) {
+    if (!io_loop_.get()) {
       delete message;
       return false;
     }
@@ -39,15 +40,15 @@ bool SyncMessageFilter::Send(Message* message) {
   base::WaitableEvent done_event(true, false);
   PendingSyncMsg pending_message(
       SyncMessage::GetMessageId(*message),
-      reinterpret_cast<SyncMessage*>(message)->GetReplyDeserializer(),
+      static_cast<SyncMessage*>(message)->GetReplyDeserializer(),
       &done_event);
 
   {
     base::AutoLock auto_lock(lock_);
     // Can't use this class on the main thread or else it can lead to deadlocks.
     // Also by definition, can't use this on IO thread since we're blocking it.
-    DCHECK(MessageLoopProxy::current() != listener_loop_);
-    DCHECK(MessageLoopProxy::current() != io_loop_);
+    DCHECK(MessageLoopProxy::current().get() != listener_loop_.get());
+    DCHECK(MessageLoopProxy::current().get() != io_loop_.get());
     pending_sync_messages_.insert(&pending_message);
   }
 

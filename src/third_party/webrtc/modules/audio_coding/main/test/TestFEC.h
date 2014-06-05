@@ -8,42 +8,41 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef TEST_FEC_H
-#define TEST_FEC_H
+#ifndef WEBRTC_MODULES_AUDIO_CODING_MAIN_TESTFEC_H_
+#define WEBRTC_MODULES_AUDIO_CODING_MAIN_TESTFEC_H_
 
-#include "ACMTest.h"
-#include "Channel.h"
-#include "PCMFile.h"
+#include "webrtc/modules/audio_coding/main/test/ACMTest.h"
+#include "webrtc/modules/audio_coding/main/test/Channel.h"
+#include "webrtc/modules/audio_coding/main/test/PCMFile.h"
+#include "webrtc/system_wrappers/interface/scoped_ptr.h"
 
 namespace webrtc {
 
-class TestFEC : public ACMTest
-{
-public:
-    TestFEC(int testMode);
-    ~TestFEC();
+class TestFEC : public ACMTest {
+ public:
+  TestFEC();
+  ~TestFEC();
 
-    void Perform();
-private:
-    // The default value of '-1' indicates that the registration is based only on codec name
-    // and a sampling frequncy matching is not required. This is useful for codecs which support
-    // several sampling frequency.
-    WebRtc_Word16 RegisterSendCodec(char side, char* codecName, WebRtc_Word32 sampFreqHz = -1);
-    void Run();
-    void OpenOutFile(WebRtc_Word16 testNumber);
-    void DisplaySendReceiveCodec();
-    WebRtc_Word32 SetVAD(bool enableDTX, bool enableVAD, ACMVADMode vadMode);
-    AudioCodingModule* _acmA;
-    AudioCodingModule* _acmB;
+  void Perform();
+ private:
+  // The default value of '-1' indicates that the registration is based only on
+  // codec name and a sampling frequency matching is not required. This is
+  // useful for codecs which support several sampling frequency.
+  int16_t RegisterSendCodec(char side, char* codecName,
+                            int32_t sampFreqHz = -1);
+  void Run();
+  void OpenOutFile(int16_t testNumber);
+  int32_t SetVAD(bool enableDTX, bool enableVAD, ACMVADMode vadMode);
+  scoped_ptr<AudioCodingModule> _acmA;
+  scoped_ptr<AudioCodingModule> _acmB;
 
-    Channel*               _channelA2B;
+  Channel* _channelA2B;
 
-    PCMFile                _inFileA;
-    PCMFile                _outFileB;
-    WebRtc_Word16            _testCntr;
-    int                    _testMode;
+  PCMFile _inFileA;
+  PCMFile _outFileB;
+  int16_t _testCntr;
 };
 
-} // namespace webrtc
+}  // namespace webrtc
 
-#endif
+#endif  // WEBRTC_MODULES_AUDIO_CODING_MAIN_TESTFEC_H_

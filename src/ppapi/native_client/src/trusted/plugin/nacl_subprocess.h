@@ -17,8 +17,8 @@
 #include "native_client/src/include/nacl_string.h"
 #include "native_client/src/include/portability.h"
 
-#include "native_client/src/trusted/plugin/service_runtime.h"
-#include "native_client/src/trusted/plugin/srpc_client.h"
+#include "ppapi/native_client/src/trusted/plugin/service_runtime.h"
+#include "ppapi/native_client/src/trusted/plugin/srpc_client.h"
 
 namespace plugin {
 
@@ -56,7 +56,6 @@ class NaClSubprocess {
 
   // Start up interfaces.
   bool StartSrpcServices();
-  bool StartJSObjectProxy(Plugin* plugin, ErrorInfo* error_info);
 
   // Invoke an Srpc Method.  |out_params| must be allocated and cleaned up
   // outside of this function, but it will be initialized by this function, and

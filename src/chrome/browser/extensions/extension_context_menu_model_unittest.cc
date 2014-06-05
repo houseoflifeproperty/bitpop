@@ -5,13 +5,14 @@
 #include "chrome/browser/extensions/extension_context_menu_model.h"
 
 #include "chrome/browser/extensions/extension_service_unittest.h"
-#include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/extensions/test_management_policy.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/common/extensions/extension_builder.h"
-#include "chrome/common/extensions/value_builder.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "chrome/test/base/test_browser_window.h"
 #include "chrome/test/base/testing_profile.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/browser/test_management_policy.h"
+#include "extensions/common/extension_builder.h"
+#include "extensions/common/value_builder.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace extensions {
@@ -34,17 +35,17 @@ TEST_F(ExtensionContextMenuModelTest, PolicyDisablesItems) {
                    .Set("page_action", DictionaryBuilder()
                         .Set("default_title", "Hello")))
       .Build();
-  ASSERT_TRUE(extension);
-  service_->AddExtension(extension);
+  ASSERT_TRUE(extension.get());
+  service_->AddExtension(extension.get());
 
   // Create a Browser for the ExtensionContextMenuModel to use.
-  Browser::CreateParams params(profile_.get());
+  Browser::CreateParams params(profile_.get(), chrome::GetActiveDesktop());
   TestBrowserWindow test_window;
   params.window = &test_window;
   Browser browser(params);
 
   scoped_refptr<ExtensionContextMenuModel> menu(
-      new ExtensionContextMenuModel(extension, &browser, NULL));
+      new ExtensionContextMenuModel(extension.get(), &browser, NULL));
 
   extensions::ExtensionSystem* system =
       extensions::ExtensionSystem::Get(profile_.get());

@@ -5,13 +5,13 @@
 #ifndef CONTENT_PUBLIC_TEST_MOCK_DOWNLOAD_ITEM_H_
 #define CONTENT_PUBLIC_TEST_MOCK_DOWNLOAD_ITEM_H_
 
-#include "base/time.h"
-#include "content/public/browser/download_id.h"
+#include "base/callback.h"
+#include "base/time/time.h"
 #include "content/public/browser/download_interrupt_reasons.h"
 #include "content/public/browser/download_item.h"
-#include "googleurl/src/gurl.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -22,28 +22,27 @@ class MockDownloadItem : public DownloadItem {
   MOCK_METHOD1(AddObserver, void(DownloadItem::Observer*));
   MOCK_METHOD1(RemoveObserver, void(DownloadItem::Observer*));
   MOCK_METHOD0(UpdateObservers, void());
-  MOCK_METHOD0(DangerousDownloadValidated, void());
-  MOCK_METHOD0(TogglePause, void());
+  MOCK_METHOD0(ValidateDangerousDownload, void());
+  MOCK_METHOD1(StealDangerousDownload, void(const AcquireFileCallback&));
+  MOCK_METHOD0(Pause, void());
+  MOCK_METHOD0(Resume, void());
   MOCK_METHOD1(Cancel, void(bool));
-  MOCK_METHOD1(Delete, void(DeleteReason));
   MOCK_METHOD0(Remove, void());
   MOCK_METHOD0(OpenDownload, void());
   MOCK_METHOD0(ShowDownloadInShell, void());
-  MOCK_CONST_METHOD0(GetId, int32());
-  MOCK_CONST_METHOD0(GetGlobalId, DownloadId());
+  MOCK_CONST_METHOD0(GetId, uint32());
   MOCK_CONST_METHOD0(GetState, DownloadState());
   MOCK_CONST_METHOD0(GetLastReason, DownloadInterruptReason());
   MOCK_CONST_METHOD0(IsPaused, bool());
   MOCK_CONST_METHOD0(IsTemporary, bool());
-  MOCK_CONST_METHOD0(IsPartialDownload, bool());
-  MOCK_CONST_METHOD0(IsInProgress, bool());
-  MOCK_CONST_METHOD0(IsCancelled, bool());
-  MOCK_CONST_METHOD0(IsInterrupted, bool());
-  MOCK_CONST_METHOD0(IsComplete, bool());
+  MOCK_CONST_METHOD0(CanResume, bool());
+  MOCK_CONST_METHOD0(IsDone, bool());
   MOCK_CONST_METHOD0(GetURL, const GURL&());
   MOCK_CONST_METHOD0(GetUrlChain, const std::vector<GURL>&());
   MOCK_CONST_METHOD0(GetOriginalUrl, const GURL&());
   MOCK_CONST_METHOD0(GetReferrerUrl, const GURL&());
+  MOCK_CONST_METHOD0(GetTabUrl, const GURL&());
+  MOCK_CONST_METHOD0(GetTabReferrerUrl, const GURL&());
   MOCK_CONST_METHOD0(GetSuggestedFilename, std::string());
   MOCK_CONST_METHOD0(GetContentDisposition, std::string());
   MOCK_CONST_METHOD0(GetMimeType, std::string());
@@ -55,16 +54,15 @@ class MockDownloadItem : public DownloadItem {
   MOCK_CONST_METHOD0(GetLastModifiedTime, const std::string&());
   MOCK_CONST_METHOD0(GetETag, const std::string&());
   MOCK_CONST_METHOD0(IsSavePackageDownload, bool());
-  MOCK_CONST_METHOD0(GetFullPath, const FilePath&());
-  MOCK_CONST_METHOD0(GetTargetFilePath, const FilePath&());
-  MOCK_CONST_METHOD0(GetForcedFilePath, const FilePath&());
-  MOCK_CONST_METHOD0(GetUserVerifiedFilePath, FilePath());
-  MOCK_CONST_METHOD0(GetFileNameToReportUser, FilePath());
+  MOCK_CONST_METHOD0(GetFullPath, const base::FilePath&());
+  MOCK_CONST_METHOD0(GetTargetFilePath, const base::FilePath&());
+  MOCK_CONST_METHOD0(GetForcedFilePath, const base::FilePath&());
+  MOCK_CONST_METHOD0(GetFileNameToReportUser, base::FilePath());
   MOCK_CONST_METHOD0(GetTargetDisposition, TargetDisposition());
   MOCK_CONST_METHOD0(GetHash, const std::string&());
   MOCK_CONST_METHOD0(GetHashState, const std::string&());
   MOCK_CONST_METHOD0(GetFileExternallyRemoved, bool());
-  MOCK_CONST_METHOD0(GetSafetyState, SafetyState());
+  MOCK_METHOD1(DeleteFile, void(const base::Callback<void(bool)>&));
   MOCK_CONST_METHOD0(IsDangerous, bool());
   MOCK_CONST_METHOD0(GetDangerType, DownloadDangerType());
   MOCK_CONST_METHOD1(TimeRemaining, bool(base::TimeDelta*));
@@ -87,9 +85,8 @@ class MockDownloadItem : public DownloadItem {
   MOCK_METHOD1(SetOpenWhenComplete, void(bool));
   MOCK_METHOD1(SetIsTemporary, void(bool));
   MOCK_METHOD1(SetOpened, void(bool));
-  MOCK_METHOD1(SetDisplayName, void(const FilePath&));
+  MOCK_METHOD1(SetDisplayName, void(const base::FilePath&));
   MOCK_CONST_METHOD1(DebugString, std::string(bool));
-  MOCK_METHOD0(MockDownloadOpenForTesting, void());
 };
 
 }  // namespace content

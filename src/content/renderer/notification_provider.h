@@ -5,46 +5,41 @@
 #ifndef CONTENT_RENDERER_NOTIFICATION_PROVIDER_H_
 #define CONTENT_RENDERER_NOTIFICATION_PROVIDER_H_
 
-#include "content/public/renderer/render_view_observer.h"
+#include "content/public/renderer/render_frame_observer.h"
 #include "content/renderer/active_notification_tracker.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNotification.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNotificationPresenter.h"
+#include "third_party/WebKit/public/web/WebNotification.h"
+#include "third_party/WebKit/public/web/WebNotificationPresenter.h"
 
-namespace WebKit {
+namespace blink {
 class WebNotificationPermissionCallback;
 }
 
 namespace content {
-class RenderViewImpl;
 
-// NotificationProvider class is owned by the RenderView.  Only
-// to be used on the main thread.
-class NotificationProvider : public RenderViewObserver,
-                             public WebKit::WebNotificationPresenter {
+// NotificationProvider class is owned by the RenderFrame.  Only to be used on
+// the main thread.
+class NotificationProvider : public RenderFrameObserver,
+                             public blink::WebNotificationPresenter {
  public:
-  explicit NotificationProvider(RenderViewImpl* render_view);
+  explicit NotificationProvider(RenderFrame* render_frame);
   virtual ~NotificationProvider();
 
  private:
-  // RenderView::Observer implementation.
+  // RenderFrameObserver implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
-  // WebKit::WebNotificationPresenter interface.
-  virtual bool show(const WebKit::WebNotification& proxy);
-  virtual void cancel(const WebKit::WebNotification& proxy);
-  virtual void objectDestroyed(const WebKit::WebNotification& proxy);
-  virtual WebKit::WebNotificationPresenter::Permission checkPermission(
-      const WebKit::WebSecurityOrigin& origin);
-  virtual void requestPermission(const WebKit::WebSecurityOrigin& origin,
-      WebKit::WebNotificationPermissionCallback* callback);
-
-  // Internal methods used to show notifications.
-  bool ShowHTML(const WebKit::WebNotification& notification, int id);
-  bool ShowText(const WebKit::WebNotification& notification, int id);
+  // blink::WebNotificationPresenter interface.
+  virtual bool show(const blink::WebNotification& proxy);
+  virtual void cancel(const blink::WebNotification& proxy);
+  virtual void objectDestroyed(const blink::WebNotification& proxy);
+  virtual blink::WebNotificationPresenter::Permission checkPermission(
+      const blink::WebSecurityOrigin& origin);
+  virtual void requestPermission(const blink::WebSecurityOrigin& origin,
+      blink::WebNotificationPermissionCallback* callback);
 
   // IPC handlers.
   void OnDisplay(int id);
-  void OnError(int id, const WebKit::WebString& message);
+  void OnError(int id);
   void OnClose(int id, bool by_user);
   void OnClick(int id);
   void OnPermissionRequestComplete(int id);

@@ -5,15 +5,16 @@
 #import <Cocoa/Cocoa.h>
 #include "chrome/browser/ui/cocoa/find_bar/find_bar_bridge.h"
 
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #import "chrome/browser/ui/cocoa/find_bar/find_bar_cocoa_controller.h"
+#include "ui/gfx/range/range.h"
 
 // static
 bool FindBarBridge::disable_animations_during_testing_ = false;
 
-FindBarBridge::FindBarBridge()
+FindBarBridge::FindBarBridge(Browser* browser)
     : find_bar_controller_(NULL) {
-  cocoa_controller_ = [[FindBarCocoaController alloc] init];
+  cocoa_controller_ = [[FindBarCocoaController alloc] initWithBrowser:browser];
   [cocoa_controller_ setFindBarBridge:this];
 }
 
@@ -52,12 +53,23 @@ void FindBarBridge::ClearResults(const FindNotificationDetails& results) {
   [cocoa_controller_ clearResults:results];
 }
 
-void FindBarBridge::SetFindText(const string16& find_text) {
-  [cocoa_controller_ setFindText:base::SysUTF16ToNSString(find_text)];
+void FindBarBridge::SetFindTextAndSelectedRange(
+    const base::string16& find_text,
+    const gfx::Range& selected_range) {
+  [cocoa_controller_ setFindText:base::SysUTF16ToNSString(find_text)
+                   selectedRange:selected_range.ToNSRange()];
+}
+
+base::string16 FindBarBridge::GetFindText() {
+  return base::SysNSStringToUTF16([cocoa_controller_ findText]);
+}
+
+gfx::Range FindBarBridge::GetSelectedRange() {
+  return gfx::Range([cocoa_controller_ selectedRange]);
 }
 
 void FindBarBridge::UpdateUIForFindResult(const FindNotificationDetails& result,
-                                          const string16& find_text) {
+                                          const base::string16& find_text) {
   [cocoa_controller_ updateUIForFindResult:result withText:find_text];
 }
 
@@ -83,6 +95,14 @@ void FindBarBridge::RestoreSavedFocus() {
   [cocoa_controller_ restoreSavedFocus];
 }
 
+bool FindBarBridge::HasGlobalFindPasteboard() {
+  return true;
+}
+
+void FindBarBridge::UpdateFindBarForChangedWebContents() {
+  [cocoa_controller_ updateFindBarForChangedWebContents];
+}
+
 bool FindBarBridge::GetFindBarWindowInfo(gfx::Point* position,
                                          bool* fully_visible) {
   NSWindow* window = [[cocoa_controller_ view] window];
@@ -101,31 +121,14 @@ bool FindBarBridge::GetFindBarWindowInfo(gfx::Point* position,
   return window_visible;
 }
 
-string16 FindBarBridge::GetFindText() {
-  // This function is currently only used in Windows and Linux specific browser
-  // tests (testing prepopulate values that Mac's don't rely on), but if we add
-  // more tests that are non-platform specific, we need to flesh out this
-  // function.
+base::string16 FindBarBridge::GetFindSelectedText() {
+  // This function is currently only used in Views.
   NOTIMPLEMENTED();
-  return string16();
+  return base::string16();
 }
 
-string16 FindBarBridge::GetFindSelectedText() {
-  // This function is currently only used in Windows and Linux specific browser
-  // tests (testing prepopulate values that Mac's don't rely on), but if we add
-  // more tests that are non-platform specific, we need to flesh out this
-  // function.
-  NOTIMPLEMENTED();
-  return string16();
-}
-
-string16 FindBarBridge::GetMatchCountText() {
-  // This function is currently only used in Windows and Linux specific browser
-  // tests (testing prepopulate values that Mac's don't rely on), but if we add
-  // more tests that are non-platform specific, we need to flesh out this
-  // function.
-  NOTIMPLEMENTED();
-  return string16();
+base::string16 FindBarBridge::GetMatchCountText() {
+  return base::SysNSStringToUTF16([cocoa_controller_ matchCountText]);
 }
 
 int FindBarBridge::GetWidth() {

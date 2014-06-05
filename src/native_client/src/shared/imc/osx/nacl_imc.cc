@@ -4,10 +4,9 @@
  * found in the LICENSE file.
  */
 
+/* NaCl inter-module communication primitives. */
 
-// NaCl inter-module communication primitives.
-
-#include "native_client/src/shared/imc/nacl_imc.h"
+#include "native_client/src/shared/imc/nacl_imc_c.h"
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
@@ -22,6 +21,7 @@
 #include <sys/types.h>
 #include <sys/un.h>
 
+#include "native_client/src/public/imc_types.h"
 #include "native_client/src/shared/platform/nacl_log.h"
 
 
@@ -54,51 +54,59 @@
 
 #if SIGPIPE_ALT_FIX
 # include <signal.h>
-#endif  // SIGPIPE_ALT_FIX
+#endif  /* SIGPIPE_ALT_FIX */
 
 #include <algorithm>
-#include "native_client/src/trusted/service_runtime/include/sys/nacl_imc_api.h"
 
-namespace nacl {
 
-namespace {
+/*
+ * The number of recvmsg retries to perform to determine --
+ * heuristically, unfortunately -- if the remote end of the socketpair
+ * had actually closed.  This is a (new) hacky workaround for an OSX
+ * blemish that replaces the older, buggier workaround.
+ */
+static const int kRecvMsgRetries = 8;
 
-// The number of recvmsg retries to perform to determine --
-// heuristically, unfortunately -- if the remote end of the socketpair
-// had actually closed.  This is a (new) hacky workaround for an OSX
-// blemish that replaces the older, buggier workaround.
-const int kRecvMsgRetries = 8;
+/*
+ * The maximum number of NaClIOVec elements sent by SendDatagram(). Plus one for
+ * NaClInternalHeader with the descriptor data bytes.
+ */
+static const size_t kIovLengthMax = NACL_ABI_IMC_IOVEC_MAX + 1;
 
-// The maximum number of IOVec elements sent by SendDatagram(). Plus one for
-// NaClInternalHeader with the descriptor data bytes.
-const size_t kIovLengthMax = NACL_ABI_IMC_IOVEC_MAX + 1;
-
-// The IMC datagram header followed by a message_bytes of data sent over the
-// a stream-oriented socket. We need to use stream-oriented socket for OS X
-// since it doesn't support file descriptor transfer over SOCK_DGRAM socket
-// like Linux.
+/*
+ * The IMC datagram header followed by a message_bytes of data sent over the
+ * a stream-oriented socket. We need to use stream-oriented socket for OS X
+ * since it doesn't support file descriptor transfer over SOCK_DGRAM socket
+ * like Linux.
+ */
 struct Header {
-  // The total bytes of data in the IMC datagram excluding the size of Header.
+  /*
+   * The total bytes of data in the IMC datagram excluding the size of
+   * Header.
+   */
   size_t message_bytes;
-  // The total number of handles to be transferred with IMC datagram.
+  /* The total number of handles to be transferred with IMC datagram. */
   size_t handle_count;
 };
 
 
-// Gets an array of file descriptors stored in msg.
-// The fdv parameter must be an int array of kHandleCountMax elements.
-// GetRights() returns the number of file descriptors copied into fdv.
-size_t GetRights(struct msghdr* msg, int* fdv) {
+/*
+ * Gets an array of file descriptors stored in msg.
+ * The fdv parameter must be an int array of kHandleCountMax elements.
+ * GetRights() returns the number of file descriptors copied into fdv.
+ */
+static size_t GetRights(struct msghdr* msg, int* fdv) {
+  struct cmsghdr* cmsg;
+  size_t count = 0;
   if (msg->msg_controllen == 0) {
     return 0;
   }
-  size_t count = 0;
-  for (struct cmsghdr* cmsg = CMSG_FIRSTHDR(msg);
+  for (cmsg = CMSG_FIRSTHDR(msg);
        cmsg != 0;
        cmsg = CMSG_NXTHDR(msg, cmsg)) {
     if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS) {
       while (CMSG_LEN((1 + count) * sizeof(int)) <= cmsg->cmsg_len) {
-        *fdv++ = *(reinterpret_cast<int*>(CMSG_DATA(cmsg)) + count);
+        *fdv++ = ((int *) CMSG_DATA(cmsg))[count];
         ++count;
       }
     }
@@ -106,15 +114,17 @@ size_t GetRights(struct msghdr* msg, int* fdv) {
   return count;
 }
 
-// Skips the specified length of octets when reading from a handle. Skipped
-// octets are discarded.
-// On success, true is returned. On error, false is returned.
-bool SkipFile(int handle, size_t length) {
+/*
+ * Skips the specified length of octets when reading from a handle. Skipped
+ * octets are discarded.
+ * On success, true is returned. On error, false is returned.
+ */
+static bool SkipFile(int handle, size_t length) {
   while (0 < length) {
     char scratch[1024];
     size_t count = std::min(sizeof scratch, length);
     count = read(handle, scratch, count);
-    if (static_cast<ssize_t>(count) == -1 || count == 0) {
+    if ((ssize_t) count == -1 || count == 0) {
       return false;
     }
     length -= count;
@@ -123,12 +133,14 @@ bool SkipFile(int handle, size_t length) {
 }
 
 #if SIGPIPE_ALT_FIX
-// TODO(kbr): move this to an Init() function so it isn't called all
-// the time.
-bool IgnoreSIGPIPE() {
+/*
+ * TODO(kbr): move this to an Init() function so it isn't called all
+ * the time.
+ */
+static bool IgnoreSIGPIPE() {
+  struct sigaction sa;
   sigset_t mask;
   sigemptyset(&mask);
-  struct sigaction sa;
   sa.sa_handler = SIG_IGN;
   sa.sa_mask = mask;
   sa.sa_flags = 0;
@@ -136,18 +148,18 @@ bool IgnoreSIGPIPE() {
 }
 #endif
 
-}  // namespace
-
-// We keep these no-op implementations of SocketAddress-based
-// functions so that sigpipe_test continues to link.
-Handle BoundSocket(const SocketAddress* address) {
+/*
+ * We keep these no-op implementations of SocketAddress-based
+ * functions so that sigpipe_test continues to link.
+ */
+NaClHandle NaClBoundSocket(const NaClSocketAddress* address) {
   UNREFERENCED_PARAMETER(address);
   NaClLog(LOG_FATAL, "BoundSocket(): Not used on OSX\n");
   return -1;
 }
 
-int SendDatagramTo(const MessageHeader* message, int flags,
-                   const SocketAddress* name) {
+int NaClSendDatagramTo(const NaClMessageHeader* message, int flags,
+                       const NaClSocketAddress* name) {
   UNREFERENCED_PARAMETER(message);
   UNREFERENCED_PARAMETER(flags);
   UNREFERENCED_PARAMETER(name);
@@ -155,9 +167,12 @@ int SendDatagramTo(const MessageHeader* message, int flags,
   return -1;
 }
 
-int SocketPair(Handle pair[2]) {
+int NaClSocketPair(NaClHandle pair[2]) {
   int result = socketpair(AF_UNIX, SOCK_STREAM, 0, pair);
   if (result == 0) {
+#if SIGPIPE_FIX
+    int nosigpipe = 1;
+#endif
 #if SIGPIPE_ALT_FIX
     if (!IgnoreSIGPIPE()) {
       close(pair[0]);
@@ -166,7 +181,6 @@ int SocketPair(Handle pair[2]) {
     }
 #endif
 #if SIGPIPE_FIX
-    int nosigpipe = 1;
     if (0 != setsockopt(pair[0], SOL_SOCKET, SO_NOSIGPIPE,
                         &nosigpipe, sizeof nosigpipe) ||
         0 != setsockopt(pair[1], SOL_SOCKET, SO_NOSIGPIPE,
@@ -180,62 +194,65 @@ int SocketPair(Handle pair[2]) {
   return result;
 }
 
-int Close(Handle handle) {
+int NaClClose(NaClHandle handle) {
   return close(handle);
 }
 
-int SendDatagram(Handle handle, const MessageHeader* message, int flags) {
+int NaClSendDatagram(NaClHandle handle, const NaClMessageHeader* message,
+                     int flags) {
   struct msghdr msg;
   struct iovec vec[kIovLengthMax + 1];
   unsigned char buf[CMSG_SPACE_KHANDLE_COUNT_MAX_INTS];
   Header header = { 0, 0 };
+  int result;
+  size_t i;
+  UNREFERENCED_PARAMETER(flags);
 
-  (void) flags;  /* BUG(shiki): unused parameter */
-
-  assert(CMSG_SPACE(kHandleCountMax * sizeof(int))
+  assert(CMSG_SPACE(NACL_HANDLE_COUNT_MAX * sizeof(int))
          <= CMSG_SPACE_KHANDLE_COUNT_MAX_INTS);
 
   /*
    * The following assert was an earlier attempt to remember/check the
-   * assumption that our struct IOVec -- which we must define to be
+   * assumption that our struct NaClIOVec -- which we must define to be
    * cross platform -- is compatible with struct iovec on *x systems.
-   * The length field of IOVec was switched to be uint32_t at oen point
+   * The length field of NaClIOVec was switched to be uint32_t at oen point
    * to use concrete types, which introduced a problem on 64-bit systems.
    *
    * Clearly, the assert does not check a strong-enough condition,
    * since structure padding would make the two sizes the same.
    *
-  assert(sizeof(struct iovec) == sizeof(IOVec));
+  assert(sizeof(struct iovec) == sizeof(NaClIOVec));
    *
    * Don't do this again!
    */
 
-  if (!MessageSizeIsValid(message)) {
+  if (!NaClMessageSizeIsValid(message)) {
     errno = EMSGSIZE;
     return -1;
   }
 
-  if (kHandleCountMax < message->handle_count ||
+  if (NACL_HANDLE_COUNT_MAX < message->handle_count ||
       kIovLengthMax < message->iov_length) {
     errno = EMSGSIZE;
     return -1;
   }
 
-  memmove(&vec[1], message->iov, sizeof(IOVec) * message->iov_length);
+  memmove(&vec[1], message->iov, sizeof(NaClIOVec) * message->iov_length);
 
   msg.msg_name = 0;
   msg.msg_namelen = 0;
   msg.msg_iov = vec;
   msg.msg_iovlen = 1 + message->iov_length;
   if (0 < message->handle_count && message->handles != NULL) {
+    struct cmsghdr *cmsg;
     int size = message->handle_count * sizeof(int);
     msg.msg_control = buf;
     msg.msg_controllen = CMSG_SPACE(size);
-    struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+    cmsg = CMSG_FIRSTHDR(&msg);
     cmsg->cmsg_level = SOL_SOCKET;
     cmsg->cmsg_type = SCM_RIGHTS;
     cmsg->cmsg_len = CMSG_LEN(size);
-    memcpy(reinterpret_cast<int*>(CMSG_DATA(cmsg)), message->handles, size);
+    memcpy(CMSG_DATA(cmsg), message->handles, size);
     msg.msg_controllen = cmsg->cmsg_len;
     header.handle_count = message->handle_count;
   } else {
@@ -244,33 +261,43 @@ int SendDatagram(Handle handle, const MessageHeader* message, int flags) {
   }
   msg.msg_flags = 0;
 
-  // Send data with the header atomically. Note to send file descriptors we need
-  // to send at least one byte of data.
-  for (size_t i = 0; i < message->iov_length; ++i) {
+  /*
+   * Send data with the header atomically. Note to send file descriptors we need
+   * to send at least one byte of data.
+   */
+  for (i = 0; i < message->iov_length; ++i) {
     header.message_bytes += message->iov[i].length;
   }
   vec[0].iov_base = &header;
   vec[0].iov_len = sizeof header;
-  int result = sendmsg(handle, &msg, 0);
+  result = sendmsg(handle, &msg, 0);
   if (result == -1) {
     return -1;
   }
-  if (static_cast<size_t>(result) < sizeof header) {
+  if ((size_t) result < sizeof header) {
     errno = EMSGSIZE;
     return -1;
   }
   return result - sizeof header;
 }
 
-int ReceiveDatagram(Handle handle, MessageHeader* message, int flags) {
+int NaClReceiveDatagram(NaClHandle handle, NaClMessageHeader* message,
+                        int flags) {
   struct msghdr msg;
   struct iovec vec[kIovLengthMax];
   unsigned char buf[CMSG_SPACE_KHANDLE_COUNT_MAX_INTS];
+  struct Header header;
+  struct iovec header_vec = { &header, sizeof header };
+  int count;
+  int retry_count;
+  size_t handle_count = 0;
+  size_t buffer_bytes = 0;
+  size_t i;
 
-  assert(CMSG_SPACE(kHandleCountMax * sizeof(int))
+  assert(CMSG_SPACE(NACL_HANDLE_COUNT_MAX * sizeof(int))
          <= CMSG_SPACE_KHANDLE_COUNT_MAX_INTS);
 
-  if (kHandleCountMax < message->handle_count ||
+  if (NACL_HANDLE_COUNT_MAX < message->handle_count ||
       kIovLengthMax < message->iov_length) {
     errno = EMSGSIZE;
     return -1;
@@ -278,28 +305,26 @@ int ReceiveDatagram(Handle handle, MessageHeader* message, int flags) {
 
   /*
    * The following assert was an earlier attempt to remember/check the
-   * assumption that our struct IOVec -- which we must define to be
+   * assumption that our struct NaClIOVec -- which we must define to be
    * cross platform -- is compatible with struct iovec on *x systems.
-   * The length field of IOVec was switched to be uint32_t at oen point
+   * The length field of NaClIOVec was switched to be uint32_t at oen point
    * to use concrete types, which introduced a problem on 64-bit systems.
    *
    * Clearly, the assert does not check a strong-enough condition,
    * since structure padding would make the two sizes the same.
    *
-  assert(sizeof(struct iovec) == sizeof(IOVec));
+  assert(sizeof(struct iovec) == sizeof(NaClIOVec));
    *
    * Don't do this again!
    */
 
-  if (!MessageSizeIsValid(message)) {
+  if (!NaClMessageSizeIsValid(message)) {
     errno = EMSGSIZE;
     return -1;
   }
 
   message->flags = 0;
-  // Receive the header of the message and handles first.
-  Header header;
-  struct iovec header_vec = { &header, sizeof header };
+  /* Receive the header of the message and handles first. */
   msg.msg_iov = &header_vec;
   msg.msg_iovlen = 1;
   msg.msg_name = 0;
@@ -312,11 +337,9 @@ int ReceiveDatagram(Handle handle, MessageHeader* message, int flags) {
     msg.msg_controllen = 0;
   }
   msg.msg_flags = 0;
-  int count;
-  int retry_count;
   for (retry_count = 0; retry_count < kRecvMsgRetries; ++retry_count) {
     if (0 != (count = recvmsg(handle, &msg,
-                              (flags & kDontWait) ? MSG_DONTWAIT : 0))) {
+                              (flags & NACL_DONT_WAIT) ? MSG_DONTWAIT : 0))) {
       break;
     }
   }
@@ -324,15 +347,16 @@ int ReceiveDatagram(Handle handle, MessageHeader* message, int flags) {
     printf("OSX_BLEMISH_HEURISTIC: retry_count = %d, count = %d\n",
            retry_count, count);
   }
-  size_t handle_count = 0;
   if (0 < count) {
     handle_count = GetRights(&msg, message->handles);
   }
   if (count != sizeof header) {
     while (0 < handle_count) {
-      // Note if the sender has sent one end of a socket pair here,
-      // ReceiveDatagram() for that socket will result in a zero length read
-      // return henceforth.
+      /*
+       * Note if the sender has sent one end of a socket pair here,
+       * ReceiveDatagram() for that socket will result in a zero length read
+       * return henceforth.
+       */
       close(message->handles[--handle_count]);
     }
     if (count == 0) {
@@ -340,9 +364,11 @@ int ReceiveDatagram(Handle handle, MessageHeader* message, int flags) {
       return 0;
     }
     if (count != -1) {
-      // TODO(shiki): We should call recvmsg() again here since it could get to
-      // wake up with a partial header since the SOCK_STREAM socket does not
-      // required to maintain message boundaries.
+      /*
+       * TODO(shiki): We should call recvmsg() again here since it could get to
+       * wake up with a partial header since the SOCK_STREAM socket does not
+       * required to maintain message boundaries.
+       */
       errno = EMSGSIZE;
     }
     return -1;
@@ -350,22 +376,22 @@ int ReceiveDatagram(Handle handle, MessageHeader* message, int flags) {
 
   message->handle_count = handle_count;
 
-  // OS X seems not to set the MSG_CTRUNC flag in msg.msg_flags as we expect,
-  // and we don't rely on it.
+  /*
+   * OS X seems not to set the MSG_CTRUNC flag in msg.msg_flags as we expect,
+   * and we don't rely on it.
+   */
   if (message->handle_count < header.handle_count) {
-    message->flags |= kHandlesTruncated;
+    message->flags |= NACL_HANDLES_TRUNCATED;
   }
 
   if (header.message_bytes == 0) {
     return 0;
   }
 
-  // Update message->iov to receive just message_bytes.
-  memmove(vec, message->iov, sizeof(IOVec) * message->iov_length);
+  /* Update message->iov to receive just message_bytes. */
+  memmove(vec, message->iov, sizeof(NaClIOVec) * message->iov_length);
   msg.msg_iov = vec;
   msg.msg_iovlen = message->iov_length;
-  size_t buffer_bytes = 0;
-  size_t i;
   for (i = 0; i < message->iov_length; ++i) {
     buffer_bytes += vec[i].iov_len;
     if (header.message_bytes <= buffer_bytes) {
@@ -376,10 +402,10 @@ int ReceiveDatagram(Handle handle, MessageHeader* message, int flags) {
     }
   }
   if (buffer_bytes < header.message_bytes) {
-    message->flags |= kMessageTruncated;
+    message->flags |= NACL_MESSAGE_TRUNCATED;
   }
 
-  // Receive the sent data.
+  /* Receive the sent data. */
   msg.msg_name = 0;
   msg.msg_namelen = 0;
 
@@ -387,9 +413,11 @@ int ReceiveDatagram(Handle handle, MessageHeader* message, int flags) {
   msg.msg_controllen = 0;
   msg.msg_flags = 0;
   for (retry_count = 0; retry_count < kRecvMsgRetries; ++retry_count) {
-    // We have to pass MSG_WAITALL here, because we have already consumed
-    // the header.  If we returned EAGAIN here, subsequent calls would read
-    // data as a header, and much hilarity would ensue.
+    /*
+     * We have to pass MSG_WAITALL here, because we have already consumed
+     * the header.  If we returned EAGAIN here, subsequent calls would read
+     * data as a header, and much hilarity would ensue.
+     */
     if (0 != (count = recvmsg(handle, &msg, MSG_WAITALL))) {
       break;
     }
@@ -399,16 +427,16 @@ int ReceiveDatagram(Handle handle, MessageHeader* message, int flags) {
            retry_count, count);
   }
   if (0 < count) {
-    // If the caller requested fewer bytes than the message contained, we need
-    // to read the remaining bytes, discard them, and report message truncated.
-    if (static_cast<size_t>(count) < header.message_bytes) {
+    /*
+     * If the caller requested fewer bytes than the message contained, we need
+     * to read the remaining bytes, discard them, and report message truncated.
+     */
+    if ((size_t) count < header.message_bytes) {
       if (!SkipFile(handle, header.message_bytes - count)) {
         return -1;
       }
-      message->flags |= kMessageTruncated;
+      message->flags |= NACL_MESSAGE_TRUNCATED;
     }
   }
   return count;
 }
-
-}  // namespace nacl

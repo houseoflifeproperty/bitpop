@@ -7,14 +7,21 @@
 
 #include <jni.h>
 
+#include "base/android/jni_weak_ref.h"
+
 namespace content {
 
+class RenderFrameHost;
+class RenderWidgetHostImpl;
 class RenderWidgetHostViewAndroid;
+class WebContents;
 struct NativeWebKeyboardEvent;
 
 // This class is in charge of dispatching key events from the java side
 // and forward to renderer along with input method results via
 // corresponding host view.
+// Ownership of these objects remains on the native side (see
+// RenderWidgetHostViewAndroid).
 class ImeAdapterAndroid {
  public:
   explicit ImeAdapterAndroid(RenderWidgetHostViewAndroid* rwhva);
@@ -22,7 +29,7 @@ class ImeAdapterAndroid {
 
   // Called from java -> native
   // The java side is responsible to translate android KeyEvent various enums
-  // and values into the corresponding WebKit::WebInputEvent.
+  // and values into the corresponding blink::WebInputEvent.
   bool SendKeyEvent(JNIEnv* env, jobject,
                     jobject original_key_event,
                     int action, int meta_state,
@@ -37,6 +44,7 @@ class ImeAdapterAndroid {
                              int unicode_char);
   void SetComposingText(JNIEnv*, jobject, jstring text, int new_cursor_pos);
   void CommitText(JNIEnv*, jobject, jstring text);
+  void FinishComposingText(JNIEnv* env, jobject);
   void AttachImeAdapter(JNIEnv*, jobject java_object);
   void SetEditableSelectionOffsets(JNIEnv*, jobject, int start, int end);
   void SetComposingRegion(JNIEnv*, jobject, int start, int end);
@@ -46,17 +54,19 @@ class ImeAdapterAndroid {
   void Cut(JNIEnv*, jobject);
   void Copy(JNIEnv*, jobject);
   void Paste(JNIEnv*, jobject);
+  void ResetImeAdapter(JNIEnv*, jobject);
 
   // Called from native -> java
   void CancelComposition();
-
-  // Native methods related to dialog like types
-  void CancelDialog(JNIEnv*, jobject);
-  void ReplaceDateTime(JNIEnv*, jobject, jstring text);
+  void FocusedNodeChanged(bool is_editable_node);
 
  private:
+  RenderWidgetHostImpl* GetRenderWidgetHostImpl();
+  RenderFrameHost* GetFocusedFrame();
+  WebContents* GetWebContents();
+
   RenderWidgetHostViewAndroid* rwhva_;
-  jobject java_ime_adapter_;
+  JavaObjectWeakGlobalRef java_ime_adapter_;
 };
 
 bool RegisterImeAdapter(JNIEnv* env);

@@ -6,16 +6,18 @@
 
 #include "base/compiler_specific.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/threading/thread.h"
 #include "base/threading/worker_pool.h"
-#include "net/base/cert_verifier.h"
-#include "net/base/default_server_bound_cert_store.h"
 #include "net/base/host_port_pair.h"
-#include "net/base/mock_host_resolver.h"
-#include "net/base/server_bound_cert_service.h"
+#include "net/cert/cert_verifier.h"
+#include "net/dns/mock_host_resolver.h"
 #include "net/http/http_network_session.h"
+#include "net/http/http_response_headers.h"
 #include "net/http/http_server_properties_impl.h"
+#include "net/http/transport_security_state.h"
+#include "net/ssl/default_server_bound_cert_store.h"
+#include "net/ssl/server_bound_cert_service.h"
 #include "net/url_request/static_http_user_agent_settings.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -44,13 +46,15 @@ const int kStageDestruction = 1 << 10;
 
 TestURLRequestContext::TestURLRequestContext()
     : initialized_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(context_storage_(this)) {
+      client_socket_factory_(NULL),
+      context_storage_(this) {
   Init();
 }
 
 TestURLRequestContext::TestURLRequestContext(bool delay_initialization)
     : initialized_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(context_storage_(this)) {
+      client_socket_factory_(NULL),
+      context_storage_(this) {
   if (!delay_initialization)
     Init();
 }
@@ -70,14 +74,8 @@ void TestURLRequestContext::Init() {
     context_storage_.set_proxy_service(ProxyService::CreateDirect());
   if (!cert_verifier())
     context_storage_.set_cert_verifier(CertVerifier::CreateDefault());
-  if (!ftp_transaction_factory()) {
-#if !defined(DISABLE_FTP_SUPPORT)
-    context_storage_.set_ftp_transaction_factory(
-        new FtpNetworkLayer(host_resolver()));
-#else
-    context_storage_.set_ftp_transaction_factory(NULL);
-#endif  // !defined(DISABLE_FTP_SUPPORT)
-  }
+  if (!transport_security_state())
+    context_storage_.set_transport_security_state(new TransportSecurityState);
   if (!ssl_config_service())
     context_storage_.set_ssl_config_service(new SSLConfigServiceDefaults);
   if (!http_auth_handler_factory()) {
@@ -86,23 +84,27 @@ void TestURLRequestContext::Init() {
   }
   if (!http_server_properties()) {
     context_storage_.set_http_server_properties(
-        new HttpServerPropertiesImpl);
+        scoped_ptr<HttpServerProperties>(new HttpServerPropertiesImpl()));
   }
   if (!transport_security_state()) {
     context_storage_.set_transport_security_state(
         new TransportSecurityState());
   }
-  HttpNetworkSession::Params params;
-  params.host_resolver = host_resolver();
-  params.cert_verifier = cert_verifier();
-  params.proxy_service = proxy_service();
-  params.ssl_config_service = ssl_config_service();
-  params.http_auth_handler_factory = http_auth_handler_factory();
-  params.network_delegate = network_delegate();
-  params.http_server_properties = http_server_properties();
-  params.net_log = net_log();
-
-  if (!http_transaction_factory()) {
+  if (http_transaction_factory()) {
+    // Make sure we haven't been passed an object we're not going to use.
+    EXPECT_FALSE(client_socket_factory_);
+  } else {
+    HttpNetworkSession::Params params;
+    params.client_socket_factory = client_socket_factory();
+    params.host_resolver = host_resolver();
+    params.cert_verifier = cert_verifier();
+    params.transport_security_state = transport_security_state();
+    params.proxy_service = proxy_service();
+    params.ssl_config_service = ssl_config_service();
+    params.http_auth_handler_factory = http_auth_handler_factory();
+    params.network_delegate = network_delegate();
+    params.http_server_properties = http_server_properties();
+    params.net_log = net_log();
     context_storage_.set_http_transaction_factory(new HttpCache(
         new HttpNetworkSession(params),
         HttpCache::DefaultBackend::InMemory(0)));
@@ -119,18 +121,17 @@ void TestURLRequestContext::Init() {
   }
   if (!http_user_agent_settings()) {
     context_storage_.set_http_user_agent_settings(
-        new StaticHttpUserAgentSettings(
-            "en-us,fr", "iso-8859-1,*,utf-8", EmptyString()));
+        new StaticHttpUserAgentSettings("en-us,fr", std::string()));
   }
   if (!job_factory())
     context_storage_.set_job_factory(new URLRequestJobFactoryImpl);
 }
 
 TestURLRequest::TestURLRequest(const GURL& url,
+                               RequestPriority priority,
                                Delegate* delegate,
                                TestURLRequestContext* context)
-    : URLRequest(url, delegate, context) {
-}
+    : URLRequest(url, priority, delegate, context) {}
 
 TestURLRequest::~TestURLRequest() {
 }
@@ -138,14 +139,14 @@ TestURLRequest::~TestURLRequest() {
 TestURLRequestContextGetter::TestURLRequestContextGetter(
     const scoped_refptr<base::SingleThreadTaskRunner>& network_task_runner)
     : network_task_runner_(network_task_runner) {
-  DCHECK(network_task_runner_);
+  DCHECK(network_task_runner_.get());
 }
 
 TestURLRequestContextGetter::TestURLRequestContextGetter(
     const scoped_refptr<base::SingleThreadTaskRunner>& network_task_runner,
     scoped_ptr<TestURLRequestContext> context)
     : network_task_runner_(network_task_runner), context_(context.Pass()) {
-  DCHECK(network_task_runner_);
+  DCHECK(network_task_runner_.get());
 }
 
 TestURLRequestContextGetter::~TestURLRequestContextGetter() {}
@@ -168,30 +169,52 @@ TestDelegate::TestDelegate()
       cancel_in_rd_pending_(false),
       quit_on_complete_(true),
       quit_on_redirect_(false),
+      quit_on_before_network_start_(false),
       allow_certificate_errors_(false),
       response_started_count_(0),
       received_bytes_count_(0),
       received_redirect_count_(0),
+      received_before_network_start_count_(0),
       received_data_before_response_(false),
       request_failed_(false),
       have_certificate_errors_(false),
       certificate_errors_are_fatal_(false),
       auth_required_(false),
+      have_full_request_headers_(false),
       buf_(new IOBuffer(kBufferSize)) {
 }
 
 TestDelegate::~TestDelegate() {}
 
+void TestDelegate::ClearFullRequestHeaders() {
+  full_request_headers_.Clear();
+  have_full_request_headers_ = false;
+}
+
 void TestDelegate::OnReceivedRedirect(URLRequest* request,
                                       const GURL& new_url,
                                       bool* defer_redirect) {
   EXPECT_TRUE(request->is_redirecting());
+
+  have_full_request_headers_ =
+      request->GetFullRequestHeaders(&full_request_headers_);
+
   received_redirect_count_++;
   if (quit_on_redirect_) {
     *defer_redirect = true;
-    MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+    base::MessageLoop::current()->PostTask(FROM_HERE,
+                                           base::MessageLoop::QuitClosure());
   } else if (cancel_in_rr_) {
     request->Cancel();
+  }
+}
+
+void TestDelegate::OnBeforeNetworkStart(URLRequest* request, bool* defer) {
+  received_before_network_start_count_++;
+  if (quit_on_before_network_start_) {
+    *defer = true;
+    base::MessageLoop::current()->PostTask(FROM_HERE,
+                                           base::MessageLoop::QuitClosure());
   }
 }
 
@@ -224,6 +247,9 @@ void TestDelegate::OnResponseStarted(URLRequest* request) {
   DCHECK(!request->status().is_io_pending());
   EXPECT_FALSE(request->is_redirecting());
 
+  have_full_request_headers_ =
+      request->GetFullRequestHeaders(&full_request_headers_);
+
   response_started_count_++;
   if (cancel_in_rs_) {
     request->Cancel();
@@ -236,7 +262,7 @@ void TestDelegate::OnResponseStarted(URLRequest* request) {
   } else {
     // Initiate the first read.
     int bytes_read = 0;
-    if (request->Read(buf_, kBufferSize, &bytes_read))
+    if (request->Read(buf_.get(), kBufferSize, &bytes_read))
       OnReadCompleted(request, bytes_read);
     else if (!request->status().is_io_pending())
       OnResponseCompleted(request);
@@ -264,7 +290,7 @@ void TestDelegate::OnReadCompleted(URLRequest* request, int bytes_read) {
   // If it was not end of stream, request to read more.
   if (request->status().is_success() && bytes_read > 0) {
     bytes_read = 0;
-    while (request->Read(buf_, kBufferSize, &bytes_read)) {
+    while (request->Read(buf_.get(), kBufferSize, &bytes_read)) {
       if (bytes_read > 0) {
         data_received_.append(buf_->data(), bytes_read);
         received_bytes_count_ += bytes_read;
@@ -281,7 +307,8 @@ void TestDelegate::OnReadCompleted(URLRequest* request, int bytes_read) {
 
 void TestDelegate::OnResponseCompleted(URLRequest* request) {
   if (quit_on_complete_)
-    MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+    base::MessageLoop::current()->PostTask(FROM_HERE,
+                                           base::MessageLoop::QuitClosure());
 }
 
 TestNetworkDelegate::TestNetworkDelegate()
@@ -290,10 +317,15 @@ TestNetworkDelegate::TestNetworkDelegate()
       created_requests_(0),
       destroyed_requests_(0),
       completed_requests_(0),
+      canceled_requests_(0),
       cookie_options_bit_mask_(0),
       blocked_get_cookies_count_(0),
       blocked_set_cookie_count_(0),
-      set_cookie_count_(0) {
+      set_cookie_count_(0),
+      has_load_timing_info_before_redirect_(false),
+      has_load_timing_info_before_auth_(false),
+      can_access_files_(true),
+      can_throttle_requests_(true) {
 }
 
 TestNetworkDelegate::~TestNetworkDelegate() {
@@ -304,9 +336,25 @@ TestNetworkDelegate::~TestNetworkDelegate() {
   }
 }
 
+bool TestNetworkDelegate::GetLoadTimingInfoBeforeRedirect(
+    LoadTimingInfo* load_timing_info_before_redirect) const {
+  *load_timing_info_before_redirect = load_timing_info_before_redirect_;
+  return has_load_timing_info_before_redirect_;
+}
+
+bool TestNetworkDelegate::GetLoadTimingInfoBeforeAuth(
+    LoadTimingInfo* load_timing_info_before_auth) const {
+  *load_timing_info_before_auth = load_timing_info_before_auth_;
+  return has_load_timing_info_before_auth_;
+}
+
 void TestNetworkDelegate::InitRequestStatesIfNew(int request_id) {
   if (next_states_.find(request_id) == next_states_.end()) {
-    next_states_[request_id] = kStageBeforeURLRequest;
+    // TODO(davidben): Although the URLRequest documentation does not allow
+    // calling Cancel() before Start(), the ResourceLoader does so. URLRequest's
+    // destructor also calls Cancel. Either officially support this or fix the
+    // ResourceLoader code.
+    next_states_[request_id] = kStageBeforeURLRequest | kStageCompletedError;
     event_order_[request_id] = "";
   }
 }
@@ -363,7 +411,8 @@ int TestNetworkDelegate::OnHeadersReceived(
     URLRequest* request,
     const CompletionCallback& callback,
     const HttpResponseHeaders* original_response_headers,
-    scoped_refptr<HttpResponseHeaders>* override_response_headers) {
+    scoped_refptr<HttpResponseHeaders>* override_response_headers,
+    GURL* allowed_unsafe_redirect_url) {
   int req_id = request->identifier();
   event_order_[req_id] += "OnHeadersReceived\n";
   InitRequestStatesIfNew(req_id);
@@ -379,11 +428,31 @@ int TestNetworkDelegate::OnHeadersReceived(
   // layer before the URLRequest reports that a response has started.
   next_states_[req_id] |= kStageBeforeSendHeaders;
 
+  if (!redirect_on_headers_received_url_.is_empty()) {
+    *override_response_headers =
+        new net::HttpResponseHeaders(original_response_headers->raw_headers());
+    (*override_response_headers)->ReplaceStatusLine("HTTP/1.1 302 Found");
+    (*override_response_headers)->RemoveHeader("Location");
+    (*override_response_headers)->AddHeader(
+        "Location: " + redirect_on_headers_received_url_.spec());
+
+    redirect_on_headers_received_url_ = GURL();
+
+    if (!allowed_unsafe_redirect_url_.is_empty())
+      *allowed_unsafe_redirect_url = allowed_unsafe_redirect_url_;
+  }
+
   return OK;
 }
 
 void TestNetworkDelegate::OnBeforeRedirect(URLRequest* request,
                                            const GURL& new_location) {
+  load_timing_info_before_redirect_ = LoadTimingInfo();
+  request->GetLoadTimingInfo(&load_timing_info_before_redirect_);
+  has_load_timing_info_before_redirect_ = true;
+  EXPECT_FALSE(load_timing_info_before_redirect_.request_start_time.is_null());
+  EXPECT_FALSE(load_timing_info_before_redirect_.request_start.is_null());
+
   int req_id = request->identifier();
   InitRequestStatesIfNew(req_id);
   event_order_[req_id] += "OnBeforeRedirect\n";
@@ -401,6 +470,11 @@ void TestNetworkDelegate::OnBeforeRedirect(URLRequest* request,
 }
 
 void TestNetworkDelegate::OnResponseStarted(URLRequest* request) {
+  LoadTimingInfo load_timing_info;
+  request->GetLoadTimingInfo(&load_timing_info);
+  EXPECT_FALSE(load_timing_info.request_start_time.is_null());
+  EXPECT_FALSE(load_timing_info.request_start.is_null());
+
   int req_id = request->identifier();
   InitRequestStatesIfNew(req_id);
   event_order_[req_id] += "OnResponseStarted\n";
@@ -435,6 +509,10 @@ void TestNetworkDelegate::OnCompleted(URLRequest* request, bool started) {
   if (request->status().status() == URLRequestStatus::FAILED) {
     error_count_++;
     last_error_ = request->status().error();
+  } else if (request->status().status() == URLRequestStatus::CANCELED) {
+    canceled_requests_++;
+  } else {
+    DCHECK_EQ(URLRequestStatus::SUCCESS, request->status().status());
   }
 }
 
@@ -449,7 +527,7 @@ void TestNetworkDelegate::OnURLRequestDestroyed(URLRequest* request) {
 }
 
 void TestNetworkDelegate::OnPACScriptError(int line_number,
-                                           const string16& error) {
+                                           const base::string16& error) {
 }
 
 NetworkDelegate::AuthRequiredResponse TestNetworkDelegate::OnAuthRequired(
@@ -457,12 +535,19 @@ NetworkDelegate::AuthRequiredResponse TestNetworkDelegate::OnAuthRequired(
     const AuthChallengeInfo& auth_info,
     const AuthCallback& callback,
     AuthCredentials* credentials) {
+  load_timing_info_before_auth_ = LoadTimingInfo();
+  request->GetLoadTimingInfo(&load_timing_info_before_auth_);
+  has_load_timing_info_before_auth_ = true;
+  EXPECT_FALSE(load_timing_info_before_auth_.request_start_time.is_null());
+  EXPECT_FALSE(load_timing_info_before_auth_.request_start.is_null());
+
   int req_id = request->identifier();
   InitRequestStatesIfNew(req_id);
   event_order_[req_id] += "OnAuthRequired\n";
   EXPECT_TRUE(next_states_[req_id] & kStageAuthRequired) <<
       event_order_[req_id];
   next_states_[req_id] = kStageBeforeSendHeaders |
+      kStageAuthRequired |  // For example, proxy auth followed by server auth.
       kStageHeadersReceived |  // Request canceled by delegate simulates empty
                                // response.
       kStageResponseStarted |  // data: URLs do not trigger sending headers
@@ -501,24 +586,19 @@ bool TestNetworkDelegate::OnCanSetCookie(const URLRequest& request,
 }
 
 bool TestNetworkDelegate::OnCanAccessFile(const URLRequest& request,
-                                          const FilePath& path) const {
-  return true;
+                                          const base::FilePath& path) const {
+  return can_access_files_;
 }
 
 bool TestNetworkDelegate::OnCanThrottleRequest(
     const URLRequest& request) const {
-  return true;
+  return can_throttle_requests_;
 }
 
 int TestNetworkDelegate::OnBeforeSocketStreamConnect(
     SocketStream* socket,
     const CompletionCallback& callback) {
   return OK;
-}
-
-void TestNetworkDelegate::OnRequestWaitStateChange(
-    const URLRequest& request,
-    RequestWaitState state) {
 }
 
 // static
@@ -544,25 +624,12 @@ const std::string& ScopedCustomUrlRequestTestHttpHost::value() {
 TestJobInterceptor::TestJobInterceptor() : main_intercept_job_(NULL) {
 }
 
-URLRequestJob* TestJobInterceptor::MaybeIntercept(
-      URLRequest* request,
-      NetworkDelegate* network_delegate) const {
+URLRequestJob* TestJobInterceptor::MaybeCreateJob(
+    URLRequest* request,
+    NetworkDelegate* network_delegate) const {
   URLRequestJob* job = main_intercept_job_;
   main_intercept_job_ = NULL;
   return job;
-}
-
-URLRequestJob* TestJobInterceptor::MaybeInterceptRedirect(
-      const GURL& location,
-      URLRequest* request,
-      NetworkDelegate* network_delegate) const {
-  return NULL;
-}
-
-URLRequestJob* TestJobInterceptor::MaybeInterceptResponse(
-      URLRequest* request,
-      NetworkDelegate* network_delegate) const {
-  return NULL;
 }
 
 void TestJobInterceptor::set_main_intercept_job(URLRequestJob* job) {

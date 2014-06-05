@@ -14,10 +14,15 @@
     'build': {
       'filepath': '.+',
     },
+    'build_scripts': {
+      'filepath': 'scripts/.*$|slave/.*\.py$',
+    },
   },
 
   'WATCHLISTS': {
-    'build': ['cmp+cc@chromium.org', 'nsylvain+cc@chromium.org'],
+    'build': ['cmp-cc@chromium.org', 'ilevy-cc@chromium.org'],
+    'build_scripts': ['kjellander-cc@chromium.org',
+                      'stip+watch@chromium.org'],
   },
 
 }

@@ -5,7 +5,8 @@
 #include "content/renderer/pepper/pepper_hung_plugin_filter.h"
 
 #include "base/bind.h"
-#include "content/common/view_messages.h"
+#include "content/child/child_process.h"
+#include "content/common/frame_messages.h"
 #include "content/renderer/render_thread_impl.h"
 
 namespace content {
@@ -23,18 +24,18 @@ const int kBlockedHardThresholdSec = kHungThresholdSec * 1.5;
 
 }  // namespace
 
-PepperHungPluginFilter::PepperHungPluginFilter(const FilePath& plugin_path,
-                                               int view_routing_id,
-                                               int plugin_child_id)
+PepperHungPluginFilter::PepperHungPluginFilter(
+    const base::FilePath& plugin_path,
+    int frame_routing_id,
+    int plugin_child_id)
     : plugin_path_(plugin_path),
-      view_routing_id_(view_routing_id),
+      frame_routing_id_(frame_routing_id),
       plugin_child_id_(plugin_child_id),
       filter_(RenderThread::Get()->GetSyncMessageFilter()),
-      io_loop_(RenderThreadImpl::current()->GetIOLoopProxy()),
+      io_loop_(ChildProcess::current()->io_message_loop_proxy()),
       pending_sync_message_count_(0),
       hung_plugin_showing_(false),
-      timer_task_pending_(false) {
-}
+      timer_task_pending_(false) {}
 
 void PepperHungPluginFilter::BeginBlockOnSyncMessage() {
   base::AutoLock lock(lock_);
@@ -54,8 +55,7 @@ void PepperHungPluginFilter::EndBlockOnSyncMessage() {
   MayHaveBecomeUnhung();
 }
 
-void PepperHungPluginFilter::OnFilterAdded(IPC::Channel* channel) {
-}
+void PepperHungPluginFilter::OnFilterAdded(IPC::Channel* channel) {}
 
 void PepperHungPluginFilter::OnFilterRemoved() {
   base::AutoLock lock(lock_);
@@ -83,7 +83,8 @@ void PepperHungPluginFilter::EnsureTimerScheduled() {
     return;
 
   timer_task_pending_ = true;
-  io_loop_->PostDelayedTask(FROM_HERE,
+  io_loop_->PostDelayedTask(
+      FROM_HERE,
       base::Bind(&PepperHungPluginFilter::OnHangTimer, this),
       base::TimeDelta::FromSeconds(kHungThresholdSec));
 }
@@ -105,12 +106,13 @@ base::TimeTicks PepperHungPluginFilter::GetHungTime() const {
   DCHECK(!last_message_received_.is_null());
 
   // Always considered hung at the hard threshold.
-  base::TimeTicks hard_time = began_blocking_time_ +
+  base::TimeTicks hard_time =
+      began_blocking_time_ +
       base::TimeDelta::FromSeconds(kBlockedHardThresholdSec);
 
   // Hung after a soft threshold from last message of any sort.
-  base::TimeTicks soft_time = last_message_received_ +
-        base::TimeDelta::FromSeconds(kHungThresholdSec);
+  base::TimeTicks soft_time =
+      last_message_received_ + base::TimeDelta::FromSeconds(kHungThresholdSec);
 
   return std::min(soft_time, hard_time);
 }
@@ -138,7 +140,8 @@ void PepperHungPluginFilter::OnHangTimer() {
     // would not have scheduled one (we only have one out-standing timer at
     // a time).
     timer_task_pending_ = true;
-    io_loop_->PostDelayedTask(FROM_HERE,
+    io_loop_->PostDelayedTask(
+        FROM_HERE,
         base::Bind(&PepperHungPluginFilter::OnHangTimer, this),
         delay);
     return;
@@ -149,8 +152,8 @@ void PepperHungPluginFilter::OnHangTimer() {
 }
 
 void PepperHungPluginFilter::SendHungMessage(bool is_hung) {
-  filter_->Send(new ViewHostMsg_PepperPluginHung(
-      view_routing_id_, plugin_child_id_, plugin_path_, is_hung));
+  filter_->Send(new FrameHostMsg_PepperPluginHung(
+      frame_routing_id_, plugin_child_id_, plugin_path_, is_hung));
 }
 
 }  // namespace content

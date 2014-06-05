@@ -2,24 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Use the <code>chrome.syncFileSystem</code> API to save and synchronize data
+// on Google Drive. This API is NOT for accessing arbitrary user docs stored in
+// Google Drive. It provides app-specific syncable storage for offline and
+// caching usage so that the same data can be available across different
+// clients. Read <a href="app_storage.html">Manage Data</a> for more on using
+// this API.
 namespace syncFileSystem {
-
-  dictionary StorageInfo {
-    long usage_bytes;
-    long quota_bytes;
+  enum SyncAction {
+    added, updated, deleted
   };
 
-  dictionary SyncState {
-    DOMString service_name;  // i.e. ‘drive’
-    SyncStateStatus state;
-    DOMString description;
-  };
-
-  enum SyncOperationResult {
-    added, updated, deleted, conflicted
-  };
-
-  enum SyncStateStatus {
+  enum ServiceStatus {
     // The sync service is being initialized (e.g. restoring data from the
     // database, checking connectivity and authenticating to the service etc).
     initializing,
@@ -35,7 +29,7 @@ namespace syncFileSystem {
     // is (temporarily) unavailable due to some recoverable errors, e.g.
     // network is offline, the remote service is down or not
     // reachable etc. More details should be given by |description| parameter
-    // in OnSyncStateUpdated (which could contain service-specific details).
+    // in OnServiceInfoUpdated (which could contain service-specific details).
     temporary_unavailable,
 
     // The sync service is disabled and the content will never sync.
@@ -45,7 +39,7 @@ namespace syncFileSystem {
     disabled
   };
 
-  enum FileSyncStatus {
+  enum FileStatus {
     // Not conflicting and has no pending local changes.
     synced,
 
@@ -56,49 +50,150 @@ namespace syncFileSystem {
     conflicting
   };
 
-  // [nodoc] A callback type for requestFileSystem.
+  enum SyncDirection {
+    local_to_remote, remote_to_local
+  };
+
+  enum ConflictResolutionPolicy {
+    last_write_win, manual
+  };
+
+  dictionary FileInfo {
+    // <code>fileEntry</code> for the target file whose status has changed.
+    // Contains name and path information of synchronized file.
+    // On file deletion,
+    // <code>fileEntry</code> information will still be available
+    // but file will no longer exist.
+    [instanceOf=Entry] object fileEntry;
+
+    // Resulting file status after $(ref:onFileStatusChanged) event.
+    // The status value can be <code>'synced'</code>,
+    // <code>'pending'</code> or <code>'conflicting'</code>.
+    FileStatus status;
+
+    // Sync action taken to fire $(ref:onFileStatusChanged) event.
+    // The action value can be
+    // <code>'added'</code>, <code>'updated'</code> or <code>'deleted'</code>.
+    // Only applies if status is <code>'synced'</code>.
+    SyncAction? action;
+
+    // Sync direction for the $(ref:onFileStatusChanged) event.
+    // Sync direction value can be
+    // <code>'local_to_remote'</code> or <code>'remote_to_local'</code>.
+    // Only applies if status is <code>'synced'</code>.
+    SyncDirection? direction;
+  };
+
+  dictionary FileStatusInfo {
+    // One of the Entry's originally given to getFileStatuses.
+    [instanceOf=Entry] object fileEntry;
+
+    // The status value can be <code>'synced'</code>,
+    // <code>'pending'</code> or <code>'conflicting'</code>.
+    FileStatus status;
+
+    // Optional error that is only returned if there was a problem retrieving
+    // the FileStatus for the given file.
+    DOMString? error;
+  };
+
+  dictionary StorageInfo {
+    long usageBytes;
+    long quotaBytes;
+  };
+
+  dictionary ServiceInfo {
+    ServiceStatus state;
+    DOMString description;
+  };
+
+  // A callback type for requestFileSystem.
   callback GetFileSystemCallback =
       void ([instanceOf=DOMFileSystem] object fileSystem);
 
-  // [nodoc] A callback type for getUsageAndQuota.
+  // A callback type for getUsageAndQuota.
   callback QuotaAndUsageCallback = void (StorageInfo info);
 
   // Returns true if operation was successful.
   callback DeleteFileSystemCallback = void (boolean result);
 
-  // [nodoc] A callback type for getFileSyncStatus.
-  callback GetFileSyncStatusCallback = void (FileSyncStatus status);
+  // A callback type for getFileStatus.
+  callback GetFileStatusCallback = void (FileStatus status);
+
+  // A callback type for getFileStatuses.
+  callback GetFileStatusesCallback = void (FileStatusInfo[] status);
+
+  // A callback type for getServiceStatus.
+  callback GetServiceStatusCallback = void (ServiceStatus status);
+
+  // A callback type for getConflictResolutionPolicy.
+  callback GetConflictResolutionPolicyCallback =
+      void (ConflictResolutionPolicy policy);
+
+  // A generic result callback to indicate success or failure.
+  callback ResultCallback = void ();
 
   interface Functions {
-    // Get a sync file system backed by |serviceName|.
-    // Calling this multiple times from the same app with the same |serviceName|
-    // will return the same handle to the same file system.
-    static void requestFileSystem(DOMString serviceName,
-                                  GetFileSystemCallback callback);
+    // Returns a syncable filesystem backed by Google Drive.
+    // The returned <code>DOMFileSystem</code> instance can be operated on
+    // in the same way as the Temporary and Persistant file systems (see
+    // <a href="http://www.w3.org/TR/file-system-api/">http://www.w3.org/TR/file-system-api/</a>),
+    // except that the filesystem object returned for Sync FileSystem does
+    // <b>NOT</b> support directory operations (yet). You can get a list
+    // of file entries by reading the root directory (by
+    // <a href="http://www.w3.org/TR/file-system-api/#widl-DirectoryEntry-createReader-DirectoryReader">creating a new DirectoryReader</a>),
+    // but cannot create a new directory in it.
+    //
+    // Calling this multiple times from
+    // the same app will return the same handle to the same file system.
+    static void requestFileSystem(GetFileSystemCallback callback);
 
-    // Get usage and quota in bytes for sync file system with |serviceName|.
+    // Sets the default conflict resolution policy
+    // for the <code>'syncable'</code> file storage for the app.
+    // By default it is set to <code>'last_write_win'</code>.
+    // When conflict resolution policy is set to <code>'last_write_win'</code>
+    // conflicts for existing files are automatically resolved next time
+    // the file is updated.
+    // |callback| can be optionally given to know if the request has
+    // succeeded or not.
+    static void setConflictResolutionPolicy(
+        ConflictResolutionPolicy policy,
+        optional ResultCallback callback);
+
+    // Gets the current conflict resolution policy.
+    static void getConflictResolutionPolicy(
+        GetConflictResolutionPolicyCallback callback);
+
+    // Returns the current usage and quota in bytes
+    // for the <code>'syncable'</code> file storage for the app.
     static void getUsageAndQuota([instanceOf=DOMFileSystem] object fileSystem,
                                  QuotaAndUsageCallback callback);
 
-    // Deletes everything in the syncable filesystem.
-    static void deleteFileSystem([instanceOf=DOMFileSystem] object fileSystem,
-                                 DeleteFileSystemCallback callback);
+    // Returns the $(ref:FileStatus) for the given <code>fileEntry</code>.
+    // The status value can be <code>'synced'</code>,
+    // <code>'pending'</code> or <code>'conflicting'</code>.
+    // Note that <code>'conflicting'</code> state only happens when
+    // the service's conflict resolution policy is set to <code>'manual'</code>.
+    static void getFileStatus([instanceOf=Entry] object fileEntry,
+                              GetFileStatusCallback callback);
 
-    // Get the FileSyncStatus for the given |fileEntry|.
-    static void getFileSyncStatus([instanceOf=FileEntry] object fileEntry,
-                                  GetFileSyncStatusCallback callback);
+    // Returns each $(ref:FileStatus) for the given <code>fileEntry</code> array.
+    // Typically called with the result from dirReader.readEntries().
+    static void getFileStatuses(object[] fileEntries,
+                                GetFileStatusesCallback callback);
+
+    // Returns the current sync backend status.
+    static void getServiceStatus(GetServiceStatusCallback callback);
   };
 
   interface Events {
-    // Fired when an error or other state change has happened in the
-    // sync backend. (e.g. the sync is temporarily disabled due to
-    // network or authentication error etc).
-    static void onSyncStateChanged(SyncState detail);
+    // Fired when an error or other status change has happened in the
+    // sync backend (for example, when the sync is temporarily disabled due to
+    // network or authentication error).
+    static void onServiceStatusChanged(ServiceInfo detail);
 
     // Fired when a file has been updated by the background sync service.
-    // TODO(calvinlo): Convert |file_entry_path| from to Webkit FileEntry.
-    static void onFileSynced(DOMString file_entry_path,
-                             SyncOperationResult result);
+    static void onFileStatusChanged(FileInfo detail);
   };
 
 };

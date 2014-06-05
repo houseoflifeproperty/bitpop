@@ -19,7 +19,6 @@ sys.path.append(os.path.join(BASE_DIR, 'site_config'))
 from slave.chromium import archive_build
 from common import archive_utils_unittest
 from common import chromium_utils
-import config
 
 
 ZIP_TEST_FILES = ['file1.txt',
@@ -43,7 +42,8 @@ class MockOptions(object):
   """
   def __init__(self, src_dir, build_dir, target, archive_path,
                extra_archive_paths, build_number, default_chromium_revision,
-               default_webkit_revision, default_v8_revision):
+               default_webkit_revision, default_v8_revision,
+               build_name):
     self.src_dir = src_dir
     self.build_dir = build_dir
     self.target = target
@@ -52,11 +52,11 @@ class MockOptions(object):
       'symbol_dir_base': archive_path,
     }
     self.extra_archive_paths = extra_archive_paths
+    self.build_name = build_name
     self.build_number = build_number
     self.default_chromium_revision = default_chromium_revision
     self.default_webkit_revision = default_webkit_revision
     self.default_v8_revision = default_v8_revision
-    self.installer = config.Archive.installer_exe
     self.factory_properties = {}
 
 
@@ -109,11 +109,13 @@ class ArchiveTest(unittest.TestCase):
     self.stager = None
 
   def initializeStager(self, build_number=None, default_chromium_revision=None,
-                       default_webkit_revision=None, default_v8_revision=None):
+                       default_webkit_revision=None, default_v8_revision=None,
+                       build_name=None):
     self.options = MockOptions(self.src_dir, self.build_dir, self.target,
                                self.archive_dir, self.extra_files_dir,
                                build_number, default_chromium_revision,
-                               default_webkit_revision, default_v8_revision)
+                               default_webkit_revision, default_v8_revision,
+                               build_name)
     if self.options.build_number:
       self.stager = archive_build.StagerByBuildNumber(self.options)
     else:
@@ -216,9 +218,9 @@ class ArchiveTest(unittest.TestCase):
 
   def testGenerateRevisionFile(self):
     build_number = None
-    chromium_revision = 12345
-    webkit_revision = 54321
-    v8_revision = 33333
+    chromium_revision = '12345'
+    webkit_revision = '54321'
+    v8_revision = '33333'
     self.initializeStager(build_number, chromium_revision, webkit_revision,
                           v8_revision)
     self.stager.GenerateRevisionFile()
@@ -239,10 +241,10 @@ class ArchiveTest(unittest.TestCase):
     GetLastBuildRevision when acrchiving by chromium revision.
     """
     build_number = None
-    chromium_revision = 12345
-    webkit_revision = 54321
-    v8_revision = 33333
-    expect_last_change_file_contents = '%d' % (chromium_revision)
+    chromium_revision = '12345'
+    webkit_revision = '54321'
+    v8_revision = '33333'
+    expect_last_change_file_contents = '%s' % (chromium_revision)
     self.initializeStager(build_number, chromium_revision, webkit_revision,
                           v8_revision)
     last_change_file_path = self.stager.last_change_file
@@ -262,11 +264,11 @@ class ArchiveTest(unittest.TestCase):
     """This test is to test function SaveBuildRevisionToSpecifiedFile and
     GetLastBuildRevision when acrchiving by build number.
     """
-    build_number = 99999
-    chromium_revision = 12345
-    webkit_revision = 54321
-    v8_revision = 33333
-    expect_last_change_file_contents = '%d' % (build_number)
+    build_number = '99999'
+    chromium_revision = '12345'
+    webkit_revision = '54321'
+    v8_revision = '33333'
+    expect_last_change_file_contents = '%s' % (build_number)
     self.initializeStager(build_number, chromium_revision, webkit_revision,
                           v8_revision)
     last_change_file_path = self.stager.last_change_file
@@ -281,6 +283,27 @@ class ArchiveTest(unittest.TestCase):
     self.assertEquals(expect_last_change_file_contents, fp.read())
     fp.close()
     self.assertEquals(build_number, self.stager.GetLastBuildRevision())
+
+  def testBuildName(self):
+    build_number = '99999'
+    chromium_revision = '12345'
+    webkit_revision = '54321'
+    v8_revision = '33333'
+    build_name = 'TestBuild'
+
+    # This tests that stager._build_name was initialized properly.
+    # It is awkward to be looking at a private variable for this, but there
+    # does not appear to be any good way to observe the value getting
+    # propagated through the public functions (it is only referenced inside
+    # ArchiveBuild).
+    # pylint: disable=W0212
+    self.initializeStager(build_number, chromium_revision, webkit_revision,
+                          v8_revision)
+    self.assertNotEquals(self.stager._build_name, build_name)
+
+    self.initializeStager(build_number, chromium_revision, webkit_revision,
+                          v8_revision, build_name)
+    self.assertEquals(self.stager._build_name, build_name)
 
 
 if __name__ == '__main__':

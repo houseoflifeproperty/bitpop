@@ -7,15 +7,14 @@
 #include "base/bind.h"
 #include "chrome/browser/predictors/predictor_database.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
-#include "content/public/browser/browser_thread.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 
 namespace predictors {
 
 // static
 PredictorDatabase* PredictorDatabaseFactory::GetForProfile(Profile* profile) {
   return static_cast<PredictorDatabase*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
@@ -24,16 +23,16 @@ PredictorDatabaseFactory* PredictorDatabaseFactory::GetInstance() {
 }
 
 PredictorDatabaseFactory::PredictorDatabaseFactory()
-    : ProfileKeyedServiceFactory(
-        "PredictorDatabase", ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "PredictorDatabase", BrowserContextDependencyManager::GetInstance()) {
 }
 
 PredictorDatabaseFactory::~PredictorDatabaseFactory() {
 }
 
-ProfileKeyedService* PredictorDatabaseFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
-  return new PredictorDatabase(profile);
+KeyedService* PredictorDatabaseFactory::BuildServiceInstanceFor(
+    content::BrowserContext* profile) const {
+  return new PredictorDatabase(static_cast<Profile*>(profile));
 }
 
 }  // namespace predictors

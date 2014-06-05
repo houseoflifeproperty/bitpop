@@ -8,6 +8,7 @@
 
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
+#include <GLES2/gl2extchromium.h>
 
 #include "gpu/command_buffer/tests/gl_manager.h"
 #include "gpu/command_buffer/tests/gl_test_utils.h"
@@ -24,6 +25,13 @@ class GLCopyTextureCHROMIUMTest : public testing::Test {
 
     glGenTextures(2, textures_);
     glBindTexture(GL_TEXTURE_2D, textures_[1]);
+
+    // Some drivers (NVidia/SGX) require texture settings to be a certain way or
+    // they won't report FRAMEBUFFER_COMPLETE.
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 
     glGenFramebuffers(1, &framebuffer_id_);
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffer_id_);
@@ -50,16 +58,21 @@ TEST_F(GLCopyTextureCHROMIUMTest, Basic) {
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE,
                pixels);
 
-  glCopyTextureCHROMIUM(GL_TEXTURE_2D, textures_[0], textures_[1], 0, GL_RGBA);
+  glCopyTextureCHROMIUM(GL_TEXTURE_2D, textures_[0], textures_[1], 0, GL_RGBA,
+                        GL_UNSIGNED_BYTE);
   EXPECT_TRUE(glGetError() == GL_NO_ERROR);
 
-  uint8 copied_pixels[1 * 4];
-  glReadPixels(0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, copied_pixels);
-  EXPECT_EQ(pixels[0], copied_pixels[0]);
-  EXPECT_EQ(pixels[1], copied_pixels[1]);
-  EXPECT_EQ(pixels[2], copied_pixels[2]);
-  EXPECT_EQ(pixels[3], copied_pixels[3]);
+  // Check the FB is still bound.
+  GLint value = 0;
+  glGetIntegerv(GL_FRAMEBUFFER_BINDING, &value);
+  GLuint fb_id = value;
+  EXPECT_EQ(framebuffer_id_, fb_id);
 
+  // Check that FB is complete.
+  EXPECT_EQ(static_cast<GLenum>(GL_FRAMEBUFFER_COMPLETE),
+            glCheckFramebufferStatus(GL_FRAMEBUFFER));
+
+  GLTestHelper::CheckPixels(0, 0, 1, 1, 0, pixels);
   EXPECT_TRUE(GL_NO_ERROR == glGetError());
 }
 
@@ -80,14 +93,19 @@ TEST_F(GLCopyTextureCHROMIUMTest, FlipY) {
                pixels);
 
   glPixelStorei(GL_UNPACK_FLIP_Y_CHROMIUM, GL_TRUE);
-  glCopyTextureCHROMIUM(GL_TEXTURE_2D, textures_[0], textures_[1], 0, GL_RGBA);
+  glCopyTextureCHROMIUM(GL_TEXTURE_2D, textures_[0], textures_[1], 0, GL_RGBA,
+                        GL_UNSIGNED_BYTE);
   EXPECT_TRUE(GL_NO_ERROR == glGetError());
 
-  uint8 copied_pixels[2][2][4];
+  uint8 copied_pixels[2][2][4] = {{{0}}};
   glReadPixels(0, 0, 2, 2, GL_RGBA, GL_UNSIGNED_BYTE, copied_pixels);
   for (int x = 0; x < 2; ++x) {
-    for (int y = 0; y < 2; ++y)
+    for (int y = 0; y < 2; ++y) {
       EXPECT_EQ(pixels[1-y][x][0], copied_pixels[y][x][0]);
+      EXPECT_EQ(pixels[1-y][x][1], copied_pixels[y][x][1]);
+      EXPECT_EQ(pixels[1-y][x][2], copied_pixels[y][x][2]);
+      EXPECT_EQ(pixels[1-y][x][3], copied_pixels[y][x][3]);
+    }
   }
 
   EXPECT_TRUE(GL_NO_ERROR == glGetError());
@@ -103,10 +121,11 @@ TEST_F(GLCopyTextureCHROMIUMTest, PremultiplyAlpha) {
                pixels);
 
   glPixelStorei(GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM, GL_TRUE);
-  glCopyTextureCHROMIUM(GL_TEXTURE_2D, textures_[0], textures_[1], 0, GL_RGBA);
+  glCopyTextureCHROMIUM(GL_TEXTURE_2D, textures_[0], textures_[1], 0, GL_RGBA,
+                       GL_UNSIGNED_BYTE);
   EXPECT_TRUE(GL_NO_ERROR == glGetError());
 
-  uint8 copied_pixels[1 * 4];
+  uint8 copied_pixels[1 * 4] = {0};
   glReadPixels(0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, copied_pixels);
   EXPECT_EQ(1u, copied_pixels[0]);
   EXPECT_EQ(1u, copied_pixels[1]);
@@ -126,10 +145,11 @@ TEST_F(GLCopyTextureCHROMIUMTest, UnpremultiplyAlpha) {
                pixels);
 
   glPixelStorei(GL_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM, GL_TRUE);
-  glCopyTextureCHROMIUM(GL_TEXTURE_2D, textures_[0], textures_[1], 0, GL_RGBA);
+  glCopyTextureCHROMIUM(GL_TEXTURE_2D, textures_[0], textures_[1], 0, GL_RGBA,
+                        GL_UNSIGNED_BYTE);
   EXPECT_TRUE(GL_NO_ERROR == glGetError());
 
-  uint8 copied_pixels[1 * 4];
+  uint8 copied_pixels[1 * 4] = {0};
   glReadPixels(0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, copied_pixels);
   EXPECT_EQ(32u, copied_pixels[0]);
   EXPECT_EQ(32u, copied_pixels[1]);
@@ -157,10 +177,11 @@ TEST_F(GLCopyTextureCHROMIUMTest, FlipYAndPremultiplyAlpha) {
 
   glPixelStorei(GL_UNPACK_FLIP_Y_CHROMIUM, GL_TRUE);
   glPixelStorei(GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM, GL_TRUE);
-  glCopyTextureCHROMIUM(GL_TEXTURE_2D, textures_[0], textures_[1], 0, GL_RGBA);
+  glCopyTextureCHROMIUM(GL_TEXTURE_2D, textures_[0], textures_[1], 0, GL_RGBA,
+                        GL_UNSIGNED_BYTE);
   EXPECT_TRUE(GL_NO_ERROR == glGetError());
 
-  uint8 copied_pixels[2][2][4];
+  uint8 copied_pixels[2][2][4] = {{{0}}};
   glReadPixels(0, 0, 2, 2, GL_RGBA, GL_UNSIGNED_BYTE, copied_pixels);
   for (int x = 0; x < 2; ++x) {
     for (int y = 0; y < 2; ++y) {
@@ -192,10 +213,11 @@ TEST_F(GLCopyTextureCHROMIUMTest, FlipYAndUnpremultiplyAlpha) {
 
   glPixelStorei(GL_UNPACK_FLIP_Y_CHROMIUM, GL_TRUE);
   glPixelStorei(GL_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM, GL_TRUE);
-  glCopyTextureCHROMIUM(GL_TEXTURE_2D, textures_[0], textures_[1], 0, GL_RGBA);
+  glCopyTextureCHROMIUM(GL_TEXTURE_2D, textures_[0], textures_[1], 0, GL_RGBA,
+                        GL_UNSIGNED_BYTE);
   EXPECT_TRUE(GL_NO_ERROR == glGetError());
 
-  uint8 copied_pixels[2][2][4];
+  uint8 copied_pixels[2][2][4] = {{{0}}};
   glReadPixels(0, 0, 2, 2, GL_RGBA, GL_UNSIGNED_BYTE, copied_pixels);
   for (int x = 0; x < 2; ++x) {
     for (int y = 0; y < 2; ++y) {
@@ -245,7 +267,7 @@ TEST_F(GLCopyTextureCHROMIUMTest, BasicStatePreservation) {
     glActiveTexture(GL_TEXTURE1 + x);
 
     glCopyTextureCHROMIUM(GL_TEXTURE_2D, textures_[0], textures_[1], 0,
-                          GL_RGBA);
+                          GL_RGBA, GL_UNSIGNED_BYTE);
     EXPECT_TRUE(GL_NO_ERROR == glGetError());
 
     EXPECT_EQ(setting, glIsEnabled(GL_DEPTH_TEST));
@@ -292,7 +314,7 @@ TEST_F(GLCopyTextureCHROMIUMTest, TextureStatePreserved) {
   glBindTexture(GL_TEXTURE_2D, texture_ids[1]);
 
   glCopyTextureCHROMIUM(GL_TEXTURE_2D, textures_[0], textures_[1], 0,
-                        GL_RGBA);
+                        GL_RGBA, GL_UNSIGNED_BYTE);
   EXPECT_TRUE(GL_NO_ERROR == glGetError());
 
   GLint active_texture = 0;
@@ -352,7 +374,7 @@ TEST_F(GLCopyTextureCHROMIUMTest, FBOStatePreserved) {
   GLTestHelper::CheckPixels(0, 0, 1, 1, 0, expected_color);
 
   glCopyTextureCHROMIUM(GL_TEXTURE_2D, textures_[0], textures_[1], 0,
-                        GL_RGBA);
+                        GL_RGBA, GL_UNSIGNED_BYTE);
   EXPECT_TRUE(GL_NO_ERROR == glGetError());
 
   EXPECT_TRUE(glIsFramebuffer(framebuffer_id));
@@ -454,7 +476,8 @@ TEST_F(GLCopyTextureCHROMIUMTest, ProgramStatePreservation) {
   glBindTexture(GL_TEXTURE_2D, textures_[0]);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE,
                pixels);
-  glCopyTextureCHROMIUM(GL_TEXTURE_2D, textures_[0], textures_[1], 0, GL_RGBA);
+  glCopyTextureCHROMIUM(GL_TEXTURE_2D, textures_[0], textures_[1], 0, GL_RGBA,
+                        GL_UNSIGNED_BYTE);
 
   // test using program after
   glClear(GL_COLOR_BUFFER_BIT);
@@ -467,6 +490,31 @@ TEST_F(GLCopyTextureCHROMIUMTest, ProgramStatePreservation) {
   gl2.MakeCurrent();
   gl2.Destroy();
   gl_.MakeCurrent();
+}
+
+// Test that glCopyTextureCHROMIUM doesn't leak uninitialized textures.
+TEST_F(GLCopyTextureCHROMIUMTest, UninitializedSource) {
+  const GLsizei kWidth = 64, kHeight = 64;
+  glBindTexture(GL_TEXTURE_2D, textures_[0]);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, kWidth, kHeight,
+               0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+
+  glCopyTextureCHROMIUM(GL_TEXTURE_2D, textures_[0], textures_[1], 0, GL_RGBA,
+                        GL_UNSIGNED_BYTE);
+  EXPECT_TRUE(GL_NO_ERROR == glGetError());
+
+  uint8 pixels[kHeight][kWidth][4] = {{{1}}};
+  glReadPixels(0, 0, kWidth, kHeight, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+  for (int x = 0; x < kWidth; ++x) {
+    for (int y = 0; y < kHeight; ++y) {
+      EXPECT_EQ(0, pixels[y][x][0]);
+      EXPECT_EQ(0, pixels[y][x][1]);
+      EXPECT_EQ(0, pixels[y][x][2]);
+      EXPECT_EQ(0, pixels[y][x][3]);
+    }
+  }
+
+  EXPECT_TRUE(GL_NO_ERROR == glGetError());
 }
 
 }  // namespace gpu

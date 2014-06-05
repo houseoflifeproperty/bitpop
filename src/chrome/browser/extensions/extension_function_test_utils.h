@@ -8,9 +8,8 @@
 #include <string>
 
 #include "base/memory/ref_counted.h"
-#include "chrome/common/extensions/extension.h"
+#include "extensions/common/manifest.h"
 
-class AsyncExtensionFunction;
 class Browser;
 class UIThreadExtensionFunction;
 
@@ -52,7 +51,7 @@ scoped_refptr<extensions::Extension> CreateEmptyExtension();
 // Creates an extension instance with a specified location that can be attached
 // to an ExtensionFunction before running.
 scoped_refptr<extensions::Extension> CreateEmptyExtensionWithLocation(
-    extensions::Extension::Location location);
+    extensions::Manifest::Location location);
 
 // Creates an empty extension with a variable ID, for tests that require
 // multiple extensions side-by-side having distinct IDs. If not empty, then
@@ -64,17 +63,13 @@ scoped_refptr<extensions::Extension> CreateEmptyExtension(
     const std::string& id_input);
 
 scoped_refptr<extensions::Extension> CreateExtension(
-    extensions::Extension::Location location,
+    extensions::Manifest::Location location,
     base::DictionaryValue* test_extension_value,
     const std::string& id_input);
 
 // Creates an extension instance with a specified extension value that can be
 // attached to an ExtensionFunction before running.
 scoped_refptr<extensions::Extension> CreateExtension(
-    base::DictionaryValue* test_extension_value);
-
-scoped_refptr<extensions::Extension> CreateExtension(
-    extensions::Extension::Location location,
     base::DictionaryValue* test_extension_value);
 
 // Returns true if |val| contains privacy information, e.g. url,
@@ -87,7 +82,8 @@ enum RunFunctionFlags {
 };
 
 // Run |function| with |args| and return the resulting error. Adds an error to
-// the current test if |function| returns a result.
+// the current test if |function| returns a result. Takes ownership of
+// |function|.
 std::string RunFunctionAndReturnError(UIThreadExtensionFunction* function,
                                       const std::string& args,
                                       Browser* browser,
@@ -97,8 +93,8 @@ std::string RunFunctionAndReturnError(UIThreadExtensionFunction* function,
                                       Browser* browser);
 
 // Run |function| with |args| and return the result. Adds an error to the
-// current test if |function| returns an error. The caller takes ownership of
-// the result.
+// current test if |function| returns an error. Takes ownership of
+// |function|. The caller takes ownership of the result.
 base::Value* RunFunctionAndReturnSingleResult(
     UIThreadExtensionFunction* function,
     const std::string& args,
@@ -110,7 +106,7 @@ base::Value* RunFunctionAndReturnSingleResult(
     Browser* browser);
 
 // Create and run |function| with |args|. Works with both synchronous and async
-// functions.
+// functions. Ownership of |function| remains with the caller.
 //
 // TODO(aa): It would be nice if |args| could be validated against the schema
 // that |function| expects. That way, we know that we are testing something

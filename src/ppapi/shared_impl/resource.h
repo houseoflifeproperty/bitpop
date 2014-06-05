@@ -18,58 +18,76 @@
 
 // All resource types should be added here. This implements our hand-rolled
 // RTTI system since we don't compile with "real" RTTI.
-#define FOR_ALL_PPAPI_RESOURCE_APIS(F) \
-  F(PPB_Audio_API) \
-  F(PPB_AudioConfig_API) \
-  F(PPB_AudioInput_API) \
-  F(PPB_AudioTrusted_API) \
-  F(PPB_Broker_API) \
-  F(PPB_Broker_Instance_API) \
-  F(PPB_BrowserFont_Trusted_API) \
-  F(PPB_Buffer_API) \
-  F(PPB_BufferTrusted_API) \
-  F(PPB_DeviceRef_API) \
-  F(PPB_DirectoryReader_API) \
-  F(PPB_FileChooser_API) \
-  F(PPB_FileIO_API) \
-  F(PPB_FileRef_API) \
-  F(PPB_FileSystem_API) \
-  F(PPB_Find_API) \
-  F(PPB_Flash_Clipboard_API) \
-  F(PPB_Flash_DeviceID_API) \
-  F(PPB_Flash_File_API) \
-  F(PPB_Flash_FontFile_API) \
-  F(PPB_Flash_Fullscreen_API) \
-  F(PPB_Flash_Functions_API) \
-  F(PPB_Flash_Menu_API) \
-  F(PPB_Flash_MessageLoop_API) \
-  F(PPB_Gamepad_API) \
-  F(PPB_Graphics2D_API) \
-  F(PPB_Graphics3D_API) \
-  F(PPB_HostResolver_Private_API) \
-  F(PPB_ImageData_API) \
-  F(PPB_InputEvent_API) \
-  F(PPB_LayerCompositor_API) \
-  F(PPB_MessageLoop_API) \
-  F(PPB_NetworkList_Private_API) \
-  F(PPB_NetworkMonitor_Private_API) \
-  F(PPB_PDFFont_API) \
-  F(PPB_Printing_API) \
-  F(PPB_ResourceArray_API) \
-  F(PPB_Scrollbar_API) \
-  F(PPB_Talk_Private_API) \
-  F(PPB_TCPServerSocket_Private_API) \
-  F(PPB_TCPSocket_Private_API) \
-  F(PPB_UDPSocket_Private_API) \
-  F(PPB_URLLoader_API) \
-  F(PPB_URLRequestInfo_API) \
-  F(PPB_URLResponseInfo_API) \
-  F(PPB_VideoCapture_API) \
-  F(PPB_VideoDecoder_API) \
-  F(PPB_VideoLayer_API) \
-  F(PPB_View_API) \
-  F(PPB_WebSocket_API) \
-  F(PPB_Widget_API) \
+#define FOR_ALL_PPAPI_RESOURCE_APIS(F)  \
+  F(ExtensionsCommon_API)               \
+  F(PPB_Audio_API)                      \
+  F(PPB_AudioBuffer_API)                \
+  F(PPB_AudioConfig_API)                \
+  F(PPB_AudioInput_API)                 \
+  F(PPB_AudioTrusted_API)               \
+  F(PPB_Broker_API)                     \
+  F(PPB_Broker_Instance_API)            \
+  F(PPB_BrowserFont_Singleton_API)      \
+  F(PPB_BrowserFont_Trusted_API)        \
+  F(PPB_Buffer_API)                     \
+  F(PPB_DeviceRef_API)                  \
+  F(PPB_Ext_CrxFileSystem_Private_API)  \
+  F(PPB_FileChooser_API)                \
+  F(PPB_FileIO_API)                     \
+  F(PPB_FileMapping_API)                \
+  F(PPB_FileRef_API)                    \
+  F(PPB_FileSystem_API)                 \
+  F(PPB_Find_API)                       \
+  F(PPB_Flash_Clipboard_API)            \
+  F(PPB_Flash_DRM_API)                  \
+  F(PPB_Flash_File_API)                 \
+  F(PPB_Flash_FontFile_API)             \
+  F(PPB_Flash_Fullscreen_API)           \
+  F(PPB_Flash_Functions_API)            \
+  F(PPB_Flash_Menu_API)                 \
+  F(PPB_Flash_MessageLoop_API)          \
+  F(PPB_Gamepad_API)                    \
+  F(PPB_Graphics2D_API)                 \
+  F(PPB_Graphics3D_API)                 \
+  F(PPB_HostResolver_API)               \
+  F(PPB_HostResolver_Private_API)       \
+  F(PPB_ImageData_API)                  \
+  F(PPB_InputEvent_API)                 \
+  F(PPB_IsolatedFileSystem_Private_API) \
+  F(PPB_LayerCompositor_API)            \
+  F(PPB_MediaStreamAudioTrack_API)      \
+  F(PPB_MediaStreamVideoTrack_API)      \
+  F(PPB_MessageLoop_API)                \
+  F(PPB_NetAddress_API)                 \
+  F(PPB_NetworkList_API)                \
+  F(PPB_NetworkMonitor_API)             \
+  F(PPB_NetworkProxy_API)               \
+  F(PPB_OutputProtection_API)           \
+  F(PPB_PDF_API)                        \
+  F(PPB_PlatformVerification_API)       \
+  F(PPB_Printing_API)                   \
+  F(PPB_Scrollbar_API)                  \
+  F(PPB_Talk_Private_API)               \
+  F(PPB_TrueTypeFont_API)               \
+  F(PPB_TrueTypeFont_Singleton_API)     \
+  F(PPB_TCPServerSocket_Private_API)    \
+  F(PPB_TCPSocket_API)                  \
+  F(PPB_TCPSocket_Private_API)          \
+  F(PPB_UDPSocket_API)                  \
+  F(PPB_UDPSocket_Private_API)          \
+  F(PPB_UMA_Singleton_API)              \
+  F(PPB_URLLoader_API)                  \
+  F(PPB_URLRequestInfo_API)             \
+  F(PPB_URLResponseInfo_API)            \
+  F(PPB_VideoCapture_API)               \
+  F(PPB_VideoDecoder_Dev_API)           \
+  F(PPB_VideoDestination_Private_API)   \
+  F(PPB_VideoFrame_API)                 \
+  F(PPB_VideoLayer_API)                 \
+  F(PPB_VideoSource_Private_API)        \
+  F(PPB_View_API)                       \
+  F(PPB_WebSocket_API)                  \
+  F(PPB_Widget_API)                     \
   F(PPB_X509Certificate_Private_API)
 
 namespace IPC {
@@ -95,10 +113,7 @@ FOR_ALL_PPAPI_RESOURCE_APIS(DECLARE_RESOURCE_CLASS)
 // in-process ("impl") resource in the host (renderer) process, or when they're
 // a proxied resource in the plugin process. This enum differentiates those
 // cases.
-enum ResourceObjectType {
-  OBJECT_IS_IMPL,
-  OBJECT_IS_PROXY
-};
+enum ResourceObjectType { OBJECT_IS_IMPL, OBJECT_IS_PROXY };
 
 class PPAPI_SHARED_EXPORT Resource : public base::RefCounted<Resource> {
  public:
@@ -177,16 +192,19 @@ class PPAPI_SHARED_EXPORT Resource : public base::RefCounted<Resource> {
   // InstanceWasDeleted() to be notified.
   virtual void NotifyInstanceWasDeleted();
 
-  // Dynamic casting for this object. Returns the pointer to the given type if
-  // it's supported. Derived classes override the functions they support to
-  // return the interface.
-  #define DEFINE_TYPE_GETTER(RESOURCE) \
-    virtual thunk::RESOURCE* As##RESOURCE();
+// Dynamic casting for this object. Returns the pointer to the given type if
+// it's supported. Derived classes override the functions they support to
+// return the interface.
+#define DEFINE_TYPE_GETTER(RESOURCE) virtual thunk::RESOURCE* As##RESOURCE();
   FOR_ALL_PPAPI_RESOURCE_APIS(DEFINE_TYPE_GETTER)
-  #undef DEFINE_TYPE_GETTER
+#undef DEFINE_TYPE_GETTER
 
-  // Template-based dynamic casting. See specializations below.
-  template <typename T> T* GetAs() { return NULL; }
+  // Template-based dynamic casting. See specializations below. This is
+  // unimplemented for the default case. This way, for anything that's not a
+  // resource (or if a developer forgets to add the resource to the list in
+  // this file), the result is a linker error.
+  template <typename T>
+  T* GetAs();
 
   // Called when a PpapiPluginMsg_ResourceReply reply is received for a
   // previous CallRenderer. The message is the nested reply message, which may
@@ -205,6 +223,14 @@ class PPAPI_SHARED_EXPORT Resource : public base::RefCounted<Resource> {
   // Logs a message to the console from this resource.
   void Log(PP_LogLevel level, const std::string& message);
 
+  // Removes the resource from the ResourceTracker's tables. This normally
+  // happens as part of Resource destruction, but if a subclass destructor
+  // has a risk of re-entering destruction via the ResourceTracker, it can
+  // call this explicitly to get rid of the table entry before continuing
+  // with the destruction. If the resource is not in the ResourceTracker's
+  // tables, silently does nothing. See http://crbug.com/159429.
+  void RemoveFromResourceTracker();
+
   // Notifications for subclasses.
   virtual void LastPluginRefWasDeleted() {}
   virtual void InstanceWasDeleted() {}
@@ -219,9 +245,10 @@ class PPAPI_SHARED_EXPORT Resource : public base::RefCounted<Resource> {
 
 // Template-based dynamic casting. These specializations forward to the
 // AsXXX virtual functions to return whether the given type is supported.
-#define DEFINE_RESOURCE_CAST(RESOURCE) \
-  template<> inline thunk::RESOURCE* Resource::GetAs() { \
-    return As##RESOURCE(); \
+#define DEFINE_RESOURCE_CAST(RESOURCE)        \
+  template <>                                 \
+  inline thunk::RESOURCE* Resource::GetAs() { \
+    return As##RESOURCE();                    \
   }
 FOR_ALL_PPAPI_RESOURCE_APIS(DEFINE_RESOURCE_CAST)
 #undef DEFINE_RESOURCE_CAST

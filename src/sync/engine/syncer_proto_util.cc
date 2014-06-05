@@ -5,12 +5,11 @@
 #include "sync/engine/syncer_proto_util.h"
 
 #include "base/format_macros.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "google_apis/google_api_keys.h"
 #include "sync/engine/net/server_connection_manager.h"
 #include "sync/engine/syncer.h"
 #include "sync/engine/syncer_types.h"
-#include "sync/engine/throttled_data_type_tracker.h"
 #include "sync/engine/traffic_logger.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/protocol/sync_enums.pb.h"
@@ -121,6 +120,10 @@ SyncProtocolErrorType ConvertSyncProtocolErrorTypePBToLocalType(
       return TRANSIENT_ERROR;
     case sync_pb::SyncEnums::MIGRATION_DONE:
       return MIGRATION_DONE;
+    case sync_pb::SyncEnums::DISABLED_BY_ADMIN:
+      return DISABLED_BY_ADMIN;
+    case sync_pb::SyncEnums::USER_ROLLBACK:
+      return USER_ROLLBACK;
     case sync_pb::SyncEnums::UNKNOWN:
       return UNKNOWN_ERROR;
     case sync_pb::SyncEnums::USER_NOT_ACTIVATED:
@@ -198,6 +201,7 @@ SyncProtocolError ConvertErrorPBToLocalType(
   return sync_protocol_error;
 }
 
+// static
 bool SyncerProtoUtil::VerifyResponseBirthday(
     const ClientToServerResponse& response,
     syncable::Directory* dir) {
@@ -227,6 +231,13 @@ bool SyncerProtoUtil::VerifyResponseBirthday(
   }
 
   return true;
+}
+
+// static
+bool SyncerProtoUtil::IsSyncDisabledByAdmin(
+    const sync_pb::ClientToServerResponse& response) {
+  return (response.has_error_code() &&
+          response.error_code() == sync_pb::SyncEnums::DISABLED_BY_ADMIN);
 }
 
 // static
@@ -267,13 +278,6 @@ bool SyncerProtoUtil::PostAndProcessHeaders(ServerConnectionManager* scm,
     return false;
   }
 
-  std::string new_token = params.response.update_client_auth_header;
-  if (!new_token.empty()) {
-    SyncEngineEvent event(SyncEngineEvent::UPDATED_TOKEN);
-    event.updated_token = new_token;
-    session->context()->NotifyListeners(event);
-  }
-
   if (response->ParseFromString(params.buffer_out)) {
     // TODO(tim): This is an egregious layering violation (bug 35060).
     switch (response->error_code()) {
@@ -305,20 +309,6 @@ base::TimeDelta SyncerProtoUtil::GetThrottleDelay(
   return throttle_delay;
 }
 
-void SyncerProtoUtil::HandleThrottleError(
-    const SyncProtocolError& error,
-    const base::TimeTicks& throttled_until,
-    ThrottledDataTypeTracker* tracker,
-    sessions::SyncSession::Delegate* delegate) {
-  DCHECK_EQ(error.error_type, THROTTLED);
-  if (error.error_data_types.Empty()) {
-    // No datatypes indicates the client should be completely throttled.
-    delegate->OnSilencedUntil(throttled_until);
-  } else {
-    tracker->SetUnthrottleTime(error.error_data_types, throttled_until);
-  }
-}
-
 namespace {
 
 // Helper function for an assertion in PostClientToServerMessage.
@@ -340,8 +330,12 @@ SyncProtocolError ConvertLegacyErrorCodeToNewError(
   error.error_type = ConvertSyncProtocolErrorTypePBToLocalType(error_type);
   if (error_type == sync_pb::SyncEnums::CLEAR_PENDING ||
       error_type == sync_pb::SyncEnums::NOT_MY_BIRTHDAY) {
-      error.action = DISABLE_SYNC_ON_CLIENT;
-  }  // There is no other action we can compute for legacy server.
+    error.action = DISABLE_SYNC_ON_CLIENT;
+  } else if (error_type == sync_pb::SyncEnums::DISABLED_BY_ADMIN) {
+    error.action = STOP_SYNC_FOR_DISABLED_ACCOUNT;
+  } else if (error_type == sync_pb::SyncEnums::USER_ROLLBACK) {
+    error.action = DISABLE_SYNC_AND_ROLLBACK;
+  } // There is no other action we can compute for legacy server.
   return error;
 }
 
@@ -363,11 +357,11 @@ SyncerError SyncerProtoUtil::PostClientToServerMessage(
   AddBagOfChips(session->context()->directory(), msg);
   msg->set_api_key(google_apis::GetAPIKey());
   msg->mutable_client_status()->CopyFrom(session->context()->client_status());
+  msg->set_invalidator_client_id(session->context()->invalidator_client_id());
 
   syncable::Directory* dir = session->context()->directory();
 
   LogClientToServerMessage(*msg);
-  session->context()->traffic_recorder()->RecordClientToServerMessage(*msg);
   if (!PostAndProcessHeaders(session->context()->connection_manager(), session,
                              *msg, response)) {
     // There was an error establishing communication with the server.
@@ -380,21 +374,21 @@ SyncerError SyncerProtoUtil::PostClientToServerMessage(
 
     return ServerConnectionErrorAsSyncerError(server_status);
   }
-
   LogClientToServerResponse(*response);
-  session->context()->traffic_recorder()->RecordClientToServerResponse(
-      *response);
 
   // Persist a bag of chips if it has been sent by the server.
   PersistBagOfChips(dir, *response);
 
   SyncProtocolError sync_protocol_error;
 
-  // Birthday mismatch overrides any error that is sent by the server.
-  if (!VerifyResponseBirthday(*response, dir)) {
+  // The DISABLED_BY_ADMIN error overrides other errors sent by the server.
+  if (IsSyncDisabledByAdmin(*response)) {
+    sync_protocol_error.error_type = DISABLED_BY_ADMIN;
+    sync_protocol_error.action = STOP_SYNC_FOR_DISABLED_ACCOUNT;
+  } else if (!VerifyResponseBirthday(*response, dir)) {
+    // If sync isn't disabled, first check for a birthday mismatch error.
     sync_protocol_error.error_type = NOT_MY_BIRTHDAY;
-     sync_protocol_error.action =
-         DISABLE_SYNC_ON_CLIENT;
+    sync_protocol_error.action = DISABLE_SYNC_ON_CLIENT;
   } else if (response->has_error()) {
     // This is a new server. Just get the error from the protocol.
     sync_protocol_error = ConvertErrorPBToLocalType(response->error());
@@ -404,12 +398,8 @@ SyncerError SyncerProtoUtil::PostClientToServerMessage(
         response->error_code());
   }
 
-  // Now set the error into the status so the layers above us could read it.
-  sessions::StatusController* status = session->mutable_status_controller();
-  status->set_sync_protocol_error(sync_protocol_error);
-
   // Inform the delegate of the error we got.
-  session->delegate()->OnSyncProtocolError(session->TakeSnapshot());
+  session->delegate()->OnSyncProtocolError(sync_protocol_error);
 
   // Update our state for any other commands we've received.
   if (response->has_client_command()) {
@@ -434,6 +424,16 @@ SyncerError SyncerProtoUtil::PostClientToServerMessage(
           base::TimeDelta::FromSeconds(
               command.sessions_commit_delay_seconds()));
     }
+
+    if (command.has_client_invalidation_hint_buffer_size()) {
+      session->delegate()->OnReceivedClientInvalidationHintBufferSize(
+          command.client_invalidation_hint_buffer_size());
+    }
+
+    if (command.has_gu_retry_delay_seconds()) {
+      session->delegate()->OnReceivedGuRetryDelay(
+          base::TimeDelta::FromSeconds(command.gu_retry_delay_seconds()));
+    }
   }
 
   // Now do any special handling for the error type and decide on the return
@@ -447,25 +447,32 @@ SyncerError SyncerProtoUtil::PostClientToServerMessage(
       LogResponseProfilingData(*response);
       return SYNCER_OK;
     case THROTTLED:
-      LOG(WARNING) << "Client silenced by server.";
-      HandleThrottleError(sync_protocol_error,
-                          base::TimeTicks::Now() + GetThrottleDelay(*response),
-                          session->context()->throttled_data_type_tracker(),
-                          session->delegate());
+      if (sync_protocol_error.error_data_types.Empty()) {
+        DLOG(WARNING) << "Client fully throttled by syncer.";
+        session->delegate()->OnThrottled(GetThrottleDelay(*response));
+      } else {
+        DLOG(WARNING) << "Some types throttled by syncer.";
+        session->delegate()->OnTypesThrottled(
+            sync_protocol_error.error_data_types,
+            GetThrottleDelay(*response));
+      }
       return SERVER_RETURN_THROTTLED;
     case TRANSIENT_ERROR:
       return SERVER_RETURN_TRANSIENT_ERROR;
     case MIGRATION_DONE:
       LOG_IF(ERROR, 0 >= response->migrated_data_type_id_size())
           << "MIGRATION_DONE but no types specified.";
-      // TODO(akalin): This should be a set union.
-      session->mutable_status_controller()->
-          set_types_needing_local_migration(GetTypesToMigrate(*response));
+      session->delegate()->OnReceivedMigrationRequest(
+          GetTypesToMigrate(*response));
       return SERVER_RETURN_MIGRATION_DONE;
     case CLEAR_PENDING:
       return SERVER_RETURN_CLEAR_PENDING;
     case NOT_MY_BIRTHDAY:
       return SERVER_RETURN_NOT_MY_BIRTHDAY;
+    case DISABLED_BY_ADMIN:
+      return SERVER_RETURN_DISABLED_BY_ADMIN;
+    case USER_ROLLBACK:
+      return SERVER_RETURN_USER_ROLLBACK;
     default:
       NOTREACHED();
       return UNSET;
@@ -473,48 +480,13 @@ SyncerError SyncerProtoUtil::PostClientToServerMessage(
 }
 
 // static
-bool SyncerProtoUtil::Compare(const syncable::Entry& local_entry,
-                              const sync_pb::SyncEntity& server_entry) {
-  const std::string name = NameFromSyncEntity(server_entry);
-
-  CHECK_EQ(local_entry.Get(ID), SyncableIdFromProto(server_entry.id_string()));
-  CHECK_EQ(server_entry.version(), local_entry.Get(BASE_VERSION));
-  CHECK(!local_entry.Get(IS_UNSYNCED));
-
-  if (local_entry.Get(IS_DEL) && server_entry.deleted())
-    return true;
-  if (local_entry.Get(CTIME) != ProtoTimeToTime(server_entry.ctime())) {
-    LOG(WARNING) << "ctime mismatch";
-    return false;
-  }
-
-  // These checks are somewhat prolix, but they're easier to debug than a big
-  // boolean statement.
-  string client_name = local_entry.Get(syncable::NON_UNIQUE_NAME);
-  if (client_name != name) {
-    LOG(WARNING) << "Client name mismatch";
-    return false;
-  }
-  if (local_entry.Get(PARENT_ID) !=
-      SyncableIdFromProto(server_entry.parent_id_string())) {
-    LOG(WARNING) << "Parent ID mismatch";
-    return false;
-  }
-  if (local_entry.Get(IS_DIR) != IsFolder(server_entry)) {
-    LOG(WARNING) << "Dir field mismatch";
-    return false;
-  }
-  if (local_entry.Get(IS_DEL) != server_entry.deleted()) {
-    LOG(WARNING) << "Deletion mismatch";
-    return false;
-  }
-  if (!local_entry.Get(IS_DIR) &&
-      (local_entry.Get(MTIME) != ProtoTimeToTime(server_entry.mtime()))) {
-    LOG(WARNING) << "mtime mismatch";
-    return false;
-  }
-
-  return true;
+bool SyncerProtoUtil::ShouldMaintainPosition(
+    const sync_pb::SyncEntity& sync_entity) {
+  // Maintain positions for bookmarks that are not server-defined top-level
+  // folders.
+  return GetModelType(sync_entity) == BOOKMARKS
+      && !(sync_entity.folder() &&
+           !sync_entity.server_defined_unique_tag().empty());
 }
 
 // static
@@ -573,7 +545,7 @@ std::string SyncerProtoUtil::SyncEntityDebugString(
       GetTimeDebugString(ProtoTimeToTime(entry.ctime()));
   return base::StringPrintf(
       "id: %s, parent_id: %s, "
-      "version: %"PRId64"d, "
+      "version: %" PRId64"d, "
       "mtime: %" PRId64"d (%s), "
       "ctime: %" PRId64"d (%s), "
       "name: %s, sync_timestamp: %" PRId64"d, "

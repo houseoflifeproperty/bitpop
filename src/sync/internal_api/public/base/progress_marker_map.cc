@@ -10,15 +10,14 @@
 
 namespace syncer {
 
-scoped_ptr<DictionaryValue> ProgressMarkerMapToValue(
+scoped_ptr<base::DictionaryValue> ProgressMarkerMapToValue(
     const ProgressMarkerMap& marker_map) {
-  scoped_ptr<DictionaryValue> value(new DictionaryValue());
+  scoped_ptr<base::DictionaryValue> value(new base::DictionaryValue());
   for (ProgressMarkerMap::const_iterator it = marker_map.begin();
        it != marker_map.end(); ++it) {
     std::string printable_payload;
-    base::JsonDoubleQuote(it->second,
-                          false /* put_in_quotes */,
-                          &printable_payload);
+    base::EscapeJSONString(
+        it->second, false /* put_in_quotes */, &printable_payload);
     value->SetString(ModelTypeToString(it->first), printable_payload);
   }
   return value.Pass();

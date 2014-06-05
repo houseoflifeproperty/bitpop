@@ -1,34 +1,34 @@
 # DO NOT EDIT EXCEPT FOR LOCAL TESTING.
 # THIS IS A GENERATED FILE.
 # ALL MANUAL CHANGES WILL BE OVERWRITTEN.
-# SEE http://code.google.com/p/chromium/wiki/UsingNewGit
+# SEE http://code.google.com/p/chromium/wiki/UsingGit
 # FOR HOW TO ROLL DEPS
 vars = {
     'webkit_url':
-         'https://chromium.googlesource.com/external/WebKit_trimmed.git',
+         'https://chromium.googlesource.com/chromium/blink.git',
     'git_url':
          'https://chromium.googlesource.com'
 }
 
 deps = {
-    'native_client/tools/perf_expectations':
-        Var('git_url') + '/chromium/src/tools/perf_expectations.git@c86fef0280ffe5b75dafd3b69f8f67a074dd4459',
+    'breakpad':
+        Var('git_url') + '/external/google-breakpad.git@1c8e155b3a4488910fa63a867de31f1735595e2f',
     'testing/gtest':
-        Var('git_url') + '/external/googletest.git@a92a6f792395e1ad462472d474ab0c76949813fa',
+        Var('git_url') + '/external/googletest.git@74de57c951aedebc5dfe26a27604353432392b98',
     'third_party':
-        Var('git_url') + '/native_client/src/third_party.git@c3603e1b117444b7f0ed86e85157088a632fa985',
-    'third_party/asan':
-        Var('git_url') + '/chromium/deps/asan.git@245a68a0347562da54e3e5881010f55a994c783f',
+        Var('git_url') + '/native_client/src/third_party.git@293473a038f9e4e8239dc12856a31c2a12a5806b',
     'third_party/lcov':
-        Var('git_url') + '/chromium/src/third_party/lcov.git@ba4a791b2b525fc13d169b4cc671dede09bbfb64',
+        Var('git_url') + '/chromium/src/third_party/lcov.git@b37daf5968200da8ff520ce65c4e5bce4047dd15',
     'third_party/lss':
-        Var('git_url') + '/external/linux-syscall-support/lss.git@8dce3586424b5811ca0c8c1938bc7d0826558e77',
+        Var('git_url') + '/external/linux-syscall-support/lss.git@2f724fced658cd6182096c615efdf3767b7c57fe',
+    'third_party/valgrind':
+        Var('git_url') + '/chromium/deps/valgrind.git@59886873b4b8258a8e0f098c23e1958e0d0c0a26',
     'tools/clang':
-        Var('git_url') + '/chromium/src/tools/clang.git@c230083d393a40cb8d6b6d4d745a77c1a6d8b555',
+        Var('git_url') + '/chromium/src/tools/clang.git@ebc2fda597745140f92be012c57104eed54743ad',
     'tools/gyp':
-        Var('git_url') + '/external/gyp.git@cb7a494ec635b2e8691af06ae557ed637e4e82f5',
+        Var('git_url') + '/external/gyp.git@9a184eea4849278fd557627adcf48cb8e2ff9f67',
     'tools/valgrind':
-        Var('git_url') + '/chromium/src/tools/valgrind.git@4cf074f2d2291065b4df2a7c60f5f632631ed2e7',
+        Var('git_url') + '/chromium/src/tools/valgrind.git@89e126305795473ff66dbce1e08a5c209e0f073e',
     'validator_snapshots':
         Var('git_url') + '/native_client/src/validator_snapshots.git@4c1ea6b6ebe020993b0a091fd4e38a6487704b60',
 }
@@ -47,8 +47,6 @@ deps_os = {
             Var('git_url') + '/native_client/deps/third_party/gnu_binutils.git@f4003433b61b25666565690caf3d7a7a1a4ec436',
         'third_party/mingw-w64/mingw/bin':
             Var('git_url') + '/native_client/deps/third_party/mingw-w64/mingw/bin.git@3cc8b140b883a9fe4986d12cfd46c16a093d3527',
-        'third_party/python_26':
-            Var('git_url') + '/chromium/deps/python_26.git@0f769a0323d9a5a301bb9c50e48f43166939a923',
     },
 }
 
@@ -66,13 +64,109 @@ hooks = [
     'action':
          [
     'python',
-    'native_client/build/download_toolchains.py',
-    '--keep',
-    '--arm-untrusted',
-    'native_client/TOOL_REVISIONS'
+    'native_client/build/package_version/package_version.py',
+    'sync',
+    '--extract'
 ],
     'pattern':
          '.'
+},
+    {
+    'action':
+         [
+    'download_from_google_storage',
+    '--no_resume',
+    '--platform=win32',
+    '--no_auth',
+    '--bucket',
+    'chromium-gn',
+    '-s',
+    'native_client/tools/gn/bin/win/gn.exe.sha1'
+],
+    'pattern':
+         '.',
+    'name':
+         'gn_win'
+},
+    {
+    'action':
+         [
+    'download_from_google_storage',
+    '--no_resume',
+    '--platform=darwin',
+    '--no_auth',
+    '--bucket',
+    'chromium-gn',
+    '-s',
+    'native_client/tools/gn/bin/mac/gn.sha1'
+],
+    'pattern':
+         '.',
+    'name':
+         'gn_mac'
+},
+    {
+    'action':
+         [
+    'download_from_google_storage',
+    '--no_resume',
+    '--platform=linux*',
+    '--no_auth',
+    '--bucket',
+    'chromium-gn',
+    '-s',
+    'native_client/tools/gn/bin/linux/gn.sha1'
+],
+    'pattern':
+         '.',
+    'name':
+         'gn_linux'
+},
+    {
+    'action':
+         [
+    'download_from_google_storage',
+    '--no_resume',
+    '--platform=linux*',
+    '--no_auth',
+    '--bucket',
+    'chromium-gn',
+    '-s',
+    'native_client/tools/gn/bin/linux/gn.sha1'
+],
+    'pattern':
+         '.',
+    'name':
+         'gn_linux'
+},
+    {
+    'action':
+         [
+    'download_from_google_storage',
+    '--no_resume',
+    '--platform=linux*',
+    '--no_auth',
+    '--bucket',
+    'chromium-gn',
+    '-s',
+    'native_client/tools/gn/bin/linux/gn32.sha1'
+],
+    'pattern':
+         '.',
+    'name':
+         'gn_linux32'
+},
+    {
+    'action':
+         [
+    'python',
+    'tools/clang/scripts/update.py',
+    '--if-needed'
+],
+    'pattern':
+         '.',
+    'name':
+         'clang'
 },
     {
     'action':

@@ -25,12 +25,13 @@ public:
     */
     virtual uint16_t mapUnit16(uint16_t x) = 0;
 
+    SK_DEFINE_FLATTENABLE_TYPE(SkUnitMapper)
+
 protected:
-    SkUnitMapper(SkFlattenableReadBuffer& rb) : SkFlattenable(rb) {}
+    SkUnitMapper(SkReadBuffer& rb) : SkFlattenable(rb) {}
 
 private:
     typedef SkFlattenable INHERITED;
 };
 
 #endif
-

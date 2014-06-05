@@ -14,11 +14,10 @@
 #include "crypto/p224_spake.h"
 #include "remoting/protocol/authenticator.h"
 
-namespace crypto {
-class RSAPrivateKey;
-}  // namespace crypto
-
 namespace remoting {
+
+class RsaKeyPair;
+
 namespace protocol {
 
 class V2Authenticator : public Authenticator {
@@ -31,7 +30,7 @@ class V2Authenticator : public Authenticator {
 
   static scoped_ptr<Authenticator> CreateForHost(
       const std::string& local_cert,
-      const crypto::RSAPrivateKey& local_private_key,
+      scoped_refptr<RsaKeyPair> key_pair,
       const std::string& shared_secret,
       State initial_state);
 
@@ -39,8 +38,10 @@ class V2Authenticator : public Authenticator {
 
   // Authenticator interface.
   virtual State state() const OVERRIDE;
+  virtual bool started() const OVERRIDE;
   virtual RejectionReason rejection_reason() const OVERRIDE;
-  virtual void ProcessMessage(const buzz::XmlElement* message) OVERRIDE;
+  virtual void ProcessMessage(const buzz::XmlElement* message,
+                              const base::Closure& resume_callback) OVERRIDE;
   virtual scoped_ptr<buzz::XmlElement> GetNextMessage() OVERRIDE;
   virtual scoped_ptr<ChannelAuthenticator>
       CreateChannelAuthenticator() const OVERRIDE;
@@ -52,11 +53,13 @@ class V2Authenticator : public Authenticator {
                   const std::string& shared_secret,
                   State initial_state);
 
+  virtual void ProcessMessageInternal(const buzz::XmlElement* message);
+
   bool is_host_side() const;
 
   // Used only for host authenticators.
   std::string local_cert_;
-  scoped_ptr<crypto::RSAPrivateKey> local_private_key_;
+  scoped_refptr<RsaKeyPair> local_key_pair_;
   bool certificate_sent_;
 
   // Used only for client authenticators.
@@ -65,6 +68,7 @@ class V2Authenticator : public Authenticator {
   // Used for both host and client authenticators.
   crypto::P224EncryptedKeyExchange key_exchange_impl_;
   State state_;
+  bool started_;
   RejectionReason rejection_reason_;
   std::queue<std::string> pending_messages_;
   std::string auth_key_;

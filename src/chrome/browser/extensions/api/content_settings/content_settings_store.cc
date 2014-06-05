@@ -11,13 +11,13 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
-#include "chrome/browser/extensions/api/content_settings/content_settings_api_constants.h"
-#include "chrome/browser/extensions/api/content_settings/content_settings_helpers.h"
 #include "chrome/browser/content_settings/content_settings_origin_identifier_value_map.h"
 #include "chrome/browser/content_settings/content_settings_rule.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
+#include "chrome/browser/extensions/api/content_settings/content_settings_api_constants.h"
+#include "chrome/browser/extensions/api/content_settings/content_settings_helpers.h"
 #include "content/public/browser/browser_thread.h"
 
 using content::BrowserThread;
@@ -105,7 +105,7 @@ void ContentSettingsStore::SetExtensionContentSetting(
       map->DeleteValue(primary_pattern, secondary_pattern, type, identifier);
     } else {
       map->SetValue(primary_pattern, secondary_pattern, type, identifier,
-                    base::Value::CreateIntegerValue(setting));
+                    new base::FundamentalValue(setting));
     }
   }
 
@@ -123,15 +123,16 @@ void ContentSettingsStore::RegisterExtension(
     bool is_enabled) {
   base::AutoLock lock(lock_);
   ExtensionEntryMap::iterator i = FindEntry(ext_id);
+  ExtensionEntry* entry;
   if (i != entries_.end()) {
-    delete i->second;
-    entries_.erase(i);
+    entry = i->second;
+  } else {
+    entry = new ExtensionEntry;
+    entries_.insert(std::make_pair(install_time, entry));
   }
 
-  ExtensionEntry* entry = new ExtensionEntry;
   entry->id = ext_id;
   entry->enabled = is_enabled;
-  entries_.insert(std::make_pair(install_time, entry));
 }
 
 void ContentSettingsStore::UnregisterExtension(
@@ -285,7 +286,7 @@ void ContentSettingsStore::SetExtensionContentSettingFromList(
     ExtensionPrefsScope scope) {
   for (base::ListValue::const_iterator it = list->begin();
        it != list->end(); ++it) {
-    if ((*it)->GetType() != Value::TYPE_DICTIONARY) {
+    if ((*it)->GetType() != base::Value::TYPE_DICTIONARY) {
       NOTREACHED();
       continue;
     }
@@ -349,7 +350,7 @@ void ContentSettingsStore::NotifyOfContentSettingChanged(
 
 bool ContentSettingsStore::OnCorrectThread() {
   // If there is no UI thread, we're most likely in a unit test.
-  return !BrowserThread::IsWellKnownThread(BrowserThread::UI) ||
+  return !BrowserThread::IsThreadInitialized(BrowserThread::UI) ||
          BrowserThread::CurrentlyOn(BrowserThread::UI);
 }
 

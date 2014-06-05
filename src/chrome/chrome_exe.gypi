@@ -6,31 +6,62 @@
   'targets': [
     {
       'target_name': 'chrome',
+      'type': 'none',
+      'dependencies': [ 'chrome_initial', ],
+      'conditions': [
+        ['OS == "win"', {
+          'actions': [
+            {
+              'variables': {
+                'reorder_py_path': '<(DEPTH)/build/win/reorder-imports.py',
+                # See comment in chrome_dll.gypi in the hardlink_to_output
+                # target for why this cannot be 'initial' like the DLL.
+                'exe_input_path':'$(OutDir)\\initialexe',
+                'exe_output_path':'<(PRODUCT_DIR)',
+              },
+              'action_name': 'reorder_imports',
+              'inputs': [
+                '<(reorder_py_path)',
+                '$(OutDir)\\initialexe\\chrome.exe',
+              ],
+              'outputs': [
+                '<(PRODUCT_DIR)\\chrome.exe',
+                '<(PRODUCT_DIR)\\chrome.exe.pdb',
+              ],
+              'action': [
+                'python',
+                '<(reorder_py_path)',
+                '-i', '<(exe_input_path)',
+                '-o', '<(exe_output_path)',
+                '-a', '<(target_arch)',
+              ],
+              'message': 'Reordering Imports',
+            },
+          ],
+        }],
+      ],
+    },
+    {
+      'target_name': 'chrome_initial',
       'type': 'executable',
+      # Name the exe chrome.exe, not chrome_initial.exe.
+      'product_name': 'chrome',
       'mac_bundle': 1,
       'variables': {
         'use_system_xdg_utils%': 0,
         'enable_wexit_time_destructors': 1,
       },
       'sources': [
-        'app/breakpad_field_trial_win.cc',
-        'app/breakpad_field_trial_win.h',
-        'app/breakpad_win.cc',
-        'app/breakpad_win.h',
         'app/chrome_exe_main_aura.cc',
-        'app/chrome_exe_main_gtk.cc',
         'app/chrome_exe_main_mac.cc',
         'app/chrome_exe_main_win.cc',
         'app/chrome_exe_resource.h',
         'app/client_util.cc',
         'app/client_util.h',
-        'app/crash_analysis_win.cc',
-        'app/crash_analysis_win.h',
-        'app/hard_error_handler_win.cc',
-        'app/hard_error_handler_win.h',
-        'app/metro_driver_win.cc',
-        'app/metro_driver_win.h',
-        '../content/app/startup_helper_win.cc',
+        'app/signature_validator_win.cc',
+        'app/signature_validator_win.h',
+        '<(DEPTH)/content/app/startup_helper_win.cc',
+        '<(DEPTH)/content/public/common/content_switches.cc',
       ],
       'mac_bundle_resources': [
         'app/app-Info.plist',
@@ -46,13 +77,6 @@
         'INFOPLIST_FILE': 'app/app-Info.plist',
       },
       'conditions': [
-        ['component == "shared_library"', {
-          'msvs_settings': {
-            'VCManifestTool': {
-              'EmbedManifest': 'false',
-            },
-          },
-        }],
         ['order_profiling!=0 and (chromeos==1 or OS=="linux")', {
           'dependencies' : [
             '../tools/cygprofile/cygprofile.gyp:cygprofile',
@@ -65,6 +89,15 @@
                 '-Wl,-section-ordering-file=<(order_text_section)' ],
             }],
           ]
+        }],
+        ['OS == "win"', {
+          'sources!': [
+            # We still want the _win entry point for sandbox, etc.
+            'app/chrome_exe_main_aura.cc',
+          ],
+          'dependencies': [
+            '../ui/gfx/gfx.gyp:gfx',
+          ],
         }],
         ['OS == "android"', {
           # Don't put the 'chrome' target in 'all' on android
@@ -108,7 +141,7 @@
             },
           ],
           'conditions': [
-            ['linux_use_tcmalloc==1', {
+            ['use_allocator!="none"', {
                 'dependencies': [
                   '<(allocator_target)',
                 ],
@@ -140,27 +173,11 @@
                 },
               ],
             }],
-            ['toolkit_uses_gtk == 1', {
+            # x11 build. Needed for chrome_main.cc initialization of libraries.
+            ['use_x11==1', {
               'dependencies': [
-                # On Linux, link the dependencies (libraries) that make up actual
-                # Chromium functionality directly into the executable.
-                '<@(chromium_dependencies)',
-                # Needed for chrome_main.cc initialization of libraries.
-                '../build/linux/system.gyp:gtk',
-                # Needed to use the master_preferences functions
-                'installer_util',
-              ],
-            }, { # else toolkit_uses_gtk == 1
-              'dependencies': [
-                # On Linux, link the dependencies (libraries) that make up actual
-                # Chromium functionality directly into the executable.
-                '<@(chromium_dependencies)',
-                # Needed for chrome_main.cc initialization of libraries.
                 '../build/linux/system.gyp:x11',
-                '../build/linux/system.gyp:pangocairo',
                 '../build/linux/system.gyp:xext',
-                # Needed to use the master_preferences functions
-                'installer_util',
               ],
             }],
           ],
@@ -170,6 +187,17 @@
             'app/chrome_main_delegate.cc',
             'app/chrome_main_delegate.h',
           ],
+          'dependencies': [
+            # On Linux, link the dependencies (libraries) that make up actual
+            # Chromium functionality directly into the executable.
+            '<@(chromium_browser_dependencies)',
+            '<@(chromium_child_dependencies)',
+            '../content/content.gyp:content_app_both',
+            # Needed for chrome_main.cc initialization of libraries.
+            '../build/linux/system.gyp:pangocairo',
+            # Needed to use the master_preferences functions
+            'installer_util',
+          ],
         }],
         ['OS=="mac"', {
           # 'branding' is a variable defined in common.gypi
@@ -177,14 +205,14 @@
           'conditions': [
             ['branding=="Chrome"', {
               'mac_bundle_resources': [
-                'app/theme/google_chrome/app.icns',
-                'app/theme/google_chrome/document.icns',
+                'app/theme/google_chrome/mac/app.icns',
+                'app/theme/google_chrome/mac/document.icns',
                 'browser/ui/cocoa/applescript/scripting.sdef',
               ],
             }, {  # else: 'branding!="Chrome"
               'mac_bundle_resources': [
-                'app/theme/chromium/app.icns',
-                'app/theme/chromium/document.icns',
+                'app/theme/chromium/mac/app.icns',
+                'app/theme/chromium/mac/document.icns',
                 'browser/ui/cocoa/applescript/scripting.sdef',
               ],
             }],
@@ -250,10 +278,10 @@
             'CHROMIUM_SHORT_NAME': '<(branding)',
           },
           'dependencies': [
+            '../components/components.gyp:chrome_manifest_bundle',
             'helper_app',
             'infoplist_strings_tool',
             'interpose_dependency_shim',
-            'chrome_manifest_bundle',
             # On Mac, make sure we've built chrome_dll, which contains all of
             # the library code with Chromium functionality.
             'chrome_dll',
@@ -418,6 +446,7 @@
             }], # internal_pdf
           ],
           'dependencies': [
+            '../components/components.gyp:startup_metric_utils',
             'chrome_resources.gyp:packed_extra_resources',
             'chrome_resources.gyp:packed_resources',
             # Copy Flash Player files to PRODUCT_DIR if applicable. Let the .gyp
@@ -427,8 +456,11 @@
             # Copy CDM files to PRODUCT_DIR if applicable. Let the .gyp
             # file decide what to do on a per-OS basis; on Mac, internal plugins
             # go inside the framework, so this dependency is in chrome_dll.gypi.
-            '../third_party/widevine/cdm/widevine_cdm.gyp:widevinecdmplugin',
+            '../third_party/widevine/cdm/widevine_cdm.gyp:widevinecdmadapter',
           ],
+        }],
+        ['chrome_multiple_dll', {
+          'defines': ['CHROME_MULTIPLE_DLL'],
         }],
         ['OS=="mac" and asan==1', {
           'xcode_settings': {
@@ -443,42 +475,47 @@
                 'linux_installer_configs',
               ],
             }],
-            ['selinux==0', {
-              'dependencies': [
-                '../sandbox/sandbox.gyp:sandbox',
-              ],
-            }],
             # For now, do not build nacl_helper when disable_nacl=1
-            # or when arm is enabled
             # http://code.google.com/p/gyp/issues/detail?id=239
-            ['disable_nacl==0 and target_arch!="arm" and coverage==0', {
+            ['disable_nacl==0', {
               'dependencies': [
                 '../native_client/src/trusted/service_runtime/linux/nacl_bootstrap.gyp:nacl_helper_bootstrap',
-                'nacl_helper',
+                '../components/nacl.gyp:nacl_helper',
                 ],
             }],
+          ],
+          'dependencies': [
+            '../sandbox/sandbox.gyp:sandbox',
           ],
         }],
         ['OS=="win"', {
           'dependencies': [
             'chrome_dll',
             'chrome_nacl_win64',
+            'chrome_process_finder',
             'chrome_version_resources',
             'installer_util',
             'image_pre_reader',
             '../base/base.gyp:base',
             '../breakpad/breakpad.gyp:breakpad_handler',
             '../breakpad/breakpad.gyp:breakpad_sender',
+            '../chrome_elf/chrome_elf.gyp:chrome_elf',
+            '../components/components.gyp:breakpad_component',
+            '../components/components.gyp:policy',
             '../sandbox/sandbox.gyp:sandbox',
-            'app/policy/cloud_policy_codegen.gyp:policy',
           ],
           'sources': [
+            'app/chrome_breakpad_client.cc',
+            'app/chrome_breakpad_client.h',
             'app/chrome_exe.rc',
+            'common/crash_keys.cc',
+            'common/crash_keys.h',
             '<(SHARED_INTERMEDIATE_DIR)/chrome_version/chrome_exe_version.rc',
           ],
           'msvs_settings': {
             'VCLinkerTool': {
               'ImportLibrary': '$(OutDir)\\lib\\chrome_exe.lib',
+              'OutputFile': '$(OutDir)\\initialexe\\chrome.exe',
               'DelayLoadDLLs': [
                 'dbghelp.dll',
                 'dwmapi.dll',
@@ -486,11 +523,15 @@
                 'ole32.dll',
                 'oleaut32.dll',
               ],
+              'AdditionalDependencies': [ 'wintrust.lib' ],
               # Set /SUBSYSTEM:WINDOWS for chrome.exe itself.
               'SubSystem': '2',
             },
             'VCManifestTool': {
-              'AdditionalManifestFiles': '$(ProjectDir)\\app\\chrome.exe.manifest',
+              'AdditionalManifestFiles': [
+                '$(ProjectDir)\\app\\chrome.exe.manifest',
+                '<(SHARED_INTERMEDIATE_DIR)/chrome/app/version_assembly/version_assembly.manifest',
+              ],
             },
           },
           'actions': [
@@ -502,8 +543,20 @@
               'outputs': [
                   '<(PRODUCT_DIR)/First Run',
               ],
-              'action': ['cp', '-f', '<@(_inputs)', '<@(_outputs)'],
+              'action': ['python', '../build/cp.py', '<@(_inputs)', '<@(_outputs)'],
               'message': 'Copy first run complete sentinel file',
+            },
+            {
+              'action_name': 'chrome_exe_manifest',
+              'includes': [
+                  'app/version_assembly/chrome_exe_manifest_action.gypi',
+              ],
+            },
+            {
+              'action_name': 'version_assembly_manifest',
+              'includes': [
+                  'app/version_assembly/version_assembly_manifest_action.gypi',
+              ],
             },
           ],
         }, {  # 'OS!="win"
@@ -511,12 +564,20 @@
             'app/client_util.cc',
           ],
         }],
+        ['OS=="win" and target_arch=="ia32"', {
+          'sources': [
+            # TODO(scottmg): This is a workaround for
+            # http://crbug.com/348525 that affects VS2013 before Update 2.
+            # This should be removed once Update 2 is released.
+            '../build/win/ftol3.obj',
+          ],
+        }],
         ['OS=="win" and component=="shared_library"', {
           'defines': ['COMPILE_CONTENT_STATICALLY'],
         }],
         ['OS=="win"', {
           'dependencies': [
-            '../win8/metro_driver/metro_driver.gyp:*',
+            '../win8/metro_driver/metro_driver.gyp:metro_driver',
             '../win8/delegate_execute/delegate_execute.gyp:*',
           ],
         }],
@@ -539,36 +600,36 @@
         },
       ],
       'conditions': [
-        ['disable_nacl!=1', {
+        ['disable_nacl!=1 and target_arch=="ia32"', {
           'targets': [
             {
               'target_name': 'chrome_nacl_win64',
               'type': 'executable',
               'product_name': 'nacl64',
               'sources': [
-                'app/breakpad_win.cc',
-                'app/crash_analysis_win.cc',
-                'app/hard_error_handler_win.cc',
+                'app/chrome_breakpad_client.cc',
+                'common/crash_keys.cc',
                 'nacl/nacl_exe_win_64.cc',
                 '../content/app/startup_helper_win.cc',
-                '../content/common/debug_flags.cc',  # Needed for sandbox_policy.cc
                 '../content/common/sandbox_init_win.cc',
-                '../content/common/sandbox_policy.cc',
+                '../content/common/sandbox_win.cc',
                 '../content/public/common/content_switches.cc',
+                '../content/public/common/sandboxed_process_launcher_delegate.cc',
                 '<(SHARED_INTERMEDIATE_DIR)/chrome_version/nacl64_exe_version.rc',
               ],
               'dependencies': [
-                'app/policy/cloud_policy_codegen.gyp:policy_win64',
                 'chrome_version_resources',
                 'installer_util_nacl_win64',
-                'nacl_win64',
-                '../breakpad/breakpad.gyp:breakpad_handler_win64',
-                '../breakpad/breakpad.gyp:breakpad_sender_win64',
                 '../base/base.gyp:base_i18n_nacl_win64',
-                '../base/base.gyp:base_nacl_win64',
+                '../base/base.gyp:base_win64',
                 '../base/base.gyp:base_static_win64',
                 '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations_win64',
+                '../breakpad/breakpad.gyp:breakpad_handler_win64',
+                '../breakpad/breakpad.gyp:breakpad_sender_win64',
+                '../components/components.gyp:breakpad_win64',
                 '../chrome/common_constants.gyp:common_constants_win64',
+                '../components/components.gyp:policy_win64',
+                '../components/nacl.gyp:nacl_win64',
                 '../crypto/crypto.gyp:crypto_nacl_win64',
                 '../ipc/ipc.gyp:ipc_win64',
                 '../sandbox/sandbox.gyp:sandbox_win64',
@@ -602,6 +663,31 @@
             },
           ],
         }],
+      ],
+    }],
+    ['test_isolation_mode != "noop"', {
+      'targets': [
+        {
+          'target_name': 'chrome_run',
+          'type': 'none',
+          'dependencies': [
+            'chrome',
+          ],
+          'includes': [
+            '../build/isolate.gypi',
+            'chrome.isolate',
+          ],
+          'sources': [
+            'chrome.isolate',
+          ],
+          'conditions': [
+            ['OS=="win"', {
+              'dependencies': [
+                'chrome_nacl_win64',
+              ],
+            }],
+          ],
+        },
       ],
     }],
   ],

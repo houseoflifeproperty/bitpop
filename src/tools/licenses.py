@@ -49,12 +49,13 @@ PRUNE_PATHS = set([
     os.path.join('third_party','perl'),
     os.path.join('third_party','psyco_win32'),
     os.path.join('third_party','pylib'),
-    os.path.join('third_party','python_26'),
     os.path.join('third_party','pywebsocket'),
     os.path.join('third_party','syzygy'),
+    os.path.join('tools','gn'),
 
     # Chromium code in third_party.
     os.path.join('third_party','fuzzymatch'),
+    os.path.join('tools', 'swarming_client'),
 
     # Stuff pulled in from chrome-internal for official builds/tools.
     os.path.join('third_party', 'clear_cache'),
@@ -71,21 +72,18 @@ PRUNE_PATHS = set([
 ])
 
 # Directories we don't scan through.
-PRUNE_DIRS = ('.svn', '.git',             # VCS metadata
-              'out', 'Debug', 'Release',  # build files
-              'layout_tests')             # lots of subdirs
+VCS_METADATA_DIRS = ('.svn', '.git')
+PRUNE_DIRS = (VCS_METADATA_DIRS +
+              ('out', 'Debug', 'Release',  # build files
+               'layout_tests'))            # lots of subdirs
 
 ADDITIONAL_PATHS = (
     os.path.join('breakpad'),
     os.path.join('chrome', 'common', 'extensions', 'docs', 'examples'),
     os.path.join('chrome', 'test', 'chromeos', 'autotest'),
     os.path.join('chrome', 'test', 'data'),
-    os.path.join('googleurl'),
     os.path.join('native_client'),
-    os.path.join('native_client_sdk'),
     os.path.join('net', 'tools', 'spdyshark'),
-    os.path.join('ppapi'),
-    os.path.join('sandbox', 'linux', 'seccomp-legacy'),
     os.path.join('sdch', 'open-vcdiff'),
     os.path.join('testing', 'gmock'),
     os.path.join('testing', 'gtest'),
@@ -95,6 +93,7 @@ ADDITIONAL_PATHS = (
     os.path.join('tools', 'grit'),
     os.path.join('tools', 'gyp'),
     os.path.join('tools', 'page_cycler', 'acid3'),
+    os.path.join('url', 'third_party', 'mozilla'),
     os.path.join('v8'),
     # Fake directory so we can include the strongtalk license.
     os.path.join('v8', 'strongtalk'),
@@ -105,20 +104,9 @@ ADDITIONAL_PATHS = (
 # can't provide a README.chromium.  Please prefer a README.chromium
 # wherever possible.
 SPECIAL_CASES = {
-    os.path.join('googleurl'): {
-        "Name": "google-url",
-        "URL": "http://code.google.com/p/google-url/",
-        "License": "BSD and MPL 1.1/GPL 2.0/LGPL 2.1",
-        "License File": "LICENSE.txt",
-    },
     os.path.join('native_client'): {
         "Name": "native client",
         "URL": "http://code.google.com/p/nativeclient",
-        "License": "BSD",
-    },
-    os.path.join('sandbox', 'linux', 'seccomp-legacy'): {
-        "Name": "seccompsandbox",
-        "URL": "http://code.google.com/p/seccompsandbox",
         "License": "BSD",
     },
     os.path.join('sdch', 'open-vcdiff'): {
@@ -150,12 +138,6 @@ SPECIAL_CASES = {
         "License": "BSD",
         # Absolute path here is resolved as relative to the source root.
         "License File": "/LICENSE.chromium_os",
-    },
-    os.path.join('third_party', 'GTM'): {
-        "Name": "Google Toolbox for Mac",
-        "URL": "http://code.google.com/p/google-toolbox-for-mac/",
-        "License": "Apache 2.0",
-        "License File": "COPYING",
     },
     os.path.join('third_party', 'lss'): {
         "Name": "linux-syscall-support",
@@ -328,9 +310,12 @@ def ParseDir(path, root, require_license_file=True):
 def ContainsFiles(path, root):
     """Determines whether any files exist in a directory or in any of its
     subdirectories."""
-    for _, _, files in os.walk(os.path.join(root, path)):
+    for _, dirs, files in os.walk(os.path.join(root, path)):
         if files:
             return True
+        for vcs_metadata in VCS_METADATA_DIRS:
+            if vcs_metadata in dirs:
+                dirs.remove(vcs_metadata)
     return False
 
 
@@ -342,7 +327,7 @@ def FilterDirsWithFiles(dirs_list, root):
 
 def FindThirdPartyDirs(prune_paths, root):
     """Find all third_party directories underneath the source root."""
-    third_party_dirs = []
+    third_party_dirs = set()
     for path, dirs, files in os.walk(root):
         path = path[len(root)+1:]  # Pretty up the path.
 
@@ -362,7 +347,7 @@ def FindThirdPartyDirs(prune_paths, root):
             for dir in dirs:
                 dirpath = os.path.join(path, dir)
                 if dirpath not in prune_paths:
-                    third_party_dirs.append(dirpath)
+                    third_party_dirs.add(dirpath)
 
             # Don't recurse into any subdirs from here.
             dirs[:] = []
@@ -375,7 +360,7 @@ def FindThirdPartyDirs(prune_paths, root):
 
     for dir in ADDITIONAL_PATHS:
         if dir not in prune_paths:
-            third_party_dirs.append(dir)
+            third_party_dirs.add(dir)
 
     return third_party_dirs
 
@@ -401,8 +386,12 @@ def ScanThirdPartyDirs(root=None):
     return len(errors) == 0
 
 
-def GenerateCredits(root=None):
-    """Generate about:credits, dumping the result to stdout."""
+def GenerateCredits():
+    """Generate about:credits."""
+
+    if len(sys.argv) not in (2, 3):
+      print 'usage: licenses.py credits [output_file]'
+      return False
 
     def EvaluateTemplate(template, env, escape=True):
         """Expand a template with variables like {{foo}} using a
@@ -413,8 +402,7 @@ def GenerateCredits(root=None):
             template = template.replace('{{%s}}' % key, val)
         return template
 
-    if root is None:
-      root = os.getcwd()
+    root = os.path.join(os.path.dirname(__file__), '..')
     third_party_dirs = FindThirdPartyDirs(PRUNE_PATHS, root)
 
     entry_template = open(os.path.join(root, 'chrome', 'browser', 'resources',
@@ -424,12 +412,9 @@ def GenerateCredits(root=None):
         try:
             metadata = ParseDir(path, root)
         except LicenseError:
-            print >>sys.stderr, ("WARNING: licensing info for " + path +
-                                 " is incomplete, skipping.")
+            # TODO(phajdan.jr): Convert to fatal error (http://crbug.com/39240).
             continue
         if metadata['License File'] == NOT_SHIPPED:
-            print >>sys.stderr, ("Path " + path + " marked as " + NOT_SHIPPED +
-                                 ", skipping.")
             continue
         env = {
             'name': metadata['Name'],
@@ -444,9 +429,18 @@ def GenerateCredits(root=None):
 
     file_template = open(os.path.join(root, 'chrome', 'browser', 'resources',
                                       'about_credits.tmpl'), 'rb').read()
-    print "<!-- Generated by licenses.py; do not edit. -->"
-    print EvaluateTemplate(file_template, {'entries': '\n'.join(entries)},
-                           escape=False)
+    template_contents = "<!-- Generated by licenses.py; do not edit. -->"
+    template_contents += EvaluateTemplate(file_template,
+                                          {'entries': '\n'.join(entries)},
+                                          escape=False)
+
+    if len(sys.argv) == 3:
+      with open(sys.argv[2], 'w') as output_file:
+        output_file.write(template_contents)
+    elif len(sys.argv) == 2:
+      print template_contents
+
+    return True
 
 
 def main():

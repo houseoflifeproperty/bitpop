@@ -4,7 +4,7 @@
 
 #include "ui/aura/client/screen_position_client.h"
 
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_property.h"
 
 DECLARE_WINDOW_PROPERTY_TYPE(aura::client::ScreenPositionClient*)
@@ -16,13 +16,17 @@ DEFINE_LOCAL_WINDOW_PROPERTY_KEY(ScreenPositionClient*,
                                  kScreenPositionClientKey,
                                  NULL);
 
-void SetScreenPositionClient(RootWindow* window,
+void SetScreenPositionClient(Window* root_window,
                              ScreenPositionClient* client) {
-  window->SetProperty(kScreenPositionClientKey, client);
+  DCHECK_EQ(root_window->GetRootWindow(), root_window);
+  root_window->SetProperty(kScreenPositionClientKey, client);
 }
 
-ScreenPositionClient* GetScreenPositionClient(const RootWindow* window) {
-  return window ? window->GetProperty(kScreenPositionClientKey) : NULL;
+ScreenPositionClient* GetScreenPositionClient(const Window* root_window) {
+  if (root_window)
+    DCHECK_EQ(root_window->GetRootWindow(), root_window);
+  return root_window ?
+      root_window->GetProperty(kScreenPositionClientKey) : NULL;
 }
 
 }  // namespace client

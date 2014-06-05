@@ -5,12 +5,13 @@
 #include "chrome/browser/ui/webui/print_preview/sticky_settings.h"
 
 #include "base/command_line.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
+#include "base/prefs/pref_service.h"
 #include "base/values.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "printing/page_size_margins.h"
 
 namespace printing {
@@ -26,14 +27,14 @@ void StickySettings::StoreAppState(const std::string& data) {
   printer_app_state_.reset(new std::string(data));
 }
 
-void StickySettings::StoreSavePath(const FilePath& path) {
-  save_path_.reset(new FilePath(path));
+void StickySettings::StoreSavePath(const base::FilePath& path) {
+  save_path_.reset(new base::FilePath(path));
 }
 
 void StickySettings::SaveInPrefs(PrefService* prefs) {
   DCHECK(prefs);
   if (prefs) {
-    scoped_ptr<DictionaryValue> value(new DictionaryValue);
+    scoped_ptr<base::DictionaryValue> value(new base::DictionaryValue);
     if (save_path_.get())
       value->SetString(printing::kSettingSavePath, save_path_->value());
     if (printer_app_state_.get())
@@ -46,28 +47,30 @@ void StickySettings::SaveInPrefs(PrefService* prefs) {
 void StickySettings::RestoreFromPrefs(PrefService* prefs) {
   DCHECK(prefs);
   if (prefs) {
-    const DictionaryValue* value =
+    const base::DictionaryValue* value =
         prefs->GetDictionary(prefs::kPrintPreviewStickySettings);
 
-    FilePath::StringType save_path;
+    base::FilePath::StringType save_path;
     if (value->GetString(printing::kSettingSavePath, &save_path))
-      save_path_.reset(new FilePath(save_path));
+      save_path_.reset(new base::FilePath(save_path));
     std::string buffer;
     if (value->GetString(printing::kSettingAppState, &buffer))
       printer_app_state_.reset(new std::string(buffer));
   }
 }
 
-void StickySettings::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterDictionaryPref(prefs::kPrintPreviewStickySettings,
-                                PrefService::UNSYNCABLE_PREF);
+void StickySettings::RegisterProfilePrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterDictionaryPref(
+      prefs::kPrintPreviewStickySettings,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 std::string* StickySettings::printer_app_state() {
   return printer_app_state_.get();
 }
 
-FilePath* StickySettings::save_path() {
+base::FilePath* StickySettings::save_path() {
   return save_path_.get();
 }
 

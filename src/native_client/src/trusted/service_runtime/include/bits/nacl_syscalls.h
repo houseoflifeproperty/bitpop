@@ -27,19 +27,22 @@
 #define NACL_sys_read                   12
 #define NACL_sys_write                  13
 #define NACL_sys_lseek                  14
-#define NACL_sys_ioctl                  15
+/* 15 used to be ioctl */
 #define NACL_sys_stat                   16
 #define NACL_sys_fstat                  17
 #define NACL_sys_chmod                  18
+#define NACL_sys_isatty                 19
 /* no fchmod emulation on windows */
 
-#define NACL_sys_sysbrk                 20
+#define NACL_sys_brk                    20
 #define NACL_sys_mmap                   21
 #define NACL_sys_munmap                 22
 
 #define NACL_sys_getdents               23
 
 #define NACL_sys_mprotect               24
+
+#define NACL_sys_list_mappings          25
 
 #define NACL_sys_exit                   30
 #define NACL_sys_getpid                 31
@@ -51,6 +54,12 @@
 #define NACL_sys_nanosleep              42
 #define NACL_sys_clock_getres           43
 #define NACL_sys_clock_gettime          44
+
+#define NACL_sys_mkdir                  45
+#define NACL_sys_rmdir                  46
+#define NACL_sys_chdir                  47
+#define NACL_sys_getcwd                 48
+#define NACL_sys_unlink                 49
 
 /* 50-58 previously used for multimedia syscalls */
 
@@ -96,11 +105,27 @@
 #define NACL_sys_test_crash             110
 
 /*
- * This syscall number is set aside for use in tests that add a
- * syscall that must coexist with the normal syscalls.
+ * These syscall numbers are set aside for use in tests that add
+ * syscalls that must coexist with the normal syscalls.
  */
 #define NACL_sys_test_syscall_1         111
+#define NACL_sys_test_syscall_2         112
 
-#define NACL_MAX_SYSCALLS               112
+#define NACL_sys_futex_wait_abs         120
+#define NACL_sys_futex_wake             121
+
+#define NACL_sys_pread                  130
+#define NACL_sys_pwrite                 131
+
+#define NACL_sys_truncate               140
+#define NACL_sys_lstat                  141
+#define NACL_sys_link                   142
+#define NACL_sys_rename                 143
+#define NACL_sys_symlink                144
+#define NACL_sys_access                 145
+#define NACL_sys_readlink               146
+#define NACL_sys_utimes                 147
+
+#define NACL_MAX_SYSCALLS               148
 
 #endif

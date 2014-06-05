@@ -29,7 +29,6 @@ option optimize_for = LITE_RUNTIME;
 option java_outer_classname = "AndroidService";
 
 
-import "client.proto";
 import "client_protocol.proto";
 import "java_client.proto";
 

@@ -9,7 +9,6 @@
 
 #include "SkGraphics.h"
 
-#include "Sk64.h"
 #include "SkBlitter.h"
 #include "SkCanvas.h"
 #include "SkFloat.h"
@@ -19,8 +18,8 @@
 #include "SkPath.h"
 #include "SkPathEffect.h"
 #include "SkPixelRef.h"
-#include "SkRandom.h"
 #include "SkRefCnt.h"
+#include "SkRTConf.h"
 #include "SkScalerContext.h"
 #include "SkShader.h"
 #include "SkStream.h"
@@ -52,7 +51,15 @@ void SkGraphics::GetVersion(int32_t* major, int32_t* minor, int32_t* patch) {
 #endif
 
 void SkGraphics::Init() {
-    SkFlattenable::InitializeFlattenables();
+#ifdef SK_DEVELOPER
+    skRTConfRegistry().possiblyDumpFile();
+    skRTConfRegistry().validate();
+    if (skRTConfRegistry().hasNonDefault()) {
+        SkDebugf("Non-default runtime configuration options:\n");
+        skRTConfRegistry().printNonDefault();
+    }
+#endif
+
 #ifdef BUILD_EMBOSS_TABLE
     SkEmbossMask_BuildTable();
 #endif
@@ -116,11 +123,13 @@ void SkGraphics::Init() {
              GetFontCacheLimit() >> 10);
 
 #endif
+
 }
 
 void SkGraphics::Term() {
     PurgeFontCache();
     SkPaint::Term();
+    SkXfermode::Term();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

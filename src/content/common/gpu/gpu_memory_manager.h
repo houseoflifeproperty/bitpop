@@ -5,49 +5,44 @@
 #ifndef CONTENT_COMMON_GPU_GPU_MEMORY_MANAGER_H_
 #define CONTENT_COMMON_GPU_GPU_MEMORY_MANAGER_H_
 
-#if defined(ENABLE_GPU)
-
-#include <set>
-#include <vector>
+#include <list>
+#include <map>
 
 #include "base/basictypes.h"
 #include "base/cancelable_callback.h"
+#include "base/containers/hash_tables.h"
 #include "base/gtest_prod_util.h"
-#include "base/hash_tables.h"
 #include "base/memory/weak_ptr.h"
 #include "content/common/content_export.h"
-#include "content/common/gpu/gpu_memory_allocation.h"
 #include "content/public/common/gpu_memory_stats.h"
+#include "gpu/command_buffer/common/gpu_memory_allocation.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
-#include "ui/gfx/size.h"
 
 namespace content {
+
 class GpuChannelManager;
 class GpuMemoryManagerClient;
-}
-
-#if defined(COMPILER_GCC)
-namespace BASE_HASH_NAMESPACE {
-template<>
-struct hash<content::GpuMemoryManagerClient*> {
-  size_t operator()(content::GpuMemoryManagerClient* ptr) const {
-    return hash<size_t>()(reinterpret_cast<size_t>(ptr));
-  }
-};
-} // namespace BASE_HASH_NAMESPACE
-#endif // COMPILER
-
-namespace content {
-class GpuMemoryManagerClient;
+class GpuMemoryManagerClientState;
 class GpuMemoryTrackingGroup;
 
 class CONTENT_EXPORT GpuMemoryManager :
     public base::SupportsWeakPtr<GpuMemoryManager> {
  public:
+#if defined(OS_ANDROID) || (defined(OS_LINUX) && !defined(OS_CHROMEOS))
+  enum { kDefaultMaxSurfacesWithFrontbufferSoftLimit = 1 };
+#else
   enum { kDefaultMaxSurfacesWithFrontbufferSoftLimit = 8 };
+#endif
+  enum ScheduleManageTime {
+    // Add a call to Manage to the thread's message loop immediately.
+    kScheduleManageNow,
+    // Add a Manage call to the thread's message loop for execution 1/60th of
+    // of a second from now.
+    kScheduleManageLater,
+  };
 
   GpuMemoryManager(GpuChannelManager* channel_manager,
-                   size_t max_surfaces_with_frontbuffer_soft_limit);
+                   uint64 max_surfaces_with_frontbuffer_soft_limit);
   ~GpuMemoryManager();
 
   // Schedule a Manage() call. If immediate is true, we PostTask without delay.
@@ -55,37 +50,31 @@ class CONTENT_EXPORT GpuMemoryManager :
   // delayed calls to "queue" up. This way, we do not spam clients in certain
   // lower priority situations. An immediate schedule manage will cancel any
   // queued delayed manage.
-  void ScheduleManage(bool immediate);
+  void ScheduleManage(ScheduleManageTime schedule_manage_time);
 
   // Retrieve GPU Resource consumption statistics for the task manager
   void GetVideoMemoryUsageStats(
-      content::GPUVideoMemoryUsageStats& video_memory_usage_stats) const;
-  void SetWindowCount(uint32 count);
+      content::GPUVideoMemoryUsageStats* video_memory_usage_stats) const;
 
-  // Add and remove clients
-  void AddClient(GpuMemoryManagerClient* client,
-                 bool has_surface,
-                 bool visible,
-                 base::TimeTicks last_used_time);
-  void RemoveClient(GpuMemoryManagerClient* client);
-  void SetClientVisible(GpuMemoryManagerClient* client, bool visible);
-  void SetClientManagedMemoryStats(GpuMemoryManagerClient* client,
-                                   const GpuManagedMemoryStats& stats);
+  GpuMemoryManagerClientState* CreateClientState(
+      GpuMemoryManagerClient* client, bool has_surface, bool visible);
 
-  // Add and remove structures to track context groups' memory consumption
-  void AddTrackingGroup(GpuMemoryTrackingGroup* tracking_group);
-  void RemoveTrackingGroup(GpuMemoryTrackingGroup* tracking_group);
+  GpuMemoryTrackingGroup* CreateTrackingGroup(
+      base::ProcessId pid, gpu::gles2::MemoryTracker* memory_tracker);
 
-  // Track a change in memory allocated by any context
-  void TrackMemoryAllocatedChange(
-      size_t old_size,
-      size_t new_size,
-      gpu::gles2::MemoryTracker::Pool tracking_pool);
+  uint64 GetClientMemoryUsage(const GpuMemoryManagerClient* client) const;
+
+  // The maximum and minimum amount of memory that a client may be assigned.
+  uint64 GetMaximumClientAllocation() const;
+  uint64 GetMinimumClientAllocation() const {
+    return bytes_minimum_per_client_;
+  }
 
  private:
   friend class GpuMemoryManagerTest;
-  FRIEND_TEST_ALL_PREFIXES(GpuMemoryManagerTest,
-                           ComparatorTests);
+  friend class GpuMemoryTrackingGroup;
+  friend class GpuMemoryManagerClientState;
+
   FRIEND_TEST_ALL_PREFIXES(GpuMemoryManagerTest,
                            TestManageBasicFunctionality);
   FRIEND_TEST_ALL_PREFIXES(GpuMemoryManagerTest,
@@ -109,133 +98,159 @@ class CONTENT_EXPORT GpuMemoryManager :
   FRIEND_TEST_ALL_PREFIXES(GpuMemoryManagerTest,
                            TestManagedUsageTracking);
   FRIEND_TEST_ALL_PREFIXES(GpuMemoryManagerTest,
-                           TestBackgroundCutoff);
+                           BackgroundMru);
   FRIEND_TEST_ALL_PREFIXES(GpuMemoryManagerTest,
-                           TestBackgroundMru);
+                           AllowNonvisibleMemory);
+  FRIEND_TEST_ALL_PREFIXES(GpuMemoryManagerTest,
+                           BackgroundDiscardPersistent);
+  FRIEND_TEST_ALL_PREFIXES(GpuMemoryManagerTest,
+                           UnmanagedTracking);
+  FRIEND_TEST_ALL_PREFIXES(GpuMemoryManagerTest,
+                           DefaultAllocation);
 
-  struct ClientState {
-    ClientState(GpuMemoryManagerClient* client,
-                bool has_surface,
-                bool visible,
-                base::TimeTicks last_used_time);
-    // The client to send allocations to.
-    GpuMemoryManagerClient* client;
+  typedef std::map<gpu::gles2::MemoryTracker*, GpuMemoryTrackingGroup*>
+      TrackingGroupMap;
 
-    // Offscreen commandbuffers will not have a surface.
-    bool has_surface;
-
-    // The last used time is determined by the last time that visibility
-    // was changed.
-    bool visible;
-    base::TimeTicks last_used_time;
-
-    // Statistics about memory usage.
-    GpuManagedMemoryStats managed_memory_stats;
-
-    // Set to disable allocating a frontbuffer or to disable allocations
-    // for clients that don't have surfaces.
-    bool hibernated;
-  };
-
-  class CONTENT_EXPORT ClientsComparator {
-   public:
-    bool operator()(ClientState* lhs,
-                    ClientState* rhs);
-  };
-
-  typedef std::map<GpuMemoryManagerClient*, ClientState*> ClientMap;
-
-  typedef std::vector<ClientState*> ClientStateVector;
+  typedef std::list<GpuMemoryManagerClientState*> ClientStateList;
 
   void Manage();
-  void SetClientsHibernatedState(const ClientStateVector& clients) const;
-  size_t GetVisibleClientAllocation(const ClientStateVector& clients) const;
-  size_t GetCurrentBackgroundedAvailableGpuMemory() const;
+  void SetClientsHibernatedState() const;
+  void AssignSurfacesAllocations();
+  void AssignNonSurfacesAllocations();
+
+  // Math helper function to compute the maximum value of cap such that
+  // sum_i min(bytes[i], cap) <= bytes_sum_limit
+  static uint64 ComputeCap(std::vector<uint64> bytes, uint64 bytes_sum_limit);
+
+  // Compute the allocation for clients when visible and not visible.
+  void ComputeVisibleSurfacesAllocations();
+  void DistributeRemainingMemoryToVisibleSurfaces();
+
+  // Compute the budget for a client. Allow at most bytes_above_required_cap
+  // bytes above client_state's required level. Allow at most
+  // bytes_above_minimum_cap bytes above client_state's minimum level. Allow
+  // at most bytes_overall_cap bytes total.
+  uint64 ComputeClientAllocationWhenVisible(
+      GpuMemoryManagerClientState* client_state,
+      uint64 bytes_above_required_cap,
+      uint64 bytes_above_minimum_cap,
+      uint64 bytes_overall_cap);
 
   // Update the amount of GPU memory we think we have in the system, based
   // on what the stubs' contexts report.
-  void UpdateAvailableGpuMemory(const ClientStateVector& clients);
-  void UpdateBackgroundedAvailableGpuMemory();
+  void UpdateAvailableGpuMemory();
+  void UpdateUnmanagedMemoryLimits();
 
   // The amount of video memory which is available for allocation.
-  size_t GetAvailableGpuMemory() const;
+  uint64 GetAvailableGpuMemory() const;
 
   // Minimum value of available GPU memory, no matter how little the GPU
   // reports. This is the default value.
-  size_t GetDefaultAvailableGpuMemory() const;
+  uint64 GetDefaultAvailableGpuMemory() const;
 
   // Maximum cap on total GPU memory, no matter how much the GPU reports.
-  size_t GetMaximumTotalGpuMemory() const;
+  uint64 GetMaximumTotalGpuMemory() const;
 
-  // The maximum and minimum amount of memory that a tab may be assigned.
-  size_t GetMaximumTabAllocation() const;
-  size_t GetMinimumTabAllocation() const;
+  // The default amount of memory that a client is assigned, if it has not
+  // reported any memory usage stats yet.
+  uint64 GetDefaultClientAllocation() const {
+    return bytes_default_per_client_;
+  }
 
-  // Get a reasonable memory limit from a viewport's surface area.
-  static size_t CalcAvailableFromViewportArea(int viewport_area);
-  static size_t CalcAvailableFromGpuTotal(size_t total_gpu_memory);
+  static uint64 CalcAvailableFromGpuTotal(uint64 total_gpu_memory);
 
   // Send memory usage stats to the browser process.
   void SendUmaStatsToBrowser();
 
   // Get the current number of bytes allocated.
-  size_t GetCurrentUsage() const {
+  uint64 GetCurrentUsage() const {
     return bytes_allocated_managed_current_ +
         bytes_allocated_unmanaged_current_;
   }
 
+  // GpuMemoryTrackingGroup interface
+  void TrackMemoryAllocatedChange(
+      GpuMemoryTrackingGroup* tracking_group,
+      uint64 old_size,
+      uint64 new_size,
+      gpu::gles2::MemoryTracker::Pool tracking_pool);
+  void OnDestroyTrackingGroup(GpuMemoryTrackingGroup* tracking_group);
+  bool EnsureGPUMemoryAvailable(uint64 size_needed);
+
+  // GpuMemoryManagerClientState interface
+  void SetClientStateVisible(
+      GpuMemoryManagerClientState* client_state, bool visible);
+  void SetClientStateManagedMemoryStats(
+      GpuMemoryManagerClientState* client_state,
+      const gpu::ManagedMemoryStats& stats);
+  void OnDestroyClientState(GpuMemoryManagerClientState* client);
+
+  // Add or remove a client from its clients list (visible, nonvisible, or
+  // nonsurface). When adding the client, add it to the front of the list.
+  void AddClientToList(GpuMemoryManagerClientState* client_state);
+  void RemoveClientFromList(GpuMemoryManagerClientState* client_state);
+  ClientStateList* GetClientList(GpuMemoryManagerClientState* client_state);
+
   // Interfaces for testing
-  void TestingSetClientVisible(GpuMemoryManagerClient* client, bool visible);
-  void TestingSetClientLastUsedTime(GpuMemoryManagerClient* client,
-                                    base::TimeTicks last_used_time);
-  void TestingSetClientHasSurface(GpuMemoryManagerClient* client,
-                                  bool has_surface);
-  bool TestingCompareClients(GpuMemoryManagerClient* lhs,
-                             GpuMemoryManagerClient* rhs) const;
   void TestingDisableScheduleManage() { disable_schedule_manage_ = true; }
-  void TestingSetAvailableGpuMemory(size_t bytes) {
+  void TestingSetAvailableGpuMemory(uint64 bytes) {
     bytes_available_gpu_memory_ = bytes;
     bytes_available_gpu_memory_overridden_ = true;
   }
 
-  void TestingSetBackgroundedAvailableGpuMemory(size_t bytes) {
-    bytes_backgrounded_available_gpu_memory_ = bytes;
+  void TestingSetMinimumClientAllocation(uint64 bytes) {
+    bytes_minimum_per_client_ = bytes;
+  }
+
+  void TestingSetDefaultClientAllocation(uint64 bytes) {
+    bytes_default_per_client_ = bytes;
+  }
+
+  void TestingSetUnmanagedLimitStep(uint64 bytes) {
+    bytes_unmanaged_limit_step_ = bytes;
   }
 
   GpuChannelManager* channel_manager_;
 
-  // All clients of this memory manager which have callbacks we
-  // can use to adjust memory usage
-  ClientMap clients_;
+  // A list of all visible and nonvisible clients, in most-recently-used
+  // order (most recently used is first).
+  ClientStateList clients_visible_mru_;
+  ClientStateList clients_nonvisible_mru_;
+
+  // A list of all clients that don't have a surface.
+  ClientStateList clients_nonsurface_;
 
   // All context groups' tracking structures
-  std::set<GpuMemoryTrackingGroup*> tracking_groups_;
+  TrackingGroupMap tracking_groups_;
 
   base::CancelableClosure delayed_manage_callback_;
   bool manage_immediate_scheduled_;
 
-  size_t max_surfaces_with_frontbuffer_soft_limit_;
+  uint64 max_surfaces_with_frontbuffer_soft_limit_;
+
+  // The priority cutoff used for all renderers.
+  gpu::MemoryAllocation::PriorityCutoff priority_cutoff_;
 
   // The maximum amount of memory that may be allocated for GPU resources
-  size_t bytes_available_gpu_memory_;
+  uint64 bytes_available_gpu_memory_;
   bool bytes_available_gpu_memory_overridden_;
 
-  // The maximum amount of memory that can be allocated for GPU resources
-  // in backgrounded renderers.
-  size_t bytes_backgrounded_available_gpu_memory_;
+  // The minimum and default allocations for a single client.
+  uint64 bytes_minimum_per_client_;
+  uint64 bytes_default_per_client_;
 
   // The current total memory usage, and historical maximum memory usage
-  size_t bytes_allocated_managed_current_;
-  size_t bytes_allocated_managed_visible_;
-  size_t bytes_allocated_managed_backgrounded_;
-  size_t bytes_allocated_unmanaged_current_;
-  size_t bytes_allocated_historical_max_;
+  uint64 bytes_allocated_managed_current_;
+  uint64 bytes_allocated_unmanaged_current_;
+  uint64 bytes_allocated_historical_max_;
 
-  // The number of browser windows that exist. If we ever receive a
-  // GpuMsg_SetVideoMemoryWindowCount, then we use this to compute memory
-  // budgets, instead of doing more complicated stub-based calculations.
-  bool window_count_has_been_received_;
-  uint32 window_count_;
+  // If bytes_allocated_unmanaged_current_ leaves the interval [low_, high_),
+  // then ScheduleManage to take the change into account.
+  uint64 bytes_allocated_unmanaged_high_;
+  uint64 bytes_allocated_unmanaged_low_;
+
+  // Update bytes_allocated_unmanaged_low/high_ in intervals of step_.
+  uint64 bytes_unmanaged_limit_step_;
 
   // Used to disable automatic changes to Manage() in testing.
   bool disable_schedule_manage_;
@@ -243,28 +258,6 @@ class CONTENT_EXPORT GpuMemoryManager :
   DISALLOW_COPY_AND_ASSIGN(GpuMemoryManager);
 };
 
-class CONTENT_EXPORT GpuMemoryManagerClient {
- public:
-  virtual ~GpuMemoryManagerClient() {}
-
-  // Returns surface size.
-  virtual gfx::Size GetSurfaceSize() const = 0;
-
-  // Returns the memory tracker for this stub.
-  virtual gpu::gles2::MemoryTracker* GetMemoryTracker() const = 0;
-
-  // Sets buffer usage depending on Memory Allocation
-  virtual void SetMemoryAllocation(
-      const GpuMemoryAllocation& allocation) = 0;
-
-  // Returns in bytes the total amount of GPU memory for the GPU which this
-  // context is currently rendering on. Returns false if no extension exists
-  // to get the exact amount of GPU memory.
-  virtual bool GetTotalGpuMemory(size_t* bytes) = 0;
-};
-
 }  // namespace content
-
-#endif
 
 #endif // CONTENT_COMMON_GPU_GPU_MEMORY_MANAGER_H_

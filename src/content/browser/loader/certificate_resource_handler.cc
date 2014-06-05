@@ -4,7 +4,7 @@
 
 #include "content/browser/loader/certificate_resource_handler.h"
 
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "content/browser/loader/resource_request_info_impl.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/common/resource_response.h"
@@ -18,15 +18,11 @@
 namespace content {
 
 CertificateResourceHandler::CertificateResourceHandler(
-    net::URLRequest* request,
-    int render_process_host_id,
-    int render_view_id)
-    : request_(request),
+    net::URLRequest* request)
+    : ResourceHandler(request),
       content_length_(0),
       read_buffer_(NULL),
       resource_buffer_(NULL),
-      render_process_host_id_(render_process_host_id),
-      render_view_id_(render_view_id),
       cert_type_(net::CERTIFICATE_MIME_TYPE_UNKNOWN) {
 }
 
@@ -60,15 +56,21 @@ bool CertificateResourceHandler::OnWillStart(int request_id,
   return true;
 }
 
+bool CertificateResourceHandler::OnBeforeNetworkStart(int request_id,
+                                                      const GURL& url,
+                                                      bool* defer) {
+  return true;
+}
+
 bool CertificateResourceHandler::OnWillRead(int request_id,
-                                           net::IOBuffer** buf,
+                                           scoped_refptr<net::IOBuffer>* buf,
                                            int* buf_size,
                                            int min_size) {
   static const int kReadBufSize = 32768;
 
   // TODO(gauravsh): Should we use 'min_size' here?
   DCHECK(buf && buf_size);
-  if (!read_buffer_) {
+  if (!read_buffer_.get()) {
     read_buffer_ = new net::IOBuffer(kReadBufSize);
   }
   *buf = read_buffer_.get();
@@ -84,39 +86,39 @@ bool CertificateResourceHandler::OnReadCompleted(int request_id,
     return true;
 
   // We have more data to read.
-  DCHECK(read_buffer_);
+  DCHECK(read_buffer_.get());
   content_length_ += bytes_read;
 
   // Release the ownership of the buffer, and store a reference
   // to it. A new one will be allocated in OnWillRead().
-  net::IOBuffer* buffer = NULL;
-  read_buffer_.swap(&buffer);
+  scoped_refptr<net::IOBuffer> buffer;
+  read_buffer_.swap(buffer);
   // TODO(gauravsh): Should this be handled by a separate thread?
   buffer_.push_back(std::make_pair(buffer, bytes_read));
 
   return true;
 }
 
-bool CertificateResourceHandler::OnResponseCompleted(
+void CertificateResourceHandler::OnResponseCompleted(
     int request_id,
     const net::URLRequestStatus& urs,
-    const std::string& sec_info) {
+    const std::string& sec_info,
+    bool* defer) {
   if (urs.status() != net::URLRequestStatus::SUCCESS)
-    return false;
+    return;
 
   AssembleResource();
 
   const void* content_bytes = NULL;
-  if (resource_buffer_)
+  if (resource_buffer_.get())
     content_bytes = resource_buffer_->data();
 
   // Note that it's up to the browser to verify that the certificate
   // data is well-formed.
+  const ResourceRequestInfo* info = GetRequestInfo();
   GetContentClient()->browser()->AddCertificate(
-      request_, cert_type_, content_bytes, content_length_,
-      render_process_host_id_, render_view_id_);
-
-  return true;
+      request(), cert_type_, content_bytes, content_length_,
+      info->GetChildID(), info->GetRouteID());
 }
 
 void CertificateResourceHandler::AssembleResource() {
@@ -132,7 +134,7 @@ void CertificateResourceHandler::AssembleResource() {
   // Copy the data into it.
   size_t bytes_copied = 0;
   for (size_t i = 0; i < buffer_.size(); ++i) {
-    net::IOBuffer* data = buffer_[i].first;
+    net::IOBuffer* data = buffer_[i].first.get();
     size_t data_len = buffer_[i].second;
     DCHECK(data != NULL);
     DCHECK_LE(bytes_copied + data_len, content_length_);
@@ -140,6 +142,12 @@ void CertificateResourceHandler::AssembleResource() {
     bytes_copied += data_len;
   }
   DCHECK_EQ(content_length_, bytes_copied);
+}
+
+void CertificateResourceHandler::OnDataDownloaded(
+    int request_id,
+    int bytes_downloaded) {
+  NOTREACHED();
 }
 
 }  // namespace content

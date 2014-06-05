@@ -21,46 +21,25 @@ import httplib
 import logging
 import os
 import platformsettings
+import random
 import re
+import script_injector
+import StringIO
 import util
 
+# PIL isn't always available, but we still want to be able to run without
+# the image scrambling functionality in this case.
+try:
+  import Image
+except ImportError:
+  Image = None
 
-HTML_RE = re.compile(r'^.{,256}?<html.*?>', re.IGNORECASE | re.DOTALL)
-HEAD_RE = re.compile(r'^.{,256}?<head.*?>', re.IGNORECASE | re.DOTALL)
 TIMER = platformsettings.timer
 
 
 class HttpClientException(Exception):
   """Base class for all exceptions in httpclient."""
   pass
-
-
-def GetInjectScript(scripts):
-  """Loads |scripts| from disk and returns a string of their content."""
-  lines = []
-  if scripts:
-    for script in scripts.split(','):
-      if os.path.exists(script):
-        lines += open(script).read()
-      elif util.resource_exists(script):
-        lines += util.resource_string(script)
-      else:
-        raise HttpClientException('Script does not exist: %s', script)
-  
-  def MinifyScript(script):
-    """Remove C-style comments and line breaks from script.
-    Note: statements must be ';' terminated, and not depending on newline"""
-    # Regex adapted from http://ostermiller.org/findcomment.html.
-    MULTILINE_COMMENT_RE = re.compile(r'/\*.*?\*/', re.DOTALL | re.MULTILINE)
-    SINGLELINE_COMMENT_RE = re.compile(r'//.*', re.MULTILINE)
-    # Remove C-style comments from JS.
-    script = re.sub(MULTILINE_COMMENT_RE, '', script)
-    script = re.sub(SINGLELINE_COMMENT_RE, '', script)
-    # Remove line breaks.
-    script = script.translate(None, '\r\n')
-    return script
-
-  return MinifyScript(''.join(lines))
 
 
 def _InjectScripts(response, inject_script):
@@ -79,22 +58,50 @@ def _InjectScripts(response, inject_script):
   content_type = response.get_header('content-type')
   if content_type and content_type.startswith('text/html'):
     text = response.get_data_as_text()
-
-    def InsertScriptAfter(matchobj):
-      return '%s<script>%s</script>' % (matchobj.group(0), inject_script)
-
-    if text and not inject_script in text:
-      text, is_injected = HEAD_RE.subn(InsertScriptAfter, text, 1)
-      if not is_injected:
-        text, is_injected = HTML_RE.subn(InsertScriptAfter, text, 1)
-      if not is_injected:
-        logging.warning('Failed to inject scripts.')
-        logging.debug('Response content: %s', text)
-      else:
-        response = copy.deepcopy(response)
-        response.set_data(text)
+    text, already_injected = script_injector.InjectScript(
+        text, 'text/html', inject_script)
+    if not already_injected:
+      response = copy.deepcopy(response)
+      response.set_data(text)
   return response
 
+def _ScrambleImages(response):
+  """If the |response| is an image, attempt to scramble it.
+
+  Copies |response| if it is modified.
+
+  Args:
+    response: an ArchivedHttpResponse
+  Returns:
+    an ArchivedHttpResponse
+  """
+
+  assert Image, '--scramble_images requires the PIL module to be installed.'
+
+  content_type = response.get_header('content-type')
+  if content_type and content_type.startswith('image/'):
+    try:
+      image_data = response.response_data[0]
+      image_data.decode(encoding='base64')
+      im = Image.open(StringIO.StringIO(image_data))
+
+      pixel_data = list(im.getdata())
+      random.shuffle(pixel_data)
+
+      scrambled_image = im.copy()
+      scrambled_image.putdata(pixel_data)
+
+      output_image_io = StringIO.StringIO()
+      scrambled_image.save(output_image_io, im.format)
+      output_image_data = output_image_io.getvalue()
+      output_image_data.encode(encoding='base64')
+
+      response = copy.deepcopy(response)
+      response.set_data(output_image_data)
+    except Exception, err:
+      pass
+
+  return response
 
 class DetailedHTTPResponse(httplib.HTTPResponse):
   """Preserve details relevant to replaying responses.
@@ -255,22 +262,36 @@ class RealHttpFetch(object):
     Returns:
       an ArchivedHttpResponse
     """
-    logging.debug('RealHttpFetch: %s %s', request.host, request.path)
-    host_ip = self._real_dns_lookup(request.host)
+    logging.debug('RealHttpFetch: %s %s', request.host, request.full_path)
+    if ':' in request.host:
+      parts = request.host.split(':')
+      truehost = parts[0]
+      trueport = int(parts[1])
+    else:
+      truehost = request.host
+      trueport = None
+
+    host_ip = self._real_dns_lookup(truehost)
     if not host_ip:
-      logging.critical('Unable to find host ip for name: %s', request.host)
+      logging.critical('Unable to find host ip for name: %s', truehost)
       return None
     retries = 3
     while True:
       try:
         if request.is_ssl:
-          connection = DetailedHTTPSConnection(host_ip)
+          if trueport:
+            connection = DetailedHTTPSConnection(host_ip, trueport)
+          else:
+            connection = DetailedHTTPSConnection(host_ip)
         else:
-          connection = DetailedHTTPConnection(host_ip)
+          if trueport:
+            connection = DetailedHTTPConnection(host_ip, trueport)
+          else:
+            connection = DetailedHTTPConnection(host_ip)
         start = TIMER()
         connection.request(
             request.command,
-            request.path,
+            request.full_path,
             request.request_body,
             request.headers)
         response = connection.getresponse()
@@ -348,13 +369,14 @@ class RecordHttpArchiveFetch(object):
 class ReplayHttpArchiveFetch(object):
   """Serve responses from the given HttpArchive."""
 
-  def __init__(self, http_archive, inject_script,
+  def __init__(self, http_archive, real_dns_lookup, inject_script,
                use_diff_on_unknown_requests=False, cache_misses=None,
-               use_closest_match=False):
+               use_closest_match=False, scramble_images=False):
     """Initialize ReplayHttpArchiveFetch.
 
     Args:
       http_archive: an instance of a HttpArchive
+      real_dns_lookup: a function that resolves a host to an IP.
       inject_script: script string to inject in all pages
       use_diff_on_unknown_requests: If True, log unknown requests
         with a diff to requests that look similar.
@@ -368,6 +390,9 @@ class ReplayHttpArchiveFetch(object):
     self.use_diff_on_unknown_requests = use_diff_on_unknown_requests
     self.cache_misses = cache_misses
     self.use_closest_match = use_closest_match
+    self.scramble_images = scramble_images
+    self.real_http_fetch = RealHttpFetch(real_dns_lookup,
+                                         http_archive.get_server_rtt)
 
   def __call__(self, request):
     """Fetch the request and return the response.
@@ -377,6 +402,9 @@ class ReplayHttpArchiveFetch(object):
     Returns:
       Instance of ArchivedHttpResponse (if found) or None
     """
+    if request.host.startswith('127.0.0.1:'):
+      return self.real_http_fetch(request)
+
     response = self.http_archive.get(request)
 
     if self.use_closest_match and not response:
@@ -403,6 +431,8 @@ class ReplayHttpArchiveFetch(object):
       logging.warning('Could not replay: %s', reason)
     else:
       response = _InjectScripts(response, self.inject_script)
+      if self.scramble_images:
+        response = _ScrambleImages(response)
     return response
 
 
@@ -411,7 +441,8 @@ class ControllableHttpArchiveFetch(object):
 
   def __init__(self, http_archive, real_dns_lookup,
                inject_script, use_diff_on_unknown_requests,
-               use_record_mode, cache_misses, use_closest_match):
+               use_record_mode, cache_misses, use_closest_match,
+               scramble_images):
     """Initialize HttpArchiveFetch.
 
     Args:
@@ -429,8 +460,9 @@ class ControllableHttpArchiveFetch(object):
         http_archive, real_dns_lookup, inject_script,
         cache_misses)
     self.replay_fetch = ReplayHttpArchiveFetch(
-        http_archive, inject_script, use_diff_on_unknown_requests, cache_misses,
-        use_closest_match)
+        http_archive, real_dns_lookup, inject_script,
+        use_diff_on_unknown_requests, cache_misses,
+        use_closest_match, scramble_images)
     if use_record_mode:
       self.SetRecordMode()
     else:

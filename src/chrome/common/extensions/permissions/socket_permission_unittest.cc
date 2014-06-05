@@ -6,30 +6,25 @@
 
 #include "base/pickle.h"
 #include "base/values.h"
-#include "chrome/common/extensions/permissions/permissions_info.h"
-#include "chrome/common/extensions/permissions/socket_permission.h"
-#include "chrome/common/extensions/permissions/socket_permission_data.h"
+#include "extensions/common/permissions/permissions_info.h"
+#include "extensions/common/permissions/socket_permission.h"
+#include "extensions/common/permissions/socket_permission_data.h"
 #include "ipc/ipc_message.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using content::SocketPermissionRequest;
-using extensions::SocketPermissionData;
+namespace extensions {
 
 namespace {
 
-std::string Parse(const std::string& permission) {
+using content::SocketPermissionRequest;
+
+void ParseTest(const std::string& permission,
+               const std::string& expected_result) {
   SocketPermissionData data;
-  CHECK(data.ParseForTest(permission)) << "Parse permission \"" << permission
-    << "\" failed.";
-  return data.GetAsStringForTest();
+  ASSERT_TRUE(data.ParseForTest(permission)) << "Parse permission \""
+                                             << permission << "\" failed.";
+  EXPECT_EQ(expected_result, data.GetAsStringForTest());
 }
-
-}  // namespace
-
-namespace extensions {
-
-class SocketPermissionTest : public testing::Test {
-};
 
 TEST(SocketPermissionTest, General) {
   SocketPermissionData data1, data2;
@@ -50,7 +45,7 @@ TEST(SocketPermissionTest, General) {
 TEST(SocketPermissionTest, Parse) {
   SocketPermissionData data;
 
-  EXPECT_FALSE(data.ParseForTest(""));
+  EXPECT_FALSE(data.ParseForTest(std::string()));
   EXPECT_FALSE(data.ParseForTest("*"));
   EXPECT_FALSE(data.ParseForTest("\00\00*"));
   EXPECT_FALSE(data.ParseForTest("\01*"));
@@ -64,76 +59,68 @@ TEST(SocketPermissionTest, Parse) {
   EXPECT_FALSE(data.ParseForTest("tcp-connect:*.exmaple.com:99 "));
   EXPECT_FALSE(data.ParseForTest("tcp-connect:\t*.exmaple.com:99"));
   EXPECT_FALSE(data.ParseForTest("tcp-connect:\n*.exmaple.com:99"));
+  EXPECT_FALSE(data.ParseForTest("resolve-host:exmaple.com:99"));
+  EXPECT_FALSE(data.ParseForTest("resolve-host:127.0.0.1"));
+  EXPECT_FALSE(data.ParseForTest("resolve-host:"));
+  EXPECT_FALSE(data.ParseForTest("resolve-proxy:exmaple.com:99"));
+  EXPECT_FALSE(data.ParseForTest("resolve-proxy:exmaple.com"));
 
-  EXPECT_EQ(Parse("tcp-connect"), "tcp-connect:*:*");
-  EXPECT_EQ(Parse("tcp-listen"), "tcp-listen:*:*");
-  EXPECT_EQ(Parse("udp-bind"), "udp-bind:*:*");
-  EXPECT_EQ(Parse("udp-send-to"), "udp-send-to:*:*");
+  ParseTest("tcp-connect", "tcp-connect:*:*");
+  ParseTest("tcp-listen", "tcp-listen:*:*");
+  ParseTest("udp-bind", "udp-bind:*:*");
+  ParseTest("udp-send-to", "udp-send-to:*:*");
+  ParseTest("resolve-host", "resolve-host");
+  ParseTest("resolve-proxy", "resolve-proxy");
 
-  EXPECT_EQ(Parse("tcp-connect:"), "tcp-connect:*:*");
-  EXPECT_EQ(Parse("tcp-listen:"), "tcp-listen:*:*");
-  EXPECT_EQ(Parse("udp-bind:"), "udp-bind:*:*");
-  EXPECT_EQ(Parse("udp-send-to:"), "udp-send-to:*:*");
+  ParseTest("tcp-connect:", "tcp-connect:*:*");
+  ParseTest("tcp-listen:", "tcp-listen:*:*");
+  ParseTest("udp-bind:", "udp-bind:*:*");
+  ParseTest("udp-send-to:", "udp-send-to:*:*");
 
-  EXPECT_EQ(Parse("tcp-connect::"), "tcp-connect:*:*");
-  EXPECT_EQ(Parse("tcp-listen::"), "tcp-listen:*:*");
-  EXPECT_EQ(Parse("udp-bind::"), "udp-bind:*:*");
-  EXPECT_EQ(Parse("udp-send-to::"), "udp-send-to:*:*");
+  ParseTest("tcp-connect::", "tcp-connect:*:*");
+  ParseTest("tcp-listen::", "tcp-listen:*:*");
+  ParseTest("udp-bind::", "udp-bind:*:*");
+  ParseTest("udp-send-to::", "udp-send-to:*:*");
 
-  EXPECT_EQ(Parse("tcp-connect:*"), "tcp-connect:*:*");
-  EXPECT_EQ(Parse("tcp-listen:*"), "tcp-listen:*:*");
-  EXPECT_EQ(Parse("udp-bind:*"), "udp-bind:*:*");
-  EXPECT_EQ(Parse("udp-send-to:*"), "udp-send-to:*:*");
+  ParseTest("tcp-connect:*", "tcp-connect:*:*");
+  ParseTest("tcp-listen:*", "tcp-listen:*:*");
+  ParseTest("udp-bind:*", "udp-bind:*:*");
+  ParseTest("udp-send-to:*", "udp-send-to:*:*");
 
-  EXPECT_EQ(Parse("tcp-connect:*:"), "tcp-connect:*:*");
-  EXPECT_EQ(Parse("tcp-listen:*:"), "tcp-listen:*:*");
-  EXPECT_EQ(Parse("udp-bind:*:"), "udp-bind:*:*");
-  EXPECT_EQ(Parse("udp-send-to:*:"), "udp-send-to:*:*");
+  ParseTest("tcp-connect:*:", "tcp-connect:*:*");
+  ParseTest("tcp-listen:*:", "tcp-listen:*:*");
+  ParseTest("udp-bind:*:", "udp-bind:*:*");
+  ParseTest("udp-send-to:*:", "udp-send-to:*:*");
 
-  EXPECT_EQ(Parse("tcp-connect::*"), "tcp-connect:*:*");
-  EXPECT_EQ(Parse("tcp-listen::*"), "tcp-listen:*:*");
-  EXPECT_EQ(Parse("udp-bind::*"), "udp-bind:*:*");
-  EXPECT_EQ(Parse("udp-send-to::*"), "udp-send-to:*:*");
+  ParseTest("tcp-connect::*", "tcp-connect:*:*");
+  ParseTest("tcp-listen::*", "tcp-listen:*:*");
+  ParseTest("udp-bind::*", "udp-bind:*:*");
+  ParseTest("udp-send-to::*", "udp-send-to:*:*");
 
-  EXPECT_EQ(Parse("tcp-connect:www.example.com"),
-      "tcp-connect:www.example.com:*");
-  EXPECT_EQ(Parse("tcp-listen:www.example.com"),
-      "tcp-listen:www.example.com:*");
-  EXPECT_EQ(Parse("udp-bind:www.example.com"),
-      "udp-bind:www.example.com:*");
-  EXPECT_EQ(Parse("udp-send-to:www.example.com"),
-      "udp-send-to:www.example.com:*");
-  EXPECT_EQ(Parse("udp-send-to:wWW.ExAmPlE.cOm"),
-      "udp-send-to:www.example.com:*");
+  ParseTest("tcp-connect:www.example.com", "tcp-connect:www.example.com:*");
+  ParseTest("tcp-listen:www.example.com", "tcp-listen:www.example.com:*");
+  ParseTest("udp-bind:www.example.com", "udp-bind:www.example.com:*");
+  ParseTest("udp-send-to:www.example.com", "udp-send-to:www.example.com:*");
+  ParseTest("udp-send-to:wWW.ExAmPlE.cOm", "udp-send-to:www.example.com:*");
 
-  EXPECT_EQ(Parse("tcp-connect:.example.com"),
-      "tcp-connect:*.example.com:*");
-  EXPECT_EQ(Parse("tcp-listen:.example.com"),
-      "tcp-listen:*.example.com:*");
-  EXPECT_EQ(Parse("udp-bind:.example.com"),
-      "udp-bind:*.example.com:*");
-  EXPECT_EQ(Parse("udp-send-to:.example.com"),
-      "udp-send-to:*.example.com:*");
+  ParseTest("tcp-connect:.example.com", "tcp-connect:*.example.com:*");
+  ParseTest("tcp-listen:.example.com", "tcp-listen:*.example.com:*");
+  ParseTest("udp-bind:.example.com", "udp-bind:*.example.com:*");
+  ParseTest("udp-send-to:.example.com", "udp-send-to:*.example.com:*");
 
-  EXPECT_EQ(Parse("tcp-connect:*.example.com"),
-      "tcp-connect:*.example.com:*");
-  EXPECT_EQ(Parse("tcp-listen:*.example.com"),
-      "tcp-listen:*.example.com:*");
-  EXPECT_EQ(Parse("udp-bind:*.example.com"),
-      "udp-bind:*.example.com:*");
-  EXPECT_EQ(Parse("udp-send-to:*.example.com"),
-      "udp-send-to:*.example.com:*");
+  ParseTest("tcp-connect:*.example.com", "tcp-connect:*.example.com:*");
+  ParseTest("tcp-listen:*.example.com", "tcp-listen:*.example.com:*");
+  ParseTest("udp-bind:*.example.com", "udp-bind:*.example.com:*");
+  ParseTest("udp-send-to:*.example.com", "udp-send-to:*.example.com:*");
 
-  EXPECT_EQ(Parse("tcp-connect::99"), "tcp-connect:*:99");
-  EXPECT_EQ(Parse("tcp-listen::99"), "tcp-listen:*:99");
-  EXPECT_EQ(Parse("udp-bind::99"), "udp-bind:*:99");
-  EXPECT_EQ(Parse("udp-send-to::99"), "udp-send-to:*:99");
+  ParseTest("tcp-connect::99", "tcp-connect:*:99");
+  ParseTest("tcp-listen::99", "tcp-listen:*:99");
+  ParseTest("udp-bind::99", "udp-bind:*:99");
+  ParseTest("udp-send-to::99", "udp-send-to:*:99");
 
-  EXPECT_EQ(Parse("tcp-connect:www.example.com"),
-      "tcp-connect:www.example.com:*");
+  ParseTest("tcp-connect:www.example.com", "tcp-connect:www.example.com:*");
 
-  EXPECT_EQ(Parse("tcp-connect:*.example.com:99"),
-      "tcp-connect:*.example.com:99");
+  ParseTest("tcp-connect:*.example.com:99", "tcp-connect:*.example.com:99");
 }
 
 TEST(SocketPermissionTest, Match) {
@@ -142,78 +129,136 @@ TEST(SocketPermissionTest, Match) {
 
   CHECK(data.ParseForTest("tcp-connect"));
   param.reset(new SocketPermission::CheckParam(
-        SocketPermissionRequest::TCP_CONNECT, "www.example.com", 80));
+      SocketPermissionRequest::TCP_CONNECT, "www.example.com", 80));
   EXPECT_TRUE(data.Check(param.get()));
   param.reset(new SocketPermission::CheckParam(
-        SocketPermissionRequest::UDP_SEND_TO, "www.example.com", 80));
+      SocketPermissionRequest::UDP_SEND_TO, "www.example.com", 80));
   EXPECT_FALSE(data.Check(param.get()));
 
   CHECK(data.ParseForTest("udp-send-to::8800"));
   param.reset(new SocketPermission::CheckParam(
-        SocketPermissionRequest::UDP_SEND_TO, "www.example.com", 8800));
+      SocketPermissionRequest::UDP_SEND_TO, "www.example.com", 8800));
   EXPECT_TRUE(data.Check(param.get()));
   param.reset(new SocketPermission::CheckParam(
-        SocketPermissionRequest::UDP_SEND_TO, "smtp.example.com", 8800));
+      SocketPermissionRequest::UDP_SEND_TO, "smtp.example.com", 8800));
   EXPECT_TRUE(data.Check(param.get()));
   param.reset(new SocketPermission::CheckParam(
-        SocketPermissionRequest::TCP_CONNECT, "www.example.com", 80));
+      SocketPermissionRequest::TCP_CONNECT, "www.example.com", 80));
   EXPECT_FALSE(data.Check(param.get()));
 
   CHECK(data.ParseForTest("udp-send-to:*.example.com:8800"));
   param.reset(new SocketPermission::CheckParam(
-        SocketPermissionRequest::UDP_SEND_TO, "www.example.com", 8800));
+      SocketPermissionRequest::UDP_SEND_TO, "www.example.com", 8800));
   EXPECT_TRUE(data.Check(param.get()));
   param.reset(new SocketPermission::CheckParam(
-        SocketPermissionRequest::UDP_SEND_TO, "smtp.example.com", 8800));
+      SocketPermissionRequest::UDP_SEND_TO, "smtp.example.com", 8800));
   EXPECT_TRUE(data.Check(param.get()));
   param.reset(new SocketPermission::CheckParam(
-        SocketPermissionRequest::UDP_SEND_TO, "SMTP.example.com", 8800));
+      SocketPermissionRequest::UDP_SEND_TO, "SMTP.example.com", 8800));
   EXPECT_TRUE(data.Check(param.get()));
   param.reset(new SocketPermission::CheckParam(
-        SocketPermissionRequest::TCP_CONNECT, "www.example.com", 80));
+      SocketPermissionRequest::TCP_CONNECT, "www.example.com", 80));
   EXPECT_FALSE(data.Check(param.get()));
   param.reset(new SocketPermission::CheckParam(
-        SocketPermissionRequest::UDP_SEND_TO, "www.google.com", 8800));
+      SocketPermissionRequest::UDP_SEND_TO, "www.google.com", 8800));
   EXPECT_FALSE(data.Check(param.get()));
   param.reset(new SocketPermission::CheckParam(
-        SocketPermissionRequest::UDP_SEND_TO, "wwwexample.com", 8800));
+      SocketPermissionRequest::UDP_SEND_TO, "wwwexample.com", 8800));
   EXPECT_FALSE(data.Check(param.get()));
 
   CHECK(data.ParseForTest("udp-send-to:*.ExAmPlE.cOm:8800"));
   param.reset(new SocketPermission::CheckParam(
-        SocketPermissionRequest::UDP_SEND_TO, "www.example.com", 8800));
+      SocketPermissionRequest::UDP_SEND_TO, "www.example.com", 8800));
   EXPECT_TRUE(data.Check(param.get()));
   param.reset(new SocketPermission::CheckParam(
-        SocketPermissionRequest::UDP_SEND_TO, "smtp.example.com", 8800));
+      SocketPermissionRequest::UDP_SEND_TO, "smtp.example.com", 8800));
   EXPECT_TRUE(data.Check(param.get()));
   param.reset(new SocketPermission::CheckParam(
-        SocketPermissionRequest::UDP_SEND_TO, "SMTP.example.com", 8800));
+      SocketPermissionRequest::UDP_SEND_TO, "SMTP.example.com", 8800));
   EXPECT_TRUE(data.Check(param.get()));
   param.reset(new SocketPermission::CheckParam(
-        SocketPermissionRequest::TCP_CONNECT, "www.example.com", 80));
+      SocketPermissionRequest::TCP_CONNECT, "www.example.com", 80));
   EXPECT_FALSE(data.Check(param.get()));
   param.reset(new SocketPermission::CheckParam(
-        SocketPermissionRequest::UDP_SEND_TO, "www.google.com", 8800));
+      SocketPermissionRequest::UDP_SEND_TO, "www.google.com", 8800));
   EXPECT_FALSE(data.Check(param.get()));
 
-  CHECK(data.ParseForTest("udp-bind::8800"));
+  ASSERT_TRUE(data.ParseForTest("udp-bind::8800"));
   param.reset(new SocketPermission::CheckParam(
-        SocketPermissionRequest::UDP_BIND, "127.0.0.1", 8800));
+      SocketPermissionRequest::UDP_BIND, "127.0.0.1", 8800));
   EXPECT_TRUE(data.Check(param.get()));
   param.reset(new SocketPermission::CheckParam(
-        SocketPermissionRequest::UDP_BIND, "127.0.0.1", 8888));
+      SocketPermissionRequest::UDP_BIND, "127.0.0.1", 8888));
   EXPECT_FALSE(data.Check(param.get()));
   param.reset(new SocketPermission::CheckParam(
-        SocketPermissionRequest::TCP_CONNECT, "www.example.com", 80));
+      SocketPermissionRequest::TCP_CONNECT, "www.example.com", 80));
   EXPECT_FALSE(data.Check(param.get()));
   param.reset(new SocketPermission::CheckParam(
-        SocketPermissionRequest::UDP_SEND_TO, "www.google.com", 8800));
+      SocketPermissionRequest::UDP_SEND_TO, "www.google.com", 8800));
   EXPECT_FALSE(data.Check(param.get()));
 
   // Do not wildcard part of ip address.
-  CHECK(data.ParseForTest("tcp-connect:*.168.0.1:8800"));
+  ASSERT_TRUE(data.ParseForTest("tcp-connect:*.168.0.1:8800"));
   param.reset(new SocketPermission::CheckParam(
-        SocketPermissionRequest::TCP_CONNECT, "192.168.0.1", 8800));
+      SocketPermissionRequest::TCP_CONNECT, "192.168.0.1", 8800));
+  EXPECT_FALSE(data.Check(param.get()));
+
+  ASSERT_FALSE(data.ParseForTest("udp-multicast-membership:*"));
+  ASSERT_FALSE(data.ParseForTest("udp-multicast-membership:*:*"));
+  ASSERT_TRUE(data.ParseForTest("udp-multicast-membership"));
+  param.reset(new SocketPermission::CheckParam(
+      SocketPermissionRequest::UDP_BIND, "127.0.0.1", 8800));
+  EXPECT_FALSE(data.Check(param.get()));
+  param.reset(new SocketPermission::CheckParam(
+      SocketPermissionRequest::UDP_BIND, "127.0.0.1", 8888));
+  EXPECT_FALSE(data.Check(param.get()));
+  param.reset(new SocketPermission::CheckParam(
+      SocketPermissionRequest::TCP_CONNECT, "www.example.com", 80));
+  EXPECT_FALSE(data.Check(param.get()));
+  param.reset(new SocketPermission::CheckParam(
+      SocketPermissionRequest::UDP_SEND_TO, "www.google.com", 8800));
+  EXPECT_FALSE(data.Check(param.get()));
+  param.reset(new SocketPermission::CheckParam(
+      SocketPermissionRequest::UDP_MULTICAST_MEMBERSHIP, "127.0.0.1", 35));
+  EXPECT_TRUE(data.Check(param.get()));
+
+  ASSERT_TRUE(data.ParseForTest("resolve-host"));
+  param.reset(new SocketPermission::CheckParam(
+      SocketPermissionRequest::RESOLVE_HOST, "www.example.com", 80));
+  EXPECT_TRUE(data.Check(param.get()));
+  param.reset(new SocketPermission::CheckParam(
+      SocketPermissionRequest::RESOLVE_HOST, "www.example.com", 8080));
+  EXPECT_TRUE(data.Check(param.get()));
+  param.reset(new SocketPermission::CheckParam(
+      SocketPermissionRequest::UDP_BIND, "127.0.0.1", 8800));
+  EXPECT_FALSE(data.Check(param.get()));
+  param.reset(new SocketPermission::CheckParam(
+      SocketPermissionRequest::TCP_CONNECT, "127.0.0.1", 8800));
+  EXPECT_FALSE(data.Check(param.get()));
+
+  ASSERT_TRUE(data.ParseForTest("resolve-proxy"));
+  param.reset(new SocketPermission::CheckParam(
+      SocketPermissionRequest::RESOLVE_PROXY, "www.example.com", 80));
+  EXPECT_TRUE(data.Check(param.get()));
+  param.reset(new SocketPermission::CheckParam(
+      SocketPermissionRequest::RESOLVE_PROXY, "www.example.com", 8080));
+  EXPECT_TRUE(data.Check(param.get()));
+  param.reset(new SocketPermission::CheckParam(
+      SocketPermissionRequest::UDP_BIND, "127.0.0.1", 8800));
+  EXPECT_FALSE(data.Check(param.get()));
+  param.reset(new SocketPermission::CheckParam(
+      SocketPermissionRequest::TCP_CONNECT, "127.0.0.1", 8800));
+  EXPECT_FALSE(data.Check(param.get()));
+
+  ASSERT_TRUE(data.ParseForTest("network-state"));
+  param.reset(new SocketPermission::CheckParam(
+      SocketPermissionRequest::NETWORK_STATE, std::string(), 0));
+  EXPECT_TRUE(data.Check(param.get()));
+  param.reset(new SocketPermission::CheckParam(
+      SocketPermissionRequest::UDP_BIND, "127.0.0.1", 8800));
+  EXPECT_FALSE(data.Check(param.get()));
+  param.reset(new SocketPermission::CheckParam(
+      SocketPermissionRequest::TCP_CONNECT, "127.0.0.1", 8800));
   EXPECT_FALSE(data.Check(param.get()));
 }
 
@@ -236,7 +281,6 @@ TEST(SocketPermissionTest, IPC) {
     EXPECT_TRUE(permission1->Equal(permission2.get()));
   }
 
-
   {
     IPC::Message m;
 
@@ -245,11 +289,11 @@ TEST(SocketPermissionTest, IPC) {
     scoped_ptr<APIPermission> permission2(
         permission_info->CreateAPIPermission());
 
-    scoped_ptr<ListValue> value(new ListValue());
-    value->Append(Value::CreateStringValue("tcp-connect:*.example.com:80"));
-    value->Append(Value::CreateStringValue("udp-bind::8080"));
-    value->Append(Value::CreateStringValue("udp-send-to::8888"));
-    CHECK(permission1->FromValue(value.get()));
+    scoped_ptr<base::ListValue> value(new base::ListValue());
+    value->AppendString("tcp-connect:*.example.com:80");
+    value->AppendString("udp-bind::8080");
+    value->AppendString("udp-send-to::8888");
+    ASSERT_TRUE(permission1->FromValue(value.get(), NULL, NULL));
 
     EXPECT_FALSE(permission1->Equal(permission2.get()));
 
@@ -269,18 +313,21 @@ TEST(SocketPermissionTest, Value) {
   scoped_ptr<APIPermission> permission2(
       permission_info->CreateAPIPermission());
 
-  scoped_ptr<ListValue> value(new ListValue());
-  value->Append(Value::CreateStringValue("tcp-connect:*.example.com:80"));
-  value->Append(Value::CreateStringValue("udp-bind::8080"));
-  value->Append(Value::CreateStringValue("udp-send-to::8888"));
-  CHECK(permission1->FromValue(value.get()));
+  scoped_ptr<base::ListValue> value(new base::ListValue());
+  value->AppendString("tcp-connect:*.example.com:80");
+  value->AppendString("udp-bind::8080");
+  value->AppendString("udp-send-to::8888");
+  ASSERT_TRUE(permission1->FromValue(value.get(), NULL, NULL));
 
   EXPECT_FALSE(permission1->Equal(permission2.get()));
 
   scoped_ptr<base::Value> vtmp(permission1->ToValue());
-  CHECK(vtmp);
-  CHECK(permission2->FromValue(vtmp.get()));
+  ASSERT_TRUE(vtmp);
+  ASSERT_TRUE(permission2->FromValue(vtmp.get(), NULL, NULL));
   EXPECT_TRUE(permission1->Equal(permission2.get()));
 }
 
+}  // namespace
+
 }  // namespace extensions
+

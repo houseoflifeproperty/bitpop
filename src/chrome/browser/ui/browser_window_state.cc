@@ -5,9 +5,9 @@
 #include "chrome/browser/ui/browser_window_state.h"
 
 #include "base/command_line.h"
-#include "base/string_number_conversions.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_number_conversions.h"
 #include "chrome/browser/defaults.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_service.h"
 #include "chrome/browser/sessions/session_service_factory.h"
@@ -42,10 +42,15 @@ bool ParseCommaSeparatedIntegers(const std::string& str,
 }  // namespace
 
 std::string GetWindowPlacementKey(const Browser* browser) {
-  std::string name(prefs::kBrowserWindowPlacement);
+  std::string name;
   if (!browser->app_name().empty()) {
+    name = prefs::kBrowserWindowPlacement;
     name.append("_");
     name.append(browser->app_name());
+  } else if (browser->is_type_popup()) {
+    name = prefs::kBrowserWindowPlacementPopup;
+  } else {
+    name = prefs::kBrowserWindowPlacement;
   }
   return name;
 }
@@ -55,13 +60,9 @@ bool ShouldSaveWindowPlacement(const Browser* browser) {
   case Browser::TYPE_TABBED:
     return true;
   case Browser::TYPE_POPUP:
-    // Only save the window placement of popups if they are restored,
-    // or the window belongs to DevTools or an App.
-    return browser_defaults::kRestorePopups || browser->is_devtools() ||
-        browser->is_app();
-  case Browser::TYPE_PANEL:
-    // Do not save the window placement of panels.
-    return false;
+    // Only save the window placement of popups if the window is from a
+    // trusted source (v1 app, devtools, or system window).
+    return browser->is_trusted_source();
   default:
     return false;
   }

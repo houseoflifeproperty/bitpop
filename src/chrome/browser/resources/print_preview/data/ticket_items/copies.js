@@ -9,22 +9,14 @@ cr.define('print_preview.ticket_items', function() {
    * Copies ticket item whose value is a {@code string} that indicates how many
    * copies of the document should be printed. The ticket item is backed by a
    * string since the user can textually input the copies value.
-   * @param {!print_preview.CapabilitiesHolder} capabilitiesHolder Capabilities
-   *     holder used to determine the default number of copies and if the copies
-   *     capability is available.
+   * @param {!print_preview.DestinationStore} destinationStore Destination store
+   *     used determine if a destination has the copies capability.
    * @constructor
    * @extends {print_preview.ticket_items.TicketItem}
    */
-  function Copies(capabilitiesHolder) {
-    print_preview.ticket_items.TicketItem.call(this);
-
-    /**
-     * Capabilities holder used to determine the default number of copies and if
-     * the copies capability is available.
-     * @type {!print_preview.CapabilitiesHolder}
-     * @private
-     */
-    this.capabilitiesHolder_ = capabilitiesHolder;
+  function Copies(destinationStore) {
+    print_preview.ticket_items.TicketItem.call(
+        this, null /*appState*/, null /*field*/, destinationStore);
   };
 
   Copies.prototype = {
@@ -44,7 +36,7 @@ cr.define('print_preview.ticket_items', function() {
 
     /** @override */
     isCapabilityAvailable: function() {
-      return this.capabilitiesHolder_.get().hasCopiesCapability;
+      return !!this.getCopiesCapability_();
     },
 
     /** @return {number} The number of copies indicated by the ticket item. */
@@ -54,12 +46,26 @@ cr.define('print_preview.ticket_items', function() {
 
     /** @override */
     getDefaultValueInternal: function() {
-      return this.capabilitiesHolder_.get().defaultCopiesStr;
+      var cap = this.getCopiesCapability_();
+      return cap.hasOwnProperty('default') ? cap.default : '1';
     },
 
     /** @override */
     getCapabilityNotAvailableValueInternal: function() {
       return '1';
+    },
+
+    /**
+     * @return {Object} Copies capability of the selected destination.
+     * @private
+     */
+    getCopiesCapability_: function() {
+      var dest = this.getSelectedDestInternal();
+      return (dest &&
+              dest.capabilities &&
+              dest.capabilities.printer &&
+              dest.capabilities.printer.copies) ||
+             null;
     }
   };
 

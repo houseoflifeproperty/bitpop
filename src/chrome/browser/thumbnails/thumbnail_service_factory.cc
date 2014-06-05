@@ -7,15 +7,15 @@
 #include "base/logging.h"
 #include "chrome/browser/thumbnails/thumbnail_service.h"
 #include "chrome/browser/thumbnails/thumbnail_service_impl.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 
 using thumbnails::ThumbnailService;
 using thumbnails::ThumbnailServiceImpl;
 
 ThumbnailServiceFactory::ThumbnailServiceFactory()
-    : RefcountedProfileKeyedServiceFactory(
+    : RefcountedBrowserContextKeyedServiceFactory(
           "ThumbnailService",
-          ProfileDependencyManager::GetInstance()) {
+          BrowserContextDependencyManager::GetInstance()) {
 }
 
 ThumbnailServiceFactory::~ThumbnailServiceFactory() {
@@ -25,7 +25,7 @@ ThumbnailServiceFactory::~ThumbnailServiceFactory() {
 scoped_refptr<ThumbnailService> ThumbnailServiceFactory::GetForProfile(
     Profile* profile) {
   return static_cast<ThumbnailService*>(
-      GetInstance()->GetServiceForProfile(profile, true).get());
+      GetInstance()->GetServiceForBrowserContext(profile, true).get());
 }
 
 // static
@@ -33,8 +33,9 @@ ThumbnailServiceFactory* ThumbnailServiceFactory::GetInstance() {
   return Singleton<ThumbnailServiceFactory>::get();
 }
 
-scoped_refptr<RefcountedProfileKeyedService>
-    ThumbnailServiceFactory::BuildServiceInstanceFor(Profile* profile) const {
-  return scoped_refptr<RefcountedProfileKeyedService>(
-      new ThumbnailServiceImpl(profile));
+scoped_refptr<RefcountedBrowserContextKeyedService>
+    ThumbnailServiceFactory::BuildServiceInstanceFor(
+        content::BrowserContext* profile) const {
+  return scoped_refptr<RefcountedBrowserContextKeyedService>(
+      new ThumbnailServiceImpl(static_cast<Profile*>(profile)));
 }

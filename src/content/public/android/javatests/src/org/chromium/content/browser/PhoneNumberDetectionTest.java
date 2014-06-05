@@ -1,15 +1,13 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.content.browser;
 
-import android.test.suitebuilder.annotation.LargeTest;
-import android.test.suitebuilder.annotation.MediumTest;
+import android.test.FlakyTest;
 
-import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
-import org.chromium.content.common.CommandLine;
+import org.chromium.content.common.ContentSwitches;
 
 /**
  * Test suite for phone number detection.
@@ -34,14 +32,16 @@ public class PhoneNumberDetectionTest extends ContentDetectionTestBase {
     private void startActivityWithTestUrlAndCountryIso(String testUrl, String countryIso)
             throws Throwable {
         final String[] cmdlineArgs = countryIso == null ? null : new String[] {
-                "--" + CommandLine.NETWORK_COUNTRY_ISO + "=" + countryIso };
+                "--" + ContentSwitches.NETWORK_COUNTRY_ISO + "=" + countryIso };
         startActivityWithTestUrlAndCommandLineArgs(testUrl, cmdlineArgs);
     }
 
-    @LargeTest
+    /* @LargeTest */
+    @FlakyTest
     @Feature({"ContentDetection", "TabContents"})
     public void testInternationalNumberIntents() throws Throwable {
         startActivityWithTestUrl("content/content_detection/phone_international.html");
+        assertWaitForPageScaleFactorMatch(1.0f);
 
         // US: +1 650-253-0000.
         String intentUrl = scrollAndTapExpectingIntent("US");
@@ -152,10 +152,12 @@ public class PhoneNumberDetectionTest extends ContentDetectionTestBase {
         assertTrue(isExpectedTelephoneIntent(intentUrl, "+97144509500"));
     }
 
-    @MediumTest
+    /* @MediumTest */
+    @FlakyTest
     @Feature({"ContentDetection", "TabContents"})
     public void testLocalUSNumbers() throws Throwable {
         startActivityWithTestUrlAndCountryIso("content/content_detection/phone_local.html", "US");
+        assertWaitForPageScaleFactorMatch(1.0f);
 
         // US_1: 1-888-433-5788.
         String intentUrl = scrollAndTapExpectingIntent("US_1");
@@ -174,10 +176,12 @@ public class PhoneNumberDetectionTest extends ContentDetectionTestBase {
         assertTrue(isExpectedTelephoneIntent(intentUrl, "+31205045100"));
     }
 
-    @MediumTest
+    /* @MediumTest */
+    @FlakyTest
     @Feature({"ContentDetection", "TabContents"})
     public void testLocalUKNumbers() throws Throwable {
         startActivityWithTestUrlAndCountryIso("content/content_detection/phone_local.html", "GB");
+        assertWaitForPageScaleFactorMatch(1.0f);
 
         // GB_1: (0) 20 7323 8299.
         String intentUrl = scrollAndTapExpectingIntent("GB_1");
@@ -196,10 +200,12 @@ public class PhoneNumberDetectionTest extends ContentDetectionTestBase {
         assertTrue(isExpectedTelephoneIntent(intentUrl, "+31205045100"));
     }
 
-    @MediumTest
+    /* @MediumTest */
+    @FlakyTest
     @Feature({"ContentDetection", "TabContents"})
     public void testLocalFRNumbers() throws Throwable {
         startActivityWithTestUrlAndCountryIso("content/content_detection/phone_local.html", "FR");
+        assertWaitForPageScaleFactorMatch(1.0f);
 
         // FR_1: 01 40 20 50 50.
         String intentUrl = scrollAndTapExpectingIntent("FR_1");

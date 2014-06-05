@@ -3,10 +3,37 @@
 // found in the LICENSE file.
 
 #include "base/at_exit.h"
+#include "base/bind.h"
 #include "base/command_line.h"
+#include "base/test/launcher/unit_test_launcher.h"
+#include "base/test/test_suite.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gl/gl_implementation.h"
+#include "ui/gl/gl_mock.h"
+#include "ui/gl/gl_surface.h"
+
+namespace {
+
+class NoAtExitBaseTestSuite : public base::TestSuite {
+ public:
+  NoAtExitBaseTestSuite(int argc, char** argv)
+      : base::TestSuite(argc, argv, false) {
+  }
+
+  virtual void Initialize() OVERRIDE {
+    base::TestSuite::Initialize();
+    gfx::SetGLGetProcAddressProc(gfx::MockGLInterface::GetGLProcAddress);
+    gfx::GLSurface::InitializeOneOffWithMockBindingsForTests();
+    gfx::GLSurface::InitializeDynamicMockBindingsForTests(NULL);
+  }
+};
+
+int RunTestSuite(int argc, char** argv) {
+  return NoAtExitBaseTestSuite(argc, argv).Run();
+}
+
+}  // namespace
 
 int main(int argc, char** argv) {
   // On Android, AtExitManager is created in
@@ -15,8 +42,9 @@ int main(int argc, char** argv) {
 #if !defined(OS_ANDROID)
   base::AtExitManager exit_manager;
 #endif
-  gfx::InitializeGLBindings(gfx::kGLImplementationMockGL);
   CommandLine::Init(argc, argv);
   testing::InitGoogleMock(&argc, argv);
-  return RUN_ALL_TESTS();
+  return base::LaunchUnitTests(argc,
+                               argv,
+                               base::Bind(&RunTestSuite, argc, argv));
 }

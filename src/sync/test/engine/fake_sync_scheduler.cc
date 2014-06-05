@@ -6,35 +6,37 @@
 
 namespace syncer {
 
-FakeSyncScheduler::FakeSyncScheduler()
-    : created_on_loop_(MessageLoop::current()) {}
+FakeSyncScheduler::FakeSyncScheduler() {}
 
 FakeSyncScheduler::~FakeSyncScheduler() {}
 
 void FakeSyncScheduler::Start(Mode mode) {
 }
 
-void FakeSyncScheduler::RequestStop(const base::Closure& callback) {
-  created_on_loop_->PostTask(FROM_HERE, callback);
+void FakeSyncScheduler::Stop() {
 }
 
-void FakeSyncScheduler::ScheduleNudgeAsync(
-     const base::TimeDelta& delay,
-     NudgeSource source,
-     ModelTypeSet types,
-     const tracked_objects::Location& nudge_location) {
+void FakeSyncScheduler::ScheduleLocalNudge(
+    const base::TimeDelta& desired_delay,
+    ModelTypeSet types,
+    const tracked_objects::Location& nudge_location) {
 }
 
-void FakeSyncScheduler::ScheduleNudgeWithStatesAsync(
-     const base::TimeDelta& delay, NudgeSource source,
-     const ModelTypeInvalidationMap& invalidation_map,
-     const tracked_objects::Location& nudge_location) {
+void FakeSyncScheduler::ScheduleLocalRefreshRequest(
+    const base::TimeDelta& desired_delay,
+    ModelTypeSet types,
+    const tracked_objects::Location& nudge_location) {
 }
 
-bool FakeSyncScheduler::ScheduleConfiguration(
+void FakeSyncScheduler::ScheduleInvalidationNudge(
+    const base::TimeDelta& desired_delay,
+    const ObjectIdInvalidationMap& invalidation_map,
+    const tracked_objects::Location& nudge_location) {
+}
+
+void FakeSyncScheduler::ScheduleConfiguration(
      const ConfigurationParams& params) {
   params.ready_task.Run();
-  return true;
 }
 
 void FakeSyncScheduler::SetNotificationsEnabled(bool notifications_enabled) {
@@ -52,10 +54,16 @@ void FakeSyncScheduler::OnConnectionStatusChange() {
 
 }
 
-void FakeSyncScheduler::OnSilencedUntil(
-     const base::TimeTicks& silenced_until) {
+void FakeSyncScheduler::OnThrottled(
+    const base::TimeDelta& throttle_duration) {
 }
-bool FakeSyncScheduler::IsSyncingCurrentlySilenced() {
+
+void FakeSyncScheduler::OnTypesThrottled(
+    ModelTypeSet types,
+    const base::TimeDelta& throttle_duration) {
+}
+
+bool FakeSyncScheduler::IsCurrentlyThrottled() {
   return false;
 }
 
@@ -71,11 +79,17 @@ void FakeSyncScheduler::OnReceivedSessionsCommitDelay(
      const base::TimeDelta& new_delay) {
 }
 
-void FakeSyncScheduler::OnShouldStopSyncingPermanently() {
+void FakeSyncScheduler::OnReceivedClientInvalidationHintBufferSize(int size) {
 }
 
-void FakeSyncScheduler::OnSyncProtocolError(
-     const sessions::SyncSessionSnapshot& snapshot) {
+void FakeSyncScheduler::OnSyncProtocolError(const SyncProtocolError& error) {
+}
+
+void FakeSyncScheduler::OnReceivedGuRetryDelay(
+    const base::TimeDelta& delay) {
+}
+
+void FakeSyncScheduler::OnReceivedMigrationRequest(ModelTypeSet types) {
 }
 
 }  // namespace syncer

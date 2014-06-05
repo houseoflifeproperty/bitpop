@@ -10,6 +10,7 @@
 #include "chrome/browser/sync/glue/shared_change_processor_ref.h"
 #include "chrome/browser/sync/profile_sync_components_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
+#include "components/sync_driver/generic_change_processor_factory.h"
 #include "content/public/browser/browser_thread.h"
 #include "sync/api/sync_error.h"
 #include "sync/api/syncable_service.h"
@@ -21,7 +22,8 @@ using content::BrowserThread;
 namespace browser_sync {
 
 UIDataTypeController::UIDataTypeController()
-    : profile_sync_factory_(NULL),
+    : DataTypeController(base::MessageLoopProxy::current(), base::Closure()),
+      profile_sync_factory_(NULL),
       profile_(NULL),
       sync_service_(NULL),
       state_(NOT_RUNNING),
@@ -29,20 +31,30 @@ UIDataTypeController::UIDataTypeController()
 }
 
 UIDataTypeController::UIDataTypeController(
+    scoped_refptr<base::MessageLoopProxy> ui_thread,
+    const base::Closure& error_callback,
     syncer::ModelType type,
     ProfileSyncComponentsFactory* profile_sync_factory,
     Profile* profile,
     ProfileSyncService* sync_service)
-    : profile_sync_factory_(profile_sync_factory),
+    : DataTypeController(ui_thread, error_callback),
+      profile_sync_factory_(profile_sync_factory),
       profile_(profile),
       sync_service_(sync_service),
       state_(NOT_RUNNING),
-      type_(type) {
+      type_(type),
+      processor_factory_(new GenericChangeProcessorFactory()) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(profile_sync_factory);
   DCHECK(profile);
   DCHECK(sync_service);
   DCHECK(syncer::IsRealDataType(type_));
+}
+
+void UIDataTypeController::SetGenericChangeProcessorFactoryForTest(
+      scoped_ptr<GenericChangeProcessorFactory> factory) {
+  DCHECK_EQ(state_, NOT_RUNNING);
+  processor_factory_ = factory.Pass();
 }
 
 UIDataTypeController::~UIDataTypeController() {
@@ -55,18 +67,17 @@ void UIDataTypeController::LoadModels(
   DCHECK(!model_load_callback.is_null());
   DCHECK(syncer::IsRealDataType(type_));
   if (state_ != NOT_RUNNING) {
-    model_load_callback.Run(type(), syncer::SyncError(FROM_HERE,
+    model_load_callback.Run(type(),
+                            syncer::SyncError(FROM_HERE,
+                                              syncer::SyncError::DATATYPE_ERROR,
                                               "Model already loaded",
                                               type()));
     return;
   }
-
   // Since we can't be called multiple times before Stop() is called,
   // |shared_change_processor_| must be NULL here.
   DCHECK(!shared_change_processor_.get());
-  shared_change_processor_ =
-      profile_sync_factory_->CreateSharedChangeProcessor();
-  DCHECK(shared_change_processor_.get());
+  shared_change_processor_ = new SharedChangeProcessor();
 
   model_load_callback_ = model_load_callback;
   state_ = MODEL_STARTING;
@@ -126,14 +137,18 @@ void UIDataTypeController::Associate() {
   // syncer::SyncableService associated with type().
   local_service_ = shared_change_processor_->Connect(
       profile_sync_factory_,
-      sync_service_,
+      processor_factory_.get(),
+      sync_service_->GetUserShare(),
       this,
       type(),
       weak_ptr_factory.GetWeakPtr());
   if (!local_service_.get()) {
-    syncer::SyncError error(FROM_HERE, "Failed to connect to syncer.", type());
+    syncer::SyncError error(FROM_HERE,
+                            syncer::SyncError::DATATYPE_ERROR,
+                            "Failed to connect to syncer.",
+                            type());
     local_merge_result.set_error(error);
-    StartDone(UNRECOVERABLE_ERROR,
+    StartDone(ASSOCIATION_FAILED,
               local_merge_result,
               syncer_merge_result);
     return;
@@ -149,7 +164,10 @@ void UIDataTypeController::Associate() {
   bool sync_has_nodes = false;
   if (!shared_change_processor_->SyncModelHasUserCreatedNodes(
           &sync_has_nodes)) {
-    syncer::SyncError error(FROM_HERE, "Failed to load sync nodes", type());
+    syncer::SyncError error(FROM_HERE,
+                            syncer::SyncError::UNRECOVERABLE_ERROR,
+                            "Failed to load sync nodes",
+                            type());
     local_merge_result.set_error(error);
     StartDone(UNRECOVERABLE_ERROR,
               local_merge_result,
@@ -158,15 +176,22 @@ void UIDataTypeController::Associate() {
   }
 
   base::TimeTicks start_time = base::TimeTicks::Now();
-  syncer::SyncError error;
   syncer::SyncDataList initial_sync_data;
-  error = shared_change_processor_->GetSyncData(&initial_sync_data);
+  syncer::SyncError error =
+      shared_change_processor_->GetAllSyncDataReturnError(
+          type(), &initial_sync_data);
   if (error.IsSet()) {
     local_merge_result.set_error(error);
     StartDone(ASSOCIATION_FAILED,
               local_merge_result,
               syncer_merge_result);
     return;
+  }
+
+  std::string datatype_context;
+  if (shared_change_processor_->GetDataTypeContext(&datatype_context)) {
+    local_service_->UpdateDataTypeContext(
+        type(), syncer::SyncChangeProcessor::NO_REFRESH, datatype_context);
   }
 
   syncer_merge_result.set_num_items_before_association(
@@ -190,11 +215,15 @@ void UIDataTypeController::Associate() {
   syncer_merge_result.set_num_items_after_association(
       shared_change_processor_->GetSyncCount());
 
-  shared_change_processor_->ActivateDataType(model_safe_group());
   state_ = RUNNING;
   StartDone(sync_has_nodes ? OK : OK_FIRST_RUN,
             local_merge_result,
             syncer_merge_result);
+}
+
+ChangeProcessor* UIDataTypeController::GetChangeProcessor() const {
+  DCHECK_EQ(state_, RUNNING);
+  return shared_change_processor_->generic_change_processor();
 }
 
 void UIDataTypeController::AbortModelLoad() {
@@ -207,7 +236,9 @@ void UIDataTypeController::AbortModelLoad() {
 
   ModelLoadCallback model_load_callback = model_load_callback_;
   model_load_callback_.Reset();
-  model_load_callback.Run(type(), syncer::SyncError(FROM_HERE,
+  model_load_callback.Run(type(),
+                          syncer::SyncError(FROM_HERE,
+                                            syncer::SyncError::DATATYPE_ERROR,
                                             "Aborted",
                                             type()));
 }
@@ -316,7 +347,8 @@ void UIDataTypeController::RecordAssociationTime(base::TimeDelta time) {
 
 void UIDataTypeController::RecordStartFailure(StartResult result) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  UMA_HISTOGRAM_ENUMERATION("Sync.DataTypeStartFailures", type(),
+  UMA_HISTOGRAM_ENUMERATION("Sync.DataTypeStartFailures",
+                            ModelTypeToHistogramInt(type()),
                             syncer::MODEL_TYPE_COUNT);
 #define PER_DATA_TYPE_MACRO(type_str) \
     UMA_HISTOGRAM_ENUMERATION("Sync." type_str "StartFailure", result, \

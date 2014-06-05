@@ -12,15 +12,18 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/history/history_types.h"
-#include "chrome/browser/sync/glue/data_type_error_handler.h"
-#include "chrome/browser/sync/glue/model_associator.h"
+#include "components/sync_driver/data_type_error_handler.h"
+#include "components/sync_driver/model_associator.h"
 #include "sync/protocol/typed_url_specifics.pb.h"
 
 class GURL;
-class MessageLoop;
 class ProfileSyncService;
+
+namespace base {
+class MessageLoop;
+}
 
 namespace history {
 class HistoryBackend;
@@ -167,9 +170,6 @@ class TypedUrlModelAssociator : public AssociatorInterface {
   bool ShouldIgnoreUrl(const GURL& url);
 
  protected:
-  // Returns true if pending_abort_ is true. Overridable by tests.
-  virtual bool IsAbortPending();
-
   // Helper function that clears our error counters (used to reset stats after
   // model association so we can track model association errors separately).
   // Overridden by tests.
@@ -187,13 +187,10 @@ class TypedUrlModelAssociator : public AssociatorInterface {
   ProfileSyncService* sync_service_;
   history::HistoryBackend* history_backend_;
 
-  MessageLoop* expected_loop_;
+  base::MessageLoop* expected_loop_;
 
-  // Lock to ensure exclusive access to the pending_abort_ flag.
-  base::Lock pending_abort_lock_;
-
-  // Set to true if there's a pending abort.
-  bool pending_abort_;
+  bool abort_requested_;
+  base::Lock abort_lock_;
 
   DataTypeErrorHandler* error_handler_; // Guaranteed to outlive datatypes.
 

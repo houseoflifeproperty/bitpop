@@ -10,6 +10,9 @@ option retain_unknown_fields = true;
 package sync_pb;
 
 message GetUpdatesCallerInfo {
+  // This message was deprecated in M28.  The preferred represenation of this
+  // information is now the GetUpdatesOrigin enum, which is defined in
+  // sync_enums.proto.
   enum GetUpdatesSource {
     UNKNOWN = 0;  // The source was not set by the caller.
     FIRST_UPDATE = 1;  // First request after browser restart.  Not to
@@ -39,6 +42,7 @@ message GetUpdatesCallerInfo {
     DATATYPE_REFRESH = 11;    // A datatype has requested a refresh. This is
                               // typically used when datatype's have custom
                               // sync UI, e.g. sessions.
+    RETRY = 13;  // A follow-up GU to pick up updates missed by previous GU.
   }
 
   required GetUpdatesSource source = 1;

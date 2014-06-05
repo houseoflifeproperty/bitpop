@@ -45,7 +45,7 @@ const int RETRY_TIMEOUT = 50 * 1000;    // ICE says 50 secs
 class StunBindingRequest : public StunRequest {
  public:
   StunBindingRequest(UDPPort* port, bool keep_alive,
-                         const talk_base::SocketAddress& addr)
+                     const talk_base::SocketAddress& addr)
     : port_(port), keep_alive_(keep_alive), server_addr_(addr) {
     start_time_ = talk_base::Time();
   }
@@ -77,7 +77,7 @@ class StunBindingRequest : public StunRequest {
     if (keep_alive_) {
       port_->requests_.SendDelayed(
           new StunBindingRequest(port_, true, server_addr_),
-          KEEPALIVE_DELAY);
+          port_->stun_keepalive_delay());
     }
   }
 
@@ -98,13 +98,13 @@ class StunBindingRequest : public StunRequest {
         && (talk_base::TimeSince(start_time_) <= RETRY_TIMEOUT)) {
       port_->requests_.SendDelayed(
           new StunBindingRequest(port_, true, server_addr_),
-          KEEPALIVE_DELAY);
+          port_->stun_keepalive_delay());
     }
   }
 
   virtual void OnTimeout() {
     LOG(LS_ERROR) << "Binding request timed out from "
-      << port_->GetLocalAddress().ToString()
+      << port_->GetLocalAddress().ToSensitiveString()
       << " (" << port_->Network()->name() << ")";
 
     port_->OnStunBindingOrResolveRequestFailed();
@@ -125,29 +125,33 @@ class StunBindingRequest : public StunRequest {
 };
 
 UDPPort::UDPPort(talk_base::Thread* thread,
+                 talk_base::PacketSocketFactory* factory,
                  talk_base::Network* network,
                  talk_base::AsyncPacketSocket* socket,
                  const std::string& username, const std::string& password)
-    : Port(thread, network, socket->GetLocalAddress().ipaddr(),
+    : Port(thread, factory, network, socket->GetLocalAddress().ipaddr(),
            username, password),
       requests_(thread),
       socket_(socket),
       error_(0),
-      resolver_(NULL) {
+      resolver_(NULL),
+      ready_(false),
+      stun_keepalive_delay_(KEEPALIVE_DELAY) {
 }
 
 UDPPort::UDPPort(talk_base::Thread* thread,
-                   talk_base::PacketSocketFactory* factory,
-                   talk_base::Network* network,
-                   const talk_base::IPAddress& ip, int min_port, int max_port,
-                   const std::string& username, const std::string& password)
-    : Port(thread, LOCAL_PORT_TYPE, ICE_TYPE_PREFERENCE_HOST,
-           factory, network, ip, min_port, max_port,
+                 talk_base::PacketSocketFactory* factory,
+                 talk_base::Network* network,
+                 const talk_base::IPAddress& ip, int min_port, int max_port,
+                 const std::string& username, const std::string& password)
+    : Port(thread, LOCAL_PORT_TYPE, factory, network, ip, min_port, max_port,
            username, password),
       requests_(thread),
       socket_(NULL),
       error_(0),
-      resolver_(NULL) {
+      resolver_(NULL),
+      ready_(false),
+      stun_keepalive_delay_(KEEPALIVE_DELAY) {
 }
 
 bool UDPPort::Init() {
@@ -161,6 +165,7 @@ bool UDPPort::Init() {
     }
     socket_->SignalReadPacket.connect(this, &UDPPort::OnReadPacket);
   }
+  socket_->SignalReadyToSend.connect(this, &UDPPort::OnReadyToSend);
   socket_->SignalAddressReady.connect(this, &UDPPort::OnLocalAddressReady);
   requests_.SignalSendPacket.connect(this, &UDPPort::OnSendPacket);
   return true;
@@ -168,7 +173,7 @@ bool UDPPort::Init() {
 
 UDPPort::~UDPPort() {
   if (resolver_) {
-    resolver_->Destroy(false);
+    resolver_->Destroy(true);
   }
   if (!SharedSocket())
     delete socket_;
@@ -187,7 +192,8 @@ void UDPPort::MaybePrepareStunCandidate() {
   if (!server_addr_.IsNil()) {
     SendStunBindingRequest();
   } else {
-    SignalAddressReady(this);
+    // Processing host candidate address.
+    SetResult(true);
   }
 }
 
@@ -211,8 +217,10 @@ Connection* UDPPort::CreateConnection(const Candidate& address,
 }
 
 int UDPPort::SendTo(const void* data, size_t size,
-                     const talk_base::SocketAddress& addr, bool payload) {
-  int sent = socket_->SendTo(data, size, addr);
+                    const talk_base::SocketAddress& addr,
+                    const talk_base::PacketOptions& options,
+                    bool payload) {
+  int sent = socket_->SendTo(data, size, addr, options);
   if (sent < 0) {
     error_ = socket_->GetError();
     LOG_J(LS_ERROR, this) << "UDP send of " << size
@@ -225,37 +233,46 @@ int UDPPort::SetOption(talk_base::Socket::Option opt, int value) {
   return socket_->SetOption(opt, value);
 }
 
+int UDPPort::GetOption(talk_base::Socket::Option opt, int* value) {
+  return socket_->GetOption(opt, value);
+}
+
 int UDPPort::GetError() {
   return error_;
 }
 
 void UDPPort::OnLocalAddressReady(talk_base::AsyncPacketSocket* socket,
                                   const talk_base::SocketAddress& address) {
-  AddAddress(address, address, "udp", LOCAL_PORT_TYPE,
+  AddAddress(address, address, talk_base::SocketAddress(),
+             UDP_PROTOCOL_NAME, LOCAL_PORT_TYPE,
              ICE_TYPE_PREFERENCE_HOST, false);
   MaybePrepareStunCandidate();
 }
 
-void UDPPort::OnReadPacket(talk_base::AsyncPacketSocket* socket,
-                           const char* data, size_t size,
-                           const talk_base::SocketAddress& remote_addr) {
+void UDPPort::OnReadPacket(
+  talk_base::AsyncPacketSocket* socket, const char* data, size_t size,
+  const talk_base::SocketAddress& remote_addr,
+  const talk_base::PacketTime& packet_time) {
   ASSERT(socket == socket_);
 
   // Look for a response from the STUN server.
   // Even if the response doesn't match one of our outstanding requests, we
   // will eat it because it might be a response to a retransmitted packet, and
   // we already cleared the request when we got the first response.
-  ASSERT(!server_addr_.IsUnresolved());
-  if (remote_addr == server_addr_ || remote_addr == server_addr2_) {
+  if (!server_addr_.IsUnresolved() && remote_addr == server_addr_) {
     requests_.CheckResponse(data, size);
     return;
   }
 
   if (Connection* conn = GetConnection(remote_addr)) {
-    conn->OnReadPacket(data, size);
+    conn->OnReadPacket(data, size, packet_time);
   } else {
     Port::OnReadPacket(data, size, remote_addr, PROTO_UDP);
   }
+}
+
+void UDPPort::OnReadyToSend(talk_base::AsyncPacketSocket* socket) {
+  Port::OnReadyToSend();
 }
 
 void UDPPort::SendStunBindingRequest() {
@@ -267,8 +284,13 @@ void UDPPort::SendStunBindingRequest() {
   if (server_addr_.IsUnresolved()) {
     ResolveStunAddress();
   } else if (socket_->GetState() == talk_base::AsyncPacketSocket::STATE_BOUND) {
-    if (server_addr_.family() == ip().family()) {
+    // Check if |server_addr_| is compatible with the port's ip.
+    if (IsCompatibleAddress(server_addr_)) {
       requests_.Send(new StunBindingRequest(this, true, server_addr_));
+    } else {
+      // Since we can't send stun messages to the server, we should mark this
+      // port ready.
+      OnStunBindingOrResolveRequestFailed();
     }
   }
 }
@@ -277,51 +299,63 @@ void UDPPort::ResolveStunAddress() {
   if (resolver_)
     return;
 
-  resolver_ = new talk_base::AsyncResolver();
-  resolver_->SignalWorkDone.connect(this, &UDPPort::OnResolveResult);
-  resolver_->set_address(server_addr_);
-  resolver_->Start();
+  resolver_ = socket_factory()->CreateAsyncResolver();
+  resolver_->SignalDone.connect(this, &UDPPort::OnResolveResult);
+  resolver_->Start(server_addr_);
 }
 
-void UDPPort::OnResolveResult(talk_base::SignalThread* t) {
-  ASSERT(t == resolver_);
-  if (resolver_->error() != 0) {
+void UDPPort::OnResolveResult(talk_base::AsyncResolverInterface* resolver) {
+  ASSERT(resolver == resolver_);
+  if (resolver_->GetError() != 0 ||
+      !resolver_->GetResolvedAddress(ip().family(), &server_addr_))  {
     LOG_J(LS_WARNING, this) << "StunPort: stun host lookup received error "
-                            << resolver_->error();
+                            << resolver_->GetError();
     OnStunBindingOrResolveRequestFailed();
+    return;
   }
 
-  server_addr_ = resolver_->address();
   SendStunBindingRequest();
 }
 
 void UDPPort::OnStunBindingRequestSucceeded(
     const talk_base::SocketAddress& stun_addr) {
-  if (SharedSocket() && stun_addr == socket_->GetLocalAddress()) {
-    // Discarding STUN candidate if it is same as the local candidate.
-    SignalAddressReady(this);
-  } else {
-    // Setting related address before STUN candidate is added. For STUN
-    // related address is local socket address.
-    set_related_address(socket_->GetLocalAddress());
-    AddAddress(stun_addr, socket_->GetLocalAddress(), "udp",
-               STUN_PORT_TYPE, ICE_TYPE_PREFERENCE_PRFLX, true);
+  if (ready_)  // Discarding the binding response if port is already enabled.
+    return;
+
+  if (!SharedSocket() || stun_addr != socket_->GetLocalAddress()) {
+    // If socket is shared and |stun_addr| is equal to local socket
+    // address then discarding the stun address.
+    // For STUN related address is local socket address.
+    AddAddress(stun_addr, socket_->GetLocalAddress(),
+               socket_->GetLocalAddress(), UDP_PROTOCOL_NAME,
+               STUN_PORT_TYPE, ICE_TYPE_PREFERENCE_SRFLX, false);
   }
+  SetResult(true);
 }
 
 void UDPPort::OnStunBindingOrResolveRequestFailed() {
-  if (SharedSocket()) {
-    // If socket is shared, we should process local udp candidate.
-    SignalAddressReady(this);
+  if (ready_)  // Discarding failure response if port is already enabled.
+    return;
+
+  // If socket is shared, we should process local udp candidate.
+  SetResult(SharedSocket());
+}
+
+void UDPPort::SetResult(bool success) {
+  // Setting ready status.
+  ready_ = true;
+  if (success) {
+    SignalPortComplete(this);
   } else {
-    SignalAddressError(this);
+    SignalPortError(this);
   }
 }
 
 // TODO: merge this with SendTo above.
 void UDPPort::OnSendPacket(const void* data, size_t size, StunRequest* req) {
   StunBindingRequest* sreq = static_cast<StunBindingRequest*>(req);
-  if (socket_->SendTo(data, size, sreq->server_addr()) < 0)
+  talk_base::PacketOptions options(DefaultDscpValue());
+  if (socket_->SendTo(data, size, sreq->server_addr(), options) < 0)
     PLOG(LERROR, socket_->GetError()) << "sendto";
 }
 

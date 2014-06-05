@@ -7,11 +7,12 @@
 #include <math.h>
 
 #include "base/logging.h"
-#include "base/stringprintf.h"
-#include "base/time.h"
+#include "base/strings/stringprintf.h"
+#include "base/time/time.h"
 #include "media/base/video_frame.h"
 #include "media/base/yuv_convert.h"
-#include "third_party/skia/include/core/SkRegion.h"
+#include "third_party/libyuv/include/libyuv/convert.h"
+#include "third_party/webrtc/modules/desktop_capture/desktop_region.h"
 
 using media::VideoFrame;
 
@@ -25,9 +26,9 @@ std::string GetTimestampString() {
   base::Time t = base::Time::NowFromSystemTime();
   base::Time::Exploded tex;
   t.LocalExplode(&tex);
-  return StringPrintf("%02d%02d/%02d%02d%02d:",
-                      tex.month, tex.day_of_month,
-                      tex.hour, tex.minute, tex.second);
+  return base::StringPrintf("%02d%02d/%02d%02d%02d:",
+                            tex.month, tex.day_of_month,
+                            tex.hour, tex.minute, tex.second);
 }
 
 int CalculateRGBOffset(int x, int y, int stride) {
@@ -59,88 +60,80 @@ void ConvertRGB32ToYUVWithRect(const uint8* rgb_plane,
   int y_offset = CalculateYOffset(x, y, y_stride);
   int uv_offset = CalculateUVOffset(x, y, uv_stride);;
 
-  media::ConvertRGB32ToYUV(rgb_plane + rgb_offset,
-                           y_plane + y_offset,
-                           u_plane + uv_offset,
-                           v_plane + uv_offset,
-                           width,
-                           height,
-                           rgb_stride,
-                           y_stride,
-                           uv_stride);
+  libyuv::ARGBToI420(rgb_plane + rgb_offset, rgb_stride,
+                     y_plane + y_offset, y_stride,
+                     u_plane + uv_offset, uv_stride,
+                     v_plane + uv_offset, uv_stride,
+                     width, height);
 }
 
-void ConvertAndScaleYUVToRGB32Rect(const uint8* source_yplane,
-                                   const uint8* source_uplane,
-                                   const uint8* source_vplane,
-                                   int source_ystride,
-                                   int source_uvstride,
-                                   const SkISize& source_size,
-                                   const SkIRect& source_buffer_rect,
-                                   uint8* dest_buffer,
-                                   int dest_stride,
-                                   const SkISize& dest_size,
-                                   const SkIRect& dest_buffer_rect,
-                                   const SkIRect& dest_rect) {
+void ConvertAndScaleYUVToRGB32Rect(
+    const uint8* source_yplane,
+    const uint8* source_uplane,
+    const uint8* source_vplane,
+    int source_ystride,
+    int source_uvstride,
+    const webrtc::DesktopSize& source_size,
+    const webrtc::DesktopRect& source_buffer_rect,
+    uint8* dest_buffer,
+    int dest_stride,
+    const webrtc::DesktopSize& dest_size,
+    const webrtc::DesktopRect& dest_buffer_rect,
+    const webrtc::DesktopRect& dest_rect) {
   // N.B. It is caller's responsibility to check if strides are large enough. We
   // cannot do it here anyway.
-  DCHECK(SkIRect::MakeSize(source_size).contains(source_buffer_rect));
-  DCHECK(SkIRect::MakeSize(dest_size).contains(dest_buffer_rect));
-  DCHECK(dest_buffer_rect.contains(dest_rect));
-  DCHECK(ScaleRect(source_buffer_rect, source_size, dest_size).
-             contains(dest_rect));
+  DCHECK(DoesRectContain(webrtc::DesktopRect::MakeSize(source_size),
+                         source_buffer_rect));
+  DCHECK(DoesRectContain(webrtc::DesktopRect::MakeSize(dest_size),
+                         dest_buffer_rect));
+  DCHECK(DoesRectContain(dest_buffer_rect, dest_rect));
+  DCHECK(DoesRectContain(ScaleRect(source_buffer_rect, source_size, dest_size),
+                         dest_rect));
 
   // If the source and/or destination buffers don't start at (0, 0)
   // offset the pointers to pretend we have complete buffers.
-  int y_offset = - CalculateYOffset(source_buffer_rect.x(),
-                                    source_buffer_rect.y(),
+  int y_offset = - CalculateYOffset(source_buffer_rect.left(),
+                                    source_buffer_rect.top(),
                                     source_ystride);
-  int uv_offset = - CalculateUVOffset(source_buffer_rect.x(),
-                                      source_buffer_rect.y(),
+  int uv_offset = - CalculateUVOffset(source_buffer_rect.left(),
+                                      source_buffer_rect.top(),
                                       source_uvstride);
-  int rgb_offset = - CalculateRGBOffset(dest_buffer_rect.x(),
-                                        dest_buffer_rect.y(),
+  int rgb_offset = - CalculateRGBOffset(dest_buffer_rect.left(),
+                                        dest_buffer_rect.top(),
                                         dest_stride);
 
   // See if scaling is needed.
-  if (source_size == dest_size) {
+  if (source_size.equals(dest_size)) {
     // Calculate the inner rectangle that can be copied by the optimized
-    // ConvertYUVToRGB32().
-    SkIRect inner_rect =
-        SkIRect::MakeLTRB(RoundToTwosMultiple(dest_rect.left() + 1),
-                          RoundToTwosMultiple(dest_rect.top() + 1),
-                          dest_rect.right(),
-                          dest_rect.bottom());
+    // libyuv::I420ToARGB().
+    webrtc::DesktopRect inner_rect =
+        webrtc::DesktopRect::MakeLTRB(RoundToTwosMultiple(dest_rect.left() + 1),
+                                      RoundToTwosMultiple(dest_rect.top() + 1),
+                                      dest_rect.right(), dest_rect.bottom());
 
     // Offset pointers to point to the top left corner of the inner rectangle.
-    y_offset += CalculateYOffset(inner_rect.x(), inner_rect.y(),
+    y_offset += CalculateYOffset(inner_rect.left(), inner_rect.top(),
                                  source_ystride);
-    uv_offset += CalculateUVOffset(inner_rect.x(), inner_rect.y(),
+    uv_offset += CalculateUVOffset(inner_rect.left(), inner_rect.top(),
                                    source_uvstride);
-    rgb_offset += CalculateRGBOffset(inner_rect.x(), inner_rect.y(),
+    rgb_offset += CalculateRGBOffset(inner_rect.left(), inner_rect.top(),
                                      dest_stride);
 
-    media::ConvertYUVToRGB32(source_yplane + y_offset,
-                             source_uplane + uv_offset,
-                             source_vplane + uv_offset,
-                             dest_buffer + rgb_offset,
-                             inner_rect.width(),
-                             inner_rect.height(),
-                             source_ystride,
-                             source_uvstride,
-                             dest_stride,
-                             media::YV12);
+    libyuv::I420ToARGB(source_yplane + y_offset, source_ystride,
+                       source_uplane + uv_offset, source_uvstride,
+                       source_vplane + uv_offset, source_uvstride,
+                       dest_buffer + rgb_offset, dest_stride,
+                       inner_rect.width(), inner_rect.height());
 
     // Now see if some pixels weren't copied due to alignment.
-    if (dest_rect != inner_rect) {
-      SkIRect outer_rect =
-        SkIRect::MakeLTRB(RoundToTwosMultiple(dest_rect.left()),
-                          RoundToTwosMultiple(dest_rect.top()),
-                          dest_rect.right(),
-                          dest_rect.bottom());
+    if (!dest_rect.equals(inner_rect)) {
+      webrtc::DesktopRect outer_rect =
+          webrtc::DesktopRect::MakeLTRB(RoundToTwosMultiple(dest_rect.left()),
+                                        RoundToTwosMultiple(dest_rect.top()),
+                                        dest_rect.right(), dest_rect.bottom());
 
-      SkIPoint offset = SkIPoint::Make(outer_rect.x() - inner_rect.x(),
-                                       outer_rect.y() - inner_rect.y());
+      webrtc::DesktopVector offset(outer_rect.left() - inner_rect.left(),
+                                   outer_rect.top() - inner_rect.top());
 
       // Offset the pointers to point to the top left corner of the outer
       // rectangle.
@@ -149,11 +142,12 @@ void ConvertAndScaleYUVToRGB32Rect(const uint8* source_yplane,
       rgb_offset += CalculateRGBOffset(offset.x(), offset.y(), dest_stride);
 
       // Draw unaligned edges.
-      SkRegion edges(dest_rect);
-      edges.op(inner_rect, SkRegion::kDifference_Op);
-      for (SkRegion::Iterator i(edges); !i.done(); i.next()) {
-        SkIRect rect(i.rect());
-        rect.offset(- outer_rect.left(), - outer_rect.top());
+      webrtc::DesktopRegion edges(dest_rect);
+      edges.Subtract(inner_rect);
+      for (webrtc::DesktopRegion::Iterator i(edges); !i.IsAtEnd();
+           i.Advance()) {
+        webrtc::DesktopRect rect = i.rect();
+        rect.Translate(-outer_rect.left(), -outer_rect.top());
         media::ScaleYUVToRGB32WithRect(source_yplane + y_offset,
                                        source_uplane + uv_offset,
                                        source_vplane + uv_offset,
@@ -194,74 +188,53 @@ int RoundToTwosMultiple(int x) {
   return x & (~1);
 }
 
-SkIRect AlignRect(const SkIRect& rect) {
+webrtc::DesktopRect AlignRect(const webrtc::DesktopRect& rect) {
   int x = RoundToTwosMultiple(rect.left());
   int y = RoundToTwosMultiple(rect.top());
   int right = RoundToTwosMultiple(rect.right() + 1);
   int bottom = RoundToTwosMultiple(rect.bottom() + 1);
-  return SkIRect::MakeLTRB(x, y, right, bottom);
+  return webrtc::DesktopRect::MakeLTRB(x, y, right, bottom);
 }
 
-SkIRect ScaleRect(const SkIRect& rect,
-                  const SkISize& in_size,
-                  const SkISize& out_size) {
+webrtc::DesktopRect ScaleRect(const webrtc::DesktopRect& rect,
+                              const webrtc::DesktopSize& in_size,
+                              const webrtc::DesktopSize& out_size) {
   int left = (rect.left() * out_size.width()) / in_size.width();
   int top = (rect.top() * out_size.height()) / in_size.height();
   int right = (rect.right() * out_size.width() + in_size.width() - 1) /
       in_size.width();
   int bottom = (rect.bottom() * out_size.height() + in_size.height() - 1) /
       in_size.height();
-  return SkIRect::MakeLTRB(left, top, right, bottom);
-}
-
-void CopyRect(const uint8* src_plane,
-              int src_plane_stride,
-              uint8* dest_plane,
-              int dest_plane_stride,
-              int bytes_per_pixel,
-              const SkIRect& rect) {
-  // Get the address of the starting point.
-  const int src_y_offset = src_plane_stride * rect.top();
-  const int dest_y_offset = dest_plane_stride * rect.top();
-  const int x_offset = bytes_per_pixel * rect.left();
-  src_plane += src_y_offset + x_offset;
-  dest_plane += dest_y_offset + x_offset;
-
-  // Copy pixels in the rectangle line by line.
-  const int bytes_per_line = bytes_per_pixel * rect.width();
-  const int height = rect.height();
-  for (int i = 0 ; i < height; ++i) {
-    memcpy(dest_plane, src_plane, bytes_per_line);
-    src_plane += src_plane_stride;
-    dest_plane += dest_plane_stride;
-  }
+  return webrtc::DesktopRect::MakeLTRB(left, top, right, bottom);
 }
 
 void CopyRGB32Rect(const uint8* source_buffer,
                    int source_stride,
-                   const SkIRect& source_buffer_rect,
+                   const webrtc::DesktopRect& source_buffer_rect,
                    uint8* dest_buffer,
                    int dest_stride,
-                   const SkIRect& dest_buffer_rect,
-                   const SkIRect& dest_rect) {
-  DCHECK(dest_buffer_rect.contains(dest_rect));
-  DCHECK(source_buffer_rect.contains(dest_rect));
+                   const webrtc::DesktopRect& dest_buffer_rect,
+                   const webrtc::DesktopRect& dest_rect) {
+  DCHECK(DoesRectContain(dest_buffer_rect, dest_rect));
+  DCHECK(DoesRectContain(source_buffer_rect, dest_rect));
 
   // Get the address of the starting point.
-  int source_offset = CalculateRGBOffset(dest_rect.x() - source_buffer_rect.x(),
-                                         dest_rect.y() - source_buffer_rect.y(),
-                                         source_stride);
-  int dest_offset = CalculateRGBOffset(dest_rect.x() - dest_buffer_rect.x(),
-                                       dest_rect.y() - dest_buffer_rect.y(),
-                                       source_stride);
+  source_buffer += CalculateRGBOffset(
+      dest_rect.left() - source_buffer_rect.left(),
+      dest_rect.top() - source_buffer_rect.top(),
+      source_stride);
+  dest_buffer += CalculateRGBOffset(
+      dest_rect.left() - dest_buffer_rect.left(),
+      dest_rect.top() - dest_buffer_rect.top(),
+      source_stride);
 
-  // Copy bits.
-  CopyRect(source_buffer + source_offset,
-           source_stride,
-           dest_buffer + dest_offset,
-           dest_stride,
-           kBytesPerPixelRGB32,
-           SkIRect::MakeWH(dest_rect.width(), dest_rect.height()));
+  // Copy pixels in the rectangle line by line.
+  const int bytes_per_line = kBytesPerPixelRGB32 * dest_rect.width();
+  for (int i = 0 ; i < dest_rect.height(); ++i) {
+    memcpy(dest_buffer, source_buffer, bytes_per_line);
+    source_buffer += source_stride;
+    dest_buffer += dest_stride;
+  }
 }
 
 std::string ReplaceLfByCrLf(const std::string& in) {
@@ -332,6 +305,13 @@ bool StringIsUtf8(const char* data, size_t length) {
   }
 
   return true;
+}
+
+bool DoesRectContain(const webrtc::DesktopRect& a,
+                     const webrtc::DesktopRect& b) {
+  webrtc::DesktopRect intersection(a);
+  intersection.IntersectWith(b);
+  return intersection.equals(b);
 }
 
 }  // namespace remoting

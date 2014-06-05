@@ -27,25 +27,24 @@ class MockAuthenticator : public Authenticator {
   }
 
   virtual void CompleteLogin(Profile* profile,
-                             const std::string& username,
-                             const std::string& password) OVERRIDE;
+                             const UserContext& user_context) OVERRIDE;
 
   virtual void AuthenticateToLogin(Profile* profile,
-                                   const std::string& username,
-                                   const std::string& password,
-                                   const std::string& login_token,
-                                   const std::string& login_captcha) OVERRIDE;
+                                   const UserContext& user_context) OVERRIDE;
 
-  virtual void AuthenticateToUnlock(const std::string& username,
-                                    const std::string& password) OVERRIDE;
+  virtual void AuthenticateToUnlock(const UserContext& user_context) OVERRIDE;
 
+  virtual void LoginAsLocallyManagedUser(
+      const UserContext& user_context) OVERRIDE;
   virtual void LoginRetailMode() OVERRIDE;
   virtual void LoginAsPublicAccount(const std::string& username) OVERRIDE;
+  virtual void LoginAsKioskAccount(const std::string& app_user_id,
+                                   bool use_guest_mount) OVERRIDE;
   virtual void LoginOffTheRecord() OVERRIDE;
 
   virtual void OnRetailModeLoginSuccess() OVERRIDE;
 
-  virtual void OnLoginSuccess(bool request_pending) OVERRIDE;
+  virtual void OnLoginSuccess() OVERRIDE;
 
   virtual void OnLoginFailure(const LoginFailure& failure) OVERRIDE;
 
@@ -54,11 +53,8 @@ class MockAuthenticator : public Authenticator {
 
   virtual void ResyncEncryptedData() OVERRIDE {}
 
-  virtual void RetryAuth(Profile* profile,
-                         const std::string& username,
-                         const std::string& password,
-                         const std::string& login_token,
-                         const std::string& login_captcha) OVERRIDE {}
+  virtual void SetExpectedCredentials(const std::string& expected_username,
+                                      const std::string& expected_password);
 
  protected:
   virtual ~MockAuthenticator() {}

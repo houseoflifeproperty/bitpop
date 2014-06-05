@@ -15,10 +15,6 @@
 #include "courgette/courgette.h"
 #include "courgette/encoded_program.h"
 
-// COURGETTE_HISTOGRAM_TARGETS prints out a histogram of how frequently
-// different target addresses are referenced.  Purely for debugging.
-#define COURGETTE_HISTOGRAM_TARGETS 0
-
 namespace courgette {
 
 DisassemblerWin32X86::DisassemblerWin32X86(const void* start, size_t length)
@@ -189,7 +185,7 @@ bool DisassemblerWin32X86::ParseHeader() {
   ReduceLength(detected_length);
 
   if (!is_32bit()) {
-    return Bad("64 bit executables are not yet supported");
+    return Bad("64 bit executables are not supported by this disassembler");
   }
 
   if (!has_text_section()) {

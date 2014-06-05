@@ -15,11 +15,11 @@
 #include "ppapi/c/pp_var.h"
 #include "ppapi/proxy/ppapi_proxy_export.h"
 #include "ppapi/shared_impl/file_path.h"
+#include "ppapi/shared_impl/file_ref_create_info.h"
+#include "ppapi/shared_impl/media_stream_video_track_shared.h"
 #include "ppapi/shared_impl/ppapi_permissions.h"
-#include "ppapi/shared_impl/ppb_file_ref_shared.h"
+#include "ppapi/shared_impl/socket_option_data.h"
 
-struct PP_FileInfo;
-struct PP_ObjectProperty;
 struct PP_NetAddress_Private;
 
 namespace ppapi {
@@ -33,6 +33,7 @@ struct PPBFlash_DrawGlyphs_Params;
 struct PPBURLLoader_UpdateProgress_Params;
 struct SerializedDirEntry;
 struct SerializedFontDescription;
+struct SerializedTrueTypeFontDesc;
 class SerializedFlashMenu;
 class SerializedHandle;
 class SerializedVar;
@@ -50,14 +51,6 @@ struct PPAPI_PROXY_EXPORT ParamTraits<PP_Bool> {
   static void Log(const param_type& p, std::string* l);
 };
 
-template<>
-struct PPAPI_PROXY_EXPORT ParamTraits<PP_FileInfo> {
-  typedef PP_FileInfo param_type;
-  static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
-  static void Log(const param_type& p, std::string* l);
-};
-
 template <>
 struct PPAPI_PROXY_EXPORT ParamTraits<PP_NetAddress_Private> {
   typedef PP_NetAddress_Private param_type;
@@ -67,25 +60,9 @@ struct PPAPI_PROXY_EXPORT ParamTraits<PP_NetAddress_Private> {
 };
 
 template<>
-struct PPAPI_PROXY_EXPORT ParamTraits<PP_ObjectProperty> {
-  typedef PP_ObjectProperty param_type;
-  static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
-  static void Log(const param_type& p, std::string* l);
-};
-
-template<>
 struct PPAPI_PROXY_EXPORT ParamTraits<
     ppapi::proxy::PPBFlash_DrawGlyphs_Params> {
   typedef ppapi::proxy::PPBFlash_DrawGlyphs_Params param_type;
-  static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
-  static void Log(const param_type& p, std::string* l);
-};
-
-template<>
-struct PPAPI_PROXY_EXPORT ParamTraits<ppapi::PPB_FileRef_CreateInfo> {
-  typedef ppapi::PPB_FileRef_CreateInfo param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
@@ -111,6 +88,15 @@ struct PPAPI_PROXY_EXPORT ParamTraits<ppapi::proxy::SerializedDirEntry> {
 template<>
 struct PPAPI_PROXY_EXPORT ParamTraits<ppapi::proxy::SerializedFontDescription> {
   typedef ppapi::proxy::SerializedFontDescription param_type;
+  static void Write(Message* m, const param_type& p);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
+  static void Log(const param_type& p, std::string* l);
+};
+
+template<>
+struct PPAPI_PROXY_EXPORT
+    ParamTraits<ppapi::proxy::SerializedTrueTypeFontDesc> {
+  typedef ppapi::proxy::SerializedTrueTypeFontDesc param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
@@ -150,15 +136,6 @@ struct PPAPI_PROXY_EXPORT ParamTraits<
 };
 
 template<>
-struct PPAPI_PROXY_EXPORT ParamTraits< std::vector<
-    ppapi::PPB_FileRef_CreateInfo> > {
-  typedef std::vector<ppapi::PPB_FileRef_CreateInfo> param_type;
-  static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
-  static void Log(const param_type& p, std::string* l);
-};
-
-template<>
 struct PPAPI_PROXY_EXPORT ParamTraits<ppapi::PpapiPermissions> {
   typedef ppapi::PpapiPermissions param_type;
   static void Write(Message* m, const param_type& p);
@@ -192,6 +169,13 @@ struct PPAPI_PROXY_EXPORT ParamTraits<ppapi::PPB_X509Certificate_Fields> {
   static void Log(const param_type& p, std::string* l);
 };
 
+template<>
+struct PPAPI_PROXY_EXPORT ParamTraits<ppapi::SocketOptionData> {
+  typedef ppapi::SocketOptionData param_type;
+  static void Write(Message* m, const param_type& p);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
+  static void Log(const param_type& p, std::string* l);
+};
 
 }  // namespace IPC
 

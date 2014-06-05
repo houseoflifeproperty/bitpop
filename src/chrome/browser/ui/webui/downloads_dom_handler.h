@@ -11,6 +11,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/download/all_download_item_notifier.h"
+#include "chrome/browser/download/download_danger_prompt.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/web_ui_message_handler.h"
@@ -73,6 +74,9 @@ class DownloadsDOMHandler : public content::WebUIMessageHandler,
   // Callback for the "pause" message - pauses the file download.
   void HandlePause(const base::ListValue* args);
 
+  // Callback for the "resume" message - resumes the file download.
+  void HandleResume(const base::ListValue* args);
+
   // Callback for the "remove" message - removes the file download from shelf
   // and list.
   void HandleRemove(const base::ListValue* args);
@@ -95,14 +99,14 @@ class DownloadsDOMHandler : public content::WebUIMessageHandler,
   virtual void CallDownloadsList(const base::ListValue& downloads);
   virtual void CallDownloadUpdated(const base::ListValue& download);
 
+  // Schedules a call to SendCurrentDownloads() in the next message loop
+  // iteration. Protected rather than private for use in tests.
+  void ScheduleSendCurrentDownloads();
+
  private:
   // Shorthand for |observing_items_|, which tracks all items that this is
   // observing so that RemoveObserver will be called for all of them.
   typedef std::set<content::DownloadItem*> DownloadSet;
-
-  // Schedules a call to SendCurrentDownloads() in the next message loop
-  // iteration.
-  void ScheduleSendCurrentDownloads();
 
   // Sends the current list of downloads to the page.
   void SendCurrentDownloads();
@@ -117,13 +121,17 @@ class DownloadsDOMHandler : public content::WebUIMessageHandler,
 
   // Conveys danger acceptance from the DownloadDangerPrompt to the
   // DownloadItem.
-  void DangerPromptAccepted(int download_id);
+  void DangerPromptDone(int download_id, DownloadDangerPrompt::Action action);
+
+  // Returns true if the records of any downloaded items are allowed (and able)
+  // to be deleted.
+  bool IsDeletingHistoryAllowed();
 
   // Returns the download that is referred to in a given value.
   content::DownloadItem* GetDownloadByValue(const base::ListValue* args);
 
-  // Current search text.
-  string16 search_text_;
+  // Current search terms.
+  scoped_ptr<base::ListValue> search_terms_;
 
   // Notifies OnDownload*() and provides safe access to the DownloadManager.
   AllDownloadItemNotifier main_notifier_;

@@ -9,7 +9,6 @@
 #include <shellapi.h>
 #endif
 
-#include "base/file_util.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/app/chrome_command_ids.h"
@@ -40,7 +39,7 @@ void TabIconView::InitializeIfNeeded() {
     HICON app_icon = GetAppIcon();
     scoped_ptr<SkBitmap> bitmap(
         IconUtil::CreateSkBitmapFromHICON(app_icon, gfx::Size(16, 16)));
-    g_default_favicon = new gfx::ImageSkia(*bitmap);
+    g_default_favicon = new gfx::ImageSkia(gfx::ImageSkiaRep(*bitmap, 1.0f));
     DestroyIcon(app_icon);
 #else
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
@@ -49,8 +48,10 @@ void TabIconView::InitializeIfNeeded() {
   }
 }
 
-TabIconView::TabIconView(chrome::TabIconViewModel* model)
-    : model_(model),
+TabIconView::TabIconView(chrome::TabIconViewModel* model,
+                         views::MenuButtonListener* listener)
+    : views::MenuButton(NULL, base::string16(), listener, false),
+      model_(model),
       throbber_running_(false),
       is_light_(false),
       throbber_frame_(0) {

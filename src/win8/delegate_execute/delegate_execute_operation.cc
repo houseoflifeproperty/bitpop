@@ -5,8 +5,8 @@
 #include "win8/delegate_execute/delegate_execute_operation.h"
 
 #include "base/command_line.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "chrome/common/chrome_switches.h"
 #include "win8/delegate_execute/delegate_execute_util.h"
 
@@ -20,7 +20,8 @@ DelegateExecuteOperation::~DelegateExecuteOperation() {
 }
 
 bool DelegateExecuteOperation::Init(const CommandLine* cmd_line) {
-  FilePath shortcut(cmd_line->GetSwitchValuePath(switches::kRelaunchShortcut));
+  base::FilePath shortcut(
+      cmd_line->GetSwitchValuePath(switches::kRelaunchShortcut));
   if (shortcut.empty()) {
     operation_type_ = DELEGATE_EXECUTE;
     return true;
@@ -44,7 +45,7 @@ bool DelegateExecuteOperation::Init(const CommandLine* cmd_line) {
 }
 
 DWORD DelegateExecuteOperation::GetParentPid() const {
-  std::vector<string16> parts;
+  std::vector<base::string16> parts;
   base::SplitString(mutex_, L'.', &parts);
   if (parts.size() != 3)
     return 0;

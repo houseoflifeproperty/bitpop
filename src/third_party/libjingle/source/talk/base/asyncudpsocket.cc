@@ -60,6 +60,7 @@ AsyncUDPSocket::AsyncUDPSocket(AsyncSocket* socket)
 
   // The socket should start out readable but not writable.
   socket_->SignalReadEvent.connect(this, &AsyncUDPSocket::OnReadEvent);
+  socket_->SignalWriteEvent.connect(this, &AsyncUDPSocket::OnWriteEvent);
 }
 
 AsyncUDPSocket::~AsyncUDPSocket() {
@@ -74,12 +75,14 @@ SocketAddress AsyncUDPSocket::GetRemoteAddress() const {
   return socket_->GetRemoteAddress();
 }
 
-int AsyncUDPSocket::Send(const void *pv, size_t cb) {
+int AsyncUDPSocket::Send(const void *pv, size_t cb,
+                         const talk_base::PacketOptions& options) {
   return socket_->Send(pv, cb);
 }
 
-int AsyncUDPSocket::SendTo(
-    const void *pv, size_t cb, const SocketAddress& addr) {
+int AsyncUDPSocket::SendTo(const void *pv, size_t cb,
+                           const SocketAddress& addr,
+                           const talk_base::PacketOptions& options) {
   return socket_->SendTo(pv, cb, addr);
 }
 
@@ -118,14 +121,19 @@ void AsyncUDPSocket::OnReadEvent(AsyncSocket* socket) {
     // When doing ICE, this kind of thing will often happen.
     // TODO: Do something better like forwarding the error to the user.
     SocketAddress local_addr = socket_->GetLocalAddress();
-    LOG(LS_INFO) << "AsyncUDPSocket[" << local_addr.ToString() << "] "
+    LOG(LS_INFO) << "AsyncUDPSocket[" << local_addr.ToSensitiveString() << "] "
                  << "receive failed with error " << socket_->GetError();
     return;
   }
 
   // TODO: Make sure that we got all of the packet.
   // If we did not, then we should resize our buffer to be large enough.
-  SignalReadPacket(this, buf_, (size_t)len, remote_addr);
+  SignalReadPacket(this, buf_, static_cast<size_t>(len), remote_addr,
+                   CreatePacketTime(0));
+}
+
+void AsyncUDPSocket::OnWriteEvent(AsyncSocket* socket) {
+  SignalReadyToSend(this);
 }
 
 }  // namespace talk_base

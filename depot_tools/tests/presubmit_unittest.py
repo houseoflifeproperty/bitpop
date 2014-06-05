@@ -7,12 +7,14 @@
 
 # pylint: disable=E1101,E1103
 
+import functools
+import itertools
 import logging
 import os
 import StringIO
-import subprocess
 import sys
 import time
+import unittest
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
@@ -20,6 +22,7 @@ sys.path.insert(0, _ROOT)
 from testing_support.super_mox import mox, SuperMoxTestBase
 
 import owners
+import subprocess2 as subprocess
 import presubmit_support as presubmit
 import rietveld
 
@@ -56,6 +59,11 @@ def GetPreferredTrySlaves(project):
     return %s
   else:
     return %s
+"""
+
+  presubmit_trymaster = """
+def GetPreferredTryMasters(project, change):
+  return %s
 """
 
   presubmit_diffs = """
@@ -146,6 +154,7 @@ def GetPreferredTrySlaves(project):
     self.mox.StubOutWithMock(presubmit.gclient_utils, 'FileRead')
     self.mox.StubOutWithMock(presubmit.gclient_utils, 'FileWrite')
     self.mox.StubOutWithMock(presubmit.scm.SVN, 'GenerateDiff')
+    self.mox.StubOutWithMock(presubmit.scm.GIT, 'GenerateDiff')
 
 
 class PresubmitUnittest(PresubmitTestsBase):
@@ -157,21 +166,38 @@ class PresubmitUnittest(PresubmitTestsBase):
     self.mox.ReplayAll()
     members = [
       'AffectedFile', 'Change', 'DoGetTrySlaves', 'DoPresubmitChecks',
-      'GetTrySlavesExecuter', 'GitAffectedFile',
+      'GetTrySlavesExecuter', 'GitAffectedFile', 'CallCommand', 'CommandData',
       'GitChange', 'InputApi', 'ListRelevantPresubmitFiles', 'Main',
-      'OutputApi', 'ParseFiles', 'PresubmitFailure',
-      'PresubmitExecuter', 'PresubmitOutput', 'ScanSubDirs',
-      'SvnAffectedFile', 'SvnChange', 'cPickle', 'cStringIO',
-      'fix_encoding', 'fnmatch', 'gclient_utils', 'glob', 'inspect', 'json',
-      'load_files',
-      'logging', 'marshal', 'normpath', 'optparse', 'os', 'owners', 'pickle',
+      'NonexistantCannedCheckFilter', 'OutputApi', 'ParseFiles',
+      'PresubmitFailure', 'PresubmitExecuter', 'PresubmitOutput', 'ScanSubDirs',
+      'SvnAffectedFile', 'SvnChange', 'cPickle', 'cpplint', 'cStringIO',
+      'contextlib', 'canned_check_filter', 'fix_encoding', 'fnmatch',
+      'gclient_utils', 'glob', 'inspect', 'json', 'load_files', 'logging',
+      'marshal', 'normpath', 'optparse', 'os', 'owners', 'pickle',
       'presubmit_canned_checks', 'random', 're', 'rietveld', 'scm',
-      'subprocess',
-      'sys', 'tempfile', 'time', 'traceback', 'types', 'unittest', 'urllib2',
-      'warn',
+      'subprocess', 'sys', 'tempfile', 'time', 'traceback', 'types', 'unittest',
+      'urllib2', 'warn', 'multiprocessing', 'DoGetTryMasters',
+      'GetTryMastersExecuter', 'itertools',
     ]
     # If this test fails, you should add the relevant test.
     self.compareMembers(presubmit, members)
+
+  def testCannedCheckFilter(self):
+    canned = presubmit.presubmit_canned_checks
+    orig = canned.CheckOwners
+    with presubmit.canned_check_filter(['CheckOwners']):
+      self.assertNotEqual(canned.CheckOwners, orig)
+      self.assertEqual(canned.CheckOwners(None, None), [])
+    self.assertEqual(canned.CheckOwners, orig)
+
+  def testCannedCheckFilterFail(self):
+    canned = presubmit.presubmit_canned_checks
+    orig = canned.CheckOwners
+    def failAttempt():
+      with presubmit.canned_check_filter(['CheckOwners', 'Spazfleem']):
+        pass
+    self.assertRaises(presubmit.NonexistantCannedCheckFilter, failAttempt)
+    self.assertEqual(canned.CheckOwners, orig)
 
   def testListRelevantPresubmitFiles(self):
     join = presubmit.os.path.join
@@ -367,6 +393,195 @@ class PresubmitUnittest(PresubmitTestsBase):
     self.assertEquals(rhs_lines[13][0].LocalPath(), files[3][1])
     self.assertEquals(rhs_lines[13][1], 49)
     self.assertEquals(rhs_lines[13][2], 'this is line number 48.1')
+
+  def testGitChange(self):
+    description_lines = ('Hello there',
+                         'this is a change',
+                         'BUG=123',
+                         ' STORY =http://foo/  \t',
+                         'and some more regular text  \t')
+    unified_diff = [
+        'diff --git binary_a.png binary_a.png',
+        'new file mode 100644',
+        'index 0000000..6fbdd6d',
+        'Binary files /dev/null and binary_a.png differ',
+        'diff --git binary_d.png binary_d.png',
+        'deleted file mode 100644',
+        'index 6fbdd6d..0000000',
+        'Binary files binary_d.png and /dev/null differ',
+        'diff --git binary_md.png binary_md.png',
+        'index 6fbdd6..be3d5d8 100644',
+        'GIT binary patch',
+        'delta 109',
+        'zcmeyihjs5>)(Opwi4&WXB~yyi6N|G`(i5|?i<2_a@)OH5N{Um`D-<SM@g!_^W9;SR',
+        'zO9b*W5{pxTM0slZ=F42indK9U^MTyVQlJ2s%1BMmEKMv1Q^gtS&9nHn&*Ede;|~CU',
+        'CMJxLN',
+        '',
+        'delta 34',
+        'scmV+-0Nww+y#@BX1(1W0gkzIp3}CZh0gVZ>`wGVcgW(Rh;SK@ZPa9GXlK=n!',
+        '',
+        'diff --git binary_m.png binary_m.png',
+        'index 6fbdd6d..be3d5d8 100644',
+        'Binary files binary_m.png and binary_m.png differ',
+        'diff --git boo/blat.cc boo/blat.cc',
+        'new file mode 100644',
+        'index 0000000..37d18ad',
+        '--- boo/blat.cc',
+        '+++ boo/blat.cc',
+        '@@ -0,0 +1,5 @@',
+        '+This is some text',
+        '+which lacks a copyright warning',
+        '+but it is nonetheless interesting',
+        '+and worthy of your attention.',
+        '+Its freshness factor is through the roof.',
+        'diff --git floo/delburt.cc floo/delburt.cc',
+        'deleted file mode 100644',
+        'index e06377a..0000000',
+        '--- floo/delburt.cc',
+        '+++ /dev/null',
+        '@@ -1,14 +0,0 @@',
+        '-This text used to be here',
+        '-but someone, probably you,',
+        '-having consumed the text',
+        '-  (absorbed its meaning)',
+        '-decided that it should be made to not exist',
+        '-that others would not read it.',
+        '-  (What happened here?',
+        '-was the author incompetent?',
+        '-or is the world today so different from the world',
+        '-   the author foresaw',
+        '-and past imaginination',
+        '-   amounts to rubble, insignificant,',
+        '-something to be tripped over',
+        '-and frustrated by)',
+        'diff --git foo/TestExpectations foo/TestExpectations',
+        'index c6e12ab..d1c5f23 100644',
+        '--- foo/TestExpectations',
+        '+++ foo/TestExpectations',
+        '@@ -1,12 +1,24 @@',
+        '-Stranger, behold:',
+        '+Strange to behold:',
+        '   This is a text',
+        ' Its contents existed before.',
+        '',
+        '-It is written:',
+        '+Weasel words suggest:',
+        '   its contents shall exist after',
+        '   and its contents',
+        ' with the progress of time',
+        ' will evolve,',
+        '-   snaillike,',
+        '+   erratically,',
+        ' into still different texts',
+        '-from this.',
+        '\ No newline at end of file',
+        '+from this.',
+        '+',
+        '+For the most part,',
+        '+I really think unified diffs',
+        '+are elegant: the way you can type',
+        '+diff --git inside/a/text inside/a/text',
+        '+or something silly like',
+        '+@@ -278,6 +278,10 @@',
+        '+and have this not be interpreted',
+        '+as the start of a new file',
+        '+or anything messed up like that,',
+        '+because you parsed the header',
+        '+correctly.',
+        '\ No newline at end of file',
+            '']
+    files = [('A      ', 'binary_a.png'),
+             ('D      ', 'binary_d.png'),
+             ('M      ', 'binary_m.png'),
+             ('M      ', 'binary_md.png'),  # Binary w/ diff
+             ('A      ', 'boo/blat.cc'),
+             ('D      ', 'floo/delburt.cc'),
+             ('M      ', 'foo/TestExpectations')]
+
+    for op, path in files:
+      full_path = presubmit.os.path.join(self.fake_root_dir, *path.split('/'))
+      if op.startswith('D'):
+        os.path.exists(full_path).AndReturn(False)
+      else:
+        os.path.exists(full_path).AndReturn(False)
+        os.path.isfile(full_path).AndReturn(True)
+
+    presubmit.scm.GIT.GenerateDiff(
+        self.fake_root_dir, files=[], full_move=True, branch=None
+        ).AndReturn('\n'.join(unified_diff))
+
+    self.mox.ReplayAll()
+
+    change = presubmit.GitChange(
+        'mychange',
+        '\n'.join(description_lines),
+        self.fake_root_dir,
+        files,
+        0,
+        0,
+        None,
+        upstream=None)
+    self.failUnless(change.Name() == 'mychange')
+    self.failUnless(change.DescriptionText() ==
+                    'Hello there\nthis is a change\nand some more regular text')
+    self.failUnless(change.FullDescriptionText() ==
+                    '\n'.join(description_lines))
+
+    self.failUnless(change.BUG == '123')
+    self.failUnless(change.STORY == 'http://foo/')
+    self.failUnless(change.BLEH == None)
+
+    self.failUnless(len(change.AffectedFiles()) == 7)
+    self.failUnless(len(change.AffectedFiles(include_dirs=True)) == 7)
+    self.failUnless(len(change.AffectedFiles(include_deletes=False)) == 5)
+    self.failUnless(len(change.AffectedFiles(include_dirs=True,
+                                             include_deletes=False)) == 5)
+
+    # Note that on git, there's no distinction between binary files and text
+    # files; everything that's not a delete is a text file.
+    affected_text_files = change.AffectedTextFiles()
+    self.failUnless(len(affected_text_files) == 5)
+
+    local_paths = change.LocalPaths()
+    expected_paths = [os.path.normpath(f) for op, f in files]
+    self.assertEqual(local_paths, expected_paths)
+
+    try:
+      _ = change.ServerPaths()
+      self.fail("ServerPaths implemented.")
+    except NotImplementedError:
+      pass
+
+    actual_rhs_lines = []
+    for f, linenum, line in change.RightHandSideLines():
+      actual_rhs_lines.append((f.LocalPath(), linenum, line))
+
+    f_blat = os.path.normpath('boo/blat.cc')
+    f_test_expectations = os.path.normpath('foo/TestExpectations')
+    expected_rhs_lines = [
+        (f_blat, 1, 'This is some text'),
+        (f_blat, 2, 'which lacks a copyright warning'),
+        (f_blat, 3, 'but it is nonetheless interesting'),
+        (f_blat, 4, 'and worthy of your attention.'),
+        (f_blat, 5, 'Its freshness factor is through the roof.'),
+        (f_test_expectations, 1, 'Strange to behold:'),
+        (f_test_expectations, 5, 'Weasel words suggest:'),
+        (f_test_expectations, 10, '   erratically,'),
+        (f_test_expectations, 13, 'from this.'),
+        (f_test_expectations, 14, ''),
+        (f_test_expectations, 15, 'For the most part,'),
+        (f_test_expectations, 16, 'I really think unified diffs'),
+        (f_test_expectations, 17, 'are elegant: the way you can type'),
+        (f_test_expectations, 18, 'diff --git inside/a/text inside/a/text'),
+        (f_test_expectations, 19, 'or something silly like'),
+        (f_test_expectations, 20, '@@ -278,6 +278,10 @@'),
+        (f_test_expectations, 21, 'and have this not be interpreted'),
+        (f_test_expectations, 22, 'as the start of a new file'),
+        (f_test_expectations, 23, 'or anything messed up like that,'),
+        (f_test_expectations, 24, 'because you parsed the header'),
+        (f_test_expectations, 25, 'correctly.')]
+
+    self.assertEquals(expected_rhs_lines, actual_rhs_lines)
 
   def testInvalidChange(self):
     try:
@@ -609,13 +824,15 @@ def CheckChangeOnCommit(input_api, output_api):
     output = presubmit.DoPresubmitChecks(
         change, False, True, None, input_buf, DEFAULT_SCRIPT, False, None)
     self.failIf(output.should_continue())
-    text = ('Running presubmit upload checks ...\n'
-            'Warning, no PRESUBMIT.py found.\n'
-            'Running default presubmit script.\n'
-            '\n'
-            '** Presubmit ERRORS **\n!!\n\n'
-            'Was the presubmit check useful? Please send feedback & hate mail '
-            'to maruel@chromium.org!\n')
+    text = (
+        'Running presubmit upload checks ...\n'
+        'Warning, no PRESUBMIT.py found.\n'
+        'Running default presubmit script.\n'
+        '\n'
+        '** Presubmit ERRORS **\n!!\n\n'
+        'Was the presubmit check useful? If not, run "git cl presubmit -v"\n'
+        'to figure out which PRESUBMIT.py was run, then run git blame\n'
+        'on the file to figure out who to ask for help.\n')
     self.assertEquals(output.getvalue(), text)
 
   def testDirectoryHandling(self):
@@ -717,7 +934,11 @@ def CheckChangeOnCommit(input_api, output_api):
     starts_with_space_result = ['  starts_with_space']
     not_list_result1 = "'foo'"
     not_list_result2 = "('a', 'tuple')"
-    for result in starts_with_space_result, not_list_result1, not_list_result2:
+    mixed_old_and_new = ['bot', ('bot2', set(['test']))]
+    not_set = [('bot2', ['test'])]
+    for result in (
+        starts_with_space_result, not_list_result1, not_list_result2,
+        mixed_old_and_new, not_set):
       self.assertRaises(presubmit.PresubmitFailure,
                         executer.ExecPresubmitScript,
                         self.presubmit_tryslave % result, '', '', change)
@@ -726,7 +947,9 @@ def CheckChangeOnCommit(input_api, output_api):
     expected_result = ['1', '2', '3']
     empty_result = []
     space_in_name_result = ['foo bar', '1\t2 3']
-    for result in expected_result, empty_result, space_in_name_result:
+    new_style = [('bot', set(['cool', 'tests']))]
+    for result in (
+        expected_result, empty_result, space_in_name_result, new_style):
       self.assertEqual(
           result,
           executer.ExecPresubmitScript(
@@ -813,6 +1036,103 @@ def CheckChangeOnCommit(input_api, output_api):
     except presubmit.PresubmitFailure:
       pass
 
+  def testGetTryMastersExecuter(self):
+    self.mox.ReplayAll()
+    change = presubmit.Change(
+        'foo',
+        'Blah Blah\n\nSTORY=http://tracker.com/42\nBUG=boo\n',
+        self.fake_root_dir,
+        None,
+        0,
+        0,
+        None)
+    executer = presubmit.GetTryMastersExecuter()
+    self.assertEqual({}, executer.ExecPresubmitScript('', '', '', change))
+    self.assertEqual({},
+        executer.ExecPresubmitScript('def foo():\n  return\n', '', '', change))
+
+    expected_result = {'m1': {'s1': set(['t1', 't2'])},
+                       'm2': {'s1': set(['defaulttests']),
+                              's2': set(['defaulttests'])}}
+    empty_result1 = {}
+    empty_result2 = {'m': {}}
+    space_in_name_result = {'m r': {'s\tv': set(['t1'])}}
+    for result in (
+        expected_result, empty_result1, empty_result2, space_in_name_result):
+      self.assertEqual(
+          result,
+          executer.ExecPresubmitScript(
+              self.presubmit_trymaster % result, '', '', change))
+
+  def testMergeMasters(self):
+    merge = presubmit._MergeMasters
+    self.assertEqual({}, merge({}, {}))
+    self.assertEqual({'m1': {}}, merge({}, {'m1': {}}))
+    self.assertEqual({'m1': {}}, merge({'m1': {}}, {}))
+    parts = [
+      {'try1.cr': {'win': set(['defaulttests'])}},
+      {'try1.cr': {'linux1': set(['test1'])},
+       'try2.cr': {'linux2': set(['defaulttests'])}},
+      {'try1.cr': {'mac1': set(['defaulttests']),
+                   'mac2': set(['test1', 'test2']),
+                   'linux1': set(['defaulttests'])}},
+    ]
+    expected = {
+      'try1.cr': {'win': set(['defaulttests']),
+                  'linux1': set(['defaulttests', 'test1']),
+                  'mac1': set(['defaulttests']),
+                  'mac2': set(['test1', 'test2'])},
+      'try2.cr': {'linux2': set(['defaulttests'])},
+    }
+    for permutation in itertools.permutations(parts):
+      self.assertEqual(expected, reduce(merge, permutation, {}))
+
+  def testDoGetTryMasters(self):
+    root_text = (self.presubmit_trymaster
+        % '{"t1.cr": {"win": set(["defaulttests"])}}')
+    linux_text = (self.presubmit_trymaster
+        % ('{"t1.cr": {"linux1": set(["t1"])},'
+           ' "t2.cr": {"linux2": set(["defaulttests"])}}'))
+
+    join = presubmit.os.path.join
+    isfile = presubmit.os.path.isfile
+    FileRead = presubmit.gclient_utils.FileRead
+    filename = 'foo.cc'
+    filename_linux = join('linux_only', 'penguin.cc')
+    root_presubmit = join(self.fake_root_dir, 'PRESUBMIT.py')
+    linux_presubmit = join(self.fake_root_dir, 'linux_only', 'PRESUBMIT.py')
+    inherit_path = join(self.fake_root_dir, self._INHERIT_SETTINGS)
+
+    isfile(inherit_path).AndReturn(False)
+    isfile(root_presubmit).AndReturn(True)
+    FileRead(root_presubmit, 'rU').AndReturn(root_text)
+
+    isfile(inherit_path).AndReturn(False)
+    isfile(root_presubmit).AndReturn(True)
+    isfile(linux_presubmit).AndReturn(True)
+    FileRead(root_presubmit, 'rU').AndReturn(root_text)
+    FileRead(linux_presubmit, 'rU').AndReturn(linux_text)
+    self.mox.ReplayAll()
+
+    change = presubmit.Change(
+        'mychange', '', self.fake_root_dir, [], 0, 0, None)
+
+    output = StringIO.StringIO()
+    self.assertEqual({'t1.cr': {'win': ['defaulttests']}},
+                     presubmit.DoGetTryMasters(change, [filename],
+                                               self.fake_root_dir,
+                                               None, None, False, output))
+    output = StringIO.StringIO()
+    expected = {
+      't1.cr': {'win': ['defaulttests'], 'linux1': ['t1']},
+      't2.cr': {'linux2': ['defaulttests']},
+    }
+    self.assertEqual(expected,
+                     presubmit.DoGetTryMasters(change,
+                                               [filename, filename_linux],
+                                               self.fake_root_dir, None, None,
+                                               False, output))
+
   def testMainUnversioned(self):
     # OptParser calls presubmit.os.path.exists and is a pain when mocked.
     self.UnMock(presubmit.os.path, 'exists')
@@ -865,14 +1185,14 @@ class InputApiUnittest(PresubmitTestsBase):
       'AffectedTextFiles',
       'DEFAULT_BLACK_LIST', 'DEFAULT_WHITE_LIST',
       'DepotToLocalPath', 'FilterSourceFile', 'LocalPaths',
-      'LocalToDepotPath',
+      'LocalToDepotPath', 'Command', 'RunTests',
       'PresubmitLocalPath', 'ReadFile', 'RightHandSideLines', 'ServerPaths',
-      'basename', 'cPickle', 'cStringIO', 'canned_checks', 'change', 'environ',
-      'glob', 'host_url', 'is_committing', 'json', 'logging', 'marshal',
-      'os_listdir', 'os_walk',
-      'os_path', 'owners_db', 'pickle', 'platform', 'python_executable', 're',
-      'rietveld', 'subprocess', 'tbr', 'tempfile', 'time', 'traceback',
-      'unittest', 'urllib2', 'version', 'verbose',
+      'basename', 'cPickle', 'cpplint', 'cStringIO', 'canned_checks', 'change',
+      'environ', 'glob', 'host_url', 'is_committing', 'json', 'logging',
+      'marshal', 'os_listdir', 'os_walk', 'os_path', 'owners_db', 'pickle',
+      'platform', 'python_executable', 're', 'rietveld', 'subprocess', 'tbr',
+      'tempfile', 'time', 'traceback', 'unittest', 'urllib2', 'version',
+      'verbose',
     ]
     # If this test fails, you should add the relevant test.
     self.compareMembers(
@@ -935,9 +1255,9 @@ class InputApiUnittest(PresubmitTestsBase):
       ['M', join('foo', 'blat', 'weird.xyz')],
       ['M', join('foo', 'blat', 'another.h')],
       ['M', join('foo', 'third_party', 'third.cc')],
-      ['D', 'foo/mat/beingdeleted.txt'],
-      ['M', 'flop/notfound.txt'],
-      ['A', 'boo/flap.h'],
+      ['D', join('foo', 'mat', 'beingdeleted.txt')],
+      ['M', join('flop', 'notfound.txt')],
+      ['A', join('boo', 'flap.h')],
     ]
     blat = presubmit.normpath(join(self.fake_root_dir, files[0][1]))
     readme = presubmit.normpath(join(self.fake_root_dir, files[1][1]))
@@ -1024,7 +1344,7 @@ class InputApiUnittest(PresubmitTestsBase):
 
   def testDefaultWhiteListBlackListFilters(self):
     def f(x):
-      return presubmit.AffectedFile(x, 'M', self.fake_root_dir)
+      return presubmit.AffectedFile(x, 'M', self.fake_root_dir, None)
     files = [
       (
         [
@@ -1234,7 +1554,8 @@ class InputApiUnittest(PresubmitTestsBase):
     input_api.ReadFile(path, 'x')
 
   def testReadFileAffectedFileDenied(self):
-    fileobj = presubmit.AffectedFile('boo', 'M', 'Unrelated')
+    fileobj = presubmit.AffectedFile('boo', 'M', 'Unrelated',
+                                     diff_cache=mox.IsA(presubmit._DiffCache))
     self.mox.ReplayAll()
 
     change = presubmit.Change(
@@ -1245,7 +1566,8 @@ class InputApiUnittest(PresubmitTestsBase):
     self.assertRaises(IOError, input_api.ReadFile, fileobj, 'x')
 
   def testReadFileAffectedFileAccepted(self):
-    fileobj = presubmit.AffectedFile('AA/boo', 'M', self.fake_root_dir)
+    fileobj = presubmit.AffectedFile('AA/boo', 'M', self.fake_root_dir,
+                                     diff_cache=mox.IsA(presubmit._DiffCache))
     presubmit.gclient_utils.FileRead(fileobj.AbsoluteLocalPath(), 'x'
                                      ).AndReturn(None)
     self.mox.ReplayAll()
@@ -1258,16 +1580,18 @@ class InputApiUnittest(PresubmitTestsBase):
     input_api.ReadFile(fileobj, 'x')
 
 
-class OuputApiUnittest(PresubmitTestsBase):
+class OutputApiUnittest(PresubmitTestsBase):
   """Tests presubmit.OutputApi."""
+
   def testMembersChanged(self):
     self.mox.ReplayAll()
     members = [
       'MailTextResult', 'PresubmitAddReviewers', 'PresubmitError',
-      'PresubmitNotifyResult', 'PresubmitPromptWarning', 'PresubmitResult',
+      'PresubmitNotifyResult', 'PresubmitPromptWarning',
+      'PresubmitPromptOrNotify', 'PresubmitResult', 'is_committing',
     ]
     # If this test fails, you should add the relevant test.
-    self.compareMembers(presubmit.OutputApi(), members)
+    self.compareMembers(presubmit.OutputApi(False), members)
 
   def testOutputApiBasics(self):
     self.mox.ReplayAll()
@@ -1313,14 +1637,28 @@ class OuputApiUnittest(PresubmitTestsBase):
     self.failUnless(output.should_continue())
     self.failUnless(output.getvalue().count('???'))
 
-    output = presubmit.PresubmitOutput(input_stream=StringIO.StringIO('y'))
+    output = presubmit.PresubmitOutput(input_stream=StringIO.StringIO('\n'))
     presubmit.OutputApi.PresubmitPromptWarning('???').handle(output)
+    output.prompt_yes_no('prompt: ')
+    self.failIf(output.should_continue())
+    self.failUnless(output.getvalue().count('???'))
+
+    output_api = presubmit.OutputApi(True)
+    output = presubmit.PresubmitOutput(input_stream=StringIO.StringIO('y'))
+    output_api.PresubmitPromptOrNotify('???').handle(output)
     output.prompt_yes_no('prompt: ')
     self.failUnless(output.should_continue())
     self.failUnless(output.getvalue().count('???'))
 
+    output_api = presubmit.OutputApi(False)
+    output = presubmit.PresubmitOutput(input_stream=StringIO.StringIO('y'))
+    output_api.PresubmitPromptOrNotify('???').handle(output)
+    self.failUnless(output.should_continue())
+    self.failUnless(output.getvalue().count('???'))
+
+    output_api = presubmit.OutputApi(True)
     output = presubmit.PresubmitOutput(input_stream=StringIO.StringIO('\n'))
-    presubmit.OutputApi.PresubmitPromptWarning('???').handle(output)
+    output_api.PresubmitPromptOrNotify('???').handle(output)
     output.prompt_yes_no('prompt: ')
     self.failIf(output.should_continue())
     self.failUnless(output.getvalue().count('???'))
@@ -1330,15 +1668,17 @@ class AffectedFileUnittest(PresubmitTestsBase):
   def testMembersChanged(self):
     self.mox.ReplayAll()
     members = [
-      'AbsoluteLocalPath', 'Action', 'ChangedContents', 'GenerateScmDiff',
-      'IsDirectory', 'IsTextFile', 'LocalPath', 'NewContents', 'OldContents',
-      'OldFileTempPath', 'Property', 'ServerPath',
+      'AbsoluteLocalPath', 'Action', 'ChangedContents', 'DIFF_CACHE',
+      'GenerateScmDiff', 'IsDirectory', 'IsTextFile', 'LocalPath',
+      'NewContents', 'Property', 'ServerPath',
     ]
     # If this test fails, you should add the relevant test.
     self.compareMembers(
-        presubmit.AffectedFile('a', 'b', self.fake_root_dir), members)
+        presubmit.AffectedFile('a', 'b', self.fake_root_dir, None), members)
     self.compareMembers(
-        presubmit.SvnAffectedFile('a', 'b', self.fake_root_dir), members)
+        presubmit.SvnAffectedFile('a', 'b', self.fake_root_dir, None), members)
+    self.compareMembers(
+        presubmit.GitAffectedFile('a', 'b', self.fake_root_dir, None), members)
 
   def testAffectedFile(self):
     path = presubmit.os.path.join('foo', 'blat.cc')
@@ -1349,7 +1689,7 @@ class AffectedFileUnittest(PresubmitTestsBase):
     presubmit.scm.SVN._CaptureInfo([path], self.fake_root_dir).AndReturn(
         {'URL': 'svn:/foo/foo/blat.cc'})
     self.mox.ReplayAll()
-    af = presubmit.SvnAffectedFile('foo/blat.cc', 'M', self.fake_root_dir)
+    af = presubmit.SvnAffectedFile('foo/blat.cc', 'M', self.fake_root_dir, None)
     self.assertEquals('svn:/foo/foo/blat.cc', af.ServerPath())
     self.assertEquals(presubmit.normpath('foo/blat.cc'), af.LocalPath())
     self.assertEquals('M', af.Action())
@@ -1361,7 +1701,7 @@ class AffectedFileUnittest(PresubmitTestsBase):
     presubmit.os.path.exists(f_notfound).AndReturn(False)
     presubmit.gclient_utils.FileRead(f_notfound, 'rU').AndRaise(IOError)
     self.mox.ReplayAll()
-    af = presubmit.AffectedFile(notfound, 'A', self.fake_root_dir)
+    af = presubmit.AffectedFile(notfound, 'A', self.fake_root_dir, None)
     self.assertEquals('', af.ServerPath())
     self.assertEquals([], af.NewContents())
 
@@ -1370,7 +1710,8 @@ class AffectedFileUnittest(PresubmitTestsBase):
         'foo.cc', 'svn:secret-property', self.fake_root_dir
         ).AndReturn('secret-property-value')
     self.mox.ReplayAll()
-    affected_file = presubmit.SvnAffectedFile('foo.cc', 'A', self.fake_root_dir)
+    affected_file = presubmit.SvnAffectedFile('foo.cc', 'A', self.fake_root_dir,
+                                              None)
     # Verify cache coherency.
     self.assertEquals('secret-property-value',
                       affected_file.Property('svn:secret-property'))
@@ -1383,7 +1724,8 @@ class AffectedFileUnittest(PresubmitTestsBase):
     presubmit.os.path.exists(f_filename).AndReturn(False)
     presubmit.scm.SVN._CaptureInfo([filename], self.fake_root_dir).AndReturn({})
     self.mox.ReplayAll()
-    affected_file = presubmit.SvnAffectedFile(filename, 'A', self.fake_root_dir)
+    affected_file = presubmit.SvnAffectedFile(filename, 'A', self.fake_root_dir,
+                                              None)
     # Verify cache coherency.
     self.failIf(affected_file.IsDirectory())
     self.failIf(affected_file.IsDirectory())
@@ -1394,16 +1736,20 @@ class AffectedFileUnittest(PresubmitTestsBase):
     presubmit.os.path.exists(f_filename).AndReturn(True)
     presubmit.os.path.isdir(f_filename).AndReturn(True)
     self.mox.ReplayAll()
-    affected_file = presubmit.SvnAffectedFile(filename, 'A', self.fake_root_dir)
+    affected_file = presubmit.SvnAffectedFile(filename, 'A', self.fake_root_dir,
+                                              None)
     # Verify cache coherency.
     self.failUnless(affected_file.IsDirectory())
     self.failUnless(affected_file.IsDirectory())
 
   def testIsTextFile(self):
     files = [
-        presubmit.SvnAffectedFile('foo/blat.txt', 'M', self.fake_root_dir),
-        presubmit.SvnAffectedFile('foo/binary.blob', 'M', self.fake_root_dir),
-        presubmit.SvnAffectedFile('blat/flop.txt', 'D', self.fake_root_dir)
+        presubmit.SvnAffectedFile('foo/blat.txt', 'M', self.fake_root_dir,
+                                  None),
+        presubmit.SvnAffectedFile('foo/binary.blob', 'M', self.fake_root_dir,
+                                  None),
+        presubmit.SvnAffectedFile('blat/flop.txt', 'D', self.fake_root_dir,
+                                  None)
     ]
     blat = presubmit.os.path.join('foo', 'blat.txt')
     blob = presubmit.os.path.join('foo', 'binary.blob')
@@ -1430,7 +1776,7 @@ class ChangeUnittest(PresubmitTestsBase):
         'AbsoluteLocalPaths', 'AffectedFiles', 'AffectedTextFiles',
         'DescriptionText', 'FullDescriptionText', 'LocalPaths', 'Name',
         'RepositoryRoot', 'RightHandSideLines', 'ServerPaths',
-        'TAG_LINE_RE',
+        'SetDescriptionText', 'TAG_LINE_RE',
         'author_email', 'issue', 'patchset', 'scm', 'tags',
     ]
     # If this test fails, you should add the relevant test.
@@ -1453,6 +1799,26 @@ class ChangeUnittest(PresubmitTestsBase):
     self.assertEquals(1, len(change.AffectedFiles(include_dirs=True)))
     self.assertEquals('Y', change.AffectedFiles(include_dirs=True)[0].Action())
 
+  def testSetDescriptionText(self):
+    change = presubmit.Change(
+        '', 'foo\nDRU=ro', self.fake_root_dir, [], 3, 5, '')
+    self.assertEquals('foo', change.DescriptionText())
+    self.assertEquals('foo\nDRU=ro', change.FullDescriptionText())
+    self.assertEquals('ro', change.DRU)
+
+    change.SetDescriptionText('bar\nWHIZ=bang')
+    self.assertEquals('bar', change.DescriptionText())
+    self.assertEquals('bar\nWHIZ=bang', change.FullDescriptionText())
+    self.assertEquals('bang', change.WHIZ)
+    self.assertFalse(change.DRU)
+
+
+def CommHelper(input_api, cmd, ret=None, **kwargs):
+  ret = ret or (('', None), 0)
+  input_api.subprocess.communicate(
+      cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **kwargs
+      ).AndReturn(ret)
+
 
 class CannedChecksUnittest(PresubmitTestsBase):
   """Tests presubmit_canned_checks.py."""
@@ -1471,7 +1837,8 @@ class CannedChecksUnittest(PresubmitTestsBase):
     input_api.traceback = presubmit.traceback
     input_api.urllib2 = self.mox.CreateMock(presubmit.urllib2)
     input_api.unittest = unittest
-    input_api.subprocess = self.mox.CreateMock(presubmit.subprocess)
+    input_api.subprocess = self.mox.CreateMock(subprocess)
+    presubmit.subprocess = input_api.subprocess
     class fake_CalledProcessError(Exception):
       def __str__(self):
         return 'foo'
@@ -1486,6 +1853,9 @@ class CannedChecksUnittest(PresubmitTestsBase):
     input_api.platform = sys.platform
     input_api.time = time
     input_api.canned_checks = presubmit_canned_checks
+    input_api.Command = presubmit.CommandData
+    input_api.RunTests = functools.partial(
+        presubmit.InputApi.RunTests, input_api)
     return input_api
 
   def testMembersChanged(self):
@@ -1507,12 +1877,15 @@ class CannedChecksUnittest(PresubmitTestsBase):
       'CheckLongLines', 'CheckTreeIsOpen', 'PanProjectChecks',
       'CheckLicense',
       'CheckOwners',
+      'CheckPatchFormatted',
       'CheckRietveldTryJobExecution',
       'CheckSingletonInHeaders',
       'CheckSvnModifiedDirectories',
       'CheckSvnForCommonMimeTypes', 'CheckSvnProperty',
       'RunPythonUnitTests', 'RunPylint',
       'RunUnitTests', 'RunUnitTestsInDirectory',
+      'GetPythonUnitTests', 'GetPylint',
+      'GetUnitTests', 'GetUnitTestsInDirectory',
     ]
     # If this test fails, you should add the relevant test.
     self.compareMembers(presubmit_canned_checks, members)
@@ -1619,8 +1992,8 @@ class CannedChecksUnittest(PresubmitTestsBase):
         'mychange', '', self.fake_root_dir, [], 0, 0, None)
     input_api1 = self.MockInputApi(change1, committing)
     files1 = [
-      presubmit.SvnAffectedFile('foo/bar.cc', 'A', self.fake_root_dir),
-      presubmit.SvnAffectedFile('foo.cc', 'M', self.fake_root_dir),
+      presubmit.SvnAffectedFile('foo/bar.cc', 'A', self.fake_root_dir, None),
+      presubmit.SvnAffectedFile('foo.cc', 'M', self.fake_root_dir, None),
     ]
     if use_source_file:
       input_api1.AffectedSourceFiles(None).AndReturn(files1)
@@ -1636,8 +2009,8 @@ class CannedChecksUnittest(PresubmitTestsBase):
         'mychange', '', self.fake_root_dir, [], 0, 0, None)
     input_api2 = self.MockInputApi(change2, committing)
     files2 = [
-      presubmit.SvnAffectedFile('foo/bar.cc', 'A', self.fake_root_dir),
-      presubmit.SvnAffectedFile('foo.cc', 'M', self.fake_root_dir),
+      presubmit.SvnAffectedFile('foo/bar.cc', 'A', self.fake_root_dir, None),
+      presubmit.SvnAffectedFile('foo.cc', 'M', self.fake_root_dir, None),
     ]
     if use_source_file:
       input_api2.AffectedSourceFiles(None).AndReturn(files2)
@@ -1816,7 +2189,7 @@ class CannedChecksUnittest(PresubmitTestsBase):
     self.assertEquals(results1[0].__class__,
         presubmit.OutputApi.PresubmitPromptWarning)
     self.assertEquals(results1[0]._long_text,
-        'makefile.foo, line 46')
+        'makefile.foo:46')
 
   def testCannedCheckLongLines(self):
     check = lambda x, y, z: presubmit_canned_checks.CheckLongLines(x, y, 10, z)
@@ -1824,14 +2197,25 @@ class CannedChecksUnittest(PresubmitTestsBase):
                      presubmit.OutputApi.PresubmitPromptWarning)
 
   def testCannedCheckJavaLongLines(self):
-    check = lambda x, y, _: presubmit_canned_checks.CheckLongLines(x, y)
+    check = lambda x, y, _: presubmit_canned_checks.CheckLongLines(x, y, 80)
     self.ContentTest(check, 'A ' * 50, 'foo.java', 'A ' * 50 + 'B', 'foo.java',
                      presubmit.OutputApi.PresubmitPromptWarning)
 
   def testCannedCheckSpecialJavaLongLines(self):
-    check = lambda x, y, _: presubmit_canned_checks.CheckLongLines(x, y)
+    check = lambda x, y, _: presubmit_canned_checks.CheckLongLines(x, y, 80)
     self.ContentTest(check, 'import ' + 'A ' * 150, 'foo.java',
                      'importSomething ' + 'A ' * 50, 'foo.java',
+                     presubmit.OutputApi.PresubmitPromptWarning)
+
+  def testCannedCheckObjCExceptionLongLines(self):
+    check = lambda x, y, _: presubmit_canned_checks.CheckLongLines(x, y, 80)
+    self.ContentTest(check, '#import ' + 'A ' * 150, 'foo.mm',
+                     'import' + 'A ' * 150, 'foo.mm',
+                     presubmit.OutputApi.PresubmitPromptWarning)
+
+  def testCannedCheckMakefileLongLines(self):
+    check = lambda x, y, _: presubmit_canned_checks.CheckLongLines(x, y, 80)
+    self.ContentTest(check, 'A ' * 100, 'foo.mk', 'A ' * 100 + 'B', 'foo.mk',
                      presubmit.OutputApi.PresubmitPromptWarning)
 
   def testCannedCheckLongLinesLF(self):
@@ -1839,15 +2223,14 @@ class CannedChecksUnittest(PresubmitTestsBase):
     self.ContentTest(check, '012345678\n', None, '0123456789\n', None,
                      presubmit.OutputApi.PresubmitPromptWarning)
 
-  def testCannedCheckLongLinesMacro(self):
+  def testCannedCheckCppExceptionLongLines(self):
     check = lambda x, y, z: presubmit_canned_checks.CheckLongLines(x, y, 10, z)
     self.ContentTest(
         check,
-        # Put a space in so it doesn't trigger long symbols. Allow 1/3 more.
-        '#if 56 89 12 45',
-        None,
-        '#if 56 89 12 456',
-        None,
+        '#if 56 89 12 45 9191919191919',
+        'foo.cc',
+        '#nif 56 89 12 45 9191919191919',
+        'foo.cc',
         presubmit.OutputApi.PresubmitPromptWarning)
 
   def testCannedCheckLongLinesHttp(self):
@@ -1859,6 +2242,17 @@ class CannedChecksUnittest(PresubmitTestsBase):
         ' http:// 0 23 56',
         None,
         presubmit.OutputApi.PresubmitPromptWarning)
+
+  def testCannedCheckLongLinesFile(self):
+    check = lambda x, y, z: presubmit_canned_checks.CheckLongLines(x, y, 10, z)
+    self.ContentTest(
+        check,
+        ' file:// 0 23 5',
+        None,
+        ' file:// 0 23 56',
+        None,
+        presubmit.OutputApi.PresubmitPromptWarning)
+
 
   def testCannedCheckLongLinesLongSymbol(self):
     check = lambda x, y, z: presubmit_canned_checks.CheckLongLines(x, y, 10, z)
@@ -1981,8 +2375,8 @@ class CannedChecksUnittest(PresubmitTestsBase):
   def testCheckSvnForCommonMimeTypes(self):
     self.mox.StubOutWithMock(presubmit_canned_checks, 'CheckSvnProperty')
     input_api = self.MockInputApi(None, False)
-    output_api = presubmit.OutputApi()
-    A = lambda x: presubmit.AffectedFile(x, 'M', self.fake_root_dir)
+    output_api = presubmit.OutputApi(False)
+    A = lambda x: presubmit.AffectedFile(x, 'M', self.fake_root_dir, None)
     files = [
       A('a.pdf'), A('b.bmp'), A('c.gif'), A('d.png'), A('e.jpg'), A('f.jpe'),
       A('random'), A('g.jpeg'), A('h.ico'),
@@ -2081,10 +2475,8 @@ class CannedChecksUnittest(PresubmitTestsBase):
 
   def testRunPythonUnitTestsNonExistentUpload(self):
     input_api = self.MockInputApi(None, False)
-    input_api.subprocess.check_output(
-        ['pyyyyython', '-m', '_non_existent_module'], cwd=None, env=None,
-        stderr=input_api.subprocess.STDOUT).AndRaise(
-            input_api.subprocess.CalledProcessError())
+    CommHelper(input_api, ['pyyyyython', '-m', '_non_existent_module'],
+                    ret=(('foo', None), 1), cwd=None, env=None)
     self.mox.ReplayAll()
 
     results = presubmit_canned_checks.RunPythonUnitTests(
@@ -2095,10 +2487,8 @@ class CannedChecksUnittest(PresubmitTestsBase):
 
   def testRunPythonUnitTestsNonExistentCommitting(self):
     input_api = self.MockInputApi(None, True)
-    input_api.subprocess.check_output(
-        ['pyyyyython', '-m', '_non_existent_module'], cwd=None, env=None,
-        stderr=input_api.subprocess.STDOUT).AndRaise(
-            input_api.subprocess.CalledProcessError())
+    CommHelper(input_api, ['pyyyyython', '-m', '_non_existent_module'],
+                    ret=(('foo', None), 1), cwd=None, env=None)
     self.mox.ReplayAll()
 
     results = presubmit_canned_checks.RunPythonUnitTests(
@@ -2110,10 +2500,8 @@ class CannedChecksUnittest(PresubmitTestsBase):
     input_api = self.MockInputApi(None, False)
     input_api.unittest = self.mox.CreateMock(unittest)
     input_api.cStringIO = self.mox.CreateMock(presubmit.cStringIO)
-    input_api.subprocess.check_output(
-        ['pyyyyython', '-m', 'test_module'], cwd=None, env=None,
-        stderr=input_api.subprocess.STDOUT).AndRaise(
-            input_api.subprocess.CalledProcessError())
+    CommHelper(input_api, ['pyyyyython', '-m', 'test_module'],
+                    ret=(('foo', None), 1), cwd=None, env=None)
     self.mox.ReplayAll()
 
     results = presubmit_canned_checks.RunPythonUnitTests(
@@ -2121,29 +2509,26 @@ class CannedChecksUnittest(PresubmitTestsBase):
     self.assertEquals(len(results), 1)
     self.assertEquals(results[0].__class__,
                       presubmit.OutputApi.PresubmitNotifyResult)
-    self.assertEquals('test_module failed!\nfoo', results[0]._message)
+    self.assertEquals('test_module (0.00s) failed\nfoo', results[0]._message)
 
   def testRunPythonUnitTestsFailureCommitting(self):
     input_api = self.MockInputApi(None, True)
-    input_api.subprocess.check_output(
-        ['pyyyyython', '-m', 'test_module'], cwd=None, env=None,
-        stderr=input_api.subprocess.STDOUT).AndRaise(
-            input_api.subprocess.CalledProcessError())
+    CommHelper(input_api, ['pyyyyython', '-m', 'test_module'],
+                    ret=(('foo', None), 1), cwd=None, env=None)
     self.mox.ReplayAll()
 
     results = presubmit_canned_checks.RunPythonUnitTests(
         input_api, presubmit.OutputApi, ['test_module'])
     self.assertEquals(len(results), 1)
     self.assertEquals(results[0].__class__, presubmit.OutputApi.PresubmitError)
-    self.assertEquals('test_module failed!\nfoo', results[0]._message)
+    self.assertEquals('test_module (0.00s) failed\nfoo', results[0]._message)
 
   def testRunPythonUnitTestsSuccess(self):
     input_api = self.MockInputApi(None, False)
     input_api.cStringIO = self.mox.CreateMock(presubmit.cStringIO)
     input_api.unittest = self.mox.CreateMock(unittest)
-    input_api.subprocess.check_output(
-        ['pyyyyython', '-m', 'test_module'], cwd=None, env=None,
-        stderr=input_api.subprocess.STDOUT)
+    CommHelper(input_api, ['pyyyyython', '-m', 'test_module'],
+                    cwd=None, env=None)
     self.mox.ReplayAll()
 
     results = presubmit_canned_checks.RunPythonUnitTests(
@@ -2161,22 +2546,15 @@ class CannedChecksUnittest(PresubmitTestsBase):
     pylint = os.path.join(_ROOT, 'third_party', 'pylint.py')
     pylintrc = os.path.join(_ROOT, 'pylintrc')
 
-    # Create a mock Popen object, and set up its expectations.
-    child = self.mox.CreateMock(subprocess.Popen)
-    child.stdin = self.mox.CreateMock(file)
-    child.stdin.write('file1.py\n')
-    child.stdin.write('--rcfile=%s\n' % pylintrc)
-    child.stdin.close()
-    child.communicate()
-    child.returncode = 0
-
-    input_api.subprocess.Popen(['pyyyyython', pylint, '--args-on-stdin'],
-        env=mox.IgnoreArg(), stdin=subprocess.PIPE).AndReturn(child)
+    CommHelper(input_api,
+        ['pyyyyython', pylint, '--args-on-stdin'],
+        env=mox.IgnoreArg(), stdin='file1.py\n--rcfile=%s' % pylintrc)
     self.mox.ReplayAll()
 
     results = presubmit_canned_checks.RunPylint(
         input_api, presubmit.OutputApi)
     self.assertEquals([], results)
+    self.checkstdout('')
 
   def testCheckBuildbotPendingBuildsBad(self):
     input_api = self.MockInputApi(None, True)
@@ -2213,17 +2591,26 @@ class CannedChecksUnittest(PresubmitTestsBase):
 
   def AssertOwnersWorks(self, tbr=False, issue='1', approvers=None,
       reviewers=None, is_committing=True, rietveld_response=None,
-      uncovered_dirs=None, expected_output=''):
+      uncovered_files=None, expected_output='', author_counts_as_owner=True,
+      manually_specified_reviewers=None):
     if approvers is None:
+      # The set of people who lgtm'ed a change.
       approvers = set()
     if reviewers is None:
-      reviewers = set()
-    reviewers = reviewers.union(approvers)
-    if uncovered_dirs is None:
-      uncovered_dirs = set()
+      # The set of people needed to lgtm a change. We default to
+      # the same list as the people who approved it. We use 'reviewers'
+      # to avoid a name collision w/ owners.py.
+      reviewers = approvers
+    if uncovered_files is None:
+      uncovered_files = set()
+    if manually_specified_reviewers is None:
+      manually_specified_reviewers = []
 
     change = self.mox.CreateMock(presubmit.Change)
     change.issue = issue
+    change.author_email = 'john@example.com'
+    change.R = ','.join(manually_specified_reviewers)
+    change.TBR = ''
     affected_file = self.mox.CreateMock(presubmit.SvnAffectedFile)
     input_api = self.MockInputApi(change, False)
     fake_db = self.mox.CreateMock(owners.Database)
@@ -2235,10 +2622,9 @@ class CannedChecksUnittest(PresubmitTestsBase):
     if not is_committing or (not tbr and issue):
       affected_file.LocalPath().AndReturn('foo/xyz.cc')
       change.AffectedFiles(file_filter=None).AndReturn([affected_file])
-      owner_email = 'john@example.com'
-      if not rietveld_response:
+      if issue and not rietveld_response:
         rietveld_response = {
-          "owner_email": owner_email,
+          "owner_email": change.author_email,
           "messages": [
             {"sender": a, "text": "I approve", "approval": True}
             for a in approvers
@@ -2255,17 +2641,23 @@ class CannedChecksUnittest(PresubmitTestsBase):
         input_api.rietveld.get_issue_properties(
             issue=int(input_api.change.issue), messages=True).AndReturn(
                 rietveld_response)
-        people.add(owner_email)
 
-      fake_db.directories_not_covered_by(set(['foo/xyz.cc']),
-          people).AndReturn(uncovered_dirs)
-      if not is_committing and uncovered_dirs:
-        fake_db.reviewers_for(set(['foo/xyz.cc'])).AndReturn(owner_email)
+      if author_counts_as_owner:
+        people.add(change.author_email)
+        fake_db.files_not_covered_by(set(['foo/xyz.cc']),
+            people).AndReturn(uncovered_files)
+      else:
+        people.discard(change.author_email)
+        fake_db.files_not_covered_by(set(['foo/xyz.cc']),
+            people).AndReturn(uncovered_files)
+      if not is_committing and uncovered_files:
+        fake_db.reviewers_for(set(['foo']),
+            change.author_email).AndReturn(change.author_email)
 
     self.mox.ReplayAll()
     output = presubmit.PresubmitOutput()
     results = presubmit_canned_checks.CheckOwners(input_api,
-        presubmit.OutputApi)
+        presubmit.OutputApi, author_counts_as_owner=author_counts_as_owner)
     if results:
       results[0].handle(output)
     self.assertEquals(output.getvalue(), expected_output)
@@ -2346,18 +2738,39 @@ class CannedChecksUnittest(PresubmitTestsBase):
 
   def testCannedCheckOwners_NoIssue(self):
     self.AssertOwnersWorks(issue=None,
-        uncovered_dirs=set(['foo']),
+        uncovered_files=set(['foo']),
         expected_output="OWNERS check failed: this change has no Rietveld "
                         "issue number, so we can't check it for approvals.\n")
     self.AssertOwnersWorks(issue=None,
         is_committing=False,
-        uncovered_dirs=set(['foo']),
-        expected_output='Missing OWNER reviewers for files in these '
-                        'directories:\n'
-                        '    foo\n'
-                        'Until the issue is uploaded, this list will include '
-                        'directories for which you \n'
-                        'are an OWNER.\n')
+        uncovered_files=set(['foo']),
+        expected_output='Missing OWNER reviewers for these files:\n'
+                        '    foo\n')
+
+  def testCannedCheckOwners_NoIssueLocalReviewers(self):
+    self.AssertOwnersWorks(issue=None,
+        reviewers=set(['jane@example.com']),
+        manually_specified_reviewers=['jane@example.com'],
+        expected_output="OWNERS check failed: this change has no Rietveld "
+                        "issue number, so we can't check it for approvals.\n")
+    self.AssertOwnersWorks(issue=None,
+        reviewers=set(['jane@example.com']),
+        manually_specified_reviewers=['jane@example.com'],
+        is_committing=False,
+        expected_output='')
+
+  def testCannedCheckOwners_NoIssueLocalReviewersDontInferEmailDomain(self):
+    self.AssertOwnersWorks(issue=None,
+        reviewers=set(['jane']),
+        manually_specified_reviewers=['jane@example.com'],
+        expected_output="OWNERS check failed: this change has no Rietveld "
+                        "issue number, so we can't check it for approvals.\n")
+    self.AssertOwnersWorks(issue=None,
+        uncovered_files=set(['foo']),
+        manually_specified_reviewers=['jane'],
+        is_committing=False,
+        expected_output='Missing OWNER reviewers for these files:\n'
+                        '    foo\n')
 
   def testCannedCheckOwners_NoLGTM(self):
     self.AssertOwnersWorks(expected_output='Missing LGTM from someone '
@@ -2372,28 +2785,38 @@ class CannedChecksUnittest(PresubmitTestsBase):
                            is_committing=False,
                            expected_output='')
 
+  def testCannedCheckOwners_AuthorCountsAsOwner(self):
+    self.AssertOwnersWorks(approvers=set(['john@example.com',
+                                          'brett@example.com']),
+                           reviewers=set(['john@example.com',
+                                          'ben@example.com']),
+                           uncovered_files=set(['foo/xyz.cc', 'foo/bar.cc']),
+                           expected_output='Missing LGTM from an OWNER '
+                                           'for these files:\n'
+                                           '    foo/bar.cc\n'
+                                           '    foo/xyz.cc\n',
+                           author_counts_as_owner=False)
+
   def testCannedCheckOwners_TBR(self):
     self.AssertOwnersWorks(tbr=True,
         expected_output='--tbr was specified, skipping OWNERS check\n')
     self.AssertOwnersWorks(tbr=True, is_committing=False, expected_output='')
 
   def testCannedCheckOwners_WithoutOwnerLGTM(self):
-    self.AssertOwnersWorks(uncovered_dirs=set(['foo']),
-        expected_output='Missing LGTM from an OWNER for files in these '
-                        'directories:\n'
+    self.AssertOwnersWorks(uncovered_files=set(['foo']),
+        expected_output='Missing LGTM from an OWNER for these files:\n'
                         '    foo\n')
-    self.AssertOwnersWorks(uncovered_dirs=set(['foo']),
-                           is_committing=False,
-        expected_output='Missing OWNER reviewers for files in these '
-                        'directories:\n'
+    self.AssertOwnersWorks(uncovered_files=set(['foo']),
+        is_committing=False,
+        expected_output='Missing OWNER reviewers for these files:\n'
                         '    foo\n')
 
   def testCannedCheckOwners_WithLGTMs(self):
     self.AssertOwnersWorks(approvers=set(['ben@example.com']),
-                           uncovered_dirs=set())
+                           uncovered_files=set())
     self.AssertOwnersWorks(approvers=set(['ben@example.com']),
                            is_committing=False,
-                           uncovered_dirs=set())
+                           uncovered_files=set())
 
   def testCannedRunUnitTests(self):
     change = presubmit.Change(
@@ -2403,24 +2826,23 @@ class CannedChecksUnittest(PresubmitTestsBase):
     unit_tests = ['allo', 'bar.py']
     input_api.PresubmitLocalPath().AndReturn(self.fake_root_dir)
     input_api.PresubmitLocalPath().AndReturn(self.fake_root_dir)
-    input_api.subprocess.check_call(
-        ['allo', '--verbose'], cwd=self.fake_root_dir)
+    CommHelper(input_api, ['allo', '--verbose'], cwd=self.fake_root_dir)
     cmd = ['bar.py', '--verbose']
     if input_api.platform == 'win32':
       cmd.insert(0, input_api.python_executable)
-    input_api.subprocess.check_call(
-        cmd, cwd=self.fake_root_dir).AndRaise(
-            input_api.subprocess.CalledProcessError())
+    CommHelper(input_api, cmd, cwd=self.fake_root_dir, ret=(('', None), 1))
 
     self.mox.ReplayAll()
     results = presubmit_canned_checks.RunUnitTests(
         input_api,
         presubmit.OutputApi,
         unit_tests)
-    self.assertEqual(1, len(results))
+    self.assertEqual(2, len(results))
     self.assertEqual(
-        presubmit.OutputApi.PresubmitPromptWarning, results[0].__class__)
-    self.checkstdout('Running allo\nRunning bar.py\n')
+        presubmit.OutputApi.PresubmitNotifyResult, results[0].__class__)
+    self.assertEqual(
+        presubmit.OutputApi.PresubmitPromptWarning, results[1].__class__)
+    self.checkstdout('')
 
   def testCannedRunUnitTestsInDirectory(self):
     change = presubmit.Change(
@@ -2433,7 +2855,8 @@ class CannedChecksUnittest(PresubmitTestsBase):
     path = presubmit.os.path.join(self.fake_root_dir, 'random_directory')
     input_api.os_listdir(path).AndReturn(['.', '..', 'a', 'b', 'c'])
     input_api.os_path.isfile = lambda x: not x.endswith('.')
-    input_api.subprocess.check_call(
+    CommHelper(
+        input_api,
         [presubmit.os.path.join('random_directory', 'b'), '--verbose'],
         cwd=self.fake_root_dir)
     input_api.logging.debug('Found 5 files, running 1')
@@ -2445,9 +2868,10 @@ class CannedChecksUnittest(PresubmitTestsBase):
         'random_directory',
         whitelist=['^a$', '^b$'],
         blacklist=['a'])
-    self.assertEqual(results, [])
-    self.checkstdout(
-        'Running %s\n' % presubmit.os.path.join('random_directory', 'b'))
+    self.assertEqual(1, len(results))
+    self.assertEqual(
+        presubmit.OutputApi.PresubmitNotifyResult, results[0].__class__)
+    self.checkstdout('')
 
   def testPanProjectChecks(self):
     # Make sure it accepts both list and tuples.

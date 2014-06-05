@@ -54,7 +54,13 @@ public final class AndroidChannelConstants {
     
     public static final String EXTRA_AUTH_TOKEN = "com.google.ipc.invalidation.AUTH_TOKEN";
 
-    /** Extra in the intent from the application that provides the auth token type. */
+    /**
+     * Extra in the intent from the application that provides the so-called "auth token type". If
+     * the auth token is a GoogleLogin token, then this value must name the Gaia service (e.g.,
+     * "chromiumsync") for which the token was generated. If the auth token is a Gaia OAuth2 token,
+     * then this value must have the form "oauth2:{scope}", where {scope} is a Google API
+     * authentication scope such as "https://www.googleapis.com/auth/chromesync".
+     */
     
     public static final String EXTRA_AUTH_TOKEN_TYPE =
         "com.google.ipc.invalidation.AUTH_TOKEN_TYPE";

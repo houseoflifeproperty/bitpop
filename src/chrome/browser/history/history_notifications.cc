@@ -22,12 +22,21 @@ URLsDeletedDetails::URLsDeletedDetails()
 
 URLsDeletedDetails::~URLsDeletedDetails() {}
 
-FaviconChangeDetails::FaviconChangeDetails() {}
+KeywordSearchUpdatedDetails::KeywordSearchUpdatedDetails(
+    const URLRow& url_row,
+    TemplateURLID keyword_id,
+    const base::string16& term)
+    : url_row(url_row),
+      keyword_id(keyword_id),
+      term(term) {
+}
 
-FaviconChangeDetails::~FaviconChangeDetails() {}
+KeywordSearchUpdatedDetails::~KeywordSearchUpdatedDetails() {}
 
-KeywordSearchTermDetails::KeywordSearchTermDetails() : keyword_id(0) {}
+KeywordSearchDeletedDetails::KeywordSearchDeletedDetails(URLID url_row_id)
+    : url_row_id(url_row_id) {
+}
 
-KeywordSearchTermDetails::~KeywordSearchTermDetails() {}
+KeywordSearchDeletedDetails::~KeywordSearchDeletedDetails() {}
 
 }  // namespace history

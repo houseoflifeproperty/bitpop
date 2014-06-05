@@ -6,18 +6,16 @@
 #include "base/values.h"
 #include "chrome/browser/extensions/api/permissions/permissions_api_helpers.h"
 #include "chrome/common/extensions/api/permissions.h"
-#include "chrome/common/extensions/permissions/permission_set.h"
+#include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/url_pattern_set.h"
-#include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
+using extensions::api::permissions::Permissions;
 using extensions::permissions_api_helpers::PackPermissionSet;
 using extensions::permissions_api_helpers::UnpackPermissionSet;
-using extensions::api::permissions::Permissions;
-using extensions::APIPermission;
-using extensions::APIPermissionSet;
-using extensions::PermissionSet;
-using extensions::URLPatternSet;
+
+namespace extensions {
 
 namespace {
 
@@ -32,35 +30,36 @@ static void AddPattern(URLPatternSet* extent, const std::string& pattern) {
 TEST(ExtensionPermissionsAPIHelpers, Pack) {
   APIPermissionSet apis;
   apis.insert(APIPermission::kTab);
-  apis.insert(APIPermission::kWebRequest);
-  // Note: kWebRequest implies also kWebRequestInternal.
+  apis.insert(APIPermission::kFileBrowserHandler);
+  // Note: kFileBrowserHandler implies kFileBrowserHandlerInternal.
   URLPatternSet hosts;
   AddPattern(&hosts, "http://a.com/*");
   AddPattern(&hosts, "http://b.com/*");
 
   scoped_refptr<PermissionSet> permission_set =
-      new PermissionSet(apis, hosts, URLPatternSet());
+      new PermissionSet(apis, ManifestPermissionSet(), hosts, URLPatternSet());
 
   // Pack the permission set to value and verify its contents.
-  scoped_ptr<Permissions> permissions(PackPermissionSet(permission_set));
-  scoped_ptr<DictionaryValue> value(permissions->ToValue());
-  ListValue* api_list = NULL;
-  ListValue* origin_list = NULL;
+  scoped_ptr<Permissions> permissions(PackPermissionSet(permission_set.get()));
+  scoped_ptr<base::DictionaryValue> value(permissions->ToValue());
+  base::ListValue* api_list = NULL;
+  base::ListValue* origin_list = NULL;
   EXPECT_TRUE(value->GetList("permissions", &api_list));
   EXPECT_TRUE(value->GetList("origins", &origin_list));
 
   EXPECT_EQ(3u, api_list->GetSize());
   EXPECT_EQ(2u, origin_list->GetSize());
 
-  std::string expected_apis[] = { "tabs", "webRequest" };
+  std::string expected_apis[] = {"tabs", "fileBrowserHandler",
+                                 "fileBrowserHandlerInternal"};
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(expected_apis); ++i) {
-    scoped_ptr<Value> value(Value::CreateStringValue(expected_apis[i]));
+    scoped_ptr<base::Value> value(new base::StringValue(expected_apis[i]));
     EXPECT_NE(api_list->end(), api_list->Find(*value));
   }
 
   std::string expected_origins[] = { "http://a.com/*", "http://b.com/*" };
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(expected_origins); ++i) {
-    scoped_ptr<Value> value(Value::CreateStringValue(expected_origins[i]));
+    scoped_ptr<base::Value> value(new base::StringValue(expected_origins[i]));
     EXPECT_NE(origin_list->end(), origin_list->Find(*value));
   }
 
@@ -70,21 +69,21 @@ TEST(ExtensionPermissionsAPIHelpers, Pack) {
   std::string error;
   Permissions permissions_object;
   EXPECT_TRUE(Permissions::Populate(*value, &permissions_object));
-  from_value = UnpackPermissionSet(permissions_object, &error);
+  from_value = UnpackPermissionSet(permissions_object, true, &error);
   EXPECT_TRUE(error.empty());
 
-  EXPECT_EQ(*permission_set, *from_value);
+  EXPECT_EQ(*permission_set.get(), *from_value.get());
 }
 
 // Tests various error conditions and edge cases when unpacking values
 // into PermissionSets.
 TEST(ExtensionPermissionsAPIHelpers, Unpack) {
-  scoped_ptr<ListValue> apis(new ListValue());
-  apis->Append(Value::CreateStringValue("tabs"));
-  scoped_ptr<ListValue> origins(new ListValue());
-  origins->Append(Value::CreateStringValue("http://a.com/*"));
+  scoped_ptr<base::ListValue> apis(new base::ListValue());
+  apis->Append(new base::StringValue("tabs"));
+  scoped_ptr<base::ListValue> origins(new base::ListValue());
+  origins->Append(new base::StringValue("http://a.com/*"));
 
-  scoped_ptr<DictionaryValue> value(new DictionaryValue());
+  scoped_ptr<base::DictionaryValue> value(new base::DictionaryValue());
   scoped_refptr<PermissionSet> permissions;
   std::string error;
 
@@ -93,9 +92,9 @@ TEST(ExtensionPermissionsAPIHelpers, Unpack) {
     Permissions permissions_object;
     value->Set("permissions", apis->DeepCopy());
     EXPECT_TRUE(Permissions::Populate(*value, &permissions_object));
-    permissions = UnpackPermissionSet(permissions_object, &error);
+    permissions = UnpackPermissionSet(permissions_object, true, &error);
     EXPECT_TRUE(permissions->HasAPIPermission(APIPermission::kTab));
-    EXPECT_TRUE(permissions);
+    EXPECT_TRUE(permissions.get());
     EXPECT_TRUE(error.empty());
   }
 
@@ -105,8 +104,8 @@ TEST(ExtensionPermissionsAPIHelpers, Unpack) {
     value->Clear();
     value->Set("origins", origins->DeepCopy());
     EXPECT_TRUE(Permissions::Populate(*value, &permissions_object));
-    permissions = UnpackPermissionSet(permissions_object, &error);
-    EXPECT_TRUE(permissions);
+    permissions = UnpackPermissionSet(permissions_object, true, &error);
+    EXPECT_TRUE(permissions.get());
     EXPECT_TRUE(error.empty());
     EXPECT_TRUE(permissions->HasExplicitAccessToOrigin(GURL("http://a.com/")));
   }
@@ -115,8 +114,8 @@ TEST(ExtensionPermissionsAPIHelpers, Unpack) {
   {
     Permissions permissions_object;
     value->Clear();
-    scoped_ptr<ListValue> invalid_apis(apis->DeepCopy());
-    invalid_apis->Append(Value::CreateIntegerValue(3));
+    scoped_ptr<base::ListValue> invalid_apis(apis->DeepCopy());
+    invalid_apis->Append(new base::FundamentalValue(3));
     value->Set("permissions", invalid_apis->DeepCopy());
     EXPECT_FALSE(Permissions::Populate(*value, &permissions_object));
   }
@@ -125,8 +124,8 @@ TEST(ExtensionPermissionsAPIHelpers, Unpack) {
   {
     Permissions permissions_object;
     value->Clear();
-    scoped_ptr<ListValue> invalid_origins(origins->DeepCopy());
-    invalid_origins->Append(Value::CreateIntegerValue(3));
+    scoped_ptr<base::ListValue> invalid_origins(origins->DeepCopy());
+    invalid_origins->Append(new base::FundamentalValue(3));
     value->Set("origins", invalid_origins->DeepCopy());
     EXPECT_FALSE(Permissions::Populate(*value, &permissions_object));
   }
@@ -135,14 +134,14 @@ TEST(ExtensionPermissionsAPIHelpers, Unpack) {
   {
     Permissions permissions_object;
     value->Clear();
-    value->Set("origins", Value::CreateIntegerValue(2));
+    value->Set("origins", new base::FundamentalValue(2));
     EXPECT_FALSE(Permissions::Populate(*value, &permissions_object));
   }
 
   {
     Permissions permissions_object;
     value->Clear();
-    value->Set("permissions", Value::CreateIntegerValue(2));
+    value->Set("permissions", new base::FundamentalValue(2));
     EXPECT_FALSE(Permissions::Populate(*value, &permissions_object));
   }
 
@@ -151,10 +150,10 @@ TEST(ExtensionPermissionsAPIHelpers, Unpack) {
     Permissions permissions_object;
     value->Clear();
     value->Set("origins", origins->DeepCopy());
-    value->Set("random", Value::CreateIntegerValue(3));
+    value->Set("random", new base::FundamentalValue(3));
     EXPECT_TRUE(Permissions::Populate(*value, &permissions_object));
-    permissions = UnpackPermissionSet(permissions_object, &error);
-    EXPECT_TRUE(permissions);
+    permissions = UnpackPermissionSet(permissions_object, true, &error);
+    EXPECT_TRUE(permissions.get());
     EXPECT_TRUE(error.empty());
     EXPECT_TRUE(permissions->HasExplicitAccessToOrigin(GURL("http://a.com/")));
   }
@@ -163,13 +162,15 @@ TEST(ExtensionPermissionsAPIHelpers, Unpack) {
   {
     Permissions permissions_object;
     value->Clear();
-    scoped_ptr<ListValue> invalid_apis(apis->DeepCopy());
-    invalid_apis->Append(Value::CreateStringValue("unknown_permission"));
+    scoped_ptr<base::ListValue> invalid_apis(apis->DeepCopy());
+    invalid_apis->Append(new base::StringValue("unknown_permission"));
     value->Set("permissions", invalid_apis->DeepCopy());
     EXPECT_TRUE(Permissions::Populate(*value, &permissions_object));
-    permissions = UnpackPermissionSet(permissions_object, &error);
-    EXPECT_FALSE(permissions);
+    permissions = UnpackPermissionSet(permissions_object, true, &error);
+    EXPECT_FALSE(permissions.get());
     EXPECT_FALSE(error.empty());
     EXPECT_EQ(error, "'unknown_permission' is not a recognized permission.");
   }
 }
+
+}  // namespace extensions

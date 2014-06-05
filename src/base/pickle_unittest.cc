@@ -7,8 +7,11 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/pickle.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+// Remove when this file is in the base namespace.
+using base::string16;
 
 namespace {
 
@@ -40,9 +43,9 @@ void VerifyResult(const Pickle& pickle) {
 
   bool outbool;
   EXPECT_TRUE(pickle.ReadBool(&iter, &outbool));
-  EXPECT_EQ(testbool1, outbool);
+  EXPECT_FALSE(outbool);
   EXPECT_TRUE(pickle.ReadBool(&iter, &outbool));
-  EXPECT_EQ(testbool2, outbool);
+  EXPECT_TRUE(outbool);
 
   uint16 outuint16;
   EXPECT_TRUE(pickle.ReadUInt16(&iter, &outuint16));
@@ -54,10 +57,6 @@ void VerifyResult(const Pickle& pickle) {
 
   const char* outdata;
   int outdatalen;
-  EXPECT_TRUE(pickle.ReadData(&iter, &outdata, &outdatalen));
-  EXPECT_EQ(testdatalen, outdatalen);
-  EXPECT_EQ(memcmp(testdata, outdata, outdatalen), 0);
-
   EXPECT_TRUE(pickle.ReadData(&iter, &outdata, &outdatalen));
   EXPECT_EQ(testdatalen, outdatalen);
   EXPECT_EQ(memcmp(testdata, outdata, outdatalen), 0);
@@ -79,14 +78,6 @@ TEST(PickleTest, EncodeDecode) {
   EXPECT_TRUE(pickle.WriteUInt16(testuint16));
   EXPECT_TRUE(pickle.WriteFloat(testfloat));
   EXPECT_TRUE(pickle.WriteData(testdata, testdatalen));
-
-  // Over allocate BeginWriteData so we can test TrimWriteData.
-  char* dest = pickle.BeginWriteData(testdatalen + 100);
-  EXPECT_TRUE(dest);
-  memcpy(dest, testdata, testdatalen);
-
-  pickle.TrimWriteData(testdatalen);
-
   VerifyResult(pickle);
 
   // test copy constructor
@@ -101,7 +92,7 @@ TEST(PickleTest, EncodeDecode) {
 
 // Tests that we can handle really small buffers.
 TEST(PickleTest, SmallBuffer) {
-  scoped_array<char> buffer(new char[1]);
+  scoped_ptr<char[]> buffer(new char[1]);
 
   // We should not touch the buffer.
   Pickle pickle(buffer.get(), 1);
@@ -134,7 +125,7 @@ TEST(PickleTest, UnalignedSize) {
 
 TEST(PickleTest, ZeroLenStr) {
   Pickle pickle;
-  EXPECT_TRUE(pickle.WriteString(""));
+  EXPECT_TRUE(pickle.WriteString(std::string()));
 
   PickleIterator iter(pickle);
   std::string outstr;
@@ -144,7 +135,7 @@ TEST(PickleTest, ZeroLenStr) {
 
 TEST(PickleTest, ZeroLenWStr) {
   Pickle pickle;
-  EXPECT_TRUE(pickle.WriteWString(L""));
+  EXPECT_TRUE(pickle.WriteWString(std::wstring()));
 
   PickleIterator iter(pickle);
   std::string outstr;
@@ -185,7 +176,7 @@ TEST(PickleTest, FindNext) {
 
 TEST(PickleTest, FindNextWithIncompleteHeader) {
   size_t header_size = sizeof(Pickle::Header);
-  scoped_array<char> buffer(new char[header_size - 1]);
+  scoped_ptr<char[]> buffer(new char[header_size - 1]);
   memset(buffer.get(), 0x1, header_size - 1);
 
   const char* start = buffer.get();
@@ -193,6 +184,37 @@ TEST(PickleTest, FindNextWithIncompleteHeader) {
 
   EXPECT_TRUE(NULL == Pickle::FindNext(header_size, start, end));
 }
+
+#if defined(COMPILER_MSVC)
+#pragma warning(push)
+#pragma warning(disable: 4146)
+#endif
+TEST(PickleTest, FindNextOverflow) {
+  size_t header_size = sizeof(Pickle::Header);
+  size_t header_size2 = 2 * header_size;
+  size_t payload_received = 100;
+  scoped_ptr<char[]> buffer(new char[header_size2 + payload_received]);
+  const char* start = buffer.get();
+  Pickle::Header* header = reinterpret_cast<Pickle::Header*>(buffer.get());
+  const char* end = start + header_size2 + payload_received;
+  // It is impossible to construct an overflow test otherwise.
+  if (sizeof(size_t) > sizeof(header->payload_size) ||
+      sizeof(uintptr_t) > sizeof(header->payload_size))
+    return;
+
+  header->payload_size = -(reinterpret_cast<uintptr_t>(start) + header_size2);
+  EXPECT_TRUE(NULL == Pickle::FindNext(header_size2, start, end));
+
+  header->payload_size = -header_size2;
+  EXPECT_TRUE(NULL == Pickle::FindNext(header_size2, start, end));
+
+  header->payload_size = 0;
+  end = start + header_size;
+  EXPECT_TRUE(NULL == Pickle::FindNext(header_size2, start, end));
+}
+#if defined(COMPILER_MSVC)
+#pragma warning(pop)
+#endif
 
 TEST(PickleTest, GetReadPointerAndAdvance) {
   Pickle pickle;
@@ -215,7 +237,7 @@ TEST(PickleTest, GetReadPointerAndAdvance) {
 
 TEST(PickleTest, Resize) {
   size_t unit = Pickle::kPayloadUnit;
-  scoped_array<char> data(new char[unit]);
+  scoped_ptr<char[]> data(new char[unit]);
   char* data_ptr = data.get();
   for (size_t i = 0; i < unit; i++)
     data_ptr[i] = 'G';
@@ -229,19 +251,19 @@ TEST(PickleTest, Resize) {
   size_t cur_payload = payload_size_after_header;
 
   // note: we assume 'unit' is a power of 2
-  EXPECT_EQ(unit, pickle.capacity());
+  EXPECT_EQ(unit, pickle.capacity_after_header());
   EXPECT_EQ(pickle.payload_size(), payload_size_after_header);
 
   // fill out a full page (noting data header)
   pickle.WriteData(data_ptr, static_cast<int>(unit - sizeof(uint32)));
   cur_payload += unit;
-  EXPECT_EQ(unit * 2, pickle.capacity());
+  EXPECT_EQ(unit * 2, pickle.capacity_after_header());
   EXPECT_EQ(cur_payload, pickle.payload_size());
 
   // one more byte should double the capacity
   pickle.WriteData(data_ptr, 1);
   cur_payload += 5;
-  EXPECT_EQ(unit * 4, pickle.capacity());
+  EXPECT_EQ(unit * 4, pickle.capacity_after_header());
   EXPECT_EQ(cur_payload, pickle.payload_size());
 }
 

@@ -33,6 +33,7 @@
 #include <vector>
 
 #include "talk/base/buffer.h"
+#include "talk/base/fakesslidentity.h"
 #include "talk/base/sigslot.h"
 #include "talk/base/sslfingerprint.h"
 #include "talk/base/messagequeue.h"
@@ -67,20 +68,25 @@ class FakeTransportChannel : public TransportChannelImpl,
         async_(false),
         identity_(NULL),
         do_dtls_(false),
-        role_(ROLE_UNKNOWN),
+        role_(ICEROLE_UNKNOWN),
         tiebreaker_(0),
         ice_proto_(ICEPROTO_HYBRID),
-        dtls_fingerprint_("", NULL, 0) {
+        remote_ice_mode_(ICEMODE_FULL),
+        dtls_fingerprint_("", NULL, 0),
+        ssl_role_(talk_base::SSL_CLIENT),
+        connection_count_(0) {
   }
   ~FakeTransportChannel() {
     Reset();
   }
 
-  TransportRole role() const { return role_; }
-  uint64 tiebreaker() const { return tiebreaker_; }
+  uint64 IceTiebreaker() const { return tiebreaker_; }
   TransportProtocol protocol() const { return ice_proto_; }
+  IceMode remote_ice_mode() const { return remote_ice_mode_; }
   const std::string& ice_ufrag() const { return ice_ufrag_; }
   const std::string& ice_pwd() const { return ice_pwd_; }
+  const std::string& remote_ice_ufrag() const { return remote_ice_ufrag_; }
+  const std::string& remote_ice_pwd() const { return remote_ice_pwd_; }
   const talk_base::SSLFingerprint& dtls_fingerprint() const {
     return dtls_fingerprint_;
   }
@@ -93,14 +99,38 @@ class FakeTransportChannel : public TransportChannelImpl,
     return transport_;
   }
 
-  virtual void SetRole(TransportRole role) { role_ = role; }
-  virtual void SetTiebreaker(uint64 tiebreaker) { tiebreaker_ = tiebreaker; }
+  virtual void SetIceRole(IceRole role) { role_ = role; }
+  virtual IceRole GetIceRole() const { return role_; }
+  virtual size_t GetConnectionCount() const { return connection_count_; }
+  virtual void SetIceTiebreaker(uint64 tiebreaker) { tiebreaker_ = tiebreaker; }
+  virtual bool GetIceProtocolType(IceProtocolType* type) const {
+    *type = ice_proto_;
+    return true;
+  }
   virtual void SetIceProtocolType(IceProtocolType type) { ice_proto_ = type; }
-  virtual void SetIceUfrag(const std::string& ufrag) { ice_ufrag_ = ufrag; }
-  virtual void SetIcePwd(const std::string& pwd) { ice_pwd_ = pwd; }
+  virtual void SetIceCredentials(const std::string& ice_ufrag,
+                                 const std::string& ice_pwd) {
+    ice_ufrag_ = ice_ufrag;
+    ice_pwd_ = ice_pwd;
+  }
+  virtual void SetRemoteIceCredentials(const std::string& ice_ufrag,
+                                       const std::string& ice_pwd) {
+    remote_ice_ufrag_ = ice_ufrag;
+    remote_ice_pwd_ = ice_pwd;
+  }
+
+  virtual void SetRemoteIceMode(IceMode mode) { remote_ice_mode_ = mode; }
   virtual bool SetRemoteFingerprint(const std::string& alg, const uint8* digest,
                                     size_t digest_len) {
     dtls_fingerprint_ = talk_base::SSLFingerprint(alg, digest, digest_len);
+    return true;
+  }
+  virtual bool SetSslRole(talk_base::SSLRole role) {
+    ssl_role_ = role;
+    return true;
+  }
+  virtual bool GetSslRole(talk_base::SSLRole* role) const {
+    *role = ssl_role_;
     return true;
   }
 
@@ -146,7 +176,15 @@ class FakeTransportChannel : public TransportChannelImpl,
     }
   }
 
-  virtual int SendPacket(const char* data, size_t len, int flags) {
+  void SetConnectionCount(size_t connection_count) {
+    size_t old_connection_count = connection_count_;
+    connection_count_ = connection_count;
+    if (connection_count_ < old_connection_count)
+      SignalConnectionRemoved(this);
+  }
+
+  virtual int SendPacket(const char* data, size_t len,
+                         const talk_base::PacketOptions& options, int flags) {
     if (state_ != STATE_CONNECTED) {
       return -1;
     }
@@ -161,7 +199,7 @@ class FakeTransportChannel : public TransportChannelImpl,
     } else {
       talk_base::Thread::Current()->Send(this, 0, packet);
     }
-    return len;
+    return static_cast<int>(len);
   }
   virtual int SetOption(talk_base::Socket::Option opt, int value) {
     return true;
@@ -179,21 +217,26 @@ class FakeTransportChannel : public TransportChannelImpl,
     PacketMessageData* data = static_cast<PacketMessageData*>(
         msg->pdata);
     dest_->SignalReadPacket(dest_, data->packet.data(),
-                            data->packet.length(), 0);
+                            data->packet.length(),
+                            talk_base::CreatePacketTime(0), 0);
     delete data;
   }
 
   bool SetLocalIdentity(talk_base::SSLIdentity* identity) {
     identity_ = identity;
-
     return true;
   }
 
-  bool IsDtlsActive() const {
+
+  void SetRemoteCertificate(talk_base::FakeSSLCertificate* cert) {
+    remote_cert_ = cert;
+  }
+
+  virtual bool IsDtlsActive() const {
     return do_dtls_;
   }
 
-  bool SetSrtpCiphers(const std::vector<std::string>& ciphers) {
+  virtual bool SetSrtpCiphers(const std::vector<std::string>& ciphers) {
     srtp_ciphers_ = ciphers;
     return true;
   }
@@ -204,6 +247,22 @@ class FakeTransportChannel : public TransportChannelImpl,
       return true;
     }
     return false;
+  }
+
+  virtual bool GetLocalIdentity(talk_base::SSLIdentity** identity) const {
+    if (!identity_)
+      return false;
+
+    *identity = identity_->GetReference();
+    return true;
+  }
+
+  virtual bool GetRemoteCertificate(talk_base::SSLCertificate** cert) const {
+    if (!remote_cert_)
+      return false;
+
+    *cert = remote_cert_->GetReference();
+    return true;
   }
 
   virtual bool ExportKeyingMaterial(const std::string& label,
@@ -235,6 +294,13 @@ class FakeTransportChannel : public TransportChannelImpl,
     }
   }
 
+  virtual bool GetStats(ConnectionInfos* infos) OVERRIDE {
+    ConnectionInfo info;
+    infos->clear();
+    infos->push_back(info);
+    return true;
+  }
+
  private:
   enum State { STATE_INIT, STATE_CONNECTING, STATE_CONNECTED };
   Transport* transport_;
@@ -242,15 +308,21 @@ class FakeTransportChannel : public TransportChannelImpl,
   State state_;
   bool async_;
   talk_base::SSLIdentity* identity_;
+  talk_base::FakeSSLCertificate* remote_cert_;
   bool do_dtls_;
   std::vector<std::string> srtp_ciphers_;
   std::string chosen_srtp_cipher_;
-  TransportRole role_;
+  IceRole role_;
   uint64 tiebreaker_;
   IceProtocolType ice_proto_;
   std::string ice_ufrag_;
   std::string ice_pwd_;
+  std::string remote_ice_ufrag_;
+  std::string remote_ice_pwd_;
+  IceMode remote_ice_mode_;
   talk_base::SSLFingerprint dtls_fingerprint_;
+  talk_base::SSLRole ssl_role_;
+  size_t connection_count_;
 };
 
 // Fake transport class, which can be passed to anything that needs a Transport.
@@ -296,6 +368,9 @@ class FakeTransport : public Transport {
     identity_ = identity;
   }
 
+  using Transport::local_description;
+  using Transport::remote_description;
+
  protected:
   virtual TransportChannelImpl* CreateTransportChannel(int component) {
     if (channels_.find(component) != channels_.end()) {
@@ -311,6 +386,16 @@ class FakeTransport : public Transport {
   virtual void DestroyTransportChannel(TransportChannelImpl* channel) {
     channels_.erase(channel->component());
     delete channel;
+  }
+  virtual void SetIdentity_w(talk_base::SSLIdentity* identity) {
+    identity_ = identity;
+  }
+  virtual bool GetIdentity_w(talk_base::SSLIdentity** identity) {
+    if (!identity_)
+      return false;
+
+    *identity = identity_->GetReference();
+    return true;
   }
 
  private:
@@ -351,6 +436,12 @@ class FakeSession : public BaseSession {
   explicit FakeSession(bool initiator)
       : BaseSession(talk_base::Thread::Current(),
                     talk_base::Thread::Current(),
+                    NULL, "", "", initiator),
+      fail_create_channel_(false) {
+  }
+  FakeSession(talk_base::Thread* worker_thread, bool initiator)
+      : BaseSession(talk_base::Thread::Current(),
+                    worker_thread,
                     NULL, "", "", initiator),
       fail_create_channel_(false) {
   }
@@ -405,6 +496,7 @@ class FakeSession : public BaseSession {
     for (TransportMap::const_iterator it = transport_proxies().begin();
         it != transport_proxies().end(); ++it) {
       it->second->CompleteNegotiation();
+      it->second->ConnectChannels();
     }
   }
 

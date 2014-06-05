@@ -5,13 +5,13 @@
 #include "ui/views/animation/bounds_animator.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/base/animation/slide_animation.h"
-#include "ui/base/animation/test_animation_delegate.h"
+#include "ui/gfx/animation/slide_animation.h"
+#include "ui/gfx/animation/test_animation_delegate.h"
 #include "ui/views/view.h"
 
-using ui::Animation;
-using ui::SlideAnimation;
-using ui::TestAnimationDelegate;
+using gfx::Animation;
+using gfx::SlideAnimation;
+using gfx::TestAnimationDelegate;
 
 namespace views {
 namespace {
@@ -22,7 +22,7 @@ class TestBoundsAnimator : public BoundsAnimator {
   }
 
  protected:
-  SlideAnimation* CreateAnimation() {
+  virtual SlideAnimation* CreateAnimation() OVERRIDE {
     SlideAnimation* animation = BoundsAnimator::CreateAnimation();
     animation->SetSlideDuration(10);
     return animation;
@@ -52,7 +52,7 @@ class OwnedDelegate : public BoundsAnimator::OwnedAnimationDelegate {
     return value;
   }
 
-  // Overridden from ui::AnimationDelegate:
+  // Overridden from gfx::AnimationDelegate:
   virtual void AnimationCanceled(const Animation* animation) OVERRIDE {
     canceled_ = true;
   }
@@ -100,7 +100,7 @@ class BoundsAnimatorTest : public testing::Test {
   TestBoundsAnimator* animator() { return &animator_; }
 
  private:
-  MessageLoopForUI message_loop_;
+  base::MessageLoopForUI message_loop_;
   TestView parent_;
   TestView* child_;  // Owned by |parent_|.
   TestBoundsAnimator animator_;
@@ -122,7 +122,7 @@ TEST_F(BoundsAnimatorTest, AnimateViewTo) {
 
   // Run the message loop; the delegate exits the loop when the animation is
   // done.
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
 
   // Make sure the bounds match of the view that was animated match.
   EXPECT_EQ(target_bounds, child()->bounds());

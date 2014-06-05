@@ -1,7 +1,0 @@
-include_rules = [
-  "+media",
-  "+net",
-  "+ui",
-  "+third_party/libpng",
-  "+third_party/zlib",
-]

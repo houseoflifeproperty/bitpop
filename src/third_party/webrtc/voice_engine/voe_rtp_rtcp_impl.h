@@ -11,9 +11,9 @@
 #ifndef WEBRTC_VOICE_ENGINE_VOE_RTP_RTCP_IMPL_H
 #define WEBRTC_VOICE_ENGINE_VOE_RTP_RTCP_IMPL_H
 
-#include "voe_rtp_rtcp.h"
+#include "webrtc/voice_engine/include/voe_rtp_rtcp.h"
 
-#include "shared_data.h"
+#include "webrtc/voice_engine/shared_data.h"
 
 namespace webrtc {
 
@@ -50,7 +50,7 @@ public:
 
     virtual int SendApplicationDefinedRTCPPacket(
         int channel,
-        const unsigned char subType,
+        unsigned char subType,
         unsigned int name,
         const char* data,
         unsigned short dataLengthInBytes);
@@ -63,15 +63,22 @@ public:
     virtual int GetRemoteSSRC(int channel, unsigned int& ssrc);
 
     // RTP Header Extension for Client-to-Mixer Audio Level Indication
-    virtual int SetRTPAudioLevelIndicationStatus(int channel,
-                                                 bool enable,
-                                                 unsigned char ID);
+    virtual int SetSendAudioLevelIndicationStatus(int channel,
+                                                  bool enable,
+                                                  unsigned char id);
+    virtual int SetReceiveAudioLevelIndicationStatus(int channel,
+                                                     bool enable,
+                                                     unsigned char id);
 
-    virtual int GetRTPAudioLevelIndicationStatus(int channel,
-                                                 bool& enabled,
-                                                 unsigned char& ID);
+    // RTP Header Extension for Absolute Sender Time
+    virtual int SetSendAbsoluteSenderTimeStatus(int channel,
+                                                bool enable,
+                                                unsigned char id);
+    virtual int SetReceiveAbsoluteSenderTimeStatus(int channel,
+                                                   bool enable,
+                                                   unsigned char id);
 
-    // CSRC 
+    // CSRC
     virtual int GetRemoteCSRCs(int channel, unsigned int arrCSRC[15]);
 
     // Statistics
@@ -94,6 +101,11 @@ public:
 
     virtual int GetFECStatus(int channel, bool& enabled, int& redPayloadtype);
 
+    //NACK
+    virtual int SetNACKStatus(int channel,
+                              bool enable,
+                              int maxNoPackets);
+
     // Store RTP and RTCP packets and dump to file (compatible with rtpplay)
     virtual int StartRTPDump(int channel,
                              const char fileNameUTF8[1024],
@@ -105,13 +117,10 @@ public:
     virtual int RTPDumpIsActive(int channel,
                                 RTPDirections direction = kRtpIncoming);
 
-    // Insert (and transmits) extra RTP packet into active RTP audio stream
-    virtual int InsertExtraRTPPacket(int channel,
-                                     unsigned char payloadType,
-                                     bool markerBit,
-                                     const char* payloadData,
-                                     unsigned short payloadSize);
-
+    virtual int GetLastRemoteTimeStamp(int channel,
+                                       uint32_t* lastRemoteTimeStamp);
+    virtual int SetVideoEngineBWETarget(int channel, ViENetwork* vie_network,
+                                        int video_channel);
 protected:
     VoERTP_RTCPImpl(voe::SharedData* shared);
     virtual ~VoERTP_RTCPImpl();
@@ -123,4 +132,3 @@ private:
 }  // namespace webrtc
 
 #endif    // WEBRTC_VOICE_ENGINE_VOE_RTP_RTCP_IMPL_H
-

@@ -17,34 +17,40 @@ need to be translated for each locale.-->
     </output>
     <output filename="ui_strings_am.pak" type="data_package" lang="am" />
     <output filename="ui_strings_ar.pak" type="data_package" lang="ar" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="ui_strings_ast.pak" type="data_package" lang="ast" />
     </if>
     <output filename="ui_strings_bg.pak" type="data_package" lang="bg" />
     <output filename="ui_strings_bn.pak" type="data_package" lang="bn" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="ui_strings_bs.pak" type="data_package" lang="bs" />
     </if>
     <output filename="ui_strings_ca.pak" type="data_package" lang="ca" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="ui_strings_ca@valencia.pak" type="data_package" lang="ca@valencia" />
     </if>
     <output filename="ui_strings_cs.pak" type="data_package" lang="cs" />
     <output filename="ui_strings_da.pak" type="data_package" lang="da" />
     <output filename="ui_strings_de.pak" type="data_package" lang="de" />
     <output filename="ui_strings_el.pak" type="data_package" lang="el" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="ui_strings_en-AU.pak" type="data_package" lang="en-AU" />
     </if>
     <output filename="ui_strings_en-GB.pak" type="data_package" lang="en-GB" />
     <output filename="ui_strings_en-US.pak" type="data_package" lang="en" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="ui_strings_eo.pak" type="data_package" lang="eo" />
     </if>
     <output filename="ui_strings_es.pak" type="data_package" lang="es" />
-    <output filename="ui_strings_es-419.pak" type="data_package" lang="es-419" />
+    <if expr="is_ios">
+      <!-- iOS uses es-MX for es-419 -->
+      <output filename="ui_strings_es-MX.pak" type="data_package" lang="es-419" />
+    </if>
+    <if expr="not is_ios">
+      <output filename="ui_strings_es-419.pak" type="data_package" lang="es-419" />
+    </if>
     <output filename="ui_strings_et.pak" type="data_package" lang="et" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="ui_strings_eu.pak" type="data_package" lang="eu" />
     </if>
     <output filename="ui_strings_fa.pak" type="data_package" lang="fa" />
@@ -52,7 +58,7 @@ need to be translated for each locale.-->
     <output filename="ui_strings_fi.pak" type="data_package" lang="fi" />
     <output filename="ui_strings_fil.pak" type="data_package" lang="fil" />
     <output filename="ui_strings_fr.pak" type="data_package" lang="fr" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="ui_strings_gl.pak" type="data_package" lang="gl" />
     </if>
     <output filename="ui_strings_gu.pak" type="data_package" lang="gu" />
@@ -60,19 +66,19 @@ need to be translated for each locale.-->
     <output filename="ui_strings_hi.pak" type="data_package" lang="hi" />
     <output filename="ui_strings_hr.pak" type="data_package" lang="hr" />
     <output filename="ui_strings_hu.pak" type="data_package" lang="hu" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="ui_strings_hy.pak" type="data_package" lang="hy" />
       <output filename="ui_strings_ia.pak" type="data_package" lang="ia" />
     </if>
     <output filename="ui_strings_id.pak" type="data_package" lang="id" />
     <output filename="ui_strings_it.pak" type="data_package" lang="it" />
     <output filename="ui_strings_ja.pak" type="data_package" lang="ja" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="ui_strings_ka.pak" type="data_package" lang="ka" />
     </if>
     <output filename="ui_strings_kn.pak" type="data_package" lang="kn" />
     <output filename="ui_strings_ko.pak" type="data_package" lang="ko" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="ui_strings_ku.pak" type="data_package" lang="ku" />
       <output filename="ui_strings_kw.pak" type="data_package" lang="kw" />
     </if>
@@ -86,11 +92,11 @@ need to be translated for each locale.-->
          be 'nb'. -->
     <output filename="ui_strings_nb.pak" type="data_package" lang="no" />
     <output filename="ui_strings_pl.pak" type="data_package" lang="pl" />
-    <if expr="pp_ifdef('ios')">
+    <if expr="is_ios">
       <!-- iOS uses pt for pt-BR -->
       <output filename="ui_strings_pt.pak" type="data_package" lang="pt-BR" />
     </if>
-    <if expr="not pp_ifdef('ios')">
+    <if expr="not is_ios">
       <output filename="ui_strings_pt-BR.pak" type="data_package" lang="pt-BR" />
     </if>
     <output filename="ui_strings_pt-PT.pak" type="data_package" lang="pt-PT" />
@@ -105,7 +111,7 @@ need to be translated for each locale.-->
     <output filename="ui_strings_te.pak" type="data_package" lang="te" />
     <output filename="ui_strings_th.pak" type="data_package" lang="th" />
     <output filename="ui_strings_tr.pak" type="data_package" lang="tr" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <output filename="ui_strings_ug.pak" type="data_package" lang="ug" />
     </if>
     <output filename="ui_strings_uk.pak" type="data_package" lang="uk" />
@@ -116,47 +122,47 @@ need to be translated for each locale.-->
   <translations>
     <file path="ui_strings_am.xtb" lang="am" />
     <file path="ui_strings_ar.xtb" lang="ar" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <file path="../../../third_party/launchpad_translations/ui_strings_ast.xtb" lang="ast" />
     </if>
     <file path="ui_strings_bg.xtb" lang="bg" />
     <file path="ui_strings_bn.xtb" lang="bn" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <file path="../../../third_party/launchpad_translations/ui_strings_bs.xtb" lang="bs" />
     </if>
     <file path="ui_strings_ca.xtb" lang="ca" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <file path="../../../third_party/launchpad_translations/ui_strings_ca-valencia.xtb" lang="ca@valencia" />
     </if>
     <file path="ui_strings_cs.xtb" lang="cs" />
     <file path="ui_strings_da.xtb" lang="da" />
     <file path="ui_strings_de.xtb" lang="de" />
     <file path="ui_strings_el.xtb" lang="el" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <file path="../../../third_party/launchpad_translations/ui_strings_en-AU.xtb" lang="en-AU" />
     </if>
     <file path="ui_strings_en-GB.xtb" lang="en-GB" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <file path="../../../third_party/launchpad_translations/ui_strings_eo.xtb" lang="eo" />
     </if>
     <file path="ui_strings_es.xtb" lang="es" />
     <file path="ui_strings_es-419.xtb" lang="es-419" />
     <file path="ui_strings_et.xtb" lang="et" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <file path="../../../third_party/launchpad_translations/ui_strings_eu.xtb" lang="eu" />
     </if>
     <file path="ui_strings_fa.xtb" lang="fa" />
     <file path="ui_strings_fi.xtb" lang="fi" />
     <file path="ui_strings_fil.xtb" lang="fil" />
     <file path="ui_strings_fr.xtb" lang="fr" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <file path="../../../third_party/launchpad_translations/ui_strings_gl.xtb" lang="gl" />
     </if>
     <file path="ui_strings_gu.xtb" lang="gu" />
     <file path="ui_strings_hi.xtb" lang="hi" />
     <file path="ui_strings_hr.xtb" lang="hr" />
     <file path="ui_strings_hu.xtb" lang="hu" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <file path="../../../third_party/launchpad_translations/ui_strings_hy.xtb" lang="hy" />
       <file path="../../../third_party/launchpad_translations/ui_strings_ia.xtb" lang="ia" />
     </if>
@@ -165,12 +171,12 @@ need to be translated for each locale.-->
     <!-- The translation console uses 'iw' for Hebrew, but we use 'he'. -->
     <file path="ui_strings_iw.xtb" lang="he" />
     <file path="ui_strings_ja.xtb" lang="ja" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <file path="../../../third_party/launchpad_translations/ui_strings_ka.xtb" lang="ka" />
     </if>
     <file path="ui_strings_kn.xtb" lang="kn" />
     <file path="ui_strings_ko.xtb" lang="ko" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <file path="../../../third_party/launchpad_translations/ui_strings_ku.xtb" lang="ku" />
       <file path="../../../third_party/launchpad_translations/ui_strings_kw.xtb" lang="kw" />
     </if>
@@ -195,7 +201,7 @@ need to be translated for each locale.-->
     <file path="ui_strings_te.xtb" lang="te" />
     <file path="ui_strings_th.xtb" lang="th" />
     <file path="ui_strings_tr.xtb" lang="tr" />
-    <if expr="pp_ifdef('use_third_party_translations')">
+    <if expr="use_third_party_translations">
       <file path="../../../third_party/launchpad_translations/ui_strings_ug.xtb" lang="ug" />
     </if>
     <file path="ui_strings_uk.xtb" lang="uk" />
@@ -206,25 +212,1601 @@ need to be translated for each locale.-->
   <release seq="1" allow_pseudo="false">
     <messages fallback_to_english="true">
 
+      <!-- time format -->
+      <message name="IDS_TIME_SECS_DEFAULT"
+               desc="This is necessary for every language. It is the default for all the numbers NOT covered by special cases (singular, dual/two, few, many) some languages need. For CJK, Vietnamese, Turkish and Kannada, this is the only string necessary. For languages with singular-plural distinction, this is the generic plural. For Lithuanian, NUMBER_DEFAULT is 11..19.">
+        <ph name="NUMBER_DEFAULT"><ex>37</ex>#</ph> secs
+      </message>
+
+      <if expr="lang not in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message name="IDS_TIME_SECS_SINGULAR"
+               desc="NUMBER_ONE is a one or one-like number: 1 (many European and most Indian languages), 1 and 0 (French, Brazilian Portuguese and Hindi), 1, 21, 31, ... (Russian, Ukrainian, Croatian, Serbian, Latvian, Lithuanian), or 1, 101, 201, ... (Slovenian). Do NOT translate this for CJK, Vietnamese, Turkish and Kannada.">
+        <ph name="NUMBER_ONE"><ex>1</ex>#</ph> sec
+      </message>
+      </if>
+      <if expr="lang in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message translateable="false" name="IDS_TIME_SECS_SINGULAR"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ar', 'ro', 'lv']">
+      <message name="IDS_TIME_SECS_ZERO"
+               desc="NUMBER_ZERO is 0 (Arabic, Latvian) or 0, 2..19, 101..119, ... (Romanian). For other languages, do NOT translate.">
+        <ph name="NUMBER_ZERO"><ex>0</ex>#</ph> secs
+      </message>
+      </if>
+      <if expr="lang not in ['ar', 'ro', 'lv']">
+      <message translateable="false" name="IDS_TIME_SECS_ZERO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ga', 'sl', 'ar']">
+      <message name="IDS_TIME_SECS_TWO"
+               desc="NUMBER_TWO is a two or two-like/dual number: 2 (Arabic and Irish) or 2, 102, 202 ... (Slovenian). For other languages, do NOT translate.">
+        <ph name="NUMBER_TWO"><ex>2</ex>#</ph> secs
+      </message>
+      </if>
+      <if expr="lang not in ['ga', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_SECS_TWO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message name="IDS_TIME_SECS_FEW"
+               desc="NUMBER_FEW is a few or few-like number in Arabic, Russian, Polish, Croatian, Serbian, Ukrainian, Czech, Slovak, Slovenian, Latvian. For other languages, do NOT translate.">
+        <ph name="NUMBER_FEW"><ex>3</ex>#</ph> secs
+      </message>
+      </if>
+      <if expr="lang not in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_SECS_FEW"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang == 'ar'">
+      <message name="IDS_TIME_SECS_MANY"
+               desc="NUMBER_MANY is 11 through 99 in Arabic. For all other languages, do NOT translate.">
+        <ph name="NUMBER_MANY"><ex>23</ex>#</ph> secs
+      </message>
+      </if>
+      <if expr="lang != 'ar'">
+      <message translateable="false" name="IDS_TIME_SECS_MANY"
+               desc="">
+        NA
+      </message>
+      </if>
+
+
+      <message name="IDS_TIME_LONG_SECS_DEFAULT"
+               desc="This is necessary for every language. It is the default for all the numbers NOT covered by special cases (singular, dual/two, few, many) some languages need. For CJK, Vietnamese, Turkish and Kannada, this is the only string necessary. For languages with singular-plural distinction, this is the generic plural. For Lithuanian, NUMBER_DEFAULT is 11..19.">
+        <ph name="NUMBER_DEFAULT"><ex>37</ex>#</ph> seconds
+      </message>
+
+      <if expr="lang not in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message name="IDS_TIME_LONG_SECS_SINGULAR"
+               desc="NUMBER_ONE is a one or one-like number: 1 (many European and most Indian languages), 1 and 0 (French, Brazilian Portuguese and Hindi), 1, 21, 31, ... (Russian, Ukrainian, Croatian, Serbian, Latvian, Lithuanian), or 1, 101, 201, ... (Slovenian). Do NOT translate this for CJK, Vietnamese, Turkish and Kannada.">
+        <ph name="NUMBER_ONE"><ex>1</ex>#</ph> second
+      </message>
+      </if>
+      <if expr="lang in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message translateable="false" name="IDS_TIME_LONG_SECS_SINGULAR"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ar', 'ro', 'lv']">
+      <message name="IDS_TIME_LONG_SECS_ZERO"
+               desc="NUMBER_ZERO is 0 (Arabic, Latvian) or 0, 2..19, 101..119, ... (Romanian). For other languages, do NOT translate.">
+        <ph name="NUMBER_ZERO"><ex>0</ex>#</ph> seconds
+      </message>
+      </if>
+      <if expr="lang not in ['ar', 'ro', 'lv']">
+      <message translateable="false" name="IDS_TIME_LONG_SECS_ZERO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ga', 'sl', 'ar']">
+      <message name="IDS_TIME_LONG_SECS_TWO"
+               desc="NUMBER_TWO is a two or two-like/dual number: 2 (Arabic and Irish) or 2, 102, 202 ... (Slovenian). For other languages, do NOT translate.">
+        <ph name="NUMBER_TWO"><ex>2</ex>#</ph> seconds
+      </message>
+      </if>
+      <if expr="lang not in ['ga', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_LONG_SECS_TWO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message name="IDS_TIME_LONG_SECS_FEW"
+               desc="NUMBER_FEW is a few or few-like number in Arabic, Russian, Polish, Croatian, Serbian, Ukrainian, Czech, Slovak, Slovenian, Latvian. For other languages, do NOT translate.">
+        <ph name="NUMBER_FEW"><ex>3</ex>#</ph> seconds
+      </message>
+      </if>
+      <if expr="lang not in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_LONG_SECS_FEW"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang == 'ar'">
+      <message name="IDS_TIME_LONG_SECS_MANY"
+               desc="NUMBER_MANY is 11 through 99 in Arabic. For all other languages, do NOT translate.">
+        <ph name="NUMBER_MANY"><ex>23</ex>#</ph> seconds
+      </message>
+      </if>
+      <if expr="lang != 'ar'">
+      <message translateable="false" name="IDS_TIME_LONG_SECS_MANY"
+               desc="">
+        NA
+      </message>
+      </if>
+
+
+      <message name="IDS_TIME_LONG_SECS_2ND_DEFAULT"
+               desc="Second part of 'xx minutes yy seconds' time format. This is necessary for every language. It is the default for all the numbers NOT covered by special cases (singular, dual/two, few, many) some languages need. For CJK, Vietnamese, Turkish and Kannada, this is the only string necessary. For languages with singular-plural distinction, this is the generic plural. For Lithuanian, NUMBER_DEFAULT is 11..19.">
+        <ph name="NUMBER_DEFAULT"><ex>37</ex>#</ph> seconds
+      </message>
+
+      <if expr="lang not in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message name="IDS_TIME_LONG_SECS_2ND_SINGULAR"
+               desc="Second part of 'xx minutes yy seconds' time format where yy (NUMBER_ONE) is a one or one-like number: 1 (many European and most Indian languages), 1 and 0 (French, Brazilian Portuguese and Hindi), 1, 21, 31, ... (Russian, Ukrainian, Croatian, Serbian, Latvian, Lithuanian), or 1, 101, 201, ... (Slovenian). Do NOT translate this for CJK, Vietnamese, Turkish and Kannada.">
+        <ph name="NUMBER_ONE"><ex>1</ex>#</ph> second
+      </message>
+      </if>
+      <if expr="lang in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message translateable="false" name="IDS_TIME_LONG_SECS_2NDS_SINGULAR"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ar', 'ro', 'lv']">
+      <message name="IDS_TIME_LONG_SECS_2ND_ZERO"
+               desc="Second part of 'xx minutes yy seconds' time format where yy (NUMBER_ZERO) is 0 (Arabic, Latvian) or 0, 2..19, 101..119, ... (Romanian). For other languages, do NOT translate.">
+        <ph name="NUMBER_ZERO"><ex>0</ex>#</ph> seconds
+      </message>
+      </if>
+      <if expr="lang not in ['ar', 'ro', 'lv']">
+      <message translateable="false" name="IDS_TIME_LONG_SECS_2ND_ZERO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ga', 'sl', 'ar']">
+      <message name="IDS_TIME_LONG_SECS_2ND_TWO"
+               desc="Second part of 'xx minutes yy seconds' time format where yy (NUMBER_TWO) is a two or two-like/dual number: 2 (Arabic and Irish) or 2, 102, 202 ... (Slovenian). For other languages, do NOT translate.">
+        <ph name="NUMBER_TWO"><ex>2</ex>#</ph> seconds
+      </message>
+      </if>
+      <if expr="lang not in ['ga', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_LONG_SECS_2ND_TWO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message name="IDS_TIME_LONG_SECS_2ND_FEW"
+               desc="Second part of 'xx minutes yy seconds' time format where yy (NUMBER_FEW) is a few or few-like number in Arabic, Russian, Polish, Croatian, Serbian, Ukrainian, Czech, Slovak, Slovenian, Latvian. For other languages, do NOT translate.">
+        <ph name="NUMBER_FEW"><ex>3</ex>#</ph> seconds
+      </message>
+      </if>
+      <if expr="lang not in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_LONG_SECS_2ND_FEW"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang == 'ar'">
+      <message name="IDS_TIME_LONG_SECS_2ND_MANY"
+               desc="Second part of 'xx minutes yy seconds' time format where yy (NUMBER_MANY) is 11 through 99 in Arabic. For all other languages, do NOT translate.">
+        <ph name="NUMBER_MANY"><ex>23</ex>#</ph> seconds
+      </message>
+      </if>
+      <if expr="lang != 'ar'">
+      <message translateable="false" name="IDS_TIME_LONG_SECS_2ND_MANY"
+               desc="">
+        NA
+      </message>
+      </if>
+
+
+      <message name="IDS_TIME_MINS_DEFAULT"
+               desc="This is necessary for every language. It is the default for all the numbers NOT covered by special cases (singular, dual/two, few, many) some languages need. For CJK, Vietnamese, Turkish and Kannada, this is the only string necessary. For languages with singular-plural distinction, this is the generic plural. For Lithuanian, NUMBER_DEFAULT is 11..19.">
+        <ph name="NUMBER_DEFAULT"><ex>37</ex>#</ph> mins
+      </message>
+
+      <if expr="lang not in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message name="IDS_TIME_MINS_SINGULAR"
+               desc="NUMBER_ONE is a one or one-like number: 1 (many European and most Indian languages), 1 and 0 (French, Brazilian Portuguese and Hindi), 1, 21, 31, ... (Russian, Ukrainian, Croatian, Serbian, Latvian, Lithuanian), or 1, 101, 201, ... (Slovenian). Do NOT translate this for CJK, Vietnamese, Turkish and Kannada.">
+        <ph name="NUMBER_ONE"><ex>1</ex>#</ph> min
+      </message>
+      </if>
+      <if expr="lang in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message translateable="false" name="IDS_TIME_MINS_SINGULAR"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ar', 'ro', 'lv']">
+      <message name="IDS_TIME_MINS_ZERO"
+               desc="NUMBER_ZERO is 0 (Arabic, Latvian) or 0, 2..19, 101..119, ... (Romanian). For other languages, do NOT translate.">
+        <ph name="NUMBER_ZERO"><ex>0</ex>#</ph> mins
+      </message>
+      </if>
+      <if expr="lang not in ['ar', 'ro', 'lv']">
+      <message translateable="false" name="IDS_TIME_MINS_ZERO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ga', 'sl', 'ar']">
+      <message name="IDS_TIME_MINS_TWO"
+               desc="NUMBER_TWO is a two or two-like/dual number: 2 (Arabic and Irish) or 2, 102, 202 ... (Slovenian). For other languages, do NOT translate.">
+        <ph name="NUMBER_TWO"><ex>2</ex>#</ph> mins
+      </message>
+      </if>
+      <if expr="lang not in ['ga', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_MINS_TWO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message name="IDS_TIME_MINS_FEW"
+               desc="NUMBER_FEW is a few or few-like number in Arabic, Russian, Polish, Croatian, Serbian, Ukrainian, Czech, Slovak, Slovenian, Latvian. For other languages, do NOT translate.">
+        <ph name="NUMBER_FEW"><ex>3</ex>#</ph> mins
+      </message>
+      </if>
+      <if expr="lang not in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_MINS_FEW"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang == 'ar'">
+      <message name="IDS_TIME_MINS_MANY"
+               desc="NUMBER_MANY is 11 through 99 in Arabic. For all other languages, do NOT translate.">
+        <ph name="NUMBER_MANY"><ex>23</ex>#</ph> mins
+      </message>
+      </if>
+      <if expr="lang != 'ar'">
+      <message translateable="false" name="IDS_TIME_MINS_MANY"
+               desc="">
+        NA
+      </message>
+      </if>
+
+
+      <message name="IDS_TIME_LONG_MINS_DEFAULT"
+               desc="This is necessary for every language. It is the default for all the numbers NOT covered by special cases (singular, dual/two, few, many) some languages need. For CJK, Vietnamese, Turkish and Kannada, this is the only string necessary. For languages with singular-plural distinction, this is the generic plural. For Lithuanian, NUMBER_DEFAULT is 11..19.">
+        <ph name="NUMBER_DEFAULT"><ex>37</ex>#</ph> minutes
+      </message>
+
+      <if expr="lang not in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message name="IDS_TIME_LONG_MINS_SINGULAR"
+               desc="NUMBER_ONE is a one or one-like number: 1 (many European and most Indian languages), 1 and 0 (French, Brazilian Portuguese and Hindi), 1, 21, 31, ... (Russian, Ukrainian, Croatian, Serbian, Latvian, Lithuanian), or 1, 101, 201, ... (Slovenian). Do NOT translate this for CJK, Vietnamese, Turkish and Kannada.">
+        <ph name="NUMBER_ONE"><ex>1</ex>#</ph> minute
+      </message>
+      </if>
+      <if expr="lang in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message translateable="false" name="IDS_TIME_LONG_MINS_SINGULAR"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ar', 'ro', 'lv']">
+      <message name="IDS_TIME_LONG_MINS_ZERO"
+               desc="NUMBER_ZERO is 0 (Arabic, Latvian) or 0, 2..19, 101..119, ... (Romanian). For other languages, do NOT translate.">
+        <ph name="NUMBER_ZERO"><ex>0</ex>#</ph> minutes
+      </message>
+      </if>
+      <if expr="lang not in ['ar', 'ro', 'lv']">
+      <message translateable="false" name="IDS_TIME_LONG_MINS_ZERO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ga', 'sl', 'ar']">
+      <message name="IDS_TIME_LONG_MINS_TWO"
+               desc="NUMBER_TWO is a two or two-like/dual number: 2 (Arabic and Irish) or 2, 102, 202 ... (Slovenian). For other languages, do NOT translate.">
+        <ph name="NUMBER_TWO"><ex>2</ex>#</ph> minutes
+      </message>
+      </if>
+      <if expr="lang not in ['ga', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_LONG_MINS_TWO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message name="IDS_TIME_LONG_MINS_FEW"
+               desc="NUMBER_FEW is a few or few-like number in Arabic, Russian, Polish, Croatian, Serbian, Ukrainian, Czech, Slovak, Slovenian, Latvian. For other languages, do NOT translate.">
+        <ph name="NUMBER_FEW"><ex>3</ex>#</ph> minutes
+      </message>
+      </if>
+      <if expr="lang not in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_LONG_MINS_FEW"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang == 'ar'">
+      <message name="IDS_TIME_LONG_MINS_MANY"
+               desc="NUMBER_MANY is 11 through 99 in Arabic. For all other languages, do NOT translate.">
+        <ph name="NUMBER_MANY"><ex>23</ex>#</ph> minutes
+      </message>
+      </if>
+      <if expr="lang != 'ar'">
+      <message translateable="false" name="IDS_TIME_LONG_MINS_MANY"
+               desc="">
+        NA
+      </message>
+      </if>
+
+
+      <message name="IDS_TIME_LONG_MINS_1ST_DEFAULT"
+               desc="First part of 'xx minutes yy seconds' time format (including the space between first and second part, if the language requires a space there). This is necessary for every language. It is the default for all the numbers NOT covered by special cases (singular, dual/two, few, many) some languages need. For CJK, Vietnamese, Turkish and Kannada, this is the only string necessary. For languages with singular-plural distinction, this is the generic plural. For Lithuanian, NUMBER_DEFAULT is 11..19.">
+        <ph name="NUMBER_DEFAULT"><ex>37</ex>#</ph> minutes '''
+      </message>
+
+      <if expr="lang not in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message name="IDS_TIME_LONG_MINS_1ST_SINGULAR"
+               desc="First part of 'xx minutes yy seconds' time format (including the space between first and second part, if the language requires a space there) where xx (NUMBER_ONE) is a one or one-like number: 1 (many European and most Indian languages), 1 and 0 (French, Brazilian Portuguese and Hindi), 1, 21, 31, ... (Russian, Ukrainian, Croatian, Serbian, Latvian, Lithuanian), or 1, 101, 201, ... (Slovenian). Do NOT translate this for CJK, Vietnamese, Turkish and Kannada.">
+        <ph name="NUMBER_ONE"><ex>1</ex>#</ph> minute '''
+      </message>
+      </if>
+      <if expr="lang in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message translateable="false" name="IDS_TIME_LONG_MINS_1ST_SINGULAR"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ar', 'ro', 'lv']">
+      <message name="IDS_TIME_LONG_MINS_1ST_ZERO"
+               desc="First part of 'xx minutes yy seconds' time format (including the space between first and second part, if the language requires a space there) where xx (NUMBER_ZERO) is 0 (Arabic, Latvian) or 0, 2..19, 101..119, ... (Romanian). For other languages, do NOT translate.">
+        <ph name="NUMBER_ZERO"><ex>0</ex>#</ph> minutes '''
+      </message>
+      </if>
+      <if expr="lang not in ['ar', 'ro', 'lv']">
+      <message translateable="false" name="IDS_TIME_LONG_MINS_1ST_ZERO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ga', 'sl', 'ar']">
+      <message name="IDS_TIME_LONG_MINS_1ST_TWO"
+               desc="First part of 'xx minutes yy seconds' time format (including the space between first and second part, if the language requires a space there) where xx (NUMBER_TWO) is a two or two-like/dual number: 2 (Arabic and Irish) or 2, 102, 202 ... (Slovenian). For other languages, do NOT translate.">
+        <ph name="NUMBER_TWO"><ex>2</ex>#</ph> minutes '''
+      </message>
+      </if>
+      <if expr="lang not in ['ga', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_LONG_MINS_1ST_TWO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message name="IDS_TIME_LONG_MINS_1ST_FEW"
+               desc="First part of 'xx minutes yy seconds' time format (including the space between first and second part, if the language requires a space there) where xx (NUMBER_FEW) is a few or few-like number in Arabic, Russian, Polish, Croatian, Serbian, Ukrainian, Czech, Slovak, Slovenian, Latvian. For other languages, do NOT translate.">
+        <ph name="NUMBER_FEW"><ex>3</ex>#</ph> minutes '''
+      </message>
+      </if>
+      <if expr="lang not in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_LONG_MINS_1ST_FEW"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang == 'ar'">
+      <message name="IDS_TIME_LONG_MINS_1ST_MANY"
+               desc="First part of 'xx minutes yy seconds' time format (including the space between first and second part, if the language requires a space there) where xx (NUMBER_MANY) is 11 through 99 in Arabic. For all other languages, do NOT translate.">
+        <ph name="NUMBER_MANY"><ex>23</ex>#</ph> minutes '''
+      </message>
+      </if>
+      <if expr="lang != 'ar'">
+      <message translateable="false" name="IDS_TIME_LONG_MINS_1ST_MANY"
+               desc="">
+        NA
+      </message>
+      </if>
+
+
+      <message name="IDS_TIME_LONG_MINS_2ND_DEFAULT"
+               desc="Second part of 'xx hours yy minutes' time format. This is necessary for every language. It is the default for all the numbers NOT covered by special cases (singular, dual/two, few, many) some languages need. For CJK, Vietnamese, Turkish and Kannada, this is the only string necessary. For languages with singular-plural distinction, this is the generic plural. For Lithuanian, NUMBER_DEFAULT is 11..19.">
+        <ph name="NUMBER_DEFAULT"><ex>37</ex>#</ph> minutes
+      </message>
+
+      <if expr="lang not in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message name="IDS_TIME_LONG_MINS_2ND_SINGULAR"
+               desc="Second part of 'xx hours yy minutes' time format where yy (NUMBER_ONE) is a one or one-like number: 1 (many European and most Indian languages), 1 and 0 (French, Brazilian Portuguese and Hindi), 1, 21, 31, ... (Russian, Ukrainian, Croatian, Serbian, Latvian, Lithuanian), or 1, 101, 201, ... (Slovenian). Do NOT translate this for CJK, Vietnamese, Turkish and Kannada.">
+        <ph name="NUMBER_ONE"><ex>1</ex>#</ph> minute
+      </message>
+      </if>
+      <if expr="lang in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message translateable="false" name="IDS_TIME_LONG_MINS_2ND_SINGULAR"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ar', 'ro', 'lv']">
+      <message name="IDS_TIME_LONG_MINS_2ND_ZERO"
+               desc="Second part of 'xx hours yy minutes' time format where yy (NUMBER_ZERO) is 0 (Arabic, Latvian) or 0, 2..19, 101..119, ... (Romanian). For other languages, do NOT translate.">
+        <ph name="NUMBER_ZERO"><ex>0</ex>#</ph> minutes
+      </message>
+      </if>
+      <if expr="lang not in ['ar', 'ro', 'lv']">
+      <message translateable="false" name="IDS_TIME_LONG_MINS_2ND_ZERO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ga', 'sl', 'ar']">
+      <message name="IDS_TIME_LONG_MINS_2ND_TWO"
+               desc="Second part of 'xx hours yy minutes' time format where yy (NUMBER_TWO) is a two or two-like/dual number: 2 (Arabic and Irish) or 2, 102, 202 ... (Slovenian). For other languages, do NOT translate.">
+        <ph name="NUMBER_TWO"><ex>2</ex>#</ph> minutes
+      </message>
+      </if>
+      <if expr="lang not in ['ga', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_LONG_MINS_2ND_TWO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message name="IDS_TIME_LONG_MINS_2ND_FEW"
+               desc="Second part of 'xx hours yy minutes' time format where yy (NUMBER_FEW) is a few or few-like number in Arabic, Russian, Polish, Croatian, Serbian, Ukrainian, Czech, Slovak, Slovenian, Latvian. For other languages, do NOT translate.">
+        <ph name="NUMBER_FEW"><ex>3</ex>#</ph> minutes
+      </message>
+      </if>
+      <if expr="lang not in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_LONG_MINS_2ND_FEW"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang == 'ar'">
+      <message name="IDS_TIME_LONG_MINS_2ND_MANY"
+               desc="Second part of 'xx hours yy minutes' time format where yy (NUMBER_MANY) is 11 through 99 in Arabic. For all other languages, do NOT translate.">
+        <ph name="NUMBER_MANY"><ex>23</ex>#</ph> minutes
+      </message>
+      </if>
+      <if expr="lang != 'ar'">
+      <message translateable="false" name="IDS_TIME_LONG_MINS_2ND_MANY"
+               desc="">
+        NA
+      </message>
+      </if>
+
+
+      <message name="IDS_TIME_HOURS_DEFAULT"
+               desc="This is necessary for every language. It is the default for all the numbers NOT covered by special cases (singular, dual/two, few, many) some languages need. For CJK, Vietnamese, Turkish and Kannada, this is the only string necessary. For languages with singular-plural distinction, this is the generic plural. For Lithuanian, NUMBER_DEFAULT is 11..19.">
+        <ph name="NUMBER_DEFAULT"><ex>37</ex>#</ph> hours
+      </message>
+
+      <if expr="lang not in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message name="IDS_TIME_HOURS_SINGULAR"
+               desc="NUMBER_ONE is a one or one-like number: 1 (many European and most Indian languages), 1 and 0 (French, Brazilian Portuguese and Hindi), 1, 21, 31, ... (Russian, Ukrainian, Croatian, Serbian, Latvian, Lithuanian), or 1, 101, 201, ... (Slovenian). Do NOT translate this for CJK, Vietnamese, Turkish and Kannada.">
+        <ph name="NUMBER_ONE"><ex>1</ex>#</ph> hour
+      </message>
+      </if>
+      <if expr="lang in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message translateable="false" name="IDS_TIME_HOURS_SINGULAR"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ar', 'ro', 'lv']">
+      <message name="IDS_TIME_HOURS_ZERO"
+               desc="NUMBER_ZERO is 0 (Arabic, Latvian) or 0, 2..19, 101..119, ... (Romanian). For other languages, do NOT translate.">
+        <ph name="NUMBER_ZERO"><ex>0</ex>#</ph> hours
+      </message>
+      </if>
+      <if expr="lang not in ['ar', 'ro', 'lv']">
+      <message translateable="false" name="IDS_TIME_HOURS_ZERO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ga', 'sl', 'ar']">
+      <message name="IDS_TIME_HOURS_TWO"
+               desc="NUMBER_TWO is a two or two-like/dual number: 2 (Arabic and Irish) or 2, 102, 202 ... (Slovenian). For other languages, do NOT translate.">
+        <ph name="NUMBER_TWO"><ex>2</ex>#</ph> hours
+      </message>
+      </if>
+      <if expr="lang not in ['ga', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_HOURS_TWO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message name="IDS_TIME_HOURS_FEW"
+               desc="NUMBER_FEW is a few or few-like number in Arabic, Russian, Polish, Croatian, Serbian, Ukrainian, Czech, Slovak, Slovenian, Latvian. For other languages, do NOT translate.">
+        <ph name="NUMBER_FEW"><ex>3</ex>#</ph> hours
+      </message>
+      </if>
+      <if expr="lang not in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_HOURS_FEW"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang == 'ar'">
+      <message name="IDS_TIME_HOURS_MANY"
+               desc="NUMBER_MANY is 11 through 99 in Arabic. For all other languages, do NOT translate.">
+        <ph name="NUMBER_MANY"><ex>23</ex>#</ph> hours
+      </message>
+      </if>
+      <if expr="lang != 'ar'">
+      <message translateable="false" name="IDS_TIME_HOURS_MANY"
+               desc="">
+        NA
+      </message>
+      </if>
+
+
+      <message name="IDS_TIME_HOURS_1ST_DEFAULT"
+               desc="First part of 'xx hours yy minutes' time format (including the space between first and second part, if the language requires a space there). This is necessary for every language. It is the default for all the numbers NOT covered by special cases (singular, dual/two, few, many) some languages need. For CJK, Vietnamese, Turkish and Kannada, this is the only string necessary. For languages with singular-plural distinction, this is the generic plural. For Lithuanian, NUMBER_DEFAULT is 11..19.">
+        <ph name="NUMBER_DEFAULT"><ex>37</ex>#</ph> hours '''
+      </message>
+
+      <if expr="lang not in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message name="IDS_TIME_HOURS_1ST_SINGULAR"
+               desc="First part of 'xx hours yy minutes' time format (including the space between first and second part, if the language requires a space there) where xx (NUMBER_ONE) is a one or one-like number: 1 (many European and most Indian languages), 1 and 0 (French, Brazilian Portuguese and Hindi), 1, 21, 31, ... (Russian, Ukrainian, Croatian, Serbian, Latvian, Lithuanian), or 1, 101, 201, ... (Slovenian). Do NOT translate this for CJK, Vietnamese, Turkish and Kannada.">
+        <ph name="NUMBER_ONE"><ex>1</ex>#</ph> hour '''
+      </message>
+      </if>
+      <if expr="lang in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message translateable="false" name="IDS_TIME_HOURS_1ST_SINGULAR"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ar', 'ro', 'lv']">
+      <message name="IDS_TIME_HOURS_1ST_ZERO"
+               desc="First part of 'xx hours yy minutes' time format (including the space between first and second part, if the language requires a space there) where xx (NUMBER_ZERO) is 0 (Arabic, Latvian) or 0, 2..19, 101..119, ... (Romanian). For other languages, do NOT translate.">
+        <ph name="NUMBER_ZERO"><ex>0</ex>#</ph> hours '''
+      </message>
+      </if>
+      <if expr="lang not in ['ar', 'ro', 'lv']">
+      <message translateable="false" name="IDS_TIME_HOURS_1ST_ZERO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ga', 'sl', 'ar']">
+      <message name="IDS_TIME_HOURS_1ST_TWO"
+               desc="First part of 'xx hours yy minutes' time format (including the space between first and second part, if the language requires a space there) where xx (NUMBER_TWO) is a two or two-like/dual number: 2 (Arabic and Irish) or 2, 102, 202 ... (Slovenian). For other languages, do NOT translate.">
+        <ph name="NUMBER_TWO"><ex>2</ex>#</ph> hours '''
+      </message>
+      </if>
+      <if expr="lang not in ['ga', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_HOURS_1ST_TWO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message name="IDS_TIME_HOURS_1ST_FEW"
+               desc="First part of 'xx hours yy minutes' time format (including the space between first and second part, if the language requires a space there) where xx (NUMBER_FEW) is a few or few-like number in Arabic, Russian, Polish, Croatian, Serbian, Ukrainian, Czech, Slovak, Slovenian, Latvian. For other languages, do NOT translate.">
+        <ph name="NUMBER_FEW"><ex>3</ex>#</ph> hours '''
+      </message>
+      </if>
+      <if expr="lang not in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_HOURS_1ST_FEW"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang == 'ar'">
+      <message name="IDS_TIME_HOURS_1ST_MANY"
+               desc="First part of 'xx hours yy minutes' time format (including the space between first and second part, if the language requires a space there) where xx (NUMBER_MANY) is 11 through 99 in Arabic. For all other languages, do NOT translate.">
+        <ph name="NUMBER_MANY"><ex>23</ex>#</ph> hours '''
+      </message>
+      </if>
+      <if expr="lang != 'ar'">
+      <message translateable="false" name="IDS_TIME_HOURS_1ST_MANY"
+               desc="">
+        NA
+      </message>
+      </if>
+
+
+      <message name="IDS_TIME_HOURS_2ND_DEFAULT"
+               desc="Second part of 'xx days yy hours' time format. This is necessary for every language. It is the default for all the numbers NOT covered by special cases (singular, dual/two, few, many) some languages need. For CJK, Vietnamese, Turkish and Kannada, this is the only string necessary. For languages with singular-plural distinction, this is the generic plural. For Lithuanian, NUMBER_DEFAULT is 11..19.">
+        <ph name="NUMBER_DEFAULT"><ex>37</ex>#</ph> hours
+      </message>
+
+      <if expr="lang not in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message name="IDS_TIME_HOURS_2ND_SINGULAR"
+               desc="Second part of 'xx days yy hours' time format where yy (NUMBER_ONE) is a one or one-like number: 1 (many European and most Indian languages), 1 and 0 (French, Brazilian Portuguese and Hindi), 1, 21, 31, ... (Russian, Ukrainian, Croatian, Serbian, Latvian, Lithuanian), or 1, 101, 201, ... (Slovenian). Do NOT translate this for CJK, Vietnamese, Turkish and Kannada.">
+        <ph name="NUMBER_ONE"><ex>1</ex>#</ph> hour
+      </message>
+      </if>
+      <if expr="lang in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message translateable="false" name="IDS_TIME_HOURS_2ND_SINGULAR"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ar', 'ro', 'lv']">
+      <message name="IDS_TIME_HOURS_2ND_ZERO"
+               desc="Second part of 'xx days yy hours' time format where yy (NUMBER_ZERO) is 0 (Arabic, Latvian) or 0, 2..19, 101..119, ... (Romanian). For other languages, do NOT translate.">
+        <ph name="NUMBER_ZERO"><ex>0</ex>#</ph> hours
+      </message>
+      </if>
+      <if expr="lang not in ['ar', 'ro', 'lv']">
+      <message translateable="false" name="IDS_TIME_HOURS_2ND_ZERO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ga', 'sl', 'ar']">
+      <message name="IDS_TIME_HOURS_2ND_TWO"
+               desc="Second part of 'xx days yy hours' time format where yy (NUMBER_TWO) is a two or two-like/dual number: 2 (Arabic and Irish) or 2, 102, 202 ... (Slovenian). For other languages, do NOT translate.">
+        <ph name="NUMBER_TWO"><ex>2</ex>#</ph> hours
+      </message>
+      </if>
+      <if expr="lang not in ['ga', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_HOURS_2ND_TWO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message name="IDS_TIME_HOURS_2ND_FEW"
+               desc="Second part of 'xx days yy hours' time format where yy (NUMBER_FEW) is a few or few-like number in Arabic, Russian, Polish, Croatian, Serbian, Ukrainian, Czech, Slovak, Slovenian, Latvian. For other languages, do NOT translate.">
+        <ph name="NUMBER_FEW"><ex>3</ex>#</ph> hours
+      </message>
+      </if>
+      <if expr="lang not in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_HOURS_2ND_FEW"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang == 'ar'">
+      <message name="IDS_TIME_HOURS_2ND_MANY"
+               desc="Second part of 'xx days yy hours' time format where yy (NUMBER_MANY) is 11 through 99 in Arabic. For all other languages, do NOT translate.">
+        <ph name="NUMBER_MANY"><ex>23</ex>#</ph> hours
+      </message>
+      </if>
+      <if expr="lang != 'ar'">
+      <message translateable="false" name="IDS_TIME_HOURS_2ND_MANY"
+               desc="">
+        NA
+      </message>
+      </if>
+
+
+      <message name="IDS_TIME_DAYS_DEFAULT"
+               desc="This is necessary for every language. It is the default for all the numbers NOT covered by special cases (singular, dual/two, few, many) some languages need. For CJK, Vietnamese, Turkish and Kannada, this is the only string necessary. For languages with singular-plural distinction, this is the generic plural. For Lithuanian, NUMBER_DEFAULT is 11..19.">
+        <ph name="NUMBER_DEFAULT"><ex>37</ex>#</ph> days
+      </message>
+
+      <if expr="lang not in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message name="IDS_TIME_DAYS_SINGULAR"
+               desc="NUMBER_ONE is a one or one-like number: 1 (many European and most Indian languages), 1 and 0 (French, Brazilian Portuguese and Hindi), 1, 21, 31, ... (Russian, Ukrainian, Croatian, Serbian, Latvian, Lithuanian), or 1, 101, 201, ... (Slovenian). Do NOT translate this for CJK, Vietnamese, Turkish and Kannada.">
+        <ph name="NUMBER_ONE"><ex>1</ex>#</ph> day
+      </message>
+      </if>
+      <if expr="lang in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message translateable="false" name="IDS_TIME_DAYS_SINGULAR"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ar', 'ro', 'lv']">
+      <message name="IDS_TIME_DAYS_ZERO"
+               desc="NUMBER_ZERO is 0 (Arabic, Latvian) or 0, 2..19, 101..119, ... (Romanian). For other languages, do NOT translate.">
+        <ph name="NUMBER_ZERO"><ex>0</ex>#</ph> days
+      </message>
+      </if>
+      <if expr="lang not in ['ar', 'ro', 'lv']">
+      <message translateable="false" name="IDS_TIME_DAYS_ZERO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ga', 'sl', 'ar']">
+      <message name="IDS_TIME_DAYS_TWO"
+               desc="NUMBER_TWO is a two or two-like/dual number: 2 (Arabic and Irish) or 2, 102, 202 ... (Slovenian). For other languages, do NOT translate.">
+        <ph name="NUMBER_TWO"><ex>2</ex>#</ph> days
+      </message>
+      </if>
+      <if expr="lang not in ['ga', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_DAYS_TWO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message name="IDS_TIME_DAYS_FEW"
+               desc="NUMBER_FEW is a few or few-like number in Arabic, Russian, Polish, Croatian, Serbian, Ukrainian, Czech, Slovak, Slovenian, Latvian. For other languages, do NOT translate.">
+        <ph name="NUMBER_FEW"><ex>3</ex>#</ph> days
+      </message>
+      </if>
+      <if expr="lang not in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_DAYS_FEW"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang == 'ar'">
+      <message name="IDS_TIME_DAYS_MANY"
+               desc="NUMBER_MANY is 11 through 99 in Arabic. For all other languages, do NOT translate.">
+        <ph name="NUMBER_MANY"><ex>23</ex>#</ph> days
+      </message>
+      </if>
+      <if expr="lang != 'ar'">
+      <message translateable="false" name="IDS_TIME_DAYS_MANY"
+               desc="">
+        NA
+      </message>
+      </if>
+
+
+      <message name="IDS_TIME_DAYS_1ST_DEFAULT"
+               desc="First part of 'xx days yy hours' time format (including the space between first and second part, if the language requires a space there). This is necessary for every language. It is the default for all the numbers NOT covered by special cases (singular, dual/two, few, many) some languages need. For CJK, Vietnamese, Turkish and Kannada, this is the only string necessary. For languages with singular-plural distinction, this is the generic plural. For Lithuanian, NUMBER_DEFAULT is 11..19.">
+        <ph name="NUMBER_DEFAULT"><ex>37</ex>#</ph> days '''
+      </message>
+
+      <if expr="lang not in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message name="IDS_TIME_DAYS_1ST_SINGULAR"
+               desc="First part of 'xx days yy hours' time format (including the space between first and second part, if the language requires a space there) where xx (NUMBER_ONE) is a one or one-like number: 1 (many European and most Indian languages), 1 and 0 (French, Brazilian Portuguese and Hindi), 1, 21, 31, ... (Russian, Ukrainian, Croatian, Serbian, Latvian, Lithuanian), or 1, 101, 201, ... (Slovenian). Do NOT translate this for CJK, Vietnamese, Turkish and Kannada.">
+        <ph name="NUMBER_ONE"><ex>1</ex>#</ph> day '''
+      </message>
+      </if>
+      <if expr="lang in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message translateable="false" name="IDS_TIME_DAYS_1ST_SINGULAR"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ar', 'ro', 'lv']">
+      <message name="IDS_TIME_DAYS_1ST_ZERO"
+               desc="First part of 'xx days yy hours' time format (including the space between first and second part, if the language requires a space there) where xx (NUMBER_ZERO) is 0 (Arabic, Latvian) or 0, 2..19, 101..119, ... (Romanian). For other languages, do NOT translate.">
+        <ph name="NUMBER_ZERO"><ex>0</ex>#</ph> days '''
+      </message>
+      </if>
+      <if expr="lang not in ['ar', 'ro', 'lv']">
+      <message translateable="false" name="IDS_TIME_DAYS_1ST_ZERO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ga', 'sl', 'ar']">
+      <message name="IDS_TIME_DAYS_1ST_TWO"
+               desc="First part of 'xx days yy hours' time format (including the space between first and second part, if the language requires a space there) where xx (NUMBER_TWO) is a two or two-like/dual number: 2 (Arabic and Irish) or 2, 102, 202 ... (Slovenian). For other languages, do NOT translate.">
+        <ph name="NUMBER_TWO"><ex>2</ex>#</ph> days '''
+      </message>
+      </if>
+      <if expr="lang not in ['ga', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_DAYS_1ST_TWO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message name="IDS_TIME_DAYS_1ST_FEW"
+               desc="First part of 'xx days yy hours' time format (including the space between first and second part, if the language requires a space there) where xx (NUMBER_FEW) is a few or few-like number in Arabic, Russian, Polish, Croatian, Serbian, Ukrainian, Czech, Slovak, Slovenian, Latvian. For other languages, do NOT translate.">
+        <ph name="NUMBER_FEW"><ex>3</ex>#</ph> days '''
+      </message>
+      </if>
+      <if expr="lang not in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_DAYS_1ST_FEW"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang == 'ar'">
+      <message name="IDS_TIME_DAYS_1ST_MANY"
+               desc="First part of 'xx days yy hours' time format (including the space between first and second part, if the language requires a space there) where xx (NUMBER_MANY) is 11 through 99 in Arabic. For all other languages, do NOT translate.">
+        <ph name="NUMBER_MANY"><ex>23</ex>#</ph> days '''
+      </message>
+      </if>
+      <if expr="lang != 'ar'">
+      <message translateable="false" name="IDS_TIME_DAYS_1ST_MANY"
+               desc="">
+        NA
+      </message>
+      </if>
+
+
+      <message name="IDS_TIME_REMAINING_SECS_DEFAULT"
+               desc="This is necessary for every language. It is the default for all the numbers NOT covered by special cases (singular, dual/two, few, many) some languages need. For CJK, Vietnamese, Turkish and Kannada, this is the only string necessary. For languages with singular-plural distinction, this is the generic plural. For Lithuanian, NUMBER_DEFAULT is 11..19.">
+        <ph name="NUMBER_DEFAULT"><ex>37</ex>#</ph> secs left
+      </message>
+
+      <if expr="lang not in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message name="IDS_TIME_REMAINING_SECS_SINGULAR"
+               desc="NUMBER_ONE is a one or one-like number: 1 (many European and most Indian languages), 1 and 0 (French, Brazilian Portuguese and Hindi), 1, 21, 31, ... (Russian, Ukrainian, Croatian, Serbian, Latvian, Lithuanian), or 1, 101, 201, ... (Slovenian). Do NOT translate this for CJK, Vietnamese, Turkish and Kannada.">
+        <ph name="NUMBER_ONE"><ex>1</ex>#</ph> sec left
+      </message>
+      </if>
+      <if expr="lang in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message translateable="false" name="IDS_TIME_REMAINING_SECS_SINGULAR"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ar', 'ro', 'lv']">
+      <message name="IDS_TIME_REMAINING_SECS_ZERO"
+               desc="NUMBER_ZERO is 0 (Arabic, Latvian) or 0, 2..19, 101..119, ... (Romanian). For other languages, do NOT translate.">
+        <ph name="NUMBER_ZERO"><ex>0</ex>#</ph> secs left
+      </message>
+      </if>
+      <if expr="lang not in ['ar', 'ro', 'lv']">
+      <message translateable="false" name="IDS_TIME_REMAINING_SECS_ZERO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ga', 'sl', 'ar']">
+      <message name="IDS_TIME_REMAINING_SECS_TWO"
+               desc="NUMBER_TWO is a two or two-like/dual number: 2 (Arabic and Irish) or 2, 102, 202 ... (Slovenian). For other languages, do NOT translate.">
+        <ph name="NUMBER_TWO"><ex>2</ex>#</ph> secs left
+      </message>
+      </if>
+      <if expr="lang not in ['ga', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_REMAINING_SECS_TWO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message name="IDS_TIME_REMAINING_SECS_FEW"
+               desc="NUMBER_FEW is a few or few-like number in Arabic, Russian, Polish, Croatian, Serbian, Ukrainian, Czech, Slovak, Slovenian, Latvian. For other languages, do NOT translate.">
+        <ph name="NUMBER_FEW"><ex>3</ex>#</ph> secs left
+      </message>
+      </if>
+      <if expr="lang not in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_REMAINING_SECS_FEW"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang == 'ar'">
+      <message name="IDS_TIME_REMAINING_SECS_MANY"
+               desc="NUMBER_MANY is 11 through 99 in Arabic. For all other languages, do NOT translate.">
+        <ph name="NUMBER_MANY"><ex>23</ex>#</ph> secs left
+      </message>
+      </if>
+      <if expr="lang != 'ar'">
+      <message translateable="false" name="IDS_TIME_REMAINING_SECS_MANY"
+               desc="">
+        NA
+      </message>
+      </if>
+
+
+      <message name="IDS_TIME_REMAINING_LONG_SECS_DEFAULT"
+               desc="This is necessary for every language. It is the default for all the numbers NOT covered by special cases (singular, dual/two, few, many) some languages need. For CJK, Vietnamese, Turkish and Kannada, this is the only string necessary. For languages with singular-plural distinction, this is the generic plural. For Lithuanian, NUMBER_DEFAULT is 11..19.">
+        <ph name="NUMBER_DEFAULT"><ex>37</ex>#</ph> seconds left
+      </message>
+
+      <if expr="lang not in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message name="IDS_TIME_REMAINING_LONG_SECS_SINGULAR"
+               desc="NUMBER_ONE is a one or one-like number: 1 (many European and most Indian languages), 1 and 0 (French, Brazilian Portuguese and Hindi), 1, 21, 31, ... (Russian, Ukrainian, Croatian, Serbian, Latvian, Lithuanian), or 1, 101, 201, ... (Slovenian). Do NOT translate this for CJK, Vietnamese, Turkish and Kannada.">
+        <ph name="NUMBER_ONE"><ex>1</ex>#</ph> second left
+      </message>
+      </if>
+      <if expr="lang in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message translateable="false" name="IDS_TIME_REMAINING_SECS_SINGULAR"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ar', 'ro', 'lv']">
+      <message name="IDS_TIME_REMAINING_LONG_SECS_ZERO"
+               desc="NUMBER_ZERO is 0 (Arabic, Latvian) or 0, 2..19, 101..119, ... (Romanian). For other languages, do NOT translate.">
+        <ph name="NUMBER_ZERO"><ex>0</ex>#</ph> seconds left
+      </message>
+      </if>
+      <if expr="lang not in ['ar', 'ro', 'lv']">
+      <message translateable="false" name="IDS_TIME_REMAINING_LONG_SECS_ZERO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ga', 'sl', 'ar']">
+      <message name="IDS_TIME_REMAINING_LONG_SECS_TWO"
+               desc="NUMBER_TWO is a two or two-like/dual number: 2 (Arabic and Irish) or 2, 102, 202 ... (Slovenian). For other languages, do NOT translate.">
+        <ph name="NUMBER_TWO"><ex>2</ex>#</ph> seconds left
+      </message>
+      </if>
+      <if expr="lang not in ['ga', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_REMAINING_LONG_SECS_TWO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message name="IDS_TIME_REMAINING_LONG_SECS_FEW"
+               desc="NUMBER_FEW is a few or few-like number in Arabic, Russian, Polish, Croatian, Serbian, Ukrainian, Czech, Slovak, Slovenian, Latvian. For other languages, do NOT translate.">
+        <ph name="NUMBER_FEW"><ex>3</ex>#</ph> seconds left
+      </message>
+      </if>
+      <if expr="lang not in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_REMAINING_LONG_SECS_FEW"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang == 'ar'">
+      <message name="IDS_TIME_REMAINING_LONG_SECS_MANY"
+               desc="NUMBER_MANY is 11 through 99 in Arabic. For all other languages, do NOT translate.">
+        <ph name="NUMBER_MANY"><ex>23</ex>#</ph> seconds left
+      </message>
+      </if>
+      <if expr="lang != 'ar'">
+      <message translateable="false" name="IDS_TIME_REMAINING_LONG_SECS_MANY"
+               desc="">
+        NA
+      </message>
+      </if>
+
+
+      <message name="IDS_TIME_REMAINING_MINS_DEFAULT"
+               desc="This is necessary for every language. It is the default for all the numbers NOT covered by special cases (singular, dual/two, few, many) some languages need. For CJK, Vietnamese, Turkish and Kannada, this is the only string necessary. For languages with singular-plural distinction, this is the generic plural. For Lithuanian, NUMBER_DEFAULT is 11..19.">
+        <ph name="NUMBER_DEFAULT"><ex>37</ex>#</ph> mins left
+      </message>
+
+      <if expr="lang not in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message name="IDS_TIME_REMAINING_MINS_SINGULAR"
+               desc="NUMBER_ONE is a one or one-like number: 1 (many European and most Indian languages), 1 and 0 (French, Brazilian Portuguese and Hindi), 1, 21, 31, ... (Russian, Ukrainian, Croatian, Serbian, Latvian, Lithuanian), or 1, 101, 201, ... (Slovenian). Do NOT translate this for CJK, Vietnamese, Turkish and Kannada.">
+        <ph name="NUMBER_ONE"><ex>1</ex>#</ph> min left
+      </message>
+      </if>
+      <if expr="lang in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message translateable="false" name="IDS_TIME_REMAINING_MINS_SINGULAR"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ar', 'ro', 'lv']">
+      <message name="IDS_TIME_REMAINING_MINS_ZERO"
+               desc="NUMBER_ZERO is 0 (Arabic, Latvian) or 0, 2..19, 101..119, ... (Romanian). For other languages, do NOT translate.">
+        <ph name="NUMBER_ZERO"><ex>0</ex>#</ph> mins left
+      </message>
+      </if>
+      <if expr="lang not in ['ar', 'ro', 'lv']">
+      <message translateable="false" name="IDS_TIME_REMAINING_MINS_ZERO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ga', 'sl', 'ar']">
+      <message name="IDS_TIME_REMAINING_MINS_TWO"
+               desc="NUMBER_TWO is a two or two-like/dual number: 2 (Arabic and Irish) or 2, 102, 202 ... (Slovenian). For other languages, do NOT translate.">
+        <ph name="NUMBER_TWO"><ex>2</ex>#</ph> mins left
+      </message>
+      </if>
+      <if expr="lang not in ['ga', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_REMAINING_MINS_TWO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message name="IDS_TIME_REMAINING_MINS_FEW"
+               desc="NUMBER_FEW is a few or few-like number in Arabic, Russian, Polish, Croatian, Serbian, Ukrainian, Czech, Slovak, Slovenian, Latvian. For other languages, do NOT translate.">
+        <ph name="NUMBER_FEW"><ex>3</ex>#</ph> mins left
+      </message>
+      </if>
+      <if expr="lang not in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_REMAINING_MINS_FEW"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang == 'ar'">
+      <message name="IDS_TIME_REMAINING_MINS_MANY"
+               desc="NUMBER_MANY is 11 through 99 in Arabic. For all other languages, do NOT translate.">
+        <ph name="NUMBER_MANY"><ex>23</ex>#</ph> mins left
+      </message>
+      </if>
+      <if expr="lang != 'ar'">
+      <message translateable="false" name="IDS_TIME_REMAINING_MINS_MANY"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <message name="IDS_TIME_REMAINING_LONG_MINS_DEFAULT"
+               desc="This is necessary for every language. It is the default for all the numbers NOT covered by special cases (singular, dual/two, few, many) some languages need. For CJK, Vietnamese, Turkish and Kannada, this is the only string necessary. For languages with singular-plural distinction, this is the generic plural. For Lithuanian, NUMBER_DEFAULT is 11..19.">
+        <ph name="NUMBER_DEFAULT"><ex>37</ex>#</ph> minutes left
+      </message>
+
+      <if expr="lang not in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message name="IDS_TIME_REMAINING_LONG_MINS_SINGULAR"
+               desc="NUMBER_ONE is a one or one-like number: 1 (many European and most Indian languages), 1 and 0 (French, Brazilian Portuguese and Hindi), 1, 21, 31, ... (Russian, Ukrainian, Croatian, Serbian, Latvian, Lithuanian), or 1, 101, 201, ... (Slovenian). Do NOT translate this for CJK, Vietnamese, Turkish and Kannada.">
+        <ph name="NUMBER_ONE"><ex>1</ex>#</ph> minute left
+      </message>
+      </if>
+      <if expr="lang in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message translateable="false" name="IDS_TIME_REMAINING_LONG_MINS_SINGULAR"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ar', 'ro', 'lv']">
+      <message name="IDS_TIME_REMAINING_LONG_MINS_ZERO"
+               desc="NUMBER_ZERO is 0 (Arabic, Latvian) or 0, 2..19, 101..119, ... (Romanian). For other languages, do NOT translate.">
+        <ph name="NUMBER_ZERO"><ex>0</ex>#</ph> minutes left
+      </message>
+      </if>
+      <if expr="lang not in ['ar', 'ro', 'lv']">
+      <message translateable="false" name="IDS_TIME_REMAINING_LONG_MINS_ZERO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ga', 'sl', 'ar']">
+      <message name="IDS_TIME_REMAINING_LONG_MINS_TWO"
+               desc="NUMBER_TWO is a two or two-like/dual number: 2 (Arabic and Irish) or 2, 102, 202 ... (Slovenian). For other languages, do NOT translate.">
+        <ph name="NUMBER_TWO"><ex>2</ex>#</ph> minutes left
+      </message>
+      </if>
+      <if expr="lang not in ['ga', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_REMAINING_LONG_MINS_TWO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message name="IDS_TIME_REMAINING_LONG_MINS_FEW"
+               desc="NUMBER_FEW is a few or few-like number in Arabic, Russian, Polish, Croatian, Serbian, Ukrainian, Czech, Slovak, Slovenian, Latvian. For other languages, do NOT translate.">
+        <ph name="NUMBER_FEW"><ex>3</ex>#</ph> minutes left
+      </message>
+      </if>
+      <if expr="lang not in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_REMAINING_LONG_MINS_FEW"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang == 'ar'">
+      <message name="IDS_TIME_REMAINING_LONG_MINS_MANY"
+               desc="NUMBER_MANY is 11 through 99 in Arabic. For all other languages, do NOT translate.">
+        <ph name="NUMBER_MANY"><ex>23</ex>#</ph> minutes left
+      </message>
+      </if>
+      <if expr="lang != 'ar'">
+      <message translateable="false" name="IDS_TIME_REMAINING_LONG_MINS_MANY"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <message name="IDS_TIME_REMAINING_HOURS_DEFAULT"
+               desc="This is necessary for every language. It is the default for all the numbers NOT covered by special cases (singular, dual/two, few, many) some languages need. For CJK, Vietnamese, Turkish and Kannada, this is the only string necessary. For languages with singular-plural distinction, this is the generic plural. For Lithuanian, NUMBER_DEFAULT is 11..19.">
+        <ph name="NUMBER_DEFAULT"><ex>37</ex>#</ph> hours left
+      </message>
+
+      <if expr="lang not in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message name="IDS_TIME_REMAINING_HOURS_SINGULAR"
+               desc="NUMBER_ONE is a one or one-like number: 1 (many European and most Indian languages), 1 and 0 (French, Brazilian Portuguese and Hindi), 1, 21, 31, ... (Russian, Ukrainian, Croatian, Serbian, Latvian, Lithuanian), or 1, 101, 201, ... (Slovenian). Do NOT translate this for CJK, Vietnamese, Turkish and Kannada.">
+        <ph name="NUMBER_ONE"><ex>1</ex>#</ph> hour left
+      </message>
+      </if>
+      <if expr="lang in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message translateable="false" name="IDS_TIME_REMAINING_HOURS_SINGULAR"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ar', 'ro', 'lv']">
+      <message name="IDS_TIME_REMAINING_HOURS_ZERO"
+               desc="NUMBER_ZERO is 0 (Arabic, Latvian) or 0, 2..19, 101..119, ... (Romanian). For other languages, do NOT translate.">
+        <ph name="NUMBER_ZERO"><ex>0</ex>#</ph> hours left
+      </message>
+      </if>
+      <if expr="lang not in ['ar', 'ro', 'lv']">
+      <message translateable="false" name="IDS_TIME_REMAINING_HOURS_ZERO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ga', 'sl', 'ar']">
+      <message name="IDS_TIME_REMAINING_HOURS_TWO"
+               desc="NUMBER_TWO is a two or two-like/dual number: 2 (Arabic and Irish) or 2, 102, 202 ... (Slovenian). For other languages, do NOT translate.">
+        <ph name="NUMBER_TWO"><ex>2</ex>#</ph> hours left
+      </message>
+      </if>
+      <if expr="lang not in ['ga', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_REMAINING_HOURS_TWO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message name="IDS_TIME_REMAINING_HOURS_FEW"
+               desc="NUMBER_FEW is a few or few-like number in Arabic, Russian, Polish, Croatian, Serbian, Ukrainian, Czech, Slovak, Slovenian, Latvian. For other languages, do NOT translate.">
+        <ph name="NUMBER_FEW"><ex>3</ex>#</ph> hours left
+      </message>
+      </if>
+      <if expr="lang not in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_REMAINING_HOURS_FEW"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang == 'ar'">
+      <message name="IDS_TIME_REMAINING_HOURS_MANY"
+               desc="NUMBER_MANY is 11 through 99 in Arabic. For all other languages, do NOT translate.">
+        <ph name="NUMBER_MANY"><ex>23</ex>#</ph> hours left
+      </message>
+      </if>
+      <if expr="lang != 'ar'">
+      <message translateable="false" name="IDS_TIME_REMAINING_HOURS_MANY"
+               desc="">
+        NA
+      </message>
+      </if>
+
+
+      <message name="IDS_TIME_REMAINING_DAYS_DEFAULT"
+               desc="This is necessary for every language. It is the default for all the numbers NOT covered by special cases (singular, dual/two, few, many) some languages need. For CJK, Vietnamese, Turkish and Kannada, this is the only string necessary. For languages with singular-plural distinction, this is the generic plural. For Lithuanian, NUMBER_DEFAULT is 11..19.">
+        <ph name="NUMBER_DEFAULT"><ex>37</ex>#</ph> days left
+      </message>
+
+      <if expr="lang not in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message name="IDS_TIME_REMAINING_DAYS_SINGULAR"
+               desc="NUMBER_ONE is a one or one-like number: 1 (many European and most Indian languages), 1 and 0 (French, Brazilian Portuguese and Hindi), 1, 21, 31, ... (Russian, Ukrainian, Croatian, Serbian, Latvian, Lithuanian), or 1, 101, 201, ... (Slovenian). Do NOT translate this for CJK, Vietnamese, Turkish and Kannada.">
+        <ph name="NUMBER_ONE"><ex>1</ex>#</ph> day left
+      </message>
+      </if>
+      <if expr="lang in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message translateable="false" name="IDS_TIME_REMAINING_DAYS_SINGULAR"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ar', 'ro', 'lv']">
+      <message name="IDS_TIME_REMAINING_DAYS_ZERO"
+               desc="NUMBER_ZERO is 0 (Arabic, Latvian) or 0, 2..19, 101..119, ... (Romanian). For other languages, do NOT translate.">
+        <ph name="NUMBER_ZERO"><ex>0</ex>#</ph> days left
+      </message>
+      </if>
+      <if expr="lang not in ['ar', 'ro', 'lv']">
+      <message translateable="false" name="IDS_TIME_REMAINING_DAYS_ZERO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ga', 'sl', 'ar']">
+      <message name="IDS_TIME_REMAINING_DAYS_TWO"
+               desc="NUMBER_TWO is a two or two-like/dual number: 2 (Arabic and Irish) or 2, 102, 202 ... (Slovenian). For other languages, do NOT translate.">
+        <ph name="NUMBER_TWO"><ex>2</ex>#</ph> days left
+      </message>
+      </if>
+      <if expr="lang not in ['ga', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_REMAINING_DAYS_TWO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message name="IDS_TIME_REMAINING_DAYS_FEW"
+               desc="NUMBER_FEW is a few or few-like number in Arabic, Russian, Polish, Croatian, Serbian, Ukrainian, Czech, Slovak, Slovenian, Latvian. For other languages, do NOT translate.">
+        <ph name="NUMBER_FEW"><ex>3</ex>#</ph> days left
+      </message>
+      </if>
+      <if expr="lang not in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_REMAINING_DAYS_FEW"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang == 'ar'">
+      <message name="IDS_TIME_REMAINING_DAYS_MANY"
+               desc="NUMBER_MANY is 11 through 99 in Arabic. For all other languages, do NOT translate.">
+        <ph name="NUMBER_MANY"><ex>23</ex>#</ph> days left
+      </message>
+      </if>
+      <if expr="lang != 'ar'">
+      <message translateable="false" name="IDS_TIME_REMAINING_DAYS_MANY"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <message name="IDS_TIME_ELAPSED_SECS_DEFAULT"
+               desc="This is necessary for every language. It is the default for all the numbers NOT covered by special cases (singular, dual/two, few, many) some languages need. For CJK, Vietnamese, Turkish and Kannada, this is the only string necessary. For languages with singular-plural distinction, this is the generic plural. For Lithuanian, NUMBER_DEFAULT is 11..19.">
+        <ph name="NUMBER_DEFAULT"><ex>37</ex>#</ph> secs ago
+      </message>
+
+      <if expr="lang not in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message name="IDS_TIME_ELAPSED_SECS_SINGULAR"
+               desc="NUMBER_ONE is a one or one-like number: 1 (many European and most Indian languages), 1 and 0 (French, Brazilian Portuguese and Hindi), 1, 21, 31, ... (Russian, Ukrainian, Croatian, Serbian, Latvian, Lithuanian), or 1, 101, 201, ... (Slovenian). Do NOT translate this for CJK, Vietnamese, Turkish and Kannada.">
+        <ph name="NUMBER_ONE"><ex>1</ex>#</ph> sec ago
+      </message>
+      </if>
+      <if expr="lang in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message translateable="false" name="IDS_TIME_ELAPSED_SECS_SINGULAR"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ar', 'ro', 'lv']">
+      <message name="IDS_TIME_ELAPSED_SECS_ZERO"
+               desc="NUMBER_ZERO is 0 (Arabic, Latvian) or 0, 2..19, 101..119, ... (Romanian). For other languages, do NOT translate.">
+        <ph name="NUMBER_ZERO"><ex>0</ex>#</ph> secs ago
+      </message>
+      </if>
+      <if expr="lang not in ['ar', 'ro', 'lv']">
+      <message translateable="false" name="IDS_TIME_ELAPSED_SECS_ZERO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ga', 'sl', 'ar']">
+      <message name="IDS_TIME_ELAPSED_SECS_TWO"
+               desc="NUMBER_TWO is a two or two-like/dual number: 2 (Arabic and Irish) or 2, 102, 202 ... (Slovenian). For other languages, do NOT translate.">
+        <ph name="NUMBER_TWO"><ex>2</ex>#</ph> secs ago
+      </message>
+      </if>
+      <if expr="lang not in ['ga', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_ELAPSED_SECS_TWO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message name="IDS_TIME_ELAPSED_SECS_FEW"
+               desc="NUMBER_FEW is a few or few-like number in Arabic, Russian, Polish, Croatian, Serbian, Ukrainian, Czech, Slovak, Slovenian, Latvian. For other languages, do NOT translate.">
+        <ph name="NUMBER_FEW"><ex>3</ex>#</ph> secs ago
+      </message>
+      </if>
+      <if expr="lang not in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_ELAPSED_SECS_FEW"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang == 'ar'">
+      <message name="IDS_TIME_ELAPSED_SECS_MANY"
+               desc="NUMBER_MANY is 11 through 99 in Arabic. For all other languages, do NOT translate.">
+        <ph name="NUMBER_MANY"><ex>23</ex>#</ph> secs ago
+      </message>
+      </if>
+      <if expr="lang != 'ar'">
+      <message translateable="false" name="IDS_TIME_ELAPSED_SECS_MANY"
+               desc="">
+        NA
+      </message>
+      </if>
+
+
+      <message name="IDS_TIME_ELAPSED_MINS_DEFAULT"
+               desc="This is necessary for every language. It is the default for all the numbers NOT covered by special cases (singular, dual/two, few, many) some languages need. For CJK, Vietnamese, Turkish and Kannada, this is the only string necessary. For languages with singular-plural distinction, this is the generic plural. For Lithuanian, NUMBER_DEFAULT is 11..19.">
+        <ph name="NUMBER_DEFAULT"><ex>37</ex>#</ph> mins ago
+      </message>
+
+      <if expr="lang not in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message name="IDS_TIME_ELAPSED_MINS_SINGULAR"
+               desc="NUMBER_ONE is a one or one-like number: 1 (many European and most Indian languages), 1 and 0 (French, Brazilian Portuguese and Hindi), 1, 21, 31, ... (Russian, Ukrainian, Croatian, Serbian, Latvian, Lithuanian), or 1, 101, 201, ... (Slovenian). Do NOT translate this for CJK, Vietnamese, Turkish and Kannada.">
+        <ph name="NUMBER_ONE"><ex>1</ex>#</ph> min ago
+      </message>
+      </if>
+      <if expr="lang in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message translateable="false" name="IDS_TIME_ELAPSED_MINS_SINGULAR"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ar', 'ro', 'lv']">
+      <message name="IDS_TIME_ELAPSED_MINS_ZERO"
+               desc="NUMBER_ZERO is 0 (Arabic, Latvian) or 0, 2..19, 101..119, ... (Romanian). For other languages, do NOT translate.">
+        <ph name="NUMBER_ZERO"><ex>0</ex>#</ph> mins ago
+      </message>
+      </if>
+      <if expr="lang not in ['ar', 'ro', 'lv']">
+      <message translateable="false" name="IDS_TIME_ELAPSED_MINS_ZERO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ga', 'sl', 'ar']">
+      <message name="IDS_TIME_ELAPSED_MINS_TWO"
+               desc="NUMBER_TWO is a two or two-like/dual number: 2 (Arabic and Irish) or 2, 102, 202 ... (Slovenian). For other languages, do NOT translate.">
+        <ph name="NUMBER_TWO"><ex>2</ex>#</ph> mins ago
+      </message>
+      </if>
+      <if expr="lang not in ['ga', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_ELAPSED_MINS_TWO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message name="IDS_TIME_ELAPSED_MINS_FEW"
+               desc="NUMBER_FEW is a few or few-like number in Arabic, Russian, Polish, Croatian, Serbian, Ukrainian, Czech, Slovak, Slovenian, Latvian. For other languages, do NOT translate.">
+        <ph name="NUMBER_FEW"><ex>3</ex>#</ph> mins ago
+      </message>
+      </if>
+      <if expr="lang not in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_ELAPSED_MINS_FEW"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang == 'ar'">
+      <message name="IDS_TIME_ELAPSED_MINS_MANY"
+               desc="NUMBER_MANY is 11 through 99 in Arabic. For all other languages, do NOT translate.">
+        <ph name="NUMBER_MANY"><ex>23</ex>#</ph> mins ago
+      </message>
+      </if>
+      <if expr="lang != 'ar'">
+      <message translateable="false" name="IDS_TIME_ELAPSED_MINS_MANY"
+               desc="">
+        NA
+      </message>
+      </if>
+
+
+      <message name="IDS_TIME_ELAPSED_HOURS_DEFAULT"
+               desc="This is necessary for every language. It is the default for all the numbers NOT covered by special cases (singular, dual/two, few, many) some languages need. For CJK, Vietnamese, Turkish and Kannada, this is the only string necessary. For languages with singular-plural distinction, this is the generic plural. For Lithuanian, NUMBER_DEFAULT is 11..19.">
+        <ph name="NUMBER_DEFAULT"><ex>37</ex>#</ph> hours ago
+      </message>
+
+      <if expr="lang not in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message name="IDS_TIME_ELAPSED_HOURS_SINGULAR"
+               desc="NUMBER_ONE is a one or one-like number: 1 (many European and most Indian languages), 1 and 0 (French, Brazilian Portuguese and Hindi), 1, 21, 31, ... (Russian, Ukrainian, Croatian, Serbian, Latvian, Lithuanian), or 1, 101, 201, ... (Slovenian). Do NOT translate this for CJK, Vietnamese, Turkish and Kannada.">
+        <ph name="NUMBER_ONE"><ex>1</ex>#</ph> hour ago
+      </message>
+      </if>
+      <if expr="lang in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message translateable="false" name="IDS_TIME_ELAPSED_HOURS_SINGULAR"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ar', 'ro', 'lv']">
+      <message name="IDS_TIME_ELAPSED_HOURS_ZERO"
+               desc="NUMBER_ZERO is 0 (Arabic, Latvian) or 0, 2..19, 101..119, ... (Romanian). For other languages, do NOT translate.">
+        <ph name="NUMBER_ZERO"><ex>0</ex>#</ph> hours ago
+      </message>
+      </if>
+      <if expr="lang not in ['ar', 'ro', 'lv']">
+      <message translateable="false" name="IDS_TIME_ELAPSED_HOURS_ZERO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ga', 'sl', 'ar']">
+      <message name="IDS_TIME_ELAPSED_HOURS_TWO"
+               desc="NUMBER_TWO is a two or two-like/dual number: 2 (Arabic and Irish) or 2, 102, 202 ... (Slovenian). For other languages, do NOT translate.">
+        <ph name="NUMBER_TWO"><ex>2</ex>#</ph> hours ago
+      </message>
+      </if>
+      <if expr="lang not in ['ga', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_ELAPSED_HOURS_TWO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message name="IDS_TIME_ELAPSED_HOURS_FEW"
+               desc="NUMBER_FEW is a few or few-like number in Arabic, Russian, Polish, Croatian, Serbian, Ukrainian, Czech, Slovak, Slovenian, Latvian. For other languages, do NOT translate.">
+        <ph name="NUMBER_FEW"><ex>3</ex>#</ph> hours ago
+      </message>
+      </if>
+      <if expr="lang not in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_ELAPSED_HOURS_FEW"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang == 'ar'">
+      <message name="IDS_TIME_ELAPSED_HOURS_MANY"
+               desc="NUMBER_MANY is 11 through 99 in Arabic. For all other languages, do NOT translate.">
+        <ph name="NUMBER_MANY"><ex>23</ex>#</ph> hours ago
+      </message>
+      </if>
+      <if expr="lang != 'ar'">
+      <message translateable="false" name="IDS_TIME_ELAPSED_HOURS_MANY"
+               desc="">
+        NA
+      </message>
+      </if>
+
+
+      <message name="IDS_TIME_ELAPSED_DAYS_DEFAULT"
+               desc="This is necessary for every language. It is the default for all the numbers NOT covered by special cases (singular, dual/two, few, many) some languages need. For CJK, Vietnamese, Turkish and Kannada, this is the only string necessary. For languages with singular-plural distinction, this is the generic plural. For Lithuanian, NUMBER_DEFAULT is 11..19.">
+        <ph name="NUMBER_DEFAULT"><ex>37</ex>#</ph> days ago
+      </message>
+
+      <if expr="lang not in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message name="IDS_TIME_ELAPSED_DAYS_SINGULAR"
+               desc="NUMBER_ONE is a one or one-like number: 1 (many European and most Indian languages), 1 and 0 (French, Brazilian Portuguese and Hindi), 1, 21, 31, ... (Russian, Ukrainian, Croatian, Serbian, Latvian, Lithuanian), or 1, 101, 201, ... (Slovenian). Do NOT translate this for CJK, Vietnamese, Turkish and Kannada.">
+        <ph name="NUMBER_ONE"><ex>1</ex>#</ph> day ago
+      </message>
+      </if>
+      <if expr="lang in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message translateable="false" name="IDS_TIME_ELAPSED_DAYS_SINGULAR"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ar', 'ro', 'lv']">
+      <message name="IDS_TIME_ELAPSED_DAYS_ZERO"
+               desc="NUMBER_ZERO is 0 (Arabic, Latvian) or 0, 2..19, 101..119, ... (Romanian). For other languages, do NOT translate.">
+        <ph name="NUMBER_ZERO"><ex>0</ex>#</ph> days ago
+      </message>
+      </if>
+      <if expr="lang not in ['ar', 'ro', 'lv']">
+      <message translateable="false" name="IDS_TIME_ELAPSED_DAYS_ZERO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ga', 'sl', 'ar']">
+      <message name="IDS_TIME_ELAPSED_DAYS_TWO"
+               desc="NUMBER_TWO is a two or two-like/dual number: 2 (Arabic and Irish) or 2, 102, 202 ... (Slovenian). For other languages, do NOT translate.">
+        <ph name="NUMBER_TWO"><ex>2</ex>#</ph> days ago
+      </message>
+      </if>
+      <if expr="lang not in ['ga', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_ELAPSED_DAYS_TWO"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message name="IDS_TIME_ELAPSED_DAYS_FEW"
+               desc="NUMBER_FEW is a few or few-like number in Arabic, Russian, Polish, Croatian, Serbian, Ukrainian, Czech, Slovak, Slovenian, Latvian. For other languages, do NOT translate.">
+        <ph name="NUMBER_FEW"><ex>3</ex>#</ph> days ago
+      </message>
+      </if>
+      <if expr="lang not in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message translateable="false" name="IDS_TIME_ELAPSED_DAYS_FEW"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang == 'ar'">
+      <message name="IDS_TIME_ELAPSED_DAYS_MANY"
+               desc="NUMBER_MANY is 11 through 99 in Arabic. For all other languages, do NOT translate.">
+        <ph name="NUMBER_MANY"><ex>23</ex>#</ph> days ago
+      </message>
+      </if>
+      <if expr="lang != 'ar'">
+      <message translateable="false" name="IDS_TIME_ELAPSED_DAYS_MANY"
+               desc="">
+        NA
+      </message>
+      </if>
+
+      <message name="IDS_PAST_TIME_TODAY" desc="Relative day today">
+        Today
+      </message>
+      <message name="IDS_PAST_TIME_YESTERDAY" desc="Relative day yesterday">
+        Yesterday
+      </message>
+
       <!-- Menus -->
       <message name="IDS_APP_MENU_EMPTY_SUBMENU" desc="Used when a submenu has no entries">
         (empty)
       </message>
 
       <!-- General application strings -->
-      <message name="IDS_APP_UNTITLED_SHORTCUT_FILE_NAME" desc="The name of the Internet Shortcut file created for URLs dragged that have no title">
-        Untitled Webpage
-      </message>
-      <message name="IDS_APP_SAVEAS_ALL_FILES" desc="Save As dialog box default text">
-        All Files
-      </message>
-      <message name="IDS_APP_SAVEAS_EXTENSION_FORMAT" desc="Save As dialog box extension format text">
-        <ph name="SAVEAS_EXTENSION_TYPE">$1<ex>EXE</ex></ph> File (.<ph name="SAVEAS_EXTENSION_NAME">$2<ex>exe</ex></ph>)
+      <if expr="is_win or is_ios">
+        <message name="IDS_APP_UNTITLED_SHORTCUT_FILE_NAME" desc="The name of the Internet Shortcut file created for URLs dragged that have no title">
+          Untitled Webpage
+        </message>
+      </if>
+      <if expr="is_win">
+        <message name="IDS_APP_SAVEAS_ALL_FILES" desc="Save As dialog box default text">
+          All Files
+        </message>
+        <message name="IDS_APP_SAVEAS_EXTENSION_FORMAT" desc="Save As dialog box extension format text">
+          <ph name="SAVEAS_EXTENSION_TYPE">$1<ex>EXE</ex></ph> File (.<ph name="SAVEAS_EXTENSION_NAME">$2<ex>exe</ex></ph>)
+        </message>
+      </if>
+      <message name="IDS_SELECT_UPLOAD_FOLDER_DIALOG_TITLE" desc="The default title for the Select Upload Folder dialog.">
+        Select Folder to Upload
       </message>
 
       <if expr="is_macosx">
         <message name="IDS_SELECT_FOLDER_BUTTON_TITLE" desc="The name of the Select button in the folder selection dialog.">
           Select
+        </message>
+        <message name="IDS_SELECT_UPLOAD_FOLDER_BUTTON_TITLE" desc="The name of the Select button in the folder selection dialog for uploading.">
+          Upload
         </message>
       </if>
 
@@ -243,6 +1825,9 @@ need to be translated for each locale.-->
       </message>
       <message name="IDS_SAVEAS_ALL_FILES" desc="Save As dialog box default text">
         All Files
+      </message>
+      <message name="IDS_SELECT_UPLOAD_FOLDER_DIALOG_UPLOAD_BUTTON" desc="Button label text for Upload Folder dialog">
+        Upload
       </message>
 
       <!--Accessible name/action strings-->
@@ -297,7 +1882,7 @@ need to be translated for each locale.-->
         Scroll Down
       </message>
 
-      <!-- Edit field context menu item labels. -->
+      <!-- Textfield context menu item labels. -->
       <message name="IDS_APP_UNDO" desc="The text label of the Undo menu item">
         &amp;Undo
       </message>
@@ -315,6 +1900,72 @@ need to be translated for each locale.-->
       </message>
       <message name="IDS_APP_SELECT_ALL" desc="The text label of the Select All menu item">
         Select &amp;all
+      </message>
+
+      <!-- Textfield editing commands; their actual string contents are unused. -->
+      <!-- These match third_party/WebKit/Source/core/editing/EditorCommand.cpp. -->
+      <message name="IDS_DELETE_BACKWARD" desc="A command to delete backward.">
+        Delete Backward
+      </message>
+      <message name="IDS_DELETE_FORWARD" desc="A command to delete forward.">
+        Delete Forward
+      </message>
+      <message name="IDS_DELETE_TO_BEGINNING_OF_LINE" desc="A command to delete to the beginning of the line.">
+        Delete To Beginning Of Line
+      </message>
+      <message name="IDS_DELETE_TO_END_OF_LINE" desc="A command to delete to the end of the line.">
+        Delete To End Of Line
+      </message>
+      <message name="IDS_DELETE_WORD_BACKWARD" desc="A command to delete backward by a word.">
+        Delete Word Backward
+      </message>
+      <message name="IDS_DELETE_WORD_FORWARD" desc="A command to delete forward by a word.">
+        Delete Word Forward
+      </message>
+      <message name="IDS_MOVE_DOWN" desc="A command to move the cursor down.">
+        Move Down
+      </message>
+      <message name="IDS_MOVE_LEFT" desc="A command to move the cursor left.">
+        Move Left
+      </message>
+      <message name="IDS_MOVE_LEFT_AND_MODIFY_SELECTION" desc="A command to move the cursor left and modify the selection.">
+        Move Left And Modify Selection
+      </message>
+      <message name="IDS_MOVE_RIGHT" desc="A command to move the cursor right.">
+        Move Right
+      </message>
+      <message name="IDS_MOVE_RIGHT_AND_MODIFY_SELECTION" desc="A command to move the cursor right and modify the selection.">
+        Move Right And Modify Selection
+      </message>
+      <message name="IDS_MOVE_WORD_LEFT" desc="A command to move the cursor left to the next word break.">
+        Move Word Left
+      </message>
+      <message name="IDS_MOVE_WORD_LEFT_AND_MODIFY_SELECTION" desc="A command to move the cursor left to the next word break and modify the selection.">
+        Move Word Left And Modify Selection
+      </message>
+      <message name="IDS_MOVE_WORD_RIGHT" desc="A command to move the cursor right to the next word break.">
+        Move Word Right
+      </message>
+      <message name="IDS_MOVE_WORD_RIGHT_AND_MODIFY_SELECTION" desc="A command to move the cursor right to the next word break and modify the selection.">
+        Move Word Right And Modify Selection
+      </message>
+      <message name="IDS_MOVE_TO_BEGINNING_OF_LINE" desc="A command to move the cursor to the beginning of the line.">
+        Move To Beginning Of Line
+      </message>
+      <message name="IDS_MOVE_TO_BEGINNING_OF_LINE_AND_MODIFY_SELECTION" desc="A command to move the cursor to the beginning of the line and modify the selection.">
+        Move To Beginning Of Line And Modify Selection
+      </message>
+      <message name="IDS_MOVE_TO_END_OF_LINE" desc="A command to move the cursor to the end of the line.">
+        Move To End Of Line
+      </message>
+      <message name="IDS_MOVE_TO_END_OF_LINE_AND_MODIFY_SELECTION" desc="A command to move the cursor to the end of the line and modify the selection.">
+        Move To End Of Line And Modify Selection
+      </message>
+      <message name="IDS_MOVE_UP" desc="A command to move the cursor up.">
+        Move Up
+      </message>
+      <message name="IDS_APP_REDO" desc="A command to redo an action.">
+        Redo
       </message>
 
       <!-- Generic terms -->
@@ -359,10 +2010,10 @@ need to be translated for each locale.-->
       <message name="IDS_APP_RIGHT_ARROW_KEY" desc="Right arrow key">
         Right Arrow
       </message>
-      <message name="IDS_APP_RIGHT_UP_KEY" desc="Up arrow key">
+      <message name="IDS_APP_UP_ARROW_KEY" desc="Up arrow key">
         Up Arrow
       </message>
-      <message name="IDS_APP_RIGHT_DOWN_KEY" desc="Down arrow key">
+      <message name="IDS_APP_DOWN_ARROW_KEY" desc="Down arrow key">
         Down Arrow
       </message>
       <message name="IDS_APP_ENTER_KEY" desc="Enter key">
@@ -376,6 +2027,24 @@ need to be translated for each locale.-->
       </message>
       <message name="IDS_APP_BACKSPACE_KEY" desc="Backspace key">
         Backspace
+      </message>
+      <message name="IDS_APP_COMMA_KEY" desc="Comma key">
+        Comma
+      </message>
+      <message name="IDS_APP_PERIOD_KEY" desc="Period key">
+        Period
+      </message>
+      <message name="IDS_APP_MEDIA_NEXT_TRACK_KEY" desc="Media next track key">
+        Media Next Track
+      </message>
+      <message name="IDS_APP_MEDIA_PLAY_PAUSE_KEY" desc="Media play pause key">
+        Media Play/Pause
+      </message>
+      <message name="IDS_APP_MEDIA_PREV_TRACK_KEY" desc="Media previous track key">
+        Media Previous Track
+      </message>
+      <message name="IDS_APP_MEDIA_STOP_KEY" desc="Media stop key">
+        Media Stop
       </message>
 
       <!-- Shortcut Modifiers -->
@@ -431,11 +2100,30 @@ need to be translated for each locale.-->
       </message>
 
       <!-- Message center -->
-      <message name="IDS_MESSAGE_CENTER_EXTENSIONS_DISABLE" desc="The menu entry for disabling extensions from a notification.">
-        Disable extension
+      <if expr="use_ash">
+        <message name="IDS_MESSAGE_CENTER_ACCESSIBLE_NAME" desc="The accessible name for the Notification Center window.">
+          Notification Center
+        </message>
+      </if>
+      <message name="IDS_MESSAGE_CENTER_NOTIFIER_DISABLE" desc="The menu entry for disabling a notifier from a notification.">
+        Disable notifications from <ph name="notifier_name">$1<ex>Notification Galore!</ex></ph>
       </message>
-      <message name="IDS_MESSAGE_CENTER_SITE_DISABLE" desc="The menu entry for disabling notification from a site.">
-        Disable notifications from <ph name="site">$1<ex>mail.google.com</ex></ph>
+      <message name="IDS_MESSAGE_CENTER_FOOTER_TITLE" desc="The label in the footer of the message center">
+        Notifications
+      </message>
+      <message name="IDS_MESSAGE_CENTER_SETTINGS_BUTTON_LABEL" desc="The button label for visiting the appropriate settings page in the footer of the message center.">
+        Settings
+      </message>
+      <if expr="is_macosx">
+        <message name="IDS_MESSAGE_CENTER_SETTINGS_GO_BACK_BUTTON_TOOLTIP" desc="The tooltip on back button that returns from settings to the notification list.">
+          Go back to notifications
+        </message>
+      </if>
+      <message name="IDS_MESSAGE_CENTER_SETTINGS_DIALOG_DESCRIPTION" desc="The label to describe the settings dialog.">
+        Allow notifications from the following:
+      </message>
+      <message name="IDS_MESSAGE_CENTER_SETTINGS_DESCRIPTION_MULTIUSER" desc="The label to describe the settings dialog if there is more than one user.">
+        Allow notifications from the following for each user:
       </message>
       <message name="IDS_MESSAGE_CENTER_SETTINGS" desc="The menu entry or button for visiting the appropriate settings page.">
         Settings...
@@ -443,22 +2131,65 @@ need to be translated for each locale.-->
       <message name="IDS_MESSAGE_CENTER_CLEAR_ALL" desc="The button for clearing all notifications.">
         Clear All
       </message>
+      <if expr="not use_titlecase">
+        <message name="IDS_MESSAGE_CENTER_QUIET_MODE_BUTTON_TOOLTIP" desc="The tooltip text for the do not disturb button.">
+          Do not disturb
+        </message>
+      </if>
+      <if expr="use_titlecase">
+        <message name="IDS_MESSAGE_CENTER_QUIET_MODE_BUTTON_TOOLTIP" desc="In Title Case: The tooltip text for the do not disturb button.">
+          Do Not Disturb
+        </message>
+      </if>
       <message name="IDS_MESSAGE_CENTER_NO_MESSAGES" desc="The message displayed in the message center when there are no notifications.">
-        You have no notifications. Relax!
+        Nothing to see here, move along.
       </message>
-      <message name="IDS_MESSAGE_CENTER_QUIET_MODE" desc="The button label for quiet mode.">
-        Quiet mode
+      <message name="IDS_MESSAGE_CENTER_QUIET_MODE" desc="The button label for do not disturb mode.">
+        Do not disturb
       </message>
-      <message name="IDS_MESSAGE_CENTER_QUIET_MODE_EXIT" desc="The button label for exiting quiet mode.">
-        Exit quiet mode
+      <message name="IDS_MESSAGE_CENTER_QUIET_MODE_1HOUR" desc="The button label to enter do not disturb mode in one hour.">
+        Do not disturb for one hour
       </message>
-      <message name="IDS_MESSAGE_CENTER_QUIET_MODE_1HOUR" desc="The button label to enter quiet mode in one hour.">
-        Quiet mode for one hour
+      <message name="IDS_MESSAGE_CENTER_QUIET_MODE_1DAY" desc="The button label to enter do not disturb mode in one day.">
+        Do not disturb for one day
       </message>
-      <message name="IDS_MESSAGE_CENTER_QUIET_MODE_1DAY" desc="The button label to enter quiet mode in one day.">
-        Quiet mode for one day
+      <message name="IDS_MESSAGE_CENTER_CLOSE_NOTIFICATION_BUTTON_ACCESSIBLE_NAME" desc="The spoken feedback text for the close button in a notification. Usually 'button' is suffixed to this text automatically.">
+        Notification close
       </message>
-      
+      <if expr="chromeos">
+        <message name="IDS_MESSAGE_CENTER_NOTIFIER_SCREENSHOT_NAME" desc="The name of screenshot notifier that is a system component">
+          Screenshot
+        </message>
+        <message name="IDS_MESSAGE_CENTER_NOTIFICATION_BUTTON_COPY_SCREENSHOT_TO_CLIPBOARD" desc="The button label for the screenshot notification which copies the screenshot image to clipboard on click.">
+          Copy to clipboard
+        </message>
+      </if>
+
+      <!-- App list -->
+      <message name="IDS_APP_LIST_HELP" desc="The menu entry to show the app list help UI.">
+        Help
+      </message>
+      <message name="IDS_APP_LIST_OPEN_SETTINGS" desc="The menu entry to show the settings UI.">
+        Settings
+      </message>
+      <message name="IDS_APP_LIST_OPEN_FEEDBACK" desc="The menu entry to show the feedback UI.">
+        Send feedback
+      </message>
+      <message name="IDS_APP_LIST_FOLDER_NAME_PLACEHOLDER" desc="The placeholder text for app list folder name.">
+        Unnamed Folder
+      </message>
+      <message name="IDS_APP_LIST_FOLDER_BUTTON_ACCESSIBILE_NAME" desc="The spoken feedback text for navigating to a folder button in top level app list">
+        Folder <ph name="folder_name">$1<ex>OEM Apps</ex></ph>
+      </message>
+      <message name="IDS_APP_LIST_FOLDER_OPEN_FOLDER_ACCESSIBILE_NAME" desc="The spoken feedback text for opening an app launcher folder">
+        Open folder
+      </message>
+      <message name="IDS_APP_LIST_FOLDER_CLOSE_FOLDER_ACCESSIBILE_NAME" desc="The spoken feedback text for closing an app launcher folder">
+        Close folder
+      </message>
+      <message name="IDS_APP_LIST_SPEECH_HINT_TEXT" desc="The text label in the speech recognition UI to ask the user to speak the search query">
+        Speak now
+      </message>
     </messages>
   </release>
 </grit>

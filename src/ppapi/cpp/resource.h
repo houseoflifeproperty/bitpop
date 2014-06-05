@@ -14,6 +14,8 @@
 /// with the module.
 namespace pp {
 
+class Var;
+
 /// A reference counted module resource.
 class Resource {
  public:
@@ -81,7 +83,12 @@ class Resource {
   /// resource.
   void PassRefFromConstructor(PP_Resource resource);
 
+  /// Sets this resource to null. This releases ownership of the resource.
+  void Clear();
+
  private:
+  friend class Var;
+
   PP_Resource pp_resource_;
 };
 

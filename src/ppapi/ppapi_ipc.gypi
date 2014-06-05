@@ -12,14 +12,20 @@
       # This part is shared between the targets defined below.
       ['ppapi_ipc_target==1', {
         'sources': [
+          'proxy/nacl_message_scanner.cc',
+          'proxy/nacl_message_scanner.h',
           'proxy/ppapi_messages.cc',
           'proxy/ppapi_messages.h',
           'proxy/ppapi_param_traits.cc',
           'proxy/ppapi_param_traits.h',
+          'proxy/raw_var_data.cc',
+          'proxy/raw_var_data.h',
           'proxy/resource_message_params.cc',
           'proxy/resource_message_params.h',
           'proxy/serialized_flash_menu.cc',
           'proxy/serialized_flash_menu.h',
+          'proxy/serialized_handle.cc',
+          'proxy/serialized_handle.h',
           'proxy/serialized_structs.cc',
           'proxy/serialized_structs.h',
           'proxy/serialized_var.cc',

@@ -6,126 +6,113 @@
 
 #include "base/location.h"
 #include "base/logging.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/task_runner.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/io_buffer.h"
-#include "net/quic/congestion_control/quic_receipt_metrics_collector.h"
-#include "net/quic/congestion_control/quic_send_scheduler.h"
+#include "net/base/net_errors.h"
 #include "net/quic/quic_utils.h"
 
 namespace net {
 
+namespace {
+
+class QuicChromeAlarm : public QuicAlarm {
+ public:
+  QuicChromeAlarm(const QuicClock* clock,
+                  base::TaskRunner* task_runner,
+                  QuicAlarm::Delegate* delegate)
+      : QuicAlarm(delegate),
+        clock_(clock),
+        task_runner_(task_runner),
+        task_deadline_(QuicTime::Zero()),
+        weak_factory_(this) {}
+
+ protected:
+  virtual void SetImpl() OVERRIDE {
+    DCHECK(deadline().IsInitialized());
+    if (task_deadline_.IsInitialized()) {
+      if (task_deadline_ <= deadline()) {
+        // Since tasks can not be un-posted, OnAlarm will be invoked which
+        // will notice that deadline has not yet been reached, and will set
+        // the alarm for the new deadline.
+        return;
+      }
+      // The scheduled task is after new deadline.  Invalidate the weak ptrs
+      // so that task does not execute when we're not expecting it.
+      weak_factory_.InvalidateWeakPtrs();
+    }
+
+    int64 delay_us = deadline().Subtract(clock_->Now()).ToMicroseconds();
+    if (delay_us < 0) {
+      delay_us = 0;
+    }
+    task_runner_->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&QuicChromeAlarm::OnAlarm, weak_factory_.GetWeakPtr()),
+        base::TimeDelta::FromMicroseconds(delay_us));
+    task_deadline_ = deadline();
+  }
+
+  virtual void CancelImpl() OVERRIDE {
+    DCHECK(!deadline().IsInitialized());
+    // Since tasks can not be un-posted, OnAlarm will be invoked which
+    // will notice that deadline is not Initialized and will do nothing.
+  }
+
+ private:
+  void OnAlarm() {
+    DCHECK(task_deadline_.IsInitialized());
+    task_deadline_ = QuicTime::Zero();
+    // The alarm may have been cancelled.
+    if (!deadline().IsInitialized()) {
+      return;
+    }
+
+    // The alarm may have been re-set to a later time.
+    if (clock_->Now() < deadline()) {
+      SetImpl();
+      return;
+    }
+
+    Fire();
+  }
+
+  const QuicClock* clock_;
+  base::TaskRunner* task_runner_;
+  // If a task has been posted to the message loop, this is the time it
+  // was scheduled to fire.  Tracking this allows us to avoid posting a
+  // new tast if the new deadline is in the future, but permits us to
+  // post a new task when the new deadline now earlier than when
+  // previously posted.
+  QuicTime task_deadline_;
+  base::WeakPtrFactory<QuicChromeAlarm> weak_factory_;
+};
+
+}  // namespace
+
 QuicConnectionHelper::QuicConnectionHelper(base::TaskRunner* task_runner,
                                            const QuicClock* clock,
-                                           DatagramClientSocket* socket)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+                                           QuicRandom* random_generator)
+    : weak_factory_(this),
       task_runner_(task_runner),
-      socket_(socket),
       clock_(clock),
-      send_alarm_registered_(false),
-      timeout_alarm_registered_(false) {
+      random_generator_(random_generator) {
 }
 
 QuicConnectionHelper::~QuicConnectionHelper() {
-}
-
-void QuicConnectionHelper::SetConnection(QuicConnection* connection) {
-  connection_ = connection;
 }
 
 const QuicClock* QuicConnectionHelper::GetClock() const {
   return clock_;
 }
 
-int QuicConnectionHelper::WritePacketToWire(
-    const QuicEncryptedPacket& packet,
-    int* error) {
-  if (connection_->ShouldSimulateLostPacket()) {
-    DLOG(INFO) << "Dropping packet due to fake packet loss.";
-    *error = 0;
-    return packet.length();
-  }
-
-  scoped_refptr<StringIOBuffer> buf(
-      new StringIOBuffer(std::string(packet.data(),
-                                     packet.length())));
-   return socket_->Write(buf, packet.length(),
-                         base::Bind(&QuicConnectionHelper::OnWriteComplete,
-                                    weak_factory_.GetWeakPtr()));
+QuicRandom* QuicConnectionHelper::GetRandomGenerator() {
+  return random_generator_;
 }
 
-void QuicConnectionHelper::SetResendAlarm(
-    QuicPacketSequenceNumber sequence_number,
-    QuicTime::Delta delay) {
-  // TODO(rch): Coalesce these alarms.
-  task_runner_->PostDelayedTask(
-      FROM_HERE,
-      base::Bind(&QuicConnectionHelper::OnResendAlarm,
-                 weak_factory_.GetWeakPtr(), sequence_number),
-      base::TimeDelta::FromMicroseconds(delay.ToMicroseconds()));
-}
-
-void QuicConnectionHelper::SetSendAlarm(QuicTime::Delta delay) {
-  send_alarm_registered_ = true;
-  task_runner_->PostDelayedTask(
-      FROM_HERE,
-      base::Bind(&QuicConnectionHelper::OnSendAlarm,
-                 weak_factory_.GetWeakPtr()),
-      base::TimeDelta::FromMicroseconds(delay.ToMicroseconds()));
-}
-
-void QuicConnectionHelper::SetTimeoutAlarm(QuicTime::Delta delay) {
-  DCHECK(!timeout_alarm_registered_);
-  timeout_alarm_registered_ = true;
-  task_runner_->PostDelayedTask(
-      FROM_HERE,
-      base::Bind(&QuicConnectionHelper::OnTimeoutAlarm,
-                 weak_factory_.GetWeakPtr()),
-      base::TimeDelta::FromMicroseconds(delay.ToMicroseconds()));
-}
-
-bool QuicConnectionHelper::IsSendAlarmSet() {
-  return send_alarm_registered_;
-}
-
-void QuicConnectionHelper::UnregisterSendAlarmIfRegistered() {
-  send_alarm_registered_ = false;
-}
-
-int QuicConnectionHelper::Read(IOBuffer* buf, int buf_len,
-                               const CompletionCallback& callback) {
-  return socket_->Read(buf, buf_len, callback);
-}
-
-void QuicConnectionHelper::GetLocalAddress(IPEndPoint* local_address) {
-  socket_->GetLocalAddress(local_address);
-}
-
-void QuicConnectionHelper::GetPeerAddress(IPEndPoint* peer_address) {
-  socket_->GetPeerAddress(peer_address);
-}
-
-
-void QuicConnectionHelper::OnResendAlarm(
-    QuicPacketSequenceNumber sequence_number) {
-  connection_->MaybeResendPacket(sequence_number);
-}
-
-void QuicConnectionHelper::OnSendAlarm() {
-  if (send_alarm_registered_) {
-    send_alarm_registered_ = false;
-    connection_->OnCanWrite();
-  }
-}
-
-void QuicConnectionHelper::OnTimeoutAlarm() {
-  timeout_alarm_registered_ = false;
-  connection_->CheckForTimeout();
-}
-
-void QuicConnectionHelper::OnWriteComplete(int result) {
-  // TODO(rch): Inform the connection about the result.
-  connection_->OnCanWrite();
+QuicAlarm* QuicConnectionHelper::CreateAlarm(QuicAlarm::Delegate* delegate) {
+  return new QuicChromeAlarm(clock_, task_runner_, delegate);
 }
 
 }  // namespace net

@@ -65,25 +65,22 @@ void NaClAppThreadSetSuspendState(struct NaClAppThread *natp,
                                   enum NaClSuspendState old_state,
                                   enum NaClSuspendState new_state) {
   while (1) {
-    Atomic32 state = natp->suspend_state;
+    Atomic32 state = CompareAndSwap(&natp->suspend_state, old_state, new_state);
+    if (NACL_LIKELY(state == (Atomic32) old_state)) {
+      break;
+    }
     if ((state & NACL_APP_THREAD_SUSPENDING) != 0) {
       /* We have been asked to suspend, so wait. */
       FutexWait(&natp->suspend_state, state);
-      continue;  /* Retry */
+    } else {
+      NaClLog(LOG_FATAL, "NaClAppThreadSetSuspendState: Unexpected state: %i\n",
+              state);
     }
-
-    CHECK(state == (Atomic32) old_state);
-    if (CompareAndSwap(&natp->suspend_state, old_state, new_state)
-        != (Atomic32) old_state) {
-      continue;  /* Retry */
-    }
-    break;
   }
 }
 
 static void HandleSuspendSignal(struct NaClSignalContext *regs) {
-  uint32_t tls_idx = NaClTlsGetIdx();
-  struct NaClAppThread *natp = nacl_thread[tls_idx];
+  struct NaClAppThread *natp = NaClTlsGetCurrentThread();
   struct NaClSignalContext *suspended_registers =
       &natp->suspended_registers->context;
 
@@ -134,6 +131,14 @@ static void HandleSuspendSignal(struct NaClSignalContext *regs) {
   }
 }
 
+static void FireDebugStubEvent(int pipe_fd) {
+  char buf = 0;
+  if (write(pipe_fd, &buf, sizeof(buf)) != sizeof(buf)) {
+    NaClSignalErrorMessage("FireDebugStubEvent: Can't send debug stub event\n");
+    NaClAbort();
+  }
+}
+
 static void HandleUntrustedFault(int signal,
                                  struct NaClSignalContext *regs,
                                  struct NaClAppThread *natp) {
@@ -146,6 +151,7 @@ static void HandleUntrustedFault(int signal,
   /* Notify the debug stub by marking this thread as faulted. */
   natp->fault_signal = signal;
   AtomicIncrement(&natp->nap->faulted_thread_count, 1);
+  FireDebugStubEvent(natp->nap->faulted_thread_fd_write);
 
   /*
    * We now expect the debug stub to suspend this thread via the
@@ -251,7 +257,8 @@ void NaClUntrustedThreadSuspend(struct NaClAppThread *natp,
         NaClLog(LOG_FATAL, "NaClUntrustedThreadSuspend: malloc() failed\n");
       }
     }
-    if (pthread_kill(natp->thread.tid, NACL_THREAD_SUSPEND_SIGNAL) != 0) {
+    CHECK(natp->host_thread_is_defined);
+    if (pthread_kill(natp->host_thread.tid, NACL_THREAD_SUSPEND_SIGNAL) != 0) {
       NaClLog(LOG_FATAL, "NaClUntrustedThreadSuspend: "
               "pthread_kill() call failed\n");
     }

@@ -4,13 +4,14 @@
 
 #include "chrome/browser/extensions/suggest_permission_util.h"
 
-#include "chrome/browser/extensions/extension_process_manager.h"
-#include "chrome/browser/extensions/extension_system.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_messages.h"
-#include "chrome/common/extensions/permissions/permissions_info.h"
+#include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/common/console_message_level.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/browser/process_manager.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_messages.h"
+#include "extensions/common/permissions/permissions_info.h"
 
 using content::CONSOLE_MESSAGE_LEVEL_WARNING;
 using content::RenderViewHost;
@@ -30,6 +31,7 @@ void SuggestAPIPermissionInDevToolsConsole(APIPermission::ID permission,
 
   const APIPermissionInfo* permission_info =
       PermissionsInfo::GetInstance()->GetByID(permission);
+  CHECK(permission_info);
 
   // Note, intentionally not internationalizing this string, as it is output
   // as a log message to developers in the developer tools console.
@@ -43,22 +45,6 @@ void SuggestAPIPermissionInDevToolsConsole(APIPermission::ID permission,
       host->GetRoutingID(), CONSOLE_MESSAGE_LEVEL_WARNING, message));
 }
 
-void SuggestAPIPermissionInDevToolsConsole(APIPermission::ID permission,
-                                           const Extension* extension,
-                                           Profile* profile) {
-  ExtensionProcessManager* process_manager =
-      extensions::ExtensionSystem::Get(profile)->process_manager();
-
-  std::set<content::RenderViewHost*> views =
-      process_manager->GetRenderViewHostsForExtension(extension->id());
-
-  for (std::set<RenderViewHost*>::const_iterator iter = views.begin();
-       iter != views.end(); ++iter) {
-    RenderViewHost* host = *iter;
-    SuggestAPIPermissionInDevToolsConsole(permission, extension, host);
-  }
-}
-
 bool IsExtensionWithPermissionOrSuggestInConsole(
     APIPermission::ID permission,
     const Extension* extension,
@@ -68,19 +54,6 @@ bool IsExtensionWithPermissionOrSuggestInConsole(
 
   if (extension)
     SuggestAPIPermissionInDevToolsConsole(permission, extension, host);
-
-  return false;
-}
-
-bool IsExtensionWithPermissionOrSuggestInConsole(
-    APIPermission::ID permission,
-    const Extension* extension,
-    Profile* profile) {
-  if (extension && extension->HasAPIPermission(permission))
-    return true;
-
-  if (extension)
-    SuggestAPIPermissionInDevToolsConsole(permission, extension, profile);
 
   return false;
 }

@@ -14,8 +14,8 @@
 #include "base/at_exit.h"
 #include "base/file_util.h"
 #include "base/memory/ref_counted.h"
-#include "base/string_number_conversions.h"
-#include "net/base/crl_set.h"
+#include "base/strings/string_number_conversions.h"
+#include "net/cert/crl_set.h"
 
 static int Usage(const char* argv0) {
   fprintf(stderr, "Usage: %s <crl-set file> [<delta file>]"
@@ -26,22 +26,22 @@ static int Usage(const char* argv0) {
 int main(int argc, char** argv) {
   base::AtExitManager at_exit_manager;
 
-  FilePath crl_set_filename, delta_filename, output_filename;
+  base::FilePath crl_set_filename, delta_filename, output_filename;
 
   if (argc < 2 || argc > 4)
     return Usage(argv[0]);
 
-  crl_set_filename = FilePath::FromUTF8Unsafe(argv[1]);
+  crl_set_filename = base::FilePath::FromUTF8Unsafe(argv[1]);
   if (argc >= 3)
-    delta_filename = FilePath::FromUTF8Unsafe(argv[2]);
+    delta_filename = base::FilePath::FromUTF8Unsafe(argv[2]);
   if (argc >= 4)
-    output_filename = FilePath::FromUTF8Unsafe(argv[3]);
+    output_filename = base::FilePath::FromUTF8Unsafe(argv[3]);
 
   std::string crl_set_bytes, delta_bytes;
-  if (!file_util::ReadFileToString(crl_set_filename, &crl_set_bytes))
+  if (!base::ReadFileToString(crl_set_filename, &crl_set_bytes))
     return 1;
   if (!delta_filename.empty() &&
-      !file_util::ReadFileToString(delta_filename, &delta_bytes)) {
+      !base::ReadFileToString(delta_filename, &delta_bytes)) {
     return 1;
   }
 
@@ -62,8 +62,7 @@ int main(int argc, char** argv) {
 
   if (!output_filename.empty()) {
     const std::string out = final_crl_set->Serialize();
-    if (file_util::WriteFile(output_filename, out.data(),
-                               out.size()) == -1) {
+    if (base::WriteFile(output_filename, out.data(), out.size()) == -1) {
       fprintf(stderr, "Failed to write resulting CRL set\n");
       return 1;
     }

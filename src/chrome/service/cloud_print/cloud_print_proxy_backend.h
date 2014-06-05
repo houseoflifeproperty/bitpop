@@ -44,6 +44,8 @@ class CloudPrintProxyFrontend {
   virtual void OnUnregisterPrinters(
       const std::string& auth_token,
       const std::list<std::string>& printer_ids) = 0;
+  // Update and store service settings.
+  virtual void OnXmppPingUpdated(int ping_timeout) = 0;
 
  protected:
   // Don't delete through SyncFrontend interface.
@@ -63,14 +65,6 @@ class CloudPrintProxyBackend {
                          bool enable_job_poll);
   ~CloudPrintProxyBackend();
 
-  // Called when the user enables Google Cloud Print.
-  // |last_robot_refresh_token|, |last_robot_email| and |last_user_email| are
-  // the previously persisted credentials if any. We will use this is the passed
-  // in LSID belongs to the same user as |last_user_email|.
-  bool InitializeWithLsid(const std::string& lsid,
-                          const std::string& last_robot_refresh_token,
-                          const std::string& last_robot_email,
-                          const std::string& last_user_email);
   // Legacy mechanism when we have saved user credentials but no saved robot
   // credentials.
   bool InitializeWithToken(const std::string& cloud_print_token);
@@ -95,7 +89,7 @@ class CloudPrintProxyBackend {
   scoped_refptr<Core> core_;
   // A reference to the MessageLoop used to construct |this|, so we know how
   // to safely talk back to the SyncFrontend.
-  MessageLoop* const frontend_loop_;
+  base::MessageLoop* const frontend_loop_;
   // The frontend which is responsible for displaying UI and updating Prefs
   CloudPrintProxyFrontend* frontend_;
 

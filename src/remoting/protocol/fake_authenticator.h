@@ -59,12 +59,19 @@ class FakeAuthenticator : public Authenticator {
   };
 
   FakeAuthenticator(Type type, int round_trips, Action action, bool async);
+
   virtual ~FakeAuthenticator();
+
+  // Set the number of messages that the authenticator needs to process before
+  // started() returns true.  Default to 0.
+  void set_messages_till_started(int messages);
 
   // Authenticator interface.
   virtual State state() const OVERRIDE;
+  virtual bool started() const OVERRIDE;
   virtual RejectionReason rejection_reason() const OVERRIDE;
-  virtual void ProcessMessage(const buzz::XmlElement* message) OVERRIDE;
+  virtual void ProcessMessage(const buzz::XmlElement* message,
+                              const base::Closure& resume_callback) OVERRIDE;
   virtual scoped_ptr<buzz::XmlElement> GetNextMessage() OVERRIDE;
   virtual scoped_ptr<ChannelAuthenticator>
       CreateChannelAuthenticator() const OVERRIDE;
@@ -77,6 +84,9 @@ class FakeAuthenticator : public Authenticator {
 
   // Total number of messages that have been processed.
   int messages_;
+  // Number of messages that the authenticator needs to process before started()
+  // returns true.  Default to 0.
+  int messages_till_started_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeAuthenticator);
 };
@@ -84,7 +94,8 @@ class FakeAuthenticator : public Authenticator {
 class FakeHostAuthenticatorFactory : public AuthenticatorFactory {
  public:
   FakeHostAuthenticatorFactory(
-      int round_trips, FakeAuthenticator::Action action, bool async);
+      int round_trips, int messages_till_start,
+      FakeAuthenticator::Action action, bool async);
   virtual ~FakeHostAuthenticatorFactory();
 
   // AuthenticatorFactory interface.
@@ -95,6 +106,7 @@ class FakeHostAuthenticatorFactory : public AuthenticatorFactory {
 
  private:
   int round_trips_;
+  int messages_till_started_;
   FakeAuthenticator::Action action_;
   bool async_;
 

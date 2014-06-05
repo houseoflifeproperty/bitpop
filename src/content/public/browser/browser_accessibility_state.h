@@ -6,6 +6,7 @@
 #define CONTENT_PUBLIC_BROWSER_BROWSER_ACCESSIBILITY_STATE_H_
 
 #include "base/callback_forward.h"
+
 #include "content/common/content_export.h"
 
 namespace content {
@@ -20,8 +21,17 @@ class CONTENT_EXPORT BrowserAccessibilityState {
   // Returns the singleton instance.
   static BrowserAccessibilityState* GetInstance();
 
-  // Called when accessibility is enabled manually (via command-line flag).
-  virtual void OnAccessibilityEnabledManually() = 0;
+  // Enables accessibility for all running tabs.
+  virtual void EnableAccessibility() = 0;
+
+  // Disables accessibility for all running tabs. (Only if accessibility is not
+  // required by a command line flag or by a platform requirement.)
+  virtual void DisableAccessibility() = 0;
+
+  // Resets accessibility to the platform default for all running tabs.
+  // This is probably off, but may be on, if --force_renderer_accessibility is
+  // passed, or EditableTextOnly if this is Win7.
+  virtual void ResetAccessibilityMode() = 0;
 
   // Called when screen reader client is detected.
   virtual void OnScreenReaderDetected() = 0;
@@ -34,6 +44,8 @@ class CONTENT_EXPORT BrowserAccessibilityState {
   // Use this to register a method to update additional accessibility
   // histograms.
   virtual void AddHistogramCallback(base::Closure callback) = 0;
+
+  virtual void UpdateHistogramsForTesting() = 0;
 };
 
 }  // namespace content

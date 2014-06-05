@@ -2,23 +2,41 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "net/websocket/websocket_errors.h"
+#include "net/websockets/websocket_errors.h"
+
+#include "base/logging.h"
 
 namespace net {
 
 Error WebSocketErrorToNetError(WebSocketError error) {
   switch (error) {
-    case WEB_SOCKET_OK:
+    case kWebSocketNormalClosure:
       return OK;
-    case WEB_SOCKET_ERR_PROTOCOL_ERROR:
+
+    case kWebSocketErrorGoingAway:  // TODO(ricea): More specific code?
+    case kWebSocketErrorProtocolError:
+    case kWebSocketErrorUnsupportedData:
+    case kWebSocketErrorInvalidFramePayloadData:
+    case kWebSocketErrorPolicyViolation:
+    case kWebSocketErrorMandatoryExtension:
+    case kWebSocketErrorInternalServerError:
       return ERR_WS_PROTOCOL_ERROR;
-    case WEB_SOCKET_ERR_MESSAGE_TOO_BIG:
+
+    case kWebSocketErrorNoStatusReceived:
+    case kWebSocketErrorAbnormalClosure:
+      return ERR_CONNECTION_CLOSED;
+
+    case kWebSocketErrorTlsHandshake:
+      // This error will probably be reported with more detail at a lower layer;
+      // this is the best we can do at this layer.
+      return ERR_SSL_PROTOCOL_ERROR;
+
+    case kWebSocketErrorMessageTooBig:
       return ERR_MSG_TOO_BIG;
+
     default:
-      NOTREACHED();
+      return ERR_UNEXPECTED;
   }
 }
 
 }  // namespace net
-
-#endif  // NET_WEBSOCKETS_WEBSOCKET_FRAME_H_

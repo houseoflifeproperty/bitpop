@@ -66,7 +66,7 @@ LABEL_MAP = {
   'glyph_brightness_up': 'bright up',
   'glyph_enter': 'enter',
   'glyph_forward': 'forward',
-  'glyph_fullscreen': 'maximize',
+  'glyph_fullscreen': 'full screen',
   # Kana/Eisu key on Japanese keyboard
   'glyph_ime': u'\u304b\u306a\u0020\u002f\u0020\u82f1\u6570',
   'glyph_lock': 'lock',
@@ -154,11 +154,16 @@ INPUT_METHOD_ID_TO_OVERLAY_ID = {
   'zinnia-japanese': 'ja',
 }
 
-COPYRIGHT_HEADER_TEMPLATE=(
-"""// Copyright (c) %s The Chromium Authors. All rights reserved.
+# The file was first generated in 2012 and we have a policy of not updating
+# copyright dates.
+COPYRIGHT_HEADER=\
+"""// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-""")
+
+// This is a generated file but may contain local modifications. See
+// src/tools/gen_keyboard_overlay_data/gen_keyboard_overlay_data.py --help
+"""
 
 # A snippet for grd file
 GRD_SNIPPET_TEMPLATE="""  <message name="%s" desc="%s">
@@ -225,9 +230,9 @@ def ToKeys(hotkey):
   """
   values = hotkey.split(' - ')
   modifiers = sorted(value.upper() for value in values
-                     if value in ['Shift', 'Ctrl', 'Alt'])
+                     if value in ['Shift', 'Ctrl', 'Alt', 'Search'])
   keycode = [value.lower() for value in values
-             if value not in ['Shift', 'Ctrl', 'Alt']]
+             if value not in ['Shift', 'Ctrl', 'Alt', 'Search']]
   # The keys which are highlighted even without modifier keys.
   base_keys = ['backspace', 'power']
   if not modifiers and (keycode and keycode[0] not in base_keys):
@@ -404,11 +409,6 @@ def FetchHotkeyData(client):
   return result
 
 
-def GenerateCopyrightHeader():
-  """Generates the copyright header for JavaScript code."""
-  return COPYRIGHT_HEADER_TEMPLATE % datetime.date.today().year
-
-
 def UniqueBehaviors(hotkey_data):
   """Retrieves a sorted list of unique behaviors from |hotkey_data|."""
   return sorted(set((behavior, description) for (behavior, _, description)
@@ -427,7 +427,7 @@ def GetPath(path_from_src):
 def OutputFile(outpath, snippet):
   """Output the snippet into the specified path."""
   out = file(outpath, 'w')
-  out.write(GenerateCopyrightHeader() + '\n')
+  out.write(COPYRIGHT_HEADER + '\n')
   out.write(snippet)
   print 'Output ' + os.path.normpath(outpath)
 

@@ -14,9 +14,16 @@
     #include "config.h"
 #endif
 
+// Allows embedders that want to disable macros that take arguments to just
+// define that symbol to be one of these
+//
+#define SK_NOTHING_ARG1(arg1)
+#define SK_NOTHING_ARG2(arg1, arg2)
+#define SK_NOTHING_ARG3(arg1, arg2, arg3)
+
 //////////////////////////////////////////////////////////////////////
 
-#if !defined(SK_BUILD_FOR_ANDROID) && !defined(SK_BUILD_FOR_ANDROID_NDK) && !defined(SK_BUILD_FOR_IOS) && !defined(SK_BUILD_FOR_PALM) && !defined(SK_BUILD_FOR_WINCE) && !defined(SK_BUILD_FOR_WIN32) && !defined(SK_BUILD_FOR_UNIX) && !defined(SK_BUILD_FOR_MAC) && !defined(SK_BUILD_FOR_SDL) && !defined(SK_BUILD_FOR_BREW) && !defined(SK_BUILD_FOR_NACL)
+#if !defined(SK_BUILD_FOR_ANDROID) && !defined(SK_BUILD_FOR_IOS) && !defined(SK_BUILD_FOR_PALM) && !defined(SK_BUILD_FOR_WINCE) && !defined(SK_BUILD_FOR_WIN32) && !defined(SK_BUILD_FOR_UNIX) && !defined(SK_BUILD_FOR_MAC) && !defined(SK_BUILD_FOR_SDL) && !defined(SK_BUILD_FOR_BREW) && !defined(SK_BUILD_FOR_NACL)
 
     #ifdef __APPLE__
         #include "TargetConditionals.h"
@@ -30,8 +37,6 @@
         #define SK_BUILD_FOR_WIN32
     #elif defined(__SYMBIAN32__)
         #define SK_BUILD_FOR_WIN32
-    #elif defined(ANDROID_NDK)
-        #define SK_BUILD_FOR_ANDROID_NDK
     #elif defined(ANDROID)
         #define SK_BUILD_FOR_ANDROID
     #elif defined(linux) || defined(__FreeBSD__) || defined(__OpenBSD__) || \
@@ -46,12 +51,12 @@
 
 #endif
 
-/* Even if the user only defined the NDK variant we still need to build
- * the default Android code. Therefore, when attempting to include/exclude
- * something from the NDK variant check first that we are building for
- * Android then check the status of the NDK define.
+/* Even if the user only defined the framework variant we still need to build
+ * the default (NDK-compliant) Android code. Therefore, when attempting to
+ * include/exclude something from the framework variant check first that we are
+ * building for Android then check the status of the framework define.
  */
-#if defined(SK_BUILD_FOR_ANDROID_NDK) && !defined(SK_BUILD_FOR_ANDROID)
+#if defined(SK_BUILD_FOR_ANDROID_FRAMEWORK) && !defined(SK_BUILD_FOR_ANDROID)
     #define SK_BUILD_FOR_ANDROID
 #endif
 
@@ -72,7 +77,6 @@
     #if !defined(SK_WARN_UNUSED_RESULT)
         #define SK_WARN_UNUSED_RESULT
     #endif
-    #include "sk_stdint.h"
 #endif
 
 //////////////////////////////////////////////////////////////////////
@@ -87,21 +91,26 @@
 
 //////////////////////////////////////////////////////////////////////
 
-#if !defined(SK_SCALAR_IS_FLOAT) && !defined(SK_SCALAR_IS_FIXED)
-    #define SK_SCALAR_IS_FLOAT
-#endif
-
-//////////////////////////////////////////////////////////////////////
-
 #if !defined(SK_CPU_BENDIAN) && !defined(SK_CPU_LENDIAN)
-    #if defined (__ppc__) || defined(__ppc64__)
-        #define SK_CPU_BENDIAN
+    #if defined(__sparc) || defined(__sparc__) || \
+      defined(_POWER) || defined(__powerpc__) || \
+      defined(__ppc__) || defined(__hppa) || \
+      defined(__PPC__) || defined(__PPC64__) || \
+      defined(_MIPSEB) || defined(__ARMEB__) || \
+      defined(__s390__) || \
+      (defined(__sh__) && defined(__BIG_ENDIAN__)) || \
+      (defined(__ia64) && defined(__BIG_ENDIAN__))
+         #define SK_CPU_BENDIAN
     #else
         #define SK_CPU_LENDIAN
     #endif
 #endif
 
 //////////////////////////////////////////////////////////////////////
+
+#if defined(__i386) || defined(_M_IX86) ||  defined(__x86_64__) || defined(_M_X64)
+  #define SK_CPU_X86 1
+#endif
 
 /**
  *  SK_CPU_SSE_LEVEL
@@ -117,29 +126,27 @@
 
 // Are we in GCC?
 #ifndef SK_CPU_SSE_LEVEL
-    #if defined(__SSE2__)
-        #define SK_CPU_SSE_LEVEL    SK_CPU_SSE_LEVEL_SSE2
+    // These checks must be done in descending order to ensure we set the highest
+    // available SSE level.
+    #if defined(__SSSE3__)
+        #define SK_CPU_SSE_LEVEL    SK_CPU_SSE_LEVEL_SSSE3
     #elif defined(__SSE3__)
         #define SK_CPU_SSE_LEVEL    SK_CPU_SSE_LEVEL_SSE3
-    #elif defined(__SSSE3__)
-        #define SK_CPU_SSE_LEVEL    SK_CPU_SSE_LEVEL_SSSE3
+    #elif defined(__SSE2__)
+        #define SK_CPU_SSE_LEVEL    SK_CPU_SSE_LEVEL_SSE2
     #endif
 #endif
 
 // Are we in VisualStudio?
 #ifndef SK_CPU_SSE_LEVEL
-    #if _M_IX86_FP == 1
-        #define SK_CPU_SSE_LEVEL    SK_CPU_SSE_LEVEL_SSE1
-    #elif _M_IX86_FP >= 2
-        #define SK_CPU_SSE_LEVEL    SK_CPU_SSE_LEVEL_SSE2
-    #endif
-#endif
-
-// 64bit intel guarantees at least SSE2
-#if defined(__x86_64__) || defined(_WIN64)
-    #if !defined(SK_CPU_SSE_LEVEL) || (SK_CPU_SSE_LEVEL < SK_CPU_SSE_LEVEL_SSE2)
-        #undef SK_CPU_SSE_LEVEL
-        #define SK_CPU_SSE_LEVEL    SK_CPU_SSE_LEVEL_SSE2
+    // These checks must be done in descending order to ensure we set the highest
+    // available SSE level.
+    #if defined (_M_IX86_FP)
+        #if _M_IX86_FP >= 2
+            #define SK_CPU_SSE_LEVEL    SK_CPU_SSE_LEVEL_SSE2
+        #elif _M_IX86_FP == 1
+            #define SK_CPU_SSE_LEVEL    SK_CPU_SSE_LEVEL_SSE1
+        #endif
     #endif
 #endif
 
@@ -177,14 +184,9 @@
     #endif
 #endif
 
-//////////////////////////////////////////////////////////////////////
-
-/**
- *  THUMB is the only known config where we avoid small branches in
- *  favor of more complex math.
- */
-#if !(defined(__arm__) && defined(__thumb__))
-    #define SK_CPU_HAS_CONDITIONAL_INSTR
+// Disable ARM64 optimizations for iOS due to complications regarding gyp and iOS.
+#if defined(__aarch64__) && !defined(SK_BUILD_FOR_IOS)
+    #define SK_CPU_ARM64
 #endif
 
 //////////////////////////////////////////////////////////////////////

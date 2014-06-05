@@ -8,7 +8,6 @@
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "media/base/media_export.h"
-#include "media/base/ranges.h"
 
 namespace media {
 
@@ -16,13 +15,13 @@ class AudioDecoderConfig;
 class DecoderBuffer;
 class VideoDecoderConfig;
 
-class MEDIA_EXPORT DemuxerStream
-    : public base::RefCountedThreadSafe<DemuxerStream> {
+class MEDIA_EXPORT DemuxerStream {
  public:
   enum Type {
     UNKNOWN,
     AUDIO,
     VIDEO,
+    TEXT,
     NUM_TYPES,  // Always keep this entry as the last one!
   };
 
@@ -41,6 +40,8 @@ class MEDIA_EXPORT DemuxerStream
   //                  new configuration to properly decode the buffers read
   //                  from this point forward. The second parameter MUST be NULL
   //                  when this status is returned.
+  //                  This will only be returned if SupportsConfigChanges()
+  //                  returns 'true' for this DemuxerStream.
   enum Status {
     kOk,
     kAborted,
@@ -58,19 +59,29 @@ class MEDIA_EXPORT DemuxerStream
 
   // Returns the audio decoder configuration. It is an error to call this method
   // if type() != AUDIO.
-  virtual const AudioDecoderConfig& audio_decoder_config() = 0;
+  virtual AudioDecoderConfig audio_decoder_config() = 0;
 
   // Returns the video decoder configuration. It is an error to call this method
   // if type() != VIDEO.
-  virtual const VideoDecoderConfig& video_decoder_config() = 0;
+  virtual VideoDecoderConfig video_decoder_config() = 0;
 
   // Returns the type of stream.
   virtual Type type() = 0;
 
   virtual void EnableBitstreamConverter() = 0;
 
+  // Whether or not this DemuxerStream allows midstream configuration changes.
+  //
+  // A DemuxerStream that returns 'true' to this may return the 'kConfigChange'
+  // status from a Read() call. In this case the client is expected to be
+  // capable of taking appropriate action to handle config changes. Otherwise
+  // audio_decoder_config() and video_decoder_config()'s return values are
+  // guaranteed to remain constant, and the client may make optimizations based
+  // on this.
+  virtual bool SupportsConfigChanges() = 0;
+
  protected:
-  friend class base::RefCountedThreadSafe<DemuxerStream>;
+  // Only allow concrete implementations to get deleted.
   virtual ~DemuxerStream();
 };
 

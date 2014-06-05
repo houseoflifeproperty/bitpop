@@ -15,9 +15,17 @@
 #include "SkXfermode.h"
 
 class SkBitmap;
-class GrEffect;
+class GrEffectRef;
 class GrContext;
 
+/**
+ *  ColorFilters are optional objects in the drawing pipeline. When present in
+ *  a paint, they are called with the "src" colors, and return new colors, which
+ *  are then passed onto the next stage (either ImageFilter or Xfermode).
+ *
+ *  All subclasses are required to be reentrant-safe : it must be legal to share
+ *  the same instance between several threads.
+ */
 class SK_API SkColorFilter : public SkFlattenable {
 public:
     SK_DECLARE_INST_COUNT(SkColorFilter)
@@ -27,14 +35,14 @@ public:
      *  returns true, and sets (if not NULL) the color and mode appropriately.
      *  If not, this returns false and ignores the parameters.
      */
-    virtual bool asColorMode(SkColor* color, SkXfermode::Mode* mode);
+    virtual bool asColorMode(SkColor* color, SkXfermode::Mode* mode) const;
 
     /**
      *  If the filter can be represented by a 5x4 matrix, this
      *  returns true, and sets the matrix appropriately.
      *  If not, this returns false and ignores the parameter.
      */
-    virtual bool asColorMatrix(SkScalar matrix[20]);
+    virtual bool asColorMatrix(SkScalar matrix[20]) const;
 
     /**
      *  If the filter can be represented by per-component table, return true,
@@ -62,7 +70,7 @@ public:
         @param result   written by the filter
     */
     virtual void filterSpan(const SkPMColor src[], int count,
-                            SkPMColor result[]) = 0;
+                            SkPMColor result[]) const = 0;
     /** Called with a scanline of colors, as if there was a shader installed.
         The implementation writes out its filtered version into result[].
         Note: shader and result may be the same buffer.
@@ -71,7 +79,7 @@ public:
         @param result   written by the filter
     */
     virtual void filterSpan16(const uint16_t shader[], int count,
-                              uint16_t result[]);
+                              uint16_t result[]) const;
 
     enum Flags {
         /** If set the filter methods will not change the alpha channel of the
@@ -87,7 +95,7 @@ public:
     /** Returns the flags for this filter. Override in subclasses to return
         custom flags.
     */
-    virtual uint32_t getFlags() { return 0; }
+    virtual uint32_t getFlags() const { return 0; }
 
     /**
      *  Apply this colorfilter to the specified SkColor. This routine handles
@@ -95,7 +103,7 @@ public:
      *  to SkColor. This method is not virtual, but will call filterSpan()
      *   which is virtual.
      */
-    SkColor filterColor(SkColor);
+    SkColor filterColor(SkColor) const;
 
     /** Create a colorfilter that uses the specified color and mode.
         If the Mode is DST, this function will return NULL (since that
@@ -118,12 +126,16 @@ public:
     /** A subclass may implement this factory function to work with the GPU backend. If the return
         is non-NULL then the caller owns a ref on the returned object.
      */
-    virtual GrEffect* asNewEffect(GrContext*) const;
+    virtual GrEffectRef* asNewEffect(GrContext*) const;
+
+    SK_TO_STRING_PUREVIRT()
 
     SK_DECLARE_FLATTENABLE_REGISTRAR_GROUP()
+    SK_DEFINE_FLATTENABLE_TYPE(SkColorFilter)
+
 protected:
     SkColorFilter() {}
-    SkColorFilter(SkFlattenableReadBuffer& rb) : INHERITED(rb) {}
+    SkColorFilter(SkReadBuffer& rb) : INHERITED(rb) {}
 
 private:
     typedef SkFlattenable INHERITED;

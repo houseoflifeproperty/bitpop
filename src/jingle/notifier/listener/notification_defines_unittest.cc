@@ -4,7 +4,7 @@
 
 #include <string>
 
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "jingle/notifier/listener/notification_defines.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -17,7 +17,7 @@ class NotificationTest : public testing::Test {};
 // Converting it to string shouldn't cause a crash.
 TEST_F(NotificationTest, BinaryData) {
   const char kNonUtf8Data[] = { '\xff', '\0' };
-  EXPECT_FALSE(IsStringUTF8(kNonUtf8Data));
+  EXPECT_FALSE(base::IsStringUTF8(kNonUtf8Data));
   Notification notification;
   notification.data = kNonUtf8Data;
   EXPECT_EQ("{ channel: \"\", data: \"\\u00FF\" }", notification.ToString());

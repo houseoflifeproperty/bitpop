@@ -6,14 +6,10 @@
 
 #include "base/command_line.h"
 #include "base/metrics/stats_table.h"
-#include "base/time.h"
-#include "chrome/common/benchmarking_messages.h"
+#include "base/time/time.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/renderer/render_thread.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCache.h"
 #include "v8/include/v8.h"
-
-using WebKit::WebCache;
 
 const char kBenchmarkingExtensionName[] = "v8/Benchmarking";
 
@@ -29,29 +25,13 @@ class BenchmarkingWrapper : public v8::Extension {
         "if (typeof(chrome.benchmarking) == 'undefined') {"
         "  chrome.benchmarking = {};"
         "};"
-        "chrome.benchmarking.clearCache = function() {"
-        "  native function ClearCache();"
-        "  ClearCache();"
-        "};"
-        "chrome.benchmarking.clearHostResolverCache = function() {"
-        "  native function ClearHostResolverCache();"
-        "  ClearHostResolverCache();"
-        "};"
-        "chrome.benchmarking.clearPredictorCache = function() {"
-        "  native function ClearPredictorCache();"
-        "  ClearPredictorCache();"
-        "};"
-        "chrome.benchmarking.closeConnections = function() {"
-        "  native function CloseConnections();"
-        "  CloseConnections();"
-        "};"
         "chrome.benchmarking.counter = function(name) {"
         "  native function GetCounter();"
         "  return GetCounter(name);"
         "};"
-        "chrome.benchmarking.enableSpdy = function(name) {"
-        "  native function EnableSpdy();"
-        "  EnableSpdy(name);"
+        "chrome.benchmarking.counterForRenderer = function(name) {"
+        "  native function GetCounterForRenderer();"
+        "  return GetCounterForRenderer(name);"
         "};"
         "chrome.benchmarking.isSingleProcess = function() {"
         "  native function IsSingleProcess();"
@@ -79,88 +59,66 @@ class BenchmarkingWrapper : public v8::Extension {
         "}"
         ) {}
 
-  virtual v8::Handle<v8::FunctionTemplate> GetNativeFunction(
-      v8::Handle<v8::String> name) {
-    if (name->Equals(v8::String::New("CloseConnections"))) {
-      return v8::FunctionTemplate::New(CloseConnections);
-    } else if (name->Equals(v8::String::New("ClearCache"))) {
-      return v8::FunctionTemplate::New(ClearCache);
-    } else if (name->Equals(v8::String::New("ClearHostResolverCache"))) {
-      return v8::FunctionTemplate::New(ClearHostResolverCache);
-    } else if (name->Equals(v8::String::New("ClearPredictorCache"))) {
-      return v8::FunctionTemplate::New(ClearPredictorCache);
-    } else if (name->Equals(v8::String::New("EnableSpdy"))) {
-      return v8::FunctionTemplate::New(EnableSpdy);
-    } else if (name->Equals(v8::String::New("GetCounter"))) {
-      return v8::FunctionTemplate::New(GetCounter);
-    } else if (name->Equals(v8::String::New("IsSingleProcess"))) {
-      return v8::FunctionTemplate::New(IsSingleProcess);
-    } else if (name->Equals(v8::String::New("HiResTime"))) {
-      return v8::FunctionTemplate::New(HiResTime);
+  virtual v8::Handle<v8::FunctionTemplate> GetNativeFunctionTemplate(
+      v8::Isolate* isolate,
+      v8::Handle<v8::String> name) OVERRIDE {
+    if (name->Equals(v8::String::NewFromUtf8(isolate, "GetCounter"))) {
+      return v8::FunctionTemplate::New(isolate, GetCounter);
+    } else if (name->Equals(
+                   v8::String::NewFromUtf8(isolate, "GetCounterForRenderer"))) {
+      return v8::FunctionTemplate::New(isolate, GetCounterForRenderer);
+    } else if (name->Equals(
+                   v8::String::NewFromUtf8(isolate, "IsSingleProcess"))) {
+      return v8::FunctionTemplate::New(isolate, IsSingleProcess);
+    } else if (name->Equals(v8::String::NewFromUtf8(isolate, "HiResTime"))) {
+      return v8::FunctionTemplate::New(isolate, HiResTime);
     }
 
     return v8::Handle<v8::FunctionTemplate>();
   }
 
-  static v8::Handle<v8::Value> CloseConnections(const v8::Arguments& args) {
-    content::RenderThread::Get()->Send(
-        new ChromeViewHostMsg_CloseCurrentConnections());
-    return v8::Undefined();
-  }
-
-  static v8::Handle<v8::Value> ClearCache(const v8::Arguments& args) {
-    int rv;
-    content::RenderThread::Get()->Send(new ChromeViewHostMsg_ClearCache(&rv));
-    WebCache::clear();
-    return v8::Undefined();
-  }
-
-  static v8::Handle<v8::Value> ClearHostResolverCache(
-      const v8::Arguments& args) {
-    int rv;
-    content::RenderThread::Get()->Send(
-        new ChromeViewHostMsg_ClearHostResolverCache(&rv));
-    return v8::Undefined();
-  }
-
-  static v8::Handle<v8::Value> ClearPredictorCache(
-      const v8::Arguments& args) {
-    int rv;
-    content::RenderThread::Get()->Send(
-        new ChromeViewHostMsg_ClearPredictorCache(&rv));
-    return v8::Undefined();
-  }
-
-  static v8::Handle<v8::Value> EnableSpdy(const v8::Arguments& args) {
-    if (!args.Length() || !args[0]->IsBoolean())
-      return v8::Undefined();
-
-    content::RenderThread::Get()->Send(new ChromeViewHostMsg_EnableSpdy(
-        args[0]->BooleanValue()));
-    return v8::Undefined();
-  }
-
-  static v8::Handle<v8::Value> GetCounter(const v8::Arguments& args) {
-    if (!args.Length() || !args[0]->IsString() || !base::StatsTable::current())
-      return v8::Undefined();
-
-    // Extract the name argument
-    char name[256];
+  /*
+   * Extract the counter name from arguments.
+   */
+  static void ExtractCounterName(
+      const v8::FunctionCallbackInfo<v8::Value>& args,
+      char* name,
+      size_t capacity) {
     name[0] = 'c';
     name[1] = ':';
-    args[0]->ToString()->WriteAscii(&name[2], 0, sizeof(name) - 3);
-
-    int counter = base::StatsTable::current()->GetCounterValue(name);
-    return v8::Integer::New(counter);
+    args[0]->ToString()->WriteUtf8(&name[2], capacity - 3);
   }
 
-  static v8::Handle<v8::Value> IsSingleProcess(const v8::Arguments& args) {
-    return v8::Boolean::New(
+  static void GetCounter(const v8::FunctionCallbackInfo<v8::Value>& args) {
+    if (!args.Length() || !args[0]->IsString() || !base::StatsTable::current())
+      return;
+
+    char name[256];
+    ExtractCounterName(args, name, sizeof(name));
+    int counter = base::StatsTable::current()->GetCounterValue(name);
+    args.GetReturnValue().Set(static_cast<int32_t>(counter));
+  }
+
+  static void GetCounterForRenderer(
+      const v8::FunctionCallbackInfo<v8::Value>& args) {
+    if (!args.Length() || !args[0]->IsString() || !base::StatsTable::current())
+      return;
+
+    char name[256];
+    ExtractCounterName(args, name, sizeof(name));
+    int counter = base::StatsTable::current()->GetCounterValue(
+        name,
+        base::GetCurrentProcId());
+    args.GetReturnValue().Set(static_cast<int32_t>(counter));
+  }
+
+  static void IsSingleProcess(const v8::FunctionCallbackInfo<v8::Value>& args) {
+    args.GetReturnValue().Set(
        CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess));
   }
 
-  static v8::Handle<v8::Value> HiResTime(const v8::Arguments& args) {
-    return v8::Number::New(
+  static void HiResTime(const v8::FunctionCallbackInfo<v8::Value>& args) {
+    args.GetReturnValue().Set(
         static_cast<double>(base::TimeTicks::HighResNow().ToInternalValue()));
   }
 };

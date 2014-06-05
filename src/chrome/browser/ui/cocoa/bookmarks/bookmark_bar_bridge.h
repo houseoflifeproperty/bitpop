@@ -13,19 +13,22 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "chrome/browser/bookmarks/bookmark_model_observer.h"
+#include "base/prefs/pref_change_registrar.h"
+#include "components/bookmarks/core/browser/bookmark_model_observer.h"
 
-class Browser;
+class Profile;
 @class BookmarkBarController;
 
 class BookmarkBarBridge : public BookmarkModelObserver {
  public:
-  BookmarkBarBridge(BookmarkBarController* controller,
+  BookmarkBarBridge(Profile* profile,
+                    BookmarkBarController* controller,
                     BookmarkModel* model);
   virtual ~BookmarkBarBridge();
 
-  // Overridden from BookmarkModelObserver
-  virtual void Loaded(BookmarkModel* model, bool ids_reassigned) OVERRIDE;
+  // Overridden from BookmarkModelObserver:
+  virtual void BookmarkModelLoaded(BookmarkModel* model,
+                                   bool ids_reassigned) OVERRIDE;
   virtual void BookmarkModelBeingDeleted(BookmarkModel* model) OVERRIDE;
   virtual void BookmarkNodeMoved(BookmarkModel* model,
                                  const BookmarkNode* old_parent,
@@ -38,7 +41,11 @@ class BookmarkBarBridge : public BookmarkModelObserver {
   virtual void BookmarkNodeRemoved(BookmarkModel* model,
                                    const BookmarkNode* parent,
                                    int old_index,
-                                   const BookmarkNode* node) OVERRIDE;
+                                   const BookmarkNode* node,
+                                   const std::set<GURL>& removed_urls) OVERRIDE;
+  virtual void BookmarkAllNodesRemoved(
+      BookmarkModel* model,
+      const std::set<GURL>& removed_urls) OVERRIDE;
   virtual void BookmarkNodeChanged(BookmarkModel* model,
                                    const BookmarkNode* node) OVERRIDE;
   virtual void BookmarkNodeFaviconChanged(BookmarkModel* model,
@@ -52,6 +59,12 @@ class BookmarkBarBridge : public BookmarkModelObserver {
   BookmarkBarController* controller_;  // weak; owns me
   BookmarkModel* model_;  // weak; it is owned by a Profile.
   bool batch_mode_;
+
+  // Needed to react to kShowAppsShortcutInBookmarkBar changes.
+  PrefChangeRegistrar profile_pref_registrar_;
+
+  // Updates the visibility of the apps shortcut based on the pref value.
+  void OnAppsPageShortcutVisibilityPrefChanged();
 
   DISALLOW_COPY_AND_ASSIGN(BookmarkBarBridge);
 };

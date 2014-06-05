@@ -10,10 +10,10 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/metrics/variations/resource_request_allowed_notifier.h"
 #include "chrome/browser/web_resource/json_asynchronous_unpacker.h"
-#include "googleurl/src/gurl.h"
+#include "chrome/browser/web_resource/resource_request_allowed_notifier.h"
 #include "net/url_request/url_fetcher_delegate.h"
+#include "url/gurl.h"
 
 class PrefService;
 
@@ -46,7 +46,8 @@ class WebResourceService
   void StartAfterDelay();
 
   // JSONAsynchronousUnpackerDelegate methods.
-  virtual void OnUnpackFinished(const DictionaryValue& parsed_json) OVERRIDE;
+  virtual void OnUnpackFinished(
+      const base::DictionaryValue& parsed_json) OVERRIDE;
   virtual void OnUnpackError(const std::string& error_message) OVERRIDE;
 
  protected:

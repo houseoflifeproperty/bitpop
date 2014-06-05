@@ -8,24 +8,23 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/supports_user_data.h"
 #include "content/public/browser/resource_request_info.h"
-#include "content/public/common/process_type.h"
 #include "content/public/common/referrer.h"
 #include "net/base/load_states.h"
-#include "webkit/glue/resource_type.h"
-
-namespace webkit_blob {
-class BlobData;
-}
+#include "webkit/common/resource_type.h"
 
 namespace content {
-class AsyncResourceHandler;
 class CrossSiteResourceHandler;
+class DetachableResourceHandler;
 class ResourceContext;
+class ResourceMessageFilter;
 struct GlobalRequestID;
+struct GlobalRoutingID;
 
 // Holds the data ResourceDispatcherHost associates with each request.
 // Retrieve this data by calling ResourceDispatcherHost::InfoForRequest.
@@ -37,26 +36,31 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
       net::URLRequest* request);
 
   // And, a const version for cases where you only need read access.
-  static const ResourceRequestInfoImpl* ForRequest(
+  CONTENT_EXPORT static const ResourceRequestInfoImpl* ForRequest(
       const net::URLRequest* request);
 
   CONTENT_EXPORT ResourceRequestInfoImpl(
-      ProcessType process_type,
+      int process_type,
       int child_id,
       int route_id,
       int origin_pid,
       int request_id,
+      int render_frame_id,
       bool is_main_frame,
-      int64 frame_id,
       bool parent_is_main_frame,
-      int64 parent_frame_id,
+      int parent_render_frame_id,
       ResourceType::Type resource_type,
       PageTransition transition_type,
+      bool should_replace_current_entry,
       bool is_download,
+      bool is_stream,
       bool allow_download,
       bool has_user_gesture,
-      WebKit::WebReferrerPolicy referrer_policy,
-      ResourceContext* context);
+      blink::WebReferrerPolicy referrer_policy,
+      blink::WebPageVisibilityState visibility_state,
+      ResourceContext* context,
+      base::WeakPtr<ResourceMessageFilter> filter,
+      bool is_async);
   virtual ~ResourceRequestInfoImpl();
 
   // ResourceRequestInfo implementation:
@@ -65,23 +69,43 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
   virtual int GetRouteID() const OVERRIDE;
   virtual int GetOriginPID() const OVERRIDE;
   virtual int GetRequestID() const OVERRIDE;
+  virtual int GetRenderFrameID() const OVERRIDE;
   virtual bool IsMainFrame() const OVERRIDE;
-  virtual int64 GetFrameID() const OVERRIDE;
   virtual bool ParentIsMainFrame() const OVERRIDE;
-  virtual int64 GetParentFrameID() const OVERRIDE;
+  virtual int GetParentRenderFrameID() const OVERRIDE;
   virtual ResourceType::Type GetResourceType() const OVERRIDE;
-  virtual WebKit::WebReferrerPolicy GetReferrerPolicy() const OVERRIDE;
+  virtual int GetProcessType() const OVERRIDE;
+  virtual blink::WebReferrerPolicy GetReferrerPolicy() const OVERRIDE;
+  virtual blink::WebPageVisibilityState GetVisibilityState() const OVERRIDE;
   virtual PageTransition GetPageTransition() const OVERRIDE;
   virtual bool HasUserGesture() const OVERRIDE;
   virtual bool WasIgnoredByHandler() const OVERRIDE;
-  virtual bool GetAssociatedRenderView(int* render_process_id,
-                                       int* render_view_id) const OVERRIDE;
+  virtual bool GetAssociatedRenderFrame(int* render_process_id,
+                                        int* render_frame_id) const OVERRIDE;
   virtual bool IsAsync() const OVERRIDE;
+  virtual bool IsDownload() const OVERRIDE;
 
 
-  void AssociateWithRequest(net::URLRequest* request);
+  CONTENT_EXPORT void AssociateWithRequest(net::URLRequest* request);
 
-  GlobalRequestID GetGlobalRequestID() const;
+  CONTENT_EXPORT GlobalRequestID GetGlobalRequestID() const;
+  GlobalRoutingID GetGlobalRoutingID() const;
+
+  // May be NULL (e.g., if process dies during a transfer).
+  ResourceMessageFilter* filter() const {
+    return filter_.get();
+  }
+
+  // Updates the data associated with this request after it is is transferred
+  // to a new renderer process.  Not all data will change during a transfer.
+  // We do not expect the ResourceContext to change during navigation, so that
+  // does not need to be updated.
+  void UpdateForTransfer(int child_id,
+                         int route_id,
+                         int origin_pid,
+                         int request_id,
+                         int parent_render_frame_id,
+                         base::WeakPtr<ResourceMessageFilter> filter);
 
   // CrossSiteResourceHandler for this request.  May be null.
   CrossSiteResourceHandler* cross_site_handler() {
@@ -91,25 +115,33 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
     cross_site_handler_ = h;
   }
 
-  // AsyncResourceHandler for this request.  May be null.
-  AsyncResourceHandler* async_handler() {
-    return async_handler_;
+  // Whether this request is part of a navigation that should replace the
+  // current session history entry. This state is shuffled up and down the stack
+  // for request transfers.
+  bool should_replace_current_entry() const {
+    return should_replace_current_entry_;
   }
-  void set_async_handler(AsyncResourceHandler* h) {
-    async_handler_ = h;
+
+  // DetachableResourceHandler for this request.  May be NULL.
+  DetachableResourceHandler* detachable_handler() const {
+    return detachable_handler_;
+  }
+  void set_detachable_handler(DetachableResourceHandler* h) {
+    detachable_handler_ = h;
   }
 
   // Identifies the type of process (renderer, plugin, etc.) making the request.
-  ProcessType process_type() const {
-    return process_type_;
-  }
+  int process_type() const { return process_type_; }
 
   // Downloads are allowed only as a top level request.
   bool allow_download() const { return allow_download_; }
 
   // Whether this is a download.
-  bool is_download() const { return is_download_; }
   void set_is_download(bool download) { is_download_ = download; }
+
+  // Whether this is a stream.
+  bool is_stream() const { return is_stream_; }
+  void set_is_stream(bool stream) { is_stream_ = stream; }
 
   void set_was_ignored_by_handler(bool value) {
     was_ignored_by_handler_ = value;
@@ -120,37 +152,40 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
   int memory_cost() const { return memory_cost_; }
   void set_memory_cost(int cost) { memory_cost_ = cost; }
 
-  // We hold a reference to the requested blob data to ensure it doesn't
-  // get finally released prior to the net::URLRequestJob being started.
-  webkit_blob::BlobData* requested_blob_data() const {
-    return requested_blob_data_.get();
-  }
-  void set_requested_blob_data(webkit_blob::BlobData* data);
-
  private:
+  FRIEND_TEST_ALL_PREFIXES(ResourceDispatcherHostTest,
+                           DeletedFilterDetached);
+  FRIEND_TEST_ALL_PREFIXES(ResourceDispatcherHostTest,
+                           DeletedFilterDetachedRedirect);
   // Non-owning, may be NULL.
   CrossSiteResourceHandler* cross_site_handler_;
-  AsyncResourceHandler* async_handler_;
+  DetachableResourceHandler* detachable_handler_;
 
-  ProcessType process_type_;
+  int process_type_;
   int child_id_;
   int route_id_;
   int origin_pid_;
   int request_id_;
+  int render_frame_id_;
   bool is_main_frame_;
-  int64 frame_id_;
   bool parent_is_main_frame_;
-  int64 parent_frame_id_;
+  int parent_render_frame_id_;
+  bool should_replace_current_entry_;
   bool is_download_;
+  bool is_stream_;
   bool allow_download_;
   bool has_user_gesture_;
   bool was_ignored_by_handler_;
   ResourceType::Type resource_type_;
   PageTransition transition_type_;
   int memory_cost_;
-  scoped_refptr<webkit_blob::BlobData> requested_blob_data_;
-  WebKit::WebReferrerPolicy referrer_policy_;
+  blink::WebReferrerPolicy referrer_policy_;
+  blink::WebPageVisibilityState visibility_state_;
   ResourceContext* context_;
+  // The filter might be deleted without deleting this object if the process
+  // exits during a transfer.
+  base::WeakPtr<ResourceMessageFilter> filter_;
+  bool is_async_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceRequestInfoImpl);
 };

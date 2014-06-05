@@ -4,26 +4,27 @@
 
 #include "chrome/browser/chromeos/system_logs/network_event_log_source.h"
 
-#include "base/message_loop.h"
-#include "chrome/browser/chromeos/system_logs/system_logs_fetcher.h"
+#include "base/message_loop/message_loop.h"
 #include "chromeos/network/network_event_log.h"
 #include "content/public/browser/browser_thread.h"
 
-namespace chromeos {
+namespace system_logs {
 
-namespace {
 const char kNetworkEventLogEntry[] = "network_event_log";
-}
 
 void NetworkEventLogSource::Fetch(const SysLogsSourceCallback& callback) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   DCHECK(!callback.is_null());
 
   scoped_ptr<SystemLogsResponse> response(new SystemLogsResponse);
-  const int kMaxNetworkEventsForAboutSystem = 200;
-  (*response)[kNetworkEventLogEntry] = network_event_log::GetAsString(
-      network_event_log::OLDEST_FIRST, kMaxNetworkEventsForAboutSystem);
+  const int kMaxNetworkEventsForAboutSystem = 400;
+  (*response)[kNetworkEventLogEntry] =
+      chromeos::network_event_log::GetAsString(
+          chromeos::network_event_log::OLDEST_FIRST,
+          "time,file,desc",
+          chromeos::network_event_log::kDefaultLogLevel,
+          kMaxNetworkEventsForAboutSystem);
   callback.Run(response.get());
 }
 
-}  // namespace chromeos
+}  // namespace system_logs

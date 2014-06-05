@@ -9,18 +9,19 @@
 #include "chrome/browser/extensions/user_script_master.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
-#include "net/base/mock_host_resolver.h"
+#include "net/dns/mock_host_resolver.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
 
 using content::WebContents;
 
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, IncognitoNoScript) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
 
   // Loads a simple extension which attempts to change the title of every page
   // that loads to "modified".
@@ -30,22 +31,29 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, IncognitoNoScript) {
   // Open incognito window and navigate to test page.
   Browser* otr_browser = ui_test_utils::OpenURLOffTheRecord(
       browser()->profile(),
-      test_server()->GetURL("files/extensions/test_file.html"));
+      embedded_test_server()->GetURL("/extensions/test_file.html"));
 
-  WebContents* tab = chrome::GetActiveWebContents(otr_browser);
+  WebContents* tab = otr_browser->tab_strip_model()->GetActiveWebContents();
 
   // Verify the script didn't run.
   bool result = false;
-  ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
-      tab->GetRenderViewHost(), L"",
-      L"window.domAutomationController.send(document.title == 'Unmodified')",
+  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+      tab,
+      "window.domAutomationController.send(document.title == 'Unmodified')",
       &result));
   EXPECT_TRUE(result);
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, IncognitoYesScript) {
+#if defined(OS_WIN)
+// This test is very flaky on XP. http://crbug.com/248821
+#define MAYBE_IncognitoYesScript DISABLED_IncognitoYesScript
+#else
+#define MAYBE_IncognitoYesScript IncognitoYesScript
+#endif
+
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest, MAYBE_IncognitoYesScript) {
   host_resolver()->AddRule("*", "127.0.0.1");
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
 
   // Load a dummy extension. This just tests that we don't regress a
   // crash fix when multiple incognito- and non-incognito-enabled extensions
@@ -65,15 +73,15 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, IncognitoYesScript) {
   // Open incognito window and navigate to test page.
   Browser* otr_browser = ui_test_utils::OpenURLOffTheRecord(
       browser()->profile(),
-      test_server()->GetURL("files/extensions/test_file.html"));
+      embedded_test_server()->GetURL("/extensions/test_file.html"));
 
-  WebContents* tab = chrome::GetActiveWebContents(otr_browser);
+  WebContents* tab = otr_browser->tab_strip_model()->GetActiveWebContents();
 
   // Verify the script ran.
   bool result = false;
-  ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
-      tab->GetRenderViewHost(), L"",
-      L"window.domAutomationController.send(document.title == 'modified')",
+  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+      tab,
+      "window.domAutomationController.send(document.title == 'modified')",
       &result));
   EXPECT_TRUE(result);
 }
@@ -88,21 +96,21 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_DontCreateIncognitoProfile) {
   ASSERT_FALSE(browser()->profile()->HasOffTheRecordProfile());
 }
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(OS_MACOSX)
 // http://crbug.com/120484
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_Incognito) {
 #else
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, Incognito) {
 #endif
   host_resolver()->AddRule("*", "127.0.0.1");
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
 
   ResultCatcher catcher;
 
   // Open incognito window and navigate to test page.
   ui_test_utils::OpenURLOffTheRecord(
       browser()->profile(),
-      test_server()->GetURL("files/extensions/test_file.html"));
+      embedded_test_server()->GetURL("/extensions/test_file.html"));
 
   ASSERT_TRUE(LoadExtensionIncognito(test_data_dir_
       .AppendASCII("incognito").AppendASCII("apis")));
@@ -119,7 +127,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_IncognitoSplitMode) {
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, IncognitoSplitMode) {
 #endif
   host_resolver()->AddRule("*", "127.0.0.1");
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
 
   // We need 2 ResultCatchers because we'll be running the same test in both
   // regular and incognito mode.
@@ -135,7 +143,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, IncognitoSplitMode) {
   // Open incognito window and navigate to test page.
   ui_test_utils::OpenURLOffTheRecord(
       browser()->profile(),
-      test_server()->GetURL("files/extensions/test_file.html"));
+      embedded_test_server()->GetURL("/extensions/test_file.html"));
 
   ASSERT_TRUE(LoadExtensionIncognito(test_data_dir_
       .AppendASCII("incognito").AppendASCII("split")));
@@ -159,22 +167,28 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_IncognitoDisabled) {
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, IncognitoDisabled) {
 #endif
   host_resolver()->AddRule("*", "127.0.0.1");
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
 
   ResultCatcher catcher;
+  ExtensionTestMessageListener listener("createIncognitoTab", true);
 
   // Open incognito window and navigate to test page.
   ui_test_utils::OpenURLOffTheRecord(
       browser()->profile(),
-      test_server()->GetURL("files/extensions/test_file.html"));
+      embedded_test_server()->GetURL("/extensions/test_file.html"));
 
   ASSERT_TRUE(LoadExtension(test_data_dir_
       .AppendASCII("incognito").AppendASCII("apis_disabled")));
 
+  EXPECT_TRUE(listener.WaitUntilSatisfied());
+  ui_test_utils::OpenURLOffTheRecord(browser()->profile(),
+                                     GURL("about:blank"));
+  listener.Reply("created");
+
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(OS_MACOSX)
 // http://crbug.com/104438.
 #define MAYBE_IncognitoPopup DISABLED_IncognitoPopup
 #else
@@ -183,7 +197,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, IncognitoDisabled) {
 // Test that opening a popup from an incognito browser window works properly.
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, MAYBE_IncognitoPopup) {
   host_resolver()->AddRule("*", "127.0.0.1");
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
 
   ResultCatcher catcher;
 
@@ -193,7 +207,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, MAYBE_IncognitoPopup) {
   // Open incognito window and navigate to test page.
   Browser* incognito_browser = ui_test_utils::OpenURLOffTheRecord(
       browser()->profile(),
-      test_server()->GetURL("files/extensions/test_file.html"));
+      embedded_test_server()->GetURL("/extensions/test_file.html"));
 
   // Simulate the incognito's browser action being clicked.
   BrowserActionTestUtil(incognito_browser).Press(0);

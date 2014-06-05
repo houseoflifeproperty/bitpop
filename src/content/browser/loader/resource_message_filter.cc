@@ -7,35 +7,36 @@
 #include "content/browser/appcache/chrome_appcache_service.h"
 #include "content/browser/fileapi/chrome_blob_storage_context.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
-#include "content/public/browser/browser_thread.h"
+#include "content/browser/service_worker/service_worker_context_wrapper.h"
+#include "content/common/resource_messages.h"
 #include "content/public/browser/resource_context.h"
+#include "webkit/browser/fileapi/file_system_context.h"
 
 namespace content {
 
 ResourceMessageFilter::ResourceMessageFilter(
     int child_id,
-    ProcessType process_type,
-    ResourceContext* resource_context,
+    int process_type,
     ChromeAppCacheService* appcache_service,
     ChromeBlobStorageContext* blob_storage_context,
-    URLRequestContextSelector* url_request_context_selector)
-    : child_id_(child_id),
+    fileapi::FileSystemContext* file_system_context,
+    ServiceWorkerContextWrapper* service_worker_context,
+    const GetContextsCallback& get_contexts_callback)
+    : BrowserMessageFilter(ResourceMsgStart),
+      child_id_(child_id),
       process_type_(process_type),
-      resource_context_(resource_context),
       appcache_service_(appcache_service),
       blob_storage_context_(blob_storage_context),
-      url_request_context_selector_(url_request_context_selector) {
-  DCHECK(resource_context);
-  DCHECK(url_request_context_selector);
-  // |appcache_service| and |blob_storage_context| may be NULL in unittests.
+      file_system_context_(file_system_context),
+      service_worker_context_(service_worker_context),
+      get_contexts_callback_(get_contexts_callback),
+      weak_ptr_factory_(this) {
 }
 
 ResourceMessageFilter::~ResourceMessageFilter() {
 }
 
 void ResourceMessageFilter::OnChannelClosing() {
-  BrowserMessageFilter::OnChannelClosing();
-
   // Unhook us from all pending network requests so they don't get sent to a
   // deleted object.
   ResourceDispatcherHostImpl::Get()->CancelRequestsForProcess(child_id_);
@@ -47,9 +48,15 @@ bool ResourceMessageFilter::OnMessageReceived(const IPC::Message& message,
       message, this, message_was_ok);
 }
 
-net::URLRequestContext* ResourceMessageFilter::GetURLRequestContext(
-    ResourceType::Type type) {
-  return url_request_context_selector_->GetRequestContext(type);
+void ResourceMessageFilter::GetContexts(
+    const ResourceHostMsg_Request& request,
+    ResourceContext** resource_context,
+    net::URLRequestContext** request_context) {
+  return get_contexts_callback_.Run(request, resource_context, request_context);
+}
+
+base::WeakPtr<ResourceMessageFilter> ResourceMessageFilter::GetWeakPtr() {
+  return weak_ptr_factory_.GetWeakPtr();
 }
 
 }  // namespace content

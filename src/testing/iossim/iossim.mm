@@ -28,6 +28,19 @@
 @class DTiPhoneSimulatorSession;
 @class DTiPhoneSimulatorSessionConfig;
 @class DTiPhoneSimulatorSystemRoot;
+@class DVTiPhoneSimulatorMessenger;
+
+@interface DVTPlatform : NSObject
++ (BOOL)loadAllPlatformsReturningError:(id*)arg1;
+@end
+
+@protocol OS_dispatch_source
+@end
+@protocol OS_dispatch_queue
+@end
+@class DVTDispatchLock;
+@class DVTConfinementServiceConnection;
+@class DVTTask;
 
 @protocol DTiPhoneSimulatorSessionDelegate
 - (void)session:(DTiPhoneSimulatorSession*)session
@@ -37,7 +50,7 @@
       withError:(NSError*)error;
 @end
 
-#import "iPhoneSimulatorRemoteClient.h"
+#import "DVTiPhoneSimulatorRemoteClient.h"
 
 // An undocumented system log key included in messages from launchd. The value
 // is the PID of the process the message is about (as opposed to launchd's PID).
@@ -73,7 +86,9 @@ const NSTimeInterval kOutputPollIntervalSeconds = 0.1;
 // The path within the developer dir of the private Simulator frameworks.
 NSString* const kSimulatorFrameworkRelativePath =
     @"Platforms/iPhoneSimulator.platform/Developer/Library/PrivateFrameworks/"
-    @"iPhoneSimulatorRemoteClient.framework";
+    @"DVTiPhoneSimulatorRemoteClient.framework";
+NSString* const kDVTFoundationRelativePath =
+    @"../SharedFrameworks/DVTFoundation.framework";
 NSString* const kDevToolsFoundationRelativePath =
     @"../OtherFrameworks/DevToolsFoundation.framework";
 NSString* const kSimulatorRelativePath =
@@ -85,6 +100,14 @@ NSString* const kSimulatorRelativePath =
 NSString* const kSimulatorAppQuitErrorKey = @"The simulated application quit.";
 
 const char* gToolName = "iossim";
+
+// Exit status codes.
+const int kExitSuccess = EXIT_SUCCESS;
+const int kExitFailure = EXIT_FAILURE;
+const int kExitInvalidArguments = 2;
+const int kExitInitializationFailure = 3;
+const int kExitAppFailedToStart = 4;
+const int kExitAppCrashed = 5;
 
 void LogError(NSString* format, ...) {
   va_list list;
@@ -120,6 +143,7 @@ void LogWarning(NSString* format, ...) {
  @private
   NSString* stdioPath_;
   NSString* developerDir_;
+  NSString* simulatorHome_;
   NSThread* outputThread_;
   NSBundle* simulatorBundle_;
   BOOL appRunning_;
@@ -139,11 +163,13 @@ void LogWarning(NSString* format, ...) {
 
 // Specifies the file locations of the simulated app's stdout and stderr.
 - (SimulatorDelegate*)initWithStdioPath:(NSString*)stdioPath
-                           developerDir:(NSString*)developerDir {
+                           developerDir:(NSString*)developerDir
+                          simulatorHome:(NSString*)simulatorHome {
   self = [super init];
   if (self) {
     stdioPath_ = [stdioPath copy];
     developerDir_ = [developerDir copy];
+    simulatorHome_ = [simulatorHome copy];
   }
 
   return self;
@@ -223,13 +249,13 @@ void LogWarning(NSString* format, ...) {
 
       // session:didEndWithError should not return (because it exits) so
       // the execution path should never get here.
-      exit(EXIT_FAILURE);
+      exit(kExitFailure);
     }
 
     LogError(@"Simulator failed to start: \"%@\" (%@:%ld)",
              [error localizedDescription],
              [error domain], static_cast<long int>([error code]));
-    exit(EXIT_FAILURE);
+    exit(kExitAppFailedToStart);
   }
 
   // Start a thread to write contents of outputPath to stdout.
@@ -268,38 +294,86 @@ void LogWarning(NSString* format, ...) {
       LogError(@"Simulator ended with error: \"%@\" (%@:%ld)",
                localizedDescription, [error domain],
                static_cast<long int>([error code]));
-      exit(EXIT_FAILURE);
+      exit(kExitFailure);
     }
   }
 
-  // Check if the simulated app exited abnormally by looking for system log
-  // messages from launchd that refer to the simulated app's PID. Limit query
-  // to messages in the last minute since PIDs are cyclical.
-  aslmsg query = asl_new(ASL_TYPE_QUERY);
-  asl_set_query(query, ASL_KEY_SENDER, "launchd",
-                ASL_QUERY_OP_EQUAL | ASL_QUERY_OP_SUBSTRING);
-  asl_set_query(query, ASL_KEY_REF_PID,
-                [[[session simulatedApplicationPID] stringValue] UTF8String],
-                ASL_QUERY_OP_EQUAL);
-  asl_set_query(query, ASL_KEY_TIME, "-1m", ASL_QUERY_OP_GREATER_EQUAL);
+  // Try to determine if the simulated app crashed or quit with a non-zero
+  // status code. iOS Simluator handles things a bit differently depending on
+  // the version, so first determine the iOS version being used.
+  BOOL badEntryFound = NO;
+  NSString* versionString =
+      [[[session sessionConfig] simulatedSystemRoot] sdkVersion];
+  NSInteger majorVersion = [[[versionString componentsSeparatedByString:@"."]
+      objectAtIndex:0] intValue];
+  if (majorVersion <= 6) {
+    // In iOS 6 and before, logging from the simulated apps went to the main
+    // system logs, so use ASL to check if the simulated app exited abnormally
+    // by looking for system log messages from launchd that refer to the
+    // simulated app's PID. Limit query to messages in the last minute since
+    // PIDs are cyclical.
+    aslmsg query = asl_new(ASL_TYPE_QUERY);
+    asl_set_query(query, ASL_KEY_SENDER, "launchd",
+                  ASL_QUERY_OP_EQUAL | ASL_QUERY_OP_SUBSTRING);
+    char session_id[20];
+    if (snprintf(session_id, 20, "%d", [session simulatedApplicationPID]) < 0) {
+      LogError(@"Failed to get [session simulatedApplicationPID]");
+      exit(kExitFailure);
+    }
+    asl_set_query(query, ASL_KEY_REF_PID, session_id, ASL_QUERY_OP_EQUAL);
+    asl_set_query(query, ASL_KEY_TIME, "-1m", ASL_QUERY_OP_GREATER_EQUAL);
 
-  // Log any messages found.
-  aslresponse response = asl_search(NULL, query);
-  BOOL entryFound = NO;
-  aslmsg entry;
-  while ((entry = aslresponse_next(response)) != NULL) {
-    entryFound = YES;
-    LogWarning(@"Console message: %s", asl_get(entry, ASL_KEY_MSG));
+    // Log any messages found, and take note of any messages that may indicate
+    // the app crashed or did not exit cleanly.
+    aslresponse response = asl_search(NULL, query);
+    aslmsg entry;
+    while ((entry = aslresponse_next(response)) != NULL) {
+      const char* message = asl_get(entry, ASL_KEY_MSG);
+      LogWarning(@"Console message: %s", message);
+      // Some messages are harmless, so don't trigger a failure for them.
+      if (strstr(message, "The following job tried to hijack the service"))
+        continue;
+      badEntryFound = YES;
+    }
+  } else {
+    // Otherwise, the iOS Simulator's system logging is sandboxed, so parse the
+    // sandboxed system.log file for known errors.
+    NSString* relativePathToSystemLog =
+        [NSString stringWithFormat:
+            @"Library/Logs/iOS Simulator/%@/system.log", versionString];
+    NSString* path =
+        [simulatorHome_ stringByAppendingPathComponent:relativePathToSystemLog];
+    NSFileManager* fileManager = [NSFileManager defaultManager];
+    if ([fileManager fileExistsAtPath:path]) {
+      NSString* content =
+          [NSString stringWithContentsOfFile:path
+                                    encoding:NSUTF8StringEncoding
+                                       error:NULL];
+      NSArray* lines = [content componentsSeparatedByCharactersInSet:
+          [NSCharacterSet newlineCharacterSet]];
+      for (NSString* line in lines) {
+        NSString* const kErrorString = @"Service exited with abnormal code:";
+        if ([line rangeOfString:kErrorString].location != NSNotFound) {
+          LogWarning(@"Console message: %@", line);
+          badEntryFound = YES;
+          break;
+        }
+      }
+      // Remove the log file so subsequent invocations of iossim won't be
+      // looking at stale logs.
+      remove([path fileSystemRepresentation]);
+    } else {
+        LogWarning(@"Unable to find sandboxed system log.");
+    }
   }
 
-  // launchd only sends messages if the process crashed or exits with a
-  // non-zero status, so if the query returned any results iossim should exit
-  // with non-zero status.
-  if (entryFound) {
+  // If the query returned any nasty-looking results, iossim should exit with
+  // non-zero status.
+  if (badEntryFound) {
     LogError(@"Simulated app crashed or exited with non-zero status");
-    exit(EXIT_FAILURE);
+    exit(kExitAppCrashed);
   }
-  exit(EXIT_SUCCESS);
+  exit(kExitSuccess);
 }
 @end
 
@@ -337,32 +411,49 @@ NSString* FindDeveloperDir() {
   return output;
 }
 
+// Helper to find a class by name and die if it isn't found.
+Class FindClassByName(NSString* nameOfClass) {
+  Class theClass = NSClassFromString(nameOfClass);
+  if (!theClass) {
+    LogError(@"Failed to find class %@ at runtime.", nameOfClass);
+    exit(kExitInitializationFailure);
+  }
+  return theClass;
+}
+
 // Loads the Simulator framework from the given developer dir.
 NSBundle* LoadSimulatorFramework(NSString* developerDir) {
   // The Simulator framework depends on some of the other Xcode private
   // frameworks; manually load them first so everything can be linked up.
+  NSString* dvtFoundationPath = [developerDir
+      stringByAppendingPathComponent:kDVTFoundationRelativePath];
+  NSBundle* dvtFoundationBundle =
+      [NSBundle bundleWithPath:dvtFoundationPath];
+  if (![dvtFoundationBundle load])
+    return nil;
+
   NSString* devToolsFoundationPath = [developerDir
       stringByAppendingPathComponent:kDevToolsFoundationRelativePath];
   NSBundle* devToolsFoundationBundle =
       [NSBundle bundleWithPath:devToolsFoundationPath];
   if (![devToolsFoundationBundle load])
     return nil;
+
+  // Prime DVTPlatform.
+  NSError* error;
+  Class DVTPlatformClass = FindClassByName(@"DVTPlatform");
+  if (![DVTPlatformClass loadAllPlatformsReturningError:&error]) {
+    LogError(@"Unable to loadAllPlatformsReturningError. Error: %@",
+         [error localizedDescription]);
+    return nil;
+  }
+
   NSString* simBundlePath = [developerDir
       stringByAppendingPathComponent:kSimulatorFrameworkRelativePath];
   NSBundle* simBundle = [NSBundle bundleWithPath:simBundlePath];
   if (![simBundle load])
     return nil;
   return simBundle;
-}
-
-// Helper to find a class by name and die if it isn't found.
-Class FindClassByName(NSString* nameOfClass) {
-  Class theClass = NSClassFromString(nameOfClass);
-  if (!theClass) {
-    LogError(@"Failed to find class %@ at runtime.", nameOfClass);
-    exit(EXIT_FAILURE);
-  }
-  return theClass;
 }
 
 // Converts the given app path to an application spec, which requires an
@@ -398,7 +489,8 @@ DTiPhoneSimulatorSessionConfig* BuildSessionConfig(
     NSString* stderrPath,
     NSArray* appArgs,
     NSDictionary* appEnv,
-    NSNumber* deviceFamily) {
+    NSNumber* deviceFamily,
+    NSString* deviceName) {
   Class sessionConfigClass = FindClassByName(@"DTiPhoneSimulatorSessionConfig");
   DTiPhoneSimulatorSessionConfig* sessionConfig =
       [[[sessionConfigClass alloc] init] autorelease];
@@ -409,6 +501,7 @@ DTiPhoneSimulatorSessionConfig* BuildSessionConfig(
   sessionConfig.simulatedApplicationStdOutPath = stdoutPath;
   sessionConfig.simulatedApplicationLaunchArgs = appArgs;
   sessionConfig.simulatedApplicationLaunchEnvironment = appEnv;
+  sessionConfig.simulatedDeviceInfoName = deviceName;
   sessionConfig.simulatedDeviceFamily = deviceFamily;
   return sessionConfig;
 }
@@ -473,18 +566,9 @@ BOOL CreateHomeDirSubDirs(NSString* userHomePath) {
 // path, then sets the path in the appropriate environment variable.
 // Returns YES if successful, NO if unable to create or initialize the given
 // directory.
-BOOL InitializeSimulatorUserHome(NSString* userHomePath, NSString* deviceName) {
+BOOL InitializeSimulatorUserHome(NSString* userHomePath) {
   if (!CreateHomeDirSubDirs(userHomePath))
     return NO;
-
-  // Set the device to simulate. Note that the iOS Simulator must not be running
-  // for this setting to take effect.
-  NSMutableDictionary* plistDict =
-      [NSMutableDictionary dictionaryWithObject:deviceName
-                                         forKey:@"SimulateDevice"];
-  NSString* plistPath = @"Library/Preferences/com.apple.iphonesimulator.plist";
-  [plistDict writeToFile:[userHomePath stringByAppendingPathComponent:plistPath]
-              atomically:YES];
 
   // Update the environment to use the specified directory as the user home
   // directory.
@@ -576,7 +660,7 @@ int main(int argc, char* const argv[]) {
         if (range.location == NSNotFound) {
           LogError(@"Invalid key=value argument for -e.");
           PrintUsage();
-          exit(EXIT_FAILURE);
+          exit(kExitInvalidArguments);
         }
         NSString* key = [envLine substringToIndex:range.location];
         NSString* value = [envLine substringFromIndex:(range.location + 1)];
@@ -590,16 +674,16 @@ int main(int argc, char* const argv[]) {
         } else {
           LogError(@"Invalid startup timeout (%s).", optarg);
           PrintUsage();
-          exit(EXIT_FAILURE);
+          exit(kExitInvalidArguments);
         }
       }
         break;
       case 'h':
         PrintUsage();
-        exit(EXIT_SUCCESS);
+        exit(kExitSuccess);
       default:
         PrintUsage();
-        exit(EXIT_FAILURE);
+        exit(kExitInvalidArguments);
     }
   }
 
@@ -616,33 +700,33 @@ int main(int argc, char* const argv[]) {
   } else {
     LogError(@"Unable to parse command line arguments.");
     PrintUsage();
-    exit(EXIT_FAILURE);
+    exit(kExitInvalidArguments);
   }
 
   NSString* developerDir = FindDeveloperDir();
   if (!developerDir) {
     LogError(@"Unable to find developer directory.");
-    exit(EXIT_FAILURE);
+    exit(kExitInitializationFailure);
   }
 
   NSBundle* simulatorFramework = LoadSimulatorFramework(developerDir);
   if (!simulatorFramework) {
     LogError(@"Failed to load the Simulator Framework.");
-    exit(EXIT_FAILURE);
+    exit(kExitInitializationFailure);
   }
 
   // Make sure the app path provided is legit.
   DTiPhoneSimulatorApplicationSpecifier* appSpec = BuildAppSpec(appPath);
   if (!appSpec) {
     LogError(@"Invalid app path: %@", appPath);
-    exit(EXIT_FAILURE);
+    exit(kExitInitializationFailure);
   }
 
   // Make sure the SDK path provided is legit (or nil).
   DTiPhoneSimulatorSystemRoot* systemRoot = BuildSystemRoot(sdkVersion);
   if (!systemRoot) {
     LogError(@"Invalid SDK version: %@", sdkVersion);
-    exit(EXIT_FAILURE);
+    exit(kExitInitializationFailure);
   }
 
   // Get the paths for stdout and stderr so the simulated app's output will show
@@ -659,7 +743,7 @@ int main(int argc, char* const argv[]) {
   } else {
     LogError(@"Invalid device name: %@. Must begin with 'iPhone' or 'iPad'",
              deviceName);
-    exit(EXIT_FAILURE);
+    exit(kExitInvalidArguments);
   }
 
   // Set up the user home directory for the simulator
@@ -670,13 +754,13 @@ int main(int argc, char* const argv[]) {
     if (!simHomePath) {
       LogError(@"Unable to create unique directory for template %@",
                dirNameTemplate);
-      exit(EXIT_FAILURE);
+      exit(kExitInitializationFailure);
     }
   }
-  if (!InitializeSimulatorUserHome(simHomePath, deviceName)) {
+  if (!InitializeSimulatorUserHome(simHomePath)) {
     LogError(@"Unable to initialize home directory for simulator: %@",
              simHomePath);
-    exit(EXIT_FAILURE);
+    exit(kExitInitializationFailure);
   }
 
   // Create the config and simulator session.
@@ -686,10 +770,12 @@ int main(int argc, char* const argv[]) {
                                                               stdioPath,
                                                               appArgs,
                                                               appEnv,
-                                                              deviceFamily);
+                                                              deviceFamily,
+                                                              deviceName);
   SimulatorDelegate* delegate =
       [[[SimulatorDelegate alloc] initWithStdioPath:stdioPath
-                                       developerDir:developerDir] autorelease];
+                                       developerDir:developerDir
+                                      simulatorHome:simHomePath] autorelease];
   DTiPhoneSimulatorSession* session = BuildSession(delegate);
 
   // Start the simulator session.
@@ -712,5 +798,5 @@ int main(int argc, char* const argv[]) {
   // because once the main run loop is started, only the delegate calling
   // exit() will end the program.
   [pool drain];
-  return EXIT_FAILURE;
+  return kExitFailure;
 }

@@ -9,18 +9,24 @@
 #include "content/browser/host_zoom_map_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/loader/resource_request_info_impl.h"
+#include "content/browser/streams/stream_context.h"
+#include "content/browser/webui/url_data_manager_backend.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
-
-// Key names on ResourceContext.
-static const char* kBlobStorageContextKeyName = "content_blob_storage_context";
-static const char* kHostZoomMapKeyName = "content_host_zoom_map";
+#include "net/base/keygen_handler.h"
+#include "net/ssl/client_cert_store.h"
 
 using base::UserDataAdapter;
 
 namespace content {
 
 namespace {
+
+// Key names on ResourceContext.
+const char kBlobStorageContextKeyName[] = "content_blob_storage_context";
+const char kHostZoomMapKeyName[] = "content_host_zoom_map";
+const char kStreamContextKeyName[] = "content_stream_context";
+const char kURLDataManagerBackendKeyName[] = "url_data_manager_backend";
 
 class NonOwningZoomData : public base::SupportsUserData::Data {
  public:
@@ -30,6 +36,11 @@ class NonOwningZoomData : public base::SupportsUserData::Data {
  private:
   HostZoomMap* host_zoom_map_;
 };
+
+// Used by the default implementation of GetMediaDeviceIDSalt, below.
+std::string ReturnEmptySalt() {
+  return std::string();
+}
 
 }  // namespace
 
@@ -45,6 +56,26 @@ ResourceContext::~ResourceContext() {
     rdhi->CancelRequestsForContext(this);
     rdhi->RemoveResourceContext(this);
   }
+
+  // In some tests this object is destructed on UI thread.
+  DetachUserDataThread();
+}
+
+ResourceContext::SaltCallback ResourceContext::GetMediaDeviceIDSalt() {
+  return base::Bind(&ReturnEmptySalt);
+}
+
+scoped_ptr<net::ClientCertStore> ResourceContext::CreateClientCertStore() {
+  return scoped_ptr<net::ClientCertStore>();
+}
+
+void ResourceContext::CreateKeygenHandler(
+    uint32 key_size_in_bits,
+    const std::string& challenge_string,
+    const GURL& url,
+    const base::Callback<void(scoped_ptr<net::KeygenHandler>)>& callback) {
+  callback.Run(make_scoped_ptr(
+      new net::KeygenHandler(key_size_in_bits, challenge_string, url)));
 }
 
 ChromeBlobStorageContext* GetChromeBlobStorageContextForResourceContext(
@@ -54,10 +85,28 @@ ChromeBlobStorageContext* GetChromeBlobStorageContextForResourceContext(
       resource_context, kBlobStorageContextKeyName);
 }
 
+StreamContext* GetStreamContextForResourceContext(
+    ResourceContext* resource_context) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  return UserDataAdapter<StreamContext>::Get(
+      resource_context, kStreamContextKeyName);
+}
+
 HostZoomMap* GetHostZoomMapForResourceContext(ResourceContext* context) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   return static_cast<NonOwningZoomData*>(
       context->GetUserData(kHostZoomMapKeyName))->host_zoom_map();
+}
+
+URLDataManagerBackend* GetURLDataManagerForResourceContext(
+    ResourceContext* context) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  if (!context->GetUserData(kURLDataManagerBackendKeyName)) {
+    context->SetUserData(kURLDataManagerBackendKeyName,
+                         new URLDataManagerBackend());
+  }
+  return static_cast<URLDataManagerBackend*>(
+      context->GetUserData(kURLDataManagerBackendKeyName));
 }
 
 void InitializeResourceContext(BrowserContext* browser_context) {
@@ -69,12 +118,18 @@ void InitializeResourceContext(BrowserContext* browser_context) {
       new UserDataAdapter<ChromeBlobStorageContext>(
           ChromeBlobStorageContext::GetFor(browser_context)));
 
+  resource_context->SetUserData(
+      kStreamContextKeyName,
+      new UserDataAdapter<StreamContext>(
+          StreamContext::GetFor(browser_context)));
+
   // This object is owned by the BrowserContext and not ResourceContext, so
   // store a non-owning pointer here.
   resource_context->SetUserData(
       kHostZoomMapKeyName,
       new NonOwningZoomData(
           HostZoomMap::GetForBrowserContext(browser_context)));
+
   resource_context->DetachUserDataThread();
 }
 

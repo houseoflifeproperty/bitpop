@@ -9,11 +9,16 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "chrome/browser/extensions/image_loading_tracker.h"
-#include "chrome/common/extensions/extension_icon_set.h"
+#include "base/memory/weak_ptr.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/common/extension_icon_set.h"
+#include "ui/base/layout.h"
 #include "ui/gfx/image/image_skia.h"
+
+namespace content {
+class BrowserContext;
+}
 
 namespace extensions {
 class Extension;
@@ -21,6 +26,7 @@ class Extension;
 
 namespace gfx {
 class Size;
+class Image;
 }
 
 namespace extensions {
@@ -42,8 +48,7 @@ namespace extensions {
 // synchronously create (when |GetRepresentation| is called on it)
 // representations for all the scale factors supported by the current platform.
 // Note that |IconImage| is not thread safe.
-class IconImage : public ImageLoadingTracker::Observer,
-                  public content::NotificationObserver {
+class IconImage : public content::NotificationObserver {
  public:
   class Observer {
    public:
@@ -55,7 +60,11 @@ class IconImage : public ImageLoadingTracker::Observer,
     virtual ~Observer() {}
   };
 
-  IconImage(const Extension* extension,
+  // |context| is required by the underlying implementation to retrieve the
+  // |ImageLoader| instance associated with the given context. |ImageLoader| is
+  // used to perform the asynchronous image load work.
+  IconImage(content::BrowserContext* context,
+            const Extension* extension,
             const ExtensionIconSet& icon_set,
             int resource_size_in_dip,
             const gfx::ImageSkia& default_icon,
@@ -67,13 +76,6 @@ class IconImage : public ImageLoadingTracker::Observer,
  private:
   class Source;
 
-  struct LoadRequest {
-    ui::ScaleFactor scale_factor;
-    bool is_async;
-  };
-
-  typedef std::map<int, LoadRequest> LoadMap;
-
   // Loads an image representation for the scale factor.
   // If the representation gets loaded synchronously, it is returned by this
   // method.
@@ -82,16 +84,14 @@ class IconImage : public ImageLoadingTracker::Observer,
   // observer's |OnExtensionIconImageLoaded| will be called.
   gfx::ImageSkiaRep LoadImageForScaleFactor(ui::ScaleFactor scale_factor);
 
-  // ImageLoadingTracker::Observer overrides:
-  virtual void OnImageLoaded(const gfx::Image& image,
-                             const std::string& extension_id,
-                             int index) OVERRIDE;
+  void OnImageLoaded(float scale_factor, const gfx::Image& image);
 
   // content::NotificationObserver overrides:
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
+  content::BrowserContext* browser_context_;
   const Extension* extension_;
   const ExtensionIconSet& icon_set_;
   const int resource_size_in_dip_;
@@ -104,10 +104,9 @@ class IconImage : public ImageLoadingTracker::Observer,
   // its own representation load fails.
   gfx::ImageSkia default_icon_;
 
-  ImageLoadingTracker tracker_;
   content::NotificationRegistrar registrar_;
 
-  LoadMap load_map_;
+  base::WeakPtrFactory<IconImage> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(IconImage);
 };

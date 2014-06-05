@@ -79,13 +79,28 @@ class FakeDeviceManager : public DeviceManagerInterface {
     *devs = vidcap_devices_;
     return true;
   }
+  virtual void SetVideoCaptureDeviceMaxFormat(const std::string& usb_id,
+                                              const VideoFormat& max_format) {
+    max_formats_[usb_id] = max_format;
+  }
+  bool IsMaxFormatForDevice(const std::string& usb_id,
+                            const VideoFormat& max_format) const {
+    std::map<std::string, VideoFormat>::const_iterator found =
+        max_formats_.find(usb_id);
+    return (found != max_formats_.end()) ?
+        max_format == found->second :
+        false;
+  }
+  virtual void ClearVideoCaptureDeviceMaxFormat(const std::string& usb_id) {
+    max_formats_.erase(usb_id);
+  }
   virtual VideoCapturer* CreateVideoCapturer(const Device& device) const {
     return new FakeVideoCapturer();
   }
   virtual bool GetWindows(
       std::vector<talk_base::WindowDescription>* descriptions) {
     descriptions->clear();
-    const int id = 1; // Note that 0 is not a valid ID.
+    const uint32_t id = 1u;  // Note that 0 is not a valid ID.
     const talk_base::WindowId window_id =
         talk_base::WindowId::Cast(id);
     std::string title = "FakeWindow";
@@ -137,21 +152,24 @@ class FakeDeviceManager : public DeviceManagerInterface {
   void SetAudioInputDevices(const std::vector<std::string>& devices) {
     input_devices_.clear();
     for (size_t i = 0; i < devices.size(); ++i) {
-      input_devices_.push_back(Device(devices[i], i));
+      input_devices_.push_back(Device(devices[i],
+                                      static_cast<int>(i)));
     }
     SignalDevicesChange();
   }
   void SetAudioOutputDevices(const std::vector<std::string>& devices) {
     output_devices_.clear();
     for (size_t i = 0; i < devices.size(); ++i) {
-      output_devices_.push_back(Device(devices[i], i));
+      output_devices_.push_back(Device(devices[i],
+                                       static_cast<int>(i)));
     }
     SignalDevicesChange();
   }
   void SetVideoCaptureDevices(const std::vector<std::string>& devices) {
     vidcap_devices_.clear();
     for (size_t i = 0; i < devices.size(); ++i) {
-      vidcap_devices_.push_back(Device(devices[i], i));
+      vidcap_devices_.push_back(Device(devices[i],
+                                       static_cast<int>(i)));
     }
     SignalDevicesChange();
   }
@@ -196,6 +214,7 @@ class FakeDeviceManager : public DeviceManagerInterface {
   std::vector<Device> input_devices_;
   std::vector<Device> output_devices_;
   std::vector<Device> vidcap_devices_;
+  std::map<std::string, VideoFormat> max_formats_;
 };
 
 }  // namespace cricket

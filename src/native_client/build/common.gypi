@@ -31,6 +31,13 @@
     # Set this to true when building with Clang.
     'clang%': 0,
 
+    'conditions': [
+      ['OS=="mac"', {
+        # On Mac only clang is new enough to build the trusted code.
+        'clang%': 1,
+      }],
+    ],
+
     # Set to 1 to enable code coverage.  In addition to build changes
     # (e.g. extra CFLAGS), also creates a new target in the src/chrome
     # project file called "coverage".
@@ -45,15 +52,15 @@
     'msvs_debug_link_incremental%': '2',
 
     # NOTE: adapted from them chrome common.gypi file for arm
-    'armv7%': 0,
+    'arm_version%': 7,
 
-    # Set Neon compilation flags (only meaningful if armv7==1).
+    # Set Neon compilation flags (only meaningful if arm_version==7).
     'arm_neon%': 1,
 
     # Set Thumb compilation flags.
     'arm_thumb%': 0,
 
-    # Set ARM fpu compilation flags (only meaningful if armv7==1 and
+    # Set ARM fpu compilation flags (only meaningful if arm_version==7 and
     # arm_neon==0).
     'arm_fpu%': 'vfpv3',
 
@@ -62,6 +69,8 @@
 
     # Version of the mac sdk to use.
     'mac_sdk%': '10.6',
+
+    'mac_deployment_target%': '10.6',
 
     # NOTE: end adapted from them chrome common.gypi file for arm
 
@@ -84,39 +93,34 @@
         # non-Official builds).
         'buildtype%': 'Dev',
 
-        # To do a shared build on linux we need to be able to choose between
-        # type static_library and shared_library. We default to doing a static
-        # build but you can override this with "gyp -Dlibrary=shared_library"
-        # or you can add the following line (without the #) to
-        # ~/.gyp/include.gypi {'variables': {'library': 'shared_library'}}
-        # to compile as shared by default
-        'library%': 'static_library',
+        'conditions': [
+          # Compute the architecture that we're building for. Default to the
+          # architecture that we're building on.
+          ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+            # This handles the Linux platforms we generally deal with. Anything
+            # else gets passed through, which probably won't work very well;
+            # such hosts should pass an explicit target_arch to gyp.
+            #
+            # NOTE: currently only nacl is generating gyp files on an arm board.
+            #    The arm.* -> arm substitution in chrome's common.gypi isn't
+            #    appropriate in that context as we actually use target_arch==arm
+            #    to me x86 -> arm cross compile. When actually running on an arm
+            #    board, we'll generate ia32 for now, so that the generation
+            #    succeeds.
+            'target_arch%':
+              '<!(uname -m | sed -e "s/i.86/ia32/;s/x86_64/x64/;s/amd64/x64/;s/arm.*/ia32/")'
+          }, {  # OS!="linux"
+            'target_arch%': 'ia32',
+          }],
+        ]
       },
+      # These come from the above variable scope.
       'nacl_standalone%': '<(nacl_standalone)',
-      # Define branding and buildtype on the basis of their settings within the
-      # variables sub-dict above, unless overridden.
+      'target_arch%': '<(target_arch)',
       'branding%': '<(branding)',
       'buildtype%': '<(buildtype)',
-      # Compute the architecture that we're building for. Default to the
-      # architecture that we're building on.
-      'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
-          # This handles the Linux platforms we generally deal with. Anything
-          # else gets passed through, which probably won't work very well; such
-          # hosts should pass an explicit target_arch to gyp.
-          #
-          # NOTE: currently only nacl is generating gyp files on an arm board.
-          #     The arm.* -> arm substitution in chrome's common.gypi isn't
-          #     appropriate in that context as we actually use target_arch==arm
-          #     to me x86 -> arm cross compile. When actually running on an arm
-          #     board, we'll generate ia32 for now, so that the generation
-          #     succeeds.
-          'target_arch%':
-            '<!(uname -m | sed -e "s/i.86/ia32/;s/x86_64/x64/;s/amd64/x64/;s/arm.*/ia32/")'
-        }, {  # OS!="linux"
-          'target_arch%': 'ia32',
-        }],
 
+      'conditions': [
         # The system root for cross-compiles. Default: none.
         # If we are building in chrome we want to rely on chrome's default, which
         # means we can't set a default here.
@@ -125,38 +129,22 @@
         }],
       ],
 
-      'library%': '<(library)',
-
-      # Variable 'component' is for cases where we would like to build some
-      # components as dynamic shared libraries but still need variable
-      # 'library' for static libraries.
-      # By default, component is set to whatever library is set to and
-      # it can be overriden by the GYP command line or by ~/.gyp/include.gypi.
-      'component%': '<(library)',
+      # This variable is to allow us to build components as either static
+      # libraries or dynamic shared libraries.
+      'component%': 'static_library',
     },
     # These come from the above variable scope.
     'target_arch%': '<(target_arch)',
     'sysroot%': '<(sysroot)',
     'nacl_standalone%': '<(nacl_standalone)',
-    'nacl_strict_warnings%': 1,
     'branding%': '<(branding)',
     'buildtype%': '<(buildtype)',
-    'library%': '<(library)',
     'component%': '<(component)',
-    'nacl_validator_ragel%': 0,
+
+    'nacl_strict_warnings%': 1,
+    'nacl_validator_ragel%': 1,
 
     'linux2%': 0,
-      'conditions': [
-        ['OS=="win"', {
-          'python_exe': [
-            'call <(DEPTH)/native_client/tools/win_py.cmd'
-          ],
-        }, {
-          'python_exe': [
-             'python'
-          ],
-        }],
-      ],
   },
 
   'target_defaults': {
@@ -211,6 +199,14 @@
           'NACL_BUILD_ARCH=arm',
           'NACL_BUILD_SUBARCH=32',
           'NACL_TARGET_ARCH=arm',
+          'NACL_TARGET_SUBARCH=32',
+        ],
+      }],
+      ['target_arch=="mipsel"', {
+        'defines': [
+          'NACL_BUILD_ARCH=mips',
+          'NACL_BUILD_SUBARCH=32',
+          'NACL_TARGET_ARCH=mips',
           'NACL_TARGET_SUBARCH=32',
         ],
       }],
@@ -312,64 +308,83 @@
               '-Wstrict-prototypes',
             ],
           }],
-          [ 'target_arch=="arm"', {
-              'cflags': [
+          ['target_arch=="arm"', {
+            'target_conditions': [
+              ['_toolset=="target"', {
+                'cflags': [
                   '-Wno-abi',
                   '-fno-exceptions',
                   '-Wall',
                   '-fPIC',
                   '--sysroot=<(sysroot)',
-              ],
-              'ldflags': [
+                ],
+                'ldflags': [
                   '--sysroot=<(sysroot)',
-              ],
-              # TODO(mcgrathr): This is copied from the arm section of
-              # chromium/src/build/common.gypi, but these details really
-              # should be more fully harmonized and shared.
-              'conditions': [
+                ],
+                # TODO(mcgrathr): This is copied from the arm section of
+                # chromium/src/build/common.gypi, but these details really
+                # should be more fully harmonized and shared.
+                'conditions': [
                   ['arm_thumb==1', {
-                      'cflags': [
-                          '-mthumb',
-                      ]
+                    'cflags': [
+                      '-mthumb',
+                    ]
                   }],
-                  ['armv7==1', {
-                      'cflags': [
-                          '-march=armv7-a',
-                          '-mtune=cortex-a8',
-                          '-mfloat-abi=<(arm_float_abi)',
-                      ],
-                      'conditions': [
-                          ['arm_neon==1', {
-                              'cflags': [ '-mfpu=neon', ],
-                          }, {
-                              'cflags': [ '-mfpu=<(arm_fpu)', ],
-                          }]
-                      ],
+                  ['arm_version==7', {
+                    'cflags': [
+                    '-march=armv7-a',
+                    '-mtune=cortex-a9',
+                    '-mfloat-abi=<(arm_float_abi)',
+                    ],
+                    'conditions': [
+                      ['arm_neon==1', {
+                        'cflags': [ '-mfpu=neon', ],
+                      }, {
+                        'cflags': [ '-mfpu=<(arm_fpu)', ],
+                      }]
+                    ],
                   }],
-              ],
-            }, { # else: target_arch != "arm"
-              'conditions': [
-                ['target_arch=="x64"', {
-                  'variables': {
-                    'mbits_flag': '-m64',
-                  },
-                }, {
-                  'variables': {
-                    'mbits_flag': '-m32',
-                  }
-                },],
-              ],
-              'asflags': [
-                '<(mbits_flag)',
-              ],
-              'cflags': [
-                '<(mbits_flag)',
-                '-fno-exceptions',
-                '-Wall',
-              ],
-              'ldflags': [
-                '<(mbits_flag)',
-              ],
+                ],
+              }],
+            ],
+          }],
+          ['target_arch=="mipsel"', {
+            'target_conditions': [
+              ['_toolset=="target"', {
+                # Copied from chromium build/common.gypi
+                'conditions': [
+                  ['mips_arch_variant=="mips32r2"', {
+                    'cflags': ['-mips32r2'],
+                  }, {
+                    'cflags': ['-mips32'],
+                  }],
+                ],
+              }],
+            ],
+          }],
+          ['target_arch=="ia32" or target_arch=="x64"', {
+            'conditions': [
+              ['target_arch=="x64"', {
+                'variables': {
+                  'mbits_flag': '-m64',
+                },
+              }, {
+                'variables': {
+                  'mbits_flag': '-m32',
+                }
+              },],
+            ],
+            'asflags': [
+              '<(mbits_flag)',
+            ],
+            'cflags': [
+              '<(mbits_flag)',
+              '-fno-exceptions',
+              '-Wall',
+            ],
+            'ldflags': [
+              '<(mbits_flag)',
+            ],
           }],
         ],
         'cflags_cc': [
@@ -397,73 +412,6 @@
             '-lpthread',
           ],
         },
-        'scons_variable_settings': {
-          'LIBPATH': ['$LIB_DIR'],
-          # Linking of large files uses lots of RAM, so serialize links
-          # using the handy flock command from util-linux.
-          'FLOCK_LINK': ['flock', '$TOP_BUILDDIR/linker.lock', '$LINK'],
-          'FLOCK_SHLINK': ['flock', '$TOP_BUILDDIR/linker.lock', '$SHLINK'],
-          'FLOCK_LDMODULE': ['flock', '$TOP_BUILDDIR/linker.lock', '$LDMODULE'],
-
-          # We have several cases where archives depend on each other in
-          # a cyclic fashion.  Since the GNU linker does only a single
-          # pass over the archives we surround the libraries with
-          # --start-group and --end-group (aka -( and -) ). That causes
-          # ld to loop over the group until no more undefined symbols
-          # are found. In an ideal world we would only make groups from
-          # those libraries which we knew to be in cycles. However,
-          # that's tough with SCons, so we bodge it by making all the
-          # archives a group by redefining the linking command here.
-          #
-          # TODO:  investigate whether we still have cycles that
-          # require --{start,end}-group.  There has been a lot of
-          # refactoring since this was first coded, which might have
-          # eliminated the circular dependencies.
-          #
-          # Note:  $_LIBDIRFLAGS comes before ${LINK,SHLINK,LDMODULE}FLAGS
-          # so that we prefer our own built libraries (e.g. -lpng) to
-          # system versions of libraries that pkg-config might turn up.
-          # TODO(sgk): investigate handling this not by re-ordering the
-          # flags this way, but by adding a hook to use the SCons
-          # ParseFlags() option on the output from pkg-config.
-          'LINKCOM': [['$FLOCK_LINK', '-o', '$TARGET', '$_LIBDIRFLAGS',
-                       '$LINKFLAGS', '$SOURCES', '-Wl,--start-group',
-                       '$_LIBFLAGS', '-Wl,--end-group']],
-          'SHLINKCOM': [['$FLOCK_SHLINK', '-o', '$TARGET', '$_LIBDIRFLAGS',
-                         '$SHLINKFLAGS', '$SOURCES', '-Wl,--start-group',
-                         '$_LIBFLAGS', '-Wl,--end-group']],
-          'LDMODULECOM': [['$FLOCK_LDMODULE', '-o', '$TARGET', '$_LIBDIRFLAGS',
-                           '$LDMODULEFLAGS', '$SOURCES', '-Wl,--start-group',
-                           '$_LIBFLAGS', '-Wl,--end-group']],
-          'IMPLICIT_COMMAND_DEPENDENCIES': 0,
-          # -rpath is only used when building with shared libraries.
-          'conditions': [
-            [ 'library=="shared_library"', {
-              'RPATH': '$LIB_DIR',
-            }],
-          ],
-        },
-        'scons_import_variables': [
-          'AS',
-          'CC',
-          'CXX',
-          'LINK',
-        ],
-        'scons_propagate_variables': [
-          'AS',
-          'CC',
-          'CCACHE_DIR',
-          'CXX',
-          'DISTCC_DIR',
-          'DISTCC_HOSTS',
-          'HOME',
-          'INCLUDE_SERVER_ARGS',
-          'INCLUDE_SERVER_PORT',
-          'LINK',
-          'CHROME_BUILD_TYPE',
-          'CHROMIUM_BUILD',
-          'OFFICIAL_BUILD',
-        ],
         'configurations': {
           'Debug': {
             'variables': {
@@ -503,19 +451,6 @@
                 ],
               }],
             ],
-          },
-        },
-        'variants': {
-          'coverage': {
-            'cflags': ['-fprofile-arcs', '-ftest-coverage'],
-            'ldflags': ['-fprofile-arcs'],
-          },
-          'profile': {
-            'cflags': ['-pg', '-g'],
-            'ldflags': ['-pg'],
-          },
-          'symbols': {
-            'cflags': ['-g'],
           },
         },
       },
@@ -580,7 +515,7 @@
             ['nacl_standalone==1', {
               # If part of the Chromium build, use the Chromium default.
               # Otherwise, when building standalone, use this.
-              'MACOSX_DEPLOYMENT_TARGET': '<(mac_sdk)', # -mmacosx-version-min
+              'MACOSX_DEPLOYMENT_TARGET': '<(mac_deployment_target)', # -mmacosx-version-min
               'SDKROOT': 'macosx<(mac_sdk)',            # -isysroot
             }],
           ],
@@ -606,6 +541,9 @@
                 '-fdiagnostics-show-option',
               ],
             },
+          }],
+          ['nacl_standalone==1 and target_arch=="x64"', {
+            'xcode_settings': {'ARCHS': ['x86_64']},
           }],
           ['nacl_standalone==1', {
             'target_conditions': [
@@ -678,13 +616,12 @@
                 'extension': 'S',
                 'inputs': [
                   '<(DEPTH)/native_client/tools/win_as.py',
-                  '$(InputPath)'
                 ],
                 'outputs': [
                   '$(IntDir)/$(InputName).obj',
                 ],
                 'action': [
-                   '<@(python_exe)',
+                   'python',
                    '<(DEPTH)/native_client/tools/win_as.py',
                    # target architecture: Win32 or x64
                    '-a', '$(PlatformName)',
@@ -702,13 +639,16 @@
           }],
         ],
         'defines': [
-          '_WIN32_WINNT=0x0600',
-          'WINVER=0x0600',
+          '_WIN32_WINNT=0x0602',
+          'WINVER=0x0602',
           # WIN32 is used by ppapi
           'WIN32',
           'NOMINMAX',
           '_CRT_RAND_S',
           'CERT_CHAIN_PARA_HAS_EXTRA_FIELDS',
+          # WIN32_LEAN_AND_MEAN tells windows.h to omit obsolete and rarely
+          # used #include files. This allows use of Winsock 2.0 which otherwise
+          # would conflict with Winsock 1.x included by windows.h.
           'WIN32_LEAN_AND_MEAN',
           '_SECURE_ATL',
           '__STDC_LIMIT_MACROS=1',
@@ -729,9 +669,6 @@
               '_HAS_TR1=0',
             ],
           }],
-        ],
-        'msvs_system_include_dirs': [
-          '<(DEPTH)/third_party/platformsdk_win7/files/Include',
         ],
         'msvs_cygwin_dirs': ['../third_party/cygwin'],
         # TODO(bsy) remove 4355 once cross-repo
@@ -757,8 +694,6 @@
           },
           'VCLibrarianTool': {
             'AdditionalOptions': ['/ignore:4221'],
-            'AdditionalLibraryDirectories':
-              ['<(DEPTH)/third_party/platformsdk_win7/files/Lib'],
           },
           'VCLinkerTool': {
             'AdditionalOptions': [
@@ -769,6 +704,7 @@
               '/nxcompat',
             ],
             'AdditionalDependencies': [
+              'advapi32.lib',
               'wininet.lib',
               'version.lib',
               'msimg32.lib',
@@ -777,8 +713,6 @@
               'psapi.lib',
               'dbghelp.lib',
             ],
-            'AdditionalLibraryDirectories':
-              ['<(DEPTH)/third_party/platformsdk_win7/files/Lib'],
             'DelayLoadDLLs': [
               'dbghelp.dll',
               'dwmapi.dll',
@@ -845,9 +779,6 @@
       ],
     }],
   ],
-  'scons_settings': {
-    'sconsbuild_dir': '<(DEPTH)/sconsbuild',
-  },
   'xcode_settings': {
     # The Xcode generator will look for an xcode_settings section at the root
     # of each dict and use it to apply settings on a file-wide basis.  Most

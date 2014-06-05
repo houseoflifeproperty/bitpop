@@ -6,9 +6,8 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/mac/bundle_locations.h"
-#include "base/memory/scoped_nsobject.h"
 #include "base/path_service.h"
 
 namespace ash {
@@ -16,7 +15,7 @@ namespace test {
 
 void OverrideFrameworkBundle() {
   // Look in the AuraShell.app directory for resources.
-  FilePath path;
+  base::FilePath path;
   PathService::Get(base::DIR_EXE, &path);
   path = path.Append(FILE_PATH_LITERAL("AuraShell.app"));
   base::mac::SetOverrideFrameworkBundlePath(path);

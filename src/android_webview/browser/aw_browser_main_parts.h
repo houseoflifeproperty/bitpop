@@ -5,28 +5,32 @@
 #ifndef ANDROID_WEBVIEW_BROWSER_AW_BROWSER_MAIN_PARTS_H_
 #define ANDROID_WEBVIEW_BROWSER_AW_BROWSER_MAIN_PARTS_H_
 
+#include "base/compiler_specific.h"
+#include "base/memory/scoped_ptr.h"
 #include "content/public/browser/browser_main_parts.h"
 
-namespace android_webview {
+namespace base {
+class MessageLoop;
+}
 
-// TODO(joth): Remove this method when when http://crbug.com/161864 is closed.
-bool UseCompositorDirectDraw();
+namespace android_webview {
 
 class AwBrowserContext;
 
 class AwBrowserMainParts : public content::BrowserMainParts {
  public:
-  AwBrowserMainParts(AwBrowserContext* browser_context);
+  explicit AwBrowserMainParts(AwBrowserContext* browser_context);
   virtual ~AwBrowserMainParts();
 
   // Overriding methods from content::BrowserMainParts.
   virtual void PreEarlyInitialization() OVERRIDE;
   virtual int PreCreateThreads() OVERRIDE;
+  virtual void PreMainMessageLoopRun() OVERRIDE;
   virtual bool MainMessageLoopRun(int* result_code) OVERRIDE;
 
  private:
   // Android specific UI MessageLoop.
-  scoped_ptr<MessageLoop> main_message_loop_;
+  scoped_ptr<base::MessageLoop> main_message_loop_;
 
   AwBrowserContext* browser_context_;  // weak
 

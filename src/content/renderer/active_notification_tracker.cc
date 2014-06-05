@@ -5,12 +5,12 @@
 #include "content/renderer/active_notification_tracker.h"
 
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNotification.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNotificationPermissionCallback.h"
+#include "base/message_loop/message_loop.h"
+#include "third_party/WebKit/public/web/WebNotification.h"
+#include "third_party/WebKit/public/web/WebNotificationPermissionCallback.h"
 
-using WebKit::WebNotification;
-using WebKit::WebNotificationPermissionCallback;
+using blink::WebNotification;
+using blink::WebNotificationPermissionCallback;
 
 namespace content {
 
@@ -38,7 +38,7 @@ bool ActiveNotificationTracker::GetNotification(
 }
 
 int ActiveNotificationTracker::RegisterNotification(
-    const WebKit::WebNotification& proxy) {
+    const blink::WebNotification& proxy) {
   if (reverse_notification_table_.find(proxy)
       != reverse_notification_table_.end()) {
     return reverse_notification_table_[proxy];
@@ -55,7 +55,7 @@ void ActiveNotificationTracker::UnregisterNotification(int id) {
   scoped_ptr<WebNotification> notification(notification_table_.Lookup(id));
   notification_table_.Remove(id);
   DCHECK(notification.get());
-  if (notification.get())
+  if (notification)
     reverse_notification_table_.erase(*notification);
 }
 
@@ -63,16 +63,6 @@ void ActiveNotificationTracker::Clear() {
   while (!reverse_notification_table_.empty()) {
     ReverseTable::iterator iter = reverse_notification_table_.begin();
     UnregisterNotification((*iter).second);
-  }
-}
-
-void ActiveNotificationTracker::DetachAll() {
-  ReverseTable::iterator iter;
-  for (iter = reverse_notification_table_.begin();
-       iter != reverse_notification_table_.end();
-       ++iter) {
-    WebNotification notification(iter->first);
-    notification.detachPresenter();
   }
 }
 

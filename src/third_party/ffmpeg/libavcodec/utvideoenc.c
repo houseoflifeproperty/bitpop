@@ -24,6 +24,7 @@
  * Ut Video encoder
  */
 
+#include "libavutil/imgutils.h"
 #include "libavutil/intreadwrite.h"
 #include "avcodec.h"
 #include "internal.h"
@@ -65,17 +66,17 @@ static av_cold int utvideo_encode_init(AVCodecContext *avctx)
     c->slice_stride    = FFALIGN(avctx->width, 32);
 
     switch (avctx->pix_fmt) {
-    case PIX_FMT_RGB24:
+    case AV_PIX_FMT_RGB24:
         c->planes        = 3;
         avctx->codec_tag = MKTAG('U', 'L', 'R', 'G');
         original_format  = UTVIDEO_RGB;
         break;
-    case PIX_FMT_RGBA:
+    case AV_PIX_FMT_RGBA:
         c->planes        = 4;
         avctx->codec_tag = MKTAG('U', 'L', 'R', 'A');
         original_format  = UTVIDEO_RGBA;
         break;
-    case PIX_FMT_YUV420P:
+    case AV_PIX_FMT_YUV420P:
         if (avctx->width & 1 || avctx->height & 1) {
             av_log(avctx, AV_LOG_ERROR,
                    "4:2:0 video requires even width and height.\n");
@@ -85,7 +86,7 @@ static av_cold int utvideo_encode_init(AVCodecContext *avctx)
         avctx->codec_tag = MKTAG('U', 'L', 'Y', '0');
         original_format  = UTVIDEO_420;
         break;
-    case PIX_FMT_YUV422P:
+    case AV_PIX_FMT_YUV422P:
         if (avctx->width & 1) {
             av_log(avctx, AV_LOG_ERROR,
                    "4:2:2 video requires even width.\n");
@@ -125,7 +126,7 @@ static av_cold int utvideo_encode_init(AVCodecContext *avctx)
         return AVERROR_OPTION_NOT_FOUND;
     }
 
-    avctx->coded_frame = avcodec_alloc_frame();
+    avctx->coded_frame = av_frame_alloc();
 
     if (!avctx->coded_frame) {
         av_log(avctx, AV_LOG_ERROR, "Could not allocate frame.\n");
@@ -226,20 +227,6 @@ static void mangle_rgb_planes(uint8_t *dst[4], int dst_stride, uint8_t *src,
             }
         }
         k += dst_stride - width;
-        src += stride;
-    }
-}
-
-/* Write data to a plane, no prediction applied */
-static void write_plane(uint8_t *src, uint8_t *dst, int stride,
-                        int width, int height)
-{
-    int i, j;
-
-    for (j = 0; j < height; j++) {
-        for (i = 0; i < width; i++)
-            *dst++ = src[i];
-
         src += stride;
     }
 }
@@ -383,8 +370,9 @@ static int encode_plane(AVCodecContext *avctx, uint8_t *src,
         for (i = 0; i < c->slices; i++) {
             sstart = send;
             send   = height * (i + 1) / c->slices;
-            write_plane(src + sstart * stride, dst + sstart * width,
-                        stride, width, send - sstart);
+            av_image_copy_plane(dst + sstart * width, width,
+                                src + sstart * stride, stride,
+                                width, send - sstart);
         }
         break;
     case PRED_LEFT:
@@ -417,7 +405,7 @@ static int encode_plane(AVCodecContext *avctx, uint8_t *src,
         /* If non-zero count is found, see if it matches width * height */
         if (counts[symbol]) {
             /* Special case if only one symbol was used */
-            if (counts[symbol] == width * height) {
+            if (counts[symbol] == width * (int64_t)height) {
                 /*
                  * Write a zero for the single symbol
                  * used in the plane, else 0xFF.
@@ -525,8 +513,7 @@ static int utvideo_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
     bytestream2_init_writer(&pb, dst, pkt->size);
 
-    av_fast_malloc(&c->slice_bits, &c->slice_bits_size,
-                   width * height + FF_INPUT_BUFFER_PADDING_SIZE);
+    av_fast_padded_malloc(&c->slice_bits, &c->slice_bits_size, width * height);
 
     if (!c->slice_bits) {
         av_log(avctx, AV_LOG_ERROR, "Cannot allocate temporary buffer 2.\n");
@@ -534,14 +521,14 @@ static int utvideo_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     }
 
     /* In case of RGB, mangle the planes to Ut Video's format */
-    if (avctx->pix_fmt == PIX_FMT_RGBA || avctx->pix_fmt == PIX_FMT_RGB24)
+    if (avctx->pix_fmt == AV_PIX_FMT_RGBA || avctx->pix_fmt == AV_PIX_FMT_RGB24)
         mangle_rgb_planes(c->slice_buffer, c->slice_stride, pic->data[0],
                           c->planes, pic->linesize[0], width, height);
 
     /* Deal with the planes */
     switch (avctx->pix_fmt) {
-    case PIX_FMT_RGB24:
-    case PIX_FMT_RGBA:
+    case AV_PIX_FMT_RGB24:
+    case AV_PIX_FMT_RGBA:
         for (i = 0; i < c->planes; i++) {
             ret = encode_plane(avctx, c->slice_buffer[i] + 2 * c->slice_stride,
                                c->slice_buffer[i], c->slice_stride,
@@ -553,7 +540,7 @@ static int utvideo_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
             }
         }
         break;
-    case PIX_FMT_YUV422P:
+    case AV_PIX_FMT_YUV422P:
         for (i = 0; i < c->planes; i++) {
             ret = encode_plane(avctx, pic->data[i], c->slice_buffer[0],
                                pic->linesize[i], width >> !!i, height, &pb);
@@ -564,7 +551,7 @@ static int utvideo_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
             }
         }
         break;
-    case PIX_FMT_YUV420P:
+    case AV_PIX_FMT_YUV420P:
         for (i = 0; i < c->planes; i++) {
             ret = encode_plane(avctx, pic->data[i], c->slice_buffer[0],
                                pic->linesize[i], width >> !!i, height >> !!i,
@@ -594,7 +581,6 @@ static int utvideo_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
      * At least currently Ut Video is IDR only.
      * Set flags accordingly.
      */
-    avctx->coded_frame->reference = 0;
     avctx->coded_frame->key_frame = 1;
     avctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
 
@@ -609,15 +595,15 @@ static int utvideo_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
 AVCodec ff_utvideo_encoder = {
     .name           = "utvideo",
+    .long_name      = NULL_IF_CONFIG_SMALL("Ut Video"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_UTVIDEO,
     .priv_data_size = sizeof(UtvideoContext),
     .init           = utvideo_encode_init,
     .encode2        = utvideo_encode_frame,
     .close          = utvideo_encode_close,
-    .pix_fmts       = (const enum PixelFormat[]) {
-                          PIX_FMT_RGB24, PIX_FMT_RGBA, PIX_FMT_YUV422P,
-                          PIX_FMT_YUV420P, PIX_FMT_NONE
+    .pix_fmts       = (const enum AVPixelFormat[]) {
+                          AV_PIX_FMT_RGB24, AV_PIX_FMT_RGBA, AV_PIX_FMT_YUV422P,
+                          AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE
                       },
-    .long_name      = NULL_IF_CONFIG_SMALL("Ut Video"),
 };

@@ -23,16 +23,13 @@ struct TextRun {
   TextRun();
   ~TextRun();
 
-  ui::Range range;
+  Range range;
   Font font;
-  // TODO(msw): Disambiguate color, strike, etc. from TextRuns.
-  //            Otherwise, this breaks the glyph shaping process.
-  //            See the example at: http://www.catch22.net/tuts/neatpad/12.
-  SkColor foreground;
   // A gfx::Font::FontStyle flag to specify bold and italic styles.
   // Supersedes |font.GetFontStyle()|. Stored separately to avoid calling
   // |font.DeriveFont()|, which is expensive on Windows.
   int font_style;
+
   bool strike;
   bool diagonal_strike;
   bool underline;
@@ -43,13 +40,13 @@ struct TextRun {
 
   SCRIPT_ANALYSIS script_analysis;
 
-  scoped_array<WORD> glyphs;
-  scoped_array<WORD> logical_clusters;
-  scoped_array<SCRIPT_VISATTR> visible_attributes;
+  scoped_ptr<WORD[]> glyphs;
+  scoped_ptr<WORD[]> logical_clusters;
+  scoped_ptr<SCRIPT_VISATTR[]> visible_attributes;
   int glyph_count;
 
-  scoped_array<int> advance_widths;
-  scoped_array<GOFFSET> offsets;
+  scoped_ptr<int[]> advance_widths;
+  scoped_ptr<GOFFSET[]> offsets;
   ABC abc_widths;
   SCRIPT_CACHE script_cache;
 
@@ -67,31 +64,33 @@ class RenderTextWin : public RenderText {
 
   // Overridden from RenderText:
   virtual Size GetStringSize() OVERRIDE;
-  virtual int GetBaseline() OVERRIDE;
   virtual SelectionModel FindCursorPosition(const Point& point) OVERRIDE;
   virtual std::vector<FontSpan> GetFontSpansForTesting() OVERRIDE;
 
  protected:
   // Overridden from RenderText:
+  virtual int GetLayoutTextBaseline() OVERRIDE;
   virtual SelectionModel AdjacentCharSelectionModel(
       const SelectionModel& selection,
       VisualCursorDirection direction) OVERRIDE;
   virtual SelectionModel AdjacentWordSelectionModel(
       const SelectionModel& selection,
       VisualCursorDirection direction) OVERRIDE;
-  virtual void SetSelectionModel(const SelectionModel& model) OVERRIDE;
-  virtual void GetGlyphBounds(size_t index,
-                              ui::Range* xspan,
-                              int* height) OVERRIDE;
-  virtual std::vector<Rect> GetSubstringBounds(const ui::Range& range) OVERRIDE;
+  virtual Range GetGlyphBounds(size_t index) OVERRIDE;
+  virtual std::vector<Rect> GetSubstringBounds(const Range& range) OVERRIDE;
   virtual size_t TextIndexToLayoutIndex(size_t index) const OVERRIDE;
   virtual size_t LayoutIndexToTextIndex(size_t index) const OVERRIDE;
-  virtual bool IsCursorablePosition(size_t position) OVERRIDE;
+  virtual bool IsValidCursorIndex(size_t index) OVERRIDE;
   virtual void ResetLayout() OVERRIDE;
   virtual void EnsureLayout() OVERRIDE;
   virtual void DrawVisualText(Canvas* canvas) OVERRIDE;
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Win_BreakRunsByUnicodeBlocks);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Win_LogicalClusters);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_MinWidth);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_NormalWidth);
+
   void ItemizeLogicalText();
   void LayoutVisualText();
   void LayoutTextRun(internal::TextRun* run);
@@ -106,7 +105,7 @@ class RenderTextWin : public RenderText {
   // Return the run index that contains the argument; or the length of the
   // |runs_| vector if argument exceeds the text length or width.
   size_t GetRunContainingCaret(const SelectionModel& caret) const;
-  size_t GetRunContainingPoint(const Point& point) const;
+  size_t GetRunContainingXCoord(int x) const;
 
   // Given a |run|, returns the SelectionModel that contains the logical first
   // or last caret position inside (not at a boundary of) the run.
@@ -125,14 +124,15 @@ class RenderTextWin : public RenderText {
   SCRIPT_STATE script_state_;
 
   ScopedVector<internal::TextRun> runs_;
-  Size string_size_;
 
-  // A common vertical baseline for all the text runs. This is computed as the
-  // largest baseline over all the runs' fonts.
-  int common_baseline_;
+  // Single line width of the layout text.
+  int string_width_;
 
-  scoped_array<int> visual_to_logical_;
-  scoped_array<int> logical_to_visual_;
+  // Wrapped multiline size of the layout text.
+  Size multiline_string_size_;
+
+  scoped_ptr<int[]> visual_to_logical_;
+  scoped_ptr<int[]> logical_to_visual_;
 
   bool needs_layout_;
 

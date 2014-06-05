@@ -7,19 +7,21 @@
 #include <map>
 
 #include "base/compiler_specific.h"
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_sync_channel.h"
-#include "base/debug/trace_event.h"
+#include "ipc/ipc_sync_message_filter.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/ppp_instance.h"
-#include "ppapi/proxy/flash_resource.h"
 #include "ppapi/proxy/flash_clipboard_resource.h"
 #include "ppapi/proxy/flash_file_resource.h"
+#include "ppapi/proxy/flash_resource.h"
 #include "ppapi/proxy/gamepad_resource.h"
 #include "ppapi/proxy/interface_list.h"
 #include "ppapi/proxy/interface_proxy.h"
+#include "ppapi/proxy/plugin_globals.h"
 #include "ppapi/proxy/plugin_message_filter.h"
 #include "ppapi/proxy/plugin_resource_tracker.h"
 #include "ppapi/proxy/plugin_var_serialization_rules.h"
@@ -27,13 +29,12 @@
 #include "ppapi/proxy/ppb_instance_proxy.h"
 #include "ppapi/proxy/ppp_class_proxy.h"
 #include "ppapi/proxy/resource_creation_proxy.h"
-#include "ppapi/proxy/resource_message_params.h"
+#include "ppapi/proxy/resource_reply_thread_registrar.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
 #include "ppapi/shared_impl/proxy_lock.h"
 #include "ppapi/shared_impl/resource.h"
 
 #if defined(OS_POSIX) && !defined(OS_NACL)
-#include "base/posix/eintr_wrapper.h"
 #include "ipc/ipc_channel_posix.h"
 #endif
 
@@ -57,7 +58,7 @@ InstanceData::InstanceData()
 
 InstanceData::~InstanceData() {
   // Run any pending mouse lock callback to prevent leaks.
-  if (mouse_lock_callback)
+  if (mouse_lock_callback.get())
     mouse_lock_callback->Abort();
 }
 
@@ -77,6 +78,8 @@ PluginDispatcher::PluginDispatcher(PP_GetInterface_Func get_interface,
 }
 
 PluginDispatcher::~PluginDispatcher() {
+  PluginGlobals::Get()->plugin_var_tracker()->DidDeleteDispatcher(this);
+
   if (plugin_delegate_)
     plugin_delegate_->Unregister(plugin_dispatcher_id_);
 
@@ -164,15 +167,29 @@ bool PluginDispatcher::InitPluginWithChannel(
   plugin_delegate_ = delegate;
   plugin_dispatcher_id_ = plugin_delegate_->Register(this);
 
+  sync_filter_ = new IPC::SyncMessageFilter(delegate->GetShutdownEvent());
+  channel()->AddFilter(sync_filter_.get());
+
   // The message filter will intercept and process certain messages directly
   // on the I/O thread.
   channel()->AddFilter(
-      new PluginMessageFilter(delegate->GetGloballySeenInstanceIDSet()));
+      new PluginMessageFilter(
+          delegate->GetGloballySeenInstanceIDSet(),
+          PluginGlobals::Get()->resource_reply_thread_registrar()));
   return true;
 }
 
 bool PluginDispatcher::IsPlugin() const {
   return true;
+}
+
+bool PluginDispatcher::SendMessage(IPC::Message* msg) {
+  // Currently we need to choose between two different mechanisms for sending.
+  // On the main thread we use the regular dispatch Send() method, on another
+  // thread we use SyncMessageFilter.
+  if (PpapiGlobals::Get()->GetMainThreadMessageLoop()->BelongsToCurrentThread())
+    return Dispatcher::Send(msg);
+  return sync_filter_->Send(msg);
 }
 
 bool PluginDispatcher::Send(IPC::Message* msg) {
@@ -194,13 +211,9 @@ bool PluginDispatcher::Send(IPC::Message* msg) {
   if (msg->is_sync()) {
     // Synchronous messages might be re-entrant, so we need to drop the lock.
     ProxyAutoUnlock unlock;
-
-    // TODO(yzshen): Make sending message thread-safe. It may be accessed from
-    // non-main threads. Moreover, since the proxy lock has been released, it
-    // may be accessed by multiple threads at the same time.
-    return Dispatcher::Send(msg);
+    return SendMessage(msg);
   }
-  return Dispatcher::Send(msg);
+  return SendMessage(msg);
 }
 
 bool PluginDispatcher::OnMessageReceived(const IPC::Message& msg) {
@@ -215,7 +228,6 @@ bool PluginDispatcher::OnMessageReceived(const IPC::Message& msg) {
     // Handle some plugin-specific control messages.
     bool handled = true;
     IPC_BEGIN_MESSAGE_MAP(PluginDispatcher, msg)
-      IPC_MESSAGE_HANDLER(PpapiPluginMsg_ResourceReply, OnMsgResourceReply)
       IPC_MESSAGE_HANDLER(PpapiMsg_SupportsInterface, OnMsgSupportsInterface)
       IPC_MESSAGE_HANDLER(PpapiMsg_SetPreferences, OnMsgSetPreferences)
       IPC_MESSAGE_UNHANDLED(handled = false);
@@ -276,16 +288,6 @@ thunk::ResourceCreationAPI* PluginDispatcher::GetResourceCreationAPI() {
       GetInterfaceProxy(API_ID_RESOURCE_CREATION));
 }
 
-// static
-void PluginDispatcher::DispatchResourceReply(
-    const ppapi::proxy::ResourceMessageReplyParams& reply_params,
-    const IPC::Message& nested_msg) {
-  // We need to grab the proxy lock to ensure that we don't collide with the
-  // plugin making pepper calls on a different thread.
-  ProxyAutoLock lock;
-  LockedDispatchResourceReply(reply_params, nested_msg);
-}
-
 void PluginDispatcher::ForceFreeAllInstances() {
   if (!g_instance_to_dispatcher)
     return;
@@ -302,12 +304,6 @@ void PluginDispatcher::ForceFreeAllInstances() {
       OnMessageReceived(msg);
     }
   }
-}
-
-void PluginDispatcher::OnMsgResourceReply(
-    const ppapi::proxy::ResourceMessageReplyParams& reply_params,
-    const IPC::Message& nested_msg) {
-  LockedDispatchResourceReply(reply_params, nested_msg);
 }
 
 void PluginDispatcher::OnMsgSupportsInterface(
@@ -336,21 +332,6 @@ void PluginDispatcher::OnMsgSetPreferences(const Preferences& prefs) {
     received_preferences_ = true;
     preferences_ = prefs;
   }
-}
-
-// static
-void PluginDispatcher::LockedDispatchResourceReply(
-    const ppapi::proxy::ResourceMessageReplyParams& reply_params,
-    const IPC::Message& nested_msg) {
-  Resource* resource = PpapiGlobals::Get()->GetResourceTracker()->GetResource(
-      reply_params.pp_resource());
-  if (!resource) {
-    DLOG_IF(INFO, reply_params.sequence() != 0)
-        << "Pepper resource reply message received but the resource doesn't "
-           "exist (probably has been destroyed).";
-    return;
-  }
-  resource->OnReplyReceived(reply_params, nested_msg);
 }
 
 }  // namespace proxy

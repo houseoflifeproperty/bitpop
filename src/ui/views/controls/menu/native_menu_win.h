@@ -12,7 +12,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "ui/views/controls/menu/menu_wrapper.h"
 #include "ui/views/views_export.h"
 
@@ -35,9 +35,9 @@ class VIEWS_EXPORT NativeMenuWin : public MenuWrapper {
   // Overridden from MenuWrapper:
   virtual void RunMenuAt(const gfx::Point& point, int alignment) OVERRIDE;
   virtual void CancelMenu() OVERRIDE;
-  virtual void Rebuild() OVERRIDE;
+  virtual void Rebuild(MenuInsertionDelegateWin* delegate) OVERRIDE;
   virtual void UpdateStates() OVERRIDE;
-  virtual gfx::NativeMenu GetNativeMenu() const OVERRIDE;
+  virtual HMENU GetNativeMenu() const OVERRIDE;
   virtual MenuAction GetMenuAction() const OVERRIDE;
   virtual void AddMenuListener(MenuListener* listener) OVERRIDE;
   virtual void RemoveMenuListener(MenuListener* listener) OVERRIDE;
@@ -74,7 +74,7 @@ class VIEWS_EXPORT NativeMenuWin : public MenuWrapper {
   // Sets the label of the item at the specified index.
   void SetMenuItemLabel(int menu_index,
                         int model_index,
-                        const string16& label);
+                        const base::string16& label);
 
   // Updates the local data structure with the correctly formatted version of
   // |label| at the specified model_index, and adds string data to |mii| if
@@ -82,7 +82,7 @@ class VIEWS_EXPORT NativeMenuWin : public MenuWrapper {
   // of the peculiarities of the Windows menu API.
   void UpdateMenuItemInfoForString(MENUITEMINFO* mii,
                                    int model_index,
-                                   const string16& label);
+                                   const base::string16& label);
 
   // Returns the alignment flags to be passed to TrackPopupMenuEx, based on the
   // supplied alignment and the UI text direction.

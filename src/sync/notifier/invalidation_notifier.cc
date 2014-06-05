@@ -6,7 +6,7 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
 #include "google/cacheinvalidation/include/invalidation-client-factory.h"
 #include "jingle/notifier/listener/push_client.h"
@@ -18,17 +18,19 @@
 namespace syncer {
 
 InvalidationNotifier::InvalidationNotifier(
-    scoped_ptr<notifier::PushClient> push_client,
-    const InvalidationStateMap& initial_invalidation_state_map,
+    scoped_ptr<SyncNetworkChannel> network_channel,
+    const std::string& invalidator_client_id,
+    const UnackedInvalidationsMap& saved_invalidations,
     const std::string& invalidation_bootstrap_data,
     const WeakHandle<InvalidationStateTracker>& invalidation_state_tracker,
     const std::string& client_info)
     : state_(STOPPED),
-      initial_invalidation_state_map_(initial_invalidation_state_map),
+      saved_invalidations_(saved_invalidations),
       invalidation_state_tracker_(invalidation_state_tracker),
       client_info_(client_info),
+      invalidator_client_id_(invalidator_client_id),
       invalidation_bootstrap_data_(invalidation_bootstrap_data),
-      invalidation_listener_(push_client.Pass()) {
+      invalidation_listener_(network_channel.Pass()) {
 }
 
 InvalidationNotifier::~InvalidationNotifier() {
@@ -57,59 +59,30 @@ InvalidatorState InvalidationNotifier::GetInvalidatorState() const {
   return registrar_.GetInvalidatorState();
 }
 
-void InvalidationNotifier::SetUniqueId(const std::string& unique_id) {
-  DCHECK(CalledOnValidThread());
-  client_id_ = unique_id;
-  DVLOG(1) << "Setting unique ID to " << unique_id;
-  CHECK(!client_id_.empty());
-}
-
-void InvalidationNotifier::SetStateDeprecated(const std::string& state) {
-  DCHECK(CalledOnValidThread());
-  DCHECK_LT(state_, STARTED);
-  if (invalidation_bootstrap_data_.empty()) {
-    // Migrate state from sync to invalidation state tracker (bug
-    // 124140).  We've just been handed state from the syncable::Directory, and
-    // the initial invalidation state was empty, implying we've never written
-    // to the new store. Do this here to ensure we always migrate (even if
-    // we fail to establish an initial connection or receive an initial
-    // invalidation) so that we can make the old code obsolete as soon as
-    // possible.
-    invalidation_bootstrap_data_ = state;
-    invalidation_state_tracker_.Call(
-        FROM_HERE, &InvalidationStateTracker::SetBootstrapData, state);
-    UMA_HISTOGRAM_BOOLEAN("InvalidationNotifier.UsefulSetState", true);
-  } else {
-    UMA_HISTOGRAM_BOOLEAN("InvalidationNotifier.UsefulSetState", false);
-  }
-}
-
 void InvalidationNotifier::UpdateCredentials(
     const std::string& email, const std::string& token) {
   if (state_ == STOPPED) {
     invalidation_listener_.Start(
         base::Bind(&invalidation::CreateInvalidationClient),
-        client_id_, client_info_, invalidation_bootstrap_data_,
-        initial_invalidation_state_map_,
+        invalidator_client_id_, client_info_, invalidation_bootstrap_data_,
+        saved_invalidations_,
         invalidation_state_tracker_,
         this);
-    invalidation_bootstrap_data_.clear();
     state_ = STARTED;
   }
   invalidation_listener_.UpdateCredentials(email, token);
 }
 
-void InvalidationNotifier::SendInvalidation(
-    const ObjectIdInvalidationMap& invalidation_map) {
+void InvalidationNotifier::RequestDetailedStatus(
+    base::Callback<void(const base::DictionaryValue&)> callback) const {
   DCHECK(CalledOnValidThread());
-  // Do nothing.
+  invalidation_listener_.RequestDetailedStatus(callback);
 }
 
 void InvalidationNotifier::OnInvalidate(
     const ObjectIdInvalidationMap& invalidation_map) {
   DCHECK(CalledOnValidThread());
-  registrar_.DispatchInvalidationsToHandlers(invalidation_map,
-                                             REMOTE_INVALIDATION);
+  registrar_.DispatchInvalidationsToHandlers(invalidation_map);
 }
 
 void InvalidationNotifier::OnInvalidatorStateChange(InvalidatorState state) {

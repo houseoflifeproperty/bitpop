@@ -41,10 +41,10 @@ class AudioRendererMixerInputTest : public testing::Test {
   }
 
   AudioRendererMixer* GetMixer(const AudioParameters& params) {
-    if (!mixer_.get()) {
+    if (!mixer_) {
       scoped_refptr<MockAudioRendererSink> sink = new MockAudioRendererSink();
-      EXPECT_CALL(*sink, Start());
-      EXPECT_CALL(*sink, Stop());
+      EXPECT_CALL(*sink.get(), Start());
+      EXPECT_CALL(*sink.get(), Stop());
 
       mixer_.reset(new AudioRendererMixer(
           audio_parameters_, audio_parameters_, sink));
@@ -54,10 +54,6 @@ class AudioRendererMixerInputTest : public testing::Test {
 
   double ProvideInput() {
     return mixer_input_->ProvideInput(audio_bus_.get(), base::TimeDelta());
-  }
-
-  int GetAudioDelayMilliseconds() {
-    return mixer_input_->current_audio_delay_milliseconds_;
   }
 
   MOCK_METHOD1(RemoveMixer, void(const AudioParameters&));
@@ -97,7 +93,7 @@ TEST_F(AudioRendererMixerInputTest, StartPlayPauseStopPlaying) {
   mixer_input_->Start();
   mixer_input_->Play();
   EXPECT_DOUBLE_EQ(ProvideInput(), 1);
-  mixer_input_->Pause(false);
+  mixer_input_->Pause();
   mixer_input_->Play();
   EXPECT_DOUBLE_EQ(ProvideInput(), 1);
   mixer_input_->Stop();

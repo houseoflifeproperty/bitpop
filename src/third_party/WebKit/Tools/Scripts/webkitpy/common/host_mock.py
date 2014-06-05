@@ -26,13 +26,10 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from webkitpy.common.checkout.checkout_mock import MockCheckout
 from webkitpy.common.checkout.scm.scm_mock import MockSCM
-from webkitpy.common.net.bugzilla.bugzilla_mock import MockBugzilla
 from webkitpy.common.net.buildbot.buildbot_mock import MockBuildBot
 from webkitpy.common.net.web_mock import MockWeb
 from webkitpy.common.system.systemhost_mock import MockSystemHost
-from webkitpy.common.watchlist.watchlist_mock import MockWatchList
 
 # New-style ports need to move down into webkitpy.common.
 from webkitpy.layout_tests.port.factory import PortFactory
@@ -40,18 +37,16 @@ from webkitpy.layout_tests.port.test import add_unit_tests_to_mock_filesystem
 
 
 class MockHost(MockSystemHost):
-    def __init__(self, log_executive=False, executive_throws_when_run=None, initialize_scm_by_default=True):
+    def __init__(self, log_executive=False, executive_throws_when_run=None, initialize_scm_by_default=True, web=None, scm=None):
         MockSystemHost.__init__(self, log_executive, executive_throws_when_run)
         add_unit_tests_to_mock_filesystem(self.filesystem)
-        self.web = MockWeb()
+        self.web = web or MockWeb()
 
-        self._checkout = MockCheckout()
-        self._scm = None
+        self._scm = scm
         # FIXME: we should never initialize the SCM by default, since the real
         # object doesn't either. This has caused at least one bug (see bug 89498).
         if initialize_scm_by_default:
             self.initialize_scm()
-        self.bugs = MockBugzilla()
         self.buildbot = MockBuildBot()
         self._chromium_buildbot = MockBuildBot()
 
@@ -59,10 +54,9 @@ class MockHost(MockSystemHost):
         # on the list of known ports should override this with a MockPortFactory.
         self.port_factory = PortFactory(self)
 
-        self._watch_list = MockWatchList()
-
     def initialize_scm(self, patch_directories=None):
-        self._scm = MockSCM(filesystem=self.filesystem, executive=self.executive)
+        if not self._scm:
+            self._scm = MockSCM(filesystem=self.filesystem, executive=self.executive)
         # Various pieces of code (wrongly) call filesystem.chdir(checkout_root).
         # Making the checkout_root exist in the mock filesystem makes that chdir not raise.
         self.filesystem.maybe_make_directory(self._scm.checkout_root)
@@ -75,7 +69,3 @@ class MockHost(MockSystemHost):
 
     def chromium_buildbot(self):
         return self._chromium_buildbot
-
-    def watch_list(self):
-        return self._watch_list
-

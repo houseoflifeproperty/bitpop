@@ -4,18 +4,19 @@
 
 #include "chrome/browser/ui/views/edit_search_engine_dialog.h"
 
+#include "base/i18n/case_conversion.h"
 #include "base/i18n/rtl.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/ui/search_engines/edit_search_engine_controller.h"
-#include "googleurl/src/gurl.h"
+#include "chrome/browser/ui/views/constrained_window_views.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
-#include "ui/base/events/event.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/events/event.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/textfield/textfield.h"
@@ -23,6 +24,7 @@
 #include "ui/views/layout/layout_constants.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_client_view.h"
+#include "url/gurl.h"
 
 using views::GridLayout;
 using views::Textfield;
@@ -60,7 +62,7 @@ void EditSearchEngineDialog::Show(gfx::NativeWindow parent,
       new EditSearchEngineDialog(template_url, delegate, profile);
   // Window interprets an empty rectangle as needing to query the content for
   // the size as well as centering relative to the parent.
-  views::Widget::CreateWindowWithParent(contents, parent);
+  CreateBrowserModalDialogViews(contents, parent);
   contents->GetWidget()->Show();
   contents->GetDialogClientView()->UpdateDialogButtons();
   contents->title_tf_->SelectAll(true);
@@ -71,7 +73,7 @@ ui::ModalType EditSearchEngineDialog::GetModalType() const {
   return ui::MODAL_TYPE_WINDOW;
 }
 
-string16 EditSearchEngineDialog::GetWindowTitle() const {
+base::string16 EditSearchEngineDialog::GetWindowTitle() const {
   return l10n_util::GetStringUTF16(controller_->template_url() ?
       IDS_SEARCH_ENGINES_EDITOR_EDIT_WINDOW_TITLE :
       IDS_SEARCH_ENGINES_EDITOR_NEW_WINDOW_TITLE);
@@ -82,7 +84,7 @@ bool EditSearchEngineDialog::IsDialogButtonEnabled(
   if (button == ui::DIALOG_BUTTON_OK) {
     return (controller_->IsKeywordValid(keyword_tf_->text()) &&
             controller_->IsTitleValid(title_tf_->text()) &&
-            controller_->IsURLValid(UTF16ToUTF8(url_tf_->text())));
+            controller_->IsURLValid(base::UTF16ToUTF8(url_tf_->text())));
   }
   return true;
 }
@@ -94,16 +96,21 @@ bool EditSearchEngineDialog::Cancel() {
 
 bool EditSearchEngineDialog::Accept() {
   controller_->AcceptAddOrEdit(title_tf_->text(), keyword_tf_->text(),
-                               UTF16ToUTF8(url_tf_->text()));
+                               base::UTF16ToUTF8(url_tf_->text()));
   return true;
 }
 
-views::View* EditSearchEngineDialog::GetContentsView() {
-  return this;
-}
+void EditSearchEngineDialog::ContentsChanged(
+    Textfield* sender,
+    const base::string16& new_contents) {
+  // Force the keyword text to be lowercase, keep the caret or selection.
+  if (sender == keyword_tf_ && !sender->HasCompositionText()) {
+    // TODO(msw): Prevent textfield scrolling with selection model changes here.
+    const gfx::SelectionModel selection_model = sender->GetSelectionModel();
+    sender->SetText(base::i18n::ToLower(new_contents));
+    sender->SelectSelectionModel(selection_model);
+  }
 
-void EditSearchEngineDialog::ContentsChanged(Textfield* sender,
-                                             const string16& new_contents) {
   GetDialogClientView()->UpdateDialogButtons();
   UpdateImageViews();
 }
@@ -117,18 +124,17 @@ bool EditSearchEngineDialog::HandleKeyEvent(
 void EditSearchEngineDialog::Init() {
   // Create the views we'll need.
   if (controller_->template_url()) {
-    title_tf_ = CreateTextfield(controller_->template_url()->short_name(),
-                                false);
-    keyword_tf_ = CreateTextfield(controller_->template_url()->keyword(), true);
+    title_tf_ = CreateTextfield(controller_->template_url()->short_name());
+    keyword_tf_ = CreateTextfield(controller_->template_url()->keyword());
     url_tf_ = CreateTextfield(
-        controller_->template_url()->url_ref().DisplayURL(), false);
+        controller_->template_url()->url_ref().DisplayURL());
     // We don't allow users to edit prepopulate URLs. This is done as
     // occasionally we need to update the URL of prepopulated TemplateURLs.
     url_tf_->SetReadOnly(controller_->template_url()->prepopulate_id() != 0);
   } else {
-    title_tf_ = CreateTextfield(string16(), false);
-    keyword_tf_ = CreateTextfield(string16(), true);
-    url_tf_ = CreateTextfield(string16(), false);
+    title_tf_ = CreateTextfield(base::string16());
+    keyword_tf_ = CreateTextfield(base::string16());
+    url_tf_ = CreateTextfield(base::string16());
   }
   title_iv_ = new views::ImageView();
   keyword_iv_ = new views::ImageView();
@@ -198,14 +204,14 @@ void EditSearchEngineDialog::Init() {
   // In order to fix this problem we transform the substring "%s" so that it
   // is displayed correctly when rendered in an RTL context.
   layout->StartRowWithPadding(0, 2, 0, unrelated_y);
-  string16 description = l10n_util::GetStringUTF16(
+  base::string16 description = l10n_util::GetStringUTF16(
       IDS_SEARCH_ENGINES_EDITOR_URL_DESCRIPTION_LABEL);
   if (base::i18n::IsRTL()) {
-    const string16 reversed_percent(ASCIIToUTF16("s%"));
-    string16::size_type percent_index =
-        description.find(ASCIIToUTF16("%s"),
-                         static_cast<string16::size_type>(0));
-    if (percent_index != string16::npos)
+    const base::string16 reversed_percent(base::ASCIIToUTF16("s%"));
+    base::string16::size_type percent_index =
+        description.find(base::ASCIIToUTF16("%s"),
+                         static_cast<base::string16::size_type>(0));
+    if (percent_index != base::string16::npos)
       description.replace(percent_index,
                           reversed_percent.length(),
                           reversed_percent);
@@ -225,12 +231,10 @@ views::Label* EditSearchEngineDialog::CreateLabel(int message_id) {
   return label;
 }
 
-Textfield* EditSearchEngineDialog::CreateTextfield(const string16& text,
-                                                   bool lowercase) {
-  Textfield* text_field = new Textfield(
-      lowercase ? Textfield::STYLE_LOWERCASE : Textfield::STYLE_DEFAULT);
+Textfield* EditSearchEngineDialog::CreateTextfield(const base::string16& text) {
+  Textfield* text_field = new Textfield();
   text_field->SetText(text);
-  text_field->SetController(this);
+  text_field->set_controller(this);
   return text_field;
 }
 
@@ -238,7 +242,7 @@ void EditSearchEngineDialog::UpdateImageViews() {
   UpdateImageView(keyword_iv_, controller_->IsKeywordValid(keyword_tf_->text()),
                   IDS_SEARCH_ENGINES_INVALID_KEYWORD_TT);
   UpdateImageView(url_iv_,
-                  controller_->IsURLValid(UTF16ToUTF8(url_tf_->text())),
+                  controller_->IsURLValid(base::UTF16ToUTF8(url_tf_->text())),
                   IDS_SEARCH_ENGINES_INVALID_URL_TT);
   UpdateImageView(title_iv_, controller_->IsTitleValid(title_tf_->text()),
                   IDS_SEARCH_ENGINES_INVALID_TITLE_TT);
@@ -249,7 +253,7 @@ void EditSearchEngineDialog::UpdateImageView(views::ImageView* image_view,
                                              int invalid_message_id) {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   if (is_valid) {
-    image_view->SetTooltipText(string16());
+    image_view->SetTooltipText(base::string16());
     image_view->SetImage(rb.GetImageSkiaNamed(IDR_INPUT_GOOD));
   } else {
     image_view->SetTooltipText(l10n_util::GetStringUTF16(invalid_message_id));

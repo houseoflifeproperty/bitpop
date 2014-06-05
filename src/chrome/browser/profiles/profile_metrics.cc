@@ -4,23 +4,38 @@
 
 #include "chrome/browser/profiles/profile_metrics.h"
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_constants.h"
+#include "chrome/installer/util/google_update_settings.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/user_metrics.h"
 
 namespace {
 
+const int kMaximumReportedProfileCount = 5;
+const int kMaximumDaysOfDisuse = 4 * 7;  // Should be integral number of weeks.
+
+struct ProfileCounts {
+  size_t total;
+  size_t signedin;
+  size_t managed;
+  size_t unused;
+
+  ProfileCounts() : total(0), signedin(0), managed(0), unused(0) {}
+};
+
 ProfileMetrics::ProfileType GetProfileType(
-    const FilePath& profile_path) {
+    const base::FilePath& profile_path) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   ProfileMetrics::ProfileType metric = ProfileMetrics::SECONDARY;
   ProfileManager* manager = g_browser_process->profile_manager();
-  FilePath user_data_dir;
+  base::FilePath user_data_dir;
   // In unittests, we do not always have a profile_manager so check.
   if (manager) {
     user_data_dir = manager->user_data_dir();
@@ -29,6 +44,38 @@ ProfileMetrics::ProfileType GetProfileType(
     metric = ProfileMetrics::ORIGINAL;
   }
   return metric;
+}
+
+void UpdateReportedOSProfileStatistics(int active, int signedin) {
+#if defined(OS_WIN)
+  GoogleUpdateSettings::UpdateProfileCounts(active, signedin);
+#endif
+}
+
+bool CountProfileInformation(ProfileManager* manager, ProfileCounts* counts) {
+  const ProfileInfoCache& info_cache = manager->GetProfileInfoCache();
+  size_t number_of_profiles = info_cache.GetNumberOfProfiles();
+  counts->total = number_of_profiles;
+
+  // Ignore other metrics if we have no profiles, e.g. in Chrome Frame tests.
+  if (!number_of_profiles)
+    return false;
+
+  // Maximum age for "active" profile is 4 weeks.
+  base::Time oldest = base::Time::Now() -
+      base::TimeDelta::FromDays(kMaximumDaysOfDisuse);
+
+  for (size_t i = 0; i < number_of_profiles; ++i) {
+    if (info_cache.GetProfileActiveTimeAtIndex(i) < oldest) {
+      counts->unused++;
+    } else {
+      if (info_cache.ProfileIsManagedAtIndex(i))
+        counts->managed++;
+      if (!info_cache.GetUserNameOfProfileAtIndex(i).empty())
+        counts->signedin++;
+    }
+  }
+  return true;
 }
 
 }  // namespace
@@ -60,21 +107,44 @@ enum ProfileAvatar {
   AVATAR_MARGARITA,
   AVATAR_NOTE,
   AVATAR_SUN_CLOUD,
-  AVATAR_UNKNOWN,           // 26
-  AVATAR_GAIA,              // 27
+  AVATAR_PLACEHOLDER,
+  AVATAR_UNKNOWN,           // 27
+  AVATAR_GAIA,              // 28
   NUM_PROFILE_AVATAR_METRICS
 };
 
-void ProfileMetrics::LogNumberOfProfiles(ProfileManager* manager,
-                                         ProfileEvent startup) {
-  size_t number_of_profiles =
-      manager->GetProfileInfoCache().GetNumberOfProfiles();
-  if (startup == STARTUP_PROFILE_EVENT) {
-    UMA_HISTOGRAM_COUNTS_100("Profile.NumberOfProfilesOnStartup",
-                             number_of_profiles);
-  } else {
-    UMA_HISTOGRAM_COUNTS_100("Profile.NumberOfProfilesAfterAddOrDelete",
-                             number_of_profiles);
+void ProfileMetrics::UpdateReportedProfilesStatistics(ProfileManager* manager) {
+  ProfileCounts counts;
+  if (CountProfileInformation(manager, &counts)) {
+    int limited_total = counts.total;
+    int limited_signedin = counts.signedin;
+    if (limited_total > kMaximumReportedProfileCount) {
+      limited_total = kMaximumReportedProfileCount + 1;
+      limited_signedin =
+          (int)((float)(counts.signedin * limited_total)
+          / counts.total + 0.5);
+    }
+    UpdateReportedOSProfileStatistics(limited_total, limited_signedin);
+  }
+}
+
+void ProfileMetrics::LogNumberOfProfiles(ProfileManager* manager) {
+  ProfileCounts counts;
+  bool success = CountProfileInformation(manager, &counts);
+  UMA_HISTOGRAM_COUNTS_100("Profile.NumberOfProfiles", counts.total);
+
+  // Ignore other metrics if we have no profiles, e.g. in Chrome Frame tests.
+  if (success) {
+    UMA_HISTOGRAM_COUNTS_100("Profile.NumberOfManagedProfiles",
+                             counts.managed);
+    UMA_HISTOGRAM_COUNTS_100("Profile.PercentageOfManagedProfiles",
+                             100 * counts.managed / counts.total);
+    UMA_HISTOGRAM_COUNTS_100("Profile.NumberOfSignedInProfiles",
+                             counts.signedin);
+    UMA_HISTOGRAM_COUNTS_100("Profile.NumberOfUnusedProfiles",
+                             counts.unused);
+
+    UpdateReportedOSProfileStatistics(counts.total, counts.signedin);
   }
 }
 
@@ -168,7 +238,10 @@ void ProfileMetrics::LogProfileAvatarSelection(size_t icon_index) {
     case 25:
       icon_name = AVATAR_SUN_CLOUD;
       break;
-    case 27:
+    case 26:
+      icon_name = AVATAR_PLACEHOLDER;
+      break;
+    case 28:
       icon_name = AVATAR_GAIA;
       break;
     default:  // We should never actually get here.
@@ -211,19 +284,36 @@ void ProfileMetrics::LogProfileSyncInfo(ProfileSync metric) {
                             NUM_PROFILE_SYNC_METRICS);
 }
 
-void ProfileMetrics::LogProfileLaunch(const FilePath& profile_path) {
+void ProfileMetrics::LogProfileAuthResult(ProfileAuth metric) {
+  UMA_HISTOGRAM_ENUMERATION("Profile.AuthResult", metric,
+                            NUM_PROFILE_AUTH_METRICS);
+}
+
+void ProfileMetrics::LogProfileUpgradeEnrollment(
+    ProfileUpgradeEnrollment metric) {
+  UMA_HISTOGRAM_ENUMERATION("Profile.UpgradeEnrollment", metric,
+                            NUM_PROFILE_ENROLLMENT_METRICS);
+}
+
+void ProfileMetrics::LogProfileLaunch(Profile* profile) {
+  base::FilePath profile_path = profile->GetPath();
   UMA_HISTOGRAM_ENUMERATION("Profile.LaunchBrowser",
                             GetProfileType(profile_path),
                             NUM_PROFILE_TYPE_METRICS);
+
+  if (profile->IsManaged()) {
+    content::RecordAction(
+        base::UserMetricsAction("ManagedMode_NewManagedUserWindow"));
+  }
 }
 
-void ProfileMetrics::LogProfileSyncSignIn(const FilePath& profile_path) {
+void ProfileMetrics::LogProfileSyncSignIn(const base::FilePath& profile_path) {
   UMA_HISTOGRAM_ENUMERATION("Profile.SyncSignIn",
                             GetProfileType(profile_path),
                             NUM_PROFILE_TYPE_METRICS);
 }
 
-void ProfileMetrics::LogProfileUpdate(const FilePath& profile_path) {
+void ProfileMetrics::LogProfileUpdate(const base::FilePath& profile_path) {
   UMA_HISTOGRAM_ENUMERATION("Profile.Update",
                             GetProfileType(profile_path),
                             NUM_PROFILE_TYPE_METRICS);

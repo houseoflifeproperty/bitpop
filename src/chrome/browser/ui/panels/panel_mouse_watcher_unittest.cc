@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "chrome/browser/ui/panels/panel_mouse_watcher.h"
 #include "chrome/browser/ui/panels/panel_mouse_watcher_observer.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -23,7 +23,7 @@ class PanelMouseWatcherTest : public testing::Test {
 };
 
 TEST_F(PanelMouseWatcherTest, StartStopWatching) {
-  MessageLoop loop(MessageLoop::TYPE_UI);
+  base::MessageLoopForUI loop;
 
   scoped_ptr<PanelMouseWatcher> watcher(PanelMouseWatcher::Create());
   EXPECT_FALSE(watcher->IsActive());

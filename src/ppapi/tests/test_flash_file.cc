@@ -228,7 +228,7 @@ std::string TestFlashFile::TestCreateDir() {
   ASSERT_FALSE(FileModuleLocal::QueryFile(instance_, dirname, &info));
   ASSERT_TRUE(FileModuleLocal::CreateDir(instance_, dirname));
   ASSERT_TRUE(FileModuleLocal::QueryFile(instance_, dirname, &info));
-  ASSERT_EQ(info.type, PP_FILETYPE_DIRECTORY);
+  ASSERT_EQ(PP_FILETYPE_DIRECTORY, info.type);
 
   PASS();
 }
@@ -249,13 +249,13 @@ std::string TestFlashFile::TestQueryFile() {
   CloseFileHandle(file_handle);
   ASSERT_TRUE(FileModuleLocal::QueryFile(instance_, filename, &info));
   ASSERT_EQ(static_cast<size_t>(info.size), contents.size());
-  ASSERT_EQ(info.type, PP_FILETYPE_REGULAR);
+  ASSERT_EQ(PP_FILETYPE_REGULAR, info.type);
   // TODO(raymes): Test the other fields.
 
   // Test querying a directory.
   ASSERT_TRUE(FileModuleLocal::CreateDir(instance_, dirname));
   ASSERT_TRUE(FileModuleLocal::QueryFile(instance_, dirname, &info));
-  ASSERT_EQ(info.type, PP_FILETYPE_DIRECTORY);
+  ASSERT_EQ(PP_FILETYPE_DIRECTORY, info.type);
   // TODO(raymes): Test the other fields.
 
   // Test querying a non-existent file.
@@ -269,7 +269,7 @@ std::string TestFlashFile::TestGetDirContents() {
   std::vector<FileModuleLocal::DirEntry> result;
   ASSERT_TRUE(FileModuleLocal::GetDirContents(instance_, std::string(),
                                               &result));
-  ASSERT_EQ(result.size(), 1);
+  ASSERT_EQ(1, result.size());
   ASSERT_EQ(result[0].name, "..");
   ASSERT_EQ(result[0].is_dir, true);
 
@@ -285,12 +285,10 @@ std::string TestFlashFile::TestGetDirContents() {
   CloseFileHandle(file_handle);
   ASSERT_TRUE(FileModuleLocal::CreateDir(instance_, dirname));
 
-  ASSERT_TRUE(FileModuleLocal::GetDirContents(instance_, "", &result));
-  FileModuleLocal::DirEntry expected[] =
-    { {"..", true},
-      {filename, false},
-      {dirname, true}
-    };
+  ASSERT_TRUE(
+      FileModuleLocal::GetDirContents(instance_, std::string(), &result));
+  FileModuleLocal::DirEntry expected[] = { { "..", true }, { filename, false },
+                                           { dirname, true } };
   size_t expected_size = sizeof(expected) / sizeof(expected[0]);
 
   std::sort(expected, expected + expected_size, DirEntryLessThan);
@@ -329,7 +327,8 @@ std::string TestFlashFile::TestCreateTemporaryFile() {
 std::string TestFlashFile::GetItemCountUnderModuleLocalRoot(
     size_t* item_count) {
   std::vector<FileModuleLocal::DirEntry> contents;
-  ASSERT_TRUE(FileModuleLocal::GetDirContents(instance_, "", &contents));
+  ASSERT_TRUE(
+      FileModuleLocal::GetDirContents(instance_, std::string(), &contents));
   *item_count = contents.size();
   PASS();
 }

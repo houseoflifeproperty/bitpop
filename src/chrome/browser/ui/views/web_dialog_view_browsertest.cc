@@ -4,13 +4,13 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/singleton.h"
-#include "base/message_loop.h"
-#include "base/utf_string_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/chrome_web_contents_handler.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -18,7 +18,6 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/views/controls/webview/web_dialog_view.h"
@@ -57,8 +56,10 @@ class TestWebDialogView : public views::WebDialogView {
       // Schedule message loop quit because we could be called while
       // the bounds change call is on the stack and not in the nested message
       // loop.
-      MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
-          &MessageLoop::Quit, base::Unretained(MessageLoop::current())));
+      base::MessageLoop::current()->PostTask(
+          FROM_HERE,
+          base::Bind(&base::MessageLoop::Quit,
+                     base::Unretained(base::MessageLoop::current())));
     }
 
     last_size_ = bounds.size();
@@ -83,7 +84,8 @@ class WebDialogBrowserTest : public InProcessBrowserTest {
   WebDialogBrowserTest() {}
 };
 
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+// TODO(linux_aura) http://crbug.com/163931
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && !defined(USE_AURA)
 #define MAYBE_SizeWindow SizeWindow
 #else
 // http://code.google.com/p/chromium/issues/detail?id=52602
@@ -102,10 +104,11 @@ IN_PROC_BROWSER_TEST_F(WebDialogBrowserTest, MAYBE_SizeWindow) {
 
   TestWebDialogView* view =
       new TestWebDialogView(browser()->profile(), delegate);
-  WebContents* web_contents = chrome::GetActiveWebContents(browser());
+  WebContents* web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
   ASSERT_TRUE(web_contents != NULL);
   views::Widget::CreateWindowWithParent(
-      view, web_contents->GetView()->GetTopLevelNativeWindow());
+      view, web_contents->GetTopLevelNativeWindow());
   view->GetWidget()->Show();
 
   // TestWebDialogView should quit current message loop on size change.

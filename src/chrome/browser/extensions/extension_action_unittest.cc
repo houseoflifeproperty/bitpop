@@ -2,19 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "chrome/browser/extensions/extension_action.h"
-#include "googleurl/src/gurl.h"
+#include "chrome/common/extensions/api/extension_action/action_info.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 namespace {
 
-using extensions::Extension;
+using extensions::ActionInfo;
 
 TEST(ExtensionActionTest, Title) {
-  Extension::ActionInfo action_info;
+  ActionInfo action_info;
   action_info.default_title = "Initial Title";
-  ExtensionAction action("", Extension::ActionInfo::TYPE_PAGE, action_info);
+  ExtensionAction action(std::string(), ActionInfo::TYPE_PAGE, action_info);
 
   ASSERT_EQ("Initial Title", action.GetTitle(1));
   action.SetTitle(ExtensionAction::kDefaultTabId, "foo");
@@ -30,84 +31,34 @@ TEST(ExtensionActionTest, Title) {
 }
 
 TEST(ExtensionActionTest, Visibility) {
-  ExtensionAction action("", Extension::ActionInfo::TYPE_PAGE,
-                         Extension::ActionInfo());
+  ExtensionAction action(std::string(), ActionInfo::TYPE_PAGE, ActionInfo());
 
   ASSERT_FALSE(action.GetIsVisible(1));
-  action.SetAppearance(ExtensionAction::kDefaultTabId, ExtensionAction::ACTIVE);
+  action.SetIsVisible(ExtensionAction::kDefaultTabId, true);
   ASSERT_TRUE(action.GetIsVisible(1));
   ASSERT_TRUE(action.GetIsVisible(100));
 
-  action.SetAppearance(ExtensionAction::kDefaultTabId,
-                       ExtensionAction::INVISIBLE);
+  action.SetIsVisible(ExtensionAction::kDefaultTabId, false);
   ASSERT_FALSE(action.GetIsVisible(1));
   ASSERT_FALSE(action.GetIsVisible(100));
-  action.SetAppearance(100, ExtensionAction::ACTIVE);
+  action.SetIsVisible(100, true);
   ASSERT_FALSE(action.GetIsVisible(1));
   ASSERT_TRUE(action.GetIsVisible(100));
-  EXPECT_FALSE(action.GetIconAnimation(100))
-      << "Page actions should not animate.";
 
   action.ClearAllValuesForTab(100);
   ASSERT_FALSE(action.GetIsVisible(1));
   ASSERT_FALSE(action.GetIsVisible(100));
 
-  ExtensionAction browser_action("", Extension::ActionInfo::TYPE_BROWSER,
-                                 Extension::ActionInfo());
+  ExtensionAction browser_action(
+      std::string(), ActionInfo::TYPE_BROWSER, ActionInfo());
   ASSERT_TRUE(browser_action.GetIsVisible(1));
 }
 
-TEST(ExtensionActionTest, ScriptBadgeAnimation) {
-  // Supports the icon animation.
-  MessageLoop message_loop;
-
-  ExtensionAction script_badge("", Extension::ActionInfo::TYPE_SCRIPT_BADGE,
-                               Extension::ActionInfo());
-  EXPECT_FALSE(script_badge.GetIconAnimation(ExtensionAction::kDefaultTabId));
-  script_badge.SetAppearance(ExtensionAction::kDefaultTabId,
-                             ExtensionAction::ACTIVE);
-  EXPECT_FALSE(script_badge.GetIconAnimation(ExtensionAction::kDefaultTabId))
-      << "Showing the default tab should not animate script badges.";
-
-  script_badge.SetAppearance(ExtensionAction::kDefaultTabId,
-                             ExtensionAction::INVISIBLE);
-  EXPECT_FALSE(script_badge.GetIconAnimation(1))
-      << "Making a script badge invisible should not show its animation.";
-  script_badge.SetAppearance(1, ExtensionAction::ACTIVE);
-  EXPECT_TRUE(script_badge.GetIconAnimation(1))
-      << "Making a script badge visible should show its animation.";
-
-  script_badge.ClearAllValuesForTab(1);
-  EXPECT_FALSE(script_badge.GetIconAnimation(100));
-}
-
-TEST(ExtensionActionTest, GetAttention) {
-  // Supports the icon animation.
-  scoped_ptr<MessageLoop> message_loop(new MessageLoop);
-
-  ExtensionAction script_badge("", Extension::ActionInfo::TYPE_SCRIPT_BADGE,
-                               Extension::ActionInfo());
-  EXPECT_FALSE(script_badge.GetIsVisible(1));
-  EXPECT_FALSE(script_badge.GetIconAnimation(1));
-  script_badge.SetAppearance(1, ExtensionAction::WANTS_ATTENTION);
-  EXPECT_TRUE(script_badge.GetIsVisible(1));
-  EXPECT_TRUE(script_badge.GetIconAnimation(1));
-
-  // Simulate waiting long enough for the animation to end.
-  message_loop.reset();  // Can't have 2 MessageLoops alive at once.
-  message_loop.reset(new MessageLoop);
-  EXPECT_FALSE(script_badge.GetIconAnimation(1));  // Sanity check.
-
-  script_badge.SetAppearance(1, ExtensionAction::ACTIVE);
-  EXPECT_FALSE(script_badge.GetIconAnimation(1))
-      << "The animation should not play again if the icon was already visible.";
-}
-
 TEST(ExtensionActionTest, Icon) {
-  Extension::ActionInfo action_info;
+  ActionInfo action_info;
   action_info.default_icon.Add(16, "icon16.png");
-  ExtensionAction page_action("", Extension::ActionInfo::TYPE_PAGE,
-                              action_info);
+  ExtensionAction page_action(
+      std::string(), ActionInfo::TYPE_PAGE, action_info);
   ASSERT_TRUE(page_action.default_icon());
   EXPECT_EQ("icon16.png",
             page_action.default_icon()->Get(
@@ -118,8 +69,7 @@ TEST(ExtensionActionTest, Icon) {
 }
 
 TEST(ExtensionActionTest, Badge) {
-  ExtensionAction action("", Extension::ActionInfo::TYPE_PAGE,
-                         Extension::ActionInfo());
+  ExtensionAction action(std::string(), ActionInfo::TYPE_PAGE, ActionInfo());
   ASSERT_EQ("", action.GetBadgeText(1));
   action.SetBadgeText(ExtensionAction::kDefaultTabId, "foo");
   ASSERT_EQ("foo", action.GetBadgeText(1));
@@ -134,8 +84,7 @@ TEST(ExtensionActionTest, Badge) {
 }
 
 TEST(ExtensionActionTest, BadgeTextColor) {
-  ExtensionAction action("", Extension::ActionInfo::TYPE_PAGE,
-                         Extension::ActionInfo());
+  ExtensionAction action(std::string(), ActionInfo::TYPE_PAGE, ActionInfo());
   ASSERT_EQ(0x00000000u, action.GetBadgeTextColor(1));
   action.SetBadgeTextColor(ExtensionAction::kDefaultTabId, 0xFFFF0000u);
   ASSERT_EQ(0xFFFF0000u, action.GetBadgeTextColor(1));
@@ -150,8 +99,7 @@ TEST(ExtensionActionTest, BadgeTextColor) {
 }
 
 TEST(ExtensionActionTest, BadgeBackgroundColor) {
-  ExtensionAction action("", Extension::ActionInfo::TYPE_PAGE,
-                         Extension::ActionInfo());
+  ExtensionAction action(std::string(), ActionInfo::TYPE_PAGE, ActionInfo());
   ASSERT_EQ(0x00000000u, action.GetBadgeBackgroundColor(1));
   action.SetBadgeBackgroundColor(ExtensionAction::kDefaultTabId,
                                  0xFFFF0000u);
@@ -173,9 +121,9 @@ TEST(ExtensionActionTest, PopupUrl) {
   GURL url_bar("http://www.example.com/bar.html");
   GURL url_baz("http://www.example.com/baz.html");
 
-  Extension::ActionInfo action_info;
+  ActionInfo action_info;
   action_info.default_popup_url = url_foo;
-  ExtensionAction action("", Extension::ActionInfo::TYPE_PAGE, action_info);
+  ExtensionAction action(std::string(), ActionInfo::TYPE_PAGE, action_info);
 
   ASSERT_EQ(url_foo, action.GetPopupUrl(1));
   ASSERT_EQ(url_foo, action.GetPopupUrl(100));

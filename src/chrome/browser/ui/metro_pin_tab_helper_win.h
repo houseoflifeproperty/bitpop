@@ -13,6 +13,10 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/image/image_skia.h"
 
+namespace gfx {
+class Size;
+}
+
 // Per-tab class to help manage metro pinning.
 class MetroPinTabHelper
     : public content::WebContentsObserver,
@@ -29,7 +33,6 @@ class MetroPinTabHelper
       const content::LoadCommittedDetails& details,
       const content::FrameNavigateParams& params) OVERRIDE;
   virtual void DidUpdateFaviconURL(
-      int32 page_id,
       const std::vector<content::FaviconURL>& candidates) OVERRIDE;
 
  private:
@@ -43,10 +46,10 @@ class MetroPinTabHelper
 
   // Favicon download callback.
   void DidDownloadFavicon(int id,
+                          int http_status_code,
                           const GURL& image_url,
-                          bool errored,
-                          int requested_size,
-                          const std::vector<SkBitmap>& bitmaps);
+                          const std::vector<SkBitmap>& bitmaps,
+                          const std::vector<gfx::Size>& original_bitmap_sizes);
 
   void UnPinPageFromStartScreen();
 

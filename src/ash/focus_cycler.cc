@@ -5,24 +5,24 @@
 #include "ash/focus_cycler.h"
 
 #include "ash/shell.h"
-#include "ash/wm/window_cycle_controller.h"
-#include "ui/aura/client/activation_client.h"
+#include "ash/wm/mru_window_tracker.h"
+#include "ash/wm/window_state.h"
+#include "ash/wm/window_util.h"
 #include "ui/aura/window.h"
 #include "ui/views/accessible_pane_view.h"
 #include "ui/views/focus/focus_search.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/public/activation_client.h"
 
 namespace ash {
 
 namespace {
 
 bool HasFocusableWindow() {
-  return !WindowCycleController::BuildWindowList(NULL).empty();
+  return !MruWindowTracker::BuildWindowList(false).empty();
 }
 
 }  // namespace
-
-namespace internal {
 
 FocusCycler::FocusCycler() : widget_activating_(NULL) {
 }
@@ -35,6 +35,19 @@ void FocusCycler::AddWidget(views::Widget* widget) {
 }
 
 void FocusCycler::RotateFocus(Direction direction) {
+  aura::Window* window = ash::wm::GetActiveWindow();
+  if (window) {
+    views::Widget* widget = views::Widget::GetWidgetForNativeWindow(window);
+    // First try to rotate focus within the active widget. If that succeeds,
+    // we're done.
+    if (widget && widget->GetFocusManager()->RotatePaneFocus(
+            direction == BACKWARD ?
+                views::FocusManager::kBackward : views::FocusManager::kForward,
+            views::FocusManager::kNoWrap)) {
+      return;
+    }
+  }
+
   const bool has_window = HasFocusableWindow();
   int index = 0;
   int count = static_cast<int>(widgets_.size());
@@ -61,12 +74,22 @@ void FocusCycler::RotateFocus(Direction direction) {
       break;
 
     if (index == browser_index) {
-      // Activate the first window.
-      WindowCycleController::Direction window_direction =
-          direction == FORWARD ? WindowCycleController::FORWARD :
-                                 WindowCycleController::BACKWARD;
-      ash::Shell::GetInstance()->window_cycle_controller()->HandleCycleWindow(
-          window_direction, false);
+      // Activate the most recently active browser window.
+      MruWindowTracker::WindowList mru_windows(
+          Shell::GetInstance()->mru_window_tracker()->BuildMruWindowList());
+      if (mru_windows.empty())
+        break;
+      aura::Window* window = mru_windows.front();
+      wm::GetWindowState(window)->Activate();
+      views::Widget* widget = views::Widget::GetWidgetForNativeWindow(window);
+      if (!widget)
+        break;
+      views::FocusManager* focus_manager = widget->GetFocusManager();
+      focus_manager->ClearFocus();
+      focus_manager->RotatePaneFocus(
+          direction == BACKWARD ?
+              views::FocusManager::kBackward : views::FocusManager::kForward,
+          views::FocusManager::kWrap);
       break;
     } else {
       if (FocusWidget(widgets_[index]))
@@ -76,18 +99,12 @@ void FocusCycler::RotateFocus(Direction direction) {
 }
 
 bool FocusCycler::FocusWidget(views::Widget* widget) {
-  views::AccessiblePaneView* view =
-      static_cast<views::AccessiblePaneView*>(widget->GetContentsView());
-  if (view->SetPaneFocusAndFocusDefault()) {
-    widget_activating_ = widget;
-    widget->Activate();
-    widget_activating_ = NULL;
-    if (widget->IsActive())
-      return true;
-  }
-  return false;
+  // Note: It is not necessary to set the focus directly to the pane since that
+  // will be taken care of by the widget activation.
+  widget_activating_ = widget;
+  widget->Activate();
+  widget_activating_ = NULL;
+  return widget->IsActive();
 }
-
-}  // namespace internal
 
 }  // namespace ash

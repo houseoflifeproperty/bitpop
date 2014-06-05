@@ -7,14 +7,17 @@
 
 #include <string>
 
+#include "base/memory/ref_counted.h"
+#include "base/memory/ref_counted_memory.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/global_request_id.h"
+#include "content/public/browser/page_navigator.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/common/referrer.h"
-#include "googleurl/src/gurl.h"
+#include "ui/base/window_open_disposition.h"
 #include "ui/gfx/rect.h"
-#include "webkit/glue/window_open_disposition.h"
+#include "url/gurl.h"
 
 class Browser;
 class Profile;
@@ -62,6 +65,22 @@ struct NavigateParams {
   GURL url;
   content::Referrer referrer;
 
+  // The browser-global ID of the frame to navigate, or -1 for the main frame.
+  int64 frame_tree_node_id;
+
+  // Any redirect URLs that occurred for this navigation before |url|.
+  // Usually empty.
+  std::vector<GURL> redirect_chain;
+
+  // Indicates whether this navigation will be sent using POST.
+  // The POST method is limited support for basic POST data by leveraging
+  // NavigationController::LOAD_TYPE_BROWSER_INITIATED_HTTP_POST.
+  // It is not for things like file uploads.
+  bool uses_post;
+
+  // The post data when the navigation uses POST.
+  scoped_refptr<base::RefCountedMemory> browser_initiated_post_data;
+
   // Extra headers to add to the request for this page.  Headers are
   // represented as "<name>: <value>" and separated by \r\n.  The entire string
   // is terminated by \r\n.  May be empty if no extra headers are needed.
@@ -106,6 +125,9 @@ struct NavigateParams {
   // |tabstrip_add_types|.
   WindowOpenDisposition disposition;
 
+  // Sets browser->is_trusted_source. Default is false.
+  bool trusted_source;
+
   // The transition type of the navigation. Default is
   // content::PAGE_TRANSITION_LINK when target_contents is specified in the
   // constructor.
@@ -128,9 +150,6 @@ struct NavigateParams {
 
   // If non-empty, the new tab is an app tab.
   std::string extension_app_id;
-
-  // If non-empty, the new tab contents encoding is overriden by this value.
-  std::string override_encoding;
 
   // If non-empty, specifies the desired initial position and size of the
   // window if |disposition| == NEW_POPUP.
@@ -207,13 +226,21 @@ struct NavigateParams {
   // explicitly or inferred from an existing Browser instance.
   chrome::HostDesktopType host_desktop_type;
 
-  // Indicates whether this navigation involves a cross-process redirect,
-  // in which case it should replace the current navigation entry.
-  bool is_cross_site_redirect;
+  // Indicates whether this navigation  should replace the current
+  // navigation entry.
+  bool should_replace_current_entry;
+
+  // Indicates whether |source_contents| should be set as opener when creating
+  // |target_contents|.
+  bool should_set_opener;
 
  private:
   NavigateParams();
 };
+
+// Copies fields from |params| struct to |nav_params| struct.
+void FillNavigateParamsFromOpenURLParams(chrome::NavigateParams* nav_params,
+                                         const content::OpenURLParams& params);
 
 // Navigates according to the configuration specified in |params|.
 void Navigate(NavigateParams* params);

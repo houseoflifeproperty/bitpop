@@ -138,19 +138,22 @@ TEST(ElfCoreDumpTest, ValidCoreFile) {
   const unsigned kNumOfThreads = 3;
   const unsigned kCrashThread = 1;
   const int kCrashSignal = SIGABRT;
-  // TODO(benchan): Revert to use ASSERT_TRUE once the flakiness in
-  // CrashGenerator is identified and fixed.
-  if (!crash_generator.CreateChildCrash(kNumOfThreads, kCrashThread,
-                                        kCrashSignal, NULL)) {
-    fprintf(stderr, "ElfCoreDumpTest.ValidCoreFile test is skipped "
-            "due to no core dump generated");
-    return;
-  }
+  ASSERT_TRUE(crash_generator.CreateChildCrash(kNumOfThreads, kCrashThread,
+                                               kCrashSignal, NULL));
   pid_t expected_crash_thread_id = crash_generator.GetThreadId(kCrashThread);
   set<pid_t> expected_thread_ids;
   for (unsigned i = 0; i < kNumOfThreads; ++i) {
     expected_thread_ids.insert(crash_generator.GetThreadId(i));
   }
+
+#if defined(__ANDROID__)
+  struct stat st;
+  if (stat(crash_generator.GetCoreFilePath().c_str(), &st) != 0) {
+    fprintf(stderr, "ElfCoreDumpTest.ValidCoreFile test is skipped "
+            "due to no core file being generated");
+    return;
+  }
+#endif
 
   MemoryMappedFile mapped_core_file;
   ASSERT_TRUE(mapped_core_file.Map(crash_generator.GetCoreFilePath().c_str()));
@@ -182,6 +185,7 @@ TEST(ElfCoreDumpTest, ValidCoreFile) {
 
   size_t num_nt_prpsinfo = 0;
   size_t num_nt_prstatus = 0;
+  size_t num_pr_fpvalid = 0;
 #if defined(__i386__) || defined(__x86_64__)
   size_t num_nt_fpregset = 0;
 #endif
@@ -213,6 +217,8 @@ TEST(ElfCoreDumpTest, ValidCoreFile) {
           EXPECT_EQ(kCrashSignal, status->pr_info.si_signo);
         }
         ++num_nt_prstatus;
+        if (status->pr_fpvalid)
+          ++num_pr_fpvalid;
         break;
       }
 #if defined(__i386__) || defined(__x86_64__)
@@ -241,9 +247,9 @@ TEST(ElfCoreDumpTest, ValidCoreFile) {
   EXPECT_EQ(1U, num_nt_prpsinfo);
   EXPECT_EQ(kNumOfThreads, num_nt_prstatus);
 #if defined(__i386__) || defined(__x86_64__)
-  EXPECT_EQ(kNumOfThreads, num_nt_fpregset);
+  EXPECT_EQ(num_pr_fpvalid, num_nt_fpregset);
 #endif
 #if defined(__i386__)
-  EXPECT_EQ(kNumOfThreads, num_nt_prxfpreg);
+  EXPECT_EQ(num_pr_fpvalid, num_nt_prxfpreg);
 #endif
 }

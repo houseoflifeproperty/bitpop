@@ -26,6 +26,7 @@
 #include "native_client/src/trusted/service_runtime/nacl_text.h"
 #include "native_client/src/trusted/service_runtime/sel_ldr.h"
 #include "native_client/src/trusted/service_runtime/sel_memory.h"
+#include "native_client/src/trusted/service_runtime/thread_suspension.h"
 
 
 /* initial size of the malloced buffer for dynamic regions */
@@ -120,14 +121,14 @@ NaClErrorCode NaClMakeDynamicTextShared(struct NaClApp *nap) {
     free(shm);
     shm = NULL;
     NaClLog(4, "NaClMakeDynamicTextShared: shm alloc ctor for text failed\n");
-    retval = LOAD_NO_MEMORY;
+    retval = LOAD_NO_MEMORY_FOR_DYNAMIC_TEXT;
     goto cleanup;
   }
 
   text_sysaddr = NaClUserToSys(nap, shm_vaddr_base);
 
   /* Existing memory is anonymous paging file backed. */
-  NaCl_page_free((void *) text_sysaddr, dynamic_text_size);
+  NaClPageFree((void *) text_sysaddr, dynamic_text_size);
 
   /*
    * Unix allows us to map pages with PROT_NONE initially and later
@@ -135,11 +136,13 @@ NaClErrorCode NaClMakeDynamicTextShared(struct NaClApp *nap) {
    *
    * Windows does not allow this, however: the initial permissions are
    * an upper bound on what the permissions may later be changed to
-   * with VirtualProtect().  Given this, using PROT_NONE at this point
-   * does not even make sense.  So we map with read+exec+write and
-   * immediately turn down the permissions, so that we can later
-   * re-enable read+exec page by page.  Write permissions are needed
-   * for gdb to set breakpoints.
+   * with VirtualProtect() or VirtualAlloc().  Given this, using
+   * PROT_NONE at this point does not even make sense.  On Windows,
+   * the pages start off as uncommitted, which makes them inaccessible
+   * regardless of the page permissions they are mapped with.
+   *
+   * Write permissions are included here for nacl64-gdb to set
+   * breakpoints.
    */
 #if NACL_WINDOWS
   mmap_protections =
@@ -165,27 +168,6 @@ NaClErrorCode NaClMakeDynamicTextShared(struct NaClApp *nap) {
   if (text_sysaddr != mmap_ret) {
     NaClLog(LOG_FATAL, "Could not map in shm for dynamic text region\n");
   }
-
-#if NACL_WINDOWS
-  {
-    /*
-     * We need a loop here because the Map() call above creates one
-     * mapping per page.  However, there is no need for it to do that
-     * for the dynamic code area.
-     * TODO(mseaborn): Create a single mapping here.
-     */
-    uintptr_t offset;
-    for (offset = 0; offset < dynamic_text_size; offset += NACL_MAP_PAGESIZE) {
-      DWORD old_prot;
-      if (!VirtualProtect((void *) (text_sysaddr + offset), NACL_MAP_PAGESIZE,
-                          PAGE_NOACCESS, &old_prot)) {
-        NaClLog(LOG_FATAL,
-                "NaClMakeDynamicTextShared: VirtualProtect() failed to "
-                "set page permissions to PAGE_NOACCESS\n");
-      }
-    }
-  }
-#endif
 
   nap->dynamic_page_bitmap =
     BitmapAllocate((uint32_t) (dynamic_text_size / NACL_MAP_PAGESIZE));
@@ -244,33 +226,23 @@ struct NaClDynamicRegion* NaClDynamicRegionFindClosestLEQ(struct NaClApp *nap,
   return nap->dynamic_regions + begin;
 }
 
-/*
- * Find the last region overlapping with the given memory range, return 0 if
- * region is unused.
- * caller must hold nap->dynamic_load_mutex, and must discard result
- * when lock is released.
- */
 struct NaClDynamicRegion* NaClDynamicRegionFind(struct NaClApp *nap,
                                                 uintptr_t ptr,
                                                 size_t size) {
-  struct NaClDynamicRegion *p = NaClDynamicRegionFindClosestLEQ(nap,
-                                                                ptr + size - 1);
+  struct NaClDynamicRegion *p =
+      NaClDynamicRegionFindClosestLEQ(nap, ptr + size - 1);
   return (p != NULL && ptr < p->start + p->size) ? p : NULL;
 }
 
-/*
- * Insert a new region into nap->dynamic regions, maintaining the sorted
- * ordering. Returns 1 on success, 0 if there is a conflicting region
- * Caller must hold nap->dynamic_load_mutex.
- * Invalidates all previous NaClDynamicRegion pointers.
- */
 int NaClDynamicRegionCreate(struct NaClApp *nap,
                             uintptr_t start,
-                            size_t size) {
+                            size_t size,
+                            int is_mmap) {
   struct NaClDynamicRegion item, *regionp, *end;
   item.start = start;
   item.size = size;
   item.delete_generation = -1;
+  item.is_mmap = is_mmap;
   if (nap->dynamic_regions_allocated == nap->num_dynamic_regions) {
     /* out of space, double buffer size */
     nap->dynamic_regions_allocated *= 2;
@@ -310,11 +282,6 @@ int NaClDynamicRegionCreate(struct NaClApp *nap,
   return 1;
 }
 
-/*
- * Delete a region from nap->dynamic_regions, maintaining the sorted ordering
- * Caller must hold nap->dynamic_load_mutex.
- * Invalidates all previous NaClDynamicRegion pointers.
- */
 void NaClDynamicRegionDelete(struct NaClApp *nap, struct NaClDynamicRegion* r) {
   struct NaClDynamicRegion *end = nap->dynamic_regions
                                 + nap->num_dynamic_regions;
@@ -462,14 +429,47 @@ static void MakeDynamicCodePagesVisible(struct NaClApp *nap,
   user_addr = (void *) NaClUserToSys(nap, nap->dynamic_text_start
                                      + page_index_min * NACL_MAP_PAGESIZE);
 
+#if NACL_WINDOWS
+  NaClUntrustedThreadsSuspendAll(nap, /* save_registers= */ 0);
+
+  /*
+   * The VirtualAlloc() call here has two effects:
+   *
+   *  1) It commits the page in the shared memory (SHM) object,
+   *     allocating swap space and making the page accessible.  This
+   *     affects our writable mapping of the shared memory object too.
+   *     Before the VirtualAlloc() call, dereferencing writable_addr
+   *     would fault.
+   *  2) It changes the page permissions of the mapping to
+   *     read+execute.  Since this exposes the page in its unsafe,
+   *     non-HLT-filled state, this must be done with untrusted
+   *     threads suspended.
+   */
+  {
+    uintptr_t offset;
+    for (offset = 0; offset < size; offset += NACL_MAP_PAGESIZE) {
+      void *user_page_addr = (char *) user_addr + offset;
+      if (VirtualAlloc(user_page_addr, NACL_MAP_PAGESIZE,
+                       MEM_COMMIT, PAGE_EXECUTE_READ) != user_page_addr) {
+        NaClLog(LOG_FATAL, "MakeDynamicCodePagesVisible: "
+                "VirtualAlloc() failed -- probably out of swap space\n");
+      }
+    }
+  }
+#endif
+
   /* Sanity check:  Ensure the page is not already in use. */
   CHECK(*writable_addr == 0);
 
   NaClFillMemoryRegionWithHalt(writable_addr, size);
 
-  if (NaCl_mprotect(user_addr, size, PROT_READ | PROT_EXEC) != 0) {
-    NaClLog(LOG_FATAL, "MakeDynamicCodePageVisible: NaCl_mprotect() failed\n");
+#if NACL_WINDOWS
+  NaClUntrustedThreadsResumeAll(nap);
+#else
+  if (NaClMprotect(user_addr, size, PROT_READ | PROT_EXEC) != 0) {
+    NaClLog(LOG_FATAL, "MakeDynamicCodePageVisible: NaClMprotect() failed\n");
   }
+#endif
 }
 
 /*
@@ -569,7 +569,7 @@ static uintptr_t CachedMapWritableText(struct NaClApp *nap,
  * Caller must hold nap->dynamic_load_mutex.
  * Returns boolean, true on success
  */
-static INLINE int NaclTextMapWrapper(struct NaClApp *nap,
+static INLINE int NaClTextMapWrapper(struct NaClApp *nap,
                                     uint32_t dest,
                                     uint32_t size,
                                     uint8_t  **mapped_addr) {
@@ -603,7 +603,7 @@ static INLINE int NaclTextMapWrapper(struct NaClApp *nap,
  * Clear the mmap cache if multiple pages were mapped.
  * Caller must hold nap->dynamic_load_mutex.
  */
-static INLINE void NaclTextMapClearCacheIfNeeded(struct NaClApp *nap,
+static INLINE void NaClTextMapClearCacheIfNeeded(struct NaClApp *nap,
                                                  uint32_t dest,
                                                  uint32_t size) {
   uint32_t                    shm_offset;
@@ -624,7 +624,8 @@ static INLINE void NaclTextMapClearCacheIfNeeded(struct NaClApp *nap,
 int32_t NaClTextDyncodeCreate(struct NaClApp *nap,
                               uint32_t       dest,
                               void           *code_copy,
-                              uint32_t       size) {
+                              uint32_t       size,
+                              const struct NaClValidationMetadata *metadata) {
   uintptr_t                   dest_addr;
   uint8_t                     *mapped_addr;
   int32_t                     retval = -NACL_ABI_EINVAL;
@@ -671,7 +672,7 @@ int32_t NaClTextDyncodeCreate(struct NaClApp *nap,
    * See: http://code.google.com/p/nativeclient/issues/detail?id=2566
    */
   if (!nap->skip_validator) {
-    validator_result = NaClValidateCode(nap, dest, code_copy, size);
+    validator_result = NaClValidateCode(nap, dest, code_copy, size, metadata);
   } else {
     NaClLog(LOG_ERROR, "VALIDATION SKIPPED.\n");
     validator_result = LOAD_OK;
@@ -695,14 +696,14 @@ int32_t NaClTextDyncodeCreate(struct NaClApp *nap,
     goto cleanup_unlock;
   }
 
-  if (NaClDynamicRegionCreate(nap, dest_addr, size) != 1) {
+  if (NaClDynamicRegionCreate(nap, dest_addr, size, 0) != 1) {
     /* target addr is in use */
     NaClLog(1, "NaClTextDyncodeCreate: Code range already allocated\n");
     retval = -NACL_ABI_EINVAL;
     goto cleanup_unlock;
   }
 
-  if (!NaclTextMapWrapper(nap, dest, size, &mapped_addr)) {
+  if (!NaClTextMapWrapper(nap, dest, size, &mapped_addr)) {
     retval = -NACL_ABI_ENOMEM;
     goto cleanup_unlock;
   }
@@ -719,25 +720,31 @@ int32_t NaClTextDyncodeCreate(struct NaClApp *nap,
 
   retval = 0;
 
-  NaclTextMapClearCacheIfNeeded(nap, dest, size);
+  NaClTextMapClearCacheIfNeeded(nap, dest, size);
 
  cleanup_unlock:
   NaClXMutexUnlock(&nap->dynamic_load_mutex);
   return retval;
 }
 
-int32_t NaClTextSysDyncode_Create(struct NaClAppThread *natp,
-                                  uint32_t             dest,
-                                  uint32_t             src,
-                                  uint32_t             size) {
+int32_t NaClSysDyncodeCreate(struct NaClAppThread *natp,
+                             uint32_t             dest,
+                             uint32_t             src,
+                             uint32_t             size) {
   struct NaClApp              *nap = natp->nap;
   uintptr_t                   src_addr;
   uint8_t                     *code_copy;
   int32_t                     retval = -NACL_ABI_EINVAL;
 
+  if (!nap->enable_dyncode_syscalls) {
+    NaClLog(LOG_WARNING,
+            "NaClSysDyncodeCreate: Dynamic code syscalls are disabled\n");
+    return -NACL_ABI_ENOSYS;
+  }
+
   src_addr = NaClUserToSysAddrRange(nap, src, size);
   if (kNaClBadAddress == src_addr) {
-    NaClLog(1, "NaClTextSysDyncode_Create: Source address out of range\n");
+    NaClLog(1, "NaClSysDyncodeCreate: Source address out of range\n");
     return -NACL_ABI_EFAULT;
   }
 
@@ -751,16 +758,17 @@ int32_t NaClTextSysDyncode_Create(struct NaClAppThread *natp,
   }
   memcpy(code_copy, (uint8_t*) src_addr, size);
 
-  retval = NaClTextDyncodeCreate(nap, dest, code_copy, size);
+  /* Unknown data source, no metadata. */
+  retval = NaClTextDyncodeCreate(nap, dest, code_copy, size, NULL);
 
   free(code_copy);
   return retval;
 }
 
-int32_t NaClTextSysDyncode_Modify(struct NaClAppThread *natp,
-                                  uint32_t             dest,
-                                  uint32_t             src,
-                                  uint32_t             size) {
+int32_t NaClSysDyncodeModify(struct NaClAppThread *natp,
+                             uint32_t             dest,
+                             uint32_t             src,
+                             uint32_t             size) {
   struct NaClApp              *nap = natp->nap;
   uintptr_t                   dest_addr;
   uintptr_t                   src_addr;
@@ -774,8 +782,21 @@ int32_t NaClTextSysDyncode_Modify(struct NaClAppThread *natp,
   int32_t                     retval = -NACL_ABI_EINVAL;
   struct NaClDynamicRegion    *region;
 
+  if (!nap->validator->code_replacement) {
+    NaClLog(LOG_WARNING,
+            "NaClSysDyncodeModify: "
+            "Dynamic code modification is not supported\n");
+    return -NACL_ABI_ENOSYS;
+  }
+
+  if (!nap->enable_dyncode_syscalls) {
+    NaClLog(LOG_WARNING,
+            "NaClSysDyncodeModify: Dynamic code syscalls are disabled\n");
+    return -NACL_ABI_ENOSYS;
+  }
+
   if (NULL == nap->text_shm) {
-    NaClLog(1, "NaClTextSysDyncode_Modify: Dynamic loading not enabled\n");
+    NaClLog(1, "NaClSysDyncodeModify: Dynamic loading not enabled\n");
     return -NACL_ABI_EINVAL;
   }
 
@@ -787,17 +808,21 @@ int32_t NaClTextSysDyncode_Modify(struct NaClAppThread *natp,
   dest_addr = NaClUserToSysAddrRange(nap, dest, size);
   src_addr = NaClUserToSysAddrRange(nap, src, size);
   if (kNaClBadAddress == src_addr || kNaClBadAddress == dest_addr) {
-    NaClLog(1, "NaClTextSysDyncode_Modify: Address out of range\n");
+    NaClLog(1, "NaClSysDyncodeModify: Address out of range\n");
     return -NACL_ABI_EFAULT;
   }
 
   NaClXMutexLock(&nap->dynamic_load_mutex);
 
   region = NaClDynamicRegionFind(nap, dest_addr, size);
-  if (NULL == region || region->start > dest_addr
-        || region->start + region->size < dest_addr + size) {
-    /* target not a subregion of region or region is null */
-    NaClLog(1, "NaClTextSysDyncode_Modify: Can't find region to modify\n");
+  if (NULL == region ||
+      region->start > dest_addr ||
+      region->start + region->size < dest_addr + size ||
+      region->is_mmap) {
+    /*
+     * target not a subregion of region or region is null, or came from a file.
+     */
+    NaClLog(1, "NaClSysDyncodeModify: Can't find region to modify\n");
     retval = -NACL_ABI_EFAULT;
     goto cleanup_unlock;
   }
@@ -849,26 +874,24 @@ int32_t NaClTextSysDyncode_Modify(struct NaClAppThread *natp,
   }
 
   if (validator_result != LOAD_OK) {
-    NaClLog(1, "NaClTextSysDyncode_Modify: "
-               "Validation of dynamic code failed\n");
+    NaClLog(1, "NaClSysDyncodeModify: Validation of dynamic code failed\n");
     retval = -NACL_ABI_EINVAL;
     goto cleanup_unlock;
   }
 
-  if (!NaclTextMapWrapper(nap, dest, size, &mapped_addr)) {
+  if (!NaClTextMapWrapper(nap, dest, size, &mapped_addr)) {
     retval = -NACL_ABI_ENOMEM;
     goto cleanup_unlock;
   }
 
   if (LOAD_OK != NaClCopyCode(nap, dest, mapped_addr, code_copy, size)) {
-    NaClLog(1, "NaClTextSysDyncode_Modify "
-               "Copying of replacement code failed\n");
+    NaClLog(1, "NaClSysDyncodeModify: Copying of replacement code failed\n");
     retval = -NACL_ABI_EINVAL;
     goto cleanup_unlock;
   }
   retval = 0;
 
-  NaclTextMapClearCacheIfNeeded(nap, dest, size);
+  NaClTextMapClearCacheIfNeeded(nap, dest, size);
 
  cleanup_unlock:
   NaClXMutexUnlock(&nap->dynamic_load_mutex);
@@ -880,17 +903,23 @@ int32_t NaClTextSysDyncode_Modify(struct NaClAppThread *natp,
   return retval;
 }
 
-int32_t NaClTextSysDyncode_Delete(struct NaClAppThread *natp,
-                                  uint32_t             dest,
-                                  uint32_t             size) {
+int32_t NaClSysDyncodeDelete(struct NaClAppThread *natp,
+                             uint32_t             dest,
+                             uint32_t             size) {
   struct NaClApp              *nap = natp->nap;
   uintptr_t                    dest_addr;
   uint8_t                     *mapped_addr;
   int32_t                     retval = -NACL_ABI_EINVAL;
   struct NaClDynamicRegion    *region;
 
+  if (!nap->enable_dyncode_syscalls) {
+    NaClLog(LOG_WARNING,
+            "NaClSysDyncodeDelete: Dynamic code syscalls are disabled\n");
+    return -NACL_ABI_ENOSYS;
+  }
+
   if (NULL == nap->text_shm) {
-    NaClLog(1, "NaClTextSysDyncode_Delete: Dynamic loading not enabled\n");
+    NaClLog(1, "NaClSysDyncodeDelete: Dynamic loading not enabled\n");
     return -NACL_ABI_EINVAL;
   }
 
@@ -908,7 +937,7 @@ int32_t NaClTextSysDyncode_Delete(struct NaClAppThread *natp,
 
   dest_addr = NaClUserToSysAddrRange(nap, dest, size);
   if (kNaClBadAddress == dest_addr) {
-    NaClLog(1, "NaClTextSysDyncode_Delete: Address out of range\n");
+    NaClLog(1, "NaClSysDyncodeDelete: Address out of range\n");
     return -NACL_ABI_EFAULT;
   }
 
@@ -919,8 +948,11 @@ int32_t NaClTextSysDyncode_Delete(struct NaClAppThread *natp,
    * previously inserted region, so no need to check for alignment/bounds/etc
    */
   region = NaClDynamicRegionFind(nap, dest_addr, size);
-  if (NULL == region || region->start != dest_addr || region->size != size) {
-    NaClLog(1, "NaClTextSysDyncode_Delete: Can't find region to delete\n");
+  if (NULL == region ||
+      region->start != dest_addr ||
+      region->size != size ||
+      region->is_mmap) {
+    NaClLog(1, "NaClSysDyncodeDelete: Can't find region to delete\n");
     retval = -NACL_ABI_EFAULT;
     goto cleanup_unlock;
   }
@@ -930,13 +962,13 @@ int32_t NaClTextSysDyncode_Delete(struct NaClAppThread *natp,
     /* first deletion request */
 
     if (nap->dynamic_delete_generation == INT32_MAX) {
-      NaClLog(1, "NaClTextSysDyncode_Delete:"
+      NaClLog(1, "NaClSysDyncodeDelete:"
                  "Overflow, can only delete INT32_MAX regions\n");
       retval = -NACL_ABI_EFAULT;
       goto cleanup_unlock;
     }
 
-    if (!NaclTextMapWrapper(nap, dest, size, &mapped_addr)) {
+    if (!NaClTextMapWrapper(nap, dest, size, &mapped_addr)) {
       retval = -NACL_ABI_ENOMEM;
       goto cleanup_unlock;
     }
@@ -952,7 +984,7 @@ int32_t NaClTextSysDyncode_Delete(struct NaClAppThread *natp,
      */
     NaClFlushCacheForDoublyMappedCode(mapped_addr, (uint8_t *) dest_addr, size);
 
-    NaclTextMapClearCacheIfNeeded(nap, dest, size);
+    NaClTextMapClearCacheIfNeeded(nap, dest, size);
 
     /* increment and record the generation deletion was requested */
     region->delete_generation = ++nap->dynamic_delete_generation;
@@ -981,4 +1013,17 @@ int32_t NaClTextSysDyncode_Delete(struct NaClAppThread *natp,
  cleanup_unlock:
   NaClXMutexUnlock(&nap->dynamic_load_mutex);
   return retval;
+}
+
+void NaClDyncodeVisit(
+    struct NaClApp *nap,
+    void           (*fn)(void *state, struct NaClDynamicRegion *region),
+    void           *state) {
+  int            i;
+
+  NaClXMutexLock(&nap->dynamic_load_mutex);
+  for (i = 0; i < nap->num_dynamic_regions; ++i) {
+    fn(state, &nap->dynamic_regions[i]);
+  }
+  NaClXMutexUnlock(&nap->dynamic_load_mutex);
 }

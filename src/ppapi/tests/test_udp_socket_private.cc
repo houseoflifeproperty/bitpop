@@ -54,37 +54,34 @@ bool TestUDPSocketPrivate::Init() {
 }
 
 void TestUDPSocketPrivate::RunTests(const std::string& filter) {
-  RUN_TEST_FORCEASYNC_AND_NOT(Connect, filter);
-  RUN_TEST_FORCEASYNC_AND_NOT(ConnectFailure, filter);
-  RUN_TEST_FORCEASYNC_AND_NOT(Broadcast, filter);
-  RUN_TEST_FORCEASYNC_AND_NOT(SetSocketFeatureErrors, filter);
+  RUN_CALLBACK_TEST(TestUDPSocketPrivate, Connect, filter);
+  RUN_CALLBACK_TEST(TestUDPSocketPrivate, ConnectFailure, filter);
+  RUN_CALLBACK_TEST(TestUDPSocketPrivate, Broadcast, filter);
+  RUN_CALLBACK_TEST(TestUDPSocketPrivate, SetSocketFeatureErrors, filter);
 }
 
 std::string TestUDPSocketPrivate::GetLocalAddress(
     PP_NetAddress_Private* address) {
   pp::TCPSocketPrivate socket(instance_);
-  TestCompletionCallback callback(instance_->pp_instance(), force_async_);
-  int32_t rv = socket.Connect(host_.c_str(), port_, callback);
-  if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
-    return ReportError("PPB_TCPSocket_Private::Connect force_async", rv);
-  if (rv == PP_OK_COMPLETIONPENDING)
-    rv = callback.WaitForResult();
-  if (rv != PP_OK)
-    return ReportError("PPB_TCPSocket_Private::Connect", rv);
-  if (!socket.GetLocalAddress(address))
-    return "PPB_TCPSocket_Private::GetLocalAddress: Failed";
+  TestCompletionCallback callback(instance_->pp_instance(), callback_type());
+  callback.WaitForResult(
+      socket.Connect(host_.c_str(), port_, callback.GetCallback()));
+  CHECK_CALLBACK_BEHAVIOR(callback);
+  ASSERT_EQ(PP_OK, callback.result());
+  ASSERT_TRUE(socket.GetLocalAddress(address));
   socket.Disconnect();
   PASS();
 }
 
 std::string TestUDPSocketPrivate::SetBroadcastOptions(
     pp::UDPSocketPrivate* socket) {
-  int32_t rv = socket->SetSocketFeature(PP_UDPSOCKETFEATURE_ADDRESS_REUSE,
-                                        pp::Var(true));
+  int32_t rv = socket->SetSocketFeature(
+      PP_UDPSOCKETFEATURE_PRIVATE_ADDRESS_REUSE, pp::Var(true));
   if (rv != PP_OK)
     return ReportError("PPB_UDPSocket_Private::SetSocketFeature", rv);
 
-  rv = socket->SetSocketFeature(PP_UDPSOCKETFEATURE_BROADCAST, pp::Var(true));
+  rv = socket->SetSocketFeature(PP_UDPSOCKETFEATURE_PRIVATE_BROADCAST,
+                                pp::Var(true));
   if (rv != PP_OK)
     return ReportError("PPB_UDPSocket_Private::SetSocketFeature", rv);
 
@@ -94,14 +91,10 @@ std::string TestUDPSocketPrivate::SetBroadcastOptions(
 std::string TestUDPSocketPrivate::BindUDPSocket(
     pp::UDPSocketPrivate* socket,
     PP_NetAddress_Private* address) {
-  TestCompletionCallback callback(instance_->pp_instance(), force_async_);
-  int32_t rv = socket->Bind(address, callback);
-  if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
-    return ReportError("PPB_UDPSocket_Private::Bind force_async", rv);
-  if (rv == PP_OK_COMPLETIONPENDING)
-    rv = callback.WaitForResult();
-  if (rv != PP_OK)
-    return ReportError("PPB_UDPSocket_Private::Bind", rv);
+  TestCompletionCallback callback(instance_->pp_instance(), callback_type());
+  callback.WaitForResult(socket->Bind(address, callback.GetCallback()));
+  CHECK_CALLBACK_BEHAVIOR(callback);
+  ASSERT_EQ(PP_OK, callback.result());
   PASS();
 }
 
@@ -130,16 +123,11 @@ std::string TestUDPSocketPrivate::LookupPortAndBindUDPSocket(
 std::string TestUDPSocketPrivate::BindUDPSocketFailure(
     pp::UDPSocketPrivate* socket,
     PP_NetAddress_Private *address) {
-  TestCompletionCallback callback(instance_->pp_instance(), force_async_);
-  int32_t rv = socket->Bind(address, callback);
-  if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
-    return ReportError("PPB_UDPSocket_Private::Bind force_async", rv);
-  if (rv == PP_OK_COMPLETIONPENDING)
-    rv = callback.WaitForResult();
-  if (rv == PP_OK)
-    return ReportError("PPB_UDPSocket_Private::Bind", rv);
-  if (socket->GetBoundAddress(address))
-      return "PPB_UDPSocket_Private::GetBoundAddress: Failed";
+  TestCompletionCallback callback(instance_->pp_instance(), callback_type());
+  callback.WaitForResult(socket->Bind(address, callback.GetCallback()));
+  CHECK_CALLBACK_BEHAVIOR(callback);
+  ASSERT_NE(PP_OK, callback.result());
+  ASSERT_FALSE(socket->GetBoundAddress(address));
   PASS();
 }
 
@@ -148,14 +136,12 @@ std::string TestUDPSocketPrivate::ReadSocket(pp::UDPSocketPrivate* socket,
                                              size_t size,
                                              std::string* message) {
   std::vector<char> buffer(size);
-  TestCompletionCallback callback(instance_->pp_instance(), force_async_);
-  int32_t rv = socket->RecvFrom(&buffer[0], size, callback);
-  if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
-    return ReportError("PPB_UDPSocket_Private::RecvFrom force_async", rv);
-  if (rv == PP_OK_COMPLETIONPENDING)
-    rv = callback.WaitForResult();
-  if (rv < 0 || size != static_cast<size_t>(rv))
-    return ReportError("PPB_UDPSocket_Private::RecvFrom", rv);
+  TestCompletionCallback callback(instance_->pp_instance(), callback_type());
+  callback.WaitForResult(
+      socket->RecvFrom(&buffer[0], size, callback.GetCallback()));
+  CHECK_CALLBACK_BEHAVIOR(callback);
+  ASSERT_FALSE(callback.result() < 0);
+  ASSERT_EQ(size, static_cast<size_t>(callback.result()));
   message->assign(buffer.begin(), buffer.end());
   PASS();
 }
@@ -164,20 +150,16 @@ std::string TestUDPSocketPrivate::PassMessage(pp::UDPSocketPrivate* target,
                                               pp::UDPSocketPrivate* source,
                                               PP_NetAddress_Private* address,
                                               const std::string& message) {
-  TestCompletionCallback callback(instance_->pp_instance(), force_async_);
+  TestCompletionCallback callback(instance_->pp_instance(), callback_type());
   int32_t rv = source->SendTo(message.c_str(), message.size(), address,
-                              callback);
-  if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
-    return ReportError("PPB_UDPSocket_Private::SendTo force_async", rv);
-
+                              callback.GetCallback());
   std::string str;
   ASSERT_SUBTEST_SUCCESS(ReadSocket(target, address, message.size(), &str));
 
-  if (rv == PP_OK_COMPLETIONPENDING)
-    rv = callback.WaitForResult();
-  if (rv < 0 || message.size() != static_cast<size_t>(rv))
-    return ReportError("PPB_UDPSocket_Private::SendTo", rv);
-
+  callback.WaitForResult(rv);
+  CHECK_CALLBACK_BEHAVIOR(callback);
+  ASSERT_FALSE(callback.result() < 0);
+  ASSERT_EQ(message.size(), static_cast<size_t>(callback.result()));
   ASSERT_EQ(message, str);
   PASS();
 }
@@ -265,12 +247,13 @@ std::string TestUDPSocketPrivate::TestBroadcast() {
 std::string TestUDPSocketPrivate::TestSetSocketFeatureErrors() {
   pp::UDPSocketPrivate socket(instance_);
   // Try to pass incorrect feature name.
-  int32_t rv = socket.SetSocketFeature(PP_UDPSOCKETFEATURE_COUNT,
+  int32_t rv = socket.SetSocketFeature(PP_UDPSOCKETFEATURE_PRIVATE_COUNT,
                                        pp::Var(true));
   ASSERT_EQ(PP_ERROR_BADARGUMENT, rv);
 
   // Try to pass incorrect feature value's type.
-  rv = socket.SetSocketFeature(PP_UDPSOCKETFEATURE_ADDRESS_REUSE, pp::Var(1));
+  rv = socket.SetSocketFeature(PP_UDPSOCKETFEATURE_PRIVATE_ADDRESS_REUSE,
+                               pp::Var(1));
   ASSERT_EQ(PP_ERROR_BADARGUMENT, rv);
   PASS();
 }

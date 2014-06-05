@@ -7,8 +7,8 @@
 
 #include "rlz/win/lib/registry_util.h"
 
-#include "base/process_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/process/process_handle.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/registry.h"
 #include "base/win/windows_version.h"
 #include "rlz/lib/assert.h"
@@ -31,14 +31,14 @@ bool RegKeyReadValue(base::win::RegKey& key, const wchar_t* name,
   }
 
   // Note that RLZ string are always ASCII by design.
-  strncpy(value, WideToUTF8(value_string).c_str(), *value_size);
+  strncpy(value, base::WideToUTF8(value_string).c_str(), *value_size);
   value[*value_size - 1] = 0;
   return true;
 }
 
 bool RegKeyWriteValue(base::win::RegKey& key, const wchar_t* name,
                       const char* value) {
-  std::wstring value_string(ASCIIToWide(value));
+  std::wstring value_string(base::ASCIIToWide(value));
   return key.WriteValue(name, value_string.c_str()) == ERROR_SUCCESS;
 }
 

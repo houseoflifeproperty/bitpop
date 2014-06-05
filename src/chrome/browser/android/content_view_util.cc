@@ -11,15 +11,23 @@
 #include "content/public/browser/web_contents.h"
 #include "jni/ContentViewUtil_jni.h"
 
-static jint CreateNativeWebContents(
-    JNIEnv* env, jclass clazz, jboolean incognito) {
-  Profile* profile = g_browser_process->profile_manager()->GetDefaultProfile();
+static jlong CreateNativeWebContents(
+    JNIEnv* env, jclass clazz, jboolean incognito, jboolean initially_hidden) {
+  Profile* profile = g_browser_process->profile_manager()->GetLastUsedProfile();
   if (incognito)
     profile = profile->GetOffTheRecordProfile();
 
+  content::WebContents::CreateParams params =
+      content::WebContents::CreateParams(profile);
+  params.initially_hidden = static_cast<bool>(initially_hidden);
+  return reinterpret_cast<intptr_t>(content::WebContents::Create(params));
+}
+
+static void DestroyNativeWebContents(
+    JNIEnv* env, jclass clazz, jlong web_contents_ptr) {
   content::WebContents* web_contents =
-      content::WebContents::Create(content::WebContents::CreateParams(profile));
-  return reinterpret_cast<jint>(web_contents);
+      reinterpret_cast<content::WebContents*>(web_contents_ptr);
+  delete web_contents;
 }
 
 bool RegisterContentViewUtil(JNIEnv* env) {

@@ -5,6 +5,7 @@
 [
   {
     "namespace": "omnibox",
+    "description": "The omnibox API allows you to register a keyword with Google Chrome's address bar, which is also known as the omnibox.",
     "types": [
       {
         "id": "SuggestResult",
@@ -20,6 +21,81 @@
             "type": "string",
             "minLength": 1,
             "description": "The text that is displayed in the URL dropdown. Can contain XML-style markup for styling. The supported tags are 'url' (for a literal URL), 'match' (for highlighting text that matched what the user's query), and 'dim' (for dim helper text). The styles can be nested, eg. <dim><match>dimmed match</match></dim>."
+          },
+          "descriptionStyles": {
+            "nodoc": true,
+            "optional": true,
+            "type": "array",
+            "description": "An array of style ranges for the description, as provided by the extension.",
+            "items": {
+              "type": "object",
+              "name": "matchClassification",
+              "description": "The style ranges for the description, as provided by the extension.",
+              "properties": {
+                "offset": { "type": "integer" },
+                "type": { "description": "The style type", "type": "string", "enum": ["url", "match", "dim"]},
+                "length": { "type": "integer", "optional": true }
+              }
+            }
+          },
+          "descriptionStylesRaw": {
+            "nodoc": true,
+            "optional": true,
+            "type": "array",
+            "description": "An array of style ranges for the description, as provided by ToValue().",
+            "items": {
+              "type": "object",
+              "name": "matchClassification",
+              "description": "The style ranges for the description, as provided by ToValue().",
+              "properties": {
+                "offset": { "type": "integer" },
+                "type": { "type": "integer" }
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "DefaultSuggestResult",
+        "inline_doc": true,
+        "type": "object",
+        "description": "A suggest result.",
+        "properties": {
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The text that is displayed in the URL dropdown. Can contain XML-style markup for styling. The supported tags are 'url' (for a literal URL), 'match' (for highlighting text that matched what the user's query), and 'dim' (for dim helper text). The styles can be nested, eg. <dim><match>dimmed match</match></dim>."
+          },
+          "descriptionStyles": {
+            "nodoc": true,
+            "optional": true,
+            "type": "array",
+            "description": "An array of style ranges for the description, as provided by the extension.",
+            "items": {
+              "type": "object",
+              "name": "matchClassification",
+              "description": "The style ranges for the description, as provided by the extension.",
+              "properties": {
+                "offset": { "type": "integer" },
+                "type": { "description": "The style type", "type": "string", "enum": ["url", "match", "dim"]},
+                "length": { "type": "integer", "optional": true }
+              }
+            }
+          },
+          "descriptionStylesRaw": {
+            "nodoc": true,
+            "optional": true,
+            "type": "array",
+            "description": "An array of style ranges for the description, as provided by ToValue().",
+            "items": {
+              "type": "object",
+              "name": "matchClassification",
+              "description": "The style ranges for the description, as provided by ToValue().",
+              "properties": {
+                "offset": { "type": "integer" },
+                "type": { "type": "integer" }
+              }
+            }
           }
         }
       }
@@ -35,10 +111,9 @@
           {
             "name": "suggestResults",
             "type": "array",
-            "description": "Array of suggest results",
+            "description": "An array of suggest results",
             "items": {
-              "type": "object",
-              "additionalProperties": { "type": "any" }
+              "$ref": "SuggestResult"
             }
           }
         ]
@@ -49,16 +124,9 @@
         "description": "Sets the description and styling for the default suggestion. The default suggestion is the text that is displayed in the first suggestion row underneath the URL bar.",
         "parameters": [
           {
-            "type": "object",
             "name": "suggestion",
-            "description": "A partial SuggestResult object, without the 'content' parameter. See SuggestResult for a description of the parameters.",
-            "properties": {
-              "description": {
-                "type": "string",
-                "minLength": 1,
-                "description": "The text to display in the default suggestion. The placeholder string '%s' can be included and will be replaced with the user's input."
-              }
-            }
+            "$ref": "DefaultSuggestResult",
+            "description": "A partial SuggestResult object, without the 'content' parameter."
           }
         ]
       }
@@ -104,6 +172,12 @@
           {
             "type": "string",
             "name": "text"
+          },
+          {
+            "name": "disposition",
+            "type": "string",
+            "enum": ["currentTab", "newForegroundTab", "newBackgroundTab"],
+            "description": "The window disposition for the omnibox query. This is the recommended context to display results. For example, if the omnibox command is to navigate to a certain URL, a disposition of 'newForegroundTab' means the navigation should take place in a new selected tab."
           }
         ]
       },

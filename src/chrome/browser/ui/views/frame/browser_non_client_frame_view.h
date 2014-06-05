@@ -5,42 +5,37 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_FRAME_BROWSER_NON_CLIENT_FRAME_VIEW_H_
 #define CHROME_BROWSER_UI_VIEWS_FRAME_BROWSER_NON_CLIENT_FRAME_VIEW_H_
 
-#include "base/memory/scoped_ptr.h"
+#include "chrome/browser/ui/views/profiles/new_avatar_button.h"
 #include "ui/views/window/non_client_view.h"
 
+class AvatarLabel;
 class AvatarMenuButton;
 class BrowserFrame;
 class BrowserView;
+class NewAvatarButton;
 
 // A specialization of the NonClientFrameView object that provides additional
 // Browser-specific methods.
 class BrowserNonClientFrameView : public views::NonClientFrameView {
  public:
-  // Insets around the tabstrip.
-  struct TabStripInsets {
-    TabStripInsets() : top(0), left(0), right(0) {}
-    TabStripInsets(int top, int left, int right)
-        : top(top),
-          left(left),
-          right(right) {}
-
-    int top;
-    int left;
-    int right;
-  };
-
   BrowserNonClientFrameView(BrowserFrame* frame, BrowserView* browser_view);
   virtual ~BrowserNonClientFrameView();
 
-  AvatarMenuButton* avatar_button() const { return avatar_button_.get(); }
+  AvatarMenuButton* avatar_button() const { return avatar_button_; }
 
-  // Returns the bounds within which the TabStrip should be laid out.
+  NewAvatarButton* new_avatar_button() const { return new_avatar_button_; }
+
+  AvatarLabel* avatar_label() const { return avatar_label_; }
+
+  // Retrieves the bounds, in non-client view coordinates within which the
+  // TabStrip should be laid out.
   virtual gfx::Rect GetBoundsForTabStrip(views::View* tabstrip) const = 0;
 
-  // Returns the TabStripInsets within the window at which the tab strip is
-  // positioned. If |as_restored| is true, this is calculated as if we were in
-  // restored mode regardless of the current mode.
-  virtual TabStripInsets GetTabStripInsets(bool force_restored) const = 0;
+  // Returns the inset of the topmost view in the client view from the top of
+  // the non-client view. The topmost view depends on the window type. The
+  // topmost view is the tab strip for tabbed browser windows, the toolbar for
+  // popups, the web contents for app windows and varies for fullscreen windows.
+  virtual int GetTopInset() const = 0;
 
   // Returns the amount that the theme background should be inset.
   virtual int GetThemeBackgroundXInset() const = 0;
@@ -51,6 +46,7 @@ class BrowserNonClientFrameView : public views::NonClientFrameView {
   // Overriden from views::View.
   virtual void VisibilityChanged(views::View* starting_from,
                                  bool is_visible) OVERRIDE;
+  virtual void OnThemeChanged() OVERRIDE;
 
  protected:
   BrowserView* browser_view() const { return browser_view_; }
@@ -58,6 +54,12 @@ class BrowserNonClientFrameView : public views::NonClientFrameView {
 
   // Updates the title and icon of the avatar button.
   void UpdateAvatarInfo();
+
+  // Updates the title of the avatar button displayed in the caption area.
+  // The button uses |style| to match the browser window style and notifies
+  // |listener| when it is clicked.
+  void UpdateNewStyleAvatarInfo(views::ButtonListener* listener,
+                                const NewAvatarButton::AvatarButtonStyle style);
 
  private:
   // The frame that hosts this view.
@@ -68,7 +70,14 @@ class BrowserNonClientFrameView : public views::NonClientFrameView {
 
   // Menu button that displays that either the incognito icon or the profile
   // icon.  May be NULL for some frame styles.
-  scoped_ptr<AvatarMenuButton> avatar_button_;
+  AvatarMenuButton* avatar_button_;
+
+  // Avatar label that is used for a managed user.
+  AvatarLabel* avatar_label_;
+
+  // Menu button that displays the name of the active or guest profile.
+  // May be NULL and will not be displayed for off the record profiles.
+  NewAvatarButton* new_avatar_button_;
 };
 
 namespace chrome {

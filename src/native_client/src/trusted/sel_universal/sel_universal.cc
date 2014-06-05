@@ -13,11 +13,13 @@
 #include <sstream>
 #include <string>
 #include <vector>
+
 #include "native_client/src/include/nacl_string.h"
 #include "native_client/src/include/nacl_macros.h"
 #include "native_client/src/include/nacl_scoped_ptr.h"
 #include "native_client/src/include/portability.h"
 #include "native_client/src/include/portability_io.h"
+#include "native_client/src/public/secure_service.h"
 #include "native_client/src/shared/platform/nacl_log.h"
 #include "native_client/src/shared/platform/scoped_ptr_refcount.h"
 #include "native_client/src/shared/srpc/nacl_srpc.h"
@@ -30,6 +32,9 @@
 #include "native_client/src/trusted/sel_universal/replay_handler.h"
 #include "native_client/src/trusted/sel_universal/rpc_universal.h"
 #include "native_client/src/trusted/service_runtime/nacl_error_code.h"
+
+#include "native_client/src/trusted/nonnacl_util/launcher_factory.h"
+#include "native_client/src/trusted/nonnacl_util/sel_ldr_launcher_zygote.h"
 
 using std::ifstream;
 using std::map;
@@ -61,7 +66,6 @@ static const char* kUsage =
     "  --url_alias <url> <filename>\n"
     "  --uses_reverse_service\n"
     "  --no_app_channel\n"
-    "  --irt <file>\n"
     "\n"
     "The following sel_ldr arguments might be useful:\n"
     "  -v                    increase verbosity\n"
@@ -89,7 +93,6 @@ static bool app_channel = true;
 // It will call exit with codes 0 (help message) and 1 (incorrect args).
 static nacl::string ProcessArguments(int argc,
                                      char* argv[],
-                                     nacl::string* irt_name,
                                      vector<nacl::string>* const sel_ldr_argv,
                                      vector<nacl::string>* const app_argv) {
   if (argc == 1) {
@@ -147,11 +150,6 @@ static nacl::string ProcessArguments(int argc,
       uses_reverse_service = true;
     } else if (flag == "--no_app_channel") {
       app_channel = false;
-    } else if (flag == "--irt") {
-      if (argc <= i + 1) {
-        NaClLog(LOG_FATAL, "not enough args for --irt option\n");
-      }
-      *irt_name = argv[++i];
     } else if (flag == "--") {
       // Done processing sel_ldr args.  The first argument after '--' is the
       // nexe.
@@ -186,7 +184,8 @@ static bool HandlerHardShutdown(NaClCommandLoop* ncl,
                                const vector<string>& args) {
   UNREFERENCED_PARAMETER(ncl);
   UNREFERENCED_PARAMETER(args);
-  NaClSrpcInvokeBySignature(&command_channel, "hard_shutdown::");
+  NaClSrpcInvokeBySignature(&command_channel,
+                            NACL_SECURE_SERVICE_HARD_SHUTDOWN);
   return true;
 }
 
@@ -204,9 +203,8 @@ int raii_main(int argc, char* argv[]) {
   // Get the arguments to sed_ldr and the nexe module
   vector<nacl::string> sel_ldr_argv;
   vector<nacl::string> app_argv;
-  nacl::string irt_name;
   nacl::string app_name =
-    ProcessArguments(argc, argv, &irt_name, &sel_ldr_argv, &app_argv);
+    ProcessArguments(argc, argv, &sel_ldr_argv, &app_argv);
 
   if (silence_nexe) {
     // redirect stdout/stderr in the nexe to /dev/null
@@ -221,15 +219,25 @@ int raii_main(int argc, char* argv[]) {
     ss_stderr << "2:" << fd;
     sel_ldr_argv.push_back(ss_stderr.str());
   }
+  nacl::Zygote zygote;
+  if (!zygote.Init()) {
+    NaClLog(LOG_FATAL, "sel_universal: cannot spawn zygote process\n");
+  }
+  NaClLog(4, "sel_universal: zygote.Init() okay\n");
+  nacl::SelLdrLauncherStandaloneFactory launcher_factory(&zygote);
+  NaClLog(4, "sel_universal: launcher_factory ctor() okay\n");
+
   // Start sel_ldr with the given application and arguments.
-  nacl::SelLdrLauncherStandalone launcher;
+  nacl::SelLdrLauncherStandalone* launcher =
+      launcher_factory.MakeSelLdrLauncherStandalone();
+  NaClLog(4, "sel_universal: MakeSelLdrLauncherStandalone() okay\n");
   nacl::DescWrapperFactory factory;  // DescWrapper "namespace"
 
-  if (!launcher.StartViaCommandLine(command_prefix, sel_ldr_argv, app_argv)) {
+  if (!launcher->StartViaCommandLine(command_prefix, sel_ldr_argv, app_argv)) {
     NaClLog(LOG_FATAL, "sel_universal: Failed to launch sel_ldr\n");
   }
 
-  if (!launcher.SetupCommand(&command_channel)) {
+  if (!launcher->SetupCommand(&command_channel)) {
     NaClLog(LOG_ERROR, "sel_universal: set up command failed\n");
     exit(1);
   }
@@ -240,40 +248,26 @@ int raii_main(int argc, char* argv[]) {
     exit(1);
   }
 
-  if (!launcher.LoadModule(&command_channel, host_file)) {
+  if (!launcher->LoadModule(&command_channel, host_file)) {
     NaClLog(LOG_ERROR, "sel_universal: load module failed\n");
     exit(1);
   }
 
   delete host_file;
 
-  if (irt_name != "") {
-    DescWrapper* irt = factory.OpenHostFile(irt_name.c_str(), O_RDONLY, 0);
-    if (NULL == irt) {
-      NaClLog(LOG_ERROR, "Could not open %s\n", irt_name.c_str());
-      exit(1);
-    }
-
-    if (!launcher.LoadIrt(&command_channel, irt)) {
-      NaClLog(LOG_ERROR, "sel_universal: load irt failed\n");
-      exit(1);
-    }
-
-    delete irt;
-  }
-
   if (uses_reverse_service) {
-    ReverseEmulateInit(&command_channel, &launcher);
+    ReverseEmulateInit(&command_channel, launcher, &launcher_factory,
+        command_prefix, sel_ldr_argv);
   }
 
-  if (!launcher.StartModule(&command_channel)) {
+  if (!launcher->StartModule(&command_channel)) {
     NaClLog(LOG_ERROR,
             "sel_universal: start module failed\n");
     exit(1);
   }
 
   if (app_channel) {
-    if (!launcher.SetupAppChannel(&channel)) {
+    if (!launcher->SetupAppChannel(&channel)) {
       NaClLog(LOG_ERROR,
               "sel_universal: set up app channel failed\n");
       exit(1);
@@ -282,7 +276,7 @@ int raii_main(int argc, char* argv[]) {
 
   NaClCommandLoop loop(channel.client,
                        &channel,
-                       launcher.socket_addr()->desc());
+                       launcher->socket_addr()->desc());
 
   // Sample built-in commands accepted by sel_universal:
   //

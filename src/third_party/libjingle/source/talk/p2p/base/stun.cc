@@ -27,7 +27,7 @@
 
 #include "talk/p2p/base/stun.h"
 
-#include <cstring>
+#include <string.h>
 
 #include "talk/base/byteorder.h"
 #include "talk/base/common.h"
@@ -98,7 +98,7 @@ bool StunMessage::AddAttribute(StunAttribute* attr) {
   if (attr_length % 4 != 0) {
     attr_length += (4 - (attr_length % 4));
   }
-  length_ += attr_length + 4;
+  length_ += static_cast<uint16>(attr_length + 4);
   return true;
 }
 
@@ -188,7 +188,7 @@ bool StunMessage::ValidateMessageIntegrity(const char* data, size_t size,
 
   // Getting length of the message to calculate Message Integrity.
   size_t mi_pos = current_pos;
-  talk_base::scoped_array<char> temp_data(new char[current_pos]);
+  talk_base::scoped_ptr<char[]> temp_data(new char[current_pos]);
   memcpy(temp_data.get(), data, current_pos);
   if (size > mi_pos + kStunAttributeHeaderSize + kStunMessageIntegritySize) {
     // Stun message has other attributes after message integrity.
@@ -203,7 +203,8 @@ bool StunMessage::ValidateMessageIntegrity(const char* data, size_t size,
     //     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
     //     |0 0|     STUN Message Type     |         Message Length        |
     //     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    talk_base::SetBE16(temp_data.get() + 2, new_adjusted_len);
+    talk_base::SetBE16(temp_data.get() + 2,
+                       static_cast<uint16>(new_adjusted_len));
   }
 
   char hmac[kStunMessageIntegritySize];
@@ -216,8 +217,9 @@ bool StunMessage::ValidateMessageIntegrity(const char* data, size_t size,
     return false;
 
   // Comparing the calculated HMAC with the one present in the message.
-  return (std::memcmp(data + current_pos + kStunAttributeHeaderSize,
-                      hmac, sizeof(hmac)) == 0);
+  return memcmp(data + current_pos + kStunAttributeHeaderSize,
+                hmac,
+                sizeof(hmac)) == 0;
 }
 
 bool StunMessage::AddMessageIntegrity(const std::string& password) {
@@ -238,8 +240,8 @@ bool StunMessage::AddMessageIntegrity(const char* key,
   if (!Write(&buf))
     return false;
 
-  int msg_len_for_hmac = buf.Length() -
-      kStunAttributeHeaderSize - msg_integrity_attr->length();
+  int msg_len_for_hmac = static_cast<int>(
+      buf.Length() - kStunAttributeHeaderSize - msg_integrity_attr->length());
   char hmac[kStunMessageIntegritySize];
   size_t ret = talk_base::ComputeHmac(talk_base::DIGEST_SHA_1,
                                       key, keylen,
@@ -299,8 +301,8 @@ bool StunMessage::AddFingerprint() {
   if (!Write(&buf))
     return false;
 
-  int msg_len_for_crc32 = buf.Length() -
-      kStunAttributeHeaderSize - fingerprint_attr->length();
+  int msg_len_for_crc32 = static_cast<int>(
+      buf.Length() - kStunAttributeHeaderSize - fingerprint_attr->length());
   uint32 c = talk_base::ComputeCrc32(buf.Data(), msg_len_for_crc32);
 
   // Insert the correct CRC-32, XORed with a constant, into the attribute.
@@ -380,7 +382,7 @@ bool StunMessage::Write(ByteBuffer* buf) const {
 
   for (size_t i = 0; i < attrs_->size(); ++i) {
     buf->WriteUInt16((*attrs_)[i]->type());
-    buf->WriteUInt16((*attrs_)[i]->length());
+    buf->WriteUInt16(static_cast<uint16>((*attrs_)[i]->length()));
     if (!(*attrs_)[i]->Write(buf))
       return false;
   }
@@ -408,7 +410,8 @@ StunAttributeValueType StunMessage::GetAttributeValueType(int type) const {
 
 StunAttribute* StunMessage::CreateAttribute(int type, size_t length) /*const*/ {
   StunAttributeValueType value_type = GetAttributeValueType(type);
-  return StunAttribute::Create(value_type, type, length, this);
+  return StunAttribute::Create(value_type, type,
+                               static_cast<uint16>(length), this);
 }
 
 const StunAttribute* StunMessage::GetAttribute(int type) const {
@@ -732,7 +735,7 @@ void StunByteStringAttribute::CopyBytes(const char* bytes) {
 
 void StunByteStringAttribute::CopyBytes(const void* bytes, size_t length) {
   char* new_bytes = new char[length];
-  std::memcpy(new_bytes, bytes, length);
+  memcpy(new_bytes, bytes, length);
   SetBytes(new_bytes, length);
 }
 
@@ -767,7 +770,7 @@ bool StunByteStringAttribute::Write(ByteBuffer* buf) const {
 void StunByteStringAttribute::SetBytes(char* bytes, size_t length) {
   delete [] bytes_;
   bytes_ = bytes;
-  SetLength(length);
+  SetLength(static_cast<uint16>(length));
 }
 
 StunErrorCodeAttribute::StunErrorCodeAttribute(uint16 type, int code,

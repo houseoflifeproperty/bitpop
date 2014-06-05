@@ -18,9 +18,35 @@ MockDemuxer::MockDemuxer() {}
 
 MockDemuxer::~MockDemuxer() {}
 
-MockDemuxerStream::MockDemuxerStream() {}
+MockDemuxerStream::MockDemuxerStream(DemuxerStream::Type type) : type_(type) {}
 
 MockDemuxerStream::~MockDemuxerStream() {}
+
+DemuxerStream::Type MockDemuxerStream::type() {
+  return type_;
+}
+
+AudioDecoderConfig MockDemuxerStream::audio_decoder_config() {
+  DCHECK_EQ(type_, DemuxerStream::AUDIO);
+  return audio_decoder_config_;
+}
+
+VideoDecoderConfig MockDemuxerStream::video_decoder_config() {
+  DCHECK_EQ(type_, DemuxerStream::VIDEO);
+  return video_decoder_config_;
+}
+
+void MockDemuxerStream::set_audio_decoder_config(
+    const AudioDecoderConfig& config) {
+  DCHECK_EQ(type_, DemuxerStream::AUDIO);
+  audio_decoder_config_ = config;
+}
+
+void MockDemuxerStream::set_video_decoder_config(
+    const VideoDecoderConfig& config) {
+  DCHECK_EQ(type_, DemuxerStream::VIDEO);
+  video_decoder_config_ = config;
+}
 
 MockVideoDecoder::MockVideoDecoder() {
   EXPECT_CALL(*this, HasAlpha()).WillRepeatedly(Return(false));
@@ -40,53 +66,13 @@ MockAudioRenderer::MockAudioRenderer() {}
 
 MockAudioRenderer::~MockAudioRenderer() {}
 
+MockTextTrack::MockTextTrack() {}
+
+MockTextTrack::~MockTextTrack() {}
+
 MockDecryptor::MockDecryptor() {}
 
 MockDecryptor::~MockDecryptor() {}
-
-void MockDecryptor::InitializeAudioDecoder(
-    scoped_ptr<AudioDecoderConfig> config,
-    const DecoderInitCB& init_cb) {
-  InitializeAudioDecoderMock(*config, init_cb);
-}
-
-void MockDecryptor::InitializeVideoDecoder(
-    scoped_ptr<VideoDecoderConfig> config,
-    const DecoderInitCB& init_cb) {
-  InitializeVideoDecoderMock(*config, init_cb);
-}
-
-MockDecryptorClient::MockDecryptorClient() {}
-
-MockDecryptorClient::~MockDecryptorClient() {}
-
-void MockDecryptorClient::NeedKey(const std::string& key_system,
-                                  const std::string& session_id,
-                                  const std::string& type,
-                                  scoped_array<uint8> init_data,
-                                  int init_data_length) {
-  NeedKeyMock(key_system, session_id, type, init_data.get(), init_data_length);
-}
-
-MockFilterCollection::MockFilterCollection()
-    : demuxer_(new MockDemuxer()),
-      video_decoder_(new MockVideoDecoder()),
-      audio_decoder_(new MockAudioDecoder()),
-      video_renderer_(new MockVideoRenderer()),
-      audio_renderer_(new MockAudioRenderer()) {
-}
-
-MockFilterCollection::~MockFilterCollection() {}
-
-scoped_ptr<FilterCollection> MockFilterCollection::Create() {
-  scoped_ptr<FilterCollection> collection(new FilterCollection());
-  collection->SetDemuxer(demuxer_);
-  collection->GetVideoDecoders()->push_back(video_decoder_);
-  collection->GetAudioDecoders()->push_back(audio_decoder_);
-  collection->AddVideoRenderer(video_renderer_);
-  collection->AddAudioRenderer(audio_renderer_);
-  return collection.Pass();
-}
 
 MockStatisticsCB::MockStatisticsCB() {}
 

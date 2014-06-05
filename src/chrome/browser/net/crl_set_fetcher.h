@@ -11,38 +11,37 @@
 #include "base/memory/ref_counted.h"
 #include "chrome/browser/component_updater/component_updater_service.h"
 
-class FilePath;
-
 namespace base {
 class DictionaryValue;
+class FilePath;
 }
 
 namespace net {
 class CRLSet;
 }
 
-class ComponentUpdateService;
-
-class CRLSetFetcher : public ComponentInstaller,
+class CRLSetFetcher : public component_updater::ComponentInstaller,
                       public base::RefCountedThreadSafe<CRLSetFetcher> {
  public:
   CRLSetFetcher();
 
-  void StartInitialLoad(ComponentUpdateService* cus);
+  void StartInitialLoad(component_updater::ComponentUpdateService* cus);
 
   // ComponentInstaller interface
   virtual void OnUpdateError(int error) OVERRIDE;
-  virtual bool Install(base::DictionaryValue* manifest,
-                       const FilePath& unpack_path) OVERRIDE;
+  virtual bool Install(const base::DictionaryValue& manifest,
+                       const base::FilePath& unpack_path) OVERRIDE;
+  virtual bool GetInstalledFile(const std::string& file,
+                                base::FilePath* installed_file) OVERRIDE;
 
  private:
   friend class base::RefCountedThreadSafe<CRLSetFetcher>;
 
   virtual ~CRLSetFetcher();
 
-  // GetCRLSetFilePath gets the path of the CRL set file in the user data
+  // GetCRLSetbase::FilePath gets the path of the CRL set file in the user data
   // dir.
-  bool GetCRLSetFilePath(FilePath* path) const;
+  bool GetCRLSetFilePath(base::FilePath* path) const;
 
   // DoInitialLoadFromDisk runs on the FILE thread and attempts to load a CRL
   // set from the user-data dir. It then registers this object as a component
@@ -51,7 +50,7 @@ class CRLSetFetcher : public ComponentInstaller,
 
   // LoadFromDisk runs on the FILE thread and attempts to load a CRL set
   // from |load_from|.
-  void LoadFromDisk(FilePath load_from,
+  void LoadFromDisk(base::FilePath load_from,
                     scoped_refptr<net::CRLSet>* out_crl_set);
 
   // SetCRLSetIfNewer runs on the IO thread and installs a CRL set
@@ -61,7 +60,7 @@ class CRLSetFetcher : public ComponentInstaller,
   // RegisterComponent registers this object as a component updater.
   void RegisterComponent(uint32 sequence_of_loaded_crl);
 
-  ComponentUpdateService* cus_;
+  component_updater::ComponentUpdateService* cus_;
 
   // We keep a pointer to the current CRLSet for use on the FILE thread when
   // applying delta updates.

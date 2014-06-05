@@ -6,21 +6,32 @@
 
 #include "base/logging.h"
 #include "ipc/ipc_message_utils.h"
+#include "ppapi/c/pp_instance.h"
 #include "ppapi/proxy/dispatcher.h"
 #include "ppapi/proxy/interface_proxy.h"
 #include "ppapi/proxy/ppapi_param_traits.h"
+#include "ppapi/proxy/ppb_buffer_proxy.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
 #include "ppapi/shared_impl/var.h"
+#include "ppapi/thunk/enter.h"
 
 namespace ppapi {
 namespace proxy {
+
+namespace {
+void DefaultHandleWriter(IPC::Message* m, const SerializedHandle& handle) {
+  IPC::ParamTraits<SerializedHandle>::Write(m, handle);
+}
+}  // namespace
 
 // SerializedVar::Inner --------------------------------------------------------
 
 SerializedVar::Inner::Inner()
     : serialization_rules_(NULL),
       var_(PP_MakeUndefined()),
-      cleanup_mode_(CLEANUP_NONE) {
+      instance_(0),
+      cleanup_mode_(CLEANUP_NONE),
+      is_valid_var_(true) {
 #ifndef NDEBUG
   has_been_serialized_ = false;
   has_been_deserialized_ = false;
@@ -30,6 +41,7 @@ SerializedVar::Inner::Inner()
 SerializedVar::Inner::Inner(VarSerializationRules* serialization_rules)
     : serialization_rules_(serialization_rules),
       var_(PP_MakeUndefined()),
+      instance_(0),
       cleanup_mode_(CLEANUP_NONE) {
 #ifndef NDEBUG
   has_been_serialized_ = false;
@@ -51,18 +63,31 @@ SerializedVar::Inner::~Inner() {
 }
 
 PP_Var SerializedVar::Inner::GetVar() {
-  DCHECK(serialization_rules_);
+  DCHECK(serialization_rules_.get());
 
-  ConvertRawVarData();
+#if defined(NACL_WIN64)
+  NOTREACHED();
+  return PP_MakeUndefined();
+#else
+  if (raw_var_data_.get()) {
+    var_ = raw_var_data_->CreatePPVar(instance_);
+    raw_var_data_.reset(NULL);
+  }
+
   return var_;
+#endif
 }
 
 void SerializedVar::Inner::SetVar(PP_Var var) {
   // Sanity check, when updating the var we should have received a
   // serialization rules pointer already.
-  DCHECK(serialization_rules_);
+  DCHECK(serialization_rules_.get());
   var_ = var;
   raw_var_data_.reset(NULL);
+}
+
+void SerializedVar::Inner::SetInstance(PP_Instance instance) {
+  instance_ = instance;
 }
 
 void SerializedVar::Inner::ForceSetVarValueForTest(PP_Var value) {
@@ -82,67 +107,30 @@ void SerializedVar::Inner::WriteToMessage(IPC::Message* m) const {
   // that returns a var. This means the message handler didn't write to the
   // output parameter, or possibly you used the wrong helper class
   // (normally SerializedVarReturnValue).
-  DCHECK(serialization_rules_);
+  DCHECK(serialization_rules_.get());
 
 #ifndef NDEBUG
   // We should only be serializing something once.
   DCHECK(!has_been_serialized_);
   has_been_serialized_ = true;
 #endif
+  scoped_ptr<RawVarDataGraph> data = RawVarDataGraph::Create(var_, instance_);
+  if (data) {
+    m->WriteBool(true);  // Success.
+    data->Write(m, base::Bind(&DefaultHandleWriter));
+  } else {
+    m->WriteBool(false);  // Failure.
+  }
+}
 
-  DCHECK(!raw_var_data_.get());
-  m->WriteInt(static_cast<int>(var_.type));
-  switch (var_.type) {
-    case PP_VARTYPE_UNDEFINED:
-    case PP_VARTYPE_NULL:
-      // These don't need any data associated with them other than the type we
-      // just serialized.
-      break;
-    case PP_VARTYPE_BOOL:
-      m->WriteBool(PP_ToBool(var_.value.as_bool));
-      break;
-    case PP_VARTYPE_INT32:
-      m->WriteInt(var_.value.as_int);
-      break;
-    case PP_VARTYPE_DOUBLE:
-      IPC::ParamTraits<double>::Write(m, var_.value.as_double);
-      break;
-    case PP_VARTYPE_STRING: {
-      // TODO(brettw) in the case of an invalid string ID, it would be nice
-      // to send something to the other side such that a 0 ID would be
-      // generated there. Then the function implementing the interface can
-      // handle the invalid string as if it was in process rather than seeing
-      // what looks like a valid empty string.
-      StringVar* string_var = StringVar::FromPPVar(var_);
-      m->WriteString(string_var ? *string_var->ptr() : std::string());
-      break;
-    }
-    case PP_VARTYPE_ARRAY_BUFFER: {
-      // TODO(dmichael) in the case of an invalid var ID, it would be nice
-      // to send something to the other side such that a 0 ID would be
-      // generated there. Then the function implementing the interface can
-      // handle the invalid string as if it was in process rather than seeing
-      // what looks like a valid empty ArraryBuffer.
-      ArrayBufferVar* buffer_var = ArrayBufferVar::FromPPVar(var_);
-      if (buffer_var) {
-        // TODO(dmichael): If it wasn't already Mapped, Unmap it. (Though once
-        //                 we use shared memory, this will probably be
-        //                 completely different anyway).
-        m->WriteData(static_cast<const char*>(buffer_var->Map()),
-                     buffer_var->ByteLength());
-      } else {
-        m->WriteData(NULL, 0);
-      }
-      break;
-    }
-    case PP_VARTYPE_OBJECT:
-      m->WriteInt64(var_.value.as_id);
-      break;
-    case PP_VARTYPE_ARRAY:
-    case PP_VARTYPE_DICTIONARY:
-      // TODO(brettw) when these are supported, implement this.
-      NOTIMPLEMENTED();
-      break;
+void SerializedVar::Inner::WriteDataToMessage(
+    IPC::Message* m,
+    const HandleWriter& handle_writer) const {
+  if (raw_var_data_) {
+    m->WriteBool(true);  // Success.
+    raw_var_data_->Write(m, handle_writer);
+  } else {
+    m->WriteBool(false);  // Failure.
   }
 }
 
@@ -159,73 +147,17 @@ bool SerializedVar::Inner::ReadFromMessage(const IPC::Message* m,
   DCHECK(!has_been_deserialized_);
   has_been_deserialized_ = true;
 #endif
-
   // When reading, the dispatcher should be set when we get a Deserialize
   // call (which will supply a dispatcher).
-  int type;
-  if (!m->ReadInt(iter, &type))
-    return false;
-
-  bool success = false;
-  switch (type) {
-    case PP_VARTYPE_UNDEFINED:
-    case PP_VARTYPE_NULL:
-      // These don't have any data associated with them other than the type we
-      // just serialized.
-      success = true;
-      break;
-    case PP_VARTYPE_BOOL: {
-      bool bool_value;
-      success = m->ReadBool(iter, &bool_value);
-      var_.value.as_bool = PP_FromBool(bool_value);
-      break;
-    }
-    case PP_VARTYPE_INT32:
-      success = m->ReadInt(iter, &var_.value.as_int);
-      break;
-    case PP_VARTYPE_DOUBLE:
-      success = IPC::ParamTraits<double>::Read(m, iter, &var_.value.as_double);
-      break;
-    case PP_VARTYPE_STRING: {
-      raw_var_data_.reset(new RawVarData);
-      raw_var_data_->type = PP_VARTYPE_STRING;
-      success = m->ReadString(iter, &raw_var_data_->data);
-      if (!success)
-        raw_var_data_.reset(NULL);
-      break;
-    }
-    case PP_VARTYPE_ARRAY_BUFFER: {
-      int length = 0;
-      const char* message_bytes = NULL;
-      success = m->ReadData(iter, &message_bytes, &length);
-      if (success) {
-        raw_var_data_.reset(new RawVarData);
-        raw_var_data_->type = PP_VARTYPE_ARRAY_BUFFER;
-        raw_var_data_->data.assign(message_bytes, length);
-      }
-      break;
-    }
-    case PP_VARTYPE_OBJECT:
-      success = m->ReadInt64(iter, &var_.value.as_id);
-      break;
-    case PP_VARTYPE_ARRAY:
-    case PP_VARTYPE_DICTIONARY:
-      // TODO(brettw) when these types are supported, implement this.
-      NOTIMPLEMENTED();
-      break;
-    default:
-      // Leave success as false.
-      break;
+  if (!m->ReadBool(iter, &is_valid_var_))
+      return false;
+  if (is_valid_var_) {
+    raw_var_data_ = RawVarDataGraph::Read(m, iter);
+    if (!raw_var_data_)
+      return false;
   }
 
-  // All success cases get here. We avoid writing the type above so that the
-  // output param is untouched (defaults to VARTYPE_UNDEFINED) even in the
-  // failure case.
-  // We also don't write the type if |raw_var_data_| is set. |var_| will be
-  // updated lazily when GetVar() is called.
-  if (success && !raw_var_data_.get())
-    var_.type = static_cast<PP_VarType>(type);
-  return success;
+  return true;
 }
 
 void SerializedVar::Inner::SetCleanupModeToEndSendPassRef() {
@@ -234,29 +166,6 @@ void SerializedVar::Inner::SetCleanupModeToEndSendPassRef() {
 
 void SerializedVar::Inner::SetCleanupModeToEndReceiveCallerOwned() {
   cleanup_mode_ = END_RECEIVE_CALLER_OWNED;
-}
-
-void SerializedVar::Inner::ConvertRawVarData() {
-  if (!raw_var_data_.get())
-    return;
-
-  DCHECK_EQ(PP_VARTYPE_UNDEFINED, var_.type);
-  switch (raw_var_data_->type) {
-    case PP_VARTYPE_STRING: {
-      var_ = StringVar::SwapValidatedUTF8StringIntoPPVar(
-          &raw_var_data_->data);
-      break;
-    }
-    case PP_VARTYPE_ARRAY_BUFFER: {
-      var_ = PpapiGlobals::Get()->GetVarTracker()->MakeArrayBufferPPVar(
-          static_cast<uint32>(raw_var_data_->data.size()),
-          raw_var_data_->data.data());
-      break;
-    }
-    default:
-      NOTREACHED();
-  }
-  raw_var_data_.reset(NULL);
 }
 
 // SerializedVar ---------------------------------------------------------------
@@ -287,6 +196,17 @@ void SerializedVarSendInput::ConvertVector(Dispatcher* dispatcher,
   output->reserve(input_count);
   for (size_t i = 0; i < input_count; i++)
     output->push_back(SerializedVarSendInput(dispatcher, input[i]));
+}
+
+// SerializedVarSendInputShmem -------------------------------------------------
+
+SerializedVarSendInputShmem::SerializedVarSendInputShmem(
+    Dispatcher* dispatcher,
+    const PP_Var& var,
+    const PP_Instance& instance)
+    : SerializedVar(dispatcher->serialization_rules()) {
+  inner_->SetVar(dispatcher->serialization_rules()->SendCallerOwned(var));
+  inner_->SetInstance(instance);
 }
 
 // ReceiveSerializedVarReturnValue ---------------------------------------------
@@ -392,6 +312,13 @@ PP_Var SerializedVarReceiveInput::Get(Dispatcher* dispatcher) {
       serialized_.inner_->serialization_rules()->BeginReceiveCallerOwned(
           serialized_.inner_->GetVar()));
   return serialized_.inner_->GetVar();
+}
+
+
+PP_Var SerializedVarReceiveInput::GetForInstance(Dispatcher* dispatcher,
+                                                 PP_Instance instance) {
+  serialized_.inner_->SetInstance(instance);
+  return Get(dispatcher);
 }
 
 // SerializedVarVectorReceiveInput ---------------------------------------------

@@ -21,18 +21,29 @@ class ScreenIos : public gfx::Screen {
     return gfx::Point(0, 0);
   }
 
-  virtual gfx::NativeWindow GetWindowAtCursorScreenPoint() OVERRIDE {
+  virtual gfx::NativeWindow GetWindowUnderCursor() OVERRIDE {
     NOTIMPLEMENTED();
     return gfx::NativeWindow();
   }
 
-  virtual int GetNumDisplays() OVERRIDE {
+  virtual gfx::NativeWindow GetWindowAtScreenPoint(const gfx::Point& point)
+      OVERRIDE {
+    NOTIMPLEMENTED();
+    return gfx::NativeWindow();
+  }
+
+  virtual int GetNumDisplays() const OVERRIDE {
 #if TARGET_IPHONE_SIMULATOR
     // UIScreen does not reliably return correct results on the simulator.
     return 1;
 #else
     return [[UIScreen screens] count];
 #endif
+  }
+
+  virtual std::vector<gfx::Display> GetAllDisplays() const OVERRIDE {
+    NOTIMPLEMENTED();
+    return std::vector<gfx::Display>(1, GetPrimaryDisplay());
   }
 
   // Returns the display nearest the specified window.
@@ -58,7 +69,8 @@ class ScreenIos : public gfx::Screen {
 
   // Returns the primary display.
   virtual gfx::Display GetPrimaryDisplay() const OVERRIDE {
-    UIScreen* mainScreen = [[UIScreen screens] objectAtIndex:0];
+    UIScreen* mainScreen = [UIScreen mainScreen];
+    CHECK(mainScreen);
     gfx::Display display(0, gfx::Rect(mainScreen.bounds));
     display.set_device_scale_factor([mainScreen scale]);
     return display;

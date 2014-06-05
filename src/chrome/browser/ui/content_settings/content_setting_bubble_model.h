@@ -5,17 +5,20 @@
 #ifndef CHROME_BROWSER_UI_CONTENT_SETTINGS_CONTENT_SETTING_BUBBLE_MODEL_H_
 #define CHROME_BROWSER_UI_CONTENT_SETTINGS_CONTENT_SETTING_BUBBLE_MODEL_H_
 
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/common/content_settings.h"
 #include "chrome/common/custom_handlers/protocol_handler.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
-#include "googleurl/src/gurl.h"
+#include "content/public/common/media_stream_request.h"
 #include "ui/gfx/image/image.h"
+#include "url/gurl.h"
 
 class ContentSettingBubbleModelDelegate;
 class Profile;
@@ -32,9 +35,12 @@ class ContentSettingBubbleModel : public content::NotificationObserver {
   typedef ContentSettingBubbleModelDelegate Delegate;
 
   struct PopupItem {
+    PopupItem(const gfx::Image& image, const std::string& title, int32 popup_id)
+        : image(image), title(title), popup_id(popup_id) {}
+
     gfx::Image image;
     std::string title;
-    content::WebContents* web_contents;
+    int32 popup_id;
   };
   typedef std::vector<PopupItem> PopupItems;
 
@@ -57,6 +63,17 @@ class ContentSettingBubbleModel : public content::NotificationObserver {
     std::set<std::string> hosts;
   };
 
+  struct MediaMenu {
+    MediaMenu();
+    ~MediaMenu();
+
+    std::string label;
+    content::MediaStreamDevice default_device;
+    content::MediaStreamDevice selected_device;
+    bool disabled;
+  };
+  typedef std::map<content::MediaStreamType, MediaMenu> MediaMenuMap;
+
   struct BubbleContent {
     BubbleContent();
     ~BubbleContent();
@@ -66,10 +83,10 @@ class ContentSettingBubbleModel : public content::NotificationObserver {
     RadioGroup radio_group;
     bool radio_group_enabled;
     std::vector<DomainList> domain_lists;
-    std::set<std::string> resource_identifiers;
     std::string custom_link;
     bool custom_link_enabled;
     std::string manage_link;
+    MediaMenuMap media_menus;
 
    private:
     DISALLOW_COPY_AND_ASSIGN(BubbleContent);
@@ -96,6 +113,8 @@ class ContentSettingBubbleModel : public content::NotificationObserver {
   virtual void OnPopupClicked(int index) {}
   virtual void OnCustomLinkClicked() {}
   virtual void OnManageLinkClicked() {}
+  virtual void OnMediaMenuClicked(content::MediaStreamType type,
+                                  const std::string& selected_device_id) {}
 
   // Called by the view code when the bubble is closed by the user using the
   // Done button.
@@ -132,7 +151,18 @@ class ContentSettingBubbleModel : public content::NotificationObserver {
   void set_manage_link(const std::string& link) {
     bubble_content_.manage_link = link;
   }
-  void AddBlockedResource(const std::string& resource_identifier);
+  void add_media_menu(content::MediaStreamType type, const MediaMenu& menu) {
+    bubble_content_.media_menus[type] = menu;
+  }
+  void set_selected_device(const content::MediaStreamDevice& device) {
+    bubble_content_.media_menus[device.type].selected_device = device;
+  }
+  bool setting_is_managed() {
+    return setting_is_managed_;
+  }
+  void set_setting_is_managed(bool managed) {
+    setting_is_managed_ = managed;
+  }
 
  private:
   content::WebContents* web_contents_;
@@ -141,6 +171,9 @@ class ContentSettingBubbleModel : public content::NotificationObserver {
   BubbleContent bubble_content_;
   // A registrar for listening for WEB_CONTENTS_DESTROYED notifications.
   content::NotificationRegistrar registrar_;
+  // A flag that indicates if the content setting managed i.e. can't be
+  // controlled by the user.
+  bool setting_is_managed_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentSettingBubbleModel);
 };
@@ -155,7 +188,6 @@ class ContentSettingTitleAndLinkModel : public ContentSettingBubbleModel {
   Delegate* delegate() const { return delegate_; }
 
  private:
-  void SetBlockedResources();
   void SetTitle();
   void SetManageLink();
   virtual void OnManageLinkClicked() OVERRIDE;

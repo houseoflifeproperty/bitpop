@@ -8,29 +8,30 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_SYSTEM_WRAPPERS_SOURCE_TRACE_WINDOWS_H_
-#define WEBRTC_SYSTEM_WRAPPERS_SOURCE_TRACE_WINDOWS_H_
+#ifndef WEBRTC_SYSTEM_WRAPPERS_SOURCE_TRACE_WIN_H_
+#define WEBRTC_SYSTEM_WRAPPERS_SOURCE_TRACE_WIN_H_
 
-#include "trace_impl.h"
 #include <stdio.h>
 #include <windows.h>
 
+#include "webrtc/system_wrappers/source/trace_impl.h"
+
 namespace webrtc {
-class TraceWindows : public TraceImpl
-{
-public:
-    TraceWindows();
-    virtual ~TraceWindows();
 
-    virtual WebRtc_Word32 AddTime(char* traceMessage,
-                                  const TraceLevel level) const;
+class TraceWindows : public TraceImpl {
+ public:
+  TraceWindows();
+  virtual ~TraceWindows();
 
-    virtual WebRtc_Word32 AddBuildInfo(char* traceMessage) const;
-    virtual WebRtc_Word32 AddDateTimeInfo(char* traceMessage) const;
-private:
-    volatile mutable WebRtc_UWord32    _prevAPITickCount;
-    volatile mutable WebRtc_UWord32   _prevTickCount;
+  virtual int32_t AddTime(char* trace_message, const TraceLevel level) const;
+
+  virtual int32_t AddBuildInfo(char* trace_message) const;
+  virtual int32_t AddDateTimeInfo(char* trace_message) const;
+ private:
+  volatile mutable uint32_t prev_api_tick_count_;
+  volatile mutable uint32_t prev_tick_count_;
 };
-} // namespace webrtc
 
-#endif // WEBRTC_SYSTEM_WRAPPERS_SOURCE_TRACE_WINDOWS_H_
+}  // namespace webrtc
+
+#endif  // WEBRTC_SYSTEM_WRAPPERS_SOURCE_TRACE_WIN_H_

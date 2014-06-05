@@ -6,10 +6,11 @@
 #define CONTENT_BROWSER_DOWNLOAD_DOWNLOAD_ITEM_IMPL_DELEGATE_H_
 
 #include "base/callback.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/download_danger_type.h"
 #include "content/public/browser/download_item.h"
+#include "content/public/browser/download_url_parameters.h"
 
 namespace content {
 class DownloadItemImpl;
@@ -22,10 +23,10 @@ class BrowserContext;
 class CONTENT_EXPORT DownloadItemImplDelegate {
  public:
   typedef base::Callback<void(
-      const FilePath&,                  // Target path
+      const base::FilePath&,            // Target path
       DownloadItem::TargetDisposition,  // overwrite/uniquify target
       DownloadDangerType,
-      const FilePath&                   // Intermediate file path
+      const base::FilePath&             // Intermediate file path
                               )> DownloadTargetCallback;
 
   // The boolean argument indicates whether or not the download was
@@ -57,7 +58,7 @@ class CONTENT_EXPORT DownloadItemImplDelegate {
       DownloadItemImpl* download, const ShouldOpenDownloadCallback& callback);
 
   // Tests if a file type should be opened automatically.
-  virtual bool ShouldOpenFileBasedOnExtension(const FilePath& path);
+  virtual bool ShouldOpenFileBasedOnExtension(const base::FilePath& path);
 
   // Checks whether a downloaded file still exists and updates the
   // file's state if the file is already removed.
@@ -65,19 +66,26 @@ class CONTENT_EXPORT DownloadItemImplDelegate {
   // to OnDownloadedFileRemoved().
   virtual void CheckForFileRemoval(DownloadItemImpl* download_item);
 
+  // Called when an interrupted download is resumed.
+  virtual void ResumeInterruptedDownload(
+      scoped_ptr<content::DownloadUrlParameters> params,
+      uint32 id);
+
   // For contextual issues like language and prefs.
   virtual BrowserContext* GetBrowserContext() const;
 
   // Update the persistent store with our information.
   virtual void UpdatePersistence(DownloadItemImpl* download);
 
+  // Opens the file associated with this download.
+  virtual void OpenDownload(DownloadItemImpl* download);
+
+  // Shows the download via the OS shell.
+  virtual void ShowDownloadInShell(DownloadItemImpl* download);
+
   // Handle any delegate portions of a state change operation on the
   // DownloadItem.
-  virtual void DownloadOpened(DownloadItemImpl* download);
   virtual void DownloadRemoved(DownloadItemImpl* download);
-
-  // Show the download in the browser.
-  virtual void ShowDownloadInBrowser(DownloadItemImpl* download);
 
   // Assert consistent state for delgate object at various transitions.
   virtual void AssertStateConsistent(DownloadItemImpl* download) const;

@@ -6,13 +6,13 @@
 
 #include <string>
 
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "base/strings/string_util.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
@@ -39,9 +39,7 @@ namespace extensions {
 class UserScriptMasterTest : public testing::Test,
                              public content::NotificationObserver {
  public:
-  UserScriptMasterTest()
-      : message_loop_(MessageLoop::TYPE_UI),
-        shared_memory_(NULL) {
+  UserScriptMasterTest() : shared_memory_(NULL) {
   }
 
   virtual void SetUp() {
@@ -54,9 +52,9 @@ class UserScriptMasterTest : public testing::Test,
     // UserScriptMaster posts tasks to the file thread so make the current
     // thread look like one.
     file_thread_.reset(new content::TestBrowserThread(
-        BrowserThread::FILE, MessageLoop::current()));
+        BrowserThread::FILE, base::MessageLoop::current()));
     ui_thread_.reset(new content::TestBrowserThread(
-        BrowserThread::UI, MessageLoop::current()));
+        BrowserThread::UI, base::MessageLoop::current()));
   }
 
   virtual void TearDown() {
@@ -66,12 +64,12 @@ class UserScriptMasterTest : public testing::Test,
 
   virtual void Observe(int type,
                        const content::NotificationSource& source,
-                       const content::NotificationDetails& details) {
+                       const content::NotificationDetails& details) OVERRIDE {
     DCHECK(type == chrome::NOTIFICATION_USER_SCRIPTS_UPDATED);
 
     shared_memory_ = content::Details<base::SharedMemory>(details).ptr();
-    if (MessageLoop::current() == &message_loop_)
-      MessageLoop::current()->Quit();
+    if (base::MessageLoop::current() == &message_loop_)
+      base::MessageLoop::current()->Quit();
   }
 
   // Directory containing user scripts.
@@ -80,7 +78,7 @@ class UserScriptMasterTest : public testing::Test,
   content::NotificationRegistrar registrar_;
 
   // MessageLoop used in tests.
-  MessageLoop message_loop_;
+  base::MessageLoopForUI message_loop_;
 
   scoped_ptr<content::TestBrowserThread> file_thread_;
   scoped_ptr<content::TestBrowserThread> ui_thread_;
@@ -94,7 +92,7 @@ TEST_F(UserScriptMasterTest, NoScripts) {
   TestingProfile profile;
   scoped_refptr<UserScriptMaster> master(new UserScriptMaster(&profile));
   master->StartLoad();
-  message_loop_.PostTask(FROM_HERE, MessageLoop::QuitClosure());
+  message_loop_.PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
   message_loop_.Run();
 
   ASSERT_TRUE(shared_memory_ != NULL);
@@ -232,9 +230,9 @@ TEST_F(UserScriptMasterTest, Parse8) {
 }
 
 TEST_F(UserScriptMasterTest, SkipBOMAtTheBeginning) {
-  FilePath path = temp_dir_.path().AppendASCII("script.user.js");
+  base::FilePath path = temp_dir_.path().AppendASCII("script.user.js");
   const std::string content("\xEF\xBB\xBF alert('hello');");
-  size_t written = file_util::WriteFile(path, content.c_str(), content.size());
+  size_t written = base::WriteFile(path, content.c_str(), content.size());
   ASSERT_EQ(written, content.size());
 
   UserScript user_script;
@@ -255,9 +253,9 @@ TEST_F(UserScriptMasterTest, SkipBOMAtTheBeginning) {
 }
 
 TEST_F(UserScriptMasterTest, LeaveBOMNotAtTheBeginning) {
-  FilePath path = temp_dir_.path().AppendASCII("script.user.js");
+  base::FilePath path = temp_dir_.path().AppendASCII("script.user.js");
   const std::string content("alert('here's a BOOM: \xEF\xBB\xBF');");
-  size_t written = file_util::WriteFile(path, content.c_str(), content.size());
+  size_t written = base::WriteFile(path, content.c_str(), content.size());
   ASSERT_EQ(written, content.size());
 
   UserScript user_script;

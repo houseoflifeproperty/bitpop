@@ -5,65 +5,60 @@
 #ifndef CHROME_RENDERER_SPELLCHECKER_HUNSPELL_ENGINE_H_
 #define CHROME_RENDERER_SPELLCHECKER_HUNSPELL_ENGINE_H_
 
-#include "base/file_util.h"
-#include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
-#include "base/utf_string_conversions.h"
-#include "chrome/common/spellcheck_common.h"
-#include "chrome/renderer/spellchecker/spelling_engine.h"
-
 #include <string>
 #include <vector>
 
+#include "base/memory/scoped_ptr.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/common/spellcheck_common.h"
+#include "chrome/renderer/spellchecker/spelling_engine.h"
+
 class Hunspell;
+
+namespace base {
+class MemoryMappedFile;
+}
 
 class HunspellEngine : public SpellingEngine {
  public:
   HunspellEngine();
   virtual ~HunspellEngine();
 
-  virtual void Init(base::PlatformFile file,
-                    const std::vector<std::string>& custom_words) OVERRIDE;
+  virtual void Init(base::File file) OVERRIDE;
 
   virtual bool InitializeIfNeeded() OVERRIDE;
   virtual bool IsEnabled() OVERRIDE;
-  virtual bool CheckSpelling(const string16& word_to_check, int tag) OVERRIDE;
-  virtual void FillSuggestionList(const string16& wrong_word,
-                          std::vector<string16>* optional_suggestions) OVERRIDE;
-  virtual void OnWordAdded(const std::string& word) OVERRIDE;
-  virtual void OnWordRemoved(const std::string& word) OVERRIDE;
+  virtual bool CheckSpelling(const base::string16& word_to_check,
+                             int tag) OVERRIDE;
+  virtual void FillSuggestionList(
+      const base::string16& wrong_word,
+      std::vector<base::string16>* optional_suggestions) OVERRIDE;
 
  private:
   // Initializes the Hunspell dictionary, or does nothing if |hunspell_| is
   // non-null. This blocks.
   void InitializeHunspell();
 
-  // Add the given custom word to |hunspell_|.
-  void AddWordToHunspell(const std::string& word);
-
-  // Remove the given custom word from |hunspell_|.
-  void RemoveWordFromHunspell(const std::string& word);
-
   // We memory-map the BDict file.
-  scoped_ptr<file_util::MemoryMappedFile> bdict_file_;
+  scoped_ptr<base::MemoryMappedFile> bdict_file_;
 
   // The hunspell dictionary in use.
   scoped_ptr<Hunspell> hunspell_;
 
-  chrome::spellcheck_common::WordList custom_words_;
+  base::File file_;
 
-  base::PlatformFile file_;
+  // This flag is true if hunspell is enabled.
+  bool hunspell_enabled_;
 
-  // This flags is true if we have been intialized.
+  // This flag is true if we have been initialized.
   // The value indicates whether we should request a
   // dictionary from the browser when the render view asks us to check the
   // spelling of a word.
   bool initialized_;
 
-  // This flags is true if we have requested dictionary.
+  // This flag is true if we have requested dictionary.
   bool dictionary_requested_;
-
 };
 
 #endif  // CHROME_RENDERER_SPELLCHECKER_HUNSPELL_ENGINE_H_
-

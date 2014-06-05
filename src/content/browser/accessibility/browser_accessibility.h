@@ -10,9 +10,12 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/strings/string16.h"
 #include "build/build_config.h"
-#include "content/common/accessibility_node_data.h"
 #include "content/common/content_export.h"
+#include "third_party/WebKit/public/web/WebAXEnums.h"
+#include "ui/accessibility/ax_node.h"
+#include "ui/accessibility/ax_node_data.h"
 
 #if defined(OS_MACOSX) && __OBJC__
 @class BrowserAccessibilityCocoa;
@@ -22,15 +25,7 @@ namespace content {
 class BrowserAccessibilityManager;
 #if defined(OS_WIN)
 class BrowserAccessibilityWin;
-#elif defined(TOOLKIT_GTK)
-class BrowserAccessibilityGtk;
 #endif
-
-typedef std::map<AccessibilityNodeData::BoolAttribute, bool> BoolAttrMap;
-typedef std::map<AccessibilityNodeData::FloatAttribute, float> FloatAttrMap;
-typedef std::map<AccessibilityNodeData::IntAttribute, int> IntAttrMap;
-typedef std::map<AccessibilityNodeData::StringAttribute, string16>
-    StringAttrMap;
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -52,45 +47,44 @@ class CONTENT_EXPORT BrowserAccessibility {
 
   virtual ~BrowserAccessibility();
 
-  // Detach all descendants of this subtree and push all of the node pointers,
-  // including this node, onto the end of |nodes|.
-  virtual void DetachTree(std::vector<BrowserAccessibility*>* nodes);
+  // Called only once, immediately after construction. The constructor doesn't
+  // take any arguments because in the Windows subclass we use a special
+  // function to construct a COM object.
+  virtual void Init(BrowserAccessibilityManager* manager, ui::AXNode* node);
 
-  // Perform platform specific initialization. This can be called multiple times
-  // during the lifetime of this instance after the members of this base object
-  // have been reset with new values from the renderer process.
-  // Child dependent initialization can be done here.
-  virtual void PostInitialize() {}
+  // Called after the object is first initialized and again every time
+  // its data changes.
+  virtual void OnDataChanged();
+
+  // Called after an atomic update to the tree finished and this object
+  // was created or changed in this update.
+  virtual void OnUpdateFinished() {}
 
   // Returns true if this is a native platform-specific object, vs a
   // cross-platform generic object.
   virtual bool IsNative() const;
 
-  // Initialize this object, reading attributes from |src|. Does not
-  // recurse into children of |src| and build the whole subtree.
-  void PreInitialize(BrowserAccessibilityManager* manager,
-      BrowserAccessibility* parent,
-      int32 child_id,
-      int32 index_in_parent,
-      const AccessibilityNodeData& src);
-
-  // Add a child of this object.
-  void AddChild(BrowserAccessibility* child);
-
-  // Update the parent and index in parent if this node has been moved.
-  void UpdateParent(BrowserAccessibility* parent, int index_in_parent);
+  // Called when the location changed.
+  virtual void OnLocationChanged() const {}
 
   // Return true if this object is equal to or a descendant of |ancestor|.
   bool IsDescendantOf(BrowserAccessibility* ancestor);
 
-  // Returns the parent of this object, or NULL if it's the root.
-  BrowserAccessibility* parent() { return parent_; }
+  // Returns true if this is a leaf node on this platform, meaning any
+  // children should not be exposed to this platform's native accessibility
+  // layer. Each platform subclass should implement this itself.
+  // The definition of a leaf may vary depending on the platform,
+  // but a leaf node should never have children that are focusable or
+  // that might send notifications.
+  virtual bool PlatformIsLeaf() const;
 
-  // Returns the number of children of this object.
-  uint32 child_count() const { return children_.size(); }
+  // Returns the number of children of this object, or 0 if PlatformIsLeaf()
+  // returns true.
+  uint32 PlatformChildCount() const;
 
-  // Return a pointer to the child with the given index.
-  BrowserAccessibility* GetChild(uint32 child_index);
+  // Return a pointer to the child at the given index, or NULL for an
+  // invalid index. Returns NULL if PlatformIsLeaf() returns true.
+  BrowserAccessibility* PlatformGetChild(uint32 child_index) const;
 
   // Return the previous sibling of this object, or NULL if it's the first
   // child of its parent.
@@ -102,41 +96,34 @@ class CONTENT_EXPORT BrowserAccessibility {
 
   // Returns the bounds of this object in coordinates relative to the
   // top-left corner of the overall web area.
-  gfx::Rect GetLocalBoundsRect();
+  gfx::Rect GetLocalBoundsRect() const;
 
   // Returns the bounds of this object in screen coordinates.
-  gfx::Rect GetGlobalBoundsRect();
+  gfx::Rect GetGlobalBoundsRect() const;
+
+  // Returns the bounds of the given range in coordinates relative to the
+  // top-left corner of the overall web area. Only valid when the
+  // role is WebAXRoleStaticText.
+  gfx::Rect GetLocalBoundsForRange(int start, int len) const;
+
+  // Same as GetLocalBoundsForRange, in screen coordinates. Only valid when
+  // the role is WebAXRoleStaticText.
+  gfx::Rect GetGlobalBoundsForRange(int start, int len) const;
 
   // Returns the deepest descendant that contains the specified point
   // (in global screen coordinates).
   BrowserAccessibility* BrowserAccessibilityForPoint(const gfx::Point& point);
 
+  // Marks this object for deletion, releases our reference to it, and
+  // nulls out the pointer to the underlying AXNode.  May not delete
+  // the object immediately due to reference counting.
   //
-  // Reference counting
-  //
-  // Each object has an internal reference count and many platform
-  // implementations may also use native reference counting.
-  //
-  // The internal reference counting is used because sometimes
-  // multiple references to the same object exist temporarily during
-  // an update. When the internal reference count reaches zero,
-  // NativeReleaseReference is called.
-  //
-  // Native reference counting is used on some platforms because the
+  // Reference counting is used on some platforms because the
   // operating system may hold onto a reference to a BrowserAccessibility
-  // object even after we're through with it. On these platforms, when
-  // the internal reference count reaches zero, instance_active is set
-  // to zero, and all queries on this object should return failure.
-  // The object isn't actually deleted until the operating system releases
-  // all of its references.
-  //
-
-  // Increment this node's internal reference count.
-  virtual void InternalAddReference();
-
-  // Decrement this node's internal reference count. If the reference count
-  // reaches zero, call NativeReleaseReference().
-  virtual void InternalReleaseReference(bool recursive);
+  // object even after we're through with it. When a BrowserAccessibility
+  // has had Destroy() called but its reference count is not yet zero,
+  // instance_active() returns false and queries on this object return failure.
+  virtual void Destroy();
 
   // Subclasses should override this to support platform reference counting.
   virtual void NativeAddReference() { }
@@ -148,84 +135,90 @@ class CONTENT_EXPORT BrowserAccessibility {
   // Accessors
   //
 
-  const BoolAttrMap& bool_attributes() const {
-    return bool_attributes_;
-  }
-
-  const FloatAttrMap& float_attributes() const {
-    return float_attributes_;
-  }
-
-  const IntAttrMap& int_attributes() const {
-    return int_attributes_;
-  }
-
-  const StringAttrMap& string_attributes() const {
-    return string_attributes_;
-  }
-
-  int32 child_id() const { return child_id_; }
-  const std::vector<BrowserAccessibility*>& children() const {
-    return children_;
-  }
-  const std::vector<std::pair<string16, string16> >& html_attributes() const {
-    return html_attributes_;
-  }
-  int32 index_in_parent() const { return index_in_parent_; }
-  const std::vector<int32>& indirect_child_ids() const {
-    return indirect_child_ids_;
-  }
-  const std::vector<int32>& line_breaks() const {
-    return line_breaks_;
-  }
-  const std::vector<int32>& cell_ids() const {
-    return cell_ids_;
-  }
-  const std::vector<int32>& unique_cell_ids() const {
-    return unique_cell_ids_;
-  }
-  gfx::Rect location() const { return location_; }
   BrowserAccessibilityManager* manager() const { return manager_; }
-  const string16& name() const { return name_; }
-  int32 renderer_id() const { return renderer_id_; }
-  int32 role() const { return role_; }
-  const string16& role_name() const { return role_name_; }
-  int32 state() const { return state_; }
-  const string16& value() const { return value_; }
-  bool instance_active() const { return instance_active_; }
-  int32 ref_count() const { return ref_count_; }
+  bool instance_active() const { return node_ != NULL; }
+  ui::AXNode* node() const { return node_; }
+  const std::string& name() const { return name_; }
+  const std::string& value() const { return value_; }
+  void set_name(const std::string& name) { name_ = name; }
+  void set_value(const std::string& value) { value_ = value; }
+
+  // These access the internal accessibility tree, which doesn't necessarily
+  // reflect the accessibility tree that should be exposed on each platform.
+  // Use PlatformChildCount and PlatformGetChild to implement platform
+  // accessibility APIs.
+  uint32 InternalChildCount() const;
+  BrowserAccessibility* InternalGetChild(uint32 child_index) const;
+
+  BrowserAccessibility* GetParent() const;
+  int32 GetIndexInParent() const;
+
+  int32 GetId() const;
+  const ui::AXNodeData& GetData() const;
+  gfx::Rect GetLocation() const;
+  int32 GetRole() const;
+  int32 GetState() const;
+
+  typedef std::vector<std::pair<std::string, std::string> > HtmlAttributes;
+  const HtmlAttributes& GetHtmlAttributes() const;
 
 #if defined(OS_MACOSX) && __OBJC__
   BrowserAccessibilityCocoa* ToBrowserAccessibilityCocoa();
 #elif defined(OS_WIN)
   BrowserAccessibilityWin* ToBrowserAccessibilityWin();
-#elif defined(TOOLKIT_GTK)
-  BrowserAccessibilityGtk* ToBrowserAccessibilityGtk();
 #endif
 
-  // Retrieve the value of a bool attribute from the bool attribute
-  // map and returns true if found.
-  bool GetBoolAttribute(
-      AccessibilityNodeData::BoolAttribute attr, bool* value) const;
+  // Accessing accessibility attributes:
+  //
+  // There are dozens of possible attributes for an accessibility node,
+  // but only a few tend to apply to any one object, so we store them
+  // in sparse arrays of <attribute id, attribute value> pairs, organized
+  // by type (bool, int, float, string, int list).
+  //
+  // There are three accessors for each type of attribute: one that returns
+  // true if the attribute is present and false if not, one that takes a
+  // pointer argument and returns true if the attribute is present (if you
+  // need to distinguish between the default value and a missing attribute),
+  // and another that returns the default value for that type if the
+  // attribute is not present. In addition, strings can be returned as
+  // either std::string or base::string16, for convenience.
 
-  // Retrieve the value of a float attribute from the float attribute
-  // map and returns true if found.
-  bool GetFloatAttribute(AccessibilityNodeData::FloatAttribute attr,
-                         float* value) const;
+  bool HasBoolAttribute(ui::AXBoolAttribute attr) const;
+  bool GetBoolAttribute(ui::AXBoolAttribute attr) const;
+  bool GetBoolAttribute(ui::AXBoolAttribute attr, bool* value) const;
 
-  // Retrieve the value of an integer attribute from the integer attribute
-  // map and returns true if found.
-  bool GetIntAttribute(AccessibilityNodeData::IntAttribute attribute,
-                       int* value) const;
+  bool HasFloatAttribute(ui::AXFloatAttribute attr) const;
+  float GetFloatAttribute(ui::AXFloatAttribute attr) const;
+  bool GetFloatAttribute(ui::AXFloatAttribute attr, float* value) const;
 
-  // Retrieve the value of a string attribute from the attribute map and
-  // returns true if found.
-  bool GetStringAttribute(
-      AccessibilityNodeData::StringAttribute attribute, string16* value) const;
+  bool HasIntAttribute(ui::AXIntAttribute attribute) const;
+  int GetIntAttribute(ui::AXIntAttribute attribute) const;
+  bool GetIntAttribute(ui::AXIntAttribute attribute, int* value) const;
+
+  bool HasStringAttribute(
+      ui::AXStringAttribute attribute) const;
+  const std::string& GetStringAttribute(ui::AXStringAttribute attribute) const;
+  bool GetStringAttribute(ui::AXStringAttribute attribute,
+                          std::string* value) const;
+
+  bool GetString16Attribute(ui::AXStringAttribute attribute,
+                            base::string16* value) const;
+  base::string16 GetString16Attribute(
+      ui::AXStringAttribute attribute) const;
+
+  bool HasIntListAttribute(ui::AXIntListAttribute attribute) const;
+  const std::vector<int32>& GetIntListAttribute(
+      ui::AXIntListAttribute attribute) const;
+  bool GetIntListAttribute(ui::AXIntListAttribute attribute,
+                           std::vector<int32>* value) const;
+
+  void SetStringAttribute(ui::AXStringAttribute attribute,
+                          const std::string& value);
 
   // Retrieve the value of a html attribute from the attribute map and
   // returns true if found.
-  bool GetHtmlAttribute(const char* attr, string16* value) const;
+  bool GetHtmlAttribute(const char* attr, base::string16* value) const;
+  bool GetHtmlAttribute(const char* attr, std::string* value) const;
 
   // Utility method to handle special cases for ARIA booleans, tristates and
   // booleans which have a "mixed" state.
@@ -244,68 +237,30 @@ class CONTENT_EXPORT BrowserAccessibility {
                        bool* is_mixed) const;
 
   // Returns true if the bit corresponding to the given state enum is 1.
-  bool HasState(AccessibilityNodeData::State state_enum) const;
+  bool HasState(ui::AXState state_enum) const;
 
   // Returns true if this node is an editable text field of any kind.
   bool IsEditableText() const;
 
   // Append the text from this node and its children.
-  string16 GetTextRecursive() const;
+  std::string GetTextRecursive() const;
 
  protected:
-  // Perform platform specific initialization. This can be called multiple times
-  // during the lifetime of this instance after the members of this base object
-  // have been reset with new values from the renderer process.
-  // Perform child independent initialization in this method.
-  virtual void PreInitialize();
-
   BrowserAccessibility();
 
-  // The manager of this tree of accessibility objects; needed for
-  // global operations like focus tracking.
+  // The manager of this tree of accessibility objects.
   BrowserAccessibilityManager* manager_;
 
-  // The parent of this object, may be NULL if we're the root object.
-  BrowserAccessibility* parent_;
+  // The underlying node.
+  ui::AXNode* node_;
 
-  // The ID of this object; globally unique within the browser process.
-  int32 child_id_;
+ private:
+  // Return the sum of the lengths of all static text descendants,
+  // including this object if it's static text.
+  int GetStaticTextLenRecursive() const;
 
-  // The index of this within its parent object.
-  int32 index_in_parent_;
-
-  // The ID of this object in the renderer process.
-  int32 renderer_id_;
-
-  // The children of this object.
-  std::vector<BrowserAccessibility*> children_;
-
-  // The number of internal references to this object.
-  int32 ref_count_;
-
-  // Accessibility metadata from the renderer
-  string16 name_;
-  string16 value_;
-  BoolAttrMap bool_attributes_;
-  IntAttrMap int_attributes_;
-  FloatAttrMap float_attributes_;
-  StringAttrMap string_attributes_;
-  std::vector<std::pair<string16, string16> > html_attributes_;
-  int32 role_;
-  int32 state_;
-  string16 role_name_;
-  gfx::Rect location_;
-  std::vector<int32> indirect_child_ids_;
-  std::vector<int32> line_breaks_;
-  std::vector<int32> cell_ids_;
-  std::vector<int32> unique_cell_ids_;
-
-  // BrowserAccessibility objects are reference-counted on some platforms.
-  // When we're done with this object and it's removed from our accessibility
-  // tree, a client may still be holding onto a pointer to this object, so
-  // we mark it as inactive so that calls to any of this object's methods
-  // immediately return failure.
-  bool instance_active_;
+  std::string name_;
+  std::string value_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(BrowserAccessibility);

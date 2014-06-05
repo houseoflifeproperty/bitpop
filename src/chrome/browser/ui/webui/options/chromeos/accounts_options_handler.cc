@@ -10,15 +10,15 @@
 #include "base/bind_helpers.h"
 #include "base/json/json_reader.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/utf_string_conversions.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/ui/webui/chromeos/ui_account_tweaks.h"
+#include "chromeos/settings/cros_settings_names.h"
 #include "content/public/browser/web_ui.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "grit/generated_resources.h"
@@ -32,7 +32,7 @@ namespace {
 // in the whitelist.
 bool WhitelistUser(const std::string& username) {
   CrosSettings* cros_settings = CrosSettings::Get();
-  if (cros_settings->FindEmailInList(kAccountsPrefUsers, username))
+  if (cros_settings->FindEmailInList(kAccountsPrefUsers, username, NULL))
     return false;
   base::StringValue username_value(username);
   cros_settings->AppendToList(kAccountsPrefUsers, &username_value);
@@ -83,10 +83,13 @@ void AccountsOptionsHandler::GetLocalizedValues(
   localized_strings->SetString("owner_only", l10n_util::GetStringUTF16(
       IDS_OPTIONS_ACCOUNTS_OWNER_ONLY));
 
+  policy::BrowserPolicyConnectorChromeOS* connector =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos();
   localized_strings->SetBoolean("whitelist_is_managed",
-      g_browser_process->browser_policy_connector()->IsEnterpriseManaged());
+                                connector->IsEnterpriseManaged());
 
-  AddAccountUITweaksLocalizedValues(localized_strings);
+  AddAccountUITweaksLocalizedValues(localized_strings,
+                                    Profile::FromWebUI(web_ui()));
 }
 
 void AccountsOptionsHandler::HandleWhitelistUser(const base::ListValue* args) {

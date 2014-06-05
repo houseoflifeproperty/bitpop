@@ -20,6 +20,8 @@
 #ifndef MEDIA_AUDIO_PULSE_PULSE_OUTPUT_H_
 #define MEDIA_AUDIO_PULSE_PULSE_OUTPUT_H_
 
+#include <string>
+
 #include "base/memory/scoped_ptr.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_parameters.h"
@@ -35,6 +37,7 @@ class AudioManagerBase;
 class PulseAudioOutputStream : public AudioOutputStream {
  public:
   PulseAudioOutputStream(const AudioParameters& params,
+                         const std::string& device_id,
                          AudioManagerBase* manager);
 
   virtual ~PulseAudioOutputStream();
@@ -48,14 +51,10 @@ class PulseAudioOutputStream : public AudioOutputStream {
   virtual void GetVolume(double* volume) OVERRIDE;
 
  private:
-  // Called by PulseAudio when |pa_context_| and |pa_stream_| change state.  If
-  // an unexpected failure state change happens and |source_callback_| is set
-  // these methods will forward the error via OnError().
-  static void ContextNotifyCallback(pa_context* c, void* p_this);
+  // Called by PulseAudio when |pa_stream_| change state.  If an unexpected
+  // failure state change happens and |source_callback_| is set
+  // this method will forward the error via OnError().
   static void StreamNotifyCallback(pa_stream* s, void* p_this);
-
-  // Triggers pa_threaded_mainloop_signal() to avoid deadlocks.
-  static void StreamSuccessCallback(pa_stream* s, int success, void* p_this);
 
   // Called by PulseAudio when it needs more audio data.
   static void StreamRequestCallback(pa_stream* s, size_t len, void* p_this);
@@ -67,14 +66,11 @@ class PulseAudioOutputStream : public AudioOutputStream {
   // Close() helper function to free internal structs.
   void Reset();
 
-  // Returns the current hardware latency value in bytes.
-  int GetHardwareLatencyInBytes();
-
-  // Helper method for waiting on Pulse Audio operations to complete.
-  void WaitForPulseOperation(pa_operation* op);
-
   // AudioParameters from the constructor.
   const AudioParameters params_;
+
+  // The device ID for the device to open.
+  const std::string device_id_;
 
   // Audio manager that created us.  Used to report that we've closed.
   AudioManagerBase* manager_;

@@ -5,10 +5,10 @@
 #include "net/http/http_pipelined_host_impl.h"
 
 #include "base/memory/scoped_ptr.h"
-#include "net/base/ssl_config_service.h"
 #include "net/http/http_pipelined_connection.h"
 #include "net/http/http_pipelined_host_test_util.h"
 #include "net/proxy/proxy_info.h"
+#include "net/ssl/ssl_config_service.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -48,7 +48,7 @@ class HttpPipelinedHostImplTest : public testing::Test {
                                              MatchesOrigin(key_.origin()),
                                              Ref(ssl_config_), Ref(proxy_info_),
                                              Ref(net_log_), true,
-                                             kProtoSPDY2))
+                                             kProtoSPDY3))
         .Times(1)
         .WillOnce(Return(pipeline));
     EXPECT_CALL(*pipeline, CreateNewStream())
@@ -56,7 +56,7 @@ class HttpPipelinedHostImplTest : public testing::Test {
         .WillOnce(Return(kDummyStream));
     EXPECT_EQ(kDummyStream, host_->CreateStreamOnNewPipeline(
         kDummyConnection, ssl_config_, proxy_info_, net_log_, true,
-        kProtoSPDY2));
+        kProtoSPDY3));
     return pipeline;
   }
 
@@ -208,7 +208,7 @@ TEST_F(HttpPipelinedHostImplTest, ShutsDownOnOldVersion) {
   ClearTestPipeline(pipeline);
   EXPECT_EQ(NULL, host_->CreateStreamOnNewPipeline(
       kDummyConnection, ssl_config_, proxy_info_, net_log_, true,
-      kProtoSPDY2));
+      kProtoSPDY3));
 }
 
 TEST_F(HttpPipelinedHostImplTest, ShutsDownOnAuthenticationRequired) {
@@ -227,7 +227,7 @@ TEST_F(HttpPipelinedHostImplTest, ShutsDownOnAuthenticationRequired) {
   ClearTestPipeline(pipeline);
   EXPECT_EQ(NULL, host_->CreateStreamOnNewPipeline(
       kDummyConnection, ssl_config_, proxy_info_, net_log_, true,
-      kProtoSPDY2));
+      kProtoSPDY3));
 }
 
 TEST_F(HttpPipelinedHostImplTest, ConnectionCloseHasNoEffect) {

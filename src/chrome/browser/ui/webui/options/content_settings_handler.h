@@ -8,12 +8,13 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/prefs/public/pref_change_registrar.h"
+#include "base/prefs/pref_change_registrar.h"
 #include "chrome/browser/pepper_flash_settings_manager.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
 #include "chrome/browser/ui/webui/options/pepper_flash_content_settings_utils.h"
 #include "chrome/common/content_settings.h"
 #include "chrome/common/content_settings_types.h"
+#include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
@@ -23,6 +24,7 @@ class ProtocolHandlerRegistry;
 namespace options {
 
 class ContentSettingsHandler : public OptionsPageUIHandler,
+                               public content::NotificationObserver,
                                public PepperFlashSettingsManager::Client {
  public:
   ContentSettingsHandler();
@@ -92,41 +94,65 @@ class ContentSettingsHandler : public OptionsPageUIHandler,
 
   // Clobbers and rebuilds the specific content setting type exceptions table.
   void UpdateExceptionsViewFromModel(ContentSettingsType type);
+
   // Clobbers and rebuilds the specific content setting type exceptions
   // OTR table.
   void UpdateOTRExceptionsViewFromModel(ContentSettingsType type);
+
   // Clobbers and rebuilds all the exceptions tables in the page (both normal
   // and OTR tables).
   void UpdateAllExceptionsViewsFromModel();
+
   // As above, but only OTR tables.
   void UpdateAllOTRExceptionsViewsFromModel();
+
   // Clobbers and rebuilds just the geolocation exception table.
   void UpdateGeolocationExceptionsView();
+
   // Clobbers and rebuilds just the desktop notification exception table.
   void UpdateNotificationExceptionsView();
+
   // Clobbers and rebuilds just the Media device exception table.
   void UpdateMediaExceptionsView();
+
+  // Clobbers and rebuilds just the MIDI SysEx exception table.
+  void UpdateMIDISysExExceptionsView();
+
+  // Clobbers and rebuilds just the zoom levels exception table.
+  void UpdateZoomLevelsExceptionsView();
+
   // Clobbers and rebuilds an exception table that's managed by the host content
   // settings map.
   void UpdateExceptionsViewFromHostContentSettingsMap(ContentSettingsType type);
+
   // As above, but acts on the OTR table for the content setting type.
   void UpdateExceptionsViewFromOTRHostContentSettingsMap(
       ContentSettingsType type);
+
   // Updates the radio buttons for enabling / disabling handlers.
   void UpdateHandlersEnabledRadios();
-  // Removes one geolocation exception.
-  void RemoveGeolocationException(const base::ListValue* args,
-                                  size_t arg_index);
-  // Removes one notification exception.
-  void RemoveNotificationException(const base::ListValue* args,
-                                   size_t arg_index);
-  // Removes one media camera and microphone exception.
-  void RemoveMediaException(const base::ListValue* args, size_t arg_index);
-  // Removes one exception of |type| from the host content settings map.
+
+  // Removes one geolocation exception. |args| contains the parameters passed to
+  // RemoveException().
+  void RemoveGeolocationException(const base::ListValue* args);
+
+  // Removes one notification exception. |args| contains the parameters passed
+  // to RemoveException().
+  void RemoveNotificationException(const base::ListValue* args);
+
+  // Removes one media camera and microphone exception. |args| contains the
+  // parameters passed to RemoveException().
+  void RemoveMediaException(const base::ListValue* args);
+
+  // Removes one exception of |type| from the host content settings map. |args|
+  // contains the parameters passed to RemoveException().
   void RemoveExceptionFromHostContentSettingsMap(
       const base::ListValue* args,
-      size_t arg_index,
       ContentSettingsType type);
+
+  // Removes one zoom level exception. |args| contains the parameters passed to
+  // RemoveException().
+  void RemoveZoomLevelException(const base::ListValue* args);
 
   // Callbacks used by the page ------------------------------------------------
 
@@ -179,9 +205,14 @@ class ContentSettingsHandler : public OptionsPageUIHandler,
 
   void OnPepperFlashPrefChanged();
 
+  // content::HostZoomMap subscription.
+  void OnZoomLevelChanged(const content::HostZoomMap::ZoomLevelChange& change);
+
   void ShowFlashMediaLink(LinkType link_type, bool show);
 
   void UpdateFlashMediaLinksVisibility();
+
+  void UpdateProtectedContentExceptionsButton();
 
   // Member variables ---------------------------------------------------------
 
@@ -189,6 +220,7 @@ class ContentSettingsHandler : public OptionsPageUIHandler,
   PrefChangeRegistrar pref_change_registrar_;
   scoped_ptr<PepperFlashSettingsManager> flash_settings_manager_;
   MediaSettingsInfo media_settings_;
+  scoped_ptr<content::HostZoomMap::Subscription> host_zoom_map_subscription_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentSettingsHandler);
 };

@@ -19,14 +19,21 @@
 #ifndef GOOGLE_CACHEINVALIDATION_IMPL_REGISTRATION_MANAGER_H_
 #define GOOGLE_CACHEINVALIDATION_IMPL_REGISTRATION_MANAGER_H_
 
+#include <map>
+#include <set>
+
 #include "google/cacheinvalidation/include/system-resources.h"
 #include "google/cacheinvalidation/deps/digest-function.h"
 #include "google/cacheinvalidation/deps/scoped_ptr.h"
 #include "google/cacheinvalidation/impl/client-protocol-namespace-fix.h"
 #include "google/cacheinvalidation/impl/digest-store.h"
+#include "google/cacheinvalidation/impl/proto-helpers.h"
 #include "google/cacheinvalidation/impl/statistics.h"
 
 namespace invalidation {
+
+using INVALIDATION_STL_NAMESPACE::map;
+using INVALIDATION_STL_NAMESPACE::set;
 
 class RegistrationManager {
  public:
@@ -65,19 +72,41 @@ class RegistrationManager {
 
   /*
    * Handles registration operation statuses from the server. Modifies |result|
-   * to contain one boolean per registration status that indicates if the
-   * registration manager considered the registration operation to be successful
-   * or not (e.g., if the object was registered and the server sent back a reply
-   * of successful unregistration, the registration manager will consider that
-   * as failure since the application's intent is to register that object).
+   * to contain one boolean per registration status, that indicates whether the
+   * registration operation was both successful and agreed with the desired
+   * client state (i.e., for each registration status,
+   * (status.optype == register) ==
+   * desiredRegistrations.contains(status.objectid)).
+   * <p>
+   * REQUIRES: the caller subsequently make an informRegistrationStatus or
+   * informRegistrationFailure upcall on the listener for each registration in
+   * {@code registrationStatuses}.
    */
   void HandleRegistrationStatus(
       const RepeatedPtrField<RegistrationStatus>& registration_statuses,
       vector<bool>* result);
 
-  /* Removes all the registrations in this manager and returns the list. */
+  /*
+   * Removes all desired registrations and pending operations. Returns all
+   * object ids that were affected.
+   * <p>
+   * REQUIRES: the caller issue a permanent failure upcall to the listener for
+   * all returned object ids.
+   */
   void RemoveRegisteredObjects(vector<ObjectIdP>* result) {
+    // Add the formerly desired- and pending- registrations to result.
     desired_registrations_->RemoveAll(result);
+    map<ObjectIdP, RegistrationP::OpType, ProtoCompareLess>::iterator
+        pending_iter = pending_operations_.begin();
+    for (; pending_iter != pending_operations_.end(); pending_iter++) {
+      result->push_back(pending_iter->first);
+    }
+    pending_operations_.clear();
+
+    // De-dup result.
+    set<ObjectIdP, ProtoCompareLess> unique_oids(result->begin(),
+                                                 result->end());
+    result->assign(unique_oids.begin(), unique_oids.end());
   }
 
   //
@@ -95,9 +124,28 @@ class RegistrationManager {
     server_summary->CopyFrom(last_known_server_summary_);
   }
 
-  /* Informs the manager of a new registration state summary from the server. */
-  void InformServerRegistrationSummary(const RegistrationSummary& reg_summary) {
+  /* Informs the manager of a new registration state summary from the server.
+   * Modifies upcalls to contain zero or more RegistrationP. For each added
+   * RegistrationP, the caller should make an inform-registration-status upcall
+   * on the listener.
+   */
+  void InformServerRegistrationSummary(const RegistrationSummary& reg_summary,
+    vector<RegistrationP>* upcalls) {
     last_known_server_summary_.CopyFrom(reg_summary);
+    if (IsStateInSyncWithServer()) {
+      // If we are now in sync with the server, then the caller should make
+      // inform-reg-status upcalls for all operations that we had pending, if
+      // any; they are also no longer pending.
+      map<ObjectIdP, RegistrationP::OpType, ProtoCompareLess>::iterator
+          pending_iter = pending_operations_.begin();
+      for (; pending_iter != pending_operations_.end(); pending_iter++) {
+        RegistrationP reg_p;
+        ProtoHelpers::InitRegistrationP(pending_iter->first,
+            pending_iter->second, &reg_p);
+        upcalls->push_back(reg_p);
+      }
+      pending_operations_.clear();
+    }
   }
 
   /* Returns whether the local registration state and server state agree, based
@@ -126,6 +174,21 @@ class RegistrationManager {
 
   /* Latest known server registration state summary. */
   RegistrationSummary last_known_server_summary_;
+
+  /*
+   * Map of object ids and operation types for which we have not yet issued any
+   * registration-status upcall to the listener. We need this so that we can
+   * synthesize success upcalls if registration sync, rather than a server
+   * message, communicates to us that we have a successful (un)registration.
+   * <p>
+   * This is a map from object id to type, rather than a set of RegistrationP,
+   * because a set of RegistrationP would assume that we always get a response
+   * for every operation we issue, which isn't necessarily true (i.e., the
+   * server might send back an unregistration status in response to a
+   * registration request).
+   */
+  map<ObjectIdP, RegistrationP::OpType, ProtoCompareLess>
+      pending_operations_;
 
   Logger* logger_;
 };

@@ -4,7 +4,7 @@
 
 #include "ui/views/examples/example_combobox_model.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 
 namespace views {
 namespace examples {
@@ -20,8 +20,8 @@ int ExampleComboboxModel::GetItemCount() const {
   return count_;
 }
 
-string16 ExampleComboboxModel::GetItemAt(int index) {
-  return ASCIIToUTF16(strings_[index]);
+base::string16 ExampleComboboxModel::GetItemAt(int index) {
+  return base::ASCIIToUTF16(strings_[index]);
 }
 
 }  // namespace examples

@@ -8,3 +8,5 @@ EXPORTS
   GoogleChromeDaysSinceLastRun
   CanOfferReactivation
   ReactivateChrome
+  CanOfferRelaunch
+  SetRelaunchOffered

@@ -29,6 +29,7 @@
 
 #include <limits>
 
+#if defined(FEATURE_ENABLE_SSL)
 #include "talk/base/sslconfig.h"
 #if defined(SSL_USE_OPENSSL)
 #include <openssl/rand.h>
@@ -40,7 +41,8 @@
 #include <windows.h>
 #include <ntsecapi.h>
 #endif  // WIN32
-#endif
+#endif  // else
+#endif  // FEATURE_ENABLED_SSL
 
 #include "talk/base/base64.h"
 #include "talk/base/basictypes.h"
@@ -153,6 +155,28 @@ class SecureRandomGenerator : public RandomGenerator {
   RtlGenRandomProc rtl_gen_random_;
 };
 
+#elif !defined(FEATURE_ENABLE_SSL)
+
+// No SSL implementation -- use rand()
+class SecureRandomGenerator : public RandomGenerator {
+ public:
+  virtual bool Init(const void* seed, size_t len) {
+    if (len >= 4) {
+      srand(*reinterpret_cast<const int*>(seed));
+    } else {
+      srand(*reinterpret_cast<const char*>(seed));
+    }
+    return true;
+  }
+  virtual bool Generate(void* buf, size_t len) {
+    char* bytes = reinterpret_cast<char*>(buf);
+    for (size_t i = 0; i < len; ++i) {
+      bytes[i] = static_cast<char>(rand());
+    }
+    return true;
+  }
+};
+
 #else
 
 #error No SSL implementation has been selected!
@@ -239,7 +263,7 @@ bool CreateRandomString(size_t len,
                         const char* table, int table_size,
                         std::string* str) {
   str->clear();
-  scoped_array<uint8> bytes(new uint8[len]);
+  scoped_ptr<uint8[]> bytes(new uint8[len]);
   if (!Rng().Generate(bytes.get(), len)) {
     LOG(LS_ERROR) << "Failed to generate random string!";
     return false;
@@ -270,7 +294,7 @@ uint32 CreateRandomId() {
 }
 
 uint64 CreateRandomId64() {
-  return static_cast<uint64> (CreateRandomId()) << 32 | CreateRandomId();
+  return static_cast<uint64>(CreateRandomId()) << 32 | CreateRandomId();
 }
 
 uint32 CreateRandomNonZeroId() {

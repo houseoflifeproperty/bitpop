@@ -11,7 +11,7 @@
 #include <map>
 
 #include "base/basictypes.h"
-#include "base/process.h"
+#include "base/process/process.h"
 #include "content/common/content_export.h"
 
 namespace content {
@@ -36,6 +36,12 @@ struct CONTENT_EXPORT GPUVideoMemoryUsageStats {
 
   // A map of processes to their GPU resource consumption
   ProcessMap process_map;
+
+  // The total amount of GPU memory allocated at the time of the request.
+  size_t bytes_allocated;
+
+  // The maximum amount of GPU memory ever allocated at once.
+  size_t bytes_allocated_historical_max;
 };
 
 }  // namespace content

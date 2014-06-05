@@ -111,6 +111,22 @@ extern const char STR_MUC_ROOM_FEATURE_HANGOUT[];
 extern const char STR_MUC_ROOM_FEATURE_HANGOUT_LITE[];
 extern const char STR_MUC_ROOM_FEATURE_BROADCAST[];
 extern const char STR_MUC_ROOM_FEATURE_MULTI_USER_VC[];
+extern const char STR_MUC_ROOM_FEATURE_RECORDABLE[];
+extern const char STR_MUC_ROOM_FEATURE_CUSTOM_RECORDING[];
+extern const char STR_MUC_ROOM_OWNER_PROFILE_ID[];
+extern const char STR_MUC_ROOM_FEATURE_ABUSE_RECORDABLE[];
+
+extern const char STR_ID_TYPE_CONVERSATION[];
+extern const char NS_GOOGLE_MUC_HANGOUT[];
+extern const StaticQName QN_GOOGLE_MUC_HANGOUT_INVITE;
+extern const StaticQName QN_GOOGLE_MUC_HANGOUT_INVITE_TYPE;
+extern const StaticQName QN_ATTR_CREATE_ACTIVITY;
+extern const StaticQName QN_GOOGLE_MUC_HANGOUT_PUBLIC;
+extern const StaticQName QN_GOOGLE_MUC_HANGOUT_INVITEE;
+extern const StaticQName QN_GOOGLE_MUC_HANGOUT_NOTIFICATION_STATUS;
+extern const StaticQName QN_GOOGLE_MUC_HANGOUT_NOTIFICATION_TYPE;
+extern const StaticQName QN_GOOGLE_MUC_HANGOUT_HANGOUT_START_CONTEXT;
+extern const StaticQName QN_GOOGLE_MUC_HANGOUT_CONVERSATION_ID;
 
 extern const StaticQName QN_STREAM_STREAM;
 extern const StaticQName QN_STREAM_FEATURES;
@@ -311,6 +327,7 @@ extern const StaticQName QN_ATTR_STATUS;
 
 // Presence connection status
 extern const char STR_PSTN_CONFERENCE_STATUS_CONNECTING[];
+extern const char STR_PSTN_CONFERENCE_STATUS_JOINING[];
 extern const char STR_PSTN_CONFERENCE_STATUS_CONNECTED[];
 extern const char STR_PSTN_CONFERENCE_STATUS_HANGUP[];
 
@@ -393,6 +410,7 @@ extern const StaticQName QN_MUC_ITEM;
 extern const StaticQName QN_MUC_AFFILIATION;
 extern const StaticQName QN_MUC_ROLE;
 extern const StaticQName QN_CLIENT_VERSION;
+extern const StaticQName QN_LOCALE;
 extern const char STR_AFFILIATION_NONE[];
 extern const char STR_ROLE_PARTICIPANT[];
 

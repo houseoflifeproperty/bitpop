@@ -19,10 +19,12 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/channel_layout.h"
 #include "libavutil/intreadwrite.h"
 #include "avcodec.h"
 #include "dsputil.h"
 #include "get_bits.h"
+#include "internal.h"
 
 #include "truespeech_data.h"
 /**
@@ -34,7 +36,6 @@
  * TrueSpeech decoder context
  */
 typedef struct {
-    AVFrame frame;
     DSPContext dsp;
     /* input data */
     DECLARE_ALIGNED(16, uint8_t, buffer)[32];
@@ -62,16 +63,14 @@ static av_cold int truespeech_decode_init(AVCodecContext * avctx)
     TSContext *c = avctx->priv_data;
 
     if (avctx->channels != 1) {
-        av_log_ask_for_sample(avctx, "Unsupported channel count: %d\n", avctx->channels);
-        return AVERROR(EINVAL);
+        avpriv_request_sample(avctx, "Channel count %d", avctx->channels);
+        return AVERROR_PATCHWELCOME;
     }
 
-    avctx->sample_fmt = AV_SAMPLE_FMT_S16;
+    avctx->channel_layout = AV_CH_LAYOUT_MONO;
+    avctx->sample_fmt     = AV_SAMPLE_FMT_S16;
 
     ff_dsputil_init(&c->dsp, avctx);
-
-    avcodec_get_frame_defaults(&c->frame);
-    avctx->coded_frame = &c->frame;
 
     return 0;
 }
@@ -307,6 +306,7 @@ static void truespeech_save_prevvec(TSContext *c)
 static int truespeech_decode_frame(AVCodecContext *avctx, void *data,
                                    int *got_frame_ptr, AVPacket *avpkt)
 {
+    AVFrame *frame     = data;
     const uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
     TSContext *c = avctx->priv_data;
@@ -324,12 +324,10 @@ static int truespeech_decode_frame(AVCodecContext *avctx, void *data,
     }
 
     /* get output buffer */
-    c->frame.nb_samples = iterations * 240;
-    if ((ret = avctx->get_buffer(avctx, &c->frame)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    frame->nb_samples = iterations * 240;
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
-    samples = (int16_t *)c->frame.data[0];
+    samples = (int16_t *)frame->data[0];
 
     memset(samples, 0, iterations * 240 * sizeof(*samples));
 
@@ -351,19 +349,18 @@ static int truespeech_decode_frame(AVCodecContext *avctx, void *data,
         truespeech_save_prevvec(c);
     }
 
-    *got_frame_ptr   = 1;
-    *(AVFrame *)data = c->frame;
+    *got_frame_ptr = 1;
 
     return buf_size;
 }
 
 AVCodec ff_truespeech_decoder = {
     .name           = "truespeech",
+    .long_name      = NULL_IF_CONFIG_SMALL("DSP Group TrueSpeech"),
     .type           = AVMEDIA_TYPE_AUDIO,
     .id             = AV_CODEC_ID_TRUESPEECH,
     .priv_data_size = sizeof(TSContext),
     .init           = truespeech_decode_init,
     .decode         = truespeech_decode_frame,
     .capabilities   = CODEC_CAP_DR1,
-    .long_name      = NULL_IF_CONFIG_SMALL("DSP Group TrueSpeech"),
 };

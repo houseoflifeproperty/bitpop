@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -11,15 +11,15 @@
 
 #include <string>
 
+#include "sync/base/sync_export.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/notifier/invalidation_util.h"
 #include "sync/notifier/invalidator_state.h"
-#include "sync/notifier/object_id_invalidation_map.h"
 
 namespace syncer {
 class InvalidationHandler;
 
-class Invalidator {
+class SYNC_EXPORT Invalidator {
  public:
   Invalidator() {}
   virtual ~Invalidator() {}
@@ -73,28 +73,15 @@ class Invalidator {
   // the updated state.
   virtual InvalidatorState GetInvalidatorState() const = 0;
 
-  // SetUniqueId must be called once, before any call to
-  // UpdateCredentials.  |unique_id| should be a non-empty globally
-  // unique string.
-  virtual void SetUniqueId(const std::string& unique_id) = 0;
-
-  // SetState must be called once, before any call to
-  // UpdateCredentials.  |state| may be empty.
-  // Deprecated in favour of InvalidationStateTracker persistence.
-  virtual void SetStateDeprecated(const std::string& state) = 0;
-
   // The observers won't be notified of any notifications until
   // UpdateCredentials is called at least once. It can be called more than
   // once.
   virtual void UpdateCredentials(
       const std::string& email, const std::string& token) = 0;
 
-  // This is here only to support the old p2p notification implementation,
-  // which is still used by sync integration tests.
-  // TODO(akalin): Remove this once we move the integration tests off p2p
-  // notifications.
-  virtual void SendInvalidation(
-      const ObjectIdInvalidationMap& invalidation_map) = 0;
+  // Requests internal detailed status to be posted back to the callback.
+  virtual void RequestDetailedStatus(
+      base::Callback<void(const base::DictionaryValue&)> callback) const = 0;
 };
 }  // namespace syncer
 

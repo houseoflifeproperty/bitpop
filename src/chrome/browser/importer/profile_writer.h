@@ -10,16 +10,18 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_vector.h"
-#include "base/string16.h"
-#include "base/time.h"
+#include "base/strings/string16.h"
+#include "base/time/time.h"
 #include "build/build_config.h"
 #include "chrome/browser/history/history_types.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
+struct ImportedBookmarkEntry;
+struct ImportedFaviconUsage;
 class Profile;
 class TemplateURL;
 
-namespace content {
+namespace autofill {
 struct PasswordForm;
 }
 
@@ -31,19 +33,6 @@ struct IE7PasswordInfo;
 // This object must be invoked on UI thread.
 class ProfileWriter : public base::RefCountedThreadSafe<ProfileWriter> {
  public:
-  struct BookmarkEntry {
-    BookmarkEntry();
-    ~BookmarkEntry();
-    bool operator==(const BookmarkEntry& other) const;
-
-    bool in_toolbar;
-    bool is_folder;
-    GURL url;
-    std::vector<string16> path;
-    string16 title;
-    base::Time creation_time;
-  };
-
   explicit ProfileWriter(Profile* profile);
 
   // These functions return true if the corresponding model has been loaded.
@@ -53,7 +42,7 @@ class ProfileWriter : public base::RefCountedThreadSafe<ProfileWriter> {
   virtual bool TemplateURLServiceIsLoaded() const;
 
   // Helper methods for adding data to local stores.
-  virtual void AddPasswordForm(const content::PasswordForm& form);
+  virtual void AddPasswordForm(const autofill::PasswordForm& form);
 
 #if defined(OS_WIN)
   virtual void AddIE7PasswordInfo(const IE7PasswordInfo& info);
@@ -82,11 +71,12 @@ class ProfileWriter : public base::RefCountedThreadSafe<ProfileWriter> {
   // For example, if |first_folder_name| is 'Imported from IE' and a folder with
   // the name 'Imported from IE' already exists in the bookmarks toolbar, then
   // we will instead create a subfolder named 'Imported from IE (1)'.
-  virtual void AddBookmarks(const std::vector<BookmarkEntry>& bookmarks,
-                            const string16& top_level_folder_name);
+  virtual void AddBookmarks(
+      const std::vector<ImportedBookmarkEntry>& bookmarks,
+      const base::string16& top_level_folder_name);
 
   virtual void AddFavicons(
-      const std::vector<history::ImportedFaviconUsage>& favicons);
+      const std::vector<ImportedFaviconUsage>& favicons);
 
   // Adds the TemplateURLs in |template_urls| to the local store.  The local
   // store becomes the owner of the TemplateURLs.  Some TemplateURLs in

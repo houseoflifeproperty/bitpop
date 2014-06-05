@@ -47,8 +47,12 @@ void SetNaClSwitchExpectations(struct NaClSignalContext *expected_regs) {
   /* The current implementation sets %edx to the return address. */
   expected_regs->edx = expected_regs->prog_ctr;
 #elif defined(__x86_64__)
-  /* The current implementation sets %rcx to the return address. */
-  expected_regs->rcx = expected_regs->prog_ctr;
+  /*
+   * The current implementation sets %r11 to the %r15-extended return
+   * address.  Note that sandbox-base-address-hiding relies on not
+   * leaking this 64-bit address into any other register.
+   */
+  expected_regs->r11 = expected_regs->prog_ctr;
   /* NaCl always sets %rdi (argument 1) as if it is calling _start. */
   expected_regs->rdi = (uintptr_t) expected_regs->stack_ptr + 8;
 #elif defined(__arm__)
@@ -59,6 +63,16 @@ void SetNaClSwitchExpectations(struct NaClSignalContext *expected_regs) {
    * calling _start.
    */
   expected_regs->r0 = expected_regs->stack_ptr;
+#elif defined(__mips__)
+  /* The current implementation sets t9 to the return address. */
+  expected_regs->t9 = expected_regs->prog_ctr;
+  /*
+   * Value from the return register v0 is put in input register a0 when
+   * a new thread is started. For the start of a new thread, expected
+   * stack pointer value is put in these registers.
+   */
+  expected_regs->a0 = expected_regs->stack_ptr;
+  expected_regs->v0 = expected_regs->stack_ptr;
 #endif
 }
 
@@ -73,6 +87,10 @@ void CheckRegistersAfterSyscall(struct NaClSignalContext *regs) {
   g_expected_regs.rax = regs->rax;
 #elif defined(__arm__)
   g_expected_regs.r0 = regs->r0;
+#elif defined(__mips__)
+  g_expected_regs.v0 = regs->v0;
+  /* NaClSwitch sets registers a0 and v0 to the same value. */
+  g_expected_regs.a0 = regs->v0;
 #else
 # error Unsupported architecture
 #endif
@@ -86,7 +104,7 @@ void TestSyscall(uintptr_t syscall_addr) {
   struct NaClSignalContext call_regs;
   char stack[0x10000];
 
-  RegsFillTestValues(&call_regs);
+  RegsFillTestValues(&call_regs, /* seed= */ 0);
   call_regs.stack_ptr = (uintptr_t) stack + sizeof(stack);
   call_regs.prog_ctr = (uintptr_t) ContinueAfterSyscall;
   RegsApplySandboxConstraints(&call_regs);
@@ -109,14 +127,17 @@ void TestSyscall(uintptr_t syscall_addr) {
      */
     if (syscall_addr == (uintptr_t) NACL_SYSCALL(tls_get) ||
         syscall_addr == (uintptr_t) NACL_SYSCALL(second_tls_get)) {
+      /* Undo some effects of RegsUnsetNonCalleeSavedRegisters(). */
       g_expected_regs.rsi = call_regs.rsi;
       g_expected_regs.rdi = call_regs.rdi;
       g_expected_regs.r8 = call_regs.r8;
       g_expected_regs.r9 = call_regs.r9;
       g_expected_regs.r10 = call_regs.r10;
-      g_expected_regs.r11 = call_regs.r11;
-      g_expected_regs.r12 = call_regs.r12;
-      g_expected_regs.r13 = call_regs.r13;
+      /*
+       * The current implementation clobbers %rcx with the
+       * non-%r15-extended return address.
+       */
+      g_expected_regs.rcx = (uint32_t) g_expected_regs.prog_ctr;
     }
 
     call_regs.rax = syscall_addr;
@@ -131,6 +152,14 @@ void TestSyscall(uintptr_t syscall_addr) {
         &call_regs,
         "bic r1, r1, #0xf000000f\n"
         "bx r1\n");
+#elif defined(__mips__)
+    call_regs.t9 = syscall_addr;  /* Scratch register */
+    call_regs.return_addr = (uintptr_t) ContinueAfterSyscall;  /* Return */
+    ASM_WITH_REGS(
+        &call_regs,
+        "and $t9, $t9, $t6\n"
+        "jr $t9\n"
+        "nop\n");
 #else
 # error Unsupported architecture
 #endif
@@ -178,7 +207,7 @@ void TestInitialRegsAtThreadEntry(void) {
   /* By default, we expect registers to be initialised to zero. */
   memset(&expected_regs, 0, sizeof(expected_regs));
   expected_regs.prog_ctr = (uintptr_t) ThreadFuncWrapper;
-  expected_regs.stack_ptr = aligned_stack_top;
+  expected_regs.stack_ptr = aligned_stack_top - NACL_STACK_ARGS_SIZE;
   RegsApplySandboxConstraints(&expected_regs);
   SetNaClSwitchExpectations(&expected_regs);
 #if defined(__x86_64__)

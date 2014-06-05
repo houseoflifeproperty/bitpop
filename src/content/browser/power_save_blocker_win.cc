@@ -7,7 +7,7 @@
 #include <windows.h>
 
 #include "base/logging.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/scoped_handle.h"
 #include "base/win/windows_version.h"
 #include "content/public/browser/browser_thread.h"
@@ -39,7 +39,7 @@ HANDLE CreatePowerRequest(POWER_REQUEST_TYPE type, const std::string& reason) {
     if (!PowerCreateRequestFn || !PowerSetRequestFn)
       return INVALID_HANDLE_VALUE;
   }
-  string16 wide_reason = ASCIIToUTF16(reason);
+  base::string16 wide_reason = base::ASCIIToUTF16(reason);
   REASON_CONTEXT context = {0};
   context.Version = POWER_REQUEST_CONTEXT_VERSION;
   context.Flags = POWER_REQUEST_CONTEXT_SIMPLE_STRING;

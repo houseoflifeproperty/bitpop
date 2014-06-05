@@ -9,7 +9,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
-#include "base/prefs/public/pref_change_registrar.h"
+#include "base/prefs/pref_change_registrar.h"
 #include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/sync/glue/non_frontend_data_type_controller.h"
 
@@ -34,6 +34,8 @@ class TypedUrlDataTypeController : public NonFrontendDataTypeController {
   // NonFrontendDataTypeController implementation
   virtual syncer::ModelType type() const OVERRIDE;
   virtual syncer::ModelSafeGroup model_safe_group() const OVERRIDE;
+  virtual void LoadModels(const ModelLoadCallback& model_load_callback)
+      OVERRIDE;
 
   // Invoked on the history thread to set our history backend - must be called
   // before CreateSyncComponents() is invoked.
@@ -44,8 +46,9 @@ class TypedUrlDataTypeController : public NonFrontendDataTypeController {
   virtual bool PostTaskOnBackendThread(
       const tracked_objects::Location& from_here,
       const base::Closure& task) OVERRIDE;
-  virtual void CreateSyncComponents() OVERRIDE;
-  virtual void StopModels() OVERRIDE;
+  virtual ProfileSyncComponentsFactory::SyncComponents CreateSyncComponents()
+      OVERRIDE;
+  virtual void DisconnectProcessor(ChangeProcessor* processor) OVERRIDE;
 
  private:
   virtual ~TypedUrlDataTypeController();

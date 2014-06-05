@@ -8,36 +8,30 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
-#include "base/string16.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/search_engines/template_url_service_observer.h"
 #include "chrome/test/base/testing_browser_process.h"
-#include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 
 class GURL;
 class TemplateURLService;
-class TemplateURLServiceTestingProfile;
+class TestingProfile;
 class TestingTemplateURLService;
 class TestingProfile;
 class WebDataService;
 
-// Implements functionality to make it easier to test TemplateURLService and
-// make changes to it.
-class TemplateURLServiceTestUtil : public TemplateURLServiceObserver {
+// TemplateURLServiceTestUtilBase contains basic API to ease testing of
+// TemplateURLService. User should take care of the infrastructure separately.
+class TemplateURLServiceTestUtilBase : public TemplateURLServiceObserver {
  public:
-  TemplateURLServiceTestUtil();
+  TemplateURLServiceTestUtilBase();
+  virtual ~TemplateURLServiceTestUtilBase();
 
-  virtual ~TemplateURLServiceTestUtil();
-
-  // Sets up the data structures for this class (mirroring gtest standard
-  // methods).
-  void SetUp();
-
-  // Cleans up data structures for this class  (mirroring gtest standard
-  // methods).
-  void TearDown();
+  void CreateTemplateUrlService();
 
   // TemplateURLServiceObserver implemementation.
   virtual void OnTemplateURLServiceChanged() OVERRIDE;
@@ -47,14 +41,6 @@ class TemplateURLServiceTestUtil : public TemplateURLServiceObserver {
 
   // Sets the observer count to 0.
   void ResetObserverCount();
-
-  // Blocks the caller until the service has finished servicing all pending
-  // requests.
-  static void BlockTillServiceProcessesRequests();
-
-  // Blocks the caller until the I/O thread has finished servicing all pending
-  // requests.
-  static void BlockTillIOThreadProcessesRequests();
 
   // Makes sure the load was successful and sent the correct notification.
   void VerifyLoad();
@@ -72,20 +58,24 @@ class TemplateURLServiceTestUtil : public TemplateURLServiceObserver {
 
   // Returns the search term from the last invocation of
   // TemplateURLService::SetKeywordSearchTermsForURL and clears the search term.
-  string16 GetAndClearSearchTerm();
+  base::string16 GetAndClearSearchTerm();
 
   // Set the google base url.  |base_url| must be valid.
   void SetGoogleBaseURL(const GURL& base_url) const;
 
   // Set the managed preferences for the default search provider and trigger
-  // notification.
-  void SetManagedDefaultSearchPreferences(bool enabled,
-                                          const std::string& name,
-                                          const std::string& keyword,
-                                          const std::string& search_url,
-                                          const std::string& suggest_url,
-                                          const std::string& icon_url,
-                                          const std::string& encodings);
+  // notification. If |alternate_url| is empty, uses an empty list of alternate
+  // URLs, otherwise use a list containing a single entry.
+  void SetManagedDefaultSearchPreferences(
+      bool enabled,
+      const std::string& name,
+      const std::string& keyword,
+      const std::string& search_url,
+      const std::string& suggest_url,
+      const std::string& icon_url,
+      const std::string& encodings,
+      const std::string& alternate_url,
+      const std::string& search_terms_replacement_key);
 
   // Remove all the managed preferences for the default search provider and
   // trigger notification.
@@ -95,21 +85,38 @@ class TemplateURLServiceTestUtil : public TemplateURLServiceObserver {
   TemplateURLService* model() const;
 
   // Returns the TestingProfile.
-  TestingProfile* profile() const;
-
-  // Starts an I/O thread.
-  void StartIOThread();
-
-  // Runs all pending tasks on the UI loop.
-  void PumpLoop();
+  virtual TestingProfile* profile() const = 0;
 
  private:
-  MessageLoopForUI message_loop_;
+  int changed_count_;
+
+  DISALLOW_COPY_AND_ASSIGN(TemplateURLServiceTestUtilBase);
+};
+
+// TemplateURLServiceTestUtil sets up TestingProfile, TemplateURLService and
+// required threads.
+class TemplateURLServiceTestUtil : public TemplateURLServiceTestUtilBase {
+ public:
+  TemplateURLServiceTestUtil();
+  virtual ~TemplateURLServiceTestUtil();
+
+  // Sets up the data structures for this class (mirroring gtest standard
+  // methods).
+  void SetUp();
+
+  // Cleans up data structures for this class  (mirroring gtest standard
+  // methods).
+  void TearDown();
+
+  // Returns the TestingProfile.
+  virtual TestingProfile* profile() const OVERRIDE;
+
+ private:
   // Needed to make the DeleteOnUIThread trait of WebDataService work
   // properly.
-  content::TestBrowserThread ui_thread_;
-  scoped_ptr<TemplateURLServiceTestingProfile> profile_;
-  int changed_count_;
+  content::TestBrowserThreadBundle thread_bundle_;
+  scoped_ptr<TestingProfile> profile_;
+  base::ScopedTempDir temp_dir_;
 
   DISALLOW_COPY_AND_ASSIGN(TemplateURLServiceTestUtil);
 };

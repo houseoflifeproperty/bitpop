@@ -8,18 +8,18 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include <stdio.h>
+#include <assert.h>
 #include <ctype.h>
-#include <cassert>
+#include <stdio.h>
 #include <string.h>
 
-#include "func_test_manager.h"
-#include "gtest/gtest.h"
-#include "system_wrappers/interface/sleep.h"
-#include "testsupport/fileutils.h"
+#include "testing/gtest/include/gtest/gtest.h"
+#include "webrtc/modules/audio_device/test/func_test_manager.h"
+#include "webrtc/system_wrappers/interface/sleep.h"
+#include "webrtc/test/testsupport/fileutils.h"
 
-#include "modules/audio_device/audio_device_config.h"
-#include "modules/audio_device/audio_device_impl.h"
+#include "webrtc/modules/audio_device/audio_device_config.h"
+#include "webrtc/modules/audio_device/audio_device_impl.h"
 
 #ifndef __GNUC__
 // Disable warning message ('sprintf': name was marked as #pragma deprecated)
@@ -36,15 +36,6 @@ const char* RecordedMicrophoneBoostFile =
 "recorded_microphone_boost_mono_48.pcm";
 const char* RecordedMicrophoneAGCFile = "recorded_microphone_AGC_mono_48.pcm";
 const char* RecordedSpeakerFile = "recorded_speaker_48.pcm";
-
-struct AudioPacket
-{
-    WebRtc_UWord8 dataBuffer[4 * 960];
-    WebRtc_UWord16 nSamples;
-    WebRtc_UWord16 nBytesPerSample;
-    WebRtc_UWord8 nChannels;
-    WebRtc_UWord32 samplesPerSec;
-};
 
 // Helper functions
 #if !defined(WEBRTC_IOS)
@@ -103,8 +94,7 @@ AudioTransportImpl::AudioTransportImpl(AudioDeviceModule* audioDevice) :
     _loopBackMeasurements(false),
     _playFile(*FileWrapper::Create()),
     _recCount(0),
-    _playCount(0),
-    _audioList()
+    _playCount(0)
 {
     _resampler.Reset(48000, 48000, kResamplerSynchronousStereo);
 }
@@ -115,18 +105,9 @@ AudioTransportImpl::~AudioTransportImpl()
     _playFile.CloseFile();
     delete &_playFile;
 
-    while (!_audioList.Empty())
-    {
-        ListItem* item = _audioList.First();
-        if (item)
-        {
-            AudioPacket* packet = static_cast<AudioPacket*> (item->GetItem());
-            if (packet)
-            {
-                delete packet;
-            }
-        }
-        _audioList.PopFront();
+    for (AudioPacketList::iterator iter = _audioList.begin();
+         iter != _audioList.end(); ++iter) {
+            delete *iter;
     }
 }
 
@@ -134,8 +115,7 @@ AudioTransportImpl::~AudioTransportImpl()
 //	AudioTransportImpl::SetFilePlayout
 // ----------------------------------------------------------------------------
 
-WebRtc_Word32 AudioTransportImpl::SetFilePlayout(bool enable,
-                                                 const char* fileName)
+int32_t AudioTransportImpl::SetFilePlayout(bool enable, const char* fileName)
 {
     _playFromFile = enable;
     if (enable)
@@ -153,41 +133,34 @@ void AudioTransportImpl::SetFullDuplex(bool enable)
 {
     _fullDuplex = enable;
 
-    while (!_audioList.Empty())
-    {
-        ListItem* item = _audioList.First();
-        if (item)
-        {
-            AudioPacket* packet = static_cast<AudioPacket*> (item->GetItem());
-            if (packet)
-            {
-                delete packet;
-            }
-        }
-        _audioList.PopFront();
+    for (AudioPacketList::iterator iter = _audioList.begin();
+         iter != _audioList.end(); ++iter) {
+            delete *iter;
     }
+    _audioList.clear();
 }
 
-WebRtc_Word32 AudioTransportImpl::RecordedDataIsAvailable(
+int32_t AudioTransportImpl::RecordedDataIsAvailable(
     const void* audioSamples,
-    const WebRtc_UWord32 nSamples,
-    const WebRtc_UWord8 nBytesPerSample,
-    const WebRtc_UWord8 nChannels,
-    const WebRtc_UWord32 samplesPerSec,
-    const WebRtc_UWord32 totalDelayMS,
-    const WebRtc_Word32 clockDrift,
-    const WebRtc_UWord32 currentMicLevel,
-    WebRtc_UWord32& newMicLevel)
+    const uint32_t nSamples,
+    const uint8_t nBytesPerSample,
+    const uint8_t nChannels,
+    const uint32_t samplesPerSec,
+    const uint32_t totalDelayMS,
+    const int32_t clockDrift,
+    const uint32_t currentMicLevel,
+    const bool keyPressed,
+    uint32_t& newMicLevel)
 {
-    if (_fullDuplex && _audioList.GetSize() < 15)
+    if (_fullDuplex && _audioList.size() < 15)
     {
         AudioPacket* packet = new AudioPacket();
         memcpy(packet->dataBuffer, audioSamples, nSamples * nBytesPerSample);
-        packet->nSamples = (WebRtc_UWord16) nSamples;
+        packet->nSamples = (uint16_t) nSamples;
         packet->nBytesPerSample = nBytesPerSample;
         packet->nChannels = nChannels;
         packet->samplesPerSec = samplesPerSec;
-        _audioList.PushBack(packet);
+        _audioList.push_back(packet);
     }
 
     _recCount++;
@@ -202,10 +175,10 @@ WebRtc_Word32 AudioTransportImpl::RecordedDataIsAvailable(
 
         if (_microphoneVolume)
         {
-            WebRtc_UWord32 maxVolume(0);
-            WebRtc_UWord32 minVolume(0);
-            WebRtc_UWord32 volume(0);
-            WebRtc_UWord16 stepSize(0);
+            uint32_t maxVolume(0);
+            uint32_t minVolume(0);
+            uint32_t volume(0);
+            uint16_t stepSize(0);
             EXPECT_EQ(0, _audioDevice->MaxMicrophoneVolume(&maxVolume));
             EXPECT_EQ(0, _audioDevice->MinMicrophoneVolume(&minVolume));
             EXPECT_EQ(0, _audioDevice->MicrophoneVolumeStepSize(&stepSize));
@@ -228,9 +201,9 @@ WebRtc_Word32 AudioTransportImpl::RecordedDataIsAvailable(
 
         if (_microphoneAGC)
         {
-            WebRtc_UWord32 maxVolume(0);
-            WebRtc_UWord32 minVolume(0);
-            WebRtc_UWord16 stepSize(0);
+            uint32_t maxVolume(0);
+            uint32_t minVolume(0);
+            uint16_t stepSize(0);
             EXPECT_EQ(0, _audioDevice->MaxMicrophoneVolume(&maxVolume));
             EXPECT_EQ(0, _audioDevice->MinMicrophoneVolume(&minVolume));
             EXPECT_EQ(0, _audioDevice->MicrophoneVolumeStepSize(&stepSize));
@@ -313,40 +286,40 @@ WebRtc_Word32 AudioTransportImpl::RecordedDataIsAvailable(
 }
 
 
-WebRtc_Word32 AudioTransportImpl::NeedMorePlayData(
-    const WebRtc_UWord32 nSamples,
-    const WebRtc_UWord8 nBytesPerSample,
-    const WebRtc_UWord8 nChannels,
-    const WebRtc_UWord32 samplesPerSec,
+int32_t AudioTransportImpl::NeedMorePlayData(
+    const uint32_t nSamples,
+    const uint8_t nBytesPerSample,
+    const uint8_t nChannels,
+    const uint32_t samplesPerSec,
     void* audioSamples,
-    WebRtc_UWord32& nSamplesOut)
+    uint32_t& nSamplesOut)
 {
     if (_fullDuplex)
     {
-        if (_audioList.Empty())
+        if (_audioList.empty())
         {
             // use zero stuffing when not enough data
             memset(audioSamples, 0, nBytesPerSample * nSamples);
         } else
         {
-            ListItem* item = _audioList.First();
-            AudioPacket* packet = static_cast<AudioPacket*> (item->GetItem());
+            AudioPacket* packet = _audioList.front();
+            _audioList.pop_front();
             if (packet)
             {
                 int ret(0);
                 int lenOut(0);
-                WebRtc_Word16 tmpBuf_96kHz[80 * 12];
-                WebRtc_Word16* ptr16In = NULL;
-                WebRtc_Word16* ptr16Out = NULL;
+                int16_t tmpBuf_96kHz[80 * 12];
+                int16_t* ptr16In = NULL;
+                int16_t* ptr16Out = NULL;
 
-                const WebRtc_UWord16 nSamplesIn = packet->nSamples;
-                const WebRtc_UWord8 nChannelsIn = packet->nChannels;
-                const WebRtc_UWord32 samplesPerSecIn = packet->samplesPerSec;
-                const WebRtc_UWord16 nBytesPerSampleIn =
+                const uint16_t nSamplesIn = packet->nSamples;
+                const uint8_t nChannelsIn = packet->nChannels;
+                const uint32_t samplesPerSecIn = packet->samplesPerSec;
+                const uint16_t nBytesPerSampleIn =
                     packet->nBytesPerSample;
 
-                WebRtc_Word32 fsInHz(samplesPerSecIn);
-                WebRtc_Word32 fsOutHz(samplesPerSec);
+                int32_t fsInHz(samplesPerSecIn);
+                int32_t fsOutHz(samplesPerSec);
 
                 if (fsInHz == 44100)
                     fsInHz = 44000;
@@ -364,19 +337,19 @@ WebRtc_Word32 AudioTransportImpl::NeedMorePlayData(
                         if (nChannels == 2)
                         {
                             _resampler.Push(
-                                (const WebRtc_Word16*) packet->dataBuffer,
+                                (const int16_t*) packet->dataBuffer,
                                 2 * nSamplesIn,
-                                (WebRtc_Word16*) audioSamples, 2
+                                (int16_t*) audioSamples, 2
                                 * nSamples, lenOut);
                         } else
                         {
                             _resampler.Push(
-                                (const WebRtc_Word16*) packet->dataBuffer,
+                                (const int16_t*) packet->dataBuffer,
                                 2 * nSamplesIn, tmpBuf_96kHz, 2
                                 * nSamples, lenOut);
 
                             ptr16In = &tmpBuf_96kHz[0];
-                            ptr16Out = (WebRtc_Word16*) audioSamples;
+                            ptr16Out = (int16_t*) audioSamples;
 
                             // do stereo -> mono
                             for (unsigned int i = 0; i < nSamples; i++)
@@ -387,7 +360,7 @@ WebRtc_Word32 AudioTransportImpl::NeedMorePlayData(
                                 ptr16In++;
                             }
                         }
-                        assert(2*nSamples == (WebRtc_UWord32)lenOut);
+                        assert(2*nSamples == (uint32_t)lenOut);
                     } else
                     {
                         if (_playCount % 100 == 0)
@@ -406,19 +379,19 @@ WebRtc_Word32 AudioTransportImpl::NeedMorePlayData(
                         if (nChannels == 1)
                         {
                             _resampler.Push(
-                                (const WebRtc_Word16*) packet->dataBuffer,
+                                (const int16_t*) packet->dataBuffer,
                                 nSamplesIn,
-                                (WebRtc_Word16*) audioSamples,
+                                (int16_t*) audioSamples,
                                 nSamples, lenOut);
                         } else
                         {
                             _resampler.Push(
-                                (const WebRtc_Word16*) packet->dataBuffer,
+                                (const int16_t*) packet->dataBuffer,
                                 nSamplesIn, tmpBuf_96kHz, nSamples,
                                 lenOut);
 
                             ptr16In = &tmpBuf_96kHz[0];
-                            ptr16Out = (WebRtc_Word16*) audioSamples;
+                            ptr16Out = (int16_t*) audioSamples;
 
                             // do mono -> stereo
                             for (unsigned int i = 0; i < nSamples; i++)
@@ -430,7 +403,7 @@ WebRtc_Word32 AudioTransportImpl::NeedMorePlayData(
                                 ptr16In++;
                             }
                         }
-                        assert(nSamples == (WebRtc_UWord32)lenOut);
+                        assert(nSamples == (uint32_t)lenOut);
                     } else
                     {
                         if (_playCount % 100 == 0)
@@ -441,21 +414,20 @@ WebRtc_Word32 AudioTransportImpl::NeedMorePlayData(
                 nSamplesOut = nSamples;
                 delete packet;
             }
-            _audioList.PopFront();
         }
-    } // if (_fullDuplex)
+    }  // if (_fullDuplex)
 
     if (_playFromFile && _playFile.Open())
     {
-        WebRtc_Word16 fileBuf[480];
+        int16_t fileBuf[480];
 
         // read mono-file
-        WebRtc_Word32 len = _playFile.Read((WebRtc_Word8*) fileBuf, 2
+        int32_t len = _playFile.Read((int8_t*) fileBuf, 2
             * nSamples);
-        if (len != 2 * (WebRtc_Word32) nSamples)
+        if (len != 2 * (int32_t) nSamples)
         {
             _playFile.Rewind();
-            _playFile.Read((WebRtc_Word8*) fileBuf, 2 * nSamples);
+            _playFile.Read((int8_t*) fileBuf, 2 * nSamples);
         }
 
         // convert to stero if required
@@ -466,7 +438,7 @@ WebRtc_Word32 AudioTransportImpl::NeedMorePlayData(
         {
             // mono sample from file is duplicated and sent to left and right
             // channels
-            WebRtc_Word16* audio16 = (WebRtc_Word16*) audioSamples;
+            int16_t* audio16 = (int16_t*) audioSamples;
             for (unsigned int i = 0; i < nSamples; i++)
             {
                 (*audio16) = fileBuf[i]; // left
@@ -475,7 +447,7 @@ WebRtc_Word32 AudioTransportImpl::NeedMorePlayData(
                 audio16++;
             }
         }
-    } // if (_playFromFile && _playFile.Open())
+    }  // if (_playFromFile && _playFile.Open())
 
     _playCount++;
 
@@ -485,10 +457,10 @@ WebRtc_Word32 AudioTransportImpl::NeedMorePlayData(
 
         if (_speakerVolume)
         {
-            WebRtc_UWord32 maxVolume(0);
-            WebRtc_UWord32 minVolume(0);
-            WebRtc_UWord32 volume(0);
-            WebRtc_UWord16 stepSize(0);
+            uint32_t maxVolume(0);
+            uint32_t minVolume(0);
+            uint32_t volume(0);
+            uint16_t stepSize(0);
             EXPECT_EQ(0, _audioDevice->MaxSpeakerVolume(&maxVolume));
             EXPECT_EQ(0, _audioDevice->MinSpeakerVolume(&minVolume));
             EXPECT_EQ(0, _audioDevice->SpeakerVolumeStepSize(&stepSize));
@@ -498,7 +470,7 @@ WebRtc_Word32 AudioTransportImpl::NeedMorePlayData(
                 TEST_LOG("[0]");
                 addMarker = false;
             }
-            WebRtc_UWord32 step = (maxVolume - minVolume) / 10;
+            uint32_t step = (maxVolume - minVolume) / 10;
             step = (step < stepSize ? stepSize : step);
             volume += step;
             if (volume > maxVolume)
@@ -529,14 +501,14 @@ WebRtc_Word32 AudioTransportImpl::NeedMorePlayData(
 
         if (_loopBackMeasurements)
         {
-            WebRtc_UWord16 recDelayMS(0);
-            WebRtc_UWord16 playDelayMS(0);
-            WebRtc_UWord32 nItemsInList(0);
+            uint16_t recDelayMS(0);
+            uint16_t playDelayMS(0);
+            size_t nItemsInList(0);
 
-            nItemsInList = _audioList.GetSize();
+            nItemsInList = _audioList.size();
             EXPECT_EQ(0, _audioDevice->RecordingDelay(&recDelayMS));
             EXPECT_EQ(0, _audioDevice->PlayoutDelay(&playDelayMS));
-            TEST_LOG("Delay (rec+play)+buf: %3u (%3u+%3u)+%3u [ms]\n",
+            TEST_LOG("Delay (rec+play)+buf: %3zu (%3u+%3u)+%3zu [ms]\n",
                      recDelayMS + playDelayMS + 10 * (nItemsInList + 1),
                      recDelayMS, playDelayMS, 10 * (nItemsInList + 1));
 
@@ -550,12 +522,36 @@ WebRtc_Word32 AudioTransportImpl::NeedMorePlayData(
         {
             TEST_LOG("++");
         }
-    } // if (_playCount % 100 == 0)
+    }  // if (_playCount % 100 == 0)
 
     nSamplesOut = nSamples;
 
     return 0;
 }
+
+int AudioTransportImpl::OnDataAvailable(const int voe_channels[],
+                                        int number_of_voe_channels,
+                                        const int16_t* audio_data,
+                                        int sample_rate,
+                                        int number_of_channels,
+                                        int number_of_frames,
+                                        int audio_delay_milliseconds,
+                                        int current_volume,
+                                        bool key_pressed,
+                                        bool need_audio_processing) {
+  return 0;
+}
+
+void AudioTransportImpl::PushCaptureData(int voe_channel,
+                                         const void* audio_data,
+                                         int bits_per_sample, int sample_rate,
+                                         int number_of_channels,
+                                         int number_of_frames) {}
+
+void AudioTransportImpl::PullRenderData(int bits_per_sample, int sample_rate,
+                                        int number_of_channels,
+                                        int number_of_frames,
+                                        void* audio_data) {}
 
 FuncTestManager::FuncTestManager() :
     _processThread(NULL),
@@ -577,7 +573,7 @@ FuncTestManager::~FuncTestManager()
 {
 }
 
-WebRtc_Word32 FuncTestManager::Init()
+int32_t FuncTestManager::Init()
 {
     EXPECT_TRUE((_processThread = ProcessThread::CreateProcessThread()) != NULL);
     if (_processThread == NULL)
@@ -609,7 +605,7 @@ WebRtc_Word32 FuncTestManager::Init()
     return 0;
 }
 
-WebRtc_Word32 FuncTestManager::Close()
+int32_t FuncTestManager::Close()
 {
     EXPECT_EQ(0, _audioDevice->RegisterEventObserver(NULL));
     EXPECT_EQ(0, _audioDevice->RegisterAudioCallback(NULL));
@@ -652,7 +648,7 @@ WebRtc_Word32 FuncTestManager::Close()
     return 0;
 }
 
-WebRtc_Word32 FuncTestManager::DoTest(const TestType testType)
+int32_t FuncTestManager::DoTest(const TestType testType)
 {
     switch (testType)
     {
@@ -712,7 +708,7 @@ WebRtc_Word32 FuncTestManager::DoTest(const TestType testType)
     return 0;
 }
 
-WebRtc_Word32 FuncTestManager::TestAudioLayerSelection()
+int32_t FuncTestManager::TestAudioLayerSelection()
 {
     TEST_LOG("\n=======================================\n");
     TEST_LOG(" Audio Layer test:\n");
@@ -880,14 +876,14 @@ WebRtc_Word32 FuncTestManager::TestAudioLayerSelection()
                 TEST_LOG("\nActiveAudioLayer: kWindowsCoreAudio <=> "
                     "switch was possible\n \n");
         }
-    } // if (tryWinWave || tryWinCore)
+    }  // if (tryWinWave || tryWinCore)
 
     PRINT_TEST_RESULTS;
 
     return 0;
 }
 
-WebRtc_Word32 FuncTestManager::TestDeviceEnumeration()
+int32_t FuncTestManager::TestDeviceEnumeration()
 {
     TEST_LOG("\n=======================================\n");
     TEST_LOG(" Device Enumeration test:\n");
@@ -908,7 +904,7 @@ WebRtc_Word32 FuncTestManager::TestDeviceEnumeration()
     char name[kAdmMaxDeviceNameSize];
     char guid[kAdmMaxGuidSize];
 
-    const WebRtc_Word16 nPlayoutDevices(audioDevice->PlayoutDevices());
+    const int16_t nPlayoutDevices(audioDevice->PlayoutDevices());
     EXPECT_TRUE(nPlayoutDevices >= 0);
     TEST_LOG("\nPlayoutDevices: %u\n \n", nPlayoutDevices);
     for (int n = 0; n < nPlayoutDevices; n++)
@@ -930,7 +926,7 @@ WebRtc_Word32 FuncTestManager::TestDeviceEnumeration()
     EXPECT_EQ(-1, audioDevice->PlayoutDeviceName(-1, name, guid));
 #endif
 
-    const WebRtc_Word16 nRecordingDevices(audioDevice->RecordingDevices());
+    const int16_t nRecordingDevices(audioDevice->RecordingDevices());
     EXPECT_TRUE(nRecordingDevices >= 0);
     TEST_LOG("\nRecordingDevices: %u\n \n", nRecordingDevices);
     for (int n = 0; n < nRecordingDevices; n++)
@@ -960,7 +956,7 @@ WebRtc_Word32 FuncTestManager::TestDeviceEnumeration()
     return 0;
 }
 
-WebRtc_Word32 FuncTestManager::TestDeviceSelection()
+int32_t FuncTestManager::TestDeviceSelection()
 {
     TEST_LOG("\n=======================================\n");
     TEST_LOG(" Device Selection test:\n");
@@ -996,7 +992,7 @@ WebRtc_Word32 FuncTestManager::TestDeviceSelection()
     EXPECT_TRUE(audioDevice->Initialized());
 
     bool available(false);
-    WebRtc_Word16 nDevices(-1);
+    int16_t nDevices(-1);
     char name[kAdmMaxDeviceNameSize];
     char guid[kAdmMaxGuidSize];
 
@@ -1022,8 +1018,6 @@ WebRtc_Word32 FuncTestManager::TestDeviceSelection()
     {
         PRINT_STR(Stereo Playout, false);
     }
-    EXPECT_EQ(0, audioDevice->SpeakerIsAvailable(&available));
-    PRINT_STR(Speaker, available);
     EXPECT_EQ(0, audioDevice->SpeakerVolumeIsAvailable(&available));
     PRINT_STR(Speaker Volume, available);
     EXPECT_EQ(0, audioDevice->SpeakerMuteIsAvailable(&available));
@@ -1042,8 +1036,6 @@ WebRtc_Word32 FuncTestManager::TestDeviceSelection()
     {
         PRINT_STR(Stereo Playout, false);
     }
-    EXPECT_EQ(0, audioDevice->SpeakerIsAvailable(&available));
-    PRINT_STR(Speaker, available);
     EXPECT_EQ(0, audioDevice->SpeakerVolumeIsAvailable(&available));
     PRINT_STR(Speaker Volume, available);
     EXPECT_EQ(0, audioDevice->SpeakerMuteIsAvailable(&available));
@@ -1069,8 +1061,6 @@ WebRtc_Word32 FuncTestManager::TestDeviceSelection()
         {
             PRINT_STR(Stereo Playout, false);
         }
-        EXPECT_EQ(0, audioDevice->SpeakerIsAvailable(&available));
-        PRINT_STR(Speaker, available);
         EXPECT_EQ(0, audioDevice->SpeakerVolumeIsAvailable(&available));
         PRINT_STR(Speaker Volume, available);
         EXPECT_EQ(0, audioDevice->SpeakerMuteIsAvailable(&available));
@@ -1100,8 +1090,6 @@ WebRtc_Word32 FuncTestManager::TestDeviceSelection()
         // special fix to ensure that we don't log 'available' when recording is not OK
         PRINT_STR(Stereo Recording, false);
     }
-    EXPECT_EQ(0, audioDevice->MicrophoneIsAvailable(&available));
-    PRINT_STR(Microphone, available);
     EXPECT_EQ(0, audioDevice->MicrophoneVolumeIsAvailable(&available));
     PRINT_STR(Microphone Volume, available);
     EXPECT_EQ(0, audioDevice->MicrophoneMuteIsAvailable(&available));
@@ -1123,8 +1111,6 @@ WebRtc_Word32 FuncTestManager::TestDeviceSelection()
         // special fix to ensure that we don't log 'available' when recording is not OK
         PRINT_STR(Stereo Recording, false);
     }
-    EXPECT_EQ(0, audioDevice->MicrophoneIsAvailable(&available));
-    PRINT_STR(Microphone, available);
     EXPECT_EQ(0, audioDevice->MicrophoneVolumeIsAvailable(&available));
     PRINT_STR(Microphone Volume, available);
     EXPECT_EQ(0, audioDevice->MicrophoneMuteIsAvailable(&available));
@@ -1154,8 +1140,6 @@ WebRtc_Word32 FuncTestManager::TestDeviceSelection()
             // is not OK
             PRINT_STR(Stereo Recording, false);
         }
-        EXPECT_EQ(0, audioDevice->MicrophoneIsAvailable(&available));
-        PRINT_STR(Microphone, available);
         EXPECT_EQ(0, audioDevice->MicrophoneVolumeIsAvailable(&available));
         PRINT_STR(Microphone Volume, available);
         EXPECT_EQ(0, audioDevice->MicrophoneMuteIsAvailable(&available));
@@ -1172,7 +1156,7 @@ WebRtc_Word32 FuncTestManager::TestDeviceSelection()
     return 0;
 }
 
-WebRtc_Word32 FuncTestManager::TestAudioTransport()
+int32_t FuncTestManager::TestAudioTransport()
 {
     TEST_LOG("\n=======================================\n");
     TEST_LOG(" Audio Transport test:\n");
@@ -1223,7 +1207,7 @@ WebRtc_Word32 FuncTestManager::TestAudioTransport()
     }
 
     bool available(false);
-    WebRtc_UWord32 samplesPerSec(0);
+    uint32_t samplesPerSec(0);
 
     if (playIsAvailable)
     {
@@ -1233,7 +1217,7 @@ WebRtc_Word32 FuncTestManager::TestAudioTransport()
         EXPECT_EQ(0, audioDevice->SpeakerVolumeIsAvailable(&available));
         if (available)
         {
-            WebRtc_UWord32 maxVolume(0);
+            uint32_t maxVolume(0);
             EXPECT_EQ(0, audioDevice->MaxSpeakerVolume(&maxVolume));
             EXPECT_EQ(0, audioDevice->SetSpeakerVolume(maxVolume/2));
         }
@@ -1285,7 +1269,7 @@ WebRtc_Word32 FuncTestManager::TestAudioTransport()
         EXPECT_EQ(0, audioDevice->MicrophoneVolumeIsAvailable(&available));
         if (available)
         {
-            WebRtc_UWord32 maxVolume(0);
+            uint32_t maxVolume(0);
             EXPECT_EQ(0, audioDevice->MaxMicrophoneVolume(&maxVolume));
             EXPECT_EQ(0, audioDevice->SetMicrophoneVolume(maxVolume));
         }
@@ -1361,8 +1345,8 @@ WebRtc_Word32 FuncTestManager::TestAudioTransport()
         // ==============================
         // Finally, make full duplex test
 
-        WebRtc_UWord32 playSamplesPerSec(0);
-        WebRtc_UWord32 recSamplesPerSecRec(0);
+        uint32_t playSamplesPerSec(0);
+        uint32_t recSamplesPerSecRec(0);
 
         EXPECT_EQ(0, audioDevice->RegisterAudioCallback(_audioTransport));
 
@@ -1371,7 +1355,7 @@ WebRtc_Word32 FuncTestManager::TestAudioTransport()
         EXPECT_EQ(0, audioDevice->MicrophoneVolumeIsAvailable(&available));
         if (available)
         {
-            WebRtc_UWord32 maxVolume(0);
+            uint32_t maxVolume(0);
             EXPECT_EQ(0, audioDevice->MaxMicrophoneVolume(&maxVolume));
             EXPECT_EQ(0, audioDevice->SetMicrophoneVolume(maxVolume));
         }
@@ -1420,7 +1404,7 @@ WebRtc_Word32 FuncTestManager::TestAudioTransport()
     return 0;
 }
 
-WebRtc_Word32 FuncTestManager::TestSpeakerVolume()
+int32_t FuncTestManager::TestSpeakerVolume()
 {
     TEST_LOG("\n=======================================\n");
     TEST_LOG(" Speaker Volume test:\n");
@@ -1445,8 +1429,8 @@ WebRtc_Word32 FuncTestManager::TestSpeakerVolume()
     }
 
     bool available(false);
-    WebRtc_UWord32 startVolume(0);
-    WebRtc_UWord32 samplesPerSec(0);
+    uint32_t startVolume(0);
+    uint32_t samplesPerSec(0);
 
     EXPECT_EQ(0, audioDevice->SpeakerVolumeIsAvailable(&available));
     if (available)
@@ -1521,7 +1505,7 @@ WebRtc_Word32 FuncTestManager::TestSpeakerVolume()
     return 0;
 }
 
-WebRtc_Word32 FuncTestManager::TestSpeakerMute()
+int32_t FuncTestManager::TestSpeakerMute()
 {
     TEST_LOG("\n=======================================\n");
     TEST_LOG(" Speaker Mute test:\n");
@@ -1547,7 +1531,7 @@ WebRtc_Word32 FuncTestManager::TestSpeakerMute()
 
     bool available(false);
     bool startMute(false);
-    WebRtc_UWord32 samplesPerSec(0);
+    uint32_t samplesPerSec(0);
 
     EXPECT_EQ(0, audioDevice->SpeakerMuteIsAvailable(&available));
     if (available)
@@ -1616,7 +1600,7 @@ WebRtc_Word32 FuncTestManager::TestSpeakerMute()
     return 0;
 }
 
-WebRtc_Word32 FuncTestManager::TestMicrophoneVolume()
+int32_t FuncTestManager::TestMicrophoneVolume()
 {
     TEST_LOG("\n=======================================\n");
     TEST_LOG(" Microphone Volume test:\n");
@@ -1681,7 +1665,7 @@ WebRtc_Word32 FuncTestManager::TestMicrophoneVolume()
         fileRecording = true;
     }
 
-    WebRtc_UWord32 startVolume(0);
+    uint32_t startVolume(0);
     bool enabled(false);
 
     // store initial volume setting
@@ -1755,7 +1739,7 @@ WebRtc_Word32 FuncTestManager::TestMicrophoneVolume()
     return 0;
 }
 
-WebRtc_Word32 FuncTestManager::TestMicrophoneMute()
+int32_t FuncTestManager::TestMicrophoneMute()
 {
     TEST_LOG("\n=======================================\n");
     TEST_LOG(" Microphone Mute test:\n");
@@ -1892,7 +1876,7 @@ WebRtc_Word32 FuncTestManager::TestMicrophoneMute()
     return 0;
 }
 
-WebRtc_Word32 FuncTestManager::TestMicrophoneBoost()
+int32_t FuncTestManager::TestMicrophoneBoost()
 {
     TEST_LOG("\n=======================================\n");
     TEST_LOG(" Microphone Boost test:\n");
@@ -2029,7 +2013,7 @@ WebRtc_Word32 FuncTestManager::TestMicrophoneBoost()
     return 0;
 }
 
-WebRtc_Word32 FuncTestManager::TestMicrophoneAGC()
+int32_t FuncTestManager::TestMicrophoneAGC()
 {
     TEST_LOG("\n=======================================\n");
     TEST_LOG(" Microphone AGC test:\n");
@@ -2093,7 +2077,7 @@ WebRtc_Word32 FuncTestManager::TestMicrophoneAGC()
         fileRecording = true;
     }
 
-    WebRtc_UWord32 startVolume(0);
+    uint32_t startVolume(0);
     bool enabled(false);
 
     // store initial volume setting
@@ -2168,7 +2152,7 @@ WebRtc_Word32 FuncTestManager::TestMicrophoneAGC()
     return 0;
 }
 
-WebRtc_Word32 FuncTestManager::TestLoopback()
+int32_t FuncTestManager::TestLoopback()
 {
     TEST_LOG("\n=======================================\n");
     TEST_LOG(" Loopback measurement test:\n");
@@ -2188,8 +2172,8 @@ WebRtc_Word32 FuncTestManager::TestLoopback()
 
     bool recIsAvailable(false);
     bool playIsAvailable(false);
-    WebRtc_UWord8 nPlayChannels(0);
-    WebRtc_UWord8 nRecChannels(0);
+    uint8_t nPlayChannels(0);
+    uint8_t nRecChannels(0);
 
     if (SelectRecordingDevice() == -1)
     {
@@ -2226,8 +2210,8 @@ WebRtc_Word32 FuncTestManager::TestLoopback()
 
     if (recIsAvailable && playIsAvailable)
     {
-        WebRtc_UWord32 playSamplesPerSec(0);
-        WebRtc_UWord32 recSamplesPerSecRec(0);
+        uint32_t playSamplesPerSec(0);
+        uint32_t recSamplesPerSecRec(0);
 
         EXPECT_EQ(0, audioDevice->RegisterAudioCallback(_audioTransport));
 
@@ -2248,7 +2232,7 @@ WebRtc_Word32 FuncTestManager::TestLoopback()
         EXPECT_EQ(0, audioDevice->MicrophoneVolumeIsAvailable(&available));
         if (available)
         {
-            WebRtc_UWord32 maxVolume(0);
+            uint32_t maxVolume(0);
             EXPECT_EQ(0, audioDevice->MaxMicrophoneVolume(&maxVolume));
             EXPECT_EQ(0, audioDevice->SetMicrophoneVolume(maxVolume));
         }
@@ -2294,7 +2278,7 @@ WebRtc_Word32 FuncTestManager::TestLoopback()
     return 0;
 }
 
-WebRtc_Word32 FuncTestManager::TestDeviceRemoval()
+int32_t FuncTestManager::TestDeviceRemoval()
 {
     TEST_LOG("\n=======================================\n");
     TEST_LOG(" Device removal test:\n");
@@ -2314,9 +2298,9 @@ WebRtc_Word32 FuncTestManager::TestDeviceRemoval()
 
     bool recIsAvailable(false);
     bool playIsAvailable(false);
-    WebRtc_UWord8 nPlayChannels(0);
-    WebRtc_UWord8 nRecChannels(0);
-    WebRtc_UWord8 loopCount(0);
+    uint8_t nPlayChannels(0);
+    uint8_t nRecChannels(0);
+    uint8_t loopCount(0);
 
     while (loopCount < 2)
     {
@@ -2354,8 +2338,8 @@ WebRtc_Word32 FuncTestManager::TestDeviceRemoval()
 
         if (recIsAvailable && playIsAvailable)
         {
-            WebRtc_UWord32 playSamplesPerSec(0);
-            WebRtc_UWord32 recSamplesPerSecRec(0);
+            uint32_t playSamplesPerSec(0);
+            uint32_t recSamplesPerSecRec(0);
 
             EXPECT_EQ(0, audioDevice->RegisterAudioCallback(_audioTransport));
 
@@ -2376,7 +2360,7 @@ WebRtc_Word32 FuncTestManager::TestDeviceRemoval()
             EXPECT_EQ(0, audioDevice->MicrophoneVolumeIsAvailable(&available));
             if (available)
             {
-                WebRtc_UWord32 maxVolume(0);
+                uint32_t maxVolume(0);
                 EXPECT_EQ(0, audioDevice->MaxMicrophoneVolume(&maxVolume));
                 EXPECT_EQ(0, audioDevice->SetMicrophoneVolume(maxVolume));
             }
@@ -2460,7 +2444,7 @@ WebRtc_Word32 FuncTestManager::TestDeviceRemoval()
 
             loopCount++;
         }
-    } // loopCount
+    }  // loopCount
 
     EXPECT_EQ(0, audioDevice->Terminate());
     EXPECT_FALSE(audioDevice->Initialized());
@@ -2471,7 +2455,7 @@ WebRtc_Word32 FuncTestManager::TestDeviceRemoval()
     return 0;
 }
 
-WebRtc_Word32 FuncTestManager::TestExtra()
+int32_t FuncTestManager::TestExtra()
 {
     TEST_LOG("\n=======================================\n");
     TEST_LOG(" Extra test:\n");
@@ -2498,12 +2482,12 @@ WebRtc_Word32 FuncTestManager::TestExtra()
     return 0;
 }
 
-WebRtc_Word32 FuncTestManager::SelectRecordingDevice()
+int32_t FuncTestManager::SelectRecordingDevice()
 {
-    WebRtc_Word16 nDevices = _audioDevice->RecordingDevices();
+    int16_t nDevices = _audioDevice->RecordingDevices();
     char name[kAdmMaxDeviceNameSize];
     char guid[kAdmMaxGuidSize];
-    WebRtc_Word32 ret(-1);
+    int32_t ret(-1);
 
 #ifdef _WIN32
     TEST_LOG("\nSelect Recording Device\n \n");
@@ -2560,9 +2544,9 @@ WebRtc_Word32 FuncTestManager::SelectRecordingDevice()
     return ret;
 }
 
-WebRtc_Word32 FuncTestManager::SelectPlayoutDevice()
+int32_t FuncTestManager::SelectPlayoutDevice()
 {
-    WebRtc_Word16 nDevices = _audioDevice->PlayoutDevices();
+    int16_t nDevices = _audioDevice->PlayoutDevices();
     char name[kAdmMaxDeviceNameSize];
     char guid[kAdmMaxGuidSize];
 
@@ -2582,7 +2566,7 @@ WebRtc_Word32 FuncTestManager::SelectPlayoutDevice()
 
     scanf("%u", &sel);
 
-    WebRtc_Word32 ret(0);
+    int32_t ret(0);
 
     if (sel == 0)
     {
@@ -2612,7 +2596,7 @@ WebRtc_Word32 FuncTestManager::SelectPlayoutDevice()
     TEST_LOG("\n: ");
     int sel(0);
     EXPECT_TRUE(scanf("%u", &sel) > 0);
-    WebRtc_Word32 ret(0);
+    int32_t ret(0);
     if (sel < (nDevices))
     {
         EXPECT_EQ(0, (ret = _audioDevice->SetPlayoutDevice(sel)));
@@ -2625,7 +2609,7 @@ WebRtc_Word32 FuncTestManager::SelectPlayoutDevice()
     return ret;
 }
 
-WebRtc_Word32 FuncTestManager::TestAdvancedMBAPI()
+int32_t FuncTestManager::TestAdvancedMBAPI()
 {
     TEST_LOG("\n=======================================\n");
     TEST_LOG(" Advanced mobile device API test:\n");
@@ -2704,7 +2688,7 @@ WebRtc_Word32 FuncTestManager::TestAdvancedMBAPI()
         " from the loudspeaker.\n\
 > Press any key to stop...\n \n");
     PAUSE(DEFAULT_PAUSE_TIME);
-    EXPECT_EQ(0, audioDevice->GetLoudspeakerStatus(loudspeakerOn));
+    EXPECT_EQ(0, audioDevice->GetLoudspeakerStatus(&loudspeakerOn));
     EXPECT_TRUE(loudspeakerOn);
 
     TEST_LOG("Set to not use speaker\n");
@@ -2713,7 +2697,7 @@ WebRtc_Word32 FuncTestManager::TestAdvancedMBAPI()
         " from the loudspeaker.\n\
 > Press any key to stop...\n \n");
     PAUSE(DEFAULT_PAUSE_TIME);
-    EXPECT_EQ(0, audioDevice->GetLoudspeakerStatus(loudspeakerOn));
+    EXPECT_EQ(0, audioDevice->GetLoudspeakerStatus(&loudspeakerOn));
     EXPECT_FALSE(loudspeakerOn);
 #endif
 
@@ -2729,6 +2713,6 @@ WebRtc_Word32 FuncTestManager::TestAdvancedMBAPI()
     return 0;
 }
 
-} // namespace webrtc
+}  // namespace webrtc
 
 // EOF

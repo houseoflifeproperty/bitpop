@@ -7,22 +7,21 @@
 #include "native_client/src/include/nacl_assert.h"
 #include "native_client/src/include/nacl_macros.h"
 #include "native_client/src/include/portability_io.h"
-#include "native_client/src/shared/gio/gio.h"
 #include "native_client/src/shared/platform/nacl_check.h"
 #include "native_client/src/shared/platform/nacl_exit.h"
 #include "native_client/src/shared/platform/nacl_log.h"
 #include "native_client/src/shared/platform/nacl_sync_checked.h"
 #include "native_client/src/trusted/service_runtime/arch/sel_ldr_arch.h"
 #include "native_client/src/trusted/service_runtime/include/bits/mman.h"
+#include "native_client/src/trusted/service_runtime/load_file.h"
 #include "native_client/src/trusted/service_runtime/nacl_all_modules.h"
 #include "native_client/src/trusted/service_runtime/nacl_app.h"
 #include "native_client/src/trusted/service_runtime/nacl_app_thread.h"
 #include "native_client/src/trusted/service_runtime/nacl_copy.h"
 #include "native_client/src/trusted/service_runtime/nacl_signal.h"
-#include "native_client/src/trusted/service_runtime/nacl_syscall_common.h"
-#include "native_client/src/trusted/service_runtime/nacl_valgrind_hooks.h"
 #include "native_client/src/trusted/service_runtime/osx/mach_exception_handler.h"
 #include "native_client/src/trusted/service_runtime/sel_ldr.h"
+#include "native_client/src/trusted/service_runtime/sys_memory.h"
 #include "native_client/src/trusted/service_runtime/thread_suspension.h"
 #include "native_client/src/trusted/service_runtime/win/debug_exception_handler.h"
 #include "native_client/tests/common/register_set.h"
@@ -37,6 +36,9 @@
 static const int kBreakInstructionSize = 1;
 static const int kBreakInstructionSignal = NACL_ABI_SIGSEGV;
 #elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_arm
+static const int kBreakInstructionSize = 4;
+static const int kBreakInstructionSignal = NACL_ABI_SIGILL;
+#elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_mips
 static const int kBreakInstructionSize = 4;
 static const int kBreakInstructionSignal = NACL_ABI_SIGTRAP;
 #else
@@ -96,7 +98,7 @@ struct NaClSignalContext *StartGuestWithSharedMemory(
    * Allocate some space in untrusted address space.  We pass the
    * address to the guest program so that we can share data with it.
    */
-  mmap_addr = NaClCommonSysMmapIntern(
+  mmap_addr = NaClSysMmapIntern(
       nap, NULL, sizeof(*expected_regs),
       NACL_ABI_PROT_READ | NACL_ABI_PROT_WRITE,
       NACL_ABI_MAP_PRIVATE | NACL_ABI_MAP_ANONYMOUS,
@@ -166,9 +168,10 @@ void TestSingleStepping(struct NaClAppThread *natp) {
   NaClAppThreadSetSuspendedRegisters(natp, &regs);
 }
 
-#elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_arm
+#elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_arm || \
+      NACL_ARCH(NACL_BUILD_ARCH) == NACL_mips
 
-/* ARM does not have hardware single-stepping, so nothing to do here. */
+/* ARM/MIPS do not have hardware single-stepping, so nothing to do here. */
 void TestSingleStepping(struct NaClAppThread *natp) {
   UNREFERENCED_PARAMETER(natp);
 }
@@ -277,7 +280,6 @@ void TestGettingRegistersInMacSwitchRemainingRegs(struct NaClApp *nap) {
 int main(int argc, char **argv) {
   struct NaClApp app;
   struct NaClApp *nap = &app;
-  struct GioMemoryFileSnapshot gio_file;
 
   NaClDebugExceptionHandlerStandaloneHandleArgs(argc, argv);
   NaClHandleBootstrapArgs(&argc, &argv);
@@ -292,12 +294,9 @@ int main(int argc, char **argv) {
     NaClLog(LOG_FATAL, "Expected 1 argument: executable filename\n");
   }
 
-  NaClFileNameForValgrind(argv[1]);
-  CHECK(GioMemoryFileSnapshotCtor(&gio_file, argv[1]));
   CHECK(NaClAppCtor(nap));
-  CHECK(NaClAppLoadFile((struct Gio *) &gio_file, nap) == LOAD_OK);
+  CHECK(NaClAppLoadFileFromFilename(nap, argv[1]) == LOAD_OK);
   NaClAppInitialDescriptorHookup(nap);
-  CHECK(NaClAppPrepareToLaunch(nap) == LOAD_OK);
 
 #if NACL_LINUX
   NaClSignalHandlerInit();

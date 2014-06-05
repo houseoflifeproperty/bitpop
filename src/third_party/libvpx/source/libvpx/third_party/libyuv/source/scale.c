@@ -632,7 +632,7 @@ TALIGN16(const uint16, scaleab2[8]) =
   { 65536 / 3, 65536 / 3, 65536 / 2, 65536 / 3, 65536 / 3, 65536 / 2, 0, 0 };
 #endif
 
-#if defined(_M_IX86) && !defined(YUV_DISABLE_ASM)
+#if defined(_M_IX86) && !defined(YUV_DISABLE_ASM) && defined(_MSC_VER)
 
 #define HAS_SCALEROWDOWN2_SSE2
 // Reads 32 pixels, throws half away and writes 16 pixels.
@@ -1370,12 +1370,12 @@ static void ScaleFilterRows_SSSE3(uint8* dst_ptr, const uint8* src_ptr,
     mov        edx, [esp + 8 + 12]  // src_stride
     mov        ecx, [esp + 8 + 16]  // dst_width
     mov        eax, [esp + 8 + 20]  // source_y_fraction (0..255)
+    shr        eax, 1
     cmp        eax, 0
     je         xloop1
-    cmp        eax, 128
+    cmp        eax, 64
     je         xloop2
 
-    shr        eax, 1
     mov        ah,al
     neg        al
     add        al, 128
@@ -2132,11 +2132,11 @@ void ScaleFilterRows_SSSE3(uint8* dst_ptr,
     "mov    0x14(%esp),%edx                    \n"
     "mov    0x18(%esp),%ecx                    \n"
     "mov    0x1c(%esp),%eax                    \n"
+    "shr    %eax                               \n"
     "cmp    $0x0,%eax                          \n"
     "je     2f                                 \n"
-    "cmp    $0x80,%eax                         \n"
+    "cmp    $0x40,%eax                         \n"
     "je     3f                                 \n"
-    "shr    %eax                               \n"
     "mov    %al,%ah                            \n"
     "neg    %al                                \n"
     "add    $0x80,%al                          \n"
@@ -2662,6 +2662,7 @@ static void ScaleFilterRows_SSE2(uint8* dst_ptr,
 static void ScaleFilterRows_SSSE3(uint8* dst_ptr,
                                   const uint8* src_ptr, int src_stride,
                                   int dst_width, int source_y_fraction) {
+  source_y_fraction >>= 1;
   if (source_y_fraction == 0) {
     asm volatile (
    "1:"
@@ -2680,7 +2681,7 @@ static void ScaleFilterRows_SSSE3(uint8* dst_ptr,
       : "memory", "cc", "rax"
     );
     return;
-  } else if (source_y_fraction == 128) {
+  } else if (source_y_fraction == 64) {
     asm volatile (
     "1:"
       "movdqa     (%1),%%xmm0                  \n"
@@ -2703,7 +2704,6 @@ static void ScaleFilterRows_SSSE3(uint8* dst_ptr,
   } else {
     asm volatile (
       "mov        %3,%%eax                     \n"
-      "shr        %%eax                        \n"
       "mov        %%al,%%ah                    \n"
       "neg        %%al                         \n"
       "add        $0x80,%%al                   \n"
@@ -3053,7 +3053,7 @@ static void ScalePlaneDown2(int src_width, int src_height,
                             int dst_width, int dst_height,
                             int src_stride, int dst_stride,
                             const uint8* src_ptr, uint8* dst_ptr,
-                            FilterMode filtering) {
+                            FilterModeEnum filtering) {
   void (*ScaleRowDown2)(const uint8* src_ptr, int src_stride,
                         uint8* dst_ptr, int dst_width);
   assert(IS_ALIGNED(src_width, 2));
@@ -3097,7 +3097,7 @@ static void ScalePlaneDown4(int src_width, int src_height,
                             int dst_width, int dst_height,
                             int src_stride, int dst_stride,
                             const uint8* src_ptr, uint8* dst_ptr,
-                            FilterMode filtering) {
+                            FilterModeEnum filtering) {
   void (*ScaleRowDown4)(const uint8* src_ptr, int src_stride,
                         uint8* dst_ptr, int dst_width);
   assert(IS_ALIGNED(src_width, 4));
@@ -3142,7 +3142,7 @@ static void ScalePlaneDown8(int src_width, int src_height,
                             int dst_width, int dst_height,
                             int src_stride, int dst_stride,
                             const uint8* src_ptr, uint8* dst_ptr,
-                            FilterMode filtering) {
+                            FilterModeEnum filtering) {
   void (*ScaleRowDown8)(const uint8* src_ptr, int src_stride,
                         uint8* dst_ptr, int dst_width);
   assert(IS_ALIGNED(src_width, 8));
@@ -3181,7 +3181,7 @@ static void ScalePlaneDown34(int src_width, int src_height,
                              int dst_width, int dst_height,
                              int src_stride, int dst_stride,
                              const uint8* src_ptr, uint8* dst_ptr,
-                             FilterMode filtering) {
+                             FilterModeEnum filtering) {
   void (*ScaleRowDown34_0)(const uint8* src_ptr, int src_stride,
                            uint8* dst_ptr, int dst_width);
   void (*ScaleRowDown34_1)(const uint8* src_ptr, int src_stride,
@@ -3274,7 +3274,7 @@ static void ScalePlaneDown38(int src_width, int src_height,
                              int dst_width, int dst_height,
                              int src_stride, int dst_stride,
                              const uint8* src_ptr, uint8* dst_ptr,
-                             FilterMode filtering) {
+                             FilterModeEnum filtering) {
   void (*ScaleRowDown38_3)(const uint8* src_ptr, int src_stride,
                            uint8* dst_ptr, int dst_width);
   void (*ScaleRowDown38_2)(const uint8* src_ptr, int src_stride,
@@ -3634,7 +3634,7 @@ static void ScalePlaneAnySize(int src_width, int src_height,
                               int dst_width, int dst_height,
                               int src_stride, int dst_stride,
                               const uint8* src_ptr, uint8* dst_ptr,
-                              FilterMode filtering) {
+                              FilterModeEnum filtering) {
   if (!filtering) {
     ScalePlaneSimple(src_width, src_height, dst_width, dst_height,
                      src_stride, dst_stride, src_ptr, dst_ptr);
@@ -3657,7 +3657,7 @@ static void ScalePlaneDown(int src_width, int src_height,
                            int dst_width, int dst_height,
                            int src_stride, int dst_stride,
                            const uint8* src_ptr, uint8* dst_ptr,
-                           FilterMode filtering) {
+                           FilterModeEnum filtering) {
   if (!filtering) {
     ScalePlaneSimple(src_width, src_height, dst_width, dst_height,
                      src_stride, dst_stride, src_ptr, dst_ptr);
@@ -3703,7 +3703,7 @@ static void ScalePlane(const uint8* src, int src_stride,
                        int src_width, int src_height,
                        uint8* dst, int dst_stride,
                        int dst_width, int dst_height,
-                       FilterMode filtering, int use_ref) {
+                       FilterModeEnum filtering, int use_ref) {
   // Use specialized scales to improve performance for common resolutions.
   // For example, all the 1/2 scalings will use ScalePlaneDown2()
   if (dst_width == src_width && dst_height == src_height) {
@@ -3767,7 +3767,7 @@ int I420Scale(const uint8* src_y, int src_stride_y,
               uint8* dst_u, int dst_stride_u,
               uint8* dst_v, int dst_stride_v,
               int dst_width, int dst_height,
-              FilterMode filtering) {
+              FilterModeEnum filtering) {
   if (!src_y || !src_u || !src_v || src_width <= 0 || src_height == 0 ||
       !dst_y || !dst_u || !dst_v || dst_width <= 0 || dst_height <= 0) {
     return -1;
@@ -3832,7 +3832,7 @@ int Scale(const uint8* src_y, const uint8* src_u, const uint8* src_v,
   int src_halfheight = (src_height + 1) >> 1;
   int dst_halfwidth = (dst_width + 1) >> 1;
   int dst_halfheight = (dst_height + 1) >> 1;
-  FilterMode filtering = interpolate ? kFilterBox : kFilterNone;
+  FilterModeEnum filtering = interpolate ? kFilterBox : kFilterNone;
 
   ScalePlane(src_y, src_stride_y, src_width, src_height,
              dst_y, dst_stride_y, dst_width, dst_height,

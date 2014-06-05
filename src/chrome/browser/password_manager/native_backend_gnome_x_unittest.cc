@@ -5,20 +5,24 @@
 #include <stdarg.h>
 
 #include "base/basictypes.h"
+#include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "base/time.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "chrome/browser/password_manager/native_backend_gnome_x.h"
-#include "chrome/browser/prefs/pref_service.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/autofill/core/common/password_form.h"
+#include "components/password_manager/core/browser/psl_matching_helper.h"
+#include "components/password_manager/core/common/password_manager_pref_names.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using autofill::PasswordForm;
+using base::UTF8ToUTF16;
+using base::UTF16ToUTF8;
 using content::BrowserThread;
-using content::PasswordForm;
 
 namespace {
 
@@ -184,31 +188,30 @@ gpointer mock_gnome_keyring_delete_password(
   return NULL;
 }
 
-gpointer mock_gnome_keyring_find_itemsv(
+gpointer mock_gnome_keyring_find_items(
     GnomeKeyringItemType type,
+    GnomeKeyringAttributeList* attributes,
     GnomeKeyringOperationGetListCallback callback,
     gpointer data,
-    GDestroyNotify destroy_data,
-    ...) {
+    GDestroyNotify destroy_data) {
   MockKeyringItem::attribute_query query;
-  va_list ap;
-  va_start(ap, destroy_data);
-  char* name;
-  while ((name = va_arg(ap, gchar*))) {
-    // Really a GnomeKeyringAttributeType, but promoted to int through ...
-    if (va_arg(ap, int) == GNOME_KEYRING_ATTRIBUTE_TYPE_STRING) {
-      query.push_back(make_pair(std::string(name),
-          MockKeyringItem::ItemAttribute(va_arg(ap, gchar*))));
-      VLOG(1) << "Querying with item attribute " << name
+  for (size_t i = 0; i < attributes->len; ++i) {
+    GnomeKeyringAttribute attribute =
+        g_array_index(attributes, GnomeKeyringAttribute, i);
+    if (attribute.type == GNOME_KEYRING_ATTRIBUTE_TYPE_STRING) {
+      query.push_back(
+          make_pair(std::string(attribute.name),
+                    MockKeyringItem::ItemAttribute(attribute.value.string)));
+      VLOG(1) << "Querying with item attribute " << attribute.name
               << ", value '" << query.back().second.value_string << "'";
     } else {
-      query.push_back(make_pair(std::string(name),
-          MockKeyringItem::ItemAttribute(va_arg(ap, uint32_t))));
-      VLOG(1) << "Querying with item attribute " << name
-              << ", value " << query.back().second.value_uint32;
+      query.push_back(
+          make_pair(std::string(attribute.name),
+                    MockKeyringItem::ItemAttribute(attribute.value.integer)));
+      VLOG(1) << "Querying with item attribute " << attribute.name << ", value "
+              << query.back().second.value_uint32;
     }
   }
-  va_end(ap);
   // Find matches and add them to a list of results.
   GList* results = NULL;
   for (size_t i = 0; i < mock_keyring_items.size(); ++i) {
@@ -261,9 +264,11 @@ const gchar* mock_gnome_keyring_result_to_message(GnomeKeyringResult res) {
 class MockGnomeKeyringLoader : public GnomeKeyringLoader {
  public:
   static bool LoadMockGnomeKeyring() {
+    if (!LoadGnomeKeyring())
+      return false;
 #define GNOME_KEYRING_ASSIGN_POINTER(name) \
   gnome_keyring_##name = &mock_gnome_keyring_##name;
-    GNOME_KEYRING_FOR_EACH_FUNC(GNOME_KEYRING_ASSIGN_POINTER)
+    GNOME_KEYRING_FOR_EACH_MOCKED_FUNC(GNOME_KEYRING_ASSIGN_POINTER)
 #undef GNOME_KEYRING_ASSIGN_POINTER
     keyring_loaded = true;
     // Reset the state of the mock library.
@@ -277,6 +282,11 @@ class MockGnomeKeyringLoader : public GnomeKeyringLoader {
 
 class NativeBackendGnomeTest : public testing::Test {
  protected:
+  enum UpdateType {  // Used in CheckPSLUpdate().
+    UPDATE_BY_UPDATELOGIN,
+    UPDATE_BY_ADDLOGIN,
+  };
+
   NativeBackendGnomeTest()
       : ui_thread_(BrowserThread::UI, &message_loop_),
         db_thread_(BrowserThread::DB) {
@@ -285,7 +295,7 @@ class NativeBackendGnomeTest : public testing::Test {
   virtual void SetUp() {
     ASSERT_TRUE(db_thread_.Start());
 
-    MockGnomeKeyringLoader::LoadMockGnomeKeyring();
+    ASSERT_TRUE(MockGnomeKeyringLoader::LoadMockGnomeKeyring());
 
     form_google_.origin = GURL("http://www.google.com/");
     form_google_.action = GURL("http://www.google.com/login");
@@ -294,7 +304,17 @@ class NativeBackendGnomeTest : public testing::Test {
     form_google_.password_element = UTF8ToUTF16("pass");
     form_google_.password_value = UTF8ToUTF16("seekrit");
     form_google_.submit_element = UTF8ToUTF16("submit");
-    form_google_.signon_realm = "Google";
+    form_google_.signon_realm = "http://www.google.com/";
+    form_google_.type = PasswordForm::TYPE_GENERATED;
+
+    form_facebook_.origin = GURL("http://www.facebook.com/");
+    form_facebook_.action = GURL("http://www.facebook.com/login");
+    form_facebook_.username_element = UTF8ToUTF16("user");
+    form_facebook_.username_value = UTF8ToUTF16("a");
+    form_facebook_.password_element = UTF8ToUTF16("password");
+    form_facebook_.password_value = UTF8ToUTF16("b");
+    form_facebook_.submit_element = UTF8ToUTF16("submit");
+    form_facebook_.signon_realm = "http://www.facebook.com/";
 
     form_isc_.origin = GURL("http://www.isc.org/");
     form_isc_.action = GURL("http://www.isc.org/auth");
@@ -303,12 +323,13 @@ class NativeBackendGnomeTest : public testing::Test {
     form_isc_.password_element = UTF8ToUTF16("passwd");
     form_isc_.password_value = UTF8ToUTF16("ihazabukkit");
     form_isc_.submit_element = UTF8ToUTF16("login");
-    form_isc_.signon_realm = "ISC";
+    form_isc_.signon_realm = "http://www.isc.org/";
   }
 
   virtual void TearDown() {
-    MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
-    MessageLoop::current()->Run();
+    base::MessageLoop::current()->PostTask(FROM_HERE,
+                                           base::MessageLoop::QuitClosure());
+    base::MessageLoop::current()->Run();
     db_thread_.Stop();
   }
 
@@ -320,11 +341,11 @@ class NativeBackendGnomeTest : public testing::Test {
     // quit so we can get on with the rest of the test.
     BrowserThread::PostTask(BrowserThread::DB, FROM_HERE,
         base::Bind(&PostQuitTask, &message_loop_));
-    MessageLoop::current()->Run();
+    base::MessageLoop::current()->Run();
   }
 
-  static void PostQuitTask(MessageLoop* loop) {
-    loop->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+  static void PostQuitTask(base::MessageLoop* loop) {
+    loop->PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
   }
 
   void CheckUint32Attribute(const MockKeyringItem* item,
@@ -358,7 +379,7 @@ class NativeBackendGnomeTest : public testing::Test {
     EXPECT_EQ("login", item->keyring);
     EXPECT_EQ(form.origin.spec(), item->display_name);
     EXPECT_EQ(UTF16ToUTF8(form.password_value), item->password);
-    EXPECT_EQ(13u, item->attributes.size());
+    EXPECT_EQ(15u, item->attributes.size());
     CheckStringAttribute(item, "origin_url", form.origin.spec());
     CheckStringAttribute(item, "action_url", form.action.spec());
     CheckStringAttribute(item, "username_element",
@@ -374,26 +395,187 @@ class NativeBackendGnomeTest : public testing::Test {
     CheckUint32Attribute(item, "preferred", form.preferred);
     // We don't check the date created. It varies.
     CheckUint32Attribute(item, "blacklisted_by_user", form.blacklisted_by_user);
+    CheckUint32Attribute(item, "type", form.type);
+    CheckUint32Attribute(item, "times_used", form.times_used);
     CheckUint32Attribute(item, "scheme", form.scheme);
     CheckStringAttribute(item, "application", app_string);
   }
 
-  MessageLoopForUI message_loop_;
+  // Saves |credentials| and then gets login for origin and realm |url|. Returns
+  // true when something is found, and in such case copies the result to
+  // |result| when |result| is not NULL. (Note that there can be max. 1 result,
+  // derived from |credentials|.)
+  bool CheckCredentialAvailability(const PasswordForm& credentials,
+                                   const GURL& url,
+                                   PasswordForm* result) {
+    NativeBackendGnome backend(321);
+    backend.Init();
+
+    BrowserThread::PostTask(
+        BrowserThread::DB,
+        FROM_HERE,
+        base::Bind(base::IgnoreResult(&NativeBackendGnome::AddLogin),
+                   base::Unretained(&backend),
+                   credentials));
+
+    PasswordForm target_form;
+    target_form.origin = url;
+    target_form.signon_realm = url.spec();
+    std::vector<PasswordForm*> form_list;
+    BrowserThread::PostTask(
+        BrowserThread::DB,
+        FROM_HERE,
+        base::Bind(base::IgnoreResult(&NativeBackendGnome::GetLogins),
+                   base::Unretained(&backend),
+                   target_form,
+                   &form_list));
+
+    RunBothThreads();
+
+    EXPECT_EQ(1u, mock_keyring_items.size());
+    if (mock_keyring_items.size() > 0)
+      CheckMockKeyringItem(&mock_keyring_items[0], credentials, "chrome-321");
+
+    if (form_list.empty())
+      return false;
+    EXPECT_EQ(1u, form_list.size());
+    if (result)
+      *result = *form_list[0];
+    STLDeleteElements(&form_list);
+    return true;
+  }
+
+  // Test that updating does not use PSL matching: Add a www.facebook.com
+  // password, then use PSL matching to get a copy of it for m.facebook.com, and
+  // add that copy as well. Now update the www.facebook.com password -- the
+  // m.facebook.com password should not get updated. Depending on the argument,
+  // the credential update is done via UpdateLogin or AddLogin.
+  void CheckPSLUpdate(UpdateType update_type) {
+    password_manager::PSLMatchingHelper helper;
+    ASSERT_TRUE(helper.IsMatchingEnabled());
+
+    NativeBackendGnome backend(321);
+    backend.Init();
+
+    // Add |form_facebook_| to saved logins.
+    BrowserThread::PostTask(
+        BrowserThread::DB,
+        FROM_HERE,
+        base::Bind(base::IgnoreResult(&NativeBackendGnome::AddLogin),
+                   base::Unretained(&backend),
+                   form_facebook_));
+
+    // Get the PSL-matched copy of the saved login for m.facebook.
+    const GURL kMobileURL("http://m.facebook.com/");
+    PasswordForm m_facebook_lookup;
+    m_facebook_lookup.origin = kMobileURL;
+    m_facebook_lookup.signon_realm = kMobileURL.spec();
+    std::vector<PasswordForm*> form_list;
+    BrowserThread::PostTask(
+        BrowserThread::DB,
+        FROM_HERE,
+        base::Bind(base::IgnoreResult(&NativeBackendGnome::GetLogins),
+                   base::Unretained(&backend),
+                   m_facebook_lookup,
+                   &form_list));
+    RunBothThreads();
+    EXPECT_EQ(1u, mock_keyring_items.size());
+    EXPECT_EQ(1u, form_list.size());
+    PasswordForm m_facebook = *form_list[0];
+    STLDeleteElements(&form_list);
+    EXPECT_EQ(kMobileURL, m_facebook.origin);
+    EXPECT_EQ(kMobileURL.spec(), m_facebook.signon_realm);
+
+    // Add the PSL-matched copy to saved logins.
+    BrowserThread::PostTask(
+        BrowserThread::DB,
+        FROM_HERE,
+        base::Bind(base::IgnoreResult(&NativeBackendGnome::AddLogin),
+                   base::Unretained(&backend),
+                   m_facebook));
+    RunBothThreads();
+    EXPECT_EQ(2u, mock_keyring_items.size());
+
+    // Update www.facebook.com login.
+    PasswordForm new_facebook(form_facebook_);
+    const base::string16 kOldPassword(form_facebook_.password_value);
+    const base::string16 kNewPassword(UTF8ToUTF16("new_b"));
+    EXPECT_NE(kOldPassword, kNewPassword);
+    new_facebook.password_value = kNewPassword;
+    switch (update_type) {
+      case UPDATE_BY_UPDATELOGIN:
+        BrowserThread::PostTask(
+            BrowserThread::DB,
+            FROM_HERE,
+            base::Bind(base::IgnoreResult(&NativeBackendGnome::UpdateLogin),
+                       base::Unretained(&backend),
+                       new_facebook));
+        break;
+      case UPDATE_BY_ADDLOGIN:
+        BrowserThread::PostTask(
+            BrowserThread::DB,
+            FROM_HERE,
+            base::Bind(base::IgnoreResult(&NativeBackendGnome::AddLogin),
+                       base::Unretained(&backend),
+                       new_facebook));
+        break;
+    }
+
+    RunBothThreads();
+    EXPECT_EQ(2u, mock_keyring_items.size());
+
+    // Check that m.facebook.com login was not modified by the update.
+    BrowserThread::PostTask(
+        BrowserThread::DB,
+        FROM_HERE,
+        base::Bind(base::IgnoreResult(&NativeBackendGnome::GetLogins),
+                   base::Unretained(&backend),
+                   m_facebook_lookup,
+                   &form_list));
+    RunBothThreads();
+    // There should be two results -- the exact one, and the PSL-matched one.
+    EXPECT_EQ(2u, form_list.size());
+    size_t index_non_psl = 0;
+    if (!form_list[index_non_psl]->original_signon_realm.empty())
+      index_non_psl = 1;
+    EXPECT_EQ(kMobileURL, form_list[index_non_psl]->origin);
+    EXPECT_EQ(kMobileURL.spec(), form_list[index_non_psl]->signon_realm);
+    EXPECT_EQ(kOldPassword, form_list[index_non_psl]->password_value);
+    STLDeleteElements(&form_list);
+
+    // Check that www.facebook.com login was modified by the update.
+    BrowserThread::PostTask(
+        BrowserThread::DB,
+        FROM_HERE,
+        base::Bind(base::IgnoreResult(&NativeBackendGnome::GetLogins),
+                   base::Unretained(&backend),
+                   form_facebook_,
+                   &form_list));
+    RunBothThreads();
+    // There should be two results -- the exact one, and the PSL-matched one.
+    EXPECT_EQ(2u, form_list.size());
+    index_non_psl = 0;
+    if (!form_list[index_non_psl]->original_signon_realm.empty())
+      index_non_psl = 1;
+    EXPECT_EQ(form_facebook_.origin, form_list[index_non_psl]->origin);
+    EXPECT_EQ(form_facebook_.signon_realm,
+              form_list[index_non_psl]->signon_realm);
+    EXPECT_EQ(kNewPassword, form_list[index_non_psl]->password_value);
+    STLDeleteElements(&form_list);
+  }
+
+  base::MessageLoopForUI message_loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread db_thread_;
 
-  TestingProfile profile_;
-
   // Provide some test forms to avoid having to set them up in each test.
   PasswordForm form_google_;
+  PasswordForm form_facebook_;
   PasswordForm form_isc_;
 };
 
 TEST_F(NativeBackendGnomeTest, BasicAddLogin) {
-  // Pretend that the migration has already taken place.
-  profile_.GetPrefs()->SetBoolean(prefs::kPasswordsUseLocalProfileId, true);
-
-  NativeBackendGnome backend(42, profile_.GetPrefs());
+  NativeBackendGnome backend(42);
   backend.Init();
 
   BrowserThread::PostTask(
@@ -409,10 +591,7 @@ TEST_F(NativeBackendGnomeTest, BasicAddLogin) {
 }
 
 TEST_F(NativeBackendGnomeTest, BasicListLogins) {
-  // Pretend that the migration has already taken place.
-  profile_.GetPrefs()->SetBoolean(prefs::kPasswordsUseLocalProfileId, true);
-
-  NativeBackendGnome backend(42, profile_.GetPrefs());
+  NativeBackendGnome backend(42);
   backend.Init();
 
   BrowserThread::PostTask(
@@ -438,11 +617,79 @@ TEST_F(NativeBackendGnomeTest, BasicListLogins) {
     CheckMockKeyringItem(&mock_keyring_items[0], form_google_, "chrome-42");
 }
 
-TEST_F(NativeBackendGnomeTest, BasicRemoveLogin) {
-  // Pretend that the migration has already taken place.
-  profile_.GetPrefs()->SetBoolean(prefs::kPasswordsUseLocalProfileId, true);
+// Save a password for www.facebook.com and see it suggested for m.facebook.com.
+TEST_F(NativeBackendGnomeTest, PSLMatchingPositive) {
+  PasswordForm result;
+  const GURL kMobileURL("http://m.facebook.com/");
+  password_manager::PSLMatchingHelper helper;
+  ASSERT_TRUE(helper.IsMatchingEnabled());
+  EXPECT_TRUE(CheckCredentialAvailability(form_facebook_, kMobileURL, &result));
+  EXPECT_EQ(kMobileURL, result.origin);
+  EXPECT_EQ(kMobileURL.spec(), result.signon_realm);
+}
 
-  NativeBackendGnome backend(42, profile_.GetPrefs());
+// Save a password for www.facebook.com and see it not suggested for
+// m-facebook.com.
+TEST_F(NativeBackendGnomeTest, PSLMatchingNegativeDomainMismatch) {
+  password_manager::PSLMatchingHelper helper;
+  ASSERT_TRUE(helper.IsMatchingEnabled());
+  EXPECT_FALSE(CheckCredentialAvailability(
+      form_facebook_, GURL("http://m-facebook.com/"), NULL));
+}
+
+// Test PSL matching is off for domains excluded from it.
+TEST_F(NativeBackendGnomeTest, PSLMatchingDisabledDomains) {
+  password_manager::PSLMatchingHelper helper;
+  ASSERT_TRUE(helper.IsMatchingEnabled());
+  EXPECT_FALSE(CheckCredentialAvailability(
+      form_google_, GURL("http://one.google.com/"), NULL));
+}
+
+TEST_F(NativeBackendGnomeTest, PSLUpdatingStrictUpdateLogin) {
+  CheckPSLUpdate(UPDATE_BY_UPDATELOGIN);
+}
+
+TEST_F(NativeBackendGnomeTest, PSLUpdatingStrictAddLogin) {
+  // TODO(vabr): if AddLogin becomes no longer valid for existing logins, then
+  // just delete this test.
+  CheckPSLUpdate(UPDATE_BY_ADDLOGIN);
+}
+
+TEST_F(NativeBackendGnomeTest, BasicUpdateLogin) {
+  NativeBackendGnome backend(42);
+  backend.Init();
+
+  // First add google login.
+  BrowserThread::PostTask(
+      BrowserThread::DB, FROM_HERE,
+      base::Bind(base::IgnoreResult(&NativeBackendGnome::AddLogin),
+                 base::Unretained(&backend), form_google_));
+
+  RunBothThreads();
+
+  PasswordForm new_form_google(form_google_);
+  new_form_google.times_used = 1;
+  new_form_google.action = GURL("http://www.google.com/different/login");
+
+  EXPECT_EQ(1u, mock_keyring_items.size());
+  if (mock_keyring_items.size() > 0)
+    CheckMockKeyringItem(&mock_keyring_items[0], form_google_, "chrome-42");
+
+  // Update login
+  BrowserThread::PostTask(
+      BrowserThread::DB, FROM_HERE,
+      base::Bind(base::IgnoreResult(&NativeBackendGnome::UpdateLogin),
+                 base::Unretained(&backend), new_form_google));
+
+  RunBothThreads();
+
+  EXPECT_EQ(1u, mock_keyring_items.size());
+  if (mock_keyring_items.size() > 0)
+    CheckMockKeyringItem(&mock_keyring_items[0], new_form_google, "chrome-42");
+}
+
+TEST_F(NativeBackendGnomeTest, BasicRemoveLogin) {
+  NativeBackendGnome backend(42);
   backend.Init();
 
   BrowserThread::PostTask(
@@ -467,10 +714,7 @@ TEST_F(NativeBackendGnomeTest, BasicRemoveLogin) {
 }
 
 TEST_F(NativeBackendGnomeTest, RemoveNonexistentLogin) {
-  // Pretend that the migration has already taken place.
-  profile_.GetPrefs()->SetBoolean(prefs::kPasswordsUseLocalProfileId, true);
-
-  NativeBackendGnome backend(42, profile_.GetPrefs());
+  NativeBackendGnome backend(42);
   backend.Init();
 
   // First add an unrelated login.
@@ -511,10 +755,7 @@ TEST_F(NativeBackendGnomeTest, RemoveNonexistentLogin) {
 }
 
 TEST_F(NativeBackendGnomeTest, AddDuplicateLogin) {
-  // Pretend that the migration has already taken place.
-  profile_.GetPrefs()->SetBoolean(prefs::kPasswordsUseLocalProfileId, true);
-
-  NativeBackendGnome backend(42, profile_.GetPrefs());
+  NativeBackendGnome backend(42);
   backend.Init();
 
   BrowserThread::PostTask(
@@ -534,10 +775,7 @@ TEST_F(NativeBackendGnomeTest, AddDuplicateLogin) {
 }
 
 TEST_F(NativeBackendGnomeTest, ListLoginsAppends) {
-  // Pretend that the migration has already taken place.
-  profile_.GetPrefs()->SetBoolean(prefs::kPasswordsUseLocalProfileId, true);
-
-  NativeBackendGnome backend(42, profile_.GetPrefs());
+  NativeBackendGnome backend(42);
   backend.Init();
 
   BrowserThread::PostTask(
@@ -569,337 +807,4 @@ TEST_F(NativeBackendGnomeTest, ListLoginsAppends) {
     CheckMockKeyringItem(&mock_keyring_items[0], form_google_, "chrome-42");
 }
 
-// TODO(mdm): add more basic (i.e. non-migration) tests here at some point.
-
-TEST_F(NativeBackendGnomeTest, DISABLED_MigrateOneLogin) {
-  // Reject attempts to migrate so we can populate the store.
-  mock_keyring_reject_local_ids = true;
-
-  {
-    NativeBackendGnome backend(42, profile_.GetPrefs());
-    backend.Init();
-
-    BrowserThread::PostTask(BrowserThread::DB, FROM_HERE,
-        base::Bind(base::IgnoreResult(&NativeBackendGnome::AddLogin),
-                   base::Unretained(&backend), form_google_));
-
-    // Make sure we can get the form back even when migration is failing.
-    std::vector<PasswordForm*> form_list;
-    BrowserThread::PostTask(
-        BrowserThread::DB, FROM_HERE,
-        base::Bind(
-            base::IgnoreResult(&NativeBackendGnome::GetAutofillableLogins),
-            base::Unretained(&backend), &form_list));
-
-    RunBothThreads();
-
-    // Quick check that we got something back.
-    EXPECT_EQ(1u, form_list.size());
-    STLDeleteElements(&form_list);
-  }
-
-  EXPECT_EQ(1u, mock_keyring_items.size());
-  if (mock_keyring_items.size() > 0)
-    CheckMockKeyringItem(&mock_keyring_items[0], form_google_, "chrome");
-
-  // Now allow the migration.
-  mock_keyring_reject_local_ids = false;
-
-  {
-    NativeBackendGnome backend(42, profile_.GetPrefs());
-    backend.Init();
-
-    // This should not trigger migration because there will be no results.
-    std::vector<PasswordForm*> form_list;
-    BrowserThread::PostTask(
-        BrowserThread::DB, FROM_HERE,
-        base::Bind(base::IgnoreResult(&NativeBackendGnome::GetBlacklistLogins),
-                   base::Unretained(&backend), &form_list));
-
-    RunBothThreads();
-
-    // Check that we got nothing back.
-    EXPECT_EQ(0u, form_list.size());
-    STLDeleteElements(&form_list);
-  }
-
-  // Check that the keyring is unmodified.
-  EXPECT_EQ(1u, mock_keyring_items.size());
-  if (mock_keyring_items.size() > 0)
-    CheckMockKeyringItem(&mock_keyring_items[0], form_google_, "chrome");
-
-  // Check that we haven't set the persistent preference.
-  EXPECT_FALSE(
-      profile_.GetPrefs()->GetBoolean(prefs::kPasswordsUseLocalProfileId));
-
-  {
-    NativeBackendGnome backend(42, profile_.GetPrefs());
-    backend.Init();
-
-    // Trigger the migration by looking something up.
-    std::vector<PasswordForm*> form_list;
-    BrowserThread::PostTask(
-        BrowserThread::DB, FROM_HERE,
-        base::Bind(
-            base::IgnoreResult(&NativeBackendGnome::GetAutofillableLogins),
-            base::Unretained(&backend), &form_list));
-
-    RunBothThreads();
-
-    // Quick check that we got something back.
-    EXPECT_EQ(1u, form_list.size());
-    STLDeleteElements(&form_list);
-  }
-
-  EXPECT_EQ(2u, mock_keyring_items.size());
-  if (mock_keyring_items.size() > 0)
-    CheckMockKeyringItem(&mock_keyring_items[0], form_google_, "chrome");
-  if (mock_keyring_items.size() > 1)
-    CheckMockKeyringItem(&mock_keyring_items[1], form_google_, "chrome-42");
-
-  // Check that we have set the persistent preference.
-  EXPECT_TRUE(
-      profile_.GetPrefs()->GetBoolean(prefs::kPasswordsUseLocalProfileId));
-}
-
-TEST_F(NativeBackendGnomeTest, DISABLED_MigrateToMultipleProfiles) {
-  // Reject attempts to migrate so we can populate the store.
-  mock_keyring_reject_local_ids = true;
-
-  {
-    NativeBackendGnome backend(42, profile_.GetPrefs());
-    backend.Init();
-
-    BrowserThread::PostTask(
-        BrowserThread::DB, FROM_HERE,
-        base::Bind(base::IgnoreResult(&NativeBackendGnome::AddLogin),
-                   base::Unretained(&backend), form_google_));
-
-    RunBothThreads();
-  }
-
-  EXPECT_EQ(1u, mock_keyring_items.size());
-  if (mock_keyring_items.size() > 0)
-    CheckMockKeyringItem(&mock_keyring_items[0], form_google_, "chrome");
-
-  // Now allow the migration.
-  mock_keyring_reject_local_ids = false;
-
-  {
-    NativeBackendGnome backend(42, profile_.GetPrefs());
-    backend.Init();
-
-    // Trigger the migration by looking something up.
-    std::vector<PasswordForm*> form_list;
-    BrowserThread::PostTask(
-        BrowserThread::DB, FROM_HERE,
-        base::Bind(
-            base::IgnoreResult(&NativeBackendGnome::GetAutofillableLogins),
-            base::Unretained(&backend), &form_list));
-
-    RunBothThreads();
-
-    // Quick check that we got something back.
-    EXPECT_EQ(1u, form_list.size());
-    STLDeleteElements(&form_list);
-  }
-
-  EXPECT_EQ(2u, mock_keyring_items.size());
-  if (mock_keyring_items.size() > 0)
-    CheckMockKeyringItem(&mock_keyring_items[0], form_google_, "chrome");
-  if (mock_keyring_items.size() > 1)
-    CheckMockKeyringItem(&mock_keyring_items[1], form_google_, "chrome-42");
-
-  // Check that we have set the persistent preference.
-  EXPECT_TRUE(
-      profile_.GetPrefs()->GetBoolean(prefs::kPasswordsUseLocalProfileId));
-
-  // Normally we'd actually have a different profile. But in the test just reset
-  // the profile's persistent pref; we pass in the local profile id anyway.
-  profile_.GetPrefs()->SetBoolean(prefs::kPasswordsUseLocalProfileId, false);
-
-  {
-    NativeBackendGnome backend(24, profile_.GetPrefs());
-    backend.Init();
-
-    // Trigger the migration by looking something up.
-    std::vector<PasswordForm*> form_list;
-    BrowserThread::PostTask(
-        BrowserThread::DB, FROM_HERE,
-        base::Bind(
-            base::IgnoreResult(&NativeBackendGnome::GetAutofillableLogins),
-            base::Unretained(&backend), &form_list));
-
-    RunBothThreads();
-
-    // Quick check that we got something back.
-    EXPECT_EQ(1u, form_list.size());
-    STLDeleteElements(&form_list);
-  }
-
-  EXPECT_EQ(3u, mock_keyring_items.size());
-  if (mock_keyring_items.size() > 0)
-    CheckMockKeyringItem(&mock_keyring_items[0], form_google_, "chrome");
-  if (mock_keyring_items.size() > 1)
-    CheckMockKeyringItem(&mock_keyring_items[1], form_google_, "chrome-42");
-  if (mock_keyring_items.size() > 2)
-    CheckMockKeyringItem(&mock_keyring_items[2], form_google_, "chrome-24");
-}
-
-TEST_F(NativeBackendGnomeTest, DISABLED_NoMigrationWithPrefSet) {
-  // Reject attempts to migrate so we can populate the store.
-  mock_keyring_reject_local_ids = true;
-
-  {
-    NativeBackendGnome backend(42, profile_.GetPrefs());
-    backend.Init();
-
-    BrowserThread::PostTask(
-        BrowserThread::DB, FROM_HERE,
-        base::Bind(base::IgnoreResult(&NativeBackendGnome::AddLogin),
-                   base::Unretained(&backend), form_google_));
-
-    RunBothThreads();
-  }
-
-  EXPECT_EQ(1u, mock_keyring_items.size());
-  if (mock_keyring_items.size() > 0)
-    CheckMockKeyringItem(&mock_keyring_items[0], form_google_, "chrome");
-
-  // Now allow migration, but also pretend that the it has already taken place.
-  mock_keyring_reject_local_ids = false;
-  profile_.GetPrefs()->SetBoolean(prefs::kPasswordsUseLocalProfileId, true);
-
-  {
-    NativeBackendGnome backend(42, profile_.GetPrefs());
-    backend.Init();
-
-    // Trigger the migration by adding a new login.
-    BrowserThread::PostTask(
-        BrowserThread::DB, FROM_HERE,
-        base::Bind(base::IgnoreResult(&NativeBackendGnome::AddLogin),
-                   base::Unretained(&backend), form_isc_));
-
-    // Look up all logins; we expect only the one we added.
-    std::vector<PasswordForm*> form_list;
-    BrowserThread::PostTask(
-        BrowserThread::DB, FROM_HERE,
-        base::Bind(
-            base::IgnoreResult(&NativeBackendGnome::GetAutofillableLogins),
-            base::Unretained(&backend), &form_list));
-
-    RunBothThreads();
-
-    // Quick check that we got the right thing back.
-    EXPECT_EQ(1u, form_list.size());
-    if (form_list.size() > 0)
-      EXPECT_EQ(form_isc_.signon_realm, form_list[0]->signon_realm);
-    STLDeleteElements(&form_list);
-  }
-
-  EXPECT_EQ(2u, mock_keyring_items.size());
-  if (mock_keyring_items.size() > 0)
-    CheckMockKeyringItem(&mock_keyring_items[0], form_google_, "chrome");
-  if (mock_keyring_items.size() > 1)
-    CheckMockKeyringItem(&mock_keyring_items[1], form_isc_, "chrome-42");
-}
-
-TEST_F(NativeBackendGnomeTest, DISABLED_DeleteMigratedPasswordIsIsolated) {
-  // Reject attempts to migrate so we can populate the store.
-  mock_keyring_reject_local_ids = true;
-
-  {
-    NativeBackendGnome backend(42, profile_.GetPrefs());
-    backend.Init();
-
-    BrowserThread::PostTask(
-        BrowserThread::DB, FROM_HERE,
-        base::Bind(base::IgnoreResult(&NativeBackendGnome::AddLogin),
-                   base::Unretained(&backend), form_google_));
-
-    RunBothThreads();
-  }
-
-  EXPECT_EQ(1u, mock_keyring_items.size());
-  if (mock_keyring_items.size() > 0)
-    CheckMockKeyringItem(&mock_keyring_items[0], form_google_, "chrome");
-
-  // Now allow the migration.
-  mock_keyring_reject_local_ids = false;
-
-  {
-    NativeBackendGnome backend(42, profile_.GetPrefs());
-    backend.Init();
-
-    // Trigger the migration by looking something up.
-    std::vector<PasswordForm*> form_list;
-    BrowserThread::PostTask(
-        BrowserThread::DB, FROM_HERE,
-        base::Bind(
-            base::IgnoreResult(&NativeBackendGnome::GetAutofillableLogins),
-            base::Unretained(&backend), &form_list));
-
-    RunBothThreads();
-
-    // Quick check that we got something back.
-    EXPECT_EQ(1u, form_list.size());
-    STLDeleteElements(&form_list);
-  }
-
-  EXPECT_EQ(2u, mock_keyring_items.size());
-  if (mock_keyring_items.size() > 0)
-    CheckMockKeyringItem(&mock_keyring_items[0], form_google_, "chrome");
-  if (mock_keyring_items.size() > 1)
-    CheckMockKeyringItem(&mock_keyring_items[1], form_google_, "chrome-42");
-
-  // Check that we have set the persistent preference.
-  EXPECT_TRUE(
-      profile_.GetPrefs()->GetBoolean(prefs::kPasswordsUseLocalProfileId));
-
-  // Normally we'd actually have a different profile. But in the test just reset
-  // the profile's persistent pref; we pass in the local profile id anyway.
-  profile_.GetPrefs()->SetBoolean(prefs::kPasswordsUseLocalProfileId, false);
-
-  {
-    NativeBackendGnome backend(24, profile_.GetPrefs());
-    backend.Init();
-
-    // Trigger the migration by looking something up.
-    std::vector<PasswordForm*> form_list;
-    BrowserThread::PostTask(
-        BrowserThread::DB, FROM_HERE,
-        base::Bind(
-            base::IgnoreResult(&NativeBackendGnome::GetAutofillableLogins),
-            base::Unretained(&backend), &form_list));
-
-    RunBothThreads();
-
-    // Quick check that we got something back.
-    EXPECT_EQ(1u, form_list.size());
-    STLDeleteElements(&form_list);
-
-    // There should be three passwords now.
-    EXPECT_EQ(3u, mock_keyring_items.size());
-    if (mock_keyring_items.size() > 0)
-      CheckMockKeyringItem(&mock_keyring_items[0], form_google_, "chrome");
-    if (mock_keyring_items.size() > 1)
-      CheckMockKeyringItem(&mock_keyring_items[1], form_google_, "chrome-42");
-    if (mock_keyring_items.size() > 2)
-      CheckMockKeyringItem(&mock_keyring_items[2], form_google_, "chrome-24");
-
-    // Now delete the password from this second profile.
-    BrowserThread::PostTask(
-        BrowserThread::DB, FROM_HERE,
-        base::Bind(base::IgnoreResult(&NativeBackendGnome::RemoveLogin),
-                   base::Unretained(&backend), form_google_));
-
-    RunBothThreads();
-
-    // The other two copies of the password in different profiles should remain.
-    EXPECT_EQ(2u, mock_keyring_items.size());
-    if (mock_keyring_items.size() > 0)
-      CheckMockKeyringItem(&mock_keyring_items[0], form_google_, "chrome");
-    if (mock_keyring_items.size() > 1)
-      CheckMockKeyringItem(&mock_keyring_items[1], form_google_, "chrome-42");
-  }
-}
+// TODO(mdm): add more basic tests here at some point.

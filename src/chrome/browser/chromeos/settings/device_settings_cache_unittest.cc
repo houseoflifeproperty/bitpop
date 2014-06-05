@@ -4,10 +4,10 @@
 
 #include "chrome/browser/chromeos/settings/device_settings_cache.h"
 
-#include "chrome/browser/policy/proto/chrome_device_policy.pb.h"
-#include "chrome/browser/policy/proto/device_management_backend.pb.h"
+#include "base/prefs/testing_pref_service.h"
+#include "chrome/browser/chromeos/chromeos/policy/chrome_device_policy.pb.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/base/testing_pref_service.h"
+#include "policy/proto/device_management_backend.pb.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace em = enterprise_management;
@@ -26,7 +26,7 @@ class DeviceSettingsCacheTest : public testing::Test {
     device_settings_cache::RegisterPrefs(&local_state_);
   }
 
-  TestingPrefService local_state_;
+  TestingPrefServiceSimple local_state_;
   em::PolicyData policy_;
 };
 

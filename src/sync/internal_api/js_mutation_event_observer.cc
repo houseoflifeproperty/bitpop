@@ -8,7 +8,7 @@
 
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "sync/js/js_event_details.h"
 #include "sync/js/js_event_handler.h"
@@ -16,7 +16,7 @@
 namespace syncer {
 
 JsMutationEventObserver::JsMutationEventObserver()
-    : weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {}
+    : weak_ptr_factory_(this) {}
 
 JsMutationEventObserver::~JsMutationEventObserver() {
   DCHECK(CalledOnValidThread());
@@ -50,14 +50,14 @@ void JsMutationEventObserver::OnChangesApplied(
   if (!event_handler_.IsInitialized()) {
     return;
   }
-  DictionaryValue details;
+  base::DictionaryValue details;
   details.SetString("modelType", ModelTypeToString(model_type));
   details.SetString("writeTransactionId",
                     base::Int64ToString(write_transaction_id));
   base::Value* changes_value = NULL;
   const size_t changes_size = changes.Get().size();
   if (changes_size <= kChangeLimit) {
-    ListValue* changes_list = new ListValue();
+    base::ListValue* changes_list = new base::ListValue();
     for (ChangeRecordList::const_iterator it =
              changes.Get().begin(); it != changes.Get().end(); ++it) {
       changes_list->Append(it->ToValue());
@@ -65,7 +65,7 @@ void JsMutationEventObserver::OnChangesApplied(
     changes_value = changes_list;
   } else {
     changes_value =
-        Value::CreateStringValue(
+        new base::StringValue(
             base::Uint64ToString(static_cast<uint64>(changes_size)) +
             " changes");
   }
@@ -77,7 +77,7 @@ void JsMutationEventObserver::OnChangesComplete(ModelType model_type) {
   if (!event_handler_.IsInitialized()) {
     return;
   }
-  DictionaryValue details;
+  base::DictionaryValue details;
   details.SetString("modelType", ModelTypeToString(model_type));
   HandleJsEvent(FROM_HERE, "onChangesComplete", JsEventDetails(&details));
 }
@@ -89,7 +89,7 @@ void JsMutationEventObserver::OnTransactionWrite(
   if (!event_handler_.IsInitialized()) {
     return;
   }
-  DictionaryValue details;
+  base::DictionaryValue details;
   details.Set("writeTransactionInfo",
               write_transaction_info.Get().ToValue(kChangeLimit));
   details.Set("modelsWithChanges",

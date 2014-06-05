@@ -4,6 +4,7 @@
 
 #include "android_webview/lib/aw_browser_dependency_factory_impl.h"
 
+#include "android_webview/browser/aw_browser_context.h"
 #include "android_webview/browser/aw_content_browser_client.h"
 #include "base/lazy_instance.h"
 #include "content/public/browser/content_browser_client.h"
@@ -21,8 +22,7 @@ base::LazyInstance<AwBrowserDependencyFactoryImpl>::Leaky g_lazy_instance;
 
 }  // namespace
 
-AwBrowserDependencyFactoryImpl::AwBrowserDependencyFactoryImpl() {
-}
+AwBrowserDependencyFactoryImpl::AwBrowserDependencyFactoryImpl() {}
 
 AwBrowserDependencyFactoryImpl::~AwBrowserDependencyFactoryImpl() {}
 
@@ -31,18 +31,13 @@ void AwBrowserDependencyFactoryImpl::InstallInstance() {
   SetInstance(g_lazy_instance.Pointer());
 }
 
-content::BrowserContext* AwBrowserDependencyFactoryImpl::GetBrowserContext(
-    bool incognito) {
-  // TODO(boliu): Remove incognito parameter.
-  LOG_IF(ERROR, incognito) << "Android WebView does not support incognito mode"
-                           << " yet. Creating normal profile instead.";
-  return static_cast<AwContentBrowserClient*>(
-      content::GetContentClient()->browser())->GetAwBrowserContext();
+content::BrowserContext* AwBrowserDependencyFactoryImpl::GetBrowserContext() {
+  return AwContentBrowserClient::GetAwBrowserContext();
 }
 
-WebContents* AwBrowserDependencyFactoryImpl::CreateWebContents(bool incognito) {
+WebContents* AwBrowserDependencyFactoryImpl::CreateWebContents() {
   return content::WebContents::Create(
-      content::WebContents::CreateParams(GetBrowserContext(incognito)));
+      content::WebContents::CreateParams(GetBrowserContext()));
 }
 
 }  // namespace android_webview

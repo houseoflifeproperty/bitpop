@@ -13,9 +13,10 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/compiler_specific.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/threading/thread.h"
-#include "content/public/test/test_browser_thread.h"
+#include "chrome/browser/ui/views/chrome_views_delegate.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/views/widget/widget_delegate.h"
 
@@ -31,6 +32,10 @@ class AuraTestHelper;
 
 namespace gfx {
 class Size;
+}
+
+namespace wm {
+class WMState;
 }
 
 // Base class for Views based tests that dispatch events.
@@ -78,6 +83,8 @@ class ViewEventTestBase : public views::WidgetDelegate,
   // Invoke when done either because of failure or success. Quits the message
   // loop.
   void Done();
+
+  static void SetUpTestCase();
 
   // Creates a window.
   virtual void SetUp() OVERRIDE;
@@ -141,9 +148,7 @@ class ViewEventTestBase : public views::WidgetDelegate,
   // Thread for posting background MouseMoves.
   scoped_ptr<base::Thread> dnd_thread_;
 
-  MessageLoopForUI message_loop_;
-
-  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThreadBundle thread_bundle_;
 
 #if defined(OS_WIN)
   ui::ScopedOleInitializer ole_initializer_;
@@ -151,7 +156,10 @@ class ViewEventTestBase : public views::WidgetDelegate,
 
 #if defined(USE_AURA)
   scoped_ptr<aura::test::AuraTestHelper> aura_test_helper_;
+  scoped_ptr<wm::WMState> wm_state_;
 #endif
+
+  ChromeViewsDelegate views_delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(ViewEventTestBase);
 };

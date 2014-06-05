@@ -9,7 +9,7 @@
 #include "base/callback.h"
 #include "base/debug/leak_tracker.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/browser_process.h"
@@ -73,36 +73,10 @@ bool SafeBrowsingUIManager::CanReportStats() const {
   return metrics && metrics->reporting_active();
 }
 
-void SafeBrowsingUIManager::DisplayBlockingPage(
-    const GURL& url,
-    const GURL& original_url,
-    const std::vector<GURL>& redirect_urls,
-    bool is_subresource,
-    SBThreatType threat_type,
-    const UrlCheckCallback& callback,
-    int render_process_host_id,
-    int render_view_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  UnsafeResource resource;
-  resource.url = url;
-  resource.original_url = original_url;
-  resource.redirect_urls = redirect_urls;
-  resource.is_subresource = is_subresource;
-  resource.threat_type = threat_type;
-  resource.callback = callback;
-  resource.render_process_host_id = render_process_host_id;
-  resource.render_view_id = render_view_id;
-
-  // The blocking page must be created from the UI thread.
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE,
-      base::Bind(&SafeBrowsingUIManager::DoDisplayBlockingPage, this,
-                 resource));
-}
-
 void SafeBrowsingUIManager::OnBlockingPageDone(
     const std::vector<UnsafeResource>& resources,
     bool proceed) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   for (std::vector<UnsafeResource>::const_iterator iter = resources.begin();
        iter != resources.end(); ++iter) {
     const UnsafeResource& resource = *iter;
@@ -118,9 +92,17 @@ void SafeBrowsingUIManager::OnBlockingPageDone(
   }
 }
 
-void SafeBrowsingUIManager::DoDisplayBlockingPage(
+void SafeBrowsingUIManager::DisplayBlockingPage(
     const UnsafeResource& resource) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  // Indicate to interested observers that the resource in question matched the
+  // SB filters. If the resource is already whitelisted, OnSafeBrowsingHit
+  // won't be called.
+  if (resource.threat_type != SB_THREAT_TYPE_SAFE) {
+    FOR_EACH_OBSERVER(Observer, observer_list_, OnSafeBrowsingMatch(resource));
+  }
+
   // Check if the user has already ignored our warning for this render_view
   // and domain.
   if (IsWhitelisted(resource)) {
@@ -219,7 +201,7 @@ void SafeBrowsingUIManager::ReportSafeBrowsingHitOnIOThread(
 
   // The service may delete the ping manager (i.e. when user disabling service,
   // etc). This happens on the IO thread.
-  if (sb_service_ == NULL || sb_service_->ping_manager() == NULL)
+  if (sb_service_.get() == NULL || sb_service_->ping_manager() == NULL)
     return;
 
   DVLOG(1) << "ReportSafeBrowsingHit: " << malicious_url << " " << page_url
@@ -239,7 +221,7 @@ void SafeBrowsingUIManager::SendSerializedMalwareDetails(
 
   // The service may delete the ping manager (i.e. when user disabling service,
   // etc). This happens on the IO thread.
-  if (sb_service_ == NULL || sb_service_->ping_manager() == NULL)
+  if (sb_service_.get() == NULL || sb_service_->ping_manager() == NULL)
     return;
 
   if (!serialized.empty()) {
@@ -254,8 +236,9 @@ void SafeBrowsingUIManager::UpdateWhitelist(const UnsafeResource& resource) {
   WhiteListedEntry entry;
   entry.render_process_host_id = resource.render_process_host_id;
   entry.render_view_id = resource.render_view_id;
-  entry.domain = net::RegistryControlledDomainService::GetDomainAndRegistry(
-      resource.url);
+  entry.domain = net::registry_controlled_domains::GetDomainAndRegistry(
+      resource.url,
+      net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES);
   entry.threat_type = resource.threat_type;
   white_listed_entries_.push_back(entry);
 }
@@ -268,20 +251,25 @@ bool SafeBrowsingUIManager::IsWhitelisted(const UnsafeResource& resource) {
     const WhiteListedEntry& entry = white_listed_entries_[i];
     if (entry.render_process_host_id == resource.render_process_host_id &&
         entry.render_view_id == resource.render_view_id &&
-        // Threat type must be the same or in the case of phishing they can
-        // either be client-side phishing URL or a SafeBrowsing phishing URL.
-        // If we show one type of phishing warning we don't want to show a
-        // second phishing warning.
+        // Threat type must be the same or they can either be client-side
+        // phishing/malware URL or a SafeBrowsing phishing/malware URL.
+        // If we show one type of phishing/malware warning we don't want to show
+        // a second phishing/malware warning.
         (entry.threat_type == resource.threat_type ||
          (entry.threat_type == SB_THREAT_TYPE_URL_PHISHING &&
           resource.threat_type == SB_THREAT_TYPE_CLIENT_SIDE_PHISHING_URL) ||
          (entry.threat_type == SB_THREAT_TYPE_CLIENT_SIDE_PHISHING_URL &&
-          resource.threat_type == SB_THREAT_TYPE_URL_PHISHING))  &&
-        entry.domain ==
-        net::RegistryControlledDomainService::GetDomainAndRegistry(
-            resource.url)) {
-      return true;
+          resource.threat_type == SB_THREAT_TYPE_URL_PHISHING) ||
+         (entry.threat_type == SB_THREAT_TYPE_URL_MALWARE &&
+          resource.threat_type == SB_THREAT_TYPE_CLIENT_SIDE_MALWARE_URL) ||
+         (entry.threat_type == SB_THREAT_TYPE_CLIENT_SIDE_MALWARE_URL &&
+          resource.threat_type == SB_THREAT_TYPE_URL_MALWARE))) {
+      return entry.domain ==
+          net::registry_controlled_domains::GetDomainAndRegistry(
+              resource.url,
+              net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES);
     }
   }
   return false;
 }
+

@@ -19,6 +19,7 @@
         '../experimental/Intersection/CubicBezierClip.cpp',
         '../experimental/Intersection/CubicBezierClip_Test.cpp',
         '../experimental/Intersection/CubicBounds.cpp',
+        '../experimental/Intersection/CubicConvexHull.cpp',
         '../experimental/Intersection/CubicIntersection.cpp',
         '../experimental/Intersection/CubicIntersection_Test.cpp',
         '../experimental/Intersection/CubicIntersection_TestData.cpp',
@@ -29,7 +30,10 @@
         '../experimental/Intersection/CubicReduceOrder.cpp',
         '../experimental/Intersection/CubicReduceOrder_Test.cpp',
         '../experimental/Intersection/CubicSubDivide.cpp',
+        '../experimental/Intersection/CubicToQuadratics.cpp',
+        '../experimental/Intersection/CubicToQuadratics_Test.cpp',
         '../experimental/Intersection/CubicUtilities.cpp',
+        '../experimental/Intersection/CubicUtilities_Test.cpp',
         '../experimental/Intersection/DataTypes.cpp',
         '../experimental/Intersection/EdgeMain.cpp',
         '../experimental/Intersection/EdgeWalker.cpp',
@@ -60,7 +64,6 @@
         '../experimental/Intersection/QuadraticBezierClip_Test.cpp',
         '../experimental/Intersection/QuadraticBounds.cpp',
         '../experimental/Intersection/QuadraticImplicit.cpp',
-        '../experimental/Intersection/QuadraticIntersection.cpp',
         '../experimental/Intersection/QuadraticIntersection_Test.cpp',
         '../experimental/Intersection/QuadraticIntersection_TestData.cpp',
         '../experimental/Intersection/QuadraticLineSegments.cpp',
@@ -73,6 +76,7 @@
         '../experimental/Intersection/QuarticRoot.cpp',
         '../experimental/Intersection/QuarticRoot_Test.cpp',
         '../experimental/Intersection/ShapeOps.cpp',
+        '../experimental/Intersection/ShapeOpCubic4x4_Test.cpp',
         '../experimental/Intersection/ShapeOpRect4x4_Test.cpp',
         '../experimental/Intersection/Simplify.cpp',
         '../experimental/Intersection/SimplifyAddIntersectingTs_Test.cpp',
@@ -82,6 +86,7 @@
         '../experimental/Intersection/SimplifyNew_Test.cpp',
         '../experimental/Intersection/SimplifyRect4x4_Test.cpp',
         '../experimental/Intersection/TestUtilities.cpp',
+        '../experimental/Intersection/TriangleUtilities.cpp',
         '../experimental/Intersection/CubicIntersection_TestData.h',
         '../experimental/Intersection/CubicLineSegments.h',
         '../experimental/Intersection/CubicUtilities.h',
@@ -105,15 +110,12 @@
         '../experimental/Intersection/ShapeOps.h',
         '../experimental/Intersection/Simplify.h',
         '../experimental/Intersection/TestUtilities.h',
+        '../experimental/Intersection/TriangleUtilities.h',
         '../experimental/Intersection/TSearch.h',
         '../experimental/Intersection/thingsToDo.txt',
       ],
       'dependencies': [
-        'skia_base_libs.gyp:skia_base_libs',
-        'effects.gyp:effects',
-        'experimental.gyp:experimental',
-        'images.gyp:images',
-        'pdf.gyp:pdf',
+        'skia_lib.gyp:skia_lib',
       ],
       'conditions': [
         [ 'skia_gpu == 1', {
@@ -125,9 +127,3 @@
     },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

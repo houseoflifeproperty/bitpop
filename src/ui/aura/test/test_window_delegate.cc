@@ -4,13 +4,17 @@
 
 #include "ui/aura/test/test_window_delegate.h"
 
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "ui/aura/window.h"
-#include "ui/base/events/event.h"
 #include "ui/base/hit_test.h"
+#include "ui/events/event.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/skia_util.h"
+
+#if defined(USE_AURA)
+#include "ui/base/cursor/cursor.h"
+#endif
 
 namespace aura {
 namespace test {
@@ -20,7 +24,8 @@ namespace test {
 
 TestWindowDelegate::TestWindowDelegate()
     : window_component_(HTCLIENT),
-      delete_on_destroyed_(false) {
+      delete_on_destroyed_(false),
+      can_focus_(true) {
 }
 
 TestWindowDelegate::~TestWindowDelegate() {
@@ -60,7 +65,7 @@ bool TestWindowDelegate::ShouldDescendIntoChildForEventHandling(
 }
 
 bool TestWindowDelegate::CanFocus() {
-  return true;
+  return can_focus_;
 }
 
 void TestWindowDelegate::OnCaptureLost() {
@@ -73,10 +78,10 @@ void TestWindowDelegate::OnDeviceScaleFactorChanged(
     float device_scale_factor) {
 }
 
-void TestWindowDelegate::OnWindowDestroying() {
+void TestWindowDelegate::OnWindowDestroying(Window* window) {
 }
 
-void TestWindowDelegate::OnWindowDestroyed() {
+void TestWindowDelegate::OnWindowDestroyed(Window* window) {
   if (delete_on_destroyed_)
     delete this;
 }
@@ -89,10 +94,6 @@ bool TestWindowDelegate::HasHitTestMask() const {
 }
 
 void TestWindowDelegate::GetHitTestMask(gfx::Path* mask) const {
-}
-
-scoped_refptr<ui::Texture> TestWindowDelegate::CopyTexture() {
-  return scoped_refptr<ui::Texture>();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -111,7 +112,7 @@ void ColorTestWindowDelegate::OnKeyEvent(ui::KeyEvent* event) {
   event->SetHandled();
 }
 
-void ColorTestWindowDelegate::OnWindowDestroyed() {
+void ColorTestWindowDelegate::OnWindowDestroyed(Window* window) {
   delete this;
 }
 
@@ -138,13 +139,14 @@ void MaskedWindowDelegate::GetHitTestMask(gfx::Path* mask) const {
 // EventCountDelegate
 
 EventCountDelegate::EventCountDelegate()
-  : mouse_enter_count_(0),
-    mouse_move_count_(0),
-    mouse_leave_count_(0),
-    mouse_press_count_(0),
-    mouse_release_count_(0),
-    key_press_count_(0),
-    key_release_count_(0) {
+    : mouse_enter_count_(0),
+      mouse_move_count_(0),
+      mouse_leave_count_(0),
+      mouse_press_count_(0),
+      mouse_release_count_(0),
+      key_press_count_(0),
+      key_release_count_(0),
+      gesture_count_(0) {
 }
 
 void EventCountDelegate::OnKeyEvent(ui::KeyEvent* event) {
@@ -181,11 +183,15 @@ void EventCountDelegate::OnMouseEvent(ui::MouseEvent* event) {
   }
 }
 
+void EventCountDelegate::OnGestureEvent(ui::GestureEvent* event) {
+  gesture_count_++;
+}
+
 std::string EventCountDelegate::GetMouseMotionCountsAndReset() {
-  std::string result = StringPrintf("%d %d %d",
-                                    mouse_enter_count_,
-                                    mouse_move_count_,
-                                    mouse_leave_count_);
+  std::string result = base::StringPrintf("%d %d %d",
+                                          mouse_enter_count_,
+                                          mouse_move_count_,
+                                          mouse_leave_count_);
   mouse_enter_count_ = 0;
   mouse_move_count_ = 0;
   mouse_leave_count_ = 0;
@@ -193,9 +199,9 @@ std::string EventCountDelegate::GetMouseMotionCountsAndReset() {
 }
 
 std::string EventCountDelegate::GetMouseButtonCountsAndReset() {
-  std::string result = StringPrintf("%d %d",
-                                    mouse_press_count_,
-                                    mouse_release_count_);
+  std::string result = base::StringPrintf("%d %d",
+                                          mouse_press_count_,
+                                          mouse_release_count_);
   mouse_press_count_ = 0;
   mouse_release_count_ = 0;
   return result;
@@ -203,12 +209,18 @@ std::string EventCountDelegate::GetMouseButtonCountsAndReset() {
 
 
 std::string EventCountDelegate::GetKeyCountsAndReset() {
-  std::string result = StringPrintf("%d %d",
-                                    key_press_count_,
-                                    key_release_count_);
+  std::string result = base::StringPrintf("%d %d",
+                                          key_press_count_,
+                                          key_release_count_);
   key_press_count_ = 0;
   key_release_count_ = 0;
   return result;
+}
+
+int EventCountDelegate::GetGestureCountAndReset() {
+  int gesture_count = gesture_count_;
+  gesture_count_ = 0;
+  return gesture_count;
 }
 
 }  // namespace test

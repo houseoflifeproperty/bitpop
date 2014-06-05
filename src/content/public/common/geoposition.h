@@ -11,7 +11,7 @@
 
 #include <string>
 
-#include "base/time.h"
+#include "base/time/time.h"
 #include "content/common/content_export.h"
 
 namespace content {
@@ -25,6 +25,7 @@ struct CONTENT_EXPORT Geoposition {
     ERROR_CODE_PERMISSION_DENIED = 1,
     ERROR_CODE_POSITION_UNAVAILABLE = 2,
     ERROR_CODE_TIMEOUT = 3,
+    ERROR_CODE_LAST = ERROR_CODE_TIMEOUT
   };
 
   // All fields are initialized to sentinel values marking them as invalid. The

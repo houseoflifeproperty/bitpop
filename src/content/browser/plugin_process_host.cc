@@ -15,33 +15,33 @@
 #include "base/base_switches.h"
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
-#include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/browser/browser_child_process_host_impl.h"
+#include "content/browser/loader/resource_message_filter.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/plugin_service_impl.h"
 #include "content/common/child_process_host_impl.h"
-#include "content/common/plugin_messages.h"
+#include "content/common/plugin_process_messages.h"
 #include "content/common/resource_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/plugin_service.h"
+#include "content/public/browser/resource_context.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/process_type.h"
+#include "content/public/common/sandboxed_process_launcher_delegate.h"
 #include "ipc/ipc_switches.h"
+#include "net/url_request/url_request_context_getter.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gl/gl_switches.h"
-
-#if defined(USE_X11)
-#include "ui/gfx/gtk_native_view_id_manager.h"
-#endif
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
@@ -51,8 +51,8 @@
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
-#include "webkit/plugins/npapi/plugin_constants_win.h"
-#include "webkit/plugins/npapi/webplugin_delegate_impl.h"
+#include "content/common/plugin_constants_win.h"
+#include "ui/gfx/switches.h"
 #endif
 
 namespace content {
@@ -73,18 +73,38 @@ void PluginProcessHost::OnPluginWindowDestroyed(HWND window, HWND parent) {
 void PluginProcessHost::AddWindow(HWND window) {
   plugin_parent_windows_set_.insert(window);
 }
-
 #endif  // defined(OS_WIN)
 
-#if defined(TOOLKIT_GTK)
-void PluginProcessHost::OnMapNativeViewId(gfx::NativeViewId id,
-                                          gfx::PluginWindowHandle* output) {
-  *output = 0;
-#if !defined(USE_AURA)
-  GtkNativeViewManager::GetInstance()->GetXIDForId(output, id);
-#endif
-}
-#endif  // defined(TOOLKIT_GTK)
+// NOTE: changes to this class need to be reviewed by the security team.
+class PluginSandboxedProcessLauncherDelegate
+    : public SandboxedProcessLauncherDelegate {
+ public:
+  explicit PluginSandboxedProcessLauncherDelegate(ChildProcessHost* host)
+#if defined(OS_POSIX)
+      : ipc_fd_(host->TakeClientFileDescriptor())
+#endif  // OS_POSIX
+  {}
+
+  virtual ~PluginSandboxedProcessLauncherDelegate() {}
+
+#if defined(OS_WIN)
+  virtual bool ShouldSandbox() OVERRIDE {
+    return false;
+  }
+
+#elif defined(OS_POSIX)
+  virtual int GetIpcFd() OVERRIDE {
+    return ipc_fd_;
+  }
+#endif  // OS_WIN
+
+ private:
+#if defined(OS_POSIX)
+  int ipc_fd_;
+#endif  // OS_POSIX
+
+  DISALLOW_COPY_AND_ASSIGN(PluginSandboxedProcessLauncherDelegate);
+};
 
 PluginProcessHost::PluginProcessHost()
 #if defined(OS_MACOSX)
@@ -105,32 +125,22 @@ PluginProcessHost::~PluginProcessHost() {
   std::set<HWND>::iterator window_index;
   for (window_index = plugin_parent_windows_set_.begin();
        window_index != plugin_parent_windows_set_.end();
-       window_index++) {
+       ++window_index) {
     PostMessage(*window_index, WM_CLOSE, 0, 0);
   }
 #elif defined(OS_MACOSX)
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   // If the plugin process crashed but had fullscreen windows open at the time,
   // make sure that the menu bar is visible.
-  std::set<uint32>::iterator window_index;
-  for (window_index = plugin_fullscreen_windows_set_.begin();
-       window_index != plugin_fullscreen_windows_set_.end();
-       window_index++) {
-    if (BrowserThread::CurrentlyOn(BrowserThread::UI)) {
-      base::mac::ReleaseFullScreen(base::mac::kFullScreenModeHideAll);
-    } else {
-      BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                              base::Bind(base::mac::ReleaseFullScreen,
-                                         base::mac::kFullScreenModeHideAll));
-    }
+  for (size_t i = 0; i < plugin_fullscreen_windows_set_.size(); ++i) {
+    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+                            base::Bind(base::mac::ReleaseFullScreen,
+                                       base::mac::kFullScreenModeHideAll));
   }
   // If the plugin hid the cursor, reset that.
   if (!plugin_cursor_visible_) {
-    if (BrowserThread::CurrentlyOn(BrowserThread::UI)) {
-      base::mac::SetCursorVisibility(true);
-    } else {
-      BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                              base::Bind(base::mac::SetCursorVisibility, true));
-    }
+    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+                            base::Bind(base::mac::SetCursorVisibility, true));
   }
 #endif
   // Cancel all pending and sent requests.
@@ -141,7 +151,7 @@ bool PluginProcessHost::Send(IPC::Message* message) {
   return process_->Send(message);
 }
 
-bool PluginProcessHost::Init(const webkit::WebPluginInfo& info) {
+bool PluginProcessHost::Init(const WebPluginInfo& info) {
   info_ = info;
   process_->SetName(info_.name);
 
@@ -167,7 +177,7 @@ bool PluginProcessHost::Init(const webkit::WebPluginInfo& info) {
   int flags = ChildProcessHost::CHILD_NORMAL;
 #endif
 
-  FilePath exe_path = ChildProcessHost::GetChildPath(flags);
+  base::FilePath exe_path = ChildProcessHost::GetChildPath(flags);
   if (exe_path.empty())
     return false;
 
@@ -181,11 +191,7 @@ bool PluginProcessHost::Init(const webkit::WebPluginInfo& info) {
   // any associated values) if present in the browser command line
   static const char* const kSwitchNames[] = {
     switches::kDisableBreakpad,
-#if defined(OS_MACOSX)
-    switches::kDisableCompositedCoreAnimationPlugins,
-    switches::kDisableCoreAnimationPlugins,
-    switches::kEnableSandboxLogging,
-#endif
+    switches::kDisableDirectNPAPIRequests,
     switches::kEnableStatsTable,
     switches::kFullMemoryCrashReport,
     switches::kLoggingLevel,
@@ -195,7 +201,13 @@ bool PluginProcessHost::Init(const webkit::WebPluginInfo& info) {
     switches::kTestSandbox,
     switches::kTraceStartup,
     switches::kUseGL,
-    switches::kUserAgent,
+#if defined(OS_MACOSX)
+    switches::kDisableCoreAnimationPlugins,
+    switches::kEnableSandboxLogging,
+#endif
+#if defined(OS_WIN)
+    switches::kHighDPISupport,
+#endif
   };
 
   cmd_line->CopySwitchesFrom(browser_command_line, kSwitchNames,
@@ -217,9 +229,9 @@ bool PluginProcessHost::Init(const webkit::WebPluginInfo& info) {
   cmd_line->AppendSwitchASCII(switches::kProcessChannelID, channel_id);
 
 #if defined(OS_POSIX)
-  base::EnvironmentVector env;
+  base::EnvironmentMap env;
 #if defined(OS_MACOSX) && !defined(__LP64__)
-  if (!browser_command_line.HasSwitch(switches::kDisableCarbonInterposing)) {
+  if (browser_command_line.HasSwitch(switches::kEnableCarbonInterposing)) {
     std::string interpose_list = GetContentClient()->GetCarbonInterposePath();
     if (!interpose_list.empty()) {
       // Add our interposing library for Carbon. This is stripped back out in
@@ -230,19 +242,13 @@ bool PluginProcessHost::Init(const webkit::WebPluginInfo& info) {
         interpose_list.insert(0, existing_list);
       }
     }
-    env.push_back(std::pair<std::string, std::string>(
-        kDYLDInsertLibrariesKey, interpose_list));
+    env[kDYLDInsertLibrariesKey] = interpose_list;
   }
 #endif
 #endif
 
   process_->Launch(
-#if defined(OS_WIN)
-      FilePath(),
-#elif defined(OS_POSIX)
-      false,
-      env,
-#endif
+      new PluginSandboxedProcessLauncherDelegate(process_->GetHost()),
       cmd_line);
 
   // The plugin needs to be shutdown gracefully, i.e. NP_Shutdown needs to be
@@ -251,6 +257,16 @@ bool PluginProcessHost::Init(const webkit::WebPluginInfo& info) {
   // been destroyed.
   process_->SetTerminateChildOnShutdown(false);
 
+  ResourceMessageFilter::GetContextsCallback get_contexts_callback(
+      base::Bind(&PluginProcessHost::GetContexts,
+      base::Unretained(this)));
+
+  // TODO(jam): right now we're passing NULL for appcache, blob storage, and
+  // file system. If NPAPI plugins actually use this, we'll have to plumb them.
+  ResourceMessageFilter* resource_message_filter = new ResourceMessageFilter(
+      process_->GetData().id, PROCESS_TYPE_PLUGIN, NULL, NULL, NULL, NULL,
+      get_contexts_callback);
+  process_->AddFilter(resource_message_filter);
   return true;
 }
 
@@ -260,21 +276,15 @@ void PluginProcessHost::ForceShutdown() {
   process_->ForceShutdown();
 }
 
-void PluginProcessHost::AddFilter(IPC::ChannelProxy::MessageFilter* filter) {
-  process_->GetHost()->AddFilter(filter);
-}
-
 bool PluginProcessHost::OnMessageReceived(const IPC::Message& msg) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(PluginProcessHost, msg)
     IPC_MESSAGE_HANDLER(PluginProcessHostMsg_ChannelCreated, OnChannelCreated)
+    IPC_MESSAGE_HANDLER(PluginProcessHostMsg_ChannelDestroyed,
+                        OnChannelDestroyed)
 #if defined(OS_WIN)
     IPC_MESSAGE_HANDLER(PluginProcessHostMsg_PluginWindowDestroyed,
                         OnPluginWindowDestroyed)
-#endif
-#if defined(TOOLKIT_GTK)
-    IPC_MESSAGE_HANDLER(PluginProcessHostMsg_MapNativeViewId,
-                        OnMapNativeViewId)
 #endif
 #if defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER(PluginProcessHostMsg_PluginSelectWindow,
@@ -289,7 +299,6 @@ bool PluginProcessHost::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
-  DCHECK(handled);
   return handled;
 }
 
@@ -326,23 +335,11 @@ void PluginProcessHost::CancelRequests() {
   }
 }
 
-// static
-void PluginProcessHost::CancelPendingRequestsForResourceContext(
-    ResourceContext* context) {
-  for (PluginProcessHostIterator host_it; !host_it.Done(); ++host_it) {
-    PluginProcessHost* host = *host_it;
-    for (size_t i = 0; i < host->pending_requests_.size(); ++i) {
-      if (host->pending_requests_[i]->GetResourceContext() == context) {
-        host->pending_requests_[i]->OnError();
-        host->pending_requests_.erase(host->pending_requests_.begin() + i);
-        --i;
-      }
-    }
-  }
-}
-
 void PluginProcessHost::OpenChannelToPlugin(Client* client) {
-  process_->Notify(NOTIFICATION_CHILD_INSTANCE_CREATED);
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&BrowserChildProcessHostImpl::NotifyProcessInstanceCreated,
+                 process_->GetData()));
   client->SetPluginInfo(info_);
   if (process_->GetHost()->IsChannelOpening()) {
     // The channel is already in the process of being opened.  Put
@@ -403,9 +400,31 @@ void PluginProcessHost::OnChannelCreated(
     const IPC::ChannelHandle& channel_handle) {
   Client* client = sent_requests_.front();
 
-  if (client)
+  if (client) {
+    if (!resource_context_map_.count(client->ID())) {
+      ResourceContextEntry entry;
+      entry.ref_count = 0;
+      entry.resource_context = client->GetResourceContext();
+      resource_context_map_[client->ID()] = entry;
+    }
+    resource_context_map_[client->ID()].ref_count++;
     client->OnChannelOpened(channel_handle);
+  }
   sent_requests_.pop_front();
+}
+
+void PluginProcessHost::OnChannelDestroyed(int renderer_id) {
+  resource_context_map_[renderer_id].ref_count--;
+  if (!resource_context_map_[renderer_id].ref_count)
+    resource_context_map_.erase(renderer_id);
+}
+
+void PluginProcessHost::GetContexts(const ResourceHostMsg_Request& request,
+                                    ResourceContext** resource_context,
+                                    net::URLRequestContext** request_context) {
+  *resource_context =
+      resource_context_map_[request.origin_pid].resource_context;
+  *request_context = (*resource_context)->GetRequestContext();
 }
 
 }  // namespace content

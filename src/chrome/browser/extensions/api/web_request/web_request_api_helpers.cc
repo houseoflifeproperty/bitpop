@@ -7,16 +7,21 @@
 #include <cmath>
 
 #include "base/bind.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "base/time.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/time/time.h"
 #include "base/values.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
 #include "chrome/browser/extensions/extension_warning_set.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/renderer_host/web_cache_manager.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/render_process_host.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/browser/runtime_data.h"
 #include "net/base/net_log.h"
 #include "net/cookies/cookie_util.h"
 #include "net/cookies/parsed_cookie.h"
@@ -97,22 +102,96 @@ bool ParseCookieLifetime(net::ParsedCookie* cookie,
   return false;
 }
 
+bool NullableEquals(const int* a, const int* b) {
+  if ((a && !b) || (!a && b))
+    return false;
+  return (!a) || (*a == *b);
+}
+
+bool NullableEquals(const bool* a, const bool* b) {
+  if ((a && !b) || (!a && b))
+    return false;
+  return (!a) || (*a == *b);
+}
+
+bool NullableEquals(const std::string* a, const std::string* b) {
+  if ((a && !b) || (!a && b))
+    return false;
+  return (!a) || (*a == *b);
+}
+
 }  // namespace
 
 RequestCookie::RequestCookie() {}
 RequestCookie::~RequestCookie() {}
 
+bool NullableEquals(const RequestCookie* a, const RequestCookie* b) {
+  if ((a && !b) || (!a && b))
+    return false;
+  if (!a)
+    return true;
+  return NullableEquals(a->name.get(), b->name.get()) &&
+         NullableEquals(a->value.get(), b->value.get());
+}
+
 ResponseCookie::ResponseCookie() {}
 ResponseCookie::~ResponseCookie() {}
+
+bool NullableEquals(const ResponseCookie* a, const ResponseCookie* b) {
+  if ((a && !b) || (!a && b))
+    return false;
+  if (!a)
+    return true;
+  return NullableEquals(a->name.get(), b->name.get()) &&
+         NullableEquals(a->value.get(), b->value.get()) &&
+         NullableEquals(a->expires.get(), b->expires.get()) &&
+         NullableEquals(a->max_age.get(), b->max_age.get()) &&
+         NullableEquals(a->domain.get(), b->domain.get()) &&
+         NullableEquals(a->path.get(), b->path.get()) &&
+         NullableEquals(a->secure.get(), b->secure.get()) &&
+         NullableEquals(a->http_only.get(), b->http_only.get());
+}
 
 FilterResponseCookie::FilterResponseCookie() {}
 FilterResponseCookie::~FilterResponseCookie() {}
 
+bool NullableEquals(const FilterResponseCookie* a,
+                    const FilterResponseCookie* b) {
+  if ((a && !b) || (!a && b))
+    return false;
+  if (!a)
+    return true;
+  return NullableEquals(a->age_lower_bound.get(), b->age_lower_bound.get()) &&
+         NullableEquals(a->age_upper_bound.get(), b->age_upper_bound.get()) &&
+         NullableEquals(a->session_cookie.get(), b->session_cookie.get());
+}
+
 RequestCookieModification::RequestCookieModification() {}
 RequestCookieModification::~RequestCookieModification() {}
 
+bool NullableEquals(const RequestCookieModification* a,
+                    const RequestCookieModification* b) {
+  if ((a && !b) || (!a && b))
+    return false;
+  if (!a)
+    return true;
+  return NullableEquals(a->filter.get(), b->filter.get()) &&
+         NullableEquals(a->modification.get(), b->modification.get());
+}
+
 ResponseCookieModification::ResponseCookieModification() : type(ADD) {}
 ResponseCookieModification::~ResponseCookieModification() {}
+
+bool NullableEquals(const ResponseCookieModification* a,
+                    const ResponseCookieModification* b) {
+  if ((a && !b) || (!a && b))
+    return false;
+  if (!a)
+    return true;
+  return a->type == b->type &&
+         NullableEquals(a->filter.get(), b->filter.get()) &&
+         NullableEquals(a->modification.get(), b->modification.get());
+}
 
 EventResponseDelta::EventResponseDelta(
     const std::string& extension_id, const base::Time& extension_install_time)
@@ -135,27 +214,27 @@ net::NetLog::ParametersCallback CreateNetLogExtensionIdCallback(
 
 // Creates NetLog parameters to indicate that an extension modified a request.
 // Caller takes ownership of returned value.
-Value* NetLogModificationCallback(
+base::Value* NetLogModificationCallback(
     const EventResponseDelta* delta,
     net::NetLog::LogLevel log_level) {
-  DictionaryValue* dict = new DictionaryValue();
+  base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetString("extension_id", delta->extension_id);
 
-  ListValue* modified_headers = new ListValue();
+  base::ListValue* modified_headers = new base::ListValue();
   net::HttpRequestHeaders::Iterator modification(
       delta->modified_request_headers);
   while (modification.GetNext()) {
     std::string line = modification.name() + ": " + modification.value();
-    modified_headers->Append(Value::CreateStringValue(line));
+    modified_headers->Append(new base::StringValue(line));
   }
   dict->Set("modified_headers", modified_headers);
 
-  ListValue* deleted_headers = new ListValue();
+  base::ListValue* deleted_headers = new base::ListValue();
   for (std::vector<std::string>::const_iterator key =
            delta->deleted_request_headers.begin();
        key != delta->deleted_request_headers.end();
        ++key) {
-    deleted_headers->Append(Value::CreateStringValue(*key));
+    deleted_headers->Append(new base::StringValue(*key));
   }
   dict->Set("deleted_headers", deleted_headers);
   return dict;
@@ -167,17 +246,17 @@ bool InDecreasingExtensionInstallationTimeOrder(
   return a->extension_install_time > b->extension_install_time;
 }
 
-ListValue* StringToCharList(const std::string& s) {
-  ListValue* result = new ListValue;
+base::ListValue* StringToCharList(const std::string& s) {
+  base::ListValue* result = new base::ListValue;
   for (size_t i = 0, n = s.size(); i < n; ++i) {
     result->Append(
-        Value::CreateIntegerValue(
+        new base::FundamentalValue(
             *reinterpret_cast<const unsigned char*>(&s[i])));
   }
   return result;
 }
 
-bool CharListToString(const ListValue* list, std::string* out) {
+bool CharListToString(const base::ListValue* list, std::string* out) {
   if (!list)
     return false;
   const size_t list_length = list->GetSize();
@@ -245,11 +324,13 @@ EventResponseDelta* CalculateOnHeadersReceivedDelta(
     const std::string& extension_id,
     const base::Time& extension_install_time,
     bool cancel,
+    const GURL& new_url,
     const net::HttpResponseHeaders* old_response_headers,
     ResponseHeaders* new_response_headers) {
   EventResponseDelta* result =
       new EventResponseDelta(extension_id, extension_install_time);
   result->cancel = cancel;
+  result->new_url = new_url;
 
   if (!new_response_headers)
     return result;
@@ -324,14 +405,14 @@ void MergeCancelOfResponses(
   }
 }
 
-// Helper function for MergeOnBeforeRequestResponses() that allows ignoring
+// Helper function for MergeRedirectUrlOfResponses() that allows ignoring
 // all redirects but those to data:// urls and about:blank. This is important
 // to treat these URLs as "cancel urls", i.e. URLs that extensions redirect
 // to if they want to express that they want to cancel a request. This reduces
 // the number of conflicts that we need to flag, as canceling is considered
 // a higher precedence operation that redirects.
 // Returns whether a redirect occurred.
-static bool MergeOnBeforeRequestResponsesHelper(
+static bool MergeRedirectUrlOfResponsesHelper(
     const EventResponseDeltas& deltas,
     GURL* new_url,
     extensions::ExtensionWarningSet* conflicting_extensions,
@@ -346,7 +427,7 @@ static bool MergeOnBeforeRequestResponsesHelper(
     if ((*delta)->new_url.is_empty())
       continue;
     if (consider_only_cancel_scheme_urls &&
-        !(*delta)->new_url.SchemeIs(chrome::kDataScheme) &&
+        !(*delta)->new_url.SchemeIs(content::kDataScheme) &&
         (*delta)->new_url.spec() != "about:blank") {
       continue;
     }
@@ -373,7 +454,7 @@ static bool MergeOnBeforeRequestResponsesHelper(
   return redirected;
 }
 
-void MergeOnBeforeRequestResponses(
+void MergeRedirectUrlOfResponses(
     const EventResponseDeltas& deltas,
     GURL* new_url,
     extensions::ExtensionWarningSet* conflicting_extensions,
@@ -381,7 +462,7 @@ void MergeOnBeforeRequestResponses(
 
   // First handle only redirects to data:// URLs and about:blank. These are a
   // special case as they represent a way of cancelling a request.
-  if (MergeOnBeforeRequestResponsesHelper(
+  if (MergeRedirectUrlOfResponsesHelper(
           deltas, new_url, conflicting_extensions, net_log, true)) {
     // If any extension cancelled a request by redirecting to a data:// URL or
     // about:blank, we don't consider the other redirects.
@@ -389,8 +470,16 @@ void MergeOnBeforeRequestResponses(
   }
 
   // Handle all other redirects.
-  MergeOnBeforeRequestResponsesHelper(
+  MergeRedirectUrlOfResponsesHelper(
       deltas, new_url, conflicting_extensions, net_log, false);
+}
+
+void MergeOnBeforeRequestResponses(
+    const EventResponseDeltas& deltas,
+    GURL* new_url,
+    extensions::ExtensionWarningSet* conflicting_extensions,
+    const net::BoundNetLog* net_log) {
+  MergeRedirectUrlOfResponses(deltas, new_url, conflicting_extensions, net_log);
 }
 
 // Assumes that |header_value| is the cookie header value of a HTTP Request
@@ -420,6 +509,7 @@ static void ParseRequestCookieLine(
       ++i;  // Skip '='.
       std::string::const_iterator cookie_value_beginning = i;
       if (*i == '"') {
+        ++i;  // Skip '"'.
         while (i != header_value.end() && *i != '"') ++i;
         if (i == header_value.end()) return;
         ++i;  // Skip '"'.
@@ -621,7 +711,7 @@ static std::string FindSetRequestHeader(
         return (*delta)->extension_id;
     }
   }
-  return "";
+  return std::string();
 }
 
 // Returns the extension ID of the first extension in |deltas| that removes the
@@ -639,7 +729,7 @@ static std::string FindRemoveRequestHeader(
         return (*delta)->extension_id;
     }
   }
-  return "";
+  return std::string();
 }
 
 void MergeOnBeforeSendHeadersResponses(
@@ -816,22 +906,26 @@ static bool DoesResponseCookieMatchFilter(net::ParsedCookie* cookie,
   if (filter->name.get() && cookie->Name() != *filter->name) return false;
   if (filter->value.get() && cookie->Value() != *filter->value) return false;
   if (filter->expires.get()) {
-    std::string actual_value = cookie->HasExpires() ? cookie->Expires() : "";
+    std::string actual_value =
+        cookie->HasExpires() ? cookie->Expires() : std::string();
     if (actual_value != *filter->expires)
       return false;
   }
   if (filter->max_age.get()) {
-    std::string actual_value = cookie->HasMaxAge() ? cookie->MaxAge() : "";
+    std::string actual_value =
+        cookie->HasMaxAge() ? cookie->MaxAge() : std::string();
     if (actual_value != base::IntToString(*filter->max_age))
       return false;
   }
   if (filter->domain.get()) {
-    std::string actual_value = cookie->HasDomain() ? cookie->Domain() : "";
+    std::string actual_value =
+        cookie->HasDomain() ? cookie->Domain() : std::string();
     if (actual_value != *filter->domain)
       return false;
   }
   if (filter->path.get()) {
-    std::string actual_value = cookie->HasPath() ? cookie->Path() : "";
+    std::string actual_value =
+        cookie->HasPath() ? cookie->Path() : std::string();
     if (actual_value != *filter->path)
       return false;
   }
@@ -880,7 +974,8 @@ static bool MergeAddResponseCookieModifications(
         continue;
       // Cookie names are not unique in response cookies so we always append
       // and never override.
-      linked_ptr<net::ParsedCookie> cookie(new net::ParsedCookie(""));
+      linked_ptr<net::ParsedCookie> cookie(
+          new net::ParsedCookie(std::string()));
       ApplyResponseCookieModification((*mod)->modification.get(), cookie.get());
       cookies->push_back(cookie);
       modified = true;
@@ -1008,13 +1103,14 @@ static std::string FindRemoveResponseHeader(
         return (*delta)->extension_id;
     }
   }
-  return "";
+  return std::string();
 }
 
 void MergeOnHeadersReceivedResponses(
     const EventResponseDeltas& deltas,
     const net::HttpResponseHeaders* original_response_headers,
     scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
+    GURL* allowed_unsafe_redirect_url,
     extensions::ExtensionWarningSet* conflicting_extensions,
     const net::BoundNetLog* net_log) {
   EventResponseDeltas::const_iterator delta;
@@ -1096,6 +1192,23 @@ void MergeOnHeadersReceivedResponses(
 
   MergeCookiesInOnHeadersReceivedResponses(deltas, original_response_headers,
       override_response_headers, conflicting_extensions, net_log);
+
+  GURL new_url;
+  MergeRedirectUrlOfResponses(
+      deltas, &new_url, conflicting_extensions, net_log);
+  if (new_url.is_valid()) {
+    // Only create a copy if we really want to modify the response headers.
+    if (override_response_headers->get() == NULL) {
+      *override_response_headers = new net::HttpResponseHeaders(
+          original_response_headers->raw_headers());
+    }
+    (*override_response_headers)->ReplaceStatusLine("HTTP/1.1 302 Found");
+    (*override_response_headers)->RemoveHeader("location");
+    (*override_response_headers)->AddHeader("Location: " + new_url.spec());
+    // Explicitly mark the URL as safe for redirection, to prevent the request
+    // from being blocked because of net::ERR_UNSAFE_REDIRECT.
+    *allowed_unsafe_redirect_url = new_url;
+  }
 }
 
 bool MergeOnAuthRequiredResponses(
@@ -1170,6 +1283,41 @@ void ClearCacheOnNavigation() {
     content::BrowserThread::PostTask(content::BrowserThread::UI, FROM_HERE,
                                      base::Bind(&ClearCacheOnNavigationOnUI));
   }
+}
+
+void NotifyWebRequestAPIUsed(
+    void* profile_id,
+    scoped_refptr<const extensions::Extension> extension) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  Profile* profile = reinterpret_cast<Profile*>(profile_id);
+  if (!g_browser_process->profile_manager()->IsValidProfile(profile))
+    return;
+
+  extensions::RuntimeData* runtime_data =
+      extensions::ExtensionSystem::Get(profile)->runtime_data();
+  if (runtime_data->HasUsedWebRequest(extension.get()))
+    return;
+  runtime_data->SetHasUsedWebRequest(extension.get(), true);
+
+  content::BrowserContext* browser_context = profile;
+  for (content::RenderProcessHost::iterator it =
+           content::RenderProcessHost::AllHostsIterator();
+       !it.IsAtEnd(); it.Advance()) {
+    content::RenderProcessHost* host = it.GetCurrentValue();
+    if (host->GetBrowserContext() == browser_context)
+      SendExtensionWebRequestStatusToHost(host);
+  }
+}
+
+bool IsValidHeaderName(const std::string& name) {
+  // Check whether the header name is RFC 2616-compliant.
+  return net::HttpUtil::IsToken(name);
+}
+
+bool IsValidHeaderValue(const std::string& value) {
+  // Just a sanity check: disallow NUL and CRLF.
+  return value.find('\0') == std::string::npos &&
+      value.find("\r\n") == std::string::npos;
 }
 
 }  // namespace extension_web_request_api_helpers

@@ -8,9 +8,9 @@
 #include "base/bind_helpers.h"
 #include "base/format_macros.h"
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "net/base/net_errors.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/http/http_response_headers.h"
@@ -24,19 +24,6 @@ namespace {
 const char kLengthHeader[] = "Content-Length";
 const char kRangeHeader[] = "Content-Range";
 const int kDataStream = 1;
-
-void AddRangeHeader(int64 start, int64 end, HttpRequestHeaders* headers) {
-  DCHECK(start >= 0 || end >= 0);
-  std::string my_start, my_end;
-  if (start >= 0)
-    my_start = base::Int64ToString(start);
-  if (end >= 0)
-    my_end = base::Int64ToString(end);
-
-  headers->SetHeader(
-      HttpRequestHeaders::kRange,
-      base::StringPrintf("bytes=%s-%s", my_start.c_str(), my_end.c_str()));
-}
 
 }  // namespace
 
@@ -156,8 +143,17 @@ void PartialData::RestoreHeaders(HttpRequestHeaders* headers) const {
               byte_range_.suffix_length() : byte_range_.last_byte_position();
 
   headers->CopyFrom(extra_headers_);
-  if (!truncated_ && byte_range_.IsValid())
-    AddRangeHeader(current_range_start_, end, headers);
+  if (truncated_ || !byte_range_.IsValid())
+    return;
+
+  if (current_range_start_ < 0) {
+    headers->SetHeader(HttpRequestHeaders::kRange,
+                       HttpByteRange::Suffix(end).GetHeaderValue());
+  } else {
+    headers->SetHeader(HttpRequestHeaders::kRange,
+                       HttpByteRange::Bounded(
+                           current_range_start_, end).GetHeaderValue());
+  }
 }
 
 int PartialData::ShouldValidateCache(disk_cache::Entry* entry,
@@ -222,11 +218,17 @@ void PartialData::PrepareCacheValidation(disk_cache::Entry* entry,
     range_present_ = true;
     if (len == cached_min_len_)
       final_range_ = true;
-    AddRangeHeader(current_range_start_, cached_start_ + cached_min_len_ - 1,
-                   headers);
+    headers->SetHeader(
+        HttpRequestHeaders::kRange,
+        net::HttpByteRange::Bounded(
+            current_range_start_,
+            cached_start_ + cached_min_len_ - 1).GetHeaderValue());
   } else {
     // This range is not in the cache.
-    AddRangeHeader(current_range_start_, cached_start_ - 1, headers);
+    headers->SetHeader(
+        HttpRequestHeaders::kRange,
+        net::HttpByteRange::Bounded(
+            current_range_start_, cached_start_ - 1).GetHeaderValue());
   }
 }
 
@@ -337,8 +339,12 @@ bool PartialData::ResponseHeadersOK(const HttpResponseHeaders* headers) {
   if (total_length <= 0)
     return false;
 
+  DCHECK_EQ(headers->response_code(), 206);
+
+  // A server should return a valid content length with a 206 (per the standard)
+  // but relax the requirement because some servers don't do that.
   int64 content_length = headers->GetContentLength();
-  if (content_length < 0 || content_length != end - start + 1)
+  if (content_length > 0 && content_length != end - start + 1)
     return false;
 
   if (!resource_size_) {
@@ -376,40 +382,26 @@ void PartialData::FixResponseHeaders(HttpResponseHeaders* headers,
   if (truncated_)
     return;
 
+  if (byte_range_.IsValid() && success) {
+    headers->UpdateWithNewRange(byte_range_, resource_size_, !sparse_entry_);
+    return;
+  }
+
   headers->RemoveHeader(kLengthHeader);
   headers->RemoveHeader(kRangeHeader);
 
-  int64 range_len, start, end;
   if (byte_range_.IsValid()) {
-    if (success) {
-      if (!sparse_entry_)
-        headers->ReplaceStatusLine("HTTP/1.1 206 Partial Content");
-
-      DCHECK(byte_range_.HasFirstBytePosition());
-      DCHECK(byte_range_.HasLastBytePosition());
-      start = byte_range_.first_byte_position();
-      end = byte_range_.last_byte_position();
-      range_len = end - start + 1;
-    } else {
-      headers->ReplaceStatusLine(
-          "HTTP/1.1 416 Requested Range Not Satisfiable");
-      start = 0;
-      end = 0;
-      range_len = 0;
-    }
-
-    headers->AddHeader(
-        base::StringPrintf("%s: bytes %" PRId64 "-%" PRId64 "/%" PRId64,
-                           kRangeHeader, start, end, resource_size_));
+    headers->ReplaceStatusLine("HTTP/1.1 416 Requested Range Not Satisfiable");
+    headers->AddHeader(base::StringPrintf("%s: bytes 0-0/%" PRId64,
+                                          kRangeHeader, resource_size_));
+    headers->AddHeader(base::StringPrintf("%s: 0", kLengthHeader));
   } else {
     // TODO(rvargas): Is it safe to change the protocol version?
     headers->ReplaceStatusLine("HTTP/1.1 200 OK");
     DCHECK_NE(resource_size_, 0);
-    range_len = resource_size_;
+    headers->AddHeader(base::StringPrintf("%s: %" PRId64, kLengthHeader,
+                                          resource_size_));
   }
-
-  headers->AddHeader(base::StringPrintf("%s: %" PRId64, kLengthHeader,
-                                        range_len));
 }
 
 void PartialData::FixContentLength(HttpResponseHeaders* headers) {

@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From private/ppb_flash_device_id.idl modified Fri Jun  1 15:21:17 2012. */
+/* From private/ppb_flash_device_id.idl modified Tue May 14 10:55:27 2013. */
 
 #ifndef PPAPI_C_PRIVATE_PPB_FLASH_DEVICE_ID_H_
 #define PPAPI_C_PRIVATE_PPB_FLASH_DEVICE_ID_H_
@@ -29,6 +29,8 @@
  * @addtogroup Interfaces
  * @{
  */
+/* TODO(raymes): This is deprecated by the PPB_Flash_DRM interface. Remove this
+ * interface after a few versions of Chrome have passed. */
 struct PPB_Flash_DeviceID_1_0 {
   PP_Resource (*Create)(PP_Instance instance);
   /**

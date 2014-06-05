@@ -4,19 +4,27 @@
  * found in the LICENSE file.
  */
 
+#define NACL_LOG_MODULE_NAME "manifest_proxy"
+
 #include <string.h>
 
 #include "native_client/src/trusted/manifest_name_service_proxy/manifest_proxy.h"
 
+#include "native_client/src/public/name_service.h"
 #include "native_client/src/shared/platform/nacl_log.h"
 #include "native_client/src/shared/platform/nacl_sync.h"
 #include "native_client/src/shared/platform/nacl_sync_checked.h"
 #include "native_client/src/shared/srpc/nacl_srpc.h"
+#include "native_client/src/trusted/desc/nacl_desc_io.h"
+#include "native_client/src/trusted/desc_cacheability/desc_cacheability.h"
 #include "native_client/src/trusted/reverse_service/manifest_rpc.h"
 #include "native_client/src/trusted/reverse_service/reverse_control_rpc.h"
 #include "native_client/src/trusted/service_runtime/include/sys/errno.h"
-#include "native_client/src/trusted/service_runtime/include/sys/nacl_name_service.h"
+#include "native_client/src/trusted/service_runtime/include/sys/fcntl.h"
 #include "native_client/src/trusted/service_runtime/nacl_secure_service.h"
+#include "native_client/src/trusted/validator/nacl_file_info.h"
+#include "native_client/src/trusted/validator/rich_file_info.h"
+#include "native_client/src/trusted/validator/validation_cache.h"
 
 static void NaClManifestWaitForChannel_yield_mu(
     struct NaClManifestProxyConnection *self) {
@@ -34,51 +42,6 @@ static void NaClManifestReleaseChannel_release_mu(
     struct NaClManifestProxyConnection *self) {
   NaClLog(4, "NaClManifestReleaseChannel_release_mu\n");
   NaClXMutexUnlock(&self->mu);
-}
-
-static void NaClManifestNameServiceListRpc(
-    struct NaClSrpcRpc      *rpc,
-    struct NaClSrpcArg      **in_args,
-    struct NaClSrpcArg      **out_args,
-    struct NaClSrpcClosure  *done_cls) {
-  struct NaClManifestProxyConnection  *proxy_conn =
-      (struct NaClManifestProxyConnection *) rpc->channel->server_instance_data;
-  uint32_t                            nbytes = out_args[0]->u.count;
-  char                                *dest = out_args[0]->arrays.carr;
-  NaClSrpcError                       srpc_error;
-
-  UNREFERENCED_PARAMETER(in_args);
-  NaClLog(4,
-          "NaClManifestNameServiceListRpc, proxy_conn 0x%"NACL_PRIxPTR"\n",
-          (uintptr_t) proxy_conn);
-
-  NaClManifestWaitForChannel_yield_mu(proxy_conn);
-
-  NaClLog(4,
-          ("NaClManifestNameServiceListRpc: nbytes %"NACL_PRIu32", dest"
-           " 0x%"NACL_PRIxPTR"\n"),
-          nbytes, (uintptr_t) dest);
-  if (NACL_SRPC_RESULT_OK !=
-      (srpc_error =
-       NaClSrpcInvokeBySignature(&proxy_conn->client_channel,
-                                 NACL_MANIFEST_LIST,
-                                 &nbytes, dest))) {
-    NaClLog(LOG_ERROR,
-            ("Manifest list via channel 0x%"NACL_PRIxPTR" with RPC "
-             NACL_MANIFEST_LIST" failed: %d\n"),
-            (uintptr_t) &proxy_conn->client_channel,
-            srpc_error);
-    rpc->result = srpc_error;
-  } else {
-    NaClLog(3,
-            "NaClManifestNameServiceListRpc, proxy returned %"NACL_PRId32
-            " bytes\n",
-            nbytes);
-    out_args[0]->u.count = nbytes;
-    rpc->result = NACL_SRPC_RESULT_OK;
-  }
-  (*done_cls->Run)(done_cls);
-  NaClManifestReleaseChannel_release_mu(proxy_conn);
 }
 
 static void NaClManifestNameServiceInsertRpc(
@@ -108,6 +71,7 @@ static void NaClManifestNameServiceLookupRpc(
   uint32_t                            cookie_size = sizeof cookie;
   int                                 status;
   struct NaClDesc                     *desc;
+  struct NaClFileToken                file_token;
   NaClSrpcError                       srpc_error;
 
   NaClLog(4, "NaClManifestNameServiceLookupRpc\n");
@@ -129,6 +93,8 @@ static void NaClManifestNameServiceLookupRpc(
                                  flags,
                                  &status,
                                  &desc,
+                                 &file_token.lo,
+                                 &file_token.hi,
                                  &cookie_size,
                                  cookie))) {
     NaClLog(LOG_ERROR,
@@ -138,9 +104,32 @@ static void NaClManifestNameServiceLookupRpc(
             srpc_error);
     rpc->result = srpc_error;
   } else {
+    struct NaClManifestProxy *proxy =
+        (struct NaClManifestProxy *) proxy_conn->base.server;
+    struct NaClValidationCache *validation_cache =
+        proxy->server->nap->validation_cache;
+    struct NaClDesc *replacement_desc;
+
+    /*
+     * The cookie is used to release renderer-side pepper file handle.
+     * For now, we leak.  We need on-close callbacks on NaClDesc
+     * objects to do this properly, but even that is insufficient
+     * since the manifest NaClDesc could, in principle, be transferred
+     * to another process -- we would need distributed garbage
+     * protection.  If Pepper could take advantage of host-OS-side
+     * reference counting that is already done, this wouldn't be a
+     * problem.
+     */
     NaClLog(4,
             "NaClManifestNameServiceLookupRpc: got cookie %.*s\n",
             cookie_size, cookie);
+    replacement_desc = NaClExchangeFileTokenForMappableDesc(&file_token,
+                                                            validation_cache);
+    if (NULL != replacement_desc) {
+      NaClDescUnref(desc);
+      desc = replacement_desc;
+    }
+
     out_args[0]->u.ival = status;
     out_args[1]->u.hval = desc;
     rpc->result = NACL_SRPC_RESULT_OK;
@@ -164,7 +153,6 @@ static void NaClManifestNameServiceDeleteRpc(
 }
 
 struct NaClSrpcHandlerDesc const kNaClManifestProxyHandlers[] = {
-  { NACL_NAME_SERVICE_LIST, NaClManifestNameServiceListRpc, },
   { NACL_NAME_SERVICE_INSERT, NaClManifestNameServiceInsertRpc, },
   { NACL_NAME_SERVICE_LOOKUP, NaClManifestNameServiceLookupRpc, },
   { NACL_NAME_SERVICE_DELETE, NaClManifestNameServiceDeleteRpc, },
@@ -172,22 +160,23 @@ struct NaClSrpcHandlerDesc const kNaClManifestProxyHandlers[] = {
 };
 
 
-int NaClManifestProxyCtor(struct NaClManifestProxy    *self,
-                          NaClThreadIfFactoryFunction thread_factory_fn,
-                          void                        *thread_factory_data,
-                          struct NaClApp              *nap) {
+int NaClManifestProxyCtor(struct NaClManifestProxy        *self,
+                          NaClThreadIfFactoryFunction     thread_factory_fn,
+                          void                            *thread_factory_data,
+                          struct NaClSecureService        *server) {
   NaClLog(4,
           ("Entered NaClManifestProxyCtor: self 0x%"NACL_PRIxPTR
-           ", nap 0x%"NACL_PRIxPTR"\n"),
+           ", client 0x%"NACL_PRIxPTR"\n"),
           (uintptr_t) self,
-          (uintptr_t) nap);
+          (uintptr_t) server);
   if (!NaClSimpleServiceCtor(&self->base,
                              kNaClManifestProxyHandlers,
                              thread_factory_fn,
                              thread_factory_data)) {
     return 0;
   }
-  self->nap = nap;
+  self->server = (struct NaClSecureService *)
+      NaClRefCountRef((struct NaClRefCount *) server);
   NACL_VTBL(NaClRefCount, self) =
       (struct NaClRefCountVtbl *) &kNaClManifestProxyVtbl;
   return 1;
@@ -196,6 +185,8 @@ int NaClManifestProxyCtor(struct NaClManifestProxy    *self,
 static void NaClManifestProxyDtor(struct NaClRefCount *vself) {
   struct NaClManifestProxy *self =
       (struct NaClManifestProxy *) vself;
+
+  NaClRefCountUnref((struct NaClRefCount *) self->server);
 
   NACL_VTBL(NaClRefCount, self) =
       (struct NaClRefCountVtbl *) &kNaClSimpleServiceVtbl;
@@ -313,7 +304,6 @@ int NaClManifestProxyConnectionFactory(
     struct NaClSimpleServiceConnection  **out) {
   struct NaClManifestProxy            *self =
       (struct NaClManifestProxy *) vself;
-  struct NaClApp                      *nap = self->nap;
   struct NaClManifestProxyConnection  *mconn;
   NaClSrpcError                       rpc_result;
   int                                 bool_status;
@@ -341,17 +331,17 @@ int NaClManifestProxyConnectionFactory(
    * Make reverse RPC to obtain a new reverse RPC connection.
    */
   NaClLog(4, "NaClManifestProxyConnectionFactory: locking reverse channel\n");
-  NaClLog(4, "NaClManifestProxyConnectionFactory: nap 0x%"NACL_PRIxPTR"\n",
-          (uintptr_t) nap);
-  NaClXMutexLock(&nap->mu);
+  NaClLog(4, "NaClManifestProxyConnectionFactory: client 0x%"NACL_PRIxPTR"\n",
+          (uintptr_t) self->server);
+  NaClXMutexLock(&self->server->mu);
   if (NACL_REVERSE_CHANNEL_INITIALIZED !=
-      nap->reverse_channel_initialization_state) {
+      self->server->reverse_channel_initialization_state) {
     NaClLog(LOG_FATAL,
             "NaClManifestProxyConnectionFactory invoked w/o reverse channel\n");
   }
   NaClLog(4, "NaClManifestProxyConnectionFactory: inserting handler\n");
-  if (!(*NACL_VTBL(NaClSecureReverseClient, nap->reverse_client)->
-        InsertHandler)(nap->reverse_client,
+  if (!(*NACL_VTBL(NaClSecureReverseClient, self->server->reverse_client)->
+        InsertHandler)(self->server->reverse_client,
                        NaClManifestReverseClientCallback,
                        (void *) mconn)) {
     NaClLog(LOG_FATAL,
@@ -365,7 +355,7 @@ int NaClManifestProxyConnectionFactory(
   NaClLog(4,
           ("NaClManifestProxyConnectionFactory: making RPC"
            " to set up connection\n"));
-  rpc_result = NaClSrpcInvokeBySignature(&nap->reverse_channel,
+  rpc_result = NaClSrpcInvokeBySignature(&self->server->reverse_channel,
                                          NACL_REVERSE_CONTROL_ADD_CHANNEL,
                                          &bool_status);
   if (NACL_SRPC_RESULT_OK != rpc_result) {
@@ -376,7 +366,7 @@ int NaClManifestProxyConnectionFactory(
   NaClLog(4,
           "NaClManifestProxyConnectionFactory: Start status %d\n", bool_status);
 
-  NaClXMutexUnlock(&nap->mu);
+  NaClXMutexUnlock(&self->server->mu);
 
   *out = (struct NaClSimpleServiceConnection *) mconn;
   return 0;
@@ -391,7 +381,7 @@ struct NaClSimpleServiceVtbl const kNaClManifestProxyVtbl = {
   /*
    * The NaClManifestProxyConnectionFactory creates a subclass of a
    * NaClSimpleServiceConnectionFactory object that uses the reverse
-   * connection object nap->reverse_client to obtain a new RPC channel
+   * connection object self->server to obtain a new RPC channel
    * with each manifest connection.
    */
   NaClSimpleServiceAcceptConnection,

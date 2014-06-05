@@ -5,12 +5,11 @@
 #ifndef CHROME_TEST_BASE_MODULE_SYSTEM_TEST_H_
 #define CHROME_TEST_BASE_MODULE_SYSTEM_TEST_H_
 
-#include "chrome/renderer/extensions/module_system.h"
-#include "v8/include/v8.h"
+#include "chrome/renderer/extensions/chrome_v8_context.h"
+#include "extensions/renderer/module_system.h"
+#include "extensions/renderer/scoped_persistent.h"
 #include "testing/gtest/include/gtest/gtest.h"
-
-class AssertNatives;
-class StringSourceMap;
+#include "v8/include/v8.h"
 
 // Test fixture for testing JS that makes use of the module system.
 //
@@ -24,6 +23,8 @@ class StringSourceMap;
 //
 // By default a test will fail if no method in the native module 'assert' is
 // called. This behaviour can be overridden by calling ExpectNoAssertionsMade().
+//
+// TODO(kalman): move this back into chrome/renderer/extensions.
 class ModuleSystemTest : public testing::Test {
  public:
   ModuleSystemTest();
@@ -43,6 +44,11 @@ class ModuleSystemTest : public testing::Test {
   // name.
   void OverrideNativeHandler(const std::string& name, const std::string& code);
 
+  // Registers |file_name| from chrome/test/data/extensions as a module name
+  // |module_name|.
+  void RegisterTestFile(const std::string& module_name,
+                        const std::string& file_name);
+
   // Make the test fail if any asserts are called. By default a test will fail
   // if no asserts are called.
   void ExpectNoAssertionsMade();
@@ -50,12 +56,17 @@ class ModuleSystemTest : public testing::Test {
   // Create an empty object in the global scope with name |name|.
   v8::Handle<v8::Object> CreateGlobal(const std::string& name);
 
-  v8::Persistent<v8::Context> context_;
+  v8::Isolate* isolate_;
   v8::HandleScope handle_scope_;
+  scoped_ptr<extensions::ChromeV8Context> context_;
+  class AssertNatives;
   AssertNatives* assert_natives_;
+  class StringSourceMap;
   scoped_ptr<StringSourceMap> source_map_;
-  scoped_ptr<extensions::ModuleSystem> module_system_;
   bool should_assertions_be_made_;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ModuleSystemTest);
 };
 
 #endif  // CHROME_TEST_BASE_MODULE_SYSTEM_TEST_H_

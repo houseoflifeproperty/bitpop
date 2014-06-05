@@ -1,5 +1,10 @@
 <h1>Connect Apps with Web Intents</h1>
 
+<p class="warning">
+<b>Warning: </b>
+Deprecated in Chrome 24.
+Web intents are no longer supported.
+</p>
 
 <p>
 <a href="http://webintents.org/">Web Intents</a>
@@ -10,7 +15,7 @@ such as editing images via the <code>manifest.json</code>;
 your application can also invoke actions to be handled by other applications.
 </p>
 
-<p>Pacakged apps use Web Intents as their primary mechanism for inter-app 
+<p>Chrome Apps use Web Intents as their primary mechanism for inter-app 
 communication.</p>
 
 <p class="note">
@@ -22,11 +27,17 @@ Check out the
 
 <h2 id="register">Register your app to handle an action</h2>
 
+<p class="warning">
+<b>Warning: </b>
+Deprecated in Chrome 24.
+Web intents are no longer supported.
+</p>
+
 <p>
 You must supply the intent in the manifest:
 </p>
 
-<pre>
+<pre data-filename="manifest.json">
 "intents":{
  "http://webintents.org/edit" : [{
    "title" : "Best Image editing app",
@@ -36,13 +47,19 @@ You must supply the intent in the manifest:
 </pre>
 
 <p>
-Unlike extensions and hosted apps, packaged applications do not 
+Unlike extensions and hosted apps, Chrome applications do not 
 need a "href" attribute in the manifest declaration, this is 
-because packaged apps have a single entry point for 
+because Chrome Apps have a single entry point for 
 launch - the <code>onLaunched</code> event.  
 </p>
 
 <h2 id="content">Handling content types</h2>
+
+<p class="warning">
+<b>Warning: </b>
+Deprecated in Chrome 24.
+Web intents are no longer supported.
+</p>
 
 <p>
 Your application can be the user's preferred choice for handling a file type.
@@ -53,7 +70,7 @@ and use the "http://webintents.org/view" action:
 <p>To be able declare your application's ability to view RSS and ATOM 
 feeds, you would add the following to your manifest.
 </p>
-<pre>
+<pre data-filename="manifest.json">
 "intents": {
  "http://webintents.org/view" : [{
    "title" : "RSS Feed Reader",
@@ -77,8 +94,14 @@ chrome.app.runtime.onLaunched(function(intent) {
 });
 </pre>
 
-
 <h2 id="launching">Launching an app with a file</h2>
+
+<p class="warning">
+<b>Warning: </b>
+Deprecated in Chrome 24.
+Web intents are no longer supported.
+</p>
+
 <p>
 If your app handles the <code>view</code> intent,
 it is possible to launch it from the command line with a file as a parameter.
@@ -99,6 +122,13 @@ chrome.app.runtime.onLaunched(function(intent) {
 </pre>
 
 <h2 id="launching">Manipulating the file</h2>
+
+<p class="warning">
+<b>Warning: </b>
+Deprecated in Chrome 24.
+Web intents are no longer supported.
+</p>
+
 <p>
   When your application is launched with a file as the parameter
   on the command-line,
@@ -131,6 +161,13 @@ chrome.app.runtime.onLaunched(function(intent) {
 </pre>
 
 <h2 id="return">Returning data to calling application</h2>
+
+<p class="warning">
+<b>Warning: </b>
+Deprecated in Chrome 24.
+Web intents are no longer supported.
+</p>
+
 <p>
 Lots of applications want to cooperate
 with the app that invoked them.
@@ -152,6 +189,12 @@ chrome.app.runtime.onLaunched(function(intent) {
 
 <h2 id="localize">Localizing your app title</h2>
 
+<p class="warning">
+<b>Warning: </b>
+Deprecated in Chrome 24.
+Web intents are no longer supported.
+</p>
+
 <p>
 If your application or extension is localized
 as per the guidelines in
@@ -160,7 +203,7 @@ you can localize the title of your intent in the picker
 using the exact same infrastructure:
 </p>
 
-<pre>
+<pre data-filename="manifest.json">
 "intents": {
  "http://webintents.org/edit" : [{
    "title" : "__MSG_intent_title__",
@@ -171,6 +214,13 @@ using the exact same infrastructure:
 </pre>
 
 <h2 id="invoke">Invoking an action</h2>
+
+<p class="warning">
+<b>Warning: </b>
+Deprecated in Chrome 24.
+Web intents are no longer supported.
+</p>
+
 <p>
 If your application needs to be able
 to use the functionality of another application,
@@ -188,6 +238,13 @@ window.navigator.webkitStartActivity(intent, function(data) {
 </pre>
 
 <h2 id="errors">Handling Errors and Exceptions</h2>
+
+<p class="warning">
+<b>Warning: </b>
+Deprecated in Chrome 24.
+Web intents are no longer supported.
+</p>
+
 <p>
    If your service application needs to signal to the client application
    that an unrecoverable error has occurred,

@@ -5,9 +5,10 @@
 #include "chrome/test/base/tracing.h"
 
 #include "base/debug/trace_event.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/render_view_host.h"
@@ -27,18 +28,19 @@ const char* g_event = "TheEvent";
 class TracingBrowserTest : public InProcessBrowserTest {
  protected:
   // Execute some no-op javascript on the current tab - this triggers a trace
-  // event in RenderViewImpl::OnScriptEvalRequest (from the renderer process).
+  // event in RenderFrameImpl::OnJavaScriptExecuteRequest (from the renderer
+  // process).
   void ExecuteJavascriptOnCurrentTab() {
-    content::RenderViewHost* rvh =
-        chrome::GetActiveWebContents(browser())->GetRenderViewHost();
+    content::RenderViewHost* rvh = browser()->tab_strip_model()->
+        GetActiveWebContents()->GetRenderViewHost();
     ASSERT_TRUE(rvh);
-    ASSERT_TRUE(content::ExecuteJavaScript(rvh, L"", L";"));
+    ASSERT_TRUE(content::ExecuteScript(rvh, ";"));
   }
 };
 
 void AddEvents(int num) {
   for (int i = 0; i < num; ++i)
-    TRACE_EVENT_INSTANT0(g_category, g_event);
+    TRACE_EVENT_INSTANT0(g_category, g_event, TRACE_EVENT_SCOPE_THREAD);
 }
 
 IN_PROC_BROWSER_TEST_F(TracingBrowserTest, BeginTracingWithWatch) {
@@ -54,7 +56,7 @@ IN_PROC_BROWSER_TEST_F(TracingBrowserTest, BeginTracingWithWatch) {
 
   // One event after wait.
   ASSERT_TRUE(BeginTracingWithWatch(g_category, g_category, g_event, 1));
-  MessageLoop::current()->PostTask(FROM_HERE, base::Bind(&AddEvents, 1));
+  base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(&AddEvents, 1));
   EXPECT_TRUE(WaitForWatchEvent(no_timeout));
   ASSERT_TRUE(EndTracing(&json_events));
 
@@ -72,13 +74,13 @@ IN_PROC_BROWSER_TEST_F(TracingBrowserTest, BeginTracingWithWatch) {
 
   // Multi event after wait.
   ASSERT_TRUE(BeginTracingWithWatch(g_category, g_category, g_event, 5));
-  MessageLoop::current()->PostTask(FROM_HERE, base::Bind(&AddEvents, 5));
+  base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(&AddEvents, 5));
   EXPECT_TRUE(WaitForWatchEvent(no_timeout));
   ASSERT_TRUE(EndTracing(&json_events));
 
   // Child process events from same process.
   ASSERT_TRUE(BeginTracingWithWatch(g_category, g_category,
-                                    "OnScriptEvalRequest", 2));
+                                    "OnJavaScriptExecuteRequest", 2));
   ASSERT_NO_FATAL_FAILURE(ExecuteJavascriptOnCurrentTab());
   ASSERT_NO_FATAL_FAILURE(ExecuteJavascriptOnCurrentTab());
   EXPECT_TRUE(WaitForWatchEvent(no_timeout));
@@ -88,7 +90,7 @@ IN_PROC_BROWSER_TEST_F(TracingBrowserTest, BeginTracingWithWatch) {
   GURL url1("chrome://tracing/");
   GURL url2("chrome://credits/");
   ASSERT_TRUE(BeginTracingWithWatch(g_category, g_category,
-                                    "OnScriptEvalRequest", 2));
+                                    "OnJavaScriptExecuteRequest", 2));
   // Open two tabs to different URLs to encourage two separate renderer
   // processes. Each will fire an event that will be counted towards the total.
   ui_test_utils::NavigateToURLWithDisposition(browser(), url1,

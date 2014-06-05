@@ -5,26 +5,26 @@
 // VideoCaptureDeviceQTKit implements all QTKit related code for
 // communicating with a QTKit capture device.
 
-#ifndef MEDIA_VIDEO_CAPTURE_MAC_VIDEO_CAPTURE_DEVICE_MAC_QTKIT_H_
-#define MEDIA_VIDEO_CAPTURE_MAC_VIDEO_CAPTURE_DEVICE_MAC_QTKIT_H_
+#ifndef MEDIA_VIDEO_CAPTURE_MAC_VIDEO_CAPTURE_DEVICE_QTKIT_MAC_H_
+#define MEDIA_VIDEO_CAPTURE_MAC_VIDEO_CAPTURE_DEVICE_QTKIT_MAC_H_
 
 #import <Foundation/Foundation.h>
 
 #include <vector>
 
+#import "media/video/capture/mac/platform_video_capturing_mac.h"
+
 namespace media {
-  class VideoCaptureDeviceMac;
+class VideoCaptureDeviceMac;
 }
 
 @class QTCaptureDeviceInput;
 @class QTCaptureSession;
 
-@interface VideoCaptureDeviceQTKit : NSObject {
+@interface VideoCaptureDeviceQTKit : NSObject<PlatformVideoCapturingMac> {
  @private
   // Settings.
   int frameRate_;
-  int frameWidth_;
-  int frameHeight_;
 
   NSLock *lock_;
   media::VideoCaptureDeviceMac *frameReceiver_;
@@ -40,16 +40,16 @@ namespace media {
 }
 
 // Returns a dictionary of capture devices with friendly name and unique id.
-+ (NSDictionary *)deviceNames;
++ (NSDictionary*)deviceNames;
 
 // Initializes the instance and registers the frame receiver.
-- (id)initWithFrameReceiver:(media::VideoCaptureDeviceMac *)frameReceiver;
+- (id)initWithFrameReceiver:(media::VideoCaptureDeviceMac*)frameReceiver;
 
 // Set the frame receiver.
-- (void)setFrameReceiver:(media::VideoCaptureDeviceMac *)frameReceiver;
+- (void)setFrameReceiver:(media::VideoCaptureDeviceMac*)frameReceiver;
 
 // Sets which capture device to use. Returns YES on sucess, NO otherwise.
-- (BOOL)setCaptureDevice:(NSString *)deviceId;
+- (BOOL)setCaptureDevice:(NSString*)deviceId;
 
 // Configures the capture properties.
 - (BOOL)setCaptureHeight:(int)height width:(int)width frameRate:(int)frameRate;
@@ -60,6 +60,9 @@ namespace media {
 // Stops video capturing.
 - (void)stopCapture;
 
+// Handle any QTCaptureSessionRuntimeErrorNotifications.
+- (void)handleNotification:(NSNotification*)errorNotification;
+
 @end
 
-#endif  // MEDIA_VIDEO_CAPTURE_MAC_VIDEO_CAPTURE_DEVICE_MAC_QTKIT_H_
+#endif  // MEDIA_VIDEO_CAPTURE_MAC_VIDEO_CAPTURE_DEVICE_QTKIT_MAC_H_

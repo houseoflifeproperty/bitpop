@@ -4,156 +4,147 @@
 
 #include "ash/wm/workspace/phantom_window_controller.h"
 
+#include <math.h>
+
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/wm/coordinate_conversion.h"
-#include "third_party/skia/include/core/SkCanvas.h"
+#include "grit/ash_resources.h"
 #include "ui/aura/window.h"
-#include "ui/base/animation/slide_animation.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
-#include "ui/gfx/canvas.h"
-#include "ui/gfx/skia_util.h"
+#include "ui/views/background.h"
 #include "ui/views/painter.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 
 namespace ash {
-namespace internal {
-
 namespace {
 
-// Amount to inset from the bounds for EdgePainter.
-const int kInsetSize = 4;
+// The duration of the show animation.
+const int kAnimationDurationMs = 200;
 
-// Size of the round rect used by EdgePainter.
-const int kRoundRectSize = 4;
+// The size of the phantom window at the beginning of the show animation in
+// relation to the size of the phantom window at the end of the animation.
+const float kStartBoundsRatio = 0.85f;
 
-// Animation time for the phantom window state change.
-const int kAnimationDuration = 200;
+// The amount of pixels that the phantom window's shadow should extend past
+// the bounds passed into Show().
+const int kShadowThickness = 15;
 
-// Paints the background of the phantom window for window snapping.
-class EdgePainter : public views::Painter {
- public:
-  EdgePainter() {}
+// The minimum size of a phantom window including the shadow. The minimum size
+// is derived from the size of the IDR_AURA_PHANTOM_WINDOW image assets.
+const int kMinSizeWithShadow = 100;
 
-  // views::Painter overrides:
-  virtual void Paint(gfx::Canvas* canvas, const gfx::Size& size) OVERRIDE {
-    int x = kInsetSize;
-    int y = kInsetSize;
-    int w = size.width() - kInsetSize * 2;
-    int h = size.height() - kInsetSize * 2;
-    bool inset = (w > 0 && h > 0);
-    if (w < 0 || h < 0) {
-      x = 0;
-      y = 0;
-      w = size.width();
-      h = size.height();
-    }
-    SkPaint paint;
-    paint.setColor(SkColorSetARGB(100, 0, 0, 0));
-    paint.setStyle(SkPaint::kFill_Style);
-    paint.setAntiAlias(true);
-    canvas->sk_canvas()->drawRoundRect(
-        gfx::RectToSkRect(gfx::Rect(x, y, w, h)),
-        SkIntToScalar(kRoundRectSize), SkIntToScalar(kRoundRectSize), paint);
-    if (!inset)
-      return;
+// Adjusts the phantom window's bounds so that the bounds:
+// - Include the size of the shadow.
+// - Have a size equal to or larger than the minimum phantom window size.
+gfx::Rect GetAdjustedBounds(const gfx::Rect& bounds) {
+  int x_inset = std::max(
+      static_cast<int>(ceil((kMinSizeWithShadow - bounds.width()) / 2.0f)),
+      kShadowThickness);
+  int y_inset = std::max(
+      static_cast<int>(ceil((kMinSizeWithShadow - bounds.height()) / 2.0f)),
+      kShadowThickness);
 
-    paint.setColor(SkColorSetARGB(200, 255, 255, 255));
-    paint.setStyle(SkPaint::kStroke_Style);
-    paint.setStrokeWidth(SkIntToScalar(2));
-    canvas->sk_canvas()->drawRoundRect(
-        gfx::RectToSkRect(gfx::Rect(x, y, w, h)), SkIntToScalar(kRoundRectSize),
-        SkIntToScalar(kRoundRectSize), paint);
-  }
+  gfx::Rect adjusted_bounds(bounds);
+  adjusted_bounds.Inset(-x_inset, -y_inset);
+  return adjusted_bounds;
+}
 
- private:
-  DISALLOW_COPY_AND_ASSIGN(EdgePainter);
-};
+// Starts an animation of |widget| to |new_bounds_in_screen|. No-op if |widget|
+// is NULL.
+void AnimateToBounds(views::Widget* widget,
+                     const gfx::Rect& new_bounds_in_screen) {
+  if (!widget)
+    return;
+
+  ui::ScopedLayerAnimationSettings scoped_setter(
+      widget->GetNativeWindow()->layer()->GetAnimator());
+  scoped_setter.SetTweenType(gfx::Tween::EASE_IN);
+  scoped_setter.SetPreemptionStrategy(
+      ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
+  scoped_setter.SetTransitionDuration(
+      base::TimeDelta::FromMilliseconds(kAnimationDurationMs));
+  widget->SetBounds(new_bounds_in_screen);
+}
 
 }  // namespace
 
+// PhantomWindowController ----------------------------------------------------
+
 PhantomWindowController::PhantomWindowController(aura::Window* window)
-    : window_(window),
-      phantom_below_window_(NULL),
-      phantom_widget_(NULL) {
+    : window_(window) {
 }
 
 PhantomWindowController::~PhantomWindowController() {
-  Hide();
 }
 
-void PhantomWindowController::Show(const gfx::Rect& bounds) {
-  if (bounds == bounds_)
+void PhantomWindowController::Show(const gfx::Rect& bounds_in_screen) {
+  gfx::Rect adjusted_bounds_in_screen = GetAdjustedBounds(bounds_in_screen);
+  if (adjusted_bounds_in_screen == target_bounds_in_screen_)
     return;
-  bounds_ = bounds;
-  if (!phantom_widget_) {
-    // Show the phantom at the bounds of the window. We'll animate to the target
-    // bounds.
-    start_bounds_ = window_->GetBoundsInScreen();
-    CreatePhantomWidget(start_bounds_);
-  } else {
-    start_bounds_ = phantom_widget_->GetWindowBoundsInScreen();
-  }
-  animation_.reset(new ui::SlideAnimation(this));
-  animation_->SetTweenType(ui::Tween::EASE_IN);
-  animation_->SetSlideDuration(kAnimationDuration);
-  animation_->Show();
+  target_bounds_in_screen_ = adjusted_bounds_in_screen;
+
+  gfx::Rect start_bounds_in_screen = target_bounds_in_screen_;
+  int start_width = std::max(
+      kMinSizeWithShadow,
+      static_cast<int>(start_bounds_in_screen.width() * kStartBoundsRatio));
+  int start_height = std::max(
+      kMinSizeWithShadow,
+      static_cast<int>(start_bounds_in_screen.height() * kStartBoundsRatio));
+  start_bounds_in_screen.Inset(
+      floor((start_bounds_in_screen.width() - start_width) / 2.0f),
+      floor((start_bounds_in_screen.height() - start_height) / 2.0f));
+  phantom_widget_ = CreatePhantomWidget(
+      wm::GetRootWindowMatching(target_bounds_in_screen_),
+      start_bounds_in_screen);
+
+  AnimateToBounds(phantom_widget_.get(), target_bounds_in_screen_);
 }
 
-void PhantomWindowController::Hide() {
-  if (phantom_widget_)
-    phantom_widget_->Close();
-  phantom_widget_ = NULL;
-}
-
-bool PhantomWindowController::IsShowing() const {
-  return phantom_widget_ != NULL;
-}
-
-void PhantomWindowController::AnimationProgressed(
-    const ui::Animation* animation) {
-  phantom_widget_->SetBounds(
-      animation->CurrentValueBetween(start_bounds_, bounds_));
-}
-
-void PhantomWindowController::CreatePhantomWidget(const gfx::Rect& bounds) {
-  DCHECK(!phantom_widget_);
-  phantom_widget_ = new views::Widget;
+scoped_ptr<views::Widget> PhantomWindowController::CreatePhantomWidget(
+    aura::Window* root_window,
+    const gfx::Rect& bounds_in_screen) {
+  scoped_ptr<views::Widget> phantom_widget(new views::Widget);
   views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
-  params.transparent = true;
+  params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   // PhantomWindowController is used by FrameMaximizeButton to highlight the
   // launcher button. Put the phantom in the same window as the launcher so that
   // the phantom is visible.
-  params.parent = Shell::GetContainer(wm::GetRootWindowMatching(bounds),
-                                      kShellWindowId_LauncherContainer);
+  params.parent = Shell::GetContainer(root_window,
+                                      kShellWindowId_ShelfContainer);
   params.can_activate = false;
   params.keep_on_top = true;
-  phantom_widget_->set_focus_on_creation(false);
-  phantom_widget_->Init(params);
-  phantom_widget_->SetVisibilityChangedAnimationsEnabled(false);
-  phantom_widget_->GetNativeWindow()->SetName("PhantomWindow");
-  phantom_widget_->GetNativeWindow()->set_id(kShellWindowId_PhantomWindow);
+  params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  phantom_widget->set_focus_on_creation(false);
+  phantom_widget->Init(params);
+  phantom_widget->SetVisibilityChangedAnimationsEnabled(false);
+  phantom_widget->GetNativeWindow()->SetName("PhantomWindow");
+  phantom_widget->GetNativeWindow()->set_id(kShellWindowId_PhantomWindow);
+  phantom_widget->SetBounds(bounds_in_screen);
+  phantom_widget->StackAbove(window_);
+
+  const int kImages[] = IMAGE_GRID(IDR_AURA_PHANTOM_WINDOW);
+  views::Painter* background_painter =
+      views::Painter::CreateImageGridPainter(kImages);
   views::View* content_view = new views::View;
   content_view->set_background(
-      views::Background::CreateBackgroundPainter(true, new EdgePainter));
-  phantom_widget_->SetContentsView(content_view);
-  phantom_widget_->SetBounds(bounds);
-  if (phantom_below_window_)
-    phantom_widget_->StackBelow(phantom_below_window_);
-  else
-    phantom_widget_->StackAbove(window_);
+      views::Background::CreateBackgroundPainter(true, background_painter));
+  phantom_widget->SetContentsView(content_view);
 
   // Show the widget after all the setups.
-  phantom_widget_->Show();
+  phantom_widget->Show();
 
   // Fade the window in.
-  ui::Layer* widget_layer = phantom_widget_->GetNativeWindow()->layer();
+  ui::Layer* widget_layer = phantom_widget->GetNativeWindow()->layer();
   widget_layer->SetOpacity(0);
   ui::ScopedLayerAnimationSettings scoped_setter(widget_layer->GetAnimator());
+  scoped_setter.SetTransitionDuration(
+      base::TimeDelta::FromMilliseconds(kAnimationDurationMs));
   widget_layer->SetOpacity(1);
+
+  return phantom_widget.Pass();
 }
 
-}  // namespace internal
 }  // namespace ash

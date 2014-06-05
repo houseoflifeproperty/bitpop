@@ -21,9 +21,12 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include "avassert.h"
+#include "avstring.h"
 #include "bprint.h"
 #include "common.h"
+#include "compat/va_copy.h"
 #include "error.h"
 #include "mem.h"
 
@@ -111,6 +114,29 @@ void av_bprintf(AVBPrint *buf, const char *fmt, ...)
     av_bprint_grow(buf, extra_len);
 }
 
+void av_vbprintf(AVBPrint *buf, const char *fmt, va_list vl_arg)
+{
+    unsigned room;
+    char *dst;
+    int extra_len;
+    va_list vl;
+
+    while (1) {
+        room = av_bprint_room(buf);
+        dst = room ? buf->str + buf->len : NULL;
+        va_copy(vl, vl_arg);
+        extra_len = vsnprintf(dst, room, fmt, vl);
+        va_end(vl);
+        if (extra_len <= 0)
+            return;
+        if (extra_len < room)
+            break;
+        if (av_bprint_alloc(buf, extra_len))
+            break;
+    }
+    av_bprint_grow(buf, extra_len);
+}
+
 void av_bprint_chars(AVBPrint *buf, char c, unsigned n)
 {
     unsigned room, real_n;
@@ -127,6 +153,75 @@ void av_bprint_chars(AVBPrint *buf, char c, unsigned n)
         memset(buf->str + buf->len, c, real_n);
     }
     av_bprint_grow(buf, n);
+}
+
+void av_bprint_append_data(AVBPrint *buf, const char *data, unsigned size)
+{
+    unsigned room, real_n;
+
+    while (1) {
+        room = av_bprint_room(buf);
+        if (size < room)
+            break;
+        if (av_bprint_alloc(buf, size))
+            break;
+    }
+    if (room) {
+        real_n = FFMIN(size, room - 1);
+        memcpy(buf->str + buf->len, data, real_n);
+    }
+    av_bprint_grow(buf, size);
+}
+
+void av_bprint_strftime(AVBPrint *buf, const char *fmt, const struct tm *tm)
+{
+    unsigned room;
+    size_t l;
+
+    if (!*fmt)
+        return;
+    while (1) {
+        room = av_bprint_room(buf);
+        if (room && (l = strftime(buf->str + buf->len, room, fmt, tm)))
+            break;
+        /* strftime does not tell us how much room it would need: let us
+           retry with twice as much until the buffer is large enough */
+        room = !room ? strlen(fmt) + 1 :
+               room <= INT_MAX / 2 ? room * 2 : INT_MAX;
+        if (av_bprint_alloc(buf, room)) {
+            /* impossible to grow, try to manage something useful anyway */
+            room = av_bprint_room(buf);
+            if (room < 1024) {
+                /* if strftime fails because the buffer has (almost) reached
+                   its maximum size, let us try in a local buffer; 1k should
+                   be enough to format any real date+time string */
+                char buf2[1024];
+                if ((l = strftime(buf2, sizeof(buf2), fmt, tm))) {
+                    av_bprintf(buf, "%s", buf2);
+                    return;
+                }
+            }
+            if (room) {
+                /* if anything else failed and the buffer is not already
+                   truncated, let us add a stock string and force truncation */
+                static const char txt[] = "[truncated strftime output]";
+                memset(buf->str + buf->len, '!', room);
+                memcpy(buf->str + buf->len, txt, FFMIN(sizeof(txt) - 1, room));
+                av_bprint_grow(buf, room); /* force truncation */
+            }
+            return;
+        }
+    }
+    av_bprint_grow(buf, l);
+}
+
+void av_bprint_get_buffer(AVBPrint *buf, unsigned size,
+                          unsigned char **mem, unsigned *actual_size)
+{
+    if (size > av_bprint_room(buf))
+        av_bprint_alloc(buf, size);
+    *actual_size = av_bprint_room(buf);
+    *mem = *actual_size ? buf->str + buf->len : NULL;
 }
 
 void av_bprint_clear(AVBPrint *buf)
@@ -165,6 +260,50 @@ int av_bprint_finalize(AVBPrint *buf, char **ret_str)
     return ret;
 }
 
+#define WHITESPACES " \n\t"
+
+void av_bprint_escape(AVBPrint *dstbuf, const char *src, const char *special_chars,
+                      enum AVEscapeMode mode, int flags)
+{
+    const char *src0 = src;
+
+    if (mode == AV_ESCAPE_MODE_AUTO)
+        mode = AV_ESCAPE_MODE_BACKSLASH; /* TODO: implement a heuristic */
+
+    switch (mode) {
+    case AV_ESCAPE_MODE_QUOTE:
+        /* enclose the string between '' */
+        av_bprint_chars(dstbuf, '\'', 1);
+        for (; *src; src++) {
+            if (*src == '\'')
+                av_bprintf(dstbuf, "'\\''");
+            else
+                av_bprint_chars(dstbuf, *src, 1);
+        }
+        av_bprint_chars(dstbuf, '\'', 1);
+        break;
+
+    /* case AV_ESCAPE_MODE_BACKSLASH or unknown mode */
+    default:
+        /* \-escape characters */
+        for (; *src; src++) {
+            int is_first_last       = src == src0 || !*(src+1);
+            int is_ws               = !!strchr(WHITESPACES, *src);
+            int is_strictly_special = special_chars && strchr(special_chars, *src);
+            int is_special          =
+                is_strictly_special || strchr("'\\", *src) ||
+                (is_ws && (flags & AV_ESCAPE_FLAG_WHITESPACE));
+
+            if (is_strictly_special ||
+                (!(flags & AV_ESCAPE_FLAG_STRICT) &&
+                 (is_special || (is_ws && is_first_last))))
+                av_bprint_chars(dstbuf, '\\', 1);
+            av_bprint_chars(dstbuf, *src, 1);
+        }
+        break;
+    }
+}
+
 #ifdef TEST
 
 #undef printf
@@ -192,6 +331,7 @@ int main(void)
 {
     AVBPrint b;
     char buf[256];
+    struct tm testtime = { .tm_year = 100, .tm_mon = 11, .tm_mday = 20 };
 
     av_bprint_init(&b, 0, -1);
     bprint_pascal(&b, 5);
@@ -225,6 +365,15 @@ int main(void)
     av_bprint_init_for_buffer(&b, buf, sizeof(buf));
     bprint_pascal(&b, 25);
     printf("Long text count only buffer: %u/%u\n", (unsigned)strlen(buf), b.len);
+
+    av_bprint_init(&b, 0, -1);
+    av_bprint_strftime(&b, "%Y-%m-%d", &testtime);
+    printf("strftime full: %u/%u \"%s\"\n", (unsigned)strlen(buf), b.len, b.str);
+    av_bprint_finalize(&b, NULL);
+
+    av_bprint_init(&b, 0, 8);
+    av_bprint_strftime(&b, "%Y-%m-%d", &testtime);
+    printf("strftime truncated: %u/%u \"%s\"\n", (unsigned)strlen(buf), b.len, b.str);
 
     return 0;
 }

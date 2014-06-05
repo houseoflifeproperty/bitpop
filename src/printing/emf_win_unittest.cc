@@ -11,8 +11,8 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
@@ -86,7 +86,7 @@ TEST_F(EmfPrintingTest, Enumerate) {
   scoped_ptr<PrintingContext> context(PrintingContext::Create(std::string()));
   EXPECT_EQ(context->InitWithSettings(settings), PrintingContext::OK);
 
-  FilePath emf_file;
+  base::FilePath emf_file;
   EXPECT_TRUE(PathService::Get(base::DIR_SOURCE_ROOT, &emf_file));
   emf_file = emf_file.Append(FILE_PATH_LITERAL("printing"))
                      .Append(FILE_PATH_LITERAL("test"))
@@ -95,7 +95,7 @@ TEST_F(EmfPrintingTest, Enumerate) {
   // Load any EMF with an image.
   Emf emf;
   std::string emf_data;
-  file_util::ReadFileToString(emf_file, &emf_data);
+  base::ReadFileToString(emf_file, &emf_data);
   ASSERT_TRUE(emf_data.size());
   EXPECT_TRUE(emf.InitFromData(&emf_data[0], emf_data.size()));
 
@@ -171,9 +171,9 @@ TEST(EmfTest, FileBackedEmf) {
   // Simplest use case.
   base::ScopedTempDir scratch_metafile_dir;
   ASSERT_TRUE(scratch_metafile_dir.CreateUniqueTempDir());
-  FilePath metafile_path;
-  EXPECT_TRUE(file_util::CreateTemporaryFileInDir(scratch_metafile_dir.path(),
-                                                  &metafile_path));
+  base::FilePath metafile_path;
+  EXPECT_TRUE(base::CreateTemporaryFileInDir(scratch_metafile_dir.path(),
+                                             &metafile_path));
   uint32 size;
   std::vector<BYTE> data;
   {
@@ -189,7 +189,7 @@ TEST(EmfTest, FileBackedEmf) {
     EXPECT_EQ(data.size(), size);
   }
   int64 file_size = 0;
-  file_util::GetFileSize(metafile_path, &file_size);
+  base::GetFileSize(metafile_path, &file_size);
   EXPECT_EQ(size, file_size);
 
   // Playback the data.

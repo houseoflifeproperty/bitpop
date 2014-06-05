@@ -36,31 +36,44 @@ public:
 
         Note: only affects stroked paths.
     */
-    SkDashPathEffect(const SkScalar intervals[], int count, SkScalar phase, bool scaleToFit = false);
+    static SkDashPathEffect* Create(const SkScalar intervals[], int count,
+                                    SkScalar phase) {
+        return SkNEW_ARGS(SkDashPathEffect, (intervals, count, phase));
+    }
     virtual ~SkDashPathEffect();
 
-    virtual bool filterPath(SkPath* dst, const SkPath& src, SkStrokeRec*) SK_OVERRIDE;
+    virtual bool filterPath(SkPath* dst, const SkPath& src,
+                            SkStrokeRec*, const SkRect*) const SK_OVERRIDE;
 
     virtual bool asPoints(PointData* results, const SkPath& src,
-                          const SkStrokeRec&, const SkMatrix&) const SK_OVERRIDE;
+                          const SkStrokeRec&, const SkMatrix&,
+                          const SkRect*) const SK_OVERRIDE;
 
-    // overrides for SkFlattenable
-    //  This method is not exported to java.
-    virtual Factory getFactory();
-    static SkFlattenable* CreateProc(SkFlattenableReadBuffer&);
+    virtual DashType asADash(DashInfo* info) const SK_OVERRIDE;
+
+    virtual Factory getFactory() const SK_OVERRIDE;
+
+    static SkFlattenable* CreateProc(SkReadBuffer&);
 
 protected:
-    SkDashPathEffect(SkFlattenableReadBuffer&);
-    virtual void flatten(SkFlattenableWriteBuffer&) const SK_OVERRIDE;
+    SkDashPathEffect(SkReadBuffer&);
+    virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
+
+#ifdef SK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS
+public:
+#endif
+    SkDashPathEffect(const SkScalar intervals[], int count, SkScalar phase);
 
 private:
+    void setInternalMembers(SkScalar phase);
+
     SkScalar*   fIntervals;
     int32_t     fCount;
+    SkScalar    fPhase;
     // computed from phase
     SkScalar    fInitialDashLength;
     int32_t     fInitialDashIndex;
     SkScalar    fIntervalLength;
-    bool        fScaleToFit;
 
     typedef SkPathEffect INHERITED;
 };

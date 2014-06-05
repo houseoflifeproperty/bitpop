@@ -8,28 +8,30 @@
 #import <Cocoa/Cocoa.h>
 
 #include "base/gtest_prod_util.h"
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "chrome/browser/ui/cocoa/location_bar/location_bar_decoration.h"
+#import "ui/base/cocoa/appkit_utils.h"
 
 // Draws an outlined rounded rect, with an optional image to the left
 // and an optional text label to the right.
 
 class BubbleDecoration : public LocationBarDecoration {
  public:
-  // |font| will be used when drawing the label, and cannot be |nil|.
-  BubbleDecoration(NSFont* font);
+  BubbleDecoration();
   virtual ~BubbleDecoration();
 
   // Setup the drawing parameters.
   NSImage* GetImage();
   void SetImage(NSImage* image);
   void SetLabel(NSString* label);
-  void SetColors(NSColor* border_color,
-                 NSColor* background_color,
-                 NSColor* text_color);
+  void SetTextColor(NSColor* text_color);
+  virtual ui::NinePartImageIds GetBubbleImageIds() = 0;
 
   // Implement |LocationBarDecoration|.
   virtual void DrawInFrame(NSRect frame, NSView* control_view) OVERRIDE;
+  virtual void DrawWithBackgroundInFrame(NSRect background_frame,
+                                         NSRect frame,
+                                         NSView* control_view) OVERRIDE;
   virtual CGFloat GetWidthForSpace(CGFloat width) OVERRIDE;
 
  protected:
@@ -41,24 +43,19 @@ class BubbleDecoration : public LocationBarDecoration {
   // from.  |frame| is the decoration's frame in the containing cell.
   NSRect GetImageRectInFrame(NSRect frame);
 
-  // Contains font and color attribute for drawing |label_|.
-  scoped_nsobject<NSDictionary> attributes_;
-
  private:
   friend class SelectedKeywordDecorationTest;
   FRIEND_TEST_ALL_PREFIXES(SelectedKeywordDecorationTest,
                            UsesPartialKeywordIfNarrow);
 
   // Image drawn in the left side of the bubble.
-  scoped_nsobject<NSImage> image_;
+  base::scoped_nsobject<NSImage> image_;
 
   // Label to draw to right of image.  Can be |nil|.
-  scoped_nsobject<NSString> label_;
+  base::scoped_nsobject<NSString> label_;
 
-  // Colors used to draw the bubble, should be set by the subclass
-  // constructor.
-  scoped_nsobject<NSColor> background_color_;
-  scoped_nsobject<NSColor> border_color_;
+  // Contains attribute for drawing |label_|.
+  base::scoped_nsobject<NSMutableDictionary> attributes_;
 
   DISALLOW_COPY_AND_ASSIGN(BubbleDecoration);
 };

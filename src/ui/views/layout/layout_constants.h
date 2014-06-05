@@ -62,8 +62,23 @@ const int kButtonVEdgeMargin = 9;
 // left or right of a button.
 const int kButtonHEdgeMargin = 13;
 
+// Vertical spacing between the edge of the window and the
+// top or bottom of a button (when using new style dialogs).
+const int kButtonVEdgeMarginNew = 20;
+
+// Vertical spacing between the edge of the window and the
+// left or right of a button (when using new style dialogs).
+const int kButtonHEdgeMarginNew = 20;
+
 // Horizontal spacing between buttons that are logically related.
 const int kRelatedButtonHSpacing = 6;
+
+// Indent of checkboxes relative to related text.
+const int kCheckboxIndent = 10;
+
+// Horizontal spacing between the end of an item (i.e. an icon or a checkbox)
+// and the start of its corresponding text.
+const int kItemLabelSpacing = 10;
 
 }  // namespace views
 

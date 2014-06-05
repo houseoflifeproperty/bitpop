@@ -8,12 +8,14 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/gtest_prod_util.h"
 #include "content/common/content_export.h"
 #include "content/public/common/sandbox_type_mac.h"
 
+namespace base {
 class FilePath;
+}
 
 #if __OBJC__
 @class NSArray;
@@ -73,8 +75,10 @@ class CONTENT_EXPORT Sandbox {
   //
   // Returns true on success, false if an error occurred enabling the sandbox.
   static bool EnableSandbox(int sandbox_type,
-                            const FilePath& allowed_dir);
+                            const base::FilePath& allowed_dir);
 
+  // Returns true if the sandbox has been enabled for the current process.
+  static bool SandboxIsCurrentlyActive();
 
   // Exposed for testing purposes, used by an accessory function of our tests
   // so we can't use FRIEND_TEST.
@@ -89,7 +93,7 @@ class CONTENT_EXPORT Sandbox {
   // The returned string contains embedded variables. The function fills in
   // |substitutions| to contain the values for these variables.
   static NSString* BuildAllowDirectoryAccessSandboxString(
-                       const FilePath& allowed_dir,
+                       const base::FilePath& allowed_dir,
                        SandboxVariableSubstitions* substitutions);
 
   // Assemble the final sandbox profile from a template by removing comments
@@ -126,7 +130,7 @@ class CONTENT_EXPORT Sandbox {
  private:
   // Returns an (allow file-read-metadata) rule for |allowed_path| and all its
   // parent directories.
-  static NSString* AllowMetadataForPath(const FilePath& allowed_path);
+  static NSString* AllowMetadataForPath(const base::FilePath& allowed_path);
 
   // Escape |src_utf8| for use in a plain string variable in a sandbox
   // configuraton file.  On return |dst| is set to the quoted output.
@@ -151,7 +155,7 @@ class CONTENT_EXPORT Sandbox {
   // Convert provided path into a "canonical" path matching what the Sandbox
   // expects i.e. one without symlinks.
   // This path is not necessarily unique e.g. in the face of hardlinks.
-  static FilePath GetCanonicalSandboxPath(const FilePath& path);
+  static base::FilePath GetCanonicalSandboxPath(const base::FilePath& path);
 
   FRIEND_TEST_ALL_PREFIXES(MacDirAccessSandboxTest, StringEscape);
   FRIEND_TEST_ALL_PREFIXES(MacDirAccessSandboxTest, RegexEscape);

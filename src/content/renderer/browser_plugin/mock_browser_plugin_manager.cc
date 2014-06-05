@@ -4,14 +4,17 @@
 
 #include "content/renderer/browser_plugin/mock_browser_plugin_manager.h"
 
-#include "ipc/ipc_message.h"
+#include "base/message_loop/message_loop.h"
+#include "content/common/browser_plugin/browser_plugin_messages.h"
 #include "content/renderer/browser_plugin/mock_browser_plugin.h"
+#include "ipc/ipc_message.h"
 
 namespace content {
 
 MockBrowserPluginManager::MockBrowserPluginManager(
     RenderViewImpl* render_view)
-    : BrowserPluginManager(render_view) {
+    : BrowserPluginManager(render_view),
+      guest_instance_id_counter_(0) {
 }
 
 MockBrowserPluginManager::~MockBrowserPluginManager() {
@@ -19,20 +22,27 @@ MockBrowserPluginManager::~MockBrowserPluginManager() {
 
 BrowserPlugin* MockBrowserPluginManager::CreateBrowserPlugin(
     RenderViewImpl* render_view,
-    WebKit::WebFrame* frame,
-    const WebKit::WebPluginParams& params) {
-  return new MockBrowserPlugin(++browser_plugin_counter_,
-                               render_view,
-                               frame,
-                               params);
+    blink::WebFrame* frame,
+    bool auto_navigate) {
+  return new MockBrowserPlugin(render_view, frame, auto_navigate);
 }
 
-void MockBrowserPluginManager::Cleanup() {
-  IDMap<BrowserPlugin>::iterator iter(&instances_);
-  while (!iter.IsAtEnd()) {
-    iter.GetCurrentValue()->Cleanup();
-    iter.Advance();
-  }
+void MockBrowserPluginManager::AllocateInstanceID(
+    const base::WeakPtr<BrowserPlugin>& browser_plugin) {
+  int guest_instance_id = ++guest_instance_id_counter_;
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&MockBrowserPluginManager::AllocateInstanceIDACK,
+                 this,
+                 browser_plugin.get(),
+                 guest_instance_id));
+}
+
+void MockBrowserPluginManager::AllocateInstanceIDACK(
+    BrowserPlugin* browser_plugin,
+    int guest_instance_id) {
+  scoped_ptr<base::DictionaryValue> extra_params(new base::DictionaryValue());
+  browser_plugin->Attach(guest_instance_id, extra_params.Pass());
 }
 
 bool MockBrowserPluginManager::Send(IPC::Message* msg) {
@@ -41,7 +51,7 @@ bool MockBrowserPluginManager::Send(IPC::Message* msg) {
   // through this function messages, messages with reply and reply messages.
   // We can only handle one synchronous message at a time.
   if (msg->is_reply()) {
-    if (reply_deserializer_.get()) {
+    if (reply_deserializer_) {
       reply_deserializer_->SerializeOutputParameters(*msg);
       reply_deserializer_.reset();
     }

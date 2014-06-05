@@ -6,42 +6,43 @@
 #define UI_BASE_IME_WIN_TSF_INPUT_SCOPE_H_
 
 #include <InputScope.h>
+#include <Windows.h>
+#include <vector>
 
 #include "base/basictypes.h"
-#include "base/compiler_specific.h"
+#include "ui/base/ime/text_input_mode.h"
 #include "ui/base/ime/text_input_type.h"
-#include "ui/base/ui_export.h"
+#include "ui/base/ui_base_export.h"
 
 namespace ui {
+namespace tsf_inputscope {
 
-// The implementation class of ITfInputScope, which is the Windows-specific
-// category representation corresponding to ui::TextInputType that we are using
-// to specify the expected text type in the target field.
-class TSFInputScope : public ITfInputScope {
- public:
-  explicit TSFInputScope(TextInputType text_input_type);
-  virtual ~TSFInputScope();
+// Returns InputScope list corresoponding to ui::TextInputType and
+// ui::TextInputMode.
+// This function is only used from following functions but declared for test.
+UI_BASE_EXPORT std::vector<InputScope> GetInputScopes(
+    TextInputType text_input_type,
+    TextInputMode text_input_mode);
 
-  // ITfInputScope:
-  STDMETHOD_(ULONG, AddRef)() OVERRIDE;
-  STDMETHOD_(ULONG, Release)() OVERRIDE;
-  STDMETHOD(QueryInterface)(REFIID iid, void** result) OVERRIDE;
-  STDMETHOD(GetInputScopes)(InputScope** input_scopes, UINT* count) OVERRIDE;
-  STDMETHOD(GetPhrase)(BSTR** phrases, UINT* count) OVERRIDE;
-  STDMETHOD(GetRegularExpression)(BSTR* regexp) OVERRIDE;
-  STDMETHOD(GetSRGS)(BSTR* srgs) OVERRIDE;
-  STDMETHOD(GetXML)(BSTR* xml) OVERRIDE;
+// Returns an instance of ITfInputScope, which is the Windows-specific
+// category representation corresponding to ui::TextInputType and
+// ui::TextInputMode that we are using to specify the expected text type
+// in the target field.
+// The returned instance has 0 reference count. The caller must maintain its
+// reference count.
+UI_BASE_EXPORT ITfInputScope* CreateInputScope(TextInputType text_input_type,
+                                               TextInputMode text_input_mode);
 
- private:
-  // The corresponding text input type.
-  TextInputType text_input_type_;
+// A wrapper of the SetInputScopes API exported by msctf.dll.
+// http://msdn.microsoft.com/en-us/library/windows/desktop/ms629026.aspx
+// Does nothing on Windows XP in case TSF is disabled.
+// NOTE: For TSF-aware window, you should use ITfInputScope instead.
+UI_BASE_EXPORT void SetInputScopeForTsfUnawareWindow(
+    HWND window_handle,
+    TextInputType text_input_type,
+    TextInputMode text_input_mode);
 
-  // The refrence count of this instance.
-  volatile LONG ref_count_;
-
-  DISALLOW_COPY_AND_ASSIGN(TSFInputScope);
-};
-
+}  // namespace tsf_inputscope
 }  // namespace ui
 
 #endif  // UI_BASE_IME_WIN_TSF_INPUT_SCOPE_H_

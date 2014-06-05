@@ -620,6 +620,9 @@ int Win32Socket::TranslateOption(Option opt, int* slevel, int* sopt) {
       *slevel = IPPROTO_TCP;
       *sopt = TCP_NODELAY;
       break;
+    case OPT_DSCP:
+      LOG(LS_WARNING) << "Socket::OPT_DSCP not supported.";
+      return -1;
     default:
       ASSERT(false);
       return -1;
@@ -697,7 +700,7 @@ void Win32Socket::OnDnsNotify(HANDLE task, int error) {
     ip = NetworkToHost32(net_ip);
   }
 
-  LOG_F(LS_INFO) << "(" << SocketAddress::IPToString(ip)
+  LOG_F(LS_INFO) << "(" << IPAddress(ip).ToSensitiveString()
                  << ", " << error << ")";
 
   if (error == 0) {

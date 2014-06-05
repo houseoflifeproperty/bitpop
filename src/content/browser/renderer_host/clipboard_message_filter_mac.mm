@@ -9,7 +9,8 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/sys_string_conversions.h"
+#include "base/mac/scoped_nsobject.h"
+#include "base/strings/sys_string_conversions.h"
 #include "content/public/browser/browser_thread.h"
 #import "ui/base/cocoa/find_pasteboard.h"
 
@@ -31,7 +32,7 @@ class WriteFindPboardWrapper {
   }
 
  private:
-  scoped_nsobject<NSString> text_;
+  base::scoped_nsobject<NSString> text_;
 
   DISALLOW_COPY_AND_ASSIGN(WriteFindPboardWrapper);
 };
@@ -39,7 +40,8 @@ class WriteFindPboardWrapper {
 }  // namespace
 
 // Called on the IO thread.
-void ClipboardMessageFilter::OnFindPboardWriteString(const string16& text) {
+void ClipboardMessageFilter::OnFindPboardWriteString(
+    const base::string16& text) {
   if (text.length() <= kMaxFindPboardStringLength) {
     NSString* nsText = base::SysUTF16ToNSString(text);
     if (nsText) {

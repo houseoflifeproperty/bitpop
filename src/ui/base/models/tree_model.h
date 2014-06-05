@@ -7,8 +7,8 @@
 
 #include <vector>
 
-#include "base/string16.h"
-#include "ui/base/ui_export.h"
+#include "base/strings/string16.h"
+#include "ui/base/ui_base_export.h"
 
 namespace gfx {
 class ImageSkia;
@@ -24,14 +24,14 @@ class TreeModel;
 class TreeModelNode {
  public:
   // Returns the title for the node.
-  virtual const string16& GetTitle() const = 0;
+  virtual const base::string16& GetTitle() const = 0;
 
  protected:
   virtual ~TreeModelNode() {}
 };
 
 // Observer for the TreeModel. Notified of significant events to the model.
-class UI_EXPORT TreeModelObserver {
+class UI_BASE_EXPORT TreeModelObserver {
  public:
   // Notification that nodes were added to the specified parent.
   virtual void TreeNodesAdded(TreeModel* model,
@@ -55,7 +55,7 @@ class UI_EXPORT TreeModelObserver {
 // TreeModel ------------------------------------------------------------------
 
 // The model for TreeView.
-class UI_EXPORT TreeModel {
+class UI_BASE_EXPORT TreeModel {
  public:
   // Returns the root of the tree. This may or may not be shown in the tree,
   // see SetRootShown for details.
@@ -81,7 +81,7 @@ class UI_EXPORT TreeModel {
 
   // Sets the title of |node|.
   // This is only invoked if the node is editable and the user edits a node.
-  virtual void SetTitle(TreeModelNode* node, const string16& title);
+  virtual void SetTitle(TreeModelNode* node, const base::string16& title);
 
   // Returns the set of icons for the nodes in the tree. You only need override
   // this if you don't want to use the default folder icons.

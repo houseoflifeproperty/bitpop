@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/weak_ptr.h"
-#include "chromeos/dbus/cryptohome_client.h"
+#include "chromeos/dbus/dbus_method_call_status.h"
 #include "content/public/browser/web_ui_message_handler.h"
 
 namespace base {
@@ -33,6 +33,8 @@ class CryptohomeWebUIHandler : public content::WebUIMessageHandler {
  private:
   // This method is called from JavaScript.
   void OnPageLoaded(const base::ListValue* args);
+
+  void DidGetNSSUtilInfoOnUIThread(bool is_tpm_token_ready);
 
   // Returns a callback to handle Cryptohome property values.
   BoolDBusMethodCallback GetCryptohomeBoolCallback(

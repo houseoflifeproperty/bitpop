@@ -10,23 +10,26 @@ from master import master_utils
 # automatically.
 # Note: don't include 'update scripts' since we can't do much about it when
 # it's failing and the tree is still technically fine.
-# TODO(glider): browser_tests and content_browsertests timeouts have become
-# annoying since the number of bots increased. Disable them until the failure
-# rate drops.
+# TODO(glider): browser_tests die unexpectedly on Mac ASan bots
+# (http://crbug.com/196533). Because there have been other problems with the
+# stability of browser_tests and content_browsertests on the ASan bot, let them
+#  not close the tree until the crash rate drops.
 categories_steps = {
-  '': ['update'],
+  '': ['update', 'runhooks'],
   'testers': [
     'base_unittests',
     #'browser_tests',
     'cacheinvalidation_unittests',
+    'cc_unittests',
     #'content_browsertests',
     'content_unittests',
     'courgette_unittests',
     'crypto_unittests',
     'device_unittests',
-    'googleurl_unittests',
-    'ipc_tests',
+    'gcm_unit_tests',
+    'gpu_unittests',
     'installer_util_unittests',
+    'ipc_tests',
     'jingle_unittests',
     'media_unittests',
     'mini_installer_test',
@@ -35,17 +38,21 @@ categories_steps = {
     'ppapi_unittests',
     'printing_unittests',
     'remoting_unittests',
+    'sandbox_linux_unittests',
     'sql_unittests',
-    'test_shell_tests',
+    'sync_unit_tests',
+    'ui_unittests',
     'unit_tests',
+    'url_unittests',
    ],
-  'compile': ['compile']
+  'compile': ['compile'],
+  'crosasantest': ['VMTest'],
 }
 
 exclusions = {
 }
 
-forgiving_steps = ['update_scripts', 'update']
+forgiving_steps = ['update_scripts', 'update', 'gclient_revert']
 
 def Update(config, active_master, c):
   c['status'].append(gatekeeper.GateKeeper(

@@ -22,7 +22,6 @@
 #include "native_client/src/untrusted/nacl/nacl_irt.h"
 #include "native_client/src/untrusted/nacl/tls.h"
 #include "native_client/src/untrusted/nacl/tls_params.h"
-#include "native_client/src/untrusted/pthread/futex.h"
 #include "native_client/src/untrusted/pthread/pthread.h"
 #include "native_client/src/untrusted/pthread/pthread_internal.h"
 #include "native_client/src/untrusted/pthread/pthread_types.h"
@@ -57,6 +56,14 @@ static const uint32_t kStackAlignment = 1;
 static const uint32_t kStackPadBelowAlign = 0;
 #endif
 
+typedef struct nc_thread_cleanup_handler {
+  struct nc_thread_cleanup_handler *previous;
+  void (*handler_function)(void *arg);
+  void *handler_arg;
+} nc_thread_cleanup_handler;
+
+static __thread nc_thread_cleanup_handler *__nc_cleanup_handlers = NULL;
+
 #define TDB_SIZE (sizeof(struct nc_combined_tdb))
 
 static inline char *align(uint32_t offset, uint32_t alignment) {
@@ -76,7 +83,7 @@ pthread_mutex_t  __nc_thread_management_lock;
  * except the main thread have terminated.
  */
 static pthread_cond_t __nc_last_thread_cond;
-static pthread_t __nc_initial_thread_id;
+pthread_t __nc_initial_thread_id;
 
 /* Number of threads currently running in this NaCl module. */
 int __nc_running_threads_counter = 1;
@@ -85,9 +92,6 @@ int __nc_running_threads_counter = 1;
 STAILQ_HEAD(tailhead, entry) __nc_thread_memory_blocks[2];
 /* We need a counter for each queue to keep track of number of blocks. */
 int __nc_memory_block_counter[2];
-
-#define NODE_TO_PAYLOAD(TlsNode) \
-  ((char *) (TlsNode) + sizeof(nc_thread_memory_block_t))
 
 /* Internal functions */
 
@@ -101,7 +105,8 @@ static inline nc_thread_descriptor_t *nc_get_tdb(void) {
    * a wrapper around __libnacl_irt_tls.tls_get() but we don't use
    * that here so that the IRT build can override the definition.
    */
-  return (void *) ((char *) __nacl_read_tp() + __nacl_tp_tdb_offset(TDB_SIZE));
+  return (void *) ((char *) __nacl_read_tp_inline()
+                   + __nacl_tp_tdb_offset(TDB_SIZE));
 }
 
 static void nc_thread_starter(void) {
@@ -111,6 +116,16 @@ static void nc_thread_starter(void) {
   g_is_irt_internal_thread = 1;
 #endif
   void *retval = tdb->start_func(tdb->state);
+
+  /*
+   * Free handler list to prevent memory leak in case function returns
+   * without calling pthread_cleanup_pop(), although doing that is unspecified
+   * behaviour.
+   */
+  while (NULL != __nc_cleanup_handlers) {
+    pthread_cleanup_pop(0);
+  }
+
   /* If the function returns, terminate the thread. */
   pthread_exit(retval);
   /* NOTREACHED */
@@ -299,8 +314,6 @@ void __pthread_initialize(void) {
   __nc_initial_thread_id = &tdb->basic_data;
 
   __nc_initialize_globals();
-
-  __nc_futex_init();
 }
 
 #endif
@@ -334,7 +347,8 @@ int pthread_create(pthread_t *thread_id,
     if (NULL == tls_node)
       break;
 
-    new_tp = __nacl_tls_initialize_memory(NODE_TO_PAYLOAD(tls_node), TDB_SIZE);
+    new_tp = __nacl_tls_initialize_memory(nc_memory_block_to_payload(tls_node),
+                                          TDB_SIZE);
 
     new_tdb = (nc_thread_descriptor_t *)
               ((char *) new_tp + __nacl_tp_tdb_offset(TDB_SIZE));
@@ -375,7 +389,7 @@ int pthread_create(pthread_t *thread_id,
       retval = EAGAIN;
       break;
     }
-    thread_stack = align((uint32_t) NODE_TO_PAYLOAD(stack_node),
+    thread_stack = align((uint32_t) nc_memory_block_to_payload(stack_node),
                          kStackAlignment);
     new_tdb->stack_node = stack_node;
 
@@ -463,6 +477,25 @@ static int wait_for_threads(void) {
   return 0;
 }
 
+void pthread_cleanup_push(void (*routine)(void *), void *arg) {
+  nc_thread_cleanup_handler *handler =
+      (nc_thread_cleanup_handler *)malloc(sizeof(*handler));
+  handler->handler_function = routine;
+  handler->handler_arg = arg;
+  handler->previous = __nc_cleanup_handlers;
+  __nc_cleanup_handlers = handler;
+}
+
+void pthread_cleanup_pop(int execute) {
+  if (NULL != __nc_cleanup_handlers) {
+    nc_thread_cleanup_handler *handler = __nc_cleanup_handlers;
+    __nc_cleanup_handlers = handler->previous;
+    if (execute)
+      handler->handler_function(handler->handler_arg);
+    free(handler);
+  }
+}
+
 void pthread_exit(void *retval) {
   /* Get all we need from the tdb before releasing it. */
   nc_thread_descriptor_t    *tdb = nc_get_tdb();
@@ -471,12 +504,15 @@ void pthread_exit(void *retval) {
   nc_basic_thread_data_t    *basic_data = tdb->basic_data;
   int                       joinable = tdb->joinable;
 
+  /* Call cleanup handlers. */
+  while (NULL != __nc_cleanup_handlers) {
+    pthread_cleanup_pop(1);
+  }
+
   /* Call the destruction functions for TSD. */
   __nc_tsd_exit();
 
   __newlib_thread_exit();
-
-  __nc_futex_thread_exit();
 
   if (__nc_initial_thread_id != basic_data) {
     pthread_mutex_lock(&__nc_thread_management_lock);

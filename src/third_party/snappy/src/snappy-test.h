@@ -47,7 +47,9 @@
 #include <sys/resource.h>
 #endif
 
+#ifdef HAVE_SYS_TIME_H
 #include <sys/time.h>
+#endif
 
 #ifdef HAVE_WINDOWS_H
 #define WIN32_LEAN_AND_MEAN
@@ -124,13 +126,23 @@ extern "C" {
 #endif
 
 namespace {
+
 namespace File {
   void Init() { }
+}  // namespace File
 
-  void ReadFileToStringOrDie(const char* filename, string* data) {
-    FILE* fp = fopen(filename, "rb");
+namespace file {
+  int Defaults() { }
+
+  class DummyStatus {
+   public:
+    void CheckSuccess() { }
+  };
+
+  DummyStatus GetContents(const string& filename, string* data, int unused) {
+    FILE* fp = fopen(filename.c_str(), "rb");
     if (fp == NULL) {
-      perror(filename);
+      perror(filename.c_str());
       exit(1);
     }
 
@@ -148,14 +160,12 @@ namespace File {
     fclose(fp);
   }
 
-  void ReadFileToStringOrDie(const string& filename, string* data) {
-    ReadFileToStringOrDie(filename.c_str(), data);
-  }
-
-  void WriteStringToFileOrDie(const string& str, const char* filename) {
-    FILE* fp = fopen(filename, "wb");
+  DummyStatus SetContents(const string& filename,
+                          const string& str,
+                          int unused) {
+    FILE* fp = fopen(filename.c_str(), "wb");
     if (fp == NULL) {
-      perror(filename);
+      perror(filename.c_str());
       exit(1);
     }
 
@@ -167,7 +177,8 @@ namespace File {
 
     fclose(fp);
   }
-}  // namespace File
+}  // namespace file
+
 }  // namespace
 
 namespace snappy {
@@ -185,6 +196,8 @@ void Test_SnappyCorruption_UnterminatedVarint();
 void Test_Snappy_ReadPastEndOfBuffer();
 void Test_Snappy_FindMatchLength();
 void Test_Snappy_FindMatchLengthRandom();
+
+string ReadTestDataFile(const string& base, size_t size_limit);
 
 string ReadTestDataFile(const string& base);
 
@@ -315,6 +328,7 @@ class Benchmark {
           (new Benchmark(#benchmark_name, benchmark_name))
 
 extern Benchmark* Benchmark_BM_UFlat;
+extern Benchmark* Benchmark_BM_UIOVec;
 extern Benchmark* Benchmark_BM_UValidate;
 extern Benchmark* Benchmark_BM_ZFlat;
 
@@ -465,6 +479,7 @@ static void RunSpecifiedBenchmarks() {
   fprintf(stderr, "---------------------------------------------------\n");
 
   snappy::Benchmark_BM_UFlat->Run();
+  snappy::Benchmark_BM_UIOVec->Run();
   snappy::Benchmark_BM_UValidate->Run();
   snappy::Benchmark_BM_ZFlat->Run();
 

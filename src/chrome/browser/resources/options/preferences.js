@@ -188,7 +188,7 @@ cr.define('options', function() {
           this.flattenMapAndDispatchEvent_(prefix + prefName + '.',
               dict[prefName]);
         } else {
-          var event = new cr.Event(prefix + prefName);
+          var event = new Event(prefix + prefName);
           this.registeredPreferences_[prefix + prefName].orig = dict[prefName];
           event.value = dict[prefName];
           this.dispatchEvent(event);
@@ -212,14 +212,13 @@ cr.define('options', function() {
       pref.type = type;
       pref.value = value;
 
-      var event = new cr.Event(name);
+      var event = new Event(name);
       // Decorate pref value as CoreOptionsHandler::CreateValueForPref() does.
-      event.value = {
-        value: value,
-        recommendedValue: pref.orig.recommendedValue,
-        disabled: pref.orig.disabled,
-        uncommitted: true,
-      };
+      event.value = {value: value, uncommitted: true};
+      if (pref.orig) {
+        event.value.recommendedValue = pref.orig.recommendedValue;
+        event.value.disabled = pref.orig.disabled;
+      }
       this.dispatchEvent(event);
     },
 
@@ -235,7 +234,7 @@ cr.define('options', function() {
       delete pref.type;
       delete pref.value;
 
-      var event = new cr.Event(name);
+      var event = new Event(name);
       // Decorate pref value as CoreOptionsHandler::CreateValueForPref() does.
       event.value = {
         value: pref.orig.recommendedValue,
@@ -301,7 +300,7 @@ cr.define('options', function() {
       delete pref.type;
       delete pref.value;
 
-      var event = new cr.Event(name);
+      var event = new Event(name);
       event.value = pref.orig;
       event.value.uncommitted = true;
       this.dispatchEvent(event);
@@ -323,7 +322,7 @@ cr.define('options', function() {
    * is stored in notification[1].
    */
   Preferences.prefsChangedCallback = function(notification) {
-    var event = new cr.Event(notification[0]);
+    var event = new Event(notification[0]);
     event.value = notification[1];
     prefs = Preferences.getInstance();
     prefs.registeredPreferences_[notification[0]] = {orig: notification[1]};

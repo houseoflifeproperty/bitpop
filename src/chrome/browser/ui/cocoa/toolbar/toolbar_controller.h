@@ -7,13 +7,13 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/prefs/public/pref_member.h"
+#include "base/prefs/pref_member.h"
 #import "chrome/browser/ui/cocoa/command_observer_bridge.h"
-#import "chrome/browser/ui/cocoa/tracking_area.h"
 #import "chrome/browser/ui/cocoa/url_drop_target.h"
 #import "chrome/browser/ui/cocoa/view_resizer.h"
+#import "ui/base/cocoa/tracking_area.h"
 
 @class AutocompleteTextField;
 @class AutocompleteTextFieldEditor;
@@ -27,7 +27,6 @@ class LocationBarViewMac;
 class Profile;
 @class ReloadButton;
 @class ToolbarButton;
-class ToolbarModel;
 @class WrenchMenuController;
 
 namespace content {
@@ -58,20 +57,20 @@ class NotificationBridge;
   IBOutlet BrowserActionsContainerView* browserActionsContainerView_;
 
  @private
-  ToolbarModel* toolbarModel_;  // weak, one per window
   CommandUpdater* commands_;  // weak, one per window
   Profile* profile_;  // weak, one per window
   Browser* browser_;  // weak, one per window
   scoped_ptr<CommandObserverBridge> commandObserver_;
   scoped_ptr<LocationBarViewMac> locationBarView_;
-  scoped_nsobject<AutocompleteTextFieldEditor> autocompleteTextFieldEditor_;
+  base::scoped_nsobject<AutocompleteTextFieldEditor>
+      autocompleteTextFieldEditor_;
   id<ViewResizer> resizeDelegate_;  // weak
-  scoped_nsobject<BackForwardMenuController> backMenuController_;
-  scoped_nsobject<BackForwardMenuController> forwardMenuController_;
-  scoped_nsobject<BrowserActionsController> browserActionsController_;
+  base::scoped_nsobject<BackForwardMenuController> backMenuController_;
+  base::scoped_nsobject<BackForwardMenuController> forwardMenuController_;
+  base::scoped_nsobject<BrowserActionsController> browserActionsController_;
 
   // Lazily-instantiated menu controller.
-  scoped_nsobject<WrenchMenuController> wrenchMenuController_;
+  base::scoped_nsobject<WrenchMenuController> wrenchMenuController_;
 
   // Used for monitoring the optional toolbar button prefs.
   scoped_ptr<ToolbarControllerInternal::NotificationBridge> notificationBridge_;
@@ -82,10 +81,10 @@ class NotificationBridge;
 
   // We have an extra retain in the locationBar_.
   // See comments in awakeFromNib for more info.
-  scoped_nsobject<AutocompleteTextField> locationBarRetainer_;
+  base::scoped_nsobject<AutocompleteTextField> locationBarRetainer_;
 
   // Tracking area for mouse enter/exit/moved in the toolbar.
-  ScopedCrTrackingArea trackingArea_;
+  ui::ScopedCrTrackingArea trackingArea_;
 
   // We retain/release the hover button since interaction with the
   // button may make it go away (e.g. delete menu option over a
@@ -97,12 +96,11 @@ class NotificationBridge;
 
 // Initialize the toolbar and register for command updates. The profile is
 // needed for initializing the location bar. The browser is needed for
-// initializing the back/forward menus.
-- (id)initWithModel:(ToolbarModel*)model
-           commands:(CommandUpdater*)commands
-            profile:(Profile*)profile
-            browser:(Browser*)browser
-     resizeDelegate:(id<ViewResizer>)resizeDelegate;
+// the toolbar model and back/forward menus.
+- (id)initWithCommands:(CommandUpdater*)commands
+               profile:(Profile*)profile
+               browser:(Browser*)browser
+        resizeDelegate:(id<ViewResizer>)resizeDelegate;
 
 // Get the C++ bridge object representing the location bar for this tab.
 - (LocationBarViewMac*)locationBarBridge;
@@ -116,15 +114,16 @@ class NotificationBridge;
 // Make the location bar the first responder, if possible.
 - (void)focusLocationBar:(BOOL)selectAll;
 
-// Updates the toolbar (and transitively the location bar) with the states of
-// the specified |tab|.  If |shouldRestore| is true, we're switching
-// (back?) to this tab and should restore any previous location bar state
-// (such as user editing) as well.
-- (void)updateToolbarWithContents:(content::WebContents*)tabForRestoring
-               shouldRestoreState:(BOOL)shouldRestore;
+// Forces the toolbar (and transitively the location bar) to update its current
+// state.  If |tab| is non-NULL, we're switching (back?) to this tab and should
+// restore any previous location bar state (such as user editing) as well.
+- (void)updateToolbarWithContents:(content::WebContents*)tab;
 
 // Sets whether or not the current page in the frontmost tab is bookmarked.
 - (void)setStarredState:(BOOL)isStarred;
+
+// Sets whether or not the current page is translated.
+- (void)setTranslateIconLit:(BOOL)on;
 
 // Happens when the zoom for the active tab changes, the active tab switches, or
 // a new tab or browser window is created. |canShowBubble| indicates if it is
@@ -146,6 +145,9 @@ class NotificationBridge;
 // associated window's coordinate system.
 - (NSPoint)bookmarkBubblePoint;
 
+// Point on the translate icon fot the Translate bubble.
+- (NSPoint)translateBubblePoint;
+
 // Returns the desired toolbar height for the given compression factor.
 - (CGFloat)desiredHeightForCompression:(CGFloat)compressByHeight;
 
@@ -162,6 +164,12 @@ class NotificationBridge;
 // Returns the wrench button.
 - (NSView*)wrenchButton;
 
+// Activates the page action for the extension that has the given id.
+- (void)activatePageAction:(const std::string&)extension_id;
+
+// Activates the browser action for the extension that has the given id.
+- (void)activateBrowserAction:(const std::string&)extension_id;
+
 @end
 
 // A set of private methods used by subclasses. Do not call these directly
@@ -169,12 +177,11 @@ class NotificationBridge;
 @interface ToolbarController(ProtectedMethods)
 // Designated initializer which takes a nib name in order to allow subclasses
 // to load a different nib file.
-- (id)initWithModel:(ToolbarModel*)model
-           commands:(CommandUpdater*)commands
-            profile:(Profile*)profile
-            browser:(Browser*)browser
-     resizeDelegate:(id<ViewResizer>)resizeDelegate
-       nibFileNamed:(NSString*)nibName;
+- (id)initWithCommands:(CommandUpdater*)commands
+               profile:(Profile*)profile
+               browser:(Browser*)browser
+        resizeDelegate:(id<ViewResizer>)resizeDelegate
+          nibFileNamed:(NSString*)nibName;
 @end
 
 // A set of private methods used by tests, in the absence of "friends" in ObjC.

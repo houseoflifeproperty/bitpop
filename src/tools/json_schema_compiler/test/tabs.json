@@ -1,6 +1,7 @@
 [
   {
     "namespace": "tabs",
+    "description": "The tabs API.",
     "types": [
       {
         "id": "Tab",
@@ -63,7 +64,7 @@
         "name": "connect",
         "nocompile": true,
         "type": "function",
-        "description": "Connects to the content script(s) in the specified tab. The <a href='extension.html#event-onConnect'>chrome.extension.onConnect</a> event is fired in each content script running in the specified tab for the current extension. For more details, see <a href='content_scripts.html#messaging'>Content Script Messaging</a>.",
+        "description": "Connects to the content script(s) in the specified tab. The <a href='extension.html#event-onConnect'>chrome.runtime.onConnect</a> event is fired in each content script running in the specified tab for the current extension. For more details, see <a href='content_scripts.html#messaging'>Content Script Messaging</a>.",
         "parameters": [
           {
             "type": "integer",
@@ -107,7 +108,7 @@
               {
                 "name": "response",
                 "type": "any",
-                "description": "The JSON response object sent by the handler of the request. If an error occurs while connecting to the specified tab, the callback will be called with no arguments and <a href='extension.html#property-lastError'>chrome.extension.lastError</a> will be set to the error message."
+                "description": "The JSON response object sent by the handler of the request. If an error occurs while connecting to the specified tab, the callback will be called with no arguments and <a href='extension.html#property-lastError'>chrome.runtime.lastError</a> will be set to the error message."
               }
             ]
           }
@@ -490,7 +491,7 @@
       {
         "name": "captureVisibleTab",
         "type": "function",
-        "description": "Captures the visible area of the currently active tab in the specified window. You must have <a href='manifest.html#permissions'>host permission</a> for the URL displayed by the tab.",
+        "description": "Captures the visible area of the currently active tab in the specified window. You must have <a href='manifest.html#permissions'>&lt;all_urls&gt;</a> permission to use this method.",
         "parameters": [
           {
             "type": "integer",

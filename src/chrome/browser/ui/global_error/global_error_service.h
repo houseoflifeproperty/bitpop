@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 
 class GlobalError;
 class Profile;
@@ -18,7 +18,7 @@ class Profile;
 // error should be shown using this service. Examples of global errors are:
 //   - the previous session crashed for a given profile.
 //   - a sync error occurred
-class GlobalErrorService : public ProfileKeyedService {
+class GlobalErrorService : public KeyedService {
  public:
   // Type used to represent the list of currently active errors.
   typedef std::vector<GlobalError*> GlobalErrorList;
@@ -42,9 +42,9 @@ class GlobalErrorService : public ProfileKeyedService {
   // This class maintains ownership of the returned error.
   GlobalError* GetGlobalErrorByMenuItemCommandID(int command_id) const;
 
-  // Gets the badge icon resource ID for the first error with a badge.
-  // Returns 0 if no such error exists.
-  int GetFirstBadgeResourceID() const;
+  // Gets the highest severity error that has a wrench menu item.
+  // Returns NULL if no such error exists.
+  GlobalError* GetHighestSeverityGlobalErrorWithWrenchMenuItem() const;
 
   // Gets the first error that has a bubble view which hasn't been shown yet.
   // Returns NULL if no such error exists.

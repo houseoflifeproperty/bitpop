@@ -45,18 +45,17 @@
 #include "net/cookies/parsed_cookie.h"
 
 #include "base/logging.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 
 namespace {
 
 const char kPathTokenName[] = "path";
 const char kDomainTokenName[] = "domain";
-const char kMACKeyTokenName[] = "mac-key";
-const char kMACAlgorithmTokenName[] = "mac-algorithm";
 const char kExpiresTokenName[] = "expires";
 const char kMaxAgeTokenName[] = "max-age";
 const char kSecureTokenName[] = "secure";
 const char kHttpOnlyTokenName[] = "httponly";
+const char kPriorityTokenName[] = "priority";
 
 const char kTerminator[] = "\n\r\0";
 const int kTerminatorLen = sizeof(kTerminator) - 1;
@@ -137,11 +136,15 @@ bool IsValidCookieValue(const std::string& value) {
   return true;
 }
 
+bool IsControlCharacter(unsigned char c) {
+    return (c >= 0) && (c <= 31);
+}
+
 bool IsValidCookieAttributeValue(const std::string& value) {
   // The greatest common denominator of cookie attribute values is
   // <any CHAR except CTLs or ";"> according to RFC 6265.
   for (std::string::const_iterator i = value.begin(); i != value.end(); ++i) {
-    if ((*i >= 0 && *i <= 31) || *i == ';')
+    if (IsControlCharacter(*i) || *i == ';')
       return false;
   }
   return true;
@@ -154,12 +157,11 @@ namespace net {
 ParsedCookie::ParsedCookie(const std::string& cookie_line)
     : path_index_(0),
       domain_index_(0),
-      mac_key_index_(0),
-      mac_algorithm_index_(0),
       expires_index_(0),
       maxage_index_(0),
       secure_index_(0),
-      httponly_index_(0) {
+      httponly_index_(0),
+      priority_index_(0) {
 
   if (cookie_line.size() > kMaxCookieSize) {
     VLOG(1) << "Not parsing cookie, too large: " << cookie_line.size();
@@ -176,6 +178,11 @@ ParsedCookie::~ParsedCookie() {
 
 bool ParsedCookie::IsValid() const {
   return !pairs_.empty();
+}
+
+CookiePriority ParsedCookie::Priority() const {
+  return (priority_index_ == 0) ? COOKIE_PRIORITY_DEFAULT :
+      StringToCookiePriority(pairs_[priority_index_].second);
 }
 
 bool ParsedCookie::SetName(const std::string& name) {
@@ -204,15 +211,6 @@ bool ParsedCookie::SetDomain(const std::string& domain) {
   return SetString(&domain_index_, kDomainTokenName, domain);
 }
 
-bool ParsedCookie::SetMACKey(const std::string& mac_key) {
-  return SetString(&mac_key_index_, kMACKeyTokenName, mac_key);
-}
-
-bool ParsedCookie::SetMACAlgorithm(const std::string& mac_algorithm) {
-  return SetString(&mac_algorithm_index_, kMACAlgorithmTokenName,
-      mac_algorithm);
-}
-
 bool ParsedCookie::SetExpires(const std::string& expires) {
   return SetString(&expires_index_, kExpiresTokenName, expires);
 }
@@ -227,6 +225,10 @@ bool ParsedCookie::SetIsSecure(bool is_secure) {
 
 bool ParsedCookie::SetIsHttpOnly(bool is_http_only) {
   return SetBool(&httponly_index_, kHttpOnlyTokenName, is_http_only);
+}
+
+bool ParsedCookie::SetPriority(const std::string& priority) {
+  return SetString(&priority_index_, kPriorityTokenName, priority);
 }
 
 std::string ParsedCookie::ToCookieLine() const {
@@ -383,12 +385,21 @@ void ParsedCookie::ParseTokenValuePairs(const std::string& cookie_line) {
     // OK, now try to parse a value.
     std::string::const_iterator value_start, value_end;
     ParseValue(&it, end, &value_start, &value_end);
+
     // OK, we're finished with a Token/Value.
     pair.second = std::string(value_start, value_end);
 
     // From RFC2109: "Attributes (names) (attr) are case-insensitive."
     if (pair_num != 0)
       StringToLowerASCII(&pair.first);
+    // Ignore Set-Cookie directives contaning control characters. See
+    // http://crbug.com/238041.
+    if (!IsValidCookieAttributeValue(pair.first) ||
+        !IsValidCookieAttributeValue(pair.second)) {
+      pairs_.clear();
+      break;
+    }
+
     pairs_.push_back(pair);
 
     // We've processed a token/value pair, we're either at the end of
@@ -405,10 +416,6 @@ void ParsedCookie::SetupAttributes() {
       path_index_ = i;
     } else if (pairs_[i].first == kDomainTokenName) {
       domain_index_ = i;
-    } else if (pairs_[i].first == kMACKeyTokenName) {
-      mac_key_index_ = i;
-    } else if (pairs_[i].first == kMACAlgorithmTokenName) {
-      mac_algorithm_index_ = i;
     } else if (pairs_[i].first == kExpiresTokenName) {
       expires_index_ = i;
     } else if (pairs_[i].first == kMaxAgeTokenName) {
@@ -417,6 +424,8 @@ void ParsedCookie::SetupAttributes() {
       secure_index_ = i;
     } else if (pairs_[i].first == kHttpOnlyTokenName) {
       httponly_index_ = i;
+    } else if (pairs_[i].first == kPriorityTokenName) {
+      priority_index_ = i;
     } else {
       /* some attribute we don't know or don't care about. */
     }
@@ -441,14 +450,14 @@ bool ParsedCookie::SetBool(size_t* index,
     ClearAttributePair(*index);
     return true;
   } else {
-    return SetAttributePair(index, key, "");
+    return SetAttributePair(index, key, std::string());
   }
 }
 
 bool ParsedCookie::SetAttributePair(size_t* index,
                                     const std::string& key,
                                     const std::string& value) {
-  if (!IsValidToken(key) || !IsValidCookieAttributeValue(value))
+  if (!(IsValidToken(key) && IsValidCookieAttributeValue(value)))
     return false;
   if (!IsValid())
     return false;
@@ -468,9 +477,9 @@ void ParsedCookie::ClearAttributePair(size_t index) {
   if (index == 0)
     return;
 
-  size_t* indexes[] = {&path_index_, &domain_index_, &mac_key_index_,
-      &mac_algorithm_index_, &expires_index_, &maxage_index_, &secure_index_,
-      &httponly_index_};
+  size_t* indexes[] = { &path_index_, &domain_index_, &expires_index_,
+                        &maxage_index_, &secure_index_, &httponly_index_,
+                        &priority_index_ };
   for (size_t i = 0; i < arraysize(indexes); ++i) {
     if (*indexes[i] == index)
       *indexes[i] = 0;

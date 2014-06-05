@@ -9,7 +9,6 @@
 #include "sync/notifier/fake_invalidation_handler.h"
 #include "sync/notifier/invalidator_registrar.h"
 #include "sync/notifier/invalidator_test_template.h"
-#include "sync/notifier/object_id_invalidation_map_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace syncer {
@@ -47,21 +46,13 @@ class RegistrarInvalidator : public Invalidator {
     return registrar_.GetInvalidatorState();
   }
 
-  virtual void SetUniqueId(const std::string& unique_id) OVERRIDE {
-    // Do nothing.
-  }
-
-  virtual void SetStateDeprecated(const std::string& state) OVERRIDE {
-    // Do nothing.
-  }
-
   virtual void UpdateCredentials(
       const std::string& email, const std::string& token) OVERRIDE {
     // Do nothing.
   }
 
-  virtual void SendInvalidation(
-      const ObjectIdInvalidationMap& invalidation_map) OVERRIDE {
+  virtual void RequestDetailedStatus(
+      base::Callback<void(const base::DictionaryValue&)> call) const OVERRIDE {
     // Do nothing.
   }
 
@@ -80,6 +71,7 @@ class RegistrarInvalidatorTestDelegate {
   }
 
   void CreateInvalidator(
+      const std::string& invalidator_client_id,
       const std::string& initial_state,
       const base::WeakPtr<InvalidationStateTracker>&
           invalidation_state_tracker) {
@@ -104,14 +96,9 @@ class RegistrarInvalidatorTestDelegate {
   }
 
   void TriggerOnIncomingInvalidation(
-      const ObjectIdInvalidationMap& invalidation_map,
-      IncomingInvalidationSource source) {
+      const ObjectIdInvalidationMap& invalidation_map) {
     invalidator_->GetRegistrar()->DispatchInvalidationsToHandlers(
-        invalidation_map, source);
-  }
-
-  static bool InvalidatorHandlesDeprecatedState() {
-    return false;
+        invalidation_map);
   }
 
  private:
@@ -130,6 +117,7 @@ class InvalidatorRegistrarTest : public testing::Test {};
 // When we expect a death via CHECK(), we can't match against the
 // CHECK() message since they are removed in official builds.
 
+#if GTEST_HAS_DEATH_TEST
 // Having registered handlers on destruction should cause a CHECK.
 TEST_F(InvalidatorRegistrarTest, RegisteredHandlerOnDestruction) {
   scoped_ptr<InvalidatorRegistrar> registrar(new InvalidatorRegistrar());
@@ -168,6 +156,7 @@ TEST_F(InvalidatorRegistrarTest, MultipleRegistration) {
   registrar.UnregisterHandler(&handler2);
   registrar.UnregisterHandler(&handler1);
 }
+#endif  // GTEST_HAS_DEATH_TEST
 
 }  // namespace
 

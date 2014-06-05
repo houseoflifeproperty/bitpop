@@ -23,46 +23,35 @@
          */
 
         .text
-/*
- * The MacOS assembler has a macro facility that is pretty close
- * to GNU as macros, but not quite the same.
- */
-#if NACL_OSX || defined(__clang__)
-# define MACRO(name)    .macro name
-# define ENDMACRO       .endmacro
-# define MACROENTRY     DEFINE_GLOBAL_HIDDEN_IDENTIFIER($0):
-# define MACROARG1      $0
-# define MACROARG2      $1
-#else
-# define MACRO(name)    .macro name arg1, arg2=0
-# define ENDMACRO       .endm
-# define MACROENTRY     DEFINE_GLOBAL_HIDDEN_IDENTIFIER(\arg1):
-# define MACROARG1      \arg1
-# define MACROARG2      \arg2
-#endif
 
-
-MACRO(switcher)
-MACROENTRY
+.macro switcher arg1, arg2
+DEFINE_GLOBAL_HIDDEN_FUNCTION(\arg1):
 #if NACL_WINDOWS
-        /* if Windows, 1st param is already in %rcx, not %rdi */
+        /* On Windows, 1st param is in %rcx. */
+        mov     %rcx, %r11
 #elif NACL_LINUX || NACL_OSX
-        /* elif Linux/OSX, 1st param is already in %rdi. */
-        mov     %rdi, %rcx
+        /* On Linux/OSX, 1st param is in %rdi. */
+        mov     %rdi, %r11
 #else
 # error "What OS/compiler is the service runtime being compiled with?"
 #endif
 
-        movq    NACL_THREAD_CONTEXT_OFFSET_RBX(%rcx), %rbx
-        movq    NACL_THREAD_CONTEXT_OFFSET_RBP(%rcx), %rbp
-        movq    NACL_THREAD_CONTEXT_OFFSET_R12(%rcx), %r12
-        movq    NACL_THREAD_CONTEXT_OFFSET_R13(%rcx), %r13
-        movq    NACL_THREAD_CONTEXT_OFFSET_R14(%rcx), %r14
-        movq    NACL_THREAD_CONTEXT_OFFSET_R15(%rcx), %r15
+        /*
+         * TODO(mcgrathr): Perhaps drop callee-saved registers (these six)
+         * from this restore and instead just clear them at startup
+         * (i.e. have NaClStartThreadInApp call a NaClStartSwitch that
+         * clears them and calls NaClSwitch).
+         */
+        movq    NACL_THREAD_CONTEXT_OFFSET_RBX(%r11), %rbx
+        movq    NACL_THREAD_CONTEXT_OFFSET_RBP(%r11), %rbp
+        movq    NACL_THREAD_CONTEXT_OFFSET_R12(%r11), %r12
+        movq    NACL_THREAD_CONTEXT_OFFSET_R13(%r11), %r13
+        movq    NACL_THREAD_CONTEXT_OFFSET_R14(%r11), %r14
+        movq    NACL_THREAD_CONTEXT_OFFSET_R15(%r11), %r15
 
         /* there is no springboard for x86_64 */
-        movq    NACL_THREAD_CONTEXT_OFFSET_RSP(%rcx), %rsp
-        movq    NACL_THREAD_CONTEXT_OFFSET_SYSRET(%rcx), %rax
+        movq    NACL_THREAD_CONTEXT_OFFSET_RSP(%r11), %rsp
+        movq    NACL_THREAD_CONTEXT_OFFSET_SYSRET(%r11), %rax
 
         /*
          * %rdi is the first argument in the user calling convention.
@@ -83,55 +72,62 @@ MACROENTRY
          * values.
          */
         xorl    %edx, %edx
+        movl    %edx, %ecx
         movl    %edx, %esi
         movq    %rdx, %r8
         movq    %rdx, %r9
         movq    %rdx, %r10
-        movq    %rdx, %r11
 
         /*
-         * Clear the x87 state.  Then restore the untrusted code's control word.
+         * Clear the x87, MMX, and SSE state.
+         * Then restore the untrusted code's x87 and SSE control words.
+         * We could roll them together by storing a 512-byte per-thread
+         * buffer and setting the control words in that in NaClSyscallSeg.
+         * But that would bloat struct NaClThreadContext by 504 bytes or so,
+         * and the performance cost of these two instructions after fxrstor
+         * seems to be immeasurably small.
          */
-        fninit
-        fldcw   NACL_THREAD_CONTEXT_OFFSET_FCW(%rcx)
+        fxrstor fxrstor_default_state(%rip)
+        fldcw   NACL_THREAD_CONTEXT_OFFSET_FCW(%r11)
+        ldmxcsr NACL_THREAD_CONTEXT_OFFSET_MXCSR(%r11)
 
+.if \arg2
         /*
-         * Clear the vector registers.
-         */
-.if MACROARG2
-        /*
-         * This is "vzeroall".
+         * Clear the AVX state that the "fxrstor" instruction doesn't cover.
+         * We could roll them together by using the "xrstor" instruction, but
+         * that has a complicated protocol and this seems to perform fine.
+         *
+         * This is "vzeroupper".
          * Some assembler versions don't know the AVX instructions.
          */
-        .byte   0xc5, 0xfc, 0x77
-.else
-        xorps   %xmm0, %xmm0
-        xorps   %xmm1, %xmm1
-        xorps   %xmm2, %xmm2
-        xorps   %xmm3, %xmm3
-        xorps   %xmm4, %xmm4
-        xorps   %xmm5, %xmm5
-        xorps   %xmm6, %xmm6
-        xorps   %xmm7, %xmm7
-        xorps   %xmm8, %xmm8
-        xorps   %xmm9, %xmm9
-        xorps   %xmm10, %xmm10
-        xorps   %xmm11, %xmm11
-        xorps   %xmm12, %xmm12
-        xorps   %xmm13, %xmm13
-        xorps   %xmm14, %xmm14
-        xorps   %xmm15, %xmm15
+        .byte   0xc5, 0xf8, 0x77
 .endif
 
         /*
-         * Load the return address into %rcx rather than doing
-         * "jmp *0x88(%rcx)" so that we do not leak the address of the
+         * Load the return address into %r11 rather than doing
+         * "jmp *XXX(%r11)" so that we do not leak the address of the
          * struct NaClThreadContext to untrusted code.  Knowing this
          * address would make bugs in the sandbox easier to exploit.
          */
-        movq    NACL_THREAD_CONTEXT_OFFSET_NEW_PROG_CTR(%rcx), %rcx
-        jmp     *%rcx
-ENDMACRO
+        movq    NACL_THREAD_CONTEXT_OFFSET_NEW_PROG_CTR(%r11), %r11
+        jmp     *%r11
+.endm
 
         switcher NaClSwitchSSE, 0
         switcher NaClSwitchAVX, 1
+
+
+        NACL_RODATA
+        /*
+         * This is the memory block for "fxrstor" to read.  The only
+         * contents that matter are the fcw and mxcsr words, which we
+         * store separately.  The mxcsr_mask word is ignored by the
+         * hardware, so there is no need to get the hardware-supplied
+         * value for that.  The hardware requires that this address be
+         * aligned to 16 bytes.  Align it further to 64 bytes because
+         * that is the usual size of a cache line; this might help
+         * performance and is very unlikely to hurt it.
+         */
+        .balign 64
+fxrstor_default_state:
+        .space 512

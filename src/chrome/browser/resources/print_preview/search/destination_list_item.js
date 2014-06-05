@@ -11,10 +11,11 @@ cr.define('print_preview', function() {
    *     events to.
    * @param {!print_preview.Destination} destination Destination data object to
    *     render.
+   * @param {RegExp} query Active filter query.
    * @constructor
    * @extends {print_preview.Component}
    */
-  function DestinationListItem(eventTarget, destination) {
+  function DestinationListItem(eventTarget, destination, query) {
     print_preview.Component.call(this);
 
     /**
@@ -32,6 +33,13 @@ cr.define('print_preview', function() {
     this.destination_ = destination;
 
     /**
+     * Active filter query text.
+     * @type {RegExp}
+     * @private
+     */
+    this.query_ = query;
+
+    /**
      * FedEx terms-of-service widget or {@code null} if this list item does not
      * render the FedEx Office print destination.
      * @type {print_preview.FedexTos}
@@ -46,7 +54,9 @@ cr.define('print_preview', function() {
    */
   DestinationListItem.EventType = {
     // Dispatched when the list item is activated.
-    SELECT: 'print_preview.DestinationListItem.SELECT'
+    SELECT: 'print_preview.DestinationListItem.SELECT',
+    REGISTER_PROMO_CLICKED:
+        'print_preview.DestinationListItem.REGISTER_PROMO_CLICKED'
   };
 
   /**
@@ -74,10 +84,32 @@ cr.define('print_preview', function() {
 
       var nameEl = this.getElement().getElementsByClassName(
           DestinationListItem.Classes_.NAME)[0];
-      nameEl.textContent = this.destination_.displayName;
-      nameEl.title = this.destination_.displayName;
+      var textContent = this.destination_.displayName;
+      if (this.query_) {
+        // When search query is specified, make it obvious why the particular
+        // printer made it to the list. Display name is always visible, even if
+        // it does not match the search query.
+        this.addTextWithHighlight_(nameEl, textContent);
+        // Show the first matching property.
+        this.destination_.extraPropertiesToMatch.some(function(property) {
+          if (property.match(this.query_)) {
+            var hintSpan = document.createElement('span');
+            hintSpan.className = 'search-hint';
+            nameEl.appendChild(hintSpan);
+            this.addTextWithHighlight_(hintSpan, property);
+            // Add the same property to the element title.
+            textContent += ' (' + property + ')';
+            return true;
+          }
+        }, this);
+      } else {
+        // Show just the display name and nothing else to lessen visual clutter.
+        nameEl.textContent = textContent;
+      }
+      nameEl.title = textContent;
 
       this.initializeOfflineStatusElement_();
+      this.initializeRegistrationPromoElement_();
     },
 
     /** @override */
@@ -92,25 +124,47 @@ cr.define('print_preview', function() {
      * @private
      */
     initializeOfflineStatusElement_: function() {
-      if (arrayContains([print_preview.Destination.ConnectionStatus.OFFLINE,
-                         print_preview.Destination.ConnectionStatus.DORMANT],
-                        this.destination_.connectionStatus)) {
+      if (this.destination_.isOffline) {
         this.getElement().classList.add(DestinationListItem.Classes_.STALE);
-        var offlineDurationMs = Date.now() - this.destination_.lastAccessTime;
-        var offlineMessageId;
-        if (offlineDurationMs > 31622400000.0) { // One year.
-          offlineMessageId = 'offlineForYear';
-        } else if (offlineDurationMs > 2678400000.0) { // One month.
-          offlineMessageId = 'offlineForMonth';
-        } else if (offlineDurationMs > 604800000.0) { // One week.
-          offlineMessageId = 'offlineForWeek';
-        } else {
-          offlineMessageId = 'offline';
-        }
-        var offlineStatusEl = this.getElement().querySelector(
-            '.offline-status');
-        offlineStatusEl.textContent = localStrings.getString(offlineMessageId);
+        var offlineStatusEl = this.getChildElement('.offline-status');
+        offlineStatusEl.textContent = this.destination_.offlineStatusText;
         setIsVisible(offlineStatusEl, true);
+      }
+    },
+
+    /**
+     * Initialize registration promo element for Privet unregistered printers.
+     */
+    initializeRegistrationPromoElement_: function() {
+      if (this.destination_.connectionStatus ==
+          print_preview.Destination.ConnectionStatus.UNREGISTERED) {
+        var registerBtnEl = this.getChildElement('.register-promo-button');
+        registerBtnEl.addEventListener('click',
+                                       this.onRegisterPromoClicked_.bind(this));
+
+        var registerPromoEl = this.getChildElement('.register-promo');
+        setIsVisible(registerPromoEl, true);
+      }
+    },
+
+    /**
+     * Adds text to parent element wrapping search query matches in highlighted
+     * spans.
+     * @param {!Element} parent Element to build the text in.
+     * @param {string} text The text string to highlight segments in.
+     * @private
+     */
+    addTextWithHighlight_: function(parent, text) {
+      var sections = text.split(this.query_);
+      for (var i = 0; i < sections.length; ++i) {
+        if (i % 2 == 0) {
+          parent.appendChild(document.createTextNode(sections[i]));
+        } else {
+          var span = document.createElement('span');
+          span.className = 'destination-list-item-query-highlight';
+          span.textContent = sections[i];
+          parent.appendChild(span);
+        }
       }
     },
 
@@ -132,8 +186,9 @@ cr.define('print_preview', function() {
               this.onTosAgree_.bind(this));
         }
         this.fedexTos_.setIsVisible(true);
-      } else {
-        var selectEvt = new cr.Event(DestinationListItem.EventType.SELECT);
+      } else if (this.destination_.connectionStatus !=
+                     print_preview.Destination.ConnectionStatus.UNREGISTERED) {
+        var selectEvt = new Event(DestinationListItem.EventType.SELECT);
         selectEvt.destination = this.destination_;
         this.eventTarget_.dispatchEvent(selectEvt);
       }
@@ -145,9 +200,20 @@ cr.define('print_preview', function() {
      * @private
      */
     onTosAgree_: function() {
-      var selectEvt = new cr.Event(DestinationListItem.EventType.SELECT);
+      var selectEvt = new Event(DestinationListItem.EventType.SELECT);
       selectEvt.destination = this.destination_;
       this.eventTarget_.dispatchEvent(selectEvt);
+    },
+
+    /**
+     * Called when the registration promo is clicked.
+     * @private
+     */
+    onRegisterPromoClicked_: function() {
+      var promoClickedEvent = new Event(
+          DestinationListItem.EventType.REGISTER_PROMO_CLICKED);
+      promoClickedEvent.destination = this.destination_;
+      this.eventTarget_.dispatchEvent(promoClickedEvent);
     }
   };
 

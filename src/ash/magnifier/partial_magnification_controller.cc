@@ -6,15 +6,16 @@
 
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
-#include "ui/aura/root_window.h"
-#include "ui/views/corewm/compound_event_filter.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_property.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/gfx/screen.h"
 #include "ui/compositor/layer.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
+#include "ui/wm/core/compound_event_filter.h"
 
 namespace {
 
@@ -79,7 +80,7 @@ void PartialMagnificationController::SetEnabled(bool enabled) {
 void PartialMagnificationController::OnMouseEvent(ui::MouseEvent* event) {
   if (IsPartialMagnified() && event->type() == ui::ET_MOUSE_MOVED) {
     aura::Window* target = static_cast<aura::Window*>(event->target());
-    aura::RootWindow* current_root = target->GetRootWindow();
+    aura::Window* current_root = target->GetRootWindow();
     // TODO(zork): Handle the case where the event is captured on a different
     // display, such as when a menu is opened.
     gfx::Rect root_bounds = current_root->bounds();
@@ -99,12 +100,12 @@ void PartialMagnificationController::OnWindowDestroying(
     aura::Window* window) {
   CloseMagnifierWindow();
 
-  aura::RootWindow* new_root_window = GetCurrentRootWindow();
+  aura::Window* new_root_window = GetCurrentRootWindow();
   if (new_root_window != window)
     SwitchTargetRootWindow(new_root_window);
 }
 
-void PartialMagnificationController::OnWidgetClosing(
+void PartialMagnificationController::OnWidgetDestroying(
     views::Widget* widget) {
   DCHECK_EQ(widget, zoom_widget_);
   RemoveZoomWidgetObservers();
@@ -131,20 +132,21 @@ void PartialMagnificationController::CreateMagnifierWindow() {
   if (zoom_widget_)
     return;
 
-  aura::RootWindow* root_window = GetCurrentRootWindow();
+  aura::Window* root_window = GetCurrentRootWindow();
   if (!root_window)
     return;
 
   root_window->AddObserver(this);
 
-  gfx::Point mouse(root_window->GetLastMouseLocationInRoot());
+  gfx::Point mouse(
+      root_window->GetHost()->dispatcher()->GetLastMouseLocationInRoot());
 
   zoom_widget_ = new views::Widget;
   views::Widget::InitParams params(
       views::Widget::InitParams::TYPE_WINDOW_FRAMELESS);
   params.can_activate = false;
   params.accept_events = false;
-  params.transparent = true;
+  params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   params.parent = root_window;
   zoom_widget_->Init(params);
   zoom_widget_->SetBounds(gfx::Rect(mouse.x() - kMagnifierWidth / 2,
@@ -161,8 +163,6 @@ void PartialMagnificationController::CreateMagnifierWindow() {
                 kMagnifierWidth,
                 kMagnifierHeight));
   zoom_widget_->GetNativeView()->layer()->SetBackgroundZoom(
-      (kMagnifierWidth - (kMagnifierWidth / scale_)) / 2,
-      (kMagnifierHeight - (kMagnifierHeight / scale_)) / 2,
       scale_,
       kZoomInset);
 
@@ -180,14 +180,14 @@ void PartialMagnificationController::CloseMagnifierWindow() {
 void PartialMagnificationController::RemoveZoomWidgetObservers() {
   DCHECK(zoom_widget_);
   zoom_widget_->RemoveObserver(this);
-  aura::RootWindow* root_window =
+  aura::Window* root_window =
       zoom_widget_->GetNativeView()->GetRootWindow();
   DCHECK(root_window);
   root_window->RemoveObserver(this);
 }
 
 void PartialMagnificationController::SwitchTargetRootWindow(
-    aura::RootWindow* new_root_window) {
+    aura::Window* new_root_window) {
   if (zoom_widget_ &&
       new_root_window == zoom_widget_->GetNativeView()->GetRootWindow())
     return;
@@ -198,13 +198,13 @@ void PartialMagnificationController::SwitchTargetRootWindow(
   SetScale(GetScale());
 }
 
-aura::RootWindow* PartialMagnificationController::GetCurrentRootWindow() {
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
-  for (Shell::RootWindowList::const_iterator iter = root_windows.begin();
+aura::Window* PartialMagnificationController::GetCurrentRootWindow() {
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
+  for (aura::Window::Windows::const_iterator iter = root_windows.begin();
        iter != root_windows.end(); ++iter) {
-    aura::RootWindow* root_window = *iter;
+    aura::Window* root_window = *iter;
     if (root_window->ContainsPointInRoot(
-            root_window->GetLastMouseLocationInRoot()))
+            root_window->GetHost()->dispatcher()->GetLastMouseLocationInRoot()))
       return root_window;
   }
   return NULL;

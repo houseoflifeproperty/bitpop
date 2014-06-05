@@ -1,0 +1,53 @@
+[
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/recipe_modules/gsutil/resources/gsutil_wrapper.py",
+      "[DEPOT_TOOLS]/third_party/gsutil/gsutil",
+      "cp",
+      "[SLAVE_BUILD]/boom",
+      "gs://chromium-recipe-test/some/random/path/to/boom"
+    ],
+    "name": "gsutil upload",
+    "~followup_annotations": [
+      "@@@STEP_LINK@gsutil.upload@https://storage.cloud.google.com/chromium-recipe-test/some/random/path/to/boom@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/recipe_modules/gsutil/resources/gsutil_wrapper.py",
+      "[DEPOT_TOOLS]/third_party/gsutil/gsutil",
+      "cp",
+      "gs://chromium-recipe-test/some/random/path/**",
+      "gs://chromium-recipe-test/staging"
+    ],
+    "name": "gsutil cp"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/recipe_modules/gsutil/resources/gsutil_wrapper.py",
+      "[DEPOT_TOOLS]/third_party/gsutil/gsutil",
+      "cp",
+      "http://storage.cloud.google.com/chromium-recipe-test/some/random/path/to/boom",
+      "[SLAVE_BUILD]/boom"
+    ],
+    "name": "gsutil gsutil download url"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/recipe_modules/gsutil/resources/gsutil_wrapper.py",
+      "[DEPOT_TOOLS]/third_party/gsutil/gsutil",
+      "cp",
+      "gs://chromium-recipe-test/staging/to/boom",
+      "[SLAVE_BUILD]/erang"
+    ],
+    "name": "gsutil download"
+  }
+]

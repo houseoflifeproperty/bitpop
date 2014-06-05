@@ -16,21 +16,12 @@ cr.define('print_preview.ticket_items', function() {
    * @extends {print_preview.ticket_items.TicketItem}
    */
   function FitToPage(documentInfo, destinationStore) {
-    print_preview.ticket_items.TicketItem.call(this);
-
-    /**
-     * Information about the document to print.
-     * @type {!print_preview.DocumentInfo}
-     * @private
-     */
-    this.documentInfo_ = documentInfo;
-
-    /**
-     * Used to determine whether fit to page should be available.
-     * @type {!print_preview.DestinationStore}
-     * @private
-     */
-    this.destinationStore_ = destinationStore;
+    print_preview.ticket_items.TicketItem.call(
+        this,
+        null /*appState*/,
+        null /*field*/,
+        destinationStore,
+        documentInfo);
   };
 
   FitToPage.prototype = {
@@ -43,21 +34,21 @@ cr.define('print_preview.ticket_items', function() {
 
     /** @override */
     isCapabilityAvailable: function() {
-      return !this.documentInfo_.isModifiable &&
-          (!this.destinationStore_.selectedDestination ||
-              this.destinationStore_.selectedDestination.id !=
+      return !this.getDocumentInfoInternal().isModifiable &&
+          (!this.getSelectedDestInternal() ||
+              this.getSelectedDestInternal().id !=
                   print_preview.Destination.GooglePromotedId.SAVE_AS_PDF);
     },
 
     /** @override */
     getDefaultValueInternal: function() {
-      return true;
+      return !this.getDocumentInfoInternal().isScalingDisabled;
     },
 
     /** @override */
     getCapabilityNotAvailableValueInternal: function() {
-      return this.destinationStore_.selectedDestination &&
-          this.destinationStore_.selectedDestination.id ==
+      return !this.getSelectedDestInternal() ||
+          this.getSelectedDestInternal().id !=
               print_preview.Destination.GooglePromotedId.SAVE_AS_PDF;
     }
   };

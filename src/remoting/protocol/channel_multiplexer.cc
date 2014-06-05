@@ -14,7 +14,7 @@
 #include "base/thread_task_runner_handle.h"
 #include "net/base/net_errors.h"
 #include "net/socket/stream_socket.h"
-#include "remoting/protocol/util.h"
+#include "remoting/protocol/message_serialization.h"
 
 namespace remoting {
 namespace protocol {
@@ -104,7 +104,7 @@ class ChannelMultiplexer::MuxSocket : public net::StreamSocket,
                                       public base::SupportsWeakPtr<MuxSocket> {
  public:
   MuxSocket(MuxChannel* channel);
-  ~MuxSocket();
+  virtual ~MuxSocket();
 
   void OnWriteComplete();
   void OnWriteFailed();
@@ -116,18 +116,18 @@ class ChannelMultiplexer::MuxSocket : public net::StreamSocket,
   virtual int Write(net::IOBuffer* buffer, int buffer_len,
                     const net::CompletionCallback& callback) OVERRIDE;
 
-  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE {
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE {
     NOTIMPLEMENTED();
-    return false;
+    return net::ERR_NOT_IMPLEMENTED;
   }
-  virtual bool SetSendBufferSize(int32 size) OVERRIDE {
+  virtual int SetSendBufferSize(int32 size) OVERRIDE {
     NOTIMPLEMENTED();
-    return false;
+    return net::ERR_NOT_IMPLEMENTED;
   }
 
   virtual int Connect(const net::CompletionCallback& callback) OVERRIDE {
     NOTIMPLEMENTED();
-    return net::ERR_FAILED;
+    return net::ERR_NOT_IMPLEMENTED;
   }
   virtual void Disconnect() OVERRIDE {
     NOTIMPLEMENTED();
@@ -142,11 +142,11 @@ class ChannelMultiplexer::MuxSocket : public net::StreamSocket,
   }
   virtual int GetPeerAddress(net::IPEndPoint* address) const OVERRIDE {
     NOTIMPLEMENTED();
-    return net::ERR_FAILED;
+    return net::ERR_NOT_IMPLEMENTED;
   }
   virtual int GetLocalAddress(net::IPEndPoint* address) const OVERRIDE {
     NOTIMPLEMENTED();
-    return net::ERR_FAILED;
+    return net::ERR_NOT_IMPLEMENTED;
   }
   virtual const net::BoundNetLog& NetLog() const OVERRIDE {
     NOTIMPLEMENTED();
@@ -163,14 +163,6 @@ class ChannelMultiplexer::MuxSocket : public net::StreamSocket,
   }
   virtual bool UsingTCPFastOpen() const OVERRIDE {
     return false;
-  }
-  virtual int64 NumBytesRead() const OVERRIDE {
-    NOTIMPLEMENTED();
-    return 0;
-  }
-  virtual base::TimeDelta GetConnectTimeMicros() const OVERRIDE {
-    NOTIMPLEMENTED();
-    return base::TimeDelta();
   }
   virtual bool WasNpnNegotiated() const OVERRIDE {
     return false;
@@ -352,7 +344,7 @@ void ChannelMultiplexer::MuxSocket::OnWriteFailed() {
 
 void ChannelMultiplexer::MuxSocket::OnPacketReceived() {
   if (!read_callback_.is_null()) {
-    int result = channel_->DoRead(read_buffer_, read_buffer_size_);
+    int result = channel_->DoRead(read_buffer_.get(), read_buffer_size_);
     read_buffer_ = NULL;
     DCHECK_GT(result, 0);
     net::CompletionCallback cb;
@@ -366,7 +358,7 @@ ChannelMultiplexer::ChannelMultiplexer(ChannelFactory* factory,
     : base_channel_factory_(factory),
       base_channel_name_(base_channel_name),
       next_channel_id_(0),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
 }
 
 ChannelMultiplexer::~ChannelMultiplexer() {

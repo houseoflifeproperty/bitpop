@@ -5,19 +5,21 @@
 #include "chrome/installer/util/auto_launch_util.h"
 
 #include "base/command_line.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/path_service.h"
-#include "base/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/win_util.h"
 #include "chrome/common/chrome_constants.h"
+#include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
-#include "chrome/installer/util/browser_distribution.h"
-#include "chrome/installer/util/product.h"
 #include "chrome/installer/util/util_constants.h"
 #include "crypto/sha2.h"
+
+using base::ASCIIToUTF16;
+using base::ASCIIToWide;
 
 namespace auto_launch_util {
 
@@ -33,36 +35,23 @@ enum FlagSetting {
   FLAG_PRESERVE,  // Preserve the value that the flag has currently.
 };
 
-// A helper function that takes a |profile_path| and builds a registry key
+// A helper function that takes a |profile_directory| and builds a registry key
 // name to use when deciding where to read/write the auto-launch value
 // to/from. It takes into account the name of the profile (so that different
 // installations of Chrome don't conflict, and so the in the future different
 // profiles can be auto-launched (or not) separately).
-string16 ProfileToKeyName(const string16& profile_directory) {
-  FilePath path;
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kUserDataDir)) {
-    path = command_line.GetSwitchValuePath(switches::kUserDataDir);
-  } else {
-    // Get the path from the same source as the installer, to make sure there
-    // are no differences.
-    BrowserDistribution* distribution =
-        BrowserDistribution::GetSpecificDistribution(
-            BrowserDistribution::CHROME_BROWSER);
-    installer::Product product(distribution);
-    std::vector<FilePath> data_dir_paths;
-    product.GetUserDataPaths(&data_dir_paths);
-    if (!data_dir_paths.empty())
-      path = data_dir_paths[0];
-  }
+base::string16 ProfileToKeyName(const base::string16& profile_directory) {
+  base::FilePath path;
+  const bool success = PathService::Get(chrome::DIR_USER_DATA, &path);
+  DCHECK(success);
   path = path.Append(profile_directory);
 
   std::string input(path.AsUTF8Unsafe());
   uint8 hash[16];
   crypto::SHA256HashString(input, hash, sizeof(hash));
   std::string hash_string = base::HexEncode(hash, sizeof(hash));
-  return string16(kAutolaunchKeyValue) +
-      ASCIIToWide("_") + ASCIIToWide(hash_string);
+  return base::string16(kAutolaunchKeyValue) + ASCIIToWide("_") +
+         ASCIIToWide(hash_string);
 }
 
 // Returns whether the Chrome executable specified in |application_path| is set
@@ -74,17 +63,17 @@ string16 ProfileToKeyName(const string16& profile_directory) {
 // |command_line_switch| is the switch we are optionally interested in and, if
 // not blank, must be present for the function to return true. If blank, it acts
 // like a wildcard.
-bool WillLaunchAtLoginWithSwitch(const FilePath& application_path,
-                                 const string16& profile_directory,
+bool WillLaunchAtLoginWithSwitch(const base::FilePath& application_path,
+                                 const base::string16& profile_directory,
                                  const std::string& command_line_switch) {
-  string16 key_name(ProfileToKeyName(profile_directory));
-  string16 autolaunch;
+  base::string16 key_name(ProfileToKeyName(profile_directory));
+  base::string16 autolaunch;
   if (!base::win::ReadCommandFromAutoRun(
       HKEY_CURRENT_USER, key_name, &autolaunch)) {
     return false;
   }
 
-  FilePath chrome_exe(application_path);
+  base::FilePath chrome_exe(application_path);
   if (chrome_exe.empty()) {
     if (!PathService::Get(base::DIR_EXE, &chrome_exe)) {
       NOTREACHED();
@@ -93,16 +82,17 @@ bool WillLaunchAtLoginWithSwitch(const FilePath& application_path,
   }
   chrome_exe = chrome_exe.Append(installer::kChromeExe);
 
-  if (autolaunch.find(chrome_exe.value()) == string16::npos)
+  if (autolaunch.find(chrome_exe.value()) == base::string16::npos)
     return false;
 
   return command_line_switch.empty() ||
-         autolaunch.find(ASCIIToUTF16(command_line_switch)) != string16::npos;
+         autolaunch.find(ASCIIToUTF16(command_line_switch)) !=
+             base::string16::npos;
 }
 
-bool AutoStartRequested(const string16& profile_directory,
+bool AutoStartRequested(const base::string16& profile_directory,
                         bool window_requested,
-                        const FilePath& application_path) {
+                        const base::FilePath& application_path) {
   if (window_requested) {
     return WillLaunchAtLoginWithSwitch(application_path,
                                        profile_directory,
@@ -121,11 +111,11 @@ bool CheckAndRemoveDeprecatedBackgroundModeSwitch() {
   // previously used key "chromium" that the BackgroundMode used to set, as it
   // is incompatible with the new key (can't have two Run keys with
   // conflicting switches).
-  string16 chromium = ASCIIToUTF16("chromium");
-  string16 value;
+  base::string16 chromium = ASCIIToUTF16("chromium");
+  base::string16 value;
   if (base::win::ReadCommandFromAutoRun(HKEY_CURRENT_USER, chromium, &value)) {
     if (value.find(ASCIIToUTF16(switches::kNoStartupWindow)) !=
-        string16::npos) {
+        base::string16::npos) {
       base::win::RemoveCommandFromAutoRun(HKEY_CURRENT_USER, chromium);
       return true;
     }
@@ -134,8 +124,8 @@ bool CheckAndRemoveDeprecatedBackgroundModeSwitch() {
   return false;
 }
 
-void SetWillLaunchAtLogin(const FilePath& application_path,
-                          const string16& profile_directory,
+void SetWillLaunchAtLogin(const base::FilePath& application_path,
+                          const base::string16& profile_directory,
                           FlagSetting foreground_mode,
                           FlagSetting background_mode) {
   if (CheckAndRemoveDeprecatedBackgroundModeSwitch()) {
@@ -155,7 +145,7 @@ void SetWillLaunchAtLogin(const FilePath& application_path,
       NOTREACHED();
     }
   }
-  string16 key_name(ProfileToKeyName(profile_directory));
+  base::string16 key_name(ProfileToKeyName(profile_directory));
 
   // Check which feature should be enabled.
   bool in_foreground =
@@ -173,14 +163,14 @@ void SetWillLaunchAtLogin(const FilePath& application_path,
 
   // TODO(finnur): Convert this into a shortcut, instead of using the Run key.
   if (in_foreground || in_background) {
-    FilePath path(application_path);
+    base::FilePath path(application_path);
     if (path.empty()) {
       if (!PathService::Get(base::DIR_EXE, &path)) {
         NOTREACHED();
         return;
       }
     }
-    string16 cmd_line = ASCIIToUTF16("\"");
+    base::string16 cmd_line = ASCIIToUTF16("\"");
     cmd_line += path.value();
     cmd_line += ASCIIToUTF16("\\");
     cmd_line += installer::kChromeExe;
@@ -211,27 +201,26 @@ void SetWillLaunchAtLogin(const FilePath& application_path,
       cmd_line += ASCIIToUTF16("\"");
     }
 
-    base::win::AddCommandToAutoRun(
-        HKEY_CURRENT_USER, key_name, cmd_line);
+    base::win::AddCommandToAutoRun(HKEY_CURRENT_USER, key_name, cmd_line);
   } else {
     base::win::RemoveCommandFromAutoRun(HKEY_CURRENT_USER, key_name);
   }
 }
 
-void DisableAllAutoStartFeatures(const string16& profile_directory) {
+void DisableAllAutoStartFeatures(const base::string16& profile_directory) {
   DisableForegroundStartAtLogin(profile_directory);
   DisableBackgroundStartAtLogin();
 }
 
-void EnableForegroundStartAtLogin(const string16& profile_directory,
-                                  const FilePath& application_path) {
+void EnableForegroundStartAtLogin(const base::string16& profile_directory,
+                                  const base::FilePath& application_path) {
   SetWillLaunchAtLogin(
       application_path, profile_directory, FLAG_ENABLE, FLAG_PRESERVE);
 }
 
-void DisableForegroundStartAtLogin(const string16& profile_directory) {
+void DisableForegroundStartAtLogin(const base::string16& profile_directory) {
   SetWillLaunchAtLogin(
-      FilePath(), profile_directory, FLAG_DISABLE, FLAG_PRESERVE);
+      base::FilePath(), profile_directory, FLAG_DISABLE, FLAG_PRESERVE);
 }
 
 void EnableBackgroundStartAtLogin() {
@@ -239,14 +228,14 @@ void EnableBackgroundStartAtLogin() {
   // just to have a unique Run key to attach it to. FilePath is blank because
   // this function is not called from the installer (see comments for
   // EnableAutoStartAtLogin).
-  SetWillLaunchAtLogin(FilePath(),
+  SetWillLaunchAtLogin(base::FilePath(),
                        ASCIIToUTF16(chrome::kInitialProfile),
                        FLAG_PRESERVE,
                        FLAG_ENABLE);
 }
 
 void DisableBackgroundStartAtLogin() {
-  SetWillLaunchAtLogin(FilePath(),
+  SetWillLaunchAtLogin(base::FilePath(),
                        ASCIIToUTF16(chrome::kInitialProfile),
                        FLAG_PRESERVE,
                        FLAG_DISABLE);

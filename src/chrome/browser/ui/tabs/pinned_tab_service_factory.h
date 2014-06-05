@@ -7,7 +7,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 
 class PinnedTabService;
 class Profile;
@@ -15,7 +15,7 @@ class Profile;
 // Singleton that owns all PinnedTabServices and associates them with Profiles.
 // Listens for the Profile's destruction notification and cleans up the
 // associated PinnedTabService.
-class PinnedTabServiceFactory : public ProfileKeyedServiceFactory {
+class PinnedTabServiceFactory : public BrowserContextKeyedServiceFactory {
  public:
   // Returns the PinnedTabService that tracks pinning changes for |profile|.
   static PinnedTabService* GetForProfile(Profile* profile);
@@ -28,10 +28,10 @@ class PinnedTabServiceFactory : public ProfileKeyedServiceFactory {
   PinnedTabServiceFactory();
   virtual ~PinnedTabServiceFactory();
 
-  // ProfileKeyedServiceFactory:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
-  virtual bool ServiceIsCreatedWithProfile() const OVERRIDE;
+  // BrowserContextKeyedServiceFactory:
+  virtual KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* profile) const OVERRIDE;
+  virtual bool ServiceIsCreatedWithBrowserContext() const OVERRIDE;
   virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
 };
 

@@ -4,19 +4,21 @@
 
 #include "chrome/browser/ui/cocoa/extensions/media_galleries_dialog_cocoa.h"
 
-#include "chrome/browser/media_gallery/media_galleries_dialog_controller_mock.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/media_galleries/media_galleries_dialog_controller_mock.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/cocoa/constrained_window/constrained_window_alert.h"
-#include "chrome/browser/ui/constrained_window_tab_helper.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
+#include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using ::testing::NiceMock;
 using ::testing::Return;
 using ::testing::ReturnRef;
-
-namespace chrome {
+using web_modal::WebContentsModalDialogManager;
 
 class MediaGalleriesDialogBrowserTest : public InProcessBrowserTest {
 };
@@ -24,26 +26,33 @@ class MediaGalleriesDialogBrowserTest : public InProcessBrowserTest {
 // Verify that programatically closing the constrained window correctly closes
 // the sheet.
 IN_PROC_BROWSER_TEST_F(MediaGalleriesDialogBrowserTest, Close) {
-  NiceMock<MediaGalleriesDialogControllerMock> controller;
+  scoped_refptr<extensions::Extension> dummy_extension =
+      extensions::test_util::CreateExtensionWithID("dummy");
+  NiceMock<MediaGalleriesDialogControllerMock> controller(*dummy_extension);
 
-  content::WebContents* web_contents = chrome::GetActiveWebContents(browser());
+  content::WebContents* web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
   EXPECT_CALL(controller, web_contents()).
       WillRepeatedly(Return(web_contents));
 
-  MediaGalleriesDialogController::KnownGalleryPermissions permissions;
-  EXPECT_CALL(controller, permissions()).
-      WillRepeatedly(ReturnRef(permissions));
+  MediaGalleriesDialogController::GalleryPermissionsVector attached_permissions;
+  EXPECT_CALL(controller, AttachedPermissions()).
+      WillRepeatedly(Return(attached_permissions));
+  MediaGalleriesDialogController::GalleryPermissionsVector
+      unattached_permissions;
+  EXPECT_CALL(controller, UnattachedPermissions()).
+      WillRepeatedly(Return(unattached_permissions));
 
   scoped_ptr<MediaGalleriesDialogCocoa> dialog(
       static_cast<MediaGalleriesDialogCocoa*>(
           MediaGalleriesDialog::Create(&controller)));
-  scoped_nsobject<NSWindow> window([[dialog->alert_ window] retain]);
+  base::scoped_nsobject<NSWindow> window([[dialog->alert_ window] retain]);
   EXPECT_TRUE([window isVisible]);
 
-  ConstrainedWindowTabHelper* constrained_window_tab_helper =
-      ConstrainedWindowTabHelper::FromWebContents(web_contents);
-  constrained_window_tab_helper->CloseConstrainedWindows();
+  WebContentsModalDialogManager* web_contents_modal_dialog_manager =
+      WebContentsModalDialogManager::FromWebContents(web_contents);
+  WebContentsModalDialogManager::TestApi test_api(
+      web_contents_modal_dialog_manager);
+  test_api.CloseAllDialogs();
   EXPECT_FALSE([window isVisible]);
 }
-
-}  // namespace chrome

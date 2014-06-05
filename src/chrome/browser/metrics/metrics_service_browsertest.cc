@@ -5,27 +5,29 @@
 // Tests the MetricsService stat recording to make sure that the numbers are
 // what we expect.
 
+#include "chrome/browser/metrics/metrics_service.h"
+
 #include <string>
 
 #include "base/command_line.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/path_service.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/metrics/metrics_service.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_types.h"
-#include "googleurl/src/gurl.h"
-#include "net/base/net_util.h"
-#include "webkit/glue/window_open_disposition.h"
+#include "content/public/test/browser_test_utils.h"
+#include "net/base/filename_util.h"
+#include "ui/base/window_open_disposition.h"
+#include "url/gurl.h"
 
-class MetricsServiceTest : public InProcessBrowserTest {
+class MetricsServiceBrowserTest : public InProcessBrowserTest {
  public:
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     // Enable the metrics service for testing (in recording-only mode).
@@ -38,17 +40,17 @@ class MetricsServiceTest : public InProcessBrowserTest {
         ui_test_utils::BROWSER_TEST_WAIT_FOR_TAB |
         ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION;
 
-    FilePath test_directory;
+    base::FilePath test_directory;
     ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &test_directory));
 
-    FilePath page1_path = test_directory.AppendASCII("title2.html");
+    base::FilePath page1_path = test_directory.AppendASCII("title2.html");
     ui_test_utils::NavigateToURLWithDisposition(
         browser(),
         net::FilePathToFileURL(page1_path),
         NEW_FOREGROUND_TAB,
         kBrowserTestFlags);
 
-    FilePath page2_path = test_directory.AppendASCII("iframe.html");
+    base::FilePath page2_path = test_directory.AppendASCII("iframe.html");
     ui_test_utils::NavigateToURLWithDisposition(
         browser(),
         net::FilePathToFileURL(page2_path),
@@ -57,15 +59,7 @@ class MetricsServiceTest : public InProcessBrowserTest {
   }
 };
 
-class MetricsServiceReportingTest : public InProcessBrowserTest {
- public:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    // Enable the metrics service for testing (in the full mode).
-    command_line->AppendSwitch(switches::kEnableMetricsReportingForTesting);
-  }
-};
-
-IN_PROC_BROWSER_TEST_F(MetricsServiceTest, CloseRenderersNormally) {
+IN_PROC_BROWSER_TEST_F(MetricsServiceBrowserTest, CloseRenderersNormally) {
   OpenTabs();
 
   // Verify that the expected stability metrics were recorded.
@@ -84,14 +78,14 @@ IN_PROC_BROWSER_TEST_F(MetricsServiceTest, CloseRenderersNormally) {
 #else
 #define MAYBE_CrashRenderers CrashRenderers
 #endif
-IN_PROC_BROWSER_TEST_F(MetricsServiceTest, MAYBE_CrashRenderers) {
+IN_PROC_BROWSER_TEST_F(MetricsServiceBrowserTest, MAYBE_CrashRenderers) {
   OpenTabs();
 
   // Kill the process for one of the tabs.
-  content::WindowedNotificationObserver observer(
-      content::NOTIFICATION_RENDERER_PROCESS_CLOSED,
-      content::NotificationService::AllSources());
-  ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUICrashURL));
+  content::RenderProcessHostWatcher observer(
+      browser()->tab_strip_model()->GetActiveWebContents(),
+      content::RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT);
+  ui_test_utils::NavigateToURL(browser(), GURL(content::kChromeUICrashURL));
   observer.Wait();
 
   // The MetricsService listens for the same notification, so the |observer|
@@ -114,20 +108,3 @@ IN_PROC_BROWSER_TEST_F(MetricsServiceTest, MAYBE_CrashRenderers) {
   // exits... it's not clear to me how to test that.
 }
 
-IN_PROC_BROWSER_TEST_F(MetricsServiceTest, CheckLowEntropySourceUsed) {
-  // Since MetricsService is only in recording mode, and is not reporting,
-  // check that the low entropy source is returned at some point.
-  ASSERT_TRUE(g_browser_process->metrics_service());
-  EXPECT_EQ(MetricsService::LAST_ENTROPY_LOW,
-            g_browser_process->metrics_service()->entropy_source_returned());
-}
-
-IN_PROC_BROWSER_TEST_F(MetricsServiceReportingTest,
-                       CheckHighEntropySourceUsed) {
-  // Since the full metrics service runs in this test, we expect that
-  // MetricsService returns the full entropy source at some point during
-  // BrowserMain startup.
-  ASSERT_TRUE(g_browser_process->metrics_service());
-  EXPECT_EQ(MetricsService::LAST_ENTROPY_HIGH,
-            g_browser_process->metrics_service()->entropy_source_returned());
-}

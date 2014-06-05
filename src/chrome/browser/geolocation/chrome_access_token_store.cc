@@ -5,15 +5,16 @@
 #include "chrome/browser/geolocation/chrome_access_token_store.h"
 
 #include "base/bind.h"
-#include "base/string_piece.h"
-#include "base/utf_string_conversions.h"
+#include "base/prefs/pref_registry_simple.h"
+#include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
+#include "base/strings/string_piece.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/prefs/pref_service.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 using content::AccessTokenStore;
 using content::BrowserThread;
@@ -35,7 +36,7 @@ bool IsUnsupportedNetworkProviderUrl(const GURL& url) {
 }
 
 // Loads access tokens and other necessary data on the UI thread, and
-// calls back to the originator on the originating threaad.
+// calls back to the originator on the originating thread.
 class TokenLoadingJob : public base::RefCountedThreadSafe<TokenLoadingJob> {
  public:
   TokenLoadingJob(
@@ -61,22 +62,21 @@ class TokenLoadingJob : public base::RefCountedThreadSafe<TokenLoadingJob> {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
     DictionaryPrefUpdate update(g_browser_process->local_state(),
                                 prefs::kGeolocationAccessToken);
-    DictionaryValue* token_dictionary = update.Get();
+    base::DictionaryValue* token_dictionary = update.Get();
 
     std::vector<std::string> providers_to_remove;
     // The dictionary value could be NULL if the pref has never been set.
     if (token_dictionary != NULL) {
-      for (DictionaryValue::key_iterator it = token_dictionary->begin_keys();
-           it != token_dictionary->end_keys(); ++it) {
-        GURL url(*it);
+      for (base::DictionaryValue::Iterator it(*token_dictionary); !it.IsAtEnd();
+           it.Advance()) {
+        GURL url(it.key());
         if (!url.is_valid())
           continue;
         if (IsUnsupportedNetworkProviderUrl(url)) {
-          providers_to_remove.push_back(*it);
+          providers_to_remove.push_back(it.key());
           continue;
         }
-        token_dictionary->GetStringWithoutPathExpansion(
-            *it, &access_token_set_[url]);
+        it.value().GetAsString(&access_token_set_[url]);
       }
       for (size_t i = 0; i < providers_to_remove.size(); ++i) {
         token_dictionary->RemoveWithoutPathExpansion(
@@ -98,8 +98,8 @@ class TokenLoadingJob : public base::RefCountedThreadSafe<TokenLoadingJob> {
 
 }  // namespace
 
-void ChromeAccessTokenStore::RegisterPrefs(PrefService* prefs) {
-  prefs->RegisterDictionaryPref(prefs::kGeolocationAccessToken);
+void ChromeAccessTokenStore::RegisterPrefs(PrefRegistrySimple* registry) {
+  registry->RegisterDictionaryPref(prefs::kGeolocationAccessToken);
 }
 
 ChromeAccessTokenStore::ChromeAccessTokenStore() {}
@@ -113,17 +113,18 @@ void ChromeAccessTokenStore::LoadAccessTokens(
 ChromeAccessTokenStore::~ChromeAccessTokenStore() {}
 
 static void SetAccessTokenOnUIThread(const GURL& server_url,
-                                     const string16& token) {
+                                     const base::string16& token) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DictionaryPrefUpdate update(g_browser_process->local_state(),
                               prefs::kGeolocationAccessToken);
-  DictionaryValue* access_token_dictionary = update.Get();
+  base::DictionaryValue* access_token_dictionary = update.Get();
   access_token_dictionary->SetWithoutPathExpansion(
-      server_url.spec(), Value::CreateStringValue(token));
+      server_url.spec(), new base::StringValue(token));
 }
 
-void ChromeAccessTokenStore::SaveAccessToken(const GURL& server_url,
-                                             const string16& access_token) {
+void ChromeAccessTokenStore::SaveAccessToken(
+    const GURL& server_url,
+    const base::string16& access_token) {
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&SetAccessTokenOnUIThread, server_url, access_token));

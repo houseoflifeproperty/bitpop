@@ -8,13 +8,12 @@
 
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/change_record.h"
 #include "sync/internal_api/public/sessions/sync_session_snapshot.h"
 #include "sync/internal_api/public/util/sync_string_conversions.h"
-#include "sync/js/js_arg_list.h"
 #include "sync/js/js_event_details.h"
 #include "sync/js/js_event_handler.h"
 
@@ -34,7 +33,7 @@ void JsSyncManagerObserver::OnSyncCycleCompleted(
   if (!event_handler_.IsInitialized()) {
     return;
   }
-  DictionaryValue details;
+  base::DictionaryValue details;
   details.Set("snapshot", snapshot.ToValue());
   HandleJsEvent(FROM_HERE, "onSyncCycleCompleted", JsEventDetails(&details));
 }
@@ -43,19 +42,10 @@ void JsSyncManagerObserver::OnConnectionStatusChange(ConnectionStatus status) {
   if (!event_handler_.IsInitialized()) {
     return;
   }
-  DictionaryValue details;
+  base::DictionaryValue details;
   details.SetString("status", ConnectionStatusToString(status));
   HandleJsEvent(FROM_HERE,
                 "onConnectionStatusChange", JsEventDetails(&details));
-}
-
-void JsSyncManagerObserver::OnUpdatedToken(const std::string& token) {
-  if (!event_handler_.IsInitialized()) {
-    return;
-  }
-  DictionaryValue details;
-  details.SetString("token", "<redacted>");
-  HandleJsEvent(FROM_HERE, "onUpdatedToken", JsEventDetails(&details));
 }
 
 void JsSyncManagerObserver::OnActionableError(
@@ -63,11 +53,16 @@ void JsSyncManagerObserver::OnActionableError(
   if (!event_handler_.IsInitialized()) {
     return;
   }
-  DictionaryValue details;
+  base::DictionaryValue details;
   details.Set("syncError",  sync_error.ToValue());
   HandleJsEvent(FROM_HERE, "onActionableError",
                 JsEventDetails(&details));
 }
+
+void JsSyncManagerObserver::OnProtocolEvent(
+    const ProtocolEvent& event) { }
+
+void JsSyncManagerObserver::OnMigrationRequested(ModelTypeSet types) { }
 
 void JsSyncManagerObserver::OnInitializationComplete(
     const WeakHandle<JsBackend>& js_backend,
@@ -79,19 +74,12 @@ void JsSyncManagerObserver::OnInitializationComplete(
   // Ignore the |js_backend| argument; it's not really convertible to
   // JSON anyway.
 
-  DictionaryValue details;
+  base::DictionaryValue details;
   details.Set("restoredTypes", ModelTypeSetToValue(restored_types));
 
   HandleJsEvent(FROM_HERE,
                 "onInitializationComplete",
                 JsEventDetails(&details));
-}
-
-void JsSyncManagerObserver::OnStopSyncingPermanently() {
-  if (!event_handler_.IsInitialized()) {
-    return;
-  }
-  HandleJsEvent(FROM_HERE, "onStopSyncingPermanently", JsEventDetails());
 }
 
 void JsSyncManagerObserver::HandleJsEvent(

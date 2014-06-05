@@ -1,21 +1,4 @@
-<p>
-The context menus module allows you
-to add items to Google Chrome's context menu.
-</p>
-
-<p>
-You can choose what types of objects
-your context menu additions apply to,
-such as images, hyperlinks, and pages.
-</p>
-
-<p>
-You can create as many context menu items
-as you need, but if more than one
-from your extension is visible at once,
-Google Chrome automatically collapses them
-into a single parent menu.
-</p>
+<h2 id="usage">Usage</h2>
 
 <p>
 Context menu items can appear in any document
@@ -26,27 +9,42 @@ specify the documentUrlPatterns field
 when you call the create() or update() method.
 </p>
 
+<p>
+You can create as many context menu items
+as you need, but if more than one
+from your extension is visible at once,
+Google Chrome automatically collapses them
+into a single parent menu.
+</p>
+
 <h2 id="manifest">Manifest</h2>
-<p>You must declare the "contextMenus" permission
-in your extension's manifest to use the API.
+<p>
+You must declare the "contextMenus" permission
+in your {{platform}}'s manifest to use the API.
+{{^is_apps}}
 Also, you should specify a 16x16-pixel icon
 for display next to your menu item.
+{{/is_apps}}
 For example:
 </p>
 
-<pre>{
+<pre data-filename="manifest.json">
+{
   "name": "My extension",
   ...
   "permissions": [
     <b>"contextMenus"</b>
   ],
+{{^is_apps}}
   "icons": {
     <b>"16": "icon-bitty.png",</b>
     "48": "icon-small.png",
     "128": "icon-large.png"
   },
+{{/is_apps}}
   ...
-}</pre>
+}
+</pre>
 
 <h2 id="examples">Examples</h2>
 

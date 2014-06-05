@@ -10,6 +10,7 @@
 #include "chrome/test/base/in_process_browser_test.h"
 
 class Browser;
+class BrowserList;
 class TabStrip;
 class TabStripModel;
 
@@ -43,6 +44,10 @@ class TabDragControllerTest : public InProcessBrowserTest {
   // side by side.
   Browser* CreateAnotherWindowBrowserAndRelayout();
 
+  // The tab drag controller interactive ui tests only use the native desktop
+  // for now.
+  const BrowserList* native_browser_list;
+
  private:
   DISALLOW_COPY_AND_ASSIGN(TabDragControllerTest);
 };
@@ -66,6 +71,6 @@ void ResetIDs(TabStripModel* model, int start);
 // is separated by a space.
 std::string IDString(TabStripModel* model);
 
-}
+}  // namespace test
 
 #endif  // CHROME_BROWSER_UI_VIEWS_TABS_TAB_DRAG_CONTROLLER_INTERACTIVE_UITEST_H_

@@ -26,7 +26,7 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import unittest
+import webkitpy.thirdparty.unittest2 as unittest
 
 from webkitpy.common.net.layouttestresults import LayoutTestResults
 from webkitpy.common.net.buildbot import BuildBot, Builder, Build
@@ -47,11 +47,6 @@ class BuilderTest(unittest.TestCase):
                 revision=build_number + 1000,
                 is_green=build_number < 4
             )
-            results = [self._mock_test_result(testname) for testname in failure(build_number)]
-            layout_test_results = LayoutTestResults(results)
-            def mock_layout_test_results():
-                return layout_test_results
-            build.layout_test_results = mock_layout_test_results
             return build
         self.builder._fetch_build = _mock_fetch_build
 
@@ -61,57 +56,9 @@ class BuilderTest(unittest.TestCase):
         self._install_fetch_build(lambda build_number: ["test1", "test2"])
 
     def test_latest_layout_test_results(self):
-        self.builder.fetch_layout_test_results = lambda results_url: LayoutTestResults([self._mock_test_result(testname) for testname in ["test1", "test2"]])
+        self.builder.fetch_layout_test_results = lambda results_url: LayoutTestResults(None)
         self.builder.accumulated_results_url = lambda: "http://dummy_url.org"
         self.assertTrue(self.builder.latest_layout_test_results())
-
-    def test_find_regression_window(self):
-        regression_window = self.builder.find_regression_window(self.builder.build(10))
-        self.assertEqual(regression_window.build_before_failure().revision(), 1003)
-        self.assertEqual(regression_window.failing_build().revision(), 1004)
-
-        regression_window = self.builder.find_regression_window(self.builder.build(10), look_back_limit=2)
-        self.assertEqual(regression_window.build_before_failure(), None)
-        self.assertEqual(regression_window.failing_build().revision(), 1008)
-
-    def test_none_build(self):
-        self.builder._fetch_build = lambda build_number: None
-        regression_window = self.builder.find_regression_window(self.builder.build(10))
-        self.assertEqual(regression_window.build_before_failure(), None)
-        self.assertEqual(regression_window.failing_build(), None)
-
-    def test_flaky_tests(self):
-        self._install_fetch_build(lambda build_number: ["test1"] if build_number % 2 else ["test2"])
-        regression_window = self.builder.find_regression_window(self.builder.build(10))
-        self.assertEqual(regression_window.build_before_failure().revision(), 1009)
-        self.assertEqual(regression_window.failing_build().revision(), 1010)
-
-    def test_failure_and_flaky(self):
-        self._install_fetch_build(lambda build_number: ["test1", "test2"] if build_number % 2 else ["test2"])
-        regression_window = self.builder.find_regression_window(self.builder.build(10))
-        self.assertEqual(regression_window.build_before_failure().revision(), 1003)
-        self.assertEqual(regression_window.failing_build().revision(), 1004)
-
-    def test_no_results(self):
-        self._install_fetch_build(lambda build_number: ["test1", "test2"] if build_number % 2 else ["test2"])
-        regression_window = self.builder.find_regression_window(self.builder.build(10))
-        self.assertEqual(regression_window.build_before_failure().revision(), 1003)
-        self.assertEqual(regression_window.failing_build().revision(), 1004)
-
-    def test_failure_after_flaky(self):
-        self._install_fetch_build(lambda build_number: ["test1", "test2"] if build_number > 6 else ["test3"])
-        regression_window = self.builder.find_regression_window(self.builder.build(10))
-        self.assertEqual(regression_window.build_before_failure().revision(), 1006)
-        self.assertEqual(regression_window.failing_build().revision(), 1007)
-
-    def test_find_blameworthy_regression_window(self):
-        self.assertEqual(self.builder.find_blameworthy_regression_window(10).revisions(), [1004])
-        self.assertEqual(self.builder.find_blameworthy_regression_window(10, look_back_limit=2), None)
-        # Flakey test avoidance requires at least 2 red builds:
-        self.assertEqual(self.builder.find_blameworthy_regression_window(4), None)
-        self.assertEqual(self.builder.find_blameworthy_regression_window(4, avoid_flakey_tests=False).revisions(), [1004])
-        # Green builder:
-        self.assertEqual(self.builder.find_blameworthy_regression_window(3), None)
 
     def test_build_caching(self):
         self.assertEqual(self.builder.build(10), self.builder.build(10))
@@ -148,17 +95,7 @@ class BuilderTest(unittest.TestCase):
             }
             return build_dictionary
         buildbot._fetch_build_dictionary = mock_fetch_build_dictionary
-        self.assertNotEqual(builder._fetch_build(1), None)
-
-
-class BuildTest(unittest.TestCase):
-    def test_layout_test_results(self):
-        buildbot = BuildBot()
-        builder = Builder(u"Foo Builder (test)", buildbot)
-        builder._fetch_file_from_results = lambda results_url, file_name: None
-        build = Build(builder, None, None, None)
-        # Test that layout_test_results() returns None if the fetch fails.
-        self.assertEqual(build.layout_test_results(), None)
+        self.assertIsNotNone(builder._fetch_build(1))
 
 
 class BuildBotTest(unittest.TestCase):
@@ -263,16 +200,16 @@ class BuildBotTest(unittest.TestCase):
         self.assertEqual(build.url(), "http://build.webkit.org/builders/Test%20Builder/builds/10")
         self.assertEqual(build.results_url(), "http://build.webkit.org/results/Test%20Builder/r20%20%2810%29")
         self.assertEqual(build.revision(), 20)
-        self.assertEqual(build.is_green(), True)
+        self.assertTrue(build.is_green())
 
         build = build.previous_build()
         self.assertEqual(build.builder(), builder)
         self.assertEqual(build.url(), "http://build.webkit.org/builders/Test%20Builder/builds/9")
         self.assertEqual(build.results_url(), "http://build.webkit.org/results/Test%20Builder/r18%20%289%29")
         self.assertEqual(build.revision(), 18)
-        self.assertEqual(build.is_green(), False)
+        self.assertFalse(build.is_green())
 
-        self.assertEqual(builder.build(None), None)
+        self.assertIsNone(builder.build(None))
 
     _example_directory_listing = '''
 <h1>Directory listing for /results/SnowLeopard Intel Leaks/</h1>

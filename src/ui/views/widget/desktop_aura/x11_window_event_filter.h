@@ -6,17 +6,15 @@
 #define UI_VIEWS_WIDGET_DESKTOP_AURA_X11_WINDOW_EVENT_FILTER_H_
 
 #include <X11/Xlib.h>
-// Get rid of a macro from Xlib.h that conflicts with Aura's RootWindow class.
-#undef RootWindow
 
 #include "base/compiler_specific.h"
-#include "base/message_loop.h"
-#include "ui/base/events/event_handler.h"
-#include "ui/base/x/x11_atom_cache.h"
+#include "base/message_loop/message_loop.h"
+#include "ui/events/event_handler.h"
+#include "ui/gfx/x/x11_atom_cache.h"
+#include "ui/gfx/x/x11_types.h"
 #include "ui/views/views_export.h"
 
 namespace aura {
-class RootWindow;
 class Window;
 }
 
@@ -25,14 +23,13 @@ class Point;
 }
 
 namespace views {
-class DesktopActivationClient;
+class DesktopWindowTreeHost;
 class NativeWidgetAura;
 
 // An EventFilter that sets properties on X11 windows.
 class VIEWS_EXPORT X11WindowEventFilter : public ui::EventHandler {
  public:
-  explicit X11WindowEventFilter(aura::RootWindow* root_window,
-                                DesktopActivationClient* activation_client);
+  explicit X11WindowEventFilter(DesktopWindowTreeHost* window_tree_host);
   virtual ~X11WindowEventFilter();
 
   // Changes whether borders are shown on this |root_window|.
@@ -42,15 +39,15 @@ class VIEWS_EXPORT X11WindowEventFilter : public ui::EventHandler {
   virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
 
  private:
+  void ToggleMaximizedState();
+
   // Dispatches a _NET_WM_MOVERESIZE message to the window manager to tell it
   // to act as if a border or titlebar drag occurred.
   bool DispatchHostWindowDragMovement(int hittest,
                                       const gfx::Point& screen_location);
 
-  DesktopActivationClient* activation_client_;
-
   // The display and the native X window hosting the root window.
-  Display* xdisplay_;
+  XDisplay* xdisplay_;
   ::Window xwindow_;
 
   // The native root window.
@@ -58,8 +55,17 @@ class VIEWS_EXPORT X11WindowEventFilter : public ui::EventHandler {
 
   ui::X11AtomCache atom_cache_;
 
+  DesktopWindowTreeHost* window_tree_host_;
+
   // True if |xwindow_| is the current _NET_ACTIVE_WINDOW.
   bool is_active_;
+
+  // The non-client component for the target of a MouseEvent. Mouse events can
+  // be destructive to the window tree, which can cause the component of a
+  // ui::EF_IS_DOUBLE_CLICK event to no longer be the same as that of the
+  // initial click. Acting on a double click should only occur for matching
+  // components.
+  int click_component_;
 
   DISALLOW_COPY_AND_ASSIGN(X11WindowEventFilter);
 };

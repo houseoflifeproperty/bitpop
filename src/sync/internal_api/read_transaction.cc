@@ -1,11 +1,11 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "sync/internal_api/public/read_transaction.h"
 
 #include "sync/syncable/directory.h"
-#include "sync/syncable/read_transaction.h"
+#include "sync/syncable/syncable_read_transaction.h"
 
 namespace syncer {
 
@@ -36,8 +36,15 @@ syncable::BaseTransaction* ReadTransaction::GetWrappedTrans() const {
   return transaction_;
 }
 
-int64 ReadTransaction::GetModelVersion(ModelType type) {
+int64 ReadTransaction::GetModelVersion(ModelType type) const {
   return transaction_->directory()->GetTransactionVersion(type);
+}
+
+void ReadTransaction::GetDataTypeContext(
+    ModelType type,
+    sync_pb::DataTypeContext* context) const {
+  return transaction_->directory()->GetDataTypeContext(
+      transaction_, type, context);
 }
 
 }  // namespace syncer

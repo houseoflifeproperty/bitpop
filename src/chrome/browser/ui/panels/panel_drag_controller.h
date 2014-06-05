@@ -5,19 +5,20 @@
 #ifndef CHROME_BROWSER_UI_PANELS_PANEL_DRAG_CONTROLLER_H_
 #define CHROME_BROWSER_UI_PANELS_PANEL_DRAG_CONTROLLER_H_
 
-#include <set>
-#include "base/basictypes.h"
-#include "ui/gfx/point.h"
+#include "base/memory/scoped_ptr.h"
+#include "chrome/browser/ui/panels/panel_collection.h"
+#include "ui/gfx/vector2d.h"
 
 class Panel;
 class PanelCollection;
 class PanelManager;
 namespace gfx {
+class Point;
 class Rect;
 }
 
-// Responsible for handling drags initiated for all panels, including both
-// intra-collection and inter-collection drags.
+// Controls all the drags initiated for all panels, including detaching,
+// docking, stacking, snapping and intra-collection dragging.
 class PanelDragController {
  public:
   explicit PanelDragController(PanelManager* panel_manager);
@@ -32,37 +33,59 @@ class PanelDragController {
   // Asynchronous confirmation of panel having been closed.
   void OnPanelClosed(Panel* panel);
 
-  bool IsDragging() const { return dragging_panel_ != NULL; }
-
+  bool is_dragging() const { return dragging_panel_ != NULL; }
   Panel* dragging_panel() const { return dragging_panel_; }
 
-#ifdef UNIT_TEST
-  static int GetDetachDockedPanelThreshold() {
-    return kDetachDockedPanelThreshold;
-  }
-
-  static int GetDockDetachedPanelThreshold() {
-    return kDockDetachedPanelThreshold;
-  }
-#endif
+  // For testing.
+  static int GetDetachDockedPanelThresholdForTesting();
+  static int GetDockDetachedPanelThresholdForTesting();
+  static int GetGluePanelDistanceThresholdForTesting();
+  static int GetGluePanelOverlapThresholdForTesting();
+  static int GetSnapPanelToScreenEdgeThresholdForTesting();
 
  private:
-  // Helper methods to figure out if the panel can be dragged to other
-  // collection. Returns target collection/boolean flag, and |new_panel_bounds|
-  // if the panelcan enter other collection at |mouse_location|.
-  PanelCollection* ComputeDragTargetCollection(
-      const gfx::Point& mouse_location, gfx::Rect* new_panel_bounds) const;
-  bool CanDragToDockedCollection(
-      const gfx::Point& mouse_location, gfx::Rect* new_panel_bounds) const;
-  bool CanDragToDetachedCollection(
-      const gfx::Point& mouse_location, gfx::Rect* new_panel_bounds) const;
+  enum GlueAction {
+    STACK,
+    SNAP
+  };
 
-  // The potential panel position is computed based on the fact that the panel
-  // should follow the mouse movement.
+  enum GlueEdge {
+    TOP_EDGE,
+    BOTTOM_EDGE,
+    LEFT_EDGE,
+    RIGHT_EDGE
+  };
+
   gfx::Point GetPanelPositionForMouseLocation(
       const gfx::Point& mouse_location) const;
 
+  // |target_position| is in screen coordinate systems. It contains the proposed
+  //  panel origin to move to. Returns true if the request has been performed.
+  void TryDetach(const gfx::Point& target_position);
+  void TryDock(const gfx::Point& target_position);
+  void TryStack(const gfx::Point& target_position);
+  bool TryUnstackFromTop(const gfx::Point& target_position);
+  bool TryUnstackFromBottom(const gfx::Point& target_position);
+  void TrySnap(gfx::Point* target_position);
+
+  // Finds the panel that the dragging panel with |potential_position| could
+  // snap to or stack with. If such panel is found, |target_bounds| contains the
+  // new bounds for the dragging panel and |target_edge| contains the matched
+  // edge.
+  Panel* FindPanelToGlue(const gfx::Point& potential_position,
+                         GlueAction action,
+                         gfx::Rect* target_bounds,
+                         GlueEdge* target_edge) const;
+
+  // Moves the |panel| (and all panels below if it is in a stack) to a different
+  // collection.
+  void MovePanelAndBelowToCollection(
+      Panel* panel,
+      PanelCollection* target_collection,
+      PanelCollection::PositioningMask positioning_mask) const;
+
   PanelManager* panel_manager_;  // Weak, owns us.
+  bool panel_stacking_enabled_;
 
   // Panel currently being dragged.
   Panel* dragging_panel_;
@@ -70,21 +93,9 @@ class PanelDragController {
   // The original panel collection when the drag is started.
   PanelCollection* dragging_panel_original_collection_;
 
-  // The mouse location, in screen coordinates, when StartDragging or Drag was
-  // pveviously called.
-  gfx::Point last_mouse_location_;
-
   // The offset from mouse location to the panel position when the drag
   // starts.
   gfx::Vector2d offset_from_mouse_location_on_drag_start_;
-
-  // The minimum distance that the docked panel gets dragged up in order to
-  // make it free-floating.
-  static const int kDetachDockedPanelThreshold;
-
-  // Indicates how close the bottom of the detached panel is to the bottom of
-  // the docked area such that the detached panel becomes docked.
-  static const int kDockDetachedPanelThreshold;
 
   DISALLOW_COPY_AND_ASSIGN(PanelDragController);
 };

@@ -5,9 +5,9 @@
 #include "net/base/host_mapping_rules.h"
 
 #include "base/logging.h"
-#include "base/string_split.h"
-#include "base/string_tokenizer.h"
-#include "base/string_util.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_tokenizer.h"
+#include "base/strings/string_util.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_util.h"
 
@@ -67,7 +67,7 @@ bool HostMappingRules::RewriteHost(HostPortPair* host_port) const {
 
 bool HostMappingRules::AddRuleFromString(const std::string& rule_string) {
   std::string trimmed;
-  TrimWhitespaceASCII(rule_string, TRIM_ALL, &trimmed);
+  base::TrimWhitespaceASCII(rule_string, base::TRIM_ALL, &trimmed);
   std::vector<std::string> parts;
   base::SplitString(trimmed, ' ', &parts);
 
@@ -100,7 +100,7 @@ void HostMappingRules::SetRulesFromString(const std::string& rules_string) {
   exclusion_rules_.clear();
   map_rules_.clear();
 
-  StringTokenizer rules(rules_string, ",");
+  base::StringTokenizer rules(rules_string, ",");
   while (rules.GetNext()) {
     bool ok = AddRuleFromString(rules.token());
     LOG_IF(ERROR, !ok) << "Failed parsing rule: " << rules.token();

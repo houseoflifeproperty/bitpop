@@ -5,9 +5,10 @@
 #include "chromeos/dbus/shill_profile_client.h"
 
 #include "base/bind.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
 #include "base/values.h"
+#include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/shill_property_changed_observer.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
@@ -19,13 +20,12 @@ namespace chromeos {
 
 namespace {
 
-// The ShillProfileClient implementation.
+const char kSharedProfilePath[] = "/profile/default";
+
 class ShillProfileClientImpl : public ShillProfileClient {
  public:
-  explicit ShillProfileClientImpl(dbus::Bus* bus);
+  ShillProfileClientImpl();
 
-  /////////////////////////////////////
-  // ShillProfileClient overrides.
   virtual void AddPropertyChangedObserver(
       const dbus::ObjectPath& profile_path,
       ShillPropertyChangedObserver* observer) OVERRIDE {
@@ -37,6 +37,7 @@ class ShillProfileClientImpl : public ShillProfileClient {
       ShillPropertyChangedObserver* observer) OVERRIDE {
     GetHelper(profile_path)->RemovePropertyChangedObserver(observer);
   }
+
   virtual void GetProperties(
       const dbus::ObjectPath& profile_path,
       const DictionaryValueCallbackWithoutStatus& callback,
@@ -49,6 +50,15 @@ class ShillProfileClientImpl : public ShillProfileClient {
                            const std::string& entry_path,
                            const base::Closure& callback,
                            const ErrorCallback& error_callback) OVERRIDE;
+
+  virtual TestInterface* GetTestInterface() OVERRIDE {
+    return NULL;
+  }
+
+ protected:
+  virtual void Init(dbus::Bus* bus) OVERRIDE {
+    bus_ = bus;
+  }
 
  private:
   typedef std::map<std::string, ShillClientHelper*> HelperMap;
@@ -63,8 +73,8 @@ class ShillProfileClientImpl : public ShillProfileClient {
   DISALLOW_COPY_AND_ASSIGN(ShillProfileClientImpl);
 };
 
-ShillProfileClientImpl::ShillProfileClientImpl(dbus::Bus* bus)
-    : bus_(bus),
+ShillProfileClientImpl::ShillProfileClientImpl()
+    : bus_(NULL),
       helpers_deleter_(&helpers_) {
 }
 
@@ -76,9 +86,9 @@ ShillClientHelper* ShillProfileClientImpl::GetHelper(
 
   // There is no helper for the profile, create it.
   dbus::ObjectProxy* object_proxy =
-      bus_->GetObjectProxy(flimflam::kFlimflamServiceName, profile_path);
-  ShillClientHelper* helper = new ShillClientHelper(bus_, object_proxy);
-  helper->MonitorPropertyChanged(flimflam::kFlimflamProfileInterface);
+      bus_->GetObjectProxy(shill::kFlimflamServiceName, profile_path);
+  ShillClientHelper* helper = new ShillClientHelper(object_proxy);
+  helper->MonitorPropertyChanged(shill::kFlimflamProfileInterface);
   helpers_.insert(HelperMap::value_type(profile_path.value(), helper));
   return helper;
 }
@@ -87,8 +97,8 @@ void ShillProfileClientImpl::GetProperties(
     const dbus::ObjectPath& profile_path,
     const DictionaryValueCallbackWithoutStatus& callback,
     const ErrorCallback& error_callback) {
-  dbus::MethodCall method_call(flimflam::kFlimflamProfileInterface,
-                               flimflam::kGetPropertiesFunction);
+  dbus::MethodCall method_call(shill::kFlimflamProfileInterface,
+                               shill::kGetPropertiesFunction);
   GetHelper(profile_path)->CallDictionaryValueMethodWithErrorCallback(
       &method_call, callback, error_callback);
 }
@@ -98,8 +108,8 @@ void ShillProfileClientImpl::GetEntry(
     const std::string& entry_path,
     const DictionaryValueCallbackWithoutStatus& callback,
     const ErrorCallback& error_callback) {
-  dbus::MethodCall method_call(flimflam::kFlimflamProfileInterface,
-                               flimflam::kGetEntryFunction);
+  dbus::MethodCall method_call(shill::kFlimflamProfileInterface,
+                               shill::kGetEntryFunction);
   dbus::MessageWriter writer(&method_call);
   writer.AppendString(entry_path);
   GetHelper(profile_path)->CallDictionaryValueMethodWithErrorCallback(
@@ -111,79 +121,13 @@ void ShillProfileClientImpl::DeleteEntry(
     const std::string& entry_path,
     const base::Closure& callback,
     const ErrorCallback& error_callback) {
-  dbus::MethodCall method_call(flimflam::kFlimflamProfileInterface,
-                               flimflam::kDeleteEntryFunction);
+  dbus::MethodCall method_call(shill::kFlimflamProfileInterface,
+                               shill::kDeleteEntryFunction);
   dbus::MessageWriter writer(&method_call);
   writer.AppendString(entry_path);
   GetHelper(profile_path)->CallVoidMethodWithErrorCallback(
       &method_call, callback, error_callback);
 }
-
-// A stub implementation of ShillProfileClient.
-class ShillProfileClientStubImpl : public ShillProfileClient {
- public:
-  ShillProfileClientStubImpl() : weak_ptr_factory_(this) {}
-
-  virtual ~ShillProfileClientStubImpl() {}
-
-  //////////////////////////////////////
-  // ShillProfileClient overrides.
-  virtual void AddPropertyChangedObserver(
-      const dbus::ObjectPath& profile_path,
-      ShillPropertyChangedObserver* observer) OVERRIDE {}
-
-  virtual void RemovePropertyChangedObserver(
-      const dbus::ObjectPath& profile_path,
-      ShillPropertyChangedObserver* observer) OVERRIDE {}
-
-  virtual void GetProperties(
-      const dbus::ObjectPath& profile_path,
-      const DictionaryValueCallbackWithoutStatus& callback,
-      const ErrorCallback& error_callback) OVERRIDE {
-    if (callback.is_null())
-      return;
-    MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&ShillProfileClientStubImpl::PassEmptyDictionaryValue,
-                   weak_ptr_factory_.GetWeakPtr(),
-                   callback));
-  }
-
-  virtual void GetEntry(const dbus::ObjectPath& profile_path,
-                        const std::string& entry_path,
-                        const DictionaryValueCallbackWithoutStatus& callback,
-                        const ErrorCallback& error_callback) OVERRIDE {
-    if (callback.is_null())
-      return;
-    MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&ShillProfileClientStubImpl::PassEmptyDictionaryValue,
-                   weak_ptr_factory_.GetWeakPtr(),
-                   callback));
-  }
-
-  virtual void DeleteEntry(const dbus::ObjectPath& profile_path,
-                           const std::string& entry_path,
-                           const base::Closure& callback,
-                           const ErrorCallback& error_callback) OVERRIDE {
-    if (callback.is_null())
-      return;
-    MessageLoop::current()->PostTask(FROM_HERE, callback);
-  }
-
- private:
-  void PassEmptyDictionaryValue(
-      const DictionaryValueCallbackWithoutStatus& callback) const {
-    base::DictionaryValue dictionary;
-    callback.Run(dictionary);
-  }
-
-  // Note: This should remain the last member so it'll be destroyed and
-  // invalidate its weak pointers before any other members are destroyed.
-  base::WeakPtrFactory<ShillProfileClientStubImpl> weak_ptr_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(ShillProfileClientStubImpl);
-};
 
 }  // namespace
 
@@ -192,13 +136,13 @@ ShillProfileClient::ShillProfileClient() {}
 ShillProfileClient::~ShillProfileClient() {}
 
 // static
-ShillProfileClient* ShillProfileClient::Create(
-    DBusClientImplementationType type,
-    dbus::Bus* bus) {
-  if (type == REAL_DBUS_CLIENT_IMPLEMENTATION)
-    return new ShillProfileClientImpl(bus);
-  DCHECK_EQ(STUB_DBUS_CLIENT_IMPLEMENTATION, type);
-  return new ShillProfileClientStubImpl();
+ShillProfileClient* ShillProfileClient::Create() {
+  return new ShillProfileClientImpl();
+}
+
+// static
+std::string ShillProfileClient::GetSharedProfilePath() {
+  return std::string(kSharedProfilePath);
 }
 
 }  // namespace chromeos

@@ -9,6 +9,10 @@
 #include "ash/wm/session_state_animator.h"
 #include "base/basictypes.h"
 
+#if defined(OS_CHROMEOS)
+#include "ui/display/chromeos/display_configurator.h"
+#endif
+
 namespace gfx {
 class Rect;
 class Size;
@@ -24,14 +28,19 @@ namespace test {
 class PowerButtonControllerTest;
 }
 
-class SessionStateController;
+class LockStateController;
 
 // Displays onscreen animations and locks or suspends the system in response to
 // the power button being pressed or released.
-class ASH_EXPORT PowerButtonController {
+class ASH_EXPORT PowerButtonController
+// TODO(derat): Remove these ifdefs after DisplayConfigurator becomes
+// cross-platform.
+#if defined(OS_CHROMEOS)
+    : public ui::DisplayConfigurator::Observer
+#endif
+      {
  public:
-
-  explicit PowerButtonController(SessionStateController* controller);
+  explicit PowerButtonController(LockStateController* controller);
   virtual ~PowerButtonController();
 
   void set_has_legacy_power_button_for_test(bool legacy) {
@@ -45,6 +54,12 @@ class ASH_EXPORT PowerButtonController {
   void OnPowerButtonEvent(bool down, const base::TimeTicks& timestamp);
   void OnLockButtonEvent(bool down, const base::TimeTicks& timestamp);
 
+#if defined(OS_CHROMEOS)
+  // Overriden from ui::DisplayConfigurator::Observer:
+  virtual void OnDisplayModeChanged(
+      const ui::DisplayConfigurator::DisplayStateList& outputs) OVERRIDE;
+#endif
+
  private:
   friend class test::PowerButtonControllerTest;
 
@@ -52,14 +67,19 @@ class ASH_EXPORT PowerButtonController {
   bool power_button_down_;
   bool lock_button_down_;
 
-  // Is the screen currently turned off?
-  bool screen_is_off_;
+  // Has the screen brightness been reduced to 0%?
+  bool brightness_is_zero_;
+
+  // True if an internal display is off while an external display is on (e.g.
+  // for Chrome OS's docked mode, where a Chromebook's lid is closed while an
+  // external display is connected).
+  bool internal_display_off_and_external_display_on_;
 
   // Was a command-line switch set telling us that we're running on hardware
   // that misreports power button releases?
   bool has_legacy_power_button_;
 
-  SessionStateController* controller_; // Not owned.
+  LockStateController* controller_; // Not owned.
 
   DISALLOW_COPY_AND_ASSIGN(PowerButtonController);
 };

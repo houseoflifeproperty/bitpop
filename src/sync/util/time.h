@@ -10,7 +10,7 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "sync/base/sync_export.h"
 
 namespace syncer {
@@ -20,7 +20,7 @@ namespace syncer {
 SYNC_EXPORT int64 TimeToProtoTime(const base::Time& t);
 
 // Converts a time field from sync protobufs to a time object.
-base::Time ProtoTimeToTime(int64 proto_t);
+SYNC_EXPORT_PRIVATE base::Time ProtoTimeToTime(int64 proto_t);
 
 SYNC_EXPORT std::string GetTimeDebugString(const base::Time& t);
 

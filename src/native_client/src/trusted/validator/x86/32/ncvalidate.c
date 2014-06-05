@@ -30,6 +30,7 @@ static NaClValidationStatus ApplyValidator_x86_32(
     int stubout_mode,
     int readonly_text,
     const NaClCPUFeatures *f,
+    const struct NaClValidationMetadata *metadata,
     struct NaClValidationCache *cache) {
   /* TODO(jfb) Use a safe cast here. */
   const NaClCPUFeaturesX86 *cpu_features = (NaClCPUFeaturesX86 *) f;
@@ -55,7 +56,7 @@ static NaClValidationStatus ApplyValidator_x86_32(
     const char validator_id[] = "x86-32";
     cache->AddData(query, (uint8_t *) validator_id, sizeof(validator_id));
     cache->AddData(query, (uint8_t *) cpu_features, sizeof(*cpu_features));
-    cache->AddData(query, data, size);
+    NaClAddCodeIdentity(data, size, metadata, cache, query);
     if (cache->QueryKnownToValidate(query)) {
       cache->DestroyQuery(query);
       return NaClValidationSucceeded;
@@ -165,6 +166,9 @@ static NaClValidationStatus ApplyValidatorCopy_x86_32(
 }
 
 static const struct NaClValidatorInterface validator = {
+  TRUE, /* Optional stubout_mode is implemented.                */
+  TRUE, /* Optional readonly_text is implemented.               */
+  TRUE, /* Optional code replacement functions are implemented. */
   ApplyValidator_x86_32,
   ApplyValidatorCopy_x86_32,
   ApplyValidatorCodeReplacement_x86_32,

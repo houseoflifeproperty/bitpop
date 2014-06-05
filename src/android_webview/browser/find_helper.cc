@@ -5,14 +5,14 @@
 #include "android_webview/browser/find_helper.h"
 
 #include "android_webview/browser/scoped_allow_wait_for_legacy_web_view_api.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/stop_find_action.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFindOptions.h"
+#include "third_party/WebKit/public/web/WebFindOptions.h"
 
 using content::WebContents;
-using WebKit::WebFindOptions;
+using blink::WebFindOptions;
 
 namespace android_webview {
 
@@ -35,45 +35,9 @@ void FindHelper::SetListener(Listener* listener) {
   listener_ = listener;
 }
 
-int FindHelper::FindAllSync(const string16& search_string) {
-  sync_find_started_ = true;
-  async_find_started_ = false;
-
-  WebFindOptions options;
-  options.forward = true;
-  options.matchCase = false;
-  options.findNext = false;
-
-  int match_count = 0;
-  int active_ordinal = 0;
-
-  StartNewRequest(search_string);
-
-  // Any ongoing asynchronous requests will be stopped in the renderer when
-  // calling SynchronousFind. Using the asynchronous StopFinding message could
-  // lead to deadblocks as the message could arrive in the middle of the
-  // synchronous operation and cancel the reply back.
-  ScopedAllowWaitForLegacyWebViewApi wait;
-  web_contents()->GetRenderViewHost()->SynchronousFind(current_request_id_,
-                                                       search_string,
-                                                       options,
-                                                       &match_count,
-                                                       &active_ordinal);
-
-  // Post the task to ourselves to prevent trigerring the notification before
-  // we actually return from the request.
-  MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&FindHelper::NotifyResults, weak_factory_.GetWeakPtr(),
-          active_ordinal, match_count, true));
-
-  return match_count;
-}
-
-void FindHelper::FindAllAsync(const string16& search_string) {
+void FindHelper::FindAllAsync(const base::string16& search_string) {
   // Stop any ongoing asynchronous request.
-  web_contents()->GetRenderViewHost()->StopFinding(
-      content::STOP_FIND_ACTION_KEEP_SELECTION);
+  web_contents()->StopFinding(content::STOP_FIND_ACTION_KEEP_SELECTION);
 
   sync_find_started_ = false;
   async_find_started_ = true;
@@ -84,8 +48,7 @@ void FindHelper::FindAllAsync(const string16& search_string) {
   options.findNext = false;
 
   StartNewRequest(search_string);
-  web_contents()->GetRenderViewHost()->Find(current_request_id_,
-                                            search_string, options);
+  web_contents()->Find(current_request_id_, search_string, options);
 }
 
 void FindHelper::HandleFindReply(int request_id,
@@ -109,14 +72,11 @@ void FindHelper::FindNext(bool forward) {
   options.matchCase = false;
   options.findNext = true;
 
-  web_contents()->GetRenderViewHost()->Find(current_request_id_,
-                                            last_search_string_,
-                                            options);
+  web_contents()->Find(current_request_id_, last_search_string_, options);
 }
 
 void FindHelper::ClearMatches() {
-  web_contents()->GetRenderViewHost()->StopFinding(
-      content::STOP_FIND_ACTION_CLEAR_SELECTION);
+  web_contents()->StopFinding(content::STOP_FIND_ACTION_CLEAR_SELECTION);
 
   sync_find_started_ = false;
   async_find_started_ = false;
@@ -125,7 +85,7 @@ void FindHelper::ClearMatches() {
   last_active_ordinal_ = -1;
 }
 
-void FindHelper::StartNewRequest(const string16& search_string) {
+void FindHelper::StartNewRequest(const base::string16& search_string) {
   current_request_id_ = find_request_id_counter_++;
   last_search_string_ = search_string;
   last_match_count_ = -1;

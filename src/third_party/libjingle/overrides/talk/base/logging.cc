@@ -4,26 +4,40 @@
 
 #include "third_party/libjingle/overrides/talk/base/logging.h"
 
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(OS_IOS)
 #include <CoreServices/CoreServices.h>
 #endif  // OS_MACOSX
 
 #include <iomanip>
 
-#include "base/string_util.h"
+#include "base/atomicops.h"
+#include "base/strings/string_util.h"
+#include "base/threading/platform_thread.h"
+#include "third_party/libjingle/source/talk/base/ipaddress.h"
 #include "third_party/libjingle/source/talk/base/stream.h"
 #include "third_party/libjingle/source/talk/base/stringencode.h"
 #include "third_party/libjingle/source/talk/base/stringutils.h"
+#include "third_party/libjingle/source/talk/base/timeutils.h"
 
-// LOG_E can't call VLOG directly like LOG_V can since VLOG expands into usage
-// of the __FILE__ macro (for filtering) and the actual VLOG call from LOG_E
-// happens inside LogEHelper. Note that the second parameter to the LAZY_STREAM
-// macro is true since the filter check is already done for LOG_E.
-#define LOG_E_BASE(file_name, line_number, sev) \
+// From this file we can't use VLOG since it expands into usage of the __FILE__
+// macro (for correct filtering). The actual logging call from DIAGNOSTIC_LOG in
+// ~DiagnosticLogMessage. Note that the second parameter to the LAZY_STREAM
+// macro is true since the filter check has already been done for
+// DIAGNOSTIC_LOG.
+#define LOG_LAZY_STREAM_DIRECT(file_name, line_number, sev) \
   LAZY_STREAM(logging::LogMessage(file_name, line_number, \
                                   -sev).stream(), true)
 
 namespace talk_base {
+
+void (*g_logging_delegate_function)(const std::string&) = NULL;
+void (*g_extra_logging_init_function)(
+    void (*logging_delegate_function)(const std::string&)) = NULL;
+#ifndef NDEBUG
+COMPILE_ASSERT(sizeof(base::subtle::Atomic32) == sizeof(base::PlatformThreadId),
+               atomic32_not_same_size_as_platformthreadid);
+base::subtle::Atomic32 g_init_logging_delegate_thread_id = 0;
+#endif
 
 /////////////////////////////////////////////////////////////////////////////
 // Constant Labels
@@ -51,10 +65,10 @@ std::string ErrorName(int err, const ConstantLabel* err_table) {
 }
 
 /////////////////////////////////////////////////////////////////////////////
-// LogEHelper
+// Log helper functions
 /////////////////////////////////////////////////////////////////////////////
 
-// Summarizes LOG_E messages as strings.
+// Generates extra information for LOG_E.
 static std::string GenerateExtra(LogErrorContext err_ctx,
                                  int err,
                                  const char* module) {
@@ -86,7 +100,11 @@ static std::string GenerateExtra(LogErrorContext err_ctx,
         break;
       }
 #endif  // OS_WIN
-#if defined(OS_MACOSX)
+#if defined(OS_IOS)
+      case ERRCTX_OSSTATUS:
+        tmp << " " << "Unknown LibJingle error: " << err;
+        break;
+#elif defined(OS_MACOSX)
       case ERRCTX_OSSTATUS: {
         tmp << " " << nonnull(GetMacOSStatusErrorString(err), "Unknown error");
         if (const char* desc = GetMacOSStatusCommentString(err)) {
@@ -103,22 +121,41 @@ static std::string GenerateExtra(LogErrorContext err_ctx,
   return "";
 }
 
-LogEHelper::LogEHelper(const char* file,
-                       int line,
-                       LoggingSeverity severity,
-                       LogErrorContext err_ctx,
-                       int err,
-                       const char* module)
+DiagnosticLogMessage::DiagnosticLogMessage(const char* file,
+                                           int line,
+                                           LoggingSeverity severity,
+                                           bool log_to_chrome,
+                                           LogErrorContext err_ctx,
+                                           int err)
     : file_name_(file),
       line_(line),
-      severity_(severity) {
+      severity_(severity),
+      log_to_chrome_(log_to_chrome) {
+  extra_ = GenerateExtra(err_ctx, err, NULL);
+}
+
+DiagnosticLogMessage::DiagnosticLogMessage(const char* file,
+                                           int line,
+                                           LoggingSeverity severity,
+                                           bool log_to_chrome,
+                                           LogErrorContext err_ctx,
+                                           int err,
+                                           const char* module)
+    : file_name_(file),
+      line_(line),
+      severity_(severity),
+      log_to_chrome_(log_to_chrome) {
   extra_ = GenerateExtra(err_ctx, err, module);
 }
 
-LogEHelper::~LogEHelper() {
+DiagnosticLogMessage::~DiagnosticLogMessage() {
   print_stream_ << extra_;
   const std::string& str = print_stream_.str();
-  LOG_E_BASE(file_name_.c_str(), line_, severity_) << str;
+  if (log_to_chrome_)
+    LOG_LAZY_STREAM_DIRECT(file_name_, line_, severity_) << str;
+  if (g_logging_delegate_function && severity_ <= LS_INFO) {
+    g_logging_delegate_function(str);
+  }
 }
 
 // Note: this function is a copy from the overriden libjingle implementation.
@@ -237,6 +274,38 @@ void LogMultiline(LoggingSeverity level, const char* label, bool input,
   if (state) {
     state->unprintable_count_[input] = consecutive_unprintable;
   }
+}
+
+void InitDiagnosticLoggingDelegateFunction(
+    void (*delegate)(const std::string&)) {
+#ifndef NDEBUG
+  // Ensure that this function is always called from the same thread.
+  base::subtle::NoBarrier_CompareAndSwap(&g_init_logging_delegate_thread_id, 0,
+      static_cast<base::subtle::Atomic32>(base::PlatformThread::CurrentId()));
+  DCHECK_EQ(g_init_logging_delegate_thread_id,
+            base::PlatformThread::CurrentId());
+#endif
+  CHECK(delegate);
+  // This function may be called with the same argument several times if the
+  // page is reloaded or there are several PeerConnections on one page with
+  // logging enabled. This is OK, we simply don't have to do anything.
+  if (delegate == g_logging_delegate_function)
+    return;
+  CHECK(!g_logging_delegate_function);
+#ifdef NDEBUG
+  IPAddress::set_strip_sensitive(true);
+#endif
+  g_logging_delegate_function = delegate;
+
+  if (g_extra_logging_init_function)
+    g_extra_logging_init_function(delegate);
+}
+
+void SetExtraLoggingInit(
+    void (*function)(void (*delegate)(const std::string&))) {
+  CHECK(function);
+  CHECK(!g_extra_logging_init_function);
+  g_extra_logging_init_function = function;
 }
 
 }  // namespace talk_base

@@ -6,37 +6,36 @@
 #define CONTENT_RENDERER_RENDERER_WEBCOOKIEJAR_IMPL_H_
 
 // TODO(darin): WebCookieJar.h is missing a WebString.h include!
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebCookieJar.h"
+#include "third_party/WebKit/public/platform/WebCookieJar.h"
 
 namespace content {
-class RenderViewImpl;
+class RenderFrameImpl;
 
-class RendererWebCookieJarImpl : public WebKit::WebCookieJar {
+class RendererWebCookieJarImpl : public blink::WebCookieJar {
  public:
-  explicit RendererWebCookieJarImpl(RenderViewImpl* sender)
+  explicit RendererWebCookieJarImpl(RenderFrameImpl* sender)
       : sender_(sender) {
   }
   virtual ~RendererWebCookieJarImpl() {}
 
  private:
-  // WebKit::WebCookieJar methods:
+  // blink::WebCookieJar methods:
   virtual void setCookie(
-      const WebKit::WebURL& url, const WebKit::WebURL& first_party_for_cookies,
-      const WebKit::WebString& value);
-  virtual WebKit::WebString cookies(
-      const WebKit::WebURL& url, const WebKit::WebURL& first_party_for_cookies);
-  virtual WebKit::WebString cookieRequestHeaderFieldValue(
-      const WebKit::WebURL& url, const WebKit::WebURL& first_party_for_cookies);
+      const blink::WebURL& url, const blink::WebURL& first_party_for_cookies,
+      const blink::WebString& value);
+  virtual blink::WebString cookies(
+      const blink::WebURL& url, const blink::WebURL& first_party_for_cookies);
+  virtual blink::WebString cookieRequestHeaderFieldValue(
+      const blink::WebURL& url, const blink::WebURL& first_party_for_cookies);
   virtual void rawCookies(
-      const WebKit::WebURL& url, const WebKit::WebURL& first_party_for_cookies,
-      WebKit::WebVector<WebKit::WebCookie>& cookies);
+      const blink::WebURL& url, const blink::WebURL& first_party_for_cookies,
+      blink::WebVector<blink::WebCookie>& cookies);
   virtual void deleteCookie(
-      const WebKit::WebURL& url, const WebKit::WebString& cookie_name);
+      const blink::WebURL& url, const blink::WebString& cookie_name);
   virtual bool cookiesEnabled(
-      const WebKit::WebURL& url, const WebKit::WebURL& first_party_for_cookies);
+      const blink::WebURL& url, const blink::WebURL& first_party_for_cookies);
 
-  RenderViewImpl* sender_;
+  RenderFrameImpl* sender_;
 };
 
 }  // namespace content

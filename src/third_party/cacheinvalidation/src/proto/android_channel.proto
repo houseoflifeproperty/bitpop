@@ -35,7 +35,6 @@ import "client_protocol.proto";
 // channel version controls the expected envelope syntax and semantics of
 // http and c2dm messages sent between the client and server.
 enum MajorVersion {
-  
 
   // The initial version of the android channel protocol.  Inbound and
   // outbound channel packets contained a single binary protocol message only.
@@ -59,12 +58,7 @@ enum MajorVersion {
 // An id that specifies how to route a message to a Ticl on an Android device
 // via C2DM.
 message EndpointId {
-
-  // The version of this message.
-  // Obsolete:  no longer set after the INITIAL version of the channel
-  // TODO: Remove with placeholder comment once
-  // unversioned clients are no longer supported
-  optional ProtocolVersion protocol_version = 1;
+  // Field 1 was once the ProtocolVersion of this message.
 
   // The "registration_id" returned when the client registers with c2dm.  This
   // id is required by c2dm in order to send a message to the device.

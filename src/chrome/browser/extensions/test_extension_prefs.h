@@ -8,18 +8,25 @@
 #include <string>
 
 #include "base/files/scoped_temp_dir.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/common/extensions/extension.h"
+#include "extensions/common/manifest.h"
 
 class ExtensionPrefValueMap;
 class PrefService;
+class PrefServiceSyncable;
 
 namespace base {
 class DictionaryValue;
 class SequencedTaskRunner;
 }
 
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
+
 namespace extensions {
+class Extension;
 class ExtensionPrefs;
 
 // This is a test class intended to make it easier to work with ExtensionPrefs
@@ -33,9 +40,14 @@ class TestExtensionPrefs {
   const ExtensionPrefs& const_prefs() const {
       return *prefs_.get();
   }
-  PrefService* pref_service() { return pref_service_.get(); }
-  const FilePath& temp_dir() const { return temp_dir_.path(); }
-  const FilePath& extensions_dir() const { return extensions_dir_; }
+  PrefService* pref_service();
+  const scoped_refptr<user_prefs::PrefRegistrySyncable>& pref_registry();
+  void ResetPrefRegistry();
+  const base::FilePath& temp_dir() const { return temp_dir_.path(); }
+  const base::FilePath& extensions_dir() const { return extensions_dir_; }
+  ExtensionPrefValueMap* extension_pref_value_map() {
+    return extension_pref_value_map_.get();
+  }
 
   // This will cause the ExtensionPrefs to be deleted and recreated, based on
   // any existing backing file we had previously created.
@@ -43,27 +55,27 @@ class TestExtensionPrefs {
 
   // Creates a new Extension with the given name in our temp dir, adds it to
   // our ExtensionPrefs, and returns it.
-  scoped_refptr<Extension> AddExtension(std::string name);
+  scoped_refptr<Extension> AddExtension(const std::string& name);
 
   // As above, but the extension is an app.
-  scoped_refptr<Extension> AddApp(std::string name);
+  scoped_refptr<Extension> AddApp(const std::string& name);
 
   // Similar to AddExtension, but takes a dictionary with manifest values.
   scoped_refptr<Extension> AddExtensionWithManifest(
       const base::DictionaryValue& manifest,
-      Extension::Location location);
+      Manifest::Location location);
 
   // Similar to AddExtension, but takes a dictionary with manifest values
   // and extension flags.
   scoped_refptr<Extension> AddExtensionWithManifestAndFlags(
       const base::DictionaryValue& manifest,
-      Extension::Location location,
+      Manifest::Location location,
       int extra_flags);
 
   // Similar to AddExtension, this adds a new test Extension. This is useful for
   // cases when you don't need the Extension object, but just the id it was
   // assigned.
-  std::string AddExtensionAndReturnId(std::string name);
+  std::string AddExtensionAndReturnId(const std::string& name);
 
   PrefService* CreateIncognitoPrefService() const;
 
@@ -73,9 +85,10 @@ class TestExtensionPrefs {
 
  protected:
   base::ScopedTempDir temp_dir_;
-  FilePath preferences_file_;
-  FilePath extensions_dir_;
-  scoped_ptr<PrefService> pref_service_;
+  base::FilePath preferences_file_;
+  base::FilePath extensions_dir_;
+  scoped_refptr<user_prefs::PrefRegistrySyncable> pref_registry_;
+  scoped_ptr<PrefServiceSyncable> pref_service_;
   scoped_ptr<ExtensionPrefs> prefs_;
   scoped_ptr<ExtensionPrefValueMap> extension_pref_value_map_;
   const scoped_refptr<base::SequencedTaskRunner> task_runner_;

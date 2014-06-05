@@ -26,121 +26,83 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import unittest
+import webkitpy.thirdparty.unittest2 as unittest
 
-from webkitpy.common.net.layouttestresults import LayoutTestResults, ORWTResultsHTMLParser
+from webkitpy.common.net.layouttestresults import LayoutTestResults
 from webkitpy.common.system.outputcapture import OutputCapture
 from webkitpy.layout_tests.models import test_results
 from webkitpy.layout_tests.models import test_failures
 from webkitpy.thirdparty.BeautifulSoup import BeautifulSoup
 
 
-class ORWTResultsHTMLParserTest(unittest.TestCase):
-    _example_results_html = """
-<html>
-<head>
-<title>Layout Test Results</title>
-</head>
-<body>
-<p>Tests that had stderr output:</p>
-<table>
-<tr>
-<td><a href="/var/lib/buildbot/build/gtk-linux-64-release/build/LayoutTests/accessibility/aria-activedescendant-crash.html">accessibility/aria-activedescendant-crash.html</a></td>
-<td><a href="accessibility/aria-activedescendant-crash-stderr.txt">stderr</a></td>
-</tr>
-<td><a href="/var/lib/buildbot/build/gtk-linux-64-release/build/LayoutTests/http/tests/security/canvas-remote-read-svg-image.html">http/tests/security/canvas-remote-read-svg-image.html</a></td>
-<td><a href="http/tests/security/canvas-remote-read-svg-image-stderr.txt">stderr</a></td>
-</tr>
-</table><p>Tests that had no expected results (probably new):</p>
-<table>
-<tr>
-<td><a href="/var/lib/buildbot/build/gtk-linux-64-release/build/LayoutTests/fast/repaint/no-caret-repaint-in-non-content-editable-element.html">fast/repaint/no-caret-repaint-in-non-content-editable-element.html</a></td>
-<td><a href="fast/repaint/no-caret-repaint-in-non-content-editable-element-actual.txt">result</a></td>
-</tr>
-</table></body>
-</html>
-"""
-
-    _example_results_html_with_failing_tests = """
-<html>
-<head>
-<title>Layout Test Results</title>
-</head>
-<body>
-<p>Tests where results did not match expected results:</p>
-<table>
-<tr>
-<td><a href="http://trac.webkit.org/export/91245/trunk/LayoutTests/compositing/plugins/composited-plugin.html">compositing/plugins/composited-plugin.html</a></td>
-<td>
-<a href="compositing/plugins/composited-plugin-expected.txt">expected</a>
-</td>
-<td>
-<a href="compositing/plugins/composited-plugin-actual.txt">actual</a>
-</td>
-<td>
-<a href="compositing/plugins/composited-plugin-diffs.txt">diff</a>
-</td>
-<td>
-<a href="compositing/plugins/composited-plugin-pretty-diff.html">pretty diff</a>
-</td>
-</tr>
-</table>
-<p>Tests that had stderr output:</p>
-<table>
-<tr>
-<td><a href="/var/lib/buildbot/build/gtk-linux-64-release/build/LayoutTests/accessibility/aria-activedescendant-crash.html">accessibility/aria-activedescendant-crash.html</a></td>
-<td><a href="accessibility/aria-activedescendant-crash-stderr.txt">stderr</a></td>
-</tr>
-<td><a href="/var/lib/buildbot/build/gtk-linux-64-release/build/LayoutTests/http/tests/security/canvas-remote-read-svg-image.html">http/tests/security/canvas-remote-read-svg-image.html</a></td>
-<td><a href="http/tests/security/canvas-remote-read-svg-image-stderr.txt">stderr</a></td>
-</tr>
-</table><p>Tests that had no expected results (probably new):</p>
-<table>
-<tr>
-<td><a href="/var/lib/buildbot/build/gtk-linux-64-release/build/LayoutTests/fast/repaint/no-caret-repaint-in-non-content-editable-element.html">fast/repaint/no-caret-repaint-in-non-content-editable-element.html</a></td>
-<td><a href="fast/repaint/no-caret-repaint-in-non-content-editable-element-actual.txt">result</a></td>
-</tr>
-</table></body>
-</html>
-"""
-
-    def test_parse_layout_test_results(self):
-        failures = [test_failures.FailureMissingResult(), test_failures.FailureMissingImageHash(), test_failures.FailureMissingImage()]
-        testname = 'fast/repaint/no-caret-repaint-in-non-content-editable-element.html'
-        expected_results = [test_results.TestResult(testname, failures)]
-
-        results = ORWTResultsHTMLParser.parse_results_html(self._example_results_html)
-        self.assertEqual(expected_results, results)
-
-
-    def test_failures_from_fail_row(self):
-        row = BeautifulSoup("<tr><td><a>test.hml</a></td><td><a>expected image</a></td><td><a>25%</a></td></tr>")
-        test_name = unicode(row.find("a").string)
-        # Even if the caller has already found the test name, findAll inside _failures_from_fail_row will see it again.
-        failures = OutputCapture().assert_outputs(self, ORWTResultsHTMLParser._failures_from_fail_row, [row])
-        self.assertEqual(len(failures), 1)
-        self.assertEqual(type(sorted(failures)[0]), test_failures.FailureImageHashMismatch)
-
-        row = BeautifulSoup("<tr><td><a>test.hml</a><a>foo</a></td></tr>")
-        expected_logs = "Unhandled link text in results.html parsing: foo.  Please file a bug against webkitpy.\n"
-        OutputCapture().assert_outputs(self, ORWTResultsHTMLParser._failures_from_fail_row, [row], expected_logs=expected_logs)
-
-
 class LayoutTestResultsTest(unittest.TestCase):
-
-    def test_set_failure_limit_count(self):
-        results = LayoutTestResults([])
-        self.assertEqual(results.failure_limit_count(), None)
-        results.set_failure_limit_count(10)
-        self.assertEqual(results.failure_limit_count(), 10)
+    # The real files have no whitespace, but newlines make this much more readable.
+    example_full_results_json = """ADD_RESULTS({
+    "tests": {
+        "fast": {
+            "dom": {
+                "prototype-inheritance.html": {
+                    "expected": "PASS",
+                    "actual": "TEXT",
+                    "is_unexpected": true
+                },
+                "prototype-banana.html": {
+                    "expected": "FAIL",
+                    "actual": "PASS",
+                    "is_unexpected": true
+                },
+                "prototype-taco.html": {
+                    "expected": "PASS",
+                    "actual": "PASS TEXT",
+                    "is_unexpected": true
+                },
+                "prototype-chocolate.html": {
+                    "expected": "FAIL",
+                    "actual": "IMAGE+TEXT"
+                },
+                "prototype-strawberry.html": {
+                    "expected": "PASS",
+                    "actual": "IMAGE PASS",
+                    "is_unexpected": true
+                }
+            }
+        },
+        "svg": {
+            "dynamic-updates": {
+                "SVGFEDropShadowElement-dom-stdDeviation-attr.html": {
+                    "expected": "PASS",
+                    "actual": "IMAGE",
+                    "has_stderr": true,
+                    "is_unexpected": true
+                }
+            }
+        }
+    },
+    "skipped": 450,
+    "num_regressions": 15,
+    "layout_tests_dir": "\/b\/build\/slave\/Webkit_Mac10_5\/build\/src\/third_party\/WebKit\/LayoutTests",
+    "version": 3,
+    "num_passes": 77,
+    "has_pretty_patch": false,
+    "fixable": 1220,
+    "num_flaky": 0,
+    "blink_revision": "1234",
+    "has_wdiff": false
+});"""
 
     def test_results_from_string(self):
-        self.assertEqual(LayoutTestResults.results_from_string(None), None)
-        self.assertEqual(LayoutTestResults.results_from_string(""), None)
-        results = LayoutTestResults.results_from_string(ORWTResultsHTMLParserTest._example_results_html)
-        self.assertEqual(len(results.failing_tests()), 1)
+        self.assertIsNone(LayoutTestResults.results_from_string(None))
+        self.assertIsNone(LayoutTestResults.results_from_string(""))
 
-    def test_tests_matching_failure_types(self):
-        results = LayoutTestResults.results_from_string(ORWTResultsHTMLParserTest._example_results_html_with_failing_tests)
-        failing_tests = results.tests_matching_failure_types([test_failures.FailureTextMismatch])
-        self.assertEqual(len(results.failing_tests()), 2)
+    def test_was_interrupted(self):
+        self.assertTrue(LayoutTestResults.results_from_string('ADD_RESULTS({"tests":{},"interrupted":true});').run_was_interrupted())
+        self.assertFalse(LayoutTestResults.results_from_string('ADD_RESULTS({"tests":{},"interrupted":false});').run_was_interrupted())
+
+    def test_blink_revision(self):
+        self.assertEqual(LayoutTestResults.results_from_string(self.example_full_results_json).blink_revision(), 1234)
+
+    def test_actual_results(self):
+        results = LayoutTestResults.results_from_string(self.example_full_results_json)
+        self.assertEqual(results.actual_results("fast/dom/prototype-banana.html"), "PASS")
+        self.assertEqual(results.actual_results("fast/dom/prototype-taco.html"), "PASS TEXT")
+        self.assertEqual(results.actual_results("nonexistant.html"), "")

@@ -9,13 +9,13 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "ui/gl/gl_switches.h"
+#include "components/os_crypt/os_crypt_switches.h"
 
 #if defined(USE_AURA)
-#include "ui/views/corewm/corewm_switches.h"
+#include "ui/wm/core/wm_core_switches.h"
 #endif
 
 namespace test_launcher_utils {
@@ -35,9 +35,12 @@ void PrepareBrowserCommandLineForTests(CommandLine* command_line) {
   // default browser) that could conflicts with some tests expectations.
   command_line->AppendSwitch(switches::kNoDefaultBrowserCheck);
 
-  // Enable warning level logging so that we can see when bad stuff happens.
-  command_line->AppendSwitch(switches::kEnableLogging);
-  command_line->AppendSwitchASCII(switches::kLoggingLevel, "1");  // warning
+  // Enable info level logging to stderr by default so that we can see when
+  // bad stuff happens, but honor the flags specified from the command line.
+  if (!command_line->HasSwitch(switches::kEnableLogging))
+    command_line->AppendSwitchASCII(switches::kEnableLogging, "stderr");
+  if (!command_line->HasSwitch(switches::kLoggingLevel))
+    command_line->AppendSwitchASCII(switches::kLoggingLevel, "0");  // info
 
   // Disable safebrowsing autoupdate.
   command_line->AppendSwitch(switches::kSbDisableAutoUpdate);
@@ -45,15 +48,11 @@ void PrepareBrowserCommandLineForTests(CommandLine* command_line) {
   // Don't install default apps.
   command_line->AppendSwitch(switches::kDisableDefaultApps);
 
-  // Don't collect GPU info, load GPU blacklist, or schedule a GPU blacklist
-  // auto-update.
-  command_line->AppendSwitch(switches::kSkipGpuDataLoading);
-
 #if defined(USE_AURA)
   // Disable window animations under Ash as the animations effect the
   // coordinates returned and result in flake.
   command_line->AppendSwitch(
-      views::corewm::switches::kWindowAnimationsDisabled);
+      wm::switches::kWindowAnimationsDisabled);
 #endif
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
@@ -67,13 +66,13 @@ void PrepareBrowserCommandLineForTests(CommandLine* command_line) {
 
 #if defined(OS_MACOSX)
   // Use mock keychain on mac to prevent blocking permissions dialogs.
-  command_line->AppendSwitch(switches::kUseMockKeychain);
+  command_line->AppendSwitch(os_crypt::switches::kUseMockKeychain);
 #endif
 
   command_line->AppendSwitch(switches::kDisableComponentUpdate);
 }
 
-bool OverrideUserDataDir(const FilePath& user_data_dir) {
+bool OverrideUserDataDir(const base::FilePath& user_data_dir) {
   bool success = true;
 
   // PathService::Override() is the best way to change the user data directory.
@@ -92,16 +91,6 @@ bool OverrideUserDataDir(const FilePath& user_data_dir) {
 #endif
 
   return success;
-}
-
-bool OverrideGLImplementation(CommandLine* command_line,
-                              const std::string& implementation_name) {
-  if (command_line->HasSwitch(switches::kUseGL))
-    return false;
-
-  command_line->AppendSwitchASCII(switches::kUseGL, implementation_name);
-
-  return true;
 }
 
 }  // namespace test_launcher_utils

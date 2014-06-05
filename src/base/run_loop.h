@@ -8,11 +8,15 @@
 #include "base/base_export.h"
 #include "base/callback.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 
 namespace base {
 #if defined(OS_ANDROID)
 class MessagePumpForUI;
+#endif
+
+#if defined(OS_WIN)
+class MessagePumpDispatcher;
 #endif
 
 #if defined(OS_IOS)
@@ -27,16 +31,10 @@ class MessagePumpUIApplication;
 class BASE_EXPORT RunLoop {
  public:
   RunLoop();
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
-  explicit RunLoop(MessageLoop::Dispatcher* dispatcher);
+#if defined(OS_WIN)
+  explicit RunLoop(MessagePumpDispatcher* dispatcher);
 #endif
   ~RunLoop();
-
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
-  void set_dispatcher(MessageLoop::Dispatcher* dispatcher) {
-    dispatcher_ = dispatcher;
-  }
-#endif
 
   // Run the current MessageLoop. This blocks until Quit is called. Before
   // calling Run, be sure to grab an AsWeakPtr or the QuitClosure in order to
@@ -73,7 +71,7 @@ class BASE_EXPORT RunLoop {
   base::Closure QuitClosure();
 
  private:
-  friend class ::MessageLoop;
+  friend class MessageLoop;
 #if defined(OS_ANDROID)
   // Android doesn't support the blocking MessageLoop::Run, so it calls
   // BeforeRun and AfterRun directly.
@@ -92,14 +90,11 @@ class BASE_EXPORT RunLoop {
 
   MessageLoop* loop_;
 
-  // WeakPtrFactory for QuitClosure safety.
-  base::WeakPtrFactory<RunLoop> weak_factory_;
-
   // Parent RunLoop or NULL if this is the top-most RunLoop.
   RunLoop* previous_run_loop_;
 
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
-  MessageLoop::Dispatcher* dispatcher_;
+#if defined(OS_WIN)
+  MessagePumpDispatcher* dispatcher_;
 #endif
 
   // Used to count how many nested Run() invocations are on the stack.
@@ -112,6 +107,9 @@ class BASE_EXPORT RunLoop {
   // Used to record that QuitWhenIdle() was called on the MessageLoop, meaning
   // that we should quit Run once it becomes idle.
   bool quit_when_idle_received_;
+
+  // WeakPtrFactory for QuitClosure safety.
+  base::WeakPtrFactory<RunLoop> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RunLoop);
 };

@@ -6,18 +6,20 @@
 
 #import <Carbon/Carbon.h>
 
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_drag_dest_delegate.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
+#include "content/public/common/drop_data.h"
 #import "third_party/mozilla/NSPasteboard+Utils.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/base/clipboard/custom_data_helper.h"
 #import "ui/base/dragdrop/cocoa_dnd_util.h"
-#include "webkit/glue/webdropdata.h"
-#include "webkit/glue/window_open_disposition.h"
+#include "ui/base/window_open_disposition.h"
 
-using WebKit::WebDragOperationsMask;
+using blink::WebDragOperationsMask;
+using content::DropData;
 using content::OpenURLParams;
 using content::Referrer;
 using content::WebContentsImpl;
@@ -26,13 +28,13 @@ int GetModifierFlags() {
   int modifier_state = 0;
   UInt32 currentModifiers = GetCurrentKeyModifiers();
   if (currentModifiers & ::shiftKey)
-    modifier_state |= WebKit::WebInputEvent::ShiftKey;
+    modifier_state |= blink::WebInputEvent::ShiftKey;
   if (currentModifiers & ::controlKey)
-    modifier_state |= WebKit::WebInputEvent::ControlKey;
+    modifier_state |= blink::WebInputEvent::ControlKey;
   if (currentModifiers & ::optionKey)
-    modifier_state |= WebKit::WebInputEvent::AltKey;
+    modifier_state |= blink::WebInputEvent::AltKey;
   if (currentModifiers & ::cmdKey)
-      modifier_state |= WebKit::WebInputEvent::MetaKey;
+      modifier_state |= blink::WebInputEvent::MetaKey;
   return modifier_state;
 }
 
@@ -44,11 +46,12 @@ int GetModifierFlags() {
 - (id)initWithWebContentsImpl:(WebContentsImpl*)contents {
   if ((self = [super init])) {
     webContents_ = contents;
+    canceled_ = false;
   }
   return self;
 }
 
-- (WebDropData*)currentDropData {
+- (DropData*)currentDropData {
   return dropData_.get();
 }
 
@@ -103,6 +106,22 @@ int GetModifierFlags() {
   // we need to send a new enter message in draggingUpdated:.
   currentRVH_ = webContents_->GetRenderViewHost();
 
+  // Fill out a DropData from pasteboard.
+  scoped_ptr<DropData> dropData;
+  dropData.reset(new DropData());
+  [self populateDropData:dropData.get()
+             fromPasteboard:[info draggingPasteboard]];
+
+  NSDragOperation mask = [info draggingSourceOperationMask];
+
+  // Give the delegate an opportunity to cancel the drag.
+  canceled_ = !webContents_->GetDelegate()->CanDragEnter(
+      webContents_,
+      *dropData,
+      static_cast<WebDragOperationsMask>(mask));
+  if (canceled_)
+    return NSDragOperationNone;
+
   if ([self onlyAllowsNavigation]) {
     if ([[info draggingPasteboard] containsURLData])
       return NSDragOperationCopy;
@@ -114,17 +133,13 @@ int GetModifierFlags() {
     delegate_->OnDragEnter();
   }
 
-  // Fill out a WebDropData from pasteboard.
-  dropData_.reset(new WebDropData());
-  [self populateWebDropData:dropData_.get()
-             fromPasteboard:[info draggingPasteboard]];
+  dropData_.swap(dropData);
 
   // Create the appropriate mouse locations for WebCore. The draggingLocation
   // is in window coordinates. Both need to be flipped.
   NSPoint windowPoint = [info draggingLocation];
   NSPoint viewPoint = [self flipWindowPointToView:windowPoint view:view];
   NSPoint screenPoint = [self flipWindowPointToScreen:windowPoint view:view];
-  NSDragOperation mask = [info draggingSourceOperationMask];
   webContents_->GetRenderViewHost()->DragTargetDragEnter(
       *dropData_,
       gfx::Point(viewPoint.x, viewPoint.y),
@@ -143,6 +158,9 @@ int GetModifierFlags() {
   if (currentRVH_ != webContents_->GetRenderViewHost())
     return;
 
+  if (canceled_)
+    return;
+
   if ([self onlyAllowsNavigation])
     return;
 
@@ -158,6 +176,9 @@ int GetModifierFlags() {
   DCHECK(currentRVH_);
   if (currentRVH_ != webContents_->GetRenderViewHost())
     [self draggingEntered:info view:view];
+
+  if (canceled_)
+    return NSDragOperationNone;
 
   if ([self onlyAllowsNavigation]) {
     if ([[info draggingPasteboard] containsURLData])
@@ -226,11 +247,14 @@ int GetModifierFlags() {
 // Given |data|, which should not be nil, fill it in using the contents of the
 // given pasteboard. The types handled by this method should be kept in sync
 // with [WebContentsViewCocoa registerDragTypes].
-- (void)populateWebDropData:(WebDropData*)data
-             fromPasteboard:(NSPasteboard*)pboard {
+- (void)populateDropData:(DropData*)data
+          fromPasteboard:(NSPasteboard*)pboard {
   DCHECK(data);
   DCHECK(pboard);
   NSArray* types = [pboard types];
+
+  data->did_originate_from_renderer =
+      [types containsObject:ui::kChromeDragDummyPboardType];
 
   // Get URL if possible. To avoid exposing file system paths to web content,
   // filenames in the drag are not converted to file URLs.
@@ -241,19 +265,21 @@ int GetModifierFlags() {
 
   // Get plain text.
   if ([types containsObject:NSStringPboardType]) {
-    data->text = NullableString16(
+    data->text = base::NullableString16(
         base::SysNSStringToUTF16([pboard stringForType:NSStringPboardType]),
         false);
   }
 
   // Get HTML. If there's no HTML, try RTF.
   if ([types containsObject:NSHTMLPboardType]) {
-    data->html = NullableString16(
-        base::SysNSStringToUTF16([pboard stringForType:NSHTMLPboardType]),
-        false);
+    NSString* html = [pboard stringForType:NSHTMLPboardType];
+    data->html = base::NullableString16(base::SysNSStringToUTF16(html), false);
+  } else if ([types containsObject:ui::kChromeDragImageHTMLPboardType]) {
+    NSString* html = [pboard stringForType:ui::kChromeDragImageHTMLPboardType];
+    data->html = base::NullableString16(base::SysNSStringToUTF16(html), false);
   } else if ([types containsObject:NSRTFPboardType]) {
     NSString* html = [pboard htmlFromRtf];
-    data->html = NullableString16(base::SysNSStringToUTF16(html), false);
+    data->html = base::NullableString16(base::SysNSStringToUTF16(html), false);
   }
 
   // Get files.
@@ -265,9 +291,9 @@ int GetModifierFlags() {
         BOOL exists = [[NSFileManager defaultManager]
                            fileExistsAtPath:filename];
         if (exists) {
-          data->filenames.push_back(
-              WebDropData::FileInfo(
-                  base::SysNSStringToUTF16(filename), string16()));
+          data->filenames.push_back(ui::FileInfo(
+              base::FilePath::FromUTF8Unsafe(base::SysNSStringToUTF8(filename)),
+              base::FilePath()));
         }
       }
     }

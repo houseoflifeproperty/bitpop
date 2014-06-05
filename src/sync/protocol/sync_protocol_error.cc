@@ -22,6 +22,8 @@ const char* GetSyncErrorTypeString(SyncProtocolErrorType type) {
     ENUM_CASE(NON_RETRIABLE_ERROR);
     ENUM_CASE(MIGRATION_DONE);
     ENUM_CASE(INVALID_CREDENTIAL);
+    ENUM_CASE(DISABLED_BY_ADMIN);
+    ENUM_CASE(USER_ROLLBACK);
     ENUM_CASE(UNKNOWN_ERROR);
   }
   NOTREACHED();
@@ -35,6 +37,8 @@ const char* GetClientActionString(ClientAction action) {
     ENUM_CASE(ENABLE_SYNC_ON_ACCOUNT);
     ENUM_CASE(STOP_AND_RESTART_SYNC);
     ENUM_CASE(DISABLE_SYNC_ON_CLIENT);
+    ENUM_CASE(STOP_SYNC_FOR_DISABLED_ACCOUNT);
+    ENUM_CASE(DISABLE_SYNC_AND_ROLLBACK);
     ENUM_CASE(UNKNOWN_ACTION);
   }
   NOTREACHED();
@@ -49,8 +53,8 @@ SyncProtocolError::SyncProtocolError()
 SyncProtocolError::~SyncProtocolError() {
 }
 
-DictionaryValue* SyncProtocolError::ToValue() const {
-  DictionaryValue* value = new DictionaryValue();
+base::DictionaryValue* SyncProtocolError::ToValue() const {
+  base::DictionaryValue* value = new base::DictionaryValue();
   value->SetString("ErrorType",
                    GetSyncErrorTypeString(error_type));
   value->SetString("ErrorDescription", error_description);

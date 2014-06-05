@@ -5,27 +5,29 @@
 #include "chrome/browser/content_settings/cookie_settings.h"
 
 #include "base/command_line.h"
+#include "base/prefs/pref_service.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/content_settings_pattern.h"
 #include "chrome/common/pref_names.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "components/keyed_service/core/keyed_service.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/user_metrics.h"
 #include "extensions/common/constants.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/net_errors.h"
 #include "net/base/static_cookie_policy.h"
+#include "url/gurl.h"
 
+using base::UserMetricsAction;
 using content::BrowserThread;
-using content::UserMetricsAction;
 
 namespace {
 
@@ -48,7 +50,7 @@ scoped_refptr<CookieSettings> CookieSettings::Factory::GetForProfile(
     Profile* profile) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   return static_cast<CookieSettings*>(
-      GetInstance()->GetServiceForProfile(profile, true).get());
+      GetInstance()->GetServiceForBrowserContext(profile, true).get());
 }
 
 // static
@@ -57,25 +59,30 @@ CookieSettings::Factory* CookieSettings::Factory::GetInstance() {
 }
 
 CookieSettings::Factory::Factory()
-    : RefcountedProfileKeyedServiceFactory(
+    : RefcountedBrowserContextKeyedServiceFactory(
         "CookieSettings",
-        ProfileDependencyManager::GetInstance()) {
+        BrowserContextDependencyManager::GetInstance()) {
 }
 
 CookieSettings::Factory::~Factory() {}
 
-void CookieSettings::Factory::RegisterUserPrefs(PrefService* user_prefs) {
-  user_prefs->RegisterBooleanPref(prefs::kBlockThirdPartyCookies,
-                                  false,
-                                  PrefService::SYNCABLE_PREF);
+void CookieSettings::Factory::RegisterProfilePrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterBooleanPref(
+      prefs::kBlockThirdPartyCookies,
+      false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 }
 
-bool CookieSettings::Factory::ServiceRedirectedInIncognito() const {
-  return true;
+content::BrowserContext* CookieSettings::Factory::GetBrowserContextToUse(
+    content::BrowserContext* context) const {
+  return chrome::GetBrowserContextRedirectedInIncognito(context);
 }
 
-scoped_refptr<RefcountedProfileKeyedService>
-CookieSettings::Factory::BuildServiceInstanceFor(Profile* profile) const {
+scoped_refptr<RefcountedBrowserContextKeyedService>
+CookieSettings::Factory::BuildServiceInstanceFor(
+    content::BrowserContext* context) const {
+  Profile* profile = static_cast<Profile*>(context);
   return new CookieSettings(profile->GetHostContentSettingsMap(),
                             profile->GetPrefs());
 }
@@ -128,7 +135,7 @@ bool CookieSettings::IsCookieSessionOnly(const GURL& origin) const {
 void CookieSettings::GetCookieSettings(
     ContentSettingsForOneType* settings) const {
   return host_content_settings_map_->GetSettingsForOneType(
-      CONTENT_SETTINGS_TYPE_COOKIES, "", settings);
+      CONTENT_SETTINGS_TYPE_COOKIES, std::string(), settings);
 }
 
 void CookieSettings::SetDefaultCookieSetting(ContentSetting setting) {
@@ -145,17 +152,21 @@ void CookieSettings::SetCookieSetting(
   if (setting == CONTENT_SETTING_SESSION_ONLY) {
     DCHECK(secondary_pattern == ContentSettingsPattern::Wildcard());
   }
-  host_content_settings_map_->SetContentSetting(
-      primary_pattern, secondary_pattern, CONTENT_SETTINGS_TYPE_COOKIES, "",
-      setting);
+  host_content_settings_map_->SetContentSetting(primary_pattern,
+                                                secondary_pattern,
+                                                CONTENT_SETTINGS_TYPE_COOKIES,
+                                                std::string(),
+                                                setting);
 }
 
 void CookieSettings::ResetCookieSetting(
     const ContentSettingsPattern& primary_pattern,
     const ContentSettingsPattern& secondary_pattern) {
-  host_content_settings_map_->SetContentSetting(
-      primary_pattern, secondary_pattern, CONTENT_SETTINGS_TYPE_COOKIES, "",
-      CONTENT_SETTING_DEFAULT);
+  host_content_settings_map_->SetContentSetting(primary_pattern,
+                                                secondary_pattern,
+                                                CONTENT_SETTINGS_TYPE_COOKIES,
+                                                std::string(),
+                                                CONTENT_SETTING_DEFAULT);
 }
 
 void CookieSettings::ShutdownOnUIThread() {
@@ -174,9 +185,12 @@ ContentSetting CookieSettings::GetCookieSetting(
 
   // First get any host-specific settings.
   content_settings::SettingInfo info;
-  scoped_ptr<base::Value> value(
-      host_content_settings_map_->GetWebsiteSetting(
-          url, first_party_url, CONTENT_SETTINGS_TYPE_COOKIES, "", &info));
+  scoped_ptr<base::Value> value(host_content_settings_map_->GetWebsiteSetting(
+      url,
+      first_party_url,
+      CONTENT_SETTINGS_TYPE_COOKIES,
+      std::string(),
+      &info));
   if (source)
     *source = info.source;
 
@@ -186,10 +200,7 @@ ContentSetting CookieSettings::GetCookieSetting(
       info.secondary_pattern.MatchesAllHosts() &&
       ShouldBlockThirdPartyCookies() &&
       !first_party_url.SchemeIs(extensions::kExtensionScheme)) {
-    bool not_strict = CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kOnlyBlockSettingThirdPartyCookies);
-    net::StaticCookiePolicy policy(not_strict ?
-        net::StaticCookiePolicy::BLOCK_SETTING_THIRD_PARTY_COOKIES :
+    net::StaticCookiePolicy policy(
         net::StaticCookiePolicy::BLOCK_ALL_THIRD_PARTY_COOKIES);
     int rv;
     if (setting_cookie)

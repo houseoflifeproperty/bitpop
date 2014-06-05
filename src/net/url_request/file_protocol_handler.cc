@@ -5,8 +5,9 @@
 #include "net/url_request/file_protocol_handler.h"
 
 #include "base/logging.h"
+#include "base/task_runner.h"
+#include "net/base/filename_util.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_util.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_error_job.h"
 #include "net/url_request/url_request_file_dir_job.h"
@@ -14,11 +15,15 @@
 
 namespace net {
 
-FileProtocolHandler::FileProtocolHandler() { }
+FileProtocolHandler::FileProtocolHandler(
+    const scoped_refptr<base::TaskRunner>& file_task_runner)
+    : file_task_runner_(file_task_runner) {}
+
+FileProtocolHandler::~FileProtocolHandler() {}
 
 URLRequestJob* FileProtocolHandler::MaybeCreateJob(
     URLRequest* request, NetworkDelegate* network_delegate) const {
-  FilePath file_path;
+  base::FilePath file_path;
   const bool is_file = FileURLToFilePath(request->url(), &file_path);
 
   // Check file access permissions.
@@ -34,14 +39,19 @@ URLRequestJob* FileProtocolHandler::MaybeCreateJob(
   // which doesn't end with a slash, should really be treated as a directory,
   // and it then redirects to the URLRequestFileDirJob.
   if (is_file &&
-      file_util::EndsWithSeparator(file_path) &&
+      file_path.EndsWithSeparator() &&
       file_path.IsAbsolute()) {
     return new URLRequestFileDirJob(request, network_delegate, file_path);
   }
 
   // Use a regular file request job for all non-directories (including invalid
   // file names).
-  return new URLRequestFileJob(request, network_delegate, file_path);
+  return new URLRequestFileJob(request, network_delegate, file_path,
+                               file_task_runner_);
+}
+
+bool FileProtocolHandler::IsSafeRedirectTarget(const GURL& location) const {
+  return false;
 }
 
 }  // namespace net

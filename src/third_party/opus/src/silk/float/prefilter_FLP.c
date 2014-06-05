@@ -8,11 +8,11 @@ this list of conditions and the following disclaimer.
 - Redistributions in binary form must reproduce the above copyright
 notice, this list of conditions and the following disclaimer in the
 documentation and/or other materials provided with the distribution.
-- Neither the name of Internet Society, IETF or IETF Trust, nor the 
+- Neither the name of Internet Society, IETF or IETF Trust, nor the
 names of specific contributors, may be used to endorse or promote
 products derived from this software without specific prior written
 permission.
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS “AS IS”
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
 ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
@@ -35,7 +35,7 @@ POSSIBILITY OF SUCH DAMAGE.
 /*
 * Prefilter for finding Quantizer input signal
 */
-static inline void silk_prefilt_FLP(
+static OPUS_INLINE void silk_prefilt_FLP(
     silk_prefilter_state_FLP    *P,                 /* I/O state */
     silk_float                  st_res[],           /* I */
     silk_float                  xw[],               /* O */
@@ -47,7 +47,7 @@ static inline void silk_prefilt_FLP(
     opus_int                    length              /* I */
 );
 
-void silk_warped_LPC_analysis_filter_FLP(
+static void silk_warped_LPC_analysis_filter_FLP(
           silk_float                 state[],            /* I/O  State [order + 1]                       */
           silk_float                 res[],              /* O    Residual signal [length]                */
     const silk_float                 coef[],             /* I    Coefficients [order]                    */
@@ -153,7 +153,7 @@ void silk_prefilter_FLP(
 /*
 * Prefilter for finding Quantizer input signal
 */
-static inline void silk_prefilt_FLP(
+static OPUS_INLINE void silk_prefilt_FLP(
     silk_prefilter_state_FLP    *P,                 /* I/O state */
     silk_float                  st_res[],           /* I */
     silk_float                  xw[],               /* O */

@@ -37,7 +37,7 @@ class GclTestsBase(SuperMoxTestBase):
   def tearDown(self):
     gcl.CODEREVIEW_SETTINGS = self.old_review_settings
 
-  def fakeChange(self, files=None):
+  def fakeChange(self, files=None):  # pylint: disable=R0201
     if files == None:
       files = [('A', 'aa'), ('M', 'bb')]
 
@@ -53,9 +53,20 @@ class GclTestsBase(SuperMoxTestBase):
     change_info.GetLocalRoot = lambda : 'proout'
     change_info.patch = None
     change_info.rietveld = 'https://my_server'
-    change_info.reviewers = None
     change_info._closed = False
     change_info._deleted = False
+    change_info._comments_added = []
+
+    class RpcServer(object):
+      # pylint: disable=R0201,W0613
+      def get_issue_properties(self, issue, messages):
+        return { 'patchsets': [1337] }
+    change_info.RpcServer = RpcServer
+
+    def AddComment(comment):
+      # pylint: disable=W0212
+      change_info._comments_added.append(comment)
+    change_info.AddComment = AddComment
 
     def Delete():
       change_info._deleted = True
@@ -88,16 +99,16 @@ class GclUnittest(GclTestsBase):
         'GenerateChangeName', 'GenerateDiff', 'GetCLs', 'GetCacheDir',
         'GetCachedFile', 'GetChangelistInfoFile', 'GetChangesDir',
         'GetCodeReviewSetting', 'GetFilesNotInCL', 'GetInfoDir',
-        'GetModifiedFiles', 'GetRepositoryRoot', 'ListFiles',
+        'GetModifiedFiles', 'GetRepositoryRoot', 'GetTreeStatus', 'ListFiles',
         'LoadChangelistInfoForMultiple', 'MISSING_TEST_MSG',
-        'OptionallyDoPresubmitChecks', 'REPOSITORY_ROOT', 'REVIEWERS_REGEX',
+        'OptionallyDoPresubmitChecks', 'REPOSITORY_ROOT',
         'RunShell', 'RunShellWithReturnCode', 'SVN',
         'TryChange', 'UnknownFiles', 'Warn',
         'attrs', 'breakpad', 'defer_attributes', 'fix_encoding',
-        'gclient_utils', 'json', 'main', 'need_change', 'need_change_and_args',
-        'no_args', 'optparse', 'os', 'presubmit_support', 'random', 're',
-        'rietveld',
-        'string', 'subprocess2', 'sys', 'tempfile', 'time',
+        'gclient_utils', 'git_cl', 'json', 'main', 'need_change',
+        'need_change_and_args', 'no_args', 'optparse', 'os',
+        'presubmit_support', 'random', 're', 'rietveld',
+        'ssl', 'string', 'subprocess2', 'sys', 'tempfile', 'time',
         'upload', 'urllib2',
     ]
     # If this test fails, you should add the relevant test.
@@ -180,13 +191,16 @@ class ChangeInfoUnittest(GclTestsBase):
   def testChangeInfoMembers(self):
     self.mox.ReplayAll()
     members = [
-      'CloseIssue', 'Delete', 'Exists', 'GetFiles', 'GetFileNames',
-      'GetLocalRoot', 'GetIssueDescription', 'Load', 'MissingTests',
-      'NeedsUpload', 'PrimeLint', 'RpcServer', 'Save', 'SendToRietveld',
+      'AddComment', 'CloseIssue', 'Delete', 'Exists', 'GetFiles',
+      'GetApprovingReviewers', 'GetFileNames', 'GetIssueDescription',
+      'GetLocalRoot', 'Load',
+      'MissingTests', 'NeedsUpload', 'PrimeLint', 'RpcServer', 'Save',
+      'SendToRietveld',
       'SEPARATOR',
-      'UpdateRietveldDescription',
-      'description', 'issue', 'name',
-      'needs_upload', 'patch', 'patchset', 'reviewers', 'rietveld',
+      'UpdateDescriptionFromIssue', 'UpdateRietveldDescription',
+      'append_footer',
+      'description', 'force_description', 'get_reviewers', 'issue', 'name',
+      'needs_upload', 'patch', 'patchset', 'rietveld', 'update_reviewers',
     ]
     # If this test fails, you should add the relevant test.
     self.compareMembers(
@@ -309,6 +323,7 @@ class CMDuploadUnittest(GclTestsBase):
     gcl.os.getcwd().AndReturn('somewhere')
     change_info.GetFiles().AndReturn(change_info.files)
     gcl.os.chdir('proout')
+    change_info.get_reviewers().AndReturn('foo@bar.com')
     change_info.GetFileNames().AndReturn(files)
     gcl.GenerateDiff(files)
     gcl.upload.RealMain(['upload.py', '-y', '--server=https://my_server',
@@ -443,13 +458,13 @@ class CMDuploadUnittest(GclTestsBase):
     change_info.files = [('A', 'aa'), ('M', 'bb')]
     change_info.patch = None
     change_info.rietveld = 'https://my_server'
-    change_info.reviewers = ['georges@example.com']
     files = [item[1] for item in change_info.files]
     output = presubmit_support.PresubmitOutput()
     gcl.DoPresubmitChecks(change_info, False, True).AndReturn(output)
     #gcl.GetCodeReviewSetting('CODE_REVIEW_SERVER').AndReturn('my_server')
     gcl.os.getcwd().AndReturn('somewhere')
     change_info.GetFiles().AndReturn(change_info.files)
+    change_info.get_reviewers().AndReturn(['georges@example.com'])
     change_info.GetFileNames().AndReturn(files)
     change_info.GetLocalRoot().AndReturn('proout')
     gcl.os.chdir('proout')
@@ -487,6 +502,7 @@ class CMDuploadUnittest(GclTestsBase):
                          '--reviewers=foo@example.com,bar@example.com',
                          '--issue=1', '--title= '],
                          change_info.patch).AndReturn(("1", "2"))
+    change_info.get_reviewers().AndReturn(['foo@example.com,bar@example.com'])
     change_info.Save()
     change_info.PrimeLint()
     gcl.os.chdir('somewhere')
@@ -559,7 +575,10 @@ class CMDCommitUnittest(GclTestsBase):
     change_info = self.mockLoad()
     self.mockPresubmit(change_info, fail=False)
     self.mockCommit(
-        change_info, 'deescription\nReview URL: https://my_server/1', '')
+        change_info, 'deescription\n\nReview URL: https://my_server/1', '')
+    change_info.UpdateDescriptionFromIssue()
+    change_info.GetApprovingReviewers().AndReturn(['a@c'])
+    change_info.update_reviewers(['a@c'])
     self.mox.ReplayAll()
 
     retval = gcl.CMDcommit(['naame'])
@@ -574,18 +593,25 @@ class CMDCommitUnittest(GclTestsBase):
     change_info = self.mockLoad()
     self.mockPresubmit(change_info, fail=False)
     self.mockCommit(
-        change_info, 'deescription\nReview URL: https://my_server/1',
+        change_info,
+        'deescription\n\nReview URL: https://my_server/1',
         '\nCommitted revision 12345')
-
+    change_info.UpdateDescriptionFromIssue()
+    change_info.GetApprovingReviewers().AndReturn(['a@c'])
+    change_info.update_reviewers(['a@c'])
+    change_info.append_footer('Committed: http://view/12345')
     self.mox.ReplayAll()
 
     retval = gcl.CMDcommit(['naame'])
     self.assertEquals(retval, 0)
-    self.assertEquals(change_info.description,
-        'deescription\n\nCommitted: http://view/12345')
+    # This is because append_footer is mocked.
+    self.assertEquals(change_info.description, 'deescription')
     # pylint: disable=W0212
     self.assertTrue(change_info._deleted)
     self.assertTrue(change_info._closed)
+    self.assertEqual(
+        change_info._comments_added,
+        ["Committed patchset #1 manually as r12345 (presubmit successful)."])
 
 
 if __name__ == '__main__':

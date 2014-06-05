@@ -32,14 +32,13 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/sequenced_task_runner_helpers.h"
-#include "base/time.h"
-#include "content/public/browser/browser_thread.h"
-#include "content/public/browser/download_id.h"
+#include "base/time/time.h"
 #include "content/public/browser/download_interrupt_reasons.h"
 #include "content/public/browser/download_item.h"
+#include "content/public/browser/download_url_parameters.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
 
@@ -52,14 +51,13 @@ class ByteStreamReader;
 class DownloadManagerDelegate;
 class DownloadQuery;
 class DownloadRequestHandle;
-class DownloadUrlParameters;
 struct DownloadCreateInfo;
-struct DownloadRetrieveInfo;
 
 // Browser's download manager: manages all downloads and destination view.
-class CONTENT_EXPORT DownloadManager
-    : public base::RefCountedThreadSafe<DownloadManager> {
+class CONTENT_EXPORT DownloadManager : public base::SupportsUserData::Data {
  public:
+  virtual ~DownloadManager() {}
+
   // Sets/Gets the delegate for this DownloadManager. The delegate has to live
   // past its Shutdown method being called (by the DownloadManager).
   virtual void SetDelegate(DownloadManagerDelegate* delegate) = 0;
@@ -85,6 +83,10 @@ class CONTENT_EXPORT DownloadManager
     virtual void OnDownloadCreated(
         DownloadManager* manager, DownloadItem* item) {}
 
+    // A SavePackage has successfully finished.
+    virtual void OnSavePackageSuccessfullyFinished(
+        DownloadManager* manager, DownloadItem* item) {}
+
     // Called when the DownloadManager is being destroyed to prevent Observers
     // from calling back to a stale pointer.
     virtual void ManagerGoingDown(DownloadManager* manager) {}
@@ -99,20 +101,14 @@ class CONTENT_EXPORT DownloadManager
   // clearing |downloads| first.
   virtual void GetAllDownloads(DownloadVector* downloads) = 0;
 
-  // Returns true if initialized properly.
-  virtual bool Init(BrowserContext* browser_context) = 0;
-
   // Called by a download source (Currently DownloadResourceHandler)
   // to initiate the non-source portions of a download.
   // Returns the id assigned to the download.  If the DownloadCreateInfo
   // specifies an id, that id will be used.
-  virtual DownloadItem* StartDownload(
+  virtual void StartDownload(
       scoped_ptr<DownloadCreateInfo> info,
-      scoped_ptr<ByteStreamReader> stream) = 0;
-
-  // Offthread target for cancelling a particular download.  Will be a no-op
-  // if the download has already been cancelled.
-  virtual void CancelDownload(int32 download_id) = 0;
+      scoped_ptr<ByteStreamReader> stream,
+      const DownloadUrlParameters::OnStartedCallback& on_started) = 0;
 
   // Remove downloads after remove_begin (inclusive) and before remove_end
   // (exclusive). You may pass in null Time values to do an unbounded delete
@@ -141,20 +137,32 @@ class CONTENT_EXPORT DownloadManager
   // Called by the embedder, after creating the download manager, to let it know
   // about downloads from previous runs of the browser.
   virtual DownloadItem* CreateDownloadItem(
-      const FilePath& path,
-      const GURL& url,
+      uint32 id,
+      const base::FilePath& current_path,
+      const base::FilePath& target_path,
+      const std::vector<GURL>& url_chain,
       const GURL& referrer_url,
       const base::Time& start_time,
       const base::Time& end_time,
+      const std::string& etag,
+      const std::string& last_modified,
       int64 received_bytes,
       int64 total_bytes,
       DownloadItem::DownloadState state,
+      DownloadDangerType danger_type,
+      DownloadInterruptReason interrupt_reason,
       bool opened) = 0;
 
   // The number of in progress (including paused) downloads.
   // Performance note: this loops over all items. If profiling finds that this
   // is too slow, use an AllDownloadItemNotifier to count in-progress items.
   virtual int InProgressCount() const = 0;
+
+  // The number of in progress (including paused) downloads.
+  // Performance note: this loops over all items. If profiling finds that this
+  // is too slow, use an AllDownloadItemNotifier to count in-progress items.
+  // This excludes downloads that are marked as malicious.
+  virtual int NonMaliciousInProgressCount() const = 0;
 
   virtual BrowserContext* GetBrowserContext() const = 0;
 
@@ -165,13 +173,7 @@ class CONTENT_EXPORT DownloadManager
 
   // Get the download item for |id| if present, no matter what type of download
   // it is or state it's in.
-  virtual DownloadItem* GetDownload(int id) = 0;
-
- protected:
-  virtual ~DownloadManager() {}
-
- private:
-  friend class base::RefCountedThreadSafe<DownloadManager>;
+  virtual DownloadItem* GetDownload(uint32 id) = 0;
 };
 
 }  // namespace content

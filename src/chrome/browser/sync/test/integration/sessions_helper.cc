@@ -6,21 +6,26 @@
 
 #include <algorithm>
 
+#include "base/bind.h"
+#include "base/command_line.h"
+#include "base/memory/weak_ptr.h"
 #include "base/stl_util.h"
 #include "base/test/test_timeouts.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sessions/session_types_test_helper.h"
-#include "chrome/browser/sync/glue/session_model_associator.h"
+#include "chrome/browser/sync/open_tabs_ui_delegate.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
+#include "chrome/browser/sync/sessions/notification_service_sessions_router.h"
+#include "chrome/browser/sync/sessions/sessions_sync_manager.h"
+#include "chrome/browser/sync/test/integration/multi_client_status_change_checker.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/browser/ui/singleton_tabs.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "content/public/browser/browser_thread.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 using sync_datatype_helper::test;
 
@@ -53,8 +58,8 @@ void ScopedWindowMap::Reset(SessionWindowMap* windows) {
 
 bool GetLocalSession(int index, const browser_sync::SyncedSession** session) {
   return ProfileSyncServiceFactory::GetInstance()->GetForProfile(
-      test()->GetProfile(index))->GetSessionModelAssociator()->GetLocalSession(
-          session);
+      test()->GetProfile(index))->GetOpenTabsUIDelegate()->
+          GetLocalSession(session);
 }
 
 bool ModelAssociatorHasTabWithUrl(int index, const GURL& url) {
@@ -70,7 +75,7 @@ bool ModelAssociatorHasTabWithUrl(int index, const GURL& url) {
   }
 
   int nav_index;
-  TabNavigation nav;
+  sessions::SerializedNavigationEntry nav;
   for (SessionWindowMap::const_iterator it =
            local_session->windows.begin();
        it != local_session->windows.end(); ++it) {
@@ -89,8 +94,7 @@ bool ModelAssociatorHasTabWithUrl(int index, const GURL& url) {
       nav = (*tab_it)->navigations[nav_index];
       if (nav.virtual_url() == url) {
         DVLOG(1) << "Found tab with url " << url.spec();
-        DVLOG(1) << "Timestamp is "
-                 << SessionTypesTestHelper::GetTimestamp(nav).ToInternalValue();
+        DVLOG(1) << "Timestamp is " << nav.timestamp().ToInternalValue();
         if (nav.title().empty()) {
           DVLOG(1) << "Title empty -- tab hasn't finished loading yet";
           continue;
@@ -121,6 +125,43 @@ bool OpenMultipleTabs(int index, const std::vector<GURL>& urls) {
   return WaitForTabsToLoad(index, urls);
 }
 
+namespace {
+
+class TabEventHandler : public browser_sync::LocalSessionEventHandler {
+ public:
+  TabEventHandler() : weak_factory_(this) {
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&TabEventHandler::QuitLoop, weak_factory_.GetWeakPtr()),
+        TestTimeouts::action_max_timeout());
+  }
+
+  virtual void OnLocalTabModified(
+      browser_sync::SyncedTabDelegate* modified_tab) OVERRIDE {
+    // Unwind to ensure SessionsSyncManager has processed the event.
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&TabEventHandler::QuitLoop, weak_factory_.GetWeakPtr()));
+  }
+
+  virtual void OnFaviconPageUrlsUpdated(
+      const std::set<GURL>& updated_page_urls) OVERRIDE {
+    // Unwind to ensure SessionsSyncManager has processed the event.
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&TabEventHandler::QuitLoop, weak_factory_.GetWeakPtr()));
+  }
+
+ private:
+  void QuitLoop() {
+    base::MessageLoop::current()->Quit();
+  }
+
+  base::WeakPtrFactory<TabEventHandler> weak_factory_;
+};
+
+}  // namespace
+
 bool WaitForTabsToLoad(int index, const std::vector<GURL>& urls) {
   DVLOG(1) << "Waiting for session to propagate to associator.";
   base::TimeTicks start_time = base::TimeTicks::Now();
@@ -138,9 +179,11 @@ bool WaitForTabsToLoad(int index, const std::vector<GURL>& urls) {
         return false;
       }
       if (!found) {
-        ProfileSyncServiceFactory::GetInstance()->GetForProfile(
-            test()->GetProfile(index))->GetSessionModelAssociator()->
-            BlockUntilLocalChangeForTest(TestTimeouts::action_max_timeout());
+        TabEventHandler handler;
+        browser_sync::NotificationServiceSessionsRouter router(
+            test()->GetProfile(index),
+            syncer::SyncableService::StartSyncFlare());
+        router.StartRoutingTo(&handler);
         content::RunMessageLoop();
       }
     }
@@ -203,16 +246,20 @@ int GetNumForeignSessions(int index) {
   SyncedSessionVector sessions;
   if (!ProfileSyncServiceFactory::GetInstance()->GetForProfile(
           test()->GetProfile(index))->
-          GetSessionModelAssociator()->GetAllForeignSessions(&sessions))
+          GetOpenTabsUIDelegate()->GetAllForeignSessions(
+              &sessions)) {
     return 0;
+  }
   return sessions.size();
 }
 
 bool GetSessionData(int index, SyncedSessionVector* sessions) {
   if (!ProfileSyncServiceFactory::GetInstance()->GetForProfile(
           test()->GetProfile(index))->
-          GetSessionModelAssociator()->GetAllForeignSessions(sessions))
+          GetOpenTabsUIDelegate()->GetAllForeignSessions(
+              sessions)) {
     return false;
+  }
   SortSyncedSessions(sessions);
   return true;
 }
@@ -235,19 +282,18 @@ void SortSyncedSessions(SyncedSessionVector* sessions) {
             CompareSyncedSessions);
 }
 
-bool NavigationEquals(const TabNavigation& expected,
-                      const TabNavigation& actual) {
+bool NavigationEquals(const sessions::SerializedNavigationEntry& expected,
+                      const sessions::SerializedNavigationEntry& actual) {
   if (expected.virtual_url() != actual.virtual_url()) {
     LOG(ERROR) << "Expected url " << expected.virtual_url()
                << ", actual " << actual.virtual_url();
     return false;
   }
-  if (SessionTypesTestHelper::GetReferrer(expected).url !=
-      SessionTypesTestHelper::GetReferrer(actual).url) {
+  if (expected.referrer().url != actual.referrer().url) {
     LOG(ERROR) << "Expected referrer "
-               << SessionTypesTestHelper::GetReferrer(expected).url
+               << expected.referrer().url
                << ", actual "
-               << SessionTypesTestHelper::GetReferrer(actual).url;
+               << actual.referrer().url;
     return false;
   }
   if (expected.title() != actual.title()) {
@@ -255,12 +301,11 @@ bool NavigationEquals(const TabNavigation& expected,
                << ", actual " << actual.title();
     return false;
   }
-  if (SessionTypesTestHelper::GetTransitionType(expected) !=
-      SessionTypesTestHelper::GetTransitionType(actual)) {
+  if (expected.transition_type() != actual.transition_type()) {
     LOG(ERROR) << "Expected transition "
-               << SessionTypesTestHelper::GetTransitionType(expected)
+               << expected.transition_type()
                << ", actual "
-               << SessionTypesTestHelper::GetTransitionType(actual);
+               << actual.transition_type();
     return false;
   }
   return true;
@@ -315,10 +360,52 @@ bool CheckForeignSessionsAgainst(
   return true;
 }
 
+namespace {
+
+// Helper class used in the implementation of AwaitCheckForeignSessionsAgainst.
+class CheckForeignSessionsChecker : public MultiClientStatusChangeChecker {
+ public:
+  CheckForeignSessionsChecker(int index,
+                              const std::vector<ScopedWindowMap>& windows);
+  virtual ~CheckForeignSessionsChecker();
+
+  virtual bool IsExitConditionSatisfied() OVERRIDE;
+  virtual std::string GetDebugMessage() const OVERRIDE;
+ private:
+  int index_;
+  const std::vector<ScopedWindowMap>& windows_;
+};
+
+CheckForeignSessionsChecker::CheckForeignSessionsChecker(
+    int index, const std::vector<ScopedWindowMap>& windows)
+    : MultiClientStatusChangeChecker(
+        sync_datatype_helper::test()->GetSyncServices()),
+      index_(index),
+      windows_(windows) {}
+
+CheckForeignSessionsChecker::~CheckForeignSessionsChecker() {}
+
+bool CheckForeignSessionsChecker::IsExitConditionSatisfied() {
+  return CheckForeignSessionsAgainst(index_, windows_);
+}
+
+std::string CheckForeignSessionsChecker::GetDebugMessage() const {
+  return "Waiting for matching foreign sessions";
+}
+
+}  //  namespace
+
+bool AwaitCheckForeignSessionsAgainst(
+    int index, const std::vector<ScopedWindowMap>& windows) {
+  CheckForeignSessionsChecker checker(index, windows);
+  checker.Wait();
+  return !checker.TimedOut();
+}
+
 void DeleteForeignSession(int index, std::string session_tag) {
   ProfileSyncServiceFactory::GetInstance()->GetForProfile(
       test()->GetProfile(index))->
-      GetSessionModelAssociator()->DeleteForeignSession(session_tag);
+          GetOpenTabsUIDelegate()->DeleteForeignSession(session_tag);
 }
 
 }  // namespace sessions_helper

@@ -5,40 +5,39 @@
 #ifndef CHROME_COMMON_SPELLCHECK_RESULT_H_
 #define CHROME_COMMON_SPELLCHECK_RESULT_H_
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
-// This class mirrors WebKit::WebTextCheckingResult which holds a
+// This class mirrors blink::WebTextCheckingResult which holds a
 // misspelled range inside the checked text. It also contains a
 // possible replacement of the misspelling if it is available.
-//
-// Although SpellCheckResult::Type defines various values Chromium
-// only uses the |Spelling| type. Other values are just reflecting the
-// enum definition in the original WebKit class.
-//
 struct SpellCheckResult {
-  enum Type {
+  enum Decoration {
+    // Red underline for misspelled words.
     SPELLING = 1 << 1,
-    GRAMMAR  = 1 << 2,
-    LINK = 1 << 5,
-    QUOTE = 1 << 6,
-    DASH = 1 << 7,
-    REPLACEMENT = 1 << 8,
-    CORRECTION = 1 << 9,
-    SHOWCORRECTIONPANEL = 1 << 10
+
+    // Gray underline for correctly spelled words that are incorrectly used in
+    // their context.
+    GRAMMAR = 1 << 2,
+
+    // No underline for words that spellcheck needs to track. For example, a
+    // word in the custom spellcheck dictionary.
+    INVISIBLE = 1 << 3,
   };
 
   explicit SpellCheckResult(
-      Type t = SPELLING,
+      Decoration d = SPELLING,
       int loc = 0,
       int len = 0,
-      const string16& rep = string16())
-      : type(t), location(loc), length(len), replacement(rep) {
+      const base::string16& rep = base::string16(),
+      uint32 h = 0)
+      : decoration(d), location(loc), length(len), replacement(rep), hash(h) {
   }
 
-  Type type;
+  Decoration decoration;
   int location;
   int length;
-  string16 replacement;
+  base::string16 replacement;
+  uint32 hash;
 };
 
 #endif  // CHROME_COMMON_SPELLCHECK_RESULT_H_

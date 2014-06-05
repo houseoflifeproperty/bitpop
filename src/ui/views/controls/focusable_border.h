@@ -18,25 +18,32 @@ class Insets;
 namespace views {
 
 // A Border class to draw a focused border around a field (e.g textfield).
-class FocusableBorder : public Border {
+class VIEWS_EXPORT FocusableBorder : public Border {
  public:
   FocusableBorder();
 
   // Sets the insets of the border.
   void SetInsets(int top, int left, int bottom, int right);
 
-  // Sets the focus state.
-  void set_has_focus(bool has_focus) {
-    has_focus_ = has_focus;
-  }
+  // Sets the color of this border.
+  void SetColor(SkColor color);
+  // Reverts the color of this border to the system default.
+  void UseDefaultColor();
 
   // Overridden from Border:
   virtual void Paint(const View& view, gfx::Canvas* canvas) OVERRIDE;
   virtual gfx::Insets GetInsets() const OVERRIDE;
+  virtual gfx::Size GetMinimumSize() const OVERRIDE;
 
  private:
-  bool has_focus_;
   gfx::Insets insets_;
+
+  // The color to paint the border when |use_default_color_| is false.
+  SkColor override_color_;
+
+  // Whether the system border color should be used. True unless SetColor has
+  // been called.
+  bool use_default_color_;
 
   DISALLOW_COPY_AND_ASSIGN(FocusableBorder);
 };

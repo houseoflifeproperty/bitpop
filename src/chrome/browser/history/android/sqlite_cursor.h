@@ -12,13 +12,13 @@
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/history/android/android_history_provider_service.h"
 #include "chrome/browser/history/history_types.h"
-#include "chrome/common/cancelable_task_tracker.h"
 
 // This class is JNI implementation of
 // org.chromium.chrome.database.SqliteCursor, it uses the AndroidStatement to
@@ -136,28 +136,28 @@ class SQLiteCursor {
 
   virtual ~SQLiteCursor();
 
+  // Destory SQLiteCursor object on UI thread. All cleanup need finish in UI
+  // thread.
+  void DestroyOnUIThread();
+
   // This method is for testing only.
   void set_test_observer(TestObserver* test_observer) {
     test_observer_ = test_observer;
   }
 
   // Get Favicon from history backend.
-  bool GetFavicon(history::FaviconID id,
+  bool GetFavicon(favicon_base::FaviconID id,
                   std::vector<unsigned char>* image_data);
 
   void GetFaviconForIDInUIThread(
-      history::FaviconID id,
+      favicon_base::FaviconID id,
       const FaviconService::FaviconRawCallback& callback);
 
   // The callback function of FaviconService::GetLargestRawFaviconForID().
-  void OnFaviconData(const history::FaviconBitmapResult& bitmap_result);
+  void OnFaviconData(const favicon_base::FaviconBitmapResult& bitmap_result);
 
   // The callback function of MoveTo().
-  void OnMoved(AndroidHistoryProviderService::Handle handle,
-               int pos);
-
-  // Used to cancel all request on the UI thread during shutdown.
-  void CancelAllRequests(base::WaitableEvent* finished);
+  void OnMoved(AndroidHistoryProviderService::Handle handle, int pos);
 
   JavaColumnType GetColumnTypeInternal(int column);
 
@@ -181,13 +181,13 @@ class SQLiteCursor {
 
   // Live on UI thread.
   scoped_ptr<CancelableRequestConsumer> consumer_;
-  scoped_ptr<CancelableTaskTracker> tracker_;
+  scoped_ptr<base::CancelableTaskTracker> tracker_;
 
   // The count of result rows.
   int count_;
 
   // The favicon image.
-  history::FaviconBitmapResult favicon_bitmap_result_;
+  favicon_base::FaviconBitmapResult favicon_bitmap_result_;
 
   TestObserver* test_observer_;
 

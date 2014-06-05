@@ -14,35 +14,41 @@ OpenURLParams::OpenURLParams(
     bool is_renderer_initiated)
     : url(url),
       referrer(referrer),
-      source_frame_id(-1),
+      uses_post(false),
+      frame_tree_node_id(-1),
       disposition(disposition),
       transition(transition),
       is_renderer_initiated(is_renderer_initiated),
-      is_cross_site_redirect(false) {
+      should_replace_current_entry(false),
+      user_gesture(!is_renderer_initiated) {
 }
 
 OpenURLParams::OpenURLParams(
     const GURL& url,
     const Referrer& referrer,
-    int64 source_frame_id,
+    int64 frame_tree_node_id,
     WindowOpenDisposition disposition,
     PageTransition transition,
     bool is_renderer_initiated)
     : url(url),
       referrer(referrer),
-      source_frame_id(source_frame_id),
+      uses_post(false),
+      frame_tree_node_id(frame_tree_node_id),
       disposition(disposition),
       transition(transition),
       is_renderer_initiated(is_renderer_initiated),
-      is_cross_site_redirect(false) {
+      should_replace_current_entry(false),
+      user_gesture(!is_renderer_initiated) {
 }
 
 OpenURLParams::OpenURLParams()
-    : source_frame_id(-1),
+    : uses_post(false),
+      frame_tree_node_id(-1),
       disposition(UNKNOWN),
       transition(PageTransitionFromInt(0)),
       is_renderer_initiated(false),
-      is_cross_site_redirect(false) {
+      should_replace_current_entry(false),
+      user_gesture(true) {
 }
 
 OpenURLParams::~OpenURLParams() {

@@ -5,6 +5,7 @@
 #include "ui/views/controls/menu/menu_host_root_view.h"
 
 #include "ui/views/controls/menu/menu_controller.h"
+#include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/submenu_view.h"
 
 namespace views {
@@ -19,7 +20,9 @@ MenuHostRootView::MenuHostRootView(Widget* widget,
 bool MenuHostRootView::OnMousePressed(const ui::MouseEvent& event) {
   forward_drag_to_menu_controller_ =
       !GetLocalBounds().Contains(event.location()) ||
-      !RootView::OnMousePressed(event);
+      !RootView::OnMousePressed(event) ||
+      DoesEventTargetEmptyMenuItem(event);
+
   if (forward_drag_to_menu_controller_ && GetMenuController())
     GetMenuController()->OnMousePressed(submenu_, event);
   return true;
@@ -48,22 +51,11 @@ void MenuHostRootView::OnMouseMoved(const ui::MouseEvent& event) {
 }
 
 bool MenuHostRootView::OnMouseWheel(const ui::MouseWheelEvent& event) {
-#if defined(OS_LINUX)
-  // ChromeOS uses MenuController to forward events like other
-  // mouse events.
   return GetMenuController() &&
       GetMenuController()->OnMouseWheel(submenu_, event);
-#else
-  // Windows uses focus_util_win::RerouteMouseWheel to forward events to
-  // the right menu.
-  // RootView::OnMouseWheel forwards to the focused view. We don't have a
-  // focused view, so we need to override this then forward to the menu.
-  return submenu_->OnMouseWheel(event);
-#endif
 }
 
-void MenuHostRootView::DispatchGestureEvent(
-    ui::GestureEvent* event) {
+void MenuHostRootView::DispatchGestureEvent(ui::GestureEvent* event) {
   RootView::DispatchGestureEvent(event);
   if (event->handled())
     return;
@@ -76,6 +68,12 @@ void MenuHostRootView::DispatchGestureEvent(
 
 MenuController* MenuHostRootView::GetMenuController() {
   return submenu_ ? submenu_->GetMenuItem()->GetMenuController() : NULL;
+}
+
+bool MenuHostRootView::DoesEventTargetEmptyMenuItem(
+    const ui::MouseEvent& event) {
+  View* view = GetEventHandlerForPoint(event.location());
+  return view && view->id() == MenuItemView::kEmptyMenuItemViewID;
 }
 
 }  // namespace views

@@ -5,28 +5,32 @@
 #include "chrome/browser/ui/webui/omnibox/omnibox_ui.h"
 
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
-#include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
 #include "chrome/browser/ui/webui/omnibox/omnibox_ui_handler.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_controller.h"
+#include "content/public/browser/web_ui_data_source.h"
 #include "grit/browser_resources.h"
 
-OmniboxUI::OmniboxUI(content::WebUI* web_ui)
-    : content::WebUIController(web_ui) {
+OmniboxUI::OmniboxUI(content::WebUI* web_ui) : MojoWebUIController(web_ui) {
   // Set up the chrome://omnibox/ source.
-  ChromeWebUIDataSource* html_source =
-      new ChromeWebUIDataSource(chrome::kChromeUIOmniboxHost);
-  html_source->add_resource_path("omnibox.css", IDR_OMNIBOX_CSS);
-  html_source->add_resource_path("omnibox.js", IDR_OMNIBOX_JS);
-  html_source->set_default_resource(IDR_OMNIBOX_HTML);
+  content::WebUIDataSource* html_source =
+      content::WebUIDataSource::Create(chrome::kChromeUIOmniboxHost);
+  html_source->AddResourcePath("omnibox.css", IDR_OMNIBOX_CSS);
+  html_source->AddResourcePath("omnibox.js", IDR_OMNIBOX_JS);
+  html_source->SetDefaultResource(IDR_OMNIBOX_HTML);
 
-  Profile* profile = Profile::FromWebUI(web_ui);
-  ChromeURLDataManager::AddDataSource(profile, html_source);
+  content::WebUIDataSource::Add(Profile::FromWebUI(web_ui), html_source);
 
-  // AddMessageHandler takes ownership of OmniboxUIHandler
-  web_ui->AddMessageHandler(new OmniboxUIHandler(profile));
+  AddMojoResourcePath("chrome/browser/ui/webui/omnibox/omnibox.mojom",
+                      IDR_OMNIBOX_MOJO_JS);
 }
 
-OmniboxUI::~OmniboxUI() { }
+OmniboxUI::~OmniboxUI() {}
+
+scoped_ptr<MojoWebUIHandler> OmniboxUI::CreateUIHandler(
+    mojo::ScopedMessagePipeHandle handle_to_page) {
+  return scoped_ptr<MojoWebUIHandler>(
+      mojo::BindToPipe(new OmniboxUIHandler(Profile::FromWebUI(web_ui())),
+                       handle_to_page.Pass()));
+}

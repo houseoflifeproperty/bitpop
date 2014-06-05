@@ -5,6 +5,8 @@
 #ifndef NET_SOCKET_BUFFERED_WRITE_STREAM_SOCKET_H_
 #define NET_SOCKET_BUFFERED_WRITE_STREAM_SOCKET_H_
 
+#include "base/basictypes.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "net/base/net_log.h"
 #include "net/socket/stream_socket.h"
@@ -33,7 +35,7 @@ class IPEndPoint;
 // There are no bounds on the local buffer size. Use carefully.
 class NET_EXPORT_PRIVATE BufferedWriteStreamSocket : public StreamSocket {
  public:
-  BufferedWriteStreamSocket(StreamSocket* socket_to_wrap);
+  explicit BufferedWriteStreamSocket(scoped_ptr<StreamSocket> socket_to_wrap);
   virtual ~BufferedWriteStreamSocket();
 
   // Socket interface
@@ -41,8 +43,8 @@ class NET_EXPORT_PRIVATE BufferedWriteStreamSocket : public StreamSocket {
                    const CompletionCallback& callback) OVERRIDE;
   virtual int Write(IOBuffer* buf, int buf_len,
                     const CompletionCallback& callback) OVERRIDE;
-  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual bool SetSendBufferSize(int32 size) OVERRIDE;
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
+  virtual int SetSendBufferSize(int32 size) OVERRIDE;
 
   // StreamSocket interface
   virtual int Connect(const CompletionCallback& callback) OVERRIDE;
@@ -56,8 +58,6 @@ class NET_EXPORT_PRIVATE BufferedWriteStreamSocket : public StreamSocket {
   virtual void SetOmniboxSpeculation() OVERRIDE;
   virtual bool WasEverUsed() const OVERRIDE;
   virtual bool UsingTCPFastOpen() const OVERRIDE;
-  virtual int64 NumBytesRead() const OVERRIDE;
-  virtual base::TimeDelta GetConnectTimeMicros() const OVERRIDE;
   virtual bool WasNpnNegotiated() const OVERRIDE;
   virtual NextProto GetNegotiatedProtocol() const OVERRIDE;
   virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
@@ -69,10 +69,13 @@ class NET_EXPORT_PRIVATE BufferedWriteStreamSocket : public StreamSocket {
   scoped_ptr<StreamSocket> wrapped_socket_;
   scoped_refptr<GrowableIOBuffer> io_buffer_;
   scoped_refptr<GrowableIOBuffer> backup_buffer_;
-  base::WeakPtrFactory<BufferedWriteStreamSocket> weak_factory_;
   bool callback_pending_;
   bool wrapped_write_in_progress_;
   int error_;
+
+  base::WeakPtrFactory<BufferedWriteStreamSocket> weak_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(BufferedWriteStreamSocket);
 };
 
 }  // namespace net

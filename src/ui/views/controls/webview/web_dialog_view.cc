@@ -6,25 +6,23 @@
 
 #include <vector>
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/event.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/views/controls/webview/webview.h"
 #include "ui/views/layout/fill_layout.h"
+#include "ui/views/widget/native_widget_aura.h"
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/widget.h"
 #include "ui/web_dialogs/web_dialog_delegate.h"
 #include "ui/web_dialogs/web_dialog_ui.h"
-
-#if defined(USE_AURA)
-#include "ui/base/events/event.h"
-#include "ui/views/widget/native_widget_aura.h"
-#endif
 
 using content::NativeWebKeyboardEvent;
 using content::WebContents;
@@ -44,9 +42,12 @@ WebDialogView::WebDialogView(
     WebContentsHandler* handler)
     : ClientView(NULL, NULL),
       WebDialogWebContentsDelegate(context, handler),
-      initialized_(false),
       delegate_(delegate),
-      web_view_(new views::WebView(context)) {
+      web_view_(new views::WebView(context)),
+      is_attempting_close_dialog_(false),
+      before_unload_fired_(false),
+      closed_via_webui_(false),
+      close_contents_called_(false) {
   web_view_->set_allow_accelerators(true);
   AddChildView(web_view_);
   set_contents_view(web_view_);
@@ -68,6 +69,13 @@ content::WebContents* WebDialogView::web_contents() {
 gfx::Size WebDialogView::GetPreferredSize() {
   gfx::Size out;
   if (delegate_)
+    delegate_->GetDialogSize(&out);
+  return out;
+}
+
+gfx::Size WebDialogView::GetMinimumSize() {
+  gfx::Size out;
+  if (delegate_)
     delegate_->GetMinimumDialogSize(&out);
   return out;
 }
@@ -75,24 +83,39 @@ gfx::Size WebDialogView::GetPreferredSize() {
 bool WebDialogView::AcceleratorPressed(const ui::Accelerator& accelerator) {
   // Pressing ESC closes the dialog.
   DCHECK_EQ(ui::VKEY_ESCAPE, accelerator.key_code());
-  OnDialogClosed(std::string());
+  if (GetWidget())
+    GetWidget()->Close();
   return true;
 }
 
-void WebDialogView::ViewHierarchyChanged(bool is_add,
-                                         views::View* parent,
-                                         views::View* child) {
-  if (is_add && GetWidget())
+void WebDialogView::ViewHierarchyChanged(
+    const ViewHierarchyChangedDetails& details) {
+  if (details.is_add && GetWidget())
     InitDialog();
 }
 
 bool WebDialogView::CanClose() {
-  bool close_dialog = true;
-  if (delegate_)
-    delegate_->OnCloseContents(web_view_->web_contents(),
-                               &close_dialog);
+  // Don't close UI if |delegate_| does not allow users to close it by
+  // clicking on "x" button or pressing Esc shortcut key on hosting dialog.
+  if (!delegate_->CanCloseDialog() && !close_contents_called_)
+    return false;
 
-  return close_dialog;
+  // If CloseContents() is called before CanClose(), which is called by
+  // RenderViewHostImpl::ClosePageIgnoringUnloadEvents, it indicates
+  // beforeunload event should not be fired during closing.
+  if ((is_attempting_close_dialog_ && before_unload_fired_) ||
+      close_contents_called_) {
+    is_attempting_close_dialog_ = false;
+    before_unload_fired_ = false;
+    return true;
+  }
+
+  if (!is_attempting_close_dialog_) {
+    // Fire beforeunload event when user attempts to close the dialog.
+    is_attempting_close_dialog_ = true;
+    web_view_->web_contents()->DispatchBeforeUnload(false);
+  }
+  return false;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -106,10 +129,10 @@ ui::ModalType WebDialogView::GetModalType() const {
   return GetDialogModalType();
 }
 
-string16 WebDialogView::GetWindowTitle() const {
+base::string16 WebDialogView::GetWindowTitle() const {
   if (delegate_)
     return delegate_->GetDialogTitle();
-  return string16();
+  return base::string16();
 }
 
 std::string WebDialogView::GetWindowName() const {
@@ -159,7 +182,7 @@ ui::ModalType WebDialogView::GetDialogModalType() const {
   return ui::MODAL_TYPE_NONE;
 }
 
-string16 WebDialogView::GetDialogTitle() const {
+base::string16 WebDialogView::GetDialogTitle() const {
   return GetWindowTitle();
 }
 
@@ -213,6 +236,13 @@ void WebDialogView::OnDialogClosed(const std::string& json_retval) {
   }
 }
 
+void WebDialogView::OnDialogCloseFromWebUI(const std::string& json_retval) {
+  closed_via_webui_ = true;
+  dialog_close_retval_ = json_retval;
+  if (GetWidget())
+    GetWidget()->Close();
+}
+
 void WebDialogView::OnCloseContents(WebContents* source,
                                     bool* out_close_dialog) {
   if (delegate_)
@@ -246,24 +276,24 @@ void WebDialogView::MoveContents(WebContents* source, const gfx::Rect& pos) {
 // they're all browser-specific. (This may change in the future.)
 void WebDialogView::HandleKeyboardEvent(content::WebContents* source,
                                         const NativeWebKeyboardEvent& event) {
-#if defined(USE_AURA)
+  if (!event.os_event)
+    return;
   ui::KeyEvent aura_event(event.os_event->native_event(), false);
-  views::NativeWidgetAura* aura_widget =
-      static_cast<views::NativeWidgetAura*>(GetWidget()->native_widget());
-  aura_widget->OnKeyEvent(&aura_event);
-#elif defined(OS_WIN)
-  // Any unhandled keyboard/character messages should be defproced.
-  // This allows stuff like F10, etc to work correctly.
-  DefWindowProc(event.os_event.hwnd, event.os_event.message,
-                  event.os_event.wParam, event.os_event.lParam);
-#endif
+  ui::EventHandler* event_handler =
+      GetWidget()->native_widget()->GetEventHandler();
+
+  DCHECK(event_handler);
+  if (event_handler)
+    event_handler->OnKeyEvent(&aura_event);
+
 }
 
 void WebDialogView::CloseContents(WebContents* source) {
+  close_contents_called_ = true;
   bool close_dialog = false;
   OnCloseContents(source, &close_dialog);
   if (close_dialog)
-    OnDialogClosed(std::string());
+    OnDialogClosed(closed_via_webui_ ? dialog_close_retval_ : std::string());
 }
 
 content::WebContents* WebDialogView::OpenURLFromTab(
@@ -292,9 +322,17 @@ void WebDialogView::AddNewContents(content::WebContents* source,
       was_blocked);
 }
 
-void WebDialogView::LoadingStateChanged(content::WebContents* source) {
+void WebDialogView::LoadingStateChanged(content::WebContents* source,
+    bool to_different_document) {
   if (delegate_)
     delegate_->OnLoadingStateChanged(source);
+}
+
+void WebDialogView::BeforeUnloadFired(content::WebContents* tab,
+                                      bool proceed,
+                                      bool* proceed_to_fire_unload) {
+  before_unload_fired_ = true;
+  *proceed_to_fire_unload = proceed;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -10,6 +10,10 @@
 #include "chrome/common/chrome_content_client.h"
 #include "content/public/app/content_main_delegate.h"
 
+namespace base {
+class CommandLine;
+}
+
 // Chrome implementation of ContentMainDelegate.
 class ChromeMainDelegate : public content::ContentMainDelegate {
  public:
@@ -42,13 +46,18 @@ class ChromeMainDelegate : public content::ContentMainDelegate {
   virtual content::ContentUtilityClient* CreateContentUtilityClient() OVERRIDE;
 
 #if defined(OS_MACOSX)
-  void InitMacCrashReporter(const CommandLine& command_line,
+  void InitMacCrashReporter(const base::CommandLine& command_line,
                             const std::string& process_type);
 #endif  // defined(OS_MACOSX)
 
-  chrome::ChromeContentClient chrome_content_client_;
-  scoped_ptr<base::StatsScope<base::StatsCounterTimer> > startup_timer_;
+  ChromeContentClient chrome_content_client_;
+
+  // startup_timer_ will hold a reference to stats_counter_timer_. Therefore,
+  // the declaration order of these variables matters. Changing this order will
+  // cause startup_timer_ to be freed before stats_counter_timer_, leaving a
+  // dangling reference.
   scoped_ptr<base::StatsCounterTimer> stats_counter_timer_;
+  scoped_ptr<base::StatsScope<base::StatsCounterTimer> > startup_timer_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeMainDelegate);
 };

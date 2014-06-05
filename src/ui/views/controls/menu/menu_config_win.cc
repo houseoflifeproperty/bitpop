@@ -13,11 +13,8 @@
 #include "base/win/win_util.h"
 #include "ui/base/l10n/l10n_util_win.h"
 #include "ui/gfx/color_utils.h"
-#include "ui/native_theme/native_theme_win.h"
-
-#if defined(USE_AURA)
 #include "ui/native_theme/native_theme_aura.h"
-#endif
+#include "ui/native_theme/native_theme_win.h"
 
 using ui::NativeTheme;
 using ui::NativeThemeWin;
@@ -25,15 +22,10 @@ using ui::NativeThemeWin;
 namespace views {
 
 void MenuConfig::Init(const NativeTheme* theme) {
-#if defined(USE_AURA)
   if (theme == ui::NativeThemeAura::instance()) {
-    InitAura();
+    InitAura(theme);
     return;
   }
-#endif
-  text_color = NativeThemeWin::instance()->GetThemeColorWithDefault(
-      NativeThemeWin::MENU, MENU_POPUPITEM, MPI_NORMAL, TMT_TEXTCOLOR,
-      COLOR_MENUTEXT);
 
   arrow_color = color_utils::GetSysSkColor(COLOR_MENUTEXT);
 
@@ -43,7 +35,7 @@ void MenuConfig::Init(const NativeTheme* theme) {
   {
     base::win::ScopedHFONT new_font(CreateFontIndirect(&metrics.lfMenuFont));
     DLOG_ASSERT(new_font.Get());
-    font = gfx::Font(new_font);
+    font_list = gfx::FontList(gfx::Font(new_font));
   }
   NativeTheme::ExtraParams extra;
   extra.menu_check.is_radio = false;
@@ -61,51 +53,19 @@ void MenuConfig::Init(const NativeTheme* theme) {
   extra.menu_check.is_radio = true;
   gfx::Size radio_size = NativeThemeWin::instance()->GetPartSize(
       NativeTheme::kMenuCheck, NativeTheme::kNormal, extra);
-  if (!radio_size.IsEmpty()) {
+  if (!radio_size.IsEmpty())
     radio_width = radio_size.width();
-    radio_height = radio_size.height();
-  } else {
+  else
     radio_width = GetSystemMetrics(SM_CXMENUCHECK);
-    radio_height = GetSystemMetrics(SM_CYMENUCHECK);
-  }
 
   gfx::Size arrow_size = NativeThemeWin::instance()->GetPartSize(
       NativeTheme::kMenuPopupArrow, NativeTheme::kNormal, extra);
   if (!arrow_size.IsEmpty()) {
     arrow_width = arrow_size.width();
-    arrow_height = arrow_size.height();
   } else {
     // Sadly I didn't see a specify metrics for this.
     arrow_width = GetSystemMetrics(SM_CXMENUCHECK);
-    arrow_height = GetSystemMetrics(SM_CYMENUCHECK);
   }
-
-  gfx::Size gutter_size = NativeThemeWin::instance()->GetPartSize(
-      NativeTheme::kMenuPopupGutter, NativeTheme::kNormal, extra);
-  if (!gutter_size.IsEmpty()) {
-    gutter_width = gutter_size.width();
-    render_gutter = true;
-  } else {
-    gutter_width = 0;
-    render_gutter = false;
-  }
-
-  gfx::Size separator_size = NativeThemeWin::instance()->GetPartSize(
-      NativeTheme::kMenuPopupSeparator, NativeTheme::kNormal, extra);
-  if (!separator_size.IsEmpty()) {
-    separator_height = separator_size.height();
-  } else {
-    // -1 makes separator centered.
-    separator_height = GetSystemMetrics(SM_CYMENU) / 2 - 1;
-  }
-
-  if (NativeTheme::IsNewMenuStyleEnabled())
-    AdjustForCommonTheme();
-
-  // On Windows, having some menus use wider spacing than others looks wrong.
-  // See http://crbug.com/88875
-  item_no_icon_bottom_margin = item_bottom_margin;
-  item_no_icon_top_margin = item_top_margin;
 
   BOOL show_cues;
   show_mnemonics =

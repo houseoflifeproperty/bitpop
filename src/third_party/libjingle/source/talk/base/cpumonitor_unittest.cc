@@ -54,6 +54,9 @@ class BusyThread : public talk_base::Thread {
   BusyThread(double load, double duration, double interval) :
     load_(load), duration_(duration), interval_(interval) {
   }
+  virtual ~BusyThread() {
+    Stop();
+  }
   void Run() {
     Timing time;
     double busy_time = interval_ * load_ / 100.0;
@@ -383,8 +386,8 @@ TEST(CpuMonitorTest, TestCpuMonitor) {
   CpuLoadListener listener;
   monitor.SignalUpdate.connect(&listener, &CpuLoadListener::OnCpuLoad);
   EXPECT_TRUE(monitor.Start(10));
-  Thread::Current()->ProcessMessages(50);
-  EXPECT_GT(listener.count(), 2);  // We have checked cpu load more than twice.
+  // We have checked cpu load more than twice.
+  EXPECT_TRUE_WAIT(listener.count() > 2, 1000);
   EXPECT_GT(listener.current_cpus(), 0);
   EXPECT_GT(listener.cpus(), 0);
   EXPECT_GE(listener.process_load(), .0f);

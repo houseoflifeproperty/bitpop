@@ -6,7 +6,8 @@
 
 #include <assert.h>
 #include <errno.h>
-#include <stdio.h>
+#include <cstdio>
+#include <cstdarg>
 #include <string.h>
 
 #include <algorithm>
@@ -16,7 +17,7 @@
 #include "native_client/src/include/nacl_string.h"
 #include "native_client/src/include/portability.h"
 #include "native_client/src/trusted/validator/ncfileutil.h"
-#include "native_client/src/trusted/validator_arm/cpuid_arm.h"
+#include "native_client/src/trusted/cpu_features/arch/arm/cpu_arm.h"
 #include "native_client/src/trusted/validator_arm/model.h"
 #include "native_client/src/trusted/validator_arm/problem_reporter.h"
 #include "native_client/src/trusted/validator_arm/validator.h"
@@ -24,8 +25,6 @@
 using nacl_arm_val::SfiValidator;
 using nacl_arm_val::CodeSegment;
 using nacl_arm_val::ProblemReporter;
-using nacl_arm_val::ValidatorProblem;
-using nacl_arm_val::kValidatorProblemSize;
 using nacl_arm_dec::MAY_BE_SAFE;
 
 using std::string;
@@ -44,30 +43,19 @@ using std::vector;
  * For possible problem ID strings, see validator.h.
  */
 class NcvalProblemReporter : public ProblemReporter {
- public:
-  virtual bool should_continue() {
-    // Collect *all* problems before returning!
-    return true;
-  }
-
  protected:
-  virtual void ReportProblemInternal(
-      uint32_t vaddr,
-      nacl_arm_val::ValidatorProblem problem,
-      nacl_arm_val::ValidatorProblemMethod method,
-      nacl_arm_val::ValidatorProblemUserData user_data);
+  virtual void ReportProblemMessage(nacl_arm_dec::Violation violation,
+                                    uint32_t vaddr,
+                                    const char* message);
 };
 
-static const size_t kBufferSize = 256;
-
 void NcvalProblemReporter::
-ReportProblemInternal(uint32_t vaddr,
-                      nacl_arm_val::ValidatorProblem problem,
-                      nacl_arm_val::ValidatorProblemMethod method,
-                      nacl_arm_val::ValidatorProblemUserData user_data) {
-  char buffer[kBufferSize];
-  ToText(buffer, kBufferSize, vaddr, problem, method, user_data);
-  fprintf(stderr, "%s\n", buffer);
+ReportProblemMessage(nacl_arm_dec::Violation violation,
+                     uint32_t vaddr,
+                     const char* message) {
+  UNREFERENCED_PARAMETER(vaddr);
+  UNREFERENCED_PARAMETER(violation);
+  printf("%8" NACL_PRIx32 ": %s\n", vaddr, message);
 }
 
 const uint32_t kOneGig = 1U * 1024 * 1024 * 1024;
@@ -105,9 +93,55 @@ int validate(const ncfile *ncf, const NaClCPUFeaturesArm *cpu_features) {
   return 0;
 }
 
+static inline uint8_t as_hex(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return c - 'a' + 0xa;
+  if (c >= 'A' && c <= 'F') return c - 'A' + 0xa;
+  CHECK(false);
+  return 0;
+}
+
+int check_code(const std::string& code) {
+  NaClCPUFeaturesArm cpu_features;
+  SfiValidator validator(
+      16,  // bytes per bundle
+      kOneGig,  // code region size
+      kOneGig,  // data region size
+      nacl_arm_dec::RegisterList(nacl_arm_dec::Register::Tp()),
+      nacl_arm_dec::RegisterList(nacl_arm_dec::Register::Sp()),
+      &cpu_features);
+  NcvalProblemReporter reporter;
+
+  uint8_t* code_buf = new uint8_t[code.length()];
+  uint32_t code_len = 0;
+  for (uint32_t i = 0; i < code.length(); i += 3) {
+    code_buf[code_len++] = (as_hex(code[i]) << 4) | as_hex(code[i+1]);
+  }
+  printf("Validating code: ");
+  for (uint32_t i = 0; i < code_len; i++) {
+    printf("%02x ", code_buf[i]);
+  }
+  printf("\n");
+
+  vector<CodeSegment> segments;
+  CodeSegment segment(code_buf, 0, code_len);
+  segments.push_back(segment);
+  bool success = validator.validate(segments, &reporter);
+  if (success) {
+    printf("valid!\n");
+    return 0;
+  } else {
+    printf("invalid\n");
+    return 1;
+  }
+}
+
 int main(int argc, const char *argv[]) {
   static const char cond_mem_access_flag[] =
       "--conditional_memory_access_allowed_for_sfi";
+
+  static const char number_runs_flag[] =
+      "--number_runs";
 
   NaClCPUFeaturesArm cpu_features;
   NaClClearCPUFeaturesArm(&cpu_features);
@@ -115,8 +149,10 @@ int main(int argc, const char *argv[]) {
   int exit_code = EXIT_FAILURE;
   bool print_usage = false;
   bool run_validation = false;
+  int number_runs = 1;
   std::string filename;
   ncfile *ncf = NULL;
+  std::string code;
 
   for (int i = 1; i < argc; ++i) {
     std::string current_arg = argv[i];
@@ -125,10 +161,25 @@ int main(int argc, const char *argv[]) {
       print_usage = true;
       run_validation = false;
       break;
+    } else if (current_arg == number_runs_flag) {
+      // next argument is the number of runs to try. Used when timing
+      // performance, and want to run many times to get a good average
+      // time result.
+      ++i;
+      if (i < argc) {
+        number_runs = atoi(argv[i]);
+      } else {
+        // No value to got with argument, fail to run.
+        print_usage = true;
+        run_validation = false;
+      }
     } else if (current_arg == cond_mem_access_flag) {
       // This flag is disallowed by default: not all ARM CPUs support it,
       // so be pessimistic unless the user asks for it.
       NaClSetCPUFeatureArm(&cpu_features, NaClCPUFeatureArm_CanUseTstMem, 1);
+    } else if (current_arg == "--check" && i + 1 < argc) {
+      code = argv[i+1];
+      i++;
     } else if (!filename.empty()) {
       fprintf(stderr, "Error: multiple files specified.\n");
       print_usage = true;
@@ -138,6 +189,10 @@ int main(int argc, const char *argv[]) {
       filename = current_arg;
       run_validation = true;
     }
+  }
+
+  if (!code.empty()) {
+      return check_code(code);
   }
 
   if (filename.empty()) {
@@ -156,14 +211,26 @@ int main(int argc, const char *argv[]) {
   }
 
   if (print_usage) {
-    fprintf(stderr, "Usage: %s [%s] <filename>\n",
-            argv[0], cond_mem_access_flag);
+    fprintf(stderr, "Usage: %s [options] <filename>\n", argv[0]);
+    fprintf(stderr, "   %s\n", cond_mem_access_flag);
+    fprintf(stderr, "      Allow conditions on memory access.\n");
+    fprintf(stderr, "   %s n\n", number_runs_flag);
+    fprintf(stderr, "      Validate input n times.\n");
+    fprintf(stderr, "      Used for performance timing.\n");
   }
 
   // TODO(cbiffle): check OS ABI, ABI version, align mask
 
-  if (run_validation)
-    exit_code = validate(ncf, &cpu_features);
+  if (run_validation) {
+    exit_code = 0;
+    for (int i = 0; i < number_runs; ++i) {
+      exit_code |= validate(ncf, &cpu_features);
+    }
+    if (exit_code == 0)
+      printf("Valid.\n");
+    else
+      printf("Invalid.\n");
+  }
 
   if (ncf)
       nc_freefile(ncf);

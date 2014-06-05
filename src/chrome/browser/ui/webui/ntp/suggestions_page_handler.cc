@@ -11,32 +11,32 @@
 #include "base/bind_helpers.h"
 #include "base/md5.h"
 #include "base/metrics/histogram.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/history/page_usage_data.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "chrome/browser/ui/webui/favicon_source.h"
-#include "chrome/browser/ui/webui/ntp/suggestions_combiner.h"
 #include "chrome/browser/ui/webui/ntp/ntp_stats.h"
+#include "chrome/browser/ui/webui/ntp/suggestions_combiner.h"
 #include "chrome/browser/ui/webui/ntp/suggestions_source_top_sites.h"
 #include "chrome/browser/ui/webui/ntp/thumbnail_source.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/url_constants.h"
-#include "content/public/browser/browser_thread.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_source.h"
+#include "content/public/browser/url_data_source.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/page_transition_types.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
-using content::UserMetricsAction;
+using base::UserMetricsAction;
 
 SuggestionsHandler::SuggestionsHandler()
     : got_first_suggestions_request_(false),
@@ -49,7 +49,7 @@ SuggestionsHandler::~SuggestionsHandler() {
     const GURL ntp_url = GURL(chrome::kChromeUINewTabURL);
     int action_id = NTP_FOLLOW_ACTION_OTHER;
     content::NavigationEntry* entry =
-        web_ui()->GetWebContents()->GetController().GetActiveEntry();
+        web_ui()->GetWebContents()->GetController().GetLastCommittedEntry();
     if (entry && (entry->GetURL() != ntp_url)) {
       action_id =
           content::PageTransitionStripQualifier(entry->GetTransitionType());
@@ -63,9 +63,9 @@ SuggestionsHandler::~SuggestionsHandler() {
 void SuggestionsHandler::RegisterMessages() {
   Profile* profile = Profile::FromWebUI(web_ui());
   // Set up our sources for thumbnail and favicon data.
-  ChromeURLDataManager::AddDataSource(profile, new ThumbnailSource(profile));
-  ChromeURLDataManager::AddDataSource(profile,
-      new FaviconSource(profile, FaviconSource::FAVICON));
+  content::URLDataSource::Add(profile, new ThumbnailSource(profile, false));
+  content::URLDataSource::Add(
+      profile, new FaviconSource(profile, FaviconSource::FAVICON));
 
   // TODO(georgey) change the source of the web-sites to provide our data.
   // Initial commit uses top sites as a data source.
@@ -112,7 +112,7 @@ void SuggestionsHandler::RegisterMessages() {
                  base::Unretained(this)));
 }
 
-void SuggestionsHandler::HandleGetSuggestions(const ListValue* args) {
+void SuggestionsHandler::HandleGetSuggestions(const base::ListValue* args) {
   if (!got_first_suggestions_request_) {
     // If it's the first request we get, return the prefetched data.
     SendPagesValue();
@@ -140,17 +140,18 @@ void SuggestionsHandler::SendPagesValue() {
   }
 }
 
-void SuggestionsHandler::HandleBlacklistURL(const ListValue* args) {
-  std::string url = UTF16ToUTF8(ExtractStringValue(args));
+void SuggestionsHandler::HandleBlacklistURL(const base::ListValue* args) {
+  std::string url = base::UTF16ToUTF8(ExtractStringValue(args));
   BlacklistURL(GURL(url));
 }
 
-void SuggestionsHandler::HandleRemoveURLsFromBlacklist(const ListValue* args) {
+void SuggestionsHandler::HandleRemoveURLsFromBlacklist(
+    const base::ListValue* args) {
   DCHECK_GT(args->GetSize(), 0U);
   // TODO(georgey) remove URLs from blacklist.
 }
 
-void SuggestionsHandler::HandleClearBlacklist(const ListValue* args) {
+void SuggestionsHandler::HandleClearBlacklist(const base::ListValue* args) {
   // TODO(georgey) clear blacklist.
 }
 
@@ -192,6 +193,7 @@ std::string SuggestionsHandler::GetDictionaryKeyForURL(const std::string& url) {
 }
 
 // static
-void SuggestionsHandler::RegisterUserPrefs(PrefService* prefs) {
+void SuggestionsHandler::RegisterProfilePrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
   // TODO(georgey) add user preferences (such as own blacklist) as needed.
 }

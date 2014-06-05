@@ -5,7 +5,7 @@
 #ifndef CHROME_BROWSER_UI_COCOA_TAB_CONTENTS_SAD_TAB_VIEW_H_
 #define CHROME_BROWSER_UI_COCOA_TAB_CONTENTS_SAD_TAB_VIEW_H_
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "ui/base/cocoa/base_view.h"
 
 #import <Cocoa/Cocoa.h>
@@ -17,18 +17,12 @@
 @interface SadTabView : BaseView<NSTextViewDelegate> {
  @private
   IBOutlet NSImageView* image_;
-  IBOutlet NSTextField* title_;
-  IBOutlet NSTextField* message_;
-  IBOutlet NSTextField* helpPlaceholder_;
+  base::scoped_nsobject<NSTextField> title_;
+  base::scoped_nsobject<NSTextField> message_;
+  base::scoped_nsobject<HyperlinkTextView> help_;
 
-  scoped_nsobject<NSColor> backgroundColor_;
+  base::scoped_nsobject<NSColor> backgroundColor_;
   NSSize messageSize_;
-
-  // Text fields don't work as well with embedded links as text views, but
-  // text views cannot conveniently be created in IB. The xib file contains
-  // a text field |helpPlaceholder_| that's replaced by this text view |help_|
-  // in -awakeFromNib.
-  scoped_nsobject<HyperlinkTextView> help_;
 
   // A weak reference to the parent controller.
   IBOutlet SadTabController* controller_;

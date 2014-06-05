@@ -7,12 +7,13 @@
 
 #import <Cocoa/Cocoa.h>
 
-#import "base/memory/scoped_nsobject.h"
+#import "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #import "chrome/browser/ui/cocoa/image_button_cell.h"
 
 class Browser;
 class ExtensionAction;
+@class ExtensionActionContextMenuController;
 class ExtensionActionIconFactoryBridge;
 
 namespace extensions {
@@ -24,14 +25,14 @@ extern NSString* const kBrowserActionButtonDraggingNotification;
 // Fired when the user drops the button.
 extern NSString* const kBrowserActionButtonDragEndNotification;
 
-@interface BrowserActionButton : NSButton {
+@interface BrowserActionButton : NSButton<NSMenuDelegate> {
  @private
   // Bridge to proxy Chrome notifications to the Obj-C class as well as load the
   // extension's icon.
   scoped_ptr<ExtensionActionIconFactoryBridge> iconFactoryBridge_;
 
   // Used to move the button and query whether a button is currently animating.
-  scoped_nsobject<NSViewAnimation> moveAnimation_;
+  base::scoped_nsobject<NSViewAnimation> moveAnimation_;
 
   // The extension for this button. Weak.
   const extensions::Extension* extension_;
@@ -46,6 +47,13 @@ extern NSString* const kBrowserActionButtonDragEndNotification;
   // this is the only button moving if it ends up being dragged. This is set to
   // YES upon |mouseDown:|.
   BOOL dragCouldStart_;
+
+  // The point where the mouse down event occurred. Used to prevent a drag from
+  // starting until it moves at least kMinimumDragDistance.
+  NSPoint dragStartPoint_;
+
+  base::scoped_nsobject<
+      ExtensionActionContextMenuController> contextMenuController_;
 }
 
 - (id)initWithFrame:(NSRect)frame

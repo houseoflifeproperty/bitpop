@@ -8,12 +8,10 @@
 #include "ui/gfx/image/image_skia.h"
 #include "ui/views/context_menu_controller.h"
 #include "ui/views/view.h"
-#include "ui/views/widget/widget_delegate.h"
 
 namespace ash {
-namespace internal {
 
-class DesktopBackgroundView : public views::WidgetDelegateView,
+class DesktopBackgroundView : public views::View,
                               public views::ContextMenuController {
  public:
   DesktopBackgroundView();
@@ -26,12 +24,12 @@ class DesktopBackgroundView : public views::WidgetDelegateView,
 
   // Overridden from views::ContextMenuController:
   virtual void ShowContextMenuForView(views::View* source,
-                                      const gfx::Point& point) OVERRIDE;
+                                      const gfx::Point& point,
+                                      ui::MenuSourceType source_type) OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(DesktopBackgroundView);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_DESKTOP_BACKGROUND_DESKTOP_BACKGROUND_VIEW_H_

@@ -4,18 +4,35 @@
 
 #include "chrome/browser/spellchecker/spellcheck_factory.h"
 
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/prefs/pref_service.h"
-#include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/spellchecker/spellcheck_service.h"
 #include "chrome/common/pref_names.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/user_prefs/user_prefs.h"
+#include "content/public/browser/render_process_host.h"
 #include "grit/locale_settings.h"
 
 // static
-SpellcheckService* SpellcheckServiceFactory::GetForProfile(Profile* profile) {
+SpellcheckService* SpellcheckServiceFactory::GetForContext(
+    content::BrowserContext* context) {
   return static_cast<SpellcheckService*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(context, true));
+}
+
+// static
+SpellcheckService* SpellcheckServiceFactory::GetForRenderProcessId(
+    int render_process_id) {
+  content::RenderProcessHost* host =
+      content::RenderProcessHost::FromID(render_process_id);
+  if (!host)
+    return NULL;
+  content::BrowserContext* context = host->GetBrowserContext();
+  if (!context)
+    return NULL;
+  return GetForContext(context);
 }
 
 // static
@@ -24,48 +41,54 @@ SpellcheckServiceFactory* SpellcheckServiceFactory::GetInstance() {
 }
 
 SpellcheckServiceFactory::SpellcheckServiceFactory()
-    : ProfileKeyedServiceFactory("SpellcheckService",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "SpellcheckService",
+        BrowserContextDependencyManager::GetInstance()) {
   // TODO(erg): Uncomment these as they are initialized.
   // DependsOn(RequestContextFactory::GetInstance());
 }
 
 SpellcheckServiceFactory::~SpellcheckServiceFactory() {}
 
-ProfileKeyedService* SpellcheckServiceFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
-  // Many variables are initialized from the profile in the SpellcheckService.
-  DCHECK(profile);
-  SpellcheckService* spellcheck = new SpellcheckService(profile);
+KeyedService* SpellcheckServiceFactory::BuildServiceInstanceFor(
+    content::BrowserContext* context) const {
+  // Many variables are initialized from the |context| in the SpellcheckService.
+  SpellcheckService* spellcheck = new SpellcheckService(context);
+
+  PrefService* prefs = user_prefs::UserPrefs::Get(context);
+  DCHECK(prefs);
 
   // Instantiates Metrics object for spellchecking for use.
   spellcheck->StartRecordingMetrics(
-      profile->GetPrefs()->GetBoolean(prefs::kEnableContinuousSpellcheck));
+      prefs->GetBoolean(prefs::kEnableContinuousSpellcheck));
 
   return spellcheck;
 }
 
-void SpellcheckServiceFactory::RegisterUserPrefs(PrefService* user_prefs) {
+void SpellcheckServiceFactory::RegisterProfilePrefs(
+    user_prefs::PrefRegistrySyncable* user_prefs) {
   // TODO(estade): IDS_SPELLCHECK_DICTIONARY should be an ASCII string.
-  user_prefs->RegisterLocalizedStringPref(prefs::kSpellCheckDictionary,
-                                          IDS_SPELLCHECK_DICTIONARY,
-                                          PrefService::UNSYNCABLE_PREF);
-  user_prefs->RegisterBooleanPref(prefs::kSpellCheckConfirmDialogShown,
-                                  false,
-                                  PrefService::UNSYNCABLE_PREF);
-  user_prefs->RegisterBooleanPref(prefs::kSpellCheckUseSpellingService,
-                                  false,
-                                  PrefService::UNSYNCABLE_PREF);
-  user_prefs->RegisterBooleanPref(prefs::kEnableContinuousSpellcheck,
-                                  true,
-                                  PrefService::SYNCABLE_PREF);
-  user_prefs->RegisterBooleanPref(prefs::kEnableAutoSpellCorrect,
-                                  true,
-                                  PrefService::UNSYNCABLE_PREF);
+  user_prefs->RegisterLocalizedStringPref(
+      prefs::kSpellCheckDictionary,
+      IDS_SPELLCHECK_DICTIONARY,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  user_prefs->RegisterBooleanPref(
+      prefs::kSpellCheckUseSpellingService,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  user_prefs->RegisterBooleanPref(
+      prefs::kEnableContinuousSpellcheck,
+      true,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  user_prefs->RegisterBooleanPref(
+      prefs::kEnableAutoSpellCorrect,
+      false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 }
 
-bool SpellcheckServiceFactory::ServiceRedirectedInIncognito() const {
-  return true;
+content::BrowserContext* SpellcheckServiceFactory::GetBrowserContextToUse(
+    content::BrowserContext* context) const {
+  return chrome::GetBrowserContextRedirectedInIncognito(context);
 }
 
 bool SpellcheckServiceFactory::ServiceIsNULLWhileTesting() const {

@@ -4,32 +4,39 @@
 
 #include "chrome/browser/prefs/browser_prefs.h"
 
+#include "apps/prefs.h"
+#include "base/debug/trace_event.h"
+#include "base/prefs/pref_registry_simple.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/about_flags.h"
 #include "chrome/browser/accessibility/invert_bubble_prefs.h"
-#include "chrome/browser/autofill/autofill_manager.h"
+#include "chrome/browser/apps/shortcut_manager.h"
+#include "chrome/browser/autocomplete/zero_suggest_provider.h"
 #include "chrome/browser/background/background_mode_manager.h"
-#include "chrome/browser/bookmarks/bookmark_prompt_prefs.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
+#include "chrome/browser/browser_process_impl.h"
 #include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/chrome_content_browser_client.h"
+#include "chrome/browser/component_updater/recovery_component_installer.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
-#include "chrome/browser/debugger/devtools_window.h"
+#include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/download/download_prefs.h"
+#include "chrome/browser/extensions/activity_log/activity_log.h"
 #include "chrome/browser/extensions/api/commands/command_service.h"
-#include "chrome/browser/extensions/api/tabs/tabs.h"
-#include "chrome/browser/extensions/component_loader.h"
-#include "chrome/browser/extensions/extension_prefs.h"
+#include "chrome/browser/extensions/api/tabs/tabs_api.h"
 #include "chrome/browser/extensions/extension_web_ui.h"
+#include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/external_protocol/external_protocol_handler.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/geolocation/geolocation_prefs.h"
 #include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/google/google_url_tracker_factory.h"
-#include "chrome/browser/intents/web_intents_util.h"
+#include "chrome/browser/gpu/gl_string_manager.h"
+#include "chrome/browser/gpu/gpu_mode_manager.h"
 #include "chrome/browser/intranet_redirect_detector.h"
-#include "chrome/browser/managed_mode/managed_mode.h"
+#include "chrome/browser/io_thread.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
+#include "chrome/browser/media/media_device_id_salt.h"
 #include "chrome/browser/media/media_stream_devices_controller.h"
 #include "chrome/browser/metrics/metrics_log.h"
 #include "chrome/browser/metrics/metrics_service.h"
@@ -37,33 +44,40 @@
 #include "chrome/browser/net/http_server_properties_manager.h"
 #include "chrome/browser/net/net_pref_observer.h"
 #include "chrome/browser/net/predictor.h"
+#include "chrome/browser/net/pref_proxy_config_tracker_impl.h"
 #include "chrome/browser/net/ssl_config_service_manager.h"
+#include "chrome/browser/network_time/network_time_service.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
-#include "chrome/browser/notifications/notification_prefs_manager.h"
-#include "chrome/browser/page_info_model.h"
-#include "chrome/browser/password_manager/password_manager.h"
+#include "chrome/browser/notifications/message_center_notification_manager.h"
 #include "chrome/browser/pepper_flash_settings_manager.h"
 #include "chrome/browser/plugins/plugin_finder.h"
+#include "chrome/browser/prefs/chrome_pref_service_factory.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
+#include "chrome/browser/printing/print_dialog_cloud.h"
 #include "chrome/browser/profiles/chrome_version_service.h"
-#include "chrome/browser/profiles/gaia_info_update_service.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_impl.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
-#include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/profiles_state.h"
+#include "chrome/browser/renderer_host/pepper/device_id_fetcher.h"
 #include "chrome/browser/renderer_host/web_cache_manager.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/template_url_prepopulate_data.h"
+#include "chrome/browser/services/gcm/gcm_profile_service.h"
+#include "chrome/browser/signin/easy_unlock.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/task_manager/task_manager.h"
-#include "chrome/browser/translate/translate_prefs.h"
-#include "chrome/browser/ui/alternate_error_tab_observer.h"
-#include "chrome/browser/ui/browser_instant_controller.h"
+#include "chrome/browser/ui/app_list/app_list_service.h"
 #include "chrome/browser/ui/browser_ui_prefs.h"
+#include "chrome/browser/ui/navigation_correction_tab_observer.h"
 #include "chrome/browser/ui/network_profile_bubble.h"
 #include "chrome/browser/ui/prefs/prefs_tab_helper.h"
 #include "chrome/browser/ui/search_engines/keyword_editor_controller.h"
 #include "chrome/browser/ui/startup/autolaunch_prompt.h"
+#include "chrome/browser/ui/startup/default_browser_prompt.h"
 #include "chrome/browser/ui/tabs/pinned_tab_codec.h"
 #include "chrome/browser/ui/webui/extensions/extension_settings_handler.h"
 #include "chrome/browser/ui/webui/flags_ui.h"
@@ -71,21 +85,97 @@
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/browser/ui/webui/plugins_ui.h"
 #include "chrome/browser/ui/webui/print_preview/sticky_settings.h"
-#include "chrome/browser/ui/webui/sync_promo/sync_promo_ui.h"
-#include "chrome/browser/ui/window_snapshot/window_snapshot.h"
 #include "chrome/browser/upgrade_detector.h"
 #include "chrome/browser/web_resource/promo_resource_service.h"
 #include "chrome/common/pref_names.h"
+#include "components/autofill/core/browser/autofill_manager.h"
+#include "components/bookmarks/core/browser/bookmark_utils.h"
+#include "components/password_manager/core/browser/password_manager.h"
+#include "components/rappor/rappor_service.h"
+#include "components/sync_driver/sync_prefs.h"
+#include "components/translate/core/browser/translate_prefs.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/render_process_host.h"
+#include "extensions/browser/extension_prefs.h"
+
+#if defined(ENABLE_AUTOFILL_DIALOG)
+#include "chrome/browser/ui/autofill/autofill_dialog_controller.h"
+#endif
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
-#include "chrome/browser/policy/cloud_policy_subsystem.h"
-#include "chrome/browser/policy/policy_statistics_collector.h"
-#include "chrome/browser/policy/url_blacklist_manager.h"
+#include "components/policy/core/browser/browser_policy_connector.h"
+#include "components/policy/core/browser/url_blacklist_manager.h"
+#include "components/policy/core/common/policy_statistics_collector.h"
+#endif
+
+#if defined(ENABLE_MANAGED_USERS)
+#include "chrome/browser/managed_mode/managed_user_service.h"
+#include "chrome/browser/managed_mode/managed_user_shared_settings_service.h"
+#include "chrome/browser/managed_mode/managed_user_sync_service.h"
+#endif
+
+#if defined(ENABLE_SERVICE_DISCOVERY)
+#include "chrome/browser/ui/webui/local_discovery/local_discovery_ui.h"
+#endif
+
+#if defined(ENABLE_PLUGIN_INSTALLATION)
+#include "chrome/browser/plugins/plugins_resource_service.h"
+#endif
+
+#if defined(OS_ANDROID)
+#include "chrome/browser/android/bookmarks/partner_bookmarks_shim.h"
+#include "chrome/browser/android/new_tab_page_prefs.h"
+#else
+#include "chrome/browser/notifications/sync_notifier/chrome_notifier_service.h"
+#include "chrome/browser/profile_resetter/automatic_profile_resetter_factory.h"
+#include "chrome/browser/ui/autofill/generated_credit_card_bubble_controller.h"
+#endif
+
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
+#include "chrome/browser/chromeos/attestation/platform_verification_flow.h"
+#include "chrome/browser/chromeos/audio/audio_devices_pref_handler_impl.h"
+#include "chrome/browser/chromeos/customization_document.h"
+#include "chrome/browser/chromeos/display/display_preferences.h"
+#include "chrome/browser/chromeos/extensions/echo_private_api.h"
+#include "chrome/browser/chromeos/first_run/first_run.h"
+#include "chrome/browser/chromeos/login/default_pinned_apps_field_trial.h"
+#include "chrome/browser/chromeos/login/login_utils.h"
+#include "chrome/browser/chromeos/login/multi_profile_user_controller.h"
+#include "chrome/browser/chromeos/login/saml/saml_offline_signin_limiter.h"
+#include "chrome/browser/chromeos/login/startup_utils.h"
+#include "chrome/browser/chromeos/login/user_image_manager.h"
+#include "chrome/browser/chromeos/login/user_image_sync_observer.h"
+#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/wallpaper_manager.h"
+#include "chrome/browser/chromeos/net/proxy_config_handler.h"
+#include "chrome/browser/chromeos/policy/auto_enrollment_client.h"
+#include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
+#include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
+#include "chrome/browser/chromeos/policy/device_status_collector.h"
+#include "chrome/browser/chromeos/policy/policy_cert_service_factory.h"
+#include "chrome/browser/chromeos/power/power_prefs.h"
+#include "chrome/browser/chromeos/preferences.h"
+#include "chrome/browser/chromeos/settings/device_oauth2_token_service.h"
+#include "chrome/browser/chromeos/settings/device_settings_cache.h"
+#include "chrome/browser/chromeos/status/data_promo_notification.h"
+#include "chrome/browser/chromeos/system/automatic_reboot_manager.h"
+#include "chrome/browser/extensions/api/enterprise_platform_keys_private/enterprise_platform_keys_private_api.h"
+#include "chrome/browser/ui/webui/chromeos/charger_replacement_handler.h"
+#include "chrome/browser/ui/webui/chromeos/login/network_screen_handler.h"
+#include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
+#else
+#include "chrome/browser/extensions/default_apps.h"
 #endif
 
 #if defined(OS_MACOSX)
+#include "chrome/browser/ui/cocoa/apps/quit_with_apps_controller_mac.h"
 #include "chrome/browser/ui/cocoa/confirm_quit.h"
+#include "chrome/browser/ui/cocoa/extensions/browser_actions_controller_prefs.h"
+#endif
+
+#if defined(OS_WIN)
+#include "chrome/browser/apps/app_launch_for_metro_restart_win.h"
 #endif
 
 #if defined(TOOLKIT_VIEWS)
@@ -93,42 +183,8 @@
 #include "chrome/browser/ui/tabs/tab_strip_layout_type_prefs.h"
 #endif
 
-#if defined(TOOLKIT_GTK)
-#include "chrome/browser/ui/gtk/browser_window_gtk.h"
-#endif
-
-#if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/audio/audio_handler.h"
-#include "chrome/browser/chromeos/customization_document.h"
-#include "chrome/browser/chromeos/display/display_preferences.h"
-#include "chrome/browser/chromeos/login/user_image_manager.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/chromeos/login/wallpaper_manager.h"
-#include "chrome/browser/chromeos/login/wizard_controller.h"
-#include "chrome/browser/chromeos/preferences.h"
-#include "chrome/browser/chromeos/proxy_config_service_impl.h"
-#include "chrome/browser/chromeos/settings/device_settings_cache.h"
-#include "chrome/browser/chromeos/status/data_promo_notification.h"
-#include "chrome/browser/policy/auto_enrollment_client.h"
-#include "chrome/browser/policy/device_status_collector.h"
-#else
-#include "chrome/browser/extensions/default_apps.h"
-#endif
-
 #if defined(USE_ASH)
 #include "chrome/browser/ui/ash/chrome_launcher_prefs.h"
-#endif
-
-#if !defined(OS_ANDROID)
-#include "chrome/browser/chrome_to_mobile_service.h"
-#endif
-
-#if defined(OS_ANDROID)
-#include "chrome/browser/ui/webui/ntp/android/promo_handler.h"
-#endif
-
-#if defined(ENABLE_PLUGIN_INSTALLATION)
-#include "chrome/browser/web_resource/plugins_resource_service.h"
 #endif
 
 namespace {
@@ -140,179 +196,320 @@ enum MigratedPreferences {
   GOOGLE_URL_TRACKER_PREFS = 1 << 2,
 };
 
+// A previous feature (see
+// chrome/browser/protector/protected_prefs_watcher.cc in source
+// control history) used this string as a prefix for various prefs it
+// registered. We keep it here for now to clear out those old prefs in
+// MigrateUserPrefs.
+const char kBackupPref[] = "backup";
+
+#if !defined(OS_ANDROID)
+// The sync promo error message preference has been removed; this pref will
+// be cleared from user data.
+const char kSyncPromoErrorMessage[] = "sync_promo.error_message";
+#endif
+
 }  // namespace
 
 namespace chrome {
 
-void RegisterLocalState(PrefService* local_state) {
+void RegisterLocalState(PrefRegistrySimple* registry) {
   // Prefs in Local State.
-  local_state->RegisterIntegerPref(prefs::kMultipleProfilePrefMigration, 0);
+  registry->RegisterIntegerPref(prefs::kMultipleProfilePrefMigration, 0);
 
   // Please keep this list alphabetized.
-  browser_shutdown::RegisterPrefs(local_state);
-  chrome::RegisterScreenshotPrefs(local_state);
-  ExternalProtocolHandler::RegisterPrefs(local_state);
-  FlagsUI::RegisterPrefs(local_state);
-  geolocation::RegisterPrefs(local_state);
-  IntranetRedirectDetector::RegisterPrefs(local_state);
-  KeywordEditorController::RegisterPrefs(local_state);
-  MetricsLog::RegisterPrefs(local_state);
-  MetricsService::RegisterPrefs(local_state);
-  PluginFinder::RegisterPrefs(local_state);
-  PrefProxyConfigTrackerImpl::RegisterPrefs(local_state);
-  ProfileInfoCache::RegisterPrefs(local_state);
-  ProfileManager::RegisterPrefs(local_state);
-  PromoResourceService::RegisterPrefs(local_state);
-  SigninManagerFactory::RegisterPrefs(local_state);
-  SSLConfigServiceManager::RegisterPrefs(local_state);
-  UpgradeDetector::RegisterPrefs(local_state);
-  WebCacheManager::RegisterPrefs(local_state);
+  AppListService::RegisterPrefs(registry);
+  browser_shutdown::RegisterPrefs(registry);
+  BrowserProcessImpl::RegisterPrefs(registry);
+  chrome_prefs::RegisterPrefs(registry);
+  chrome_variations::VariationsService::RegisterPrefs(registry);
+  component_updater::RegisterPrefsForRecoveryComponent(registry);
+  ExternalProtocolHandler::RegisterPrefs(registry);
+  FlagsUI::RegisterPrefs(registry);
+  geolocation::RegisterPrefs(registry);
+  GLStringManager::RegisterPrefs(registry);
+  GpuModeManager::RegisterPrefs(registry);
+  IntranetRedirectDetector::RegisterPrefs(registry);
+  IOThread::RegisterPrefs(registry);
+  KeywordEditorController::RegisterPrefs(registry);
+  MetricsLog::RegisterPrefs(registry);
+  MetricsService::RegisterPrefs(registry);
+  PrefProxyConfigTrackerImpl::RegisterPrefs(registry);
+  ProfileInfoCache::RegisterPrefs(registry);
+  profiles::RegisterPrefs(registry);
+  PromoResourceService::RegisterPrefs(registry);
+  rappor::RapporService::RegisterPrefs(registry);
+  RegisterScreenshotPrefs(registry);
+  SigninManagerFactory::RegisterPrefs(registry);
+  SSLConfigServiceManager::RegisterPrefs(registry);
+  UpgradeDetector::RegisterPrefs(registry);
+  WebCacheManager::RegisterPrefs(registry);
 
-#if defined(ENABLE_PLUGIN_INSTALLATION)
-  PluginsResourceService::RegisterPrefs(local_state);
+#if defined(ENABLE_AUTOFILL_DIALOG)
+  autofill::AutofillDialogController::RegisterPrefs(registry);
 #endif
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
-  policy::CloudPolicySubsystem::RegisterPrefs(local_state);
-  policy::PolicyStatisticsCollector::RegisterPrefs(local_state);
+  policy::BrowserPolicyConnector::RegisterPrefs(registry);
+  policy::PolicyStatisticsCollector::RegisterPrefs(registry);
 #endif
 
-#if defined(ENABLE_NOTIFICATIONS)
-  NotificationPrefsManager::RegisterPrefs(local_state);
+#if defined(ENABLE_NOTIFICATIONS) && !defined(OS_ANDROID)
+  // Android does not use the message center for notifications.
+  MessageCenterNotificationManager::RegisterPrefs(registry);
+#endif
+
+#if defined(ENABLE_PLUGINS)
+  PluginFinder::RegisterPrefs(registry);
+#endif
+
+#if defined(ENABLE_PLUGIN_INSTALLATION)
+  PluginsResourceService::RegisterPrefs(registry);
 #endif
 
 #if defined(ENABLE_TASK_MANAGER)
-  TaskManager::RegisterPrefs(local_state);
+  TaskManager::RegisterPrefs(registry);
 #endif  // defined(ENABLE_TASK_MANAGER)
 
-#if defined(TOOLKIT_VIEWS)
-  RegisterBrowserViewPrefs(local_state);
-  RegisterTabStripLayoutTypePrefs(local_state);
-#endif
-
 #if !defined(OS_ANDROID)
-  BackgroundModeManager::RegisterPrefs(local_state);
-  chrome_variations::VariationsService::RegisterPrefs(local_state);
-  RegisterBrowserPrefs(local_state);
-  ManagedMode::RegisterPrefs(local_state);
-#endif
+  AutomaticProfileResetterFactory::RegisterPrefs(registry);
+  BackgroundModeManager::RegisterPrefs(registry);
+  RegisterBrowserPrefs(registry);
+#if !defined(OS_CHROMEOS)
+  RegisterDefaultBrowserPromptPrefs(registry);
+#endif  // !defined(OS_CHROMEOS)
+#endif  // !defined(OS_ANDROID)
 
 #if defined(OS_CHROMEOS)
-  chromeos::AudioHandler::RegisterPrefs(local_state);
-  chromeos::DataPromoNotification::RegisterPrefs(local_state);
-  chromeos::device_settings_cache::RegisterPrefs(local_state);
-  chromeos::language_prefs::RegisterPrefs(local_state);
-  chromeos::ProxyConfigServiceImpl::RegisterPrefs(local_state);
-  chromeos::RegisterDisplayLocalStatePrefs(local_state);
-  chromeos::ServicesCustomizationDocument::RegisterPrefs(local_state);
-  chromeos::UserImageManager::RegisterPrefs(local_state);
-  chromeos::UserManager::RegisterPrefs(local_state);
-  chromeos::WallpaperManager::RegisterPrefs(local_state);
-  chromeos::WizardController::RegisterPrefs(local_state);
-  policy::AutoEnrollmentClient::RegisterPrefs(local_state);
-  policy::DeviceStatusCollector::RegisterPrefs(local_state);
+  chromeos::AudioDevicesPrefHandlerImpl::RegisterPrefs(registry);
+  chromeos::ChargerReplacementHandler::RegisterPrefs(registry);
+  chromeos::DataPromoNotification::RegisterPrefs(registry);
+  chromeos::DeviceOAuth2TokenService::RegisterPrefs(registry);
+  chromeos::device_settings_cache::RegisterPrefs(registry);
+  chromeos::default_pinned_apps_field_trial::RegisterPrefs(registry);
+  chromeos::language_prefs::RegisterPrefs(registry);
+  chromeos::KioskAppManager::RegisterPrefs(registry);
+  chromeos::LoginUtils::RegisterPrefs(registry);
+  chromeos::MultiProfileUserController::RegisterPrefs(registry);
+  chromeos::NetworkScreenHandler::RegisterPrefs(registry);
+  chromeos::Preferences::RegisterPrefs(registry);
+  chromeos::proxy_config::RegisterPrefs(registry);
+  chromeos::RegisterDisplayLocalStatePrefs(registry);
+  chromeos::ServicesCustomizationDocument::RegisterPrefs(registry);
+  chromeos::SigninScreenHandler::RegisterPrefs(registry);
+  chromeos::system::AutomaticRebootManager::RegisterPrefs(registry);
+  chromeos::UserImageManager::RegisterPrefs(registry);
+  chromeos::UserManager::RegisterPrefs(registry);
+  chromeos::WallpaperManager::RegisterPrefs(registry);
+  chromeos::StartupUtils::RegisterPrefs(registry);
+  chromeos::echo_offer::RegisterPrefs(registry);
+  policy::AutoEnrollmentClient::RegisterPrefs(registry);
+  policy::BrowserPolicyConnectorChromeOS::RegisterPrefs(registry);
+  policy::DeviceCloudPolicyManagerChromeOS::RegisterPrefs(registry);
+  policy::DeviceStatusCollector::RegisterPrefs(registry);
+  policy::PolicyCertServiceFactory::RegisterPrefs(registry);
 #endif
 
 #if defined(OS_MACOSX)
-  confirm_quit::RegisterLocalState(local_state);
-#endif
-}
-
-void RegisterUserPrefs(PrefService* user_prefs) {
-  // User prefs. Please keep this list alphabetized.
-  AlternateErrorPageTabObserver::RegisterUserPrefs(user_prefs);
-  AutofillManager::RegisterUserPrefs(user_prefs);
-  BookmarkPromptPrefs::RegisterUserPrefs(user_prefs);
-  bookmark_utils::RegisterUserPrefs(user_prefs);
-  BrowserInstantController::RegisterUserPrefs(user_prefs);
-  ChromeContentBrowserClient::RegisterUserPrefs(user_prefs);
-  ChromeVersionService::RegisterUserPrefs(user_prefs);
-  chrome_browser_net::HttpServerPropertiesManager::RegisterPrefs(user_prefs);
-  chrome_browser_net::Predictor::RegisterUserPrefs(user_prefs);
-  DownloadPrefs::RegisterUserPrefs(user_prefs);
-  extensions::ComponentLoader::RegisterUserPrefs(user_prefs);
-  extensions::ExtensionPrefs::RegisterUserPrefs(user_prefs);
-  ExtensionWebUI::RegisterUserPrefs(user_prefs);
-  first_run::RegisterUserPrefs(user_prefs);
-  GAIAInfoUpdateService::RegisterUserPrefs(user_prefs);
-  HostContentSettingsMap::RegisterUserPrefs(user_prefs);
-  IncognitoModePrefs::RegisterUserPrefs(user_prefs);
-  InstantUI::RegisterUserPrefs(user_prefs);
-  MediaCaptureDevicesDispatcher::RegisterUserPrefs(user_prefs);
-  MediaStreamDevicesController::RegisterUserPrefs(user_prefs);
-  NetPrefObserver::RegisterPrefs(user_prefs);
-  NewTabUI::RegisterUserPrefs(user_prefs);
-  PasswordManager::RegisterUserPrefs(user_prefs);
-  PrefProxyConfigTrackerImpl::RegisterPrefs(user_prefs);
-  PrefsTabHelper::RegisterUserPrefs(user_prefs);
-  ProfileImpl::RegisterUserPrefs(user_prefs);
-  PromoResourceService::RegisterUserPrefs(user_prefs);
-  ProtocolHandlerRegistry::RegisterPrefs(user_prefs);
-  RegisterBrowserUserPrefs(user_prefs);
-  SessionStartupPref::RegisterUserPrefs(user_prefs);
-  TemplateURLPrepopulateData::RegisterUserPrefs(user_prefs);
-  TranslatePrefs::RegisterUserPrefs(user_prefs);
-
-#if defined(ENABLE_CONFIGURATION_POLICY)
-  policy::URLBlacklistManager::RegisterPrefs(user_prefs);
-#endif
-
-#if defined(ENABLE_WEB_INTENTS)
-  web_intents::RegisterUserPrefs(user_prefs);
-#endif
-
-#if defined(TOOLKIT_VIEWS)
-  RegisterInvertBubbleUserPrefs(user_prefs);
-#elif defined(TOOLKIT_GTK)
-  BrowserWindowGtk::RegisterUserPrefs(user_prefs);
-#endif
-
-#if defined(OS_ANDROID)
-  geolocation::RegisterUserPrefs(user_prefs);
-  PromoHandler::RegisterUserPrefs(user_prefs);
-#endif
-
-#if defined(USE_ASH)
-  ash::RegisterChromeLauncherUserPrefs(user_prefs);
-#endif
-
-#if !defined(OS_ANDROID)
-  CaptureVisibleTabFunction::RegisterUserPrefs(user_prefs);
-  ChromeToMobileService::RegisterUserPrefs(user_prefs);
-  DevToolsWindow::RegisterUserPrefs(user_prefs);
-  extensions::CommandService::RegisterUserPrefs(user_prefs);
-  ExtensionSettingsHandler::RegisterUserPrefs(user_prefs);
-  ManagedMode::RegisterUserPrefs(user_prefs);
-  PepperFlashSettingsManager::RegisterUserPrefs(user_prefs);
-  PinnedTabCodec::RegisterUserPrefs(user_prefs);
-  PluginsUI::RegisterUserPrefs(user_prefs);
-  printing::StickySettings::RegisterUserPrefs(user_prefs);
-  RegisterAutolaunchPrefs(user_prefs);
-  SyncPromoUI::RegisterUserPrefs(user_prefs);
-#endif
-
-#if !defined(OS_ANDROID) && !defined(OS_CHROMEOS)
-  default_apps::RegisterUserPrefs(user_prefs);
-#endif
-
-#if defined(OS_CHROMEOS)
-  chromeos::Preferences::RegisterUserPrefs(user_prefs);
-  chromeos::ProxyConfigServiceImpl::RegisterPrefs(user_prefs);
+  confirm_quit::RegisterLocalState(registry);
+  QuitWithAppsController::RegisterPrefs(registry);
 #endif
 
 #if defined(OS_WIN)
-  NetworkProfileBubble::RegisterPrefs(user_prefs);
+  app_metro_launch::RegisterPrefs(registry);
+  password_manager::PasswordManager::RegisterLocalPrefs(registry);
+#endif
+
+#if defined(TOOLKIT_VIEWS)
+  RegisterBrowserViewLocalPrefs(registry);
+  RegisterTabStripLayoutTypePrefs(registry);
 #endif
 }
 
+// Register prefs applicable to all profiles.
+void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+  TRACE_EVENT0("browser", "chrome::RegisterUserPrefs");
+  // User prefs. Please keep this list alphabetized.
+  apps::RegisterProfilePrefs(registry);
+  autofill::AutofillManager::RegisterProfilePrefs(registry);
+  bookmark_utils::RegisterProfilePrefs(registry);
+  sync_driver::SyncPrefs::RegisterProfilePrefs(registry);
+  ChromeContentBrowserClient::RegisterProfilePrefs(registry);
+  ChromeVersionService::RegisterProfilePrefs(registry);
+  chrome_browser_net::HttpServerPropertiesManager::RegisterProfilePrefs(
+      registry);
+  chrome_browser_net::Predictor::RegisterProfilePrefs(registry);
+  chrome_prefs::RegisterProfilePrefs(registry);
+  DownloadPrefs::RegisterProfilePrefs(registry);
+  easy_unlock::RegisterProfilePrefs(registry);
+  extensions::ExtensionPrefs::RegisterProfilePrefs(registry);
+  extensions::launch_util::RegisterProfilePrefs(registry);
+  ExtensionWebUI::RegisterProfilePrefs(registry);
+  HostContentSettingsMap::RegisterProfilePrefs(registry);
+  IncognitoModePrefs::RegisterProfilePrefs(registry);
+  InstantUI::RegisterProfilePrefs(registry);
+  NavigationCorrectionTabObserver::RegisterProfilePrefs(registry);
+  MediaCaptureDevicesDispatcher::RegisterProfilePrefs(registry);
+  MediaDeviceIDSalt::RegisterProfilePrefs(registry);
+  MediaStreamDevicesController::RegisterProfilePrefs(registry);
+  NetPrefObserver::RegisterProfilePrefs(registry);
+  NetworkTimeService::RegisterProfilePrefs(registry);
+
+  password_manager::PasswordManager::RegisterProfilePrefs(registry);
+  PrefProxyConfigTrackerImpl::RegisterProfilePrefs(registry);
+  PrefsTabHelper::RegisterProfilePrefs(registry);
+  Profile::RegisterProfilePrefs(registry);
+  ProfileImpl::RegisterProfilePrefs(registry);
+  PromoResourceService::RegisterProfilePrefs(registry);
+  ProtocolHandlerRegistry::RegisterProfilePrefs(registry);
+  RegisterBrowserUserPrefs(registry);
+  SessionStartupPref::RegisterProfilePrefs(registry);
+  TemplateURLPrepopulateData::RegisterProfilePrefs(registry);
+  TranslatePrefs::RegisterProfilePrefs(registry);
+  ZeroSuggestProvider::RegisterProfilePrefs(registry);
+  gcm::GCMProfileService::RegisterProfilePrefs(registry);
+
+#if defined(ENABLE_AUTOFILL_DIALOG)
+  autofill::AutofillDialogController::RegisterProfilePrefs(registry);
+#endif
+
+#if defined(ENABLE_CONFIGURATION_POLICY)
+  policy::URLBlacklistManager::RegisterProfilePrefs(registry);
+#endif
+
+#if defined(ENABLE_EXTENSIONS)
+  extensions::ActivityLog::RegisterProfilePrefs(registry);
+#endif
+
+#if defined(ENABLE_FULL_PRINTING)
+  print_dialog_cloud::RegisterProfilePrefs(registry);
+  printing::StickySettings::RegisterProfilePrefs(registry);
+#endif
+
+#if defined(ENABLE_MANAGED_USERS)
+  ManagedUserService::RegisterProfilePrefs(registry);
+  ManagedUserSharedSettingsService::RegisterProfilePrefs(registry);
+  ManagedUserSyncService::RegisterProfilePrefs(registry);
+#endif
+
+#if defined(ENABLE_NOTIFICATIONS)
+  DesktopNotificationService::RegisterProfilePrefs(registry);
+#endif
+
+#if defined(ENABLE_SERVICE_DISCOVERY)
+  LocalDiscoveryUI::RegisterProfilePrefs(registry);
+#endif
+
+#if defined(OS_ANDROID)
+  chrome_variations::VariationsService::RegisterProfilePrefs(registry);
+  NewTabPagePrefs::RegisterProfilePrefs(registry);
+  PartnerBookmarksShim::RegisterProfilePrefs(registry);
+#else
+  AppShortcutManager::RegisterProfilePrefs(registry);
+  autofill::GeneratedCreditCardBubbleController::RegisterUserPrefs(registry);
+  DeviceIDFetcher::RegisterProfilePrefs(registry);
+  DevToolsWindow::RegisterProfilePrefs(registry);
+  extensions::CommandService::RegisterProfilePrefs(registry);
+  extensions::ExtensionSettingsHandler::RegisterProfilePrefs(registry);
+  extensions::TabsCaptureVisibleTabFunction::RegisterProfilePrefs(registry);
+  first_run::RegisterProfilePrefs(registry);
+  NewTabUI::RegisterProfilePrefs(registry);
+  notifier::ChromeNotifierService::RegisterProfilePrefs(registry);
+  PepperFlashSettingsManager::RegisterProfilePrefs(registry);
+  PinnedTabCodec::RegisterProfilePrefs(registry);
+  PluginsUI::RegisterProfilePrefs(registry);
+  RegisterAutolaunchUserPrefs(registry);
+  signin::RegisterProfilePrefs(registry);
+#endif
+
+#if !defined(OS_ANDROID) && !defined(OS_CHROMEOS)
+  default_apps::RegisterProfilePrefs(registry);
+#endif
+
+#if defined(OS_CHROMEOS)
+  chromeos::attestation::PlatformVerificationFlow::RegisterProfilePrefs(
+      registry);
+  chromeos::first_run::RegisterProfilePrefs(registry);
+  chromeos::MultiProfileUserController::RegisterProfilePrefs(registry);
+  chromeos::Preferences::RegisterProfilePrefs(registry);
+  chromeos::proxy_config::RegisterProfilePrefs(registry);
+  chromeos::SAMLOfflineSigninLimiter::RegisterProfilePrefs(registry);
+  chromeos::ServicesCustomizationDocument::RegisterProfilePrefs(registry);
+  chromeos::UserImageSyncObserver::RegisterProfilePrefs(registry);
+  extensions::EnterprisePlatformKeysPrivateChallengeUserKeyFunction::
+      RegisterProfilePrefs(registry);
+  FlagsUI::RegisterProfilePrefs(registry);
+#endif
+
+#if defined(OS_MACOSX)
+  RegisterBrowserActionsControllerProfilePrefs(registry);
+#endif
+
+#if defined(OS_WIN)
+  NetworkProfileBubble::RegisterProfilePrefs(registry);
+#endif
+
+#if defined(TOOLKIT_VIEWS)
+  RegisterBrowserViewProfilePrefs(registry);
+  RegisterInvertBubbleUserPrefs(registry);
+#endif
+
+#if defined(USE_ASH)
+  ash::RegisterChromeLauncherUserPrefs(registry);
+#endif
+
+  // Prefs registered only for migration (clearing or moving to a new
+  // key) go here.
+  registry->RegisterDictionaryPref(
+      kBackupPref,
+      new base::DictionaryValue(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+#if !defined(OS_ANDROID)
+  registry->RegisterStringPref(
+      kSyncPromoErrorMessage,
+      std::string(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+#endif
+}
+
+void RegisterUserProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+  RegisterProfilePrefs(registry);
+
+#if defined(OS_CHROMEOS)
+  chromeos::PowerPrefs::RegisterUserProfilePrefs(registry);
+#endif
+}
+
+void RegisterScreenshotPrefs(PrefRegistrySimple* registry) {
+  registry->RegisterBooleanPref(prefs::kDisableScreenshots, false);
+}
+
+#if defined(OS_CHROMEOS)
+void RegisterLoginProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+  RegisterProfilePrefs(registry);
+
+  chromeos::PowerPrefs::RegisterLoginProfilePrefs(registry);
+}
+#endif
+
 void MigrateUserPrefs(Profile* profile) {
-  // Cleanup old prefs.
-  static const char kBackupPref[] = "backup";
   PrefService* prefs = profile->GetPrefs();
-  prefs->RegisterDictionaryPref(kBackupPref, new DictionaryValue(),
-                                PrefService::UNSYNCABLE_PREF);
+
+  // Cleanup prefs from now-removed protector feature.
   prefs->ClearPref(kBackupPref);
-  prefs->UnregisterPreference(kBackupPref);
+
+#if !defined(OS_ANDROID)
+  // Cleanup now-removed sync promo error message preference.
+  // TODO(fdoray): Remove this when it's safe to do so (crbug.com/268442).
+  prefs->ClearPref(kSyncPromoErrorMessage);
+#endif
+
+  PromoResourceService::MigrateUserPrefs(prefs);
+  TranslatePrefs::MigrateUserPrefs(prefs, prefs::kAcceptLanguages);
+
+#if defined(ENABLE_MANAGED_USERS)
+  ManagedUserService::MigrateUserPrefs(prefs);
+#endif
 }
 
 void MigrateBrowserPrefs(Profile* profile, PrefService* local_state) {
@@ -320,14 +517,14 @@ void MigrateBrowserPrefs(Profile* profile, PrefService* local_state) {
   // or remove them from local_state outright, if copying is not required.
   int current_version =
       local_state->GetInteger(prefs::kMultipleProfilePrefMigration);
+  PrefRegistrySimple* registry = static_cast<PrefRegistrySimple*>(
+      local_state->DeprecatedGetPrefRegistry());
 
   if (!(current_version & DNS_PREFS)) {
-    local_state->RegisterListPref(prefs::kDnsStartupPrefetchList,
-                                  PrefService::UNSYNCABLE_PREF);
+    registry->RegisterListPref(prefs::kDnsStartupPrefetchList);
     local_state->ClearPref(prefs::kDnsStartupPrefetchList);
 
-    local_state->RegisterListPref(prefs::kDnsHostReferralList,
-                                  PrefService::UNSYNCABLE_PREF);
+    registry->RegisterListPref(prefs::kDnsHostReferralList);
     local_state->ClearPref(prefs::kDnsHostReferralList);
 
     current_version |= DNS_PREFS;
@@ -337,19 +534,13 @@ void MigrateBrowserPrefs(Profile* profile, PrefService* local_state) {
 
   PrefService* user_prefs = profile->GetPrefs();
   if (!(current_version & WINDOWS_PREFS)) {
-    local_state->RegisterIntegerPref(prefs::kDevToolsHSplitLocation, -1);
-    if (local_state->HasPrefPath(prefs::kDevToolsHSplitLocation)) {
-      user_prefs->SetInteger(prefs::kDevToolsHSplitLocation,
-          local_state->GetInteger(prefs::kDevToolsHSplitLocation));
-    }
-    local_state->ClearPref(prefs::kDevToolsHSplitLocation);
-
-    local_state->RegisterDictionaryPref(prefs::kBrowserWindowPlacement);
+    registry->RegisterDictionaryPref(prefs::kBrowserWindowPlacement);
     if (local_state->HasPrefPath(prefs::kBrowserWindowPlacement)) {
       const PrefService::Preference* pref =
           local_state->FindPreference(prefs::kBrowserWindowPlacement);
       DCHECK(pref);
-      user_prefs->Set(prefs::kBrowserWindowPlacement, *(pref->GetValue()));
+      user_prefs->Set(prefs::kBrowserWindowPlacement,
+                      *(pref->GetValue()));
     }
     local_state->ClearPref(prefs::kBrowserWindowPlacement);
 
@@ -359,19 +550,19 @@ void MigrateBrowserPrefs(Profile* profile, PrefService* local_state) {
   }
 
   if (!(current_version & GOOGLE_URL_TRACKER_PREFS)) {
-    GoogleURLTrackerFactory::GetInstance()->RegisterUserPrefsOnProfile(profile);
-    local_state->RegisterStringPref(prefs::kLastKnownGoogleURL,
-                                    GoogleURLTracker::kDefaultGoogleHomepage);
+    registry->RegisterStringPref(prefs::kLastKnownGoogleURL,
+                                 GoogleURLTracker::kDefaultGoogleHomepage);
     if (local_state->HasPrefPath(prefs::kLastKnownGoogleURL)) {
       user_prefs->SetString(prefs::kLastKnownGoogleURL,
-          local_state->GetString(prefs::kLastKnownGoogleURL));
+                            local_state->GetString(prefs::kLastKnownGoogleURL));
     }
     local_state->ClearPref(prefs::kLastKnownGoogleURL);
 
-    local_state->RegisterStringPref(prefs::kLastPromptedGoogleURL,
-                                    std::string());
+    registry->RegisterStringPref(prefs::kLastPromptedGoogleURL,
+                                 std::string());
     if (local_state->HasPrefPath(prefs::kLastPromptedGoogleURL)) {
-      user_prefs->SetString(prefs::kLastPromptedGoogleURL,
+      user_prefs->SetString(
+          prefs::kLastPromptedGoogleURL,
           local_state->GetString(prefs::kLastPromptedGoogleURL));
     }
     local_state->ClearPref(prefs::kLastPromptedGoogleURL);
@@ -380,6 +571,10 @@ void MigrateBrowserPrefs(Profile* profile, PrefService* local_state) {
     local_state->SetInteger(prefs::kMultipleProfilePrefMigration,
                             current_version);
   }
+
+#if defined(OS_CHROMEOS)
+  chromeos::default_pinned_apps_field_trial::MigratePrefs(local_state);
+#endif
 }
 
 }  // namespace chrome

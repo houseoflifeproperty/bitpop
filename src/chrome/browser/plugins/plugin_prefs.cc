@@ -9,39 +9,47 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/prefs/scoped_user_pref_update.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/plugins/plugin_installer.h"
 #include "chrome/browser/plugins/plugin_metadata.h"
 #include "chrome/browser/plugins/plugin_prefs_factory.h"
-#include "chrome/browser/browser_process.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_content_client.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/plugin_service.h"
-#include "webkit/plugins/npapi/plugin_list.h"
-#include "webkit/plugins/webplugininfo.h"
+#include "content/public/common/webplugininfo.h"
 
 using content::BrowserThread;
 using content::PluginService;
 
 namespace {
 
-// How long to wait to save the plugin enabled information, which might need to
-// go to disk.
-const int64 kPluginUpdateDelayMs = 60 * 1000;
+bool IsComponentUpdatedPepperFlash(const base::FilePath& plugin) {
+  if (plugin.BaseName().value() == chrome::kPepperFlashPluginFilename) {
+    base::FilePath component_updated_pepper_flash_dir;
+    if (PathService::Get(chrome::DIR_COMPONENT_UPDATED_PEPPER_FLASH_PLUGIN,
+                         &component_updated_pepper_flash_dir) &&
+        component_updated_pepper_flash_dir.IsParent(plugin)) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 }  // namespace
 
@@ -51,10 +59,10 @@ PluginPrefs::PluginState::PluginState() {
 PluginPrefs::PluginState::~PluginState() {
 }
 
-bool PluginPrefs::PluginState::Get(const FilePath& plugin,
+bool PluginPrefs::PluginState::Get(const base::FilePath& plugin,
                                    bool* enabled) const {
-  FilePath key = ConvertMapKey(plugin);
-  std::map<FilePath, bool>::const_iterator iter = state_.find(key);
+  base::FilePath key = ConvertMapKey(plugin);
+  std::map<base::FilePath, bool>::const_iterator iter = state_.find(key);
   if (iter != state_.end()) {
     *enabled = iter->second;
     return true;
@@ -62,22 +70,18 @@ bool PluginPrefs::PluginState::Get(const FilePath& plugin,
   return false;
 }
 
-void PluginPrefs::PluginState::Set(const FilePath& plugin, bool enabled) {
+void PluginPrefs::PluginState::Set(const base::FilePath& plugin, bool enabled) {
   state_[ConvertMapKey(plugin)] = enabled;
 }
 
-FilePath PluginPrefs::PluginState::ConvertMapKey(const FilePath& plugin) const {
+base::FilePath PluginPrefs::PluginState::ConvertMapKey(
+    const base::FilePath& plugin) const {
   // Keep the state of component-updated and bundled Pepper Flash in sync.
-  if (plugin.BaseName().value() == chrome::kPepperFlashPluginFilename) {
-    FilePath component_updated_pepper_flash_dir;
-    if (PathService::Get(chrome::DIR_COMPONENT_UPDATED_PEPPER_FLASH_PLUGIN,
-                         &component_updated_pepper_flash_dir) &&
-        component_updated_pepper_flash_dir.IsParent(plugin)) {
-      FilePath bundled_pepper_flash;
-      if (PathService::Get(chrome::FILE_PEPPER_FLASH_PLUGIN,
-                           &bundled_pepper_flash)) {
-        return bundled_pepper_flash;
-      }
+  if (IsComponentUpdatedPepperFlash(plugin)) {
+    base::FilePath bundled_pepper_flash;
+    if (PathService::Get(chrome::FILE_PEPPER_FLASH_PLUGIN,
+                         &bundled_pepper_flash)) {
+      return bundled_pepper_flash;
     }
   }
 
@@ -97,12 +101,8 @@ scoped_refptr<PluginPrefs> PluginPrefs::GetForTestingProfile(
           profile, &PluginPrefsFactory::CreateForTestingProfile).get());
 }
 
-void PluginPrefs::SetPluginListForTesting(
-    webkit::npapi::PluginList* plugin_list) {
-  plugin_list_ = plugin_list;
-}
-
-void PluginPrefs::EnablePluginGroup(bool enabled, const string16& group_name) {
+void PluginPrefs::EnablePluginGroup(bool enabled,
+                                    const base::string16& group_name) {
   PluginService::GetInstance()->GetPlugins(
       base::Bind(&PluginPrefs::EnablePluginGroupInternal,
                  this, enabled, group_name));
@@ -110,8 +110,8 @@ void PluginPrefs::EnablePluginGroup(bool enabled, const string16& group_name) {
 
 void PluginPrefs::EnablePluginGroupInternal(
     bool enabled,
-    const string16& group_name,
-    const std::vector<webkit::WebPluginInfo>& plugins) {
+    const base::string16& group_name,
+    const std::vector<content::WebPluginInfo>& plugins) {
   base::AutoLock auto_lock(lock_);
   PluginFinder* finder = PluginFinder::GetInstance();
 
@@ -133,10 +133,10 @@ void PluginPrefs::EnablePluginGroupInternal(
 }
 
 void PluginPrefs::EnablePlugin(
-    bool enabled, const FilePath& path,
+    bool enabled, const base::FilePath& path,
     const base::Callback<void(bool)>& callback) {
   PluginFinder* finder = PluginFinder::GetInstance();
-  webkit::WebPluginInfo plugin;
+  content::WebPluginInfo plugin;
   bool can_enable = true;
   if (PluginService::GetInstance()->GetPluginInfoByPath(path, &plugin)) {
     scoped_ptr<PluginMetadata> plugin_metadata(
@@ -155,8 +155,8 @@ void PluginPrefs::EnablePlugin(
   }
 
   if (!can_enable) {
-    MessageLoop::current()->PostTask(FROM_HERE,
-                                     base::Bind(callback, false));
+    base::MessageLoop::current()->PostTask(FROM_HERE,
+                                           base::Bind(callback, false));
     return;
   }
 
@@ -167,17 +167,17 @@ void PluginPrefs::EnablePlugin(
 
 void PluginPrefs::EnablePluginInternal(
     bool enabled,
-    const FilePath& path,
+    const base::FilePath& path,
     PluginFinder* plugin_finder,
     const base::Callback<void(bool)>& callback,
-    const std::vector<webkit::WebPluginInfo>& plugins) {
+    const std::vector<content::WebPluginInfo>& plugins) {
   {
     // Set the desired state for the plug-in.
     base::AutoLock auto_lock(lock_);
     plugin_state_.Set(path, enabled);
   }
 
-  string16 group_name;
+  base::string16 group_name;
   for (size_t i = 0; i < plugins.size(); ++i) {
     if (plugins[i].path == path) {
       scoped_ptr<PluginMetadata> plugin_metadata(
@@ -213,7 +213,7 @@ void PluginPrefs::EnablePluginInternal(
 }
 
 PluginPrefs::PolicyStatus PluginPrefs::PolicyStatusForPlugin(
-    const string16& name) const {
+    const base::string16& name) const {
   base::AutoLock auto_lock(lock_);
   if (IsStringMatchedInSet(name, policy_enabled_plugin_patterns_)) {
     return POLICY_ENABLED;
@@ -226,10 +226,10 @@ PluginPrefs::PolicyStatus PluginPrefs::PolicyStatusForPlugin(
   }
 }
 
-bool PluginPrefs::IsPluginEnabled(const webkit::WebPluginInfo& plugin) const {
+bool PluginPrefs::IsPluginEnabled(const content::WebPluginInfo& plugin) const {
   scoped_ptr<PluginMetadata> plugin_metadata(
       PluginFinder::GetInstance()->GetPluginMetadata(plugin));
-  string16 group_name = plugin_metadata->name();
+  base::string16 group_name = plugin_metadata->name();
 
   // Check if the plug-in or its group is enabled by policy.
   PolicyStatus plugin_status = PolicyStatusForPlugin(plugin.name);
@@ -246,7 +246,7 @@ bool PluginPrefs::IsPluginEnabled(const webkit::WebPluginInfo& plugin) const {
   // information.
   // TODO(dspringer): When NaCl is on by default, remove this code.
   if ((plugin.name ==
-       ASCIIToUTF16(chrome::ChromeContentClient::kNaClPluginName)) &&
+       base::ASCIIToUTF16(ChromeContentClient::kNaClPluginName)) &&
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableNaCl)) {
     return true;
   }
@@ -258,8 +258,8 @@ bool PluginPrefs::IsPluginEnabled(const webkit::WebPluginInfo& plugin) const {
     return plugin_enabled;
 
   // Check user preferences for the plug-in group.
-  std::map<string16, bool>::const_iterator group_it(
-      plugin_group_state_.find(plugin.name));
+  std::map<base::string16, bool>::const_iterator group_it(
+      plugin_group_state_.find(group_name));
   if (group_it != plugin_group_state_.end())
     return group_it->second;
 
@@ -267,7 +267,7 @@ bool PluginPrefs::IsPluginEnabled(const webkit::WebPluginInfo& plugin) const {
   return true;
 }
 
-void PluginPrefs::UpdatePatternsAndNotify(std::set<string16>* patterns,
+void PluginPrefs::UpdatePatternsAndNotify(std::set<base::string16>* patterns,
                                           const std::string& pref_name) {
   base::AutoLock auto_lock(lock_);
   ListValueToStringSet(prefs_->GetList(pref_name.c_str()), patterns);
@@ -276,9 +276,10 @@ void PluginPrefs::UpdatePatternsAndNotify(std::set<string16>* patterns,
 }
 
 /*static*/
-bool PluginPrefs::IsStringMatchedInSet(const string16& name,
-                                       const std::set<string16>& pattern_set) {
-  std::set<string16>::const_iterator pattern(pattern_set.begin());
+bool PluginPrefs::IsStringMatchedInSet(
+    const base::string16& name,
+    const std::set<base::string16>& pattern_set) {
+  std::set<base::string16>::const_iterator pattern(pattern_set.begin());
   while (pattern != pattern_set.end()) {
     if (MatchPattern(name, *pattern))
       return true;
@@ -289,15 +290,15 @@ bool PluginPrefs::IsStringMatchedInSet(const string16& name,
 }
 
 /* static */
-void PluginPrefs::ListValueToStringSet(const ListValue* src,
-                                       std::set<string16>* dest) {
+void PluginPrefs::ListValueToStringSet(const base::ListValue* src,
+                                       std::set<base::string16>* dest) {
   DCHECK(src);
   DCHECK(dest);
   dest->clear();
-  ListValue::const_iterator end(src->end());
-  for (ListValue::const_iterator current(src->begin());
+  base::ListValue::const_iterator end(src->end());
+  for (base::ListValue::const_iterator current(src->begin());
        current != end; ++current) {
-    string16 plugin_name;
+    base::string16 plugin_name;
     if ((*current)->GetAsString(&plugin_name)) {
       dest->insert(plugin_name);
     }
@@ -307,9 +308,9 @@ void PluginPrefs::ListValueToStringSet(const ListValue* src,
 void PluginPrefs::SetPrefs(PrefService* prefs) {
   prefs_ = prefs;
   bool update_internal_dir = false;
-  FilePath last_internal_dir =
+  base::FilePath last_internal_dir =
       prefs_->GetFilePath(prefs::kPluginsLastInternalDirectory);
-  FilePath cur_internal_dir;
+  base::FilePath cur_internal_dir;
   if (PathService::Get(chrome::DIR_INTERNAL_PLUGINS, &cur_internal_dir) &&
       cur_internal_dir != last_internal_dir) {
     update_internal_dir = true;
@@ -317,42 +318,9 @@ void PluginPrefs::SetPrefs(PrefService* prefs) {
         prefs::kPluginsLastInternalDirectory, cur_internal_dir);
   }
 
-  bool force_enable_internal_pdf = false;
-  bool internal_pdf_enabled = false;
-  string16 pdf_group_name =
-      ASCIIToUTF16(chrome::ChromeContentClient::kPDFPluginName);
-  FilePath pdf_path;
-  PathService::Get(chrome::FILE_PDF_PLUGIN, &pdf_path);
-  FilePath::StringType pdf_path_str = pdf_path.value();
-  if (!prefs_->GetBoolean(prefs::kPluginsEnabledInternalPDF)) {
-    // We switched to the internal pdf plugin being on by default, and so we
-    // need to force it to be enabled.  We only want to do it this once though,
-    // i.e. we don't want to enable it again if the user disables it afterwards.
-    prefs_->SetBoolean(prefs::kPluginsEnabledInternalPDF, true);
-    force_enable_internal_pdf = true;
-  }
-
-  bool force_enable_nacl = false;
-  string16 nacl_group_name =
-      ASCIIToUTF16(chrome::ChromeContentClient::kNaClPluginName);
-  // Since the NaCl Plugin changed names between Chrome 13 and 14, we need to
-  // check for both because either could be stored as the plugin group name.
-  string16 old_nacl_group_name =
-      ASCIIToUTF16(chrome::ChromeContentClient::kNaClOldPluginName);
-  FilePath nacl_path;
-  PathService::Get(chrome::FILE_NACL_PLUGIN, &nacl_path);
-  FilePath::StringType nacl_path_str = nacl_path.value();
-  if (!prefs_->GetBoolean(prefs::kPluginsEnabledNaCl)) {
-    // We switched to the nacl plugin being on by default, and so we need to
-    // force it to be enabled.  We only want to do it this once though, i.e.
-    // we don't want to enable it again if the user disables it afterwards.
-    prefs_->SetBoolean(prefs::kPluginsEnabledNaCl, true);
-    force_enable_nacl = true;
-  }
-
   bool migrate_to_pepper_flash = false;
 #if defined(OS_WIN) || defined(OS_MACOSX)
-  // If bundled NPAPI Flash is enabled while Peppper Flash is disabled, we
+  // If bundled NPAPI Flash is enabled while Pepper Flash is disabled, we
   // would like to turn Pepper Flash on. And we only want to do it once.
   // TODO(yzshen): Remove all |migrate_to_pepper_flash|-related code after it
   // has been run once by most users. (Maybe Chrome 24 or Chrome 25.)
@@ -363,41 +331,59 @@ void PluginPrefs::SetPrefs(PrefService* prefs) {
   }
 #endif
 
+  bool remove_component_pepper_flash_settings = false;
+  // If component-updated Pepper Flash is disabled, we would like to remove that
+  // settings item. And we only want to do it once. (Please see the comments of
+  // kPluginsRemovedOldComponentPepperFlashSettings for why.)
+  // TODO(yzshen): Remove all |remove_component_pepper_flash_settings|-related
+  // code after it has been run once by most users.
+  if (!prefs_->GetBoolean(
+          prefs::kPluginsRemovedOldComponentPepperFlashSettings)) {
+    prefs_->SetBoolean(prefs::kPluginsRemovedOldComponentPepperFlashSettings,
+                       true);
+    remove_component_pepper_flash_settings = true;
+  }
+
   {  // Scoped update of prefs::kPluginsPluginsList.
     ListPrefUpdate update(prefs_, prefs::kPluginsPluginsList);
-    ListValue* saved_plugins_list = update.Get();
+    base::ListValue* saved_plugins_list = update.Get();
     if (saved_plugins_list && !saved_plugins_list->empty()) {
       // The following four variables are only valid when
       // |migrate_to_pepper_flash| is set to true.
-      FilePath npapi_flash;
-      FilePath pepper_flash;
-      DictionaryValue* pepper_flash_node = NULL;
+      base::FilePath npapi_flash;
+      base::FilePath pepper_flash;
+      base::DictionaryValue* pepper_flash_node = NULL;
       bool npapi_flash_enabled = false;
       if (migrate_to_pepper_flash) {
         PathService::Get(chrome::FILE_FLASH_PLUGIN, &npapi_flash);
         PathService::Get(chrome::FILE_PEPPER_FLASH_PLUGIN, &pepper_flash);
       }
 
-      for (ListValue::const_iterator it = saved_plugins_list->begin();
+      // Used when |remove_component_pepper_flash_settings| is set to true.
+      base::ListValue::iterator component_pepper_flash_node =
+          saved_plugins_list->end();
+
+      for (base::ListValue::iterator it = saved_plugins_list->begin();
            it != saved_plugins_list->end();
            ++it) {
-        if (!(*it)->IsType(Value::TYPE_DICTIONARY)) {
+        if (!(*it)->IsType(base::Value::TYPE_DICTIONARY)) {
           LOG(WARNING) << "Invalid entry in " << prefs::kPluginsPluginsList;
           continue;  // Oops, don't know what to do with this item.
         }
 
-        DictionaryValue* plugin = static_cast<DictionaryValue*>(*it);
-        string16 group_name;
+        base::DictionaryValue* plugin =
+            static_cast<base::DictionaryValue*>(*it);
+        base::string16 group_name;
         bool enabled;
         if (!plugin->GetBoolean("enabled", &enabled))
           enabled = true;
 
-        FilePath::StringType path;
+        base::FilePath::StringType path;
         // The plugin list constains all the plugin files in addition to the
         // plugin groups.
         if (plugin->GetString("path", &path)) {
           // Files have a path attribute, groups don't.
-          FilePath plugin_path(path);
+          base::FilePath plugin_path(path);
 
           // The path to the intenral plugin directory changes everytime Chrome
           // is auto-updated, since it contains the current version number. For
@@ -408,7 +394,7 @@ void PluginPrefs::SetPrefs(PrefService* prefs) {
           // that are within the previous internal plugin directory, and update
           // them in the prefs accordingly.
           if (update_internal_dir) {
-            FilePath relative_path;
+            base::FilePath relative_path;
 
             // Extract the part of |plugin_path| that is relative to
             // |last_internal_dir|. For example, |relative_path| will be
@@ -420,7 +406,7 @@ void PluginPrefs::SetPrefs(PrefService* prefs) {
             while (last_internal_dir.IsParent(plugin_path)) {
               relative_path = plugin_path.BaseName().Append(relative_path);
 
-              FilePath old_path = plugin_path;
+              base::FilePath old_path = plugin_path;
               plugin_path = plugin_path.DirName();
               // To be extra sure that we won't end up in an infinite loop.
               if (old_path == plugin_path) {
@@ -438,37 +424,26 @@ void PluginPrefs::SetPrefs(PrefService* prefs) {
             }
           }
 
-          if (FilePath::CompareIgnoreCase(path, pdf_path_str) == 0) {
-            if (!enabled && force_enable_internal_pdf) {
-              enabled = true;
-              plugin->SetBoolean("enabled", true);
-            }
-
-            internal_pdf_enabled = enabled;
-          } else if (FilePath::CompareIgnoreCase(path, nacl_path_str) == 0) {
-            if (!enabled && force_enable_nacl) {
-              enabled = true;
-              plugin->SetBoolean("enabled", true);
-            }
-          } else if (migrate_to_pepper_flash &&
-              FilePath::CompareEqualIgnoreCase(path, npapi_flash.value())) {
+          if (migrate_to_pepper_flash &&
+                     base::FilePath::CompareEqualIgnoreCase(
+                         path, npapi_flash.value())) {
             npapi_flash_enabled = enabled;
           } else if (migrate_to_pepper_flash &&
-              FilePath::CompareEqualIgnoreCase(path, pepper_flash.value())) {
+                     base::FilePath::CompareEqualIgnoreCase(
+                         path, pepper_flash.value())) {
             if (!enabled)
               pepper_flash_node = plugin;
+          } else if (remove_component_pepper_flash_settings &&
+                     IsComponentUpdatedPepperFlash(plugin_path)) {
+            if (!enabled) {
+              component_pepper_flash_node = it;
+              // Skip setting |enabled| into |plugin_state_|.
+              continue;
+            }
           }
 
           plugin_state_.Set(plugin_path, enabled);
         } else if (!enabled && plugin->GetString("name", &group_name)) {
-          // Don't disable this group if it's for the pdf or nacl plugins and
-          // we just forced it on.
-          if (force_enable_internal_pdf && pdf_group_name == group_name)
-            continue;
-          if (force_enable_nacl && (nacl_group_name == group_name ||
-                                    old_nacl_group_name == group_name))
-            continue;
-
           // Otherwise this is a list of groups.
           plugin_group_state_[group_name] = false;
         }
@@ -479,13 +454,20 @@ void PluginPrefs::SetPrefs(PrefService* prefs) {
         pepper_flash_node->SetBoolean("enabled", true);
         plugin_state_.Set(pepper_flash, true);
       }
+
+      if (component_pepper_flash_node != saved_plugins_list->end()) {
+        DCHECK(remove_component_pepper_flash_settings);
+        saved_plugins_list->Erase(component_pepper_flash_node, NULL);
+      }
     } else {
       // If the saved plugin list is empty, then the call to UpdatePreferences()
       // below failed in an earlier run, possibly because the user closed the
-      // browser too quickly. Try to force enable the internal PDF and nacl
-      // plugins again.
-      force_enable_internal_pdf = true;
-      force_enable_nacl = true;
+      // browser too quickly.
+
+      // Only want one PDF plugin enabled at a time. See http://crbug.com/50105
+      // for background.
+      plugin_group_state_[base::ASCIIToUTF16(
+          PluginMetadata::kAdobeReaderGroupName)] = false;
     }
   }  // Scoped update of prefs::kPluginsPluginsList.
 
@@ -518,23 +500,6 @@ void PluginPrefs::SetPrefs(PrefService* prefs) {
                             base::Unretained(this),
                             &policy_enabled_plugin_patterns_));
 
-  if (force_enable_internal_pdf || internal_pdf_enabled) {
-    // See http://crbug.com/50105 for background.
-    plugin_group_state_[ASCIIToUTF16(
-        PluginMetadata::kAdobeReaderGroupName)] = false;
-  }
-
-  if (force_enable_internal_pdf || force_enable_nacl) {
-    // We want to save this, but doing so requires loading the list of plugins,
-    // so do it after a minute as to not impact startup performance.  Note that
-    // plugins are loaded after 30s by the metrics service.
-    BrowserThread::PostDelayedTask(
-        BrowserThread::FILE,
-        FROM_HERE,
-        base::Bind(&PluginPrefs::GetPreferencesDataOnFileThread, this),
-        base::TimeDelta::FromMilliseconds(kPluginUpdateDelayMs));
-  }
-
   NotifyPluginStatusChanged();
 }
 
@@ -544,57 +509,41 @@ void PluginPrefs::ShutdownOnUIThread() {
 }
 
 PluginPrefs::PluginPrefs() : profile_(NULL),
-                             prefs_(NULL),
-                             plugin_list_(NULL) {
+                             prefs_(NULL) {
 }
 
 PluginPrefs::~PluginPrefs() {
 }
 
 void PluginPrefs::SetPolicyEnforcedPluginPatterns(
-    const std::set<string16>& disabled_patterns,
-    const std::set<string16>& disabled_exception_patterns,
-    const std::set<string16>& enabled_patterns) {
+    const std::set<base::string16>& disabled_patterns,
+    const std::set<base::string16>& disabled_exception_patterns,
+    const std::set<base::string16>& enabled_patterns) {
   policy_disabled_plugin_patterns_ = disabled_patterns;
   policy_disabled_plugin_exception_patterns_ = disabled_exception_patterns;
   policy_enabled_plugin_patterns_ = enabled_patterns;
 }
 
-webkit::npapi::PluginList* PluginPrefs::GetPluginList() const {
-  if (plugin_list_)
-    return plugin_list_;
-  return PluginService::GetInstance()->GetPluginList();
-}
-
-void PluginPrefs::GetPreferencesDataOnFileThread() {
-  std::vector<webkit::WebPluginInfo> plugins;
-  webkit::npapi::PluginList* plugin_list = GetPluginList();
-  plugin_list->GetPluginsNoRefresh(&plugins);
-
-  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-      base::Bind(&PluginPrefs::OnUpdatePreferences, this, plugins));
-}
-
 void PluginPrefs::OnUpdatePreferences(
-    const std::vector<webkit::WebPluginInfo>& plugins) {
+    const std::vector<content::WebPluginInfo>& plugins) {
   if (!prefs_)
     return;
 
   PluginFinder* finder = PluginFinder::GetInstance();
   ListPrefUpdate update(prefs_, prefs::kPluginsPluginsList);
-  ListValue* plugins_list = update.Get();
+  base::ListValue* plugins_list = update.Get();
   plugins_list->Clear();
 
-  FilePath internal_dir;
+  base::FilePath internal_dir;
   if (PathService::Get(chrome::DIR_INTERNAL_PLUGINS, &internal_dir))
     prefs_->SetFilePath(prefs::kPluginsLastInternalDirectory, internal_dir);
 
   base::AutoLock auto_lock(lock_);
 
   // Add the plugin files.
-  std::set<string16> group_names;
+  std::set<base::string16> group_names;
   for (size_t i = 0; i < plugins.size(); ++i) {
-    DictionaryValue* summary = new DictionaryValue();
+    base::DictionaryValue* summary = new base::DictionaryValue();
     summary->SetString("path", plugins[i].path.value());
     summary->SetString("name", plugins[i].name);
     summary->SetString("version", plugins[i].version);
@@ -610,12 +559,12 @@ void PluginPrefs::OnUpdatePreferences(
   }
 
   // Add the plug-in groups.
-  for (std::set<string16>::const_iterator it = group_names.begin();
+  for (std::set<base::string16>::const_iterator it = group_names.begin();
       it != group_names.end(); ++it) {
-    DictionaryValue* summary = new DictionaryValue();
+    base::DictionaryValue* summary = new base::DictionaryValue();
     summary->SetString("name", *it);
     bool enabled = true;
-    std::map<string16, bool>::iterator gstate_it =
+    std::map<base::string16, bool>::iterator gstate_it =
         plugin_group_state_.find(*it);
     if (gstate_it != plugin_group_state_.end())
       enabled = gstate_it->second;

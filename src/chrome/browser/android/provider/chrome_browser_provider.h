@@ -5,14 +5,14 @@
 #ifndef CHROME_BROWSER_ANDROID_PROVIDER_CHROME_BROWSER_PROVIDER_H_
 #define CHROME_BROWSER_ANDROID_PROVIDER_CHROME_BROWSER_PROVIDER_H_
 
-#include "base/android/jni_helper.h"
+#include "base/android/jni_weak_ref.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/waitable_event.h"
-#include "chrome/browser/bookmarks/base_bookmark_model_observer.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/history/android/android_history_types.h"
-#include "chrome/common/cancelable_task_tracker.h"
+#include "components/bookmarks/core/browser/base_bookmark_model_observer.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
@@ -138,6 +138,8 @@ class ChromeBrowserProvider : public BaseBookmarkModelObserver,
                                   jstring title,
                                   jlong parent_id);
 
+  void RemoveAllBookmarks(JNIEnv* env, jobject obj);
+
   base::android::ScopedJavaLocalRef<jobject> GetAllBookmarkFolders(JNIEnv* env,
                                                                    jobject obj);
 
@@ -174,6 +176,8 @@ class ChromeBrowserProvider : public BaseBookmarkModelObserver,
 
   // Override BaseBookmarkModelObserver.
   virtual void BookmarkModelChanged() OVERRIDE;
+  virtual void ExtensiveBookmarkChangesBeginning(BookmarkModel* model) OVERRIDE;
+  virtual void ExtensiveBookmarkChangesEnded(BookmarkModel* model) OVERRIDE;
 
   // Override NotificationObserver.
   virtual void Observe(int type,
@@ -197,13 +201,12 @@ class ChromeBrowserProvider : public BaseBookmarkModelObserver,
   CancelableRequestConsumer android_history_consumer_;
   CancelableRequestConsumer favicon_consumer_;
 
-  CancelableTaskTracker cancelable_task_tracker_;
+  base::CancelableTaskTracker cancelable_task_tracker_;
 
   // Used to register/unregister notification observer.
   content::NotificationRegistrar notification_registrar_;
 
-  // Signaled if TemplateURLModel has been loaded.
-  base::WaitableEvent template_loaded_event_;
+  bool handling_extensive_changes_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeBrowserProvider);
 };

@@ -10,22 +10,23 @@
 #include <map>
 
 #include "base/memory/ref_counted.h"
-#include "base/memory/singleton.h"
 #include "gpu/command_buffer/service/shader_translator.h"
 #include "third_party/angle/include/GLSLANG/ShaderLang.h"
 
 namespace gpu {
 namespace gles2 {
 
-// This singleton and the cache that it implements is NOT thread safe.
-// We're relying on the fact that the all GLES2DecoderImpl's are used
-// on one thread.
+// This class is not thread safe and can only be created and destroyed
+// on a single thread. But it is safe to use two independent instances on two
+// threads without synchronization.
 //
 // TODO(backer): Investigate using glReleaseShaderCompiler as an alternative to
 // to this cache.
-class ShaderTranslatorCache : public ShaderTranslator::DestructionObserver {
+class GPU_EXPORT ShaderTranslatorCache
+    : public base::RefCounted<ShaderTranslatorCache>,
+      public NON_EXPORTED_BASE(ShaderTranslator::DestructionObserver) {
  public:
-  static ShaderTranslatorCache* GetInstance();
+  ShaderTranslatorCache();
 
   // ShaderTranslator::DestructionObserver implementation
   virtual void OnDestruct(ShaderTranslator* translator) OVERRIDE;
@@ -36,14 +37,11 @@ class ShaderTranslatorCache : public ShaderTranslator::DestructionObserver {
       const ShBuiltInResources* resources,
       ShaderTranslatorInterface::GlslImplementationType
           glsl_implementation_type,
-      ShaderTranslatorInterface::GlslBuiltInFunctionBehavior
-          glsl_built_in_function_behavior);
+      ShCompileOptions driver_bug_workarounds);
 
  private:
-  ShaderTranslatorCache();
+  friend class base::RefCounted<ShaderTranslatorCache>;
   virtual ~ShaderTranslatorCache();
-
-  friend struct DefaultSingletonTraits<ShaderTranslatorCache>;
 
   // Parameters passed into ShaderTranslator::Init
   struct ShaderTranslatorInitParams {
@@ -52,8 +50,7 @@ class ShaderTranslatorCache : public ShaderTranslator::DestructionObserver {
     ShBuiltInResources resources;
     ShaderTranslatorInterface::GlslImplementationType
         glsl_implementation_type;
-    ShaderTranslatorInterface::GlslBuiltInFunctionBehavior
-        glsl_built_in_function_behavior;
+    ShCompileOptions driver_bug_workarounds;
 
     ShaderTranslatorInitParams(
         ShShaderType shader_type,
@@ -61,13 +58,12 @@ class ShaderTranslatorCache : public ShaderTranslator::DestructionObserver {
         const ShBuiltInResources& resources,
         ShaderTranslatorInterface::GlslImplementationType
             glsl_implementation_type,
-        ShaderTranslatorInterface::GlslBuiltInFunctionBehavior
-            glsl_built_in_function_behavior)
+        ShCompileOptions driver_bug_workarounds)
       : shader_type(shader_type),
         shader_spec(shader_spec),
         resources(resources),
         glsl_implementation_type(glsl_implementation_type),
-        glsl_built_in_function_behavior(glsl_built_in_function_behavior) {
+        driver_bug_workarounds(driver_bug_workarounds) {
     }
 
     ShaderTranslatorInitParams(const ShaderTranslatorInitParams& params) {

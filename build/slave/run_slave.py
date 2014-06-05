@@ -8,13 +8,20 @@
 
 import os
 import shutil
-import socket
 import subprocess
 import sys
 import time
 
-SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+BUILD_DIR = os.path.dirname(SCRIPT_DIR)
+ROOT_DIR = os.path.dirname(BUILD_DIR)
 needs_reboot = False
+
+# Temporarily add scripts to the path.  We do so in a more consistent
+# manner below, but cannot keep it here because of our recursive calls.
+sys.path.insert(0, os.path.join(os.path.dirname(SCRIPT_DIR), 'scripts'))
+from common import chromium_utils
+sys.path.pop(0)
 
 # By default, the slave will identify itself to the master by its hostname.
 # To override that, explicitly set a slavename here.
@@ -164,13 +171,13 @@ def HotPatchSlaveBuilder(is_testing):
   Bot.old_remote_setBuilderList = Bot.remote_setBuilderList
   def cleanup(self, wanted):
     retval = self.old_remote_setBuilderList(wanted)
-    wanted_dirs = sorted(['info', 'cert', '.svn'] + [r[1] for r in wanted])
+    wanted_dirs = sorted(
+        ['info', 'cert', '.svn', 'cache_dir'] + [r[1] for r in wanted])
     Log('Wanted directories: %s' % wanted_dirs)
     actual_dirs = sorted(
         i for i in os.listdir(self.basedir)
         if os.path.isdir(os.path.join(self.basedir, i)))
     Log('Actual directories: %s' % actual_dirs)
-    from common import chromium_utils
     for d in actual_dirs:
       # Delete build.dead directories.
       possible_build_dead = os.path.join(self.basedir, d, 'build.dead')
@@ -197,19 +204,9 @@ def FixSubversionConfig():
   shutil.copyfile('config', dest)
 
 
-def GetActiveSlavename(config_bootstrap):
-  active_slavename = os.environ.get('TESTING_SLAVENAME', slavename)
-  if active_slavename:
-    config_bootstrap.Master.active_slavename = active_slavename
-  else:
-    config_bootstrap.Master.active_slavename = (
-        socket.getfqdn().split('.', 1)[0].lower())
-  return active_slavename
-
-
 def GetActiveMaster(slave_bootstrap, config_bootstrap, active_slavename):
   master_name = os.environ.get(
-      'TESTING_MASTER', slave_bootstrap.GetActiveMaster(active_slavename))
+      'TESTING_MASTER', chromium_utils.GetActiveMaster(active_slavename))
   if not master_name:
     raise RuntimeError('*** Failed to detect the active master')
   slave_bootstrap.ImportMasterConfigs(master_name)
@@ -221,6 +218,48 @@ def GetActiveMaster(slave_bootstrap, config_bootstrap, active_slavename):
     config_bootstrap.Master.active_master = master
     return master
   raise RuntimeError('*** Failed to detect the active master')
+
+
+def GetRoot():
+  if chromium_utils.IsWindows():
+    return os.path.splitdrive(SCRIPT_DIR)[0]
+  return '/'
+
+
+def SpawnSubdirBuildbotsIfNeeded():
+  """Creates /c directory structure and spawns other bots on host as needed."""
+  # 'make start' spawns subdirs bots only when run in /b.
+  # TODO(ilevy): Remove this restriction after run_slave.py refactor.
+  if chromium_utils.GetActiveSubdir():
+    return
+  print 'Spawning other slaves on this host as needed.'
+  print 'Run make stopall to terminate.'
+  for slave in chromium_utils.GetSlavesForHost():
+    subdir = slave.get('subdir')
+    if not subdir:
+      continue
+    botdir = os.path.join(GetRoot(), 'c', subdir)
+
+    def GClientCall(command):
+      # We just synced depot_tools, so disable gclient auto-sync.
+      env = dict(os.environ, DEPOT_TOOLS_UPDATE='0')
+      subprocess.check_call([GetGClientPath()] + command, env=env, cwd=botdir)
+
+    gclient_solutions = chromium_utils.ParsePythonCfg(
+        os.path.join(ROOT_DIR, '.gclient')).get('solutions', [])
+    assert len(gclient_solutions) == 1
+    if subdir and not os.path.exists(botdir):
+      print 'Creating %s' % botdir
+      os.mkdir(botdir)
+      GClientCall(['config', gclient_solutions[0]['url'], '--git-deps'])
+      GClientCall(['sync'])
+      shutil.copyfile(
+          os.path.join(BUILD_DIR, 'site_config', '.bot_password'),
+          os.path.join(botdir, 'build', 'site_config', '.bot_password'))
+    bot_slavedir = os.path.join(botdir, 'build', 'slave')
+    if not os.path.exists(os.path.join(bot_slavedir, 'twistd.pid')):
+      print 'Spawning slave in %s' % bot_slavedir
+      subprocess.check_call(['make', 'start'], cwd=bot_slavedir)
 
 
 def GetThirdPartyVersions(master):
@@ -242,21 +281,31 @@ def error(msg):
   sys.exit(1)
 
 
+def UseBotoPath():
+  """Mutate the environment to reference the prefered gs credentials."""
+  # Get the path to the boto file containing the password.
+  boto_file = os.path.join(BUILD_DIR, 'site_config', '.boto')
+  # If the boto file exists, make sure gsutil uses this boto file.
+  if os.path.exists(boto_file):
+    os.environ['AWS_CREDENTIAL_FILE'] = boto_file
+    os.environ['BOTO_CONFIG'] = boto_file
+
+
 def main():
   # Use adhoc argument parsing because of twisted's twisted argument parsing.
   # Change the current directory to the directory of the script.
-  os.chdir(SCRIPT_PATH)
-  build_dir = os.path.dirname(SCRIPT_PATH)
-  # Directory containing build/slave/run_slave.py
-  root_dir = os.path.dirname(build_dir)
-  depot_tools = os.path.join(root_dir, 'depot_tools')
-
+  os.chdir(SCRIPT_DIR)
+  depot_tools = os.path.join(ROOT_DIR, 'depot_tools')
   if not os.path.isdir(depot_tools):
     error('You must put a copy of depot_tools in %s' % depot_tools)
   bot_password_file = os.path.normpath(
-      os.path.join(build_dir, 'site_config', '.bot_password'))
+      os.path.join(BUILD_DIR, 'site_config', '.bot_password'))
   if not os.path.isfile(bot_password_file):
     error('You forgot to put the password at %s' % bot_password_file)
+
+  if (os.path.exists(os.path.join(GetRoot(), 'b')) and
+      os.path.exists(os.path.join(GetRoot(), 'c'))):
+    SpawnSubdirBuildbotsIfNeeded()
 
   # Make sure the current python path is absolute.
   old_pythonpath = os.environ.get('PYTHONPATH', '')
@@ -267,26 +316,27 @@ def main():
 
   # Update the python path.
   python_path = [
-    os.path.join(build_dir, 'site_config'),
-    os.path.join(build_dir, 'scripts'),
-    os.path.join(build_dir, 'scripts', 'release'),
-    os.path.join(build_dir, 'third_party'),
-    os.path.join(root_dir, 'build_internal', 'site_config'),
-    os.path.join(root_dir, 'build_internal', 'symsrc'),
-    SCRIPT_PATH,  # Include the current working directory by default.
+    os.path.join(BUILD_DIR, 'site_config'),
+    os.path.join(BUILD_DIR, 'scripts'),
+    os.path.join(BUILD_DIR, 'scripts', 'release'),
+    os.path.join(BUILD_DIR, 'third_party'),
+    os.path.join(ROOT_DIR, 'build_internal', 'site_config'),
+    os.path.join(ROOT_DIR, 'build_internal', 'symsrc'),
+    SCRIPT_DIR,  # Include the current working directory by default.
   ]
 
   # Need to update sys.path prior to the following imports.
   sys.path = python_path + sys.path
   import slave.bootstrap
   import config_bootstrap
-  active_slavename = GetActiveSlavename(config_bootstrap)
-  active_master = GetActiveMaster(slave.bootstrap, config_bootstrap,
-                                  active_slavename)
+  active_slavename = chromium_utils.GetActiveSlavename()
+  config_bootstrap.Master.active_slavename = active_slavename
+  active_master = GetActiveMaster(
+      slave.bootstrap, config_bootstrap, active_slavename)
 
   bb_ver, tw_ver = GetThirdPartyVersions(active_master)
-  python_path.append(os.path.join(build_dir, 'third_party', bb_ver))
-  python_path.append(os.path.join(build_dir, 'third_party', tw_ver))
+  python_path.append(os.path.join(BUILD_DIR, 'third_party', bb_ver))
+  python_path.append(os.path.join(BUILD_DIR, 'third_party', tw_ver))
   sys.path.extend(python_path[-2:])
 
   os.environ['PYTHONPATH'] = (
@@ -304,8 +354,14 @@ def main():
         'BUILDBOT_ARCHIVE_FORCE_SSH',
         'CHROME_HEADLESS',
         'CHROMIUM_BUILD',
+        'COMMONPROGRAMFILES',
+        'COMMONPROGRAMFILES(X86)',
+        'COMMONPROGRAMW6432',
         'COMSPEC',
         'COMPUTERNAME',
+        'DBUS_SESSION_BUS_ADDRESS',
+        # TODO(maruel): Remove once everyone is on 2.7.5.
+        'DEPOT_TOOLS_PYTHON_275',
         'DXSDK_DIR',
         'HOMEDRIVE',
         'HOMEPATH',
@@ -316,6 +372,7 @@ def main():
         'PATHEXT',
         'PROCESSOR_ARCHITECTURE',
         'PROCESSOR_ARCHITEW6432',
+        'PROCESSOR_IDENTIFIER',
         'PROGRAMFILES',
         'PROGRAMW6432',
         'PYTHONPATH',
@@ -330,6 +387,7 @@ def main():
         'USERDOMAIN',
         'USERPROFILE',
         'VS100COMNTOOLS',
+        'VS110COMNTOOLS',
         'WINDIR',
     ]
 
@@ -342,9 +400,10 @@ def main():
         os.path.dirname(sys.executable),
         os.path.join(os.environ['SYSTEMROOT'], 'system32'),
         os.path.join(os.environ['SYSTEMROOT'], 'system32', 'WBEM'),
+        os.path.join(os.environ['SYSTEMDRIVE'], 'Program Files', '7-Zip'),
     ]
     # build_internal/tools contains tools we can't redistribute.
-    tools = os.path.join(root_dir, 'build_internal', 'tools')
+    tools = os.path.join(ROOT_DIR, 'build_internal', 'tools')
     if os.path.isdir(tools):
       slave_path.append(os.path.abspath(tools))
     os.environ['PATH'] = os.pathsep.join(slave_path)
@@ -387,6 +446,11 @@ def main():
     slave_path = [
         os.path.join(os.path.expanduser('~'), 'slavebin'),
         depot_tools,
+    ]
+    # Git on mac is installed from git-scm.com/download/mac
+    if sys.platform == 'darwin' and os.path.isdir('/usr/local/git/bin'):
+      slave_path.append('/usr/local/git/bin')
+    slave_path += [
         # Reuse the python executable used to start this script.
         os.path.dirname(sys.executable),
         '/usr/bin', '/bin', '/usr/sbin', '/sbin', '/usr/local/bin'
@@ -395,6 +459,9 @@ def main():
 
   else:
     error('Platform %s is not implemented yet' % sys.platform)
+
+  # This may be redundant, unless this is imported and main is called.
+  UseBotoPath()
 
   # This envrionment is defined only when testing the slave on a dev machine.
   is_testing = 'TESTING_MASTER' in os.environ
@@ -411,21 +478,27 @@ def main():
     # This line should not be reached.
 
 
-def UpdateScripts():
-  if os.environ.get('RUN_SLAVE_UPDATED_SCRIPTS', None):
-    os.environ.pop('RUN_SLAVE_UPDATED_SCRIPTS')
-    return False
-  gclient_path = os.path.join(SCRIPT_PATH, '..', '..', 'depot_tools', 'gclient')
+def GetGClientPath():
+  """Returns path to local gclient executable."""
+  gclient_path = os.path.join(ROOT_DIR, 'depot_tools', 'gclient')
   if sys.platform.startswith('win'):
-    gclient_path += '.bat'
-  if subprocess.call([gclient_path, 'sync', '--force']) != 0:
-    msg = '(%s) `gclient sync` failed; proceeding anyway...' % sys.argv[0]
-    print >> sys.stderr, msg
-  os.environ['RUN_SLAVE_UPDATED_SCRIPTS'] = '1'
-  return True
+    return gclient_path + '.bat'
+
+  if not os.path.isfile(gclient_path):
+    raise RuntimeError('gclient not found. Check that depot_tools is '
+                       'properly installed')
+  return gclient_path
 
 
 if '__main__' == __name__:
-  if UpdateScripts():
-    os.execv(sys.executable, [sys.executable] + sys.argv)
+  skip_sync_arg = '--no-gclient-sync'
+  if skip_sync_arg not in sys.argv:
+    UseBotoPath()
+    if subprocess.call([GetGClientPath(), 'sync', '--force']) != 0:
+      print >> sys.stderr, (
+          '(%s) `gclient sync` failed; proceeding anyway...' % sys.argv[0])
+    os.execv(sys.executable, [sys.executable] + sys.argv + [skip_sync_arg])
+
+  # Remove skip_sync_arg from arg list.  Needed because twistd.
+  sys.argv.remove(skip_sync_arg)
   main()

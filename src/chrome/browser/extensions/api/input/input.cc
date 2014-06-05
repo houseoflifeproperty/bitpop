@@ -1,136 +1,176 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/extensions/api/input/input.h"
 
-#include <string>
+#include "base/command_line.h"
+#include "base/lazy_instance.h"
+#include "base/metrics/histogram.h"
+#include "base/strings/string16.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/user_metrics.h"
+#include "extensions/browser/extension_function_registry.h"
+#include "ui/events/event.h"
+#include "ui/keyboard/keyboard_controller.h"
+#include "ui/keyboard/keyboard_switches.h"
 
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/values.h"
-#include "chrome/browser/extensions/key_identifier_conversion_views.h"
-#include "chrome/browser/ui/top_level_widget.h"
-#include "chrome/common/chrome_notification_types.h"
-#include "ui/base/events/event.h"
-#include "ui/views/ime/input_method.h"
-#include "ui/views/widget/widget.h"
+#if defined(USE_ASH)
+#include "ash/root_window_controller.h"
+#include "ash/shell.h"
+#include "ui/aura/window_tree_host.h"
+#include "ui/keyboard/keyboard_util.h"
+#endif
+
+#if !defined(USE_ASH)
+namespace {
+
+const char kNotYetImplementedError[] =
+    "API is not implemented on this platform.";
+
+}  // namespace
+#endif
 
 namespace extensions {
 
-namespace {
+bool VirtualKeyboardPrivateInsertTextFunction::RunSync() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+#if defined(USE_ASH)
+  base::string16 text;
+  EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &text));
 
-// Keys.
-const char kType[] = "type";
-const char kKeyIdentifier[] = "keyIdentifier";
-const char kAlt[] = "altKey";
-const char kCtrl[] = "ctrlKey";
-const char kMeta[] = "metaKey";
-const char kShift[] = "shiftKey";
-const char kKeyDown[] = "keydown";
-const char kKeyUp[] = "keyup";
-
-// Errors.
-const char kUnknownEventTypeError[] = "Unknown event type.";
-const char kUnknownOrUnsupportedKeyIdentiferError[] = "Unknown or unsupported "
-    "key identifier.";
-const char kUnsupportedModifier[] = "Unsupported modifier.";
-const char kNoValidRecipientError[] = "No valid recipient for event.";
-const char kKeyEventUnprocessedError[] = "Event was not handled.";
-
-ui::EventType GetTypeFromString(const std::string& type) {
-  if (type == kKeyDown) {
-    return ui::ET_KEY_PRESSED;
-  } else if (type == kKeyUp) {
-    return ui::ET_KEY_RELEASED;
-  }
-  return ui::ET_UNKNOWN;
+  return keyboard::InsertText(text, ash::Shell::GetPrimaryRootWindow());
+#else
+  error_ = kNotYetImplementedError;
+  return false;
+#endif
 }
 
-// Converts a hex string "U+NNNN" to uint16. Returns 0 on error.
-uint16 UnicodeIdentifierStringToInt(const std::string& key_identifier) {
-  int character = 0;
-  if ((key_identifier.length() == 6) &&
-      (key_identifier.substr(0, 2) == "U+") &&
-      (key_identifier.substr(2).find_first_not_of("0123456789abcdefABCDEF") ==
-       std::string::npos)) {
-    const bool result =
-        base::HexStringToInt(key_identifier.substr(2), &character);
-    DCHECK(result) << key_identifier;
+bool VirtualKeyboardPrivateMoveCursorFunction::RunSync() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+#if defined(USE_ASH)
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+      keyboard::switches::kEnableSwipeSelection)) {
+    return false;
   }
-  return character;
+
+  int swipe_direction;
+  int modifier_flags;
+  EXTENSION_FUNCTION_VALIDATE(args_->GetInteger(0, &swipe_direction));
+  EXTENSION_FUNCTION_VALIDATE(args_->GetInteger(1, &modifier_flags));
+
+  return keyboard::MoveCursor(
+      swipe_direction,
+      modifier_flags,
+      ash::Shell::GetPrimaryRootWindow()->GetHost());
+#else
+  error_ = kNotYetImplementedError;
+  return false;
+#endif
 }
 
-}  // namespace
+bool VirtualKeyboardPrivateSendKeyEventFunction::RunSync() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+#if defined(USE_ASH)
+  base::Value* options_value = NULL;
+  base::DictionaryValue* params = NULL;
+  std::string type;
+  int char_value;
+  int key_code;
+  std::string key_name;
+  int modifiers;
 
-bool SendKeyboardEventInputFunction::RunImpl() {
-  DictionaryValue* args;
-  EXTENSION_FUNCTION_VALIDATE(args_->GetDictionary(0, &args));
+  EXTENSION_FUNCTION_VALIDATE(args_->Get(0, &options_value));
+  EXTENSION_FUNCTION_VALIDATE(options_value->GetAsDictionary(&params));
+  EXTENSION_FUNCTION_VALIDATE(params->GetString("type", &type));
+  EXTENSION_FUNCTION_VALIDATE(params->GetInteger("charValue", &char_value));
+  EXTENSION_FUNCTION_VALIDATE(params->GetInteger("keyCode", &key_code));
+  EXTENSION_FUNCTION_VALIDATE(params->GetString("keyName", &key_name));
+  EXTENSION_FUNCTION_VALIDATE(params->GetInteger("modifiers", &modifiers));
 
-  std::string type_name;
-  EXTENSION_FUNCTION_VALIDATE(args->GetString(kType, &type_name));
-  ui::EventType type = GetTypeFromString(type_name);
-  if (type == ui::ET_UNKNOWN) {
-    error_ = kUnknownEventTypeError;
-    return false;
-  }
+  return keyboard::SendKeyEvent(
+      type,
+      char_value,
+      key_code,
+      key_name,
+      modifiers,
+      ash::Shell::GetPrimaryRootWindow()->GetHost());
+#else
+  error_ = kNotYetImplementedError;
+  return false;
+#endif
+}
 
-  std::string identifier;
-  EXTENSION_FUNCTION_VALIDATE(args->GetString(kKeyIdentifier, &identifier));
-  TrimWhitespaceASCII(identifier, TRIM_ALL, &identifier);
+bool VirtualKeyboardPrivateHideKeyboardFunction::RunSync() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+#if defined(USE_ASH)
+  UMA_HISTOGRAM_ENUMERATION(
+      "VirtualKeyboard.KeyboardControlEvent",
+      keyboard::KEYBOARD_CONTROL_HIDE_USER,
+      keyboard::KEYBOARD_CONTROL_MAX);
 
-  const ui::KeyEvent& prototype_event = KeyEventFromKeyIdentifier(identifier);
-  uint16 character = 0;
-  if (prototype_event.key_code() == ui::VKEY_UNKNOWN) {
-    // Check if |identifier| is "U+NNNN" format.
-    character = UnicodeIdentifierStringToInt(identifier);
-    if (!character) {
-      error_ = kUnknownOrUnsupportedKeyIdentiferError;
-      return false;
-    }
-  }
-
-  bool flag = false;
-  int flags = 0;
-  if (prototype_event.key_code() != ui::VKEY_UNKNOWN)
-    flags = prototype_event.flags();
-  flags |= (args->GetBoolean(kAlt, &flag) && flag) ? ui::EF_ALT_DOWN : 0;
-  flags |= (args->GetBoolean(kCtrl, &flag) && flag) ? ui::EF_CONTROL_DOWN : 0;
-  flags |= (args->GetBoolean(kShift, &flag) && flag) ? ui::EF_SHIFT_DOWN : 0;
-  if (args->GetBoolean(kMeta, &flag) && flag) {
-    // Views does not have a Meta event flag, so return an error for now.
-    error_ = kUnsupportedModifier;
-    return false;
-  }
-
-  views::Widget* widget =
-      chrome::GetTopLevelWidgetForBrowser(GetCurrentBrowser());
-  if (!widget) {
-    error_ = kNoValidRecipientError;
-    return false;
-  }
-
-  ui::KeyEvent event(type,
-                     prototype_event.key_code(),
-                     flags,
-                     prototype_event.is_char());
-  if (character) {
-    event.set_character(character);
-    event.set_unmodified_character(character);
-  }
-
-  views::InputMethod* ime = widget->GetInputMethod();
-  if (ime) {
-    ime->DispatchKeyEvent(event);
-  } else {
-    widget->OnKeyEvent(&event);
-    if (event.handled()) {
-      error_ = kKeyEventUnprocessedError;
-      return false;
-    }
-  }
+  // Pass HIDE_REASON_MANUAL since calls to HideKeyboard as part of this API
+  // would be user generated.
+  keyboard::KeyboardController::GetInstance()->HideKeyboard(
+      keyboard::KeyboardController::HIDE_REASON_MANUAL);
 
   return true;
+#else
+  error_ = kNotYetImplementedError;
+  return false;
+#endif
+}
+
+bool VirtualKeyboardPrivateLockKeyboardFunction::RunSync() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+#if defined(USE_ASH)
+  bool lock;
+  EXTENSION_FUNCTION_VALIDATE(args_->GetBoolean(0, &lock));
+  keyboard::KeyboardController::GetInstance()->set_lock_keyboard(lock);
+  return true;
+#else
+  error_ = kNotYetImplementedError;
+  return false;
+#endif
+}
+
+bool VirtualKeyboardPrivateKeyboardLoadedFunction::RunSync() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+#if defined(USE_ASH)
+  keyboard::MarkKeyboardLoadFinished();
+  base::UserMetricsAction("VirtualKeyboardLoaded");
+  return true;
+#else
+  error_ = kNotYetImplementedError;
+  return false;
+#endif
+}
+
+bool VirtualKeyboardPrivateGetKeyboardConfigFunction::RunSync() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+#if defined(USE_ASH)
+  base::DictionaryValue* results = new base::DictionaryValue();
+  results->SetString("layout", keyboard::GetKeyboardLayout());
+  results->SetBoolean("a11ymode", keyboard::GetAccessibilityKeyboardEnabled());
+  SetResult(results);
+  return true;
+#else
+  error_ = kNotYetImplementedError;
+  return false;
+#endif
+}
+
+InputAPI::InputAPI(content::BrowserContext* context) {}
+
+InputAPI::~InputAPI() {
+}
+
+static base::LazyInstance<BrowserContextKeyedAPIFactory<InputAPI> > g_factory =
+    LAZY_INSTANCE_INITIALIZER;
+
+// static
+BrowserContextKeyedAPIFactory<InputAPI>* InputAPI::GetFactoryInstance() {
+  return g_factory.Pointer();
 }
 
 }  // namespace extensions

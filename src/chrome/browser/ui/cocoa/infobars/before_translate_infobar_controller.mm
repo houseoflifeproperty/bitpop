@@ -4,7 +4,7 @@
 
 #include "chrome/browser/ui/cocoa/infobars/before_translate_infobar_controller.h"
 
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_utilities.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -15,8 +15,8 @@ using InfoBarUtilities::VerifyControlOrderAndSpacing;
 namespace {
 
 NSButton* CreateNSButtonWithResourceIDAndParameter(
-    int resourceId, const string16& param) {
-  string16 title = l10n_util::GetStringFUTF16(resourceId, param);
+    int resourceId, const base::string16& param) {
+  base::string16 title = l10n_util::GetStringFUTF16(resourceId, param);
   NSButton* button = [[NSButton alloc] init];
   [button setTitle:base::SysUTF16ToNSString(title)];
   [button setBezelStyle:NSTexturedRoundedBezelStyle];
@@ -37,9 +37,8 @@ NSButton* CreateNSButtonWithResourceIDAndParameter(
   [super dealloc];
 }
 
-- (id)initWithDelegate:(InfoBarDelegate*)delegate
-                  owner:(InfoBarService*)owner {
-  if ((self = [super initWithDelegate:delegate owner:owner])) {
+- (id)initWithInfoBar:(InfoBarCocoa*)infobar {
+  if ((self = [super initWithInfoBar:infobar])) {
     [self initializeExtraControls];
   }
   return self;
@@ -47,7 +46,7 @@ NSButton* CreateNSButtonWithResourceIDAndParameter(
 
 - (void)initializeExtraControls {
   TranslateInfoBarDelegate* delegate = [self delegate];
-  const string16& language =
+  const base::string16& language =
       delegate->language_name_at(delegate->original_language_index());
   neverTranslateButton_.reset(
       CreateNSButtonWithResourceIDAndParameter(
@@ -81,9 +80,9 @@ NSButton* CreateNSButtonWithResourceIDAndParameter(
 
 - (void)loadLabelText {
   size_t offset = 0;
-  string16 text =
+  base::string16 text =
       l10n_util::GetStringFUTF16(IDS_TRANSLATE_INFOBAR_BEFORE_MESSAGE,
-                                 string16(), &offset);
+                                 base::string16(), &offset);
   NSString* string1 = base::SysUTF16ToNSString(text.substr(0, offset));
   NSString* string2 = base::SysUTF16ToNSString(text.substr(offset));
   [label1_ setStringValue:string1];
@@ -96,10 +95,10 @@ NSButton* CreateNSButtonWithResourceIDAndParameter(
       label1_.get(), fromLanguagePopUp_.get(), label2_.get(),
       cancelButton_, okButton_, nil];
 
-  if ([self delegate]->ShouldShowNeverTranslateButton())
+  if ([self delegate]->ShouldShowNeverTranslateShortcut())
     [visibleControls addObject:neverTranslateButton_.get()];
 
-  if ([self delegate]->ShouldShowAlwaysTranslateButton())
+  if ([self delegate]->ShouldShowAlwaysTranslateShortcut())
     [visibleControls addObject:alwaysTranslateButton_.get()];
 
   return visibleControls;

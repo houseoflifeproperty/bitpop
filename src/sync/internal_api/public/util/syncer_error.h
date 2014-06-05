@@ -9,16 +9,8 @@
 
 namespace syncer {
 
-// This enum describes all the ways a SyncerCommand can fail.
-//
-// SyncerCommands do many different things, but they share a common function
-// signature.  This enum, the return value for all SyncerCommands, must be able
-// to describe any possible failure for all SyncerComand.
-//
-// For convenience, functions which are invoked only by SyncerCommands may also
-// return a SyncerError.  It saves us having to write a conversion function, and
-// it makes refactoring easier.
-enum SyncerError {
+// This enum describes all the possible results of a sync cycle.
+enum SYNC_EXPORT_PRIVATE SyncerError {
   UNSET = 0,       // Default value.
   CANNOT_DO_WORK,  // A model worker could not process a work item.
 
@@ -29,8 +21,6 @@ enum SyncerError {
 
   // Based on values returned by server.  Most are defined in sync.proto.
   SERVER_RETURN_INVALID_CREDENTIAL,
-  FIRST_SERVER_RETURN_VALUE = SERVER_RETURN_INVALID_CREDENTIAL,
-
   SERVER_RETURN_UNKNOWN_ERROR,
   SERVER_RETURN_THROTTLED,
   SERVER_RETURN_TRANSIENT_ERROR,
@@ -39,6 +29,13 @@ enum SyncerError {
   SERVER_RETURN_NOT_MY_BIRTHDAY,
   SERVER_RETURN_CONFLICT,
   SERVER_RESPONSE_VALIDATION_FAILED,
+  SERVER_RETURN_DISABLED_BY_ADMIN,
+  SERVER_RETURN_USER_ROLLBACK,
+
+  // A datatype decided the sync cycle needed to be performed again.
+  DATATYPE_TRIGGERED_RETRY,
+
+  SERVER_MORE_TO_DOWNLOAD,
 
   SYNCER_OK
 };

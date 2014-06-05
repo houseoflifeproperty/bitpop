@@ -9,17 +9,59 @@ cr.define('options', function() {
   /** @const */ var OptionsPage = options.OptionsPage;
   /** @const */ var LanguageList = options.LanguageList;
 
-  // Some input methods like Chinese Pinyin have config pages.
-  // This is the map of the input method names to their config page names.
-  /** @const */ var INPUT_METHOD_ID_TO_CONFIG_PAGE_NAME = {
-    'mozc': 'languageMozc',
-    'mozc-chewing': 'languageChewing',
-    'mozc-dv': 'languageMozc',
-    'mozc-hangul': 'languageHangul',
-    'mozc-jp': 'languageMozc',
-    'pinyin': 'languagePinyin',
-    'pinyin-dv': 'languagePinyin',
+  /**
+   * Spell check dictionary download status.
+   * @type {Enum}
+   */
+  /** @const*/ var DOWNLOAD_STATUS = {
+    IN_PROGRESS: 1,
+    FAILED: 2
   };
+
+  /**
+   * The preference is a boolean that enables/disables spell checking.
+   * @type {string}
+   * @const
+   */
+  var ENABLE_SPELL_CHECK_PREF = 'browser.enable_spellchecking';
+
+  /**
+   * The preference is a CSV string that describes preload engines
+   * (i.e. active input methods).
+   * @type {string}
+   * @const
+   */
+  var PRELOAD_ENGINES_PREF = 'settings.language.preload_engines';
+
+  /**
+   * The preference that lists the extension IMEs that are enabled in the
+   * language menu.
+   * @type {string}
+   * @const
+   */
+  var ENABLED_EXTENSION_IME_PREF = 'settings.language.enabled_extension_imes';
+
+  /**
+   * The preference that lists the languages which are not translated.
+   * @type {string}
+   * @const
+   */
+  var TRANSLATE_BLOCKED_LANGUAGES_PREF = 'translate_blocked_languages';
+
+  /**
+   * The preference key that is a string that describes the spell check
+   * dictionary language, like "en-US".
+   * @type {string}
+   * @const
+   */
+  var SPELL_CHECK_DICTIONARY_PREF = 'spellcheck.dictionary';
+
+  /**
+   * The preference that indicates if the Translate feature is enabled.
+   * @type {string}
+   * @const
+   */
+  var ENABLE_TRANSLATE = 'translate.enabled';
 
   /////////////////////////////////////////////////////////////////////////////
   // LanguageOptions class:
@@ -46,6 +88,72 @@ cr.define('options', function() {
      */
     prospectiveUiLanguageCode_: null,
 
+    /*
+     * Map from language code to spell check dictionary download status for that
+     * language.
+     * @type {Array}
+     * @private
+     */
+    spellcheckDictionaryDownloadStatus_: [],
+
+    /**
+     * Number of times a spell check dictionary download failed.
+     * @type {int}
+     * @private
+     */
+    spellcheckDictionaryDownloadFailures_: 0,
+
+    /**
+     * The list of preload engines, like ['mozc', 'pinyin'].
+     * @type {Array}
+     * @private
+     */
+    preloadEngines_: [],
+
+    /**
+     * The list of extension IMEs that are enabled out of the language menu.
+     * @type {Array}
+     * @private
+     */
+    enabledExtensionImes_: [],
+
+    /**
+     * The list of the languages which is not translated.
+     * @type {Array}
+     * @private
+     */
+    translateBlockedLanguages_: [],
+
+    /**
+     * The list of the languages supported by Translate server
+     * @type {Array}
+     * @private
+     */
+    translateSupportedLanguages_: [],
+
+    /**
+     * The preference is a string that describes the spell check dictionary
+     * language, like "en-US".
+     * @type {string}
+     * @private
+     */
+    spellCheckDictionary_: '',
+
+    /**
+     * The map of language code to input method IDs, like:
+     * {'ja': ['mozc', 'mozc-jp'], 'zh-CN': ['pinyin'], ...}
+     * @type {Object}
+     * @private
+     */
+    languageCodeToInputMethodIdsMap_: {},
+
+    /**
+     * The value that indicates if Translate feature is enabled or not.
+     * @type {boolean}
+     * @private
+     */
+    enableTranslate_: false,
+
     /**
      * Initializes LanguageOptions page.
      * Calls base class implementation to start preference initialization.
@@ -67,15 +175,23 @@ cr.define('options', function() {
                             this.handleVisibleChange_.bind(this));
 
       if (cr.isChromeOS) {
-        $('chewing-confirm').onclick = $('hangul-confirm').onclick =
-            $('mozc-confirm').onclick = $('pinyin-confirm').onclick =
-                OptionsPage.closeOverlay.bind(OptionsPage);
-
         this.initializeInputMethodList_();
         this.initializeLanguageCodeToInputMethodIdsMap_();
       }
-      Preferences.getInstance().addEventListener(this.spellCheckDictionaryPref,
+
+      var checkbox = $('offer-to-translate-in-this-language');
+      checkbox.addEventListener('click',
+          this.handleOfferToTranslateCheckboxClick_.bind(this));
+
+      Preferences.getInstance().addEventListener(
+          TRANSLATE_BLOCKED_LANGUAGES_PREF,
+          this.handleTranslateBlockedLanguagesPrefChange_.bind(this));
+      Preferences.getInstance().addEventListener(SPELL_CHECK_DICTIONARY_PREF,
           this.handleSpellCheckDictionaryPrefChange_.bind(this));
+      Preferences.getInstance().addEventListener(ENABLE_TRANSLATE,
+          this.handleEnableTranslatePrefChange_.bind(this));
+      this.translateSupportedLanguages_ =
+          loadTimeData.getValue('translateSupportedLanguages');
 
       // Set up add button.
       $('language-options-add-button').onclick = function(e) {
@@ -85,34 +201,27 @@ cr.define('options', function() {
         if (match) {
           var addLanguageCode = match[1];
           $('language-options-list').addLanguage(addLanguageCode);
+          this.addBlockedLanguage_(addLanguageCode);
         } else {
           OptionsPage.navigateToPage('addLanguage');
         }
-      };
+      }.bind(this);
 
       if (!cr.isMac) {
         // Set up the button for editing custom spelling dictionary.
-        $('edit-dictionary-button') .onclick = function(e) {
+        $('edit-dictionary-button').onclick = function(e) {
           OptionsPage.navigateToPage('editDictionary');
+        };
+        $('dictionary-download-retry-button').onclick = function(e) {
+          chrome.send('retryDictionaryDownload');
         };
       }
 
-      if (cr.isChromeOS) {
-        // Listen to user clicks on the add language list.
-        var addLanguageList = $('add-language-overlay-language-list');
-        addLanguageList.addEventListener(
-            'click',
-            this.handleAddLanguageListClick_.bind(this));
-        $('language-options-extension-ime-button').addEventListener(
-            'click',
-            this.handleExtensionImeButtonClick_.bind(this));
-      } else {
-        // Listen to add language dialog ok button.
-        var addLanguageOkButton = $('add-language-overlay-ok-button');
-        addLanguageOkButton.addEventListener(
-            'click',
-            this.handleAddLanguageOkButtonClick_.bind(this));
+      // Listen to add language dialog ok button.
+      $('add-language-overlay-ok-button').addEventListener(
+          'click', this.handleAddLanguageOkButtonClick_.bind(this));
 
+      if (!cr.isChromeOS) {
         // Show experimental features if enabled.
         if (loadTimeData.getBoolean('enableSpellingAutoCorrect'))
           $('auto-spell-correction-option').hidden = false;
@@ -120,7 +229,7 @@ cr.define('options', function() {
         // Handle spell check enable/disable.
         if (!cr.isMac) {
           Preferences.getInstance().addEventListener(
-              this.enableSpellCheckPref,
+              ENABLE_SPELL_CHECK_PREF,
               this.updateEnableSpellCheck_.bind(this));
         }
       }
@@ -144,107 +253,125 @@ cr.define('options', function() {
           OptionsPage.closeOverlay.bind(OptionsPage);
     },
 
-    // The preference is a boolean that enables/disables spell checking.
-    enableSpellCheckPref: 'browser.enable_spellchecking',
-    // The preference is a CSV string that describes preload engines
-    // (i.e. active input methods).
-    preloadEnginesPref: 'settings.language.preload_engines',
-    // The list of preload engines, like ['mozc', 'pinyin'].
-    preloadEngines_: [],
-    // The preference that lists the extension IMEs that are filtered out of
-    // the language menu.
-    filteredExtensionImesPref: 'settings.language.filtered_extension_imes',
-    // The list of extension IMEs that are filtered out of the language menu.
-    filteredExtensionImes_: [],
-    // The preference is a string that describes the spell check
-    // dictionary language, like "en-US".
-    spellCheckDictionaryPref: 'spellcheck.dictionary',
-    spellCheckDictionary_: '',
-    // The map of language code to input method IDs, like:
-    // {'ja': ['mozc', 'mozc-jp'], 'zh-CN': ['pinyin'], ...}
-    languageCodeToInputMethodIdsMap_: {},
-
     /**
      * Initializes the input method list.
      */
     initializeInputMethodList_: function() {
       var inputMethodList = $('language-options-input-method-list');
-      var inputMethodListData = loadTimeData.getValue('inputMethodList');
-      var inputMethodPrototype = $('language-options-input-method-proto');
+      var inputMethodPrototype = $('language-options-input-method-template');
 
       // Add all input methods, but make all of them invisible here. We'll
       // change the visibility in handleLanguageOptionsListChange_() based
       // on the selected language. Note that we only have less than 100
       // input methods, so creating DOM nodes at once here should be ok.
-      for (var i = 0; i < inputMethodListData.length; i++) {
-        var inputMethod = inputMethodListData[i];
-        var element = inputMethodPrototype.cloneNode(true);
+      this.appendInputMethodElement_(loadTimeData.getValue('inputMethodList'));
+      this.appendInputMethodElement_(loadTimeData.getValue('extensionImeList'));
+      this.appendComponentExtensionIme_(
+          loadTimeData.getValue('componentExtensionImeList'));
+
+      // Listen to pref change once the input method list is initialized.
+      Preferences.getInstance().addEventListener(
+          PRELOAD_ENGINES_PREF,
+          this.handlePreloadEnginesPrefChange_.bind(this));
+      Preferences.getInstance().addEventListener(
+          ENABLED_EXTENSION_IME_PREF,
+          this.handleEnabledExtensionsPrefChange_.bind(this));
+    },
+
+    /**
+     * Appends input method lists based on component extension ime list.
+     * @param {!Array} componentExtensionImeList A list of input method
+     *     descriptors.
+     * @private
+     */
+    appendComponentExtensionIme_: function(componentExtensionImeList) {
+      this.appendInputMethodElement_(componentExtensionImeList);
+
+      for (var i = 0; i < componentExtensionImeList.length; i++) {
+        var inputMethod = componentExtensionImeList[i];
+        for (var languageCode in inputMethod.languageCodeSet) {
+          if (languageCode in this.languageCodeToInputMethodIdsMap_) {
+            this.languageCodeToInputMethodIdsMap_[languageCode].push(
+                inputMethod.id);
+          } else {
+            this.languageCodeToInputMethodIdsMap_[languageCode] =
+                [inputMethod.id];
+          }
+        }
+      }
+    },
+
+    /**
+     * Appends input methods into input method list.
+     * @param {!Array} inputMethods A list of input method descriptors.
+     * @private
+     */
+    appendInputMethodElement_: function(inputMethods) {
+      var inputMethodList = $('language-options-input-method-list');
+      var inputMethodTemplate = $('language-options-input-method-template');
+
+      for (var i = 0; i < inputMethods.length; i++) {
+        var inputMethod = inputMethods[i];
+        var element = inputMethodTemplate.cloneNode(true);
         element.id = '';
         element.languageCodeSet = inputMethod.languageCodeSet;
-        var input = element.querySelectorAll('input')[0];
+
+        var input = element.querySelector('input');
         input.inputMethodId = inputMethod.id;
-        var span = element.querySelectorAll('span')[0];
+        var span = element.querySelector('span');
         span.textContent = inputMethod.displayName;
+
+        if (inputMethod.optionsPage) {
+          var button = document.createElement('button');
+          button.textContent = loadTimeData.getString('configure');
+          button.inputMethodId = inputMethod.id;
+          button.onclick = function(inputMethodId, e) {
+            chrome.send('inputMethodOptionsOpen', [inputMethodId]);
+          }.bind(this, inputMethod.id);
+          element.appendChild(button);
+        }
 
         // Listen to user clicks.
         input.addEventListener('click',
                                this.handleCheckboxClick_.bind(this));
-
-        // Add the configure button if the config page is present for this
-        // input method.
-        if (inputMethod.id in INPUT_METHOD_ID_TO_CONFIG_PAGE_NAME) {
-          var pageName = INPUT_METHOD_ID_TO_CONFIG_PAGE_NAME[inputMethod.id];
-          var button = this.createConfigureInputMethodButton_(inputMethod.id,
-                                                              pageName);
-          element.appendChild(button);
-        }
         inputMethodList.appendChild(element);
       }
-
-      var extensionImeList = loadTimeData.getValue('extensionImeList');
-      for (var i = 0; i < extensionImeList.length; i++) {
-        var inputMethod = extensionImeList[i];
-        var element = inputMethodPrototype.cloneNode(true);
-        element.id = '';
-        element.languageCodeSet = {};
-        var input = element.querySelectorAll('input')[0];
-        input.inputMethodId = inputMethod.id;
-        var span = element.querySelectorAll('span')[0];
-        span.textContent = inputMethod.displayName;
-
-        input.addEventListener('click',
-                               this.handleExtensionCheckboxClick_.bind(this));
-
-        inputMethodList.appendChild(element);
-      }
-
-      // Listen to pref change once the input method list is initialized.
-      Preferences.getInstance().addEventListener(
-          this.preloadEnginesPref,
-          this.handlePreloadEnginesPrefChange_.bind(this));
-      Preferences.getInstance().addEventListener(
-          this.filteredExtensionImesPref,
-          this.handleFilteredExtensionsPrefChange_.bind(this));
     },
 
     /**
-     * Creates a configure button for the given input method ID.
-     * @param {string} inputMethodId Input method ID (ex. "pinyin").
-     * @param {string} pageName Name of the config page (ex. "languagePinyin").
+     * Adds a language to the preference 'translate_blocked_languages'. If
+     * |langCode| is already added, nothing happens. |langCode| is converted
+     * to a Translate language synonym before added.
+     * @param {string} langCode A language code like 'en'
      * @private
      */
-    createConfigureInputMethodButton_: function(inputMethodId, pageName) {
-      var button = document.createElement('button');
-      button.textContent = loadTimeData.getString('configure');
-      button.onclick = function(e) {
-        // Prevent the default action (i.e. changing the checked property
-        // of the checkbox). The button click here should not be handled
-        // as checkbox click.
-        e.preventDefault();
-        chrome.send('inputMethodOptionsOpen', [inputMethodId]);
-        OptionsPage.navigateToPage(pageName);
-      };
-      return button;
+    addBlockedLanguage_: function(langCode) {
+      langCode = this.convertLangCodeForTranslation_(langCode);
+      if (this.translateBlockedLanguages_.indexOf(langCode) == -1) {
+        this.translateBlockedLanguages_.push(langCode);
+        Preferences.setListPref(TRANSLATE_BLOCKED_LANGUAGES_PREF,
+                                this.translateBlockedLanguages_, true);
+      }
+    },
+
+    /**
+     * Removes a language from the preference 'translate_blocked_languages'.
+     * If |langCode| doesn't exist in the preference, nothing happens.
+     * |langCode| is converted to a Translate language synonym before removed.
+     * @param {string} langCode A language code like 'en'
+     * @private
+     */
+    removeBlockedLanguage_: function(langCode) {
+      langCode = this.convertLangCodeForTranslation_(langCode);
+      if (this.translateBlockedLanguages_.indexOf(langCode) != -1) {
+        this.translateBlockedLanguages_ =
+            this.translateBlockedLanguages_.filter(
+                function(langCodeNotTranslated) {
+                  return langCodeNotTranslated != langCode;
+                });
+        Preferences.setListPref(TRANSLATE_BLOCKED_LANGUAGES_PREF,
+                                this.translateBlockedLanguages_, true);
+      }
     },
 
     /**
@@ -282,26 +409,20 @@ cr.define('options', function() {
         }
       }
 
+      this.updateOfferToTranslateCheckbox_(languageCode);
+
       if (cr.isWindows || cr.isChromeOS)
         this.updateUiLanguageButton_(languageCode);
 
-      if (!cr.isMac) {
-        this.updateSelectedLanguageName_(languageCode);
+      this.updateSelectedLanguageName_(languageCode);
+
+      if (!cr.isMac)
         this.updateSpellCheckLanguageButton_(languageCode);
-      }
 
       if (cr.isChromeOS)
         this.updateInputMethodList_(languageCode);
 
       this.updateLanguageListInAddLanguageOverlay_();
-    },
-
-    /**
-     * Happens when a user changes back to the language they're currently using.
-     */
-    currentLocaleWasReselected: function() {
-      this.updateUiLanguageButton_(
-          loadTimeData.getString('currentUiLanguageCode'));
     },
 
     /**
@@ -348,6 +469,9 @@ cr.define('options', function() {
         var languageCode = languageCodes[i];
         var inputMethodIds = this.languageCodeToInputMethodIdsMap_[
             languageCode];
+        if (!inputMethodIds)
+          continue;
+
         // Check if we have active input methods associated with the language.
         for (var j = 0; j < inputMethodIds.length; j++) {
           var inputMethodId = inputMethodIds[j];
@@ -425,9 +549,14 @@ cr.define('options', function() {
       // hidden by a language change.
       uiLanguageButton.hidden = false;
 
+      // Hide the controlled setting indicator.
+      var uiLanguageIndicator = document.querySelector(
+          '.language-options-contents .controlled-setting-indicator');
+      uiLanguageIndicator.removeAttribute('controlled-by');
+
       if (languageCode == this.prospectiveUiLanguageCode_) {
         uiLanguageMessage.textContent =
-            loadTimeData.getString('is_displayed_in_this_language');
+            loadTimeData.getString('isDisplayedInThisLanguage');
         showMutuallyExclusiveNodes(
             [uiLanguageButton, uiLanguageMessage, uiLanguageNotification], 1);
       } else if (languageCode in loadTimeData.getValue('uiLanguageCodeSet')) {
@@ -438,16 +567,22 @@ cr.define('options', function() {
           uiLanguageMessage.hidden = true;
         } else {
           uiLanguageButton.textContent =
-              loadTimeData.getString('display_in_this_language');
+              loadTimeData.getString('displayInThisLanguage');
+
+          if (loadTimeData.getBoolean('secondaryUser')) {
+            uiLanguageButton.disabled = true;
+            uiLanguageIndicator.setAttribute('controlled-by', 'shared');
+          } else {
+            uiLanguageButton.onclick = function(e) {
+              chrome.send('uiLanguageChange', [languageCode]);
+            };
+          }
           showMutuallyExclusiveNodes(
               [uiLanguageButton, uiLanguageMessage, uiLanguageNotification], 0);
-          uiLanguageButton.onclick = function(e) {
-            chrome.send('uiLanguageChange', [languageCode]);
-          };
         }
       } else {
         uiLanguageMessage.textContent =
-            loadTimeData.getString('cannot_be_displayed_in_this_language');
+            loadTimeData.getString('cannotBeDisplayedInThisLanguage');
         showMutuallyExclusiveNodes(
             [uiLanguageButton, uiLanguageMessage, uiLanguageNotification], 1);
       }
@@ -459,20 +594,44 @@ cr.define('options', function() {
      * @private
      */
     updateSpellCheckLanguageButton_: function(languageCode) {
+      var spellCheckLanguageSection = $('language-options-spellcheck');
       var spellCheckLanguageButton =
           $('language-options-spell-check-language-button');
       var spellCheckLanguageMessage =
           $('language-options-spell-check-language-message');
+      var dictionaryDownloadInProgress =
+          $('language-options-dictionary-downloading-message');
+      var dictionaryDownloadFailed =
+          $('language-options-dictionary-download-failed-message');
+      var dictionaryDownloadFailHelp =
+          $('language-options-dictionary-download-fail-help-message');
+      spellCheckLanguageSection.hidden = false;
+      spellCheckLanguageMessage.hidden = true;
+      spellCheckLanguageButton.hidden = true;
+      dictionaryDownloadInProgress.hidden = true;
+      dictionaryDownloadFailed.hidden = true;
+      dictionaryDownloadFailHelp.hidden = true;
 
       if (languageCode == this.spellCheckDictionary_) {
-        spellCheckLanguageMessage.textContent =
-            loadTimeData.getString('is_used_for_spell_checking');
-        showMutuallyExclusiveNodes(
-            [spellCheckLanguageButton, spellCheckLanguageMessage], 1);
+        if (!(languageCode in this.spellcheckDictionaryDownloadStatus_)) {
+          spellCheckLanguageMessage.textContent =
+              loadTimeData.getString('isUsedForSpellChecking');
+          showMutuallyExclusiveNodes(
+              [spellCheckLanguageButton, spellCheckLanguageMessage], 1);
+        } else if (this.spellcheckDictionaryDownloadStatus_[languageCode] ==
+                       DOWNLOAD_STATUS.IN_PROGRESS) {
+          dictionaryDownloadInProgress.hidden = false;
+        } else if (this.spellcheckDictionaryDownloadStatus_[languageCode] ==
+                       DOWNLOAD_STATUS.FAILED) {
+          spellCheckLanguageSection.hidden = true;
+          dictionaryDownloadFailed.hidden = false;
+          if (this.spellcheckDictionaryDownloadFailures_ > 1)
+            dictionaryDownloadFailHelp.hidden = false;
+        }
       } else if (languageCode in
           loadTimeData.getValue('spellCheckLanguageCodeSet')) {
         spellCheckLanguageButton.textContent =
-            loadTimeData.getString('use_this_for_spell_checking');
+            loadTimeData.getString('useThisForSpellChecking');
         showMutuallyExclusiveNodes(
             [spellCheckLanguageButton, spellCheckLanguageMessage], 0);
         spellCheckLanguageButton.languageCode = languageCode;
@@ -481,10 +640,66 @@ cr.define('options', function() {
         spellCheckLanguageMessage.hidden = true;
       } else {
         spellCheckLanguageMessage.textContent =
-            loadTimeData.getString('cannot_be_used_for_spell_checking');
+            loadTimeData.getString('cannotBeUsedForSpellChecking');
         showMutuallyExclusiveNodes(
             [spellCheckLanguageButton, spellCheckLanguageMessage], 1);
       }
+    },
+
+    /**
+     * Updates the checkbox for stopping translation.
+     * @param {string} languageCode Language code (ex. "fr").
+     * @private
+     */
+    updateOfferToTranslateCheckbox_: function(languageCode) {
+      var div = $('language-options-offer-to-translate');
+
+      // Translation server supports Chinese (Transitional) and Chinese
+      // (Simplified) but not 'general' Chinese. To avoid ambiguity, we don't
+      // show this preference when general Chinese is selected.
+      if (languageCode != 'zh') {
+        div.hidden = false;
+      } else {
+        div.hidden = true;
+        return;
+      }
+
+      var offerToTranslate = div.querySelector('div');
+      var cannotTranslate = $('cannot-translate-in-this-language');
+      var nodes = [offerToTranslate, cannotTranslate];
+
+      var convertedLangCode = this.convertLangCodeForTranslation_(languageCode);
+      if (this.translateSupportedLanguages_.indexOf(convertedLangCode) != -1) {
+        showMutuallyExclusiveNodes(nodes, 0);
+      } else {
+        showMutuallyExclusiveNodes(nodes, 1);
+        return;
+      }
+
+      var checkbox = $('offer-to-translate-in-this-language');
+
+      if (!this.enableTranslate_) {
+        checkbox.disabled = true;
+        checkbox.checked = false;
+        return;
+      }
+
+      // If the language corresponds to the default target language (in most
+      // cases, the user's locale language), "Offer to translate" checkbox
+      // should be always unchecked.
+      var defaultTargetLanguage =
+          loadTimeData.getString('defaultTargetLanguage');
+      if (convertedLangCode == defaultTargetLanguage) {
+        checkbox.disabled = true;
+        checkbox.checked = false;
+        return;
+      }
+
+      checkbox.disabled = false;
+
+      var blockedLanguages = this.translateBlockedLanguages_;
+      var checked = blockedLanguages.indexOf(convertedLangCode) == -1;
+      checkbox.checked = checked;
     },
 
     /**
@@ -508,7 +723,7 @@ cr.define('options', function() {
         var method = methods[i];
         if (languageCode in method.languageCodeSet) {
           method.hidden = false;
-          var input = method.querySelectorAll('input')[0];
+          var input = method.querySelector('input');
           // Give it focus if the ID matches.
           if (input.inputMethodId == focusInputMethodId) {
             input.focus();
@@ -517,6 +732,9 @@ cr.define('options', function() {
           method.hidden = true;
         }
       }
+
+      $('language-options-input-method-none').hidden =
+          (languageCode in this.languageCodeToInputMethodIdsMap_);
 
       if (focusInputMethodId == 'add') {
         $('language-options-add-button').focus();
@@ -538,15 +756,19 @@ cr.define('options', function() {
       for (var i = 0; i < languageCodes.length; i++) {
         languageCodeSet[languageCodes[i]] = true;
       }
+
       var addLanguageList = $('add-language-overlay-language-list');
-      var lis = addLanguageList.querySelectorAll('li');
-      for (var i = 0; i < lis.length; i++) {
-        // The first child button knows the language code.
-        var button = lis[i].childNodes[0];
-        if (button.languageCode in languageCodeSet) {
-          lis[i].style.display = 'none';
-        } else {
-          lis[i].style.display = 'block';
+      var options = addLanguageList.querySelectorAll('option');
+      assert(options.length > 0);
+      var selectedFirstItem = false;
+      for (var i = 0; i < options.length; i++) {
+        var option = options[i];
+        option.hidden = option.value in languageCodeSet;
+        if (!option.hidden && !selectedFirstItem) {
+          // Select first visible item, otherwise previously selected hidden
+          // item will be selected by default at the next time.
+          option.selected = true;
+          selectedFirstItem = true;
         }
       }
     },
@@ -564,14 +786,32 @@ cr.define('options', function() {
     },
 
     /**
-     * Handles filteredExtensionImesPref change.
+     * Handles enabledExtensionImePref change.
      * @param {Event} e Change event.
      * @private
      */
-    handleFilteredExtensionsPrefChange_: function(e) {
+    handleEnabledExtensionsPrefChange_: function(e) {
       var value = e.value.value;
-      this.filteredExtensionImes_ = value.split(',');
-      this.updateCheckboxesFromFilteredExtensions_();
+      this.enabledExtensionImes_ = value.split(',');
+      this.updateCheckboxesFromEnabledExtensions_();
+    },
+
+    /**
+     * Handles offer-to-translate checkbox's click event.
+     * @param {Event} e Click event.
+     * @private
+     */
+    handleOfferToTranslateCheckboxClick_: function(e) {
+      var checkbox = e.target;
+      var checked = checkbox.checked;
+
+      var languageOptionsList = $('language-options-list');
+      var selectedLanguageCode = languageOptionsList.getSelectedLanguageCode();
+
+      if (checked)
+        this.removeBlockedLanguage_(selectedLanguageCode);
+      else
+        this.addBlockedLanguage_(selectedLanguageCode);
     },
 
     /**
@@ -581,11 +821,17 @@ cr.define('options', function() {
      */
     handleCheckboxClick_: function(e) {
       var checkbox = e.target;
+
+      if (checkbox.inputMethodId.match(/^_ext_ime_/)) {
+        this.updateEnabledExtensionsFromCheckboxes_();
+        this.saveEnabledExtensionPref_();
+        return;
+      }
       if (this.preloadEngines_.length == 1 && !checkbox.checked) {
         // Don't allow disabling the last input method.
         this.showNotification_(
-            loadTimeData.getString('please_add_another_input_method'),
-            loadTimeData.getString('ok_button'));
+            loadTimeData.getString('pleaseAddAnotherInputMethod'),
+            loadTimeData.getString('okButton'));
         checkbox.checked = true;
         return;
       }
@@ -600,91 +846,25 @@ cr.define('options', function() {
     },
 
     /**
-     * Handles extension input method checkbox's click event.
+     * Handles clicks on the "OK" button of the "Add language" dialog.
      * @param {Event} e Click event.
      * @private
      */
-    handleExtensionCheckboxClick_: function(e) {
-      var checkbox = e.target;
-      this.updateFilteredExtensionsFromCheckboxes_();
-      this.saveFilteredExtensionPref_();
-    },
-
-    /**
-     * Handles add language list's click event.
-     * @param {Event} e Click event.
-     */
-    handleAddLanguageListClick_: function(e) {
-      var languageOptionsList = $('language-options-list');
-      var languageCode = e.target.languageCode;
-      // languageCode can be undefined, if click was made on some random
-      // place in the overlay, rather than a button. Ignore it.
-      if (!languageCode) {
-        return;
-      }
-      languageOptionsList.addLanguage(languageCode);
-      var inputMethodIds = this.languageCodeToInputMethodIdsMap_[languageCode];
-      // Enable the first input method for the language added.
-      if (inputMethodIds && inputMethodIds[0] &&
-          // Don't add the input method it's already present. This can
-          // happen if the same input method is shared among multiple
-          // languages (ex. English US keyboard is used for English US and
-          // Filipino).
-          this.preloadEngines_.indexOf(inputMethodIds[0]) == -1) {
-        this.preloadEngines_.push(inputMethodIds[0]);
-        this.updateCheckboxesFromPreloadEngines_();
-        this.savePreloadEnginesPref_();
-      }
-      OptionsPage.closeOverlay();
-    },
-
-    /**
-     * Handles extension IME button.
-     */
-    handleExtensionImeButtonClick_: function() {
-      $('language-options-list').clearSelection();
-
-      var languageName = $('language-options-language-name');
-      languageName.textContent = loadTimeData.getString('extension_ime_label');
-
-      var uiLanguageMessage = $('language-options-ui-language-message');
-      uiLanguageMessage.textContent =
-          loadTimeData.getString('extension_ime_description');
-
-      var uiLanguageButton = $('language-options-ui-language-button');
-      uiLanguageButton.onclick = null;
-      uiLanguageButton.hidden = true;
-
-      this.updateSpellCheckLanguageButton_();
-
-      // Hide all input method checkboxes that aren't extension IMEs.
-      var inputMethodList = $('language-options-input-method-list');
-      var methods = inputMethodList.querySelectorAll('.input-method');
-      for (var i = 0; i < methods.length; i++) {
-        var method = methods[i];
-        var input = method.querySelectorAll('input')[0];
-        // Give it focus if the ID matches.
-        if (input.inputMethodId.match(/^_ext_ime_/))
-          method.hidden = false;
-        else
-          method.hidden = true;
-      }
-    },
-
-
-    handleAddLanguageOkButtonClick_: function() {
+    handleAddLanguageOkButtonClick_: function(e) {
       var languagesSelect = $('add-language-overlay-language-list');
       var selectedIndex = languagesSelect.selectedIndex;
       if (selectedIndex >= 0) {
         var selection = languagesSelect.options[selectedIndex];
-        $('language-options-list').addLanguage(String(selection.value));
+        var langCode = String(selection.value);
+        $('language-options-list').addLanguage(langCode);
+        this.addBlockedLanguage_(langCode);
         OptionsPage.closeOverlay();
       }
     },
 
     /**
      * Checks if languageCode is deletable or not.
-     * @param {String} languageCode the languageCode to check for deletability.
+     * @param {string} languageCode the languageCode to check for deletability.
      */
     languageIsDeletable: function(languageCode) {
       // Don't allow removing the language if it's a UI language.
@@ -699,12 +879,23 @@ cr.define('options', function() {
      * @param {Event} e Change event.
      * @private
      */
-     updateEnableSpellCheck_: function() {
+    updateEnableSpellCheck_: function() {
        var value = !$('enable-spell-check').checked;
        $('language-options-spell-check-language-button').disabled = value;
        if (!cr.IsMac)
          $('edit-dictionary-button').hidden = value;
      },
+
+    /**
+     * Handles translateBlockedLanguagesPref change.
+     * @param {Event} e Change event.
+     * @private
+     */
+    handleTranslateBlockedLanguagesPrefChange_: function(e) {
+      this.translateBlockedLanguages_ = e.value.value;
+      this.updateOfferToTranslateCheckbox_(
+          $('language-options-list').getSelectedLanguageCode());
+    },
 
     /**
      * Handles spellCheckDictionaryPref change.
@@ -714,10 +905,22 @@ cr.define('options', function() {
     handleSpellCheckDictionaryPrefChange_: function(e) {
       var languageCode = e.value.value;
       this.spellCheckDictionary_ = languageCode;
-      var languageOptionsList = $('language-options-list');
-      var selectedLanguageCode = languageOptionsList.getSelectedLanguageCode();
-      if (!cr.isMac)
-        this.updateSpellCheckLanguageButton_(selectedLanguageCode);
+      if (!cr.isMac) {
+        this.updateSpellCheckLanguageButton_(
+            $('language-options-list').getSelectedLanguageCode());
+      }
+    },
+
+    /**
+     * Handles translate.enabled change.
+     * @param {Event} e Change event.
+     * @private
+     */
+    handleEnableTranslatePrefChange_: function(e) {
+      var enabled = e.value.value;
+      this.enableTranslate_ = enabled;
+      this.updateOfferToTranslateCheckbox_(
+          $('language-options-list').getSelectedLanguageCode());
     },
 
     /**
@@ -728,7 +931,7 @@ cr.define('options', function() {
     handleSpellCheckLanguageButtonClick_: function(e) {
       var languageCode = e.target.languageCode;
       // Save the preference.
-      Preferences.setStringPref(this.spellCheckDictionaryPref,
+      Preferences.setStringPref(SPELL_CHECK_DICTIONARY_PREF,
                                 languageCode, true);
       chrome.send('spellCheckLanguageChange', [languageCode]);
     },
@@ -747,6 +950,11 @@ cr.define('options', function() {
       // associated with the language code.
       var enginesToBeRemovedSet = {};
       var inputMethodIds = this.languageCodeToInputMethodIdsMap_[languageCode];
+
+      // If this language doesn't have any input methods, it can be deleted.
+      if (!inputMethodIds)
+        return true;
+
       for (var i = 0; i < inputMethodIds.length; i++) {
         enginesToBeRemovedSet[inputMethodIds[i]] = true;
       }
@@ -764,6 +972,9 @@ cr.define('options', function() {
         // we don't remove this time.
         var inputMethodIdsForAnotherLanguage =
             this.languageCodeToInputMethodIdsMap_[languageCodes[i]];
+        if (!inputMethodIdsForAnotherLanguage)
+          continue;
+
         for (var j = 0; j < inputMethodIdsForAnotherLanguage.length; j++) {
           var inputMethodId = inputMethodIdsForAnotherLanguage[j];
           if (inputMethodId in enginesToBeRemovedSet) {
@@ -785,46 +996,53 @@ cr.define('options', function() {
     },
 
     /**
-     * Saves the filtered extension preference.
+     * Saves the enabled extension preference.
      * @private
      */
-    saveFilteredExtensionPref_: function() {
-      Preferences.setStringPref(this.filteredExtensionImesPref,
-                                this.filteredExtensionImes_.join(','), true);
+    saveEnabledExtensionPref_: function() {
+      Preferences.setStringPref(ENABLED_EXTENSION_IME_PREF,
+                                this.enabledExtensionImes_.join(','), true);
     },
 
     /**
-     * Updates the checkboxes in the input method list from the filtered
+     * Updates the checkboxes in the input method list from the enabled
      * extensions preference.
      * @private
      */
-    updateCheckboxesFromFilteredExtensions_: function() {
+    updateCheckboxesFromEnabledExtensions_: function() {
       // Convert the list into a dictonary for simpler lookup.
       var dictionary = {};
-      for (var i = 0; i < this.filteredExtensionImes_.length; i++)
-        dictionary[this.filteredExtensionImes_[i]] = true;
+      for (var i = 0; i < this.enabledExtensionImes_.length; i++)
+        dictionary[this.enabledExtensionImes_[i]] = true;
 
       var inputMethodList = $('language-options-input-method-list');
       var checkboxes = inputMethodList.querySelectorAll('input');
       for (var i = 0; i < checkboxes.length; i++) {
         if (checkboxes[i].inputMethodId.match(/^_ext_ime_/))
-          checkboxes[i].checked = !(checkboxes[i].inputMethodId in dictionary);
+          checkboxes[i].checked = (checkboxes[i].inputMethodId in dictionary);
+      }
+      var configureButtons = inputMethodList.querySelectorAll('button');
+      for (var i = 0; i < configureButtons.length; i++) {
+        if (configureButtons[i].inputMethodId.match(/^_ext_ime_/)) {
+          configureButtons[i].hidden =
+              !(configureButtons[i].inputMethodId in dictionary);
+        }
       }
     },
 
     /**
-     * Updates the filtered extensions preference from the checkboxes in the
+     * Updates the enabled extensions preference from the checkboxes in the
      * input method list.
      * @private
      */
-    updateFilteredExtensionsFromCheckboxes_: function() {
-      this.filteredExtensionImes_ = [];
+    updateEnabledExtensionsFromCheckboxes_: function() {
+      this.enabledExtensionImes_ = [];
       var inputMethodList = $('language-options-input-method-list');
       var checkboxes = inputMethodList.querySelectorAll('input');
       for (var i = 0; i < checkboxes.length; i++) {
         if (checkboxes[i].inputMethodId.match(/^_ext_ime_/)) {
-          if (!checkboxes[i].checked)
-            this.filteredExtensionImes_.push(checkboxes[i].inputMethodId);
+          if (checkboxes[i].checked)
+            this.enabledExtensionImes_.push(checkboxes[i].inputMethodId);
         }
       }
     },
@@ -834,7 +1052,7 @@ cr.define('options', function() {
      * @private
      */
     savePreloadEnginesPref_: function() {
-      Preferences.setStringPref(this.preloadEnginesPref,
+      Preferences.setStringPref(PRELOAD_ENGINES_PREF,
                                 this.preloadEngines_.join(','), true);
     },
 
@@ -855,6 +1073,13 @@ cr.define('options', function() {
       for (var i = 0; i < checkboxes.length; i++) {
         if (!checkboxes[i].inputMethodId.match(/^_ext_ime_/))
           checkboxes[i].checked = (checkboxes[i].inputMethodId in dictionary);
+      }
+      var configureButtons = inputMethodList.querySelectorAll('button');
+      for (var i = 0; i < configureButtons.length; i++) {
+        if (!configureButtons[i].inputMethodId.match(/^_ext_ime_/)) {
+          configureButtons[i].hidden =
+              !(configureButtons[i].inputMethodId in dictionary);
+        }
       }
     },
 
@@ -891,17 +1116,20 @@ cr.define('options', function() {
         dictionary[list[i].id] = true;
       }
 
-      var filteredPreloadEngines = [];
+      var enabledPreloadEngines = [];
       var seen = {};
       for (var i = 0; i < preloadEngines.length; i++) {
         // Check if the preload engine is present in the
         // dictionary, and not duplicate. Otherwise, skip it.
-        if (preloadEngines[i] in dictionary && !(preloadEngines[i] in seen)) {
-          filteredPreloadEngines.push(preloadEngines[i]);
+        // Component Extension IME should be handled same as preloadEngines and
+        // "_comp_" is the special prefix of its ID.
+        if ((preloadEngines[i] in dictionary && !(preloadEngines[i] in seen)) ||
+            /^_comp_/.test(preloadEngines[i])) {
+          enabledPreloadEngines.push(preloadEngines[i]);
           seen[preloadEngines[i]] = true;
         }
       }
-      return filteredPreloadEngines;
+      return enabledPreloadEngines;
     },
 
     // TODO(kochi): This is an adapted copy from new_tab.js.
@@ -959,7 +1187,113 @@ cr.define('options', function() {
 
       show();
       delayedHide();
-    }
+    },
+
+    /**
+     * Chrome callback for when the UI language preference is saved.
+     * @param {string} languageCode The newly selected language to use.
+     * @private
+     */
+    uiLanguageSaved_: function(languageCode) {
+      this.prospectiveUiLanguageCode_ = languageCode;
+
+      // If the user is no longer on the same language code, ignore.
+      if ($('language-options-list').getSelectedLanguageCode() != languageCode)
+        return;
+
+      // Special case for when a user changes to a different language, and
+      // changes back to the same language without having restarted Chrome or
+      // logged in/out of ChromeOS.
+      if (languageCode == loadTimeData.getString('currentUiLanguageCode')) {
+        this.updateUiLanguageButton_(languageCode);
+        return;
+      }
+
+      // Otherwise, show a notification telling the user that their changes will
+      // only take effect after restart.
+      showMutuallyExclusiveNodes([$('language-options-ui-language-button'),
+                                  $('language-options-ui-notification-bar')],
+                                 1);
+    },
+
+    /**
+     * A handler for when dictionary for |languageCode| begins downloading.
+     * @param {string} languageCode The language of the dictionary that just
+     *     began downloading.
+     * @private
+     */
+    onDictionaryDownloadBegin_: function(languageCode) {
+      this.spellcheckDictionaryDownloadStatus_[languageCode] =
+          DOWNLOAD_STATUS.IN_PROGRESS;
+      if (!cr.isMac &&
+          languageCode ==
+              $('language-options-list').getSelectedLanguageCode()) {
+        this.updateSpellCheckLanguageButton_(languageCode);
+      }
+    },
+
+    /**
+     * A handler for when dictionary for |languageCode| successfully downloaded.
+     * @param {string} languageCode The language of the dictionary that
+     *     succeeded downloading.
+     * @private
+     */
+    onDictionaryDownloadSuccess_: function(languageCode) {
+      delete this.spellcheckDictionaryDownloadStatus_[languageCode];
+      this.spellcheckDictionaryDownloadFailures_ = 0;
+      if (!cr.isMac &&
+          languageCode ==
+              $('language-options-list').getSelectedLanguageCode()) {
+        this.updateSpellCheckLanguageButton_(languageCode);
+      }
+    },
+
+    /**
+     * A handler for when dictionary for |languageCode| fails to download.
+     * @param {string} languageCode The language of the dictionary that failed
+     *     to download.
+     * @private
+     */
+    onDictionaryDownloadFailure_: function(languageCode) {
+      this.spellcheckDictionaryDownloadStatus_[languageCode] =
+          DOWNLOAD_STATUS.FAILED;
+      this.spellcheckDictionaryDownloadFailures_++;
+      if (!cr.isMac &&
+          languageCode ==
+              $('language-options-list').getSelectedLanguageCode()) {
+        this.updateSpellCheckLanguageButton_(languageCode);
+      }
+    },
+
+    /*
+     * Converts the language code for Translation. There are some differences
+     * between the language set for Translation and that for Accept-Language.
+     * @param {string} languageCode The language code like 'fr'.
+     * @return {string} The converted language code.
+     * @private
+     */
+    convertLangCodeForTranslation_: function(languageCode) {
+      var tokens = languageCode.split('-');
+      var main = tokens[0];
+
+      // See also: chrome/renderer/translate/translate_helper.cc.
+      var synonyms = {
+        'nb': 'no',
+        'he': 'iw',
+        'jv': 'jw',
+        'fil': 'tl',
+      };
+
+      if (main in synonyms) {
+        return synonyms[main];
+      } else if (main == 'zh') {
+        // In Translation, general Chinese is not used, and the sub code is
+        // necessary as a language code for Translate server.
+        return languageCode;
+      }
+
+      return main;
+    },
   };
 
   /**
@@ -975,29 +1309,24 @@ cr.define('options', function() {
     }
   }
 
-  /**
-   * Chrome callback for when the UI language preference is saved.
-   * @param {string} languageCode The newly selected language to use.
-   */
   LanguageOptions.uiLanguageSaved = function(languageCode) {
-    this.prospectiveUiLanguageCode_ = languageCode;
+    LanguageOptions.getInstance().uiLanguageSaved_(languageCode);
+  };
 
-    // If the user is no longer on the same language code, ignore.
-    if ($('language-options-list').getSelectedLanguageCode() != languageCode)
-      return;
+  LanguageOptions.onDictionaryDownloadBegin = function(languageCode) {
+    LanguageOptions.getInstance().onDictionaryDownloadBegin_(languageCode);
+  };
 
-    // Special case for when a user changes to a different language, and changes
-    // back to the same language without having restarted Chrome or logged
-    // in/out of ChromeOS.
-    if (languageCode == loadTimeData.getString('currentUiLanguageCode')) {
-      LanguageOptions.getInstance().currentLocaleWasReselected();
-      return;
-    }
+  LanguageOptions.onDictionaryDownloadSuccess = function(languageCode) {
+    LanguageOptions.getInstance().onDictionaryDownloadSuccess_(languageCode);
+  };
 
-    // Otherwise, show a notification telling the user that their changes will
-    // only take effect after restart.
-    showMutuallyExclusiveNodes([$('language-options-ui-language-button'),
-                                $('language-options-ui-notification-bar')], 1);
+  LanguageOptions.onDictionaryDownloadFailure = function(languageCode) {
+    LanguageOptions.getInstance().onDictionaryDownloadFailure_(languageCode);
+  };
+
+  LanguageOptions.onComponentManagerInitialized = function(componentImes) {
+    LanguageOptions.getInstance().appendComponentExtensionIme_(componentImes);
   };
 
   // Export

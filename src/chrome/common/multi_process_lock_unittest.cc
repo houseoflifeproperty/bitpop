@@ -6,10 +6,11 @@
 #include "base/environment.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/process/kill.h"
 #include "base/rand_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/test/multiprocess_test.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/common/multi_process_lock.h"
 #include "testing/multiprocess_func_list.h"
 
@@ -50,7 +51,7 @@ std::string MultiProcessLockTest::GenerateLockName() {
 
 void MultiProcessLockTest::ExpectLockIsLocked(const std::string &name) {
   ScopedEnvironmentVariable var(kLockEnviromentVarName, name);
-  base::ProcessHandle handle = SpawnChild("MultiProcessLockTryFailMain", false);
+  base::ProcessHandle handle = SpawnChild("MultiProcessLockTryFailMain");
   ASSERT_TRUE(handle);
   int exit_code = 0;
   EXPECT_TRUE(base::WaitForExitCode(handle, &exit_code));
@@ -60,8 +61,7 @@ void MultiProcessLockTest::ExpectLockIsLocked(const std::string &name) {
 void MultiProcessLockTest::ExpectLockIsUnlocked(
     const std::string &name) {
   ScopedEnvironmentVariable var(kLockEnviromentVarName, name);
-  base::ProcessHandle handle = SpawnChild("MultiProcessLockTrySucceedMain",
-                                          false);
+  base::ProcessHandle handle = SpawnChild("MultiProcessLockTrySucceedMain");
   ASSERT_TRUE(handle);
   int exit_code = 0;
   EXPECT_TRUE(base::WaitForExitCode(handle, &exit_code));

@@ -5,7 +5,8 @@
 #ifndef CONTENT_RENDERER_JAVA_JAVA_BRIDGE_CHANNEL_H_
 #define CONTENT_RENDERER_JAVA_JAVA_BRIDGE_CHANNEL_H_
 
-#include "content/common/np_channel_base.h"
+#include "base/memory/scoped_ptr.h"
+#include "content/child/npapi/np_channel_base.h"
 #include "ipc/ipc_channel_handle.h"
 
 namespace content {
@@ -29,6 +30,10 @@ class JavaBridgeChannel : public content::NPChannelBase {
   virtual ~JavaBridgeChannel();
 
   static NPChannelBase* ClassFactory() { return new JavaBridgeChannel(); }
+
+  // Dummy NPObject owner Id used to track objects owned by the JavaBridge
+  // peer in the Browser process.
+  scoped_ptr<struct _NPP> peer_owner_id_;
 
   DISALLOW_COPY_AND_ASSIGN(JavaBridgeChannel);
 };

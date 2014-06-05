@@ -13,6 +13,8 @@
 #include "net/base/completion_callback.h"
 #include "net/base/net_log.h"
 #include "net/http/http_stream.h"
+#include "net/spdy/spdy_read_queue.h"
+#include "net/spdy/spdy_session.h"
 #include "net/spdy/spdy_stream.h"
 
 namespace net {
@@ -28,11 +30,9 @@ class UploadDataStream;
 class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
                                           public HttpStream {
  public:
-  SpdyHttpStream(SpdySession* spdy_session, bool direct);
+  // |spdy_session| must not be NULL.
+  SpdyHttpStream(const base::WeakPtr<SpdySession>& spdy_session, bool direct);
   virtual ~SpdyHttpStream();
-
-  // Initializes this SpdyHttpStream by wrapping an existing SpdyStream.
-  void InitializeWithExistingStream(SpdyStream* spdy_stream);
 
   SpdyStream* stream() { return stream_.get(); }
 
@@ -40,9 +40,12 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
   void Cancel();
 
   // HttpStream implementation.
+
   virtual int InitializeStream(const HttpRequestInfo* request_info,
+                               RequestPriority priority,
                                const BoundNetLog& net_log,
                                const CompletionCallback& callback) OVERRIDE;
+
   virtual int SendRequest(const HttpRequestHeaders& headers,
                           HttpResponseInfo* response,
                           const CompletionCallback& callback) OVERRIDE;
@@ -56,38 +59,49 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
   virtual HttpStream* RenewStreamForAuth() OVERRIDE;
   virtual bool IsResponseBodyComplete() const OVERRIDE;
   virtual bool CanFindEndOfResponse() const OVERRIDE;
-  virtual bool IsMoreDataBuffered() const OVERRIDE;
+
+  // Must not be called if a NULL SpdySession was pssed into the
+  // constructor.
   virtual bool IsConnectionReused() const OVERRIDE;
+
   virtual void SetConnectionReused() OVERRIDE;
   virtual bool IsConnectionReusable() const OVERRIDE;
+  virtual int64 GetTotalReceivedBytes() const OVERRIDE;
+  virtual bool GetLoadTimingInfo(
+      LoadTimingInfo* load_timing_info) const OVERRIDE;
   virtual void GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
   virtual void GetSSLCertRequestInfo(
       SSLCertRequestInfo* cert_request_info) OVERRIDE;
   virtual bool IsSpdyHttpStream() const OVERRIDE;
-  virtual void LogNumRttVsBytesMetrics() const OVERRIDE {}
   virtual void Drain(HttpNetworkSession* session) OVERRIDE;
+  virtual void SetPriority(RequestPriority priority) OVERRIDE;
 
   // SpdyStream::Delegate implementation.
-  virtual bool OnSendHeadersComplete(int status) OVERRIDE;
-  virtual int OnSendBody() OVERRIDE;
-  virtual int OnSendBodyComplete(int status, bool* eof) OVERRIDE;
-  virtual int OnResponseReceived(const SpdyHeaderBlock& response,
-                                 base::Time response_time,
-                                 int status) OVERRIDE;
-  virtual void OnHeadersSent() OVERRIDE;
-  virtual int OnDataReceived(const char* buffer, int bytes) OVERRIDE;
-  virtual void OnDataSent(int length) OVERRIDE;
+  virtual void OnRequestHeadersSent() OVERRIDE;
+  virtual SpdyResponseHeadersStatus OnResponseHeadersUpdated(
+      const SpdyHeaderBlock& response_headers) OVERRIDE;
+  virtual void OnDataReceived(scoped_ptr<SpdyBuffer> buffer) OVERRIDE;
+  virtual void OnDataSent() OVERRIDE;
   virtual void OnClose(int status) OVERRIDE;
 
  private:
-  // Reads the data (whether chunked or not) from the request body stream and
-  // sends the data by calling WriteStreamData on the underlying SpdyStream.
-  int SendData();
+  // Must be called only when |request_info_| is non-NULL.
+  bool HasUploadData() const;
+
+  void OnStreamCreated(const CompletionCallback& callback, int rv);
+
+  // Reads the remaining data (whether chunked or not) from the
+  // request body stream and sends it if there's any. The read and
+  // subsequent sending may happen asynchronously. Must be called only
+  // when HasUploadData() is true.
+  void ReadAndSendRequestBodyData();
+
+  // Called when data has just been read from the request body stream;
+  // does the actual sending of data.
+  void OnRequestBodyReadCompleted(int status);
 
   // Call the user callback.
   void DoCallback(int rv);
-
-  int OnRequestBodyReadCompleted(int status);
 
   void ScheduleBufferedReadCallback();
 
@@ -96,13 +110,23 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
   bool ShouldWaitForMoreBufferedData() const;
 
   base::WeakPtrFactory<SpdyHttpStream> weak_factory_;
-  scoped_refptr<SpdyStream> stream_;
-  scoped_refptr<SpdySession> spdy_session_;
+
+  const base::WeakPtr<SpdySession> spdy_session_;
+  bool is_reused_;
+  SpdyStreamRequest stream_request_;
+  base::WeakPtr<SpdyStream> stream_;
+
+  bool stream_closed_;
+
+  // Set only when |stream_closed_| is true.
+  int closed_stream_status_;
+  SpdyStreamId closed_stream_id_;
+  bool closed_stream_has_load_timing_info_;
+  LoadTimingInfo closed_stream_load_timing_info_;
+  int64 closed_stream_received_bytes_;
 
   // The request to send.
   const HttpRequestInfo* request_info_;
-
-  bool has_upload_data_;
 
   // |response_info_| is the HTTP response data object which is filled in
   // when a SYN_REPLY comes in for the stream.
@@ -111,12 +135,12 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
 
   scoped_ptr<HttpResponseInfo> push_response_info_;
 
-  bool download_finished_;
-  bool response_headers_received_;  // Indicates waiting for more HEADERS.
+  // We don't use SpdyStream's |response_header_status_| as we
+  // sometimes call back into our delegate before it is updated.
+  SpdyResponseHeadersStatus response_headers_status_;
 
   // We buffer the response body as it arrives asynchronously from the stream.
-  // TODO(mbelshe):  is this infinite buffering?
-  std::list<scoped_refptr<IOBufferWithSize> > response_body_;
+  SpdyReadQueue response_body_queue_;
 
   CompletionCallback callback_;
 
@@ -125,9 +149,8 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
   int user_buffer_len_;
 
   // Temporary buffer used to read the request body from UploadDataStream.
-  scoped_refptr<IOBufferWithSize> raw_request_body_buf_;
-  // Wraps raw_request_body_buf_ to read the remaining data progressively.
-  scoped_refptr<DrainableIOBuffer> request_body_buf_;
+  scoped_refptr<IOBufferWithSize> request_body_buf_;
+  int request_body_buf_size_;
 
   // Is there a scheduled read callback pending.
   bool buffered_read_callback_pending_;

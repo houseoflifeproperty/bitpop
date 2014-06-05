@@ -72,6 +72,13 @@ class PlatformInfo(object):
     def is_freebsd(self):
         return self.os_name == 'freebsd'
 
+    def is_highdpi(self):
+        if self.is_mac():
+            output = self._executive.run_command(['system_profiler', 'SPDisplaysDataType'], error_handler=self._executive.ignore_error)
+            if output and 'Retina: Yes' in output:
+                return True
+        return False
+
     def display_name(self):
         # platform.platform() returns Darwin information for Mac, which is just confusing.
         if self.is_mac():
@@ -124,12 +131,13 @@ class PlatformInfo(object):
         raise AssertionError('unrecognized platform string "%s"' % sys_platform)
 
     def _determine_mac_version(self, mac_version_string):
-        release_version = mac_version_string.split('.')[1]
+        release_version = int(mac_version_string.split('.')[1])
         version_strings = {
-            '5': 'leopard',
-            '6': 'snowleopard',
-            '7': 'lion',
-            '8': 'mountainlion',
+            5: 'leopard',
+            6: 'snowleopard',
+            7: 'lion',
+            8: 'mountainlion',
+            9: 'mavericks',
         }
         assert release_version >= min(version_strings.keys())
         return version_strings.get(release_version, 'future')
@@ -155,7 +163,7 @@ class PlatformInfo(object):
 
     def _win_version_tuple_from_cmd(self):
         # Note that this should only ever be called on windows, so this should always work.
-        ver_output = self._executive.run_command(['cmd', '/c', 'ver'])
+        ver_output = self._executive.run_command(['cmd', '/c', 'ver'], decode_output=False)
         match_object = re.search(r'(?P<major>\d)\.(?P<minor>\d)\.(?P<build>\d+)', ver_output)
         assert match_object, 'cmd returned an unexpected version string: ' + ver_output
         return tuple(map(int, match_object.groups()))

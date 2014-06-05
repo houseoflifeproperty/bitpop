@@ -2,20 +2,20 @@
  * LATM/LOAS muxer
  * Copyright (c) 2011 Kieran Kunhya <kieran@kunhya.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -124,7 +124,7 @@ static void latm_write_frame_header(AVFormatContext *s, PutBitContext *bs)
 
             if (!ctx->channel_conf) {
                 GetBitContext gb;
-                init_get_bits(&gb, avctx->extradata, avctx->extradata_size * 8);
+                init_get_bits8(&gb, avctx->extradata, avctx->extradata_size);
                 skip_bits_long(&gb, ctx->off + 3);
                 avpriv_copy_pce_data(bs, &gb);
             }
@@ -156,6 +156,15 @@ static int latm_write_packet(AVFormatContext *s, AVPacket *pkt)
         av_log(s, AV_LOG_ERROR, "ADTS header detected - ADTS will not be incorrectly muxed into LATM\n");
         return AVERROR_INVALIDDATA;
     }
+
+    if (!s->streams[0]->codec->extradata) {
+        if(pkt->size > 2 && pkt->data[0] == 0x56 && (pkt->data[1] >> 4) == 0xe &&
+            (AV_RB16(pkt->data + 1) & 0x1FFF) + 3 == pkt->size)
+            return ff_raw_write_packet(s, pkt);
+        else
+            return AVERROR_INVALIDDATA;
+    }
+
     if (pkt->size > 0x1fff)
         goto too_large;
 

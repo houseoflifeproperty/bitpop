@@ -4,32 +4,109 @@
 
 #include "chrome/renderer/content_settings_observer.h"
 
+#include "base/command_line.h"
+#include "base/metrics/histogram.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/renderer/document_state.h"
 #include "content/public/renderer/navigation_state.h"
+#include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_view.h"
 #include "extensions/common/constants.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDataSource.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrameClient.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
-#include "webkit/glue/weburlresponse_extradata_impl.h"
+#include "extensions/renderer/dispatcher.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
+#include "third_party/WebKit/public/web/WebDataSource.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebFrameClient.h"
+#include "third_party/WebKit/public/web/WebSecurityOrigin.h"
+#include "third_party/WebKit/public/web/WebView.h"
+#include "webkit/child/weburlresponse_extradata_impl.h"
 
-using WebKit::WebDataSource;
-using WebKit::WebFrame;
-using WebKit::WebFrameClient;
-using WebKit::WebSecurityOrigin;
-using WebKit::WebString;
-using WebKit::WebURL;
-using WebKit::WebView;
+using blink::WebDataSource;
+using blink::WebDocument;
+using blink::WebFrame;
+using blink::WebFrameClient;
+using blink::WebSecurityOrigin;
+using blink::WebString;
+using blink::WebURL;
+using blink::WebView;
 using content::DocumentState;
 using content::NavigationState;
+using extensions::APIPermission;
 
 namespace {
+
+enum {
+  INSECURE_CONTENT_DISPLAY = 0,
+  INSECURE_CONTENT_DISPLAY_HOST_GOOGLE,
+  INSECURE_CONTENT_DISPLAY_HOST_WWW_GOOGLE,
+  INSECURE_CONTENT_DISPLAY_HTML,
+  INSECURE_CONTENT_RUN,
+  INSECURE_CONTENT_RUN_HOST_GOOGLE,
+  INSECURE_CONTENT_RUN_HOST_WWW_GOOGLE,
+  INSECURE_CONTENT_RUN_TARGET_YOUTUBE,
+  INSECURE_CONTENT_RUN_JS,
+  INSECURE_CONTENT_RUN_CSS,
+  INSECURE_CONTENT_RUN_SWF,
+  INSECURE_CONTENT_DISPLAY_HOST_YOUTUBE,
+  INSECURE_CONTENT_RUN_HOST_YOUTUBE,
+  INSECURE_CONTENT_RUN_HOST_GOOGLEUSERCONTENT,
+  INSECURE_CONTENT_DISPLAY_HOST_MAIL_GOOGLE,
+  INSECURE_CONTENT_RUN_HOST_MAIL_GOOGLE,
+  INSECURE_CONTENT_DISPLAY_HOST_PLUS_GOOGLE,
+  INSECURE_CONTENT_RUN_HOST_PLUS_GOOGLE,
+  INSECURE_CONTENT_DISPLAY_HOST_DOCS_GOOGLE,
+  INSECURE_CONTENT_RUN_HOST_DOCS_GOOGLE,
+  INSECURE_CONTENT_DISPLAY_HOST_SITES_GOOGLE,
+  INSECURE_CONTENT_RUN_HOST_SITES_GOOGLE,
+  INSECURE_CONTENT_DISPLAY_HOST_PICASAWEB_GOOGLE,
+  INSECURE_CONTENT_RUN_HOST_PICASAWEB_GOOGLE,
+  INSECURE_CONTENT_DISPLAY_HOST_GOOGLE_READER,
+  INSECURE_CONTENT_RUN_HOST_GOOGLE_READER,
+  INSECURE_CONTENT_DISPLAY_HOST_CODE_GOOGLE,
+  INSECURE_CONTENT_RUN_HOST_CODE_GOOGLE,
+  INSECURE_CONTENT_DISPLAY_HOST_GROUPS_GOOGLE,
+  INSECURE_CONTENT_RUN_HOST_GROUPS_GOOGLE,
+  INSECURE_CONTENT_DISPLAY_HOST_MAPS_GOOGLE,
+  INSECURE_CONTENT_RUN_HOST_MAPS_GOOGLE,
+  INSECURE_CONTENT_DISPLAY_HOST_GOOGLE_SUPPORT,
+  INSECURE_CONTENT_RUN_HOST_GOOGLE_SUPPORT,
+  INSECURE_CONTENT_DISPLAY_HOST_GOOGLE_INTL,
+  INSECURE_CONTENT_RUN_HOST_GOOGLE_INTL,
+  INSECURE_CONTENT_NUM_EVENTS
+};
+
+// Constants for UMA statistic collection.
+static const char kWWWDotGoogleDotCom[] = "www.google.com";
+static const char kMailDotGoogleDotCom[] = "mail.google.com";
+static const char kPlusDotGoogleDotCom[] = "plus.google.com";
+static const char kDocsDotGoogleDotCom[] = "docs.google.com";
+static const char kSitesDotGoogleDotCom[] = "sites.google.com";
+static const char kPicasawebDotGoogleDotCom[] = "picasaweb.google.com";
+static const char kCodeDotGoogleDotCom[] = "code.google.com";
+static const char kGroupsDotGoogleDotCom[] = "groups.google.com";
+static const char kMapsDotGoogleDotCom[] = "maps.google.com";
+static const char kWWWDotYoutubeDotCom[] = "www.youtube.com";
+static const char kDotGoogleUserContentDotCom[] = ".googleusercontent.com";
+static const char kGoogleReaderPathPrefix[] = "/reader/";
+static const char kGoogleSupportPathPrefix[] = "/support/";
+static const char kGoogleIntlPathPrefix[] = "/intl/";
+static const char kDotJS[] = ".js";
+static const char kDotCSS[] = ".css";
+static const char kDotSWF[] = ".swf";
+static const char kDotHTML[] = ".html";
+
+// Constants for mixed-content blocking.
+static const char kGoogleDotCom[] = "google.com";
+
+static bool IsHostInDomain(const std::string& host, const std::string& domain) {
+  return (EndsWith(host, domain, false) &&
+          (host.length() == domain.length() ||
+           (host.length() > domain.length() &&
+            host[host.length() - domain.length() - 1] == '.')));
+}
 
 GURL GetOriginOrURL(const WebFrame* frame) {
   WebString top_origin = frame->top()->document().securityOrigin().toString();
@@ -66,12 +143,32 @@ ContentSetting GetContentSettingFromRules(
 }  // namespace
 
 ContentSettingsObserver::ContentSettingsObserver(
-    content::RenderView* render_view)
-    : content::RenderViewObserver(render_view),
-      content::RenderViewObserverTracker<ContentSettingsObserver>(render_view),
+    content::RenderFrame* render_frame,
+    extensions::Dispatcher* extension_dispatcher)
+    : content::RenderFrameObserver(render_frame),
+      content::RenderFrameObserverTracker<ContentSettingsObserver>(
+          render_frame),
+      extension_dispatcher_(extension_dispatcher),
+      allow_displaying_insecure_content_(false),
+      allow_running_insecure_content_(false),
       content_setting_rules_(NULL),
-      is_interstitial_page_(false) {
+      is_interstitial_page_(false),
+      npapi_plugins_blocked_(false) {
   ClearBlockedContentSettings();
+  render_frame->GetWebFrame()->setPermissionClient(this);
+
+  if (render_frame->GetRenderView()->GetMainRenderFrame() != render_frame) {
+    // Copy all the settings from the main render frame to avoid race conditions
+    // when initializing this data. See http://crbug.com/333308.
+    ContentSettingsObserver* parent = ContentSettingsObserver::Get(
+        render_frame->GetRenderView()->GetMainRenderFrame());
+    allow_displaying_insecure_content_ =
+        parent->allow_displaying_insecure_content_;
+    allow_running_insecure_content_ = parent->allow_running_insecure_content_;
+    temporarily_allowed_plugins_ = parent->temporarily_allowed_plugins_;
+    is_interstitial_page_ = parent->is_interstitial_page_;
+    npapi_plugins_blocked_ = parent->npapi_plugins_blocked_;
+  }
 }
 
 ContentSettingsObserver::~ContentSettingsObserver() {
@@ -93,16 +190,10 @@ bool ContentSettingsObserver::IsPluginTemporarilyAllowed(
 }
 
 void ContentSettingsObserver::DidBlockContentType(
-    ContentSettingsType settings_type,
-    const std::string& resource_identifier) {
-  // Always send a message when |resource_identifier| is not empty, to tell the
-  // browser which resource was blocked (otherwise the browser will only show
-  // the first resource to be blocked, and none that are blocked at a later
-  // time).
-  if (!content_blocked_[settings_type] || !resource_identifier.empty()) {
+    ContentSettingsType settings_type) {
+  if (!content_blocked_[settings_type]) {
     content_blocked_[settings_type] = true;
-    Send(new ChromeViewHostMsg_ContentBlocked(routing_id(), settings_type,
-                                              resource_identifier));
+    Send(new ChromeViewHostMsg_ContentBlocked(routing_id(), settings_type));
   }
 }
 
@@ -110,6 +201,12 @@ bool ContentSettingsObserver::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(ContentSettingsObserver, message)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_SetAsInterstitial, OnSetAsInterstitial)
+    IPC_MESSAGE_HANDLER(ChromeViewMsg_NPAPINotSupported, OnNPAPINotSupported)
+    IPC_MESSAGE_HANDLER(ChromeViewMsg_SetAllowDisplayingInsecureContent,
+                        OnSetAllowDisplayingInsecureContent)
+    IPC_MESSAGE_HANDLER(ChromeViewMsg_SetAllowRunningInsecureContent,
+                        OnSetAllowRunningInsecureContent)
+    IPC_MESSAGE_HANDLER(ChromeViewMsg_ReloadFrame, OnReloadFrame);
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   if (handled)
@@ -124,18 +221,18 @@ bool ContentSettingsObserver::OnMessageReceived(const IPC::Message& message) {
   return false;
 }
 
-void ContentSettingsObserver::DidCommitProvisionalLoad(
-    WebFrame* frame, bool is_new_navigation) {
+void ContentSettingsObserver::DidCommitProvisionalLoad(bool is_new_navigation) {
+  WebFrame* frame = render_frame()->GetWebFrame();
   if (frame->parent())
-    return; // Not a top-level navigation.
+    return;  // Not a top-level navigation.
 
   DocumentState* document_state = DocumentState::FromDataSource(
       frame->dataSource());
   NavigationState* navigation_state = document_state->navigation_state();
   if (!navigation_state->was_within_same_page()) {
     // Clear "block" flags for the new page. This needs to happen before any of
-    // |AllowScript()|, |AllowScriptFromSource()|, |AllowImage()|, or
-    // |AllowPlugins()| is called for the new page so that these functions can
+    // |allowScript()|, |allowScriptFromSource()|, |allowImage()|, or
+    // |allowPlugins()| is called for the new page so that these functions can
     // correctly detect that a piece of content flipped from "not blocked" to
     // "blocked".
     ClearBlockedContentSettings();
@@ -146,13 +243,13 @@ void ContentSettingsObserver::DidCommitProvisionalLoad(
   // If we start failing this DCHECK, please makes sure we don't regress
   // this bug: http://code.google.com/p/chromium/issues/detail?id=79304
   DCHECK(frame->document().securityOrigin().toString() == "null" ||
-         !url.SchemeIs(chrome::kDataScheme));
+         !url.SchemeIs(content::kDataScheme));
 }
 
-bool ContentSettingsObserver::AllowDatabase(WebFrame* frame,
-                                            const WebString& name,
+bool ContentSettingsObserver::allowDatabase(const WebString& name,
                                             const WebString& display_name,
                                             unsigned long estimated_size) {
+  WebFrame* frame = render_frame()->GetWebFrame();
   if (frame->document().securityOrigin().isUnique() ||
       frame->top()->document().securityOrigin().isUnique())
     return false;
@@ -165,7 +262,8 @@ bool ContentSettingsObserver::AllowDatabase(WebFrame* frame,
   return result;
 }
 
-bool ContentSettingsObserver::AllowFileSystem(WebFrame* frame) {
+bool ContentSettingsObserver::allowFileSystem() {
+  WebFrame* frame = render_frame()->GetWebFrame();
   if (frame->document().securityOrigin().isUnique() ||
       frame->top()->document().securityOrigin().isUnique())
     return false;
@@ -177,13 +275,14 @@ bool ContentSettingsObserver::AllowFileSystem(WebFrame* frame) {
   return result;
 }
 
-bool ContentSettingsObserver::AllowImage(WebFrame* frame,
-                                         bool enabled_per_settings,
+bool ContentSettingsObserver::allowImage(bool enabled_per_settings,
                                          const WebURL& image_url) {
   bool allow = enabled_per_settings;
   if (enabled_per_settings) {
     if (is_interstitial_page_)
       return true;
+
+    WebFrame* frame = render_frame()->GetWebFrame();
     if (IsWhitelistedForContentSettings(frame))
       return true;
 
@@ -195,13 +294,13 @@ bool ContentSettingsObserver::AllowImage(WebFrame* frame,
     }
   }
   if (!allow)
-    DidBlockContentType(CONTENT_SETTINGS_TYPE_IMAGES, std::string());
+    DidBlockContentType(CONTENT_SETTINGS_TYPE_IMAGES);
   return allow;
 }
 
-bool ContentSettingsObserver::AllowIndexedDB(WebFrame* frame,
-                                             const WebString& name,
+bool ContentSettingsObserver::allowIndexedDB(const WebString& name,
                                              const WebSecurityOrigin& origin) {
+  WebFrame* frame = render_frame()->GetWebFrame();
   if (frame->document().securityOrigin().isUnique() ||
       frame->top()->document().securityOrigin().isUnique())
     return false;
@@ -214,18 +313,17 @@ bool ContentSettingsObserver::AllowIndexedDB(WebFrame* frame,
   return result;
 }
 
-bool ContentSettingsObserver::AllowPlugins(WebFrame* frame,
-                                           bool enabled_per_settings) {
+bool ContentSettingsObserver::allowPlugins(bool enabled_per_settings) {
   return enabled_per_settings;
 }
 
-bool ContentSettingsObserver::AllowScript(WebFrame* frame,
-                                          bool enabled_per_settings) {
+bool ContentSettingsObserver::allowScript(bool enabled_per_settings) {
   if (!enabled_per_settings)
     return false;
   if (is_interstitial_page_)
     return true;
 
+  WebFrame* frame = render_frame()->GetWebFrame();
   std::map<WebFrame*, bool>::const_iterator it =
       cached_script_permissions_.find(frame);
   if (it != cached_script_permissions_.end())
@@ -248,16 +346,16 @@ bool ContentSettingsObserver::AllowScript(WebFrame* frame,
   return allow;
 }
 
-bool ContentSettingsObserver::AllowScriptFromSource(
-    WebFrame* frame,
+bool ContentSettingsObserver::allowScriptFromSource(
     bool enabled_per_settings,
-    const WebKit::WebURL& script_url) {
+    const blink::WebURL& script_url) {
   if (!enabled_per_settings)
     return false;
   if (is_interstitial_page_)
     return true;
 
   bool allow = true;
+  WebFrame* frame = render_frame()->GetWebFrame();
   if (content_setting_rules_) {
     ContentSetting setting = GetContentSettingFromRules(
         content_setting_rules_->script_rules,
@@ -268,7 +366,8 @@ bool ContentSettingsObserver::AllowScriptFromSource(
   return allow || IsWhitelistedForContentSettings(frame);
 }
 
-bool ContentSettingsObserver::AllowStorage(WebFrame* frame, bool local) {
+bool ContentSettingsObserver::allowStorage(bool local) {
+  WebFrame* frame = render_frame()->GetWebFrame();
   if (frame->document().securityOrigin().isUnique() ||
       frame->top()->document().securityOrigin().isUnique())
     return false;
@@ -289,16 +388,193 @@ bool ContentSettingsObserver::AllowStorage(WebFrame* frame, bool local) {
   return result;
 }
 
-void ContentSettingsObserver::DidNotAllowPlugins() {
-  DidBlockContentType(CONTENT_SETTINGS_TYPE_PLUGINS, std::string());
+bool ContentSettingsObserver::allowReadFromClipboard(bool default_value) {
+  bool allowed = false;
+  WebFrame* frame = render_frame()->GetWebFrame();
+  // TODO(dcheng): Should we consider a toURL() method on WebSecurityOrigin?
+  Send(new ChromeViewHostMsg_CanTriggerClipboardRead(
+      GURL(frame->document().securityOrigin().toString()), &allowed));
+  return allowed;
 }
 
-void ContentSettingsObserver::DidNotAllowScript() {
-  DidBlockContentType(CONTENT_SETTINGS_TYPE_JAVASCRIPT, std::string());
+bool ContentSettingsObserver::allowWriteToClipboard(bool default_value) {
+  bool allowed = false;
+  WebFrame* frame = render_frame()->GetWebFrame();
+  Send(new ChromeViewHostMsg_CanTriggerClipboardWrite(
+      GURL(frame->document().securityOrigin().toString()), &allowed));
+  return allowed;
 }
 
-void ContentSettingsObserver::DidNotAllowMixedScript() {
-  DidBlockContentType(CONTENT_SETTINGS_TYPE_MIXEDSCRIPT, std::string());
+bool ContentSettingsObserver::allowWebComponents(bool default_value) {
+  if (default_value)
+    return true;
+
+  WebFrame* frame = render_frame()->GetWebFrame();
+  WebSecurityOrigin origin = frame->document().securityOrigin();
+  if (EqualsASCII(origin.protocol(), content::kChromeUIScheme))
+    return true;
+
+  if (const extensions::Extension* extension = GetExtension(origin)) {
+    if (extension->HasAPIPermission(APIPermission::kExperimental))
+      return true;
+  }
+
+  return false;
+}
+
+bool ContentSettingsObserver::allowMutationEvents(bool default_value) {
+  WebFrame* frame = render_frame()->GetWebFrame();
+  WebSecurityOrigin origin = frame->document().securityOrigin();
+  const extensions::Extension* extension = GetExtension(origin);
+  if (extension && extension->is_platform_app())
+    return false;
+  return default_value;
+}
+
+bool ContentSettingsObserver::allowPushState() {
+  WebFrame* frame = render_frame()->GetWebFrame();
+  WebSecurityOrigin origin = frame->document().securityOrigin();
+  const extensions::Extension* extension = GetExtension(origin);
+  return !extension || !extension->is_platform_app();
+}
+
+static void SendInsecureContentSignal(int signal) {
+  UMA_HISTOGRAM_ENUMERATION("SSL.InsecureContent", signal,
+                            INSECURE_CONTENT_NUM_EVENTS);
+}
+
+bool ContentSettingsObserver::allowDisplayingInsecureContent(
+    bool allowed_per_settings,
+    const blink::WebSecurityOrigin& origin,
+    const blink::WebURL& resource_url) {
+  SendInsecureContentSignal(INSECURE_CONTENT_DISPLAY);
+
+  std::string origin_host(origin.host().utf8());
+  WebFrame* frame = render_frame()->GetWebFrame();
+  GURL frame_gurl(frame->document().url());
+  if (IsHostInDomain(origin_host, kGoogleDotCom)) {
+    SendInsecureContentSignal(INSECURE_CONTENT_DISPLAY_HOST_GOOGLE);
+    if (StartsWithASCII(frame_gurl.path(), kGoogleSupportPathPrefix, false)) {
+      SendInsecureContentSignal(INSECURE_CONTENT_DISPLAY_HOST_GOOGLE_SUPPORT);
+    } else if (StartsWithASCII(frame_gurl.path(),
+                               kGoogleIntlPathPrefix,
+                               false)) {
+      SendInsecureContentSignal(INSECURE_CONTENT_DISPLAY_HOST_GOOGLE_INTL);
+    }
+  }
+
+  if (origin_host == kWWWDotGoogleDotCom) {
+    SendInsecureContentSignal(INSECURE_CONTENT_DISPLAY_HOST_WWW_GOOGLE);
+    if (StartsWithASCII(frame_gurl.path(), kGoogleReaderPathPrefix, false))
+      SendInsecureContentSignal(INSECURE_CONTENT_DISPLAY_HOST_GOOGLE_READER);
+  } else if (origin_host == kMailDotGoogleDotCom) {
+    SendInsecureContentSignal(INSECURE_CONTENT_DISPLAY_HOST_MAIL_GOOGLE);
+  } else if (origin_host == kPlusDotGoogleDotCom) {
+    SendInsecureContentSignal(INSECURE_CONTENT_DISPLAY_HOST_PLUS_GOOGLE);
+  } else if (origin_host == kDocsDotGoogleDotCom) {
+    SendInsecureContentSignal(INSECURE_CONTENT_DISPLAY_HOST_DOCS_GOOGLE);
+  } else if (origin_host == kSitesDotGoogleDotCom) {
+    SendInsecureContentSignal(INSECURE_CONTENT_DISPLAY_HOST_SITES_GOOGLE);
+  } else if (origin_host == kPicasawebDotGoogleDotCom) {
+    SendInsecureContentSignal(INSECURE_CONTENT_DISPLAY_HOST_PICASAWEB_GOOGLE);
+  } else if (origin_host == kCodeDotGoogleDotCom) {
+    SendInsecureContentSignal(INSECURE_CONTENT_DISPLAY_HOST_CODE_GOOGLE);
+  } else if (origin_host == kGroupsDotGoogleDotCom) {
+    SendInsecureContentSignal(INSECURE_CONTENT_DISPLAY_HOST_GROUPS_GOOGLE);
+  } else if (origin_host == kMapsDotGoogleDotCom) {
+    SendInsecureContentSignal(INSECURE_CONTENT_DISPLAY_HOST_MAPS_GOOGLE);
+  } else if (origin_host == kWWWDotYoutubeDotCom) {
+    SendInsecureContentSignal(INSECURE_CONTENT_DISPLAY_HOST_YOUTUBE);
+  }
+
+  GURL resource_gurl(resource_url);
+  if (EndsWith(resource_gurl.path(), kDotHTML, false))
+    SendInsecureContentSignal(INSECURE_CONTENT_DISPLAY_HTML);
+
+  if (allowed_per_settings || allow_displaying_insecure_content_)
+    return true;
+
+  Send(new ChromeViewHostMsg_DidBlockDisplayingInsecureContent(routing_id()));
+
+  return false;
+}
+
+bool ContentSettingsObserver::allowRunningInsecureContent(
+    bool allowed_per_settings,
+    const blink::WebSecurityOrigin& origin,
+    const blink::WebURL& resource_url) {
+  std::string origin_host(origin.host().utf8());
+  WebFrame* frame = render_frame()->GetWebFrame();
+  GURL frame_gurl(frame->document().url());
+  DCHECK_EQ(frame_gurl.host(), origin_host);
+
+  bool is_google = IsHostInDomain(origin_host, kGoogleDotCom);
+  if (is_google) {
+    SendInsecureContentSignal(INSECURE_CONTENT_RUN_HOST_GOOGLE);
+    if (StartsWithASCII(frame_gurl.path(), kGoogleSupportPathPrefix, false)) {
+      SendInsecureContentSignal(INSECURE_CONTENT_RUN_HOST_GOOGLE_SUPPORT);
+    } else if (StartsWithASCII(frame_gurl.path(),
+                               kGoogleIntlPathPrefix,
+                               false)) {
+      SendInsecureContentSignal(INSECURE_CONTENT_RUN_HOST_GOOGLE_INTL);
+    }
+  }
+
+  if (origin_host == kWWWDotGoogleDotCom) {
+    SendInsecureContentSignal(INSECURE_CONTENT_RUN_HOST_WWW_GOOGLE);
+    if (StartsWithASCII(frame_gurl.path(), kGoogleReaderPathPrefix, false))
+      SendInsecureContentSignal(INSECURE_CONTENT_RUN_HOST_GOOGLE_READER);
+  } else if (origin_host == kMailDotGoogleDotCom) {
+    SendInsecureContentSignal(INSECURE_CONTENT_RUN_HOST_MAIL_GOOGLE);
+  } else if (origin_host == kPlusDotGoogleDotCom) {
+    SendInsecureContentSignal(INSECURE_CONTENT_RUN_HOST_PLUS_GOOGLE);
+  } else if (origin_host == kDocsDotGoogleDotCom) {
+    SendInsecureContentSignal(INSECURE_CONTENT_RUN_HOST_DOCS_GOOGLE);
+  } else if (origin_host == kSitesDotGoogleDotCom) {
+    SendInsecureContentSignal(INSECURE_CONTENT_RUN_HOST_SITES_GOOGLE);
+  } else if (origin_host == kPicasawebDotGoogleDotCom) {
+    SendInsecureContentSignal(INSECURE_CONTENT_RUN_HOST_PICASAWEB_GOOGLE);
+  } else if (origin_host == kCodeDotGoogleDotCom) {
+    SendInsecureContentSignal(INSECURE_CONTENT_RUN_HOST_CODE_GOOGLE);
+  } else if (origin_host == kGroupsDotGoogleDotCom) {
+    SendInsecureContentSignal(INSECURE_CONTENT_RUN_HOST_GROUPS_GOOGLE);
+  } else if (origin_host == kMapsDotGoogleDotCom) {
+    SendInsecureContentSignal(INSECURE_CONTENT_RUN_HOST_MAPS_GOOGLE);
+  } else if (origin_host == kWWWDotYoutubeDotCom) {
+    SendInsecureContentSignal(INSECURE_CONTENT_RUN_HOST_YOUTUBE);
+  } else if (EndsWith(origin_host, kDotGoogleUserContentDotCom, false)) {
+    SendInsecureContentSignal(INSECURE_CONTENT_RUN_HOST_GOOGLEUSERCONTENT);
+  }
+
+  GURL resource_gurl(resource_url);
+  if (resource_gurl.host() == kWWWDotYoutubeDotCom)
+    SendInsecureContentSignal(INSECURE_CONTENT_RUN_TARGET_YOUTUBE);
+
+  if (EndsWith(resource_gurl.path(), kDotJS, false))
+    SendInsecureContentSignal(INSECURE_CONTENT_RUN_JS);
+  else if (EndsWith(resource_gurl.path(), kDotCSS, false))
+    SendInsecureContentSignal(INSECURE_CONTENT_RUN_CSS);
+  else if (EndsWith(resource_gurl.path(), kDotSWF, false))
+    SendInsecureContentSignal(INSECURE_CONTENT_RUN_SWF);
+
+  if (!allow_running_insecure_content_ && !allowed_per_settings) {
+    DidBlockContentType(CONTENT_SETTINGS_TYPE_MIXEDSCRIPT);
+    return false;
+  }
+
+  return true;
+}
+
+void ContentSettingsObserver::didNotAllowPlugins() {
+  DidBlockContentType(CONTENT_SETTINGS_TYPE_PLUGINS);
+}
+
+void ContentSettingsObserver::didNotAllowScript() {
+  DidBlockContentType(CONTENT_SETTINGS_TYPE_JAVASCRIPT);
+}
+
+bool ContentSettingsObserver::AreNPAPIPluginsBlocked() const {
+  return npapi_plugins_blocked_;
 }
 
 void ContentSettingsObserver::OnLoadBlockedPlugins(
@@ -310,6 +586,25 @@ void ContentSettingsObserver::OnSetAsInterstitial() {
   is_interstitial_page_ = true;
 }
 
+void ContentSettingsObserver::OnNPAPINotSupported() {
+  npapi_plugins_blocked_ = true;
+}
+
+void ContentSettingsObserver::OnSetAllowDisplayingInsecureContent(bool allow) {
+  allow_displaying_insecure_content_ = allow;
+}
+
+void ContentSettingsObserver::OnSetAllowRunningInsecureContent(bool allow) {
+  allow_running_insecure_content_ = allow;
+  OnSetAllowDisplayingInsecureContent(allow);
+}
+
+void ContentSettingsObserver::OnReloadFrame() {
+  DCHECK(!render_frame()->GetWebFrame()->parent()) <<
+      "Should only be called on the main frame";
+  render_frame()->GetWebFrame()->reload();
+}
+
 void ContentSettingsObserver::ClearBlockedContentSettings() {
   for (size_t i = 0; i < arraysize(content_blocked_); ++i)
     content_blocked_[i] = false;
@@ -317,7 +612,23 @@ void ContentSettingsObserver::ClearBlockedContentSettings() {
   cached_script_permissions_.clear();
 }
 
+const extensions::Extension* ContentSettingsObserver::GetExtension(
+    const WebSecurityOrigin& origin) const {
+  if (!EqualsASCII(origin.protocol(), extensions::kExtensionScheme))
+    return NULL;
+
+  const std::string extension_id = origin.host().utf8().data();
+  if (!extension_dispatcher_->IsExtensionActive(extension_id))
+    return NULL;
+
+  return extension_dispatcher_->extensions()->GetByID(extension_id);
+}
+
 bool ContentSettingsObserver::IsWhitelistedForContentSettings(WebFrame* frame) {
+  // Whitelist Instant processes.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kInstantProcess))
+    return true;
+
   // Whitelist ftp directory listings, as they require JavaScript to function
   // properly.
   webkit_glue::WebURLResponseExtraDataImpl* extra_data =
@@ -338,22 +649,24 @@ bool ContentSettingsObserver::IsWhitelistedForContentSettings(
   if (origin.isUnique())
     return false;  // Uninitialized document?
 
-  if (EqualsASCII(origin.protocol(), chrome::kChromeUIScheme))
+  if (EqualsASCII(origin.protocol(), content::kChromeUIScheme))
     return true;  // Browser UI elements should still work.
 
-  if (EqualsASCII(origin.protocol(), chrome::kChromeDevToolsScheme))
+  if (EqualsASCII(origin.protocol(), content::kChromeDevToolsScheme))
     return true;  // DevTools UI elements should still work.
 
   if (EqualsASCII(origin.protocol(), extensions::kExtensionScheme))
     return true;
 
-  if (EqualsASCII(origin.protocol(), chrome::kChromeInternalScheme))
+  // TODO(creis, fsamuel): Remove this once the concept of swapped out
+  // RenderFrames goes away.
+  if (document_url == GURL(content::kSwappedOutURL))
     return true;
 
   // If the scheme is file:, an empty file name indicates a directory listing,
   // which requires JavaScript to function properly.
-  if (EqualsASCII(origin.protocol(), chrome::kFileScheme)) {
-    return document_url.SchemeIs(chrome::kFileScheme) &&
+  if (EqualsASCII(origin.protocol(), content::kFileScheme)) {
+    return document_url.SchemeIs(content::kFileScheme) &&
            document_url.ExtractFileName().empty();
   }
 

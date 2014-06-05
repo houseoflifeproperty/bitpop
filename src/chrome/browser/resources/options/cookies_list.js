@@ -39,8 +39,7 @@ cr.define('options', function() {
                     ['temporary', 'label_file_system_temporary_usage']],
     'server_bound_cert': [['serverId', 'label_server_bound_cert_server_id'],
                           ['certType', 'label_server_bound_cert_type'],
-                          ['created', 'label_server_bound_cert_created'],
-                          ['expires', 'label_server_bound_cert_expires']],
+                          ['created', 'label_server_bound_cert_created']],
     'flash_lso': [['domain', 'label_cookie_domain']],
   };
 
@@ -279,7 +278,8 @@ cr.define('options', function() {
       }
       this.dataChild.textContent = text;
 
-      for (var key in info.appsProtectingThis) {
+      var apps = info.appsProtectingThis;
+      for (var key in apps) {
         addAppInfo(this.dataChild, apps[key]);
       }
 

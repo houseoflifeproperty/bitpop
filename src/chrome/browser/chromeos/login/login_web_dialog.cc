@@ -4,12 +4,17 @@
 
 #include "chrome/browser/chromeos/login/login_web_dialog.h"
 
-#include "base/utf_string_conversions.h"
+#include <deque>
+
+#include "base/lazy_instance.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chromeos/login/helper.h"
-#include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
+#include "content/public/browser/web_contents.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
@@ -26,6 +31,13 @@ namespace {
 const double kDefaultWidthRatio = 0.6;
 const double kDefaultHeightRatio = 0.6;
 
+// Default width/height ratio of minimal dialog size.
+const double kMinimumWidthRatio = 0.25;
+const double kMinimumHeightRatio = 0.25;
+
+static base::LazyInstance<std::deque<content::WebContents*> >
+    g_web_contents_stack = LAZY_INSTANCE_INITIALIZER;
+
 }  // namespace
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -34,17 +46,18 @@ const double kDefaultHeightRatio = 0.6;
 void LoginWebDialog::Delegate::OnDialogClosed() {
 }
 
-LoginWebDialog::LoginWebDialog(Delegate* delegate,
+LoginWebDialog::LoginWebDialog(Profile* profile,
+                               Delegate* delegate,
                                gfx::NativeWindow parent_window,
-                               const string16& title,
+                               const base::string16& title,
                                const GURL& url,
                                Style style)
-    : delegate_(delegate),
+    : profile_(profile),
       parent_window_(parent_window),
+      delegate_(delegate),
       title_(title),
       url_(url),
       style_(style),
-      bubble_frame_view_(NULL),
       is_open_(false) {
   gfx::Rect screen_bounds(chromeos::CalculateScreenBounds(gfx::Size()));
   width_ = static_cast<int>(kDefaultWidthRatio * screen_bounds.width());
@@ -57,7 +70,7 @@ LoginWebDialog::~LoginWebDialog() {
 
 void LoginWebDialog::Show() {
   chrome::ShowWebDialog(parent_window_,
-                        ProfileManager::GetDefaultProfile(),
+                        profile_,
                         this);
   is_open_ = true;
 }
@@ -68,7 +81,7 @@ void LoginWebDialog::SetDialogSize(int width, int height) {
   height_ = height;
 }
 
-void LoginWebDialog::SetDialogTitle(const string16& title) {
+void LoginWebDialog::SetDialogTitle(const base::string16& title) {
   title_ = title;
 }
 
@@ -79,7 +92,7 @@ ui::ModalType LoginWebDialog::GetDialogModalType() const {
   return ui::MODAL_TYPE_SYSTEM;
 }
 
-string16 LoginWebDialog::GetDialogTitle() const {
+base::string16 LoginWebDialog::GetDialogTitle() const {
   return title_;
 }
 
@@ -95,8 +108,27 @@ void LoginWebDialog::GetDialogSize(gfx::Size* size) const {
   size->SetSize(width_, height_);
 }
 
+void LoginWebDialog::GetMinimumDialogSize(gfx::Size* size) const {
+  gfx::Rect screen_bounds(chromeos::CalculateScreenBounds(gfx::Size()));
+  size->SetSize(kMinimumWidthRatio * screen_bounds.width(),
+                kMinimumHeightRatio * screen_bounds.height());
+}
+
 std::string LoginWebDialog::GetDialogArgs() const {
   return std::string();
+}
+
+// static.
+content::WebContents* LoginWebDialog::GetCurrentWebContents() {
+  if (!g_web_contents_stack.Pointer()->size())
+    return NULL;
+
+  return g_web_contents_stack.Pointer()->front();
+}
+
+void LoginWebDialog::OnDialogShown(content::WebUI* webui,
+                                   content::RenderViewHost* render_view_host) {
+  g_web_contents_stack.Pointer()->push_front(webui->GetWebContents());
 }
 
 void LoginWebDialog::OnDialogClosed(const std::string& json_retval) {
@@ -111,6 +143,13 @@ void LoginWebDialog::OnCloseContents(WebContents* source,
                                      bool* out_close_dialog) {
   if (out_close_dialog)
     *out_close_dialog = true;
+
+  if (g_web_contents_stack.Pointer()->size() &&
+      source == g_web_contents_stack.Pointer()->front()) {
+    g_web_contents_stack.Pointer()->pop_front();
+  } else {
+    NOTREACHED();
+  }
 }
 
 bool LoginWebDialog::ShouldShowDialogTitle() const {

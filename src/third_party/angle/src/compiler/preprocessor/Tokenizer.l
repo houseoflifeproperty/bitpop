@@ -1,6 +1,6 @@
 /*
 //
-// Copyright (c) 2002-2011 The ANGLE Project Authors. All rights reserved.
+// Copyright (c) 2002-2013 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -14,7 +14,7 @@ IF YOU MODIFY THIS FILE YOU ALSO NEED TO RUN generate_parser.sh.
 
 %top{
 //
-// Copyright (c) 2011 The ANGLE Project Authors. All rights reserved.
+// Copyright (c) 2011-2013 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -25,7 +25,7 @@ IF YOU MODIFY THIS FILE YOU ALSO NEED TO RUN generate_parser.sh.
 %{
 #include "Tokenizer.h"
 
-#include "Diagnostics.h"
+#include "DiagnosticsBase.h"
 #include "Token.h"
 
 #if defined(__GNUC__)
@@ -229,6 +229,8 @@ FRACTIONAL_CONSTANT  ({DIGIT}*"."{DIGIT}+)|({DIGIT}+".")
     return '\n';
 }
 
+\\{NEWLINE} { ++yylineno; }
+
 . {
     yylval->assign(1, yytext[0]);
     return pp::Token::PP_OTHER;
@@ -239,13 +241,14 @@ FRACTIONAL_CONSTANT  ({DIGIT}*"."{DIGIT}+)|({DIGIT}+".")
     // Set the location for EOF token manually.
     pp::Input* input = &yyextra->input;
     pp::Input::Location* scanLoc = &yyextra->scanLoc;
-    int sIndexMax = std::max(0, input->count() - 1);
+    yy_size_t sIndexMax = input->count() ? input->count() - 1 : 0;
     if (scanLoc->sIndex != sIndexMax)
     {
         // We can only reach here if there are empty strings at the
         // end of the input.
         scanLoc->sIndex = sIndexMax; scanLoc->cIndex = 0;
-        yyfileno = sIndexMax; yylineno = 1;
+        // FIXME: this is not 64-bit clean.
+        yyfileno = static_cast<int>(sIndexMax); yylineno = 1;
     }
     yylloc->file = yyfileno;
     yylloc->line = yylineno;
@@ -264,11 +267,9 @@ FRACTIONAL_CONSTANT  ({DIGIT}*"."{DIGIT}+)|({DIGIT}+".")
 
 namespace pp {
 
-// TODO(alokp): Maximum token length should ideally be specified by
-// the preprocessor client, i.e., the compiler.
-const size_t Tokenizer::kMaxTokenLength = 256;
-
-Tokenizer::Tokenizer(Diagnostics* diagnostics) : mHandle(0)
+Tokenizer::Tokenizer(Diagnostics* diagnostics)
+    : mHandle(0),
+      mMaxTokenLength(256)
 {
     mContext.diagnostics = diagnostics;
 }
@@ -278,9 +279,8 @@ Tokenizer::~Tokenizer()
     destroyScanner();
 }
 
-bool Tokenizer::init(int count, const char* const string[], const int length[])
+bool Tokenizer::init(size_t count, const char* const string[], const int length[])
 {
-    if (count < 0) return false;
     if ((count > 0) && (string == 0)) return false;
 
     mContext.input = Input(count, string, length);
@@ -302,11 +302,11 @@ void Tokenizer::setLineNumber(int line)
 void Tokenizer::lex(Token* token)
 {
     token->type = yylex(&token->text, &token->location, mHandle);
-    if (token->text.size() > kMaxTokenLength)
+    if (token->text.size() > mMaxTokenLength)
     {
         mContext.diagnostics->report(Diagnostics::TOKEN_TOO_LONG,
                                      token->location, token->text);
-        token->text.erase(kMaxTokenLength);
+        token->text.erase(mMaxTokenLength);
     }
 
     token->flags = 0;

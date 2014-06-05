@@ -5,8 +5,8 @@
 #ifndef CONTENT_PUBLIC_BROWSER_WORKER_SERVICE_OBSERVER_H_
 #define CONTENT_PUBLIC_BROWSER_WORKER_SERVICE_OBSERVER_H_
 
-#include "base/process.h"
-#include "base/string16.h"
+#include "base/process/process.h"
+#include "base/strings/string16.h"
 
 class GURL;
 
@@ -15,7 +15,7 @@ namespace content {
 class WorkerServiceObserver {
  public:
   virtual void WorkerCreated(const GURL& url,
-                             const string16& name,
+                             const base::string16& name,
                              int process_id,
                              int route_id) {}
   virtual void WorkerDestroyed(int process_id, int route_id) {}

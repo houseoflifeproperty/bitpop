@@ -8,9 +8,11 @@
 
 #include "base/basictypes.h"
 #include "base/command_line.h"
+#include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/content_settings_custom_extension_provider.h"
 #include "chrome/browser/content_settings/content_settings_default_provider.h"
 #include "chrome/browser/content_settings/content_settings_details.h"
@@ -21,26 +23,26 @@
 #include "chrome/browser/content_settings/content_settings_provider.h"
 #include "chrome/browser/content_settings/content_settings_rule.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
+#include "chrome/browser/extensions/api/content_settings/content_settings_service.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/intents/web_intents_util.h"
-#include "chrome/browser/prefs/pref_service.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/content_settings_pattern.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_switches.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/common/constants.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/net_errors.h"
 #include "net/base/static_cookie_policy.h"
+#include "url/gurl.h"
 
+using base::UserMetricsAction;
 using content::BrowserThread;
-using content::UserMetricsAction;
 
 namespace {
 
@@ -77,8 +79,11 @@ bool SupportsResourceIdentifier(ContentSettingsType content_type) {
 
 HostContentSettingsMap::HostContentSettingsMap(
     PrefService* prefs,
-    bool incognito)
-    : prefs_(prefs),
+    bool incognito) :
+#ifndef NDEBUG
+      used_from_thread_id_(base::PlatformThread::CurrentId()),
+#endif
+      prefs_(prefs),
       is_off_the_record_(incognito) {
   content_settings::ObservableProvider* policy_provider =
       new content_settings::PolicyProvider(prefs_);
@@ -116,40 +121,52 @@ void HostContentSettingsMap::RegisterExtensionService(
 
   content_settings::ObservableProvider* custom_extension_provider =
       new content_settings::CustomExtensionProvider(
-          extension_service->GetContentSettingsStore(),
+          extensions::ContentSettingsService::Get(
+              extension_service->GetBrowserContext())->content_settings_store(),
           is_off_the_record_);
   custom_extension_provider->AddObserver(this);
   content_settings_providers_[CUSTOM_EXTENSION_PROVIDER] =
       custom_extension_provider;
 
+#ifndef NDEBUG
+  DCHECK(used_from_thread_id_ != base::kInvalidThreadId)
+      << "Used from multiple threads before initialization complete.";
+#endif
+
   OnContentSettingChanged(ContentSettingsPattern(),
                           ContentSettingsPattern(),
                           CONTENT_SETTINGS_TYPE_DEFAULT,
-                          "");
+                          std::string());
 }
 #endif
 
 // static
-void HostContentSettingsMap::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterIntegerPref(prefs::kContentSettingsWindowLastTabIndex,
-                             0,
-                             PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterIntegerPref(prefs::kContentSettingsDefaultWhitelistVersion,
-                             0, PrefService::SYNCABLE_PREF);
-  prefs->RegisterBooleanPref(prefs::kContentSettingsClearOnExitMigrated,
-                             false, PrefService::SYNCABLE_PREF);
+void HostContentSettingsMap::RegisterProfilePrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterIntegerPref(
+      prefs::kContentSettingsWindowLastTabIndex,
+      0,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kContentSettingsDefaultWhitelistVersion,
+      0,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kContentSettingsClearOnExitMigrated,
+      false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 
   // Register the prefs for the content settings providers.
-  content_settings::DefaultProvider::RegisterUserPrefs(prefs);
-  content_settings::PrefProvider::RegisterUserPrefs(prefs);
-  content_settings::PolicyProvider::RegisterUserPrefs(prefs);
+  content_settings::DefaultProvider::RegisterProfilePrefs(registry);
+  content_settings::PrefProvider::RegisterProfilePrefs(registry);
+  content_settings::PolicyProvider::RegisterProfilePrefs(registry);
 }
 
 ContentSetting HostContentSettingsMap::GetDefaultContentSettingFromProvider(
     ContentSettingsType content_type,
     content_settings::ProviderInterface* provider) const {
   scoped_ptr<content_settings::RuleIterator> rule_iterator(
-      provider->GetRuleIterator(content_type, "", false));
+      provider->GetRuleIterator(content_type, std::string(), false));
 
   ContentSettingsPattern wildcard = ContentSettingsPattern::Wildcard();
   while (rule_iterator->HasNext()) {
@@ -165,6 +182,8 @@ ContentSetting HostContentSettingsMap::GetDefaultContentSettingFromProvider(
 ContentSetting HostContentSettingsMap::GetDefaultContentSetting(
     ContentSettingsType content_type,
     std::string* provider_id) const {
+  UsedContentSettingsProviders();
+
   // Iterate through the list of providers and return the first non-NULL value
   // that matches |primary_url| and |secondary_url|.
   for (ConstProviderIterator provider = content_settings_providers_.begin();
@@ -206,6 +225,7 @@ void HostContentSettingsMap::GetSettingsForOneType(
   DCHECK(SupportsResourceIdentifier(content_type) ||
          resource_identifier.empty());
   DCHECK(settings);
+  UsedContentSettingsProviders();
 
   settings->clear();
   for (ConstProviderIterator provider = content_settings_providers_.begin();
@@ -237,7 +257,7 @@ void HostContentSettingsMap::SetDefaultContentSetting(
 
   base::Value* value = NULL;
   if (setting != CONTENT_SETTING_DEFAULT)
-    value = Value::CreateIntegerValue(setting);
+    value = base::Value::CreateIntegerValue(setting);
   SetWebsiteSetting(
       ContentSettingsPattern::Wildcard(),
       ContentSettingsPattern::Wildcard(),
@@ -255,6 +275,8 @@ void HostContentSettingsMap::SetWebsiteSetting(
   DCHECK(IsValueAllowedForType(prefs_, value, content_type));
   DCHECK(SupportsResourceIdentifier(content_type) ||
          resource_identifier.empty());
+  UsedContentSettingsProviders();
+
   for (ProviderIterator provider = content_settings_providers_.begin();
        provider != content_settings_providers_.end();
        ++provider) {
@@ -278,7 +300,7 @@ void HostContentSettingsMap::SetContentSetting(
   DCHECK(!ContentTypeHasCompoundValue(content_type));
   base::Value* value = NULL;
   if (setting != CONTENT_SETTING_DEFAULT)
-    value = Value::CreateIntegerValue(setting);
+    value = base::Value::CreateIntegerValue(setting);
   SetWebsiteSetting(primary_pattern,
                     secondary_pattern,
                     content_type,
@@ -290,7 +312,6 @@ void HostContentSettingsMap::AddExceptionForURL(
     const GURL& primary_url,
     const GURL& secondary_url,
     ContentSettingsType content_type,
-    const std::string& resource_identifier,
     ContentSetting setting) {
   // TODO(markusheintz): Until the UI supports pattern pairs, both urls must
   // match.
@@ -302,18 +323,19 @@ void HostContentSettingsMap::AddExceptionForURL(
   SetContentSetting(ContentSettingsPattern::FromURLNoWildcard(primary_url),
                     ContentSettingsPattern::Wildcard(),
                     content_type,
-                    resource_identifier,
+                    std::string(),
                     CONTENT_SETTING_DEFAULT);
 
   SetContentSetting(ContentSettingsPattern::FromURL(primary_url),
                     ContentSettingsPattern::Wildcard(),
                     content_type,
-                    resource_identifier,
+                    std::string(),
                     setting);
 }
 
 void HostContentSettingsMap::ClearSettingsForOneType(
     ContentSettingsType content_type) {
+  UsedContentSettingsProviders();
   for (ProviderIterator provider = content_settings_providers_.begin();
        provider != content_settings_providers_.end();
        ++provider) {
@@ -332,12 +354,6 @@ bool HostContentSettingsMap::IsSettingAllowedForType(
     PrefService* prefs,
     ContentSetting setting,
     ContentSettingsType content_type) {
-  // Intents content settings are hidden behind a switch for now.
-  if (content_type == CONTENT_SETTINGS_TYPE_INTENTS) {
-    if (!web_intents::IsWebIntentsEnabled(prefs))
-      return false;
-  }
-
   // We don't yet support stored content settings for mixed scripting.
   if (content_type == CONTENT_SETTINGS_TYPE_MIXEDSCRIPT)
     return false;
@@ -354,6 +370,12 @@ bool HostContentSettingsMap::IsSettingAllowedForType(
     return false;
   }
 
+#if defined(OS_ANDROID)
+  // App banners store a dictionary.
+  if (content_type == CONTENT_SETTINGS_TYPE_APP_BANNER)
+    return false;
+#endif
+
   // DEFAULT, ALLOW and BLOCK are always allowed.
   if (setting == CONTENT_SETTING_DEFAULT ||
       setting == CONTENT_SETTING_ALLOW ||
@@ -366,12 +388,13 @@ bool HostContentSettingsMap::IsSettingAllowedForType(
     case CONTENT_SETTINGS_TYPE_PLUGINS:
     case CONTENT_SETTINGS_TYPE_GEOLOCATION:
     case CONTENT_SETTINGS_TYPE_NOTIFICATIONS:
-    case CONTENT_SETTINGS_TYPE_INTENTS:
     case CONTENT_SETTINGS_TYPE_MOUSELOCK:
     case CONTENT_SETTINGS_TYPE_MEDIASTREAM:
     case CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC:
     case CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA:
     case CONTENT_SETTINGS_TYPE_PPAPI_BROKER:
+    case CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS:
+    case CONTENT_SETTINGS_TYPE_MIDI_SYSEX:
       return setting == CONTENT_SETTING_ASK;
     default:
       return false;
@@ -384,6 +407,11 @@ bool HostContentSettingsMap::ContentTypeHasCompoundValue(
   // Values for content type CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE and
   // CONTENT_SETTINGS_TYPE_MEDIASTREAM are of type dictionary/map. Compound
   // types like dictionaries can't be mapped to the type |ContentSetting|.
+#if defined(OS_ANDROID)
+  if (type == CONTENT_SETTINGS_TYPE_APP_BANNER)
+    return true;
+#endif
+
   return (type == CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE ||
           type == CONTENT_SETTINGS_TYPE_MEDIASTREAM);
 }
@@ -451,19 +479,19 @@ void HostContentSettingsMap::MigrateObsoleteClearOnExitPref() {
   AddSettingsForOneType(content_settings_providers_[PREF_PROVIDER],
                         PREF_PROVIDER,
                         CONTENT_SETTINGS_TYPE_COOKIES,
-                        "",
+                        std::string(),
                         &exceptions,
                         false);
   for (ContentSettingsForOneType::iterator it = exceptions.begin();
        it != exceptions.end(); ++it) {
     if (it->setting != CONTENT_SETTING_ALLOW)
       continue;
-    SetWebsiteSetting(
-        it->primary_pattern,
-        it->secondary_pattern,
-        CONTENT_SETTINGS_TYPE_COOKIES,
-        "",
-        Value::CreateIntegerValue(CONTENT_SETTING_SESSION_ONLY));
+    SetWebsiteSetting(it->primary_pattern,
+                      it->secondary_pattern,
+                      CONTENT_SETTINGS_TYPE_COOKIES,
+                      std::string(),
+                      base::Value::CreateIntegerValue(
+                          CONTENT_SETTING_SESSION_ONLY));
   }
 
   prefs_->SetBoolean(prefs::kContentSettingsClearOnExitMigrated, true);
@@ -502,27 +530,50 @@ void HostContentSettingsMap::AddSettingsForOneType(
   }
 }
 
+void HostContentSettingsMap::UsedContentSettingsProviders() const {
+#ifndef NDEBUG
+  if (used_from_thread_id_ == base::kInvalidThreadId)
+    return;
+
+  if (base::PlatformThread::CurrentId() != used_from_thread_id_)
+    used_from_thread_id_ = base::kInvalidThreadId;
+#endif
+}
+
 bool HostContentSettingsMap::ShouldAllowAllContent(
     const GURL& primary_url,
     const GURL& secondary_url,
     ContentSettingsType content_type) {
   if (content_type == CONTENT_SETTINGS_TYPE_NOTIFICATIONS ||
-      content_type == CONTENT_SETTINGS_TYPE_GEOLOCATION) {
+      content_type == CONTENT_SETTINGS_TYPE_GEOLOCATION ||
+      content_type == CONTENT_SETTINGS_TYPE_MIDI_SYSEX) {
     return false;
   }
-  if (secondary_url.SchemeIs(chrome::kChromeUIScheme) &&
+#if defined(OS_ANDROID) || defined(OS_CHROMEOS)
+  if (content_type == CONTENT_SETTINGS_TYPE_PROTECTED_MEDIA_IDENTIFIER) {
+    return false;
+  }
+#endif
+  if (secondary_url.SchemeIs(content::kChromeUIScheme) &&
       content_type == CONTENT_SETTINGS_TYPE_COOKIES &&
       primary_url.SchemeIsSecure()) {
     return true;
   }
   if (primary_url.SchemeIs(extensions::kExtensionScheme)) {
-    return content_type != CONTENT_SETTINGS_TYPE_PLUGINS &&
-        (content_type != CONTENT_SETTINGS_TYPE_COOKIES ||
-            secondary_url.SchemeIs(extensions::kExtensionScheme));
+    switch (content_type) {
+      case CONTENT_SETTINGS_TYPE_PLUGINS:
+      case CONTENT_SETTINGS_TYPE_MEDIASTREAM:
+      case CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC:
+      case CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA:
+        return false;
+      case CONTENT_SETTINGS_TYPE_COOKIES:
+        return secondary_url.SchemeIs(extensions::kExtensionScheme);
+      default:
+        return true;
+    }
   }
-  return primary_url.SchemeIs(chrome::kChromeDevToolsScheme) ||
-         primary_url.SchemeIs(chrome::kChromeInternalScheme) ||
-         primary_url.SchemeIs(chrome::kChromeUIScheme);
+  return primary_url.SchemeIs(content::kChromeDevToolsScheme) ||
+         primary_url.SchemeIs(content::kChromeUIScheme);
 }
 
 base::Value* HostContentSettingsMap::GetWebsiteSetting(
@@ -541,7 +592,7 @@ base::Value* HostContentSettingsMap::GetWebsiteSetting(
       info->primary_pattern = ContentSettingsPattern::Wildcard();
       info->secondary_pattern = ContentSettingsPattern::Wildcard();
     }
-    return Value::CreateIntegerValue(CONTENT_SETTING_ALLOW);
+    return base::Value::CreateIntegerValue(CONTENT_SETTING_ALLOW);
   }
 
   ContentSettingsPattern* primary_pattern = NULL;

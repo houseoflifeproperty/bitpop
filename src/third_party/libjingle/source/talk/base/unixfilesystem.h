@@ -25,29 +25,35 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _TALK_BASE_UNIXFILESYSTEM_H__
-#define _TALK_BASE_UNIXFILESYSTEM_H__
+#ifndef TALK_BASE_UNIXFILESYSTEM_H_
+#define TALK_BASE_UNIXFILESYSTEM_H_
 
-#include "fileutils.h"
+#include <sys/types.h>
+
+#include "talk/base/fileutils.h"
 
 namespace talk_base {
 
 class UnixFilesystem : public FilesystemInterface {
  public:
+  UnixFilesystem();
+  virtual ~UnixFilesystem();
 
 #if defined(ANDROID) || defined(IOS)
-// Android does not have a native code API to fetch the app data or temp
-// folders. That needs to be passed into this class from Java. Similarly, iOS
-// only supports an Objective-C API for fetching the folder locations, so that
-// needs to be passed in here from Objective-C.
-
+  // Android does not have a native code API to fetch the app data or temp
+  // folders. That needs to be passed into this class from Java. Similarly, iOS
+  // only supports an Objective-C API for fetching the folder locations, so that
+  // needs to be passed in here from Objective-C.  Or at least that used to be
+  // the case; now the ctor will do the work if necessary and possible.
+  // TODO(fischman): add an Android version that uses JNI and drop the
+  // SetApp*Folder() APIs once external users stop using them.
   static void SetAppDataFolder(const std::string& folder);
   static void SetAppTempFolder(const std::string& folder);
 #endif
 
-  // Opens a file. Returns an open StreamInterface if function succeeds. Otherwise,
-  // returns NULL.
-  virtual FileStream *OpenFile(const Pathname &filename, 
+  // Opens a file. Returns an open StreamInterface if function succeeds.
+  // Otherwise, returns NULL.
+  virtual FileStream *OpenFile(const Pathname &filename,
                                const std::string &mode);
 
   // Atomically creates an empty file accessible only to the current user if one
@@ -59,22 +65,27 @@ class UnixFilesystem : public FilesystemInterface {
   virtual bool DeleteFile(const Pathname &filename);
 
   // This will attempt to delete the folder located at 'folder'
-  // It ASSERTs and returns false if you pass it a non-existant folder or a plain file.
+  // It ASSERTs and returns false if you pass it a non-existant folder or a
+  // plain file.
   virtual bool DeleteEmptyFolder(const Pathname &folder);
-		
-  // Creates a directory. This will call itself recursively to create /foo/bar even if
-  // /foo does not exist.
+
+  // Creates a directory. This will call itself recursively to create /foo/bar
+  // even if /foo does not exist. All created directories are created with the
+  // given mode.
   // Returns TRUE if function succeeds
-   virtual bool CreateFolder(const Pathname &pathname);
-  
-  // This moves a file from old_path to new_path, where "file" can be a plain file
-  // or directory, which will be moved recursively.
+  virtual bool CreateFolder(const Pathname &pathname, mode_t mode);
+
+  // As above, with mode = 0755.
+  virtual bool CreateFolder(const Pathname &pathname);
+
+  // This moves a file from old_path to new_path, where "file" can be a plain
+  // file or directory, which will be moved recursively.
   // Returns true if function succeeds.
   virtual bool MoveFile(const Pathname &old_path, const Pathname &new_path);
   virtual bool MoveFolder(const Pathname &old_path, const Pathname &new_path);
-  
-  // This copies a file from old_path to _new_path where "file" can be a plain file
-  // or directory, which will be copied recursively.
+
+  // This copies a file from old_path to _new_path where "file" can be a plain
+  // file or directory, which will be copied recursively.
   // Returns true if function succeeds
   virtual bool CopyFile(const Pathname &old_path, const Pathname &new_path);
 
@@ -86,12 +97,13 @@ class UnixFilesystem : public FilesystemInterface {
 
   // Returns true of pathname represents an existing file
   virtual bool IsFile(const Pathname& pathname);
-  
+
   // Returns true if pathname refers to no filesystem object, every parent
   // directory either exists, or is also absent.
   virtual bool IsAbsent(const Pathname& pathname);
 
-  virtual std::string TempFilename(const Pathname &dir, const std::string &prefix);
+  virtual std::string TempFilename(const Pathname &dir,
+                                   const std::string &prefix);
 
   // A folder appropriate for storing temporary files (Contents are
   // automatically deleted when the program exists)
@@ -128,4 +140,4 @@ class UnixFilesystem : public FilesystemInterface {
 
 }  // namespace talk_base
 
-#endif  // _UNIXFILESYSTEM_H__
+#endif  // TALK_BASE_UNIXFILESYSTEM_H_

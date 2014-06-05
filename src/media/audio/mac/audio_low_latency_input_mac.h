@@ -39,11 +39,11 @@
 #include <AudioUnit/AudioUnit.h>
 #include <CoreAudio/CoreAudio.h>
 
-#include "base/atomicops.h"
+#include "base/cancelable_callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
+#include "media/audio/agc_audio_stream.h"
 #include "media/audio/audio_io.h"
-#include "media/audio/audio_input_stream_impl.h"
 #include "media/audio/audio_parameters.h"
 #include "media/base/seekable_buffer.h"
 
@@ -52,12 +52,13 @@ namespace media {
 class AudioManagerMac;
 class DataBuffer;
 
-class AUAudioInputStream : public AudioInputStreamImpl {
+class AUAudioInputStream : public AgcAudioStream<AudioInputStream> {
  public:
   // The ctor takes all the usual parameters, plus |manager| which is the
   // the audio manager who is creating this object.
   AUAudioInputStream(AudioManagerMac* manager,
-                     const AudioParameters& params,
+                     const AudioParameters& input_params,
+                     const AudioParameters& output_params,
                      AudioDeviceID audio_device_id);
   // The dtor is typically called by the AudioManager only and it is usually
   // triggered by calling AudioInputStream::Close().
@@ -135,13 +136,16 @@ class AUAudioInputStream : public AudioInputStreamImpl {
 
   // Temporary storage for recorded data. The InputProc() renders into this
   // array as soon as a frame of the desired buffer size has been recorded.
-  scoped_array<uint8> audio_data_buffer_;
+  scoped_ptr<uint8[]> audio_data_buffer_;
 
   // True after successfull Start(), false after successful Stop().
   bool started_;
 
   // Fixed capture hardware latency in frames.
   double hardware_latency_frames_;
+
+  // Delay due to the FIFO in bytes.
+  int fifo_delay_bytes_;
 
   // The number of channels in each frame of audio data, which is used
   // when querying the volume of each channel.
@@ -157,6 +161,9 @@ class AUAudioInputStream : public AudioInputStreamImpl {
   // The client requests that the recorded data shall be delivered using
   // OnData() callbacks where each callback contains this amount of bytes.
   int requested_size_bytes_;
+
+  // Used to defer Start() to workaround http://crbug.com/160920.
+  base::CancelableClosure deferred_start_cb_;
 
   DISALLOW_COPY_AND_ASSIGN(AUAudioInputStream);
 };

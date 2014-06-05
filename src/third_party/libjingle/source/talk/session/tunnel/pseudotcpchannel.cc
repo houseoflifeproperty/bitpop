@@ -340,7 +340,9 @@ void PseudoTcpChannel::OnChannelWritableState(TransportChannel* channel) {
 }
 
 void PseudoTcpChannel::OnChannelRead(TransportChannel* channel,
-                                     const char* data, size_t size, int flags) {
+                                     const char* data, size_t size,
+                                     const talk_base::PacketTime& packet_time,
+                                     int flags) {
   //LOG_F(LS_VERBOSE) << "(" << size << ")";
   ASSERT(worker_thread_->IsCurrent());
   CritScope lock(&cs_);
@@ -502,7 +504,8 @@ IPseudoTcpNotify::WriteResult PseudoTcpChannel::TcpWritePacket(
   ASSERT(cs_.CurrentThreadIsOwner());
   ASSERT(tcp == tcp_);
   ASSERT(NULL != channel_);
-  int sent = channel_->SendPacket(buffer, len);
+  talk_base::PacketOptions packet_options;
+  int sent = channel_->SendPacket(buffer, len, packet_options);
   if (sent > 0) {
     //LOG_F(LS_VERBOSE) << "(" << sent << ") Sent";
     return IPseudoTcpNotify::WR_SUCCESS;

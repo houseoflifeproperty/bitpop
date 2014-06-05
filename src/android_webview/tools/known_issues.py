@@ -2,7 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""List of known-incompatibly-licensed directories for Android WebView.
+"""List of directories which are known issues for Android WebView.
+
+There are a number of directories in the Chromium tree which should be removed
+when merging into Android. Some are for licensing reasons; others are to ensure
+that the build inside the Android tree does not accidentally include the wrong
+headers.
 
 This is not used by the webview_licenses tool itself; it is effectively a
 "cache" of the output of webview_licenses.GetIncompatibleDirectories() for the
@@ -21,30 +26,37 @@ process will stop and this list must be updated.
 # If there is a temporary license-related issue with a particular third_party
 # directory, please put it here, with a comment linking to the bug entry.
 KNOWN_ISSUES = [
-  'third_party/accessibility-developer-tools', # crbug.com/165901
 ]
 
 KNOWN_INCOMPATIBLE = {
-    # Incompatible code in the main chromium repository.
     '.': [
+        # Incompatibly licensed code from the main chromium src/ directory.
         'base/third_party/xdg_mime',
         'breakpad',
         'chrome/installer/mac/third_party/xz',
         'chrome/test/data',
-        'third_party/active_doc',
         'third_party/apple_apsl',
         'third_party/apple_sample_code',
         'third_party/bsdiff',
         'third_party/bspatch',
+        'third_party/instrumented_libraries',
+        'third_party/liblouis',
+        'third_party/speech-dispatcher',
         'third_party/sudden_motion_sensor',
         'third_party/swiftshader',
         'third_party/talloc',
         'third_party/webdriver',
         'third_party/wtl',
         'tools/telemetry/third_party/websocket-client',
+
+        # Code we don't want to build/include by accident from the main chromium
+        # src/ directory.
+        'third_party/ashmem/*.[ch]',
+        'third_party/expat/files/lib',
+        'third_party/libjpeg/*.[ch]',
     ],
-    # Incompatible code in ICU.
     'third_party/icu': [
+        # Incompatible code from ICU's repository.
         'source/data/brkitr',
     ],
 }

@@ -4,7 +4,7 @@
 
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/histogram_samples.h"
 #include "base/metrics/statistics_recorder.h"
@@ -16,6 +16,8 @@
 #include "dbus/object_proxy.h"
 #include "dbus/test_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+namespace dbus {
 
 // The test for sender verification in ObjectProxy.
 class SignalSenderVerificationTest : public testing::Test {
@@ -34,19 +36,18 @@ class SignalSenderVerificationTest : public testing::Test {
     // Start the D-Bus thread.
     dbus_thread_.reset(new base::Thread("D-Bus Thread"));
     base::Thread::Options thread_options;
-    thread_options.message_loop_type = MessageLoop::TYPE_IO;
+    thread_options.message_loop_type = base::MessageLoop::TYPE_IO;
     ASSERT_TRUE(dbus_thread_->StartWithOptions(thread_options));
 
     // Create the client, using the D-Bus thread.
-    dbus::Bus::Options bus_options;
-    bus_options.bus_type = dbus::Bus::SESSION;
-    bus_options.connection_type = dbus::Bus::PRIVATE;
-    bus_options.dbus_thread_message_loop_proxy =
-        dbus_thread_->message_loop_proxy();
-    bus_ = new dbus::Bus(bus_options);
+    Bus::Options bus_options;
+    bus_options.bus_type = Bus::SESSION;
+    bus_options.connection_type = Bus::PRIVATE;
+    bus_options.dbus_task_runner = dbus_thread_->message_loop_proxy();
+    bus_ = new Bus(bus_options);
     object_proxy_ = bus_->GetObjectProxy(
         "org.chromium.TestService",
-        dbus::ObjectPath("/org/chromium/TestObject"));
+        ObjectPath("/org/chromium/TestObject"));
     ASSERT_TRUE(bus_->HasDBusThread());
 
     object_proxy_->SetNameOwnerChangedCallback(
@@ -67,9 +68,9 @@ class SignalSenderVerificationTest : public testing::Test {
     message_loop_.Run();
 
     // Start the test service, using the D-Bus thread.
-    dbus::TestService::Options options;
-    options.dbus_thread_message_loop_proxy = dbus_thread_->message_loop_proxy();
-    test_service_.reset(new dbus::TestService(options));
+    TestService::Options options;
+    options.dbus_task_runner = dbus_thread_->message_loop_proxy();
+    test_service_.reset(new TestService(options));
     ASSERT_TRUE(test_service_->StartService());
     ASSERT_TRUE(test_service_->WaitUntilServiceIsStarted());
     ASSERT_TRUE(test_service_->HasDBusThread());
@@ -77,7 +78,7 @@ class SignalSenderVerificationTest : public testing::Test {
 
     // Same setup for the second TestService. This service should not have the
     // ownership of the name at this point.
-    test_service2_.reset(new dbus::TestService(options));
+    test_service2_.reset(new TestService(options));
     ASSERT_TRUE(test_service2_->StartService());
     ASSERT_TRUE(test_service2_->WaitUntilServiceIsStarted());
     ASSERT_TRUE(test_service2_->HasDBusThread());
@@ -87,7 +88,6 @@ class SignalSenderVerificationTest : public testing::Test {
     if (!on_name_owner_changed_called_)
       message_loop_.Run();
     ASSERT_FALSE(latest_name_owner_.empty());
-
   }
 
   virtual void TearDown() {
@@ -120,12 +120,9 @@ class SignalSenderVerificationTest : public testing::Test {
     message_loop_.Quit();
   }
 
-  void OnNameOwnerChanged(bool* called_flag, dbus::Signal* signal) {
-    dbus::MessageReader reader(signal);
-    std::string name, old_owner, new_owner;
-    ASSERT_TRUE(reader.PopString(&name));
-    ASSERT_TRUE(reader.PopString(&old_owner));
-    ASSERT_TRUE(reader.PopString(&new_owner));
+  void OnNameOwnerChanged(bool* called_flag,
+                          const std::string& old_owner,
+                          const std::string& new_owner) {
     latest_name_owner_ = new_owner;
     *called_flag = true;
     message_loop_.Quit();
@@ -133,8 +130,8 @@ class SignalSenderVerificationTest : public testing::Test {
 
   // Called when the "Test" signal is received, in the main thread.
   // Copy the string payload to |test_signal_string_|.
-  void OnTestSignal(dbus::Signal* signal) {
-    dbus::MessageReader reader(signal);
+  void OnTestSignal(Signal* signal) {
+    MessageReader reader(signal);
     ASSERT_TRUE(reader.PopString(&test_signal_string_));
     message_loop_.Quit();
   }
@@ -148,19 +145,26 @@ class SignalSenderVerificationTest : public testing::Test {
   }
 
  protected:
-
   // Wait for the hey signal to be received.
   void WaitForTestSignal() {
     // OnTestSignal() will quit the message loop.
     message_loop_.Run();
   }
 
-  MessageLoop message_loop_;
+  // Stopping a thread is considered an IO operation, so we need to fiddle with
+  // thread restrictions before and after calling Stop() on a TestService.
+  void SafeServiceStop(TestService* test_service) {
+    base::ThreadRestrictions::SetIOAllowed(true);
+    test_service->Stop();
+    base::ThreadRestrictions::SetIOAllowed(false);
+  }
+
+  base::MessageLoop message_loop_;
   scoped_ptr<base::Thread> dbus_thread_;
-  scoped_refptr<dbus::Bus> bus_;
-  dbus::ObjectProxy* object_proxy_;
-  scoped_ptr<dbus::TestService> test_service_;
-  scoped_ptr<dbus::TestService> test_service2_;
+  scoped_refptr<Bus> bus_;
+  ObjectProxy* object_proxy_;
+  scoped_ptr<TestService> test_service_;
+  scoped_ptr<TestService> test_service2_;
   // Text message from "Test" signal.
   std::string test_signal_string_;
 
@@ -185,7 +189,7 @@ TEST_F(SignalSenderVerificationTest, TestSignalAccepted) {
 TEST_F(SignalSenderVerificationTest, TestSignalRejected) {
   // To make sure the histogram instance is created.
   UMA_HISTOGRAM_COUNTS("DBus.RejectedSignalCount", 0);
-  base::Histogram* reject_signal_histogram =
+  base::HistogramBase* reject_signal_histogram =
         base::StatisticsRecorder::FindHistogram("DBus.RejectedSignalCount");
   scoped_ptr<base::HistogramSamples> samples1(
       reject_signal_histogram->SnapshotSamples());
@@ -225,6 +229,7 @@ TEST_F(SignalSenderVerificationTest, TestOwnerChanged) {
 
   // Reset the flag as NameOwnerChanged is already received in setup.
   on_name_owner_changed_called_ = false;
+  on_ownership_called_ = false;
   test_service2_->RequestOwnership(
       base::Bind(&SignalSenderVerificationTest::OnOwnership,
                  base::Unretained(this), true));
@@ -247,13 +252,71 @@ TEST_F(SignalSenderVerificationTest, TestOwnerChanged) {
   ASSERT_EQ(kNewMessage, test_signal_string_);
 }
 
+TEST_F(SignalSenderVerificationTest, TestOwnerStealing) {
+  // Release and acquire the name ownership.
+  // latest_name_owner_ should be non empty as |test_service_| owns the name.
+  ASSERT_FALSE(latest_name_owner_.empty());
+  test_service_->ShutdownAndBlock();
+  // OnNameOwnerChanged will PostTask to quit the message loop.
+  message_loop_.Run();
+  // latest_name_owner_ should be empty as the owner is gone.
+  ASSERT_TRUE(latest_name_owner_.empty());
+  // Reset the flag as NameOwnerChanged is already received in setup.
+  on_name_owner_changed_called_ = false;
+
+  // Start a test service that allows theft, using the D-Bus thread.
+  TestService::Options options;
+  options.dbus_task_runner = dbus_thread_->message_loop_proxy();
+  options.request_ownership_options = Bus::REQUIRE_PRIMARY_ALLOW_REPLACEMENT;
+  TestService stealable_test_service(options);
+  ASSERT_TRUE(stealable_test_service.StartService());
+  ASSERT_TRUE(stealable_test_service.WaitUntilServiceIsStarted());
+  ASSERT_TRUE(stealable_test_service.HasDBusThread());
+  ASSERT_TRUE(stealable_test_service.has_ownership());
+
+  // OnNameOwnerChanged will PostTask to quit the message loop.
+  message_loop_.Run();
+
+  // Send a signal to check that the service is correctly owned.
+  const char kMessage[] = "hello, world";
+
+  // Send the test signal from the exported object.
+  stealable_test_service.SendTestSignal(kMessage);
+  // Receive the signal with the object proxy. The signal is handled in
+  // SignalSenderVerificationTest::OnTestSignal() in the main thread.
+  WaitForTestSignal();
+  ASSERT_EQ(kMessage, test_signal_string_);
+
+  // Reset the flag as NameOwnerChanged was called above.
+  on_name_owner_changed_called_ = false;
+  test_service2_->RequestOwnership(
+      base::Bind(&SignalSenderVerificationTest::OnOwnership,
+                 base::Unretained(this), true));
+  // Both of OnNameOwnerChanged() and OnOwnership() should quit the MessageLoop,
+  // but there's no expected order of those 2 event.
+  message_loop_.Run();
+  if (!on_name_owner_changed_called_ || !on_ownership_called_)
+    message_loop_.Run();
+  ASSERT_TRUE(on_name_owner_changed_called_);
+  ASSERT_TRUE(on_ownership_called_);
+
+  // Now the second service owns the name.
+  const char kNewMessage[] = "hello, new world";
+
+  test_service2_->SendTestSignal(kNewMessage);
+  WaitForTestSignal();
+  ASSERT_EQ(kNewMessage, test_signal_string_);
+
+  SafeServiceStop(&stealable_test_service);
+}
+
 // Fails on Linux ChromiumOS Tests
 TEST_F(SignalSenderVerificationTest, DISABLED_TestMultipleObjects) {
   const char kMessage[] = "hello, world";
 
-  dbus::ObjectProxy* object_proxy2 = bus_->GetObjectProxy(
+  ObjectProxy* object_proxy2 = bus_->GetObjectProxy(
       "org.chromium.TestService",
-      dbus::ObjectPath("/org/chromium/DifferentObject"));
+      ObjectPath("/org/chromium/DifferentObject"));
 
   bool second_name_owner_changed_called = false;
   object_proxy2->SetNameOwnerChangedCallback(
@@ -314,3 +377,5 @@ TEST_F(SignalSenderVerificationTest, DISABLED_TestMultipleObjects) {
   WaitForTestSignal();
   ASSERT_EQ(kNewMessage, test_signal_string_);
 }
+
+}  // namespace dbus

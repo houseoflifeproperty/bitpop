@@ -33,17 +33,18 @@
 #include <vector>
 
 #include "base/gtest_prod_util.h"
-#include "base/time.h"
+#include "base/time/time.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/safe_browsing/ui_manager.h"
 #include "content/public/browser/interstitial_page_delegate.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 class MalwareDetails;
-class MessageLoop;
 class SafeBrowsingBlockingPageFactory;
 
 namespace base {
 class DictionaryValue;
+class MessageLoop;
 }
 
 namespace content {
@@ -111,11 +112,18 @@ class SafeBrowsingBlockingPage : public content::InterstitialPageDelegate {
     SHOW,
     PROCEED,
     DONT_PROCEED,
+    SHOW_ADVANCED,
   };
 
   // Records a user action for this interstitial, using the form
   // SBInterstitial[Phishing|Malware|Multiple][Show|Proceed|DontProceed].
   void RecordUserAction(BlockingPageEvent event);
+
+  // Used to query the HistoryService to see if the URL is in history. For UMA.
+  void OnGotHistoryCount(HistoryService::Handle handle,
+                         bool success,
+                         int num_visits,
+                         base::Time first_visit);
 
   // Records the time it took for the user to react to the
   // interstitial.  We won't double-count if this method is called
@@ -156,7 +164,7 @@ class SafeBrowsingBlockingPage : public content::InterstitialPageDelegate {
 
   // For reporting back user actions.
   SafeBrowsingUIManager* ui_manager_;
-  MessageLoop* report_loop_;
+  base::MessageLoop* report_loop_;
 
   // True if the interstitial is blocking the main page because it is on one
   // of our lists.  False if a subresource is being blocked, or in the case of
@@ -204,6 +212,10 @@ class SafeBrowsingBlockingPage : public content::InterstitialPageDelegate {
   // SafeBrowsingBlockingPage.
   static SafeBrowsingBlockingPageFactory* factory_;
 
+  // How many times is this same URL in history? Used for histogramming.
+  int num_visits_;
+  CancelableRequestConsumer request_consumer_;
+
   DISALLOW_COPY_AND_ASSIGN(SafeBrowsingBlockingPage);
 };
 
@@ -227,11 +239,11 @@ class SafeBrowsingBlockingPageV1 : public SafeBrowsingBlockingPage {
   // A helper method used by the Populate methods above used to populate common
   // fields.
   void PopulateStringDictionary(base::DictionaryValue* strings,
-                                const string16& title,
-                                const string16& headline,
-                                const string16& description1,
-                                const string16& description2,
-                                const string16& description3);
+                                const base::string16& title,
+                                const base::string16& headline,
+                                const base::string16& description1,
+                                const base::string16& description2,
+                                const base::string16& description3);
 
   DISALLOW_COPY_AND_ASSIGN(SafeBrowsingBlockingPageV1);
 };
@@ -256,11 +268,14 @@ class SafeBrowsingBlockingPageV2 : public SafeBrowsingBlockingPage {
   // A helper method used by the Populate methods above used to populate common
   // fields.
   void PopulateStringDictionary(base::DictionaryValue* strings,
-                                const string16& title,
-                                const string16& headline,
-                                const string16& description1,
-                                const string16& description2,
-                                const string16& description3);
+                                const base::string16& title,
+                                const base::string16& headline,
+                                const base::string16& description1,
+                                const base::string16& description2,
+                                const base::string16& description3);
+
+  // For the FieldTrial: this contains the name of the condition.
+  std::string trialCondition_;
 
   DISALLOW_COPY_AND_ASSIGN(SafeBrowsingBlockingPageV2);
 };

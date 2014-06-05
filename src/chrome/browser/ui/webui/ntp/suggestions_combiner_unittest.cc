@@ -9,7 +9,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
 #include "chrome/browser/ui/webui/ntp/suggestions_combiner.h"
 #include "chrome/browser/ui/webui/ntp/suggestions_page_handler.h"
@@ -166,7 +166,7 @@ class SuggestionsSourceStub : public SuggestionsSource {
   virtual base::DictionaryValue* PopItem() OVERRIDE {
     if (items_.empty())
       return NULL;
-    DictionaryValue* item = items_.front();
+    base::DictionaryValue* item = items_.front();
     items_.pop_front();
     return item;
   }
@@ -182,12 +182,12 @@ class SuggestionsSourceStub : public SuggestionsSource {
   // Adds a fake suggestion. This suggestion is a DictionaryValue with a single
   // "title" field containing |title|.
   void AddSuggestion(const std::string& title) {
-    DictionaryValue* item = new DictionaryValue();
+    base::DictionaryValue* item = new base::DictionaryValue();
     item->SetString("title", title);
     items_.push_back(item);
   }
 
-  void SetCombiner(SuggestionsCombiner* combiner) OVERRIDE {
+  virtual void SetCombiner(SuggestionsCombiner* combiner) OVERRIDE {
     DCHECK(!combiner_);
     combiner_ = combiner;
   }
@@ -250,13 +250,12 @@ TEST_F(SuggestionsCombinerTest, SourcesAreNotDoneFetching) {
 }
 
 TEST_F(SuggestionsCombinerTest, TestSuite) {
-  size_t test_count = sizeof(test_suite)/sizeof(test_suite[0]);
+  size_t test_count = arraysize(test_suite);
   for (size_t i = 0; i < test_count; ++i) {
     const TestDescription& description = test_suite[i];
-    size_t source_count =
-        sizeof(description.sources)/sizeof(description.sources[0]);
+    size_t source_count = arraysize(description.sources);
 
-    scoped_array<SuggestionsSourceStub*> sources(
+    scoped_ptr<SuggestionsSourceStub*[]> sources(
         new SuggestionsSourceStub*[source_count]);
 
     // Setup sources.

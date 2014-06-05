@@ -19,8 +19,14 @@
 #include "content/public/browser/speech_recognition_session_context.h"
 #include "content/public/common/speech_recognition_error.h"
 
+namespace media {
+class AudioManager;
+}
+
 namespace content {
 class BrowserMainLoop;
+class MediaStreamManager;
+class MediaStreamUIProxy;
 class SpeechRecognitionManagerDelegate;
 class SpeechRecognizer;
 
@@ -56,8 +62,7 @@ class CONTENT_EXPORT SpeechRecognitionManagerImpl :
       const SpeechRecognitionSessionConfig& config) OVERRIDE;
   virtual void StartSession(int session_id) OVERRIDE;
   virtual void AbortSession(int session_id) OVERRIDE;
-  virtual void AbortAllSessionsForListener(
-        SpeechRecognitionEventListener* listener) OVERRIDE;
+  virtual void AbortAllSessionsForRenderProcess(int render_process_id) OVERRIDE;
   virtual void AbortAllSessionsForRenderView(int render_process_id,
                                              int render_view_id) OVERRIDE;
   virtual void StopAudioCaptureForSession(int session_id) OVERRIDE;
@@ -69,8 +74,7 @@ class CONTENT_EXPORT SpeechRecognitionManagerImpl :
                          int render_view_id,
                          int request_id) const OVERRIDE;
   virtual bool HasAudioInputDevices() OVERRIDE;
-  virtual bool IsCapturingAudio() OVERRIDE;
-  virtual string16 GetAudioInputDeviceModel() OVERRIDE;
+  virtual base::string16 GetAudioInputDeviceModel() OVERRIDE;
   virtual void ShowAudioInputSettings() OVERRIDE;
 
   // SpeechRecognitionEventListener methods.
@@ -88,11 +92,15 @@ class CONTENT_EXPORT SpeechRecognitionManagerImpl :
   virtual void OnAudioLevelsChange(int session_id, float volume,
                                    float noise_volume) OVERRIDE;
 
+  SpeechRecognitionManagerDelegate* delegate() const { return delegate_.get(); }
+
  protected:
   // BrowserMainLoop is the only one allowed to istantiate and free us.
   friend class BrowserMainLoop;
-  friend class scoped_ptr<SpeechRecognitionManagerImpl>;  // Needed for dtor.
-  SpeechRecognitionManagerImpl();
+  // Needed for dtor.
+  friend struct base::DefaultDeleter<SpeechRecognitionManagerImpl>;
+  SpeechRecognitionManagerImpl(media::AudioManager* audio_manager,
+                               MediaStreamManager* media_stream_manager);
   virtual ~SpeechRecognitionManagerImpl();
 
  private:
@@ -118,10 +126,12 @@ class CONTENT_EXPORT SpeechRecognitionManagerImpl :
     ~Session();
 
     int id;
+    bool abort_requested;
     bool listener_is_active;
     SpeechRecognitionSessionConfig config;
     SpeechRecognitionSessionContext context;
     scoped_refptr<SpeechRecognizer> recognizer;
+    scoped_ptr<MediaStreamUIProxy> ui;
   };
 
   // Callback issued by the SpeechRecognitionManagerDelegate for reporting
@@ -130,19 +140,21 @@ class CONTENT_EXPORT SpeechRecognitionManagerImpl :
                                   bool ask_user,
                                   bool is_allowed);
 
-  // Callback to get back the result of a media request. |label| is the string
-  // to identify the request; |devices| is an array of devices approved to be
-  // used for the request, |devices| is empty if the users deny the request.
-  void MediaRequestPermissionCallback(const std::string& label,
-                                      const MediaStreamDevices& devices);
+  // Callback to get back the result of a media request. |devices| is an array
+  // of devices approved to be used for the request, |devices| is empty if the
+  // users deny the request.
+  void MediaRequestPermissionCallback(int session_id,
+                                      const MediaStreamDevices& devices,
+                                      scoped_ptr<MediaStreamUIProxy> stream_ui);
 
   // Entry point for pushing any external event into the session handling FSM.
   void DispatchEvent(int session_id, FSMEvent event);
 
   // Defines the behavior of the session handling FSM, selecting the appropriate
   // transition according to the session, its current state and the event.
-  void ExecuteTransitionAndGetNextState(
-      const Session& session, FSMState session_state, FSMEvent event);
+  void ExecuteTransitionAndGetNextState(Session* session,
+                                        FSMState session_state,
+                                        FSMEvent event);
 
   // Retrieves the state of the session, enquiring directly the recognizer.
   FSMState GetSessionState(int session_id) const;
@@ -152,16 +164,18 @@ class CONTENT_EXPORT SpeechRecognitionManagerImpl :
   void SessionAbort(const Session& session);
   void SessionStopAudioCapture(const Session& session);
   void ResetCapturingSessionId(const Session& session);
-  void SessionDelete(const Session& session);
+  void SessionDelete(Session* session);
   void NotFeasible(const Session& session, FSMEvent event);
 
   bool SessionExists(int session_id) const;
-  const Session& GetSession(int session_id) const;
+  Session* GetSession(int session_id) const;
   SpeechRecognitionEventListener* GetListener(int session_id) const;
   SpeechRecognitionEventListener* GetDelegateListener() const;
   int GetNextSessionID();
 
-  typedef std::map<int, Session> SessionsTable;
+  media::AudioManager* audio_manager_;
+  MediaStreamManager* media_stream_manager_;
+  typedef std::map<int, Session*> SessionsTable;
   SessionsTable sessions_;
   int primary_session_id_;
   int last_session_id_;

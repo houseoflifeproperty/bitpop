@@ -8,12 +8,12 @@
 #include <utility>
 #include <vector>
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_editor_base_controller.h"
 
 // A list of pairs containing the name and URL associated with each
 // currently active tab in the active browser window.
-typedef std::pair<string16, GURL> ActiveTabNameURLPair;
+typedef std::pair<base::string16, GURL> ActiveTabNameURLPair;
 typedef std::vector<ActiveTabNameURLPair> ActiveTabsNameURLPairVector;
 
 // A controller for the Bookmark All Tabs sheet which is presented upon
@@ -28,7 +28,7 @@ typedef std::vector<ActiveTabNameURLPair> ActiveTabsNameURLPairVector;
                    profile:(Profile*)profile
                     parent:(const BookmarkNode*)parent
                        url:(const GURL&)url
-                     title:(const string16&)title
+                     title:(const base::string16&)title
              configuration:(BookmarkEditor::Configuration)configuration;
 
 @end

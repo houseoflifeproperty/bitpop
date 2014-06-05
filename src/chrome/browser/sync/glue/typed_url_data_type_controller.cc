@@ -7,13 +7,16 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/metrics/histogram.h"
-#include "chrome/browser/history/history.h"
+#include "base/prefs/pref_service.h"
+#include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/history/history_db_task.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/sync/glue/chrome_report_unrecoverable_error.h"
+#include "chrome/browser/sync/glue/typed_url_change_processor.h"
 #include "chrome/browser/sync/profile_sync_components_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
@@ -27,7 +30,7 @@ namespace {
 // The history service exposes a special non-standard task API which calls back
 // once a task has been dispatched, so we have to build a special wrapper around
 // the tasks we want to run.
-class RunTaskOnHistoryThread : public HistoryDBTask {
+class RunTaskOnHistoryThread : public history::HistoryDBTask {
  public:
   explicit RunTaskOnHistoryThread(const base::Closure& task,
                                   TypedUrlDataTypeController* dtc)
@@ -65,9 +68,12 @@ TypedUrlDataTypeController::TypedUrlDataTypeController(
     ProfileSyncComponentsFactory* profile_sync_factory,
     Profile* profile,
     ProfileSyncService* sync_service)
-    : NonFrontendDataTypeController(profile_sync_factory,
-                                    profile,
-                                    sync_service),
+    : NonFrontendDataTypeController(
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
+          base::Bind(&ChromeReportUnrecoverableError),
+          profile_sync_factory,
+          profile,
+          sync_service),
       backend_(NULL) {
   pref_registrar_.Init(profile->GetPrefs());
   pref_registrar_.Add(
@@ -84,6 +90,22 @@ syncer::ModelType TypedUrlDataTypeController::type() const {
 syncer::ModelSafeGroup TypedUrlDataTypeController::model_safe_group()
     const {
   return syncer::GROUP_HISTORY;
+}
+
+void TypedUrlDataTypeController::LoadModels(
+    const ModelLoadCallback& model_load_callback) {
+  if (profile()->GetPrefs()->GetBoolean(prefs::kSavingBrowserHistoryDisabled)) {
+    model_load_callback.Run(
+        type(),
+        syncer::SyncError(FROM_HERE,
+                          syncer::SyncError::DATATYPE_ERROR,
+                          "History sync disabled by policy.",
+                          type()));
+    return;
+  }
+
+  set_state(MODEL_LOADED);
+  model_load_callback.Run(type(), syncer::SyncError());
 }
 
 void TypedUrlDataTypeController::SetBackend(history::HistoryBackend* backend) {
@@ -124,23 +146,20 @@ bool TypedUrlDataTypeController::PostTaskOnBackendThread(
   }
 }
 
-void TypedUrlDataTypeController::CreateSyncComponents() {
+ProfileSyncComponentsFactory::SyncComponents
+TypedUrlDataTypeController::CreateSyncComponents() {
   DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK_EQ(state(), ASSOCIATING);
   DCHECK(backend_);
-  ProfileSyncComponentsFactory::SyncComponents sync_components =
-      profile_sync_factory()->CreateTypedUrlSyncComponents(
-          profile_sync_service(),
-          backend_,
-          this);
-  set_model_associator(sync_components.model_associator);
-  set_change_processor(sync_components.change_processor);
+  return profile_sync_factory()->CreateTypedUrlSyncComponents(
+      profile_sync_service(),
+      backend_,
+      this);
 }
 
-void TypedUrlDataTypeController::StopModels() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(state() == STOPPING || state() == NOT_RUNNING || state() == DISABLED);
-  DVLOG(1) << "TypedUrlDataTypeController::StopModels(): State = " << state();
+void TypedUrlDataTypeController::DisconnectProcessor(
+    ChangeProcessor* processor) {
+  static_cast<TypedUrlChangeProcessor*>(processor)->Disconnect();
 }
 
 TypedUrlDataTypeController::~TypedUrlDataTypeController() {}

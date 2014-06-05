@@ -5,25 +5,12 @@
 #include "ui/views/layout/box_layout.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/views/test/test_views.h"
 #include "ui/views/view.h"
 
 namespace views {
 
 namespace {
-
-class StaticSizedView : public View {
- public:
-  explicit StaticSizedView(const gfx::Size& size)
-    : size_(size) {
-  }
-
-  virtual gfx::Size GetPreferredSize() OVERRIDE{
-    return size_;
-  }
-
- private:
-  gfx::Size size_;
-};
 
 class BoxLayoutTest : public testing::Test {
  public:
@@ -129,6 +116,44 @@ TEST_F(BoxLayoutTest, DistributeEmptySpace) {
   layout_->Layout(host_.get());
   EXPECT_EQ(gfx::Rect(10, 10, 40, 20).ToString(), v1->bounds().ToString());
   EXPECT_EQ(gfx::Rect(60, 10, 30, 20).ToString(), v2->bounds().ToString());
+}
+
+TEST_F(BoxLayoutTest, UseHeightForWidth) {
+  layout_.reset(new BoxLayout(BoxLayout::kVertical, 0, 0, 0));
+  View* v1 = new StaticSizedView(gfx::Size(20, 10));
+  host_->AddChildView(v1);
+  View* v2 = new ProportionallySizedView(2);
+  host_->AddChildView(v2);
+  EXPECT_EQ(gfx::Size(20, 50), layout_->GetPreferredSize(host_.get()));
+
+  host_->SetBounds(0, 0, 20, 50);
+  layout_->Layout(host_.get());
+  EXPECT_EQ(gfx::Rect(0, 0, 20, 10), v1->bounds());
+  EXPECT_EQ(gfx::Rect(0, 10, 20, 40), v2->bounds());
+
+  EXPECT_EQ(110, layout_->GetPreferredHeightForWidth(host_.get(), 50));
+}
+
+TEST_F(BoxLayoutTest, EmptyPreferredSize) {
+  for (size_t i = 0; i < 2; i++) {
+    BoxLayout::Orientation orientation = i == 0 ? BoxLayout::kHorizontal :
+                                                  BoxLayout::kVertical;
+    host_->RemoveAllChildViews(true);
+    host_->SetLayoutManager(new BoxLayout(orientation, 0, 0, 5));
+    View* v1 = new StaticSizedView(gfx::Size());
+    host_->AddChildView(v1);
+    View* v2 = new StaticSizedView(gfx::Size(10, 10));
+    host_->AddChildView(v2);
+    host_->SizeToPreferredSize();
+    host_->Layout();
+
+    EXPECT_EQ(v2->GetPreferredSize().width(), host_->bounds().width()) << i;
+    EXPECT_EQ(v2->GetPreferredSize().height(), host_->bounds().height()) << i;
+    EXPECT_EQ(v1->GetPreferredSize().width(), v1->bounds().width()) << i;
+    EXPECT_EQ(v1->GetPreferredSize().height(), v1->bounds().height()) << i;
+    EXPECT_EQ(v2->GetPreferredSize().width(), v2->bounds().width()) << i;
+    EXPECT_EQ(v2->GetPreferredSize().height(), v2->bounds().height()) << i;
+  }
 }
 
 }  // namespace views

@@ -5,16 +5,16 @@
 #include "ui/views/widget/desktop_aura/desktop_drag_drop_client_win.h"
 
 #include "ui/base/dragdrop/drag_drop_types.h"
-#include "ui/base/dragdrop/drag_source.h"
+#include "ui/base/dragdrop/drag_source_win.h"
+#include "ui/base/dragdrop/drop_target_event.h"
 #include "ui/base/dragdrop/os_exchange_data_provider_win.h"
 #include "ui/views/widget/desktop_aura/desktop_drop_target_win.h"
-#include "ui/views/widget/desktop_aura/desktop_root_window_host_win.h"
-#include "ui/views/widget/drop_target_win.h"
+#include "ui/views/widget/desktop_aura/desktop_window_tree_host_win.h"
 
 namespace views {
 
 DesktopDragDropClientWin::DesktopDragDropClientWin(
-    aura::RootWindow* root_window,
+    aura::Window* root_window,
     HWND window)
     : drag_drop_in_progress_(false),
       drag_operation_(0) {
@@ -26,7 +26,7 @@ DesktopDragDropClientWin::~DesktopDragDropClientWin() {
 
 int DesktopDragDropClientWin::StartDragAndDrop(
     const ui::OSExchangeData& data,
-    aura::RootWindow* root_window,
+    aura::Window* root_window,
     aura::Window* source_window,
     const gfx::Point& root_location,
     int operation,
@@ -34,16 +34,20 @@ int DesktopDragDropClientWin::StartDragAndDrop(
   drag_drop_in_progress_ = true;
   drag_operation_ = operation;
 
-  drag_source_ = new ui::DragSource;
-  DWORD effects;
-  DoDragDrop(ui::OSExchangeDataProviderWin::GetIDataObject(data),
-             drag_source_,
-             ui::DragDropTypes::DragOperationToDropEffect(operation),
-             &effects);
+  drag_source_ = new ui::DragSourceWin;
+  DWORD effect;
+  HRESULT result = DoDragDrop(
+      ui::OSExchangeDataProviderWin::GetIDataObject(data),
+      drag_source_,
+      ui::DragDropTypes::DragOperationToDropEffect(operation),
+      &effect);
 
   drag_drop_in_progress_ = false;
 
-  return drag_operation_;
+  if (result != DRAGDROP_S_DROP)
+    effect = DROPEFFECT_NONE;
+
+  return ui::DragDropTypes::DropEffectToDragOperation(effect);
 }
 
 void DesktopDragDropClientWin::DragUpdate(aura::Window* target,

@@ -96,7 +96,7 @@ llc-install() {
   # This just works on linux and assumes release builds...
   # TODO(pnacl-team): Make this path configurable.
   cp ${TC_BUILD_LLVM}/Release+Asserts/bin/llc \
-    toolchain/pnacl_linux_x86/host_x86_32/bin/llc
+    toolchain/linux_x86/pnacl_newlib/host_x86_32/bin/llc
 }
 
 
@@ -108,7 +108,6 @@ llc-run-x8632() {
       -filetype=obj \
       -streaming-bitcode \
       -tail-merge-threshold=50 \
-      -reduce-memory-footprint \
       ${pexe} \
       -o ${pexe}.o \
       -metadata-text ${pexe}.meta

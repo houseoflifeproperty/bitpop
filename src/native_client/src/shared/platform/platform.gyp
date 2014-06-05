@@ -58,6 +58,7 @@
           'posix/lock.c',
           'posix/nacl_exit.c',
           'posix/nacl_fast_mutex.c',
+          'posix/nacl_file_lock.c',
           'posix/nacl_find_addrsp.c',
           'posix/nacl_host_desc.c',
           'posix/nacl_secure_random.c',
@@ -133,6 +134,8 @@
     {
       'target_name': 'platform',
       'type': 'static_library',
+      # tls_edit relies on this which is always built for the host platform.
+      'toolsets': ['host', 'target'],
       'variables': {
         'target_base': 'platform_lib',
       },
@@ -161,6 +164,7 @@
         'build_glibc': 1,
         'build_newlib': 1,
         'build_pnacl_newlib': 1,
+        'build_irt': 1,
         'sources': [
           'nacl_check.c',
           'nacl_log.c',
@@ -181,7 +185,7 @@
     # ----------------------------------------------------------------------
   ],
   'conditions': [
-    ['OS=="win"', {
+    ['OS=="win" and target_arch=="ia32"', {
       'targets': [
         # ---------------------------------------------------------------------
         {

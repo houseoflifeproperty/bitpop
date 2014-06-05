@@ -38,13 +38,12 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavcodec/dsputil.h"
 #include "libavutil/mem.h"
 #include "libavutil/x86/asm.h"
 #include "idct_xvid.h"
-#include "dsputil_mmx.h"
+#include "dsputil_x86.h"
 
-#if HAVE_INLINE_ASM
+#if HAVE_SSE2_INLINE
 
 /**
  * @file
@@ -376,7 +375,7 @@ inline void ff_idct_xvid_sse2(short *block)
     JZ("%%esi", "1f")
     "5:                                                          \n\t"
     iMTX_MULT("7*16(%0)", MANGLE(iTab2), ROUND(walkenIdctRounders+5*16), PUT_ODD(ROW7))
-#if !ARCH_X86_64
+#if ARCH_X86_32
     iLLM_HEAD
 #endif
     iLLM_PASS("%0")
@@ -405,4 +404,4 @@ void ff_idct_xvid_sse2_add(uint8_t *dest, int line_size, short *block)
     ff_add_pixels_clamped_mmx(block, dest, line_size);
 }
 
-#endif /* HAVE_INLINE_ASM */
+#endif /* HAVE_SSE2_INLINE */

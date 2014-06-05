@@ -11,6 +11,7 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "ui/gl/gl_bindings.h"
+#include "ui/gl/gl_gl_api_implementation.h"
 
 namespace gfx {
 
@@ -37,33 +38,17 @@ GLGetProcAddressProc g_get_proc_address;
 
 void CleanupNativeLibraries(void* unused) {
   if (g_libraries) {
-    for (LibraryArray::iterator it = g_libraries->begin();
-         it != g_libraries->end(); ++it) {
-      base::UnloadNativeLibrary(*it);
-    }
+    // We do not call base::UnloadNativeLibrary() for these libraries as
+    // unloading libGL without closing X display is not allowed. See
+    // crbug.com/250813 for details.
     delete g_libraries;
     g_libraries = NULL;
   }
 }
 
-bool ExportsCoreFunctionsFromGetProcAddress(GLImplementation implementation) {
-  switch (GetGLImplementation()) {
-    case kGLImplementationDesktopGL:
-    case kGLImplementationOSMesaGL:
-    case kGLImplementationAppleGL:
-    case kGLImplementationMockGL:
-      return true;
-    case kGLImplementationEGLGLES2:
-      return false;
-    default:
-      NOTREACHED();
-      return true;
-  }
 }
 
-}
-
-GLApi* g_current_gl_context;
+base::ThreadLocalPointer<GLApi>* g_current_gl_context_tls = NULL;
 OSMESAApi* g_current_osmesa_context;
 
 #if defined(OS_WIN)
@@ -75,6 +60,10 @@ WGLApi* g_current_wgl_context;
 
 EGLApi* g_current_egl_context;
 GLXApi* g_current_glx_context;
+
+#elif defined(USE_OZONE)
+
+EGLApi* g_current_egl_context;
 
 #elif defined(OS_ANDROID)
 
@@ -134,7 +123,7 @@ void SetGLGetProcAddressProc(GLGetProcAddressProc proc) {
   g_get_proc_address = proc;
 }
 
-void* GetGLCoreProcAddress(const char* name) {
+void* GetGLProcAddress(const char* name) {
   DCHECK(g_gl_implementation != kGLImplementationNone);
 
   if (g_libraries) {
@@ -145,8 +134,7 @@ void* GetGLCoreProcAddress(const char* name) {
         return proc;
     }
   }
-  if (ExportsCoreFunctionsFromGetProcAddress(g_gl_implementation) &&
-      g_get_proc_address) {
+  if (g_get_proc_address) {
     void* proc = g_get_proc_address(name);
     if (proc)
       return proc;
@@ -155,17 +143,25 @@ void* GetGLCoreProcAddress(const char* name) {
   return NULL;
 }
 
-void* GetGLProcAddress(const char* name) {
-  DCHECK(g_gl_implementation != kGLImplementationNone);
-
-  void* proc = GetGLCoreProcAddress(name);
-  if (!proc && g_get_proc_address) {
-    proc = g_get_proc_address(name);
-    if (proc)
-      return proc;
-  }
-
-  return proc;
+void InitializeNullDrawGLBindings() {
+  // This is platform independent, so it does not need to live in a platform
+  // specific implementation file.
+  InitializeNullDrawGLBindingsGL();
 }
+
+bool HasInitializedNullDrawGLBindings() {
+  return HasInitializedNullDrawGLBindingsGL();
+}
+
+DisableNullDrawGLBindings::DisableNullDrawGLBindings() {
+  initial_enabled_ = SetNullDrawGLBindingsEnabledGL(false);
+}
+
+DisableNullDrawGLBindings::~DisableNullDrawGLBindings() {
+  SetNullDrawGLBindingsEnabledGL(initial_enabled_);
+}
+
+GLWindowSystemBindingInfo::GLWindowSystemBindingInfo()
+    : direct_rendering(true) {}
 
 }  // namespace gfx

@@ -29,11 +29,10 @@ def neutral_repr(value):
      merge rows/actions of the table.
      """
   if (isinstance(value, BitExpr) or isinstance(value, SymbolTable) or
-      isinstance(value, Row) or isinstance(value, DecoderAction) or
-      isinstance(value, RuleRestrictions)):
+      isinstance(value, Row) or isinstance(value, DecoderAction) ):
     return value.neutral_repr()
   elif isinstance(value, list):
-    return [ neutral_repr(v) for v in value ]
+    return '[' + ',\n    '.join([ neutral_repr(v) for v in value ]) + ']'
   else:
     return repr(value)
 
@@ -43,8 +42,7 @@ def sub_bit_exprs(value):
 
      Used to find the set of identifier references used by a value.
      """
-  if (isinstance(value, BitExpr) or isinstance(value, SymbolTable) or
-      isinstance(value, RuleRestrictions)):
+  if isinstance(value, BitExpr) or isinstance(value, SymbolTable):
     return value.sub_bit_exprs()
   elif isinstance(value, list):
     exprs = set()
@@ -87,6 +85,20 @@ class BitExpr(object):
     # Default implementation is to convert it by adding unsigned
     # int mask.
     return BitField(self, NUM_INST_BITS - 1, 0)
+
+  def to_type(self, type, options={}):
+    """Converts the expression to the given type."""
+    if type == 'bool':
+      return self.to_bool(options)
+    if type == 'uint32':
+      return self.to_uint32(options)
+    if type == 'register':
+      return self.to_register(options)
+    if type == 'register_list':
+      return self.to_register_list(options)
+    if type == 'bitfield':
+      return self.to_bitfield(options)
+    raise Exception("to_type(%s): can't convert %s" % (type, self))
 
   def to_bool(self, options={}):
     """Returns a string describing this as a C++ boolean
@@ -225,6 +237,9 @@ class IdRef(BitExpr):
             cmp(self._name, other._name) or
             cmp(self._value, other._value))
 
+_AND_PRINT_OP=""" &&
+       """
+
 class AndExp(BitExpr):
   """Models an anded expression."""
 
@@ -240,11 +255,11 @@ class AndExp(BitExpr):
   def to_bool(self, options={}):
     value = '(%s)' % self._args[0].to_bool(options)
     for arg in self._args[1:]:
-      value = '%s && (%s)' % (value, arg.to_bool(options))
+      value = '%s%s(%s)' % (value, _AND_PRINT_OP, arg.to_bool(options))
     return value
 
   def to_uint32(self, options={}):
-    value = self.args[0].to_uint32(options)
+    value = self._args[0].to_uint32(options)
     for arg in self._args[1:]:
       value = '%s & %s' % (value, arg.to_uint32(options))
     return '(%s)' % value
@@ -259,10 +274,13 @@ class AndExp(BitExpr):
     return list(self._args)
 
   def __repr__(self):
-    return ' && '.join([repr(a) for a in self._args])
+    return _AND_PRINT_OP.join([repr(a) for a in self._args])
 
   def neutral_repr(self):
-    return ' && '.join([neutral_repr(a) for a in self._args])
+    return _AND_PRINT_OP.join([neutral_repr(a) for a in self._args])
+
+_OR_PRINT_OP=""" ||
+       """
 
 class OrExp(BitExpr):
   """Models an or-ed expression."""
@@ -279,7 +297,7 @@ class OrExp(BitExpr):
   def to_bool(self, options={}):
     value = '(%s)' % self._args[0].to_bool(options)
     for arg in self._args[1:]:
-      value = '%s || (%s)' % (value, arg.to_bool(options))
+      value = '%s%s(%s)' % (value, _OR_PRINT_OP, arg.to_bool(options))
     return value
 
   def to_register(self, options={}):
@@ -298,10 +316,10 @@ class OrExp(BitExpr):
     return list(self._args)
 
   def __repr__(self):
-    return ' || '.join([repr(a) for a in self._args])
+    return _OR_PRINT_OP.join([repr(a) for a in self._args])
 
   def neutral_repr(self):
-    return ' || '.join([neutral_repr(a) for a in self._args])
+    return _OR_PRINT_OP.join([neutral_repr(a) for a in self._args])
 
 # Defines the negated comparison operator.
 _NEGATED_COMPARE_OP = {
@@ -312,6 +330,9 @@ _NEGATED_COMPARE_OP = {
     '>=': '<',
     '>': '<=',
 }
+
+_COMPARE_OP_FORMAT=""" %s
+         """
 
 class CompareExp(BitExpr):
   """Models the comparison of two values."""
@@ -351,7 +372,7 @@ class CompareExp(BitExpr):
 
   def __repr__(self):
     return '%s %s %s' % (repr(self._args[0]),
-                         self._op,
+                         self.compare_op(),
                          repr(self._args[1]))
 
   def neutral_repr(self):
@@ -363,17 +384,24 @@ class CompareExp(BitExpr):
       # Order arguments based on comparison value.
       cmp_value = cmp(arg1, arg2)
       if cmp_value < 0:
-        return '%s %s %s' % (arg1, self._op, arg2)
+        return '%s %s %s' % (arg1, self.compare_op(), arg2)
       elif cmp_value > 0:
-        return '%s %s %s' % (arg2, self._op, arg1)
+        return '%s %s %s' % (arg2, self.compare_op(), arg1)
       else:
         # comparison against self can be simplified.
         return BoolValue(self._op == '==').neutral_repr()
     elif self._op in ['>', '>=']:
-      return '%s %s %s' % (arg2, _NEGATED_COMPARE_OP.get(self._op), arg1)
+      return '%s %s %s' % (arg2,
+                           self.compare_op(_NEGATED_COMPARE_OP.get(self._op)),
+                           arg1)
     else:
       # Assume in canonical order.
-      return '%s %s %s' % (arg1, self._op, arg2)
+      return '%s %s %s' % (arg1, self.compare_op(), arg2)
+
+  def compare_op(self, op=None):
+    if op == None: op = self._op
+    return _COMPARE_OP_FORMAT % op
+
 
 class ShiftOp(BitExpr):
   """Models a left/right shift operator."""
@@ -422,16 +450,40 @@ class AddOp(BitExpr):
   def to_register_list(self, options={}):
     rl = self._args[0].to_register_list(options)
     if self._op == '+':
-      return '%s.Add(%s)' % (rl, self._args[1].to_register(options))
+      return '%s.\n   Add(%s)' % (rl, self._args[1].to_register(options))
     elif self._op == '-':
-      return '%s.Remove(%s)' % (rl, self._args[1].to_register(options))
+      return '%s.\n   Remove(%s)' % (rl, self._args[1].to_register(options))
     else:
       raise Exception("Bad op %s" % self._op)
 
   def to_uint32(self, options={}):
-    return '%s %s %s' % (self._args[0].to_uint32(options),
-                         self._op,
-                         self._args[1].to_uint32(options))
+      # Check subtraction as a special case. By default, we assume that all
+      # integers are unsigned. However, a difference may generate a negative
+      # value. In C++, the subtraction of unsigned integers is an unsigned
+      # integer, which is not a difference. To fix this, we insert integer
+      # typecasts.
+    if self._is_subtract_bitfields():
+        # Cast each argument to an int, so that we can do subtraction that
+        # can result in negative values.
+        args = [TypeCast('int', a) for a in self._args]
+        return AddOp('-', args[0], args[1]).to_uint32(options)
+    else:
+        return '%s %s %s' % (self._args[0].to_uint32(options),
+                             self._op,
+                             self._args[1].to_uint32(options))
+
+  def _is_subtract_bitfields(self):
+      """Returns true if the subtraction of bitfields that are not defined
+         by typecasts."""
+      if self._op != '-': return False
+      for arg in self.args():
+          if isinstance(arg, TypeCast):
+              return False
+          try:
+              bf = arg.to_bitfield()
+          except:
+              return False
+      return True
 
   def to_uint32_constant(self):
     args = [a.to_uint32_constant() for a in self._args]
@@ -578,17 +630,77 @@ class BitSet(BitExpr):
   def to_register_list(self, options={}):
     code = 'RegisterList()'
     for value in self._values:
-      code = '%s.Add(%s)' % (code, value.to_register(options))
+      code = '%s.\n   Add(%s)' % (code, value.to_register(options))
     return code
 
   def sub_bit_exprs(self):
     return list(self._values)
 
   def __repr__(self):
-    return '{%s}' % ','.join([repr(v) for v in self._values])
+    return '{%s}' % ', '.join([repr(v) for v in self._values])
 
   def neutral_repr(self):
-    return '{%s}' % ','.join([neutral_repr(v) for v in self._values])
+    return '{%s}' % ', '.join([neutral_repr(v) for v in self._values])
+
+"""Defines a map from a function name, to the list of possible signatures
+   for the funtion. The signature is a two-tuple where the first element
+   is a list of parameter types, and the second is the result type.
+   If a function does not appear in this list, all arguments are assumed
+   to be of type uint32, and return type uint32.
+   NOTE: Currently, one can't allow full polymorphism in the signatures,
+   because there is no way to test if an expression can be of a particular
+   type.
+   """
+_FUNCTION_SIGNATURE_MAP = {
+    'Add': [(['register_list', 'register'], 'register_list')],
+    'Contains': [(['register_list', 'register'], 'bool')],
+    'Union': [(['register_list', 'register_list'], 'register_list')],
+    'NumGPRs': [(['register_list'], 'uint32')],
+    'SmallestGPR': [(['register_list'], 'uint32')],
+    'Register': [(['uint32'], 'register')],
+    'RegisterList': [([], 'register_list'),
+                     (['uint32'], 'register_list'),
+                     # (['register'], 'registerlist),
+                     ],
+    }
+
+# Models how each DGEN type is represented as a C++ type cast.
+DGEN_TYPE_TO_CPP_TYPE = {
+    'int': 'int32_t',
+    'unsigned': 'uint32_t'
+    }
+
+class TypeCast(BitExpr):
+    """Allow some simple type castings."""
+
+    def __init__(self, type, arg):
+        self._type = type
+        self._arg = arg
+        if type not in DGEN_TYPE_TO_CPP_TYPE.keys():
+            raise Exception('TypeCast(%s, %s): type not understood.' %
+                            (type, arg))
+        # Verify we can convert arg to an integer.
+        arg.to_uint32()
+
+    def name(self):
+        return self._name
+
+    def arg(self):
+        return self._arg
+
+    def to_uint32(self, options={}):
+        return ('static_cast<%s>(%s)' %
+                (DGEN_TYPE_TO_CPP_TYPE[self._type],
+                 self._arg.to_uint32(options)))
+
+    def sub_bit_exprs(self):
+        return [ self._arg ]
+
+    def __repr__(self):
+        return '%s(%s)' % (self._type, self._arg)
+
+    def neutral_repr(self):
+        return '%s(%s)' % (self._type, neutral_repr(self._arg))
 
 class FunctionCall(BitExpr):
   """Abstract class defining an (external) function call."""
@@ -607,16 +719,16 @@ class FunctionCall(BitExpr):
     raise Exception('to_bitfield not defined for %s' % self)
 
   def to_bool(self, options={}):
-    return self._to_call(self._add_namespace_option(options))
+    return self._to_call('bool', self._add_namespace_option(options))
 
   def to_register(self, options={}):
-    return self._to_call(self._add_namespace_option(options))
+    return self._to_call('register', self._add_namespace_option(options))
 
   def to_register_list(self, options={}):
-    return self._to_call(self._add_namespace_option(options))
+    return self._to_call('register_list', self._add_namespace_option(options))
 
   def to_uint32(self, options={}):
-    return self._to_call(self._add_namespace_option(options))
+    return self._to_call('uint32', self._add_namespace_option(options))
 
   def sub_bit_exprs(self):
     return list(self._args)
@@ -629,12 +741,45 @@ class FunctionCall(BitExpr):
     return "%s(%s)" % (self._name,
                        ', '.join([neutral_repr(a) for a in self._args]))
 
-  def _to_call(self, options={}):
+  def matches_signature(self, signature, return_type, options={}):
+    """Checks whether the function call matches the signature.
+       If so, returns the corresponding (translated) arguments
+       to use for the call. Otherwise returns None.
+       """
+    params, result = signature
+    if result != return_type: return None
+    if len(params) != len(self.args()): return None
+    args = []
+    for (type, arg) in zip(params, self.args()):
+      args.append(arg.to_type(type, options))
+    return args
+
+  def _to_call(self, return_type, options={}):
     """Generates a call to the external function."""
+    # Try (pseudo) translation functions.
+    trans_fcns = _FUNCTION_TRANSLATION_MAP.get(self._name)
+    if trans_fcns:
+      for fcn in trans_fcns:
+        exp = fcn(self, return_type, options)
+        if exp: return exp
+
+    # Convert arguments to corresponding signatures, and
+    # return corresponding call.
     namespace = (('%s::' % options.get('namespace'))
                  if options.get('namespace') else '')
-    return '%s(%s)' % ('%s%s' % (namespace, self._name),
-                       ', '.join([a.to_uint32(options) for a in self._args]))
+    signatures = _FUNCTION_SIGNATURE_MAP.get(self._name)
+    if signatures == None:
+      args = [a.to_uint32(options) for a in self.args()]
+    else:
+      good = False
+      for signature in signatures:
+        args = self.matches_signature(signature, return_type, options)
+        if args != None:
+          good = True
+      if not good:
+        raise Exception("don't know how to translate to %s: %s" %
+                        (return_type, self))
+    return '%s(%s)' % ('%s%s' % (namespace, self._name), ', '.join(args))
 
   def _add_namespace_option(self, options):
     if not options.get('namespace'):
@@ -716,6 +861,14 @@ class InBitSet(InSet):
   def __repr__(self):
     return "%s in bitset %s" % (repr(self._value), repr(self._bitset))
 
+_IF_THEN_ELSE_CPP_FORMAT="""(%s
+       ? %s
+       : %s)"""
+
+_IF_THEN_ELSE_DGEN_FORMAT="""%s
+       if %s
+       else %s"""
+
 class IfThenElse(BitExpr):
   """Models a conditional expression."""
 
@@ -737,30 +890,35 @@ class IfThenElse(BitExpr):
     return IfThenElse(self._test, self._else_value, self._then_value)
 
   def to_bool(self, options={}):
-    return "(%s ? %s : %s)" % (self._test.to_bool(options),
-                               self._then_value.to_bool(options),
-                               self._else_value.to_bool(options))
+    return _IF_THEN_ELSE_CPP_FORMAT % (
+        self._test.to_bool(options),
+        self._then_value.to_bool(options),
+        self._else_value.to_bool(options))
 
   def to_register_list(self, options={}):
-    return '(%s ? %s : %s)' % (self._test.to_bool(options),
-                               self._then_value.to_register_list(options),
-                               self._else_value.to_register_list(options))
+    return _IF_THEN_ELSE_CPP_FORMAT % (
+        self._test.to_bool(options),
+        self._then_value.to_register_list(options),
+        self._else_value.to_register_list(options))
 
   def to_uint32(self, options={}):
-    return "(%s ? %s : %s)" % (self._test.to_bool(options),
-                               self._then_value.to_uint32(options),
-                               self._else_value.to_uint32(options))
+    return _IF_THEN_ELSE_CPP_FORMAT % (
+        self._test.to_bool(options),
+        self._then_value.to_uint32(options),
+        self._else_value.to_uint32(options))
 
   def sub_bit_exprs(self):
     return [self._test, self._then_value, self._else_value]
 
   def __repr__(self):
-    return '%s if %s else %s' % (self._then_value, self._test, self._else_value)
+    return _IF_THEN_ELSE_DGEN_FORMAT % (
+        self._then_value, self._test, self._else_value)
 
   def neutral_repr(self):
-    return '%s if %s else %s' % (neutral_repr(self._then_value),
-                                 neutral_repr(self._test),
-                                 neutral_repr(self._else_value))
+    return _IF_THEN_ELSE_DGEN_FORMAT % (
+        neutral_repr(self._then_value),
+        neutral_repr(self._test),
+        neutral_repr(self._else_value))
 
 class ParenthesizedExp(BitExpr):
   """Models a parenthesized expression."""
@@ -805,21 +963,64 @@ class ParenthesizedExp(BitExpr):
   def neutral_repr(self):
     return '(%s)' % neutral_repr(self._exp)
 
+class Implicit(BitExpr):
+  """Models an implicit method definition, based on the values of
+     other method definitions."""
+  def __init__(self, methods):
+    self._methods = methods
+
+  def methods(self):
+    return list(self._methods)
+
+  def __repr__(self):
+    return ("implied by %s" %
+            ', '.join([repr(m) for m in self._methods]))
+
+  def neutral_repr(self):
+    return repr(self)
+
+class QuotedString(BitExpr):
+  """Models a quoted string."""
+
+  def __init__(self, text, name=None):
+    if not isinstance(text, str):
+      raise Exception("Can't create a quoted string from %s" % text)
+    self._text = text
+    if name == None: name = repr(text)
+    self._name = name
+
+  def name(self):
+    return self._name
+
+  def text(self):
+    return self._text
+
+  def __repr__(self):
+    return self.name()
+
+  def to_cstring(self):
+    return '"%s"' % self._text
+
+  def neutral_repr(self):
+    return self.name()
+
 class Literal(BitExpr):
   """Models a literal unsigned integer."""
 
-  def __init__(self, value):
+  def __init__(self, value, name=None):
     if not isinstance(value, int):
       raise Exception("Can't create literal from %s" % value)
     self._value = value
+    if name == None: name = repr(value)
+    self._name = name
+
+  def name(self):
+      return self._name
 
   def value(self):
     return self._value
 
   def to_uint32(self, options={}):
-    return repr(self._value)
-
-  def __repr__(self):
     return repr(self._value)
 
   def must_be_in_range(self, min_include, max_exclude):
@@ -830,7 +1031,10 @@ class Literal(BitExpr):
     return int(self.to_uint32())
 
   def neutral_repr(self):
-    return neutral_repr(self._value)
+    return self.name()
+
+  def __repr__(self):
+      return self.name()
 
 class BoolValue(BitExpr):
   """Models true and false."""
@@ -1025,7 +1229,40 @@ class SafetyAction(BitExpr):
   def neutral_repr(self):
     return '%s => %s' % (neutral_repr(self._test), self._action)
 
+class Violation(BitExpr):
+  """Models a (conditional) violation."""
+
+  def __init__(self, test, print_args):
+    self._test = test
+    self._print_args = print_args
+
+  def test(self):
+    return self._test
+
+  def violation_type(self):
+    return self._violation_type
+
+  def print_args(self):
+    return list(self._print_args)
+
+  def to_bool(self, options={}):
+    return self.test().to_bool(options)
+
+  def sub_bit_exprs(self):
+    return [self._test] + self._print_args
+
+  def __repr__(self):
+    return '%s =>\n   error(%s)' % (
+        self._test,
+        ', '.join([repr(a) for a in self._print_args]))
+
+  def neutral_repr(self):
+    return '%s =>\n   error(%s)' % (
+        neutral_repr(self._test),
+        ', '.join([neutral_repr(a) for a in self._print_args]))
+
 _INHERITS_SYMBOL = '$inherits$'
+_INHERITS_EXCLUDES_SYMBOL = '$inherits-excludes$'
 
 class SymbolTable(object):
   """Holds mapping from names to corresponding value."""
@@ -1041,11 +1278,14 @@ class SymbolTable(object):
       st._dict[k] = self._dict[k]
     return st
 
-  def find(self, name):
+  def find(self, name, install_inheriting=True):
     value = self._dict.get(name)
     if value: return value
     inherits = self._dict.get(_INHERITS_SYMBOL)
     if not inherits: return None
+    excludes = self._dict.get(_INHERITS_EXCLUDES_SYMBOL)
+    if excludes and name in excludes:
+      return None
     value = inherits.find(name)
     if value == None: return value
     if self._frozen:
@@ -1053,7 +1293,8 @@ class SymbolTable(object):
           "Can't copy inherited value of %s, symbol table frozen" % name)
     # Install locally before going on, so that the same
     # definition is consistently used.
-    self._dict[name] = value
+    if install_inheriting:
+      self._dict[name] = value
     return value
 
   def define(self, name, value, fail_if_defined = True):
@@ -1076,22 +1317,57 @@ class SymbolTable(object):
     self._frozen = True
 
   def remove(self, name):
-    self._dict.pop(name)
+    self._dict.pop(name, None)
 
-  def inherits(self, context):
+  def inherits(self, context, excludes):
     """Adds inheriting symbol table."""
     self.define(_INHERITS_SYMBOL, context)
+    self.define(_INHERITS_EXCLUDES_SYMBOL, excludes)
 
   def disinherit(self):
     """Removes inheriting symbol tables."""
     # Install inheriting values not explicitly overridden.
-    inherits_st = self._dict.get(_INHERITS_SYMBOL)
+    excludes = set([_INHERITS_EXCLUDES_SYMBOL, _INHERITS_SYMBOL])
+    current_st = self
+    inherits_st = current_st.find(_INHERITS_SYMBOL)
     while inherits_st:
-      self.remove(_INHERITS_SYMBOL)
-      # Copy definitions in inherits to this.
+
+      # Start by updating symbols to be excluded from the current
+      # symbol table.
+      inherits_excludes = current_st.find(
+          _INHERITS_EXCLUDES_SYMBOL, install_inheriting=False)
+      if inherits_excludes:
+          for sym in inherits_excludes:
+              excludes.add(sym)
+
+      # Copy definitions in inherits to this, excluding symbols that
+      # should not be inherited.
       for key in inherits_st.keys():
-        self.define(key, inherits_st.find(key), fail_if_defined=False)
-      inherits_st = self.find(_INHERITS_SYMBOL)
+        if key not in excludes:
+
+            # If the key defines a fields argument, remove references
+            # to excluded fields.
+            value = inherits_st.find(key)
+            if key == 'fields' and isinstance(value, list):
+                filtered_fields = []
+                for field in value:
+                    subfield = field
+                    if isinstance(subfield, BitField):
+                        subfield = subfield.name()
+                    if (isinstance(subfield, IdRef)
+                        and subfield.name() in excludes):
+                        continue
+                    filtered_fields.append(field)
+                value = filtered_fields
+
+            # Install value.
+            self.define(key, value, fail_if_defined=False)
+      current_st = inherits_st
+      inherits_st = current_st.find(_INHERITS_SYMBOL)
+
+    # Before returning, remove inheriting entries.
+    self.remove(_INHERITS_EXCLUDES_SYMBOL)
+    self.remove(_INHERITS_SYMBOL)
 
   def keys(self):
     return [k for k in self._dict.keys() if k != _INHERITS_SYMBOL]
@@ -1128,7 +1404,11 @@ class SymbolTable(object):
         is_first = False
       else:
         dict_rep = '%s,%s  ' % (dict_rep, NEWLINE_STR)
-      dict_rep = "%s%s: %s" % (dict_rep, k, dict[k])
+      value = dict[k]
+      # Try to better pretty-print lists.
+      if isinstance(value, list) and len(repr(value)) > 60:
+        value = '[' + ',\n    '.join([repr(v) for v in value]) + ']'
+      dict_rep = "%s%s: %s" % (dict_rep, k, value)
     dict_rep += '}'
     return dict_rep
 
@@ -1391,7 +1671,9 @@ class BitPattern(BitExpr):
       else:
         inst = self.column.name().to_uint32(options)
         value = ('(%s & 0x%08X) %s 0x%08X'
-                 % (inst, self.mask, self.op, self.value))
+                 % (inst, self.mask,
+                    _COMPARE_OP_FORMAT % self.op,
+                    self.value))
       return value
 
     def to_commented_bool(self, options={}):
@@ -1491,53 +1773,6 @@ class BitPattern(BitExpr):
         else:
           return "~%s" % self.bitstring()
 
-class RuleRestrictions(object):
-  """A rule restriction defines zero or more (anded) bit patterns, and
-     an optional other (i.e. base class) restriction to be used when testing.
-     """
-
-  def __init__(self, restrictions=[], other=None):
-    self.restrictions = restrictions[:]
-    self.other = other
-
-  def IsEmpty(self):
-    return not self.restrictions and not self.other
-
-  def add(self, restriction):
-    self.restrictions = self.restrictions + [restriction]
-
-  def sub_bit_exprs(self):
-    return sub_bit_exprs(list(self.restrictions))
-
-  def __repr__(self):
-    """ Returns the printable string for the restrictions. """
-    rep = ''
-    if self.restrictions:
-      for r in self.restrictions:
-        rep += '& %s' % r
-      rep += ' '
-    if self.other:
-      rep += ('& other: %s' % self.other)
-    return rep
-
-  def neutral_repr(self):
-    """Returns a normalized neutral representation of the rule restrictions."""
-    rep = ''
-    if self.restrictions:
-      for r in self.restrictions:
-        rep += '& %s' % neutral_repr(r)
-      rep += ' '
-    if self.other:
-      rep += ('& other: %s' % self.other)
-    return rep
-
-  def __hash__(self):
-    return hash(self.neutral_repr())
-
-  def __cmp__(self, other):
-    return (cmp(type(self), type(other)) or
-            cmp(self.neutral_repr(), neutral_repr(other)))
-
 TABLE_FORMAT="""
 Table %s
 %s
@@ -1612,17 +1847,39 @@ class Table(object):
         if column >= len(self._columns): return None
         return BitPattern.parse_catch(pattern, self._columns[column])
 
+    def copy(self):
+      """Returns a copy of the table."""
+      table = Table(self.name, self.citation)
+      table._columns = self._columns
+      for r in self._rows:
+        table.add_row(r.patterns, r.action)
+      if self.default_row:
+        table.add_default_row(self.default_row.action)
+      return table
+
+    def row_filter(self, filter):
+      """Returns a copy of the table, filtering each row with the
+         replacement row defined by function argument filter (of
+         form: lambda row:).
+         """
+      table = Table(self.name, self.citation)
+      table._columns = self._columns
+      for r in self._rows:
+        row = filter(r)
+        if row:
+          table.add_row(row.patterns, row.action)
+      if self.default_row:
+        row = filter(self.default_row)
+        if row:
+          table.add_default_row(row.action)
+      return table
+
     def action_filter(self, names):
         """Returns a table with DecoderActions reduced to the given field names.
            Used to optimize out duplicates, depending on context.
         """
-        table = Table(self.name, self.citation)
-        table._columns = self._columns
-        for r in self._rows:
-          table.add_row(r.patterns, r.action.action_filter(names))
-        if self.default_row:
-          table.add_default_row(self.default_row.action.action_filter(names))
-        return table
+        return self.row_filter(
+            lambda r: Row(r.patterns, r.action.action_filter(names)))
 
     def add_column_to_rows(self, rows):
       """Add column information to each row, returning a copy of the rows
@@ -1645,15 +1902,36 @@ class Table(object):
       return sorted(methods)
 
     def __repr__(self):
+      rows = list(self._rows)
+      if self.default_row:
+        rows.append(self.default_row)
       return TABLE_FORMAT % (self.name,
                              ' '.join([repr(c) for c in self._columns]),
-                             NEWLINE_STR.join([repr(r) for r in self._rows]))
+                             NEWLINE_STR.join([repr(r) for r in rows]))
+
+# Defines a mapping from decoder action field names, to the
+# corresponding type of the expression. The domain is a field
+# name. The range is a list of type names defined in
+# BitExpr.to_type. Otherwise it must be a function (taking a single
+# argument) which does the type checking.  Note: This is filled
+# dynamically during import time, so that circular dependencies can be
+# handled. In particular, dgen_decoder.py fills in types for method
+# fields.
+_DECODER_ACTION_FIELD_TYPE_MAP = {}
+
+def DefineDecoderFieldType(name, type):
+    """Adds the corresponding type association to the list of known
+       types for decoder fields."""
+    global _DECODER_ACTION_FIELD_TYPE_MAP
+    types = _DECODER_ACTION_FIELD_TYPE_MAP.get(name)
+    if types == None:
+        types = set()
+        _DECODER_ACTION_FIELD_TYPE_MAP[name] = types
+    types.add(type)
 
 class DecoderAction:
   """An action defining a class decoder to apply.
      Fields are:
-       baseline - Name of class decoder used in the baseline.
-       actual - Name of the class decoder to use in the validator.
        _st - Symbol table of other information stored on the decoder action.
        _neutral_st - Symbol table to use for neutral_repr. Note: This
              symbol table is the same as _st, except when method action_filter
@@ -1668,19 +1946,51 @@ class DecoderAction:
       self._st.define('baseline', baseline)
     if actual != None:
       self._st.define('actual', actual)
-    self._st.define('constraints', RuleRestrictions())
 
-  def find(self, name):
-    return self._st.find(name)
+    # The following field is set by method force_type_checking, and is
+    # used to force type checking while parsing a decoder action. This
+    # allows the parser to report problems at the corresponding source
+    # line that defined the value of a field to something we don't
+    # understand.
+    self._force_type_checking = False
+
+  def force_type_checking(self, value):
+      """Sets field defining if type checking will be done as symbols
+         are added to the decoder action. This allows the parser to
+         report problems at the corresponding source line that defined
+         the field."""
+      self._force_type_checking = value
+
+  def find(self, name, install_inheriting=True):
+    return self._st.find(name, install_inheriting)
 
   def define(self, name, value, fail_if_defined=True):
+    if self._force_type_checking:
+        types = _DECODER_ACTION_FIELD_TYPE_MAP.get(name)
+        if types:
+            # Now try translating value for each type, so that
+            # if there is a problem, a corresponding exception
+            # will be raised.
+            for type in types:
+                if isinstance(type, str):
+                    if not isinstance(value, BitExpr):
+                        raise Exception(
+                            "Defining %s:%s. Value must be BitExpr" %
+                            (name, value))
+                    value.to_type(type)
+                else:
+                    type(value)
     return self._st.define(name, value, fail_if_defined)
+
+  def freeze(self):
+      """Don't allow any modifications of fields (unless copying)."""
+      self._st.freeze()
 
   def remove(self, name):
     self._st.remove(name)
 
-  def inherits(self, context):
-    self._st.inherits(context)
+  def inherits(self, context, excludes):
+    self._st.inherits(context, excludes)
 
   def disinherit(self):
     self._st.disinherit()
@@ -1688,7 +1998,25 @@ class DecoderAction:
   def keys(self):
     return self._st.keys()
 
+  def copy(self):
+    """Returns a copy of the decoder action."""
+    action = DecoderAction()
+    action._st = SymbolTable()
+    action._neutral_st = action._st
+    for field in self._st.keys():
+      action.define(field, self.find(field))
+    return action
+
   def action_filter(self, names):
+    """Filters fields in the decoder to only include fields in names.
+       for most operations, we build a symbol table (_st) that contains
+       not only the specified fields, but any implicit dependent fields.
+       For method neutral_repr, we create a special symbol table _neutral_st
+       that only contains the fields specified.
+
+       Note: actual and actual-not-baseline are handled specially. See
+       code of function body for details.
+       """
     action = DecoderAction()
     action._st = SymbolTable()
     action._neutral_st = SymbolTable()
@@ -1714,8 +2042,21 @@ class DecoderAction:
         # Copy over if defined.
         value = self._st.find(n)
       if value != None:
+        # Copy to both the copy, and the neutral form.
         action._st.define(name, value, fail_if_defined=False)
-        action._neutral_st.define(name, value, fail_if_defined=False)
+        neutral_value = value
+        if name == 'safety':
+          # To get better compression of actual decoders,
+          # merge and order alternatives.
+          neutral_value = set()
+          strs = set()
+          for v in value:
+            if isinstance(v, BitExpr):
+              neutral_value.add(v)
+            else:
+              strs.add(v)
+          neutral_value = sorted(neutral_value) + sorted(strs)
+        action._neutral_st.define(name, neutral_value, fail_if_defined=False)
         _add_if_bitexpr(value, values)
 
     # Collect sub expressions (via closure) and add names of id refs
@@ -1758,10 +2099,6 @@ class DecoderAction:
   def rule(self):
     """Returns the rule associated with the action."""
     return self.find('rule')
-
-  def constraints(self):
-    """Returns the pattern restrictions associated with the action."""
-    return self.find('constraints')
 
   def safety(self):
     """Returns the safety associated with the action."""
@@ -1809,6 +2146,10 @@ class DecoderMethod(object):
 
   def action_filter(self, unused_names):
     return self
+
+  def copy(self):
+    """Returns a copy of the decoder method."""
+    return DecoderMethod(self.name)
 
   def __eq__(self, other):
     return (self.__class__.__name__ == 'DecoderMethod'
@@ -1929,6 +2270,7 @@ class Decoder(object):
   Fields are:
       primary - The entry parse table to find a class decoder.
       tables - The (sorted) set of tables defined by a decoder.
+      value_map - Saved values of the decoder.
 
   Note: maintains restriction that tables have unique names.
   """
@@ -1937,7 +2279,19 @@ class Decoder(object):
     self.primary = None
     self._is_sorted = False
     self._tables = []
-    self._class_defs = {}
+    self._value_map = {}
+
+  def value_keys(self):
+    return self._value_map.keys()
+
+  def define_value(self, name, value):
+      """Associate value with name, for the given decoder."""
+      self._value_map[name] = value
+
+  def get_value(self, name, default_value=None):
+      """Returns the associated value with the given name. Use the
+         default if the name is not bound."""
+      return self._value_map.get(name, default_value)
 
   def add(self, table):
     """Adds the table to the set of tables. Returns true if successful.
@@ -1959,6 +2313,10 @@ class Decoder(object):
     self._is_sorted = True
     return self._tables
 
+  def table_names(self):
+    """Returns the names of all tables in the decoder."""
+    return sorted([tbl.name for tbl in self.tables()])
+
   def get_table(self, name):
     """Returns the table with the given name"""
     for tbl in self._tables:
@@ -1975,50 +2333,54 @@ class Decoder(object):
         table.remove_table(name)
     self._tables = new_tables
 
-  def get_class_defs(self):
-    return self._class_defs
+  def table_filter(self, filter):
+    """Returns a copy of the decoder, filtering each table with
+      the replacement row defined by function argument filter (of
+      form: lambda table:).
 
-  def set_class_defs(self, class_defs):
-    self._class_defs = class_defs
-
-  def add_class_def(self, cls, supercls):
-    """Adds that cls's superclass is supercls. Returns true if able to add.
-
-       Arguments are:
-         cls - The class (name) being defined.
-         supercls - The class (name) cls is a subclass of.
-    """
-    if cls in self._class_defs:
-      return self._class_defs[cls] == supercls
-    else:
-      self._class_defs[cls] = supercls
-      return True
-
-  def action_filter(self, names):
-    """Returns a new set of tables with actions reduced to the set of
-    field names.
-    """
+      Note: The filter can't change the name of the primary table.
+      """
     decoder = Decoder()
-    decoder._tables = sorted([ t.action_filter(names) for t in self._tables ],
-                             key=lambda(tbl): tbl.name)
-    decoder.primary = filter(
-        lambda(t): t.name == self.primary.name, self._tables)[0]
-    decoder._class_defs = self._class_defs.copy()
+
+    tables = set()
+    for tbl in self._tables:
+      filtered_table = filter(tbl)
+      if filtered_table != None:
+        tables.add(filtered_table)
+        if tbl.name == self.primary.name:
+          decoder.primary = filtered_table
+      elif tbl.name == self.primary.name:
+        raise Exception("table_filter: can't filter out table %s" %
+                        self.primary.name)
+    decoder._tables = sorted(tables, key=lambda(tbl): tbl.name)
+    decoder._value_map = self._value_map.copy()
     return decoder
 
-  def base_class(self, cls):
-    """Returns the base-most class of cls (or cls if no base class). """
-    tried = set()
-    while cls in self._class_defs:
-      if cls in tried:
-        raise Exception('Class %s defined circularly' % cls)
-      tried.add(cls)
-      cls = self._class_defs[cls]
-    return cls
+  def action_filter(self, names):
+    """Returns a new set of tables, with actions reduced to the set of
+      specified field names.
+    """
+    # Filter actions in tables.
+    decoder = self.table_filter(lambda tbl: tbl.action_filter(names))
+
+    # Now filter other decoders associated with the specification.
+    for key in decoder.value_keys():
+      action = decoder.get_value(key)
+      if isinstance(action, DecoderAction):
+        decoder.define_value(key, action.action_filter(names))
+    return decoder
 
   def decoders(self):
     """Returns the sorted sequence of DecoderAction's defined in the tables."""
     decoders = set()
+
+    # Add other decoders associated with specification, but not in tables.
+    for key in self.value_keys():
+      action = self.get_value(key)
+      if isinstance(action, DecoderAction):
+        decoders.add(action)
+
+    # Add decoders specified in the tables.
     for t in self._tables:
         for r in t.rows(True):
             if isinstance(r.action, DecoderAction):
@@ -2037,3 +2399,113 @@ class Decoder(object):
       print "%s" % tbl
     else:
       raise Exception("Can't find table %s" % table)
+
+def _TranslateSignExtend(exp, return_type, options):
+  """Implements SignExtend(x, i):
+     if i == len(x) then x else Replicate(TopBit(x), i - len(x)):x
+     where i >= len(x)
+  """
+  # Note: Returns None if not translatible.
+  args = _ExtractExtendArgs(exp, return_type)
+  if args == None: return None
+  if exp.name() != 'SignExtend': return None
+  (i, x, len_x) = args
+  value_x = x.to_uint32(options)
+  if i == len_x:
+    return value_x
+  else:
+    top_bit_mask = 1
+    for n in range(1, len_x):
+      top_bit_mask = top_bit_mask << 1
+    replicate_mask = 0
+    for n in range(0, i - len_x):
+      replicate_mask = (replicate_mask << 1) | 1
+    replicate_mask = replicate_mask << len_x
+    text = ("""(((%s) & 0x%08X)
+       ? ((%s) | 0x%08X)
+       : %s)""" %
+            (value_x, top_bit_mask, value_x, replicate_mask, value_x))
+    return text
+
+def _TranslateZeroExtend(exp, return_type, options):
+  """Implements ZeroExtend(x, i):
+       if i == len(x) then x else Replicate('0', i-len(x)):x
+  """
+  args = _ExtractExtendArgs(exp, return_type)
+  if args == None: return None
+  if exp.name() != 'ZeroExtend': return None
+  # Note: Converting to unsigned integer is the same as extending.
+  return x.to_uint32(options)
+
+def _ToBitFieldExtend(exp, return_type, options):
+  """Implements a to_bitfield conversion for ZeroExtend and
+     SignExtend.
+  """
+  args = _ExtractExtendArgs(exp, return_type)
+  if not args or exp.name() not in ['ZeroExtend', 'SignExtend']:
+    return None
+  i, x, len_x = args
+  return BitField(exp, len_x - 1, 0)
+
+def _ExtractExtendArgs(exp, return_type):
+  """Returns (i, x, len(x)) if exp is one of the following forms:
+        XXX(x, i)
+        XXX(x, i)
+     Otherwise, returns None.
+     """
+  if not isinstance(exp, FunctionCall): return None
+  if return_type != 'uint32': return None
+  if len(exp.args()) != 2: return None
+  args = exp.args()
+  x = args[0]
+  i = args[1]
+  try:
+    bf = x.to_bitfield()
+  except:
+    return None
+  if not isinstance(i, Literal): return None
+  i = i.value()
+  if i < 0 or i > NUM_INST_BITS: return None
+  len_x = bf.num_bits()
+  if i < len_x: return None
+  return (i, x, len_x)
+
+# Holds the set of installed parameters. Map is from parameter name,
+# to the previous value defined in _FUNCTION_TRANSLATION_MAP.
+_INSTALLED_PARAMS_MAP = {}
+
+def InstallParameter(name, type):
+  """Installs parameter in as a preprocessing fuction of no arguments."""
+  global _INSTALLED_PARAMS_MAP
+  global _FUNCTION_TRANSLATION_MAP
+  installed = _FUNCTION_TRANSLATION_MAP.get(name)
+  _INSTALLED_PARAMS_MAP[name] = installed
+  if installed:
+    installed = list(installed)
+  else:
+    installed = []
+  installed.insert(0, _BuildParameter(name, type))
+  _FUNCTION_TRANSLATION_MAP[name] = installed
+
+def UninstallParameter(name):
+  """Restores the function translation map to its former state before
+     the previous call to InstallParameter with the given name.
+     """
+  global _INSTALLED_PARAMS_MAP
+  global _FUNCTION_TRANSLATION_MAP
+  _FUNCTION_TRANSLATION_MAP[name] = _INSTALLED_PARAMS_MAP[name]
+  _INSTALLED_PARAMS_MAP[name] = None
+
+def _BuildParameter(name, type):
+  """Builds a parameter translation function for the correspondin
+     parameter macro.
+     """
+  return (lambda exp, return_type, options:
+            (name if exp.matches_signature(([], type), return_type) != None
+             else None))
+
+"""Defines special processing fuctions if the signature matches."""
+_FUNCTION_TRANSLATION_MAP = {
+    'ZeroExtend': [_TranslateZeroExtend, _ToBitFieldExtend],
+    'SignExtend': [_TranslateSignExtend, _ToBitFieldExtend],
+}

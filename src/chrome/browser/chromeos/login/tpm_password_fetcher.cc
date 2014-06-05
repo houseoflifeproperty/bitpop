@@ -6,7 +6,7 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 
@@ -20,7 +20,7 @@ const int kTpmCheckIntervalMs = 500;
 }  // namespace
 
 TpmPasswordFetcher::TpmPasswordFetcher(TpmPasswordFetcherDelegate* delegate)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+    : weak_factory_(this),
       delegate_(delegate) {
   DCHECK(delegate_);
 }
@@ -66,7 +66,7 @@ void TpmPasswordFetcher::OnTpmGetPassword(DBusMethodCallStatus call_status,
 }
 
 void TpmPasswordFetcher::RescheduleFetch() {
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&TpmPasswordFetcher::Fetch, weak_factory_.GetWeakPtr()),
       base::TimeDelta::FromMilliseconds(kTpmCheckIntervalMs));

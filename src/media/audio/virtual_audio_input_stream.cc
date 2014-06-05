@@ -8,7 +8,7 @@
 #include <utility>
 
 #include "base/bind.h"
-#include "base/message_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "media/audio/virtual_audio_output_stream.h"
 
 namespace media {
@@ -47,58 +47,63 @@ class LoopbackAudioConverter : public AudioConverter::InputCallback {
   DISALLOW_COPY_AND_ASSIGN(LoopbackAudioConverter);
 };
 
-VirtualAudioInputStream* VirtualAudioInputStream::MakeStream(
-    AudioManagerBase* manager, const AudioParameters& params,
-    base::MessageLoopProxy* message_loop) {
-  return new VirtualAudioInputStream(manager, params, message_loop);
-}
-
 VirtualAudioInputStream::VirtualAudioInputStream(
-    AudioManagerBase* manager, const AudioParameters& params,
-    base::MessageLoopProxy* message_loop)
-    : audio_manager_(manager),
-      message_loop_(message_loop),
+    const AudioParameters& params,
+    const scoped_refptr<base::SingleThreadTaskRunner>& worker_task_runner,
+    const AfterCloseCallback& after_close_cb)
+    : worker_task_runner_(worker_task_runner),
+      after_close_cb_(after_close_cb),
       callback_(NULL),
-      buffer_duration_ms_(base::TimeDelta::FromMilliseconds(
-          params.frames_per_buffer() * base::Time::kMillisecondsPerSecond /
-          static_cast<float>(params.sample_rate()))),
       buffer_(new uint8[params.GetBytesPerBuffer()]),
       params_(params),
-      audio_bus_(AudioBus::Create(params_)),
       mixer_(params_, params_, false),
-      num_attached_outputs_streams_(0) {
+      num_attached_output_streams_(0),
+      fake_consumer_(worker_task_runner_, params_) {
+  DCHECK(params_.IsValid());
+  DCHECK(worker_task_runner_.get());
+
+  // VAIS can be constructed on any thread, but will DCHECK that all
+  // AudioInputStream methods are called from the same thread.
+  thread_checker_.DetachFromThread();
 }
 
 VirtualAudioInputStream::~VirtualAudioInputStream() {
-  for (AudioConvertersMap::iterator it = converters_.begin();
-       it != converters_.end(); ++it)
-    delete it->second;
+  DCHECK(!callback_);
 
-  DCHECK_EQ(0, num_attached_outputs_streams_);
+  // Sanity-check: Contract for Add/RemoveOutputStream() requires that all
+  // output streams be removed before VirtualAudioInputStream is destroyed.
+  DCHECK_EQ(0, num_attached_output_streams_);
+
+  for (AudioConvertersMap::iterator it = converters_.begin();
+       it != converters_.end(); ++it) {
+    delete it->second;
+  }
 }
 
 bool VirtualAudioInputStream::Open() {
+  DCHECK(thread_checker_.CalledOnValidThread());
   memset(buffer_.get(), 0, params_.GetBytesPerBuffer());
   return true;
 }
 
 void VirtualAudioInputStream::Start(AudioInputCallback* callback) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(thread_checker_.CalledOnValidThread());
   callback_ = callback;
-  on_more_data_cb_.Reset(base::Bind(&VirtualAudioInputStream::ReadAudio,
-                                    base::Unretained(this)));
-  audio_manager_->GetMessageLoop()->PostTask(FROM_HERE,
-                                             on_more_data_cb_.callback());
+  fake_consumer_.Start(base::Bind(
+      &VirtualAudioInputStream::PumpAudio, base::Unretained(this)));
 }
 
 void VirtualAudioInputStream::Stop() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
-  on_more_data_cb_.Cancel();
+  DCHECK(thread_checker_.CalledOnValidThread());
+  fake_consumer_.Stop();
+  callback_ = NULL;
 }
 
 void VirtualAudioInputStream::AddOutputStream(
     VirtualAudioOutputStream* stream, const AudioParameters& output_params) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(thread_checker_.CalledOnValidThread());
+
+  base::AutoLock scoped_lock(converter_network_lock_);
 
   AudioConvertersMap::iterator converter = converters_.find(output_params);
   if (converter == converters_.end()) {
@@ -111,47 +116,52 @@ void VirtualAudioInputStream::AddOutputStream(
     mixer_.AddInput(converter->second);
   }
   converter->second->AddInput(stream);
-  ++num_attached_outputs_streams_;
+  ++num_attached_output_streams_;
 }
 
 void VirtualAudioInputStream::RemoveOutputStream(
     VirtualAudioOutputStream* stream, const AudioParameters& output_params) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(thread_checker_.CalledOnValidThread());
+
+  base::AutoLock scoped_lock(converter_network_lock_);
 
   DCHECK(converters_.find(output_params) != converters_.end());
   converters_[output_params]->RemoveInput(stream);
 
-  --num_attached_outputs_streams_;
+  --num_attached_output_streams_;
+  DCHECK_LE(0, num_attached_output_streams_);
 }
 
-void VirtualAudioInputStream::ReadAudio() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
-  DCHECK(callback_);
+void VirtualAudioInputStream::PumpAudio(AudioBus* audio_bus) {
+  DCHECK(worker_task_runner_->BelongsToCurrentThread());
 
-  mixer_.Convert(audio_bus_.get());
-  audio_bus_->ToInterleaved(params_.frames_per_buffer(),
-                            params_.bits_per_sample() / 8,
-                            buffer_.get());
-
+  {
+    base::AutoLock scoped_lock(converter_network_lock_);
+    mixer_.Convert(audio_bus);
+  }
+  audio_bus->ToInterleaved(params_.frames_per_buffer(),
+                           params_.bits_per_sample() / 8,
+                           buffer_.get());
   callback_->OnData(this,
                     buffer_.get(),
                     params_.GetBytesPerBuffer(),
                     params_.GetBytesPerBuffer(),
                     1.0);
-
-  message_loop_->PostDelayedTask(FROM_HERE,
-                                 on_more_data_cb_.callback(),
-                                 buffer_duration_ms_);
 }
 
 void VirtualAudioInputStream::Close() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
-  if (callback_) {
-    DCHECK(on_more_data_cb_.IsCancelled());
-    callback_->OnClose(this);
-    callback_ = NULL;
+  DCHECK(thread_checker_.CalledOnValidThread());
+
+  Stop();  // Make sure callback_ is no longer being used.
+
+  // If a non-null AfterCloseCallback was provided to the constructor, invoke it
+  // here.  The callback is moved to a stack-local first since |this| could be
+  // destroyed during Run().
+  if (!after_close_cb_.is_null()) {
+    const AfterCloseCallback cb = after_close_cb_;
+    after_close_cb_.Reset();
+    cb.Run(this);
   }
-  audio_manager_->ReleaseInputStream(this);
 }
 
 double VirtualAudioInputStream::GetMaxVolume() {

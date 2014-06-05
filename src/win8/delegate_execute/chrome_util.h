@@ -5,17 +5,16 @@
 #ifndef WIN8_DELEGATE_EXECUTE_CHROME_UTIL_H_
 #define WIN8_DELEGATE_EXECUTE_CHROME_UTIL_H_
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
+namespace base {
 class FilePath;
+}
 
 namespace delegate_execute {
 
 // Finalizes a previously updated installation.
-void UpdateChromeIfNeeded(const FilePath& chrome_exe);
-
-// Returns the appid of the Chrome pointed to by |chrome_exe|.
-string16 GetAppId(const FilePath& chrome_exe);
+void UpdateChromeIfNeeded(const base::FilePath& chrome_exe);
 
 }  // namespace delegate_execute
 

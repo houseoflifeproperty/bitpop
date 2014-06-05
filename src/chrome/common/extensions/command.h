@@ -5,10 +5,10 @@
 #ifndef CHROME_COMMON_EXTENSIONS_COMMAND_H_
 #define CHROME_COMMON_EXTENSIONS_COMMAND_H_
 
-#include <string>
 #include <map>
+#include <string>
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "ui/base/accelerators/accelerator.h"
 
 namespace base {
@@ -25,8 +25,9 @@ class Command {
  public:
   Command();
   Command(const std::string& command_name,
-          const string16& description,
-          const std::string& accelerator);
+          const base::string16& description,
+          const std::string& accelerator,
+          bool global);
   ~Command();
 
   // The platform value for the Command.
@@ -34,13 +35,23 @@ class Command {
 
   // Parse a string as an accelerator. If the accelerator is unparsable then
   // a generic ui::Accelerator object will be returns (with key_code Unknown).
-  static ui::Accelerator StringToAccelerator(const std::string& accelerator);
+  static ui::Accelerator StringToAccelerator(const std::string& accelerator,
+                                             const std::string& command_name);
+
+  // Returns the string representation of an accelerator without localizing the
+  // shortcut text (like accelerator::GetShortcutText() does).
+  static std::string AcceleratorToString(const ui::Accelerator& accelerator);
+
+  // Return true if the specified accelerator is one of the following multimedia
+  // keys: Next Track key, Previous Track key, Stop Media key, Play/Pause Media
+  // key, without any modifiers.
+  static bool IsMediaKey(const ui::Accelerator& accelerator);
 
   // Parse the command.
-  bool Parse(base::DictionaryValue* command,
+  bool Parse(const base::DictionaryValue* command,
              const std::string& command_name,
              int index,
-             string16* error);
+             base::string16* error);
 
   // Convert a Command object from |extension| to a DictionaryValue.
   // |active| specifies whether the command is active or not.
@@ -50,17 +61,22 @@ class Command {
   // Accessors:
   const std::string& command_name() const { return command_name_; }
   const ui::Accelerator& accelerator() const { return accelerator_; }
-  const string16& description() const { return description_; }
+  const base::string16& description() const { return description_; }
+  bool global() const { return global_; }
 
   // Setter:
   void set_accelerator(ui::Accelerator accelerator) {
     accelerator_ = accelerator;
   }
+  void set_global(bool global) {
+    global_ = global;
+  }
 
  private:
   std::string command_name_;
   ui::Accelerator accelerator_;
-  string16 description_;
+  base::string16 description_;
+  bool global_;
 };
 
 // A mapping of command name (std::string) to a command object.

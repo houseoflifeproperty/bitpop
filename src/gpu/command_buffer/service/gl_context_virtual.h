@@ -42,11 +42,12 @@ class GPU_EXPORT GLContextVirtual : public gfx::GLContext {
   virtual void ReleaseCurrent(gfx::GLSurface* surface) OVERRIDE;
   virtual bool IsCurrent(gfx::GLSurface* surface) OVERRIDE;
   virtual void* GetHandle() OVERRIDE;
-  virtual gfx::GLStateRestorer* GetGLStateRestorer() OVERRIDE;
   virtual void SetSwapInterval(int interval) OVERRIDE;
   virtual std::string GetExtensions() OVERRIDE;
   virtual bool GetTotalGpuMemory(size_t* bytes) OVERRIDE;
+  virtual void SetSafeToForceGpuSwitch() OVERRIDE;
   virtual bool WasAllocatedUsingRobustnessExtension() OVERRIDE;
+  virtual void SetUnbindFboOnMakeCurrent() OVERRIDE;
 
  protected:
   virtual ~GLContextVirtual();
@@ -54,7 +55,6 @@ class GPU_EXPORT GLContextVirtual : public gfx::GLContext {
  private:
   scoped_refptr<gfx::GLContext> shared_context_;
   gfx::Display* display_;
-  scoped_ptr<gfx::GLStateRestorer> state_restorer_;
   base::WeakPtr<gles2::GLES2Decoder> decoder_;
 
   DISALLOW_COPY_AND_ASSIGN(GLContextVirtual);

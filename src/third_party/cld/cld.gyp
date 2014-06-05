@@ -11,7 +11,10 @@
       'target_name': 'cld',
       'type': 'static_library',
       'dependencies': [
-      	'../icu/icu.gyp:icuuc',
+        '../icu/icu.gyp:icuuc',
+      ],
+      'export_dependent_settings': [
+        '../icu/icu.gyp:icuuc',
       ],
       'include_dirs': [
         '.',
@@ -101,22 +104,20 @@
       },
       'conditions': [
         ['OS=="win"', {
-              'direct_dependent_settings': {
-                'defines': [
-                  'COMPILER_MSVC',
-                ],
-              },
-              'msvs_disabled_warnings': [4005, 4006, 4018, 4244, 4309, 4800],
-            },
-        ],
-        ['OS!="win"', {
-              'direct_dependent_settings': {
-                'defines': [
-                  'COMPILER_GCC',
-                ],
-              },
-            },
-        ],
+          'direct_dependent_settings': {
+            'defines': [
+              'COMPILER_MSVC',
+            ],
+          },
+          # TODO(jschuh): C4267: http://crbug.com/167187 size_t -> int
+          'msvs_disabled_warnings': [4005, 4006, 4018, 4244, 4309, 4800, 4267],
+        }, {
+          'direct_dependent_settings': {
+            'defines': [
+              'COMPILER_GCC',
+            ],
+          },
+        }],
       ],
     },
   ],

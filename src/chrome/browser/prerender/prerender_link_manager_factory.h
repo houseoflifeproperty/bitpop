@@ -7,7 +7,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 
 class Profile;
 
@@ -15,7 +15,7 @@ namespace prerender {
 
 class PrerenderLinkManager;
 
-class PrerenderLinkManagerFactory : public ProfileKeyedServiceFactory {
+class PrerenderLinkManagerFactory : public BrowserContextKeyedServiceFactory {
  public:
   static PrerenderLinkManager* GetForProfile(Profile* profile);
   static PrerenderLinkManagerFactory* GetInstance();
@@ -26,9 +26,10 @@ class PrerenderLinkManagerFactory : public ProfileKeyedServiceFactory {
   PrerenderLinkManagerFactory();
   virtual ~PrerenderLinkManagerFactory() { }
 
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
-  virtual bool ServiceHasOwnInstanceInIncognito() const OVERRIDE;
+  virtual KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* profile) const OVERRIDE;
+  virtual content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const OVERRIDE;
 };
 
 }  // namespace prerender

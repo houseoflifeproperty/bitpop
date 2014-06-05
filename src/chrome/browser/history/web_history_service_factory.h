@@ -7,7 +7,7 @@
 
 #include "base/memory/singleton.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 
 namespace history {
 class WebHistoryService;
@@ -15,7 +15,7 @@ class WebHistoryService;
 
 // Used for creating and fetching a per-profile instance of the
 // WebHistoryService.
-class WebHistoryServiceFactory : public ProfileKeyedServiceFactory {
+class WebHistoryServiceFactory : public BrowserContextKeyedServiceFactory {
  public:
   // Get the singleton instance of the factory.
   static WebHistoryServiceFactory* GetInstance();
@@ -24,9 +24,9 @@ class WebHistoryServiceFactory : public ProfileKeyedServiceFactory {
   static history::WebHistoryService* GetForProfile(Profile* profile);
 
  protected:
-  // Overridden from ProfileKeyedServiceFactory.
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
+  // Overridden from BrowserContextKeyedServiceFactory.
+  virtual KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* context) const OVERRIDE;
 
  private:
   friend struct DefaultSingletonTraits<WebHistoryServiceFactory>;

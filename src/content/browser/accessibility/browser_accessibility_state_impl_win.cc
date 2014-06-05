@@ -4,12 +4,12 @@
 
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
 
-#include <psapi.h>
 #include <windows.h>
+#include <psapi.h>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/metrics/histogram.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 
 namespace content {
 
@@ -42,7 +42,7 @@ void BrowserAccessibilityStateImpl::UpdatePlatformSpecificHistograms() {
   if (!EnumProcessModules(process, modules, 0, &bytes_required))
     return;
 
-  scoped_array<char> buffer(new char[bytes_required]);
+  scoped_ptr<char[]> buffer(new char[bytes_required]);
   modules = reinterpret_cast<HMODULE*>(buffer.get());
   DWORD ignore;
   if (!EnumProcessModules(process, modules, bytes_required, &ignore))
@@ -57,7 +57,7 @@ void BrowserAccessibilityStateImpl::UpdatePlatformSpecificHistograms() {
   for (size_t i = 0; i < module_count; i++) {
     TCHAR filename[MAX_PATH];
     GetModuleFileName(modules[i], filename, sizeof(filename));
-    string16 module_name(FilePath(filename).BaseName().value());
+    base::string16 module_name(base::FilePath(filename).BaseName().value());
     if (LowerCaseEqualsASCII(module_name, "fsdomsrv.dll"))
       jaws = true;
     if (LowerCaseEqualsASCII(module_name, "vbufbackend_gecko_ia2.dll"))

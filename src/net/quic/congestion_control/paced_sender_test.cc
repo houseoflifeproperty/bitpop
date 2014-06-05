@@ -11,14 +11,17 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace net {
-namespace testing {
+namespace test {
 
-const int kHundredKBytesPerS = 100000;
+const int kHundredKBytesPerS = 100;
 
 class PacedSenderTest : public ::testing::Test {
  protected:
   PacedSenderTest()
-      : paced_sender_(new PacedSender(&clock_, kHundredKBytesPerS)) {
+      : zero_time_(QuicTime::Delta::Zero()),
+        paced_sender_(new PacedSender(
+            QuicBandwidth::FromKBytesPerSecond(kHundredKBytesPerS),
+            kDefaultMaxPacketSize)) {
   }
 
   const QuicTime::Delta zero_time_;
@@ -27,57 +30,49 @@ class PacedSenderTest : public ::testing::Test {
 };
 
 TEST_F(PacedSenderTest, Basic) {
-  paced_sender_->UpdateBandwidthEstimate(kHundredKBytesPerS * 10);
-  EXPECT_TRUE(paced_sender_->TimeUntilSend(zero_time_).IsZero());
-  EXPECT_EQ(kMaxPacketSize * 2,
-            paced_sender_->AvailableWindow(kMaxPacketSize * 4));
-  paced_sender_->SentPacket(kMaxPacketSize);
-  EXPECT_TRUE(paced_sender_->TimeUntilSend(zero_time_).IsZero());
-  paced_sender_->SentPacket(kMaxPacketSize);
-  EXPECT_EQ(static_cast<int64>(kMaxPacketSize * 2),
-            paced_sender_->TimeUntilSend(zero_time_).ToMicroseconds());
-  EXPECT_EQ(0u, paced_sender_->AvailableWindow(kMaxPacketSize * 4));
+  paced_sender_->UpdateBandwidthEstimate(clock_.Now(),
+      QuicBandwidth::FromKBytesPerSecond(kHundredKBytesPerS * 10));
+  EXPECT_TRUE(paced_sender_->TimeUntilSend(clock_.Now(), zero_time_).IsZero());
+  paced_sender_->OnPacketSent(clock_.Now(), kDefaultMaxPacketSize);
+  EXPECT_TRUE(paced_sender_->TimeUntilSend(clock_.Now(), zero_time_).IsZero());
+  paced_sender_->OnPacketSent(clock_.Now(), kDefaultMaxPacketSize);
+  EXPECT_EQ(static_cast<int64>(kDefaultMaxPacketSize * 2),
+            paced_sender_->TimeUntilSend(
+                clock_.Now(), zero_time_).ToMicroseconds());
   clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(24));
-  EXPECT_TRUE(paced_sender_->TimeUntilSend(zero_time_).IsZero());
-  EXPECT_EQ(kMaxPacketSize * 2,
-            paced_sender_->AvailableWindow(kMaxPacketSize * 4));
+  EXPECT_TRUE(paced_sender_->TimeUntilSend(clock_.Now(), zero_time_).IsZero());
 }
 
 TEST_F(PacedSenderTest, LowRate) {
-  paced_sender_->UpdateBandwidthEstimate(kHundredKBytesPerS);
-  EXPECT_TRUE(paced_sender_->TimeUntilSend(zero_time_).IsZero());
-  size_t window = paced_sender_->AvailableWindow(kMaxPacketSize * 4);
-  EXPECT_EQ(kMaxPacketSize * 2, window);
-  paced_sender_->SentPacket(kMaxPacketSize);
-  EXPECT_TRUE(paced_sender_->TimeUntilSend(zero_time_).IsZero());
-  paced_sender_->SentPacket(kMaxPacketSize);
-  EXPECT_EQ(static_cast<int64>(kMaxPacketSize * 20),
-            paced_sender_->TimeUntilSend(zero_time_).ToMicroseconds());
-  EXPECT_EQ(0u, paced_sender_->AvailableWindow(kMaxPacketSize * 4));
+  paced_sender_->UpdateBandwidthEstimate(clock_.Now(),
+      QuicBandwidth::FromKBytesPerSecond(kHundredKBytesPerS));
+  EXPECT_TRUE(paced_sender_->TimeUntilSend(clock_.Now(), zero_time_).IsZero());
+  paced_sender_->OnPacketSent(clock_.Now(), kDefaultMaxPacketSize);
+  EXPECT_TRUE(paced_sender_->TimeUntilSend(clock_.Now(), zero_time_).IsZero());
+  paced_sender_->OnPacketSent(clock_.Now(), kDefaultMaxPacketSize);
+  EXPECT_EQ(static_cast<int64>(kDefaultMaxPacketSize * 20),
+            paced_sender_->TimeUntilSend(
+                clock_.Now(), zero_time_).ToMicroseconds());
   clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(24));
-  EXPECT_TRUE(paced_sender_->TimeUntilSend(zero_time_).IsZero());
-  EXPECT_EQ(kMaxPacketSize * 2,
-            paced_sender_->AvailableWindow(kMaxPacketSize * 4));
+  EXPECT_TRUE(paced_sender_->TimeUntilSend(clock_.Now(), zero_time_).IsZero());
 }
 
 TEST_F(PacedSenderTest, HighRate) {
-  int bandwidth_estimate = kHundredKBytesPerS * 100;
-  paced_sender_->UpdateBandwidthEstimate(bandwidth_estimate);
-  EXPECT_TRUE(paced_sender_->TimeUntilSend(zero_time_).IsZero());
-  EXPECT_EQ(bandwidth_estimate / 500u,
-            paced_sender_->AvailableWindow(kMaxPacketSize * 100));
+  QuicBandwidth bandwidth_estimate = QuicBandwidth::FromKBytesPerSecond(
+      kHundredKBytesPerS * 100);
+  paced_sender_->UpdateBandwidthEstimate(clock_.Now(), bandwidth_estimate);
+  EXPECT_TRUE(paced_sender_->TimeUntilSend(clock_.Now(), zero_time_).IsZero());
   for (int i = 0; i < 16; ++i) {
-    paced_sender_->SentPacket(kMaxPacketSize);
-    EXPECT_TRUE(paced_sender_->TimeUntilSend(zero_time_).IsZero());
+    paced_sender_->OnPacketSent(clock_.Now(), kDefaultMaxPacketSize);
+    EXPECT_TRUE(paced_sender_->TimeUntilSend(
+        clock_.Now(), zero_time_).IsZero());
   }
-  paced_sender_->SentPacket(kMaxPacketSize);
-  EXPECT_EQ(0u, paced_sender_->AvailableWindow(kMaxPacketSize * 100));
-  EXPECT_EQ(2040, paced_sender_->TimeUntilSend(zero_time_).ToMicroseconds());
+  paced_sender_->OnPacketSent(clock_.Now(), kDefaultMaxPacketSize);
+  EXPECT_EQ(2040, paced_sender_->TimeUntilSend(
+      clock_.Now(), zero_time_).ToMicroseconds());
   clock_.AdvanceTime(QuicTime::Delta::FromMicroseconds(20400));
-  EXPECT_TRUE(paced_sender_->TimeUntilSend(zero_time_).IsZero());
-  EXPECT_EQ(bandwidth_estimate / 500u,
-            paced_sender_->AvailableWindow(kMaxPacketSize * 100));
+  EXPECT_TRUE(paced_sender_->TimeUntilSend(clock_.Now(), zero_time_).IsZero());
 }
 
-}  // namespace testing
+}  // namespace test
 }  // namespace net

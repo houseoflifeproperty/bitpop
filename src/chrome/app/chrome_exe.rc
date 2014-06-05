@@ -36,21 +36,42 @@ LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
 // icons.  To avoid breaking existing shortcuts, add new icons at the end
 // (following the ordering described above).
 #if defined(GOOGLE_CHROME_BUILD)
-IDR_MAINFRAME           ICON                    "theme\google_chrome\chrome.ico"
-IDR_MAINFRAME_2         ICON                    "theme\google_chrome\chrome2.ico"
-IDR_MAINFRAME_3         ICON                    "theme\google_chrome\chrome3.ico"
-IDR_MAINFRAME_4         ICON                    "theme\google_chrome\chrome4.ico"
+IDR_MAINFRAME           ICON                    "theme\google_chrome\win\chrome.ico"
+IDR_MAINFRAME_2         ICON                    "theme\google_chrome\win\chrome2.ico"
+IDR_MAINFRAME_3         ICON                    "theme\google_chrome\win\chrome3.ico"
+IDR_MAINFRAME_4         ICON                    "theme\google_chrome\win\chrome4.ico"
 // The SXS icon must have an index of 4, the constant is used in Chrome code to
 // identify it.
-IDR_SXS                 ICON                    "theme\google_chrome\chrome_sxs.ico"
+IDR_SXS                 ICON                    "theme\google_chrome\win\chrome_sxs.ico"
 #else
-IDR_MAINFRAME           ICON                    "theme\chromium\chromium.ico"
+IDR_MAINFRAME           ICON                    "theme\chromium\win\chromium.ico"
 #endif
-// Icon for the App Lancher. Named with a leading X to keep the name
-// alphabetically after IDR_SXS.
-// The SXS icon must have an index of 5 for Chrome and 1 for Chromium, these
-// constants are used in Chrome code to identify it.
-IDR_X_APP_LIST          ICON                    "theme\\app_list.ico"
+
+// Start a naming scheme to keep icons in order. A leading X is used to keep
+// the name alphabetically after IDR_SXS. The maximum of the number that follows
+// should be incremented when a new icon is added. The icon indices in
+// chrome_icon_resources_win.cc should also be updated.
+
+#if defined(GOOGLE_CHROME_BUILD)
+IDR_X001_APP_LIST       ICON                    "theme\\google_chrome\\win\\app_list.ico"
+IDR_X002_APP_LIST_SXS   ICON                    "theme\\google_chrome\\win\\app_list_sxs.ico"
+#else
+IDR_X001_APP_LIST       ICON                    "theme\\chromium\\win\\app_list.ico"
+#endif
+
+IDR_X003_INSTALL_APP    ICON                    "theme\\win\\install_app.ico"
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// GOOGLEUPDATEAPPLICATIONCOMMANDS is a "well-known" marker resource defined
+// by Omaha. Executables must both be signed by Google and contain the marker
+// in order to expose application commands.
+//
+#define IDR_GOOGLE_UPDATE_APP_COMMANDS_MARKUP 1
+
+IDR_GOOGLE_UPDATE_APP_COMMANDS_MARKUP GOOGLEUPDATEAPPLICATIONCOMMANDS { 1L }
+
 
 #endif    // English (U.S.) resources
 /////////////////////////////////////////////////////////////////////////////

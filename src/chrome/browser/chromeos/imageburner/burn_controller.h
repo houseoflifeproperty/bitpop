@@ -8,11 +8,11 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "chrome/browser/chromeos/imageburner/burn_manager.h"
 #include "chromeos/disks/disk_mount_manager.h"
 
-class FilePath;
-
 namespace base {
+class FilePath;
 class TimeDelta;
 }
 
@@ -22,13 +22,6 @@ class WebContents;
 
 namespace chromeos {
 namespace imageburner {
-
-// An enum used to describe what type of progress is being made.
-enum ProgressType {
-  DOWNLOADING,
-  UNZIPPING,
-  BURNING
-};
 
 // A class to control recovery media creating process.
 class BurnController {
@@ -69,8 +62,8 @@ class BurnController {
   // Returns devices on which we can burn recovery image.
   virtual std::vector<disks::DiskMountManager::Disk> GetBurnableDevices() = 0;
   // Starts burning process.
-  virtual void StartBurnImage(const FilePath& target_device_path,
-                              const FilePath& target_file_path) = 0;
+  virtual void StartBurnImage(const base::FilePath& target_device_path,
+                              const base::FilePath& target_file_path) = 0;
   // Cancels burning process.
   virtual void CancelBurnImage() = 0;
   // Creates a new instance of BurnController.

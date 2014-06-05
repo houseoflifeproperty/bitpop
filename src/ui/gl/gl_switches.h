@@ -23,11 +23,12 @@ extern const char kGLImplementationMockName[];
 
 namespace switches {
 
+GL_EXPORT extern const char kDisableD3D11[];
 GL_EXPORT extern const char kDisableGpuVsync[];
 GL_EXPORT extern const char kEnableGPUServiceLogging[];
 GL_EXPORT extern const char kEnableGPUClientLogging[];
+GL_EXPORT extern const char kEnableGPUServiceTracing[];
 GL_EXPORT extern const char kGpuNoContextLost[];
-GL_EXPORT extern const char kGpuSwapDelay[];
 
 GL_EXPORT extern const char kSupportsDualGpus[];
 GL_EXPORT extern const char kGpuSwitching[];
@@ -41,6 +42,14 @@ GL_EXPORT extern const char kGpuSwitchingOptionNameAutomatic[];
 GL_EXPORT extern const char kUseGL[];
 GL_EXPORT extern const char kSwiftShaderPath[];
 GL_EXPORT extern const char kTestGLLib[];
+GL_EXPORT extern const char kUseGpuInTests[];
+
+// These flags are used by the test harness code, not passed in by users.
+GL_EXPORT extern const char kDisableGLDrawingForTests[];
+GL_EXPORT extern const char kOverrideUseGLWithOSMesaForTests[];
+
+GL_EXPORT extern const char* kGLSwitchesCopiedFromGpuProcessHost[];
+GL_EXPORT extern const int kGLSwitchesCopiedFromGpuProcessHostNumSwitches;
 
 }  // namespace switches
 

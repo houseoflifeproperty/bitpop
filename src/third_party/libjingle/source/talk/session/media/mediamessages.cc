@@ -33,7 +33,6 @@
 
 #include "talk/base/logging.h"
 #include "talk/base/stringencode.h"
-#include "talk/media/base/streamparams.h"
 #include "talk/p2p/base/constants.h"
 #include "talk/p2p/base/parsing.h"
 #include "talk/session/media/mediasessionclient.h"
@@ -51,13 +50,6 @@ void AddStream(std::vector<StreamParams>* streams, const StreamParams& stream) {
 
 bool ParseSsrc(const std::string& string, uint32* ssrc) {
   return talk_base::FromString(string, ssrc);
-}
-
-bool ParseSsrc(const buzz::XmlElement* element, uint32* ssrc) {
-  if (element == NULL) {
-    return false;
-  }
-  return ParseSsrc(element->BodyText(), ssrc);
 }
 
 // Builds a <view> element according to the following spec:
@@ -84,7 +76,7 @@ buzz::XmlElement* CreateStaticVideoViewElem(const std::string& content_name,
                                             const StaticVideoView& view) {
   buzz::XmlElement* view_elem =
       CreateVideoViewElem(content_name, STR_JINGLE_DRAFT_VIEW_TYPE_STATIC);
-  AddXmlAttr(view_elem, QN_SSRC, view.ssrc);
+  AddXmlAttr(view_elem, QN_SSRC, view.selector.ssrc);
 
   buzz::XmlElement* params_elem = new buzz::XmlElement(QN_JINGLE_DRAFT_PARAMS);
   AddXmlAttr(params_elem, QN_WIDTH, view.width);
@@ -98,37 +90,25 @@ buzz::XmlElement* CreateStaticVideoViewElem(const std::string& content_name,
 
 }  //  namespace
 
-bool MediaStreams::GetAudioStreamByNickAndName(
-    const std::string& nick, const std::string& name, StreamParams* stream) {
-  return GetStreamByNickAndName(audio_, nick, name, stream);
+bool MediaStreams::GetAudioStream(
+    const StreamSelector& selector, StreamParams* stream) {
+  return GetStream(audio_, selector, stream);
 }
 
-bool MediaStreams::GetVideoStreamByNickAndName(
-    const std::string& nick, const std::string& name, StreamParams* stream) {
-  return GetStreamByNickAndName(video_, nick, name, stream);
+bool MediaStreams::GetVideoStream(
+    const StreamSelector& selector, StreamParams* stream) {
+  return GetStream(video_, selector, stream);
 }
 
-bool MediaStreams::GetDataStreamByNickAndName(
-    const std::string& nick, const std::string& name, StreamParams* stream) {
-  return GetStreamByNickAndName(data_, nick, name, stream);
+bool MediaStreams::GetDataStream(
+    const StreamSelector& selector, StreamParams* stream) {
+  return GetStream(data_, selector, stream);
 }
 
 void MediaStreams::CopyFrom(const MediaStreams& streams) {
   audio_ = streams.audio_;
   video_ = streams.video_;
   data_ = streams.data_;
-}
-
-bool MediaStreams::GetAudioStreamBySsrc(uint32 ssrc, StreamParams* stream) {
-  return GetStreamBySsrc(audio_, ssrc, stream);
-}
-
-bool MediaStreams::GetVideoStreamBySsrc(uint32 ssrc, StreamParams* stream) {
-  return GetStreamBySsrc(video_, ssrc, stream);
-}
-
-bool MediaStreams::GetDataStreamBySsrc(uint32 ssrc, StreamParams* stream) {
-  return GetStreamBySsrc(data_, ssrc, stream);
 }
 
 void MediaStreams::AddAudioStream(const StreamParams& stream) {
@@ -143,19 +123,19 @@ void MediaStreams::AddDataStream(const StreamParams& stream) {
   AddStream(&data_, stream);
 }
 
-void MediaStreams::RemoveAudioStreamByNickAndName(
-    const std::string& nick, const std::string& name) {
-  RemoveStreamByNickAndName(&audio_, nick, name);
+bool MediaStreams::RemoveAudioStream(
+    const StreamSelector& selector) {
+  return RemoveStream(&audio_, selector);
 }
 
-void MediaStreams::RemoveVideoStreamByNickAndName(
-    const std::string& nick, const std::string& name) {
-  RemoveStreamByNickAndName(&video_, nick, name);
+bool MediaStreams::RemoveVideoStream(
+    const StreamSelector& selector) {
+  return RemoveStream(&video_, selector);
 }
 
-void MediaStreams::RemoveDataStreamByNickAndName(
-    const std::string& nick, const std::string& name) {
-  RemoveStreamByNickAndName(&data_, nick, name);
+bool MediaStreams::RemoveDataStream(
+    const StreamSelector& selector) {
+  return RemoveStream(&data_, selector);
 }
 
 bool IsJingleViewRequest(const buzz::XmlElement* action_elem) {
@@ -165,9 +145,11 @@ bool IsJingleViewRequest(const buzz::XmlElement* action_elem) {
 bool ParseStaticVideoView(const buzz::XmlElement* view_elem,
                           StaticVideoView* view,
                           ParseError* error) {
-  if (!ParseSsrc(view_elem->Attr(QN_SSRC), &(view->ssrc))) {
+  uint32 ssrc;
+  if (!ParseSsrc(view_elem->Attr(QN_SSRC), &ssrc)) {
     return BadParse("Invalid or missing view ssrc.", error);
   }
+  view->selector = StreamSelector(ssrc);
 
   const buzz::XmlElement* params_elem =
       view_elem->FirstNamed(QN_JINGLE_DRAFT_PARAMS);
@@ -195,7 +177,7 @@ bool ParseJingleViewRequest(const buzz::XmlElement* action_elem,
       view_request->static_video_views.clear();
       return true;
     } else if (STR_JINGLE_DRAFT_VIEW_TYPE_STATIC == type) {
-      StaticVideoView static_video_view(0, 0, 0, 0);
+      StaticVideoView static_video_view(StreamSelector(0), 0, 0, 0);
       if (!ParseStaticVideoView(view_elem, &static_video_view, error)) {
         return false;
       }
@@ -276,8 +258,9 @@ bool ParseJingleStream(const buzz::XmlElement* stream_elem,
                        std::vector<StreamParams>* streams,
                        ParseError* error) {
   StreamParams stream;
-  stream.nick = stream_elem->Attr(QN_NICK);
-  stream.name = stream_elem->Attr(QN_NAME);
+  // We treat the nick as a stream groupid.
+  stream.groupid = stream_elem->Attr(QN_NICK);
+  stream.id = stream_elem->Attr(QN_NAME);
   stream.type = stream_elem->Attr(QN_TYPE);
   stream.display = stream_elem->Attr(QN_DISPLAY);
   stream.cname = stream_elem->Attr(QN_CNAME);
@@ -289,6 +272,23 @@ bool ParseJingleStream(const buzz::XmlElement* stream_elem,
     return false;
   }
   streams->push_back(stream);
+  return true;
+}
+
+bool ParseJingleRtpHeaderExtensions(const buzz::XmlElement* parent_elem,
+                                    std::vector<RtpHeaderExtension>* hdrexts,
+                                    ParseError* error) {
+  for (const buzz::XmlElement* hdrext_elem =
+           parent_elem->FirstNamed(QN_JINGLE_RTP_HDREXT);
+       hdrext_elem != NULL;
+       hdrext_elem = hdrext_elem->NextNamed(QN_JINGLE_RTP_HDREXT)) {
+    std::string uri = hdrext_elem->Attr(QN_URI);
+    int id = GetXmlAttr(hdrext_elem, QN_ID, 0);
+    if (id <= 0) {
+      return BadParse("Invalid RTP header extension id.", error);
+    }
+    hdrexts->push_back(RtpHeaderExtension(uri, id));
+  }
   return true;
 }
 
@@ -346,8 +346,9 @@ void WriteJingleStream(const StreamParams& stream,
                        buzz::XmlElement* parent_elem) {
   buzz::XmlElement* stream_elem =
       new buzz::XmlElement(QN_JINGLE_DRAFT_STREAM, false);
-  AddXmlAttrIfNonEmpty(stream_elem, QN_NICK, stream.nick);
-  AddXmlAttrIfNonEmpty(stream_elem, QN_NAME, stream.name);
+  // We treat the nick as a stream groupid.
+  AddXmlAttrIfNonEmpty(stream_elem, QN_NICK, stream.groupid);
+  AddXmlAttrIfNonEmpty(stream_elem, QN_NAME, stream.id);
   AddXmlAttrIfNonEmpty(stream_elem, QN_TYPE, stream.type);
   AddXmlAttrIfNonEmpty(stream_elem, QN_DISPLAY, stream.display);
   AddXmlAttrIfNonEmpty(stream_elem, QN_CNAME, stream.cname);
@@ -368,5 +369,19 @@ void WriteJingleStreams(const std::vector<StreamParams>& streams,
 
   parent_elem->AddElement(streams_elem);
 }
+
+void WriteJingleRtpHeaderExtensions(
+    const std::vector<RtpHeaderExtension>& hdrexts,
+    buzz::XmlElement* parent_elem) {
+  for (std::vector<RtpHeaderExtension>::const_iterator hdrext = hdrexts.begin();
+       hdrext != hdrexts.end(); ++hdrext) {
+    buzz::XmlElement* hdrext_elem =
+      new buzz::XmlElement(QN_JINGLE_RTP_HDREXT, false);
+    AddXmlAttr(hdrext_elem, QN_URI, hdrext->uri);
+    AddXmlAttr(hdrext_elem, QN_ID, hdrext->id);
+    parent_elem->AddElement(hdrext_elem);
+  }
+}
+
 
 }  // namespace cricket

@@ -9,20 +9,22 @@
 #include "base/compiler_specific.h"
 #include "base/debug/stack_trace.h"
 #include "base/logging.h"
-#include "base/rand_util.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_response_body_drainer.h"
 #include "net/http/http_stream_factory_impl.h"
 #include "net/http/url_security_manager.h"
 #include "net/proxy/proxy_service.h"
+#include "net/quic/crypto/quic_random.h"
 #include "net/quic/quic_clock.h"
+#include "net/quic/quic_crypto_client_stream_factory.h"
 #include "net/quic/quic_stream_factory.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/client_socket_pool_manager_impl.h"
 #include "net/socket/next_proto.h"
+#include "net/spdy/hpack_huffman_aggregator.h"
 #include "net/spdy/spdy_session_pool.h"
 
 namespace {
@@ -41,6 +43,7 @@ net::ClientSocketPoolManager* CreateSocketPoolManager(
       params.cert_verifier,
       params.server_bound_cert_service,
       params.transport_security_state,
+      params.cert_transparency_verifier,
       params.ssl_session_cache_shard,
       params.proxy_service,
       params.ssl_config_service,
@@ -57,11 +60,11 @@ HttpNetworkSession::Params::Params()
       cert_verifier(NULL),
       server_bound_cert_service(NULL),
       transport_security_state(NULL),
+      cert_transparency_verifier(NULL),
       proxy_service(NULL),
       ssl_config_service(NULL),
       http_auth_handler_factory(NULL),
       network_delegate(NULL),
-      http_server_properties(NULL),
       net_log(NULL),
       host_mapping_rules(NULL),
       force_http_pipelining(false),
@@ -69,19 +72,29 @@ HttpNetworkSession::Params::Params()
       http_pipelining_enabled(false),
       testing_fixed_http_port(0),
       testing_fixed_https_port(0),
-      max_spdy_sessions_per_domain(0),
       force_spdy_single_domain(false),
-      enable_spdy_ip_pooling(true),
-      enable_spdy_credential_frames(false),
       enable_spdy_compression(true),
       enable_spdy_ping_based_connection_checking(true),
       spdy_default_protocol(kProtoUnknown),
-      spdy_initial_recv_window_size(0),
+      spdy_stream_initial_recv_window_size(0),
       spdy_initial_max_concurrent_streams(0),
       spdy_max_concurrent_streams_limit(0),
       time_func(&base::TimeTicks::Now),
-      origin_port_to_force_quic_on(0) {
+      enable_quic(false),
+      enable_quic_https(false),
+      enable_quic_port_selection(true),
+      enable_quic_pacing(false),
+      enable_quic_time_based_loss_detection(false),
+      enable_quic_persist_server_info(false),
+      quic_clock(NULL),
+      quic_random(NULL),
+      quic_max_packet_length(kDefaultMaxPacketSize),
+      enable_user_alternate_protocol_ports(false),
+      quic_crypto_client_stream_factory(NULL) {
+  quic_supported_versions.push_back(QUIC_VERSION_16);
 }
+
+HttpNetworkSession::Params::~Params() {}
 
 // TODO(mbelshe): Move the socket factories into HttpStreamFactory.
 HttpNetworkSession::HttpNetworkSession(const Params& params)
@@ -98,30 +111,44 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
       websocket_socket_pool_manager_(
           CreateSocketPoolManager(WEBSOCKET_SOCKET_POOL, params)),
       quic_stream_factory_(params.host_resolver,
-                           net::ClientSocketFactory::GetDefaultFactory(),
-                           base::Bind(&base::RandUint64),
-                           new QuicClock()),
+                           params.client_socket_factory ?
+                               params.client_socket_factory :
+                               net::ClientSocketFactory::GetDefaultFactory(),
+                           params.http_server_properties,
+                           params.cert_verifier,
+                           params.quic_crypto_client_stream_factory,
+                           params.quic_random ? params.quic_random :
+                               QuicRandom::GetInstance(),
+                           params.quic_clock ? params. quic_clock :
+                               new QuicClock(),
+                           params.quic_max_packet_length,
+                           params.quic_supported_versions,
+                           params.enable_quic_port_selection,
+                           params.enable_quic_pacing,
+                           params.enable_quic_time_based_loss_detection),
       spdy_session_pool_(params.host_resolver,
                          params.ssl_config_service,
                          params.http_server_properties,
-                         params.max_spdy_sessions_per_domain,
                          params.force_spdy_single_domain,
-                         params.enable_spdy_ip_pooling,
-                         params.enable_spdy_credential_frames,
                          params.enable_spdy_compression,
                          params.enable_spdy_ping_based_connection_checking,
                          params.spdy_default_protocol,
-                         params.spdy_initial_recv_window_size,
+                         params.spdy_stream_initial_recv_window_size,
                          params.spdy_initial_max_concurrent_streams,
                          params.spdy_max_concurrent_streams_limit,
                          params.time_func,
                          params.trusted_spdy_proxy),
-      ALLOW_THIS_IN_INITIALIZER_LIST(http_stream_factory_(
-          new HttpStreamFactoryImpl(this))),
+      http_stream_factory_(new HttpStreamFactoryImpl(this, false)),
+      http_stream_factory_for_websocket_(
+          new HttpStreamFactoryImpl(this, true)),
       params_(params) {
   DCHECK(proxy_service_);
-  DCHECK(ssl_config_service_);
+  DCHECK(ssl_config_service_.get());
   CHECK(http_server_properties_);
+
+  if (HpackHuffmanAggregator::UseAggregator()) {
+    huffman_aggregator_.reset(new HpackHuffmanAggregator());
+  }
 }
 
 HttpNetworkSession::~HttpNetworkSession() {
@@ -170,25 +197,44 @@ SSLClientSocketPool* HttpNetworkSession::GetSocketPoolForSSLWithProxy(
       proxy_server);
 }
 
-Value* HttpNetworkSession::SocketPoolInfoToValue() const {
+base::Value* HttpNetworkSession::SocketPoolInfoToValue() const {
   // TODO(yutak): Should merge values from normal pools and WebSocket pools.
   return normal_socket_pool_manager_->SocketPoolInfoToValue();
 }
 
-Value* HttpNetworkSession::SpdySessionPoolInfoToValue() const {
+base::Value* HttpNetworkSession::SpdySessionPoolInfoToValue() const {
   return spdy_session_pool_.SpdySessionPoolInfoToValue();
+}
+
+base::Value* HttpNetworkSession::QuicInfoToValue() const {
+  base::DictionaryValue* dict = new base::DictionaryValue();
+  dict->Set("sessions", quic_stream_factory_.QuicStreamFactoryInfoToValue());
+  dict->SetBoolean("quic_enabled", params_.enable_quic);
+  dict->SetBoolean("quic_enabled_https", params_.enable_quic_https);
+  dict->SetBoolean("enable_quic_port_selection",
+                   params_.enable_quic_port_selection);
+  dict->SetBoolean("enable_quic_pacing",
+                   params_.enable_quic_pacing);
+  dict->SetBoolean("enable_quic_time_based_loss_detection",
+                   params_.enable_quic_time_based_loss_detection);
+  dict->SetBoolean("enable_quic_persist_server_info",
+                   params_.enable_quic_persist_server_info);
+  dict->SetString("origin_to_force_quic_on",
+                  params_.origin_to_force_quic_on.ToString());
+  return dict;
 }
 
 void HttpNetworkSession::CloseAllConnections() {
   normal_socket_pool_manager_->FlushSocketPoolsWithError(ERR_ABORTED);
   websocket_socket_pool_manager_->FlushSocketPoolsWithError(ERR_ABORTED);
   spdy_session_pool_.CloseCurrentSessions(ERR_ABORTED);
+  quic_stream_factory_.CloseAllSessions(ERR_ABORTED);
 }
 
 void HttpNetworkSession::CloseIdleConnections() {
   normal_socket_pool_manager_->CloseIdleSockets();
   websocket_socket_pool_manager_->CloseIdleSockets();
-  spdy_session_pool_.CloseIdleSessions();
+  spdy_session_pool_.CloseCurrentIdleSessions();
 }
 
 ClientSocketPoolManager* HttpNetworkSession::GetSocketPoolManager(

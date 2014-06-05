@@ -11,9 +11,9 @@
 #include "base/base64.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "remoting/host/pin_hash.h"
-#include "remoting/host/win/elevated_controller_resource.h"
+#include "remoting/host/win/core_resource.h"
 #include "remoting/protocol/authentication_method.h"
 
 namespace remoting {
@@ -42,27 +42,8 @@ LRESULT VerifyConfigWindowWin::OnInitDialog(HWND wparam, LPARAM lparam) {
 
   CenterWindow();
 
-  // TODO(simonmorris): l10n.
-  SetWindowText(L"Chrome Remote Desktop");
-
-  CWindow email_label(GetDlgItem(IDC_EMAIL_LABEL));
-  email_label.SetWindowText(L"Account:");
-
-  CWindow pin_label(GetDlgItem(IDC_PIN_LABEL));
-  pin_label.SetWindowText(L"PIN:");
-
-  CWindow ok_button(GetDlgItem(IDOK));
-  ok_button.SetWindowText(L"Confirm");
-
-  CWindow cancel_button(GetDlgItem(IDCANCEL));
-  cancel_button.SetWindowText(L"Cancel");
-
-  CWindow message_text(GetDlgItem(IDC_MESSAGE));
-  message_text.SetWindowText(L"Please confirm your account and PIN below to "
-                             L"allow access by Chrome Remote Desktop.");
-
   CWindow email_text(GetDlgItem(IDC_EMAIL));
-  email_text.SetWindowText(UTF8ToUTF16(email_).c_str());
+  email_text.SetWindowText(base::UTF8ToUTF16(email_).c_str());
   return TRUE;
 }
 
@@ -127,13 +108,14 @@ bool VerifyConfigWindowWin::VerifyHostSecretHash() {
 
   // Get the PIN length.
   int pin_length = pin_edit.GetWindowTextLength();
-  scoped_array<char16> pin(new char16[pin_length + 1]);
+  scoped_ptr<base::char16[]> pin(new base::char16[pin_length + 1]);
 
   // Get the PIN making sure it is NULL terminated even if an error occurs.
   int result = pin_edit.GetWindowText(pin.get(), pin_length + 1);
   pin[std::min(result, pin_length)] = 0;
 
-  return VerifyHostPinHash(host_secret_hash_, host_id_, UTF16ToUTF8(pin.get()));
+  return VerifyHostPinHash(host_secret_hash_,
+                           host_id_, base::UTF16ToUTF8(pin.get()));
 }
 
 }  // namespace remoting

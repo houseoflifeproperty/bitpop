@@ -8,16 +8,17 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "video_engine/test/auto_test/interface/vie_file_based_comparison_tests.h"
+#include "webrtc/video_engine/test/auto_test/interface/vie_file_based_comparison_tests.h"
 
-#include "video_engine/test/auto_test/interface/vie_autotest_defines.h"
-#include "video_engine/test/auto_test/primitives/base_primitives.h"
-#include "video_engine/test/auto_test/primitives/framedrop_primitives.h"
-#include "video_engine/test/auto_test/primitives/general_primitives.h"
-#include "video_engine/test/libvietest/include/tb_interfaces.h"
-#include "video_engine/test/libvietest/include/vie_external_render_filter.h"
-#include "video_engine/test/libvietest/include/vie_fake_camera.h"
-#include "video_engine/test/libvietest/include/vie_to_file_renderer.h"
+#include "webrtc/video_engine/test/auto_test/interface/vie_autotest_defines.h"
+#include "webrtc/video_engine/test/auto_test/primitives/base_primitives.h"
+#include "webrtc/video_engine/test/auto_test/primitives/framedrop_primitives.h"
+#include "webrtc/video_engine/test/auto_test/primitives/general_primitives.h"
+#include "webrtc/video_engine/test/libvietest/include/tb_external_transport.h"
+#include "webrtc/video_engine/test/libvietest/include/tb_interfaces.h"
+#include "webrtc/video_engine/test/libvietest/include/vie_external_render_filter.h"
+#include "webrtc/video_engine/test/libvietest/include/vie_fake_camera.h"
+#include "webrtc/video_engine/test/libvietest/include/vie_to_file_renderer.h"
 
 bool ViEFileBasedComparisonTests::TestCallSetup(
     const std::string& i420_video_file,
@@ -47,7 +48,7 @@ bool ViEFileBasedComparisonTests::TestCallSetup(
   EXPECT_EQ(0, interfaces.capture->ConnectCaptureDevice(
       capture_id, video_channel));
 
-  ConfigureRtpRtcp(interfaces.rtp_rtcp, video_channel);
+  ConfigureRtpRtcp(interfaces.rtp_rtcp, kNack, video_channel);
 
   webrtc::ViERender* render_interface = interfaces.render;
   webrtc::ViEImageProcess* image_process = interfaces.image_process;
@@ -89,8 +90,8 @@ void ViEFileBasedComparisonTests::TestFullStack(
     int width,
     int height,
     int bit_rate_kbps,
-    int packet_loss_percent,
-    int network_delay_ms,
+    ProtectionMethod protection_method,
+    const NetworkParameters& network,
     ViEToFileRenderer* local_file_renderer,
     ViEToFileRenderer* remote_file_renderer,
     FrameDropDetector* frame_drop_detector) {
@@ -115,11 +116,10 @@ void ViEFileBasedComparisonTests::TestFullStack(
 
   EXPECT_EQ(0, interfaces.capture->ConnectCaptureDevice(
       capture_id, video_channel));
-  ConfigureRtpRtcp(interfaces.rtp_rtcp, video_channel);
+  ConfigureRtpRtcp(interfaces.rtp_rtcp, protection_method, video_channel);
 
   ::TestFullStack(interfaces, capture_id, video_channel, width, height,
-                  bit_rate_kbps, packet_loss_percent, network_delay_ms,
-                  frame_drop_detector, remote_file_renderer,
-                  local_file_renderer);
+                  bit_rate_kbps, network, frame_drop_detector,
+                  remote_file_renderer, local_file_renderer);
   EXPECT_TRUE(fake_camera.StopCamera());
 }

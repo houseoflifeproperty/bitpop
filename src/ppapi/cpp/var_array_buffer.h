@@ -19,7 +19,11 @@ namespace pp {
 /// <code>HandleMessage</code> functions of <code>Instance</code>.
 class VarArrayBuffer : public Var {
  public:
-  /// Contruct a <code>VarArrayBuffer</code> given a var for which
+  /// The default constructor constructs a <code>VarArrayBuffer</code> which is
+  /// 0 byte long.
+  VarArrayBuffer();
+
+  /// Construct a <code>VarArrayBuffer</code> given a var for which
   /// is_array_buffer() is true. This will refer to the same
   /// <code>ArrayBuffer</code> as var, but allows you to access methods
   /// specific to <code>VarArrayBuffer</code>.
@@ -27,7 +31,7 @@ class VarArrayBuffer : public Var {
   /// @param[in] var An <code>ArrayBuffer</code> var.
   explicit VarArrayBuffer(const Var& var);
 
-  /// Construct a new <code>VarArrayBuffer_Dev</code> which is
+  /// Construct a new <code>VarArrayBuffer</code> which is
   /// <code>size_in_bytes</code> bytes long and initialized to zero.
   ///
   /// @param[in] size_in_bytes The size of the constructed
@@ -50,7 +54,7 @@ class VarArrayBuffer : public Var {
   /// This function assigns one <code>VarArrayBuffer</code> to another
   /// <code>VarArrayBuffer</code>. A Var's assignment operator is overloaded
   /// here so that we can check for assigning a non-ArrayBuffer var to a
-  /// <code>VarArrayBuffer_Dev</code>.
+  /// <code>VarArrayBuffer</code>.
   ///
   /// @param[in] other The <code>VarArrayBuffer</code> to be assigned.
   ///
@@ -65,7 +69,9 @@ class VarArrayBuffer : public Var {
 
   /// Map() maps the <code>ArrayBuffer</code> in to the module's address space
   /// and returns a pointer to the beginning of the internal buffer for
-  /// this <code>ArrayBuffer</code>.
+  /// this <code>ArrayBuffer</code>. ArrayBuffers are copied when transmitted,
+  /// so changes to the underlying memory are not automatically available to
+  /// the embedding page.
   ///
   /// Note that calling Map() can be a relatively expensive operation. Use care
   /// when calling it in performance-critical code. For example, you should call
@@ -88,6 +94,9 @@ class VarArrayBuffer : public Var {
   /// space. Use this if you want to save memory but might want to call Map()
   /// to map the buffer again later.
   void Unmap();
+
+ private:
+  void ConstructWithSize(uint32_t size_in_bytes);
 };
 
 }  // namespace pp

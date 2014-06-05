@@ -8,11 +8,9 @@ namespace net {
 
 URLRequestJobFactory::ProtocolHandler::~ProtocolHandler() {}
 
-URLRequestJobFactory::Interceptor::~Interceptor() {}
-
-bool URLRequestJobFactory::Interceptor::WillHandleProtocol(
-    const std::string& protocol) const {
-  return false;
+bool URLRequestJobFactory::ProtocolHandler::IsSafeRedirectTarget(
+    const GURL& location) const {
+  return true;
 }
 
 URLRequestJobFactory::URLRequestJobFactory() {}

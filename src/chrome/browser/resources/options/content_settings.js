@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-if (!loadTimeData.getBoolean('newContentSettings')) {
-
 cr.define('options', function() {
   /** @const */ var OptionsPage = options.OptionsPage;
 
@@ -29,8 +27,6 @@ cr.define('options', function() {
     initializePage: function() {
       OptionsPage.prototype.initializePage.call(this);
 
-      chrome.send('getContentFilterSettings');
-
       var exceptionsButtons =
           this.pageDiv.querySelectorAll('.exceptions-list-button');
       for (var i = 0; i < exceptionsButtons.length; i++) {
@@ -41,13 +37,13 @@ cr.define('options', function() {
           // history so back/forward and tab restore works.
           var hash = event.currentTarget.getAttribute('contentType');
           var url = page.name + '#' + hash;
-          window.history.replaceState({pageName: page.name},
-                                      page.title,
-                                      '/' + url);
+          window.history.pushState({pageName: page.name},
+                                    page.title,
+                                    '/' + url);
 
           // Navigate after the history has been replaced in order to have the
           // correct hash loaded.
-          OptionsPage.navigateToPage('contentExceptions');
+          OptionsPage.showPageByName('contentExceptions', false);
 
           uber.invokeMethodOnParent('setPath', {path: url});
           uber.invokeMethodOnParent('setTitle',
@@ -61,10 +57,6 @@ cr.define('options', function() {
           OptionsPage.navigateToPage('handlers');
         };
       }
-
-      $('manage-galleries-button').onclick = function(event) {
-        OptionsPage.navigateToPage('manageGalleries');
-      };
 
       if (cr.isChromeOS)
         UIAccountTweaks.applyGuestModeVisibility(document);
@@ -118,13 +110,14 @@ cr.define('options', function() {
         continue;
       // Create a synthetic pref change event decorated as
       // CoreOptionsHandler::CreateValueForPref() does.
-      var event = new cr.Event(group);
+      var event = new Event(group);
       event.value = {
         value: dict[group].value,
         controlledBy: controlledBy,
       };
-      for (var i = 0; i < indicators.length; i++)
+      for (var i = 0; i < indicators.length; i++) {
         indicators[i].handlePrefChange(event);
+      }
     }
   };
 
@@ -155,7 +148,8 @@ cr.define('options', function() {
     OptionsPage.hideBubble();
     // Create a synthetic pref change event decorated as
     // CoreOptionsHandler::CreateValueForPref() does.
-    var event = new cr.Event();
+    // TODO(arv): It was not clear what event type this should use?
+    var event = new Event('undefined');
     event.value = {};
 
     if (mediaSettings.showBubble) {
@@ -171,31 +165,36 @@ cr.define('options', function() {
   /**
    * Initializes an exceptions list.
    * @param {string} type The content type that we are setting exceptions for.
-   * @param {Array} list An array of pairs, where the first element of each pair
-   *     is the filter string, and the second is the setting (allow/block).
+   * @param {Array} exceptions An array of pairs, where the first element of
+   *     each pair is the filter string, and the second is the setting
+   *     (allow/block).
    */
-  ContentSettings.setExceptions = function(type, list) {
-    var exceptionsList =
-        document.querySelector('div[contentType=' + type + ']' +
-                               ' list[mode=normal]');
-    exceptionsList.setExceptions(list);
+  ContentSettings.setExceptions = function(type, exceptions) {
+    this.getExceptionsList(type, 'normal').setExceptions(exceptions);
   };
 
-  ContentSettings.setHandlers = function(list) {
-    $('handlers-list').setHandlers(list);
+  ContentSettings.setHandlers = function(handlers) {
+    $('handlers-list').setHandlers(handlers);
   };
 
-  ContentSettings.setIgnoredHandlers = function(list) {
-    $('ignored-handlers-list').setHandlers(list);
+  ContentSettings.setIgnoredHandlers = function(ignoredHandlers) {
+    $('ignored-handlers-list').setHandlers(ignoredHandlers);
   };
 
-  ContentSettings.setOTRExceptions = function(type, list) {
-    var exceptionsList =
-        document.querySelector('div[contentType=' + type + ']' +
-                               ' list[mode=otr]');
-
+  ContentSettings.setOTRExceptions = function(type, otrExceptions) {
+    var exceptionsList = this.getExceptionsList(type, 'otr');
     exceptionsList.parentNode.hidden = false;
-    exceptionsList.setExceptions(list);
+    exceptionsList.setExceptions(otrExceptions);
+  };
+
+  /**
+   * @param {string} type The type of exceptions (e.g. "location") to get.
+   * @param {string} mode The mode of the desired exceptions list (e.g. otr).
+   * @return {?ExceptionsList} The corresponding exceptions list or null.
+   */
+  ContentSettings.getExceptionsList = function(type, mode) {
+    return document.querySelector(
+        'div[contentType=' + type + '] list[mode=' + mode + ']');
   };
 
   /**
@@ -209,10 +208,8 @@ cr.define('options', function() {
    */
   ContentSettings.patternValidityCheckComplete =
       function(type, mode, pattern, valid) {
-    var exceptionsList =
-        document.querySelector('div[contentType=' + type + '] ' +
-                               'list[mode=' + mode + ']');
-    exceptionsList.patternValidityCheckComplete(pattern, valid);
+    this.getExceptionsList(type, mode).patternValidityCheckComplete(pattern,
+                                                                    valid);
   };
 
   /**
@@ -223,7 +220,7 @@ cr.define('options', function() {
    */
   ContentSettings.showMediaPepperFlashDefaultLink = function(show) {
     $('media-pepper-flash-default').hidden = !show;
-  }
+  };
 
   /**
    * Shows/hides the link to the Pepper Flash camera and microphone
@@ -233,7 +230,15 @@ cr.define('options', function() {
    */
   ContentSettings.showMediaPepperFlashExceptionsLink = function(show) {
     $('media-pepper-flash-exceptions').hidden = !show;
-  }
+  };
+
+  /**
+   * Shows/hides the whole Web MIDI settings.
+   * @param {bool} show Wether to show the whole Web MIDI settings.
+   */
+  ContentSettings.showExperimentalWebMIDISettings = function(show) {
+    $('experimental-web-midi-settings').hidden = !show;
+  };
 
   /**
    * Updates the microphone/camera devices menu with the given entries.
@@ -269,6 +274,16 @@ cr.define('options', function() {
   };
 
   /**
+   * Enables/disables the protected content exceptions button.
+   * @param {bool} enable Whether to enable the button.
+   */
+  ContentSettings.enableProtectedContentExceptions = function(enable) {
+    var exceptionsButton = $('protected-content-exceptions');
+    if (exceptionsButton)
+      exceptionsButton.disabled = !enable;
+  };
+
+  /**
    * Set the default microphone device based on the popup selection.
    * @private
    */
@@ -292,5 +307,3 @@ cr.define('options', function() {
   };
 
 });
-
-}

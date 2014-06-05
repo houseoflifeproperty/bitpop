@@ -27,10 +27,10 @@
 
 #include <vector>
 
-#include "talk/base/basicpacketsocketfactory.h"
 #include "talk/base/fakenetwork.h"
 #include "talk/base/gunit.h"
 #include "talk/base/thread.h"
+#include "talk/p2p/base/basicpacketsocketfactory.h"
 #include "talk/p2p/base/portallocatorsessionproxy.h"
 #include "talk/p2p/client/basicportallocator.h"
 #include "talk/p2p/client/fakeportallocator.h"
@@ -59,11 +59,13 @@ class TestSessionChannel : public sigslot::has_slots<> {
     proxy_session_->SignalPortReady.connect(
         this, &TestSessionChannel::OnPortReady);
   }
-  virtual ~TestSessionChannel() {}
+  virtual ~TestSessionChannel() {
+    delete proxy_session_;
+  }
   void OnCandidatesReady(PortAllocatorSession* session,
                          const std::vector<Candidate>& candidates) {
     EXPECT_EQ(proxy_session_, session);
-    candidates_count_ += candidates.size();
+    candidates_count_ += static_cast<int>(candidates.size());
   }
   void OnCandidatesAllocationDone(PortAllocatorSession* session) {
     EXPECT_EQ(proxy_session_, session);
@@ -78,20 +80,16 @@ class TestSessionChannel : public sigslot::has_slots<> {
   bool allocation_complete() { return allocation_complete_; }
   int ports_count() { return ports_count_; }
 
-  void GetInitialPorts() {
-    proxy_session_->GetInitialPorts();
+  void StartGettingPorts() {
+    proxy_session_->StartGettingPorts();
   }
 
-  void StartGetAllPorts() {
-    proxy_session_->StartGetAllPorts();
+  void StopGettingPorts() {
+    proxy_session_->StopGettingPorts();
   }
 
-  void StopGetAllPorts() {
-    proxy_session_->StopGetAllPorts();
-  }
-
-  bool IsGettingAllPorts() {
-    return proxy_session_->IsGettingAllPorts();
+  bool IsGettingPorts() {
+    return proxy_session_->IsGettingPorts();
   }
 
  private:
@@ -106,10 +104,11 @@ class PortAllocatorSessionProxyTest : public testing::Test {
   PortAllocatorSessionProxyTest()
       : socket_factory_(talk_base::Thread::Current()),
         allocator_(talk_base::Thread::Current(), NULL),
-        session_(talk_base::Thread::Current(), &socket_factory_,
-                 "test content", 1,
-                 kIceUfrag0, kIcePwd0),
-        session_muxer_(new PortAllocatorSessionMuxer(&session_)) {
+        session_(new cricket::FakePortAllocatorSession(
+                     talk_base::Thread::Current(), &socket_factory_,
+                     "test content", 1,
+                     kIceUfrag0, kIcePwd0)),
+        session_muxer_(new PortAllocatorSessionMuxer(session_)) {
   }
   virtual ~PortAllocatorSessionProxyTest() {}
   void RegisterSessionProxy(PortAllocatorSessionProxy* proxy) {
@@ -121,15 +120,14 @@ class PortAllocatorSessionProxyTest : public testing::Test {
         new PortAllocatorSessionProxy("test content", 1, 0);
     TestSessionChannel* channel = new TestSessionChannel(proxy);
     session_muxer_->RegisterSessionProxy(proxy);
-    channel->GetInitialPorts();
-    channel->StartGetAllPorts();
+    channel->StartGettingPorts();
     return channel;
   }
 
  protected:
   talk_base::BasicPacketSocketFactory socket_factory_;
   cricket::FakePortAllocator allocator_;
-  cricket::FakePortAllocatorSession session_;
+  cricket::FakePortAllocatorSession* session_;
   // Muxer object will be delete itself after all registered session proxies
   // are deleted.
   PortAllocatorSessionMuxer* session_muxer_;
@@ -148,18 +146,18 @@ TEST_F(PortAllocatorSessionProxyTest, TestLateBinding) {
   EXPECT_EQ_WAIT(1, channel1->candidates_count(), 1000);
   EXPECT_EQ(1, channel1->ports_count());
   EXPECT_TRUE(channel1->allocation_complete());
-  EXPECT_EQ(1, session_.port_config_count());
+  EXPECT_EQ(1, session_->port_config_count());
   // Creating another PortAllocatorSessionProxy and it also should receive
   // already happened events.
   PortAllocatorSessionProxy* proxy =
       new PortAllocatorSessionProxy("test content", 2, 0);
   TestSessionChannel* channel2 = new TestSessionChannel(proxy);
   session_muxer_->RegisterSessionProxy(proxy);
-  EXPECT_TRUE(channel2->IsGettingAllPorts());
+  EXPECT_TRUE(channel2->IsGettingPorts());
   EXPECT_EQ_WAIT(1, channel2->candidates_count(), 1000);
   EXPECT_EQ(1, channel2->ports_count());
   EXPECT_TRUE_WAIT(channel2->allocation_complete(), 1000);
-  EXPECT_EQ(1, session_.port_config_count());
+  EXPECT_EQ(1, session_->port_config_count());
   delete channel1;
   delete channel2;
 }

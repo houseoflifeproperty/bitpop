@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/command_line.h"
 #include "chrome/browser/extensions/active_tab_permission_granter.h"
 #include "chrome/browser/extensions/browser_action_test_util.h"
 #include "chrome/browser/extensions/extension_action.h"
@@ -10,15 +11,15 @@
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/feature_switch.h"
+#include "extensions/common/permissions/permissions_data.h"
 
 using content::WebContents;
 
@@ -33,19 +34,14 @@ class CommandsApiTest : public ExtensionApiTest {
   BrowserActionTestUtil GetBrowserActionsBar() {
     return BrowserActionTestUtil(browser());
   }
-};
 
-class ScriptBadgesCommandsApiTest : public ExtensionApiTest {
- public:
-  ScriptBadgesCommandsApiTest() {
-    // We cannot add this to CommandsApiTest because then PageActions get
-    // treated like BrowserActions and the PageAction test starts failing.
-    CommandLine::ForCurrentProcess()->AppendSwitchASCII(
-        switches::kScriptBadges, "1");
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kEnableExperimentalExtensionApis);
+  bool IsGrantedForTab(const Extension* extension,
+                       const content::WebContents* web_contents) {
+    return PermissionsData::HasAPIPermissionForTab(
+        extension,
+        SessionID::IdForTab(web_contents),
+        APIPermission::kTab);
   }
-  virtual ~ScriptBadgesCommandsApiTest() {}
 };
 
 // Test the basic functionality of the Keybinding API:
@@ -76,24 +72,22 @@ IN_PROC_BROWSER_TEST_F(CommandsApiTest, Basic) {
   WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   ASSERT_TRUE(tab);
 
-  ActiveTabPermissionGranter* granter =
-      TabHelper::FromWebContents(tab)->active_tab_permission_granter();
-  EXPECT_FALSE(granter->IsGranted(extension));
+  EXPECT_FALSE(IsGrantedForTab(extension, tab));
 
   // Activate the shortcut (Ctrl+Shift+F).
   ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
       browser(), ui::VKEY_F, true, true, false, false));
 
   // activeTab should now be granted.
-  EXPECT_TRUE(granter->IsGranted(extension));
+  EXPECT_TRUE(IsGrantedForTab(extension, tab));
 
   // Verify the command worked.
   bool result = false;
-  ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
-      tab->GetRenderViewHost(), L"",
-      L"setInterval(function(){"
-      L"  if(document.body.bgColor == 'red'){"
-      L"    window.domAutomationController.send(true)}}, 100)",
+  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+      tab,
+      "setInterval(function(){"
+      "  if(document.body.bgColor == 'red'){"
+      "    window.domAutomationController.send(true)}}, 100)",
       &result));
   ASSERT_TRUE(result);
 
@@ -102,11 +96,11 @@ IN_PROC_BROWSER_TEST_F(CommandsApiTest, Basic) {
       browser(), ui::VKEY_Y, true, true, false, false));
 
   result = false;
-  ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
-      tab->GetRenderViewHost(), L"",
-      L"setInterval(function(){"
-      L"  if(document.body.bgColor == 'blue'){"
-      L"    window.domAutomationController.send(true)}}, 100)",
+  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+      tab,
+      "setInterval(function(){"
+      "  if(document.body.bgColor == 'blue'){"
+      "    window.domAutomationController.send(true)}}, 100)",
       &result));
   ASSERT_TRUE(result);
 }
@@ -135,7 +129,7 @@ IN_PROC_BROWSER_TEST_F(CommandsApiTest, MAYBE_PageAction) {
   // Make sure it appears and is the right one.
   ASSERT_TRUE(WaitForPageActionVisibilityChangeTo(1));
   int tab_id = SessionTabHelper::FromWebContents(
-      chrome::GetActiveWebContents(browser()))->session_id().id();
+      browser()->tab_strip_model()->GetActiveWebContents())->session_id().id();
   ExtensionAction* action =
       ExtensionActionManager::Get(browser()->profile())->
       GetPageAction(*extension);
@@ -147,53 +141,174 @@ IN_PROC_BROWSER_TEST_F(CommandsApiTest, MAYBE_PageAction) {
       browser(), ui::VKEY_F, false, true, true, false));
 
   // Verify the command worked (the page action turns the page red).
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   bool result = false;
-  ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
-      tab->GetRenderViewHost(), L"",
-      L"setInterval(function(){"
-      L"  if(document.body.bgColor == 'red'){"
-      L"    window.domAutomationController.send(true)}}, 100)",
+  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+      tab,
+      "setInterval(function(){"
+      "  if(document.body.bgColor == 'red'){"
+      "    window.domAutomationController.send(true)}}, 100)",
       &result));
   ASSERT_TRUE(result);
 }
 
-// Checked-in in a disabled state, because the necessary functionality to
-// automatically verify that the test works hasn't been implemented for the
-// script badges yet (see http://crbug.com/140016). The test results, can be
-// verified manually by running the test and verifying that the synthesized
-// popup for script badges appear. When bug 140016 has been fixed, the popup
-// code can signal to the test that the test passed.
-// TODO(finnur): Enable this test once the bug is fixed.
-IN_PROC_BROWSER_TEST_F(ScriptBadgesCommandsApiTest, DISABLED_ScriptBadge) {
-  ASSERT_TRUE(test_server()->Start());
-  ASSERT_TRUE(RunExtensionTest("keybinding/script_badge")) << message_;
-  const Extension* extension = GetSingleLoadedExtension();
-  ASSERT_TRUE(extension) << message_;
-
-  {
-    ResultCatcher catcher;
-    // Tell the extension to update the script badge state.
-    ui_test_utils::NavigateToURL(
-        browser(), GURL(extension->GetResourceURL("show.html")));
-    ASSERT_TRUE(catcher.GetNextResult());
-  }
-
-  {
-    ResultCatcher catcher;
-    // Activate the shortcut (Ctrl+Shift+F).
-    ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
-        browser(), ui::VKEY_F, true, true, false, false));
-    ASSERT_TRUE(catcher.GetNextResult());
-  }
-}
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
+// TODO(erg): linux_aura bringup: http://crbug.com/163931
+#define MAYBE_SynthesizedCommand DISABLED_SynthesizedCommand
+#else
+#define MAYBE_SynthesizedCommand SynthesizedCommand
+#endif
 
 // This test validates that the getAll query API function returns registered
 // commands as well as synthesized ones and that inactive commands (like the
 // synthesized ones are in nature) have no shortcuts.
-IN_PROC_BROWSER_TEST_F(CommandsApiTest, SynthesizedCommand) {
+IN_PROC_BROWSER_TEST_F(CommandsApiTest, MAYBE_SynthesizedCommand) {
   ASSERT_TRUE(test_server()->Start());
   ASSERT_TRUE(RunExtensionTest("keybinding/synthesized")) << message_;
 }
 
-}  // extensions
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
+// TODO(erg): linux_aura bringup: http://crbug.com/163931
+#define MAYBE_DontOverwriteSystemShortcuts DISABLED_DontOverwriteSystemShortcuts
+#else
+#define MAYBE_DontOverwriteSystemShortcuts DontOverwriteSystemShortcuts
+#endif
+
+// This test validates that an extension cannot request a shortcut that is
+// already in use by Chrome.
+IN_PROC_BROWSER_TEST_F(CommandsApiTest, MAYBE_DontOverwriteSystemShortcuts) {
+  ASSERT_TRUE(test_server()->Start());
+
+  ASSERT_TRUE(ui_test_utils::BringBrowserWindowToFront(browser()));
+
+  ASSERT_TRUE(RunExtensionTest("keybinding/dont_overwrite_system")) << message_;
+
+  ui_test_utils::NavigateToURL(browser(),
+      test_server()->GetURL("files/extensions/test_file.txt"));
+
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
+  ASSERT_TRUE(tab);
+
+  // Activate the shortcut (Alt+Shift+F) to make the page blue.
+  {
+    ResultCatcher catcher;
+    ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
+        browser(), ui::VKEY_F, false, true, true, false));
+    ASSERT_TRUE(catcher.GetNextResult());
+  }
+
+  bool result = false;
+  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+      tab,
+      "setInterval(function() {"
+      "  if (document.body.bgColor == 'blue') {"
+      "    window.domAutomationController.send(true)}}, 100)",
+      &result));
+  ASSERT_TRUE(result);
+
+  // Activate the bookmark shortcut (Ctrl+D) to make the page green (should not
+  // work without requesting via chrome_settings_overrides).
+#if defined(OS_MACOSX)
+    ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
+        browser(), ui::VKEY_D, false, false, false, true));
+#else
+    ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
+        browser(), ui::VKEY_D, true, false, false, false));
+#endif
+
+  // The page should still be blue.
+  result = false;
+  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+      tab,
+      "setInterval(function() {"
+      "  if (document.body.bgColor == 'blue') {"
+      "    window.domAutomationController.send(true)}}, 100)",
+      &result));
+  ASSERT_TRUE(result);
+
+  // Activate the shortcut (Ctrl+F) to make the page red (should not work).
+  ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
+      browser(), ui::VKEY_F, true, false, false, false));
+
+  // The page should still be blue.
+  result = false;
+  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+      tab,
+      "setInterval(function() {"
+      "  if (document.body.bgColor == 'blue') {"
+      "    window.domAutomationController.send(true)}}, 100)",
+      &result));
+  ASSERT_TRUE(result);
+}
+
+// This test validates that an extension can override the Chrome bookmark
+// shortcut if it has requested to do so.
+IN_PROC_BROWSER_TEST_F(CommandsApiTest, OverwriteBookmarkShortcut) {
+  ASSERT_TRUE(test_server()->Start());
+
+  ASSERT_TRUE(ui_test_utils::BringBrowserWindowToFront(browser()));
+
+  // This functionality requires a feature flag.
+  CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+      "--enable-override-bookmarks-ui",
+      "1");
+
+  ASSERT_TRUE(RunExtensionTest("keybinding/overwrite_bookmark_shortcut"))
+      << message_;
+
+  ui_test_utils::NavigateToURL(browser(),
+      test_server()->GetURL("files/extensions/test_file.txt"));
+
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
+  ASSERT_TRUE(tab);
+
+  // Activate the shortcut (Ctrl+D) to make the page green.
+  {
+    ResultCatcher catcher;
+#if defined(OS_MACOSX)
+    ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
+        browser(), ui::VKEY_D, false, false, false, true));
+#else
+    ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
+        browser(), ui::VKEY_D, true, false, false, false));
+#endif
+    ASSERT_TRUE(catcher.GetNextResult());
+  }
+
+  bool result = false;
+  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+      tab,
+      "setInterval(function() {"
+      "  if (document.body.bgColor == 'green') {"
+      "    window.domAutomationController.send(true)}}, 100)",
+      &result));
+  ASSERT_TRUE(result);
+}
+
+#if defined(OS_WIN)
+// Currently this feature is implemented on Windows only.
+#define MAYBE_AllowDuplicatedMediaKeys AllowDuplicatedMediaKeys
+#else
+#define MAYBE_AllowDuplicatedMediaKeys DISABLED_AllowDuplicatedMediaKeys
+#endif
+
+// Test that media keys go to all extensions that register for them.
+IN_PROC_BROWSER_TEST_F(CommandsApiTest, MAYBE_AllowDuplicatedMediaKeys) {
+  ResultCatcher catcher;
+  ASSERT_TRUE(RunExtensionTest("keybinding/non_global_media_keys_0"))
+      << message_;
+  ASSERT_TRUE(catcher.GetNextResult());
+  ASSERT_TRUE(RunExtensionTest("keybinding/non_global_media_keys_1"))
+      << message_;
+  ASSERT_TRUE(catcher.GetNextResult());
+
+  // Activate the Media Stop key.
+  ASSERT_TRUE(ui_test_utils::SendKeyPressSync(
+      browser(), ui::VKEY_MEDIA_STOP, false, false, false, false));
+
+  // We should get two success result.
+  ASSERT_TRUE(catcher.GetNextResult());
+  ASSERT_TRUE(catcher.GetNextResult());
+}
+
+}  // namespace extensions

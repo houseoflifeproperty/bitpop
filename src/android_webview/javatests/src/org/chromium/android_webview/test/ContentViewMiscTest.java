@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,29 +8,23 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.graphics.Bitmap;
-import android.graphics.Color;
 import android.net.Proxy;
-import android.test.FlakyTest;
 import android.test.mock.MockContext;
 import android.test.suitebuilder.annotation.SmallTest;
 
 import org.chromium.android_webview.AwContents;
-import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
-import org.chromium.base.ThreadUtils;
 import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.ContentViewStatics;
 import org.chromium.net.ProxyChangeListener;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.Callable;
 
 /**
  *  Tests for ContentView methods that don't fall into any other category.
  */
-public class ContentViewMiscTest extends AndroidWebViewTestBase {
+public class ContentViewMiscTest extends AwTestBase {
 
     private TestAwContentsClient mContentsClient;
     private AwContents mAwContents;
@@ -46,49 +40,14 @@ public class ContentViewMiscTest extends AndroidWebViewTestBase {
         mContentViewCore = testContainerView.getContentViewCore();
     }
 
-    /*
-     * @SmallTest
-     * @Feature({"Android-WebView"})
-     * BUG 162967
-     */
-    @FlakyTest
-    public void testFlingScroll() throws Throwable {
-        StringBuffer testPage = new StringBuffer().append("data:text/html;utf-8,")
-                .append("<html><head><style>body { width: 5000px; height: 5000px; }</head><body>")
-                .append("</body></html>");
-
-        // Test flinging in the y axis
-        loadUrlSync(mAwContents , mContentsClient.getOnPageFinishedHelper(),
-                testPage.toString());
-        assertEquals(0, mContentViewCore.getNativeScrollYForTest());
-        ThreadUtils.runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                mContentViewCore.flingScroll(0, 2000);
-            }
-        });
-        Thread.sleep(1000);
-        assertNotSame(0, mContentViewCore.getNativeScrollYForTest());
-
-        // Test flinging in the x axis
-        assertEquals(0, mContentViewCore.getNativeScrollXForTest());
-        ThreadUtils.runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                mContentViewCore.flingScroll(2000, 0);
-            }
-        });
-        Thread.sleep(1000);
-        assertNotSame(0, mContentViewCore.getNativeScrollXForTest());
-    }
-
     @SmallTest
     @Feature({"AndroidWebView"})
     public void testFindAddress() {
         assertNull(ContentViewStatics.findAddress("This is some random text"));
 
         String googleAddr = "1600 Amphitheatre Pkwy, Mountain View, CA 94043";
-        assertEquals(googleAddr, ContentViewStatics.findAddress(googleAddr));
+        String testString = "Address: " + googleAddr + "  in a string";
+        assertEquals(googleAddr, ContentViewStatics.findAddress(testString));
     }
 
     @SmallTest
@@ -147,29 +106,5 @@ public class ContentViewMiscTest extends AndroidWebViewTestBase {
         ContentViewStatics.enablePlatformNotifications();
         receiverRef.get().onReceive(context, intent);
         assertEquals(true, proxyChanged.get());
-    }
-
-    /**
-     * @SmallTest
-     * @Feature({"AndroidWebView"})
-     * Bug 6931901
-     */
-    @DisabledTest
-    public void testSetGetBackgroundColor() throws Throwable {
-        loadUrlSync(mAwContents , mContentsClient.getOnPageFinishedHelper(), "about:blank");
-        ThreadUtils.runOnUiThreadBlocking(new Runnable() {
-            @Override
-            public void run() {
-                mContentViewCore.setBackgroundColor(Color.MAGENTA);
-            }
-        });
-        int backgroundColor = ThreadUtils.runOnUiThreadBlocking(new Callable<Integer>() {
-            @Override
-            public Integer call() {
-                Bitmap map = mContentViewCore.getBitmap(1, 1);
-                return map.getPixel(0,0);
-            }
-        });
-        assertEquals(Color.MAGENTA, backgroundColor);
     }
 }

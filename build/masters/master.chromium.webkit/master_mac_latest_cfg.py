@@ -9,36 +9,36 @@ defaults = {}
 
 helper = master_config.Helper(defaults)
 B = helper.Builder
-D = helper.Dependent
 F = helper.Factory
-S = helper.Scheduler
 
-def mac(): return chromium_factory.ChromiumFactory('src/build', 'darwin')
+def mac():
+  return chromium_factory.ChromiumFactory('src/xcodebuild', 'darwin')
+
+def mac_out():
+  return chromium_factory.ChromiumFactory('src/out', 'darwin')
 
 
 ################################################################################
 ## Release
 ################################################################################
 
-defaults['category'] = '8mac latest'
-
-#
-# Main release scheduler for webkit
-#
-S('s8_webkit_rel', branch='trunk', treeStableTimer=60)
+defaults['category'] = 'nonlayout'
 
 #
 # Mac Rel Builder
 #
-B('Mac10.6 Tests', 'f_mac_tests_rel', scheduler='s8_webkit_rel')
-F('f_mac_tests_rel', mac().ChromiumWebkitLatestFactory(
+B('Mac10.6 Tests', 'f_mac_tests_rel', scheduler='global_scheduler')
+F('f_mac_tests_rel', mac_out().ChromiumFactory(
     options=['--build-tool=ninja', '--compiler=goma-clang', '--',
              'chromium_builder_tests'],
     tests=[
       'browser_tests',
+      'cc_unittests',
       'content_browsertests',
-      'interactive_ui',
+      'interactive_ui_tests',
+      'telemetry_unittests',
       'unit',
+      'webkit_compositor_bindings_unittests',
     ],
     factory_properties={
         'generate_gtest_json': True,
@@ -46,55 +46,32 @@ F('f_mac_tests_rel', mac().ChromiumWebkitLatestFactory(
             'GYP_GENERATORS':'ninja',
             'GYP_DEFINES':'fastbuild=1',
         },
+        'blink_config': 'blink',
     }))
 
-B('Mac10.6 Perf', 'f_mac_perf6_rel', scheduler='s8_webkit_rel')
-F('f_mac_perf6_rel', mac().ChromiumWebkitLatestFactory(
-    options=['--build-tool=ninja', '--compiler=goma-clang', '--',
-             'chromium_builder_perf'],
-    tests=[
-      'dom_perf',
-      'dromaeo',
-      'memory',
-      'page_cycler_bloat-http',
-      'page_cycler_database',
-      'page_cycler_dhtml',
-      'page_cycler_indexeddb',
-      'page_cycler_intl1',
-      'page_cycler_intl2',
-      'page_cycler_morejs',
-      'page_cycler_moz',
-      'page_cycler_moz-http',
-      'startup',
-      'sunspider',
-      'tab_switching',
-      'octane',
-    ],
-    factory_properties={
-        'show_perf_results': True,
-        'perf_id': 'chromium-rel-mac6-webkit',
-        'gclient_env': {
-            'GYP_GENERATORS':'ninja',
-            'GYP_DEFINES': 'fastbuild=1',
-        },
-    }))
 
-B('Mac10.8 Tests', 'f_mac_tests_rel_108', scheduler='s8_webkit_rel')
-F('f_mac_tests_rel_108', mac().ChromiumWebkitLatestFactory(
-    options=['--build-tool=ninja', '--compiler=goma-clang', '--',
-             'chromium_builder_tests'],
+B('Mac10.8 Tests', 'f_mac_tests_rel_108', scheduler='global_scheduler')
+F('f_mac_tests_rel_108', mac_out().ChromiumFactory(
+    # Build 'all' instead of 'chromium_builder_tests' so that archiving works.
+    # TODO: Define a new build target that is archive-friendly?
+    options=['--build-tool=ninja', '--compiler=goma-clang', '--', 'all'],
     tests=[
       'browser_tests',
       'content_browsertests',
-      'interactive_ui',
+      'interactive_ui_tests',
+      'telemetry_unittests',
       'unit',
     ],
     factory_properties={
+        'archive_build': True,
+        'blink_config': 'blink',
+        'build_name': 'Mac',
         'generate_gtest_json': True,
         'gclient_env': {
             'GYP_GENERATORS':'ninja',
             'GYP_DEFINES':'fastbuild=1',
         },
+        'gs_bucket': 'gs://chromium-webkit-snapshots',
     }))
 
 
@@ -103,17 +80,15 @@ F('f_mac_tests_rel_108', mac().ChromiumWebkitLatestFactory(
 ################################################################################
 
 #
-# Main debug scheduler for webkit
-#
-S('s8_webkit_dbg', branch='trunk', treeStableTimer=60)
-
-#
 # Mac Dbg Builder
 #
-B('Mac Builder (dbg)', 'f_mac_dbg', scheduler='s8_webkit_dbg')
-F('f_mac_dbg', mac().ChromiumWebkitLatestFactory(
+B('Mac Builder (dbg)', 'f_mac_dbg', scheduler='global_scheduler')
+F('f_mac_dbg', mac().ChromiumFactory(
     target='Debug',
-    options=['--', '-project', '../webkit/webkit.xcodeproj',]))
+    options=['--compiler=goma-clang', '--', '-target', 'blink_tests'],
+    factory_properties={
+        'blink_config': 'blink',
+    }))
 
-def Update(config, active_master, c):
+def Update(_config, _active_master, c):
   return helper.Update(c)

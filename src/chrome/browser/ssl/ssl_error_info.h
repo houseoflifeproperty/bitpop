@@ -8,9 +8,9 @@
 #include <string>
 #include <vector>
 
-#include "base/string16.h"
-#include "net/base/cert_status_flags.h"
-#include "net/base/x509_certificate.h"
+#include "base/strings/string16.h"
+#include "net/cert/cert_status_flags.h"
+#include "net/cert/x509_certificate.h"
 
 class GURL;
 
@@ -32,7 +32,10 @@ class SSLErrorInfo {
     CERT_INVALID,
     CERT_WEAK_SIGNATURE_ALGORITHM,
     CERT_WEAK_KEY,
+    CERT_NAME_CONSTRAINT_VIOLATION,
     UNKNOWN,
+    CERT_WEAK_KEY_DH,
+    CERT_PINNED_KEY_MISSING,
     END_OF_ENUM
   };
 
@@ -55,32 +58,32 @@ class SSLErrorInfo {
                                     std::vector<SSLErrorInfo>* errors);
 
   // A title describing the error, usually to be used with the details below.
-  const string16& title() const { return title_; }
+  const base::string16& title() const { return title_; }
 
   // A description of the error.
-  const string16& details() const { return details_; }
+  const base::string16& details() const { return details_; }
 
   // A short message describing the error (1 line).
-  const string16& short_description() const { return short_description_; }
+  const base::string16& short_description() const { return short_description_; }
 
   // A lengthy explanation of what the error is.  Each entry in the returned
   // vector is a paragraph.
-  const std::vector<string16>& extra_information() const {
+  const std::vector<base::string16>& extra_information() const {
     return extra_information_;
   }
 
  private:
-  SSLErrorInfo(const string16& title,
-               const string16& details,
-               const string16& short_description,
-               const std::vector<string16>& extra_info);
+  SSLErrorInfo(const base::string16& title,
+               const base::string16& details,
+               const base::string16& short_description,
+               const std::vector<base::string16>& extra_info);
 
-  string16 title_;
-  string16 details_;
-  string16 short_description_;
+  base::string16 title_;
+  base::string16 details_;
+  base::string16 short_description_;
   // Extra-informations contains paragraphs of text explaining in details what
   // the error is and what the risks are.
-  std::vector<string16> extra_information_;
+  std::vector<base::string16> extra_information_;
 };
 
 #endif  // CHROME_BROWSER_SSL_SSL_ERROR_INFO_H_

@@ -6,7 +6,7 @@
 #define SYNC_UTIL_DATA_TYPE_HISTOGRAM_H_
 
 #include "base/metrics/histogram.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "sync/internal_api/public/base/model_type.h"
 
 // For now, this just implements UMA_HISTOGRAM_LONG_TIMES. This can be adjusted
@@ -72,6 +72,9 @@
       case ::syncer::APPS: \
         PER_DATA_TYPE_MACRO("Apps"); \
         break; \
+      case ::syncer::APP_LIST: \
+        PER_DATA_TYPE_MACRO("AppList"); \
+        break; \
       case ::syncer::APP_SETTINGS: \
         PER_DATA_TYPE_MACRO("AppSettings"); \
         break; \
@@ -84,11 +87,44 @@
       case ::syncer::HISTORY_DELETE_DIRECTIVES: \
         PER_DATA_TYPE_MACRO("HistoryDeleteDirectives"); \
         break; \
+      case ::syncer::SYNCED_NOTIFICATIONS: \
+        PER_DATA_TYPE_MACRO("SyncedNotifications"); \
+        break; \
+      case ::syncer::SYNCED_NOTIFICATION_APP_INFO: \
+        PER_DATA_TYPE_MACRO("SyncedNotificationAppInfo"); \
+        break; \
       case ::syncer::DEVICE_INFO: \
         PER_DATA_TYPE_MACRO("DeviceInfo"); \
         break; \
       case ::syncer::EXPERIMENTS: \
         PER_DATA_TYPE_MACRO("Experiments"); \
+        break; \
+      case ::syncer::PRIORITY_PREFERENCES :\
+        PER_DATA_TYPE_MACRO("PriorityPreferences"); \
+        break; \
+      case ::syncer::DICTIONARY: \
+        PER_DATA_TYPE_MACRO("Dictionary"); \
+        break; \
+      case ::syncer::FAVICON_IMAGES: \
+        PER_DATA_TYPE_MACRO("FaviconImages"); \
+        break; \
+      case ::syncer::FAVICON_TRACKING: \
+        PER_DATA_TYPE_MACRO("FaviconTracking"); \
+        break; \
+      case ::syncer::MANAGED_USER_SETTINGS: \
+        PER_DATA_TYPE_MACRO("ManagedUserSetting"); \
+        break; \
+      case ::syncer::MANAGED_USERS: \
+        PER_DATA_TYPE_MACRO("ManagedUser"); \
+        break; \
+      case ::syncer::MANAGED_USER_SHARED_SETTINGS: \
+        PER_DATA_TYPE_MACRO("ManagedUserSharedSetting"); \
+        break; \
+      case ::syncer::ARTICLES: \
+        PER_DATA_TYPE_MACRO("Article"); \
+        break; \
+      case ::syncer::PROXY_TABS: \
+        PER_DATA_TYPE_MACRO("Tabs"); \
         break; \
       default: \
         NOTREACHED() << "Unknown datatype " \

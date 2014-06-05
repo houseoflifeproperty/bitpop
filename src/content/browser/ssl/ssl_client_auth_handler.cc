@@ -9,20 +9,23 @@
 #include "content/browser/loader/resource_request_info_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/x509_certificate.h"
 #include "net/http/http_transaction_factory.h"
+#include "net/ssl/client_cert_store.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 
 namespace content {
 
 SSLClientAuthHandler::SSLClientAuthHandler(
+    scoped_ptr<net::ClientCertStore> client_cert_store,
     net::URLRequest* request,
     net::SSLCertRequestInfo* cert_request_info)
     : request_(request),
       http_network_session_(
           request_->context()->http_transaction_factory()->GetSession()),
-      cert_request_info_(cert_request_info) {
+      cert_request_info_(cert_request_info),
+      client_cert_store_(client_cert_store.Pass()) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 }
 
@@ -39,22 +42,14 @@ void SSLClientAuthHandler::SelectCertificate() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DCHECK(request_);
 
-  int render_process_host_id;
-  int render_view_host_id;
-  if (!ResourceRequestInfo::ForRequest(request_)->GetAssociatedRenderView(
-          &render_process_host_id,
-          &render_view_host_id))
-    NOTREACHED();
-
-  // If the RVH does not exist by the time this task gets run, then the task
-  // will be dropped and the scoped_refptr to SSLClientAuthHandler will go
-  // away, so we do not leak anything. The destructor takes care of ensuring
-  // the net::URLRequest always gets a response.
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE,
-      base::Bind(
-          &SSLClientAuthHandler::DoSelectCertificate, this,
-          render_process_host_id, render_view_host_id));
+  if (client_cert_store_) {
+    client_cert_store_->GetClientCerts(
+        *cert_request_info_,
+        &cert_request_info_->client_certs,
+        base::Bind(&SSLClientAuthHandler::DidGetClientCerts, this));
+  } else {
+    DidGetClientCerts();
+  }
 }
 
 void SSLClientAuthHandler::CertificateSelected(net::X509Certificate* cert) {
@@ -66,6 +61,40 @@ void SSLClientAuthHandler::CertificateSelected(net::X509Certificate* cert) {
       base::Bind(
           &SSLClientAuthHandler::DoCertificateSelected, this,
           make_scoped_refptr(cert)));
+}
+
+void SSLClientAuthHandler::DidGetClientCerts() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  // Request may have cancelled while we were getting client certs.
+  if (!request_)
+    return;
+
+  // Note that if |client_cert_store_| is NULL, we intentionally fall through to
+  // DoCertificateSelected. This is for platforms where the client cert matching
+  // is not performed by Chrome, the platform can handle the cert matching
+  // before showing the dialog.
+  if (client_cert_store_ && cert_request_info_->client_certs.empty()) {
+    // No need to query the user if there are no certs to choose from.
+    DoCertificateSelected(NULL);
+    return;
+  }
+
+  int render_process_host_id;
+  int render_frame_host_id;
+  if (!ResourceRequestInfo::ForRequest(request_)->GetAssociatedRenderFrame(
+          &render_process_host_id,
+          &render_frame_host_id))
+    NOTREACHED();
+
+  // If the RVH does not exist by the time this task gets run, then the task
+  // will be dropped and the scoped_refptr to SSLClientAuthHandler will go
+  // away, so we do not leak anything. The destructor takes care of ensuring
+  // the net::URLRequest always gets a response.
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(
+          &SSLClientAuthHandler::DoSelectCertificate, this,
+          render_process_host_id, render_frame_host_id));
 }
 
 void SSLClientAuthHandler::DoCertificateSelected(net::X509Certificate* cert) {
@@ -84,10 +113,12 @@ void SSLClientAuthHandler::DoCertificateSelected(net::X509Certificate* cert) {
 }
 
 void SSLClientAuthHandler::DoSelectCertificate(
-    int render_process_host_id, int render_view_host_id) {
+    int render_process_host_id, int render_frame_host_id) {
   GetContentClient()->browser()->SelectClientCertificate(
-      render_process_host_id, render_view_host_id, http_network_session_,
-      cert_request_info_,
+      render_process_host_id,
+      render_frame_host_id,
+      http_network_session_,
+      cert_request_info_.get(),
       base::Bind(&SSLClientAuthHandler::CertificateSelected, this));
 }
 

@@ -9,24 +9,26 @@
 
 #include <string>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/common/mac/launchd.h"
 #include "chrome/common/multi_process_lock.h"
 
+namespace base {
 class MessageLoop;
+}
 
 // TODO(dmaclach): Write this in terms of a real mock.
 // http://crbug.com/76923
 class MockLaunchd : public Launchd {
  public:
-  static bool MakeABundle(const FilePath& dst,
+  static bool MakeABundle(const base::FilePath& dst,
                           const std::string& name,
-                          FilePath* bundle_root,
-                          FilePath* executable);
+                          base::FilePath* bundle_root,
+                          base::FilePath* executable);
 
-  MockLaunchd(const FilePath& file, MessageLoop* loop,
+  MockLaunchd(const base::FilePath& file, base::MessageLoop* loop,
               bool create_socket, bool as_service);
   virtual ~MockLaunchd();
 
@@ -60,9 +62,9 @@ class MockLaunchd : public Launchd {
   bool delete_called() const { return delete_called_; }
 
  private:
-  FilePath file_;
+  base::FilePath file_;
   std::string pipe_name_;
-  MessageLoop* message_loop_;
+  base::MessageLoop* message_loop_;
   scoped_ptr<MultiProcessLock> running_lock_;
   bool create_socket_;
   bool as_service_;

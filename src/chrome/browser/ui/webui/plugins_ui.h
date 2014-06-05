@@ -8,10 +8,12 @@
 #include "content/public/browser/web_ui_controller.h"
 #include "ui/base/layout.h"
 
-class PrefService;
-
 namespace base {
 class RefCountedMemory;
+}
+
+namespace user_prefs {
+class PrefRegistrySyncable;
 }
 
 class PluginsUI : public content::WebUIController {
@@ -20,7 +22,7 @@ class PluginsUI : public content::WebUIController {
 
   static base::RefCountedMemory* GetFaviconResourceBytes(
       ui::ScaleFactor scale_factor);
-  static void RegisterUserPrefs(PrefService* prefs);
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(PluginsUI);

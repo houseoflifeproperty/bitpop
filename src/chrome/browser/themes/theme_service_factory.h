@@ -7,7 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 
 class Profile;
 class ThemeService;
@@ -19,7 +19,7 @@ class Extension;
 // Singleton that owns all ThemeServices and associates them with
 // Profiles. Listens for the Profile's destruction notification and cleans up
 // the associated ThemeService.
-class ThemeServiceFactory : public ProfileKeyedServiceFactory {
+class ThemeServiceFactory : public BrowserContextKeyedServiceFactory {
  public:
   // Returns the ThemeService that provides theming resources for
   // |profile|. Note that even if a Profile doesn't have a theme installed, it
@@ -39,11 +39,14 @@ class ThemeServiceFactory : public ProfileKeyedServiceFactory {
   ThemeServiceFactory();
   virtual ~ThemeServiceFactory();
 
-  // ProfileKeyedServiceFactory:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
-  virtual void RegisterUserPrefs(PrefService* prefs) OVERRIDE;
-  virtual bool ServiceRedirectedInIncognito() const OVERRIDE;
+  // BrowserContextKeyedServiceFactory:
+  virtual KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* profile) const OVERRIDE;
+  virtual void RegisterProfilePrefs(
+      user_prefs::PrefRegistrySyncable* registry) OVERRIDE;
+  virtual content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const OVERRIDE;
+  virtual bool ServiceIsCreatedWithBrowserContext() const OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(ThemeServiceFactory);
 };

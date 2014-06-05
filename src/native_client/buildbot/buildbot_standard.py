@@ -10,29 +10,17 @@ import os.path
 import re
 import subprocess
 import sys
+import time
 
 from buildbot_lib import (
     BuildContext, BuildStatus, Command, EnsureDirectoryExists,
-    ParseStandardCommandLine, RemoveDirectory, RunBuild, SCons, Step, StepLink,
+    ParseStandardCommandLine, RemoveDirectory, RemoveGypBuildDirectories,
+    RemoveSconsBuildDirectories, RunBuild, SCons, Step, StepLink,
     StepText, TryToCleanContents)
 
 
 # Windows-specific environment manipulation
 def SetupWindowsEnvironment(context):
-  # Blow away path for now if on the bots (to be more hermetic).
-  if os.environ.get('BUILDBOT_SLAVENAME'):
-    paths = [
-        r'c:\b\depot_tools',
-        r'c:\b\depot_tools\python_bin',
-        r'c:\b\build_internal\tools',
-        r'e:\b\depot_tools',
-        r'e:\b\depot_tools\python_bin',
-        r'e:\b\build_internal\tools',
-        r'C:\WINDOWS\system32',
-        r'C:\WINDOWS\system32\WBEM',
-        ]
-    context.SetEnv('PATH', os.pathsep.join(paths))
-
   # Poke around looking for MSVC.  We should do something more principled in
   # the future.
 
@@ -45,6 +33,7 @@ def SetupWindowsEnvironment(context):
 
   # The location of MSVC can differ depending on the version.
   msvc_locs = [
+      ('Microsoft Visual Studio 12.0', 'VS120COMNTOOLS', '2013'),
       ('Microsoft Visual Studio 10.0', 'VS100COMNTOOLS', '2010'),
       ('Microsoft Visual Studio 9.0', 'VS90COMNTOOLS', '2008'),
       ('Microsoft Visual Studio 8.0', 'VS80COMNTOOLS', '2005'),
@@ -106,7 +95,7 @@ def SetupContextVars(context):
 
 
 def ValidatorTest(context, architecture, validator, warn_only=False):
-  cmd=[
+  cmd = [
       sys.executable,
       'tests/abi_corpus/validator_regression_test.py',
       '--keep-going',
@@ -116,6 +105,41 @@ def ValidatorTest(context, architecture, validator, warn_only=False):
   if warn_only:
     cmd.append('--warn-only')
   Command(context, cmd=cmd)
+
+
+def SummarizeCoverage(context):
+  Command(context, [
+      sys.executable,
+      'tools/coverage_summary.py',
+      context['platform'] + '-' + context['default_scons_platform'],
+  ])
+
+
+def ArchiveCoverage(context):
+  gsutil = '/b/build/third_party/gsutil/gsutil'
+  gsd_url = 'http://gsdview.appspot.com/nativeclient-coverage2/revs'
+  variant_name = ('coverage-' + context['platform'] + '-' +
+                  context['default_scons_platform'])
+  coverage_path = variant_name + '/html/index.html'
+  revision = os.environ.get('BUILDBOT_REVISION', 'None')
+  link_url = gsd_url + '/' + revision + '/' + coverage_path
+  gsd_base = 'gs://nativeclient-coverage2/revs'
+  gs_path = gsd_base + '/' + revision + '/' + variant_name
+  cov_dir = 'scons-out/' + variant_name + '/coverage'
+  # Copy lcov file.
+  Command(context, [
+      sys.executable, gsutil,
+      'cp', '-a', 'public-read',
+      cov_dir + '/coverage.lcov',
+      gs_path + '/coverage.lcov',
+  ])
+  # Copy html.
+  Command(context, [
+      sys.executable, gsutil,
+      'cp', '-R', '-a', 'public-read',
+      'html', gs_path,
+  ], cwd=cov_dir)
+  print '@@@STEP_LINK@view@%s@@@' % link_url
 
 
 def CommandGypBuild(context):
@@ -157,31 +181,12 @@ def CommandGclientRunhooks(context):
   Command(context, cmd=[gclient, 'runhooks', '--force'])
 
 
-def RemoveGypBuildDirectories():
-  # Remove all directories on all platforms.  Overkill, but it allows for
-  # straight-line code.
-  # Windows
-  RemoveDirectory('build/Debug')
-  RemoveDirectory('build/Release')
-  RemoveDirectory('build/Debug-Win32')
-  RemoveDirectory('build/Release-Win32')
-  RemoveDirectory('build/Debug-x64')
-  RemoveDirectory('build/Release-x64')
-
-  # Linux and Mac
-  RemoveDirectory('hg')
-  RemoveDirectory('../xcodebuild')
-  RemoveDirectory('../sconsbuild')
-  RemoveDirectory('../out')
-  RemoveDirectory('src/third_party/nacl_sdk/arm-newlib')
-
-
 def BuildScript(status, context):
   inside_toolchain = context['inside_toolchain']
 
   # Clean out build directories.
   with Step('clobber', status):
-    RemoveDirectory(r'scons-out')
+    RemoveSconsBuildDirectories()
     RemoveGypBuildDirectories()
 
   with Step('cleanup_temp', status):
@@ -236,26 +241,6 @@ def BuildScript(status, context):
     with Step('build ncval-x86-64', status):
       SCons(context, platform='x86-64', parallel=True, args=['ncval'])
 
-    with Step('clobber dfa_validator', status):
-      Command(context, cmd=['rm', '-rf', 'dfa_validator'])
-    with Step('clone dfa_validator', status):
-      Command(context, cmd=[
-          'git', 'clone',
-          'git://github.com/mseaborn/x86-decoder.git', 'dfa_validator32'])
-      Command(context, cmd=[
-          'git', 'checkout', '1a5963fa48739c586d5bbd3d46d0a8a7f25112f2'],
-          cwd='dfa_validator32')
-      Command(context, cmd=[
-          'git', 'clone',
-          'git://github.com/mseaborn/x86-decoder.git', 'dfa_validator64'])
-      Command(context, cmd=[
-          'git', 'checkout', '6ffa36f44cafd2cdad37e1e27254c498030ff712'],
-          cwd='dfa_validator64')
-    with Step('build dfa_validator_32', status):
-      Command(context, cmd=['make'], cwd='dfa_validator32')
-    with Step('build dfa_validator_64', status):
-      Command(context, cmd=['make'], cwd='dfa_validator64')
-
     with Step('build ragel_validator-32', status):
       SCons(context, platform='x86-32', parallel=True, args=['ncval_new'])
     with Step('build ragel_validator-64', status):
@@ -276,15 +261,6 @@ def BuildScript(status, context):
       ValidatorTest(
           context, 'x86-64', 'scons-out/opt-linux-x86-64/staging/ncval')
 
-    with Step('validator_regression_test dfa x86-32', status,
-        halt_on_fail=False):
-      ValidatorTest(
-          context, 'x86-32', 'dfa_validator32/dfa_ncval', warn_only=True)
-    with Step('validator_regression_test dfa x86-64', status,
-        halt_on_fail=False):
-      ValidatorTest(
-          context, 'x86-64', 'dfa_validator64/dfa_ncval', warn_only=True)
-
     with Step('validator_regression_test ragel x86-32', status,
         halt_on_fail=False):
       ValidatorTest(
@@ -296,8 +272,10 @@ def BuildScript(status, context):
           context, 'x86-64',
           'scons-out/opt-linux-x86-64/staging/ncval_new')
 
-    with Step('validator_diff_tests', status, halt_on_fail=False):
-      SCons(context, args=['validator_diff_tests'])
+    with Step('validator_diff32_tests', status, halt_on_fail=False):
+      SCons(context, platform='x86-32', args=['validator_diff_tests'])
+    with Step('validator_diff64_tests', status, halt_on_fail=False):
+      SCons(context, platform='x86-64', args=['validator_diff_tests'])
     return
 
   # Run checkdeps script to vet #includes.
@@ -309,9 +287,31 @@ def BuildScript(status, context):
     with Step('gyp_compile', status):
       CommandGypBuild(context)
 
+  # On a subset of Linux builds, build Breakpad tools for testing.
+  if context['use_breakpad_tools']:
+    with Step('breakpad configure', status):
+      Command(context, cmd=['mkdir', '-p', 'breakpad-out'])
+      Command(context, cwd='breakpad-out',
+              cmd=['bash', '../../breakpad/configure',
+                   'CXXFLAGS=-I../..'])  # For third_party/lss
+    with Step('breakpad make', status):
+      Command(context, cmd=['make', '-j%d' % context['max_jobs']],
+              cwd='breakpad-out')
+
   # The main compile step.
   with Step('scons_compile', status):
     SCons(context, parallel=True, args=[])
+
+  if context['coverage']:
+    with Step('collect_coverage', status, halt_on_fail=True):
+      SCons(context, args=['coverage'])
+    with Step('summarize_coverage', status, halt_on_fail=False):
+      SummarizeCoverage(context)
+    slave_type = os.environ.get('BUILDBOT_SLAVE_TYPE')
+    if slave_type != 'Trybot' and slave_type is not None:
+      with Step('archive_coverage', status, halt_on_fail=True):
+        ArchiveCoverage(context)
+    return
 
   ### BEGIN tests ###
   with Step('small_tests', status, halt_on_fail=False):
@@ -331,24 +331,14 @@ def BuildScript(status, context):
     SCons(context, mode=context['default_scons_mode'] + ['nacl_irt_test'],
           args=['medium_tests_irt'])
 
-  # TODO(eugenis): reenable this on clang/opt once the LLVM issue is fixed
-  # http://code.google.com/p/nativeclient/issues/detail?id=2473
-  bug2473 = (context['clang'] or context['asan']) and context['mode'] == 'opt'
-  if context.Mac() and context['arch'] != 'arm' and not bug2473:
-    # x86-64 is not fully supported on Mac.  Not everything works, but we
-    # want to stop x86-64 sel_ldr from regressing, so do a minimal test here.
-    with Step('minimal x86-64 test', status, halt_on_fail=False):
-      SCons(context, parallel=True, platform='x86-64',
-            args=['run_hello_world_test'])
-
   ### END tests ###
 
   if not context['no_gyp']:
     # Build with ragel-based validator using GYP.
     gyp_defines_save = context.GetEnv('GYP_DEFINES')
     context.SetEnv('GYP_DEFINES',
-                   ' '.join([gyp_defines_save, 'nacl_validator_ragel=1']))
-    with Step('gyp_compile_ragel', status):
+                   ' '.join([gyp_defines_save, 'nacl_validator_ragel=0']))
+    with Step('gyp_compile_noragel', status):
       # Clobber GYP build to recompile necessary files with new preprocessor macro
       # definitions.  It is done because some build systems (such as GNU Make,
       # MSBuild etc.) do not consider compiler arguments as a dependency.
@@ -358,12 +348,12 @@ def BuildScript(status, context):
     context.SetEnv('GYP_DEFINES', gyp_defines_save)
 
   # Build with ragel-based validator using scons.
-  with Step('scons_compile_ragel', status):
-    SCons(context, parallel=True, args=['validator_ragel=1'])
+  with Step('scons_compile_noragel', status):
+    SCons(context, parallel=True, args=['validator_ragel=0'])
 
   # Smoke tests for the R-DFA validator.
-  with Step('validator_ragel_tests', status):
-    args = ['validator_ragel=1',
+  with Step('validator_noragel_tests', status):
+    args = ['validator_ragel=0',
             'small_tests',
             'medium_tests',
             'large_tests',
@@ -392,5 +382,14 @@ def Main():
   RunBuild(BuildScript, status)
 
 
+def TimedMain():
+  start_time = time.time()
+  try:
+    Main()
+  finally:
+    time_taken = time.time() - start_time
+    print 'RESULT BuildbotTime: total= %.3f minutes' % (time_taken / 60)
+
+
 if __name__ == '__main__':
-  Main()
+  TimedMain()

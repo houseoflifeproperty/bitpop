@@ -36,6 +36,12 @@ class SSLIdentity;
 
 namespace cricket {
 
+struct TransportOptions {
+  TransportOptions() : ice_restart(false), prefer_passive_role(false) {}
+  bool ice_restart;
+  bool prefer_passive_role;
+};
+
 // Creates transport descriptions according to the supplied configuration.
 // When creating answers, performs the appropriate negotiation
 // of the various fields to determine the proper result.
@@ -43,7 +49,7 @@ class TransportDescriptionFactory {
  public:
   // Default ctor; use methods below to set configuration.
   TransportDescriptionFactory();
-
+  SecurePolicy secure() const { return secure_; }
   // The identity to use when setting up DTLS.
   talk_base::SSLIdentity* identity() const { return identity_; }
 
@@ -53,24 +59,23 @@ class TransportDescriptionFactory {
   void set_secure(SecurePolicy s) { secure_ = s; }
   // Specifies the identity to use (only used when secure is not SEC_DISABLED).
   void set_identity(talk_base::SSLIdentity* identity) { identity_ = identity; }
-  // Specifies the algorithm to use when creating an identity digest.
-  void set_digest_algorithm(const std::string& alg) { digest_alg_ = alg; }
 
   // Creates a transport description suitable for use in an offer.
-  TransportDescription* CreateOffer(
+  TransportDescription* CreateOffer(const TransportOptions& options,
       const TransportDescription* current_description) const;
   // Create a transport description that is a response to an offer.
   TransportDescription* CreateAnswer(
       const TransportDescription* offer,
+      const TransportOptions& options,
       const TransportDescription* current_description) const;
 
  private:
-  bool CreateIdentityDigest(TransportDescription* description) const;
+  bool SetSecurityInfo(TransportDescription* description,
+                       ConnectionRole role) const;
 
   TransportProtocol protocol_;
   SecurePolicy secure_;
   talk_base::SSLIdentity* identity_;
-  std::string digest_alg_;
 };
 
 }  // namespace cricket

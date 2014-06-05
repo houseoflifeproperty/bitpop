@@ -8,10 +8,11 @@
 
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/metrics/metrics_service.h"
+#include "chrome/browser/omaha_query_params/omaha_query_params.h"
 #include "net/base/escape.h"
 
 namespace {
@@ -27,6 +28,13 @@ namespace extensions {
 ManifestFetchData::ManifestFetchData(const GURL& update_url, int request_id)
     : base_url_(update_url),
       full_url_(update_url) {
+  std::string query = full_url_.has_query() ?
+      full_url_.query() + "&" : std::string();
+  query += chrome::OmahaQueryParams::Get(chrome::OmahaQueryParams::CRX);
+  GURL::Replacements replacements;
+  replacements.SetQueryStr(query);
+  full_url_ = full_url_.ReplaceComponents(replacements);
+
   request_ids_.insert(request_id);
 }
 
@@ -54,7 +62,8 @@ ManifestFetchData::~ManifestFetchData() {}
 //   http://somehost/path?x=id%3Daaaa%26v%3D1.1%26uc&x=id%3Dbbbb%26v%3D2.0%26uc
 //
 // (Note that '=' is %3D and '&' is %26 when urlencoded.)
-bool ManifestFetchData::AddExtension(std::string id, std::string version,
+bool ManifestFetchData::AddExtension(const std::string& id,
+                                     const std::string& version,
                                      const PingData* ping_data,
                                      const std::string& update_url_data,
                                      const std::string& install_source) {
@@ -133,7 +142,8 @@ bool ManifestFetchData::Includes(const std::string& extension_id) const {
   return extension_ids_.find(extension_id) != extension_ids_.end();
 }
 
-bool ManifestFetchData::DidPing(std::string extension_id, PingType type) const {
+bool ManifestFetchData::DidPing(const std::string& extension_id,
+                                PingType type) const {
   std::map<std::string, PingData>::const_iterator i = pings_.find(extension_id);
   if (i == pings_.end())
     return false;

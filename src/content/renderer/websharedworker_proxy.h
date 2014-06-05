@@ -10,53 +10,36 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "googleurl/src/gurl.h"
 #include "ipc/ipc_listener.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSharedWorker.h"
+#include "third_party/WebKit/public/web/WebSharedWorkerConnector.h"
+#include "url/gurl.h"
 
 namespace content {
 
-class ChildThread;
+class MessageRouter;
 
 // Implementation of the WebSharedWorker APIs. This object is intended to only
 // live long enough to allow the caller to send a "connect" event to the worker
 // thread. Once the connect event has been sent, all future communication will
 // happen via the WebMessagePortChannel, and the WebSharedWorker instance will
 // be freed.
-class WebSharedWorkerProxy : public WebKit::WebSharedWorker,
+class WebSharedWorkerProxy : public blink::WebSharedWorkerConnector,
                              private IPC::Listener {
  public:
   // If the worker not loaded yet, route_id == MSG_ROUTING_NONE
-  WebSharedWorkerProxy(ChildThread* child_thread,
+  WebSharedWorkerProxy(MessageRouter* router,
                        unsigned long long document_id,
-                       bool exists,
                        int route_id,
-                       int render_view_route_id);
+                       int render_frame_route_id);
   virtual ~WebSharedWorkerProxy();
 
-  // Implementations of WebSharedWorker APIs
-  virtual bool isStarted();
-  virtual void connect(WebKit::WebMessagePortChannel* channel,
+  // Implementations of WebSharedWorkerConnector APIs
+  virtual void connect(blink::WebMessagePortChannel* channel,
                        ConnectListener* listener);
-
-  virtual void startWorkerContext(
-      const WebKit::WebURL& script_url,
-      const WebKit::WebString& name,
-      const WebKit::WebString& user_agent,
-      const WebKit::WebString& source_code,
-      const WebKit::WebString& content_security_policy,
-      WebKit::WebContentSecurityPolicyType policy_type,
-      long long script_resource_appcache_id);
-
-  virtual void terminateWorkerContext();
-  virtual void clientDestroyed();
 
  private:
   // IPC::Listener implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-
-  // Returns true if the worker is running (can send messages to it).
-  bool IsStarted();
 
   // Disconnects the worker (stops listening for incoming messages).
   void Disconnect();
@@ -71,17 +54,9 @@ class WebSharedWorkerProxy : public WebKit::WebSharedWorker,
   // Sends any messages currently in the queue.
   void SendQueuedMessages();
 
-  void CreateWorkerContext(const GURL& script_url,
-                           bool is_shared,
-                           const string16& name,
-                           const string16& user_agent,
-                           const string16& source_code,
-                           const string16& content_security_policy,
-                           WebKit::WebContentSecurityPolicyType policy_type,
-                           int pending_route_id,
-                           int64 script_resource_appcache_id);
   void OnWorkerCreated();
-
+  void OnWorkerScriptLoadFailed();
+  void OnWorkerConnected();
 
   // Routing id associated with this worker - used to receive messages from the
   // worker, and also to route messages to the worker (WorkerService contains
@@ -89,10 +64,10 @@ class WebSharedWorkerProxy : public WebKit::WebSharedWorker,
   // routing ids).
   int route_id_;
 
-  // The routing id for the RenderView that created this worker.
-  int render_view_route_id_;
+  // The routing id for the RenderFrame that created this worker.
+  int render_frame_route_id_;
 
-  ChildThread* child_thread_;
+  MessageRouter* const router_;
 
   // ID of our parent document (used to shutdown workers when the parent
   // document is detached).
@@ -106,6 +81,7 @@ class WebSharedWorkerProxy : public WebKit::WebSharedWorker,
   // the worker).
   int pending_route_id_;
   ConnectListener* connect_listener_;
+  bool created_;
 
   DISALLOW_COPY_AND_ASSIGN(WebSharedWorkerProxy);
 };

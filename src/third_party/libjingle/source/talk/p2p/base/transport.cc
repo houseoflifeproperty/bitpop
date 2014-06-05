@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2004--2005, Google Inc.
+ * Copyright 2004, Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -27,6 +27,7 @@
 
 #include "talk/p2p/base/transport.h"
 
+#include "talk/base/bind.h"
 #include "talk/base/common.h"
 #include "talk/base/logging.h"
 #include "talk/p2p/base/candidate.h"
@@ -39,33 +40,29 @@
 
 namespace cricket {
 
+using talk_base::Bind;
+
 enum {
-  MSG_CREATECHANNEL = 1,
-  MSG_DESTROYCHANNEL = 2,
-  MSG_DESTROYALLCHANNELS = 3,
-  MSG_CONNECTCHANNELS = 4,
-  MSG_RESETCHANNELS = 5,
-  MSG_ONSIGNALINGREADY = 6,
-  MSG_ONREMOTECANDIDATE = 7,
-  MSG_READSTATE = 8,
-  MSG_WRITESTATE = 9,
-  MSG_REQUESTSIGNALING = 10,
-  MSG_CANDIDATEREADY = 11,
-  MSG_ROUTECHANGE = 12,
-  MSG_CONNECTING = 13,
-  MSG_CANDIDATEALLOCATIONCOMPLETE = 14,
-  MSG_ROLECONFLICT = 15,
-  MSG_SETROLE = 16,
-  MSG_SETLOCALDESCRIPTION = 17,
-  MSG_SETREMOTEDESCRIPTION = 18
+  MSG_ONSIGNALINGREADY = 1,
+  MSG_ONREMOTECANDIDATE,
+  MSG_READSTATE,
+  MSG_WRITESTATE,
+  MSG_REQUESTSIGNALING,
+  MSG_CANDIDATEREADY,
+  MSG_ROUTECHANGE,
+  MSG_CONNECTING,
+  MSG_CANDIDATEALLOCATIONCOMPLETE,
+  MSG_ROLECONFLICT,
+  MSG_COMPLETED,
+  MSG_FAILED,
 };
 
 struct ChannelParams : public talk_base::MessageData {
   ChannelParams() : channel(NULL), candidate(NULL) {}
   explicit ChannelParams(int component)
       : component(component), channel(NULL), candidate(NULL) {}
-  explicit ChannelParams(Candidate* candidate) :
-      channel(NULL), candidate(candidate) {
+  explicit ChannelParams(Candidate* candidate)
+      : channel(NULL), candidate(candidate) {
   }
 
   ~ChannelParams() {
@@ -78,24 +75,31 @@ struct ChannelParams : public talk_base::MessageData {
   Candidate* candidate;
 };
 
-struct TransportDescriptionParams : public talk_base::MessageData {
-  TransportDescriptionParams(const TransportDescription& desc,
-                             ContentAction action)
-      : desc(desc), action(action), result(false) {}
-  const TransportDescription& desc;
-  ContentAction action;
-  bool result;
-};
-
-cricket::TransportProtocol GetProtocolFromDescription(
-    const cricket::TransportDescription* desc) {
-  ASSERT(desc != NULL);
-
-  if (desc->transport_type == cricket::NS_JINGLE_ICE_UDP) {
-    return (desc->HasOption(cricket::ICE_OPTION_GICE)) ?
-        cricket::ICEPROTO_HYBRID : cricket::ICEPROTO_RFC5245;
+static std::string IceProtoToString(TransportProtocol proto) {
+  std::string proto_str;
+  switch (proto) {
+    case ICEPROTO_GOOGLE:
+      proto_str = "gice";
+      break;
+    case ICEPROTO_HYBRID:
+      proto_str = "hybrid";
+      break;
+    case ICEPROTO_RFC5245:
+      proto_str = "ice";
+      break;
+    default:
+      ASSERT(false);
+      break;
   }
-  return cricket::ICEPROTO_GOOGLE;
+  return proto_str;
+}
+
+bool BadTransportDescription(const std::string& desc, std::string* err_desc) {
+  if (err_desc) {
+    *err_desc = desc;
+  }
+  LOG(LS_ERROR) << desc;
+  return false;
 }
 
 Transport::Transport(talk_base::Thread* signaling_thread,
@@ -111,10 +115,12 @@ Transport::Transport(talk_base::Thread* signaling_thread,
     destroyed_(false),
     readable_(TRANSPORT_STATE_NONE),
     writable_(TRANSPORT_STATE_NONE),
+    was_writable_(false),
     connect_requested_(false),
-    role_(ROLE_UNKNOWN),
+    ice_role_(ICEROLE_UNKNOWN),
     tiebreaker_(0),
-    protocol_(ICEPROTO_HYBRID) {
+    protocol_(ICEPROTO_HYBRID),
+    remote_ice_mode_(ICEMODE_FULL) {
 }
 
 Transport::~Transport() {
@@ -122,29 +128,58 @@ Transport::~Transport() {
   ASSERT(destroyed_);
 }
 
-void Transport::SetRole(TransportRole role) {
-  role_ = role;
-  worker_thread()->Send(this, MSG_SETROLE);
+void Transport::SetIceRole(IceRole role) {
+  worker_thread_->Invoke<void>(Bind(&Transport::SetIceRole_w, this, role));
+}
+
+void Transport::SetIdentity(talk_base::SSLIdentity* identity) {
+  worker_thread_->Invoke<void>(Bind(&Transport::SetIdentity_w, this, identity));
+}
+
+bool Transport::GetIdentity(talk_base::SSLIdentity** identity) {
+  // The identity is set on the worker thread, so for safety it must also be
+  // acquired on the worker thread.
+  return worker_thread_->Invoke<bool>(
+      Bind(&Transport::GetIdentity_w, this, identity));
+}
+
+bool Transport::GetRemoteCertificate(talk_base::SSLCertificate** cert) {
+  // Channels can be deleted on the worker thread, so for safety the remote
+  // certificate is acquired on the worker thread.
+  return worker_thread_->Invoke<bool>(
+      Bind(&Transport::GetRemoteCertificate_w, this, cert));
+}
+
+bool Transport::GetRemoteCertificate_w(talk_base::SSLCertificate** cert) {
+  ASSERT(worker_thread()->IsCurrent());
+  if (channels_.empty())
+    return false;
+
+  ChannelMap::iterator iter = channels_.begin();
+  return iter->second->GetRemoteCertificate(cert);
 }
 
 bool Transport::SetLocalTransportDescription(
-    const TransportDescription& description, ContentAction action) {
-  TransportDescriptionParams params(description, action);
-  worker_thread()->Send(this, MSG_SETLOCALDESCRIPTION, &params);
-  return params.result;
+    const TransportDescription& description,
+    ContentAction action,
+    std::string* error_desc) {
+  return worker_thread_->Invoke<bool>(Bind(
+      &Transport::SetLocalTransportDescription_w, this,
+      description, action, error_desc));
 }
 
 bool Transport::SetRemoteTransportDescription(
-    const TransportDescription& description, ContentAction action) {
-  TransportDescriptionParams params(description, action);
-  worker_thread()->Send(this, MSG_SETREMOTEDESCRIPTION, &params);
-  return params.result;
+    const TransportDescription& description,
+    ContentAction action,
+    std::string* error_desc) {
+  return worker_thread_->Invoke<bool>(Bind(
+      &Transport::SetRemoteTransportDescription_w, this,
+      description, action, error_desc));
 }
 
 TransportChannelImpl* Transport::CreateChannel(int component) {
-  ChannelParams params(component);
-  worker_thread()->Send(this, MSG_CREATECHANNEL, &params);
-  return params.channel;
+  return worker_thread_->Invoke<TransportChannelImpl*>(Bind(
+      &Transport::CreateChannel_w, this, component));
 }
 
 TransportChannelImpl* Transport::CreateChannel_w(int component) {
@@ -173,14 +208,16 @@ TransportChannelImpl* Transport::CreateChannel_w(int component) {
   }
 
   // Push down our transport state to the new channel.
-  impl->SetRole(role_);
-  impl->SetTiebreaker(tiebreaker_);
-  if (local_description_) {
-    ApplyLocalTransportDescription_w(impl);
-    if (remote_description_) {
-      ApplyNegotiatedTransportDescription_w(impl);
-    }
-  }
+  impl->SetIceRole(ice_role_);
+  impl->SetIceTiebreaker(tiebreaker_);
+  // TODO(ronghuawu): Change CreateChannel_w to be able to return error since
+  // below Apply**Description_w calls can fail.
+  if (local_description_)
+    ApplyLocalTransportDescription_w(impl, NULL);
+  if (remote_description_)
+    ApplyRemoteTransportDescription_w(impl, NULL);
+  if (local_description_ && remote_description_)
+    ApplyNegotiatedTransportDescription_w(impl, NULL);
 
   impl->SignalReadableState.connect(this, &Transport::OnChannelReadableState);
   impl->SignalWritableState.connect(this, &Transport::OnChannelWritableState);
@@ -191,6 +228,8 @@ TransportChannelImpl* Transport::CreateChannel_w(int component) {
   impl->SignalCandidatesAllocationDone.connect(
       this, &Transport::OnChannelCandidatesAllocationDone);
   impl->SignalRoleConflict.connect(this, &Transport::OnRoleConflict);
+  impl->SignalConnectionRemoved.connect(
+      this, &Transport::OnChannelConnectionRemoved);
 
   if (connect_requested_) {
     impl->Connect();
@@ -215,8 +254,8 @@ bool Transport::HasChannels() {
 }
 
 void Transport::DestroyChannel(int component) {
-  ChannelParams params(component);
-  worker_thread()->Send(this, MSG_DESTROYCHANNEL, &params);
+  worker_thread_->Invoke<void>(Bind(
+      &Transport::DestroyChannel_w, this, component));
 }
 
 void Transport::DestroyChannel_w(int component) {
@@ -250,7 +289,7 @@ void Transport::DestroyChannel_w(int component) {
 
 void Transport::ConnectChannels() {
   ASSERT(signaling_thread()->IsCurrent());
-  worker_thread()->Send(this, MSG_CONNECTCHANNELS, NULL);
+  worker_thread_->Invoke<void>(Bind(&Transport::ConnectChannels_w, this));
 }
 
 void Transport::ConnectChannels_w() {
@@ -270,11 +309,12 @@ void Transport::ConnectChannels_w() {
     // initiate request initiated by the remote.
     LOG(LS_INFO) << "Transport::ConnectChannels_w: No local description has "
                  << "been set. Will generate one.";
-    TransportDescription desc(NS_GINGLE_P2P, TransportOptions(),
+    TransportDescription desc(NS_GINGLE_P2P, std::vector<std::string>(),
                               talk_base::CreateRandomString(ICE_UFRAG_LENGTH),
                               talk_base::CreateRandomString(ICE_PWD_LENGTH),
-                              NULL, Candidates());
-    SetLocalTransportDescription_w(desc, CA_OFFER);
+                              ICEMODE_FULL, CONNECTIONROLE_NONE, NULL,
+                              Candidates());
+    SetLocalTransportDescription_w(desc, CA_OFFER, NULL);
   }
 
   CallChannels_w(&TransportChannelImpl::Connect);
@@ -290,7 +330,8 @@ void Transport::OnConnecting_s() {
 
 void Transport::DestroyAllChannels() {
   ASSERT(signaling_thread()->IsCurrent());
-  worker_thread()->Send(this, MSG_DESTROYALLCHANNELS, NULL);
+  worker_thread_->Invoke<void>(
+      Bind(&Transport::DestroyAllChannels_w, this));
   worker_thread()->Clear(this);
   signaling_thread()->Clear(this);
   destroyed_ = true;
@@ -318,7 +359,7 @@ void Transport::DestroyAllChannels_w() {
 
 void Transport::ResetChannels() {
   ASSERT(signaling_thread()->IsCurrent());
-  worker_thread()->Send(this, MSG_RESETCHANNELS, NULL);
+  worker_thread_->Invoke<void>(Bind(&Transport::ResetChannels_w, this));
 }
 
 void Transport::ResetChannels_w() {
@@ -364,6 +405,12 @@ bool Transport::VerifyCandidate(const Candidate& cand, std::string* error) {
 
   // Disallow all ports below 1024, except for 80 and 443 on public addresses.
   int port = cand.address().port();
+  if (port == 0) {
+    // Expected for active-only candidates per
+    // http://tools.ietf.org/html/rfc6544#section-4.5 so no error.
+    *error = "";
+    return false;
+  }
   if (port < 1024) {
     if ((port != 80) && (port != 443)) {
       *error = "candidate has port below 1024, but not 80 or 443";
@@ -377,6 +424,35 @@ bool Transport::VerifyCandidate(const Candidate& cand, std::string* error) {
   }
 
   return true;
+}
+
+
+bool Transport::GetStats(TransportStats* stats) {
+  ASSERT(signaling_thread()->IsCurrent());
+  return worker_thread_->Invoke<bool>(Bind(
+      &Transport::GetStats_w, this, stats));
+}
+
+bool Transport::GetStats_w(TransportStats* stats) {
+  ASSERT(worker_thread()->IsCurrent());
+  stats->content_name = content_name();
+  stats->channel_stats.clear();
+  for (ChannelMap::iterator iter = channels_.begin();
+       iter != channels_.end();
+       ++iter) {
+    TransportChannelStats substats;
+    substats.component = iter->second->component();
+    if (!iter->second->GetStats(&substats.connection_infos)) {
+      return false;
+    }
+    stats->channel_stats.push_back(substats);
+  }
+  return true;
+}
+
+bool Transport::GetSslRole(talk_base::SSLRole* ssl_role) const {
+  return worker_thread_->Invoke<bool>(Bind(
+      &Transport::GetSslRole_w, this, ssl_role));
 }
 
 void Transport::OnRemoteCandidates(const std::vector<Candidate>& candidates) {
@@ -427,12 +503,15 @@ void Transport::OnChannelReadableState_s() {
 void Transport::OnChannelWritableState(TransportChannel* channel) {
   ASSERT(worker_thread()->IsCurrent());
   signaling_thread()->Post(this, MSG_WRITESTATE, NULL);
+
+  MaybeCompleted_w();
 }
 
 void Transport::OnChannelWritableState_s() {
   ASSERT(signaling_thread()->IsCurrent());
   TransportState writable = GetTransportState_s(false);
   if (writable_ != writable) {
+    was_writable_ = (writable_ == TRANSPORT_STATE_ALL);
     writable_ = writable;
     SignalWritableState(this);
   }
@@ -468,6 +547,7 @@ void Transport::OnChannelRequestSignaling(TransportChannelImpl* channel) {
 
 void Transport::OnChannelRequestSignaling_s(int component) {
   ASSERT(signaling_thread()->IsCurrent());
+  LOG(LS_INFO) << "Transport: " << content_name_ << ", allocating candidates";
   // Resetting ICE state for the channel.
   {
     talk_base::CritScope cs(&crit_);
@@ -528,6 +608,8 @@ void Transport::OnChannelCandidatesAllocationDone(
   talk_base::CritScope cs(&crit_);
   ChannelMap::iterator iter = channels_.find(channel->component());
   ASSERT(iter != channels_.end());
+  LOG(LS_INFO) << "Transport: " << content_name_ << ", component "
+               << channel->component() << " allocation complete";
   iter->second.set_candidates_allocated(true);
 
   // If all channels belonging to this Transport got signal, then
@@ -538,10 +620,13 @@ void Transport::OnChannelCandidatesAllocationDone(
       return;
   }
   signaling_thread_->Post(this, MSG_CANDIDATEALLOCATIONCOMPLETE);
+
+  MaybeCompleted_w();
 }
 
 void Transport::OnChannelCandidatesAllocationDone_s() {
   ASSERT(signaling_thread()->IsCurrent());
+  LOG(LS_INFO) << "Transport: " << content_name_ << " allocation complete";
   SignalCandidatesAllocationDone(this);
 }
 
@@ -549,66 +634,156 @@ void Transport::OnRoleConflict(TransportChannelImpl* channel) {
   signaling_thread_->Post(this, MSG_ROLECONFLICT);
 }
 
-void Transport::SetRole_w() {
+void Transport::OnChannelConnectionRemoved(TransportChannelImpl* channel) {
+  ASSERT(worker_thread()->IsCurrent());
+  MaybeCompleted_w();
+
+  // Check if the state is now Failed.
+  // Failed is only available in the Controlling ICE role.
+  if (channel->GetIceRole() != ICEROLE_CONTROLLING) {
+    return;
+  }
+
+  ChannelMap::iterator iter = channels_.find(channel->component());
+  ASSERT(iter != channels_.end());
+  // Failed can only occur after candidate allocation has stopped.
+  if (!iter->second.candidates_allocated()) {
+    return;
+  }
+
+  size_t connections = channel->GetConnectionCount();
+  if (connections == 0) {
+    // A Transport has failed if any of its channels have no remaining
+    // connections.
+    signaling_thread_->Post(this, MSG_FAILED);
+  }
+}
+
+void Transport::MaybeCompleted_w() {
+  ASSERT(worker_thread()->IsCurrent());
+
+  // A Transport's ICE process is completed if all of its channels are writable,
+  // have finished allocating candidates, and have pruned all but one of their
+  // connections.
+  ChannelMap::const_iterator iter;
+  for (iter = channels_.begin(); iter != channels_.end(); ++iter) {
+    const TransportChannelImpl* channel = iter->second.get();
+    if (!(channel->writable() &&
+          channel->GetConnectionCount() == 1 &&
+          channel->GetIceRole() == ICEROLE_CONTROLLING &&
+          iter->second.candidates_allocated())) {
+      return;
+    }
+  }
+
+  signaling_thread_->Post(this, MSG_COMPLETED);
+}
+
+void Transport::SetIceRole_w(IceRole role) {
   talk_base::CritScope cs(&crit_);
+  ice_role_ = role;
   for (ChannelMap::iterator iter = channels_.begin();
        iter != channels_.end(); ++iter) {
-    iter->second->SetRole(role_);
+    iter->second->SetIceRole(ice_role_);
+  }
+}
+
+void Transport::SetRemoteIceMode_w(IceMode mode) {
+  talk_base::CritScope cs(&crit_);
+  remote_ice_mode_ = mode;
+  // Shouldn't channels be created after this method executed?
+  for (ChannelMap::iterator iter = channels_.begin();
+       iter != channels_.end(); ++iter) {
+    iter->second->SetRemoteIceMode(remote_ice_mode_);
   }
 }
 
 bool Transport::SetLocalTransportDescription_w(
-    const TransportDescription& desc, ContentAction action) {
+    const TransportDescription& desc,
+    ContentAction action,
+    std::string* error_desc) {
   bool ret = true;
   talk_base::CritScope cs(&crit_);
   local_description_.reset(new TransportDescription(desc));
 
   for (ChannelMap::iterator iter = channels_.begin();
        iter != channels_.end(); ++iter) {
-    ret &= ApplyLocalTransportDescription_w(iter->second.get());
+    ret &= ApplyLocalTransportDescription_w(iter->second.get(), error_desc);
   }
   if (!ret)
     return false;
 
   // If PRANSWER/ANSWER is set, we should decide transport protocol type.
   if (action == CA_PRANSWER || action == CA_ANSWER) {
-    ret &= NegotiateTransportDescription_w(action);
+    ret &= NegotiateTransportDescription_w(action, error_desc);
   }
   return ret;
 }
 
 bool Transport::SetRemoteTransportDescription_w(
-    const TransportDescription& desc, ContentAction action) {
+    const TransportDescription& desc,
+    ContentAction action,
+    std::string* error_desc) {
   bool ret = true;
   talk_base::CritScope cs(&crit_);
   remote_description_.reset(new TransportDescription(desc));
 
-  // If PRANSWER/ANSWER is set, we should decide transport protocol type.
-  if (action == CA_PRANSWER || action == CA_ANSWER) {
-    ret = NegotiateTransportDescription_w(CA_OFFER);
+  for (ChannelMap::iterator iter = channels_.begin();
+       iter != channels_.end(); ++iter) {
+    ret &= ApplyRemoteTransportDescription_w(iter->second.get(), error_desc);
   }
 
+  // If PRANSWER/ANSWER is set, we should decide transport protocol type.
+  if (action == CA_PRANSWER || action == CA_ANSWER) {
+    ret = NegotiateTransportDescription_w(CA_OFFER, error_desc);
+  }
   return ret;
 }
 
-bool Transport::ApplyLocalTransportDescription_w(TransportChannelImpl* ch) {
-  ch->SetIceUfrag(local_description_->ice_ufrag);
-  ch->SetIcePwd(local_description_->ice_pwd);
+bool Transport::ApplyLocalTransportDescription_w(TransportChannelImpl* ch,
+                                                 std::string* error_desc) {
+  // If existing protocol_type is HYBRID, we may have not chosen the final
+  // protocol type, so update the channel protocol type from the
+  // local description. Otherwise, skip updating the protocol type.
+  // We check for HYBRID to avoid accidental changes; in the case of a
+  // session renegotiation, the new offer will have the google-ice ICE option,
+  // so we need to make sure we don't switch back from ICE mode to HYBRID
+  // when this happens.
+  // There are some other ways we could have solved this, but this is the
+  // simplest. The ultimate solution will be to get rid of GICE altogether.
+  IceProtocolType protocol_type;
+  if (ch->GetIceProtocolType(&protocol_type) &&
+      protocol_type == ICEPROTO_HYBRID) {
+    ch->SetIceProtocolType(
+        TransportProtocolFromDescription(local_description()));
+  }
+  ch->SetIceCredentials(local_description_->ice_ufrag,
+                        local_description_->ice_pwd);
   return true;
 }
 
-void Transport::ApplyNegotiatedTransportDescription_w(
-    TransportChannelImpl* channel) {
-  channel->SetIceProtocolType(protocol_);
+bool Transport::ApplyRemoteTransportDescription_w(TransportChannelImpl* ch,
+                                                  std::string* error_desc) {
+  ch->SetRemoteIceCredentials(remote_description_->ice_ufrag,
+                              remote_description_->ice_pwd);
+  return true;
 }
 
-bool Transport::NegotiateTransportDescription_w(ContentAction local_role_) {
+bool Transport::ApplyNegotiatedTransportDescription_w(
+    TransportChannelImpl* channel, std::string* error_desc) {
+  channel->SetIceProtocolType(protocol_);
+  channel->SetRemoteIceMode(remote_ice_mode_);
+  return true;
+}
+
+bool Transport::NegotiateTransportDescription_w(ContentAction local_role,
+                                                std::string* error_desc) {
   // TODO(ekr@rtfm.com): This is ICE-specific stuff. Refactor into
   // P2PTransport.
   const TransportDescription* offer;
   const TransportDescription* answer;
 
-  if (local_role_ == CA_OFFER) {
+  if (local_role == CA_OFFER) {
     offer = local_description_.get();
     answer = remote_description_.get();
   } else {
@@ -616,8 +791,8 @@ bool Transport::NegotiateTransportDescription_w(ContentAction local_role_) {
     answer = local_description_.get();
   }
 
-  TransportProtocol offer_proto = GetProtocolFromDescription(offer);
-  TransportProtocol answer_proto = GetProtocolFromDescription(answer);
+  TransportProtocol offer_proto = TransportProtocolFromDescription(offer);
+  TransportProtocol answer_proto = TransportProtocolFromDescription(answer);
 
   // If offered protocol is gice/ice, then we expect to receive matching
   // protocol in answer, anything else is treated as an error.
@@ -630,9 +805,24 @@ bool Transport::NegotiateTransportDescription_w(ContentAction local_role_) {
   // answer must be treated as error.
   if ((offer_proto == ICEPROTO_GOOGLE || offer_proto == ICEPROTO_RFC5245) &&
       (offer_proto != answer_proto)) {
-    return false;
+    std::ostringstream desc;
+    desc << "Offer and answer protocol mismatch: "
+         << IceProtoToString(offer_proto)
+         << " vs "
+         << IceProtoToString(answer_proto);
+    return BadTransportDescription(desc.str(), error_desc);
   }
   protocol_ = answer_proto == ICEPROTO_HYBRID ? ICEPROTO_GOOGLE : answer_proto;
+
+  // If transport is in ICEROLE_CONTROLLED and remote end point supports only
+  // ice_lite, this local end point should take CONTROLLING role.
+  if (ice_role_ == ICEROLE_CONTROLLED &&
+      remote_description_->ice_mode == ICEMODE_LITE) {
+    SetIceRole_w(ICEROLE_CONTROLLING);
+  }
+
+  // Update remote ice_mode to all existing channels.
+  remote_ice_mode_ = remote_description_->ice_mode;
 
   // Now that we have negotiated everything, push it downward.
   // Note that we cache the result so that if we have race conditions
@@ -642,32 +832,14 @@ bool Transport::NegotiateTransportDescription_w(ContentAction local_role_) {
   for (ChannelMap::iterator iter = channels_.begin();
        iter != channels_.end();
        ++iter) {
-    ApplyNegotiatedTransportDescription_w(iter->second.get());
+    if (!ApplyNegotiatedTransportDescription_w(iter->second.get(), error_desc))
+      return false;
   }
   return true;
 }
 
 void Transport::OnMessage(talk_base::Message* msg) {
   switch (msg->message_id) {
-    case MSG_CREATECHANNEL: {
-        ChannelParams* params = static_cast<ChannelParams*>(msg->pdata);
-        params->channel = CreateChannel_w(params->component);
-      }
-      break;
-    case MSG_DESTROYCHANNEL: {
-        ChannelParams* params = static_cast<ChannelParams*>(msg->pdata);
-        DestroyChannel_w(params->component);
-      }
-      break;
-    case MSG_CONNECTCHANNELS:
-      ConnectChannels_w();
-      break;
-    case MSG_RESETCHANNELS:
-      ResetChannels_w();
-      break;
-    case MSG_DESTROYALLCHANNELS:
-      DestroyAllChannels_w();
-      break;
     case MSG_ONSIGNALINGREADY:
       CallChannels_w(&TransportChannelImpl::OnSignalingReady);
       break;
@@ -707,22 +879,11 @@ void Transport::OnMessage(talk_base::Message* msg) {
     case MSG_ROLECONFLICT:
       SignalRoleConflict();
       break;
-    case MSG_SETROLE:
-      SetRole_w();
+    case MSG_COMPLETED:
+      SignalCompleted(this);
       break;
-    case MSG_SETLOCALDESCRIPTION: {
-        TransportDescriptionParams* params =
-            static_cast<TransportDescriptionParams*>(msg->pdata);
-        params->result = SetLocalTransportDescription_w(params->desc,
-                                                        params->action);
-      }
-      break;
-    case MSG_SETREMOTEDESCRIPTION: {
-        TransportDescriptionParams* params =
-            static_cast<TransportDescriptionParams*>(msg->pdata);
-        params->result = SetRemoteTransportDescription_w(params->desc,
-                                                         params->action);
-      }
+    case MSG_FAILED:
+      SignalFailed(this);
       break;
   }
 }
@@ -744,6 +905,18 @@ bool TransportParser::ParseAddress(const buzz::XmlElement* elem,
   address->SetPort(port);
 
   return true;
+}
+
+// We're GICE if the namespace is NS_GOOGLE_P2P, or if NS_JINGLE_ICE_UDP is
+// used and the GICE ice-option is set.
+TransportProtocol TransportProtocolFromDescription(
+    const TransportDescription* desc) {
+  ASSERT(desc != NULL);
+  if (desc->transport_type == NS_JINGLE_ICE_UDP) {
+    return (desc->HasOption(ICE_OPTION_GICE)) ?
+        ICEPROTO_HYBRID : ICEPROTO_RFC5245;
+  }
+  return ICEPROTO_GOOGLE;
 }
 
 }  // namespace cricket

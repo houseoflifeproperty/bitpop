@@ -9,16 +9,17 @@
 #include "base/memory/ref_counted.h"
 #include "base/threading/thread.h"
 #include "base/synchronization/waitable_event.h"
+#include "dbus/bus.h"
 #include "dbus/exported_object.h"
 
 namespace base {
-class MessageLoopProxy;
+class SequencedTaskRunner;
 }
 
 namespace dbus {
 
-class Bus;
 class MethodCall;
+class MessageWriter;
 class Response;
 
 // The test service is used for end-to-end tests.  The service runs in a
@@ -35,13 +36,16 @@ class TestService : public base::Thread {
     ~Options();
 
     // NULL by default (i.e. don't use the D-Bus thread).
-    scoped_refptr<base::MessageLoopProxy> dbus_thread_message_loop_proxy;
+    scoped_refptr<base::SequencedTaskRunner> dbus_task_runner;
+
+    // Flags governing parameters of service ownership request.
+    Bus::ServiceOwnershipOptions request_ownership_options;
   };
 
   // The number of methods we'll export.
   static const int kNumMethodsToExport;
 
-  TestService(const Options& options);
+  explicit TestService(const Options& options);
   virtual ~TestService();
 
   // Starts the service in a separate thread.
@@ -69,6 +73,10 @@ class TestService : public base::Thread {
   // |callback| will be called with the result when an ownership request is
   // completed.
   void RequestOwnership(base::Callback<void(bool)> callback);
+
+  // Release the ownership of the well-known name "TestService".
+  // |callback| will be called when the ownership has been released.
+  void ReleaseOwnership(base::Closure callback);
 
   // Returns whether this instance has the name ownership or not.
   bool has_ownership() const { return has_ownership_; }
@@ -98,7 +106,7 @@ class TestService : public base::Thread {
                   bool success);
 
   // base::Thread override.
-  virtual void Run(MessageLoop* message_loop) OVERRIDE;
+  virtual void Run(base::MessageLoop* message_loop) OVERRIDE;
 
   //
   // Exported methods.
@@ -134,6 +142,25 @@ class TestService : public base::Thread {
   void SetProperty(MethodCall* method_call,
                    dbus::ExportedObject::ResponseSender response_sender);
 
+  // Performs an action for testing.
+  void PerformAction(MethodCall* method_call,
+                     dbus::ExportedObject::ResponseSender response_sender);
+
+  // Object Manager: returns the set of objects and properties.
+  void GetManagedObjects(MethodCall* method_call,
+                         dbus::ExportedObject::ResponseSender response_sender);
+
+  // Add a properties dictionary to a message writer.
+  void AddPropertiesToWriter(MessageWriter* writer);
+
+  // Add a new object to the manager.
+  void AddObject(const dbus::ObjectPath& object_path);
+  void AddObjectInternal(const dbus::ObjectPath& object_path);
+
+  // Remove an object from the manager.
+  void RemoveObject(const dbus::ObjectPath& object_path);
+  void RemoveObjectInternal(const dbus::ObjectPath& object_path);
+
   // Sends a property changed signal for the name property.
   void SendPropertyChangedSignal(const std::string& name);
 
@@ -143,8 +170,30 @@ class TestService : public base::Thread {
   // Helper function for RequestOwnership().
   void RequestOwnershipInternal(base::Callback<void(bool)> callback);
 
-  scoped_refptr<base::MessageLoopProxy> dbus_thread_message_loop_proxy_;
-  base::WaitableEvent on_all_methods_exported_;
+  // Helper function for ReleaseOwnership().
+  void ReleaseOwnershipInternal(base::Closure callback);
+
+  // Sends the response on completion of the performed action.
+  void PerformActionResponse(
+      MethodCall* method_call,
+      dbus::ExportedObject::ResponseSender response_sender);
+
+  // Re-requests ownership of the well-known name after releasing it.
+  void OwnershipReleased(
+      MethodCall* method_call,
+      dbus::ExportedObject::ResponseSender response_sender);
+
+  // Sends the action response after regaining the well-known name.
+  void OwnershipRegained(
+      MethodCall* method_call,
+      dbus::ExportedObject::ResponseSender response_sender,
+      bool success);
+
+  // Options to use when requesting service ownership.
+  Bus::ServiceOwnershipOptions request_ownership_options_;
+
+  scoped_refptr<base::SequencedTaskRunner> dbus_task_runner_;
+  base::WaitableEvent on_name_obtained_;
   // The number of methods actually exported.
   int num_exported_methods_;
 
@@ -153,6 +202,7 @@ class TestService : public base::Thread {
 
   scoped_refptr<Bus> bus_;
   ExportedObject* exported_object_;
+  ExportedObject* exported_object_manager_;
 };
 
 }  // namespace dbus

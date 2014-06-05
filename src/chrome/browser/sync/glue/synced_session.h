@@ -8,9 +8,10 @@
 #include <map>
 #include <string>
 
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/sessions/session_types.h"
+#include "sync/protocol/session_specifics.pb.h"
 
 namespace content {
 class NavigationEntry;
@@ -25,6 +26,7 @@ struct SyncedSession {
   typedef std::map<SessionID::id_type, SessionWindow*> SyncedWindowMap;
 
   // The type of device.
+  // Please keep in sync with ForeignSessionHelper.java
   enum DeviceType {
     TYPE_UNSET = 0,
     TYPE_WIN = 1,
@@ -74,9 +76,13 @@ struct SyncedSession {
       case SyncedSession::TYPE_TABLET:
         return "tablet";
       default:
-        return "";
+        return std::string();
     }
   }
+
+  // Convert this object to its protocol buffer equivalent. Shallow conversion,
+  // does not create SessionTab protobufs.
+  sync_pb::SessionHeader ToSessionHeader() const;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SyncedSession);

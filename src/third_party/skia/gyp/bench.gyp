@@ -8,17 +8,19 @@
     {
       'target_name': 'bench',
       'type': 'executable',
-      'include_dirs' : [
-        '../src/core',
-      ],
-      'includes': [
-        'bench.gypi'
-      ],
       'dependencies': [
-        'skia_base_libs.gyp:skia_base_libs',
-        'effects.gyp:effects',
-        'images.gyp:images',
+        'skia_lib.gyp:skia_lib',
         'bench_timer',
+        'flags.gyp:flags',
+        'jsoncpp.gyp:jsoncpp',
+      ],
+      'sources': [
+        '../bench/SkBenchLogger.cpp',
+        '../bench/SkBenchLogger.h',
+        '../bench/SkGMBench.cpp',
+        '../bench/SkGMBench.h',
+        '../bench/benchmain.cpp',
+        '../tools/sk_tool_utils.cpp',
       ],
       'conditions': [
         ['skia_gpu == 1',
@@ -26,8 +28,15 @@
             'include_dirs' : [
               '../src/gpu',
             ],
+            'dependencies': [
+              'gputest.gyp:skgputest',
+            ],
           },
         ],
+      ],
+      'includes': [
+        'bench.gypi',
+        'gmslides.gypi',
       ],
     },
     {
@@ -43,12 +52,16 @@
         '../bench/BenchSysTimer_windows.h',
         '../bench/BenchSysTimer_windows.cpp',
       ],
-        'include_dirs': [
+      'include_dirs': [
         '../src/core',
         '../src/gpu',
+        '../tools',
       ],
+      'direct_dependent_settings': {
+        'include_dirs': ['../bench'],
+      },
       'dependencies': [
-        'skia_base_libs.gyp:skia_base_libs',
+        'skia_lib.gyp:skia_lib',
       ],
       'conditions': [
         [ 'skia_os not in ["mac", "ios"]', {
@@ -57,13 +70,13 @@
             '../bench/BenchSysTimer_mach.cpp',
           ],
         }],
-        [ 'skia_os not in ["linux", "freebsd", "openbsd", "solaris", "android"]', {
+        [ 'skia_os not in ["linux", "freebsd", "openbsd", "solaris", "android", "chromeos"]', {
           'sources!': [
             '../bench/BenchSysTimer_posix.h',
             '../bench/BenchSysTimer_posix.cpp',
           ],
         }],
-        [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris"]', {
+        [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "chromeos"]', {
           'link_settings': {
             'libraries': [
               '-lrt',
@@ -86,9 +99,3 @@
     }
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

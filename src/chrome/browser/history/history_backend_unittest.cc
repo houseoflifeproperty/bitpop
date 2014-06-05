@@ -2,40 +2,45 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "chrome/browser/history/history_backend.h"
+
 #include <algorithm>
 #include <set>
 #include <vector>
 
 #include "base/basictypes.h"
 #include "base/bind.h"
-#include "base/bind_helpers.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
-#include "base/string16.h"
-#include "base/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
-#include "chrome/browser/history/history_backend.h"
+#include "base/run_loop.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/history/history_notifications.h"
+#include "chrome/browser/history/history_service.h"
+#include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/in_memory_database.h"
 #include "chrome/browser/history/in_memory_history_backend.h"
 #include "chrome/browser/history/visit_filter.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/thumbnail_score.h"
-#include "chrome/tools/profiles/thumbnail-inl.h"
+#include "chrome/common/importer/imported_favicon_usage.h"
+#include "chrome/test/base/testing_profile.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/core/browser/bookmark_utils.h"
+#include "components/bookmarks/core/test/bookmark_test_helpers.h"
+#include "components/bookmarks/core/test/test_bookmark_client.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
-#include "googleurl/src/gurl.h"
+#include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/gfx/codec/jpeg_codec.h"
-#include "ui/gfx/image/image.h"
+#include "url/gurl.h"
 
 using base::Time;
 
@@ -45,10 +50,6 @@ using base::Time;
 // harder than calling it directly for many things.
 
 namespace {
-
-// data we'll put into the thumbnail database
-static const unsigned char blob1[] =
-    "12346102356120394751634516591348710478123649165419234519234512349134";
 
 static const gfx::Size kTinySize = gfx::Size(10, 10);
 static const gfx::Size kSmallSize = gfx::Size(16, 16);
@@ -66,32 +67,32 @@ bool FaviconBitmapLessThan(const history::FaviconBitmap& a,
   return a.pixel_size.GetArea() < b.pixel_size.GetArea();
 }
 
-}  // namepace
+}  // namespace
 
 namespace history {
 
-class HistoryBackendTest;
+class HistoryBackendTestBase;
 
 // This must be a separate object since HistoryBackend manages its lifetime.
 // This just forwards the messages we're interested in to the test object.
 class HistoryBackendTestDelegate : public HistoryBackend::Delegate {
  public:
-  explicit HistoryBackendTestDelegate(HistoryBackendTest* test) : test_(test) {}
+  explicit HistoryBackendTestDelegate(HistoryBackendTestBase* test)
+      : test_(test) {}
 
-  virtual void NotifyProfileError(int backend_id,
-                                  sql::InitStatus init_status) OVERRIDE {}
-  virtual void SetInMemoryBackend(int backend_id,
-                                  InMemoryHistoryBackend* backend) OVERRIDE;
-  virtual void BroadcastNotifications(int type,
-                                      HistoryDetails* details) OVERRIDE;
-  virtual void DBLoaded(int backend_id) OVERRIDE;
-  virtual void StartTopSitesMigration(int backend_id) OVERRIDE;
+  virtual void NotifyProfileError(sql::InitStatus init_status) OVERRIDE {}
+  virtual void SetInMemoryBackend(
+      scoped_ptr<InMemoryHistoryBackend> backend) OVERRIDE;
+  virtual void BroadcastNotifications(
+      int type,
+      scoped_ptr<HistoryDetails> details) OVERRIDE;
+  virtual void DBLoaded() OVERRIDE;
   virtual void NotifyVisitDBObserversOnAddVisit(
       const BriefVisitInfo& info) OVERRIDE {}
 
  private:
   // Not owned by us.
-  HistoryBackendTest* test_;
+  HistoryBackendTestBase* test_;
 
   DISALLOW_COPY_AND_ASSIGN(HistoryBackendTestDelegate);
 };
@@ -110,16 +111,108 @@ class HistoryBackendCancelableRequest
   }
 };
 
-class HistoryBackendTest : public testing::Test {
+class HistoryBackendTestBase : public testing::Test {
  public:
-  HistoryBackendTest()
-      : bookmark_model_(NULL),
+  typedef std::vector<std::pair<int, HistoryDetails*> > NotificationList;
+
+  HistoryBackendTestBase()
+      : bookmark_model_(bookmark_client_.CreateModel(false)),
         loaded_(false),
-        num_broadcasted_notifications_(0) {
+        ui_thread_(content::BrowserThread::UI, &message_loop_) {}
+
+  virtual ~HistoryBackendTestBase() {
+    STLDeleteValues(&broadcasted_notifications_);
   }
 
-  virtual ~HistoryBackendTest() {
+ protected:
+  int num_broadcasted_notifications() const {
+    return broadcasted_notifications_.size();
   }
+
+  const NotificationList& broadcasted_notifications() const {
+    return broadcasted_notifications_;
+  }
+
+  void ClearBroadcastedNotifications() {
+    STLDeleteValues(&broadcasted_notifications_);
+  }
+
+  base::FilePath test_dir() {
+    return test_dir_;
+  }
+
+  void BroadcastNotifications(int type, scoped_ptr<HistoryDetails> details) {
+    // Send the notifications directly to the in-memory database.
+    content::Details<HistoryDetails> det(details.get());
+    mem_backend_->Observe(
+        type, content::Source<HistoryBackendTestBase>(NULL), det);
+
+    // The backend passes ownership of the details pointer to us.
+    broadcasted_notifications_.push_back(
+        std::make_pair(type, details.release()));
+  }
+
+  test::TestBookmarkClient bookmark_client_;
+  scoped_refptr<HistoryBackend> backend_;  // Will be NULL on init failure.
+  scoped_ptr<InMemoryHistoryBackend> mem_backend_;
+  scoped_ptr<BookmarkModel> bookmark_model_;
+  bool loaded_;
+
+ private:
+  friend class HistoryBackendTestDelegate;
+
+  // testing::Test
+  virtual void SetUp() {
+    if (!base::CreateNewTempDirectory(FILE_PATH_LITERAL("BackendTest"),
+                                      &test_dir_))
+      return;
+    backend_ = new HistoryBackend(
+        test_dir_, new HistoryBackendTestDelegate(this), bookmark_model_.get());
+    backend_->Init(std::string(), false);
+  }
+
+  virtual void TearDown() {
+    if (backend_.get())
+      backend_->Closing();
+    backend_ = NULL;
+    mem_backend_.reset();
+    base::DeleteFile(test_dir_, true);
+    base::RunLoop().RunUntilIdle();
+  }
+
+  void SetInMemoryBackend(scoped_ptr<InMemoryHistoryBackend> backend) {
+    mem_backend_.swap(backend);
+  }
+
+  // The types and details of notifications which were broadcasted.
+  NotificationList broadcasted_notifications_;
+
+  base::MessageLoop message_loop_;
+  base::FilePath test_dir_;
+  content::TestBrowserThread ui_thread_;
+
+  DISALLOW_COPY_AND_ASSIGN(HistoryBackendTestBase);
+};
+
+void HistoryBackendTestDelegate::SetInMemoryBackend(
+    scoped_ptr<InMemoryHistoryBackend> backend) {
+  test_->SetInMemoryBackend(backend.Pass());
+}
+
+void HistoryBackendTestDelegate::BroadcastNotifications(
+    int type,
+    scoped_ptr<HistoryDetails> details) {
+  test_->BroadcastNotifications(type, details.Pass());
+}
+
+void HistoryBackendTestDelegate::DBLoaded() {
+  test_->loaded_ = true;
+}
+
+class HistoryBackendTest : public HistoryBackendTestBase {
+ public:
+  HistoryBackendTest() {}
+  virtual ~HistoryBackendTest() {}
 
   // Callback for QueryMostVisited.
   void OnQueryMostVisited(CancelableRequestProvider::Handle handle,
@@ -133,6 +226,7 @@ class HistoryBackendTest : public testing::Test {
     filtered_list_ = data;
   }
 
+ protected:
   const history::MostVisitedURLList& get_most_visited_list() const {
     return most_visited_list_;
   }
@@ -140,14 +234,6 @@ class HistoryBackendTest : public testing::Test {
   const history::FilteredURLList& get_filtered_list() const {
     return filtered_list_;
   }
-
-  int num_broadcasted_notifications() const {
-    return num_broadcasted_notifications_;
-  }
-
- protected:
-  scoped_refptr<HistoryBackend> backend_;  // Will be NULL on init failure.
-  scoped_ptr<InMemoryHistoryBackend> mem_backend_;
 
   void AddRedirectChain(const char* sequence[], int page_id) {
     AddRedirectChainWithTransitionAndTime(sequence, page_id,
@@ -181,9 +267,9 @@ class HistoryBackendTest : public testing::Test {
   // updated transition code of the visit records for |url1| and |url2| is
   // returned by filling in |*transition1| and |*transition2|, respectively.
   // |time| is a time of the redirect.
-  void  AddClientRedirect(const GURL& url1, const GURL& url2, bool did_replace,
-                          base::Time time,
-                          int* transition1, int* transition2) {
+  void AddClientRedirect(const GURL& url1, const GURL& url2, bool did_replace,
+                         base::Time time,
+                         int* transition1, int* transition2) {
     void* const dummy_scope = reinterpret_cast<void*>(0x87654321);
     history::RedirectList redirects;
     if (url1.is_valid())
@@ -196,11 +282,11 @@ class HistoryBackendTest : public testing::Test {
         history::SOURCE_BROWSED, did_replace);
     backend_->AddPage(request);
 
-    *transition1 = getTransition(url1);
-    *transition2 = getTransition(url2);
+    *transition1 = GetTransition(url1);
+    *transition2 = GetTransition(url2);
   }
 
-  int getTransition(const GURL& url) {
+  int GetTransition(const GURL& url) {
     if (!url.is_valid())
       return 0;
     URLRow row;
@@ -208,10 +294,6 @@ class HistoryBackendTest : public testing::Test {
     VisitVector visits;
     EXPECT_TRUE(backend_->db()->GetVisitsForURL(id, &visits));
     return visits[0].transition;
-  }
-
-  FilePath getTestDir() {
-    return test_dir_;
   }
 
   // Returns a gfx::Size vector with small size.
@@ -254,7 +336,8 @@ class HistoryBackendTest : public testing::Test {
   }
 
   // Returns the number of icon mappings of |icon_type| to |page_url|.
-  size_t NumIconMappingsForPageURL(const GURL& page_url, IconType icon_type) {
+  size_t NumIconMappingsForPageURL(const GURL& page_url,
+                                   favicon_base::IconType icon_type) {
     std::vector<IconMapping> icon_mappings;
     backend_->thumbnail_db_->GetIconMappingsForPageURL(page_url, icon_type,
                                                        &icon_mappings);
@@ -278,7 +361,7 @@ class HistoryBackendTest : public testing::Test {
 
   // Returns the favicon bitmaps for |icon_id| sorted by pixel size in
   // ascending order. Returns true if there is at least one favicon bitmap.
-  bool GetSortedFaviconBitmaps(FaviconID icon_id,
+  bool GetSortedFaviconBitmaps(favicon_base::FaviconID icon_id,
                                std::vector<FaviconBitmap>* favicon_bitmaps) {
     if (!backend_->thumbnail_db_->GetFaviconBitmaps(icon_id, favicon_bitmaps))
       return false;
@@ -289,7 +372,7 @@ class HistoryBackendTest : public testing::Test {
 
   // Returns true if there is exactly one favicon bitmap associated to
   // |favicon_id|. If true, returns favicon bitmap in output parameter.
-  bool GetOnlyFaviconBitmap(const FaviconID icon_id,
+  bool GetOnlyFaviconBitmap(const favicon_base::FaviconID icon_id,
                             FaviconBitmap* favicon_bitmap) {
     std::vector<FaviconBitmap> favicon_bitmaps;
     if (!backend_->thumbnail_db_->GetFaviconBitmaps(icon_id, &favicon_bitmaps))
@@ -306,7 +389,7 @@ class HistoryBackendTest : public testing::Test {
   void GenerateFaviconBitmapData(
       const GURL& icon_url1,
       const std::vector<gfx::Size>& icon_url1_sizes,
-      std::vector<FaviconBitmapData>* favicon_bitmap_data) {
+      std::vector<favicon_base::FaviconBitmapData>* favicon_bitmap_data) {
     GenerateFaviconBitmapData(icon_url1, icon_url1_sizes, GURL(),
                               std::vector<gfx::Size>(), favicon_bitmap_data);
   }
@@ -316,14 +399,14 @@ class HistoryBackendTest : public testing::Test {
       const std::vector<gfx::Size>& icon_url1_sizes,
       const GURL& icon_url2,
       const std::vector<gfx::Size>& icon_url2_sizes,
-      std::vector<FaviconBitmapData>* favicon_bitmap_data) {
+      std::vector<favicon_base::FaviconBitmapData>* favicon_bitmap_data) {
     favicon_bitmap_data->clear();
 
     char bitmap_char = 'a';
     for (size_t i = 0; i < icon_url1_sizes.size(); ++i) {
       std::vector<unsigned char> data;
       data.push_back(bitmap_char);
-      FaviconBitmapData bitmap_data_element;
+      favicon_base::FaviconBitmapData bitmap_data_element;
       bitmap_data_element.bitmap_data =
           base::RefCountedBytes::TakeVector(&data);
       bitmap_data_element.pixel_size = icon_url1_sizes[i];
@@ -336,7 +419,7 @@ class HistoryBackendTest : public testing::Test {
     for (size_t i = 0; i < icon_url2_sizes.size(); ++i) {
       std::vector<unsigned char> data;
       data.push_back(bitmap_char);
-      FaviconBitmapData bitmap_data_element;
+      favicon_base::FaviconBitmapData bitmap_data_element;
       bitmap_data_element.bitmap_data =
           base::RefCountedBytes::TakeVector(&data);
       bitmap_data_element.pixel_size = icon_url2_sizes[i];
@@ -355,77 +438,102 @@ class HistoryBackendTest : public testing::Test {
            *bitmap_data->front() == expected_data;
   }
 
-  BookmarkModel bookmark_model_;
-
- protected:
-  bool loaded_;
-
  private:
-  friend class HistoryBackendTestDelegate;
-
-  // testing::Test
-  virtual void SetUp() {
-    if (!file_util::CreateNewTempDirectory(FILE_PATH_LITERAL("BackendTest"),
-                                           &test_dir_))
-      return;
-    backend_ = new HistoryBackend(test_dir_,
-                                  0,
-                                  new HistoryBackendTestDelegate(this),
-                                  &bookmark_model_);
-    backend_->Init(std::string(), false);
-  }
-
-  virtual void TearDown() {
-    if (backend_.get())
-      backend_->Closing();
-    backend_ = NULL;
-    mem_backend_.reset();
-    file_util::Delete(test_dir_, true);
-  }
-
-  void SetInMemoryBackend(int backend_id, InMemoryHistoryBackend* backend) {
-    mem_backend_.reset(backend);
-  }
-
-  void BroadcastNotifications(int type,
-                              HistoryDetails* details) {
-    ++num_broadcasted_notifications_;
-
-    // Send the notifications directly to the in-memory database.
-    content::Details<HistoryDetails> det(details);
-    mem_backend_->Observe(type, content::Source<HistoryBackendTest>(NULL), det);
-
-    // The backend passes ownership of the details pointer to us.
-    delete details;
-  }
-
-  // The number of notifications which were broadcasted.
-  int num_broadcasted_notifications_;
-
-  MessageLoop message_loop_;
-  FilePath test_dir_;
   history::MostVisitedURLList most_visited_list_;
   history::FilteredURLList filtered_list_;
+
+  DISALLOW_COPY_AND_ASSIGN(HistoryBackendTest);
 };
 
-void HistoryBackendTestDelegate::SetInMemoryBackend(int backend_id,
-    InMemoryHistoryBackend* backend) {
-  test_->SetInMemoryBackend(backend_id, backend);
-}
+class InMemoryHistoryBackendTest : public HistoryBackendTestBase {
+ public:
+  InMemoryHistoryBackendTest() {}
+  virtual ~InMemoryHistoryBackendTest() {}
 
-void HistoryBackendTestDelegate::BroadcastNotifications(
-    int type,
-    HistoryDetails* details) {
-  test_->BroadcastNotifications(type, details);
-}
+ protected:
+  void SimulateNotification(int type,
+                            const URLRow* row1,
+                            const URLRow* row2 = NULL,
+                            const URLRow* row3 = NULL) {
+    URLRows rows;
+    rows.push_back(*row1);
+    if (row2) rows.push_back(*row2);
+    if (row3) rows.push_back(*row3);
 
-void HistoryBackendTestDelegate::DBLoaded(int backend_id) {
-  test_->loaded_ = true;
-}
+    if (type == chrome::NOTIFICATION_HISTORY_URLS_MODIFIED) {
+      scoped_ptr<URLsModifiedDetails> details(new URLsModifiedDetails());
+      details->changed_urls.swap(rows);
+      BroadcastNotifications(type, details.PassAs<HistoryDetails>());
+    } else if (type == chrome::NOTIFICATION_HISTORY_URL_VISITED) {
+      for (URLRows::const_iterator it = rows.begin(); it != rows.end(); ++it) {
+        scoped_ptr<URLVisitedDetails> details(new URLVisitedDetails());
+        details->row = *it;
+        BroadcastNotifications(type, details.PassAs<HistoryDetails>());
+      }
+    } else if (type == chrome::NOTIFICATION_HISTORY_URLS_DELETED) {
+      scoped_ptr<URLsDeletedDetails> details(new URLsDeletedDetails());
+      details->rows = rows;
+      BroadcastNotifications(type, details.PassAs<HistoryDetails>());
+    } else {
+      NOTREACHED();
+    }
+  }
 
-void HistoryBackendTestDelegate::StartTopSitesMigration(int backend_id) {
-  test_->backend_->MigrateThumbnailsDatabase();
-}
+  size_t GetNumberOfMatchingSearchTerms(const int keyword_id,
+                                        const base::string16& prefix) {
+    std::vector<KeywordSearchTermVisit> matching_terms;
+    mem_backend_->db()->GetMostRecentKeywordSearchTerms(
+        keyword_id, prefix, 1, &matching_terms);
+    return matching_terms.size();
+  }
+
+  static URLRow CreateTestTypedURL() {
+    URLRow url_row(GURL("https://www.google.com/"));
+    url_row.set_id(10);
+    url_row.set_title(base::UTF8ToUTF16("Google Search"));
+    url_row.set_typed_count(1);
+    url_row.set_visit_count(1);
+    url_row.set_last_visit(Time::Now() - base::TimeDelta::FromHours(1));
+    return url_row;
+  }
+
+  static URLRow CreateAnotherTestTypedURL() {
+    URLRow url_row(GURL("https://maps.google.com/"));
+    url_row.set_id(20);
+    url_row.set_title(base::UTF8ToUTF16("Google Maps"));
+    url_row.set_typed_count(2);
+    url_row.set_visit_count(3);
+    url_row.set_last_visit(Time::Now() - base::TimeDelta::FromHours(2));
+    return url_row;
+  }
+
+  static URLRow CreateTestNonTypedURL() {
+    URLRow url_row(GURL("https://news.google.com/"));
+    url_row.set_id(30);
+    url_row.set_title(base::UTF8ToUTF16("Google News"));
+    url_row.set_visit_count(5);
+    url_row.set_last_visit(Time::Now() - base::TimeDelta::FromHours(3));
+    return url_row;
+  }
+
+  void PopulateTestURLsAndSearchTerms(URLRow* row1,
+                                      URLRow* row2,
+                                      const base::string16& term1,
+                                      const base::string16& term2);
+
+  void TestAddingAndChangingURLRows(int notification_type);
+
+  static const TemplateURLID kTestKeywordId;
+  static const char kTestSearchTerm1[];
+  static const char kTestSearchTerm2[];
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(InMemoryHistoryBackendTest);
+};
+
+const TemplateURLID InMemoryHistoryBackendTest::kTestKeywordId = 42;
+const char InMemoryHistoryBackendTest::kTestSearchTerm1[] = "banana";
+const char InMemoryHistoryBackendTest::kTestSearchTerm2[] = "orange";
 
 // http://crbug.com/114287
 #if defined(OS_WIN)
@@ -447,10 +555,10 @@ TEST_F(HistoryBackendTest, DeleteAll) {
   // we can test that updating works properly.
   GURL favicon_url1("http://www.google.com/favicon.ico");
   GURL favicon_url2("http://news.google.com/favicon.ico");
-  FaviconID favicon2 = backend_->thumbnail_db_->AddFavicon(favicon_url2,
-      FAVICON, GetSizesSmallAndLarge());
-  FaviconID favicon1 = backend_->thumbnail_db_->AddFavicon(favicon_url1,
-      FAVICON, GetSizesSmallAndLarge());
+  favicon_base::FaviconID favicon2 =
+      backend_->thumbnail_db_->AddFavicon(favicon_url2, favicon_base::FAVICON);
+  favicon_base::FaviconID favicon1 =
+      backend_->thumbnail_db_->AddFavicon(favicon_url1, favicon_base::FAVICON);
 
   std::vector<unsigned char> data;
   data.push_back('a');
@@ -491,12 +599,10 @@ TEST_F(HistoryBackendTest, DeleteAll) {
   VisitVector visits;
   backend_->db_->GetVisitsForURL(row1_id, &visits);
   ASSERT_EQ(1U, visits.size());
-  VisitID visit1_id = visits[0].visit_id;
 
   visits.clear();
   backend_->db_->GetVisitsForURL(row2_id, &visits);
   ASSERT_EQ(1U, visits.size());
-  VisitID visit2_id = visits[0].visit_id;
 
   // The in-memory backend should have been set and it should have gotten the
   // typed URL.
@@ -504,39 +610,12 @@ TEST_F(HistoryBackendTest, DeleteAll) {
   URLRow outrow1;
   EXPECT_TRUE(mem_backend_->db_->GetRowForURL(row1.url(), NULL));
 
-  // Add thumbnails for each page. The |Images| take ownership of SkBitmap
-  // created from decoding the images.
-  ThumbnailScore score(0.25, true, true);
-  scoped_ptr<SkBitmap> google_bitmap(
-      gfx::JPEGCodec::Decode(kGoogleThumbnail, sizeof(kGoogleThumbnail)));
-
-  gfx::Image google_image(*google_bitmap);
-
-  Time time;
-  GURL gurl;
-  backend_->thumbnail_db_->SetPageThumbnail(gurl, row1_id, &google_image,
-                                            score, time);
-  scoped_ptr<SkBitmap> weewar_bitmap(
-     gfx::JPEGCodec::Decode(kWeewarThumbnail, sizeof(kWeewarThumbnail)));
-  gfx::Image weewar_image(*weewar_bitmap);
-  backend_->thumbnail_db_->SetPageThumbnail(gurl, row2_id, &weewar_image,
-                                            score, time);
-
   // Star row1.
-  bookmark_model_.AddURL(
-      bookmark_model_.bookmark_bar_node(), 0, string16(), row1.url());
-
-  // Set full text index for each one.
-  backend_->text_database_->AddPageData(row1.url(), row1_id, visit1_id,
-                                        row1.last_visit(),
-                                        UTF8ToUTF16("Title 1"),
-                                        UTF8ToUTF16("Body 1"));
-  backend_->text_database_->AddPageData(row2.url(), row2_id, visit2_id,
-                                        row2.last_visit(),
-                                        UTF8ToUTF16("Title 2"),
-                                        UTF8ToUTF16("Body 2"));
+  bookmark_model_->AddURL(
+      bookmark_model_->bookmark_bar_node(), 0, base::string16(), row1.url());
 
   // Now finally clear all history.
+  ClearBroadcastedNotifications();
   backend_->DeleteAllHistory();
 
   // The first URL should be preserved but the time should be cleared.
@@ -555,16 +634,11 @@ TEST_F(HistoryBackendTest, DeleteAll) {
   backend_->db_->GetAllVisitsInRange(Time(), Time(), 0, &all_visits);
   ASSERT_EQ(0U, all_visits.size());
 
-  // All thumbnails should be deleted.
-  std::vector<unsigned char> out_data;
-  EXPECT_FALSE(backend_->thumbnail_db_->GetPageThumbnail(outrow1.id(),
-                                                         &out_data));
-  EXPECT_FALSE(backend_->thumbnail_db_->GetPageThumbnail(row2_id, &out_data));
-
   // We should have a favicon and favicon bitmaps for the first URL only. We
   // look them up by favicon URL since the IDs may have changed.
-  FaviconID out_favicon1 = backend_->thumbnail_db_->
-      GetFaviconIDForFaviconURL(favicon_url1, FAVICON, NULL);
+  favicon_base::FaviconID out_favicon1 =
+      backend_->thumbnail_db_->GetFaviconIDForFaviconURL(
+          favicon_url1, favicon_base::FAVICON, NULL);
   EXPECT_TRUE(out_favicon1);
 
   std::vector<FaviconBitmap> favicon_bitmaps;
@@ -588,29 +662,30 @@ TEST_F(HistoryBackendTest, DeleteAll) {
   EXPECT_TRUE(BitmapDataEqual('b', favicon_bitmap2.bitmap_data));
   EXPECT_EQ(kLargeSize, favicon_bitmap2.pixel_size);
 
-  FaviconID out_favicon2 = backend_->thumbnail_db_->
-      GetFaviconIDForFaviconURL(favicon_url2, FAVICON, NULL);
+  favicon_base::FaviconID out_favicon2 =
+      backend_->thumbnail_db_->GetFaviconIDForFaviconURL(
+          favicon_url2, favicon_base::FAVICON, NULL);
   EXPECT_FALSE(out_favicon2) << "Favicon not deleted";
 
   // The remaining URL should still reference the same favicon, even if its
   // ID has changed.
   std::vector<IconMapping> mappings;
   EXPECT_TRUE(backend_->thumbnail_db_->GetIconMappingsForPageURL(
-      outrow1.url(), FAVICON, &mappings));
+      outrow1.url(), favicon_base::FAVICON, &mappings));
   EXPECT_EQ(1u, mappings.size());
   EXPECT_EQ(out_favicon1, mappings[0].icon_id);
 
   // The first URL should still be bookmarked.
-  EXPECT_TRUE(bookmark_model_.IsBookmarked(row1.url()));
+  EXPECT_TRUE(bookmark_model_->IsBookmarked(row1.url()));
 
-  // The full text database should have no data.
-  std::vector<TextDatabase::Match> text_matches;
-  Time first_time_searched;
-  backend_->text_database_->GetTextMatches(UTF8ToUTF16("Body"),
-                                           QueryOptions(),
-                                           &text_matches,
-                                           &first_time_searched);
-  EXPECT_EQ(0U, text_matches.size());
+  // Check that we fire the notification about all history having been deleted.
+  ASSERT_EQ(1u, broadcasted_notifications().size());
+  ASSERT_EQ(chrome::NOTIFICATION_HISTORY_URLS_DELETED,
+            broadcasted_notifications()[0].first);
+  const URLsDeletedDetails* details = static_cast<const URLsDeletedDetails*>(
+      broadcasted_notifications()[0].second);
+  EXPECT_TRUE(details->all_history);
+  EXPECT_FALSE(details->archived);
 }
 
 // Checks that adding a visit, then calling DeleteAll, and then trying to add
@@ -646,9 +721,8 @@ TEST_F(HistoryBackendTest, DeleteAllThenAddData) {
   backend_->db_->GetAllVisitsInRange(Time(), Time(), 0, &all_visits);
   ASSERT_EQ(0U, all_visits.size());
 
-  // Try and set the full text index.
-  backend_->SetPageTitle(url, UTF8ToUTF16("Title"));
-  backend_->SetPageContents(url, UTF8ToUTF16("Body"));
+  // Try and set the title.
+  backend_->SetPageTitle(url, base::UTF8ToUTF16("Title"));
 
   // The row should still be deleted.
   EXPECT_FALSE(backend_->db_->GetRowForURL(url, &outrow));
@@ -656,15 +730,6 @@ TEST_F(HistoryBackendTest, DeleteAllThenAddData) {
   // The visit should still be deleted.
   backend_->db_->GetAllVisitsInRange(Time(), Time(), 0, &all_visits);
   ASSERT_EQ(0U, all_visits.size());
-
-  // The full text database should have no data.
-  std::vector<TextDatabase::Match> text_matches;
-  Time first_time_searched;
-  backend_->text_database_->GetTextMatches(UTF8ToUTF16("Body"),
-                                           QueryOptions(),
-                                           &text_matches,
-                                           &first_time_searched);
-  EXPECT_EQ(0U, text_matches.size());
 }
 
 TEST_F(HistoryBackendTest, URLsNoLongerBookmarked) {
@@ -673,22 +738,20 @@ TEST_F(HistoryBackendTest, URLsNoLongerBookmarked) {
 
   std::vector<unsigned char> data;
   data.push_back('1');
-  FaviconID favicon1 = backend_->thumbnail_db_->AddFavicon(
-      favicon_url1,
-      FAVICON,
-      GetDefaultFaviconSizes(),
-      new base::RefCountedBytes(data),
-      Time::Now(),
-      gfx::Size());
+  favicon_base::FaviconID favicon1 =
+      backend_->thumbnail_db_->AddFavicon(favicon_url1,
+                                          favicon_base::FAVICON,
+                                          new base::RefCountedBytes(data),
+                                          Time::Now(),
+                                          gfx::Size());
 
   data[0] = '2';
-  FaviconID favicon2 = backend_->thumbnail_db_->AddFavicon(
-      favicon_url2,
-      FAVICON,
-      GetDefaultFaviconSizes(),
-      new base::RefCountedBytes(data),
-      Time::Now(),
-      gfx::Size());
+  favicon_base::FaviconID favicon2 =
+      backend_->thumbnail_db_->AddFavicon(favicon_url2,
+                                          favicon_base::FAVICON,
+                                          new base::RefCountedBytes(data),
+                                          Time::Now(),
+                                          gfx::Size());
 
   // First visit two URLs.
   URLRow row1(GURL("http://www.google.com/"));
@@ -711,8 +774,10 @@ TEST_F(HistoryBackendTest, URLsNoLongerBookmarked) {
   URLID row2_id = backend_->db_->GetRowForURL(row2.url(), NULL);
 
   // Star the two URLs.
-  bookmark_utils::AddIfNotBookmarked(&bookmark_model_, row1.url(), string16());
-  bookmark_utils::AddIfNotBookmarked(&bookmark_model_, row2.url(), string16());
+  bookmark_utils::AddIfNotBookmarked(
+      bookmark_model_.get(), row1.url(), base::string16());
+  bookmark_utils::AddIfNotBookmarked(
+      bookmark_model_.get(), row2.url(), base::string16());
 
   // Delete url 2. Because url 2 is starred this won't delete the URL, only
   // the visits.
@@ -726,12 +791,11 @@ TEST_F(HistoryBackendTest, URLsNoLongerBookmarked) {
   EXPECT_EQ(0U, visits.size());
   // The favicon should still be valid.
   EXPECT_EQ(favicon2,
-      backend_->thumbnail_db_->GetFaviconIDForFaviconURL(favicon_url2,
-                                                         FAVICON,
-                                                         NULL));
+            backend_->thumbnail_db_->GetFaviconIDForFaviconURL(
+                favicon_url2, favicon_base::FAVICON, NULL));
 
   // Unstar row2.
-  bookmark_utils::RemoveAllBookmarks(&bookmark_model_, row2.url());
+  bookmark_utils::RemoveAllBookmarks(bookmark_model_.get(), row2.url());
 
   // Tell the backend it was unstarred. We have to explicitly do this as
   // BookmarkModel isn't wired up to the backend during testing.
@@ -743,12 +807,11 @@ TEST_F(HistoryBackendTest, URLsNoLongerBookmarked) {
   EXPECT_FALSE(backend_->db_->GetRowForURL(row2.url(), &tmp_url_row));
   // And the favicon should be deleted.
   EXPECT_EQ(0,
-      backend_->thumbnail_db_->GetFaviconIDForFaviconURL(favicon_url2,
-                                                         FAVICON,
-                                                         NULL));
+            backend_->thumbnail_db_->GetFaviconIDForFaviconURL(
+                favicon_url2, favicon_base::FAVICON, NULL));
 
   // Unstar row 1.
-  bookmark_utils::RemoveAllBookmarks(&bookmark_model_, row1.url());
+  bookmark_utils::RemoveAllBookmarks(bookmark_model_.get(), row1.url());
   // Tell the backend it was unstarred. We have to explicitly do this as
   // BookmarkModel isn't wired up to the backend during testing.
   unstarred_urls.clear();
@@ -765,9 +828,8 @@ TEST_F(HistoryBackendTest, URLsNoLongerBookmarked) {
 
   // The favicon should still be valid.
   EXPECT_EQ(favicon1,
-      backend_->thumbnail_db_->GetFaviconIDForFaviconURL(favicon_url1,
-                                                         FAVICON,
-                                                         NULL));
+            backend_->thumbnail_db_->GetFaviconIDForFaviconURL(
+                favicon_url1, favicon_base::FAVICON, NULL));
 }
 
 // Tests a handful of assertions for a navigation with a type of
@@ -849,16 +911,117 @@ TEST_F(HistoryBackendTest, ClientRedirect) {
   EXPECT_TRUE(transition2 & content::PAGE_TRANSITION_CHAIN_END);
 }
 
+TEST_F(HistoryBackendTest, AddPagesWithDetails) {
+  ASSERT_TRUE(backend_.get());
+
+  // Import one non-typed URL, two non-archived and one archived typed URLs.
+  URLRow row1(GURL("https://news.google.com/"));
+  row1.set_visit_count(1);
+  row1.set_last_visit(Time::Now());
+  URLRow row2(GURL("https://www.google.com/"));
+  row2.set_typed_count(1);
+  row2.set_last_visit(Time::Now());
+  URLRow row3(GURL("https://mail.google.com/"));
+  row3.set_visit_count(1);
+  row3.set_typed_count(1);
+  row3.set_last_visit(Time::Now() - base::TimeDelta::FromDays(7 - 1));
+  URLRow row4(GURL("https://maps.google.com/"));
+  row4.set_visit_count(1);
+  row4.set_typed_count(1);
+  row4.set_last_visit(Time::Now() - base::TimeDelta::FromDays(365 + 2));
+
+  URLRows rows;
+  rows.push_back(row1);
+  rows.push_back(row2);
+  rows.push_back(row3);
+  rows.push_back(row4);
+  backend_->AddPagesWithDetails(rows, history::SOURCE_BROWSED);
+
+  // Verify that recent URLs have ended up in the main |db_|, while expired URLs
+  // have ended up in the |archived_db_|.
+  URLRow stored_row1, stored_row2, stored_row3, stored_row4;
+  EXPECT_NE(0, backend_->db_->GetRowForURL(row1.url(), &stored_row1));
+  EXPECT_NE(0, backend_->db_->GetRowForURL(row2.url(), &stored_row2));
+  EXPECT_NE(0, backend_->db_->GetRowForURL(row3.url(), &stored_row3));
+  EXPECT_EQ(0, backend_->db_->GetRowForURL(row4.url(), &stored_row4));
+
+  EXPECT_EQ(0, backend_->archived_db_->GetRowForURL(row1.url(), &stored_row1));
+  EXPECT_EQ(0, backend_->archived_db_->GetRowForURL(row2.url(), &stored_row2));
+  EXPECT_EQ(0, backend_->archived_db_->GetRowForURL(row3.url(), &stored_row3));
+  EXPECT_NE(0, backend_->archived_db_->GetRowForURL(row4.url(), &stored_row4));
+
+  // Ensure that a notification was fired, and further verify that the IDs in
+  // the notification are set to those that are in effect in the main database.
+  // The InMemoryHistoryBackend relies on this for caching.
+  ASSERT_EQ(1u, broadcasted_notifications().size());
+  ASSERT_EQ(chrome::NOTIFICATION_HISTORY_URLS_MODIFIED,
+            broadcasted_notifications()[0].first);
+  const URLsModifiedDetails* details = static_cast<const URLsModifiedDetails*>(
+      broadcasted_notifications()[0].second);
+  EXPECT_EQ(2u, details->changed_urls.size());
+
+  URLRows::const_iterator it_row2 = std::find_if(
+      details->changed_urls.begin(),
+      details->changed_urls.end(),
+      history::URLRow::URLRowHasURL(row2.url()));
+  ASSERT_NE(details->changed_urls.end(), it_row2);
+  EXPECT_EQ(stored_row2.id(), it_row2->id());
+
+  URLRows::const_iterator it_row3 = std::find_if(
+        details->changed_urls.begin(),
+        details->changed_urls.end(),
+        history::URLRow::URLRowHasURL(row3.url()));
+  ASSERT_NE(details->changed_urls.end(), it_row3);
+  EXPECT_EQ(stored_row3.id(), it_row3->id());
+}
+
+// This verifies that a notification is fired. In-depth testing of logic should
+// be done in HistoryTest.SetTitle.
+TEST_F(HistoryBackendTest, SetPageTitleFiresNotificationWithCorrectDetails) {
+  const char kTestUrlTitle[] = "Google Search";
+
+  ASSERT_TRUE(backend_.get());
+
+  // Add two pages, then change the title of the second one.
+  URLRow row1(GURL("https://news.google.com/"));
+  row1.set_typed_count(1);
+  row1.set_last_visit(Time::Now());
+  URLRow row2(GURL("https://www.google.com/"));
+  row2.set_visit_count(2);
+  row2.set_last_visit(Time::Now());
+
+  URLRows rows;
+  rows.push_back(row1);
+  rows.push_back(row2);
+  backend_->AddPagesWithDetails(rows, history::SOURCE_BROWSED);
+
+  ClearBroadcastedNotifications();
+  backend_->SetPageTitle(row2.url(), base::UTF8ToUTF16(kTestUrlTitle));
+
+  // Ensure that a notification was fired, and further verify that the IDs in
+  // the notification are set to those that are in effect in the main database.
+  // The InMemoryHistoryBackend relies on this for caching.
+  URLRow stored_row2;
+  EXPECT_TRUE(backend_->GetURL(row2.url(), &stored_row2));
+  ASSERT_EQ(1u, broadcasted_notifications().size());
+  ASSERT_EQ(chrome::NOTIFICATION_HISTORY_URLS_MODIFIED,
+            broadcasted_notifications()[0].first);
+  const URLsModifiedDetails* details = static_cast<const URLsModifiedDetails*>(
+      broadcasted_notifications()[0].second);
+  ASSERT_EQ(1u, details->changed_urls.size());
+  EXPECT_EQ(base::UTF8ToUTF16(kTestUrlTitle), details->changed_urls[0].title());
+  EXPECT_EQ(stored_row2.id(), details->changed_urls[0].id());
+}
+
 TEST_F(HistoryBackendTest, ImportedFaviconsTest) {
   // Setup test data - two Urls in the history, one with favicon assigned and
   // one without.
   GURL favicon_url1("http://www.google.com/favicon.ico");
   std::vector<unsigned char> data;
   data.push_back('1');
-  FaviconID favicon1 = backend_->thumbnail_db_->AddFavicon(
+  favicon_base::FaviconID favicon1 = backend_->thumbnail_db_->AddFavicon(
       favicon_url1,
-      FAVICON,
-      GetDefaultFaviconSizes(),
+      favicon_base::FAVICON,
       base::RefCountedBytes::TakeVector(&data),
       Time::Now(),
       gfx::Size());
@@ -877,14 +1040,14 @@ TEST_F(HistoryBackendTest, ImportedFaviconsTest) {
   URLRow url_row1, url_row2;
   EXPECT_FALSE(backend_->db_->GetRowForURL(row1.url(), &url_row1) == 0);
   EXPECT_FALSE(backend_->db_->GetRowForURL(row2.url(), &url_row2) == 0);
-  EXPECT_EQ(1u, NumIconMappingsForPageURL(row1.url(), FAVICON));
-  EXPECT_EQ(0u, NumIconMappingsForPageURL(row2.url(), FAVICON));
+  EXPECT_EQ(1u, NumIconMappingsForPageURL(row1.url(), favicon_base::FAVICON));
+  EXPECT_EQ(0u, NumIconMappingsForPageURL(row2.url(), favicon_base::FAVICON));
 
   // Now provide one imported favicon for both URLs already in the registry.
   // The new favicon should only be used with the URL that doesn't already have
   // a favicon.
-  std::vector<history::ImportedFaviconUsage> favicons;
-  history::ImportedFaviconUsage favicon;
+  std::vector<ImportedFaviconUsage> favicons;
+  ImportedFaviconUsage favicon;
   favicon.favicon_url = GURL("http://news.google.com/favicon.ico");
   favicon.png_data.push_back('2');
   favicon.urls.insert(row1.url());
@@ -896,14 +1059,14 @@ TEST_F(HistoryBackendTest, ImportedFaviconsTest) {
 
   std::vector<IconMapping> mappings;
   EXPECT_TRUE(backend_->thumbnail_db_->GetIconMappingsForPageURL(
-      row1.url(), FAVICON, &mappings));
+      row1.url(), favicon_base::FAVICON, &mappings));
   EXPECT_EQ(1u, mappings.size());
   EXPECT_EQ(favicon1, mappings[0].icon_id);
   EXPECT_EQ(favicon_url1, mappings[0].icon_url);
 
   mappings.clear();
   EXPECT_TRUE(backend_->thumbnail_db_->GetIconMappingsForPageURL(
-    row2.url(), FAVICON, &mappings));
+      row2.url(), favicon_base::FAVICON, &mappings));
   EXPECT_EQ(1u, mappings.size());
   EXPECT_EQ(favicon.favicon_url, mappings[0].icon_url);
 
@@ -920,8 +1083,8 @@ TEST_F(HistoryBackendTest, ImportedFaviconsTest) {
   EXPECT_TRUE(backend_->db_->GetRowForURL(url3, &url_row3) == 0);
 
   // If the URL is bookmarked, it should get added to history with 0 visits.
-  bookmark_model_.AddURL(bookmark_model_.bookmark_bar_node(), 0, string16(),
-                         url3);
+  bookmark_model_->AddURL(
+      bookmark_model_->bookmark_bar_node(), 0, base::string16(), url3);
   backend_->SetImportedFavicons(favicons);
   EXPECT_FALSE(backend_->db_->GetRowForURL(url3, &url_row3) == 0);
   EXPECT_TRUE(url_row3.visit_count() == 0);
@@ -998,6 +1161,94 @@ TEST_F(HistoryBackendTest, AddPageVisitSource) {
     }
   }
   EXPECT_EQ(0x7, sources);
+}
+
+TEST_F(HistoryBackendTest, AddPageVisitNotLastVisit) {
+  ASSERT_TRUE(backend_.get());
+
+  GURL url("http://www.google.com");
+
+  // Clear all history.
+  backend_->DeleteAllHistory();
+
+  // Create visit times
+  base::Time recent_time = base::Time::Now();
+  base::TimeDelta visit_age = base::TimeDelta::FromDays(3);
+  base::Time older_time = recent_time - visit_age;
+
+  // Visit the url with recent time.
+  backend_->AddPageVisit(url, recent_time, 0,
+      content::PageTransitionFromInt(
+          content::PageTransitionGetQualifier(content::PAGE_TRANSITION_TYPED)),
+      history::SOURCE_BROWSED);
+
+  // Add to the url a visit with older time (could be syncing from another
+  // client, etc.).
+  backend_->AddPageVisit(url, older_time, 0,
+      content::PageTransitionFromInt(
+          content::PageTransitionGetQualifier(content::PAGE_TRANSITION_TYPED)),
+      history::SOURCE_SYNCED);
+
+  // Fetch the row information about url from history db.
+  VisitVector visits;
+  URLRow row;
+  URLID row_id = backend_->db_->GetRowForURL(url, &row);
+  backend_->db_->GetVisitsForURL(row_id, &visits);
+
+  // Last visit time should be the most recent time, not the most recently added
+  // visit.
+  ASSERT_EQ(2U, visits.size());
+  ASSERT_EQ(recent_time, row.last_visit());
+}
+
+TEST_F(HistoryBackendTest, AddPageVisitFiresNotificationWithCorrectDetails) {
+  ASSERT_TRUE(backend_.get());
+
+  GURL url1("http://www.google.com");
+  GURL url2("http://maps.google.com");
+
+  // Clear all history.
+  backend_->DeleteAllHistory();
+  ClearBroadcastedNotifications();
+
+  // Visit two distinct URLs, the second one twice.
+  backend_->AddPageVisit(url1, base::Time::Now(), 0,
+                         content::PAGE_TRANSITION_LINK,
+                         history::SOURCE_BROWSED);
+  for (int i = 0; i < 2; ++i) {
+    backend_->AddPageVisit(url2, base::Time::Now(), 0,
+                           content::PAGE_TRANSITION_TYPED,
+                           history::SOURCE_BROWSED);
+  }
+
+  URLRow stored_row1, stored_row2;
+  EXPECT_NE(0, backend_->db_->GetRowForURL(url1, &stored_row1));
+  EXPECT_NE(0, backend_->db_->GetRowForURL(url2, &stored_row2));
+
+  // Expect that NOTIFICATION_HISTORY_URLS_VISITED has been fired 3x, and that
+  // each time, the URLRows have the correct URLs and IDs set.
+  ASSERT_EQ(3, num_broadcasted_notifications());
+  ASSERT_EQ(chrome::NOTIFICATION_HISTORY_URL_VISITED,
+            broadcasted_notifications()[0].first);
+  const URLVisitedDetails* details = static_cast<const URLVisitedDetails*>(
+      broadcasted_notifications()[0].second);
+  EXPECT_EQ(content::PAGE_TRANSITION_LINK,
+            content::PageTransitionStripQualifier(details->transition));
+  EXPECT_EQ(stored_row1.id(), details->row.id());
+  EXPECT_EQ(stored_row1.url(), details->row.url());
+
+  // No further checking, this case analogous to the first one.
+  ASSERT_EQ(chrome::NOTIFICATION_HISTORY_URL_VISITED,
+            broadcasted_notifications()[1].first);
+
+  ASSERT_EQ(chrome::NOTIFICATION_HISTORY_URL_VISITED,
+            broadcasted_notifications()[2].first);
+  details = static_cast<const URLVisitedDetails*>(
+      broadcasted_notifications()[2].second);
+  EXPECT_EQ(content::PAGE_TRANSITION_TYPED,
+            content::PageTransitionStripQualifier(details->transition));
+  EXPECT_EQ(stored_row2.id(), details->row.id());
+  EXPECT_EQ(stored_row2.url(), details->row.url());
 }
 
 TEST_F(HistoryBackendTest, AddPageArgsSource) {
@@ -1219,23 +1470,23 @@ TEST_F(HistoryBackendTest, MigrationVisitSource) {
   backend_->Closing();
   backend_ = NULL;
 
-  FilePath old_history_path;
+  base::FilePath old_history_path;
   ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &old_history_path));
   old_history_path = old_history_path.AppendASCII("History");
   old_history_path = old_history_path.AppendASCII("HistoryNoSource");
 
   // Copy history database file to current directory so that it will be deleted
   // in Teardown.
-  FilePath new_history_path(getTestDir());
-  file_util::Delete(new_history_path, true);
-  file_util::CreateDirectory(new_history_path);
-  FilePath new_history_file = new_history_path.Append(chrome::kHistoryFilename);
-  ASSERT_TRUE(file_util::CopyFile(old_history_path, new_history_file));
+  base::FilePath new_history_path(test_dir());
+  base::DeleteFile(new_history_path, true);
+  base::CreateDirectory(new_history_path);
+  base::FilePath new_history_file =
+      new_history_path.Append(chrome::kHistoryFilename);
+  ASSERT_TRUE(base::CopyFile(old_history_path, new_history_file));
 
   backend_ = new HistoryBackend(new_history_path,
-                                0,
                                 new HistoryBackendTestDelegate(this),
-                                &bookmark_model_);
+                                bookmark_model_.get());
   backend_->Init(std::string(), false);
   backend_->Closing();
   backend_ = NULL;
@@ -1287,84 +1538,86 @@ TEST_F(HistoryBackendTest, SetFaviconMappingsForPageAndRedirects) {
   const GURL icon_url1("http://www.google.com/icon");
   const GURL icon_url2("http://www.google.com/icon2");
 
-  // Create mapping for a page with two favicons.
-  IconURLSizesMap two_icon_url_sizes;
-  two_icon_url_sizes[icon_url1] = GetSizesSmallAndLarge();
-  two_icon_url_sizes[icon_url2] = GetSizesSmallAndLarge();
+  // Generate bitmap data for a page with two favicons.
+  std::vector<favicon_base::FaviconBitmapData> two_favicon_bitmap_data;
+  GenerateFaviconBitmapData(icon_url1, GetSizesSmallAndLarge(),
+      icon_url2, GetSizesSmallAndLarge(), &two_favicon_bitmap_data);
 
-  // Create a mapping for a page with a single favicon.
-  IconURLSizesMap one_icon_url_sizes;
-  one_icon_url_sizes[icon_url1] = GetSizesSmallAndLarge();
-
-  std::vector<FaviconBitmapData> favicon_bitmap_data;
+  // Generate bitmap data for a page with a single favicon.
+  std::vector<favicon_base::FaviconBitmapData> one_favicon_bitmap_data;
+  GenerateFaviconBitmapData(icon_url1, GetSizesSmallAndLarge(),
+                            &one_favicon_bitmap_data);
 
   // Add two favicons
-  backend_->SetFavicons(url1, FAVICON, favicon_bitmap_data,
-      two_icon_url_sizes);
-  EXPECT_EQ(2u, NumIconMappingsForPageURL(url1, FAVICON));
-  EXPECT_EQ(2u, NumIconMappingsForPageURL(url2, FAVICON));
+  backend_->SetFavicons(url1, favicon_base::FAVICON, two_favicon_bitmap_data);
+  EXPECT_EQ(2u, NumIconMappingsForPageURL(url1, favicon_base::FAVICON));
+  EXPECT_EQ(2u, NumIconMappingsForPageURL(url2, favicon_base::FAVICON));
 
   // Add one touch_icon
-  backend_->SetFavicons(url1, TOUCH_ICON, favicon_bitmap_data,
-      one_icon_url_sizes);
-  EXPECT_EQ(1u, NumIconMappingsForPageURL(url1, TOUCH_ICON));
-  EXPECT_EQ(1u, NumIconMappingsForPageURL(url2, TOUCH_ICON));
-  EXPECT_EQ(2u, NumIconMappingsForPageURL(url1, FAVICON));
+  backend_->SetFavicons(
+      url1, favicon_base::TOUCH_ICON, one_favicon_bitmap_data);
+  EXPECT_EQ(1u, NumIconMappingsForPageURL(url1, favicon_base::TOUCH_ICON));
+  EXPECT_EQ(1u, NumIconMappingsForPageURL(url2, favicon_base::TOUCH_ICON));
+  EXPECT_EQ(2u, NumIconMappingsForPageURL(url1, favicon_base::FAVICON));
 
   // Add one TOUCH_PRECOMPOSED_ICON
-  backend_->SetFavicons(url1, TOUCH_PRECOMPOSED_ICON, favicon_bitmap_data,
-      one_icon_url_sizes);
+  backend_->SetFavicons(
+      url1, favicon_base::TOUCH_PRECOMPOSED_ICON, one_favicon_bitmap_data);
   // The touch_icon was replaced.
-  EXPECT_EQ(0u, NumIconMappingsForPageURL(url1, TOUCH_ICON));
-  EXPECT_EQ(2u, NumIconMappingsForPageURL(url1, FAVICON));
-  EXPECT_EQ(1u, NumIconMappingsForPageURL(url1, TOUCH_PRECOMPOSED_ICON));
-  EXPECT_EQ(1u, NumIconMappingsForPageURL(url2, TOUCH_PRECOMPOSED_ICON));
+  EXPECT_EQ(0u, NumIconMappingsForPageURL(url1, favicon_base::TOUCH_ICON));
+  EXPECT_EQ(2u, NumIconMappingsForPageURL(url1, favicon_base::FAVICON));
+  EXPECT_EQ(
+      1u,
+      NumIconMappingsForPageURL(url1, favicon_base::TOUCH_PRECOMPOSED_ICON));
+  EXPECT_EQ(
+      1u,
+      NumIconMappingsForPageURL(url2, favicon_base::TOUCH_PRECOMPOSED_ICON));
 
   // Add a touch_icon.
-  backend_->SetFavicons(url1, TOUCH_ICON, favicon_bitmap_data,
-      one_icon_url_sizes);
-  EXPECT_EQ(1u, NumIconMappingsForPageURL(url1, TOUCH_ICON));
-  EXPECT_EQ(2u, NumIconMappingsForPageURL(url1, FAVICON));
+  backend_->SetFavicons(
+      url1, favicon_base::TOUCH_ICON, one_favicon_bitmap_data);
+  EXPECT_EQ(1u, NumIconMappingsForPageURL(url1, favicon_base::TOUCH_ICON));
+  EXPECT_EQ(2u, NumIconMappingsForPageURL(url1, favicon_base::FAVICON));
   // The TOUCH_PRECOMPOSED_ICON was replaced.
-  EXPECT_EQ(0u, NumIconMappingsForPageURL(url1, TOUCH_PRECOMPOSED_ICON));
+  EXPECT_EQ(
+      0u,
+      NumIconMappingsForPageURL(url1, favicon_base::TOUCH_PRECOMPOSED_ICON));
 
   // Add a single favicon.
-  backend_->SetFavicons(url1, FAVICON, favicon_bitmap_data,
-      one_icon_url_sizes);
-  EXPECT_EQ(1u, NumIconMappingsForPageURL(url1, TOUCH_ICON));
-  EXPECT_EQ(1u, NumIconMappingsForPageURL(url1, FAVICON));
-  EXPECT_EQ(1u, NumIconMappingsForPageURL(url2, FAVICON));
+  backend_->SetFavicons(url1, favicon_base::FAVICON, one_favicon_bitmap_data);
+  EXPECT_EQ(1u, NumIconMappingsForPageURL(url1, favicon_base::TOUCH_ICON));
+  EXPECT_EQ(1u, NumIconMappingsForPageURL(url1, favicon_base::FAVICON));
+  EXPECT_EQ(1u, NumIconMappingsForPageURL(url2, favicon_base::FAVICON));
 
   // Add two favicons.
-  backend_->SetFavicons(url1, FAVICON, favicon_bitmap_data,
-                        two_icon_url_sizes);
-  EXPECT_EQ(1u, NumIconMappingsForPageURL(url1, TOUCH_ICON));
-  EXPECT_EQ(2u, NumIconMappingsForPageURL(url1, FAVICON));
+  backend_->SetFavicons(url1, favicon_base::FAVICON, two_favicon_bitmap_data);
+  EXPECT_EQ(1u, NumIconMappingsForPageURL(url1, favicon_base::TOUCH_ICON));
+  EXPECT_EQ(2u, NumIconMappingsForPageURL(url1, favicon_base::FAVICON));
 }
 
 // Test that there is no churn in icon mappings from calling
-// SetFavicons() twice with the same |icon_url_sizes| parameter.
+// SetFavicons() twice with the same |favicon_bitmap_data| parameter.
 TEST_F(HistoryBackendTest, SetFaviconMappingsForPageDuplicates) {
   const GURL url("http://www.google.com/");
   const GURL icon_url("http://www.google.com/icon");
-  std::vector<FaviconBitmapData> favicon_bitmap_data;
 
-  IconURLSizesMap icon_url_sizes;
-  icon_url_sizes[icon_url] = GetSizesSmallAndLarge();
+  std::vector<favicon_base::FaviconBitmapData> favicon_bitmap_data;
+  GenerateFaviconBitmapData(icon_url, GetSizesSmallAndLarge(),
+                            &favicon_bitmap_data);
 
-  backend_->SetFavicons(url, FAVICON, favicon_bitmap_data, icon_url_sizes);
+  backend_->SetFavicons(url, favicon_base::FAVICON, favicon_bitmap_data);
 
   std::vector<IconMapping> icon_mappings;
   EXPECT_TRUE(backend_->thumbnail_db_->GetIconMappingsForPageURL(
-      url, FAVICON, &icon_mappings));
+      url, favicon_base::FAVICON, &icon_mappings));
   EXPECT_EQ(1u, icon_mappings.size());
   IconMappingID mapping_id = icon_mappings[0].mapping_id;
 
-  backend_->SetFavicons(url, FAVICON, favicon_bitmap_data, icon_url_sizes);
+  backend_->SetFavicons(url, favicon_base::FAVICON, favicon_bitmap_data);
 
   icon_mappings.clear();
   EXPECT_TRUE(backend_->thumbnail_db_->GetIconMappingsForPageURL(
-      url, FAVICON, &icon_mappings));
+      url, favicon_base::FAVICON, &icon_mappings));
   EXPECT_EQ(1u, icon_mappings.size());
 
   // The same row in the icon_mapping table should be used for the mapping as
@@ -1372,225 +1625,143 @@ TEST_F(HistoryBackendTest, SetFaviconMappingsForPageDuplicates) {
   EXPECT_EQ(mapping_id, icon_mappings[0].mapping_id);
 }
 
-// Test that setting favicons for a page which already has data does the
-// right thing.
-TEST_F(HistoryBackendTest, SetFavicons) {
+// Test that calling SetFavicons() with FaviconBitmapData of different pixel
+// sizes than the initially passed in FaviconBitmapData deletes the no longer
+// used favicon bitmaps.
+TEST_F(HistoryBackendTest, SetFaviconsDeleteBitmaps) {
   const GURL page_url("http://www.google.com/");
-  std::vector<FaviconBitmapData> favicon_bitmap_data;
-  IconURLSizesMap icon_url_sizes;
+  const GURL icon_url("http://www.google.com/icon");
 
-  // Set |page_url| as having two favicons each available from the web at two
-  // sizes.
-  const GURL icon_url1("http://www.google.com/icon1");
-  const GURL icon_url2("http://www.google.com/icon2");
-
-  icon_url_sizes[icon_url1] = GetSizesSmallAndLarge();
-  icon_url_sizes[icon_url2] = GetSizesSmallAndLarge();
-
-  // Set only sizes info for the favicons.
-  backend_->SetFavicons(page_url, FAVICON, favicon_bitmap_data,
-                        icon_url_sizes);
-
-  std::vector<IconMapping> icon_mappings;
-  EXPECT_TRUE(backend_->thumbnail_db_->GetIconMappingsForPageURL(
-      page_url, &icon_mappings));
-  EXPECT_EQ(2u, icon_mappings.size());
-  for (size_t i = 0; i < icon_mappings.size(); ++i) {
-    EXPECT_FALSE(backend_->thumbnail_db_->GetFaviconBitmaps(
-        icon_mappings[i].icon_id, NULL));
-  }
-
-  // Add bitmap data to the favicons.
-  GenerateFaviconBitmapData(icon_url1,
-                            GetSizesSmall(),
-                            icon_url2,
-                            GetSizesSmallAndLarge(),
+  std::vector<favicon_base::FaviconBitmapData> favicon_bitmap_data;
+  GenerateFaviconBitmapData(icon_url, GetSizesSmallAndLarge(),
                             &favicon_bitmap_data);
+  backend_->SetFavicons(page_url, favicon_base::FAVICON, favicon_bitmap_data);
 
-  backend_->SetFavicons(page_url, FAVICON, favicon_bitmap_data,
-                        icon_url_sizes);
-
-  icon_mappings.clear();
+  // Test initial state.
+  std::vector<IconMapping> icon_mappings;
   EXPECT_TRUE(GetSortedIconMappingsForPageURL(page_url, &icon_mappings));
-  EXPECT_EQ(2u, icon_mappings.size());
-
-  GURL icon_url;
-  IconType icon_type;
-  FaviconSizes favicon_sizes;
-  EXPECT_TRUE(backend_->thumbnail_db_->GetFaviconHeader(
-      icon_mappings[0].icon_id, &icon_url, &icon_type, &favicon_sizes));
-  EXPECT_EQ(icon_url1, icon_url);
-  EXPECT_EQ(FAVICON, icon_type);
-  EXPECT_EQ(GetSizesSmallAndLarge(), favicon_sizes);
+  EXPECT_EQ(1u, icon_mappings.size());
+  EXPECT_EQ(icon_url, icon_mappings[0].icon_url);
+  EXPECT_EQ(favicon_base::FAVICON, icon_mappings[0].icon_type);
+  favicon_base::FaviconID favicon_id = icon_mappings[0].icon_id;
 
   std::vector<FaviconBitmap> favicon_bitmaps;
-  EXPECT_TRUE(backend_->thumbnail_db_->GetFaviconBitmaps(
-      icon_mappings[0].icon_id, &favicon_bitmaps));
-  EXPECT_EQ(1u, favicon_bitmaps.size());
+  EXPECT_TRUE(GetSortedFaviconBitmaps(favicon_id, &favicon_bitmaps));
+  EXPECT_EQ(2u, favicon_bitmaps.size());
+  FaviconBitmapID small_bitmap_id = favicon_bitmaps[0].bitmap_id;
+  EXPECT_NE(0, small_bitmap_id);
   EXPECT_TRUE(BitmapDataEqual('a', favicon_bitmaps[0].bitmap_data));
   EXPECT_EQ(kSmallSize, favicon_bitmaps[0].pixel_size);
-
-  favicon_sizes.clear();
-  EXPECT_TRUE(backend_->thumbnail_db_->GetFaviconHeader(
-      icon_mappings[1].icon_id, &icon_url, &icon_type, &favicon_sizes));
-  EXPECT_EQ(icon_url2, icon_url);
-  EXPECT_EQ(FAVICON, icon_type);
-  EXPECT_EQ(GetSizesSmallAndLarge(), favicon_sizes);
-
-  favicon_bitmaps.clear();
-  EXPECT_TRUE(GetSortedFaviconBitmaps(icon_mappings[1].icon_id,
-                                      &favicon_bitmaps));
-
-  EXPECT_EQ(2u, favicon_bitmaps.size());
-  EXPECT_TRUE(BitmapDataEqual('b', favicon_bitmaps[0].bitmap_data));
-  EXPECT_EQ(kSmallSize, favicon_bitmaps[0].pixel_size);
-  EXPECT_TRUE(BitmapDataEqual('c', favicon_bitmaps[1].bitmap_data));
+  FaviconBitmapID large_bitmap_id = favicon_bitmaps[1].bitmap_id;
+  EXPECT_NE(0, large_bitmap_id);
+  EXPECT_TRUE(BitmapDataEqual('b', favicon_bitmaps[1].bitmap_data));
   EXPECT_EQ(kLargeSize, favicon_bitmaps[1].pixel_size);
 
-  // Change the sizes for which the favicon at icon_url1 is available at from
-  // the web. Verify that all the data remains valid.
-  icon_url_sizes[icon_url1] = GetSizesTinySmallAndLarge();
-  favicon_bitmap_data.clear();
-  backend_->SetFavicons(page_url, FAVICON, favicon_bitmap_data,
-                        icon_url_sizes);
+  // Call SetFavicons() with bitmap data for only the large bitmap. Check that
+  // the small bitmap is in fact deleted.
+  GenerateFaviconBitmapData(icon_url, GetSizesLarge(), &favicon_bitmap_data);
+  backend_->SetFavicons(page_url, favicon_base::FAVICON, favicon_bitmap_data);
+
+  scoped_refptr<base::RefCountedMemory> bitmap_data_out;
+  gfx::Size pixel_size_out;
+  EXPECT_FALSE(backend_->thumbnail_db_->GetFaviconBitmap(small_bitmap_id,
+      NULL, &bitmap_data_out, &pixel_size_out));
+  EXPECT_TRUE(backend_->thumbnail_db_->GetFaviconBitmap(large_bitmap_id,
+      NULL, &bitmap_data_out, &pixel_size_out));
+  EXPECT_TRUE(BitmapDataEqual('a', bitmap_data_out));
+  EXPECT_EQ(kLargeSize, pixel_size_out);
 
   icon_mappings.clear();
-  EXPECT_TRUE(GetSortedIconMappingsForPageURL(page_url, &icon_mappings));
-  EXPECT_EQ(2u, icon_mappings.size());
+  EXPECT_TRUE(backend_->thumbnail_db_->GetIconMappingsForPageURL(page_url,
+      &icon_mappings));
+  EXPECT_EQ(1u, icon_mappings.size());
+  EXPECT_EQ(favicon_id, icon_mappings[0].icon_id);
 
-  favicon_sizes.clear();
-  EXPECT_TRUE(backend_->thumbnail_db_->GetFaviconHeader(
-      icon_mappings[0].icon_id, &icon_url, &icon_type, &favicon_sizes));
-  EXPECT_EQ(icon_url1, icon_url);
-  EXPECT_EQ(FAVICON, icon_type);
-  EXPECT_EQ(GetSizesTinySmallAndLarge(), favicon_sizes);
+  // Call SetFavicons() with no bitmap data. Check that the bitmaps and icon
+  // mappings are deleted.
+  favicon_bitmap_data.clear();
+  backend_->SetFavicons(page_url, favicon_base::FAVICON, favicon_bitmap_data);
 
-  favicon_bitmaps.clear();
-  EXPECT_TRUE(backend_->thumbnail_db_->GetFaviconBitmaps(
-      icon_mappings[0].icon_id, &favicon_bitmaps));
-  EXPECT_EQ(1u, favicon_bitmaps.size());
-
-  favicon_sizes.clear();
-  EXPECT_TRUE(backend_->thumbnail_db_->GetFaviconHeader(
-      icon_mappings[1].icon_id, &icon_url, &icon_type, &favicon_sizes));
-  EXPECT_EQ(icon_url2, icon_url);
-  EXPECT_EQ(FAVICON, icon_type);
-  EXPECT_EQ(GetSizesSmallAndLarge(), favicon_sizes);
-
-  favicon_bitmaps.clear();
-  EXPECT_TRUE(backend_->thumbnail_db_->GetFaviconBitmaps(
-      icon_mappings[1].icon_id, &favicon_bitmaps));
-  EXPECT_EQ(2u, favicon_bitmaps.size());
+  EXPECT_FALSE(backend_->thumbnail_db_->GetFaviconBitmap(large_bitmap_id, NULL,
+      NULL, NULL));
+  icon_mappings.clear();
+  EXPECT_FALSE(backend_->thumbnail_db_->GetIconMappingsForPageURL(page_url,
+      &icon_mappings));
 
   // Notifications should have been broadcast for each call to SetFavicons().
   EXPECT_EQ(3, num_broadcasted_notifications());
 }
 
-// Test that changing the sizes that a favicon is available at from the web
-// deletes stale favicons and favicon bitmaps.
-TEST_F(HistoryBackendTest, SetFaviconsDeleteBitmaps) {
-  const GURL page_url("http://www.google.com/");
-  const GURL icon_url("http://www.google.com/icon");
-
-  // Set |page_url| as having one favicon with two different sizes.
-  IconURLSizesMap icon_url_sizes;
-  icon_url_sizes[icon_url] = GetSizesSmallAndLarge();
-
-  std::vector<FaviconBitmapData> favicon_bitmap_data;
-  GenerateFaviconBitmapData(icon_url, GetSizesSmallAndLarge(),
-                            &favicon_bitmap_data);
-
-  // Add bitmap data and sizes information to the database.
-  backend_->SetFavicons(page_url, FAVICON, favicon_bitmap_data,
-                        icon_url_sizes);
-
-  FaviconID favicon_id = backend_->thumbnail_db_->GetFaviconIDForFaviconURL(
-      icon_url, FAVICON, NULL);
-  EXPECT_NE(0, favicon_id);
-
-  std::vector<FaviconBitmap> favicon_bitmaps;
-  EXPECT_TRUE(backend_->thumbnail_db_->GetFaviconBitmaps(favicon_id,
-                                                         &favicon_bitmaps));
-  EXPECT_EQ(2u, favicon_bitmaps.size());
-
-  // Change the bitmap sizes available from the web only to the small size only.
-  icon_url_sizes[icon_url] = GetSizesSmall();
-  favicon_bitmap_data.clear();
-  backend_->SetFavicons(page_url, FAVICON, favicon_bitmap_data,
-                        icon_url_sizes);
-
-  favicon_id = backend_->thumbnail_db_->GetFaviconIDForFaviconURL(
-      icon_url, FAVICON, NULL);
-  EXPECT_NE(0, favicon_id);
-
-  favicon_bitmaps.clear();
-  EXPECT_TRUE(backend_->thumbnail_db_->GetFaviconBitmaps(favicon_id,
-                                                         &favicon_bitmaps));
-  EXPECT_EQ(1u, favicon_bitmaps.size());
-  EXPECT_EQ(kSmallSize, favicon_bitmaps[0].pixel_size);
-
-  // Clear |icon_url_sizes|. SetFavicons() should delete the remaining favicon
-  // and its favicon bitmap.
-  icon_url_sizes.clear();
-  backend_->SetFavicons(page_url, FAVICON, favicon_bitmap_data, icon_url_sizes);
-  EXPECT_EQ(0, backend_->thumbnail_db_->GetFaviconIDForFaviconURL(
-      icon_url, FAVICON, NULL));
-  EXPECT_FALSE(backend_->thumbnail_db_->GetFaviconBitmaps(favicon_id, NULL));
-}
-
 // Test updating a single favicon bitmap's data via SetFavicons.
 TEST_F(HistoryBackendTest, SetFaviconsReplaceBitmapData) {
-
   const GURL page_url("http://www.google.com/");
   const GURL icon_url("http://www.google.com/icon");
-  IconURLSizesMap icon_url_sizes;
-  icon_url_sizes[icon_url] = GetSizesSmall();
 
   std::vector<unsigned char> data_initial;
   data_initial.push_back('a');
 
-  FaviconBitmapData bitmap_data_element;
+  favicon_base::FaviconBitmapData bitmap_data_element;
   bitmap_data_element.bitmap_data =
       base::RefCountedBytes::TakeVector(&data_initial);
   bitmap_data_element.pixel_size = kSmallSize;
   bitmap_data_element.icon_url = icon_url;
-  std::vector<FaviconBitmapData> favicon_bitmap_data;
+  std::vector<favicon_base::FaviconBitmapData> favicon_bitmap_data;
   favicon_bitmap_data.push_back(bitmap_data_element);
 
   // Add bitmap to the database.
-  backend_->SetFavicons(page_url, FAVICON, favicon_bitmap_data,
-                        icon_url_sizes);
+  backend_->SetFavicons(page_url, favicon_base::FAVICON, favicon_bitmap_data);
 
-  FaviconID original_favicon_id =
-      backend_->thumbnail_db_->GetFaviconIDForFaviconURL(icon_url, FAVICON,
-                                                         NULL);
+  favicon_base::FaviconID original_favicon_id =
+      backend_->thumbnail_db_->GetFaviconIDForFaviconURL(
+          icon_url, favicon_base::FAVICON, NULL);
   EXPECT_NE(0, original_favicon_id);
   FaviconBitmap original_favicon_bitmap;
   EXPECT_TRUE(
       GetOnlyFaviconBitmap(original_favicon_id, &original_favicon_bitmap));
   EXPECT_TRUE(BitmapDataEqual('a', original_favicon_bitmap.bitmap_data));
 
-  // SetFavicons with identical data but a different bitmap.
-  std::vector<unsigned char> updated_data;
-  updated_data.push_back('b');
-  favicon_bitmap_data[0].bitmap_data =
-      base::RefCountedBytes::TakeVector(&updated_data);
-  backend_->SetFavicons(page_url, FAVICON, favicon_bitmap_data,
-                        icon_url_sizes);
+  EXPECT_EQ(1, num_broadcasted_notifications());
 
-  FaviconID updated_favicon_id =
-      backend_->thumbnail_db_->GetFaviconIDForFaviconURL(icon_url, FAVICON,
-                                                         NULL);
+  // Call SetFavicons() with completely identical data.
+  std::vector<unsigned char> updated_data;
+  updated_data.push_back('a');
+  favicon_bitmap_data[0].bitmap_data = new base::RefCountedBytes(updated_data);
+  backend_->SetFavicons(page_url, favicon_base::FAVICON, favicon_bitmap_data);
+
+  favicon_base::FaviconID updated_favicon_id =
+      backend_->thumbnail_db_->GetFaviconIDForFaviconURL(
+          icon_url, favicon_base::FAVICON, NULL);
   EXPECT_NE(0, updated_favicon_id);
   FaviconBitmap updated_favicon_bitmap;
   EXPECT_TRUE(
       GetOnlyFaviconBitmap(updated_favicon_id, &updated_favicon_bitmap));
+  EXPECT_TRUE(BitmapDataEqual('a', updated_favicon_bitmap.bitmap_data));
+
+  // Because the bitmap data is byte equivalent, no notifications should have
+  // been broadcasted.
+  EXPECT_EQ(1, num_broadcasted_notifications());
+
+  // Call SetFavicons() with identical data but a different bitmap.
+  updated_data[0] = 'b';
+  favicon_bitmap_data[0].bitmap_data = new base::RefCountedBytes(updated_data);
+  backend_->SetFavicons(page_url, favicon_base::FAVICON, favicon_bitmap_data);
+
+  updated_favicon_id = backend_->thumbnail_db_->GetFaviconIDForFaviconURL(
+      icon_url, favicon_base::FAVICON, NULL);
+  EXPECT_NE(0, updated_favicon_id);
+  EXPECT_TRUE(
+      GetOnlyFaviconBitmap(updated_favicon_id, &updated_favicon_bitmap));
   EXPECT_TRUE(BitmapDataEqual('b', updated_favicon_bitmap.bitmap_data));
 
-  // There should be no churn in FaviconIDs or FaviconBitmapIds.
+  // There should be no churn in FaviconIDs or FaviconBitmapIds even though
+  // the bitmap data changed.
   EXPECT_EQ(original_favicon_bitmap.icon_id, updated_favicon_bitmap.icon_id);
   EXPECT_EQ(original_favicon_bitmap.bitmap_id,
             updated_favicon_bitmap.bitmap_id);
+
+  // A notification should have been broadcasted as the favicon bitmap data has
+  // changed.
+  EXPECT_EQ(2, num_broadcasted_notifications());
 }
 
 // Test that if two pages share the same FaviconID, changing the favicon for
@@ -1601,30 +1772,29 @@ TEST_F(HistoryBackendTest, SetFaviconsSameFaviconURLForTwoPages) {
   GURL page_url1("http://www.google.com");
   GURL page_url2("http://www.google.ca");
 
-  IconURLSizesMap icon_url_sizes;
-  icon_url_sizes[icon_url] = GetSizesSmallAndLarge();
-
-  std::vector<FaviconBitmapData> favicon_bitmap_data;
+  std::vector<favicon_base::FaviconBitmapData> favicon_bitmap_data;
   GenerateFaviconBitmapData(icon_url, GetSizesSmallAndLarge(),
                             &favicon_bitmap_data);
 
-  backend_->SetFavicons(page_url1, FAVICON, favicon_bitmap_data,
-                        icon_url_sizes);
+  backend_->SetFavicons(page_url1, favicon_base::FAVICON, favicon_bitmap_data);
 
   std::vector<GURL> icon_urls;
   icon_urls.push_back(icon_url);
 
-  HistoryBackend::FaviconResults results;
-  backend_->UpdateFaviconMappingsAndFetch(
-      page_url2, icon_urls, FAVICON, kSmallSize.width(),
-      GetScaleFactors1x2x(), &results);
+  std::vector<favicon_base::FaviconBitmapResult> bitmap_results;
+  backend_->UpdateFaviconMappingsAndFetch(page_url2,
+                                          icon_urls,
+                                          favicon_base::FAVICON,
+                                          kSmallSize.width(),
+                                          GetScaleFactors1x2x(),
+                                          &bitmap_results);
 
   // Check that the same FaviconID is mapped to both page URLs.
   std::vector<IconMapping> icon_mappings;
   EXPECT_TRUE(backend_->thumbnail_db_->GetIconMappingsForPageURL(
       page_url1, &icon_mappings));
   EXPECT_EQ(1u, icon_mappings.size());
-  FaviconID favicon_id = icon_mappings[0].icon_id;
+  favicon_base::FaviconID favicon_id = icon_mappings[0].icon_id;
   EXPECT_NE(0, favicon_id);
 
   icon_mappings.clear();
@@ -1634,12 +1804,9 @@ TEST_F(HistoryBackendTest, SetFaviconsSameFaviconURLForTwoPages) {
   EXPECT_EQ(favicon_id, icon_mappings[0].icon_id);
 
   // Change the icon URL that |page_url1| is mapped to.
-  icon_url_sizes.clear();
-  icon_url_sizes[icon_url_new] = GetSizesSmall();
   GenerateFaviconBitmapData(icon_url_new, GetSizesSmall(),
                             &favicon_bitmap_data);
-  backend_->SetFavicons(page_url1, FAVICON, favicon_bitmap_data,
-                        icon_url_sizes);
+  backend_->SetFavicons(page_url1, favicon_base::FAVICON, favicon_bitmap_data);
 
   // |page_url1| should map to a new FaviconID and have valid bitmap data.
   icon_mappings.clear();
@@ -1672,34 +1839,37 @@ TEST_F(HistoryBackendTest, SetFaviconsSameFaviconURLForTwoPages) {
   EXPECT_EQ(3, num_broadcasted_notifications());
 }
 
-// Test that there is no churn from calling UpdateFaviconMappingsAndFetch()
-// for an icon URL which is already mapped to the passed in page URL.
+// Test that no notifications are broadcast as a result of calling
+// UpdateFaviconMappingsAndFetch() for an icon URL which is already
+// mapped to the passed in page URL.
 TEST_F(HistoryBackendTest, UpdateFaviconMappingsAndFetchNoChange) {
   GURL page_url("http://www.google.com");
   GURL icon_url("http://www.google.com/favicon.ico");
-  std::vector<FaviconBitmapData> favicon_bitmap_data;
+  std::vector<favicon_base::FaviconBitmapData> favicon_bitmap_data;
+  GenerateFaviconBitmapData(icon_url, GetSizesSmall(), &favicon_bitmap_data);
 
-  IconURLSizesMap icon_url_sizes;
-  icon_url_sizes[icon_url] = GetSizesSmall();
+  backend_->SetFavicons(page_url, favicon_base::FAVICON, favicon_bitmap_data);
 
-  backend_->SetFavicons(page_url, FAVICON, favicon_bitmap_data,
-                        icon_url_sizes);
-
-  FaviconID icon_id = backend_->thumbnail_db_->GetFaviconIDForFaviconURL(
-      icon_url, FAVICON, NULL);
+  favicon_base::FaviconID icon_id =
+      backend_->thumbnail_db_->GetFaviconIDForFaviconURL(
+          icon_url, favicon_base::FAVICON, NULL);
   EXPECT_NE(0, icon_id);
   EXPECT_EQ(1, num_broadcasted_notifications());
 
   std::vector<GURL> icon_urls;
   icon_urls.push_back(icon_url);
 
-  HistoryBackend::FaviconResults results;
-  backend_->UpdateFaviconMappingsAndFetch(
-      page_url, icon_urls, FAVICON, kSmallSize.width(),
-      GetScaleFactors1x2x(), &results);
+  std::vector<favicon_base::FaviconBitmapResult> bitmap_results;
+  backend_->UpdateFaviconMappingsAndFetch(page_url,
+                                          icon_urls,
+                                          favicon_base::FAVICON,
+                                          kSmallSize.width(),
+                                          GetScaleFactors1x2x(),
+                                          &bitmap_results);
 
-  EXPECT_EQ(icon_id, backend_->thumbnail_db_->GetFaviconIDForFaviconURL(
-      icon_url, FAVICON, NULL));
+  EXPECT_EQ(icon_id,
+            backend_->thumbnail_db_->GetFaviconIDForFaviconURL(
+                icon_url, favicon_base::FAVICON, NULL));
 
   // No notification should have been broadcast as no icon mapping, favicon,
   // or favicon bitmap was updated, added or removed.
@@ -1717,29 +1887,27 @@ TEST_F(HistoryBackendTest, MergeFaviconPageURLNotInDB) {
   scoped_refptr<base::RefCountedBytes> bitmap_data(
       new base::RefCountedBytes(data));
 
-  backend_->MergeFavicon(page_url, icon_url, FAVICON, bitmap_data, kSmallSize);
+  backend_->MergeFavicon(
+      page_url, icon_url, favicon_base::FAVICON, bitmap_data, kSmallSize);
 
-  // |page_url| should now be mapped to |icon_url| and sizes should be set
-  // to GetDefaultFaviconSizes().
+  // |page_url| should now be mapped to |icon_url| and the favicon bitmap should
+  // not be expired.
   std::vector<IconMapping> icon_mappings;
   EXPECT_TRUE(backend_->thumbnail_db_->GetIconMappingsForPageURL(page_url,
       &icon_mappings));
   EXPECT_EQ(1u, icon_mappings.size());
   EXPECT_EQ(icon_url, icon_mappings[0].icon_url);
 
-  FaviconSizes favicon_sizes;
-  EXPECT_TRUE(backend_->thumbnail_db_->GetFaviconHeader(
-      icon_mappings[0].icon_id, NULL, NULL, &favicon_sizes));
-  EXPECT_EQ(GetDefaultFaviconSizes(), favicon_sizes);
-
   FaviconBitmap favicon_bitmap;
   EXPECT_TRUE(GetOnlyFaviconBitmap(icon_mappings[0].icon_id, &favicon_bitmap));
+  EXPECT_NE(base::Time(), favicon_bitmap.last_updated);
   EXPECT_TRUE(BitmapDataEqual('a', favicon_bitmap.bitmap_data));
   EXPECT_EQ(kSmallSize, favicon_bitmap.pixel_size);
 
   data[0] = 'b';
   bitmap_data = new base::RefCountedBytes(data);
-  backend_->MergeFavicon(page_url, icon_url, FAVICON, bitmap_data, kSmallSize);
+  backend_->MergeFavicon(
+      page_url, icon_url, favicon_base::FAVICON, bitmap_data, kSmallSize);
 
   // |page_url| should still have a single favicon bitmap. The bitmap data
   // should be updated.
@@ -1749,12 +1917,8 @@ TEST_F(HistoryBackendTest, MergeFaviconPageURLNotInDB) {
   EXPECT_EQ(1u, icon_mappings.size());
   EXPECT_EQ(icon_url, icon_mappings[0].icon_url);
 
-  favicon_sizes.clear();
-  EXPECT_TRUE(backend_->thumbnail_db_->GetFaviconHeader(
-      icon_mappings[0].icon_id, NULL, NULL, &favicon_sizes));
-  EXPECT_EQ(GetDefaultFaviconSizes(), favicon_sizes);
-
   EXPECT_TRUE(GetOnlyFaviconBitmap(icon_mappings[0].icon_id, &favicon_bitmap));
+  EXPECT_NE(base::Time(), favicon_bitmap.last_updated);
   EXPECT_TRUE(BitmapDataEqual('b', favicon_bitmap.bitmap_data));
   EXPECT_EQ(kSmallSize, favicon_bitmap.pixel_size);
 }
@@ -1765,15 +1929,11 @@ TEST_F(HistoryBackendTest, MergeFaviconPageURLInDB) {
   GURL icon_url1("http:/www.google.com/favicon.ico");
   GURL icon_url2("http://www.google.com/favicon2.ico");
 
-  IconURLSizesMap icon_url_sizes;
-  icon_url_sizes[icon_url1] = GetSizesSmallAndLarge();
-
-  std::vector<FaviconBitmapData> favicon_bitmap_data;
+  std::vector<favicon_base::FaviconBitmapData> favicon_bitmap_data;
   GenerateFaviconBitmapData(icon_url1, GetSizesSmall(),
                             &favicon_bitmap_data);
 
-  backend_->SetFavicons(page_url, FAVICON, favicon_bitmap_data,
-                        icon_url_sizes);
+  backend_->SetFavicons(page_url, favicon_base::FAVICON, favicon_bitmap_data);
 
   // Test initial state.
   std::vector<IconMapping> icon_mappings;
@@ -1782,13 +1942,9 @@ TEST_F(HistoryBackendTest, MergeFaviconPageURLInDB) {
   EXPECT_EQ(1u, icon_mappings.size());
   EXPECT_EQ(icon_url1, icon_mappings[0].icon_url);
 
-  FaviconSizes favicon_sizes;
-  EXPECT_TRUE(backend_->thumbnail_db_->GetFaviconHeader(
-      icon_mappings[0].icon_id, NULL, NULL, &favicon_sizes));
-  EXPECT_EQ(GetSizesSmallAndLarge(), favicon_sizes);
-
   FaviconBitmap favicon_bitmap;
   EXPECT_TRUE(GetOnlyFaviconBitmap(icon_mappings[0].icon_id, &favicon_bitmap));
+  EXPECT_NE(base::Time(), favicon_bitmap.last_updated);
   EXPECT_TRUE(BitmapDataEqual('a', favicon_bitmap.bitmap_data));
   EXPECT_EQ(kSmallSize, favicon_bitmap.pixel_size);
 
@@ -1799,7 +1955,8 @@ TEST_F(HistoryBackendTest, MergeFaviconPageURLInDB) {
   data.push_back('a');
   scoped_refptr<base::RefCountedBytes> bitmap_data(
       new base::RefCountedBytes(data));
-  backend_->MergeFavicon(page_url, icon_url1, FAVICON, bitmap_data, kSmallSize);
+  backend_->MergeFavicon(
+      page_url, icon_url1, favicon_base::FAVICON, bitmap_data, kSmallSize);
 
   // All the data should stay the same and no notifications should have been
   // sent.
@@ -1809,12 +1966,8 @@ TEST_F(HistoryBackendTest, MergeFaviconPageURLInDB) {
   EXPECT_EQ(1u, icon_mappings.size());
   EXPECT_EQ(icon_url1, icon_mappings[0].icon_url);
 
-  favicon_sizes.clear();
-  EXPECT_TRUE(backend_->thumbnail_db_->GetFaviconHeader(
-      icon_mappings[0].icon_id, NULL, NULL, &favicon_sizes));
-  EXPECT_EQ(GetSizesSmallAndLarge(), favicon_sizes);
-
   EXPECT_TRUE(GetOnlyFaviconBitmap(icon_mappings[0].icon_id, &favicon_bitmap));
+  EXPECT_NE(base::Time(), favicon_bitmap.last_updated);
   EXPECT_TRUE(BitmapDataEqual('a', favicon_bitmap.bitmap_data));
   EXPECT_EQ(kSmallSize, favicon_bitmap.pixel_size);
 
@@ -1823,51 +1976,43 @@ TEST_F(HistoryBackendTest, MergeFaviconPageURLInDB) {
   // 2) Merge favicon bitmap of the same size.
   data[0] = 'b';
   bitmap_data = new base::RefCountedBytes(data);
-  backend_->MergeFavicon(page_url, icon_url1, FAVICON, bitmap_data, kSmallSize);
+  backend_->MergeFavicon(
+      page_url, icon_url1, favicon_base::FAVICON, bitmap_data, kSmallSize);
 
-  // The small favicon bitmap at |icon_url1| should be overwritten and favicon
-  // sizes should remain unchanged. No notification should be sent.
+  // The small favicon bitmap at |icon_url1| should be overwritten.
   icon_mappings.clear();
   EXPECT_TRUE(backend_->thumbnail_db_->GetIconMappingsForPageURL(page_url,
       &icon_mappings));
   EXPECT_EQ(1u, icon_mappings.size());
   EXPECT_EQ(icon_url1, icon_mappings[0].icon_url);
 
-  favicon_sizes.clear();
-  EXPECT_TRUE(backend_->thumbnail_db_->GetFaviconHeader(
-      icon_mappings[0].icon_id, NULL, NULL, &favicon_sizes));
-  EXPECT_EQ(GetSizesSmallAndLarge(), favicon_sizes);
-
   EXPECT_TRUE(GetOnlyFaviconBitmap(icon_mappings[0].icon_id, &favicon_bitmap));
+  EXPECT_NE(base::Time(), favicon_bitmap.last_updated);
   EXPECT_TRUE(BitmapDataEqual('b', favicon_bitmap.bitmap_data));
   EXPECT_EQ(kSmallSize, favicon_bitmap.pixel_size);
-
-  EXPECT_EQ(1, num_broadcasted_notifications());
 
   // 3) Merge favicon for the same icon URL, but a pixel size for which there is
   // no favicon bitmap.
   data[0] = 'c';
   bitmap_data = new base::RefCountedBytes(data);
-  backend_->MergeFavicon(page_url, icon_url1, FAVICON, bitmap_data, kTinySize);
+  backend_->MergeFavicon(
+      page_url, icon_url1, favicon_base::FAVICON, bitmap_data, kTinySize);
 
-  // A new favicon bitmap should be created and favicon sizes should be set to
-  // the default.
+  // A new favicon bitmap should be created and the preexisting favicon bitmap
+  // ('b') should be expired.
   icon_mappings.clear();
   EXPECT_TRUE(backend_->thumbnail_db_->GetIconMappingsForPageURL(page_url,
       &icon_mappings));
   EXPECT_EQ(1u, icon_mappings.size());
   EXPECT_EQ(icon_url1, icon_mappings[0].icon_url);
 
-  favicon_sizes.clear();
-  EXPECT_TRUE(backend_->thumbnail_db_->GetFaviconHeader(
-      icon_mappings[0].icon_id, NULL, NULL, &favicon_sizes));
-  EXPECT_EQ(GetDefaultFaviconSizes(), favicon_sizes);
-
   std::vector<FaviconBitmap> favicon_bitmaps;
   EXPECT_TRUE(GetSortedFaviconBitmaps(icon_mappings[0].icon_id,
                                       &favicon_bitmaps));
+  EXPECT_NE(base::Time(), favicon_bitmaps[0].last_updated);
   EXPECT_TRUE(BitmapDataEqual('c', favicon_bitmaps[0].bitmap_data));
   EXPECT_EQ(kTinySize, favicon_bitmaps[0].pixel_size);
+  EXPECT_EQ(base::Time(), favicon_bitmaps[1].last_updated);
   EXPECT_TRUE(BitmapDataEqual('b', favicon_bitmaps[1].bitmap_data));
   EXPECT_EQ(kSmallSize, favicon_bitmaps[1].pixel_size);
 
@@ -1875,7 +2020,8 @@ TEST_F(HistoryBackendTest, MergeFaviconPageURLInDB) {
   // mapped to page URL.
   data[0] = 'd';
   bitmap_data = new base::RefCountedBytes(data);
-  backend_->MergeFavicon(page_url, icon_url2, FAVICON, bitmap_data, kSmallSize);
+  backend_->MergeFavicon(
+      page_url, icon_url2, favicon_base::FAVICON, bitmap_data, kSmallSize);
 
   // The existing favicon bitmaps should be copied over to the newly created
   // favicon at |icon_url2|. |page_url| should solely be mapped to |icon_url2|.
@@ -1885,24 +2031,21 @@ TEST_F(HistoryBackendTest, MergeFaviconPageURLInDB) {
   EXPECT_EQ(1u, icon_mappings.size());
   EXPECT_EQ(icon_url2, icon_mappings[0].icon_url);
 
-  favicon_sizes.clear();
-  EXPECT_TRUE(backend_->thumbnail_db_->GetFaviconHeader(
-      icon_mappings[0].icon_id, NULL, NULL, &favicon_sizes));
-  EXPECT_EQ(GetDefaultFaviconSizes(), favicon_sizes);
-
   favicon_bitmaps.clear();
   EXPECT_TRUE(GetSortedFaviconBitmaps(icon_mappings[0].icon_id,
                                       &favicon_bitmaps));
+  EXPECT_EQ(base::Time(), favicon_bitmaps[0].last_updated);
   EXPECT_TRUE(BitmapDataEqual('c', favicon_bitmaps[0].bitmap_data));
   EXPECT_EQ(kTinySize, favicon_bitmaps[0].pixel_size);
   // The favicon being merged should take precedence over the preexisting
   // favicon bitmaps.
+  EXPECT_NE(base::Time(), favicon_bitmaps[1].last_updated);
   EXPECT_TRUE(BitmapDataEqual('d', favicon_bitmaps[1].bitmap_data));
   EXPECT_EQ(kSmallSize, favicon_bitmaps[1].pixel_size);
 
   // A notification should have been broadcast for each call to SetFavicons()
   // and MergeFavicon().
-  EXPECT_EQ(3, num_broadcasted_notifications());
+  EXPECT_EQ(4, num_broadcasted_notifications());
 }
 
 // Test calling MergeFavicon() when |icon_url| is known to the database but not
@@ -1910,17 +2053,14 @@ TEST_F(HistoryBackendTest, MergeFaviconPageURLInDB) {
 TEST_F(HistoryBackendTest, MergeFaviconIconURLMappedToDifferentPageURL) {
   GURL page_url1("http://www.google.com");
   GURL page_url2("http://news.google.com");
+  GURL page_url3("http://maps.google.com");
   GURL icon_url("http:/www.google.com/favicon.ico");
 
-  IconURLSizesMap icon_url_sizes;
-  icon_url_sizes[icon_url] = GetSizesSmallAndLarge();
-
-  std::vector<FaviconBitmapData> favicon_bitmap_data;
+  std::vector<favicon_base::FaviconBitmapData> favicon_bitmap_data;
   GenerateFaviconBitmapData(icon_url, GetSizesSmall(),
                             &favicon_bitmap_data);
 
-  backend_->SetFavicons(page_url1, FAVICON, favicon_bitmap_data,
-                        icon_url_sizes);
+  backend_->SetFavicons(page_url1, favicon_base::FAVICON, favicon_bitmap_data);
 
   // Test initial state.
   std::vector<IconMapping> icon_mappings;
@@ -1929,30 +2069,52 @@ TEST_F(HistoryBackendTest, MergeFaviconIconURLMappedToDifferentPageURL) {
   EXPECT_EQ(1u, icon_mappings.size());
   EXPECT_EQ(icon_url, icon_mappings[0].icon_url);
 
-  FaviconSizes favicon_sizes;
-  EXPECT_TRUE(backend_->thumbnail_db_->GetFaviconHeader(
-      icon_mappings[0].icon_id, NULL, NULL, &favicon_sizes));
-  EXPECT_EQ(GetSizesSmallAndLarge(), favicon_sizes);
-
   FaviconBitmap favicon_bitmap;
   EXPECT_TRUE(GetOnlyFaviconBitmap(icon_mappings[0].icon_id, &favicon_bitmap));
+  EXPECT_NE(base::Time(), favicon_bitmap.last_updated);
   EXPECT_TRUE(BitmapDataEqual('a', favicon_bitmap.bitmap_data));
   EXPECT_EQ(kSmallSize, favicon_bitmap.pixel_size);
 
+  // 1) Merge in an identical favicon bitmap data but for a different page URL.
   std::vector<unsigned char> data;
-  data.push_back('b');
+  data.push_back('a');
   scoped_refptr<base::RefCountedBytes> bitmap_data(
       new base::RefCountedBytes(data));
-  backend_->MergeFavicon(page_url2, icon_url, FAVICON, bitmap_data, kSmallSize);
 
-  // The small favicon bitmap at |icon_url| should be overwritten. |page_url1|
-  // and |page_url2| should both map to the same favicon.
+  backend_->MergeFavicon(
+      page_url2, icon_url, favicon_base::FAVICON, bitmap_data, kSmallSize);
+
+  favicon_base::FaviconID favicon_id =
+      backend_->thumbnail_db_->GetFaviconIDForFaviconURL(
+          icon_url, favicon_base::FAVICON, NULL);
+  EXPECT_NE(0, favicon_id);
+
+  EXPECT_TRUE(GetOnlyFaviconBitmap(favicon_id, &favicon_bitmap));
+  EXPECT_NE(base::Time(), favicon_bitmap.last_updated);
+  EXPECT_TRUE(BitmapDataEqual('a', favicon_bitmap.bitmap_data));
+  EXPECT_EQ(kSmallSize, favicon_bitmap.pixel_size);
+
+  // 2) Merging a favicon bitmap with different bitmap data for the same icon
+  // URL should overwrite the small favicon bitmap at |icon_url|.
+  bitmap_data->data()[0] = 'b';
+  backend_->MergeFavicon(
+      page_url3, icon_url, favicon_base::FAVICON, bitmap_data, kSmallSize);
+
+  favicon_id = backend_->thumbnail_db_->GetFaviconIDForFaviconURL(
+      icon_url, favicon_base::FAVICON, NULL);
+  EXPECT_NE(0, favicon_id);
+
+  EXPECT_TRUE(GetOnlyFaviconBitmap(favicon_id, &favicon_bitmap));
+  EXPECT_NE(base::Time(), favicon_bitmap.last_updated);
+  EXPECT_TRUE(BitmapDataEqual('b', favicon_bitmap.bitmap_data));
+  EXPECT_EQ(kSmallSize, favicon_bitmap.pixel_size);
+
+  // |icon_url| should be mapped to all three page URLs.
   icon_mappings.clear();
   EXPECT_TRUE(backend_->thumbnail_db_->GetIconMappingsForPageURL(page_url1,
       &icon_mappings));
   EXPECT_EQ(1u, icon_mappings.size());
-  FaviconID favicon_id = icon_mappings[0].icon_id;
-  EXPECT_NE(0, favicon_id);
+  EXPECT_EQ(favicon_id, icon_mappings[0].icon_id);
 
   icon_mappings.clear();
   EXPECT_TRUE(backend_->thumbnail_db_->GetIconMappingsForPageURL(page_url2,
@@ -1960,14 +2122,15 @@ TEST_F(HistoryBackendTest, MergeFaviconIconURLMappedToDifferentPageURL) {
   EXPECT_EQ(1u, icon_mappings.size());
   EXPECT_EQ(favicon_id, icon_mappings[0].icon_id);
 
-  GURL icon_url_in_db;
-  EXPECT_TRUE(backend_->thumbnail_db_->GetFaviconHeader(
-      icon_mappings[0].icon_id, &icon_url_in_db, NULL, NULL));
-  EXPECT_EQ(icon_url, icon_url_in_db);
+  icon_mappings.clear();
+  EXPECT_TRUE(backend_->thumbnail_db_->GetIconMappingsForPageURL(page_url3,
+      &icon_mappings));
+  EXPECT_EQ(1u, icon_mappings.size());
+  EXPECT_EQ(favicon_id, icon_mappings[0].icon_id);
 
-  EXPECT_TRUE(GetOnlyFaviconBitmap(favicon_id, &favicon_bitmap));
-  EXPECT_TRUE(BitmapDataEqual('b', favicon_bitmap.bitmap_data));
-  EXPECT_EQ(kSmallSize, favicon_bitmap.pixel_size);
+  // A notification should have been broadcast for each call to SetFavicons()
+  // and MergeFavicon().
+  EXPECT_EQ(3, num_broadcasted_notifications());
 }
 
 // Test that MergeFavicon() does not add more than
@@ -1987,7 +2150,10 @@ TEST_F(HistoryBackendTest, MergeFaviconMaxFaviconBitmapsPerIconURL) {
     icon_url_string[replace_index] = '0' + i;
     GURL icon_url(icon_url_string);
 
-    backend_->MergeFavicon(page_url, icon_url, FAVICON, bitmap_data,
+    backend_->MergeFavicon(page_url,
+                           icon_url,
+                           favicon_base::FAVICON,
+                           bitmap_data,
                            gfx::Size(pixel_size, pixel_size));
     ++pixel_size;
   }
@@ -2011,37 +2177,150 @@ TEST_F(HistoryBackendTest, MergeFaviconShowsUpInGetFaviconsForURLResult) {
   GURL icon_url("http://www.google.com/favicon.ico");
   GURL merged_icon_url("http://wwww.google.com/favicon2.ico");
 
-  IconURLSizesMap icon_url_sizes;
-  icon_url_sizes[icon_url] = GetSizesSmallAndLarge();
-
-  std::vector<FaviconBitmapData> favicon_bitmap_data;
+  std::vector<favicon_base::FaviconBitmapData> favicon_bitmap_data;
   GenerateFaviconBitmapData(icon_url, GetSizesSmallAndLarge(),
                             &favicon_bitmap_data);
 
   // Set some preexisting favicons for |page_url|.
-  backend_->SetFavicons(page_url, FAVICON, favicon_bitmap_data,
-                        icon_url_sizes);
+  backend_->SetFavicons(page_url, favicon_base::FAVICON, favicon_bitmap_data);
 
   // Merge small favicon.
   std::vector<unsigned char> data;
   data.push_back('c');
   scoped_refptr<base::RefCountedBytes> bitmap_data(
       new base::RefCountedBytes(data));
-  backend_->MergeFavicon(page_url, merged_icon_url, FAVICON, bitmap_data,
+  backend_->MergeFavicon(page_url,
+                         merged_icon_url,
+                         favicon_base::FAVICON,
+                         bitmap_data,
                          kSmallSize);
 
   // Request favicon bitmaps for both 1x and 2x to simulate request done by
   // BookmarkModel::GetFavicon().
-  HistoryBackend::FaviconResults results;
-  backend_->GetFaviconsForURL(page_url, FAVICON, kSmallSize.width(),
-                              GetScaleFactors1x2x(), &results);
+  std::vector<favicon_base::FaviconBitmapResult> bitmap_results;
+  backend_->GetFaviconsForURL(page_url,
+                              favicon_base::FAVICON,
+                              kSmallSize.width(),
+                              GetScaleFactors1x2x(),
+                              &bitmap_results);
 
-  EXPECT_EQ(2u, results.bitmap_results.size());
-  const FaviconBitmapResult& first_result = results.bitmap_results[0];
-  const FaviconBitmapResult& result =
+  EXPECT_EQ(2u, bitmap_results.size());
+  const favicon_base::FaviconBitmapResult& first_result = bitmap_results[0];
+  const favicon_base::FaviconBitmapResult& result =
       (first_result.pixel_size == kSmallSize) ? first_result
-                                              : results.bitmap_results[1];
+                                              : bitmap_results[1];
   EXPECT_TRUE(BitmapDataEqual('c', result.bitmap_data));
+}
+
+// Tests GetFaviconsForURL with icon_types priority,
+TEST_F(HistoryBackendTest, TestGetFaviconsForURLWithIconTypesPriority) {
+  GURL page_url("http://www.google.com");
+  GURL icon_url("http://www.google.com/favicon.ico");
+  GURL touch_icon_url("http://wwww.google.com/touch_icon.ico");
+
+  std::vector<favicon_base::FaviconBitmapData> favicon_bitmap_data;
+  std::vector<gfx::Size> favicon_size;
+  favicon_size.push_back(gfx::Size(16, 16));
+  favicon_size.push_back(gfx::Size(32, 32));
+  GenerateFaviconBitmapData(icon_url, favicon_size, &favicon_bitmap_data);
+  ASSERT_EQ(2u, favicon_bitmap_data.size());
+
+  std::vector<favicon_base::FaviconBitmapData> touch_icon_bitmap_data;
+  std::vector<gfx::Size> touch_icon_size;
+  touch_icon_size.push_back(gfx::Size(64, 64));
+  GenerateFaviconBitmapData(icon_url, touch_icon_size, &touch_icon_bitmap_data);
+  ASSERT_EQ(1u, touch_icon_bitmap_data.size());
+
+  // Set some preexisting favicons for |page_url|.
+  backend_->SetFavicons(page_url, favicon_base::FAVICON, favicon_bitmap_data);
+  backend_->SetFavicons(
+      page_url, favicon_base::TOUCH_ICON, touch_icon_bitmap_data);
+
+  favicon_base::FaviconBitmapResult result;
+  std::vector<int> icon_types;
+  icon_types.push_back(favicon_base::FAVICON);
+  icon_types.push_back(favicon_base::TOUCH_ICON);
+
+  backend_->GetLargestFaviconForURL(page_url, icon_types, 16, &result);
+
+  // Verify the result icon is 32x32 favicon.
+  EXPECT_EQ(gfx::Size(32, 32), result.pixel_size);
+  EXPECT_EQ(favicon_base::FAVICON, result.icon_type);
+
+  // Change Minimal size to 32x32 and verify the 64x64 touch icon returned.
+  backend_->GetLargestFaviconForURL(page_url, icon_types, 32, &result);
+  EXPECT_EQ(gfx::Size(64, 64), result.pixel_size);
+  EXPECT_EQ(favicon_base::TOUCH_ICON, result.icon_type);
+}
+
+// Test the the first types of icon is returned if its size equal to the
+// second types icon.
+TEST_F(HistoryBackendTest, TestGetFaviconsForURLReturnFavicon) {
+  GURL page_url("http://www.google.com");
+  GURL icon_url("http://www.google.com/favicon.ico");
+  GURL touch_icon_url("http://wwww.google.com/touch_icon.ico");
+
+  std::vector<favicon_base::FaviconBitmapData> favicon_bitmap_data;
+  std::vector<gfx::Size> favicon_size;
+  favicon_size.push_back(gfx::Size(16, 16));
+  favicon_size.push_back(gfx::Size(32, 32));
+  GenerateFaviconBitmapData(icon_url, favicon_size, &favicon_bitmap_data);
+  ASSERT_EQ(2u, favicon_bitmap_data.size());
+
+  std::vector<favicon_base::FaviconBitmapData> touch_icon_bitmap_data;
+  std::vector<gfx::Size> touch_icon_size;
+  touch_icon_size.push_back(gfx::Size(32, 32));
+  GenerateFaviconBitmapData(icon_url, touch_icon_size, &touch_icon_bitmap_data);
+  ASSERT_EQ(1u, touch_icon_bitmap_data.size());
+
+  // Set some preexisting favicons for |page_url|.
+  backend_->SetFavicons(page_url, favicon_base::FAVICON, favicon_bitmap_data);
+  backend_->SetFavicons(
+      page_url, favicon_base::TOUCH_ICON, touch_icon_bitmap_data);
+
+  favicon_base::FaviconBitmapResult result;
+  std::vector<int> icon_types;
+  icon_types.push_back(favicon_base::FAVICON);
+  icon_types.push_back(favicon_base::TOUCH_ICON);
+
+  backend_->GetLargestFaviconForURL(page_url, icon_types, 16, &result);
+
+  // Verify the result icon is 32x32 favicon.
+  EXPECT_EQ(gfx::Size(32, 32), result.pixel_size);
+  EXPECT_EQ(favicon_base::FAVICON, result.icon_type);
+
+  // Change minimal size to 32x32 and verify the 32x32 favicon returned.
+  favicon_base::FaviconBitmapResult result1;
+  backend_->GetLargestFaviconForURL(page_url, icon_types, 32, &result1);
+  EXPECT_EQ(gfx::Size(32, 32), result1.pixel_size);
+  EXPECT_EQ(favicon_base::FAVICON, result1.icon_type);
+}
+
+// Test the favicon is returned if its size is smaller than minimal size,
+// because it is only one available.
+TEST_F(HistoryBackendTest, TestGetFaviconsForURLReturnFaviconEvenItSmaller) {
+  GURL page_url("http://www.google.com");
+  GURL icon_url("http://www.google.com/favicon.ico");
+
+  std::vector<favicon_base::FaviconBitmapData> favicon_bitmap_data;
+  std::vector<gfx::Size> favicon_size;
+  favicon_size.push_back(gfx::Size(16, 16));
+  GenerateFaviconBitmapData(icon_url, favicon_size, &favicon_bitmap_data);
+  ASSERT_EQ(1u, favicon_bitmap_data.size());
+
+  // Set preexisting favicons for |page_url|.
+  backend_->SetFavicons(page_url, favicon_base::FAVICON, favicon_bitmap_data);
+
+  favicon_base::FaviconBitmapResult result;
+  std::vector<int> icon_types;
+  icon_types.push_back(favicon_base::FAVICON);
+  icon_types.push_back(favicon_base::TOUCH_ICON);
+
+  backend_->GetLargestFaviconForURL(page_url, icon_types, 32, &result);
+
+  // Verify 16x16 icon is returned, even it small than minimal_size.
+  EXPECT_EQ(gfx::Size(16, 16), result.pixel_size);
+  EXPECT_EQ(favicon_base::FAVICON, result.icon_type);
 }
 
 // Test UpdateFaviconMapingsAndFetch() when multiple icon types are passed in.
@@ -2054,33 +2333,31 @@ TEST_F(HistoryBackendTest, UpdateFaviconMappingsAndFetchMultipleIconTypes) {
   GURL icon_urlc("http://www.google.com/favicon3.ico");
 
   // |page_url1| is mapped to |icon_urla| which if of type TOUCH_ICON.
-  IconURLSizesMap icon_url_sizes;
-  icon_url_sizes[icon_urla] = GetSizesSmall();
-
-  std::vector<FaviconBitmapData> favicon_bitmap_data;
+  std::vector<favicon_base::FaviconBitmapData> favicon_bitmap_data;
   GenerateFaviconBitmapData(icon_urla, GetSizesSmall(), &favicon_bitmap_data);
-  backend_->SetFavicons(page_url1, TOUCH_ICON, favicon_bitmap_data,
-                        icon_url_sizes);
+  backend_->SetFavicons(
+      page_url1, favicon_base::TOUCH_ICON, favicon_bitmap_data);
 
   // |page_url2| is mapped to |icon_urlb| and |icon_urlc| which are of type
   // TOUCH_PRECOMPOSED_ICON.
-  icon_url_sizes.clear();
-  icon_url_sizes[icon_urlb] = GetSizesSmall();
-  icon_url_sizes[icon_urlc] = GetSizesSmall();
   GenerateFaviconBitmapData(icon_urlb, GetSizesSmall(), icon_urlc,
                             GetSizesSmall(), &favicon_bitmap_data);
-  backend_->SetFavicons(page_url2, TOUCH_PRECOMPOSED_ICON, favicon_bitmap_data,
-                        icon_url_sizes);
+  backend_->SetFavicons(
+      page_url2, favicon_base::TOUCH_PRECOMPOSED_ICON, favicon_bitmap_data);
 
   std::vector<GURL> icon_urls;
   icon_urls.push_back(icon_urla);
   icon_urls.push_back(icon_urlb);
   icon_urls.push_back(icon_urlc);
 
-  HistoryBackend::FaviconResults results;
+  std::vector<favicon_base::FaviconBitmapResult> bitmap_results;
   backend_->UpdateFaviconMappingsAndFetch(
-      page_url3, icon_urls, (TOUCH_ICON | TOUCH_PRECOMPOSED_ICON),
-      kSmallSize.width(), GetScaleFactors1x2x(), &results);
+      page_url3,
+      icon_urls,
+      (favicon_base::TOUCH_ICON | favicon_base::TOUCH_PRECOMPOSED_ICON),
+      kSmallSize.width(),
+      GetScaleFactors1x2x(),
+      &bitmap_results);
 
   // |page_url1| and |page_url2| should still be mapped to the same icon URLs.
   std::vector<IconMapping> icon_mappings;
@@ -2088,15 +2365,15 @@ TEST_F(HistoryBackendTest, UpdateFaviconMappingsAndFetchMultipleIconTypes) {
       &icon_mappings));
   EXPECT_EQ(1u, icon_mappings.size());
   EXPECT_EQ(icon_urla, icon_mappings[0].icon_url);
-  EXPECT_EQ(TOUCH_ICON, icon_mappings[0].icon_type);
+  EXPECT_EQ(favicon_base::TOUCH_ICON, icon_mappings[0].icon_type);
 
   icon_mappings.clear();
   EXPECT_TRUE(GetSortedIconMappingsForPageURL(page_url2, &icon_mappings));
   EXPECT_EQ(2u, icon_mappings.size());
   EXPECT_EQ(icon_urlb, icon_mappings[0].icon_url);
-  EXPECT_EQ(TOUCH_PRECOMPOSED_ICON, icon_mappings[0].icon_type);
+  EXPECT_EQ(favicon_base::TOUCH_PRECOMPOSED_ICON, icon_mappings[0].icon_type);
   EXPECT_EQ(icon_urlc, icon_mappings[1].icon_url);
-  EXPECT_EQ(TOUCH_PRECOMPOSED_ICON, icon_mappings[1].icon_type);
+  EXPECT_EQ(favicon_base::TOUCH_PRECOMPOSED_ICON, icon_mappings[1].icon_type);
 
   // |page_url3| should be mapped only to |icon_urlb| and |icon_urlc| as
   // TOUCH_PRECOMPOSED_ICON is the largest IconType.
@@ -2104,9 +2381,9 @@ TEST_F(HistoryBackendTest, UpdateFaviconMappingsAndFetchMultipleIconTypes) {
   EXPECT_TRUE(GetSortedIconMappingsForPageURL(page_url3, &icon_mappings));
   EXPECT_EQ(2u, icon_mappings.size());
   EXPECT_EQ(icon_urlb, icon_mappings[0].icon_url);
-  EXPECT_EQ(TOUCH_PRECOMPOSED_ICON, icon_mappings[0].icon_type);
+  EXPECT_EQ(favicon_base::TOUCH_PRECOMPOSED_ICON, icon_mappings[0].icon_type);
   EXPECT_EQ(icon_urlc, icon_mappings[1].icon_url);
-  EXPECT_EQ(TOUCH_PRECOMPOSED_ICON, icon_mappings[1].icon_type);
+  EXPECT_EQ(favicon_base::TOUCH_PRECOMPOSED_ICON, icon_mappings[1].icon_type);
 }
 
 // Test the results of GetFaviconsFromDB() when there are no found
@@ -2114,13 +2391,13 @@ TEST_F(HistoryBackendTest, UpdateFaviconMappingsAndFetchMultipleIconTypes) {
 TEST_F(HistoryBackendTest, GetFaviconsFromDBEmpty) {
   const GURL page_url("http://www.google.com/");
 
-  std::vector<FaviconBitmapResult> bitmap_results;
-  IconURLSizesMap icon_url_sizes;
-  EXPECT_FALSE(backend_->GetFaviconsFromDB(page_url, FAVICON,
-      kSmallSize.width(), GetScaleFactors1x2x(), &bitmap_results,
-      &icon_url_sizes));
+  std::vector<favicon_base::FaviconBitmapResult> bitmap_results;
+  EXPECT_FALSE(backend_->GetFaviconsFromDB(page_url,
+                                           favicon_base::FAVICON,
+                                           kSmallSize.width(),
+                                           GetScaleFactors1x2x(),
+                                           &bitmap_results));
   EXPECT_TRUE(bitmap_results.empty());
-  EXPECT_TRUE(icon_url_sizes.empty());
 }
 
 // Test the results of GetFaviconsFromDB() when there are matching favicons
@@ -2129,51 +2406,45 @@ TEST_F(HistoryBackendTest, GetFaviconsFromDBNoFaviconBitmaps) {
   const GURL page_url("http://www.google.com/");
   const GURL icon_url("http://www.google.com/icon1");
 
-  IconURLSizesMap icon_url_sizes;
-  icon_url_sizes[icon_url] = GetSizesSmallAndLarge();
+  favicon_base::FaviconID icon_id =
+      backend_->thumbnail_db_->AddFavicon(icon_url, favicon_base::FAVICON);
+  EXPECT_NE(0, icon_id);
+  EXPECT_NE(0, backend_->thumbnail_db_->AddIconMapping(page_url, icon_id));
 
-  // No favicon bitmaps.
-  std::vector<FaviconBitmapData> favicon_bitmap_data;
-
-  backend_->SetFavicons(page_url, FAVICON, favicon_bitmap_data,
-                        icon_url_sizes);
-
-  std::vector<FaviconBitmapResult> bitmap_results_out;
-  IconURLSizesMap icon_url_sizes_out;
-  EXPECT_TRUE(backend_->GetFaviconsFromDB(page_url, FAVICON, kSmallSize.width(),
-      GetScaleFactors1x2x(), &bitmap_results_out, &icon_url_sizes_out));
+  std::vector<favicon_base::FaviconBitmapResult> bitmap_results_out;
+  EXPECT_FALSE(backend_->GetFaviconsFromDB(page_url,
+                                           favicon_base::FAVICON,
+                                           kSmallSize.width(),
+                                           GetScaleFactors1x2x(),
+                                           &bitmap_results_out));
   EXPECT_TRUE(bitmap_results_out.empty());
-  EXPECT_EQ(icon_url_sizes, icon_url_sizes_out);
 }
 
 // Test that GetFaviconsFromDB() returns results for the bitmaps which most
 // closely match the passed in desired size and scale factors.
 TEST_F(HistoryBackendTest, GetFaviconsFromDBSelectClosestMatch) {
   const GURL page_url("http://www.google.com/");
-
   const GURL icon_url("http://www.google.com/icon1");
-  IconURLSizesMap icon_url_sizes;
-  icon_url_sizes[icon_url] = GetSizesTinySmallAndLarge();
 
-  std::vector<FaviconBitmapData> favicon_bitmap_data;
+  std::vector<favicon_base::FaviconBitmapData> favicon_bitmap_data;
   GenerateFaviconBitmapData(icon_url, GetSizesTinySmallAndLarge(),
                             &favicon_bitmap_data);
 
-  backend_->SetFavicons(page_url, FAVICON, favicon_bitmap_data,
-                        icon_url_sizes);
+  backend_->SetFavicons(page_url, favicon_base::FAVICON, favicon_bitmap_data);
 
-  std::vector<FaviconBitmapResult> bitmap_results_out;
-  IconURLSizesMap icon_url_sizes_out;
-  EXPECT_TRUE(backend_->GetFaviconsFromDB(page_url, FAVICON, kSmallSize.width(),
-      GetScaleFactors1x2x(), &bitmap_results_out, &icon_url_sizes_out));
+  std::vector<favicon_base::FaviconBitmapResult> bitmap_results_out;
+  EXPECT_TRUE(backend_->GetFaviconsFromDB(page_url,
+                                          favicon_base::FAVICON,
+                                          kSmallSize.width(),
+                                          GetScaleFactors1x2x(),
+                                          &bitmap_results_out));
 
-  // The bitmap data for the 1x and 2x bitmaps should be returned as their sizes
-  // match exactly.
-
+  // The bitmap data for the small and large bitmaps should be returned as their
+  // sizes match exactly.
   EXPECT_EQ(2u, bitmap_results_out.size());
   // No required order for results.
   if (bitmap_results_out[0].pixel_size == kLargeSize) {
-    FaviconBitmapResult tmp_result = bitmap_results_out[0];
+    favicon_base::FaviconBitmapResult tmp_result = bitmap_results_out[0];
     bitmap_results_out[0] = bitmap_results_out[1];
     bitmap_results_out[1] = tmp_result;
   }
@@ -2182,15 +2453,13 @@ TEST_F(HistoryBackendTest, GetFaviconsFromDBSelectClosestMatch) {
   EXPECT_TRUE(BitmapDataEqual('b', bitmap_results_out[0].bitmap_data));
   EXPECT_EQ(kSmallSize, bitmap_results_out[0].pixel_size);
   EXPECT_EQ(icon_url, bitmap_results_out[0].icon_url);
-  EXPECT_EQ(FAVICON, bitmap_results_out[0].icon_type);
+  EXPECT_EQ(favicon_base::FAVICON, bitmap_results_out[0].icon_type);
 
   EXPECT_FALSE(bitmap_results_out[1].expired);
   EXPECT_TRUE(BitmapDataEqual('c', bitmap_results_out[1].bitmap_data));
   EXPECT_EQ(kLargeSize, bitmap_results_out[1].pixel_size);
   EXPECT_EQ(icon_url, bitmap_results_out[1].icon_url);
-  EXPECT_EQ(FAVICON, bitmap_results_out[1].icon_type);
-
-  EXPECT_EQ(icon_url_sizes, icon_url_sizes_out);
+  EXPECT_EQ(favicon_base::FAVICON, bitmap_results_out[1].icon_type);
 }
 
 // Test that GetFaviconsFromDB() returns results from the icon URL whose
@@ -2200,29 +2469,25 @@ TEST_F(HistoryBackendTest, GetFaviconsFromDBSingleIconURL) {
 
   const GURL icon_url1("http://www.google.com/icon1");
   const GURL icon_url2("http://www.google.com/icon2");
-  IconURLSizesMap icon_url_sizes;
-  icon_url_sizes[icon_url1] = GetSizesSmall();
-  icon_url_sizes[icon_url2] = GetSizesSmallAndLarge();
 
-  std::vector<FaviconBitmapData> favicon_bitmap_data;
+  std::vector<favicon_base::FaviconBitmapData> favicon_bitmap_data;
   GenerateFaviconBitmapData(icon_url1, GetSizesSmall(), icon_url2,
                             GetSizesLarge(), &favicon_bitmap_data);
 
-  backend_->SetFavicons(page_url, FAVICON, favicon_bitmap_data,
-                        icon_url_sizes);
+  backend_->SetFavicons(page_url, favicon_base::FAVICON, favicon_bitmap_data);
 
-  std::vector<FaviconBitmapResult> bitmap_results_out;
-  IconURLSizesMap icon_url_sizes_out;
-  EXPECT_TRUE(backend_->GetFaviconsFromDB(page_url, FAVICON, kSmallSize.width(),
-      GetScaleFactors1x2x(), &bitmap_results_out, &icon_url_sizes_out));
+  std::vector<favicon_base::FaviconBitmapResult> bitmap_results_out;
+  EXPECT_TRUE(backend_->GetFaviconsFromDB(page_url,
+                                          favicon_base::FAVICON,
+                                          kSmallSize.width(),
+                                          GetScaleFactors1x2x(),
+                                          &bitmap_results_out));
 
   // The results should have results for the icon URL with the large bitmap as
   // downscaling is preferred to upscaling.
   EXPECT_EQ(1u, bitmap_results_out.size());
   EXPECT_EQ(kLargeSize, bitmap_results_out[0].pixel_size);
   EXPECT_EQ(icon_url2, bitmap_results_out[0].icon_url);
-
-  EXPECT_EQ(icon_url_sizes, icon_url_sizes_out);
 }
 
 // Test the results of GetFaviconsFromDB() when called with different
@@ -2232,39 +2497,35 @@ TEST_F(HistoryBackendTest, GetFaviconsFromDBIconType) {
   const GURL icon_url1("http://www.google.com/icon1.png");
   const GURL icon_url2("http://www.google.com/icon2.png");
 
-  IconURLSizesMap icon_url_sizes;
-  icon_url_sizes[icon_url1] = GetSizesSmall();
-
-  std::vector<FaviconBitmapData> favicon_bitmap_data;
+  std::vector<favicon_base::FaviconBitmapData> favicon_bitmap_data;
   GenerateFaviconBitmapData(icon_url1, GetSizesSmall(),  &favicon_bitmap_data);
-  backend_->SetFavicons(page_url, FAVICON, favicon_bitmap_data,
-                        icon_url_sizes);
+  backend_->SetFavicons(page_url, favicon_base::FAVICON, favicon_bitmap_data);
 
-  IconURLSizesMap touch_icon_url_sizes;
-  touch_icon_url_sizes[icon_url2] = GetSizesSmall();
   GenerateFaviconBitmapData(icon_url2, GetSizesSmall(), &favicon_bitmap_data);
-  backend_->SetFavicons(page_url, TOUCH_ICON, favicon_bitmap_data,
-                        touch_icon_url_sizes);
+  backend_->SetFavicons(
+      page_url, favicon_base::TOUCH_ICON, favicon_bitmap_data);
 
-  std::vector<FaviconBitmapResult> bitmap_results_out;
-  IconURLSizesMap icon_url_sizes_out;
-  EXPECT_TRUE(backend_->GetFaviconsFromDB(page_url, FAVICON,
-      kSmallSize.width(), GetScaleFactors1x2x(), &bitmap_results_out,
-      &icon_url_sizes_out));
+  std::vector<favicon_base::FaviconBitmapResult> bitmap_results_out;
+  EXPECT_TRUE(backend_->GetFaviconsFromDB(page_url,
+                                          favicon_base::FAVICON,
+                                          kSmallSize.width(),
+                                          GetScaleFactors1x2x(),
+                                          &bitmap_results_out));
 
   EXPECT_EQ(1u, bitmap_results_out.size());
-  EXPECT_EQ(FAVICON, bitmap_results_out[0].icon_type);
-  EXPECT_EQ(icon_url_sizes, icon_url_sizes_out);
+  EXPECT_EQ(favicon_base::FAVICON, bitmap_results_out[0].icon_type);
+  EXPECT_EQ(icon_url1, bitmap_results_out[0].icon_url);
 
   bitmap_results_out.clear();
-  icon_url_sizes_out.clear();
-  EXPECT_TRUE(backend_->GetFaviconsFromDB(page_url, TOUCH_ICON,
-      kSmallSize.width(), GetScaleFactors1x2x(), &bitmap_results_out,
-      &icon_url_sizes_out));
+  EXPECT_TRUE(backend_->GetFaviconsFromDB(page_url,
+                                          favicon_base::TOUCH_ICON,
+                                          kSmallSize.width(),
+                                          GetScaleFactors1x2x(),
+                                          &bitmap_results_out));
 
   EXPECT_EQ(1u, bitmap_results_out.size());
-  EXPECT_EQ(TOUCH_ICON, bitmap_results_out[0].icon_type);
-  EXPECT_EQ(touch_icon_url_sizes, icon_url_sizes_out);
+  EXPECT_EQ(favicon_base::TOUCH_ICON, bitmap_results_out[0].icon_type);
+  EXPECT_EQ(icon_url2, bitmap_results_out[0].icon_url);
 }
 
 // Test that GetFaviconsFromDB() correctly sets the expired flag for bitmap
@@ -2278,16 +2539,17 @@ TEST_F(HistoryBackendTest, GetFaviconsFromDBExpired) {
   scoped_refptr<base::RefCountedBytes> bitmap_data(
       base::RefCountedBytes::TakeVector(&data));
   base::Time last_updated = base::Time::FromTimeT(0);
-  FaviconID icon_id = backend_->thumbnail_db_->AddFavicon(icon_url, FAVICON,
-      GetSizesSmallAndLarge(), bitmap_data, last_updated, kSmallSize);
+  favicon_base::FaviconID icon_id = backend_->thumbnail_db_->AddFavicon(
+      icon_url, favicon_base::FAVICON, bitmap_data, last_updated, kSmallSize);
   EXPECT_NE(0, icon_id);
   EXPECT_NE(0, backend_->thumbnail_db_->AddIconMapping(page_url, icon_id));
 
-  std::vector<FaviconBitmapResult> bitmap_results_out;
-  IconURLSizesMap icon_url_sizes_out;
-  EXPECT_TRUE(backend_->GetFaviconsFromDB(page_url, FAVICON,
-      kSmallSize.width(), GetScaleFactors1x2x(), &bitmap_results_out,
-      &icon_url_sizes_out));
+  std::vector<favicon_base::FaviconBitmapResult> bitmap_results_out;
+  EXPECT_TRUE(backend_->GetFaviconsFromDB(page_url,
+                                          favicon_base::FAVICON,
+                                          kSmallSize.width(),
+                                          GetScaleFactors1x2x(),
+                                          &bitmap_results_out));
 
   EXPECT_EQ(1u, bitmap_results_out.size());
   EXPECT_TRUE(bitmap_results_out[0].expired);
@@ -2299,16 +2561,16 @@ TEST_F(HistoryBackendTest, UpdateFaviconMappingsAndFetchNoDB) {
   // Make the thumbnail database invalid.
   backend_->thumbnail_db_.reset();
 
-  HistoryBackend::FaviconResults results;
-  results.bitmap_results.push_back(FaviconBitmapResult());
-  results.size_map[GURL()] = FaviconSizes();
+  std::vector<favicon_base::FaviconBitmapResult> bitmap_results;
 
-  backend_->UpdateFaviconMappingsAndFetch(
-      GURL(), std::vector<GURL>(), FAVICON, kSmallSize.width(),
-      GetScaleFactors1x2x(), &results);
+  backend_->UpdateFaviconMappingsAndFetch(GURL(),
+                                          std::vector<GURL>(),
+                                          favicon_base::FAVICON,
+                                          kSmallSize.width(),
+                                          GetScaleFactors1x2x(),
+                                          &bitmap_results);
 
-  EXPECT_TRUE(results.bitmap_results.empty());
-  EXPECT_TRUE(results.size_map.empty());
+  EXPECT_TRUE(bitmap_results.empty());
 }
 
 TEST_F(HistoryBackendTest, CloneFaviconIsRestrictedToSameDomain) {
@@ -2318,39 +2580,45 @@ TEST_F(HistoryBackendTest, CloneFaviconIsRestrictedToSameDomain) {
   const GURL icon_url("http://www.google.com/icon.png");
 
   // Add a favicon
-  IconURLSizesMap icon_url_sizes;
-  icon_url_sizes[icon_url] = GetSizesSmall();
-
-  std::vector<FaviconBitmapData> favicon_bitmap_data;
+  std::vector<favicon_base::FaviconBitmapData> favicon_bitmap_data;
   GenerateFaviconBitmapData(icon_url, GetSizesSmall(),  &favicon_bitmap_data);
-  backend_->SetFavicons(url, FAVICON, favicon_bitmap_data, icon_url_sizes);
+  backend_->SetFavicons(url, favicon_base::FAVICON, favicon_bitmap_data);
   EXPECT_TRUE(backend_->thumbnail_db_->GetIconMappingsForPageURL(
-      url, FAVICON, NULL));
+      url, favicon_base::FAVICON, NULL));
 
   // Validate starting state.
-  std::vector<FaviconBitmapResult> bitmap_results_out;
-  IconURLSizesMap icon_url_sizes_out;
-  EXPECT_TRUE(backend_->GetFaviconsFromDB(url, FAVICON,
-      kSmallSize.width(), GetScaleFactors1x2x(), &bitmap_results_out,
-      &icon_url_sizes_out));
-  EXPECT_FALSE(backend_->GetFaviconsFromDB(same_domain_url, FAVICON,
-      kSmallSize.width(), GetScaleFactors1x2x(), &bitmap_results_out,
-      &icon_url_sizes_out));
-  EXPECT_FALSE(backend_->GetFaviconsFromDB(foreign_domain_url, FAVICON,
-      kSmallSize.width(), GetScaleFactors1x2x(), &bitmap_results_out,
-      &icon_url_sizes_out));
+  std::vector<favicon_base::FaviconBitmapResult> bitmap_results_out;
+  EXPECT_TRUE(backend_->GetFaviconsFromDB(url,
+                                          favicon_base::FAVICON,
+                                          kSmallSize.width(),
+                                          GetScaleFactors1x2x(),
+                                          &bitmap_results_out));
+  EXPECT_FALSE(backend_->GetFaviconsFromDB(same_domain_url,
+                                           favicon_base::FAVICON,
+                                           kSmallSize.width(),
+                                           GetScaleFactors1x2x(),
+                                           &bitmap_results_out));
+  EXPECT_FALSE(backend_->GetFaviconsFromDB(foreign_domain_url,
+                                           favicon_base::FAVICON,
+                                           kSmallSize.width(),
+                                           GetScaleFactors1x2x(),
+                                           &bitmap_results_out));
 
   // Same-domain cloning should work.
   backend_->CloneFavicons(url, same_domain_url);
-  EXPECT_TRUE(backend_->GetFaviconsFromDB(same_domain_url, FAVICON,
-      kSmallSize.width(), GetScaleFactors1x2x(), &bitmap_results_out,
-      &icon_url_sizes_out));
+  EXPECT_TRUE(backend_->GetFaviconsFromDB(same_domain_url,
+                                          favicon_base::FAVICON,
+                                          kSmallSize.width(),
+                                          GetScaleFactors1x2x(),
+                                          &bitmap_results_out));
 
   // Foreign-domain cloning is forbidden.
   backend_->CloneFavicons(url, foreign_domain_url);
-  EXPECT_FALSE(backend_->GetFaviconsFromDB(foreign_domain_url, FAVICON,
-      kSmallSize.width(), GetScaleFactors1x2x(), &bitmap_results_out,
-      &icon_url_sizes_out));
+  EXPECT_FALSE(backend_->GetFaviconsFromDB(foreign_domain_url,
+                                           favicon_base::FAVICON,
+                                           kSmallSize.width(),
+                                           GetScaleFactors1x2x(),
+                                           &bitmap_results_out));
 }
 
 TEST_F(HistoryBackendTest, QueryFilteredURLs) {
@@ -2440,7 +2708,7 @@ TEST_F(HistoryBackendTest, QueryFilteredURLs) {
                      base::Unretained(static_cast<HistoryBackendTest*>(this))));
   HistoryBackendCancelableRequest cancellable_request;
   cancellable_request.MockScheduleOfRequest<QueryFilteredURLsRequest>(
-      request1);
+      request1.get());
 
   VisitFilter filter;
   // Time limit is |tested_time| +/- 45 min.
@@ -2463,7 +2731,7 @@ TEST_F(HistoryBackendTest, QueryFilteredURLs) {
           base::Bind(&HistoryBackendTest::OnQueryFiltered,
                      base::Unretained(static_cast<HistoryBackendTest*>(this))));
   cancellable_request.MockScheduleOfRequest<QueryFilteredURLsRequest>(
-      request2);
+      request2.get());
   filter.SetFilterTime(tested_time + one_hour);
   filter.SetFilterWidth(one_hour);
   backend_->QueryFilteredURLs(request2, 100, filter, false);
@@ -2479,7 +2747,7 @@ TEST_F(HistoryBackendTest, QueryFilteredURLs) {
           base::Bind(&HistoryBackendTest::OnQueryFiltered,
                      base::Unretained(static_cast<HistoryBackendTest*>(this))));
   cancellable_request.MockScheduleOfRequest<QueryFilteredURLsRequest>(
-      request3);
+      request3.get());
   filter.SetFilterTime(tested_time - one_hour);
   filter.SetFilterWidth(one_hour);
   backend_->QueryFilteredURLs(request3, 100, filter, false);
@@ -2500,7 +2768,7 @@ TEST_F(HistoryBackendTest, QueryFilteredURLs) {
           base::Bind(&HistoryBackendTest::OnQueryFiltered,
                      base::Unretained(static_cast<HistoryBackendTest*>(this))));
   cancellable_request.MockScheduleOfRequest<QueryFilteredURLsRequest>(
-      request4);
+      request4.get());
   filter.SetFilterTime(tested_time);
   filter.SetDayOfTheWeekFilter(static_cast<int>(exploded_time.day_of_week));
   backend_->QueryFilteredURLs(request4, 100, filter, false);
@@ -2516,7 +2784,7 @@ TEST_F(HistoryBackendTest, QueryFilteredURLs) {
           base::Bind(&HistoryBackendTest::OnQueryFiltered,
                      base::Unretained(static_cast<HistoryBackendTest*>(this))));
   cancellable_request.MockScheduleOfRequest<QueryFilteredURLsRequest>(
-      request5);
+      request5.get());
   filter.SetFilterTime(tested_time - base::TimeDelta::FromMinutes(40));
   filter.SetFilterWidth(base::TimeDelta::FromMinutes(20));
   backend_->QueryFilteredURLs(request5, 100, filter, false);
@@ -2531,7 +2799,7 @@ TEST_F(HistoryBackendTest, QueryFilteredURLs) {
           base::Bind(&HistoryBackendTest::OnQueryFiltered,
                      base::Unretained(static_cast<HistoryBackendTest*>(this))));
   cancellable_request.MockScheduleOfRequest<QueryFilteredURLsRequest>(
-      request6);
+      request6.get());
   filter.SetFilterTime(tested_time);
   filter.SetFilterWidth(one_hour * 2);
   backend_->QueryFilteredURLs(request6, 100, filter, true);
@@ -2601,7 +2869,7 @@ TEST_F(HistoryBackendTest, MigrationVisitDuration) {
   backend_->Closing();
   backend_ = NULL;
 
-  FilePath old_history_path, old_history, old_archived;
+  base::FilePath old_history_path, old_history, old_archived;
   ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &old_history_path));
   old_history_path = old_history_path.AppendASCII("History");
   old_history = old_history_path.AppendASCII("HistoryNoDuration");
@@ -2609,19 +2877,19 @@ TEST_F(HistoryBackendTest, MigrationVisitDuration) {
 
   // Copy history database file to current directory so that it will be deleted
   // in Teardown.
-  FilePath new_history_path(getTestDir());
-  file_util::Delete(new_history_path, true);
-  file_util::CreateDirectory(new_history_path);
-  FilePath new_history_file = new_history_path.Append(chrome::kHistoryFilename);
-  FilePath new_archived_file =
+  base::FilePath new_history_path(test_dir());
+  base::DeleteFile(new_history_path, true);
+  base::CreateDirectory(new_history_path);
+  base::FilePath new_history_file =
+      new_history_path.Append(chrome::kHistoryFilename);
+  base::FilePath new_archived_file =
       new_history_path.Append(chrome::kArchivedHistoryFilename);
-  ASSERT_TRUE(file_util::CopyFile(old_history, new_history_file));
-  ASSERT_TRUE(file_util::CopyFile(old_archived, new_archived_file));
+  ASSERT_TRUE(base::CopyFile(old_history, new_history_file));
+  ASSERT_TRUE(base::CopyFile(old_archived, new_archived_file));
 
   backend_ = new HistoryBackend(new_history_path,
-                                0,
                                 new HistoryBackendTestDelegate(this),
-                                &bookmark_model_);
+                                bookmark_model_.get());
   backend_->Init(std::string(), false);
   backend_->Closing();
   backend_ = NULL;
@@ -2666,7 +2934,7 @@ TEST_F(HistoryBackendTest, AddPageNoVisitForBookmark) {
   ASSERT_TRUE(backend_.get());
 
   GURL url("http://www.google.com");
-  string16 title(UTF8ToUTF16("Bookmark title"));
+  base::string16 title(base::UTF8ToUTF16("Bookmark title"));
   backend_->AddPageNoVisitForBookmark(url, title);
 
   URLRow row;
@@ -2676,19 +2944,20 @@ TEST_F(HistoryBackendTest, AddPageNoVisitForBookmark) {
   EXPECT_EQ(0, row.visit_count());
 
   backend_->DeleteURL(url);
-  backend_->AddPageNoVisitForBookmark(url, string16());
+  backend_->AddPageNoVisitForBookmark(url, base::string16());
   backend_->GetURL(url, &row);
   EXPECT_EQ(url, row.url());
-  EXPECT_EQ(UTF8ToUTF16(url.spec()), row.title());
+  EXPECT_EQ(base::UTF8ToUTF16(url.spec()), row.title());
   EXPECT_EQ(0, row.visit_count());
 }
 
 TEST_F(HistoryBackendTest, ExpireHistoryForTimes) {
   ASSERT_TRUE(backend_.get());
 
-  HistoryAddPageArgs args[5];
+  HistoryAddPageArgs args[10];
   for (size_t i = 0; i < arraysize(args); ++i) {
-    args[i].url = GURL("http://example" + base::IntToString(i) + ".com");
+    args[i].url = GURL("http://example" +
+                       std::string((i % 2 == 0 ? ".com" : ".net")));
     args[i].time = base::Time::FromInternalValue(i);
     backend_->AddPage(args[i]);
   }
@@ -2699,22 +2968,426 @@ TEST_F(HistoryBackendTest, ExpireHistoryForTimes) {
     EXPECT_TRUE(backend_->GetURL(args[i].url, &row));
   }
 
-  std::vector<base::Time> times;
-  times.push_back(args[0].time);
-  // Insert twice to make sure we handle duplicate times correctly.
-  times.push_back(args[2].time);
-  times.push_back(args[2].time);
-  times.push_back(args[4].time);
-  backend_->ExpireHistoryForTimes(times);
+  std::set<base::Time> times;
+  times.insert(args[5].time);
+  backend_->ExpireHistoryForTimes(times,
+                                  base::Time::FromInternalValue(2),
+                                  base::Time::FromInternalValue(8));
 
-  EXPECT_EQ(base::Time::FromInternalValue(1),
+  EXPECT_EQ(base::Time::FromInternalValue(0),
             backend_->GetFirstRecordedTimeForTest());
 
-  EXPECT_FALSE(backend_->GetURL(args[0].url, &row));
-  EXPECT_TRUE(backend_->GetURL(args[1].url, &row));
-  EXPECT_FALSE(backend_->GetURL(args[2].url, &row));
-  EXPECT_TRUE(backend_->GetURL(args[3].url, &row));
-  EXPECT_FALSE(backend_->GetURL(args[4].url, &row));
+  // Visits to http://example.com are untouched.
+  VisitVector visit_vector;
+  EXPECT_TRUE(backend_->GetVisitsForURL(
+      backend_->db_->GetRowForURL(GURL("http://example.com"), NULL),
+      &visit_vector));
+  ASSERT_EQ(5u, visit_vector.size());
+  EXPECT_EQ(base::Time::FromInternalValue(0), visit_vector[0].visit_time);
+  EXPECT_EQ(base::Time::FromInternalValue(2), visit_vector[1].visit_time);
+  EXPECT_EQ(base::Time::FromInternalValue(4), visit_vector[2].visit_time);
+  EXPECT_EQ(base::Time::FromInternalValue(6), visit_vector[3].visit_time);
+  EXPECT_EQ(base::Time::FromInternalValue(8), visit_vector[4].visit_time);
+
+  // Visits to http://example.net between [2,8] are removed.
+  visit_vector.clear();
+  EXPECT_TRUE(backend_->GetVisitsForURL(
+      backend_->db_->GetRowForURL(GURL("http://example.net"), NULL),
+      &visit_vector));
+  ASSERT_EQ(2u, visit_vector.size());
+  EXPECT_EQ(base::Time::FromInternalValue(1), visit_vector[0].visit_time);
+  EXPECT_EQ(base::Time::FromInternalValue(9), visit_vector[1].visit_time);
+
+  EXPECT_EQ(base::Time::FromInternalValue(0),
+            backend_->GetFirstRecordedTimeForTest());
+}
+
+TEST_F(HistoryBackendTest, ExpireHistory) {
+  ASSERT_TRUE(backend_.get());
+  // Since history operations are dependent on the local timezone, make all
+  // entries relative to a fixed, local reference time.
+  base::Time reference_time = base::Time::UnixEpoch().LocalMidnight() +
+                              base::TimeDelta::FromHours(12);
+
+  // Insert 4 entries into the database.
+  HistoryAddPageArgs args[4];
+  for (size_t i = 0; i < arraysize(args); ++i) {
+    args[i].url = GURL("http://example" + base::IntToString(i) + ".com");
+    args[i].time = reference_time + base::TimeDelta::FromDays(i);
+    backend_->AddPage(args[i]);
+  }
+
+  URLRow url_rows[4];
+  for (unsigned int i = 0; i < arraysize(args); ++i)
+    ASSERT_TRUE(backend_->GetURL(args[i].url, &url_rows[i]));
+
+  std::vector<ExpireHistoryArgs> expire_list;
+  VisitVector visits;
+
+  // Passing an empty map should be a no-op.
+  backend_->ExpireHistory(expire_list);
+  backend_->db()->GetAllVisitsInRange(base::Time(), base::Time(), 0, &visits);
+  EXPECT_EQ(4U, visits.size());
+
+  // Trying to delete an unknown URL with the time of the first visit should
+  // also be a no-op.
+  expire_list.resize(expire_list.size() + 1);
+  expire_list[0].SetTimeRangeForOneDay(args[0].time);
+  expire_list[0].urls.insert(GURL("http://google.does-not-exist"));
+  backend_->ExpireHistory(expire_list);
+  backend_->db()->GetAllVisitsInRange(base::Time(), base::Time(), 0, &visits);
+  EXPECT_EQ(4U, visits.size());
+
+  // Now add the first URL with the same time -- it should get deleted.
+  expire_list.back().urls.insert(url_rows[0].url());
+  backend_->ExpireHistory(expire_list);
+
+  backend_->db()->GetAllVisitsInRange(base::Time(), base::Time(), 0, &visits);
+  ASSERT_EQ(3U, visits.size());
+  EXPECT_EQ(visits[0].url_id, url_rows[1].id());
+  EXPECT_EQ(visits[1].url_id, url_rows[2].id());
+  EXPECT_EQ(visits[2].url_id, url_rows[3].id());
+
+  // The first recorded time should also get updated.
+  EXPECT_EQ(backend_->GetFirstRecordedTimeForTest(), args[1].time);
+
+  // Now delete the rest of the visits in one call.
+  for (unsigned int i = 1; i < arraysize(args); ++i) {
+    expire_list.resize(expire_list.size() + 1);
+    expire_list[i].SetTimeRangeForOneDay(args[i].time);
+    expire_list[i].urls.insert(args[i].url);
+  }
+  backend_->ExpireHistory(expire_list);
+
+  backend_->db()->GetAllVisitsInRange(base::Time(), base::Time(), 0, &visits);
+  ASSERT_EQ(0U, visits.size());
+}
+
+TEST_F(HistoryBackendTest, DeleteMatchingUrlsForKeyword) {
+  // Set up urls and keyword_search_terms
+  GURL url1("https://www.bing.com/?q=bar");
+  URLRow url_info1(url1);
+  url_info1.set_visit_count(0);
+  url_info1.set_typed_count(0);
+  url_info1.set_last_visit(Time());
+  url_info1.set_hidden(false);
+  const URLID url1_id = backend_->db()->AddURL(url_info1);
+  EXPECT_NE(0, url1_id);
+
+  TemplateURLID keyword_id = 1;
+  base::string16 keyword = base::UTF8ToUTF16("bar");
+  ASSERT_TRUE(backend_->db()->SetKeywordSearchTermsForURL(
+      url1_id, keyword_id, keyword));
+
+  GURL url2("https://www.google.com/?q=bar");
+  URLRow url_info2(url2);
+  url_info2.set_visit_count(0);
+  url_info2.set_typed_count(0);
+  url_info2.set_last_visit(Time());
+  url_info2.set_hidden(false);
+  const URLID url2_id = backend_->db()->AddURL(url_info2);
+  EXPECT_NE(0, url2_id);
+
+  TemplateURLID keyword_id2 = 2;
+  ASSERT_TRUE(backend_->db()->SetKeywordSearchTermsForURL(
+      url2_id, keyword_id2, keyword));
+
+  // Add another visit to the same URL
+  URLRow url_info3(url2);
+  url_info3.set_visit_count(0);
+  url_info3.set_typed_count(0);
+  url_info3.set_last_visit(Time());
+  url_info3.set_hidden(false);
+  const URLID url3_id = backend_->db()->AddURL(url_info3);
+  EXPECT_NE(0, url3_id);
+  ASSERT_TRUE(backend_->db()->SetKeywordSearchTermsForURL(
+      url3_id, keyword_id2, keyword));
+
+  // Test that deletion works correctly
+  backend_->DeleteMatchingURLsForKeyword(keyword_id2, keyword);
+
+  // Test that rows 2 and 3 are deleted, while 1 is intact
+  URLRow row;
+  EXPECT_TRUE(backend_->db()->GetURLRow(url1_id, &row));
+  EXPECT_EQ(url1.spec(), row.url().spec());
+  EXPECT_FALSE(backend_->db()->GetURLRow(url2_id, &row));
+  EXPECT_FALSE(backend_->db()->GetURLRow(url3_id, &row));
+
+  // Test that corresponding keyword search terms are deleted for rows 2 & 3,
+  // but not for row 1
+  EXPECT_TRUE(backend_->db()->GetKeywordSearchTermRow(url1_id, NULL));
+  EXPECT_FALSE(backend_->db()->GetKeywordSearchTermRow(url2_id, NULL));
+  EXPECT_FALSE(backend_->db()->GetKeywordSearchTermRow(url3_id, NULL));
+}
+
+// Simple test that removes a bookmark. This test exercises the code paths in
+// History that block till bookmark bar model is loaded.
+TEST_F(HistoryBackendTest, RemoveNotification) {
+  scoped_ptr<TestingProfile> profile(new TestingProfile());
+
+  ASSERT_TRUE(profile->CreateHistoryService(false, false));
+  profile->CreateBookmarkModel(true);
+  BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile.get());
+  test::WaitForBookmarkModelToLoad(model);
+
+  // Add a URL.
+  GURL url("http://www.google.com");
+  bookmark_utils::AddIfNotBookmarked(model, url, base::string16());
+
+  HistoryService* service = HistoryServiceFactory::GetForProfile(
+      profile.get(), Profile::EXPLICIT_ACCESS);
+
+  service->AddPage(
+      url, base::Time::Now(), NULL, 1, GURL(), RedirectList(),
+      content::PAGE_TRANSITION_TYPED, SOURCE_BROWSED, false);
+
+  // This won't actually delete the URL, rather it'll empty out the visits.
+  // This triggers blocking on the BookmarkModel.
+  service->DeleteURL(url);
+}
+
+// Test DeleteFTSIndexDatabases deletes expected files.
+TEST_F(HistoryBackendTest, DeleteFTSIndexDatabases) {
+  ASSERT_TRUE(backend_.get());
+
+  base::FilePath history_path(test_dir());
+  base::FilePath db1(history_path.AppendASCII("History Index 2013-05"));
+  base::FilePath db1_journal(db1.InsertBeforeExtensionASCII("-journal"));
+  base::FilePath db1_wal(db1.InsertBeforeExtensionASCII("-wal"));
+  base::FilePath db2_symlink(history_path.AppendASCII("History Index 2013-06"));
+  base::FilePath db2_actual(history_path.AppendASCII("Underlying DB"));
+
+  // Setup dummy index database files.
+  const char* data = "Dummy";
+  const size_t data_len = 5;
+  ASSERT_TRUE(base::WriteFile(db1, data, data_len));
+  ASSERT_TRUE(base::WriteFile(db1_journal, data, data_len));
+  ASSERT_TRUE(base::WriteFile(db1_wal, data, data_len));
+  ASSERT_TRUE(base::WriteFile(db2_actual, data, data_len));
+#if defined(OS_POSIX)
+  EXPECT_TRUE(base::CreateSymbolicLink(db2_actual, db2_symlink));
+#endif
+
+  // Delete all DTS index databases.
+  backend_->DeleteFTSIndexDatabases();
+  EXPECT_FALSE(base::PathExists(db1));
+  EXPECT_FALSE(base::PathExists(db1_wal));
+  EXPECT_FALSE(base::PathExists(db1_journal));
+  EXPECT_FALSE(base::PathExists(db2_symlink));
+  EXPECT_TRUE(base::PathExists(db2_actual));  // Symlinks shouldn't be followed.
+}
+
+// Common implementation for the two tests below, given that the only difference
+// between them is the type of the notification sent out.
+void InMemoryHistoryBackendTest::TestAddingAndChangingURLRows(
+    int notification_type) {
+  const char kTestTypedURLAlternativeTitle[] = "Google Search Again";
+  const char kTestNonTypedURLAlternativeTitle[] = "Google News Again";
+
+  // Notify the in-memory database that a typed and non-typed URLRow (which were
+  // never before seen by the cache) have been modified.
+  URLRow row1(CreateTestTypedURL());
+  URLRow row2(CreateTestNonTypedURL());
+  SimulateNotification(notification_type, &row1, &row2);
+
+  // The in-memory database should only pick up the typed URL, and should ignore
+  // the non-typed one. The typed URL should retain the ID that was present in
+  // the notification.
+  URLRow cached_row1, cached_row2;
+  EXPECT_NE(0, mem_backend_->db()->GetRowForURL(row1.url(), &cached_row1));
+  EXPECT_EQ(0, mem_backend_->db()->GetRowForURL(row2.url(), &cached_row2));
+  EXPECT_EQ(row1.id(), cached_row1.id());
+
+  // Try changing attributes (other than typed_count) for existing URLRows.
+  row1.set_title(base::UTF8ToUTF16(kTestTypedURLAlternativeTitle));
+  row2.set_title(base::UTF8ToUTF16(kTestNonTypedURLAlternativeTitle));
+  SimulateNotification(notification_type, &row1, &row2);
+
+  // URLRows that are cached by the in-memory database should be updated.
+  EXPECT_NE(0, mem_backend_->db()->GetRowForURL(row1.url(), &cached_row1));
+  EXPECT_EQ(0, mem_backend_->db()->GetRowForURL(row2.url(), &cached_row2));
+  EXPECT_EQ(base::UTF8ToUTF16(kTestTypedURLAlternativeTitle),
+            cached_row1.title());
+
+  // Now decrease the typed count for the typed URLRow, and increase it for the
+  // previously non-typed URLRow.
+  row1.set_typed_count(0);
+  row2.set_typed_count(2);
+  SimulateNotification(notification_type, &row1, &row2);
+
+  // The in-memory database should stop caching the first URLRow, and start
+  // caching the second URLRow.
+  EXPECT_EQ(0, mem_backend_->db()->GetRowForURL(row1.url(), &cached_row1));
+  EXPECT_NE(0, mem_backend_->db()->GetRowForURL(row2.url(), &cached_row2));
+  EXPECT_EQ(row2.id(), cached_row2.id());
+  EXPECT_EQ(base::UTF8ToUTF16(kTestNonTypedURLAlternativeTitle),
+            cached_row2.title());
+}
+
+TEST_F(InMemoryHistoryBackendTest, OnURLsModified) {
+  TestAddingAndChangingURLRows(chrome::NOTIFICATION_HISTORY_URLS_MODIFIED);
+}
+
+TEST_F(InMemoryHistoryBackendTest, OnURLsVisisted) {
+  TestAddingAndChangingURLRows(chrome::NOTIFICATION_HISTORY_URL_VISITED);
+}
+
+TEST_F(InMemoryHistoryBackendTest, OnURLsDeletedPiecewise) {
+  // Add two typed and one non-typed URLRow to the in-memory database.
+  URLRow row1(CreateTestTypedURL());
+  URLRow row2(CreateAnotherTestTypedURL());
+  URLRow row3(CreateTestNonTypedURL());
+  SimulateNotification(chrome::NOTIFICATION_HISTORY_URLS_MODIFIED,
+                       &row1, &row2, &row3);
+
+  // Notify the in-memory database that the second typed URL and the non-typed
+  // URL has been deleted.
+  SimulateNotification(chrome::NOTIFICATION_HISTORY_URLS_DELETED,
+                       &row2, &row3);
+
+  // Expect that the first typed URL remains intact, the second typed URL is
+  // correctly removed, and the non-typed URL does not magically appear.
+  URLRow cached_row1;
+  EXPECT_NE(0, mem_backend_->db()->GetRowForURL(row1.url(), &cached_row1));
+  EXPECT_EQ(0, mem_backend_->db()->GetRowForURL(row2.url(), NULL));
+  EXPECT_EQ(0, mem_backend_->db()->GetRowForURL(row3.url(), NULL));
+  EXPECT_EQ(row1.id(), cached_row1.id());
+}
+
+TEST_F(InMemoryHistoryBackendTest, OnURLsDeletedEnMasse) {
+  // Add two typed and one non-typed URLRow to the in-memory database.
+  URLRow row1(CreateTestTypedURL());
+  URLRow row2(CreateAnotherTestTypedURL());
+  URLRow row3(CreateTestNonTypedURL());
+  SimulateNotification(chrome::NOTIFICATION_HISTORY_URLS_MODIFIED,
+                       &row1, &row2, &row3);
+
+  // Now notify the in-memory database that all history has been deleted.
+  scoped_ptr<URLsDeletedDetails> details(new URLsDeletedDetails());
+  details->all_history = true;
+  BroadcastNotifications(chrome::NOTIFICATION_HISTORY_URLS_DELETED,
+                         details.PassAs<HistoryDetails>());
+
+  // Expect that everything goes away.
+  EXPECT_EQ(0, mem_backend_->db()->GetRowForURL(row1.url(), NULL));
+  EXPECT_EQ(0, mem_backend_->db()->GetRowForURL(row2.url(), NULL));
+  EXPECT_EQ(0, mem_backend_->db()->GetRowForURL(row3.url(), NULL));
+}
+
+void InMemoryHistoryBackendTest::PopulateTestURLsAndSearchTerms(
+    URLRow* row1,
+    URLRow* row2,
+    const base::string16& term1,
+    const base::string16& term2) {
+  // Add a typed and a non-typed URLRow to the in-memory database. This time,
+  // though, do it through the history backend...
+  URLRows rows;
+  rows.push_back(*row1);
+  rows.push_back(*row2);
+  backend_->AddPagesWithDetails(rows, history::SOURCE_BROWSED);
+  backend_->db()->GetRowForURL(row1->url(), row1);  // Get effective IDs from
+  backend_->db()->GetRowForURL(row2->url(), row2);  // the database.
+
+  // ... so that we can also use that for adding the search terms. This way, we
+  // not only test that the notifications involved are handled correctly, but
+  // also that they are fired correctly (in the history backend).
+  backend_->SetKeywordSearchTermsForURL(row1->url(), kTestKeywordId, term1);
+  backend_->SetKeywordSearchTermsForURL(row2->url(), kTestKeywordId, term2);
+}
+
+TEST_F(InMemoryHistoryBackendTest, SetKeywordSearchTerms) {
+  URLRow row1(CreateTestTypedURL());
+  URLRow row2(CreateTestNonTypedURL());
+  base::string16 term1(base::UTF8ToUTF16(kTestSearchTerm1));
+  base::string16 term2(base::UTF8ToUTF16(kTestSearchTerm2));
+  PopulateTestURLsAndSearchTerms(&row1, &row2, term1, term2);
+
+  // Both URLs now have associated search terms, so the in-memory database
+  // should cache both of them, regardless whether they have been typed or not.
+  URLRow cached_row1, cached_row2;
+  EXPECT_NE(0, mem_backend_->db()->GetRowForURL(row1.url(), &cached_row1));
+  EXPECT_NE(0, mem_backend_->db()->GetRowForURL(row2.url(), &cached_row2));
+  EXPECT_EQ(row1.id(), cached_row1.id());
+  EXPECT_EQ(row2.id(), cached_row2.id());
+
+  // Verify that lookups will actually return both search terms; and also check
+  // at the low level that the rows are there.
+  EXPECT_EQ(1u, GetNumberOfMatchingSearchTerms(kTestKeywordId, term1));
+  EXPECT_EQ(1u, GetNumberOfMatchingSearchTerms(kTestKeywordId, term2));
+  EXPECT_TRUE(mem_backend_->db()->GetKeywordSearchTermRow(row1.id(), NULL));
+  EXPECT_TRUE(mem_backend_->db()->GetKeywordSearchTermRow(row2.id(), NULL));
+}
+
+TEST_F(InMemoryHistoryBackendTest, DeleteKeywordSearchTerms) {
+  URLRow row1(CreateTestTypedURL());
+  URLRow row2(CreateTestNonTypedURL());
+  base::string16 term1(base::UTF8ToUTF16(kTestSearchTerm1));
+  base::string16 term2(base::UTF8ToUTF16(kTestSearchTerm2));
+  PopulateTestURLsAndSearchTerms(&row1, &row2, term1, term2);
+
+  // Delete both search terms. This should be reflected in the in-memory DB.
+  backend_->DeleteKeywordSearchTermForURL(row1.url());
+  backend_->DeleteKeywordSearchTermForURL(row2.url());
+
+  // The typed URL should remain intact.
+  // Note: we do not need to guarantee anything about the non-typed URL.
+  URLRow cached_row1;
+  EXPECT_NE(0, mem_backend_->db()->GetRowForURL(row1.url(), &cached_row1));
+  EXPECT_EQ(row1.id(), cached_row1.id());
+
+  // Verify that the search terms are no longer returned as results, and also
+  // check at the low level that they are gone for good.
+  EXPECT_EQ(0u, GetNumberOfMatchingSearchTerms(kTestKeywordId, term1));
+  EXPECT_EQ(0u, GetNumberOfMatchingSearchTerms(kTestKeywordId, term2));
+  EXPECT_FALSE(mem_backend_->db()->GetKeywordSearchTermRow(row1.id(), NULL));
+  EXPECT_FALSE(mem_backend_->db()->GetKeywordSearchTermRow(row2.id(), NULL));
+}
+
+TEST_F(InMemoryHistoryBackendTest, DeleteAllSearchTermsForKeyword) {
+  URLRow row1(CreateTestTypedURL());
+  URLRow row2(CreateTestNonTypedURL());
+  base::string16 term1(base::UTF8ToUTF16(kTestSearchTerm1));
+  base::string16 term2(base::UTF8ToUTF16(kTestSearchTerm2));
+  PopulateTestURLsAndSearchTerms(&row1, &row2, term1, term2);
+
+  // Removing a keyword should cause all corresponding search terms to be
+  // deleted from the in-memory database (and also the main database).
+  TemplateURLID id = kTestKeywordId;
+  mem_backend_->Observe(chrome::NOTIFICATION_TEMPLATE_URL_REMOVED,
+                        content::Source<HistoryBackendTestBase>(NULL),
+                        content::Details<TemplateURLID>(&id));
+
+  // The typed URL should remain intact.
+  // Note: we do not need to guarantee anything about the non-typed URL.
+  URLRow cached_row1;
+  EXPECT_NE(0, mem_backend_->db()->GetRowForURL(row1.url(), &cached_row1));
+  EXPECT_EQ(row1.id(), cached_row1.id());
+
+  // Verify that the search terms are no longer returned as results, and also
+  // check at the low level that they are gone for good.
+  EXPECT_EQ(0u, GetNumberOfMatchingSearchTerms(kTestKeywordId, term1));
+  EXPECT_EQ(0u, GetNumberOfMatchingSearchTerms(kTestKeywordId, term2));
+  EXPECT_FALSE(mem_backend_->db()->GetKeywordSearchTermRow(row1.id(), NULL));
+  EXPECT_FALSE(mem_backend_->db()->GetKeywordSearchTermRow(row2.id(), NULL));
+}
+
+TEST_F(InMemoryHistoryBackendTest, OnURLsDeletedWithSearchTerms) {
+  URLRow row1(CreateTestTypedURL());
+  URLRow row2(CreateTestNonTypedURL());
+  base::string16 term1(base::UTF8ToUTF16(kTestSearchTerm1));
+  base::string16 term2(base::UTF8ToUTF16(kTestSearchTerm2));
+  PopulateTestURLsAndSearchTerms(&row1, &row2, term1, term2);
+
+  // Notify the in-memory database that the second typed URL has been deleted.
+  SimulateNotification(chrome::NOTIFICATION_HISTORY_URLS_DELETED, &row2);
+
+  // Verify that the second term is no longer returned as result, and also check
+  // at the low level that it is gone for good. The term corresponding to the
+  // first URLRow should not be affected.
+  EXPECT_EQ(1u, GetNumberOfMatchingSearchTerms(kTestKeywordId, term1));
+  EXPECT_EQ(0u, GetNumberOfMatchingSearchTerms(kTestKeywordId, term2));
+  EXPECT_TRUE(mem_backend_->db()->GetKeywordSearchTermRow(row1.id(), NULL));
+  EXPECT_FALSE(mem_backend_->db()->GetKeywordSearchTermRow(row2.id(), NULL));
 }
 
 }  // namespace history

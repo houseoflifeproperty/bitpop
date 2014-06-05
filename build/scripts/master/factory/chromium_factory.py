@@ -6,15 +6,44 @@
 
 Based on gclient_factory.py and adds chromium-specific steps."""
 
-import os
 import re
 
 from master.factory import chromium_commands
 from master.factory import gclient_factory
-from master.factory.build_factory import BuildFactory
 
 import config
 
+
+# This is kind of the wrong place for this, but it is the only place apart
+# from master_config imported by all the configs that need this list.
+blink_tests = [
+  'blink_heap_unittests',
+  'blink_platform_unittests',
+  'webkit',
+  'webkit_lint',
+  'webkit_python_tests',
+  'webkit_unit_tests',
+  'wtf_unittests',
+]
+
+# These are run on the non-blink tryservers. We don't run the layout tests
+# because they are slow, and we don't run the python tests because there's no
+# need to on chromium jobs.
+blink_tests_for_chromium_tryjobs = [
+  'blink_heap_unittests_br',
+  'blink_platform_unittests_br',
+  'webkit_unit_tests_br',
+  'wtf_unittests_br',
+]
+
+# These are run on the blink tryservers; the 'webkit' step is not run
+# under buildrunner because it needs to archive things.
+blink_tests_for_blink_tryjobs = blink_tests_for_chromium_tryjobs + [
+  'buildrunner_tests',
+  'webkit',
+  'webkit_lint_br',
+  'webkit_python_tests_br',
+]
 
 def ForceComponent(target, project, gclient_env):
   # Force all bots to specify the "Component" gyp variables, unless it is
@@ -36,52 +65,27 @@ class ChromiumFactory(gclient_factory.GClientFactory):
 
   DEFAULT_TARGET_PLATFORM = config.Master.default_platform
 
-  # TODO(rnk): crbug.com/109780, delete this once we've tested that
-  # build_for_tool= works on the FYI bots.
-  MEMORY_TOOLS_GYP_DEFINES = (
-    # gcc flags
-    'mac_debug_optimization=1 '
-    'mac_release_optimization=1 '
-    'release_optimize=1 '
-    'no_gc_sections=1 '
-    'debug_extra_cflags="-g -fno-inline -fno-omit-frame-pointer '
-                        '-fno-builtin -fno-optimize-sibling-calls" '
-    'release_extra_cflags="-g -fno-inline -fno-omit-frame-pointer '
-                          '-fno-builtin -fno-optimize-sibling-calls" '
-
-    # MSVS flags
-    'win_debug_RuntimeChecks=0 '
-    'win_debug_disable_iterator_debugging=1 '
-    'win_debug_Optimization=1 '
-    'win_debug_InlineFunctionExpansion=0 '
-    'win_release_InlineFunctionExpansion=0 '
-    'win_release_OmitFramePointers=0 '
-
-    'linux_use_tcmalloc=1 '
-    'release_valgrind_build=1 '
-    'werror= '
-    'component=static_library '
-    'use_system_zlib=0 '
-  )
+  MEMORY_TOOLS_GYP_DEFINES = 'build_for_tool=memcheck'
 
   # gclient custom vars
   CUSTOM_VARS_GOOGLECODE_URL = ('googlecode_url', config.Master.googlecode_url)
   CUSTOM_VARS_SOURCEFORGE_URL = ('sourceforge_url',
                                  config.Master.sourceforge_url)
+  CUSTOM_VARS_LLVM_URL = ('llvm_url', config.Master.llvm_url)
   CUSTOM_VARS_WEBKIT_MIRROR = ('webkit_trunk', config.Master.webkit_trunk_url)
-  # $$WK_REV$$ below will be substituted with the revision that triggered the
-  # build in chromium_step.py@GClient.startVC. Use this only with builds
-  # triggered by a webkit poller.
-  CUSTOM_VARS_WEBKIT_LATEST = [('webkit_revision', '$$WK_REV$$')]
   CUSTOM_VARS_NACL_TRUNK_URL = ('nacl_trunk', config.Master.nacl_trunk_url)
   # safe sync urls
   SAFESYNC_URL_CHROMIUM = 'http://chromium-status.appspot.com/lkgr'
 
   # gclient additional custom deps
   CUSTOM_DEPS_V8_LATEST = ('src/v8',
-    'http://v8.googlecode.com/svn/branches/bleeding_edge')
-  CUSTOM_DEPS_WEBRTC_LATEST = ('src/third_party/webrtc',
-    config.Master.webrtc_url + 'trunk/webrtc')
+    'http://v8.googlecode.com/svn/branches/bleeding_edge@$$V8_REV$$')
+  CUSTOM_DEPS_V8_TRUNK = ('src/v8',
+    'http://v8.googlecode.com/svn/trunk@$$V8_REV$$')
+  CUSTOM_DEPS_WEBRTC_TRUNK = ('src/third_party/webrtc',
+    config.Master.webrtc_url + '/trunk/webrtc@$$WEBRTC_REV$$')
+  CUSTOM_DEPS_LIBJINGLE_TRUNK = ('src/third_party/libjingle/source/talk',
+    config.Master.webrtc_url + '/trunk/talk@$$WEBRTC_REV$$')
   CUSTOM_DEPS_AVPERF = ('src/chrome/test/data/media/avperf',
     config.Master.trunk_url + '/deps/avperf')
   CUSTOM_VARS_NACL_LATEST = [
@@ -101,46 +105,56 @@ class ChromiumFactory(gclient_factory.GClientFactory):
      config.Master.trunk_url + '/deps/third_party/tsan')
   CUSTOM_DEPS_NACL_VALGRIND = ('src/third_party/valgrind/bin',
      config.Master.nacl_trunk_url + '/src/third_party/valgrind/bin')
-  CUSTOM_DEPS_TSAN_GCC = ('src/third_party/compiler-tsan',
-     config.Master.trunk_url + '/deps/third_party/compiler-tsan')
   CUSTOM_DEPS_WEBDRIVER_JAVA_TESTS = (
      'src/chrome/test/chromedriver/third_party/java_tests',
      config.Master.trunk_url + '/deps/third_party/webdriver')
 
   CUSTOM_DEPS_GYP = [
     ('src/tools/gyp', 'http://gyp.googlecode.com/svn/trunk')]
+  CUSTOM_DEPS_GIT_INTERNAL = [
+      ('src/third_party/adobe/flash/symbols/ppapi/mac', None),
+      ('src/third_party/adobe/flash/symbols/ppapi/mac_64', None),
+      ('src/third_party/adobe/flash/symbols/ppapi/linux', None),
+      ('src/third_party/adobe/flash/symbols/ppapi/linux_x64', None),
+      ('src/third_party/adobe/flash/symbols/ppapi/win', None),
+      ('src/third_party/adobe/flash/symbols/ppapi/win_x64', None),
+  ]
+
+  # Mapping of repositories to got_xx_revision variables.
+  CHROMIUM_GOT_REVISION_MAPPINGS = {
+      'src': 'got_revision',
+      'src/third_party/WebKit': 'got_webkit_revision',
+      'src/third_party/webrtc': 'got_webrtc_revision',
+      'src/tools/swarm_client': 'got_swarm_client_revision',  # crbug.com/321778
+      'src/tools/swarming_client': 'got_swarming_client_revision',
+      'src/v8': 'got_v8_revision',
+  }
+
 
   # A map used to skip dependencies when a test is not run.
   # The map key is the test name. The map value is an array containing the
   # dependencies that are not needed when this test is not run.
   NEEDED_COMPONENTS = {
-    '^(webkit|avperf)$':
-      [('src/webkit/data/layout_tests/LayoutTests', None),
-       ('src/third_party/WebKit/LayoutTests', None),],
+    '^(webkit)$':
+      [('src/third_party/WebKit/LayoutTests', None)],
   }
 
   NEEDED_COMPONENTS_INTERNAL = {
     'memory':
       [('src/data/memory_test', None)],
-    '(frame_rate|gpu_frame_rate)':
-      [('src/chrome/test/data/perf/frame_rate/private', None)],
     'page_cycler':
       [('src/data/page_cycler', None)],
-    '(selenium|chrome_frame)':
+    'selenium':
       [('src/data/selenium_core', None)],
-    'tab_switching':
-      [('src/data/tab_switching', None)],
     'browser_tests':
       [('src/chrome/test/data/firefox2_profile/searchplugins', None),
        ('src/chrome/test/data/firefox2_searchplugins', None),
        ('src/chrome/test/data/firefox3_profile/searchplugins', None),
        ('src/chrome/test/data/firefox3_searchplugins', None),
        ('src/chrome/test/data/ssl/certs', None)],
-    '(pyauto_chromoting_tests)':
-      [('src/chrome/test/data/plugin', None)],
     'unit':
       [('src/chrome/test/data/osdd', None)],
-    '^(webkit|test_shell)$':
+    '^(webkit|content_unittests)$':
       [('src/webkit/data/bmp_decoder', None),
        ('src/webkit/data/ico_decoder', None),
        ('src/webkit/data/test_shell/plugins', None),
@@ -158,74 +172,16 @@ class ChromiumFactory(gclient_factory.GClientFactory):
       [('src/data/mozilla_js_tests', None)],
   }
 
-  # List of test groups for media tests.  Media tests generate a lot of data, so
-  # it's nice to separate them into different graphs.  Each tuple corresponds to
-  # a PyAuto test suite name and indicates if the suite contains perf tests.
-  MEDIA_TEST_GROUPS = [
-      ('AV_PERF', True),
-  ]
-
-  # Minimal deps for running PyAuto.
-  # http://dev.chromium.org/developers/pyauto
-  PYAUTO_DEPS = \
-      [('src/chrome/test/data',
-        config.Master.trunk_url + '/src/chrome/test/data'),
-       ('src/chrome/test/pyautolib',
-        config.Master.trunk_url + '/src/chrome/test/pyautolib'),
-       ('src/chrome/test/functional',
-        config.Master.trunk_url + '/src/chrome/test/functional'),
-       ('src/content/test/data',
-        config.Master.trunk_url + '/src/content/test/data'),
-       ('src/third_party/simplejson',
-        config.Master.trunk_url + '/src/third_party/simplejson'),
-       ('src/net/data/ssl/certificates',
-        config.Master.trunk_url + '/src/net/data/ssl/certificates'),
-       ('src/net/tools/testserver',
-        config.Master.trunk_url + '/src/net/tools/testserver'),
-       # It would be better to use config.Master.googlecode_url here.
-       # But it causes QA buildbot failures on Mac beta and stable.
-       # See http://crbug.com/155918#c21 .
-       ('src/third_party/pyftpdlib/src',
-        'http://pyftpdlib.googlecode.com/svn/trunk'),
-       ('src/third_party/pywebsocket/src',
-        'http://pywebsocket.googlecode.com/svn/trunk/src'),
-       ('src/third_party/tlslite',
-        config.Master.trunk_url + '/src/third_party/tlslite'),
-       ('src/third_party/python_26',
-        config.Master.trunk_url + '/tools/third_party/python_26'),
-       ('src/chrome/test/data/media/avperf',
-        config.Master.trunk_url + '/deps/avperf'),
-       ('webdriver.DEPS',
-        config.Master.trunk_url + '/src/chrome/test/pyautolib/' +
-            'webdriver.DEPS'),
-        ]
-  # Extend if we can.
   # pylint: disable=E1101
   if config.Master.trunk_internal_url:
-    PYAUTO_DEPS.append(('src/content/test/data/plugin',
-                        config.Master.trunk_internal_url +
-                        '/data/chrome_plugin_tests'))
-    PYAUTO_DEPS.append(('src/chrome/test/data/pyauto_private',
-                        config.Master.trunk_internal_url +
-                        '/data/pyauto_private'))
-    PYAUTO_DEPS.append(('src/data/page_cycler',
-                        config.Master.trunk_internal_url +
-                        '/data/page_cycler'))
     CUSTOM_DEPS_DEVTOOLS_PERF.append(('src/data/devtools_test_pages',
                                       config.Master.trunk_internal_url +
                                       '/data/devtools_test_pages'))
 
-  CHROMEBOT_DEPS = [
-    ('src/tools/chromebot',
-     config.Master.trunk_url + '/tools/chromebot'),
-    ('src/chrome/tools/process_dumps',
-     config.Master.trunk_url + '/src/chrome/tools/process_dumps'),
-    ('src/chrome/test/data/reliability',
-     config.Master.trunk_url + '/src/chrome/test/data/reliability')]
-
   def __init__(self, build_dir, target_platform=None, pull_internal=True,
                full_checkout=False, additional_svn_urls=None, name=None,
-               custom_deps_list=None, nohooks_on_update=False, target_os=None):
+               custom_deps_list=None, nohooks_on_update=False, target_os=None,
+               swarm_client_canary=False):
     if full_checkout:
       needed_components = None
     else:
@@ -237,6 +193,7 @@ class ChromiumFactory(gclient_factory.GClientFactory):
                custom_vars_list=[self.CUSTOM_VARS_WEBKIT_MIRROR,
                                  self.CUSTOM_VARS_GOOGLECODE_URL,
                                  self.CUSTOM_VARS_SOURCEFORGE_URL,
+                                 self.CUSTOM_VARS_LLVM_URL,
                                  self.CUSTOM_VARS_NACL_TRUNK_URL])
     internal_custom_deps_list = [main]
     if config.Master.trunk_internal_url_src and pull_internal:
@@ -254,11 +211,15 @@ class ChromiumFactory(gclient_factory.GClientFactory):
       solution = gclient_factory.GClientSolution(svn_url)
       internal_custom_deps_list.append(solution)
 
-    gclient_factory.GClientFactory.__init__(self, build_dir,
-                                            internal_custom_deps_list,
-                                            target_platform=target_platform,
-                                            nohooks_on_update=nohooks_on_update,
-                                            target_os=target_os)
+    gclient_factory.GClientFactory.__init__(self,
+        build_dir, internal_custom_deps_list, target_platform=target_platform,
+        nohooks_on_update=nohooks_on_update, target_os=target_os,
+        revision_mapping=self.CHROMIUM_GOT_REVISION_MAPPINGS)
+    if swarm_client_canary:
+      # Contrary to other canaries like blink, v8, we don't really care about
+      # having one build per swarm_client commits by having an additional source
+      # change listener so just fetching @ToT all the time is good enough.
+      self._solutions[0].custom_vars_list.append(('swarming_revision', ''))
 
   def _AddTests(self, factory_cmd_obj, tests, mode=None,
                 factory_properties=None):
@@ -289,10 +250,22 @@ class ChromiumFactory(gclient_factory.GClientFactory):
 
     # Run interactive_ui_tests first to make sure it does not fail if another
     # test running before it leaks a window or a popup (crash dialog, etc).
-    if R('interactive_ui'):
-      f.AddAnnotatedGTestTestStep('interactive_ui_tests', fp)
-    if R('interactive_ui_br'):
+    if R('interactive_ui_tests'):
+      f.AddGTestTestStep('interactive_ui_tests', fp)
+    if R('interactive_ui_tests_br'):
       f.AddBuildrunnerGTest('interactive_ui_tests', fp)
+
+    # interactive_ui_tests specifically for Instant Extended.
+    if R('instant_extended_manual_tests'):
+      arg_list = [
+          '--gtest_filter=InstantExtendedManualTest.*',
+          '--run-manual',
+          '--enable-benchmarking',
+          '--enable-stats-table',
+          '--ignore-certificate-errors',
+      ]
+      f.AddBuildrunnerGTest('interactive_ui_tests', factory_properties=fp,
+                            arg_list=arg_list)
 
     # Check for an early bail.  Do early since this may cancel other tests.
     if R('check_lkgr'):
@@ -310,7 +283,7 @@ class ChromiumFactory(gclient_factory.GClientFactory):
     if R('check_bins'):
       f.AddCheckBinsStep()
     if R('check_bins_br'):
-      f.AddCheckBinsStep()
+      f.AddBuildrunnerCheckBinsStep()
     if R('check_perms'):
       f.AddCheckPermsStep()
     if R('check_perms_br'):
@@ -321,369 +294,533 @@ class ChromiumFactory(gclient_factory.GClientFactory):
       f.AddBuildrunnerCheckLicensesStep(fp)
 
     # Small ("module") unit tests:
-    if R('base', 'base_unittests'):
-      f.AddAnnotatedGTestTestStep('base_unittests', fp)
-    if R('base_br'):
+    if R('accessibility_unittests'):
+      f.AddGTestTestStep('accessibility_unittests', fp)
+    if R('accessibility_unittests_br'):
+      f.AddBuildrunnerGTest('accessibility_unittests', fp)
+    if R('base_unittests'):
+      f.AddGTestTestStep('base_unittests', fp)
+    if R('base_unittests_br'):
       f.AddBuildrunnerGTest('base_unittests', fp)
-    if R('cacheinvalidation', 'cacheinvalidation_unittests'):
-      f.AddAnnotatedGTestTestStep('cacheinvalidation_unittests', fp)
+    if R('cacheinvalidation_unittests'):
+      f.AddGTestTestStep('cacheinvalidation_unittests', fp)
     if R('cacheinvalidation_br'):
       f.AddBuildrunnerGTest('cacheinvalidation_unittests', fp)
+    if R('cast', 'cast_unittests'):
+      f.AddGTestTestStep('cast_unittests', fp)
+    if R('cast_br'):
+      f.AddBuildrunnerGTest('cast_unittests', fp)
     if R('cc_unittests'):
-      f.AddAnnotatedGTestTestStep('cc_unittests', fp)
+      f.AddGTestTestStep('cc_unittests', fp)
     if R('cc_unittests_br'):
       f.AddBuildrunnerGTest('cc_unittests', fp)
-    if R('chromedriver2_unittests'):
-      f.AddAnnotatedGTestTestStep('chromedriver2_unittests', fp)
+    if R('chromedriver_unittests'):
+      f.AddGTestTestStep('chromedriver_unittests', fp)
+    if R('chromedriver_unittests_br'):
+      f.AddBuildrunnerGTest('chromedriver_unittests', fp)
     if R('chromeos_unittests'):
-      f.AddAnnotatedGTestTestStep('chromeos_unittests', fp)
-    if R('courgette'):
-      f.AddAnnotatedGTestTestStep('courgette_unittests', fp)
+      f.AddGTestTestStep('chromeos_unittests', fp)
+    if R('chromeos_unittests_br'):
+      f.AddBuildrunnerGTest('chromeos_unittests', fp)
+    if R('chrome_elf_unittests'):
+      f.AddGTestTestStep('chrome_elf_unittests', fp)
+    if R('chrome_elf_unittests_br'):
+      f.AddBuildrunnerGTest('chrome_elf_unittests', fp)
+    if R('components_unittests'):
+      f.AddGTestTestStep('components_unittests', fp)
+    if R('components_unittests_br'):
+      f.AddBuildrunnerGTest('components_unittests', fp)
+    if R('courgette_unittests'):
+      f.AddGTestTestStep('courgette_unittests', fp)
     if R('courgette_br'):
       f.AddBuildrunnerGTest('courgette_unittests', fp)
-    if R('crypto', 'crypto_unittests'):
-      f.AddAnnotatedGTestTestStep('crypto_unittests', fp)
+    if R('crypto_unittests'):
+      f.AddGTestTestStep('crypto_unittests', fp)
     if R('crypto_br'):
       f.AddBuildrunnerGTest('crypto_unittests', fp)
     if R('dbus'):
-      f.AddAnnotatedGTestTestStep('dbus_unittests', fp)
+      f.AddGTestTestStep('dbus_unittests', fp)
     if R('dbus_br'):
       f.AddBuildrunnerGTest('dbus_unittests', fp)
-    if R('googleurl', 'googleurl_unittests'):
-      f.AddAnnotatedGTestTestStep('googleurl_unittests', fp)
-    if R('googleurl_br'):
-      f.AddBuildrunnerGTest('googleurl_unittests', fp)
+    if R('gcm_unit_tests'):
+      f.AddGTestTestStep('gcm_unit_tests', fp)
+    if R('gcm_unit_tests_br'):
+      f.AddBuildrunnerGTest('gcm_unit_tests', fp)
+    if R('gfx_unittests'):
+      f.AddGTestTestStep('gfx_unittests', fp)
+    if R('gfx_unittests_br'):
+      f.AddBuildrunnerGTest('gfx_unittests', fp)
+    if R('google_apis_unittests'):
+      f.AddGTestTestStep('google_apis_unittests', fp)
+    if R('google_apis_unittests_br'):
+      f.AddBuildrunnerGTest('google_apis_unittests', fp)
     if R('gpu', 'gpu_unittests'):
-      f.AddAnnotatedGTestTestStep(
+      f.AddGTestTestStep(
           'gpu_unittests', fp, arg_list=['--gmock_verbose=error'])
     if R('gpu_br'):
       f.AddBuildrunnerGTest(
           'gpu_unittests', fp, arg_list=['--gmock_verbose=error'])
+    if R('url_unittests', 'url_unittests'):
+      f.AddGTestTestStep('url_unittests', fp)
+    if R('url_unittests_br'):
+      f.AddBuildrunnerGTest('url_unittests', fp)
     if R('jingle', 'jingle_unittests'):
-      f.AddAnnotatedGTestTestStep('jingle_unittests', fp)
+      f.AddGTestTestStep('jingle_unittests', fp)
     if R('jingle_br'):
       f.AddBuildrunnerGTest('jingle_unittests', fp)
     if R('content_unittests'):
-      f.AddAnnotatedGTestTestStep('content_unittests', fp)
+      f.AddGTestTestStep('content_unittests', fp)
     if R('content_unittests_br'):
       f.AddBuildrunnerGTest('content_unittests', fp)
+    if R('keyboard_unittests'):
+      f.AddGTestTestStep('keyboard_unittests', fp)
+    if R('keyboard_unittests_br'):
+      f.AddBuildrunnerGTest('keyboard_unittests', fp)
     if R('device_unittests'):
-      f.AddAnnotatedGTestTestStep('device_unittests', fp)
+      f.AddGTestTestStep('device_unittests', fp)
     if R('device_unittests_br'):
       f.AddBuildrunnerGTest('device_unittests', fp)
     if R('media', 'media_unittests'):
-      f.AddAnnotatedGTestTestStep('media_unittests', fp)
+      f.AddGTestTestStep('media_unittests', fp)
     if R('media_br'):
       f.AddBuildrunnerGTest('media_unittests', fp)
+    if R('mojo_apps_js_unittests'):
+      f.AddBuildrunnerGTest('mojo_apps_js_unittests', fp)
+    if R('mojo_common_unittests'):
+      f.AddBuildrunnerGTest('mojo_common_unittests', fp)
+    if R('mojo_js_unittests'):
+      f.AddBuildrunnerGTest('mojo_js_unittests', fp)
+    if R('mojo_public_bindings_unittests'):
+      f.AddBuildrunnerGTest('mojo_public_bindings_unittests', fp)
+    if R('mojo_public_environment_unittests'):
+      f.AddBuildrunnerGTest('mojo_public_environment_unittests', fp)
+    if R('mojo_public_system_unittests'):
+      f.AddBuildrunnerGTest('mojo_public_system_unittests', fp)
+    if R('mojo_public_utility_unittests'):
+      f.AddBuildrunnerGTest('mojo_public_utility_unittests', fp)
+    if R('mojo_service_manager_unittests'):
+      f.AddBuildrunnerGTest('mojo_service_manager_unittests', fp)
+    if R('mojo_system_unittests'):
+      f.AddBuildrunnerGTest('mojo_system_unittests', fp)
+    if R('mojo_view_manager_unittests'):
+      f.AddBuildrunnerGTest('mojo_view_manager_unittests', fp)
+    if R('nacl_loader_unittests'):
+      f.AddGTestTestStep('nacl_loader_unittests', fp)
+    if R('nacl_loader_unittests_br'):
+      f.AddBuildrunnerGTest('nacl_loader_unittests', fp)
     if R('net', 'net_unittests'):
-      f.AddAnnotatedGTestTestStep('net_unittests', fp)
+      f.AddGTestTestStep('net_unittests', fp)
     if R('net_br'):
       f.AddBuildrunnerGTest('net_unittests', fp)
     if R('ppapi_unittests'):
-      f.AddAnnotatedGTestTestStep('ppapi_unittests', fp)
+      f.AddGTestTestStep('ppapi_unittests', fp)
     if R('ppapi_unittests_br'):
       f.AddBuildrunnerGTest('ppapi_unittests', fp)
     if R('printing', 'printing_unittests'):
-      f.AddAnnotatedGTestTestStep('printing_unittests', fp)
+      f.AddGTestTestStep('printing_unittests', fp)
     if R('printing_br'):
       f.AddBuildrunnerGTest('printing_unittests', fp)
     if R('remoting', 'remoting_unittests'):
-      f.AddAnnotatedGTestTestStep('remoting_unittests', fp)
+      f.AddGTestTestStep('remoting_unittests', fp)
     if R('remoting_br'):
       f.AddBuildrunnerGTest('remoting_unittests', fp)
-    if R('test_shell'):
-      f.AddAnnotatedGTestTestStep('test_shell_tests', fp)
-    if R('test_shell_br'):
-      f.AddBuildrunnerGTest('test_shell_tests', fp)
     # Windows sandbox
+    if R('sbox_unittests'):
+      f.AddGTestTestStep('sbox_unittests', fp)
+    if R('sbox_unittests_br'):
+      f.AddBuildrunnerGTest('sbox_unittests', fp)
+    if R('sbox_integration_tests'):
+      f.AddGTestTestStep('sbox_integration_tests', fp)
+    if R('sbox_integration_tests_br'):
+      f.AddBuildrunnerGTest('sbox_integration_tests', fp)
+    if R('sbox_validation_tests'):
+      f.AddBuildrunnerGTest('sbox_validation_tests', fp)
+    if R('sbox_validation_tests_br'):
+      f.AddBuildrunnerGTest('sbox_validation_tests', fp)
     if R('sandbox'):
-      f.AddAnnotatedGTestTestStep('sbox_unittests', fp)
-      f.AddAnnotatedGTestTestStep('sbox_integration_tests', fp)
-      f.AddAnnotatedGTestTestStep('sbox_validation_tests', fp)
+      f.AddGTestTestStep('sbox_unittests', fp)
+      f.AddGTestTestStep('sbox_integration_tests', fp)
+      f.AddGTestTestStep('sbox_validation_tests', fp)
     if R('sandbox_br'):
       f.AddBuildrunnerGTest('sbox_unittests', fp)
       f.AddBuildrunnerGTest('sbox_integration_tests', fp)
       f.AddBuildrunnerGTest('sbox_validation_tests', fp)
     # Linux sandbox
     if R('sandbox_linux_unittests'):
-      f.AddAnnotatedGTestTestStep('sandbox_linux_unittests', fp)
+      f.AddGTestTestStep('sandbox_linux_unittests', fp)
     if R('sandbox_linux_unittests_br'):
       f.AddBuildrunnerGTest('sandbox_linux_unittests', fp)
+    if R('telemetry_unittests'):
+      f.AddTelemetryUnitTests()
+    if R('telemetry_unittests_br'):
+      f.AddBuildrunnerTelemetryUnitTests()
+    if R('telemetry_perf_unittests'):
+      f.AddTelemetryPerfUnitTests()
+    if R('telemetry_perf_unittests_br'):
+      f.AddBuildrunnerTelemetryPerfUnitTests()
     if R('ui_unittests'):
-      f.AddAnnotatedGTestTestStep('ui_unittests', fp)
+      f.AddGTestTestStep('ui_unittests', fp)
     if R('ui_unittests_br'):
       f.AddBuildrunnerGTest('ui_unittests', fp)
     if R('views', 'views_unittests'):
-      f.AddAnnotatedGTestTestStep('views_unittests', fp)
+      f.AddGTestTestStep('views_unittests', fp)
     if R('views_br'):
       f.AddBuildrunnerGTest('views_unittests', fp)
     if R('aura'):
-      f.AddAnnotatedGTestTestStep('aura_unittests', fp)
+      f.AddGTestTestStep('aura_unittests', fp)
     if R('aura_br'):
       f.AddBuildrunnerGTest('aura_unittests', fp)
     if R('aura_shell') or R('ash') or R('ash_unittests'):
-      f.AddAnnotatedGTestTestStep('ash_unittests', fp)
+      f.AddGTestTestStep('ash_unittests', fp)
+    if R('aura_shell_br', 'ash_br', 'ash_unittests_br'):
+      f.AddBuildrunnerGTest('ash_unittests', fp)
+    if R('app_list_unittests'):
+      f.AddGTestTestStep('app_list_unittests', fp)
+    if R('app_list_unittests_br'):
+      f.AddBuildrunnerGTest('app_list_unittests', fp)
+    if R('message_center_unittests'):
+      f.AddGTestTestStep('message_center_unittests', fp)
+    if R('message_center_unittests_br'):
+      f.AddBuildrunnerGTest('message_center_unittests', fp)
     if R('compositor'):
-      f.AddAnnotatedGTestTestStep('compositor_unittests', fp)
+      f.AddGTestTestStep('compositor_unittests', fp)
     if R('compositor_br'):
       f.AddBuildrunnerGTest('compositor_unittests', fp)
+    if R('events'):
+      f.AddGTestTestStep('events_unittests', fp)
+    if R('events_br'):
+      f.AddBuildrunnerGTest('events_unittests', fp)
 
     # Medium-sized tests (unit and browser):
     if R('unit'):
-      f.AddAnnotatedChromeUnitTests(fp)
+      f.AddChromeUnitTests(fp)
     if R('unit_br'):
       f.AddBuildrunnerChromeUnitTests(fp)
     # A snapshot of the "ChromeUnitTests" available for individual selection
-    if R('unit_ipc', 'ipc_tests'):
-      f.AddAnnotatedGTestTestStep('ipc_tests', fp)
-    if R('unit_ipc_br'):
+    if R('ipc_tests'):
+      f.AddGTestTestStep('ipc_tests', fp)
+    if R('ipc_tests_br'):
       f.AddBuildrunnerGTest('ipc_tests', fp)
     if R('unit_sync', 'sync_unit_tests'):
-      f.AddAnnotatedGTestTestStep('sync_unit_tests', fp)
+      f.AddGTestTestStep('sync_unit_tests', fp)
     if R('unit_sync_br'):
       f.AddBuildrunnerGTest('sync_unit_tests', fp)
     if R('unit_unit', 'unit_tests'):
-      f.AddAnnotatedGTestTestStep('unit_tests', fp)
+      f.AddGTestTestStep('unit_tests', fp)
     if R('unit_unit_br'):
       f.AddBuildrunnerGTest('unit_tests', fp)
     if R('unit_sql', 'sql_unittests'):
-      f.AddAnnotatedGTestTestStep('sql_unittests', fp)
+      f.AddGTestTestStep('sql_unittests', fp)
     if R('unit_sql_br'):
       f.AddBuildrunnerGTest('sql_unittests', fp)
     if R('browser_tests'):
-      f.AddAnnotatedBrowserTests(fp)
+      f.AddBrowserTests(fp)
     if R('browser_tests_br'):
       f.AddBuildrunnerBrowserTests(fp)
-    if R('chromedriver2_tests'):
-      f.AddAnnotatedGTestTestStep('chromedriver2_tests', fp)
+    if R('push_canary_tests'):
+      f.AddPushCanaryTests(fp)
+    if R('chromedriver_tests'):
+      f.AddGTestTestStep('chromedriver_tests', fp)
+    if R('chromedriver_tests_br'):
+      f.AddBuildrunnerGTest('chromedriver_tests', fp)
     if R('content_browsertests'):
-      f.AddAnnotatedGTestTestStep('content_browsertests', fp)
+      f.AddGTestTestStep('content_browsertests', fp)
     if R('content_browsertests_br'):
       f.AddBuildrunnerGTest('content_browsertests', fp)
+    if R('ash_browsertests'):
+      ash_fp = fp.copy()
+      ash_fp['browser_tests_extra_options'] = ['--ash-browsertests']
+      f.AddBuildrunnerBrowserTests(ash_fp)
 
-    # Big, UI tests:
-    if R('automated_ui'):
-      f.AddAnnotatedAutomatedUiTests(fp)
-    if R('automated_ui_br'):
-      f.AddBuildrunnerAutomatedUiTests(fp)
-    if R('dom_checker'):
-      f.AddDomCheckerTests()
-    if R('dom_checker_br'):
-      f.AddBuildrunnerDomCheckerTests()
+    if self._target_platform == 'win32':
+      if R('installer_util_unittests'):
+        f.AddGTestTestStep('installer_util_unittests', fp)
+      if R('installer_util_unittests_br'):
+        f.AddBuildrunnerGTest('installer_util_unittests', fp)
 
     if R('installer'):
-      f.AddAnnotatedInstallerTests(fp)
+      f.AddInstallerTests(fp)
     if R('installer_br'):
       f.AddBuildrunnerInstallerTests(fp)
 
+    if R('mini_installer'):
+      f.AddMiniInstallerTestStep(fp)
+    if R('mini_installer_br'):
+      f.AddBuildrunnerMiniInstallerTestStep(fp)
+
     # WebKit-related tests:
     if R('webkit_compositor_bindings_unittests'):
-      f.AddAnnotatedGTestTestStep('webkit_compositor_bindings_unittests', fp)
+      f.AddGTestTestStep('webkit_compositor_bindings_unittests', fp)
     if R('webkit_compositor_bindings_unittests_br'):
       f.AddBuildrunnerGTest('webkit_compositor_bindings_unittests', fp)
-    if R('webkit_unit'):
-      f.AddAnnotatedGTestTestStep('webkit_unit_tests', fp)
-    if R('webkit_unit_br'):
+    if R('webkit_unit_tests'):
+      f.AddGTestTestStep('webkit_unit_tests', fp)
+    if R('webkit_unit_tests_br'):
       f.AddBuildrunnerGTest('webkit_unit_tests', fp)
+    if R('wtf_unittests'):
+      f.AddGTestTestStep('wtf_unittests', fp)
+    if R('wtf_unittests_br'):
+      f.AddBuildrunnerGTest('wtf_unittests', fp)
+    if R('blink_platform_unittests'):
+      f.AddGTestTestStep('blink_platform_unittests', fp)
+    if R('blink_platform_unittests_br'):
+      f.AddBuildrunnerGTest('blink_platform_unittests', fp)
+    if R('blink_heap_unittests'):
+      f.AddGTestTestStep('blink_heap_unittests', fp)
+    if R('blink_heap_unittests_br'):
+      f.AddBuildrunnerGTest('blink_heap_unittests', fp)
     if R('webkit_lint'):
       f.AddWebkitLint(factory_properties=fp)
     if R('webkit_lint_br'):
       f.AddBuildrunnerWebkitLint(factory_properties=fp)
+    if R('webkit_python_tests'):
+      f.AddWebkitPythonTests(factory_properties=fp)
+    if R('webkit_python_tests_br'):
+      f.AddBuildrunnerWebkitPythonTests(factory_properties=fp)
     if R('webkit'):
       f.AddWebkitTests(factory_properties=fp)
     if R('devtools_perf'):
       f.AddDevToolsTests(factory_properties=fp)
 
-    # Benchmark tests:
-    if R('page_cycler_moz'):
-      f.AddPageCyclerTest('page_cycler_moz', fp)
-    if R('page_cycler_morejs'):
-      f.AddPageCyclerTest('page_cycler_morejs', fp)
-    if R('page_cycler_intl1'):
-      f.AddPageCyclerTest('page_cycler_intl1', fp)
-    if R('page_cycler_intl2'):
-      f.AddPageCyclerTest('page_cycler_intl2', fp)
-    if R('page_cycler_bloat'):
-      f.AddPageCyclerTest('page_cycler_bloat', fp)
-    if R('page_cycler_dhtml'):
-      f.AddPageCyclerTest('page_cycler_dhtml', fp)
-    if R('page_cycler_database'):
-      f.AddPageCyclerTest('page_cycler_database', fp, suite='Database*')
-    if R('page_cycler_indexeddb'):
-      f.AddPageCyclerTest('page_cycler_indexeddb', fp, suite='IndexedDB*')
-    if R('page_cycler_2012Q2-netsim'):
-      fp['use_xvfb_on_linux'] = True
-      f.AddPyAutoFunctionalTest(
-          'page_cycler_2012Q2-netsim',
-          test_args=['perf.PageCyclerNetSimTest.test2012Q2'],
-          factory_properties=fp, perf=True)
-    if R('scrolling_benchmark'):
-      f.AddTelemetryTest(
-          'scrolling_benchmark', 'top_25.json', factory_properties=fp)
-    if R('jsgamebench'):
-      f.AddTelemetryTest(
-          'jsgamebench', 'jsgamebench.json', factory_properties=fp)
-    if R('kraken'):
-      f.AddTelemetryTest('kraken', 'kraken.json', factory_properties=fp)
-    if R('robohornetpro'):
-      f.AddTelemetryTest(
-          'robohornetpro', 'robohornetpro.json', factory_properties=fp)
-    if R('memory_benchmark'):
-      f.AddTelemetryTest(
-          'memory_benchmark', 'top_25.json', factory_properties=fp)
+    # Android device test
+    if R('device_status'):
+      f.AddDeviceStatus(factory_properties=fp)
 
-    if R('memory'):
-      f.AddMemoryTests(fp)
-    if R('tab_switching'):
-      f.AddTabSwitchingTests(fp)
-    if R('sunspider'):
-      f.AddTelemetryTest('sunspider', 'sunspider.json', factory_properties=fp)
-    if R('octane'):
-      f.AddTelemetryTest('octane', 'octane.json', factory_properties=fp)
-    if R('image_decoding_benchmark'):
-      f.AddTelemetryTest(
-          'image_decoding_benchmark', 'tough_image_cases.json',
-          factory_properties=fp)
+    def Telemetry(test_name):
+      if R(test_name.replace('.', '_')):
+        f.AddTelemetryTest(test_name, factory_properties=fp)
+
+    # Benchmark tests:
+    # Page cyclers:
+    page_cyclers = [
+        'bloat',
+        'dhtml',
+        'indexeddb',
+        'intl_ar_fa_he',
+        'intl_es_fr_pt-BR',
+        'intl_hi_ru',
+        'intl_ja_zh',
+        'intl_ko_th_vi',
+        'morejs',
+        'moz',
+        'netsim.top_10',
+        'pica',
+        'top_10_mobile',
+        'tough_layout_cases',
+        'typical_25',
+      ]
+    for test_name in page_cyclers:
+      Telemetry('page_cycler.' + test_name)
+
+    # Synthetic benchmarks:
+    synthetic_benchmarks = [
+        'blink_perf',
+        'dom_perf',
+        'image_decoding.tough_decoding_cases',
+        'jsgamebench',
+        'kraken',
+        'media.android',
+        'media.media_cns_cases',
+        'media.mse_cases',
+        'media.tough_media_cases',
+        'octane',
+        'robohornet_pro',
+        'scheduler.tough_scheduling_cases',
+        'smoothness.fast_path.key_silk_cases',
+        'smoothness.fast_path.polymer',
+        'smoothness.fast_path_gpu_rasterization.key_silk_cases',
+        'smoothness.fast_path_gpu_rasterization.polymer',
+        'smoothness.gpu_rasterization.key_silk_cases',
+        'smoothness.gpu_rasterization.polymer',
+        'smoothness.key_silk_cases',
+        'smoothness.polymer',
+        'smoothness.tough_animation_cases',
+        'spaceport',
+        'sunspider',
+        'thread_times.fast_path.key_silk_cases',
+        'thread_times.fast_path.polymer',
+        'thread_times.key_silk_cases',
+        'thread_times.polymer',
+        'webrtc',
+      ]
+    for test_name in synthetic_benchmarks:
+      Telemetry(test_name)
     if R('dromaeo'):
-      f.AddTelemetryTest('dromaeo', 'dromaeo/domcoreattr.json',
-                         step_name='dromaeo_domcoreattr', factory_properties=fp)
-      f.AddTelemetryTest('dromaeo', 'dromaeo/domcoremodify.json',
-                         step_name='dromaeo_domcoremodify',
+      dromaeo_benchmarks = [
+          'domcoreattr',
+          'domcoremodify',
+          'domcorequery',
+          'domcoretraverse',
+          'jslibattrjquery',
+          'jslibattrprototype',
+          'jslibeventjquery',
+          'jslibeventprototype',
+          'jslibmodifyjquery',
+          'jslibmodifyprototype',
+          'jslibstylejquery',
+          'jslibstyleprototype',
+          'jslibtraversejquery',
+          'jslibtraverseprototype',
+        ]
+      for test_name in dromaeo_benchmarks:
+        f.AddTelemetryTest('dromaeo.%s' % test_name, factory_properties=fp)
+
+    # Real-world benchmarks:
+    real_world_benchmarks = [
+        'maps',
+        'memory.mobile_memory',
+        'memory.reload.2012Q3',
+        'memory.top_25',
+        'memory.tough_dom_memory_cases',
+        'rasterize_and_record_micro.fast_path_gpu_rasterization.key_silk_cases',
+        'rasterize_and_record_micro.fast_path.polymer',
+        'rasterize_and_record_micro.key_mobile_sites',
+        'rasterize_and_record_micro.key_silk_cases',
+        'rasterize_and_record_micro.polymer',
+        'rasterize_and_record_micro.top_25',
+        'repaint.key_mobile_sites',
+        'repaint.gpu_rasterization.key_mobile_sites',
+        'smoothness.gpu_rasterization.key_mobile_sites',
+        'smoothness.gpu_rasterization.top_25',
+        'smoothness.key_mobile_sites',
+        'smoothness.top_25',
+        'smoothness.tough_canvas_cases',
+        'smoothness.tough_pinch_zoom_cases',
+        'smoothness.tough_webgl_cases',
+        'tab_switching.top_10',
+        'thread_times.key_mobile_sites',
+      ]
+    for test_name in real_world_benchmarks:
+      Telemetry(test_name)
+
+    # Other benchmarks:
+    if R('tab_capture_performance'):
+      f.AddTabCapturePerformanceTests(fp)
+    if R('indexeddb_perf'):
+      f.AddTelemetryTest('indexeddb_perf', factory_properties=fp)
+    if R('startup_cold'):
+      f.AddTelemetryTest('startup.cold.blank_page', factory_properties=fp)
+      f.AddTelemetryTest('start_with_url.cold.startup_pages',
                          factory_properties=fp)
-      f.AddTelemetryTest('dromaeo', 'dromaeo/domcorequery.json',
-                         step_name='dromaeo_domcorequery',
+    if R('startup_warm'):
+      f.AddTelemetryTest('startup.warm.blank_page', factory_properties=fp)
+      f.AddTelemetryTest('start_with_url.warm.startup_pages',
                          factory_properties=fp)
-      f.AddTelemetryTest('dromaeo', 'dromaeo/domcoretraverse.json',
-                         step_name='dromaeo_domcoretraverse',
-                         factory_properties=fp)
-      f.AddTelemetryTest('dromaeo', 'dromaeo/jslibattrjquery.json',
-                         step_name='dromaeo_jslibattrjquery',
-                         factory_properties=fp)
-      f.AddTelemetryTest('dromaeo', 'dromaeo/jslibattrprototype.json',
-                         step_name='dromaeo_jslibattrprototype',
-                         factory_properties=fp)
-      f.AddTelemetryTest('dromaeo', 'dromaeo/jslibeventjquery.json',
-                         step_name='dromaeo_jslibeventjquery',
-                         factory_properties=fp)
-      f.AddTelemetryTest('dromaeo', 'dromaeo/jslibeventprototype.json',
-                         step_name='dromaeo_jslibeventprototype',
-                         factory_properties=fp)
-      f.AddTelemetryTest('dromaeo', 'dromaeo/jslibmodifyjquery.json',
-                         step_name='dromaeo_jslibmodifyjquery',
-                         factory_properties=fp)
-      f.AddTelemetryTest('dromaeo', 'dromaeo/jslibmodifyprototype.json',
-                         step_name='dromaeo_jslibmodifyprototype',
-                         factory_properties=fp)
-      f.AddTelemetryTest('dromaeo', 'dromaeo/jslibstylejquery.json',
-                         step_name='dromaeo_jslibstylejquery',
-                         factory_properties=fp)
-      f.AddTelemetryTest('dromaeo', 'dromaeo/jslibstyleprototype.json',
-                         step_name='dromaeo_jslibstyleprototype',
-                         factory_properties=fp)
-      f.AddTelemetryTest('dromaeo', 'dromaeo/jslibtraversejquery.json',
-                         step_name='dromaeo_jslibtraversejquery',
-                         factory_properties=fp)
-      f.AddTelemetryTest('dromaeo', 'dromaeo/jslibtraverseprototype.json',
-                         step_name='dromaeo_jslibtraverseprototype',
-                         factory_properties=fp)
-    if R('frame_rate'):
-      f.AddFrameRateTests(fp)
-    if R('gpu_frame_rate'):
-      f.AddGpuFrameRateTests(fp)
-    if R('gpu_latency'):
-      f.AddGpuLatencyTests(fp)
-    if R('gpu_throughput'):
-      f.AddGpuThroughputTests(fp)
-    if R('dom_perf'):
-      f.AddDomPerfTests(fp)
-    if R('idb_perf'):
-      f.AddIDBPerfTests(fp)
-    if R('page_cycler_moz-http'):
-      f.AddPageCyclerTest('page_cycler_moz-http', fp)
-    if R('page_cycler_bloat-http'):
-      f.AddPageCyclerTest('page_cycler_bloat-http', fp)
-    if R('startup'):
-      f.AddStartupTests(fp)
-      f.AddNewTabUITests(fp)
+    if R('startup_warm_dirty'):
+      startup_fp = fp.copy()
+      # pylint: disable=W0212
+      startup_fp['profile_type'] = 'small_profile'
+      # TODO(jeremy): Disable on ref builds pending fix for crbug.com/327017.
+      startup_fp['run_reference_build'] = False
+      f.AddTelemetryTest('startup.warm.blank_page',
+                         step_name='startup.warm.dirty.blank_page',
+                         factory_properties=startup_fp)
+    if R('startup_cold_dirty'):
+      startup_fp = fp.copy()
+      # pylint: disable=W0212
+      startup_fp['profile_type'] = 'small_profile'
+      # TODO(jeremy): Disable on ref builds pending fix for crbug.com/327017.
+      startup_fp['run_reference_build'] = False
+      f.AddTelemetryTest('startup.cold.blank_page',
+                         step_name='startup.cold.dirty.blank_page',
+                         factory_properties=startup_fp)
+    if R('startup_warm_session_restore'):
+      startup_fp = fp.copy()
+      # pylint: disable=W0212
+      startup_fp['profile_type'] = 'small_profile'
+      # TODO(jeremy): Disable on ref builds pending fix for crbug.com/327017.
+      startup_fp['run_reference_build'] = False
+      f.AddTelemetryTest('session_restore.warm.typical_25',
+                         step_name='session_restore.warm.typical_25',
+                         factory_properties=startup_fp)
+    if R('startup_cold_session_restore'):
+      startup_fp = fp.copy()
+      # pylint: disable=W0212
+      startup_fp['profile_type'] = 'small_profile'
+      #TODO(jeremy): Disable on ref builds pending fix for crbug.com/327017.
+      startup_fp['run_reference_build'] = False
+      f.AddTelemetryTest('session_restore.cold.typical_25',
+                         step_name='session_restore.cold.typical_25',
+                         factory_properties=startup_fp)
+
+
     if R('sizes'):
       f.AddSizesTests(fp)
-    if R('sync'):
-      f.AddSyncPerfTests(fp)
+    if R('sizes_br'):
+      f.AddBuildrunnerSizesTests(fp)
     if R('mach_ports'):
       f.AddMachPortsTests(fp)
+    if R('cc_perftests'):
+      f.AddCCPerfTests(fp)
+    if R('media_perftests'):
+      f.AddMediaPerfTests(fp)
+    if R('load_library_perf_tests'):
+      f.AddLoadLibraryPerfTests(fp)
 
     if R('sync_integration'):
-      f.AddAnnotatedSyncIntegrationTests(fp)
+      f.AddSyncIntegrationTests(fp)
     if R('sync_integration_br'):
       f.AddBuildrunnerSyncIntegrationTests(fp)
 
+    # WebRTC tests:
+    if R('webrtc_perf_content_unittests'):
+      f.AddWebRtcPerfContentUnittests(fp)
+    if R('webrtc_manual_content_browsertests'):
+      f.AddWebRtcPerfManualContentBrowserTests(fp)
+    if R('webrtc_content_unittests'):
+      arg_list = ['--gtest_filter=WebRTC*:RTC*:MediaStream*']
+      f.AddGTestTestStep('content_unittests', description=' (webrtc filtered)',
+                         factory_properties=fp, arg_list=arg_list)
+    if R('webrtc_manual_browser_tests'):
+      f.AddWebRtcPerfManualBrowserTests(fp)
+
     # GPU tests:
     if R('gl_tests'):
-      f.AddAnnotatedGLTests(fp)
+      f.AddGLTests(fp)
     if R('gl_tests_br'):
-      f.AddBuildrunnerGLTests(fp)
+      f.AddBuildrunnerGTest('gl_tests', fp, test_tool_arg_list=['--no-xvfb'])
+    if R('content_gl_tests'):
+      f.AddContentGLTests(fp)
     if R('gles2_conform_test'):
-      f.AddAnnotatedGLES2ConformTest(fp)
+      f.AddGLES2ConformTest(fp)
     if R('gles2_conform_test_br'):
-      f.AddBuildrunnerGLES2ConformTest(fp)
-    if R('gpu_tests'):
-      f.AddAnnotatedGpuTests(fp)
-    if R('gpu_tests_br'):
-      f.AddBuildrunnerGpuTests(fp)
-    if R('soft_gpu_tests'):
-      f.AddAnnotatedSoftGpuTests(fp)
-    if R('soft_gpu_tests_br'):
-      f.AddBuildrunnerAnnotatedSoftGpuTests(fp)
+      f.AddBuildrunnerGTest('gles2_conform_test', fp,
+                            test_tool_arg_list=['--no-xvfb'])
     if R('gpu_content_tests'):
-      f.AddAnnotatedGpuContentTests(fp)
-    if R('spaceport'):
-      f.AddTelemetryTest('spaceport', 'spaceport.json', factory_properties=fp)
+      f.AddGpuContentTests(fp)
 
-    # ChromeFrame tests:
-    if R('chrome_frame_perftests'):
-      f.AddChromeFramePerfTests(fp)
-    if R('chrome_frame'):
-      # Add all major CF tests.
-      f.AddAnnotatedGTestTestStep('chrome_frame_net_tests', fp)
-      f.AddAnnotatedGTestTestStep('chrome_frame_unittests', fp)
-      f.AddAnnotatedGTestTestStep('chrome_frame_tests', fp)
-    elif R('chrome_frame_br'):
-      f.AddBuildrunnerGTest('chrome_frame_net_tests', fp)
-      f.AddBuildrunnerGTest('chrome_frame_unittests', fp)
-      f.AddBuildrunnerGTest('chrome_frame_tests', fp)
-    else:
-      if R('chrome_frame_net_tests'):
-        f.AddAnnotatedGTestTestStep('chrome_frame_net_tests', fp)
-      if R('chrome_frame_net_tests_br'):
-        f.AddBuildrunnerGTest('chrome_frame_net_tests', fp)
-      if R('chrome_frame_unittests'):
-        f.AddAnnotatedGTestTestStep('chrome_frame_unittests', fp)
-      if R('chrome_frame_unittests_br'):
-        f.AddBuildrunnerGTest('chrome_frame_unittests', fp)
-      if R('chrome_frame_tests'):
-        f.AddAnnotatedGTestTestStep('chrome_frame_tests', fp)
-      if R('chrome_frame_tests_br'):
-        f.AddBuildrunnerGTest('chrome_frame_tests', fp)
+    def S(test, prefix, add_functor, br_functor=None):
+      """Find any tests with a specific prefix and add them to the build.
 
-    def S(test, prefix, add_functor):
+      S() looks for prefix attached to a test, strips the prefix, and performs a
+      prefix-specific add function via add_functor. If the test is also a
+      buildrunner test (ends in _br), it uses a buildrunner functor. Thus,
+      instead of ash_unittests, valgrind_ash_unittests is ash_unittests added
+      with a special function (one that wraps it with a valgrind driver.
+      """
       if test.startswith(prefix):
         test_name = test[len(prefix):]
         tests.remove(test)
-        add_functor(test_name)
+        if br_functor and test_name.endswith('_br'):
+          br_functor(test_name[:-3])
+        else:
+          add_functor(test_name)
         return True
 
     def M(test, prefix, test_type, fp):
+      """A special case of S() that operates on memory tests."""
       return S(
           test, prefix, lambda test_name:
-          f.AddAnnotatedMemoryTest(test_name, test_type, factory_properties=fp))
+          f.AddMemoryTest(test_name, test_type, factory_properties=fp),
+          lambda test_name:
+            f.AddBuildrunnerMemoryTest(
+                test_name, test_type, factory_properties=fp))
 
     # Valgrind tests:
     for test in tests[:]:
       # TODO(timurrrr): replace 'valgrind' with 'memcheck'
       #                 below and in master.chromium/master.cfg
       if M(test, 'valgrind_', 'memcheck', fp):
-        continue
-      if M(test, 'tsan_gcc_', 'tsan_gcc', fp):
         continue
       # Run TSan in two-stage RaceVerifier mode.
       if M(test, 'tsan_rv_', 'tsan_rv', fp):
@@ -696,119 +833,104 @@ class ChromiumFactory(gclient_factory.GClientFactory):
         continue
       if M(test, 'drmemory_pattern_', 'drmemory_pattern', fp):
         continue
-      if S(test, 'heapcheck_',
-           lambda name: f.AddAnnotatedHeapcheckTest(name,
-                                                    timeout=1200,
-                                                    factory_properties=fp)):
-        continue
-
-    # PyAuto functional tests.
-    if R('pyauto_chromoting_tests'):
-      f.AddPyAutoFunctionalTest('pyauto_chromoting_tests', suite='CHROMOTING',
-                                factory_properties=fp)
-    if R('pyauto_official_tests'):
-      # Mapping from self._target_platform to a chrome-*.zip
-      platmap = {'win32': 'win32',
-                 'darwin': 'mac',
-                 'linux2': 'lucid64bit'}
-      zip_plat = platmap[self._target_platform]
-      workdir = os.path.join(f.working_dir, 'chrome-' + zip_plat)
-      f.AddPyAutoFunctionalTest('pyauto_functional_tests',
-                                src_base='..',
-                                workdir=workdir,
-                                factory_properties=fp)
-    if R('pyauto_perf_tests'):
-      # Mapping from self._target_platform to a chrome-*.zip
-      platmap = {'win32': 'win32',
-                 'darwin': 'mac',
-                 'linux2': 'lucid64bit'}
-      zip_plat = platmap[self._target_platform]
-      workdir = os.path.join(f.working_dir, 'chrome-' + zip_plat)
-      f.AddPyAutoFunctionalTest('pyauto_perf_tests',
-                                suite='PERFORMANCE',
-                                src_base='..',
-                                workdir=workdir,
-                                factory_properties=fp,
-                                perf=True)
-    if R('pyauto_webrtc_tests'):
-      # Mapping from self._target_platform to a chrome-*.zip
-      platmap = {'win32': 'win32',
-                 'darwin': 'mac',
-                 'linux2': 'lucid64bit'}
-      zip_plat = platmap[self._target_platform]
-      workdir = os.path.join(f.working_dir, 'chrome-' + zip_plat)
-      f.AddPyAutoFunctionalTest('pyauto_webrtc_tests',
-                                suite='WEBRTC',
-                                src_base='..',
-                                workdir=workdir,
-                                factory_properties=fp,
-                                perf=True)
 
     # Endurance tests.
-    endure_tests = {
-      'control': [
-        'perf_endure.ChromeEndureControlTest.testControlAttachDetachDOMTree',
-        'perf_endure.ChromeEndureControlTest.'
-          'testControlAttachDetachDOMTreeWebDriver',
-      ],
-      'docs': [
-        'perf_endure.ChromeEndureDocsTest.testDocsAlternatelyClickLists',
-      ],
-      'gmail': [
-        'perf_endure.ChromeEndureGmailTest.testGmailComposeDiscard',
-        'perf_endure.ChromeEndureGmailTest.'
-          'testGmailAlternateThreadlistConversation',
-        'perf_endure.ChromeEndureGmailTest.testGmailAlternateTwoLabels',
-        'perf_endure.ChromeEndureGmailTest.testGmailExpandCollapseConversation',
-      ],
-      'indexeddb': [
-        'perf_endure.IndexedDBOfflineTest.testOfflineOnline',
-      ],
-      'plus': [
-        'perf_endure.ChromeEndurePlusTest.testPlusAlternatelyClickStreams',
-      ],
-    }
-    # Live sites.
-    if R('endure_control_tests'):
-      f.AddChromeEndureTest('endure_control_test', endure_tests['control'], fp)
-    if R('endure_docs_tests'):
-      f.AddChromeEndureTest('endure_docs_test', endure_tests['docs'], fp)
-    if R('endure_gmail_tests'):
-      f.AddChromeEndureTest('endure_gmail_test', endure_tests['gmail'], fp)
-    if R('endure_indexeddb_tests'):
-      f.AddChromeEndureTest('endure_indexeddb_test', endure_tests['indexeddb'],
-                            fp)
-    if R('endure_plus_tests'):
-      f.AddChromeEndureTest('endure_plus_test', endure_tests['plus'], fp)
-    # Web Page Replay.
-    if R('endure_docs_wpr_tests'):
-      f.AddChromeEndureTest('endure_docs_wpr_test', endure_tests['docs'], fp,
-                            wpr=True)
-    if R('endure_gmail_wpr_tests'):
-      f.AddChromeEndureTest('endure_gmail_wpr_test', endure_tests['gmail'], fp,
-                            wpr=True)
-    if R('endure_plus_wpr_tests'):
-      f.AddChromeEndureTest('endure_plus_wpr_test', endure_tests['plus'], fp,
-                            wpr=True)
 
-    # HTML5 media tag performance/functional test using PyAuto.
-    if R('avperf'):
-      # Performance test should be run on virtual X buffer.
-      fp['use_xvfb_on_linux'] = True
-      f.AddWebkitTests(factory_properties=fp)
-      f.AddMediaTests(factory_properties=fp, test_groups=self.MEDIA_TEST_GROUPS)
+    def _GetFPWithTestPropertiesAdded(test_name):
+      """Returns a copy of |fp| with test-specific properties added.
+
+      Args:
+        test_name: Test name, which may be a key in fp['test_properties'].
+
+      Returns:
+        A dictionary that's a copy of the factory properties with test-specific
+        properties added in.
+      """
+      if fp.has_key('test_properties'):
+        return dict(fp, **fp['test_properties'].get(test_name, {}))
+      else:
+        return fp.copy()
+
+    def _AddEndureTest(test_name, telemetry_test_name, test_name_ui):
+      """Adds an endurance test to the factory command object.
+
+      Args:
+        test_name: The test name string, which can be used in
+            tools/build/masters/master.chromium.endure/master.cfg.
+        telemetry_test_name: The benchmark name used by Telemetry.
+        test_name_ui: A short name for this test to show on the waterfall UI.
+      """
+      if R(test_name):
+        # Get test-specific factory properties.
+        test_fp = _GetFPWithTestPropertiesAdded(test_name)
+        # Test name for waterfall ui and dashboard.
+        full_test_name = '%s%s' % (test_name_ui,
+                                   test_fp.get('test_name_suffix', ''))
+        # Hierarchical suite + test name only for dashboard. The 'step_name'
+        # is passed to runtest.py, where it is used to build the test name on
+        # the archive and dashboard.
+        test_fp['step_name'] = 'endure/%s' % full_test_name
+
+        f.AddTelemetryTest(
+            telemetry_test_name,
+            step_name='endure_%s' % full_test_name,
+            factory_properties=test_fp,
+            timeout=6000)
+
+    _AddEndureTest('endure_browser_control_tests',
+                   'endure.browser_control',
+                   'control')
+
+    _AddEndureTest('endure_browser_control_click_tests',
+                   'endure.browser_control_click',
+                   'control_click')
+
+    _AddEndureTest('endure_calendar_tests',
+                   'endure.calendar_forward_backward',
+                   'cal_fw_back')
+
+    _AddEndureTest('endure_gmail_alt_label_tests',
+                   'endure.gmail_alt_two_labels',
+                   'gmail_labels')
+
+    _AddEndureTest('endure_gmail_alt_threadlist_tests',
+                   'endure.gmail_alt_threadlist_conversation',
+                   'gmail_thread')
+
+    _AddEndureTest('endure_gmail_refresh_tests',
+                   'endure.endure_gmail_refresh',
+                   'gmail_refresh')
+
+    _AddEndureTest('endure_gmail_expand_collapse_tests',
+                   'endure.gmail_expand_collapse_conversation',
+                   'gmail_exp_col')
+
+    _AddEndureTest('endure_indexeddb_offline_tests',
+                   'endure.indexeddb_offline',
+                   'idb_offline')
+
+    _AddEndureTest('endure_plus_tests',
+                   'endure.plus_alt_posts_photos',
+                   'plus_photos')
+
     if R('chromedriver_tests'):
       f.AddChromeDriverTest()
     if R('webdriver_tests'):
       f.AddWebDriverTest()
+
+    # Dynamorio coverage.
+    if R('trigger_coverage_tests'):
+      f.AddTriggerCoverageTests(fp)
+    if R('extract_dynamorio_build'):
+      f.AddExtractDynamorioBuild(fp)
+    if R('coverage_tests'):
+      f.AddCoverageTests(fp)
 
     # When adding a test that uses a new executable, update kill_processes.py.
 
     # Coverage tests.  Add coverage processing absoluely last, after
     # all tests have run.  Tests which run after coverage processing
     # don't get counted.
-    if R('run_coverage_bundles'):
-      f.AddRunCoverageBundles(fp)
     if R('process_coverage'):
       f.AddProcessCoverage(fp)
 
@@ -816,6 +938,8 @@ class ChromiumFactory(gclient_factory.GClientFactory):
     # annotator).
     if R('nacl_integration'):
       f.AddNaClIntegrationTestStep(fp)
+    if R('nacl_integration_br'):
+      f.AddBuildrunnerNaClIntegrationTestStep(fp)
     if R('nacl_integration_memcheck'):
       f.AddNaClIntegrationTestStep(fp, None, 'memcheck-browser-tests')
     if R('nacl_integration_tsan'):
@@ -823,6 +947,10 @@ class ChromiumFactory(gclient_factory.GClientFactory):
 
     if R('buildrunner_tests'):
       f.AddBuildStep(factory_properties, name='buildrunner_tests')
+
+    # Add bisection test (if this is specified, it should be the only test)
+    if R('bisect_revisions'):
+      f.AddBisectTest()
 
     # Add an optional set of annotated steps.
     # NOTE: This really should go last as it can be confusing if the annotator
@@ -834,10 +962,6 @@ class ChromiumFactory(gclient_factory.GClientFactory):
     # If you are using a subclass, make sure the tests list provided to
     # _AddTests() had the factory-specific tests stripped off.
     assert not tests, 'Did you make a typo? %s wasn\'t processed' % tests
-
-  @property
-  def build_dir(self):
-    return self._build_dir
 
   def ForceMissingFilesToBeFatal(self, project, gclient_env):
     """Force Windows bots to fail GYPing if referenced files do not exist."""
@@ -851,13 +975,21 @@ class ChromiumFactory(gclient_factory.GClientFactory):
                       mode=None, slave_type='BuilderTester',
                       options=None, compile_timeout=1200, build_url=None,
                       project=None, factory_properties=None, gclient_deps=None,
-                      enable_swarm_tests=False):
+                      run_default_swarm_tests=None):
     factory_properties = (factory_properties or {}).copy()
+    run_default_swarm_tests = run_default_swarm_tests or []
+
+    # Default to the configuration of Blink appropriate for Chromium patches.
+    factory_properties.setdefault('blink_config', 'chromium')
+    if factory_properties['blink_config'] == 'blink':
+      # This will let builders embed their webkit revision in their output
+      # filename and will let testers look for zip files containing a webkit
+      # revision in their filename. For this to work correctly, the testers
+      # need to be on a Triggerable that's activated by their builder.
+      factory_properties.setdefault('webkit_dir', 'third_party/WebKit/Source')
+
     factory_properties['gclient_env'] = \
         factory_properties.get('gclient_env', {}).copy()
-    # Defaults gyp to VS2010.
-    if self._target_platform == 'win32':
-      factory_properties['gclient_env'].setdefault('GYP_MSVS_VERSION', '2010')
     tests = tests or []
 
     if factory_properties.get('needs_valgrind'):
@@ -870,8 +1002,6 @@ class ChromiumFactory(gclient_factory.GClientFactory):
             config.Master.trunk_url +
             '/deps/third_party/drmemory/drmemory.DEPS',
             'drmemory.DEPS'))
-    elif factory_properties.get('needs_tsan_gcc'):
-      self._solutions[0].custom_deps_list = [self.CUSTOM_DEPS_TSAN_GCC]
     elif factory_properties.get('needs_webdriver_java_tests'):
       self._solutions[0].custom_deps_list = [
         self.CUSTOM_DEPS_WEBDRIVER_JAVA_TESTS
@@ -886,7 +1016,7 @@ class ChromiumFactory(gclient_factory.GClientFactory):
       self._solutions[0].safesync_url = self.SAFESYNC_URL_CHROMIUM
 
     tests_for_build = [
-        re.match('^(?:valgrind_|heapcheck_)?(.*)$', t).group(1) for t in tests]
+        re.match('^(?:valgrind_)?(.*)$', t).group(1) for t in tests]
 
     # Ensure that component is set correctly in the gyp defines.
     ForceComponent(target, project, factory_properties['gclient_env'])
@@ -894,15 +1024,24 @@ class ChromiumFactory(gclient_factory.GClientFactory):
     # Ensure GYP errors out if files referenced in .gyp files are missing.
     self.ForceMissingFilesToBeFatal(project, factory_properties['gclient_env'])
 
-    is_windows_asan_builder = (slave_type == 'Builder' and
-                               self._target_platform == 'win32' and
-                               factory_properties.get('asan'))
+    # There's 2 different windows SyzyASan builders:
+    #     - The unittests builder, which build all the unittests, instrument
+    #       them and put them in a zip file for the test bots.
+    #     - The Chromium LKGR builder, which build the All_syzygy target of the
+    #       Chromium project with the 'asan' gyp define set. There's no need to
+    #       call a script to do the instrumentation for this target (it's
+    #       already in the build steps). This builder should archive the builds
+    #       for Clusterfuzz, it need to have the 'cf_archive_build' property.
+    is_win_syzyasan_tests_builder = (slave_type == 'Builder' and
+                                     self._target_platform == 'win32' and
+                                     factory_properties.get('syzyasan') and
+                                 not factory_properties.get('cf_archive_build'))
 
     factory = self.BuildFactory(target, clobber, tests_for_build, mode,
                                 slave_type, options, compile_timeout, build_url,
                                 project, factory_properties,
                                 gclient_deps=gclient_deps,
-                                skip_archive_steps=is_windows_asan_builder)
+                               skip_archive_steps=is_win_syzyasan_tests_builder)
 
     # Get the factory command object to create new steps to the factory.
     chromium_cmd_obj = chromium_commands.ChromiumCommands(factory,
@@ -910,21 +1049,37 @@ class ChromiumFactory(gclient_factory.GClientFactory):
                                                           self._build_dir,
                                                           self._target_platform)
 
-    # Add ASANification step for windows
+    # Add ASANification step for windows unittests.
     # MUST BE FIRST STEP ADDED AFTER BuildFactory CALL in order to add back
-    # the ZipBuild step in it's expected place
-    if is_windows_asan_builder:
-      chromium_cmd_obj.AddWindowsASANStep()
+    # the ZipBuild step in it's expected place.
+    if is_win_syzyasan_tests_builder:
+      # This must occur before syzygy modifies the dlls.
+      for dll in ['chrome.dll', 'chrome_child.dll']:
+        chromium_cmd_obj.AddGenerateCodeTallyStep(dll)
+        chromium_cmd_obj.AddConvertCodeTallyJsonStep(dll)
+
+        if factory_properties.get('code_tally_upload_url'):
+          chromium_cmd_obj.AddUploadConvertedCodeTally(
+              dll, factory_properties.get('code_tally_upload_url'))
+
+      chromium_cmd_obj.AddWindowsSyzyASanStep()
       # Need to add the Zip Build step back
       chromium_cmd_obj.AddZipBuild(halt_on_failure=True,
                                    factory_properties=factory_properties)
+
+    # Trigger Swarming tester. This buildbot builder does nothing else than
+    # running swarming jobs.
+    if (factory_properties.get('swarming_triggered_builder') or
+        run_default_swarm_tests):
+      chromium_cmd_obj.AddTriggerSwarmingTests(
+          run_default_swarm_tests, factory_properties)
 
     # Add this archive build step.
     if factory_properties.get('archive_build'):
       chromium_cmd_obj.AddArchiveBuild(factory_properties=factory_properties)
 
-    if factory_properties.get('asan_archive_build'):
-      chromium_cmd_obj.AddAsanArchiveBuild(
+    if factory_properties.get('cf_archive_build'):
+      chromium_cmd_obj.AddCFArchiveBuild(
           factory_properties=factory_properties)
 
     # Add the package source step.
@@ -935,14 +1090,8 @@ class ChromiumFactory(gclient_factory.GClientFactory):
     self.TriggerFactory(factory, slave_type=slave_type,
                         factory_properties=factory_properties)
 
-    # Trigger swarm tests.
-    if enable_swarm_tests:
-      chromium_cmd_obj.AddTriggerSwarmTests(tests, factory_properties)
-
     # Start the crash handler process.
-    if ((self._target_platform == 'win32' and slave_type != 'Builder' and
-         self._build_dir == 'src/chrome') or
-        factory_properties.get('start_crash_handler')):
+    if factory_properties.get('start_crash_handler'):
       chromium_cmd_obj.AddRunCrashHandler()
 
     # Add all the tests.
@@ -950,10 +1099,6 @@ class ChromiumFactory(gclient_factory.GClientFactory):
 
     if factory_properties.get('process_dumps'):
       chromium_cmd_obj.AddProcessDumps()
-
-    test_parity_platform = factory_properties.get('test_parity_platform')
-    if test_parity_platform:
-      chromium_cmd_obj.AddSendTestParityStep(test_parity_platform)
 
     return factory
 
@@ -963,6 +1108,7 @@ class ChromiumFactory(gclient_factory.GClientFactory):
                                 slave_type='AnnotatedBuilderTester',
                                 clobber=False,
                                 compile_timeout=6000,
+                                maxTime=8*60*60,
                                 project=None,
                                 factory_properties=None, options=None,
                                 tests=None,
@@ -980,6 +1126,8 @@ class ChromiumFactory(gclient_factory.GClientFactory):
     # Setup factory.
     factory_properties = factory_properties or {}
     options = options or {}
+    if self._target_os:
+      factory_properties['target_os'] = self._target_os
 
     # Ensure that component is set correctly in the gyp defines.
     ForceComponent(target, project, factory_properties)
@@ -1005,8 +1153,15 @@ class ChromiumFactory(gclient_factory.GClientFactory):
     factory_properties['target'] = target
     factory_properties.setdefault('clobber', clobber)
 
-    chromium_cmd_obj.AddAnnotationStep('build', annotation_script, env=env,
-                                       factory_properties=factory_properties)
+    chromium_cmd_obj.AddAnnotationStep(
+        name='slave_steps',
+        cmd=annotation_script,
+        factory_properties=factory_properties,
+        env=env, maxTime=maxTime)
+
+    # Add archive build step.
+    if factory_properties.get('archive_build'):
+      chromium_cmd_obj.AddArchiveBuild(factory_properties=factory_properties)
 
     # Add all the tests.
     self._AddTests(factory_cmd_obj=chromium_cmd_obj, tests=tests,
@@ -1019,16 +1174,6 @@ class ChromiumFactory(gclient_factory.GClientFactory):
     return factory
 
 
-  def ReliabilityTestsFactory(self, platform='win'):
-    """Create a BuildFactory to run a reliability slave."""
-    factory = BuildFactory({})
-    cmd_obj = chromium_commands.ChromiumCommands(factory,
-                                                 'Release', '',
-                                                 self._target_platform)
-    cmd_obj.AddUpdateScriptStep()
-    cmd_obj.AddReliabilityTests(platform=platform)
-    return factory
-
   def ChromiumV8LatestFactory(self, target='Release', clobber=False, tests=None,
                               mode=None, slave_type='BuilderTester',
                               options=None, compile_timeout=1200,
@@ -1038,16 +1183,89 @@ class ChromiumFactory(gclient_factory.GClientFactory):
     return self.ChromiumFactory(target, clobber, tests, mode, slave_type,
                                 options, compile_timeout, build_url, project,
                                 factory_properties)
+  def ChromiumV8TrunkFactory(self, target='Release', clobber=False, tests=None,
+                             mode=None, slave_type='BuilderTester',
+                             options=None, compile_timeout=1200,
+                             build_url=None, project=None,
+                             factory_properties=None):
+    self._solutions[0].custom_deps_list = [self.CUSTOM_DEPS_V8_TRUNK]
+    return self.ChromiumFactory(target, clobber, tests, mode, slave_type,
+                                options, compile_timeout, build_url, project,
+                                factory_properties)
+
+  def ChromiumWebRTCFactory(self, target='Release', clobber=False,
+                            tests=None, mode=None,
+                            slave_type='BuilderTester', options=None,
+                            compile_timeout=1200, build_url=None,
+                            project=None, factory_properties=None):
+    self._solutions.append(gclient_factory.GClientSolution(
+        config.Master.trunk_url + '/deps/third_party/webrtc/webrtc.DEPS',
+        name='webrtc.DEPS'))
+    return self.ChromiumFactory(target, clobber, tests, mode, slave_type,
+                                options, compile_timeout, build_url, project,
+                                factory_properties)
 
   def ChromiumWebRTCLatestFactory(self, target='Release', clobber=False,
                                   tests=None, mode=None,
                                   slave_type='BuilderTester', options=None,
                                   compile_timeout=1200, build_url=None,
                                   project=None, factory_properties=None):
-    self._solutions[0].custom_deps_list = [self.CUSTOM_DEPS_WEBRTC_LATEST]
-    return self.ChromiumFactory(target, clobber, tests, mode, slave_type,
-                                options, compile_timeout, build_url, project,
-                                factory_properties)
+    self._solutions[0].custom_deps_list = [self.CUSTOM_DEPS_WEBRTC_TRUNK,
+                                           self.CUSTOM_DEPS_LIBJINGLE_TRUNK]
+    factory_properties = factory_properties or {}
+    factory_properties['primary_repo'] = 'webrtc_'
+    factory_properties['no_gclient_revision'] = True
+    factory_properties['revision_dir'] = 'third_party/webrtc'
+    return self.ChromiumWebRTCFactory(target, clobber, tests, mode, slave_type,
+                                      options, compile_timeout, build_url,
+                                      project, factory_properties)
+
+  def ChromiumWebRTCAndroidFactory(self, annotation_script,
+                                   branch='master',
+                                   target='Release',
+                                   slave_type='AnnotatedBuilderTester',
+                                   clobber=False,
+                                   compile_timeout=6000,
+                                   project=None,
+                                   factory_properties=None, options=None,
+                                   tests=None,
+                                   gclient_deps=None):
+    self._solutions.append(gclient_factory.GClientSolution(
+        config.Master.trunk_url + '/deps/third_party/webrtc/webrtc.DEPS',
+        name='webrtc.DEPS'))
+    return self.ChromiumAnnotationFactory(annotation_script=annotation_script,
+                                          branch=branch,
+                                          target=target,
+                                          slave_type=slave_type,
+                                          clobber=clobber,
+                                          compile_timeout=compile_timeout,
+                                          project=project,
+                                          factory_properties=factory_properties,
+                                          options=options,
+                                          tests=tests,
+                                          gclient_deps=gclient_deps)
+
+  def ChromiumWebRTCAndroidLatestFactory(self, annotation_script,
+                                         branch='master',
+                                         target='Release',
+                                         slave_type='AnnotatedBuilderTester',
+                                         clobber=False,
+                                         compile_timeout=6000,
+                                         project=None,
+                                         factory_properties=None, options=None,
+                                         tests=None,
+                                         gclient_deps=None):
+    self._solutions[0].custom_deps_list = [self.CUSTOM_DEPS_WEBRTC_TRUNK,
+                                           self.CUSTOM_DEPS_LIBJINGLE_TRUNK]
+    factory_properties = factory_properties or {}
+    factory_properties['primary_repo'] = 'webrtc_'
+    factory_properties['no_gclient_revision'] = True
+    factory_properties['revision_dir'] = 'third_party/webrtc'
+    return self.ChromiumWebRTCAndroidFactory(annotation_script, branch, target,
+                                             slave_type, clobber,
+                                             compile_timeout, project,
+                                             factory_properties, options,
+                                             tests, gclient_deps)
 
   def ChromiumAVPerfFactory(self, target='Release', clobber=False, tests=None,
                               mode=None, slave_type='BuilderTester',
@@ -1079,57 +1297,6 @@ class ChromiumFactory(gclient_factory.GClientFactory):
                                 options, compile_timeout, build_url, project,
                                 factory_properties)
 
-  def _InitWebkitLatestFactorySettings(self, factory_properties):
-    self._solutions[0].custom_vars_list.extend(self.CUSTOM_VARS_WEBKIT_LATEST)
-
-    # This will let builders embed their webkit revision in their output
-    # filename and will let testers look for zip files containing a webkit
-    # revision in their filename. For this to work correctly, the testers
-    # need to be on a Triggerable that's activated by their builder.
-    factory_properties.setdefault('webkit_dir', 'third_party/WebKit/Source')
-
-  def ChromiumWebkitLatestAnnotationFactory(self, annotation_script,
-                                            branch='master', target='Release',
-                                            slave_type='AnnotatedBuilderTester',
-                                            clobber=False, compile_timeout=6000,
-                                            project=None,
-                                            factory_properties=None,
-                                            tests=None):
-    factory_properties = factory_properties or {}
-    self._InitWebkitLatestFactorySettings(factory_properties)
-
-    return self.ChromiumAnnotationFactory(
-        annotation_script=annotation_script, branch=branch, target=target,
-        slave_type=slave_type, clobber=clobber, compile_timeout=compile_timeout,
-        project=project, factory_properties=factory_properties, tests=tests)
-
-  def ChromiumWebkitLatestFactory(self, target='Release', clobber=False,
-                                  tests=None, mode=None,
-                                  slave_type='BuilderTester', options=None,
-                                  compile_timeout=1200, build_url=None,
-                                  project=None, factory_properties=None):
-    factory_properties = factory_properties or {}
-    self._InitWebkitLatestFactorySettings(factory_properties)
-
-    return self.ChromiumFactory(target, clobber, tests, mode, slave_type,
-                                options, compile_timeout, build_url, project,
-                                factory_properties)
-
-  def ChromiumOSWebkitLatestFactory(self, target='Release', clobber=False,
-                                    tests=None, mode=None,
-                                    slave_type='BuilderTester', options=None,
-                                    compile_timeout=1200, build_url=None,
-                                    project=None, factory_properties=None):
-    # Make sure the solution is not already there.
-    if 'cros_deps' not in [s.name for s in self._solutions]:
-      self._solutions.append(gclient_factory.GClientSolution(
-          config.Master.trunk_url + '/src/tools/cros.DEPS', name='cros_deps'))
-
-    return self.ChromiumWebkitLatestFactory(target, clobber, tests, mode,
-                                            slave_type, options,
-                                            compile_timeout, build_url,
-                                            project, factory_properties)
-
   def ChromiumGYPLatestFactory(self, target='Debug', clobber=False, tests=None,
                                mode=None, slave_type='BuilderTester',
                                options=None, compile_timeout=1200,
@@ -1158,25 +1325,10 @@ class ChromiumFactory(gclient_factory.GClientFactory):
                                 options, compile_timeout, build_url, project,
                                 factory_properties)
 
-  def ChromiumArmuFactory(self, target='Release', clobber=False, tests=None,
-                          mode=None, slave_type='BuilderTester', options=None,
-                          compile_timeout=1200, build_url=None, project=None,
-                          factory_properties=None):
-    self._project = 'webkit_armu.sln'
-    self._solutions[0].custom_deps_list = [self.CUSTOM_DEPS_V8_LATEST]
-    return self.ChromiumFactory(target, clobber, tests, mode, slave_type,
-                                options, compile_timeout, build_url, project,
-                                factory_properties)
-
   def ChromiumOSFactory(self, target='Release', clobber=False, tests=None,
                         mode=None, slave_type='BuilderTester', options=None,
                         compile_timeout=1200, build_url=None, project=None,
                         factory_properties=None):
-    # Make sure the solution is not already there.
-    if 'cros_deps' not in [s.name for s in self._solutions]:
-      self._solutions.append(gclient_factory.GClientSolution(
-          config.Master.trunk_url + '/src/tools/cros.DEPS', name='cros_deps'))
-
     return self.ChromiumFactory(target, clobber, tests, mode, slave_type,
                                 options, compile_timeout, build_url, project,
                                 factory_properties)
@@ -1226,84 +1378,10 @@ class ChromiumFactory(gclient_factory.GClientFactory):
                                 options, compile_timeout, build_url, project,
                                 factory_properties)
 
-  def ChromiumGITFactory(self, target='Release', clobber=False, tests=None,
-                         mode=None, slave_type='Tester', options=None,
-                         compile_timeout=1200, build_url=None, project=None,
-                         git_url=None, factory_properties=None):
-    if not factory_properties:
-      factory_properties = {}
-    factory_properties['no_gclient_branch'] = True
-    if git_url is None:
-      git_url = '%s/chromium/src.git' % config.Master.git_server_url
-    main = gclient_factory.GClientSolution(
-        svn_url=git_url, name='src', custom_deps_file='.DEPS.git')
-    self._solutions[0] = main
-    if (len(self._solutions) > 1 and
-        self._solutions[1].svn_url == config.Master.trunk_internal_url_src):
-      svn_url = 'ssh://gerrit-int.chromium.org:29419/chrome/src-internal'
-      self._solutions[1] = gclient_factory.GClientSolution(
-          svn_url=svn_url,
-          name='src-internal',
-          custom_deps_file='.DEPS.git',
-          needed_components=self.NEEDED_COMPONENTS_INTERNAL)
-    return self.ChromiumFactory(target, clobber, tests, mode, slave_type,
-                                options, compile_timeout, build_url, project,
-                                factory_properties)
-
   def ChromiumOSASANFactory(self, target='Release', clobber=False, tests=None,
                             mode=None, slave_type='BuilderTester', options=None,
                             compile_timeout=1200, build_url=None, project=None,
                             factory_properties=None):
-    # Make sure the solution is not already there.
-    if 'cros_deps' not in [s.name for s in self._solutions]:
-      self._solutions.append(gclient_factory.GClientSolution(
-          config.Master.trunk_url + '/src/tools/cros.DEPS', name='cros_deps'))
-    if 'asan.DEPS' not in [s.name for s in self._solutions]:
-      self._solutions.append(gclient_factory.GClientSolution(
-          config.Master.trunk_url + '/deps/asan.DEPS',
-          'asan.DEPS'))
     return self.ChromiumFactory(target, clobber, tests, mode, slave_type,
                                 options, compile_timeout, build_url, project,
                                 factory_properties)
-
-  def ChromiumChromebotFactory(
-      self, target='Release', clobber=False, tests=None,
-      mode=None, slave_type='ChromebotClient', options=None,
-      compile_timeout=1200, build_url=None, project=None,
-      factory_properties=None, web_build_dir=None):
-    factory_properties = factory_properties or {}
-    self._solutions = []
-
-    for name, url in self.CHROMEBOT_DEPS:
-      self._solutions.append(gclient_factory.GClientSolution(url, name))
-
-    # Ensure that component is set correctly in the gyp defines.
-    ForceComponent(target, project, factory_properties)
-
-    factory = self.BuildFactory(target, clobber, tests, mode,
-                                slave_type, options, compile_timeout, build_url,
-                                project, factory_properties)
-
-    # Get the factory command object to create new steps to the factory.
-    chromium_cmd_obj = chromium_commands.ChromiumCommands(factory,
-                                                          target,
-                                                          self._build_dir,
-                                                          self._target_platform)
-
-    # Add steps.
-    client_os = factory_properties.get('client_os')
-    if slave_type == 'ChromebotServer':
-      chromium_cmd_obj.AddDownloadFileStep(factory_properties.get('config'),
-                                           'src/tools/chromebot/custom.cfg')
-      chromium_cmd_obj.AddGetBuildForChromebot(client_os,
-                                               archive_url=build_url,
-                                               build_dir=web_build_dir)
-      chromium_cmd_obj.AddChromebotServer(factory_properties)
-      chromium_cmd_obj.AddReliabilityTests(client_os)
-    elif slave_type == 'ChromebotClient':
-      chromium_cmd_obj.AddGetBuildForChromebot(client_os,
-                                               extract=True,
-                                               build_url=build_url)
-      chromium_cmd_obj.AddChromebotClient(factory_properties)
-
-    return factory

@@ -10,9 +10,9 @@
 #import "chrome/browser/ui/cocoa/location_bar/image_decoration.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
-@class ExtensionActionContextMenu;
+@class ExtensionActionContextMenuController;
 class Browser;
 class LocationBarViewMac;
 
@@ -25,8 +25,7 @@ class WebContents;
 
 class PageActionDecoration : public ImageDecoration,
                              public ExtensionActionIconFactory::Observer,
-                             public content::NotificationObserver,
-                             public ExtensionAction::IconAnimation::Observer {
+                             public content::NotificationObserver {
  public:
   PageActionDecoration(LocationBarViewMac* owner,
                        Browser* browser,
@@ -50,19 +49,16 @@ class PageActionDecoration : public ImageDecoration,
   void SetToolTip(NSString* tooltip);
   void SetToolTip(std::string tooltip);
 
-  // Get the point where extension info bubbles should point within
-  // the given decoration frame.
-  NSPoint GetBubblePointInFrame(NSRect frame);
-
   // Overridden from |LocationBarDecoration|
   virtual CGFloat GetWidthForSpace(CGFloat width) OVERRIDE;
-  virtual void DrawWithBackgroundInFrame(NSRect background_frame,
-                                         NSRect frame,
-                                         NSView* control_view) OVERRIDE;
   virtual bool AcceptsMousePress() OVERRIDE;
   virtual bool OnMousePressed(NSRect frame) OVERRIDE;
   virtual NSString* GetToolTip() OVERRIDE;
   virtual NSMenu* GetMenu() OVERRIDE;
+  virtual NSPoint GetBubblePointInFrame(NSRect frame) OVERRIDE;
+
+  // Activate the page action in its default frame.
+  void ActivatePageAction();
 
  private:
   // Activate the page action in the given |frame|.
@@ -70,9 +66,6 @@ class PageActionDecoration : public ImageDecoration,
 
   // Show the popup in the frame, with the given URL.
   void ShowPopup(const NSRect& frame, const GURL& popup_url);
-
-  // Overridden from ExtensionAction::IconAnimation::Observer.
-  virtual void OnIconChanged() OVERRIDE;
 
   // Overridden from NotificationObserver:
   virtual void Observe(int type,
@@ -104,19 +97,16 @@ class PageActionDecoration : public ImageDecoration,
   GURL current_url_;
 
   // The string to show for a tooltip.
-  scoped_nsobject<NSString> tooltip_;
+  base::scoped_nsobject<NSString> tooltip_;
 
-  // The context menu for the Page Action.
-  scoped_nsobject<ExtensionActionContextMenu> menu_;
+  // The context menu controller for the Page Action.
+  base::scoped_nsobject<
+      ExtensionActionContextMenuController> contextMenuController_;
 
   // This is used for post-install visual feedback. The page_action
   // icon is briefly shown even if it hasn't been enabled by its
   // extension.
   bool preview_enabled_;
-
-  // Fade-in animation for the icon with observer scoped to this.
-  ExtensionAction::IconAnimation::ScopedObserver
-      scoped_icon_animation_observer_;
 
   // Used to register for notifications received by
   // NotificationObserver.

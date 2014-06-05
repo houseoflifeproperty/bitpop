@@ -10,8 +10,13 @@
 #include "base/logging.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/singleton.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "base/synchronization/lock.h"
+#include "build/build_config.h"
+
+#if defined(OS_ANDROID) && defined(ARCH_CPU_ARMEL)
+#include <cpu-features.h>
+#endif
 
 namespace crypto {
 
@@ -49,6 +54,13 @@ class OpenSSLInitSingleton {
       locks_.push_back(new base::Lock());
     CRYPTO_set_locking_callback(LockingCallback);
     CRYPTO_set_id_callback(CurrentThreadId);
+
+#if defined(OS_ANDROID) && defined(ARCH_CPU_ARMEL)
+    const bool has_neon =
+        (android_getCpuFeatures() & ANDROID_CPU_ARM_FEATURE_NEON) != 0;
+    if (has_neon)
+      CRYPTO_set_NEON_capable(1);
+#endif
   }
 
   ~OpenSSLInitSingleton() {

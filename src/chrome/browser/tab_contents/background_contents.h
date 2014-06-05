@@ -12,11 +12,12 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "webkit/glue/window_open_disposition.h"
+#include "ui/base/window_open_disposition.h"
 
 class Profile;
 
 namespace content {
+class SessionStorageNamespace;
 class SiteInstance;
 };
 
@@ -42,9 +43,12 @@ class BackgroundContents : public content::WebContentsDelegate,
     virtual ~Delegate() {}
   };
 
-  BackgroundContents(content::SiteInstance* site_instance,
-                     int routing_id,
-                     Delegate* delegate);
+  BackgroundContents(
+      content::SiteInstance* site_instance,
+      int routing_id,
+      Delegate* delegate,
+      const std::string& partition_id,
+      content::SessionStorageNamespace* session_storage_namespace);
   virtual ~BackgroundContents();
 
   content::WebContents* web_contents() const { return web_contents_.get(); }
@@ -61,9 +65,10 @@ class BackgroundContents : public content::WebContentsDelegate,
                               const gfx::Rect& initial_pos,
                               bool user_gesture,
                               bool* was_blocked) OVERRIDE;
+  virtual bool IsNeverVisible(content::WebContents* web_contents) OVERRIDE;
 
   // content::WebContentsObserver implementation:
-  virtual void RenderViewGone(base::TerminationStatus status) OVERRIDE;
+  virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
 
   // content::NotificationObserver
   virtual void Observe(int type,
@@ -91,10 +96,10 @@ struct BackgroundContentsOpenedDetails {
   BackgroundContents* contents;
 
   // The name of the parent frame for these contents.
-  const string16& frame_name;
+  const base::string16& frame_name;
 
   // The ID of the parent application (if any).
-  const string16& application_id;
+  const base::string16& application_id;
 };
 
 #endif  // CHROME_BROWSER_TAB_CONTENTS_BACKGROUND_CONTENTS_H_

@@ -4,7 +4,7 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #import "chrome/browser/ui/cocoa/location_bar/selected_keyword_decoration.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -22,8 +22,7 @@ const CGFloat kNarrowWidth(5.0);
 
 class SelectedKeywordDecorationTest : public CocoaTest {
  public:
-  SelectedKeywordDecorationTest()
-      : decoration_([NSFont userFontOfSize:12]) {
+  SelectedKeywordDecorationTest() {
   }
 
   SelectedKeywordDecoration decoration_;
@@ -33,7 +32,7 @@ class SelectedKeywordDecorationTest : public CocoaTest {
 // not enough room.
 TEST_F(SelectedKeywordDecorationTest, UsesPartialKeywordIfNarrow) {
 
-  const string16 kKeyword = ASCIIToUTF16("Engine");
+  const base::string16 kKeyword = base::ASCIIToUTF16("Engine");
   NSString* const kFullString = @"Search Engine:";
   NSString* const kPartialString = @"Search En\u2026:";  // ellipses
 

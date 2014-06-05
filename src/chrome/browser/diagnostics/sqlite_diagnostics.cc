@@ -6,153 +6,264 @@
 
 #include "base/file_util.h"
 #include "base/logging.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/singleton.h"
+#include "base/memory/weak_ptr.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
-#include "base/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
+#include "chromeos/chromeos_constants.h"
+#include "components/webdata/common/webdata_constants.h"
 #include "content/public/common/content_constants.h"
 #include "sql/connection.h"
-#include "sql/diagnostic_error_delegate.h"
 #include "sql/statement.h"
 #include "third_party/sqlite/sqlite3.h"
-#include "webkit/appcache/appcache_interfaces.h"
-#include "webkit/database/database_tracker.h"
+#include "webkit/browser/database/database_tracker.h"
+#include "webkit/common/appcache/appcache_interfaces.h"
+
+namespace diagnostics {
 
 namespace {
 
-// Generic diagnostic test class for checking sqlite db integrity.
-class SqliteIntegrityTest : public DiagnosticTest {
+// Generic diagnostic test class for checking SQLite database integrity.
+class SqliteIntegrityTest : public DiagnosticsTest {
  public:
-  SqliteIntegrityTest(bool critical, const string16& title,
-                      const FilePath& profile_relative_db_path)
-      : DiagnosticTest(title),
-        critical_(critical),
-        db_path_(profile_relative_db_path) {
+  // These are bit flags, so each value should be a power of two.
+  enum Flags {
+    NO_FLAGS_SET = 0,
+    CRITICAL = 0x01,
+    REMOVE_IF_CORRUPT = 0x02,
+  };
+
+  SqliteIntegrityTest(uint32 flags,
+                      DiagnosticsTestId id,
+                      const base::FilePath& db_path)
+      : DiagnosticsTest(id), flags_(flags), db_path_(db_path) {}
+
+  virtual bool RecoveryImpl(DiagnosticsModel::Observer* observer) OVERRIDE {
+    int outcome_code = GetOutcomeCode();
+    if (flags_ & REMOVE_IF_CORRUPT) {
+      switch (outcome_code) {
+        case DIAG_SQLITE_ERROR_HANDLER_CALLED:
+        case DIAG_SQLITE_CANNOT_OPEN_DB:
+        case DIAG_SQLITE_DB_LOCKED:
+        case DIAG_SQLITE_PRAGMA_FAILED:
+        case DIAG_SQLITE_DB_CORRUPTED:
+          LOG(WARNING) << "Removing broken SQLite database: "
+                       << db_path_.value();
+          base::DeleteFile(db_path_, false);
+          break;
+        case DIAG_SQLITE_SUCCESS:
+        case DIAG_SQLITE_FILE_NOT_FOUND_OK:
+        case DIAG_SQLITE_FILE_NOT_FOUND:
+          break;
+        default:
+          DCHECK(false) << "Invalid outcome code: " << outcome_code;
+          break;
+      }
+    }
+    return true;
   }
 
-  virtual int GetId() { return 0; }
+  virtual bool ExecuteImpl(DiagnosticsModel::Observer* observer) OVERRIDE {
+    // If we're given an absolute path, use it. If not, then assume it's under
+    // the profile directory.
+    base::FilePath path;
+    if (!db_path_.IsAbsolute())
+      path = GetUserDefaultProfileDir().Append(db_path_);
+    else
+      path = db_path_;
 
-  virtual bool ExecuteImpl(DiagnosticsModel::Observer* observer) {
-    FilePath path = GetUserDefaultProfileDir();
-    path = path.Append(db_path_);
-    if (!file_util::PathExists(path)) {
-      RecordOutcome(ASCIIToUTF16("File not found"),
-                    critical_ ? DiagnosticsModel::TEST_FAIL_CONTINUE :
-                                DiagnosticsModel::TEST_OK);
+    if (!base::PathExists(path)) {
+      if (flags_ & CRITICAL) {
+        RecordOutcome(DIAG_SQLITE_FILE_NOT_FOUND,
+                      "File not found",
+                      DiagnosticsModel::TEST_FAIL_CONTINUE);
+      } else {
+        RecordOutcome(DIAG_SQLITE_FILE_NOT_FOUND_OK,
+                      "File not found (but that is OK)",
+                      DiagnosticsModel::TEST_OK);
+      }
       return true;
     }
 
     int errors = 0;
-    { // This block scopes the lifetime of the db objects.
-      sql::Connection db;
-      db.set_exclusive_locking();
-      if (!db.Open(path)) {
-        RecordFailure(ASCIIToUTF16("Cannot open DB. Possibly corrupted"));
+    {  // Scope the statement and database so they close properly.
+      sql::Connection database;
+      database.set_exclusive_locking();
+      scoped_refptr<ErrorRecorder> recorder(new ErrorRecorder);
+
+      // Set the error callback so that we can get useful results in a debug
+      // build for a corrupted database. Without setting the error callback,
+      // sql::Connection will just DCHECK.
+      database.set_error_callback(
+          base::Bind(&SqliteIntegrityTest::ErrorRecorder::RecordSqliteError,
+                     recorder->AsWeakPtr(),
+                     &database));
+      if (!database.Open(path)) {
+        RecordFailure(DIAG_SQLITE_CANNOT_OPEN_DB,
+                      "Cannot open DB. Possibly corrupted");
         return true;
       }
-      sql::Statement s(db.GetUniqueStatement("PRAGMA integrity_check;"));
-      if (!s.is_valid()) {
-        int error = db.GetErrorCode();
+      if (recorder->has_error()) {
+        RecordFailure(DIAG_SQLITE_ERROR_HANDLER_CALLED,
+                      recorder->FormatError());
+        return true;
+      }
+      sql::Statement statement(
+          database.GetUniqueStatement("PRAGMA integrity_check;"));
+      if (recorder->has_error()) {
+        RecordFailure(DIAG_SQLITE_ERROR_HANDLER_CALLED,
+                      recorder->FormatError());
+        return true;
+      }
+      if (!statement.is_valid()) {
+        int error = database.GetErrorCode();
         if (SQLITE_BUSY == error) {
-          RecordFailure(ASCIIToUTF16("DB locked by another process"));
+          RecordFailure(DIAG_SQLITE_DB_LOCKED,
+                        "Database locked by another process");
         } else {
-          string16 str(ASCIIToUTF16("Pragma failed. Error: "));
-          str += base::IntToString16(error);
-          RecordFailure(str);
+          std::string str("Pragma failed. Error: ");
+          str += base::IntToString(error);
+          RecordFailure(DIAG_SQLITE_PRAGMA_FAILED, str);
         }
         return false;
       }
-      while (s.Step()) {
-        std::string result(s.ColumnString(0));
+
+      while (statement.Step()) {
+        std::string result(statement.ColumnString(0));
         if ("ok" != result)
           ++errors;
       }
+      if (recorder->has_error()) {
+        RecordFailure(DIAG_SQLITE_ERROR_HANDLER_CALLED,
+                      recorder->FormatError());
+        return true;
+      }
     }
+
     // All done. Report to the user.
     if (errors != 0) {
-      string16 str(ASCIIToUTF16("Database corruption detected :"));
-      str += base::IntToString16(errors) + ASCIIToUTF16(" errors");
-      RecordFailure(str);
+      std::string str("Database corruption detected: ");
+      str += base::IntToString(errors) + " errors";
+      RecordFailure(DIAG_SQLITE_DB_CORRUPTED, str);
       return true;
     }
-    RecordSuccess(ASCIIToUTF16("no corruption detected"));
+    RecordSuccess("No corruption detected");
     return true;
   }
 
  private:
-  bool critical_;
-  FilePath db_path_;
-  DISALLOW_COPY_AND_ASSIGN(SqliteIntegrityTest);
-};
+  class ErrorRecorder : public base::RefCounted<ErrorRecorder>,
+                        public base::SupportsWeakPtr<ErrorRecorder> {
+   public:
+    ErrorRecorder() : has_error_(false), sqlite_error_(0), last_errno_(0) {}
 
-// Uniquifier to use the sql::DiagnosticErrorDelegate template which
-// requires a static name() method.
-template <size_t unique>
-class HistogramUniquifier {
- public:
-  static const char* name() {
-    const char* kHistogramNames[] = {
-      "Sqlite.Thumbnail.Error",
-      "Sqlite.Text.Error",
-      "Sqlite.Web.Error"
-    };
-    return kHistogramNames[unique];
-  }
+    void RecordSqliteError(sql::Connection* connection,
+                           int sqlite_error,
+                           sql::Statement* statement) {
+      has_error_ = true;
+      sqlite_error_ = sqlite_error;
+      last_errno_ = connection->GetLastErrno();
+      message_ = connection->GetErrorMessage();
+    }
+
+    bool has_error() const { return has_error_; }
+
+    std::string FormatError() {
+      return base::StringPrintf("SQLite error: %d, Last Errno: %d: %s",
+                                sqlite_error_,
+                                last_errno_,
+                                message_.c_str());
+    }
+
+   private:
+    friend class base::RefCounted<ErrorRecorder>;
+    ~ErrorRecorder() {}
+
+    bool has_error_;
+    int sqlite_error_;
+    int last_errno_;
+    std::string message_;
+
+    DISALLOW_COPY_AND_ASSIGN(ErrorRecorder);
+  };
+
+  uint32 flags_;
+  base::FilePath db_path_;
+  DISALLOW_COPY_AND_ASSIGN(SqliteIntegrityTest);
 };
 
 }  // namespace
 
-sql::ErrorDelegate* GetErrorHandlerForThumbnailDb() {
-  return new sql::DiagnosticErrorDelegate<HistogramUniquifier<0> >();
-}
-
-sql::ErrorDelegate* GetErrorHandlerForTextDb() {
-  return new sql::DiagnosticErrorDelegate<HistogramUniquifier<1> >();
-}
-
-sql::ErrorDelegate* GetErrorHandlerForWebDb() {
-  return new sql::DiagnosticErrorDelegate<HistogramUniquifier<2> >();
-}
-
-DiagnosticTest* MakeSqliteWebDbTest() {
-  return new SqliteIntegrityTest(true, ASCIIToUTF16("Web DB"),
-                                 FilePath(chrome::kWebDataFilename));
-}
-
-DiagnosticTest* MakeSqliteCookiesDbTest() {
-  return new SqliteIntegrityTest(true, ASCIIToUTF16("Cookies DB"),
-                                 FilePath(chrome::kCookieFilename));
-}
-
-DiagnosticTest* MakeSqliteHistoryDbTest() {
-  return new SqliteIntegrityTest(true, ASCIIToUTF16("History DB"),
-                                 FilePath(chrome::kHistoryFilename));
-}
-
-DiagnosticTest* MakeSqliteArchivedHistoryDbTest() {
-  return new SqliteIntegrityTest(false, ASCIIToUTF16("Archived History DB"),
-                                 FilePath(chrome::kArchivedHistoryFilename));
-}
-
-DiagnosticTest* MakeSqliteThumbnailsDbTest() {
-  return new SqliteIntegrityTest(false, ASCIIToUTF16("Thumbnails DB"),
-                                 FilePath(chrome::kThumbnailsFilename));
-}
-
-DiagnosticTest* MakeSqliteAppCacheDbTest() {
-  FilePath appcache_dir(content::kAppCacheDirname);
-  FilePath appcache_db = appcache_dir.Append(appcache::kAppCacheDatabaseName);
-  return new SqliteIntegrityTest(false, ASCIIToUTF16("AppCache DB"),
+DiagnosticsTest* MakeSqliteAppCacheDbTest() {
+  base::FilePath appcache_dir(content::kAppCacheDirname);
+  base::FilePath appcache_db =
+      appcache_dir.Append(appcache::kAppCacheDatabaseName);
+  return new SqliteIntegrityTest(SqliteIntegrityTest::NO_FLAGS_SET,
+                                 DIAGNOSTICS_SQLITE_INTEGRITY_APP_CACHE_TEST,
                                  appcache_db);
 }
 
-DiagnosticTest* MakeSqliteWebDatabaseTrackerDbTest() {
-  FilePath databases_dir(webkit_database::kDatabaseDirectoryName);
-  FilePath tracker_db =
-      databases_dir.Append(webkit_database::kTrackerDatabaseFileName);
-  return new SqliteIntegrityTest(false, ASCIIToUTF16("DatabaseTracker DB"),
-                                 tracker_db);
+DiagnosticsTest* MakeSqliteArchivedHistoryDbTest() {
+  return new SqliteIntegrityTest(
+      SqliteIntegrityTest::NO_FLAGS_SET,
+      DIAGNOSTICS_SQLITE_INTEGRITY_ARCHIVED_HISTORY_TEST,
+      base::FilePath(chrome::kArchivedHistoryFilename));
 }
+
+DiagnosticsTest* MakeSqliteCookiesDbTest() {
+  return new SqliteIntegrityTest(SqliteIntegrityTest::CRITICAL,
+                                 DIAGNOSTICS_SQLITE_INTEGRITY_COOKIE_TEST,
+                                 base::FilePath(chrome::kCookieFilename));
+}
+
+DiagnosticsTest* MakeSqliteWebDatabaseTrackerDbTest() {
+  base::FilePath databases_dir(webkit_database::kDatabaseDirectoryName);
+  base::FilePath tracker_db =
+      databases_dir.Append(webkit_database::kTrackerDatabaseFileName);
+  return new SqliteIntegrityTest(
+      SqliteIntegrityTest::NO_FLAGS_SET,
+      DIAGNOSTICS_SQLITE_INTEGRITY_DATABASE_TRACKER_TEST,
+      tracker_db);
+}
+
+DiagnosticsTest* MakeSqliteHistoryDbTest() {
+  return new SqliteIntegrityTest(SqliteIntegrityTest::CRITICAL,
+                                 DIAGNOSTICS_SQLITE_INTEGRITY_HISTORY_TEST,
+                                 base::FilePath(chrome::kHistoryFilename));
+}
+
+#if defined(OS_CHROMEOS)
+DiagnosticsTest* MakeSqliteNssCertDbTest() {
+  base::FilePath home_dir = base::GetHomeDir();
+  return new SqliteIntegrityTest(SqliteIntegrityTest::REMOVE_IF_CORRUPT,
+                                 DIAGNOSTICS_SQLITE_INTEGRITY_NSS_CERT_TEST,
+                                 home_dir.Append(chromeos::kNssCertDbPath));
+}
+
+DiagnosticsTest* MakeSqliteNssKeyDbTest() {
+  base::FilePath home_dir = base::GetHomeDir();
+  return new SqliteIntegrityTest(SqliteIntegrityTest::REMOVE_IF_CORRUPT,
+                                 DIAGNOSTICS_SQLITE_INTEGRITY_NSS_KEY_TEST,
+                                 home_dir.Append(chromeos::kNssKeyDbPath));
+}
+#endif  // defined(OS_CHROMEOS)
+
+DiagnosticsTest* MakeSqliteThumbnailsDbTest() {
+  return new SqliteIntegrityTest(SqliteIntegrityTest::NO_FLAGS_SET,
+                                 DIAGNOSTICS_SQLITE_INTEGRITY_THUMBNAILS_TEST,
+                                 base::FilePath(chrome::kThumbnailsFilename));
+}
+
+DiagnosticsTest* MakeSqliteWebDataDbTest() {
+  return new SqliteIntegrityTest(SqliteIntegrityTest::CRITICAL,
+                                 DIAGNOSTICS_SQLITE_INTEGRITY_WEB_DATA_TEST,
+                                 base::FilePath(kWebDataFilename));
+}
+
+}  // namespace diagnostics

@@ -15,6 +15,13 @@
 #include "ipc/ipc_sync_message_filter.h"
 #include "ipc/ipc_sender.h"
 
+namespace base {
+
+class DictionaryValue;
+class HistogramDeltaSerialization;
+
+}  // namespace base
+
 // This class handles IPC commands for the service process.
 class ServiceIPCServer : public IPC::Listener, public IPC::Sender {
  public:
@@ -30,7 +37,9 @@ class ServiceIPCServer : public IPC::Listener, public IPC::Sender {
 
   // Safe to call on any thread, as long as it's guaranteed that the thread's
   // lifetime is less than the main thread.
-  IPC::SyncMessageFilter* sync_message_filter() { return sync_message_filter_; }
+  IPC::SyncMessageFilter* sync_message_filter() {
+    return sync_message_filter_.get();
+  }
 
   bool is_client_connected() const { return client_connected_; }
 
@@ -44,14 +53,14 @@ class ServiceIPCServer : public IPC::Listener, public IPC::Sender {
   virtual void OnChannelError() OVERRIDE;
 
   // IPC message handlers.
-  void OnEnableCloudPrintProxy(const std::string& lsid);
   void OnEnableCloudPrintProxyWithRobot(
       const std::string& robot_auth_code,
       const std::string& robot_email,
       const std::string& user_email,
-      bool connect_new_printers,
-      const std::vector<std::string>& printer_blacklist);
+      const base::DictionaryValue& user_settings);
   void OnGetCloudPrintProxyInfo();
+  void OnGetHistograms();
+  void OnGetPrinters();
   void OnDisableCloudPrintProxy();
 
   void OnShutdown();
@@ -68,6 +77,8 @@ class ServiceIPCServer : public IPC::Listener, public IPC::Sender {
   // Allows threads other than the main thread to send sync messages.
   scoped_refptr<IPC::SyncMessageFilter> sync_message_filter_;
 
+  // Calculates histograms deltas.
+  scoped_ptr<base::HistogramDeltaSerialization> histogram_delta_serializer_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceIPCServer);
 };

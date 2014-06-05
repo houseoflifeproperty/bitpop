@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+var listenOnce = chrome.test.listenOnce;
+var listenForever = chrome.test.listenForever;
+
 JSON.parse = function() {
   return "JSON.parse clobbered by extension.";
 };
@@ -26,17 +29,17 @@ chrome.test.getConfig(function(config) {
     function setupTestTab() {
       chrome.test.log("Creating tab...");
       chrome.tabs.create({
-        url: "http://localhost:PORT/files/extensions/test_file.html"
+        url: "http://localhost:PORT/extensions/test_file.html"
                  .replace(/PORT/, config.testServer.port)
-      }, function(tab) {
-        chrome.tabs.onUpdated.addListener(function listener(tabid, info) {
-          if (tab.id == tabid && info.status == 'complete') {
-            chrome.test.log("Created tab: " + tab.url);
-            chrome.tabs.onUpdated.removeListener(listener);
-            testTab = tab;
-            chrome.test.succeed();
-          }
-        });
+      }, function(newTab) {
+        var doneListening = listenForever(chrome.tabs.onUpdated,
+          function(_, info, tab) {
+            if (tab.id == newTab.id && info.status == 'complete') {
+              chrome.test.log("Created tab: " + tab.url);
+              testTab = tab;
+              doneListening();
+            }
+          });
       });
     },
 
@@ -44,9 +47,8 @@ chrome.test.getConfig(function(config) {
     function postMessage() {
       var port = chrome.tabs.connect(testTab.id);
       port.postMessage({testPostMessage: true});
-      port.onMessage.addListener(function(msg) {
+      listenOnce(port.onMessage, function(msg) {
         port.disconnect();
-        chrome.test.succeed();
       });
     },
 
@@ -55,20 +57,21 @@ chrome.test.getConfig(function(config) {
       var portName = "lemonjello";
       var port = chrome.tabs.connect(testTab.id, {name: portName});
       port.postMessage({testPortName: true});
-      port.onMessage.addListener(function(msg) {
+      listenOnce(port.onMessage, function(msg) {
         chrome.test.assertEq(msg.portName, portName);
         port.disconnect();
-        chrome.test.succeed();
       });
     },
 
     // Tests that postMessage from the tab and its response works.
     function postMessageFromTab() {
-      chrome.extension.onConnect.addListener(function(port) {
-        chrome.test.assertTrue(Boolean(port.sender.tab.url));
-        chrome.test.assertTrue(Boolean(port.sender.tab.title));
-        chrome.test.assertTrue(Boolean(port.sender.tab.id));
-        port.onMessage.addListener(function(msg) {
+      listenOnce(chrome.runtime.onConnect, function(port) {
+        chrome.test.assertEq({
+          tab: testTab,
+          url: testTab.url,
+           id: chrome.runtime.id
+        }, port.sender);
+        listenOnce(port.onMessage, function(msg) {
           chrome.test.assertTrue(msg.testPostMessageFromTab);
           port.postMessage({success: true, portName: port.name});
           chrome.test.log("postMessageFromTab: got message from tab");
@@ -78,19 +81,21 @@ chrome.test.getConfig(function(config) {
       var port = chrome.tabs.connect(testTab.id);
       port.postMessage({testPostMessageFromTab: true});
       chrome.test.log("postMessageFromTab: sent first message to tab");
-      port.onMessage.addListener(function(msg) {
+      listenOnce(port.onMessage, function(msg) {
         port.disconnect();
-        chrome.test.succeed();
       });
     },
 
     // Tests receiving a request from a content script and responding.
     function sendMessageFromTab() {
-      var doneListening = chrome.test.listenForever(
-        chrome.extension.onMessage,
+      var doneListening = listenForever(
+        chrome.runtime.onMessage,
         function(request, sender, sendResponse) {
-          chrome.test.assertTrue("url" in sender.tab, "no tab available.");
-          chrome.test.assertEq(sender.id, location.host);
+          chrome.test.assertEq({
+            tab: testTab,
+            url: testTab.url,
+             id: chrome.runtime.id
+          }, sender);
           if (request.step == 1) {
             // Step 1: Page should send another request for step 2.
             chrome.test.log("sendMessageFromTab: got step 1");
@@ -112,8 +117,8 @@ chrome.test.getConfig(function(config) {
     // Tests error handling when sending a request from a content script to an
     // invalid extension.
     function sendMessageFromTabError() {
-      chrome.test.listenOnce(
-        chrome.extension.onMessage,
+      listenOnce(
+        chrome.runtime.onMessage,
         function(request, sender, sendResponse) {
           if (!request.success)
             chrome.test.fail();
@@ -129,8 +134,8 @@ chrome.test.getConfig(function(config) {
     // Tests error handling when connecting to an invalid extension from a
     // content script.
     function connectFromTabError() {
-      chrome.test.listenOnce(
-        chrome.extension.onMessage,
+      listenOnce(
+        chrome.runtime.onMessage,
         function(request, sender, sendResponse) {
           if (!request.success)
             chrome.test.fail();
@@ -155,17 +160,29 @@ chrome.test.getConfig(function(config) {
     function disconnect() {
       var port = chrome.tabs.connect(testTab.id);
       port.postMessage({testDisconnect: true});
-      port.onDisconnect.addListener(function() {
+      listenOnce(port.onDisconnect, function() {});
+    },
+
+    // Tests that a message which fails to serialize prints an error and
+    // doesn't send (http://crbug.com/263077).
+    function unserializableMessage() {
+      try {
+        chrome.tabs.connect(testTab.id).postMessage(function() {
+          // This shouldn't ever be called, so it's a bit pointless.
+          chrome.test.fail();
+        });
+        // Didn't crash.
         chrome.test.succeed();
-      });
+      } catch (e) {
+        chrome.test.fail(e.stack);
+      }
     },
 
     // Tests that we get the disconnect event when the tab context closes.
     function disconnectOnClose() {
       var port = chrome.tabs.connect(testTab.id);
       port.postMessage({testDisconnectOnClose: true});
-      port.onDisconnect.addListener(function() {
-        chrome.test.succeed();
+      listenOnce(port.onDisconnect, function() {
         testTab = null; // the tab is about:blank now.
       });
     },

@@ -4,8 +4,8 @@
 
 #include "ui/views/accessible_pane_view.h"
 
-#include "base/message_loop.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "base/message_loop/message_loop.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/views/focus/focus_search.h"
 #include "ui/views/focus/view_storage.h"
 #include "ui/views/widget/widget.h"
@@ -42,7 +42,8 @@ class AccessiblePaneViewFocusSearch : public FocusSearch {
 
 AccessiblePaneView::AccessiblePaneView()
     : pane_has_focus_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(method_factory_(this)),
+      allow_deactivate_on_esc_(false),
+      method_factory_(this),
       focus_manager_(NULL),
       home_key_(ui::VKEY_HOME, ui::EF_NONE),
       end_key_(ui::VKEY_END, ui::EF_NONE),
@@ -50,6 +51,7 @@ AccessiblePaneView::AccessiblePaneView()
       left_key_(ui::VKEY_LEFT, ui::EF_NONE),
       right_key_(ui::VKEY_RIGHT, ui::EF_NONE) {
   focus_search_.reset(new AccessiblePaneViewFocusSearch(this));
+  last_focused_view_storage_id_ = ViewStorage::GetInstance()->CreateStorageID();
 }
 
 AccessiblePaneView::~AccessiblePaneView() {
@@ -65,7 +67,12 @@ bool AccessiblePaneView::SetPaneFocus(views::View* initial_focus) {
   if (!focus_manager_)
     focus_manager_ = GetFocusManager();
 
-  focus_manager_->StoreFocusedView(true);
+  View* focused_view = focus_manager_->GetFocusedView();
+  if (focused_view && !ContainsForFocusSearch(this, focused_view)) {
+    ViewStorage* view_storage = ViewStorage::GetInstance();
+    view_storage->RemoveView(last_focused_view_storage_id_);
+    view_storage->StoreView(last_focused_view_storage_id_, focused_view);
+  }
 
   // Use the provided initial focus if it's visible and enabled, otherwise
   // use the first focusable child.
@@ -156,15 +163,23 @@ views::FocusTraversable* AccessiblePaneView::GetPaneFocusTraversable() {
 bool AccessiblePaneView::AcceleratorPressed(
     const ui::Accelerator& accelerator) {
 
-  const views::View* focused_view = focus_manager_->GetFocusedView();
+  views::View* focused_view = focus_manager_->GetFocusedView();
   if (!ContainsForFocusSearch(this, focused_view))
     return false;
 
   switch (accelerator.key_code()) {
-    case ui::VKEY_ESCAPE:
+    case ui::VKEY_ESCAPE: {
       RemovePaneFocus();
-      focus_manager_->RestoreFocusedView();
+      View* last_focused_view = ViewStorage::GetInstance()->RetrieveView(
+          last_focused_view_storage_id_);
+      if (last_focused_view) {
+        focus_manager_->SetFocusedViewWithReason(
+            last_focused_view, FocusManager::kReasonFocusRestore);
+      } else if (allow_deactivate_on_esc_) {
+        focused_view->GetWidget()->Deactivate();
+      }
       return true;
+    }
     case ui::VKEY_LEFT:
       focus_manager_->AdvanceFocus(true);
       return true;
@@ -192,8 +207,12 @@ void AccessiblePaneView::SetVisible(bool flag) {
   View::SetVisible(flag);
 }
 
-void AccessiblePaneView::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_PANE;
+void AccessiblePaneView::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_PANE;
+}
+
+void AccessiblePaneView::RequestFocus() {
+  SetPaneFocusAndFocusDefault();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

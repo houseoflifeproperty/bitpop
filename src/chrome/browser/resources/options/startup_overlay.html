@@ -5,7 +5,7 @@
        its 'controlled-by' attribute will get set when the urls preference is
        managed by a policy, so that the managed prefs bar will show up.
   -->
-  <input type="text" pref="session.urls_to_restore_on_startup" hidden>
+  <input type="text" pref="session.startup_urls" hidden>
   <div class="content-area">
     <list id="startupPagesList"></list>
   </div>
@@ -16,7 +16,9 @@
     </span>
     <div class="button-strip">
       <button id="startup-overlay-cancel" i18n-content="cancel"></button>
-      <button id="startup-overlay-confirm" i18n-content="ok"></button>
+      <button id="startup-overlay-confirm" class="default-button"
+          i18n-content="ok">
+      </button>
     </div>
   </div>
   <div id="startupPagesListDropmarker"></div>

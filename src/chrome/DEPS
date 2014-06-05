@@ -1,11 +1,7 @@
 include_rules = [
-  "+ash",
   "+base/prefs",
-  "+cc",
   "+crypto",
   "+gpu",
-  "+jni",
-  "+leveldb",
   "+net",
   "+printing",
   "+sql",
@@ -15,19 +11,18 @@ include_rules = [
 
   # Limit what we include from nacl.
   "-native_client",
-  "+native_client/src/trusted/service_runtime/osx",
-  "+native_client/src/trusted/service_runtime/win",
-  "+native_client/src/shared/imc",
 
   # The subdirectories in chrome/ will manually allow their own include
   # directories in chrome/ so we disallow all of them.
   "-chrome",
   "+chrome/common",
   "+chrome/test",
+  "+components/metrics",
+  "+components/variations",
   "+content/public/common",
   "+content/public/test",
-  "+content/test/gpu",
-  "+content/test/net",
+  "+mojo/common",
+  "+mojo/public",
 
   # Don't allow inclusion of these other libs we shouldn't be calling directly.
   "-webkit",
@@ -36,18 +31,16 @@ include_rules = [
   "-crypto/third_party",
 
   # Allow inclusion of WebKit API files.
-  "+third_party/WebKit/Source/Platform/chromium",
-  "+third_party/WebKit/Source/WebKit/chromium",
+  "+third_party/WebKit/public/platform",
+  "+third_party/WebKit/public/web",
 
   # Allow inclusion of third-party code:
+  "+third_party/google_toolbox_for_mac/src",
   "+third_party/hunspell",
-  "+third_party/icon_family", # IconFamily for Mac.
   "+third_party/libxml",
   "+third_party/mozilla",     # Mozilla interface headers.
-  "+third_party/npapi",       # NPAPI interface headers.
   "+third_party/skia",
-  "+third_party/tcmalloc",
-  "+third_party/GTM",         # Google Toolbox for Mac.
+  "+third_party/zlib/google",
 
   "+ui",
 ]

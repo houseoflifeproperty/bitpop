@@ -196,7 +196,7 @@ bool SkGroup::hasEnable() const {
     return true;
 }
 
-bool SkGroup::ifCondition(SkAnimateMaker& maker, SkDrawable* drawable,
+bool SkGroup::ifCondition(SkAnimateMaker& maker, SkDrawable*,
         SkString& conditionString) {
     if (conditionString.size() == 0)
         return true;
@@ -319,5 +319,3 @@ bool SkSave::draw(SkAnimateMaker& maker) {
     maker.fCanvas->restore();
     return result;
 }
-
-

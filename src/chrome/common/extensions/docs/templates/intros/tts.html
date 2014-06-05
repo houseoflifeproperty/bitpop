@@ -1,17 +1,4 @@
-<p id="classSummary">
-Use the <code>chrome.tts</code> module to play synthesized
-text-to-speech (TTS).
-See also the related
-<a href="ttsEngine.html">ttsEngine</a>
-module, which allows an extension to implement a speech engine.
-</p>
-
-
 <h2 id="overview">Overview</h2>
-
-<p>You must declare the "tts" permission
-in your extension's manifest to use this API.
-</p>
 
 <p>Chrome provides native support for speech on Windows (using SAPI
 5), Mac OS X, and Chrome OS, using speech synthesis capabilities
@@ -22,7 +9,7 @@ engines.</p>
 <h2 id="generating_speech">Generating speech</h2>
 
 <p>Call <code>speak()</code> from your extension or
-packaged app to speak. For example:</p>
+Chrome App to speak. For example:</p>
 
 <pre>chrome.tts.speak('Hello, world.');</pre>
 
@@ -55,21 +42,21 @@ chrome.tts.speak(
 </pre>
 
 <p>A complete description of all options can be found in the
-$ref:tts.speak below.
+$(ref:tts.speak) below.
 Not all speech engines will support all options.</p>
 
 <p>To catch errors and make sure you're calling <code>speak()</code>
 correctly, pass a callback function that takes no arguments. Inside
 the callback, check
-$ref:runtime.lastError
+$(ref:runtime.lastError)
 to see if there were any errors.</p>
 
 <pre>chrome.tts.speak(
     utterance,
     options,
     function() {
-      if (chrome.extension.lastError) {
-        console.log('Error: ' + chrome.extension.lastError.message);
+      if (chrome.runtime.lastError) {
+        console.log('Error: ' + chrome.runtime.lastError.message);
       }
     });</pre>
 

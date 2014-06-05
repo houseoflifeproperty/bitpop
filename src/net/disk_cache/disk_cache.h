@@ -12,14 +12,13 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/cache_type.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
 
-class FilePath;
-
 namespace base {
+class FilePath;
 class MessageLoopProxy;
 }
 
@@ -48,10 +47,14 @@ class Backend;
 // be invoked when a backend is available or a fatal error condition is reached.
 // The pointer to receive the |backend| must remain valid until the operation
 // completes (the callback is notified).
-NET_EXPORT int CreateCacheBackend(net::CacheType type, const FilePath& path,
-                                  int max_bytes, bool force,
+NET_EXPORT int CreateCacheBackend(net::CacheType type,
+                                  net::BackendType backend_type,
+                                  const base::FilePath& path,
+                                  int max_bytes,
+                                  bool force,
                                   base::MessageLoopProxy* thread,
-                                  net::NetLog* net_log, Backend** backend,
+                                  net::NetLog* net_log,
+                                  scoped_ptr<Backend>* backend,
                                   const net::CompletionCallback& callback);
 
 // The root interface for a disk cache instance.
@@ -106,14 +109,14 @@ class NET_EXPORT Backend {
   // either direction by using null Time values for either argument. The return
   // value is a net error code. If this method returns ERR_IO_PENDING, the
   // |callback| will be invoked when the operation completes.
-  virtual int DoomEntriesBetween(const base::Time initial_time,
-                                 const base::Time end_time,
+  virtual int DoomEntriesBetween(base::Time initial_time,
+                                 base::Time end_time,
                                  const CompletionCallback& callback) = 0;
 
   // Marks all entries accessed since |initial_time| for deletion. The return
   // value is a net error code. If this method returns ERR_IO_PENDING, the
   // |callback| will be invoked when the operation completes.
-  virtual int DoomEntriesSince(const base::Time initial_time,
+  virtual int DoomEntriesSince(base::Time initial_time,
                                const CompletionCallback& callback) = 0;
 
   // Enumerates the cache. Initialize |iter| to NULL before calling this method
@@ -127,7 +130,12 @@ class NET_EXPORT Backend {
   // remain valid until the operation completes.
   //
   // NOTE: This method does not modify the last_used field of the entry, and
-  // therefore it does not impact the eviction ranking of the entry.
+  // therefore it does not impact the eviction ranking of the entry. However,
+  // an enumeration will go through all entries on the cache only if the cache
+  // is not modified while the enumeration is taking place. Significantly
+  // altering the entry pointed by |iter| (for example, deleting the entry) will
+  // invalidate |iter|. Performing operations on an entry that modify the entry
+  // may result in loops in the iteration, skipped entries or similar.
   virtual int OpenNextEntry(void** iter, Entry** next_entry,
                             const CompletionCallback& callback) = 0;
 
@@ -300,6 +308,16 @@ class NET_EXPORT Entry {
  protected:
   virtual ~Entry() {}
 };
+
+struct EntryDeleter {
+  void operator()(Entry* entry) {
+    // Note that |entry| is ref-counted.
+    entry->Close();
+  }
+};
+
+// Automatically closes an entry when it goes out of scope.
+typedef scoped_ptr<Entry, EntryDeleter> ScopedEntryPtr;
 
 }  // namespace disk_cache
 

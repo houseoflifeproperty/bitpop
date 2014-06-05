@@ -24,20 +24,20 @@ class VertexArrayManagerTest : public testing::Test {
   VertexArrayManagerTest() {
   }
 
-  ~VertexArrayManagerTest() {
+  virtual ~VertexArrayManagerTest() {
   }
 
  protected:
   virtual void SetUp() {
     gl_.reset(new ::testing::StrictMock< ::gfx::MockGLInterface>());
-    ::gfx::GLInterface::SetGLInterface(gl_.get());
+    ::gfx::MockGLInterface::SetGLInterface(gl_.get());
 
     manager_ = new VertexArrayManager();
   }
 
   virtual void TearDown() {
     delete manager_;
-    ::gfx::GLInterface::SetGLInterface(NULL);
+    ::gfx::MockGLInterface::SetGLInterface(NULL);
     gl_.reset();
   }
 
@@ -58,7 +58,7 @@ TEST_F(VertexArrayManagerTest, Basic) {
 
   // Check we can create
   manager_->CreateVertexAttribManager(
-      kClient1Id, kService1Id, kNumVertexAttribs);
+      kClient1Id, kService1Id, kNumVertexAttribs, true);
   // Check creation success
   VertexAttribManager* info1 = manager_->GetVertexAttribManager(kClient1Id);
   ASSERT_TRUE(info1 != NULL);
@@ -84,7 +84,8 @@ TEST_F(VertexArrayManagerTest, Destroy) {
   const GLuint kService1Id = 11;
   VertexArrayManager manager;
   // Check we can create
-  manager.CreateVertexAttribManager(kClient1Id, kService1Id, kNumVertexAttribs);
+  manager.CreateVertexAttribManager(
+      kClient1Id, kService1Id, kNumVertexAttribs, true);
   // Check creation success
   VertexAttribManager* info1 = manager.GetVertexAttribManager(kClient1Id);
   ASSERT_TRUE(info1 != NULL);

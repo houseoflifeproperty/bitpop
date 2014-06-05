@@ -47,6 +47,7 @@ class TargetProcess {
   // Creates the new target process. The process is created suspended.
   DWORD Create(const wchar_t* exe_path,
                const wchar_t* command_line,
+               bool inherit_handles,
                const base::win::StartupInformation& startup_info,
                base::win::ScopedProcessInformation* target_info);
 
@@ -112,7 +113,7 @@ class TargetProcess {
   // Base address of the main executable
   void* base_address_;
   // Full name of the target executable.
-  scoped_ptr_malloc<wchar_t> exe_name_;
+  scoped_ptr<wchar_t, base::FreeDeleter> exe_name_;
 
   // Function used for testing.
   friend TargetProcess* MakeTestTargetProcess(HANDLE process,

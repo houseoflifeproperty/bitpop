@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 
 namespace buzz {
@@ -17,6 +18,11 @@ namespace remoting {
 namespace protocol {
 
 class ChannelAuthenticator;
+
+typedef base::Callback<void(const std::string& secret)> SecretFetchedCallback;
+typedef base::Callback<void(
+    bool pairing_supported,
+    const SecretFetchedCallback& secret_fetched_callback)> FetchSecretCallback;
 
 // Authenticator is an abstract interface for authentication protocol
 // implementations. Different implementations of this interface may be
@@ -38,6 +44,9 @@ class Authenticator {
   //    WAITING_MESSAGE -> MESSAGE_READY
   //    WAITING_MESSAGE -> ACCEPTED
   //    WAITING_MESSAGE -> REJECTED
+  //    WAITING_MESSAGE -> PROCESSING_MESSAGE
+  // After asynchronous message processing finishes:
+  ///   PROCESSING_MESSAGE -> MESSAGE_READY
   // When GetNextMessage() is called:
   //    MESSAGE_READY -> WAITING_MESSAGE
   //    MESSAGE_READY -> ACCEPTED
@@ -53,6 +62,9 @@ class Authenticator {
 
     // Session is rejected.
     REJECTED,
+
+    // Asynchronously processing the last message from the peer.
+    PROCESSING_MESSAGE,
   };
 
   enum RejectionReason {
@@ -77,13 +89,21 @@ class Authenticator {
   // Returns current state of the authenticator.
   virtual State state() const = 0;
 
+  // Returns whether authentication has started. The chromoting host uses this
+  // method to starts the back off process to prevent malicious clients from
+  // guessing the PIN by spamming the host with auth requests.
+  virtual bool started() const = 0;
+
   // Returns rejection reason. Can be called only when in REJECTED state.
   virtual RejectionReason rejection_reason() const = 0;
 
   // Called in response to incoming message received from the peer.
-  // Should only be called when in WAITING_MESSAGE state. Caller
-  // retains ownership of |message|.
-  virtual void ProcessMessage(const buzz::XmlElement* message) = 0;
+  // Should only be called when in WAITING_MESSAGE state. Caller retains
+  // ownership of |message|. |resume_callback| will be called when processing is
+  // finished. The implementation must guarantee that |resume_callback| is not
+  // called after the Authenticator is destroyed.
+  virtual void ProcessMessage(const buzz::XmlElement* message,
+                              const base::Closure& resume_callback) = 0;
 
   // Must be called when in MESSAGE_READY state. Returns next
   // authentication message that needs to be sent to the peer.

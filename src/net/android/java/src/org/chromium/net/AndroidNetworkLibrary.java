@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,14 +8,15 @@ import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.security.KeyChain;
+import android.telephony.TelephonyManager;
 import android.util.Log;
 
-import org.chromium.net.CertificateMimeType;
 import org.chromium.base.CalledByNative;
 import org.chromium.base.CalledByNativeUnchecked;
 
 import java.net.Inet6Address;
 import java.net.InetAddress;
+import java.net.InterfaceAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.net.URLConnection;
@@ -29,13 +30,13 @@ import java.util.Enumeration;
  */
 class AndroidNetworkLibrary {
 
-    private static final String TAG = AndroidNetworkLibrary.class.getName();
+    private static final String TAG = "AndroidNetworkLibrary";
 
     /**
      * Stores the key pair through the CertInstaller activity.
-     * @param context: current application context.
-     * @param public_key: The public key bytes as DER-encoded SubjectPublicKeyInfo (X.509)
-     * @param private_key: The private key as DER-encoded PrivateKeyInfo (PKCS#8).
+     * @param context current application context.
+     * @param publicKey The public key bytes as DER-encoded SubjectPublicKeyInfo (X.509)
+     * @param privateKey The private key as DER-encoded PrivateKeyInfo (PKCS#8).
      * @return: true on success, false on failure.
      *
      * Note that failure means that the function could not launch the CertInstaller
@@ -43,15 +44,15 @@ class AndroidNetworkLibrary {
      * by the CertInstaller UI itself.
      */
     @CalledByNative
-    static public boolean storeKeyPair(Context context, byte[] public_key, byte[] private_key) {
+    public static boolean storeKeyPair(Context context, byte[] publicKey, byte[] privateKey) {
         // TODO(digit): Use KeyChain official extra values to pass the public and private
         // keys when they're available. The "KEY" and "PKEY" hard-coded constants were taken
         // from the platform sources, since there are no official KeyChain.EXTRA_XXX definitions
         // for them. b/5859651
         try {
             Intent intent = KeyChain.createInstallIntent();
-            intent.putExtra("PKEY", private_key);
-            intent.putExtra("KEY", public_key);
+            intent.putExtra("PKEY", privateKey);
+            intent.putExtra("KEY", publicKey);
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             context.startActivity(intent);
             return true;
@@ -65,9 +66,9 @@ class AndroidNetworkLibrary {
       * Adds a cryptographic file (User certificate, a CA certificate or
       * PKCS#12 keychain) through the system's CertInstaller activity.
       *
-      * @param context: current application context.
-      * @param file_type: cryptographic file type. E.g. CertificateMimeType.X509_USER_CERT
-      * @param data: certificate/keychain data bytes.
+      * @param context current application context.
+      * @param certType cryptographic file type. E.g. CertificateMimeType.X509_USER_CERT
+      * @param data certificate/keychain data bytes.
       * @return true on success, false on failure.
       *
       * Note that failure only indicates that the function couldn't launch the
@@ -75,24 +76,24 @@ class AndroidNetworkLibrary {
       * installed to the keystore.
       */
     @CalledByNative
-    static public boolean storeCertificate(Context context, int cert_type, byte[] data) {
+    public static boolean storeCertificate(Context context, int certType, byte[] data) {
         try {
             Intent intent = KeyChain.createInstallIntent();
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 
-            switch (cert_type) {
-              case CertificateMimeType.X509_USER_CERT:
-              case CertificateMimeType.X509_CA_CERT:
-                intent.putExtra(KeyChain.EXTRA_CERTIFICATE, data);
-                break;
+            switch (certType) {
+                case CertificateMimeType.X509_USER_CERT:
+                case CertificateMimeType.X509_CA_CERT:
+                    intent.putExtra(KeyChain.EXTRA_CERTIFICATE, data);
+                    break;
 
-              case CertificateMimeType.PKCS12_ARCHIVE:
-                intent.putExtra(KeyChain.EXTRA_PKCS12, data);
-                break;
+                case CertificateMimeType.PKCS12_ARCHIVE:
+                    intent.putExtra(KeyChain.EXTRA_PKCS12, data);
+                    break;
 
-              default:
-                Log.w(TAG, "invalid certificate type: " + cert_type);
-                return false;
+                default:
+                    Log.w(TAG, "invalid certificate type: " + certType);
+                    return false;
             }
             context.startActivity(intent);
             return true;
@@ -107,7 +108,7 @@ class AndroidNetworkLibrary {
      *         extension. Returns null if no corresponding mime type exists.
      */
     @CalledByNative
-    static public String getMimeTypeFromExtension(String extension) {
+    public static String getMimeTypeFromExtension(String extension) {
         return URLConnection.guessContentTypeFromName("foo." + extension);
     }
 
@@ -117,12 +118,12 @@ class AndroidNetworkLibrary {
      *         returns false if it cannot determine this.
      */
     @CalledByNative
-    static public boolean haveOnlyLoopbackAddresses() {
+    public static boolean haveOnlyLoopbackAddresses() {
         Enumeration<NetworkInterface> list = null;
         try {
             list = NetworkInterface.getNetworkInterfaces();
             if (list == null) return false;
-        } catch (SocketException e) {
+        } catch (Exception e) {
             Log.w(TAG, "could not get network interfaces: " + e);
             return false;
         }
@@ -140,14 +141,15 @@ class AndroidNetworkLibrary {
 
     /**
      * @return the network interfaces list (if any) string. The items in
-     *         the list string are delimited by a semicolon ";", each item
-     *         is a network interface name and address pair and formatted
-     *         as "name,address". e.g.
-     *           eth0,10.0.0.2;eth0,fe80::5054:ff:fe12:3456
-     *         represents a network list string which containts two items.
+     *         the list string are delimited by a new line, each item
+     *         is tab separated network interface name, address with network
+     *         prefix length and network interface index.
+     *         as "name\taddress/prefix\tindex". e.g.
+     *           eth0\t10.0.0.2/8\t5\neth0\tfe80::5054:ff:fe12:3456/16\t5
+     *         represents a network list string with two items.
      */
     @CalledByNative
-    static public String getNetworkList() {
+    public static String getNetworkList() {
         Enumeration<NetworkInterface> list = null;
         try {
             list = NetworkInterface.getNetworkInterfaces();
@@ -164,24 +166,29 @@ class AndroidNetworkLibrary {
                 // Skip loopback interfaces, and ones which are down.
                 if (!netIf.isUp() || netIf.isLoopback())
                     continue;
-                Enumeration<InetAddress> addressList = netIf.getInetAddresses();
-                while (addressList.hasMoreElements()) {
-                    InetAddress address = addressList.nextElement();
+                for (InterfaceAddress interfaceAddress : netIf.getInterfaceAddresses()) {
+                    InetAddress address = interfaceAddress.getAddress();
                     // Skip loopback addresses configured on non-loopback interfaces.
                     if (address.isLoopbackAddress())
                         continue;
                     StringBuilder addressString = new StringBuilder();
                     addressString.append(netIf.getName());
-                    addressString.append(",");
+                    addressString.append("\t");
 
                     String ipAddress = address.getHostAddress();
                     if (address instanceof Inet6Address && ipAddress.contains("%")) {
                         ipAddress = ipAddress.substring(0, ipAddress.lastIndexOf("%"));
                     }
                     addressString.append(ipAddress);
+                    addressString.append("/");
+                    addressString.append(interfaceAddress.getNetworkPrefixLength());
+                    addressString.append("\t");
+
+                    // TODO(vitalybuka): use netIf.getIndex() when API level 19 is availible.
+                    addressString.append("0");
 
                     if (result.length() != 0)
-                        result.append(";");
+                        result.append("\n");
                     result.append(addressString.toString());
                 }
             } catch (SocketException e) {
@@ -192,19 +199,25 @@ class AndroidNetworkLibrary {
     }
 
     /**
-     * Validate the server's certificate chain is trusted.
+     * Validate the server's certificate chain is trusted. Note that the caller
+     * must still verify the name matches that of the leaf certificate.
      *
      * @param certChain The ASN.1 DER encoded bytes for certificates.
-     * @param authType The key exchange algorithm name (e.g. RSA)
-     * @return true if the server is trusted
-     * @throws CertificateException,KeyStoreException,NoSuchAlgorithmException
-     *             on error initializing the TrustManager or reading the
-     *             certChain
+     * @param authType The key exchange algorithm name (e.g. RSA).
+     * @param host The hostname of the server.
+     * @return Android certificate verification result code.
      */
-    @CalledByNativeUnchecked
-    public static boolean verifyServerCertificates(byte[][] certChain, String authType)
-            throws CertificateException, KeyStoreException, NoSuchAlgorithmException {
-        return X509Util.verifyServerCertificates(certChain, authType);
+    @CalledByNative
+    public static AndroidCertVerifyResult verifyServerCertificates(byte[][] certChain,
+                                                                   String authType,
+                                                                   String host) {
+        try {
+            return X509Util.verifyServerCertificates(certChain, authType, host);
+        } catch (KeyStoreException e) {
+            return new AndroidCertVerifyResult(CertVerifyStatusAndroid.VERIFY_FAILED);
+        } catch (NoSuchAlgorithmException e) {
+            return new AndroidCertVerifyResult(CertVerifyStatusAndroid.VERIFY_FAILED);
+        }
     }
 
     /**
@@ -226,4 +239,32 @@ class AndroidNetworkLibrary {
             CertificateException, KeyStoreException {
         X509Util.clearTestRootCertificates();
     }
+
+    /**
+     * Returns the ISO country code equivalent of the current MCC.
+     */
+    @CalledByNative
+    private static String getNetworkCountryIso(Context context) {
+      TelephonyManager telephonyManager =
+          (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
+      if (telephonyManager != null) {
+        return telephonyManager.getNetworkCountryIso();
+      }
+      return "";
+    }
+
+    /**
+     * Returns the MCC+MNC (mobile country code + mobile network code) as
+     * the numeric name of the current registered operator.
+     */
+    @CalledByNative
+    private static String getNetworkOperator(Context context) {
+      TelephonyManager telephonyManager =
+          (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
+      if (telephonyManager != null) {
+        return telephonyManager.getNetworkOperator();
+      }
+      return "";
+    }
+
 }

@@ -16,21 +16,26 @@ class SessionStorageNamespace;
 class WebContents;
 }
 
+namespace sessions {
+class SerializedNavigationEntry;
+}
+
 namespace chrome {
 
 // Add a tab with its session history restored from the SessionRestore
 // system. If select is true, the tab is selected. |tab_index| gives the index
 // to insert the tab at. |selected_navigation| is the index of the
-// TabNavigation in |navigations| to select. If |extension_app_id| is
-// non-empty the tab is an app tab and |extension_app_id| is the id of the
+// SerializedNavigationEntry in |navigations| to select. If |extension_app_id|
+// is non-empty the tab is an app tab and |extension_app_id| is the id of the
 // extension. If |pin| is true and |tab_index|/ is the last pinned tab, then
 // the newly created tab is pinned. If |from_last_session| is true,
 // |navigations| are from the previous session. |user_agent_override| contains
 // the string being used as the user agent for all of the tab's navigations when
-// the regular user agent is overridden.
+// the regular user agent is overridden. Returns the WebContents of the restored
+// tab.
 content::WebContents* AddRestoredTab(
     Browser* browser,
-    const std::vector<TabNavigation>& navigations,
+    const std::vector<sessions::SerializedNavigationEntry>& navigations,
     int tab_index,
     int selected_navigation,
     const std::string& extension_app_id,
@@ -41,10 +46,11 @@ content::WebContents* AddRestoredTab(
     const std::string& user_agent_override);
 
 // Replaces the state of the currently selected tab with the session
-// history restored from the SessionRestore system.
-void ReplaceRestoredTab(
+// history restored from the SessionRestore system. Returns the WebContents of
+// the restored tab.
+content::WebContents* ReplaceRestoredTab(
     Browser* browser,
-    const std::vector<TabNavigation>& navigations,
+    const std::vector<sessions::SerializedNavigationEntry>& navigations,
     int selected_navigation,
     bool from_last_session,
     const std::string& extension_app_id,

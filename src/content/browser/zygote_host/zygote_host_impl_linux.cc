@@ -4,6 +4,7 @@
 
 #include "content/browser/zygote_host/zygote_host_impl_linux.h"
 
+#include <string.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -13,20 +14,26 @@
 #include "base/command_line.h"
 #include "base/environment.h"
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
+#include "base/files/scoped_file.h"
 #include "base/linux_util.h"
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
 #include "base/posix/eintr_wrapper.h"
-#include "base/posix/unix_domain_socket.h"
-#include "base/process_util.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/time.h"
-#include "base/utf_string_conversions.h"
+#include "base/posix/unix_domain_socket_linux.h"
+#include "base/process/launch.h"
+#include "base/process/memory.h"
+#include "base/process/process_handle.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "content/browser/renderer_host/render_sandbox_host_linux.h"
+#include "content/common/child_process_sandbox_support_impl_linux.h"
 #include "content/common/zygote_commands_linux.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/common/content_switches.h"
@@ -34,12 +41,33 @@
 #include "sandbox/linux/suid/client/setuid_sandbox_client.h"
 #include "sandbox/linux/suid/common/sandbox.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/gfx/switches.h"
 
 #if defined(USE_TCMALLOC)
 #include "third_party/tcmalloc/chromium/src/gperftools/heap-profiler.h"
 #endif
 
 namespace content {
+
+// Receive a fixed message on fd and return the sender's PID.
+// Returns true if the message received matches the expected message.
+static bool ReceiveFixedMessage(int fd,
+                                const char* expect_msg,
+                                size_t expect_len,
+                                base::ProcessId* sender_pid) {
+  char buf[expect_len + 1];
+  ScopedVector<base::ScopedFD> fds_vec;
+
+  const ssize_t len = UnixDomainSocket::RecvMsgWithPid(
+      fd, buf, sizeof(buf), &fds_vec, sender_pid);
+  if (static_cast<size_t>(len) != expect_len)
+    return false;
+  if (memcmp(buf, expect_msg, expect_len) != 0)
+    return false;
+  if (!fds_vec.empty())
+    return false;
+  return true;
+}
 
 // static
 ZygoteHost* ZygoteHost::GetInstance() {
@@ -48,16 +76,18 @@ ZygoteHost* ZygoteHost::GetInstance() {
 
 ZygoteHostImpl::ZygoteHostImpl()
     : control_fd_(-1),
+      control_lock_(),
       pid_(-1),
       init_(false),
       using_suid_sandbox_(false),
+      sandbox_binary_(),
       have_read_sandbox_status_word_(false),
-      sandbox_status_(0) {}
+      sandbox_status_(0),
+      child_tracking_lock_(),
+      list_of_running_zygote_children_(),
+      should_teardown_after_last_child_exits_(false) {}
 
-ZygoteHostImpl::~ZygoteHostImpl() {
-  if (init_)
-    close(control_fd_);
-}
+ZygoteHostImpl::~ZygoteHostImpl() { TearDown(); }
 
 // static
 ZygoteHostImpl* ZygoteHostImpl::GetInstance() {
@@ -68,24 +98,19 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
   DCHECK(!init_);
   init_ = true;
 
-  FilePath chrome_path;
+  base::FilePath chrome_path;
   CHECK(PathService::Get(base::FILE_EXE, &chrome_path));
   CommandLine cmd_line(chrome_path);
 
   cmd_line.AppendSwitchASCII(switches::kProcessType, switches::kZygoteProcess);
 
   int fds[2];
-#if defined(OS_FREEBSD) || defined(OS_OPENBSD)
-  // The BSDs often don't support SOCK_SEQPACKET yet, so fall back to
-  // SOCK_DGRAM if necessary.
-  if (socketpair(PF_UNIX, SOCK_SEQPACKET, 0, fds) != 0)
-    CHECK(socketpair(PF_UNIX, SOCK_DGRAM, 0, fds) == 0);
-#else
-  CHECK(socketpair(PF_UNIX, SOCK_SEQPACKET, 0, fds) == 0);
-#endif
+  CHECK(socketpair(AF_UNIX, SOCK_SEQPACKET, 0, fds) == 0);
+  CHECK(UnixDomainSocket::EnableReceiveProcessId(fds[0]));
   base::FileHandleMappingVector fds_to_map;
   fds_to_map.push_back(std::make_pair(fds[1], kZygoteSocketPairFd));
 
+  base::LaunchOptions options;
   const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
   if (browser_command_line.HasSwitch(switches::kZygoteCmdPrefix)) {
     cmd_line.PrependWrapper(
@@ -101,14 +126,11 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
     switches::kV,
     switches::kVModule,
     switches::kRegisterPepperPlugins,
-    switches::kDisableSeccompSandbox,
     switches::kDisableSeccompFilterSandbox,
-    switches::kEnableSeccompSandbox,
 
     // Zygote process needs to know what resources to have loaded when it
     // becomes a renderer process.
     switches::kForceDeviceScaleFactor,
-    switches::kTouchOptimizedUI,
 
     switches::kNoSandbox,
   };
@@ -119,84 +141,52 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
 
   sandbox_binary_ = sandbox_cmd.c_str();
 
-  if (!sandbox_cmd.empty()) {
-    struct stat st;
-    if (stat(sandbox_binary_.c_str(), &st) != 0) {
-      LOG(FATAL) << "The SUID sandbox helper binary is missing: "
-                 << sandbox_binary_ << " Aborting now.";
-    }
-
-    if (access(sandbox_binary_.c_str(), X_OK) == 0 &&
-        (st.st_uid == 0) &&
-        (st.st_mode & S_ISUID) &&
-        (st.st_mode & S_IXOTH)) {
-      using_suid_sandbox_ = true;
-      cmd_line.PrependWrapper(sandbox_binary_);
-
-      scoped_ptr<sandbox::SetuidSandboxClient>
-          sandbox_client(sandbox::SetuidSandboxClient::Create());
-      sandbox_client->SetupLaunchEnvironment();
-    } else {
-      LOG(FATAL) << "The SUID sandbox helper binary was found, but is not "
-                    "configured correctly. Rather than run without sandboxing "
-                    "I'm aborting now. You need to make sure that "
-                 << sandbox_binary_ << " is owned by root and has mode 4755.";
-    }
-  } else {
-    LOG(ERROR) << "Running without the SUID sandbox! See "
-        "https://code.google.com/p/chromium/wiki/LinuxSUIDSandboxDevelopment "
-        "for more information on developing with the sandbox on.";
-  }
+  // A non empty sandbox_cmd means we want a SUID sandbox.
+  using_suid_sandbox_ = !sandbox_cmd.empty();
 
   // Start up the sandbox host process and get the file descriptor for the
   // renderers to talk to it.
   const int sfd = RenderSandboxHostLinux::GetInstance()->GetRendererSocket();
-  fds_to_map.push_back(std::make_pair(sfd, kZygoteRendererSocketFd));
+  fds_to_map.push_back(std::make_pair(sfd, GetSandboxFD()));
 
-  int dummy_fd = -1;
+  base::ScopedFD dummy_fd;
   if (using_suid_sandbox_) {
-    dummy_fd = socket(PF_UNIX, SOCK_DGRAM, 0);
-    CHECK(dummy_fd >= 0);
-    fds_to_map.push_back(std::make_pair(dummy_fd, kZygoteIdFd));
+    scoped_ptr<sandbox::SetuidSandboxClient>
+        sandbox_client(sandbox::SetuidSandboxClient::Create());
+    sandbox_client->PrependWrapper(&cmd_line);
+    sandbox_client->SetupLaunchOptions(&options, &fds_to_map, &dummy_fd);
+    sandbox_client->SetupLaunchEnvironment();
   }
 
   base::ProcessHandle process = -1;
-  base::LaunchOptions options;
   options.fds_to_remap = &fds_to_map;
   base::LaunchProcess(cmd_line.argv(), options, &process);
   CHECK(process != -1) << "Failed to launch zygote process";
+  dummy_fd.reset();
 
   if (using_suid_sandbox_) {
-    // In the SUID sandbox, the real zygote is forked from the sandbox.
-    // We need to look for it.
-    // But first, wait for the zygote to tell us it's running.
-    // The sending code is in content/browser/zygote_main_linux.cc.
-    std::vector<int> fds_vec;
-    const int kExpectedLength = sizeof(kZygoteHelloMessage);
-    char buf[kExpectedLength];
-    const ssize_t len = UnixDomainSocket::RecvMsg(fds[0], buf, sizeof(buf),
-                                                  &fds_vec);
-    CHECK(len == kExpectedLength) << "Incorrect zygote magic length";
-    CHECK(0 == strcmp(buf, kZygoteHelloMessage))
-        << "Incorrect zygote hello";
+    // The SUID sandbox will execute the zygote in a new PID namespace, and
+    // the main zygote process will then fork from there.  Watch now our
+    // elaborate dance to find and validate the zygote's PID.
 
-    std::string inode_output;
-    ino_t inode = 0;
-    // Figure out the inode for |dummy_fd|, close |dummy_fd| on our end,
-    // and find the zygote process holding |dummy_fd|.
-    if (base::FileDescriptorGetInode(&inode, dummy_fd)) {
-      close(dummy_fd);
-      std::vector<std::string> get_inode_cmdline;
-      get_inode_cmdline.push_back(sandbox_binary_);
-      get_inode_cmdline.push_back(base::kFindInodeSwitch);
-      get_inode_cmdline.push_back(base::Int64ToString(inode));
-      CommandLine get_inode_cmd(get_inode_cmdline);
-      if (base::GetAppOutput(get_inode_cmd, &inode_output)) {
-        base::StringToInt(inode_output, &pid_);
-      }
-    }
-    CHECK(pid_ > 0) << "Did not find zygote process (using sandbox binary "
-        << sandbox_binary_ << ")";
+    // First we receive a message from the zygote boot process.
+    base::ProcessId boot_pid;
+    CHECK(ReceiveFixedMessage(
+        fds[0], kZygoteBootMessage, sizeof(kZygoteBootMessage), &boot_pid));
+
+    // Within the PID namespace, the zygote boot process thinks it's PID 1,
+    // but its real PID can never be 1. This gives us a reliable test that
+    // the kernel is translating the sender's PID to our namespace.
+    CHECK_GT(boot_pid, 1)
+        << "Received invalid process ID for zygote; kernel might be too old? "
+           "See crbug.com/357670 or try using --"
+        << switches::kDisableSetuidSandbox << " to workaround.";
+
+    // Now receive the message that the zygote's ready to go, along with the
+    // main zygote process's ID.
+    CHECK(ReceiveFixedMessage(
+        fds[0], kZygoteHelloMessage, sizeof(kZygoteHelloMessage), &pid_));
+    CHECK_GT(pid_, 1);
 
     if (process != pid_) {
       // Reap the sandbox.
@@ -217,8 +207,56 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
   // We don't wait for the reply. We'll read it in ReadReply.
 }
 
+void ZygoteHostImpl::TearDownAfterLastChild() {
+  bool do_teardown = false;
+  {
+    base::AutoLock lock(child_tracking_lock_);
+    should_teardown_after_last_child_exits_ = true;
+    do_teardown = list_of_running_zygote_children_.empty();
+  }
+  if (do_teardown) {
+    TearDown();
+  }
+}
+
+// Note: this is also called from the destructor.
+void ZygoteHostImpl::TearDown() {
+  base::AutoLock lock(control_lock_);
+  if (control_fd_ > -1) {
+    // Closing the IPC channel will act as a notification to exit
+    // to the Zygote.
+    if (IGNORE_EINTR(close(control_fd_))) {
+      PLOG(ERROR) << "Could not close Zygote control channel.";
+      NOTREACHED();
+    }
+    control_fd_ = -1;
+  }
+}
+
+void ZygoteHostImpl::ZygoteChildBorn(pid_t process) {
+  base::AutoLock lock(child_tracking_lock_);
+  bool new_element_inserted =
+      list_of_running_zygote_children_.insert(process).second;
+  DCHECK(new_element_inserted);
+}
+
+void ZygoteHostImpl::ZygoteChildDied(pid_t process) {
+  bool do_teardown = false;
+  {
+    base::AutoLock lock(child_tracking_lock_);
+    size_t num_erased = list_of_running_zygote_children_.erase(process);
+    DCHECK_EQ(1U, num_erased);
+    do_teardown = should_teardown_after_last_child_exits_ &&
+                  list_of_running_zygote_children_.empty();
+  }
+  if (do_teardown) {
+    TearDown();
+  }
+}
+
 bool ZygoteHostImpl::SendMessage(const Pickle& data,
                                  const std::vector<int>* fds) {
+  DCHECK_NE(-1, control_fd_);
   CHECK(data.size() <= kZygoteMaxMessageLength)
       << "Trying to send too-large message to zygote (sending " << data.size()
       << " bytes, max is " << kZygoteMaxMessageLength << ")";
@@ -233,6 +271,7 @@ bool ZygoteHostImpl::SendMessage(const Pickle& data,
 }
 
 ssize_t ZygoteHostImpl::ReadReply(void* buf, size_t buf_len) {
+  DCHECK_NE(-1, control_fd_);
   // At startup we send a kZygoteCommandGetSandboxStatus request to the zygote,
   // but don't wait for the reply. Thus, the first time that we read from the
   // zygote, we get the reply to that request.
@@ -255,6 +294,12 @@ pid_t ZygoteHostImpl::ForkRequest(
   DCHECK(init_);
   Pickle pickle;
 
+  int raw_socks[2];
+  PCHECK(0 == socketpair(AF_UNIX, SOCK_SEQPACKET, 0, raw_socks));
+  base::ScopedFD my_sock(raw_socks[0]);
+  base::ScopedFD peer_sock(raw_socks[1]);
+  CHECK(UnixDomainSocket::EnableReceiveProcessId(my_sock.get()));
+
   pickle.WriteInt(kZygoteCommandFork);
   pickle.WriteString(process_type);
   pickle.WriteInt(argv.size());
@@ -262,30 +307,66 @@ pid_t ZygoteHostImpl::ForkRequest(
        i = argv.begin(); i != argv.end(); ++i)
     pickle.WriteString(*i);
 
-  pickle.WriteInt(mapping.size());
+  // Fork requests contain one file descriptor for the PID oracle, and one
+  // more for each file descriptor mapping for the child process.
+  const size_t num_fds_to_send = 1 + mapping.size();
+  pickle.WriteInt(num_fds_to_send);
 
   std::vector<int> fds;
-  // Scoped pointers cannot be stored in containers, so we have to use a
-  // linked_ptr.
-  std::vector<linked_ptr<file_util::ScopedFD> > autodelete_fds;
+  ScopedVector<base::ScopedFD> autoclose_fds;
+
+  // First FD to send is peer_sock.
+  fds.push_back(peer_sock.get());
+  autoclose_fds.push_back(new base::ScopedFD(peer_sock.Pass()));
+
+  // The rest come from mapping.
   for (std::vector<FileDescriptorInfo>::const_iterator
        i = mapping.begin(); i != mapping.end(); ++i) {
     pickle.WriteUInt32(i->id);
     fds.push_back(i->fd.fd);
     if (i->fd.auto_close) {
-      // Auto-close means we need to close the FDs after they habe been passed
+      // Auto-close means we need to close the FDs after they have been passed
       // to the other process.
-      linked_ptr<file_util::ScopedFD> ptr(
-          new file_util::ScopedFD(&(fds.back())));
-      autodelete_fds.push_back(ptr);
+      autoclose_fds.push_back(new base::ScopedFD(i->fd.fd));
     }
   }
+
+  // Sanity check that we've populated |fds| correctly.
+  DCHECK_EQ(num_fds_to_send, fds.size());
 
   pid_t pid;
   {
     base::AutoLock lock(control_lock_);
     if (!SendMessage(pickle, &fds))
       return base::kNullProcessHandle;
+    autoclose_fds.clear();
+
+    {
+      char buf[sizeof(kZygoteChildPingMessage) + 1];
+      ScopedVector<base::ScopedFD> recv_fds;
+      base::ProcessId real_pid;
+
+      ssize_t n = UnixDomainSocket::RecvMsgWithPid(
+          my_sock.get(), buf, sizeof(buf), &recv_fds, &real_pid);
+      if (n != sizeof(kZygoteChildPingMessage) ||
+          0 != memcmp(buf,
+                      kZygoteChildPingMessage,
+                      sizeof(kZygoteChildPingMessage))) {
+        // Zygote children should still be trustworthy when they're supposed to
+        // ping us, so something's broken if we don't receive a valid ping.
+        LOG(ERROR) << "Did not receive ping from zygote child";
+        NOTREACHED();
+        real_pid = -1;
+      }
+      my_sock.reset();
+
+      // Always send PID back to zygote.
+      Pickle pid_pickle;
+      pid_pickle.WriteInt(kZygoteCommandForkRealPID);
+      pid_pickle.WriteInt(real_pid);
+      if (!SendMessage(pid_pickle, NULL))
+        return base::kNullProcessHandle;
+    }
 
     // Read the reply, which pickles the PID and an optional UMA enumeration.
     static const unsigned kMaxReplyLength = 2048;
@@ -311,12 +392,13 @@ pid_t ZygoteHostImpl::ForkRequest(
       // Here we're using whatever name we got from the other side.
       // But since it's likely that the same one will be used repeatedly
       // (even though it's not guaranteed), we cache it here.
-      static base::Histogram* uma_histogram;
+      static base::HistogramBase* uma_histogram;
       if (!uma_histogram || uma_histogram->histogram_name() != uma_name) {
         uma_histogram = base::LinearHistogram::FactoryGet(
             uma_name, 1,
             uma_boundary_value,
-            uma_boundary_value + 1, base::Histogram::kUmaTargetedHistogramFlag);
+            uma_boundary_value + 1,
+            base::HistogramBase::kUmaTargetedHistogramFlag);
       }
       uma_histogram->Add(uma_sample);
     }
@@ -335,6 +417,7 @@ pid_t ZygoteHostImpl::ForkRequest(
   AdjustRendererOOMScore(pid, kLowestRendererOomScore);
 #endif
 
+  ZygoteChildBorn(pid);
   return pid;
 }
 
@@ -371,10 +454,12 @@ void ZygoteHostImpl::AdjustRendererOOMScore(base::ProcessHandle pid,
   static bool selinux_valid = false;
 
   if (!selinux_valid) {
-    const FilePath kSelinuxPath("/selinux");
+    const base::FilePath kSelinuxPath("/selinux");
+    base::FileEnumerator en(kSelinuxPath, false, base::FileEnumerator::FILES);
+    bool has_selinux_files = !en.Next().empty();
+
     selinux = access(kSelinuxPath.value().c_str(), X_OK) == 0 &&
-        file_util::CountFilesCreatedAfter(kSelinuxPath,
-                                          base::Time::UnixEpoch()) > 0;
+              has_selinux_files;
     selinux_valid = true;
   }
 
@@ -393,7 +478,12 @@ void ZygoteHostImpl::AdjustRendererOOMScore(base::ProcessHandle pid,
     adj_oom_score_cmdline.push_back(base::IntToString(score));
 
     base::ProcessHandle sandbox_helper_process;
-    if (base::LaunchProcess(adj_oom_score_cmdline, base::LaunchOptions(),
+    base::LaunchOptions options;
+
+    // sandbox_helper_process is a setuid binary.
+    options.allow_new_privs = true;
+
+    if (base::LaunchProcess(adj_oom_score_cmdline, options,
                             &sandbox_helper_process)) {
       base::EnsureProcessGetsReaped(sandbox_helper_process);
     }
@@ -404,41 +494,6 @@ void ZygoteHostImpl::AdjustRendererOOMScore(base::ProcessHandle pid,
 }
 #endif
 
-void ZygoteHostImpl::AdjustLowMemoryMargin(int64 margin_mb) {
-#if defined(OS_CHROMEOS)
-  // You can't change the low memory margin unless you're root. Because of this,
-  // we can't set the low memory margin from the browser process.
-  // So, we use the SUID binary to change it for us.
-  if (using_suid_sandbox_) {
-#if defined(USE_TCMALLOC)
-    // If heap profiling is running, these processes are not exiting, at least
-    // on ChromeOS. The easiest thing to do is not launch them when profiling.
-    // TODO(stevenjb): Investigate further and fix.
-    if (IsHeapProfilerRunning())
-      return;
-#endif
-    std::vector<std::string> adj_low_mem_commandline;
-    adj_low_mem_commandline.push_back(sandbox_binary_);
-    adj_low_mem_commandline.push_back(sandbox::kAdjustLowMemMarginSwitch);
-    adj_low_mem_commandline.push_back(base::Int64ToString(margin_mb));
-
-    base::ProcessHandle sandbox_helper_process;
-    if (base::LaunchProcess(adj_low_mem_commandline, base::LaunchOptions(),
-                            &sandbox_helper_process)) {
-      base::EnsureProcessGetsReaped(sandbox_helper_process);
-    } else {
-      LOG(ERROR) << "Unable to run suid sandbox to set low memory margin.";
-    }
-  }
-  // Don't adjust memory margin if we're not running with the sandbox: this
-  // isn't very common, and not doing it has little impact.
-#else
-  // Low memory notification is currently only implemented on ChromeOS.
-  NOTREACHED() << "AdjustLowMemoryMargin not implemented";
-#endif  // defined(OS_CHROMEOS)
-}
-
-
 void ZygoteHostImpl::EnsureProcessTerminated(pid_t process) {
   DCHECK(init_);
   Pickle pickle;
@@ -447,6 +502,7 @@ void ZygoteHostImpl::EnsureProcessTerminated(pid_t process) {
   pickle.WriteInt(process);
   if (!SendMessage(pickle, NULL))
     LOG(ERROR) << "Failed to send Reap message to zygote";
+  ZygoteChildDied(process);
 }
 
 base::TerminationStatus ZygoteHostImpl::GetTerminationStatus(
@@ -459,10 +515,6 @@ base::TerminationStatus ZygoteHostImpl::GetTerminationStatus(
   pickle.WriteBool(known_dead);
   pickle.WriteInt(handle);
 
-  // Set this now to handle the early termination cases.
-  if (exit_code)
-    *exit_code = RESULT_CODE_NORMAL_EXIT;
-
   static const unsigned kMaxMessageLength = 128;
   char buf[kMaxMessageLength];
   ssize_t len;
@@ -473,26 +525,33 @@ base::TerminationStatus ZygoteHostImpl::GetTerminationStatus(
     len = ReadReply(buf, sizeof(buf));
   }
 
+  // Set this now to handle the error cases.
+  if (exit_code)
+    *exit_code = RESULT_CODE_NORMAL_EXIT;
+  int status = base::TERMINATION_STATUS_NORMAL_TERMINATION;
+
   if (len == -1) {
     LOG(WARNING) << "Error reading message from zygote: " << errno;
-    return base::TERMINATION_STATUS_NORMAL_TERMINATION;
   } else if (len == 0) {
     LOG(WARNING) << "Socket closed prematurely.";
-    return base::TERMINATION_STATUS_NORMAL_TERMINATION;
+  } else {
+    Pickle read_pickle(buf, len);
+    int tmp_status, tmp_exit_code;
+    PickleIterator iter(read_pickle);
+    if (!read_pickle.ReadInt(&iter, &tmp_status) ||
+        !read_pickle.ReadInt(&iter, &tmp_exit_code)) {
+      LOG(WARNING)
+          << "Error parsing GetTerminationStatus response from zygote.";
+    } else {
+      if (exit_code)
+        *exit_code = tmp_exit_code;
+      status = tmp_status;
+    }
   }
 
-  Pickle read_pickle(buf, len);
-  int status, tmp_exit_code;
-  PickleIterator iter(read_pickle);
-  if (!read_pickle.ReadInt(&iter, &status) ||
-      !read_pickle.ReadInt(&iter, &tmp_exit_code)) {
-    LOG(WARNING) << "Error parsing GetTerminationStatus response from zygote.";
-    return base::TERMINATION_STATUS_NORMAL_TERMINATION;
+  if (status != base::TERMINATION_STATUS_STILL_RUNNING) {
+    ZygoteChildDied(handle);
   }
-
-  if (exit_code)
-    *exit_code = tmp_exit_code;
-
   return static_cast<base::TerminationStatus>(status);
 }
 

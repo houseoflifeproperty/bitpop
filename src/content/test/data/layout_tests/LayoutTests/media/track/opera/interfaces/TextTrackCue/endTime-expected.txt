@@ -1,4 +1,0 @@
- 
-PASS TextTrackCue.endTime, script-created cue 
-TIMEOUT TextTrackCue.endTime, parsed cue Test timed out
-

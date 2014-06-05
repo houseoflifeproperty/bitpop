@@ -11,10 +11,11 @@ Preferences::Preferences()
       default_fixed_font_size(0),
       number_of_cpu_cores(0),
       is_3d_supported(true),
-      is_stage3d_supported(false) {
-}
+      is_stage3d_supported(false),
+      is_stage3d_baseline_supported(false),
+      is_accelerated_video_decode_enabled(false) {}
 
-Preferences::Preferences(const webkit_glue::WebPreferences& prefs)
+Preferences::Preferences(const WebPreferences& prefs)
     : standard_font_family_map(prefs.standard_font_family_map),
       fixed_font_family_map(prefs.fixed_font_family_map),
       serif_font_family_map(prefs.serif_font_family_map),
@@ -24,14 +25,11 @@ Preferences::Preferences(const webkit_glue::WebPreferences& prefs)
       number_of_cpu_cores(prefs.number_of_cpu_cores),
       is_3d_supported(prefs.flash_3d_enabled),
       is_stage3d_supported(prefs.flash_stage3d_enabled),
-      // This determines both if webgl is supported (experimental_webgl_enabled)
-      // and if it runs in hardware
-      // (accelerated_compositing_for_plugins_enabled)
-      is_webgl_supported(prefs.experimental_webgl_enabled &&
-                         prefs.accelerated_compositing_for_plugins_enabled) {
-}
+      is_stage3d_baseline_supported(prefs.flash_stage3d_baseline_enabled),
+      is_webgl_supported(prefs.experimental_webgl_enabled),
+      is_accelerated_video_decode_enabled(
+          prefs.pepper_accelerated_video_decode_enabled) {}
 
-Preferences::~Preferences() {
-}
+Preferences::~Preferences() {}
 
 }  // namespace ppapi

@@ -4,37 +4,33 @@
 
 #include "chrome/browser/ui/views/login_view.h"
 
-#include <string>
-
-#include "base/compiler_specific.h"
-#include "base/message_loop.h"
-#include "base/utf_string_conversions.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/layout/layout_constants.h"
-#include "ui/views/widget/root_view.h"
 
 static const int kMessageWidth = 320;
 static const int kTextfieldStackHorizontalSpacing = 30;
 
+using password_manager::LoginModel;
 using views::GridLayout;
 
 ///////////////////////////////////////////////////////////////////////////////
 // LoginView, public:
 
-LoginView::LoginView(const string16& explanation,
+LoginView::LoginView(const base::string16& explanation,
                      LoginModel* model)
-    : username_field_(new views::Textfield),
-      password_field_(new views::Textfield(views::Textfield::STYLE_OBSCURED)),
+    : username_field_(new views::Textfield()),
+      password_field_(new views::Textfield()),
       username_label_(new views::Label(
           l10n_util::GetStringUTF16(IDS_LOGIN_DIALOG_USERNAME_FIELD))),
       password_label_(new views::Label(
           l10n_util::GetStringUTF16(IDS_LOGIN_DIALOG_PASSWORD_FIELD))),
       message_label_(new views::Label(explanation)),
       login_model_(model) {
+  password_field_->SetTextInputType(ui::TEXT_INPUT_TYPE_PASSWORD);
   message_label_->SetMultiLine(true);
   message_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   message_label_->SetAllowCharacterBreak(true);
@@ -80,19 +76,19 @@ LoginView::LoginView(const string16& explanation,
   layout->AddPaddingRow(0, views::kUnrelatedControlVerticalSpacing);
 
   if (login_model_)
-    login_model_->SetObserver(this);
+    login_model_->AddObserver(this);
 }
 
 LoginView::~LoginView() {
   if (login_model_)
-    login_model_->SetObserver(NULL);
+    login_model_->RemoveObserver(this);
 }
 
-string16 LoginView::GetUsername() {
+const base::string16& LoginView::GetUsername() const {
   return username_field_->text();
 }
 
-string16 LoginView::GetPassword() {
+const base::string16& LoginView::GetPassword() const {
   return password_field_->text();
 }
 
@@ -101,13 +97,18 @@ views::View* LoginView::GetInitiallyFocusedView() {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// LoginView, views::View, views::LoginModelObserver overrides:
+// LoginView, views::View, password_manager::LoginModelObserver overrides:
 
-void LoginView::OnAutofillDataAvailable(const string16& username,
-                                        const string16& password) {
+void LoginView::OnAutofillDataAvailable(const base::string16& username,
+                                        const base::string16& password) {
   if (username_field_->text().empty()) {
     username_field_->SetText(username);
     password_field_->SetText(password);
     username_field_->SelectAll(true);
   }
+}
+
+void LoginView::OnLoginModelDestroying() {
+  login_model_->RemoveObserver(this);
+  login_model_ = NULL;
 }

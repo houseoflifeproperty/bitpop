@@ -9,11 +9,14 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "net/base/host_port_pair.h"
+#include "net/base/io_buffer.h"
+#include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "net/url_request/url_fetcher_impl.h"
+#include "net/url_request/url_fetcher_response_writer.h"
 #include "net/url_request/url_request_status.h"
 
 namespace net {
@@ -57,6 +60,15 @@ void TestURLFetcher::SetUploadData(const std::string& upload_content_type,
   upload_data_ = upload_content;
 }
 
+void TestURLFetcher::SetUploadFilePath(
+    const std::string& upload_content_type,
+    const base::FilePath& file_path,
+    uint64 range_offset,
+    uint64 range_length,
+    scoped_refptr<base::TaskRunner> file_task_runner) {
+  upload_file_path_ = file_path;
+}
+
 void TestURLFetcher::SetChunkedUpload(const std::string& upload_content_type) {
 }
 
@@ -80,6 +92,10 @@ int TestURLFetcher::GetLoadFlags() const {
 void TestURLFetcher::SetReferrer(const std::string& referrer) {
 }
 
+void TestURLFetcher::SetReferrerPolicy(
+    URLRequest::ReferrerPolicy referrer_policy) {
+}
+
 void TestURLFetcher::SetExtraRequestHeaders(
     const std::string& extra_request_headers) {
   fake_extra_request_headers_.Clear();
@@ -88,11 +104,6 @@ void TestURLFetcher::SetExtraRequestHeaders(
 
 void TestURLFetcher::AddExtraRequestHeader(const std::string& header_line) {
   fake_extra_request_headers_.AddHeaderFromString(header_line);
-}
-
-void TestURLFetcher::GetExtraRequestHeaders(
-    HttpRequestHeaders* headers) const {
-  *headers = fake_extra_request_headers_;
 }
 
 void TestURLFetcher::SetRequestContext(
@@ -130,16 +141,36 @@ void TestURLFetcher::SetAutomaticallyRetryOnNetworkChanges(int max_retries) {
 }
 
 void TestURLFetcher::SaveResponseToFileAtPath(
-    const FilePath& file_path,
-    scoped_refptr<base::TaskRunner> file_task_runner) {
+    const base::FilePath& file_path,
+    scoped_refptr<base::SequencedTaskRunner> file_task_runner) {
 }
 
 void TestURLFetcher::SaveResponseToTemporaryFile(
-    scoped_refptr<base::TaskRunner> file_task_runner) {
+    scoped_refptr<base::SequencedTaskRunner> file_task_runner) {
+}
+
+void TestURLFetcher::SaveResponseWithWriter(
+    scoped_ptr<URLFetcherResponseWriter> response_writer) {
+  if (fake_response_destination_ == STRING) {
+    response_writer_ = response_writer.Pass();
+    int response = response_writer_->Initialize(CompletionCallback());
+    // The TestURLFetcher doesn't handle asynchronous writes.
+    DCHECK_EQ(OK, response);
+
+    scoped_refptr<IOBuffer> buffer(new StringIOBuffer(fake_response_string_));
+    response = response_writer_->Write(buffer.get(),
+                                       fake_response_string_.size(),
+                                       CompletionCallback());
+    DCHECK_EQ(static_cast<int>(fake_response_string_.size()), response);
+    response = response_writer_->Finish(CompletionCallback());
+    DCHECK_EQ(OK, response);
+  } else {
+    NOTIMPLEMENTED();
+  }
 }
 
 HttpResponseHeaders* TestURLFetcher::GetResponseHeaders() const {
-  return fake_response_headers_;
+  return fake_response_headers_.get();
 }
 
 HostPortPair TestURLFetcher::GetSocketAddress() const {
@@ -177,12 +208,6 @@ const ResponseCookies& TestURLFetcher::GetCookies() const {
   return fake_cookies_;
 }
 
-bool TestURLFetcher::FileErrorOccurred(
-    base::PlatformFileError* out_error_code) const {
-  NOTIMPLEMENTED();
-  return false;
-}
-
 void TestURLFetcher::ReceivedContentWasMalformed() {
 }
 
@@ -196,12 +221,17 @@ bool TestURLFetcher::GetResponseAsString(
 }
 
 bool TestURLFetcher::GetResponseAsFilePath(
-    bool take_ownership, FilePath* out_response_path) const {
+    bool take_ownership, base::FilePath* out_response_path) const {
   if (fake_response_destination_ != TEMP_FILE)
     return false;
 
   *out_response_path = fake_response_file_path_;
   return true;
+}
+
+void TestURLFetcher::GetExtraRequestHeaders(
+    HttpRequestHeaders* headers) const {
+  *headers = fake_extra_request_headers_;
 }
 
 void TestURLFetcher::set_status(const URLRequestStatus& status) {
@@ -230,13 +260,13 @@ void TestURLFetcher::SetResponseString(const std::string& response) {
   fake_response_string_ = response;
 }
 
-void TestURLFetcher::SetResponseFilePath(const FilePath& path) {
+void TestURLFetcher::SetResponseFilePath(const base::FilePath& path) {
   fake_response_destination_ = TEMP_FILE;
   fake_response_file_path_ = path;
 }
 
 TestURLFetcherFactory::TestURLFetcherFactory()
-    : ScopedURLFetcherFactory(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+    : ScopedURLFetcherFactory(this),
       delegate_for_tests_(NULL),
       remove_fetcher_on_delete_(false) {
 }
@@ -272,58 +302,72 @@ void TestURLFetcherFactory::SetDelegateForTests(
   delegate_for_tests_ = delegate_for_tests;
 }
 
-// This class is used by the FakeURLFetcherFactory below.
-class FakeURLFetcher : public TestURLFetcher {
- public:
-  // Normal URL fetcher constructor but also takes in a pre-baked response.
-  FakeURLFetcher(const GURL& url,
-                 URLFetcherDelegate* d,
-                 const std::string& response_data, bool success)
-      : TestURLFetcher(0, url, d),
-        ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
-    set_status(URLRequestStatus(
-        success ? URLRequestStatus::SUCCESS : URLRequestStatus::FAILED,
-        0));
-    set_response_code(success ? 200 : 500);
-    SetResponseString(response_data);
+FakeURLFetcher::FakeURLFetcher(const GURL& url,
+                               URLFetcherDelegate* d,
+                               const std::string& response_data,
+                               HttpStatusCode response_code,
+                               URLRequestStatus::Status status)
+    : TestURLFetcher(0, url, d),
+      weak_factory_(this) {
+  Error error = OK;
+  switch(status) {
+    case URLRequestStatus::SUCCESS:
+      // |error| is initialized to OK.
+      break;
+    case URLRequestStatus::IO_PENDING:
+      error = ERR_IO_PENDING;
+      break;
+    case URLRequestStatus::CANCELED:
+      error = ERR_ABORTED;
+      break;
+    case URLRequestStatus::FAILED:
+      error = ERR_FAILED;
+      break;
   }
+  set_status(URLRequestStatus(status, error));
+  set_response_code(response_code);
+  SetResponseString(response_data);
+}
 
-  // Start the request.  This will call the given delegate asynchronously
-  // with the pre-baked response as parameter.
-  virtual void Start() OVERRIDE {
-    MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&FakeURLFetcher::RunDelegate, weak_factory_.GetWeakPtr()));
-  }
+FakeURLFetcher::~FakeURLFetcher() {}
 
-  virtual const GURL& GetURL() const OVERRIDE {
-    return TestURLFetcher::GetOriginalURL();
-  }
+void FakeURLFetcher::Start() {
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&FakeURLFetcher::RunDelegate, weak_factory_.GetWeakPtr()));
+}
 
- private:
-  virtual ~FakeURLFetcher() {
-  }
+void FakeURLFetcher::RunDelegate() {
+  delegate()->OnURLFetchComplete(this);
+}
 
-  // This is the method which actually calls the delegate that is passed in the
-  // constructor.
-  void RunDelegate() {
-    delegate()->OnURLFetchComplete(this);
-  }
-
-  base::WeakPtrFactory<FakeURLFetcher> weak_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(FakeURLFetcher);
-};
-
-FakeURLFetcherFactory::FakeURLFetcherFactory()
-    : ScopedURLFetcherFactory(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
-      default_factory_(NULL) {
+const GURL& FakeURLFetcher::GetURL() const {
+  return TestURLFetcher::GetOriginalURL();
 }
 
 FakeURLFetcherFactory::FakeURLFetcherFactory(
     URLFetcherFactory* default_factory)
-    : ScopedURLFetcherFactory(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+    : ScopedURLFetcherFactory(this),
+      creator_(base::Bind(&DefaultFakeURLFetcherCreator)),
       default_factory_(default_factory) {
+}
+
+FakeURLFetcherFactory::FakeURLFetcherFactory(
+    URLFetcherFactory* default_factory,
+    const FakeURLFetcherCreator& creator)
+    : ScopedURLFetcherFactory(this),
+      creator_(creator),
+      default_factory_(default_factory) {
+}
+
+scoped_ptr<FakeURLFetcher> FakeURLFetcherFactory::DefaultFakeURLFetcherCreator(
+      const GURL& url,
+      URLFetcherDelegate* delegate,
+      const std::string& response_data,
+      HttpStatusCode response_code,
+      URLRequestStatus::Status status) {
+  return scoped_ptr<FakeURLFetcher>(
+      new FakeURLFetcher(url, delegate, response_data, response_code, status));
 }
 
 FakeURLFetcherFactory::~FakeURLFetcherFactory() {}
@@ -343,14 +387,25 @@ URLFetcher* FakeURLFetcherFactory::CreateURLFetcher(
       return default_factory_->CreateURLFetcher(id, url, request_type, d);
     }
   }
-  return new FakeURLFetcher(url, d, it->second.first, it->second.second);
+
+  scoped_ptr<FakeURLFetcher> fake_fetcher =
+      creator_.Run(url, d, it->second.response_data,
+                   it->second.response_code, it->second.status);
+  // TODO: Make URLFetcherFactory::CreateURLFetcher return a scoped_ptr
+  return fake_fetcher.release();
 }
 
-void FakeURLFetcherFactory::SetFakeResponse(const std::string& url,
-                                            const std::string& response_data,
-                                            bool success) {
+void FakeURLFetcherFactory::SetFakeResponse(
+    const GURL& url,
+    const std::string& response_data,
+    HttpStatusCode response_code,
+    URLRequestStatus::Status status) {
   // Overwrite existing URL if it already exists.
-  fake_responses_[GURL(url)] = std::make_pair(response_data, success);
+  FakeURLResponse response;
+  response.response_data = response_data;
+  response.response_code = response_code;
+  response.status = status;
+  fake_responses_[url] = response;
 }
 
 void FakeURLFetcherFactory::ClearFakeResponses() {

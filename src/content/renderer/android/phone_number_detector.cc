@@ -6,8 +6,8 @@
 
 #include <algorithm>
 
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/public/renderer/android_content_detection_prefixes.h"
 #include "net/base/escape.h"
 #include "third_party/libphonenumber/src/phonenumber_api.h"
@@ -54,13 +54,14 @@ GURL PhoneNumberDetector::GetIntentURL(const std::string& content_text) {
       net::EscapeQueryParamValue(content_text, true));
 }
 
-bool PhoneNumberDetector::FindContent(const string16::const_iterator& begin,
-                                      const string16::const_iterator& end,
-                                      size_t* start_pos,
-                                      size_t* end_pos,
-                                      std::string* content_text) {
-  string16 utf16_input = string16(begin, end);
-  std::string utf8_input = UTF16ToUTF8(utf16_input);
+bool PhoneNumberDetector::FindContent(
+    const base::string16::const_iterator& begin,
+    const base::string16::const_iterator& end,
+    size_t* start_pos,
+    size_t* end_pos,
+    std::string* content_text) {
+  base::string16 utf16_input = base::string16(begin, end);
+  std::string utf8_input = base::UTF16ToUTF8(utf16_input);
 
   PhoneNumberMatcher matcher(utf8_input, region_code_);
   if (matcher.HasNext()) {
@@ -77,8 +78,9 @@ bool PhoneNumberDetector::FindContent(const string16::const_iterator& begin,
       return false;
 
     // Need to return start_pos and end_pos relative to a UTF16 encoding.
-    *start_pos = UTF8ToUTF16(utf8_input.substr(0, match.start())).length();
-    *end_pos = *start_pos + UTF8ToUTF16(match.raw_string()).length();
+    *start_pos =
+        base::UTF8ToUTF16(utf8_input.substr(0, match.start())).length();
+    *end_pos = *start_pos + base::UTF8ToUTF16(match.raw_string()).length();
 
     return true;
   }

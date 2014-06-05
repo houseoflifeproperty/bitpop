@@ -41,6 +41,7 @@ Webdriver.support
 .. autosummary::
    :toctree: webdriver_support
 
+   selenium.webdriver.support.expected_conditions
    selenium.webdriver.support.select
    selenium.webdriver.support.wait
 
@@ -74,6 +75,16 @@ Webdriver.ie
    :toctree: webdriver_ie
 
    selenium.webdriver.ie.webdriver
+
+Webdriver.phantomjs
+-------------------
+
+.. currentmodule:: selenium.webdriver.phantomjs
+.. autosummary::
+   :toctree: webdriver_phantomjs
+
+   selenium.webdriver.phantomjs.service
+   selenium.webdriver.phantomjs.webdriver
 
 Webdriver.remote
 ----------------

@@ -9,7 +9,7 @@
 
 #include "base/json/json_reader.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "google_apis/gaia/oauth2_mint_token_flow.h"
@@ -29,7 +29,8 @@ namespace {
 static const char kValidTokenResponse[] =
     "{"
     "  \"token\": \"at1\","
-    "  \"issueAdvice\": \"Auto\""
+    "  \"issueAdvice\": \"Auto\","
+    "  \"expiresIn\": \"3600\""
     "}";
 static const char kTokenResponseNoAccessToken[] =
     "{"
@@ -110,13 +111,13 @@ std::vector<std::string> CreateTestScopes() {
 static IssueAdviceInfo CreateIssueAdvice() {
   IssueAdviceInfo ia;
   IssueAdviceInfoEntry e1;
-  e1.description = ASCIIToUTF16("Manage your calendars");
-  e1.details.push_back(ASCIIToUTF16("View and manage your calendars"));
+  e1.description = base::ASCIIToUTF16("Manage your calendars");
+  e1.details.push_back(base::ASCIIToUTF16("View and manage your calendars"));
   ia.push_back(e1);
   IssueAdviceInfoEntry e2;
-  e2.description = ASCIIToUTF16("Manage your documents");
-  e2.details.push_back(ASCIIToUTF16("View your documents"));
-  e2.details.push_back(ASCIIToUTF16("Upload new documents"));
+  e2.description = base::ASCIIToUTF16("Manage your documents");
+  e2.details.push_back(base::ASCIIToUTF16("View your documents"));
+  e2.details.push_back(base::ASCIIToUTF16("Upload new documents"));
   ia.push_back(e2);
   return ia;
 }
@@ -126,7 +127,8 @@ class MockDelegate : public OAuth2MintTokenFlow::Delegate {
   MockDelegate() {}
   ~MockDelegate() {}
 
-  MOCK_METHOD1(OnMintTokenSuccess, void(const std::string& access_token));
+  MOCK_METHOD2(OnMintTokenSuccess, void(const std::string& access_token,
+                                        int time_to_live));
   MOCK_METHOD1(OnIssueAdviceSuccess,
                void (const IssueAdviceInfo& issue_advice));
   MOCK_METHOD1(OnMintTokenFailure,
@@ -141,7 +143,6 @@ class MockMintTokenFlow : public OAuth2MintTokenFlow {
   ~MockMintTokenFlow() {}
 
   MOCK_METHOD0(CreateAccessTokenFetcher, OAuth2AccessTokenFetcher*());
-  MOCK_METHOD0(CreateMintTokenFetcher, OAuth2MintTokenFetcher*());
 };
 
 }  // namespace
@@ -169,9 +170,9 @@ class OAuth2MintTokenFlowTest : public testing::Test {
 
   // Helper to parse the given string to DictionaryValue.
   static base::DictionaryValue* ParseJson(const std::string& str) {
-    scoped_ptr<Value> value(base::JSONReader::Read(str));
+    scoped_ptr<base::Value> value(base::JSONReader::Read(str));
     EXPECT_TRUE(value.get());
-    EXPECT_EQ(Value::TYPE_DICTIONARY, value->GetType());
+    EXPECT_EQ(base::Value::TYPE_DICTIONARY, value->GetType());
     return static_cast<base::DictionaryValue*>(value.release());
   }
 
@@ -231,14 +232,19 @@ TEST_F(OAuth2MintTokenFlowTest, ParseMintTokenResponse) {
     scoped_ptr<base::DictionaryValue> json(
         ParseJson(kTokenResponseNoAccessToken));
     std::string at;
-    EXPECT_FALSE(OAuth2MintTokenFlow::ParseMintTokenResponse(json.get(), &at));
+    int ttl;
+    EXPECT_FALSE(OAuth2MintTokenFlow::ParseMintTokenResponse(json.get(), &at,
+                                                             &ttl));
     EXPECT_TRUE(at.empty());
   }
   {  // All good.
     scoped_ptr<base::DictionaryValue> json(ParseJson(kValidTokenResponse));
     std::string at;
-    EXPECT_TRUE(OAuth2MintTokenFlow::ParseMintTokenResponse(json.get(), &at));
+    int ttl;
+    EXPECT_TRUE(OAuth2MintTokenFlow::ParseMintTokenResponse(json.get(), &at,
+                                                            &ttl));
     EXPECT_EQ("at1", at);
+    EXPECT_EQ(3600, ttl);
   }
 }
 
@@ -273,7 +279,7 @@ TEST_F(OAuth2MintTokenFlowTest, ParseIssueAdviceResponse) {
 TEST_F(OAuth2MintTokenFlowTest, ProcessApiCallSuccess) {
   {  // No body.
     TestURLFetcher url_fetcher(1, GURL("http://www.google.com"), NULL);
-    url_fetcher.SetResponseString("");
+    url_fetcher.SetResponseString(std::string());
     CreateFlow(OAuth2MintTokenFlow::MODE_MINT_TOKEN_NO_FORCE);
     EXPECT_CALL(delegate_, OnMintTokenFailure(_));
     flow_->ProcessApiCallSuccess(&url_fetcher);
@@ -296,7 +302,7 @@ TEST_F(OAuth2MintTokenFlowTest, ProcessApiCallSuccess) {
     TestURLFetcher url_fetcher(1, GURL("http://www.google.com"), NULL);
     url_fetcher.SetResponseString(kValidTokenResponse);
     CreateFlow(OAuth2MintTokenFlow::MODE_MINT_TOKEN_NO_FORCE);
-    EXPECT_CALL(delegate_, OnMintTokenSuccess("at1"));
+    EXPECT_CALL(delegate_, OnMintTokenSuccess("at1", 3600));
     flow_->ProcessApiCallSuccess(&url_fetcher);
   }
   {  // Valid json: no description.

@@ -24,6 +24,7 @@ import com.google.ipc.invalidation.util.InternalBase;
 import com.google.ipc.invalidation.util.Marshallable;
 import com.google.ipc.invalidation.util.NamedRunnable;
 import com.google.ipc.invalidation.util.Smearer;
+import com.google.ipc.invalidation.util.TextBuilder;
 import com.google.protos.ipc.invalidation.JavaClient.RecurringTaskState;
 
 
@@ -246,5 +247,14 @@ public abstract class RecurringTask extends InternalBase
       builder.setBackoffState(delayGenerator.marshal());
     }
     return builder.build();
+  }
+
+  @Override
+  public void toCompactString(TextBuilder builder) {
+    builder.append("<RecurringTask: name=").append(name)
+        .append(", initialDelayMs=").append(initialDelayMs)
+        .append(", timeoutDelayMs=").append(timeoutDelayMs)
+        .append(", isScheduled=").append(isScheduled)
+        .append(">");
   }
 }

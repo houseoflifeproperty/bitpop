@@ -6,12 +6,13 @@
 // Multiply-included message file, hence no include guard.
 
 #include "content/public/common/geoposition.h"
-#include "googleurl/src/gurl.h"
 #include "ipc/ipc_message_macros.h"
+#include "url/gurl.h"
 
 #define IPC_MESSAGE_START GeolocationMsgStart
 
-IPC_ENUM_TRAITS(content::Geoposition::ErrorCode)
+IPC_ENUM_TRAITS_MAX_VALUE(content::Geoposition::ErrorCode,
+                          content::Geoposition::ERROR_CODE_LAST)
 
 IPC_STRUCT_TRAITS_BEGIN(content::Geoposition)
   IPC_STRUCT_TRAITS_MEMBER(latitude)
@@ -44,10 +45,11 @@ IPC_MESSAGE_ROUTED1(GeolocationMsg_PositionUpdated,
 // The |render_view_id| and |bridge_id| representing |host| is requesting
 // permission to access geolocation position.
 // This will be replied by GeolocationMsg_PermissionSet.
-IPC_MESSAGE_CONTROL3(GeolocationHostMsg_RequestPermission,
+IPC_MESSAGE_CONTROL4(GeolocationHostMsg_RequestPermission,
                      int /* render_view_id */,
                      int /* bridge_id */,
-                     GURL /* GURL of the frame requesting geolocation */)
+                     GURL /* GURL of the frame requesting geolocation */,
+                     bool /* user_gesture */)
 
 // The |render_view_id| and |bridge_id| representing |GURL| is cancelling its
 // previous permission request to access geolocation position.

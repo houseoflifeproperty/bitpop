@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From private/ppb_flash.idl modified Thu Dec 06 12:27:21 2012. */
+/* From private/ppb_flash.idl modified Thu Apr 18 15:06:12 2013. */
 
 #ifndef PPAPI_C_PRIVATE_PPB_FLASH_H_
 #define PPAPI_C_PRIVATE_PPB_FLASH_H_
@@ -72,7 +72,7 @@ typedef enum {
    */
   PP_FLASHSETTING_3DENABLED = 1,
   /**
-   * Specifies if the given instance is in private/inconito/off-the-record mode
+   * Specifies if the given instance is in private/incognito/off-the-record mode
    * (returns true) or "regular" mode (returns false). Returns an undefined
    * PP_Var on invalid instance.
    */
@@ -100,7 +100,14 @@ typedef enum {
    * Specifies restrictions on how flash should handle LSOs. The result is an
    * int from <code>PP_FlashLSORestrictions</code>.
    */
-  PP_FLASHSETTING_LSORESTRICTIONS = 6
+  PP_FLASHSETTING_LSORESTRICTIONS = 6,
+  /**
+   * Specifies if the driver is reliable enough to use Shader Model 3 commands
+   * with it.
+   *
+   * This should only be enabled if PP_FLASHSETTING_STAGE3DENABLED is true.
+   */
+  PP_FLASHSETTING_STAGE3DBASELINEENABLED = 7
 } PP_FlashSetting;
 PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_FlashSetting, 4);
 
@@ -111,7 +118,11 @@ typedef enum {
   /**
    * Specifies the document URL which contains the flash instance.
    */
-  PP_FLASHCRASHKEY_URL = 1
+  PP_FLASHCRASHKEY_URL = 1,
+  /**
+   * Specifies the URL of the current swf.
+   */
+  PP_FLASHCRASHKEY_RESOURCE_URL = 2
 } PP_FlashCrashKey;
 PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_FlashCrashKey, 4);
 /**
@@ -175,7 +186,7 @@ struct PPB_Flash_13_0 {
    */
   struct PP_Var (*GetCommandLineArgs)(PP_Module module);
   /**
-   * Loads the given font in a more priviledged process on Windows. Call this if
+   * Loads the given font in a more privileged process on Windows. Call this if
    * Windows is giving errors for font calls. See
    * content/renderer/font_cache_dispatcher_win.cc
    *

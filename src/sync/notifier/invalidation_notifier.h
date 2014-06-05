@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -7,7 +7,7 @@
 // up to the invalidation client.
 //
 // You probably don't want to use this directly; use
-// NonBlockingInvalidationNotifier.
+// NonBlockingInvalidator.
 
 #ifndef SYNC_NOTIFIER_INVALIDATION_NOTIFIER_H_
 #define SYNC_NOTIFIER_INVALIDATION_NOTIFIER_H_
@@ -18,6 +18,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/non_thread_safe.h"
+#include "sync/base/sync_export.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/util/weak_handle.h"
 #include "sync/notifier/invalidation_state_tracker.h"
@@ -32,16 +33,16 @@ class PushClient;
 namespace syncer {
 
 // This class must live on the IO thread.
-// TODO(dcheng): Think of a name better than InvalidationInvalidator.
-class InvalidationNotifier
+class SYNC_EXPORT_PRIVATE InvalidationNotifier
     : public Invalidator,
       public SyncInvalidationListener::Delegate,
       public base::NonThreadSafe {
  public:
   // |invalidation_state_tracker| must be initialized.
   InvalidationNotifier(
-      scoped_ptr<notifier::PushClient> push_client,
-      const InvalidationStateMap& initial_invalidation_state_map,
+      scoped_ptr<SyncNetworkChannel> network_channel,
+      const std::string& invalidator_client_id,
+      const UnackedInvalidationsMap& saved_invalidations,
       const std::string& invalidation_bootstrap_data,
       const WeakHandle<InvalidationStateTracker>&
           invalidation_state_tracker,
@@ -55,12 +56,11 @@ class InvalidationNotifier
                                    const ObjectIdSet& ids) OVERRIDE;
   virtual void UnregisterHandler(InvalidationHandler* handler) OVERRIDE;
   virtual InvalidatorState GetInvalidatorState() const OVERRIDE;
-  virtual void SetUniqueId(const std::string& unique_id) OVERRIDE;
-  virtual void SetStateDeprecated(const std::string& state) OVERRIDE;
   virtual void UpdateCredentials(
       const std::string& email, const std::string& token) OVERRIDE;
-  virtual void SendInvalidation(
-      const ObjectIdInvalidationMap& invalidation_map) OVERRIDE;
+  virtual void RequestDetailedStatus(
+      base::Callback<void(const base::DictionaryValue&)> callback) const
+      OVERRIDE;
 
   // SyncInvalidationListener::Delegate implementation.
   virtual void OnInvalidate(
@@ -82,7 +82,7 @@ class InvalidationNotifier
   InvalidatorRegistrar registrar_;
 
   // Passed to |invalidation_listener_|.
-  const InvalidationStateMap initial_invalidation_state_map_;
+  const UnackedInvalidationsMap saved_invalidations_;
 
   // Passed to |invalidation_listener_|.
   const WeakHandle<InvalidationStateTracker>
@@ -92,12 +92,10 @@ class InvalidationNotifier
   const std::string client_info_;
 
   // The client ID to pass to |invalidation_listener_|.
-  std::string client_id_;
+  const std::string invalidator_client_id_;
 
   // The initial bootstrap data to pass to |invalidation_listener_|.
-  // TODO(tim): This should be made const once migration is completed for bug
-  // 124140.
-  std::string invalidation_bootstrap_data_;
+  const std::string invalidation_bootstrap_data_;
 
   // The invalidation listener.
   SyncInvalidationListener invalidation_listener_;

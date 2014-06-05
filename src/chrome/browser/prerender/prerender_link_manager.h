@@ -8,10 +8,11 @@
 #include <list>
 
 #include "base/basictypes.h"
-#include "base/time.h"
+#include "base/gtest_prod_util.h"
+#include "base/time/time.h"
 #include "chrome/browser/prerender/prerender_handle.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
-#include "googleurl/src/gurl.h"
+#include "components/keyed_service/core/keyed_service.h"
+#include "url/gurl.h"
 
 class Profile;
 
@@ -23,16 +24,18 @@ namespace gfx {
 class Size;
 }
 
+FORWARD_DECLARE_TEST(WebViewTest, NoPrerenderer);
+
 namespace prerender {
 
-class PrerenderHandle;
+class PrerenderContents;
 class PrerenderManager;
 
 // PrerenderLinkManager implements the API on Link elements for all documents
 // being rendered in this chrome instance.  It receives messages from the
 // renderer indicating addition, cancelation and abandonment of link elements,
 // and controls the PrerenderManager accordingly.
-class PrerenderLinkManager : public ProfileKeyedService,
+class PrerenderLinkManager : public KeyedService,
                              public PrerenderHandle::Observer {
  public:
   explicit PrerenderLinkManager(PrerenderManager* manager);
@@ -44,6 +47,7 @@ class PrerenderLinkManager : public ProfileKeyedService,
   void OnAddPrerender(int child_id,
                       int prerender_id,
                       const GURL& url,
+                      uint32 rel_types,
                       const content::Referrer& referrer,
                       const gfx::Size& size,
                       int render_view_route_id);
@@ -65,21 +69,26 @@ class PrerenderLinkManager : public ProfileKeyedService,
  private:
   friend class PrerenderBrowserTest;
   friend class PrerenderTest;
+  // WebViewTest.NoPrerenderer needs to access the private IsEmpty() method.
+  FRIEND_TEST_ALL_PREFIXES(::WebViewTest, NoPrerenderer);
 
   struct LinkPrerender {
     LinkPrerender(int launcher_child_id,
                   int prerender_id,
                   const GURL& url,
+                  uint32 rel_types,
                   const content::Referrer& referrer,
                   const gfx::Size& size,
                   int render_view_route_id,
-                  base::TimeTicks creation_time);
+                  base::TimeTicks creation_time,
+                  PrerenderContents* deferred_launcher);
     ~LinkPrerender();
 
     // Parameters from PrerenderLinkManager::OnAddPrerender():
     int launcher_child_id;
     int prerender_id;
     GURL url;
+    uint32 rel_types;
     content::Referrer referrer;
     gfx::Size size;
     int render_view_route_id;
@@ -87,10 +96,24 @@ class PrerenderLinkManager : public ProfileKeyedService,
     // The time at which this Prerender was added to PrerenderLinkManager.
     base::TimeTicks creation_time;
 
+    // If non-NULL, this link prerender was launched by an unswapped prerender,
+    // |deferred_launcher|. When |deferred_launcher| is swapped in, the field is
+    // set to NULL.
+    PrerenderContents* deferred_launcher;
+
     // Initially NULL, |handle| is set once we start this prerender. It is owned
     // by this struct, and must be deleted before destructing this struct.
     PrerenderHandle* handle;
+
+    // True if this prerender has become a MatchComplete replacement. This state
+    // is maintained so the renderer is not notified of a stop twice.
+    bool is_match_complete_replacement;
+
+    // True if this prerender has been abandoned by its launcher.
+    bool has_been_abandoned;
   };
+
+  class PendingPrerenderManager;
 
   bool IsEmpty() const;
 
@@ -106,18 +129,32 @@ class PrerenderLinkManager : public ProfileKeyedService,
 
   LinkPrerender* FindByPrerenderHandle(PrerenderHandle* prerender_handle);
 
+  // Removes |prerender| from the the prerender link manager. Deletes the
+  // PrerenderHandle as needed.
   void RemovePrerender(LinkPrerender* prerender);
 
-  // From ProfileKeyedService:
+  // Cancels |prerender| and removes |prerender| from the prerender link
+  // manager.
+  void CancelPrerender(LinkPrerender* prerender);
+
+  // Called when |launcher| is swapped in.
+  void StartPendingPrerendersForLauncher(PrerenderContents* launcher);
+
+  // Called when |launcher| is aborted.
+  void CancelPendingPrerendersForLauncher(PrerenderContents* launcher);
+
+  // From KeyedService:
   virtual void Shutdown() OVERRIDE;
 
   // From PrerenderHandle::Observer:
   virtual void OnPrerenderStart(PrerenderHandle* prerender_handle) OVERRIDE;
   virtual void OnPrerenderStopLoading(PrerenderHandle* prerender_handle)
       OVERRIDE;
+  virtual void OnPrerenderDomContentLoaded(PrerenderHandle* prerender_handle)
+      OVERRIDE;
   virtual void OnPrerenderStop(PrerenderHandle* prerender_handle) OVERRIDE;
-  virtual void OnPrerenderAddAlias(PrerenderHandle* prerender_handle,
-                                   const GURL& alias_url) OVERRIDE;
+  virtual void OnPrerenderCreatedMatchCompleteReplacement(
+      PrerenderHandle* handle) OVERRIDE;
 
   bool has_shutdown_;
 
@@ -128,10 +165,13 @@ class PrerenderLinkManager : public ProfileKeyedService,
   // at the back.
   std::list<LinkPrerender> prerenders_;
 
+  // Helper object to manage prerenders which are launched by other prerenders
+  // and must be deferred until the launcher is swapped in.
+  scoped_ptr<PendingPrerenderManager> pending_prerender_manager_;
+
   DISALLOW_COPY_AND_ASSIGN(PrerenderLinkManager);
 };
 
 }  // namespace prerender
 
 #endif  // CHROME_BROWSER_PRERENDER_PRERENDER_LINK_MANAGER_H_
-

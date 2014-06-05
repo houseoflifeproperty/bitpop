@@ -8,8 +8,10 @@
 #include <string>
 
 #include "base/memory/weak_ptr.h"
+#include "net/base/load_timing_info.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_job.h"
+#include "net/url_request/url_request_job_factory.h"
 
 namespace net {
 
@@ -17,7 +19,7 @@ namespace net {
 // probably want to inherit from it to set up the state you want. Then install
 // it as the protocol handler for the "test" scheme.
 //
-// It will respond to three URLs, which you can retrieve using the test_url*
+// It will respond to several URLs, which you can retrieve using the test_url*
 // getters, which will in turn respond with the corresponding responses returned
 // by test_data*. Any other URLs that begin with "test:" will return an error,
 // which might also be useful, you can use test_url_error() to retreive a
@@ -56,24 +58,30 @@ class NET_EXPORT_PRIVATE URLRequestTestJob : public URLRequestJob {
                     const std::string& response_data,
                     bool auto_advance);
 
-  // The three canned URLs this handler will respond to without having been
+  // The canned URLs this handler will respond to without having been
   // explicitly initialized with response headers and data.
   // FIXME(brettw): we should probably also have a redirect one
   static GURL test_url_1();
   static GURL test_url_2();
   static GURL test_url_3();
+  static GURL test_url_4();
   static GURL test_url_error();
+  static GURL test_url_redirect_to_url_2();
 
   // The data that corresponds to each of the URLs above
   static std::string test_data_1();
   static std::string test_data_2();
   static std::string test_data_3();
+  static std::string test_data_4();
 
   // The headers that correspond to each of the URLs above
   static std::string test_headers();
 
   // The headers for a redirect response
   static std::string test_redirect_headers();
+
+  // The headers for a redirect response to the second test url.
+  static std::string test_redirect_to_url_2_headers();
 
   // The headers for a server error response
   static std::string test_error_headers();
@@ -90,10 +98,17 @@ class NET_EXPORT_PRIVATE URLRequestTestJob : public URLRequestJob {
   bool auto_advance() { return auto_advance_; }
   void set_auto_advance(bool auto_advance) { auto_advance_ = auto_advance; }
 
-  // Factory method for protocol factory registration if callers don't subclass
-  static URLRequest::ProtocolFactory Factory;
+  void set_load_timing_info(const LoadTimingInfo& load_timing_info) {
+    load_timing_info_ = load_timing_info;
+  }
+
+  RequestPriority priority() const { return priority_; }
+
+  // Create a protocol handler for callers that don't subclass.
+  static URLRequestJobFactory::ProtocolHandler* CreateProtocolHandler();
 
   // Job functions
+  virtual void SetPriority(RequestPriority priority) OVERRIDE;
   virtual void Start() OVERRIDE;
   virtual bool ReadRawData(IOBuffer* buf,
                            int buf_size,
@@ -101,6 +116,8 @@ class NET_EXPORT_PRIVATE URLRequestTestJob : public URLRequestJob {
   virtual void Kill() OVERRIDE;
   virtual bool GetMimeType(std::string* mime_type) const OVERRIDE;
   virtual void GetResponseInfo(HttpResponseInfo* info) OVERRIDE;
+  virtual void GetLoadTimingInfo(
+      LoadTimingInfo* load_timing_info) const OVERRIDE;
   virtual int GetResponseCode() const OVERRIDE;
   virtual bool IsRedirectResponse(GURL* location,
                                   int* http_status_code) OVERRIDE;
@@ -132,6 +149,8 @@ class NET_EXPORT_PRIVATE URLRequestTestJob : public URLRequestJob {
 
   Stage stage_;
 
+  RequestPriority priority_;
+
   // The headers the job should return, will be set in Start() if not provided
   // in the explicit ctor.
   scoped_refptr<HttpResponseHeaders> response_headers_;
@@ -146,6 +165,8 @@ class NET_EXPORT_PRIVATE URLRequestTestJob : public URLRequestJob {
   // Holds the buffer for an asynchronous ReadRawData call
   IOBuffer* async_buf_;
   int async_buf_size_;
+
+  LoadTimingInfo load_timing_info_;
 
   base::WeakPtrFactory<URLRequestTestJob> weak_factory_;
 };

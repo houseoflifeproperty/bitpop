@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 chrome.test.getConfig(function(config) {
-  var path = "/files/extensions/test_file.txt";
+  var path = "/extensions/test_file.txt";
   var urlA = "http://a.com:" + config.testServer.port + path;
   var urlB = "http://b.com:" + config.testServer.port + path;
   var testTabId;
@@ -16,9 +16,9 @@ chrome.test.getConfig(function(config) {
         // Generally, the tab navigation hasn't happened by the time we execute
         // the script, so it's still showing a.com, where we don't have
         // permission to run it.
-        if (chrome.extension.lastError) {
+        if (chrome.runtime.lastError) {
           chrome.test.assertTrue(
-              chrome.extension.lastError.message.indexOf(
+              chrome.runtime.lastError.message.indexOf(
                   'Cannot access contents of url "http://a.com:') == 0);
           chrome.test.notifyPass();
         } else {

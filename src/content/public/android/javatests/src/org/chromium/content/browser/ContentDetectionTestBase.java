@@ -1,29 +1,28 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.content.browser;
 
-import android.content.Context;
-import android.net.Uri;
+import static org.chromium.base.test.util.ScalableTimeout.scaleTimeout;
 
-import java.util.concurrent.TimeUnit;
+import android.net.Uri;
 
 import org.chromium.base.test.util.UrlUtils;
 import org.chromium.content.browser.test.util.DOMUtils;
-import org.chromium.content.browser.test.util.JavaScriptUtils;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnPageFinishedHelper;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnStartContentIntentHelper;
-import org.chromium.content_shell.ContentShellActivity;
-import org.chromium.content_shell.ContentShellTestBase;
+import org.chromium.content_shell_apk.ContentShellTestBase;
+
+import java.util.concurrent.TimeUnit;
 
 /**
  * Base class for content detection test suites.
  */
 public class ContentDetectionTestBase extends ContentShellTestBase {
 
-    private static final int WAIT_TIMEOUT_SECONDS = 10;
+    private static final long WAIT_TIMEOUT_SECONDS = scaleTimeout(10);
 
     private TestCallbackHelperContainer mCallbackHelper;
 
@@ -33,7 +32,7 @@ public class ContentDetectionTestBase extends ContentShellTestBase {
      */
     protected TestCallbackHelperContainer getTestCallbackHelperContainer() {
         if (mCallbackHelper == null) {
-            mCallbackHelper = new TestCallbackHelperContainer(getContentView());
+            mCallbackHelper = new TestCallbackHelperContainer(getContentViewCore());
         }
         return mCallbackHelper;
     }
@@ -53,7 +52,7 @@ public class ContentDetectionTestBase extends ContentShellTestBase {
      * @return true if the test url is the current one, false otherwise.
      */
     protected boolean isCurrentTestUrl(String testUrl) {
-        return UrlUtils.getTestFileUrl(testUrl).equals(getContentView().getUrl());
+        return UrlUtils.getTestFileUrl(testUrl).equals(getContentViewCore().getUrl());
     }
 
     /**
@@ -67,8 +66,8 @@ public class ContentDetectionTestBase extends ContentShellTestBase {
                 callbackHelperContainer.getOnStartContentIntentHelper();
         int currentCallCount = onStartContentIntentHelper.getCallCount();
 
-        DOMUtils.scrollNodeIntoView(getContentView(), callbackHelperContainer, id);
-        DOMUtils.clickNode(this, getContentView(), callbackHelperContainer, id);
+        DOMUtils.scrollNodeIntoView(getContentViewCore(), id);
+        DOMUtils.clickNode(this, getContentViewCore(), id);
 
         onStartContentIntentHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_SECONDS,
                 TimeUnit.SECONDS);
@@ -88,8 +87,8 @@ public class ContentDetectionTestBase extends ContentShellTestBase {
                 callbackHelperContainer.getOnPageFinishedHelper();
         int currentCallCount = onPageFinishedHelper.getCallCount();
 
-        DOMUtils.scrollNodeIntoView(getContentView(), callbackHelperContainer, id);
-        DOMUtils.clickNode(this, getContentView(), callbackHelperContainer, id);
+        DOMUtils.scrollNodeIntoView(getContentViewCore(), id);
+        DOMUtils.clickNode(this, getContentViewCore(), id);
 
         onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_SECONDS,
                 TimeUnit.SECONDS);

@@ -18,13 +18,19 @@ package com.google.ipc.invalidation.external.client.contrib;
 
 import com.google.android.gcm.GCMBaseIntentService;
 import com.google.android.gcm.GCMBroadcastReceiver;
+import com.google.android.gcm.GCMRegistrar;
+import com.google.ipc.invalidation.external.client.SystemResources.Logger;
+import com.google.ipc.invalidation.external.client.android.service.AndroidLogger;
 import com.google.ipc.invalidation.ticl.android.c2dm.WakeLockManager;
 
 import android.app.IntentService;
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.util.Log;
+import android.content.pm.PackageManager;
+import android.content.pm.PackageManager.NameNotFoundException;
+import android.content.pm.ServiceInfo;
 
 /**
  * A Google Cloud Messaging listener class that rebroadcasts events as package-scoped
@@ -130,8 +136,8 @@ public class MultiplexingGcmListener extends GCMBaseIntentService {
     private static final String EXTRA_WAKELOCK_NAME =
         "com.google.ipc.invalidation.gcmmplex.listener.WAKELOCK_NAME";
 
-    /** Log tag for {@code AbstractListener}. */
-    private static final String LISTENER_TAG = "MplexGcmAbsListener";
+    /** Logger for {@code AbstractListener}. */
+    private static final Logger logger = AndroidLogger.forTag("MplexGcmAbsListener");
 
     /**
      * A {@code BroadcastReceiver} to receive intents from the {@code MultiplexingGcmListener}
@@ -173,10 +179,18 @@ public class MultiplexingGcmListener extends GCMBaseIntentService {
 
     protected AbstractListener(String name) {
       super(name);
+
+      // If the process dies during a call to onHandleIntent, redeliver the intent when the service
+      // restarts.
+      setIntentRedelivery(true);
     }
 
     @Override
     public final void onHandleIntent(Intent intent) {
+      if (intent == null) {
+        return;
+      }
+
       // This method is final to prevent subclasses from overriding it and introducing errors in
       // the wakelock protocol.
       try {
@@ -188,8 +202,8 @@ public class MultiplexingGcmListener extends GCMBaseIntentService {
         String receiverAcquiredWakelock = intent.getStringExtra(EXTRA_WAKELOCK_NAME);
         String wakelockToRelease = getWakelockKey(getClass());
         if (!wakelockToRelease.equals(receiverAcquiredWakelock)) {
-          Log.w(LISTENER_TAG, "Receiver acquired wakelock ;" + receiverAcquiredWakelock
-              + "' but releasing '" + wakelockToRelease + "'");
+          logger.warning("Receiver acquired wakelock '%s' but releasing '%s'",
+              receiverAcquiredWakelock, wakelockToRelease);
         }
         WakeLockManager wakelockManager = WakeLockManager.getInstance(this);
         wakelockManager.release(wakelockToRelease);
@@ -200,7 +214,7 @@ public class MultiplexingGcmListener extends GCMBaseIntentService {
     private void doHandleIntent(Intent intent) {
       // Ensure this is an Intent we want to handle.
       if (!MultiplexingGcmListener.Intents.ACTION.equals(intent.getAction())) {
-        Log.w(LISTENER_TAG, "Ignoring intent with unknown action: " + intent);
+        logger.warning("Ignoring intent with unknown action: %s", intent);
         return;
       }
       // Dispatch based on the extras.
@@ -214,12 +228,12 @@ public class MultiplexingGcmListener extends GCMBaseIntentService {
         int numDeleted =
             intent.getIntExtra(MultiplexingGcmListener.Intents.EXTRA_DATA_NUM_DELETED_MSGS, -1);
         if (numDeleted == -1) {
-          Log.w(LISTENER_TAG, "Could not parse num-deleted field of GCM broadcast: " + intent);
+          logger.warning("Could not parse num-deleted field of GCM broadcast: %s", intent);
           return;
         }
         onDeletedMessages(numDeleted);
       } else {
-        Log.w(LISTENER_TAG, "Broadcast GCM intent with no known operation: " + intent);
+        logger.warning("Broadcast GCM intent with no known operation: %s", intent);
       }
     }
 
@@ -238,8 +252,14 @@ public class MultiplexingGcmListener extends GCMBaseIntentService {
     }
   }
 
-  /** Tag for logging. */
-  private static final String LOG_TAG = "MplexGcmListener";
+  /**
+   * Name of the metadata element within the {@code service} element whose value is a
+   * comma-delimited list of GCM sender ids.
+   */
+  private static final String GCM_SENDER_IDS_METADATA_KEY = "sender_ids";
+
+  /** Logger. */
+  private static final Logger logger = AndroidLogger.forTag("MplexGcmListener");
 
   // All onYYY methods work by constructing an appropriate Intent and broadcasting it.
 
@@ -282,7 +302,12 @@ public class MultiplexingGcmListener extends GCMBaseIntentService {
   @Override
   protected void onError(Context context, String errorId) {
     // This is called for unrecoverable errors, so just log a warning.
-    Log.w(LOG_TAG, "GCM error: " + errorId);
+    logger.warning("GCM error: %s", errorId);
+  }
+
+  @Override
+  protected String[] getSenderIds(Context context) {
+    return readSenderIdsFromManifestOrDie(this);
   }
 
   /**
@@ -293,5 +318,45 @@ public class MultiplexingGcmListener extends GCMBaseIntentService {
     intent.setAction(Intents.ACTION);
     intent.setPackage(getPackageName());
     sendBroadcast(intent);
+  }
+
+  /**
+   * Registers with GCM if not already registered. Also verifies that the device supports GCM
+   * and that the manifest is correctly configured. Returns the existing registration id, if one
+   * exists, or the empty string if one does not.
+   *
+   * @throws UnsupportedOperationException if the device does not have all GCM dependencies
+   * @throws IllegalStateException if the manifest is not correctly configured
+   */
+  public static String initializeGcm(Context context) {
+    GCMRegistrar.checkDevice(context);
+    GCMRegistrar.checkManifest(context);
+    final String regId = GCMRegistrar.getRegistrationId(context);
+    if (regId.equals("")) {
+      GCMRegistrar.register(context, readSenderIdsFromManifestOrDie(context));
+    }
+    return regId;
+  }
+
+  /**
+   * Returns the GCM sender ids from {@link #GCM_SENDER_IDS_METADATA_KEY} or throws a
+   * {@code RuntimeException} if they are not defined.
+   */
+  
+  static String[] readSenderIdsFromManifestOrDie(Context context) {
+    try {
+      ServiceInfo serviceInfo = context.getPackageManager().getServiceInfo(
+          new ComponentName(context, MultiplexingGcmListener.class), PackageManager.GET_META_DATA);
+      if (serviceInfo.metaData == null) {
+        throw new RuntimeException("Service has no metadata");
+      }
+      String senderIds = serviceInfo.metaData.getString(GCM_SENDER_IDS_METADATA_KEY);
+      if (senderIds == null) {
+        throw new RuntimeException("Service does not have the sender-ids metadata");
+      }
+      return senderIds.split(",");
+    } catch (NameNotFoundException exception) {
+      throw new RuntimeException("Could not read service info from manifest", exception);
+    }
   }
 }

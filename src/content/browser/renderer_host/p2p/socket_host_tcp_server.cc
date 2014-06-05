@@ -21,12 +21,13 @@ const int kListenBacklog = 5;
 namespace content {
 
 P2PSocketHostTcpServer::P2PSocketHostTcpServer(
-    IPC::Sender* message_sender, int id)
+    IPC::Sender* message_sender, int id, P2PSocketType client_type)
     : P2PSocketHost(message_sender, id),
+      client_type_(client_type),
       socket_(new net::TCPServerSocket(NULL, net::NetLog::Source())),
-      ALLOW_THIS_IN_INITIALIZER_LIST(accept_callback_(
+      accept_callback_(
           base::Bind(&P2PSocketHostTcpServer::OnAccepted,
-                     base::Unretained(this)))) {
+                     base::Unretained(this))) {
 }
 
 P2PSocketHostTcpServer::~P2PSocketHostTcpServer() {
@@ -40,7 +41,7 @@ P2PSocketHostTcpServer::~P2PSocketHostTcpServer() {
 }
 
 bool P2PSocketHostTcpServer::Init(const net::IPEndPoint& local_address,
-                                  const net::IPEndPoint& remote_address) {
+                                  const P2PHostAndIPEndPoint& remote_address) {
   DCHECK_EQ(state_, STATE_UNINITIALIZED);
 
   int result = socket_->Listen(local_address, kListenBacklog);
@@ -114,7 +115,9 @@ void P2PSocketHostTcpServer::OnAccepted(int result) {
 }
 
 void P2PSocketHostTcpServer::Send(const net::IPEndPoint& to,
-                                  const std::vector<char>& data) {
+                                  const std::vector<char>& data,
+                                  const talk_base::PacketOptions& options,
+                                  uint64 packet_id) {
   NOTREACHED();
   OnError();
 }
@@ -127,12 +130,23 @@ P2PSocketHost* P2PSocketHostTcpServer::AcceptIncomingTcpConnection(
 
   net::StreamSocket* socket = it->second;
   accepted_sockets_.erase(it);
-  scoped_ptr<P2PSocketHostTcp> result(
-      new P2PSocketHostTcp(message_sender_, id));
+
+  scoped_ptr<P2PSocketHostTcpBase> result;
+  if (client_type_ == P2P_SOCKET_TCP_CLIENT) {
+    result.reset(new P2PSocketHostTcp(message_sender_, id, client_type_, NULL));
+  } else {
+    result.reset(new P2PSocketHostStunTcp(
+                    message_sender_, id, client_type_, NULL));
+  }
   if (!result->InitAccepted(remote_address, socket))
     return NULL;
-
   return result.release();
+}
+
+bool P2PSocketHostTcpServer::SetOption(P2PSocketOption option,
+                                       int value) {
+  // Currently we don't have use case tcp server sockets are used for p2p.
+  return false;
 }
 
 }  // namespace content

@@ -15,15 +15,15 @@ import Queue
 import shlex
 import shutil
 import sys
-import time
 import threading
-from time import strftime
+import time
 
 from common import chromium_utils
 from slave import slave_utils
 
 
-FILENAME = 'chromium-src.tar.bz2'
+FILENAME = 'chromium-src'
+EXT = 'tar.bz2'
 GSBASE = 'gs://chromium-browser-csindex'
 GSACL = 'public-read'
 CONCURRENT_TASKS = 8
@@ -134,10 +134,13 @@ def main():
   if not os.path.exists('src'):
     raise Exception('ERROR: no src directory to package, exiting')
 
-  completed_hour = strftime('%H')
-  completed_filename = '%s.%s' % (
+  revision = options.build_properties.get('got_revision', '')
+  if revision == '':
+    revision = 'NONE'
+  completed_filename = '%s-%s.%s' % (
       options.factory_properties.get('package_filename', FILENAME),
-      completed_hour)
+      revision,
+      EXT)
   partial_filename = '%s.partial' % completed_filename
 
   chromium_utils.RunCommand(['rm', '-f', partial_filename])
@@ -149,17 +152,31 @@ def main():
 
   print '%s: Creating tar file...' % time.strftime('%X')
   packaging_successful = True
-  find_command = ['find', 'src/', 'tools/', '-type', 'f',
+  find_command = ['find', 'src/', 'tools/', '/usr/include/', '-type', 'f',
                   # The only files under src/out we want to package up
-                  # are index files and generated sources.
+                  # are index files....
                   '(', '-regex', '^src/out/.*index$', '-o',
-                       '-regex', '^src/out/[^/]*/obj/gen/.*', '-o',
+                      '(',
+                         # ... and generated sources...
+                         '-regex', '^src/out/.*/gen/.*', '-a',
+                         '(', '-name', '*.h', '-o', '-name', '*.cc', '-o',
+                              '-name', '*.cpp', '-o', '-name', '*.js',
+                              ')', '-a',
+                         # ... but none of the NaCL stuff.
+                         '!', '-regex', '^src/out/[^/]*/gen/lib[^/]*/.*', '-a',
+                         '!', '-regex', '^src/out/[^/]*/gen/sdk/.*', '-a',
+                         '!', '-regex', '^src/out/[^/]*/gen/tc_.*',
+                       ')', '-o',
                        '!', '-regex', '^src/out/.*', ')', '-a',
                   # Exclude all .svn directories, the native client toolchain
                   # and the llvm build directory, and perf/data files.
-                  '!', '-regex', r'.*\.svn.*', '-a',
+                  '!', '-regex', r'.*/\.svn/.*', '-a',
+                  '!', '-regex', r'.*/\.git/.*', '-a',
                   '!', '-regex', '^src/native_client/toolchain/.*', '-a',
+                  '!', '-regex', '^src/native_client/.*/testdata/.*', '-a',
                   '!', '-regex', '^src/third_party/llvm-build/.*', '-a',
+                  '!', '-regex', '^src/chrome/tools/test/reference_build/.*',
+                  '-a',
                   '!', '-regex', '^tools/perf/data/.*']
 
   try:
@@ -200,6 +217,19 @@ def main():
     if not modified_time:
       raise Exception('ERROR: could not get modified_time, exiting')
     print 'Last modified time: %s' % modified_time
+
+    print '%s: Deleting old archives on google storage...' % time.strftime('%X')
+    regex = re.compile('\s*\d+\s+([-:\w]+)\s+(%s/.*%s.*)\n' % (GSBASE, EXT))
+    last_week = int(time.time()) - 7 * 24 * 60 * 60
+    for match_data in regex.finditer(output):
+      timestamp = int(time.strftime(
+          '%s', time.strptime(match_data.group(1), '%Y-%m-%dT%H:%M:%S')))
+      if timestamp < last_week:
+        print 'Deleting %s...' % match_data.group(2)
+        status = slave_utils.GSUtilDeleteFile(match_data.group(2))
+        if status != 0:
+          raise Exception('ERROR: GSUtilDeleteFile error %d. "%s"' % (
+              status, match_data.group(2)))
 
   except Exception, e:
     print str(e)

@@ -26,14 +26,15 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from webkitpy.common.checkout.scm import CommitMessage
 from webkitpy.common.system.filesystem_mock import MockFileSystem
 from webkitpy.common.system.executive_mock import MockExecutive
 
 
 class MockSCM(object):
+    executable_name = "MockSCM"
+
     def __init__(self, filesystem=None, executive=None):
-        self.checkout_root = "/mock-checkout"
+        self.checkout_root = "/mock-checkout/third_party/WebKit"
         self.added_paths = set()
         self._filesystem = filesystem or MockFileSystem()
         self._executive = executive or MockExecutive()
@@ -46,14 +47,26 @@ class MockSCM(object):
         if return_exit_code:
             return 0
 
-    def ensure_clean_working_directory(self, force_clean):
+    def has_working_directory_changes(self):
+        return False
+
+    def ensure_cleanly_tracking_remote_master(self):
+        pass
+
+    def current_branch(self):
+        return "mock-branch-name"
+
+    def checkout_branch(self, name):
+        pass
+
+    def create_clean_branch(self, name):
+        pass
+
+    def delete_branch(self, name):
         pass
 
     def supports_local_commits(self):
         return True
-
-    def ensure_no_local_commits(self, force_clean):
-        pass
 
     def exists(self, path):
         # TestRealMain.test_real_main (and several other rebaseline tests) are sensitive to this return value.
@@ -63,56 +76,23 @@ class MockSCM(object):
     def absolute_path(self, *comps):
         return self._filesystem.join(self.checkout_root, *comps)
 
-    def changed_files(self, git_commit=None):
-        return ["MockFile1"]
-
-    def changed_files_for_revision(self, revision):
-        return ["MockFile1"]
-
-    def head_svn_revision(self):
-        return '1234'
-
     def svn_revision(self, path):
         return '5678'
 
-    def create_patch(self, git_commit, changed_files=None):
-        return "Patch1"
-
-    def commit_ids_from_commitish_arguments(self, args):
-        return ["Commitish1", "Commitish2"]
-
-    def committer_email_for_revision(self, revision):
-        return "mock@webkit.org"
-
-    def commit_locally_with_message(self, message):
-        pass
-
-    def commit_with_message(self, message, username=None, password=None, git_commit=None, force_squash=False, changed_files=None):
-        pass
-
-    def merge_base(self, git_commit):
+    def svn_revision_from_git_commit(self, git_commit):
+        if git_commit == '6469e754a1':
+            return 1234
+        if git_commit == '624c3081c0':
+            return 5678
+        if git_commit == '624caaaaaa':
+            return 10000
         return None
 
-    def commit_message_for_local_commit(self, commit_id):
-        if commit_id == "Commitish1":
-            return CommitMessage("CommitMessage1\n" \
-                "https://bugs.example.org/show_bug.cgi?id=50000\n")
-        if commit_id == "Commitish2":
-            return CommitMessage("CommitMessage2\n" \
-                "https://bugs.example.org/show_bug.cgi?id=50001\n")
-        raise Exception("Bogus commit_id in commit_message_for_local_commit.")
+    def timestamp_of_revision(self, path, revision):
+        return '2013-02-01 08:48:05 +0000'
 
-    def diff_for_file(self, path, log=None):
-        return path + '-diff'
-
-    def diff_for_revision(self, revision):
-        return "DiffForRevision%s\nhttp://bugs.webkit.org/show_bug.cgi?id=12345" % revision
-
-    def show_head(self, path):
-        return path
-
-    def svn_revision_from_commit_text(self, commit_text):
-        return "49824"
+    def commit_locally_with_message(self, message, commit_all_working_directory_changes=True):
+        pass
 
     def delete(self, path):
         return self.delete_list([path])
@@ -123,3 +103,7 @@ class MockSCM(object):
         for path in paths:
             if self._filesystem.exists(path):
                 self._filesystem.remove(path)
+
+    def move(self, origin, destination):
+        if self._filesystem:
+            self._filesystem.move(self.absolute_path(origin), self.absolute_path(destination))

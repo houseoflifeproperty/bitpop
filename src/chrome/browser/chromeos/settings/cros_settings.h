@@ -9,26 +9,36 @@
 #include <vector>
 
 #include "base/callback_forward.h"
-#include "base/hash_tables.h"
-#include "base/observer_list.h"
+#include "base/callback_list.h"
+#include "base/containers/hash_tables.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/threading/non_thread_safe.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
-#include "chrome/browser/chromeos/settings/cros_settings_provider.h"
-#include "content/public/browser/notification_observer.h"
+#include "chromeos/settings/cros_settings_names.h"
+#include "chromeos/settings/cros_settings_provider.h"
 
 namespace base {
-template <typename T> struct DefaultLazyInstanceTraits;
+class DictionaryValue;
 class ListValue;
 class Value;
 }
 
 namespace chromeos {
 
+class DeviceSettingsService;
+
 // This class manages per-device/global settings.
 class CrosSettings : public base::NonThreadSafe {
  public:
-  // Class factory.
+  // Manage singleton instance.
+  static void Initialize();
+  static bool IsInitialized();
+  static void Shutdown();
   static CrosSettings* Get();
+
+  // Creates a device settings service instance. This is meant for unit tests,
+  // production code uses the singleton returned by Get() above.
+  explicit CrosSettings(DeviceSettingsService* device_settings_service);
+  virtual ~CrosSettings();
 
   // Helper function to test if the given |path| is a valid cros setting.
   static bool IsCrosSettings(const std::string& path);
@@ -71,35 +81,34 @@ class CrosSettings : public base::NonThreadSafe {
   bool GetString(const std::string& path, std::string* out_value) const;
   bool GetList(const std::string& path,
                const base::ListValue** out_value) const;
+  bool GetDictionary(const std::string& path,
+                     const base::DictionaryValue** out_value) const;
 
   // Helper function for the whitelist op. Implemented here because we will need
   // this in a few places. The functions searches for |email| in the pref |path|
-  // It respects whitelists so foo@bar.baz will match *@bar.baz too.
-  bool FindEmailInList(const std::string& path, const std::string& email) const;
+  // It respects whitelists so foo@bar.baz will match *@bar.baz too. If the
+  // match was via a wildcard, |wildcard_match| is set to true.
+  bool FindEmailInList(const std::string& path,
+                       const std::string& email,
+                       bool* wildcard_match) const;
 
   // Adding/removing of providers.
   bool AddSettingsProvider(CrosSettingsProvider* provider);
   bool RemoveSettingsProvider(CrosSettingsProvider* provider);
 
-  // If the pref at the given |path| changes, we call the observer's Observe
-  // method with NOTIFICATION_SYSTEM_SETTING_CHANGED.
-  void AddSettingsObserver(const char* path,
-                           content::NotificationObserver* obs);
-  void RemoveSettingsObserver(const char* path,
-                              content::NotificationObserver* obs);
+  // Add an observer Callback for changes for the given |path|.
+  typedef base::CallbackList<void(void)>::Subscription ObserverSubscription;
+  scoped_ptr<ObserverSubscription> AddSettingsObserver(
+      const std::string& path,
+      const base::Closure& callback);
 
   // Returns the provider that handles settings with the |path| or prefix.
   CrosSettingsProvider* GetProvider(const std::string& path) const;
 
  private:
-  friend struct base::DefaultLazyInstanceTraits<CrosSettings>;
   friend class CrosSettingsTest;
 
-  // Public for testing.
-  CrosSettings();
-  ~CrosSettings();
-
-  // Fires system setting change notification.
+  // Fires system setting change callback.
   void FireObservers(const std::string& path);
 
   // List of ChromeOS system settings providers.
@@ -107,13 +116,22 @@ class CrosSettings : public base::NonThreadSafe {
 
   // A map from settings names to a list of observers. Observers get fired in
   // the order they are added.
-  typedef ObserverList<content::NotificationObserver, true>
-      NotificationObserverList;
-  typedef base::hash_map<std::string, NotificationObserverList*>
+  typedef base::hash_map<std::string, base::CallbackList<void(void)>*>
       SettingsObserverMap;
   SettingsObserverMap settings_observers_;
 
   DISALLOW_COPY_AND_ASSIGN(CrosSettings);
+};
+
+// Helper class for tests. Initializes the CrosSettings singleton on
+// construction and tears it down again on destruction.
+class ScopedTestCrosSettings {
+ public:
+  ScopedTestCrosSettings();
+  ~ScopedTestCrosSettings();
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ScopedTestCrosSettings);
 };
 
 }  // namespace chromeos

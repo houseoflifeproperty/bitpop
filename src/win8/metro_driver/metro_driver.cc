@@ -13,15 +13,8 @@
 #include "base/logging.h"
 #include "base/logging_win.h"
 #include "base/win/scoped_comptr.h"
+#include "base/win/windows_version.h"
 #include "win8/metro_driver/winrt_utils.h"
-#include "sandbox/win/src/sidestep/preamble_patcher.h"
-
-#if !defined(USE_AURA)
-#include "win8/metro_driver/chrome_app_view.h"
-#endif
-
-// TODO(siggi): Move this to GYP.
-#pragma comment(lib, "runtimeobject.lib")
 
 namespace {
 
@@ -31,15 +24,26 @@ LONG WINAPI ErrorReportingHandler(EXCEPTION_POINTERS* ex_info) {
   DWORD code = ex_info->ExceptionRecord->ExceptionCode;
   ULONG_PTR* info = ex_info->ExceptionRecord->ExceptionInformation;
   if (code == EXCEPTION_RO_ORIGINATEERROR) {
-    string16 msg(reinterpret_cast<wchar_t*>(info[2]), info[1]);
+    base::string16 msg(reinterpret_cast<wchar_t*>(info[2]), info[1]);
     LOG(ERROR) << "VEH: Metro error 0x" << std::hex << info[0] << ": " << msg;
   } else if (code == EXCEPTION_RO_TRANSFORMERROR) {
-    string16 msg(reinterpret_cast<wchar_t*>(info[3]), info[2]);
+    base::string16 msg(reinterpret_cast<wchar_t*>(info[3]), info[2]);
     LOG(ERROR) << "VEH: Metro old error 0x" << std::hex << info[0]
                << " new error 0x" << info[1] << ": " << msg;
   }
 
   return EXCEPTION_CONTINUE_SEARCH;
+}
+
+void SetMetroReportingFlags() {
+#if !defined(NDEBUG)
+  // Set the error reporting flags to always raise an exception,
+  // which is then processed by our vectored exception handling
+  // above to log the error message.
+  winfoundtn::Diagnostics::SetErrorReportingFlags(
+      winfoundtn::Diagnostics::UseSetErrorInfo |
+      winfoundtn::Diagnostics::ForceExceptions);
+#endif
 }
 
 // TODO(robertshield): This GUID is hard-coded in a bunch of places that
@@ -49,148 +53,68 @@ const GUID kChromeTraceProviderName = {
     0x7fe69228, 0x633e, 0x4f06,
         { 0x80, 0xc1, 0x52, 0x7f, 0xea, 0x23, 0xe3, 0xa7 } };
 
-}
+}  // namespace
+
+#if !defined(COMPONENT_BUILD)
 // Required for base initialization.
 // TODO(siggi): This should be handled better, as this way our at exit
 //     registrations will run under the loader's lock. However,
 //     once metro_driver is merged into Chrome.dll, this will go away anyhow.
 base::AtExitManager at_exit;
+#endif
 
-namespace Hacks {
-
-typedef BOOL (WINAPI* IsImmersiveFunctionPtr)(HANDLE process);
-char* g_real_is_immersive_proc_stub = NULL;
-
-HMODULE g_webrtc_quartz_dll_handle = NULL;
-bool g_fake_is_immersive_process_ret = false;
-
-BOOL WINAPI MetroChromeIsImmersiveIntercept(HANDLE process) {
-  if (g_fake_is_immersive_process_ret && process == ::GetCurrentProcess())
-    return FALSE;
-
-  IsImmersiveFunctionPtr real_proc =
-      reinterpret_cast<IsImmersiveFunctionPtr>(
-          static_cast<char*>(g_real_is_immersive_proc_stub));
-  return real_proc(process);
+mswr::ComPtr<winapp::Core::ICoreApplication> InitWindows8() {
+  SetMetroReportingFlags();
+  HRESULT hr = ::Windows::Foundation::Initialize(RO_INIT_MULTITHREADED);
+  if (FAILED(hr))
+    CHECK(false);
+  mswr::ComPtr<winapp::Core::ICoreApplication> core_app;
+  hr = winrt_utils::CreateActivationFactory(
+      RuntimeClass_Windows_ApplicationModel_Core_CoreApplication,
+      core_app.GetAddressOf());
+  if (FAILED(hr))
+    CHECK(false);
+  return core_app;
 }
 
-void MetroSpecificHacksInitialize() {
-  // The quartz dll which is used by the webrtc code in Chrome fails in a metro
-  // app. It checks this via the IsImmersiveProcess export in user32. We
-  // intercept the same and spoof the value as false. This is ok as technically
-  // a metro browser is not a real metro application. The webrtc functionality
-  // works fine with this hack.
-  // TODO(tommi)
-  // BUG:- https://code.google.com/p/chromium/issues/detail?id=140545
-  // We should look into using media foundation on windows 8 in metro chrome.
-  IsImmersiveFunctionPtr is_immersive_func_address =
-      reinterpret_cast<IsImmersiveFunctionPtr>(::GetProcAddress(
-          ::GetModuleHandle(L"user32.dll"), "IsImmersiveProcess"));
-  DCHECK(is_immersive_func_address);
-
-  // Allow the function to be patched by changing the protections on the page.
-  DWORD old_protect = 0;
-  ::VirtualProtect(is_immersive_func_address, 5, PAGE_EXECUTE_READWRITE,
-                   &old_protect);
-
-  DCHECK(g_real_is_immersive_proc_stub == NULL);
-  g_real_is_immersive_proc_stub = reinterpret_cast<char*>(VirtualAllocEx(
-      ::GetCurrentProcess(), NULL, sidestep::kMaxPreambleStubSize,
-      MEM_COMMIT, PAGE_EXECUTE_READWRITE));
-  DCHECK(g_real_is_immersive_proc_stub);
-
-  sidestep::SideStepError patch_result =
-      sidestep::PreamblePatcher::Patch(
-          is_immersive_func_address, MetroChromeIsImmersiveIntercept,
-          g_real_is_immersive_proc_stub, sidestep::kMaxPreambleStubSize);
-
-  DCHECK(patch_result == sidestep::SIDESTEP_SUCCESS);
-
-  // Restore the permissions on the page in user32 containing the
-  // IsImmersiveProcess function code.
-  DWORD dummy = 0;
-  ::VirtualProtect(is_immersive_func_address, 5, old_protect, &dummy);
-
-  // Mimic the original page permissions from the IsImmersiveProcess page
-  // on our stub.
-  ::VirtualProtect(g_real_is_immersive_proc_stub,
-                   sidestep::kMaxPreambleStubSize,
-                   old_protect,
-                   &old_protect);
-
-  g_fake_is_immersive_process_ret = true;
-  g_webrtc_quartz_dll_handle = LoadLibrary(L"quartz.dll");
-  g_fake_is_immersive_process_ret = false;
-
-  DCHECK(g_webrtc_quartz_dll_handle);
-  if (!g_webrtc_quartz_dll_handle) {
-    DVLOG(1) << "Quartz dll load failed with error: " << GetLastError();
-  } else {
-    // Pin the quartz module to protect against it being inadvarently unloaded.
-    ::GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_PIN, L"quartz.dll",
-                        &g_webrtc_quartz_dll_handle);
-  }
-}
-
-}  // namespace Hacks
+mswr::ComPtr<winapp::Core::ICoreApplication> InitWindows7();
 
 extern "C" __declspec(dllexport)
-int InitMetro(LPTHREAD_START_ROUTINE thread_proc, void* context) {
+int InitMetro() {
+  // Metro mode or its emulation is not supported in Vista or XP.
+  if (base::win::GetVersion() < base::win::VERSION_WIN7)
+    return 1;
   // Initialize the command line.
   CommandLine::Init(0, NULL);
-  logging::InitLogging(
-        NULL,
-        logging::LOG_ONLY_TO_SYSTEM_DEBUG_LOG,
-        logging::LOCK_LOG_FILE,
-        logging::DELETE_OLD_LOG_FILE,
-        logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS);
-
+  // Initialize the logging system.
+  logging::LoggingSettings settings;
+  settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;
+  logging::InitLogging(settings);
 #if defined(NDEBUG)
   logging::SetMinLogLevel(logging::LOG_ERROR);
 #else
   logging::SetMinLogLevel(logging::LOG_VERBOSE);
-  // Set the error reporting flags to always raise an exception,
-  // which is then processed by our vectored exception handling
-  // above to log the error message.
-  winfoundtn::Diagnostics::SetErrorReportingFlags(
-      winfoundtn::Diagnostics::UseSetErrorInfo |
-      winfoundtn::Diagnostics::ForceExceptions);
-
-  HANDLE registration =
+    HANDLE registration =
       ::AddVectoredExceptionHandler(TRUE, ErrorReportingHandler);
 #endif
-
   // Enable trace control and transport through event tracing for Windows.
   logging::LogEventProvider::Initialize(kChromeTraceProviderName);
-
   DVLOG(1) << "InitMetro";
 
-  mswrw::RoInitializeWrapper ro_initializer(RO_INIT_MULTITHREADED);
-  CheckHR(ro_initializer, "RoInitialize failed");
-
+  // OS specific initialization.
   mswr::ComPtr<winapp::Core::ICoreApplication> core_app;
-  HRESULT hr = winrt_utils::CreateActivationFactory(
-      RuntimeClass_Windows_ApplicationModel_Core_CoreApplication,
-      core_app.GetAddressOf());
-  CheckHR(hr, "Failed to create app factory");
-  if (FAILED(hr))
-    return 1;
+  if (base::win::GetVersion() < base::win::VERSION_WIN8)
+    core_app = InitWindows7();
+  else
+    core_app = InitWindows8();
 
-#if !defined(USE_AURA)
-  // The metro specific hacks code assumes that there is only one thread active
-  // at the moment. This better be the case or we may have race conditions.
-  Hacks::MetroSpecificHacksInitialize();
-#endif
-
-  auto view_factory = mswr::Make<ChromeAppViewFactory>(
-      core_app.Get(), thread_proc, context);
-  hr = core_app->Run(view_factory.Get());
+  auto view_factory = mswr::Make<ChromeAppViewFactory>(core_app.Get());
+  HRESULT hr = core_app->Run(view_factory.Get());
   DVLOG(1) << "exiting InitMetro, hr=" << hr;
 
 #if !defined(NDEBUG)
   ::RemoveVectoredExceptionHandler(registration);
 #endif
-
   return hr;
 }
 

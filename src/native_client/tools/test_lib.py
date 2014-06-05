@@ -7,13 +7,19 @@
 
 """
 
+import atexit
 import difflib
-import re
 import os
+import re
+import shutil
 import signal
 import subprocess
 import sys
+import tempfile
+import threading
 
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+import pynacl.platform
 
 
 # Windows does not fully implement os.times functionality.  If
@@ -102,7 +108,36 @@ class SubprocessCpuTimer:
 def PopenBufSize():
   return 1000 * 1000
 
-def RunTestWithInput(cmd, input_data):
+
+def CommunicateWithTimeout(proc, input_data=None, timeout=None):
+  if timeout == 0:
+    timeout = None
+
+  result = []
+  def Target():
+    result.append(list(proc.communicate(input_data)))
+
+  thread = threading.Thread(target=Target)
+  thread.start()
+  thread.join(timeout)
+  if thread.is_alive():
+    sys.stderr.write('\nAttempting to kill test due to timeout!\n')
+    # This will kill the process which should force communicate to return with
+    # any partial output.
+    pynacl.platform.KillSubprocessAndChildren(proc)
+    # Thus result should ALWAYS contain something after this join.
+    thread.join()
+    sys.stderr.write('\n\nKilled test due to timeout!\n')
+    # Also append to stderr.
+    result[0][1] += '\n\nKilled test due to timeout!\n'
+    returncode = -9
+  else:
+    returncode = proc.returncode
+  assert len(result) == 1
+  return tuple(result[0]) + (returncode,)
+
+
+def RunTestWithInput(cmd, input_data, timeout=None):
   """Run a test where we only care about the return code."""
   assert type(cmd) == list
   failed = 0
@@ -114,13 +149,12 @@ def RunTestWithInput(cmd, input_data):
       p = subprocess.Popen(cmd,
                            bufsize=PopenBufSize(),
                            stdin=subprocess.PIPE)
-      p.communicate(input_data)
+      _, _, retcode = CommunicateWithTimeout(p, input_data, timeout=timeout)
     else:
       p = subprocess.Popen(cmd,
                            bufsize=PopenBufSize(),
                            stdin=input_data)
-      p.communicate()
-    retcode = p.wait()
+      _, _, retcode = CommunicateWithTimeout(p, timeout=timeout)
   except OSError:
     print 'exception: ' + str(sys.exc_info()[1])
     retcode = 0
@@ -131,7 +165,7 @@ def RunTestWithInput(cmd, input_data):
   return (timer.ElapsedCpuTime(p), retcode, failed)
 
 
-def RunTestWithInputOutput(cmd, input_data):
+def RunTestWithInputOutput(cmd, input_data, capture_stderr=True, timeout=None):
   """Run a test where we also care about stdin/stdout/stderr.
 
   NOTE: this function may have problems with arbitrarily
@@ -161,24 +195,27 @@ def RunTestWithInputOutput(cmd, input_data):
     else:
       no_pipe = None
 
+    # Only capture stderr if capture_stderr is true
+    p_stderr = subprocess.PIPE if capture_stderr else None
+
     if type(input_data) == str:
       p = subprocess.Popen(cmd,
                            bufsize=PopenBufSize(),
                            stdin=subprocess.PIPE,
-                           stderr=subprocess.PIPE,
+                           stderr=p_stderr,
                            stdout=subprocess.PIPE,
                            preexec_fn = no_pipe)
-      stdout, stderr = p.communicate(input_data)
+      stdout, stderr, retcode = CommunicateWithTimeout(
+          p, input_data, timeout=timeout)
     else:
       # input_data is a file like object
       p = subprocess.Popen(cmd,
                            bufsize=PopenBufSize(),
                            stdin=input_data,
-                           stderr=subprocess.PIPE,
+                           stderr=p_stderr,
                            stdout=subprocess.PIPE,
                            preexec_fn = no_pipe)
-      stdout, stderr = p.communicate()
-    retcode = p.wait()
+      stdout, stderr, retcode = CommunicateWithTimeout(p, timeout=timeout)
   except OSError, x:
     if x.errno == 10:
       print '@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@'
@@ -268,3 +305,40 @@ def RegexpFilterLines(regexp, inverse, group_only, lines):
       result.append(line)
 
   return '\n'.join(result)
+
+
+def MakeTempDir(env, **kwargs):
+  """Create a temporary directory and arrange to clean it up on exit.
+
+  Passes arguments through to tempfile.mkdtemp
+  """
+  temporary_dir = tempfile.mkdtemp(**kwargs)
+  def Cleanup():
+    try:
+      # Try to remove the dir but only if it exists. Some tests may clean up
+      # after themselves.
+      if os.path.exists(temporary_dir):
+        shutil.rmtree(temporary_dir)
+    except BaseException as e:
+      sys.stderr.write('Unable to delete dir %s on exit: %s\n' % (
+        temporary_dir, e))
+  atexit.register(Cleanup)
+  return temporary_dir
+
+def MakeTempFile(env, **kwargs):
+  """Create a temporary file and arrange to clean it up on exit.
+
+  Passes arguments through to tempfile.mkstemp
+  """
+  handle, path = tempfile.mkstemp()
+  def Cleanup():
+    try:
+      # Try to remove the file but only if it exists. Some tests may clean up
+      # after themselves.
+      if os.path.exists(path):
+        os.unlink(path)
+    except BaseException as e:
+      sys.stderr.write('Unable to delete file %s on exit: %s\n' % (
+        path, e))
+  atexit.register(Cleanup)
+  return handle, path

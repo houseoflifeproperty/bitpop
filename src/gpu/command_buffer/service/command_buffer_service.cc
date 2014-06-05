@@ -6,7 +6,7 @@
 
 #include <limits>
 
-#include "base/process_util.h"
+#include "base/logging.h"
 #include "base/debug/trace_event.h"
 #include "gpu/command_buffer/common/cmd_buffer_common.h"
 #include "gpu/command_buffer/common/command_buffer_shared.h"
@@ -37,7 +37,7 @@ bool CommandBufferService::Initialize() {
   return true;
 }
 
-CommandBufferService::State CommandBufferService::GetState() {
+CommandBufferService::State CommandBufferService::GetLastState() {
   State state;
   state.num_entries = num_entries_;
   state.get_offset = get_offset_;
@@ -50,30 +50,23 @@ CommandBufferService::State CommandBufferService::GetState() {
   return state;
 }
 
-CommandBufferService::State CommandBufferService::GetLastState() {
-  return GetState();
+int32 CommandBufferService::GetLastToken() {
+  return GetLastState().token;
 }
 
 void CommandBufferService::UpdateState() {
   if (shared_state_) {
-    CommandBufferService::State state = GetState();
+    CommandBufferService::State state = GetLastState();
     shared_state_->Write(state);
   }
 }
 
-CommandBufferService::State CommandBufferService::FlushSync(
-    int32 put_offset, int32 last_known_get) {
-  if (put_offset < 0 || put_offset > num_entries_) {
-    error_ = gpu::error::kOutOfBounds;
-    return GetState();
-  }
+void CommandBufferService::WaitForTokenInRange(int32 start, int32 end) {
+  DCHECK(error_ != error::kNoError || InRange(start, end, token_));
+}
 
-  put_offset_ = put_offset;
-
-  if (!put_offset_change_callback_.is_null())
-    put_offset_change_callback_.Run();
-
-  return GetState();
+void CommandBufferService::WaitForGetOffsetInRange(int32 start, int32 end) {
+  DCHECK(error_ != error::kNoError || InRange(start, end, get_offset_));
 }
 
 void CommandBufferService::Flush(int32 put_offset) {
@@ -91,10 +84,12 @@ void CommandBufferService::Flush(int32 put_offset) {
 void CommandBufferService::SetGetBuffer(int32 transfer_buffer_id) {
   DCHECK_EQ(-1, ring_buffer_id_);
   DCHECK_EQ(put_offset_, get_offset_);  // Only if it's empty.
+  // If the buffer is invalid we handle it gracefully.
+  // This means ring_buffer_ can be NULL.
   ring_buffer_ = GetTransferBuffer(transfer_buffer_id);
-  DCHECK(ring_buffer_.ptr);
   ring_buffer_id_ = transfer_buffer_id;
-  num_entries_ = ring_buffer_.size / sizeof(CommandBufferEntry);
+  int32 size = ring_buffer_ ? ring_buffer_->size() : 0;
+  num_entries_ = size / sizeof(CommandBufferEntry);
   put_offset_ = 0;
   SetGetOffset(0);
   if (!get_buffer_change_callback_.is_null()) {
@@ -104,9 +99,13 @@ void CommandBufferService::SetGetBuffer(int32 transfer_buffer_id) {
   UpdateState();
 }
 
-void CommandBufferService::SetSharedStateBuffer(int32 transfer_buffer_id) {
-  gpu::Buffer buffer = GetTransferBuffer(transfer_buffer_id);
-  shared_state_ = reinterpret_cast<CommandBufferSharedState*>(buffer.ptr);
+void CommandBufferService::SetSharedStateBuffer(
+    scoped_ptr<BufferBacking> shared_state_buffer) {
+  shared_state_buffer_ = shared_state_buffer.Pass();
+  DCHECK(shared_state_buffer_->GetSize() >= sizeof(*shared_state_));
+
+  shared_state_ =
+      static_cast<CommandBufferSharedState*>(shared_state_buffer_->GetMemory());
 
   UpdateState();
 }
@@ -116,34 +115,50 @@ void CommandBufferService::SetGetOffset(int32 get_offset) {
   get_offset_ = get_offset;
 }
 
-int32 CommandBufferService::CreateTransferBuffer(size_t size,
-                                                 int32 id_request) {
-  return transfer_buffer_manager_->CreateTransferBuffer(size, id_request);
+scoped_refptr<Buffer> CommandBufferService::CreateTransferBuffer(size_t size,
+                                                                 int32* id) {
+  *id = -1;
+
+  scoped_ptr<SharedMemory> shared_memory(new SharedMemory());
+  if (!shared_memory->CreateAndMapAnonymous(size))
+    return NULL;
+
+  static int32 next_id = 1;
+  *id = next_id++;
+
+  if (!RegisterTransferBuffer(
+          *id, MakeBackingFromSharedMemory(shared_memory.Pass(), size))) {
+    *id = -1;
+    return NULL;
+  }
+
+  return GetTransferBuffer(*id);
 }
 
-int32 CommandBufferService::RegisterTransferBuffer(
-    base::SharedMemory* shared_memory, size_t size, int32 id_request) {
-  return transfer_buffer_manager_->RegisterTransferBuffer(
-      shared_memory, size, id_request);
-}
-
-void CommandBufferService::DestroyTransferBuffer(int32 handle) {
-  transfer_buffer_manager_->DestroyTransferBuffer(handle);
-  if (handle == ring_buffer_id_) {
+void CommandBufferService::DestroyTransferBuffer(int32 id) {
+  transfer_buffer_manager_->DestroyTransferBuffer(id);
+  if (id == ring_buffer_id_) {
     ring_buffer_id_ = -1;
-    ring_buffer_ = Buffer();
+    ring_buffer_ = NULL;
     num_entries_ = 0;
     get_offset_ = 0;
     put_offset_ = 0;
   }
 }
 
-Buffer CommandBufferService::GetTransferBuffer(int32 handle) {
-  return transfer_buffer_manager_->GetTransferBuffer(handle);
+scoped_refptr<Buffer> CommandBufferService::GetTransferBuffer(int32 id) {
+  return transfer_buffer_manager_->GetTransferBuffer(id);
+}
+
+bool CommandBufferService::RegisterTransferBuffer(
+    int32 id,
+    scoped_ptr<BufferBacking> buffer) {
+  return transfer_buffer_manager_->RegisterTransferBuffer(id, buffer.Pass());
 }
 
 void CommandBufferService::SetToken(int32 token) {
   token_ = token;
+  UpdateState();
 }
 
 void CommandBufferService::SetParseError(error::Error error) {

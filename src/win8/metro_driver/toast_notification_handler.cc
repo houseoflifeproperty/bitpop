@@ -7,13 +7,14 @@
 #include "win8/metro_driver/stdafx.h"
 #include "win8/metro_driver/toast_notification_handler.h"
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/path_service.h"
-#include "base/utf_string_conversions.h"
-// TODO(ananta)
-// Refactor the chrome_util and shell_util code from chrome into a common lib
-#include "win8/delegate_execute/chrome_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/installer/util/browser_distribution.h"
+#include "chrome/installer/util/install_util.h"
+#include "chrome/installer/util/shell_util.h"
+
 #include "win8/metro_driver/winrt_utils.h"
 
 typedef winfoundtn::ITypedEventHandler<
@@ -63,7 +64,7 @@ HRESULT GetTextNodeRoot(
 // The index parameter identifies which text node we append to.
 HRESULT CreateTextNode(winxml::Dom::IXmlDocument* xml_doc,
                        int index,
-                       const string16& text_string) {
+                       const base::string16& text_string) {
   DCHECK(xml_doc);
 
   mswr::ComPtr<winxml::Dom::IXmlElement> document_element;
@@ -196,16 +197,19 @@ void ToastNotificationHandler::DisplayNotification(
       toast_xml.Get(), &notification_);
   CheckHR(hr);
 
-  FilePath chrome_path;
+  base::FilePath chrome_path;
   if (!PathService::Get(base::FILE_EXE, &chrome_path)) {
     NOTREACHED() << "Failed to get chrome exe path";
     return;
   }
-  string16 appid = delegate_execute::GetAppId(chrome_path);
+
+  BrowserDistribution* dist = BrowserDistribution::GetDistribution();
+  bool is_per_user_install = InstallUtil::IsPerUserInstall(
+      chrome_path.value().c_str());
+  base::string16 appid =
+      ShellUtil::GetBrowserModelId(dist, is_per_user_install);
   DVLOG(1) << "Chrome Appid is " << appid.c_str();
 
-  // TODO(ananta)
-  // We should probably use BrowserDistribution here to get the product name.
   mswrw::HString app_user_model_id;
   app_user_model_id.Attach(MakeHString(appid));
 

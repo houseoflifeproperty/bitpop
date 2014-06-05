@@ -8,10 +8,11 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "gtest/gtest.h"
-#include "modules/media_file/interface/media_file.h"
-#include "testsupport/fileutils.h"
-#include "voice_engine/voice_engine_defines.h" // defines SLEEP
+#include "testing/gtest/include/gtest/gtest.h"
+#include "webrtc/modules/media_file/interface/media_file.h"
+#include "webrtc/system_wrappers/interface/sleep.h"
+#include "webrtc/test/testsupport/fileutils.h"
+#include "webrtc/test/testsupport/gtest_disable.h"
 
 class MediaFileTest : public testing::Test {
  protected:
@@ -27,7 +28,7 @@ class MediaFileTest : public testing::Test {
   webrtc::MediaFile* media_file_;
 };
 
-TEST_F(MediaFileTest, StartPlayingAudioFileWithoutError) {
+TEST_F(MediaFileTest, DISABLED_ON_ANDROID(StartPlayingAudioFileWithoutError)) {
   // TODO(leozwang): Use hard coded filename here, we want to
   // loop through all audio files in future
   const std::string audio_file = webrtc::test::ProjectRootPath() +
@@ -40,7 +41,7 @@ TEST_F(MediaFileTest, StartPlayingAudioFileWithoutError) {
 
   ASSERT_EQ(true, media_file_->IsPlaying());
 
-  SLEEP(1);
+  webrtc::SleepMs(1);
 
   ASSERT_EQ(0, media_file_->StopPlaying());
 }

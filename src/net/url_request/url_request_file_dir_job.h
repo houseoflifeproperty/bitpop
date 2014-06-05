@@ -7,8 +7,7 @@
 
 #include <string>
 
-#include "base/file_path.h"
-#include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/memory/weak_ptr.h"
 #include "net/base/directory_lister.h"
 #include "net/url_request/url_request_job.h"
@@ -21,7 +20,7 @@ class URLRequestFileDirJob
  public:
   URLRequestFileDirJob(URLRequest* request,
                        NetworkDelegate* network_delegate,
-                       const FilePath& dir_path);
+                       const base::FilePath& dir_path);
 
   bool list_complete() const { return list_complete_; }
 
@@ -32,7 +31,7 @@ class URLRequestFileDirJob
   virtual void Kill() OVERRIDE;
   virtual bool ReadRawData(IOBuffer* buf,
                            int buf_size,
-                           int *bytes_read) OVERRIDE;
+                           int* bytes_read) OVERRIDE;
   virtual bool GetMimeType(std::string* mime_type) const OVERRIDE;
   virtual bool GetCharset(std::string* charset) OVERRIDE;
 
@@ -55,7 +54,7 @@ class URLRequestFileDirJob
   bool FillReadBuffer(char *buf, int buf_size, int *bytes_read);
 
   DirectoryLister lister_;
-  FilePath dir_path_;
+  base::FilePath dir_path_;
   std::string data_;
   bool canceled_;
 

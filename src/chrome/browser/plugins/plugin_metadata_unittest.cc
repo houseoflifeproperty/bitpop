@@ -4,21 +4,20 @@
 
 #include "chrome/browser/plugins/plugin_metadata.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "content/public/common/webplugininfo.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/plugins/webplugininfo.h"
-
-using webkit::WebPluginInfo;
 
 namespace {
 
 PluginMetadata::SecurityStatus GetSecurityStatus(
     PluginMetadata* plugin_metadata,
     const char* version) {
-  WebPluginInfo plugin(ASCIIToUTF16("Foo plug-in"),
-                       FilePath(FILE_PATH_LITERAL("/tmp/plugin.so")),
-                       ASCIIToUTF16(version),
-                       ASCIIToUTF16("Foo plug-in."));
+  content::WebPluginInfo plugin(
+      base::ASCIIToUTF16("Foo plug-in"),
+      base::FilePath(FILE_PATH_LITERAL("/tmp/plugin.so")),
+      base::ASCIIToUTF16(version),
+      base::ASCIIToUTF16("Foo plug-in."));
   return plugin_metadata->GetSecurityStatus(plugin);
 }
 
@@ -33,16 +32,14 @@ TEST(PluginMetadataTest, SecurityStatus) {
       PluginMetadata::SECURITY_STATUS_REQUIRES_AUTHORIZATION;
 
   PluginMetadata plugin_metadata("claybrick-writer",
-                                 ASCIIToUTF16("ClayBrick Writer"),
-                                 true, GURL(), GURL(),
-                                 ASCIIToUTF16("ClayBrick"),
-                                 "");
-#if defined(OS_LINUX)
+                                 base::ASCIIToUTF16("ClayBrick Writer"),
+                                 true,
+                                 GURL(),
+                                 GURL(),
+                                 base::ASCIIToUTF16("ClayBrick"),
+                                 std::string());
   EXPECT_EQ(kRequiresAuthorization,
             GetSecurityStatus(&plugin_metadata, "1.2.3"));
-#else
-  EXPECT_EQ(kUpToDate, GetSecurityStatus(&plugin_metadata, "1.2.3"));
-#endif
 
   plugin_metadata.AddVersion(Version("9.4.1"), kRequiresAuthorization);
   plugin_metadata.AddVersion(Version("10"), kOutOfDate);

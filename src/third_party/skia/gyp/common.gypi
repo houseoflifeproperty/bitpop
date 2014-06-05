@@ -12,8 +12,10 @@
 
   'target_defaults': {
     'defines': [
+      'SK_INTERNAL',
       'SK_GAMMA_SRGB',
       'SK_GAMMA_APPLY_TO_A8',
+      'SK_SCALAR_TO_FLOAT_EXCLUDED',  # temporary to allow Chrome to call SkFloatToScalar
     ],
 
     # Validate the 'skia_os' setting against 'OS', because only certain
@@ -22,7 +24,8 @@
     'variables': {
       'conditions': [
         [ 'skia_os != OS and not ((skia_os == "ios" and OS == "mac") or \
-                                  (skia_os == "nacl" and OS == "linux"))', {
+                                  (skia_os == "nacl" and OS == "linux") or \
+                                  (skia_os == "chromeos" and OS == "linux"))', {
           'error': '<!(Cannot build with skia_os=<(skia_os) on OS=<(OS))',
         }],
         [ 'skia_mesa and skia_os not in ["mac", "linux"]', {
@@ -36,6 +39,9 @@
         }],
         [ 'skia_os == "nacl" and OS != "linux"', {
           'error': '<!(Skia NaCl build only currently supported on Linux.)',
+        }],
+        [ 'skia_os == "chromeos" and OS != "linux"', {
+          'error': '<!(Skia ChromeOS build is only supported on Linux.)',
         }],
       ],
     },
@@ -76,25 +82,37 @@
           ],
         },
       }],
+      [ 'skia_win_debuggers_path and skia_os == "win"',
+        {
+          'defines': [
+            'SK_USE_CDB',
+          ],
+        },
+      ],
+      [ 'skia_android_framework==0', {
+        # These defines are not used for skia_android_framework, where we build
+        # one makefile and allow someone to add SK_DEBUG etc for their own
+        # debugging purposes.
+        'configurations': {
+          'Debug': {
+            'defines': [
+              'SK_DEBUG',
+              'SK_DEVELOPER=1',
+            ],
+          },
+          'Release': {
+            'defines': [
+              'SK_RELEASE',
+            ],
+          },
+          'Release_Developer': {
+            'inherit_from': ['Release'],
+            'defines': [
+              'SK_DEVELOPER=1',
+            ],
+          },
+        },
+      }],
     ],
-    'configurations': {
-      'Debug': {
-        'defines': [
-          'SK_DEBUG',
-          'GR_DEBUG=1',
-        ],
-      },
-      'Release': {
-        'defines': [
-          'SK_RELEASE',
-          'GR_RELEASE=1',
-        ],
-      },
-    },
   }, # end 'target_defaults'
 }
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

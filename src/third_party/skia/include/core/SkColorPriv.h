@@ -1,11 +1,9 @@
-
 /*
  * Copyright 2006 The Android Open Source Project
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 
 #ifndef SkColorPriv_DEFINED
 #define SkColorPriv_DEFINED
@@ -17,6 +15,134 @@
 
 #include "SkColor.h"
 #include "SkMath.h"
+
+//////////////////////////////////////////////////////////////////////////////
+
+#define SkASSERT_IS_BYTE(x)     SkASSERT(0 == ((x) & ~0xFF))
+
+/*
+ *  Skia's 32bit backend only supports 1 sizzle order at a time (compile-time).
+ *  This is specified by 4 defines SK_A32_SHIFT, SK_R32_SHIFT, ... for G and B.
+ *
+ *  For easier compatibility with Skia's GPU backend, we further restrict these
+ *  to either (in memory-byte-order) RGBA or BGRA. Note that this "order" does
+ *  not directly correspond to the same shift-order, since we have to take endianess
+ *  into account.
+ *
+ *  Here we enforce this constraint.
+ */
+
+#ifdef SK_CPU_BENDIAN
+    #define SK_RGBA_R32_SHIFT   24
+    #define SK_RGBA_G32_SHIFT   16
+    #define SK_RGBA_B32_SHIFT   8
+    #define SK_RGBA_A32_SHIFT   0
+
+    #define SK_BGRA_B32_SHIFT   24
+    #define SK_BGRA_G32_SHIFT   16
+    #define SK_BGRA_R32_SHIFT   8
+    #define SK_BGRA_A32_SHIFT   0
+#else
+    #define SK_RGBA_R32_SHIFT   0
+    #define SK_RGBA_G32_SHIFT   8
+    #define SK_RGBA_B32_SHIFT   16
+    #define SK_RGBA_A32_SHIFT   24
+
+    #define SK_BGRA_B32_SHIFT   0
+    #define SK_BGRA_G32_SHIFT   8
+    #define SK_BGRA_R32_SHIFT   16
+    #define SK_BGRA_A32_SHIFT   24
+#endif
+
+#if defined(SK_PMCOLOR_IS_RGBA) && defined(SK_PMCOLOR_IS_BGRA)
+    #error "can't define PMCOLOR to be RGBA and BGRA"
+#endif
+
+#define LOCAL_PMCOLOR_SHIFTS_EQUIVALENT_TO_RGBA  \
+    (SK_A32_SHIFT == SK_RGBA_A32_SHIFT &&    \
+     SK_R32_SHIFT == SK_RGBA_R32_SHIFT &&    \
+     SK_G32_SHIFT == SK_RGBA_G32_SHIFT &&    \
+     SK_B32_SHIFT == SK_RGBA_B32_SHIFT)
+
+#define LOCAL_PMCOLOR_SHIFTS_EQUIVALENT_TO_BGRA  \
+    (SK_A32_SHIFT == SK_BGRA_A32_SHIFT &&    \
+     SK_R32_SHIFT == SK_BGRA_R32_SHIFT &&    \
+     SK_G32_SHIFT == SK_BGRA_G32_SHIFT &&    \
+     SK_B32_SHIFT == SK_BGRA_B32_SHIFT)
+
+
+#if defined(SK_PMCOLOR_IS_RGBA) && !LOCAL_PMCOLOR_SHIFTS_EQUIVALENT_TO_RGBA
+    #error "SK_PMCOLOR_IS_RGBA does not match SK_*32_SHIFT values"
+#endif
+
+#if defined(SK_PMCOLOR_IS_BGRA) && !LOCAL_PMCOLOR_SHIFTS_EQUIVALENT_TO_BGRA
+    #error "SK_PMCOLOR_IS_BGRA does not match SK_*32_SHIFT values"
+#endif
+
+#if !defined(SK_PMCOLOR_IS_RGBA) && !defined(SK_PMCOLOR_IS_RGBA)
+    // deduce which to define from the _SHIFT defines
+
+    #if LOCAL_PMCOLOR_SHIFTS_EQUIVALENT_TO_RGBA
+        #define SK_PMCOLOR_IS_RGBA
+    #elif LOCAL_PMCOLOR_SHIFTS_EQUIVALENT_TO_BGRA
+        #define SK_PMCOLOR_IS_BGRA
+    #else
+        #error "need 32bit packing to be either RGBA or BGRA"
+    #endif
+#endif
+
+// hide these now that we're done
+#undef LOCAL_PMCOLOR_SHIFTS_EQUIVALENT_TO_RGBA
+#undef LOCAL_PMCOLOR_SHIFTS_EQUIVALENT_TO_BGRA
+
+//////////////////////////////////////////////////////////////////////////////
+
+// Reverse the bytes coorsponding to RED and BLUE in a packed pixels. Note the
+// pair of them are in the same 2 slots in both RGBA and BGRA, thus there is
+// no need to pass in the colortype to this function.
+static inline uint32_t SkSwizzle_RB(uint32_t c) {
+    static const uint32_t kRBMask = (0xFF << SK_R32_SHIFT) | (0xFF << SK_B32_SHIFT);
+
+    unsigned c0 = (c >> SK_R32_SHIFT) & 0xFF;
+    unsigned c1 = (c >> SK_B32_SHIFT) & 0xFF;
+    return (c & ~kRBMask) | (c0 << SK_B32_SHIFT) | (c1 << SK_R32_SHIFT);
+}
+
+static inline uint32_t SkPackARGB_as_RGBA(U8CPU a, U8CPU r, U8CPU g, U8CPU b) {
+    SkASSERT_IS_BYTE(a);
+    SkASSERT_IS_BYTE(r);
+    SkASSERT_IS_BYTE(g);
+    SkASSERT_IS_BYTE(b);
+    return (a << SK_RGBA_A32_SHIFT) | (r << SK_RGBA_R32_SHIFT) |
+           (g << SK_RGBA_G32_SHIFT) | (b << SK_RGBA_B32_SHIFT);
+}
+
+static inline uint32_t SkPackARGB_as_BGRA(U8CPU a, U8CPU r, U8CPU g, U8CPU b) {
+    SkASSERT_IS_BYTE(a);
+    SkASSERT_IS_BYTE(r);
+    SkASSERT_IS_BYTE(g);
+    SkASSERT_IS_BYTE(b);
+    return (a << SK_BGRA_A32_SHIFT) | (r << SK_BGRA_R32_SHIFT) |
+           (g << SK_BGRA_G32_SHIFT) | (b << SK_BGRA_B32_SHIFT);
+}
+
+static inline SkPMColor SkSwizzle_RGBA_to_PMColor(uint32_t c) {
+#ifdef SK_PMCOLOR_IS_RGBA
+    return c;
+#else
+    return SkSwizzle_RB(c);
+#endif
+}
+
+static inline SkPMColor SkSwizzle_BGRA_to_PMColor(uint32_t c) {
+#ifdef SK_PMCOLOR_IS_BGRA
+    return c;
+#else
+    return SkSwizzle_RB(c);
+#endif
+}
+
+//////////////////////////////////////////////////////////////////////////////
 
 ///@{
 /** See ITU-R Recommendation BT.709 at http://www.itu.int/rec/R-REC-BT.709/ .*/
@@ -53,6 +179,15 @@ static inline unsigned SkAlpha255To256(U8CPU alpha) {
     // this one assues that blending on top of an opaque dst keeps it that way
     // even though it is less accurate than a+(a>>7) for non-opaque dsts
     return alpha + 1;
+}
+
+/**
+ *  Turn a 0..255 value into a 0..256 value, rounding up if the value is >= 0x80.
+ *  This is slightly more accurate than SkAlpha255To256.
+ */
+static inline unsigned Sk255To256(U8CPU value) {
+    SkASSERT(SkToU8(value) == value);
+    return value + (value >> 7);
 }
 
 /** Multiplify value by 0..256, and shift the result down 8
@@ -239,6 +374,16 @@ static inline SkPMColor SkPackARGB32(U8CPU a, U8CPU r, U8CPU g, U8CPU b) {
            (g << SK_G32_SHIFT) | (b << SK_B32_SHIFT);
 }
 
+static inline uint32_t SkPackPMColor_as_RGBA(SkPMColor c) {
+    return SkPackARGB_as_RGBA(SkGetPackedA32(c), SkGetPackedR32(c),
+                              SkGetPackedG32(c), SkGetPackedB32(c));
+}
+
+static inline uint32_t SkPackPMColor_as_BGRA(SkPMColor c) {
+    return SkPackARGB_as_BGRA(SkGetPackedA32(c), SkGetPackedR32(c),
+                              SkGetPackedG32(c), SkGetPackedB32(c));
+}
+
 /**
  * Abstract 4-byte interpolation, implemented on top of SkPMColor
  * utility functions. Third parameter controls blending of the first two:
@@ -269,36 +414,90 @@ static inline SkPMColor SkFourByteInterp(SkPMColor src, SkPMColor dst,
 }
 
 /**
- * 32b optimized version; currently appears to be 10% faster even on 64b
- * architectures than an equivalent 64b version and 30% faster than
- * SkFourByteInterp(). Third parameter controls blending of the first two:
- *   (src, dst, 0) returns dst
- *   (src, dst, 0xFF) returns src
- * ** Does not match the results of SkFourByteInterp() because we use
- * a more accurate scale computation!
- * TODO: migrate Skia function to using an accurate 255->266 alpha
- * conversion.
+ * 0xAARRGGBB -> 0x00AA00GG, 0x00RR00BB
+ */
+static inline void SkSplay(uint32_t color, uint32_t* ag, uint32_t* rb) {
+    const uint32_t mask = 0x00FF00FF;
+    *ag = (color >> 8) & mask;
+    *rb = color & mask;
+}
+
+/**
+ * 0xAARRGGBB -> 0x00AA00GG00RR00BB
+ * (note, ARGB -> AGRB)
+ */
+static inline uint64_t SkSplay(uint32_t color) {
+    const uint32_t mask = 0x00FF00FF;
+    uint64_t agrb = (color >> 8) & mask;  // 0x0000000000AA00GG
+    agrb <<= 32;                          // 0x00AA00GG00000000
+    agrb |= color & mask;                 // 0x00AA00GG00RR00BB
+    return agrb;
+}
+
+/**
+ * 0xAAxxGGxx, 0xRRxxBBxx-> 0xAARRGGBB
+ */
+static inline uint32_t SkUnsplay(uint32_t ag, uint32_t rb) {
+    const uint32_t mask = 0xFF00FF00;
+    return (ag & mask) | ((rb & mask) >> 8);
+}
+
+/**
+ * 0xAAxxGGxxRRxxBBxx -> 0xAARRGGBB
+ * (note, AGRB -> ARGB)
+ */
+static inline uint32_t SkUnsplay(uint64_t agrb) {
+    const uint32_t mask = 0xFF00FF00;
+    return SkPMColor(
+        ((agrb & mask) >> 8) |   // 0x00RR00BB
+        ((agrb >> 32) & mask));  // 0xAARRGGBB
+}
+
+static inline SkPMColor SkFastFourByteInterp256_32(SkPMColor src, SkPMColor dst, unsigned scale) {
+    SkASSERT(scale <= 256);
+
+    // Two 8-bit blends per two 32-bit registers, with space to make sure the math doesn't collide.
+    uint32_t src_ag, src_rb, dst_ag, dst_rb;
+    SkSplay(src, &src_ag, &src_rb);
+    SkSplay(dst, &dst_ag, &dst_rb);
+
+    const uint32_t ret_ag = src_ag * scale + (256 - scale) * dst_ag;
+    const uint32_t ret_rb = src_rb * scale + (256 - scale) * dst_rb;
+
+    return SkUnsplay(ret_ag, ret_rb);
+}
+
+static inline SkPMColor SkFastFourByteInterp256_64(SkPMColor src, SkPMColor dst, unsigned scale) {
+    SkASSERT(scale <= 256);
+    // Four 8-bit blends in one 64-bit register, with space to make sure the math doesn't collide.
+    return SkUnsplay(SkSplay(src) * scale + (256-scale) * SkSplay(dst));
+}
+
+// TODO(mtklein): Replace slow versions with fast versions, using scale + (scale>>7) everywhere.
+
+/**
+ * Same as SkFourByteInterp256, but faster.
+ */
+static inline SkPMColor SkFastFourByteInterp256(SkPMColor src, SkPMColor dst, unsigned scale) {
+    // On a 64-bit machine, _64 is about 10% faster than _32, but ~40% slower on a 32-bit machine.
+    if (sizeof(void*) == 4) {
+        return SkFastFourByteInterp256_32(src, dst, scale);
+    } else {
+        return SkFastFourByteInterp256_64(src, dst, scale);
+    }
+}
+
+/**
+ * Nearly the same as SkFourByteInterp, but faster and a touch more accurate, due to better
+ * srcWeight scaling to [0, 256].
  */
 static inline SkPMColor SkFastFourByteInterp(SkPMColor src,
                                              SkPMColor dst,
                                              U8CPU srcWeight) {
-    SkASSERT(srcWeight < 256);
-
-    // Reorders ARGB to AG-RB in order to reduce the number of operations.
-    const uint32_t mask = 0xFF00FF;
-    uint32_t src_rb = src & mask;
-    uint32_t src_ag = (src >> 8) & mask;
-    uint32_t dst_rb = dst & mask;
-    uint32_t dst_ag = (dst >> 8) & mask;
-
+    SkASSERT(srcWeight <= 255);
     // scale = srcWeight + (srcWeight >> 7) is more accurate than
     // scale = srcWeight + 1, but 7% slower
-    int scale = srcWeight + (srcWeight >> 7);
-
-    uint32_t ret_rb = src_rb * scale + (256 - scale) * dst_rb;
-    uint32_t ret_ag = src_ag * scale + (256 - scale) * dst_ag;
-
-    return (ret_ag & ~mask) | ((ret_rb & ~mask) >> 8);
+    return SkFastFourByteInterp256(src, dst, srcWeight + (srcWeight >> 7));
 }
 
 /**
@@ -313,9 +512,9 @@ static inline SkPMColor SkPackARGB32NoCheck(U8CPU a, U8CPU r, U8CPU g, U8CPU b) 
 static inline
 SkPMColor SkPremultiplyARGBInline(U8CPU a, U8CPU r, U8CPU g, U8CPU b) {
     SkA32Assert(a);
-    SkA32Assert(r);
-    SkA32Assert(g);
-    SkA32Assert(b);
+    SkR32Assert(r);
+    SkG32Assert(g);
+    SkB32Assert(b);
 
     if (a != 255) {
         r = SkMulDiv255Round(r, a);
@@ -329,7 +528,6 @@ SK_API extern const uint32_t gMask_00FF00FF;
 
 static inline uint32_t SkAlphaMulQ(uint32_t c, unsigned scale) {
     uint32_t mask = gMask_00FF00FF;
-//    uint32_t mask = 0xFF00FF;
 
     uint32_t rb = ((c & mask) * scale) >> 8;
     uint32_t ag = ((c >> 8) & mask) * scale;
@@ -833,32 +1031,31 @@ static inline SkPMColor SkBlendLCD16Opaque(int srcR, int srcG, int srcB,
                         SkBlend32(srcB, dstB, maskB));
 }
 
-static inline void SkBlitLCD16Row(SkPMColor dst[], const uint16_t src[],
-                                  SkColor color, int width, SkPMColor) {
-    int srcA = SkColorGetA(color);
-    int srcR = SkColorGetR(color);
-    int srcG = SkColorGetG(color);
-    int srcB = SkColorGetB(color);
+static inline void SkBlitLCD16Row(SkPMColor dst[], const uint16_t mask[],
+                                  SkColor src, int width, SkPMColor) {
+    int srcA = SkColorGetA(src);
+    int srcR = SkColorGetR(src);
+    int srcG = SkColorGetG(src);
+    int srcB = SkColorGetB(src);
 
     srcA = SkAlpha255To256(srcA);
 
     for (int i = 0; i < width; i++) {
-        dst[i] = SkBlendLCD16(srcA, srcR, srcG, srcB, dst[i], src[i]);
+        dst[i] = SkBlendLCD16(srcA, srcR, srcG, srcB, dst[i], mask[i]);
     }
 }
 
-static inline void SkBlitLCD16OpaqueRow(SkPMColor dst[], const uint16_t src[],
-                                        SkColor color, int width,
+static inline void SkBlitLCD16OpaqueRow(SkPMColor dst[], const uint16_t mask[],
+                                        SkColor src, int width,
                                         SkPMColor opaqueDst) {
-    int srcR = SkColorGetR(color);
-    int srcG = SkColorGetG(color);
-    int srcB = SkColorGetB(color);
+    int srcR = SkColorGetR(src);
+    int srcG = SkColorGetG(src);
+    int srcB = SkColorGetB(src);
 
     for (int i = 0; i < width; i++) {
-        dst[i] = SkBlendLCD16Opaque(srcR, srcG, srcB, dst[i], src[i],
+        dst[i] = SkBlendLCD16Opaque(srcR, srcG, srcB, dst[i], mask[i],
                                     opaqueDst);
     }
 }
 
 #endif
-

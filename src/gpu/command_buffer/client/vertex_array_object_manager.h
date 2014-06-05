@@ -6,9 +6,10 @@
 #define GPU_COMMAND_BUFFER_CLIENT_VERTEX_ARRAY_OBJECT_MANAGER_H_
 
 #include <GLES2/gl2.h>
-#include "../client/hash_tables.h"
-#include "../common/scoped_ptr.h"
-#include "../common/types.h"
+
+#include "base/containers/hash_tables.h"
+#include "base/macros.h"
+#include "base/memory/scoped_ptr.h"
 #include "gles2_impl_export.h"
 
 namespace gpu {
@@ -93,7 +94,7 @@ class GLES2_IMPL_EXPORT VertexArrayObjectManager {
   GLuint bound_element_array_buffer() const;
 
  private:
-  typedef gpu::hash_map<GLuint, VertexArrayObject*> VertexArrayObjectMap;
+  typedef base::hash_map<GLuint, VertexArrayObject*> VertexArrayObjectMap;
 
   bool IsDefaultVAOBound() const;
 
@@ -109,7 +110,7 @@ class GLES2_IMPL_EXPORT VertexArrayObjectManager {
   GLuint element_array_buffer_id_;
   GLsizei element_array_buffer_size_;
   GLsizei collection_buffer_size_;
-  scoped_array<int8> collection_buffer_;
+  scoped_ptr<int8[]> collection_buffer_;
 
   VertexArrayObject* default_vertex_array_object_;
   VertexArrayObject* bound_vertex_array_object_;

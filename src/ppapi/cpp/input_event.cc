@@ -19,6 +19,10 @@ template <> const char* interface_name<PPB_InputEvent_1_0>() {
   return PPB_INPUT_EVENT_INTERFACE_1_0;
 }
 
+template <> const char* interface_name<PPB_KeyboardInputEvent_1_2>() {
+  return PPB_KEYBOARD_INPUT_EVENT_INTERFACE_1_2;
+}
+
 template <> const char* interface_name<PPB_KeyboardInputEvent_1_0>() {
   return PPB_KEYBOARD_INPUT_EVENT_INTERFACE_1_0;
 }
@@ -33,6 +37,10 @@ template <> const char* interface_name<PPB_WheelInputEvent_1_0>() {
 
 template <> const char* interface_name<PPB_TouchInputEvent_1_0>() {
   return PPB_TOUCH_INPUT_EVENT_INTERFACE_1_0;
+}
+
+template <> const char* interface_name<PPB_IMEInputEvent_1_0>() {
+  return PPB_IME_INPUT_EVENT_INTERFACE_1_0;
 }
 
 }  // namespace
@@ -185,11 +193,19 @@ KeyboardInputEvent::KeyboardInputEvent() : InputEvent() {
 }
 
 KeyboardInputEvent::KeyboardInputEvent(const InputEvent& event) : InputEvent() {
-  // Type check the input event before setting it.
-  if (!has_interface<PPB_KeyboardInputEvent_1_0>())
-    return;
-  if (get_interface<PPB_KeyboardInputEvent_1_0>()->IsKeyboardInputEvent(
-          event.pp_resource())) {
+  PP_Bool is_keyboard_event = PP_FALSE;
+
+  if (has_interface<PPB_KeyboardInputEvent_1_2>()) {
+    is_keyboard_event =
+        get_interface<PPB_KeyboardInputEvent_1_2>()->IsKeyboardInputEvent(
+            event.pp_resource());
+  } else if (has_interface<PPB_KeyboardInputEvent_1_0>()) {
+    is_keyboard_event =
+        get_interface<PPB_KeyboardInputEvent_1_0>()->IsKeyboardInputEvent(
+            event.pp_resource());
+  }
+
+  if (PP_ToBool(is_keyboard_event)) {
     Module::Get()->core()->AddRefResource(event.pp_resource());
     PassRefFromConstructor(event.pp_resource());
   }
@@ -201,26 +217,66 @@ KeyboardInputEvent::KeyboardInputEvent(const InstanceHandle& instance,
                                        uint32_t modifiers,
                                        uint32_t key_code,
                                        const Var& character_text) {
-  // Type check the input event before setting it.
-  if (!has_interface<PPB_KeyboardInputEvent_1_0>())
-    return;
-  PassRefFromConstructor(get_interface<PPB_KeyboardInputEvent_1_0>()->Create(
-      instance.pp_instance(), type, time_stamp, modifiers, key_code,
-      character_text.pp_var()));
+  if (has_interface<PPB_KeyboardInputEvent_1_2>()) {
+    PassRefFromConstructor(get_interface<PPB_KeyboardInputEvent_1_2>()->Create(
+        instance.pp_instance(), type, time_stamp, modifiers, key_code,
+        character_text.pp_var(), Var().pp_var()));
+  } else if (has_interface<PPB_KeyboardInputEvent_1_0>()) {
+    PassRefFromConstructor(get_interface<PPB_KeyboardInputEvent_1_0>()->Create(
+        instance.pp_instance(), type, time_stamp, modifiers, key_code,
+        character_text.pp_var()));
+  }
+}
+
+KeyboardInputEvent::KeyboardInputEvent(const InstanceHandle& instance,
+                                       PP_InputEvent_Type type,
+                                       PP_TimeTicks time_stamp,
+                                       uint32_t modifiers,
+                                       uint32_t key_code,
+                                       const Var& character_text,
+                                       const Var& code) {
+  if (has_interface<PPB_KeyboardInputEvent_1_2>()) {
+    PassRefFromConstructor(get_interface<PPB_KeyboardInputEvent_1_2>()->Create(
+        instance.pp_instance(), type, time_stamp, modifiers, key_code,
+        character_text.pp_var(), code.pp_var()));
+  } else if (has_interface<PPB_KeyboardInputEvent_1_0>()) {
+    PassRefFromConstructor(get_interface<PPB_KeyboardInputEvent_1_0>()->Create(
+        instance.pp_instance(), type, time_stamp, modifiers, key_code,
+        character_text.pp_var()));
+  }
 }
 
 uint32_t KeyboardInputEvent::GetKeyCode() const {
-  if (!has_interface<PPB_KeyboardInputEvent_1_0>())
-    return 0;
-  return get_interface<PPB_KeyboardInputEvent_1_0>()->GetKeyCode(pp_resource());
+  if (has_interface<PPB_KeyboardInputEvent_1_2>()) {
+    return get_interface<PPB_KeyboardInputEvent_1_2>()->GetKeyCode(
+        pp_resource());
+  } else if (has_interface<PPB_KeyboardInputEvent_1_0>()) {
+    return get_interface<PPB_KeyboardInputEvent_1_0>()->GetKeyCode(
+        pp_resource());
+  }
+  return 0;
 }
 
 Var KeyboardInputEvent::GetCharacterText() const {
-  if (!has_interface<PPB_KeyboardInputEvent_1_0>())
-    return Var();
-  return Var(PASS_REF,
-             get_interface<PPB_KeyboardInputEvent_1_0>()->GetCharacterText(
+  if (has_interface<PPB_KeyboardInputEvent_1_2>()) {
+    return Var(PASS_REF,
+               get_interface<PPB_KeyboardInputEvent_1_2>()->GetCharacterText(
+                   pp_resource()));
+  } else if (has_interface<PPB_KeyboardInputEvent_1_0>()) {
+    return Var(PASS_REF,
+               get_interface<PPB_KeyboardInputEvent_1_0>()->GetCharacterText(
                  pp_resource()));
+  }
+  return Var();
+}
+
+Var KeyboardInputEvent::GetCode() const {
+  if (has_interface<PPB_KeyboardInputEvent_1_2>()) {
+    return Var(PASS_REF,
+               get_interface<PPB_KeyboardInputEvent_1_2>()->GetCode(
+                   pp_resource()));
+  }
+  return Var();
 }
 
 // TouchInputEvent ------------------------------------------------------------
@@ -278,6 +334,81 @@ TouchPoint TouchInputEvent::GetTouchByIndex(PP_TouchListType list,
     return TouchPoint();
   return TouchPoint(get_interface<PPB_TouchInputEvent_1_0>()->
                         GetTouchByIndex(pp_resource(), list, index));
+}
+
+// IMEInputEvent -------------------------------------------------------
+
+IMEInputEvent::IMEInputEvent() : InputEvent() {
+}
+
+IMEInputEvent::IMEInputEvent(const InputEvent& event) : InputEvent() {
+  if (has_interface<PPB_IMEInputEvent_1_0>()) {
+    if (get_interface<PPB_IMEInputEvent_1_0>()->IsIMEInputEvent(
+            event.pp_resource())) {
+      Module::Get()->core()->AddRefResource(event.pp_resource());
+      PassRefFromConstructor(event.pp_resource());
+    }
+  }
+}
+
+IMEInputEvent::IMEInputEvent(
+    const InstanceHandle& instance,
+    PP_InputEvent_Type type,
+    PP_TimeTicks time_stamp,
+    const Var& text,
+    const std::vector<uint32_t>& segment_offsets,
+    int32_t target_segment,
+    const std::pair<uint32_t, uint32_t>& selection) : InputEvent() {
+  if (!has_interface<PPB_IMEInputEvent_1_0>())
+    return;
+  uint32_t dummy = 0;
+  PassRefFromConstructor(get_interface<PPB_IMEInputEvent_1_0>()->Create(
+      instance.pp_instance(), type, time_stamp, text.pp_var(),
+      segment_offsets.empty() ? 0 : segment_offsets.size() - 1,
+      segment_offsets.empty() ? &dummy : &segment_offsets[0],
+      target_segment, selection.first, selection.second));
+}
+
+
+Var IMEInputEvent::GetText() const {
+  if (has_interface<PPB_IMEInputEvent_1_0>()) {
+    return Var(PASS_REF,
+               get_interface<PPB_IMEInputEvent_1_0>()->GetText(
+                   pp_resource()));
+  }
+  return Var();
+}
+
+uint32_t IMEInputEvent::GetSegmentNumber() const {
+  if (has_interface<PPB_IMEInputEvent_1_0>()) {
+    return get_interface<PPB_IMEInputEvent_1_0>()->GetSegmentNumber(
+        pp_resource());
+  }
+  return 0;
+}
+
+uint32_t IMEInputEvent::GetSegmentOffset(uint32_t index) const {
+  if (has_interface<PPB_IMEInputEvent_1_0>()) {
+    return get_interface<PPB_IMEInputEvent_1_0>()->GetSegmentOffset(
+        pp_resource(), index);
+  }
+  return 0;
+}
+
+int32_t IMEInputEvent::GetTargetSegment() const {
+  if (has_interface<PPB_IMEInputEvent_1_0>()) {
+    return get_interface<PPB_IMEInputEvent_1_0>()->GetTargetSegment(
+        pp_resource());
+  }
+  return 0;
+}
+
+void IMEInputEvent::GetSelection(uint32_t* start, uint32_t* end) const {
+  if (has_interface<PPB_IMEInputEvent_1_0>()) {
+    get_interface<PPB_IMEInputEvent_1_0>()->GetSelection(pp_resource(),
+                                                         start,
+                                                         end);
+  }
 }
 
 }  // namespace pp

@@ -21,13 +21,13 @@
 
 #include <stdint.h>
 #include "libavutil/common.h"
+#include "libavutil/internal.h"
 #include "libavutil/mathematics.h"
 #include "avcodec.h"
 #include "get_bits.h"
 #include "aacps.h"
 #include "aacps_tablegen.h"
 #include "aacpsdata.c"
-#include "dsputil.h"
 
 #define PS_BASELINE 0  ///< Operate in Baseline PS mode
                        ///< Baseline implies 10 or 20 stereo bands,
@@ -139,7 +139,7 @@ static int ps_read_extension_data(GetBitContext *gb, PSContext *ps, int ps_exten
     return get_bits_count(gb) - count;
 }
 
-static void ipdopd_reset(int8_t *opd_hist, int8_t *ipd_hist)
+static void ipdopd_reset(int8_t *ipd_hist, int8_t *opd_hist)
 {
     int i;
     for (i = 0; i < PS_MAX_NR_IPDOPD; i++) {
@@ -236,6 +236,7 @@ int ff_ps_read_data(AVCodecContext *avctx, GetBitContext *gb_host, PSContext *ps
     if (!ps->num_env || ps->border_position[ps->num_env] < numQMFSlots - 1) {
         //Create a fake envelope
         int source = ps->num_env ? ps->num_env - 1 : ps->num_env_old - 1;
+        int b;
         if (source >= 0 && source != ps->num_env) {
             if (ps->enable_iid) {
                 memcpy(ps->iid_par+ps->num_env, ps->iid_par+source, sizeof(ps->iid_par[0]));
@@ -246,6 +247,22 @@ int ff_ps_read_data(AVCodecContext *avctx, GetBitContext *gb_host, PSContext *ps
             if (ps->enable_ipdopd) {
                 memcpy(ps->ipd_par+ps->num_env, ps->ipd_par+source, sizeof(ps->ipd_par[0]));
                 memcpy(ps->opd_par+ps->num_env, ps->opd_par+source, sizeof(ps->opd_par[0]));
+            }
+        }
+        if (ps->enable_iid){
+            for (b = 0; b < ps->nr_iid_par; b++) {
+                if (FFABS(ps->iid_par[ps->num_env][b]) > 7 + 8 * ps->iid_quant) {
+                    av_log(avctx, AV_LOG_ERROR, "iid_par invalid\n");
+                    goto err;
+                }
+            }
+        }
+        if (ps->enable_icc){
+            for (b = 0; b < ps->nr_iid_par; b++) {
+                if (ps->icc_par[ps->num_env][b] > 7U) {
+                    av_log(avctx, AV_LOG_ERROR, "icc_par invalid\n");
+                    goto err;
+                }
             }
         }
         ps->num_env++;
@@ -305,14 +322,15 @@ static void hybrid2_re(float (*in)[2], float (*out)[32][2], const float filter[8
 }
 
 /** Split one subband into 6 subsubbands with a complex filter */
-static void hybrid6_cx(PSDSPContext *dsp, float (*in)[2], float (*out)[32][2], const float (*filter)[8][2], int len)
+static void hybrid6_cx(PSDSPContext *dsp, float (*in)[2], float (*out)[32][2],
+                       TABLE_CONST float (*filter)[8][2], int len)
 {
     int i;
     int N = 8;
     LOCAL_ALIGNED_16(float, temp, [8], [2]);
 
     for (i = 0; i < len; i++, in++) {
-        dsp->hybrid_analysis(temp, in, filter, 1, N);
+        dsp->hybrid_analysis(temp, in, (const float (*)[8][2]) filter, 1, N);
         out[0][i][0] = temp[6][0];
         out[0][i][1] = temp[6][1];
         out[1][i][0] = temp[7][0];
@@ -328,12 +346,14 @@ static void hybrid6_cx(PSDSPContext *dsp, float (*in)[2], float (*out)[32][2], c
     }
 }
 
-static void hybrid4_8_12_cx(PSDSPContext *dsp, float (*in)[2], float (*out)[32][2], const float (*filter)[8][2], int N, int len)
+static void hybrid4_8_12_cx(PSDSPContext *dsp,
+                            float (*in)[2], float (*out)[32][2],
+                            TABLE_CONST float (*filter)[8][2], int N, int len)
 {
     int i;
 
     for (i = 0; i < len; i++, in++) {
-        dsp->hybrid_analysis(out[0] + i, in, filter, 32, N);
+        dsp->hybrid_analysis(out[0] + i, in, (const float (*)[8][2]) filter, 32, N);
     }
 }
 
@@ -603,7 +623,6 @@ static void map_val_20_to_34(float par[PS_MAX_NR_IIDICC])
     par[ 3] =  par[ 2];
     par[ 2] =  par[ 1];
     par[ 1] = (par[ 0] + par[ 1]) * 0.5f;
-    par[ 0] =  par[ 0];
 }
 
 static void decorrelation(PSContext *ps, float (*out)[32][2], const float (*s)[32][2], int is34)
@@ -669,7 +688,8 @@ static void decorrelation(PSContext *ps, float (*out)[32][2], const float (*s)[3
             memcpy(ap_delay[k][m],   ap_delay[k][m]+numQMFSlots,           5*sizeof(ap_delay[k][m][0]));
         }
         ps->dsp.decorrelate(out[k], delay[k] + PS_MAX_DELAY - 2, ap_delay[k],
-                            phi_fract[is34][k], Q_fract_allpass[is34][k],
+                            phi_fract[is34][k],
+                            (const float (*)[2]) Q_fract_allpass[is34][k],
                             transient_gain[b], g_decay_slope, nL - n0);
     }
     for (; k < SHORT_DELAY_BAND[is34]; k++) {
@@ -747,7 +767,7 @@ static void stereo_processing(PSContext *ps, float (*l)[32][2], float (*r)[32][2
     int8_t (*ipd_mapped)[PS_MAX_NR_IIDICC] = ipd_mapped_buf;
     int8_t (*opd_mapped)[PS_MAX_NR_IIDICC] = opd_mapped_buf;
     const int8_t *k_to_i = is34 ? k_to_i_34 : k_to_i_20;
-    const float (*H_LUT)[8][4] = (PS_BASELINE || ps->icc_mode < 3) ? HA : HB;
+    TABLE_CONST float (*H_LUT)[8][4] = (PS_BASELINE || ps->icc_mode < 3) ? HA : HB;
 
     //Remapping
     if (ps->num_env_old) {
@@ -807,7 +827,8 @@ static void stereo_processing(PSContext *ps, float (*l)[32][2], float (*r)[32][2
             h12 = H_LUT[iid_mapped[e][b] + 7 + 23 * ps->iid_quant][icc_mapped[e][b]][1];
             h21 = H_LUT[iid_mapped[e][b] + 7 + 23 * ps->iid_quant][icc_mapped[e][b]][2];
             h22 = H_LUT[iid_mapped[e][b] + 7 + 23 * ps->iid_quant][icc_mapped[e][b]][3];
-            if (!PS_BASELINE && ps->enable_ipdopd && b < ps->nr_ipdopd_par) {
+
+            if (!PS_BASELINE && ps->enable_ipdopd && 2*b <= NR_PAR_BANDS[is34]) {
                 //The spec say says to only run this smoother when enable_ipdopd
                 //is set but the reference decoder appears to run it constantly
                 float h11i, h12i, h21i, h22i;
@@ -897,7 +918,7 @@ int ff_ps_apply(AVCodecContext *avctx, PSContext *ps, float L[2][38][64], float 
         memset(ps->ap_delay + top, 0, (NR_ALLPASS_BANDS[is34] - top)*sizeof(ps->ap_delay[0]));
 
     hybrid_analysis(&ps->dsp, Lbuf, ps->in_buf, L, is34, len);
-    decorrelation(ps, Rbuf, Lbuf, is34);
+    decorrelation(ps, Rbuf, (const float (*)[32][2]) Lbuf, is34);
     stereo_processing(ps, Lbuf, Rbuf, is34);
     hybrid_synthesis(&ps->dsp, L, Lbuf, is34, len);
     hybrid_synthesis(&ps->dsp, R, Rbuf, is34, len);

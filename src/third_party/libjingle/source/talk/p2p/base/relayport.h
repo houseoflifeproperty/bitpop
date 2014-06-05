@@ -72,6 +72,7 @@ class RelayPort : public Port {
   virtual Connection* CreateConnection(const Candidate& address,
                                        CandidateOrigin origin);
   virtual int SetOption(talk_base::Socket::Option opt, int value);
+  virtual int GetOption(talk_base::Socket::Option opt, int* value);
   virtual int GetError();
 
   const ProtocolAddress * ServerAddress(size_t index) const;
@@ -91,12 +92,15 @@ class RelayPort : public Port {
   void SetReady();
 
   virtual int SendTo(const void* data, size_t size,
-                     const talk_base::SocketAddress& addr, bool payload);
+                     const talk_base::SocketAddress& addr,
+                     const talk_base::PacketOptions& options,
+                     bool payload);
 
   // Dispatches the given packet to the port or connection as appropriate.
   void OnReadPacket(const char* data, size_t size,
                     const talk_base::SocketAddress& remote_addr,
-                    ProtocolType proto);
+                    ProtocolType proto,
+                    const talk_base::PacketTime& packet_time);
 
  private:
   friend class RelayEntry;

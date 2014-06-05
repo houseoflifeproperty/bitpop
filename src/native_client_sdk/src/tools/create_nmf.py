@@ -3,38 +3,35 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from __future__ import with_statement
+"""Tool for automatically creating .nmf files from .nexe/.pexe/.bc executables.
+
+As well as creating the nmf file this tool can also find and stage
+any shared libraries dependencies that the executables might have.
+"""
 
 import errno
+import json
 import optparse
 import os
-import re
+import posixpath
 import shutil
-import struct
-import subprocess
 import sys
-import urllib
 
+import getos
+
+if sys.version_info < (2, 6, 0):
+  sys.stderr.write("python 2.6 or later is required run this script\n")
+  sys.exit(1)
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+LIB_DIR = os.path.join(SCRIPT_DIR, 'lib')
+
+sys.path.append(LIB_DIR)
+
+import elf
+import get_shared_deps
 import quote
 
-try:
-  import json
-except ImportError:
-  import simplejson as json
-
-NeededMatcher = re.compile('^ *NEEDED *([^ ]+)\n$')
-FormatMatcher = re.compile('^(.+):\\s*file format (.+)\n$')
-
-OBJDUMP_ARCH_MAP = {
-    # Names returned by Linux's objdump:
-    'elf64-x86-64': 'x86-64',
-    'elf32-i386': 'x86-32',
-    'elf32-little': 'arm',
-    'elf32-littlearm': 'arm',
-    # Names returned by x86_64-nacl-objdump:
-    'elf64-nacl': 'x86-64',
-    'elf32-nacl': 'x86-32',
-}
 
 ARCH_LOCATION = {
     'x86-32': 'lib32',
@@ -49,14 +46,10 @@ MAIN_NEXE = 'main.nexe'  # Name of entry point for execution
 PROGRAM_KEY = 'program'  # Key of the program section in an nmf file
 URL_KEY = 'url'  # Key of the url field for a particular file in an nmf file
 FILES_KEY = 'files'  # Key of the files section in an nmf file
-
-# The proper name of the dynamic linker, as kept in the IRT.  This is
-# excluded from the nmf file by convention.
-LD_NACL_MAP = {
-    'x86-32': 'ld-nacl-x86-32.so.1',
-    'x86-64': 'ld-nacl-x86-64.so.1',
-    'arm': None,
-}
+PNACL_OPTLEVEL_KEY = 'optlevel' # key for PNaCl optimization level
+PORTABLE_KEY = 'portable' # key for portable section of manifest
+TRANSLATE_KEY = 'pnacl-translate' # key for translatable objects
+TRANSLATE_DEBUG_KEY = 'pnacl-debug' # key for translatable debug objects
 
 
 def DebugPrint(message):
@@ -65,6 +58,60 @@ def DebugPrint(message):
 
 
 DebugPrint.debug_mode = False  # Set to True to enable extra debug prints
+
+
+def SplitPath(path):
+  """Returns all components of a path as a list.
+
+  e.g.
+  'foo/bar/baz.blah' => ['foo', 'bar', 'baz.blah']
+  """
+  result = []
+  while path:
+    path, part = os.path.split(path)
+    result.append(part)
+  return result[::-1]  # Reverse.
+
+
+def MakePosixPath(path):
+  """Converts from the native format to posixpath format.
+
+  e.g. on Windows, "foo\\bar\\baz.blah" => "foo/bar/baz.blah"
+  on Mac/Linux this is a no-op.
+  """
+  if os.path == posixpath:
+    return path
+  return posixpath.join(*SplitPath(path))
+
+
+def PosixRelPath(path, start):
+  """Takes two paths in native format, and produces a relative path in posix
+  format.
+
+  e.g.
+  For Windows: "foo\\bar\\baz.blah", "foo" => "bar/baz.blah"
+  For Mac/Linux: "foo/bar/baz.blah", "foo" => "bar/baz.blah"
+
+  NOTE: This function uses os.path.realpath to create a canonical path for
+  |path| and |start|.
+  """
+  real_path = os.path.realpath(path)
+  real_start = os.path.realpath(start)
+  return MakePosixPath(os.path.relpath(real_path, real_start))
+
+
+def DirectoryTreeContainsFile(dirname, filename):
+  """Returns True if a file is in a directory, or any of that directory's
+  subdirectories recursively.
+
+  e.g.
+  DirectoryTreeContainsFile("foo", "foo/quux.txt") => True
+  DirectoryTreeContainsFile("foo", "foo/bar/baz/blah.txt") => True
+  DirectoryTreeContainsFile("foo", "bar/blah.txt") => False
+  """
+  real_dirname = os.path.realpath(dirname)
+  real_filename = os.path.realpath(filename)
+  return real_filename.startswith(real_dirname)
 
 
 def MakeDir(dirname):
@@ -82,134 +129,55 @@ def MakeDir(dirname):
       raise
 
 
+def ParseElfHeader(path):
+  """Wrap elf.ParseElfHeader to return raise this module's Error on failure."""
+  try:
+    return elf.ParseElfHeader(path)
+  except elf.Error, e:
+    raise Error(str(e))
+
+
 class Error(Exception):
-  '''Local Error class for this file.'''
+  """Local Error class for this file."""
   pass
 
 
-def ParseElfHeader(path):
-  """Determine properties of a nexe by parsing elf header.
-  Return tuple of architecture and boolean signalling whether
-  the executable is dynamic (has INTERP header) or static.
-  """
-  # From elf.h:
-  # typedef struct
-  # {
-  #   unsigned char e_ident[EI_NIDENT]; /* Magic number and other info */
-  #   Elf64_Half e_type; /* Object file type */
-  #   Elf64_Half e_machine; /* Architecture */
-  #   ...
-  # } Elf32_Ehdr;
-  elf_header_format = '16s2H'
-  elf_header_size = struct.calcsize(elf_header_format)
-
-  with open(path, 'rb') as f:
-    header = f.read(elf_header_size)
-
-  header = struct.unpack(elf_header_format, header)
-  e_ident, _, e_machine = header[:3]
-
-  elf_magic = '\x7fELF'
-  if e_ident[:4] != elf_magic:
-    raise Error("Not a valid NaCL executable: %s" % path)
-
-  e_machine_mapping = {
-    3 : 'x86-32',
-    40 : 'arm',
-    62 : 'x86-64'
-  }
-  if e_machine not in e_machine_mapping:
-    raise Error("Unknown machine type: %s" % e_machine)
-
-  # Set arch based on the machine type in the elf header
-  arch = e_machine_mapping[e_machine]
-
-  # Now read the full header in either 64bit or 32bit mode
-  if arch == 'x86-64':
-    elf_header_format = '16s2HI3lI3H'
-  else:
-    elf_header_format = '16s2HI3II3H'
-
-  dynamic = IsDynamicElf(path, elf_header_format)
-  return arch, dynamic
-
-
-def IsDynamicElf(path, elf_header_format):
-  """Examine an elf file to determine if it is dynamically
-  linked or not.
-  This is determined by searching the program headers for
-  a header of type PT_INTERP.
-  """
-  elf_header_size = struct.calcsize(elf_header_format)
-
-  with open(path, 'rb') as f:
-    header = f.read(elf_header_size)
-    header = struct.unpack(elf_header_format, header)
-    p_header_offset = header[5]
-    p_header_entry_size = header[9]
-    num_p_header = header[10]
-    f.seek(p_header_offset)
-    p_headers = f.read(p_header_entry_size*num_p_header)
-
-  # Read the first word of each Phdr to find out its type.
-  #
-  # typedef struct
-  # {
-  #   Elf32_Word  p_type;     /* Segment type */
-  #   ...
-  # } Elf32_Phdr;
-  elf_phdr_format = 'I'
-  PT_INTERP = 3
-
-  while p_headers:
-    p_header = p_headers[:p_header_entry_size]
-    p_headers = p_headers[p_header_entry_size:]
-    phdr_type = struct.unpack(elf_phdr_format, p_header[:4])[0]
-    if phdr_type == PT_INTERP:
-      return True
-
-  return False
-
-
-
 class ArchFile(object):
-  '''Simple structure containing information about
+  """Simple structure containing information about an architecture-specific
+     file.
 
   Attributes:
     name: Name of this file
     path: Full path to this file on the build system
     arch: Architecture of this file (e.g., x86-32)
     url: Relative path to file in the staged web directory.
-        Used for specifying the "url" attribute in the nmf file.'''
+        Used for specifying the "url" attribute in the nmf file."""
 
-  def __init__(self, name, path, url, arch=None):
+  def __init__(self, name, path, url=None, arch=None):
     self.name = name
     self.path = path
     self.url = url
     self.arch = arch
-    if arch is None:
+    if not arch:
       self.arch = ParseElfHeader(path)[0]
 
   def __repr__(self):
-    return "<ArchFile %s>" % self.path
+    return '<ArchFile %s>' % self.path
 
   def __str__(self):
-    '''Return the file path when invoked with the str() function'''
+    """Return the file path when invoked with the str() function"""
     return self.path
 
 
 class NmfUtils(object):
-  '''Helper class for creating and managing nmf files
-
-  Attributes:
-    manifest: A JSON-structured dict containing the nmf structure
-    needed: A dict with key=filename and value=ArchFile (see GetNeeded)
-  '''
+  """Helper class for creating and managing nmf files"""
 
   def __init__(self, main_files=None, objdump=None,
                lib_path=None, extra_files=None, lib_prefix=None,
-               remap=None):
-    '''Constructor
+               nexe_prefix=None, no_arch_prefix=None, remap=None,
+               pnacl_optlevel=None, pnacl_debug_optlevel=None,
+               nmf_root=None):
+    """Constructor
 
     Args:
       main_files: List of main entry program files.  These will be named
@@ -217,165 +185,175 @@ class NmfUtils(object):
       objdump: path to x86_64-nacl-objdump tool (or Linux equivalent)
       lib_path: List of paths to library directories
       extra_files: List of extra files to include in the nmf
-      lib_prefix: A list of path components to prepend to the library paths,
-          both for staging the libraries and for inclusion into the nmf file.
-          Examples:  ['..'], ['lib_dir']
+      lib_prefix: A path prefix to prepend to the library paths, both for
+          staging the libraries and for inclusion into the nmf file.
+          Example: '../lib_dir'
+      nexe_prefix: Like lib_prefix, but is prepended to the nexes instead.
+      no_arch_prefix: Don't prefix shared libraries by lib32/lib64.
       remap: Remaps the library name in the manifest.
-      '''
+      pnacl_optlevel: Optimization level for PNaCl translation.
+      pnacl_debug_optlevel: Optimization level for debug PNaCl translation.
+      nmf_root: Directory of the NMF. All urls are relative to this directory.
+    """
+    assert len(main_files) > 0
     self.objdump = objdump
-    self.main_files = main_files or []
+    self.main_files = main_files
     self.extra_files = extra_files or []
     self.lib_path = lib_path or []
     self.manifest = None
-    self.needed = {}
-    self.lib_prefix = lib_prefix or []
+    self.needed = None
+    self.lib_prefix = lib_prefix or ''
+    self.nexe_prefix = nexe_prefix or ''
+    self.no_arch_prefix = no_arch_prefix
     self.remap = remap or {}
+    self.pnacl = main_files[0].endswith(('.pexe', '.bc'))
+    self.pnacl_optlevel = pnacl_optlevel
+    self.pnacl_debug_optlevel = pnacl_debug_optlevel
+    if nmf_root is not None:
+      self.nmf_root = nmf_root
+    else:
+      # To match old behavior, if there is no nmf_root, use the directory of
+      # the first nexe found in main_files.
+      self.nmf_root = os.path.dirname(main_files[0])
 
-  def GleanFromObjdump(self, files):
-    '''Get architecture and dependency information for given files
-
-    Args:
-      files: A dict with key=filename and value=list or set of archs.  E.g.:
-          { '/path/to/my.nexe': ['x86-32']
-            '/path/to/lib64/libmy.so': ['x86-64'],
-            '/path/to/mydata.so': ['x86-32', 'x86-64'],
-            '/path/to/my.data': None }  # Indicates all architectures
-
-    Returns: A tuple with the following members:
-      input_info: A dict with key=filename and value=ArchFile of input files.
-          Includes the input files as well, with arch filled in if absent.
-          Example: { '/path/to/my.nexe': ArchFile(my.nexe),
-                     '/path/to/libfoo.so': ArchFile(libfoo.so) }
-      needed: A set of strings formatted as "arch/name".  Example:
-          set(['x86-32/libc.so', 'x86-64/libgcc.so'])
-    '''
-    if not self.objdump:
-      raise Error("No objdump executable specified (see --help for more info)")
-    DebugPrint("GleanFromObjdump(%s)" % ([self.objdump, '-p'] + files.keys()))
-    proc = subprocess.Popen([self.objdump, '-p'] + files.keys(),
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, bufsize=-1)
-    input_info = {}
-    needed = set()
-    output, err_output = proc.communicate()
-    if proc.returncode:
-      raise Error('%s\nStdError=%s\nobjdump failed with error code: %d' %
-                  (output, err_output, proc.returncode))
-
-    for line in output.splitlines(True):
-      # Objdump should display the architecture first and then the dependencies
-      # second for each file in the list.
-      matched = FormatMatcher.match(line)
-      if matched:
-        filename = matched.group(1)
-        arch = OBJDUMP_ARCH_MAP[matched.group(2)]
-        if files[filename] is None or arch in files[filename]:
-          name = os.path.basename(filename)
-          input_info[filename] = ArchFile(
-              arch=arch,
-              name=name,
-              path=filename,
-              url='/'.join(self.lib_prefix + [ARCH_LOCATION[arch], name]))
-      matched = NeededMatcher.match(line)
-      if matched:
-        if files[filename] is None or arch in files[filename]:
-          needed.add('/'.join([arch, matched.group(1)]))
-    return input_info, needed
-
-  def FindLibsInPath(self, name):
-    '''Finds the set of libraries matching |name| within lib_path
-
-    Args:
-      name: name of library to find
-
-    Returns:
-      A list of system paths that match the given name within the lib_path'''
-    files = []
-    for dirname in self.lib_path:
-      filename = os.path.join(dirname, name)
-      if os.path.exists(filename):
-        files.append(filename)
-    if not files:
-      raise Error('cannot find library %s' % name)
-    return files
+    for filename in self.main_files:
+      if not os.path.exists(filename):
+        raise Error('Input file not found: %s' % filename)
+      if not os.path.isfile(filename):
+        raise Error('Input is not a file: %s' % filename)
 
   def GetNeeded(self):
-    '''Collect the list of dependencies for the main_files
+    """Collect the list of dependencies for the main_files
 
     Returns:
       A dict with key=filename and value=ArchFile of input files.
           Includes the input files as well, with arch filled in if absent.
           Example: { '/path/to/my.nexe': ArchFile(my.nexe),
-                     '/path/to/libfoo.so': ArchFile(libfoo.so) }'''
+                     '/path/to/libfoo.so': ArchFile(libfoo.so) }"""
+
     if self.needed:
       return self.needed
 
     DebugPrint('GetNeeded(%s)' % self.main_files)
 
-    dynamic = any(ParseElfHeader(f)[1] for f in self.main_files)
+    if not self.objdump:
+      self.objdump = FindObjdumpExecutable()
 
-    if dynamic:
-      examined = set()
-      all_files, unexamined = self.GleanFromObjdump(
-          dict([(f, None) for f in self.main_files]))
-      for name, arch_file in all_files.items():
-        arch_file.url = name
-        if unexamined:
-          unexamined.add('/'.join([arch_file.arch, RUNNABLE_LD]))
-      while unexamined:
-        files_to_examine = {}
-        for arch_name in unexamined:
-          arch, name = arch_name.split('/')
-          for path in self.FindLibsInPath(name):
-            files_to_examine.setdefault(path, set()).add(arch)
-        new_files, needed = self.GleanFromObjdump(files_to_examine)
-        all_files.update(new_files)
-        examined |= unexamined
-        unexamined = needed - examined
+    try:
+      all_files = get_shared_deps.GetNeeded(self.main_files, self.objdump,
+                                            self.lib_path)
+    except get_shared_deps.NoObjdumpError:
+      raise Error('No objdump executable found (see --help for more info)')
+    except get_shared_deps.Error, e:
+      raise Error(str(e))
 
-      # With the runnable-ld.so scheme we have today, the proper name of
-      # the dynamic linker should be excluded from the list of files.
-      ldso = [LD_NACL_MAP[arch] for arch in set(OBJDUMP_ARCH_MAP.values())]
-      for name, arch_map in all_files.items():
-        if arch_map.name in ldso:
-          del all_files[name]
+    self.needed = {}
 
-      self.needed = all_files
-    else:
-      for filename in self.main_files:
-        url = os.path.split(filename)[1]
-        archfile = ArchFile(name=os.path.basename(filename),
-                            path=filename, url=url)
-        self.needed[filename] = archfile
+    # all_files is a dictionary mapping filename to architecture. self.needed
+    # should be a dictionary of filename to ArchFile.
+    for filename, arch in all_files.iteritems():
+      name = os.path.basename(filename)
+      self.needed[filename] = ArchFile(name=name, path=filename, arch=arch)
+
+    self._SetArchFileUrls()
 
     return self.needed
 
+  def _SetArchFileUrls(self):
+    """Fill in the url member of all ArchFiles in self.needed.
+
+    All urls are relative to the nmf_root. In addition, architecture-specific
+    files are relative to the .nexe with the matching architecture. This is
+    useful when making a multi-platform packaged app, so each architecture's
+    files are in a different directory.
+    """
+    # self.GetNeeded() should have already been called.
+    assert self.needed is not None
+
+    main_nexes = [f for f in self.main_files if f.endswith('.nexe')]
+
+    # map from each arch to its corresponding main nexe.
+    arch_to_main_dir = {}
+    for main_file in main_nexes:
+      arch, _ = ParseElfHeader(main_file)
+      main_dir = os.path.dirname(main_file)
+      main_dir = PosixRelPath(main_dir, self.nmf_root)
+      if main_dir == '.':
+        main_dir = ''
+      arch_to_main_dir[arch] = main_dir
+
+    for arch_file in self.needed.itervalues():
+      prefix = ''
+      if DirectoryTreeContainsFile(self.nmf_root, arch_file.path):
+        # This file is already in the nmf_root tree, so it does not need to be
+        # staged. Just make the URL relative to the .nmf.
+        url = PosixRelPath(arch_file.path, self.nmf_root)
+      else:
+        # This file is outside of the nmf_root subtree, so it needs to be
+        # staged. Its path should be relative to the main .nexe with the same
+        # architecture.
+        prefix = arch_to_main_dir[arch_file.arch]
+        url = os.path.basename(arch_file.path)
+
+      if arch_file.name.endswith('.nexe'):
+        prefix = posixpath.join(prefix, self.nexe_prefix)
+      elif self.no_arch_prefix:
+        prefix = posixpath.join(prefix, self.lib_prefix)
+      else:
+        prefix = posixpath.join(
+            prefix, self.lib_prefix, ARCH_LOCATION[arch_file.arch])
+      arch_file.url = posixpath.join(prefix, url)
+
   def StageDependencies(self, destination_dir):
-    '''Copies over the dependencies into a given destination directory
+    """Copies over the dependencies into a given destination directory
 
     Each library will be put into a subdirectory that corresponds to the arch.
 
     Args:
       destination_dir: The destination directory for staging the dependencies
-    '''
-    needed = self.GetNeeded()
-    for source, arch_file in needed.items():
-      urldest = urllib.url2pathname(arch_file.url)
-      if source.endswith('.nexe') and source in self.main_files:
-        urldest = os.path.basename(urldest)
+    """
+    assert self.needed is not None
+    for arch_file in self.needed.itervalues():
+      source = arch_file.path
+      destination = os.path.join(destination_dir, arch_file.url)
 
-      destination = os.path.join(destination_dir, urldest)
+      if (os.path.normcase(os.path.realpath(source)) ==
+          os.path.normcase(os.path.realpath(destination))):
+        continue
 
-      if (os.path.normcase(os.path.abspath(source)) !=
-          os.path.normcase(os.path.abspath(destination))):
-        # make sure target dir exists
-        MakeDir(os.path.dirname(destination))
+      # make sure target dir exists
+      MakeDir(os.path.dirname(destination))
 
-        Trace("copy: %s -> %s" % (source, destination))
-        shutil.copy2(source, destination)
+      Trace('copy: %s -> %s' % (source, destination))
+      shutil.copy2(source, destination)
+
+  def _GeneratePNaClManifest(self):
+    manifest = {}
+    manifest[PROGRAM_KEY] = {}
+    manifest[PROGRAM_KEY][PORTABLE_KEY] = {}
+    portable = manifest[PROGRAM_KEY][PORTABLE_KEY]
+    for filename in self.main_files:
+      translate_dict =  {
+          'url': os.path.basename(filename),
+      }
+      if filename.endswith('.pexe'):
+        if self.pnacl_optlevel is not None:
+          translate_dict[PNACL_OPTLEVEL_KEY] = self.pnacl_optlevel
+        if TRANSLATE_KEY in portable:
+          raise Error('Multiple .pexe files')
+        portable[TRANSLATE_KEY] = translate_dict
+      elif filename.endswith('.bc'):
+        if self.pnacl_debug_optlevel is not None:
+          translate_dict[PNACL_OPTLEVEL_KEY] = self.pnacl_debug_optlevel
+        if TRANSLATE_DEBUG_KEY in portable:
+          raise Error('Multiple .bc files')
+        portable[TRANSLATE_DEBUG_KEY] = translate_dict
+      else:
+        raise Error('Unexpected executable type: %s' % filename)
+    self.manifest = manifest
 
   def _GenerateManifest(self):
-    '''Create a JSON formatted dict containing the files
+    """Create a JSON formatted dict containing the files
 
     NaCl will map url requests based on architecture.  The startup NEXE
     can always be found under the top key PROGRAM.  Additional files are under
@@ -383,7 +361,8 @@ class NmfUtils(object):
     PROGRAM key is populated with urls pointing the runnable-ld.so which acts
     as the startup nexe.  The application itself is then placed under the
     FILES key mapped as 'main.exe' instead of the original name so that the
-    loader can find it. '''
+    loader can find it.
+    """
     manifest = { FILES_KEY: {}, PROGRAM_KEY: {} }
 
     needed = self.GetNeeded()
@@ -406,18 +385,14 @@ class NmfUtils(object):
           manifest[PROGRAM_KEY][archinfo.arch] = urlinfo
           continue
 
-      # For the main nexes:
-      if need.endswith('.nexe') and need in self.main_files:
-        # Ensure that the nexe name is relative, not absolute.
-        # We assume that the nexe and the corresponding nmf file are
-        # installed in the same directory.
-        urlinfo[URL_KEY] = os.path.basename(urlinfo[URL_KEY])
-        # Place it under program if we aren't using the runnable-ld.so.
-        if not runnable:
-          manifest[PROGRAM_KEY][archinfo.arch] = urlinfo
-          continue
-        # Otherwise, treat it like another another file named main.nexe.
-        name = MAIN_NEXE
+      if need in self.main_files:
+        if need.endswith(".nexe"):
+          # Place it under program if we aren't using the runnable-ld.so.
+          if not runnable:
+            manifest[PROGRAM_KEY][archinfo.arch] = urlinfo
+            continue
+          # Otherwise, treat it like another another file named main.nexe.
+          name = MAIN_NEXE
 
       name = self.remap.get(name, name)
       fileinfo = manifest[FILES_KEY].get(name, {})
@@ -426,14 +401,16 @@ class NmfUtils(object):
     self.manifest = manifest
 
   def GetManifest(self):
-    '''Returns a JSON-formatted dict containing the NaCl dependencies'''
+    """Returns a JSON-formatted dict containing the NaCl dependencies"""
     if not self.manifest:
-      self._GenerateManifest()
-
+      if self.pnacl:
+        self._GeneratePNaClManifest()
+      else:
+        self._GenerateManifest()
     return self.manifest
 
   def GetJson(self):
-    '''Returns the Manifest as a JSON-formatted string'''
+    """Returns the Manifest as a JSON-formatted string"""
     pretty_string = json.dumps(self.GetManifest(), indent=2)
     # json.dumps sometimes returns trailing whitespace and does not put
     # a newline at the end.  This code fixes these problems.
@@ -488,28 +465,117 @@ def ParseExtraFiles(encoded_list, err):
   return canonicalized
 
 
+def GetSDKRoot():
+  """Determine current NACL_SDK_ROOT, either via the environment variable
+  itself, or by attempting to derive it from the location of this script.
+  """
+  sdk_root = os.environ.get('NACL_SDK_ROOT')
+  if not sdk_root:
+    sdk_root = os.path.dirname(SCRIPT_DIR)
+    if not os.path.exists(os.path.join(sdk_root, 'toolchain')):
+      return None
+
+  return sdk_root
+
+
+def FindObjdumpExecutable():
+  """Derive path to objdump executable to use for determining shared
+  object dependencies.
+  """
+  sdk_root = GetSDKRoot()
+  if not sdk_root:
+    return None
+
+  osname = getos.GetPlatform()
+  toolchain = os.path.join(sdk_root, 'toolchain', '%s_x86_glibc' % osname)
+  objdump = os.path.join(toolchain, 'bin', 'x86_64-nacl-objdump')
+  if osname == 'win':
+    objdump += '.exe'
+
+  if not os.path.exists(objdump):
+    sys.stderr.write('WARNING: failed to find objdump in default '
+                     'location: %s' % objdump)
+    return None
+
+  return objdump
+
+
+def GetDefaultLibPath(config):
+  """Derive default library path to use when searching for shared
+  objects.  This currently include the toolchain library folders
+  as well as the top level SDK lib folder and the naclports lib
+  folder.  We include both 32-bit and 64-bit library paths.
+  """
+  assert(config in ('Debug', 'Release'))
+  sdk_root = GetSDKRoot()
+  if not sdk_root:
+    # TOOD(sbc): output a warning here?  We would also need to suppress
+    # the warning when run from the chromium build.
+    return []
+
+  osname = getos.GetPlatform()
+  libpath = [
+    # Core toolchain libraries
+    'toolchain/%s_x86_glibc/x86_64-nacl/lib' % osname,
+    'toolchain/%s_x86_glibc/x86_64-nacl/lib32' % osname,
+    # naclports installed libraries
+    'toolchain/%s_x86_glibc/x86_64-nacl/usr/lib' % osname,
+    'toolchain/%s_x86_glibc/i686-nacl/usr/lib' % osname,
+    # SDK bundle libraries
+    'lib/glibc_x86_32/%s' % config,
+    'lib/glibc_x86_64/%s' % config,
+    # naclports bundle libraries
+    'ports/lib/glibc_x86_32/%s' % config,
+    'ports/lib/glibc_x86_64/%s' % config,
+  ]
+
+  bionic_dir = 'toolchain/%s_arm_bionic' % osname
+  if os.path.isdir(os.path.join(sdk_root, bionic_dir)):
+    libpath += [
+      '%s/arm-nacl/lib' % bionic_dir,
+      '%s/arm-nacl/usr/lib' % bionic_dir,
+      'lib/bionic_arm/%s' % config,
+    ]
+  libpath = [os.path.normpath(p) for p in libpath]
+  libpath = [os.path.join(sdk_root, p) for p in libpath]
+  return libpath
+
+
 def main(argv):
   parser = optparse.OptionParser(
-      usage='Usage: %prog [options] nexe [extra_libs...]')
+      usage='Usage: %prog [options] nexe [extra_libs...]', description=__doc__)
   parser.add_option('-o', '--output', dest='output',
                     help='Write manifest file to FILE (default is stdout)',
                     metavar='FILE')
   parser.add_option('-D', '--objdump', dest='objdump',
-                    help='Use TOOL as the "objdump" tool to run',
+                    help='Override the default "objdump" tool used to find '
+                         'shared object dependencies',
                     metavar='TOOL')
+  parser.add_option('--no-default-libpath', action='store_true',
+                    help="Don't include the SDK default library paths")
+  parser.add_option('--debug-libs', action='store_true',
+                    help='Use debug library paths when constructing default '
+                         'library path.')
   parser.add_option('-L', '--library-path', dest='lib_path',
                     action='append', default=[],
                     help='Add DIRECTORY to library search path',
                     metavar='DIRECTORY')
   parser.add_option('-P', '--path-prefix', dest='path_prefix', default='',
+                    help='Deprecated. An alias for --lib-prefix.',
+                    metavar='DIRECTORY')
+  parser.add_option('-p', '--lib-prefix', dest='lib_prefix', default='',
                     help='A path to prepend to shared libraries in the .nmf',
+                    metavar='DIRECTORY')
+  parser.add_option('-N', '--nexe-prefix', dest='nexe_prefix', default='',
+                    help='A path to prepend to nexes in the .nmf',
                     metavar='DIRECTORY')
   parser.add_option('-s', '--stage-dependencies', dest='stage_dependencies',
                     help='Destination directory for staging libraries',
                     metavar='DIRECTORY')
-  parser.add_option('-r', '--remove', dest='remove',
-                    help='Remove the prefix from the files.',
-                    metavar='PATH')
+  parser.add_option('--no-arch-prefix', action='store_true',
+                    help='Don\'t put shared libraries in the lib32/lib64 '
+                    'directories. Instead, they will be put in the same '
+                    'directory as the .nexe that matches its architecture.')
   parser.add_option('-t', '--toolchain', help='Legacy option, do not use')
   parser.add_option('-n', '--name', dest='name',
                     help='Rename FOO as BAR',
@@ -518,10 +584,27 @@ def main(argv):
                     help=('Add extra key:file tuple to the "files"' +
                           ' section of the .nmf'),
                     action='append', default=[], metavar='FILE')
+  parser.add_option('-O', '--pnacl-optlevel',
+                    help='Set the optimization level to N in PNaCl manifests',
+                    metavar='N')
+  parser.add_option('--pnacl-debug-optlevel',
+                    help='Set the optimization level to N for debugging '
+                         'sections in PNaCl manifests',
+                    metavar='N')
   parser.add_option('-v', '--verbose',
                     help='Verbose output', action='store_true')
   parser.add_option('-d', '--debug-mode',
                     help='Debug mode', action='store_true')
+
+  # To enable bash completion for this command first install optcomplete
+  # and then add this line to your .bashrc:
+  #  complete -F _optcomplete create_nmf.py
+  try:
+    import optcomplete
+    optcomplete.autocomplete(parser)
+  except ImportError:
+    pass
+
   options, args = parser.parse_args(argv)
   if options.verbose:
     Trace.verbose = True
@@ -529,53 +612,86 @@ def main(argv):
     DebugPrint.debug_mode = True
 
   if options.toolchain is not None:
-    print "warning: option -t/--toolchain is deprecated."
+    sys.stderr.write('warning: option -t/--toolchain is deprecated.\n')
 
   if len(args) < 1:
-    raise Error("No nexe files specified.  See --help for more info")
+    parser.error('No nexe files specified.  See --help for more info')
 
   canonicalized = ParseExtraFiles(options.extra_files, sys.stderr)
   if canonicalized is None:
-    parser.error("Bad --extra-files (-x) argument syntax")
+    parser.error('Bad --extra-files (-x) argument syntax')
 
   remap = {}
   for ren in options.name:
     parts = ren.split(',')
     if len(parts) != 2:
-      raise Error('Expecting --name=<orig_arch.so>,<new_name.so>')
+      parser.error('Expecting --name=<orig_arch.so>,<new_name.so>')
     remap[parts[0]] = parts[1]
 
   if options.path_prefix:
-    path_prefix = options.path_prefix.split('/')
+    options.lib_prefix = options.path_prefix
+
+  for libpath in options.lib_path:
+    if not os.path.exists(libpath):
+      sys.stderr.write('Specified library path does not exist: %s\n' % libpath)
+    elif not os.path.isdir(libpath):
+      sys.stderr.write('Specified library is not a directory: %s\n' % libpath)
+
+  if not options.no_default_libpath:
+    # Add default libraries paths to the end of the search path.
+    config = options.debug_libs and 'Debug' or 'Release'
+    options.lib_path += GetDefaultLibPath(config)
+    for path in options.lib_path:
+      Trace('libpath: %s' % path)
+
+  pnacl_optlevel = None
+  if options.pnacl_optlevel is not None:
+    pnacl_optlevel = int(options.pnacl_optlevel)
+    if pnacl_optlevel < 0 or pnacl_optlevel > 3:
+      sys.stderr.write(
+          'warning: PNaCl optlevel %d is unsupported (< 0 or > 3)\n' %
+          pnacl_optlevel)
+  if options.pnacl_debug_optlevel is not None:
+    pnacl_debug_optlevel = int(options.pnacl_debug_optlevel)
   else:
-    path_prefix = []
+    pnacl_debug_optlevel = pnacl_optlevel
+
+  nmf_root = None
+  if options.output:
+    nmf_root = os.path.dirname(options.output)
 
   nmf = NmfUtils(objdump=options.objdump,
                  main_files=args,
                  lib_path=options.lib_path,
                  extra_files=canonicalized,
-                 lib_prefix=path_prefix,
-                 remap=remap)
+                 lib_prefix=options.lib_prefix,
+                 nexe_prefix=options.nexe_prefix,
+                 no_arch_prefix=options.no_arch_prefix,
+                 remap=remap,
+                 pnacl_optlevel=pnacl_optlevel,
+                 pnacl_debug_optlevel=pnacl_debug_optlevel,
+                 nmf_root=nmf_root)
 
-  nmf.GetManifest()
-  if options.output is None:
+  if not options.output:
     sys.stdout.write(nmf.GetJson())
   else:
     with open(options.output, 'w') as output:
       output.write(nmf.GetJson())
 
-  if options.stage_dependencies:
-    Trace("Staging dependencies...")
+  if options.stage_dependencies and not nmf.pnacl:
+    Trace('Staging dependencies...')
     nmf.StageDependencies(options.stage_dependencies)
 
   return 0
 
 
-# Invoke this file directly for simple testing.
 if __name__ == '__main__':
   try:
     rtn = main(sys.argv[1:])
   except Error, e:
-    sys.stderr.write("%s: %s\n" % (os.path.basename(__file__), e))
+    sys.stderr.write('%s: %s\n' % (os.path.basename(__file__), e))
+    rtn = 1
+  except KeyboardInterrupt:
+    sys.stderr.write('%s: interrupted\n' % os.path.basename(__file__))
     rtn = 1
   sys.exit(rtn)

@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/json/json_writer.h"
 #include "base/values.h"
+#include "chromeos/network/shill_property_util.h"
 #include "dbus/message.h"
 #include "dbus/object_path.h"
 #include "dbus/values_util.h"
@@ -22,10 +23,24 @@ namespace chromeos {
 
 namespace {
 
-// Runs the given task.  This function is used to implement the mock bus.
-void RunTask(const tracked_objects::Location& from_here,
-             const base::Closure& task) {
-  task.Run();
+// Pops a string-to-string dictionary from the reader.
+base::DictionaryValue* PopStringToStringDictionary(
+    dbus::MessageReader* reader) {
+  dbus::MessageReader array_reader(NULL);
+  if (!reader->PopArray(&array_reader))
+    return NULL;
+  scoped_ptr<base::DictionaryValue> result(new base::DictionaryValue);
+  while (array_reader.HasMoreData()) {
+    dbus::MessageReader entry_reader(NULL);
+    std::string key;
+    std::string value;
+    if (!array_reader.PopDictEntry(&entry_reader) ||
+        !entry_reader.PopString(&key) ||
+        !entry_reader.PopString(&value))
+      return NULL;
+    result->SetWithoutPathExpansion(key, base::Value::CreateStringValue(value));
+  }
+  return result.release();
 }
 
 }  // namespace
@@ -110,47 +125,41 @@ void ShillClientUnittestBase::SetUp() {
   // Create a mock proxy.
   mock_proxy_ = new dbus::MockObjectProxy(
       mock_bus_.get(),
-      flimflam::kFlimflamServiceName,
+      shill::kFlimflamServiceName,
       object_path_);
-
-  // Set an expectation so mock_proxy's CallMethodAndBlock() will use
-  // OnCallMethodAndBlock() to return responses.
-  EXPECT_CALL(*mock_proxy_, CallMethodAndBlock(_, _))
-      .WillRepeatedly(Invoke(
-          this, &ShillClientUnittestBase::OnCallMethodAndBlock));
 
   // Set an expectation so mock_proxy's CallMethod() will use OnCallMethod()
   // to return responses.
-  EXPECT_CALL(*mock_proxy_, CallMethod(_, _, _))
+  EXPECT_CALL(*mock_proxy_.get(), CallMethod(_, _, _))
       .WillRepeatedly(Invoke(this, &ShillClientUnittestBase::OnCallMethod));
 
   // Set an expectation so mock_proxy's CallMethodWithErrorCallback() will use
   // OnCallMethodWithErrorCallback() to return responses.
-  EXPECT_CALL(*mock_proxy_, CallMethodWithErrorCallback(_, _, _, _))
+  EXPECT_CALL(*mock_proxy_.get(), CallMethodWithErrorCallback(_, _, _, _))
       .WillRepeatedly(Invoke(
-          this, &ShillClientUnittestBase::OnCallMethodWithErrorCallback));
+           this, &ShillClientUnittestBase::OnCallMethodWithErrorCallback));
 
   // Set an expectation so mock_proxy's ConnectToSignal() will use
   // OnConnectToSignal() to run the callback.
-  EXPECT_CALL(*mock_proxy_, ConnectToSignal(
-      interface_name_,
-      flimflam::kMonitorPropertyChanged, _, _))
-      .WillRepeatedly(Invoke(this,
-                             &ShillClientUnittestBase::OnConnectToSignal));
+  EXPECT_CALL(
+      *mock_proxy_.get(),
+      ConnectToSignal(interface_name_, shill::kMonitorPropertyChanged, _, _))
+      .WillRepeatedly(
+           Invoke(this, &ShillClientUnittestBase::OnConnectToSignal));
 
   // Set an expectation so mock_bus's GetObjectProxy() for the given
   // service name and the object path will return mock_proxy_.
-  EXPECT_CALL(*mock_bus_, GetObjectProxy(flimflam::kFlimflamServiceName,
-                                         object_path_))
+  EXPECT_CALL(*mock_bus_.get(),
+              GetObjectProxy(shill::kFlimflamServiceName, object_path_))
       .WillOnce(Return(mock_proxy_.get()));
 
-  // Set an expectation so mock_bus's PostTaskToDBusThread() will run the
-  // given task.
-  EXPECT_CALL(*mock_bus_, PostTaskToDBusThread(_, _))
-      .WillRepeatedly(Invoke(&RunTask));
+  // Set an expectation so mock_bus's GetDBusTaskRunner will return the current
+  // task runner.
+  EXPECT_CALL(*mock_bus_.get(), GetDBusTaskRunner())
+      .WillRepeatedly(Return(message_loop_.message_loop_proxy()));
 
   // ShutdownAndBlock() will be called in TearDown().
-  EXPECT_CALL(*mock_bus_, ShutdownAndBlock()).WillOnce(Return());
+  EXPECT_CALL(*mock_bus_.get(), ShutdownAndBlock()).WillOnce(Return());
 }
 
 void ShillClientUnittestBase::TearDown() {
@@ -232,6 +241,63 @@ void ShillClientUnittestBase::ExpectStringAndValueArguments(
 }
 
 // static
+void ShillClientUnittestBase::ExpectDictionaryValueArgument(
+    const base::DictionaryValue* expected_dictionary,
+    dbus::MessageReader* reader) {
+  dbus::MessageReader array_reader(NULL);
+  ASSERT_TRUE(reader->PopArray(&array_reader));
+  while (array_reader.HasMoreData()) {
+    dbus::MessageReader entry_reader(NULL);
+    ASSERT_TRUE(array_reader.PopDictEntry(&entry_reader));
+    std::string key;
+    ASSERT_TRUE(entry_reader.PopString(&key));
+    dbus::MessageReader variant_reader(NULL);
+    ASSERT_TRUE(entry_reader.PopVariant(&variant_reader));
+    scoped_ptr<base::Value> value;
+    // Variants in the dictionary can be basic types or string-to-string
+    // dictinoary.
+    switch (variant_reader.GetDataType()) {
+      case dbus::Message::ARRAY:
+        value.reset(PopStringToStringDictionary(&variant_reader));
+        break;
+      case dbus::Message::BOOL:
+      case dbus::Message::INT32:
+      case dbus::Message::STRING:
+        value.reset(dbus::PopDataAsValue(&variant_reader));
+        break;
+      default:
+        NOTREACHED();
+    }
+    ASSERT_TRUE(value.get());
+    const base::Value* expected_value = NULL;
+    EXPECT_TRUE(expected_dictionary->GetWithoutPathExpansion(key,
+                                                             &expected_value));
+    EXPECT_TRUE(value->Equals(expected_value));
+  }
+}
+
+// static
+base::DictionaryValue*
+ShillClientUnittestBase::CreateExampleServiceProperties() {
+  base::DictionaryValue* properties = new base::DictionaryValue;
+  properties->SetWithoutPathExpansion(
+      shill::kGuidProperty,
+      base::Value::CreateStringValue("00000000-0000-0000-0000-000000000000"));
+  properties->SetWithoutPathExpansion(
+      shill::kModeProperty,
+      base::Value::CreateStringValue(shill::kModeManaged));
+  properties->SetWithoutPathExpansion(
+      shill::kTypeProperty,
+      base::Value::CreateStringValue(shill::kTypeWifi));
+  shill_property_util::SetSSID("testssid", properties);
+  properties->SetWithoutPathExpansion(
+      shill::kSecurityProperty,
+      base::Value::CreateStringValue(shill::kSecurityPsk));
+  return properties;
+}
+
+
+// static
 void ShillClientUnittestBase::ExpectNoResultValue(
     DBusMethodCallStatus call_status) {
   EXPECT_EQ(DBUS_METHOD_CALL_SUCCESS, call_status);
@@ -250,6 +316,20 @@ void ShillClientUnittestBase::ExpectObjectPathResult(
 void ShillClientUnittestBase::ExpectObjectPathResultWithoutStatus(
     const dbus::ObjectPath& expected_result,
     const dbus::ObjectPath& result) {
+  EXPECT_EQ(expected_result, result);
+}
+
+// static
+void ShillClientUnittestBase::ExpectBoolResultWithoutStatus(
+    bool expected_result,
+    bool result) {
+  EXPECT_EQ(expected_result, result);
+}
+
+// static
+void ShillClientUnittestBase::ExpectStringResultWithoutStatus(
+    const std::string& expected_result,
+    const std::string& result) {
   EXPECT_EQ(expected_result, result);
 }
 
@@ -305,17 +385,6 @@ void ShillClientUnittestBase::OnCallMethodWithErrorCallback(
     const dbus::ObjectProxy::ResponseCallback& response_callback,
     const dbus::ObjectProxy::ErrorCallback& error_callback) {
   OnCallMethod(method_call, timeout_ms, response_callback);
-}
-
-dbus::Response* ShillClientUnittestBase::OnCallMethodAndBlock(
-    dbus::MethodCall* method_call,
-    int timeout_ms) {
-  EXPECT_EQ(interface_name_, method_call->GetInterface());
-  EXPECT_EQ(expected_method_name_, method_call->GetMember());
-  dbus::MessageReader reader(method_call);
-  argument_checker_.Run(&reader);
-  return dbus::Response::FromRawMessage(
-      dbus_message_copy(response_->raw_message()));
 }
 
 }  // namespace chromeos

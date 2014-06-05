@@ -8,8 +8,9 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "critical_section_wrapper.h"
-#include "monitor_module.h"
+#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/interface/tick_util.h"
+#include "webrtc/voice_engine/monitor_module.h"
 
 namespace webrtc  {
 
@@ -18,7 +19,7 @@ namespace voe  {
 MonitorModule::MonitorModule() :
     _observerPtr(NULL),
     _callbackCritSect(*CriticalSectionWrapper::CreateCriticalSection()),
-    _lastProcessTime(GET_TIME_IN_MS())
+    _lastProcessTime(TickTime::MillisecondTimestamp())
 {
 }
 
@@ -27,7 +28,7 @@ MonitorModule::~MonitorModule()
     delete &_callbackCritSect;
 }
 
-WebRtc_Word32 
+int32_t 
 MonitorModule::RegisterObserver(MonitorObserver& observer)
 {
     CriticalSectionScoped lock(&_callbackCritSect);
@@ -39,7 +40,7 @@ MonitorModule::RegisterObserver(MonitorObserver& observer)
     return 0;
 }
 
-WebRtc_Word32 
+int32_t 
 MonitorModule::DeRegisterObserver()
 {
     CriticalSectionScoped lock(&_callbackCritSect);
@@ -51,33 +52,33 @@ MonitorModule::DeRegisterObserver()
     return 0;
 }
 
-WebRtc_Word32 
+int32_t 
 MonitorModule::Version(char* version,
-                       WebRtc_UWord32& remainingBufferInBytes,
-                       WebRtc_UWord32& position) const
+                       uint32_t& remainingBufferInBytes,
+                       uint32_t& position) const
 {
     return 0;
 }
    
-WebRtc_Word32 
-MonitorModule::ChangeUniqueId(const WebRtc_Word32 id)
+int32_t 
+MonitorModule::ChangeUniqueId(int32_t id)
 {
     return 0;
 }
 
-WebRtc_Word32 
+int32_t 
 MonitorModule::TimeUntilNextProcess()
 {
-    WebRtc_UWord32 now = GET_TIME_IN_MS();
-    WebRtc_Word32 timeToNext =
+    uint32_t now = TickTime::MillisecondTimestamp();
+    int32_t timeToNext =
         kAverageProcessUpdateTimeMs - (now - _lastProcessTime);
     return (timeToNext); 
 }
 
-WebRtc_Word32 
+int32_t 
 MonitorModule::Process()
 {
-    _lastProcessTime = GET_TIME_IN_MS();
+    _lastProcessTime = TickTime::MillisecondTimestamp();
     if (_observerPtr)
     {
         CriticalSectionScoped lock(&_callbackCritSect);
@@ -86,6 +87,6 @@ MonitorModule::Process()
     return 0;
 }
 
-}  //  namespace voe
+}  // namespace voe
 
-}  //  namespace webrtc
+}  // namespace webrtc

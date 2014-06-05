@@ -9,10 +9,9 @@
 #include "base/bind.h"
 #include "base/lazy_instance.h"
 #include "base/mac/scoped_cftyperef.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread.h"
-#include "content/public/browser/browser_thread.h"
 
 namespace content {
 namespace {
@@ -23,7 +22,9 @@ namespace {
 // http://www.opensource.apple.com/source/IOKitUser/IOKitUser-514.16.31/pwr_mgt.subproj/IOPMLibPrivate.c .
 struct PowerSaveBlockerLazyInstanceTraits {
   static const bool kRegisterOnExit = false;
+#ifndef NDEBUG
   static const bool kAllowedToAccessOnNonjoinableThread = true;
+#endif
 
   static base::Thread* New(void* instance) {
     base::Thread* thread = new (instance) base::Thread("PowerSaveBlocker");
@@ -74,7 +75,7 @@ void PowerSaveBlockerImpl::Delegate::ApplyBlock() {
       break;
   }
   if (level) {
-    base::mac::ScopedCFTypeRef<CFStringRef> cf_reason(
+    base::ScopedCFTypeRef<CFStringRef> cf_reason(
         base::SysUTF8ToCFStringRef(reason_));
     IOReturn result = IOPMAssertionCreateWithName(level,
                                                   kIOPMAssertionLevelOn,

@@ -8,14 +8,17 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/string_piece.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/strings/string_piece.h"
 #include "base/sys_byteorder.h"
 #include "net/base/net_export.h"
 #include "net/spdy/spdy_protocol.h"
 
 namespace net {
 
-// This class provides facilities for basic binary value packing and unpacking
+class SpdyFramer;
+
+// This class provides facilities for basic binary value packing
 // into Spdy frames.
 //
 // The SpdyFrameBuilder supports appending primitive values (int, string, etc)
@@ -24,28 +27,61 @@ namespace net {
 // buffer is exposed as the "data" of the SpdyFrameBuilder.
 class NET_EXPORT_PRIVATE SpdyFrameBuilder {
  public:
+  // Initializes a SpdyFrameBuilder with a buffer of given size
+  SpdyFrameBuilder(size_t size, SpdyMajorVersion version);
+
   ~SpdyFrameBuilder();
 
-  // Initializes a SpdyFrameBuilder with a buffer of given size,
-  // populate with a SPDY control frame header based on
-  // |type|, |flags|, and |spdy_version|.
-  SpdyFrameBuilder(SpdyControlType type, SpdyControlFlags flags,
-                   int spdy_version, size_t size);
+  // Returns the total size of the SpdyFrameBuilder's data, which may include
+  // multiple frames.
+  size_t length() const { return offset_ + length_; }
 
-  // Initiailizes a SpdyFrameBuilder with a buffer of given size,
-  // populated with a SPDY data frame header based on
-  // |stream_id| and |flags|.
-  SpdyFrameBuilder(SpdyStreamId stream_id, SpdyDataFlags flags,  size_t size);
+  // Returns a writeable buffer of given size in bytes, to be appended to the
+  // currently written frame. Does bounds checking on length but does not
+  // increment the underlying iterator. To do so, consumers should subsequently
+  // call Seek().
+  // In general, consumers should use Write*() calls instead of this.
+  // Returns NULL on failure.
+  char* GetWritableBuffer(size_t length);
 
-  // Returns the size of the SpdyFrameBuilder's data.
-  size_t length() const { return length_; }
+  // Seeks forward by the given number of bytes. Useful in conjunction with
+  // GetWriteableBuffer() above.
+  bool Seek(size_t length);
+
+  // Populates this frame with a SPDY control frame header using
+  // version-specific information from the |framer| and length information from
+  // capacity_. The given type must be a control frame type.
+  // Used only for SPDY versions <4.
+  bool WriteControlFrameHeader(const SpdyFramer& framer,
+                               SpdyFrameType type,
+                               uint8 flags);
+
+  // Populates this frame with a SPDY data frame header using version-specific
+  // information from the |framer| and length information from capacity_.
+  bool WriteDataFrameHeader(const SpdyFramer& framer,
+                            SpdyStreamId stream_id,
+                            uint8 flags);
+
+  // Populates this frame with a SPDY4/HTTP2 frame prefix using
+  // version-specific information from the |framer| and length information from
+  // capacity_. The given type must be a control frame type.
+  // Used only for SPDY versions >=4.
+  bool BeginNewFrame(const SpdyFramer& framer,
+                     SpdyFrameType type,
+                     uint8 flags,
+                     SpdyStreamId stream_id);
 
   // Takes the buffer from the SpdyFrameBuilder.
   SpdyFrame* take() {
-    SpdyFrame* rv = new SpdyFrame(buffer_, true);
-    buffer_ = NULL;
+    if (version_ > SPDY3) {
+      DLOG_IF(DFATAL, SpdyConstants::GetFrameMaximumSize(version_) < length_)
+          << "Frame length " << length_
+          << " is longer than the maximum allowed length.";
+    }
+    SpdyFrame* rv = new SpdyFrame(buffer_.release(), length(), true);
     capacity_ = 0;
     length_ = 0;
+    offset_ = 0;
     return rv;
   }
 
@@ -63,68 +99,47 @@ class NET_EXPORT_PRIVATE SpdyFrameBuilder {
     value = htonl(value);
     return WriteBytes(&value, sizeof(value));
   }
+  bool WriteUInt64(uint64 value) {
+    uint32 upper = htonl(value >> 32);
+    uint32 lower = htonl(value);
+    return (WriteBytes(&upper, sizeof(upper)) &&
+            WriteBytes(&lower, sizeof(lower)));
+  }
   // TODO(hkhalil) Rename to WriteStringPiece16().
   bool WriteString(const std::string& value);
   bool WriteStringPiece32(const base::StringPiece& value);
   bool WriteBytes(const void* data, uint32 data_len);
 
-  // Write an integer to a particular offset in the data buffer.
-  bool WriteUInt32ToOffset(int offset, uint32 value) {
-    value = htonl(value);
-    return WriteBytesToOffset(offset, &value, sizeof(value));
-  }
+  // Update (in-place) the length field in the frame being built to reflect the
+  // current actual length of bytes written to said frame through this builder.
+  // The framer parameter is used to determine version-specific location and
+  // size information of the length field to be written, and must be initialized
+  // with the correct version for the frame being written.
+  bool RewriteLength(const SpdyFramer& framer);
 
-  // Write to a particular offset in the data buffer.
-  bool WriteBytesToOffset(int offset, const void* data, uint32 data_len) {
-    if (offset + data_len > length_)
-      return false;
-    char *ptr = buffer_ + offset;
-    memcpy(ptr, data, data_len);
-    return true;
-  }
+  // Update (in-place) the length field in the frame being built to reflect the
+  // given length.
+  // The framer parameter is used to determine version-specific location and
+  // size information of the length field to be written, and must be initialized
+  // with the correct version for the frame being written.
+  bool OverwriteLength(const SpdyFramer& framer, size_t length);
 
-  // Returns true if the given iterator could point to data with the given
-  // length. If there is no room for the given data before the end of the
-  // payload, returns false.
-  bool IteratorHasRoomFor(const void* iter, int len) const {
-    const char* end_of_region = reinterpret_cast<const char*>(iter) + len;
-    if (len < 0 ||
-        iter < buffer_ ||
-        iter > end_of_payload() ||
-        iter > end_of_region ||
-        end_of_region > end_of_payload())
-      return false;
-
-    // Watch out for overflow in pointer calculation, which wraps.
-    return (iter <= end_of_region) && (end_of_region <= end_of_payload());
-  }
-
- protected:
-  size_t capacity() const {
-    return capacity_;
-  }
-
-  const char* end_of_payload() const { return buffer_ + length_; }
-
-  // Completes the write operation by padding the data with NULL bytes until it
-  // is padded. Should be paired with BeginWrite, but it does not necessarily
-  // have to be called after the data is written.
-  void EndWrite(char* dest, int length);
-
-  // Moves the iterator by the given number of bytes.
-  static void UpdateIter(void** iter, int bytes) {
-    *iter = static_cast<char*>(*iter) + bytes;
-  }
+  // Update (in-place) the flags field in the frame being built to reflect the
+  // given flags value.
+  // Used only for SPDY versions >=4.
+  bool OverwriteFlags(const SpdyFramer& framer, uint8 flags);
 
  private:
-  // Returns the location that the data should be written at, or NULL if there
-  // is not enough room. Call EndWrite with the returned offset and the given
-  // length to pad out for the next write.
-  char* BeginWrite(size_t length);
+  // Checks to make sure that there is an appropriate amount of space for a
+  // write of given size, in bytes.
+  bool CanWrite(size_t length) const;
 
-  char* buffer_;
-  size_t capacity_;  // Allocation size of payload (or -1 if buffer is const).
-  size_t length_;    // current length of the buffer
+  scoped_ptr<char[]> buffer_;
+  size_t capacity_;  // Allocation size of payload, set by constructor.
+  size_t length_;    // Length of the latest frame in the buffer.
+  size_t offset_;    // Position at which the latest frame begins.
+
+  const SpdyMajorVersion version_;
 };
 
 }  // namespace net

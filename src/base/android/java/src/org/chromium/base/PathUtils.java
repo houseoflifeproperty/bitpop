@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -41,11 +41,20 @@ public abstract class PathUtils {
     }
 
     /**
+     * @return the private directory that is used to store application database.
+     */
+    @CalledByNative
+    public static String getDatabaseDirectory(Context appContext) {
+        // Context.getDatabasePath() returns path for the provided filename.
+        return appContext.getDatabasePath("foo").getParent();
+    }
+
+    /**
      * @return the cache directory.
      */
     @SuppressWarnings("unused")
     @CalledByNative
-    private static String getCacheDirectory(Context appContext) {
+    public static String getCacheDirectory(Context appContext) {
         return appContext.getCacheDir().getPath();
     }
 

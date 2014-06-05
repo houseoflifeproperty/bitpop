@@ -7,9 +7,10 @@
 #include "base/bind.h"
 #include "base/environment.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/nix/xdg_util.h"
-#include "base/process_util.h"
+#include "base/process/kill.h"
+#include "base/process/launch.h"
 #include "content/public/browser/browser_thread.h"
 
 using base::Environment;
@@ -25,7 +26,7 @@ const char kGNOMEPrinterConfigCommand[] = "system-config-printer";
 // Detect the command based on the deskop environment and open the printer
 // manager dialog.
 void DetectAndOpenPrinterConfigDialog() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
   scoped_ptr<Environment> env(Environment::Create());
 
   const char* command = NULL;

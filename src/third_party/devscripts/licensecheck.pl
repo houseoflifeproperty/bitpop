@@ -136,10 +136,13 @@ use strict;
 use warnings;
 use Getopt::Long qw(:config gnu_getopt);
 use File::Basename;
+use Tie::File;
+use Fcntl 'O_RDONLY';
 
 sub fatal($);
 sub parse_copyright($);
 sub parselicense($);
+sub remove_comments($);
 
 my $progname = basename($0);
 
@@ -168,8 +171,9 @@ my $default_check_regex = '\.(c(c|pp|xx)?|h(h|pp|xx)?|f(77|90)?|p(l|m)|xs|sh|php
 
 my $modified_conf_msg;
 
-my ($opt_verbose, $opt_lines, $opt_noconf, $opt_ignore_regex, $opt_check_regex)
-  = ('', '', '', '', '');
+my ($opt_verbose, $opt_lines, $opt_noconf) = ('', '', '');
+my $opt_ignore_regex = $default_ignore_regex;
+my $opt_check_regex = $default_check_regex;
 my $opt_recursive = 0;
 my $opt_copyright = 0;
 my $opt_machine = 0;
@@ -235,8 +239,6 @@ GetOptions("help|h" => \$opt_help,
     or die "Usage: $progname [options] filelist\nRun $progname --help for more details\n";
 
 $opt_lines = $def_lines if $opt_lines !~ /^[1-9][0-9]*$/;
-$opt_ignore_regex = $default_ignore_regex if ! length $opt_ignore_regex;
-$opt_check_regex = $default_check_regex if ! length $opt_check_regex;
 
 if ($opt_noconf) {
     fatal "--no-conf is only acceptable as the first command-line option!";
@@ -284,7 +286,7 @@ while (@ARGV) {
 
 while (@files) {
     my $file = shift @files;
-    my $content = '';
+    my $header = '';
     my $copyright_match;
     my $copyright = '';
     my $license = '';
@@ -293,24 +295,35 @@ while (@files) {
     open (F, "<$file") or die "Unable to access $file\n";
     while (<F>) {
         last if ($. > $opt_lines);
-        $content .= $_;
+        $header .= $_;
     }
     close(F);
 
     $copyright = join(" / ", values %copyrights);
 
-    print qq(----- $file header -----\n$content----- end header -----\n\n)
+    print qq(----- $file header -----\n$header----- end header -----\n\n)
 	if $opt_verbose;
 
-    # Remove Fortran comments
-    $content =~ s/^[cC] //gm;
-    $content =~ tr/\t\r\n/ /;
-    # Remove C / C++ comments
-    $content =~ s#(\*/|/[/*])##g;
-    $content =~ tr% A-Za-z.,@;0-9\(\)/-%%cd;
-    $content =~ tr/ //s;
+    remove_comments($header);
+    $license = parselicense($header);
 
-    $license = parselicense($content);
+    # If no license in header, check footer (slow, because read file backwards)
+    # Need for instance for Perl files, which often use the footer
+    if ($license eq "UNKNOWN") {
+        my $footer = '';
+        tie(my @file_lines, "Tie::File", $file, autochomp => 0, mode => O_RDONLY) or die("Unable to access $file\n");
+        # Avoid indexing error if header is entire file
+        if ($#file_lines >= $opt_lines) {
+            foreach (@file_lines[-$opt_lines .. -1]) {
+                $footer .= $_;
+            }
+        }
+        print qq(----- $file footer -----\n$header----- end footer -----\n\n)
+            if $opt_verbose;
+        remove_comments($footer);
+        $license = parselicense($footer);
+    }
+
     if ($opt_machine) {
 	print "$file\t$license";
 	print "\t" . ($copyright or "*No copyright*") if $opt_copyright;
@@ -323,6 +336,18 @@ while (@files) {
 	  if $copyright and $opt_copyright;
 	print "\n" if $opt_copyright;
     }
+}
+
+sub remove_comments($) {
+    $_ = $_[0];
+    # Remove Fortran comments
+    s/^[cC] //gm;
+    tr/\t\r\n/ /;
+    # Remove C / C++ comments
+    s#(\*/|/[/*])##g;
+    tr% A-Za-z.,@;0-9\(\)/-%%cd;
+    tr/ //s;
+    $_[0] = $_;
 }
 
 sub parse_copyright($) {
@@ -406,17 +431,22 @@ sub parselicense($) {
     my ($licensetext) = @_;
 
     my $gplver = "";
+    my $lgplver = "";
     my $extrainfo = "";
     my $license = "";
 
-    if ($licensetext =~ /version ([^, ]+?)[.,]? (?:\(?only\)?.? )?(?:of the GNU (Affero )?(Lesser |Library )?General Public License )?(as )?published by the Free Software Foundation/i or
-	$licensetext =~ /GNU (?:Affero )?(?:Lesser |Library )?General Public License (?:as )?published by the Free Software Foundation; version ([^, ]+?)[.,]? /i) {
-
-	$gplver = " (v$1)";
-    } elsif ($licensetext =~ /GNU (?:Affero )?(?:Lesser |Library )?General Public License, version (\d+(?:\.\d+)?)[ \.]/) {
+    if ($licensetext =~ /version ([^, ]+?)[.,]? (?:\(?only\)?.? )?(?:of the GNU (Affero )?General Public License )?(as )?published by the Free Software Foundation/i or
+	$licensetext =~ /GNU (?:Affero )?General Public License (?:as )?published by the Free Software Foundation; version ([^, ]+?)[.,]? /i or
+	$licensetext =~ /GNU (?:Affero )?General Public License,? [Vv]ersion (\d+(?:\.\d+)?)[ \.]/) {
 	$gplver = " (v$1)";
     } elsif ($licensetext =~ /either version ([^ ]+)(?: of the License)?, or \(at your option\) any later version/) {
 	$gplver = " (v$1 or later)";
+    }
+
+    if ($licensetext =~ /version ([^, ]+?)[.,]? (?:or later|or any later version) (?:of the GNU (?:Lesser |Library )General Public License )(as )?published by the Free Software Foundation/i or
+	$licensetext =~ /(?:GNU (?:Lesser |Library )|(?:Lesser|Library) GNU )General Public License (?:(?:as )?published by the Free Software Foundation;)?,? (?:either )?[Vv]ersion ([^, ]+?)(?: of the license)?[.,]? (?:or later|or (?:\(at your option\) )?any later version)/i or
+	$licensetext =~ /GNU (?:Lesser |Library )General Public License(?: \(LGPL\))?,? [Vv]ersion (\d+(?:\.\d+)?)[ \.]/) {
+	$lgplver = " (v$1 or later)";
     }
 
     if ($licensetext =~ /permission (?:is (also granted|given))? to link (the code of )?this program with (any edition of )?(Qt|the Qt library)/i) {
@@ -427,17 +457,26 @@ sub parselicense($) {
 	$license = "GENERATED FILE";
     }
 
-    if ($licensetext =~ /is (free software.? you can redistribute it and\/or modify it|licensed) under the terms of (version [^ ]+ of )?the (GNU (Library |Lesser )General Public License|LGPL)/i) {
-	$license = "LGPL$gplver$extrainfo $license";
+    if ($licensetext =~ /is (free software.? you can redistribute it and\/or modify it|licensed) under the terms of (version [^ ]+ of )?the (GNU (Library |Lesser )General Public License|LGPL)/i or
+        $licensetext =~ /(is distributed|may be used|can redistribute).*terms.*(LGPL|(Lesser|Library) GNU General Public License)/) {
+        if ($lgplver) {
+	    $license = "LGPL$lgplver$extrainfo $license";
+        } else {
+	    $license = "LGPL (unversioned/unknown version) $license";
+        }
     }
 
     if ($licensetext =~ /is free software.? you (can|may) redistribute it and\/or modify it under the terms of (?:version [^ ]+ (?:\(?only\)? )?of )?the GNU General Public License/i) {
 	$license = "GPL$gplver$extrainfo $license";
     } elsif ($licensetext =~ /is distributed under the terms of the GNU General Public License,/
-	and length $gplver) {
+	and $gplver) {
 	$license = "GPL$gplver$extrainfo $license";
-    } elsif ($licensetext =~ /is distributed.*terms.*GPL/) {
-	$license = "GPL (unversioned/unknown version) $license";
+    } elsif ($licensetext =~ /is distributed.*terms.*[^L]GPL/) {
+        if ($gplver) {
+	    $license = "GPL$gplver$extrainfo $license";
+        } else {
+	    $license = "GPL (unversioned/unknown version) $license";
+        }
     }
 
     if ($licensetext =~ /This file is part of the .*Qt GUI Toolkit. This file may be distributed under the terms of the Q Public License as defined/) {
@@ -446,15 +485,19 @@ sub parselicense($) {
 	$license = "QPL $license";
     }
 
-    if ($licensetext =~ /opensource\.org\/licenses\/mit-license\.php/) {
+    if ($licensetext =~ /opensource\.org\/licenses\/mit/) {
 	$license = "MIT/X11 (BSD like) $license";
     } elsif ($licensetext =~ /Permission is hereby granted, free of charge, to any person obtaining a copy of this software and(\/or)? associated documentation files \(the (Software|Materials)\), to deal in the (Software|Materials)/) {
 	$license = "MIT/X11 (BSD like) $license";
     } elsif ($licensetext =~ /Permission is hereby granted, without written agreement and without license or royalty fees, to use, copy, modify, and distribute this software and its documentation for any purpose/) {
 	$license = "MIT/X11 (BSD like) $license";
+    } elsif ($licensetext =~ /Permission to use, copy, modify, distribute, and sell this software and its documentation for any purpose is hereby granted without fee/) {
+	$license = "MIT/X11 (BSD like) $license";
+    } elsif ($licensetext  =~ /MIT .* License/) {
+	$license = "MIT/X11 (BSD like) $license";
     }
 
-    if ($licensetext  =~ /This file is distributed under the University of Illinois Open Source License/){
+    if ($licensetext  =~ /the University of Illinois Open Source License/){
 	$license = "University of Illinois/NCSA Open Source License (BSD like) $license";
     }
 
@@ -477,11 +520,16 @@ sub parselicense($) {
         $license = "BSD-like $license";
     } elsif ($licensetext =~ /BSD terms apply/) {
         $license = "BSD-like $license";
+    } elsif ($licensetext =~ /subject to the BSD License/) {
+        # TODO(sbc): remove this case once we fix: http://crbug.com/177268
+        $license = "BSD-like $license";
+    } elsif ($licensetext =~ /license BSD/) {
+        $license = "BSD-like $license";
     } elsif ($licensetext =~ /GOVERNED BY A BSD-STYLE SOURCE LICENSE/) {
         $license = "BSD-like $license";
     }
 
-    if ($licensetext =~ /Mozilla Public License( Version|, v.) ([^ ]+[^. ])/) {
+    if ($licensetext =~ /Mozilla Public License( Version|, v.) ([^ ]+[^., ]),?/) {
 	$license = "MPL (v$2) $license";
     }
 
@@ -493,7 +541,7 @@ sub parselicense($) {
 	$license = "Artistic $license";
     }
 
-    if ($licensetext =~ /This program is free software; you can redistribute it and\/or modify it under the same terms as Perl itself/) {
+    if ($licensetext =~ /This (program|library) is free software; you can redistribute it and\/or modify it under the same terms as Perl itself/) {
 	$license = "Perl $license";
     }
 
@@ -523,7 +571,7 @@ sub parselicense($) {
 	$license = "SGI Free Software License B $license";
     }
 
-    if ($licensetext =~ /in the public domain/i) {
+    if ($licensetext =~ /(in|into) the public domain/i) {
 	$license = "Public domain $license";
     }
 
@@ -562,6 +610,10 @@ sub parselicense($) {
         $license = "MIT/X11 (BSD like) $license";
     }
 
+    if ($licensetext =~ /License MIT(-| )License/) {
+        $license = "MIT/X11 (BSD like) $license";
+    }
+
     if ($licensetext =~ /As a special exception, you may create a larger work that contains part or all of the Bison parser skeleton and distribute that work under terms of your choice/) {
         $license = $license . "with Bison parser exception";
     }
@@ -570,7 +622,11 @@ sub parselicense($) {
         $license = $license . "with libtool exception";
     }
 
-    $license = "UNKNOWN" if (!length($license));
+    if ($licensetext =~ /These materials are protected by copyright laws and contain material proprietary to the Khronos Group, Inc\. You may use these materials for implementing Khronos specifications, without altering or removing any trademark, copyright or other notice from the specification/) {
+        $license = $license . "Khronos Group";
+    }
+
+    $license = "UNKNOWN" unless $license;
 
     # Remove trailing spaces.
     $license =~ s/\s+$//;

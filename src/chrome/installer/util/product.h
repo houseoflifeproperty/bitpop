@@ -12,8 +12,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "chrome/installer/util/browser_distribution.h"
 #include "chrome/installer/util/shell_util.h"
+#include "chrome/installer/util/util_constants.h"
 
+namespace base {
 class CommandLine;
+}
 
 namespace installer {
 
@@ -39,7 +42,8 @@ class Product {
 
   void InitializeFromPreferences(const MasterPreferences& prefs);
 
-  void InitializeFromUninstallCommand(const CommandLine& uninstall_command);
+  void InitializeFromUninstallCommand(
+      const base::CommandLine& uninstall_command);
 
   BrowserDistribution* distribution() const {
     return distribution_;
@@ -77,18 +81,8 @@ class Product {
       return options_.erase(option) != 0;
   }
 
-  // Returns the path(s) to the directory that holds the user data (primary
-  // and, if applicable to |dist|, alternate).  This is always inside a user's
-  // local application data folder (e.g., "AppData\Local or "Local
-  // Settings\Application Data" in %USERPROFILE%). Note that these are the
-  // defaults and do not take into account that they can be overriden with a
-  // command line parameter.  |paths| may be empty on return, but is guaranteed
-  // not to contain empty paths otherwise. If more than one path is returned,
-  // they are guaranteed to be siblings.
-  void GetUserDataPaths(std::vector<FilePath>* paths) const;
-
   // Launches Chrome without waiting for it to exit.
-  bool LaunchChrome(const FilePath& application_path) const;
+  bool LaunchChrome(const base::FilePath& application_path) const;
 
   // Launches Chrome with given command line, waits for Chrome indefinitely
   // (until it terminates), and gets the process exit code if available.
@@ -96,8 +90,8 @@ class Product {
   // The status of Chrome at the return of the function is given by exit_code.
   // NOTE: The 'options' CommandLine object should only contain parameters.
   // The program part will be ignored.
-  bool LaunchChromeAndWait(const FilePath& application_path,
-                           const CommandLine& options,
+  bool LaunchChromeAndWait(const base::FilePath& application_path,
+                           const base::CommandLine& options,
                            int32* exit_code) const;
 
   // Sets the boolean MSI marker for this installation if set is true or clears
@@ -110,24 +104,28 @@ class Product {
   bool ShouldCreateUninstallEntry() const;
 
   // See ProductOperations::AddKeyFiles.
-  void AddKeyFiles(std::vector<FilePath>* key_files) const;
+  void AddKeyFiles(std::vector<base::FilePath>* key_files) const;
 
   // See ProductOperations::AddComDllList.
-  void AddComDllList(std::vector<FilePath>* com_dll_list) const;
+  void AddComDllList(std::vector<base::FilePath>* com_dll_list) const;
 
   // See ProductOperations::AppendProductFlags.
-  void AppendProductFlags(CommandLine* command_line) const;
+  void AppendProductFlags(base::CommandLine* command_line) const;
 
   // See ProductOperations::AppendRenameFlags.
-  void AppendRenameFlags(CommandLine* command_line) const;
+  void AppendRenameFlags(base::CommandLine* command_line) const;
 
   // See Productoperations::SetChannelFlags.
   bool SetChannelFlags(bool set, ChannelInfo* channel_info) const;
 
   // See ProductOperations::AddDefaultShortcutProperties.
   void AddDefaultShortcutProperties(
-      const FilePath& target_exe,
+      const base::FilePath& target_exe,
       ShellUtil::ShortcutProperties* properties) const;
+
+  void LaunchUserExperiment(const base::FilePath& setup_path,
+                            InstallStatus status,
+                            bool system_level) const;
 
  protected:
   enum CacheStateFlags {

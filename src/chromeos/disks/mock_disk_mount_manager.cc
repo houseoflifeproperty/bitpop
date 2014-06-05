@@ -6,9 +6,9 @@
 
 #include <utility>
 
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 
 using testing::_;
 using testing::AnyNumber;
@@ -166,11 +166,11 @@ void MockDiskMountManager::SetupDefaultReplies() {
       .Times(AnyNumber());
   EXPECT_CALL(*this, MountPath(_, _, _, _))
       .Times(AnyNumber());
-  EXPECT_CALL(*this, UnmountPath(_, _))
+  EXPECT_CALL(*this, UnmountPath(_, _, _))
       .Times(AnyNumber());
   EXPECT_CALL(*this, FormatMountedDevice(_))
       .Times(AnyNumber());
-  EXPECT_CALL(*this, UnmountDeviceRecursive(_, _, _))
+  EXPECT_CALL(*this, UnmountDeviceRecursively(_, _))
       .Times(AnyNumber());
 }
 
@@ -181,25 +181,28 @@ void MockDiskMountManager::CreateDiskEntryForMountDevice(
     const std::string& vendor_name,
     const std::string& product_name,
     DeviceType device_type,
-    uint64 total_size_in_bytes) {
-  Disk* disk = new DiskMountManager::Disk(std::string(mount_info.source_path),
-                                          std::string(mount_info.mount_path),
+    uint64 total_size_in_bytes,
+    bool is_parent,
+    bool has_media,
+    bool on_boot_device) {
+  Disk* disk = new DiskMountManager::Disk(mount_info.source_path,
+                                          mount_info.mount_path,
                                           std::string(),  // system_path
-                                          std::string(),  // file_path
-                                          device_label,  // device_label
+                                          mount_info.source_path,
+                                          device_label,
                                           std::string(),  // drive_label
                                           std::string(),  // vendor_id
                                           vendor_name,
                                           std::string(),  // product_id
                                           product_name,
-                                          device_id,  // fs_uuid
+                                          device_id,      // fs_uuid
                                           std::string(),  // system_path_prefix
                                           device_type,
                                           total_size_in_bytes,
-                                          false,  // is_parent
+                                          is_parent,
                                           false,  // is_read_only
-                                          true,  // has_media
-                                          false,  // on_boot_device
+                                          has_media,
+                                          on_boot_device,
                                           false);  // is_hidden
   DiskMountManager::DiskMap::iterator it = disks_.find(mount_info.source_path);
   if (it == disks_.end()) {

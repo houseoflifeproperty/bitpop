@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/bind.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "chrome/browser/download/download_danger_prompt.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -75,20 +75,20 @@ class DownloadDangerPromptTest : public InProcessBrowserTest {
  private:
   void SetUpDownloadItemExpectations() {
     EXPECT_CALL(download_, GetFileNameToReportUser()).WillRepeatedly(Return(
-        FilePath(FILE_PATH_LITERAL("evil.exe"))));
+        base::FilePath(FILE_PATH_LITERAL("evil.exe"))));
     EXPECT_CALL(download_, AddObserver(_))
-      .WillOnce(SaveArg<0>(&download_observer_));
+        .WillOnce(SaveArg<0>(&download_observer_));
     EXPECT_CALL(download_, RemoveObserver(Eq(ByRef(download_observer_))));
+    EXPECT_CALL(download_, GetDangerType())
+        .WillRepeatedly(Return(content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL));
   }
 
   void CreatePrompt() {
     prompt_ = DownloadDangerPrompt::Create(
         &download_,
         browser()->tab_strip_model()->GetActiveWebContents(),
-        base::Bind(&DownloadDangerPromptTest::PromptCallback, this,
-                   DownloadDangerPrompt::ACCEPT),
-        base::Bind(&DownloadDangerPromptTest::PromptCallback, this,
-                   DownloadDangerPrompt::CANCEL));
+        false,
+        base::Bind(&DownloadDangerPromptTest::PromptCallback, this));
     content::RunAllPendingInMessageLoop();
   }
 
@@ -111,33 +111,43 @@ class DownloadDangerPromptTest : public InProcessBrowserTest {
 IN_PROC_BROWSER_TEST_F(DownloadDangerPromptTest, TestAll) {
   OpenNewTab();
 
-  // The Accept action should cause the accept callback to be invoked.
+  // Clicking the Accept button should invoke the ACCEPT action.
   SetUpExpectations(DownloadDangerPrompt::ACCEPT);
   SimulatePromptAction(DownloadDangerPrompt::ACCEPT);
   VerifyExpectations();
 
-  // The Discard action should cause the discard callback to be invoked.
+  // Clicking the Cancel button should invoke the CANCEL action.
   SetUpExpectations(DownloadDangerPrompt::CANCEL);
   SimulatePromptAction(DownloadDangerPrompt::CANCEL);
   VerifyExpectations();
 
-  // If the download is no longer in-progress, the dialog should dismiss itself.
-  SetUpExpectations(DownloadDangerPrompt::CANCEL);
-  EXPECT_CALL(download(), IsInProgress()).WillOnce(Return(false));
-  download_observer()->OnDownloadUpdated(&download());
-  VerifyExpectations();
-
   // If the download is no longer dangerous (because it was accepted), the
-  // dialog should dismiss itself.
-  SetUpExpectations(DownloadDangerPrompt::CANCEL);
-  EXPECT_CALL(download(), IsInProgress()).WillOnce(Return(true));
+  // dialog should DISMISS itself.
+  SetUpExpectations(DownloadDangerPrompt::DISMISS);
   EXPECT_CALL(download(), IsDangerous()).WillOnce(Return(false));
   download_observer()->OnDownloadUpdated(&download());
   VerifyExpectations();
 
-  // If the containing tab is closed, the dialog should be canceled.
+  // If the download is in a terminal state then the dialog should DISMISS
+  // itself.
+  SetUpExpectations(DownloadDangerPrompt::DISMISS);
+  EXPECT_CALL(download(), IsDangerous()).WillOnce(Return(true));
+  EXPECT_CALL(download(), IsDone()).WillOnce(Return(true));
+  download_observer()->OnDownloadUpdated(&download());
+  VerifyExpectations();
+
+  // If the download is dangerous and is not in a terminal state, don't dismiss
+  // the dialog.
+  SetUpExpectations(DownloadDangerPrompt::ACCEPT);
+  EXPECT_CALL(download(), IsDangerous()).WillOnce(Return(true));
+  EXPECT_CALL(download(), IsDone()).WillOnce(Return(false));
+  download_observer()->OnDownloadUpdated(&download());
+  SimulatePromptAction(DownloadDangerPrompt::ACCEPT);
+  VerifyExpectations();
+
+  // If the containing tab is closed, the dialog should DISMISS itself.
   OpenNewTab();
-  SetUpExpectations(DownloadDangerPrompt::CANCEL);
+  SetUpExpectations(DownloadDangerPrompt::DISMISS);
   chrome::CloseTab(browser());
   VerifyExpectations();
 }

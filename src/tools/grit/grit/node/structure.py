@@ -8,6 +8,7 @@
 
 import os
 import platform
+import re
 
 from grit import exception
 from grit import util
@@ -52,6 +53,13 @@ _GATHERERS = {
 class StructureNode(base.Node):
   '''A <structure> element.'''
 
+  # Regular expression for a local variable definition.  Each definition
+  # is of the form NAME=VALUE, where NAME cannot contain '=' or ',' and
+  # VALUE must escape all commas: ',' -> ',,'.  Each variable definition
+  # should be separated by a comma with no extra whitespace.
+  # Example: THING1=foo,THING2=bar
+  variable_pattern = re.compile('([^,=\s]+)=((?:,,|[^,])*)')
+
   def __init__(self):
     super(StructureNode, self).__init__()
 
@@ -59,8 +67,17 @@ class StructureNode(base.Node):
     # avoid doing it more than once.
     self._last_flat_filename = None
 
+    # See _Substitute; this substituter is used for local variables and
+    # the root substituter is used for global variables.
+    self.substituter = None
+
   def _IsValidChild(self, child):
     return isinstance(child, variant.SkeletonNode)
+
+  def _ParseVariables(self, variables):
+    '''Parse a variable string into a dictionary.'''
+    matches = StructureNode.variable_pattern.findall(variables)
+    return dict((name, value.replace(',,', ',')) for name, value in matches)
 
   def EndParsing(self):
     super(StructureNode, self).EndParsing()
@@ -76,6 +93,14 @@ class StructureNode(base.Node):
     if hasattr(self.GetRoot(), 'defines'):
       self.gatherer.SetDefines(self.GetRoot().defines)
     self.gatherer.SetAttributes(self.attrs)
+    if self.ExpandVariables():
+      self.gatherer.SetFilenameExpansionFunction(self._Substitute)
+
+    # Parse local variables and instantiate the substituter.
+    if self.attrs['variables']:
+      variables = self.attrs['variables']
+      self.substituter = util.Substituter()
+      self.substituter.AddSubstitutions(self._ParseVariables(variables))
 
     self.skeletons = {}  # Maps expressions to skeleton gatherers
     for child in self.children:
@@ -86,6 +111,10 @@ class StructureNode(base.Node):
                         is_skeleton=True)
       skel.SetGrdNode(self)  # TODO(benrg): Or child? Only used for ToRealPath
       skel.SetUberClique(self.UberClique())
+      if hasattr(self.GetRoot(), 'defines'):
+        skel.SetDefines(self.GetRoot().defines)
+      if self.ExpandVariables():
+        skel.SetFilenameExpansionFunction(self._Substitute)
       self.skeletons[child.attrs['expr']] = skel
 
   def MandatoryAttributes(self):
@@ -117,6 +146,7 @@ class StructureNode(base.Node):
              # this hack so that only the files you really need are marked as
              # dependencies.
              'sconsdep' : 'false',
+             'variables': '',
              }
 
   def IsExcludedFromRc(self):
@@ -135,7 +165,12 @@ class StructureNode(base.Node):
       return
 
     with open(flat_filename, 'wb') as outfile:
-      outfile.write(self.gatherer.GetData('', 'utf-8'))
+      if self.ExpandVariables():
+        text = self.gatherer.GetText()
+        file_contents = self._Substitute(text).encode('utf-8')
+      else:
+        file_contents = self.gatherer.GetData('', 'utf-8')
+      outfile.write(file_contents)
 
     self._last_flat_filename = flat_filename
     return os.path.basename(flat_filename)
@@ -165,8 +200,10 @@ class StructureNode(base.Node):
     from grit.format import rc_header
     id_map = rc_header.GetIds(self.GetRoot())
     id = id_map[self.GetTextualIds()[0]]
-    data = self.gatherer.GetData(lang, encoding)
-    return id, data
+    if self.ExpandVariables():
+      text = self.gatherer.GetText()
+      return id, util.Encode(self._Substitute(text), encoding)
+    return id, self.gatherer.GetData(lang, encoding)
 
   def GetHtmlResourceFilenames(self):
     """Returns a set of all filenames inlined by this node."""
@@ -223,6 +260,12 @@ class StructureNode(base.Node):
       return (self.attrs['expand_variables'] == 'true' or
               self.attrs['file'].lower().endswith('.rc'))
 
+  def _Substitute(self, text):
+    '''Perform local and global variable substitution.'''
+    if self.substituter:
+      text = self.substituter.Substitute(text)
+    return self.GetRoot().GetSubstituter().Substitute(text)
+
   def RunCommandOnCurrentPlatform(self):
     if self.attrs['run_command_on_platforms'] == '':
       return True
@@ -273,7 +316,7 @@ class StructureNode(base.Node):
         # Note that we reapply substitution a second time here.
         # This is because a) we need to look inside placeholders
         # b) the substitution values are language-dependent
-        file_contents = self.GetRoot().GetSubstituter().Substitute(file_contents)
+        file_contents = self._Substitute(file_contents)
 
       with open(filename, 'wb') as file_object:
         output_stream = util.WrapOutputStream(file_object,

@@ -4,11 +4,14 @@
 
 #include "chrome/browser/ui/views/frame/system_menu_model_delegate.h"
 
+#include "base/prefs/pref_service.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/command_updater.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
 #include "chrome/browser/ui/browser_commands.h"
+#include "chrome/common/pref_names.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -23,9 +26,14 @@ SystemMenuModelDelegate::~SystemMenuModelDelegate() {
 }
 
 bool SystemMenuModelDelegate::IsCommandIdChecked(int command_id) const {
-  // TODO(beng): encoding menu.
-  // No items in our system menu are check-able.
-  return false;
+  switch (command_id) {
+    case IDC_USE_SYSTEM_TITLE_BAR: {
+      PrefService* prefs = browser_->profile()->GetPrefs();
+      return !prefs->GetBoolean(prefs::kUseCustomChromeFrame);
+    }
+    default:
+      return false;
+  }
 }
 
 bool SystemMenuModelDelegate::IsCommandIdEnabled(int command_id) const {
@@ -41,7 +49,8 @@ bool SystemMenuModelDelegate::IsItemForCommandIdDynamic(int command_id) const {
   return command_id == IDC_RESTORE_TAB;
 }
 
-string16 SystemMenuModelDelegate::GetLabelForCommandId(int command_id) const {
+base::string16 SystemMenuModelDelegate::GetLabelForCommandId(
+    int command_id) const {
   DCHECK_EQ(command_id, IDC_RESTORE_TAB);
 
   int string_id = IDS_RESTORE_TAB;
@@ -54,6 +63,6 @@ string16 SystemMenuModelDelegate::GetLabelForCommandId(int command_id) const {
   return l10n_util::GetStringUTF16(string_id);
 }
 
-void SystemMenuModelDelegate::ExecuteCommand(int command_id) {
+void SystemMenuModelDelegate::ExecuteCommand(int command_id, int event_flags) {
   chrome::ExecuteCommand(browser_, command_id);
 }

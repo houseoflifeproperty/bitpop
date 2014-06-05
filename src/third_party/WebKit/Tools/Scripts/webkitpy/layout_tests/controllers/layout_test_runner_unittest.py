@@ -27,7 +27,7 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import unittest
+import webkitpy.thirdparty.unittest2 as unittest
 
 from webkitpy.common.host_mock import MockHost
 from webkitpy.common.system.systemhost_mock import MockSystemHost
@@ -104,16 +104,7 @@ class LayoutTestRunnerTests(unittest.TestCase):
     def _run_tests(self, runner, tests):
         test_inputs = [TestInput(test, 6000) for test in tests]
         expectations = TestExpectations(runner._port, tests)
-        runner.run_tests(expectations, test_inputs, set(),
-            num_workers=1, needs_http=any('http' in test for test in tests), needs_websockets=any(['websocket' in test for test in tests]), retrying=False)
-
-    def test_http_locking(self):
-        runner = self._runner()
-        self._run_tests(runner, ['http/tests/passes/text.html', 'passes/text.html'])
-
-    def test_perf_locking(self):
-        runner = self._runner()
-        self._run_tests(runner, ['http/tests/passes/text.html', 'perf/foo/test.html'])
+        runner.run_tests(expectations, test_inputs, set(), num_workers=1, retrying=False)
 
     def test_interrupt_if_at_failure_limits(self):
         runner = self._runner()
@@ -164,58 +155,6 @@ class LayoutTestRunnerTests(unittest.TestCase):
         self.assertEqual(0, run_results.expected)
         self.assertEqual(1, run_results.unexpected)
 
-    def test_servers_started(self):
-
-        def start_http_server(number_of_servers=None):
-            self.http_started = True
-
-        def start_websocket_server():
-            self.websocket_started = True
-
-        def stop_http_server():
-            self.http_stopped = True
-
-        def stop_websocket_server():
-            self.websocket_stopped = True
-
-        host = MockHost()
-        port = host.port_factory.get('test-mac-leopard')
-        port.start_http_server = start_http_server
-        port.start_websocket_server = start_websocket_server
-        port.stop_http_server = stop_http_server
-        port.stop_websocket_server = stop_websocket_server
-
-        self.http_started = self.http_stopped = self.websocket_started = self.websocket_stopped = False
-        runner = self._runner(port=port)
-        runner._needs_http = True
-        runner._needs_websockets = False
-        runner.start_servers_with_lock(number_of_servers=4)
-        self.assertEqual(self.http_started, True)
-        self.assertEqual(self.websocket_started, False)
-        runner.stop_servers_with_lock()
-        self.assertEqual(self.http_stopped, True)
-        self.assertEqual(self.websocket_stopped, False)
-
-        self.http_started = self.http_stopped = self.websocket_started = self.websocket_stopped = False
-        runner._needs_http = True
-        runner._needs_websockets = True
-        runner.start_servers_with_lock(number_of_servers=4)
-        self.assertEqual(self.http_started, True)
-        self.assertEqual(self.websocket_started, True)
-        runner.stop_servers_with_lock()
-        self.assertEqual(self.http_stopped, True)
-        self.assertEqual(self.websocket_stopped, True)
-
-        self.http_started = self.http_stopped = self.websocket_started = self.websocket_stopped = False
-        runner._needs_http = False
-        runner._needs_websockets = False
-        runner.start_servers_with_lock(number_of_servers=4)
-        self.assertEqual(self.http_started, False)
-        self.assertEqual(self.websocket_started, False)
-        runner.stop_servers_with_lock()
-        self.assertEqual(self.http_stopped, False)
-        self.assertEqual(self.websocket_stopped, False)
-
 
 class SharderTests(unittest.TestCase):
 
@@ -230,16 +169,19 @@ class SharderTests(unittest.TestCase):
         "ietestcenter/Javascript/11.1.5_4-4-c-1.html",
         "dom/html/level2/html/HTMLAnchorElement06.html",
         "perf/object-keys.html",
+        "virtual/threaded/dir/test.html",
+        "virtual/threaded/fast/foo/test.html",
     ]
 
     def get_test_input(self, test_file):
         return TestInput(test_file, requires_lock=(test_file.startswith('http') or test_file.startswith('perf')))
 
-    def get_shards(self, num_workers, fully_parallel, test_list=None, max_locked_shards=1):
+    def get_shards(self, num_workers, fully_parallel, run_singly, test_list=None, max_locked_shards=1):
         port = TestPort(MockSystemHost())
         self.sharder = Sharder(port.split_test, max_locked_shards)
         test_list = test_list or self.test_list
-        return self.sharder.shard_tests([self.get_test_input(test) for test in test_list], num_workers, fully_parallel)
+        return self.sharder.shard_tests([self.get_test_input(test) for test in test_list],
+            num_workers, fully_parallel, run_singly)
 
     def assert_shards(self, actual_shards, expected_shard_names):
         self.assertEqual(len(actual_shards), len(expected_shard_names))
@@ -250,7 +192,7 @@ class SharderTests(unittest.TestCase):
                               expected_test_names)
 
     def test_shard_by_dir(self):
-        locked, unlocked = self.get_shards(num_workers=2, fully_parallel=False)
+        locked, unlocked = self.get_shards(num_workers=2, fully_parallel=False, run_singly=False)
 
         # Note that although there are tests in multiple dirs that need locks,
         # they are crammed into a single shard in order to reduce the # of
@@ -263,29 +205,35 @@ class SharderTests(unittest.TestCase):
                 'http/tests/xmlhttprequest/supported-xml-content-types.html',
                 'perf/object-keys.html'])])
         self.assert_shards(unlocked,
-            [('animations', ['animations/keyframes.html']),
+            [('virtual/threaded/dir', ['virtual/threaded/dir/test.html']),
+             ('virtual/threaded/fast/foo', ['virtual/threaded/fast/foo/test.html']),
+             ('animations', ['animations/keyframes.html']),
              ('dom/html/level2/html', ['dom/html/level2/html/HTMLAnchorElement03.html',
                                       'dom/html/level2/html/HTMLAnchorElement06.html']),
              ('fast/css', ['fast/css/display-none-inline-style-change-crash.html']),
              ('ietestcenter/Javascript', ['ietestcenter/Javascript/11.1.5_4-4-c-1.html'])])
 
     def test_shard_every_file(self):
-        locked, unlocked = self.get_shards(num_workers=2, fully_parallel=True)
+        locked, unlocked = self.get_shards(num_workers=2, fully_parallel=True, max_locked_shards=2, run_singly=False)
         self.assert_shards(locked,
-            [('.', ['http/tests/websocket/tests/unicode.htm']),
-             ('.', ['http/tests/security/view-source-no-refresh.html']),
-             ('.', ['http/tests/websocket/tests/websocket-protocol-ignored.html']),
-             ('.', ['http/tests/xmlhttprequest/supported-xml-content-types.html']),
-             ('.', ['perf/object-keys.html'])]),
+            [('locked_shard_1',
+              ['http/tests/websocket/tests/unicode.htm',
+               'http/tests/security/view-source-no-refresh.html',
+               'http/tests/websocket/tests/websocket-protocol-ignored.html']),
+             ('locked_shard_2',
+              ['http/tests/xmlhttprequest/supported-xml-content-types.html',
+               'perf/object-keys.html'])]),
         self.assert_shards(unlocked,
-            [('.', ['animations/keyframes.html']),
+            [('virtual/threaded/dir', ['virtual/threaded/dir/test.html']),
+             ('virtual/threaded/fast/foo', ['virtual/threaded/fast/foo/test.html']),
+             ('.', ['animations/keyframes.html']),
              ('.', ['fast/css/display-none-inline-style-change-crash.html']),
              ('.', ['dom/html/level2/html/HTMLAnchorElement03.html']),
              ('.', ['ietestcenter/Javascript/11.1.5_4-4-c-1.html']),
              ('.', ['dom/html/level2/html/HTMLAnchorElement06.html'])])
 
     def test_shard_in_two(self):
-        locked, unlocked = self.get_shards(num_workers=1, fully_parallel=False)
+        locked, unlocked = self.get_shards(num_workers=1, fully_parallel=False, run_singly=False)
         self.assert_shards(locked,
             [('locked_tests',
               ['http/tests/websocket/tests/unicode.htm',
@@ -299,22 +247,24 @@ class SharderTests(unittest.TestCase):
                'fast/css/display-none-inline-style-change-crash.html',
                'dom/html/level2/html/HTMLAnchorElement03.html',
                'ietestcenter/Javascript/11.1.5_4-4-c-1.html',
-               'dom/html/level2/html/HTMLAnchorElement06.html'])])
+               'dom/html/level2/html/HTMLAnchorElement06.html',
+               'virtual/threaded/dir/test.html',
+               'virtual/threaded/fast/foo/test.html'])])
 
     def test_shard_in_two_has_no_locked_shards(self):
-        locked, unlocked = self.get_shards(num_workers=1, fully_parallel=False,
+        locked, unlocked = self.get_shards(num_workers=1, fully_parallel=False, run_singly=False,
              test_list=['animations/keyframe.html'])
         self.assertEqual(len(locked), 0)
         self.assertEqual(len(unlocked), 1)
 
     def test_shard_in_two_has_no_unlocked_shards(self):
-        locked, unlocked = self.get_shards(num_workers=1, fully_parallel=False,
+        locked, unlocked = self.get_shards(num_workers=1, fully_parallel=False, run_singly=False,
              test_list=['http/tests/websocket/tests/unicode.htm'])
         self.assertEqual(len(locked), 1)
         self.assertEqual(len(unlocked), 0)
 
     def test_multiple_locked_shards(self):
-        locked, unlocked = self.get_shards(num_workers=4, fully_parallel=False, max_locked_shards=2)
+        locked, unlocked = self.get_shards(num_workers=4, fully_parallel=False, max_locked_shards=2, run_singly=False)
         self.assert_shards(locked,
             [('locked_shard_1',
               ['http/tests/security/view-source-no-refresh.html',
@@ -324,7 +274,7 @@ class SharderTests(unittest.TestCase):
               ['http/tests/xmlhttprequest/supported-xml-content-types.html',
                'perf/object-keys.html'])])
 
-        locked, unlocked = self.get_shards(num_workers=4, fully_parallel=False)
+        locked, unlocked = self.get_shards(num_workers=4, fully_parallel=False, run_singly=False)
         self.assert_shards(locked,
             [('locked_shard_1',
               ['http/tests/security/view-source-no-refresh.html',
@@ -332,3 +282,18 @@ class SharderTests(unittest.TestCase):
                'http/tests/websocket/tests/websocket-protocol-ignored.html',
                'http/tests/xmlhttprequest/supported-xml-content-types.html',
                'perf/object-keys.html'])])
+
+    def test_virtual_shards(self):
+        # With run_singly=False, we try to keep all of the tests in a virtual suite together even
+        # when fully_parallel=True, so that we don't restart every time the command line args change.
+        locked, unlocked = self.get_shards(num_workers=2, fully_parallel=True, max_locked_shards=2, run_singly=False,
+                test_list=['virtual/foo/bar1.html', 'virtual/foo/bar2.html'])
+        self.assert_shards(unlocked,
+            [('virtual/foo', ['virtual/foo/bar1.html', 'virtual/foo/bar2.html'])])
+
+        # But, with run_singly=True, we have to restart every time anyway, so we want full parallelism.
+        locked, unlocked = self.get_shards(num_workers=2, fully_parallel=True, max_locked_shards=2, run_singly=True,
+                test_list=['virtual/foo/bar1.html', 'virtual/foo/bar2.html'])
+        self.assert_shards(unlocked,
+            [('.', ['virtual/foo/bar1.html']),
+             ('.', ['virtual/foo/bar2.html'])])

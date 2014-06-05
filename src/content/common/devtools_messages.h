@@ -86,11 +86,6 @@ IPC_MESSAGE_ROUTED2(DevToolsAgentMsg_AddMessageToConsole,
                     content::ConsoleMessageLevel /* level */,
                     std::string /* message */)
 
-// Notifies worker devtools agent that it should pause worker context
-// when it starts and wait until either DevTools client is attached or
-// explicit resume notification is received.
-IPC_MESSAGE_ROUTED0(DevToolsAgentMsg_PauseWorkerContextOnStart)
-
 // Worker DevTools agent should resume worker execution.
 IPC_MESSAGE_ROUTED0(DevToolsAgentMsg_ResumeWorkerContext)
 
@@ -107,48 +102,29 @@ IPC_MESSAGE_ROUTED0(DevToolsMsg_SetupDevToolsClient)
 //-----------------------------------------------------------------------------
 // These are messages sent from the renderer to the browser.
 
-// Activates (brings to the front) corresponding dev tools window.
-IPC_MESSAGE_ROUTED0(DevToolsHostMsg_ActivateWindow)
-
-// Closes dev tools window that is inspecting current render_view_host.
-IPC_MESSAGE_ROUTED0(DevToolsHostMsg_CloseWindow)
-
-// Moves the corresponding dev tools window by the specified offset.
-IPC_MESSAGE_ROUTED2(DevToolsHostMsg_MoveWindow,
-                    int /* x */,
-                    int /* y */)
-
-// Specifies side for devtools to dock to.
-IPC_MESSAGE_ROUTED1(DevToolsHostMsg_RequestSetDockSide,
-                    std::string /* side */)
-
-// Opens given URL in the new tab.
-IPC_MESSAGE_ROUTED1(DevToolsHostMsg_OpenInNewTab,
-                    std::string /* url */)
-
-// Shows Save As dialog for content.
-IPC_MESSAGE_ROUTED3(DevToolsHostMsg_Save,
-                    std::string /* url */,
-                    std::string /* content */,
-                    bool /* save_as */)
-
-// Appends given |content| to the file that has been associated with the
-// given |url| by Save message handler.
-IPC_MESSAGE_ROUTED2(DevToolsHostMsg_Append,
-                    std::string /* url */,
-                    std::string /* content */)
+// Transport from Inspector frontend to frontend host.
+IPC_MESSAGE_ROUTED1(DevToolsHostMsg_DispatchOnEmbedder,
+                    std::string /* message */)
 
 // Updates agent runtime state stored in devtools manager in order to support
 // cross-navigation instrumentation.
 IPC_MESSAGE_ROUTED1(DevToolsHostMsg_SaveAgentRuntimeState,
                     std::string /* state */)
 
-// Clears browser cache.
-IPC_MESSAGE_ROUTED0(DevToolsHostMsg_ClearBrowserCache)
+//-----------------------------------------------------------------------------
+// These are messages sent from the GPU process to the inspected renderer.
 
-// Clears browser cookies.
-IPC_MESSAGE_ROUTED0(DevToolsHostMsg_ClearBrowserCookies)
+IPC_STRUCT_BEGIN(GpuTaskInfo)
+  IPC_STRUCT_MEMBER(double, timestamp)
+  IPC_STRUCT_MEMBER(int, phase)
+  IPC_STRUCT_MEMBER(bool, foreign)
+  IPC_STRUCT_MEMBER(uint64, gpu_memory_used_bytes)
+  IPC_STRUCT_MEMBER(uint64, gpu_memory_limit_bytes)
+IPC_STRUCT_END()
 
+// Recorded events are passed in chunks to the renderer process.
+IPC_MESSAGE_ROUTED1(DevToolsAgentMsg_GpuTasksChunk,
+                    std::vector<GpuTaskInfo> /* gpu_tasks */)
 
 //-----------------------------------------------------------------------------
 // These are messages sent from the inspected page renderer to the worker

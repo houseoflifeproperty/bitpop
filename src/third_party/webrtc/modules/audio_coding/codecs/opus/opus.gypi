@@ -23,6 +23,9 @@
           ],
         }],
       ],
+      'include_dirs': [
+        '<(webrtc_root)',
+      ],
       'sources': [
         'interface/opus_interface.h',
         'opus_interface.c',
@@ -33,25 +36,19 @@
     ['include_tests==1', {
       'targets': [
         {
-          'target_name': 'opus_demo',
+          'target_name': 'webrtc_opus_fec_test',
           'type': 'executable',
           'dependencies': [
-            '<(DEPTH)/third_party/opus/opus.gyp:opus'
-          ],
-          'conditions': [
-            ['OS == "win"', {
-              'defines': [
-                'inline=__inline',
-              ],
-            }],
-          ],
-          'sources': [
-            '<(DEPTH)/third_party/opus/src/src/opus_demo.c',
+            'webrtc_opus',
+            '<(webrtc_root)/common_audio/common_audio.gyp:common_audio',
+            '<(webrtc_root)/test/test.gyp:test_support_main',
+            '<(DEPTH)/testing/gtest.gyp:gtest',
           ],
           'include_dirs': [
-            '<(DEPTH)/third_party/opus/src/celt',
-            '<(DEPTH)/third_party/opus/src/include',
-            '<(DEPTH)/third_party/opus/src/silk',
+            '<(webrtc_root)',
+          ],
+          'sources': [
+            'opus_fec_test.cc',
           ],
         },
       ],

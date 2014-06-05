@@ -6,14 +6,14 @@
 #define CONTENT_RENDERER_DISAMBIGUATION_POPUP_HELPER_H_
 
 #include "content/common/content_export.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
+#include "third_party/WebKit/public/platform/WebVector.h"
 
 namespace gfx {
 class Rect;
 class Size;
 }
 
-namespace WebKit {
+namespace blink {
 struct WebRect;
 }
 
@@ -24,11 +24,13 @@ class DisambiguationPopupHelper {
  public:
   CONTENT_EXPORT static float ComputeZoomAreaAndScaleFactor(
       const gfx::Rect& tap_rect,
-      const WebKit::WebVector<WebKit::WebRect>& target_rects,
-      const gfx::Size& viewport_size,
+      const blink::WebVector<blink::WebRect>& target_rects,
+      const gfx::Size& screen_size,
+      const gfx::Size& visible_content_size,
+      float total_scale,
       gfx::Rect* zoom_rect);
 };
 
-} // namespace content
+}  // namespace content
 
-#endif // CONTENT_RENDERER_DISAMBIGUATION_POPUP_HELPER_H_
+#endif  // CONTENT_RENDERER_DISAMBIGUATION_POPUP_HELPER_H_

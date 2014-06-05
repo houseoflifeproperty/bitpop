@@ -11,11 +11,13 @@
 #include "base/compiler_specific.h"
 #include "chrome/browser/ui/autofill/autofill_popup_view.h"
 
-class AutofillPopupController;
-
 namespace gfx {
 class Rect;
 }
+
+namespace autofill {
+
+class AutofillPopupController;
 
 class AutofillPopupViewAndroid : public AutofillPopupView {
  public:
@@ -25,13 +27,9 @@ class AutofillPopupViewAndroid : public AutofillPopupView {
   // Methods called from Java via JNI
   // --------------------------------------------------------------------------
   // Called when an autofill item was selected.
-  void SuggestionSelected(JNIEnv* env,
-                          jobject obj,
-                          jint list_index,
-                          jstring value,
-                          jint unique_id);
+  void SuggestionSelected(JNIEnv* env, jobject obj, jint list_index);
 
-  void Dismissed(JNIEnv *env, jobject obj);
+  void RequestHide(JNIEnv* env, jobject obj);
 
   static bool RegisterAutofillPopupViewAndroid(JNIEnv* env);
 
@@ -52,5 +50,7 @@ class AutofillPopupViewAndroid : public AutofillPopupView {
 
   DISALLOW_COPY_AND_ASSIGN(AutofillPopupViewAndroid);
 };
+
+}  // namespace autofill
 
 #endif  // CHROME_BROWSER_UI_ANDROID_AUTOFILL_AUTOFILL_POPUP_VIEW_ANDROID_H_

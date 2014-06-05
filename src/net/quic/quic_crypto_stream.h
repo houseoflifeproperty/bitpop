@@ -5,14 +5,17 @@
 #ifndef NET_QUIC_QUIC_CRYPTO_STREAM_H_
 #define NET_QUIC_QUIC_CRYPTO_STREAM_H_
 
+#include "base/basictypes.h"
 #include "net/quic/crypto/crypto_framer.h"
+#include "net/quic/crypto/crypto_utils.h"
+#include "net/quic/quic_config.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/reliable_quic_stream.h"
 
 namespace net {
 
+class CryptoHandshakeMessage;
 class QuicSession;
-struct CryptoHandshakeMessage;
 
 // Crypto handshake messages in QUIC take place over a reserved
 // reliable stream with the id 1.  Each endpoint (client and server)
@@ -27,31 +30,35 @@ struct CryptoHandshakeMessage;
 class NET_EXPORT_PRIVATE QuicCryptoStream
     : public ReliableQuicStream,
       public CryptoFramerVisitorInterface {
-
  public:
   explicit QuicCryptoStream(QuicSession* session);
 
   // CryptoFramerVisitorInterface implementation
   virtual void OnError(CryptoFramer* framer) OVERRIDE;
-  virtual void OnHandshakeMessage(const CryptoHandshakeMessage& message) = 0;
+  virtual void OnHandshakeMessage(
+      const CryptoHandshakeMessage& message) OVERRIDE;
 
   // ReliableQuicStream implementation
-  virtual uint32 ProcessData(const char* data, uint32 data_len) OVERRIDE;
+  virtual uint32 ProcessRawData(const char* data, uint32 data_len) OVERRIDE;
+  virtual QuicPriority EffectivePriority() const OVERRIDE;
 
   // Sends |message| to the peer.
+  // TODO(wtc): return a success/failure status.
   void SendHandshakeMessage(const CryptoHandshakeMessage& message);
 
-  bool handshake_complete() { return handshake_complete_; }
+  bool encryption_established() const { return encryption_established_; }
+  bool handshake_confirmed() const { return handshake_confirmed_; }
+
+  const QuicCryptoNegotiatedParameters& crypto_negotiated_params() const;
 
  protected:
-  // Closes the connection
-  void CloseConnection(QuicErrorCode error);
+  bool encryption_established_;
+  bool handshake_confirmed_;
 
-  void SetHandshakeComplete(QuicErrorCode error);
+  QuicCryptoNegotiatedParameters crypto_negotiated_params_;
 
  private:
   CryptoFramer crypto_framer_;
-  bool handshake_complete_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicCryptoStream);
 };

@@ -11,7 +11,7 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/controls/webview/webview.h"
 #include "ui/views/layout/fill_layout.h"
@@ -21,7 +21,7 @@ using content::BrowserThread;
 
 namespace {
 
-ash::internal::ScreensaverView* g_instance = NULL;
+ash::ScreensaverView* g_instance = NULL;
 
 // Do not restart the screensaver again if it has
 // terminated kMaxTerminations times already.
@@ -31,15 +31,11 @@ const int kMaxTerminations = 3;
 
 namespace ash {
 
-void ShowScreensaver(const GURL& url) {
-  internal::ScreensaverView::ShowScreensaver(url);
-}
+void ShowScreensaver(const GURL& url) { ScreensaverView::ShowScreensaver(url); }
 
-void CloseScreensaver() {
-  internal::ScreensaverView::CloseScreensaver();
-}
+void CloseScreensaver() { ScreensaverView::CloseScreensaver(); }
 
-namespace internal {
+bool IsScreensaverShown() { return ScreensaverView::IsScreensaverShown(); }
 
 // static
 void ScreensaverView::ShowScreensaver(const GURL& url) {
@@ -57,6 +53,17 @@ void ScreensaverView::CloseScreensaver() {
   }
 }
 
+// static
+bool ScreensaverView::IsScreensaverShown() {
+  return g_instance && g_instance->IsScreensaverShowingURL(g_instance->url_);
+}
+
+bool ScreensaverView::IsScreensaverShowingURL(const GURL& url) {
+  return screensaver_webview_ &&
+      screensaver_webview_->web_contents() &&
+      (screensaver_webview_->web_contents()->GetURL() == url);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // ScreensaverView, views::WidgetDelegateView implementation.
 views::View* ScreensaverView::GetContentsView() {
@@ -65,7 +72,7 @@ views::View* ScreensaverView::GetContentsView() {
 
 ////////////////////////////////////////////////////////////////////////////////
 // ScreensaverView, content::WebContentsObserver implementation.
-void ScreensaverView::RenderViewGone(
+void ScreensaverView::RenderProcessGone(
     base::TerminationStatus status) {
   LOG(ERROR) << "Screensaver terminated with status " << status;
   termination_count_++;
@@ -109,7 +116,7 @@ void ScreensaverView::Close() {
 
 void ScreensaverView::AddChildWebContents() {
   content::BrowserContext* context =
-      Shell::GetInstance()->delegate()->GetCurrentBrowserContext();
+      Shell::GetInstance()->delegate()->GetActiveBrowserContext();
   screensaver_webview_ = new views::WebView(context);
   SetLayoutManager(new views::FillLayout);
   AddChildView(screensaver_webview_);
@@ -128,7 +135,7 @@ void ScreensaverView::LoadScreensaver() {
 }
 
 void ScreensaverView::ShowWindow() {
-  aura::RootWindow* root_window = ash::Shell::GetPrimaryRootWindow();
+  aura::Window* root_window = ash::Shell::GetPrimaryRootWindow();
   gfx::Rect screen_rect =
       Shell::GetScreen()->GetDisplayNearestWindow(root_window).bounds();
 
@@ -151,5 +158,4 @@ ScreensaverView* ScreensaverView::GetInstance() {
   return g_instance;
 }
 
-}  // namespace internal
 }  // namespace ash

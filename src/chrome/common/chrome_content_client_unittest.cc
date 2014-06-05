@@ -5,7 +5,7 @@
 #include "chrome/common/chrome_content_client.h"
 
 #include "base/command_line.h"
-#include "base/string_split.h"
+#include "base/strings/string_split.h"
 #include "content/public/common/content_switches.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -15,7 +15,7 @@ void CheckUserAgentStringOrdering(bool mobile_device) {
   std::vector<std::string> pieces;
 
   // Check if the pieces of the user agent string come in the correct order.
-  chrome::ChromeContentClient content_client;
+  ChromeContentClient content_client;
   std::string buffer = content_client.GetUserAgent();
 
   base::SplitStringUsingSubstr(buffer, "Mozilla/5.0 (", &pieces);

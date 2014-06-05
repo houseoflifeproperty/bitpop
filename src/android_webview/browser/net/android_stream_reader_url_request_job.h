@@ -5,11 +5,14 @@
 #ifndef ANDROID_WEBVIEW_NATIVE_ANDROID_STREAM_READER_URL_REQUEST_JOB_H_
 #define ANDROID_WEBVIEW_NATIVE_ANDROID_STREAM_READER_URL_REQUEST_JOB_H_
 
+#include <string>
+
 #include "base/android/scoped_java_ref.h"
 #include "base/location.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/threading/non_thread_safe.h"
+#include "base/threading/thread_checker.h"
 #include "net/http/http_byte_range.h"
 #include "net/url_request/url_request_job.h"
 
@@ -23,6 +26,7 @@ class TaskRunner;
 }
 
 namespace net {
+class HttpResponseInfo;
 class URLRequest;
 }
 
@@ -37,9 +41,18 @@ class AndroidStreamReaderURLRequestJob : public net::URLRequestJob {
    */
   class Delegate {
    public:
+    // This method is called from a worker thread, not from the IO thread.
     virtual scoped_ptr<android_webview::InputStream> OpenInputStream(
         JNIEnv* env,
-        net::URLRequest* request) = 0;
+        const GURL& url) = 0;
+
+    // This method is called on the Job's thread if the result of calling
+    // OpenInputStream was null.
+    // Setting the |restart| parameter to true will cause the request to be
+    // restarted with a new job.
+    virtual void OnInputStreamOpenFailed(
+        net::URLRequest* request,
+        bool* restart) = 0;
 
     virtual bool GetMimeType(
         JNIEnv* env,
@@ -71,6 +84,8 @@ class AndroidStreamReaderURLRequestJob : public net::URLRequestJob {
       const net::HttpRequestHeaders& headers) OVERRIDE;
   virtual bool GetMimeType(std::string* mime_type) const OVERRIDE;
   virtual bool GetCharset(std::string* charset) OVERRIDE;
+  virtual int GetResponseCode() const OVERRIDE;
+  virtual void GetResponseInfo(net::HttpResponseInfo* info) OVERRIDE;
 
  protected:
   virtual ~AndroidStreamReaderURLRequestJob();
@@ -85,15 +100,20 @@ class AndroidStreamReaderURLRequestJob : public net::URLRequestJob {
       CreateStreamReader(android_webview::InputStream* stream);
 
  private:
-  void StartAsync();
+  void HeadersComplete(int status_code, const std::string& status_text);
 
+  void OnInputStreamOpened(
+      scoped_ptr<Delegate> delegate,
+      scoped_ptr<android_webview::InputStream> input_stream);
   void OnReaderSeekCompleted(int content_size);
   void OnReaderReadCompleted(int bytes_read);
 
   net::HttpByteRange byte_range_;
+  scoped_ptr<net::HttpResponseInfo> response_info_;
   scoped_ptr<Delegate> delegate_;
   scoped_refptr<InputStreamReaderWrapper> input_stream_reader_wrapper_;
   base::WeakPtrFactory<AndroidStreamReaderURLRequestJob> weak_factory_;
+  base::ThreadChecker thread_checker_;
 
   DISALLOW_COPY_AND_ASSIGN(AndroidStreamReaderURLRequestJob);
 };

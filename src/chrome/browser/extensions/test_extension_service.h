@@ -10,10 +10,6 @@
 
 #include "chrome/browser/extensions/extension_service.h"
 
-namespace syncer {
-class SyncErrorFactory;
-}
-
 namespace extensions {
 class CrxInstaller;
 class Extension;
@@ -27,15 +23,14 @@ class TestExtensionService : public ExtensionServiceInterface {
   virtual ~TestExtensionService();
 
   // ExtensionServiceInterface implementation.
-  virtual const ExtensionSet* extensions() const OVERRIDE;
-  virtual const ExtensionSet* disabled_extensions() const OVERRIDE;
+  virtual const extensions::ExtensionSet* extensions() const OVERRIDE;
   virtual extensions::PendingExtensionManager*
       pending_extension_manager() OVERRIDE;
 
   virtual bool UpdateExtension(
       const std::string& id,
-      const FilePath& path,
-      const GURL& download_url,
+      const base::FilePath& path,
+      bool file_ownership_passed,
       extensions::CrxInstaller** out_crx_installer) OVERRIDE;
   virtual const extensions::Extension* GetExtensionById(
       const std::string& id, bool include_disabled) const OVERRIDE;
@@ -47,23 +42,9 @@ class TestExtensionService : public ExtensionServiceInterface {
       const std::string& extension_id) OVERRIDE;
   virtual bool IsExtensionEnabled(
       const std::string& extension_id) const OVERRIDE;
-  virtual bool IsExternalExtensionUninstalled(
-      const std::string& extension_id) const OVERRIDE;
 
   virtual void CheckManagementPolicy() OVERRIDE;
   virtual void CheckForUpdatesSoon() OVERRIDE;
-
-  virtual syncer::SyncMergeResult MergeDataAndStartSyncing(
-      syncer::ModelType type,
-      const syncer::SyncDataList& initial_sync_data,
-      scoped_ptr<syncer::SyncChangeProcessor> sync_processor,
-      scoped_ptr<syncer::SyncErrorFactory> sync_error_factory) OVERRIDE;
-  virtual void StopSyncing(syncer::ModelType type) OVERRIDE;
-  virtual syncer::SyncDataList GetAllSyncData(
-      syncer::ModelType type) const OVERRIDE;
-  virtual syncer::SyncError ProcessSyncChanges(
-      const tracked_objects::Location& from_here,
-      const syncer::SyncChangeList& change_list) OVERRIDE;
 
   virtual bool is_ready() OVERRIDE;
 
@@ -75,10 +56,9 @@ class TestExtensionService : public ExtensionServiceInterface {
 
   virtual void UnloadExtension(
       const std::string& extension_id,
-      extension_misc::UnloadedExtensionReason reason) OVERRIDE;
-
-  virtual void SyncExtensionChangeIfNeeded(
-      const extensions::Extension& extension) OVERRIDE;
+      extensions::UnloadedExtensionInfo::Reason reason) OVERRIDE;
+  virtual void RemoveComponentExtension(const std::string & extension_id)
+      OVERRIDE;
 };
 
 #endif  // CHROME_BROWSER_EXTENSIONS_TEST_EXTENSION_SERVICE_H_

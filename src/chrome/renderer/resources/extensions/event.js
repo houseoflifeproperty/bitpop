@@ -2,20 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-  var DCHECK = requireNative('logging').DCHECK;
-  var eventBindingsNatives = requireNative('event_bindings');
-  var AttachEvent = eventBindingsNatives.AttachEvent;
-  var DetachEvent = eventBindingsNatives.DetachEvent;
-  var AttachFilteredEvent = eventBindingsNatives.AttachFilteredEvent;
-  var DetachFilteredEvent = eventBindingsNatives.DetachFilteredEvent;
-  var MatchAgainstEventFilter = eventBindingsNatives.MatchAgainstEventFilter;
+  var eventNatives = requireNative('event_natives');
+  var handleUncaughtException = require('uncaught_exception_handler').handle;
+  var logging = requireNative('logging');
+  var schemaRegistry = requireNative('schema_registry');
   var sendRequest = require('sendRequest').sendRequest;
   var utils = require('utils');
   var validate = require('schemaUtils').validate;
-
-  var chromeHidden = requireNative('chrome_hidden').GetChromeHidden();
-  var GetExtensionAPIDefinition =
-      requireNative('apiDefinitions').GetExtensionAPIDefinition;
+  var unloadEvent = require('unload_event');
 
   // Schemas for the rule-style functions on the events API that
   // only need to be generated occasionally, so populate them lazily.
@@ -30,7 +24,7 @@
   function ensureRuleSchemasLoaded() {
     if (ruleFunctionSchemas.addRules)
       return;
-    var eventsSchema = GetExtensionAPIDefinition("events")[0];
+    var eventsSchema = schemaRegistry.GetSchema("events");
     var eventType = utils.lookup(eventsSchema.types, 'id', 'events.Event');
 
     ruleFunctionSchemas.addRules =
@@ -40,44 +34,6 @@
     ruleFunctionSchemas.removeRules =
         utils.lookup(eventType.functions, 'name', 'removeRules');
   }
-
-  // Local implementation of JSON.parse & JSON.stringify that protect us
-  // from being clobbered by an extension.
-  //
-  // TODO(aa): This makes me so sad. We shouldn't need it, as we can just pass
-  // Values directly over IPC without serializing to strings and use
-  // JSONValueConverter.
-  chromeHidden.JSON = new (function() {
-    var $Object = Object;
-    var $Array = Array;
-    var $jsonStringify = JSON.stringify;
-    var $jsonParse = JSON.parse;
-
-    this.stringify = function(thing) {
-      var customizedObjectToJSON = $Object.prototype.toJSON;
-      var customizedArrayToJSON = $Array.prototype.toJSON;
-      if (customizedObjectToJSON !== undefined) {
-        $Object.prototype.toJSON = null;
-      }
-      if (customizedArrayToJSON !== undefined) {
-        $Array.prototype.toJSON = null;
-      }
-      try {
-        return $jsonStringify(thing);
-      } finally {
-        if (customizedObjectToJSON !== undefined) {
-          $Object.prototype.toJSON = customizedObjectToJSON;
-        }
-        if (customizedArrayToJSON !== undefined) {
-          $Array.prototype.toJSON = customizedArrayToJSON;
-        }
-      }
-    };
-
-    this.parse = function(thing) {
-      return $jsonParse(thing);
-    };
-  })();
 
   // A map of event names to the event object that is registered to that name.
   var attachedNamedEvents = {};
@@ -89,6 +45,25 @@
   // Key is event name, value is function.
   var eventArgumentMassagers = {};
 
+  // An attachment strategy for events that aren't attached to the browser.
+  // This applies to events with the "unmanaged" option and events without
+  // names.
+  var NullAttachmentStrategy = function(event) {
+    this.event_ = event;
+  };
+  NullAttachmentStrategy.prototype.onAddedListener =
+      function(listener) {
+  };
+  NullAttachmentStrategy.prototype.onRemovedListener =
+      function(listener) {
+  };
+  NullAttachmentStrategy.prototype.detach = function(manual) {
+  };
+  NullAttachmentStrategy.prototype.getListenersByIDs = function(ids) {
+    // |ids| is for filtered events only.
+    return this.event_.listeners;
+  };
+
   // Handles adding/removing/dispatching listeners for unfiltered events.
   var UnfilteredAttachmentStrategy = function(event) {
     this.event_ = event;
@@ -97,22 +72,23 @@
   UnfilteredAttachmentStrategy.prototype.onAddedListener =
       function(listener) {
     // Only attach / detach on the first / last listener removed.
-    if (this.event_.listeners_.length == 0)
-      AttachEvent(this.event_.eventName_);
+    if (this.event_.listeners.length == 0)
+      eventNatives.AttachEvent(this.event_.eventName);
   };
 
   UnfilteredAttachmentStrategy.prototype.onRemovedListener =
       function(listener) {
-    if (this.event_.listeners_.length == 0)
+    if (this.event_.listeners.length == 0)
       this.detach(true);
   };
 
   UnfilteredAttachmentStrategy.prototype.detach = function(manual) {
-    DetachEvent(this.event_.eventName_, manual);
+    eventNatives.DetachEvent(this.event_.eventName, manual);
   };
 
   UnfilteredAttachmentStrategy.prototype.getListenersByIDs = function(ids) {
-    return this.event_.listeners_;
+    // |ids| is for filtered events only.
+    return this.event_.listeners;
   };
 
   var FilteredAttachmentStrategy = function(event) {
@@ -123,8 +99,8 @@
   FilteredAttachmentStrategy.idToEventMap = {};
 
   FilteredAttachmentStrategy.prototype.onAddedListener = function(listener) {
-    var id = AttachFilteredEvent(this.event_.eventName_,
-        listener.filters || {});
+    var id = eventNatives.AttachFilteredEvent(this.event_.eventName,
+                                              listener.filters || {});
     if (id == -1)
       throw new Error("Can't add listener");
     listener.id = id;
@@ -143,7 +119,7 @@
     var id = listener.id;
     delete this.listenerMap_[id];
     delete FilteredAttachmentStrategy.idToEventMap[id];
-    DetachFilteredEvent(id, manual);
+    eventNatives.DetachFilteredEvent(id, manual);
   };
 
   FilteredAttachmentStrategy.prototype.detach = function(manual) {
@@ -154,25 +130,47 @@
   FilteredAttachmentStrategy.prototype.getListenersByIDs = function(ids) {
     var result = [];
     for (var i = 0; i < ids.length; i++)
-      result.push(this.listenerMap_[ids[i]]);
+      $Array.push(result, this.listenerMap_[ids[i]]);
     return result;
   };
 
-  chromeHidden.parseEventOptions = function(opt_eventOptions) {
+  function parseEventOptions(opt_eventOptions) {
     function merge(dest, src) {
       for (var k in src) {
-        if (!dest.hasOwnProperty(k)) {
+        if (!$Object.hasOwnProperty(dest, k)) {
           dest[k] = src[k];
         }
       }
     }
 
     var options = opt_eventOptions || {};
-    merge(options,
-        {supportsFilters: false,
-         supportsListeners: true,
-         supportsRules: false,
-        });
+    merge(options, {
+      // Event supports adding listeners with filters ("filtered events"), for
+      // example as used in the webNavigation API.
+      //
+      // event.addListener(listener, [filter1, filter2]);
+      supportsFilters: false,
+
+      // Events supports vanilla events. Most APIs use these.
+      //
+      // event.addListener(listener);
+      supportsListeners: true,
+
+      // Event supports adding rules ("declarative events") rather than
+      // listeners, for example as used in the declarativeWebRequest API.
+      //
+      // event.addRules([rule1, rule2]);
+      supportsRules: false,
+
+      // Event is unmanaged in that the browser has no knowledge of its
+      // existence; it's never invoked, doesn't keep the renderer alive, and
+      // the bindings system has no knowledge of it.
+      //
+      // Both events created by user code (new chrome.Event()) and messaging
+      // events are unmanaged, though in the latter case the browser *does*
+      // interact indirectly with them via IPCs written by hand.
+      unmanaged: false,
+    });
     return options;
   };
 
@@ -182,173 +180,170 @@
   // opt_eventName is required for events that support rules.
   //
   // Example:
-  //   chrome.tabs.onChanged = new chrome.Event("tab-changed");
+  //   var Event = require('event_bindings').Event;
+  //   chrome.tabs.onChanged = new Event("tab-changed");
   //   chrome.tabs.onChanged.addListener(function(data) { alert(data); });
-  //   chromeHidden.Event.dispatch("tab-changed", "hi");
+  //   Event.dispatch("tab-changed", "hi");
   // will result in an alert dialog that says 'hi'.
   //
   // If opt_eventOptions exists, it is a dictionary that contains the boolean
   // entries "supportsListeners" and "supportsRules".
-  chrome.Event = function(opt_eventName, opt_argSchemas, opt_eventOptions) {
-    this.eventName_ = opt_eventName;
-    this.listeners_ = [];
-    this.eventOptions_ = chromeHidden.parseEventOptions(opt_eventOptions);
+  // If opt_webViewInstanceId exists, it is an integer uniquely identifying a
+  // <webview> tag within the embedder. If it does not exist, then this is an
+  // extension event rather than a <webview> event.
+  var EventImpl = function(opt_eventName, opt_argSchemas, opt_eventOptions,
+                           opt_webViewInstanceId) {
+    this.eventName = opt_eventName;
+    this.argSchemas = opt_argSchemas;
+    this.listeners = [];
+    this.eventOptions = parseEventOptions(opt_eventOptions);
+    this.webViewInstanceId = opt_webViewInstanceId || 0;
 
-    if (this.eventOptions_.supportsRules && !opt_eventName)
-      throw new Error("Events that support rules require an event name.");
-
-    if (this.eventOptions_.supportsFilters) {
-      this.attachmentStrategy_ = new FilteredAttachmentStrategy(this);
-    } else {
-      this.attachmentStrategy_ = new UnfilteredAttachmentStrategy(this);
+    if (!this.eventName) {
+      if (this.eventOptions.supportsRules)
+        throw new Error("Events that support rules require an event name.");
+      // Events without names cannot be managed by the browser by definition
+      // (the browser has no way of identifying them).
+      this.eventOptions.unmanaged = true;
     }
 
-    // Validate event arguments (the data that is passed to the callbacks)
-    // if we are in debug.
-    if (opt_argSchemas &&
-        chromeHidden.validateCallbacks) {
+    // Track whether the event has been destroyed to help track down the cause
+    // of http://crbug.com/258526.
+    // This variable will eventually hold the stack trace of the destroy call.
+    // TODO(kalman): Delete this and replace with more sound logic that catches
+    // when events are used without being *attached*.
+    this.destroyed = null;
 
-      this.validateEventArgs_ = function(args) {
-        try {
-          validate(args, opt_argSchemas);
-        } catch (exception) {
-          return "Event validation error during " + opt_eventName + " -- " +
-                 exception;
-        }
-      };
-    } else {
-      this.validateEventArgs_ = function() {}
-    }
+    if (this.eventOptions.unmanaged)
+      this.attachmentStrategy = new NullAttachmentStrategy(this);
+    else if (this.eventOptions.supportsFilters)
+      this.attachmentStrategy = new FilteredAttachmentStrategy(this);
+    else
+      this.attachmentStrategy = new UnfilteredAttachmentStrategy(this);
   };
-
-
-  chromeHidden.Event = {};
 
   // callback is a function(args, dispatch). args are the args we receive from
   // dispatchEvent(), and dispatch is a function(args) that dispatches args to
   // its listeners.
-  chromeHidden.Event.registerArgumentMassager = function(name, callback) {
+  function registerArgumentMassager(name, callback) {
     if (eventArgumentMassagers[name])
       throw new Error("Massager already registered for event: " + name);
     eventArgumentMassagers[name] = callback;
-  };
+  }
 
   // Dispatches a named event with the given argument array. The args array is
   // the list of arguments that will be sent to the event callback.
-  chromeHidden.Event.dispatchEvent = function(name, args, filteringInfo) {
-    var listenerIDs = null;
+  function dispatchEvent(name, args, filteringInfo) {
+    var listenerIDs = [];
 
     if (filteringInfo)
-      listenerIDs = MatchAgainstEventFilter(name, filteringInfo);
+      listenerIDs = eventNatives.MatchAgainstEventFilter(name, filteringInfo);
 
     var event = attachedNamedEvents[name];
     if (!event)
       return;
 
     var dispatchArgs = function(args) {
-      result = event.dispatch_(args, listenerIDs);
+      var result = event.dispatch_(args, listenerIDs);
       if (result)
-        DCHECK(!result.validationErrors, result.validationErrors);
+        logging.DCHECK(!result.validationErrors, result.validationErrors);
+      return result;
     };
 
     if (eventArgumentMassagers[name])
       eventArgumentMassagers[name](args, dispatchArgs);
     else
       dispatchArgs(args);
-  };
-
-  // Test if a named event has any listeners.
-  chromeHidden.Event.hasListener = function(name) {
-    return (attachedNamedEvents[name] &&
-            attachedNamedEvents[name].listeners_.length > 0);
-  };
+  }
 
   // Registers a callback to be called when this event is dispatched.
-  chrome.Event.prototype.addListener = function(cb, filters) {
-    if (!this.eventOptions_.supportsListeners)
+  EventImpl.prototype.addListener = function(cb, filters) {
+    if (!this.eventOptions.supportsListeners)
       throw new Error("This event does not support listeners.");
-    if (this.eventOptions_.maxListeners &&
-        this.getListenerCount() >= this.eventOptions_.maxListeners)
-      throw new Error("Too many listeners for " + this.eventName_);
+    if (this.eventOptions.maxListeners &&
+        this.getListenerCount_() >= this.eventOptions.maxListeners) {
+      throw new Error("Too many listeners for " + this.eventName);
+    }
     if (filters) {
-      if (!this.eventOptions_.supportsFilters)
+      if (!this.eventOptions.supportsFilters)
         throw new Error("This event does not support filters.");
       if (filters.url && !(filters.url instanceof Array))
-        throw new Error("filters.url should be an array");
+        throw new Error("filters.url should be an array.");
+      if (filters.serviceType &&
+          !(typeof filters.serviceType === 'string')) {
+        throw new Error("filters.serviceType should be a string.")
+      }
     }
     var listener = {callback: cb, filters: filters};
     this.attach_(listener);
-    this.listeners_.push(listener);
+    $Array.push(this.listeners, listener);
   };
 
-  chrome.Event.prototype.attach_ = function(listener) {
-    this.attachmentStrategy_.onAddedListener(listener);
-    if (this.listeners_.length == 0) {
+  EventImpl.prototype.attach_ = function(listener) {
+    this.attachmentStrategy.onAddedListener(listener);
+
+    if (this.listeners.length == 0) {
       allAttachedEvents[allAttachedEvents.length] = this;
-      if (!this.eventName_)
-        return;
-
-      if (attachedNamedEvents[this.eventName_]) {
-        throw new Error("chrome.Event '" + this.eventName_ +
-                        "' is already attached.");
+      if (this.eventName) {
+        if (attachedNamedEvents[this.eventName]) {
+          throw new Error("Event '" + this.eventName +
+                          "' is already attached.");
+        }
+        attachedNamedEvents[this.eventName] = this;
       }
-
-      attachedNamedEvents[this.eventName_] = this;
     }
   };
 
   // Unregisters a callback.
-  chrome.Event.prototype.removeListener = function(cb) {
-    if (!this.eventOptions_.supportsListeners)
+  EventImpl.prototype.removeListener = function(cb) {
+    if (!this.eventOptions.supportsListeners)
       throw new Error("This event does not support listeners.");
+
     var idx = this.findListener_(cb);
-    if (idx == -1) {
+    if (idx == -1)
       return;
-    }
 
-    var removedListener = this.listeners_.splice(idx, 1)[0];
-    this.attachmentStrategy_.onRemovedListener(removedListener);
+    var removedListener = $Array.splice(this.listeners, idx, 1)[0];
+    this.attachmentStrategy.onRemovedListener(removedListener);
 
-    if (this.listeners_.length == 0) {
-      var i = allAttachedEvents.indexOf(this);
+    if (this.listeners.length == 0) {
+      var i = $Array.indexOf(allAttachedEvents, this);
       if (i >= 0)
         delete allAttachedEvents[i];
-      if (!this.eventName_)
-        return;
-
-      if (!attachedNamedEvents[this.eventName_]) {
-        throw new Error("chrome.Event '" + this.eventName_ +
-                        "' is not attached.");
+      if (this.eventName) {
+        if (!attachedNamedEvents[this.eventName]) {
+          throw new Error(
+              "Event '" + this.eventName + "' is not attached.");
+        }
+        delete attachedNamedEvents[this.eventName];
       }
-
-      delete attachedNamedEvents[this.eventName_];
     }
   };
 
   // Test if the given callback is registered for this event.
-  chrome.Event.prototype.hasListener = function(cb) {
-    if (!this.eventOptions_.supportsListeners)
+  EventImpl.prototype.hasListener = function(cb) {
+    if (!this.eventOptions.supportsListeners)
       throw new Error("This event does not support listeners.");
     return this.findListener_(cb) > -1;
   };
 
   // Test if any callbacks are registered for this event.
-  chrome.Event.prototype.hasListeners = function() {
-    return this.getListenerCount() > 0;
+  EventImpl.prototype.hasListeners = function() {
+    return this.getListenerCount_() > 0;
   };
 
-  // Return the number of listeners on this event.
-  chrome.Event.prototype.getListenerCount = function() {
-    if (!this.eventOptions_.supportsListeners)
+  // Returns the number of listeners on this event.
+  EventImpl.prototype.getListenerCount_ = function() {
+    if (!this.eventOptions.supportsListeners)
       throw new Error("This event does not support listeners.");
-    return this.listeners_.length;
+    return this.listeners.length;
   };
 
   // Returns the index of the given callback if registered, or -1 if not
   // found.
-  chrome.Event.prototype.findListener_ = function(cb) {
-    for (var i = 0; i < this.listeners_.length; i++) {
-      if (this.listeners_[i].callback == cb) {
+  EventImpl.prototype.findListener_ = function(cb) {
+    for (var i = 0; i < this.listeners.length; i++) {
+      if (this.listeners[i].callback == cb) {
         return i;
       }
     }
@@ -356,26 +351,41 @@
     return -1;
   };
 
-  chrome.Event.prototype.dispatch_ = function(args, listenerIDs) {
-    if (!this.eventOptions_.supportsListeners)
+  EventImpl.prototype.dispatch_ = function(args, listenerIDs) {
+    if (this.destroyed) {
+      throw new Error(this.eventName + ' was already destroyed at: ' +
+                      this.destroyed);
+    }
+    if (!this.eventOptions.supportsListeners)
       throw new Error("This event does not support listeners.");
-    var validationErrors = this.validateEventArgs_(args);
-    if (validationErrors) {
-      console.error(validationErrors);
-      return {validationErrors: validationErrors};
+
+    if (this.argSchemas && logging.DCHECK_IS_ON()) {
+      try {
+        validate(args, this.argSchemas);
+      } catch (e) {
+        e.message += ' in ' + this.eventName;
+        throw e;
+      }
     }
 
-    var listeners = this.attachmentStrategy_.getListenersByIDs(listenerIDs);
+    // Make a copy of the listeners in case the listener list is modified
+    // while dispatching the event.
+    var listeners = $Array.slice(
+        this.attachmentStrategy.getListenersByIDs(listenerIDs));
 
     var results = [];
     for (var i = 0; i < listeners.length; i++) {
       try {
-        var result = this.dispatchToListener(listeners[i].callback, args);
+        var result = this.wrapper.dispatchToListener(listeners[i].callback,
+                                                     args);
         if (result !== undefined)
-          results.push(result);
+          $Array.push(results, result);
       } catch (e) {
-        console.error("Error in event handler for '" + this.eventName_ +
-                      "': " + e.message + ' ' + e.stack);
+        handleUncaughtException(
+          'Error in event handler for ' +
+              (this.eventName ? this.eventName : '(unknown)') +
+              ': ' + e.message + '\nStack trace: ' + e.stack,
+          e);
       }
     }
     if (results.length)
@@ -383,29 +393,29 @@
   }
 
   // Can be overridden to support custom dispatching.
-  chrome.Event.prototype.dispatchToListener = function(callback, args) {
-    return callback.apply(null, args);
+  EventImpl.prototype.dispatchToListener = function(callback, args) {
+    return $Function.apply(callback, null, args);
   }
 
   // Dispatches this event object to all listeners, passing all supplied
   // arguments to this function each listener.
-  chrome.Event.prototype.dispatch = function(varargs) {
-    return this.dispatch_(Array.prototype.slice.call(arguments), undefined);
+  EventImpl.prototype.dispatch = function(varargs) {
+    return this.dispatch_($Array.slice(arguments), undefined);
   };
 
   // Detaches this event object from its name.
-  chrome.Event.prototype.detach_ = function() {
-    this.attachmentStrategy_.detach(false);
+  EventImpl.prototype.detach_ = function() {
+    this.attachmentStrategy.detach(false);
   };
 
-  chrome.Event.prototype.destroy_ = function() {
-    this.listeners_ = [];
-    this.validateEventArgs_ = [];
-    this.detach_(false);
+  EventImpl.prototype.destroy_ = function() {
+    this.listeners.length = 0;
+    this.detach_();
+    this.destroyed = new Error().stack;
   };
 
-  chrome.Event.prototype.addRules = function(rules, opt_cb) {
-    if (!this.eventOptions_.supportsRules)
+  EventImpl.prototype.addRules = function(rules, opt_cb) {
+    if (!this.eventOptions.supportsRules)
       throw new Error("This event does not support rules.");
 
     // Takes a list of JSON datatype identifiers and returns a schema fragment
@@ -430,77 +440,89 @@
     function validateRules(rules, conditions, actions) {
       var conditionsSchema = buildArrayOfChoicesSchema(conditions);
       var actionsSchema = buildArrayOfChoicesSchema(actions);
-      rules.forEach(function(rule) {
+      $Array.forEach(rules, function(rule) {
         validate([rule.conditions], [conditionsSchema]);
         validate([rule.actions], [actionsSchema]);
-      })
+      });
     };
 
-    if (!this.eventOptions_.conditions || !this.eventOptions_.actions) {
-      throw new Error('Event ' + this.eventName_ + ' misses conditions or ' +
-                'actions in the API specification.');
+    if (!this.eventOptions.conditions || !this.eventOptions.actions) {
+      throw new Error('Event ' + this.eventName + ' misses ' +
+                      'conditions or actions in the API specification.');
     }
 
     validateRules(rules,
-                  this.eventOptions_.conditions,
-                  this.eventOptions_.actions);
+                  this.eventOptions.conditions,
+                  this.eventOptions.actions);
 
     ensureRuleSchemasLoaded();
     // We remove the first parameter from the validation to give the user more
     // meaningful error messages.
-    validate([rules, opt_cb],
-             ruleFunctionSchemas.addRules.parameters.slice().splice(1));
-    sendRequest("events.addRules", [this.eventName_, rules, opt_cb],
-                ruleFunctionSchemas.addRules.parameters);
+    validate([this.webViewInstanceId, rules, opt_cb],
+             $Array.splice(
+                 $Array.slice(ruleFunctionSchemas.addRules.parameters), 1));
+    sendRequest(
+      "events.addRules",
+      [this.eventName, this.webViewInstanceId, rules,  opt_cb],
+      ruleFunctionSchemas.addRules.parameters);
   }
 
-  chrome.Event.prototype.removeRules = function(ruleIdentifiers, opt_cb) {
-    if (!this.eventOptions_.supportsRules)
+  EventImpl.prototype.removeRules = function(ruleIdentifiers, opt_cb) {
+    if (!this.eventOptions.supportsRules)
       throw new Error("This event does not support rules.");
     ensureRuleSchemasLoaded();
     // We remove the first parameter from the validation to give the user more
     // meaningful error messages.
-    validate([ruleIdentifiers, opt_cb],
-             ruleFunctionSchemas.removeRules.parameters.slice().splice(1));
+    validate([this.webViewInstanceId, ruleIdentifiers, opt_cb],
+             $Array.splice(
+                 $Array.slice(ruleFunctionSchemas.removeRules.parameters), 1));
     sendRequest("events.removeRules",
-                [this.eventName_, ruleIdentifiers, opt_cb],
+                [this.eventName,
+                 this.webViewInstanceId,
+                 ruleIdentifiers,
+                 opt_cb],
                 ruleFunctionSchemas.removeRules.parameters);
   }
 
-  chrome.Event.prototype.getRules = function(ruleIdentifiers, cb) {
-    if (!this.eventOptions_.supportsRules)
+  EventImpl.prototype.getRules = function(ruleIdentifiers, cb) {
+    if (!this.eventOptions.supportsRules)
       throw new Error("This event does not support rules.");
     ensureRuleSchemasLoaded();
     // We remove the first parameter from the validation to give the user more
     // meaningful error messages.
-    validate([ruleIdentifiers, cb],
-             ruleFunctionSchemas.getRules.parameters.slice().splice(1));
+    validate([this.webViewInstanceId, ruleIdentifiers, cb],
+             $Array.splice(
+                 $Array.slice(ruleFunctionSchemas.getRules.parameters), 1));
 
-    sendRequest("events.getRules",
-                [this.eventName_, ruleIdentifiers, cb],
-                ruleFunctionSchemas.getRules.parameters);
+    sendRequest(
+      "events.getRules",
+      [this.eventName, this.webViewInstanceId, ruleIdentifiers, cb],
+      ruleFunctionSchemas.getRules.parameters);
   }
 
-  // Special load events: we don't use the DOM unload because that slows
-  // down tab shutdown.  On the other hand, onUnload might not always fire,
-  // since Chrome will terminate renderers on shutdown (SuddenTermination).
-  chromeHidden.onLoad = new chrome.Event();
-  chromeHidden.onUnload = new chrome.Event();
-
-  chromeHidden.dispatchOnLoad =
-      chromeHidden.onLoad.dispatch.bind(chromeHidden.onLoad);
-
-  chromeHidden.dispatchOnUnload = function() {
-    chromeHidden.onUnload.dispatch();
+  unloadEvent.addListener(function() {
     for (var i = 0; i < allAttachedEvents.length; ++i) {
       var event = allAttachedEvents[i];
       if (event)
         event.detach_();
     }
-  };
+  });
 
-  chromeHidden.dispatchError = function(msg) {
-    console.error(msg);
-  };
+  var Event = utils.expose('Event', EventImpl, { functions: [
+    'addListener',
+    'removeListener',
+    'hasListener',
+    'hasListeners',
+    'dispatchToListener',
+    'dispatch',
+    'addRules',
+    'removeRules',
+    'getRules'
+  ] });
 
-  exports.Event = chrome.Event;
+  // NOTE: Event is (lazily) exposed as chrome.Event from dispatcher.cc.
+  exports.Event = Event;
+
+  exports.dispatchEvent = dispatchEvent;
+  exports.parseEventOptions = parseEventOptions;
+  exports.registerArgumentMassager = registerArgumentMassager;

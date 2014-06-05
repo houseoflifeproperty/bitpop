@@ -5,57 +5,56 @@
 #include "chrome/browser/download/download_danger_prompt.h"
 
 #include "base/bind.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/download/chrome_download_manager_delegate.h"
+#include "chrome/browser/download/download_stats.h"
 #include "chrome/browser/ui/tab_modal_confirm_dialog.h"
 #include "chrome/browser/ui/tab_modal_confirm_dialog_delegate.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_danger_type.h"
 #include "content/public/browser/download_item.h"
+#include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace {
 
+// TODO(wittman): Create a native web contents modal dialog implementation of
+// this dialog for non-Views platforms, to support bold formatting of the
+// message lead.
+
 // Implements DownloadDangerPrompt using a TabModalConfirmDialog.
-class DownloadDangerPromptImpl
-  : public DownloadDangerPrompt,
-    public content::DownloadItem::Observer,
-    public TabModalConfirmDialogDelegate {
+class DownloadDangerPromptImpl : public DownloadDangerPrompt,
+                                 public content::DownloadItem::Observer,
+                                 public TabModalConfirmDialogDelegate {
  public:
   DownloadDangerPromptImpl(content::DownloadItem* item,
                            content::WebContents* web_contents,
-                           const base::Closure& accepted,
-                           const base::Closure& canceled);
+                           bool show_context,
+                           const OnDone& done);
   virtual ~DownloadDangerPromptImpl();
 
-  // DownloadDangerPrompt
+  // DownloadDangerPrompt:
   virtual void InvokeActionForTesting(Action action) OVERRIDE;
 
  private:
-  // content::DownloadItem::Observer
+  // content::DownloadItem::Observer:
   virtual void OnDownloadUpdated(content::DownloadItem* download) OVERRIDE;
-  virtual void OnDownloadOpened(content::DownloadItem* download) OVERRIDE;
 
-  // TabModalConfirmDialogDelegate
-  virtual string16 GetTitle() OVERRIDE;
-  virtual string16 GetMessage() OVERRIDE;
-  virtual string16 GetAcceptButtonTitle() OVERRIDE;
+  // TabModalConfirmDialogDelegate:
+  virtual base::string16 GetTitle() OVERRIDE;
+  virtual base::string16 GetDialogMessage() OVERRIDE;
+  virtual base::string16 GetAcceptButtonTitle() OVERRIDE;
+  virtual base::string16 GetCancelButtonTitle() OVERRIDE;
   virtual void OnAccepted() OVERRIDE;
   virtual void OnCanceled() OVERRIDE;
+  virtual void OnClosed() OVERRIDE;
 
-  // Runs |callback|. PrepareToClose() is called beforehand. Doing so prevents
-  // this object from responding to state changes in |download_| that might
-  // result from invoking the callback. |callback| must refer to either
-  // |accepted_| or |canceled_|.
-  void RunCallback(const base::Closure& callback);
-
-  // Resets |accepted_|, |canceled_| and removes the observer from |download_|,
-  // in preparation for closing the prompt.
-  void PrepareToClose();
+  void RunDone(Action action);
 
   content::DownloadItem* download_;
-  base::Closure accepted_;
-  base::Closure canceled_;
+  bool show_context_;
+  OnDone done_;
 
   DISALLOW_COPY_AND_ASSIGN(DownloadDangerPromptImpl);
 };
@@ -63,93 +62,185 @@ class DownloadDangerPromptImpl
 DownloadDangerPromptImpl::DownloadDangerPromptImpl(
     content::DownloadItem* download,
     content::WebContents* web_contents,
-    const base::Closure& accepted,
-    const base::Closure& canceled)
+    bool show_context,
+    const OnDone& done)
     : TabModalConfirmDialogDelegate(web_contents),
       download_(download),
-      accepted_(accepted),
-      canceled_(canceled) {
-  DCHECK(!accepted_.is_null());
-  // canceled_ is allowed to be null.
-  DCHECK(download_);
+      show_context_(show_context),
+      done_(done) {
+  DCHECK(!done_.is_null());
   download_->AddObserver(this);
+  RecordOpenedDangerousConfirmDialog(download_->GetDangerType());
 }
 
 DownloadDangerPromptImpl::~DownloadDangerPromptImpl() {
   // |this| might be deleted without invoking any callbacks. E.g. pressing Esc
   // on GTK or if the user navigates away from the page showing the prompt.
-  PrepareToClose();
+  RunDone(DISMISS);
 }
 
 void DownloadDangerPromptImpl::InvokeActionForTesting(Action action) {
-  if (action == ACCEPT)
-    Accept();
-  else
-    Cancel();
+  switch (action) {
+    case ACCEPT: Accept(); break;
+    case CANCEL: Cancel(); break;
+    case DISMISS:
+      RunDone(DISMISS);
+      Cancel();
+      break;
+  }
 }
 
 void DownloadDangerPromptImpl::OnDownloadUpdated(
     content::DownloadItem* download) {
   // If the download is nolonger dangerous (accepted externally) or the download
-  // doesn't exist anymore, the download danger prompt is no longer necessary.
-  if (!download->IsInProgress() || !download->IsDangerous())
+  // is in a terminal state, then the download danger prompt is no longer
+  // necessary.
+  if (!download->IsDangerous() || download->IsDone()) {
+    RunDone(DISMISS);
     Cancel();
+  }
 }
 
-void DownloadDangerPromptImpl::OnDownloadOpened(
-    content::DownloadItem* download) {
+base::string16 DownloadDangerPromptImpl::GetTitle() {
+  if (show_context_)
+    return l10n_util::GetStringUTF16(IDS_CONFIRM_KEEP_DANGEROUS_DOWNLOAD_TITLE);
+  switch (download_->GetDangerType()) {
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL:
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT:
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST:
+    case content::DOWNLOAD_DANGER_TYPE_POTENTIALLY_UNWANTED: {
+      return l10n_util::GetStringUTF16(
+          IDS_RESTORE_KEEP_DANGEROUS_DOWNLOAD_TITLE);
+    }
+    default: {
+      return l10n_util::GetStringUTF16(
+          IDS_CONFIRM_KEEP_DANGEROUS_DOWNLOAD_TITLE);
+    }
+  }
 }
 
-string16 DownloadDangerPromptImpl::GetTitle() {
-  return l10n_util::GetStringUTF16(IDS_CONFIRM_KEEP_DANGEROUS_DOWNLOAD_TITLE);
+base::string16 DownloadDangerPromptImpl::GetDialogMessage() {
+  if (show_context_) {
+    switch (download_->GetDangerType()) {
+      case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_FILE: {
+        return l10n_util::GetStringFUTF16(
+            IDS_PROMPT_DANGEROUS_DOWNLOAD,
+            download_->GetFileNameToReportUser().LossyDisplayName());
+      }
+      case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL: // Fall through
+      case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT:
+      case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST: {
+        return l10n_util::GetStringFUTF16(
+            IDS_PROMPT_MALICIOUS_DOWNLOAD_CONTENT,
+            download_->GetFileNameToReportUser().LossyDisplayName());
+      }
+      case content::DOWNLOAD_DANGER_TYPE_UNCOMMON_CONTENT: {
+        return l10n_util::GetStringFUTF16(
+            IDS_PROMPT_UNCOMMON_DOWNLOAD_CONTENT,
+            download_->GetFileNameToReportUser().LossyDisplayName());
+      }
+      case content::DOWNLOAD_DANGER_TYPE_POTENTIALLY_UNWANTED: {
+        return l10n_util::GetStringFUTF16(
+            IDS_PROMPT_DOWNLOAD_CHANGES_SETTINGS,
+            download_->GetFileNameToReportUser().LossyDisplayName());
+      }
+      case content::DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS:
+      case content::DOWNLOAD_DANGER_TYPE_MAYBE_DANGEROUS_CONTENT:
+      case content::DOWNLOAD_DANGER_TYPE_USER_VALIDATED:
+      case content::DOWNLOAD_DANGER_TYPE_MAX: {
+        break;
+      }
+    }
+  } else {
+    switch (download_->GetDangerType()) {
+      case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL:
+      case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT:
+      case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST: {
+        return l10n_util::GetStringUTF16(
+            IDS_PROMPT_CONFIRM_KEEP_MALICIOUS_DOWNLOAD_LEAD) +
+            base::ASCIIToUTF16("\n\n") +
+            l10n_util::GetStringUTF16(
+                IDS_PROMPT_CONFIRM_KEEP_MALICIOUS_DOWNLOAD_BODY);
+      }
+      default: {
+        return l10n_util::GetStringUTF16(
+            IDS_PROMPT_CONFIRM_KEEP_DANGEROUS_DOWNLOAD);
+      }
+    }
+  }
+  NOTREACHED();
+  return base::string16();
 }
 
-string16 DownloadDangerPromptImpl::GetMessage() {
-  return l10n_util::GetStringUTF16(IDS_PROMPT_CONFIRM_KEEP_DANGEROUS_DOWNLOAD);
+base::string16 DownloadDangerPromptImpl::GetAcceptButtonTitle() {
+  if (show_context_)
+    return l10n_util::GetStringUTF16(IDS_CONFIRM_DOWNLOAD);
+  switch (download_->GetDangerType()) {
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL:
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT:
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST:
+    case content::DOWNLOAD_DANGER_TYPE_POTENTIALLY_UNWANTED: {
+      return l10n_util::GetStringUTF16(IDS_CONFIRM_DOWNLOAD_AGAIN_MALICIOUS);
+    }
+    default:
+      return l10n_util::GetStringUTF16(IDS_CONFIRM_DOWNLOAD_AGAIN);
+  }
 }
 
-string16 DownloadDangerPromptImpl::GetAcceptButtonTitle() {
-  return l10n_util::GetStringUTF16(IDS_CONFIRM_DOWNLOAD_AGAIN);
+base::string16 DownloadDangerPromptImpl::GetCancelButtonTitle() {
+  if (show_context_)
+    return l10n_util::GetStringUTF16(IDS_CANCEL);
+  switch (download_->GetDangerType()) {
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL:
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT:
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST:
+    case content::DOWNLOAD_DANGER_TYPE_POTENTIALLY_UNWANTED: {
+      return l10n_util::GetStringUTF16(IDS_CONFIRM_CANCEL_AGAIN_MALICIOUS);
+    }
+    default:
+      return l10n_util::GetStringUTF16(IDS_CANCEL);
+  }
 }
 
 void DownloadDangerPromptImpl::OnAccepted() {
-  RunCallback(accepted_);
+  RunDone(ACCEPT);
 }
 
 void DownloadDangerPromptImpl::OnCanceled() {
-  RunCallback(canceled_);
+  RunDone(CANCEL);
 }
 
-void DownloadDangerPromptImpl::RunCallback(const base::Closure& callback) {
+void DownloadDangerPromptImpl::OnClosed() {
+  RunDone(DISMISS);
+}
+
+void DownloadDangerPromptImpl::RunDone(Action action) {
   // Invoking the callback can cause the download item state to change or cause
   // the constrained window to close, and |callback| refers to a member
   // variable.
-  base::Closure callback_copy = callback;
-  PrepareToClose();
-  if (!callback_copy.is_null())
-    callback_copy.Run();
-}
-
-void DownloadDangerPromptImpl::PrepareToClose() {
-  accepted_.Reset();
-  canceled_.Reset();
+  OnDone done = done_;
+  done_.Reset();
   if (download_ != NULL) {
     download_->RemoveObserver(this);
     download_ = NULL;
   }
+  if (!done.is_null())
+    done.Run(action);
 }
 
-} // namespace
+}  // namespace
 
+#if !defined(USE_AURA)
 // static
 DownloadDangerPrompt* DownloadDangerPrompt::Create(
     content::DownloadItem* item,
     content::WebContents* web_contents,
-    const base::Closure& accepted,
-    const base::Closure& canceled) {
-  DownloadDangerPromptImpl* prompt =
-      new DownloadDangerPromptImpl(item, web_contents, accepted, canceled);
+    bool show_context,
+    const OnDone& done) {
+  DownloadDangerPromptImpl* prompt = new DownloadDangerPromptImpl(
+      item, web_contents, show_context, done);
   // |prompt| will be deleted when the dialog is done.
   TabModalConfirmDialog::Create(prompt, web_contents);
   return prompt;
 }
+#endif

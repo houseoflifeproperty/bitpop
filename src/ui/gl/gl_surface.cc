@@ -14,6 +14,11 @@
 #include "base/threading/thread_local.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_implementation.h"
+#include "ui/gl/gl_switches.h"
+
+#if defined(USE_X11)
+#include <X11/Xlib.h>
+#endif
 
 namespace gfx {
 
@@ -24,9 +29,7 @@ base::LazyInstance<base::ThreadLocalPointer<GLSurface> >::Leaky
 
 // static
 bool GLSurface::InitializeOneOff() {
-  static bool initialized = false;
-  if (initialized)
-    return true;
+  DCHECK_EQ(kGLImplementationNone, GetGLImplementation());
 
   TRACE_EVENT0("gpu", "GLSurface::InitializeOneOff");
 
@@ -34,12 +37,16 @@ bool GLSurface::InitializeOneOff() {
   GetAllowedGLImplementations(&allowed_impls);
   DCHECK(!allowed_impls.empty());
 
+  CommandLine* cmd = CommandLine::ForCurrentProcess();
+
   // The default implementation is always the first one in list.
   GLImplementation impl = allowed_impls[0];
   bool fallback_to_osmesa = false;
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kUseGL)) {
+  if (cmd->HasSwitch(switches::kOverrideUseGLWithOSMesaForTests)) {
+    impl = kGLImplementationOSMesaGL;
+  } else if (cmd->HasSwitch(switches::kUseGL)) {
     std::string requested_implementation_name =
-        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(switches::kUseGL);
+        cmd->GetSwitchValueASCII(switches::kUseGL);
     if (requested_implementation_name == "any") {
       fallback_to_osmesa = true;
     } else if (requested_implementation_name == "swiftshader") {
@@ -55,22 +62,101 @@ bool GLSurface::InitializeOneOff() {
     }
   }
 
-  initialized = InitializeGLBindings(impl) && InitializeOneOffInternal();
+  bool gpu_service_logging = cmd->HasSwitch(switches::kEnableGPUServiceLogging);
+  bool disable_gl_drawing = cmd->HasSwitch(switches::kDisableGLDrawingForTests);
+
+  return InitializeOneOffImplementation(
+      impl, fallback_to_osmesa, gpu_service_logging, disable_gl_drawing);
+}
+
+// static
+bool GLSurface::InitializeOneOffImplementation(GLImplementation impl,
+                                               bool fallback_to_osmesa,
+                                               bool gpu_service_logging,
+                                               bool disable_gl_drawing) {
+  bool initialized =
+      InitializeStaticGLBindings(impl) && InitializeOneOffInternal();
   if (!initialized && fallback_to_osmesa) {
     ClearGLBindings();
-    initialized = InitializeGLBindings(kGLImplementationOSMesaGL) &&
+    initialized = InitializeStaticGLBindings(kGLImplementationOSMesaGL) &&
                   InitializeOneOffInternal();
   }
+  if (!initialized)
+    ClearGLBindings();
 
   if (initialized) {
     DVLOG(1) << "Using "
              << GetGLImplementationName(GetGLImplementation())
              << " GL implementation.";
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kEnableGPUServiceLogging))
+    if (gpu_service_logging)
       InitializeDebugGLBindings();
+    if (disable_gl_drawing)
+      InitializeNullDrawGLBindings();
   }
   return initialized;
+}
+
+// static
+void GLSurface::InitializeOneOffForTests() {
+  DCHECK_EQ(kGLImplementationNone, GetGLImplementation());
+
+#if defined(USE_X11)
+  XInitThreads();
+#endif
+
+  bool use_osmesa = true;
+
+  // We usually use OSMesa as this works on all bots. The command line can
+  // override this behaviour to use hardware GL.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kUseGpuInTests))
+    use_osmesa = false;
+
+#if defined(OS_ANDROID)
+  // On Android we always use hardware GL.
+  use_osmesa = false;
+#endif
+
+  std::vector<GLImplementation> allowed_impls;
+  GetAllowedGLImplementations(&allowed_impls);
+  DCHECK(!allowed_impls.empty());
+
+  GLImplementation impl = allowed_impls[0];
+  if (use_osmesa)
+    impl = kGLImplementationOSMesaGL;
+
+  DCHECK(!CommandLine::ForCurrentProcess()->HasSwitch(switches::kUseGL))
+      << "kUseGL has not effect in tests";
+
+  bool fallback_to_osmesa = false;
+  bool gpu_service_logging = false;
+  bool disable_gl_drawing = true;
+
+  CHECK(InitializeOneOffImplementation(
+      impl, fallback_to_osmesa, gpu_service_logging, disable_gl_drawing));
+}
+
+// static
+void GLSurface::InitializeOneOffWithMockBindingsForTests() {
+  DCHECK(!CommandLine::ForCurrentProcess()->HasSwitch(switches::kUseGL))
+      << "kUseGL has not effect in tests";
+
+  // This method may be called multiple times in the same process to set up
+  // mock bindings in different ways.
+  ClearGLBindings();
+
+  bool fallback_to_osmesa = false;
+  bool gpu_service_logging = false;
+  bool disable_gl_drawing = false;
+
+  CHECK(InitializeOneOffImplementation(kGLImplementationMockGL,
+                                       fallback_to_osmesa,
+                                       gpu_service_logging,
+                                       disable_gl_drawing));
+}
+
+// static
+void GLSurface::InitializeDynamicMockBindingsForTests(GLContext* context) {
+  CHECK(InitializeDynamicGLBindings(kGLImplementationMockGL, context));
 }
 
 GLSurface::GLSurface() {}
@@ -84,30 +170,17 @@ bool GLSurface::Resize(const gfx::Size& size) {
   return false;
 }
 
+bool GLSurface::Recreate() {
+  NOTIMPLEMENTED();
+  return false;
+}
+
 bool GLSurface::DeferDraws() {
   return false;
 }
 
-bool GLSurface::DeferSwapBuffers() {
+bool GLSurface::SupportsPostSubBuffer() {
   return false;
-}
-
-std::string GLSurface::GetExtensions() {
-  // Use of GLSurfaceAdapter class means that we can't compare
-  // GetCurrent() and this directly.
-  DCHECK(GetCurrent()->GetHandle() == GetHandle() ||
-         GetBackingFrameBufferObject());
-  return std::string("");
-}
-
-bool GLSurface::HasExtension(const char* name) {
-  std::string extensions = GetExtensions();
-  extensions += " ";
-
-  std::string delimited_name(name);
-  delimited_name += " ";
-
-  return extensions.find(delimited_name) != std::string::npos;
 }
 
 unsigned int GLSurface::GetBackingFrameBufferObject() {
@@ -122,7 +195,8 @@ bool GLSurface::OnMakeCurrent(GLContext* context) {
   return true;
 }
 
-void GLSurface::SetBackbufferAllocation(bool allocated) {
+bool GLSurface::SetBackbufferAllocation(bool allocated) {
+  return true;
 }
 
 void GLSurface::SetFrontbufferAllocation(bool allocated) {
@@ -148,7 +222,8 @@ unsigned GLSurface::GetFormat() {
   return 0;
 }
 
-void GLSurface::GetVSyncParameters(const UpdateVSyncCallback& callback) {
+VSyncProvider* GLSurface::GetVSyncProvider() {
+  return NULL;
 }
 
 GLSurface* GLSurface::GetCurrent() {
@@ -191,12 +266,12 @@ bool GLSurfaceAdapter::Resize(const gfx::Size& size) {
   return surface_->Resize(size);
 }
 
-bool GLSurfaceAdapter::DeferDraws() {
-  return surface_->DeferDraws();
+bool GLSurfaceAdapter::Recreate() {
+  return surface_->Recreate();
 }
 
-bool GLSurfaceAdapter::DeferSwapBuffers() {
-  return surface_->DeferSwapBuffers();
+bool GLSurfaceAdapter::DeferDraws() {
+  return surface_->DeferDraws();
 }
 
 bool GLSurfaceAdapter::IsOffscreen() {
@@ -211,8 +286,8 @@ bool GLSurfaceAdapter::PostSubBuffer(int x, int y, int width, int height) {
   return surface_->PostSubBuffer(x, y, width, height);
 }
 
-std::string GLSurfaceAdapter::GetExtensions() {
-  return surface_->GetExtensions();
+bool GLSurfaceAdapter::SupportsPostSubBuffer() {
+  return surface_->SupportsPostSubBuffer();
 }
 
 gfx::Size GLSurfaceAdapter::GetSize() {
@@ -231,8 +306,8 @@ bool GLSurfaceAdapter::OnMakeCurrent(GLContext* context) {
   return surface_->OnMakeCurrent(context);
 }
 
-void GLSurfaceAdapter::SetBackbufferAllocation(bool allocated) {
-  surface_->SetBackbufferAllocation(allocated);
+bool GLSurfaceAdapter::SetBackbufferAllocation(bool allocated) {
+  return surface_->SetBackbufferAllocation(allocated);
 }
 
 void GLSurfaceAdapter::SetFrontbufferAllocation(bool allocated) {
@@ -255,8 +330,8 @@ unsigned GLSurfaceAdapter::GetFormat() {
   return surface_->GetFormat();
 }
 
-void GLSurfaceAdapter::GetVSyncParameters(const UpdateVSyncCallback& callback) {
-  surface_->GetVSyncParameters(callback);
+VSyncProvider* GLSurfaceAdapter::GetVSyncProvider() {
+  return surface_->GetVSyncProvider();
 }
 
 GLSurfaceAdapter::~GLSurfaceAdapter() {}

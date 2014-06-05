@@ -15,6 +15,10 @@ class DictionaryValue;
 class ListValue;
 }
 
+namespace content {
+class WebUIDataSource;
+}
+
 namespace extensions {
 class Command;
 class CommandService;
@@ -32,9 +36,8 @@ class CommandHandler : public content::WebUIMessageHandler,
   explicit CommandHandler(Profile* profile);
   virtual ~CommandHandler();
 
-  // Fetches the localized values for the page and deposits them into
-  // |localized_strings|.
-  void GetLocalizedValues(base::DictionaryValue* localized_strings);
+  // Fetches the localized values for the page and deposits them into |source|.
+  void GetLocalizedValues(content::WebUIDataSource* source);
 
   // WebUIMessageHandler implementation.
   virtual void RegisterMessages() OVERRIDE;
@@ -56,6 +59,10 @@ class CommandHandler : public content::WebUIMessageHandler,
   // Handles requests from javascript to set a particular keyboard shortcut
   // for a given extension command.
   void HandleSetExtensionCommandShortcut(const base::ListValue* args);
+
+  // Handles requests from javascript to change the scope of a particular
+  // keyboard shortcut for a given extension command.
+  void HandleSetCommandScope(const base::ListValue* args);
 
   // Handles requests from javascript to temporarily disable general Chrome
   // shortcut handling while the web page is capturing which shortcut to use.

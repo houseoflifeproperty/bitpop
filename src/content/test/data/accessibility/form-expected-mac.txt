@@ -1,1 +1,3 @@
-#<skip -- not interesting on mac>
+AXWebArea
+    AXGroup
+        AXButton AXTitle='Submit'

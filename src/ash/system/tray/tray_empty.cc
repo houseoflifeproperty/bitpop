@@ -6,6 +6,7 @@
 
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/background.h"
+#include "ui/views/border.h"
 #include "ui/views/view.h"
 
 namespace {
@@ -25,7 +26,6 @@ class EmptyBackground : public views::Background {
 }
 
 namespace ash {
-namespace internal {
 
 TrayEmpty::TrayEmpty(SystemTray* system_tray)
     : SystemTrayItem(system_tray) {
@@ -43,7 +43,7 @@ views::View* TrayEmpty::CreateDefaultView(user::LoginStatus status) {
 
   views::View* view = new views::View;
   view->set_background(new EmptyBackground());
-  view->set_border(views::Border::CreateEmptyBorder(10, 0, 0, 0));
+  view->SetBorder(views::Border::CreateEmptyBorder(10, 0, 0, 0));
   view->SetLayoutManager(new views::BoxLayout(views::BoxLayout::kVertical,
         0, 0, 0));
   view->SetPaintToLayer(true);
@@ -63,5 +63,4 @@ void TrayEmpty::DestroyDetailedView() {}
 
 void TrayEmpty::UpdateAfterLoginStatusChange(user::LoginStatus status) {}
 
-}  // namespace internal
 }  // namespace ash

@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
 #include "chrome/browser/download/download_status_updater.h"
 #include "content/public/test/mock_download_item.h"
@@ -79,7 +79,7 @@ class DownloadStatusUpdaterTest : public testing::Test {
     for (int i = 0; i < manager_count; ++i) {
       content::MockDownloadManager* mgr =
           new StrictMock<content::MockDownloadManager>;
-      managers_.push_back(make_scoped_refptr(mgr));
+      managers_.push_back(mgr);
     }
   }
 
@@ -89,7 +89,7 @@ class DownloadStatusUpdaterTest : public testing::Test {
 
   // Hook the specified manager into the updater.
   void LinkManager(int i) {
-    content::MockDownloadManager* mgr = managers_[i].get();
+    content::MockDownloadManager* mgr = managers_[i];
     manager_observer_index_ = i;
     while (manager_observers_.size() <= static_cast<size_t>(i)) {
       manager_observers_.push_back(NULL);
@@ -103,7 +103,7 @@ class DownloadStatusUpdaterTest : public testing::Test {
   // Add some number of Download items to a particular manager.
   void AddItems(int manager_index, int item_count, int in_progress_count) {
     DCHECK_GT(managers_.size(), static_cast<size_t>(manager_index));
-    content::MockDownloadManager* manager = managers_[manager_index].get();
+    content::MockDownloadManager* manager = managers_[manager_index];
 
     if (manager_items_.size() <= static_cast<size_t>(manager_index))
       manager_items_.resize(manager_index+1);
@@ -112,8 +112,10 @@ class DownloadStatusUpdaterTest : public testing::Test {
     for (int i = 0; i < item_count; ++i) {
       content::MockDownloadItem* item =
           new StrictMock<content::MockDownloadItem>;
-      EXPECT_CALL(*item, IsInProgress())
-          .WillRepeatedly(Return(i < in_progress_count));
+      content::DownloadItem::DownloadState state =
+          i < in_progress_count ? content::DownloadItem::IN_PROGRESS
+              : content::DownloadItem::CANCELLED;
+      EXPECT_CALL(*item, GetState()).WillRepeatedly(Return(state));
       EXPECT_CALL(*item, AddObserver(_))
           .WillOnce(Return());
       manager_items_[manager_index].push_back(item);
@@ -125,7 +127,7 @@ class DownloadStatusUpdaterTest : public testing::Test {
   // Return the specified manager.
   content::MockDownloadManager* Manager(int manager_index) {
     DCHECK_GT(managers_.size(), static_cast<size_t>(manager_index));
-    return managers_[manager_index].get();
+    return managers_[manager_index];
   }
 
   // Return the specified item.
@@ -154,23 +156,23 @@ class DownloadStatusUpdaterTest : public testing::Test {
   // Transition specified item to completed.
   void CompleteItem(int manager_index, int item_index) {
     content::MockDownloadItem* item(Item(manager_index, item_index));
-    EXPECT_CALL(*item, IsInProgress())
-        .WillRepeatedly(Return(false));
+    EXPECT_CALL(*item, GetState())
+        .WillRepeatedly(Return(content::DownloadItem::COMPLETE));
     updater_->OnDownloadUpdated(managers_[manager_index], item);
   }
 
   // Verify and clear all mocks expectations.
   void VerifyAndClearExpectations() {
-    for (std::vector<scoped_refptr<content::MockDownloadManager> >::iterator it
+    for (ScopedVector<content::MockDownloadManager>::iterator it
              = managers_.begin(); it != managers_.end(); ++it)
-      Mock::VerifyAndClearExpectations(it->get());
+      Mock::VerifyAndClearExpectations(*it);
     for (std::vector<Items>::iterator it = manager_items_.begin();
          it != manager_items_.end(); ++it)
       for (Items::iterator sit = it->begin(); sit != it->end(); ++sit)
         Mock::VerifyAndClearExpectations(*sit);
   }
 
-  std::vector<scoped_refptr<content::MockDownloadManager> > managers_;
+  ScopedVector<content::MockDownloadManager> managers_;
   // DownloadItem so that it can be assigned to the result of SearchDownloads.
   typedef std::vector<content::DownloadItem*> Items;
   std::vector<Items> manager_items_;
@@ -186,7 +188,7 @@ class DownloadStatusUpdaterTest : public testing::Test {
   // object) can be deleted.
   // TODO(rdsmith): This can be removed when the DownloadManager
   // is no longer required to be deleted on the UI thread.
-  MessageLoop loop_;
+  base::MessageLoop loop_;
   content::TestBrowserThread ui_thread_;
 };
 
@@ -208,7 +210,7 @@ TEST_F(DownloadStatusUpdaterTest, OneManagerNoItems) {
 
   float progress = -1;
   int download_count = -1;
-  EXPECT_CALL(*managers_[0].get(), GetAllDownloads(_))
+  EXPECT_CALL(*managers_[0], GetAllDownloads(_))
       .WillRepeatedly(SetArgPointee<0>(manager_items_[0]));
   EXPECT_TRUE(updater_->GetProgress(&progress, &download_count));
   EXPECT_FLOAT_EQ(0.0f, progress);

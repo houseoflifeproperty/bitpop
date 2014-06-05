@@ -4,25 +4,24 @@
 
 #include "chrome/browser/ui/ash/ime_controller_chromeos.h"
 
-#include "chrome/browser/chromeos/input_method/input_method_configuration.h"
-#include "chrome/browser/chromeos/input_method/input_method_manager.h"
+#include "chromeos/ime/input_method_manager.h"
 #include "ui/base/accelerators/accelerator.h"
 
 bool ImeController::HandleNextIme() {
   chromeos::input_method::InputMethodManager* manager =
-      chromeos::input_method::GetInputMethodManager();
+      chromeos::input_method::InputMethodManager::Get();
   return manager->SwitchToNextInputMethod();
 }
 
-bool ImeController::HandlePreviousIme() {
+bool ImeController::HandlePreviousIme(const ui::Accelerator& accelerator) {
   chromeos::input_method::InputMethodManager* manager =
-      chromeos::input_method::GetInputMethodManager();
-  return manager->SwitchToPreviousInputMethod();
+      chromeos::input_method::InputMethodManager::Get();
+  return manager->SwitchToPreviousInputMethod(accelerator);
 }
 
 bool ImeController::HandleSwitchIme(const ui::Accelerator& accelerator) {
   chromeos::input_method::InputMethodManager* manager =
-      chromeos::input_method::GetInputMethodManager();
+      chromeos::input_method::InputMethodManager::Get();
   return manager->SwitchInputMethod(accelerator);
 }
 
@@ -49,7 +48,7 @@ ui::Accelerator ImeController::RemapAccelerator(
 
 bool ImeController::UsingFrenchInputMethod() const {
   chromeos::input_method::InputMethodManager* manager =
-      chromeos::input_method::GetInputMethodManager();
+      chromeos::input_method::InputMethodManager::Get();
   const chromeos::input_method::InputMethodDescriptor& descriptor =
       manager->GetCurrentInputMethod();
   const std::string& layout = descriptor.id();

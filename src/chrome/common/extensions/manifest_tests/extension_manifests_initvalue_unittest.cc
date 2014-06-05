@@ -2,24 +2,26 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/common/extensions/manifest_tests/extension_manifest_test.h"
-
 #include "base/i18n/rtl.h"
 #include "base/path_service.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
+#include "chrome/common/extensions/manifest_tests/extension_manifest_test.h"
+#include "chrome/common/extensions/manifest_url_handler.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/l10n/l10n_util.h"
 
-#if defined(TOOLKIT_GTK)
-#include <gtk/gtk.h>
-#endif
+namespace extensions {
 
-namespace errors = extension_manifest_errors;
+namespace errors = manifest_errors;
+namespace keys = manifest_keys;
 
-TEST_F(ExtensionManifestTest, InitFromValueInvalid) {
+class InitValueManifestTest : public ExtensionManifestTest {
+};
+
+TEST_F(InitValueManifestTest, InitFromValueInvalid) {
   Testcase testcases[] = {
     Testcase("init_invalid_version_missing.json", errors::kInvalidVersion),
     Testcase("init_invalid_version_invalid.json", errors::kInvalidVersion),
@@ -65,23 +67,28 @@ TEST_F(ExtensionManifestTest, InitFromValueInvalid) {
              errors::kInvalidMinimumChromeVersion),
     Testcase("init_invalid_chrome_version_too_low.json",
              errors::kChromeVersionTooLow),
+    Testcase("init_invalid_short_name_empty.json",
+             errors::kInvalidShortName),
+    Testcase("init_invalid_short_name_type.json",
+             errors::kInvalidShortName),
   };
 
   RunTestcases(testcases, arraysize(testcases),
                EXPECT_TYPE_ERROR);
 }
 
-TEST_F(ExtensionManifestTest, InitFromValueValid) {
-  scoped_refptr<extensions::Extension> extension(LoadAndExpectSuccess(
+TEST_F(InitValueManifestTest, InitFromValueValid) {
+  scoped_refptr<Extension> extension(LoadAndExpectSuccess(
       "init_valid_minimal.json"));
 
-  FilePath path;
+  base::FilePath path;
   PathService::Get(chrome::DIR_TEST_DATA, &path);
   path = path.AppendASCII("extensions");
 
-  EXPECT_TRUE(extensions::Extension::IdIsValid(extension->id()));
+  EXPECT_TRUE(Extension::IdIsValid(extension->id()));
   EXPECT_EQ("1.0.0.0", extension->VersionString());
   EXPECT_EQ("my extension", extension->name());
+  EXPECT_EQ(extension->name(), extension->short_name());
   EXPECT_EQ(extension->id(), extension->url().host());
   EXPECT_EQ(extension->path(), path);
   EXPECT_EQ(path, extension->path());
@@ -93,8 +100,15 @@ TEST_F(ExtensionManifestTest, InitFromValueValid) {
 
   // Test with an options page.
   extension = LoadAndExpectSuccess("init_valid_options.json");
-  EXPECT_EQ("chrome-extension", extension->options_url().scheme());
-  EXPECT_EQ("/options.html", extension->options_url().path());
+  EXPECT_EQ("chrome-extension",
+            ManifestURL::GetOptionsPage(extension.get()).scheme());
+  EXPECT_EQ("/options.html",
+            ManifestURL::GetOptionsPage(extension.get()).path());
+
+  // Test optional short_name field.
+  extension = LoadAndExpectSuccess("init_valid_short_name.json");
+  EXPECT_EQ("a very descriptive extension name", extension->name());
+  EXPECT_EQ("concise name", extension->short_name());
 
   Testcase testcases[] = {
     // Test that an empty list of page actions does not stop a browser action
@@ -122,34 +136,27 @@ TEST_F(ExtensionManifestTest, InitFromValueValid) {
                EXPECT_TYPE_SUCCESS);
 }
 
-TEST_F(ExtensionManifestTest, InitFromValueValidNameInRTL) {
-#if defined(TOOLKIT_GTK)
-  GtkTextDirection gtk_dir = gtk_widget_get_default_direction();
-  gtk_widget_set_default_direction(GTK_TEXT_DIR_RTL);
-#else
+TEST_F(InitValueManifestTest, InitFromValueValidNameInRTL) {
   std::string locale = l10n_util::GetApplicationLocale("");
   base::i18n::SetICUDefaultLocale("he");
-#endif
 
   // No strong RTL characters in name.
-  scoped_refptr<extensions::Extension> extension(LoadAndExpectSuccess(
+  scoped_refptr<Extension> extension(LoadAndExpectSuccess(
       "init_valid_name_no_rtl.json"));
 
-  string16 localized_name(ASCIIToUTF16("Dictionary (by Google)"));
+  base::string16 localized_name(base::ASCIIToUTF16("Dictionary (by Google)"));
   base::i18n::AdjustStringForLocaleDirection(&localized_name);
-  EXPECT_EQ(localized_name, UTF8ToUTF16(extension->name()));
+  EXPECT_EQ(localized_name, base::UTF8ToUTF16(extension->name()));
 
   // Strong RTL characters in name.
   extension = LoadAndExpectSuccess("init_valid_name_strong_rtl.json");
 
-  localized_name = WideToUTF16(L"Dictionary (\x05D1\x05D2"L" Google)");
+  localized_name = base::WideToUTF16(L"Dictionary (\x05D1\x05D2" L" Google)");
   base::i18n::AdjustStringForLocaleDirection(&localized_name);
-  EXPECT_EQ(localized_name, UTF8ToUTF16(extension->name()));
+  EXPECT_EQ(localized_name, base::UTF8ToUTF16(extension->name()));
 
   // Reset locale.
-#if defined(TOOLKIT_GTK)
-  gtk_widget_set_default_direction(gtk_dir);
-#else
   base::i18n::SetICUDefaultLocale(locale);
-#endif
 }
+
+}  // namespace extensions

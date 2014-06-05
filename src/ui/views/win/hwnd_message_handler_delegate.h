@@ -19,12 +19,12 @@ namespace ui {
 class Accelerator;
 class KeyEvent;
 class MouseEvent;
+class TouchEvent;
 }
 
 namespace views {
 
 class InputMethod;
-class NativeWidgetWin;
 
 // Implemented by the object that uses the HWNDMessageHandler to handle
 // notifications from the underlying HWND and service requests for data.
@@ -45,13 +45,6 @@ class VIEWS_EXPORT HWNDMessageHandlerDelegate {
   virtual bool CanActivate() const = 0;
 
   virtual bool WidgetSizeIsClientSize() const = 0;
-
-  // Returns true if the delegate has a focus saving mechanism that should be
-  // used when the window is activated and deactivated.
-  virtual bool CanSaveFocus() const = 0;
-  virtual void SaveFocusOnDeactivate() = 0;
-  virtual void RestoreFocusOnActivate() = 0;
-  virtual void RestoreFocusOnEnable() = 0;
 
   // Returns true if the delegate represents a modal window.
   virtual bool IsModal() const = 0;
@@ -86,6 +79,12 @@ class VIEWS_EXPORT HWNDMessageHandlerDelegate {
 
   virtual gfx::NativeViewAccessible GetNativeViewAccessible() = 0;
 
+  // Returns true if the window should handle standard system commands, such as
+  // close, minimize, maximize.
+  // TODO(benwells): Remove this once bubbles don't have two widgets
+  // implementing them on non-aura windows. http://crbug.com/189112.
+  virtual bool ShouldHandleSystemCommands() const = 0;
+
   // TODO(beng): Investigate migrating these methods to On* prefixes once
   // HWNDMessageHandler is the WindowImpl.
 
@@ -99,6 +98,9 @@ class VIEWS_EXPORT HWNDMessageHandlerDelegate {
   // Called when a well known "app command" from the system was performed.
   // Returns true if the command was handled.
   virtual bool HandleAppCommand(short command) = 0;
+
+  // Called from WM_CANCELMODE.
+  virtual void HandleCancelMode() = 0;
 
   // Called when the window has lost mouse capture.
   virtual void HandleCaptureLost() = 0;
@@ -127,7 +129,7 @@ class VIEWS_EXPORT HWNDMessageHandlerDelegate {
   // Called when the HWND is to be focused for the first time. This is called
   // when the window is shown for the first time. Returns true if the delegate
   // set focus and no default processing should be done by the message handler.
-  virtual bool HandleInitialFocus() = 0;
+  virtual bool HandleInitialFocus(ui::WindowShowState show_state) = 0;
 
   // Called when display settings are adjusted on the system.
   virtual void HandleDisplayChange() = 0;
@@ -142,6 +144,10 @@ class VIEWS_EXPORT HWNDMessageHandlerDelegate {
 
   // Called when the system's work area has changed.
   virtual void HandleWorkAreaChanged() = 0;
+
+  // Called when the window's visibility is changing. |visible| holds the new
+  // state.
+  virtual void HandleVisibilityChanging(bool visible) = 0;
 
   // Called when the window's visibility changed. |visible| holds the new state.
   virtual void HandleVisibilityChanged(bool visible) = 0;
@@ -171,6 +177,9 @@ class VIEWS_EXPORT HWNDMessageHandlerDelegate {
   // translation). Returns true if the event was sent to the input method.
   virtual bool HandleUntranslatedKeyEvent(const ui::KeyEvent& event) = 0;
 
+  // Called when a touch event is received.
+  virtual void HandleTouchEvent(const ui::TouchEvent& event) = 0;
+
   // Called when an IME message needs to be processed by the delegate. Returns
   // true if the event was handled and no default processing should be
   // performed.
@@ -190,9 +199,6 @@ class VIEWS_EXPORT HWNDMessageHandlerDelegate {
   // Called to compel the delegate to paint using the software path.
   virtual void HandlePaint(gfx::Canvas* canvas) = 0;
 
-  // Called when we have detected a screen reader.
-  virtual void HandleScreenReaderDetected() = 0;
-
   // Called to forward a WM_NOTIFY message to the tooltip manager.
   virtual bool HandleTooltipNotify(int w_param,
                                    NMHDR* l_param,
@@ -202,6 +208,9 @@ class VIEWS_EXPORT HWNDMessageHandlerDelegate {
   virtual void HandleTooltipMouseMove(UINT message,
                                       WPARAM w_param,
                                       LPARAM l_param) = 0;
+
+  // Invoked on entering/exiting a menu loop.
+  virtual void HandleMenuLoop(bool in_menu_loop) = 0;
 
   // Catch-all message handling and filtering. Called before
   // HWNDMessageHandler's built-in handling, which may pre-empt some
@@ -219,6 +228,13 @@ class VIEWS_EXPORT HWNDMessageHandlerDelegate {
   virtual void PostHandleMSG(UINT message,
                              WPARAM w_param,
                              LPARAM l_param) = 0;
+
+  // Called when a scroll event is received. Returns true if the event was
+  // handled by the delegate.
+  virtual bool HandleScrollEvent(const ui::ScrollEvent& event) = 0;
+
+  // Called when the window size is about to change.
+  virtual void HandleWindowSizeChanging() = 0;
 
  protected:
   virtual ~HWNDMessageHandlerDelegate() {}

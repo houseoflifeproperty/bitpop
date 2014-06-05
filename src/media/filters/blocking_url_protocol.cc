@@ -11,7 +11,7 @@
 namespace media {
 
 BlockingUrlProtocol::BlockingUrlProtocol(
-    const scoped_refptr<DataSource>& data_source,
+    DataSource* data_source,
     const base::Closure& error_cb)
     : data_source_(data_source),
       error_cb_(error_cb),
@@ -67,7 +67,7 @@ bool BlockingUrlProtocol::GetPosition(int64* position_out) {
 
 bool BlockingUrlProtocol::SetPosition(int64 position) {
   int64 file_size;
-  if ((data_source_->GetSize(&file_size) && position >= file_size) ||
+  if ((data_source_->GetSize(&file_size) && position > file_size) ||
       position < 0) {
     return false;
   }

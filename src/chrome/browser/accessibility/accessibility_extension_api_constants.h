@@ -13,11 +13,13 @@ namespace extension_accessibility_api_constants {
 extern const char kTypeKey[];
 extern const char kNameKey[];
 extern const char kContextKey[];
-extern const char kDetailsKey[];
 extern const char kValueKey[];
+extern const char kChildrenCountKey[];
 extern const char kPasswordKey[];
 extern const char kItemCountKey[];
+extern const char kItemDepthKey[];
 extern const char kItemIndexKey[];
+extern const char kItemExpandedKey[];
 extern const char kSelectionStartKey[];
 extern const char kSelectionEndKey[];
 extern const char kCheckedKey[];
@@ -25,16 +27,8 @@ extern const char kHasSubmenuKey[];
 extern const char kMessageKey[];
 extern const char kStringValueKey[];
 
-// Events.
-extern const char kOnWindowOpened[];
-extern const char kOnWindowClosed[];
-extern const char kOnControlFocused[];
-extern const char kOnControlAction[];
-extern const char kOnTextChanged[];
-extern const char kOnMenuOpened[];
-extern const char kOnMenuClosed[];
-
-// Types of controls that can receive accessibility events
+// Types of controls that can receive accessibility events.
+extern const char kTypeAlert[];
 extern const char kTypeButton[];
 extern const char kTypeCheckbox[];
 extern const char kTypeComboBox[];
@@ -46,6 +40,8 @@ extern const char kTypeRadioButton[];
 extern const char kTypeSlider[];
 extern const char kTypeTab[];
 extern const char kTypeTextBox[];
+extern const char kTypeTree[];
+extern const char kTypeTreeItem[];
 extern const char kTypeVolume[];
 extern const char kTypeWindow[];
 

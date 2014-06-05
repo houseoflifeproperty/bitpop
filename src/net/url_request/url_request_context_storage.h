@@ -56,14 +56,13 @@ class NET_EXPORT URLRequestContextStorage {
   void set_proxy_service(ProxyService* proxy_service);
   void set_ssl_config_service(SSLConfigService* ssl_config_service);
   void set_network_delegate(NetworkDelegate* network_delegate);
-  void set_http_server_properties(HttpServerProperties* http_server_properties);
+  void set_http_server_properties(
+      scoped_ptr<HttpServerProperties> http_server_properties);
   void set_cookie_store(CookieStore* cookie_store);
   void set_transport_security_state(
       TransportSecurityState* transport_security_state);
   void set_http_transaction_factory(
       HttpTransactionFactory* http_transaction_factory);
-  void set_ftp_transaction_factory(
-      FtpTransactionFactory* ftp_transaction_factory);
   void set_job_factory(URLRequestJobFactory* job_factory);
   void set_throttler_manager(URLRequestThrottlerManager* throttler_manager);
   void set_http_user_agent_settings(
@@ -79,6 +78,7 @@ class NET_EXPORT URLRequestContextStorage {
   scoped_ptr<NetLog> net_log_;
   scoped_ptr<HostResolver> host_resolver_;
   scoped_ptr<CertVerifier> cert_verifier_;
+  // The ServerBoundCertService must outlive the HttpTransactionFactory.
   scoped_ptr<ServerBoundCertService> server_bound_cert_service_;
   scoped_ptr<FraudulentCertificateReporter> fraudulent_certificate_reporter_;
   scoped_ptr<HttpAuthHandlerFactory> http_auth_handler_factory_;
@@ -92,7 +92,6 @@ class NET_EXPORT URLRequestContextStorage {
   scoped_ptr<TransportSecurityState> transport_security_state_;
 
   scoped_ptr<HttpTransactionFactory> http_transaction_factory_;
-  scoped_ptr<FtpTransactionFactory> ftp_transaction_factory_;
   scoped_ptr<URLRequestJobFactory> job_factory_;
   scoped_ptr<URLRequestThrottlerManager> throttler_manager_;
 

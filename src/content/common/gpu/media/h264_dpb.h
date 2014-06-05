@@ -12,7 +12,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_vector.h"
-#include "content/common/gpu/media/h264_parser.h"
+#include "media/filters/h264_parser.h"
 
 namespace content {
 
@@ -55,7 +55,8 @@ struct H264Picture {
   // memory management after finishing this picture.
   bool long_term_reference_flag;
   bool adaptive_ref_pic_marking_mode_flag;
-  H264DecRefPicMarking ref_pic_marking[H264SliceHeader::kRefListSize];
+  media::H264DecRefPicMarking
+      ref_pic_marking[media::H264SliceHeader::kRefListSize];
 
   typedef std::vector<H264Picture*> PtrVector;
 };
@@ -68,11 +69,15 @@ class H264DPB {
   H264DPB();
   ~H264DPB();
 
-  // Remove unused (not reference and already outputted) pictures from DPB.
-  void RemoveUnused();
+  void set_max_num_pics(size_t max_num_pics);
+  size_t max_num_pics() { return max_num_pics_; }
 
-  // Remove a picture by its pic_order_cnt.
-  void RemoveByPOC(int poc);
+  // Remove unused (not reference and already outputted) pictures from DPB
+  // and free it.
+  void DeleteUnused();
+
+  // Remove a picture by its pic_order_cnt and free it.
+  void DeleteByPOC(int poc);
 
   // Clear DPB.
   void Clear();
@@ -115,13 +120,14 @@ class H264DPB {
   Pictures::reverse_iterator rend() { return pics_.rend(); }
 
   size_t size() const { return pics_.size(); }
-  bool IsFull() const { return pics_.size() == kDPBMaxSize; }
+  bool IsFull() const { return pics_.size() == max_num_pics_; }
 
   // Per H264 spec, increase to 32 if interlaced video is supported.
-  enum { kDPBMaxSize = 16 };
+  enum { kDPBMaxSize = 16, };
 
  private:
   Pictures pics_;
+  size_t max_num_pics_;
 
   DISALLOW_COPY_AND_ASSIGN(H264DPB);
 };

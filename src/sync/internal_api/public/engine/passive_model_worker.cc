@@ -4,19 +4,27 @@
 
 #include "sync/internal_api/public/engine/passive_model_worker.h"
 
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 
 namespace syncer {
 
-PassiveModelWorker::PassiveModelWorker(const MessageLoop* sync_loop)
-    : sync_loop_(sync_loop) {}
+PassiveModelWorker::PassiveModelWorker(const base::MessageLoop* sync_loop,
+                                       WorkerLoopDestructionObserver* observer)
+    : ModelSafeWorker(observer),
+      sync_loop_(sync_loop) {
+}
 
 PassiveModelWorker::~PassiveModelWorker() {
 }
 
-SyncerError PassiveModelWorker::DoWorkAndWaitUntilDone(
+void PassiveModelWorker::RegisterForLoopDestruction() {
+  base::MessageLoop::current()->AddDestructionObserver(this);
+  SetWorkingLoopToCurrent();
+}
+
+SyncerError PassiveModelWorker::DoWorkAndWaitUntilDoneImpl(
     const WorkCallback& work) {
-  DCHECK_EQ(MessageLoop::current(), sync_loop_);
+  DCHECK_EQ(base::MessageLoop::current(), sync_loop_);
   // Simply do the work on the current thread.
   return work.Run();
 }

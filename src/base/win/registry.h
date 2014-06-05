@@ -26,6 +26,7 @@ namespace win {
 class BASE_EXPORT RegKey {
  public:
   RegKey();
+  explicit RegKey(HKEY key);
   RegKey(HKEY rootkey, const wchar_t* subkey, REGSAM access);
   ~RegKey();
 
@@ -46,11 +47,17 @@ class BASE_EXPORT RegKey {
   // Closes this reg key.
   void Close();
 
-  // Returns false if this key does not have the specified value, of if an error
+  // Replaces the handle of the registry key and takes ownership of the handle.
+  void Set(HKEY key);
+
+  // Transfers ownership away from this object.
+  HKEY Take();
+
+  // Returns false if this key does not have the specified value, or if an error
   // occurrs while attempting to access it.
   bool HasValue(const wchar_t* value_name) const;
 
-  // Returns the number of values for this key, of 0 if the number cannot be
+  // Returns the number of values for this key, or 0 if the number cannot be
   // determined.
   DWORD GetValueCount() const;
 

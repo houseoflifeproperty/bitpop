@@ -4,16 +4,17 @@
 
 #include "ppapi/shared_impl/ppb_url_util_shared.h"
 
-#include "googleurl/src/gurl.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
+#include "ppapi/shared_impl/proxy_lock.h"
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/shared_impl/var_tracker.h"
+#include "url/gurl.h"
 
 namespace ppapi {
 
 namespace {
 
-void ConvertComponent(const url_parse::Component& input,
+void ConvertComponent(const url::Component& input,
                       PP_URLComponent_Dev* output) {
   output->begin = input.begin;
   output->len = input.len;
@@ -25,8 +26,7 @@ void ConvertComponent(const url_parse::Component& input,
 //
 // Output can be NULL to specify "do nothing." This rule is followed by all the
 // url util functions, so we implement it once here.
-void ConvertComponents(const url_parse::Parsed& input,
-                       PP_URLComponents_Dev* output) {
+void ConvertComponents(const url::Parsed& input, PP_URLComponents_Dev* output) {
   if (!output)
     return;
 
@@ -45,6 +45,7 @@ void ConvertComponents(const url_parse::Parsed& input,
 // static
 PP_Var PPB_URLUtil_Shared::Canonicalize(PP_Var url,
                                         PP_URLComponents_Dev* components) {
+  ProxyAutoLock lock;
   StringVar* url_string = StringVar::FromPPVar(url);
   if (!url_string)
     return PP_MakeNull();
@@ -56,6 +57,7 @@ PP_Var PPB_URLUtil_Shared::ResolveRelativeToURL(
     PP_Var base_url,
     PP_Var relative,
     PP_URLComponents_Dev* components) {
+  ProxyAutoLock lock;
   StringVar* base_url_string = StringVar::FromPPVar(base_url);
   StringVar* relative_string = StringVar::FromPPVar(relative);
   if (!base_url_string || !relative_string)
@@ -70,6 +72,7 @@ PP_Var PPB_URLUtil_Shared::ResolveRelativeToURL(
 
 // static
 PP_Bool PPB_URLUtil_Shared::IsSameSecurityOrigin(PP_Var url_a, PP_Var url_b) {
+  ProxyAutoLock lock;
   StringVar* url_a_string = StringVar::FromPPVar(url_a);
   StringVar* url_b_string = StringVar::FromPPVar(url_b);
   if (!url_a_string || !url_b_string)

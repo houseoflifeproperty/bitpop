@@ -10,11 +10,12 @@
 
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
-#include "base/string16.h"
-#include "chrome/browser/webdata/web_database_table.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/search_engines/template_url_id.h"
+#include "components/webdata/common/web_database_table.h"
 
 struct TemplateURLData;
+class WebDatabase;
 
 namespace sql {
 class Statement;
@@ -53,6 +54,21 @@ class Statement;
 //                          version 39.
 //   alternate_urls         See TemplateURLData::alternate_urls. This was added
 //                          in version 47.
+//   search_terms_replacement_key
+//                          See TemplateURLData::search_terms_replacement_key.
+//                          This was added in version 49.
+//   image_url              See TemplateURLData::image_url. This was added in
+//                          version 52.
+//   search_url_post_params See TemplateURLData::search_url_post_params. This
+//                          was added in version 52.
+//   suggest_url_post_params See TemplateURLData::suggestions_url_post_params.
+//                          This was added in version 52.
+//   instant_url_post_params See TemplateURLData::instant_url_post_params. This
+//                          was added in version 52.
+//   image_url_post_params  See TemplateURLData::image_url_post_params. This
+//                          was added in version 52.
+//   new_tab_url            See TemplateURLData::new_tab_url. This was added in
+//                          version 53.
 //
 // This class also manages some fields in the |meta| table:
 //
@@ -61,33 +77,42 @@ class Statement;
 //
 class KeywordTable : public WebDatabaseTable {
  public:
+  enum OperationType {
+    ADD,
+    REMOVE,
+    UPDATE,
+  };
+
+  typedef std::pair<OperationType, TemplateURLData> Operation;
+  typedef std::vector<Operation> Operations;
   typedef std::vector<TemplateURLData> Keywords;
 
   // Constants exposed for the benefit of test code:
 
   static const char kDefaultSearchProviderKey[];
 
-  KeywordTable(sql::Connection* db, sql::MetaTable* meta_table);
+  KeywordTable();
   virtual ~KeywordTable();
-  virtual bool Init() OVERRIDE;
+
+  // Retrieves the KeywordTable* owned by |database|.
+  static KeywordTable* FromWebDatabase(WebDatabase* db);
+
+  virtual WebDatabaseTable::TypeKey GetTypeKey() const OVERRIDE;
+  virtual bool CreateTablesIfNecessary() OVERRIDE;
   virtual bool IsSyncable() OVERRIDE;
+  virtual bool MigrateToVersion(int version,
+                                bool* update_compatible_version) OVERRIDE;
 
-  // Adds a new keyword, updating the id field on success.
-  // Returns true if successful.
-  bool AddKeyword(const TemplateURLData& data);
-
-  // Removes the specified keyword.
-  // Returns true if successful.
-  bool RemoveKeyword(TemplateURLID id);
+  // Performs an arbitrary number of Add/Remove/Update operations as a single
+  // transaction.  This is provided for efficiency reasons: if the caller needs
+  // to perform a large number of operations, doing them in a single transaction
+  // instead of one-per-transaction can be dramatically more efficient.
+  bool PerformOperations(const Operations& operations);
 
   // Loads the keywords into the specified vector. It's up to the caller to
   // delete the returned objects.
   // Returns true on success.
   bool GetKeywords(Keywords* keywords);
-
-  // Updates the database values for the specified url.
-  // Returns true on success.
-  bool UpdateKeyword(const TemplateURLData& data);
 
   // ID (TemplateURLData->id) of the default search provider.
   bool SetDefaultSearchProviderID(int64 id);
@@ -113,11 +138,12 @@ class KeywordTable : public WebDatabaseTable {
   bool MigrateToVersion45RemoveLogoIDAndAutogenerateColumns();
   bool MigrateToVersion47AddAlternateURLsColumn();
   bool MigrateToVersion48RemoveKeywordsBackup();
+  bool MigrateToVersion49AddSearchTermsReplacementKeyColumn();
+  bool MigrateToVersion52AddImageSearchAndPOSTSupport();
+  bool MigrateToVersion53AddNewTabURLColumn();
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(KeywordTableTest, GetTableContents);
-  FRIEND_TEST_ALL_PREFIXES(KeywordTableTest, GetTableContentsOrdering);
-  FRIEND_TEST_ALL_PREFIXES(KeywordTableTest, SanitizeURLs);
+  friend class KeywordTableTest;
   FRIEND_TEST_ALL_PREFIXES(WebDatabaseMigrationTest, MigrateVersion44ToCurrent);
 
   // NOTE: Since the table columns have changed in different versions, many
@@ -130,11 +156,17 @@ class KeywordTable : public WebDatabaseTable {
   static bool GetKeywordDataFromStatement(const sql::Statement& s,
                                           TemplateURLData* data);
 
-  // Returns contents of selected table as a string in |contents| parameter.
-  // Returns true on success, false otherwise.
-  bool GetTableContents(const char* table_name,
-                        int table_version,
-                        std::string* contents);
+  // Adds a new keyword, updating the id field on success.
+  // Returns true if successful.
+  bool AddKeyword(const TemplateURLData& data);
+
+  // Removes the specified keyword.
+  // Returns true if successful.
+  bool RemoveKeyword(TemplateURLID id);
+
+  // Updates the database values for the specified url.
+  // Returns true on success.
+  bool UpdateKeyword(const TemplateURLData& data);
 
   // Gets a string representation for keyword with id specified.
   // Used to store its result in |meta| table or to compare with another

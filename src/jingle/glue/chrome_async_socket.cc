@@ -5,23 +5,23 @@
 #include "jingle/glue/chrome_async_socket.h"
 
 #include <algorithm>
-#include <cstring>
 #include <cstdlib>
+#include <cstring>
 
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "jingle/glue/resolving_client_socket_factory.h"
 #include "net/base/address_list.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_util.h"
-#include "net/base/ssl_config_service.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/socket/tcp_client_socket.h"
+#include "net/ssl/ssl_config_service.h"
 #include "third_party/libjingle/source/talk/base/socketaddress.h"
 
 namespace jingle_glue {
@@ -30,8 +30,7 @@ ChromeAsyncSocket::ChromeAsyncSocket(
     ResolvingClientSocketFactory* resolving_client_socket_factory,
     size_t read_buf_size,
     size_t write_buf_size)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)),
-      resolving_client_socket_factory_(resolving_client_socket_factory),
+    : resolving_client_socket_factory_(resolving_client_socket_factory),
       state_(STATE_CLOSED),
       error_(ERROR_NONE),
       net_error_(net::OK),
@@ -41,7 +40,8 @@ ChromeAsyncSocket::ChromeAsyncSocket(
       read_end_(0U),
       write_state_(IDLE),
       write_buf_(new net::IOBufferWithSize(write_buf_size)),
-      write_end_(0U) {
+      write_end_(0U),
+      weak_ptr_factory_(this) {
   DCHECK(resolving_client_socket_factory_.get());
   DCHECK_GT(read_buf_size, 0U);
   DCHECK_GT(write_buf_size, 0U);
@@ -106,9 +106,9 @@ bool ChromeAsyncSocket::Connect(const talk_base::SocketAddress& address) {
 
   net::HostPortPair dest_host_port_pair(address.hostname(), address.port());
 
-  transport_socket_.reset(
+  transport_socket_ =
       resolving_client_socket_factory_->CreateTransportClientSocket(
-          dest_host_port_pair));
+          dest_host_port_pair);
   int status = transport_socket_->Connect(
       base::Bind(&ChromeAsyncSocket::ProcessConnectDone,
                  weak_ptr_factory_.GetWeakPtr()));
@@ -117,7 +117,7 @@ bool ChromeAsyncSocket::Connect(const talk_base::SocketAddress& address) {
     // directly here as the caller may not expect an error/close to
     // happen here.  This is okay, as from the caller's point of view,
     // the connect always happens asynchronously.
-    MessageLoop* message_loop = MessageLoop::current();
+    base::MessageLoop* message_loop = base::MessageLoop::current();
     CHECK(message_loop);
     message_loop->PostTask(
         FROM_HERE,
@@ -154,7 +154,7 @@ void ChromeAsyncSocket::PostDoRead() {
   DCHECK_EQ(read_state_, IDLE);
   DCHECK_EQ(read_start_, 0U);
   DCHECK_EQ(read_end_, 0U);
-  MessageLoop* message_loop = MessageLoop::current();
+  base::MessageLoop* message_loop = base::MessageLoop::current();
   CHECK(message_loop);
   message_loop->PostTask(
       FROM_HERE,
@@ -288,7 +288,7 @@ void ChromeAsyncSocket::PostDoWrite() {
   DCHECK(IsOpen());
   DCHECK_EQ(write_state_, IDLE);
   DCHECK_GT(write_end_, 0U);
-  MessageLoop* message_loop = MessageLoop::current();
+  base::MessageLoop* message_loop = base::MessageLoop::current();
   CHECK(message_loop);
   message_loop->PostTask(
       FROM_HERE,
@@ -404,15 +404,15 @@ bool ChromeAsyncSocket::StartTls(const std::string& domain_name) {
   DCHECK(transport_socket_.get());
   scoped_ptr<net::ClientSocketHandle> socket_handle(
       new net::ClientSocketHandle());
-  socket_handle->set_socket(transport_socket_.release());
-  transport_socket_.reset(
+  socket_handle->SetSocket(transport_socket_.Pass());
+  transport_socket_ =
       resolving_client_socket_factory_->CreateSSLClientSocket(
-          socket_handle.release(), net::HostPortPair(domain_name, 443)));
+          socket_handle.Pass(), net::HostPortPair(domain_name, 443));
   int status = transport_socket_->Connect(
       base::Bind(&ChromeAsyncSocket::ProcessSSLConnectDone,
                  weak_ptr_factory_.GetWeakPtr()));
   if (status != net::ERR_IO_PENDING) {
-    MessageLoop* message_loop = MessageLoop::current();
+    base::MessageLoop* message_loop = base::MessageLoop::current();
     CHECK(message_loop);
     message_loop->PostTask(
         FROM_HERE,

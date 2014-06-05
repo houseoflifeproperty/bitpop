@@ -33,7 +33,11 @@ message ExtensionSpecifics {
   // Whether or not this extension is enabled in incognito mode.
   optional bool incognito_enabled = 5;
 
-  // The name of the extension.  Used only for debugging.
+  // The name of the extension. Used for bookmark apps.
   optional string name = 6;
+
+  // Whether this extension was installed remotely, and hasn't been approved by
+  // a user in chrome yet.
+  optional bool remote_install = 7;
 }
 

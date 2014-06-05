@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "net/quic/quic_fec_group.h"
+
 #include <algorithm>
 #include <vector>
 
+#include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "net/quic/quic_fec_group.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 using ::testing::_;
@@ -18,12 +20,21 @@ namespace net {
 namespace {
 
 const char* kData[] = {
-    "abc12345678",
-    "987defg",
-    "ghi12345",
-    "987jlkmno",
-    "mno4567890",
-    "789pqrstuvw",
+  "abc12345678",
+  "987defg",
+  "ghi12345",
+  "987jlkmno",
+  "mno4567890",
+  "789pqrstuvw",
+};
+
+const bool kEntropyFlag[] = {
+  false,
+  true,
+  true,
+  false,
+  true,
+  true,
 };
 
 }  // namespace
@@ -32,12 +43,15 @@ class QuicFecGroupTest : public ::testing::Test {
  protected:
   void RunTest(size_t num_packets, size_t lost_packet, bool out_of_order) {
     size_t max_len = strlen(kData[0]);
-    scoped_array<char>redundancy(new char[max_len]);
-    for (size_t i = 0; i < max_len; i++) {
-      // Initialize to the first packet.
-      redundancy[i] = kData[0][i];
-      // XOR in the remaining packets.
-      for (size_t packet = 1; packet < num_packets; packet++) {
+    scoped_ptr<char[]> redundancy(new char[max_len]);
+    for (size_t packet = 0; packet < num_packets; ++packet) {
+      for (size_t i = 0; i < max_len; i++) {
+        if (packet == 0) {
+          // Initialize to the first packet.
+          redundancy[i] = kData[0][i];
+          continue;
+        }
+        // XOR in the remaining packets.
         uint8 byte = i > strlen(kData[packet]) ? 0x00 : kData[packet][i];
         redundancy[i] = redundancy[i] ^ byte;
       }
@@ -53,18 +67,21 @@ class QuicFecGroupTest : public ::testing::Test {
         if (packet == lost_packet) {
           ASSERT_FALSE(group.IsFinished());
           QuicFecData fec;
-          fec.min_protected_packet_sequence_number = 0;
+          fec.fec_group = 0;
           fec.redundancy = StringPiece(redundancy.get(), strlen(kData[0]));
-          ASSERT_TRUE(group.UpdateFec(num_packets, fec));
+          ASSERT_TRUE(group.UpdateFec(ENCRYPTION_FORWARD_SECURE, num_packets,
+                                      fec));
         } else {
           QuicPacketHeader header;
           header.packet_sequence_number = packet;
-          ASSERT_TRUE(group.Update(header, kData[packet]));
+          header.entropy_flag = kEntropyFlag[packet];
+          ASSERT_TRUE(group.Update(ENCRYPTION_FORWARD_SECURE, header,
+                                   kData[packet]));
         }
         ASSERT_TRUE(group.CanRevive() == (packet == num_packets - 1));
       }
     } else {
-    // Update the FEC state for each non-lost packet.
+      // Update the FEC state for each non-lost packet.
       for (size_t packet = 0; packet < num_packets; packet++) {
         if (packet == lost_packet) {
           continue;
@@ -72,17 +89,20 @@ class QuicFecGroupTest : public ::testing::Test {
 
         QuicPacketHeader header;
         header.packet_sequence_number = packet;
-        ASSERT_TRUE(group.Update(header, kData[packet]));
+        header.entropy_flag = kEntropyFlag[packet];
+        ASSERT_TRUE(group.Update(ENCRYPTION_FORWARD_SECURE, header,
+                                 kData[packet]));
         ASSERT_FALSE(group.CanRevive());
       }
 
       ASSERT_FALSE(group.IsFinished());
       // Attempt to revive the missing packet.
       QuicFecData fec;
-      fec.min_protected_packet_sequence_number = 0;
+      fec.fec_group = 0;
       fec.redundancy = StringPiece(redundancy.get(), strlen(kData[0]));
 
-      ASSERT_TRUE(group.UpdateFec(num_packets, fec));
+      ASSERT_TRUE(group.UpdateFec(ENCRYPTION_FORWARD_SECURE, num_packets,
+                                  fec));
     }
     QuicPacketHeader header;
     char recovered[kMaxPacketSize];
@@ -94,6 +114,8 @@ class QuicFecGroupTest : public ::testing::Test {
     EXPECT_EQ(lost_packet, header.packet_sequence_number)
         << "Failed to revive packet " << lost_packet << " out of "
         << num_packets;
+    // Revived packets have an unknown entropy.
+    EXPECT_FALSE(header.entropy_flag);
     ASSERT_GE(len, strlen(kData[lost_packet])) << "Incorrect length";
     for (size_t i = 0; i < strlen(kData[lost_packet]); i++) {
       EXPECT_EQ(kData[lost_packet][i], recovered[i]);
@@ -131,13 +153,14 @@ TEST_F(QuicFecGroupTest, UpdateFecIfReceivedPacketIsNotCovered) {
 
   QuicPacketHeader header;
   header.packet_sequence_number = 3;
-  group.Update(header, data1);
+  group.Update(ENCRYPTION_FORWARD_SECURE, header, data1);
 
   QuicFecData fec;
-  fec.min_protected_packet_sequence_number = 1;
+  fec.fec_group = 1;
   fec.redundancy = redundancy;
 
-  ASSERT_FALSE(group.UpdateFec(2, fec));
+  header.packet_sequence_number = 2;
+  ASSERT_FALSE(group.UpdateFec(ENCRYPTION_FORWARD_SECURE, 2, fec));
 }
 
 TEST_F(QuicFecGroupTest, ProtectsPacketsBefore) {
@@ -145,7 +168,7 @@ TEST_F(QuicFecGroupTest, ProtectsPacketsBefore) {
   header.packet_sequence_number = 3;
 
   QuicFecGroup group;
-  ASSERT_TRUE(group.Update(header, kData[0]));
+  ASSERT_TRUE(group.Update(ENCRYPTION_FORWARD_SECURE, header, kData[0]));
 
   EXPECT_FALSE(group.ProtectsPacketsBefore(1));
   EXPECT_FALSE(group.ProtectsPacketsBefore(2));
@@ -160,13 +183,13 @@ TEST_F(QuicFecGroupTest, ProtectsPacketsBeforeWithSeveralPackets) {
   header.packet_sequence_number = 3;
 
   QuicFecGroup group;
-  ASSERT_TRUE(group.Update(header, kData[0]));
+  ASSERT_TRUE(group.Update(ENCRYPTION_FORWARD_SECURE, header, kData[0]));
 
   header.packet_sequence_number = 7;
-  ASSERT_TRUE(group.Update(header, kData[0]));
+  ASSERT_TRUE(group.Update(ENCRYPTION_FORWARD_SECURE, header, kData[0]));
 
   header.packet_sequence_number = 5;
-  ASSERT_TRUE(group.Update(header, kData[0]));
+  ASSERT_TRUE(group.Update(ENCRYPTION_FORWARD_SECURE, header, kData[0]));
 
   EXPECT_FALSE(group.ProtectsPacketsBefore(1));
   EXPECT_FALSE(group.ProtectsPacketsBefore(2));
@@ -182,11 +205,11 @@ TEST_F(QuicFecGroupTest, ProtectsPacketsBeforeWithSeveralPackets) {
 
 TEST_F(QuicFecGroupTest, ProtectsPacketsBeforeWithFecData) {
   QuicFecData fec;
-  fec.min_protected_packet_sequence_number = 2;
+  fec.fec_group = 2;
   fec.redundancy = kData[0];
 
   QuicFecGroup group;
-  ASSERT_TRUE(group.UpdateFec(3, fec));
+  ASSERT_TRUE(group.UpdateFec(ENCRYPTION_FORWARD_SECURE, 3, fec));
 
   EXPECT_FALSE(group.ProtectsPacketsBefore(1));
   EXPECT_FALSE(group.ProtectsPacketsBefore(2));
@@ -194,6 +217,26 @@ TEST_F(QuicFecGroupTest, ProtectsPacketsBeforeWithFecData) {
   EXPECT_TRUE(group.ProtectsPacketsBefore(4));
   EXPECT_TRUE(group.ProtectsPacketsBefore(5));
   EXPECT_TRUE(group.ProtectsPacketsBefore(50));
+}
+
+TEST_F(QuicFecGroupTest, EffectiveEncryptionLevel) {
+  QuicFecGroup group;
+  EXPECT_EQ(NUM_ENCRYPTION_LEVELS, group.effective_encryption_level());
+
+  QuicPacketHeader header;
+  header.packet_sequence_number = 5;
+  ASSERT_TRUE(group.Update(ENCRYPTION_INITIAL, header, kData[0]));
+  EXPECT_EQ(ENCRYPTION_INITIAL, group.effective_encryption_level());
+
+  QuicFecData fec;
+  fec.fec_group = 0;
+  fec.redundancy = kData[0];
+  ASSERT_TRUE(group.UpdateFec(ENCRYPTION_FORWARD_SECURE, 7, fec));
+  EXPECT_EQ(ENCRYPTION_INITIAL, group.effective_encryption_level());
+
+  header.packet_sequence_number = 3;
+  ASSERT_TRUE(group.Update(ENCRYPTION_NONE, header, kData[0]));
+  EXPECT_EQ(ENCRYPTION_NONE, group.effective_encryption_level());
 }
 
 }  // namespace net

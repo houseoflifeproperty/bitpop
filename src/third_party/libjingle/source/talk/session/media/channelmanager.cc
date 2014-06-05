@@ -33,129 +33,32 @@
 
 #include <algorithm>
 
+#include "talk/base/bind.h"
 #include "talk/base/common.h"
 #include "talk/base/logging.h"
 #include "talk/base/sigslotrepeater.h"
 #include "talk/base/stringencode.h"
+#include "talk/base/stringutils.h"
 #include "talk/media/base/capturemanager.h"
+#include "talk/media/base/hybriddataengine.h"
 #include "talk/media/base/rtpdataengine.h"
 #include "talk/media/base/videocapturer.h"
+#include "talk/media/devices/devicemanager.h"
+#ifdef HAVE_SCTP
+#include "talk/media/sctp/sctpdataengine.h"
+#endif
 #include "talk/session/media/soundclip.h"
+#include "talk/session/media/srtpfilter.h"
 
 namespace cricket {
 
 enum {
-  MSG_CREATEVOICECHANNEL = 1,
-  MSG_DESTROYVOICECHANNEL = 2,
-  MSG_SETAUDIOOPTIONS = 3,
-  MSG_GETOUTPUTVOLUME = 4,
-  MSG_SETOUTPUTVOLUME = 5,
-  MSG_SETLOCALMONITOR = 6,
-  MSG_SETVOICELOGGING = 7,
-  MSG_CREATEVIDEOCHANNEL = 11,
-  MSG_DESTROYVIDEOCHANNEL = 12,
-  MSG_SETVIDEOOPTIONS = 13,
-  MSG_SETLOCALRENDERER = 14,
-  MSG_SETDEFAULTVIDEOENCODERCONFIG = 15,
-  MSG_SETVIDEOLOGGING = 16,
-  MSG_CREATESOUNDCLIP = 17,
-  MSG_DESTROYSOUNDCLIP = 18,
-  MSG_VIDEOCAPTURESTATE = 19,
-  MSG_SETVIDEOCAPTURE = 20,
-  MSG_TERMINATE = 21,
-  MSG_REGISTERVIDEOPROCESSOR = 22,
-  MSG_UNREGISTERVIDEOPROCESSOR = 23,
-  MSG_REGISTERVOICEPROCESSOR = 24,
-  MSG_UNREGISTERVOICEPROCESSOR = 25,
-  MSG_SETVIDEOCAPTURER = 26,
-  MSG_CREATEDATACHANNEL = 27,
-  MSG_DESTROYDATACHANNEL = 28,
-  // The following are done in the new "CaptureManager" style that
-  // all local video capturers, processors, and managers should move
-  // to.
-  // TODO(pthatcher): Add more of the CaptureManager interface.
-  MSG_STARTVIDEOCAPTURE = 29,
-  MSG_STOPVIDEOCAPTURE = 30,
-  MSG_ADDVIDEORENDERER = 31,
-  MSG_REMOVEVIDEORENDERER = 32,
-  MSG_GETSTARTCAPTUREFORMAT = 33,
+  MSG_VIDEOCAPTURESTATE = 1,
 };
+
+using talk_base::Bind;
 
 static const int kNotSetOutputVolume = -1;
-
-struct CreationParams : public talk_base::MessageData {
-  CreationParams(BaseSession* session, const std::string& content_name,
-                 bool rtcp, VoiceChannel* voice_channel)
-      : session(session),
-        content_name(content_name),
-        rtcp(rtcp),
-        voice_channel(voice_channel),
-        video_channel(NULL),
-        data_channel(NULL) {
-  }
-  BaseSession* session;
-  std::string content_name;
-  bool rtcp;
-  VoiceChannel* voice_channel;
-  VideoChannel* video_channel;
-  DataChannel* data_channel;
-};
-
-struct AudioOptionsParams : public talk_base::MessageData {
-  AudioOptionsParams(int o, const Device* in, const Device* out, int delay)
-      : options(o), in_device(in), out_device(out), delay_offset(delay) {}
-  int options;
-  const Device* in_device;
-  const Device* out_device;
-  int delay_offset;
-  bool result;
-};
-
-struct VolumeLevel : public talk_base::MessageData {
-  VolumeLevel() : level(-1), result(false) {}
-  explicit VolumeLevel(int l) : level(l), result(false) {}
-  int level;
-  bool result;
-};
-
-struct VideoOptions : public talk_base::MessageData {
-  explicit VideoOptions(const Device* d) : cam_device(d), result(false) {}
-  const Device* cam_device;
-  bool result;
-};
-
-struct DefaultVideoEncoderConfig : public talk_base::MessageData {
-  explicit DefaultVideoEncoderConfig(const VideoEncoderConfig& c)
-      : config(c), result(false) {}
-  VideoEncoderConfig config;
-  bool result;
-};
-
-struct LocalMonitor : public talk_base::MessageData {
-  explicit LocalMonitor(bool e) : enable(e), result(false) {}
-  bool enable;
-  bool result;
-};
-
-struct LocalRenderer : public talk_base::MessageData {
-  explicit LocalRenderer(VideoRenderer* r) : renderer(r), result(false) {}
-  VideoRenderer* renderer;
-  bool result;
-};
-
-struct Capturer : public talk_base::MessageData {
-  Capturer(VideoCapturer* c)
-      : capturer(c),
-        result(false) {}
-  VideoCapturer* capturer;
-  bool result;
-};
-
-struct LoggingOptions : public talk_base::MessageData {
-  explicit LoggingOptions(int lev, const char* f) : level(lev), filter(f) {}
-  int level;
-  std::string filter;
-};
 
 struct CaptureStateParams : public talk_base::MessageData {
   CaptureStateParams(cricket::VideoCapturer* c, cricket::CaptureState s)
@@ -165,58 +68,23 @@ struct CaptureStateParams : public talk_base::MessageData {
   cricket::CaptureState state;
 };
 
-struct CaptureParams : public talk_base::MessageData {
-  explicit CaptureParams(bool c) : capture(c), result(false) {}
-  bool capture;
-  bool result;
-};
+static DataEngineInterface* ConstructDataEngine() {
+#ifdef HAVE_SCTP
+  return new HybridDataEngine(new RtpDataEngine(), new SctpDataEngine());
+#else
+  return new RtpDataEngine();
+#endif
+}
 
-struct VideoProcessorParams : public talk_base::MessageData {
-  VideoProcessorParams(VideoCapturer* c, VideoProcessor* p)
-      : capturer(c), processor(p), result(false) {}
-  VideoCapturer* capturer;
-  VideoProcessor* processor;
-  bool result;
-};
-
-struct VoiceProcessorParams : public talk_base::MessageData {
-  VoiceProcessorParams(uint32 c, VoiceProcessor* p, MediaProcessorDirection d)
-      : ssrc(c), direction(d), processor(p), result(false) {}
-  uint32 ssrc;
-  MediaProcessorDirection direction;
-  VoiceProcessor* processor;
-  bool result;
-};
-
-struct VideoCapturerFormatParams : public talk_base::MessageData {
-  explicit VideoCapturerFormatParams(
-      VideoCapturer* capturer, const VideoFormat& format)
-      : capturer(capturer), format(format), result(false) {}
-  VideoCapturer* capturer;
-  VideoFormat format;
-  bool result;
-};
-
-struct VideoCapturerRendererParams : public talk_base::MessageData {
-  VideoCapturerRendererParams(VideoCapturer* capturer, VideoRenderer* renderer)
-      : capturer(capturer), renderer(renderer), result(false) {}
-  VideoCapturer* capturer;
-  VideoRenderer* renderer;
-  bool result;
-};
-
-struct StartCaptureParams  : public talk_base::MessageData {
-  StartCaptureParams() : video_format() {}
-  VideoFormat video_format;
-};
-
+#if !defined(DISABLE_MEDIA_ENGINE_FACTORY)
 ChannelManager::ChannelManager(talk_base::Thread* worker_thread) {
   Construct(MediaEngineFactory::Create(),
-            new RtpDataEngine(),
+            ConstructDataEngine(),
             cricket::DeviceManagerFactory::Create(),
             new CaptureManager(),
             worker_thread);
 }
+#endif
 
 ChannelManager::ChannelManager(MediaEngineInterface* me,
                                DataEngineInterface* dme,
@@ -229,7 +97,11 @@ ChannelManager::ChannelManager(MediaEngineInterface* me,
 ChannelManager::ChannelManager(MediaEngineInterface* me,
                                DeviceManagerInterface* dm,
                                talk_base::Thread* worker_thread) {
-  Construct(me, new RtpDataEngine(), dm, new CaptureManager(), worker_thread);
+  Construct(me,
+            ConstructDataEngine(),
+            dm,
+            new CaptureManager(),
+            worker_thread);
 }
 
 void ChannelManager::Construct(MediaEngineInterface* me,
@@ -244,14 +116,16 @@ void ChannelManager::Construct(MediaEngineInterface* me,
   initialized_ = false;
   main_thread_ = talk_base::Thread::Current();
   worker_thread_ = worker_thread;
+  // Get the default audio options from the media engine.
+  audio_options_ = media_engine_->GetAudioOptions();
   audio_in_device_ = DeviceManagerInterface::kDefaultDeviceName;
   audio_out_device_ = DeviceManagerInterface::kDefaultDeviceName;
-  audio_options_ = MediaEngineInterface::DEFAULT_AUDIO_OPTIONS;
   audio_delay_offset_ = MediaEngineInterface::kDefaultAudioDelayOffset;
   audio_output_volume_ = kNotSetOutputVolume;
   local_renderer_ = NULL;
   capturing_ = false;
   monitoring_ = false;
+  enable_rtx_ = false;
 
   // Init the device manager immediately, and set up our default video device.
   SignalDevicesChange.repeat(device_manager_->SignalDevicesChange);
@@ -259,15 +133,37 @@ void ChannelManager::Construct(MediaEngineInterface* me,
 
   // Camera is started asynchronously, request callbacks when startup
   // completes to be able to forward them to the rendering manager.
-  media_engine_->SignalVideoCaptureStateChange.connect(
+  media_engine_->SignalVideoCaptureStateChange().connect(
       this, &ChannelManager::OnVideoCaptureStateChange);
   capture_manager_->SignalCapturerStateChange.connect(
       this, &ChannelManager::OnVideoCaptureStateChange);
 }
 
 ChannelManager::~ChannelManager() {
-  if (initialized_)
+  if (initialized_) {
     Terminate();
+    // If srtp is initialized (done by the Channel) then we must call
+    // srtp_shutdown to free all crypto kernel lists. But we need to make sure
+    // shutdown always called at the end, after channels are destroyed.
+    // ChannelManager d'tor is always called last, it's safe place to call
+    // shutdown.
+    ShutdownSrtp();
+  }
+}
+
+bool ChannelManager::SetVideoRtxEnabled(bool enable) {
+  // To be safe, this call is only allowed before initialization. Apps like
+  // Flute only have a singleton ChannelManager and we don't want this flag to
+  // be toggled between calls or when there's concurrent calls. We expect apps
+  // to enable this at startup and retain that setting for the lifetime of the
+  // app.
+  if (!initialized_) {
+    enable_rtx_ = enable;
+    return true;
+  } else {
+    LOG(LS_WARNING) << "Cannot toggle rtx after initialization!";
+    return false;
+  }
 }
 
 int ChannelManager::GetCapabilities() {
@@ -285,6 +181,11 @@ void ChannelManager::GetSupportedAudioCodecs(
   }
 }
 
+void ChannelManager::GetSupportedAudioRtpHeaderExtensions(
+    RtpHeaderExtensions* ext) const {
+  *ext = media_engine_->audio_rtp_header_extensions();
+}
+
 void ChannelManager::GetSupportedVideoCodecs(
     std::vector<VideoCodec>* codecs) const {
   codecs->clear();
@@ -292,8 +193,16 @@ void ChannelManager::GetSupportedVideoCodecs(
   std::vector<VideoCodec>::const_iterator it;
   for (it = media_engine_->video_codecs().begin();
       it != media_engine_->video_codecs().end(); ++it) {
+    if (!enable_rtx_ && _stricmp(kRtxCodecName, it->name.c_str()) == 0) {
+      continue;
+    }
     codecs->push_back(*it);
   }
+}
+
+void ChannelManager::GetSupportedVideoRtpHeaderExtensions(
+    RtpHeaderExtensions* ext) const {
+  *ext = media_engine_->video_rtp_header_extensions();
 }
 
 void ChannelManager::GetSupportedDataCodecs(
@@ -309,7 +218,7 @@ bool ChannelManager::Init() {
 
   ASSERT(worker_thread_ != NULL);
   if (worker_thread_ && worker_thread_->started()) {
-    if (media_engine_->Init()) {
+    if (media_engine_->Init(worker_thread_)) {
       initialized_ = true;
 
       // Now that we're initialized, apply any stored preferences. A preferred
@@ -343,7 +252,7 @@ bool ChannelManager::Init() {
         LOG(LS_WARNING) << "Failed to SetAudioOptions with"
                         << " microphone: " << audio_in_device_
                         << " speaker: " << audio_out_device_
-                        << " options: " << audio_options_
+                        << " options: " << audio_options_.ToString()
                         << " delay: " << audio_delay_offset_;
       }
 
@@ -354,8 +263,8 @@ bool ChannelManager::Init() {
         LOG(LS_WARNING) << "Failed to SetOutputVolume to "
                         << audio_output_volume_;
       }
-      if (!SetVideoOptions(camera_device_) && !camera_device_.empty()) {
-        LOG(LS_WARNING) << "Failed to SetVideoOptions with camera: "
+      if (!SetCaptureDevice(camera_device_) && !camera_device_.empty()) {
+        LOG(LS_WARNING) << "Failed to SetCaptureDevice with camera: "
                         << camera_device_;
       }
 
@@ -382,7 +291,7 @@ void ChannelManager::Terminate() {
   if (!initialized_) {
     return;
   }
-  Send(MSG_TERMINATE, NULL);
+  worker_thread_->Invoke<void>(Bind(&ChannelManager::Terminate_w, this));
   media_engine_->Terminate();
   initialized_ = false;
 }
@@ -399,15 +308,16 @@ void ChannelManager::Terminate_w() {
   while (!soundclips_.empty()) {
     DestroySoundclip_w(soundclips_.back());
   }
-  if (!SetVideoOptions_w(NULL)) {
+  if (!SetCaptureDevice_w(NULL)) {
     LOG(LS_WARNING) << "failed to delete video capturer";
   }
 }
 
 VoiceChannel* ChannelManager::CreateVoiceChannel(
     BaseSession* session, const std::string& content_name, bool rtcp) {
-  CreationParams params(session, content_name, rtcp, NULL);
-  return (Send(MSG_CREATEVOICECHANNEL, &params)) ? params.voice_channel : NULL;
+  return worker_thread_->Invoke<VoiceChannel*>(
+      Bind(&ChannelManager::CreateVoiceChannel_w, this,
+           session, content_name, rtcp));
 }
 
 VoiceChannel* ChannelManager::CreateVoiceChannel_w(
@@ -431,8 +341,8 @@ VoiceChannel* ChannelManager::CreateVoiceChannel_w(
 
 void ChannelManager::DestroyVoiceChannel(VoiceChannel* voice_channel) {
   if (voice_channel) {
-    talk_base::TypedMessageData<VoiceChannel*> data(voice_channel);
-    Send(MSG_DESTROYVOICECHANNEL, &data);
+    worker_thread_->Invoke<void>(
+        Bind(&ChannelManager::DestroyVoiceChannel_w, this, voice_channel));
   }
 }
 
@@ -452,8 +362,9 @@ void ChannelManager::DestroyVoiceChannel_w(VoiceChannel* voice_channel) {
 VideoChannel* ChannelManager::CreateVideoChannel(
     BaseSession* session, const std::string& content_name, bool rtcp,
     VoiceChannel* voice_channel) {
-  CreationParams params(session, content_name, rtcp, voice_channel);
-  return (Send(MSG_CREATEVIDEOCHANNEL, &params)) ? params.video_channel : NULL;
+  return worker_thread_->Invoke<VideoChannel*>(
+      Bind(&ChannelManager::CreateVideoChannel_w, this, session,
+           content_name, rtcp, voice_channel));
 }
 
 VideoChannel* ChannelManager::CreateVideoChannel_w(
@@ -481,8 +392,8 @@ VideoChannel* ChannelManager::CreateVideoChannel_w(
 
 void ChannelManager::DestroyVideoChannel(VideoChannel* video_channel) {
   if (video_channel) {
-    talk_base::TypedMessageData<VideoChannel*> data(video_channel);
-    Send(MSG_DESTROYVIDEOCHANNEL, &data);
+    worker_thread_->Invoke<void>(
+        Bind(&ChannelManager::DestroyVideoChannel_w, this, video_channel));
   }
 }
 
@@ -500,16 +411,26 @@ void ChannelManager::DestroyVideoChannel_w(VideoChannel* video_channel) {
 }
 
 DataChannel* ChannelManager::CreateDataChannel(
-    BaseSession* session, const std::string& content_name, bool rtcp) {
-  CreationParams params(session, content_name, rtcp, NULL);
-  return (Send(MSG_CREATEDATACHANNEL, &params)) ? params.data_channel : NULL;
+    BaseSession* session, const std::string& content_name,
+    bool rtcp, DataChannelType channel_type) {
+  return worker_thread_->Invoke<DataChannel*>(
+      Bind(&ChannelManager::CreateDataChannel_w, this, session, content_name,
+           rtcp, channel_type));
 }
 
 DataChannel* ChannelManager::CreateDataChannel_w(
-    BaseSession* session, const std::string& content_name, bool rtcp) {
+    BaseSession* session, const std::string& content_name,
+    bool rtcp, DataChannelType data_channel_type) {
   // This is ok to alloc from a thread other than the worker thread.
   ASSERT(initialized_);
-  DataMediaChannel* media_channel = data_media_engine_->CreateChannel();
+  DataMediaChannel* media_channel = data_media_engine_->CreateChannel(
+      data_channel_type);
+  if (!media_channel) {
+    LOG(LS_WARNING) << "Failed to create data channel of type "
+                    << data_channel_type;
+    return NULL;
+  }
+
   DataChannel* data_channel = new DataChannel(
       worker_thread_, media_channel,
       session, content_name, rtcp);
@@ -524,8 +445,8 @@ DataChannel* ChannelManager::CreateDataChannel_w(
 
 void ChannelManager::DestroyDataChannel(DataChannel* data_channel) {
   if (data_channel) {
-    talk_base::TypedMessageData<DataChannel*> data(data_channel);
-    Send(MSG_DESTROYDATACHANNEL, &data);
+    worker_thread_->Invoke<void>(
+        Bind(&ChannelManager::DestroyDataChannel_w, this, data_channel));
   }
 }
 
@@ -543,9 +464,8 @@ void ChannelManager::DestroyDataChannel_w(DataChannel* data_channel) {
 }
 
 Soundclip* ChannelManager::CreateSoundclip() {
-  talk_base::TypedMessageData<Soundclip*> data(NULL);
-  Send(MSG_CREATESOUNDCLIP, &data);
-  return data.data();
+  return worker_thread_->Invoke<Soundclip*>(
+      Bind(&ChannelManager::CreateSoundclip_w, this));
 }
 
 Soundclip* ChannelManager::CreateSoundclip_w() {
@@ -564,8 +484,8 @@ Soundclip* ChannelManager::CreateSoundclip_w() {
 
 void ChannelManager::DestroySoundclip(Soundclip* soundclip) {
   if (soundclip) {
-    talk_base::TypedMessageData<Soundclip*> data(soundclip);
-    Send(MSG_DESTROYSOUNDCLIP, &data);
+    worker_thread_->Invoke<void>(
+        Bind(&ChannelManager::DestroySoundclip_w, this, soundclip));
   }
 }
 
@@ -583,23 +503,26 @@ void ChannelManager::DestroySoundclip_w(Soundclip* soundclip) {
 }
 
 bool ChannelManager::GetAudioOptions(std::string* in_name,
-                                     std::string* out_name, int* opts) {
+                                     std::string* out_name,
+                                     AudioOptions* options) {
   if (in_name)
     *in_name = audio_in_device_;
   if (out_name)
     *out_name = audio_out_device_;
-  if (opts)
-    *opts = audio_options_;
+  if (options)
+    *options = audio_options_;
   return true;
 }
 
 bool ChannelManager::SetAudioOptions(const std::string& in_name,
-                                     const std::string& out_name, int opts) {
-  return SetAudioOptions(in_name, out_name, opts, audio_delay_offset_);
+                                     const std::string& out_name,
+                                     const AudioOptions& options) {
+  return SetAudioOptions(in_name, out_name, options, audio_delay_offset_);
 }
 
 bool ChannelManager::SetAudioOptions(const std::string& in_name,
-                                     const std::string& out_name, int opts,
+                                     const std::string& out_name,
+                                     const AudioOptions& options,
                                      int delay_offset) {
   // Get device ids from DeviceManager.
   Device in_dev, out_dev;
@@ -615,13 +538,14 @@ bool ChannelManager::SetAudioOptions(const std::string& in_name,
   // If we're initialized, pass the settings to the media engine.
   bool ret = true;
   if (initialized_) {
-    AudioOptionsParams options(opts, &in_dev, &out_dev, delay_offset);
-    ret = (Send(MSG_SETAUDIOOPTIONS, &options) && options.result);
+    ret = worker_thread_->Invoke<bool>(
+        Bind(&ChannelManager::SetAudioOptions_w, this,
+             options, delay_offset, &in_dev, &out_dev));
   }
 
   // If all worked well, save the values for use in GetAudioOptions.
   if (ret) {
-    audio_options_ = opts;
+    audio_options_ = options;
     audio_in_device_ = in_name;
     audio_out_device_ = out_name;
     audio_delay_offset_ = delay_offset;
@@ -629,13 +553,14 @@ bool ChannelManager::SetAudioOptions(const std::string& in_name,
   return ret;
 }
 
-bool ChannelManager::SetAudioOptions_w(int opts, int delay_offset,
+bool ChannelManager::SetAudioOptions_w(
+    const AudioOptions& options, int delay_offset,
     const Device* in_dev, const Device* out_dev) {
   ASSERT(worker_thread_ == talk_base::Thread::Current());
   ASSERT(initialized_);
 
   // Set audio options
-  bool ret = media_engine_->SetAudioOptions(opts);
+  bool ret = media_engine_->SetAudioOptions(options);
 
   if (ret) {
     ret = media_engine_->SetAudioDelayOffset(delay_offset);
@@ -650,26 +575,19 @@ bool ChannelManager::SetAudioOptions_w(int opts, int delay_offset,
 }
 
 bool ChannelManager::GetOutputVolume(int* level) {
-  VolumeLevel volume;
-  if (!Send(MSG_GETOUTPUTVOLUME, &volume) || !volume.result) {
+  if (!initialized_) {
     return false;
   }
-
-  *level = volume.level;
-  return true;
-}
-
-bool ChannelManager::GetOutputVolume_w(int* level) {
-  ASSERT(worker_thread_ == talk_base::Thread::Current());
-  ASSERT(initialized_);
-  return media_engine_->GetOutputVolume(level);
+  return worker_thread_->Invoke<bool>(
+      Bind(&MediaEngineInterface::GetOutputVolume, media_engine_.get(), level));
 }
 
 bool ChannelManager::SetOutputVolume(int level) {
   bool ret = level >= 0 && level <= 255;
   if (initialized_) {
-    VolumeLevel volume(level);
-    ret &= Send(MSG_SETOUTPUTVOLUME, &volume) && volume.result;
+    ret &= worker_thread_->Invoke<bool>(
+        Bind(&MediaEngineInterface::SetOutputVolume,
+             media_engine_.get(), level));
   }
 
   if (ret) {
@@ -677,12 +595,6 @@ bool ChannelManager::SetOutputVolume(int level) {
   }
 
   return ret;
-}
-
-bool ChannelManager::SetOutputVolume_w(int level) {
-  ASSERT(worker_thread_ == talk_base::Thread::Current());
-  ASSERT(initialized_);
-  return media_engine_->SetOutputVolume(level);
 }
 
 bool ChannelManager::IsSameCapturer(const std::string& capturer_name,
@@ -697,7 +609,15 @@ bool ChannelManager::IsSameCapturer(const std::string& capturer_name,
   return capturer->GetId() == device.id;
 }
 
-bool ChannelManager::GetVideoOptions(std::string* cam_name) {
+bool ChannelManager::GetVideoCaptureDevice(Device* device) {
+  std::string device_name;
+  if (!GetCaptureDevice(&device_name)) {
+    return false;
+  }
+  return device_manager_->GetVideoCaptureDevice(device_name, device);
+}
+
+bool ChannelManager::GetCaptureDevice(std::string* cam_name) {
   if (camera_device_.empty()) {
     // Initialize camera_device_ with default.
     Device device;
@@ -713,7 +633,7 @@ bool ChannelManager::GetVideoOptions(std::string* cam_name) {
   return true;
 }
 
-bool ChannelManager::SetVideoOptions(const std::string& cam_name) {
+bool ChannelManager::SetCaptureDevice(const std::string& cam_name) {
   Device device;
   bool ret = true;
   if (!device_manager_->GetVideoCaptureDevice(cam_name, &device)) {
@@ -725,8 +645,8 @@ bool ChannelManager::SetVideoOptions(const std::string& cam_name) {
 
   // If we're running, tell the media engine about it.
   if (initialized_ && ret) {
-    VideoOptions options(&device);
-    ret = (Send(MSG_SETVIDEOOPTIONS, &options) && options.result);
+    ret = worker_thread_->Invoke<bool>(
+        Bind(&ChannelManager::SetCaptureDevice_w, this, &device));
   }
 
   // If everything worked, retain the name of the selected camera.
@@ -755,10 +675,19 @@ VideoCapturer* ChannelManager::CreateVideoCapturer() {
     }
     return NULL;
   }
-  return device_manager_->CreateVideoCapturer(device);
+  VideoCapturer* capturer = device_manager_->CreateVideoCapturer(device);
+  if (capturer && default_video_encoder_config_.max_codec.id != 0) {
+    // For now, use the aspect ratio of the default_video_encoder_config_,
+    // which may be different than the native aspect ratio of the start
+    // format the camera may use.
+    capturer->UpdateAspectRatio(
+        default_video_encoder_config_.max_codec.width,
+        default_video_encoder_config_.max_codec.height);
+  }
+  return capturer;
 }
 
-bool ChannelManager::SetVideoOptions_w(const Device* cam_device) {
+bool ChannelManager::SetCaptureDevice_w(const Device* cam_device) {
   ASSERT(worker_thread_ == talk_base::Thread::Current());
   ASSERT(initialized_);
 
@@ -773,8 +702,9 @@ bool ChannelManager::SetVideoOptions_w(const Device* cam_device) {
 bool ChannelManager::SetDefaultVideoEncoderConfig(const VideoEncoderConfig& c) {
   bool ret = true;
   if (initialized_) {
-    DefaultVideoEncoderConfig config(c);
-    ret = Send(MSG_SETDEFAULTVIDEOENCODERCONFIG, &config) && config.result;
+    ret = worker_thread_->Invoke<bool>(
+        Bind(&MediaEngineInterface::SetDefaultVideoEncoderConfig,
+             media_engine_.get(), c));
   }
   if (ret) {
     default_video_encoder_config_ = c;
@@ -782,33 +712,22 @@ bool ChannelManager::SetDefaultVideoEncoderConfig(const VideoEncoderConfig& c) {
   return ret;
 }
 
-bool ChannelManager::SetDefaultVideoEncoderConfig_w(
-    const VideoEncoderConfig& c) {
-  ASSERT(worker_thread_ == talk_base::Thread::Current());
-  ASSERT(initialized_);
-  return media_engine_->SetDefaultVideoEncoderConfig(c);
-}
-
 bool ChannelManager::SetLocalMonitor(bool enable) {
-  LocalMonitor monitor(enable);
-  bool ret = Send(MSG_SETLOCALMONITOR, &monitor) && monitor.result;
+  bool ret = initialized_ && worker_thread_->Invoke<bool>(
+      Bind(&MediaEngineInterface::SetLocalMonitor,
+           media_engine_.get(), enable));
   if (ret) {
     monitoring_ = enable;
   }
   return ret;
 }
 
-bool ChannelManager::SetLocalMonitor_w(bool enable) {
-  ASSERT(worker_thread_ == talk_base::Thread::Current());
-  ASSERT(initialized_);
-  return media_engine_->SetLocalMonitor(enable);
-}
-
 bool ChannelManager::SetLocalRenderer(VideoRenderer* renderer) {
   bool ret = true;
   if (initialized_) {
-    LocalRenderer local(renderer);
-    ret = (Send(MSG_SETLOCALRENDERER, &local) && local.result);
+    ret = worker_thread_->Invoke<bool>(
+        Bind(&MediaEngineInterface::SetLocalRenderer,
+             media_engine_.get(), renderer));
   }
   if (ret) {
     local_renderer_ = renderer;
@@ -816,72 +735,23 @@ bool ChannelManager::SetLocalRenderer(VideoRenderer* renderer) {
   return ret;
 }
 
-bool ChannelManager::SetLocalRenderer_w(VideoRenderer* renderer) {
-  ASSERT(worker_thread_ == talk_base::Thread::Current());
-  ASSERT(initialized_);
-  return media_engine_->SetLocalRenderer(renderer);
-}
-
-bool ChannelManager::SetVideoCapturer(VideoCapturer* capturer) {
-  bool ret = true;
-  if (initialized_) {
-    Capturer capture(capturer);
-    ret = (Send(MSG_SETVIDEOCAPTURER, &capture) && capture.result);
-  }
-  return ret;
-}
-
-bool ChannelManager::SetVideoCapturer_w(VideoCapturer* capturer) {
-  ASSERT(worker_thread_ == talk_base::Thread::Current());
-  ASSERT(initialized_);
-  return media_engine_->SetVideoCapturer(capturer);
-}
-
-bool ChannelManager::SetVideoCapture(bool capture) {
-  bool ret;
-  CaptureParams capture_params(capture);
-  ret = (Send(MSG_SETVIDEOCAPTURE, &capture_params) &&
-         capture_params.result);
-  if (ret) {
-    capturing_ = capture;
-  }
-  return capture_params.result;
-}
-
-bool ChannelManager::SetVideoCapture_w(bool capture) {
-  ASSERT(worker_thread_ == talk_base::Thread::Current());
-  ASSERT(initialized_);
-  return media_engine_->SetVideoCapture(capture);
-}
-
 void ChannelManager::SetVoiceLogging(int level, const char* filter) {
-  SetMediaLogging(false, level, filter);
+  if (initialized_) {
+    worker_thread_->Invoke<void>(
+        Bind(&MediaEngineInterface::SetVoiceLogging,
+             media_engine_.get(), level, filter));
+  } else {
+    media_engine_->SetVoiceLogging(level, filter);
+  }
 }
 
 void ChannelManager::SetVideoLogging(int level, const char* filter) {
-  SetMediaLogging(true, level, filter);
-}
-
-void ChannelManager::SetMediaLogging(bool video, int level,
-                                     const char* filter) {
-  // Can be called before initialization; in this case, the worker function
-  // is simply called on the main thread.
   if (initialized_) {
-    LoggingOptions options(level, filter);
-    Send((video) ? MSG_SETVIDEOLOGGING : MSG_SETVOICELOGGING, &options);
+    worker_thread_->Invoke<void>(
+        Bind(&MediaEngineInterface::SetVideoLogging,
+             media_engine_.get(), level, filter));
   } else {
-    SetMediaLogging_w(video, level, filter);
-  }
-}
-
-void ChannelManager::SetMediaLogging_w(bool video, int level,
-                                       const char* filter) {
-  // Can be called before initialization
-  ASSERT(worker_thread_ == talk_base::Thread::Current() || !initialized_);
-  if (video) {
     media_engine_->SetVideoLogging(level, filter);
-  } else {
-    media_engine_->SetVoiceLogging(level, filter);
   }
 }
 
@@ -891,25 +761,25 @@ void ChannelManager::SetMediaLogging_w(bool video, int level,
 // renderer is accessed today) and register with it directly.
 bool ChannelManager::RegisterVideoProcessor(VideoCapturer* capturer,
                                             VideoProcessor* processor) {
-  VideoProcessorParams processor_params(capturer, processor);
-  return (Send(MSG_REGISTERVIDEOPROCESSOR, &processor_params) &&
-      processor_params.result);
+  return initialized_ && worker_thread_->Invoke<bool>(
+      Bind(&ChannelManager::RegisterVideoProcessor_w, this,
+           capturer, processor));
 }
+
 bool ChannelManager::RegisterVideoProcessor_w(VideoCapturer* capturer,
                                               VideoProcessor* processor) {
-  media_engine_->RegisterVideoProcessor(processor);
   return capture_manager_->AddVideoProcessor(capturer, processor);
 }
 
 bool ChannelManager::UnregisterVideoProcessor(VideoCapturer* capturer,
                                               VideoProcessor* processor) {
-  VideoProcessorParams processor_params(capturer, processor);
-  return (Send(MSG_UNREGISTERVIDEOPROCESSOR, &processor_params) &&
-      processor_params.result);
+  return initialized_ && worker_thread_->Invoke<bool>(
+      Bind(&ChannelManager::UnregisterVideoProcessor_w, this,
+           capturer, processor));
 }
+
 bool ChannelManager::UnregisterVideoProcessor_w(VideoCapturer* capturer,
                                                 VideoProcessor* processor) {
-  media_engine_->UnregisterVideoProcessor(processor);
   return capture_manager_->RemoveVideoProcessor(capturer, processor);
 }
 
@@ -917,30 +787,18 @@ bool ChannelManager::RegisterVoiceProcessor(
     uint32 ssrc,
     VoiceProcessor* processor,
     MediaProcessorDirection direction) {
-  VoiceProcessorParams processor_params(ssrc, processor, direction);
-  return (Send(MSG_REGISTERVOICEPROCESSOR, &processor_params) &&
-      processor_params.result);
-}
-bool ChannelManager::RegisterVoiceProcessor_w(
-    uint32 ssrc,
-    VoiceProcessor* processor,
-    MediaProcessorDirection direction) {
-  return media_engine_->RegisterVoiceProcessor(ssrc, processor, direction);
+  return initialized_ && worker_thread_->Invoke<bool>(
+      Bind(&MediaEngineInterface::RegisterVoiceProcessor, media_engine_.get(),
+           ssrc, processor, direction));
 }
 
 bool ChannelManager::UnregisterVoiceProcessor(
     uint32 ssrc,
     VoiceProcessor* processor,
     MediaProcessorDirection direction) {
-  VoiceProcessorParams processor_params(ssrc, processor, direction);
-  return (Send(MSG_UNREGISTERVOICEPROCESSOR, &processor_params) &&
-      processor_params.result);
-}
-bool ChannelManager::UnregisterVoiceProcessor_w(
-    uint32 ssrc,
-    VoiceProcessor* processor,
-    MediaProcessorDirection direction) {
-  return media_engine_->UnregisterVoiceProcessor(ssrc, processor, direction);
+  return initialized_ && worker_thread_->Invoke<bool>(
+      Bind(&MediaEngineInterface::UnregisterVoiceProcessor,
+           media_engine_.get(), ssrc, processor, direction));
 }
 
 // The following are done in the new "CaptureManager" style that
@@ -949,53 +807,65 @@ bool ChannelManager::UnregisterVoiceProcessor_w(
 // TODO(pthatcher): Add more of the CaptureManager interface.
 bool ChannelManager::StartVideoCapture(
     VideoCapturer* capturer, const VideoFormat& video_format) {
-  VideoCapturerFormatParams params(capturer, video_format);
-  return Send(MSG_STARTVIDEOCAPTURE, &params) && params.result;
+  return initialized_ && worker_thread_->Invoke<bool>(
+      Bind(&CaptureManager::StartVideoCapture,
+           capture_manager_.get(), capturer, video_format));
 }
 
-bool ChannelManager::StartVideoCapture_w(
-    VideoCapturer* capturer, const VideoFormat& video_format) {
-  return capture_manager_->StartVideoCapture(capturer, video_format);
+bool ChannelManager::MuteToBlackThenPause(
+    VideoCapturer* video_capturer, bool muted) {
+  if (!initialized_) {
+    return false;
+  }
+  worker_thread_->Invoke<void>(
+      Bind(&VideoCapturer::MuteToBlackThenPause, video_capturer, muted));
+  return true;
 }
 
 bool ChannelManager::StopVideoCapture(
     VideoCapturer* capturer, const VideoFormat& video_format) {
-  VideoCapturerFormatParams params(capturer, video_format);
-  return (Send(MSG_STOPVIDEOCAPTURE, &params) && params.result);
+  return initialized_ && worker_thread_->Invoke<bool>(
+      Bind(&CaptureManager::StopVideoCapture,
+           capture_manager_.get(), capturer, video_format));
 }
 
-bool ChannelManager::StopVideoCapture_w(
-    VideoCapturer* capturer, const VideoFormat& video_format) {
-  return capture_manager_->StopVideoCapture(capturer, video_format);
+bool ChannelManager::RestartVideoCapture(
+    VideoCapturer* video_capturer,
+    const VideoFormat& previous_format,
+    const VideoFormat& desired_format,
+    CaptureManager::RestartOptions options) {
+  return initialized_ && worker_thread_->Invoke<bool>(
+      Bind(&CaptureManager::RestartVideoCapture, capture_manager_.get(),
+           video_capturer, previous_format, desired_format, options));
 }
 
 bool ChannelManager::AddVideoRenderer(
     VideoCapturer* capturer, VideoRenderer* renderer) {
-  VideoCapturerRendererParams params(capturer, renderer);
-  return (Send(MSG_ADDVIDEORENDERER, &params) && params.result);
-}
-
-bool ChannelManager::AddVideoRenderer_w(
-    VideoCapturer* capturer, VideoRenderer* renderer) {
-  return capture_manager_->AddVideoRenderer(capturer, renderer);
+  return initialized_ && worker_thread_->Invoke<bool>(
+      Bind(&CaptureManager::AddVideoRenderer,
+           capture_manager_.get(), capturer, renderer));
 }
 
 bool ChannelManager::RemoveVideoRenderer(
     VideoCapturer* capturer, VideoRenderer* renderer) {
-  VideoCapturerRendererParams params(capturer, renderer);
-  return (Send(MSG_REMOVEVIDEORENDERER, &params) && params.result);
+  return initialized_ && worker_thread_->Invoke<bool>(
+      Bind(&CaptureManager::RemoveVideoRenderer,
+           capture_manager_.get(), capturer, renderer));
 }
 
-bool ChannelManager::RemoveVideoRenderer_w(
-    VideoCapturer* capturer, VideoRenderer* renderer) {
-  return capture_manager_->RemoveVideoRenderer(capturer, renderer);
+bool ChannelManager::IsScreencastRunning() const {
+  return initialized_ && worker_thread_->Invoke<bool>(
+      Bind(&ChannelManager::IsScreencastRunning_w, this));
 }
 
-
-bool ChannelManager::Send(uint32 id, talk_base::MessageData* data) {
-  if (!worker_thread_ || !initialized_) return false;
-  worker_thread_->Send(this, id, data);
-  return true;
+bool ChannelManager::IsScreencastRunning_w() const {
+  VideoChannels::const_iterator it = video_channels_.begin();
+  for ( ; it != video_channels_.end(); ++it) {
+    if ((*it) && (*it)->IsScreencasting()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void ChannelManager::OnVideoCaptureStateChange(VideoCapturer* capturer,
@@ -1008,110 +878,7 @@ void ChannelManager::OnVideoCaptureStateChange(VideoCapturer* capturer,
 }
 
 void ChannelManager::OnMessage(talk_base::Message* message) {
-  talk_base::MessageData* data = message->pdata;
   switch (message->message_id) {
-    case MSG_CREATEVOICECHANNEL: {
-      CreationParams* p = static_cast<CreationParams*>(data);
-      p->voice_channel =
-          CreateVoiceChannel_w(p->session, p->content_name, p->rtcp);
-      break;
-    }
-    case MSG_DESTROYVOICECHANNEL: {
-      VoiceChannel* p = static_cast<talk_base::TypedMessageData<VoiceChannel*>*>
-          (data)->data();
-      DestroyVoiceChannel_w(p);
-      break;
-    }
-    case MSG_CREATEVIDEOCHANNEL: {
-      CreationParams* p = static_cast<CreationParams*>(data);
-      p->video_channel = CreateVideoChannel_w(p->session, p->content_name,
-                                              p->rtcp, p->voice_channel);
-      break;
-    }
-    case MSG_DESTROYVIDEOCHANNEL: {
-      VideoChannel* p = static_cast<talk_base::TypedMessageData<VideoChannel*>*>
-          (data)->data();
-      DestroyVideoChannel_w(p);
-      break;
-    }
-    case MSG_CREATEDATACHANNEL: {
-      CreationParams* p = static_cast<CreationParams*>(data);
-      p->data_channel =
-          CreateDataChannel_w(p->session, p->content_name, p->rtcp);
-      break;
-    }
-    case MSG_DESTROYDATACHANNEL: {
-      DataChannel* p = static_cast<talk_base::TypedMessageData<DataChannel*>*>
-          (data)->data();
-      DestroyDataChannel_w(p);
-      break;
-    }
-    case MSG_CREATESOUNDCLIP: {
-      talk_base::TypedMessageData<Soundclip*> *p =
-          static_cast<talk_base::TypedMessageData<Soundclip*>*>(data);
-      p->data() = CreateSoundclip_w();
-      break;
-    }
-    case MSG_DESTROYSOUNDCLIP: {
-      talk_base::TypedMessageData<Soundclip*> *p =
-          static_cast<talk_base::TypedMessageData<Soundclip*>*>(data);
-      DestroySoundclip_w(p->data());
-      break;
-    }
-    case MSG_SETAUDIOOPTIONS: {
-      AudioOptionsParams* p = static_cast<AudioOptionsParams*>(data);
-      p->result = SetAudioOptions_w(p->options, p->delay_offset,
-                                    p->in_device, p->out_device);
-      break;
-    }
-    case MSG_GETOUTPUTVOLUME: {
-      VolumeLevel* p = static_cast<VolumeLevel*>(data);
-      p->result = GetOutputVolume_w(&p->level);
-      break;
-    }
-    case MSG_SETOUTPUTVOLUME: {
-      VolumeLevel* p = static_cast<VolumeLevel*>(data);
-      p->result = SetOutputVolume_w(p->level);
-      break;
-    }
-    case MSG_SETLOCALMONITOR: {
-      LocalMonitor* p = static_cast<LocalMonitor*>(data);
-      p->result = SetLocalMonitor_w(p->enable);
-      break;
-    }
-    case MSG_SETVIDEOOPTIONS: {
-      VideoOptions* p = static_cast<VideoOptions*>(data);
-      p->result = SetVideoOptions_w(p->cam_device);
-      break;
-    }
-    case MSG_SETDEFAULTVIDEOENCODERCONFIG: {
-      DefaultVideoEncoderConfig* p =
-          static_cast<DefaultVideoEncoderConfig*>(data);
-      p->result = SetDefaultVideoEncoderConfig_w(p->config);
-      break;
-    }
-    case MSG_SETLOCALRENDERER: {
-      LocalRenderer* p = static_cast<LocalRenderer*>(data);
-      p->result = SetLocalRenderer_w(p->renderer);
-      break;
-    }
-    case MSG_SETVIDEOCAPTURER: {
-      Capturer* p = static_cast<Capturer*>(data);
-      p->result = SetVideoCapturer_w(p->capturer);
-      break;
-    }
-    case MSG_SETVIDEOCAPTURE: {
-      CaptureParams* p = static_cast<CaptureParams*>(data);
-      p->result = SetVideoCapture_w(p->capture);
-      break;
-    }
-    case MSG_SETVOICELOGGING:
-    case MSG_SETVIDEOLOGGING: {
-      LoggingOptions* p = static_cast<LoggingOptions*>(data);
-      bool video = (message->message_id == MSG_SETVIDEOLOGGING);
-      SetMediaLogging_w(video, p->level, p->filter.c_str());
-      break;
-    }
     case MSG_VIDEOCAPTURESTATE: {
       CaptureStateParams* data =
           static_cast<CaptureStateParams*>(message->pdata);
@@ -1119,71 +886,9 @@ void ChannelManager::OnMessage(talk_base::Message* message) {
       delete data;
       break;
     }
-    case MSG_TERMINATE: {
-      Terminate_w();
-      break;
-    }
-    case MSG_REGISTERVIDEOPROCESSOR: {
-      VideoProcessorParams* data =
-          static_cast<VideoProcessorParams*>(message->pdata);
-      data->result = RegisterVideoProcessor_w(data->capturer, data->processor);
-      break;
-    }
-    case MSG_UNREGISTERVIDEOPROCESSOR: {
-      VideoProcessorParams* data =
-          static_cast<VideoProcessorParams*>(message->pdata);
-      data->result = UnregisterVideoProcessor_w(data->capturer,
-                                                data->processor);
-      break;
-    }
-    case MSG_REGISTERVOICEPROCESSOR: {
-      VoiceProcessorParams* data =
-          static_cast<VoiceProcessorParams*>(message->pdata);
-      data->result = RegisterVoiceProcessor_w(data->ssrc,
-                                              data->processor,
-                                              data->direction);
-      break;
-    }
-    case MSG_UNREGISTERVOICEPROCESSOR: {
-      VoiceProcessorParams* data =
-          static_cast<VoiceProcessorParams*>(message->pdata);
-      data->result = UnregisterVoiceProcessor_w(data->ssrc,
-                                              data->processor,
-                                              data->direction);
-      break;
-    }
-    case MSG_STARTVIDEOCAPTURE: {
-      VideoCapturerFormatParams* data =
-          static_cast<VideoCapturerFormatParams*>(message->pdata);
-      data->result = StartVideoCapture_w(data->capturer, data->format);
-      break;
-    }
-    case MSG_STOPVIDEOCAPTURE: {
-      VideoCapturerFormatParams* data =
-          static_cast<VideoCapturerFormatParams*>(message->pdata);
-      data->result = StopVideoCapture_w(data->capturer, data->format);
-      break;
-    }
-    case MSG_ADDVIDEORENDERER: {
-      VideoCapturerRendererParams* data =
-          static_cast<VideoCapturerRendererParams*>(message->pdata);
-      data->result = AddVideoRenderer_w(data->capturer, data->renderer);
-      break;
-    }
-    case MSG_REMOVEVIDEORENDERER: {
-      VideoCapturerRendererParams* data =
-          static_cast<VideoCapturerRendererParams*>(message->pdata);
-      data->result = RemoveVideoRenderer_w(data->capturer, data->renderer);
-      break;
-    }
-    case MSG_GETSTARTCAPTUREFORMAT: {
-      StartCaptureParams* data =
-          static_cast<StartCaptureParams*>(message->pdata);
-      data->video_format = GetStartCaptureFormat_w();
-      break;
-    }
   }
 }
+
 
 static void GetDeviceNames(const std::vector<Device>& devs,
                            std::vector<std::string>* names) {
@@ -1223,14 +928,20 @@ bool ChannelManager::GetVideoCaptureDevices(std::vector<std::string>* names) {
   return ret;
 }
 
-VideoFormat ChannelManager::GetStartCaptureFormat() {
-  StartCaptureParams params;
-  Send(MSG_GETSTARTCAPTUREFORMAT, &params);
-  return params.video_format;
+void ChannelManager::SetVideoCaptureDeviceMaxFormat(
+    const std::string& usb_id,
+    const VideoFormat& max_format) {
+  device_manager_->SetVideoCaptureDeviceMaxFormat(usb_id, max_format);
 }
 
-VideoFormat ChannelManager::GetStartCaptureFormat_w() {
-  return media_engine_->GetStartCaptureFormat();
+VideoFormat ChannelManager::GetStartCaptureFormat() {
+  return worker_thread_->Invoke<VideoFormat>(
+      Bind(&MediaEngineInterface::GetStartCaptureFormat, media_engine_.get()));
+}
+
+bool ChannelManager::StartAecDump(talk_base::PlatformFile file) {
+  return worker_thread_->Invoke<bool>(
+      Bind(&MediaEngineInterface::StartAecDump, media_engine_.get(), file));
 }
 
 }  // namespace cricket

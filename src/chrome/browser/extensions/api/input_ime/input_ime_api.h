@@ -5,38 +5,45 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_INPUT_IME_INPUT_IME_API_H_
 #define CHROME_BROWSER_EXTENSIONS_API_INPUT_IME_INPUT_IME_API_H_
 
-#include "chrome/browser/extensions/extension_function.h"
-
-#include "base/memory/singleton.h"
-#include "base/values.h"
-#include "chrome/browser/chromeos/input_method/input_method_engine.h"
-#include "chrome/common/extensions/extension.h"
-
 #include <map>
 #include <string>
 #include <vector>
 
+#include "base/memory/singleton.h"
+#include "base/scoped_observer.h"
+#include "base/values.h"
+#include "chrome/browser/chromeos/input_method/input_method_engine_interface.h"
+#include "chrome/browser/profiles/profile.h"
+#include "components/keyed_service/core/keyed_service.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_function.h"
+#include "extensions/browser/extension_registry_observer.h"
+#include "extensions/common/extension.h"
+
 class Profile;
 
 namespace chromeos {
-class InputMethodEngine;
+class InputMethodEngineInterface;
 class ImeObserver;
-}
+}  // namespace chromeos
 
 namespace extensions {
+class ExtensionRegistry;
+struct InputComponentInfo;
 
 class InputImeEventRouter {
  public:
   static InputImeEventRouter* GetInstance();
-  void Init();
 
-  bool RegisterIme(Profile* profile,
-                   const std::string& extension_id,
-                   const extensions::Extension::InputComponentInfo& component);
-  void UnregisterAllImes(Profile* profile, const std::string& extension_id);
-  chromeos::InputMethodEngine* GetEngine(const std::string& extension_id,
-                                         const std::string& engine_id);
-  chromeos::InputMethodEngine* GetActiveEngine(const std::string& extension_id);
+  bool RegisterIme(const std::string& extension_id,
+                   const extensions::InputComponentInfo& component);
+  void UnregisterAllImes(const std::string& extension_id);
+  chromeos::InputMethodEngineInterface* GetEngine(
+      const std::string& extension_id,
+      const std::string& engine_id);
+  chromeos::InputMethodEngineInterface* GetActiveEngine(
+      const std::string& extension_id);
 
 
   // Called when a key event was handled.
@@ -55,10 +62,15 @@ class InputImeEventRouter {
   InputImeEventRouter();
   ~InputImeEventRouter();
 
-  std::map<std::string, std::map<std::string, chromeos::InputMethodEngine*> >
-      engines_;
-  std::map<std::string, std::map<std::string, chromeos::ImeObserver*> >
-      observers_;
+  // The engine map for event routing.
+  //   { Profile : { extension_id : { engine_id : Engine } } }.
+  // TODO(shuchen): reuse the engine map in InputMethodManagerImpl.
+  typedef std::map<std::string, chromeos::InputMethodEngineInterface*>
+      EngineMap;
+  typedef std::map<std::string, EngineMap> ExtensionMap;
+  typedef std::map<Profile*, ExtensionMap, ProfileCompare>
+      ProfileEngineMap;
+  ProfileEngineMap profile_engine_map_;
 
   unsigned int next_request_id_;
   RequestMap request_map_;
@@ -66,108 +78,183 @@ class InputImeEventRouter {
   DISALLOW_COPY_AND_ASSIGN(InputImeEventRouter);
 };
 
-class SetCompositionFunction : public SyncExtensionFunction {
+class InputImeSetCompositionFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("input.ime.setComposition");
+  DECLARE_EXTENSION_FUNCTION("input.ime.setComposition",
+                             INPUT_IME_SETCOMPOSITION)
 
  protected:
-  virtual ~SetCompositionFunction() {}
+  virtual ~InputImeSetCompositionFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
-class ClearCompositionFunction : public SyncExtensionFunction {
+class InputImeClearCompositionFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("input.ime.clearComposition");
+  DECLARE_EXTENSION_FUNCTION("input.ime.clearComposition",
+                             INPUT_IME_CLEARCOMPOSITION)
 
  protected:
-  virtual ~ClearCompositionFunction() {}
+  virtual ~InputImeClearCompositionFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
-class CommitTextFunction : public SyncExtensionFunction {
+class InputImeCommitTextFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("input.ime.commitText");
+  DECLARE_EXTENSION_FUNCTION("input.ime.commitText", INPUT_IME_COMMITTEXT)
 
  protected:
-  virtual ~CommitTextFunction() {}
+  virtual ~InputImeCommitTextFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
-class SetCandidateWindowPropertiesFunction : public SyncExtensionFunction {
+class InputImeSetCandidateWindowPropertiesFunction
+    : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("input.ime.setCandidateWindowProperties");
+  DECLARE_EXTENSION_FUNCTION("input.ime.setCandidateWindowProperties",
+                             INPUT_IME_SETCANDIDATEWINDOWPROPERTIES)
 
  protected:
-  virtual ~SetCandidateWindowPropertiesFunction() {}
+  virtual ~InputImeSetCandidateWindowPropertiesFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
-class SetCandidatesFunction : public SyncExtensionFunction {
+class InputImeSetCandidatesFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("input.ime.setCandidates");
+  DECLARE_EXTENSION_FUNCTION("input.ime.setCandidates", INPUT_IME_SETCANDIDATES)
 
  protected:
-  virtual ~SetCandidatesFunction() {}
+  virtual ~InputImeSetCandidatesFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
+};
+
+class InputImeSetCursorPositionFunction : public SyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("input.ime.setCursorPosition",
+                             INPUT_IME_SETCURSORPOSITION)
+
+ protected:
+  virtual ~InputImeSetCursorPositionFunction() {}
+
+  // ExtensionFunction:
+  virtual bool RunSync() OVERRIDE;
+};
+
+class InputImeSetMenuItemsFunction : public SyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("input.ime.setMenuItems", INPUT_IME_SETMENUITEMS)
+
+ protected:
+  virtual ~InputImeSetMenuItemsFunction() {}
+
+  // ExtensionFunction:
+  virtual bool RunSync() OVERRIDE;
+};
+
+class InputImeUpdateMenuItemsFunction : public SyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("input.ime.updateMenuItems",
+                             INPUT_IME_UPDATEMENUITEMS)
+
+ protected:
+  virtual ~InputImeUpdateMenuItemsFunction() {}
+
+  // ExtensionFunction:
+  virtual bool RunSync() OVERRIDE;
+};
+
+class InputImeDeleteSurroundingTextFunction : public SyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("input.ime.deleteSurroundingText",
+                             INPUT_IME_DELETESURROUNDINGTEXT)
+ protected:
+  virtual ~InputImeDeleteSurroundingTextFunction() {}
+
+  // ExtensionFunction:
+  virtual bool RunSync() OVERRIDE;
+};
+
+class InputImeKeyEventHandledFunction : public AsyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("input.ime.keyEventHandled",
+                             INPUT_IME_KEYEVENTHANDLED)
+
+ protected:
+  virtual ~InputImeKeyEventHandledFunction() {}
+
+  // ExtensionFunction:
+  virtual bool RunAsync() OVERRIDE;
+};
+
+class InputImeSendKeyEventsFunction : public AsyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("input.ime.sendKeyEvents",
+                             INPUT_IME_SENDKEYEVENTS)
+
+ protected:
+  virtual ~InputImeSendKeyEventsFunction() {}
+
+  // ExtensionFunction:
+  virtual bool RunAsync() OVERRIDE;
+};
+
+class InputImeHideInputViewFunction : public AsyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("input.ime.hideInputView",
+                             INPUT_IME_HIDEINPUTVIEW)
+
+ protected:
+  virtual ~InputImeHideInputViewFunction() {}
+
+  // ExtensionFunction:
+  virtual bool RunAsync() OVERRIDE;
+};
+
+class InputImeAPI : public BrowserContextKeyedAPI,
+                    public ExtensionRegistryObserver,
+                    public EventRouter::Observer {
+ public:
+  explicit InputImeAPI(content::BrowserContext* context);
+  virtual ~InputImeAPI();
+
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<InputImeAPI>* GetFactoryInstance();
+
+  // ExtensionRegistryObserver implementation.
+  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
+                                 const Extension* extension) OVERRIDE;
+  virtual void OnExtensionUnloaded(
+      content::BrowserContext* browser_context,
+      const Extension* extension,
+      UnloadedExtensionInfo::Reason reason) OVERRIDE;
+
+  // EventRouter::Observer implementation.
+  virtual void OnListenerAdded(const EventListenerInfo& details) OVERRIDE;
 
  private:
-  bool ReadCandidates(
-      ListValue* candidates,
-      std::vector<chromeos::InputMethodEngine::Candidate>* output);
-};
+  friend class BrowserContextKeyedAPIFactory<InputImeAPI>;
+  InputImeEventRouter* input_ime_event_router();
 
-class SetCursorPositionFunction : public SyncExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION_NAME("input.ime.setCursorPosition");
+  // BrowserContextKeyedAPI implementation.
+  static const char* service_name() {
+    return "InputImeAPI";
+  }
+  static const bool kServiceIsNULLWhileTesting = true;
 
- protected:
-  virtual ~SetCursorPositionFunction() {}
+  content::BrowserContext* const browser_context_;
 
-  // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
-};
-
-class SetMenuItemsFunction : public SyncExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION_NAME("input.ime.setMenuItems");
-
- protected:
-  virtual ~SetMenuItemsFunction() {}
-
-  // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
-};
-
-class UpdateMenuItemsFunction : public SyncExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION_NAME("input.ime.updateMenuItems");
-
- protected:
-  virtual ~UpdateMenuItemsFunction() {}
-
-  // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
-};
-
-class KeyEventHandled : public AsyncExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION_NAME("input.ime.keyEventHandled");
-
- protected:
-  virtual ~KeyEventHandled() {}
-
-  // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  // Listen to extension load, unloaded notifications.
+  ScopedObserver<ExtensionRegistry, ExtensionRegistryObserver>
+      extension_registry_observer_;
 };
 
 }  // namespace extensions

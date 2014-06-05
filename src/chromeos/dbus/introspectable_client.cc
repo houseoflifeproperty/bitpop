@@ -32,11 +32,7 @@ namespace chromeos {
 // The IntrospectableClient implementation used in production.
 class IntrospectableClientImpl : public IntrospectableClient {
  public:
-  explicit IntrospectableClientImpl(dbus::Bus* bus)
-      : bus_(bus),
-        weak_ptr_factory_(this) {
-    DVLOG(1) << "Creating IntrospectableClientImpl";
-  }
+  IntrospectableClientImpl() : bus_(NULL), weak_ptr_factory_(this) {}
 
   virtual ~IntrospectableClientImpl() {
   }
@@ -57,6 +53,9 @@ class IntrospectableClientImpl : public IntrospectableClient {
                    weak_ptr_factory_.GetWeakPtr(),
                    service_name, object_path, callback));
   }
+
+ protected:
+  virtual void Init(dbus::Bus* bus) OVERRIDE { bus_ = bus; }
 
  private:
   // Called by dbus:: when a response for Introspect() is recieved.
@@ -90,19 +89,6 @@ class IntrospectableClientImpl : public IntrospectableClient {
   base::WeakPtrFactory<IntrospectableClientImpl> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(IntrospectableClientImpl);
-};
-
-// The IntrospectableClient implementation used on Linux desktop, which does
-// nothing.
-class IntrospectableClientStubImpl : public IntrospectableClient {
- public:
-  // IntrospectableClient override.
-  virtual void Introspect(const std::string& service_name,
-                          const dbus::ObjectPath& object_path,
-                          const IntrospectCallback& callback) OVERRIDE {
-    VLOG(1) << "Introspect: " << service_name << " " << object_path.value();
-    callback.Run(service_name, object_path, "", false);
-  }
 };
 
 IntrospectableClient::IntrospectableClient() {
@@ -145,13 +131,8 @@ IntrospectableClient::GetInterfacesFromIntrospectResult(
 }
 
 // static
-IntrospectableClient* IntrospectableClient::Create(
-    DBusClientImplementationType type,
-    dbus::Bus* bus) {
-  if (type == REAL_DBUS_CLIENT_IMPLEMENTATION)
-    return new IntrospectableClientImpl(bus);
-  DCHECK_EQ(STUB_DBUS_CLIENT_IMPLEMENTATION, type);
-  return new IntrospectableClientStubImpl();
+IntrospectableClient* IntrospectableClient::Create() {
+  return new IntrospectableClientImpl();
 }
 
 }  // namespace chromeos

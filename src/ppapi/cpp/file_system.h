@@ -28,6 +28,22 @@ class FileSystem : public Resource {
   /// use it.
   FileSystem();
 
+  /// The copy constructor for <code>FileSystem</code>.
+  ///
+  /// @param[in] other A reference to a <code>FileSystem</code>.
+  FileSystem(const FileSystem& other);
+
+  /// Constructs a <code>FileSystem</code> from a <code>Resource</code>.
+  ///
+  /// @param[in] resource A <code>Resource</code> containing a file system.
+  explicit FileSystem(const Resource& resource);
+
+  /// A constructor used when you have received a PP_Resource as a return
+  /// value that has already been reference counted.
+  ///
+  /// @param[in] resource A PP_Resource corresponding to a PPB_FileSystem.
+  FileSystem(PassRef, PP_Resource resource);
+
   /// This constructor creates a file system object of the given type.
   ///
   /// @param[in] instance The instance with which this resource will be
@@ -52,6 +68,14 @@ class FileSystem : public Resource {
   ///
   /// @return An int32_t containing an error code from <code>pp_errors.h</code>.
   int32_t Open(int64_t expected_size, const CompletionCallback& cc);
+
+  /// Checks whether a <code>Resource</code> is a file system, to test whether
+  /// it is appropriate for use with the <code>FileSystem</code> constructor.
+  ///
+  /// @param[in] resource A <code>Resource</code> to test.
+  ///
+  /// @return True if <code>resource</code> is a file system.
+  static bool IsFileSystem(const Resource& resource);
 };
 
 }  // namespace pp

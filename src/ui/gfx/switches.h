@@ -5,16 +5,15 @@
 #ifndef UI_GFX_SWITCHES_H_
 #define UI_GFX_SWITCHES_H_
 
-#include "ui/base/ui_export.h"
+#include "ui/gfx/gfx_export.h"
 
-namespace gfx {
 namespace switches {
 
-UI_EXPORT extern const char kDisableScalingInImageSkiaOperations[];
-UI_EXPORT extern const char kEnableBrowserTextSubpixelPositioning[];
-UI_EXPORT extern const char kEnableWebkitTextSubpixelPositioning[];
+GFX_EXPORT extern const char kEnableBrowserTextSubpixelPositioning[];
+GFX_EXPORT extern const char kEnableWebkitTextSubpixelPositioning[];
+GFX_EXPORT extern const char kForceDeviceScaleFactor[];
+GFX_EXPORT extern const char kHighDPISupport[];
 
 }  // namespace switches
-}  // namespace gfx
 
 #endif  // UI_GFX_SWITCHES_H_

@@ -54,26 +54,25 @@ enum ModelType {
   FIRST_USER_MODEL_TYPE = BOOKMARKS,  // Declared 2nd, for debugger prettiness.
   FIRST_REAL_MODEL_TYPE = FIRST_USER_MODEL_TYPE,
 
-  // A preference folder or a preference object.
+  // A preference object.
   PREFERENCES,
-  // A password folder or password object.
+  // A password object.
   PASSWORDS,
-    // An AutofillProfile Object
+  // An AutofillProfile Object
   AUTOFILL_PROFILE,
-  // An autofill folder or an autofill object.
+  // An autofill object.
   AUTOFILL,
-
-  // A themes folder or a themes object.
+  // A themes object.
   THEMES,
-  // A typed_url folder or a typed_url object.
+  // A typed_url object.
   TYPED_URLS,
-  // An extension folder or an extension object.
+  // An extension object.
   EXTENSIONS,
   // An object representing a custom search engine.
   SEARCH_ENGINES,
   // An object representing a browser session.
   SESSIONS,
-  // An app folder or an app object.
+  // An app object.
   APPS,
   // An app setting from the extension settings API.
   APP_SETTINGS,
@@ -83,8 +82,48 @@ enum ModelType {
   APP_NOTIFICATIONS,
   // History delete directives.
   HISTORY_DELETE_DIRECTIVES,
-  LAST_USER_MODEL_TYPE = HISTORY_DELETE_DIRECTIVES,
+  // Synced push notifications.
+  SYNCED_NOTIFICATIONS,
+  // Synced Notification app info.
+  SYNCED_NOTIFICATION_APP_INFO,
+  // Custom spelling dictionary.
+  DICTIONARY,
+  // Favicon images.
+  FAVICON_IMAGES,
+  // Favicon tracking information.
+  FAVICON_TRACKING,
+  // These preferences are synced before other user types and are never
+  // encrypted.
+  PRIORITY_PREFERENCES,
+  // Managed user settings.
+  MANAGED_USER_SETTINGS,
+  // Managed users. Every managed user is a profile that is configured remotely
+  // by this user and can have restrictions applied. MANAGED_USERS and
+  // MANAGED_USER_SETTINGS can not be encrypted.
+  MANAGED_USERS,
+  // Managed user shared settings. Shared settings can be modified both by the
+  // manager and the supervised user.
+  MANAGED_USER_SHARED_SETTINGS,
+  // Distilled articles.
+  ARTICLES,
+  // App List items
+  APP_LIST,
 
+  // ---- Proxy types ----
+  // Proxy types are excluded from the sync protocol, but are still considered
+  // real user types. By convention, we prefix them with 'PROXY_' to distinguish
+  // them from normal protocol types.
+
+  // Tab sync. This is a placeholder type, so that Sessions can be implicitly
+  // enabled for history sync and tabs sync.
+  PROXY_TABS,
+
+  FIRST_PROXY_TYPE = PROXY_TABS,
+  LAST_PROXY_TYPE = PROXY_TABS,
+
+  LAST_USER_MODEL_TYPE = PROXY_TABS,
+
+  // ---- Control Types ----
   // An object representing a set of Nigori keys.
   NIGORI,
   FIRST_CONTROL_MODEL_TYPE = NIGORI,
@@ -98,8 +137,10 @@ enum ModelType {
 
   // If you are adding a new sync datatype that is exposed to the user via the
   // sync preferences UI, be sure to update the list in
-  // chrome/browser/sync/user_selectable_sync_type.h so that the UMA histograms
-  // for sync include your new type.
+  // components/sync_driver/user_selectable_sync_type.h so that the UMA
+  // histograms for sync include your new type.  In this case, be sure to also
+  // update the UserSelectableTypes() definition in
+  // sync/syncable/model_type.cc.
 
   MODEL_TYPE_COUNT,
 };
@@ -123,7 +164,8 @@ SYNC_EXPORT void AddDefaultFieldValue(ModelType datatype,
 // local concept: the enum is not in the protocol.  The SyncEntity's ModelType
 // is inferred from the presence of particular datatype field in the
 // entity specifics.
-ModelType GetModelType(const sync_pb::SyncEntity& sync_entity);
+SYNC_EXPORT_PRIVATE ModelType GetModelType(
+    const sync_pb::SyncEntity& sync_entity);
 
 // Extract the model type from an EntitySpecifics field.  Note that there
 // are some ModelTypes (like TOP_LEVEL_FOLDER) that can't be inferred this way;
@@ -131,16 +173,31 @@ ModelType GetModelType(const sync_pb::SyncEntity& sync_entity);
 SYNC_EXPORT ModelType GetModelTypeFromSpecifics(
     const sync_pb::EntitySpecifics& specifics);
 
-// If this returns false, we shouldn't bother maintaining a position
-// value (sibling ordering) for this item.
-bool ShouldMaintainPosition(ModelType model_type);
+// Protocol types are those types that have actual protocol buffer
+// representations. This distinguishes them from Proxy types, which have no
+// protocol representation and are never sent to the server.
+SYNC_EXPORT ModelTypeSet ProtocolTypes();
 
-// These are the user-selectable data types.  Note that some of these share a
+// These are the normal user-controlled types. This is to distinguish from
+// ControlTypes which are always enabled.  Note that some of these share a
 // preference flag, so not all of them are individually user-selectable.
 SYNC_EXPORT ModelTypeSet UserTypes();
 
+// These are the user-selectable data types.
+SYNC_EXPORT ModelTypeSet UserSelectableTypes();
+SYNC_EXPORT bool IsUserSelectableType(ModelType model_type);
+
 // This is the subset of UserTypes() that can be encrypted.
-ModelTypeSet EncryptableUserTypes();
+SYNC_EXPORT_PRIVATE ModelTypeSet EncryptableUserTypes();
+
+// This is the subset of UserTypes() that have priority over other types.  These
+// types are synced before other user types and are never encrypted.
+SYNC_EXPORT ModelTypeSet PriorityUserTypes();
+
+// Proxy types are placeholder types for handling implicitly enabling real
+// types. They do not exist at the server, and are simply used for
+// UI/Configuration logic.
+SYNC_EXPORT ModelTypeSet ProxyTypes();
 
 // Returns a list of all control types.
 //
@@ -158,6 +215,14 @@ SYNC_EXPORT ModelTypeSet ControlTypes();
 //
 // See comment above for more information on what makes these types special.
 SYNC_EXPORT bool IsControlType(ModelType model_type);
+
+// Core types are those data types used by sync's core functionality (i.e. not
+// user data types). These types are always enabled, and include ControlTypes().
+//
+// The set of all core types.
+SYNC_EXPORT ModelTypeSet CoreTypes();
+// Those core types that have high priority (includes ControlTypes()).
+SYNC_EXPORT ModelTypeSet PriorityCoreTypes();
 
 // Determine a model type from the field number of its associated
 // EntitySpecifics field.  Returns UNSPECIFIED if the field number is
@@ -179,7 +244,8 @@ SYNC_EXPORT bool IsControlType(ModelType model_type);
 //     }
 //     model_types.Put(model_type);
 //   }
-ModelType GetModelTypeFromSpecificsFieldNumber(int field_number);
+SYNC_EXPORT_PRIVATE ModelType GetModelTypeFromSpecificsFieldNumber(
+    int field_number);
 
 // Return the field number of the EntitySpecifics field associated with
 // a model type.
@@ -196,19 +262,29 @@ FullModelTypeSet ToFullModelTypeSet(ModelTypeSet in);
 // the name of |model_type|.
 SYNC_EXPORT const char* ModelTypeToString(ModelType model_type);
 
+// Some histograms take an integer parameter that represents a model type.
+// The mapping from ModelType to integer is defined here.  It should match
+// the mapping from integer to labels defined in histograms.xml.
+SYNC_EXPORT int ModelTypeToHistogramInt(ModelType model_type);
+
 // Handles all model types, and not just real ones.
 //
 // Caller takes ownership of returned value.
-base::StringValue* ModelTypeToValue(ModelType model_type);
+SYNC_EXPORT_PRIVATE base::StringValue* ModelTypeToValue(ModelType model_type);
 
 // Converts a Value into a ModelType - complement to ModelTypeToValue().
-ModelType ModelTypeFromValue(const base::Value& value);
+SYNC_EXPORT_PRIVATE ModelType ModelTypeFromValue(const base::Value& value);
 
 // Returns the ModelType corresponding to the name |model_type_string|.
 SYNC_EXPORT ModelType ModelTypeFromString(
     const std::string& model_type_string);
 
+// Returns the comma-separated string representation of |model_types|.
 SYNC_EXPORT std::string ModelTypeSetToString(ModelTypeSet model_types);
+
+// Returns the set of comma-separated model types from |model_type_string|.
+SYNC_EXPORT ModelTypeSet ModelTypeSetFromString(
+    const std::string& model_type_string);
 
 // Caller takes ownership of returned list.
 SYNC_EXPORT base::ListValue* ModelTypeSetToValue(ModelTypeSet model_types);
@@ -228,11 +304,21 @@ bool RealModelTypeToNotificationType(ModelType model_type,
 // Converts a notification type to a real model type.  Returns true
 // iff |notification_type| was the notification type of a real model
 // type and |model_type| was filled in.
-bool NotificationTypeToRealModelType(const std::string& notification_type,
-                                     ModelType* model_type);
+SYNC_EXPORT bool NotificationTypeToRealModelType(
+    const std::string& notification_type,
+    ModelType* model_type);
 
 // Returns true if |model_type| is a real datatype
 SYNC_EXPORT bool IsRealDataType(ModelType model_type);
+
+// Returns true if |model_type| is an act-once type. Act once types drop
+// entities after applying them. Drops are deletes that are not synced to other
+// clients.
+// TODO(haitaol): Make entries of act-once data types immutable.
+SYNC_EXPORT bool IsActOnceDataType(ModelType model_type);
+
+// Returns set of model types that should be backed up before first sync.
+SYNC_EXPORT ModelTypeSet BackupTypes();
 
 }  // namespace syncer
 

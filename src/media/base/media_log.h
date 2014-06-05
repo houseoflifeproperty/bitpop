@@ -64,9 +64,16 @@ class MEDIA_EXPORT MediaLog : public base::RefCountedThreadSafe<MediaLog> {
   scoped_ptr<MediaLogEvent> CreateVideoSizeSetEvent(
       size_t width, size_t height);
   scoped_ptr<MediaLogEvent> CreateBufferedExtentsChangedEvent(
-      size_t start, size_t current, size_t end);
+      int64 start, int64 current, int64 end);
   scoped_ptr<MediaLogEvent> CreateMediaSourceErrorEvent(
       const std::string& error);
+
+  // Report a property change without an accompanying event.
+  void SetStringProperty(const char* key, const std::string& value);
+  void SetIntegerProperty(const char* key, int value);
+  void SetDoubleProperty(const char* key, double value);
+  void SetBooleanProperty(const char* key, bool value);
+  void SetTimeProperty(const char* key, base::TimeDelta value);
 
  protected:
   friend class base::RefCountedThreadSafe<MediaLog>;

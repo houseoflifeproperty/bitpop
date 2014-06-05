@@ -12,11 +12,8 @@ from __future__ import with_statement
 import codecs
 import logging
 import os
-import subprocess
-import sys
 import time
 import urllib2
-import xml.dom.minidom
 
 import simplejson
 from slave.gtest.test_result import TestResult
@@ -68,59 +65,6 @@ def add_path_to_trie(path, value, trie):
   if not directory in trie:
     trie[directory] = {}
   add_path_to_trie(rest, value, trie[directory])
-
-
-def _is_git_directory(dir_path):
-  """Returns true if the given directory is in a git repository.
-
-  Args:
-    dir_path: The directory path to be tested.
-  """
-  if os.path.exists(os.path.join(dir_path, '.git')):
-    return True
-  parent = os.path.dirname(dir_path)
-  if parent == dir_path:
-    return False
-  return _is_git_directory(parent)
-
-
-def GetSvnRevision(in_directory):
-  """Returns the svn revision for the given directory.
-
-  Args:
-    in_directory: The directory where svn is to be run.
-  """
-  if not os.path.exists(os.path.join(in_directory, '.svn')):
-    if _is_git_directory(in_directory):
-      return _get_git_revision(in_directory)
-    else:
-      return ''
-
-  # Note: Not thread safe: http://bugs.python.org/issue2320
-  output = subprocess.Popen(['svn', 'info', '--xml'],
-                            cwd=in_directory,
-                            shell=(sys.platform == 'win32'),
-                            stdout=subprocess.PIPE).communicate()[0]
-  try:
-    dom = xml.dom.minidom.parseString(output)
-    return dom.getElementsByTagName('entry')[0].getAttribute('revision')
-  except xml.parsers.expat.ExpatError:
-    return ''
-  return ''
-
-
-def _get_git_revision(in_directory):
-  """Returns the git hash tag for the given directory.
-
-  Args:
-    in_directory: The directory where git is to be run.
-  """
-  command_line = ['git', 'log', '-1', '--pretty=oneline']
-  output = subprocess.Popen(command_line,
-                            cwd=in_directory,
-                            shell=(sys.platform == 'win32'),
-                            stdout=subprocess.PIPE).communicate()[0]
-  return output[0:40]
 
 
 def generate_test_timings_trie(individual_test_timings):
@@ -188,7 +132,7 @@ class JSONResultsGenerator(object):
 
   def __init__(self, builder_name, build_name, build_number,
                results_file_base_path, builder_base_url,
-               test_results_map, svn_repositories=None,
+               test_results_map, svn_revisions=None,
                test_results_server=None,
                test_type='',
                master_name='',
@@ -205,7 +149,7 @@ class JSONResultsGenerator(object):
       builder_base_url: the URL where we have the archived test results.
         If this is None no archived results will be retrieved.
       test_results_map: A dictionary that maps test_name to TestResult.
-      svn_repositories: A (json_field_name, svn_path) pair for SVN
+      svn_revisions: A (json_field_name, revision) pair for SVN
         repositories that tests rely on.  The SVN revision will be
         included in the JSON with the given json_field_name.
       test_results_server: server that hosts test results json.
@@ -224,9 +168,9 @@ class JSONResultsGenerator(object):
     self._test_results_map = test_results_map
     self._test_results = test_results_map.values()
 
-    self._svn_repositories = svn_repositories
-    if not self._svn_repositories:
-      self._svn_repositories = {}
+    self._svn_revisions = svn_revisions
+    if not self._svn_revisions:
+      self._svn_revisions = {}
 
     self._test_results_server = test_results_server
     self._test_type = test_type
@@ -298,7 +242,7 @@ class JSONResultsGenerator(object):
                     'Not uploading JSON files.')
       return
 
-    logging.info('Uploading JSON files for builder: %s', self._builder_name)
+    print 'Uploading JSON files for builder: %s' % self._builder_name
     attrs = [('builder', self._builder_name),
              ('testtype', self._test_type),
              ('master', self._master_name)]
@@ -310,7 +254,7 @@ class JSONResultsGenerator(object):
     # 120 seconds are more than enough to upload test results.
     uploader.upload(attrs, files, 120)
 
-    logging.info('JSON files uploaded.')
+    print 'JSON files uploaded.'
 
   def _write_json(self, json_object, file_path):
     # Specify separators in order to get compact encoding.
@@ -491,8 +435,8 @@ class JSONResultsGenerator(object):
                                     self.BUILD_NUMBERS)
 
     # Include SVN revisions for the given repositories.
-    for (name, path) in self._svn_repositories:
-      self._insert_item_into_raw_list(results_for_builder, GetSvnRevision(path),
+    for (name, revision) in self._svn_revisions:
+      self._insert_item_into_raw_list(results_for_builder, revision,
                                       name + 'Revision')
 
     self._insert_item_into_raw_list(results_for_builder,

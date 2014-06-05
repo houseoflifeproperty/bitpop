@@ -188,8 +188,9 @@ protected:
         Branch() {
         }
 
-        Branch(Op op, int depth, unsigned offset) : fOffset(offset), fOpStackDepth(depth), fOperator(op),
-            fPrimed(kIsNotPrimed), fDone(kIsNotDone) {
+        Branch(Op op, int depth, size_t offset)
+            : fOffset(SkToU16(offset)), fOpStackDepth(depth), fOperator(op)
+            , fPrimed(kIsNotPrimed), fDone(kIsNotDone) {
         }
 
         enum Primed {
@@ -289,4 +290,3 @@ struct SkScriptNAnswer2 {
 
 
 #endif // SkScript2_DEFINED
-

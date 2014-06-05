@@ -26,23 +26,7 @@
 # class may indicate the rev or feature that makes the encoding valid in
 # parentheses.
 #
-# For documentation and testing, an "=InstClass" can be followed by up to 3
-# additional identifiers, and has the form:
-#     =InstClass Rule Pattern Constraints
-# where
-#     InstClass - is the class decoder to return when matched.
-#     Rule - is the Arm rule that applies to the match (see below).
-#     Pattern - is a bitpattern for testing instances of the rule.
-#     Constraints - identifies what additional constraints are assumed
-#            by the corresponding rule.
-#
-# The Rules are identified with an identifier of the form:
-#     NNN_Rule_SS_AA_Pppp
-# where
-#    NNN is the nmenonic of the instruction.
-#    SS is the section number in A8.6.SS that define the instruction.
-#    AA is the instruction form on that page,
-#    pp is the page number in A8-pp that the instruction is on.
+# See dgen_input.py for more information on formatting "=InstClass".
 #
 # Patterns are sequences of 32 characters as follows:
 #   '1' - Bit must be value 1.
@@ -63,50 +47,16 @@
 #   'd'    - Bit(23) Direction (add vs subtract) of offset. (deprecated)
 #   'u'    - Bit(23) Direction (add vs subtract) of offset.
 #   'p'    - Bit(24) defining if pre-indexing should be used.
-#
-# Constraints can be broken into three categories:
-#    Parse precondition - Don't test the instruction if the parse
-#        precondition is met.
-#    Safety constraint - Safety should not have allowed the
-#        instruction to be parsed if the given constraint is defined.
-#    Parse precondition and safety constraint - Contains both
-#        parse precondition(s) and safety constraint(s).
-#
-# Parse constraints are only necessary because our pattern language is
-# too simple. In most cases, the decoder tables will chose the
-# appropriate class decoder. However, it will be different than the
-# one being tested. Hence, we add a precondition parse check to
-# make sure we don't test these cases.
-#
-# Parse preconditions:
-#    NotRdIsPcAndS - not (Rd is Pc (R15) and S=1 (updates register bit)).
-#    NeitherRdIsPcAndSNorRnIsPcAndNotS - Neither
-#        (1) Rd is Pc and S=1; nor
-#        (2) Rn is Pc ans S=0;
-#    NeitherImm5NotZeroNorNotRdIsPcAndS - Neither combination of the above two
-#        (1) The immediate (5-bit) value must not be zero; nor
-#        (2) Not (Rd is Pc (R15) and S=1 (updates register bit)).
-#    NotRnIsPc - Rn!=Pc.
-#    NotRnIsSp - Rn!=Sp.
-#
-# Safety constraints:
-#    RegsNotPc - All registers defined by instruction are not Pc (R15).
-#
-# Parse precondition and safety constraint:
-#    NotRaIsPcAndRegsNotPc - Parse precondition Ra!=Pc and safety
-#         constraint that all registers defined by the instruction
-#         are not Pc (R15).
-#    NotRnIsPcAndRegsNotPc - Parse precondition Rn!=pc and safety
-#         constraint that all registers defined by the instruction
-#         are not Pc (R15).
 
 ##############################################################
 # The following define common entries for each (action) row.
 #
 # base: The register used as the base for the effective address
 #       for reads and writes.
-# clear_bits: True implies that the masked bits are cleared.
-#       (defaults to false). Corresponds to virtual clear_bits.
+# clears_bits: True implies that the masked bits are cleared.
+#       (defaults to false). Corresponds to virtual
+#       clears_bits. Assumes clears_mask() returns the mask to
+#       check against.
 # defs: The set of registers defined. (missing implies {}).
 # dynamic_code_replace_immediates: The set of immediate fields that
 #      should be zeroed out, when generating the dynamic code
@@ -114,22 +64,22 @@
 #      dynamic_code_replacement_sentinel.
 # small_imm_base_wb: True if a small immediate is written back to the
 #       base register (missing implies false).
-# immediate: True if the instruction does a read/write
-#       as "base + immediate". (missing implies false).
 # is_literal_load: Checks whether the instruction is a PC-relative
 #       load plus immediate.
+# is_literal_pool_head: Checks whether the instruction is a special
+#       bit sequence that marks the start of a literal pool.
 # is_load_tp: Checks if r9 is used to load a thread pointer (missing
 #       implies false).
-# pool_head: Defines instruction to start a literal pool.
-#       (missing implies false).
 # relative: Defines if the instruction is a direct relative
 #       branch (R15 + constant offset). (missing implies false.)
 # relative_offset: Defines the constant offset used in a direct
 #       relative branch.
 # safety: How safety is defined for the class (missing implies true).
-# sets_Z_if_clear_bits: True implies that it sets the Z (condition)
-#       bit if mask bits are cleared. (defaults to false).
-#       Corresponds to defining virtual sets_Z_if_clear_bits.
+# sets_Z_if_clear_bits: Defines the register that is tested if bits
+#       have been cleared. Corresponds to defining virtual
+#       sets_Z_if_clear_bits. Assumes clears_mask() returns the mask
+#       to check against, and test_register() returns the expected
+#       register that was used to set the Z bits.
 # target: The register use to compute an indirect branch,
 #       if defined (defaults to None).
 # uses: The set of registers  used. (missing implies {})
@@ -148,122 +98,36 @@
 ##############################################################
 
 ##############################################################
-# The following defines a class decoder hierarchy used to select the
-# appropriate tester. We want to add class hierarchy information for
-# classes that want their tester to be defined on a superclass.
-# By providing this information, the generator can pick out
-# the corresponding baseline class tester to use, and does
-# not need to define separate testers for derived classes of
-# the baseline class tester.
-# #############################################################
+# Special actions needed by the validator.
+##############################################################
 
-class BreakPointAndConstantPoolHead : Immediate16Use
-class Binary2RegisterImmediateOpDynCodeReplace : Binary2RegisterImmediateOp
-class Binary2RegisterImmediateOpAddSub : Binary2RegisterImmediateOp
-class Binary3RegisterImmedShiftedOpRegsNotPc : Binary3RegisterImmedShiftedOp
-class Binary3RegisterOpAltANoCondsUpdate : Binary3RegisterOpAltA
-class Binary4RegisterDualOpLtV6RdNotRn : Binary4RegisterDualOp
-class Binary4RegisterDualOpNoCondsUpdate : Binary4RegisterDualOp
-class Binary4RegisterDualResultLtV6RdHiLoNotRn : Binary4RegisterDualResult
-class Binary4RegisterDualResultNoCondsUpdate : Binary4RegisterDualResult
-class Binary4RegisterDualResultUsesRnRm : Binary4RegisterDualResult
-class Deprecated : UnsafeCondDecoder
-class ForbiddenCondDecoder : UnsafeCondDecoder
-class ForbiddenUncondDecoder : UnsafeUncondDecoder
-class LdrImmediateOp : Load2RegisterImm12Op
-class LoadRegisterList : LoadStoreRegisterList
-class LoadStoreVectorRegister : LoadStoreVectorOp
-class LoadVectorRegister : LoadStoreVectorRegister
-class LoadVectorRegisterList : LoadStoreVectorRegisterList
-class Load3RegisterDoubleOp : LoadStore3RegisterDoubleOp
-class Load2RegisterImm8DoubleOp : LoadStore2RegisterImm8DoubleOp
-class Load2RegisterImm8Op : LoadStore2RegisterImm8Op
-class Load2RegisterImm12Op : LoadStore2RegisterImm12Op
-class Load3RegisterImm5Op : LoadStore3RegisterImm5Op
-class Load3RegisterOp : LoadStore3RegisterOp
-class MaskedBinary2RegisterImmediateOp : Binary2RegisterImmediateOp
-class MaskedBinaryRegisterImmediateTest : BinaryRegisterImmediateTest
-class StoreRegisterList : LoadStoreRegisterList
-class Store2RegisterImm12OpRnNotRtOnWriteback : Store2RegisterImm12Op
-class Store3RegisterDoubleOp : LoadStore3RegisterDoubleOp
-class Store2RegisterImm8DoubleOp : LoadStore2RegisterImm8DoubleOp
-class Store2RegisterImm8Op : LoadStore2RegisterImm8Op
-class Store2RegisterImm12Op : LoadStore2RegisterImm12Op
-class Store3RegisterImm5Op : LoadStore3RegisterImm5Op
-class Store3RegisterOp : LoadStore3RegisterOp
-class Unary1RegisterImmediateOpDynCodeReplace : Unary1RegisterImmediateOp
-class Unary1RegisterImmediateOp12DynCodeReplace : Unary1RegisterImmediateOp12
-class Unary2RegisterOpNotRmIsPcNoCondUpdates : Unary2RegisterOpNotRmIsPc
-class Unary2RegisterShiftedOpImmNotZero : Unary2RegisterShiftedOp
-class UndefinedCondDecoder : UnsafeCondDecoder
-class UnpredictableUncondDecoder : UnsafeUncondDecoder
-class Vector2RegisterMiscellaneous_RG : Vector2RegisterMiscellaneous
-class Vector2RegisterMiscellaneous_V8_16_32 : Vector2RegisterMiscellaneous
-class Vector2RegisterMiscellaneous_V8 : Vector2RegisterMiscellaneous
-class Vector2RegisterMiscellaneous_V8S : Vector2RegisterMiscellaneous
-class Vector2RegisterMiscellaneous_F32 : Vector2RegisterMiscellaneous
-class Vector2RegisterMiscellaneous_V8_16_32I : Vector2RegisterMiscellaneous
-class Vector2RegisterMiscellaneous_V8_16_32T : Vector2RegisterMiscellaneous
-class Vector2RegisterMiscellaneous_V16_32_64N : Vector2RegisterMiscellaneous
-class Vector2RegisterMiscellaneous_I8_16_32L : Vector2RegisterMiscellaneous
-class Vector2RegisterMiscellaneous_CVT_F2I : Vector2RegisterMiscellaneous
-class VectorBinary2RegisterScalar_I16_32 : VectorBinary2RegisterScalar
-class VectorBinary2RegisterScalar_I16_32L : VectorBinary2RegisterScalar
-class VectorBinary2RegisterScalar_F32 : VectorBinary2RegisterScalar
-class VectorBinary3RegisterDifferentLength_I8_16_32
-         : VectorBinary3RegisterDifferentLength
-class VectorBinary3RegisterDifferentLength_I8_16_32
-         : VectorBinary3RegisterDifferentLength
-class VectorBinary3RegisterDifferentLength_I16_32_64
-         : VectorBinary3RegisterDifferentLength
-class VectorBinary3RegisterDifferentLength_I8_16_32L
-         : VectorBinary3RegisterDifferentLength
-class VectorBinary3RegisterDifferentLength_I16_32L
-         : VectorBinary3RegisterDifferentLength
-class VectorBinary3RegisterDifferentLength_P8
-         : VectorBinary3RegisterDifferentLength
-class VectorBinary3RegisterSameLengthDQ
-         : VectorBinary3RegisterSameLength
-class VectorBinary3RegisterSameLengthDQI16_32
-         : VectorBinary3RegisterSameLength
-class VectorBinary3RegisterSameLengthDQI8_16_32
-         : VectorBinary3RegisterSameLength
-class VectorBinary3RegisterSameLengthDQI8P
-         : VectorBinary3RegisterSameLength
-class VectorBinary3RegisterSameLength32P
-         : VectorBinary3RegisterSameLength
-class VectorBinary3RegisterSameLength32_DQ
-         : VectorBinary3RegisterSameLength
-class VectorBinary3RegisterSameLengthDI
-         : VectorBinary3RegisterSameLength
-class VectorBinary2RegisterShiftAmount_E8_16_32L
-        : VectorBinary2RegisterShiftAmount
-class VectorBinary2RegisterShiftAmount_CVT
-        : VectorBinary2RegisterShiftAmount
-class VectorBinary2RegisterShiftAmount_E8_16_32L
-        : VectorBinary2RegisterShiftAmount
-class VectorBinary2RegisterShiftAmount_I : VectorBinary2RegisterShiftAmount
-class VectorBinary2RegisterShiftAmount_ILS : VectorBinary2RegisterShiftAmount
-class VectorBinary2RegisterShiftAmount_N16_32_64R
-        : VectorBinary2RegisterShiftAmount
-class VectorBinary2RegisterShiftAmount_N16_32_64RS
-        : VectorBinary2RegisterShiftAmount
-class VectorBinary2RegisterShiftAmount_CVT : VectorBinary2RegisterShiftAmount
-class VectorLoadStoreMultiple1 : VectorLoadStoreMultiple
-class VectorLoadStoreMultiple2 : VectorLoadStoreMultiple
-class VectorLoadStoreMultiple3 : VectorLoadStoreMultiple
-class VectorLoadStoreMultiple4 : VectorLoadStoreMultiple
-class VectorLoadStoreSingle1 : VectorLoadStoreSingle
-class VectorLoadStoreSingle2 : VectorLoadStoreSingle
-class VectorLoadStoreSingle3 : VectorLoadStoreSingle
-class VectorLoadStoreSingle4 : VectorLoadStoreSingle
-class VectorLoadSingle1AllLanes : VectorLoadSingleAllLanes
-class VectorLoadSingle2AllLanes : VectorLoadSingleAllLanes
-class VectorLoadSingle3AllLanes : VectorLoadSingleAllLanes
-class VectorLoadSingle4AllLanes : VectorLoadSingleAllLanes
-class Vector1RegisterImmediate_MOV : Vector1RegisterImmediate
-class Vector1RegisterImmediate_BIT : Vector1RegisterImmediate
-class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
+*Nop
+  defs := {};
+  uses := {};
+
+*Deprecated *Nop
+  safety := true => DEPRECATED;
+
+*Forbidden *Nop
+  safety := true => FORBIDDEN;
+
+*Undefined *Nop
+  safety := true => UNDEFINED;
+
+*Unpredictable *Nop
+  safety := true => UNPREDICTABLE;
+
+*NotImplemented *Nop
+  # Used when instruction is not defined by any table entries.
+  safety := true => NOT_IMPLEMENTED;
+  rule := NOT_IMPLEMENTED;
+
+*FictitiousFirst *Nop
+  # Used to process the fictitious instruction before the "first" instruction
+  # in the code segment. The contents of this fictitious instruction is defined
+  # by macro src/include/arm_sandbox.h:NACL_INSTR_ARM_FAIL_VALIDATION
+  safety := true => FORBIDDEN;
+  rule := FICTITIOUS_FIRST;
 
 ##############################################################
 # The following define decoder tables.
@@ -283,7 +147,6 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
 +-- data_processing_and_miscellaneous_instructions (See Section A5.2)
 *mov
   { cond(31:28), S(20), imm4(19:16), Rd(15:12), imm12(11:0) }
-  baseline := Unary1RegisterImmediateOpDynCodeReplace;
   imm := imm4:imm12;
   safety := Rd=1111 => UNPREDICTABLE;
   defs := { Rd , NZCV if S else None };
@@ -300,7 +163,7 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
 | "      1xxxx      1001     ->synchronization_primitives
 | "      ~0xx1x     1011     ->extra_load_store_instructions
 | "      "          11x1     "
-| "      0xx1x      1011     = baseline := ForbiddenCondDecoder;
+| "      0xx1x      1011     = *Forbidden
                                pattern := cccc0000xx1xxxxxxxxxxxxx1xx1xxxx;
                                rule := extra_load_store_instructions_unpriviledged;
 | "      "          11x1     "
@@ -317,29 +180,24 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
 +-- data_processing_register (See Section A5.2.1)
 *RdRm
    { cond(31:28), S(20), Rd(15:12), Rm(3:0) }
-   baseline := Unary2RegisterOp;
    defs := { Rd , NZCV if S else None };
    safety := (Rd=1111 & S=1) => DECODER_ERROR &  # ARM
              Rd=1111 => FORBIDDEN_OPERANDS;  # NaCl
    uses := { Rm };
 *RdRmSh *RdRm
    { cond(31:28), S(20), Rd(15:12), imm5(11:7), type(6:5), Rm(3:0) }
-   baseline := Unary2RegisterShiftedOp;
    shift := DecodeImmShift(type, imm5);
 *RnRmShTst
    { cond(31:28), S(20), Rn(19:16), imm5(11:7), type(6:5), Rm(3:0) }
    shift := DecodeImmShift(type, imm5);
-   baseline := Binary2RegisterImmedShiftedTest;
    defs := { NZCV if S else None };
    uses := { Rn , Rm };
 *RdRmShInz *RdRmSh
-   baseline := Unary2RegisterShiftedOpImmNotZero;
    safety := (Rd=1111 & S=1) => DECODER_ERROR &  # ARM
              imm5=00000 => DECODER_ERROR &
              Rd=1111 => FORBIDDEN_OPERANDS;      # NaCl
 *RdRnRmSh *RdRmSh
    { cond(31:28), S(20), Rn(19:16), Rd(15:12), imm5(11:7), type(6:5), Rm(3:0) }
-   baseline := Binary3RegisterShiftedOp;
    uses := { Rn , Rm };
 +--
 | op1(24:20) op2(11:7) op3(6:5)
@@ -417,26 +275,22 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
 +-- data_processing_register_shifted_register (See Section A5.2.2)
 *RdRsRm
    { cond(31:28), S(20), Rd(15:12), Rs(11:8), type(6:5), Rm(3:0) }
-   baseline := Unary3RegisterShiftedOp;
    setflags := S=1; shift_t := DecodeRegShift(type);
    defs := {Rd, NZCV if setflags else None};
    safety := Pc in {Rd, Rm, Rs} => UNPREDICTABLE;
    uses := {Rm, Rs};
 *RnRdRsRm *RdRsRm
    { cond(31:28), S(20), Rn(19:16), Rd(15:12), Rs(11:8), type(6:5), Rm(3:0) }
-   baseline := Binary4RegisterShiftedOp;
    safety := Pc in {Rn, Rd, Rm, Rs} => UNPREDICTABLE;
    uses := {Rn, Rm, Rs};
 *RnRsRm
    { cond(31:28), Rn(19:16), Rs(11:8), type(6:5), Rm(3:0) }
-   baseline := Binary3RegisterShiftedTest;
    shift_t := DecodeRegShift(type);
    defs := {NZCV};  # S(20)=1
    safety := Pc in {Rn, Rm, Rs} => UNPREDICTABLE;
    uses := {Rn, Rm, Rs};
 *RdRmRn
    { cond(31:28), S(20), Rd(15:12), Rm(11:8), Rn(3:0) }
-   baseline := Binary3RegisterOp;
    setflags := S=1;
    defs := {Rd, NZCV if setflags else None};   
    safety := Pc in {Rd, Rn, Rm} => UNPREDICTABLE;
@@ -511,45 +365,38 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
 # appropriately.
 *U1R_12
    { cond(31:28), S(20), Rd(15:12), imm12(11:0) }
-   baseline := Unary1RegisterImmediateOp12;
    setflags := S=1; imm32 := ARMExpandImm(imm12);
    defs := {Rd, NZCV if setflags else None};
    uses := {};
    safety := (Rd=1111 & S=1) => DECODER_ERROR &
              Rd=1111 => FORBIDDEN_OPERANDS;
 *U1R_12_DCR *U1R_12
-   baseline := Unary1RegisterImmediateOp12DynCodeReplace;
    dynamic_code_replace_immediates := {imm12};
 *B2R *U1R_12
    { cond(31:28), S(20), Rn(19:16), Rd(15:12), imm12(11:0) }
-   baseline := Binary2RegisterImmediateOp;
    uses := {Rn};
 *B2R_MASK *B2R
-   baseline := MaskedBinary2RegisterImmediateOp;
-   clears_bits := true;
+   clears_bits := (imm32 & clears_mask()) == clears_mask();
 *B2R_DCR *B2R
-   baseline := Binary2RegisterImmediateOpDynCodeReplace;
    dynamic_code_replace_immediates := {imm12};
 *B2R_ADDSUB *B2R
    # Note: This is a variant of *B2R instructions, that is used
    # to define add and subtract, and have additional decoding error
    # safety checks.
-   baseline := Binary2RegisterImmediateOpAddSub;
    safety := (Rd=1111 & S=1) => DECODER_ERROR &
              (Rn=1111 & S=0) => DECODER_ERROR &
              Rd=1111 => FORBIDDEN_OPERANDS;
 *TEST 
    { cond(31:28), Rn(19:16), imm12(11:0) }
-   baseline := BinaryRegisterImmediateTest;
-   imm32 := AMRExpandImm_C(imm12);
+   imm32 := ARMExpandImm_C(imm12);
    defs := {NZCV};
    uses := {Rn};
 *TEST_MASK *TEST
-   baseline := MaskedBinaryRegisterImmediateTest;
-   sets_Z_if_bits_clear := true;
+   sets_Z_if_clear_bits :=
+     Rn == RegIndex(test_register()) &
+     (imm32 & clears_mask()) == clears_mask();
 *U1R_PC
    { cond(31:28), Rd(15:12), imm12(11:0) }
-   baseline := Unary1RegisterImmediateOpPc;
    imm32 := ARMExpandImm(imm12);
    defs := {Rd};
    safety := Rd=1111 => FORBIDDEN_OPERANDS;
@@ -617,7 +464,6 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
 +-- multiply_and_multiply_accumulate (See Section A5.2.5)
 *MUL
    { cond(31:28), S(20), Rd(19:16), Rm(11:8), Rn(3:0) }
-   baseline := Binary3RegisterOpAltA;
    setflags := S=1;
    defs := {Rd, NZCV if setflags else None};
    safety := Pc in {Rd, Rn, Rm} => UNPREDICTABLE &
@@ -625,14 +471,12 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
    uses := {Rm, Rn};
 *MLS
    { cond(31:28), Rd(19:16), Ra(15:12), Rm(11:8), Rn(3:0) }
-   baseline := Binary4RegisterDualOp;
    defs := {Rd};
    safety := Pc in {Rd, Rn, Rm, Ra} => UNPREDICTABLE;
    uses := {Rn, Rm, Ra};
    arch := v6T2;
 *MLA
    { cond(31:28), S(20), Rd(19:16), Ra(15:12), Rm(11:8), Rn(3:0) }
-   baseline := Binary4RegisterDualOpLtV6RdNotRn;
    setflags := S=1;
    defs := {Rd, NZCV if setflags else None};
    safety := Pc in {Rd, Rn, Rm, Ra} => UNPREDICTABLE &
@@ -640,14 +484,12 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
    uses := {Rn, Rm, Ra};
 *UMAAL
    { cond(31:28), RdHi(19:16), RdLo(15:12), Rm(11:8), Rn(3:0) }
-   baseline := Binary4RegisterDualResult;
    defs := {RdLo, RdHi};
    safety := Pc in {RdLo, RdHi, Rn, Rm} => UNPREDICTABLE &
              RdHi == RdLo => UNPREDICTABLE;
    uses := {RdLo, RdHi, Rn, Rm};
 *MULL
    { cond(31:28), S(20), RdHi(19:16), RdLo(15:12), Rm(11:8), Rn(3:0) }
-   baseline :=  Binary4RegisterDualResultUsesRnRm;
    setflags := S=1;
    defs := {RdLo, RdHi, NZCV if setflags else None};
    safety := Pc in {RdLo, RdHi, Rn, Rm} => UNPREDICTABLE &
@@ -656,7 +498,6 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
    uses := {Rn, Rm};
 *MLAL
    { cond(31:28), S(20), RdHi(19:16), RdLo(15:12), Rm(11:8), Rn(3:0) }
-   baseline := Binary4RegisterDualResultLtV6RdHiLoNotRn;
    setflags := S=1;
    defs := {RdLo, RdHi, NZCV if setflags else None};
    safety := Pc in {RdLo, RdHi, Rn, Rm} => UNPREDICTABLE &
@@ -674,12 +515,12 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
 | 0100      = *UMAAL
               pattern := cccc00000100hhhhllllmmmm1001nnnn;
               rule := UMAAL_A1;
-| 0101      = UndefinedCondDecoder => Undefined # No rule defined in table.
+| 0101      = *Undefined  # No rule defined in table.
               pattern := cccc00000101xxxxxxxxxxxx1001xxxx;
 | 0110      = *MLS
               pattern := cccc00000110ddddaaaammmm1001nnnn;
               rule := MLS_A1;
-| 0111      = UndefinedCondDecoder => Undefined # No rule defined in table.
+| 0111      = *Undefined  # No rule defined in table.
               pattern := cccc00000111xxxxxxxxxxxx1001xxxx;
 | 100x      = *MULL
               pattern := cccc0000100shhhhllllmmmm1001nnnn;
@@ -701,7 +542,6 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
 +-- saturating_addition_and_subtraction (See Section A5.2.6)
 *RdRmRn
    { Cond(31:28), Rn(19:16), Rd(15:12), Rm(3:0) }
-   baseline := Binary3RegisterOpAltBNoCondUpdates;
    defs := {Rd};
    safety := Pc in {Rd, Rn, Rm} => UNPREDICTABLE;
    uses := {Rn, Rm};
@@ -725,7 +565,6 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
 +-- halfword_multiply_and_multiply_accumulate (See Section A5.2.7)
 *RdRnRm
    {cond(31:28), Rd(19:16), Rm(11:8), M(6), N(5), Rn(3:0)}
-   baseline := Binary3RegisterOpAltA;
    n_high := N=1; m_high := M=1;
    defs := {Rd};
    uses := {Rn, Rm};   
@@ -733,12 +572,10 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
    arch := v5TE;
 *RdRnRmRa *RdRnRm
    {cond(31:28), Rd(19:16), Ra(15:12), Rm(11:8), M(6), N(5), Rn(3:0)}
-   baseline := Binary4RegisterDualOp;
    uses := {Rn, Rm, Ra};
    safety := Pc in {Rd, Rn, Rm, Ra} => UNPREDICTABLE;
 *RdLoHiRnRm *RdRnRm
    {cond(31:28), RdHi(19:16), RdLo(15:12), Rm(11:8), M(6), N(5), Rn(3:0)}
-   baseline := Binary4RegisterDualResult;
    defs := {RdLo, RdHi};
    uses := {RdLo, RdHi, Rn, Rm};
    safety := Pc in {RdLo, RdHi, Rn, Rm} => UNPREDICTABLE &
@@ -778,7 +615,6 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
   imm32 := ZeroExtend(imm4H:imm4L, 32);
   add := U=1; 
 *LdrRtImm *RtImm
-  baseline := LoadRegisterImm8Op;
   # Note: There is a problem here. The ARM manual defines 'base' as follows:
   #   base := Align(PC, 4);
   #   address := base + imm32 if add else base - imm32;
@@ -796,7 +632,6 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
             P == W => UNPREDICTABLE &
             Rt == Pc => UNPREDICTABLE;
 *LdrRtRt2Imm *LdrRtImm
-  baseline := LoadRegisterImm8DoubleOp;
   Rt2 := Rt + 1;
   defs := {Rt, Rt2};
   safety := Rt(0)=1 => UNPREDICTABLE &
@@ -811,7 +646,6 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
   base := Rn;
   small_imm_base_wb := wback;
 *LdrRtRnImm *RtRnImm
-  baseline := Load2RegisterImm8Op;
   defs := {Rt, base if wback else None};
   uses := {Rn};
   safety := Rn=1111 => DECODER_ERROR &
@@ -819,7 +653,6 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
             Rt == Pc | (wback & Rn==Rt) => UNPREDICTABLE &
             Rt == Pc => FORBIDDEN_OPERANDS;
 *LdrRtRt2RnImm *LdrRtRnImm
-  baseline := Load2RegisterImm8DoubleOp;
   Rt2 := Rt + 1;
   defs := {Rt, Rt2, base if wback else None};
   safety := Rn=1111 => DECODER_ERROR &
@@ -829,19 +662,17 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
             Rt2 == Pc => UNPREDICTABLE;
   arch := v5TE;
 *StrRtRnImm *RtRnImm
-  baseline := Store2RegisterImm8Op;
   defs := {base if wback else None};
   uses := {Rt, Rn};
   safety := P=0 & W=1 => DECODER_ERROR &
             Rt == Pc => UNPREDICTABLE &
             wback & (Rn == Pc | Rn == Rt) => UNPREDICTABLE;
 *StrRtRt2RnImm *StrRtRnImm
-  baseline := Store2RegisterImm8DoubleOp;
   Rt2 := Rt + 1;
   uses := {Rt, Rt2, Rn};
   safety := Rt(0)=1 => UNPREDICTABLE &
             P=0 & W=1 => UNPREDICTABLE &
-            wback & (Rn == Pc | Rn == Rt) => UNPREDICTABLE &
+            wback & (Rn == Pc | Rn == Rt | Rn == Rt2) => UNPREDICTABLE &
             Rt2 == Pc => UNPREDICTABLE;
 
 *RtRnRm
@@ -849,7 +680,6 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
   index := P=1; add := U=1; wback := (P=0) | (W=1);
   base := Rn;
 *LdrRtRt2RnRm *RtRnRm
-  baseline := Load3RegisterDoubleOp;
   Rt2 := Rt + 1;
   defs := {Rt, Rt2, base if wback else None};
   uses := {Rn, Rm};
@@ -863,7 +693,6 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
             index => FORBIDDEN;
   arch := v5TE;
 *StrRtRt2RnRm *RtRnRm
-  baseline := Store3RegisterDoubleOp;
   Rt2 := Rt + 1;
   defs := {base if wback else None};
   uses := {Rt, Rt2, Rn, Rm};
@@ -879,7 +708,6 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
 *RtRnRmSh *RtRnRm
   shift_t := SRType_LSL(); shift_n := 0;
 *LdrRtRnRmSh *RtRnRmSh
-  baseline := Load3RegisterOp;
   defs := {Rt, base if wback else None};
   uses := {Rn, Rm};
   safety := P=0 & W=1 => DECODER_ERROR &
@@ -890,7 +718,6 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
             # which NaCl doesn't allow.
             index => FORBIDDEN;
 *StrRtRnRmSh *RtRnRmSh
-  baseline := Store3RegisterOp;
   defs := {base if wback else None};
   uses := {Rt, Rn, Rm};
   safety := P=0 & W=1 => DECODER_ERROR &
@@ -956,7 +783,7 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
                                    rule := LDRSH_immediate;
 | "        "          1111      = *LdrRtImm
                                    pattern := cccc0001u1011111ttttiiii1111iiii;
-                                   rule := LDRSB_literal;
+                                   rule := LDRSH_literal;
 +--
 
 # Table omitted: extra_load_store_instructions_unpriviledged (See section A5.2.9)
@@ -964,20 +791,17 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
 +-- synchronization_primitives (See Section A5.2.10)
 *LdRtRn
   { cond(31:28), Rn(19:16), Rt(15:12) }
-  baseline := LoadExclusive2RegisterOp;
   imm32 := Zeros((32));
   base := Rn;
   defs := {Rt};
   uses := {Rn};
   safety := Pc in {Rt, Rn} => UNPREDICTABLE;
 *LdRtRt2Rn *LdRtRn
-  baseline := LoadExclusive2RegisterDoubleOp;
   Rt2 := Rt + 1;
   defs := {Rt, Rt2};
   safety := Rt(0)=1 | Rt == Lr | Rn == Pc => UNPREDICTABLE;
 *StRdRtRn
   { cond(31:28), Rn(19:16), Rd(15:12), Rt(3:0) }
-  baseline := StoreExclusive3RegisterOp;
   imm32 := Zeros((32));
   base := Rn;
   defs := {Rd};
@@ -985,7 +809,6 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
   safety := Pc in {Rd, Rt, Rn} => UNPREDICTABLE &
             Rd in {Rn, Rt} => UNPREDICTABLE;
 *StRdRtRt2Rn *StRdRtRn
-  baseline := StoreExclusive3RegisterDoubleOp;
   Rt2 := Rt + 1;
   uses := {Rn, Rt, Rt2};
   safety := Pc in {Rd, Rn} | Rt(0)=1 | Rt == Lr  => UNPREDICTABLE &
@@ -994,7 +817,7 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
 | op(23:20)
             # SWP/SWPB are OPTIONAL+deprecated in v7 with the Virtualization
             # Extension, and OBSOLETE+UNDEFINED in v8 aarch32.
-| 0x00      = baseline := Deprecated;
+| 0x00      = *Deprecated
               pattern := cccc00010b00nnnntttt00001001tttt;
               rule := SWP_SWPB;
 | 1000      = *StRdRtRn
@@ -1021,70 +844,74 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
 | 1111      = *LdRtRn
               pattern := cccc00011111nnnntttt111110011111;
               rule := STREXH;  arch := v6K;
-| else:     = Undefined  # Note on table description.
+| else:     = *Undefined  # Note on table description.
 +--
 
-# TODO(karl): Add uses to corresponding classes.
 +-- msr_immediate_and_hints (See Section A5.2.11)
+*Msr
+  { cond(31:28), mask(19:18), imm12(11:0) }
+  imm32 := ARMExpandImm(imm12);
+  write_nzcvq := mask(1)=1;
+  write_g := mask(0)=1;
+  defs := {NZCV if write_nzcvq else None};
+  uses := {};
+  # TODO(karl): model that ASPR.GE is set if write_g, and that
+  # ASPR.Q is set if write_nzcvq.
+  safety := mask=00 => DECODER_ERROR;
++--
 | op(22) op1(19:16) op2(7:0)
-| 0      0000       0000_0000  = CondDecoder => DontCareInst
-                                 Nop_Rule_110_A1_P222
-                                 cccc0011001000001111000000000000 (v6K,v6T2)
-| "      "          0000_0001  = CondDecoder => DontCareInst
-                                 Yield_Rule_413_A1_P812
-                                 cccc0011001000001111000000000001 (v6K)
-| "      "          0000_0010  = ForbiddenCondDecoder => Forbidden
+| 0      0000       0000_0000  = *Nop
+                                 pattern := cccc0011001000001111000000000000;
+                                 rule := NOP;
+                                 arch := (v6K, v6T2);
+| "      "          0000_0001  = *Nop
+                                 pattern := cccc0011001000001111000000000001;
+                                 rule := YIELD;
+                                 arch := v6K;    
+| "      "          0000_0010  = *Forbidden
                                  # Don't allow, may put hardware to sleep
                                  # until a send event occurs.
-                                 Wfe_Rule_411_A1_P808
-                                 cccc0011001000001111000000000010 (v6K)
-| "      "          0000_0011  = ForbiddenCondDecoder => Forbidden
+                                 pattern := cccc0011001000001111000000000010;
+                                 rule := WFE;
+                                 arch := v6K;
+| "      "          0000_0011  = *Forbidden
                                  # Don't allow, may put hardware to sleep
                                  # until a send event occurs.
-                                 Wfi_Rule_412_A1_P810
-                                 cccc0011001000001111000000000011 (v6K)
-| "      "          0000_0100  = ForbiddenCondDecoder => Forbidden
+                                 pattern := cccc0011001000001111000000000011;
+                                 rule := WFI;
+                                 arch := v6K;
+| "      "          0000_0100  = *Forbidden
                                  # Don't allow, causes an event to be
                                  # signalled to all processors in the
                                  # multiprocessor system.
-                                 Sev_Rule_158_A1_P316
-                                 cccc0011001000001111000000000100 (v6K)
-| "      "          1111_xxxx  = ForbiddenCondDecoder => Forbidden
+                                 pattern := cccc0011001000001111000000000100;
+                                 rule := SEV;
+                                 arch := v6K;
+| "      "          1111_xxxx  = *Forbidden
                                  # Don't allow unless there is a good reason
                                  # for it.
-                                 Dbg_Rule_40_A1_P88
-                                 cccc001100100000111100001111iiii (v7)
-| "      0100       -          = MoveImmediate12ToApsr => DontCareInst
-                                 # Note: DontCareInst will act like the
-                                 # conditions flag is always changed, which
-                                 # is a safe presumption.
-                                 Msr_Rule_103_A1_P208
-                                 cccc0011001001001111iiiiiiiiiiii
-| "      1x00       "          = MoveImmediate12ToApsr => DontCareInst
-                                 # TODO(jfb) This and the above are the same
-                                 #           except for the pattern: 0b00 mask
-                                 #           isn't allowed.
-                                 Msr_Rule_103_A1_P208
-                                 cccc001100101x001111iiiiiiiiiiii
-| "      xx01       -          = ForbiddenCondDecoder => Forbidden
-                                 Msr_Rule_B6_1_6_A1_PB6_12
-                                 cccc00110010ii011111iiiiiiiiiiii
+                                 pattern := cccc001100100000111100001111iiii;
+                                 rule := DBG;
+                                 arch := v7;
+# Note: mask(19:18)=00 isn't allowed for MSR_immediate (checked by
+# following 2 rows).
+| "      0100       -          = *Msr
+                                 pattern := cccc00110010mm001111iiiiiiiiiiii;
+                                 rule := MSR_immediate;
+| "      1x00       "          "
+| "      xx01       -          = *Forbidden
                                  # MSR(immediate), ring0 version
-| "      xx1x       -          = ForbiddenCondDecoder => Forbidden
-                                 Msr_Rule_B6_1_6_A1_PB6_12
-                                 cccc00110010ii1i1111iiiiiiiiiiii
-                                 # MSR(immediate), ring0 version
-| 1      -          -          = ForbiddenCondDecoder => Forbidden
-                                 Msr_Rule_B6_1_6_A1_PB6_12
-                                 cccc00110110iiii1111iiiiiiiiiiii
-                                 # MSR(immediate), ring0 version
-| else:                        = Forbidden  # Unallocated hints, page A5-17
+                                 pattern := cccc00110r10mmmm1111iiiiiiiiiiii;
+                                 rule := MSR_immediate;
+| "      xx1x       -          "
+| 1      -          -          "
+# Unallocated hints, see note on table description.
+| else:                        = *Forbidden  
 +--
 
 +-- miscellaneous_instructions (See Section A5.2.12)
 *RnSet
    { cond(31:28), R(22), Rd(15:12) }
-   baseline := Unary1RegisterSet;
    read_spsr := R=1;
    safety := R=1 => FORBIDDEN_OPERANDS &
              Rd=1111 => UNPREDICTABLE;
@@ -1092,7 +919,6 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
    uses := {};
 *RnUse
    { cond(31:28), mask(19:18), Rn(3:0) }
-   baseline := Unary1RegisterUse;
    write_nzcvq := mask(1)=1; write_g := mask(0)=1;
    defs := { NZCV if write_nzcvq else None };
    uses := { Rn };
@@ -1100,28 +926,24 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
              Rn == Pc => UNPREDICTABLE;
 *Bx
    { cond(31:28), Rm(3:0) }
-   baseline := BranchToRegister;
    safety := Rm=1111 => FORBIDDEN_OPERANDS;
    target := Rm;
    defs := { Pc };
    uses := { Rm };
    arch := v4T;
 *Blx *Bx
-   baseline := BranchToRegister;   
    defs := { Pc , Lr };
    arch := v5T;
 *Clz
    { cond(31:28), Rd(15:12), Rm(3:0) }
-   baseline := Unary2RegisterOpNotRmIsPc;
    safety := Pc in {Rd, Rm} => UNPREDICTABLE;
    defs := { Rd };
    uses := { Rm };
    arch := v5T;
 *Bkpt
    { cond(31:28), imm12(19:8), imm4(3:0) }
-   baseline := BreakPointAndConstantPoolHead;
    imm32 := ZeroExtend(imm12:imm4, 32);
-   pool_head := true;
+   is_literal_pool_head := inst == LiteralPoolHeadConstant();
    defs := {};
    uses := {};
    safety := cond=~1110 => UNPREDICTABLE &
@@ -1129,51 +951,55 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
    arch := v5T;
 +--
 | op2(6:4) B(9) op(22:21) op1(19:16)
-| 000      1    x0        xxxx       = ForbiddenCondDecoder => Forbidden
-                                       MRS_Banked_register
-                                       cccc00010r00mmmmdddd001m00000000 (v7VE)
-| "        "    x1        "          = ForbiddenCondDecoder => Forbidden
-                                       MSR_Banked_register
-                                       cccc00010r10mmmm1111001m0000nnnn (v7VE)
+| 000      1    x0        xxxx       = *Forbidden
+                                       pattern := cccc00010r00mmmmdddd001m00000000;
+                                       rule := MRS_Banked_register;
+                                       arch := v7VE;
+| "        "    x1        "          = *Forbidden
+                                       pattern := cccc00010r10mmmm1111001m0000nnnn;
+                                       rule := MRS_Banked_register;
+                                       arch := v7VE;
 | "        0    x0        xxxx       = *RnSet
                                        pattern := cccc00010r001111dddd000000000000;
                                        rule := MRS;
 | "        "    01        xx00       = *RnUse
                                        pattern := cccc00010010mm00111100000000nnnn;
                                        rule := MSR_register;
-| "        "    01        xx01       = ForbiddenCondDecoder => Forbidden
-                                       MSR_register
-                                       cccc00010r10mmmm111100000000nnnn
+| "        "    01        xx01       = *Forbidden
+                                       pattern := cccc00010r10mmmm111100000000nnnn;
+                                       rule := MSR_register;
 | "        "    "         xx1x       "
-| "        "    11        -          = ForbiddenCondDecoder => Forbidden
-                                       MSR_register
-                                       cccc00010r10mmmm111100000000nnnn
+| "        "    11        -          "
 | 001      -    01        -          = *Bx
                                        pattern := cccc000100101111111111110001mmmm;
                                        rule := Bx;
 | "        -    11        -          = *Clz
                                        pattern := cccc000101101111dddd11110001mmmm;
                                        rule := CLZ;
-| 010      -    01        -          = ForbiddenCondDecoder => Forbidden
-                                       BXJ
-                                       cccc000100101111111111110010mmmm (v5TEJ)
+| 010      -    01        -          = *Forbidden
+                                       pattern := cccc000100101111111111110010mmmm;
+                                       rule := BXJ;
+                                       arch := v5TEJ;
 | 011      -    01        -          = *Blx
                                        pattern := cccc000100101111111111110011mmmm;
                                        rule := BLX_register;
 | 101      -    -         -          ->saturating_addition_and_subtraction
-| 110      -    11        -          = ForbiddenCondDecoder => Forbidden
-                                       ERET
-                                       cccc0001011000000000000001101110 (v7VE)
+| 110      -    11        -          = *Forbidden
+                                       pattern := cccc0001011000000000000001101110;
+                                       rule := ERET;
+                                       arch := v7VE;
 | 111      -    01        -          = *Bkpt
                                        pattern := cccc00010010iiiiiiiiiiii0111iiii;
                                        rule := BKPT;
-| "        -    10        -          = ForbiddenCondDecoder => Forbidden
-                                       HVC
-                                       cccc00010100iiiiiiiiiiii0111iiii (v7VE)
-| "        -    11        -          = ForbiddenCondDecoder => Forbidden
-                                       SMC
-                                       cccc000101100000000000000111iiii (SE)
-| else:                              = Undefined     # Note on page A5-18
+| "        -    10        -          = *Forbidden
+                                       pattern := cccc00010100iiiiiiiiiiii0111iiii;
+                                       rule := HVC;
+                                       arch := v7VE;
+| "        -    11        -          = *Forbidden
+                                       pattern := cccc000101100000000000000111iiii;
+                                       rule := SMC;
+                                       arch := SE;
+| else:                              = *Undefined     # Note on page A5-18
 +--
 
 
@@ -1181,13 +1007,13 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
 # Instructions that use Rt and an immediate value.
 *LdRtPcImm
   { cond(31:28), U(23), Rt(15:12), imm12(11:0) }
-  baseline := Load2RegisterImm12Op;
   imm32 := ZeroExtend(imm12, 32);
   add := U=1;
   base := Pc;
   defs := {Rt};
   uses := {Pc};
   is_literal_load := true;
+  safety := Rt == Pc => FORBIDDEN_OPERANDS;
 *LdRtPcImmB *LdRtPcImm
   safety := Rt == Pc => UNPREDICTABLE;
 
@@ -1199,7 +1025,6 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
   base := Rn;
   small_imm_base_wb := wback;
 *LdRtRnImm *RtRnImm
-  baseline := Load2RegisterImm12Op;
   defs := {Rt, base if wback else None};
   uses := {Rn};
   safety := Rn == Pc => DECODER_ERROR &
@@ -1214,10 +1039,8 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
             Rt == Pc => UNPREDICTABLE &
             wback & Rn == Rt => UNPREDICTABLE;
 *LdRtRnImmTpCheck *LdRtRnImm
-  baseline := LdrImmediateOp;
   is_load_tp := Rn == Tp & index & not wback & add & imm12 in {0, 4};
 *StRtRnImm *RtRnImm
-  baseline := Store2RegisterImm12Op;
   defs := {base if wback else None};
   uses := {Rn, Rt};
   safety := P=0 & W=1 => DECODER_ERROR &
@@ -1237,7 +1060,6 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
   shift := DecodeImmShift(type, imm5);
   base := Rn;
 *LdRtRnRmSh *RtRnRmSh
-  baseline := Load3RegisterImm5Op;
   defs := {Rt, base if wback else None};
   uses := {Rm, Rn};
   safety := P=0 & W=1 => DECODER_ERROR &
@@ -1253,7 +1075,6 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
             ArchVersion() < 6 & wback & Rn == Rm => UNPREDICTABLE &
             index => FORBIDDEN;
 *StRtRnRmSh *RtRnRmSh
-  baseline := Store3RegisterImm5Op;
   defs := {base if wback else None};
   uses := {Rm, Rn, Rt};
   safety := P=0 & W=1 => DECODER_ERROR &
@@ -1278,10 +1099,10 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
         = *StRtRnRmSh pattern := cccc011pd0w0nnnnttttiiiiitt0mmmm;
           rule := STR_register;
 | 0     0x010      -    -          -
-        = baseline := ForbiddenCondDecoder;
+        = *Forbidden
           pattern := cccc0100u010nnnnttttiiiiiiiiiiii; rule := STRT_A1;
 | 1     0x010      0    -          -
-        = baseline := ForbiddenCondDecoder;
+        = *Forbidden
           pattern := cccc0110u010nnnnttttiiiiitt0mmmm; rule := STRT_A2;
 | 0     xx0x1      -    ~1111      ~0x011
         = *LdRtRnImmTpCheck pattern := cccc010pu0w1nnnnttttiiiiiiiiiiii;
@@ -1293,22 +1114,22 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
         = *LdRtRnRmSh pattern := cccc011pu0w1nnnnttttiiiiitt0mmmm;
           rule := LDR_register;
 | 0     0x011      -    -          -
-        = baseline := ForbiddenCondDecoder;
+        = *Forbidden
           pattern := cccc0100u011nnnnttttiiiiiiiiiiii; rule := LDRT_A1;
 | 1     0x011      0    -          -
-        = baseline := ForbiddenCondDecoder;
+        = *Forbidden
           pattern := cccc0110u011nnnnttttiiiiitt0mmmm; rule := LDRT_A2;
 | 0     xx1x0      -    -          ~0x110
         = *StRtRnImmB pattern := cccc010pu1w0nnnnttttiiiiiiiiiiii;
           rule := STRB_immediate;
 | 1     xx1x0      0    -          ~0x110
-        = *StRtRnRmSh pattern := cccc011pu1w0nnnnttttiiiiitt0mmmm;
+        = *StRtRnRmShB pattern := cccc011pu1w0nnnnttttiiiiitt0mmmm;
           rule := STRB_register;
 | 0     0x110      -    -          -
-        = baseline := ForbiddenCondDecoder;
+        = *Forbidden
           pattern := cccc0100u110nnnnttttiiiiiiiiiiii; rule := STRBT_A1;
 | 1     0x110      0    -          -
-        = baseline := ForbiddenCondDecoder;
+        = *Forbidden
           pattern := cccc0110u110nnnnttttiiiiitt0mmmm; rule := STRBT_A2;
 | 0     xx1x1      -    ~1111      ~0x111
         = *LdRtRnImmB pattern := cccc010pu1w1nnnnttttiiiiiiiiiiii;
@@ -1320,326 +1141,350 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
         = *LdRtRnRmShB pattern := cccc011pu1w1nnnnttttiiiiitt0mmmm;
           rule := LDRB_register;
 | 0     0x111      -    -          -
-        = baseline := ForbiddenCondDecoder;
+        = *Forbidden
           pattern := cccc0100u111nnnnttttiiiiiiiiiiii; rule := LDRBT_A1;
 | 1     0x111      0    -          -
-        = baseline := ForbiddenCondDecoder;
+        = *Forbidden
           pattern := cccc0110u111nnnnttttiiiiitt0mmmm; rule := LDRBT_A2;
 # Instructions with A==1 and B==1 are in media_instructions.
 # TODO(jfb) Should we mark them as unreachable?
 +--
 
-# TODO(karl): Add uses to corresponding classes.
 +-- media_instructions (See Section A5.4)
+*RdRnRm
+  { cond(31:28), Rd(19:16), Rm(11:8), Rn(3:0) }
+  defs := {Rd};
+  uses := {Rn, Rm};
+  safety := Pc in {Rd, Rn, Rm} => UNPREDICTABLE;
+*RdRnRmRa
+  { cond(31:28), Rd(19:16), Ra(15:12), Rm(11:8), Rn(3:0) }
+  defs := {Rd};
+  uses := {Rn, Rm, Ra};
+  safety := Ra == Pc => DECODER_ERROR &
+            Pc in {Rd, Rn, Rm} => UNPREDICTABLE;
+*RdRnLsbMsb
+  { cond(31:28), msb(20:16), Rd(15:12), lsb(11:7), Rn(3:0) }
+  defs := {Rd};
+  uses := {Rn, Rd};
+  safety := Rn == Pc => DECODER_ERROR &
+            Rd == Pc => UNPREDICTABLE &
+            msb < lsb => UNPREDICTABLE;
+*RdRnLsbWidth
+  { cond(31:28), widthm1(20:16), Rd(15:12), lsb(11:7), Rn(3:0) }
+  defs := {Rd};
+  uses := {Rn};
+  safety := Pc in {Rd, Rn} => UNPREDICTABLE &
+            lsb + widthm1 > 31 => UNPREDICTABLE;
+*RdLsbWidth
+  { cond(31:28), msb(20:16), Rd(15:12), lsb(11:7) }
+  defs := {Rd};
+  uses := {Rd};
+  safety := Rd == Pc => UNPREDICTABLE &
+            msb < lsb => UNPREDICTABLE;
+*Udf
+  defs := {};
+  uses := {};
+  safety := not IsUDFNaClSafe(inst) => FORBIDDEN_OPERANDS;
++--
 | op1(24:20) op2(7:5) Rd(15:12) Rn(3:0)
 | 000xx      -        -         -     ->parallel_addition_and_subtraction_signed
 | 001xx      -        -         -     ->parallel_addition_and_subtraction_unsigned
 | 01xxx      -        -         -     ->packing_unpacking_saturation_and_reversal
 | 10xxx      -        -         -     ->signed_multiply_signed_and_unsigned_divide
-| 11000      000      1111      -     = Binary3RegisterOpAltA
-                                        => Defs16To19CondsDontCareRdRmRnNotPc
-                                        Usad8_Rule_253_A1_P500
-                                        cccc01111000dddd1111mmmm0001nnnn
-                                        RegsNotPc (v6)
-| "          "        ~1111     -     = Binary4RegisterDualOp
-                                        => Defs16To19CondsDontCareRdRaRmRnNotPc
-                                        Usada8_Rule_254_A1_P502
-                                        cccc01111000ddddaaaammmm0001nnnn
-                                        # Note: In baseline class, bits(15:12)
-                                        # is Ra (not Rd as column name
-                                        # suggests).
-                                        RegsNotPc (v6)
-| 1101x      x10      -         -     = Binary2RegisterBitRangeNotRnIsPcBitfieldExtract
-                                        => Defs12To15CondsDontCareRdRnNotPcBitfieldExtract
-                                        Sbfx_Rule_154_A1_P308
-                                        cccc0111101wwwwwddddlllll101nnnn
-                                        RegsNotPc (v6T2)
-| 1110x      x00      -         1111  = Unary1RegisterBitRangeMsbGeLsb
-                                        Bfc_17_A1_P46
-                                        cccc0111110mmmmmddddlllll0011111
-                                        RegsNotPc (v6T2)
-| "          "        -         ~1111 = Binary2RegisterBitRangeMsbGeLsb
-                                        => Defs12To15CondsDontCareMsbGeLsb
-                                        Bfi_Rule_18_A1_P48
-                                        cccc0111110mmmmmddddlllll001nnnn
-                                        RegsNotPc (v6T2)
-| 1111x      x10      -         -     = Binary2RegisterBitRangeNotRnIsPcBitfieldExtract
-                                        => Defs12To15CondsDontCareRdRnNotPcBitfieldExtract
-                                        Ubfx_Rule_236_A1_P466
-                                        cccc0111111mmmmmddddlllll101nnnn
-                                        RegsNotPc (v6T2)
-| 11111      111      -         -     = PermanentlyUndefined
-                                        # Note: the UDF mnemonic only applies
-                                        #   when cond == 0b1110, but all
-                                        #   encodings are permanently undefined.
-                                        Udf_Rule_A1
-                                        cccc01111111iiiiiiiiiiii1111iiii
-| else:                               = Undefined  # Note on page A5-21
+| 11000      000      1111      -
+                      = *RdRnRm
+                        pattern := cccc01111000dddd1111mmmm0001nnnn;
+                        rule := USAD8;  arch := v6;
+| "          "        ~1111     -
+                      = *RdRnRmRa
+                        pattern := cccc01111000ddddaaaammmm0001nnnn;
+                        rule := USADA8;  arch := v6;
+| 1101x      x10      -         -
+                      = *RdRnLsbWidth
+                        pattern := cccc0111101wwwwwddddlllll101nnnn;
+                        rule := SBFX;  arch := v6T2;
+| 1110x      x00      -         1111
+                      = *RdLsbWidth
+                        pattern := cccc0111110mmmmmddddlllll0011111;
+                        rule := BFC;  arch := v6T2;
+| "          "        -         ~1111
+                      = *RdRnLsbMsb
+                        pattern := cccc0111110mmmmmddddlllll001nnnn;
+                        rule := BFI; arch := v6T2;
+| 1111x      x10      -         -
+                      = *RdRnLsbWidth
+                        pattern := cccc0111111mmmmmddddlllll101nnnn;
+                        rule := UBFX;  arch := v6T2;
+| 11111      111      -         -
+                      = *Udf
+                        pattern := cccc01111111iiiiiiiiiiii1111iiii;
+                        # Note: the UDF mnemonic only applies
+                        #   when cond == 0b1110, but all
+                        #   encodings are permanently undefined.
+                        rule := UDF;
+| else:               = *Undefined  # Note on table a5.4
 +--
 
-# TODO(karl): Add uses to corresponding classes.
 # None of the instructions in the following table set NZCV flags.
 # Some do set the APSR's sticky Q bit (for saturation) or the GE bits,
 # but we don't model them.
 +-- parallel_addition_and_subtraction_signed (See Section A5.4.1)
+*RdRnRm
+  { cond(31:28), Rn(19:16), Rd(15:12), Rm(3:0) }
+  defs := {Rd};
+  uses := {Rn, Rm};
+  safety := Pc in {Rd, Rn, Rm} => UNPREDICTABLE;
+  arch := v6;
++--
 | op1(21:20) op2(7:5)
-| 01         000      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Sadd16_Rule_148_A1_P296
-                        cccc01100001nnnndddd11110001mmmm RegsNotPc (v6)
-| 01         001      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Sasx_Rule_150_A1_P300
-                        cccc01100001nnnndddd11110011mmmm RegsNotPc (v6)
-| 01         010      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Ssax_Rule_185_A1_P366
-                        cccc01100001nnnndddd11110101mmmm RegsNotPc (v6)
-| 01         011      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Ssub16_Rule_186_A1_P368
-                        cccc01100001nnnndddd11110111mmmm RegsNotPc (v6)
-| 01         100      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Sadd8_Rule_149_A1_P298
-                        cccc01100001nnnndddd11111001mmmm RegsNotPc (v6)
-| 01         111      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Ssub8_Rule_187_A1_P370
-                        cccc01100001nnnndddd11111111mmmm RegsNotPc (v6)
-| 10         000      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Qadd16_Rule_125_A1_P252
-                        cccc01100010nnnndddd11110001mmmm RegsNotPc (v6)
-| 10         001      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Qasx_Rule_127_A1_P256
-                        cccc01100010nnnndddd11110011mmmm RegsNotPc (v6)
-| 10         010      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Qsax_Rule_130_A1_P262
-                        cccc01100010nnnndddd11110101mmmm RegsNotPc (v6)
-| 10         011      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Qsub16_Rule_132_A1_P266
-                        cccc01100010nnnndddd11110111mmmm RegsNotPc (v6)
-| 10         100      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Qadd8_Rule_126_A1_P254
-                        cccc01100010nnnndddd11111001mmmm RegsNotPc (v6)
-| 10         111      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Qsub8_Rule_133_A1_P268
-                        cccc01100010nnnndddd11111111mmmm RegsNotPc (v6)
-| 11         000      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Shadd16_Rule_159_A1_P318
-                        cccc01100011nnnndddd11110001mmmm RegsNotPc (v6)
-| 11         001      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Shasx_Rule_161_A1_P322
-                        cccc01100011nnnndddd11110011mmmm RegsNotPc (v6)
-| 11         010      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Shsax_Rule_162_A1_P324
-                        cccc01100011nnnndddd11110101mmmm RegsNotPc (v6)
-| 11         011      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Shsub16_Rule_163_A1_P326
-                        cccc01100011nnnndddd11110111mmmm RegsNotPc (v6)
-| 11         100      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Shadd8_Rule_160_A1_P320
-                        cccc01100011nnnndddd11111001mmmm RegsNotPc (v6)
-| 11         111      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Shsub8_Rule_164_A1_P328
-                        cccc01100011nnnndddd11111111mmmm RegsNotPc (v6)
-| else:               = Undefined  # Note on page A5-23
+| 01         000      = *RdRnRm
+                         pattern := cccc01100001nnnndddd11110001mmmm;
+                         rule := SADD16;
+| 01         001      = *RdRnRm
+                         pattern := cccc01100001nnnndddd11110011mmmm;
+                         rule := SASX;
+| 01         010      = *RdRnRm
+                         pattern := cccc01100001nnnndddd11110101mmmm;
+                         rule := SSAX;
+| 01         011      = *RdRnRm
+                         pattern := cccc01100001nnnndddd11110111mmmm;
+                         rule := SSSUB16;
+| 01         100      = *RdRnRm
+                         pattern := cccc01100001nnnndddd11111001mmmm;
+                         rule := SADD8;
+| 01         111      = *RdRnRm
+                         pattern := cccc01100001nnnndddd11111111mmmm;
+                         rule := SSUB8;
+| 10         000      = *RdRnRm
+                         pattern := cccc01100010nnnndddd11110001mmmm;
+                         rule := QADD16;
+| 10         001      = *RdRnRm
+                         pattern := cccc01100010nnnndddd11110011mmmm;
+                         rule := QASX;
+| 10         010      = *RdRnRm
+                         pattern := cccc01100010nnnndddd11110101mmmm;
+                         rule := QSAX;
+| 10         011      = *RdRnRm
+                         pattern := cccc01100010nnnndddd11110111mmmm;
+                         rule := QSUB16;
+| 10         100      = *RdRnRm
+                         pattern := cccc01100010nnnndddd11111001mmmm;
+                         rule := QADD8;
+| 10         111      = *RdRnRm
+                         pattern := cccc01100010nnnndddd11111111mmmm;
+                         rule := QSUB8;
+| 11         000      = *RdRnRm
+                         pattern := cccc01100011nnnndddd11110001mmmm;
+                         rule := SHADD16;
+| 11         001      = *RdRnRm
+                         pattern := cccc01100011nnnndddd11110011mmmm;
+                         rule := SHASX;
+| 11         010      = *RdRnRm
+                         pattern := cccc01100011nnnndddd11110101mmmm;
+                         rule := SHSAX;
+| 11         011      = *RdRnRm
+                         pattern := cccc01100011nnnndddd11110111mmmm;
+                         rule := SHSUB16;
+| 11         100      = *RdRnRm
+                         pattern := cccc01100011nnnndddd11111001mmmm;
+                         rule := SHADD8;
+| 11         111      = *RdRnRm
+                         pattern := cccc01100011nnnndddd11111111mmmm;
+                         rule := SHSUB8;
+| else:               = *Undefined  # Note on table description.
 +--
 
-# TODO(karl): Add uses to corresponding classes.
 # None of the instructions in the following table set NZCV flags.
 # Some do set the APSR's sticky Q bit (for saturation) or the GE bits,
 # but we don't model them.
 +-- parallel_addition_and_subtraction_unsigned (See Section A5.4.2)
+*RdRnRm
+  { cond(31:28), Rn(19:16), Rd(15:12), Rm(3:0) }
+  defs := {Rd};
+  uses := {Rn, Rm};
+  safety := Pc in {Rd, Rn, Rm} => UNPREDICTABLE;
+  arch := v6;
++--
 | op1(21:20) op2(7:5)
-| 01         000      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Uadd16_Rule_233_A1_P460
-                        cccc01100101nnnndddd11110001mmmm RegsNotPc (v6)
-| 01         001      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Uasx_Rule_235_A1_P464
-                        cccc01100101nnnndddd11110011mmmm RegsNotPc (v6)
-| 01         010      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Usax_Rule_257_A1_P508
-                        cccc01100101nnnndddd11110101mmmm RegsNotPc (v6)
-| 01         011      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Usub16_Rule_258_A1_P510
-                        cccc01100101nnnndddd11110111mmmm RegsNotPc (v6)
-| 01         100      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Uadd8_Rule_234_A1_P462
-                        cccc01100101nnnndddd11111001mmmm RegsNotPc (v6)
-| 01         111      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Usub8_Rule_259_A1_P512
-                        cccc01100101nnnndddd11111111mmmm RegsNotPc (v6)
-| 10         000      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Uqadd16_Rule_247_A1_P488
-                        cccc01100110nnnndddd11110001mmmm RegsNotPc (v6)
-| 10         001      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Uqasx_Rule_249_A1_P492
-                        cccc01100110nnnndddd11110011mmmm RegsNotPc (v6)
-| 10         010      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Uqsax_Rule_250_A1_P494
-                        cccc01100110nnnndddd11110101mmmm RegsNotPc (v6)
-| 10         011      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Uqsub16_Rule_251_A1_P496
-                        cccc01100110nnnndddd11110111mmmm RegsNotPc (v6)
-| 10         100      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Uqadd8_Rule_248_A1_P490
-                        cccc01100110nnnndddd11111001mmmm RegsNotPc (v6)
-| 10         111      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Uqsub8_Rule_252_A1_P498
-                        cccc01100110nnnndddd11111111mmmm RegsNotPc (v6)
-| 11         000      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Uhadd16_Rule_238_A1_P470
-                        cccc01100111nnnndddd11110001mmmm RegsNotPc (v6)
-| 11         001      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Uhasx_Rule_240_A1_P474
-                        cccc01100111nnnndddd11110011mmmm RegsNotPc (v6)
-| 11         010      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Uhsax_Rule_241_A1_P476
-                        cccc01100111nnnndddd11110101mmmm RegsNotPc (v6)
-| 11         011      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Uhsub16_Rule_242_A1_P478
-                        cccc01100111nnnndddd11110111mmmm RegsNotPc (v6)
-| 11         100      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Uhadd8_Rule_239_A1_P472
-                        cccc01100111nnnndddd11111001mmmm RegsNotPc (v6)
-| 11         111      = Binary3RegisterOpAltBNoCondUpdates
-                        => Defs12To15CondsDontCareRnRdRmNotPc
-                        Uhsub8_Rule_243_A1_P480
-                        cccc01100111nnnndddd11111111mmmm RegsNotPc (v6)
-| else:               = Undefined  # Note on page A5-23
+| 01         000      = *RdRnRm
+                         pattern := cccc01100101nnnndddd11110001mmmm;
+                         rule := UADD16;
+| 01         001      = *RdRnRm
+                         pattern := cccc01100101nnnndddd11110011mmmm;
+                         rule := UASX;
+| 01         010      = *RdRnRm
+                         pattern := cccc01100101nnnndddd11110101mmmm;
+                         rule := USAX;
+| 01         011      = *RdRnRm
+                         pattern := cccc01100101nnnndddd11110111mmmm;
+                         rule := USUB16;
+| 01         100      = *RdRnRm
+                         pattern := cccc01100101nnnndddd11111001mmmm;
+                         rule := UADD8;
+| 01         111      = *RdRnRm
+                         pattern := cccc01100101nnnndddd11111111mmmm;
+                         rule := USUB8;
+| 10         000      = *RdRnRm
+                         pattern := cccc01100110nnnndddd11110001mmmm;
+                         rule := UQADD16;
+| 10         001      = *RdRnRm
+                         pattern := cccc01100110nnnndddd11110011mmmm;
+                         rule := UQASX;
+| 10         010      = *RdRnRm
+                         pattern := cccc01100110nnnndddd11110101mmmm;
+                         rule := UQSAX;
+| 10         011      = *RdRnRm
+                         pattern := cccc01100110nnnndddd11110111mmmm;
+                         rule := UQSUB16;
+| 10         100      = *RdRnRm
+                         pattern := cccc01100110nnnndddd11111001mmmm;
+                         rule := UQADD8;
+| 10         111      = *RdRnRm
+                         pattern := cccc01100110nnnndddd11111111mmmm;
+                         rule := UQSUB8;
+| 11         000      = *RdRnRm
+                         pattern := cccc01100111nnnndddd11110001mmmm;
+                         rule := UHADD16;
+| 11         001      = *RdRnRm
+                         pattern := cccc01100111nnnndddd11110011mmmm;
+                         rule := UHASX;
+| 11         010      = *RdRnRm
+                         pattern := cccc01100111nnnndddd11110101mmmm;
+                         rule := UHSAX;
+| 11         011      = *RdRnRm
+                         pattern := cccc01100111nnnndddd11110111mmmm;
+                         rule := UHSUB16;
+| 11         100      = *RdRnRm
+                         pattern := cccc01100111nnnndddd11111001mmmm;
+                         rule := UHADD8;
+| 11         111      = *RdRnRm
+                         pattern := cccc01100111nnnndddd11111111mmmm;
+                         rule := UHSUB8;
+| else:               = *Undefined  # Note on table description.
 +--
 
-# TODO(karl): Add uses to corresponding classes.
 # None of the instructions in the following table set NZCV flags.
 # Some do set the APSR's sticky Q bit (for saturation) or the GE bits,
 # but we don't model them.
 +-- packing_unpacking_saturation_and_reversal (See Section A5.4.3)
+*RdRm
+  { cond(31:28), Rd(15:12), Rm(3:0) }
+  defs := {Rd};
+  uses := {Rm};
+  safety := Pc in {Rd, Rm} => UNPREDICTABLE;
+  arch := v6;
+*RdRmRbit *RdRm
+  arch := v6T2;
+*RdRnRm *RdRm
+  { cond(31:28), Rn(19:16), Rd(15:12), Rm(3:0) }
+  uses := {Rn, Rm};
+  safety := Pc in {Rd, Rn, Rm} => UNPREDICTABLE;
+*RdRnRmGE *RdRnRm
+  # Note: This instruction uses APSR.GE.
+*RdRnRmImm *RdRnRm
+  { cond(31:28), Rn(19:16), Rd(15:12), imm5(11:7), tb(6), Rm(3:0) }
+  tbform := tb=1;
+  shift := DecodeImmShift(tb:'0', imm5);
+*RdRmRot *RdRm
+  { cond(31:28), Rd(15:12), rotate(11:10), Rm(3:0) }
+  rotation := rotate:'000';
+*RdRnRmRot *RdRnRm
+  { cond(31:28), Rn(19:16), Rd(15:12), rotate(11:10), Rm(3:0) }
+  rotation := rotate:'000';
+  safety := Rn=1111 => DECODER_ERROR &
+            Pc in {Rd, Rm} => UNPREDICTABLE;
+*RdRn
+  { cond(31:28), Rd(15:12), Rn(3:0) }
+  # Note: Sets APSR.Q
+  defs := {Rd};
+  uses := {Rn};
+  safety := Pc in {Rd, Rn} => UNPREDICTABLE;
+  arch := v6;
+*RdImmRn *RdRn
+  { cond(31:28), sat_imm(19:16), Rd(15:12), Rn(3:0) }
+  saturate_to := sat_imm + 1;
+*URdImmRn *RdImmRn
+  saturate_to := sat_imm;
+*RdImmRnSh *RdRn
+  { cond(31:28), sat_imm(20:16), Rd(15:12), imm5(11:7), sh(6), Rn(3:0) }
+  saturate_to := sat_imm + 1;
+  shift := DecodeImmShift(sh:'0', imm5);
+*URdImmRnSh *RdImmRnSh
+  saturate_to := sat_imm;
++--
 | op1(22:20) op2(7:5) A(19:16)
-| 000        xx0      -        = Binary3RegisterImmedShiftedOpRegsNotPc
-                                 => Defs12To15CondsDontCareRnRdRmNotPc
-                                 Pkh_Rule_116_A1_P234
-                                 cccc01101000nnnnddddiiiiit01mmmm RegsNotPc (v6)
-| "          011      ~1111    = Binary3RegisterImmedShiftedOpRegsNotPc
-                                 => Defs12To15CondsDontCareRnRdRmNotPc
-                                 Sxtab16_Rule_221_A1_P436
-                                 cccc01101000nnnnddddrr000111mmmm RegsNotPc (v6)
-| "          "        1111     = Unary2RegisterImmedShiftedOpRegsNotPc
-                                 => Defs12To15CondsDontCareRdRnNotPc
-                                 Sxtb16_Rule_224_A1_P442
-                                 cccc011010001111ddddrr000111mmmm RegsNotPc (v6)
-| "          101      -        = Binary3RegisterOpAltBNoCondUpdates
-                                 => Defs12To15CondsDontCareRnRdRmNotPc
-                                 Sel_Rule_156_A1_P312
-                                 cccc01101000nnnndddd11111011mmmm RegsNotPc (v6)
-| 01x        xx0      -        = Unary2RegisterSatImmedShiftedOp
-                                 => Defs12To15CondsDontCareRdRnNotPc
-                                 Ssat_Rule_183_A1_P362
-                                 cccc0110101iiiiiddddiiiiis01nnnn RegsNotPc (v6)
-| 010        001      -        = Unary2RegisterSatImmedShiftedOp
-                                 => Defs12To15CondsDontCareRdRnNotPc
-                                 Ssat16_Rule_184_A1_P364
-                                 cccc01101010iiiidddd11110011nnnn RegsNotPc (v6)
-| "          011      ~1111    = Binary3RegisterOpAltBNoCondUpdates
-                                 => Defs12To15CondsDontCareRnRdRmNotPc
-                                 Sxtab_Rule_220_A1_P434
-                                 cccc01101010nnnnddddrr000111mmmm RegsNotPc (v6)
-| "          "        1111     = Unary2RegisterImmedShiftedOpRegsNotPc
-                                 => Defs12To15CondsDontCareRdRnNotPc
-                                 Sxtb_Rule_223_A1_P440
-                                 cccc011010101111ddddrr000111mmmm RegsNotPc (v6)
-| 011        001      -        = Unary2RegisterOpNotRmIsPcNoCondUpdates
-                                 => Defs12To15CondsDontCareRdRnNotPc
-                                 Rev_Rule_135_A1_P272
-                                 cccc011010111111dddd11110011mmmm RegsNotPc (v6)
-| "          011      ~1111    = Binary3RegisterOpAltBNoCondUpdates
-                                 => Defs12To15CondsDontCareRnRdRmNotPc
-                                 Sxtah_Rule_222_A1_P438
-                                 cccc01101011nnnnddddrr000111mmmm RegsNotPc (v6)
-| "          "        1111     = Unary2RegisterOpNotRmIsPcNoCondUpdates
-                                 => Defs12To15CondsDontCareRdRnNotPc
-                                 Sxth_Rule_225_A1_P444
-                                 cccc011010111111ddddrr000111mmmm RegsNotPc (v6)
-| "          101      -        = Unary2RegisterOpNotRmIsPcNoCondUpdates
-                                 => Defs12To15CondsDontCareRdRnNotPc
-                                 Rev16_Rule_136_A1_P274
-                                 cccc011010111111dddd11111011mmmm RegsNotPc (v6)
-| 100        011      ~1111    = Binary3RegisterOpAltBNoCondUpdates
-                                 => Defs12To15CondsDontCareRnRdRmNotPc
-                                 Uxtab16_Rule_262_A1_P516
-                                 cccc01101100nnnnddddrr000111mmmm RegsNotPc (v6)
-| "          "        1111     = Unary2RegisterOpNotRmIsPcNoCondUpdates
-                                 => Defs12To15CondsDontCareRdRnNotPc
-                                 Uxtb16_Rule_264_A1_P522
-                                 cccc011011001111ddddrr000111mmmm RegsNotPc (v6)
-| 11x        xx0      -        = Unary2RegisterSatImmedShiftedOp
-                                 => Defs12To15CondsDontCareRdRnNotPc
-                                 Usat_Rule_255_A1_P504
-                                 cccc0110111iiiiiddddiiiiis01nnnn RegsNotPc (v6)
-| 110        001      -        = Unary2RegisterSatImmedShiftedOp
-                                 => Defs12To15CondsDontCareRdRnNotPc
-                                 Usat16_Rule_256_A1_P506
-                                 cccc01101110iiiidddd11110011nnnn RegsNotPc (v6)
-| "          011      ~1111    = Binary3RegisterOpAltBNoCondUpdates
-                                 => Defs12To15CondsDontCareRnRdRmNotPc
-                                 Uxtab_Rule_260_A1_P514
-                                 cccc01101110nnnnddddrr000111mmmm RegsNotPc (v6)
-| "          "        1111     = Unary2RegisterOpNotRmIsPcNoCondUpdates
-                                 => Defs12To15CondsDontCareRdRnNotPc
-                                 Uxtb_Rule_263_A1_P520
-                                 cccc011011101111ddddrr000111mmmm RegsNotPc (v6)
-| 111        001      -        = Unary2RegisterOpNotRmIsPcNoCondUpdates
-                                 => Defs12To15CondsDontCareRdRnNotPc
-                                 Rbit_Rule_134_A1_P270
-                                 cccc011011111111dddd11110011mmmm RegsNotPc (v6T2)
-| "          011      ~1111    = Binary3RegisterOpAltBNoCondUpdates
-                                 => Defs12To15CondsDontCareRnRdRmNotPc
-                                 Uxtah_Rule_262_A1_P518
-                                 cccc01101111nnnnddddrr000111mmmm RegsNotPc (v6)
-| "          "        1111     = Unary2RegisterOpNotRmIsPcNoCondUpdates
-                                 => Defs12To15CondsDontCareRdRnNotPc
-                                 Uxth_Rule_265_A1_P524
-                                 cccc011011111111ddddrr000111mmmm RegsNotPc (v6)
-| "          101      -        = Unary2RegisterOpNotRmIsPcNoCondUpdates
-                                 => Defs12To15CondsDontCareRdRnNotPc
-                                 Revsh_Rule_137_A1_P276
-                                 cccc011011111111dddd11111011mmmm RegsNotPc (v6)
-| else:                        = Undefined  # Note on page A5-24
+| 000        xx0      -        = *RdRnRmImm
+                                  pattern := cccc01101000nnnnddddiiiiit01mmmm;
+                                  rule := PKH;
+| "          011      ~1111    = *RdRnRmRot
+                                  pattern := cccc01101000nnnnddddrr000111mmmm;
+                                  rule := SXTAB16;
+| "          "        1111     = *RdRmRot
+                                  pattern := cccc011010001111ddddrr000111mmmm;
+                                  rule := SXTB16;
+| "          101      -        = *RdRnRmGE
+                                  pattern := cccc01101000nnnndddd11111011mmmm;
+                                  rule := SEL;
+| 01x        xx0      -        = *RdImmRnSh
+                                 pattern := cccc0110101iiiiiddddiiiiis01nnnn;
+                                 rule := SSAT;
+| 010        001      -        = *RdImmRn
+                                 pattern := cccc01101010iiiidddd11110011nnnn;
+                                 rule := SSAT16;
+| "          011      ~1111    = *RdRnRmRot
+                                 pattern := cccc01101010nnnnddddrr000111mmmm;
+                                 rule := SXTAB;
+| "          "        1111     = *RdRmRot
+                                  pattern := cccc011010101111ddddrr000111mmmm;
+                                  rule := SXTB;
+| 011        001      -        = *RdRm
+                                  pattern := cccc011010111111dddd11110011mmmm;
+                                  rule := REV;
+| "          011      ~1111    = *RdRnRmRot
+                                  pattern := cccc01101011nnnnddddrr000111mmmm;
+                                  rule := SXTAH;
+| "          "        1111     = *RdRmRot
+                                  pattern := cccc011010111111ddddrr000111mmmm;
+                                  rule := SXTH;
+| "          101      -        = *RdRm
+                                  pattern := cccc011010111111dddd11111011mmmm;
+                                  rule := REV16;
+| 100        011      ~1111    = *RdRnRmRot
+                                  pattern := cccc01101100nnnnddddrr000111mmmm;
+                                  rule := UXTAB16;
+| "          "        1111     = *RdRmRot
+                                  pattern := cccc011011001111ddddrr000111mmmm;
+                                  rule := UXTB16;
+| 11x        xx0      -        = *URdImmRnSh
+                                  pattern := cccc0110111iiiiiddddiiiiis01nnnn;
+                                  rule := USAT;
+| 110        001      -        = *URdImmRn
+                                  pattern := cccc01101110iiiidddd11110011nnnn;
+                                  rule := USAT16;
+| "          011      ~1111    = *RdRnRmRot
+                                  pattern := cccc01101110nnnnddddrr000111mmmm;
+                                  rule := UXTAB;
+| "          "        1111     = *RdRmRot
+                                  pattern := cccc011011101111ddddrr000111mmmm;
+                                  rule := UXTB;
+| 111        001      -        = *RdRmRbit
+                                  pattern := cccc011011111111dddd11110011mmmm;
+                                  rule := RBIT;
+| "          011      ~1111    = *RdRnRmRot
+                                  pattern := cccc01101111nnnnddddrr000111mmmm;
+                                  rule := UXTAH;
+| "          "        1111     = *RdRmRot
+                                  pattern := cccc011011111111ddddrr000111mmmm;
+                                  rule := UXTH;
+| "          101      -        = *RdRm
+                                  pattern := cccc011011111111dddd11111011mmmm;
+                                  rule := REVSH;
+| else:                        = *Undefined  # Note on table description.
 +--
 
 +-- signed_multiply_signed_and_unsigned_divide (See Section A5.4.4)
 *RdRnRmRa
   { cond(31:28), Rd(19:16), Ra(15:12), Rm(11:8), M(5), Rn(3:0) }
-  baseline := Binary4RegisterDualOpNoCondsUpdate;
   defs := {Rd};
   uses := {Rn, Rm, Ra};
   safety := Ra == Pc => DECODER_ERROR &
@@ -1647,14 +1492,12 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
   arch := v6;
 *RdRnRm
   { cond(31:28), Rd(19:16), Rm(11:8), M(5), Rn(3:0) }
-  baseline := Binary3RegisterOpAltANoCondsUpdate;
   defs := {Rd};
   uses := {Rm, Rn};
   safety := Pc in {Rd, Rm, Rn} => UNPREDICTABLE;
   arch := v6;
 *RdLoHiRnRm
   { cond(31:28), RdHi(19:16), RdLo(15:12), Rm(11:8), M(5), Rn(3:0) }
-  baseline := Binary4RegisterDualResultNoCondsUpdate;
   defs := {RdHi, RdLo};
   uses := {RdHi, RdLo, Rm, Rn};
   safety := Pc in { RdHi, RdLo, Rn, Rm} => UNPREDICTABLE &
@@ -1723,417 +1566,895 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
 | "          11x      -        = *RdRnRmRa
                                  pattern := cccc01110101ddddaaaammmm11r1nnnn;
                                  rule := SMMLS;
-| else:                        = Undefined  # Note associated with table.
+| else:                        = *Undefined  # Note associated with table.
 +--
 
-# TODO(karl): Add uses to corresponding classes.
 +-- branch_branch_with_link_and_block_data_transfer (See Section A5.5)
-# TODO(karl): Clean up the actual classes once baseline has been committed.
+*RnRegs
+  { cond(31:28), W(21), Rn(19:16), register_list(15:0) }
+  registers := RegisterList(register_list); wback := W=1;
+  base := Rn;
+  small_imm_base_wb := wback;
+  safety := Rn == Pc | NumGPRs(registers) < 1 => UNPREDICTABLE;
+*LdRnRegs *RnRegs
+  defs := Union({Rn if wback else None}, registers);
+  uses := {Rn};
+  safety := super.safety &
+            wback & Contains(registers, Rn) => UNKNOWN &
+            Contains(registers, Pc) => FORBIDDEN_OPERANDS;
+*StRnRegs *RnRegs
+  defs := {Rn if wback else None};
+  uses := Union({Rn}, registers);
+  safety := super.safety &
+            wback & Contains(registers, Rn) &
+            Rn != SmallestGPR(registers) => UNKNOWN;
+*Branch
+  { Cond(31:28), imm24(23:0) }
+  imm32 := SignExtend(imm24:'00', 32);
+  defs := {Pc};
+  uses := {Pc};
+  relative := true;
+  # The ARM manual states that "PC reads as the address of the current
+  # instruction plus 8.
+  relative_offset := imm32 + 8;
+  safety := true => MAY_BE_SAFE;
+*BranchLink *Branch
+  defs := {Pc, Lr};
++--
 | op(25:20) R(15) Rn(19:16)
-| 0000x0    -     -         = StoreRegisterList
-                              Stmda_Stmed_Rule_190_A1_P376
-                              cccc100000w0nnnnrrrrrrrrrrrrrrrr
-| 0000x1    -     -         = LoadRegisterList => LoadMultiple
-                              Ldmda_Ldmfa_Rule_54_A1_P112
-                              cccc100000w1nnnnrrrrrrrrrrrrrrrr
-| 0010x0    -     -         = StoreRegisterList
-                              Stm_Stmia_Stmea_Rule_189_A1_P374
-                              cccc100010w0nnnnrrrrrrrrrrrrrrrr
-| 001001    -     -         = LoadRegisterList => LoadMultiple
-                              Ldm_Ldmia_Ldmfd_Rule_53_A1_P110
-                              cccc10001001nnnnrrrrrrrrrrrrrrrr
-| 001011    -     ~1101     = LoadRegisterList => LoadMultiple
-                              Ldm_Ldmia_Ldmfd_Rule_53_A1_P110
-                              cccc10001011nnnnrrrrrrrrrrrrrrrr
-| "         -     1101      = LoadRegisterList => LoadMultiple
-                              Pop_Rule_A1
-                              cccc10001011nnnnrrrrrrrrrrrrrrrr
-| 010000    -     -         = StoreRegisterList
-                              Stmdb_Stmfd_Rule_191_A1_P378
-                              cccc10010000nnnnrrrrrrrrrrrrrrrr
-| 010010    -     ~1101     = StoreRegisterList
-                              Stmdb_Stmfd_Rule_191_A1_P378
-                              cccc10010010nnnnrrrrrrrrrrrrrrrr
-| "         -     1101      = StoreRegisterList
-                              Push_Rule_A1
-                              cccc10010010nnnnrrrrrrrrrrrrrrrr
-| 0100x1    -     -         = LoadRegisterList => LoadMultiple
-                              Ldmdb_Ldmea_Rule_55_A1_P114
-                              cccc100100w1nnnnrrrrrrrrrrrrrrrr
-| 0110x0    -     -         = StoreRegisterList
-                              Stmib_Stmfa_Rule_192_A1_P380
-                              cccc100110w0nnnnrrrrrrrrrrrrrrrr
-| 0110x1    -     -         = LoadRegisterList => LoadMultiple
-                              Ldmib_Ldmed_Rule_56_A1_P116
-                              cccc100110w1nnnnrrrrrrrrrrrrrrrr
-| 0xx1x0    -     -         = ForbiddenCondDecoder => Forbidden
-                              Stm_Rule_11_B6_A1_P22 # ring0 version
-                              cccc100pu100nnnnrrrrrrrrrrrrrrrr
-| 0xx1x1    0     -         = ForbiddenCondDecoder => Forbidden
-                              Ldm_Rule_3_B6_A1_P7   # ring0 version
-                              cccc100pu101nnnn0rrrrrrrrrrrrrrr
-| "         1     -         = ForbiddenCondDecoder => Forbidden
-                              Ldm_Rule_2_B6_A1_P5   # exception return
-                              cccc100pu1w1nnnn1rrrrrrrrrrrrrrr
-| 10xxxx    -     -         = BranchImmediate24 => Branch
-                              B_Rule_16_A1_P44
-                              cccc1010iiiiiiiiiiiiiiiiiiiiiiii
-| 11xxxx    -     -         = BranchImmediate24 => Branch
-                              Bl_Blx_Rule_23_A1_P58
-                              cccc1011iiiiiiiiiiiiiiiiiiiiiiii
+| 0000x0    -     -         = *StRnRegs
+                               pattern := cccc100000w0nnnnrrrrrrrrrrrrrrrr;
+                               rule := STMDA_STMED;
+| 0000x1    -     -         = *LdRnRegs
+                               pattern := cccc100000w1nnnnrrrrrrrrrrrrrrrr;
+                               rule := LDMDA_LDMFA;
+| 0010x0    -     -         = *StRnRegs
+                               pattern := cccc100010w0nnnnrrrrrrrrrrrrrrrr;
+                               rule := STM_STMIA_STMEA;
+# Note: The following three table rows should not be separated.
+# They have the same semantics. Further, the separation (of the neumonic)
+# involves the bit count in the register list (which is not specified in
+# this table).
+#| 001001    -     -         =  pattern := cccc100010w1nnnnrrrrrrrrrrrrrrrr;
+#                               rule := LDM_LDMIA_LDMFD;
+#| 001011    -     ~1101     =  pattern := cccc100010w1nnnnrrrrrrrrrrrrrrrr;
+#                               rule := LDM_LDMIA_LDMFD;
+#| "         -     1101      =  pattern := cccc100010111101rrrrrrrrrrrrrrrr;
+#                               rule := POP;
+#
+# The following is the merged replacement for the three rows above.
+| 0010w1    -     -         = *LdRnRegs
+                               pattern := cccc100010w1nnnnrrrrrrrrrrrrrrrr;
+                               rule := LDM_LDMIA_LDMFD;
+# Note: The following three table rows should not be separated.
+# They have the same semantics. Further, the separation (of the neumonic)
+# involves the bit count in the register list (which is not specified in
+# this table).
+#| 010000    -     -         =  pattern := cccc100100w0nnnnrrrrrrrrrrrrrrrr;
+#                               rule := STMDB_STMFD;
+#| 010010    -     ~1101     =  pattern := cccc100100w0nnnnrrrrrrrrrrrrrrrr;
+#                               rule := STMDB_STMFD;
+#| "         -     1101      =  pattern := cccc100100101101rrrrrrrrrrrrrrrr;
+#                               rule := PUSH;
+#
+# The following is the merged replacement for the three rows above.
+| 0100w0    -     -         = *StRnRegs
+                               pattern := cccc100100w0nnnnrrrrrrrrrrrrrrrr;
+                               rule := STMDB_STMFD;
+| 0100x1    -     -         = *LdRnRegs
+                               pattern := cccc100100w1nnnnrrrrrrrrrrrrrrrr;
+                               rule := LDMDB_LDMEA;
+| 0110x0    -     -         = *StRnRegs
+                               pattern := cccc100110w0nnnnrrrrrrrrrrrrrrrr;
+                               rule := STMIB_STMFA;
+| 0110x1    -     -         = *LdRnRegs
+                               pattern := cccc100110w1nnnnrrrrrrrrrrrrrrrr;
+                               rule := LDMIB_LDMED;
+| 0xx1x0    -     -         = *Forbidden  # ring0 version
+                               pattern := cccc100pu100nnnnrrrrrrrrrrrrrrrr;
+                               rule := STM_User_registers;
+| 0xx1x1    0     -         = *Forbidden  # ring0 version
+                               pattern := cccc100pu101nnnn0rrrrrrrrrrrrrrr;
+                               rule := LDM_User_registers;
+| "         1     -         = *Forbidden
+                               pattern := cccc100pu1w1nnnn1rrrrrrrrrrrrrrr;
+                               rule := LDM_exception_return;
+| 10xxxx    -     -         = *Branch
+                               pattern := cccc1010iiiiiiiiiiiiiiiiiiiiiiii;
+                               rule := B;
+| 11xxxx    -     -         = *BranchLink
+                               pattern := cccc1011iiiiiiiiiiiiiiiiiiiiiiii;
+                               rule := BL_BLX_immediate;
 +--
 
-# TODO(karl): Add uses to corresponding classes.
 +-- coprocessor_instructions_and_supervisor_call (See Section A5.6)
 # Note: We currently only allow floating point (and advanced SIMD)
 # coprocessor operations (coproc=101x).
 # Note: Column op1 is repeated so that the first three rows can define
 # (anded) multiple test conditions for this row.
 |  coproc(11:8) op1(25:20) op(4) Rn(19:16) op1_repeated(25:20)
-|  -            00000x     -     -          -      = UndefinedCondDecoder => Undefined
-                                                     Undefined_A5_6
-                                                     cccc1100000xnnnnxxxxccccxxxoxxxx
-|  -            11xxxx     -     -          -      = ForbiddenCondDecoder => Forbidden
-                                                     Svc_Rule_A1
-                                                     cccc1111iiiiiiiiiiiiiiiiiiiiiiii
-| ~101x         0xxxx0     -     -         ~000x00 = ForbiddenCondDecoder => Forbidden
-                                                     Stc_Rule_A2
-                                                     cccc110pudw0nnnnddddcccciiiiiiii
-|  "            0xxxx1     -    ~1111      ~000x01 = ForbiddenCondDecoder => Forbidden
-                                                     Ldc_immediate_Rule_A1
-                                                     cccc110pudw1nnnnddddcccciiiiiiii
-|  "            "          -     1111       "      = ForbiddenCondDecoder => Forbidden
-                                                     Ldc_literal_Rule_A1
-                                                     cccc110pudw11111ddddcccciiiiiiii
-|  "            000100     -     -          -      = ForbiddenCondDecoder => Forbidden
-                                                     Mcrr_Rule_A1
-                                                     cccc11000100ttttttttccccoooommmm (v5TE)
-|  "            000101     -     -          -      = ForbiddenCondDecoder => Forbidden
-                                                     Mrrc_Rule_A1
-                                                     cccc11000101ttttttttccccoooommmm (v5TE)
-|  "            10xxxx     0     -          -      = ForbiddenCondDecoder => Forbidden
-                                                     Cdp_Rule_A1
-                                                     cccc1110oooonnnnddddccccooo0mmmm
-|  "            10xxx0     1     -          -      = ForbiddenCondDecoder => Forbidden
-                                                     Mcr_Rule_A1
-                                                     cccc1110ooo0nnnnttttccccooo1mmmm
-|  "            10xxx1     1     -          -      = ForbiddenCondDecoder => Forbidden
-                                                     Mrc_Rule_A1
-                                                     cccc1110ooo1nnnnttttccccooo1mmmm
-|  101x         0xxxxx     -     -         ~000x0x -> extension_register_load_store_instructions
-|  "            00010x     -     -          -      -> transfer_between_arm_core_and_extension_registers_64_bit
-|  "            10xxxx     0     -          -      -> floating_point_data_processing_instructions
-|  "            10xxxx     1     -          -      -> transfer_between_arm_core_and_extension_register_8_16_and_32_bit
+|  -            00000x     -     -          -      =
+         *Undefined  # No rule defined in table.
+          pattern := cccc1100000xnnnnxxxxccccxxxoxxxx;
+|  -            11xxxx     -     -          -      =
+         *Forbidden
+          pattern := cccc1111iiiiiiiiiiiiiiiiiiiiiiii;
+          rule := SVC;
+| ~101x         0xxxx0     -     -         ~000x00 =
+         *Forbidden
+          pattern := cccc110pudw0nnnnddddcccciiiiiiii;
+          rule := STC;
+|  "            0xxxx1     -    ~1111      ~000x01 =
+          *Forbidden
+           pattern := cccc110pudw1nnnnddddcccciiiiiiii;
+           rule := LDC_immediate;
+|  "            "          -     1111       "      =
+          *Forbidden
+           pattern := cccc110pudw11111ddddcccciiiiiiii;
+           rule := LDC_literal;
+|  "            000100     -     -          -      =
+          *Forbidden
+           pattern := cccc11000100ttttttttccccoooommmm;
+           rule := MCRR;
+           arch := v5TE;
+|  "            000101     -     -          -      =
+          *Forbidden
+           pattern := cccc11000101ttttttttccccoooommmm;
+           rule := MRRC;
+           arch := v5TE;
+|  "            10xxxx     0     -          -      =
+          *Forbidden
+           pattern := cccc1110oooonnnnddddccccooo0mmmm;
+           rule := CDP;
+|  "            10xxx0     1     -          -      =
+          *Forbidden
+           pattern := cccc1110ooo0nnnnttttccccooo1mmmm;
+           rule := MCR;
+           # Following defines advice for "mcr p15, 0, rx, c7, c10, 5"
+           # (memory barrier).
+           violations := inst=cccc111000000111tttt111110111010 =>
+                  error('Consider using DSB (defined in ARMv7) for memory barrier');
+|  "            10xxx1     1     -          -      =
+          *Forbidden
+           pattern := cccc1110ooo1nnnnttttccccooo1mmmm;
+           rule := MRC;
+|  101x         0xxxxx     -     -         ~000x0x ->
+           extension_register_load_store_instructions
+|  "            00010x     -     -          -      ->
+           transfer_between_arm_core_and_extension_registers_64_bit
+|  "            10xxxx     0     -          -      ->
+           floating_point_data_processing_instructions
+|  "            10xxxx     1     -          -      ->
+           transfer_between_arm_core_and_extension_register_8_16_and_32_bit
 +--
 
-# TODO(karl): Add uses to corresponding classes.
 +-- floating_point_data_processing_instructions (A7.5 Table A7-16)
+*base
+   { cond(31:28), D(22), Vn(19:16), Vd(15:12), sz(8),
+     N(7), op(6), M(5), Vm(3:0) }
+   dp_operation := sz=1;
+   d := D:Vd if dp_operation else Vd:D;
+   n := N:Vn if dp_operation else Vn:N;
+   m := M:Vm if dp_operation else Vm:M;
+   # TODO(karl): Add vector defs/uses etc.
+   defs := {};
+   uses := {};
+   # Note: we have explicitly added that cond(31:28)=~1111 to safety to meet
+   # table (ARM) restriction.
+   safety := cond=1111 => DECODER_ERROR;
+   arch := VFPv2;
+*Vml_a_s *base
+   { cond(31:28), D(22), Vn(19:16), Vd(15:12), sz(8),
+     N(7), op(6), M(5), Vm(3:0) }
+   advsimd := false;  add := op=0;
+*Vnml_a_s *base
+   type := VFPNegMul_VNMLA if op=1 else VFPNegMul_VNMLS;
+*Vnmul *base - { op }
+   type := VFPNegMul_VNMUL;
+*Vop *base - { op }
+   advsimd := false;
+*Vfnm_a_s *base
+   op1_neg := op=1;
+   arch := VFPv4;
+*Vfm_a_s *Vfnm_a_s
+   advsimd := false;
++--
 | opc1(23:20) opc3(7:6)
-| 0x00        -         = CondVfpOp => VfpOp
-                          Vmla_vmls_Rule_423_A2_P636
-                          cccc11100d00nnnndddd101snom0mmmm (VFPv2)
-| 0x01        -         = CondVfpOp => VfpOp
-                          Vnmla_vnmls_Rule_343_A1_P674
-                          cccc11100d01nnnndddd101snom0mmmm (VFPv2)
-| 0x10        x1        = CondVfpOp => VfpOp
-                          Vnmul_Rule_343_A2_P674
-                          cccc11100d10nnnndddd101sn1m0mmmm (VFPv2)
-| "           x0        = CondVfpOp => VfpOp
-                          Vmul_Rule_338_A2_P664
-                          cccc11100d10nnnndddd101sn0m0mmmm (VFPv2)
-| 0x11        x0        = CondVfpOp => VfpOp
-                          Vadd_Rule_271_A2_P536
-                          cccc11100d11nnnndddd101sn0m0mmmm (VFPv2)
-| "           x1        = CondVfpOp => VfpOp
-                          Vsub_Rule_402_A2_P790
-                          cccc11100d11nnnndddd101sn1m0mmmm (VFPv2)
-| 1x00        x0        = CondVfpOp => VfpOp
-                          Vdiv_Rule_301_A1_P590
-                          cccc11101d00nnnndddd101sn0m0mmmm (VFPv2)
-| 1x01        -         = CondVfpOp => VfpOp
-                          Vfnma_vfnms_Rule_A1
-                          cccc11101d01nnnndddd101snom0mmmm (VFPv4)
-| 1x10        -         = CondVfpOp => VfpOp
-                          Vfma_vfms_Rule_A1
-                          cccc11101d10nnnndddd101snom0mmmm (VFPv4)
+| 0x00        -         = *Vml_a_s
+                           pattern := cccc11100d00nnnndddd101snom0mmmm;
+                           rule := VMLA_VMLS_floating_point;
+| 0x01        -         = *Vnml_a_s
+                           pattern := cccc11100d01nnnndddd101snom0mmmm;
+                           rule := VNMLA_VNMLS;
+| 0x10        x1        = *Vnmul
+                           pattern := cccc11100d10nnnndddd101sn1m0mmmm;
+                           rule := VNMUL;
+| "           x0        = *Vop
+                           pattern := cccc11100d10nnnndddd101sn0m0mmmm;
+                           rule := VMUL_floating_point;
+| 0x11        x0        = *Vop
+                           pattern := cccc11100d11nnnndddd101sn0m0mmmm;
+                           rule := VADD_floating_point;
+| "           x1        = *Vop
+                           pattern := cccc11100d11nnnndddd101sn1m0mmmm;
+                           rule := VSUB_floating_point;
+| 1x00        x0        = *Vop
+                           pattern := cccc11101d00nnnndddd101sn0m0mmmm;
+                           rule := VDIV;
+| 1x01        -         = *Vfnm_a_s
+                           pattern := cccc11101d01nnnndddd101snom0mmmm;
+                           rule := VFNMA_VFNMS;
+| 1x10        -         = *Vfm_a_s
+                           pattern := cccc11101d10nnnndddd101snom0mmmm;
+                           rule := VFMA_VFMS;
 | 1x11        -         -> other_floating_point_data_processing_instructions
 +--
 
-# TODO(karl): Add uses to corresponding classes.
 +-- other_floating_point_data_processing_instructions (A7.5 Table A7-17)
+*Vbase
+   # TODO(karl): Add vector defs/uses etc.
+   defs := {};
+   uses := {};
+   safety := true => MAY_BE_SAFE;
+*VdOp *Vbase
+   { cond(31:28), D(22), Vd(15:12), sz(8) }
+   d := Vd:D if sz=0 else D:Vd;
+*VdVmOp *VdOp
+   { cond(31:28), D(22), Vd(15:12), sz(8), M(5), Vm(3:0) }
+   m := Vm:D if sz=0 else M:Vm;
+*VmovImm *VdOp
+   { cond(31:28), D(22), imm4H(19:16), Vd(15:12), sz(8), imm4L(3:0) }
+   single_register := sz=0;  advsimd := false;
+   imm32 := VFPExpandImm(imm4H:imm4L, 32);
+   imm64 := VFPExpandImm(imm4H:imm4L, 64);
+   regs := 1;
+*VopBase *VdVmOp
+   advsimd := false;
+*VmovReg *VopBase
+   single_register := sz=0;
+   regs := 1;
+*Vop *VopBase
+   dp_operation := sz=1;
+*VcvtFP *VdVmOp
+   double_to_single := sz=1;
+*VcvtInt *Vbase
+   { cond(31:28), D(22), opc2(18:16), Vd(15:12), sz(8), op(7), M(5), Vm(3:0) }
+   to_integer := opc2(2)=1;  dp_operation := sz=1;
+   unsigned := opc2(0)=0 if to_integer else op=0;
+   round_zero := to_integer & op=1;
+   round_nearest := not to_integer;
+   d := Vd:D if to_integer else D:Vd if dp_operation else Vd:D;
+   m := Vm:M if not to_integer else M:Vm if dp_operation else Vm:M;
+   safety := opc2=~000 & opc2=~10x => DECODER_ERROR;
+*VcvtFixed *VdOp
+   { cond(31:28), D(22), op(18), U(16), Vd(12:12), sf(8),
+     sx(7), i(5), imm4(3:0) }
+   to_fixed := op=1;  dp_operation:= sf=1;  unsigned := U=1;
+   size := 16 if sx=0 else 32;
+   # casts needed in following to allow negatives in C++.
+   frac_bits := size - imm4:i;  
+   round_zero := to_fixed;
+   round_nearest := not to_fixed;
+   safety := frac_bits < 0 => UNPREDICTABLE;
+*VcvtFP16 *Vbase
+   { cond(31:28), D(22), op(16), Vd(15:12), T(7), M(5), Vm(3:0) }
+   half_to_single := op=0;
+   lowbit := 16 if T=1 else 0;
+   m := Vm:M;
+   d := Vd:D;   
+*Vcmp *VdOp
+   { cond(31:28), D(22), Vd(15:12), sz(8), E(7) }
+   # Sets FPSCR, not APSR.
+   dp_operation := sz=1; quiet_nan_exc := E=1;
+*VcmpWithZero *Vcmp
+   with_zero := true;
+*VcmpWithoutZero *Vcmp
+   { cond(31:28), D(22), Vd(15:12), sz(8), E(7), M(5), Vm(3:0) }
+   with_zero := false;
+   m := M:Vm if dp_operation else Vm:M;
++--
 | opc2(19:16) opc3(7:6)
-| -           x0        = CondVfpOp => VfpOp
-                          Vmov_Rule_326_A2_P640
-                          cccc11101d11iiiidddd101s0000iiii (VFPv3)
-| 0000        01        = CondVfpOp => VfpOp
-                          Vmov_Rule_327_A2_P642
-                          cccc11101d110000dddd101s01m0mmmm (VFPv2)
-| "           11        = CondVfpOp => VfpOp
-                          Vabs_Rule_269_A2_P532
-                          cccc11101d110000dddd101s11m0mmmm (VFPv2)
-| 0001        01        = CondVfpOp => VfpOp
-                          Vneg_Rule_342_A2_P672
-                          cccc11101d110001dddd101s01m0mmmm (VFPv2)
-| "           11        = CondVfpOp => VfpOp
-                          Vsqrt_Rule_388_A1_P762
-                          cccc11101d110001dddd101s11m0mmmm (VFPv2)
-| 001x        x1        = CondVfpOp => VfpOp
-                          Vcvtb_Vcvtt_Rule_300_A1_P588
-                          cccc11101d11001odddd1010t1m0mmmm (VFPv3HP)
+| -           x0        = *VmovImm
+                           pattern := cccc11101d11iiiidddd101s0000iiii;
+                           rule := VMOV_immediate;
+                           arch := VFPv3;
+| 0000        01        = *VmovReg
+                           pattern := cccc11101d110000dddd101s01m0mmmm;
+                           rule := VMOV_register;
+                           arch := VFPv2;
+| "           11        = *Vop
+                           pattern := cccc11101d110000dddd101s11m0mmmm;
+                           rule := VABS;
+                           arch := VFPv2;
+| 0001        01        = *Vop
+                           pattern := cccc11101d110001dddd101s01m0mmmm;
+                           rule := VNEG;
+                           arch := VFPv2;
+| "           11        = *Vop
+                           pattern := cccc11101d110001dddd101s11m0mmmm;
+                           rule := VSQRT;
+                           arch := VFPv2;
+| 001x        x1        = *VcvtFP16
+                           pattern := cccc11101d11001odddd1010t1m0mmmm;
+                           rule := VCVTB_VCVTT;
+                           arch := VFPv3HP;
 # The two following entries aren't separate in the ARM manual, but separating
 # them simplifies handling of default-zero bits.
-| 0100        x1        = CondVfpOp => VfpOp # Sets FPSCR, not APSR.
-                          Vcmp_Vcmpe_Rule_A1
-                          cccc11101d110100dddd101se1m0mmmm (VFPv2)
-| 0101        x1        = CondVfpOp => VfpOp # Sets FPSCR, not APSR.
-                          Vcmp_Vcmpe_Rule_A2
-                          cccc11101d110101dddd101se1000000 (VFPv2)
-| 0111        11        = CondVfpOp => VfpOp
-                          Vcvt_Rule_298_A1_P584
-                          cccc11101d110111dddd101s11m0mmmm (VFPv2)
-| 1000        x1        = CondVfpOp => VfpOp
-                          Vcvt_Vcvtr_Rule_295_A1_P578
-                          cccc11101d111000dddd101sp1m0mmmm (VFPv2)
-| 101x        x1        = CondVfpOp => VfpOp
-                          Vcvt_Rule_297_A1_P582
-                          cccc11101d11101udddd101fx1i0iiii (VFPv3)
-| 110x        x1        = CondVfpOp => VfpOp
-                          Vcvt_Vcvtr_Rule_295_A1_P578
-                          cccc11101d11110xdddd101sp1m0mmmm (VFPv2)
-| 111x        x1        = CondVfpOp => VfpOp
-                          Vcvt_Rule_297_A1_P582
-                          cccc11101d11111udddd101fx1i0iiii (VFPv3)
+| 0100        x1        = *VcmpWithoutZero
+                           pattern := cccc11101d110100dddd101se1m0mmmm;
+                           rule := VCMP_VCMPE;
+                           arch := VFPv2;
+| 0101        x1        = *VcmpWithZero 
+                           pattern := cccc11101d110101dddd101se1000000;
+                           rule := VCMP_VCMPE;
+                           arch := VFPv2;
+| 0111        11        = *VcvtFP
+                           pattern := cccc11101d110111dddd101s11m0mmmm;
+        rule := VCVT_between_double_precision_and_single_precision;
+                           arch := VFPv2;                           
+| 1000        x1        = *VcvtInt
+                           pattern := cccc11101d111ooodddd101sp1m0mmmm;
+        rule := VCVT_VCVTR_between_floating_point_and_integer_Floating_point;
+                           arch := VFPv2;
+| 101x        x1        = *VcvtFixed
+                           pattern := cccc11101d111o1udddd101fx1i0iiii;
+        rule := VCVT_between_floating_point_and_fixed_point_Floating_point;
+                           arch := VFPv3;
+| 110x        x1        = *VcvtInt
+                           pattern := cccc11101d111ooodddd101sp1m0mmmm;
+        rule := VCVT_VCVTR_between_floating_point_and_integer_Floating_point;
+                           arch := VFPv2;
+| 111x        x1        = *VcvtFixed
+                           pattern := cccc11101d111o1udddd101fx1i0iiii;
+        rule := VCVT_between_floating_point_and_fixed_point_Floating_point;
+                           arch := VFPv3;
 +--
 
-# TODO(karl): Add uses to corresponding classes.
 +-- extension_register_load_store_instructions (A7.6)
-#
-# TODO(karl): Decide if baseline classes should also be actual classes, once
-#             we finish fixing all uses of StoreCoprocessor and LoadCoprocessor.
+*VdRegs
+  { cond(31:28), D(22), Vd(15:12), imm8(7:0) }
+  imm32 := ZeroExtend(imm8:'00', 32);
+*VdRnImm *VdRegs
+  { cond(31:28), U(23), D(22), Rn(19:16), Vd(15:12), imm8(7:0) }
+  add := U=1;
+  n := Rn;
+  base := Rn;
+  defs := {};
+  uses := {Rn};
+*Vldr *VdRnImm
+  # TODO(karl): Add vector defs/uses etc.
+  is_literal_load := Rn == Pc;
+*Vldr32 *Vldr
+  single_reg := true;
+  d := D:Vd;
+  arch := VFPv2;
+*Vldr64 *Vldr
+  single_reg := false;
+  d := D:Vd;
+  arch := (VFPv2, AdvSIMD);
+*Vstr *VdRnImm
+  # TODO(karl): Add vector defs/uses etc.
+  safety := n == Pc => FORBIDDEN_OPERANDS;
+*Vstr32 *Vstr
+  single_reg := true;
+  d := Vd:D;
+  arch := VFPv2;
+*Vstr64 *Vstr
+  single_reg := false;
+  d := D:Vd;
+  arch := (VFPv2, AdvSIMD);
+*Vstackop *VdRegs
+  # TODO(karl): Add vector defs/uses etc.
+  base := Sp;
+  small_imm_base_wb := true;
+  defs := {Sp};
+  uses := {Sp};  
+*Vpop *Vstackop
+*Vpop32 *Vpop
+  single_regs := true; d := Vd:D;
+  regs := imm8;
+  safety := regs == 0 | d + regs > 32 => UNPREDICTABLE;
+  arch := VFPv2;
+*Vpop64 *Vpop
+  single_regs := false; d := D:Vd;
+  regs := imm8 / 2;
+  safety := regs == 0 | regs > 16 | d + regs > 32 => UNPREDICTABLE &
+            VFPSmallRegisterBank() & d + regs > 16 => UNPREDICTABLE &
+            imm8(0) == 1 => DEPRECATED;
+  arch := (VFPv2, AdvSIMD);
+*Vpush *Vstackop
+*Vpush32 *Vpush
+  single_regs := true; d := Vd:D;
+  regs := imm8;
+  safety := regs == 0 | d + regs > 32 => UNPREDICTABLE;
+  arch := VFPv2;
+*Vpush64 *Vpush
+  single_regs := false; d := D:Vd;
+  regs := imm8 / 2;
+  safety := regs == 0 | regs > 16 | d + regs > 32 => UNPREDICTABLE &
+            VFPSmallRegisterBank() & d + regs > 16 => UNPREDICTABLE &
+            imm8(0) == 1 => DEPRECATED;
+  arch := (VFPv2, AdvSIMD);
+*VdRnRegs *VdRegs
+  { cond(31:28), P(24), U(23), D(22), W(21), Rn(19:16),
+    Vd(15:12), imm8(7:0) }
+  # Valid combinations are: PUW = 010 (IA without !)
+  #                             = 011 (IA without !)
+  #                             = 101 (IA ith !)
+  add := U=1; wback := W=1;
+  n := Rn;
+  base := Rn;
+  small_imm_base_wb := wback;
+  defs := {Rn if wback else None};
+  uses := {Rn};
+  safety := P=0 & U=0 & W=0 => DECODER_ERROR &
+            P=1 & W=0 => DECODER_ERROR &  # VLDR/VSTR
+            P == U & W=1 => UNDEFINED &
+            n == Pc & wback => UNPREDICTABLE;
+*Vldm *VdRnRegs
+  # TODO(karl): Add vector defs/uses etc.
+  is_literal_load := Rn == Pc;
+  safety := super.safety &
+            P=0 & U=1 & W=1 & Rn == Sp => DECODER_ERROR;  # VPOP
+*Vldm32 *Vldm
+  single_regs := true;
+  d := Vd:D;  regs := imm8;
+  safety := super.safety &
+            regs == 0 | d + regs > 32 => UNPREDICTABLE;
+  arch := VFPv2;
+*Vldm64 *Vldm
+  single_regs := false;  
+  d := D:Vd;  regs := imm8 / 2;
+  safety := super.safety &
+            regs == 0 | regs > 16 | d + regs > 32 => UNPREDICTABLE &
+            VFPSmallRegisterBank() & d + regs > 16 => UNPREDICTABLE &
+            imm8(0) == 1 => DEPRECATED;
+  arch := (VFPv2, AdvSIMD);
+*Vstm *VdRnRegs
+  # TODO(karl): Add vector defs/uses etc.
+  safety := super.safety &
+            P=1 & U=0 & W=1 & Rn == Sp => DECODER_ERROR &  # VPUSH
+            Rn == Pc => FORBIDDEN_OPERANDS;
+*Vstm32 *Vstm
+  single_regs := true;
+  d := Vd:D;  regs := imm8;
+  safety := super.safety &
+            regs == 0 | d + regs > 32 => UNPREDICTABLE;
+  arch := VFPv2;
+*Vstm64 *Vstm
+  single_regs := false;  
+  d := D:Vd;  regs := imm8 / 2;
+  safety := super.safety &
+            regs == 0 | regs > 16 | d + regs > 32 => UNPREDICTABLE &
+            VFPSmallRegisterBank() & d + regs > 16 => UNPREDICTABLE &
+            imm8(0) == 1 => DEPRECATED;
+  arch := (VFPv2, AdvSIMD);
++--
 # TODO(jfb) The architecture for these instructions only includes Advanced SIMD
 #           for the 64-bit variants (coproc==0b1011).
 #
-# Note: The following instructions handles both A1 and A2 forms of the
-# instruction, by matching coproc(11:8)=101x.
-#
-| opcode(24:20) Rn(19:16)
-| 0010x         -         -> transfer_between_arm_core_and_extension_registers_64_bit
-| 01x00         -         = StoreVectorRegisterList
-                            Vstm_Rule_399_A1_A2_P784
-                            cccc11001d00nnnndddd101xiiiiiiii (VFPv2, AdvSIMD)
-| 01x10         -         = StoreVectorRegisterList
-                            Vstm_Rule_399_A1_A2_P784
-                            cccc11001d10nnnndddd101xiiiiiiii (VFPv2, AdvSIMD)
-| 1xx00         -         = StoreVectorRegister
-                            Vstr_Rule_400_A1_A2_P786
-                            cccc1101ud00nnnndddd101xiiiiiiii (VFPv2, AdvSIMD)
-| 10x10         ~1101     = StoreVectorRegisterList
-                            Vstm_Rule_399_A1_A2_P784
-                            cccc11010d10nnnndddd101xiiiiiiii NotRnIsSp (VFPv2, AdvSIMD)
-| "             1101      = StoreVectorRegisterList
-                            Vpush_355_A1_A2_P696
-                            cccc11010d101101dddd101xiiiiiiii (VFPv2, AdvSIMD)
-| 01x01         -         = LoadVectorRegisterList
-                            Vldm_Rule_319_A1_A2_P626
-                            cccc11001d01nnnndddd101xiiiiiiii (VFPv2, AdvSIMD)
-| 01x11         ~1101     = LoadVectorRegisterList
-                            Vldm_Rule_319_A1_A2_P626
-                            cccc11001d11nnnndddd101xiiiiiiii NotRnIsSp (VFPv2, AdvSIMD)
-| "             1101      = LoadVectorRegisterList
-                            Vpop_Rule_354_A1_A2_P694
-                            cccc11001d111101dddd101xiiiiiiii (VFPv2, AdvSIMD)
-| 1xx01         -         = LoadVectorRegister
-                            Vldr_Rule_320_A1_A2_P628
-                            cccc1101ud01nnnndddd101xiiiiiiii (VFPv2, AdvSIMD)
-| 10x11         -         = LoadVectorRegisterList
-                            Vldm_Rule_318_A1_A2_P626
-                            cccc11010d11nnnndddd101xiiiiiiii (VFPv2, AdvSIMD)
+# Note: For ease of implementation, we have added field S(8) to capture
+# whether the instruction is single (32) or double (64). This corresponds
+# to matching coproc(11:8)=101x.
+| opcode(24:20) Rn(19:16) S(8)
+| 0010x         -         - -> transfer_between_arm_core_and_extension_registers_64_bit
+| 01x00         -         0 = *Vstm32
+                               pattern := cccc110pudw0nnnndddd1010iiiiiiii;
+                               rule := VSTM;
+| "             "         1 = *Vstm64
+                               pattern := cccc110pudw0nnnndddd1011iiiiiiii;
+                               rule := VSTM;
+| 01x10         -         0 = *Vstm32
+                               pattern := cccc110pudw0nnnndddd1010iiiiiiii;
+                               rule := VSTM;
+| "             "         1 = *Vstm64
+                               pattern := cccc110pudw0nnnndddd1011iiiiiiii;
+                               rule := VSTM;
+| 1xx00         -         0 = *Vstr32
+                               pattern := cccc1101ud00nnnndddd1010iiiiiiii;
+                               rule := VSTR;
+| "             "         1 = *Vstr64
+                               pattern := cccc1101ud00nnnndddd1011iiiiiiii;
+                               rule := VSTR;
+| 10x10         ~1101     0 = *Vstm32
+                               pattern := cccc110pudw0nnnndddd1010iiiiiiii;
+                               rule := VSTM;
+| "             "         1 = *Vstm64
+                               pattern := cccc110pudw0nnnndddd1011iiiiiiii;
+                               rule := VSTM;
+| "             1101      0 = *Vpush32
+                               pattern := cccc11010d101101dddd1010iiiiiiii;
+                               rule := VPUSH;
+| "             "         1 = *Vpush64
+                               pattern := cccc11010d101101dddd1011iiiiiiii;
+                               rule := VPUSH;
+| 01x01         -         0 = *Vldm32
+                               pattern := cccc110pudw1nnnndddd1010iiiiiiii;
+                               rule := VLDM;
+| "             "         1 = *Vldm64
+                               pattern := cccc110pudw1nnnndddd1011iiiiiiii;
+                               rule := VLDM;
+| 01x11         ~1101     0 = *Vldm32
+                               pattern := cccc110pudw1nnnndddd1010iiiiiiii;
+                               rule := VLDM;
+| "             "         1 = *Vldm64
+                               pattern := cccc110pudw1nnnndddd1011iiiiiiii;
+                               rule := VLDM;
+| "             1101      0 = *Vpop32
+                               pattern := cccc11001d111101dddd1010iiiiiiii;
+                               rule := VPOP;
+| "             "         1 = *Vpop64
+                               pattern := cccc11001d111101dddd1011iiiiiiii;
+                               rule := VPOP;
+| 1xx01         -         0 = *Vldr32
+                               pattern := cccc1101ud01nnnndddd1010iiiiiiii;
+                               rule := VLDR;
+| "             "         1 = *Vldr64
+                               pattern := cccc1101ud01nnnndddd1011iiiiiiii;
+                               rule := VLDR;
+| 10x11         -         0 = *Vldm32
+                               pattern := cccc110pudw1nnnndddd1010iiiiiiii;
+                               rule := VLDM;
+| "             "         1 = *Vldm64
+                               pattern := cccc110pudw1nnnndddd1011iiiiiiii;
+                               rule := VLDM;
 +--
 
-# TODO(karl): Add uses to corresponding classes.
 +-- transfer_between_arm_core_and_extension_register_8_16_and_32_bit (A7.8)
+*VmovSnRt
+  { cond(31:28), op(20), Vn(19:16), Rt(15:12), N(7) }
+  to_arm_register := op=1; t := Rt; n := Vn:N;
+  defs := {Rt if to_arm_register else None};
+  uses := {Rt if not to_arm_register else None};
+  safety := t == Pc => UNPREDICTABLE;
+  # TODO(karl): Add vector defs/uses etc.
+*UsesRt
+  { cond(31:28), Rt(15:12) }
+  t := Rt;
+  defs := {};
+  uses := {Rt};
+  safety := t == Pc => UNPREDICTABLE;
+  # TODO(karl): Add vector defs/uses etc.
+*Vdup
+  { cond(31:28), B(22), Q(21), Vd(19:16), Rt(15:12), D(7), E(5) }
+  d := D:Vd; t := Rt; regs := 1 if Q=0 else 2;
+  sel := B:E;
+  esize := 32  if sel=00 else
+           16  if sel=01 else
+           8   if sel=10 else
+           0;  # i.e. undefined.
+  elements := 2  if sel=00 else
+              4  if sel=01 else
+              8  if sel=10 else
+              0; # i.e. undefined.
+  defs := {};
+  uses := {Rt};
+  safety := cond != cond_AL => DEPRECATED &
+            Q=1 & Vd(0)=1 => UNDEFINED &
+            sel=11 => UNDEFINED &
+            t == Pc => UNPREDICTABLE;
+  # TODO(karl): Add vector defs/uses etc.
+*VmovDdRt
+  { cond(31:28), opc1(22:21), Vd(19:16), Rt(15:12), D(7), opc2(6:5) }
+  sel := opc1:opc2;
+  advsimd := sel in bitset {1xxx, 0xx1};
+  esize := 8   if sel=1xxx else
+           16  if sel=0xx1 else
+           32  if sel=0x00 else
+           0;  # i.e. undefined.
+  index := opc1(0):opc2    if sel=1xxx else
+           opc1(0):opc2(1) if sel=0xx1 else
+           opc1(0)         if sel=0x00 else
+           0;              # i.e undefined.
+  d := D:Vd; t := Rt;
+  defs := {};
+  uses := {Rt};
+  safety := sel=0x10 => UNDEFINED &
+            t == Pc => UNPREDICTABLE;
+  # TODO(karl): Add vector defs/uses etc.
+*VmovRtFPSCR
+  { cond(31:28), Rt(15:12) }
+  t := Rt;
+  defs := {NZCV if t == Pc else Rt};
+  # TODO(karl): Add vector defs/uses etc.
+*VmovRtDd
+  { cond(31:28), U(23), opc1(22:21), Vn(19:16), Rt(15:12), N(7), opc2(6:5) }
+  sel := U:opc1:opc2;
+  advsimd := sel in bitset {x1xxx, x0xx1};
+  esize := 8   if sel=x1xxx else
+           16  if sel=x0xx1 else
+           32  if sel=00x00 else
+           0;  # i.e. undefined.
+  index := opc1(0):opc2    if sel=x1xxx else
+           opc1(0):opc2(1) if sel=x0xx1 else
+           opc1(0)         if sel=00x00 else
+           0;              # i.e. undefined
+  t := Rt; n := N:Vn; unsigned := U=1;
+  defs := {Rt};
+  safety := sel in bitset {10x00, x0x10} => UNDEFINED &
+            t == Pc => UNPREDICTABLE;
+  # TODO(karl): Add vector defs/uses etc.
++--
 | L(20) C(8) A(23:21) B(6:5)
-| 0     0    000      -      = MoveVfpRegisterOp
-                               Vmov_Rule_330_A1_P648
-                               cccc11100000nnnntttt1010n0010000 (VFPv2)
-| "     "    111      -      = VfpUsesRegOp => DontCareInstRdNotPc
-                               Vmsr_Rule_336_A1_P660
-                               cccc111011100001tttt101000010000 (VFPv2, AdvSIMD)
-| 0     1    0xx      -      = MoveVfpRegisterOpWithTypeSel
-                               # Bit 23 is 0, we can use the baseline class'
-                               # safety function and remain correct.
-                               Vmov_Rule_328_A1_P644
-                               # TODO(jfb) Only the word version
-                               #           (opc1:opc2=='0x00') is VFPv2.
-                               cccc11100ii0ddddtttt1011dii10000 (VFPv2, AdvSIMD)
-| "     "    1xx      0x     = DuplicateToAdvSIMDRegisters
-                               Vdup_Rule_303_A1_P594
-                               cccc11101bq0ddddtttt1011d0e10000 (AdvSIMD)
-| 1     0    000      -      = MoveVfpRegisterOp
-                               Vmov_Rule_330_A1_P648
-                               cccc11100001nnnntttt1010n0010000 (VFPv2)
-| "     "    111      -      = VfpMrsOp
-                               Vmrs_Rule_335_A1_P658
-                               cccc111011110001tttt101000010000 (VFPv2, AdvSIMD)
-| "     1    xxx      -      = MoveVfpRegisterOpWithTypeSel
-                               Vmov_Rule_329_A1_P646
-                               # TODO(jfb) Only the word version
-                               #           (U:opc1:opc2=='00x00') is VFPv2.
-                               cccc1110iii1nnnntttt1011nii10000 (VFPv2, AdvSIMD)
-| else:                      = Undefined  # Note on page A7-31
+| 0     0    000      -      =
+        *VmovSnRt  pattern := cccc1110000onnnntttt1010n0010000;
+        rule := VMOV_between_ARM_core_register_and_single_precision_register;
+        arch := VFPv2;
+| "     "    111      -      =
+        *UsesRt  pattern := cccc111011100001tttt101000010000;
+        rule := VMSR; arch := (VFPv2, AdvSIMD);
+| 0     1    0xx      -      =
+        *VmovDdRt  pattern := cccc11100ii0ddddtttt1011dii10000;
+        rule := VMOV_ARM_core_register_to_scalar;  arch := (VFPv2, AdvSIMD);
+| "     "    1xx      0x     = 
+        *Vdup  pattern := cccc11101bq0ddddtttt1011d0e10000;
+        rule := VDUP_ARM_core_register;  arch := AdvSIMD;
+| 1     0    000      -      =
+        *VmovSnRt  pattern := cccc1110000xnnnntttt1010n0010000;
+        rule := VMOV_between_ARM_core_register_and_single_precision_register;
+        arch := VFPv2;
+| "     "    111      -      =
+        *VmovRtFPSCR  pattern := cccc111011110001tttt101000010000;
+        rule := VMRS;  arch := (VFPv2, AdvSIMD);
+| "     1    xxx      -      =
+        *VmovRtDd pattern := cccc1110iii1nnnntttt1011nii10000;
+        rule := MOVE_scalar_to_ARM_core_register;  arch := (VFPv2, AdvSIMD);
+| else: = *Undefined  # Note on table description.
 +--
 
-# TODO(karl): Add uses to corresponding classes.
 +-- transfer_between_arm_core_and_extension_registers_64_bit (A7.9)
+*VmovXRtRt2
+  { cond(31:28), op(20), Rt2(19:16), Rt(15:12), M(5), Vm(3:0) }
+  to_arm_registers := op=1; t := Rt; t2 := Rt2;
+  defs := {Rt, Rt2} if to_arm_registers else {};
+  uses := {} if to_arm_registers else {Rt, Rt2};
+*VmovSnRtRt2 *VmovXRtRt2
+  m := Vm:M;
+  safety := Pc in {t, t2} | m == 31 => UNPREDICTABLE &
+            to_arm_registers & t == t2 => UNPREDICTABLE;
+  # TODO(karl): Add vector defs/uses etc.
+*VmovDmRtRt2 *VmovXRtRt2
+  m := M:Vm;
+  safety := Pc in {t, t2} => UNPREDICTABLE &
+            to_arm_registers & t == t2 => UNPREDICTABLE;
+  # TODO(karl): Add vector defs/uses etc.
++--
 | C(8) op(7:4)
-| 0    00x1    = MoveDoubleVfpRegisterOp
-                 Vmov_two_S_Rule_A1
-                 cccc1100010otttttttt101000m1mmmm (VFPv2)
-| 1    00x1    = MoveDoubleVfpRegisterOp
-                 Vmov_one_D_Rule_A1
-                 cccc1100010otttttttt101100m1mmmm (VFPv2, AdvSIMD)
-| else:        = Undefined
+| 0    00x1    = *VmovSnRtRt2
+                  pattern := cccc1100010otttttttt101000m1mmmm;
+                  rule := VMOV_between_two_ARM_core_registers_and_two_single_precision_registers;
+                  arch := (VFPv2);
+| 1    00x1    = *VmovDmRtRt2
+                  pattern := cccc1100010otttttttt101100m1mmmm;
+                  rule := VMOV_between_two_ARM_core_registers_and_a_doubleword_extension_register;
+                  arch := (VFPv2, AdvSIMD);
+| else:        = *Undefined
 +--
 
-# TODO(karl): Add uses to corresponding classes.
 +-- unconditional_instructions (See Section A5.7)
 | op1(27:20) op(4) Rn(19:16) op1_repeated(27:20)
-| 0xxx_xxxx  -     -         - -> memory_hints_advanced_simd_instructions_and_miscellaneous_instructions
-| 100x_x1x0  -     -         - = ForbiddenUncondDecoder => Forbidden
-                                 Srs_Rule_B6_1_10_A1_B6_20
-                                 1111100pu1w0110100000101000iiiii (v6)
-| 100x_x0x1  -     -         - = ForbiddenUncondDecoder => Forbidden
-                                 Rfe_Rule_B6_1_10_A1_B6_16
-                                 1111100pu0w1nnnn0000101000000000 (v6)
-| 101x_xxxx  -     -         - = ForbiddenUncondDecoder => Forbidden
-                                 # Forbidden because it switches to Thumb.
-                                 Blx_Rule_23_A2_P58
-                                 1111101hiiiiiiiiiiiiiiiiiiiiiiii (v5)
-| 110x_xxx0   -     -        ~1100_0x00
-                               = ForbiddenUncondDecoder => Forbidden
-                                 Stc2_Rule_188_A2_P372
-                                 1111110pudw0nnnniiiiiiiiiiiiiiii (v5)
-| 110x_xxx1  -     ~1111     ~1100_0x01
-                               = ForbiddenUncondDecoder => Forbidden
-                                 Ldc2_Rule_51_A2_P106
-                                 1111110pudw1nnnniiiiiiiiiiiiiiii (v5)
-| 110x_xxx1  -     1111      ~1100_0x01
-                               = ForbiddenUncondDecoder => Forbidden
-                                 Ldc2_Rule_52_A2_P108
-                                 1111110pudw11111iiiiiiiiiiiiiiii (v5)
-| 1100_0100  -     -         - = ForbiddenUncondDecoder => Forbidden
-                                 Mcrr2_Rule_93_A2_P188
-                                 111111000100ssssttttiiiiiiiiiiii (v6)
-| 1100_0101  -     -         - = ForbiddenUncondDecoder => Forbidden
-                                 Mrrc2_Rule_101_A2_P204
-                                 111111000101ssssttttiiiiiiiiiiii (v6)
-| 1110_xxxx  0     -         - = ForbiddenUncondDecoder => Forbidden
-                                 Cdp2_Rule_28_A2_P68
-                                 11111110iiiiiiiiiiiiiiiiiii0iiii (v5)
-| 1110_xxx0  1     -         - = ForbiddenUncondDecoder => Forbidden
-                                 Mcr2_Rule_92_A2_P186
-                                 11111110iii0iiiittttiiiiiii1iiii (v5)
-| 1110_xxx1  1     -         - = ForbiddenUncondDecoder => Forbidden
-                                 Mrc2_Rule_100_A2_P202
-                                 11111110iii1iiiittttiiiiiii1iiii (v5)
-| else:                        = Undefined
+| 0xxx_xxxx  -     -         - -> 
+        memory_hints_advanced_simd_instructions_and_miscellaneous_instructions
+| 100x_x1x0  -     -         - =
+       *Forbidden  pattern := 1111100pu1w0110100000101000iiiii;
+        rule := SRS;  arch := v6;
+| 100x_x0x1  -     -         - =
+       *Forbidden  pattern := 1111100pu0w1nnnn0000101000000000;
+        rule := RFE;  arch := v6;
+| 101x_xxxx  -     -         - =
+       *Forbidden  pattern := 1111101hiiiiiiiiiiiiiiiiiiiiiiii;
+        # Forbidden because it switches to Thumb.
+        rule := BLX_immediate;  arch := v5;
+| 110x_xxx0   -     -        ~1100_0x00 =
+       *Forbidden  pattern := 1111110pudw0nnnniiiiiiiiiiiiiiii;
+        rule := STC2;  arch := v5;
+| 110x_xxx1  -     ~1111     ~1100_0x01 =
+       *Forbidden  pattern := 1111110pudw1nnnniiiiiiiiiiiiiiii;
+        rule := LDC2_immediate;  arch := v5;
+| 110x_xxx1  -     1111      ~1100_0x01 =
+       *Forbidden  pattern := 1111110pudw11111iiiiiiiiiiiiiiii;
+        rule := LDC2_literal;  arch := v5;
+| 1100_0100  -     -         - =
+       *Forbidden  pattern := 111111000100ssssttttiiiiiiiiiiii;
+        rule := MCRR2;  arch := v6;
+| 1100_0101  -     -         - =
+       *Forbidden  pattern := 111111000101ssssttttiiiiiiiiiiii;
+        rule := MRRC2;  arch := v6;
+| 1110_xxxx  0     -         - =
+       *Forbidden  pattern := 11111110iiiiiiiiiiiiiiiiiii0iiii;
+        rule := CDP2;  arch := v5;
+| 1110_xxx0  1     -         - =
+       *Forbidden  pattern := 11111110iii0iiiittttiiiiiii1iiii;
+        rule := MCR2;  arch := v5;
+| 1110_xxx1  1     -         - =
+       *Forbidden  pattern := 11111110iii1iiiittttiiiiiii1iiii;
+        rule := MRC2;  arch := v5;
+| else:                        = *Undefined
 +--
 
-# TODO(karl): Add uses to corresponding classes.
-+-- memory_hints_advanced_simd_instructions_and_miscellaneous_instructions (See Section A5.7.1)
++-- memory_hints_advanced_simd_instructions_and_miscellaneous_instructions
+    (See Section A5.7.1)
+*Barrier
+  { option(3:0) }
+  defs := {};
+  uses := {};
+*DataBarrier *Barrier
+  safety := not option in
+            {'1111', '1110', '1011', '1010',
+             '0111', '0110', '0011', '0010'} => FORBIDDEN_OPERANDS;
+*InstructionBarrier *Barrier
+  safety := option=~1111 => FORBIDDEN_OPERANDS;
+*PreloadLit
+  { U(23), imm12(11:0) }
+  imm32 := ZeroExtend(imm12, 32);  add := U=1;
+  base := Pc;
+  defs := {};
+  uses := {Pc};
+  is_literal_load := true;
+  safety := true => MAY_BE_SAFE;
+*PreloadData *PreloadLit
+  { U(23), R(22), Rn(19:16), imm12(11:0) }
+  is_pldw := R=0;
+  base := Rn;
+  uses := {Rn};
+  safety := Rn=1111 => DECODER_ERROR;
+  is_literal_load := base == Pc;
+*PreloadDataReg
+  { U(23), R(22), Rn(19:16), imm5(11:7), type(6:5), Rm(3:0) }
+  add := U=1; is_pldw := R=1;
+  shift := DecodeImmShift(type, imm5);
+  base := Rn;
+  defs := {};
+  uses := {Rm, Rn};
+  safety :=  Rm == Pc | (Rn == Pc & is_pldw) => UNPREDICTABLE &
+             true => FORBIDDEN_OPERANDS;
+*PreloadInst
+  { U(23), Rn(19:16), imm12(11:0) }
+  imm32 := ZeroExtend(imm12, 32);  add := U=1;
+  base := Rn;
+  defs := {};
+  uses := {Rn};
+  safety := true => MAY_BE_SAFE;
+  is_literal_load := Rn == Pc;
+*PreloadInstReg
+  { U(23), Rn(19:16), imm5(11:7), type(6:5), Rm(3:0) }
+  add := U=1;
+  shift := DecodeImmShift(type, imm5);
+  base := Rn;
+  defs := {};
+  uses := {Rm, Rn};
+  safety :=  Rm == Pc => UNPREDICTABLE &
+             true => FORBIDDEN_OPERANDS;
++--
 | op1(26:20) op2(7:4) Rn(19:16)
-| 001_0000   xx0x     xxx0  = ForbiddenUncondDecoder => Forbidden
-                              Cps_Rule_b6_1_1_A1_B6_3
-                              111100010000iii00000000iii0iiiii (v6)
-| 001_0000   0000     xxx1  = ForbiddenUncondDecoder => Forbidden
-                              Setend_Rule_157_P314
-                              1111000100000001000000i000000000 (v6)
-| 01x_xxxx   -        -     ->advanced_simd_data_processing_instructions
-| 100_xxx0   -        -     ->advanced_simd_element_or_structure_load_store_instructions
-| 100_x001   -        -     = ForbiddenUncondDecoder => Forbidden
-                              Unallocated_hints
-                              # Manual says these are treated as NOPs, disallow
-                              # until proven necessary.
-                              11110100x001xxxxxxxxxxxxxxxxxxxx (MPExt)
-| 100_x101   -        -     = PreloadRegisterImm12Op
-                              Pli_Rule_120_A1_P242
-                              11110100u101nnnn1111iiiiiiiiiiii (v7)
-| 100_xx11   -        -     = UnpredictableUncondDecoder => Unpredictable
-                              Unpredictable
-                              11110100xx11xxxxxxxxxxxxxxxxxxxx
-| 101_x001   -        ~1111 = PreloadRegisterImm12Op
-                              Pldw_Rule_117_A1_P236
-                              11110101u001nnnn1111iiiiiiiiiiii
-                              & ~xxxxxxxxxxxx1111xxxxxxxxxxxxxxxx (MP)
-| "          -        1111  = UnpredictableUncondDecoder => Unpredictable
-                              Unpredictable
-                              11110101x001xxxxxxxxxxxxxxxxxxxx
-| 101_x101   -        ~1111 = PreloadRegisterImm12Op
-                              Pld_Rule_117_A1_P236
-                              11110101u101nnnn1111iiiiiiiiiiii
-                              & ~xxxxxxxxxxxx1111xxxxxxxxxxxxxxxx (v5TE)
-| "          -        1111  = PreloadRegisterImm12Op
-                              Pld_Rule_118_A1_P238
-                              11110101u10111111111iiiiiiiiiiii (v5TE)
-| 101_0011   -        -     = UnpredictableUncondDecoder => Unpredictable
-                              Unpredictable
-                              111101010011xxxxxxxxxxxxxxxxxxxx
-| 101_0111   0000     -     = UnpredictableUncondDecoder => Unpredictable
-                              Unpredictable
-                              111101010111xxxxxxxxxxxx0000xxxx
-| "          0001     -     = ForbiddenUncondDecoder => Forbidden
-                              # Might affect global exclusive access record.
-                              # Disallow until proven useful.
-                              Clrex_Rule_30_A1_P70
-                              11110101011111111111000000011111 (v6K)
-| "          001x     -     = UnpredictableUncondDecoder => Unpredictable
-                              Unpredictable
-                              111101010111xxxxxxxxxxxx001xxxxx
-| "          0100     -     = DataBarrier
-                              Dsb_Rule_42_A1_P92
-                              # Note: Has safety constraint that xxxx in:
-                              # {1111, 1110, 1011, 1010, 0111, 0110, 0011, 0010}
-                              1111010101111111111100000100xxxx (v6T2)
-| "          0101     -     = DataBarrier
-                              Dmb_Rule_41_A1_P90
-                              # Note: Has safety constraint that xxxx in
-                              # {1111, 1110, 1011, 1010, 0111, 0110, 0011, 0010}
-                              1111010101111111111100000101xxxx (v7)
-| "          0110     -     = InstructionBarrier
-                              Isb_Rule_49_A1_P102
-                              # Note: Has safety constraint that xxxx = 1111
-                              1111010101111111111100000110xxxx (v6T2)
-| "          0111     -     = UnpredictableUncondDecoder => Unpredictable
-                              Unpredictable
-                              111101010111xxxxxxxxxxxx0111xxxx
-| "          1xxx     -     = UnpredictableUncondDecoder => Unpredictable
-                              Unpredictable
-                              111101010111xxxxxxxxxxxx1xxxxxxx
-| 101_1x11   -        -     = UnpredictableUncondDecoder => Unpredictable
-                              Unpredictable
-                              111101011x11xxxxxxxxxxxxxxxxxxxx
-| 110_x001   xxx0     -     = ForbiddenUncondDecoder => Forbidden
-                              Unallocated_hints
-                              # Manual says these are treated as NOPs, disallow
-                              # until proven necessary.
-                              11110110x001xxxxxxxxxxxxxxx0xxxx (MPExt)
-| 110_x101   xxx0     -     = PreloadRegisterPairOp
-                              Pli_Rule_121_A1_P244
-                              11110110u101nnnn1111iiiiitt0mmmm (v7)
-| 111_x001   xxx0     -     = PreloadRegisterPairOp
-                              Pldw_Rule_119_A1_P240
-                              11110111u001nnnn1111iiiiitt0mmmm (MPExt)
-| 111_x101   xxx0     -     = PreloadRegisterPairOp
-                              Pld_Rule_119_A1_P240
-                              11110111u101nnnn1111iiiiitt0mmmm (v5TE)
-| 11x_xx11   xxx0     -     = UnpredictableUncondDecoder => Unpredictable
-                              Unpredictable
-                              1111011xxx11xxxxxxxxxxxxxxx0xxxx
-| else:                     = Undefined   # Note on page A5-31
+| 001_0000   xx0x     xxx0  = *Forbidden
+                               pattern := 111100010000iii00000000iii0iiiii;
+                               rule := CPS;
+                               arch := v6;
+| 001_0000   0000     xxx1  = *Forbidden
+                               pattern := 1111000100000001000000i000000000;
+                               rule := SETEND;
+                               arch := v6;
+| 01x_xxxx   -        -     -> advanced_simd_data_processing_instructions
+| 100_xxx0   -        -     ->
+               advanced_simd_element_or_structure_load_store_instructions
+| 100_x001   -        -     = *Forbidden
+                               # Manual says these are treated as NOPs,
+                               # disallow until proven necessary.
+                               pattern := 11110100x001xxxxxxxxxxxxxxxxxxxx;
+                               arch := MPExt;
+| 100_x101   -        -     = *PreloadInst
+                               pattern := 11110100u101nnnn1111iiiiiiiiiiii;
+                               rule := PLI_immediate_literal;
+                               arch := v7;
+| 100_xx11   -        -     = *Unpredictable
+                               pattern := 11110100xx11xxxxxxxxxxxxxxxxxxxx;
+| 101_x001   -        ~1111 = *PreloadData
+                               pattern := 11110101ur01nnnn1111iiiiiiiiiiii;
+                               rule := PLD_PLDW_immediate;
+                               arch := MPExt;
+| "          -        1111  = *Unpredictable
+                               pattern := 11110101x001xxxxxxxxxxxxxxxxxxxx;
+| 101_x101   -        ~1111 = *PreloadData
+                               pattern := 11110101ur01nnnn1111iiiiiiiiiiii;
+                               rule := PLD_PLDW_immediate;
+                               arch := v5TE;
+| "          -        1111  = *PreloadLit
+                               pattern := 11110101u10111111111iiiiiiiiiiii;
+                               rule := PLD_literal;
+                               arch := v5TE;                           
+| 101_0011   -        -     = *Unpredictable
+                               pattern := 111101010011xxxxxxxxxxxxxxxxxxxx;
+| 101_0111   0000     -     = *Unpredictable
+                               pattern := 111101010111xxxxxxxxxxxx0000xxxx;
+| "          0001     -     = *Forbidden
+                               # Might affect global exclusive access record.
+                               # Disallow until proven useful.
+                               pattern := 11110101011111111111000000011111;
+                               rule := CLREX;
+                               arch := V6K;
+| "          001x     -     = *Unpredictable
+                               pattern := 111101010111xxxxxxxxxxxx001xxxxx;
+| "          0100     -     = *DataBarrier
+                               pattern := 1111010101111111111100000100xxxx;
+                               rule := DSB;
+                               arch := v6T2;
+| "          0101     -     = *DataBarrier
+                               pattern := 1111010101111111111100000101xxxx;
+                               rule := DMB;
+                               arch := v7;
+| "          0110     -     = *InstructionBarrier
+                               pattern := 1111010101111111111100000110xxxx;
+                               rule := ISB;
+                               arch := v6T2;
+| "          0111     -     = *Unpredictable
+                               pattern := 111101010111xxxxxxxxxxxx0111xxxx;
+| "          1xxx     -     = *Unpredictable
+                               pattern := 111101010111xxxxxxxxxxxx1xxxxxxx;
+| 101_1x11   -        -     = *Unpredictable
+                               pattern := 111101011x11xxxxxxxxxxxxxxxxxxxx;
+| 110_x001   xxx0     -     = *Forbidden
+                               # Manual says these are treated as NOPs,
+                               # disallow until proven necessary.
+                               pattern := 11110110x001xxxxxxxxxxxxxxx0xxxx;
+                               arch := MPExt;
+| 110_x101   xxx0     -     = *PreloadInstReg
+                               pattern := 11110110u101nnnn1111iiiiitt0mmmm;
+                               rule := PLI_register;
+                               arch := v7;
+| 111_x001   xxx0     -     = *PreloadDataReg
+                               pattern := 11110111u001nnnn1111iiiiitt0mmmm;
+                               rule := PLD_PLDW_register;
+                               arch := MPExt;
+| 111_x101   xxx0     -     = *PreloadDataReg
+                               pattern := 11110111u101nnnn1111iiiiitt0mmmm;
+                               rule := PLD_PLDW_register;
+                               arch := v5TE;
+| 11x_xx11   xxx0     -     = *Unpredictable
+                               pattern := 1111011xxx11xxxxxxxxxxxxxxx0xxxx;
+| else:                     = *Undefined   # See note on ARM table.
 +--
 
-# TODO(karl): Add uses to corresponding classes.
 +-- advanced_simd_data_processing_instructions (See Section A7.4)
+*VdVm
+   { D(22), Vd(15:12), M(5), Vm(3:0) }
+   d := D:Vd; m := M:Vm;
+   # TODO(karl): Add vector defs/uses etc.
+   defs := {};
+   uses := {};
+*VdVnVm *VdVm
+   { D(22), Vn(19:16), Vd(15:12), N(7), M(5), Vm(3:0) }
+   n := N:Vn;
+*Vext *VdVnVm
+   { D(22), Vn(19:16), Vd(15:12), imm4(11:8), N(7), Q(6), M(5), Vm(3:0) }
+   quadword_operation := Q=1;
+   position := 8 * imm4;
+   safety := Q=1 & (Vd(0)=1 | Vn(0)=1 | Vm(0)=1) => UNDEFINED &
+             Q=0 & imm4(3)=1 => UNDEFINED;
+*Vtbl *VdVnVm
+   { D(22), Vn(19:16), Vd(15:12), len(9:8), N(7), op(6), M(5), Vm(3:0) }
+   is_vtbl := op=0; length := len+1;
+   # TODO(karl): Add vector uses. Note: Uses quite different from othe
+   # instructions in this table because it changes with len.
+   safety := n+length > 32 => UNPREDICTABLE;
+*Vdup *VdVm
+   { D(22), imm4(19:16), Vd(15:12), Q(6), M(5), Vm(3:0) }
+   esize :=       8 if imm4=xxx1
+            else 16 if imm4=xx10
+            else 32 if imm4=x100
+            else  0;   # i.e. not defined.
+   elements :=      8 if imm4=xxx1
+               else 4 if imm4=xx10
+               else 2 if imm4=x100
+               else 0;   # i.e. not defined.
+   index :=      imm4(3:1) if imm4=xxx1
+            else imm4(3:2) if imm4=xx10
+            else   imm4(3) if imm4=x100
+            else         0;   # i.e. not defined.
+   regs := 1 if Q=0 else 2;
+   safety := imm4=x000 => UNDEFINED &
+             Q=1 & Vd(0)=1 => UNDEFINED;
++--
 | U(24) A(23:19) B(11:8) C(7:4)
 | -     0xxxx    -       -      -> simd_dp_3same
 | "     1x000    -       0xx1   -> simd_dp_1imm
@@ -2145,64 +2466,64 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
 | "     1x10x    -       x0x0   "
 | "     1x0xx    -       x1x0   -> simd_dp_2scalar
 | "     1x10x    -       x1x0   "
-| 0     1x11x    -       xxx0   = VectorBinary3RegisterImmOp
-                                  Vext_Rule_305_A1_P598
-                                  111100101d11nnnnddddiiiinqm0mmmm
+| 0     1x11x    -       xxx0   = *Vext
+                                   pattern := 111100101d11nnnnddddiiiinqm0mmmm;
+                                   rule := VEXT;
 | 1     1x11x    0xxx    xxx0   -> simd_dp_2misc
-| "     "        10xx    xxx0   = VectorBinary3RegisterLookupOp
-                                  Vtbl_Vtbx_Rule_406_A1_P798
-                                  111100111d11nnnndddd10ccnpm0mmmm
-| "     "        1100    0xx0   = VectorUnary2RegisterDup
-                                  Vdup_Rule_302_A1_P592
-                                  111100111d11iiiidddd11000qm0mmmm
-| else:                         = Undefined  # Note on page A7-10
+| "     "        10xx    xxx0   = *Vtbl
+                                   pattern := 111100111d11nnnndddd10ccnpm0mmmm;
+                                   rule := VTBL_VTBX;
+| "     "        1100    0xx0   = *Vdup
+                                   pattern := 111100111d11iiiidddd11000qm0mmmm;
+                                   rule := VDUP_scalar;
+| else:                         = *Undefined  # Note on table description.
 +--
 
-# TODO(karl): Add uses to corresponding classes.
 +-- simd_dp_3same (See Section A7.4.1)
-*V3RSL VectorBinary3RegisterSameLength
+*V3RSL
    { U(24), D(22), size(21:20), Vn(19:16), Vd(15:12), op(9),
      N(7), Q(6), M(5), Vm(3:0) }
    d := D:Vd; n := N:Vn; m := M:Vm;
    defs := {};  # Doesn't affect general purpose registers.
    uses := {};
+   # TODO(karl): Add vector defs/uses etc.
    arch := ASIMD;
 *V3RSL_DQ *V3RSL  # Uses Q registers if Q=1, D registers otherwise.
-   baseline := VectorBinary3RegisterSameLengthDQ;
+   # TODO(karl): Add vector defs/uses etc.
    regs := 1 if Q=0 else 2;
-   safety := Q=1 & (Vd(0)=1 | Vn(0)=1 | Vd(0)=1) => UNDEFINED;
+   safety := Q=1 & (Vd(0)=1 | Vn(0)=1 | Vm(0)=1) => UNDEFINED;
 *V3RSL_DQI *V3RSL_DQ
    # Works on 8, 16, 32, and 64-bit integers;
+   # TODO(karl): Add vector defs/uses etc.
    unsigned := U=1;
    esize := 8  << size; elements := 64 / esize;
 *V3RSL_DQI16_32 *V3RSL_DQI
    # Works on 16 and 32-bit integers.
-   baseline := VectorBinary3RegisterSameLengthDQI16_32;
-   safety := Q=1 & (Vd(0)=1 | Vn(0)=1 | Vd(0)=1) => UNDEFINED &
+   # TODO(karl): Add vector defs/uses etc.
+   safety := Q=1 & (Vd(0)=1 | Vn(0)=1 | Vm(0)=1) => UNDEFINED &
              (size=11 | size=00) => UNDEFINED;
 *V3RSL_DQI8_16_32 *V3RSL_DQI
    # Only works on 8, 16, and 32-bit integers.
-   baseline := VectorBinary3RegisterSameLengthDQI8_16_32;
-   safety := Q=1 & (Vd(0)=1 | Vn(0)=1 | Vd(0)=1) => UNDEFINED &
+   # TODO(karl): Add vector defs/uses etc.
+   safety := Q=1 & (Vd(0)=1 | Vn(0)=1 | Vm(0)=1) => UNDEFINED &
              size=11 => UNDEFINED;
 *V3RSL_DQI8P *V3RSL_DQI
-   baseline := VectorBinary3RegisterSameLengthDQI8P;
+   # TODO(karl): Add vector defs/uses etc.
    # Operates on 8-bit and polynomials.
    unsigned := false;
-   safety := Q=1 & (Vd(0)=1 | Vn(0)=1 | Vd(0)=1) => UNDEFINED &
+   safety := Q=1 & (Vd(0)=1 | Vn(0)=1 | Vm(0)=1) => UNDEFINED &
              size=~00 => UNDEFINED;
 *V3RSL32 *V3RSL  # Operates on 32-bit values.
    sz := size(0); op1_neg := size(1);
    esize := 32; elements := 2;
 *V3RSL32P *V3RSL32  # Operates on pairs of 32-bit values.
-   baseline := VectorBinary3RegisterSameLength32P;
    safety := sz=1 | Q=1 => UNDEFINED;
 *V3RSL32_DQ *V3RSL32  # Uses Q registers if Q=1, D registers otherwise.
-   baseline := VectorBinary3RegisterSameLength32_DQ;
-   safety := Q=1 & (Vd(0)=1 | Vn(0)=1 | Vd(0)=1) => UNDEFINED &
+   # TODO(karl): Add vector defs/uses etc.
+   safety := Q=1 & (Vd(0)=1 | Vn(0)=1 | Vm(0)=1) => UNDEFINED &
              sz=1 =>UNDEFINED;
 *V3RSL_DI *V3RSL  # double word (D registers) 8, 16, and 32 integers
-   baseline := VectorBinary3RegisterSameLengthDI;
+   # TODO(karl): Add vector defs/uses etc.
    unsigned := U=1;
    esize := 8  << size; elements := 64 / esize;
    safety := size=11 => UNDEFINED & Q=1 => UNDEFINED;
@@ -2380,12 +2701,11 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
 | "       "    "     1x       = *V3RSL32_DQ
                                 pattern := 111100100d1snnnndddd1111nqm1mmmm;
                                 rule := VRSQRTS;
-| else:                       = Undefined
+| else:                       = *Undefined
 +--
 
-# TODO(karl): Add uses to corresponding classes.
 +-- simd_dp_3diff (See Section A7.4.2)
-*V3RDL VectorBinary3RegisterDifferentLength
+*V3RDL
    { U(24), D(22), size(21:20), Vn(19:16), Vd(15:12), op(8),
      N(7), M(5), Vm(3:0) }
    d := D:Vd; n := N:Vn; m := M:Vm;
@@ -2395,85 +2715,82 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
    uses := {};
 *V3RDL_I8_16_32 *V3RDL
    # Allows 8, 16, and 32-bit integer values (defined by size).
-   baseline := VectorBinary3RegisterDifferentLength_I8_16_32;
+   # TODO(karl): Add vector defs/uses etc.
    is_w := op=1;
    safety := size=11 => DECODER_ERROR &
              Vd(0)=1 | (op=1 & Vn(0)=1) => UNDEFINED;
 *V3RDL_I16_32_64 *V3RDL
    # Allows 16, 32, and 64-bit operands (defined by 2*size).
-   baseline := VectorBinary3RegisterDifferentLength_I16_32_64;
+   # TODO(karl): Add vector defs/uses etc.
    safety := size=11 => DECODER_ERROR &
              Vn(0)=1 | Vm(0)=1 => UNDEFINED;
 *V3RDL_I8_16_32L *V3RDL
    # Allows 8, 16, and 32-bit operands, and long (i.e. double
    # sized) results.
-   baseline := VectorBinary3RegisterDifferentLength_I8_16_32L;
+   # TODO(karl): Add vector defs/uses etc.
    safety := size=11 => DECODER_ERROR &
              Vd(0)=1 => UNDEFINED;
 *V3RDL_I16_32L *V3RDL
    # Allows 16 and 32-bit operands, and long (i.e. double sized)
    # results.
-   baseline := VectorBinary3RegisterDifferentLength_I16_32L;
+   # TODO(karl): Add vector defs/uses etc.
    add := op=0;
    m := Vm(2:0) if size=01 else Vm;
    safety := size=11 => DECODER_ERROR &
              size=00 | Vd(0)=1 => UNDEFINED;
 *V3RDL_P8 *V3RDL
    # Defines an 8-bit polynomial vector operation.
-   baseline := VectorBinary3RegisterDifferentLength_P8;
+   # TODO(karl): Add vector defs/uses etc.
    safety := size=11 => DECODER_ERROR &
              U=1 | size=~00 => UNDEFINED &
              Vd(0)=1 => UNDEFINED;
 +--
-# Note: Table advanced_simd_data_processing_instructions (the
-# caller of this table) restricts size(21:20) to be in {0x, 10}.
 | A(11:8) U(24)
 | 000x    -     = *V3RDL_I8_16_32
-                  pattern := 1111001u1dssnnnndddd000pn0m0mmmm & size=~11;
+                  pattern := 1111001u1dssnnnndddd000pn0m0mmmm;
                   is_vaddw := U=1;
                   rule := VADDL_VADDW;
 | 001x    -     = *V3RDL_I8_16_32
-                  pattern := 1111001u1dssnnnndddd001pn0m0mmmm & size=~11;
+                  pattern := 1111001u1dssnnnndddd001pn0m0mmmm;
                   rule := VSUBL_VSUBW;
 | 0100    0     = *V3RDL_I16_32_64
-                  pattern := 111100101dssnnnndddd0100n0m0mmmm & size=~11;
+                  pattern := 111100101dssnnnndddd0100n0m0mmmm;
                   rule := VADDHN;
 | "       1     = *V3RDL_I16_32_64
-                  pattern := 111100111dssnnnndddd0100n0m0mmmm & size=~11;
+                  pattern := 111100111dssnnnndddd0100n0m0mmmm;
                   rule := VRADDHN;
 | 0101    -     = *V3RDL_I8_16_32L
-                  pattern := 1111001u1dssnnnndddd0101n0m0mmmm & size=~11;
+                  pattern := 1111001u1dssnnnndddd0101n0m0mmmm;
                   rule := VABAL_A2;
 | 0110    0     = *V3RDL_I16_32_64
-                  pattern := 111100101dssnnnndddd0110n0m0mmmm & size=~11;
+                  pattern := 111100101dssnnnndddd0110n0m0mmmm;
                   rule := VSUBHN;
 | "       1     = *V3RDL_I16_32_64
-                  pattern := 111100111dssnnnndddd0110n0m0mmmm & size=~11;
+                  pattern := 111100111dssnnnndddd0110n0m0mmmm;
                   rule := VRSUBHN;
 | 0111    -     = *V3RDL_I8_16_32L
-                  pattern := 1111001u1dssnnnndddd0111n0m0mmmm & size=~11;
+                  pattern := 1111001u1dssnnnndddd0111n0m0mmmm;
                   rule := VABDL_integer_A2;
 | 10x0    -     = *V3RDL_I8_16_32L
-                  pattern := 1111001u1dssnnnndddd10p0n0m0mmmm & size=~11;
+                  pattern := 1111001u1dssnnnndddd10p0n0m0mmmm;
                   rule := VMLAL_VMLSL_integer_A2;
 | 10x1    0     = *V3RDL_I16_32L
-                  pattern := 111100101dssnnnndddd10p1n0m0mmmm & size=~11;
+                  pattern := 111100101dssnnnndddd10p1n0m0mmmm;
                   rule := VQDMLAL_VQDMLSL_A1;
 | 1100    -     = *V3RDL_I8_16_32L  # Note: inst(9)=0, implying not polynomial.
-                  pattern := 1111001u1dssnnnndddd11p0n0m0mmmm & size=~11;
+                  pattern := 1111001u1dssnnnndddd11p0n0m0mmmm;
                   rule := VMULL_integer_A2;
 | 1101    0     = *V3RDL_I16_32L
-                  pattern := 111100101dssnnnndddd1101n0m0mmmm & size=~11;
+                  pattern := 111100101dssnnnndddd1101n0m0mmmm;
                   rule := VQDMULL_A1;
 | 1110    -     = *V3RDL_P8  # Note: inst(9)=1, implying polynomial.
-                  pattern := 1111001u1dssnnnndddd11p0n0m0mmmm & size=~11;
+                  pattern := 1111001u1dssnnnndddd11p0n0m0mmmm;
                   rule := VMULL_polynomial_A2;
-| else:         = Undefined
+| else:         = *Undefined
 +--
 
-# TODO(karl): Add uses to corresponding classes.
 +-- simd_dp_2scalar (See Section A7.4.3)
-*V2RS VectorBinary2RegisterScalar
+*V2RS
    { Q(24), D(22), size(21:20), Vn(19:16), Vd(15:12), op(10),
      F(8), N(7), M(5), Vm(3:0) }
    d := D:Vd; n := N:Vn;
@@ -2484,7 +2801,7 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
    arch := ASIMD;
 *V2RS_I16_32 *V2RS
    # Allows 16 and 32-bit integers (i.e. F=0).
-   baseline := VectorBinary2RegisterScalar_I16_32;
+   # TODO(karl): Add vector defs/uses etc.
    regs := 1 if Q=0 else 2;
    m  := Vm(2:0) if size=01 else Vm;
    index := M:Vm(3) if size=01 else M;
@@ -2493,14 +2810,14 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
              Q=1 & (Vd(0)=1 | Vn(0)=1) => UNDEFINED;
 *V2RS_I16_32L *V2RS_I16_32
    # Allows 16 and 32-bit operands, and long (i.e. double sized) results.
-   baseline := VectorBinary2RegisterScalar_I16_32L;
+   # TODO(karl): Add vector defs/uses etc.
    unsigned := Q=1;
    regs := 1;
    safety := size=11 => DECODER_ERROR &
              (size=00 | Vd(0)=1) => UNDEFINED;
 *V2RS_F32 *V2RS
    # Allows 32-bit floating-point values.
-   baseline := VectorBinary2RegisterScalar_F32;
+   # TODO(karl): Add vector defs/uses etc.
    regs := 1 if Q=0 else 2;
    m  := Vm;
    index := M;
@@ -2510,59 +2827,55 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
 +--
 # Note: for and/sub operations defined by bit 10, we have duplicated
 # rows and back filled bit 10 into A.
-# Note: Table advanced_simd_data_processing_instructions (the
-# caller of this table) restricts size(21:20) to be in {0x, 10}.
 | A(11:8) U(24)
 | 0000    -     = *V2RS_I16_32
-                  pattern := 1111001q1dssnnnndddd0p0fn1m0mmmm & size=~11;
+                  pattern := 1111001q1dssnnnndddd0p0fn1m0mmmm;
                   rule := VMLA_by_scalar_A1;
 | 0001    -     = *V2RS_F32
-                  pattern := 1111001q1dssnnnndddd0p0fn1m0mmmm & size=~11;
+                  pattern := 1111001q1dssnnnndddd0p0fn1m0mmmm;
                   rule := VMLA_by_scalar_A1;
 | 0100    -     = *V2RS_I16_32
-                  pattern := 1111001q1dssnnnndddd0p0fn1m0mmmm & size=~11;
+                  pattern := 1111001q1dssnnnndddd0p0fn1m0mmmm;
                   rule := VMLS_by_scalar_A1;
 | 0101    -     = *V2RS_F32
-                  pattern := 1111001q1dssnnnndddd0p0fn1m0mmmm & size=~11;
+                  pattern := 1111001q1dssnnnndddd0p0fn1m0mmmm;
                   rule := VMLS_by_scalar_A1;
 | 0010    -     = *V2RS_I16_32L
-                  pattern := 1111001u1dssnnnndddd0p10n1m0mmmm & size=~11;
+                  pattern := 1111001u1dssnnnndddd0p10n1m0mmmm;
                   rule := VMLAL_by_scalar_A2;
 | 0110    -     = *V2RS_I16_32L
-                  pattern := 1111001u1dssnnnndddd0p10n1m0mmmm & size=~11;
+                  pattern := 1111001u1dssnnnndddd0p10n1m0mmmm;
                   rule := VMLSL_by_scalar_A2;
 | 0011    0     = *V2RS_I16_32L
-                  pattern := 111100101dssnnnndddd0p11n1m0mmmm & size=~11;
+                  pattern := 111100101dssnnnndddd0p11n1m0mmmm;
                   rule := VQDMLAL_A1;
 | 0111    0     = *V2RS_I16_32L
-                  pattern := 111100101dssnnnndddd0p11n1m0mmmm & size=~11;
+                  pattern := 111100101dssnnnndddd0p11n1m0mmmm;
                   rule := VQDMLSL_A1;
 | 1000    -     = *V2RS_I16_32
-                  pattern := 1111001q1dssnnnndddd100fn1m0mmmm & size=~11;
+                  pattern := 1111001q1dssnnnndddd100fn1m0mmmm;
                   rule := VMUL_by_scalar_A1;
 | 1001    -     = *V2RS_F32
-                  pattern := 1111001q1dssnnnndddd100fn1m0mmmm & size=~11;
+                  pattern := 1111001q1dssnnnndddd100fn1m0mmmm;
                   rule := VMUL_by_scalar_A1;
 | 1010    -     = *V2RS_I16_32L
-                  pattern := 1111001u1dssnnnndddd1010n1m0mmmm & size=~11;
+                  pattern := 1111001u1dssnnnndddd1010n1m0mmmm;
                   rule := VMULL_by_scalar_A2;
 | 1011    0     = *V2RS_I16_32L
-                  pattern := 111100101dssnnnndddd1011n1m0mmmm & size=~11;
+                  pattern := 111100101dssnnnndddd1011n1m0mmmm;
                   rule := VQDMULL_A2;
 | 1100    -     = *V2RS_I16_32
-                  pattern := 1111001q1dssnnnndddd1100n1m0mmmm & size=~11;
+                  pattern := 1111001q1dssnnnndddd1100n1m0mmmm;
                   rule := VQDMULH_A2;
 | 1101    -     = *V2RS_I16_32
-                  pattern := 1111001q1dssnnnndddd1101n1m0mmmm & size=~11;
+                  pattern := 1111001q1dssnnnndddd1101n1m0mmmm;
                   rule := VQRDMULH;
-| else:         = Undefined
+| else:         = *Undefined
 +--
 
-# TODO(karl): Add uses to corresponding classes.
 +-- simd_dp_2shift (See Section A7.4.4)
 *V2RSA 
    { U(24), D(22), imm6(21:16), Vd(15:12), op(8), L(7), Q(6), M(5), Vm(3:0) }
-   baseline := VectorBinary2RegisterShiftAmount;
    d := D:Vd; n := M:Vm;
    regs := 1 if Q=0 else 2;
    defs := {};  # Doesn't affect general purpose registers.
@@ -2570,7 +2883,6 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
    arch := ASIMD;
 *V2RSA_I *V2RSA
    # allows 8, 16, 32, or 64-bit integers.
-   baseline := VectorBinary2RegisterShiftAmount_I;
    esize := 8  if L:imm6=0001xxx else
             16 if L:imm6=001xxxx else
             32 if L:imm6=01xxxxx else
@@ -2586,11 +2898,13 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
              Q=1 & (Vd(0)=1 | Vm(0)=1) => UNDEFINED;
 *V2RSA_IR *V2RSA_I
    # Shifts right 8, 16, 32, or 64-bit integers.
+   # TODO(karl): Add vector defs/uses etc.
    shift_amount := 16 - imm6 if L:imm6=0001xxx else
                    32 - imm6 if L:imm6=001xxxx else
                    64 - imm6;
 *V2RSA_IL *V2RSA_I
    # Shifts left 8, 16, 32, or 64-bit integers.
+   # TODO(karl): Add vector defs/uses etc.
    shift_amount := imm6 - 8  if L:imm6=0001xxx else
                    imm6 - 16 if L:imm6=001xxxx else
                    imm6 - 32 if L:imm6=01xxxxx else
@@ -2598,7 +2912,7 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
                    0;
 *V2RSA_ILS *V2RSA_IL
    # Shifts left with signed/unsigned arguments.
-   baseline := VectorBinary2RegisterShiftAmount_ILS;
+   # TODO(karl): Add vector defs/uses etc.
    src_unsigned := U=1 & op=1;
    dest_unsigned := U=1;
    safety := L:imm6=0000xxx => DECODER_ERROR &
@@ -2619,7 +2933,7 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
                0;  # i.e. error
 *V2RSA_N16_32_64R *V2RSA_NE16_32_64
    # Shifts right.
-   baseline := VectorBinary2RegisterShiftAmount_N16_32_64R;
+   # TODO(karl): Add vector defs/uses etc.
    shift_amount := 16 - imm6 if imm6=001xxx else
                    32 - imm6 if imm6=01xxxx else
                    64 - imm6 if imm6=1xxxxx else
@@ -2628,7 +2942,7 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
              Vm(0)=1 => UNDEFINED;
 *V2RSA_N16_32_64RS *V2RSA_N16_32_64R
    # Shifts right narrows with signed/unsigned arguments.
-   baseline := VectorBinary2RegisterShiftAmount_N16_32_64RS;
+   # TODO(karl): Add vector defs/uses etc.
    src_unsigned := U=1 & op=1;
    dest_unsigned := U=1;
    safety := imm6=000xxx => DECODER_ERROR &
@@ -2638,7 +2952,7 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
    # Shifts left 8, 16, or 32-bit integers, and expands
    # result to twice the length of the arguments.
    # shift_amount == 0 => VMOVL
-   baseline := VectorBinary2RegisterShiftAmount_E8_16_32L;
+   # TODO(karl): Add vector defs/uses etc.
    shift_amount := imm6 - 8  if imm6=001xxx else
                    imm6 - 16 if imm6=01xxxx else
                    imm6 - 32 if imm6=1xxxxx else
@@ -2647,7 +2961,7 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
              Vd(0)=1 => UNDEFINED;
 *V2RSA_CVT *V2RSA
    # converts between floating-point and fixed-point.
-   baseline := VectorBinary2RegisterShiftAmount_CVT;
+   # TODO(karl): Add vector defs/uses etc.
    to_fixed := op=1;
    unsigned := U=1;
    esize := 32; frac_bits := 64 - imm6; elements := 2;
@@ -2710,14 +3024,12 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
 | 111x    -     -    0    = *V2RSA_CVT
                             pattern := 1111001u1diiiiiidddd111p0qm1mmmm;
                             rule := VCVT_between_floating_point_and_fixed_point;
-| else:                   = Undefined
+| else:                   = *Undefined
 +--
 
-# TODO(karl): Add uses to corresponding classes.
 +-- simd_dp_2misc (See Section A7.4.5)
 *V2RM
    { D(22), size(19:18), Vd(15:12), F(10), op(8:7), Q(6), M(5), Vm(3:0) }
-   baseline := Vector2RegisterMiscellaneous;
    esize := 8 << size;  elements := 64 / esize;
    d := D:Vd; m := M:Vm; regs := 1 if Q=0 else 2;
    defs := {};  # Doesn't affect general purpose registers.
@@ -2725,7 +3037,7 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
    arch := ASIMD;
 *V2RM_RG *V2RM
    # Reverse a group of values.
-   baseline := Vector2RegisterMiscellaneous_RG;
+   # TODO(karl): Add vector defs/uses etc.
    # Note: rev_groupsize(op, size) = 1 << (3 - op - size);
    # Uses rev_groupsize since the table generator can't handle non-constant
    # shifts.
@@ -2737,21 +3049,22 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
              Q=1 & (Vd(0)=1 | Vm(0)=1) => UNDEFINED;
 *V2RM_V8_16_32 *V2RM
    # Operates on 8, 16, and 32-bit values.
-   baseline := Vector2RegisterMiscellaneous_V8_16_32;
+   # TODO(karl): Add vector defs/uses etc.
    safety := size=11 => UNDEFINED &
              Q=1 & (Vd(0)=1 | Vm(0)=1) => UNDEFINED;             
 *V2RM_V8_16_32L *V2RM_V8_16_32
    # Operates on 8, 16, and 32-bit values, and the result is twice the
    # length of the operands.
+   # TODO(karl): Add vector defs/uses etc.
    unsigned := (op(0)=1);
 *V2RM_V8 *V2RM
    # Operates on 8-bit values.
-   baseline := Vector2RegisterMiscellaneous_V8;
+   # TODO(karl): Add vector defs/uses etc.
    safety := size=~00 => UNDEFINED &
              Q=1 & (Vd(0)=1 | Vm(0)=1) => UNDEFINED;
 *V2RM_F32 *V2RM
    # Operates on 32-bit floating-point values.
-   baseline := Vector2RegisterMiscellaneous_F32;
+   # TODO(karl): Add vector defs/uses etc.
    safety := Q=1 & (Vd(0)=1 | Vm(0)=1) => UNDEFINED &
              size=~10 => UNDEFINED;
 *V2RM_IF32 *V2RM_F32
@@ -2759,58 +3072,62 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
    floating_point := F=1;
 *V2RM_V8S *V2RM
    # Swaps 8-bit values.
-   baseline := Vector2RegisterMiscellaneous_V8S;
+   # TODO(karl): Add vector defs/uses etc.
    safety := d == m => UNKNOWN &
              size=~00 => UNDEFINED &
              Q=1 & (Vd(0)=1 | Vm(0)=1) => UNDEFINED;
 *V2RM_V8_16_32T *V2RM
    # Transposes vectors of 8, 16, and 32-bit values.
-   baseline := Vector2RegisterMiscellaneous_V8_16_32T;
+   # TODO(karl): Add vector defs/uses etc.
    quadword_operation := Q=1;
    safety := d == m => UNKNOWN &
              size=11 => UNDEFINED &
              Q=1 & (Vd(0)=1 | Vm(0)=1) => UNDEFINED;
 *V2RM_V8_16_32I *V2RM
    # Interleaves vectors of 8, 16, and 32-bit values.
-   baseline := Vector2RegisterMiscellaneous_V8_16_32I;
+   # TODO(karl): Add vector defs/uses etc.
    quadword_operation := Q=1;
    safety := d == m => UNKNOWN &
              size=11 | (Q=0 & size=10) => UNDEFINED &
              Q=1 & (Vd(0)=1 | Vm(0)=1) => UNDEFINED;
 *V2RM_V16_32_64N *V2RM
    # Narrows 16, 32, or 64-bit values.
-   baseline := Vector2RegisterMiscellaneous_V16_32_64N;
+   # TODO(karl): Add vector defs/uses etc.
    safety := size=11 => UNDEFINED &
              Vm(0)=1 => UNDEFINED;
 *V2RM_I8_16_32L *V2RM
    # Vector apply an immediate shift value to 8, 16, or 32-bit value,
    # expanding the result to twice the length of the argument.
-   baseline := Vector2RegisterMiscellaneous_I8_16_32L;
+   # TODO(karl): Add vector defs/uses etc.
    shift_amount := esize;
    safety := size=11 | Vd(0)=1 => UNDEFINED;
 *V2RM_I16_32_64N
    # Narrow  16, 32, or 64-bit signed/unsigned values.
    { D(22), size(19:18), Vd(15:12), op(7:6), M(5), Vm(3:0) }
-   baseline := Vector2RegisterMiscellaneous_I16_32_64N;
+   # TODO(karl): Add vector defs/uses etc.
    src_unsigned := op=11; dest_unsigned := op(0)=1;
    d := D:Vd; m := M:Vm;
+   defs := {};  # Doesn't affect general purpose registers.
+   uses := {};
    safety := op=00 => DECODER_ERROR &
              size=11 | Vm(0)=1 => UNDEFINED;
    arch := ASIMD;
 *V2RM_CVT_H2S
    { D(22), size(19:18), Vd(15:12), op(8), M(5), Vm(3:0) }
    # Convert between half-precision and single-precision.
-   baseline := Vector2RegisterMiscellaneous_CVT_H2S;
+   # TODO(karl): Add vector defs/uses etc.
    half_to_single := op=1;
    esize := 16; elements := 4;
    d := D:Vd; m := M:Vm;
+   defs := {};  # Doesn't affect general purpose registers.
+   uses := {};
    safety := size=~01 => UNDEFINED &
              half_to_single & Vd(0)=1 => UNDEFINED &
              not half_to_single & Vm(0)=1 => UNDEFINED;
    arch := ASIMDhp;
 *V2RM_CVT_F2I *V2RM
    # Convert between floating-point and integer.
-   baseline := Vector2RegisterMiscellaneous_CVT_F2I;
+   # TODO(karl): Add vector defs/uses etc.
    to_integer := op(1)=1; unsigned := op(0)=1;
    safety := Q=1 & (Vd(0)=1 | Vm(0)=1) => UNDEFINED &
              size=~10 => UNDEFINED;
@@ -2927,29 +3244,27 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
 | "        11xxx   = *V2RM_CVT_F2I
                      pattern := 111100111d11ss11dddd011ppqm0mmmm;
                      rule := VCVT;
-| else:            = Undefined
+| else:            = *Undefined
 +--
 
-# TODO(karl): Add uses to corresponding classes.
 +-- simd_dp_1imm (See Section A7.4.6)
 *V1RI
    { i(24), D(22), imm3(18:16), Vd(15:12), cmode(11:8), Q(6), op(5), imm4(3:0) }
-   baseline := Vector1RegisterImmediate;
    imm64 := AdvSIMDExpandImm(op, cmode, i:imm3:imm4);
    d := D:Vd; regs := 1 if Q=0 else 2;
+   # TODO(karl): Add vector defs/uses etc.
+   defs := {};
+   uses := {};
    arch := ASIMD;
 *V1RI_MOV *V1RI
-   baseline := Vector1RegisterImmediate_MOV;
    single_register := false;
    safety := op=0 & cmode(0)=1 & cmode(3:2)=~11 => DECODER_ERROR &
              op=1 & cmode=~1110 => DECODER_ERROR &
              Q=1 & Vd(0)=1 => UNDEFINED;
 *V1RI_BIT *V1RI
-   baseline := Vector1RegisterImmediate_BIT;
    safety := cmode(0)=0 | cmode(3:2)=11 => DECODER_ERROR &
              Q=1 & Vd(0)=1 => UNDEFINED;
 *V1RI_MVN *V1RI
-   baseline := Vector1RegisterImmediate_MVN;
    safety := (cmode(0)=1 & cmode(3:2)=~11) | cmode(3:1)=111 => DECODER_ERROR &
              Q=1 & Vd(0)=1 => UNDEFINED;
 +--
@@ -2987,28 +3302,26 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
 | "     1110        = *V1RI_MOV
                       pattern := 1111001m1d000mmmddddcccc0qp1mmmm;
                       rule := VMOV_immediate_A1;
-| "     1111        = Undefined
+| "     1111        = *Undefined
 +--
 
-# TODO(karl): Add uses to corresponding classes.
 +-- advanced_simd_element_or_structure_load_store_instructions (See Section A7.7)
 *VLSM
    { D(22), Rn(19:16), Vd(15:12), type(11:8), size(7:6), align(5:4), Rm(3:0) }
-   baseline := VectorLoadStoreMultiple;
    alignment := 1 if align=00 else 4 << align;
    ebytes := 1 << size; esize := 8 * ebytes; elements := 8 / ebytes;
    d := D:Vd; n := Rn; m := Rm;
    wback := (m != Pc); register_index := (m != Pc & m != Sp);
    base := n;
+   # TODO(karl): Add vector defs/uses etc.
    # defs ignores FPRs. It only models GPRs and conditions.
    defs := { base } if wback else {};
    # Note: register_index defines if Rm is used (rather than a small constant).
-   small_imm_base_wb := not register_index;
+   small_imm_base_wb := wback & not register_index;
    # uses ignores FPRs. It only models GPRs.
    uses := { m if wback else None , n };
    arch := ASIMD;
 *VLSM1 *VLSM
-   baseline := VectorLoadStoreMultiple1;
    regs := 1 if type=0111 else
            2 if type=1010 else
            3 if type=0110 else
@@ -3020,7 +3333,6 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
              not type in bitset {0111, 1010, 0110, 0010} => DECODER_ERROR &
              n == Pc | d + regs > 32 => UNPREDICTABLE;
 *VLSM2 *VLSM
-   baseline := VectorLoadStoreMultiple2;
    regs := 1 if type in bitset {1000, 1001} else 2;
    inc  := 1 if type=1000 else 2;
    d2 := d + inc;
@@ -3029,7 +3341,6 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
              not type in bitset {1000, 1001, 0011} => DECODER_ERROR &
              n == Pc | d2 + regs > 32 => UNPREDICTABLE;
 *VLSM3 *VLSM
-   baseline := VectorLoadStoreMultiple3;
    inc := 1 if type=0100 else 2;
    alignment := 1 if align(0)=0 else 8;
    d2 := d + inc; d3 := d2 + inc;
@@ -3037,7 +3348,6 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
              not type in bitset {0100, 0101} => DECODER_ERROR &
              n == Pc | d3 > 31 => UNPREDICTABLE;
 *VLSM4 *VLSM
-   baseline := VectorLoadStoreMultiple4;
    inc := 1 if type=0000 else 2;
    d2 := d + inc; d3 := d2 + inc; d4 := d3 + inc;
    safety := size=11 => UNDEFINED &
@@ -3045,7 +3355,6 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
              n == Pc | d4 > 31 => UNPREDICTABLE;
 *VLSS
    { D(22), Rn(19:16), Vd(15:12), size(11:10), index_align(7:4), Rm(3:0) }
-   baseline := VectorLoadStoreSingle;
    ebytes := 1 << size; esize := 8 * ebytes;
    index := index_align(3:1) if size=00 else
             index_align(3:2) if size=01 else
@@ -3058,15 +3367,15 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
    d := D:Vd; n := Rn; m := Rm;
    wback := (m != Pc); register_index := (m != Pc & m != Sp);
    base := n;
+   # TODO(karl): Add vector defs/uses etc.
    # defs ignores FPRs. It only models GPRs and conditions.
    defs := { base } if wback else {};
    # Note: register_index defines if Rm is used (rather than a small constant).
-   small_imm_base_wb := not register_index;
+   small_imm_base_wb := wback & not register_index;
    # uses ignores FPRs. It only models GPRs.
    uses := { m if wback else None , n };
    arch := ASIMD;
 *VLSS1 *VLSS
-   baseline := VectorLoadStoreSingle1;
    alignment := 1 if size=00 else
                 (1 if index_align(0)=0 else 2) if size=01 else
                 (1 if index_align(1:0)=00 else 4) if size=10 else
@@ -3079,7 +3388,6 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
                      & index_align(1:0)=~11 => UNDEFINED &
              n == Pc => UNPREDICTABLE;
 *VLSS2 *VLSS
-   baseline := VectorLoadStoreSingle2;
    alignment := (1 if index_align(0)=0 else 2) if size=00 else
                 (1 if index_align(0)=0 else 4) if size=01 else
                 (1 if index_align(0)=0 else 8) if size=10 else
@@ -3089,7 +3397,6 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
              size=10 & index_align(1)=~0 => UNDEFINED &
              n == Pc | d2 > 31 => UNPREDICTABLE;
 *VLSS3 *VLSS
-   baseline := VectorLoadStoreSingle3;
    alignment := 1;
    d2 := d + inc; d3 := d2 + inc;
    safety := size=11 => UNDEFINED &
@@ -3098,7 +3405,6 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
              size=10 & index_align(1:0)=~00 => UNDEFINED &
              n == Pc | d3 > 31 => UNPREDICTABLE;
 *VLSS4 *VLSS
-   baseline := VectorLoadStoreSingle4;
    d2 := d + inc; d3 := d2 + inc; d4 := d3 + inc;
    alignment := (1 if index_align(0)=0 else 4) if size=00 else
                 (1 if index_align(0)=0 else 8) if size=01 else
@@ -3110,40 +3416,36 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
              n == Pc | d4 > 31 => UNPREDICTABLE;
 *VLSA
    { D(22), Rn(19:16), Vd(15:12), size(7:6), T(5), a(4), Rm(3:0) }
-   baseline := VectorLoadSingleAllLanes;
    ebytes := 1 << size; elements := 8 / ebytes;
    d := D:Vd; n := Rn; m := Rm;
    wback := (m != Pc); register_index := (m != Pc & m != Sp);
    base := n;
+   # TODO(karl): Add vector defs/uses etc.
    # defs ignores FPRs. It only models GPRs and conditions.
    defs := { base } if wback else {};
    # Note: register_index defines if Rm is used (rather than a small constant).
-   small_imm_base_wb := not register_index;
+   small_imm_base_wb := wback & not register_index;
    # uses ignores FPRs. It only models GPRs.
    uses := { m if wback else None , n };
    arch := ASIMD;
 *VLS1A *VLSA
-   baseline := VectorLoadSingle1AllLanes;
    alignment := 1 if a=0 else ebytes;
    regs := 1 if T=0 else 2;
    safety := size=11 | (size=00 & a=1) => UNDEFINED &
              n == Pc | d + regs > 32 => UNPREDICTABLE;
 *VLS2A *VLSA
-   baseline := VectorLoadSingle2AllLanes;
    alignment := 1 if a=0 else 2 * ebytes;
    inc := 1 if T=0 else 2;
    d2 := d + inc;
    safety := size=11 => UNDEFINED &
              n == Pc | d2 > 31 => UNPREDICTABLE;
 *VLS3A *VLSA
-   baseline := VectorLoadSingle3AllLanes;
    inc := 1 if T=0 else 2;
    alignment := 1;
    d2 := d + inc; d3 := d2 + inc;
    safety := size=11 | a=1 => UNDEFINED &
              n == Pc | d3 > 31 => UNPREDICTABLE;
 *VLS4A *VLSA
-   baseline := VectorLoadSingle4AllLanes;
    alignment := 16 if size=11 else
                 (1 if a=0 else 8) if size=10 else
                 (1 if a=0 else 4 * ebytes);
@@ -3227,5 +3529,5 @@ class Vector1RegisterImmediate_MVN : Vector1RegisterImmediate
 | " "     1111    = *VLS4A
                     pattern := 111101001d10nnnndddd1111sstammmm;
                     rule := VLD4_single_4_element_structure_to_all_lanes;
-| else:           = Undefined
+| else:           = *Undefined
 +--

@@ -7,10 +7,13 @@
 
 #include <GLES2/gl2.h>
 
-#include <queue>
-#include "../client/hash_tables.h"
-#include "../common/gles2_cmd_format.h"
+#include <deque>
+#include <list>
+
+#include "base/atomicops.h"
+#include "base/containers/hash_tables.h"
 #include "gles2_impl_export.h"
+#include "gpu/command_buffer/common/gles2_cmd_format.h"
 
 namespace gpu {
 
@@ -26,19 +29,30 @@ class GLES2_IMPL_EXPORT QuerySyncManager {
  public:
   static const size_t kSyncsPerBucket = 4096;
 
+  struct Bucket {
+    explicit Bucket(QuerySync* sync_mem)
+        : syncs(sync_mem),
+          used_query_count(0) {
+    }
+    QuerySync* syncs;
+    unsigned used_query_count;
+  };
   struct QueryInfo {
-    QueryInfo(int32 id, uint32 offset, QuerySync* sync_mem)
-        : shm_id(id),
+    QueryInfo(Bucket* bucket, int32 id, uint32 offset, QuerySync* sync_mem)
+        : bucket(bucket),
+          shm_id(id),
           shm_offset(offset),
           sync(sync_mem) {
     }
 
     QueryInfo()
-        : shm_id(0),
+        : bucket(NULL),
+          shm_id(0),
           shm_offset(0),
           sync(NULL) {
     }
 
+    Bucket* bucket;
     int32 shm_id;
     uint32 shm_offset;
     QuerySync* sync;
@@ -49,11 +63,12 @@ class GLES2_IMPL_EXPORT QuerySyncManager {
 
   bool Alloc(QueryInfo* info);
   void Free(const QueryInfo& sync);
+  void Shrink();
 
  private:
   MappedMemoryManager* mapped_memory_;
-  std::queue<QuerySync*> buckets_;
-  std::queue<QueryInfo> free_queries_;
+  std::deque<Bucket*> buckets_;
+  std::deque<QueryInfo> free_queries_;
 
   DISALLOW_COPY_AND_ASSIGN(QuerySyncManager);
 };
@@ -91,17 +106,16 @@ class GLES2_IMPL_EXPORT QueryTracker {
     void MarkAsActive() {
       state_ = kActive;
       ++submit_count_;
+      if (submit_count_ == INT_MAX)
+        submit_count_ = 1;
     }
 
     void MarkAsPending(int32 token) {
       token_ = token;
       state_ = kPending;
-      flushed_ = false;
     }
 
-    uint32 submit_count() const {
-      return submit_count_;
-    }
+    base::subtle::Atomic32 submit_count() const { return submit_count_; }
 
     int32 token() const {
       return token_;
@@ -130,9 +144,9 @@ class GLES2_IMPL_EXPORT QueryTracker {
     GLenum target_;
     QuerySyncManager::QueryInfo info_;
     State state_;
-    uint32 submit_count_;
+    base::subtle::Atomic32 submit_count_;
     int32 token_;
-    bool flushed_;
+    uint32 flush_count_;
     uint64 client_begin_time_us_; // Only used for latency query target.
     uint32 result_;
   };
@@ -142,12 +156,16 @@ class GLES2_IMPL_EXPORT QueryTracker {
 
   Query* CreateQuery(GLuint id, GLenum target);
   Query* GetQuery(GLuint id);
-  void RemoveQuery(GLuint id, bool context_lost);
+  void RemoveQuery(GLuint id);
+  void Shrink();
+  void FreeCompletedQueries();
 
  private:
-  typedef gpu::hash_map<GLuint, Query*> QueryMap;
+  typedef base::hash_map<GLuint, Query*> QueryMap;
+  typedef std::list<Query*> QueryList;
 
   QueryMap queries_;
+  QueryList removed_queries_;
   QuerySyncManager query_sync_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(QueryTracker);

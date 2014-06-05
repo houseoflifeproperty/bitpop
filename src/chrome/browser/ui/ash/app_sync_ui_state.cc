@@ -4,17 +4,19 @@
 
 #include "chrome/browser/ui/ash/app_sync_ui_state.h"
 
+#include "base/prefs/pref_service.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/pending_extension_manager.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/ash/app_sync_ui_state_factory.h"
 #include "chrome/browser/ui/ash/app_sync_ui_state_observer.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_source.h"
+#include "extensions/browser/extension_system.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/login/user_manager.h"
@@ -44,9 +46,7 @@ bool AppSyncUIState::ShouldObserveAppSyncForProfile(Profile* profile) {
   if (!ProfileSyncServiceFactory::HasProfileSyncService(profile))
     return false;
 
-  const bool is_new_profile = profile->GetPrefs()->GetInitializationStatus() ==
-      PrefService::INITIALIZATION_STATUS_CREATED_NEW_PROFILE;
-  return is_new_profile;
+  return profile->IsNewProfile();
 #else
   return false;
 #endif
@@ -76,7 +76,7 @@ void AppSyncUIState::StartObserving() {
   DCHECK(!sync_service_);
 
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_LOADED,
+                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                  content::Source<Profile>(profile_));
 
   sync_service_ = ProfileSyncServiceFactory::GetForProfile(profile_);
@@ -140,7 +140,7 @@ void AppSyncUIState::OnMaxSyncingTimer() {
 void AppSyncUIState::Observe(int type,
                              const content::NotificationSource& source,
                              const content::NotificationDetails& details) {
-  DCHECK_EQ(chrome::NOTIFICATION_EXTENSION_LOADED, type);
+  DCHECK_EQ(chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED, type);
   CheckAppSync();
 }
 

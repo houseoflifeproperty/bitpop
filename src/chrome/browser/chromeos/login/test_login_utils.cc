@@ -5,6 +5,7 @@
 #include "chrome/browser/chromeos/login/test_login_utils.h"
 
 #include "chrome/browser/chromeos/login/mock_authenticator.h"
+#include "chrome/browser/chromeos/login/user.h"
 
 namespace chromeos {
 
@@ -17,14 +18,13 @@ TestLoginUtils::TestLoginUtils(const std::string& expected_username,
 TestLoginUtils::~TestLoginUtils() {}
 
 void TestLoginUtils::PrepareProfile(
-    const std::string& username,
+    const UserContext& credentials,
     const std::string& display_email,
-    const std::string& password,
-    bool using_oauth,
     bool has_cookies,
+    bool has_active_session,
     Delegate* delegate) {
-  DCHECK_EQ(expected_username_, username);
-  DCHECK_EQ(expected_password_, password);
+  DCHECK_EQ(expected_username_, credentials.username);
+  DCHECK_EQ(expected_password_, credentials.password);
   // Profile hasn't been loaded.
   delegate->OnProfilePrepared(NULL);
 }
@@ -38,17 +38,7 @@ scoped_refptr<Authenticator> TestLoginUtils::CreateAuthenticator(
       consumer, expected_username_, expected_password_);
 }
 
-std::string TestLoginUtils::GetOffTheRecordCommandLine(
-    const GURL& start_url,
-    const CommandLine& base_command_line,
-    CommandLine* command_line) {
-  return std::string();
-}
-
 void TestLoginUtils::InitRlzDelayed(Profile* user_profile) {
-}
-
-void TestLoginUtils::StopBackgroundFetchers() {
 }
 
 }  // namespace chromeos

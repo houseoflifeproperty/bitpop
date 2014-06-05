@@ -18,7 +18,6 @@ BUILD_TOOLS_DIR = os.path.dirname(SCRIPT_DIR)
 TOOLS_DIR = os.path.join(os.path.dirname(BUILD_TOOLS_DIR), 'tools')
 
 sys.path.extend([BUILD_TOOLS_DIR, TOOLS_DIR])
-import build_utils
 import getos
 import manifest_util
 import oshelpers
@@ -40,13 +39,15 @@ class SdkToolsTestCase(unittest.TestCase):
 
   def SetupWithBaseDirPrefix(self, basedir_prefix, tmpdir=None):
     self.basedir = tempfile.mkdtemp(prefix=basedir_prefix, dir=tmpdir)
+    self.cache_dir = os.path.join(self.basedir, 'nacl_sdk', 'sdk_cache')
     # We have to make sure that we build our updaters with a version that is at
     # least as large as the version in the sdk_tools bundle. If not, update
     # tests may fail because the "current" version (according to the sdk_cache)
     # is greater than the version we are attempting to update to.
     self.current_revision = self._GetSdkToolsBundleRevision()
     self._BuildUpdater(self.basedir, self.current_revision)
-    self._LoadCacheManifest()
+    self.manifest = self._ReadCacheManifest()
+    self.sdk_tools_bundle = self.manifest.GetBundle('sdk_tools')
     self.server = test_server.LocalHTTPServer(self.basedir)
 
   def _GetSdkToolsBundleRevision(self):
@@ -60,26 +61,27 @@ class SdkToolsTestCase(unittest.TestCase):
     manifest.LoadDataFromString(open(manifest_filename, 'r').read())
     return manifest.GetBundle('sdk_tools').revision
 
-  def _LoadCacheManifest(self):
-    """Read the manifest from nacl_sdk/sdk_cache.
-
-    This manifest should only contain the sdk_tools bundle.
-    """
-    manifest_filename = os.path.join(self.basedir, 'nacl_sdk', 'sdk_cache',
-        MANIFEST_BASENAME)
-    self.manifest = manifest_util.SDKManifest()
-    self.manifest.LoadDataFromString(open(manifest_filename).read())
-    self.sdk_tools_bundle = self.manifest.GetBundle('sdk_tools')
+  def _WriteConfig(self, config_data):
+    config_filename = os.path.join(self.cache_dir, 'naclsdk_config.json')
+    with open(config_filename, 'w') as stream:
+      stream.write(config_data)
 
   def _WriteCacheManifest(self, manifest):
     """Write the manifest at nacl_sdk/sdk_cache.
 
     This is useful for faking having installed a bundle.
     """
-    manifest_filename = os.path.join(self.basedir, 'nacl_sdk', 'sdk_cache',
-        MANIFEST_BASENAME)
+    manifest_filename = os.path.join(self.cache_dir, MANIFEST_BASENAME)
     with open(manifest_filename, 'w') as stream:
       stream.write(manifest.GetDataAsString())
+
+  def _ReadCacheManifest(self):
+    """Read the manifest at nacl_sdk/sdk_cache."""
+    manifest_filename = os.path.join(self.cache_dir, MANIFEST_BASENAME)
+    manifest = manifest_util.SDKManifest()
+    with open(manifest_filename) as stream:
+      manifest.LoadDataFromString(stream.read())
+    return manifest
 
   def _WriteManifest(self):
     with open(os.path.join(self.basedir, MANIFEST_BASENAME), 'w') as stream:
@@ -118,7 +120,7 @@ class SdkToolsTestCase(unittest.TestCase):
     archive.size = archive_size
     return archive
 
-  def _Run(self, args):
+  def _Run(self, args, expect_error=False):
     naclsdk_shell_script = os.path.join(self.basedir, 'nacl_sdk', 'naclsdk')
     if getos.GetPlatform() == 'win':
       naclsdk_shell_script += '.bat'
@@ -127,11 +129,11 @@ class SdkToolsTestCase(unittest.TestCase):
     cmd.extend(['-U', self.server.GetURL(MANIFEST_BASENAME)])
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     stdout, _ = process.communicate()
-    try:
-      self.assertEqual(process.returncode, 0)
-    except Exception:
-      print stdout
-      raise
+
+    if ((expect_error and process.returncode == 0) or
+        (not expect_error and process.returncode != 0)):
+      self.fail('Error running nacl_sdk:\n"""\n%s\n"""' % stdout)
+
     return stdout
 
   def _RunAndExtractRevision(self):
@@ -190,6 +192,7 @@ class TestAutoUpdateSdkTools(SdkToolsTestCase):
     """Test that running naclsdk with a new revision will auto-update."""
     new_revision = self.current_revision + 1
     archive = self._BuildUpdaterArchive('new', new_revision)
+    self.sdk_tools_bundle.RemoveAllArchivesForHostOS(archive.host_os)
     self.sdk_tools_bundle.AddArchive(archive)
     self.sdk_tools_bundle.revision = new_revision
     self._WriteManifest()
@@ -206,6 +209,7 @@ class TestAutoUpdateSdkTools(SdkToolsTestCase):
     """
     new_revision = self.current_revision + 1
     archive = self._BuildUpdaterArchive('new', new_revision)
+    self.sdk_tools_bundle.RemoveAllArchivesForHostOS(archive.host_os)
     self.sdk_tools_bundle.AddArchive(archive)
     self.sdk_tools_bundle.revision = new_revision
     self._WriteManifest()
@@ -216,6 +220,15 @@ class TestAutoUpdateSdkTools(SdkToolsTestCase):
     stdout = self._Run(['update', 'sdk_tools'])
     self.assertTrue(stdout.find('Ignoring manual update request.') != -1)
     self.assertFalse(os.path.exists(sdk_tools_update_dir))
+
+  def testHelpCommand(self):
+    """Running naclsdk with -h should work.
+
+    This is a regression test for a bug where the auto-updater would remove the
+    sdk_tools directory when running "naclsdk -h".
+    """
+    self._WriteManifest()
+    self._Run(['-h'])
 
 
 class TestAutoUpdateSdkToolsDifferentFilesystem(TestAutoUpdateSdkTools):

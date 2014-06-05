@@ -13,6 +13,7 @@
 #include "base/logging.h"
 #import "base/mac/foundation_util.h"
 #import "base/mac/scoped_nsautorelease_pool.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "chrome/common/chrome_constants.h"
 
@@ -23,7 +24,7 @@
 namespace {
 
 #if !defined(OS_IOS)
-const FilePath* g_override_versioned_directory = NULL;
+const base::FilePath* g_override_versioned_directory = NULL;
 
 // Return a retained (NOT autoreleased) NSBundle* as the internal
 // implementation of chrome::OuterAppBundle(), which should be the only
@@ -42,8 +43,8 @@ NSBundle* OuterAppBundleInternal() {
   }
 
   // From C.app/Contents/Versions/1.2.3.4, go up three steps to get to C.app.
-  FilePath versioned_dir = chrome::GetVersionedDirectory();
-  FilePath outer_app_dir = versioned_dir.DirName().DirName().DirName();
+  base::FilePath versioned_dir = chrome::GetVersionedDirectory();
+  base::FilePath outer_app_dir = versioned_dir.DirName().DirName().DirName();
   const char* outer_app_dir_c = outer_app_dir.value().c_str();
   NSString* outer_app_dir_ns = [NSString stringWithUTF8String:outer_app_dir_c];
 
@@ -51,24 +52,16 @@ NSBundle* OuterAppBundleInternal() {
 }
 #endif  // !defined(OS_IOS)
 
-const char* ProductDirNameInternal() {
+char* ProductDirNameForBundle(NSBundle* chrome_bundle) {
   const char* product_dir_name = NULL;
 #if !defined(OS_IOS)
   base::mac::ScopedNSAutoreleasePool pool;
 
-  // Use OuterAppBundle() to get the main app's bundle. This key needs to live
-  // in the main app's bundle because it will be set differently on the canary
-  // channel, and the autoupdate system dictates that there can be no
-  // differences between channels within the versioned directory. This would
-  // normally use base::mac::FrameworkBundle(), but that references the
-  // framework bundle within the versioned directory. Ordinarily, the profile
-  // should not be accessed from non-browser processes, but those processes do
-  // attempt to get the profile directory, so direct them to look in the outer
-  // browser .app's Info.plist for the CrProductDirName key.
-  NSBundle* bundle = chrome::OuterAppBundle();
   NSString* product_dir_name_ns =
-      [bundle objectForInfoDictionaryKey:@"CrProductDirName"];
+      [chrome_bundle objectForInfoDictionaryKey:@"CrProductDirName"];
   product_dir_name = [product_dir_name_ns fileSystemRepresentation];
+#else
+  DCHECK(!chrome_bundle);
 #endif
 
   if (!product_dir_name) {
@@ -92,28 +85,48 @@ const char* ProductDirNameInternal() {
 // official canary channel, the Info.plist will have CrProductDirName set
 // to "Google/Chrome Canary".
 std::string ProductDirName() {
-  static const char* product_dir_name = ProductDirNameInternal();
+#if defined(OS_IOS)
+  static const char* product_dir_name = ProductDirNameForBundle(nil);
+#else
+  // Use OuterAppBundle() to get the main app's bundle. This key needs to live
+  // in the main app's bundle because it will be set differently on the canary
+  // channel, and the autoupdate system dictates that there can be no
+  // differences between channels within the versioned directory. This would
+  // normally use base::mac::FrameworkBundle(), but that references the
+  // framework bundle within the versioned directory. Ordinarily, the profile
+  // should not be accessed from non-browser processes, but those processes do
+  // attempt to get the profile directory, so direct them to look in the outer
+  // browser .app's Info.plist for the CrProductDirName key.
+  static const char* product_dir_name =
+      ProductDirNameForBundle(chrome::OuterAppBundle());
+#endif
   return std::string(product_dir_name);
+}
+
+bool GetDefaultUserDataDirectoryForProduct(const std::string& product_dir,
+                                           base::FilePath* result) {
+  bool success = false;
+  if (result && PathService::Get(base::DIR_APP_DATA, result)) {
+    *result = result->Append(product_dir);
+    success = true;
+  }
+  return success;
 }
 
 }  // namespace
 
 namespace chrome {
 
-bool GetDefaultUserDataDirectory(FilePath* result) {
-  bool success = false;
-  if (result && PathService::Get(base::DIR_APP_DATA, result)) {
-    *result = result->Append(ProductDirName());
-    success = true;
-  }
-  return success;
+bool GetDefaultUserDataDirectory(base::FilePath* result) {
+  return GetDefaultUserDataDirectoryForProduct(ProductDirName(), result);
 }
 
-bool GetUserDocumentsDirectory(FilePath* result) {
+bool GetUserDocumentsDirectory(base::FilePath* result) {
   return base::mac::GetUserDirectory(NSDocumentDirectory, result);
 }
 
-void GetUserCacheDirectory(const FilePath& profile_dir, FilePath* result) {
+void GetUserCacheDirectory(const base::FilePath& profile_dir,
+                           base::FilePath* result) {
   // If the profile directory is under ~/Library/Application Support,
   // use a suitable cache directory under ~/Library/Caches.  For
   // example, a profile directory of ~/Library/Application
@@ -123,10 +136,10 @@ void GetUserCacheDirectory(const FilePath& profile_dir, FilePath* result) {
   // Default value in cases where any of the following fails.
   *result = profile_dir;
 
-  FilePath app_data_dir;
+  base::FilePath app_data_dir;
   if (!PathService::Get(base::DIR_APP_DATA, &app_data_dir))
     return;
-  FilePath cache_dir;
+  base::FilePath cache_dir;
   if (!PathService::Get(base::DIR_CACHE, &cache_dir))
     return;
   if (!app_data_dir.AppendRelativePath(profile_dir, &cache_dir))
@@ -135,30 +148,30 @@ void GetUserCacheDirectory(const FilePath& profile_dir, FilePath* result) {
   *result = cache_dir;
 }
 
-bool GetUserDownloadsDirectory(FilePath* result) {
+bool GetUserDownloadsDirectory(base::FilePath* result) {
   return base::mac::GetUserDirectory(NSDownloadsDirectory, result);
 }
 
-bool GetUserMusicDirectory(FilePath* result) {
+bool GetUserMusicDirectory(base::FilePath* result) {
   return base::mac::GetUserDirectory(NSMusicDirectory, result);
 }
 
-bool GetUserPicturesDirectory(FilePath* result) {
+bool GetUserPicturesDirectory(base::FilePath* result) {
   return base::mac::GetUserDirectory(NSPicturesDirectory, result);
 }
 
-bool GetUserVideosDirectory(FilePath* result) {
+bool GetUserVideosDirectory(base::FilePath* result) {
   return base::mac::GetUserDirectory(NSMoviesDirectory, result);
 }
 
 #if !defined(OS_IOS)
 
-FilePath GetVersionedDirectory() {
+base::FilePath GetVersionedDirectory() {
   if (g_override_versioned_directory)
     return *g_override_versioned_directory;
 
   // Start out with the path to the running executable.
-  FilePath path;
+  base::FilePath path;
   PathService::Get(base::FILE_EXE, &path);
 
   // One step up to MacOS, another to Contents.
@@ -179,14 +192,14 @@ FilePath GetVersionedDirectory() {
   return path;
 }
 
-void SetOverrideVersionedDirectory(const FilePath* path) {
+void SetOverrideVersionedDirectory(const base::FilePath* path) {
   if (path != g_override_versioned_directory) {
     delete g_override_versioned_directory;
     g_override_versioned_directory = path;
   }
 }
 
-FilePath GetFrameworkBundlePath() {
+base::FilePath GetFrameworkBundlePath() {
   // It's tempting to use +[NSBundle bundleWithIdentifier:], but it's really
   // slow (about 30ms on 10.5 and 10.6), despite Apple's documentation stating
   // that it may be more efficient than +bundleForClass:.  +bundleForClass:
@@ -202,11 +215,19 @@ FilePath GetFrameworkBundlePath() {
   return GetVersionedDirectory().Append(kFrameworkName);
 }
 
-bool GetLocalLibraryDirectory(FilePath* result) {
+bool GetLocalLibraryDirectory(base::FilePath* result) {
   return base::mac::GetLocalDirectory(NSLibraryDirectory, result);
 }
 
-bool GetGlobalApplicationSupportDirectory(FilePath* result) {
+bool GetUserLibraryDirectory(base::FilePath* result) {
+  return base::mac::GetUserDirectory(NSLibraryDirectory, result);
+}
+
+bool GetUserApplicationsDirectory(base::FilePath* result) {
+  return base::mac::GetUserDirectory(NSApplicationDirectory, result);
+}
+
+bool GetGlobalApplicationSupportDirectory(base::FilePath* result) {
   return base::mac::GetLocalDirectory(NSApplicationSupportDirectory, result);
 }
 
@@ -215,6 +236,13 @@ NSBundle* OuterAppBundle() {
   // to OuterAppBundleInternal().
   static NSBundle* bundle = OuterAppBundleInternal();
   return bundle;
+}
+
+bool GetUserDataDirectoryForBrowserBundle(NSBundle* bundle,
+                                          base::FilePath* result) {
+  scoped_ptr<char, base::FreeDeleter>
+      product_dir_name(ProductDirNameForBundle(bundle));
+  return GetDefaultUserDataDirectoryForProduct(product_dir_name.get(), result);
 }
 
 #endif  // !defined(OS_IOS)

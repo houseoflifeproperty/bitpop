@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2012 Justin Ruggles <justin.ruggles@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -62,7 +62,7 @@ int ff_audio_data_set_channels(AudioData *a, int channels)
     return 0;
 }
 
-int ff_audio_data_init(AudioData *a, void **src, int plane_size, int channels,
+int ff_audio_data_init(AudioData *a, uint8_t **src, int plane_size, int channels,
                        int nb_samples, enum AVSampleFormat sample_fmt,
                        int read_only, const char *name)
 {
@@ -213,13 +213,18 @@ void ff_audio_data_free(AudioData **a)
     av_freep(a);
 }
 
-int ff_audio_data_copy(AudioData *dst, AudioData *src)
+int ff_audio_data_copy(AudioData *dst, AudioData *src, ChannelMapInfo *map)
 {
     int ret, p;
 
     /* validate input/output compatibility */
     if (dst->sample_fmt != src->sample_fmt || dst->channels < src->channels)
         return AVERROR(EINVAL);
+
+    if (map && !src->is_planar) {
+        av_log(src, AV_LOG_ERROR, "cannot remap packed format during copy\n");
+        return AVERROR(EINVAL);
+    }
 
     /* if the input is empty, just empty the output */
     if (!src->nb_samples) {
@@ -233,8 +238,29 @@ int ff_audio_data_copy(AudioData *dst, AudioData *src)
         return ret;
 
     /* copy data */
-    for (p = 0; p < src->planes; p++)
-        memcpy(dst->data[p], src->data[p], src->nb_samples * src->stride);
+    if (map) {
+        if (map->do_remap) {
+            for (p = 0; p < src->planes; p++) {
+                if (map->channel_map[p] >= 0)
+                    memcpy(dst->data[p], src->data[map->channel_map[p]],
+                           src->nb_samples * src->stride);
+            }
+        }
+        if (map->do_copy || map->do_zero) {
+            for (p = 0; p < src->planes; p++) {
+                if (map->channel_copy[p])
+                    memcpy(dst->data[p], dst->data[map->channel_copy[p]],
+                           src->nb_samples * src->stride);
+                else if (map->channel_zero[p])
+                    av_samples_set_silence(&dst->data[p], 0, src->nb_samples,
+                                           1, dst->sample_fmt);
+            }
+        }
+    } else {
+        for (p = 0; p < src->planes; p++)
+            memcpy(dst->data[p], src->data[p], src->nb_samples * src->stride);
+    }
+
     dst->nb_samples = src->nb_samples;
 
     return 0;

@@ -6,8 +6,9 @@
 #define IPC_IPC_PLATFORM_FILE_H_
 
 #include "base/basictypes.h"
+#include "base/files/file.h"
 #include "base/platform_file.h"
-#include "base/process.h"
+#include "base/process/process.h"
 #include "ipc/ipc_export.h"
 
 #if defined(OS_POSIX)
@@ -39,11 +40,26 @@ inline base::PlatformFile PlatformFileForTransitToPlatformFile(
 #endif
 }
 
+inline base::File PlatformFileForTransitToFile(
+    const PlatformFileForTransit& transit) {
+#if defined(OS_WIN)
+  return base::File(transit);
+#elif defined(OS_POSIX)
+  return base::File(transit.fd);
+#endif
+}
+
 // Returns a file handle equivalent to |file| that can be used in |process|.
 IPC_EXPORT PlatformFileForTransit GetFileHandleForProcess(
     base::PlatformFile file,
     base::ProcessHandle process,
     bool close_source_handle);
+
+// Returns a file handle equivalent to |file| that can be used in |process|.
+// Note that this function takes ownership of |file|.
+IPC_EXPORT PlatformFileForTransit TakeFileHandleForProcess(
+    base::File file,
+    base::ProcessHandle process);
 
 }  // namespace IPC
 

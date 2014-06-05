@@ -10,7 +10,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/ssl/ssl_client_auth_observer.h"
 #include "chrome/browser/ssl/ssl_client_certificate_selector.h"
 #include "ui/views/controls/button/button.h"
@@ -28,12 +28,12 @@ class X509Certificate;
 }
 
 namespace views {
+class LabelButton;
 class TableView;
-class TextButton;
+class Widget;
 }
 
 class CertificateSelectorTableModel;
-class ConstrainedWindow;
 
 class SSLClientCertificateSelector : public SSLClientAuthObserver,
                                      public views::DialogDelegateView,
@@ -56,14 +56,13 @@ class SSLClientCertificateSelector : public SSLClientAuthObserver,
 
   // DialogDelegateView:
   virtual bool CanResize() const OVERRIDE;
-  virtual string16 GetWindowTitle() const OVERRIDE;
+  virtual base::string16 GetWindowTitle() const OVERRIDE;
   virtual void DeleteDelegate() OVERRIDE;
   virtual bool IsDialogButtonEnabled(ui::DialogButton button) const OVERRIDE;
   virtual bool Cancel() OVERRIDE;
   virtual bool Accept() OVERRIDE;
   virtual views::View* GetInitiallyFocusedView() OVERRIDE;
-  virtual views::View* GetContentsView() OVERRIDE;
-  virtual views::View* GetExtraView() OVERRIDE;
+  virtual views::View* CreateExtraView() OVERRIDE;
   virtual ui::ModalType GetModalType() const OVERRIDE;
 
   // views::ButtonListener:
@@ -76,16 +75,17 @@ class SSLClientCertificateSelector : public SSLClientAuthObserver,
 
  private:
   void CreateCertTable();
-  void CreateViewCertButton();
+
+  // Callback after unlocking certificate slot.
+  void Unlocked(net::X509Certificate* cert);
 
   scoped_ptr<CertificateSelectorTableModel> model_;
 
   content::WebContents* web_contents_;
 
-  ConstrainedWindow* window_;
+  views::Widget* window_;
   views::TableView* table_;
-  views::TextButton* view_cert_button_;
-  views::View* view_cert_button_container_;
+  views::LabelButton* view_cert_button_;
 
   DISALLOW_COPY_AND_ASSIGN(SSLClientCertificateSelector);
 };

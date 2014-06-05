@@ -4,8 +4,8 @@
 
 #include <string>
 
-#include "base/time.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/time/time.h"
 #include "chrome/browser/performance_monitor/metric.h"
 #include "chrome/browser/ui/webui/performance_monitor/performance_monitor_ui_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -42,7 +42,7 @@ class PerformanceMonitorUtilTest : public ::testing::Test {
         break;
       default:
         NOTREACHED();
-        return scoped_ptr<Database::MetricVector>(NULL);
+        return scoped_ptr<Database::MetricVector>();
     }
     return aggregator->AggregateInterval(
         type, &metric, metrics->end(), start, kMaxTime, resolution);

@@ -10,25 +10,21 @@
 
 #include "base/command_line.h"
 #include "base/i18n/rtl.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/permissions/permission_set.h"
-#include "content/public/browser/browser_thread.h"
-#include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/permissions/permission_set.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-
-using content::NavigationController;
 
 namespace extensions {
 
@@ -45,14 +41,14 @@ AutoApproveForTest g_auto_approve_for_test = DO_NOT_SKIP;
 // Creates a dummy extension and sets the manifest's name to the item's
 // localized name.
 scoped_refptr<Extension> CreateDummyExtension(const BundleInstaller::Item& item,
-                                              DictionaryValue* manifest) {
+                                              base::DictionaryValue* manifest) {
   // We require localized names so we can have nice error messages when we can't
   // parse an extension manifest.
   CHECK(!item.localized_name.empty());
 
   std::string error;
-  return Extension::Create(FilePath(),
-                           Extension::INTERNAL,
+  return Extension::Create(base::FilePath(),
+                           Manifest::INTERNAL,
                            *manifest,
                            Extension::NO_FLAGS,
                            item.id,
@@ -97,8 +93,8 @@ void BundleInstaller::SetAutoApproveForTesting(bool auto_approve) {
 
 BundleInstaller::Item::Item() : state(STATE_PENDING) {}
 
-string16 BundleInstaller::Item::GetNameForDisplay() {
-  string16 name = UTF8ToUTF16(localized_name);
+base::string16 BundleInstaller::Item::GetNameForDisplay() {
+  base::string16 name = base::UTF8ToUTF16(localized_name);
   base::i18n::AdjustStringForLocaleDirection(&name);
   return l10n_util::GetStringFUTF16(IDS_EXTENSION_PERMISSION_LINE, name);
 }
@@ -137,7 +133,7 @@ void BundleInstaller::PromptForApproval(Delegate* delegate) {
   ParseManifests();
 }
 
-void BundleInstaller::CompleteInstall(NavigationController* controller,
+void BundleInstaller::CompleteInstall(content::WebContents* web_contents,
                                       Delegate* delegate) {
   CHECK(approved_);
 
@@ -162,28 +158,28 @@ void BundleInstaller::CompleteInstall(NavigationController* controller,
             profile_,
             i->first,
             scoped_ptr<base::DictionaryValue>(
-                parsed_manifests_[i->first]->DeepCopy())));
+                parsed_manifests_[i->first]->DeepCopy()), true));
     approval->use_app_installed_bubble = false;
     approval->skip_post_install_ui = true;
 
     scoped_refptr<WebstoreInstaller> installer = new WebstoreInstaller(
         profile_,
         this,
-        controller,
+        web_contents,
         i->first,
         approval.Pass(),
-        WebstoreInstaller::FLAG_NONE);
+        WebstoreInstaller::INSTALL_SOURCE_OTHER);
     installer->Start();
   }
 }
 
-string16 BundleInstaller::GetHeadingTextFor(Item::State state) const {
+base::string16 BundleInstaller::GetHeadingTextFor(Item::State state) const {
   // For STATE_FAILED, we can't tell if the items were apps or extensions
   // so we always show the same message.
   if (state == Item::STATE_FAILED) {
     if (GetItemsWithState(state).size())
       return l10n_util::GetStringUTF16(IDS_EXTENSION_BUNDLE_ERROR_HEADING);
-    return string16();
+    return base::string16();
   }
 
   size_t total = GetItemsWithState(state).size();
@@ -199,7 +195,7 @@ string16 BundleInstaller::GetHeadingTextFor(Item::State state) const {
 
   int msg_id = kHeadingIds[state][index];
   if (!msg_id)
-    return string16();
+    return base::string16();
 
   return l10n_util::GetStringUTF16(msg_id);
 }
@@ -216,7 +212,7 @@ void BundleInstaller::ParseManifests() {
 
   for (ItemMap::iterator i = items_.begin(); i != items_.end(); ++i) {
     scoped_refptr<WebstoreInstallHelper> helper = new WebstoreInstallHelper(
-        this, i->first, i->second.manifest, "", GURL(), NULL);
+        this, i->first, i->second.manifest, std::string(), GURL(), NULL);
     helper->Start();
   }
 }
@@ -261,7 +257,8 @@ void BundleInstaller::ShowPrompt() {
   scoped_refptr<PermissionSet> permissions;
   for (size_t i = 0; i < dummy_extensions_.size(); ++i) {
     permissions = PermissionSet::CreateUnion(
-          permissions, dummy_extensions_[i]->required_permission_set());
+        permissions.get(),
+        PermissionsData::GetRequiredPermissions(dummy_extensions_[i].get()));
   }
 
   if (g_auto_approve_for_test == PROCEED) {
@@ -279,7 +276,7 @@ void BundleInstaller::ShowPrompt() {
     if (browser)
       web_contents = browser->tab_strip_model()->GetActiveWebContents();
     install_ui_.reset(new ExtensionInstallPrompt(web_contents));
-    install_ui_->ConfirmBundleInstall(this, permissions);
+    install_ui_->ConfirmBundleInstall(this, permissions.get());
   }
 }
 
@@ -297,9 +294,9 @@ void BundleInstaller::ShowInstalledBubbleIfDone() {
 void BundleInstaller::OnWebstoreParseSuccess(
     const std::string& id,
     const SkBitmap& icon,
-    DictionaryValue* manifest) {
+    base::DictionaryValue* manifest) {
   dummy_extensions_.push_back(CreateDummyExtension(items_[id], manifest));
-  parsed_manifests_[id] = linked_ptr<DictionaryValue>(manifest);
+  parsed_manifests_[id] = linked_ptr<base::DictionaryValue>(manifest);
 
   ShowPromptIfDoneParsing();
 }

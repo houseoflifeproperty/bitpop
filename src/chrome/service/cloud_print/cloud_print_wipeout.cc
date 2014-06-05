@@ -38,8 +38,9 @@ void CloudPrintWipeout::UnregisterNextPrinter() {
   GURL url = GetUrlForPrinterDelete(cloud_print_server_url_,
                                     printer_id,
                                     "connector_disabled");
-  request_ = new CloudPrintURLFetcher;
-  request_->StartGetRequest(url, this, kMaxWipeoutAttempts, std::string());
+  request_ = CloudPrintURLFetcher::Create();
+  request_->StartGetRequest(CloudPrintURLFetcher::REQUEST_UNREGISTER,
+                            url, this, kMaxWipeoutAttempts, std::string());
 }
 
 CloudPrintURLFetcher::ResponseAction CloudPrintWipeout::HandleJSONData(
@@ -47,7 +48,7 @@ CloudPrintURLFetcher::ResponseAction CloudPrintWipeout::HandleJSONData(
     const GURL& url,
     base::DictionaryValue* json_data,
     bool succeeded) {
-  // We don't care if delete was sucessful or not here.
+  // We don't care if delete was successful or not here.
   UnregisterNextPrinter();
   return CloudPrintURLFetcher::STOP_PROCESSING;
 }
@@ -57,7 +58,7 @@ void CloudPrintWipeout::OnRequestGiveUp() {
 }
 
 CloudPrintURLFetcher::ResponseAction CloudPrintWipeout::OnRequestAuthError() {
-  // We can't recover from auth rrror. Report complition to stop service.
+  // We can't recover from auth error. Report completion to stop service.
   client_->OnUnregisterPrintersComplete();
   return CloudPrintURLFetcher::STOP_PROCESSING;
 }

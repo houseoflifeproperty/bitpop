@@ -22,36 +22,21 @@
 #include <opus.h>
 #include <opus_multistream.h>
 
-#include "libavutil/common.h"
 #include "libavutil/avassert.h"
 #include "libavutil/intreadwrite.h"
 #include "avcodec.h"
 #include "internal.h"
 #include "vorbis.h"
 #include "mathops.h"
+#include "libopus.h"
 
 struct libopus_context {
     OpusMSDecoder *dec;
-    AVFrame frame;
     int pre_skip;
 #ifndef OPUS_SET_GAIN
     union { int i; double d; } gain;
 #endif
 };
-
-static int opus_error_to_averror(int err)
-{
-    switch (err) {
-        case OPUS_BAD_ARG:          return AVERROR(EINVAL);
-        case OPUS_BUFFER_TOO_SMALL: return AVERROR_BUFFER_TOO_SMALL;
-        case OPUS_INTERNAL_ERROR:   return AVERROR(EFAULT);
-        case OPUS_INVALID_PACKET:   return AVERROR_INVALIDDATA;
-        case OPUS_UNIMPLEMENTED:    return AVERROR(ENOSYS);
-        case OPUS_INVALID_STATE:    return AVERROR_EXTERNAL;
-        case OPUS_ALLOC_FAIL:       return AVERROR(ENOMEM);
-        default:                    return AVERROR(EINVAL);
-    }
-}
 
 #define OPUS_HEAD_SIZE 19
 
@@ -105,7 +90,7 @@ static av_cold int libopus_decode_init(AVCodecContext *avc)
     if (!opus->dec) {
         av_log(avc, AV_LOG_ERROR, "Unable to create decoder: %s\n",
                opus_strerror(ret));
-        return opus_error_to_averror(ret);
+        return ff_opus_error_to_averror(ret);
     }
 
 #ifdef OPUS_SET_GAIN
@@ -125,8 +110,7 @@ static av_cold int libopus_decode_init(AVCodecContext *avc)
 
     avc->internal->skip_samples = opus->pre_skip;
     avc->delay = 3840;  /* Decoder delay (in samples) at 48kHz */
-    avcodec_get_frame_defaults(&opus->frame);
-    avc->coded_frame = &opus->frame;
+
     return 0;
 }
 
@@ -140,52 +124,50 @@ static av_cold int libopus_decode_close(AVCodecContext *avc)
 
 #define MAX_FRAME_SIZE (960 * 6)
 
-static int libopus_decode(AVCodecContext *avc, void *frame,
+static int libopus_decode(AVCodecContext *avc, void *data,
                           int *got_frame_ptr, AVPacket *pkt)
 {
     struct libopus_context *opus = avc->priv_data;
+    AVFrame *frame               = data;
     int ret, nb_samples;
 
-    opus->frame.nb_samples = MAX_FRAME_SIZE;
-    ret = avc->get_buffer(avc, &opus->frame);
-    if (ret < 0) {
-        av_log(avc, AV_LOG_ERROR, "get_buffer() failed\n");
+    frame->nb_samples = MAX_FRAME_SIZE;
+    if ((ret = ff_get_buffer(avc, frame, 0)) < 0)
         return ret;
-    }
 
     if (avc->sample_fmt == AV_SAMPLE_FMT_S16)
         nb_samples = opus_multistream_decode(opus->dec, pkt->data, pkt->size,
-                                             (opus_int16 *)opus->frame.data[0],
-                                             opus->frame.nb_samples, 0);
+                                             (opus_int16 *)frame->data[0],
+                                             frame->nb_samples, 0);
     else
         nb_samples = opus_multistream_decode_float(opus->dec, pkt->data, pkt->size,
-                                                   (float *)opus->frame.data[0],
-                                                   opus->frame.nb_samples, 0);
+                                                   (float *)frame->data[0],
+                                                   frame->nb_samples, 0);
 
     if (nb_samples < 0) {
         av_log(avc, AV_LOG_ERROR, "Decoding error: %s\n",
                opus_strerror(nb_samples));
-        return opus_error_to_averror(nb_samples);
+        return ff_opus_error_to_averror(nb_samples);
     }
 
 #ifndef OPUS_SET_GAIN
     {
         int i = avc->channels * nb_samples;
         if (avc->sample_fmt == AV_SAMPLE_FMT_FLT) {
-            float *pcm = (float *)opus->frame.data[0];
+            float *pcm = (float *)frame->data[0];
             for (; i > 0; i--, pcm++)
                 *pcm = av_clipf(*pcm * opus->gain.d, -1, 1);
         } else {
-            int16_t *pcm = (int16_t *)opus->frame.data[0];
+            int16_t *pcm = (int16_t *)frame->data[0];
             for (; i > 0; i--, pcm++)
                 *pcm = av_clip_int16(((int64_t)opus->gain.i * *pcm) >> 16);
         }
     }
 #endif
 
-    opus->frame.nb_samples = nb_samples;
-    *(AVFrame *)frame = opus->frame;
-    *got_frame_ptr = 1;
+    frame->nb_samples = nb_samples;
+    *got_frame_ptr    = 1;
+
     return pkt->size;
 }
 
@@ -201,6 +183,7 @@ static void libopus_flush(AVCodecContext *avc)
 
 AVCodec ff_libopus_decoder = {
     .name           = "libopus",
+    .long_name      = NULL_IF_CONFIG_SMALL("libopus Opus"),
     .type           = AVMEDIA_TYPE_AUDIO,
     .id             = AV_CODEC_ID_OPUS,
     .priv_data_size = sizeof(struct libopus_context),
@@ -209,7 +192,6 @@ AVCodec ff_libopus_decoder = {
     .decode         = libopus_decode,
     .flush          = libopus_flush,
     .capabilities   = CODEC_CAP_DR1,
-    .long_name      = NULL_IF_CONFIG_SMALL("libopus Opus"),
     .sample_fmts    = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_FLT,
                                                      AV_SAMPLE_FMT_S16,
                                                      AV_SAMPLE_FMT_NONE },

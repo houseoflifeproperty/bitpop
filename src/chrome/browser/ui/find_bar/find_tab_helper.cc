@@ -6,21 +6,21 @@
 
 #include <vector>
 
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/find_bar/find_bar_state.h"
 #include "chrome/browser/ui/find_bar/find_bar_state_factory.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/stop_find_action.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFindOptions.h"
+#include "third_party/WebKit/public/web/WebFindOptions.h"
 #include "ui/gfx/rect_f.h"
 
-using WebKit::WebFindOptions;
+using blink::WebFindOptions;
 using content::WebContents;
 
-DEFINE_WEB_CONTENTS_USER_DATA_KEY(FindTabHelper)
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(FindTabHelper);
 
 // static
 int FindTabHelper::find_request_id_counter_ = -1;
@@ -37,7 +37,7 @@ FindTabHelper::FindTabHelper(WebContents* web_contents)
 FindTabHelper::~FindTabHelper() {
 }
 
-void FindTabHelper::StartFinding(string16 search_string,
+void FindTabHelper::StartFinding(base::string16 search_string,
                                  bool forward_direction,
                                  bool case_sensitive) {
   // If search_string is empty, it means FindNext was pressed with a keyboard
@@ -45,7 +45,7 @@ void FindTabHelper::StartFinding(string16 search_string,
   if (search_string.empty() && find_text_.empty()) {
     Profile* profile =
         Profile::FromBrowserContext(web_contents()->GetBrowserContext());
-    string16 last_search_prepopulate_text =
+    base::string16 last_search_prepopulate_text =
         FindBarStateFactory::GetLastPrepopulateText(profile);
 
     // Try the last thing we searched for on this tab, then the last thing
@@ -89,8 +89,7 @@ void FindTabHelper::StartFinding(string16 search_string,
   options.forward = forward_direction;
   options.matchCase = case_sensitive;
   options.findNext = find_next;
-  web_contents()->GetRenderViewHost()->Find(current_find_request_id_,
-                                            find_text_, options);
+  web_contents()->Find(current_find_request_id_, find_text_, options);
 }
 
 void FindTabHelper::StopFinding(
@@ -99,7 +98,7 @@ void FindTabHelper::StopFinding(
     // kClearSelection means the find string has been cleared by the user, but
     // the UI has not been dismissed. In that case we want to clear the
     // previously remembered search (http://crbug.com/42639).
-    previous_find_text_ = string16();
+    previous_find_text_ = base::string16();
   } else {
     find_ui_active_ = false;
     if (!find_text_.empty())
@@ -124,7 +123,7 @@ void FindTabHelper::StopFinding(
       NOTREACHED();
       action = content::STOP_FIND_ACTION_KEEP_SELECTION;
   }
-  web_contents()->GetRenderViewHost()->StopFinding(action);
+  web_contents()->StopFinding(action);
 }
 
 #if defined(OS_ANDROID)

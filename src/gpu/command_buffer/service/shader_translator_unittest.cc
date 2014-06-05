@@ -13,24 +13,27 @@ class ShaderTranslatorTest : public testing::Test {
   ShaderTranslatorTest() {
   }
 
-  ~ShaderTranslatorTest() {
+  virtual ~ShaderTranslatorTest() {
   }
 
  protected:
   virtual void SetUp() {
     ShBuiltInResources resources;
     ShInitBuiltInResources(&resources);
+    resources.MaxExpressionComplexity = 32;
+    resources.MaxCallStackDepth = 32;
+
     vertex_translator_ = new ShaderTranslator();
     fragment_translator_ = new ShaderTranslator();
 
     ASSERT_TRUE(vertex_translator_->Init(
         SH_VERTEX_SHADER, SH_GLES2_SPEC, &resources,
         ShaderTranslatorInterface::kGlsl,
-        ShaderTranslatorInterface::kGlslBuiltInFunctionEmulated));
+        SH_EMULATE_BUILT_IN_FUNCTIONS));
     ASSERT_TRUE(fragment_translator_->Init(
         SH_FRAGMENT_SHADER, SH_GLES2_SPEC, &resources,
         ShaderTranslatorInterface::kGlsl,
-        ShaderTranslatorInterface::kGlslBuiltInFunctionOriginal));
+        static_cast<ShCompileOptions>(0)));
     // Post-init the results must be empty.
     // Vertex translator results.
     EXPECT_TRUE(vertex_translator_->translated_shader() == NULL);
@@ -63,7 +66,7 @@ TEST_F(ShaderTranslatorTest, ValidVertexShader) {
   // Info log must be NULL.
   EXPECT_TRUE(vertex_translator_->info_log() == NULL);
   // Translated shader must be valid and non-empty.
-  EXPECT_TRUE(vertex_translator_->translated_shader() != NULL);
+  ASSERT_TRUE(vertex_translator_->translated_shader() != NULL);
   EXPECT_GT(strlen(vertex_translator_->translated_shader()), 0u);
   // There should be no attributes or uniforms.
   EXPECT_TRUE(vertex_translator_->attrib_map().empty());
@@ -80,7 +83,7 @@ TEST_F(ShaderTranslatorTest, InvalidVertexShader) {
   // An invalid shader should fail.
   EXPECT_FALSE(vertex_translator_->Translate(bad_shader));
   // Info log must be valid and non-empty.
-  EXPECT_TRUE(vertex_translator_->info_log() != NULL);
+  ASSERT_TRUE(vertex_translator_->info_log() != NULL);
   EXPECT_GT(strlen(vertex_translator_->info_log()), 0u);
   // Translated shader must be NULL.
   EXPECT_TRUE(vertex_translator_->translated_shader() == NULL);
@@ -91,7 +94,7 @@ TEST_F(ShaderTranslatorTest, InvalidVertexShader) {
   // Try a good shader after bad.
   EXPECT_TRUE(vertex_translator_->Translate(good_shader));
   EXPECT_TRUE(vertex_translator_->info_log() == NULL);
-  EXPECT_TRUE(vertex_translator_->translated_shader() != NULL);
+  ASSERT_TRUE(vertex_translator_->translated_shader() != NULL);
   EXPECT_GT(strlen(vertex_translator_->translated_shader()), 0u);
 }
 
@@ -106,7 +109,7 @@ TEST_F(ShaderTranslatorTest, ValidFragmentShader) {
   // Info log must be NULL.
   EXPECT_TRUE(fragment_translator_->info_log() == NULL);
   // Translated shader must be valid and non-empty.
-  EXPECT_TRUE(fragment_translator_->translated_shader() != NULL);
+  ASSERT_TRUE(fragment_translator_->translated_shader() != NULL);
   EXPECT_GT(strlen(fragment_translator_->translated_shader()), 0u);
   // There should be no attributes or uniforms.
   EXPECT_TRUE(fragment_translator_->attrib_map().empty());
@@ -119,7 +122,7 @@ TEST_F(ShaderTranslatorTest, InvalidFragmentShader) {
   // An invalid shader should fail.
   EXPECT_FALSE(fragment_translator_->Translate(shader));
   // Info log must be valid and non-empty.
-  EXPECT_TRUE(fragment_translator_->info_log() != NULL);
+  ASSERT_TRUE(fragment_translator_->info_log() != NULL);
   EXPECT_GT(strlen(fragment_translator_->info_log()), 0u);
   // Translated shader must be NULL.
   EXPECT_TRUE(fragment_translator_->translated_shader() == NULL);
@@ -139,7 +142,7 @@ TEST_F(ShaderTranslatorTest, GetAttributes) {
   // Info log must be NULL.
   EXPECT_TRUE(vertex_translator_->info_log() == NULL);
   // Translated shader must be valid and non-empty.
-  EXPECT_TRUE(vertex_translator_->translated_shader() != NULL);
+  ASSERT_TRUE(vertex_translator_->translated_shader() != NULL);
   EXPECT_GT(strlen(vertex_translator_->translated_shader()), 0u);
   // There should be no uniforms.
   EXPECT_TRUE(vertex_translator_->uniform_map().empty());
@@ -174,7 +177,7 @@ TEST_F(ShaderTranslatorTest, GetUniforms) {
   // Info log must be NULL.
   EXPECT_TRUE(fragment_translator_->info_log() == NULL);
   // Translated shader must be valid and non-empty.
-  EXPECT_TRUE(fragment_translator_->translated_shader() != NULL);
+  ASSERT_TRUE(fragment_translator_->translated_shader() != NULL);
   EXPECT_GT(strlen(fragment_translator_->translated_shader()), 0u);
   // There should be no attributes.
   EXPECT_TRUE(fragment_translator_->attrib_map().empty());
@@ -213,11 +216,48 @@ TEST_F(ShaderTranslatorTest, BuiltInFunctionEmulation) {
   // Info log must be NULL.
   EXPECT_TRUE(vertex_translator_->info_log() == NULL);
   // Translated shader must be valid and non-empty.
-  EXPECT_TRUE(vertex_translator_->translated_shader() != NULL);
+  ASSERT_TRUE(vertex_translator_->translated_shader() != NULL);
   EXPECT_TRUE(strstr(vertex_translator_->translated_shader(),
                      "webgl_dot_emu") != NULL);
 }
 #endif
+
+TEST_F(ShaderTranslatorTest, OptionsString) {
+  scoped_refptr<ShaderTranslator> translator_1 = new ShaderTranslator();
+  scoped_refptr<ShaderTranslator> translator_2 = new ShaderTranslator();
+  scoped_refptr<ShaderTranslator> translator_3 = new ShaderTranslator();
+
+  ShBuiltInResources resources;
+  ShInitBuiltInResources(&resources);
+
+  ASSERT_TRUE(translator_1->Init(
+      SH_VERTEX_SHADER, SH_GLES2_SPEC, &resources,
+      ShaderTranslatorInterface::kGlsl,
+      SH_EMULATE_BUILT_IN_FUNCTIONS));
+  ASSERT_TRUE(translator_2->Init(
+      SH_FRAGMENT_SHADER, SH_GLES2_SPEC, &resources,
+      ShaderTranslatorInterface::kGlsl,
+      static_cast<ShCompileOptions>(0)));
+  resources.EXT_draw_buffers = 1;
+  ASSERT_TRUE(translator_3->Init(
+      SH_VERTEX_SHADER, SH_GLES2_SPEC, &resources,
+      ShaderTranslatorInterface::kGlsl,
+      SH_EMULATE_BUILT_IN_FUNCTIONS));
+
+  std::string options_1(
+      translator_1->GetStringForOptionsThatWouldEffectCompilation());
+  std::string options_2(
+      translator_1->GetStringForOptionsThatWouldEffectCompilation());
+  std::string options_3(
+      translator_2->GetStringForOptionsThatWouldEffectCompilation());
+  std::string options_4(
+      translator_3->GetStringForOptionsThatWouldEffectCompilation());
+
+  EXPECT_EQ(options_1, options_2);
+  EXPECT_NE(options_1, options_3);
+  EXPECT_NE(options_1, options_4);
+  EXPECT_NE(options_3, options_4);
+}
 
 }  // namespace gles2
 }  // namespace gpu

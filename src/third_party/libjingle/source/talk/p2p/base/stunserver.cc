@@ -42,7 +42,8 @@ StunServer::~StunServer() {
 
 void StunServer::OnPacket(
     talk_base::AsyncPacketSocket* socket, const char* buf, size_t size,
-    const talk_base::SocketAddress& remote_addr) {
+    const talk_base::SocketAddress& remote_addr,
+    const talk_base::PacketTime& packet_time) {
   // Parse the STUN message; eat any messages that fail to parse.
   talk_base::ByteBuffer bbuf(buf, size);
   StunMessage msg;
@@ -102,7 +103,8 @@ void StunServer::SendResponse(
     const StunMessage& msg, const talk_base::SocketAddress& addr) {
   talk_base::ByteBuffer buf;
   msg.Write(&buf);
-  if (socket_->SendTo(buf.Data(), buf.Length(), addr) < 0)
+  talk_base::PacketOptions options;
+  if (socket_->SendTo(buf.Data(), buf.Length(), addr, options) < 0)
     LOG_ERR(LS_ERROR) << "sendto";
 }
 

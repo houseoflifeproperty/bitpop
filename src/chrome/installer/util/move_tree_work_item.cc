@@ -14,9 +14,9 @@
 MoveTreeWorkItem::~MoveTreeWorkItem() {
 }
 
-MoveTreeWorkItem::MoveTreeWorkItem(const FilePath& source_path,
-                                   const FilePath& dest_path,
-                                   const FilePath& temp_dir,
+MoveTreeWorkItem::MoveTreeWorkItem(const base::FilePath& source_path,
+                                   const base::FilePath& dest_path,
+                                   const base::FilePath& temp_dir,
                                    MoveTreeOption duplicate_option)
     : source_path_(source_path),
       dest_path_(dest_path),
@@ -28,7 +28,7 @@ MoveTreeWorkItem::MoveTreeWorkItem(const FilePath& source_path,
 }
 
 bool MoveTreeWorkItem::Do() {
-  if (!file_util::PathExists(source_path_)) {
+  if (!base::PathExists(source_path_)) {
     LOG(ERROR) << source_path_.value() << " does not exist";
     return false;
   }
@@ -41,21 +41,21 @@ bool MoveTreeWorkItem::Do() {
   // 2) If the contents of src_path_ are NOT fully contained in dest_path_, we
   //    attempt to backup dest_path_ and replace it with src_path_. This will
   //    fail if files in dest_path_ are in use.
-  if (file_util::PathExists(dest_path_)) {
+  if (base::PathExists(dest_path_)) {
     // Generate a backup path that can keep the original files under dest_path_.
     if (!backup_path_.CreateUniqueTempDirUnderPath(temp_dir_)) {
       PLOG(ERROR) << "Failed to get backup path in folder "
                   << temp_dir_.value();
       return false;
     }
-    FilePath backup = backup_path_.path().Append(dest_path_.BaseName());
+    base::FilePath backup = backup_path_.path().Append(dest_path_.BaseName());
 
     if (duplicate_option_ == CHECK_DUPLICATES) {
       if (installer::IsIdenticalFileHierarchy(source_path_, dest_path_)) {
         // The files we are moving are already present in the destination path.
         // We most likely don't need to do anything. As such, just move the
         // source files to the temp folder as backup.
-        if (file_util::Move(source_path_, backup)) {
+        if (base::Move(source_path_, backup)) {
           source_moved_to_backup_ = true;
           VLOG(1) << "Moved source " << source_path_.value()
                   << " to backup path " << backup.value();
@@ -74,7 +74,7 @@ bool MoveTreeWorkItem::Do() {
       }
     }
 
-    if (file_util::Move(dest_path_, backup)) {
+    if (base::Move(dest_path_, backup)) {
       moved_to_backup_ = true;
       VLOG(1) << "Moved destination " << dest_path_.value()
               << " to backup path " << backup.value();
@@ -86,7 +86,7 @@ bool MoveTreeWorkItem::Do() {
   }
 
   // Now move source to destination.
-  if (file_util::Move(source_path_, dest_path_)) {
+  if (base::Move(source_path_, dest_path_)) {
     moved_to_dest_path_ = true;
     VLOG(1) << "Moved source " << source_path_.value()
             << " to destination " << dest_path_.value();
@@ -100,17 +100,17 @@ bool MoveTreeWorkItem::Do() {
 }
 
 void MoveTreeWorkItem::Rollback() {
-  if (moved_to_dest_path_ && !file_util::Move(dest_path_, source_path_))
+  if (moved_to_dest_path_ && !base::Move(dest_path_, source_path_))
     LOG(ERROR) << "Can not move " << dest_path_.value()
                << " to " << source_path_.value();
 
-  FilePath backup = backup_path_.path().Append(dest_path_.BaseName());
-  if (moved_to_backup_ && !file_util::Move(backup, dest_path_)) {
+  base::FilePath backup = backup_path_.path().Append(dest_path_.BaseName());
+  if (moved_to_backup_ && !base::Move(backup, dest_path_)) {
     LOG(ERROR) << "failed move " << backup.value()
                << " to " << dest_path_.value();
   }
 
-  if (source_moved_to_backup_ && !file_util::Move(backup, source_path_)) {
+  if (source_moved_to_backup_ && !base::Move(backup, source_path_)) {
     LOG(ERROR) << "Can not restore " << backup.value()
                << " to " << source_path_.value();
   }

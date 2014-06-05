@@ -5,27 +5,31 @@
 #ifndef CHROME_BROWSER_UI_WEBUI_NTP_NEW_TAB_PAGE_HANDLER_H_
 #define CHROME_BROWSER_UI_WEBUI_NTP_NEW_TAB_PAGE_HANDLER_H_
 
+#include "base/memory/weak_ptr.h"
 #include "base/values.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "content/public/browser/web_ui_message_handler.h"
 
-class PrefService;
+class PrefRegistrySimple;
 class Profile;
+
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
 
 // Handler for general New Tab Page functionality that does not belong in a
 // more specialized handler.
-class NewTabPageHandler : public content::WebUIMessageHandler {
+class NewTabPageHandler : public content::WebUIMessageHandler,
+                          public base::SupportsWeakPtr<NewTabPageHandler> {
  public:
   NewTabPageHandler();
 
   // Register NTP per-profile preferences.
-  static void RegisterUserPrefs(PrefService* prefs);
-
-  // Register NTP profile-independent preferences.
-  static void RegisterPrefs(PrefService* prefs);
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // Registers values (strings etc.) for the page.
-  static void GetLocalizedValues(Profile* profile, DictionaryValue* values);
+  static void GetLocalizedValues(Profile* profile,
+      base::DictionaryValue* values);
 
  private:
   virtual ~NewTabPageHandler();
@@ -34,25 +38,25 @@ class NewTabPageHandler : public content::WebUIMessageHandler {
   virtual void RegisterMessages() OVERRIDE;
 
   // Callback for "notificationPromoClosed". No arguments.
-  void HandleNotificationPromoClosed(const ListValue* args);
+  void HandleNotificationPromoClosed(const base::ListValue* args);
 
   // Callback for "notificationPromoViewed". No arguments.
-  void HandleNotificationPromoViewed(const ListValue* args);
+  void HandleNotificationPromoViewed(const base::ListValue* args);
 
   // Callback for "notificationPromoLinkClicked". No arguments.
-  void HandleNotificationPromoLinkClicked(const ListValue* args);
+  void HandleNotificationPromoLinkClicked(const base::ListValue* args);
 
   // Callback for "bubblePromoClosed". No arguments.
-  void HandleBubblePromoClosed(const ListValue* args);
+  void HandleBubblePromoClosed(const base::ListValue* args);
 
   // Callback for "bubblePromoViewed". No arguments.
-  void HandleBubblePromoViewed(const ListValue* args);
+  void HandleBubblePromoViewed(const base::ListValue* args);
 
   // Callback for "bubblePromoLinkClicked". No arguments.
-  void HandleBubblePromoLinkClicked(const ListValue* args);
+  void HandleBubblePromoLinkClicked(const base::ListValue* args);
 
   // Callback for "pageSelected".
-  void HandlePageSelected(const ListValue* args);
+  void HandlePageSelected(const base::ListValue* args);
 
   // Callback for "logTimeToClick".
   void HandleLogTimeToClick(const base::ListValue* args);
@@ -65,17 +69,13 @@ class NewTabPageHandler : public content::WebUIMessageHandler {
   // group, and the rest of the bits are used for the page group ID (defined
   // here).
   static const int kPageIdOffset = 10;
-  // TODO(vadimt): create a new enum and a new UMA histogram for search ntp so
-  // the two histograms don't get mixed in together.
   enum {
     INDEX_MASK = (1 << kPageIdOffset) - 1,
     MOST_VISITED_PAGE_ID = 1 << kPageIdOffset,
     APPS_PAGE_ID = 2 << kPageIdOffset,
     BOOKMARKS_PAGE_ID = 3 << kPageIdOffset,
     SUGGESTIONS_PAGE_ID = 4 << kPageIdOffset,
-    RECENTLY_CLOSED_PAGE_ID = 5 << kPageIdOffset,
-    OTHER_DEVICES_PAGE_ID = 6 << kPageIdOffset,
-    LAST_PAGE_ID = OTHER_DEVICES_PAGE_ID
+    LAST_PAGE_ID = SUGGESTIONS_PAGE_ID
   };
   static const int kHistogramEnumerationMax =
       (LAST_PAGE_ID >> kPageIdOffset) + 1;

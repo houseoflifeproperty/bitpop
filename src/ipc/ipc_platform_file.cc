@@ -18,7 +18,8 @@ PlatformFileForTransit GetFileHandleForProcess(base::PlatformFile handle,
   DWORD options = DUPLICATE_SAME_ACCESS;
   if (close_source_handle)
     options |= DUPLICATE_CLOSE_SOURCE;
-  if (!::DuplicateHandle(::GetCurrentProcess(),
+  if (handle == INVALID_HANDLE_VALUE ||
+      !::DuplicateHandle(::GetCurrentProcess(),
                          handle,
                          process,
                          &out_handle,
@@ -42,6 +43,11 @@ PlatformFileForTransit GetFileHandleForProcess(base::PlatformFile handle,
   #error Not implemented.
 #endif
   return out_handle;
+}
+
+PlatformFileForTransit TakeFileHandleForProcess(base::File file,
+                                                base::ProcessHandle process) {
+  return GetFileHandleForProcess(file.TakePlatformFile(), process, true);
 }
 
 }  // namespace IPC

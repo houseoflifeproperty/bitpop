@@ -5,7 +5,7 @@
 #include "sync/internal_api/js_mutation_event_observer.h"
 
 #include "base/basictypes.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/values.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/util/weak_handle.h"
@@ -29,7 +29,7 @@ class JsMutationEventObserverTest : public testing::Test {
  private:
   // This must be destroyed after the member variables below in order
   // for WeakHandles to be destroyed properly.
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
 
  protected:
   StrictMock<MockJsEventHandler> mock_js_event_handler_;
@@ -70,10 +70,10 @@ TEST_F(JsMutationEventObserverTest, OnChangesApplied) {
   for (int i = AUTOFILL_PROFILE; i < MODEL_TYPE_COUNT; ++i) {
     const std::string& model_type_str =
         ModelTypeToString(ModelTypeFromInt(i));
-    DictionaryValue expected_details;
+    base::DictionaryValue expected_details;
     expected_details.SetString("modelType", model_type_str);
     expected_details.SetString("writeTransactionId", "0");
-    ListValue* expected_changes = new ListValue();
+    base::ListValue* expected_changes = new base::ListValue();
     expected_details.Set("changes", expected_changes);
     for (int j = i; j < MODEL_TYPE_COUNT; ++j) {
       expected_changes->Append(changes[j].ToValue());
@@ -98,7 +98,7 @@ TEST_F(JsMutationEventObserverTest, OnChangesComplete) {
   InSequence dummy;
 
   for (int i = FIRST_REAL_MODEL_TYPE; i < MODEL_TYPE_COUNT; ++i) {
-    DictionaryValue expected_details;
+    base::DictionaryValue expected_details;
     expected_details.SetString(
         "modelType",
         ModelTypeToString(ModelTypeFromInt(i)));

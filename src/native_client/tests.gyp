@@ -23,19 +23,43 @@
         'build_newlib': 1,
         'build_pnacl_newlib': 1,
         'extra_args': [
-          '--strip-debug',
+          '--strip-all',
         ],
       },
       'sources': [
         'tests/hello_world/hello_world.c',
       ],
     },
+    # Build simple_thread_test to verify that __thread linkage works
+    # correctly with gyp-built libraries:
+    # https://code.google.com/p/chromium/issues/detail?id=3461
+    {
+      'target_name': 'simple_thread_test',
+      'type': 'none',
+      'dependencies': [
+        'tools.gyp:prep_toolchain',
+        'src/untrusted/nacl/nacl.gyp:nacl_lib',
+        'src/untrusted/irt/irt.gyp:irt_core_nexe'
+      ],
+      'link_flags': ['-lpthread'],
+      # Bug 3461 only occurs when linking -fPIC objects so we use
+      # -fPIC here even though it isn't strictly necessary.
+      'compile_flags': ['-fPIC'],
+      'variables': {
+        'nexe_target': 'simple_thread_test',
+        'build_glibc': 0,
+        'build_newlib': 1,
+        'build_pnacl_newlib': 0,
+      },
+      'sources': [
+        'tests/threads/simple_thread_test.c',
+      ],
+    },
   ],
   'conditions': [
-    # Only build the tests on arm, but don't try to run them
-    ['target_arch!="arm"', {
+    ['target_arch!="arm" and target_arch!="mipsel"', {
       'targets': [
-
+        # Only build the tests on arm and mips, but don't try to run them
         {
           'target_name': 'test_hello_world_nexe',
           'type': 'none',
@@ -51,7 +75,7 @@
             'disable_glibc%': 0,
           },
           'conditions': [
-            ['OS=="win"', {
+            ['OS=="win" and target_arch=="ia32"', {
               'dependencies': [
                 'src/trusted/service_runtime/service_runtime.gyp:sel_ldr64',
               ],
@@ -72,14 +96,14 @@
               'msvs_cygwin_shell': 0,
               'description': 'Testing NACL build',
               'inputs': [
-                '<!@(<(python_exe) <(script) -i <(arch) <(name) <(tools))',
+                '<!@(python <(script) -i <(arch) <(name) <(tools))',
               ],
               # Add a bogus output file, to cause this step to always fire.
               'outputs': [
                 '<(PRODUCT_DIR)/test-output/dont_create_hello_world.out'
               ],
               'action': [
-                '>(python_exe)',
+                'python',
                 '<(DEPTH)/native_client/build/test_build.py',
                 '-r',
                 '<(arch)',
@@ -109,7 +133,7 @@
             'script': '<(DEPTH)/native_client/build/test_build.py',
           },
           'conditions': [
-            ['OS=="win"', {
+            ['OS=="win" and target_arch=="ia32"', {
               'dependencies': [
                 'src/trusted/service_runtime/service_runtime.gyp:sel_ldr64',
               ],
@@ -121,14 +145,14 @@
               'msvs_cygwin_shell': 0,
               'description': 'Testing PNaCl translated Nexe build',
               'inputs': [
-                '<!@(<(python_exe) <(script) -i <(arch) <(name) <(tools))',
+                '<!@(python <(script) -i <(arch) <(name) <(tools))',
               ],
               # Add a bogus output file, to cause this step to always fire.
               'outputs': [
                 '<(PRODUCT_DIR)/test-output/dont_create_hello_world_pnacl.out'
               ],
               'action': [
-                '>(python_exe)',
+                'python',
                 '<(DEPTH)/native_client/build/test_build.py',
                 '-r',
                 '<(arch)',

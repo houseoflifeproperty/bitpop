@@ -9,18 +9,21 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/startup/startup_tab.h"
 #include "chrome/browser/ui/startup/startup_types.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 class Browser;
-class CommandLine;
 class GURL;
 class PrefService;
+
+namespace base {
+class CommandLine;
+}
 
 // class containing helpers for BrowserMain to spin up a new instance and
 // initialize the profile.
@@ -37,8 +40,8 @@ class StartupBrowserCreator {
 
   // This function is equivalent to ProcessCommandLine but should only be
   // called during actual process startup.
-  bool Start(const CommandLine& cmd_line,
-             const FilePath& cur_dir,
+  bool Start(const base::CommandLine& cmd_line,
+             const base::FilePath& cur_dir,
              Profile* last_used_profile,
              const Profiles& last_opened_profiles,
              int* return_code) {
@@ -48,14 +51,15 @@ class StartupBrowserCreator {
 
   // This function performs command-line handling and is invoked only after
   // start up (for example when we get a start request for another process).
-  // |command_line| holds the command line we need to process
-  static void ProcessCommandLineAlreadyRunning(const CommandLine& cmd_line,
-                                               const FilePath& cur_dir);
-
-  template <class AutomationProviderClass>
-  static bool CreateAutomationProvider(const std::string& channel_id,
-                                       Profile* profile,
-                                       size_t expected_tabs);
+  // |command_line| holds the command line we need to process.
+  // |cur_dir| is the current working directory that the original process was
+  // invoked from.
+  // |startup_profile_dir| is the directory that contains the profile that the
+  // command line arguments will be executed under.
+  static void ProcessCommandLineAlreadyRunning(
+      const base::CommandLine& command_line,
+      const base::FilePath& cur_dir,
+      const base::FilePath& startup_profile_dir);
 
   // Returns true if we're launching a profile synchronously. In that case, the
   // opened window should not cause a session restore.
@@ -66,9 +70,9 @@ class StartupBrowserCreator {
   // implies that the directory of the executable should be used.
   // |process_startup| indicates whether this is the first browser.
   // |is_first_run| indicates that this is a new profile.
-  bool LaunchBrowser(const CommandLine& command_line,
+  bool LaunchBrowser(const base::CommandLine& command_line,
                      Profile* profile,
-                     const FilePath& cur_dir,
+                     const base::FilePath& cur_dir,
                      chrome::startup::IsProcessStartup is_process_startup,
                      chrome::startup::IsFirstRun is_first_run,
                      int* return_code);
@@ -79,7 +83,7 @@ class StartupBrowserCreator {
   static bool WasRestarted();
 
   static SessionStartupPref GetSessionStartupPref(
-      const CommandLine& command_line,
+      const base::CommandLine& command_line,
       Profile* profile);
 
   void set_is_default_browser_dialog_suppressed(bool new_value) {
@@ -98,6 +102,9 @@ class StartupBrowserCreator {
     return show_main_browser_window_;
   }
 
+  // For faking that no profiles have been launched yet.
+  static void ClearLaunchedProfilesForTesting();
+
  private:
   friend class CloudPrintProxyPolicyTest;
   friend class CloudPrintProxyPolicyStartupTest;
@@ -107,16 +114,17 @@ class StartupBrowserCreator {
   FRIEND_TEST_ALL_PREFIXES(StartupBrowserCreatorTest,
                            ReadingWasRestartedAfterRestart);
   FRIEND_TEST_ALL_PREFIXES(StartupBrowserCreatorTest, UpdateWithTwoProfiles);
+  FRIEND_TEST_ALL_PREFIXES(StartupBrowserCreatorTest, LastUsedProfileActivated);
 
   // Returns the list of URLs to open from the command line. The returned
   // vector is empty if the user didn't specify any URLs on the command line.
   static std::vector<GURL> GetURLsFromCommandLine(
-      const CommandLine& command_line,
-      const FilePath& cur_dir,
+      const base::CommandLine& command_line,
+      const base::FilePath& cur_dir,
       Profile* profile);
 
-  static bool ProcessCmdLineImpl(const CommandLine& command_line,
-                                 const FilePath& cur_dir,
+  static bool ProcessCmdLineImpl(const base::CommandLine& command_line,
+                                 const base::FilePath& cur_dir,
                                  bool process_startup,
                                  Profile* last_used_profile,
                                  const Profiles& last_opened_profiles,
@@ -125,15 +133,19 @@ class StartupBrowserCreator {
 
   // Callback after a profile has been created.
   static void ProcessCommandLineOnProfileCreated(
-      const CommandLine& cmd_line,
-      const FilePath& cur_dir,
+      const base::CommandLine& command_line,
+      const base::FilePath& cur_dir,
       Profile* profile,
       Profile::CreateStatus status);
+
+  // Returns true once a profile was activated. Used by the
+  // StartupBrowserCreatorTest.LastUsedProfileActivated test.
+  static bool ActivatedProfile();
 
   // Additional tabs to open during first run.
   std::vector<GURL> first_run_tabs_;
 
-  // True if the set-as-default dialog has been explicitly supressed.
+  // True if the set-as-default dialog has been explicitly suppressed.
   // This information is used to allow the default browser prompt to show on
   // first-run when the dialog has been suppressed.
   bool is_default_browser_dialog_suppressed_;
@@ -147,7 +159,18 @@ class StartupBrowserCreator {
   // of testing.)
   static bool was_restarted_read_;
 
+  static bool in_synchronous_profile_launch_;
+
   DISALLOW_COPY_AND_ASSIGN(StartupBrowserCreator);
 };
+
+// Returns true if |profile| has exited uncleanly and has not been launched
+// after the unclean exit.
+bool HasPendingUncleanExit(Profile* profile);
+
+// Returns the path that contains the profile that should be loaded on process
+// startup.
+base::FilePath GetStartupProfilePath(const base::FilePath& user_data_dir,
+                                     const base::CommandLine& command_line);
 
 #endif  // CHROME_BROWSER_UI_STARTUP_STARTUP_BROWSER_CREATOR_H_

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,13 +11,16 @@ import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.test.util.CommonResources;
 import org.chromium.base.test.util.Feature;
 import org.chromium.content.browser.ContentViewCore;
-import org.chromium.content.browser.NavigationEntry;
 import org.chromium.content.browser.NavigationHistory;
 import org.chromium.net.test.util.TestWebServer;
 
 import java.util.concurrent.Callable;
 
-public class SaveRestoreStateTest extends AndroidWebViewTestBase {
+/**
+ * Tests for the {@link android.webkit.WebView#saveState} and
+ * {@link android.webkit.WebView#restoreState} APIs.
+ */
+public class SaveRestoreStateTest extends AwTestBase {
     private static class TestVars {
         public final TestAwContentsClient contentsClient;
         public final AwTestContainerView testView;
@@ -44,14 +47,14 @@ public class SaveRestoreStateTest extends AndroidWebViewTestBase {
 
     private static final int NUM_NAVIGATIONS = 3;
     private static final String TITLES[] = {
-            "page 1 title foo",
-            "page 2 title bar",
-            "page 3 title baz"
+        "page 1 title foo",
+        "page 2 title bar",
+        "page 3 title baz"
     };
     private static final String PATHS[] = {
-            "/p1foo.html",
-            "/p2bar.html",
-            "/p3baz.html",
+        "/p1foo.html",
+        "/p2bar.html",
+        "/p3baz.html",
     };
 
     private String mUrls[];
@@ -66,14 +69,6 @@ public class SaveRestoreStateTest extends AndroidWebViewTestBase {
 
     @Override
     public void tearDown() throws Exception {
-        // TODO(boliu): This is to work around disk cache corruption bug on
-        // unclean shutdown (crbug.com/154805).
-        try {
-          clearCacheOnUiThread(mVars.awContents, true);
-        } catch (Throwable e) {
-          throw new Exception(e);
-        }
-
         if (mWebServer != null) {
             mWebServer.shutdown();
         }
@@ -94,7 +89,7 @@ public class SaveRestoreStateTest extends AndroidWebViewTestBase {
     }
 
     private NavigationHistory getNavigationHistoryOnUiThread(
-            final TestVars vars) throws Throwable{
+            final TestVars vars) throws Throwable {
         return runTestOnUiThreadAndGetResult(new Callable<NavigationHistory>() {
             @Override
             public NavigationHistory call() throws Exception {
@@ -138,13 +133,13 @@ public class SaveRestoreStateTest extends AndroidWebViewTestBase {
     public void testSaveRestoreStateWithTitle() throws Throwable {
         setServerResponseAndLoad(mVars, 1);
         final TestVars restoredVars = saveAndRestoreStateOnUiThread(mVars);
-        assertTrue(pollOnUiThread(new Callable<Boolean>() {
+        pollOnUiThread(new Callable<Boolean>() {
             @Override
             public Boolean call() throws Exception {
                 return TITLES[0].equals(restoredVars.contentViewCore.getTitle()) &&
                        TITLES[0].equals(restoredVars.contentsClient.getUpdatedTitle());
             }
-        }));
+        });
     }
 
     @SmallTest

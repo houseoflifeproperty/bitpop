@@ -10,11 +10,16 @@ import sys
 import textwrap
 import unittest
 
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT_DIR)
+BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(BASE_PATH)
 
-import dmprof
-from dmprof import FUNCTION_ADDRESS, TYPEINFO_ADDRESS
+from lib.bucket import Bucket
+from lib.ordered_dict import OrderedDict
+from lib.policy import Policy
+from lib.symbol import SymbolMappingCache
+from lib.symbol import FUNCTION_SYMBOLS, SOURCEFILE_SYMBOLS, TYPEINFO_SYMBOLS
+
+import subcommands
 
 
 class SymbolMappingCacheTest(unittest.TestCase):
@@ -22,7 +27,7 @@ class SymbolMappingCacheTest(unittest.TestCase):
     def __init__(self, addresses):
       self._addresses = addresses
 
-    def iter_addresses(self, address_type):  # pylint: disable=W0613
+    def iter_addresses(self, symbol_type):  # pylint: disable=W0613
       for address in self._addresses:
         yield address
 
@@ -31,7 +36,10 @@ class SymbolMappingCacheTest(unittest.TestCase):
       self._mapping = mapping
 
     def find(self, address_list):
-      return [self._mapping[address] for address in address_list]
+      result = OrderedDict()
+      for address in address_list:
+        result[address] = self._mapping[address]
+      return result
 
   _TEST_FUNCTION_CACHE = textwrap.dedent("""\
       1 0x0000000000000001
@@ -64,41 +72,45 @@ class SymbolMappingCacheTest(unittest.TestCase):
   }
 
   def test_update(self):
-    symbol_mapping_cache = dmprof.SymbolMappingCache()
+    symbol_mapping_cache = SymbolMappingCache()
     cache_f = cStringIO.StringIO()
     cache_f.write(self._TEST_FUNCTION_CACHE)
 
     # No update from self._TEST_FUNCTION_CACHE
     symbol_mapping_cache.update(
-        FUNCTION_ADDRESS,
+        FUNCTION_SYMBOLS,
         self.MockBucketSet(self._TEST_FUNCTION_ADDRESS_LIST1),
         self.MockSymbolFinder(self._TEST_FUNCTION_DICT), cache_f)
     for address in self._TEST_FUNCTION_ADDRESS_LIST1:
       self.assertEqual(self._TEST_FUNCTION_DICT[address],
-                       symbol_mapping_cache.lookup(FUNCTION_ADDRESS, address))
+                       symbol_mapping_cache.lookup(FUNCTION_SYMBOLS, address))
     self.assertEqual(self._TEST_FUNCTION_CACHE, cache_f.getvalue())
 
     # Update to self._TEST_FUNCTION_ADDRESS_LIST2
     symbol_mapping_cache.update(
-        FUNCTION_ADDRESS,
+        FUNCTION_SYMBOLS,
         self.MockBucketSet(self._TEST_FUNCTION_ADDRESS_LIST2),
         self.MockSymbolFinder(self._TEST_FUNCTION_DICT), cache_f)
     for address in self._TEST_FUNCTION_ADDRESS_LIST2:
       self.assertEqual(self._TEST_FUNCTION_DICT[address],
-                       symbol_mapping_cache.lookup(FUNCTION_ADDRESS, address))
+                       symbol_mapping_cache.lookup(FUNCTION_SYMBOLS, address))
     self.assertEqual(self._EXPECTED_TEST_FUNCTION_CACHE, cache_f.getvalue())
 
 
 class PolicyTest(unittest.TestCase):
   class MockSymbolMappingCache(object):
     def __init__(self):
-      self._symbol_caches = {FUNCTION_ADDRESS: {}, TYPEINFO_ADDRESS: {}}
+      self._symbol_caches = {
+          FUNCTION_SYMBOLS: {},
+          SOURCEFILE_SYMBOLS: {},
+          TYPEINFO_SYMBOLS: {},
+          }
 
-    def add(self, address_type, address, symbol):
-      self._symbol_caches[address_type][address] = symbol
+    def add(self, symbol_type, address, symbol):
+      self._symbol_caches[symbol_type][address] = symbol
 
-    def lookup(self, address_type, address):
-      symbol = self._symbol_caches[address_type].get(address)
+    def lookup(self, symbol_type, address):
+      symbol = self._symbol_caches[symbol_type].get(address)
       return symbol if symbol else '0x%016x' % address
 
   _TEST_POLICY = textwrap.dedent("""\
@@ -148,28 +160,57 @@ class PolicyTest(unittest.TestCase):
       """)
 
   def test_load(self):
-    policy = dmprof.Policy.parse(cStringIO.StringIO(self._TEST_POLICY), 'json')
+    policy = Policy.parse(cStringIO.StringIO(self._TEST_POLICY), 'json')
     self.assertTrue(policy)
     self.assertEqual('POLICY_DEEP_3', policy.version)
 
   def test_find(self):
-    policy = dmprof.Policy.parse(cStringIO.StringIO(self._TEST_POLICY), 'json')
+    policy = Policy.parse(cStringIO.StringIO(self._TEST_POLICY), 'json')
     self.assertTrue(policy)
 
     symbol_mapping_cache = self.MockSymbolMappingCache()
-    symbol_mapping_cache.add(FUNCTION_ADDRESS, 0x1212, 'v8::create')
-    symbol_mapping_cache.add(FUNCTION_ADDRESS, 0x1381, 'WebKit::create')
+    symbol_mapping_cache.add(FUNCTION_SYMBOLS, 0x1212, 'v8::create')
+    symbol_mapping_cache.add(FUNCTION_SYMBOLS, 0x1381, 'WebKit::create')
 
-    bucket1 = dmprof.Bucket([0x1212, 0x013], False, 0x29492, '_Z')
+    bucket1 = Bucket([0x1212, 0x013], 'malloc', 0x29492, '_Z')
     bucket1.symbolize(symbol_mapping_cache)
-    bucket2 = dmprof.Bucket([0x18242, 0x1381], False, 0x9492, '_Z')
+    bucket2 = Bucket([0x18242, 0x1381], 'malloc', 0x9492, '_Z')
     bucket2.symbolize(symbol_mapping_cache)
-    bucket3 = dmprof.Bucket([0x18242, 0x181], False, 0x949, '_Z')
+    bucket3 = Bucket([0x18242, 0x181], 'malloc', 0x949, '_Z')
     bucket3.symbolize(symbol_mapping_cache)
 
-    self.assertEqual('malloc-v8', policy.find(bucket1))
-    self.assertEqual('malloc-WebKit', policy.find(bucket2))
-    self.assertEqual('malloc-catch-all', policy.find(bucket3))
+    self.assertEqual('malloc-v8', policy.find_malloc(bucket1))
+    self.assertEqual('malloc-WebKit', policy.find_malloc(bucket2))
+    self.assertEqual('malloc-catch-all', policy.find_malloc(bucket3))
+
+
+class BucketsCommandTest(unittest.TestCase):
+  def test(self):
+    BUCKETS_PATH = os.path.join(BASE_PATH, 'tests', 'output', 'buckets')
+    with open(BUCKETS_PATH) as output_f:
+      expected = output_f.read()
+
+    out = cStringIO.StringIO()
+
+    HEAP_PATH = os.path.join(BASE_PATH, 'tests', 'data', 'heap.01234.0001.heap')
+    subcommand = subcommands.BucketsCommand()
+    returncode = subcommand.do(['buckets', HEAP_PATH], out)
+    self.assertEqual(0, returncode)
+    self.assertEqual(expected, out.getvalue())
+
+
+class UploadCommandTest(unittest.TestCase):
+  def test(self):
+    MOCK_GSUTIL_PATH = os.path.join(BASE_PATH, 'tests', 'mock_gsutil.py')
+    HEAP_PATH = os.path.join(BASE_PATH, 'tests', 'data', 'heap.01234.0001.heap')
+    subcommand = subcommands.UploadCommand()
+    returncode = subcommand.do([
+        'upload',
+         '--gsutil',
+        MOCK_GSUTIL_PATH,
+        HEAP_PATH,
+        'gs://test-storage/'])
+    self.assertEqual(0, returncode)
 
 
 if __name__ == '__main__':

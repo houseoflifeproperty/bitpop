@@ -15,6 +15,17 @@ var testServerPort;
 var testServer = "www.a.com";
 var defaultScheme = "http";
 var eventsCaptured;
+var listeners = {
+  'onBeforeRequest': [],
+  'onBeforeSendHeaders': [],
+  'onAuthRequired': [],
+  'onSendHeaders': [],
+  'onHeadersReceived': [],
+  'onResponseStarted': [],
+  'onBeforeRedirect': [],
+  'onCompleted': [],
+  'onErrorOccurred': []
+};
 
 // If true, don't bark on events that were not registered via expect().
 // These events are recorded in capturedUnexpectedData instead of
@@ -26,15 +37,20 @@ var ignoreUnexpected = false;
 var logAllRequests = false;
 
 function runTests(tests) {
-  chrome.tabs.create({url: "about:blank"}, function(tab) {
-    tabId = tab.id;
-    tabIdMap = {};
-    tabIdMap[tabId] = 0;
-    chrome.test.getConfig(function(config) {
-      testServerPort = config.testServer.port;
-      chrome.test.runTests(tests);
-    });
-  });
+  var waitForAboutBlank = function(_, info, tab) {
+    if (info.status == "complete" && tab.url == "about:blank") {
+      tabId = tab.id;
+      tabIdMap = {};
+      tabIdMap[tabId] = 0;
+      chrome.tabs.onUpdated.removeListener(waitForAboutBlank);
+      chrome.test.getConfig(function(config) {
+        testServerPort = config.testServer.port;
+        chrome.test.runTests(tests);
+      });
+    }
+  };
+  chrome.tabs.onUpdated.addListener(waitForAboutBlank);
+  chrome.tabs.create({url: "about:blank"});
 }
 
 // Returns an URL from the test server, fixing up the port. Must be called
@@ -166,6 +182,7 @@ function captureEvent(name, details, callback) {
   // us specify special return values per event.
   var currentIndex = capturedEventData.length;
   var extraOptions;
+  var retval;
   if (expectedEventData.length > currentIndex) {
     retval =
         expectedEventData[currentIndex].retval_function ?
@@ -267,64 +284,103 @@ function intersect(array1, array2) {
 }
 
 function initListeners(filter, extraInfoSpec) {
-  chrome.webRequest.onBeforeRequest.addListener(
-      function(details) {
+  var onBeforeRequest = function(details) {
     return captureEvent("onBeforeRequest", details);
-  }, filter, intersect(extraInfoSpec, ["blocking", "requestBody"]));
-  chrome.webRequest.onBeforeSendHeaders.addListener(
-      function(details) {
+  };
+  listeners['onBeforeRequest'].push(onBeforeRequest);
+
+  var onBeforeSendHeaders = function(details) {
     return captureEvent("onBeforeSendHeaders", details);
-  }, filter, intersect(extraInfoSpec, ["blocking", "requestHeaders"]));
-  chrome.webRequest.onSendHeaders.addListener(
-      function(details) {
+  };
+  listeners['onBeforeSendHeaders'].push(onBeforeSendHeaders);
+
+  var onSendHeaders = function(details) {
     return captureEvent("onSendHeaders", details);
-  }, filter, intersect(extraInfoSpec, ["requestHeaders"]));
-  chrome.webRequest.onHeadersReceived.addListener(
-      function(details) {
+  };
+  listeners['onSendHeaders'].push(onSendHeaders);
+
+  var onHeadersReceived = function(details) {
     return captureEvent("onHeadersReceived", details);
-  }, filter, intersect(extraInfoSpec, ["blocking", "responseHeaders"]));
-  chrome.webRequest.onAuthRequired.addListener(
-      function(details, callback) {
+  };
+  listeners['onHeadersReceived'].push(onHeadersReceived);
+
+  var onAuthRequired = function(details) {
     return captureEvent("onAuthRequired", details, callback);
-  }, filter, intersect(extraInfoSpec, ["asyncBlocking", "blocking",
-                                       "responseHeaders"]));
-  chrome.webRequest.onResponseStarted.addListener(
-      function(details) {
+  };
+  listeners['onAuthRequired'].push(onAuthRequired);
+
+  var onResponseStarted = function(details) {
     return captureEvent("onResponseStarted", details);
-  }, filter, intersect(extraInfoSpec, ["responseHeaders"]));
-  chrome.webRequest.onBeforeRedirect.addListener(
-      function(details) {
+  };
+  listeners['onResponseStarted'].push(onResponseStarted);
+
+  var onBeforeRedirect = function(details) {
     return captureEvent("onBeforeRedirect", details);
-  }, filter, intersect(extraInfoSpec, ["responseHeaders"]));
-  chrome.webRequest.onCompleted.addListener(
-      function(details) {
+  };
+  listeners['onBeforeRedirect'].push(onBeforeRedirect);
+
+  var onCompleted = function(details) {
     return captureEvent("onCompleted", details);
-  }, filter, intersect(extraInfoSpec, ["responseHeaders"]));
-  chrome.webRequest.onErrorOccurred.addListener(
-      function(details) {
+  };
+  listeners['onCompleted'].push(onCompleted);
+
+  var onErrorOccurred = function(details) {
     return captureEvent("onErrorOccurred", details);
-  }, filter);
+  };
+  listeners['onErrorOccurred'].push(onErrorOccurred);
+
+  chrome.webRequest.onBeforeRequest.addListener(
+      onBeforeRequest, filter,
+      intersect(extraInfoSpec, ["blocking", "requestBody"]));
+
+  chrome.webRequest.onBeforeSendHeaders.addListener(
+      onBeforeSendHeaders, filter,
+      intersect(extraInfoSpec, ["blocking", "requestHeaders"]));
+
+  chrome.webRequest.onSendHeaders.addListener(
+      onSendHeaders, filter,
+      intersect(extraInfoSpec, ["requestHeaders"]));
+
+  chrome.webRequest.onHeadersReceived.addListener(
+      onHeadersReceived, filter,
+      intersect(extraInfoSpec, ["blocking", "responseHeaders"]));
+
+  chrome.webRequest.onAuthRequired.addListener(
+      onAuthRequired, filter,
+      intersect(extraInfoSpec, ["asyncBlocking", "blocking",
+                                "responseHeaders"]));
+
+  chrome.webRequest.onResponseStarted.addListener(
+      onResponseStarted, filter,
+      intersect(extraInfoSpec, ["responseHeaders"]));
+
+  chrome.webRequest.onBeforeRedirect.addListener(
+      onBeforeRedirect, filter, intersect(extraInfoSpec, ["responseHeaders"]));
+
+  chrome.webRequest.onCompleted.addListener(
+      onCompleted, filter,
+      intersect(extraInfoSpec, ["responseHeaders"]));
+
+  chrome.webRequest.onErrorOccurred.addListener(onErrorOccurred, filter);
 }
 
 function removeListeners() {
-  function helper(event) {
-    // Note: We're poking at the internal event data, but it's easier than
-    // the alternative. If this starts failing, we just need to update this
-    // helper.
-    for (var i in event.subEvents_) {
-      event.removeListener(event.subEvents_[i].callback);
+  function helper(eventName) {
+    for (var i in listeners[eventName]) {
+      chrome.webRequest[eventName].removeListener(listeners[eventName][i]);
     }
-    chrome.test.assertFalse(event.hasListeners());
+    listeners[eventName].length = 0;
+    chrome.test.assertFalse(chrome.webRequest[eventName].hasListeners());
   }
-  helper(chrome.webRequest.onBeforeRequest);
-  helper(chrome.webRequest.onBeforeSendHeaders);
-  helper(chrome.webRequest.onAuthRequired);
-  helper(chrome.webRequest.onSendHeaders);
-  helper(chrome.webRequest.onHeadersReceived);
-  helper(chrome.webRequest.onResponseStarted);
-  helper(chrome.webRequest.onBeforeRedirect);
-  helper(chrome.webRequest.onCompleted);
-  helper(chrome.webRequest.onErrorOccurred);
+  helper('onBeforeRequest');
+  helper('onBeforeSendHeaders');
+  helper('onAuthRequired');
+  helper('onSendHeaders');
+  helper('onHeadersReceived');
+  helper('onResponseStarted');
+  helper('onBeforeRedirect');
+  helper('onCompleted');
+  helper('onErrorOccurred');
 }
 
 function resetDeclarativeRules() {

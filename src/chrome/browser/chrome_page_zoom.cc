@@ -7,17 +7,17 @@
 #include <algorithm>
 #include <cmath>
 
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/chrome_page_zoom_constants.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/page_zoom.h"
 #include "content/public/common/renderer_preferences.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 
-using content::UserMetricsAction;
+using base::UserMetricsAction;
 
 namespace chrome_page_zoom {
 
@@ -36,7 +36,7 @@ std::vector<double> PresetZoomValues(PageZoomValueType value_type,
   for (size_t i = 0; i < kPresetZoomFactorsSize; i++) {
     double zoom_value = kPresetZoomFactors[i];
     if (value_type == PAGE_ZOOM_VALUE_TYPE_LEVEL)
-      zoom_value = WebKit::WebView::zoomFactorToZoomLevel(zoom_value);
+      zoom_value = content::ZoomFactorToZoomLevel(zoom_value);
     if (content::ZoomValuesEqual(zoom_value, custom_value))
       found_custom = true;
     zoom_values.push_back(zoom_value);
@@ -44,10 +44,10 @@ std::vector<double> PresetZoomValues(PageZoomValueType value_type,
   // If the preset array did not contain the custom value, append it to the
   // vector and then sort.
   double min = value_type == PAGE_ZOOM_VALUE_TYPE_LEVEL ?
-      WebKit::WebView::zoomFactorToZoomLevel(content::kMinimumZoomFactor) :
+      content::ZoomFactorToZoomLevel(content::kMinimumZoomFactor) :
       content::kMinimumZoomFactor;
   double max = value_type == PAGE_ZOOM_VALUE_TYPE_LEVEL ?
-      WebKit::WebView::zoomFactorToZoomLevel(content::kMaximumZoomFactor) :
+      content::ZoomFactorToZoomLevel(content::kMaximumZoomFactor) :
       content::kMaximumZoomFactor;
   if (!found_custom && custom_value > min && custom_value < max) {
     zoom_values.push_back(custom_value);
@@ -65,14 +65,13 @@ std::vector<double> PresetZoomLevels(double custom_level) {
 }
 
 void Zoom(content::WebContents* web_contents, content::PageZoom zoom) {
-  content::RenderViewHost* host = web_contents->GetRenderViewHost();
   double current_zoom_level = web_contents->GetZoomLevel();
   double default_zoom_level =
       Profile::FromBrowserContext(web_contents->GetBrowserContext())->
           GetPrefs()->GetDouble(prefs::kDefaultZoomLevel);
 
   if (zoom == content::PAGE_ZOOM_RESET) {
-    host->SetZoomLevel(default_zoom_level);
+    web_contents->SetZoomLevel(default_zoom_level);
     content::RecordAction(UserMetricsAction("ZoomNormal"));
     return;
   }
@@ -90,7 +89,7 @@ void Zoom(content::WebContents* web_contents, content::PageZoom zoom) {
       if (content::ZoomValuesEqual(zoom_level, current_zoom_level))
         continue;
       if (zoom_level < current_zoom_level) {
-        host->SetZoomLevel(zoom_level);
+        web_contents->SetZoomLevel(zoom_level);
         content::RecordAction(UserMetricsAction("ZoomMinus"));
         return;
       }
@@ -105,7 +104,7 @@ void Zoom(content::WebContents* web_contents, content::PageZoom zoom) {
       if (content::ZoomValuesEqual(zoom_level, current_zoom_level))
         continue;
       if (zoom_level > current_zoom_level) {
-        host->SetZoomLevel(zoom_level);
+        web_contents->SetZoomLevel(zoom_level);
         content::RecordAction(UserMetricsAction("ZoomPlus"));
         return;
       }

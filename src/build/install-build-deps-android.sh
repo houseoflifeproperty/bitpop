@@ -17,11 +17,9 @@ if ! uname -m | egrep -q "i686|x86_64"; then
   exit
 fi
 
-if [ "x$(id -u)" != x0 ]; then
-  echo "Running as non-root user."
-  echo "You might have to enter your password one or more times for 'sudo'."
-  echo
-fi
+# Install first the default Linux build deps.
+"$(dirname "${BASH_SOURCE[0]}")/install-build-deps.sh" \
+    --no-syms --no-arm --no-chromeos-fonts --no-nacl --no-prompt
 
 # The temporary directory used to store output of update-java-alternatives
 TEMPDIR=$(mktemp -d)
@@ -44,10 +42,13 @@ sudo apt-get -f install
 # be installed manually on late-model versions.
 
 # common
-sudo apt-get -y install python-pexpect xvfb x11-utils
+sudo apt-get -y install checkstyle lighttpd python-pexpect xvfb x11-utils
 
-if /usr/bin/lsb_release -r -s | grep -q "12."; then
-  # Ubuntu 12.x
+# Few binaries in the Android SDK require 32-bit libraries on the host.
+sudo apt-get -y install lib32z1 g++-multilib
+
+if [ $(/usr/bin/lsb_release -r -s | cut -d"." -f1) -ge 12 ]; then
+  # Ubuntu >= 12.x
   sudo apt-get -y install ant
 
   # Java can not be installed via ppa on Ubuntu 12.04+ so we'll

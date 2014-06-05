@@ -5,23 +5,21 @@
 #ifndef CHROME_BROWSER_PLUGINS_PLUGIN_INSTALLER_H_
 #define CHROME_BROWSER_PLUGINS_PLUGIN_INSTALLER_H_
 
+#include "base/gtest_prod_util.h"
 #include "base/observer_list.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/version.h"
 #include "chrome/browser/plugins/plugin_metadata.h"
+#include "content/public/browser/download_interrupt_reasons.h"
 #include "content/public/browser/download_item.h"
-#include "googleurl/src/gurl.h"
-#include "net/base/net_errors.h"
+#include "url/gurl.h"
 
-class FilePath;
 class PluginInstallerObserver;
 class WeakPluginInstallerObserver;
 
 namespace content {
+class DownloadManager;
 class WebContents;
-}
-
-namespace webkit {
 struct WebPluginInfo;
 }
 
@@ -56,16 +54,24 @@ class PluginInstaller : public content::DownloadItem::Observer {
                        content::WebContents* web_contents);
 
  private:
-  void DownloadStarted(scoped_refptr<content::DownloadManager> dlm,
-                       content::DownloadItem* item,
-                       net::Error error);
+  void StartInstallingWithDownloadManager(
+      const GURL& plugin_url,
+      content::WebContents* web_contents,
+      content::DownloadManager* download_manager);
+  void DownloadStarted(content::DownloadItem* item,
+                       content::DownloadInterruptReason interrupt_reason);
   void DownloadError(const std::string& msg);
   void DownloadCancelled();
 
   InstallerState state_;
   ObserverList<PluginInstallerObserver> observers_;
+  int strong_observer_count_;
   ObserverList<WeakPluginInstallerObserver> weak_observers_;
 
+  FRIEND_TEST_ALL_PREFIXES(PluginInstallerTest,
+                           StartInstalling_SuccessfulDownload);
+  FRIEND_TEST_ALL_PREFIXES(PluginInstallerTest, StartInstalling_FailedStart);
+  FRIEND_TEST_ALL_PREFIXES(PluginInstallerTest, StartInstalling_Interrupted);
   DISALLOW_COPY_AND_ASSIGN(PluginInstaller);
 };
 

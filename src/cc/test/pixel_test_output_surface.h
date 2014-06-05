@@ -1,37 +1,36 @@
-// Copyright 2012 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CC_TEST_PIXEL_TEST_GRAPHICS_CONTEXT_H_
-#define CC_TEST_PIXEL_TEST_GRAPHICS_CONTEXT_H_
+#ifndef CC_TEST_PIXEL_TEST_OUTPUT_SURFACE_H_
+#define CC_TEST_PIXEL_TEST_OUTPUT_SURFACE_H_
 
-#include "base/memory/scoped_ptr.h"
-#include "cc/output_surface.h"
+#include "cc/output/output_surface.h"
 
 namespace cc {
 
 class PixelTestOutputSurface : public OutputSurface {
  public:
-  static scoped_ptr<PixelTestOutputSurface> create() {
-    return make_scoped_ptr(new PixelTestOutputSurface);
+  explicit PixelTestOutputSurface(
+      scoped_refptr<ContextProvider> context_provider);
+  explicit PixelTestOutputSurface(
+      scoped_ptr<SoftwareOutputDevice> software_device);
+
+  virtual void Reshape(const gfx::Size& size, float scale_factor) OVERRIDE;
+  virtual bool HasExternalStencilTest() const OVERRIDE;
+
+  void set_surface_expansion_size(const gfx::Size& surface_expansion_size) {
+    surface_expansion_size_ = surface_expansion_size;
+  }
+  void set_has_external_stencil_test(bool has_test) {
+    external_stencil_test_ = has_test;
   }
 
-  virtual ~PixelTestOutputSurface();
-
-  // OutputSurface overrides.
-  virtual bool BindToClient(OutputSurfaceClient*) OVERRIDE;
-  virtual const struct OutputSurface::Capabilities& Capabilities() const
-      OVERRIDE;
-  virtual WebKit::WebGraphicsContext3D* Context3D() const OVERRIDE;
-  virtual SoftwareOutputDevice* SoftwareDevice() const OVERRIDE;
-  virtual void SendFrameToParentCompositor(const CompositorFrame&) OVERRIDE {}
-
  private:
-  PixelTestOutputSurface();
-
-  scoped_ptr<WebKit::WebGraphicsContext3D> context_;
+  gfx::Size surface_expansion_size_;
+  bool external_stencil_test_;
 };
 
 }  // namespace cc
 
-#endif  // CC_TEST_PIXEL_TEST_GRAPHICS_CONTEXT_H_
+#endif  // CC_TEST_PIXEL_TEST_OUTPUT_SURFACE_H_

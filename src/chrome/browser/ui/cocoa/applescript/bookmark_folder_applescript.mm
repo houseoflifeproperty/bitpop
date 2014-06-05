@@ -4,14 +4,14 @@
 
 #import "chrome/browser/ui/cocoa/applescript/bookmark_folder_applescript.h"
 
-#import "base/memory/scoped_nsobject.h"
-#import "base/string16.h"
-#include "base/sys_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
+#import "base/mac/scoped_nsobject.h"
+#import "base/strings/string16.h"
+#include "base/strings/sys_string_conversions.h"
 #import "chrome/browser/ui/cocoa/applescript/bookmark_item_applescript.h"
 #import "chrome/browser/ui/cocoa/applescript/constants_applescript.h"
 #include "chrome/browser/ui/cocoa/applescript/error_applescript.h"
-#include "googleurl/src/gurl.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "url/gurl.h"
 
 @implementation BookmarkFolderAppleScript
 
@@ -24,7 +24,7 @@
 
     if (!node->is_folder())
       continue;
-    scoped_nsobject<BookmarkFolderAppleScript> bookmarkFolder(
+    base::scoped_nsobject<BookmarkFolderAppleScript> bookmarkFolder(
         [[BookmarkFolderAppleScript alloc] initWithBookmarkNode:node]);
     [bookmarkFolder setContainer:self
                         property:AppleScript::kBookmarkFoldersProperty];
@@ -45,7 +45,7 @@
 
   const BookmarkNode* node = model->AddFolder(bookmarkNode_,
                                               bookmarkNode_->child_count(),
-                                              string16());
+                                              base::string16());
   if (!node) {
     AppleScript::SetError(AppleScript::errCreateBookmarkFolder);
     return;
@@ -67,7 +67,7 @@
 
   const BookmarkNode* node = model->AddFolder(bookmarkNode_,
                                               position,
-                                              string16());
+                                              base::string16());
   if (!node) {
     AppleScript::SetError(AppleScript::errCreateBookmarkFolder);
     return;
@@ -95,7 +95,7 @@
 
     if (!node->is_url())
       continue;
-    scoped_nsobject<BookmarkItemAppleScript> bookmarkItem(
+    base::scoped_nsobject<BookmarkItemAppleScript> bookmarkItem(
         [[BookmarkItemAppleScript alloc] initWithBookmarkNode:node]);
     [bookmarkItem setContainer:self
                       property:AppleScript::kBookmarkItemsProperty];
@@ -123,7 +123,7 @@
 
   const BookmarkNode* node = model->AddURL(bookmarkNode_,
                                            bookmarkNode_->child_count(),
-                                           string16(),
+                                           base::string16(),
                                            url);
   if (!node) {
     AppleScript::SetError(AppleScript::errCreateBookmarkItem);
@@ -153,7 +153,7 @@
 
   const BookmarkNode* node = model->AddURL(bookmarkNode_,
                                            position,
-                                           string16(),
+                                           base::string16(),
                                            url);
   if (!node) {
     AppleScript::SetError(AppleScript::errCreateBookmarkItem);

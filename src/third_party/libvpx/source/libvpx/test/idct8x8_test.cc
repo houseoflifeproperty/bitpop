@@ -14,11 +14,9 @@
 
 #include "third_party/googletest/src/include/gtest/gtest.h"
 
-extern "C" {
-#include "vp9_rtcd.h"
-}
+#include "./vp9_rtcd.h"
 
-#include "acm_random.h"
+#include "test/acm_random.h"
 #include "vpx/vpx_integer.h"
 
 using libvpx_test::ACMRandom;
@@ -27,10 +25,10 @@ namespace {
 
 #ifdef _MSC_VER
 static int round(double x) {
-  if(x < 0)
-    return (int)ceil(x - 0.5);
+  if (x < 0)
+    return static_cast<int>(ceil(x - 0.5));
   else
-    return (int)floor(x + 0.5);
+    return static_cast<int>(floor(x + 0.5));
 }
 #endif
 
@@ -112,45 +110,23 @@ TEST(VP9Idct8x8Test, AccuracyCheck) {
   const int count_test_block = 10000;
   for (int i = 0; i < count_test_block; ++i) {
     int16_t input[64], coeff[64];
-    int16_t output_c[64];
     double output_r[64];
+    uint8_t dst[64], src[64];
 
+    for (int j = 0; j < 64; ++j) {
+      src[j] = rnd.Rand8();
+      dst[j] = rnd.Rand8();
+    }
     // Initialize a test block with input range [-255, 255].
     for (int j = 0; j < 64; ++j)
-      input[j] = rnd.Rand8() - rnd.Rand8();
+      input[j] = src[j] - dst[j];
 
-    const int pitch = 16;
-    vp9_short_fdct8x8_c(input, output_c, pitch);
-    reference_dct_2d(input, output_r);
-
-    for (int j = 0; j < 64; ++j) {
-      const double diff = output_c[j] - output_r[j];
-      const double error = diff * diff;
-      // An error in a DCT coefficient isn't that bad.
-      // We care more about the reconstructed pixels.
-      EXPECT_GE(2.0, error)
-          << "Error: 8x8 FDCT/IDCT has error " << error
-          << " at index " << j;
-    }
-
-#if 0
-    // Tests that the reference iDCT and fDCT match.
-    reference_dct_2d(input, output_r);
-    reference_idct_2d(output_r, output_c);
-    for (int j = 0; j < 64; ++j) {
-      const int diff = output_c[j] -input[j];
-      const int error = diff * diff;
-      EXPECT_EQ(0, error)
-          << "Error: 8x8 FDCT/IDCT has error " << error
-          << " at index " << j;
-    }
-#endif
     reference_dct_2d(input, output_r);
     for (int j = 0; j < 64; ++j)
       coeff[j] = round(output_r[j]);
-    vp9_short_idct8x8_c(coeff, output_c, pitch);
+    vp9_idct8x8_64_add_c(coeff, dst, 8);
     for (int j = 0; j < 64; ++j) {
-      const int diff = output_c[j] -input[j];
+      const int diff = dst[j] - src[j];
       const int error = diff * diff;
       EXPECT_GE(1, error)
           << "Error: 8x8 FDCT/IDCT has error " << error

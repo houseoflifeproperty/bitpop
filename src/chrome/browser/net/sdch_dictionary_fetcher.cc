@@ -6,7 +6,7 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "chrome/browser/profiles/profile.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/url_fetcher.h"
@@ -15,7 +15,7 @@
 
 SdchDictionaryFetcher::SdchDictionaryFetcher(
     net::URLRequestContextGetter* context)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+    : weak_factory_(this),
       task_is_pending_(false),
       context_(context) {
   DCHECK(CalledOnValidThread());
@@ -54,7 +54,7 @@ void SdchDictionaryFetcher::Schedule(const GURL& dictionary_url) {
 void SdchDictionaryFetcher::ScheduleDelayedRun() {
   if (fetch_queue_.empty() || current_fetch_.get() || task_is_pending_)
     return;
-  MessageLoop::current()->PostDelayedTask(FROM_HERE,
+  base::MessageLoop::current()->PostDelayedTask(FROM_HERE,
       base::Bind(&SdchDictionaryFetcher::StartFetching,
                  weak_factory_.GetWeakPtr()),
       base::TimeDelta::FromMilliseconds(kMsDelayFromRequestTillDownload));

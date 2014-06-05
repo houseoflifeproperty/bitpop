@@ -1,14 +1,27 @@
 include_rules = [
+  "+device/bluetooth",
+  "+cc/debug",
   "+chromeos",
-  "+content/public",
+  "+gpu/config",
   "+grit/ash_resources.h",
   "+grit/ash_strings.h",
-  "+grit/ash_wallpaper_resources.h",
   "+grit/ui_resources.h",
   "+grit/ui_strings.h",
+  "+media",
   "+skia/ext",
   "+third_party/cros_system_api",
   "+third_party/skia",
   "+net",
   "+ui",
+  "+win8",
+  "-ash/host",
 ]
+
+specific_include_rules = {
+  "root_window_controller\.*": [
+    "+ash/host"
+  ],
+  "touch_transformer_controller\.*": [
+    "+ash/host"
+  ],
+}

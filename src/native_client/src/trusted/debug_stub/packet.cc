@@ -100,6 +100,45 @@ void Packet::AddString(const char *str) {
   }
 }
 
+void Packet::AddEscapedData(const char *data, size_t length) {
+  while (length > 0) {
+    char ch = *data;
+    // Escape certain characters by sending 0x7d ('}') followed by the original
+    // character xor-ed with 0x20.
+    if (ch == '}' || ch == '#' || ch == '$' || ch == '*') {
+      AddRawChar('}');
+      AddRawChar(ch ^ 0x20);
+    } else {
+      AddRawChar(ch);
+    }
+    ++data;
+    --length;
+    // See if run length encoding can be used.
+    // Limit runs to 97 copies, as character 126 is the highest that can be
+    // used in the encoding.
+    size_t count = 0;
+    while (count < 97 && length > count && data[count] == ch) {
+      count++;
+    }
+    // We can only use run length encoding if there are 3 or more of the same
+    // character (not including the initial character). This is the minimum run
+    // length allowed by the protocol.
+    if (count >= 3) {
+      // An odd quirk of the protocol is that because the characters
+      // '#' and '$' cannot appear in a packet, they also are not valid as a
+      // run length. Since these correspond to lengths 6 and 7, runs of this
+      // size must be clipped down to length 5.
+      if (count == 6 || count == 7) {
+        count = 5;
+      }
+      AddRawChar('*');
+      AddRawChar(static_cast<char>(count + 29));
+      data += count;
+      length -= count;
+    }
+  }
+}
+
 void Packet::AddHexString(const char *str) {
   assert(str);
 
@@ -132,7 +171,9 @@ void Packet::AddNumberSep(uint64_t val, char sep) {
       val >>= 8;
 
       // Supress leading zeros, so we are done when val hits zero
-      if (val == 0) break;
+      if (val == 0) {
+        break;
+      }
     }
 
     // Strip the high zero for this byte if needed
@@ -153,18 +194,24 @@ bool Packet::GetNumberSep(uint64_t *val, char *sep) {
   uint64_t out = 0;
   char ch;
 
-  if (!GetRawChar(&ch)) return false;
+  if (!GetRawChar(&ch)) {
+    return false;
+  }
 
   // Check for -1
   if (ch == '-') {
-    if (!GetRawChar(&ch)) return false;
+    if (!GetRawChar(&ch)) {
+      return false;
+    }
 
     if (ch == '1') {
       *val = -1;
 
       ch = 0;
       GetRawChar(&ch);
-      if (sep) *sep = ch;
+      if (sep) {
+        *sep = ch;
+      }
       return true;
     }
     return false;
@@ -174,14 +221,18 @@ bool Packet::GetNumberSep(uint64_t *val, char *sep) {
     int nib;
 
     // Check for separator
-    if (!NibbleToInt(ch, &nib)) break;
+    if (!NibbleToInt(ch, &nib)) {
+      break;
+    }
 
     // Add this nibble.
     out = (out << 4) + nib;
 
     // Get the next character (if availible)
     ch = 0;
-    if (!GetRawChar(&ch)) break;
+    if (!GetRawChar(&ch)) {
+      break;
+    }
   } while (1);
 
   // Set the value;
@@ -264,12 +315,20 @@ bool Packet::GetWord8(uint8_t *ch) {
   int  val1, val2;
 
   // Get two ASCII hex values
-  if (!GetRawChar(&seq1)) return false;
-  if (!GetRawChar(&seq2)) return false;
+  if (!GetRawChar(&seq1)) {
+    return false;
+  }
+  if (!GetRawChar(&seq2)) {
+    return false;
+  }
 
   // Convert them to ints
-  if (!NibbleToInt(seq1, &val1)) return false;
-  if (!NibbleToInt(seq2, &val2)) return false;
+  if (!NibbleToInt(seq1, &val1)) {
+    return false;
+  }
+  if (!NibbleToInt(seq2, &val2)) {
+    return false;
+  }
 
   *ch = (val1 << 4) + val2;
   return true;
@@ -283,7 +342,9 @@ bool Packet::GetBlock(void *ptr, uint32_t len) {
 
   for (uint32_t offs = 0; offs < len; offs++) {
     res = GetWord8(&p[offs]);
-    if (false == res) break;
+    if (false == res) {
+      break;
+    }
   }
 
   return res;
@@ -306,7 +367,9 @@ bool Packet::GetWord64(uint64_t *ptr) {
 
 
 bool Packet::GetString(string* str) {
-  if (EndOfPacket()) return false;
+  if (EndOfPacket()) {
+    return false;
+  }
 
   *str = &data_[read_index_];
   read_index_ = write_index_;
@@ -314,64 +377,58 @@ bool Packet::GetString(string* str) {
 }
 
 bool Packet::GetHexString(string* str) {
+  // Decode a string encoded as a series of 2-hex digit pairs.
+
+  char ch1;
+  char ch2;
+  int nib1;
+  int nib2;
+
+  if (EndOfPacket()) {
+    return false;
+  }
+
+  // Pull values until we hit a separator
+  str->clear();
+  while (GetRawChar(&ch1)) {
+    if (!NibbleToInt(ch1, &nib1)) {
+      read_index_--;
+      break;
+    }
+    if (!GetRawChar(&ch2) ||
+        !NibbleToInt(ch2, &nib2)) {
+      return false;
+    }
+    *str += static_cast<char>((nib1 << 4) + nib2);
+  }
+  return true;
+}
+
+bool Packet::GetStringSep(std::string *str, char sep) {
   char ch;
-  if (EndOfPacket()) return false;
+
+  if (EndOfPacket()) {
+    return false;
+  }
 
   // Pull values until we hit a separator
   str->clear();
   while (GetRawChar(&ch)) {
-    if (NibbleToInt(ch, NULL)) {
+    if (ch == sep) {
+      return true;
+    } else {
       *str += ch;
-    } else {
-      read_index_--;
-      break;
     }
   }
-  return true;
+  return false;
 }
-
-bool Packet::GetStringCB(void *ctx, StrFunc_t cb) {
-  assert(NULL != ctx);
-
-  if (EndOfPacket()) {
-    cb(ctx, NULL);
-    return false;
-  }
-
-  cb(ctx, &data_[read_index_]);
-  read_index_ = write_index_;
-  return true;
-}
-
-bool Packet::GetHexStringCB(void *ctx, StrFunc_t cb) {
-  assert(NULL != ctx);
-
-  std::string out;
-  char ch;
-
-  if (EndOfPacket()) {
-    cb(ctx, NULL);
-    return false;
-  }
-
-  // Pull values until we hit a separator
-  while (GetRawChar(&ch)) {
-    if (NibbleToInt(ch, NULL)) {
-      out += ch;
-    } else {
-      read_index_--;
-      break;
-    }
-  }
-
-  // Call the CB with the availible string
-  cb(ctx, out.data());
-  return true;
-}
-
 
 const char *Packet::GetPayload() const {
   return &data_[0];
+}
+
+size_t Packet::GetPayloadSize() const {
+  return write_index_;
 }
 
 bool Packet::GetSequence(int32_t *ch) const {

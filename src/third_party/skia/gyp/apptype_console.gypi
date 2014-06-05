@@ -12,9 +12,10 @@
       },
     },
     'conditions': [
-      [ 'skia_os == "android"', {
+      [ 'skia_os == "android" and not skia_android_framework', {
         'dependencies': [
           'android_deps.gyp:Android_EntryPoint',
+          'android_system.gyp:skia_launcher',
         ],
       }],
       [ 'skia_os == "nacl"', {
@@ -33,19 +34,15 @@
           '../include/views',
           '../include/xml',
           '../include/utils/mac',
+          '../src/views/mac',
         ],
         'sources': [
           '../src/views/ios/SkOSWindow_iOS.mm',
-          '../src/views/mac/SkEventNotifier.h',
           '../src/views/mac/SkEventNotifier.mm',
-          '../experimental/iOSSampleApp/iPad/AppDelegate_iPad.h',
           '../experimental/iOSSampleApp/iPad/AppDelegate_iPad.mm',
-          '../experimental/iOSSampleApp/iPhone/AppDelegate_iPhone.h',
           '../experimental/iOSSampleApp/iPhone/AppDelegate_iPhone.mm',
-          '../experimental/iOSSampleApp/Shared/SkUIView.h',
           '../experimental/iOSSampleApp/Shared/SkUIView.mm',
           '../experimental/iOSSampleApp/Shared/skia_ios.mm',
-          '../experimental/SimpleiOSApp/SimpleApp.h',
           '../experimental/SimpleiOSApp/SimpleApp.mm',
         ],
         'dependencies': [
@@ -74,9 +71,3 @@
     ],
   },
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

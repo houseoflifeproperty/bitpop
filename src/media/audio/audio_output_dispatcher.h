@@ -20,12 +20,14 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_manager.h"
 #include "media/audio/audio_parameters.h"
 
-class MessageLoop;
+namespace base {
+class SingleThreadTaskRunner;
+}
 
 namespace media {
 
@@ -35,7 +37,8 @@ class MEDIA_EXPORT AudioOutputDispatcher
     : public base::RefCountedThreadSafe<AudioOutputDispatcher> {
  public:
   AudioOutputDispatcher(AudioManager* audio_manager,
-                        const AudioParameters& params);
+                        const AudioParameters& params,
+                        const std::string& device_id);
 
   // Called by AudioOutputProxy to open the stream.
   // Returns false, if it fails to open it.
@@ -62,17 +65,18 @@ class MEDIA_EXPORT AudioOutputDispatcher
   // Called on the audio thread when the AudioManager is shutting down.
   virtual void Shutdown() = 0;
 
+  const std::string& device_id() const { return device_id_; }
+
  protected:
   friend class base::RefCountedThreadSafe<AudioOutputDispatcher>;
-  friend class AudioOutputProxyTest;
-
   virtual ~AudioOutputDispatcher();
 
   // A no-reference-held pointer (we don't want circular references) back to the
   // AudioManager that owns this object.
   AudioManager* audio_manager_;
-  MessageLoop* message_loop_;
-  AudioParameters params_;
+  const scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
+  const AudioParameters params_;
+  std::string device_id_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(AudioOutputDispatcher);

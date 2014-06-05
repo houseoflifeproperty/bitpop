@@ -50,6 +50,10 @@ class RepoPoller(PollingChangeSource):
                category='', project='', revlinktmpl=None,
                encoding='utf-8', from_addr=None, to_addrs=None,
                smtp_host=None):
+    # In 'dry_run' mode poller won't fetch the repository.
+    # Used when running master smoke tests.
+    self.dry_run = 'POLLER_DRY_RUN' in os.environ
+
     if not workdir:
       workdir = tempfile.mkdtemp(prefix='repo_poller')
       log.msg('RepoPoller: using new working dir %s' % workdir)
@@ -76,6 +80,10 @@ class RepoPoller(PollingChangeSource):
     self.errCount = 0
 
   def startService(self):
+    if self.dry_run:
+      PollingChangeSource.startService(self)
+      return
+
     if not os.path.isabs(self.workdir):
       self.workdir = os.path.join(self.master.basedir, self.workdir)
       log.msg('RepoPoller: using workdir "%s"' % self.workdir)
@@ -104,8 +112,7 @@ class RepoPoller(PollingChangeSource):
   def RunCmd(self, binary, args, path):
     log.msg('RepoPoller: running "%s %s" (in %s)'
             % (binary, ' '.join(args), path))
-    d = utils.getProcessOutputAndValue(binary, args, path=path,
-                                       env=dict(PATH=os.environ['PATH']))
+    d = utils.getProcessOutputAndValue(binary, args, path=path, env=os.environ)
     def _check_status(result):
       (stdout, stderr, status) = result
       if status != 0:
@@ -181,6 +188,9 @@ class RepoPoller(PollingChangeSource):
 
   @deferredLocked('initLock')
   def poll(self):
+    if self.dry_run:
+      return defer.succeed(None)
+
     d = defer.succeed(0)
     for repo_branch in self.repo_branches:
       d.addCallback(log.msg,'RepoPoller: polling new changes for branch %s...'
@@ -218,8 +228,7 @@ class RepoPoller(PollingChangeSource):
     args = ['log', rev, '--no-walk', '--format=%s%n%b']
     d = utils.getProcessOutput(self.git_bin, args,
                                path=os.path.join(self.workdir, project),
-                               env=dict(PATH=os.environ['PATH']),
-                               errortoo=False)
+                               env=os.environ, errortoo=False)
     def process(git_output):
       stripped_output = git_output.strip().decode(self.encoding)
       if len(stripped_output) == 0:
@@ -232,8 +241,7 @@ class RepoPoller(PollingChangeSource):
     args = ['log', rev, '--name-only', '--no-walk', '--format=%n']
     d = utils.getProcessOutput(self.git_bin, args,
                                path=os.path.join(self.workdir, project),
-                               env=dict(PATH=os.environ['PATH']),
-                               errortoo=False)
+                               env=os.environ, errortoo=False)
     d.addCallback(lambda git_output: [x for x in git_output.splitlines() if x])
     return d
 
@@ -241,8 +249,7 @@ class RepoPoller(PollingChangeSource):
     args = ['log', rev, '--no-walk', '--format=%aE']
     d = utils.getProcessOutput(self.git_bin, args,
                                path=os.path.join(self.workdir, project),
-                               env=dict(PATH=os.environ['PATH']),
-                               errortoo=False)
+                               env=os.environ, errortoo=False)
     def process(git_output):
       stripped_output = git_output.strip().decode(self.encoding)
       if len(stripped_output) == 0:

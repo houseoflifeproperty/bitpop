@@ -19,26 +19,24 @@
 #include <zlib.h>
 
 #include "avcodec.h"
+#include "internal.h"
 #include "libavutil/common.h"
 
 typedef struct {
-    AVFrame  previous_frame;
+    AVFrame  *previous_frame;
     z_stream zstream;
-    int      size;
 } ZeroCodecContext;
 
 static int zerocodec_decode_frame(AVCodecContext *avctx, void *data,
-                                  int *data_size, AVPacket *avpkt)
+                                  int *got_frame, AVPacket *avpkt)
 {
     ZeroCodecContext *zc = avctx->priv_data;
-    AVFrame *pic         = avctx->coded_frame;
-    AVFrame *prev_pic    = &zc->previous_frame;
+    AVFrame *pic         = data;
+    AVFrame *prev_pic    = zc->previous_frame;
     z_stream *zstream    = &zc->zstream;
     uint8_t *prev        = prev_pic->data[0];
     uint8_t *dst;
-    int i, j, zret;
-
-    pic->reference = 3;
+    int i, j, zret, ret;
 
     if (avpkt->flags & AV_PKT_FLAG_KEY) {
         pic->key_frame = 1;
@@ -48,6 +46,9 @@ static int zerocodec_decode_frame(AVCodecContext *avctx, void *data,
             av_log(avctx, AV_LOG_ERROR, "Missing reference frame.\n");
             return AVERROR_INVALIDDATA;
         }
+
+        prev += (avctx->height - 1) * prev_pic->linesize[0];
+
         pic->key_frame = 0;
         pic->pict_type = AV_PICTURE_TYPE_P;
     }
@@ -58,15 +59,13 @@ static int zerocodec_decode_frame(AVCodecContext *avctx, void *data,
         return AVERROR_INVALIDDATA;
     }
 
-    if (avctx->get_buffer(avctx, pic) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "Could not allocate buffer.\n");
-        return AVERROR(ENOMEM);
-    }
+    if ((ret = ff_get_buffer(avctx, pic, AV_GET_BUFFER_FLAG_REF)) < 0)
+        return ret;
 
     zstream->next_in  = avpkt->data;
     zstream->avail_in = avpkt->size;
 
-    dst = pic->data[0];
+    dst = pic->data[0] + (avctx->height - 1) * pic->linesize[0];
 
     /**
      * ZeroCodec has very simple interframe compression. If a value
@@ -79,7 +78,6 @@ static int zerocodec_decode_frame(AVCodecContext *avctx, void *data,
 
         zret = inflate(zstream, Z_SYNC_FLUSH);
         if (zret != Z_OK && zret != Z_STREAM_END) {
-            avctx->release_buffer(avctx, pic);
             av_log(avctx, AV_LOG_ERROR,
                    "Inflate failed with return code: %d.\n", zret);
             return AVERROR_INVALIDDATA;
@@ -89,20 +87,15 @@ static int zerocodec_decode_frame(AVCodecContext *avctx, void *data,
             for (j = 0; j < avctx->width << 1; j++)
                 dst[j] += prev[j] & -!dst[j];
 
-        prev += prev_pic->linesize[0];
-        dst  += pic->linesize[0];
+        prev -= prev_pic->linesize[0];
+        dst  -= pic->linesize[0];
     }
 
-    /* Release the previous buffer if need be */
-    if (prev_pic->data[0])
-        avctx->release_buffer(avctx, prev_pic);
+    av_frame_unref(zc->previous_frame);
+    if ((ret = av_frame_ref(zc->previous_frame, pic)) < 0)
+        return ret;
 
-    *data_size       = sizeof(AVFrame);
-    *(AVFrame *)data = *pic;
-
-    /* Store the previous frame for use later.
-     * FFSWAP ensures that e.g. pic->data is NULLed. */
-    FFSWAP(AVFrame, *pic, *prev_pic);
+    *got_frame = 1;
 
     return avpkt->size;
 }
@@ -110,15 +103,10 @@ static int zerocodec_decode_frame(AVCodecContext *avctx, void *data,
 static av_cold int zerocodec_decode_close(AVCodecContext *avctx)
 {
     ZeroCodecContext *zc = avctx->priv_data;
-    AVFrame *prev_pic    = &zc->previous_frame;
+
+    av_frame_free(&zc->previous_frame);
 
     inflateEnd(&zc->zstream);
-
-    /* Release last frame */
-    if (prev_pic->data[0])
-        avctx->release_buffer(avctx, prev_pic);
-
-    av_freep(&avctx->coded_frame);
 
     return 0;
 }
@@ -129,11 +117,8 @@ static av_cold int zerocodec_decode_init(AVCodecContext *avctx)
     z_stream *zstream    = &zc->zstream;
     int zret;
 
-    avctx->pix_fmt             = PIX_FMT_UYVY422;
+    avctx->pix_fmt             = AV_PIX_FMT_UYVY422;
     avctx->bits_per_raw_sample = 8;
-
-    zc->size = avpicture_get_size(avctx->pix_fmt,
-                                  avctx->width, avctx->height);
 
     zstream->zalloc = Z_NULL;
     zstream->zfree  = Z_NULL;
@@ -145,9 +130,8 @@ static av_cold int zerocodec_decode_init(AVCodecContext *avctx)
         return AVERROR(ENOMEM);
     }
 
-    avctx->coded_frame = avcodec_alloc_frame();
-    if (!avctx->coded_frame) {
-        av_log(avctx, AV_LOG_ERROR, "Could not allocate frame buffer.\n");
+    zc->previous_frame = av_frame_alloc();
+    if (!zc->previous_frame) {
         zerocodec_decode_close(avctx);
         return AVERROR(ENOMEM);
     }
@@ -158,11 +142,11 @@ static av_cold int zerocodec_decode_init(AVCodecContext *avctx)
 AVCodec ff_zerocodec_decoder = {
     .type           = AVMEDIA_TYPE_VIDEO,
     .name           = "zerocodec",
+    .long_name      = NULL_IF_CONFIG_SMALL("ZeroCodec Lossless Video"),
     .id             = AV_CODEC_ID_ZEROCODEC,
     .priv_data_size = sizeof(ZeroCodecContext),
     .init           = zerocodec_decode_init,
     .decode         = zerocodec_decode_frame,
     .close          = zerocodec_decode_close,
     .capabilities   = CODEC_CAP_DR1,
-    .long_name      = NULL_IF_CONFIG_SMALL("ZeroCodec Lossless Video"),
 };

@@ -16,12 +16,11 @@ namespace switches {
 const char* const kSwitchesToRemoveOnAutorestart[] = {
   switches::kApp,
   switches::kAppId,
-  switches::kFirstRun,
-  switches::kImport,
-  switches::kImportFromFile,
+  switches::kForceFirstRun,
   switches::kMakeDefaultBrowser,
   switches::kNoStartupWindow,
-  switches::kRestoreLastSession
+  switches::kRestoreLastSession,
+  switches::kShowAppList,
 };
 
 void RemoveSwitchesForAutostart(

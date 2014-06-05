@@ -31,7 +31,7 @@ class BrowserTabRestoreServiceDelegate : public TabRestoreServiceDelegate {
   virtual content::WebContents* GetActiveWebContents() const OVERRIDE;
   virtual bool IsTabPinned(int index) const OVERRIDE;
   virtual content::WebContents* AddRestoredTab(
-      const std::vector<TabNavigation>& navigations,
+      const std::vector<sessions::SerializedNavigationEntry>& navigations,
       int tab_index,
       int selected_navigation,
       const std::string& extension_app_id,
@@ -40,8 +40,8 @@ class BrowserTabRestoreServiceDelegate : public TabRestoreServiceDelegate {
       bool from_last_session,
       content::SessionStorageNamespace* storage_namespace,
       const std::string& user_agent_override) OVERRIDE;
-  virtual void ReplaceRestoredTab(
-      const std::vector<TabNavigation>& navigations,
+  virtual content::WebContents* ReplaceRestoredTab(
+      const std::vector<sessions::SerializedNavigationEntry>& navigations,
       int selected_navigation,
       bool from_last_session,
       const std::string& extension_app_id,

@@ -9,30 +9,30 @@
 
 class GURL;
 struct DOMStorageMsg_Event_Params;
-namespace dom_storage {
-class DomStorageCachedArea;
-}
+
 namespace IPC {
 class Message;
 }
 
 namespace content {
 
+class DOMStorageCachedArea;
+
 // Dispatches DomStorage related messages sent to a renderer process from the
 // main browser process. There is one instance per child process. Messages
 // are dispatched on the main renderer thread. The RenderThreadImpl
 // creates an instance and delegates calls to it. This classes also manages
-// the collection of DomStorageCachedAreas that are active in the process.
+// the collection of DOMStorageCachedAreas that are active in the process.
 class DomStorageDispatcher {
  public:
   DomStorageDispatcher();
   ~DomStorageDispatcher();
 
   // Each call to open should be balanced with a call to close.
-  scoped_refptr<dom_storage::DomStorageCachedArea> OpenCachedArea(
-      int connection_id, int64 namespace_id, const GURL& origin);
-  void CloseCachedArea(
-      int connection_id, dom_storage::DomStorageCachedArea* area);
+  scoped_refptr<DOMStorageCachedArea> OpenCachedArea(int connection_id,
+                                                     int64 namespace_id,
+                                                     const GURL& origin);
+  void CloseCachedArea(int connection_id, DOMStorageCachedArea* area);
 
   bool OnMessageReceived(const IPC::Message& msg);
 
@@ -42,6 +42,7 @@ class DomStorageDispatcher {
   // IPC message handlers
   void OnStorageEvent(const DOMStorageMsg_Event_Params& params);
   void OnAsyncOperationComplete(bool success);
+  void OnResetCachedValues(int64 namespace_id);
 
   scoped_refptr<ProxyImpl> proxy_;
 };

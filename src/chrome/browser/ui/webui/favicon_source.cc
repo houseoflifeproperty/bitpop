@@ -6,132 +6,115 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/strings/string_number_conversions.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/webui/web_ui_util.h"
+#include "chrome/browser/search/instant_io_context.h"
+#include "chrome/browser/sync/open_tabs_ui_delegate.h"
+#include "chrome/browser/sync/profile_sync_service.h"
+#include "chrome/browser/sync/profile_sync_service_factory.h"
+#include "chrome/common/favicon/favicon_url_parser.h"
 #include "chrome/common/url_constants.h"
 #include "grit/locale_settings.h"
 #include "grit/ui_resources.h"
+#include "net/url_request/url_request.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/base/webui/web_ui_util.h"
+
+FaviconSource::IconRequest::IconRequest()
+    : size_in_dip(gfx::kFaviconSize),
+      scale_factor(ui::SCALE_FACTOR_NONE) {
+}
+
+FaviconSource::IconRequest::IconRequest(
+    const content::URLDataSource::GotDataCallback& cb,
+    const GURL& path,
+    int size,
+    ui::ScaleFactor scale)
+    : callback(cb),
+      request_path(path),
+      size_in_dip(size),
+      scale_factor(scale) {
+}
+
+FaviconSource::IconRequest::~IconRequest() {
+}
 
 FaviconSource::FaviconSource(Profile* profile, IconType type)
-    : DataSource(type == FAVICON ? chrome::kChromeUIFaviconHost :
-                     chrome::kChromeUITouchIconHost,
-                 MessageLoop::current()) {
-  Init(profile, type);
-}
-
-FaviconSource::FaviconSource(Profile* profile,
-                             IconType type,
-                             const std::string& source_name)
-    : DataSource(source_name, MessageLoop::current()) {
-  Init(profile, type);
-}
+    : profile_(profile->GetOriginalProfile()),
+      icon_types_(type == FAVICON ? favicon_base::FAVICON
+                                  : favicon_base::TOUCH_PRECOMPOSED_ICON |
+                                        favicon_base::TOUCH_ICON |
+                                        favicon_base::FAVICON) {}
 
 FaviconSource::~FaviconSource() {
 }
 
-void FaviconSource::Init(Profile* profile, IconType type) {
-  profile_ = profile->GetOriginalProfile();
-  icon_types_ = type == FAVICON ? history::FAVICON :
-      history::TOUCH_PRECOMPOSED_ICON | history::TOUCH_ICON |
-      history::FAVICON;
+std::string FaviconSource::GetSource() const {
+  return icon_types_ == favicon_base::FAVICON ? chrome::kChromeUIFaviconHost
+                                              : chrome::kChromeUITouchIconHost;
 }
 
-void FaviconSource::StartDataRequest(const std::string& path,
-                                     bool is_incognito,
-                                     int request_id) {
+void FaviconSource::StartDataRequest(
+    const std::string& path,
+    int render_process_id,
+    int render_frame_id,
+    const content::URLDataSource::GotDataCallback& callback) {
   FaviconService* favicon_service =
       FaviconServiceFactory::GetForProfile(profile_, Profile::EXPLICIT_ACCESS);
-  if (!favicon_service || path.empty()) {
-    SendDefaultResponse(IconRequest(request_id, 16, ui::SCALE_FACTOR_100P));
+  if (!favicon_service) {
+    SendDefaultResponse(callback);
     return;
   }
 
-  int size_in_dip = gfx::kFaviconSize;
-  ui::ScaleFactor scale_factor = ui::SCALE_FACTOR_100P;
+  chrome::ParsedFaviconPath parsed;
+  bool success = chrome::ParseFaviconPath(path, icon_types_, &parsed);
+  if (!success) {
+    SendDefaultResponse(callback);
+    return;
+  }
 
-  if (path.size() > 8 &&
-      (path.substr(0, 8) == "iconurl/" || path.substr(0, 8) == "iconurl@")) {
-    size_t prefix_length = 8;
-    // Optional scale factor appended to iconurl, which may be @1x or @2x.
-    if (path.at(7) == '@') {
-        size_t slash = path.find("/");
-        std::string scale_str = path.substr(8, slash - 8);
-        web_ui_util::ParseScaleFactor(scale_str, &scale_factor);
-        prefix_length = slash + 1;
-    }
+  GURL url(parsed.url);
+
+  if (parsed.is_icon_url) {
     // TODO(michaelbai): Change GetRawFavicon to support combination of
     // IconType.
     favicon_service->GetRawFavicon(
-        GURL(path.substr(prefix_length)),
-        history::FAVICON,
-        size_in_dip,
-        scale_factor,
+        url,
+        favicon_base::FAVICON,
+        parsed.size_in_dip,
+        parsed.scale_factor,
         base::Bind(&FaviconSource::OnFaviconDataAvailable,
                    base::Unretained(this),
-                   IconRequest(request_id, size_in_dip, scale_factor)),
+                   IconRequest(
+                       callback, url, parsed.size_in_dip, parsed.scale_factor)),
         &cancelable_task_tracker_);
   } else {
-    GURL url;
-    if (path.size() > 5 && path.substr(0, 5) == "size/") {
-      size_t slash = path.find("/", 5);
-      size_t scale_delimiter = path.find("@", 5);
-      std::string size = path.substr(5, slash - 5);
-      size_in_dip = atoi(size.c_str());
-      if (size_in_dip != 64 && size_in_dip != 32 && size_in_dip != 16) {
-        // Only 64x64, 32x32 and 16x16 icons are supported.
-        size_in_dip = 16;
-      }
-      // Optional scale factor.
-      if (scale_delimiter != std::string::npos && scale_delimiter < slash) {
-        DCHECK(size_in_dip == 16);
-        std::string scale_str = path.substr(scale_delimiter + 1,
-                                            slash - scale_delimiter - 1);
-        web_ui_util::ParseScaleFactor(scale_str, &scale_factor);
-      }
-      url = GURL(path.substr(slash + 1));
-    } else {
-      // URL requests prefixed with "origin/" are converted to a form with an
-      // empty path and a valid scheme. (e.g., example.com -->
-      // http://example.com/ or http://example.com/a --> http://example.com/)
-      if (path.size() > 7 && path.substr(0, 7) == "origin/") {
-        std::string originalUrl = path.substr(7);
-
-        // If the original URL does not specify a scheme (e.g., example.com
-        // instead of http://example.com), add "http://" as a default.
-        if (!GURL(originalUrl).has_scheme())
-          originalUrl = "http://" + originalUrl;
-
-        // Strip the path beyond the top-level domain.
-        url = GURL(originalUrl).GetOrigin();
-      } else {
-        url = GURL(path);
-      }
-    }
-
     // Intercept requests for prepopulated pages.
     for (size_t i = 0; i < arraysize(history::kPrepopulatedPages); i++) {
       if (url.spec() ==
           l10n_util::GetStringUTF8(history::kPrepopulatedPages[i].url_id)) {
-        SendResponse(request_id,
+        callback.Run(
             ResourceBundle::GetSharedInstance().LoadDataResourceBytesForScale(
                 history::kPrepopulatedPages[i].favicon_id,
-                scale_factor));
+                parsed.scale_factor));
         return;
       }
     }
 
     favicon_service->GetRawFaviconForURL(
-        FaviconService::FaviconForURLParams(
-            profile_, url, icon_types_, size_in_dip),
-        scale_factor,
+        FaviconService::FaviconForURLParams(url, icon_types_,
+                                            parsed.size_in_dip),
+        parsed.scale_factor,
         base::Bind(&FaviconSource::OnFaviconDataAvailable,
                    base::Unretained(this),
-                   IconRequest(request_id, size_in_dip, scale_factor)),
+                   IconRequest(callback,
+                               url,
+                               parsed.size_in_dip,
+                               parsed.scale_factor)),
         &cancelable_task_tracker_);
   }
 }
@@ -148,15 +131,44 @@ bool FaviconSource::ShouldReplaceExistingSource() const {
   return false;
 }
 
+bool FaviconSource::ShouldServiceRequest(const net::URLRequest* request) const {
+  if (request->url().SchemeIs(chrome::kChromeSearchScheme))
+    return InstantIOContext::ShouldServiceRequest(request);
+  return URLDataSource::ShouldServiceRequest(request);
+}
+
+bool FaviconSource::HandleMissingResource(const IconRequest& request) {
+  // If the favicon is not available, try to use the synced favicon.
+  ProfileSyncService* sync_service =
+      ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile_);
+  browser_sync::OpenTabsUIDelegate* open_tabs = sync_service ?
+      sync_service->GetOpenTabsUIDelegate() : NULL;
+
+  scoped_refptr<base::RefCountedMemory> response;
+  if (open_tabs &&
+      open_tabs->GetSyncedFaviconForPageURL(request.request_path.spec(),
+                                            &response)) {
+    request.callback.Run(response.get());
+    return true;
+  }
+  return false;
+}
+
 void FaviconSource::OnFaviconDataAvailable(
     const IconRequest& request,
-    const history::FaviconBitmapResult& bitmap_result) {
+    const favicon_base::FaviconBitmapResult& bitmap_result) {
   if (bitmap_result.is_valid()) {
     // Forward the data along to the networking system.
-    SendResponse(request.request_id, bitmap_result.bitmap_data);
-  } else {
+    request.callback.Run(bitmap_result.bitmap_data.get());
+  } else if (!HandleMissingResource(request)) {
     SendDefaultResponse(request);
   }
+}
+
+void FaviconSource::SendDefaultResponse(
+    const content::URLDataSource::GotDataCallback& callback) {
+  SendDefaultResponse(
+      IconRequest(callback, GURL(), 16, ui::SCALE_FACTOR_100P));
 }
 
 void FaviconSource::SendDefaultResponse(const IconRequest& icon_request) {
@@ -176,7 +188,8 @@ void FaviconSource::SendDefaultResponse(const IconRequest& icon_request) {
       resource_id = IDR_DEFAULT_FAVICON;
       break;
   }
-  base::RefCountedMemory* default_favicon = default_favicons_[favicon_index];
+  base::RefCountedMemory* default_favicon =
+      default_favicons_[favicon_index].get();
 
   if (!default_favicon) {
     ui::ScaleFactor scale_factor = icon_request.scale_factor;
@@ -185,5 +198,5 @@ void FaviconSource::SendDefaultResponse(const IconRequest& icon_request) {
     default_favicons_[favicon_index] = default_favicon;
   }
 
-  SendResponse(icon_request.request_id, default_favicon);
+  icon_request.callback.Run(default_favicon);
 }

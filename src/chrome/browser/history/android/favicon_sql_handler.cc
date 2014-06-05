@@ -37,23 +37,19 @@ bool FaviconSQLHandler::Update(const HistoryAndBookmarkRow& row,
   // If the image_data will be updated, it is not reasonable to find if the
   // icon is already in database, just create a new favicon.
   // TODO(pkotwicz): Pass in real pixel size.
-  FaviconID favicon_id = thumbnail_db_->AddFavicon(
-      GURL(),
-      history::FAVICON,
-      history::GetDefaultFaviconSizes(),
-      row.favicon(),
-      Time::Now(),
-      gfx::Size());
+  favicon_base::FaviconID favicon_id = thumbnail_db_->AddFavicon(
+      GURL(), favicon_base::FAVICON, row.favicon(), Time::Now(), gfx::Size());
 
   if (!favicon_id)
     return false;
 
-  std::vector<FaviconID> favicon_ids;
+  std::vector<favicon_base::FaviconID> favicon_ids;
   for (TableIDRows::const_iterator i = ids_set.begin();
        i != ids_set.end(); ++i) {
     // Remove all icon mappings to favicons of type FAVICON.
     std::vector<IconMapping> icon_mappings;
-    thumbnail_db_->GetIconMappingsForPageURL(i->url, FAVICON, &icon_mappings);
+    thumbnail_db_->GetIconMappingsForPageURL(
+        i->url, favicon_base::FAVICON, &icon_mappings);
     for (std::vector<IconMapping>::const_iterator m = icon_mappings.begin();
          m != icon_mappings.end(); ++m) {
       if (!thumbnail_db_->DeleteIconMapping(m->mapping_id))
@@ -74,7 +70,7 @@ bool FaviconSQLHandler::Update(const HistoryAndBookmarkRow& row,
 }
 
 bool FaviconSQLHandler::Delete(const TableIDRows& ids_set) {
-  std::vector<FaviconID> favicon_ids;
+  std::vector<favicon_base::FaviconID> favicon_ids;
   for (TableIDRows::const_iterator i = ids_set.begin();
        i != ids_set.end(); ++i) {
     // Since the URL was deleted, we delete all types of icon mappings.
@@ -106,20 +102,17 @@ bool FaviconSQLHandler::Insert(HistoryAndBookmarkRow* row) {
 
   // Is it a problem to give a empty URL?
   // TODO(pkotwicz): Pass in real pixel size.
-  FaviconID id = thumbnail_db_->AddFavicon(
-      GURL(),
-      history::FAVICON,
-      history::GetDefaultFaviconSizes(),
-      row->favicon(),
-      Time::Now(),
-      gfx::Size());
+  favicon_base::FaviconID id = thumbnail_db_->AddFavicon(
+      GURL(), favicon_base::FAVICON, row->favicon(), Time::Now(), gfx::Size());
   if (!id)
     return false;
   return thumbnail_db_->AddIconMapping(row->url(), id);
 }
 
-bool FaviconSQLHandler::DeleteUnusedFavicon(const std::vector<FaviconID>& ids) {
-  for (std::vector<FaviconID>::const_iterator i = ids.begin(); i != ids.end();
+bool FaviconSQLHandler::DeleteUnusedFavicon(
+    const std::vector<favicon_base::FaviconID>& ids) {
+  for (std::vector<favicon_base::FaviconID>::const_iterator i = ids.begin();
+       i != ids.end();
        ++i) {
     if (!thumbnail_db_->HasMappingFor(*i) && !thumbnail_db_->DeleteFavicon(*i))
       return false;

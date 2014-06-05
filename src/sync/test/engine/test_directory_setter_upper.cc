@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,12 +7,12 @@
 #include "base/compiler_specific.h"
 #include "base/file_util.h"
 #include "base/location.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "sync/syncable/directory.h"
 #include "sync/syncable/in_memory_directory_backing_store.h"
 #include "sync/syncable/mutable_entry.h"
-#include "sync/syncable/read_transaction.h"
-#include "sync/syncable/write_transaction.h"
+#include "sync/syncable/syncable_read_transaction.h"
+#include "sync/syncable/syncable_write_transaction.h"
 #include "sync/test/test_transaction_observer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -27,13 +27,31 @@ void TestDirectorySetterUpper::SetUp() {
   WeakHandle<syncable::TransactionObserver> transaction_observer =
       MakeWeakHandle(test_transaction_observer_->AsWeakPtr());
 
-  directory_.reset(new syncable::Directory(
-      new syncable::InMemoryDirectoryBackingStore(name_),
-      &handler_,
-      NULL,
-      &encryption_handler_,
-      encryption_handler_.cryptographer()));
+  directory_.reset(
+      new syncable::Directory(
+          new syncable::InMemoryDirectoryBackingStore(name_),
+          &handler_,
+          NULL,
+          &encryption_handler_,
+          encryption_handler_.cryptographer()));
   ASSERT_EQ(syncable::OPENED, directory_->Open(
+          name_, &delegate_, transaction_observer));
+}
+
+void TestDirectorySetterUpper::SetUpWith(
+    syncer::syncable::DirectoryBackingStore* directory_store) {
+  CHECK(directory_store);
+  test_transaction_observer_.reset(new syncable::TestTransactionObserver());
+  WeakHandle<syncable::TransactionObserver> transaction_observer =
+      MakeWeakHandle(test_transaction_observer_->AsWeakPtr());
+
+  directory_.reset(
+      new syncable::Directory(directory_store,
+                              &handler_,
+                              NULL,
+                              &encryption_handler_,
+                              encryption_handler_.cryptographer()));
+    ASSERT_EQ(syncable::OPENED, directory_->Open(
           name_, &delegate_, transaction_observer));
 }
 

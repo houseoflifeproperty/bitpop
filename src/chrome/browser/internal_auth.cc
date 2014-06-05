@@ -10,14 +10,13 @@
 #include "base/base64.h"
 #include "base/lazy_instance.h"
 #include "base/rand_util.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
-#include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_checker.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
-#include "content/public/browser/browser_thread.h"
 #include "crypto/hmac.h"
 
 namespace {
@@ -90,7 +89,7 @@ int64 GetCurrentTick() {
 bool IsDomainSane(const std::string& domain) {
   return !domain.empty() &&
       domain.size() <= kStringLengthLimit &&
-      IsStringUTF8(domain) &&
+      base::IsStringUTF8(domain) &&
       domain.find_first_of(kItemSeparator) == std::string::npos;
 }
 
@@ -110,14 +109,14 @@ bool IsVarSane(const std::string& var) {
       kVarValueSeparator) == kAllowedChars + arraysize(kAllowedChars));
   return !var.empty() &&
       var.size() <= kStringLengthLimit &&
-      IsStringASCII(var) &&
+      base::IsStringASCII(var) &&
       var.find_first_not_of(kAllowedChars) == std::string::npos &&
       !IsAsciiDigit(var[0]);
 }
 
 bool IsValueSane(const std::string& value) {
   return value.size() <= kStringLengthLimit &&
-      IsStringUTF8(value) &&
+      base::IsStringUTF8(value) &&
       value.find_first_of(kItemSeparator) == std::string::npos;
 }
 
@@ -167,10 +166,7 @@ void CreatePassport(const std::string& domain,
     return;
   }
   std::string hmac_base64;
-  if (!base::Base64Encode(hmac, &hmac_base64)) {
-    NOTREACHED();
-    return;
-  }
+  base::Base64Encode(hmac, &hmac_base64);
   if (hmac_base64.size() != BASE64_PER_RAW(kHMACSizeInBytes)) {
     NOTREACHED();
     return;
@@ -269,7 +265,7 @@ class InternalAuthVerificationService {
     const std::string& domain,
     int64 current_tick) {
     if (passport.size() != kPassportSize ||
-        !IsStringASCII(passport) ||
+        !base::IsStringASCII(passport) ||
         !IsDomainSane(domain) ||
         current_tick <= dark_tick_ ||
         current_tick > key_change_tick_  + kKeyRegenerationHardTicks ||

@@ -12,7 +12,7 @@
 #include "content/public/renderer/render_view_observer.h"
 #include "ipc/ipc_sender.h"
 
-namespace WebKit {
+namespace blink {
 class WebFrame;
 struct WebPluginParams;
 }
@@ -38,22 +38,29 @@ class CONTENT_EXPORT BrowserPluginManager
     BrowserPluginManager::factory_ = factory;
   }
 
-  BrowserPluginManager(RenderViewImpl* render_view);
+  explicit BrowserPluginManager(RenderViewImpl* render_view);
 
-  // Creates a new BrowserPlugin object with a unique identifier.
+  // Creates a new BrowserPlugin object.
   // BrowserPlugin is responsible for associating itself with the
   // BrowserPluginManager via AddBrowserPlugin. When it is destroyed, it is
   // responsible for removing its association via RemoveBrowserPlugin.
   virtual BrowserPlugin* CreateBrowserPlugin(
       RenderViewImpl* render_view,
-      WebKit::WebFrame* frame,
-      const WebKit::WebPluginParams& params) = 0;
+      blink::WebFrame* frame,
+      bool auto_navigate) = 0;
 
-  void AddBrowserPlugin(int instance_id, BrowserPlugin* browser_plugin);
-  void RemoveBrowserPlugin(int instance_id);
-  BrowserPlugin* GetBrowserPlugin(int instance_id) const;
-  void SetEmbedderFocus(const RenderViewImpl* embedder, bool focused);
-  RenderViewImpl* render_view() const { return render_view_; }
+  // Asynchronously requests a new browser-process-allocated instance ID.
+  // After the browser process allocates an ID, it calls back into the
+  // |browser_plugin| if it's still alive.
+  virtual void AllocateInstanceID(
+      const base::WeakPtr<BrowserPlugin>& browser_plugin) = 0;
+
+  void AddBrowserPlugin(int guest_instance_id, BrowserPlugin* browser_plugin);
+  void RemoveBrowserPlugin(int guest_instance_id);
+  BrowserPlugin* GetBrowserPlugin(int guest_instance_id) const;
+  void UpdateDeviceScaleFactor(float device_scale_factor);
+  void UpdateFocusState();
+  RenderViewImpl* render_view() const { return render_view_.get(); }
 
   // RenderViewObserver implementation.
 
@@ -74,9 +81,11 @@ class CONTENT_EXPORT BrowserPluginManager
   static BrowserPluginManagerFactory* factory_;
 
   virtual ~BrowserPluginManager();
+  // This map is keyed by guest instance IDs.
   IDMap<BrowserPlugin> instances_;
   base::WeakPtr<RenderViewImpl> render_view_;
-  int browser_plugin_counter_;
+
+  DISALLOW_COPY_AND_ASSIGN(BrowserPluginManager);
 };
 
 }  // namespace content

@@ -49,9 +49,9 @@ void HandleCloserAgent::InitializeHandlesToClose() {
   HandleListEntry* entry = g_handles_to_close->handle_entries;
   for (size_t i = 0; i < g_handles_to_close->num_handle_types; ++i) {
     // Set the type name.
-    char16* input = entry->handle_type;
+    base::char16* input = entry->handle_type;
     HandleMap::mapped_type& handle_names = handles_to_close_[input];
-    input = reinterpret_cast<char16*>(reinterpret_cast<char*>(entry)
+    input = reinterpret_cast<base::char16*>(reinterpret_cast<char*>(entry)
         + entry->offset_to_names);
     // Grab all the handle names.
     for (size_t j = 0; j < entry->name_count; ++j) {
@@ -65,9 +65,9 @@ void HandleCloserAgent::InitializeHandlesToClose() {
     entry = reinterpret_cast<HandleListEntry*>(reinterpret_cast<char*>(entry)
         + entry->record_bytes);
 
-    DCHECK(reinterpret_cast<char16*>(entry) >= input);
-    DCHECK(reinterpret_cast<char16*>(entry) - input <
-           sizeof(size_t) / sizeof(char16));
+    DCHECK(reinterpret_cast<base::char16*>(entry) >= input);
+    DCHECK(reinterpret_cast<base::char16*>(entry) - input <
+           sizeof(size_t) / sizeof(base::char16));
   }
 
   // Clean up the memory we copied over.
@@ -88,7 +88,7 @@ bool HandleCloserAgent::CloseHandles() {
                                      32 * sizeof(wchar_t));
   OBJECT_TYPE_INFORMATION* type_info =
       reinterpret_cast<OBJECT_TYPE_INFORMATION*>(&(type_info_buffer[0]));
-  string16 handle_name;
+  base::string16 handle_name;
   HANDLE handle = NULL;
   int invalid_count = 0;
 
@@ -109,7 +109,7 @@ bool HandleCloserAgent::CloseHandles() {
           &(type_info_buffer[0]));
       rc = QueryObjectTypeInformation(handle, type_info, &size);
       // Leave padding for the nul terminator.
-      if (NT_SUCCESS(0) && size == type_info_buffer.size())
+      if (NT_SUCCESS(rc) && size == type_info_buffer.size())
         rc = STATUS_INFO_LENGTH_MISMATCH;
     }
     if (!NT_SUCCESS(rc) || !type_info->Name.Buffer) {

@@ -9,13 +9,13 @@
 #include <vector>
 
 #include "base/logging.h"
-#include "base/perftimer.h"
 #include "base/metrics/histogram.h"
-#include "base/string_split.h"
-#include "base/string_util.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/timer/elapsed_timer.h"
 #include "chrome/renderer/safe_browsing/features.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
+#include "url/gurl.h"
 
 namespace safe_browsing {
 
@@ -25,13 +25,14 @@ PhishingUrlFeatureExtractor::~PhishingUrlFeatureExtractor() {}
 
 bool PhishingUrlFeatureExtractor::ExtractFeatures(const GURL& url,
                                                   FeatureMap* features) {
-  PerfTimer timer;
+  base::ElapsedTimer timer;
   if (url.HostIsIPAddress()) {
     if (!features->AddBooleanFeature(features::kUrlHostIsIpAddress))
       return false;
   } else {
+    // Remove any leading/trailing dots.
     std::string host;
-    TrimString(url.host(), ".", &host);  // Remove any leading/trailing dots.
+    base::TrimString(url.host(), ".", &host);
 
     // TODO(bryner): Ensure that the url encoding is consistent with
     // the features in the model.
@@ -39,7 +40,10 @@ bool PhishingUrlFeatureExtractor::ExtractFeatures(const GURL& url,
     // Disallow unknown registries so that we don't classify
     // partial hostnames (e.g. "www.subdomain").
     size_t registry_length =
-        net::RegistryControlledDomainService::GetRegistryLength(host, false);
+        net::registry_controlled_domains::GetRegistryLength(
+            host,
+            net::registry_controlled_domains::EXCLUDE_UNKNOWN_REGISTRIES,
+            net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES);
 
     if (registry_length == 0 || registry_length == std::string::npos) {
       DVLOG(1) << "Could not find TLD for host: " << host;

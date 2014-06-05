@@ -5,6 +5,7 @@
  */
 
 #include <setjmp.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,6 +18,7 @@
 #include "native_client/src/shared/platform/nacl_threads.h"
 #include "native_client/src/trusted/service_runtime/nacl_config.h"
 #include "native_client/src/trusted/service_runtime/nacl_signal.h"
+#include "native_client/src/trusted/service_runtime/nacl_tls.h"
 #include "native_client/src/trusted/service_runtime/sel_memory.h"
 #include "native_client/src/trusted/service_runtime/sel_rt.h"
 
@@ -41,12 +43,12 @@ typedef union {
  */
 static void *Alloc1Page(int flags) {
   void *page;
-  if (NaCl_page_alloc(&page, NACL_PAGESIZE)) {
+  if (NaClPageAlloc(&page, NACL_PAGESIZE)) {
     printf("Failed to allocate page.\n");
     exit(-1);
   }
 
-  if (NaCl_mprotect(page, NACL_PAGESIZE, flags)) {
+  if (NaClMprotect(page, NACL_PAGESIZE, flags)) {
     printf("Failed to set page protection to %d.\n", flags);
     exit(-1);
   }
@@ -55,7 +57,7 @@ static void *Alloc1Page(int flags) {
 }
 
 static void Free1Page(void *page) {
-    NaCl_page_free(page, NACL_PAGESIZE);
+  NaClPageFree(page, NACL_PAGESIZE);
 }
 
 /* Execute a non execute page. */
@@ -139,77 +141,52 @@ void Attempt(const char *str, void (WINAPI *start_fn)(void *), int sig) {
   }
   NaClThreadJoin(&thread);
 
-  switch(sig) {
-    /*
-     * There are inconsistences between POSIX implementations on which errors
-     * return SIGSEGV vs SIGBUS, so we allow either one.
-     */
-    case 10:
-    case 11:
-      if ((11 == g_SigFound) || (10 == g_SigFound)) return;
-
-    /* Otherwise look for an exact match */
-    default:
-      if (sig == g_SigFound) return;
-  }
+  if (sig == g_SigFound) return;
 
   /* If we have not matched, then print an error and exit. */
   printf("Error: Got signal %d, while expecting %d.\n", g_SigFound, sig);
   exit(-1);
 }
 
-enum NaClSignalResult Handler(int signal_number, void *ctx) {
-  UNREFERENCED_PARAMETER(ctx);
+void Handler(int signal_number, const struct NaClSignalContext *context,
+             int is_untrusted) {
+  UNREFERENCED_PARAMETER(context);
+  UNREFERENCED_PARAMETER(is_untrusted);
 
   g_SigFound = signal_number;
 
   siglongjmp(try_state, 1);
-
-  return NACL_SIGNAL_SKIP;
 }
 
 #define ATTEMPT(x,sig) Attempt(#x,x,sig)
 int main(int argc, const char *argv[]) {
-  int none1, none2;
-  int sigHandler;
+  /*
+   * There are inconsistencies between POSIX implementations on which errors
+   * return SIGSEGV vs SIGBUS.
+   */
+#if NACL_OSX
+  const int kAccessViolationOnMappedPageSignal = SIGBUS;
+#else
+  const int kAccessViolationOnMappedPageSignal = SIGSEGV;
+#endif
+  const int kAccessUnmappedPageSignal = SIGSEGV;
+  const int kDivideByZeroSignal = SIGFPE;
+
   UNREFERENCED_PARAMETER(argc);
   UNREFERENCED_PARAMETER(argv);
 
   NaClLogModuleInit();
   NaClTimeInit();
   NaClInitGlobals();
+  NaClTlsInit();
   NaClSignalHandlerInit();
 
-  /* Add this one first, we should never call it */
-  none1 = NaClSignalHandlerAdd(NaClSignalHandleNone);
-  sigHandler = NaClSignalHandlerAdd(Handler);
+  NaClSignalHandlerSet(Handler);
 
-  /* Add and remove it to make sure we can. */
-  none2 = NaClSignalHandlerAdd(NaClSignalHandleNone);
-  if (0 == NaClSignalHandlerRemove(none2)) {
-    printf("Failed to unload 'none2' handler.\n");
-    exit(-1);
-  }
-
-  ATTEMPT(Exec_RW, 11);
-  ATTEMPT(Write_RX, 11);
-  ATTEMPT(ReadWriteUnmapped, 11);
-  ATTEMPT(DivZero, 8);
-
-  if (0 == NaClSignalHandlerRemove(sigHandler)) {
-    printf("Failed to unload 'sigHandler' handler.\n");
-    exit(-1);
-  }
-  if (0 == NaClSignalHandlerRemove(none1)) {
-    printf("Failed to unload 'none1' handler.\n");
-    exit(-1);
-  }
-
-  /* All handlers are unloaded, now using default to trigger an exit. */
-  ReadWriteUnmapped(NULL);
-
-  printf("Should never reach here.\n");
-  exit(-1);
+  ATTEMPT(Exec_RW, kAccessViolationOnMappedPageSignal);
+  ATTEMPT(Write_RX, kAccessViolationOnMappedPageSignal);
+  ATTEMPT(ReadWriteUnmapped, kAccessUnmappedPageSignal);
+  ATTEMPT(DivZero, kDivideByZeroSignal);
 
   /* Correct shutdown order would have been:
    * NaClSignalHandlerFini();
@@ -217,6 +194,5 @@ int main(int argc, const char *argv[]) {
    * NaClLogModuleInit();
    */
 
-  /* Unreachable, but added to prevent warning. */
   return 0;
 }

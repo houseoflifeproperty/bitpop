@@ -5,10 +5,10 @@
 #include "base/base_paths.h"
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/path_service.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/registry.h"
 #include "chrome/browser/background/background_mode_manager.h"
 #include "chrome/common/chrome_switches.h"
@@ -42,10 +42,10 @@ void BackgroundModeManager::DisplayAppInstalledNotification(
       l10n_util::GetStringUTF16(IDS_BACKGROUND_APP_INSTALLED_BALLOON_TITLE),
       l10n_util::GetStringFUTF16(
           IDS_BACKGROUND_APP_INSTALLED_BALLOON_BODY,
-          UTF8ToUTF16(extension->name()),
+          base::UTF8ToUTF16(extension->name()),
           l10n_util::GetStringUTF16(IDS_PRODUCT_NAME)));
 }
 
-string16 BackgroundModeManager::GetPreferencesMenuLabel() {
+base::string16 BackgroundModeManager::GetPreferencesMenuLabel() {
   return l10n_util::GetStringUTF16(IDS_OPTIONS);
 }

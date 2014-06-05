@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/utf_string_conversions.h"  // ASCIIToUTF16
+#include "ash/shell.h"
+#include "base/strings/utf_string_conversions.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/controls/button/checkbox.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/button/radio_button.h"
-#include "ui/views/controls/button/text_button.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
 
@@ -34,12 +36,12 @@ class WidgetsWindow : public views::WidgetDelegateView {
 
   // Overridden from views::WidgetDelegate:
   virtual views::View* GetContentsView() OVERRIDE;
-  virtual string16 GetWindowTitle() const OVERRIDE;
+  virtual base::string16 GetWindowTitle() const OVERRIDE;
   virtual bool CanResize() const OVERRIDE;
 
  private:
-  views::NativeTextButton* button_;
-  views::NativeTextButton* disabled_button_;
+  views::LabelButton* button_;
+  views::LabelButton* disabled_button_;
   views::Checkbox* checkbox_;
   views::Checkbox* checkbox_disabled_;
   views::Checkbox* checkbox_checked_;
@@ -51,24 +53,28 @@ class WidgetsWindow : public views::WidgetDelegateView {
 };
 
 WidgetsWindow::WidgetsWindow()
-    : button_(new views::NativeTextButton(NULL, ASCIIToUTF16("Button"))),
+    : button_(new views::LabelButton(NULL, base::ASCIIToUTF16("Button"))),
       disabled_button_(
-          new views::NativeTextButton(NULL, ASCIIToUTF16("Disabled button"))),
-      checkbox_(new views::Checkbox(ASCIIToUTF16("Checkbox"))),
+          new views::LabelButton(NULL, base::ASCIIToUTF16("Disabled button"))),
+      checkbox_(new views::Checkbox(base::ASCIIToUTF16("Checkbox"))),
       checkbox_disabled_(new views::Checkbox(
-          ASCIIToUTF16("Checkbox disabled"))),
-      checkbox_checked_(new views::Checkbox(ASCIIToUTF16("Checkbox checked"))),
+          base::ASCIIToUTF16("Checkbox disabled"))),
+      checkbox_checked_(new views::Checkbox(
+          base::ASCIIToUTF16("Checkbox checked"))),
       checkbox_checked_disabled_(new views::Checkbox(
-          ASCIIToUTF16("Checkbox checked disabled"))),
-      radio_button_(new views::RadioButton(ASCIIToUTF16("Radio button"), 0)),
+          base::ASCIIToUTF16("Checkbox checked disabled"))),
+      radio_button_(new views::RadioButton(
+          base::ASCIIToUTF16("Radio button"), 0)),
       radio_button_disabled_(new views::RadioButton(
-          ASCIIToUTF16("Radio button disabled"), 0)),
+          base::ASCIIToUTF16("Radio button disabled"), 0)),
       radio_button_selected_(new views::RadioButton(
-          ASCIIToUTF16("Radio button selected"), 0)),
+          base::ASCIIToUTF16("Radio button selected"), 0)),
       radio_button_selected_disabled_(new views::RadioButton(
-          ASCIIToUTF16("Radio button selected disabled"), 1)) {
+          base::ASCIIToUTF16("Radio button selected disabled"), 1)) {
+  button_->SetStyle(views::Button::STYLE_BUTTON);
   AddChildView(button_);
   disabled_button_->SetEnabled(false);
+  disabled_button_->SetStyle(views::Button::STYLE_BUTTON);
   AddChildView(disabled_button_);
   AddChildView(checkbox_);
   checkbox_disabled_->SetEnabled(false);
@@ -115,8 +121,8 @@ views::View* WidgetsWindow::GetContentsView() {
   return this;
 }
 
-string16 WidgetsWindow::GetWindowTitle() const {
-  return ASCIIToUTF16("Examples: Widgets");
+base::string16 WidgetsWindow::GetWindowTitle() const {
+  return base::ASCIIToUTF16("Examples: Widgets");
 }
 
 bool WidgetsWindow::CanResize() const {
@@ -131,7 +137,8 @@ namespace shell {
 void CreateWidgetsWindow() {
   gfx::Rect bounds(kWindowLeft, kWindowTop, kWindowWidth, kWindowHeight);
   views::Widget* widget =
-      views::Widget::CreateWindowWithBounds(new WidgetsWindow, bounds);
+      views::Widget::CreateWindowWithContextAndBounds(
+          new WidgetsWindow, Shell::GetPrimaryRootWindow(), bounds);
   widget->GetNativeView()->SetName("WidgetsWindow");
   widget->Show();
 }

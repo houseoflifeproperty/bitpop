@@ -27,14 +27,10 @@ NONESSENTIAL_DIRS = (
     'breakpad/src/processor/testdata',
     'chrome/browser/resources/tracing/tests',
     'chrome/common/extensions/docs',
-    'chrome/test/data',
     'chrome/tools/test/reference_build',
-    'content/test/data',
     'courgette/testdata',
     'data',
-    'media/test/data',
     'native_client/src/trusted/service_runtime/testdata',
-    'net/data',
     'src/chrome/test/data',
     'o3d/documentation',
     'o3d/samples',
@@ -71,6 +67,13 @@ NONESSENTIAL_DIRS = (
     'webkit/tools/test/reference_build',
 )
 
+TESTDIRS = (
+    'chrome/test/data',
+    'content/test/data',
+    'media/test/data',
+    'net/data',
+)
+
 
 def GetSourceDirectory():
   return os.path.realpath(
@@ -94,9 +97,13 @@ class MyTarFile(tarfile.TarFile):
       if 'ChangeLog' in name:
         return
 
-      for nonessential_dir in NONESSENTIAL_DIRS:
+      # Remove contents of non-essential directories, but preserve gyp files,
+      # so that build/gyp_chromium can work.
+      for nonessential_dir in (NONESSENTIAL_DIRS + TESTDIRS):
         dir_path = os.path.join(GetSourceDirectory(), nonessential_dir)
-        if name.startswith(dir_path):
+        if (name.startswith(dir_path) and
+            os.path.isfile(name) and
+            'gyp' not in name):
           return
 
     tarfile.TarFile.add(self, name, arcname=arcname, recursive=recursive)
@@ -104,49 +111,55 @@ class MyTarFile(tarfile.TarFile):
 
 def main(argv):
   parser = optparse.OptionParser()
+  parser.add_option("--basename")
   parser.add_option("--remove-nonessential-files",
                     dest="remove_nonessential_files",
                     action="store_true", default=False)
+  parser.add_option("--test-data", action="store_true")
+  # TODO(phajdan.jr): Remove --xz option when it's not needed for compatibility.
   parser.add_option("--xz", action="store_true")
 
   options, args = parser.parse_args(argv)
 
   if len(args) != 1:
     print 'You must provide only one argument: output file name'
-    print '(without .tar.bz2 extension).'
+    print '(without .tar.xz extension).'
     return 1
 
   if not os.path.exists(GetSourceDirectory()):
-    print 'Cannot find the src directory.'
+    print 'Cannot find the src directory ' + GetSourceDirectory()
     return 1
 
-  # This command is from src/DEPS; please keep them in sync.
+  # These two commands are from src/DEPS; please keep them in sync.
   if subprocess.call(['python', 'build/util/lastchange.py', '-o',
                       'build/util/LASTCHANGE'], cwd=GetSourceDirectory()) != 0:
     print 'Could not run build/util/lastchange.py to update LASTCHANGE.'
     return 1
+  if subprocess.call(['python', 'build/util/lastchange.py', '-s',
+                      'third_party/WebKit', '-o',
+                      'build/util/LASTCHANGE.blink'],
+                     cwd=GetSourceDirectory()) != 0:
+    print 'Could not run build/util/lastchange.py to update LASTCHANGE.blink.'
+    return 1
 
-  if options.xz:
-    output_fullname = args[0] + '.tar'
-  else:
-    output_fullname = args[0] + '.tar.bz2'
+  output_fullname = args[0] + '.tar'
+  output_basename = options.basename or os.path.basename(args[0])
 
-  output_basename = os.path.basename(args[0])
-
-  if options.xz:
-    archive = MyTarFile.open(output_fullname, 'w')
-  else:
-    archive = MyTarFile.open(output_fullname, 'w:bz2')
+  archive = MyTarFile.open(output_fullname, 'w')
   archive.set_remove_nonessential_files(options.remove_nonessential_files)
   try:
-    archive.add(GetSourceDirectory(), arcname=output_basename)
+    if options.test_data:
+      for directory in TESTDIRS:
+        archive.add(os.path.join(GetSourceDirectory(), directory),
+                    arcname=os.path.join(output_basename, directory))
+    else:
+      archive.add(GetSourceDirectory(), arcname=output_basename)
   finally:
     archive.close()
 
-  if options.xz:
-    if subprocess.call(['xz', '-9', output_fullname]) != 0:
-      print 'xz -9 failed!'
-      return 1
+  if subprocess.call(['xz', '-9', output_fullname]) != 0:
+    print 'xz -9 failed!'
+    return 1
 
   return 0
 

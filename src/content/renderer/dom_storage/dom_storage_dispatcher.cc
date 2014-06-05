@@ -7,22 +7,19 @@
 #include <list>
 #include <map>
 
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/synchronization/lock.h"
-#include "content/common/dom_storage_messages.h"
+#include "content/common/dom_storage/dom_storage_messages.h"
+#include "content/common/dom_storage/dom_storage_types.h"
+#include "content/renderer/dom_storage/dom_storage_cached_area.h"
+#include "content/renderer/dom_storage/dom_storage_proxy.h"
 #include "content/renderer/dom_storage/webstoragearea_impl.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
 #include "content/renderer/render_thread_impl.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebKitPlatformSupport.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebStorageEventDispatcher.h"
-#include "webkit/dom_storage/dom_storage_cached_area.h"
-#include "webkit/dom_storage/dom_storage_proxy.h"
-#include "webkit/dom_storage/dom_storage_types.h"
-
-using dom_storage::DomStorageCachedArea;
-using dom_storage::DomStorageProxy;
-using dom_storage::ValuesMap;
+#include "ipc/message_filter.h"
+#include "third_party/WebKit/public/platform/Platform.h"
+#include "third_party/WebKit/public/web/WebKit.h"
+#include "third_party/WebKit/public/web/WebStorageEventDispatcher.h"
 
 namespace content {
 
@@ -33,7 +30,7 @@ namespace {
 // a synchronous message is sent to flush all pending messages thru.
 // We expect to receive an 'ack' for each message sent. This object
 // observes receipt of the acks on the IPC thread to decrement a counter.
-class MessageThrottlingFilter : public IPC::ChannelProxy::MessageFilter {
+class MessageThrottlingFilter : public IPC::MessageFilter {
  public:
   explicit MessageThrottlingFilter(RenderThreadImpl* sender)
       : pending_count_(0), sender_(sender) {}
@@ -94,29 +91,33 @@ bool MessageThrottlingFilter::OnMessageReceived(const IPC::Message& message) {
 }  // namespace
 
 // ProxyImpl -----------------------------------------------------
-// An implementation of the DomStorageProxy interface in terms of IPC.
+// An implementation of the DOMStorageProxy interface in terms of IPC.
 // This class also manages the collection of cached areas and pending
 // operations awaiting completion callbacks.
-class DomStorageDispatcher::ProxyImpl : public DomStorageProxy {
+class DomStorageDispatcher::ProxyImpl : public DOMStorageProxy {
  public:
   explicit ProxyImpl(RenderThreadImpl* sender);
 
   // Methods for use by DomStorageDispatcher directly.
-  DomStorageCachedArea* OpenCachedArea(
+  DOMStorageCachedArea* OpenCachedArea(
       int64 namespace_id, const GURL& origin);
-  void CloseCachedArea(DomStorageCachedArea* area);
-  DomStorageCachedArea* LookupCachedArea(
+  void CloseCachedArea(DOMStorageCachedArea* area);
+  DOMStorageCachedArea* LookupCachedArea(
       int64 namespace_id, const GURL& origin);
+  void ResetAllCachedAreas(int64 namespace_id);
   void CompleteOnePendingCallback(bool success);
   void Shutdown();
 
-  // DomStorageProxy interface for use by DomStorageCachedArea.
-  virtual void LoadArea(int connection_id, ValuesMap* values,
+  // DOMStorageProxy interface for use by DOMStorageCachedArea.
+  virtual void LoadArea(int connection_id, DOMStorageValuesMap* values,
+                        bool* send_log_get_messages,
                         const CompletionCallback& callback) OVERRIDE;
-  virtual void SetItem(int connection_id, const string16& key,
-                       const string16& value, const GURL& page_url,
+  virtual void SetItem(int connection_id, const base::string16& key,
+                       const base::string16& value, const GURL& page_url,
                        const CompletionCallback& callback) OVERRIDE;
-  virtual void RemoveItem(int connection_id, const string16& key,
+  virtual void LogGetItem(int connection_id, const base::string16& key,
+                          const base::NullableString16& value) OVERRIDE;
+  virtual void RemoveItem(int connection_id, const base::string16& key,
                           const GURL& page_url,
                           const CompletionCallback& callback) OVERRIDE;
   virtual void ClearArea(int connection_id,
@@ -127,11 +128,13 @@ class DomStorageDispatcher::ProxyImpl : public DomStorageProxy {
   // Struct to hold references to our contained areas and
   // to keep track of how many tabs have a given area open.
   struct CachedAreaHolder {
-    scoped_refptr<DomStorageCachedArea> area_;
+    scoped_refptr<DOMStorageCachedArea> area_;
     int open_count_;
+    int64 namespace_id_;
     CachedAreaHolder() : open_count_(0) {}
-    CachedAreaHolder(DomStorageCachedArea* area, int count)
-        : area_(area), open_count_(count) {}
+    CachedAreaHolder(DOMStorageCachedArea* area, int count,
+                     int64 namespace_id)
+        : area_(area), open_count_(count), namespace_id_(namespace_id) {}
   };
   typedef std::map<std::string, CachedAreaHolder> CachedAreaMap;
   typedef std::list<CompletionCallback> CallbackList;
@@ -143,7 +146,7 @@ class DomStorageDispatcher::ProxyImpl : public DomStorageProxy {
   // to more reliably commit changes during shutdown.
   void PushPendingCallback(const CompletionCallback& callback) {
     if (pending_callbacks_.empty())
-      WebKit::webKitPlatformSupport()->suddenTerminationChanged(false);
+      blink::Platform::current()->suddenTerminationChanged(false);
     pending_callbacks_.push_back(callback);
   }
 
@@ -151,7 +154,7 @@ class DomStorageDispatcher::ProxyImpl : public DomStorageProxy {
     CompletionCallback callback = pending_callbacks_.front();
     pending_callbacks_.pop_front();
     if (pending_callbacks_.empty())
-      WebKit::webKitPlatformSupport()->suddenTerminationChanged(true);
+      blink::Platform::current()->suddenTerminationChanged(true);
     return callback;
   }
 
@@ -175,24 +178,24 @@ class DomStorageDispatcher::ProxyImpl : public DomStorageProxy {
 DomStorageDispatcher::ProxyImpl::ProxyImpl(RenderThreadImpl* sender)
     : sender_(sender),
       throttling_filter_(new MessageThrottlingFilter(sender)) {
-  sender_->AddFilter(throttling_filter_);
+  sender_->AddFilter(throttling_filter_.get());
 }
 
-DomStorageCachedArea* DomStorageDispatcher::ProxyImpl::OpenCachedArea(
+DOMStorageCachedArea* DomStorageDispatcher::ProxyImpl::OpenCachedArea(
     int64 namespace_id, const GURL& origin) {
   std::string key = GetCachedAreaKey(namespace_id, origin);
   if (CachedAreaHolder* holder = GetAreaHolder(key)) {
     ++(holder->open_count_);
-    return holder->area_;
+    return holder->area_.get();
   }
-  scoped_refptr<DomStorageCachedArea> area =
-      new DomStorageCachedArea(namespace_id, origin, this);
-  cached_areas_[key] = CachedAreaHolder(area, 1);
+  scoped_refptr<DOMStorageCachedArea> area =
+      new DOMStorageCachedArea(namespace_id, origin, this);
+  cached_areas_[key] = CachedAreaHolder(area.get(), 1, namespace_id);
   return area.get();
 }
 
 void DomStorageDispatcher::ProxyImpl::CloseCachedArea(
-    DomStorageCachedArea* area) {
+    DOMStorageCachedArea* area) {
   std::string key = GetCachedAreaKey(area->namespace_id(), area->origin());
   CachedAreaHolder* holder = GetAreaHolder(key);
   DCHECK(holder);
@@ -203,7 +206,7 @@ void DomStorageDispatcher::ProxyImpl::CloseCachedArea(
   }
 }
 
-DomStorageCachedArea* DomStorageDispatcher::ProxyImpl::LookupCachedArea(
+DOMStorageCachedArea* DomStorageDispatcher::ProxyImpl::LookupCachedArea(
     int64 namespace_id, const GURL& origin) {
   std::string key = GetCachedAreaKey(namespace_id, origin);
   CachedAreaHolder* holder = GetAreaHolder(key);
@@ -212,37 +215,52 @@ DomStorageCachedArea* DomStorageDispatcher::ProxyImpl::LookupCachedArea(
   return holder->area_.get();
 }
 
+void DomStorageDispatcher::ProxyImpl::ResetAllCachedAreas(int64 namespace_id) {
+  for (CachedAreaMap::iterator it = cached_areas_.begin();
+       it != cached_areas_.end();
+       ++it) {
+    if (it->second.namespace_id_ == namespace_id)
+      it->second.area_->Reset();
+  }
+}
+
 void DomStorageDispatcher::ProxyImpl::CompleteOnePendingCallback(bool success) {
   PopPendingCallback().Run(success);
 }
 
 void DomStorageDispatcher::ProxyImpl::Shutdown() {
   throttling_filter_->Shutdown();
-  sender_->RemoveFilter(throttling_filter_);
+  sender_->RemoveFilter(throttling_filter_.get());
   sender_ = NULL;
   cached_areas_.clear();
   pending_callbacks_.clear();
 }
 
 void DomStorageDispatcher::ProxyImpl::LoadArea(
-    int connection_id, ValuesMap* values,
+    int connection_id, DOMStorageValuesMap* values, bool* send_log_get_messages,
     const CompletionCallback& callback) {
   PushPendingCallback(callback);
   throttling_filter_->SendThrottled(new DOMStorageHostMsg_LoadStorageArea(
-      connection_id, values));
+      connection_id, values, send_log_get_messages));
 }
 
 void DomStorageDispatcher::ProxyImpl::SetItem(
-    int connection_id, const string16& key,
-    const string16& value, const GURL& page_url,
+    int connection_id, const base::string16& key,
+    const base::string16& value, const GURL& page_url,
     const CompletionCallback& callback) {
   PushPendingCallback(callback);
   throttling_filter_->SendThrottled(new DOMStorageHostMsg_SetItem(
       connection_id, key, value, page_url));
 }
 
+void DomStorageDispatcher::ProxyImpl::LogGetItem(
+    int connection_id, const base::string16& key,
+    const base::NullableString16& value) {
+  sender_->Send(new DOMStorageHostMsg_LogGetItem(connection_id, key, value));
+}
+
 void DomStorageDispatcher::ProxyImpl::RemoveItem(
-    int connection_id, const string16& key,  const GURL& page_url,
+    int connection_id, const base::string16& key,  const GURL& page_url,
     const CompletionCallback& callback) {
   PushPendingCallback(callback);
   throttling_filter_->SendThrottled(new DOMStorageHostMsg_RemoveItem(
@@ -267,7 +285,7 @@ DomStorageDispatcher::~DomStorageDispatcher() {
   proxy_->Shutdown();
 }
 
-scoped_refptr<DomStorageCachedArea> DomStorageDispatcher::OpenCachedArea(
+scoped_refptr<DOMStorageCachedArea> DomStorageDispatcher::OpenCachedArea(
     int connection_id, int64 namespace_id, const GURL& origin) {
   RenderThreadImpl::current()->Send(
       new DOMStorageHostMsg_OpenStorageArea(
@@ -276,7 +294,7 @@ scoped_refptr<DomStorageCachedArea> DomStorageDispatcher::OpenCachedArea(
 }
 
 void DomStorageDispatcher::CloseCachedArea(
-    int connection_id, DomStorageCachedArea* area) {
+    int connection_id, DOMStorageCachedArea* area) {
   RenderThreadImpl::current()->Send(
       new DOMStorageHostMsg_CloseStorageArea(connection_id));
   proxy_->CloseCachedArea(area);
@@ -288,6 +306,8 @@ bool DomStorageDispatcher::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(DOMStorageMsg_Event, OnStorageEvent)
     IPC_MESSAGE_HANDLER(DOMStorageMsg_AsyncOperationComplete,
                         OnAsyncOperationComplete)
+    IPC_MESSAGE_HANDLER(DOMStorageMsg_ResetCachedValues,
+                        OnResetCachedValues)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -303,14 +323,14 @@ void DomStorageDispatcher::OnStorageEvent(
     originating_area = WebStorageAreaImpl::FromConnectionId(
         params.connection_id);
   } else {
-    DomStorageCachedArea* cached_area = proxy_->LookupCachedArea(
+    DOMStorageCachedArea* cached_area = proxy_->LookupCachedArea(
         params.namespace_id, params.origin);
     if (cached_area)
       cached_area->ApplyMutation(params.key, params.new_value);
   }
 
-  if (params.namespace_id == dom_storage::kLocalStorageNamespaceId) {
-    WebKit::WebStorageEventDispatcher::dispatchLocalStorageEvent(
+  if (params.namespace_id == kLocalStorageNamespaceId) {
+    blink::WebStorageEventDispatcher::dispatchLocalStorageEvent(
         params.key,
         params.old_value,
         params.new_value,
@@ -321,7 +341,7 @@ void DomStorageDispatcher::OnStorageEvent(
   } else {
     WebStorageNamespaceImpl
         session_namespace_for_event_dispatch(params.namespace_id);
-    WebKit::WebStorageEventDispatcher::dispatchSessionStorageEvent(
+    blink::WebStorageEventDispatcher::dispatchSessionStorageEvent(
         params.key,
         params.old_value,
         params.new_value,
@@ -335,6 +355,10 @@ void DomStorageDispatcher::OnStorageEvent(
 
 void DomStorageDispatcher::OnAsyncOperationComplete(bool success) {
   proxy_->CompleteOnePendingCallback(success);
+}
+
+void DomStorageDispatcher::OnResetCachedValues(int64 namespace_id) {
+  proxy_->ResetAllCachedAreas(namespace_id);
 }
 
 }  // namespace content

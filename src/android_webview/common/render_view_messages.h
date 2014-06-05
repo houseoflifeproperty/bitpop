@@ -8,6 +8,7 @@
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_platform_file.h"
+#include "third_party/skia/include/core/SkColor.h"
 
 // Singly-included section for enums and custom IPC traits.
 #ifndef ANDROID_WEBVIEW_COMMON_RENDER_VIEW_MESSAGES_H_
@@ -51,6 +52,33 @@ IPC_MESSAGE_ROUTED2(AwViewMsg_DoHitTest,
                     int /* view_x */,
                     int /* view_y */)
 
+// Sets the zoom factor for text only. Used in layout modes other than
+// Text Autosizing.
+IPC_MESSAGE_ROUTED1(AwViewMsg_SetTextZoomFactor,
+                    float /* zoom_factor */)
+
+// Resets WebKit WebView scrolling and scale state. We need to send this
+// message whenever we want to guarantee that page's scale will be
+// recalculated by WebKit.
+IPC_MESSAGE_ROUTED0(AwViewMsg_ResetScrollAndScaleState)
+
+// Sets the initial page scale. This overrides initial scale set by
+// the meta viewport tag.
+IPC_MESSAGE_ROUTED1(AwViewMsg_SetInitialPageScale,
+                    double /* page_scale_factor */)
+
+// Makes the blink::WebView use the given size for layout regardless of what
+// the size of the RenderWidget or viewport settings are.
+IPC_MESSAGE_ROUTED1(AwViewMsg_SetFixedLayoutSize,
+                    gfx::Size /* size */)
+
+// Sets the base background color for this view.
+IPC_MESSAGE_ROUTED1(AwViewMsg_SetBackgroundColor,
+                    SkColor)
+
+IPC_MESSAGE_CONTROL1(AwViewMsg_SetJsOnlineProperty,
+                     bool /* network_up */)
+
 //-----------------------------------------------------------------------------
 // RenderView messages
 // These are messages sent from the renderer to the browser process.
@@ -63,3 +91,27 @@ IPC_MESSAGE_ROUTED2(AwViewHostMsg_DocumentHasImagesResponse,
 // Response to AwViewMsg_DoHitTest.
 IPC_MESSAGE_ROUTED1(AwViewHostMsg_UpdateHitTestData,
                     android_webview::AwHitTestData)
+
+// Sent whenever the page scale factor (as seen by RenderView) is changed.
+IPC_MESSAGE_ROUTED1(AwViewHostMsg_PageScaleFactorChanged,
+                    float /* page_scale_factor */)
+
+// Sent whenever the contents size (as seen by RenderView) is changed.
+IPC_MESSAGE_ROUTED1(AwViewHostMsg_OnContentsSizeChanged,
+                    gfx::Size /* contents_size */)
+
+// Sent immediately before a top level navigation is initiated within Blink.
+// There are some exlusions, the most important ones are it is not sent
+// when creating a popup window, and not sent for application initiated
+// navigations. See AwContentRendererClient::HandleNavigation for all
+// cornercases. This is sent before updating the NavigationController state
+// or creating a URLRequest for the main frame resource.
+IPC_SYNC_MESSAGE_CONTROL2_1(AwViewHostMsg_ShouldOverrideUrlLoading,
+                            int /* render_frame_id id */,
+                            base::string16 /* in - url */,
+                            bool /* out - result */)
+
+// Sent when a subframe is created.
+IPC_MESSAGE_CONTROL2(AwViewHostMsg_SubFrameCreated,
+                     int /* parent_render_frame_id */,
+                     int /* child_render_frame_id */)

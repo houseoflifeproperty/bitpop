@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,7 @@ import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
@@ -22,9 +23,11 @@ import android.widget.TextView.OnEditorActionListener;
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 import org.chromium.content.browser.ContentView;
+import org.chromium.content.browser.ContentViewClient;
+import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.ContentViewRenderView;
 import org.chromium.content.browser.LoadUrlParams;
-import org.chromium.ui.gfx.NativeWindow;
+import org.chromium.ui.base.WindowAndroid;
 
 /**
  * Container for the various UI components that make up a shell window.
@@ -34,23 +37,25 @@ public class Shell extends LinearLayout {
 
     private static final long COMPLETED_PROGRESS_TIMEOUT_MS = 200;
 
-    private Runnable mClearProgressRunnable = new Runnable() {
+    private final Runnable mClearProgressRunnable = new Runnable() {
         @Override
         public void run() {
             mProgressDrawable.setLevel(0);
         }
     };
 
-    // TODO(jrg): a mContentView.destroy() call is needed, both upstream and downstream.
     private ContentView mContentView;
+    private ContentViewCore mContentViewCore;
+    private ContentViewClient mContentViewClient;
     private EditText mUrlTextView;
     private ImageButton mPrevButton;
     private ImageButton mNextButton;
 
     private ClipDrawable mProgressDrawable;
 
+    private long mNativeShell;
     private ContentViewRenderView mContentViewRenderView;
-    private NativeWindow mWindow;
+    private WindowAndroid mWindow;
 
     private boolean mLoading = false;
 
@@ -80,10 +85,41 @@ public class Shell extends LinearLayout {
     }
 
     /**
+     * Initializes the Shell for use.
+     *
+     * @param nativeShell The pointer to the native Shell object.
      * @param window The owning window for this shell.
+     * @param client The {@link ContentViewClient} to be bound to any current or new
+     *               {@link ContentViewCore}s associated with this shell.
      */
-    public void setWindow(NativeWindow window) {
+    public void initialize(long nativeShell, WindowAndroid window, ContentViewClient client) {
+        mNativeShell = nativeShell;
         mWindow = window;
+        mContentViewClient = client;
+    }
+
+    /**
+     * Closes the shell and cleans up the native instance, which will handle destroying all
+     * dependencies.
+     */
+    public void close() {
+        if (mNativeShell == 0) return;
+        nativeCloseShell(mNativeShell);
+    }
+
+    @CalledByNative
+    private void onNativeDestroyed() {
+        mWindow = null;
+        mNativeShell = 0;
+        mContentViewCore.destroy();
+    }
+
+    /**
+     * @return Whether the Shell has been destroyed.
+     * @see #onNativeDestroyed()
+     */
+    public boolean isDestroyed() {
+        return mNativeShell == 0;
     }
 
     /**
@@ -125,7 +161,7 @@ public class Shell extends LinearLayout {
                 mNextButton.setVisibility(hasFocus ? GONE : VISIBLE);
                 mPrevButton.setVisibility(hasFocus ? GONE : VISIBLE);
                 if (!hasFocus) {
-                    mUrlTextView.setText(mContentView.getUrl());
+                    mUrlTextView.setText(mContentViewCore.getUrl());
                 }
             }
         });
@@ -140,12 +176,15 @@ public class Shell extends LinearLayout {
     public void loadUrl(String url) {
         if (url == null) return;
 
-        if (TextUtils.equals(url, mContentView.getUrl())) {
-            mContentView.reload();
+        if (TextUtils.equals(url, mContentViewCore.getUrl())) {
+            mContentViewCore.reload(true);
         } else {
-            mContentView.loadUrl(new LoadUrlParams(sanitizeUrl(url)));
+            mContentViewCore.loadUrl(new LoadUrlParams(sanitizeUrl(url)));
         }
         mUrlTextView.clearFocus();
+        // TODO(aurimas): Remove this when crbug.com/174541 is fixed.
+        mContentView.clearFocus();
+        mContentView.requestFocus();
     }
 
     /**
@@ -164,7 +203,7 @@ public class Shell extends LinearLayout {
         mPrevButton.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (mContentView.canGoBack()) mContentView.goBack();
+                if (mContentViewCore.canGoBack()) mContentViewCore.goBack();
             }
         });
 
@@ -172,7 +211,7 @@ public class Shell extends LinearLayout {
         mNextButton.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (mContentView.canGoForward()) mContentView.goForward();
+                if (mContentViewCore.canGoForward()) mContentViewCore.goForward();
             }
         });
     }
@@ -212,23 +251,33 @@ public class Shell extends LinearLayout {
      */
     @SuppressWarnings("unused")
     @CalledByNative
-    private void initFromNativeTabContents(int nativeTabContents) {
-        mContentView = ContentView.newInstance(
-                getContext(), nativeTabContents, mWindow, ContentView.PERSONALITY_CHROME);
-        if (mContentView.getUrl() != null) mUrlTextView.setText(mContentView.getUrl());
+    private void initFromNativeTabContents(long nativeTabContents) {
+        mContentView = ContentView.newInstance(getContext(), nativeTabContents, mWindow);
+        mContentViewCore = mContentView.getContentViewCore();
+        mContentViewCore.setContentViewClient(mContentViewClient);
+
+        if (getParent() != null) mContentViewCore.onShow();
+        if (mContentViewCore.getUrl() != null) mUrlTextView.setText(mContentViewCore.getUrl());
         ((FrameLayout) findViewById(R.id.contentview_holder)).addView(mContentView,
                 new FrameLayout.LayoutParams(
                         FrameLayout.LayoutParams.MATCH_PARENT,
                         FrameLayout.LayoutParams.MATCH_PARENT));
         mContentView.requestFocus();
-        mContentViewRenderView.setCurrentContentView(mContentView);
+        mContentViewRenderView.setCurrentContentViewCore(mContentViewCore);
     }
 
     /**
-     * @return The {@link ContentView} currently shown by this Shell.
+     * @return The {@link ViewGroup} currently shown by this Shell.
      */
-    public ContentView getContentView() {
+    public ViewGroup getContentView() {
         return mContentView;
+    }
+
+    /**
+     * @return The {@link ContentViewCore} currently managing the view shown by this Shell.
+     */
+    public ContentViewCore getContentViewCore() {
+        return mContentViewCore;
     }
 
     private void setKeyboardVisibilityForUrl(boolean visible) {
@@ -240,4 +289,6 @@ public class Shell extends LinearLayout {
             imm.hideSoftInputFromWindow(mUrlTextView.getWindowToken(), 0);
         }
     }
+
+    private static native void nativeCloseShell(long shellPtr);
 }

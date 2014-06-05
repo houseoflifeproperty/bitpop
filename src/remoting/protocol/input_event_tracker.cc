@@ -12,12 +12,10 @@ namespace protocol {
 
 InputEventTracker::InputEventTracker(InputStub* input_stub)
     : input_stub_(input_stub),
-      mouse_pos_(SkIPoint::Make(0, 0)),
       mouse_button_state_(0) {
 }
 
-InputEventTracker::~InputEventTracker() {
-}
+InputEventTracker::~InputEventTracker() {}
 
 bool InputEventTracker::IsKeyPressed(uint32 usb_keycode) const {
   return pressed_keys_.find(usb_keycode) != pressed_keys_.end();
@@ -56,6 +54,10 @@ void InputEventTracker::ReleaseAll() {
 }
 
 void InputEventTracker::InjectKeyEvent(const KeyEvent& event) {
+  // We don't need to track the keyboard lock states of key down events.
+  // Pressed keys will be released with |lock_states| set to 0.
+  // The lock states of auto generated key up events don't matter as long as
+  // we release all the pressed keys at blurring/disconnection time.
   if (event.has_pressed()) {
     if (event.has_usb_keycode()) {
       if (event.pressed()) {
@@ -68,9 +70,13 @@ void InputEventTracker::InjectKeyEvent(const KeyEvent& event) {
   input_stub_->InjectKeyEvent(event);
 }
 
+void InputEventTracker::InjectTextEvent(const TextEvent& event) {
+  input_stub_->InjectTextEvent(event);
+}
+
 void InputEventTracker::InjectMouseEvent(const MouseEvent& event) {
   if (event.has_x() && event.has_y()) {
-    mouse_pos_ = SkIPoint::Make(event.x(), event.y());
+    mouse_pos_ = webrtc::DesktopVector(event.x(), event.y());
   }
   if (event.has_button() && event.has_button_down()) {
     // Button values are defined in remoting/proto/event.proto.

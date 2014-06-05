@@ -22,9 +22,19 @@ const int kRightInsetSize = 4;
 namespace views {
 
 FocusableBorder::FocusableBorder()
-    : has_focus_(false),
-      insets_(kTopInsetSize, kLeftInsetSize,
-              kBottomInsetSize, kRightInsetSize) {
+    : insets_(kTopInsetSize, kLeftInsetSize,
+              kBottomInsetSize, kRightInsetSize),
+      override_color_(SK_ColorWHITE),
+      use_default_color_(true) {
+}
+
+void FocusableBorder::SetColor(SkColor color) {
+  override_color_ = color;
+  use_default_color_ = false;
+}
+
+void FocusableBorder::UseDefaultColor() {
+  use_default_color_ = true;
 }
 
 void FocusableBorder::Paint(const View& view, gfx::Canvas* canvas) {
@@ -32,10 +42,14 @@ void FocusableBorder::Paint(const View& view, gfx::Canvas* canvas) {
   path.addRect(gfx::RectToSkRect(view.GetLocalBounds()), SkPath::kCW_Direction);
   SkPaint paint;
   paint.setStyle(SkPaint::kStroke_Style);
-  SkColor focus_color = view.GetNativeTheme()->GetSystemColor(
-      has_focus_ ? ui::NativeTheme::kColorId_FocusedBorderColor
-          : ui::NativeTheme::kColorId_UnfocusedBorderColor);
-  paint.setColor(focus_color);
+  SkColor color = override_color_;
+  if (use_default_color_) {
+    color = view.GetNativeTheme()->GetSystemColor(
+        view.HasFocus() ? ui::NativeTheme::kColorId_FocusedBorderColor :
+                          ui::NativeTheme::kColorId_UnfocusedBorderColor);
+  }
+
+  paint.setColor(color);
   paint.setStrokeWidth(SkIntToScalar(2));
 
   canvas->DrawPath(path, paint);
@@ -43,6 +57,10 @@ void FocusableBorder::Paint(const View& view, gfx::Canvas* canvas) {
 
 gfx::Insets FocusableBorder::GetInsets() const {
   return insets_;
+}
+
+gfx::Size FocusableBorder::GetMinimumSize() const {
+  return gfx::Size();
 }
 
 void FocusableBorder::SetInsets(int top, int left, int bottom, int right) {

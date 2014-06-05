@@ -4,23 +4,26 @@
 
 #include "chrome/common/content_settings_helper.h"
 
-#include "base/string_piece.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_piece.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/common/url_constants.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace content_settings_helper {
 
 std::string OriginToString(const GURL& origin) {
-   std::string port_component(origin.IntPort() != url_parse::PORT_UNSPECIFIED ?
-      ":" + origin.port() : "");
-  std::string scheme_component(!origin.SchemeIs(chrome::kHttpScheme) ?
-      origin.scheme() + content::kStandardSchemeSeparator : "");
-  return scheme_component + origin.host() + port_component;
+  std::string port_component(origin.IntPort() != url::PORT_UNSPECIFIED
+                                 ? ":" + origin.port()
+                                 : std::string());
+  std::string scheme_component(!origin.SchemeIs(url::kHttpScheme)
+                                   ? origin.scheme() +
+                                     content::kStandardSchemeSeparator
+                                   : std::string());
+   return scheme_component + origin.host() + port_component;
 }
 
-string16 OriginToString16(const GURL& origin) {
-  return UTF8ToUTF16(OriginToString(origin));
+base::string16 OriginToString16(const GURL& origin) {
+  return base::UTF8ToUTF16(OriginToString(origin));
 }
 
 }  // namespace content_settings_helper

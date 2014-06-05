@@ -12,23 +12,9 @@ namespace content {
 class IndexedDBKey;
 class IndexedDBKeyPath;
 class IndexedDBKeyRange;
-class SerializedScriptValue;
 }
 
 namespace IPC {
-
-// These datatypes are used by utility_messages.h and render_messages.h.
-// Unfortunately we can't move it to common: MSVC linker complains about
-// WebKit datatypes that are not linked on npchrome_frame (even though it's
-// never actually used by that target).
-
-template <>
-struct ParamTraits<content::SerializedScriptValue> {
-  typedef content::SerializedScriptValue param_type;
-  static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
-  static void Log(const param_type& p, std::string* l);
-};
 
 template <>
 struct ParamTraits<content::IndexedDBKey> {

@@ -8,7 +8,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
 #include "content/public/common/common_param_traits.h"
-#include "googleurl/src/gurl.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_message_utils.h"
 #include "net/base/host_port_pair.h"
@@ -17,6 +16,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/rect.h"
+#include "url/gurl.h"
 
 // Tests that serialize/deserialize correctly understand each other
 TEST(IPCMessageTest, Serialize) {
@@ -78,7 +78,6 @@ TEST(IPCMessageTest, Pair) {
   EXPECT_TRUE(IPC::ParamTraits<TestPair>::Read(&msg, &iter, &output));
   EXPECT_EQ(output.first, "foo");
   EXPECT_EQ(output.second, "bar");
-
 }
 
 // Tests bitmap serialization.
@@ -110,11 +109,11 @@ TEST(IPCMessageTest, Bitmap) {
   const char* fixed_data;
   int fixed_data_size;
   iter = PickleIterator(msg);
-  msg.ReadData(&iter, &fixed_data, &fixed_data_size);
+  EXPECT_TRUE(msg.ReadData(&iter, &fixed_data, &fixed_data_size));
   bad_msg.WriteData(fixed_data, fixed_data_size);
   // Add some bogus pixel data.
   const size_t bogus_pixels_size = bitmap.getSize() * 2;
-  scoped_array<char> bogus_pixels(new char[bogus_pixels_size]);
+  scoped_ptr<char[]> bogus_pixels(new char[bogus_pixels_size]);
   memset(bogus_pixels.get(), 'B', bogus_pixels_size);
   bad_msg.WriteData(bogus_pixels.get(), bogus_pixels_size);
   // Make sure we don't read out the bitmap!
@@ -124,15 +123,15 @@ TEST(IPCMessageTest, Bitmap) {
 }
 
 TEST(IPCMessageTest, ListValue) {
-  ListValue input;
-  input.Set(0, Value::CreateDoubleValue(42.42));
-  input.Set(1, Value::CreateStringValue("forty"));
-  input.Set(2, Value::CreateNullValue());
+  base::ListValue input;
+  input.Set(0, new base::FundamentalValue(42.42));
+  input.Set(1, new base::StringValue("forty"));
+  input.Set(2, base::Value::CreateNullValue());
 
   IPC::Message msg(1, 2, IPC::Message::PRIORITY_NORMAL);
   IPC::WriteParam(&msg, input);
 
-  ListValue output;
+  base::ListValue output;
   PickleIterator iter(msg);
   EXPECT_TRUE(IPC::ReadParam(&msg, &iter, &output));
 
@@ -146,19 +145,19 @@ TEST(IPCMessageTest, ListValue) {
 }
 
 TEST(IPCMessageTest, DictionaryValue) {
-  DictionaryValue input;
-  input.Set("null", Value::CreateNullValue());
-  input.Set("bool", Value::CreateBooleanValue(true));
-  input.Set("int", Value::CreateIntegerValue(42));
+  base::DictionaryValue input;
+  input.Set("null", base::Value::CreateNullValue());
+  input.Set("bool", new base::FundamentalValue(true));
+  input.Set("int", new base::FundamentalValue(42));
 
-  scoped_ptr<DictionaryValue> subdict(new DictionaryValue());
-  subdict->Set("str", Value::CreateStringValue("forty two"));
-  subdict->Set("bool", Value::CreateBooleanValue(false));
+  scoped_ptr<base::DictionaryValue> subdict(new base::DictionaryValue());
+  subdict->Set("str", new base::StringValue("forty two"));
+  subdict->Set("bool", new base::FundamentalValue(false));
 
-  scoped_ptr<ListValue> sublist(new ListValue());
-  sublist->Set(0, Value::CreateDoubleValue(42.42));
-  sublist->Set(1, Value::CreateStringValue("forty"));
-  sublist->Set(2, Value::CreateStringValue("two"));
+  scoped_ptr<base::ListValue> sublist(new base::ListValue());
+  sublist->Set(0, new base::FundamentalValue(42.42));
+  sublist->Set(1, new base::StringValue("forty"));
+  sublist->Set(2, new base::StringValue("two"));
   subdict->Set("list", sublist.release());
 
   input.Set("dict", subdict.release());
@@ -166,7 +165,7 @@ TEST(IPCMessageTest, DictionaryValue) {
   IPC::Message msg(1, 2, IPC::Message::PRIORITY_NORMAL);
   IPC::WriteParam(&msg, input);
 
-  DictionaryValue output;
+  base::DictionaryValue output;
   PickleIterator iter(msg);
   EXPECT_TRUE(IPC::ReadParam(&msg, &iter, &output));
 

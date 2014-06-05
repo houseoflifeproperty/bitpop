@@ -8,17 +8,31 @@
         'chromium_code': 1,
       },
       'includes': [
+        '../../build/util/version.gypi',
         '../../build/win_precompile.gypi',
-        '../../chrome/version.gypi',
       ],
       'target_defaults': {
+        # This and the force include below is a workaround for intsafe.h in
+        # VS 2010.
+        'msvs_system_include_dirs': [
+          '<(DEPTH)/build',
+        ],
         'msvs_settings': {
-            'VCLinkerTool': {
-                'AdditionalDependencies': [
-                    'D2D1.lib',
-                    'D3D11.lib',
-                ],
-            },
+          'VCLinkerTool': {
+            'AdditionalDependencies': [
+              'D2D1.lib',
+              'D3D11.lib',
+              'runtimeobject.lib',
+            ],
+            'DelayLoadDLLs': [
+              'API-MS-WIN-CORE-WINRT-ERROR-L1-1-0.DLL',
+              'API-MS-WIN-CORE-WINRT-L1-1-0.DLL',
+              'API-MS-WIN-CORE-WINRT-STRING-L1-1-0.DLL',
+            ],
+          },
+          'VCCLCompilerTool': {
+            'ForcedIncludeFiles': [ 'intsafe_workaround.h', ],
+          },
         },
       },
       'targets': [
@@ -52,19 +66,22 @@
           'type': 'shared_library',
           'dependencies': [
             '../../base/base.gyp:base',
-            '../../build/temp_gyp/googleurl.gyp:googleurl',
             '../../chrome/common_constants.gyp:common_constants',
+            '../../chrome/chrome.gyp:installer_util',
             '../../crypto/crypto.gyp:crypto',
             '../../google_update/google_update.gyp:google_update',
             '../../ipc/ipc.gyp:ipc',
             '../../sandbox/sandbox.gyp:sandbox',
-            '../../ui/metro_viewer/metro_viewer.gyp:metro_viewer',
-            '../win8.gyp:check_sdk_patch',
+            '../../ui/metro_viewer/metro_viewer.gyp:metro_viewer_messages',
+            '../../url/url.gyp:url_lib',
             'metro_driver_version_resources',
           ],
           'sources': [
+            'display_properties.cc',
+            'display_properties.h',
             'metro_driver.cc',
             'metro_driver.h',
+            'metro_driver_win7.cc',
             'stdafx.h',
             'winrt_utils.cc',
             'winrt_utils.h',
@@ -72,11 +89,19 @@
           ],
           'conditions': [
             ['use_aura==1', {
+              'dependencies': [
+                '../win8.gyp:metro_viewer_constants',
+              ],
               'sources': [
                 'chrome_app_view_ash.cc',
                 'chrome_app_view_ash.h',
                 'direct3d_helper.cc',
                 'direct3d_helper.h',
+                'file_picker_ash.cc',
+                'file_picker_ash.h',
+              ],
+              'includes': [
+                'ime/ime.gypi',
               ],
             }, {  # use_aura!=1
               'sources': [
@@ -84,20 +109,18 @@
                 'chrome_app_view.h',
                 'chrome_url_launch_handler.cc',
                 'chrome_url_launch_handler.h',
-                '../delegate_execute/chrome_util.cc',
-                '../delegate_execute/chrome_util.h',
                 'devices_handler.cc',
                 'devices_handler.h',
-                'file_picker.h',
                 'file_picker.cc',
+                'file_picker.h',
                 'metro_dialog_box.cc',
                 'metro_dialog_box.h',
-                'print_handler.cc',
-                'print_handler.h',
                 'print_document_source.cc',
                 'print_document_source.h',
-                'secondary_tile.h',
+                'print_handler.cc',
+                'print_handler.h',
                 'secondary_tile.cc',
+                'secondary_tile.h',
                 'settings_handler.cc',
                 'settings_handler.h',
                 'toast_notification_handler.cc',
@@ -123,6 +146,7 @@
           'type': 'executable',
           'dependencies': [
             '../../base/base.gyp:base',
+            '../../chrome/chrome.gyp:installer_util',
             '../../testing/gtest.gyp:gtest',
             'metro_driver',
           ],

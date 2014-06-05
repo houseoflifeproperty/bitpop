@@ -57,9 +57,6 @@ class WrapperGen(Generator):
   GetInterface functions).
 
   Subclasses must implement GenerateWrapperForPPBMethod (and PPP).
-  Optionally, subclasses can implement InterfaceNeedsWrapper to
-  filter out interfaces that do not actually need wrappers (those
-  interfaces can jump directly to the original interface functions).
   """
 
   def __init__(self, wrapper_prefix, s1, s2, s3):
@@ -106,8 +103,14 @@ class WrapperGen(Generator):
     """
     out.Write("""/* Use local strcmp to avoid dependency on libc. */
 static int mystrcmp(const char* s1, const char *s2) {
-  while((*s1 && *s2) && (*s1++ == *s2++));
-  return *(--s1) - *(--s2);
+  while (1) {
+    if (*s1 == 0) break;
+    if (*s2 == 0) break;
+    if (*s1 != *s2) break;
+    ++s1;
+    ++s2;
+  }
+  return (int)(*s1) - (int)(*s2);
 }\n
 """)
 
@@ -154,7 +157,7 @@ static struct %(wrapper_struct)s *%(wrapper_prefix)sPPPShimIface(
 const void *__%(wrapper_prefix)s_PPBGetInterface(const char *name) {
   struct %(wrapper_struct)s *wrapper = %(wrapper_prefix)sPPBShimIface(name);
   if (wrapper == NULL) {
-    /* We don't have an IDL for this, for some reason. Take our chances. */
+    /* We did not generate a wrapper for this, so return the real interface. */
     return (*__real_PPBGetInterface)(name);
   }
 
@@ -165,17 +168,13 @@ const void *__%(wrapper_prefix)s_PPBGetInterface(const char *name) {
     wrapper->real_iface = iface;
   }
 
-  if (wrapper->wrapped_iface) {
-    return wrapper->wrapped_iface;
-  } else {
-    return wrapper->real_iface;
-  }
+  return wrapper->wrapped_iface;
 }
 
 const void *__%(wrapper_prefix)s_PPPGetInterface(const char *name) {
   struct %(wrapper_struct)s *wrapper = %(wrapper_prefix)sPPPShimIface(name);
   if (wrapper == NULL) {
-    /* We don't have an IDL for this, for some reason. Take our chances. */
+    /* We did not generate a wrapper for this, so return the real interface. */
     return (*__real_PPPGetInterface)(name);
   }
 
@@ -186,11 +185,7 @@ const void *__%(wrapper_prefix)s_PPPGetInterface(const char *name) {
     wrapper->real_iface = iface;
   }
 
-  if (wrapper->wrapped_iface) {
-    return wrapper->wrapped_iface;
-  } else {
-    return wrapper->real_iface;
-  }
+  return wrapper->wrapped_iface;
 }
 """ % { 'wrapper_struct' : self.GetWrapperMetadataName(),
         'wrapper_prefix' : self.wrapper_prefix,
@@ -198,12 +193,6 @@ const void *__%(wrapper_prefix)s_PPPGetInterface(const char *name) {
 
 
   ############################################################
-
-  def InterfaceNeedsWrapper(self, iface, releases):
-    """Return true if the interface has ANY methods that need wrapping.
-    """
-    return True
-
 
   def OwnHeaderFile(self):
     """Return the header file that specifies the API of this wrapper.
@@ -254,13 +243,11 @@ const void *__%(wrapper_prefix)s_PPPGetInterface(const char *name) {
     # Get typedefs for PPB_GetInterface.
     out.Write('#include "%s"\n' % self.GetHeaderName('ppb.h'))
 
-    # Get a conservative list of all #includes that are needed,
-    # whether it requires wrapping or not. We currently depend on the macro
-    # string for comparison, even when it is not wrapped, to decide when
-    # to use the original/real interface.
+    # Only include headers where *some* interface needs wrapping.
     header_files = set()
     for iface in iface_releases:
-      header_files.add(iface.header_file)
+      if iface.needs_wrapping:
+        header_files.add(iface.header_file)
     for header in sorted(header_files):
       out.Write('#include "%s"\n' % header)
     out.Write('\n')
@@ -268,21 +255,6 @@ const void *__%(wrapper_prefix)s_PPPGetInterface(const char *name) {
 
   def WrapperMethodPrefix(self, iface, release):
     return '%s_%s_%s_' % (self.wrapper_prefix, release, iface.GetName())
-
-
-  def GetReturnArgs(self, ret_type, args_spec):
-    if ret_type != 'void':
-      ret = 'return '
-    else:
-      ret = ''
-    if args_spec:
-      args = []
-      for arg in args_spec:
-        args.append(arg[1])
-      args = ', '.join(args)
-    else:
-      args = ''
-    return (ret, args)
 
 
   def GenerateWrapperForPPBMethod(self, iface, member):
@@ -342,24 +314,31 @@ const void *__%(wrapper_prefix)s_PPPGetInterface(const char *name) {
                   iface.struct_name)
         continue
 
-      out.Write('struct %s %s_Wrappers_%s = {\n' % (iface.struct_name,
-                                                    self.wrapper_prefix,
-                                                    iface.struct_name))
+      out.Write('static const struct %s %s_Wrappers_%s = {\n' % (
+          iface.struct_name, self.wrapper_prefix, iface.struct_name))
       methods = []
       for member in iface.node.GetListOf('Member'):
         # Skip the method if it's not actually in the release.
         if not member.InReleases([iface.release]):
           continue
         prefix = self.WrapperMethodPrefix(iface.node, iface.release)
-        cast = self.cgen.GetSignature(member, iface.release, 'return',
-                                      prefix='',
-                                      func_as_ptr=True,
-                                      ptr_prefix='',
-                                      include_name=False)
-        methods.append('  .%s = (%s)&%s%s' % (member.GetName(),
-                                              cast,
-                                              prefix,
-                                              member.GetName()))
+        # Casts are necessary for the PPB_* wrappers because we must
+        # cast away "__attribute__((pnaclcall))".  The PPP_* wrappers
+        # must match the default calling conventions and so don't have
+        # the attribute, so omitting casts for them provides a little
+        # extra type checking.
+        if iface.node.GetName().startswith('PPB_'):
+          cast = '(%s)' % self.cgen.GetSignature(
+              member, iface.release, 'return',
+              prefix='',
+              func_as_ptr=True,
+              include_name=False)
+        else:
+          cast = ''
+        methods.append('  .%s = %s&%s%s' % (member.GetName(),
+                                            cast,
+                                            prefix,
+                                            member.GetName()))
       out.Write('  ' + ',\n  '.join(methods) + '\n')
       out.Write('};\n\n')
 
@@ -372,11 +351,9 @@ const void *__%(wrapper_prefix)s_PPPGetInterface(const char *name) {
     for iface in iface_releases:
       iface_macro = self.cgen.GetInterfaceMacro(iface.node, iface.version)
       if iface.needs_wrapping:
-        wrap_iface = '(void *) &%s_Wrappers_%s' % (self.wrapper_prefix,
-                                                   iface.struct_name)
-      else:
-        wrap_iface = 'NULL /* Still need slot for real_iface */'
-      out.Write("""static struct %s %s = {
+        wrap_iface = '(const void *) &%s_Wrappers_%s' % (self.wrapper_prefix,
+                                                         iface.struct_name)
+        out.Write("""static struct %s %s = {
   .iface_macro = %s,
   .wrapped_iface = %s,
   .real_iface = NULL
@@ -389,10 +366,11 @@ const void *__%(wrapper_prefix)s_PPPGetInterface(const char *name) {
     ppb_wrapper_infos = []
     ppp_wrapper_infos = []
     for iface in iface_releases:
-      appender = PPKind.ChoosePPFunc(iface,
-                                     ppb_wrapper_infos.append,
-                                     ppp_wrapper_infos.append)
-      appender('  &%s' % self.GetWrapperInfoName(iface))
+      if iface.needs_wrapping:
+        appender = PPKind.ChoosePPFunc(iface,
+                                       ppb_wrapper_infos.append,
+                                       ppp_wrapper_infos.append)
+        appender('  &%s' % self.GetWrapperInfoName(iface))
     ppb_wrapper_infos.append('  NULL')
     ppp_wrapper_infos.append('  NULL')
     out.Write(
@@ -409,8 +387,10 @@ const void *__%(wrapper_prefix)s_PPPGetInterface(const char *name) {
     """
     out.Write('/* BEGIN Declarations for all Wrapper Infos */\n\n')
     for iface in iface_releases:
-      out.Write('static struct %s %s;\n' %
-                (self.GetWrapperMetadataName(), self.GetWrapperInfoName(iface)))
+      if iface.needs_wrapping:
+        out.Write('static struct %s %s;\n' %
+                  (self.GetWrapperMetadataName(),
+                   self.GetWrapperInfoName(iface)))
     out.Write('/* END Declarations for all Wrapper Infos. */\n\n')
 
 
@@ -434,8 +414,6 @@ const void *__%(wrapper_prefix)s_PPPGetInterface(const char *name) {
     # Generate the includes.
     self.GenerateIncludes(iface_releases, out)
 
-    out.Write(self.GetGuardStart())
-
     # Write out static helper functions (mystrcmp).
     self.GenerateHelperFunctions(out)
 
@@ -456,6 +434,5 @@ const void *__%(wrapper_prefix)s_PPPGetInterface(const char *name) {
     # Write out the IDL-invariant functions.
     self.GenerateFixedFunctions(out)
 
-    out.Write(self.GetGuardEnd())
     out.Close()
     return 0

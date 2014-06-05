@@ -20,7 +20,7 @@ import com.google.ipc.invalidation.external.client.SystemResources;
 import com.google.ipc.invalidation.ticl.TestableNetworkChannel;
 import com.google.ipc.invalidation.ticl.android2.ProtocolIntents;
 import com.google.ipc.invalidation.ticl.android2.ResourcesFactory.AndroidResources;
-import com.google.protos.ipc.invalidation.Channel.NetworkEndpointId;
+import com.google.protos.ipc.invalidation.ChannelCommon.NetworkEndpointId;
 
 import android.content.Context;
 import android.content.Intent;

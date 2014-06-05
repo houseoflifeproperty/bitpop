@@ -1,20 +1,11 @@
 include_rules = [
-  "+net/base",
-  "+net/ftp",
-  "+net/http",
-  "+net/proxy",
-  "+net/test",
-  "+net/url_request",
-
-  # Note: Only for net::EnableSSLServerSockets(), which must be called by
-  # at process start.
-  "+net/socket",
-
+  "+net",
   "+remoting/codec",
-  "+remoting/protocol",
   "+remoting/jingle_glue",
+  "+remoting/protocol",
   "+third_party/jsoncpp",
   "+third_party/modp_b64",
   "+third_party/npapi",
+  "+third_party/webrtc",
   "+ui",
 ]

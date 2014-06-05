@@ -99,6 +99,8 @@ bool BaseScrollBarThumb::OnMouseDragged(const ui::MouseEvent& event) {
   }
   if (scroll_bar_->IsHorizontal()) {
     int thumb_x = event.x() - mouse_offset_;
+    if (base::i18n::IsRTL())
+      thumb_x *= -1;
     scroll_bar_->ScrollToThumbPosition(GetPosition() + thumb_x, false);
   } else {
     int thumb_y = event.y() - mouse_offset_;
@@ -108,7 +110,8 @@ bool BaseScrollBarThumb::OnMouseDragged(const ui::MouseEvent& event) {
 }
 
 void BaseScrollBarThumb::OnMouseReleased(const ui::MouseEvent& event) {
-  OnMouseCaptureLost();
+  SetState(HitTestPoint(event.location()) ?
+           CustomButton::STATE_HOVERED : CustomButton::STATE_NORMAL);
 }
 
 void BaseScrollBarThumb::OnMouseCaptureLost() {
@@ -120,7 +123,12 @@ CustomButton::ButtonState BaseScrollBarThumb::GetState() const {
 }
 
 void BaseScrollBarThumb::SetState(CustomButton::ButtonState state) {
+  if (state_ == state)
+    return;
+
+  CustomButton::ButtonState old_state = state_;
   state_ = state;
+  scroll_bar_->OnThumbStateChanged(old_state, state);
   SchedulePaint();
 }
 

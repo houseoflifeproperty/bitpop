@@ -5,17 +5,16 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_PAGE_ACTION_CONTROLLER_H_
 #define CHROME_BROWSER_EXTENSIONS_PAGE_ACTION_CONTROLLER_H_
 
-#include <set>
 #include <string>
 
 #include "base/observer_list.h"
 #include "chrome/browser/extensions/location_bar_controller.h"
 #include "content/public/browser/web_contents_observer.h"
 
-class ExtensionService;
 class Profile;
 
 namespace extensions {
+class ExtensionRegistry;
 
 // A LocationBarController which populates the location bar with icons based
 // on the page_action extension API.
@@ -27,8 +26,6 @@ class PageActionController : public LocationBarController,
 
   // LocationBarController implementation.
   virtual std::vector<ExtensionAction*> GetCurrentActions() const OVERRIDE;
-  // Page actions can't try to get attention.
-  virtual void GetAttentionFor(const std::string& extension_id) OVERRIDE {}
   virtual Action OnClicked(const std::string& extension_id,
                            int mouse_button) OVERRIDE;
   virtual void NotifyChange() OVERRIDE;
@@ -40,10 +37,10 @@ class PageActionController : public LocationBarController,
 
  private:
   // Gets the Profile for the web contents.
-  Profile* profile() const;
+  Profile* GetProfile() const;
 
-  // Gets the ExtensionService for the web contents.
-  ExtensionService* GetExtensionService() const;
+  // Gets the ExtensionRegistry for the web contents.
+  ExtensionRegistry* GetExtensionRegistry() const;
 
   DISALLOW_COPY_AND_ASSIGN(PageActionController);
 };

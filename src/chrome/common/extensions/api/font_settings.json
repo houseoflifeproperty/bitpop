@@ -5,7 +5,7 @@
 [
   {
     "namespace": "fontSettings",
-    "documentation_permissions_required": ["fontSettings"],
+    "description": "Use the <code>chrome.fontSettings</code> API to manage Chrome's font settings.",
     "types": [
       {
         "id": "FontName",

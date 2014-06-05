@@ -5,11 +5,13 @@
 #ifndef CHROME_BROWSER_CHROMEOS_EXTERNAL_METRICS_H_
 #define CHROME_BROWSER_CHROMEOS_EXTERNAL_METRICS_H_
 
+#include <string>
+
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
+#include "base/containers/hash_tables.h"
+#include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
-#include "base/hash_tables.h"
 #include "base/memory/ref_counted.h"
 
 namespace chromeos {
@@ -21,9 +23,6 @@ namespace chromeos {
 // normal UMA mechanism. The file is then truncated to zero size. Chrome uses
 // flock() to synchronize accesses to the file.
 class ExternalMetrics : public base::RefCountedThreadSafe<ExternalMetrics> {
-  FRIEND_TEST_ALL_PREFIXES(ExternalMetricsTest, ParseExternalMetricsFile);
-  friend class base::RefCountedThreadSafe<ExternalMetrics>;
-
  public:
   ExternalMetrics();
 
@@ -33,6 +32,9 @@ class ExternalMetrics : public base::RefCountedThreadSafe<ExternalMetrics> {
   void Start();
 
  private:
+  friend class base::RefCountedThreadSafe<ExternalMetrics>;
+  FRIEND_TEST_ALL_PREFIXES(ExternalMetricsTest, ParseExternalMetricsFile);
+
   // There is one function with this type for each action.
   typedef void (*RecordFunctionType)();
 
@@ -64,6 +66,10 @@ class ExternalMetrics : public base::RefCountedThreadSafe<ExternalMetrics> {
   // in the form <histogram-name> <sample> <max>.
   void RecordLinearHistogram(const char* histogram_data);
 
+  // Passes a sparse histogram event to the UMA service.  |histogram_data| is
+  // in the form <histogram-name> <sample>.
+  void RecordSparseHistogram(const char* histogram_data);
+
   // Collects external events from metrics log file.  This is run at periodic
   // intervals.
   void CollectEvents();
@@ -74,6 +80,12 @@ class ExternalMetrics : public base::RefCountedThreadSafe<ExternalMetrics> {
   // Schedules a metrics event collection in the future.
   void ScheduleCollector();
 
+  // Calls setup methods for Chrome OS field trials that need to be initialized
+  // based on data from the file system.  They are setup here so that we can
+  // make absolutely sure that they are setup before we gather UMA statistics
+  // from ChromeOS.
+  void SetupFieldTrialsOnFileThread();
+
   // Maps histogram or action names to recorder structs.
   base::hash_map<std::string, RecordFunctionType> action_recorders_;
 
@@ -82,7 +94,8 @@ class ExternalMetrics : public base::RefCountedThreadSafe<ExternalMetrics> {
 
   // Used for testing only.
   RecorderType test_recorder_;
-  FilePath test_path_;
+  base::FilePath test_path_;
+
   DISALLOW_COPY_AND_ASSIGN(ExternalMetrics);
 };
 

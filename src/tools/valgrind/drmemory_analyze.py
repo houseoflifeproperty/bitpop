@@ -122,9 +122,13 @@ class DrMemoryAnalyzer:
         self.ReadLine()
         while self.line_.strip() != "":
           line = self.line_.strip()
-          (count, name) = re.match(" *([0-9]+)x(?: \(leaked .*\))?: (.*)",
+          (count, name) = re.match(" *([0-9\?]+)x(?: \(.*?\))?: (.*)",
                                    line).groups()
-          count = int(count)
+          if (count == "?"):
+            # Whole-module have no count available: assume 1
+            count = 1
+          else:
+            count = int(count)
           self.used_suppressions[name] += count
           self.ReadLine()
 
@@ -178,10 +182,7 @@ class DrMemoryAnalyzer:
 
 def main():
   '''For testing only. The DrMemoryAnalyze class should be imported instead.'''
-  parser = optparse.OptionParser("usage: %prog [options] <files to analyze>")
-  parser.add_option("", "--source_dir",
-                    help="path to top of source tree for this build"
-                    "(used to normalize source paths in baseline)")
+  parser = optparse.OptionParser("usage: %prog <files to analyze>")
 
   (options, args) = parser.parse_args()
   if len(args) == 0:

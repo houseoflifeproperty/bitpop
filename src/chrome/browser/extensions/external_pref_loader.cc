@@ -5,15 +5,16 @@
 #include "chrome/browser/extensions/external_pref_loader.h"
 
 #include "base/bind.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
+#include "base/files/file_path.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/common/chrome_paths.h"
 #include "content/public/browser/browser_thread.h"
 
@@ -21,31 +22,31 @@ using content::BrowserThread;
 
 namespace {
 
-FilePath::CharType kExternalExtensionJson[] =
+base::FilePath::CharType kExternalExtensionJson[] =
     FILE_PATH_LITERAL("external_extensions.json");
 
-std::set<FilePath> GetPrefsCandidateFilesFromFolder(
-      const FilePath& external_extension_search_path) {
+std::set<base::FilePath> GetPrefsCandidateFilesFromFolder(
+      const base::FilePath& external_extension_search_path) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
 
-  std::set<FilePath> external_extension_paths;
+  std::set<base::FilePath> external_extension_paths;
 
-  if (!file_util::PathExists(external_extension_search_path)) {
+  if (!base::PathExists(external_extension_search_path)) {
     // Does not have to exist.
     return external_extension_paths;
   }
 
-  file_util::FileEnumerator json_files(
+  base::FileEnumerator json_files(
       external_extension_search_path,
       false,  // Recursive.
-      file_util::FileEnumerator::FILES);
+      base::FileEnumerator::FILES);
 #if defined(OS_WIN)
-  FilePath::StringType extension = UTF8ToWide(std::string(".json"));
+  base::FilePath::StringType extension = base::UTF8ToWide(std::string(".json"));
 #elif defined(OS_POSIX)
-  FilePath::StringType extension(".json");
+  base::FilePath::StringType extension(".json");
 #endif
   do {
-    FilePath file = json_files.Next();
+    base::FilePath file = json_files.Next();
     if (file.BaseName().value() == kExternalExtensionJson)
       continue;  // Already taken care of elsewhere.
     if (file.empty())
@@ -66,23 +67,23 @@ std::set<FilePath> GetPrefsCandidateFilesFromFolder(
 // occurs). An empty dictionary is returned in case of failure (e.g. invalid
 // path or json content).
 // Caller takes ownership of the returned dictionary.
-DictionaryValue* ExtractExtensionPrefs(base::ValueSerializer* serializer,
-                                       const FilePath& path) {
+base::DictionaryValue* ExtractExtensionPrefs(base::ValueSerializer* serializer,
+                                             const base::FilePath& path) {
   std::string error_msg;
-  Value* extensions = serializer->Deserialize(NULL, &error_msg);
+  base::Value* extensions = serializer->Deserialize(NULL, &error_msg);
   if (!extensions) {
     LOG(WARNING) << "Unable to deserialize json data: " << error_msg
                  << " in file " << path.value() << ".";
-    return new DictionaryValue;
+    return new base::DictionaryValue;
   }
 
-  DictionaryValue* ext_dictionary = NULL;
+  base::DictionaryValue* ext_dictionary = NULL;
   if (extensions->GetAsDictionary(&ext_dictionary))
     return ext_dictionary;
 
   LOG(WARNING) << "Expected a JSON dictionary in file "
                << path.value() << ".";
-  return new DictionaryValue;
+  return new base::DictionaryValue;
 }
 
 }  // namespace
@@ -94,7 +95,7 @@ ExternalPrefLoader::ExternalPrefLoader(int base_path_id, Options options)
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
-const FilePath ExternalPrefLoader::GetBaseCrxFilePath() {
+const base::FilePath ExternalPrefLoader::GetBaseCrxFilePath() {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   // |base_path_| was set in LoadOnFileThread().
@@ -111,29 +112,27 @@ void ExternalPrefLoader::StartLoading() {
 void ExternalPrefLoader::LoadOnFileThread() {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
 
+  scoped_ptr<base::DictionaryValue> prefs(new base::DictionaryValue);
+
   // TODO(skerner): Some values of base_path_id_ will cause
   // PathService::Get() to return false, because the path does
   // not exist.  Find and fix the build/install scripts so that
   // this can become a CHECK().  Known examples include chrome
   // OS developer builds and linux install packages.
   // Tracked as crbug.com/70402 .
-  if (!PathService::Get(base_path_id_, &base_path_))
-    return;
+  if (PathService::Get(base_path_id_, &base_path_)) {
+    ReadExternalExtensionPrefFile(prefs.get());
 
-  scoped_ptr<DictionaryValue> prefs(new DictionaryValue);
+    if (!prefs->empty())
+      LOG(WARNING) << "You are using an old-style extension deployment method "
+                      "(external_extensions.json), which will soon be "
+                      "deprecated. (see http://developer.chrome.com/"
+                      "extensions/external_extensions.html)";
 
-  ReadExternalExtensionPrefFile(prefs.get());
-  if (!prefs->empty())
-    LOG(WARNING) << "You are using an old-style extension deployment method "
-                    "(external_extensions.json), which will soon be "
-                    "deprecated. (see http://code.google.com/chrome/"
-                    "extensions/external_extensions.html )";
-
-  ReadStandaloneExtensionPrefFiles(prefs.get());
+    ReadStandaloneExtensionPrefFiles(prefs.get());
+  }
 
   prefs_.swap(prefs);
-  if (!prefs_.get())
-    prefs_.reset(new DictionaryValue());
 
   if (base_path_id_ == chrome::DIR_EXTERNAL_EXTENSIONS) {
     UMA_HISTOGRAM_COUNTS_100("Extensions.ExternalJsonCount",
@@ -151,20 +150,21 @@ void ExternalPrefLoader::LoadOnFileThread() {
       base::Bind(&ExternalPrefLoader::LoadFinished, this));
 }
 
-void ExternalPrefLoader::ReadExternalExtensionPrefFile(DictionaryValue* prefs) {
+void ExternalPrefLoader::ReadExternalExtensionPrefFile(
+    base::DictionaryValue* prefs) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   CHECK(NULL != prefs);
 
-  FilePath json_file = base_path_.Append(kExternalExtensionJson);
+  base::FilePath json_file = base_path_.Append(kExternalExtensionJson);
 
-  if (!file_util::PathExists(json_file)) {
+  if (!base::PathExists(json_file)) {
     // This is not an error.  The file does not exist by default.
     return;
   }
 
   if (IsOptionSet(ENSURE_PATH_CONTROLLED_BY_ADMIN)) {
 #if defined(OS_MACOSX)
-    if (!file_util::VerifyPathControlledByAdmin(json_file)) {
+    if (!base::VerifyPathControlledByAdmin(json_file)) {
       LOG(ERROR) << "Can not read external extensions source.  The file "
                  << json_file.value() << " and every directory in its path, "
                  << "must be owned by root, have group \"admin\", and not be "
@@ -175,26 +175,26 @@ void ExternalPrefLoader::ReadExternalExtensionPrefFile(DictionaryValue* prefs) {
     }
 #else
     // The only platform that uses this check is Mac OS.  If you add one,
-    // you need to implement file_util::VerifyPathControlledByAdmin() for
+    // you need to implement base::VerifyPathControlledByAdmin() for
     // that platform.
     NOTREACHED();
 #endif  // defined(OS_MACOSX)
   }
 
   JSONFileValueSerializer serializer(json_file);
-  scoped_ptr<DictionaryValue> ext_prefs(
+  scoped_ptr<base::DictionaryValue> ext_prefs(
       ExtractExtensionPrefs(&serializer, json_file));
-  if (ext_prefs.get())
+  if (ext_prefs)
     prefs->MergeDictionary(ext_prefs.get());
 }
 
 void ExternalPrefLoader::ReadStandaloneExtensionPrefFiles(
-    DictionaryValue* prefs) {
+    base::DictionaryValue* prefs) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   CHECK(NULL != prefs);
 
   // First list the potential .json candidates.
-  std::set<FilePath>
+  std::set<base::FilePath>
       candidates = GetPrefsCandidateFilesFromFolder(base_path_);
   if (candidates.empty()) {
     DVLOG(1) << "Extension candidates list empty";
@@ -203,14 +203,14 @@ void ExternalPrefLoader::ReadStandaloneExtensionPrefFiles(
 
   // For each file read the json description & build the proper
   // associated prefs.
-  for (std::set<FilePath>::const_iterator it = candidates.begin();
+  for (std::set<base::FilePath>::const_iterator it = candidates.begin();
        it != candidates.end();
        ++it) {
-    FilePath extension_candidate_path = base_path_.Append(*it);
+    base::FilePath extension_candidate_path = base_path_.Append(*it);
 
     std::string id =
 #if defined(OS_WIN)
-        WideToASCII(
+        base::UTF16ToASCII(
             extension_candidate_path.RemoveExtension().BaseName().value());
 #elif defined(OS_POSIX)
         extension_candidate_path.RemoveExtension().BaseName().value().c_str();
@@ -220,21 +220,22 @@ void ExternalPrefLoader::ReadStandaloneExtensionPrefFiles(
              << extension_candidate_path.LossyDisplayName().c_str();
 
     JSONFileValueSerializer serializer(extension_candidate_path);
-    scoped_ptr<DictionaryValue> ext_prefs(
+    scoped_ptr<base::DictionaryValue> ext_prefs(
         ExtractExtensionPrefs(&serializer, extension_candidate_path));
-    if (ext_prefs.get()) {
+    if (ext_prefs) {
       DVLOG(1) << "Adding extension with id: " << id;
       prefs->Set(id, ext_prefs.release());
     }
   }
 }
 
-ExternalTestingLoader::ExternalTestingLoader(const std::string& json_data,
-                                             const FilePath& fake_base_path)
+ExternalTestingLoader::ExternalTestingLoader(
+    const std::string& json_data,
+    const base::FilePath& fake_base_path)
     : fake_base_path_(fake_base_path) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   JSONStringValueSerializer serializer(json_data);
-  FilePath fake_json_path = fake_base_path.AppendASCII("fake.json");
+  base::FilePath fake_json_path = fake_base_path.AppendASCII("fake.json");
   testing_prefs_.reset(ExtractExtensionPrefs(&serializer, fake_json_path));
 }
 
@@ -246,8 +247,8 @@ void ExternalTestingLoader::StartLoading() {
 
 ExternalTestingLoader::~ExternalTestingLoader() {}
 
-const FilePath ExternalTestingLoader::GetBaseCrxFilePath() {
+const base::FilePath ExternalTestingLoader::GetBaseCrxFilePath() {
   return fake_base_path_;
 }
 
-}  // extensions
+}  // namespace extensions

@@ -10,7 +10,7 @@
 #include "content/public/common/page_transition_types.h"
 
 class Browser;
-class DockInfo;
+class GURL;
 
 namespace content {
 class WebContents;
@@ -39,18 +39,23 @@ class TabStripModelDelegate {
     TAB_TEAROFF_ACTION = 2
   };
 
+  enum RestoreTabType {
+    RESTORE_NONE,
+    RESTORE_TAB,
+    RESTORE_WINDOW
+  };
+
   virtual ~TabStripModelDelegate() {}
 
-  // Adds what the delegate considers to be a blank tab to the model. An |index|
-  // value of -1 means to append the contents to the end of the tab strip.
-  virtual void AddBlankTabAt(int index, bool foreground) = 0;
+  // Adds a tab to the model and loads |url| in the tab. If |url| is an empty
+  // URL, then the new tab-page is loaded instead. An |index| value of -1
+  // means to append the contents to the end of the tab strip.
+  virtual void AddTabAt(const GURL& url, int index, bool foreground) = 0;
 
   // Asks for a new TabStripModel to be created and the given web contentses to
   // be added to it. Its size and position are reflected in |window_bounds|.
-  // If |dock_info|'s type is other than NONE, the newly created window should
-  // be docked as identified by |dock_info|. Returns the Browser object
-  // representing the newly created window and tab strip. This does not
-  // show the window; it's up to the caller to do so.
+  // Returns the Browser object representing the newly created window and tab
+  // strip. This does not show the window; it's up to the caller to do so.
   //
   // TODO(avi): This is a layering violation; the TabStripModel should not know
   // about the Browser type. At least fix so that this returns a
@@ -64,7 +69,6 @@ class TabStripModelDelegate {
   virtual Browser* CreateNewStripWithContents(
       const std::vector<NewStripContents>& contentses,
       const gfx::Rect& window_bounds,
-      const DockInfo& dock_info,
       bool maximize) = 0;
 
   // Notifies the delegate that the specified WebContents will be added to the
@@ -98,10 +102,15 @@ class TabStripModelDelegate {
   virtual bool RunUnloadListenerBeforeClosing(
       content::WebContents* contents) = 0;
 
-  // Returns true if a tab can be restored.
-  virtual bool CanRestoreTab() = 0;
+  // Returns true if we should run unload listeners before attempts
+  // to close |contents|.
+  virtual bool ShouldRunUnloadListenerBeforeClosing(
+      content::WebContents* contents) = 0;
 
-  // Restores the last closed tab if CanRestoreTab would return true.
+  // Returns the current tab restore type.
+  virtual RestoreTabType GetRestoreTabType() = 0;
+
+  // Restores the last closed tab unless tab restore type is none.
   virtual void RestoreTab() = 0;
 
   // Returns true if we should allow "bookmark all tabs" in this window; this is

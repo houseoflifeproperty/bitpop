@@ -16,17 +16,46 @@ and builders of a selected master.
 
 # pylint: disable=C0323
 
+import contextlib
 import os
 import optparse
 import sys
 import traceback
 
+BASE_DIR = os.path.abspath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), os.pardir, os.pardir))
+
+sys.path.insert(0, os.path.join(BASE_DIR, 'scripts'))
 
 from common import chromium_utils
 
 # this is required for master.cfg to be loaded properly, since setuptools
 # is only required by runbuild.py at the moment.
 chromium_utils.AddThirdPartyLibToPath('setuptools-0.6c11')
+
+
+@contextlib.contextmanager
+def TemporaryMasterPasswords():
+  all_paths = [os.path.join(BASE_DIR, 'site_config', '.bot_password')]
+  all_paths.extend(os.path.join(path, '.apply_issue_password')
+                   for path in chromium_utils.ListMasters())
+  created_paths = []
+  for path in all_paths:
+    if not os.path.exists(path):
+      try:
+        with open(path, 'w') as f:
+          f.write('reindeer flotilla\n')
+        created_paths.append(path)
+      except OSError:
+        pass
+  try:
+    yield
+  finally:
+    for path in created_paths:
+      try:
+        os.remove(path)
+      except OSError:
+        print 'WARNING: Could not remove %s!' % path
 
 
 def ExecuteConfig(canonical_config):
@@ -48,13 +77,11 @@ def ExecuteConfig(canonical_config):
   sys.path.append(localDict['basedir'])
   try:
     exec f in localDict
-  except:
-    raise
+    return localDict
   finally:
     sys.path = beforepath
     os.chdir(mycwd)
     f.close()
-  return localDict
 
 
 def LoadConfig(basedir, config_file='master.cfg', suppress=False):
@@ -72,20 +99,21 @@ def LoadConfig(basedir, config_file='master.cfg', suppress=False):
   canonical_basedir = os.path.abspath(os.path.expanduser(basedir))
   canonical_config = os.path.join(canonical_basedir, config_file)
 
-  try:
-    localdict = ExecuteConfig(canonical_config)
-  except IOError as err:
-    errno, strerror = err
-    filename = err.filename
-    print >>sys.stderr, 'error %d executing %s: %s: %s' % (errno,
-        canonical_config, strerror, filename)
-    print >>sys.stderr, traceback.format_exc()
-    return None
-  except Exception:
-    if not suppress:
-      print >>sys.stderr, ('error while parsing %s: ' % canonical_config)
+  with TemporaryMasterPasswords():
+    try:
+      localdict = ExecuteConfig(canonical_config)
+    except IOError as err:
+      errno, strerror = err
+      filename = err.filename
+      print >>sys.stderr, 'error %d executing %s: %s: %s' % (errno,
+          canonical_config, strerror, filename)
       print >>sys.stderr, traceback.format_exc()
-    return None
+      return None
+    except Exception:
+      if not suppress:
+        print >>sys.stderr, ('error while parsing %s: ' % canonical_config)
+        print >>sys.stderr, traceback.format_exc()
+      return None
 
   return localdict
 
@@ -217,7 +245,7 @@ def OnlyGetOne(seq, key, source):
     return res[0]
 
 
-def GetMasters(include_internal=True):
+def GetMasters(include_public=True, include_internal=True):
   """Return a pair of (mastername, path) for all masters found."""
 
   # note: ListMasters uses master.cfg hardcoded as part of its search path
@@ -232,7 +260,8 @@ def GetMasters(include_internal=True):
     return sep.join(chunks[1:])
 
   return [(parse_master_name(m), m) for m in
-          chromium_utils.ListMasters(include_internal=include_internal)]
+          chromium_utils.ListMasters(include_public=include_public,
+                                     include_internal=include_internal)]
 
 
 def ChooseMaster(searchname):

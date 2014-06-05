@@ -114,7 +114,7 @@ public final class AndroidInvalidationListenerIntentMapper {
 
   /**
    * Handles an invalidation-related listener {@code upcall} by dispatching to the appropriate
-   * method on an instance of {@link #listenerClass}.
+   * method on an instance of {@link InvalidationListener}.
    */
   private void onInvalidateUpcall(ListenerUpcall upcall, InvalidationListener listener) {
     InvalidateUpcall invalidate = upcall.getInvalidate();

@@ -9,10 +9,12 @@
 
 #include <cstring>
 #include <deque>
+#include <set>
 #include <string>
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/strings/string_piece.h"
 #include "chrome/browser/safe_browsing/chunk_range.h"
 
 class GURL;
@@ -20,7 +22,7 @@ class GURL;
 class SBEntry;
 
 // A truncated hash's type.
-typedef int32 SBPrefix;
+typedef uint32 SBPrefix;
 
 // Container for holding a chunk URL and the list it belongs to.
 struct ChunkUrl {
@@ -34,13 +36,16 @@ union SBFullHash {
   SBPrefix prefix;
 };
 
-inline bool operator==(const SBFullHash& lhash, const SBFullHash& rhash) {
-  return memcmp(lhash.full_hash, rhash.full_hash, sizeof(SBFullHash)) == 0;
+inline bool SBFullHashEqual(const SBFullHash& a, const SBFullHash& b) {
+  return !memcmp(a.full_hash, b.full_hash, sizeof(a.full_hash));
 }
 
-inline bool operator<(const SBFullHash& lhash, const SBFullHash& rhash) {
-  return memcmp(lhash.full_hash, rhash.full_hash, sizeof(SBFullHash)) < 0;
+inline bool SBFullHashLess(const SBFullHash& a, const SBFullHash& b) {
+  return memcmp(a.full_hash, b.full_hash, sizeof(a.full_hash)) < 0;
 }
+
+// Generate full hash for the given string.
+SBFullHash SBFullHashForString(const base::StringPiece& str);
 
 // Container for information about a specific host in an add/sub chunk.
 struct SBChunkHost {
@@ -104,8 +109,8 @@ class SBChunkList {
 // Used when we get a gethash response.
 struct SBFullHashResult {
   SBFullHash hash;
-  std::string list_name;
-  int add_chunk_id;
+  // TODO(shess): Refactor to allow ListType here.
+  int list_id;
 };
 
 // Contains information about a list in the database.
@@ -141,12 +146,16 @@ enum SBThreatType {
   // The download URL is malware.
   SB_THREAT_TYPE_BINARY_MALWARE_URL,
 
-  // The hash of the download contents is malware.
-  SB_THREAT_TYPE_BINARY_MALWARE_HASH,
-
   // Url detected by the client-side phishing model.  Note that unlike the
   // above values, this does not correspond to a downloaded list.
   SB_THREAT_TYPE_CLIENT_SIDE_PHISHING_URL,
+
+  // The Chrome extension or app (given by its ID) is malware.
+  SB_THREAT_TYPE_EXTENSION,
+
+  // Url detected by the client-side malware IP list. This IP list is part
+  // of the client side detection model.
+  SB_THREAT_TYPE_CLIENT_SIDE_MALWARE_URL,
 };
 
 // SBEntry ---------------------------------------------------------------------
@@ -280,32 +289,47 @@ namespace safe_browsing_util {
 // SafeBrowsing list names.
 extern const char kMalwareList[];
 extern const char kPhishingList[];
-// Binary Download list names.
+// Binary Download list name.
 extern const char kBinUrlList[];
-extern const char kBinHashList[];
 // SafeBrowsing client-side detection whitelist list name.
 extern const char kCsdWhiteList[];
 // SafeBrowsing download whitelist list name.
 extern const char kDownloadWhiteList[];
+// SafeBrowsing extension list name.
+extern const char kExtensionBlacklist[];
+// SafeBrowsing side-effect free whitelist name.
+extern const char kSideEffectFreeWhitelist[];
+// SafeBrowsing csd malware IP blacklist name.
+extern const char kIPBlacklist[];
+
+// This array must contain all Safe Browsing lists.
+extern const char* kAllLists[8];
 
 enum ListType {
   INVALID = -1,
   MALWARE = 0,
   PHISH = 1,
   BINURL = 2,
-  BINHASH = 3,
+  // Obsolete BINHASH = 3,
   CSDWHITELIST = 4,
   // SafeBrowsing lists are stored in pairs.  Keep ListType 5
   // available for a potential second list that we would store in the
   // csd-whitelist store file.
   DOWNLOADWHITELIST = 6,
+  // See above comment. Leave 7 available.
+  EXTENSIONBLACKLIST = 8,
+  // See above comment. Leave 9 available.
+  SIDEEFFECTFREEWHITELIST = 10,
+  // See above comment. Leave 11 available.
+  IPBLACKLIST = 12,
+  // See above comment.  Leave 13 available.
 };
 
 // Maps a list name to ListType.
-int GetListId(const std::string& name);
-// Maps a ListId to list name. Return false if fails.
-bool GetListName(int list_id, std::string* list);
+ListType GetListId(const std::string& name);
 
+// Maps a ListId to list name. Return false if fails.
+bool GetListName(ListType list_id, std::string* list);
 
 // Canonicalizes url as per Google Safe Browsing Specification.
 // See section 6.1 in
@@ -333,17 +357,13 @@ int GetHashIndex(const SBFullHash& hash,
 int GetUrlHashIndex(const GURL& url,
                     const std::vector<SBFullHashResult>& full_hashes);
 
-bool IsPhishingList(const std::string& list_name);
-bool IsMalwareList(const std::string& list_name);
-bool IsBadbinurlList(const std::string& list_name);
-bool IsBadbinhashList(const std::string& list_name);
-
 GURL GeneratePhishingReportUrl(const std::string& report_page,
                                const std::string& url_to_report,
                                bool is_client_side_detection);
 
-void StringToSBFullHash(const std::string& hash_in, SBFullHash* hash_out);
+SBFullHash StringToSBFullHash(const std::string& hash_in);
 std::string SBFullHashToString(const SBFullHash& hash_out);
+
 }  // namespace safe_browsing_util
 
 #endif  // CHROME_BROWSER_SAFE_BROWSING_SAFE_BROWSING_UTIL_H_

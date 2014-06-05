@@ -4,30 +4,24 @@
 
 #include "chrome/browser/extensions/extension_apitest.h"
 
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "net/base/mock_host_resolver.h"
+#include "net/dns/mock_host_resolver.h"
 
-// Possible race in ChromeURLDataManager. http://crbug.com/59198
-#if defined(OS_MACOSX) || defined(OS_LINUX)
-#define MAYBE_TabOnRemoved DISABLED_TabOnRemoved
-#else
-#define MAYBE_TabOnRemoved TabOnRemoved
+#if defined(OS_WIN)
+#include "ui/aura/window.h"
+#include "ui/aura/window_tree_host.h"
 #endif
 
 // Window resizes are not completed by the time the callback happens,
 // so these tests fail on linux/gtk. http://crbug.com/72369
 #if defined(OS_LINUX) && !defined(USE_AURA)
-#define MAYBE_FocusWindowDoesNotExitFullscreen \
-  DISABLED_FocusWindowDoesNotExitFullscreen
-#define MAYBE_UpdateWindowSizeExitsFullscreen \
-  DISABLED_UpdateWindowSizeExitsFullscreen
 #define MAYBE_UpdateWindowResize DISABLED_UpdateWindowResize
 #define MAYBE_UpdateWindowShowState DISABLED_UpdateWindowShowState
 #else
@@ -41,17 +35,15 @@
 #define MAYBE_UpdateWindowShowState UpdateWindowShowState
 #endif  // defined(USE_AURA) || defined(OS_MACOSX)
 
-#define MAYBE_FocusWindowDoesNotExitFullscreen FocusWindowDoesNotExitFullscreen
-#define MAYBE_UpdateWindowSizeExitsFullscreen UpdateWindowSizeExitsFullscreen
 #define MAYBE_UpdateWindowResize UpdateWindowResize
 #endif  // defined(OS_LINUX) && !defined(USE_AURA)
 
 // http://crbug.com/145639
-#if defined(OS_CHROMEOS)
+#if defined(OS_LINUX) || defined(OS_WIN)
 #define MAYBE_TabEvents DISABLED_TabEvents
 #else
 #define MAYBE_TabEvents TabEvents
-#endif  // defined(OS_CHROMEOS)
+#endif
 
 class ExtensionApiNewTabTest : public ExtensionApiTest {
  public:
@@ -75,13 +67,23 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiNewTabTest, Tabs) {
   ASSERT_TRUE(RunExtensionSubtest("tabs/basics", "crud.html")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, Tabs2) {
+// Flaky on windows: http://crbug.com/238667
+#if defined(OS_WIN)
+#define MAYBE_Tabs2 DISABLED_Tabs2
+#else
+#define MAYBE_Tabs2 Tabs2
+#endif
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest, MAYBE_Tabs2) {
   ASSERT_TRUE(RunExtensionSubtest("tabs/basics", "crud2.html")) << message_;
 }
 
 // crbug.com/149924
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, FLAKY_TabDuplicate) {
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_TabDuplicate) {
   ASSERT_TRUE(RunExtensionSubtest("tabs/basics", "duplicate.html")) << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest, TabSize) {
+  ASSERT_TRUE(RunExtensionSubtest("tabs/basics", "tab_size.html")) << message_;
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, TabUpdate) {
@@ -92,7 +94,13 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, TabPinned) {
   ASSERT_TRUE(RunExtensionSubtest("tabs/basics", "pinned.html")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, TabMove) {
+// Flaky on windows: http://crbug.com/238667
+#if defined(OS_WIN)
+#define MAYBE_TabMove DISABLED_TabMove
+#else
+#define MAYBE_TabMove TabMove
+#endif
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest, MAYBE_TabMove) {
   ASSERT_TRUE(RunExtensionSubtest("tabs/basics", "move.html")) << message_;
 }
 
@@ -109,7 +117,13 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, TabQuery) {
   ASSERT_TRUE(RunExtensionSubtest("tabs/basics", "query.html")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, TabHighlight) {
+// Flaky on windows: http://crbug.com/239022
+#if defined(OS_WIN)
+#define MAYBE_TabHighlight DISABLED_TabHighlight
+#else
+#define MAYBE_TabHighlight TabHighlight
+#endif
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest, MAYBE_TabHighlight) {
   ASSERT_TRUE(RunExtensionSubtest("tabs/basics", "highlight.html")) << message_;
 }
 
@@ -117,7 +131,13 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, TabCrashBrowser) {
   ASSERT_TRUE(RunExtensionSubtest("tabs/basics", "crash.html")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, TabOpener) {
+// Flaky on windows: http://crbug.com/238667
+#if defined(OS_WIN)
+#define MAYBE_TabOpener DISABLED_TabOpener
+#else
+#define MAYBE_TabOpener TabOpener
+#endif
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest, MAYBE_TabOpener) {
   ASSERT_TRUE(RunExtensionSubtest("tabs/basics", "opener.html")) << message_;
 }
 
@@ -127,11 +147,12 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_TabGetCurrent) {
 
 // Flaky on the trybots. See http://crbug.com/96725.
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_TabConnect) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(RunExtensionTest("tabs/connect")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, MAYBE_TabOnRemoved) {
+// Possible race in ChromeURLDataManager. http://crbug.com/59198
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_TabOnRemoved) {
   ASSERT_TRUE(RunExtensionTest("tabs/on_removed")) << message_;
 }
 
@@ -139,41 +160,54 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_TabReload) {
   ASSERT_TRUE(RunExtensionTest("tabs/reload")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_CaptureVisibleTabJpeg) {
+class ExtensionApiCaptureTest : public ExtensionApiTest {
+ public:
+  ExtensionApiCaptureTest() {}
+
+  virtual void SetUp() OVERRIDE {
+    EnablePixelOutput();
+    ExtensionApiTest::SetUp();
+  }
+
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    ExtensionApiTest::SetUpCommandLine(command_line);
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(ExtensionApiCaptureTest,
+                       DISABLED_CaptureVisibleTabJpeg) {
   host_resolver()->AddRule("a.com", "127.0.0.1");
   host_resolver()->AddRule("b.com", "127.0.0.1");
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(RunExtensionSubtest("tabs/capture_visible_tab",
                                   "test_jpeg.html")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_CaptureVisibleTabPng) {
+IN_PROC_BROWSER_TEST_F(ExtensionApiCaptureTest, DISABLED_CaptureVisibleTabPng) {
   host_resolver()->AddRule("a.com", "127.0.0.1");
   host_resolver()->AddRule("b.com", "127.0.0.1");
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(RunExtensionSubtest("tabs/capture_visible_tab",
                                   "test_png.html")) << message_;
 }
 
 // Times out on non-Windows.
 // See http://crbug.com/80212
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_CaptureVisibleTabRace) {
+IN_PROC_BROWSER_TEST_F(ExtensionApiCaptureTest,
+                       DISABLED_CaptureVisibleTabRace) {
   ASSERT_TRUE(RunExtensionSubtest("tabs/capture_visible_tab",
                                   "test_race.html")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, CaptureVisibleFile) {
+
+// Disabled for being flaky, see http://crbug/367695.
+IN_PROC_BROWSER_TEST_F(ExtensionApiCaptureTest,
+                       DISABLED_CaptureVisibleFile) {
   ASSERT_TRUE(RunExtensionSubtest("tabs/capture_visible_tab",
                                   "test_file.html")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, CaptureVisibleNoFile) {
-  ASSERT_TRUE(RunExtensionSubtest(
-      "tabs/capture_visible_tab", "test_nofile.html",
-      ExtensionApiTest::kFlagNone)) << message_;
-}
-
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, CaptureVisibleDisabled) {
+IN_PROC_BROWSER_TEST_F(ExtensionApiCaptureTest, CaptureVisibleDisabled) {
   browser()->profile()->GetPrefs()->SetBoolean(prefs::kDisableScreenshots,
                                                true);
   ASSERT_TRUE(RunExtensionSubtest("tabs/capture_visible_tab",
@@ -184,21 +218,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, TabsOnUpdated) {
   ASSERT_TRUE(RunExtensionTest("tabs/on_updated")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest,
-                       MAYBE_FocusWindowDoesNotExitFullscreen) {
-  browser()->window()->EnterFullscreen(
-      GURL(), FEB_TYPE_BROWSER_FULLSCREEN_EXIT_INSTRUCTION);
-  bool is_fullscreen = browser()->window()->IsFullscreen();
-  ASSERT_TRUE(RunExtensionTest("window_update/focus")) << message_;
-  ASSERT_EQ(is_fullscreen, browser()->window()->IsFullscreen());
-}
-
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest,
-                       MAYBE_UpdateWindowSizeExitsFullscreen) {
-  browser()->window()->EnterFullscreen(
-      GURL(), FEB_TYPE_BROWSER_FULLSCREEN_EXIT_INSTRUCTION);
-  ASSERT_TRUE(RunExtensionTest("window_update/sizing")) << message_;
-  ASSERT_FALSE(browser()->window()->IsFullscreen());
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest, TabsNoPermissions) {
+  ASSERT_TRUE(RunExtensionTest("tabs/no_permissions")) << message_;
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest,
@@ -206,9 +227,10 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest,
   ASSERT_TRUE(RunExtensionTest("window_update/resize")) << message_;
 }
 
-#if defined(OS_WIN) && !defined(USE_AURA)
+#if defined(OS_WIN)
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, FocusWindowDoesNotUnmaximize) {
-  gfx::NativeWindow window = browser()->window()->GetNativeWindow();
+  HWND window =
+      browser()->window()->GetNativeWindow()->GetHost()->GetAcceleratedWidget();
   ::SendMessage(window, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
   ASSERT_TRUE(RunExtensionTest("window_update/focus")) << message_;
   ASSERT_TRUE(::IsZoomed(window));

@@ -13,7 +13,6 @@
 #include "gl/GrGLFunctions.h"
 
 class GrGpuGL;
-class SkPath;
 
 /**
  * Currently this represents a path built using GL_NV_path_rendering. If we
@@ -23,12 +22,12 @@ class SkPath;
 
 class GrGLPath : public GrPath {
 public:
-    GrGLPath(GrGpuGL* gpu, const SkPath& path);
+    GrGLPath(GrGpuGL* gpu, const SkPath& path, const SkStrokeRec& stroke);
     virtual ~GrGLPath();
     GrGLuint pathID() const { return fPathID; }
     // TODO: Figure out how to get an approximate size of the path in Gpu
     // memory.
-    virtual size_t sizeInBytes() const SK_OVERRIDE { return 100; }
+    virtual size_t gpuMemorySize() const SK_OVERRIDE { return 100; }
 
 protected:
     virtual void onRelease() SK_OVERRIDE;

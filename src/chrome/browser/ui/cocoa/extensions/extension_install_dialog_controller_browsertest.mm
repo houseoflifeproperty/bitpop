@@ -9,14 +9,16 @@
 #import "chrome/browser/ui/cocoa/extensions/extension_install_prompt_test_utils.h"
 #import "chrome/browser/ui/cocoa/extensions/extension_install_view_controller.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/test/base/in_process_browser_test.h"
+#include "extensions/common/extension.h"
 
 using extensions::Extension;
 
 class ExtensionInstallDialogControllerTest : public InProcessBrowserTest {
 public:
-  ExtensionInstallDialogControllerTest() {
+  ExtensionInstallDialogControllerTest() {}
+
+  virtual void SetUpOnMainThread() OVERRIDE {
     extension_ = chrome::LoadInstallPromptExtension();
   }
 
@@ -26,17 +28,43 @@ public:
 
 IN_PROC_BROWSER_TEST_F(ExtensionInstallDialogControllerTest, BasicTest) {
   content::WebContents* tab = browser()->tab_strip_model()->GetWebContentsAt(0);
+  ExtensionInstallPrompt::ShowParams show_params(tab);
 
   chrome::MockExtensionInstallPromptDelegate delegate;
   ExtensionInstallPrompt::Prompt prompt =
-      chrome::BuildExtensionInstallPrompt(extension_);
+      chrome::BuildExtensionInstallPrompt(extension_.get());
 
   ExtensionInstallDialogController* controller =
-      new ExtensionInstallDialogController(tab,
+      new ExtensionInstallDialogController(show_params,
                                            &delegate,
                                            prompt);
 
-  scoped_nsobject<NSWindow> window(
+  base::scoped_nsobject<NSWindow> window(
+      [[[controller->view_controller() view] window] retain]);
+  EXPECT_TRUE([window isVisible]);
+
+  // Press cancel to close the window
+  [[controller->view_controller() cancelButton] performClick:nil];
+
+  // Wait for the window to finish closing.
+  EXPECT_FALSE([window isVisible]);
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionInstallDialogControllerTest,
+                       DISABLED_Permissions) {
+  content::WebContents* tab = browser()->tab_strip_model()->GetWebContentsAt(0);
+  ExtensionInstallPrompt::ShowParams show_params(tab);
+
+  chrome::MockExtensionInstallPromptDelegate delegate;
+  ExtensionInstallPrompt::Prompt prompt =
+      chrome::BuildExtensionPostInstallPermissionsPrompt(extension_.get());
+
+  ExtensionInstallDialogController* controller =
+      new ExtensionInstallDialogController(show_params,
+                                           &delegate,
+                                           prompt);
+
+  base::scoped_nsobject<NSWindow> window(
       [[[controller->view_controller() view] window] retain]);
   EXPECT_TRUE([window isVisible]);
 

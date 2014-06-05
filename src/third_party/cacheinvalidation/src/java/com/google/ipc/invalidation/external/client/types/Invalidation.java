@@ -36,28 +36,43 @@ public final class Invalidation {
   /** Optional payload for the object. */
   private final byte[] payload;
 
-  /** Creates an invalidation for the given {@code object} and {@code version}. */
+  /** Whether this is a restarted invalidation, for internal use only. */
+  private final boolean isTrickleRestart;
+
+  /**
+   * Creates an invalidation for the given {@code object} and {@code version}.
+   */
   public static Invalidation newInstance(ObjectId objectId, long version) {
-    return new Invalidation(objectId, version, null);
+    return new Invalidation(objectId, version, null, true);
+  }
+
+  /**
+   * Creates an invalidation for the given {@code object} and {@code version} and {@code payload}
+   */
+  public static Invalidation newInstance(ObjectId objectId, long version,
+      byte[] payload) {
+    return new Invalidation(objectId, version, payload, true);
   }
 
   /**
    * Creates an invalidation for the given {@code object}, {@code version} and optional
-   * {@code payload}.
+   * {@code payload} and internal {@code isTrickleRestart} flag.
    */
   public static Invalidation newInstance(ObjectId objectId, long version,
-      byte[] payload) {
-    return new Invalidation(objectId, version, payload);
+      byte[] payload, boolean isTrickleRestart) {
+    return new Invalidation(objectId, version, payload, isTrickleRestart);
   }
 
   /**
    * Creates an invalidation for the given {@code object}, {@code version} and optional
    * {@code payload} and optional {@code componentStampLog}.
    */
-  private Invalidation(ObjectId objectId, long version, byte[] payload) {
+  private Invalidation(ObjectId objectId, long version, byte[] payload,
+      boolean isTrickleRestart) {
     this.objectId = Preconditions.checkNotNull(objectId, "objectId");
     this.version = version;
     this.payload = payload;
+    this.isTrickleRestart = isTrickleRestart;
   }
 
   public ObjectId getObjectId() {
@@ -90,7 +105,8 @@ public final class Invalidation {
     }
     // Both have a payload or not.
     return objectId.equals(other.objectId) && (version == other.version) &&
-    ((payload == null) || Arrays.equals(payload, other.payload));
+        (isTrickleRestart == other.isTrickleRestart) &&
+        ((payload == null) || Arrays.equals(payload, other.payload));
   }
 
   @Override
@@ -98,6 +114,9 @@ public final class Invalidation {
     int result = 17;
     result = 31 * result + objectId.hashCode();
     result = 31 * result + (int) (version ^ (version >>> 32));
+
+    // Booleans.hashCode() inlined here to reduce client library size.
+    result = 31 * result + (isTrickleRestart ? 1231 : 1237);
     if (payload != null) {
       result = 31 * result + Arrays.hashCode(payload);
     }
@@ -106,6 +125,12 @@ public final class Invalidation {
 
   @Override
   public String toString() {
-    return "Inv: <" + objectId + ", " + version + ", " + BytesFormatter.toString(payload) + ">";
+    return "Inv: <" + objectId + ", " + version + ", " + isTrickleRestart + ", " +
+        BytesFormatter.toString(payload) + ">";
+  }
+
+  /** Returns whether this is a restarted invalidation, for internal use only. */
+  public boolean getIsTrickleRestartForInternalUse() {
+    return isTrickleRestart;
   }
 }

@@ -4,9 +4,9 @@
 
 // Download utility test for Mac OS X.
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/path_service.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #import "chrome/browser/ui/cocoa/download/download_util_mac.h"
 #include "chrome/common/chrome_paths.h"
@@ -26,7 +26,7 @@ class DownloadUtilMacTest : public CocoaTest {
     [pasteboard_ releaseGlobally];
   }
 
-  NSPasteboard* const pasteboard() { return pasteboard_; }
+  NSPasteboard* pasteboard() { return pasteboard_; }
 
  private:
   NSPasteboard* pasteboard_;
@@ -35,9 +35,9 @@ class DownloadUtilMacTest : public CocoaTest {
 // Ensure adding files to the pasteboard methods works as expected.
 TEST_F(DownloadUtilMacTest, AddFileToPasteboardTest) {
   // Get a download test file for addition to the pasteboard.
-  FilePath testPath;
+  base::FilePath testPath;
   ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &testPath));
-  FilePath testFile(FILE_PATH_LITERAL("download-test1.lib"));
+  base::FilePath testFile(FILE_PATH_LITERAL("download-test1.lib"));
   testPath = testPath.Append(testFile);
 
   // Add a test file to the pasteboard via the download_util method.

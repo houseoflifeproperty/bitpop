@@ -35,7 +35,7 @@
 
 import logging
 import os
-import unittest
+import webkitpy.thirdparty.unittest2 as unittest
 
 import checker as style
 from webkitpy.common.system.logtesting import LogTesting, TestLogStream
@@ -50,7 +50,6 @@ from checker import CheckerDispatcher
 from checker import ProcessorBase
 from checker import StyleProcessor
 from checker import StyleProcessorConfiguration
-from checkers.changelog import ChangeLogChecker
 from checkers.cpp import CppChecker
 from checkers.jsonchecker import JSONChecker
 from checkers.python import PythonChecker
@@ -173,7 +172,7 @@ class GlobalVariablesTest(unittest.TestCase):
             # begin with -.
             self.assertTrue(rule.startswith('-'))
             # Check no rule occurs twice.
-            self.assertFalse(rule in already_seen)
+            self.assertNotIn(rule, already_seen)
             already_seen.append(rule)
 
     def test_defaults(self):
@@ -212,47 +211,9 @@ class GlobalVariablesTest(unittest.TestCase):
 
         assertCheck("random_path.cpp",
                     "build/include")
-        assertNoCheck("Tools/WebKitAPITest/main.cpp",
-                      "build/include")
         assertCheck("random_path.cpp",
                     "readability/naming")
-        assertNoCheck("Source/WebKit/gtk/webkit/webkit.h",
-                      "readability/naming")
-        assertNoCheck("Tools/DumpRenderTree/gtk/DumpRenderTree.cpp",
-                      "readability/null")
-        assertNoCheck("Source/WebKit/efl/ewk/ewk_view.h",
-                      "readability/naming")
-        assertNoCheck("Source/WebCore/css/CSSParser.cpp",
-                      "readability/naming")
-
-        # Test if Qt exceptions are indeed working
-        assertCheck("Source/WebKit/qt/WidgetApi/qwebpage.cpp",
-                    "readability/braces")
-        assertCheck("Source/WebKit/qt/tests/qwebelement/tst_qwebelement.cpp",
-                    "readability/braces")
-        assertCheck("Source/WebKit/qt/declarative/platformplugin/WebPlugin.cpp",
-                    "readability/braces")
-        assertCheck("Source/WebKit/qt/examples/platformplugin/WebPlugin.cpp",
-                    "readability/braces")
-        assertNoCheck("Source/WebKit/qt/WidgetApi/qwebpage.cpp",
-                      "readability/naming")
-        assertNoCheck("Source/WebKit/qt/tests/qwebelement/tst_qwebelement.cpp",
-                      "readability/naming")
-        assertNoCheck("Source/WebKit/qt/declarative/platformplugin/WebPlugin.cpp",
-                      "readability/naming")
-        assertNoCheck("Source/WebKit/qt/examples/platformplugin/WebPlugin.cpp",
-                      "readability/naming")
-
-        assertNoCheck("Tools/MiniBrowser/qt/UrlLoader.cpp",
-                    "build/include")
-
-        assertNoCheck("Source/WebKit2/UIProcess/API/qt",
-                    "readability/parameter_name")
-
-        assertNoCheck("Source/WebCore/ForwardingHeaders/debugger/Debugger.h",
-                      "build/header_guard")
-
-        assertNoCheck("Source/WebCore/platform/graphics/gstreamer/VideoSinkGStreamer.cpp",
+        assertNoCheck("Source/core/css/CSSParser-in.cpp",
                       "readability/naming")
 
         # Third-party Python code: webkitpy/thirdparty
@@ -263,19 +224,12 @@ class GlobalVariablesTest(unittest.TestCase):
         assertCheck(path, "pep8/W291")
         assertCheck(path, "whitespace/carriage_return")
 
-        # Test if the exception for GDBInterface.cpp is in place.
-        assertNoCheck("Source/JavaScriptCore/jit/GDBInterface.cpp",
-                      "readability/naming")
-
-        # Javascript keywords.
-        assertCheck("Source/JavaScriptCore/parser/Keywords.table", "whitespace/carriage_return")
-
     def test_max_reports_per_category(self):
         """Check that _MAX_REPORTS_PER_CATEGORY is valid."""
         all_categories = self._all_categories()
         for category in _MAX_REPORTS_PER_CATEGORY.iterkeys():
-            self.assertTrue(category in all_categories,
-                            'Key "%s" is not a category' % category)
+            self.assertIn(category, all_categories,
+                          'Key "%s" is not a category' % category)
 
 
 class CheckWebKitStyleFunctionTest(unittest.TestCase):
@@ -357,7 +311,7 @@ class CheckerDispatcherSkipTest(unittest.TestCase):
     def test_should_skip_without_warning__false(self):
         """Test should_skip_without_warning() for False return values."""
         paths = ['foo.txt',
-                 os.path.join('LayoutTests', 'ChangeLog'),
+                 os.path.join('LayoutTests', 'TestExpectations'),
         ]
 
         for path in paths:
@@ -396,7 +350,7 @@ class CheckerDispatcherDispatchTest(unittest.TestCase):
     def assert_checker_none(self, file_path):
         """Assert that the dispatched checker is None."""
         checker = self.dispatch(file_path)
-        self.assertTrue(checker is None, 'Checking: "%s"' % file_path)
+        self.assertIsNone(checker, 'Checking: "%s"' % file_path)
 
     def assert_checker(self, file_path, expected_class):
         """Assert the type of the dispatched checker."""
@@ -408,10 +362,6 @@ class CheckerDispatcherDispatchTest(unittest.TestCase):
                           % {"file_path": file_path,
                              "got_class": got_class,
                              "expected_class": expected_class})
-
-    def assert_checker_changelog(self, file_path):
-        """Assert that the dispatched checker is a ChangeLogChecker."""
-        self.assert_checker(file_path, ChangeLogChecker)
 
     def assert_checker_cpp(self, file_path):
         """Assert that the dispatched checker is a CppChecker."""
@@ -432,25 +382,6 @@ class CheckerDispatcherDispatchTest(unittest.TestCase):
     def assert_checker_xml(self, file_path):
         """Assert that the dispatched checker is a XMLChecker."""
         self.assert_checker(file_path, XMLChecker)
-
-    def test_changelog_paths(self):
-        """Test paths that should be checked as ChangeLog."""
-        paths = [
-                 "ChangeLog",
-                 "ChangeLog-2009-06-16",
-                 os.path.join("Source", "WebCore", "ChangeLog"),
-                 ]
-
-        for path in paths:
-            self.assert_checker_changelog(path)
-
-        # Check checker attributes on a typical input.
-        file_path = "ChangeLog"
-        self.assert_checker_changelog(file_path)
-        checker = self.dispatch(file_path)
-        self.assertEqual(checker.file_path, file_path)
-        self.assertEqual(checker.handle_style_error,
-                          self.mock_handle_style_error)
 
     def test_cpp_paths(self):
         """Test paths that should be checked as C++."""
@@ -525,12 +456,9 @@ class CheckerDispatcherDispatchTest(unittest.TestCase):
     def test_text_paths(self):
         """Test paths that should be checked as text."""
         paths = [
-           "foo.ac",
            "foo.cc",
            "foo.cgi",
            "foo.css",
-           "foo.exp",
-           "foo.flex",
            "foo.gyp",
            "foo.gypi",
            "foo.html",
@@ -541,15 +469,12 @@ class CheckerDispatcherDispatchTest(unittest.TestCase):
            "foo.php",
            "foo.pl",
            "foo.pm",
-           "foo.pri",
-           "foo.pro",
            "foo.rb",
            "foo.sh",
            "foo.txt",
-           "foo.wm",
            "foo.xhtml",
            "foo.y",
-           os.path.join("Source", "WebCore", "inspector", "front-end", "inspector.js"),
+           os.path.join("Source", "WebCore", "inspector", "front-end", "Main.js"),
            os.path.join("Tools", "Scripts", "check-webkit-style"),
         ]
 

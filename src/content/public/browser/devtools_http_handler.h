@@ -19,25 +19,15 @@ class URLRequestContextGetter;
 namespace content {
 
 class DevToolsHttpHandlerDelegate;
-class RenderViewHost;
 
 // This class is used for managing DevTools remote debugging server.
 // Clients can connect to the specified ip:port and start debugging
 // this browser.
 class DevToolsHttpHandler {
  public:
-  // Interface responsible for mapping RenderViewHost instances to/from string
-  // identifiers.
-  class RenderViewHostBinding {
-   public:
-    virtual ~RenderViewHostBinding() {}
-
-    // Returns the mapping of RenderViewHost to identifier.
-    virtual std::string GetIdentifier(RenderViewHost* rvh) = 0;
-
-    // Returns the mapping of identifier to RenderViewHost.
-    virtual RenderViewHost* ForIdentifier(const std::string& identifier) = 0;
-  };
+  // Returns true if the given protocol version is supported.
+  CONTENT_EXPORT static bool IsSupportedProtocolVersion(
+      const std::string& version);
 
   // Returns frontend resource id for the given resource |name|.
   CONTENT_EXPORT static int GetFrontendResourceId(
@@ -53,12 +43,8 @@ class DevToolsHttpHandler {
   // Automatically destroys the handler instance.
   virtual void Stop() = 0;
 
-  // Set the RenderViewHostBinding instance. If no instance is provided the
-  // default implementation will be used.
-  virtual void SetRenderViewHostBinding(RenderViewHostBinding* binding) = 0;
-
-  // Returns the URL for the address to debug |render_view_host|.
-  virtual GURL GetFrontendURL(RenderViewHost* render_view_host) = 0;
+  // Returns the URL for the address to debug |agent_host|.
+  virtual GURL GetFrontendURL() = 0;
 
  protected:
   virtual ~DevToolsHttpHandler() {}

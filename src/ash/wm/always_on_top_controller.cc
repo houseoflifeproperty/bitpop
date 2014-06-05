@@ -4,14 +4,12 @@
 
 #include "ash/wm/always_on_top_controller.h"
 
-#include "ash/root_window_controller.h"
-#include "ash/wm/property_util.h"
-#include "ash/wm/workspace_controller.h"
+#include "ash/shell.h"
+#include "ash/shell_window_ids.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/window.h"
 
 namespace ash {
-namespace internal {
 
 AlwaysOnTopController::AlwaysOnTopController()
     : always_on_top_container_(NULL) {
@@ -38,8 +36,8 @@ aura::Window* AlwaysOnTopController::GetContainer(aura::Window* window) const {
   DCHECK(always_on_top_container_);
   if (window->GetProperty(aura::client::kAlwaysOnTopKey))
     return always_on_top_container_;
-  return GetRootWindowController(always_on_top_container_->GetRootWindow())->
-      workspace_controller()->GetParentForNewWindow(window);
+  return Shell::GetContainer(always_on_top_container_->GetRootWindow(),
+                             kShellWindowId_DefaultContainer);
 }
 
 void AlwaysOnTopController::OnWindowAdded(aura::Window* child) {
@@ -56,8 +54,8 @@ void AlwaysOnTopController::OnWindowPropertyChanged(aura::Window* window,
                                                     const void* key,
                                                     intptr_t old) {
   if (key == aura::client::kAlwaysOnTopKey) {
-    DCHECK(window->type() == aura::client::WINDOW_TYPE_NORMAL ||
-           window->type() == aura::client::WINDOW_TYPE_POPUP);
+    DCHECK(window->type() == ui::wm::WINDOW_TYPE_NORMAL ||
+           window->type() == ui::wm::WINDOW_TYPE_POPUP);
     aura::Window* container = GetContainer(window);
     if (window->parent() != container)
       container->AddChild(window);
@@ -69,5 +67,4 @@ void AlwaysOnTopController::OnWindowDestroyed(aura::Window* window) {
     always_on_top_container_ = NULL;
 }
 
-}  // namespace internal
 }  // namespace ash

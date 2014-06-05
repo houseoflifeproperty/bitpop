@@ -19,8 +19,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/path_service.h"
-#include "base/process_util.h"
-#include "base/string_util.h"
+#include "base/process/launch.h"
+#include "base/strings/string_util.h"
 #include "base/synchronization/lock.h"
 
 namespace {
@@ -176,7 +176,7 @@ std::string GetLinuxDistro() {
 
 void SetLinuxDistro(const std::string& distro) {
   std::string trimmed_distro;
-  TrimWhitespaceASCII(distro, TRIM_ALL, &trimmed_distro);
+  base::TrimWhitespaceASCII(distro, base::TRIM_ALL, &trimmed_distro);
   base::strlcpy(g_linux_distro, trimmed_distro.c_str(), kDistroSize);
 }
 
@@ -231,7 +231,7 @@ bool FindProcessHoldingSocket(pid_t* pid_out, ino_t socket_inode) {
         continue;
       }
 
-      ino_t fd_inode;
+      ino_t fd_inode = static_cast<ino_t>(-1);
       if (ProcPathGetInode(&fd_inode, buf)) {
         if (fd_inode == socket_inode) {
           if (already_found) {
@@ -277,7 +277,7 @@ pid_t FindThreadIDWithSyscall(pid_t pid, const std::string& expected_data,
   }
   closedir(task);
 
-  scoped_array<char> syscall_data(new char[expected_data.length()]);
+  scoped_ptr<char[]> syscall_data(new char[expected_data.length()]);
   for (std::vector<pid_t>::const_iterator
        i = tids.begin(); i != tids.end(); ++i) {
     const pid_t current_tid = *i;
@@ -287,8 +287,7 @@ pid_t FindThreadIDWithSyscall(pid_t pid, const std::string& expected_data,
       continue;
     if (syscall_supported != NULL)
       *syscall_supported = true;
-    bool read_ret =
-        file_util::ReadFromFD(fd, syscall_data.get(), expected_data.length());
+    bool read_ret = ReadFromFD(fd, syscall_data.get(), expected_data.length());
     close(fd);
     if (!read_ret)
       continue;

@@ -6,11 +6,14 @@
 
 #include "base/basictypes.h"
 #include "base/format_macros.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "base/time.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using base::ASCIIToUTF16;
+using base::UTF8ToUTF16;
 
 namespace {
 

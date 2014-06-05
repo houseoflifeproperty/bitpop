@@ -2,59 +2,109 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-var chromeHidden = requireNative('chrome_hidden').GetChromeHidden();
+var handleUncaughtException = require('uncaught_exception_handler').handle;
 var lastError = require('lastError');
+var logging = requireNative('logging');
 var natives = requireNative('sendRequest');
+var processNatives = requireNative('process');
 var validate = require('schemaUtils').validate;
 
+// All outstanding requests from sendRequest().
+var requests = {};
+
+// Used to prevent double Activity Logging for API calls that use both custom
+// bindings and ExtensionFunctions (via sendRequest).
+var calledSendRequest = false;
+
+// Runs a user-supplied callback safely.
+function safeCallbackApply(name, request, callback, args) {
+  try {
+    $Function.apply(callback, request, args);
+  } catch (e) {
+    var errorMessage = "Error in response to " + name + ": " + e;
+    if (request.stack && request.stack != '')
+      errorMessage += "\n" + request.stack;
+    handleUncaughtException(errorMessage, e);
+  }
+}
+
 // Callback handling.
-var requests = [];
-chromeHidden.handleResponse = function(requestId, name,
-                                       success, responseList, error) {
+function handleResponse(requestId, name, success, responseList, error) {
+  // The chrome objects we will set lastError on. Really we should only be
+  // setting this on the callback's chrome object, but set on ours too since
+  // it's conceivable that something relies on that.
+  var callerChrome = chrome;
+
   try {
     var request = requests[requestId];
-    if (success) {
-      lastError.clear();
-    } else {
-      if (!error) {
+    logging.DCHECK(request != null);
+
+    // lastError needs to be set on the caller's chrome object no matter what,
+    // though chances are it's the same as ours (it will be different when
+    // calling API methods on other contexts).
+    if (request.callback)
+      callerChrome = natives.GetGlobal(request.callback).chrome;
+
+    lastError.clear(chrome);
+    if (callerChrome !== chrome)
+      lastError.clear(callerChrome);
+
+    if (!success) {
+      if (!error)
         error = "Unknown error.";
-      }
-      console.error("Error during " + name + ": " + error);
-      lastError.set(error);
+      lastError.set(name, error, request.stack, chrome);
+      if (callerChrome !== chrome)
+        lastError.set(name, error, request.stack, callerChrome);
     }
 
     if (request.customCallback) {
-      var customCallbackArgs = [name, request].concat(responseList);
-      request.customCallback.apply(request, customCallbackArgs);
+      safeCallbackApply(name,
+                        request,
+                        request.customCallback,
+                        $Array.concat([name, request], responseList));
     }
 
     if (request.callback) {
       // Validate callback in debug only -- and only when the
       // caller has provided a callback. Implementations of api
-      // calls my not return data if they observe the caller
+      // calls may not return data if they observe the caller
       // has not provided a callback.
-      if (chromeHidden.validateCallbacks && !error) {
-        try {
-          if (!request.callbackSchema.parameters) {
-            throw new Error("No callback schemas defined");
-          }
-
-          validate(responseList, request.callbackSchema.parameters);
-        } catch (exception) {
-          return "Callback validation error during " + name + " -- " +
-                 exception.stack;
-        }
+      if (logging.DCHECK_IS_ON() && !error) {
+        if (!request.callbackSchema.parameters)
+          throw new Error(name + ": no callback schema defined");
+        validate(responseList, request.callbackSchema.parameters);
       }
+      safeCallbackApply(name, request, request.callback, responseList);
+    }
 
-      request.callback.apply(request, responseList);
+    if (error &&
+        !lastError.hasAccessed(chrome) &&
+        !lastError.hasAccessed(callerChrome)) {
+      // The native call caused an error, but the developer didn't check
+      // runtime.lastError.
+      // Notify the developer of the error via the (error) console.
+      console.error("Unchecked runtime.lastError while running " +
+          (name || "unknown") + ": " + error +
+          (request.stack ? "\n" + request.stack : ""));
     }
   } finally {
     delete requests[requestId];
-    lastError.clear();
+    lastError.clear(chrome);
+    if (callerChrome !== chrome)
+      lastError.clear(callerChrome);
   }
-
-  return undefined;
 };
+
+function getExtensionStackTrace(call_name) {
+  var stack = $String.split(new Error().stack, '\n');
+  var id = processNatives.GetExtensionId();
+
+  // Remove stack frames before and after that weren't associated with the
+  // extension.
+  return $Array.join(stack.filter(function(line) {
+    return line.indexOf(id) != -1;
+  }), '\n');
+}
 
 function prepareRequest(args, argSchemas) {
   var request = {};
@@ -78,7 +128,6 @@ function prepareRequest(args, argSchemas) {
 
 // Send an API request and optionally register a callback.
 // |optArgs| is an object with optional parameters as follows:
-// - noStringify: true if we should not stringify the request arguments.
 // - customCallback: a callback that should be called instead of the standard
 //   callback.
 // - nativeFunction: the v8 native function to handle the request, or
@@ -87,35 +136,43 @@ function prepareRequest(args, argSchemas) {
 //   thread.
 // - preserveNullInObjects: true if it is safe for null to be in objects.
 function sendRequest(functionName, args, argSchemas, optArgs) {
+  calledSendRequest = true;
   if (!optArgs)
     optArgs = {};
   var request = prepareRequest(args, argSchemas);
+  request.stack = getExtensionStackTrace();
   if (optArgs.customCallback) {
     request.customCallback = optArgs.customCallback;
   }
-  // JSON.stringify doesn't support a root object which is undefined.
-  if (request.args === undefined)
-    request.args = null;
 
-  // TODO(asargent) - convert all optional native functions to accept raw
-  // v8 values instead of expecting JSON strings.
-  var doStringify = false;
-  if (optArgs.nativeFunction && !optArgs.noStringify)
-    doStringify = true;
-  var requestArgs = doStringify ?
-      chromeHidden.JSON.stringify(request.args) : request.args;
   var nativeFunction = optArgs.nativeFunction || natives.StartRequest;
 
   var requestId = natives.GetNextRequestId();
   request.id = requestId;
   requests[requestId] = request;
+
   var hasCallback = request.callback || optArgs.customCallback;
   return nativeFunction(functionName,
-                        requestArgs,
+                        request.args,
                         requestId,
                         hasCallback,
                         optArgs.forIOThread,
                         optArgs.preserveNullInObjects);
 }
 
+function getCalledSendRequest() {
+  return calledSendRequest;
+}
+
+function clearCalledSendRequest() {
+  calledSendRequest = false;
+}
+
 exports.sendRequest = sendRequest;
+exports.getCalledSendRequest = getCalledSendRequest;
+exports.clearCalledSendRequest = clearCalledSendRequest;
+exports.safeCallbackApply = safeCallbackApply;
+exports.getExtensionStackTrace = getExtensionStackTrace;
+
+// Called by C++.
+exports.handleResponse = handleResponse;

@@ -15,13 +15,15 @@ import config
 class V8Commands(commands.FactoryCommands):
   """Encapsulates methods to add v8 commands to a buildbot factory."""
 
-  # pylint: disable=W0212
-  # (accessing protected member V8)
-  PERF_BASE_URL = config.Master.V8.perf_base_url
+  # This is needed to set legacy perf links. Can be removed when fully converted
+  # to the perf dashboard (chromium-perf.appspot.com). See
+  # scripts/master/factory/commands.py for how this is used.
+  PERF_BASE_URL = config.Master.NaClBase.perf_base_url
 
   def __init__(self, factory=None, target=None, build_dir=None,
                target_platform=None, target_arch=None,
-               shard_count=1, shard_run=1, shell_flags=None, isolates=False):
+               shard_count=1, shard_run=1, shell_flags=None, isolates=False,
+               command_prefix=None, test_env=None, test_options=None):
 
     commands.FactoryCommands.__init__(self, factory, target, build_dir,
                                       target_platform, target_arch)
@@ -42,6 +44,9 @@ class V8Commands(commands.FactoryCommands):
     self._shard_run = shard_run
     self._shell_flags = shell_flags
     self._isolates = isolates
+    self._command_prefix = command_prefix
+    self._test_env = test_env
+    self._test_options = test_options or []
 
     if self._target_platform == 'win32':
       # Override to use the right python
@@ -67,64 +72,85 @@ class V8Commands(commands.FactoryCommands):
               '--shard_run=%s' % self._shard_run]
     if self._shell_flags:
       cmd += ['--shell_flags="'+ self._shell_flags +'"']
+    if self._command_prefix:
+      cmd += ['--command_prefix', self._command_prefix]
     if self._isolates:
       cmd += ['--isolates', 'on']
     return cmd
 
   def AddV8GCMole(self):
-    cmd = ['lua', '../../../gcmole/gcmole.lua']
-    self.AddTestStep(shell.ShellCommand,
-                     'GCMole', cmd,
+    cmd = ['lua', './tools/gcmole/gcmole.lua']
+    env = {
+      'CLANG_BIN': (
+        self._build_dir + '../../../../../gcmole/bin'
+      ),
+      'CLANG_PLUGINS': (
+        self._build_dir + '../../../../../gcmole'
+      ),
+    }
+    self.AddTestStep(shell.ShellCommand, 'GCMole', cmd,
+                     env=env,
                      timeout=3600,
                      workdir='build/v8/')
 
   def AddV8Initializers(self):
     binary = 'out/' + self._target + '/d8'
     cmd = ['bash', './tools/check-static-initializers.sh', binary]
-    self.AddTestStep(shell.ShellCommand,
-                     'Static-Initializers', cmd,
+    self.AddTestStep(shell.ShellCommand, 'Static-Initializers', cmd,
                      workdir='build/v8/')
 
-  def AddV8Testing(self, properties=None):
+  def AddV8Test(self, name, step_name, options=None, flaky_tests='dontcare'):
+    options = options or []
     if self._target_platform == 'win32':
       self.AddTaskkillStep()
-    cmd = self.GetV8TestingCommand()
-    self.AddTestStep(shell.ShellCommand,
-                     'Check', cmd,
+    cmd = self.GetV8TestingCommand() + self._test_options + options
+    if name:
+      cmd += ['--testname', name]
+    if flaky_tests == 'run' or flaky_tests == 'skip':
+      cmd += ['--flaky-tests', flaky_tests]
+    self.AddTestStep(shell.ShellCommand, step_name, cmd,
                      timeout=3600,
-                     workdir='build/v8/')
+                     workdir='build/v8/',
+                     env=self._test_env)
 
-  def AddV8Test262(self, properties=None):
-    if self._target_platform == 'win32':
-      self.AddTaskkillStep()
-    cmd = self.GetV8TestingCommand()
-    cmd += ['--testname', 'test262']
-    self.AddTestStep(shell.ShellCommand, 'Test262', cmd,
-                     timeout=3600, workdir='build/v8/')
+  def AddV8TestTC(self, name, step_name, options=None):
+    """Adds a tree closer step without flaky tests and another step with."""
+    self.AddV8Test(name, step_name, options, flaky_tests='skip')
+    self.AddV8Test(name, "%s - flaky" % step_name, options, flaky_tests='run')
 
-  def AddV8Mozilla(self, properties=None):
-    if self._target_platform == 'win32':
-      self.AddTaskkillStep()
-    cmd = self.GetV8TestingCommand()
-    cmd += ['--testname', 'mozilla']
-    self.AddTestStep(shell.ShellCommand, 'Mozilla', cmd,
-                     timeout=3600, workdir='build/v8/')
+  def AddPresubmitTest(self):
+    cmd = [self._python, self._v8testing_tool, '--testname', 'presubmit']
+    self.AddTestStep(shell.ShellCommand, 'Presubmit', cmd, workdir='build/v8/')
 
-  def AddPresubmitTest(self, properties=None):
-    cmd = [self._python, self._v8testing_tool,
-           '--testname', 'presubmit']
-    self.AddTestStep(shell.ShellCommand, 'Presubmit', cmd,
-                     workdir='build/v8/')
-
-  def AddFuzzer(self, properties=None):
+  def AddFuzzer(self):
     binary = 'out/' + self._target + '/d8'
     cmd = ['bash', './tools/fuzz-harness.sh', binary]
-    self.AddTestStep(shell.ShellCommand, 'Fuzz', cmd,
-                     workdir='build/v8/')
+    self.AddTestStep(shell.ShellCommand, 'Fuzz', cmd, workdir='build/v8/')
 
-  def AddLeakTests(self, properties=None):
-    cmd = [self._python, self._v8testing_tool,
-           '--testname', 'leak']
+  def AddDeoptFuzzer(self):
+    if self._target_platform == 'win32':
+      self.AddTaskkillStep()
+    cmd = [self._python, './tools/run-deopt-fuzzer.py',
+           '--mode', self._target, '--progress=verbose', '--buildbot']
+    if self._arch:
+      cmd += ['--arch', self._arch]
+    if self._shard_count > 1:
+      cmd += ['--shard_count=%s' % self._shard_count,
+              '--shard_run=%s' % self._shard_run]
+    if self._shell_flags:
+      cmd += ['--shell_flags="'+ self._shell_flags +'"']
+    if self._command_prefix:
+      cmd += ['--command_prefix', self._command_prefix]
+    if self._isolates:
+      cmd += ['--isolates']
+    cmd += self._test_options
+    self.AddTestStep(shell.ShellCommand, 'Deopt Fuzz', cmd,
+                     timeout=3600,
+                     workdir='build/v8/',
+                     env=self._test_env)
+
+  def AddLeakTests(self):
+    cmd = [self._python, self._v8testing_tool, '--testname', 'leak']
     env = {
       'PATH': (
         self._build_dir + '../src/third_party/valgrind/linux_x86/bin;'
@@ -137,18 +163,17 @@ class V8Commands(commands.FactoryCommands):
                      env=env,
                      workdir='build/v8/')
 
+  def AddSimpleLeakTest(self):
+    if self._target_platform == 'win32':
+      self.AddTaskkillStep()
+    cmd = ['valgrind', '--leak-check=full', '--show-reachable=yes',
+           '--num-callers=20', './out/%s/d8' % self._target, '-e',
+           '"print(1+2)"']
+    self.AddTestStep(shell.ShellCommand, 'Simple Leak Check', cmd,
+                     timeout=300, workdir='build/v8/')
+
   def AddArchiveBuild(self, mode='dev', show_url=True,
       extra_archive_paths=None):
     """Adds a step to the factory to archive a build."""
     cmd = [self._python, self._v8archive_tool, '--target', self._target]
-    self.AddTestStep(shell.ShellCommand, 'Archiving', cmd,
-                 workdir='build/v8')
-
-  def AddMoveExtracted(self):
-    """Adds a step to download and extract a previously archived build."""
-    cmd = ('cp -R sconsbuild/release/* v8/.')
-    self._factory.addStep(shell.ShellCommand,
-                          description='Move extracted to bleeding',
-                          timeout=600,
-                          workdir='build',
-                          command=cmd)
+    self.AddTestStep(shell.ShellCommand, 'Archiving', cmd, workdir='build/v8')

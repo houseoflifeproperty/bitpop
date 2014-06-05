@@ -7,24 +7,24 @@
 
 #include <map>
 #include <string>
-#include <vector>
 
 #include "base/compiler_specific.h"
-#include "net/tools/flip_server/balsa_headers.h"
-#include "net/tools/flip_server/balsa_visitor_interface.h"
+#include "base/memory/scoped_ptr.h"
+#include "net/tools/balsa/balsa_headers.h"
+#include "net/tools/balsa/balsa_visitor_interface.h"
 #include "net/tools/flip_server/constants.h"
 
 namespace net {
 
-class StoreBodyAndHeadersVisitor: public BalsaVisitorInterface {
+class StoreBodyAndHeadersVisitor : public BalsaVisitorInterface {
  public:
   void HandleError() { error_ = true; }
 
   // BalsaVisitorInterface:
-  virtual void ProcessBodyInput(const char *input, size_t size) OVERRIDE {}
-  virtual void ProcessBodyData(const char *input, size_t size) OVERRIDE;
-  virtual void ProcessHeaderInput(const char *input, size_t size) OVERRIDE {}
-  virtual void ProcessTrailerInput(const char *input, size_t size) OVERRIDE {}
+  virtual void ProcessBodyInput(const char* input, size_t size) OVERRIDE {}
+  virtual void ProcessBodyData(const char* input, size_t size) OVERRIDE;
+  virtual void ProcessHeaderInput(const char* input, size_t size) OVERRIDE {}
+  virtual void ProcessTrailerInput(const char* input, size_t size) OVERRIDE {}
   virtual void ProcessHeaders(const BalsaHeaders& headers) OVERRIDE {
     // nothing to do here-- we're assuming that the BalsaFrame has
     // been handed our headers.
@@ -37,17 +37,17 @@ class StoreBodyAndHeadersVisitor: public BalsaVisitorInterface {
                                        size_t request_uri_length,
                                        const char* version_input,
                                        size_t version_length) OVERRIDE {}
-  virtual void ProcessResponseFirstLine(const char *line_input,
+  virtual void ProcessResponseFirstLine(const char* line_input,
                                         size_t line_length,
-                                        const char *version_input,
+                                        const char* version_input,
                                         size_t version_length,
-                                        const char *status_input,
+                                        const char* status_input,
                                         size_t status_length,
-                                        const char *reason_input,
+                                        const char* reason_input,
                                         size_t reason_length) OVERRIDE {}
   virtual void ProcessChunkLength(size_t chunk_length) OVERRIDE {}
-  virtual void ProcessChunkExtensions(const char *input,
-                                      size_t size) OVERRIDE {}
+  virtual void ProcessChunkExtensions(const char* input, size_t size) OVERRIDE {
+  }
   virtual void HeaderDone() OVERRIDE {}
   virtual void MessageDone() OVERRIDE {}
   virtual void HandleHeaderError(BalsaFrame* framer) OVERRIDE;
@@ -60,41 +60,46 @@ class StoreBodyAndHeadersVisitor: public BalsaVisitorInterface {
   bool error_;
 };
 
-////////////////////////////////////////////////////////////////////////////////
-
-struct FileData {
+class FileData {
+ public:
   FileData();
-  FileData(BalsaHeaders* h, const std::string& b);
+  FileData(const BalsaHeaders* headers,
+           const std::string& filename,
+           const std::string& body);
   ~FileData();
-  void CopyFrom(const FileData& file_data);
 
-  BalsaHeaders* headers;
-  std::string filename;
-  // priority, filename
-  std::vector< std::pair<int, std::string> > related_files;
-  std::string body;
+  BalsaHeaders* headers() { return headers_.get(); }
+  const BalsaHeaders* headers() const { return headers_.get(); }
+
+  const std::string& filename() { return filename_; }
+  const std::string& body() { return body_; }
+
+ private:
+  scoped_ptr<BalsaHeaders> headers_;
+  std::string filename_;
+  std::string body_;
+
+  DISALLOW_COPY_AND_ASSIGN(FileData);
 };
-
-////////////////////////////////////////////////////////////////////////////////
 
 class MemCacheIter {
  public:
-  MemCacheIter() :
-      file_data(NULL),
-      priority(0),
-      transformed_header(false),
-      body_bytes_consumed(0),
-      stream_id(0),
-      max_segment_size(kInitialDataSendersThreshold),
-      bytes_sent(0) {}
-  explicit MemCacheIter(FileData* fd) :
-      file_data(fd),
-      priority(0),
-      transformed_header(false),
-      body_bytes_consumed(0),
-      stream_id(0),
-      max_segment_size(kInitialDataSendersThreshold),
-      bytes_sent(0) {}
+  MemCacheIter()
+      : file_data(NULL),
+        priority(0),
+        transformed_header(false),
+        body_bytes_consumed(0),
+        stream_id(0),
+        max_segment_size(kInitialDataSendersThreshold),
+        bytes_sent(0) {}
+  explicit MemCacheIter(FileData* fd)
+      : file_data(fd),
+        priority(0),
+        transformed_header(false),
+        body_bytes_consumed(0),
+        stream_id(0),
+        max_segment_size(kInitialDataSendersThreshold),
+        bytes_sent(0) {}
   FileData* file_data;
   int priority;
   bool transformed_header;
@@ -104,27 +109,35 @@ class MemCacheIter {
   size_t bytes_sent;
 };
 
-////////////////////////////////////////////////////////////////////////////////
-
 class MemoryCache {
  public:
-  typedef std::map<std::string, FileData> Files;
+  typedef std::map<std::string, FileData*> Files;
 
  public:
   MemoryCache();
-  ~MemoryCache();
+  virtual ~MemoryCache();
 
   void CloneFrom(const MemoryCache& mc);
 
   void AddFiles();
 
-  void ReadToString(const char* filename, std::string* output);
+  // virtual for unittests
+  virtual void ReadToString(const char* filename, std::string* output);
 
   void ReadAndStoreFileContents(const char* filename);
 
   FileData* GetFileData(const std::string& filename);
 
   bool AssignFileData(const std::string& filename, MemCacheIter* mci);
+
+  // For unittests
+  void InsertFile(const BalsaHeaders* headers,
+                  const std::string& filename,
+                  const std::string& body);
+
+ private:
+  void InsertFile(FileData* file_data);
+  void ClearFiles();
 
   Files files_;
   std::string cwd_;
@@ -139,4 +152,3 @@ class NotifierInterface {
 }  // namespace net
 
 #endif  // NET_TOOLS_FLIP_SERVER_MEM_CACHE_H_
-

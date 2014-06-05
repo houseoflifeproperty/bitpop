@@ -37,6 +37,12 @@ class NET_EXPORT_PRIVATE URLFetcherImpl : public URLFetcher {
   // URLFetcher implementation:
   virtual void SetUploadData(const std::string& upload_content_type,
                              const std::string& upload_content) OVERRIDE;
+  virtual void SetUploadFilePath(
+      const std::string& upload_content_type,
+      const base::FilePath& file_path,
+      uint64 range_offset,
+      uint64 range_length,
+      scoped_refptr<base::TaskRunner> file_task_runner) OVERRIDE;
   virtual void SetChunkedUpload(
       const std::string& upload_content_type) OVERRIDE;
   virtual void AppendChunkToUpload(const std::string& data,
@@ -44,11 +50,11 @@ class NET_EXPORT_PRIVATE URLFetcherImpl : public URLFetcher {
   virtual void SetLoadFlags(int load_flags) OVERRIDE;
   virtual int GetLoadFlags() const OVERRIDE;
   virtual void SetReferrer(const std::string& referrer) OVERRIDE;
+  virtual void SetReferrerPolicy(
+      URLRequest::ReferrerPolicy referrer_policy) OVERRIDE;
   virtual void SetExtraRequestHeaders(
       const std::string& extra_request_headers) OVERRIDE;
   virtual void AddExtraRequestHeader(const std::string& header_line) OVERRIDE;
-  virtual void GetExtraRequestHeaders(
-      HttpRequestHeaders* headers) const OVERRIDE;
   virtual void SetRequestContext(
       URLRequestContextGetter* request_context_getter) OVERRIDE;
   virtual void SetFirstPartyForCookies(
@@ -63,10 +69,12 @@ class NET_EXPORT_PRIVATE URLFetcherImpl : public URLFetcher {
   virtual base::TimeDelta GetBackoffDelay() const OVERRIDE;
   virtual void SetAutomaticallyRetryOnNetworkChanges(int max_retries) OVERRIDE;
   virtual void SaveResponseToFileAtPath(
-      const FilePath& file_path,
-      scoped_refptr<base::TaskRunner> file_task_runner) OVERRIDE;
+      const base::FilePath& file_path,
+      scoped_refptr<base::SequencedTaskRunner> file_task_runner) OVERRIDE;
   virtual void SaveResponseToTemporaryFile(
-      scoped_refptr<base::TaskRunner> file_task_runner) OVERRIDE;
+      scoped_refptr<base::SequencedTaskRunner> file_task_runner) OVERRIDE;
+  virtual void SaveResponseWithWriter(
+      scoped_ptr<URLFetcherResponseWriter> response_writer) OVERRIDE;
   virtual HttpResponseHeaders* GetResponseHeaders() const OVERRIDE;
   virtual HostPortPair GetSocketAddress() const OVERRIDE;
   virtual bool WasFetchedViaProxy() const OVERRIDE;
@@ -76,14 +84,12 @@ class NET_EXPORT_PRIVATE URLFetcherImpl : public URLFetcher {
   virtual const URLRequestStatus& GetStatus() const OVERRIDE;
   virtual int GetResponseCode() const OVERRIDE;
   virtual const ResponseCookies& GetCookies() const OVERRIDE;
-  virtual bool FileErrorOccurred(
-      base::PlatformFileError* out_error_code) const OVERRIDE;
   virtual void ReceivedContentWasMalformed() OVERRIDE;
   virtual bool GetResponseAsString(
       std::string* out_response_string) const OVERRIDE;
   virtual bool GetResponseAsFilePath(
       bool take_ownership,
-      FilePath* out_response_path) const OVERRIDE;
+      base::FilePath* out_response_path) const OVERRIDE;
 
   static void CancelAll();
 

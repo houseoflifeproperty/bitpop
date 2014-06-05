@@ -8,27 +8,16 @@
 #include <string>
 #include <vector>
 
-#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "base/synchronization/cancellation_flag.h"
-#include "base/synchronization/lock.h"
-#include "base/synchronization/waitable_event.h"
-#include "base/string16.h"
-#include "base/threading/platform_thread.h"
-#include "base/threading/thread.h"
-#include "base/time.h"
+#include "base/thread_task_runner_handle.h"
+#include "base/time/time.h"
 #include "remoting/base/auto_thread_task_runner.h"
-#include "remoting/host/chromoting_host_context.h"
-#include "remoting/host/host_key_pair.h"
-#include "remoting/host/log_to_server.h"
+#include "remoting/host/it2me/it2me_host.h"
 #include "remoting/host/plugin/host_plugin_utils.h"
 #include "remoting/host/setup/daemon_controller.h"
-#include "remoting/host/ui_strings.h"
-#include "third_party/npapi/bindings/npapi.h"
-#include "third_party/npapi/bindings/npfunctions.h"
-#include "third_party/npapi/bindings/npruntime.h"
+#include "remoting/jingle_glue/xmpp_signal_strategy.h"
+#include "remoting/protocol/pairing_registry.h"
 
 namespace remoting {
 
@@ -36,7 +25,7 @@ namespace remoting {
 // HostNPScriptObject creates threads that are required to run
 // ChromotingHost and starts/stops the host on those threads. When
 // destroyed it synchronously shuts down the host and all threads.
-class HostNPScriptObject {
+class HostNPScriptObject : public It2MeHost::Observer {
  public:
   HostNPScriptObject(NPP plugin,
                      NPObject* parent,
@@ -60,30 +49,12 @@ class HostNPScriptObject {
 
   // Post LogDebugInfo to the correct proxy (and thus, on the correct thread).
   // This should only be called by HostLogHandler. To log to the UI, use the
-  // standard LOG(INFO) and it will be sent to this method.
+  // standard HOST_LOG and it will be sent to this method.
   void PostLogDebugInfo(const std::string& message);
 
   void SetWindow(NPWindow* np_window);
 
  private:
-  //////////////////////////////////////////////////////////
-  // Definitions for It2Me host.
-
-  class It2MeImpl;
-
-  // These state values are duplicated in host_session.js. Remember to update
-  // both copies when making changes.
-  enum State {
-    kDisconnected,
-    kStarting,
-    kRequestedAccessCode,
-    kReceivedAccessCode,
-    kConnected,
-    kDisconnecting,
-    kError,
-    kInvalidDomainError
-  };
-
   //////////////////////////////////////////////////////////
   // Plugin methods for It2Me host.
 
@@ -104,7 +75,19 @@ class HostNPScriptObject {
   //////////////////////////////////////////////////////////
   // Plugin methods for Me2Me host.
 
-  // Returns host name. No arguments.
+  // Deletes all paired clients from the registry.
+  bool ClearPairedClients(const NPVariant* args,
+                          uint32_t arg_count,
+                          NPVariant* result);
+
+  // Deletes a paired client referenced by client id.
+  bool DeletePairedClient(const NPVariant* args,
+                          uint32_t arg_count,
+                          NPVariant* result);
+
+  // Fetches the host name, passing it to the supplied callback. Args are:
+  //   function(string) callback
+  // Returns false if the parameters are invalid.
   bool GetHostName(const NPVariant* args,
                    uint32_t arg_count,
                    NPVariant* result);
@@ -112,7 +95,9 @@ class HostNPScriptObject {
   // Calculates PIN hash value to be stored in the config. Args are:
   //   string hostId Host ID.
   //   string pin The PIN.
-  // Returns the resulting hash value encoded with Base64.
+  //   function(string) callback
+  // Passes the resulting hash value base64-encoded to the callback.
+  // Returns false if the parameters are invalid.
   bool GetPinHash(const NPVariant* args,
                   uint32_t arg_count,
                   NPVariant* result);
@@ -148,12 +133,23 @@ class HostNPScriptObject {
                         uint32_t arg_count,
                         NPVariant* result);
 
+  // Retrieves the list of paired clients as a JSON-encoded string.
+  bool GetPairedClients(const NPVariant* args,
+                        uint32_t arg_count,
+                        NPVariant* result);
+
   // Retrieves the user's consent to report crash dumps. The first argument
   // specifies the callback to be called with the recorder consent. Possible
   // consent codes are defined in remoting/host/breakpad.h.
   bool GetUsageStatsConsent(const NPVariant* args,
                             uint32_t arg_count,
                             NPVariant* result);
+
+  // Download and install the host component.
+  //   function(number) done_callback
+  bool InstallHost(const NPVariant* args,
+                   uint32_t arg_count,
+                   NPVariant* result);
 
   // Start the daemon process with the specified config. Args are:
   //   string config
@@ -167,21 +163,22 @@ class HostNPScriptObject {
   bool StopDaemon(const NPVariant* args, uint32_t arg_count, NPVariant* result);
 
   //////////////////////////////////////////////////////////
-  // Helper methods used by the It2Me host implementation.
+  // Implementation of It2MeHost::Observer methods.
 
   // Notifies OnStateChanged handler of a state change.
-  void NotifyStateChanged(State state);
+  virtual void OnStateChanged(It2MeHostState state) OVERRIDE;
 
   // If the web-app has registered a callback to be notified of changes to the
   // NAT traversal policy, notify it.
-  void NotifyNatPolicyChanged(bool nat_traversal_enabled);
+  virtual void OnNatPolicyChanged(bool nat_traversal_enabled) OVERRIDE;
 
   // Stores the Access Code for the web-app to query.
-  void StoreAccessCode(const std::string& access_code,
-                       base::TimeDelta access_code_lifetime);
+  virtual void OnStoreAccessCode(const std::string& access_code,
+                                 base::TimeDelta access_code_lifetime) OVERRIDE;
 
   // Stores the client user's name for the web-app to query.
-  void StoreClientUsername(const std::string& client_username);
+  virtual void OnClientAuthenticated(
+      const std::string& client_username) OVERRIDE;
 
   // Used to generate localized strings to pass to the It2Me host core.
   void LocalizeStrings(NPObject* localize_func);
@@ -191,7 +188,7 @@ class HostNPScriptObject {
   // |result| and returns true on success, or leaves it unchanged and returns
   // false on failure.
   bool LocalizeString(NPObject* localize_func, const char* tag,
-                      string16* result);
+                      base::string16* result);
 
   // Helper function for executing InvokeDefault on an NPObject that performs
   // a string->string mapping with one substitution. Stores the translation in
@@ -200,36 +197,47 @@ class HostNPScriptObject {
   bool LocalizeStringWithSubstitution(NPObject* localize_func,
                                       const char* tag,
                                       const char* substitution,
-                                      string16* result);
+                                      base::string16* result);
 
   //////////////////////////////////////////////////////////
   // Helper methods for Me2Me host.
 
   // Helpers for GenerateKeyPair().
-  void DoGenerateKeyPair(const ScopedRefNPObject& callback);
-  void InvokeGenerateKeyPairCallback(const ScopedRefNPObject& callback,
+  static void DoGenerateKeyPair(
+      const scoped_refptr<AutoThreadTaskRunner>& plugin_task_runner,
+      const base::Callback<void (const std::string&,
+                                 const std::string&)>& callback);
+  void InvokeGenerateKeyPairCallback(scoped_ptr<ScopedRefNPObject> callback,
                                      const std::string& private_key,
                                      const std::string& public_key);
 
-
   // Callback handler for SetConfigAndStart(), Stop(), SetPin() and
   // SetUsageStatsConsent() in DaemonController.
-  void InvokeAsyncResultCallback(const ScopedRefNPObject& callback,
+  void InvokeAsyncResultCallback(scoped_ptr<ScopedRefNPObject> callback,
                                  DaemonController::AsyncResult result);
 
+  // Callback handler for PairingRegistry methods that return a boolean
+  // success status.
+  void InvokeBooleanCallback(scoped_ptr<ScopedRefNPObject> callback,
+                             bool result);
+
   // Callback handler for DaemonController::GetConfig().
-  void InvokeGetDaemonConfigCallback(const ScopedRefNPObject& callback,
+  void InvokeGetDaemonConfigCallback(scoped_ptr<ScopedRefNPObject> callback,
                                      scoped_ptr<base::DictionaryValue> config);
 
   // Callback handler for DaemonController::GetVersion().
-  void InvokeGetDaemonVersionCallback(const ScopedRefNPObject& callback,
+  void InvokeGetDaemonVersionCallback(scoped_ptr<ScopedRefNPObject> callback,
                                       const std::string& version);
 
+  // Callback handler for GetPairedClients().
+  void InvokeGetPairedClientsCallback(
+      scoped_ptr<ScopedRefNPObject> callback,
+      scoped_ptr<base::ListValue> paired_clients);
+
   // Callback handler for DaemonController::GetUsageStatsConsent().
-  void InvokeGetUsageStatsConsentCallback(const ScopedRefNPObject& callback,
-                                          bool supported,
-                                          bool allowed,
-                                          bool set_by_policy);
+  void InvokeGetUsageStatsConsentCallback(
+      scoped_ptr<ScopedRefNPObject> callback,
+      const DaemonController::UsageStatsConsent& consent);
 
   //////////////////////////////////////////////////////////
   // Basic helper methods used for both It2Me and Me2me.
@@ -240,7 +248,7 @@ class HostNPScriptObject {
 
   // Helper function for executing InvokeDefault on an NPObject, and ignoring
   // the return value.
-  bool InvokeAndIgnoreResult(NPObject* func,
+  bool InvokeAndIgnoreResult(const ScopedRefNPObject& func,
                              const NPVariant* args,
                              uint32_t arg_count);
 
@@ -253,6 +261,7 @@ class HostNPScriptObject {
   NPP plugin_;
   NPObject* parent_;
   scoped_refptr<AutoThreadTaskRunner> plugin_task_runner_;
+  scoped_ptr<base::ThreadTaskRunnerHandle> plugin_task_runner_handle_;
 
   // True if we're in the middle of handling a log message.
   bool am_currently_logging_;
@@ -263,18 +272,22 @@ class HostNPScriptObject {
   // It2Me host state.
 
   // Internal implementation of the It2Me host function.
-  scoped_refptr<It2MeImpl> it2me_impl_;
+  scoped_ptr<ChromotingHostContext> host_context_;
+  scoped_refptr<It2MeHost> it2me_host_;
 
-  // Cached, read-only copies of |it2me_impl_| session state.
-  State state_;
+  // Cached, read-only copies of |it2me_host_| session state.
+  It2MeHostState state_;
   std::string access_code_;
   base::TimeDelta access_code_lifetime_;
   std::string client_username_;
 
-  // Localized strings for use by the |it2me_impl_| UI.
-  UiStrings ui_strings_;
+  // IT2Me Talk server configuration used by |it2me_host_| to connect.
+  XmppSignalStrategy::XmppServerConfig xmpp_server_config_;
 
-  // Callbacks to notify in response to |it2me_impl_| events.
+  // Chromoting Bot JID used by |it2me_host_| to register the host.
+  std::string directory_bot_jid_;
+
+  // Callbacks to notify in response to |it2me_host_| events.
   ScopedRefNPObject on_nat_traversal_policy_changed_func_;
   ScopedRefNPObject on_state_changed_func_;
 
@@ -282,19 +295,22 @@ class HostNPScriptObject {
   // Me2Me host state.
 
   // Platform-specific installation & configuration implementation.
-  scoped_ptr<DaemonController> daemon_controller_;
+  scoped_refptr<DaemonController> daemon_controller_;
 
   // TODO(sergeyu): Replace this thread with
   // SequencedWorkerPool. Problem is that SequencedWorkerPool relies
   // on MessageLoopProxy::current().
   scoped_refptr<AutoThreadTaskRunner> worker_thread_;
 
+  // Used to load and update the paired clients for this host.
+  scoped_refptr<protocol::PairingRegistry> pairing_registry_;
+
   //////////////////////////////////////////////////////////
   // Plugin state used for both Ir2Me and Me2Me.
 
   // Used to cancel pending tasks for this object when it is destroyed.
-  base::WeakPtrFactory<HostNPScriptObject> weak_factory_;
   base::WeakPtr<HostNPScriptObject> weak_ptr_;
+  base::WeakPtrFactory<HostNPScriptObject> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(HostNPScriptObject);
 };

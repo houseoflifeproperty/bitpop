@@ -8,14 +8,15 @@
 #include <string>
 
 #include "base/base64.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/format_macros.h"
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
+#include "net/http/http_auth_challenge_tokenizer.h"
 
 // These are defined for the GSSAPI library:
 // Paraphrasing the comments from gssapi.h:
@@ -445,7 +446,7 @@ base::NativeLibrary GSSAPISharedLibrary::LoadSharedLibrary() {
 
   for (size_t i = 0; i < num_lib_names; ++i) {
     const char* library_name = library_names[i];
-    FilePath file_path(library_name);
+    base::FilePath file_path(library_name);
 
     // TODO(asanka): Move library loading to a separate thread.
     //               http://crbug.com/66702
@@ -684,7 +685,7 @@ void HttpAuthGSSAPI::Delegate() {
 }
 
 HttpAuth::AuthorizationResult HttpAuthGSSAPI::ParseChallenge(
-    HttpAuth::ChallengeTokenizer* tok) {
+    HttpAuthChallengeTokenizer* tok) {
   // Verify the challenge's auth-scheme.
   if (!LowerCaseEqualsASCII(tok->scheme(), StringToLowerASCII(scheme_).c_str()))
     return HttpAuth::AUTHORIZATION_RESULT_INVALID;
@@ -715,7 +716,7 @@ HttpAuth::AuthorizationResult HttpAuthGSSAPI::ParseChallenge(
 }
 
 int HttpAuthGSSAPI::GenerateAuthToken(const AuthCredentials* credentials,
-                                      const std::wstring& spn,
+                                      const std::string& spn,
                                       std::string* auth_token) {
   DCHECK(auth_token);
 
@@ -734,11 +735,7 @@ int HttpAuthGSSAPI::GenerateAuthToken(const AuthCredentials* credentials,
   std::string encode_input(static_cast<char*>(output_token.value),
                            output_token.length);
   std::string encode_output;
-  bool base64_rv = base::Base64Encode(encode_input, &encode_output);
-  if (!base64_rv) {
-    LOG(ERROR) << "Base64 encoding of auth token failed.";
-    return ERR_ENCODING_CONVERSION_FAILED;
-  }
+  base::Base64Encode(encode_input, &encode_output);
   *auth_token = scheme_ + " " + encode_output;
   return OK;
 }
@@ -837,12 +834,12 @@ int MapInitSecContextStatusToError(OM_uint32 major_status) {
 
 }
 
-int HttpAuthGSSAPI::GetNextSecurityToken(const std::wstring& spn,
+int HttpAuthGSSAPI::GetNextSecurityToken(const std::string& spn,
                                          gss_buffer_t in_token,
                                          gss_buffer_t out_token) {
   // Create a name for the principal
   // TODO(cbentzel): Just do this on the first pass?
-  std::string spn_principal = WideToASCII(spn);
+  std::string spn_principal = spn;
   gss_buffer_desc spn_buffer = GSS_C_EMPTY_BUFFER;
   spn_buffer.value = const_cast<char*>(spn_principal.c_str());
   spn_buffer.length = spn_principal.size() + 1;

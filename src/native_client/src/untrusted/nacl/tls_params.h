@@ -112,21 +112,13 @@
 
 #include <stddef.h>
 
-#if defined(__pnacl__)
+#if defined(NACL_DEFINE_EXTERNAL_NATIVE_SUPPORT_FUNCS)
+# define NACL_TLS_LAYOUT_FUNC
+#else
+# define NACL_TLS_LAYOUT_FUNC static inline __attribute__((__unused__))
+#endif
 
-/*
- * These are compiler intrinsics in NaCl's variant of LLVM.
- *
- * See:
- *      hg/llvm/llvm-trunk/include/llvm/CodeGen/ISDOpcodes.h
- *      hg/llvm/llvm-trunk/include/llvm/Intrinsics.td
- *      hg/llvm/llvm-trunk/lib/CodeGen/SelectionDAG/SelectionDAG.cpp
- *      hg/llvm/llvm-trunk/lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp
- *      hg/llvm/llvm-trunk/lib/Target/ARM/ARMISelLowering.h
- *      hg/llvm/llvm-trunk/lib/Target/ARM/ARMISelLowering.cpp
- *      hg/llvm/llvm-trunk/lib/Target/X86/X86ISelLowering.h
- *      hg/llvm/llvm-trunk/lib/Target/X86/X86ISelLowering.cpp
- */
+#if defined(__pnacl__) && !defined(NACL_DEFINE_EXTERNAL_NATIVE_SUPPORT_FUNCS)
 
 /*
  * Signed offset from $tp to the beginning of TLS data.
@@ -134,7 +126,7 @@
  * The address ($tp + __nacl_tp_tls_offset(tls_size))
  * is what gets initialized with the .tdata image.
  */
-ptrdiff_t __nacl_tp_tls_offset(size_t tls_size) asm("llvm.nacl.tp.tls.offset");
+ptrdiff_t __nacl_tp_tls_offset(size_t tls_size);
 
 /*
  * Signed offset from $tp to the thread library's private thread data block.
@@ -142,7 +134,7 @@ ptrdiff_t __nacl_tp_tls_offset(size_t tls_size) asm("llvm.nacl.tp.tls.offset");
  * is stored.  On some machines it's required that the first word of this
  * be a pointer with value $tp.
  */
-ptrdiff_t __nacl_tp_tdb_offset(size_t tdb_size) asm("llvm.nacl.tp.tdb.offset");
+ptrdiff_t __nacl_tp_tdb_offset(size_t tdb_size);
 
 #elif defined(__i386__) || defined(__x86_64__)
 
@@ -160,12 +152,12 @@ ptrdiff_t __nacl_tp_tdb_offset(size_t tdb_size) asm("llvm.nacl.tp.tdb.offset");
  * In x86-64, __nacl_read_tp() must be called; it returns the $tp address.
  */
 
-static inline __attribute__((__unused__))
+NACL_TLS_LAYOUT_FUNC
 ptrdiff_t __nacl_tp_tls_offset(size_t tls_size) {
   return -(ptrdiff_t) tls_size;
 }
 
-static inline __attribute__((__unused__))
+NACL_TLS_LAYOUT_FUNC
 ptrdiff_t __nacl_tp_tdb_offset(size_t tdb_size) {
   return 0;
 }
@@ -186,12 +178,33 @@ ptrdiff_t __nacl_tp_tdb_offset(size_t tdb_size) {
  * In NaCl, this is defined as register r9.
  */
 
-static inline __attribute__((__unused__))
+NACL_TLS_LAYOUT_FUNC
 ptrdiff_t __nacl_tp_tls_offset(size_t tls_size) {
   return 8;
 }
 
-static inline __attribute__((__unused__))
+NACL_TLS_LAYOUT_FUNC
+ptrdiff_t __nacl_tp_tdb_offset(size_t tdb_size) {
+  return -(ptrdiff_t) tdb_size;
+}
+
+#elif defined(__mips__)
+
+/*
+ *  +-----------+---------------+
+ *  |    TDB    | TLS data, bss |
+ *  +-----------+---------------+
+ *              ^
+ *              |
+ *              +--- $tp points here
+ */
+
+NACL_TLS_LAYOUT_FUNC
+ptrdiff_t __nacl_tp_tls_offset(size_t tls_size) {
+  return 0;
+}
+
+NACL_TLS_LAYOUT_FUNC
 ptrdiff_t __nacl_tp_tdb_offset(size_t tdb_size) {
   return -(ptrdiff_t) tdb_size;
 }
@@ -201,5 +214,7 @@ ptrdiff_t __nacl_tp_tdb_offset(size_t tdb_size) {
 #error "unknown platform"
 
 #endif
+
+#undef NACL_TLS_LAYOUT_FUNC
 
 #endif /* NATIVE_CLIENT_SRC_UNTRUSTED_NACL_TLS_PARAMS_H_ */

@@ -13,6 +13,7 @@
 #define CONTENT_PUBLIC_COMMON_RENDERER_PREFERENCES_H_
 
 #include <string>
+#include <vector>
 
 #include "content/common/content_export.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -36,8 +37,17 @@ enum RendererPreferencesSubpixelRenderingEnum {
   RENDERER_PREFERENCES_SUBPIXEL_RENDERING_VBGR,
 };
 
+enum TapMultipleTargetsStrategy {
+  TAP_MULTIPLE_TARGETS_STRATEGY_ZOOM = 0,
+  TAP_MULTIPLE_TARGETS_STRATEGY_POPUP,
+  TAP_MULTIPLE_TARGETS_STRATEGY_NONE,
+
+  TAP_MULTIPLE_TARGETS_STRATEGY_MAX = TAP_MULTIPLE_TARGETS_STRATEGY_NONE,
+};
+
 struct CONTENT_EXPORT RendererPreferences {
   RendererPreferences();
+  ~RendererPreferences();
 
   // Whether the renderer's current browser context accept drops from the OS
   // that result in navigations away from the current page.
@@ -92,6 +102,9 @@ struct CONTENT_EXPORT RendererPreferences {
   // from GtkSettings.
   double caret_blink_interval;
 
+  // Whether or not to set custom colors at all.
+  bool use_custom_colors;
+
   // Set to false to not send referrers.
   bool enable_referrers;
 
@@ -105,8 +118,36 @@ struct CONTENT_EXPORT RendererPreferences {
   // being overridden for the current navigation.
   std::string user_agent_override;
 
-  // Specifies whether renderer input event throttle is enabled.
-  bool throttle_input_events;
+  // The accept-languages of the browser, comma-separated.
+  std::string accept_languages;
+
+  // Specifies whether the renderer reports frame name changes to the browser
+  // process.
+  // TODO(fsamuel): This is a short-term workaround to avoid regressing
+  // Sunspider. We need to find an efficient way to report changes to frame
+  // names to the browser process. See http://crbug.com/169110 for more
+  // information.
+  bool report_frame_name_changes;
+
+  // Controls deacceleration of touchpad-initiated flings.
+  std::vector<float> touchpad_fling_profile;
+
+  // Controls deacceleration of touchscreen-initiated flings.
+  std::vector<float> touchscreen_fling_profile;
+
+  // How to handle a tap gesture touching multiple targets
+  TapMultipleTargetsStrategy tap_multiple_targets_strategy;
+
+  // Disables rendering default error page when client choses to block a page.
+  // Corresponds to net::ERR_BLOCKED_BY_CLIENT.
+  bool disable_client_blocked_error_page;
+
+  // Determines whether plugins are allowed to enter fullscreen mode.
+  bool plugin_fullscreen_allowed;
+
+  // Whether video-overlay (hole-punching) should be used for the embedded
+  // encrypted video.  Currently only used by Android.
+  bool use_video_overlay_for_embedded_encrypted_video;
 };
 
 }  // namespace content

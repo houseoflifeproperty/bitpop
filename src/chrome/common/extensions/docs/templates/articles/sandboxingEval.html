@@ -3,13 +3,13 @@
 
 <p>
   Chrome's extension system enforces a fairly strict default
-  <a href='contentSecurityPolicy.html'>
+  <a href='../extensions/contentSecurityPolicy.html'>
     <strong>Content Security Policy (CSP)</strong>
   </a>. The policy restrictions are straightforward: script must be moved
   out-of-line into separate JavaScript files, inline event handlers must be
   converted to use <code>addEventListener</code>, and <code>eval()</code> is
   disabled. Chrome Apps have an
-  <a href='http://developer.chrome.com/trunk/apps/app_csp.html'>even more strict
+  <a href='contentSecurityPolicy.html'>even more strict
   policy</a>, and we're quite happy with the security properties these policies
   provide.
 </p>
@@ -60,7 +60,7 @@
 
 <p>
   If you'd like to dive straight into code, please grab the
-  <a href='http://code.google.com/chrome/extensions/samples.html#3c6dfba67f6a7480d931b5a4a646c151ad1a049b'>sandboxing
+  <a href='/extensions/samples.html#sandboxed-frame'>sandboxing
   sample extension and take off</a>. It's a working example of a tiny messaging
   API built on top of the <a href='http://handlebarsjs.com'>Handlebars</a>
   templating library, and it should give you everything you need to get going.
@@ -78,23 +78,25 @@
   file cleverly named "sandbox.html". The manifest entry looks like this:
 </p>
 
-<pre>{
+<pre data-filename="manifest.json">
+{
   ...,
   "sandbox": {
      "pages": ["sandbox.html"]
   },
   ...
-}</pre>
+}
+</pre>
 
 <h3 id="load_file">Load the sandboxed file</h3>
 
 <p>
   In order to do something interesting with the sandboxed file, we need to load
   it in a context where it can be addressed by the extension's code. Here,
-  <a href='http://code.google.com/chrome/extensions/examples/howto/sandbox/sandbox.html'>sandbox.html</a>
-  has been loaded into the extension's <a href='http://code.google.com/chrome/extensions/dev/event_pages.html'>Event
-  Page</a> (<a href='http://code.google.com/chrome/extensions/examples/howto/sandbox/eventpage.html'>eventpage.html</a>)
-  via an <code>iframe</code>. <a href='http://code.google.com/chrome/extensions/examples/howto/sandbox/eventpage.js'>eventpage.js</a>
+  <a href='/extensions/examples/howto/sandbox/sandbox.html'>sandbox.html</a>
+  has been loaded into the extension's <a href='event_pages.html'>Event
+  Page</a> (<a href='/extensions/examples/howto/sandbox/eventpage.html'>eventpage.html</a>)
+  via an <code>iframe</code>. <a href='/extensions/examples/howto/sandbox/eventpage.js'>eventpage.js</a>
   contains code that sends a message into the sandbox whenever the browser
   action is clicked by finding the <code>iframe</code> on the page, and
   executing the <code>postMessage</code> method on its
@@ -103,14 +105,16 @@
   both in a moment.
 </p>
 
-<pre>chrome.browserAction.onClicked.addListener(function() {
+<pre data-filename="eventpage.js">
+chrome.browserAction.onClicked.addListener(function() {
  var iframe = document.getElementById('theFrame');
  var message = {
    command: 'render',
    context: {thing: 'world'}
  };
  iframe.contentWindow.postMessage(message, '*');
-});</pre>
+});
+</pre>
 
 <p class="note">
   For general information about the <code>postMessage</code> API, take a look at
@@ -128,17 +132,19 @@
   creates and compiles an inline template in the way Handlebars suggests:
 </p>
 
-<pre>&lt;script src="handlebars-1.0.0.beta.6.js"&gt;&lt;/script&gt;
- &lt;script id="hello-world-template" type="text/x-handlebars-template"&gt;
-   &lt;div class="entry"&gt;
-     &lt;h1&gt;Hello, &#123&#123thing&#125&#125!&lt;/h1&gt;
-   &lt;/div&gt;
- &lt;/script&gt;
- &lt;script&gt;
-   var templates = [];
-   var source = document.getElementById('hello-world-template').innerHTML;
-   templates['hello'] = Handlebars.compile(source);
- &lt;/script&gt;</pre>
+<pre data-filename="sandbox.html">
+&lt;script src="handlebars-1.0.0.beta.6.js"&gt;&lt;/script&gt;
+&lt;script id="hello-world-template" type="text/x-handlebars-template"&gt;
+  &lt;div class="entry"&gt;
+    &lt;h1&gt;Hello, &#123&#123thing&#125&#125!&lt;/h1&gt;
+  &lt;/div&gt;
+&lt;/script&gt;
+&lt;script&gt;
+  var templates = [];
+  var source = document.getElementById('hello-world-template').innerHTML;
+  templates['hello'] = Handlebars.compile(source);
+&lt;/script&gt;
+</pre>
 
 <p>
   This doesn't fail! Even though <code>Handlebars.compile</code> ends up using
@@ -158,26 +164,30 @@
   Page so the extension can do something useful with it later on:
 </p>
 
-<pre>window.addEventListener('message', function(event) {
-  var command = event.data.command;
-  var name = event.data.name || 'hello';
-  switch(command) {
-    case 'render':
-      event.source.postMessage({
-        name: name,
-        html: templates[name](event.data.context)
-      }, event.origin);
-      break;
-
-    // case 'somethingElse':
-    //   ...
-  }
-});</pre>
+<pre data-filename="sandbox.html">
+&lt;script&gt;
+  window.addEventListener('message', function(event) {
+    var command = event.data.command;
+    var name = event.data.name || 'hello';
+    switch(command) {
+      case 'render':
+        event.source.postMessage({
+          name: name,
+          html: templates[name](event.data.context)
+        }, event.origin);
+        break;
+  
+      // case 'somethingElse':
+      //   ...
+    }
+  });
+&lt;/script&gt;
+</pre>
 
 <p>
   Back in the Event Page, we'll receive this message, and do something
   interesting with the <code>html</code> data we've been passed. In this case,
-  we'll just echo it out via a <a href='http://code.google.com/chrome/extensions/notifications.html'>Desktop
+  we'll just echo it out via a <a href='desktop_notifications.html'>Desktop
   Notification</a>, but it's entirely possible to use this HTML safely as part
   of the extension's UI. Inserting it via <code>innerHTML</code> doesn't pose a
   significant security risk, as even a complete compromise of the sandboxed code

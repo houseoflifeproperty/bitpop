@@ -210,7 +210,7 @@ float CpuSampler::GetSystemLoad() {
   } else {
     if (nt_query_system_information) {
       ULONG returned_length = 0;
-      scoped_array<SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION> processor_info(
+      scoped_ptr<SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION[]> processor_info(
           new SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION[cpus_]);
       nt_query_system_information(
           ::SystemProcessorPerformanceInformation,
@@ -281,6 +281,13 @@ float CpuSampler::GetSystemLoad() {
   const uint64 cpu_times = nice + system + user;
   const uint64 total_times = cpu_times + idle;
 #endif  // defined(LINUX) || defined(ANDROID)
+
+#if defined(__native_client__)
+  // TODO(ryanpetrie): Implement this via PPAPI when it's available.
+  const uint64 cpu_times = 0;
+  const uint64 total_times = 0;
+#endif  // defined(__native_client__)
+
   system_.prev_load_time_ = timenow;
   system_.prev_load_ = UpdateCpuLoad(total_times,
                                      cpu_times * cpus_,
@@ -359,6 +366,12 @@ float CpuSampler::GetProcessLoad() {
       (usage.ru_utime.tv_sec + usage.ru_stime.tv_sec) * kNumMicrosecsPerSec +
       usage.ru_utime.tv_usec + usage.ru_stime.tv_usec;
 #endif  // defined(LINUX) || defined(ANDROID)
+
+#if defined(__native_client__)
+  // TODO(ryanpetrie): Implement this via PPAPI when it's available.
+  const uint64 cpu_times = 0;
+#endif  // defined(__native_client__)
+
   process_.prev_load_time_ = timenow;
   process_.prev_load_ = UpdateCpuLoad(total_times,
                                      cpu_times,
@@ -378,22 +391,27 @@ int CpuSampler::GetCurrentCpus() {
 ///////////////////////////////////////////////////////////////////
 // Implementation of class CpuMonitor.
 CpuMonitor::CpuMonitor(Thread* thread)
-    : monitor_thread_(thread ? thread : Thread::Current()) {
-  monitor_thread_->SignalQueueDestroyed.connect(
-      this, &CpuMonitor::OnMessageQueueDestroyed);
+    : monitor_thread_(thread) {
 }
 
 CpuMonitor::~CpuMonitor() {
   Stop();
 }
 
+void CpuMonitor::set_thread(Thread* thread) {
+  ASSERT(monitor_thread_ == NULL || monitor_thread_ == thread);
+  monitor_thread_ = thread;
+}
+
 bool CpuMonitor::Start(int period_ms) {
-  if (!sampler_.Init()) return false;
+  if (!monitor_thread_  || !sampler_.Init()) return false;
+
+  monitor_thread_->SignalQueueDestroyed.connect(
+       this, &CpuMonitor::OnMessageQueueDestroyed);
 
   period_ms_ = period_ms;
-  if (monitor_thread_) {
-    monitor_thread_->PostDelayed(period_ms_, this);
-  }
+  monitor_thread_->PostDelayed(period_ms_, this);
+
   return true;
 }
 

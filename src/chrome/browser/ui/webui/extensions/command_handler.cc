@@ -6,16 +6,16 @@
 
 #include "base/bind.h"
 #include "base/values.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/commands/command_service.h"
-#include "chrome/browser/extensions/api/commands/command_service_factory.h"
+#include "chrome/browser/extensions/extension_commands_global_registry.h"
 #include "chrome/browser/extensions/extension_keybinding_registry.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/extension_set.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_data_source.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/extension_set.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -27,25 +27,29 @@ CommandHandler::CommandHandler(Profile* profile) : profile_(profile) {
 CommandHandler::~CommandHandler() {
 }
 
-void CommandHandler::GetLocalizedValues(DictionaryValue* localized_strings) {
-  DCHECK(localized_strings);
-  localized_strings->SetString("extensionCommandsOverlay",
+void CommandHandler::GetLocalizedValues(content::WebUIDataSource* source) {
+  source->AddString("extensionCommandsOverlay",
       l10n_util::GetStringUTF16(IDS_EXTENSION_COMMANDS_DIALOG_TITLE));
-  localized_strings->SetString("extensionCommandsEmpty",
+  source->AddString("extensionCommandsEmpty",
       l10n_util::GetStringUTF16(IDS_EXTENSION_COMMANDS_EMPTY));
-  localized_strings->SetString("extensionCommandsInactive",
+  source->AddString("extensionCommandsInactive",
       l10n_util::GetStringUTF16(IDS_EXTENSION_COMMANDS_INACTIVE));
-  localized_strings->SetString("extensionCommandsStartTyping",
+  source->AddString("extensionCommandsStartTyping",
       l10n_util::GetStringUTF16(IDS_EXTENSION_TYPE_SHORTCUT));
-  localized_strings->SetString("extensionCommandsDelete",
+  source->AddString("extensionCommandsDelete",
       l10n_util::GetStringUTF16(IDS_EXTENSION_DELETE_SHORTCUT));
-  localized_strings->SetString("ok", l10n_util::GetStringUTF16(IDS_OK));
+  source->AddString("extensionCommandsGlobal",
+      l10n_util::GetStringUTF16(IDS_EXTENSION_COMMANDS_GLOBAL));
+  source->AddString("extensionCommandsRegular",
+      l10n_util::GetStringUTF16(IDS_EXTENSION_COMMANDS_NOT_GLOBAL));
+  source->AddString("ok", l10n_util::GetStringUTF16(IDS_OK));
 }
 
 void CommandHandler::RegisterMessages() {
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                  content::Source<Profile>(profile_));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::Source<Profile>(profile_));
 
   web_ui()->RegisterMessageCallback("extensionCommandsRequestExtensionsData",
@@ -57,25 +61,28 @@ void CommandHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("setExtensionCommandShortcut",
       base::Bind(&CommandHandler::HandleSetExtensionCommandShortcut,
       base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("setCommandScope",
+      base::Bind(&CommandHandler::HandleSetCommandScope,
+      base::Unretained(this)));
 }
 
 void CommandHandler::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
-  DCHECK(type == chrome::NOTIFICATION_EXTENSION_LOADED ||
-         type == chrome::NOTIFICATION_EXTENSION_UNLOADED);
+  DCHECK(type == chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED ||
+         type == chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED);
   UpdateCommandDataOnPage();
 }
 
 void CommandHandler::UpdateCommandDataOnPage() {
-  DictionaryValue results;
+  base::DictionaryValue results;
   GetAllCommands(&results);
   web_ui()->CallJavascriptFunction(
-      "ExtensionCommandsOverlay.returnExtensionsData", results);
+      "extensions.ExtensionCommandsOverlay.returnExtensionsData", results);
 }
 
-void CommandHandler::HandleRequestExtensionsData(const ListValue* args) {
+void CommandHandler::HandleRequestExtensionsData(const base::ListValue* args) {
   UpdateCommandDataOnPage();
 }
 
@@ -92,36 +99,58 @@ void CommandHandler::HandleSetExtensionCommandShortcut(
   }
 
   Profile* profile = Profile::FromWebUI(web_ui());
-  CommandService* command_service =
-      CommandServiceFactory::GetForProfile(profile);
+  CommandService* command_service = CommandService::Get(profile);
   command_service->UpdateKeybindingPrefs(extension_id, command_name, keystroke);
 
   UpdateCommandDataOnPage();
 }
 
-void CommandHandler::HandleSetShortcutHandlingSuspended(const ListValue* args) {
+void CommandHandler::HandleSetCommandScope(
+    const base::ListValue* args) {
+  std::string extension_id;
+  std::string command_name;
+  bool global;
+  if (!args->GetString(0, &extension_id) ||
+      !args->GetString(1, &command_name) ||
+      !args->GetBoolean(2, &global)) {
+    NOTREACHED();
+    return;
+  }
+
+  Profile* profile = Profile::FromWebUI(web_ui());
+  CommandService* command_service = CommandService::Get(profile);
+  if (command_service->SetScope(extension_id, command_name, global))
+    UpdateCommandDataOnPage();
+}
+
+void CommandHandler::HandleSetShortcutHandlingSuspended(
+    const base::ListValue* args) {
   bool suspended;
-  if (args->GetBoolean(0, &suspended))
+  if (args->GetBoolean(0, &suspended)) {
+    // Suspend/Resume normal shortcut handling.
     ExtensionKeybindingRegistry::SetShortcutHandlingSuspended(suspended);
+
+    // Suspend/Resume global shortcut handling.
+    ExtensionCommandsGlobalRegistry::SetShortcutHandlingSuspended(suspended);
+  }
 }
 
 void CommandHandler::GetAllCommands(base::DictionaryValue* commands) {
-  ListValue* results = new ListValue;
+  base::ListValue* results = new base::ListValue;
 
   Profile* profile = Profile::FromWebUI(web_ui());
-  CommandService* command_service =
-      CommandServiceFactory::GetForProfile(profile);
+  CommandService* command_service = CommandService::Get(profile);
 
   const ExtensionSet* extensions = extensions::ExtensionSystem::Get(profile)->
       extension_service()->extensions();
   for (ExtensionSet::const_iterator extension = extensions->begin();
        extension != extensions->end(); ++extension) {
-    scoped_ptr<DictionaryValue> extension_dict(new DictionaryValue);
+    scoped_ptr<base::DictionaryValue> extension_dict(new base::DictionaryValue);
     extension_dict->SetString("name", (*extension)->name());
     extension_dict->SetString("id", (*extension)->id());
 
     // Add the keybindings to a list structure.
-    scoped_ptr<ListValue> extensions_list(new ListValue());
+    scoped_ptr<base::ListValue> extensions_list(new base::ListValue());
 
     bool active = false;
 
@@ -130,7 +159,8 @@ void CommandHandler::GetAllCommands(base::DictionaryValue* commands) {
                                                  CommandService::ALL,
                                                  &browser_action,
                                                  &active)) {
-      extensions_list->Append(browser_action.ToValue((*extension), active));
+      extensions_list->Append(
+          browser_action.ToValue((extension->get()), active));
     }
 
     extensions::Command page_action;
@@ -138,29 +168,24 @@ void CommandHandler::GetAllCommands(base::DictionaryValue* commands) {
                                               CommandService::ALL,
                                               &page_action,
                                               &active)) {
-      extensions_list->Append(page_action.ToValue((*extension), active));
-    }
-
-    extensions::Command script_badge;
-    if (command_service->GetScriptBadgeCommand((*extension)->id(),
-                                              CommandService::ALL,
-                                              &script_badge,
-                                              &active)) {
-      extensions_list->Append(script_badge.ToValue((*extension), active));
+      extensions_list->Append(page_action.ToValue((extension->get()), active));
     }
 
     extensions::CommandMap named_commands;
     if (command_service->GetNamedCommands((*extension)->id(),
                                           CommandService::ALL,
+                                          extensions::CommandService::ANY_SCOPE,
                                           &named_commands)) {
       for (extensions::CommandMap::const_iterator iter = named_commands.begin();
            iter != named_commands.end(); ++iter) {
-        ui::Accelerator shortcut_assigned =
-            command_service->FindShortcutForCommand(
+        extensions::Command command = command_service->FindCommandByName(
                 (*extension)->id(), iter->second.command_name());
+        ui::Accelerator shortcut_assigned = command.accelerator();
+
         active = (shortcut_assigned.key_code() != ui::VKEY_UNKNOWN);
 
-        extensions_list->Append(iter->second.ToValue((*extension), active));
+        extensions_list->Append(
+            iter->second.ToValue((extension->get()), active));
       }
     }
 

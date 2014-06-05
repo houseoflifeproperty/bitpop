@@ -19,16 +19,6 @@ void CheckApproximatelyEqual(const gfx::Transform& lhs,
   }
 }
 
-float NormalizeAngle(float angle) {
-  while (angle < 0.0f) {
-    angle += 360.0f;
-  }
-  while (angle > 360.0f) {
-    angle -= 360.0f;
-  }
-  return angle;
-}
-
 } // namespace
 
 TEST(InterpolatedTransformTest, InterpolatedRotation) {
@@ -90,10 +80,10 @@ TEST(InterpolatedTransformTest, InterpolatedRotationAboutPivot) {
   CheckApproximatelyEqual(gfx::Transform(), result);
   result = interpolated_xform.Interpolate(1.0f);
   gfx::Point expected_result = pivot;
-  result.TransformPoint(pivot);
+  result.TransformPoint(&pivot);
   EXPECT_EQ(expected_result, pivot);
   expected_result = gfx::Point(0, 100);
-  result.TransformPoint(above_pivot);
+  result.TransformPoint(&above_pivot);
   EXPECT_EQ(expected_result, above_pivot);
 }
 
@@ -107,10 +97,10 @@ TEST(InterpolatedTransformTest, InterpolatedScaleAboutPivot) {
   CheckApproximatelyEqual(gfx::Transform(), result);
   result = interpolated_xform.Interpolate(1.0f);
   gfx::Point expected_result = pivot;
-  result.TransformPoint(pivot);
+  result.TransformPoint(&pivot);
   EXPECT_EQ(expected_result, pivot);
   expected_result = gfx::Point(100, 300);
-  result.TransformPoint(above_pivot);
+  result.TransformPoint(&above_pivot);
   EXPECT_EQ(expected_result, above_pivot);
 }
 

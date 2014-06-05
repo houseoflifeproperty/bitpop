@@ -4,9 +4,8 @@
 
 #include "content/browser/download/save_item.h"
 
-#include "base/file_util.h"
 #include "base/logging.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "content/browser/download/save_file.h"
 #include "content/browser/download/save_file_manager.h"
 #include "content/browser/download/save_package.h"
@@ -114,7 +113,7 @@ int SaveItem::PercentComplete() const {
 }
 
 // Rename the save item with new path.
-void SaveItem::Rename(const FilePath& full_path) {
+void SaveItem::Rename(const base::FilePath& full_path) {
   DCHECK(!full_path.empty() && !has_final_name());
   full_path_ = full_path;
   file_name_ = full_path_.BaseName();
@@ -122,12 +121,12 @@ void SaveItem::Rename(const FilePath& full_path) {
 }
 
 void SaveItem::SetSaveId(int32 save_id) {
-  DCHECK(save_id_ == -1);
+  DCHECK_EQ(-1, save_id_);
   save_id_ = save_id;
 }
 
 void SaveItem::SetTotalBytes(int64 total_bytes) {
-  DCHECK(total_bytes_ == 0);
+  DCHECK_EQ(0, total_bytes_);
   total_bytes_ = total_bytes;
 }
 

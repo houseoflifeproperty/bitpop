@@ -1,34 +1,32 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package org.chromium.chrome.testshell;
+package org.chromium.chrome.browser.test;
 
 import android.os.Parcel;
-import android.test.FlakyTest;
 import android.test.suitebuilder.annotation.SmallTest;
 
 import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
 import org.chromium.chrome.browser.ChromeBrowserProvider.BookmarkNode;
 import org.chromium.chrome.browser.ChromeBrowserProvider.Type;
-import org.chromium.chrome.testshell.ChromiumTestShellTestBase;
-import org.chromium.chrome.testshell.util.BookmarkUtils;
+import org.chromium.chrome.browser.test.util.BookmarkUtils;
+import org.chromium.chrome.shell.ChromeShellTestBase;
 
 import java.util.Random;
 
 /**
  * Tests parceling of bookmark node hierarchies used by the provider client API.
  */
-public class ProviderBookmarkNodeTest extends ChromiumTestShellTestBase {
-    private static final String TAG = "ProviderBookmarkNodeTest";
-
+public class ProviderBookmarkNodeTest extends ChromeShellTestBase {
     Random mGenerator = new Random();
     byte[][] mImageBlobs = null;
 
     @Override
     protected void setUp() throws Exception {
-        launchChromiumTestShellWithUrl(null);
+        super.setUp();
+        launchChromeShellWithUrl(null);
 
         mImageBlobs = new byte[][] {
             BookmarkUtils.getIcon("chrome/provider/icon1.png"),

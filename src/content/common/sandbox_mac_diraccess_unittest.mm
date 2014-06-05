@@ -10,10 +10,11 @@ extern "C" {
 }
 
 #include "base/file_util.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
+#include "base/process/kill.h"
+#include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/test/multiprocess_test.h"
-#include "base/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
 #include "content/common/sandbox_mac.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/multiprocess_func_list.h"
@@ -33,8 +34,7 @@ class MacDirAccessSandboxTest : public base::MultiProcessTest {
  public:
   bool CheckSandbox(const std::string& directory_to_try) {
     setenv(kSandboxAccessPathKey, directory_to_try.c_str(), 1);
-    base::ProcessHandle child_process = SpawnChild("mac_sandbox_path_access",
-                                                   false);
+    base::ProcessHandle child_process = SpawnChild("mac_sandbox_path_access");
     if (child_process == base::kNullProcessHandle) {
       LOG(WARNING) << "SpawnChild failed";
       return false;
@@ -98,13 +98,14 @@ TEST_F(MacDirAccessSandboxTest, RegexEscape) {
     EXPECT_TRUE(Sandbox::QuoteStringForRegex("}", &out));   // } == 0x7D == 125
     EXPECT_FALSE(Sandbox::QuoteStringForRegex("~", &out));  // ~ == 0x7E == 126
     EXPECT_FALSE(
-        Sandbox::QuoteStringForRegex(WideToUTF8(L"^\u2135.\u2136$"), &out));
+        Sandbox::QuoteStringForRegex(base::WideToUTF8(L"^\u2135.\u2136$"),
+                                     &out));
   }
 
   {
     for (size_t i = 0; i < ARRAYSIZE_UNSAFE(regex_cases); ++i) {
       std::string out;
-      std::string in = WideToUTF8(regex_cases[i].to_escape);
+      std::string in = base::WideToUTF8(regex_cases[i].to_escape);
       EXPECT_TRUE(Sandbox::QuoteStringForRegex(in, &out));
       std::string expected("^");
       expected.append(regex_cases[i].escaped);
@@ -131,22 +132,21 @@ TEST_F(MacDirAccessSandboxTest, RegexEscape) {
 }
 
 // A class to handle auto-deleting a directory.
-class ScopedDirectoryDelete {
- public:
-  inline void operator()(FilePath* x) const {
-    if (x) {
-      file_util::Delete(*x, true);
-    }
+struct ScopedDirectoryDelete {
+  inline void operator()(base::FilePath* x) const {
+    if (x)
+      base::DeleteFile(*x, true);
   }
 };
 
-typedef scoped_ptr_malloc<FilePath, ScopedDirectoryDelete> ScopedDirectory;
+typedef scoped_ptr<base::FilePath, ScopedDirectoryDelete> ScopedDirectory;
 
 TEST_F(MacDirAccessSandboxTest, SandboxAccess) {
-  using file_util::CreateDirectory;
+  using base::CreateDirectory;
 
-  FilePath tmp_dir;
-  ASSERT_TRUE(file_util::CreateNewTempDirectory("", &tmp_dir));
+  base::FilePath tmp_dir;
+  ASSERT_TRUE(base::CreateNewTempDirectory(base::FilePath::StringType(),
+                                           &tmp_dir));
   // This step is important on OS X since the sandbox only understands "real"
   // paths and the paths CreateNewTempDirectory() returns are empirically in
   // /var which is a symlink to /private/var .
@@ -161,7 +161,7 @@ TEST_F(MacDirAccessSandboxTest, SandboxAccess) {
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(sandbox_dir_cases); ++i) {
     const char* sandbox_dir_name = sandbox_dir_cases[i];
-    FilePath sandbox_dir = tmp_dir.Append(sandbox_dir_name);
+    base::FilePath sandbox_dir = tmp_dir.Append(sandbox_dir_name);
     ASSERT_TRUE(CreateDirectory(sandbox_dir));
     ScopedDirectory cleanup_sandbox(&sandbox_dir);
 
@@ -169,7 +169,7 @@ TEST_F(MacDirAccessSandboxTest, SandboxAccess) {
     // as a substring but to which access is denied.
     std::string sibling_sandbox_dir_name_denied =
         std::string(sandbox_dir_cases[i]) + kDeniedSuffix;
-    FilePath sibling_sandbox_dir = tmp_dir.Append(
+    base::FilePath sibling_sandbox_dir = tmp_dir.Append(
                                       sibling_sandbox_dir_name_denied.c_str());
     ASSERT_TRUE(CreateDirectory(sibling_sandbox_dir));
     ScopedDirectory cleanup_sandbox_sibling(&sibling_sandbox_dir);
@@ -195,7 +195,7 @@ MULTIPROCESS_TEST_MAIN(mac_sandbox_path_access) {
   Sandbox::SandboxVariableSubstitions substitutions;
   NSString* allow_dir_sandbox_code =
       Sandbox::BuildAllowDirectoryAccessSandboxString(
-          FilePath(sandbox_allowed_dir),
+          base::FilePath(sandbox_allowed_dir),
           &substitutions);
   sandbox_profile = [sandbox_profile
       stringByReplacingOccurrencesOfString:@";ENABLE_DIRECTORY_ACCESS"
@@ -233,16 +233,17 @@ MULTIPROCESS_TEST_MAIN(mac_sandbox_path_access) {
   closedir(file_list);
 
   // Test restrictions on accessing files.
-  FilePath allowed_dir_path(sandbox_allowed_dir);
-  FilePath allowed_file = allowed_dir_path.Append("ok_to_write");
-  FilePath denied_file1 =  allowed_dir_path.DirName().Append("cant_access");
+  base::FilePath allowed_dir_path(sandbox_allowed_dir);
+  base::FilePath allowed_file = allowed_dir_path.Append("ok_to_write");
+  base::FilePath denied_file1 =
+      allowed_dir_path.DirName().Append("cant_access");
 
   // Try to write a file who's name has the same prefix as the directory we
   // allow access to.
-  FilePath basename = allowed_dir_path.BaseName();
-  FilePath allowed_parent_dir = allowed_dir_path.DirName();
+  base::FilePath basename = allowed_dir_path.BaseName();
+  base::FilePath allowed_parent_dir = allowed_dir_path.DirName();
   std::string tricky_filename = basename.value() + "123";
-  FilePath denied_file2 =  allowed_parent_dir.Append(tricky_filename);
+  base::FilePath denied_file2 =  allowed_parent_dir.Append(tricky_filename);
 
   if (open(allowed_file.value().c_str(), O_WRONLY | O_CREAT) <= 0) {
     PLOG(ERROR) << "Sandbox overly restrictive: failed to write ("

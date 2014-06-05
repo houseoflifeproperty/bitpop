@@ -52,8 +52,8 @@
               " is FALSE\n",                                              \
               __LINE__, __FILE__, slhs, srhs);                            \
       fprintf(stderr,                                                     \
-              "got 0x%08"NACL_PRIxPTR" (%"NACL_PRIdPTR"); "               \
-              "comparison value 0x%08"NACL_PRIxPTR" (%"NACL_PRIdPTR")\n", \
+              "got 0x%08" NACL_PRIxPTR " (%" NACL_PRIdPTR "); "           \
+              "comparison value 0x%08" NACL_PRIxPTR " (%" NACL_PRIdPTR" )\n", \
               (uintptr_t) (lhs), (uintptr_t) (lhs),                       \
               (uintptr_t) (rhs), (uintptr_t) (rhs));                      \
       thunk;                                                              \
@@ -79,5 +79,8 @@
 #define ASSERT_EQ(lhs, rhs) ASSERT_OP(lhs, ==, rhs, #lhs, #rhs)
 #define ASSERT_NE(lhs, rhs) ASSERT_OP(lhs, !=, rhs, #lhs, #rhs)
 #define ASSERT_LE(lhs, rhs) ASSERT_OP(lhs, <=, rhs, #lhs, #rhs)
+#define ASSERT_GE(lhs, rhs) ASSERT_OP(lhs, >=, rhs, #lhs, #rhs)
+#define ASSERT_LT(lhs, rhs) ASSERT_OP(lhs, <, rhs, #lhs, #rhs)
+#define ASSERT_GT(lhs, rhs) ASSERT_OP(lhs, >, rhs, #lhs, #rhs)
 
 #endif  /* NATIVE_CLIENT_SRC_INCLUDE_NACL_ASSERT_H_ */

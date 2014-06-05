@@ -6,7 +6,7 @@
 
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
-#include "ash/wm/window_util.h"
+#include "ash/wm/window_state.h"
 #include "ui/aura/window.h"
 
 namespace ash {
@@ -16,21 +16,22 @@ namespace {
 // These are the list of container ids of containers which may contain windows
 // that need to be activated in the order that they should be activated.
 const int kWindowContainerIds[] = {
-    internal::kShellWindowId_LockSystemModalContainer,
-    internal::kShellWindowId_SettingBubbleContainer,
-    internal::kShellWindowId_LockScreenContainer,
-    internal::kShellWindowId_SystemModalContainer,
-    internal::kShellWindowId_AlwaysOnTopContainer,
-    internal::kShellWindowId_AppListContainer,
-    internal::kShellWindowId_DefaultContainer,
+    kShellWindowId_OverlayContainer,
+    kShellWindowId_LockSystemModalContainer,
+    kShellWindowId_SettingBubbleContainer,
+    kShellWindowId_LockScreenContainer,
+    kShellWindowId_SystemModalContainer,
+    kShellWindowId_AlwaysOnTopContainer,
+    kShellWindowId_AppListContainer,
+    kShellWindowId_DefaultContainer,
 
-    // Panel, launcher and status are intentionally checked after other
+    // Docked, panel, launcher and status are intentionally checked after other
     // containers even though these layers are higher. The user expects their
     // windows to be focused before these elements.
-    internal::kShellWindowId_PanelContainer,
-    internal::kShellWindowId_LauncherContainer,
-    internal::kShellWindowId_StatusContainer,
-};
+    kShellWindowId_DockedContainer,
+    kShellWindowId_PanelContainer,
+    kShellWindowId_ShelfContainer,
+    kShellWindowId_StatusContainer, };
 
 bool BelongsToContainerWithEqualOrGreaterId(const aura::Window* window,
                                             int container_id) {
@@ -53,14 +54,11 @@ AshFocusRules::~AshFocusRules() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// AshFocusRules, views::corewm::FocusRules:
+// AshFocusRules, ::wm::FocusRules:
 
 bool AshFocusRules::SupportsChildActivation(aura::Window* window) const {
-  if (window->id() == internal::kShellWindowId_WorkspaceContainer)
+  if (window->id() == kShellWindowId_DefaultContainer)
     return true;
-
-  if (window->id() == internal::kShellWindowId_DefaultContainer)
-    return false;
 
   for (size_t i = 0; i < arraysize(kWindowContainerIds); i++) {
     if (window->id() == kWindowContainerIds[i])
@@ -76,12 +74,12 @@ bool AshFocusRules::IsWindowConsideredVisibleForActivation(
 
   // Minimized windows are hidden in their minimized state, but they can always
   // be activated.
-  if (wm::IsWindowMinimized(window))
+  if (wm::GetWindowState(window)->IsMinimized())
     return true;
 
-  return window->TargetVisibility() && (window->parent()->id() ==
-      internal::kShellWindowId_WorkspaceContainer || window->parent()->id() ==
-      internal::kShellWindowId_LockScreenContainer);
+  return window->TargetVisibility() &&
+         (window->parent()->id() == kShellWindowId_DefaultContainer ||
+          window->parent()->id() == kShellWindowId_LockScreenContainer);
 }
 
 bool AshFocusRules::CanActivateWindow(aura::Window* window) const {
@@ -94,7 +92,7 @@ bool AshFocusRules::CanActivateWindow(aura::Window* window) const {
 
   if (Shell::GetInstance()->IsSystemModalWindowOpen()) {
     return BelongsToContainerWithEqualOrGreaterId(
-          window, internal::kShellWindowId_SystemModalContainer);
+        window, kShellWindowId_SystemModalContainer);
   }
 
   return true;
@@ -107,9 +105,9 @@ aura::Window* AshFocusRules::GetNextActivatableWindow(
   int starting_container_index = 0;
   // If the container of the window losing focus is in the list, start from that
   // container.
-  aura::RootWindow* root = ignore->GetRootWindow();
+  aura::Window* root = ignore->GetRootWindow();
   if (!root)
-    root = Shell::GetActiveRootWindow();
+    root = Shell::GetTargetRootWindow();
   int container_count = static_cast<int>(arraysize(kWindowContainerIds));
   for (int i = 0; ignore && i < container_count; i++) {
     aura::Window* container = Shell::GetContainer(root, kWindowContainerIds[i]);
@@ -139,8 +137,9 @@ aura::Window* AshFocusRules::GetTopmostWindowToActivateForContainerIndex(
     int index,
     aura::Window* ignore) const {
   aura::Window* window = NULL;
-  aura::Window::Windows containers =
-      Shell::GetAllContainers(kWindowContainerIds[index]);
+  aura::Window* root = ignore ? ignore->GetRootWindow() : NULL;
+  aura::Window::Windows containers = Shell::GetContainersFromAllRootWindows(
+      kWindowContainerIds[index], root);
   for (aura::Window::Windows::const_iterator iter = containers.begin();
         iter != containers.end() && !window; ++iter) {
     window = GetTopmostWindowToActivateInContainer((*iter), ignore);
@@ -151,25 +150,14 @@ aura::Window* AshFocusRules::GetTopmostWindowToActivateForContainerIndex(
 aura::Window* AshFocusRules::GetTopmostWindowToActivateInContainer(
     aura::Window* container,
     aura::Window* ignore) const {
-  // Workspace has an extra level of windows that needs to be special cased.
-  if (container->id() == internal::kShellWindowId_DefaultContainer) {
-    for (aura::Window::Windows::const_reverse_iterator i =
-             container->children().rbegin();
-         i != container->children().rend(); ++i) {
-      if ((*i)->IsVisible()) {
-        aura::Window* window =
-            GetTopmostWindowToActivateInContainer(*i, ignore);
-        if (window)
-          return window;
-      }
-    }
-    return NULL;
-  }
   for (aura::Window::Windows::const_reverse_iterator i =
            container->children().rbegin();
        i != container->children().rend();
        ++i) {
-    if (*i != ignore && CanActivateWindow(*i) && !wm::IsWindowMinimized(*i))
+    WindowState* window_state = GetWindowState(*i);
+    if (*i != ignore &&
+        window_state->CanActivate() &&
+        !window_state->IsMinimized())
       return *i;
   }
   return NULL;

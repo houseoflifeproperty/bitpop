@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 #include "base/memory/scoped_ptr.h"
-#include "net/base/mock_host_resolver.h"
 #include "net/base/net_errors.h"
+#include "net/dns/mock_host_resolver.h"
 #include "net/http/http_auth_handler.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/mock_allow_url_security_manager.h"
@@ -21,13 +21,13 @@ class MockHttpAuthHandlerFactory : public HttpAuthHandlerFactory {
       return_code_(return_code) {}
   virtual ~MockHttpAuthHandlerFactory() {}
 
-  virtual int CreateAuthHandler(HttpAuth::ChallengeTokenizer* challenge,
+  virtual int CreateAuthHandler(HttpAuthChallengeTokenizer* challenge,
                                 HttpAuth::Target target,
                                 const GURL& origin,
                                 CreateReason reason,
                                 int nonce_count,
                                 const BoundNetLog& net_log,
-                                scoped_ptr<HttpAuthHandler>* handler) {
+                                scoped_ptr<HttpAuthHandler>* handler) OVERRIDE {
     handler->reset();
     return return_code_;
   }

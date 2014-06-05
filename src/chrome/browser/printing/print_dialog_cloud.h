@@ -10,17 +10,28 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "ui/gfx/native_widget_types.h"
 
-class FilePath;
+class Browser;
+class Profile;
+
+namespace base {
 class CommandLine;
+class FilePath;
+}
 
 namespace content {
 class BrowserContext;
 }
 
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
+
 namespace print_dialog_cloud {
+
+void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
 // Creates a print dialog to print a file on disk.
 // Called on the FILE or UI thread. Even though this may start up a modal
@@ -29,11 +40,10 @@ namespace print_dialog_cloud {
 // to.
 void CreatePrintDialogForFile(content::BrowserContext* browser_context,
                               gfx::NativeWindow modal_parent,
-                              const FilePath& path_to_file,
-                              const string16& print_job_title,
-                              const string16& print_ticket,
-                              const std::string& file_type,
-                              bool delete_on_close);
+                              const base::FilePath& path_to_file,
+                              const base::string16& print_job_title,
+                              const base::string16& print_ticket,
+                              const std::string& file_type);
 
 // Creates a print dialog to print data in RAM.
 // Called on the FILE or UI thread. Even though this may start up a modal
@@ -42,25 +52,22 @@ void CreatePrintDialogForFile(content::BrowserContext* browser_context,
 // to.
 void CreatePrintDialogForBytes(content::BrowserContext* browser_context,
                                gfx::NativeWindow modal_parent,
-                               scoped_refptr<base::RefCountedBytes> data,
-                               const string16& print_job_title,
-                               const string16& print_ticket,
+                               const base::RefCountedMemory* data,
+                               const base::string16& print_job_title,
+                               const base::string16& print_ticket,
                                const std::string& file_type);
 
 // Parse switches from command_line and display the print dialog as appropriate.
-// Uses the default profile.
-bool CreatePrintDialogFromCommandLine(const CommandLine& command_line);
+bool CreatePrintDialogFromCommandLine(Profile* profile,
+                                      const base::CommandLine& command_line);
 
-// Creates a dialog for signing into cloud print.
-// The dialog will call |callback| when complete.
-// Called on the UI thread. Even though this starts up a modal
-// dialog, it will return immediately. The dialog is handled asynchronously.
-// If non-NULL, |modal_parent| specifies a window that the print dialog is modal
-// to.
-void CreateCloudPrintSigninDialog(content::BrowserContext* browser_context,
-                                  gfx::NativeWindow modal_parent,
-                                  const base::Closure& callback);
+// Creates a tab with Google 'sign in' or 'add account' page, based on
+// passed |add_account| value.
+// Calls |callback| when complete.
+void CreateCloudPrintSigninTab(Browser* browser,
+                               bool add_account,
+                               const base::Closure& callback);
 
-}  // end namespace
+}  // namespace print_dialog_cloud
 
 #endif  // CHROME_BROWSER_PRINTING_PRINT_DIALOG_CLOUD_H_

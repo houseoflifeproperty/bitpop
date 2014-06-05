@@ -6,10 +6,9 @@
 
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#import "chrome/browser/ui/cocoa/bookmarks/bookmark_cell_single_line.h"
 #include "chrome/browser/ui/cocoa/bookmarks/bookmark_model_observer_for_cocoa.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -80,9 +79,11 @@
 - (void)runAsModalSheet {
   // Ping me when things change out from under us.
   observer_.reset(new BookmarkModelObserverForCocoa(
-                    node_, BookmarkModelFactory::GetForProfile(profile_),
-                    self,
-                    @selector(cancel:)));
+                    BookmarkModelFactory::GetForProfile(profile_),
+                    ^(BOOL nodeWasDeleted) {
+                        [self cancel:nil];
+                    }));
+  observer_->StartObservingNode(node_);
   [NSApp beginSheet:[self window]
      modalForWindow:parentWindow_
       modalDelegate:self

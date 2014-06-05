@@ -21,8 +21,10 @@ from webelement import WebElement
 from remote_connection import RemoteConnection
 from errorhandler import ErrorHandler
 from selenium.common.exceptions import WebDriverException
+from selenium.common.exceptions import InvalidSelectorException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.alert import Alert
+from selenium.webdriver.common.html5.application_cache import ApplicationCache
 
 
 class WebDriver(object):
@@ -642,6 +644,20 @@ class WebDriver(object):
         self.execute(Command.SET_SCRIPT_TIMEOUT,
             {'ms': float(time_to_wait) * 1000})
 
+    def set_page_load_timeout(self, time_to_wait):
+        """
+        Set the amount of time to wait for a page load to complete 
+           before throwing an error.
+
+        :Args:
+         - time_to_wait: The amount of time to wait
+
+        :Usage:
+            driver.set_page_load_timeout(30)
+        """
+        self.execute(Command.SET_TIMEOUTS,
+            {'ms': float(time_to_wait) * 1000, 'type':'page load'})
+
     def find_element(self, by=By.ID, value=None):
         """
         'Private' method used by the find_element_by_* methods.
@@ -649,6 +665,9 @@ class WebDriver(object):
         :Usage:
             Use the corresponding find_element_by_* instead of this.
         """
+        if isinstance(by, tuple) or isinstance(value, int) or value==None:
+            raise InvalidSelectorException("Invalid locator values passed in")
+            
         return self.execute(Command.FIND_ELEMENT,
                              {'using': by, 'value': value})['value']
 
@@ -659,6 +678,9 @@ class WebDriver(object):
         :Usage:
             Use the corresponding find_elements_by_* instead of this.
         """
+        if isinstance(by, tuple) or isinstance(value, int) or value==None:
+            raise InvalidSelectorException("Invalid locator values passed in")
+
         return self.execute(Command.FIND_ELEMENTS,
                              {'using': by, 'value': value})['value']
     @property
@@ -772,3 +794,12 @@ class WebDriver(object):
             self.execute(Command.SET_SCREEN_ORIENTATION, {'orientation': value})['value']
         else:
             raise WebDriverException("You can only set the orientation to 'LANDSCAPE' and 'PORTRAIT'")
+
+    def is_online(self):
+        """ Returns a boolean if the browser is online or offline"""
+        return self.execute(Command.IS_BROWSER_ONLINE)['value']
+
+    @property
+    def application_cache(self):
+        """ Returns a ApplicationCache Object to interact with the browser app cache"""
+        return ApplicationCache(self)

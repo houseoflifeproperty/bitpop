@@ -10,7 +10,7 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "chromeos/chromeos_export.h"
-#include "chromeos/dbus/dbus_client_implementation_type.h"
+#include "chromeos/dbus/dbus_client.h"
 #include "chromeos/dbus/shill_client_helper.h"
 
 namespace base {
@@ -22,7 +22,6 @@ class DictionaryValue;
 
 namespace dbus {
 
-class Bus;
 class ObjectPath;
 
 }  // namespace dbus
@@ -33,7 +32,7 @@ namespace chromeos {
 // service.
 // All methods should be called from the origin thread which initializes the
 // DBusThreadManager instance.
-class CHROMEOS_EXPORT ShillServiceClient {
+class CHROMEOS_EXPORT ShillServiceClient : public DBusClient {
  public:
   typedef ShillClientHelper::PropertyChangedHandler PropertyChangedHandler;
   typedef ShillClientHelper::DictionaryValueCallback DictionaryValueCallback;
@@ -44,25 +43,47 @@ class CHROMEOS_EXPORT ShillServiceClient {
   // GetTestInterface(), only implemented in the stub implementation.
   class TestInterface {
    public:
+    // Adds a Service to the Manager and Service stubs.
     virtual void AddService(const std::string& service_path,
                             const std::string& name,
                             const std::string& type,
-                            const std::string& state) = 0;
+                            const std::string& state,
+                            bool add_to_visible_list,
+                            bool add_to_watch_list) = 0;
+    virtual void AddServiceWithIPConfig(const std::string& service_path,
+                                        const std::string& name,
+                                        const std::string& type,
+                                        const std::string& state,
+                                        const std::string& ipconfig_path,
+                                        bool add_to_visible_list,
+                                        bool add_to_watch_list) = 0;
+
+    // Removes a Service to the Manager and Service stubs.
     virtual void RemoveService(const std::string& service_path) = 0;
-    virtual void SetServiceProperty(const std::string& service_path,
+
+    // Returns false if a Service matching |service_path| does not exist.
+    virtual bool SetServiceProperty(const std::string& service_path,
                                     const std::string& property,
                                     const base::Value& value) = 0;
+
+    // Returns properties for |service_path| or NULL if no Service matches.
+    virtual const base::DictionaryValue* GetServiceProperties(
+        const std::string& service_path) const = 0;
+
+    // Clears all Services from the Manager and Service stubs.
     virtual void ClearServices() = 0;
 
+    virtual void SetConnectBehavior(const std::string& service_path,
+                                    const base::Closure& behavior) = 0;
+
    protected:
-    ~TestInterface() {}
+    virtual ~TestInterface() {}
   };
   virtual ~ShillServiceClient();
 
   // Factory function, creates a new instance which is owned by the caller.
   // For normal usage, access the singleton via DBusThreadManager::Get().
-  static ShillServiceClient* Create(DBusClientImplementationType type,
-                                    dbus::Bus* bus);
+  static ShillServiceClient* Create();
 
   // Adds a property changed |observer| to the service at |service_path|.
   virtual void AddPropertyChangedObserver(
@@ -86,6 +107,13 @@ class CHROMEOS_EXPORT ShillServiceClient {
                            const base::Value& value,
                            const base::Closure& callback,
                            const ErrorCallback& error_callback) = 0;
+
+  // Calls SetProperties method.
+  // |callback| is called after the method call succeeds.
+  virtual void SetProperties(const dbus::ObjectPath& service_path,
+                             const base::DictionaryValue& properties,
+                             const base::Closure& callback,
+                             const ErrorCallback& error_callback) = 0;
 
   // Calls ClearProperty method.
   // |callback| is called after the method call succeeds.
@@ -127,19 +155,25 @@ class CHROMEOS_EXPORT ShillServiceClient {
       const base::Closure& callback,
       const ErrorCallback& error_callback) = 0;
 
-  // DEPRECATED DO NOT USE: Calls ActivateCellularModem method and blocks until
-  // the method call finishes.
-  //
-  // TODO(hashimoto): Refactor CrosActivateCellularModem and remove this method.
-  // crosbug.com/29902
-  virtual bool CallActivateCellularModemAndBlock(
+  // Calls the CompleteCellularActivation method.
+  // |callback| is called after the method call succeeds.
+  virtual void CompleteCellularActivation(
       const dbus::ObjectPath& service_path,
-      const std::string& carrier) = 0;
+      const base::Closure& callback,
+      const ErrorCallback& error_callback) = 0;
+
+  // Calls the GetLoadableProfileEntries method.
+  // |callback| is called after the method call succeeds.
+  virtual void GetLoadableProfileEntries(
+      const dbus::ObjectPath& service_path,
+      const DictionaryValueCallback& callback) = 0;
 
   // Returns an interface for testing (stub only), or returns NULL.
   virtual TestInterface* GetTestInterface() = 0;
 
  protected:
+  friend class ShillServiceClientTest;
+
   // Create() should be used instead.
   ShillServiceClient();
 

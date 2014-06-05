@@ -25,11 +25,17 @@
 #include "avformat.h"
 #include "libavutil/bprint.h"
 
+enum sub_sort {
+    SUB_SORT_TS_POS = 0,    ///< sort by timestamps, then position
+    SUB_SORT_POS_TS,        ///< sort by position, then timestamps
+};
+
 typedef struct {
     AVPacket *subs;         ///< array of subtitles packets
     int nb_subs;            ///< number of subtitles packets
     int allocated_size;     ///< allocated size for subs
     int current_sub_idx;    ///< current position for the read packet callback
+    enum sub_sort sort;     ///< sort method to use when finalizing subtitles
 } FFDemuxSubtitlesQueue;
 
 /**
@@ -55,6 +61,13 @@ void ff_subtitles_queue_finalize(FFDemuxSubtitlesQueue *q);
 int ff_subtitles_queue_read_packet(FFDemuxSubtitlesQueue *q, AVPacket *pkt);
 
 /**
+ * Update current_sub_idx to emulate a seek. Except the first parameter, it
+ * matches AVInputFormat->read_seek2 prototypes.
+ */
+int ff_subtitles_queue_seek(FFDemuxSubtitlesQueue *q, AVFormatContext *s, int stream_index,
+                            int64_t min_ts, int64_t ts, int64_t max_ts, int flags);
+
+/**
  * Remove and destroy all the subtitles packets.
  */
 void ff_subtitles_queue_clean(FFDemuxSubtitlesQueue *q);
@@ -73,5 +86,39 @@ int ff_smil_extract_next_chunk(AVIOContext *pb, AVBPrint *buf, char *c);
  * @param attr the attribute to look for
  */
 const char *ff_smil_get_attr_ptr(const char *s, const char *attr);
+
+/**
+ * @brief Read a subtitles chunk.
+ *
+ * A chunk is defined by a multiline "event", ending with a second line break.
+ * The trailing line breaks are trimmed. CRLF are supported.
+ * Example: "foo\r\nbar\r\n\r\nnext" will print "foo\r\nbar" into buf, and pb
+ * will focus on the 'n' of the "next" string.
+ *
+ * @param pb  I/O context
+ * @param buf an initialized buf where the chunk is written
+ *
+ * @note buf is cleared before writing into it.
+ */
+void ff_subtitles_read_chunk(AVIOContext *pb, AVBPrint *buf);
+
+/**
+ * Get the number of characters to increment to jump to the next line, or to
+ * the end of the string.
+ * The function handles the following line breaks schemes:
+ * LF, CRLF (MS), or standalone CR (old MacOS).
+ */
+static av_always_inline int ff_subtitles_next_line(const char *ptr)
+{
+    int n = strcspn(ptr, "\r\n");
+    ptr += n;
+    if (*ptr == '\r') {
+        ptr++;
+        n++;
+    }
+    if (*ptr == '\n')
+        n++;
+    return n;
+}
 
 #endif /* AVFORMAT_SUBTITLES_H */

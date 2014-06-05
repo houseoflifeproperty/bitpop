@@ -5,11 +5,11 @@
 #include "net/http/http_stream_factory.h"
 
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
-#include "googleurl/src/gurl.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "net/base/host_mapping_rules.h"
 #include "net/base/host_port_pair.h"
+#include "url/gurl.h"
 
 namespace net {
 
@@ -19,7 +19,7 @@ namespace net {
 // static
 std::vector<std::string>* HttpStreamFactory::next_protos_ = NULL;
 // static
-bool HttpStreamFactory::enabled_protocols_[NUM_ALTERNATE_PROTOCOLS];
+bool HttpStreamFactory::enabled_protocols_[NUM_VALID_ALTERNATE_PROTOCOLS];
 // static
 bool HttpStreamFactory::spdy_enabled_ = true;
 // static
@@ -34,6 +34,28 @@ std::list<HostPortPair>* HttpStreamFactory::forced_spdy_exclusions_ = NULL;
 HttpStreamFactory::~HttpStreamFactory() {}
 
 // static
+bool HttpStreamFactory::IsProtocolEnabled(AlternateProtocol protocol) {
+  DCHECK(IsAlternateProtocolValid(protocol));
+  return enabled_protocols_[
+      protocol - ALTERNATE_PROTOCOL_MINIMUM_VALID_VERSION];
+}
+
+// static
+void HttpStreamFactory::SetProtocolEnabled(AlternateProtocol protocol) {
+  DCHECK(IsAlternateProtocolValid(protocol));
+  enabled_protocols_[
+      protocol - ALTERNATE_PROTOCOL_MINIMUM_VALID_VERSION] = true;
+}
+
+// static
+void HttpStreamFactory::ResetEnabledProtocols() {
+  for (int i = ALTERNATE_PROTOCOL_MINIMUM_VALID_VERSION;
+       i <= ALTERNATE_PROTOCOL_MAXIMUM_VALID_VERSION; ++i) {
+    enabled_protocols_[i - ALTERNATE_PROTOCOL_MINIMUM_VALID_VERSION] = false;
+  }
+}
+
+// static
 void HttpStreamFactory::ResetStaticSettingsToInit() {
   // WARNING: These must match the initializers above.
   delete next_protos_;
@@ -44,45 +66,41 @@ void HttpStreamFactory::ResetStaticSettingsToInit() {
   force_spdy_over_ssl_ = true;
   force_spdy_always_ = false;
   forced_spdy_exclusions_ = NULL;
-  for (int i = 0; i < NUM_ALTERNATE_PROTOCOLS; ++i)
-    enabled_protocols_[i] = false;
+  ResetEnabledProtocols();
 }
 
 void HttpStreamFactory::ProcessAlternateProtocol(
-    HttpServerProperties* http_server_properties,
+    const base::WeakPtr<HttpServerProperties>& http_server_properties,
     const std::string& alternate_protocol_str,
     const HostPortPair& http_host_port_pair) {
   std::vector<std::string> port_protocol_vector;
   base::SplitString(alternate_protocol_str, ':', &port_protocol_vector);
   if (port_protocol_vector.size() != 2) {
-    DLOG(WARNING) << kAlternateProtocolHeader
-                  << " header has too many tokens: "
-                  << alternate_protocol_str;
+    DVLOG(1) << kAlternateProtocolHeader
+             << " header has too many tokens: "
+             << alternate_protocol_str;
     return;
   }
 
   int port;
   if (!base::StringToInt(port_protocol_vector[0], &port) ||
       port <= 0 || port >= 1 << 16) {
-    DLOG(WARNING) << kAlternateProtocolHeader
-                  << " header has unrecognizable port: "
-                  << port_protocol_vector[0];
+    DVLOG(1) << kAlternateProtocolHeader
+             << " header has unrecognizable port: "
+             << port_protocol_vector[0];
     return;
   }
 
-  AlternateProtocol protocol = ALTERNATE_PROTOCOL_BROKEN;
-  for (int i = 0; i < NUM_ALTERNATE_PROTOCOLS; ++i) {
-    if (enabled_protocols_[i] &&
-        port_protocol_vector[1] == kAlternateProtocolStrings[i]) {
-      protocol = static_cast<AlternateProtocol>(i);
-    }
+  AlternateProtocol protocol =
+      AlternateProtocolFromString(port_protocol_vector[1]);
+  if (IsAlternateProtocolValid(protocol) && !IsProtocolEnabled(protocol)) {
+    protocol = ALTERNATE_PROTOCOL_BROKEN;
   }
 
   if (protocol == ALTERNATE_PROTOCOL_BROKEN) {
-    // Currently, we only recognize the npn-spdy protocol.
-    DLOG(WARNING) << kAlternateProtocolHeader
-                  << " header has unrecognized protocol: "
-                  << port_protocol_vector[1];
+    DVLOG(1) << kAlternateProtocolHeader
+             << " header has unrecognized protocol: "
+             << port_protocol_vector[1];
     return;
   }
 
@@ -106,12 +124,11 @@ GURL HttpStreamFactory::ApplyHostMappingRules(const GURL& url,
                                               HostPortPair* endpoint) {
   const HostMappingRules* mapping_rules = GetHostMappingRules();
   if (mapping_rules && mapping_rules->RewriteHost(endpoint)) {
-    url_canon::Replacements<char> replacements;
+    url::Replacements<char> replacements;
     const std::string port_str = base::IntToString(endpoint->port());
-    replacements.SetPort(port_str.c_str(),
-                         url_parse::Component(0, port_str.size()));
+    replacements.SetPort(port_str.c_str(), url::Component(0, port_str.size()));
     replacements.SetHost(endpoint->host().c_str(),
-                         url_parse::Component(0, endpoint->host().size()));
+                         url::Component(0, endpoint->host().size()));
     return url.ReplaceComponents(replacements);
   }
   return url;
@@ -139,57 +156,90 @@ bool HttpStreamFactory::HasSpdyExclusion(const HostPortPair& endpoint) {
 }
 
 // static
-void HttpStreamFactory::EnableNpnSpdy() {
-  set_use_alternate_protocols(true);
-  std::vector<std::string> next_protos;
-  next_protos.push_back("http/1.1");
-  next_protos.push_back("spdy/2");
-  SetNextProtos(next_protos);
-}
-
-// static
 void HttpStreamFactory::EnableNpnHttpOnly() {
   // Avoid alternate protocol in this case. Otherwise, browser will try SSL
   // and then fallback to http. This introduces extra load.
   set_use_alternate_protocols(false);
-  std::vector<std::string> next_protos;
-  next_protos.push_back("http/1.1");
-  next_protos.push_back("http1.1");
+  std::vector<NextProto> next_protos;
+  next_protos.push_back(kProtoHTTP11);
   SetNextProtos(next_protos);
 }
 
 // static
 void HttpStreamFactory::EnableNpnSpdy3() {
   set_use_alternate_protocols(true);
-  std::vector<std::string> next_protos;
-  next_protos.push_back("http/1.1");
-  next_protos.push_back("spdy/2");
-  next_protos.push_back("spdy/3");
+  std::vector<NextProto> next_protos;
+  next_protos.push_back(kProtoHTTP11);
+  next_protos.push_back(kProtoQUIC1SPDY3);
+  next_protos.push_back(kProtoSPDY3);
   SetNextProtos(next_protos);
 }
 
 // static
-void HttpStreamFactory::SetNextProtos(const std::vector<std::string>& value) {
+void HttpStreamFactory::EnableNpnSpdy31() {
+  set_use_alternate_protocols(true);
+  std::vector<NextProto> next_protos;
+  next_protos.push_back(kProtoHTTP11);
+  next_protos.push_back(kProtoQUIC1SPDY3);
+  next_protos.push_back(kProtoSPDY3);
+  next_protos.push_back(kProtoSPDY31);
+  SetNextProtos(next_protos);
+}
+
+// static
+void HttpStreamFactory::EnableNpnSpdy31WithSpdy2() {
+  set_use_alternate_protocols(true);
+  std::vector<NextProto> next_protos;
+  next_protos.push_back(kProtoHTTP11);
+  next_protos.push_back(kProtoQUIC1SPDY3);
+  next_protos.push_back(kProtoDeprecatedSPDY2);
+  next_protos.push_back(kProtoSPDY3);
+  next_protos.push_back(kProtoSPDY31);
+  SetNextProtos(next_protos);
+}
+
+// static
+void HttpStreamFactory::EnableNpnSpdy4Http2() {
+  set_use_alternate_protocols(true);
+  std::vector<NextProto> next_protos;
+  next_protos.push_back(kProtoHTTP11);
+  next_protos.push_back(kProtoQUIC1SPDY3);
+  next_protos.push_back(kProtoSPDY3);
+  next_protos.push_back(kProtoSPDY31);
+  next_protos.push_back(kProtoSPDY4);
+  SetNextProtos(next_protos);
+}
+
+// static
+void HttpStreamFactory::SetNextProtos(const std::vector<NextProto>& value) {
   if (!next_protos_)
     next_protos_ = new std::vector<std::string>;
 
-  *next_protos_ = value;
+  next_protos_->clear();
 
-  for (uint32 i = 0; i < NUM_ALTERNATE_PROTOCOLS; ++i)
-    enabled_protocols_[i] = false;
+  ResetEnabledProtocols();
 
-  // TODO(rtenneti): bug 116575 - consider using same strings/enums for SPDY
-  // versions in next_protos and kAlternateProtocolStrings.
+  // TODO(rtenneti): bug 116575 - consider combining the NextProto and
+  // AlternateProtocol.
   for (uint32 i = 0; i < value.size(); ++i) {
-    if (value[i] == "spdy/1") {
-      enabled_protocols_[NPN_SPDY_1] = true;
-    } else if (value[i] == "spdy/2") {
-      enabled_protocols_[NPN_SPDY_2] = true;
-    } else if (value[i] == "spdy/3") {
-      enabled_protocols_[NPN_SPDY_3] = true;
+    NextProto proto = value[i];
+    // Add the protocol to the TLS next protocol list, except for QUIC
+    // since it uses UDP.
+    if (proto != kProtoQUIC1SPDY3) {
+      next_protos_->push_back(SSLClientSocket::NextProtoToString(proto));
+    }
+
+    // Enable the corresponding alternate protocol, except for HTTP
+    // which has not corresponding alternative.
+    if (proto != kProtoHTTP11) {
+      AlternateProtocol alternate = AlternateProtocolFromNextProto(proto);
+      if (!IsAlternateProtocolValid(alternate)) {
+        NOTREACHED() << "Invalid next proto: " << proto;
+        continue;
+      }
+      SetProtocolEnabled(alternate);
     }
   }
-  enabled_protocols_[NPN_SPDY_1] = false;
 }
 
 HttpStreamFactory::HttpStreamFactory() {}

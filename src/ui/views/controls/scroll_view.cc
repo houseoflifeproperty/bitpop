@@ -5,7 +5,7 @@
 #include "ui/views/controls/scroll_view.h"
 
 #include "base/logging.h"
-#include "ui/base/events/event.h"
+#include "ui/events/event.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/scrollbar/native_scroll_bar.h"
@@ -13,29 +13,23 @@
 
 namespace views {
 
-const char* const ScrollView::kViewClassName = "views/ScrollView";
+const char ScrollView::kViewClassName[] = "ScrollView";
 
 namespace {
 
 // Subclass of ScrollView that resets the border when the theme changes.
 class ScrollViewWithBorder : public views::ScrollView {
  public:
-  ScrollViewWithBorder() {
-    SetThemeSpecificState();
-  }
+  ScrollViewWithBorder() {}
 
   // View overrides;
   virtual void OnNativeThemeChanged(const ui::NativeTheme* theme) OVERRIDE {
-    SetThemeSpecificState();
+    SetBorder(Border::CreateSolidBorder(
+        1,
+        theme->GetSystemColor(ui::NativeTheme::kColorId_UnfocusedBorderColor)));
   }
 
  private:
-  void SetThemeSpecificState() {
-    set_border(Border::CreateSolidBorder(
-        1, GetNativeTheme()->GetSystemColor(
-            ui::NativeTheme::kColorId_UnfocusedBorderColor)));
-  }
-
   DISALLOW_COPY_AND_ASSIGN(ScrollViewWithBorder);
 };
 
@@ -84,8 +78,8 @@ class ScrollView::Viewport : public View {
   Viewport() {}
   virtual ~Viewport() {}
 
-  virtual std::string GetClassName() const OVERRIDE {
-    return "views/Viewport";
+  virtual const char* GetClassName() const OVERRIDE {
+    return "ScrollView::Viewport";
   }
 
   virtual void ScrollRectToVisible(const gfx::Rect& rect) OVERRIDE {
@@ -99,7 +93,7 @@ class ScrollView::Viewport : public View {
         scroll_rect);
   }
 
-  void ChildPreferredSizeChanged(View* child) OVERRIDE {
+  virtual void ChildPreferredSizeChanged(View* child) OVERRIDE {
     if (parent())
       parent()->Layout();
   }
@@ -115,7 +109,12 @@ ScrollView::ScrollView()
       header_viewport_(new Viewport()),
       horiz_sb_(new NativeScrollBar(true)),
       vert_sb_(new NativeScrollBar(false)),
-      resize_corner_(NULL) {
+      resize_corner_(NULL),
+      min_height_(-1),
+      max_height_(-1),
+      hide_horizontal_scrollbar_(false) {
+  set_notify_enter_exit_on_child(true);
+
   AddChildView(contents_viewport_);
   AddChildView(header_viewport_);
 
@@ -155,11 +154,13 @@ void ScrollView::SetHeader(View* header) {
 gfx::Rect ScrollView::GetVisibleRect() const {
   if (!contents_)
     return gfx::Rect();
+  return gfx::Rect(-contents_->x(), -contents_->y(),
+                   contents_viewport_->width(), contents_viewport_->height());
+}
 
-  const int x = horiz_sb_->visible() ? horiz_sb_->GetPosition() : 0;
-  const int y = vert_sb_->visible() ? vert_sb_->GetPosition() : 0;
-  return gfx::Rect(x, y, contents_viewport_->width(),
-                   contents_viewport_->height());
+void ScrollView::ClipHeightTo(int min_height, int max_height) {
+  min_height_ = min_height;
+  max_height_ = max_height;
 }
 
 int ScrollView::GetScrollBarWidth() const {
@@ -170,7 +171,56 @@ int ScrollView::GetScrollBarHeight() const {
   return horiz_sb_ ? horiz_sb_->GetLayoutSize() : 0;
 }
 
+void ScrollView::SetHorizontalScrollBar(ScrollBar* horiz_sb) {
+  DCHECK(horiz_sb);
+  horiz_sb->SetVisible(horiz_sb_->visible());
+  delete horiz_sb_;
+  horiz_sb->set_controller(this);
+  horiz_sb_ = horiz_sb;
+}
+
+void ScrollView::SetVerticalScrollBar(ScrollBar* vert_sb) {
+  DCHECK(vert_sb);
+  vert_sb->SetVisible(vert_sb_->visible());
+  delete vert_sb_;
+  vert_sb->set_controller(this);
+  vert_sb_ = vert_sb;
+}
+
+gfx::Size ScrollView::GetPreferredSize() {
+  if (!is_bounded())
+    return View::GetPreferredSize();
+
+  gfx::Size size = contents()->GetPreferredSize();
+  size.SetToMax(gfx::Size(size.width(), min_height_));
+  size.SetToMin(gfx::Size(size.width(), max_height_));
+  gfx::Insets insets = GetInsets();
+  size.Enlarge(insets.width(), insets.height());
+  return size;
+}
+
+int ScrollView::GetHeightForWidth(int width) {
+  if (!is_bounded())
+    return View::GetHeightForWidth(width);
+
+  gfx::Insets insets = GetInsets();
+  width = std::max(0, width - insets.width());
+  int height = contents()->GetHeightForWidth(width) + insets.height();
+  return std::min(std::max(height, min_height_), max_height_);
+}
+
 void ScrollView::Layout() {
+  if (is_bounded()) {
+    int content_width = width();
+    int content_height = contents()->GetHeightForWidth(content_width);
+    if (content_height > height()) {
+      content_width = std::max(content_width - GetScrollBarWidth(), 0);
+      content_height = contents()->GetHeightForWidth(content_width);
+    }
+    if (contents()->bounds().size() != gfx::Size(content_width, content_height))
+      contents()->SetBounds(0, 0, content_width, content_height);
+  }
+
   // Most views will want to auto-fit the available space. Most of them want to
   // use all available width (without overflowing) and only overflow in
   // height. Examples are HistoryView, MostVisitedView, DownloadTabView, etc.
@@ -238,15 +288,17 @@ void ScrollView::Layout() {
   }
 
   if (horiz_sb_required) {
+    int height_offset = horiz_sb_->GetContentOverlapSize();
     horiz_sb_->SetBounds(0,
-                         viewport_bounds.bottom(),
+                         viewport_bounds.bottom() - height_offset,
                          viewport_bounds.right(),
-                         horiz_sb_height);
+                         horiz_sb_height + height_offset);
   }
   if (vert_sb_required) {
-    vert_sb_->SetBounds(viewport_bounds.right(),
+    int width_offset = vert_sb_->GetContentOverlapSize();
+    vert_sb_->SetBounds(viewport_bounds.right() - width_offset,
                         0,
-                        vert_sb_width,
+                        vert_sb_width + width_offset,
                         viewport_bounds.bottom());
   }
   if (resize_corner_required) {
@@ -298,6 +350,20 @@ bool ScrollView::OnMouseWheel(const ui::MouseWheelEvent& e) {
   return processed;
 }
 
+void ScrollView::OnMouseEntered(const ui::MouseEvent& event) {
+  if (horiz_sb_)
+    horiz_sb_->OnMouseEnteredScrollView(event);
+  if (vert_sb_)
+    vert_sb_->OnMouseEnteredScrollView(event);
+}
+
+void ScrollView::OnMouseExited(const ui::MouseEvent& event) {
+  if (horiz_sb_)
+    horiz_sb_->OnMouseExitedScrollView(event);
+  if (vert_sb_)
+    vert_sb_->OnMouseExitedScrollView(event);
+}
+
 void ScrollView::OnGestureEvent(ui::GestureEvent* event) {
   // If the event happened on one of the scrollbars, then those events are
   // sent directly to the scrollbars. Otherwise, only scroll events are sent to
@@ -317,7 +383,7 @@ void ScrollView::OnGestureEvent(ui::GestureEvent* event) {
   }
 }
 
-std::string ScrollView::GetClassName() const {
+const char* ScrollView::GetClassName() const {
   return kViewClassName;
 }
 
@@ -450,6 +516,9 @@ void ScrollView::ComputeScrollBarsVisibility(const gfx::Size& vp_size,
     *horiz_is_shown = true;
     *vert_is_shown = true;
   }
+
+  if (hide_horizontal_scrollbar_)
+    *horiz_is_shown = false;
 }
 
 // Make sure that a single scrollbar is created and visible as needed

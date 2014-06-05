@@ -14,6 +14,7 @@ a zip archive for all of the above is produced.
 # Python 2.5 compatibility
 from __future__ import with_statement
 
+import io
 import os
 import platform
 import re
@@ -55,17 +56,38 @@ def createZip(zip_path, directory):
   zip.close()
 
 
-def buildWebApp(buildtype, version, mimetype, destination, zip_path, plugin,
-                files, locales):
+def replaceString(destination, placeholder, value):
+  findAndReplace(os.path.join(destination, 'plugin_settings.js'),
+                 "'" + placeholder + "'", "'" + value + "'")
+
+
+def processJinjaTemplate(input_file, output_file, context):
+  jinja2_path = os.path.normpath(
+      os.path.join(os.path.abspath(__file__),
+                   '../../../third_party/jinja2'))
+  sys.path.append(os.path.split(jinja2_path)[0])
+  import jinja2
+  (template_path, template_name) = os.path.split(input_file)
+  env = jinja2.Environment(loader=jinja2.FileSystemLoader(template_path))
+  template = env.get_template(template_name)
+  rendered = template.render(context)
+  io.open(output_file, 'w', encoding='utf-8').write(rendered)
+
+
+
+def buildWebApp(buildtype, version, mimetype, destination, zip_path,
+                manifest_template, webapp_type, plugin, files, locales):
   """Does the main work of building the webapp directory and zipfile.
 
   Args:
-    buildtype: the type of build ("Official" or "Dev")
+    buildtype: the type of build ("Official" or "Dev").
     mimetype: A string with mimetype of plugin.
     destination: A string with path to directory where the webapp will be
                  written.
     zipfile: A string with path to the zipfile to create containing the
              contents of |destination|.
+    manifest_template: jinja2 template file for manifest.
+    webapp_type: webapp type ("v1", "v2" or "v2_pnacl").
     plugin: A string with path to the binary plugin for this webapp.
     files: An array of strings listing the paths for resources to include
            in this webapp.
@@ -111,21 +133,23 @@ def buildWebApp(buildtype, version, mimetype, destination, zip_path, plugin,
   # Copy all the locales, preserving directory structure
   destination_locales = os.path.join(destination, "_locales")
   os.mkdir(destination_locales , 0775)
-  locale_dir = "/_locales/"
+  remoting_locales = os.path.join(destination, "remoting_locales")
+  os.mkdir(remoting_locales , 0775)
   for current_locale in locales:
-    pos = current_locale.find(locale_dir)
-    if (pos == -1):
-      raise Exception("Missing locales directory in " + current_locale)
-    subtree = current_locale[pos + len(locale_dir):]
-    pos = subtree.find("/")
-    if (pos == -1):
-      raise Exception("Malformed locale: " + current_locale)
-    locale_id = subtree[:pos]
-    messages = subtree[pos+1:]
-    destination_dir = os.path.join(destination_locales, locale_id)
-    destination_file = os.path.join(destination_dir, messages)
-    os.mkdir(destination_dir, 0775)
-    shutil.copy2(current_locale, destination_file)
+    extension = os.path.splitext(current_locale)[1]
+    if extension == '.json':
+      locale_id = os.path.split(os.path.split(current_locale)[0])[1]
+      destination_dir = os.path.join(destination_locales, locale_id)
+      destination_file = os.path.join(destination_dir,
+                                      os.path.split(current_locale)[1])
+      os.mkdir(destination_dir, 0775)
+      shutil.copy2(current_locale, destination_file)
+    elif extension == '.pak':
+      destination_file = os.path.join(remoting_locales,
+                                      os.path.split(current_locale)[1])
+      shutil.copy2(current_locale, destination_file)
+    else:
+      raise Exception("Unknown extension: " + current_locale);
 
   # Create fake plugin files to appease the manifest checker.
   # It requires that if there is a plugin listed in the manifest that
@@ -155,75 +179,149 @@ def buildWebApp(buildtype, version, mimetype, destination, zip_path, plugin,
     else:
       shutil.copy2(plugin, newPluginPath)
 
-  # Strip the linux build.
-  if ((platform.system() == 'Linux') and (buildtype == 'Official')):
-    subprocess.call(["strip", newPluginPath])
-
-  # Set the version number in the manifest version.
-  findAndReplace(os.path.join(destination, 'manifest.json'),
-                 'FULL_APP_VERSION',
-                 version)
+    # Strip the linux build.
+    if ((platform.system() == 'Linux') and (buildtype == 'Official')):
+      subprocess.call(["strip", newPluginPath])
 
   # Set the correct mimetype.
+  hostPluginMimeType = os.environ.get(
+      'HOST_PLUGIN_MIMETYPE', 'application/vnd.chromium.remoting-host')
   findAndReplace(os.path.join(destination, 'plugin_settings.js'),
-                 'HOST_PLUGIN_MIMETYPE',
-                 mimetype)
+                 'HOST_PLUGIN_MIMETYPE', hostPluginMimeType)
+
+  # Allow host names for google services/apis to be overriden via env vars.
+  oauth2AccountsHost = os.environ.get(
+      'OAUTH2_ACCOUNTS_HOST', 'https://accounts.google.com')
+  oauth2ApiHost = os.environ.get(
+      'OAUTH2_API_HOST', 'https://www.googleapis.com')
+  directoryApiHost = os.environ.get(
+      'DIRECTORY_API_HOST', 'https://www.googleapis.com')
+  oauth2BaseUrl = oauth2AccountsHost + '/o/oauth2'
+  oauth2ApiBaseUrl = oauth2ApiHost + '/oauth2'
+  directoryApiBaseUrl = directoryApiHost + '/chromoting/v1'
+  replaceString(destination, 'OAUTH2_BASE_URL', oauth2BaseUrl)
+  replaceString(destination, 'OAUTH2_API_BASE_URL', oauth2ApiBaseUrl)
+  replaceString(destination, 'DIRECTORY_API_BASE_URL', directoryApiBaseUrl)
+  # Substitute hosts in the manifest's CSP list.
+  # Ensure we list the API host only once if it's the same for multiple APIs.
+  googleApiHosts = ' '.join(set([oauth2ApiHost, directoryApiHost]))
+
+  # WCS and the OAuth trampoline are both hosted on talkgadget. Split them into
+  # separate suffix/prefix variables to allow for wildcards in manifest.json.
+  talkGadgetHostSuffix = os.environ.get(
+      'TALK_GADGET_HOST_SUFFIX', 'talkgadget.google.com')
+  talkGadgetHostPrefix = os.environ.get(
+      'TALK_GADGET_HOST_PREFIX', 'https://chromoting-client.')
+  oauth2RedirectHostPrefix = os.environ.get(
+      'OAUTH2_REDIRECT_HOST_PREFIX', 'https://chromoting-oauth.')
+
+  # Use a wildcard in the manifest.json host specs if the prefixes differ.
+  talkGadgetHostJs = talkGadgetHostPrefix + talkGadgetHostSuffix
+  talkGadgetBaseUrl = talkGadgetHostJs + '/talkgadget/'
+  if talkGadgetHostPrefix == oauth2RedirectHostPrefix:
+    talkGadgetHostJson = talkGadgetHostJs
+  else:
+    talkGadgetHostJson = 'https://*.' + talkGadgetHostSuffix
 
   # Set the correct OAuth2 redirect URL.
-  scheme = 'https://'
-  urlSuffix = '.talkgadget.google.com/talkgadget/oauth/chrome-remote-desktop'
-  url = scheme + 'chromoting-oauth' + urlSuffix
-  urlPattern = scheme + '*' + urlSuffix
-  if (buildtype == 'Official'):
-    oauth2RedirectUrlJs = (
-        "'" + url + "/rel/' + chrome.i18n.getMessage('@@extension_id')")
-    oauth2RedirectUrlJson = urlPattern + '/rel/*'
+  oauth2RedirectHostJs = oauth2RedirectHostPrefix + talkGadgetHostSuffix
+  oauth2RedirectHostJson = talkGadgetHostJson
+  oauth2RedirectPath = '/talkgadget/oauth/chrome-remote-desktop'
+  oauth2RedirectBaseUrlJs = oauth2RedirectHostJs + oauth2RedirectPath
+  oauth2RedirectBaseUrlJson = oauth2RedirectHostJson + oauth2RedirectPath
+  if buildtype == 'Official':
+    oauth2RedirectUrlJs = ("'" + oauth2RedirectBaseUrlJs +
+                           "/rel/' + chrome.i18n.getMessage('@@extension_id')")
+    oauth2RedirectUrlJson = oauth2RedirectBaseUrlJson + '/rel/*'
   else:
-    oauth2RedirectUrlJs = "'" + url + "/dev'"
-    oauth2RedirectUrlJson = urlPattern  + '/dev*'
+    oauth2RedirectUrlJs = "'" + oauth2RedirectBaseUrlJs + "/dev'"
+    oauth2RedirectUrlJson = oauth2RedirectBaseUrlJson + '/dev*'
+  thirdPartyAuthUrlJs = oauth2RedirectBaseUrlJs + "/thirdpartyauth"
+  thirdPartyAuthUrlJson = oauth2RedirectBaseUrlJson + '/thirdpartyauth*'
+  replaceString(destination, "TALK_GADGET_URL", talkGadgetBaseUrl)
   findAndReplace(os.path.join(destination, 'plugin_settings.js'),
-                 "'OAUTH2_REDIRECT_URL'",
-                 oauth2RedirectUrlJs)
-  findAndReplace(os.path.join(destination, 'manifest.json'),
-                 "OAUTH2_REDIRECT_URL",
-                 oauth2RedirectUrlJson)
+                 "'OAUTH2_REDIRECT_URL'", oauth2RedirectUrlJs)
+
+  # Configure xmpp server and directory bot settings in the plugin.
+  xmppServerAddress = os.environ.get(
+      'XMPP_SERVER_ADDRESS', 'talk.google.com:5222')
+  xmppServerUseTls = os.environ.get('XMPP_SERVER_USE_TLS', 'true')
+  directoryBotJid = os.environ.get(
+      'DIRECTORY_BOT_JID', 'remoting@bot.talk.google.com')
+
+  findAndReplace(os.path.join(destination, 'plugin_settings.js'),
+                 "Boolean('XMPP_SERVER_USE_TLS')", xmppServerUseTls)
+  replaceString(destination, "XMPP_SERVER_ADDRESS", xmppServerAddress)
+  replaceString(destination, "DIRECTORY_BOT_JID", directoryBotJid)
+  replaceString(destination, "THIRD_PARTY_AUTH_REDIRECT_URL",
+                thirdPartyAuthUrlJs)
 
   # Set the correct API keys.
+  # For overriding the client ID/secret via env vars, see google_api_keys.py.
   apiClientId = google_api_keys.GetClientID('REMOTING')
   apiClientSecret = google_api_keys.GetClientSecret('REMOTING')
+  apiClientIdV2 = google_api_keys.GetClientID('REMOTING_IDENTITY_API')
 
-  findAndReplace(os.path.join(destination, 'plugin_settings.js'),
-                 "'API_CLIENT_ID'",
-                 "'" + apiClientId + "'")
-  findAndReplace(os.path.join(destination, 'plugin_settings.js'),
-                 "'API_CLIENT_SECRET'",
-                 "'" + apiClientSecret + "'")
+  replaceString(destination, "API_CLIENT_ID", apiClientId)
+  replaceString(destination, "API_CLIENT_SECRET", apiClientSecret)
+
+  # Use a consistent extension id for unofficial builds.
+  if buildtype != 'Official':
+    manifestKey = '"key": "remotingdevbuild",'
+  else:
+    manifestKey = ''
+
+  # Generate manifest.
+  context = {
+    'webapp_type': webapp_type,
+    'FULL_APP_VERSION': version,
+    'MANIFEST_KEY_FOR_UNOFFICIAL_BUILD': manifestKey,
+    'OAUTH2_REDIRECT_URL': oauth2RedirectUrlJson,
+    'TALK_GADGET_HOST': talkGadgetHostJson,
+    'THIRD_PARTY_AUTH_REDIRECT_URL': thirdPartyAuthUrlJson,
+    'REMOTING_IDENTITY_API_CLIENT_ID': apiClientIdV2,
+    'OAUTH2_BASE_URL': oauth2BaseUrl,
+    'OAUTH2_API_BASE_URL': oauth2ApiBaseUrl,
+    'DIRECTORY_API_BASE_URL': directoryApiBaseUrl,
+    'OAUTH2_ACCOUNTS_HOST': oauth2AccountsHost,
+    'GOOGLE_API_HOSTS': googleApiHosts,
+  }
+  processJinjaTemplate(manifest_template,
+                       os.path.join(destination, 'manifest.json'),
+                       context)
 
   # Make the zipfile.
   createZip(zip_path, destination)
 
+  return 0
+
 
 def main():
-  if len(sys.argv) < 7:
+  if len(sys.argv) < 6:
     print ('Usage: build-webapp.py '
-           '<build-type> <version> <mime-type> <dst> <zip-path> <plugin> '
-           '<other files...> --locales <locales...>')
+           '<build-type> <version> <mime-type> <dst> <zip-path> '
+           '<manifest_template> <webapp_type> <other files...> '
+           '[--plugin <plugin>] [--locales <locales...>]')
     return 1
 
-  reading_locales = False
+  arg_type = ''
   files = []
   locales = []
-  for arg in sys.argv[7:]:
-    if arg == "--locales":
-      reading_locales = True;
-    elif reading_locales:
+  plugin = ""
+  for arg in sys.argv[8:]:
+    if arg in ['--locales', '--plugin']:
+      arg_type = arg
+    elif arg_type == '--locales':
       locales.append(arg)
+    elif arg_type == '--plugin':
+      plugin = arg
+      arg_type = ''
     else:
       files.append(arg)
 
-  buildWebApp(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5],
-              sys.argv[6], files, locales)
-  return 0
+  return buildWebApp(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4],
+                     sys.argv[5], sys.argv[6], sys.argv[7], plugin,
+                     files, locales)
 
 
 if __name__ == '__main__':

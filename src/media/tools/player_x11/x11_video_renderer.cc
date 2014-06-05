@@ -10,13 +10,13 @@
 #include <X11/extensions/Xcomposite.h>
 
 #include "base/bind.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "media/base/video_frame.h"
 #include "media/base/yuv_convert.h"
 
 // Creates a 32-bit XImage.
 static XImage* CreateImage(Display* display, int width, int height) {
-  LOG(INFO) << "Allocating XImage " << width << "x" << height;
+  VLOG(0) << "Allocating XImage " << width << "x" << height;
   return  XCreateImage(display,
                        DefaultVisual(display, DefaultScreen(display)),
                        DefaultDepth(display, DefaultScreen(display)),
@@ -83,7 +83,8 @@ X11VideoRenderer::~X11VideoRenderer() {
     XRenderFreePicture(display_, picture_);
 }
 
-void X11VideoRenderer::Paint(media::VideoFrame* video_frame) {
+void X11VideoRenderer::Paint(
+    const scoped_refptr<media::VideoFrame>& video_frame) {
   if (!image_)
     Initialize(video_frame->coded_size(), video_frame->visible_rect());
 
@@ -100,14 +101,16 @@ void X11VideoRenderer::Paint(media::VideoFrame* video_frame) {
 
   // Convert YUV frame to RGB.
   DCHECK(video_frame->format() == media::VideoFrame::YV12 ||
+         video_frame->format() == media::VideoFrame::I420 ||
          video_frame->format() == media::VideoFrame::YV16);
   DCHECK(video_frame->stride(media::VideoFrame::kUPlane) ==
          video_frame->stride(media::VideoFrame::kVPlane));
 
   DCHECK(image_->data);
-  media::YUVType yuv_type =
-      (video_frame->format() == media::VideoFrame::YV12) ?
-      media::YV12 : media::YV16;
+  media::YUVType yuv_type = (video_frame->format() == media::VideoFrame::YV12 ||
+                             video_frame->format() == media::VideoFrame::I420)
+                                ? media::YV12
+                                : media::YV16;
   media::ConvertYUVToRGB32(video_frame->data(media::VideoFrame::kYPlane),
                            video_frame->data(media::VideoFrame::kUPlane),
                            video_frame->data(media::VideoFrame::kVPlane),
@@ -181,7 +184,7 @@ void X11VideoRenderer::Paint(media::VideoFrame* video_frame) {
 void X11VideoRenderer::Initialize(gfx::Size coded_size,
                                   gfx::Rect visible_rect) {
   CHECK(!image_);
-  LOG(INFO) << "Initializing X11 Renderer...";
+  VLOG(0) << "Initializing X11 Renderer...";
 
   // Resize the window to fit that of the video.
   XResizeWindow(display_, window_, visible_rect.width(), visible_rect.height());
@@ -194,7 +197,7 @@ void X11VideoRenderer::Initialize(gfx::Size coded_size,
   use_render_ = XRenderQueryExtension(display_, &dummy, &dummy);
 
   if (use_render_) {
-    LOG(INFO) << "Using XRender extension.";
+    VLOG(0) << "Using XRender extension.";
 
     // If we are using XRender, we'll create a picture representing the
     // window.

@@ -6,8 +6,8 @@
 
 namespace content {
 
-TEST_F(RenderWidgetTest, OnMsgPaintAtSize) {
-  TestResizeAndPaint();
+TEST_F(RenderWidgetTest, OnResize) {
+  TestOnResize();
 }
 
 }  // namespace content

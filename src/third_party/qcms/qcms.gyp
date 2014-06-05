@@ -7,7 +7,7 @@
     {
       'target_name': 'qcms',
       'product_name': 'qcms',
-      'type': '<(library)',
+      'type': 'static_library',
       'sources': [
         'src/chain.c',
         'src/chain.h',
@@ -30,27 +30,27 @@
       # removed on next roll.
       'msvs_disabled_warnings': [ 4018 ],
 
-      'variables': {
-        'conditions': [
-          # For x86, turn off SSE2 for non-CrOS *nix Chrome builds.
-          ['disable_sse2==1 or \
-            (branding=="Chrome" and target_arch=="ia32" and \
-             os_posix==1 and OS!="mac" and chromeos==0)', {
-            'qcms_use_sse': 0,
-          }, {
-            'qcms_use_sse': 1,
-          }],
-        ],
-      },
-
       'conditions': [
-        [ 'qcms_use_sse==1', {
+        ['target_arch=="ia32" or target_arch=="x64"', {
           'defines': [
             'SSE2_ENABLE',
           ],
           'sources': [
             'src/transform-sse1.c',
             'src/transform-sse2.c',
+          ],
+        }],
+        # QCMS assumes this target isn't compiled since MSVC x64 doesn't support
+        # the MMX intrinsics present in the SSE1 code.
+        ['OS=="win" and target_arch=="x64"', {
+          'sources!': [
+            'src/transform-sse1.c',
+          ],
+        }],
+        ['OS == "win" and (MSVS_VERSION == "2013" or MSVS_VERSION == "2013e")', {
+          'msvs_disabled_warnings': [
+            4056,  # overflow in floating-point constant arithmetic (INFINITY)
+            4756,  # overflow in constant arithmetic (INFINITY)
           ],
         }],
       ],

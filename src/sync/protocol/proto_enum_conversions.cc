@@ -20,6 +20,20 @@ namespace syncer {
 #define ENUM_CASE(enum_parent, enum_value)              \
   case enum_parent::enum_value: return #enum_value
 
+const char* GetAppListItemTypeString(
+    sync_pb::AppListSpecifics::AppListItemType item_type) {
+  ASSERT_ENUM_BOUNDS(sync_pb::AppListSpecifics, AppListItemType,
+                     TYPE_APP, TYPE_URL);
+  switch (item_type) {
+    ENUM_CASE(sync_pb::AppListSpecifics, TYPE_APP);
+    ENUM_CASE(sync_pb::AppListSpecifics, TYPE_REMOVE_DEFAULT_APP);
+    ENUM_CASE(sync_pb::AppListSpecifics, TYPE_FOLDER);
+    ENUM_CASE(sync_pb::AppListSpecifics, TYPE_URL);
+  }
+  NOTREACHED();
+  return "";
+}
+
 const char* GetBrowserTypeString(
     sync_pb::SessionWindow::BrowserType browser_type) {
   ASSERT_ENUM_BOUNDS(sync_pb::SessionWindow, BrowserType,
@@ -69,7 +83,7 @@ const char* GetPageTransitionRedirectTypeString(
 const char* GetUpdatesSourceString(
     sync_pb::GetUpdatesCallerInfo::GetUpdatesSource updates_source) {
   ASSERT_ENUM_BOUNDS(sync_pb::GetUpdatesCallerInfo, GetUpdatesSource,
-                     UNKNOWN, DATATYPE_REFRESH);
+                     UNKNOWN, RETRY);
   switch (updates_source) {
     ENUM_CASE(sync_pb::GetUpdatesCallerInfo, UNKNOWN);
     ENUM_CASE(sync_pb::GetUpdatesCallerInfo, FIRST_UPDATE);
@@ -82,6 +96,25 @@ const char* GetUpdatesSourceString(
     ENUM_CASE(sync_pb::GetUpdatesCallerInfo, NEW_CLIENT);
     ENUM_CASE(sync_pb::GetUpdatesCallerInfo, RECONFIGURATION);
     ENUM_CASE(sync_pb::GetUpdatesCallerInfo, DATATYPE_REFRESH);
+    ENUM_CASE(sync_pb::GetUpdatesCallerInfo, RETRY);
+  }
+  NOTREACHED();
+  return "";
+}
+
+const char* GetUpdatesOriginString(
+    sync_pb::SyncEnums::GetUpdatesOrigin origin) {
+  ASSERT_ENUM_BOUNDS(sync_pb::SyncEnums, GetUpdatesOrigin,
+                     UNKNOWN_ORIGIN, RETRY);
+  switch (origin) {
+    ENUM_CASE(sync_pb::SyncEnums, UNKNOWN_ORIGIN);
+    ENUM_CASE(sync_pb::SyncEnums, PERIODIC);
+    ENUM_CASE(sync_pb::SyncEnums, NEWLY_SUPPORTED_DATATYPE);
+    ENUM_CASE(sync_pb::SyncEnums, MIGRATION);
+    ENUM_CASE(sync_pb::SyncEnums, NEW_CLIENT);
+    ENUM_CASE(sync_pb::SyncEnums, RECONFIGURATION);
+    ENUM_CASE(sync_pb::SyncEnums, GU_TRIGGER);
+    ENUM_CASE(sync_pb::SyncEnums, RETRY);
   }
   NOTREACHED();
   return "";
@@ -116,6 +149,8 @@ const char* GetErrorTypeString(sync_pb::SyncEnums::ErrorType error_type) {
     ENUM_CASE(sync_pb::SyncEnums, CLEAR_PENDING);
     ENUM_CASE(sync_pb::SyncEnums, TRANSIENT_ERROR);
     ENUM_CASE(sync_pb::SyncEnums, MIGRATION_DONE);
+    ENUM_CASE(sync_pb::SyncEnums, DISABLED_BY_ADMIN);
+    ENUM_CASE(sync_pb::SyncEnums, USER_ROLLBACK);
     ENUM_CASE(sync_pb::SyncEnums, UNKNOWN);
   }
   NOTREACHED();
@@ -136,6 +171,18 @@ const char* GetActionString(sync_pb::SyncEnums::Action action) {
   NOTREACHED();
   return "";
 
+}
+
+const char* GetLaunchTypeString(sync_pb::AppSpecifics::LaunchType launch_type) {
+  ASSERT_ENUM_BOUNDS(sync_pb::AppSpecifics, LaunchType, PINNED, WINDOW);
+  switch (launch_type) {
+    ENUM_CASE(sync_pb::AppSpecifics, PINNED);
+    ENUM_CASE(sync_pb::AppSpecifics, REGULAR);
+    ENUM_CASE(sync_pb::AppSpecifics, FULLSCREEN);
+    ENUM_CASE(sync_pb::AppSpecifics, WINDOW);
+  }
+  NOTREACHED();
+  return "";
 }
 
 const char* GetDeviceTypeString(
@@ -179,24 +226,36 @@ const char* PassphraseTypeString(
   return "";
 }
 
-const char* SingletonEventTypeString(
-    sync_pb::DebugEventInfo::SingletonEventType type) {
-  ASSERT_ENUM_BOUNDS(sync_pb::DebugEventInfo, SingletonEventType,
+const char* SingletonDebugEventTypeString(
+    sync_pb::SyncEnums::SingletonDebugEventType type) {
+  ASSERT_ENUM_BOUNDS(sync_pb::SyncEnums, SingletonDebugEventType,
                      CONNECTION_STATUS_CHANGE, BOOTSTRAP_TOKEN_UPDATED);
   switch (type) {
-    ENUM_CASE(sync_pb::DebugEventInfo, CONNECTION_STATUS_CHANGE);
-    ENUM_CASE(sync_pb::DebugEventInfo, UPDATED_TOKEN);
-    ENUM_CASE(sync_pb::DebugEventInfo, PASSPHRASE_REQUIRED);
-    ENUM_CASE(sync_pb::DebugEventInfo, PASSPHRASE_ACCEPTED);
-    ENUM_CASE(sync_pb::DebugEventInfo, INITIALIZATION_COMPLETE);
-    ENUM_CASE(sync_pb::DebugEventInfo, STOP_SYNCING_PERMANENTLY);
-    ENUM_CASE(sync_pb::DebugEventInfo, ENCRYPTION_COMPLETE);
-    ENUM_CASE(sync_pb::DebugEventInfo, ACTIONABLE_ERROR);
-    ENUM_CASE(sync_pb::DebugEventInfo, ENCRYPTED_TYPES_CHANGED);
-    ENUM_CASE(sync_pb::DebugEventInfo, PASSPHRASE_TYPE_CHANGED);
-    ENUM_CASE(sync_pb::DebugEventInfo, KEYSTORE_TOKEN_UPDATED);
-    ENUM_CASE(sync_pb::DebugEventInfo, CONFIGURE_COMPLETE);
-    ENUM_CASE(sync_pb::DebugEventInfo, BOOTSTRAP_TOKEN_UPDATED);
+    ENUM_CASE(sync_pb::SyncEnums, CONNECTION_STATUS_CHANGE);
+    ENUM_CASE(sync_pb::SyncEnums, UPDATED_TOKEN);
+    ENUM_CASE(sync_pb::SyncEnums, PASSPHRASE_REQUIRED);
+    ENUM_CASE(sync_pb::SyncEnums, PASSPHRASE_ACCEPTED);
+    ENUM_CASE(sync_pb::SyncEnums, INITIALIZATION_COMPLETE);
+    ENUM_CASE(sync_pb::SyncEnums, STOP_SYNCING_PERMANENTLY);
+    ENUM_CASE(sync_pb::SyncEnums, ENCRYPTION_COMPLETE);
+    ENUM_CASE(sync_pb::SyncEnums, ACTIONABLE_ERROR);
+    ENUM_CASE(sync_pb::SyncEnums, ENCRYPTED_TYPES_CHANGED);
+    ENUM_CASE(sync_pb::SyncEnums, PASSPHRASE_TYPE_CHANGED);
+    ENUM_CASE(sync_pb::SyncEnums, KEYSTORE_TOKEN_UPDATED);
+    ENUM_CASE(sync_pb::SyncEnums, CONFIGURE_COMPLETE);
+    ENUM_CASE(sync_pb::SyncEnums, BOOTSTRAP_TOKEN_UPDATED);
+  }
+  NOTREACHED();
+  return "";
+}
+
+const char* GetBlockedStateString(
+    sync_pb::TabNavigation::BlockedState state) {
+  ASSERT_ENUM_BOUNDS(sync_pb::TabNavigation, BlockedState,
+                     STATE_ALLOWED, STATE_BLOCKED);
+  switch (state) {
+    ENUM_CASE(sync_pb::TabNavigation, STATE_ALLOWED);
+    ENUM_CASE(sync_pb::TabNavigation, STATE_BLOCKED);
   }
   NOTREACHED();
   return "";

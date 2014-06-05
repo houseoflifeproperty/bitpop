@@ -48,6 +48,22 @@ void ResourceHost::SendReply(const ReplyMessageContext& context,
   host_->SendReply(context, msg);
 }
 
+bool ResourceHost::IsFileRefHost() {
+  return false;
+}
+
+bool ResourceHost::IsFileSystemHost() {
+  return false;
+}
+
+bool ResourceHost::IsMediaStreamVideoTrackHost() {
+  return false;
+}
+
+bool ResourceHost::IsGraphics2DHost() {
+  return false;
+}
+
 void ResourceHost::AddFilter(scoped_refptr<ResourceMessageFilter> filter) {
   message_filters_.push_back(filter);
   filter->OnFilterAdded(this);

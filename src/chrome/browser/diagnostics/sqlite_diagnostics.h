@@ -7,23 +7,34 @@
 
 #include "chrome/browser/diagnostics/diagnostics_test.h"
 
-namespace sql {
-  class ErrorDelegate;
-}
+namespace diagnostics {
 
-// The following three factories create the error handlers that we use when
-// issuing sqlite commands during normal browser operation.
-sql::ErrorDelegate* GetErrorHandlerForThumbnailDb();
-sql::ErrorDelegate* GetErrorHandlerForTextDb();
-sql::ErrorDelegate* GetErrorHandlerForWebDb();
+enum SQLiteIntegrityOutcomeCode {
+  DIAG_SQLITE_SUCCESS,
+  DIAG_SQLITE_FILE_NOT_FOUND_OK,
+  DIAG_SQLITE_FILE_NOT_FOUND,
+  DIAG_SQLITE_ERROR_HANDLER_CALLED,
+  DIAG_SQLITE_CANNOT_OPEN_DB,
+  DIAG_SQLITE_DB_LOCKED,
+  DIAG_SQLITE_PRAGMA_FAILED,
+  DIAG_SQLITE_DB_CORRUPTED
+};
 
-// Factories for the db integrity tests we run in diagnostic mode.
-DiagnosticTest* MakeSqliteWebDbTest();
-DiagnosticTest* MakeSqliteCookiesDbTest();
-DiagnosticTest* MakeSqliteHistoryDbTest();
-DiagnosticTest* MakeSqliteArchivedHistoryDbTest();
-DiagnosticTest* MakeSqliteThumbnailsDbTest();
-DiagnosticTest* MakeSqliteAppCacheDbTest();
-DiagnosticTest* MakeSqliteWebDatabaseTrackerDbTest();
+// Factories for the database integrity tests we run in diagnostic mode.
+DiagnosticsTest* MakeSqliteAppCacheDbTest();
+DiagnosticsTest* MakeSqliteArchivedHistoryDbTest();
+DiagnosticsTest* MakeSqliteCookiesDbTest();
+DiagnosticsTest* MakeSqliteHistoryDbTest();
+DiagnosticsTest* MakeSqliteThumbnailsDbTest();
+
+#if defined(OS_CHROMEOS)
+DiagnosticsTest* MakeSqliteNssCertDbTest();
+DiagnosticsTest* MakeSqliteNssKeyDbTest();
+#endif  // defined(OS_CHROMEOS)
+
+DiagnosticsTest* MakeSqliteWebDatabaseTrackerDbTest();
+DiagnosticsTest* MakeSqliteWebDataDbTest();
+
+}  // namespace diagnostics
 
 #endif  // CHROME_BROWSER_DIAGNOSTICS_SQLITE_DIAGNOSTICS_H_

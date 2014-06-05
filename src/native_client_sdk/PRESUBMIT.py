@@ -21,6 +21,8 @@ def CommonChecks(input_api, output_api):
   black_list = [
     r'src[\\\/]build_tools[\\\/]tests[\\\/].*',
     r'src[\\\/]build_tools[\\\/]sdk_tools[\\\/]third_party[\\\/].*',
+    r'src[\\\/]doc[\\\/]*',
+    r'src[\\\/]gonacl_appengine[\\\/]*',
   ]
   canned = input_api.canned_checks
   output.extend(canned.RunPylint(input_api, output_api, black_list=black_list,
@@ -36,5 +38,14 @@ def CheckChangeOnCommit(input_api, output_api):
   return CommonChecks(input_api, output_api)
 
 
-def GetPreferredTrySlaves(project, change):
-  return ['linux_nacl_sdk', 'win_nacl_sdk', 'mac_nacl_sdk']
+def GetPreferredTryMasters(project, change):
+  return {
+    'tryserver.chromium': {
+      'linux_nacl_sdk': set(['defaulttests']),
+      'linux_nacl_sdk_build': set(['defaulttests']),
+      'win_nacl_sdk': set(['defaulttests']),
+      'win_nacl_sdk_build': set(['defaulttests']),
+      'mac_nacl_sdk': set(['defaulttests']),
+      'mac_nacl_sdk_build': set(['defaulttests']),
+    }
+  }

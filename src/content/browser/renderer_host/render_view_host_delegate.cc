@@ -4,17 +4,12 @@
 
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 
-#include "googleurl/src/gurl.h"
-#include "webkit/glue/webpreferences.h"
+#include "url/gurl.h"
+#include "webkit/common/webpreferences.h"
 
 namespace content {
 
 RenderViewHostDelegateView* RenderViewHostDelegate::GetDelegateView() {
-  return NULL;
-}
-
-RenderViewHostDelegate::RendererManagement*
-RenderViewHostDelegate::GetRendererManagementDelegate() {
   return NULL;
 }
 
@@ -23,25 +18,28 @@ bool RenderViewHostDelegate::OnMessageReceived(RenderViewHost* render_view_host,
   return false;
 }
 
-bool RenderViewHostDelegate::AddMessageToConsole(
-    int32 level, const string16& message, int32 line_no,
-    const string16& source_id) {
-  return false;
-}
-
-const GURL& RenderViewHostDelegate::GetURL() const {
-  return GURL::EmptyGURL();
-}
-
 WebContents* RenderViewHostDelegate::GetAsWebContents() {
   return NULL;
 }
 
-webkit_glue::WebPreferences RenderViewHostDelegate::GetWebkitPrefs() {
-  return webkit_glue::WebPreferences();
+WebPreferences RenderViewHostDelegate::GetWebkitPrefs() {
+  return WebPreferences();
 }
 
 bool RenderViewHostDelegate::IsFullscreenForCurrentTab() const {
+  return false;
+}
+
+SessionStorageNamespace* RenderViewHostDelegate::GetSessionStorageNamespace(
+    SiteInstance* instance) {
+  return NULL;
+}
+
+FrameTree* RenderViewHostDelegate::GetFrameTree() {
+  return NULL;
+}
+
+bool RenderViewHostDelegate::IsNeverVisible() {
   return false;
 }
 

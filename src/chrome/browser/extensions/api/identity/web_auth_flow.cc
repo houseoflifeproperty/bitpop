@@ -4,216 +4,241 @@
 
 #include "chrome/browser/extensions/api/identity/web_auth_flow.h"
 
-#include "base/bind.h"
-#include "base/command_line.h"
+#include "apps/app_window.h"
+#include "base/base64.h"
 #include "base/location.h"
-#include "base/message_loop.h"
-#include "base/stringprintf.h"
-#include "base/string_util.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/extensions/component_loader.h"
+#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_navigator.h"
-#include "chrome/common/chrome_switches.h"
-#include "content/public/browser/load_notification_details.h"
-#include "content/public/browser/navigation_controller.h"
+#include "chrome/common/extensions/api/identity_private.h"
+#include "chrome/common/extensions/extension_constants.h"
+#include "content/public/browser/navigation_details.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_request_details.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/page_transition_types.h"
-#include "googleurl/src/gurl.h"
-#include "webkit/glue/window_open_disposition.h"
-#include "ipc/ipc_message.h"
+#include "crypto/random.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
+#include "grit/browser_resources.h"
+#include "url/gurl.h"
 
-using content::LoadNotificationDetails;
-using content::NavigationController;
+using apps::AppWindow;
 using content::RenderViewHost;
 using content::ResourceRedirectDetails;
 using content::WebContents;
 using content::WebContentsObserver;
 
-namespace {
-
-static const char kChromeExtensionSchemeUrlPattern[] =
-    "chrome-extension://%s/";
-static const char kChromiumDomainRedirectUrlPattern[] =
-    "https://%s.chromiumapp.org/";
-
-}  // namespace
-
 namespace extensions {
+
+namespace identity_private = api::identity_private;
 
 WebAuthFlow::WebAuthFlow(
     Delegate* delegate,
     Profile* profile,
-    const std::string& extension_id,
     const GURL& provider_url,
-    Mode mode,
-    const gfx::Rect& initial_bounds,
-    chrome::HostDesktopType host_desktop_type)
+    Mode mode)
     : delegate_(delegate),
       profile_(profile),
       provider_url_(provider_url),
       mode_(mode),
-      initial_bounds_(initial_bounds),
-      host_desktop_type_(host_desktop_type),
-      popup_shown_(false),
-      contents_(NULL) {
-  InitValidRedirectUrlPrefixes(extension_id);
+      embedded_window_created_(false) {
 }
 
 WebAuthFlow::~WebAuthFlow() {
-  // Set the delegate to NULL to avoid reporting results twice.
-  delegate_ = NULL;
+  DCHECK(delegate_ == NULL);
 
   // Stop listening to notifications first since some of the code
   // below may generate notifications.
   registrar_.RemoveAll();
+  WebContentsObserver::Observe(NULL);
 
-  if (contents_) {
-    if (popup_shown_) {
-      contents_->Close();
-    } else {
-      contents_->Stop();
-      // Tell message loop to delete contents_ instead of deleting it
-      // directly since destructor can run in response to a callback from
-      // contents_.
-      MessageLoop::current()->DeleteSoon(FROM_HERE, contents_);
-    }
+  if (!app_window_key_.empty()) {
+    apps::AppWindowRegistry::Get(profile_)->RemoveObserver(this);
+
+    if (app_window_ && app_window_->web_contents())
+      app_window_->web_contents()->Close();
   }
 }
 
 void WebAuthFlow::Start() {
-  contents_ = CreateWebContents();
-  WebContentsObserver::Observe(contents_);
+  apps::AppWindowRegistry::Get(profile_)->AddObserver(this);
 
-  NavigationController* controller = &(contents_->GetController());
+  // Attach a random ID string to the window so we can recoginize it
+  // in OnAppWindowAdded.
+  std::string random_bytes;
+  crypto::RandBytes(WriteInto(&random_bytes, 33), 32);
+  base::Base64Encode(random_bytes, &app_window_key_);
 
-  // Register for appropriate notifications to intercept navigation to the
-  // redirect URLs.
-  registrar_.Add(
-      this,
-      content::NOTIFICATION_RESOURCE_RECEIVED_REDIRECT,
-      content::Source<WebContents>(contents_));
+  // identityPrivate.onWebFlowRequest(app_window_key, provider_url_, mode_)
+  scoped_ptr<base::ListValue> args(new base::ListValue());
+  args->AppendString(app_window_key_);
+  args->AppendString(provider_url_.spec());
+  if (mode_ == WebAuthFlow::INTERACTIVE)
+    args->AppendString("interactive");
+  else
+    args->AppendString("silent");
 
-  controller->LoadURL(
-      provider_url_,
-      content::Referrer(),
-      content::PAGE_TRANSITION_AUTO_TOPLEVEL,
-      std::string());
-}
+  scoped_ptr<Event> event(
+      new Event(identity_private::OnWebFlowRequest::kEventName, args.Pass()));
+  event->restrict_to_browser_context = profile_;
+  ExtensionSystem* system = ExtensionSystem::Get(profile_);
 
-WebContents* WebAuthFlow::CreateWebContents() {
-  return WebContents::Create(WebContents::CreateParams(profile_));
-}
-
-void WebAuthFlow::ShowAuthFlowPopup() {
-  Browser::CreateParams browser_params(Browser::TYPE_POPUP, profile_,
-                                       host_desktop_type_);
-  browser_params.initial_bounds = initial_bounds_;
-  Browser* browser = new Browser(browser_params);
-  chrome::NavigateParams params(browser, contents_);
-  params.disposition = CURRENT_TAB;
-  params.window_action = chrome::NavigateParams::SHOW_WINDOW;
-  chrome::Navigate(&params);
-  // Observe method and WebContentsObserver::* methods will be called
-  // for varous navigation events. That is where we check for redirect
-  // to the right URL.
-  popup_shown_ = true;
-}
-
-bool WebAuthFlow::BeforeUrlLoaded(const GURL& url) {
-  if (IsValidRedirectUrl(url)) {
-    ReportResult(url);
-    return true;
+  extensions::ComponentLoader* component_loader =
+      system->extension_service()->component_loader();
+  if (!component_loader->Exists(extension_misc::kIdentityApiUiAppId)) {
+    component_loader->Add(
+        IDR_IDENTITY_API_SCOPE_APPROVAL_MANIFEST,
+        base::FilePath(FILE_PATH_LITERAL("identity_scope_approval_dialog")));
   }
-  return false;
+
+  system->event_router()->DispatchEventWithLazyListener(
+      extension_misc::kIdentityApiUiAppId, event.Pass());
+}
+
+void WebAuthFlow::DetachDelegateAndDelete() {
+  delegate_ = NULL;
+  base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
+}
+
+void WebAuthFlow::OnAppWindowAdded(AppWindow* app_window) {
+  if (app_window->window_key() == app_window_key_ &&
+      app_window->extension_id() == extension_misc::kIdentityApiUiAppId) {
+    app_window_ = app_window;
+    WebContentsObserver::Observe(app_window->web_contents());
+
+    registrar_.Add(
+        this,
+        content::NOTIFICATION_WEB_CONTENTS_RENDER_VIEW_HOST_CREATED,
+        content::NotificationService::AllBrowserContextsAndSources());
+  }
+}
+
+void WebAuthFlow::OnAppWindowRemoved(AppWindow* app_window) {
+  if (app_window->window_key() == app_window_key_ &&
+      app_window->extension_id() == extension_misc::kIdentityApiUiAppId) {
+    app_window_ = NULL;
+    registrar_.RemoveAll();
+
+    if (delegate_)
+      delegate_->OnAuthFlowFailure(WebAuthFlow::WINDOW_CLOSED);
+  }
+}
+
+void WebAuthFlow::BeforeUrlLoaded(const GURL& url) {
+  if (delegate_ && embedded_window_created_)
+    delegate_->OnAuthFlowURLChange(url);
 }
 
 void WebAuthFlow::AfterUrlLoaded() {
-  // Do nothing if a popup is already created.
-  if (popup_shown_)
-    return;
-
-  // Report results directly if not in interactive mode.
-  if (mode_ != WebAuthFlow::INTERACTIVE) {
-    ReportResult(GURL());
-    return;
-  }
-
-  // We are in interactive mode and window is not shown yet; show the window.
-  ShowAuthFlowPopup();
+  if (delegate_ && embedded_window_created_ && mode_ == WebAuthFlow::SILENT)
+    delegate_->OnAuthFlowFailure(WebAuthFlow::INTERACTION_REQUIRED);
 }
 
 void WebAuthFlow::Observe(int type,
                           const content::NotificationSource& source,
                           const content::NotificationDetails& details) {
-  switch (type) {
-    case content::NOTIFICATION_RESOURCE_RECEIVED_REDIRECT: {
-      ResourceRedirectDetails* redirect_details =
-          content::Details<ResourceRedirectDetails>(details).ptr();
-      if (redirect_details != NULL)
-        BeforeUrlLoaded(redirect_details->new_url);
+  DCHECK(app_window_);
+
+  if (!delegate_)
+    return;
+
+  if (!embedded_window_created_) {
+    DCHECK(type == content::NOTIFICATION_WEB_CONTENTS_RENDER_VIEW_HOST_CREATED);
+
+    RenderViewHost* render_view(
+        content::Details<RenderViewHost>(details).ptr());
+    WebContents* web_contents = WebContents::FromRenderViewHost(render_view);
+
+    if (web_contents &&
+        (web_contents->GetEmbedderWebContents() ==
+         WebContentsObserver::web_contents())) {
+      // Switch from watching the app window to the guest inside it.
+      embedded_window_created_ = true;
+      WebContentsObserver::Observe(web_contents);
+
+      registrar_.RemoveAll();
+      registrar_.Add(this,
+                     content::NOTIFICATION_RESOURCE_RECEIVED_REDIRECT,
+                     content::Source<WebContents>(web_contents));
+      registrar_.Add(this,
+                     content::NOTIFICATION_WEB_CONTENTS_TITLE_UPDATED,
+                     content::Source<WebContents>(web_contents));
     }
-    break;
-    default:
-      NOTREACHED() << "Got a notification that we did not register for: "
-                   << type;
-      break;
+  } else {
+    // embedded_window_created_
+    switch (type) {
+      case content::NOTIFICATION_RESOURCE_RECEIVED_REDIRECT: {
+        ResourceRedirectDetails* redirect_details =
+            content::Details<ResourceRedirectDetails>(details).ptr();
+        if (redirect_details != NULL)
+          BeforeUrlLoaded(redirect_details->new_url);
+        break;
+      }
+      case content::NOTIFICATION_WEB_CONTENTS_TITLE_UPDATED: {
+        std::pair<content::NavigationEntry*, bool>* title =
+            content::Details<std::pair<content::NavigationEntry*, bool> >(
+                details).ptr();
+
+        if (title->first) {
+          delegate_->OnAuthFlowTitleChange(
+              base::UTF16ToUTF8(title->first->GetTitle()));
+        }
+        break;
+      }
+      default:
+        NOTREACHED()
+            << "Got a notification that we did not register for: " << type;
+        break;
+    }
   }
 }
 
-void WebAuthFlow::ProvisionalChangeToMainFrameUrl(
-    const GURL& url,
+void WebAuthFlow::RenderProcessGone(base::TerminationStatus status) {
+  if (delegate_)
+    delegate_->OnAuthFlowFailure(WebAuthFlow::WINDOW_CLOSED);
+}
+
+void WebAuthFlow::DidStartProvisionalLoadForFrame(
+    int64 frame_id,
+    int64 parent_frame_id,
+    bool is_main_frame,
+    const GURL& validated_url,
+    bool is_error_page,
+    bool is_iframe_srcdoc,
     RenderViewHost* render_view_host) {
-  BeforeUrlLoaded(url);
+  if (is_main_frame)
+    BeforeUrlLoaded(validated_url);
+}
+
+void WebAuthFlow::DidFailProvisionalLoad(
+    int64 frame_id,
+    const base::string16& frame_unique_name,
+    bool is_main_frame,
+    const GURL& validated_url,
+    int error_code,
+    const base::string16& error_description,
+    RenderViewHost* render_view_host) {
+  if (delegate_)
+    delegate_->OnAuthFlowFailure(LOAD_FAILED);
 }
 
 void WebAuthFlow::DidStopLoading(RenderViewHost* render_view_host) {
   AfterUrlLoaded();
 }
 
-void WebAuthFlow::WebContentsDestroyed(WebContents* web_contents) {
-  contents_ = NULL;
-  ReportResult(GURL());
-}
-
-void WebAuthFlow::ReportResult(const GURL& url) {
-  if (!delegate_)
-    return;
-
-  if (url.is_empty()) {
-    delegate_->OnAuthFlowFailure();
-  } else {
-    // TODO(munjal): Consider adding code to parse out access token
-    // from some common places (e.g. URL fragment) so the apps don't
-    // have to do that work.
-    delegate_->OnAuthFlowSuccess(url.spec());
-  }
-
-  // IMPORTANT: Do not access any members after calling the delegate
-  // since the delegate can destroy |this| in the callback and hence
-  // all data members are invalid after that.
-}
-
-bool WebAuthFlow::IsValidRedirectUrl(const GURL& url) const {
-  std::vector<std::string>::const_iterator iter;
-  for (iter = valid_prefixes_.begin(); iter != valid_prefixes_.end(); ++iter) {
-    if (StartsWithASCII(url.spec(), *iter, false)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-void WebAuthFlow::InitValidRedirectUrlPrefixes(
-    const std::string& extension_id) {
-  valid_prefixes_.push_back(base::StringPrintf(
-      kChromeExtensionSchemeUrlPattern, extension_id.c_str()));
-  valid_prefixes_.push_back(base::StringPrintf(
-      kChromiumDomainRedirectUrlPattern, extension_id.c_str()));
+void WebAuthFlow::DidNavigateMainFrame(
+    const content::LoadCommittedDetails& details,
+    const content::FrameNavigateParams& params) {
+  if (delegate_ && details.http_status_code >= 400)
+    delegate_->OnAuthFlowFailure(LOAD_FAILED);
 }
 
 }  // namespace extensions

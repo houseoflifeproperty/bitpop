@@ -10,32 +10,41 @@
 #
 
 import driver_tools
+import filetype
+import ldtools
+import multiprocessing
+import os
 import pathtools
-import shutil
 from driver_env import env
-from driver_log import Log, TempFiles
+from driver_log import Log
+from driver_temps import TempFiles
 
-import re
 import subprocess
 
 EXTRA_ENV = {
-  'PIC'           : '0',
+  'PIC': '${NONSFI_NACL}',
 
   # Determine if we should build nexes compatible with the IRT
   'USE_IRT' : '1',
 
+  # Allow zero-cost C++ exception handling in the pexe, which is not
+  # supported by PNaCl's stable ABI.
+  'ALLOW_ZEROCOST_CXX_EH' : '0',
+
   # Use the IRT shim by default. This can be disabled with an explicit
   # flag (--noirtshim) or via -nostdlib.
-  'USE_IRT_SHIM'  : '${!SHARED ? 1 : 0}',
-  # Experimental mode exploring newlib as a shared library
-  'NEWLIB_SHARED_EXPERIMENT': '0',
+  'USE_IRT_SHIM'  : '1',
+
+  # To simulate the sandboxed translator better and avoid user surprises,
+  # reject LLVM bitcode (non-finalized) by default, accepting only PNaCl
+  # (finalized) bitcode. --allow-llvm-bitcode-input has to be passed
+  # explicitly to override this.
+  'ALLOW_LLVM_BITCODE_INPUT': '0',
 
   # Flags for pnacl-nativeld
-  'LD_FLAGS': '${STATIC ? -static} ${SHARED ? -shared}',
+  'LD_FLAGS': '-static',
 
-  'STATIC'         : '0',
-  'SHARED'         : '0',
-  'STDLIB'         : '1',
+  'USE_STDLIB'     : '1',
   'USE_DEFAULTLIBS': '1',
   'FAST_TRANSLATION': '0',
 
@@ -44,7 +53,7 @@ EXTRA_ENV = {
   'OUTPUT_TYPE'   : '',
 
   # Library Strings
-  'LD_ARGS' : '${STDLIB ? ${LD_ARGS_normal} : ${LD_ARGS_nostdlib}}',
+  'LD_ARGS' : '${USE_STDLIB ? ${LD_ARGS_normal} : ${LD_ARGS_nostdlib}}',
 
   # Note: we always requires a shim now, but the dummy shim is not doing
   # anything useful.
@@ -54,145 +63,81 @@ EXTRA_ENV = {
   # libpnacl_irt_shim_dummy.a if libpnacl_irt_shim.a does not exist.
   'LD_ARGS_IRT_SHIM': '-l:libpnacl_irt_shim.a',
   'LD_ARGS_IRT_SHIM_DUMMY': '-l:libpnacl_irt_shim_dummy.a',
+  # In addition to specifying the entry point, we also specify an undefined
+  # reference to _start, which is called by the shim's entry function,
+  # __pnacl_wrapper_start. _start normally comes from libnacl and will be in
+  # the pexe, however for the IRT it comes from irt_entry.c and when linking it
+  # using native object files, this reference is required to make sure it gets
+  # pulled in from the archive.
+  'LD_ARGS_ENTRY': '--entry=__pnacl_start --undefined=_start',
 
-  'LD_ARGS_ENTRY': '--entry=__pnacl_start',
+  'CRTBEGIN': '${ALLOW_ZEROCOST_CXX_EH ? -l:crtbegin_for_eh.o : -l:crtbegin.o}',
+  'CRTEND': '-l:crtend.o',
 
-  'CRTBEGIN' : '${SHARED ? -l:crtbeginS.o : -l:crtbegin.o}',
-  'CRTEND'   : '${SHARED ? -l:crtendS.o : -l:crtend.o}',
-  # static and dynamic newlib images link against the static libgcc_eh
-  'LIBGCC_EH': '${STATIC || NEWLIB_SHARED_EXPERIMENT && !SHARED ? ' +
-               '-l:libgcc_eh.a : ' +
-               # NOTE: libgcc_s.so drags in "glibc.so"
-               # TODO(robertm): provide a "better" libgcc_s.so
-               ' ${NEWLIB_SHARED_EXPERIMENT ? : -l:libgcc_s.so.1}}',
-
-  # List of user requested libraries (according to bitcode metadata).
-  'NEEDED_LIBRARIES': '',   # Set by ApplyBitcodeConfig.
-
-  'LD_ARGS_nostdlib': '-nostdlib ${ld_inputs} ${NEEDED_LIBRARIES}',
+  'LD_ARGS_nostdlib': '-nostdlib ${ld_inputs}',
 
   # These are just the dependencies in the native link.
   'LD_ARGS_normal':
     '${CRTBEGIN} ${ld_inputs} ' +
     '${USE_IRT_SHIM ? ${LD_ARGS_IRT_SHIM} : ${LD_ARGS_IRT_SHIM_DUMMY}} ' +
-    '${NEEDED_LIBRARIES} ' +
-    '${STATIC ? --start-group} ' +
+    '--start-group ' +
     '${USE_DEFAULTLIBS ? ${DEFAULTLIBS}} ' +
-    '${STATIC ? --end-group} ' +
+    '--end-group ' +
     '${CRTEND}',
 
-  # TODO(pdox): To simplify translation, reduce from 3 to 2 cases.
-  # BUG= http://code.google.com/p/nativeclient/issues/detail?id=2423
-  'DEFAULTLIBS':
-    '${LIBGCC_EH} -l:libgcc.a ${MISC_LIBS}',
+  'DEFAULTLIBS': '${ALLOW_ZEROCOST_CXX_EH ? -l:libgcc_eh.a} ' +
+                 '-l:libgcc.a -l:libcrt_platform.a ',
 
-  'MISC_LIBS':
-    # TODO(pdox):
-    # Move libcrt_platform into the __pnacl namespace,
-    # with stubs to access it from newlib.
-    '${LIBMODE_NEWLIB ? -l:libcrt_platform.a} ',
-
-  # Determine whether or not to use bitcode metadata to generate .so stubs
-  # for the final link.
-  'USE_META': '0',
-
-  'TRIPLE'      : '${TRIPLE_%ARCH%}',
-  'TRIPLE_ARM'  : 'armv7a-none-nacl-gnueabi',
-  'TRIPLE_X8632': 'i686-none-nacl-gnu',
-  'TRIPLE_X8664': 'x86_64-none-nacl-gnu',
-  'TRIPLE_MIPS32': 'mipsel-none-nacl-gnu',
-
+  # BE CAREFUL: anything added here can introduce skew between
+  # the pnacl-translate commandline tool and the in-browser translator.
+  # See: llvm/tools/pnacl-llc/srpc_main.cpp and
+  # chromium/src/ppapi/native_client/src/trusted/plugin/pnacl_options.cc
   'LLC_FLAGS_COMMON': '${PIC ? -relocation-model=pic} ' +
                       #  -force-tls-non-pic makes the code generator (llc)
                       # do the work that would otherwise be done by
                       # linker rewrites which are quite messy in the nacl
                       # case and hence have not been implemented in gold
-                      '${PIC && !SHARED ? -force-tls-non-pic} ' +
-                      # this translates the pexe one function at a time
-                      # which is also what the streaming translation does
-                      '-reduce-memory-footprint',
-
-
-  'LLC_FLAGS_ARM'    :
-    ('-arm-reserve-r9 -sfi-disable-cp ' +
-     '-sfi-load -sfi-store -sfi-stack -sfi-branch -sfi-data ' +
-     '-no-inline-jumptables -float-abi=hard'),
-
-  'LLC_FLAGS_X8632' : '',
-  'LLC_FLAGS_X8664' : '',
-
-  'LLC_FLAGS_MIPS32': '-sfi-load -sfi-store -sfi-stack -sfi-branch -sfi-data',
+                      '${PIC ? -force-tls-non-pic} ',
 
   # LLC flags which set the target and output type.
-  # These are handled separately by libLTO.
-  'LLC_FLAGS_TARGET' : '-mcpu=${LLC_MCPU} ' +
-                       '-mtriple=${TRIPLE} ' +
-                       '-filetype=${filetype}',
-  # Additional non-default flags go here.
-  'LLC_FLAGS_EXTRA' : '',
+  'LLC_FLAGS_TARGET' : '-mtriple=${TRIPLE} -filetype=${outfiletype}',
 
-  # slower translation == faster code
-  'LLC_FLAGS_SLOW':
-  # TODO(robertm): consider activating '-O3'
-  # Due to a quadratic algorithm used for tail merging
-  # capping it at 50 helps speed up translation
-                     '-tail-merge-threshold=50',
+  # Append additional non-default flags here.
+  # BE CAREFUL: anything added here can introduce skew between
+  # the pnacl-translate commandline tool and the in-browser translator.
+  # See: llvm/tools/pnacl-llc/srpc_main.cpp and
+  # chromium/src/ppapi/native_client/src/trusted/plugin/pnacl_options.cc
+  'LLC_FLAGS_EXTRA' : '${FAST_TRANSLATION ? ${LLC_FLAGS_FAST}} ' +
+                      '${#OPT_LEVEL ? -O${OPT_LEVEL}} ' +
+                      '${OPT_LEVEL == 0 ? -disable-fp-elim}',
+
+  # Opt level from command line (if any)
+  'OPT_LEVEL' : '',
 
   # faster translation == slower code
-  # TODO(robertm): these need to be evaluated for how effective they
-  #                are and how much they hurt performance
-  'LLC_FLAGS_FAST' : '${LLC_FLAGS_FAST_%ARCH%}',
+  'LLC_FLAGS_FAST' : '-O0'
+                     # This, surprisingly, makes a measurable difference
+                     ' -tail-merge-threshold=20',
 
-  'LLC_FLAGS_FAST_X8632':
-  # -O0 causes us to run out of space when translating llc.pexe
-  # -O1 reduces translation time by approx 10% but breaks the nexe
-  # -O2 is the default
-  #                        '-O1 ' +
-                          '-fast-isel ' +
-  # This does not result in working nexes,
-  #                   '-pre-RA-sched=fast
-  # This does not result in working nexes,',
-  #                   '-regalloc=fast ' +
-  # This, surprisingly, makes a measurable difference
-                          '-tail-merge-threshold=20',
-  'LLC_FLAGS_FAST_X8664':
-                           '-O1 ' +
-  # broken
-  #                        '-fast-isel ' +
-                          '-tail-merge-threshold=20',
-  'LLC_FLAGS_FAST_ARM':
-  # due to slow turn around times ARM settings have not been explored in depth
-  #                       '-O2 ' +
-                          '-fast-isel ' +
-                          '-tail-merge-threshold=20',
-  'LLC_FLAGS_FAST_MIPS32': '-fast-isel -tail-merge-threshold=20',
-
-  'LLC_FLAGS': '${LLC_FLAGS_TARGET} ' +
-               '${LLC_FLAGS_COMMON} ' +
-               '${LLC_FLAGS_%ARCH%} ' +
-               '${FAST_TRANSLATION ? ${LLC_FLAGS_FAST} : ${LLC_FLAGS_SLOW}} ' +
-               '${LLC_FLAGS_EXTRA} ',
-
-  # CPU that is representative of baseline feature requirements for NaCl
-  # and/or chrome.  We may want to make this more like "-mtune"
-  # by specifying both "-mcpu=X" and "-mattr=+feat1,-feat2,...".
-  # Note: this may be different from the in-browser translator, which may
-  # do auto feature detection based on CPUID, but constrained by what is
-  # accepted by NaCl validators.
-  'LLC_MCPU'        : '${LLC_MCPU_%ARCH%}',
-  'LLC_MCPU_ARM'    : 'cortex-a8',
-  'LLC_MCPU_X8632'  : 'pentium4',
-  'LLC_MCPU_X8664'  : 'core2',
-  'LLC_MCPU_MIPS32' : 'mips32r2',
+  'LLC_FLAGS': '${LLC_FLAGS_TARGET} ${LLC_FLAGS_COMMON} ${LLC_FLAGS_ARCH} ' +
+               '${LLC_FLAGS_EXTRA}',
 
   # Note: this is only used in the unsandboxed case
-  'RUN_LLC'       : '${LLVM_LLC} ${LLC_FLAGS} ${input} -o ${output} ' +
-                    '-metadata-text ${output}.meta',
+  'RUN_LLC'       : '${LLVM_PNACL_LLC} ${LLC_FLAGS} ${LLC_MCPU} '
+                    '${input} -o ${output} ',
+  # Whether to stream the bitcode from a single FD in unsandboxed mode
+  # (otherwise it will use concurrent file reads when using multithreaded module
+  # splitting)
+  'STREAM_BITCODE' : '1',
   # Rate in bits/sec to stream the bitcode from sel_universal over SRPC
   # for testing. Defaults to 1Gbps (effectively unlimited).
-  # If 0, use the non-streaming file-descriptor codepath.
   'BITCODE_STREAM_RATE' : '1000000000',
+  # Default to 0, which means unset by the user. In this cases the driver will
+  # use up to 4 modules if there are enough cores. If the user overrides,
+  # use as many modules as specified (which could be only 1).
+  'SPLIT_MODULE' : '0',
 }
+
 
 TranslatorPatterns = [
   ( '-o(.+)',          "env.set('OUTPUT', pathtools.normalize($0))"),
@@ -202,6 +147,10 @@ TranslatorPatterns = [
   ( '-c',              "env.set('OUTPUT_TYPE', 'o')"), # Stop at .o
 
   # Expose a very limited set of llc flags.
+  # BE CAREFUL: anything added here can introduce skew between
+  # the pnacl-translate commandline tool and the in-browser translator.
+  # See: llvm/tools/pnacl-llc/srpc_main.cpp and
+  # chromium/src/ppapi/native_client/src/trusted/plugin/pnacl_options.cc
   ( '(-sfi-.+)',        "env.append('LLC_FLAGS_EXTRA', $0)"),
   ( '(-mtls-use-call)', "env.append('LLC_FLAGS_EXTRA', $0)"),
   # These flags are usually used for linktime dead code/data
@@ -210,20 +159,19 @@ TranslatorPatterns = [
   ( '(-ffunction-sections)', "env.append('LLC_FLAGS_EXTRA', $0)"),
   ( '(--gc-sections)',       "env.append('LD_FLAGS', $0)"),
   ( '(-mattr=.*)', "env.append('LLC_FLAGS_EXTRA', $0)"),
-  ( '-mcpu=(.*)', "env.set('LLC_MCPU', $0)"),
+  ( '(-mcpu=.*)', "env.set('LLC_MCPU', '')\n"
+                  "env.append('LLC_FLAGS_EXTRA', $0)"),
+  ( '(-pnaclabi-verify=.*)', "env.append('LLC_FLAGS_EXTRA', $0)"),
+  ( '(-pnaclabi-verify-fatal-errors=.*)', "env.append('LLC_FLAGS_EXTRA', $0)"),
+  ( '(-pnaclabi-allow-dev-intrinsics)', "env.append('LLC_FLAGS_EXTRA', $0)"),
   # Allow overriding the -O level.
-  ( '(-O[0-3])', "env.append('LLC_FLAGS_EXTRA', $0)"),
+  ( '-O([0-3])', "env.set('OPT_LEVEL', $0)"),
 
   # This adds arch specific flags to the llc invocation aimed at
   # improving translation speed at the expense of code quality.
   ( '-translate-fast',  "env.set('FAST_TRANSLATION', '1')"),
 
-  # If translating a .pexe which was linked statically against
-  # glibc, then you must do pnacl-translate -static. This will
-  # be removed once GLibC is actually statically linked.
-  ( '-static',         "env.set('STATIC', '1')"),
-  ( '-shared',         "env.set('SHARED', '1')"),
-  ( '-nostdlib',       "env.set('STDLIB', '0')"),
+  ( '-nostdlib',       "env.set('USE_STDLIB', '0')"),
 
   # Disables the default libraries.
   # This flag is needed for building libgcc_s.so.
@@ -232,41 +180,94 @@ TranslatorPatterns = [
   ( '--noirt',         "env.set('USE_IRT', '0')\n"
                        "env.append('LD_FLAGS', '--noirt')"),
   ( '--noirtshim',     "env.set('USE_IRT_SHIM', '0')"),
-  ( '--cc-rewrite',    "env.set('USE_IRT_SHIM', '0')\n"
-                       "env.append('LLC_FLAGS_EXTRA', '--nacl-cc-rewrite')"),
-  ( '--newlib-shared-experiment',  "env.set('NEWLIB_SHARED_EXPERIMENT', '1')"),
+  ( '(--pnacl-nativeld=.+)', "env.append('LD_FLAGS', $0)"),
 
-  # Toggle the use of ELF-stubs / bitcode metadata, which represent real .so
-  # files in the final native link.
-  # There may be cases where this will not work (e.g., when the final link
-  # includes native .o files, where its imports / exports were not known
-  # at bitcode link time, and not added to the bitcode metadata).
-  ( '-usemeta',         "env.set('USE_META', '1')"),
-  ( '-nousemeta',       "env.set('USE_META', '0')"),
+  # Allowing zero-cost C++ exception handling causes a specific set of
+  # native objects to get linked into the nexe.
+  ( '--pnacl-allow-zerocost-eh', "env.set('ALLOW_ZEROCOST_CXX_EH', '1')"),
+  # TODO(mseaborn): Remove "--pnacl-allow-exceptions", replaced by
+  # "--pnacl-allow-zerocost-eh".
+  ( '--pnacl-allow-exceptions', "env.set('ALLOW_ZEROCOST_CXX_EH', '1')"),
 
-  ( '-rpath-link=(.+)', "env.append('LD_FLAGS', '-L'+$0)"),
+  ( '--allow-llvm-bitcode-input', "env.set('ALLOW_LLVM_BITCODE_INPUT', '1')"),
 
   ( '-fPIC',           "env.set('PIC', '1')"),
 
-  ( '-Wl,(.*)',        "env.append('LD_FLAGS', *($0).split(','))"),
+  ( '(--build-id)',    "env.append('LD_FLAGS', $0)"),
   ( '-bitcode-stream-rate=([0-9]+)', "env.set('BITCODE_STREAM_RATE', $0)"),
+  ( '-split-module=([0-9]+)', "env.set('SPLIT_MODULE', $0)"),
+  ( '-no-stream-bitcode', "env.set('STREAM_BITCODE', '0')"),
+
+  # Treat general linker flags as inputs so they don't get re-ordered
+  ( '-Wl,(.*)',        "env.append('INPUTS', *($0).split(','))"),
 
   ( '(-.*)',            driver_tools.UnrecognizedOption),
-
   ( '(.*)',            "env.append('INPUTS', pathtools.normalize($0))"),
 ]
+
+
+def SetUpArch():
+  base_arch = env.getone('BASE_ARCH')
+  env.set('TARGET_OS', 'nacl')
+  if base_arch.endswith('_LINUX'):
+    base_arch = base_arch[:-len('_LINUX')]
+    env.set('TARGET_OS', 'linux')
+  elif base_arch.endswith('_MAC'):
+    base_arch = base_arch[:-len('_MAC')]
+    env.set('TARGET_OS', 'mac')
+
+  if env.getbool('NONSFI_NACL'):
+    triple_map = {
+        'nacl':
+            {'X8632': 'i686-linux-gnu',
+             'ARM': 'armv7a-linux-gnueabihf'}}
+  else:
+    triple_map = {
+        'nacl':
+            {'X8632': 'i686-none-nacl-gnu',
+             'X8664': 'x86_64-none-nacl-gnu',
+             'ARM': 'armv7a-none-nacl-gnueabihf',
+             'MIPS32': 'mipsel-none-nacl-gnu'},
+        'linux': {'X8632': 'i686-linux-gnu'},
+        'mac': {'X8632': 'i686-apple-darwin'}}
+  env.set('TRIPLE', triple_map[env.getone('TARGET_OS')][base_arch])
+
+  # CPU that is representative of baseline feature requirements for NaCl
+  # and/or chrome.  We may want to make this more like "-mtune"
+  # by specifying both "-mcpu=X" and "-mattr=+feat1,-feat2,...".
+  # Note: this may be different from the in-browser translator, which may
+  # do auto feature detection based on CPUID, but constrained by what is
+  # accepted by NaCl validators.
+  cpu_map = {
+      'X8632': 'pentium4',
+      'X8664': 'core2',
+      'ARM': 'cortex-a9',
+      'MIPS32': 'mips32r2'}
+  env.set('LLC_MCPU', '-mcpu=%s' % cpu_map[base_arch])
+
+  llc_flags_map = {
+      'ARM': ['-arm-reserve-r9', '-sfi-disable-cp', '-sfi-load', '-sfi-store',
+              '-sfi-stack', '-sfi-branch', '-sfi-data',
+              '-no-inline-jumptables', '-float-abi=hard', '-mattr=+neon'],
+      # Once PNaCl's build of compiler-rt (libgcc.a) defines __aeabi_*
+      # functions, we can drop the following ad-hoc option.
+      'ARM_NONSFI': ['-arm-enable-aeabi-functions=0'],
+      'MIPS32': ['-sfi-load', '-sfi-store', '-sfi-stack',
+                 '-sfi-branch', '-sfi-data']}
+  env.set('LLC_FLAGS_ARCH', *llc_flags_map.get(env.getone('ARCH'), []))
+  # When linking against a host OS's libc (such as Linux glibc), don't
+  # use %gs:0 to read the thread pointer because that won't be
+  # compatible with the libc's use of %gs:0.  Similarly, Non-SFI Mode
+  # currently offers no optimized path for reading the thread pointer.
+  if env.getone('TARGET_OS') != 'nacl' or env.getbool('NONSFI_NACL'):
+    env.append('LLC_FLAGS_ARCH', '-mtls-use-call')
 
 
 def main(argv):
   env.update(EXTRA_ENV)
   driver_tools.ParseArgs(argv, TranslatorPatterns)
-  if env.getbool('SHARED'):
-    env.set('PIC', '1')
-
-  if env.getbool('SHARED') and env.getbool('STATIC'):
-    Log.Fatal('Cannot mix -static and -shared')
-
   driver_tools.GetArch(required = True)
+  SetUpArch()
 
   inputs = env.get('INPUTS')
   output = env.getone('OUTPUT')
@@ -278,7 +279,11 @@ def main(argv):
     Log.Fatal("Please specify output file with -o")
 
   # Find the bitcode file on the command line.
-  bcfiles = filter(driver_tools.IsBitcode, inputs)
+  bcfiles = [f for f in inputs
+             if not ldtools.IsFlag(f) and
+               (filetype.IsPNaClBitcode(f)
+                or filetype.IsLLVMBitcode(f)
+                or filetype.FileType(f) == 'll')]
   if len(bcfiles) > 1:
     Log.Fatal('Expecting at most 1 bitcode file')
   elif len(bcfiles) == 1:
@@ -286,16 +291,44 @@ def main(argv):
   else:
     bcfile = None
 
+  if not env.getbool('SPLIT_MODULE'):
+    try:
+      env.set('SPLIT_MODULE', str(min(4, multiprocessing.cpu_count())))
+    except NotImplementedError:
+      env.set('SPLIT_MODULE', '2')
+  elif int(env.getone('SPLIT_MODULE')) < 1:
+    Log.Fatal('Value given for -split-module must be > 0')
+  if (env.getbool('ALLOW_LLVM_BITCODE_INPUT') or
+      env.getone('TARGET_OS') != 'nacl' or
+      env.getbool('USE_EMULATOR')):
+    # When llvm input is allowed, the pexe may not be ABI-stable, so do not
+    # split it.  Non-ABI-stable pexes may have symbol naming and visibility
+    # issues that the current splitting scheme doesn't account for.
+    #
+    # For now, also do not enable multi-threaded translation when TARGET_OS !=
+    # 'nacl', since in these cases we will be using the host toolchain's
+    # linker.
+    #
+    # The x86->arm emulator is very flaky when threading is used, so don't
+    # do module splitting when using it.
+    env.set('SPLIT_MODULE', '1')
+  else:
+    modules = env.getone('SPLIT_MODULE')
+    if modules != '1':
+      env.append('LLC_FLAGS_EXTRA', '-split-module=' + modules)
+      env.append('LD_FLAGS', '-split-module=' + modules)
+    if not env.getbool('SANDBOXED') and env.getbool('STREAM_BITCODE'):
+      # Do not set -streaming-bitcode for sandboxed mode, because it is already
+      # in the default command line.
+      env.append('LLC_FLAGS_EXTRA', '-streaming-bitcode')
+
   # If there's a bitcode file, translate it now.
   tng = driver_tools.TempNameGen(inputs + bcfiles, output)
   output_type = env.getone('OUTPUT_TYPE')
-  metadata = None
   if bcfile:
     sfile = None
     if output_type == 's':
       sfile = output
-    elif env.getbool('FORCE_INTERMEDIATE_S'):
-      sfile = tng.TempNameForInput(bcfile, 's')
 
     ofile = None
     if output_type == 'o':
@@ -304,11 +337,11 @@ def main(argv):
       ofile = tng.TempNameForInput(bcfile, 'o')
 
     if sfile:
-      RunLLC(bcfile, sfile, filetype='asm')
+      RunLLC(bcfile, sfile, outfiletype='asm')
       if ofile:
         RunAS(sfile, ofile)
     else:
-      RunLLC(bcfile, ofile, filetype='obj')
+      RunLLC(bcfile, ofile, outfiletype='obj')
   else:
     ofile = None
 
@@ -320,118 +353,18 @@ def main(argv):
   if bcfile:
     inputs = ListReplace(inputs, bcfile, '__BITCODE__')
     env.set('INPUTS', *inputs)
+  if int(env.getone('SPLIT_MODULE')) > 1:
+    modules = int(env.getone('SPLIT_MODULE'))
+    for i in range(1, modules):
+      filename = ofile + '.module%d' % i
+      TempFiles.add(filename)
+      env.append('INPUTS', filename)
 
-  # Get bitcode type and metadata
-  if bcfile:
-    bctype = driver_tools.FileType(bcfile)
-    # sanity checking
-    if bctype == 'pso':
-      assert not env.getbool('STATIC')
-      assert env.getbool('SHARED')
-      assert env.getbool('PIC')
-      assert env.get('ARCH') != 'arm', "no glibc support for arm yet"
-    elif bctype == 'pexe':
-      if env.getbool('LIBMODE_GLIBC'):   # this is our proxy for dynamic images
-        assert not env.getbool('STATIC')
-        assert not env.getbool('SHARED')
-        assert env.get('ARCH') != 'arm', "no glibc support for arm yet"
-        # for the dynamic case we require non-pic because we do not
-        # have the necessary tls rewrites in gold
-        assert not env.getbool('PIC')
-      else:
-        assert env.getbool('LIBMODE_NEWLIB')
-        assert not env.getbool('SHARED')
-        # for static images we tolerate both PIC and non-PIC
-    else:
-      assert False
-
-    metadata = driver_tools.GetBitcodeMetadata(bcfile)
-
-  # Determine the output type, in this order of precedence:
-  # 1) Output type can be specified on command-line (-S, -c, -shared, -static)
-  # 2) If bitcode file given, use its output type. (pso->so, pexe->nexe, po->o)
-  # 3) Otherwise, assume nexe output.
-  if env.getbool('SHARED'):
-    output_type = 'so'
-  elif env.getbool('STATIC'):
-    output_type = 'nexe'
-  elif bcfile:
-    DefaultOutputTypes = {
-      'pso' : 'so',
-      'pexe': 'nexe',
-      'po'  : 'o',
-    }
-    output_type = DefaultOutputTypes[bctype]
+  if env.getone('TARGET_OS') != 'nacl':
+    RunHostLD(ofile, output)
   else:
-    output_type = 'nexe'
-
-  # If the bitcode is of type "object", no linking is required.
-  if output_type == 'o':
-    # Copy ofile to output
-    Log.Info('Copying %s to %s' % (ofile, output))
-    shutil.copy(pathtools.tosys(ofile), pathtools.tosys(output))
-    return 0
-
-  if bcfile:
-    ApplyBitcodeConfig(metadata, bctype)
-
-  # NOTE: we intentionally delay setting STATIC here to give user choices
-  #       preference but we should think about dropping the support for
-  #       the -static, -shared flags in the translator and have everything
-  #       be determined by bctype
-  if metadata is None:
-    env.set('STATIC', '1')
-  elif len(metadata['NeedsLibrary']) == 0 and not env.getbool('SHARED'):
-    env.set('STATIC', '1')
-
-  assert output_type in ('so','nexe')
-  RunLD(ofile, output)
+    RunLD(ofile, output)
   return 0
-
-def ApplyBitcodeConfig(metadata, bctype):
-  # Read the bitcode metadata to extract library
-  # dependencies and SOName.
-  # For now, we use LD_FLAGS to convey the information.
-  # However, if the metadata becomes richer we will need another mechanism.
-  # TODO(jvoung): at least grep out the SRPC output from LLC and transmit
-  # that directly to LD to avoid issues with mismatching delimiters.
-  for needed in metadata['NeedsLibrary']:
-    env.append('LD_FLAGS', '--add-extra-dt-needed=' + needed)
-  if bctype == 'pso':
-    soname = metadata['SOName']
-    if soname:
-      env.append('LD_FLAGS', '-soname=' + soname)
-
-  # For the current LD final linker, native libraries still need to be
-  # linked directly, since --add-extra-dt-needed isn't enough.
-  # BUG= http://code.google.com/p/nativeclient/issues/detail?id=2451
-  # For the under-construction gold final linker, it expects to have
-  # the needed libraries on the commandline as "-llib1 -llib2", which actually
-  # refer to the stub metadata file.
-  for needed in metadata['NeedsLibrary']:
-    # Specify the ld-nacl-${arch}.so as the --dynamic-linker to set PT_INTERP.
-    # Also, the original libc.so linker script had it listed as --as-needed,
-    # so let's do that.
-    if needed.startswith('ld-nacl-'):
-      env.append('NEEDED_LIBRARIES', '--dynamic-linker=' + needed)
-      env.append('NEEDED_LIBRARIES',
-                 '--as-needed',
-                 # We normally would have a symlink between
-                 # ld-2.9 <-> ld-nacl-${arch}.so, but our native lib directory
-                 # has no symlinks (to make windows + cygwin happy).
-                 # Link to ld-2.9.so instead for now.
-                 '-l:ld-2.9.so',
-                 '--no-as-needed')
-    else:
-      env.append('NEEDED_LIBRARIES', '-l:' + needed)
-    # libc and libpthread may need the nonshared components too.
-    # Normally these are enclosed in --start-group and --end-group...
-    if not env.getbool('NEWLIB_SHARED_EXPERIMENT'):
-      if needed.startswith('libc.so'):
-        env.append('NEEDED_LIBRARIES', '-l:libc_nonshared.a')
-      elif needed.startswith('libpthread.so'):
-        env.append('NEEDED_LIBRARIES', '-l:libpthread_nonshared.a')
-
 
 def RunAS(infile, outfile):
   driver_tools.RunDriver('as', [infile, '-o', outfile])
@@ -445,87 +378,49 @@ def ListReplace(items, old, new):
       ret.append(k)
   return ret
 
-def RequiresNonStandardLDCommandline(inputs, infile):
-  ''' Determine when we must force USE_DEFAULT_CMD_LINE off for running
-  the sandboxed LD (if link line is completely non-standard).
-  '''
-  if len(inputs) > 1:
-    # There must have been some native objects on the link line.
-    # In that case, if we are using the sandboxed translator, we cannot
-    # currently allow that with the default commandline (only one input).
-    return ('Native link with more than one native object: %s' % str(inputs),
-            True)
-  if not infile:
-    return ('No bitcode input: %s' % str(infile), True)
-  if not env.getbool('STDLIB'):
-    return ('NOSTDLIB', True)
-  if not env.getbool('USE_IRT'):
-    return ('USE_IRT false when normally true', True)
-  if (not env.getbool('SHARED') and
-      not env.getbool('USE_IRT_SHIM')):
-    return ('USE_IRT_SHIM false when normally true', True)
-  return (None, False)
-
-def ToggleDefaultCommandlineLD(inputs, infile):
-  if env.getbool('USE_DEFAULT_CMD_LINE'):
-    reason, non_standard = RequiresNonStandardLDCommandline(inputs, infile)
-    if non_standard:
-      Log.Info(reason + ' -- not using default SRPC commandline for LD!')
-      inputs.append('--pnacl-driver-set-USE_DEFAULT_CMD_LINE=0')
-
-
-def RequiresNonStandardLLCCommandline():
-  if env.getbool('FAST_TRANSLATION'):
-    return ('FAST_TRANSLATION', True)
-
-  extra_flags = env.get('LLC_FLAGS_EXTRA')
-  if extra_flags != []:
-    reason = 'Has additional llc flags: %s' % extra_flags
-    return (reason, True)
-
-  return (None, False)
-
-
-def UseDefaultCommandlineLLC():
-  if not env.getbool('USE_DEFAULT_CMD_LINE'):
-    return False
-  else:
-    reason, non_standard = RequiresNonStandardLLCCommandline()
-    if non_standard:
-      Log.Info(reason + ' -- not using default SRPC commandline for LLC!')
-      return False
-    return True
-
 def RunLD(infile, outfile):
   inputs = env.get('INPUTS')
   if infile:
-    inputs = ListReplace(inputs,
-                         '__BITCODE__',
-                         '--llc-translated-file=' + infile)
-  ToggleDefaultCommandlineLD(inputs, infile)
+    # Put llc-translated-file at the beginning of the inputs so that it will
+    # pull in all needed symbols from any native archives that may also be
+    # in the input list. This is in case there are any mixed groups of bitcode
+    # and native archives in the link (as is the case with irt_browser_lib)
+    inputs.remove('__BITCODE__')
+    inputs = ['--llc-translated-file=' + infile] + inputs
   env.set('ld_inputs', *inputs)
   args = env.get('LD_ARGS') + ['-o', outfile]
-  if not env.getbool('SHARED') and env.getbool('STDLIB'):
+  if env.getbool('USE_STDLIB'):
     args += env.get('LD_ARGS_ENTRY')
   args += env.get('LD_FLAGS')
-  # If there is bitcode, there is also a metadata file.
-  if infile and env.getbool('USE_META'):
-    args += ['--metadata', '%s.meta' % infile]
   driver_tools.RunDriver('nativeld', args)
 
-def RunLLC(infile, outfile, filetype):
+def RunHostLD(infile, outfile):
+  if env.getone('TARGET_OS') == 'linux':
+    driver_tools.Run(['objcopy', '--redefine-sym', '_start=_user_start',
+                      infile])
+  lib_dir = (env.getone('BASE_LIB_NATIVE')
+             + 'x86-32-%s' % env.getone('TARGET_OS'))
+  args = ['gcc', '-m32', infile, '-o', outfile,
+          os.path.join(lib_dir, 'unsandboxed_irt.o'), '-lpthread']
+  if env.getone('TARGET_OS') == 'linux':
+    args.append('-lrt')  # For clock_gettime()
+  driver_tools.Run(args)
+
+def RunLLC(infile, outfile, outfiletype):
   env.push()
-  env.setmany(input=infile, output=outfile, filetype=filetype)
+  env.setmany(input=infile, output=outfile, outfiletype=outfiletype)
   if env.getbool('SANDBOXED'):
-    is_shared, soname, needed = RunLLCSandboxed()
+    RunLLCSandboxed()
     env.pop()
-    # soname and dt_needed libs are returned from LLC and passed to LD
-    driver_tools.SetBitcodeMetadata(infile, is_shared, soname, needed)
   else:
-    driver_tools.Run("${RUN_LLC}")
-    # As a side effect, this creates a temporary file
-    if not env.getbool('SAVE_TEMPS'):
-      TempFiles.add(outfile + '.meta')
+    args = ["${RUN_LLC}"]
+    if filetype.IsPNaClBitcode(infile):
+      args.append("-bitcode-format=pnacl")
+    elif filetype.IsLLVMBitcode(infile):
+      if not env.getbool('ALLOW_LLVM_BITCODE_INPUT'):
+        Log.Fatal('Translator expects finalized PNaCl bitcode. '
+                  'Pass --allow-llvm-bitcode-input to override.')
+    driver_tools.Run(' '.join(args))
     env.pop()
   return 0
 
@@ -533,56 +428,53 @@ def RunLLCSandboxed():
   driver_tools.CheckTranslatorPrerequisites()
   infile = env.getone('input')
   outfile = env.getone('output')
-  flags = env.get('LLC_FLAGS')
-  script = MakeSelUniversalScriptForLLC(infile, outfile, flags)
+  is_pnacl = filetype.IsPNaClBitcode(infile)
+  if not is_pnacl and not env.getbool('ALLOW_LLVM_BITCODE_INPUT'):
+    Log.Fatal('Translator expects finalized PNaCl bitcode. '
+              'Pass --allow-llvm-bitcode-input to override.')
+  script = MakeSelUniversalScriptForLLC(infile, outfile, is_pnacl)
   command = ('${SEL_UNIVERSAL_PREFIX} ${SEL_UNIVERSAL} ${SEL_UNIVERSAL_FLAGS} '
     '-- ${LLC_SB}')
-  _, stdout, _  = driver_tools.Run(command,
-                                stdin_contents=script,
-                                # stdout/stderr will be automatically dumped
-                                # upon failure
-                                redirect_stderr=subprocess.PIPE,
-                                redirect_stdout=subprocess.PIPE)
-  # Get the values returned from the llc RPC to use in input to ld
-  is_shared = re.search(r'output\s+0:\s+i\(([0|1])\)', stdout).group(1)
-  is_shared = (is_shared == '1')
-  soname = re.search(r'output\s+1:\s+s\("(.*)"\)', stdout).group(1)
-  needed_str = re.search(r'output\s+2:\s+s\("(.*)"\)', stdout).group(1)
-  # If the delimiter changes, this line needs to change
-  needed_libs = [ lib for lib in needed_str.split(r'\n') if lib]
-  return is_shared, soname, needed_libs
+  driver_tools.Run(command,
+                   stdin_contents=script,
+                   # stdout/stderr will be automatically dumped
+                   # upon failure
+                   redirect_stderr=subprocess.PIPE,
+                   redirect_stdout=subprocess.PIPE)
 
-def BuildLLCCommandLine(flags):
+def BuildOverrideLLCCommandLine(is_pnacl):
+  extra_flags = env.get('LLC_FLAGS_EXTRA')
+  # The mcpu is not part of the default flags, so append that too.
+  mcpu = env.getone('LLC_MCPU')
+  if mcpu:
+    extra_flags.append(mcpu)
+  if not is_pnacl:
+    extra_flags.append('-bitcode-format=llvm')
   # command_line is a NUL (\x00) terminated sequence.
   kTerminator = '\0'
-  command_line = kTerminator.join(['llc'] + flags) + kTerminator
+  command_line = kTerminator.join(extra_flags) + kTerminator
   command_line_escaped = command_line.replace(kTerminator, '\\x00')
   return len(command_line), command_line_escaped
 
-def MakeSelUniversalScriptForLLC(infile, outfile, flags):
+def MakeSelUniversalScriptForLLC(infile, outfile, is_pnacl):
   script = []
   script.append('readwrite_file objfile %s' % outfile)
+  modules = int(env.getone('SPLIT_MODULE'))
+  if modules > 1:
+    script.extend(['readwrite_file objfile%d %s.module%d' % (m, outfile, m)
+                   for m in range(1, modules)])
   stream_rate = int(env.getraw('BITCODE_STREAM_RATE'))
-  if stream_rate == 0:
-    script.append('readonly_file myfile %s' % infile)
-    if UseDefaultCommandlineLLC():
-      script.append('rpc RunWithDefaultCommandLine  h(myfile) h(objfile) *'
-                    ' i() s() s()')
-    else:
-      cmdline_len, cmdline_escaped = BuildLLCCommandLine(flags)
-      script.append('rpc Run h(myfile) h(objfile) C(%d,%s) * i() s() s()' %
-                    (cmdline_len, cmdline_escaped))
-  else:
-    if UseDefaultCommandlineLLC():
-      script.append('rpc StreamInit h(objfile) * s()')
-    else:
-      cmdline_len, cmdline_escaped = BuildLLCCommandLine(flags)
-      script.append('rpc StreamInitWithCommandLine h(objfile) C(%d,%s) * s()' %
-                    (cmdline_len, cmdline_escaped))
-    # specify filename, chunk size and rate in bits/s
-    script.append('stream_file %s %s %s' % (infile, 64 * 1024, stream_rate))
-    script.append('rpc StreamEnd * i() s() s() s()')
-  script.append('echo "llc complete"')
+  assert stream_rate != 0
+  cmdline_len, cmdline_escaped = BuildOverrideLLCCommandLine(is_pnacl)
+  assert modules in range(1, 17)
+  script.append('rpc StreamInitWithSplit i(%d) h(objfile) ' % modules +
+                ' '.join(['h(objfile%d)' % m for m in range(1, modules)] +
+                         ['h(invalid)' for x in range(modules, 16)]) +
+                ' C(%d,%s) * s()' % (cmdline_len, cmdline_escaped))
+  # specify filename, chunk size and rate in bits/s
+  script.append('stream_file %s %s %s' % (infile, 64 * 1024, stream_rate))
+  script.append('rpc StreamEnd * i() s() s() s()')
+  script.append('echo "pnacl-llc complete"')
   script.append('')
   return '\n'.join(script)
 
@@ -600,10 +492,9 @@ Usage: pnacl-translate [options] -arch <arch> <input> -o <output>
                           tuning and features, see -mattr, and -mcpu.
   -o <output>             Output file.
 
-  The output file type depends on the input file type:
-     Portable object (.po)         -> NaCl ELF object (.o)
-     Portable shared object (.pso) -> NaCl ELF shared object (.so)
-     Portable executable (.pexe)   -> NaCl ELF executable (.nexe)
+  The default output file type is .nexe, which assumes that the input file
+  type is .pexe.  Native object files and assembly can also be generated
+  with the -S and -c commandline flags.
 
 ADVANCED OPTIONS:
   -mattr=<+feat1,-feat2>  Toggle specific cpu features on and off.

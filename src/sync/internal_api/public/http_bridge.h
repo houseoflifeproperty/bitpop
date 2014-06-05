@@ -13,16 +13,22 @@
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
-#include "googleurl/src/gurl.h"
+#include "net/base/network_time_notifier.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "sync/base/sync_export.h"
+#include "sync/internal_api/public/base/cancelation_observer.h"
 #include "sync/internal_api/public/http_post_provider_factory.h"
 #include "sync/internal_api/public/http_post_provider_interface.h"
+#include "sync/internal_api/public/network_time_update_callback.h"
+#include "url/gurl.h"
 
-class MessageLoop;
 class HttpBridgeTest;
+
+namespace base {
+class MessageLoop;
+}
 
 namespace net {
 class HttpResponseHeaders;
@@ -32,23 +38,26 @@ class URLFetcher;
 
 namespace syncer {
 
+class CancelationSignal;
+
 // A bridge between the syncer and Chromium HTTP layers.
 // Provides a way for the sync backend to use Chromium directly for HTTP
 // requests rather than depending on a third party provider (e.g libcurl).
 // This is a one-time use bridge. Create one for each request you want to make.
 // It is RefCountedThreadSafe because it can PostTask to the io loop, and thus
 // needs to stick around across context switches, etc.
-class HttpBridge : public base::RefCountedThreadSafe<HttpBridge>,
-                   public HttpPostProviderInterface,
-                   public net::URLFetcherDelegate {
+class SYNC_EXPORT_PRIVATE HttpBridge
+    : public base::RefCountedThreadSafe<HttpBridge>,
+      public HttpPostProviderInterface,
+      public net::URLFetcherDelegate {
  public:
   // A request context used for HTTP requests bridged from the sync backend.
   // A bridged RequestContext has a dedicated in-memory cookie store and does
   // not use a cache. Thus the same type can be used for incognito mode.
   class RequestContext : public net::URLRequestContext {
    public:
-    // |baseline_context| is used to obtain the accept-language,
-    // accept-charsets, and proxy service information for bridged requests.
+    // |baseline_context| is used to obtain the accept-language
+    // and proxy service information for bridged requests.
     // Typically |baseline_context| should be the net::URLRequestContext of the
     // currently active profile.
     RequestContext(
@@ -69,7 +78,8 @@ class HttpBridge : public base::RefCountedThreadSafe<HttpBridge>,
   };
 
   // Lazy-getter for RequestContext objects.
-  class RequestContextGetter : public net::URLRequestContextGetter {
+  class SYNC_EXPORT_PRIVATE RequestContextGetter
+      : public net::URLRequestContextGetter {
    public:
     RequestContextGetter(
         net::URLRequestContextGetter* baseline_context_getter,
@@ -95,7 +105,8 @@ class HttpBridge : public base::RefCountedThreadSafe<HttpBridge>,
     DISALLOW_COPY_AND_ASSIGN(RequestContextGetter);
   };
 
-  explicit HttpBridge(RequestContextGetter* context);
+  HttpBridge(RequestContextGetter* context,
+             const NetworkTimeUpdateCallback& network_time_update_callback);
 
   // HttpPostProvider implementation.
   virtual void SetExtraRequestHeaders(const char* headers) OVERRIDE;
@@ -118,11 +129,7 @@ class HttpBridge : public base::RefCountedThreadSafe<HttpBridge>,
   // net::URLFetcherDelegate implementation.
   virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
 
-#if defined(UNIT_TEST)
-  net::URLRequestContextGetter* GetRequestContextGetter() const {
-    return context_getter_for_request_;
-  }
-#endif
+  net::URLRequestContextGetter* GetRequestContextGetterForTest() const;
 
  protected:
   friend class base::RefCountedThreadSafe<HttpBridge>;
@@ -133,6 +140,7 @@ class HttpBridge : public base::RefCountedThreadSafe<HttpBridge>,
   virtual void MakeAsynchronousPost();
 
  private:
+  friend class SyncHttpBridgeTest;
   friend class ::HttpBridgeTest;
 
   // Called on the IO loop to issue the network request. The extra level
@@ -146,18 +154,14 @@ class HttpBridge : public base::RefCountedThreadSafe<HttpBridge>,
   // fetcher.
   void DestroyURLFetcherOnIOThread(net::URLFetcher* fetcher);
 
-  // Gets a customized net::URLRequestContext for bridged requests. See
-  // RequestContext definition for details.
-  const scoped_refptr<RequestContextGetter> context_getter_for_request_;
-
-  const scoped_refptr<base::SingleThreadTaskRunner> network_task_runner_;
+  void UpdateNetworkTime();
 
   // The message loop of the thread we were created on. This is the thread that
   // will block on MakeSynchronousPost while the IO thread fetches data from
   // the network.
   // This should be the main syncer thread (SyncerThread) which is what blocks
   // on network IO through curl_easy_perform.
-  MessageLoop* const created_on_loop_;
+  base::MessageLoop* const created_on_loop_;
 
   // The URL to POST to.
   GURL url_for_request_;
@@ -182,6 +186,11 @@ class HttpBridge : public base::RefCountedThreadSafe<HttpBridge>,
     // deleted on. We must manually delete url_poster_ on the IO loop.
     net::URLFetcher* url_poster;
 
+    // Start and finish time of request. Set immediately before sending
+    // request and after receiving response.
+    base::Time start_time;
+    base::Time end_time;
+
     // Used to support 'Abort' functionality.
     bool aborted;
 
@@ -195,33 +204,62 @@ class HttpBridge : public base::RefCountedThreadSafe<HttpBridge>,
   };
 
   // This lock synchronizes use of state involved in the flow to fetch a URL
-  // using URLFetcher.  Because we can Abort() from any thread, for example,
-  // this flow needs to be synchronized to gracefully clean up URLFetcher and
-  // return appropriate values in |error_code|.
+  // using URLFetcher, including |fetch_state_| and
+  // |context_getter_for_request_| on any thread, for example, this flow needs
+  // to be synchronized to gracefully clean up URLFetcher and return
+  // appropriate values in |error_code|.
   mutable base::Lock fetch_state_lock_;
   URLFetchState fetch_state_;
+
+  // Gets a customized net::URLRequestContext for bridged requests. See
+  // RequestContext definition for details.
+  scoped_refptr<RequestContextGetter> context_getter_for_request_;
+
+  const scoped_refptr<base::SingleThreadTaskRunner> network_task_runner_;
+
+  // Callback for updating network time.
+  NetworkTimeUpdateCallback network_time_update_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(HttpBridge);
 };
 
-class SYNC_EXPORT HttpBridgeFactory : public HttpPostProviderFactory {
+class SYNC_EXPORT HttpBridgeFactory : public HttpPostProviderFactory,
+                                      public CancelationObserver {
  public:
   HttpBridgeFactory(
       net::URLRequestContextGetter* baseline_context_getter,
-      const std::string& user_agent);
+      const NetworkTimeUpdateCallback& network_time_update_callback,
+      CancelationSignal* cancelation_signal);
   virtual ~HttpBridgeFactory();
 
   // HttpPostProviderFactory:
+  virtual void Init(const std::string& user_agent) OVERRIDE;
   virtual HttpPostProviderInterface* Create() OVERRIDE;
   virtual void Destroy(HttpPostProviderInterface* http) OVERRIDE;
 
- private:
-  // This request context is built on top of the baseline context and shares
-  // common components.
-  HttpBridge::RequestContextGetter* GetRequestContextGetter();
+  // CancelationObserver implementation:
+  virtual void OnSignalReceived() OVERRIDE;
 
-  const scoped_refptr<HttpBridge::RequestContextGetter>
-      request_context_getter_;
+ private:
+  // Protects |request_context_getter_| and |baseline_request_context_getter_|.
+  base::Lock context_getter_lock_;
+
+  // This request context is the starting point for the request_context_getter_
+  // that we eventually use to make requests.  During shutdown we must drop all
+  // references to it before the ProfileSyncService's Shutdown() call is
+  // complete.
+  scoped_refptr<net::URLRequestContextGetter> baseline_request_context_getter_;
+
+  // This request context is built on top of the baseline context and shares
+  // common components. Takes a reference to the
+  // baseline_request_context_getter_.  It's mostly used on sync thread when
+  // creating connection but is released as soon as possible during shutdown.
+  // Protected by |context_getter_lock_|.
+  scoped_refptr<HttpBridge::RequestContextGetter> request_context_getter_;
+
+  NetworkTimeUpdateCallback network_time_update_callback_;
+
+  CancelationSignal* const cancelation_signal_;
 
   DISALLOW_COPY_AND_ASSIGN(HttpBridgeFactory);
 };

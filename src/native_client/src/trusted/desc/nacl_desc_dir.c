@@ -88,7 +88,7 @@ struct NaClDescDirDesc *NaClDescDirDescMake(struct NaClHostDir *nhdp) {
   return ndp;
 }
 
-struct NaClDescDirDesc *NaClDescDirDescOpen(char  *path) {
+struct NaClDescDirDesc *NaClDescDirDescOpen(char *path) {
   struct NaClHostDir  *nhdp;
 
   nhdp = malloc(sizeof *nhdp);
@@ -131,6 +131,18 @@ static ssize_t NaClDescDirDescRead(struct NaClDesc         *vself,
   /* return -NACL_ABI_EINVAL; */
 }
 
+static nacl_off64_t NaClDescDirDescSeek(struct NaClDesc *vself,
+                                        nacl_off64_t    offset,
+                                        int             whence) {
+  struct NaClDescDirDesc *self = (struct NaClDescDirDesc *) vself;
+  /* Special case to handle rewinddir() */
+  if (offset == 0 || whence == SEEK_SET) {
+    NaClHostDirRewind(self->hd);
+    return 0;
+  }
+  return -NACL_ABI_EINVAL;
+}
+
 static int NaClDescDirDescFstat(struct NaClDesc          *vself,
                                 struct nacl_abi_stat     *statbuf) {
   UNREFERENCED_PARAMETER(vself);
@@ -145,15 +157,6 @@ static int NaClDescDirDescFstat(struct NaClDesc          *vself,
   return 0;
 }
 
-static int NaClDescDirDescExternalizeSize(struct NaClDesc *vself,
-                                          size_t          *nbytes,
-                                          size_t          *nhandles) {
-  UNREFERENCED_PARAMETER(vself);
-  *nbytes = 0;
-  *nhandles = 1;
-  return 0;
-}
-
 static struct NaClDescVtbl const kNaClDescDirDescVtbl = {
   {
     NaClDescDirDescDtor,
@@ -162,12 +165,12 @@ static struct NaClDescVtbl const kNaClDescDirDescVtbl = {
   NACL_DESC_UNMAP_NOT_IMPLEMENTED
   NaClDescDirDescRead,
   NaClDescWriteNotImplemented,
-  NaClDescSeekNotImplemented,
-  NaClDescIoctlNotImplemented,
+  NaClDescDirDescSeek,
+  NaClDescPReadNotImplemented,
+  NaClDescPWriteNotImplemented,
   NaClDescDirDescFstat,
   NaClDescDirDescGetdents,
-  NACL_DESC_DIR,
-  NaClDescDirDescExternalizeSize,
+  NaClDescExternalizeSizeNotImplemented,
   NaClDescExternalizeNotImplemented,
   NaClDescLockNotImplemented,
   NaClDescTryLockNotImplemented,
@@ -185,15 +188,10 @@ static struct NaClDescVtbl const kNaClDescDirDescVtbl = {
   NaClDescPostNotImplemented,
   NaClDescSemWaitNotImplemented,
   NaClDescGetValueNotImplemented,
+  NaClDescSetMetadata,
+  NaClDescGetMetadata,
+  NaClDescSetFlags,
+  NaClDescGetFlags,
+  NaClDescIsattyNotImplemented,
+  NACL_DESC_DIR,
 };
-
-int NaClDescDirInternalize(struct NaClDesc               **out_desc,
-                           struct NaClDescXferState      *xfer,
-                           struct NaClDescQuotaInterface *quota_interface) {
-  UNREFERENCED_PARAMETER(out_desc);
-  UNREFERENCED_PARAMETER(xfer);
-  UNREFERENCED_PARAMETER(quota_interface);
-
-  NaClLog(LOG_ERROR, "NaClDescDirDescInternalize: not implemented for dir\n");
-  return -NACL_ABI_EINVAL;
-}

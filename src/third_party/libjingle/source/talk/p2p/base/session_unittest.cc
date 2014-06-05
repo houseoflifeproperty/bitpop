@@ -25,21 +25,21 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <cstring>
+#include <string.h>
+
 #include <sstream>
 #include <deque>
 #include <map>
 
 #include "talk/base/base64.h"
-#include "talk/base/basicpacketsocketfactory.h"
 #include "talk/base/common.h"
 #include "talk/base/gunit.h"
 #include "talk/base/helpers.h"
-#include "talk/base/host.h"
 #include "talk/base/logging.h"
 #include "talk/base/natserver.h"
 #include "talk/base/natsocketfactory.h"
 #include "talk/base/stringencode.h"
+#include "talk/p2p/base/basicpacketsocketfactory.h"
 #include "talk/p2p/base/constants.h"
 #include "talk/p2p/base/parsing.h"
 #include "talk/p2p/base/portallocator.h"
@@ -64,7 +64,7 @@ using cricket::PROTOCOL_GINGLE;
 static const std::string kInitiator = "init@init.com";
 static const std::string kResponder = "resp@resp.com";
 // Expected from test random number generator.
-static const std::string kSessionId = "2154761789";
+static const std::string kSessionId = "9254631414740579489";
 // TODO: When we need to test more than one transport type,
 // allow this to be injected like the content types are.
 static const std::string kTransportType = "http://www.google.com/transport/p2p";
@@ -76,19 +76,6 @@ static const int kEventTimeout = 5000;
 static const int kNumPorts = 2;
 static const int kPort0 = 28653;
 static const int kPortStep = 5;
-
-static const std::string kNotifyNick1 = "derekcheng_google.com^59422C27";
-static const std::string kNotifyNick2 = "someoneelses_google.com^7abd6a7a20";
-static const uint32 kNotifyAudioSsrc1 = 2625839801U;
-static const uint32 kNotifyAudioSsrc2 = 2529430427U;
-static const uint32 kNotifyVideoSsrc1 = 3;
-static const uint32 kNotifyVideoSsrc2 = 2;
-
-static const std::string kViewRequestNick = "param_google.com^16A3CDBE";
-static const uint32 kViewRequestSsrc = 4;
-static const int kViewRequestWidth = 320;
-static const int kViewRequestHeight = 200;
-static const int kViewRequestFrameRate = 15;
 
 int GetPort(int port_index) {
   return kPort0 + (port_index * kPortStep);
@@ -174,7 +161,7 @@ std::string P2pCandidateXml(const std::string& name, int port_index) {
   std::string username = GetUsername(port_index);
   // TODO: Use the component id instead of the channel name to
   // determinte if we need to covert the username here.
-  if (name == "rtcp" || name == "video_rtp" || name == "chanb") {
+  if (name == "rtcp" || name == "video_rtcp" || name == "chanb") {
     char next_ch = username[username.size() - 1];
     ASSERT(username.size() > 0);
     talk_base::Base64::GetNextBase64Char(next_ch, &next_ch);
@@ -624,7 +611,7 @@ class TestPortAllocatorSession : public cricket::PortAllocatorSession {
       delete ports_[i];
   }
 
-  virtual void GetInitialPorts() {
+  virtual void StartGettingPorts() {
     for (int i = 0; i < kNumPorts; i++) {
       int index = port_offset_ + i;
       ports_[i] = cricket::UDPPort::Create(
@@ -633,19 +620,19 @@ class TestPortAllocatorSession : public cricket::PortAllocatorSession {
           GetUsername(index), GetPassword(index));
       AddPort(ports_[i]);
     }
+    running_ = true;
   }
 
-  virtual void StartGetAllPorts() { running_ = true; }
-  virtual void StopGetAllPorts() { running_ = false; }
-  virtual bool IsGettingAllPorts() { return running_; }
+  virtual void StopGettingPorts() { running_ = false; }
+  virtual bool IsGettingPorts() { return running_; }
 
   void AddPort(cricket::Port* port) {
     port->set_component(component_);
     port->set_generation(0);
     port->SignalDestroyed.connect(
         this, &TestPortAllocatorSession::OnPortDestroyed);
-    port->SignalAddressReady.connect(
-        this, &TestPortAllocatorSession::OnAddressReady);
+    port->SignalPortComplete.connect(
+        this, &TestPortAllocatorSession::OnPortComplete);
     port->PrepareAddress();
     SignalPortReady(this, port);
   }
@@ -657,7 +644,7 @@ class TestPortAllocatorSession : public cricket::PortAllocatorSession {
     }
   }
 
-  void OnAddressReady(cricket::Port* port) {
+  void OnPortComplete(cricket::Port* port) {
     SignalCandidatesReady(this, port->Candidates());
   }
 
@@ -714,7 +701,7 @@ cricket::SessionDescription* NewTestSessionDescription(
                     new TestContentDescription(gingle_content_type,
                                                content_type_a));
   cricket::TransportDescription desc(cricket::NS_GINGLE_P2P,
-                                     cricket::Candidates());
+                                     std::string(), std::string());
   offer->AddTransportInfo(cricket::TransportInfo(content_name_a, desc));
 
   if (content_name_a != content_name_b) {
@@ -736,7 +723,7 @@ cricket::SessionDescription* NewTestSessionDescription(
   offer->AddTransportInfo(cricket::TransportInfo
                           (content_name, cricket::TransportDescription(
                           cricket::NS_GINGLE_P2P,
-                          cricket::Candidates())));
+                          std::string(), std::string())));
   return offer;
 }
 
@@ -814,7 +801,7 @@ struct ChannelHandler : sigslot::has_slots<> {
   }
 
   void OnReadPacket(cricket::TransportChannel* p, const char* buf,
-                    size_t size, int flags) {
+                    size_t size, const talk_base::PacketTime& time, int flags) {
     if (memcmp(buf, name.c_str(), name.size()) != 0)
       return;  // drop packet if packet doesn't belong to this channel. This
                // can happen when transport channels are muxed together.
@@ -824,14 +811,15 @@ struct ChannelHandler : sigslot::has_slots<> {
     EXPECT_LE(size, sizeof(last_data));
     data_count += 1;
     last_size = size;
-    std::memcpy(last_data, buf, size);
+    memcpy(last_data, buf, size);
   }
 
   void Send(const char* data, size_t size) {
+    talk_base::PacketOptions options;
     std::string data_with_id(name);
     data_with_id += data;
     int result = channel->SendPacket(data_with_id.c_str(), data_with_id.size(),
-                                     0);
+                                     options, 0);
     EXPECT_EQ(static_cast<int>(data_with_id.size()), result);
   }
 
@@ -872,6 +860,10 @@ class TestClient : public sigslot::has_slots<> {
     }
     delete session_manager;
     delete client;
+    for (std::deque<buzz::XmlElement*>::iterator it = sent_stanzas.begin();
+         it != sent_stanzas.end(); ++it) {
+      delete *it;
+    }
   }
 
   void Construct(cricket::PortAllocator* pa,
@@ -895,11 +887,12 @@ class TestClient : public sigslot::has_slots<> {
     session_created_count = 0;
     session_destroyed_count = 0;
     session_remote_description_update_count = 0;
-    last_expected_sent_stanza = NULL;
+    new_local_description = false;
+    new_remote_description = false;
+    last_content_action = cricket::CA_OFFER;
+    last_content_source = cricket::CS_LOCAL;
     session = NULL;
     last_session_state = cricket::BaseSession::STATE_INIT;
-    chan_a = NULL;
-    chan_b = NULL;
     blow_up_on_error = true;
     error_count = 0;
 
@@ -917,11 +910,11 @@ class TestClient : public sigslot::has_slots<> {
   }
 
   uint32 sent_stanza_count() const {
-    return sent_stanzas.size();
+    return static_cast<uint32>(sent_stanzas.size());
   }
 
   const buzz::XmlElement* stanza() const {
-    return last_expected_sent_stanza;
+    return last_expected_sent_stanza.get();
   }
 
   cricket::BaseSession::State session_state() const {
@@ -960,7 +953,7 @@ class TestClient : public sigslot::has_slots<> {
     EXPECT_TRUE(!sent_stanzas.empty()) <<
         "Found no stanza when expected " << expected;
 
-    last_expected_sent_stanza = sent_stanzas.front();
+    last_expected_sent_stanza.reset(sent_stanzas.front());
     sent_stanzas.pop_front();
 
     std::string actual = last_expected_sent_stanza->Str();
@@ -1000,6 +993,10 @@ class TestClient : public sigslot::has_slots<> {
     session->SignalError.connect(this, &TestClient::OnSessionError);
     session->SignalRemoteDescriptionUpdate.connect(
         this, &TestClient::OnSessionRemoteDescriptionUpdate);
+    session->SignalNewLocalDescription.connect(
+        this, &TestClient::OnNewLocalDescription);
+    session->SignalNewRemoteDescription.connect(
+        this, &TestClient::OnNewRemoteDescription);
 
     CreateChannels();
   }
@@ -1031,6 +1028,20 @@ class TestClient : public sigslot::has_slots<> {
   void OnSessionRemoteDescriptionUpdate(cricket::BaseSession* session,
       const cricket::ContentInfos& contents) {
     session_remote_description_update_count++;
+  }
+
+  void OnNewLocalDescription(cricket::BaseSession* session,
+                             cricket::ContentAction action) {
+    new_local_description = true;
+    last_content_action = action;
+    last_content_source = cricket::CS_LOCAL;
+  }
+
+  void OnNewRemoteDescription(cricket::BaseSession* session,
+                              cricket::ContentAction action) {
+    new_remote_description = true;
+    last_content_action = action;
+    last_content_source = cricket::CS_REMOTE;
   }
 
   void PrepareCandidates() {
@@ -1068,12 +1079,16 @@ class TestClient : public sigslot::has_slots<> {
 
   void CreateChannels() {
     ASSERT(session != NULL);
-    chan_a = new ChannelHandler(
-        session->CreateChannel(content_name_a, channel_name_a, 1),
-        channel_name_a);
-    chan_b = new ChannelHandler(
-        session->CreateChannel(content_name_b, channel_name_b, 2),
-        channel_name_b);
+    // We either have a single content with multiple components (RTP/RTCP), or
+    // multiple contents with single components, but not both.
+    int component_a = 1;
+    int component_b = (content_name_a == content_name_b) ? 2 : 1;
+    chan_a.reset(new ChannelHandler(
+        session->CreateChannel(content_name_a, channel_name_a, component_a),
+        channel_name_a));
+    chan_b.reset(new ChannelHandler(
+        session->CreateChannel(content_name_b, channel_name_b, component_b),
+        channel_name_b));
   }
 
   int* next_message_id;
@@ -1088,16 +1103,20 @@ class TestClient : public sigslot::has_slots<> {
   uint32 session_created_count;
   uint32 session_destroyed_count;
   uint32 session_remote_description_update_count;
+  bool new_local_description;
+  bool new_remote_description;
+  cricket::ContentAction last_content_action;
+  cricket::ContentSource last_content_source;
   std::deque<buzz::XmlElement*> sent_stanzas;
-  buzz::XmlElement* last_expected_sent_stanza;
+  talk_base::scoped_ptr<buzz::XmlElement> last_expected_sent_stanza;
 
   cricket::SessionManager* session_manager;
   TestSessionClient* client;
   cricket::PortAllocator* port_allocator_;
   cricket::Session* session;
   cricket::BaseSession::State last_session_state;
-  ChannelHandler* chan_a;
-  ChannelHandler* chan_b;
+  talk_base::scoped_ptr<ChannelHandler> chan_a;
+  talk_base::scoped_ptr<ChannelHandler> chan_b;
   bool blow_up_on_error;
   int error_count;
 };
@@ -1139,14 +1158,10 @@ class SessionTest : public testing::Test {
       EXPECT_EQ(strlen(dat1a), chan2a->last_size);
       EXPECT_EQ(strlen(dat1b), chan2b->last_size);
 
-      EXPECT_EQ(0, std::memcmp(chan1a->last_data, dat2a,
-                               strlen(dat2a)));
-      EXPECT_EQ(0, std::memcmp(chan1b->last_data, dat2b,
-                               strlen(dat2b)));
-      EXPECT_EQ(0, std::memcmp(chan2a->last_data, dat1a,
-                               strlen(dat1a)));
-      EXPECT_EQ(0, std::memcmp(chan2b->last_data, dat1b,
-                               strlen(dat1b)));
+      EXPECT_EQ(0, memcmp(chan1a->last_data, dat2a, strlen(dat2a)));
+      EXPECT_EQ(0, memcmp(chan1b->last_data, dat2b, strlen(dat2b)));
+      EXPECT_EQ(0, memcmp(chan2a->last_data, dat1a, strlen(dat1a)));
+      EXPECT_EQ(0, memcmp(chan2b->last_data, dat1b, strlen(dat1b)));
     }
   }
 
@@ -1195,10 +1210,13 @@ class SessionTest : public testing::Test {
     EXPECT_EQ(cricket::BaseSession::STATE_INIT,
               initiator->session_state());
 
+    // See comment in CreateChannels about how we choose component IDs.
+    int component_a = 1;
+    int component_b = (content_name_a == content_name_b) ? 2 : 1;
     EXPECT_TRUE(initiator->HasTransport(content_name_a));
-    EXPECT_TRUE(initiator->HasChannel(content_name_a, 1));
+    EXPECT_TRUE(initiator->HasChannel(content_name_a, component_a));
     EXPECT_TRUE(initiator->HasTransport(content_name_b));
-    EXPECT_TRUE(initiator->HasChannel(content_name_b, 2));
+    EXPECT_TRUE(initiator->HasChannel(content_name_b, component_b));
 
     // Initiate and expect initiate message sent.
     cricket::SessionDescription* offer = NewTestSessionDescription(
@@ -1239,9 +1257,9 @@ class SessionTest : public testing::Test {
               responder->session_state());
 
     EXPECT_TRUE(responder->HasTransport(content_name_a));
-    EXPECT_TRUE(responder->HasChannel(content_name_a, 1));
+    EXPECT_TRUE(responder->HasChannel(content_name_a, component_a));
     EXPECT_TRUE(responder->HasTransport(content_name_b));
-    EXPECT_TRUE(responder->HasChannel(content_name_b, 2));
+    EXPECT_TRUE(responder->HasChannel(content_name_b, component_b));
 
     // Expect transport-info message from initiator.
     // But don't send candidates until initiate ack is received.
@@ -1376,8 +1394,8 @@ class SessionTest : public testing::Test {
       EXPECT_TRUE(responder_proxy_chan_b->impl() != NULL);
       EXPECT_EQ(responder_proxy_chan_a->impl(), responder_proxy_chan_b->impl());
     }
-    TestSendRecv(initiator->chan_a, initiator->chan_b,
-                 responder->chan_a, responder->chan_b);
+    TestSendRecv(initiator->chan_a.get(), initiator->chan_b.get(),
+                 responder->chan_a.get(), responder->chan_b.get());
 
     if (resulting_protocol == PROTOCOL_JINGLE) {
       // Deliver a description-info message to the initiator and check if the
@@ -1822,8 +1840,8 @@ class SessionTest : public testing::Test {
                    initiator->session_state(), kEventTimeout);
     EXPECT_EQ_WAIT(cricket::BaseSession::STATE_INPROGRESS,
                    responder->session_state(), kEventTimeout);
-    TestSendRecv(initiator->chan_a, initiator->chan_b,
-                 responder->chan_a, responder->chan_b);
+    TestSendRecv(initiator->chan_a.get(), initiator->chan_b.get(),
+                 responder->chan_a.get(), responder->chan_b.get());
   }
 
   void TestCandidatesInInitiateAndAccept(const std::string& test_name) {
@@ -1960,8 +1978,8 @@ class SessionTest : public testing::Test {
                    initiator->session_state(), kEventTimeout);
     EXPECT_EQ_WAIT(cricket::BaseSession::STATE_INPROGRESS,
                    responder->session_state(), kEventTimeout);
-    TestSendRecv(initiator->chan_a, initiator->chan_b,
-                 responder->chan_a, responder->chan_b);
+    TestSendRecv(initiator->chan_a.get(), initiator->chan_b.get(),
+                 responder->chan_a.get(), responder->chan_b.get());
   }
 
   // Tests that when an initiator terminates right after initiate,
@@ -2140,6 +2158,126 @@ class SessionTest : public testing::Test {
     initiator->ExpectSentStanza(
         IqSet("1", kInitiator, kResponder, description_info_xml));
   }
+
+  void DoTestSignalNewDescription(
+      TestClient* client,
+      cricket::BaseSession::State state,
+      cricket::ContentAction expected_content_action,
+      cricket::ContentSource expected_content_source) {
+    // Clean up before the new test.
+    client->new_local_description = false;
+    client->new_remote_description = false;
+
+    client->SetSessionState(state);
+    EXPECT_EQ((expected_content_source == cricket::CS_LOCAL),
+               client->new_local_description);
+    EXPECT_EQ((expected_content_source == cricket::CS_REMOTE),
+               client->new_remote_description);
+    EXPECT_EQ(expected_content_action, client->last_content_action);
+    EXPECT_EQ(expected_content_source, client->last_content_source);
+  }
+
+  void TestCallerSignalNewDescription() {
+    talk_base::scoped_ptr<cricket::PortAllocator> allocator(
+        new TestPortAllocator());
+    int next_message_id = 0;
+
+    std::string content_name = "content-name";
+    std::string content_type = "content-type";
+    talk_base::scoped_ptr<TestClient> initiator(
+        new TestClient(allocator.get(), &next_message_id,
+                       kInitiator, PROTOCOL_JINGLE,
+                       content_type,
+                       content_name, "",
+                       "",  ""));
+
+    initiator->CreateSession();
+
+    // send offer -> send update offer ->
+    // receive pr answer -> receive update pr answer ->
+    // receive answer
+    DoTestSignalNewDescription(
+        initiator.get(), cricket::BaseSession::STATE_SENTINITIATE,
+        cricket::CA_OFFER, cricket::CS_LOCAL);
+
+    DoTestSignalNewDescription(
+        initiator.get(), cricket::BaseSession::STATE_SENTINITIATE,
+        cricket::CA_OFFER, cricket::CS_LOCAL);
+
+    DoTestSignalNewDescription(
+        initiator.get(), cricket::BaseSession::STATE_RECEIVEDPRACCEPT,
+        cricket::CA_PRANSWER, cricket::CS_REMOTE);
+
+    DoTestSignalNewDescription(
+        initiator.get(), cricket::BaseSession::STATE_RECEIVEDPRACCEPT,
+        cricket::CA_PRANSWER, cricket::CS_REMOTE);
+
+    DoTestSignalNewDescription(
+        initiator.get(), cricket::BaseSession::STATE_RECEIVEDACCEPT,
+        cricket::CA_ANSWER, cricket::CS_REMOTE);
+  }
+
+  void TestCalleeSignalNewDescription() {
+    talk_base::scoped_ptr<cricket::PortAllocator> allocator(
+        new TestPortAllocator());
+    int next_message_id = 0;
+
+    std::string content_name = "content-name";
+    std::string content_type = "content-type";
+    talk_base::scoped_ptr<TestClient> initiator(
+        new TestClient(allocator.get(), &next_message_id,
+                       kInitiator, PROTOCOL_JINGLE,
+                       content_type,
+                       content_name, "",
+                       "",  ""));
+
+    initiator->CreateSession();
+
+    // receive offer -> receive update offer ->
+    // send pr answer -> send update pr answer ->
+    // send answer
+    DoTestSignalNewDescription(
+        initiator.get(), cricket::BaseSession::STATE_RECEIVEDINITIATE,
+        cricket::CA_OFFER, cricket::CS_REMOTE);
+
+    DoTestSignalNewDescription(
+        initiator.get(), cricket::BaseSession::STATE_RECEIVEDINITIATE,
+        cricket::CA_OFFER, cricket::CS_REMOTE);
+
+    DoTestSignalNewDescription(
+        initiator.get(), cricket::BaseSession::STATE_SENTPRACCEPT,
+        cricket::CA_PRANSWER, cricket::CS_LOCAL);
+
+    DoTestSignalNewDescription(
+        initiator.get(), cricket::BaseSession::STATE_SENTPRACCEPT,
+        cricket::CA_PRANSWER, cricket::CS_LOCAL);
+
+    DoTestSignalNewDescription(
+        initiator.get(), cricket::BaseSession::STATE_SENTACCEPT,
+        cricket::CA_ANSWER, cricket::CS_LOCAL);
+  }
+
+  void TestGetTransportStats() {
+    talk_base::scoped_ptr<cricket::PortAllocator> allocator(
+        new TestPortAllocator());
+    int next_message_id = 0;
+
+    std::string content_name = "content-name";
+    std::string content_type = "content-type";
+    talk_base::scoped_ptr<TestClient> initiator(
+        new TestClient(allocator.get(), &next_message_id,
+                       kInitiator, PROTOCOL_JINGLE,
+                       content_type,
+                       content_name, "",
+                       "",  ""));
+    initiator->CreateSession();
+
+    cricket::SessionStats stats;
+    EXPECT_TRUE(initiator->session->GetStats(&stats));
+    // At initiation, there are 2 transports.
+    EXPECT_EQ(2ul, stats.proxy_to_transport.size());
+    EXPECT_EQ(2ul, stats.transport_stats.size());
+  }
 };
 
 // For each of these, "X => Y = Z" means "if a client with protocol X
@@ -2296,4 +2434,16 @@ TEST_F(SessionTest, TestTransportMux) {
 
 TEST_F(SessionTest, TestSendDescriptionInfo) {
   TestSendDescriptionInfo();
+}
+
+TEST_F(SessionTest, TestCallerSignalNewDescription) {
+  TestCallerSignalNewDescription();
+}
+
+TEST_F(SessionTest, TestCalleeSignalNewDescription) {
+  TestCalleeSignalNewDescription();
+}
+
+TEST_F(SessionTest, TestGetTransportStats) {
+  TestGetTransportStats();
 }

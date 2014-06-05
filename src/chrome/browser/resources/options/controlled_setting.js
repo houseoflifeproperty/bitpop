@@ -15,13 +15,14 @@ cr.define('options', function() {
   var ControlledSettingIndicator = cr.ui.define('span');
 
   ControlledSettingIndicator.prototype = {
-    __proto__: HTMLSpanElement.prototype,
+    __proto__: cr.ui.BubbleButton.prototype,
 
     /**
      * Decorates the base element to show the proper icon.
      */
     decorate: function() {
-      var self = this;
+      cr.ui.BubbleButton.prototype.decorate.call(this);
+      this.classList.add('controlled-setting-indicator');
 
       // If there is a pref, track its controlledBy and recommendedValue
       // properties in order to be able to bring up the correct bubble.
@@ -30,16 +31,6 @@ cr.define('options', function() {
             this.pref, this.handlePrefChange.bind(this));
         this.resetHandler = this.clearAssociatedPref_;
       }
-
-      this.className = 'controlled-setting-indicator';
-      this.location = cr.ui.ArrowLocation.TOP_END;
-      this.image = document.createElement('div');
-      this.image.tabIndex = 0;
-      this.image.setAttribute('role', 'button');
-      this.image.addEventListener('click', this);
-      this.image.addEventListener('keydown', this);
-      this.image.addEventListener('mousedown', this);
-      this.appendChild(this.image);
     },
 
     /**
@@ -50,17 +41,6 @@ cr.define('options', function() {
      */
     set resetHandler(handler) {
       this.resetHandler_ = handler;
-    },
-
-    /**
-     * Whether the indicator is currently showing a bubble.
-     * @type {boolean}
-     */
-    get showingBubble() {
-      return this.image.classList.contains('showing-bubble');
-    },
-    set showingBubble(showing) {
-      this.image.classList.toggle('showing-bubble', showing);
     },
 
     /**
@@ -78,9 +58,16 @@ cr.define('options', function() {
     handlePrefChange: function(event) {
       OptionsPage.hideBubble();
       if (event.value.controlledBy) {
-        this.controlledBy =
-            !this.value || String(event.value.value) == this.value ?
-            event.value.controlledBy : null;
+        if (!this.value || String(event.value.value) == this.value) {
+          this.controlledBy = event.value.controlledBy;
+          if (event.value.extension) {
+            this.extensionId = event.value.extension.id;
+            this.extensionIcon = event.value.extension.icon;
+            this.extensionName = event.value.extension.name;
+          }
+        } else {
+          this.controlledBy = null;
+        }
       } else if (event.value.recommendedValue != undefined) {
         this.controlledBy =
             !this.value || String(event.value.recommendedValue) == this.value ?
@@ -88,42 +75,6 @@ cr.define('options', function() {
       } else {
         this.controlledBy = null;
       }
-    },
-
-    /**
-     * Handle mouse and keyboard events, allowing the user to open and close a
-     * bubble with further information.
-     * @param {Event} event Mouse or keyboard event.
-     */
-    handleEvent: function(event) {
-      switch (event.type) {
-        // Toggle the bubble on left click. Let any other clicks propagate.
-        case 'click':
-          if (event.button != 0)
-            return;
-          break;
-        // Toggle the bubble when <Return> or <Space> is pressed. Let any other
-        // key presses propagate.
-        case 'keydown':
-          switch (event.keyCode) {
-            case 13:  // Return.
-            case 32:  // Space.
-              break;
-            default:
-              return;
-          }
-          break;
-        // Blur focus when a mouse button is pressed, matching the behavior of
-        // other Web UI elements.
-        case 'mousedown':
-          if (document.activeElement)
-            document.activeElement.blur();
-          event.preventDefault();
-          return;
-      }
-      this.toggleBubble_();
-      event.preventDefault();
-      event.stopPropagation();
     },
 
     /**
@@ -141,16 +92,30 @@ cr.define('options', function() {
           var defaultStrings = {
             'policy': loadTimeData.getString('controlledSettingsPolicy'),
             'extension': loadTimeData.getString('controlledSettingsExtension'),
+            'extensionWithName': loadTimeData.getString(
+                'controlledSettingsExtensionWithName'),
           };
+          if (cr.isChromeOS) {
+            defaultStrings.shared =
+                loadTimeData.getString('controlledSettingsShared');
+          }
         } else {
           var defaultStrings = {
             'policy': loadTimeData.getString('controlledSettingPolicy'),
             'extension': loadTimeData.getString('controlledSettingExtension'),
+            'extensionWithName': loadTimeData.getString(
+                'controlledSettingExtensionWithName'),
             'recommended':
                 loadTimeData.getString('controlledSettingRecommended'),
             'hasRecommendation':
                 loadTimeData.getString('controlledSettingHasRecommendation'),
           };
+          if (cr.isChromeOS) {
+            defaultStrings.owner =
+                loadTimeData.getString('controlledSettingOwner');
+            defaultStrings.shared =
+                loadTimeData.getString('controlledSettingShared');
+          }
         }
 
         // No controller, no bubble.
@@ -158,6 +123,8 @@ cr.define('options', function() {
           return;
 
         var text = defaultStrings[this.controlledBy];
+        if (this.controlledBy == 'extension' && this.extensionName)
+          text = defaultStrings.extensionWithName;
 
         // Apply text overrides.
         if (this.hasAttribute('text' + this.controlledBy))
@@ -165,8 +132,7 @@ cr.define('options', function() {
 
         // Create the DOM tree.
         var content = document.createElement('div');
-        content.className = 'controlled-setting-bubble-content';
-        content.setAttribute('controlled-by', this.controlledBy);
+        content.classList.add('controlled-setting-bubble-header');
         content.textContent = text;
 
         if (this.controlledBy == 'hasRecommendation' && this.resetHandler_ &&
@@ -182,6 +148,35 @@ cr.define('options', function() {
           });
           container.appendChild(action);
           content.appendChild(container);
+        } else if (this.controlledBy == 'extension' && this.extensionName) {
+          var extensionContainer =
+              $('extension-controlled-settings-bubble-template').
+                  cloneNode(true);
+          // No need for an id anymore, and thus remove to avoid id collision.
+          extensionContainer.removeAttribute('id');
+          extensionContainer.hidden = false;
+
+          var extensionName = extensionContainer.querySelector(
+              '.controlled-setting-bubble-extension-name');
+          extensionName.textContent = this.extensionName;
+          extensionName.style.backgroundImage =
+              'url("' + this.extensionIcon + '")';
+
+          var manageLink = extensionContainer.querySelector(
+              '.controlled-setting-bubble-extension-manage-link');
+          var extensionId = this.extensionId;
+          manageLink.onclick = function() {
+            uber.invokeMethodOnWindow(
+                window.top, 'showPage', {pageId: 'extensions',
+                                         path: '?id=' + extensionId});
+          };
+
+          var disableButton = extensionContainer.querySelector(
+              '.controlled-setting-bubble-extension-disable-button');
+          disableButton.onclick = function() {
+            chrome.send('disableExtension', [extensionId]);
+          };
+          content.appendChild(extensionContainer);
         }
 
         OptionsPage.showBubble(content, this.image, this, this.location);
@@ -225,6 +220,10 @@ cr.define('options', function() {
    *                        override this recommendation but has not done so.
    * - 'hasRecommendation': A value is recommended by policy. The user has
    *                        overridden this recommendation.
+   * - 'owner':             A value is controlled by the owner of the device
+   *                        (Chrome OS only).
+   * - 'shared':            A value belongs to the primary user but can be
+   *                        modified (Chrome OS only).
    * - unset:               The value is controlled by the user alone.
    * @type {string}
    */

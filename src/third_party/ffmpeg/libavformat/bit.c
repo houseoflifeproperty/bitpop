@@ -44,7 +44,7 @@ static int probe(AVProbeData *p)
             return 0;
         i+=j;
     }
-    return AVPROBE_SCORE_MAX/2;
+    return AVPROBE_SCORE_EXTENSION;
 }
 
 static int read_header(AVFormatContext *s)
@@ -90,7 +90,8 @@ static int read_packet(AVFormatContext *s,
     if(ret != 8 * packet_size * sizeof(uint16_t))
         return AVERROR(EIO);
 
-    av_new_packet(pkt, packet_size);
+    if (av_new_packet(pkt, packet_size) < 0)
+        return AVERROR(ENOMEM);
 
     init_put_bits(&pbo, pkt->data, packet_size);
     for(j=0; j < packet_size; j++)
@@ -138,7 +139,6 @@ static int write_packet(AVFormatContext *s, AVPacket *pkt)
     init_get_bits(&gb, pkt->data, 8*10);
     for(i=0; i< 8 * 10; i++)
         avio_wl16(pb, get_bits1(&gb) ? BIT_1 : BIT_0);
-    avio_flush(pb);
 
     return 0;
 }

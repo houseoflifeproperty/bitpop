@@ -1,3 +1,7 @@
+<html>
+<head></head>
+<body>
+
 <textarea id='id_message'>
 </textarea>
 
@@ -25,4 +29,13 @@ function SetSrc(src) {
   plugin = document.getElementById('plugin');
   plugin.src = src;
 }
+
+var plugin = document.getElementById('plugin');
+plugin.addEventListener('-internal-instanceid-allocated', function(e) {
+  var detail = e.detail ? JSON.parse(e.detail) : {};
+  plugin['-internal-attach'](detail.windowId, {});
+});
 </script>
+
+</body>
+</html>

@@ -16,7 +16,9 @@ try the
   <h4 id="general">General</h4>
   <ul>
     <li><a href="#faq-gen-01">What are Google Chrome Extensions?</a></li>
+{{^is_apps}}
     <li><a href="#faq-dev-01">How can I set up Chrome for extension development?</a></li>
+{{/is_apps}}
     <li><a href="#faq-gen-02">What technologies are used to write extensions for Chrome?</a></li>
     <li><a href="#faq-gen-03">Are extensions fetched from the web every time the browser is loaded?</a></li>
     <li><a href="#faq-dev-14">How do I determine which version of Chrome is deployed to which channel?</a></li>
@@ -32,8 +34,10 @@ try the
     <li><a href="#faq-dev-05">Can extensions create UI outside of the rendered web page?</a></li>
     <li><a href="#faq-interact-chrome">Can extensions listen to clicks on Chrome tabs and navigation buttons?</a>
     <li><a href="#faq-dev-11">Can two extensions communicate with each other?</a></li>
+{{^is_apps}}
     <li><a href="#faq-dev-13">Can extensions use Google Analytics?</a></li>
     <li><a href="#faq-dev-15">Can extensions modify chrome:// URLs?</a></li>
+{{/is_apps}}
     <li><a href="#faq-open-popups">Can extensions open browser/page action popups without user interaction?</a></li>
     <li><a href="#faq-persist-popups">Can extensions keep popups open after the user clicks away from them?</a></li>
     <li><a href="#faq-lifecycle-events">Can extensions be notified when they are installed/uninstalled?</a></li>
@@ -42,7 +46,9 @@ try the
   <ul>
     <li><a href="#faq-building-ui">How do I build a UI for my extension?</a>
     <li><a href="#faq-dev-09">How much data can I store in localStorage?</a></li>
+{{^is_apps}}
     <li><a href="#faq-dev-10">How do I create an options menu for my application?</a></li>
+{{/is_apps}}
     <li><a href="#faq-dev-12">What debugging tools are available to extension developers?</a></li>
     <li><a href="#faq-dev-16">Why do wildcard matches not work for top level domains (TLDs)?</a></li>
     <li><a href="#faq-management">Why does the management API not fire events when my extension is installed/uninstalled?</a></li>
@@ -64,6 +70,7 @@ try the
   party websites or services, and customized browsing experiences.
 </p>
 
+{{^is_apps}}
 <h3 id="faq-dev-01">How can I set up Chrome for extension development?</h3>
 <p>
   As long as you are using a version of Chrome that supports
@@ -77,13 +84,14 @@ try the
   <img src="{{static}}/images/hotdogmenu.png" height="29" width="29" alt=""
     class="nomargin" />
   and select <b>Extensions</b> from the <b>Tools</b> menu.
-  If there's a "+" next to "Developer mode",
-  click the "+" so it turns into a "-".
+  Ensure that the "Developer mode" checkbox in the top right-hand corner
+  is checked.
   Now you can reload extensions,
   load an unpacked directory of files as if it were a packaged extension,
   and more. For a complete tutorial, see
-  <a href="http://code.google.com/chrome/extensions/getstarted.html">Getting Started</a>.
+  <a href="/extensions/getstarted.html">Getting Started</a>.
 </p>
+{{/is_apps}}
 
 <h3 id="faq-gen-02">What technologies are used to write extensions for Chrome?</h3>
 <p>
@@ -93,7 +101,7 @@ try the
   scripting. Because Chrome supports HTML5 and CSS3, developers can
   use the latest open web technologies such as canvas and CSS animations in
   their extensions. Extensions also have access to several
-  <a href="http://code.google.com/chrome/extensions/api_other.html">JavaScript APIs</a>
+  <a href="/extensions/api_other.html">JavaScript APIs</a>
   that help perform functions like JSON encoding and interacting with the
   browser.
 </p>
@@ -154,7 +162,7 @@ cros,beta,#.#.###.#,#.#.###.#,mm/dd/yy,mm/dd/yy,#####,#####,#####</pre>
 <h3 id="faq-dev-02">Can extensions make cross-domain Ajax requests?</h3>
 <p>
   Yes. Extensions can make cross-domain requests.  See
-  <a href="http://code.google.com/chrome/extensions/xhr.html">this page</a>
+  <a href="/extensions/xhr.html">this page</a>
   for more information.
 </p>
 
@@ -208,7 +216,7 @@ cros,beta,#.#.###.#,#.#.###.#,mm/dd/yy,mm/dd/yy,#####,#####,#####</pre>
 </p>
 <p>
   An extension may also create popup notifications, which exist outside of the
-  browser window.  See the <a href="notifications.html">desktop
+  browser window.  See the <a href="desktop_notifications.html">desktop
     notifications</a> documentation for more details.
 </p>
 
@@ -226,16 +234,19 @@ cros,beta,#.#.###.#,#.#.###.#,mm/dd/yy,mm/dd/yy,#####,#####,#####</pre>
   for more information.
 </p>
 
+{{^is_apps}}
 <h3 id="faq-dev-13">Can extensions use Google Analytics?</h3>
 <p>
   Yes, since extensions are built just like websites, they can use
   <a href="http://www.google.com/analytics/">Google Analytics</a> to track
-  usage.  However, we strongly advise you to modify the tracking code to pull
+  usage.  However, you must modify the tracking code to pull
   an HTTPS version of the Google Analytics library.  See
   <a href="tut_analytics.html">this tutorial</a> for more information on doing
   this.
 </p>
+{{/is_apps}}
 
+{{^is_apps}}
 <h3 id="faq-dev-15">Can extensions modify chrome:// URLs?</h3>
 <p>
   No. The extensions APIs have been designed to minimize backwards
@@ -256,6 +267,7 @@ cros,beta,#.#.###.#,#.#.###.#,mm/dd/yy,mm/dd/yy,#####,#####,#####</pre>
   functionality they want without depending on the browser's internal implementation
   to stay the same.
 </p>
+{{/is_apps}}
 
 <h3 id="faq-open-popups">Can extensions open browser/page action popups without
   user interaction?</h3>
@@ -276,7 +288,7 @@ cros,beta,#.#.###.#,#.#.###.#,mm/dd/yy,mm/dd/yy,#####,#####,#####</pre>
   installed/uninstalled?</h3>
 <p>
   You can listen to the
-  $ref:runtime.onInstalled
+  $(ref:runtime.onInstalled)
   event to be notified when your extension is installed or updated, or when
   Chrome itself is updated. There is no corresponding event for when your
   extension is uninstalled.
@@ -299,21 +311,23 @@ cros,beta,#.#.###.#,#.#.###.#,mm/dd/yy,mm/dd/yy,#####,#####,#####</pre>
   Extensions can store up to 5MB of data in localStorage.
 </p>
 
+{{^is_apps}}
 <h3 id="faq-dev-10">How do I create an options menu for my application?</h3>
 <p>
   You can let users set options for your extension by creating an
-  <a href="http://code.google.com/chrome/extensions/trunk/options.html">options page</a>,
+  <a href="/extensions/options.html">options page</a>,
   which is a simple HTML page that will be loaded when a user clicks the
   "options" button for your extension. This page can read and write settings
   to localStorage, or even send options to a web server so that they can be
   persisted across browsers.
 </p>
+{{/is_apps}}
 
 <h3 id="faq-dev-12">What debugging tools are available to extension developers?</h3>
 <p>
   Chrome's built-in developer tools can be used to debug extensions
   as well as web pages. See this
-  <a href="http://code.google.com/chrome/extensions/tut_debugging.html ">tutorial on debugging extensions</a>
+  <a href="/extensions/tut_debugging.html ">tutorial on debugging extensions</a>
   for more information.
 </p>
 
@@ -353,7 +367,7 @@ cros,beta,#.#.###.#,#.#.###.#,mm/dd/yy,mm/dd/yy,#####,#####,#####</pre>
   the first time?</h3>
 <p>
   You can listen to the
-  $ref:runtime.onInstalled
+  $(ref:runtime.onInstalled)
   event. See <a href="#faq-lifecycle-events">this FAQ entry</a>.
 </p>
 
@@ -385,12 +399,12 @@ cros,beta,#.#.###.#,#.#.###.#,mm/dd/yy,mm/dd/yy,#####,#####,#####</pre>
     Search the issue tracker at
     <a href="http://crbug.com">http://crbug.com</a> to see whether
     someone has reported a similar issue.  Most issues related to
-    extensions are filed under <strong>Feature=Extensions</strong>, so to
+    extensions are filed under <strong>Cr=Platform-Extensions</strong>, so to
     look for an extension bug related to the
     chrome.tabs.executeScript function (for example), search for
-    "<code>Feature=Extensions Type=Bug chrome.tabs.executeScript</code>",
+    "<code>Cr=Platform-Extensions Type=Bug chrome.tabs.executeScript</code>",
     which will give you
-    <a href="http://code.google.com/p/chromium/issues/list?can=2&q=Feature%3DExtensions+Type%3DBug+chrome.tabs.executeScript&colspec=ID+Stars+Pri+Area+Feature+Type+Status+Summary+Modified+Owner+Mstone+OS&x=mstone&y=area&cells=tiles">
+    <a href="https://code.google.com/p/chromium/issues/list?can=2&q=Cr%3DPlatform-Extensions+Type%3DBug+chrome.tabs.executeScript&colspec=ID+Pri+M+Iteration+ReleaseBlock+Cr+Status+Owner+Summary+Modified&x=m&y=releaseblock&cells=tiles">
     this list of results</a>.
   </li>
   <li>
@@ -403,7 +417,7 @@ cros,beta,#.#.###.#,#.#.###.#,mm/dd/yy,mm/dd/yy,#####,#####,#####</pre>
   </li>
   <li>
     If you found no appropriate bug to star, file a new issue report at
-    <a href="http://new.crbug.com">http://new.crbug.com</a>.  Be as explicit
+    <a href="http://crbug.com/new">http://crbug.com/new</a>.  Be as explicit
     as possible when filling out this form: choose a descriptive title,
     explain the steps to reproduce the bug, and describe the expected and
     actual behavior.  Attach your test example to the report and add
@@ -440,12 +454,12 @@ cros,beta,#.#.###.#,#.#.###.#,mm/dd/yy,mm/dd/yy,#####,#####,#####</pre>
     Search the issue tracker at
     <a href="http://crbug.com">http://crbug.com</a> to see whether
     someone has requested a similar feature.  Most requests related to
-    extensions are filed under <strong>Feature=Extensions</strong>, so to
+    extensions are filed under <strong>Cr=Platform-Extensions</strong>, so to
     look for an extension feature request related to keyboard shortcuts
     (for example), search
-    for "<code>Feature=Extensions Type=Feature shortcuts</code>",
+    for "<code>Cr=Platform-Extensions Type=Feature shortcuts</code>",
     which will give you
-    <a href="http://code.google.com/p/chromium/issues/list?can=2&q=Feature%3DExtensions+Type%3DFeature+shortcuts&colspec=ID+Stars+Pri+Area+Feature+Type+Status+Summary+Modified+Owner+Mstone+OS&x=mstone&y=area&cells=tiles">
+    <a href="https://code.google.com/p/chromium/issues/list?can=2&q=Cr%3DPlatform-Extensions+Type%3DFeature+shortcuts&colspec=ID+Pri+M+Iteration+ReleaseBlock+Cr+Status+Owner+Summary+Modified&x=m&y=releaseblock&cells=tiles">
     this list of results</a>.
   </li>
   <li>
@@ -456,7 +470,7 @@ cros,beta,#.#.###.#,#.#.###.#,mm/dd/yy,mm/dd/yy,#####,#####,#####</pre>
   </li>
   <li>
     If you found no appropriate ticket to star, file a new request at
-    <a href="http://new.crbug.com">http://new.crbug.com</a>.  Be as detailed
+    <a href="http://crbug.com/new">http://crbug.com/new</a>.  Be as detailed
     as possible when filling out this form: choose a descriptive title
     and explain exactly what feature you would like and how you plan to use it.
   </li>

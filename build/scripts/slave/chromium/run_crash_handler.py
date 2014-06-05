@@ -24,6 +24,7 @@ except ImportError:
   sys.exit(1)
 
 from common import chromium_utils
+from slave import build_directory
 
 USAGE = '%s [options]' % os.path.basename(sys.argv[0])
 
@@ -34,12 +35,12 @@ def main():
   """
   option_parser = optparse.OptionParser(usage=USAGE)
 
-  option_parser.add_option('', '--target', default='Release',
+  option_parser.add_option('--target', default='Release',
                            help='build target (Debug or Release)')
-  option_parser.add_option('', '--build-dir', default='chrome',
-                           help='path to main build directory (the parent of '
-                                'the Release or Debug directory)')
+  option_parser.add_option('--build-dir', help='ignored')
   options, args = option_parser.parse_args()
+  options.build_dir = build_directory.GetBuildOutputDirectory()
+
   if args:
     option_parser.error('No args are supported')
 

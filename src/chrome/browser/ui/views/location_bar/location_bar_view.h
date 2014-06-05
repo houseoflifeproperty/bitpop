@@ -9,25 +9,25 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
-#include "base/prefs/public/pref_member.h"
+#include "base/memory/weak_ptr.h"
+#include "base/prefs/pref_member.h"
 #include "chrome/browser/extensions/extension_context_menu_model.h"
 #include "chrome/browser/search_engines/template_url_service_observer.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_controller.h"
+#include "chrome/browser/ui/search/search_model_observer.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
 #include "chrome/browser/ui/views/dropdown_bar_host.h"
 #include "chrome/browser/ui/views/dropdown_bar_host_delegate.h"
 #include "chrome/browser/ui/views/extensions/extension_popup.h"
+#include "chrome/browser/ui/views/omnibox/omnibox_view_views.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "ui/gfx/animation/animation_delegate.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/rect.h"
-#include "ui/views/controls/native/native_view_host.h"
+#include "ui/views/controls/button/button.h"
 #include "ui/views/drag_controller.h"
-
-#if defined(USE_AURA)
-#include "ui/compositor/layer_animation_observer.h"
-#endif
 
 class ActionBoxButtonView;
 class CommandUpdater;
@@ -36,23 +36,37 @@ class ContentSettingImageView;
 class EVBubbleView;
 class ExtensionAction;
 class GURL;
+class GeneratedCreditCardView;
 class InstantController;
 class KeywordHintView;
 class LocationIconView;
 class OpenPDFInReaderView;
+class ManagePasswordsIconView;
+class OriginChipView;
 class PageActionWithBadgeView;
 class PageActionImageView;
 class Profile;
-class ScriptBubbleIconView;
 class SelectedKeywordView;
 class StarView;
 class TemplateURLService;
-class WebIntentsButtonView;
+class ToolbarOriginChipView;
+class TranslateIconView;
 class ZoomView;
+
+namespace content {
+struct SSLStatus;
+}
+
+namespace gfx {
+class SlideAnimation;
+}
 
 namespace views {
 class BubbleDelegateView;
+class ImageButton;
+class ImageView;
 class Label;
+class LabelButton;
 class Widget;
 }
 
@@ -67,29 +81,31 @@ class Widget;
 class LocationBarView : public LocationBar,
                         public LocationBarTesting,
                         public views::View,
+                        public views::ButtonListener,
                         public views::DragController,
                         public OmniboxEditController,
                         public DropdownBarHostDelegate,
+                        public gfx::AnimationDelegate,
                         public TemplateURLServiceObserver,
-                        public content::NotificationObserver {
+                        public content::NotificationObserver,
+                        public SearchModelObserver {
  public:
   // The location bar view's class name.
   static const char kViewClassName[];
 
-  // DropdownBarHostDelegate
-  virtual void SetFocusAndSelection(bool select_all) OVERRIDE;
-  virtual void SetAnimationOffset(int offset) OVERRIDE;
-
-  // Returns the offset used while animating.
-  int animation_offset() const { return animation_offset_; }
+  // Returns the offset used during dropdown animation.
+  int dropdown_animation_offset() const { return dropdown_animation_offset_; }
 
   class Delegate {
    public:
     // Should return the current web contents.
-    virtual content::WebContents* GetWebContents() const = 0;
+    virtual content::WebContents* GetWebContents() = 0;
 
     // Returns the InstantController, or NULL if there isn't one.
     virtual InstantController* GetInstant() = 0;
+
+    virtual ToolbarModel* GetToolbarModel() = 0;
+    virtual const ToolbarModel* GetToolbarModel() const = 0;
 
     // Creates Widget for the given delegate.
     virtual views::Widget* CreateViewsBubble(
@@ -104,16 +120,10 @@ class LocationBarView : public LocationBar,
     virtual ContentSettingBubbleModelDelegate*
         GetContentSettingBubbleModelDelegate() = 0;
 
-    // Shows page information in the given web contents.
-    virtual void ShowPageInfo(content::WebContents* web_contents,
-                              const GURL& url,
-                              const content::SSLStatus& ssl,
-                              bool show_history) = 0;
-
-    // Called by the location bar view when the user starts typing in the edit.
-    // This forces our security style to be UNKNOWN for the duration of the
-    // editing.
-    virtual void OnInputInProgress(bool in_progress) = 0;
+    // Shows permissions and settings for the given web contents.
+    virtual void ShowWebsiteSettings(content::WebContents* web_contents,
+                                     const GURL& url,
+                                     const content::SSLStatus& ssl) = 0;
 
    protected:
     virtual ~Delegate() {}
@@ -127,24 +137,11 @@ class LocationBarView : public LocationBar,
     SECURITY_TEXT,
   };
 
-  // The modes reflect the different scenarios where a location bar can be used.
-  // The normal mode is the mode used in a regular browser window.
-  // In popup mode, the location bar view is read only and has a slightly
-  // different presentation (font size / color).
-  // In app launcher mode, the location bar is empty and no security states or
-  // page/browser actions are displayed.
-  enum Mode {
-    NORMAL = 0,
-    POPUP,
-    APP_LAUNCHER
-  };
-
   LocationBarView(Browser* browser,
                   Profile* profile,
                   CommandUpdater* command_updater,
-                  ToolbarModel* model,
                   Delegate* delegate,
-                  Mode mode);
+                  bool is_popup_mode);
 
   virtual ~LocationBarView();
 
@@ -160,19 +157,19 @@ class LocationBarView : public LocationBar,
   SkColor GetColor(ToolbarModel::SecurityLevel security_level,
                    ColorKind kind) const;
 
-  // Updates the location bar.  We also reset the bar's permanent text and
-  // security style, and, if |tab_for_state_restoring| is non-NULL, also restore
-  // saved state that the tab holds.
-  void Update(const content::WebContents* tab_for_state_restoring);
-
-  // Returns corresponding profile.
-  Profile* profile() const { return profile_; }
-
   // Returns the delegate.
   Delegate* delegate() const { return delegate_; }
 
   // See comment in browser_window.h for more info.
   void ZoomChangedForActiveTab(bool can_show_bubble);
+
+  // The zoom icon. It may not be visible.
+  ZoomView* zoom_view() { return zoom_view_; }
+
+  // The passwords icon. It may not be visible.
+  ManagePasswordsIconView* manage_passwords_icon_view() {
+    return manage_passwords_icon_view_;
+  }
 
   // Sets |preview_enabled| for the PageAction View associated with this
   // |page_action|. If |preview_enabled| is true, the view will display the
@@ -183,46 +180,39 @@ class LocationBarView : public LocationBar,
                                    bool preview_enabled);
 
   // Retrieves the PageAction View which is associated with |page_action|.
-  views::View* GetPageActionView(ExtensionAction* page_action);
+  PageActionWithBadgeView* GetPageActionView(ExtensionAction* page_action);
 
   // Toggles the star on or off.
   void SetStarToggled(bool on);
 
-  // Returns the star view. It may not be visible.
+  // The star. It may not be visible.
   StarView* star_view() { return star_view_; }
 
-  // Shows the bookmark prompt.
-  void ShowBookmarkPrompt();
+  // Toggles the translate icon on or off.
+  void SetTranslateIconToggled(bool on);
 
-  // Shows the Chrome To Mobile bubble.
-  void ShowChromeToMobileBubble();
+  // The translate icon. It may not be visible.
+  TranslateIconView* translate_icon_view() { return translate_icon_view_; }
 
-  // Returns the screen coordinates of the location entry (where the URL text
-  // appears, not where the icons are shown).
-  gfx::Point GetLocationEntryOrigin() const;
+  void set_toolbar_origin_chip_view(
+      ToolbarOriginChipView* toolbar_origin_chip_view) {
+    toolbar_origin_chip_view_ = toolbar_origin_chip_view;
+  }
 
-  // Invoked from OmniboxViewWin to show the instant suggestion.
-  void SetInstantSuggestion(const string16& text);
+  // Returns the screen coordinates of the omnibox (where the URL text appears,
+  // not where the icons are shown).
+  gfx::Point GetOmniboxViewOrigin() const;
 
-  // Returns the current instant suggestion text.
-  string16 GetInstantSuggestion() const;
+  // Shows |text| as an inline autocompletion.  This is useful for IMEs, where
+  // we can't show the autocompletion inside the actual OmniboxView.  See
+  // comments on |ime_inline_autocomplete_view_|.
+  void SetImeInlineAutocompletion(const base::string16& text);
 
-  // Sets whether the location entry can accept focus.
-  void SetLocationEntryFocusable(bool focusable);
+  // Invoked from OmniboxViewWin to show gray text autocompletion.
+  void SetGrayTextAutocompletion(const base::string16& text);
 
-  // Returns true if the location entry is focusable and visible in
-  // the root view.
-  bool IsLocationEntryFocusableInRootView() const;
-
-  // Sizing functions
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-
-  // Layout and Painting functions
-  virtual void Layout() OVERRIDE;
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
-
-  // No focus border for the location bar, the caret is enough.
-  virtual void OnPaintFocusBorder(gfx::Canvas* canvas) OVERRIDE { }
+  // Returns the current gray text autocompletion.
+  base::string16 GetGrayTextAutocompletion() const;
 
   // Set if we should show a focus rect while the location entry field is
   // focused. Used when the toolbar is in full keyboard accessibility mode.
@@ -233,47 +223,160 @@ class LocationBarView : public LocationBar,
   // in the toolbar in full keyboard accessibility mode.
   virtual void SelectAll();
 
-  const gfx::Font& font() const { return font_; }
+  views::ImageView* GetLocationIconView();
+  const views::ImageView* GetLocationIconView() const;
 
-#if defined(OS_WIN) && !defined(USE_AURA)
-  // Event Handlers
-  virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
-  virtual bool OnMouseDragged(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseCaptureLost() OVERRIDE;
-#endif
+  // Return a view suitable for anchoring location-bar-anchored bubbles to.
+  views::View* GetLocationBarAnchor();
+  // Return the point suitable for anchoring location-bar-anchored bubbles at.
+  // The point will be returned in the coordinates of the LocationBarView.
+  gfx::Point GetLocationBarAnchorPoint() const;
 
-  LocationIconView* location_icon_view() { return location_icon_view_; }
-  const LocationIconView* location_icon_view() const {
-    return location_icon_view_;
+  OmniboxViewViews* omnibox_view() { return omnibox_view_; }
+
+  views::View* generated_credit_card_view();
+
+  // Returns the height of the control without the top and bottom
+  // edges(i.e.  the height of the edit control inside).  If
+  // |use_preferred_size| is true this will be the preferred height,
+  // otherwise it will be the current height.
+  int GetInternalHeight(bool use_preferred_size);
+
+  // Returns the position and width that the popup should be, and also the left
+  // edge that the results should align themselves to (which will leave some
+  // border on the left of the popup).
+  void GetOmniboxPopupPositioningInfo(gfx::Point* top_left_screen_coord,
+                                      int* popup_width,
+                                      int* left_margin,
+                                      int* right_margin);
+
+  // LocationBar:
+  virtual void FocusLocation(bool select_all) OVERRIDE;
+  virtual void Revert() OVERRIDE;
+  virtual OmniboxView* GetOmniboxView() OVERRIDE;
+
+  // views::View:
+  virtual bool HasFocus() const OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
+  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual void Layout() OVERRIDE;
+
+  // OmniboxEditController:
+  virtual void Update(const content::WebContents* contents) OVERRIDE;
+  virtual void ShowURL() OVERRIDE;
+  virtual ToolbarModel* GetToolbarModel() OVERRIDE;
+  virtual content::WebContents* GetWebContents() OVERRIDE;
+
+  // Thickness of the edges of the omnibox background images, in normal mode.
+  static const int kNormalEdgeThickness;
+  // The same, but for popup mode.
+  static const int kPopupEdgeThickness;
+  // Space between items in the location bar, as well as between items and the
+  // edges.
+  static const int kItemPadding;
+  // Amount of padding built into the standard omnibox icons.
+  static const int kIconInternalPadding;
+  // Amount of padding to place between the origin chip and the leading edge of
+  // the location bar.
+  static const int kOriginChipEdgeItemPadding;
+  // Amount of padding built into the origin chip.
+  static const int kOriginChipBuiltinPadding;
+  // Space between the edge and a bubble.
+  static const int kBubblePadding;
+
+ private:
+  typedef std::vector<ContentSettingImageView*> ContentSettingViews;
+
+  friend class PageActionImageView;
+  friend class PageActionWithBadgeView;
+  typedef std::vector<ExtensionAction*> PageActions;
+  typedef std::vector<PageActionWithBadgeView*> PageActionViews;
+
+  // Returns the thickness of any visible left and right edge, in pixels.
+  int GetHorizontalEdgeThickness() const;
+
+  // The same, but for the top and bottom edges.
+  int vertical_edge_thickness() const {
+    return is_popup_mode_ ? kPopupEdgeThickness : kNormalEdgeThickness;
   }
 
-  views::View* location_entry_view() const { return location_entry_view_; }
+  // Updates the visibility state of the Content Blocked icons to reflect what
+  // is actually blocked on the current page. Returns true if the visibility
+  // of at least one of the views in |content_setting_views_| changed.
+  bool RefreshContentSettingViews();
 
-  // Overridden from OmniboxEditController:
-  virtual void OnAutocompleteAccept(const GURL& url,
-                                    WindowOpenDisposition disposition,
-                                    content::PageTransition transition,
-                                    const GURL& alternate_nav_url) OVERRIDE;
-  virtual void OnChanged() OVERRIDE;
-  virtual void OnSelectionBoundsChanged() OVERRIDE;
-  virtual void OnInputInProgress(bool in_progress) OVERRIDE;
-  virtual void OnKillFocus() OVERRIDE;
-  virtual void OnSetFocus() OVERRIDE;
-  virtual gfx::Image GetFavicon() const OVERRIDE;
-  virtual string16 GetTitle() const OVERRIDE;
-  virtual InstantController* GetInstant() OVERRIDE;
-  virtual content::WebContents* GetWebContents() const OVERRIDE;
+  // Deletes all page action views that we have created.
+  void DeletePageActionViews();
 
-  // Overridden from views::View:
-  virtual std::string GetClassName() const OVERRIDE;
-  virtual bool SkipDefaultKeyEventProcessing(
-      const ui::KeyEvent& event) OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
-  virtual bool HasFocus() const OVERRIDE;
+  // Updates the views for the Page Actions, to reflect state changes for
+  // PageActions. Returns true if the visibility of a PageActionWithBadgeView
+  // changed, or PageActionWithBadgeView were created/destroyed.
+  bool RefreshPageActionViews();
+
+  // Updates the view for the zoom icon based on the current tab's zoom. Returns
+  // true if the visibility of the view changed.
+  bool RefreshZoomView();
+
+  // Updates the Translate icon based on the current tab's Translate status.
+  void RefreshTranslateIcon();
+
+  // Updates |manage_passwords_icon_view_|. Returns true if visibility changed.
+  bool RefreshManagePasswordsIconView();
+
+  // Shows the manage passwords bubble if there is a savable password.
+  void ShowManagePasswordsBubbleIfNeeded();
+
+  // Helper to show the first run info bubble.
+  void ShowFirstRunBubbleInternal();
+
+  // Handles a request to change the value of this text field from software
+  // using an accessibility API (typically automation software, screen readers
+  // don't normally use this). Sets the value and clears the selection.
+  void AccessibilitySetValue(const base::string16& new_value);
+
+  // Returns true if the suggest text is valid.
+  bool HasValidSuggestText() const;
+
+  // Origin chip animation control methods.
+  void OnShowURLAnimationEnded();
+  void OnHideURLAnimationEnded();
+
+  // LocationBar:
+  virtual void ShowFirstRunBubble() OVERRIDE;
+  virtual GURL GetDestinationURL() const OVERRIDE;
+  virtual WindowOpenDisposition GetWindowOpenDisposition() const OVERRIDE;
+  virtual content::PageTransition GetPageTransition() const OVERRIDE;
+  virtual void AcceptInput() OVERRIDE;
+  virtual void FocusSearch() OVERRIDE;
+  virtual void UpdateContentSettingsIcons() OVERRIDE;
+  virtual void UpdateManagePasswordsIconAndBubble() OVERRIDE;
+  virtual void UpdatePageActions() OVERRIDE;
+  virtual void InvalidatePageActions() OVERRIDE;
+  virtual void UpdateOpenPDFInReaderPrompt() OVERRIDE;
+  virtual void UpdateGeneratedCreditCardView() OVERRIDE;
+  virtual void SaveStateToContents(content::WebContents* contents) OVERRIDE;
+  virtual const OmniboxView* GetOmniboxView() const OVERRIDE;
+  virtual LocationBarTesting* GetLocationBarForTesting() OVERRIDE;
+
+  // LocationBarTesting:
+  virtual int PageActionCount() OVERRIDE;
+  virtual int PageActionVisibleCount() OVERRIDE;
+  virtual ExtensionAction* GetPageAction(size_t index) OVERRIDE;
+  virtual ExtensionAction* GetVisiblePageAction(size_t index) OVERRIDE;
+  virtual void TestPageActionPressed(size_t index) OVERRIDE;
+  virtual bool GetBookmarkStarVisibility() OVERRIDE;
+
+  // views::View:
+  virtual const char* GetClassName() const OVERRIDE;
   virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE;
+  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+  virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE;
 
-  // Overridden from views::DragController:
+  // views::ButtonListener:
+  virtual void ButtonPressed(views::Button* sender,
+                             const ui::Event& event) OVERRIDE;
+
+  // views::DragController:
   virtual void WriteDragDataForView(View* sender,
                                     const gfx::Point& press_pt,
                                     OSExchangeData* data) OVERRIDE;
@@ -283,165 +386,51 @@ class LocationBarView : public LocationBar,
                                    const gfx::Point& press_pt,
                                    const gfx::Point& p) OVERRIDE;
 
-  // Overridden from LocationBar:
-  virtual void ShowFirstRunBubble() OVERRIDE;
-  virtual void SetInstantSuggestion(
-      const InstantSuggestion& suggestion) OVERRIDE;
-  virtual string16 GetInputString() const OVERRIDE;
-  virtual WindowOpenDisposition GetWindowOpenDisposition() const OVERRIDE;
-  virtual content::PageTransition GetPageTransition() const OVERRIDE;
-  virtual void AcceptInput() OVERRIDE;
-  virtual void FocusLocation(bool select_all) OVERRIDE;
-  virtual void FocusSearch() OVERRIDE;
-  virtual void UpdateContentSettingsIcons() OVERRIDE;
-  virtual void UpdatePageActions() OVERRIDE;
-  virtual void InvalidatePageActions() OVERRIDE;
-  virtual void UpdateWebIntentsButton() OVERRIDE;
-  virtual void UpdateOpenPDFInReaderPrompt() OVERRIDE;
-  virtual void SaveStateToContents(content::WebContents* contents) OVERRIDE;
-  virtual void Revert() OVERRIDE;
-  virtual const OmniboxView* GetLocationEntry() const OVERRIDE;
-  virtual OmniboxView* GetLocationEntry() OVERRIDE;
-  virtual LocationBarTesting* GetLocationBarForTesting() OVERRIDE;
+  // OmniboxEditController:
+  virtual void OnChanged() OVERRIDE;
+  virtual void OnSetFocus() OVERRIDE;
+  virtual InstantController* GetInstant() OVERRIDE;
+  virtual const ToolbarModel* GetToolbarModel() const OVERRIDE;
+  virtual void HideURL() OVERRIDE;
 
-  // Overridden from LocationBarTesting:
-  virtual int PageActionCount() OVERRIDE;
-  virtual int PageActionVisibleCount() OVERRIDE;
-  virtual ExtensionAction* GetPageAction(size_t index) OVERRIDE;
-  virtual ExtensionAction* GetVisiblePageAction(size_t index) OVERRIDE;
-  virtual void TestPageActionPressed(size_t index) OVERRIDE;
-  virtual void TestActionBoxMenuItemSelected(int command_id) OVERRIDE;
-  virtual bool GetBookmarkStarVisibility() OVERRIDE;
+  // DropdownBarHostDelegate:
+  virtual void SetFocusAndSelection(bool select_all) OVERRIDE;
+  virtual void SetAnimationOffset(int offset) OVERRIDE;
 
-  // Overridden from TemplateURLServiceObserver
+  // gfx::AnimationDelegate:
+  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
+  virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE;
+
+  // TemplateURLServiceObserver:
   virtual void OnTemplateURLServiceChanged() OVERRIDE;
 
-  // Overridden from content::NotificationObserver
+  // content::NotificationObserver:
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  // Returns the height of the control without the top and bottom
-  // edges(i.e.  the height of the edit control inside).  If
-  // |use_preferred_size| is true this will be the preferred height,
-  // otherwise it will be the current height.
-  int GetInternalHeight(bool use_preferred_size);
-
-  // Space between items in the location bar.
-  static int GetItemPadding();
-
-  // Space between the edges and the items next to them.
-  static int GetEdgeItemPadding();
-
-  // Thickness of the left and right edges of the omnibox, in normal mode.
-  static const int kNormalHorizontalEdgeThickness;
-  // Thickness of the top and bottom edges of the omnibox.
-  static const int kVerticalEdgeThickness;
-  // Amount of padding built into the standard omnibox icons.
-  static const int kIconInternalPadding;
-  // Space between the edge and a bubble.
-  static const int kBubbleHorizontalPadding;
-
- protected:
-  virtual void OnFocus() OVERRIDE;
-
- private:
-  typedef std::vector<ContentSettingImageView*> ContentSettingViews;
-
-  friend class PageActionImageView;
-  friend class PageActionWithBadgeView;
-  typedef std::vector<PageActionWithBadgeView*> PageActionViews;
-
-  // Returns the amount of horizontal space (in pixels) out of
-  // |location_bar_width| that is not taken up by the actual text in
-  // location_entry_.
-  int AvailableWidth(int location_bar_width);
-
-  // If |view| fits in |available_width|, it is made visible and positioned at
-  // the leading or trailing end of |bounds|, which are then shrunk
-  // appropriately.  Otherwise |view| is made invisible.
-  // Note: |view| is expected to have already been positioned and sized
-  // vertically.
-  void LayoutView(views::View* view,
-                  int padding,
-                  int available_width,
-                  bool leading,
-                  gfx::Rect* bounds);
-
-  // Update the visibility state of the Content Blocked icons to reflect what is
-  // actually blocked on the current page.
-  void RefreshContentSettingViews();
-
-  // Delete all page action views that we have created.
-  void DeletePageActionViews();
-
-  // Update the views for the Page Actions, to reflect state changes for
-  // PageActions.
-  void RefreshPageActionViews();
-
-  // Returns the number of scripts currently running on the page.
-  size_t ScriptBubbleScriptsRunning();
-
-  // Update the Script Bubble Icon, to reflect the number of content scripts
-  // running on the page.
-  void RefreshScriptBubble();
-
-  // Update the view for the zoom icon based on the current tab's zoom.
-  void RefreshZoomView();
-
-  // Sets the visibility of view to new_vis.
-  void ToggleVisibility(bool new_vis, views::View* view);
-
-#if !defined(USE_AURA)
-  // Helper for the Mouse event handlers that does all the real work.
-  void OnMouseEvent(const ui::MouseEvent& event, UINT msg);
-#endif
-
-  // Returns true if the suggest text is valid.
-  bool HasValidSuggestText() const;
-
-  // Helper to show the first run info bubble.
-  void ShowFirstRunBubbleInternal();
-
-  // Draw backgrounds and borders for page actions.  Must be called
-  // after layout, so the |page_action_views_| have their bounds.
-  void PaintPageActionBackgrounds(gfx::Canvas* canvas);
+  // SearchModelObserver:
+  virtual void ModelChanged(const SearchModel::State& old_state,
+                            const SearchModel::State& new_state) OVERRIDE;
 
   // The Browser this LocationBarView is in.  Note that at least
   // chromeos::SimpleWebViewDialog uses a LocationBarView outside any browser
   // window, so this may be NULL.
   Browser* browser_;
 
-  // The Autocomplete Edit field.
-  scoped_ptr<OmniboxView> location_entry_;
-
-  // The profile which corresponds to this View.
-  Profile* profile_;
-
-  // Command updater which corresponds to this View.
-  CommandUpdater* command_updater_;
-
-  // The model.
-  ToolbarModel* model_;
+  OmniboxViewViews* omnibox_view_;
 
   // Our delegate.
   Delegate* delegate_;
 
-  // This is the string of text from the autocompletion session that the user
-  // entered or selected.
-  string16 location_input_;
+  // Object used to paint the border.
+  scoped_ptr<views::Painter> border_painter_;
 
-  // The user's desired disposition for how their input should be opened
-  WindowOpenDisposition disposition_;
+  // The version of the origin chip that appears in the location bar.
+  OriginChipView* origin_chip_view_;
 
-  // The transition type to use for the navigation
-  content::PageTransition transition_;
-
-  // Font used by edit and some of the hints.
-  gfx::Font font_;
-
-  // An object used to paint the normal-mode background.
-  scoped_ptr<views::Painter> background_painter_;
+  // The version of the origin chip that appears in the toolbar.
+  ToolbarOriginChipView* toolbar_origin_chip_view_;
 
   // An icon to the left of the edit field.
   LocationIconView* location_icon_view_;
@@ -449,8 +438,11 @@ class LocationBarView : public LocationBar,
   // A bubble displayed for EV HTTPS sites.
   EVBubbleView* ev_bubble_view_;
 
-  // Location_entry view
-  views::View* location_entry_view_;
+  // A view to show inline autocompletion when an IME is active.  In this case,
+  // we shouldn't change the text or selection inside the OmniboxView itself,
+  // since this will conflict with the IME's control over the text.  So instead
+  // we show any autocompletion in a separate field after the OmniboxView.
+  views::Label* ime_inline_autocomplete_view_;
 
   // The following views are used to provide hints and remind the user as to
   // what is going in the edit. They are all added a children of the
@@ -468,35 +460,42 @@ class LocationBarView : public LocationBar,
   // Shown if the selected url has a corresponding keyword.
   KeywordHintView* keyword_hint_view_;
 
+  // The voice search icon.
+  views::ImageButton* mic_search_view_;
+
   // The content setting views.
   ContentSettingViews content_setting_views_;
 
   // The zoom icon.
   ZoomView* zoom_view_;
 
+  // A bubble that shows after successfully generating a new credit card number.
+  GeneratedCreditCardView* generated_credit_card_view_;
+
   // The icon to open a PDF in Reader.
   OpenPDFInReaderView* open_pdf_in_reader_view_;
 
+  // The manage passwords icon.
+  ManagePasswordsIconView* manage_passwords_icon_view_;
+
   // The current page actions.
-  std::vector<ExtensionAction*> page_actions_;
+  PageActions page_actions_;
 
   // The page action icon views.
   PageActionViews page_action_views_;
 
-  // The script bubble.
-  ScriptBubbleIconView* script_bubble_icon_view_;
+  // The icon for Translate.
+  TranslateIconView* translate_icon_view_;
 
   // The star.
   StarView* star_view_;
 
-  // The web intents choose-another-service button
-  WebIntentsButtonView* web_intents_button_view_;
+  // The search/go button.
+  views::LabelButton* search_button_;
 
-  // The action box button (plus).
-  ActionBoxButtonView* action_box_button_view_;
-
-  // The mode that dictates how the bar shows.
-  Mode mode_;
+  // Whether we're in popup mode. This value also controls whether the location
+  // bar is read-only.
+  const bool is_popup_mode_;
 
   // True if we should show a focus rect while the location entry field is
   // focused. Used when the toolbar is in full keyboard accessibility mode.
@@ -509,16 +508,26 @@ class LocationBarView : public LocationBar,
   // Tracks this preference to determine whether bookmark editing is allowed.
   BooleanPrefMember edit_bookmarks_enabled_;
 
-  // While animating, the host clips the widget and draws only the bottom
-  // part of it. The view needs to know the pixel offset at which we are drawing
-  // the widget so that we can draw the curved edges that attach to the toolbar
-  // in the right location.
-  int animation_offset_;
+  // During dropdown animation, the host clips the widget and draws only the
+  // bottom part of it. The view needs to know the pixel offset at which we are
+  // drawing the widget so that we can draw the curved edges that attach to the
+  // toolbar in the right location.
+  int dropdown_animation_offset_;
+
+  // Origin chip animations.
+  scoped_ptr<gfx::SlideAnimation> show_url_animation_;
+  scoped_ptr<gfx::SlideAnimation> hide_url_animation_;
+
+  // Text label shown only during origin chip animations.
+  views::Label* animated_host_label_;
 
   // Used to register for notifications received by NotificationObserver.
   content::NotificationRegistrar registrar_;
 
-  DISALLOW_IMPLICIT_CONSTRUCTORS(LocationBarView);
+  // Used to bind callback functions to this object.
+  base::WeakPtrFactory<LocationBarView> weak_ptr_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(LocationBarView);
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_LOCATION_BAR_LOCATION_BAR_VIEW_H_

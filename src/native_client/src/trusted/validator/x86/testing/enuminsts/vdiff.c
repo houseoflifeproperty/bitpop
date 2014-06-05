@@ -48,15 +48,6 @@ static Bool gVerbose = FALSE;
  */
 static Bool gSilent = FALSE;
 
-/* When true, don't report consecutive errors for consecutive instructions
- * with the same instruction mnemonic.
- */
-static Bool gSkipRepeatReports = FALSE;
-
-/* Set to true to enable checking of mnemonics (opcode names).
- */
-static Bool gCheckMnemonics = TRUE;
-
 /* Count of errors that have a high certainty of being exploitable. */
 static int gSawLethalError = 0;
 
@@ -124,9 +115,7 @@ static void PrintProgress(const char* format, ...) {
   va_end(ap);
 }
 
-/* Report a disagreement between decoders. To reduce
- * noice from uninteresting related errors, gSkipRepeatReports will
- * avoid printing consecutive errors for the same opcode.
+/* Report a disagreement between decoders.
  */
 static void DecoderError(const char *why,
                          NaClEnumerator *pinst,
@@ -144,31 +133,13 @@ static void PrintBytes(FILE *f, uint8_t* bytes, size_t len) {
   }
 }
 
-static Bool NotOpcodeRepeat(const char* opcode) {
-  static char last_opcode[kBufferSize] = "";
-  Bool result = (strcmp(last_opcode, opcode) != 0);
-  strncpy(last_opcode, opcode, kBufferSize);
-  return result;
-}
-
-static void CheckMnemonics(NaClEnumerator* pinst, NaClEnumerator* dinst) {
-  const char* prod_opcode = vProd->_get_inst_mnemonic_fn(pinst);
-  const char* dfa_opcode = vDFA->_get_inst_mnemonic_fn(dinst);
-
-  if (0 != strcmp(prod_opcode, dfa_opcode)) {
-    /* avoid redundant messages... */
-    if (NotOpcodeRepeat(prod_opcode)) {
-      printf("Warning: OPCODE MISMATCH: %s != %s\n", prod_opcode, dfa_opcode);
-    }
-  }
-}
-
 struct vdiff_stats {
   int64_t tried;
   int64_t valid;
   int64_t invalid;
   int64_t errors;
-} gVDiffStats = {0, 0, 0, 0};
+  int64_t ignored;
+} gVDiffStats = {0, 0, 0, 0, 0};
 
 static void IncrTried(void) {
   gVDiffStats.tried += 1;
@@ -186,6 +157,10 @@ static void IncrErrors(void) {
   gVDiffStats.errors += 1;
 }
 
+static void IncrIgnored(void) {
+  gVDiffStats.ignored += 1;
+}
+
 static void PrintStats(void) {
   printf("Stats:\n");
   if (!gEasyDiffMode) {
@@ -194,8 +169,10 @@ static void PrintStats(void) {
   }
   printf("errors: %" NACL_PRIu64 "\n", gVDiffStats.errors);
   printf("tried: %" NACL_PRIu64 "\n", gVDiffStats.tried);
-  printf("    =? %" NACL_PRIu64 " valid + invalid + errors\n",
-         gVDiffStats.valid + gVDiffStats.invalid + gVDiffStats.errors);
+  printf("ignored: %" NACL_PRIu64 "\n", gVDiffStats.ignored);
+  printf("    =? %" NACL_PRIu64 " valid + invalid + errors + ignored\n",
+         gVDiffStats.valid + gVDiffStats.invalid + gVDiffStats.errors +
+         gVDiffStats.ignored);
 }
 
 static void InitInst(NaClEnumerator *nacle,
@@ -234,19 +211,30 @@ static void TryOneInstruction(uint8_t *itext, size_t nbytes) {
         /* Both validators see a legal instruction, */
         /* and they agree on critical details.      */
         IncrValid();
-        /* Warn if decoders disagree opcode name. */
-        if (gCheckMnemonics) CheckMnemonics(&pinst, &dinst);
       } else {
         DecoderError("LENGTH MISMATCH", &pinst, &dinst, "");
         IncrErrors();
       }
     } else if (prod_okay && !rdfa_okay) {
-      /* Validators disagree on instruction legality */
-      DecoderError("VALIDATORS DISAGREE (prod accepts, RDFA rejects)",
-                   &pinst,
-                   &dinst,
-                   "");
-      IncrErrors();
+      /*
+       * 32bit production validator by design is unable to distingush a lot of
+       * instructions (the ones which work only with memory or only with
+       * registers).  To avoid commiting multimegabyte golden file don't count
+       * these differences as substantial.  It's not a security problem if we
+       * reject some valid x86 instructions and if we'll lose something
+       * important hopefully developers will remind us.
+       */
+      if (NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86 &&
+          NACL_TARGET_SUBARCH == 32) {
+        IncrIgnored();
+      } else {
+        /* Validators disagree on instruction legality */
+        DecoderError("VALIDATORS DISAGREE (prod accepts, RDFA rejects)",
+                     &pinst,
+                     &dinst,
+                     "");
+        IncrErrors();
+      }
     } else if (!prod_okay && rdfa_okay) {
       /* Validators disagree on instruction legality */
       DecoderError("VALIDATORS DISAGREE (prod rejects, RDFA accepts)",
@@ -433,7 +421,6 @@ static void WithREX(TestAllFunction testall,
  * all instructions.
  */
 static void TestAllInstructions(void) {
-  gSkipRepeatReports = TRUE;
   /* NOTE: Prefix byte order needs to be reversed when written as
    * an integer. For example, for integer prefix 0x3a0f, 0f will
    * go in instruction byte 0, and 3a in byte 1.
@@ -504,10 +491,6 @@ static void RunRegressionTests(void) {
   TestOneInstruction("664001d8");  /* legal; REX after data16    */
   TestOneInstruction("414001d8");  /* illegal; two REX bytes     */
 
-  /* Reset the opcode repeat test, so as not to silence errors */
-  /* that happened in the regression suite. */
-  (void)NotOpcodeRepeat("");
-
   /* And some tests for degenerate prefix patterns */
   TestOneInstruction("666690");
   TestOneInstruction("6690");
@@ -535,17 +518,22 @@ static int ParseArgv(const int argc, const char* argv[]) {
   if (nextarg < argc &&
       0 == strcmp(argv[nextarg], FLAG_EasyDiff)) {
     gEasyDiffMode = TRUE;
-    gCheckMnemonics = FALSE;
     nextarg += 1;
   }
   return nextarg;
 }
+
+static char g_standard_output_buffer[4 << 10];
 
 int main(const int argc, const char *argv[]) {
   int nextarg;
 
   NaClLogModuleInit();
   NaClLogSetVerbosity(LOG_FATAL);
+  if (0 != setvbuf(stdout, g_standard_output_buffer, _IOLBF,
+                   sizeof g_standard_output_buffer)) {
+    NaClLog(LOG_FATAL, "vdiff: setvbuf failed\n");
+  }
 #if NACL_LINUX || NACL_OSX
   srandom(time(NULL));
 #endif

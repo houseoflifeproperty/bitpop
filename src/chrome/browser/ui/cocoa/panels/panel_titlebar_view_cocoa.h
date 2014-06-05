@@ -8,17 +8,15 @@
 #import <Cocoa/Cocoa.h>
 
 #import "chrome/browser/ui/cocoa/panels/mouse_drag_controller.h"
-#import "chrome/browser/ui/cocoa/tracking_area.h"
+#import "ui/base/cocoa/tracking_area.h"
 
-@class CrTrackingArea;
 @class HoverImageButton;
 @class MouseDragController;
 @class PanelWindowControllerCocoa;
 
 // A class that works as a custom titlebar for Panels. It is placed on top of
-// the regular Cocoa titlebar. We paint theme image on it, and it's
-// the place for the close button, page favicon, title label and a button to
-// minimize/restore the panel.
+// the regular Cocoa titlebar. It's the place for the close button, page
+// favicon, title label and a button to minimize/restore the panel.
 // It also facilitates dragging and minimization of the panels, and changes
 // color as 'new activity' indicator.
 // One way to have custom titlebar would be to use NSBorderlessWindow,
@@ -59,16 +57,16 @@
   IBOutlet NSView* overlay_;
   NSButton* closeButton_;  // Created explicitly, not from NIB. Weak, destroyed
                            // when view is destroyed, as a subview.
-  ScopedCrTrackingArea closeButtonTrackingArea_;
+  ui::ScopedCrTrackingArea closeButtonTrackingArea_;
   BOOL isDrawingAttention_;
 
   // "Glint" animation is used in "Draw Attention" mode.
-  scoped_nsobject<RepaintAnimation> glintAnimation_;
-  scoped_nsobject<NSTimer> glintAnimationTimer_;
-  double glintInterval_;
+  base::scoped_nsobject<RepaintAnimation> glintAnimation_;
+  base::scoped_nsobject<NSTimer> glintAnimationTimer_;
+  int glintCounter_;
 
   // Drag support.
-  scoped_nsobject<MouseDragController> dragController_;
+  base::scoped_nsobject<MouseDragController> dragController_;
 }
 
 // Callbacks from Close, Minimize, and Restore buttons.
@@ -94,7 +92,6 @@
 
 // Various events that we'll need to redraw our titlebar for.
 - (void)didChangeFrame:(NSNotification*)notification;
-- (void)didChangeTheme:(NSNotification*)notification;
 - (void)didChangeMainWindow:(NSNotification*)notification;
 
 // Draw Attention methods - change appearance of titlebar to attract user.

@@ -6,30 +6,47 @@
   'variables': {
     'conditions': [
       ['sysroot!=""', {
-        'pkg-config': './pkg-config-wrapper "<(sysroot)" "<(target_arch)"',
+        'pkg-config': '<(chroot_cmd) ./pkg-config-wrapper "<(sysroot)" "<(target_arch)"',
+        # libgcrypt-config-wrapper invokes libgcrypt-config directly from the 
+        # sysroot, so there's no need to prefix it with <(chroot_cmd).
+        'libgcrypt-config': './libgcrypt-config-wrapper "<(sysroot)"',
       }, {
-        'pkg-config': 'pkg-config'
-      }]
+        'pkg-config': 'pkg-config',
+        'libgcrypt-config': 'libgcrypt-config',
+      }],
     ],
 
+    'linux_link_libgps%': 0,
     'linux_link_libpci%': 0,
+    'linux_link_libspeechd%': 0,
+    'linux_link_libbrlapi%': 0,
   },
   'conditions': [
-    [ 'os_posix==1 and OS!="mac"', {
-      'variables': {
-        # We use our own copy of libssl3, although we still need to link against
-        # the rest of NSS.
-        'use_system_ssl%': 0,
-      },
-    }, {
-      'variables': {
-        'use_system_ssl%': 1,
-      },
-    }],
-    [ 'chromeos==0', {
-      # Hide GTK and related dependencies for Chrome OS, so they won't get
-      # added back to Chrome OS. Don't try to use GTK on Chrome OS.
+    [ 'chromeos==0 and use_ozone==0', {
+      # Hide GTK and related dependencies for Chrome OS and Ozone, so they won't get
+      # added back to Chrome OS and Ozone. Don't try to use GTK on Chrome OS and Ozone.
       'targets': [
+        {
+          'target_name': 'gdk',
+          'type': 'none',
+          'conditions': [
+            ['_toolset=="target"', {
+              'direct_dependent_settings': {
+                'cflags': [
+                  '<!@(<(pkg-config) --cflags gdk-2.0)',
+                ],
+              },
+              'link_settings': {
+                'ldflags': [
+                  '<!@(<(pkg-config) --libs-only-L --libs-only-other gdk-2.0)',
+                ],
+                'libraries': [
+                  '<!@(<(pkg-config) --libs-only-l gdk-2.0)',
+                ],
+              },
+            }],
+          ],
+        },
         {
           'target_name': 'gtk',
           'type': 'none',
@@ -41,7 +58,7 @@
           },
           'conditions': [
             ['_toolset=="target"', {
-              'direct_dependent_settings': {
+              'all_dependent_settings': {
                 'cflags': [
                   '<!@(<(pkg-config) --cflags <(gtk_packages))',
                 ],
@@ -55,7 +72,7 @@
                 ],
               },
             }, {
-              'direct_dependent_settings': {
+              'all_dependent_settings': {
                 'cflags': [
                   '<!@(pkg-config --cflags <(gtk_packages))',
                 ],
@@ -92,85 +109,357 @@
             }],
           ],
         },
+      ],  # targets
+    }],
+    [ 'use_x11==1', {
+      # Hide X11 and related dependencies when use_x11=0
+      'targets': [
         {
-          'target_name': 'gdk',
+          'target_name': 'x11',
           'type': 'none',
+          'toolsets': ['host', 'target'],
           'conditions': [
             ['_toolset=="target"', {
               'direct_dependent_settings': {
                 'cflags': [
-                  '<!@(<(pkg-config) --cflags gdk-2.0)',
+                  '<!@(<(pkg-config) --cflags x11)',
                 ],
               },
               'link_settings': {
                 'ldflags': [
-                  '<!@(<(pkg-config) --libs-only-L --libs-only-other gdk-2.0)',
+                  '<!@(<(pkg-config) --libs-only-L --libs-only-other x11 xi)',
                 ],
                 'libraries': [
-                  '<!@(<(pkg-config) --libs-only-l gdk-2.0)',
+                  '<!@(<(pkg-config) --libs-only-l x11 xi)',
+                ],
+              },
+            }, {
+              'direct_dependent_settings': {
+                'cflags': [
+                  '<!@(pkg-config --cflags x11)',
+                ],
+              },
+              'link_settings': {
+                'ldflags': [
+                  '<!@(pkg-config --libs-only-L --libs-only-other x11 xi)',
+                ],
+                'libraries': [
+                  '<!@(pkg-config --libs-only-l x11 xi)',
                 ],
               },
             }],
           ],
         },
+        {
+          'target_name': 'xcursor',
+          'type': 'none',
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(<(pkg-config) --cflags xcursor)',
+            ],
+          },
+          'link_settings': {
+            'ldflags': [
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other xcursor)',
+            ],
+            'libraries': [
+              '<!@(<(pkg-config) --libs-only-l xcursor)',
+            ],
+          },
+        },
+        {
+          'target_name': 'xcomposite',
+          'type': 'none',
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(<(pkg-config) --cflags xcomposite)',
+            ],
+          },
+          'link_settings': {
+            'ldflags': [
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other xcomposite)',
+            ],
+            'libraries': [
+              '<!@(<(pkg-config) --libs-only-l xcomposite)',
+            ],
+          },
+        },
+        {
+          'target_name': 'xdamage',
+          'type': 'none',
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(<(pkg-config) --cflags xdamage)',
+            ],
+          },
+          'link_settings': {
+            'ldflags': [
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other xdamage)',
+            ],
+            'libraries': [
+              '<!@(<(pkg-config) --libs-only-l xdamage)',
+            ],
+          },
+        },
+        {
+          'target_name': 'xext',
+          'type': 'none',
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(<(pkg-config) --cflags xext)',
+            ],
+          },
+          'link_settings': {
+            'ldflags': [
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other xext)',
+            ],
+            'libraries': [
+              '<!@(<(pkg-config) --libs-only-l xext)',
+            ],
+          },
+        },
+        {
+          'target_name': 'xfixes',
+          'type': 'none',
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(<(pkg-config) --cflags xfixes)',
+            ],
+          },
+          'link_settings': {
+            'ldflags': [
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other xfixes)',
+            ],
+            'libraries': [
+              '<!@(<(pkg-config) --libs-only-l xfixes)',
+            ],
+          },
+        },
+        {
+          'target_name': 'xi',
+          'type': 'none',
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(<(pkg-config) --cflags xi)',
+            ],
+          },
+          'link_settings': {
+            'ldflags': [
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other xi)',
+            ],
+            'libraries': [
+              '<!@(<(pkg-config) --libs-only-l xi)',
+            ],
+          },
+        },
+        {
+          'target_name': 'xrandr',
+          'type': 'none',
+          'toolsets': ['host', 'target'],
+          'conditions': [
+            ['_toolset=="target"', {
+              'direct_dependent_settings': {
+                'cflags': [
+                  '<!@(<(pkg-config) --cflags xrandr)',
+                ],
+              },
+              'link_settings': {
+                'ldflags': [
+                  '<!@(<(pkg-config) --libs-only-L --libs-only-other xrandr)',
+                ],
+                'libraries': [
+                  '<!@(<(pkg-config) --libs-only-l xrandr)',
+                ],
+              },
+            }, {
+              'direct_dependent_settings': {
+                'cflags': [
+                  '<!@(pkg-config --cflags xrandr)',
+                ],
+              },
+              'link_settings': {
+                'ldflags': [
+                  '<!@(pkg-config --libs-only-L --libs-only-other xrandr)',
+                ],
+                'libraries': [
+                  '<!@(pkg-config --libs-only-l xrandr)',
+                ],
+              },
+            }],
+          ],
+        },
+        {
+          'target_name': 'xrender',
+          'type': 'none',
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(<(pkg-config) --cflags xrender)',
+            ],
+          },
+          'link_settings': {
+            'ldflags': [
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other xrender)',
+            ],
+            'libraries': [
+              '<!@(<(pkg-config) --libs-only-l xrender)',
+            ],
+          },
+        },
+        {
+          'target_name': 'xscrnsaver',
+          'type': 'none',
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(<(pkg-config) --cflags xscrnsaver)',
+            ],
+          },
+          'link_settings': {
+            'ldflags': [
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other xscrnsaver)',
+            ],
+            'libraries': [
+              '<!@(<(pkg-config) --libs-only-l xscrnsaver)',
+            ],
+          },
+        },
+        {
+          'target_name': 'xtst',
+          'type': 'none',
+          'toolsets': ['host', 'target'],
+          'conditions': [
+            ['_toolset=="target"', {
+              'direct_dependent_settings': {
+                'cflags': [
+                  '<!@(<(pkg-config) --cflags xtst)',
+                ],
+              },
+              'link_settings': {
+                'ldflags': [
+                  '<!@(<(pkg-config) --libs-only-L --libs-only-other xtst)',
+                ],
+                'libraries': [
+                  '<!@(<(pkg-config) --libs-only-l xtst)',
+                ],
+              },
+            }, {
+              'direct_dependent_settings': {
+                'cflags': [
+                  '<!@(pkg-config --cflags xtst)',
+                ],
+              },
+              'link_settings': {
+                'ldflags': [
+                  '<!@(pkg-config --libs-only-L --libs-only-other xtst)',
+                ],
+                'libraries': [
+                  '<!@(pkg-config --libs-only-l xtst)',
+                ],
+              },
+            }]
+          ]
+        }
       ],  # targets
+    }],
+    ['use_evdev_gestures==1', {
+      'targets': [
+        {
+          'target_name': 'libevdev-cros',
+          'type': 'none',
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(<(pkg-config) --cflags libevdev-cros)'
+            ],
+          },
+          'link_settings': {
+            'ldflags': [
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other libevdev-cros)',
+            ],
+            'libraries': [
+              '<!@(<(pkg-config) --libs-only-l libevdev-cros)',
+            ],
+          },
+        },
+        {
+          'target_name': 'libgestures',
+          'type': 'none',
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(<(pkg-config) --cflags libgestures)'
+            ],
+          },
+          'link_settings': {
+            'ldflags': [
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other libgestures)',
+            ],
+            'libraries': [
+              '<!@(<(pkg-config) --libs-only-l libgestures)',
+            ],
+          },
+        },
+      ],
     }],
   ],  # conditions
   'targets': [
     {
-      'target_name': 'ssl',
+      'target_name': 'dbus',
+      'type': 'none',
+      'direct_dependent_settings': {
+        'cflags': [
+          '<!@(<(pkg-config) --cflags dbus-1)',
+        ],
+      },
+      'link_settings': {
+        'ldflags': [
+          '<!@(<(pkg-config) --libs-only-L --libs-only-other dbus-1)',
+        ],
+        'libraries': [
+          '<!@(<(pkg-config) --libs-only-l dbus-1)',
+        ],
+      },
+    },
+    {
+      'target_name': 'dridrm',
+      'type': 'none',
+      'direct_dependent_settings': {
+        'cflags': [
+          '<!@(<(pkg-config) --cflags libdrm)',
+        ],
+      },
+      'link_settings': {
+        'libraries': [
+          '<!@(<(pkg-config) --libs-only-l libdrm)',
+        ],
+      },
+    },
+    {
+      'target_name': 'fontconfig',
       'type': 'none',
       'conditions': [
         ['_toolset=="target"', {
           'conditions': [
-            ['use_openssl==1', {
-              'dependencies': [
-                '../../third_party/openssl/openssl.gyp:openssl',
-              ],
-            }],
-            ['use_openssl==0 and use_system_ssl==0', {
-              'dependencies': [
-                '../../net/third_party/nss/ssl.gyp:libssl',
-                '../../third_party/zlib/zlib.gyp:zlib',
-              ],
+            ['use_system_fontconfig==1', {
               'direct_dependent_settings': {
-                'include_dirs+': [
-                  # We need for our local copies of the libssl3 headers to come
-                  # before other includes, as we are shadowing system headers.
-                  '<(DEPTH)/net/third_party/nss/ssl',
-                ],
                 'cflags': [
-                  '<!@(<(pkg-config) --cflags nss)',
+                  '<!@(<(pkg-config) --cflags fontconfig)',
                 ],
               },
               'link_settings': {
                 'ldflags': [
-                  '<!@(<(pkg-config) --libs-only-L --libs-only-other nss)',
+                  '<!@(<(pkg-config) --libs-only-L --libs-only-other fontconfig)',
                 ],
                 'libraries': [
-                  '<!@(<(pkg-config) --libs-only-l nss | sed -e "s/-lssl3//")',
+                  '<!@(<(pkg-config) --libs-only-l fontconfig)',
                 ],
               },
+            }, {  # use_system_fontconfig==0
+              'dependencies': [
+                '../../third_party/fontconfig/fontconfig.gyp:fontconfig',
+              ],
+              'export_dependent_settings' : [
+                '../../third_party/fontconfig/fontconfig.gyp:fontconfig',
+              ],
             }],
-            ['use_openssl==0 and use_system_ssl==1', {
-              'direct_dependent_settings': {
-                'cflags': [
-                  '<!@(<(pkg-config) --cflags nss)',
-                ],
-                'defines': [
-                  'USE_SYSTEM_SSL',
-                ],
-              },
-              'link_settings': {
-                'ldflags': [
-                  '<!@(<(pkg-config) --libs-only-L --libs-only-other nss)',
-                ],
-                'libraries': [
-                  '<!@(<(pkg-config) --libs-only-l nss)',
-                ],
-              },
-            }],
-          ]
+          ],
         }],
       ],
     },
@@ -190,27 +479,6 @@
             ],
             'libraries': [
               '<!@(<(pkg-config) --libs-only-l freetype2)',
-            ],
-          },
-        }],
-      ],
-    },
-    {
-      'target_name': 'fontconfig',
-      'type': 'none',
-      'conditions': [
-        ['_toolset=="target"', {
-          'direct_dependent_settings': {
-            'cflags': [
-              '<!@(<(pkg-config) --cflags fontconfig)',
-            ],
-          },
-          'link_settings': {
-            'ldflags': [
-              '<!@(<(pkg-config) --libs-only-L --libs-only-other fontconfig)',
-            ],
-            'libraries': [
-              '<!@(<(pkg-config) --libs-only-l fontconfig)',
             ],
           },
         }],
@@ -245,9 +513,6 @@
       'type': 'static_library',
       'conditions': [
         ['use_gio==1 and _toolset=="target"', {
-          'dependencies': [
-            '../../base/base.gyp:base',
-          ],
           'cflags': [
             '<!@(<(pkg-config) --cflags gio-2.0)',
           ],
@@ -262,6 +527,9 @@
               '<(SHARED_INTERMEDIATE_DIR)',
             ],
           },
+          'include_dirs': [
+            '../..',
+          ],
           'link_settings': {
             'ldflags': [
               '<!@(<(pkg-config) --libs-only-L --libs-only-other gio-2.0)',
@@ -299,9 +567,6 @@
                          '--output-h', '<(output_h)',
                          '--output-cc', '<(output_cc)',
                          '--header', '<gio/gio.h>',
-                         # TODO(phajdan.jr): This will no longer be needed
-                         # after switch to Precise, http://crbug.com/158577 .
-                         '--bundled-header', '"build/linux/gsettings.h"',
                          '--link-directly=<(linux_link_gsettings)',
                          'g_settings_new',
                          'g_settings_get_child',
@@ -311,7 +576,7 @@
                          'g_settings_get_strv',
                          'g_settings_list_schemas',
               ],
-              'message': 'Generating libgio library loader.',
+              'message': 'Generating libgio library loader',
               'process_outputs_as_sources': 1,
             },
           ],
@@ -319,173 +584,39 @@
       ],
     },
     {
-      'target_name': 'libpci',
-      'type': 'static_library',
-      'cflags': [
-        '<!@(<(pkg-config) --cflags libpci)',
-      ],
-      'dependencies': [
-        '../../base/base.gyp:base',
-      ],
-      'direct_dependent_settings': {
-        'include_dirs': [
-          '<(SHARED_INTERMEDIATE_DIR)',
-        ],
-        'conditions': [
-          ['linux_link_libpci==1', {
-            'link_settings': {
-              'ldflags': [
-                '<!@(<(pkg-config) --libs-only-L --libs-only-other libpci)',
-              ],
-              'libraries': [
-                '<!@(<(pkg-config) --libs-only-l libpci)',
-              ],
-            }
-          }],
-        ],
-      },
-      'hard_dependency': 1,
-      'actions': [
-        {
-          'variables': {
-            'output_h': '<(SHARED_INTERMEDIATE_DIR)/library_loaders/libpci.h',
-            'output_cc': '<(INTERMEDIATE_DIR)/libpci_loader.cc',
-            'generator': '../../tools/generate_library_loader/generate_library_loader.py',
-          },
-          'action_name': 'generate_libpci_loader',
-          'inputs': [
-            '<(generator)',
-          ],
-          'outputs': [
-            '<(output_h)',
-            '<(output_cc)',
-          ],
-          'action': ['python',
-                     '<(generator)',
-                     '--name', 'LibPciLoader',
-                     '--output-h', '<(output_h)',
-                     '--output-cc', '<(output_cc)',
-                     '--header', '<pci/pci.h>',
-                     # TODO(phajdan.jr): Report problem to pciutils project
-                     # and get it fixed so that we don't need --use-extern-c.
-                     '--use-extern-c',
-                     '--link-directly=<(linux_link_libpci)',
-                     'pci_alloc',
-                     'pci_init',
-                     'pci_cleanup',
-                     'pci_scan_bus',
-                     'pci_fill_info',
-                     'pci_lookup_name',
-          ],
-          'message': 'Generating libpci library loader.',
-          'process_outputs_as_sources': 1,
-        },
-      ],
-    },
-    {
-      'target_name': 'x11',
+      'target_name': 'glib',
       'type': 'none',
       'toolsets': ['host', 'target'],
+      'variables': {
+        'glib_packages': 'glib-2.0 gmodule-2.0 gobject-2.0 gthread-2.0',
+      },
       'conditions': [
         ['_toolset=="target"', {
           'direct_dependent_settings': {
             'cflags': [
-              '<!@(<(pkg-config) --cflags x11)',
+              '<!@(<(pkg-config) --cflags <(glib_packages))',
             ],
           },
           'link_settings': {
             'ldflags': [
-              '<!@(<(pkg-config) --libs-only-L --libs-only-other x11 xi)',
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other <(glib_packages))',
             ],
             'libraries': [
-              '<!@(<(pkg-config) --libs-only-l x11 xi)',
+              '<!@(<(pkg-config) --libs-only-l <(glib_packages))',
             ],
           },
         }, {
           'direct_dependent_settings': {
             'cflags': [
-              '<!@(pkg-config --cflags x11)',
+              '<!@(pkg-config --cflags <(glib_packages))',
             ],
           },
           'link_settings': {
             'ldflags': [
-              '<!@(pkg-config --libs-only-L --libs-only-other x11 xi)',
+              '<!@(pkg-config --libs-only-L --libs-only-other <(glib_packages))',
             ],
             'libraries': [
-              '<!@(pkg-config --libs-only-l x11 xi)',
-            ],
-          },
-        }],
-      ],
-    },
-    {
-      'target_name': 'xext',
-      'type': 'none',
-      'conditions': [
-        ['_toolset=="target"', {
-          'direct_dependent_settings': {
-            'cflags': [
-              '<!@(<(pkg-config) --cflags xext)',
-            ],
-          },
-          'link_settings': {
-            'ldflags': [
-              '<!@(<(pkg-config) --libs-only-L --libs-only-other xext)',
-            ],
-            'libraries': [
-              '<!@(<(pkg-config) --libs-only-l xext)',
-            ],
-          },
-        }],
-      ],
-    },
-    {
-      'target_name': 'xfixes',
-      'type': 'none',
-      'conditions': [
-        ['_toolset=="target"', {
-          'direct_dependent_settings': {
-            'cflags': [
-              '<!@(<(pkg-config) --cflags xfixes)',
-            ],
-          },
-          'link_settings': {
-            'ldflags': [
-              '<!@(<(pkg-config) --libs-only-L --libs-only-other xfixes)',
-            ],
-            'libraries': [
-              '<!@(<(pkg-config) --libs-only-l xfixes)',
-            ],
-          },
-        }],
-      ],
-    },
-    {
-      'target_name': 'libgcrypt',
-      'type': 'none',
-      'conditions': [
-        ['_toolset=="target" and use_cups==1', {
-          'direct_dependent_settings': {
-            'cflags': [
-              '<!@(libgcrypt-config --cflags)',
-            ],
-          },
-          'link_settings': {
-            'libraries': [
-              '<!@(libgcrypt-config --libs)',
-            ],
-          },
-        }],
-      ],
-    },
-    {
-      'target_name': 'selinux',
-      'type': 'none',
-      'conditions': [
-        ['_toolset=="target"', {
-          'link_settings': {
-            'libraries': [
-              '-lselinux',
+              '<!@(pkg-config --libs-only-l <(glib_packages))',
             ],
           },
         }],
@@ -568,100 +699,161 @@
       ],
     },
     {
-      'target_name': 'dbus',
-      'type': 'none',
-      'direct_dependent_settings': {
-        'cflags': [
-          '<!@(<(pkg-config) --cflags dbus-1)',
+      'target_name': 'libbrlapi',
+      'type': 'static_library',
+      'all_dependent_settings': {
+        'include_dirs': [
+          '<(SHARED_INTERMEDIATE_DIR)',
+        ],
+        'defines': [
+          'USE_BRLAPI',
+        ],
+        'conditions': [
+          ['linux_link_libbrlapi==1', {
+            'link_settings': {
+              'libraries': [
+                '-lbrlapi',
+              ],
+            }
+          }],
         ],
       },
+      'include_dirs': [
+        '../..',
+      ],
+      'hard_dependency': 1,
+      'actions': [
+        {
+          'variables': {
+            'output_h': '<(SHARED_INTERMEDIATE_DIR)/library_loaders/libbrlapi.h',
+            'output_cc': '<(INTERMEDIATE_DIR)/libbrlapi_loader.cc',
+            'generator': '../../tools/generate_library_loader/generate_library_loader.py',
+          },
+          'action_name': 'generate_brlapi_loader',
+          'inputs': [
+            '<(generator)',
+          ],
+          'outputs': [
+            '<(output_h)',
+            '<(output_cc)',
+          ],
+          'action': ['python',
+                     '<(generator)',
+                     '--name', 'LibBrlapiLoader',
+                     '--output-h', '<(output_h)',
+                     '--output-cc', '<(output_cc)',
+                     '--header', '<brlapi.h>',
+                     '--link-directly=<(linux_link_libbrlapi)',
+                     'brlapi_getHandleSize',
+                     'brlapi_error_location',
+                     'brlapi_expandKeyCode',
+                     'brlapi_strerror',
+                     'brlapi__acceptKeys',
+                     'brlapi__openConnection',
+                     'brlapi__closeConnection',
+                     'brlapi__getDisplaySize',
+                     'brlapi__enterTtyModeWithPath',
+                     'brlapi__leaveTtyMode',
+                     'brlapi__writeDots',
+                     'brlapi__readKey',
+          ],
+          'message': 'Generating libbrlapi library loader',
+          'process_outputs_as_sources': 1,
+        },
+      ],
+    },
+    {
+      'target_name': 'libcap',
+      'type': 'none',
       'link_settings': {
-        'ldflags': [
-          '<!@(<(pkg-config) --libs-only-L --libs-only-other dbus-1)',
-        ],
         'libraries': [
-          '<!@(<(pkg-config) --libs-only-l dbus-1)',
+          '-lcap',
         ],
       },
     },
     {
-      'target_name': 'glib',
+      'target_name': 'libgcrypt',
       'type': 'none',
-      'toolsets': ['host', 'target'],
-      'variables': {
-        'glib_packages': 'glib-2.0 gmodule-2.0 gobject-2.0 gthread-2.0',
-      },
       'conditions': [
-        ['_toolset=="target"', {
+        ['_toolset=="target" and use_cups==1', {
           'direct_dependent_settings': {
             'cflags': [
-              '<!@(<(pkg-config) --cflags <(glib_packages))',
+              '<!@(<(libgcrypt-config) --cflags)',
             ],
           },
           'link_settings': {
-            'ldflags': [
-              '<!@(<(pkg-config) --libs-only-L --libs-only-other <(glib_packages))',
-            ],
             'libraries': [
-              '<!@(<(pkg-config) --libs-only-l <(glib_packages))',
+              # libgcrypt-config does not support --libs-only-l options,
+              # and the result contains -L options, which shouldn't be in
+              # the entries of 'libraries'. So filter them out.
+              '<!@(<(libgcrypt-config) --libs | sed -e \'s/-L[^ ]*//g\')',
             ],
           },
-        }, {
-          'direct_dependent_settings': {
-            'cflags': [
-              '<!@(pkg-config --cflags <(glib_packages))',
-            ],
-          },
-          'link_settings': {
-            'ldflags': [
-              '<!@(pkg-config --libs-only-L --libs-only-other <(glib_packages))',
-            ],
-            'libraries': [
-              '<!@(pkg-config --libs-only-l <(glib_packages))',
-            ],
-          },
-        }],
-        ['chromeos==1', {
-          'link_settings': {
-            'libraries': [ '-lXtst' ]
-          }
         }],
       ],
     },
     {
-      'target_name': 'pangocairo',
-      'type': 'none',
-      'toolsets': ['host', 'target'],
-      'conditions': [
-        ['_toolset=="target"', {
-          'direct_dependent_settings': {
-            'cflags': [
-              '<!@(<(pkg-config) --cflags pangocairo)',
-            ],
+      'target_name': 'libpci',
+      'type': 'static_library',
+      'cflags': [
+        '<!@(<(pkg-config) --cflags libpci)',
+      ],
+      'direct_dependent_settings': {
+        'include_dirs': [
+          '<(SHARED_INTERMEDIATE_DIR)',
+        ],
+        'conditions': [
+          ['linux_link_libpci==1', {
+            'link_settings': {
+              'ldflags': [
+                '<!@(<(pkg-config) --libs-only-L --libs-only-other libpci)',
+              ],
+              'libraries': [
+                '<!@(<(pkg-config) --libs-only-l libpci)',
+              ],
+            }
+          }],
+        ],
+      },
+      'include_dirs': [
+        '../..',
+      ],
+      'hard_dependency': 1,
+      'actions': [
+        {
+          'variables': {
+            'output_h': '<(SHARED_INTERMEDIATE_DIR)/library_loaders/libpci.h',
+            'output_cc': '<(INTERMEDIATE_DIR)/libpci_loader.cc',
+            'generator': '../../tools/generate_library_loader/generate_library_loader.py',
           },
-          'link_settings': {
-            'ldflags': [
-              '<!@(<(pkg-config) --libs-only-L --libs-only-other pangocairo)',
-            ],
-            'libraries': [
-              '<!@(<(pkg-config) --libs-only-l pangocairo)',
-            ],
-          },
-        }, {
-          'direct_dependent_settings': {
-            'cflags': [
-              '<!@(pkg-config --cflags pangocairo)',
-            ],
-          },
-          'link_settings': {
-            'ldflags': [
-              '<!@(pkg-config --libs-only-L --libs-only-other pangocairo)',
-            ],
-            'libraries': [
-              '<!@(pkg-config --libs-only-l pangocairo)',
-            ],
-          },
-        }],
+          'action_name': 'generate_libpci_loader',
+          'inputs': [
+            '<(generator)',
+          ],
+          'outputs': [
+            '<(output_h)',
+            '<(output_cc)',
+          ],
+          'action': ['python',
+                     '<(generator)',
+                     '--name', 'LibPciLoader',
+                     '--output-h', '<(output_h)',
+                     '--output-cc', '<(output_cc)',
+                     '--header', '<pci/pci.h>',
+                     # TODO(phajdan.jr): Report problem to pciutils project
+                     # and get it fixed so that we don't need --use-extern-c.
+                     '--use-extern-c',
+                     '--link-directly=<(linux_link_libpci)',
+                     'pci_alloc',
+                     'pci_init',
+                     'pci_cleanup',
+                     'pci_scan_bus',
+                     'pci_fill_info',
+                     'pci_lookup_name',
+          ],
+          'message': 'Generating libpci library loader',
+          'process_outputs_as_sources': 1,
+        },
       ],
     },
     {
@@ -674,27 +866,164 @@
       },
     },
     {
-      'target_name': 'ibus',
-      'type': 'none',
-      'conditions': [
-        ['use_ibus==1', {
+      'target_name': 'libspeechd',
+      'type': 'static_library',
+      'direct_dependent_settings': {
+        'include_dirs': [
+          '<(SHARED_INTERMEDIATE_DIR)',
+        ],
+        'conditions': [
+          ['linux_link_libspeechd==1', {
+            'link_settings': {
+              'libraries': [
+                '-lspeechd',
+              ],
+            }
+          }],
+        ],
+      },
+      'include_dirs': [
+        '../..',
+      ],
+      'hard_dependency': 1,
+      'actions': [
+        {
           'variables': {
-            'ibus_min_version': '1.3.99.20110425',
+            'output_h': '<(SHARED_INTERMEDIATE_DIR)/library_loaders/libspeechd.h',
+            'output_cc': '<(INTERMEDIATE_DIR)/libspeechd_loader.cc',
+            'generator': '../../tools/generate_library_loader/generate_library_loader.py',
+
+            # speech-dispatcher >= 0.8 installs libspeechd.h into
+            # speech-dispatcher/libspeechd.h, whereas speech-dispatcher < 0.8
+            # puts libspeechd.h in the top-level include directory.
+            # Since we need to support both cases for now, we ship a copy of
+            # libspeechd.h in third_party/speech-dispatcher. If the user
+            # prefers to link against the speech-dispatcher directly, the
+            # `libspeechd_h_prefix' variable can be passed to gyp with a value
+            # such as "speech-dispatcher/" that will be prepended to
+            # "libspeechd.h" in the #include directive.
+            # TODO(phaldan.jr): Once we do not need to support
+            # speech-dispatcher < 0.8 we can get rid of all this (including
+            # third_party/speech-dispatcher) and just include
+            # speech-dispatcher/libspeechd.h unconditionally.
+            'libspeechd_h_prefix%': '',
           },
+          'action_name': 'generate_libspeechd_loader',
+          'inputs': [
+            '<(generator)',
+          ],
+          'outputs': [
+            '<(output_h)',
+            '<(output_cc)',
+          ],
+          'action': ['python',
+                     '<(generator)',
+                     '--name', 'LibSpeechdLoader',
+                     '--output-h', '<(output_h)',
+                     '--output-cc', '<(output_cc)',
+                     '--header', '<<(libspeechd_h_prefix)libspeechd.h>',
+                     '--bundled-header',
+                     '"third_party/speech-dispatcher/libspeechd.h"',
+                     '--link-directly=<(linux_link_libspeechd)',
+                     'spd_open',
+                     'spd_say',
+                     'spd_stop',
+                     'spd_close',
+                     'spd_pause',
+                     'spd_resume',
+                     'spd_set_notification_on',
+                     'spd_set_voice_rate',
+                     'spd_set_voice_pitch',
+                     'spd_list_synthesis_voices',
+                     'spd_set_synthesis_voice',
+                     'spd_list_modules',
+                     'spd_set_output_module',
+          ],
+          'message': 'Generating libspeechd library loader',
+          'process_outputs_as_sources': 1,
+        },
+      ],
+    },
+    {
+      'target_name': 'pangocairo',
+      'type': 'none',
+      'toolsets': ['host', 'target'],
+      'conditions': [
+        ['_toolset=="target"', {
           'direct_dependent_settings': {
-            'defines': ['HAVE_IBUS=1'],
             'cflags': [
-              '<!@(<(pkg-config) --cflags "ibus-1.0 >= <(ibus_min_version)")',
+              '<!@(<(pkg-config) --cflags pangocairo pangoft2)',
             ],
           },
           'link_settings': {
             'ldflags': [
-              '<!@(<(pkg-config) --libs-only-L --libs-only-other "ibus-1.0 >= <(ibus_min_version)")',
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other pangocairo pangoft2)',
             ],
             'libraries': [
-              '<!@(<(pkg-config) --libs-only-l "ibus-1.0 >= <(ibus_min_version)")',
+              '<!@(<(pkg-config) --libs-only-l pangocairo pangoft2)',
             ],
           },
+        }, {
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(pkg-config --cflags pangocairo pangoft2)',
+            ],
+          },
+          'link_settings': {
+            'ldflags': [
+              '<!@(pkg-config --libs-only-L --libs-only-other pangocairo pangoft2)',
+            ],
+            'libraries': [
+              '<!@(pkg-config --libs-only-l pangocairo pangoft2)',
+            ],
+          },
+        }],
+      ],
+    },
+    {
+      'target_name': 'ssl',
+      'type': 'none',
+      'conditions': [
+        ['_toolset=="target"', {
+          'conditions': [
+            ['use_openssl==1', {
+              'dependencies': [
+                '../../third_party/openssl/openssl.gyp:openssl',
+              ],
+            }],
+            ['use_openssl==0', {
+              'dependencies': [
+                '../../net/third_party/nss/ssl.gyp:libssl',
+              ],
+              'direct_dependent_settings': {
+                'include_dirs+': [
+                  # We need for our local copies of the libssl3 headers to come
+                  # before other includes, as we are shadowing system headers.
+                  '<(DEPTH)/net/third_party/nss/ssl',
+                ],
+                'cflags': [
+                  '<!@(<(pkg-config) --cflags nss)',
+                ],
+              },
+              'link_settings': {
+                'ldflags': [
+                  '<!@(<(pkg-config) --libs-only-L --libs-only-other nss)',
+                ],
+                'libraries': [
+                  '<!@(<(pkg-config) --libs-only-l nss | sed -e "s/-lssl3//")',
+                ],
+              },
+            }],
+            ['use_openssl==0 and clang==1', {
+              'direct_dependent_settings': {
+                'cflags': [
+                  # There is a broken header guard in /usr/include/nss/secmod.h:
+                  # https://bugzilla.mozilla.org/show_bug.cgi?id=884072
+                  '-Wno-header-guard',
+                ],
+              },
+            }],
+          ]
         }],
       ],
     },

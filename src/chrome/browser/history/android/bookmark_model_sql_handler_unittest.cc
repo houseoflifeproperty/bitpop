@@ -4,9 +4,8 @@
 
 #include "chrome/browser/history/android/bookmark_model_sql_handler.h"
 
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/history/history_database.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -14,9 +13,11 @@
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
-#include "chrome/test/base/ui_test_utils.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/core/test/bookmark_test_helpers.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace history {
@@ -27,13 +28,12 @@ class BookmarkModelSQLHandlerTest : public testing::Test {
  public:
   BookmarkModelSQLHandlerTest()
       : profile_manager_(
-          static_cast<TestingBrowserProcess*>(g_browser_process)),
+          TestingBrowserProcess::GetGlobal()),
         bookmark_model_(NULL),
         ui_thread_(BrowserThread::UI, &message_loop_),
         file_thread_(BrowserThread::FILE, &message_loop_) {
   }
-  ~BookmarkModelSQLHandlerTest() {
-  }
+  virtual ~BookmarkModelSQLHandlerTest() {}
 
  protected:
   virtual void SetUp() OVERRIDE {
@@ -46,19 +46,19 @@ class BookmarkModelSQLHandlerTest : public testing::Test {
         chrome::kInitialProfile);
     // Create the BookmarkModel that doesn't need to invoke load().
     testing_profile->CreateBookmarkModel(true);
-    testing_profile->BlockUntilBookmarkModelLoaded();
+    bookmark_model_ = BookmarkModelFactory::GetForProfile(testing_profile);
+    test::WaitForBookmarkModelToLoad(bookmark_model_);
+    ASSERT_TRUE(bookmark_model_);
     // Get the BookmarkModel from LastUsedProfile, this is the same way that
     // how the BookmarkModelSQLHandler gets the BookmarkModel.
     Profile* profile = ProfileManager::GetLastUsedProfile();
     ASSERT_TRUE(profile);
-    bookmark_model_ = BookmarkModelFactory::GetForProfile(profile);
-    ASSERT_TRUE(bookmark_model_);
 
     // Create the directory for history database.
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-    FilePath history_db_name = temp_dir_.path().AppendASCII(
+    base::FilePath history_db_name = temp_dir_.path().AppendASCII(
         chrome::kHistoryFilename);
-    history_db_.Init(history_db_name, NULL);
+    history_db_.Init(history_db_name);
   }
 
   // Runs the MessageLoopForUI, and return till all pending messages were
@@ -69,7 +69,7 @@ class BookmarkModelSQLHandlerTest : public testing::Test {
 
   TestingProfileManager profile_manager_;
   BookmarkModel* bookmark_model_;
-  MessageLoopForUI message_loop_;
+  base::MessageLoopForUI message_loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread file_thread_;
   base::ScopedTempDir temp_dir_;
@@ -80,7 +80,7 @@ TEST_F(BookmarkModelSQLHandlerTest, InsertIntoMobileFolder) {
   HistoryAndBookmarkRow row;
   row.set_raw_url("http://bookmark.com");
   row.set_url(GURL("http://bookmark.com"));
-  row.set_title(UTF8ToUTF16("Bookmark Title"));
+  row.set_title(base::UTF8ToUTF16("Bookmark Title"));
   row.set_is_bookmark(true);
 
   BookmarkModelSQLHandler handler(&history_db_);
@@ -99,7 +99,7 @@ TEST_F(BookmarkModelSQLHandlerTest, InsertIntoSpecificFolder) {
   HistoryAndBookmarkRow row;
   row.set_raw_url("http://bookmark.com");
   row.set_url(GURL("http://bookmark.com"));
-  row.set_title(UTF8ToUTF16("Bookmark Title"));
+  row.set_title(base::UTF8ToUTF16("Bookmark Title"));
   row.set_is_bookmark(true);
   // Set other folder as parent.
   row.set_parent_id(bookmark_model_->other_node()->id());
@@ -119,7 +119,7 @@ TEST_F(BookmarkModelSQLHandlerTest, InsertIntoSpecificFolder) {
 TEST_F(BookmarkModelSQLHandlerTest, UpdateHistoryToBookmark) {
   // Added a row in url database.
   URLRow url_row(GURL("http://www.google.com"));
-  url_row.set_title(UTF8ToUTF16("Google"));
+  url_row.set_title(base::UTF8ToUTF16("Google"));
   URLID url_id = history_db_.AddURL(url_row);
   ASSERT_TRUE(url_id);
 
@@ -182,7 +182,7 @@ TEST_F(BookmarkModelSQLHandlerTest, UpdateHistoryToBookmark) {
   EXPECT_EQ(row.parent_id(), parent1->id());
 
   // Only update the title.
-  url_row.set_title(UTF8ToUTF16("Google Inc."));
+  url_row.set_title(base::UTF8ToUTF16("Google Inc."));
   history_db_.UpdateURLRow(url_id, url_row);
   HistoryAndBookmarkRow update_title;
   update_title.set_title(url_row.title());
@@ -212,7 +212,7 @@ TEST_F(BookmarkModelSQLHandlerTest, Delete) {
   GURL url1 = GURL("http://bookmark.com");
   row.set_raw_url("http://bookmark.com");
   row.set_url(url1);
-  row.set_title(UTF8ToUTF16("Bookmark Title"));
+  row.set_title(base::UTF8ToUTF16("Bookmark Title"));
   row.set_is_bookmark(true);
 
   BookmarkModelSQLHandler handler(&history_db_);

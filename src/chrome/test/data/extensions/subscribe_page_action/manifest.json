@@ -1,6 +1,7 @@
 {
   "background": {
-    "scripts": ["background.js"]
+    "persistent": false,
+    "scripts": [ "background.js" ]
   },
   "content_scripts": [ {
     "js": [ "sniff_common.js", "doc_start.js" ],
@@ -20,13 +21,10 @@
   "options_page": "options.html",
   "page_action": {
     "default_icon": "feed-icon-16x16.png",
-    "default_title": "__MSG_rss_subscription_default_title__",
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_title": "__MSG_rss_subscription_default_title__"
   },
-  "permissions": [ "tabs", "http://*/*", "https://*/*" ],
-  "version": "2.2.0",
-  "web_accessible_resources": [
-    "iframe.js",
-    "style.css"
-  ]
+  "permissions": [ "tabs", "http://*/*", "https://*/*", "storage" ],
+  "version": "2.2.3",
+  "web_accessible_resources": [ "iframe.js", "style.css" ]
 }

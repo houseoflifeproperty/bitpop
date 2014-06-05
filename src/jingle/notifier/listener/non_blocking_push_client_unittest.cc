@@ -8,7 +8,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "jingle/notifier/base/fake_base_task.h"
 #include "jingle/notifier/listener/fake_push_client.h"
 #include "jingle/notifier/listener/fake_push_client_observer.h"
@@ -56,7 +56,7 @@ class NonBlockingPushClientTest : public testing::Test {
     return scoped_ptr<PushClient>(fake_push_client_);
   }
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   FakePushClientObserver fake_observer_;
   scoped_ptr<NonBlockingPushClient> push_client_;
   // Owned by |push_client_|.

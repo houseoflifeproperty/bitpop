@@ -4,34 +4,29 @@
 
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_idle_logout.h"
 
+#include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/synchronization/waitable_event.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/settings/device_settings_test_helper.h"
-#include "chrome/common/chrome_notification_types.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
-#include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
-
-using content::BrowserThread;
+#include "ui/wm/core/user_activity_detector.h"
 
 namespace chromeos {
 
 class KioskModeIdleLogoutTest : public ash::test::AshTestBase {
  public:
   KioskModeIdleLogoutTest()
-      : ui_thread_(BrowserThread::UI, message_loop()),
-        idle_logout_(NULL) {
+      : idle_logout_(NULL) {
   }
 
   virtual void SetUp() OVERRIDE {
-    DBusThreadManager::Initialize();
     AshTestBase::SetUp();
     idle_logout_ = new KioskModeIdleLogout();
   }
@@ -39,7 +34,6 @@ class KioskModeIdleLogoutTest : public ash::test::AshTestBase {
   virtual void TearDown() OVERRIDE {
     delete idle_logout_;
     AshTestBase::TearDown();
-    DBusThreadManager::Shutdown();
   }
 
   bool LoginUserObserverRegistered() {
@@ -49,13 +43,10 @@ class KioskModeIdleLogoutTest : public ash::test::AshTestBase {
         content::NotificationService::AllSources());
   }
 
-  bool PowerManagerObserverRegistered() {
-    chromeos::PowerManagerClient* power_manager =
-        chromeos::DBusThreadManager::Get()->GetPowerManagerClient();
-    return power_manager->HasObserver(idle_logout_);
+  bool UserActivityObserverRegistered() {
+    return ash::Shell::GetInstance()->user_activity_detector()->HasObserver(
+        idle_logout_);
   }
-
-  content::TestBrowserThread ui_thread_;
 
   ScopedDeviceSettingsTestHelper device_settings_test_helper_;
 
@@ -63,12 +54,14 @@ class KioskModeIdleLogoutTest : public ash::test::AshTestBase {
   content::NotificationRegistrar registrar_;
 };
 
-TEST_F(KioskModeIdleLogoutTest, CheckObserversBeforeUserLogin) {
+// http://crbug.com/177918
+TEST_F(KioskModeIdleLogoutTest, DISABLED_CheckObserversBeforeUserLogin) {
   EXPECT_TRUE(LoginUserObserverRegistered());
-  EXPECT_FALSE(PowerManagerObserverRegistered());
+  EXPECT_FALSE(UserActivityObserverRegistered());
 }
 
-TEST_F(KioskModeIdleLogoutTest, CheckObserversAfterUserLogin) {
+// http://crbug.com/177918
+TEST_F(KioskModeIdleLogoutTest, DISABLED_CheckObserversAfterUserLogin) {
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_LOGIN_USER_CHANGED,
       content::Source<UserManager>(UserManager::Get()),
@@ -79,7 +72,7 @@ TEST_F(KioskModeIdleLogoutTest, CheckObserversAfterUserLogin) {
 
   RunAllPendingInMessageLoop();
   EXPECT_FALSE(LoginUserObserverRegistered());
-  EXPECT_TRUE(PowerManagerObserverRegistered());
+  EXPECT_TRUE(UserActivityObserverRegistered());
 }
 
 }  // namespace chromeos

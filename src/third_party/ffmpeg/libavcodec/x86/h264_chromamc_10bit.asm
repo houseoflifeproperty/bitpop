@@ -5,25 +5,24 @@
 ;*
 ;* Authors: Daniel Kang <daniel.d.kang@gmail.com>
 ;*
-;* This file is part of Libav.
+;* This file is part of FFmpeg.
 ;*
-;* Libav is free software; you can redistribute it and/or
+;* FFmpeg is free software; you can redistribute it and/or
 ;* modify it under the terms of the GNU Lesser General Public
 ;* License as published by the Free Software Foundation; either
 ;* version 2.1 of the License, or (at your option) any later version.
 ;*
-;* Libav is distributed in the hope that it will be useful,
+;* FFmpeg is distributed in the hope that it will be useful,
 ;* but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 ;* Lesser General Public License for more details.
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
-;* License along with Libav; if not, write to the Free Software
+;* License along with FFmpeg; if not, write to the Free Software
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
-%include "x86inc.asm"
-%include "x86util.asm"
+%include "libavutil/x86/x86util.asm"
 
 SECTION_RODATA
 
@@ -246,7 +245,7 @@ cglobal %1_h264_chroma_mc2_10, 6,7
 %if %0==3
     movq          %2, %3
 %endif
-    PAVG          %1, %2
+    pavgw         %1, %2
 %endmacro
 
 %define CHROMAMC_AVG  NOTHING
@@ -256,18 +255,17 @@ CHROMA_MC8 put
 INIT_XMM avx
 CHROMA_MC8 put
 %endif
-INIT_MMX mmx2
+INIT_MMX mmxext
 CHROMA_MC4 put
 CHROMA_MC2 put
 
 %define CHROMAMC_AVG  AVG
-%define PAVG          pavgw
 INIT_XMM sse2
 CHROMA_MC8 avg
 %if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 CHROMA_MC8 avg
 %endif
-INIT_MMX mmx2
+INIT_MMX mmxext
 CHROMA_MC4 avg
 CHROMA_MC2 avg

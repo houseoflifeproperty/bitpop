@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/file_path.h"
-#include "base/utf_string_conversions.h"
+#include "base/files/file_path.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/common/view_messages.h"
-#include "content/public/test/render_view_test.h"
 #include "content/public/common/file_chooser_params.h"
+#include "content/public/test/render_view_test.h"
 #include "content/renderer/pepper/mock_renderer_ppapi_host.h"
 #include "content/renderer/pepper/pepper_file_chooser_host.h"
 #include "content/renderer/render_view_impl.h"
@@ -17,12 +17,13 @@
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/proxy/resource_message_params.h"
 #include "ppapi/proxy/resource_message_test_sink.h"
+#include "ppapi/shared_impl/file_ref_create_info.h"
 #include "ppapi/shared_impl/ppapi_permissions.h"
-#include "ppapi/shared_impl/ppb_file_ref_shared.h"
+#include "ppapi/shared_impl/proxy_lock.h"
 #include "ppapi/shared_impl/resource_tracker.h"
 #include "ppapi/shared_impl/test_globals.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/base/dialogs/selected_file_info.h"
+#include "ui/shell_dialogs/selected_file_info.h"
 
 namespace content {
 
@@ -30,14 +31,12 @@ namespace {
 
 class PepperFileChooserHostTest : public RenderViewTest {
  public:
-  PepperFileChooserHostTest()
-      : pp_instance_(123456),
-        old_content_client_(NULL) {}
+  PepperFileChooserHostTest() : pp_instance_(123456) {}
 
   virtual void SetUp() {
-    old_content_client_ = GetContentClient();
     SetContentClient(&client_);
     RenderViewTest::SetUp();
+    ppapi::ProxyLock::DisableLockingOnThreadForTest();
 
     globals_.GetResourceTracker()->DidCreateInstance(pp_instance_);
   }
@@ -45,7 +44,6 @@ class PepperFileChooserHostTest : public RenderViewTest {
     globals_.GetResourceTracker()->DidDeleteInstance(pp_instance_);
 
     RenderViewTest::TearDown();
-    SetContentClient(old_content_client_);
   }
 
   PP_Instance pp_instance() const { return pp_instance_; }
@@ -55,15 +53,12 @@ class PepperFileChooserHostTest : public RenderViewTest {
 
   ppapi::TestGlobals globals_;
   TestContentClient client_;
-
-  // Original value for the content client.
-  ContentClient* old_content_client_;
 };
 
 // For testing to convert our hardcoded file paths to 8-bit.
-std::string FilePathToUTF8(const FilePath::StringType& path) {
+std::string FilePathToUTF8(const base::FilePath::StringType& path) {
 #if defined(OS_WIN)
-  return UTF16ToUTF8(path);
+  return base::UTF16ToUTF8(path);
 #else
   return path;
 #endif
@@ -101,13 +96,13 @@ TEST_F(PepperFileChooserHostTest, Show) {
   // Basic validation of request.
   EXPECT_EQ(FileChooserParams::Open, chooser_params.mode);
   ASSERT_EQ(1u, chooser_params.accept_types.size());
-  EXPECT_EQ(accept[0], UTF16ToUTF8(chooser_params.accept_types[0]));
+  EXPECT_EQ(accept[0], base::UTF16ToUTF8(chooser_params.accept_types[0]));
 
   // Send a chooser reply to the render view. Note our reply path has to have a
   // path separator so we include both a Unix and a Windows one.
   ui::SelectedFileInfo selected_info;
   selected_info.display_name = FILE_PATH_LITERAL("Hello, world");
-  selected_info.local_path = FilePath(FILE_PATH_LITERAL("myp\\ath/foo"));
+  selected_info.local_path = base::FilePath(FILE_PATH_LITERAL("myp\\ath/foo"));
   std::vector<ui::SelectedFileInfo> selected_info_vector;
   selected_info_vector.push_back(selected_info);
   RenderViewImpl* view_impl = static_cast<RenderViewImpl*>(view_);
@@ -125,15 +120,13 @@ TEST_F(PepperFileChooserHostTest, Show) {
   EXPECT_EQ(call_params.sequence(), reply_params.sequence());
   EXPECT_EQ(PP_OK, reply_params.result());
   PpapiPluginMsg_FileChooser_ShowReply::Schema::Param reply_msg_param;
-  ASSERT_TRUE(PpapiPluginMsg_FileChooser_ShowReply::Read(&reply_msg,
-                                                         &reply_msg_param));
-  const std::vector<ppapi::PPB_FileRef_CreateInfo>& chooser_results =
+  ASSERT_TRUE(
+      PpapiPluginMsg_FileChooser_ShowReply::Read(&reply_msg, &reply_msg_param));
+  const std::vector<ppapi::FileRefCreateInfo>& chooser_results =
       reply_msg_param.a;
   ASSERT_EQ(1u, chooser_results.size());
-  // Note path is empty because this is an external filesystem.
-  EXPECT_EQ(std::string(), chooser_results[0].path);
   EXPECT_EQ(FilePathToUTF8(selected_info.display_name),
-            chooser_results[0].name);
+            chooser_results[0].display_name);
 }
 
 TEST_F(PepperFileChooserHostTest, NoUserGesture) {

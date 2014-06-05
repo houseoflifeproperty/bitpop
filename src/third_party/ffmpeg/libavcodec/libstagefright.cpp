@@ -36,6 +36,7 @@
 extern "C" {
 #include "avcodec.h"
 #include "libavutil/imgutils.h"
+#include "internal.h"
 }
 
 #define OMX_QCOM_COLOR_FormatYVU420SemiPlanar 0x7FA30C00
@@ -153,7 +154,7 @@ void* decode_thread(void *arg)
 {
     AVCodecContext *avctx = (AVCodecContext*)arg;
     StagefrightContext *s = (StagefrightContext*)avctx->priv_data;
-    const AVPixFmtDescriptor *pix_desc = &av_pix_fmt_descriptors[avctx->pix_fmt];
+    const AVPixFmtDescriptor *pix_desc = av_pix_fmt_desc_get(avctx->pix_fmt);
     Frame* frame;
     MediaBuffer *buffer;
     int32_t w, h;
@@ -185,9 +186,8 @@ void* decode_thread(void *arg)
                 buffer->release();
                 goto push_frame;
             }
-            ret = avctx->get_buffer(avctx, frame->vframe);
+            ret = ff_get_buffer(avctx, frame->vframe, AV_GET_BUFFER_FLAG_REF);
             if (ret < 0) {
-                av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
                 frame->status = ret;
                 decode_done   = 1;
                 buffer->release();
@@ -325,13 +325,13 @@ static av_cold int Stagefright_init(AVCodecContext *avctx)
     outFormat->findInt32(kKeyColorFormat, &colorFormat);
     if (colorFormat == OMX_QCOM_COLOR_FormatYVU420SemiPlanar ||
         colorFormat == OMX_COLOR_FormatYUV420SemiPlanar)
-        avctx->pix_fmt = PIX_FMT_NV21;
+        avctx->pix_fmt = AV_PIX_FMT_NV21;
     else if (colorFormat == OMX_COLOR_FormatYCbYCr)
-        avctx->pix_fmt = PIX_FMT_YUYV422;
+        avctx->pix_fmt = AV_PIX_FMT_YUYV422;
     else if (colorFormat == OMX_COLOR_FormatCbYCrY)
-        avctx->pix_fmt = PIX_FMT_UYVY422;
+        avctx->pix_fmt = AV_PIX_FMT_UYVY422;
     else
-        avctx->pix_fmt = PIX_FMT_YUV420P;
+        avctx->pix_fmt = AV_PIX_FMT_YUV420P;
 
     outFormat->findCString(kKeyDecoderComponent, &s->decoder_component);
     if (s->decoder_component)
@@ -354,7 +354,7 @@ fail:
 }
 
 static int Stagefright_decode_frame(AVCodecContext *avctx, void *data,
-                                    int *data_size, AVPacket *avpkt)
+                                    int *got_frame, AVPacket *avpkt)
 {
     StagefrightContext *s = (StagefrightContext*)avctx->priv_data;
     Frame *frame;
@@ -457,13 +457,11 @@ static int Stagefright_decode_frame(AVCodecContext *avctx, void *data,
         return -1;
     }
 
-    if (s->prev_frame) {
-        avctx->release_buffer(avctx, s->prev_frame);
-        av_freep(&s->prev_frame);
-    }
+    if (s->prev_frame)
+        av_frame_free(&s->prev_frame);
     s->prev_frame = ret_frame;
 
-    *data_size = sizeof(AVFrame);
+    *got_frame = 1;
     *(AVFrame*)data = *ret_frame;
     return orig_size;
 }
@@ -482,10 +480,8 @@ static av_cold int Stagefright_close(AVCodecContext *avctx)
             while (!s->out_queue->empty()) {
                 frame = *s->out_queue->begin();
                 s->out_queue->erase(s->out_queue->begin());
-                if (frame->vframe) {
-                    avctx->release_buffer(avctx, frame->vframe);
-                    av_freep(&frame->vframe);
-                }
+                if (frame->vframe)
+                    av_frame_free(&frame->vframe);
                 av_freep(&frame);
             }
             pthread_mutex_unlock(&s->out_mutex);
@@ -515,10 +511,8 @@ static av_cold int Stagefright_close(AVCodecContext *avctx)
 
         pthread_join(s->decode_thread_id, NULL);
 
-        if (s->prev_frame) {
-            avctx->release_buffer(avctx, s->prev_frame);
-            av_freep(&s->prev_frame);
-        }
+        if (s->prev_frame)
+            av_frame_free(&s->prev_frame);
 
         s->thread_started = false;
     }
@@ -534,10 +528,8 @@ static av_cold int Stagefright_close(AVCodecContext *avctx)
     while (!s->out_queue->empty()) {
         frame = *s->out_queue->begin();
         s->out_queue->erase(s->out_queue->begin());
-        if (frame->vframe) {
-            avctx->release_buffer(avctx, frame->vframe);
-            av_freep(&frame->vframe);
-        }
+        if (frame->vframe)
+            av_frame_free(&frame->vframe);
         av_freep(&frame);
     }
 

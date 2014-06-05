@@ -8,8 +8,8 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/ppb_message_loop.h"
 #include "ppapi/proxy/plugin_dispatcher.h"
@@ -86,7 +86,7 @@ int32_t MessageLoopResource::AttachToCurrentThread() {
   AddRef();
   slot->Set(this);
 
-  loop_.reset(new MessageLoop(MessageLoop::TYPE_DEFAULT));
+  loop_.reset(new base::MessageLoop);
   loop_proxy_ = base::MessageLoopProxy::current();
 
   // Post all pending work to the message loop.
@@ -106,8 +106,8 @@ int32_t MessageLoopResource::Run() {
     return PP_ERROR_INPROGRESS;
 
   nested_invocations_++;
-  CallWhileUnlocked(base::Bind(&MessageLoop::Run,
-                               base::Unretained(loop_.get())));
+  CallWhileUnlocked(
+      base::Bind(&base::MessageLoop::Run, base::Unretained(loop_.get())));
   nested_invocations_--;
 
   if (should_destroy_ && nested_invocations_ == 0) {
@@ -141,7 +141,7 @@ int32_t MessageLoopResource::PostQuit(PP_Bool should_destroy) {
   if (IsCurrent() && nested_invocations_ > 0)
     loop_->Quit();
   else
-    PostClosure(FROM_HERE, MessageLoop::QuitClosure(), 0);
+    PostClosure(FROM_HERE, base::MessageLoop::QuitClosure(), 0);
   return PP_OK;
 }
 
@@ -177,10 +177,9 @@ void MessageLoopResource::PostClosure(
     const tracked_objects::Location& from_here,
     const base::Closure& closure,
     int64 delay_ms) {
-  if (loop_proxy_) {
-    loop_proxy_->PostDelayedTask(from_here,
-                                 closure,
-                                 base::TimeDelta::FromMilliseconds(delay_ms));
+  if (loop_proxy_.get()) {
+    loop_proxy_->PostDelayedTask(
+        from_here, closure, base::TimeDelta::FromMilliseconds(delay_ms));
   } else {
     TaskInfo info;
     info.from_here = FROM_HERE;
@@ -188,6 +187,10 @@ void MessageLoopResource::PostClosure(
     info.delay_ms = delay_ms;
     pending_tasks_.push_back(info);
   }
+}
+
+base::MessageLoopProxy* MessageLoopResource::GetMessageLoopProxy() {
+  return loop_proxy_.get();
 }
 
 // static

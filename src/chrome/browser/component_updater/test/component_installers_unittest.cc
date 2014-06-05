@@ -4,11 +4,11 @@
 
 #include "chrome/browser/component_updater/flash_component_installer.h"
 
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
 #include "base/version.h"
 #include "build/build_config.h"
@@ -20,9 +20,11 @@
 
 using content::BrowserThread;
 
+namespace component_updater {
+
 namespace {
 // File name of the Pepper Flash plugin on different platforms.
-const FilePath::CharType kDataPath[] =
+const base::FilePath::CharType kDataPath[] =
 #if defined(OS_MACOSX)
     FILE_PATH_LITERAL("components/flapper/mac");
 #elif defined(OS_WIN)
@@ -36,37 +38,51 @@ const FilePath::CharType kDataPath[] =
     FILE_PATH_LITERAL("components/flapper/NONEXISTENT");
 #endif
 #endif
-}
+}  // namespace
+
+// TODO(jschuh): Get Pepper Flash supported on Win64 build.
+// http://crbug.com/179716
+#if defined(OS_WIN) && defined(ARCH_CPU_X86_64)
+#define MAYBE_PepperFlashCheck DISABLED_PepperFlashCheck
+// TODO(avi): Get Pepper Flash supported on the Mac 64 bit build.
+// http://crbug.com/225777
+#elif defined(OS_MACOSX) && defined(ARCH_CPU_X86_64)
+#define MAYBE_PepperFlashCheck DISABLED_PepperFlashCheck
+#else
+#define MAYBE_PepperFlashCheck PepperFlashCheck
+#endif
 
 // TODO(viettrungluu): Separate out into two separate tests; use a test fixture.
-TEST(ComponentInstallerTest, PepperFlashCheck) {
-  MessageLoop message_loop;
+TEST(ComponentInstallerTest, MAYBE_PepperFlashCheck) {
+  base::MessageLoop message_loop;
   content::TestBrowserThread ui_thread(BrowserThread::UI, &message_loop);
 
-  ppapi::PpapiGlobals::ForTest for_test;
-  ppapi::TestGlobals test_globals(for_test);
+  ppapi::PpapiGlobals::PerThreadForTest per_thread_for_test;
+  ppapi::TestGlobals test_globals(per_thread_for_test);
   ppapi::PpapiGlobals::SetPpapiGlobalsOnThreadForTest(&test_globals);
 
   // The test directory is chrome/test/data/components/flapper.
-  FilePath manifest;
+  base::FilePath manifest;
   PathService::Get(chrome::DIR_TEST_DATA, &manifest);
   manifest = manifest.Append(kDataPath);
   manifest = manifest.AppendASCII("manifest.json");
 
-  if (!file_util::PathExists(manifest)) {
+  if (!base::PathExists(manifest)) {
     LOG(WARNING) << "No test manifest available. Skipping.";
     return;
   }
 
   JSONFileValueSerializer serializer(manifest);
   std::string error;
-  scoped_ptr<base::Value> root(serializer.Deserialize(NULL, &error));
-  ASSERT_TRUE(root.get() != NULL);
+  scoped_ptr<base::DictionaryValue> root(static_cast<base::DictionaryValue*>(
+      serializer.Deserialize(NULL, &error)));
+  ASSERT_TRUE(root);
   ASSERT_TRUE(root->IsType(base::Value::TYPE_DICTIONARY));
 
   // This checks that the whole manifest is compatible.
   Version version;
-  EXPECT_TRUE(CheckPepperFlashManifest(
-      static_cast<base::DictionaryValue*>(root.get()), &version));
+  EXPECT_TRUE(CheckPepperFlashManifest(*root, &version));
   EXPECT_TRUE(version.IsValid());
 }
+
+}  // namespace component_updater

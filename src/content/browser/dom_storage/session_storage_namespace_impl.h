@@ -10,12 +10,10 @@
 #include "content/common/content_export.h"
 #include "content/public/browser/session_storage_namespace.h"
 
-namespace dom_storage {
-class DomStorageSession;
-}
-
 namespace content {
-class DOMStorageContextImpl;
+
+class DOMStorageContextWrapper;
+class DOMStorageSession;
 
 class SessionStorageNamespaceImpl
     : NON_EXPORTED_BASE(public SessionStorageNamespace) {
@@ -24,17 +22,22 @@ class SessionStorageNamespaceImpl
   //
   // The CONTENT_EXPORT allows TestRenderViewHost to instantiate these.
   CONTENT_EXPORT explicit SessionStorageNamespaceImpl(
-      DOMStorageContextImpl* context);
+      DOMStorageContextWrapper* context);
 
   // Constructs a |SessionStorageNamespaceImpl| by cloning
   // |namespace_to_clone|. Allocates new IDs for it.
-  SessionStorageNamespaceImpl(DOMStorageContextImpl* context,
+  SessionStorageNamespaceImpl(DOMStorageContextWrapper* context,
                               int64 namepace_id_to_clone);
 
   // Constructs a |SessionStorageNamespaceImpl| and assigns |persistent_id|
   // to it. Allocates a new non-persistent ID.
-  SessionStorageNamespaceImpl(DOMStorageContextImpl* context,
+  SessionStorageNamespaceImpl(DOMStorageContextWrapper* context,
                               const std::string& persistent_id);
+
+  // Creates an alias of |master_session_storage_namespace|. This will allocate
+  // a new non-persistent ID.
+  explicit SessionStorageNamespaceImpl(
+      SessionStorageNamespaceImpl* master_session_storage_namespace);
 
   // SessionStorageNamespace implementation.
   virtual int64 id() const OVERRIDE;
@@ -43,13 +46,22 @@ class SessionStorageNamespaceImpl
   virtual bool should_persist() const OVERRIDE;
 
   SessionStorageNamespaceImpl* Clone();
-  bool IsFromContext(DOMStorageContextImpl* context);
+  bool IsFromContext(DOMStorageContextWrapper* context);
+
+  virtual void AddTransactionLogProcessId(int process_id) OVERRIDE;
+  virtual void RemoveTransactionLogProcessId(int process_id) OVERRIDE;
+  virtual void Merge(bool actually_merge,
+                     int process_id,
+                     SessionStorageNamespace* other,
+                     const MergeResultCallback& callback) OVERRIDE;
+  virtual bool IsAliasOf(SessionStorageNamespace* other) OVERRIDE;
+  virtual SessionStorageNamespace* CreateAlias() OVERRIDE;
 
  private:
-  explicit SessionStorageNamespaceImpl(dom_storage::DomStorageSession* clone);
+  explicit SessionStorageNamespaceImpl(DOMStorageSession* clone);
   virtual ~SessionStorageNamespaceImpl();
 
-  scoped_refptr<dom_storage::DomStorageSession> session_;
+  scoped_refptr<DOMStorageSession> session_;
 
   DISALLOW_COPY_AND_ASSIGN(SessionStorageNamespaceImpl);
 };

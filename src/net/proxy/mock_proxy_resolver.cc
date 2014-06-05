@@ -5,19 +5,20 @@
 #include "net/proxy/mock_proxy_resolver.h"
 
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 
 namespace net {
 
 MockAsyncProxyResolverBase::Request::Request(
-    MockAsyncProxyResolverBase* resolver, const GURL& url, ProxyInfo* results,
+    MockAsyncProxyResolverBase* resolver,
+    const GURL& url,
+    ProxyInfo* results,
     const CompletionCallback& callback)
-        : resolver_(resolver),
-          url_(url),
-          results_(results),
-          callback_(callback),
-          origin_loop_(MessageLoop::current()) {
-    }
+    : resolver_(resolver),
+      url_(url),
+      results_(results),
+      callback_(callback),
+      origin_loop_(base::MessageLoop::current()) {}
 
     void MockAsyncProxyResolverBase::Request::CompleteNow(int rv) {
       CompletionCallback callback = callback_;
@@ -30,16 +31,14 @@ MockAsyncProxyResolverBase::Request::Request(
 
 MockAsyncProxyResolverBase::Request::~Request() {}
 
-
 MockAsyncProxyResolverBase::SetPacScriptRequest::SetPacScriptRequest(
-        MockAsyncProxyResolverBase* resolver,
-        const scoped_refptr<ProxyResolverScriptData>& script_data,
-        const CompletionCallback& callback)
-        : resolver_(resolver),
-          script_data_(script_data),
-          callback_(callback),
-          origin_loop_(MessageLoop::current()) {
-    }
+    MockAsyncProxyResolverBase* resolver,
+    const scoped_refptr<ProxyResolverScriptData>& script_data,
+    const CompletionCallback& callback)
+    : resolver_(resolver),
+      script_data_(script_data),
+      callback_(callback),
+      origin_loop_(base::MessageLoop::current()) {}
 
 MockAsyncProxyResolverBase::SetPacScriptRequest::~SetPacScriptRequest() {}
 
@@ -70,19 +69,12 @@ int MockAsyncProxyResolverBase::GetProxyForURL(
 void MockAsyncProxyResolverBase::CancelRequest(RequestHandle request_handle) {
   scoped_refptr<Request> request = reinterpret_cast<Request*>(request_handle);
   cancelled_requests_.push_back(request);
-  RemovePendingRequest(request);
+  RemovePendingRequest(request.get());
 }
 
 LoadState MockAsyncProxyResolverBase::GetLoadState(
     RequestHandle request_handle) const {
-  NOTREACHED();
-  return LOAD_STATE_IDLE;
-}
-
-LoadState MockAsyncProxyResolverBase::GetLoadStateThreadSafe(
-    RequestHandle request_handle) const {
-  NOTREACHED();
-  return LOAD_STATE_IDLE;
+  return LOAD_STATE_RESOLVING_PROXY_FOR_URL;
 }
 
 int MockAsyncProxyResolverBase::SetPacScript(

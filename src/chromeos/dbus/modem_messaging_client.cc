@@ -8,7 +8,7 @@
 
 #include "base/bind.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
 #include "base/values.h"
 #include "dbus/bus.h"
@@ -135,12 +135,11 @@ class ModemMessagingProxy {
 
 class CHROMEOS_EXPORT ModemMessagingClientImpl : public ModemMessagingClient {
  public:
-  explicit ModemMessagingClientImpl(dbus::Bus *bus)
-      : bus_(bus),
+  ModemMessagingClientImpl()
+      : bus_(NULL),
         proxies_deleter_(&proxies_) {
   }
 
-  // ModemMessagingClient override.
   virtual void SetSmsReceivedHandler(
       const std::string& service_name,
       const dbus::ObjectPath& object_path,
@@ -148,14 +147,12 @@ class CHROMEOS_EXPORT ModemMessagingClientImpl : public ModemMessagingClient {
     GetProxy(service_name, object_path)->SetSmsReceivedHandler(handler);
   }
 
-  // ModemMessagingClient override.
   virtual void ResetSmsReceivedHandler(
       const std::string& service_name,
       const dbus::ObjectPath& object_path) OVERRIDE {
     GetProxy(service_name, object_path)->ResetSmsReceivedHandler();
   }
 
-  // ModemMessagingClient override.
   virtual void Delete(const std::string& service_name,
                       const dbus::ObjectPath& object_path,
                       const dbus::ObjectPath& sms_path,
@@ -163,12 +160,16 @@ class CHROMEOS_EXPORT ModemMessagingClientImpl : public ModemMessagingClient {
     GetProxy(service_name, object_path)->Delete(sms_path, callback);
   }
 
-  // ModemMessagingClient override.
   virtual void List(const std::string& service_name,
                     const dbus::ObjectPath& object_path,
                     const ListCallback& callback) OVERRIDE {
     GetProxy(service_name, object_path)->List(callback);
   }
+
+ protected:
+  virtual void Init(dbus::Bus* bus) OVERRIDE {
+    bus_ = bus;
+  };
 
  private:
   typedef std::map<std::pair<std::string, std::string>, ModemMessagingProxy*>
@@ -196,66 +197,6 @@ class CHROMEOS_EXPORT ModemMessagingClientImpl : public ModemMessagingClient {
   DISALLOW_COPY_AND_ASSIGN(ModemMessagingClientImpl);
 };
 
-class CHROMEOS_EXPORT ModemMessagingClientStubImpl
-    : public ModemMessagingClient {
- public:
-  ModemMessagingClientStubImpl() {}
-  virtual ~ModemMessagingClientStubImpl() {}
-
-  // ModemMessagingClient override.
-  virtual void SetSmsReceivedHandler(
-      const std::string& service_name,
-      const dbus::ObjectPath& object_path,
-      const SmsReceivedHandler& handler) OVERRIDE {
-    DCHECK(sms_received_handler_.is_null());
-    sms_received_handler_ = handler;
-  }
-
-  // ModemMessagingClient override.
-  virtual void ResetSmsReceivedHandler(
-      const std::string& service_name,
-      const dbus::ObjectPath& object_path) OVERRIDE {
-    sms_received_handler_.Reset();
-  }
-
-  // ModemMessagingClient override.
-  virtual void Delete(const std::string& service_name,
-                      const dbus::ObjectPath& object_path,
-                      const dbus::ObjectPath& sms_path,
-                      const DeleteCallback& callback) OVERRIDE {
-    std::vector<dbus::ObjectPath>::iterator it(
-        find(message_paths_.begin(), message_paths_.end(), sms_path));
-    if (it != message_paths_.end())
-      message_paths_.erase(it);
-    callback.Run();
-  }
-
-  // ModemMessagingClient override.
-  virtual void List(const std::string& service_name,
-                    const dbus::ObjectPath& object_path,
-                    const ListCallback& callback) OVERRIDE {
-    // This entire ModemMessagingClientStubImpl is for testing.
-    // Calling List with |service_name| equal to "AddSMS" allows unit
-    // tests to confirm that the sms_received_handler is functioning.
-    if (service_name == "AddSMS") {
-      std::vector<dbus::ObjectPath> no_paths;
-      const dbus::ObjectPath kSmsPath("/SMS/0");
-      message_paths_.push_back(kSmsPath);
-      if (!sms_received_handler_.is_null())
-        sms_received_handler_.Run(kSmsPath, true);
-      callback.Run(no_paths);
-    } else {
-      callback.Run(message_paths_);
-    }
-  }
-
- private:
-  SmsReceivedHandler sms_received_handler_;
-  std::vector<dbus::ObjectPath> message_paths_;
-
-  DISALLOW_COPY_AND_ASSIGN(ModemMessagingClientStubImpl);
-};
-
 }  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -267,14 +208,8 @@ ModemMessagingClient::~ModemMessagingClient() {}
 
 
 // static
-ModemMessagingClient* ModemMessagingClient::Create(
-    DBusClientImplementationType type,
-    dbus::Bus* bus) {
-  if (type == REAL_DBUS_CLIENT_IMPLEMENTATION) {
-    return new ModemMessagingClientImpl(bus);
-  }
-  DCHECK_EQ(STUB_DBUS_CLIENT_IMPLEMENTATION, type);
-  return new ModemMessagingClientStubImpl();
+ModemMessagingClient* ModemMessagingClient::Create() {
+  return new ModemMessagingClientImpl();
 }
 
 

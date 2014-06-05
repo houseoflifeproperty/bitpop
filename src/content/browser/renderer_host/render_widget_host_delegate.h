@@ -5,7 +5,14 @@
 #ifndef CONTENT_BROWSER_RENDER_WIDGET_HOST_DELEGATE_H_
 #define CONTENT_BROWSER_RENDER_WIDGET_HOST_DELEGATE_H_
 
+#include "build/build_config.h"
 #include "content/common/content_export.h"
+#include "ui/gfx/native_widget_types.h"
+
+namespace blink {
+class WebMouseWheelEvent;
+class WebGestureEvent;
+}
 
 namespace content {
 
@@ -34,6 +41,28 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // specified events. This gives an opportunity to the browser to process the
   // event (used for keyboard shortcuts).
   virtual void HandleKeyboardEvent(const NativeWebKeyboardEvent& event) {}
+
+  // Callback to inform the browser that the renderer did not process the
+  // specified mouse wheel event.  Returns true if the browser has handled
+  // the event itself.
+  virtual bool HandleWheelEvent(const blink::WebMouseWheelEvent& event);
+
+  // Callback to give the browser a chance to handle the specified gesture
+  // event before sending it to the renderer.
+  // Returns true if the |event| was handled.
+  virtual bool PreHandleGestureEvent(const blink::WebGestureEvent& event);
+
+  // Callback to inform the browser that the renderer did not process the
+  // specified gesture event.  Returns true if the |event| was handled.
+  virtual bool HandleGestureEvent(const blink::WebGestureEvent& event);
+
+  // Notifies that screen rects were sent to renderer process.
+  virtual void DidSendScreenRects(RenderWidgetHostImpl* rwh) {}
+
+#if defined(OS_WIN)
+  // Returns the widget's parent's NativeViewAccessible.
+  virtual gfx::NativeViewAccessible GetParentNativeViewAccessible();
+#endif
 
  protected:
   virtual ~RenderWidgetHostDelegate() {}

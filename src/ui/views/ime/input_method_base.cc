@@ -4,29 +4,21 @@
 
 #include "ui/views/ime/input_method_base.h"
 
-#include "ui/base/events/event.h"
+#include "base/logging.h"
 #include "ui/base/ime/text_input_client.h"
+#include "ui/events/event.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 
-#include "base/logging.h"
-
 namespace views {
 
-InputMethodBase::InputMethodBase()
-    : delegate_(NULL),
-      widget_(NULL),
-      widget_focused_(false) {
-}
+InputMethodBase::InputMethodBase() : delegate_(NULL), widget_(NULL) {}
 
 InputMethodBase::~InputMethodBase() {
-  if (widget_) {
-    widget_->GetFocusManager()->RemoveFocusChangeListener(this);
-    widget_ = NULL;
-  }
+  DetachFromWidget();
 }
 
-void InputMethodBase::set_delegate(internal::InputMethodDelegate* delegate) {
+void InputMethodBase::SetDelegate(internal::InputMethodDelegate* delegate) {
   DCHECK(delegate);
   delegate_ = delegate;
 }
@@ -34,38 +26,24 @@ void InputMethodBase::set_delegate(internal::InputMethodDelegate* delegate) {
 void InputMethodBase::Init(Widget* widget) {
   DCHECK(widget);
   DCHECK(widget->GetFocusManager());
-
-  if (widget_) {
-    NOTREACHED() << "The input method is already initialized.";
-    return;
-  }
+  DCHECK(!widget_) << "The input method is already initialized.";
 
   widget_ = widget;
-  // The InputMethod is lazily created, so we need to tell it the currently
-  // focused view.
+  // Alert the InputMethod of the Widget's currently focused view.
   View* focused = widget->GetFocusManager()->GetFocusedView();
   if (focused)
     OnWillChangeFocus(NULL, focused);
   widget->GetFocusManager()->AddFocusChangeListener(this);
 }
 
-void InputMethodBase::OnFocus() {
-  widget_focused_ = true;
-}
-
-void InputMethodBase::OnBlur() {
-  widget_focused_ = false;
-}
-
 views::View* InputMethodBase::GetFocusedView() const {
-  return widget_->GetFocusManager()->GetFocusedView();
+  return widget_ ? widget_->GetFocusManager()->GetFocusedView() : NULL;
 }
 
-void InputMethodBase::OnTextInputTypeChanged(View* view) {
-}
+void InputMethodBase::OnTextInputTypeChanged(View* view) {}
 
 ui::TextInputClient* InputMethodBase::GetTextInputClient() const {
-  return (widget_focused_ && GetFocusedView()) ?
+  return (widget_ && widget_->IsActive() && GetFocusedView()) ?
       GetFocusedView()->GetTextInputClient() : NULL;
 }
 
@@ -78,14 +56,12 @@ bool InputMethodBase::IsMock() const {
   return false;
 }
 
-void InputMethodBase::OnWillChangeFocus(View* focused_before, View* focused) {
-}
+void InputMethodBase::OnWillChangeFocus(View* focused_before, View* focused) {}
 
-void InputMethodBase::OnDidChangeFocus(View* focused_before, View* focused) {
-}
+void InputMethodBase::OnDidChangeFocus(View* focused_before, View* focused) {}
 
 bool InputMethodBase::IsViewFocused(View* view) const {
-  return widget_focused_ && view && GetFocusedView() == view;
+  return widget_ && widget_->IsActive() && view && GetFocusedView() == view;
 }
 
 bool InputMethodBase::IsTextInputTypeNone() const {
@@ -109,13 +85,24 @@ bool InputMethodBase::GetCaretBoundsInWidget(gfx::Rect* rect) const {
   if (!client || client->GetTextInputType() == ui::TEXT_INPUT_TYPE_NONE)
     return false;
 
-  *rect = GetFocusedView()->ConvertRectToWidget(client->GetCaretBounds());
+  gfx::Rect caret_bounds = client->GetCaretBounds();
+  gfx::Point caret_origin = caret_bounds.origin();
+  View::ConvertPointFromScreen(GetFocusedView(), &caret_origin);
+  caret_bounds.set_origin(caret_origin);
+  *rect = GetFocusedView()->ConvertRectToWidget(caret_bounds);
 
-  // We need to do coordinate conversion if the focused view is inside a child
-  // Widget.
+  // Convert coordinates if the focused view is inside a child Widget.
   if (GetFocusedView()->GetWidget() != widget_)
     return Widget::ConvertRect(GetFocusedView()->GetWidget(), widget_, rect);
   return true;
+}
+
+void InputMethodBase::DetachFromWidget() {
+  if (!widget_)
+    return;
+
+  widget_->GetFocusManager()->RemoveFocusChangeListener(this);
+  widget_ = NULL;
 }
 
 }  // namespace views

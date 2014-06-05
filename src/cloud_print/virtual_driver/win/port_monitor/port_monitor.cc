@@ -15,16 +15,18 @@
 #include "base/at_exit.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/logging.h"
 #include "base/path_service.h"
-#include "base/process.h"
-#include "base/process_util.h"
-#include "base/string16.h"
+#include "base/process/process.h"
+#include "base/process/launch.h"
+#include "base/strings/string16.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_handle.h"
 #include "base/win/windows_version.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/installer/launcher_support/chrome_launcher_support.h"
-#include "cloud_print/virtual_driver/virtual_driver_switches.h"
+#include "cloud_print/common/win/cloud_print_utils.h"
 #include "cloud_print/virtual_driver/win/port_monitor/spooler_win.h"
 #include "cloud_print/virtual_driver/win/virtual_driver_consts.h"
 #include "cloud_print/virtual_driver/win/virtual_driver_helpers.h"
@@ -42,18 +44,32 @@ const wchar_t kCloudPrintRegKey[] = L"Software\\Google\\CloudPrint";
 
 const wchar_t kXpsMimeType[] = L"application/vnd.ms-xpsdocument";
 
-const size_t kMaxCommandLineLen = 0x7FFF;
-
+const wchar_t kAppDataDir[] = L"Google\\Cloud Printer";
 
 struct MonitorData {
-  base::AtExitManager* at_exit_manager;
+  scoped_ptr<base::AtExitManager> at_exit_manager;
 };
 
 struct PortData {
+  PortData() : job_id(0), printer_handle(NULL), file(0) {
+  }
+  ~PortData() {
+    Close();
+  }
+  void Close() {
+    if (printer_handle) {
+      ClosePrinter(printer_handle);
+      printer_handle = NULL;
+    }
+    if (file) {
+      base::CloseFile(file);
+      file = NULL;
+    }
+  }
   DWORD job_id;
   HANDLE printer_handle;
   FILE* file;
-  FilePath* file_path;
+  base::FilePath file_path;
 };
 
 typedef struct {
@@ -90,17 +106,26 @@ MONITOR2 g_monitor_2 = {
   Monitor2Shutdown
 };
 
-// Frees any objects referenced by port_data and sets pointers to NULL.
-void CleanupPortData(PortData* port_data) {
-  delete port_data->file_path;
-  port_data->file_path = NULL;
-  if (port_data->printer_handle != NULL) {
-    ClosePrinter(port_data->printer_handle);
-    port_data->printer_handle = NULL;
+base::FilePath GetAppDataDir() {
+  base::FilePath file_path;
+  base::win::Version version = base::win::GetVersion();
+  int path_id = (version >= base::win::VERSION_VISTA) ?
+                base::DIR_LOCAL_APP_DATA_LOW : base::DIR_LOCAL_APP_DATA;
+  if (!PathService::Get(path_id, &file_path)) {
+    LOG(ERROR) << "Can't get DIR_LOCAL_APP_DATA";
+    return base::FilePath();
   }
-  if (port_data->file != NULL) {
-    file_util::CloseFile(port_data->file);
-    port_data->file = NULL;
+  return file_path.Append(kAppDataDir);
+}
+
+// Delete files which where not deleted by chrome.
+void DeleteLeakedFiles(const base::FilePath& dir) {
+  base::Time delete_before = base::Time::Now() - base::TimeDelta::FromDays(1);
+  base::FileEnumerator enumerator(dir, false, base::FileEnumerator::FILES);
+  for (base::FilePath file_path = enumerator.Next(); !file_path.empty();
+       file_path = enumerator.Next()) {
+    if (enumerator.GetInfo().GetLastModifiedTime() < delete_before)
+      base::DeleteFile(file_path, false);
   }
 }
 
@@ -110,7 +135,7 @@ void CleanupPortData(PortData* port_data) {
 // On failure returns FALSE and title is unmodified.
 bool GetJobTitle(HANDLE printer_handle,
                  DWORD job_id,
-                 string16 *title) {
+                 base::string16 *title) {
   DCHECK(printer_handle != NULL);
   DCHECK(title != NULL);
   DWORD bytes_needed = 0;
@@ -119,7 +144,7 @@ bool GetJobTitle(HANDLE printer_handle,
     LOG(ERROR) << "Unable to get bytes needed for job info.";
     return false;
   }
-  scoped_array<BYTE> buffer(new BYTE[bytes_needed]);
+  scoped_ptr<BYTE[]> buffer(new BYTE[bytes_needed]);
   if (!GetJob(printer_handle,
               job_id,
               1,
@@ -138,7 +163,7 @@ bool GetJobTitle(HANDLE printer_handle,
 // Verifies that a valid parent Window exists and then just displays an
 // error message to let the user know that there is no interactive
 // configuration.
-void HandlePortUi(HWND hwnd, const string16& caption) {
+void HandlePortUi(HWND hwnd, const base::string16& caption) {
   if (hwnd != NULL && IsWindow(hwnd)) {
     DisplayWindowsMessage(hwnd, CO_E_NOT_SUPPORTED, cloud_print::kPortName);
   }
@@ -170,8 +195,8 @@ bool GetUserToken(HANDLE* primary_token) {
 // Launches the Cloud Print dialog in Chrome.
 // xps_path references a file to print.
 // job_title is the title to be used for the resulting print job.
-bool LaunchPrintDialog(const string16& xps_path,
-                       const string16& job_title) {
+bool LaunchPrintDialog(const base::FilePath& xps_path,
+                       const base::string16& job_title) {
   HANDLE token = NULL;
   if (!GetUserToken(&token)) {
     LOG(ERROR) << "Unable to get user token.";
@@ -179,7 +204,7 @@ bool LaunchPrintDialog(const string16& xps_path,
   }
   base::win::ScopedHandle primary_token_scoped(token);
 
-  FilePath chrome_path = GetChromeExePath();
+  base::FilePath chrome_path = GetChromeExePath();
   if (chrome_path.empty()) {
     LOG(ERROR) << "Unable to get chrome exe path.";
     return false;
@@ -187,19 +212,13 @@ bool LaunchPrintDialog(const string16& xps_path,
 
   CommandLine command_line(chrome_path);
 
-  FilePath chrome_profile = GetChromeProfilePath();
-  if (!chrome_profile.empty()) {
-    command_line.AppendSwitchPath(switches::kCloudPrintUserDataDir,
-                                  chrome_profile);
-  }
+  base::FilePath chrome_profile = GetChromeProfilePath();
+  if (!chrome_profile.empty())
+    command_line.AppendSwitchPath(switches::kUserDataDir, chrome_profile);
 
-  command_line.AppendSwitchPath(switches::kCloudPrintFile,
-                                FilePath(xps_path));
-  command_line.AppendSwitchNative(switches::kCloudPrintFileType,
-                                  kXpsMimeType);
-  command_line.AppendSwitchNative(switches::kCloudPrintJobTitle,
-                                  job_title);
-  command_line.AppendSwitch(switches::kCloudPrintDeleteFile);
+  command_line.AppendSwitchPath(switches::kCloudPrintFile, xps_path);
+  command_line.AppendSwitchNative(switches::kCloudPrintFileType, kXpsMimeType);
+  command_line.AppendSwitchNative(switches::kCloudPrintJobTitle, job_title);
   base::LaunchOptions options;
   options.as_user = primary_token_scoped;
   base::LaunchProcess(command_line, options, NULL);
@@ -220,7 +239,7 @@ void LaunchChromeDownloadPage() {
   }
   base::win::ScopedHandle token_scoped(token);
 
-  FilePath ie_path;
+  base::FilePath ie_path;
   PathService::Get(base::DIR_PROGRAM_FILESX86, &ie_path);
   ie_path = ie_path.Append(kIePath);
   CommandLine command_line(ie_path);
@@ -260,35 +279,35 @@ bool ValidateCurrentUser() {
 }
 }  // namespace
 
-FilePath ReadPathFromRegistry(HKEY root, const wchar_t* path_name) {
+base::FilePath ReadPathFromRegistry(HKEY root, const wchar_t* path_name) {
   base::win::RegKey gcp_key(HKEY_CURRENT_USER, kCloudPrintRegKey, KEY_READ);
-  string16 data;
+  base::string16 data;
   if (SUCCEEDED(gcp_key.ReadValue(path_name, &data)) &&
-      file_util::PathExists(FilePath(data))) {
-    return FilePath(data);
+      base::PathExists(base::FilePath(data))) {
+    return base::FilePath(data);
   }
-  return FilePath();
+  return base::FilePath();
 }
 
-FilePath ReadPathFromAnyRegistry(const wchar_t* path_name) {
-  FilePath result = ReadPathFromRegistry(HKEY_CURRENT_USER, path_name);
+base::FilePath ReadPathFromAnyRegistry(const wchar_t* path_name) {
+  base::FilePath result = ReadPathFromRegistry(HKEY_CURRENT_USER, path_name);
   if (!result.empty())
     return result;
   return ReadPathFromRegistry(HKEY_LOCAL_MACHINE, path_name);
 }
 
-FilePath GetChromeExePath() {
-  FilePath path = ReadPathFromAnyRegistry(kChromeExePathRegValue);
+base::FilePath GetChromeExePath() {
+  base::FilePath path = ReadPathFromAnyRegistry(kChromeExePathRegValue);
   if (!path.empty())
     return path;
   return chrome_launcher_support::GetAnyChromePath();
 }
 
-FilePath GetChromeProfilePath() {
-  FilePath path = ReadPathFromAnyRegistry(kChromeProfilePathRegValue);
-  if (!path.empty() && file_util::DirectoryExists(path))
+base::FilePath GetChromeProfilePath() {
+  base::FilePath path = ReadPathFromAnyRegistry(kChromeProfilePathRegValue);
+  if (!path.empty() && base::DirectoryExists(path))
     return path;
-  return FilePath();
+  return base::FilePath();
 }
 
 BOOL WINAPI Monitor2EnumPorts(HANDLE,
@@ -360,20 +379,12 @@ BOOL WINAPI Monitor2EnumPorts(HANDLE,
 }
 
 BOOL WINAPI Monitor2OpenPort(HANDLE, wchar_t*, HANDLE* handle) {
-  PortData* port_data =
-      reinterpret_cast<PortData*>(GlobalAlloc(GMEM_FIXED|GMEM_ZEROINIT,
-                                              sizeof(PortData)));
-  if (port_data == NULL) {
-    LOG(ERROR) << "Unable to allocate memory for internal structures.";
-    SetLastError(E_OUTOFMEMORY);
-    return FALSE;
-  }
   if (handle == NULL) {
     LOG(ERROR) << "handle should not be NULL.";
     SetLastError(ERROR_INVALID_PARAMETER);
     return FALSE;
   }
-  *handle = (HANDLE)port_data;
+  *handle = new PortData();
   return TRUE;
 }
 
@@ -382,16 +393,7 @@ BOOL WINAPI Monitor2StartDocPort(HANDLE port_handle,
                                  DWORD job_id,
                                  DWORD,
                                  BYTE*) {
-  const wchar_t* kUsageKey = L"dr";
-  // Set appropriate key to 1 to let Omaha record usage.
-  base::win::RegKey key;
-  if (key.Create(HKEY_CURRENT_USER, kKeyLocation,
-                 KEY_SET_VALUE) != ERROR_SUCCESS) {
-    LOG(ERROR) << "Unable to open key to log usage";
-  }
-  if (key.WriteValue(kUsageKey, L"1") != ERROR_SUCCESS) {
-    LOG(ERROR) << "Unable to set usage key";
-  }
+  SetGoogleUpdateUsage(kGoogleUpdateProductId);
   if (port_handle == NULL) {
     LOG(ERROR) << "port_handle should not be NULL.";
     SetLastError(ERROR_INVALID_PARAMETER);
@@ -416,21 +418,21 @@ BOOL WINAPI Monitor2StartDocPort(HANDLE port_handle,
     // This is the normal flow during a unit test.
     port_data->printer_handle = NULL;
   }
-  FilePath app_data;
-  port_data->file_path = new FilePath();
-  if (port_data->file_path == NULL) {
-    LOG(ERROR) << "Unable to allocate memory for internal structures.";
-    SetLastError(E_OUTOFMEMORY);
+  base::FilePath& file_path = port_data->file_path;
+  base::FilePath app_data_dir = GetAppDataDir();
+  if (app_data_dir.empty())
+    return FALSE;
+  DeleteLeakedFiles(app_data_dir);
+  if (!base::CreateDirectory(app_data_dir) ||
+      !base::CreateTemporaryFileInDir(app_data_dir, &file_path)) {
+    LOG(ERROR) << "Can't create temporary file in " << app_data_dir.value();
     return FALSE;
   }
-  bool result = PathService::Get(base::DIR_LOCAL_APP_DATA_LOW, &app_data);
-  file_util::CreateTemporaryFileInDir(app_data, port_data->file_path);
-  port_data->file = file_util::OpenFile(*(port_data->file_path), "wb+");
+  port_data->file = base::OpenFile(file_path, "wb+");
   if (port_data->file == NULL) {
-    LOG(ERROR) << "Error opening file " << port_data->file_path << ".";
+    LOG(ERROR) << "Error opening file " << file_path.value() << ".";
     return FALSE;
   }
-
   return TRUE;
 }
 
@@ -471,18 +473,26 @@ BOOL WINAPI Monitor2EndDocPort(HANDLE port_handle) {
   }
 
   if (port_data->file != NULL) {
-    file_util::CloseFile(port_data->file);
+    base::CloseFile(port_data->file);
     port_data->file = NULL;
-    string16 job_title;
-    if (port_data->printer_handle != NULL) {
-      GetJobTitle(port_data->printer_handle,
-                  port_data->job_id,
-                  &job_title);
+    bool delete_file = true;
+    int64 file_size = 0;
+    base::GetFileSize(port_data->file_path, &file_size);
+    if (file_size > 0) {
+      base::string16 job_title;
+      if (port_data->printer_handle != NULL) {
+        GetJobTitle(port_data->printer_handle,
+                    port_data->job_id,
+                    &job_title);
+      }
+      if (!LaunchPrintDialog(port_data->file_path, job_title)) {
+        LaunchChromeDownloadPage();
+      } else {
+        delete_file = false;
+      }
     }
-    if (!LaunchPrintDialog(port_data->file_path->value().c_str(),
-                           job_title)) {
-      LaunchChromeDownloadPage();
-    }
+    if (delete_file)
+      base::DeleteFile(port_data->file_path, false);
   }
   if (port_data->printer_handle != NULL) {
     // Tell the spooler that the job is complete.
@@ -492,7 +502,7 @@ BOOL WINAPI Monitor2EndDocPort(HANDLE port_handle) {
            NULL,
            JOB_CONTROL_SENT_TO_PRINTER);
   }
-  CleanupPortData(port_data);
+  port_data->Close();
   // Return success even if we can't display the dialog.
   // TODO(abodenha@chromium.org) Come up with a better way of handling
   // this situation.
@@ -506,8 +516,7 @@ BOOL WINAPI Monitor2ClosePort(HANDLE port_handle) {
     return FALSE;
   }
   PortData* port_data = reinterpret_cast<PortData*>(port_handle);
-  CleanupPortData(port_data);
-  GlobalFree(port_handle);
+  delete port_data;
   return TRUE;
 }
 
@@ -515,8 +524,7 @@ VOID WINAPI Monitor2Shutdown(HANDLE monitor_handle) {
   if (monitor_handle != NULL) {
     MonitorData* monitor_data =
       reinterpret_cast<MonitorData*>(monitor_handle);
-    delete monitor_data->at_exit_manager;
-    GlobalFree(monitor_handle);
+    delete monitor_handle;
   }
 }
 
@@ -529,16 +537,9 @@ BOOL WINAPI Monitor2XcvOpenPort(HANDLE,
     SetLastError(ERROR_INVALID_PARAMETER);
     return FALSE;
   }
-  XcvUiData* xcv_data;
-  xcv_data = reinterpret_cast<XcvUiData*>(GlobalAlloc(GMEM_FIXED|GMEM_ZEROINIT,
-                                                      sizeof(XcvUiData)));
-  if (xcv_data == NULL) {
-    LOG(ERROR) << "Unable to allocate memory for internal structures.";
-    SetLastError(E_OUTOFMEMORY);
-    return FALSE;
-  }
+  XcvUiData* xcv_data = new XcvUiData();
   xcv_data->granted_access = granted_access;
-  *handle = (HANDLE)xcv_data;
+  *handle = xcv_data;
   return TRUE;
 }
 
@@ -561,7 +562,7 @@ DWORD WINAPI Monitor2XcvDataPort(HANDLE xcv_handle,
   // dynamic creation of ports.
   if (lstrcmp(L"MonitorUI", data_name) == 0) {
     DWORD dll_path_len = 0;
-    FilePath dll_path(GetPortMonitorDllName());
+    base::FilePath dll_path(GetPortMonitorDllName());
     dll_path_len = static_cast<DWORD>(dll_path.value().length());
     if (output_data_bytes_needed != NULL) {
       *output_data_bytes_needed = dll_path_len;
@@ -580,7 +581,8 @@ DWORD WINAPI Monitor2XcvDataPort(HANDLE xcv_handle,
 }
 
 BOOL WINAPI Monitor2XcvClosePort(HANDLE handle) {
-  GlobalFree(handle);
+  XcvUiData* xcv_data = reinterpret_cast<XcvUiData*>(handle);
+  delete xcv_data;
   return TRUE;
 }
 
@@ -603,21 +605,17 @@ BOOL WINAPI MonitorUiConfigureOrDeletePortUI(const wchar_t*,
 
 MONITOR2* WINAPI InitializePrintMonitor2(MONITORINIT*,
                                          HANDLE* handle) {
-  cloud_print::MonitorData* monitor_data =
-      reinterpret_cast<cloud_print::MonitorData*>
-      (GlobalAlloc(GMEM_FIXED|GMEM_ZEROINIT, sizeof(cloud_print::MonitorData)));
-  if (monitor_data == NULL) {
-    return NULL;
-  }
-  if (handle != NULL) {
-    *handle = (HANDLE)monitor_data;
-    if (!cloud_print::kIsUnittest) {
-      // Unit tests set up their own AtExitManager
-      monitor_data->at_exit_manager = new base::AtExitManager();
-    }
-  } else {
+  if (handle == NULL) {
     SetLastError(ERROR_INVALID_PARAMETER);
     return NULL;
+  }
+  cloud_print::MonitorData* monitor_data = new cloud_print::MonitorData;
+  *handle = monitor_data;
+  if (!cloud_print::kIsUnittest) {
+    // Unit tests set up their own AtExitManager
+    monitor_data->at_exit_manager.reset(new base::AtExitManager());
+    // Single spooler.exe handles verbose users.
+    PathService::DisableCache();
   }
   return &cloud_print::g_monitor_2;
 }

@@ -5,20 +5,31 @@
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_folder_target.h"
 
 #include "base/logging.h"
-#include "base/sys_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
+#include "base/strings/sys_string_conversions.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_folder_controller.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_button.h"
-#import "chrome/browser/ui/cocoa/event_utils.h"
-#import "third_party/mozilla/NSPasteboard+Utils.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/core/browser/bookmark_node_data.h"
+#include "components/bookmarks/core/browser/bookmark_pasteboard_helper_mac.h"
+#import "ui/base/cocoa/cocoa_base_utils.h"
 
 NSString* kBookmarkButtonDragType = @"ChromiumBookmarkButtonDragType";
 
+@interface BookmarkFolderTarget()
+// Copies the given bookmark node to the given pasteboard, declaring appropriate
+// types (to paste a URL with a title).
+- (void)copyBookmarkNode:(const BookmarkNode*)node
+        toDragPasteboard:(NSPasteboard*)pboard;
+@end
+
 @implementation BookmarkFolderTarget
 
-- (id)initWithController:(id<BookmarkButtonControllerProtocol>)controller {
+- (id)initWithController:(id<BookmarkButtonControllerProtocol>)controller
+                 profile:(Profile*)profile {
   if ((self = [super init])) {
     controller_ = controller;
+    profile_ = profile;
   }
   return self;
 }
@@ -56,7 +67,7 @@ NSString* kBookmarkButtonDragType = @"ChromiumBookmarkButtonDragType";
   DCHECK([sender bookmarkNode]->is_folder());
   NSEvent* event = [NSApp currentEvent];
   WindowOpenDisposition disposition =
-      event_utils::WindowOpenDispositionFromNSEvent(event);
+      ui::WindowOpenDispositionFromNSEvent(event);
   if (([event type] != NSMouseEntered) &&
       ([event type] != NSMouseMoved) &&
       ([event type] != NSScrollWheel) &&
@@ -77,7 +88,7 @@ NSString* kBookmarkButtonDragType = @"ChromiumBookmarkButtonDragType";
 }
 
 - (void)copyBookmarkNode:(const BookmarkNode*)node
-            toPasteboard:(NSPasteboard*)pboard {
+        toDragPasteboard:(NSPasteboard*)pboard {
   if (!node) {
     NOTREACHED();
     return;
@@ -87,16 +98,12 @@ NSString* kBookmarkButtonDragType = @"ChromiumBookmarkButtonDragType";
     // TODO(viettrungluu): I'm not sure what we should do, so just declare the
     // "additional" types we're given for now. Maybe we want to add a list of
     // URLs? Would we then have to recurse if there were subfolders?
-    // In the meanwhile, we *must* set it to a known state. (If this survives to
-    // a 10.6-only release, it can be replaced with |-clearContents|.)
-    [pboard declareTypes:[NSArray array] owner:nil];
+    // In the meanwhile, we *must* set it to a known state.
+    [pboard clearContents];
   } else {
-    const std::string spec = node->url().spec();
-    NSString* url = base::SysUTF8ToNSString(spec);
-    NSString* title = base::SysUTF16ToNSString(node->GetTitle());
-    [pboard declareURLPasteboardWithAdditionalTypes:[NSArray array]
-                                              owner:nil];
-    [pboard setDataForURL:url title:title];
+    BookmarkNodeData data(node);
+    data.SetOriginatingProfilePath(profile_->GetPath());
+    data.WriteToClipboard(ui::CLIPBOARD_TYPE_DRAG);
   }
 }
 
@@ -105,7 +112,7 @@ NSString* kBookmarkButtonDragType = @"ChromiumBookmarkButtonDragType";
   if (const BookmarkNode* node = [button bookmarkNode]) {
     // Put the bookmark information into the pasteboard, and then write our own
     // data for |kBookmarkButtonDragType|.
-    [self copyBookmarkNode:node toPasteboard:pboard];
+    [self copyBookmarkNode:node toDragPasteboard:pboard];
     [pboard addTypes:[NSArray arrayWithObject:kBookmarkButtonDragType]
                owner:nil];
     [pboard setData:[NSData dataWithBytes:&button length:sizeof(button)]

@@ -10,12 +10,12 @@
 #include <vector>
 
 #include "base/memory/ref_counted.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/global_request_id.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/common/referrer.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace base {
 
@@ -116,8 +116,15 @@ class NavigationController {
     // Note the default value in constructor below.
     PageTransition transition_type;
 
+    // The FrameTreeNode ID for the frame to navigate, or -1 for the main frame.
+    int64 frame_tree_node_id;
+
     // Referrer for this load. Empty if none.
     Referrer referrer;
+
+    // Any redirect URLs that occurred for this navigation before |url|.
+    // Defaults to an empty vector.
+    std::vector<GURL> redirect_chain;
 
     // Extra headers for this load, separated by \n.
     std::string extra_headers;
@@ -151,9 +158,21 @@ class NavigationController {
     // True if this URL should be able to access local resources.
     bool can_load_local_resources;
 
-    // Indicates whether this navigation involves a cross-process redirect,
-    // in which case it should replace the current navigation entry.
-    bool is_cross_site_redirect;
+    // Indicates whether this navigation should replace the current
+    // navigation entry.
+    bool should_replace_current_entry;
+
+    // Used to specify which frame to navigate. If empty, the main frame is
+    // navigated. This is currently only used in tests.
+    std::string frame_name;
+
+    // Indicates that during this navigation, the session history should be
+    // cleared such that the resulting page is the first and only entry of the
+    // session history.
+    //
+    // The clearing is done asynchronously, and completes when this navigation
+    // commits.
+    bool should_clear_history_list;
 
     explicit LoadURLParams(const GURL& url);
     ~LoadURLParams();
@@ -200,21 +219,23 @@ class NavigationController {
 
   // Active entry --------------------------------------------------------------
 
+  // THIS IS DEPRECATED. DO NOT USE. Use GetVisibleEntry instead.
+  // See http://crbug.com/273710.
+  //
   // Returns the active entry, which is the transient entry if any, the pending
   // entry if a navigation is in progress or the last committed entry otherwise.
   // NOTE: This can be NULL!!
-  //
-  // If you are trying to get the current state of the NavigationController,
-  // this is the method you will typically want to call.  If you want to display
-  // the active entry to the user (e.g., in the location bar), use
-  // GetVisibleEntry instead.
   virtual NavigationEntry* GetActiveEntry() const = 0;
 
-  // Returns the same entry as GetActiveEntry, except that it ignores pending
-  // history navigation entries.  This should be used when displaying info to
-  // the user, so that the location bar and other indicators do not update for
-  // a back/forward navigation until the pending entry commits.  This approach
-  // guards against URL spoofs on slow history navigations.
+  // Returns the entry that should be displayed to the user in the address bar.
+  // This is the transient entry if any, the pending entry if a navigation is
+  // in progress *and* is safe to display to the user (see below), or the last
+  // committed entry otherwise.
+  // NOTE: This can be NULL if no entry has committed!
+  //
+  // A pending entry is safe to display if it started in the browser process or
+  // if it's a renderer-initiated navigation in a new tab which hasn't been
+  // accessed by another tab.  (If it has been accessed, it risks a URL spoof.)
   virtual NavigationEntry* GetVisibleEntry() const = 0;
 
   // Returns the index from which we would go back/forward or reload.  This is
@@ -265,6 +286,15 @@ class NavigationController {
   // by the navigation controller and may be deleted at any time.
   virtual NavigationEntry* GetTransientEntry() const = 0;
 
+  // Adds an entry that is returned by GetActiveEntry(). The entry is
+  // transient: any navigation causes it to be removed and discarded.  The
+  // NavigationController becomes the owner of |entry| and deletes it when
+  // it discards it. This is useful with interstitial pages that need to be
+  // represented as an entry, but should go away when the user navigates away
+  // from them.
+  // Note that adding a transient entry does not change the active contents.
+  virtual void SetTransientEntry(NavigationEntry* entry) = 0;
+
   // New navigations -----------------------------------------------------------
 
   // Loads the specified URL, specifying extra http headers to add to the
@@ -279,7 +309,8 @@ class NavigationController {
   virtual void LoadURLWithParams(const LoadURLParams& params) = 0;
 
   // Loads the current page if this NavigationController was restored from
-  // history and the current page has not loaded yet.
+  // history and the current page has not loaded yet or if the load was
+  // explicitly requested using SetNeedsReload().
   virtual void LoadIfNecessary() = 0;
 
   // Renavigation --------------------------------------------------------------
@@ -314,14 +345,14 @@ class NavigationController {
 
   // Removing of entries -------------------------------------------------------
 
-  // Removes the entry at the specified |index|.  This call dicards any pending
-  // and transient entries.  If the index is the last committed index, this does
-  // nothing and returns false.
-  virtual void RemoveEntryAtIndex(int index) = 0;
+  // Removes the entry at the specified |index|.  This call discards any
+  // transient entries.  If the index is the last committed index or the pending
+  // entry, this does nothing and returns false.
+  virtual bool RemoveEntryAtIndex(int index) = 0;
 
   // Random --------------------------------------------------------------------
 
-  // Session storage depends on dom_storage that depends on WebKit::WebString,
+  // Session storage depends on dom_storage that depends on blink::WebString,
   // which cannot be used on iOS.
 #if !defined(OS_IOS)
   // Returns all the SessionStorageNamespace objects that this
@@ -343,8 +374,14 @@ class NavigationController {
   virtual int32 GetMaxRestoredPageID() const = 0;
 
   // Returns true if a reload happens when activated (SetActive(true) is
-  // invoked). This is true for session/tab restore and cloned tabs.
+  // invoked). This is true for session/tab restore, cloned tabs and tabs that
+  // requested a reload (using SetNeedsReload()) after their renderer was
+  // killed.
   virtual bool NeedsReload() const = 0;
+
+  // Request a reload to happen when activated. This can be used when a renderer
+  // backing a background tab is killed by the system on Android or ChromeOS.
+  virtual void SetNeedsReload() = 0;
 
   // Cancels a repost that brought up a warning.
   virtual void CancelPendingReload() = 0;
@@ -352,12 +389,12 @@ class NavigationController {
   virtual void ContinuePendingReload() = 0;
 
   // Returns true if we are navigating to the URL the tab is opened with.
-  // Returns false after initial navigation has loaded in frame.
-  virtual bool IsInitialNavigation() = 0;
+  // Returns false after the initial navigation has committed.
+  virtual bool IsInitialNavigation() const = 0;
 
-  // Broadcasts the NOTIFY_NAV_ENTRY_CHANGED notification for the given entry
-  // (which must be at the given index). This will keep things in sync like
-  // the saved session.
+  // Broadcasts the NOTIFICATION_NAV_ENTRY_CHANGED notification for the given
+  // entry (which must be at the given index). This will keep things in sync
+  // like the saved session.
   virtual void NotifyEntryChanged(const NavigationEntry* entry, int index) = 0;
 
   // Copies the navigation state from the given controller to this one. This
@@ -365,18 +402,52 @@ class NavigationController {
   virtual void CopyStateFrom(const NavigationController& source) = 0;
 
   // A variant of CopyStateFrom. Removes all entries from this except the last
-  // entry, inserts all entries from |source| before and including the active
-  // entry. This method is intended for use when the last entry of |this| is the
-  // active entry. For example:
+  // committed entry, and inserts all entries from |source| before and including
+  // its last committed entry. For example:
   // source: A B *C* D
-  // this:   E F *G*   (last must be active or pending)
+  // this:   E F *G*
   // result: A B C *G*
-  // This ignores the transient index of the source and honors that of 'this'.
-  virtual void CopyStateFromAndPrune(NavigationController* source) = 0;
+  // If there is a pending entry after *G* in |this|, it is also preserved.
+  // If |replace_entry| is true, the current entry in |source| is replaced. So
+  // the result above would be A B *G*.
+  // This ignores any pending or transient entries in |source|.  Callers must
+  // ensure that |CanPruneAllButLastCommitted| returns true before calling this,
+  // or it will crash.
+  virtual void CopyStateFromAndPrune(NavigationController* source,
+                                     bool replace_entry) = 0;
 
-  // Removes all the entries except the active entry. If there is a new pending
-  // navigation it is preserved.
-  virtual void PruneAllButActive() = 0;
+  // Returns whether it is safe to call PruneAllButLastCommitted or
+  // CopyStateFromAndPrune.  There must be a last committed entry, no transient
+  // entry, and if there is a pending entry, it must be new and not an existing
+  // entry.
+  //
+  // If there were no last committed entry, the pending entry might not commit,
+  // leaving us with a blank page.  This is unsafe when used with
+  // |CopyStateFromAndPrune|, which would show an existing entry above the blank
+  // page.
+  // If there were a transient entry, we would not want to prune the other
+  // entries, which the transient entry could be referring to.
+  // If there were an existing pending entry, we could not prune the last
+  // committed entry, in case it did not commit.  That would leave us with no
+  // sensible place to put the pending entry when it did commit, after all other
+  // entries are pruned.  For example, it could be going back several entries.
+  // (New pending entries are safe, because they can always commit to the end.)
+  virtual bool CanPruneAllButLastCommitted() = 0;
+
+  // Removes all the entries except the last committed entry. If there is a new
+  // pending navigation it is preserved.  Callers must ensure
+  // |CanPruneAllButLastCommitted| returns true before calling this, or it will
+  // crash.
+  virtual void PruneAllButLastCommitted() = 0;
+
+  // Clears all screenshots associated with navigation entries in this
+  // controller. Useful to reduce memory consumption in low-memory situations.
+  virtual void ClearAllScreenshots() = 0;
+
+ private:
+  // This interface should only be implemented inside content.
+  friend class NavigationControllerImpl;
+  NavigationController() {}
 };
 
 }  // namespace content

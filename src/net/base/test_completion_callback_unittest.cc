@@ -6,7 +6,7 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/threading/worker_pool.h"
 #include "net/base/completion_callback.h"
 #include "net/base/test_completion_callback.h"
@@ -43,9 +43,9 @@ class ExampleEmployer::ExampleWorker
  public:
   ExampleWorker(ExampleEmployer* employer,
                 const net::CompletionCallback& callback)
-      : employer_(employer), callback_(callback),
-        origin_loop_(MessageLoop::current()) {
-  }
+      : employer_(employer),
+        callback_(callback),
+        origin_loop_(base::MessageLoop::current()) {}
   void DoWork();
   void DoCallback();
  private:
@@ -58,7 +58,7 @@ class ExampleEmployer::ExampleWorker
   net::CompletionCallback callback_;
   // Used to post ourselves onto the origin thread.
   base::Lock origin_loop_lock_;
-  MessageLoop* origin_loop_;
+  base::MessageLoop* origin_loop_;
 };
 
 void ExampleEmployer::ExampleWorker::DoWork() {
@@ -94,7 +94,7 @@ ExampleEmployer::~ExampleEmployer() {
 }
 
 bool ExampleEmployer::DoSomething(const net::CompletionCallback& callback) {
-  DCHECK(!request_) << "already in use";
+  DCHECK(!request_.get()) << "already in use";
 
   request_ = new ExampleWorker(this, callback);
 

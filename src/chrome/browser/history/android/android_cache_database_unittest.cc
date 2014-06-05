@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/file_path.h"
-#include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/history/android/android_cache_database.h"
 #include "chrome/browser/history/android/android_time.h"
 #include "chrome/browser/history/history_database.h"
@@ -21,35 +20,35 @@ class AndroidCacheDatabaseTest : public testing::Test {
  public:
   AndroidCacheDatabaseTest() {
   }
-  ~AndroidCacheDatabaseTest() {
-  }
+  virtual ~AndroidCacheDatabaseTest() {}
 
  protected:
   virtual void SetUp() {
     // Get a temporary directory for the test DB files.
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-    FilePath history_db_name_ = temp_dir_.path().AppendASCII("history.db");
+    base::FilePath history_db_name_ =
+        temp_dir_.path().AppendASCII("history.db");
     android_cache_db_name_ = temp_dir_.path().AppendASCII(
         "TestAndroidCache.db");
-    ASSERT_EQ(sql::INIT_OK, history_db_.Init(history_db_name_, NULL));
+    ASSERT_EQ(sql::INIT_OK, history_db_.Init(history_db_name_));
     ASSERT_EQ(sql::INIT_OK,
               history_db_.InitAndroidCacheDatabase(android_cache_db_name_));
   }
 
   base::ScopedTempDir temp_dir_;
-  FilePath android_cache_db_name_;
+  base::FilePath android_cache_db_name_;
   HistoryDatabase history_db_;
 };
 
 TEST(AndroidCacheDatabaseAttachTest, AttachDatabaseInTransactionNesting) {
   base::ScopedTempDir temp_dir;
-  FilePath android_cache_db_name;
+  base::FilePath android_cache_db_name;
   HistoryDatabase history_db;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
-  FilePath history_db_name = temp_dir.path().AppendASCII("history.db");
+  base::FilePath history_db_name = temp_dir.path().AppendASCII("history.db");
   android_cache_db_name = temp_dir.path().AppendASCII(
         "TestAndroidCache.db");
-  ASSERT_EQ(sql::INIT_OK, history_db.Init(history_db_name, NULL));
+  ASSERT_EQ(sql::INIT_OK, history_db.Init(history_db_name));
   // Create nested transactions.
   history_db.BeginTransaction();
   history_db.BeginTransaction();
@@ -74,7 +73,7 @@ TEST_F(AndroidCacheDatabaseTest, InitAndroidCacheDatabase) {
 TEST_F(AndroidCacheDatabaseTest, SearchTermsTable) {
   // Test AddSearchTerm.
   Time search_time1 = Time::Now() - TimeDelta::FromDays(1);
-  string16 search_term1(UTF8ToUTF16("search term 1"));
+  base::string16 search_term1(base::UTF8ToUTF16("search term 1"));
   SearchTermID id1 = history_db_.AddSearchTerm(search_term1, search_time1);
   ASSERT_TRUE(id1);
   SearchTermRow row1;
@@ -86,7 +85,7 @@ TEST_F(AndroidCacheDatabaseTest, SearchTermsTable) {
 
   // Test UpdateSearchTerm.
   SearchTermRow update_row1;
-  update_row1.term = (UTF8ToUTF16("update search term1"));
+  update_row1.term = (base::UTF8ToUTF16("update search term1"));
   update_row1.last_visit_time = Time::Now();
   ASSERT_TRUE(history_db_.UpdateSearchTerm(id1, update_row1));
   EXPECT_EQ(id1, history_db_.GetSearchTerm(update_row1.term, &row1));
@@ -96,7 +95,7 @@ TEST_F(AndroidCacheDatabaseTest, SearchTermsTable) {
   EXPECT_EQ(id1, row1.id);
 
   Time search_time2 = Time::Now() - TimeDelta::FromHours(1);
-  string16 search_term2(UTF8ToUTF16("search term 2"));
+  base::string16 search_term2(base::UTF8ToUTF16("search term 2"));
   SearchTermID id2 = history_db_.AddSearchTerm(search_term2, search_time2);
   ASSERT_TRUE(id2);
   ASSERT_TRUE(history_db_.SetKeywordSearchTermsForURL(1, 1, search_term2));

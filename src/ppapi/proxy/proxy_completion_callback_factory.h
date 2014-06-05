@@ -6,7 +6,7 @@
 #define PPAPI_PROXY_PROXY_COMPLETION_CALLBACK_FACTORY_H_
 
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "ppapi/cpp/completion_callback.h"
 #include "ppapi/utility/completion_callback_factory.h"
 
@@ -21,26 +21,26 @@ class ProxyNonThreadSafeThreadTraits {
    public:
     RefCount() : ref_(0) {
 #ifndef NDEBUG
-      message_loop_ = MessageLoop::current();
+      message_loop_ = base::MessageLoop::current();
 #endif
     }
 
     ~RefCount() {
 #ifndef NDEBUG
-      DCHECK(message_loop_ == MessageLoop::current());
+      DCHECK(message_loop_ == base::MessageLoop::current());
 #endif
     }
 
     int32_t AddRef() {
 #ifndef NDEBUG
-      DCHECK(message_loop_ == MessageLoop::current());
+      DCHECK(message_loop_ == base::MessageLoop::current());
 #endif
       return ++ref_;
     }
 
     int32_t Release() {
 #ifndef NDEBUG
-      DCHECK(message_loop_ == MessageLoop::current());
+      DCHECK(message_loop_ == base::MessageLoop::current());
 #endif
       DCHECK(ref_ > 0);
       return --ref_;
@@ -49,7 +49,7 @@ class ProxyNonThreadSafeThreadTraits {
    private:
     int32_t ref_;
 #ifndef NDEBUG
-    MessageLoop* message_loop_;
+    base::MessageLoop* message_loop_;
 #endif
   };
 

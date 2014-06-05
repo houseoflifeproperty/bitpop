@@ -32,22 +32,19 @@
 #include <vector>
 #include <map>
 
+#include "talk/base/asyncpacketsocket.h"
 #include "talk/base/network.h"
-#include "talk/base/packetsocketfactory.h"
 #include "talk/base/proxyinfo.h"
 #include "talk/base/ratetracker.h"
 #include "talk/base/sigslot.h"
 #include "talk/base/socketaddress.h"
 #include "talk/base/thread.h"
 #include "talk/p2p/base/candidate.h"
+#include "talk/p2p/base/packetsocketfactory.h"
 #include "talk/p2p/base/portinterface.h"
 #include "talk/p2p/base/stun.h"
 #include "talk/p2p/base/stunrequest.h"
 #include "talk/p2p/base/transport.h"
-
-namespace talk_base {
-class AsyncPacketSocket;
-}
 
 namespace cricket {
 
@@ -56,7 +53,12 @@ class ConnectionRequest;
 
 extern const char LOCAL_PORT_TYPE[];
 extern const char STUN_PORT_TYPE[];
+extern const char PRFLX_PORT_TYPE[];
 extern const char RELAY_PORT_TYPE[];
+
+extern const char UDP_PROTOCOL_NAME[];
+extern const char TCP_PROTOCOL_NAME[];
+extern const char SSLTCP_PROTOCOL_NAME[];
 
 // The length of time we wait before timing out readability on a connection.
 const uint32 CONNECTION_READ_TIMEOUT = 30 * 1000;   // 30 seconds
@@ -79,7 +81,14 @@ enum RelayType {
 };
 
 enum IcePriorityValue {
-  ICE_TYPE_PREFERENCE_RELAY = 0,
+  // The reason we are choosing Relay preference 2 is because, we can run
+  // Relay from client to server on UDP/TCP/TLS. To distinguish the transport
+  // protocol, we prefer UDP over TCP over TLS.
+  // For UDP ICE_TYPE_PREFERENCE_RELAY will be 2.
+  // For TCP ICE_TYPE_PREFERENCE_RELAY will be 1.
+  // For TLS ICE_TYPE_PREFERENCE_RELAY will be 0.
+  // Check turnport.cc for setting these values.
+  ICE_TYPE_PREFERENCE_RELAY = 2,
   ICE_TYPE_PREFERENCE_HOST_TCP = 90,
   ICE_TYPE_PREFERENCE_SRFLX = 100,
   ICE_TYPE_PREFERENCE_PRFLX = 110,
@@ -92,9 +101,12 @@ bool StringToProto(const char* value, ProtocolType* proto);
 struct ProtocolAddress {
   talk_base::SocketAddress address;
   ProtocolType proto;
+  bool secure;
 
   ProtocolAddress(const talk_base::SocketAddress& a, ProtocolType p)
-    : address(a), proto(p) { }
+      : address(a), proto(p), secure(false) { }
+  ProtocolAddress(const talk_base::SocketAddress& a, ProtocolType p, bool sec)
+      : address(a), proto(p), secure(sec) { }
 };
 
 // Represents a local communication mechanism that can be used to create
@@ -103,11 +115,11 @@ struct ProtocolAddress {
 class Port : public PortInterface, public talk_base::MessageHandler,
              public sigslot::has_slots<> {
  public:
-  Port(talk_base::Thread* thread, talk_base::Network* network,
-       const talk_base::IPAddress& ip,
+  Port(talk_base::Thread* thread, talk_base::PacketSocketFactory* factory,
+       talk_base::Network* network, const talk_base::IPAddress& ip,
        const std::string& username_fragment, const std::string& password);
   Port(talk_base::Thread* thread, const std::string& type,
-       const uint32 preference, talk_base::PacketSocketFactory* factory,
+       talk_base::PacketSocketFactory* factory,
        talk_base::Network* network, const talk_base::IPAddress& ip,
        int min_port, int max_port, const std::string& username_fragment,
        const std::string& password);
@@ -127,11 +139,11 @@ class Port : public PortInterface, public talk_base::MessageHandler,
   virtual IceProtocolType IceProtocol() const { return ice_protocol_; }
 
   // Methods to set/get ICE role and tiebreaker values.
-  void SetRole(TransportRole role) { role_ = role; }
-  TransportRole Role() const { return role_; }
+  IceRole GetIceRole() const { return ice_role_; }
+  void SetIceRole(IceRole role) { ice_role_ = role; }
 
-  void SetTiebreaker(uint64 tiebreaker) { tiebreaker_ = tiebreaker; }
-  uint64 Tiebreaker() const { return tiebreaker_; }
+  void SetIceTiebreaker(uint64 tiebreaker) { tiebreaker_ = tiebreaker; }
+  uint64 IceTiebreaker() const { return tiebreaker_; }
 
   virtual bool SharedSocket() const { return shared_socket_; }
 
@@ -153,24 +165,11 @@ class Port : public PortInterface, public talk_base::MessageHandler,
   int component() const { return component_; }
   void set_component(int component) { component_ = component; }
 
-
-  uint32 type_preference() const { return type_preference_; }
-  void set_type_preference(uint32 preference) {
-    type_preference_ = preference;
-  }
-
   bool send_retransmit_count_attribute() const {
     return send_retransmit_count_attribute_;
   }
   void set_send_retransmit_count_attribute(bool enable) {
     send_retransmit_count_attribute_ = enable;
-  }
-
-  const talk_base::SocketAddress& related_address() const {
-    return related_address_;
-  }
-  void set_related_address(const talk_base::SocketAddress& address) {
-    related_address_ = address;
   }
 
   // Identifies the generation that this port was created in.
@@ -194,24 +193,24 @@ class Port : public PortInterface, public talk_base::MessageHandler,
   const std::string username_fragment() const;
   const std::string& password() const { return password_; }
 
-  // PrepareAddress will attempt to get an address for this port that other
-  // clients can send to.  It may take some time before the address is read.
-  // Once it is ready, we will send SignalAddressReady.  If errors are
-  // preventing the port from getting an address, it may send
-  // SignalAddressError.
-  sigslot::signal1<Port*> SignalAddressReady;
-  sigslot::signal1<Port*> SignalAddressError;
-
   // Fired when candidates are discovered by the port. When all candidates
   // are discovered that belong to port SignalAddressReady is fired.
-  // TODO(mallinath) - Change SignalAddressError to SignalPortError.
-  // TODO(mallinath) - Change SignalAddressReady to SignalPortReady.
   sigslot::signal2<Port*, const Candidate&> SignalCandidateReady;
 
   // Provides all of the above information in one handy object.
   virtual const std::vector<Candidate>& Candidates() const {
     return candidates_;
   }
+
+  // SignalPortComplete is sent when port completes the task of candidates
+  // allocation.
+  sigslot::signal1<Port*> SignalPortComplete;
+  // This signal sent when port fails to allocate candidates and this port
+  // can't be used in establishing the connections. When port is in shared mode
+  // and port fails to allocate one of the candidates, port shouldn't send
+  // this signal as other candidates might be usefull in establishing the
+  // connection.
+  sigslot::signal1<Port*> SignalPortError;
 
   // Returns a map containing all of the connections of this port, keyed by the
   // remote address.
@@ -231,7 +230,8 @@ class Port : public PortInterface, public talk_base::MessageHandler,
   // TODO(mallinath) - Make it pure virtual.
   virtual bool HandleIncomingPacket(
       talk_base::AsyncPacketSocket* socket, const char* data, size_t size,
-      const talk_base::SocketAddress& remote_addr) {
+      const talk_base::SocketAddress& remote_addr,
+      const talk_base::PacketTime& packet_time) {
     ASSERT(false);
     return false;
   }
@@ -255,10 +255,6 @@ class Port : public PortInterface, public talk_base::MessageHandler,
 
   virtual void EnablePortPackets();
 
-  // Indicates to the port that its official use has now begun.  This will
-  // start the timer that checks to see if the port is being used.
-  void Start();
-
   // Called if the port has no connections and is no longer useful.
   void Destroy();
 
@@ -270,11 +266,15 @@ class Port : public PortInterface, public talk_base::MessageHandler,
   int min_port() { return min_port_; }
   int max_port() { return max_port_; }
 
+  // Timeout shortening function to speed up unit tests.
+  void set_timeout_delay(int delay) { timeout_delay_ = delay; }
+
   // This method will return local and remote username fragements from the
   // stun username attribute if present.
   bool ParseStunUsername(const StunMessage* stun_msg,
                          std::string* local_username,
-                         std::string* remote_username) const;
+                         std::string* remote_username,
+                         IceProtocolType* remote_protocol_type) const;
   void CreateStunUsername(const std::string& remote_username,
                           std::string* stun_username_attr_str) const;
 
@@ -282,11 +282,33 @@ class Port : public PortInterface, public talk_base::MessageHandler,
                             IceMessage* stun_msg,
                             const std::string& remote_ufrag);
 
+  // Called when the socket is currently able to send.
+  void OnReadyToSend();
+
+  // Called when the Connection discovers a local peer reflexive candidate.
+  // Returns the index of the new local candidate.
+  size_t AddPrflxCandidate(const Candidate& local);
+
+  // Returns if RFC 5245 ICE protocol is used.
+  bool IsStandardIce() const;
+
+  // Returns if Google ICE protocol is used.
+  bool IsGoogleIce() const;
+
+  // Returns if Hybrid ICE protocol is used.
+  bool IsHybridIce() const;
+
  protected:
+  enum {
+    MSG_CHECKTIMEOUT = 0,
+    MSG_FIRST_AVAILABLE
+  };
+
   void set_type(const std::string& type) { type_ = type; }
   // Fills in the local address of the port.
   void AddAddress(const talk_base::SocketAddress& address,
                   const talk_base::SocketAddress& base_address,
+                  const talk_base::SocketAddress& related_address,
                   const std::string& protocol, const std::string& type,
                   uint32 type_preference, bool final);
 
@@ -312,6 +334,12 @@ class Port : public PortInterface, public talk_base::MessageHandler,
   // Checks if the address in addr is compatible with the port's ip.
   bool IsCompatibleAddress(const talk_base::SocketAddress& addr);
 
+  // Returns default DSCP value.
+  talk_base::DiffServCodePoint DefaultDscpValue() const {
+    // No change from what MediaChannel set.
+    return talk_base::DSCP_NO_CHANGE;
+  }
+
  private:
   void Construct();
   // Called when one of our connections deletes itself.
@@ -320,14 +348,9 @@ class Port : public PortInterface, public talk_base::MessageHandler,
   // Checks if this port is useless, and hence, should be destroyed.
   void CheckTimeout();
 
-  std::string ComputeFoundation(const std::string& type,
-      const std::string& protocol,
-      const talk_base::SocketAddress& base_address) const;
-
   talk_base::Thread* thread_;
   talk_base::PacketSocketFactory* factory_;
   std::string type_;
-  uint32 type_preference_;
   bool send_retransmit_count_attribute_;
   talk_base::Network* network_;
   talk_base::IPAddress ip_;
@@ -336,7 +359,6 @@ class Port : public PortInterface, public talk_base::MessageHandler,
   std::string content_name_;
   int component_;
   uint32 generation_;
-  talk_base::SocketAddress related_address_;
   // In order to establish a connection to this Port (so that real data can be
   // sent through), the other side must send us a STUN binding request that is
   // authenticated with this username_fragment and password.
@@ -349,13 +371,12 @@ class Port : public PortInterface, public talk_base::MessageHandler,
   std::string password_;
   std::vector<Candidate> candidates_;
   AddressMap connections_;
-  enum Lifetime { LT_PRESTART, LT_PRETIMEOUT, LT_POSTTIMEOUT } lifetime_;
+  int timeout_delay_;
   bool enable_port_packets_;
   IceProtocolType ice_protocol_;
-  TransportRole role_;
+  IceRole ice_role_;
   uint64 tiebreaker_;
   bool shared_socket_;
-
   // Information to use when going through a proxy.
   std::string user_agent_;
   talk_base::ProxyInfo proxy_;
@@ -398,6 +419,7 @@ class Connection : public talk_base::MessageHandler,
   };
 
   ReadState read_state() const { return read_state_; }
+  bool readable() const { return read_state_ == STATE_READABLE; }
 
   enum WriteState {
     STATE_WRITABLE          = 0,  // we have received ping responses recently
@@ -407,6 +429,7 @@ class Connection : public talk_base::MessageHandler,
   };
 
   WriteState write_state() const { return write_state_; }
+  bool writable() const { return write_state_ == STATE_WRITABLE; }
 
   // Determines whether the connection has finished connecting.  This can only
   // be false for TCP connections.
@@ -428,15 +451,23 @@ class Connection : public talk_base::MessageHandler,
   // The connection can send and receive packets asynchronously.  This matches
   // the interface of AsyncPacketSocket, which may use UDP or TCP under the
   // covers.
-  virtual int Send(const void* data, size_t size) = 0;
+  virtual int Send(const void* data, size_t size,
+                   const talk_base::PacketOptions& options) = 0;
 
   // Error if Send() returns < 0
   virtual int GetError() = 0;
 
-  sigslot::signal3<Connection*, const char*, size_t> SignalReadPacket;
+  sigslot::signal4<Connection*, const char*, size_t,
+                   const talk_base::PacketTime&> SignalReadPacket;
+
+  sigslot::signal1<Connection*> SignalReadyToSend;
 
   // Called when a packet is received on this connection.
-  void OnReadPacket(const char* data, size_t size);
+  void OnReadPacket(const char* data, size_t size,
+                    const talk_base::PacketTime& packet_time);
+
+  // Called when the socket is currently able to send.
+  void OnReadyToSend();
 
   // Called when a connection is determined to be no longer useful to us.  We
   // still keep it around in case the other side wants to use it.  But we can
@@ -444,6 +475,13 @@ class Connection : public talk_base::MessageHandler,
   // side stops using it as well.
   bool pruned() const { return pruned_; }
   void Prune();
+
+  bool use_candidate_attr() const { return use_candidate_attr_; }
+  void set_use_candidate_attr(bool enable);
+
+  void set_remote_ice_mode(IceMode mode) {
+    remote_ice_mode_ = mode;
+  }
 
   // Makes the connection go away.
   void Destroy();
@@ -463,6 +501,7 @@ class Connection : public talk_base::MessageHandler,
 
   // Debugging description of this connection
   std::string ToString() const;
+  std::string ToSensitiveString() const;
 
   bool reported() const { return reported_; }
   void set_reported(bool reported) { reported_ = reported;}
@@ -471,12 +510,12 @@ class Connection : public talk_base::MessageHandler,
   // transmission. This connection will send STUN ping with USE-CANDIDATE
   // attribute.
   sigslot::signal1<Connection*> SignalUseCandidate;
-  void set_nominated(bool nominated) { nominated_ = nominated; }
-  bool nominated() const { return nominated_; }
   // Invoked when Connection receives STUN error response with 487 code.
   void HandleRoleConflictFromPeer();
 
   State state() const { return state_; }
+
+  IceMode remote_ice_mode() const { return remote_ice_mode_; }
 
  protected:
   // Constructs a new connection to the given remote port.
@@ -510,6 +549,12 @@ class Connection : public talk_base::MessageHandler,
   WriteState write_state_;
   bool connected_;
   bool pruned_;
+  // By default |use_candidate_attr_| flag will be true,
+  // as we will be using agrressive nomination.
+  // But when peer is ice-lite, this flag "must" be initialized to false and
+  // turn on when connection becomes "best connection".
+  bool use_candidate_attr_;
+  IceMode remote_ice_mode_;
   StunRequestManager requests_;
   uint32 rtt_;
   uint32 last_ping_sent_;      // last time we sent a ping to the other side
@@ -523,8 +568,10 @@ class Connection : public talk_base::MessageHandler,
   talk_base::RateTracker send_rate_tracker_;
 
  private:
+  void MaybeAddPrflxCandidate(ConnectionRequest* request,
+                              StunMessage* response);
+
   bool reported_;
-  bool nominated_;
   State state_;
 
   friend class Port;
@@ -536,7 +583,8 @@ class ProxyConnection : public Connection {
  public:
   ProxyConnection(Port* port, size_t index, const Candidate& candidate);
 
-  virtual int Send(const void* data, size_t size);
+  virtual int Send(const void* data, size_t size,
+                   const talk_base::PacketOptions& options);
   virtual int GetError() { return error_; }
 
  private:

@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2010 The WebM project authors. All Rights Reserved.
+ *  Copyright (c) 2014 The WebM project authors. All Rights Reserved.
  *
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
@@ -8,618 +8,332 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <assert.h>
 
-#include "vpx_ports/config.h"
+#include "./vpx_config.h"
+#include "./vp9_rtcd.h"
 #include "vpx_ports/mem.h"
-#include "vp9/common/vp9_subpixel.h"
 
-extern const short vp9_six_tap_mmx[16][6 * 8];
+typedef void filter8_1dfunction (
+  const unsigned char *src_ptr,
+  const ptrdiff_t src_pitch,
+  unsigned char *output_ptr,
+  ptrdiff_t out_pitch,
+  unsigned int output_height,
+  const short *filter
+);
 
-extern const short vp9_bilinear_filters_8x_mmx[16][2 * 8];
+#define FUN_CONV_1D(name, step_q4, filter, dir, src_start, avg, opt) \
+  void vp9_convolve8_##name##_##opt(const uint8_t *src, ptrdiff_t src_stride, \
+                                   uint8_t *dst, ptrdiff_t dst_stride, \
+                                   const int16_t *filter_x, int x_step_q4, \
+                                   const int16_t *filter_y, int y_step_q4, \
+                                   int w, int h) { \
+  if (step_q4 == 16 && filter[3] != 128) { \
+    if (filter[0] || filter[1] || filter[2]) { \
+      while (w >= 16) { \
+        vp9_filter_block1d16_##dir##8_##avg##opt(src_start, \
+                                                 src_stride, \
+                                                 dst, \
+                                                 dst_stride, \
+                                                 h, \
+                                                 filter); \
+        src += 16; \
+        dst += 16; \
+        w -= 16; \
+      } \
+      while (w >= 8) { \
+        vp9_filter_block1d8_##dir##8_##avg##opt(src_start, \
+                                                src_stride, \
+                                                dst, \
+                                                dst_stride, \
+                                                h, \
+                                                filter); \
+        src += 8; \
+        dst += 8; \
+        w -= 8; \
+      } \
+      while (w >= 4) { \
+        vp9_filter_block1d4_##dir##8_##avg##opt(src_start, \
+                                                src_stride, \
+                                                dst, \
+                                                dst_stride, \
+                                                h, \
+                                                filter); \
+        src += 4; \
+        dst += 4; \
+        w -= 4; \
+      } \
+    } else { \
+      while (w >= 16) { \
+        vp9_filter_block1d16_##dir##2_##avg##opt(src, \
+                                                 src_stride, \
+                                                 dst, \
+                                                 dst_stride, \
+                                                 h, \
+                                                 filter); \
+        src += 16; \
+        dst += 16; \
+        w -= 16; \
+      } \
+      while (w >= 8) { \
+        vp9_filter_block1d8_##dir##2_##avg##opt(src, \
+                                                src_stride, \
+                                                dst, \
+                                                dst_stride, \
+                                                h, \
+                                                filter); \
+        src += 8; \
+        dst += 8; \
+        w -= 8; \
+      } \
+      while (w >= 4) { \
+        vp9_filter_block1d4_##dir##2_##avg##opt(src, \
+                                                src_stride, \
+                                                dst, \
+                                                dst_stride, \
+                                                h, \
+                                                filter); \
+        src += 4; \
+        dst += 4; \
+        w -= 4; \
+      } \
+    } \
+  } \
+  if (w) { \
+    vp9_convolve8_##name##_c(src, src_stride, dst, dst_stride, \
+                             filter_x, x_step_q4, filter_y, y_step_q4, \
+                             w, h); \
+  } \
+}
 
-extern void vp9_filter_block1d_h6_mmx(unsigned char   *src_ptr,
-                                      unsigned short  *output_ptr,
-                                      unsigned int     src_pixels_per_line,
-                                      unsigned int     pixel_step,
-                                      unsigned int     output_height,
-                                      unsigned int     output_width,
-                                      const short     *vp9_filter);
-
-extern void vp9_filter_block1dc_v6_mmx(unsigned short *src_ptr,
-                                       unsigned char  *output_ptr,
-                                       int             output_pitch,
-                                       unsigned int    pixels_per_line,
-                                       unsigned int    pixel_step,
-                                       unsigned int    output_height,
-                                       unsigned int    output_width,
-                                       const short    *vp9_filter);
-
-extern void vp9_filter_block1d8_h6_sse2(unsigned char  *src_ptr,
-                                        unsigned short *output_ptr,
-                                        unsigned int    src_pixels_per_line,
-                                        unsigned int    pixel_step,
-                                        unsigned int    output_height,
-                                        unsigned int    output_width,
-                                        const short    *vp9_filter);
-
-extern void vp9_filter_block1d16_h6_sse2(unsigned char  *src_ptr,
-                                         unsigned short *output_ptr,
-                                         unsigned int    src_pixels_per_line,
-                                         unsigned int    pixel_step,
-                                         unsigned int    output_height,
-                                         unsigned int    output_width,
-                                         const short    *vp9_filter);
-
-extern void vp9_filter_block1d8_v6_sse2(unsigned short *src_ptr,
-                                        unsigned char *output_ptr,
-                                        int dst_ptich,
-                                        unsigned int pixels_per_line,
-                                        unsigned int pixel_step,
-                                        unsigned int output_height,
-                                        unsigned int output_width,
-                                        const short    *vp9_filter);
-
-extern void vp9_filter_block1d16_v6_sse2(unsigned short *src_ptr,
-                                         unsigned char *output_ptr,
-                                         int dst_ptich,
-                                         unsigned int pixels_per_line,
-                                         unsigned int pixel_step,
-                                         unsigned int output_height,
-                                         unsigned int output_width,
-                                         const short    *vp9_filter);
-
-extern void vp9_unpack_block1d16_h6_sse2(unsigned char  *src_ptr,
-                                         unsigned short *output_ptr,
-                                         unsigned int    src_pixels_per_line,
-                                         unsigned int    output_height,
-                                         unsigned int    output_width);
-
-extern void vp9_filter_block1d8_h6_only_sse2(unsigned char *src_ptr,
-                                             unsigned int   src_pixels_per_line,
-                                             unsigned char *output_ptr,
-                                             int            dst_pitch,
-                                             unsigned int   output_height,
-                                             const short   *vp9_filter);
-
-extern void vp9_filter_block1d16_h6_only_sse2(unsigned char *src_ptr,
-                                              unsigned int   src_pixels_per_lin,
-                                              unsigned char *output_ptr,
-                                              int            dst_pitch,
-                                              unsigned int   output_height,
-                                              const short   *vp9_filter);
-
-extern void vp9_filter_block1d8_v6_only_sse2(unsigned char *src_ptr,
-                                             unsigned int   src_pixels_per_line,
-                                             unsigned char *output_ptr,
-                                             int            dst_pitch,
-                                             unsigned int   output_height,
-                                             const short   *vp9_filter);
-
-extern prototype_subpixel_predict(vp9_bilinear_predict8x8_mmx);
-
-///////////////////////////////////////////////////////////////////////////
-// the mmx function that does the bilinear filtering and var calculation //
-// int one pass                                                          //
-///////////////////////////////////////////////////////////////////////////
-DECLARE_ALIGNED(16, const short, vp9_bilinear_filters_mmx[16][8]) = {
-  { 128, 128, 128, 128,  0,  0,  0,  0 },
-  { 120, 120, 120, 120,  8,  8,  8,  8 },
-  { 112, 112, 112, 112, 16, 16, 16, 16 },
-  { 104, 104, 104, 104, 24, 24, 24, 24 },
-  {  96, 96, 96, 96, 32, 32, 32, 32 },
-  {  88, 88, 88, 88, 40, 40, 40, 40 },
-  {  80, 80, 80, 80, 48, 48, 48, 48 },
-  {  72, 72, 72, 72, 56, 56, 56, 56 },
-  {  64, 64, 64, 64, 64, 64, 64, 64 },
-  {  56, 56, 56, 56, 72, 72, 72, 72 },
-  {  48, 48, 48, 48, 80, 80, 80, 80 },
-  {  40, 40, 40, 40, 88, 88, 88, 88 },
-  {  32, 32, 32, 32, 96, 96, 96, 96 },
-  {  24, 24, 24, 24, 104, 104, 104, 104 },
-  {  16, 16, 16, 16, 112, 112, 112, 112 },
-  {   8,  8,  8,  8, 120, 120, 120, 120 }
-};
-
-#if HAVE_MMX
-void vp9_sixtap_predict4x4_mmx(unsigned char  *src_ptr,
-                               int  src_pixels_per_line,
-                               int  xoffset,
-                               int  yoffset,
-                               unsigned char *dst_ptr,
-                               int  dst_pitch) {
-#ifdef ANNOUNCE_FUNCTION
-  printf("vp9_sixtap_predict4x4_mmx\n");
+#define FUN_CONV_2D(avg, opt) \
+void vp9_convolve8_##avg##opt(const uint8_t *src, ptrdiff_t src_stride, \
+                              uint8_t *dst, ptrdiff_t dst_stride, \
+                              const int16_t *filter_x, int x_step_q4, \
+                              const int16_t *filter_y, int y_step_q4, \
+                              int w, int h) { \
+  assert(w <= 64); \
+  assert(h <= 64); \
+  if (x_step_q4 == 16 && y_step_q4 == 16) { \
+    if (filter_x[0] || filter_x[1] || filter_x[2] || filter_x[3] == 128 || \
+        filter_y[0] || filter_y[1] || filter_y[2] || filter_y[3] == 128) { \
+      DECLARE_ALIGNED_ARRAY(16, unsigned char, fdata2, 64 * 71); \
+      vp9_convolve8_horiz_##opt(src - 3 * src_stride, src_stride, fdata2, 64, \
+                                filter_x, x_step_q4, filter_y, y_step_q4, \
+                                w, h + 7); \
+      vp9_convolve8_##avg##vert_##opt(fdata2 + 3 * 64, 64, dst, dst_stride, \
+                                      filter_x, x_step_q4, filter_y, \
+                                      y_step_q4, w, h); \
+    } else { \
+      DECLARE_ALIGNED_ARRAY(16, unsigned char, fdata2, 64 * 65); \
+      vp9_convolve8_horiz_##opt(src, src_stride, fdata2, 64, \
+                                filter_x, x_step_q4, filter_y, y_step_q4, \
+                                w, h + 1); \
+      vp9_convolve8_##avg##vert_##opt(fdata2, 64, dst, dst_stride, \
+                                      filter_x, x_step_q4, filter_y, \
+                                      y_step_q4, w, h); \
+    } \
+  } else { \
+    vp9_convolve8_##avg##c(src, src_stride, dst, dst_stride, \
+                           filter_x, x_step_q4, filter_y, y_step_q4, w, h); \
+  } \
+}
+#if HAVE_AVX2
+filter8_1dfunction vp9_filter_block1d16_v8_avx2;
+filter8_1dfunction vp9_filter_block1d16_h8_avx2;
+filter8_1dfunction vp9_filter_block1d4_v8_ssse3;
+#if (ARCH_X86_64)
+filter8_1dfunction vp9_filter_block1d8_v8_intrin_ssse3;
+filter8_1dfunction vp9_filter_block1d8_h8_intrin_ssse3;
+filter8_1dfunction vp9_filter_block1d4_h8_intrin_ssse3;
+#define vp9_filter_block1d8_v8_avx2 vp9_filter_block1d8_v8_intrin_ssse3
+#define vp9_filter_block1d8_h8_avx2 vp9_filter_block1d8_h8_intrin_ssse3
+#define vp9_filter_block1d4_h8_avx2 vp9_filter_block1d4_h8_intrin_ssse3
+#else
+filter8_1dfunction vp9_filter_block1d8_v8_ssse3;
+filter8_1dfunction vp9_filter_block1d8_h8_ssse3;
+filter8_1dfunction vp9_filter_block1d4_h8_ssse3;
+#define vp9_filter_block1d8_v8_avx2 vp9_filter_block1d8_v8_ssse3
+#define vp9_filter_block1d8_h8_avx2 vp9_filter_block1d8_h8_ssse3
+#define vp9_filter_block1d4_h8_avx2 vp9_filter_block1d4_h8_ssse3
 #endif
-  /* Temp data bufffer used in filtering */
-  DECLARE_ALIGNED_ARRAY(16, unsigned short, fdata2, 16 * 16);
-  const short *hfilter, *vfilter;
-  hfilter = vp9_six_tap_mmx[xoffset];
-  vp9_filter_block1d_h6_mmx(src_ptr - (2 * src_pixels_per_line), fdata2,
-                            src_pixels_per_line, 1, 9, 8, hfilter);
-  vfilter = vp9_six_tap_mmx[yoffset];
-  vp9_filter_block1dc_v6_mmx(fdata2 + 8, dst_ptr, dst_pitch,
-                             8, 4, 4, 4, vfilter);
-}
+filter8_1dfunction vp9_filter_block1d16_v2_ssse3;
+filter8_1dfunction vp9_filter_block1d16_h2_ssse3;
+filter8_1dfunction vp9_filter_block1d8_v2_ssse3;
+filter8_1dfunction vp9_filter_block1d8_h2_ssse3;
+filter8_1dfunction vp9_filter_block1d4_v2_ssse3;
+filter8_1dfunction vp9_filter_block1d4_h2_ssse3;
+#define vp9_filter_block1d4_v8_avx2 vp9_filter_block1d4_v8_ssse3
+#define vp9_filter_block1d16_v2_avx2 vp9_filter_block1d16_v2_ssse3
+#define vp9_filter_block1d16_h2_avx2 vp9_filter_block1d16_h2_ssse3
+#define vp9_filter_block1d8_v2_avx2  vp9_filter_block1d8_v2_ssse3
+#define vp9_filter_block1d8_h2_avx2  vp9_filter_block1d8_h2_ssse3
+#define vp9_filter_block1d4_v2_avx2  vp9_filter_block1d4_v2_ssse3
+#define vp9_filter_block1d4_h2_avx2  vp9_filter_block1d4_h2_ssse3
+// void vp9_convolve8_horiz_avx2(const uint8_t *src, ptrdiff_t src_stride,
+//                                uint8_t *dst, ptrdiff_t dst_stride,
+//                                const int16_t *filter_x, int x_step_q4,
+//                                const int16_t *filter_y, int y_step_q4,
+//                                int w, int h);
+// void vp9_convolve8_vert_avx2(const uint8_t *src, ptrdiff_t src_stride,
+//                               uint8_t *dst, ptrdiff_t dst_stride,
+//                               const int16_t *filter_x, int x_step_q4,
+//                               const int16_t *filter_y, int y_step_q4,
+//                               int w, int h);
+FUN_CONV_1D(horiz, x_step_q4, filter_x, h, src, , avx2);
+FUN_CONV_1D(vert, y_step_q4, filter_y, v, src - src_stride * 3, , avx2);
 
-void vp9_sixtap_predict16x16_mmx(unsigned char  *src_ptr,
-                                 int  src_pixels_per_line,
-                                 int  xoffset,
-                                 int  yoffset,
-                                 unsigned char *dst_ptr,
-                                 int dst_pitch) {
-#ifdef ANNOUNCE_FUNCTION
-  printf("vp9_sixtap_predict16x16_mmx\n");
+// void vp9_convolve8_avx2(const uint8_t *src, ptrdiff_t src_stride,
+//                          uint8_t *dst, ptrdiff_t dst_stride,
+//                          const int16_t *filter_x, int x_step_q4,
+//                          const int16_t *filter_y, int y_step_q4,
+//                          int w, int h);
+FUN_CONV_2D(, avx2);
 #endif
-  /* Temp data bufffer used in filtering */
-  DECLARE_ALIGNED_ARRAY(16, unsigned short, fdata2, 24 * 24);
-  const short *hfilter, *vfilter;
-
-  hfilter = vp9_six_tap_mmx[xoffset];
-  vp9_filter_block1d_h6_mmx(src_ptr - (2 * src_pixels_per_line),
-                            fdata2,   src_pixels_per_line, 1, 21, 32,
-                            hfilter);
-  vp9_filter_block1d_h6_mmx(src_ptr - (2 * src_pixels_per_line) + 4,
-                            fdata2 + 4, src_pixels_per_line, 1, 21, 32,
-                            hfilter);
-  vp9_filter_block1d_h6_mmx(src_ptr - (2 * src_pixels_per_line) + 8,
-                            fdata2 + 8, src_pixels_per_line, 1, 21, 32,
-                            hfilter);
-  vp9_filter_block1d_h6_mmx(src_ptr - (2 * src_pixels_per_line) + 12,
-                            fdata2 + 12, src_pixels_per_line, 1, 21, 32,
-                            hfilter);
-
-  vfilter = vp9_six_tap_mmx[yoffset];
-  vp9_filter_block1dc_v6_mmx(fdata2 + 32, dst_ptr,      dst_pitch,
-                             32, 16, 16, 16, vfilter);
-  vp9_filter_block1dc_v6_mmx(fdata2 + 36, dst_ptr + 4,  dst_pitch,
-                             32, 16, 16, 16, vfilter);
-  vp9_filter_block1dc_v6_mmx(fdata2 + 40, dst_ptr + 8,  dst_pitch,
-                             32, 16, 16, 16, vfilter);
-  vp9_filter_block1dc_v6_mmx(fdata2 + 44, dst_ptr + 12, dst_pitch,
-                             32, 16, 16, 16, vfilter);
-}
-
-void vp9_sixtap_predict8x8_mmx(unsigned char  *src_ptr,
-                               int  src_pixels_per_line,
-                               int  xoffset,
-                               int  yoffset,
-                               unsigned char *dst_ptr,
-                               int  dst_pitch) {
-#ifdef ANNOUNCE_FUNCTION
-  printf("vp9_sixtap_predict8x8_mmx\n");
+#if HAVE_SSSE3
+#if (ARCH_X86_64)
+filter8_1dfunction vp9_filter_block1d16_v8_intrin_ssse3;
+filter8_1dfunction vp9_filter_block1d16_h8_intrin_ssse3;
+filter8_1dfunction vp9_filter_block1d8_v8_intrin_ssse3;
+filter8_1dfunction vp9_filter_block1d8_h8_intrin_ssse3;
+filter8_1dfunction vp9_filter_block1d4_v8_ssse3;
+filter8_1dfunction vp9_filter_block1d4_h8_intrin_ssse3;
+#define vp9_filter_block1d16_v8_ssse3 vp9_filter_block1d16_v8_intrin_ssse3
+#define vp9_filter_block1d16_h8_ssse3 vp9_filter_block1d16_h8_intrin_ssse3
+#define vp9_filter_block1d8_v8_ssse3 vp9_filter_block1d8_v8_intrin_ssse3
+#define vp9_filter_block1d8_h8_ssse3 vp9_filter_block1d8_h8_intrin_ssse3
+#define vp9_filter_block1d4_h8_ssse3 vp9_filter_block1d4_h8_intrin_ssse3
+#else
+filter8_1dfunction vp9_filter_block1d16_v8_ssse3;
+filter8_1dfunction vp9_filter_block1d16_h8_ssse3;
+filter8_1dfunction vp9_filter_block1d8_v8_ssse3;
+filter8_1dfunction vp9_filter_block1d8_h8_ssse3;
+filter8_1dfunction vp9_filter_block1d4_v8_ssse3;
+filter8_1dfunction vp9_filter_block1d4_h8_ssse3;
 #endif
-  /* Temp data bufffer used in filtering */
-  DECLARE_ALIGNED_ARRAY(16, unsigned short, fdata2, 256);
-  const short *hfilter, *vfilter;
+filter8_1dfunction vp9_filter_block1d16_v8_avg_ssse3;
+filter8_1dfunction vp9_filter_block1d16_h8_avg_ssse3;
+filter8_1dfunction vp9_filter_block1d8_v8_avg_ssse3;
+filter8_1dfunction vp9_filter_block1d8_h8_avg_ssse3;
+filter8_1dfunction vp9_filter_block1d4_v8_avg_ssse3;
+filter8_1dfunction vp9_filter_block1d4_h8_avg_ssse3;
 
-  hfilter = vp9_six_tap_mmx[xoffset];
-  vp9_filter_block1d_h6_mmx(src_ptr - (2 * src_pixels_per_line),
-                            fdata2,   src_pixels_per_line, 1, 13, 16,
-                            hfilter);
-  vp9_filter_block1d_h6_mmx(src_ptr - (2 * src_pixels_per_line) + 4,
-                            fdata2 + 4, src_pixels_per_line, 1, 13, 16,
-                            hfilter);
+filter8_1dfunction vp9_filter_block1d16_v2_ssse3;
+filter8_1dfunction vp9_filter_block1d16_h2_ssse3;
+filter8_1dfunction vp9_filter_block1d8_v2_ssse3;
+filter8_1dfunction vp9_filter_block1d8_h2_ssse3;
+filter8_1dfunction vp9_filter_block1d4_v2_ssse3;
+filter8_1dfunction vp9_filter_block1d4_h2_ssse3;
+filter8_1dfunction vp9_filter_block1d16_v2_avg_ssse3;
+filter8_1dfunction vp9_filter_block1d16_h2_avg_ssse3;
+filter8_1dfunction vp9_filter_block1d8_v2_avg_ssse3;
+filter8_1dfunction vp9_filter_block1d8_h2_avg_ssse3;
+filter8_1dfunction vp9_filter_block1d4_v2_avg_ssse3;
+filter8_1dfunction vp9_filter_block1d4_h2_avg_ssse3;
 
-  vfilter = vp9_six_tap_mmx[yoffset];
-  vp9_filter_block1dc_v6_mmx(fdata2 + 16, dst_ptr,     dst_pitch,
-                             16, 8, 8, 8, vfilter);
-  vp9_filter_block1dc_v6_mmx(fdata2 + 20, dst_ptr + 4, dst_pitch,
-                             16, 8, 8, 8, vfilter);
-}
+// void vp9_convolve8_horiz_ssse3(const uint8_t *src, ptrdiff_t src_stride,
+//                                uint8_t *dst, ptrdiff_t dst_stride,
+//                                const int16_t *filter_x, int x_step_q4,
+//                                const int16_t *filter_y, int y_step_q4,
+//                                int w, int h);
+// void vp9_convolve8_vert_ssse3(const uint8_t *src, ptrdiff_t src_stride,
+//                               uint8_t *dst, ptrdiff_t dst_stride,
+//                               const int16_t *filter_x, int x_step_q4,
+//                               const int16_t *filter_y, int y_step_q4,
+//                               int w, int h);
+// void vp9_convolve8_avg_horiz_ssse3(const uint8_t *src, ptrdiff_t src_stride,
+//                                    uint8_t *dst, ptrdiff_t dst_stride,
+//                                    const int16_t *filter_x, int x_step_q4,
+//                                    const int16_t *filter_y, int y_step_q4,
+//                                    int w, int h);
+// void vp9_convolve8_avg_vert_ssse3(const uint8_t *src, ptrdiff_t src_stride,
+//                                   uint8_t *dst, ptrdiff_t dst_stride,
+//                                   const int16_t *filter_x, int x_step_q4,
+//                                   const int16_t *filter_y, int y_step_q4,
+//                                   int w, int h);
+FUN_CONV_1D(horiz, x_step_q4, filter_x, h, src, , ssse3);
+FUN_CONV_1D(vert, y_step_q4, filter_y, v, src - src_stride * 3, , ssse3);
+FUN_CONV_1D(avg_horiz, x_step_q4, filter_x, h, src, avg_, ssse3);
+FUN_CONV_1D(avg_vert, y_step_q4, filter_y, v, src - src_stride * 3, avg_,
+            ssse3);
 
-void vp9_sixtap_predict8x4_mmx(unsigned char  *src_ptr,
-                               int  src_pixels_per_line,
-                               int  xoffset,
-                               int  yoffset,
-                               unsigned char *dst_ptr,
-                               int  dst_pitch) {
-#ifdef ANNOUNCE_FUNCTION
-  printf("vp9_sixtap_predict8x4_mmx\n");
-#endif
-  /* Temp data bufffer used in filtering */
-  DECLARE_ALIGNED_ARRAY(16, unsigned short, fdata2, 256);
-  const short *hfilter, *vfilter;
-
-  hfilter = vp9_six_tap_mmx[xoffset];
-  vp9_filter_block1d_h6_mmx(src_ptr - (2 * src_pixels_per_line),
-                            fdata2,   src_pixels_per_line, 1, 9, 16, hfilter);
-  vp9_filter_block1d_h6_mmx(src_ptr - (2 * src_pixels_per_line) + 4,
-                            fdata2 + 4, src_pixels_per_line, 1, 9, 16, hfilter);
-
-  vfilter = vp9_six_tap_mmx[yoffset];
-  vp9_filter_block1dc_v6_mmx(fdata2 + 16, dst_ptr,     dst_pitch,
-                             16, 8, 4, 8, vfilter);
-  vp9_filter_block1dc_v6_mmx(fdata2 + 20, dst_ptr + 4, dst_pitch,
-                             16, 8, 4, 8, vfilter);
-}
-
-void vp9_bilinear_predict16x16_mmx(unsigned char  *src_ptr,
-                                   int  src_pixels_per_line,
-                                   int  xoffset,
-                                   int  yoffset,
-                                   unsigned char *dst_ptr,
-                                   int  dst_pitch) {
-  vp9_bilinear_predict8x8_mmx(src_ptr,
-                              src_pixels_per_line, xoffset, yoffset,
-                              dst_ptr, dst_pitch);
-  vp9_bilinear_predict8x8_mmx(src_ptr + 8,
-                              src_pixels_per_line, xoffset, yoffset,
-                              dst_ptr + 8, dst_pitch);
-  vp9_bilinear_predict8x8_mmx(src_ptr + 8 * src_pixels_per_line,
-                              src_pixels_per_line, xoffset, yoffset,
-                              dst_ptr + dst_pitch * 8, dst_pitch);
-  vp9_bilinear_predict8x8_mmx(src_ptr + 8 * src_pixels_per_line + 8,
-                              src_pixels_per_line, xoffset, yoffset,
-                              dst_ptr + dst_pitch * 8 + 8, dst_pitch);
-}
+// void vp9_convolve8_ssse3(const uint8_t *src, ptrdiff_t src_stride,
+//                          uint8_t *dst, ptrdiff_t dst_stride,
+//                          const int16_t *filter_x, int x_step_q4,
+//                          const int16_t *filter_y, int y_step_q4,
+//                          int w, int h);
+// void vp9_convolve8_avg_ssse3(const uint8_t *src, ptrdiff_t src_stride,
+//                              uint8_t *dst, ptrdiff_t dst_stride,
+//                              const int16_t *filter_x, int x_step_q4,
+//                              const int16_t *filter_y, int y_step_q4,
+//                              int w, int h);
+FUN_CONV_2D(, ssse3);
+FUN_CONV_2D(avg_ , ssse3);
 #endif
 
 #if HAVE_SSE2
-void vp9_sixtap_predict16x16_sse2(unsigned char  *src_ptr,
-                                  int  src_pixels_per_line,
-                                  int  xoffset,
-                                  int  yoffset,
-                                  unsigned char *dst_ptr,
-                                  int  dst_pitch) {
-  /* Temp data bufffer used in filtering */
-  DECLARE_ALIGNED_ARRAY(16, unsigned short, fdata2, 24 * 24);
-  const short *hfilter, *vfilter;
-#ifdef ANNOUNCE_FUNCTION
-  printf("vp9_sixtap_predict16x16_sse2\n");
-#endif
+filter8_1dfunction vp9_filter_block1d16_v8_sse2;
+filter8_1dfunction vp9_filter_block1d16_h8_sse2;
+filter8_1dfunction vp9_filter_block1d8_v8_sse2;
+filter8_1dfunction vp9_filter_block1d8_h8_sse2;
+filter8_1dfunction vp9_filter_block1d4_v8_sse2;
+filter8_1dfunction vp9_filter_block1d4_h8_sse2;
+filter8_1dfunction vp9_filter_block1d16_v8_avg_sse2;
+filter8_1dfunction vp9_filter_block1d16_h8_avg_sse2;
+filter8_1dfunction vp9_filter_block1d8_v8_avg_sse2;
+filter8_1dfunction vp9_filter_block1d8_h8_avg_sse2;
+filter8_1dfunction vp9_filter_block1d4_v8_avg_sse2;
+filter8_1dfunction vp9_filter_block1d4_h8_avg_sse2;
 
-  if (xoffset) {
-    if (yoffset) {
-      hfilter = vp9_six_tap_mmx[xoffset];
-      vp9_filter_block1d16_h6_sse2(src_ptr - (2 * src_pixels_per_line), fdata2,
-                                   src_pixels_per_line, 1, 21, 32, hfilter);
-      vfilter = vp9_six_tap_mmx[yoffset];
-      vp9_filter_block1d16_v6_sse2(fdata2 + 32, dst_ptr, dst_pitch,
-                                   32, 16, 16, dst_pitch, vfilter);
-    } else {
-      /* First-pass only */
-      hfilter = vp9_six_tap_mmx[xoffset];
-      vp9_filter_block1d16_h6_only_sse2(src_ptr, src_pixels_per_line,
-                                        dst_ptr, dst_pitch, 16, hfilter);
-    }
-  } else {
-    /* Second-pass only */
-    vfilter = vp9_six_tap_mmx[yoffset];
-    vp9_unpack_block1d16_h6_sse2(src_ptr - (2 * src_pixels_per_line), fdata2,
-                                 src_pixels_per_line, 21, 32);
-    vp9_filter_block1d16_v6_sse2(fdata2 + 32, dst_ptr, dst_pitch,
-                                 32, 16, 16, dst_pitch, vfilter);
-  }
-}
+filter8_1dfunction vp9_filter_block1d16_v2_sse2;
+filter8_1dfunction vp9_filter_block1d16_h2_sse2;
+filter8_1dfunction vp9_filter_block1d8_v2_sse2;
+filter8_1dfunction vp9_filter_block1d8_h2_sse2;
+filter8_1dfunction vp9_filter_block1d4_v2_sse2;
+filter8_1dfunction vp9_filter_block1d4_h2_sse2;
+filter8_1dfunction vp9_filter_block1d16_v2_avg_sse2;
+filter8_1dfunction vp9_filter_block1d16_h2_avg_sse2;
+filter8_1dfunction vp9_filter_block1d8_v2_avg_sse2;
+filter8_1dfunction vp9_filter_block1d8_h2_avg_sse2;
+filter8_1dfunction vp9_filter_block1d4_v2_avg_sse2;
+filter8_1dfunction vp9_filter_block1d4_h2_avg_sse2;
 
-void vp9_sixtap_predict8x8_sse2(unsigned char  *src_ptr,
-                                int  src_pixels_per_line,
-                                int  xoffset,
-                                int  yoffset,
-                                unsigned char *dst_ptr,
-                                int  dst_pitch) {
-  /* Temp data bufffer used in filtering */
-  DECLARE_ALIGNED_ARRAY(16, unsigned short, fdata2, 256);
-  const short *hfilter, *vfilter;
-#ifdef ANNOUNCE_FUNCTION
-  printf("vp9_sixtap_predict8x8_sse2\n");
-#endif
+// void vp9_convolve8_horiz_sse2(const uint8_t *src, ptrdiff_t src_stride,
+//                               uint8_t *dst, ptrdiff_t dst_stride,
+//                               const int16_t *filter_x, int x_step_q4,
+//                               const int16_t *filter_y, int y_step_q4,
+//                               int w, int h);
+// void vp9_convolve8_vert_sse2(const uint8_t *src, ptrdiff_t src_stride,
+//                              uint8_t *dst, ptrdiff_t dst_stride,
+//                              const int16_t *filter_x, int x_step_q4,
+//                              const int16_t *filter_y, int y_step_q4,
+//                              int w, int h);
+// void vp9_convolve8_avg_horiz_sse2(const uint8_t *src, ptrdiff_t src_stride,
+//                                   uint8_t *dst, ptrdiff_t dst_stride,
+//                                   const int16_t *filter_x, int x_step_q4,
+//                                   const int16_t *filter_y, int y_step_q4,
+//                                   int w, int h);
+// void vp9_convolve8_avg_vert_sse2(const uint8_t *src, ptrdiff_t src_stride,
+//                                  uint8_t *dst, ptrdiff_t dst_stride,
+//                                  const int16_t *filter_x, int x_step_q4,
+//                                  const int16_t *filter_y, int y_step_q4,
+//                                  int w, int h);
+FUN_CONV_1D(horiz, x_step_q4, filter_x, h, src, , sse2);
+FUN_CONV_1D(vert, y_step_q4, filter_y, v, src - src_stride * 3, , sse2);
+FUN_CONV_1D(avg_horiz, x_step_q4, filter_x, h, src, avg_, sse2);
+FUN_CONV_1D(avg_vert, y_step_q4, filter_y, v, src - src_stride * 3, avg_, sse2);
 
-  if (xoffset) {
-    if (yoffset) {
-      hfilter = vp9_six_tap_mmx[xoffset];
-      vp9_filter_block1d8_h6_sse2(src_ptr - (2 * src_pixels_per_line), fdata2,
-                                  src_pixels_per_line, 1, 13, 16, hfilter);
-      vfilter = vp9_six_tap_mmx[yoffset];
-      vp9_filter_block1d8_v6_sse2(fdata2 + 16, dst_ptr, dst_pitch,
-                                  16, 8, 8, dst_pitch, vfilter);
-    } else {
-      /* First-pass only */
-      hfilter = vp9_six_tap_mmx[xoffset];
-      vp9_filter_block1d8_h6_only_sse2(src_ptr, src_pixels_per_line,
-                                       dst_ptr, dst_pitch, 8, hfilter);
-    }
-  } else {
-    /* Second-pass only */
-    vfilter = vp9_six_tap_mmx[yoffset];
-    vp9_filter_block1d8_v6_only_sse2(src_ptr - (2 * src_pixels_per_line),
-                                     src_pixels_per_line,
-                                     dst_ptr, dst_pitch, 8, vfilter);
-  }
-}
-
-void vp9_sixtap_predict8x4_sse2(unsigned char  *src_ptr,
-                                int  src_pixels_per_line,
-                                int  xoffset,
-                                int  yoffset,
-                                unsigned char *dst_ptr,
-                                int  dst_pitch) {
-  /* Temp data bufffer used in filtering */
-  DECLARE_ALIGNED_ARRAY(16, unsigned short, fdata2, 256);
-  const short *hfilter, *vfilter;
-#ifdef ANNOUNCE_FUNCTION
-  printf("vp9_sixtap_predict8x4_sse2\n");
-#endif
-
-  if (xoffset) {
-    if (yoffset) {
-      hfilter = vp9_six_tap_mmx[xoffset];
-      vp9_filter_block1d8_h6_sse2(src_ptr - (2 * src_pixels_per_line), fdata2,
-                                  src_pixels_per_line, 1, 9, 16, hfilter);
-      vfilter = vp9_six_tap_mmx[yoffset];
-      vp9_filter_block1d8_v6_sse2(fdata2 + 16, dst_ptr, dst_pitch,
-                                  16, 8, 4, dst_pitch, vfilter);
-    } else {
-      /* First-pass only */
-      hfilter = vp9_six_tap_mmx[xoffset];
-      vp9_filter_block1d8_h6_only_sse2(src_ptr, src_pixels_per_line,
-                                       dst_ptr, dst_pitch, 4, hfilter);
-    }
-  } else {
-    /* Second-pass only */
-    vfilter = vp9_six_tap_mmx[yoffset];
-    vp9_filter_block1d8_v6_only_sse2(src_ptr - (2 * src_pixels_per_line),
-                                     src_pixels_per_line,
-                                     dst_ptr, dst_pitch, 4, vfilter);
-  }
-}
-#endif
-
-#if HAVE_SSSE3
-extern void vp9_filter_block1d8_h6_ssse3(unsigned char  *src_ptr,
-                                         unsigned int    src_pixels_per_line,
-                                         unsigned char  *output_ptr,
-                                         unsigned int    output_pitch,
-                                         unsigned int    output_height,
-                                         unsigned int    vp9_filter_index);
-
-extern void vp9_filter_block1d16_h6_ssse3(unsigned char  *src_ptr,
-                                          unsigned int    src_pixels_per_line,
-                                          unsigned char  *output_ptr,
-                                          unsigned int    output_pitch,
-                                          unsigned int    output_height,
-                                          unsigned int    vp9_filter_index);
-
-extern void vp9_filter_block1d16_v6_ssse3(unsigned char *src_ptr,
-                                          unsigned int   src_pitch,
-                                          unsigned char *output_ptr,
-                                          unsigned int   out_pitch,
-                                          unsigned int   output_height,
-                                          unsigned int   vp9_filter_index);
-
-extern void vp9_filter_block1d8_v6_ssse3(unsigned char *src_ptr,
-                                         unsigned int   src_pitch,
-                                         unsigned char *output_ptr,
-                                         unsigned int   out_pitch,
-                                         unsigned int   output_height,
-                                         unsigned int   vp9_filter_index);
-
-extern void vp9_filter_block1d4_h6_ssse3(unsigned char  *src_ptr,
-                                         unsigned int    src_pixels_per_line,
-                                         unsigned char  *output_ptr,
-                                         unsigned int    output_pitch,
-                                         unsigned int    output_height,
-                                         unsigned int    vp9_filter_index);
-
-extern void vp9_filter_block1d4_v6_ssse3(unsigned char *src_ptr,
-                                         unsigned int   src_pitch,
-                                         unsigned char *output_ptr,
-                                         unsigned int   out_pitch,
-                                         unsigned int   output_height,
-                                         unsigned int   vp9_filter_index);
-
-void vp9_sixtap_predict16x16_ssse3(unsigned char  *src_ptr,
-                                   int  src_pixels_per_line,
-                                   int  xoffset,
-                                   int  yoffset,
-                                   unsigned char *dst_ptr,
-                                   int  dst_pitch) {
-  DECLARE_ALIGNED_ARRAY(16, unsigned char, fdata2, 24 * 24);
-#ifdef ANNOUNCE_FUNCTION
-  printf("vp9_sixtap_predict16x16_ssse3\n");
-#endif
-
-  if (xoffset) {
-    if (yoffset) {
-      vp9_filter_block1d16_h6_ssse3(src_ptr - (2 * src_pixels_per_line),
-                                    src_pixels_per_line,
-                                    fdata2, 16, 21, xoffset);
-      vp9_filter_block1d16_v6_ssse3(fdata2, 16, dst_ptr, dst_pitch,
-                                    16, yoffset);
-    } else {
-      /* First-pass only */
-      vp9_filter_block1d16_h6_ssse3(src_ptr, src_pixels_per_line,
-                                    dst_ptr, dst_pitch, 16, xoffset);
-    }
-  } else {
-    /* Second-pass only */
-    vp9_filter_block1d16_v6_ssse3(src_ptr - (2 * src_pixels_per_line),
-                                  src_pixels_per_line,
-                                  dst_ptr, dst_pitch, 16, yoffset);
-  }
-}
-
-void vp9_sixtap_predict8x8_ssse3(unsigned char  *src_ptr,
-                                 int  src_pixels_per_line,
-                                 int  xoffset,
-                                 int  yoffset,
-                                 unsigned char *dst_ptr,
-                                 int  dst_pitch) {
-  DECLARE_ALIGNED_ARRAY(16, unsigned char, fdata2, 256);
-#ifdef ANNOUNCE_FUNCTION
-  printf("vp9_sixtap_predict8x8_ssse3\n");
-#endif
-
-  if (xoffset) {
-    if (yoffset) {
-      vp9_filter_block1d8_h6_ssse3(src_ptr - (2 * src_pixels_per_line),
-                                   src_pixels_per_line, fdata2, 8, 13, xoffset);
-      vp9_filter_block1d8_v6_ssse3(fdata2, 8, dst_ptr, dst_pitch, 8, yoffset);
-    } else {
-      vp9_filter_block1d8_h6_ssse3(src_ptr, src_pixels_per_line,
-                                   dst_ptr, dst_pitch, 8, xoffset);
-    }
-  } else {
-    /* Second-pass only */
-    vp9_filter_block1d8_v6_ssse3(src_ptr - (2 * src_pixels_per_line),
-                                 src_pixels_per_line,
-                                 dst_ptr, dst_pitch, 8, yoffset);
-  }
-}
-
-void vp9_sixtap_predict8x4_ssse3(unsigned char  *src_ptr,
-                                 int  src_pixels_per_line,
-                                 int  xoffset,
-                                 int  yoffset,
-                                 unsigned char *dst_ptr,
-                                 int  dst_pitch) {
-  DECLARE_ALIGNED_ARRAY(16, unsigned char, fdata2, 256);
-#ifdef ANNOUNCE_FUNCTION
-  printf("vp9_sixtap_predict8x4_ssse3\n");
-#endif
-
-  if (xoffset) {
-    if (yoffset) {
-      vp9_filter_block1d8_h6_ssse3(src_ptr - (2 * src_pixels_per_line),
-                                   src_pixels_per_line, fdata2, 8, 9, xoffset);
-      vp9_filter_block1d8_v6_ssse3(fdata2, 8, dst_ptr, dst_pitch, 4, yoffset);
-    } else {
-      /* First-pass only */
-      vp9_filter_block1d8_h6_ssse3(src_ptr, src_pixels_per_line,
-                                   dst_ptr, dst_pitch, 4, xoffset);
-    }
-  } else {
-    /* Second-pass only */
-    vp9_filter_block1d8_v6_ssse3(src_ptr - (2 * src_pixels_per_line),
-                                 src_pixels_per_line,
-                                 dst_ptr, dst_pitch, 4, yoffset);
-  }
-}
-
-void vp9_sixtap_predict4x4_ssse3(unsigned char  *src_ptr,
-                                 int   src_pixels_per_line,
-                                 int  xoffset,
-                                 int  yoffset,
-                                 unsigned char *dst_ptr,
-                                 int dst_pitch) {
-  DECLARE_ALIGNED_ARRAY(16, unsigned char, fdata2, 4 * 9);
-#ifdef ANNOUNCE_FUNCTION
-  printf("vp9_sixtap_predict4x4_ssse3\n");
-#endif
-
-  if (xoffset) {
-    if (yoffset) {
-      vp9_filter_block1d4_h6_ssse3(src_ptr - (2 * src_pixels_per_line),
-                                   src_pixels_per_line, fdata2, 4, 9, xoffset);
-      vp9_filter_block1d4_v6_ssse3(fdata2, 4, dst_ptr, dst_pitch, 4, yoffset);
-    } else {
-      vp9_filter_block1d4_h6_ssse3(src_ptr, src_pixels_per_line,
-                                   dst_ptr, dst_pitch, 4, xoffset);
-    }
-  } else {
-    vp9_filter_block1d4_v6_ssse3(src_ptr - (2 * src_pixels_per_line),
-                                 src_pixels_per_line,
-                                 dst_ptr, dst_pitch, 4, yoffset);
-  }
-}
-
-void vp9_filter_block1d16_v8_ssse3(const unsigned char *src_ptr,
-                                   const unsigned int src_pitch,
-                                   unsigned char *output_ptr,
-                                   unsigned int out_pitch,
-                                   unsigned int output_height,
-                                   const short *filter);
-
-void vp9_filter_block1d16_h8_ssse3(const unsigned char *src_ptr,
-                                   const unsigned int src_pitch,
-                                   unsigned char *output_ptr,
-                                   unsigned int out_pitch,
-                                   unsigned int output_height,
-                                   const short *filter);
-
-void vp9_filter_block2d_16x16_8_ssse3(const unsigned char *src_ptr,
-                                      const unsigned int src_stride,
-                                      const short *hfilter_aligned16,
-                                      const short *vfilter_aligned16,
-                                      unsigned char *dst_ptr,
-                                      unsigned int dst_stride) {
-  if (hfilter_aligned16[3] != 128 && vfilter_aligned16[3] != 128) {
-    DECLARE_ALIGNED_ARRAY(16, unsigned char, fdata2, 23 * 16);
-
-    vp9_filter_block1d16_h8_ssse3(src_ptr - (3 * src_stride), src_stride,
-                                  fdata2, 16, 23, hfilter_aligned16);
-    vp9_filter_block1d16_v8_ssse3(fdata2, 16, dst_ptr, dst_stride, 16,
-                                  vfilter_aligned16);
-  } else {
-    if (hfilter_aligned16[3] != 128) {
-      vp9_filter_block1d16_h8_ssse3(src_ptr, src_stride, dst_ptr, dst_stride,
-                                    16, hfilter_aligned16);
-    } else {
-      vp9_filter_block1d16_v8_ssse3(src_ptr - (3 * src_stride), src_stride,
-                                    dst_ptr, dst_stride, 16, vfilter_aligned16);
-    }
-  }
-}
-
-void vp9_filter_block1d8_v8_ssse3(const unsigned char *src_ptr,
-                                   const unsigned int src_pitch,
-                                   unsigned char *output_ptr,
-                                   unsigned int out_pitch,
-                                   unsigned int output_height,
-                                   const short *filter);
-
-void vp9_filter_block1d8_h8_ssse3(const unsigned char *src_ptr,
-                                   const unsigned int src_pitch,
-                                   unsigned char *output_ptr,
-                                   unsigned int out_pitch,
-                                   unsigned int output_height,
-                                   const short *filter);
-
-void vp9_filter_block2d_8x8_8_ssse3(const unsigned char *src_ptr,
-                                    const unsigned int src_stride,
-                                    const short *hfilter_aligned16,
-                                    const short *vfilter_aligned16,
-                                    unsigned char *dst_ptr,
-                                    unsigned int dst_stride) {
-  if (hfilter_aligned16[3] != 128 && vfilter_aligned16[3] != 128) {
-    DECLARE_ALIGNED_ARRAY(16, unsigned char, fdata2, 23 * 16);
-
-    vp9_filter_block1d8_h8_ssse3(src_ptr - (3 * src_stride), src_stride,
-                                 fdata2, 16, 15, hfilter_aligned16);
-    vp9_filter_block1d8_v8_ssse3(fdata2, 16, dst_ptr, dst_stride, 8,
-                                 vfilter_aligned16);
-  } else {
-    if (hfilter_aligned16[3] != 128) {
-      vp9_filter_block1d8_h8_ssse3(src_ptr, src_stride, dst_ptr, dst_stride, 8,
-                                   hfilter_aligned16);
-    } else {
-      vp9_filter_block1d8_v8_ssse3(src_ptr - (3 * src_stride), src_stride,
-                                   dst_ptr, dst_stride, 8, vfilter_aligned16);
-    }
-  }
-}
-
-void vp9_filter_block2d_8x4_8_ssse3(const unsigned char *src_ptr,
-                                    const unsigned int src_stride,
-                                    const short *hfilter_aligned16,
-                                    const short *vfilter_aligned16,
-                                    unsigned char *dst_ptr,
-                                    unsigned int dst_stride) {
-  if (hfilter_aligned16[3] !=128 && vfilter_aligned16[3] != 128) {
-      DECLARE_ALIGNED_ARRAY(16, unsigned char, fdata2, 23 * 16);
-
-      vp9_filter_block1d8_h8_ssse3(src_ptr - (3 * src_stride), src_stride,
-                                   fdata2, 16, 11, hfilter_aligned16);
-      vp9_filter_block1d8_v8_ssse3(fdata2, 16, dst_ptr, dst_stride, 4,
-                                   vfilter_aligned16);
-  } else {
-    if (hfilter_aligned16[3] != 128) {
-      vp9_filter_block1d8_h8_ssse3(src_ptr, src_stride, dst_ptr, dst_stride, 4,
-                                   hfilter_aligned16);
-    } else {
-      vp9_filter_block1d8_v8_ssse3(src_ptr - (3 * src_stride), src_stride,
-                                   dst_ptr, dst_stride, 4, vfilter_aligned16);
-    }
-  }
-}
+// void vp9_convolve8_sse2(const uint8_t *src, ptrdiff_t src_stride,
+//                         uint8_t *dst, ptrdiff_t dst_stride,
+//                         const int16_t *filter_x, int x_step_q4,
+//                         const int16_t *filter_y, int y_step_q4,
+//                         int w, int h);
+// void vp9_convolve8_avg_sse2(const uint8_t *src, ptrdiff_t src_stride,
+//                             uint8_t *dst, ptrdiff_t dst_stride,
+//                             const int16_t *filter_x, int x_step_q4,
+//                             const int16_t *filter_y, int y_step_q4,
+//                             int w, int h);
+FUN_CONV_2D(, sse2);
+FUN_CONV_2D(avg_ , sse2);
 #endif

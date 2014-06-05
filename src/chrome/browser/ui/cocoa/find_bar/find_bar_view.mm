@@ -8,6 +8,7 @@
 #import "chrome/browser/ui/cocoa/themed_window.h"
 #import "chrome/browser/ui/cocoa/url_drop_target.h"
 #import "chrome/browser/ui/cocoa/view_id_util.h"
+#import "ui/base/cocoa/nsgraphics_context_additions.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 
 namespace {
@@ -15,6 +16,16 @@ CGFloat kCurveSize = 8;
 }  // end namespace
 
 @implementation FindBarView
+
+- (id)initWithFrame:(NSRect)frame {
+  if ((self = [super initWithFrame:frame])) {
+    // Give this view its own layer so that it can appear over the web contents
+    // view's layer. Layer squashing is not necessary for this view because
+    // NSTextField will correctly anti-alias text on 10.8 and beyond.
+    [self cr_setWantsLayer:YES];
+  }
+  return self;
+}
 
 - (void)awakeFromNib {
   // Register for all the drag types handled by the RWHVCocoa.
@@ -69,9 +80,10 @@ CGFloat kCurveSize = 8;
     [path addClip];
 
     // Set the pattern phase
-    NSPoint phase = [[self window] themePatternPhase];
+    NSPoint position = [[self window]
+        themeImagePositionForAlignment:THEME_IMAGE_ALIGN_WITH_TAB_STRIP];
+    [context cr_setPatternPhase:position forView:self];
 
-    [context setPatternPhase:phase];
     [super drawBackgroundWithOpaque:YES];
   }
 
@@ -130,10 +142,6 @@ CGFloat kCurveSize = 8;
 // Eat drag operations, to prevent drags from going through to the views below.
 - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)info {
   return NSDragOperationNone;
-}
-
-- (ViewID)viewID {
-  return VIEW_ID_FIND_IN_PAGE;
 }
 
 // Specifies that mouse events over this view should be ignored by the

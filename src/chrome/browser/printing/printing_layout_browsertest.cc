@@ -3,29 +3,30 @@
 // found in the LICENSE file.
 
 #include "base/command_line.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
-#include "base/message_loop.h"
+#include "base/files/file_enumerator.h"
+#include "base/files/file_path.h"
+#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
-#include "base/process_util.h"
-#include "base/string_util.h"
+#include "base/process/process.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/test/test_file_util.h"
 #include "base/threading/simple_thread.h"
-#include "base/utf_string_conversions.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/printing/print_job.h"
 #include "chrome/browser/printing/print_view_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
-#include "net/test/test_server.h"
+#include "net/test/spawned_test_server/spawned_test_server.h"
 #include "printing/image.h"
 #include "printing/printing_test.h"
 
@@ -39,7 +40,7 @@ class PrintingLayoutTest : public PrintingTest<InProcessBrowserTest>,
                            public content::NotificationObserver {
  public:
   PrintingLayoutTest() {
-    FilePath browser_directory;
+    base::FilePath browser_directory;
     PathService::Get(chrome::DIR_APP, &browser_directory);
     emf_path_ = browser_directory.AppendASCII("metafile_dumps");
   }
@@ -52,7 +53,7 @@ class PrintingLayoutTest : public PrintingTest<InProcessBrowserTest>,
 
   virtual void TearDown() OVERRIDE {
     InProcessBrowserTest::TearDown();
-    file_util::Delete(emf_path_, true);
+    base::DeleteFile(emf_path_, true);
   }
 
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
@@ -65,7 +66,7 @@ class PrintingLayoutTest : public PrintingTest<InProcessBrowserTest>,
                    content::NotificationService::AllSources());
 
     content::WebContents* web_contents =
-        chrome::GetActiveWebContents(browser());
+        browser()->tab_strip_model()->GetActiveWebContents();
     printing::PrintViewManager::FromWebContents(web_contents)->PrintNow();
     content::RunMessageLoop();
     registrar_.RemoveAll();
@@ -78,14 +79,16 @@ class PrintingLayoutTest : public PrintingTest<InProcessBrowserTest>,
     switch (content::Details<printing::JobEventDetails>(details)->type()) {
       case printing::JobEventDetails::JOB_DONE: {
         // Succeeded.
-        MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+        base::MessageLoop::current()->PostTask(
+            FROM_HERE, base::MessageLoop::QuitClosure());
         break;
       }
       case printing::JobEventDetails::USER_INIT_CANCELED:
       case printing::JobEventDetails::FAILED: {
         // Failed.
         ASSERT_TRUE(false);
-        MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+        base::MessageLoop::current()->PostTask(
+            FROM_HERE, base::MessageLoop::QuitClosure());
         break;
       }
       case printing::JobEventDetails::NEW_DOC:
@@ -110,25 +113,26 @@ class PrintingLayoutTest : public PrintingTest<InProcessBrowserTest>,
   // data pixels and returns the percentage of different pixels; 0 for success,
   // [0, 100] for failure.
   double CompareWithResult(const std::wstring& verification_name) {
-    FilePath test_result(ScanFiles(verification_name));
+    base::FilePath test_result(ScanFiles(verification_name));
     if (test_result.value().empty()) {
       // 100% different, the print job buffer is not there.
       return 100.;
     }
 
-    FilePath base_path(ui_test_utils::GetTestFilePath(
-        FilePath().AppendASCII("printing"), FilePath()));
-    FilePath emf(base_path.Append(verification_name + L".emf"));
-    FilePath png(base_path.Append(verification_name + L".png"));
+    base::FilePath base_path(ui_test_utils::GetTestFilePath(
+        base::FilePath().AppendASCII("printing"), base::FilePath()));
+    base::FilePath emf(base_path.Append(verification_name + L".emf"));
+    base::FilePath png(base_path.Append(verification_name + L".png"));
 
-    FilePath cleartype(base_path.Append(verification_name + L"_cleartype.png"));
+    base::FilePath cleartype(
+        base_path.Append(verification_name + L"_cleartype.png"));
     // Looks for Cleartype override.
-    if (file_util::PathExists(cleartype) && IsClearTypeEnabled())
+    if (base::PathExists(cleartype) && IsClearTypeEnabled())
       png = cleartype;
 
     if (GenerateFiles()) {
       // Copy the .emf and generate an .png.
-      file_util::CopyFile(test_result, emf);
+      base::CopyFile(test_result, emf);
       Image emf_content(emf);
       emf_content.SaveToPng(png);
       // Saving is always fine.
@@ -140,24 +144,25 @@ class PrintingLayoutTest : public PrintingTest<InProcessBrowserTest>,
       Image png_content(png);
       double diff_emf = emf_content.PercentageDifferent(test_content);
 
-      EXPECT_EQ(0., diff_emf) << WideToUTF8(verification_name) <<
+      EXPECT_EQ(0., diff_emf) << base::WideToUTF8(verification_name) <<
           " original size:" << emf_content.size().ToString() <<
           " result size:" << test_content.size().ToString();
       if (diff_emf) {
         // Backup the result emf file.
-        FilePath failed(base_path.Append(verification_name + L"_failed.emf"));
-        file_util::CopyFile(test_result, failed);
+        base::FilePath failed(
+            base_path.Append(verification_name + L"_failed.emf"));
+        base::CopyFile(test_result, failed);
       }
 
       // This verification is only to know that the EMF rendering stays
       // immutable.
       double diff_png = emf_content.PercentageDifferent(png_content);
-      EXPECT_EQ(0., diff_png) << WideToUTF8(verification_name) <<
+      EXPECT_EQ(0., diff_png) << base::WideToUTF8(verification_name) <<
           " original size:" << emf_content.size().ToString() <<
           " result size:" << test_content.size().ToString();
       if (diff_png) {
         // Backup the rendered emf file to detect the rendering difference.
-        FilePath rendering(
+        base::FilePath rendering(
             base_path.Append(verification_name + L"_rendering.png"));
         emf_content.SaveToPng(rendering);
       }
@@ -167,8 +172,8 @@ class PrintingLayoutTest : public PrintingTest<InProcessBrowserTest>,
 
   // Makes sure the directory exists and is empty.
   void CleanupDumpDirectory() {
-    EXPECT_TRUE(file_util::DieFileDie(emf_path_, true));
-    EXPECT_TRUE(file_util::CreateDirectory(emf_path_));
+    EXPECT_TRUE(base::DieFileDie(emf_path_, true));
+    EXPECT_TRUE(base::CreateDirectory(emf_path_));
   }
 
   // Returns if Clear Type is currently enabled.
@@ -193,16 +198,16 @@ class PrintingLayoutTest : public PrintingTest<InProcessBrowserTest>,
     bool found_emf = false;
     bool found_prn = false;
     for (int i = 0; i < 100; ++i) {
-      file_util::FileEnumerator enumerator(emf_path_, false,
-          file_util::FileEnumerator::FILES);
+      base::FileEnumerator enumerator(emf_path_, false,
+                                      base::FileEnumerator::FILES);
       emf_file.clear();
       prn_file.clear();
       found_emf = false;
       found_prn = false;
-      FilePath file;
+      base::FilePath file;
       while (!(file = enumerator.Next()).empty()) {
         std::wstring ext = file.Extension();
-        if (base::strcasecmp(WideToUTF8(ext).c_str(), ".emf") == 0) {
+        if (base::strcasecmp(base::WideToUTF8(ext).c_str(), ".emf") == 0) {
           EXPECT_FALSE(found_emf) << "Found a leftover .EMF file: \"" <<
               emf_file << "\" and \"" << file.value() <<
               "\" when looking for \"" << verification_name << "\"";
@@ -210,13 +215,13 @@ class PrintingLayoutTest : public PrintingTest<InProcessBrowserTest>,
           emf_file = file.value();
           continue;
         }
-        if (base::strcasecmp(WideToUTF8(ext).c_str(), ".prn") == 0) {
+        if (base::strcasecmp(base::WideToUTF8(ext).c_str(), ".prn") == 0) {
           EXPECT_FALSE(found_prn) << "Found a leftover .PRN file: \"" <<
               prn_file << "\" and \"" << file.value() <<
               "\" when looking for \"" << verification_name << "\"";
           prn_file = file.value();
           found_prn = true;
-          file_util::Delete(file, false);
+          base::DeleteFile(file, false);
           continue;
         }
         EXPECT_TRUE(false);
@@ -234,7 +239,7 @@ class PrintingLayoutTest : public PrintingTest<InProcessBrowserTest>,
     return CommandLine::ForCurrentProcess()->HasSwitch(kGenerateSwitch);
   }
 
-  FilePath emf_path_;
+  base::FilePath emf_path_;
   content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(PrintingLayoutTest);

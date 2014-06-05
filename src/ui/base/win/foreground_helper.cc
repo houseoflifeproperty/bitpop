@@ -5,7 +5,7 @@
 #include "ui/base/win/foreground_helper.h"
 
 #include "base/logging.h"
-#include "ui/base/win/window_impl.h"
+#include "ui/gfx/win/window_impl.h"
 
 namespace ui {
 
@@ -72,13 +72,9 @@ HRESULT ForegroundHelper::ForegroundHotKey(HWND window) {
   return S_OK;
 }
 
-  // Handle the registered Hotkey being pressed.
-LRESULT ForegroundHelper::OnHotKey(UINT message,
-                                   WPARAM wparam,
-                                   LPARAM lparam,
-                                   BOOL& handled) {
+// Handle the registered Hotkey being pressed.
+void ForegroundHelper::OnHotKey(int id, UINT vcode, UINT modifiers) {
   SetForegroundWindow(window_);
-  return 1;
 }
 
 }  // namespace ui

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,10 +11,12 @@
 #include "base/atomicops.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/threading/thread_checker.h"
+#include "sync/base/sync_export.h"
+#include "sync/internal_api/public/base/cancelation_observer.h"
 #include "sync/syncable/syncable_id.h"
 
 namespace sync_pb {
@@ -22,6 +24,8 @@ class ClientToServerMessage;
 }
 
 namespace syncer {
+
+class CancelationSignal;
 
 namespace syncable {
 class Directory;
@@ -34,7 +38,7 @@ static const int32 kUnsetPayloadLength = -1;
 // HttpResponse gathers the relevant output properties of an HTTP request.
 // Depending on the value of the server_status code, response_code, and
 // content_length may not be valid.
-struct HttpResponse {
+struct SYNC_EXPORT_PRIVATE HttpResponse {
   enum ServerConnectionCode {
     // For uninitialized state.
     NONE,
@@ -77,9 +81,6 @@ struct HttpResponse {
   // The size of a download request's payload.
   int64 payload_length;
 
-  // Value of the Update-Client-Auth header.
-  std::string update_client_auth_header;
-
   // Identifies the type of failure, if any.
   ServerConnectionCode server_status;
 
@@ -98,7 +99,7 @@ struct ServerConnectionEvent {
       connection_code(code) {}
 };
 
-class ServerConnectionEventListener {
+class SYNC_EXPORT_PRIVATE ServerConnectionEventListener {
  public:
   virtual void OnServerConnectionEvent(const ServerConnectionEvent& event) = 0;
  protected:
@@ -109,7 +110,8 @@ class ServerConnectionManager;
 // A helper class that automatically notifies when the status changes.
 // TODO(tim): This class shouldn't be exposed outside of the implementation,
 // bug 35060.
-class ScopedServerStatusWatcher : public base::NonThreadSafe {
+class SYNC_EXPORT_PRIVATE ScopedServerStatusWatcher
+    : public base::NonThreadSafe {
  public:
   ScopedServerStatusWatcher(ServerConnectionManager* conn_mgr,
                             HttpResponse* response);
@@ -123,7 +125,7 @@ class ScopedServerStatusWatcher : public base::NonThreadSafe {
 // Use this class to interact with the sync server.
 // The ServerConnectionManager currently supports POSTing protocol buffers.
 //
-class ServerConnectionManager {
+class SYNC_EXPORT_PRIVATE ServerConnectionManager : public CancelationObserver {
  public:
   // buffer_in - will be POSTed
   // buffer_out - string will be overwritten with response
@@ -178,7 +180,8 @@ class ServerConnectionManager {
 
   ServerConnectionManager(const std::string& server,
                           int port,
-                          bool use_ssl);
+                          bool use_ssl,
+                          CancelationSignal* cancelation_signal);
 
   virtual ~ServerConnectionManager();
 
@@ -210,11 +213,11 @@ class ServerConnectionManager {
   // communication with the server.
   virtual Connection* MakeConnection();
 
-  // Aborts any active HTTP POST request.
+  // Closes any active network connections to the sync server.
   // We expect this to get called on a different thread than the valid
   // ThreadChecker thread, as we want to kill any pending http traffic without
   // having to wait for the request to complete.
-  void TerminateAllIO();
+  virtual void OnSignalReceived() OVERRIDE FINAL;
 
   void set_client_id(const std::string& client_id) {
     DCHECK(thread_checker_.CalledOnValidThread());
@@ -222,25 +225,8 @@ class ServerConnectionManager {
     client_id_.assign(client_id);
   }
 
-  // Returns true if the auth token is succesfully set and false otherwise.
-  bool set_auth_token(const std::string& auth_token) {
-    DCHECK(thread_checker_.CalledOnValidThread());
-    if (previously_invalidated_token != auth_token) {
-      auth_token_.assign(auth_token);
-      previously_invalidated_token = std::string();
-      return true;
-    }
-    return false;
-  }
-
-  void InvalidateAndClearAuthToken() {
-    DCHECK(thread_checker_.CalledOnValidThread());
-    // Copy over the token to previous invalid token.
-    if (!auth_token_.empty()) {
-      previously_invalidated_token.assign(auth_token_);
-      auth_token_ = std::string();
-    }
-  }
+  // Sets a new auth token and time.
+  bool SetAuthToken(const std::string& auth_token);
 
   bool HasInvalidAuthToken() {
     return auth_token_.empty();
@@ -256,9 +242,8 @@ class ServerConnectionManager {
     return proto_sync_path_;
   }
 
-  std::string get_time_path() const {
-    return get_time_path_;
-  }
+  // Updates server_status_ and notifies listeners if server_status_ changed
+  void SetServerStatus(HttpResponse::ServerConnectionCode server_status);
 
   // NOTE: Tests rely on this protected function being virtual.
   //
@@ -267,6 +252,11 @@ class ServerConnectionManager {
                                 const std::string& path,
                                 const std::string& auth_token,
                                 ScopedServerStatusWatcher* watcher);
+
+  // An internal helper to clear our auth_token_ and cache the old version
+  // in |previously_invalidated_token_| to shelter us from retrying with a
+  // known bad token.
+  void InvalidateAndClearAuthToken();
 
   // Helper to check terminated flags and build a Connection object, installing
   // it as the |active_connection_|.  If this ServerConnectionManager has been
@@ -291,7 +281,6 @@ class ServerConnectionManager {
 
   // The paths we post to.
   std::string proto_sync_path_;
-  std::string get_time_path_;
 
   // The auth token to use in authenticated requests.
   std::string auth_token_;
@@ -339,14 +328,11 @@ class ServerConnectionManager {
 
   void NotifyStatusChanged();
 
+  CancelationSignal* const cancelation_signal_;
+  bool signal_handler_registered_;
+
   DISALLOW_COPY_AND_ASSIGN(ServerConnectionManager);
 };
-
-// Fills a ClientToServerMessage with the appropriate share and birthday
-// settings.
-bool FillMessageWithShareDetails(sync_pb::ClientToServerMessage* csm,
-                                 syncable::Directory* manager,
-                                 const std::string& share);
 
 std::ostream& operator<<(std::ostream& s, const struct HttpResponse& hr);
 

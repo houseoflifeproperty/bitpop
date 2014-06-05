@@ -9,7 +9,7 @@
 #ifndef SYNC_TEST_ENGINE_FAKE_SYNC_SCHEDULER_H_
 #define SYNC_TEST_ENGINE_FAKE_SYNC_SCHEDULER_H_
 
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "sync/engine/sync_scheduler.h"
 
 namespace syncer {
@@ -20,17 +20,20 @@ class FakeSyncScheduler : public SyncScheduler {
   virtual ~FakeSyncScheduler();
 
   virtual void Start(Mode mode) OVERRIDE;
-  virtual void RequestStop(const base::Closure& callback) OVERRIDE;
-  virtual void ScheduleNudgeAsync(
-      const base::TimeDelta& delay,
-      NudgeSource source,
+  virtual void Stop() OVERRIDE;
+  virtual void ScheduleLocalNudge(
+      const base::TimeDelta& desired_delay,
       ModelTypeSet types,
       const tracked_objects::Location& nudge_location) OVERRIDE;
-  virtual void ScheduleNudgeWithStatesAsync(
-      const base::TimeDelta& delay, NudgeSource source,
-      const ModelTypeInvalidationMap& invalidation_map,
+  virtual void ScheduleLocalRefreshRequest(
+      const base::TimeDelta& desired_delay,
+      ModelTypeSet types,
       const tracked_objects::Location& nudge_location) OVERRIDE;
-  virtual bool ScheduleConfiguration(
+  virtual void ScheduleInvalidationNudge(
+      const base::TimeDelta& desired_delay,
+      const ObjectIdInvalidationMap& invalidation_map,
+      const tracked_objects::Location& nudge_location) OVERRIDE;
+  virtual void ScheduleConfiguration(
       const ConfigurationParams& params) OVERRIDE;
   virtual void SetNotificationsEnabled(bool notifications_enabled) OVERRIDE;
 
@@ -39,21 +42,24 @@ class FakeSyncScheduler : public SyncScheduler {
   virtual void OnConnectionStatusChange() OVERRIDE;
 
   // SyncSession::Delegate implementation.
-  virtual void OnSilencedUntil(
-      const base::TimeTicks& silenced_until) OVERRIDE;
-  virtual bool IsSyncingCurrentlySilenced() OVERRIDE;
+  virtual void OnThrottled(
+      const base::TimeDelta& throttle_duration) OVERRIDE;
+  virtual void OnTypesThrottled(
+      ModelTypeSet types,
+      const base::TimeDelta& throttle_duration) OVERRIDE;
+  virtual bool IsCurrentlyThrottled() OVERRIDE;
   virtual void OnReceivedShortPollIntervalUpdate(
       const base::TimeDelta& new_interval) OVERRIDE;
   virtual void OnReceivedLongPollIntervalUpdate(
       const base::TimeDelta& new_interval) OVERRIDE;
   virtual void OnReceivedSessionsCommitDelay(
       const base::TimeDelta& new_delay) OVERRIDE;
-  virtual void OnShouldStopSyncingPermanently() OVERRIDE;
+  virtual void OnReceivedClientInvalidationHintBufferSize(int size) OVERRIDE;
   virtual void OnSyncProtocolError(
-      const sessions::SyncSessionSnapshot& snapshot) OVERRIDE;
-
- private:
-    MessageLoop* const created_on_loop_;
+      const SyncProtocolError& error) OVERRIDE;
+  virtual void OnReceivedGuRetryDelay(
+      const base::TimeDelta& delay) OVERRIDE;
+  virtual void OnReceivedMigrationRequest(ModelTypeSet types) OVERRIDE;
 };
 
 }  // namespace syncer

@@ -4,18 +4,15 @@
 
 #include "chrome/browser/ui/views/bookmarks/bookmark_menu_controller_views.h"
 
+#include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
-#include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_node_data.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
-#include "chrome/browser/event_disposition.h"
-#include "chrome/browser/prefs/pref_service.h"
-#include "chrome/browser/profiles/profile.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/bookmarks/bookmark_stats.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
+#include "chrome/browser/ui/views/bookmarks/bookmark_menu_controller_observer.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_menu_delegate.h"
 #include "chrome/common/pref_names.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/user_metrics.h"
 #include "grit/generated_resources.h"
@@ -24,11 +21,12 @@
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/views/controls/button/menu_button.h"
+#include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/widget/widget.h"
 
+using base::UserMetricsAction;
 using content::PageNavigator;
-using content::UserMetricsAction;
 using views::MenuItemView;
 
 BookmarkMenuController::BookmarkMenuController(Browser* browser,
@@ -37,14 +35,15 @@ BookmarkMenuController::BookmarkMenuController(Browser* browser,
                                                const BookmarkNode* node,
                                                int start_child_index)
     : menu_delegate_(
-        new BookmarkMenuDelegate(browser, page_navigator, parent, 1)),
+        new BookmarkMenuDelegate(browser, page_navigator, parent, 1,
+                                 kint32max)),
       node_(node),
       observer_(NULL),
       for_drop_(false),
       bookmark_bar_(NULL) {
   menu_delegate_->Init(this, NULL, node, start_child_index,
                        BookmarkMenuDelegate::HIDE_PERMANENT_FOLDERS,
-                       bookmark_utils::LAUNCH_BAR_SUBFOLDER);
+                       BOOKMARK_LAUNCH_LOCATION_BAR_SUBFOLDER);
   menu_runner_.reset(new views::MenuRunner(menu_delegate_->menu()));
 }
 
@@ -53,7 +52,7 @@ void BookmarkMenuController::RunMenuAt(BookmarkBarView* bookmark_bar,
   bookmark_bar_ = bookmark_bar;
   views::MenuButton* menu_button = bookmark_bar_->GetMenuButtonForNode(node_);
   DCHECK(menu_button);
-  MenuItemView::AnchorPosition anchor;
+  views::MenuAnchorPosition anchor;
   bookmark_bar_->GetAnchorPositionForButton(menu_button, &anchor);
   gfx::Point screen_loc;
   views::View::ConvertPointToScreen(menu_button, &screen_loc);
@@ -61,12 +60,12 @@ void BookmarkMenuController::RunMenuAt(BookmarkBarView* bookmark_bar,
   gfx::Rect bounds(screen_loc.x(), screen_loc.y(), menu_button->width(),
                    menu_button->height() - 1);
   for_drop_ = for_drop;
-  BookmarkModelFactory::GetForProfile(
-      menu_delegate_->profile())->AddObserver(this);
+  menu_delegate_->GetBookmarkModel()->AddObserver(this);
   // We only delete ourself after the menu completes, so we can safely ignore
   // the return value.
   ignore_result(menu_runner_->RunMenuAt(menu_delegate_->parent(), menu_button,
-      bounds, anchor, for_drop ? views::MenuRunner::FOR_DROP : 0));
+      bounds, anchor, ui::MENU_SOURCE_NONE,
+      for_drop ? views::MenuRunner::FOR_DROP : 0));
   if (!for_drop)
     delete this;
 }
@@ -87,7 +86,7 @@ void BookmarkMenuController::SetPageNavigator(PageNavigator* navigator) {
   menu_delegate_->SetPageNavigator(navigator);
 }
 
-string16 BookmarkMenuController::GetTooltipText(int id,
+base::string16 BookmarkMenuController::GetTooltipText(int id,
                                                 const gfx::Point& p) const {
   return menu_delegate_->GetTooltipText(id, p);
 }
@@ -141,8 +140,8 @@ int BookmarkMenuController::OnPerformDrop(MenuItemView* menu,
 bool BookmarkMenuController::ShowContextMenu(MenuItemView* source,
                                              int id,
                                              const gfx::Point& p,
-                                             bool is_mouse_gesture) {
-  return menu_delegate_->ShowContextMenu(source, id, p, is_mouse_gesture);
+                                             ui::MenuSourceType source_type) {
+  return menu_delegate_->ShowContextMenu(source, id, p, source_type);
 }
 
 void BookmarkMenuController::DropMenuClosed(MenuItemView* menu) {
@@ -165,13 +164,13 @@ int BookmarkMenuController::GetDragOperations(MenuItemView* sender) {
 views::MenuItemView* BookmarkMenuController::GetSiblingMenu(
     views::MenuItemView* menu,
     const gfx::Point& screen_point,
-    views::MenuItemView::AnchorPosition* anchor,
+    views::MenuAnchorPosition* anchor,
     bool* has_mnemonics,
     views::MenuButton** button) {
   if (!bookmark_bar_ || for_drop_)
     return NULL;
   gfx::Point bookmark_bar_loc(screen_point);
-  views::View::ConvertPointToTarget(NULL, bookmark_bar_, &bookmark_bar_loc);
+  views::View::ConvertPointFromScreen(bookmark_bar_, &bookmark_bar_loc);
   int start_index;
   const BookmarkNode* node = bookmark_bar_->GetNodeForButtonAtModelIndex(
       bookmark_bar_loc, &start_index);
@@ -195,8 +194,7 @@ void BookmarkMenuController::BookmarkModelChanged() {
 }
 
 BookmarkMenuController::~BookmarkMenuController() {
-  BookmarkModelFactory::GetForProfile(
-      menu_delegate_->profile())->RemoveObserver(this);
+  menu_delegate_->GetBookmarkModel()->RemoveObserver(this);
   if (observer_)
-    observer_->BookmarkMenuDeleted(this);
+    observer_->BookmarkMenuControllerDeleted(this);
 }

@@ -12,9 +12,9 @@
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/web_contents_delegate.h"
-#include "googleurl/src/gurl.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/widget/widget_delegate.h"
+#include "url/gurl.h"
 
 class CommandUpdater;
 class Profile;
@@ -52,6 +52,9 @@ class SimpleWebViewDialog : public views::ButtonListener,
   // Inits view. Should be attached to a Widget before call.
   void Init();
 
+  // Overridden from views::View:
+  virtual void Layout() OVERRIDE;
+
   // Overridden from views::WidgetDelegate:
   virtual views::View* GetContentsView() OVERRIDE;
   virtual views::View* GetInitiallyFocusedView() OVERRIDE;
@@ -65,12 +68,15 @@ class SimpleWebViewDialog : public views::ButtonListener,
       const content::OpenURLParams& params) OVERRIDE;
 
   // Implements content::WebContentsDelegate:
-  virtual void LoadingStateChanged(content::WebContents* source) OVERRIDE;
-
-  // Implements LocationBarView::Delegate:
   virtual void NavigationStateChanged(const content::WebContents* source,
                                       unsigned changed_flags) OVERRIDE;
-  virtual content::WebContents* GetWebContents() const OVERRIDE;
+  virtual void LoadingStateChanged(content::WebContents* source,
+                                   bool to_different_document) OVERRIDE;
+
+  // Implements LocationBarView::Delegate:
+  virtual content::WebContents* GetWebContents() OVERRIDE;
+  virtual ToolbarModel* GetToolbarModel() OVERRIDE;
+  virtual const ToolbarModel* GetToolbarModel() const OVERRIDE;
   virtual InstantController* GetInstant() OVERRIDE;
   virtual views::Widget* CreateViewsBubble(
       views::BubbleDelegateView* bubble_delegate) OVERRIDE;
@@ -79,14 +85,13 @@ class SimpleWebViewDialog : public views::ButtonListener,
       ExtensionAction* action) OVERRIDE;
   virtual ContentSettingBubbleModelDelegate*
   GetContentSettingBubbleModelDelegate() OVERRIDE;
-  virtual void ShowPageInfo(content::WebContents* web_contents,
-                            const GURL& url,
-                            const content::SSLStatus& ssl,
-                            bool show_history) OVERRIDE;
-  virtual void OnInputInProgress(bool in_progress) OVERRIDE;
+  virtual void ShowWebsiteSettings(content::WebContents* web_contents,
+                                   const GURL& url,
+                                   const content::SSLStatus& ssl) OVERRIDE;
 
   // Implements ToolbarModelDelegate:
   virtual content::WebContents* GetActiveWebContents() const OVERRIDE;
+  virtual bool InTabbedBrowser() const OVERRIDE;
 
   // Implements CommandUpdaterDelegate:
   virtual void ExecuteCommandWithDisposition(
@@ -94,6 +99,8 @@ class SimpleWebViewDialog : public views::ButtonListener,
       WindowOpenDisposition) OVERRIDE;
 
  private:
+  friend class SimpleWebViewDialogTest;
+
   void LoadImages();
   void UpdateButtons();
   void UpdateReload(bool is_loading, bool force);
@@ -117,6 +124,6 @@ class SimpleWebViewDialog : public views::ButtonListener,
   DISALLOW_COPY_AND_ASSIGN(SimpleWebViewDialog);
 };
 
-}  // chromeos
+}  // namespace chromeos
 
 #endif  // CHROME_BROWSER_CHROMEOS_LOGIN_SIMPLE_WEB_VIEW_DIALOG_H_

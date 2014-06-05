@@ -16,18 +16,19 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/platform_thread.h"
-#include "base/time.h"
-#include "base/timer.h"
-#include "net/base/cert_verify_result.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "net/base/completion_callback.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_export.h"
 #include "net/base/net_log.h"
 #include "net/base/nss_memio.h"
-#include "net/base/server_bound_cert_service.h"
-#include "net/base/ssl_config_service.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/cert_verify_result.h"
+#include "net/cert/ct_verify_result.h"
+#include "net/cert/x509_certificate.h"
 #include "net/socket/ssl_client_socket.h"
+#include "net/ssl/server_bound_cert_service.h"
+#include "net/ssl/ssl_config_service.h"
 
 namespace base {
 class SequencedTaskRunner;
@@ -37,6 +38,7 @@ namespace net {
 
 class BoundNetLog;
 class CertVerifier;
+class CTVerifier;
 class ClientSocketHandle;
 class ServerBoundCertService;
 class SingleRequestCertVerifier;
@@ -59,7 +61,7 @@ class SSLClientSocketNSS : public SSLClientSocket {
   // behaviour is desired, for performance or compatibility, the current task
   // runner should be supplied instead.
   SSLClientSocketNSS(base::SequencedTaskRunner* nss_task_runner,
-                     ClientSocketHandle* transport_socket,
+                     scoped_ptr<ClientSocketHandle> transport_socket,
                      const HostPortPair& host_and_port,
                      const SSLConfig& ssl_config,
                      const SSLClientSocketContext& context);
@@ -91,8 +93,6 @@ class SSLClientSocketNSS : public SSLClientSocket {
   virtual void SetOmniboxSpeculation() OVERRIDE;
   virtual bool WasEverUsed() const OVERRIDE;
   virtual bool UsingTCPFastOpen() const OVERRIDE;
-  virtual int64 NumBytesRead() const OVERRIDE;
-  virtual base::TimeDelta GetConnectTimeMicros() const OVERRIDE;
   virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
 
   // Socket implementation.
@@ -102,9 +102,14 @@ class SSLClientSocketNSS : public SSLClientSocket {
   virtual int Write(IOBuffer* buf,
                     int buf_len,
                     const CompletionCallback& callback) OVERRIDE;
-  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual bool SetSendBufferSize(int32 size) OVERRIDE;
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
+  virtual int SetSendBufferSize(int32 size) OVERRIDE;
   virtual ServerBoundCertService* GetServerBoundCertService() const OVERRIDE;
+
+ protected:
+  // SSLClientSocket implementation.
+  virtual scoped_refptr<X509Certificate> GetUnverifiedServerCertificateChain()
+      const OVERRIDE;
 
  private:
   // Helper class to handle marshalling any NSS interaction to and from the
@@ -137,12 +142,21 @@ class SSLClientSocketNSS : public SSLClientSocket {
   int DoVerifyCert(int result);
   int DoVerifyCertComplete(int result);
 
+  void VerifyCT();
+
   void LogConnectionTypeMetrics() const;
 
   // The following methods are for debugging bug 65948. Will remove this code
   // after fixing bug 65948.
   void EnsureThreadIdAssigned() const;
   bool CalledOnValidThread() const;
+
+  // Adds the SignedCertificateTimestamps from ct_verify_result_ to |ssl_info|.
+  // SCTs are held in three separate vectors in ct_verify_result, each
+  // vetor representing a particular verification state, this method associates
+  // each of the SCTs with the corresponding SCTVerifyStatus as it adds it to
+  // the |ssl_info|.signed_certificate_timestamps list.
+  void AddSCTInfoToSSLInfo(SSLInfo* ssl_info) const;
 
   // The task runner used to perform NSS operations.
   scoped_refptr<base::SequencedTaskRunner> nss_task_runner_;
@@ -155,10 +169,13 @@ class SSLClientSocketNSS : public SSLClientSocket {
   CompletionCallback user_connect_callback_;
 
   CertVerifyResult server_cert_verify_result_;
-  HashValueVector side_pinned_public_keys_;
 
   CertVerifier* const cert_verifier_;
   scoped_ptr<SingleRequestCertVerifier> verifier_;
+
+  // Certificate Transparency: Verifier and result holder.
+  ct::CTVerifyResult ct_verify_result_;
+  CTVerifier* cert_transparency_verifier_;
 
   // The service for retrieving Channel ID keys.  May be NULL.
   ServerBoundCertService* server_bound_cert_service_;
@@ -183,6 +200,11 @@ class SSLClientSocketNSS : public SSLClientSocket {
   base::TimeTicks start_cert_verification_time_;
 
   TransportSecurityState* transport_security_state_;
+
+  // pinning_failure_log contains a message produced by
+  // TransportSecurityState::DomainState::CheckPublicKeyPins in the event of a
+  // pinning failure. It is a (somewhat) human-readable string.
+  std::string pinning_failure_log_;
 
   // The following two variables are added for debugging bug 65948. Will
   // remove this code after fixing bug 65948.

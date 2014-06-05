@@ -2,22 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/time.h"
-#include "chrome/common/autofill_messages.h"
-#include "chrome/common/form_data.h"
+#include "base/time/time.h"
 #include "chrome/test/base/chrome_render_view_test.h"
+#include "components/autofill/content/common/autofill_messages.h"
+#include "components/autofill/core/common/form_data.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFormElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLError.h"
-#include "webkit/glue/web_io_operators.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebURLError.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebFormElement.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 
-using WebKit::WebFrame;
-using WebKit::WebString;
-using WebKit::WebURLError;
+using blink::WebString;
+using blink::WebURLError;
 
 typedef ChromeRenderViewTest FormAutocompleteTest;
+
+namespace autofill {
 
 // Tests that submitting a form generates a FormSubmitted message
 // with the form fields.
@@ -100,10 +101,10 @@ TEST_F(FormAutocompleteTest, DynamicAutoCompleteOffFormSubmit) {
   LoadHTML("<html><form id='myForm'><input name='fname' value='Rick'/>"
            "<input name='lname' value='Deckard'/></form></html>");
 
-  WebKit::WebElement element =
-      GetMainFrame()->document().getElementById(WebKit::WebString("myForm"));
+  blink::WebElement element =
+      GetMainFrame()->document().getElementById(blink::WebString("myForm"));
   ASSERT_FALSE(element.isNull());
-  WebKit::WebFormElement form = element.to<WebKit::WebFormElement>();
+  blink::WebFormElement form = element.to<blink::WebFormElement>();
   EXPECT_TRUE(form.autoComplete());
 
   // Dynamically mark the form as autocomplete off.
@@ -120,3 +121,5 @@ TEST_F(FormAutocompleteTest, DynamicAutoCompleteOffFormSubmit) {
   EXPECT_FALSE(render_thread_->sink().GetFirstMessageMatching(
       AutofillHostMsg_FormSubmitted::ID));
 }
+
+}  // namespace autofill

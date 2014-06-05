@@ -11,10 +11,12 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/auth.h"
 #include "net/base/completion_callback.h"
+#include "net/base/net_export.h"
 #include "net/cookies/cookie_store.h"
+#include "net/filter/filter.h"
 #include "net/http/http_request_info.h"
 #include "net/url_request/url_request_job.h"
 #include "net/url_request/url_request_throttler_entry_interface.h"
@@ -30,7 +32,7 @@ class URLRequestContext;
 
 // A URLRequestJob subclass that is built on top of HttpTransaction.  It
 // provides an implementation for both HTTP and HTTPS.
-class URLRequestHttpJob : public URLRequestJob {
+class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
  public:
   static URLRequestJob* Factory(URLRequest* request,
                                 NetworkDelegate* network_delegate,
@@ -40,6 +42,28 @@ class URLRequestHttpJob : public URLRequestJob {
   URLRequestHttpJob(URLRequest* request,
                     NetworkDelegate* network_delegate,
                     const HttpUserAgentSettings* http_user_agent_settings);
+
+  virtual ~URLRequestHttpJob();
+
+  // Overridden from URLRequestJob:
+  virtual void SetPriority(RequestPriority priority) OVERRIDE;
+  virtual void Start() OVERRIDE;
+  virtual void Kill() OVERRIDE;
+
+  RequestPriority priority() const {
+    return priority_;
+  }
+
+ private:
+  enum CompletionCause {
+    ABORTED,
+    FINISHED
+  };
+
+  typedef base::RefCountedData<bool> SharedBoolean;
+
+  class HttpFilterContext;
+  class HttpTransactionDelegateImpl;
 
   // Shadows URLRequestJob's version of this method so we can grab cookies.
   void NotifyHeadersComplete();
@@ -73,16 +97,17 @@ class URLRequestHttpJob : public URLRequestJob {
   virtual void SetUpload(UploadDataStream* upload) OVERRIDE;
   virtual void SetExtraRequestHeaders(
       const HttpRequestHeaders& headers) OVERRIDE;
-  virtual void Start() OVERRIDE;
-  virtual void Kill() OVERRIDE;
   virtual LoadState GetLoadState() const OVERRIDE;
   virtual UploadProgress GetUploadProgress() const OVERRIDE;
   virtual bool GetMimeType(std::string* mime_type) const OVERRIDE;
   virtual bool GetCharset(std::string* charset) OVERRIDE;
   virtual void GetResponseInfo(HttpResponseInfo* info) OVERRIDE;
+  virtual void GetLoadTimingInfo(
+      LoadTimingInfo* load_timing_info) const OVERRIDE;
   virtual bool GetResponseCookies(std::vector<std::string>* cookies) OVERRIDE;
   virtual int GetResponseCode() const OVERRIDE;
   virtual Filter* SetupFilter() const OVERRIDE;
+  virtual bool CopyFragmentOnRedirect(const GURL& location) const OVERRIDE;
   virtual bool IsSafeRedirect(const GURL& location) OVERRIDE;
   virtual bool NeedsAuth() OVERRIDE;
   virtual void GetAuthChallengeInfo(scoped_refptr<AuthChallengeInfo>*) OVERRIDE;
@@ -90,12 +115,63 @@ class URLRequestHttpJob : public URLRequestJob {
   virtual void CancelAuth() OVERRIDE;
   virtual void ContinueWithCertificate(X509Certificate* client_cert) OVERRIDE;
   virtual void ContinueDespiteLastError() OVERRIDE;
+  virtual void ResumeNetworkStart() OVERRIDE;
   virtual bool ReadRawData(IOBuffer* buf, int buf_size,
                            int* bytes_read) OVERRIDE;
   virtual void StopCaching() OVERRIDE;
+  virtual bool GetFullRequestHeaders(
+      HttpRequestHeaders* headers) const OVERRIDE;
+  virtual int64 GetTotalReceivedBytes() const OVERRIDE;
   virtual void DoneReading() OVERRIDE;
+  virtual void DoneReadingRedirectResponse() OVERRIDE;
+
   virtual HostPortPair GetSocketAddress() const OVERRIDE;
   virtual void NotifyURLRequestDestroyed() OVERRIDE;
+
+  void RecordTimer();
+  void ResetTimer();
+
+  virtual void UpdatePacketReadTimes() OVERRIDE;
+  void RecordPacketStats(FilterContext::StatisticSelector statistic) const;
+
+  void RecordCompressionHistograms();
+  bool IsCompressibleContent() const;
+
+  // Starts the transaction if extensions using the webrequest API do not
+  // object.
+  void StartTransaction();
+  // If |result| is net::OK, calls StartTransactionInternal. Otherwise notifies
+  // cancellation.
+  void MaybeStartTransactionInternal(int result);
+  void StartTransactionInternal();
+
+  void RecordPerfHistograms(CompletionCause reason);
+  void DoneWithRequest(CompletionCause reason);
+
+  // Callback functions for Cookie Monster
+  void DoLoadCookies();
+  void CheckCookiePolicyAndLoad(const CookieList& cookie_list);
+  void OnCookiesLoaded(const std::string& cookie_line);
+  void DoStartTransaction();
+
+  // See the implementation for a description of save_next_cookie_running and
+  // callback_pending.
+  void OnCookieSaved(scoped_refptr<SharedBoolean> save_next_cookie_running,
+                     scoped_refptr<SharedBoolean> callback_pending,
+                     bool cookie_status);
+
+  // Some servers send the body compressed, but specify the content length as
+  // the uncompressed size. If this is the case, we return true in order
+  // to request to work around this non-adherence to the HTTP standard.
+  // |rv| is the standard return value of a read function indicating the number
+  // of bytes read or, if negative, an error code.
+  bool ShouldFixMismatchedContentLength(int rv) const;
+
+  // Returns the effective response headers, considering that they may be
+  // overridden by |override_response_headers_|.
+  HttpResponseHeaders* GetResponseHeaders() const;
+
+  RequestPriority priority_;
 
   HttpRequestInfo request_info_;
   const HttpResponseInfo* response_info_;
@@ -138,67 +214,6 @@ class URLRequestHttpJob : public URLRequestJob {
   // For recording of stats, we need to remember if this is cached content.
   bool is_cached_content_;
 
- private:
-  enum CompletionCause {
-    ABORTED,
-    FINISHED
-  };
-
-  typedef base::RefCountedData<bool> SharedBoolean;
-
-  class HttpFilterContext;
-  class HttpTransactionDelegateImpl;
-
-  virtual ~URLRequestHttpJob();
-
-  void RecordTimer();
-  void ResetTimer();
-
-  virtual void UpdatePacketReadTimes() OVERRIDE;
-  void RecordPacketStats(FilterContext::StatisticSelector statistic) const;
-
-  void RecordCompressionHistograms();
-  bool IsCompressibleContent() const;
-
-  // Starts the transaction if extensions using the webrequest API do not
-  // object.
-  void StartTransaction();
-  // If |result| is net::OK, calls StartTransactionInternal. Otherwise notifies
-  // cancellation.
-  void MaybeStartTransactionInternal(int result);
-  void StartTransactionInternal();
-
-  void RecordPerfHistograms(CompletionCause reason);
-  void DoneWithRequest(CompletionCause reason);
-
-  // Callback functions for Cookie Monster
-  void DoLoadCookies();
-  void CheckCookiePolicyAndLoad(const CookieList& cookie_list);
-  void OnCookiesLoaded(
-      const std::string& cookie_line,
-      const std::vector<CookieStore::CookieInfo>& cookie_infos);
-  void DoStartTransaction();
-
-  // See the implementation for a description of save_next_cookie_running and
-  // callback_pending.
-  void OnCookieSaved(scoped_refptr<SharedBoolean> save_next_cookie_running,
-                     scoped_refptr<SharedBoolean> callback_pending,
-                     bool cookie_status);
-
-  // Some servers send the body compressed, but specify the content length as
-  // the uncompressed size. If this is the case, we return true in order
-  // to request to work around this non-adherence to the HTTP standard.
-  // |rv| is the standard return value of a read function indicating the number
-  // of bytes read or, if negative, an error code.
-  bool ShouldFixMismatchedContentLength(int rv) const;
-
-  // Returns the effective response headers, considering that they may be
-  // overridden by |override_response_headers_|.
-  HttpResponseHeaders* GetResponseHeaders() const;
-
-  // Override of the private interface of URLRequestJob.
-  virtual void OnDetachRequest() OVERRIDE;
-
   base::Time request_creation_time_;
 
   // Data used for statistics gathering. This data is only used for histograms
@@ -229,6 +244,9 @@ class URLRequestHttpJob : public URLRequestJob {
   // The start time for the job, ignoring re-starts.
   base::TimeTicks start_time_;
 
+  // When the transaction finished reading the request headers.
+  base::TimeTicks receive_headers_end_;
+
   scoped_ptr<HttpFilterContext> filter_context_;
   base::WeakPtrFactory<URLRequestHttpJob> weak_factory_;
 
@@ -239,14 +257,17 @@ class URLRequestHttpJob : public URLRequestJob {
   // layers of the network stack.
   scoped_refptr<HttpResponseHeaders> override_response_headers_;
 
+  // The network delegate can mark a URL as safe for redirection.
+  // The reference fragment of the original URL is not appended to the redirect
+  // URL when the redirect URL is equal to |allowed_unsafe_redirect_url_|.
+  GURL allowed_unsafe_redirect_url_;
+
   // Flag used to verify that |this| is not deleted while we are awaiting
   // a callback from the NetworkDelegate. Used as a fail-fast mechanism.
   // True if we are waiting a callback and
   // NetworkDelegate::NotifyURLRequestDestroyed has not been called, yet,
   // to inform the NetworkDelegate that it may not call back.
   bool awaiting_callback_;
-
-  scoped_ptr<HttpTransactionDelegateImpl> http_transaction_delegate_;
 
   const HttpUserAgentSettings* http_user_agent_settings_;
 

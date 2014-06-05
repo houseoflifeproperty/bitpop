@@ -5,13 +5,14 @@
 #ifndef CHROME_BROWSER_UI_WEBUI_OPTIONS_CHROMEOS_CHANGE_PICTURE_OPTIONS_HANDLER_H_
 #define CHROME_BROWSER_UI_WEBUI_OPTIONS_CHROMEOS_CHANGE_PICTURE_OPTIONS_HANDLER_H_
 
-#include "base/memory/weak_ptr.h"
+#include "chrome/browser/chromeos/camera_presence_notifier.h"
 #include "chrome/browser/image_decoder.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
+#include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
-#include "ui/base/dialogs/select_file_dialog.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/shell_dialogs/select_file_dialog.h"
 
 namespace base {
 class DictionaryValue;
@@ -19,12 +20,17 @@ class ListValue;
 }
 
 namespace chromeos {
+
+class User;
+
 namespace options {
 
 // ChromeOS user image options page UI handler.
 class ChangePictureOptionsHandler : public ::options::OptionsPageUIHandler,
                                     public ui::SelectFileDialog::Listener,
-                                    public ImageDecoder::Delegate {
+                                    public content::NotificationObserver,
+                                    public ImageDecoder::Delegate,
+                                    public CameraPresenceNotifier::Observer {
  public:
   ChangePictureOptionsHandler();
   virtual ~ChangePictureOptionsHandler();
@@ -35,6 +41,9 @@ class ChangePictureOptionsHandler : public ::options::OptionsPageUIHandler,
 
   // WebUIMessageHandler implementation.
   virtual void RegisterMessages() OVERRIDE;
+
+  // CameraPresenceNotifier::Observer implementation:
+  virtual void OnCameraPresenceCheckDone(bool is_camera_present) OVERRIDE;
 
  private:
   // Sends list of available default images to the page.
@@ -63,11 +72,14 @@ class ChangePictureOptionsHandler : public ::options::OptionsPageUIHandler,
   // Opens a file selection dialog to choose user image from file.
   void HandleChooseFile(const base::ListValue* args);
 
+  // Handles 'take-photo' button click.
+  void HandleTakePhoto(const base::ListValue* args);
+
   // Handles photo taken with WebRTC UI.
   void HandlePhotoTaken(const base::ListValue* args);
 
-  // Handles camera presence check request.
-  void HandleCheckCameraPresence(const base::ListValue* args);
+  // Handles 'discard-photo' button click.
+  void HandleDiscardPhoto(const base::ListValue* args);
 
   // Gets the list of available user images and sends it to the page.
   void HandleGetAvailableImages(const base::ListValue* args);
@@ -78,21 +90,21 @@ class ChangePictureOptionsHandler : public ::options::OptionsPageUIHandler,
   // Handles page shown event.
   void HandlePageShown(const base::ListValue* args);
 
+  // Handles page hidden event.
+  void HandlePageHidden(const base::ListValue* args);
+
   // Selects one of the available images as user's.
   void HandleSelectImage(const base::ListValue* args);
 
   // SelectFileDialog::Delegate implementation.
   virtual void FileSelected(
-      const FilePath& path,
+      const base::FilePath& path,
       int index, void* params) OVERRIDE;
 
   // content::NotificationObserver implementation.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
-
-  // Called when the camera presence check has been completed.
-  void OnCameraPresenceCheckDone();
 
   // Sets user image to photo taken from camera.
   void SetImageFromCamera(const gfx::ImageSkia& photo);
@@ -104,6 +116,10 @@ class ChangePictureOptionsHandler : public ::options::OptionsPageUIHandler,
   virtual void OnImageDecoded(const ImageDecoder* decoder,
                               const SkBitmap& decoded_image) OVERRIDE;
   virtual void OnDecodeImageFailed(const ImageDecoder* decoder) OVERRIDE;
+
+  // Returns user related to current WebUI. If this user doesn't exist,
+  // returns active user.
+  User* GetUser() const;
 
   scoped_refptr<ui::SelectFileDialog> select_file_dialog_;
 
@@ -121,8 +137,6 @@ class ChangePictureOptionsHandler : public ::options::OptionsPageUIHandler,
   std::string user_photo_data_url_;
 
   content::NotificationRegistrar registrar_;
-
-  base::WeakPtrFactory<ChangePictureOptionsHandler> weak_factory_;
 
   // Last ImageDecoder instance used to decode an image blob received by
   // HandlePhotoTaken.

@@ -80,7 +80,7 @@ class JSONGeneratorTest(unittest.TestCase):
       '',
       None,   # don't fetch past json results archive
       test_results_map,
-      svn_repositories=[('webkit', '.')],
+      svn_revisions=[('blink', '.')],
       file_writer=mock_writer)
 
     failed_count_map = dict([(t, 1) for t in failed_tests])

@@ -115,7 +115,7 @@ class NET_EXPORT StringIOBuffer : public IOBuffer {
  public:
   explicit StringIOBuffer(const std::string& s);
 
-  int size() const { return string_data_.size(); }
+  int size() const { return static_cast<int>(string_data_.size()); }
 
  private:
   virtual ~StringIOBuffer();
@@ -203,7 +203,7 @@ class NET_EXPORT GrowableIOBuffer : public IOBuffer {
  private:
   virtual ~GrowableIOBuffer();
 
-  scoped_ptr_malloc<char> real_data_;
+  scoped_ptr<char, base::FreeDeleter> real_data_;
   int capacity_;
   int offset_;
 };

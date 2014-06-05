@@ -4,57 +4,21 @@
 
 #include "chrome/browser/browsing_data/browsing_data_cookie_helper.h"
 
-
 #include "base/bind.h"
-#include "base/message_loop.h"
-#include "base/synchronization/waitable_event.h"
+#include "base/run_loop.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/parsed_cookie.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using content::BrowserThread;
-
 namespace {
 
 class BrowsingDataCookieHelperTest : public testing::Test {
  public:
-  void SetUpOnIOThread(base::WaitableEvent* io_setup_complete) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-    // This is a workaround for a bug in the TestingProfile.
-    // The URLRequestContext will be created by GetCookieMonster on the UI
-    // thread, if it does not already exist. But it must be created on the IO
-    // thread or else it will DCHECK upon destruction.
-    // Force it to be created here.
-    testing_profile_->CreateRequestContext();
-    testing_profile_->GetRequestContext()->GetURLRequestContext();
-    io_setup_complete->Signal();
-  }
-
-  virtual void SetUp() {
-    ui_thread_.reset(new content::TestBrowserThread(BrowserThread::UI,
-                                                    &message_loop_));
-    // Note: we're starting a real IO thread because parts of the
-    // BrowsingDataCookieHelper expect to run on that thread.
-    io_thread_.reset(new content::TestBrowserThread(BrowserThread::IO));
-    ASSERT_TRUE(io_thread_->Start());
-    testing_profile_.reset(new TestingProfile());
-    base::WaitableEvent io_setup_complete(true, false);
-    BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        base::Bind(&BrowsingDataCookieHelperTest::SetUpOnIOThread,
-                   base::Unretained(this), &io_setup_complete));
-    io_setup_complete.Wait();
-  }
-
-  virtual void TearDown() {
-    // This must be reset before the IO thread stops, because the
-    // URLRequestContextGetter forces its own deletion to occur on that thread.
-    testing_profile_->ResetRequestContext();
-    io_thread_.reset();
-    ui_thread_.reset();
+  BrowsingDataCookieHelperTest()
+      : testing_profile_(new TestingProfile()) {
   }
 
   void CreateCookiesForTest() {
@@ -94,7 +58,6 @@ class BrowsingDataCookieHelperTest : public testing::Test {
     EXPECT_EQ("B", it->Name());
 
     ASSERT_TRUE(++it == cookies.end());
-    MessageLoop::current()->Quit();
   }
 
   void DomainCookieCallback(const net::CookieList& cookies) {
@@ -114,7 +77,6 @@ class BrowsingDataCookieHelperTest : public testing::Test {
     EXPECT_EQ("2", it->Value());
 
     ASSERT_TRUE(++it == cookies.end());
-    MessageLoop::current()->Quit();
   }
 
   void DeleteCallback(const net::CookieList& cookies) {
@@ -126,7 +88,6 @@ class BrowsingDataCookieHelperTest : public testing::Test {
     EXPECT_EQ("B", it->Name());
 
     ASSERT_TRUE(++it == cookies.end());
-    MessageLoop::current()->Quit();
   }
 
   void CannedUniqueCallback(const net::CookieList& cookies) {
@@ -209,9 +170,7 @@ class BrowsingDataCookieHelperTest : public testing::Test {
   }
 
  protected:
-  MessageLoop message_loop_;
-  scoped_ptr<content::TestBrowserThread> ui_thread_;
-  scoped_ptr<content::TestBrowserThread> io_thread_;
+  content::TestBrowserThreadBundle thread_bundle_;
   scoped_ptr<TestingProfile> testing_profile_;
 
   net::CookieList cookie_list_;
@@ -225,9 +184,7 @@ TEST_F(BrowsingDataCookieHelperTest, FetchData) {
   cookie_helper->StartFetching(
       base::Bind(&BrowsingDataCookieHelperTest::FetchCallback,
                  base::Unretained(this)));
-
-  // Blocks until BrowsingDataCookieHelperTest::FetchCallback is notified.
-  MessageLoop::current()->Run();
+  base::RunLoop().RunUntilIdle();
 }
 
 TEST_F(BrowsingDataCookieHelperTest, DomainCookie) {
@@ -238,9 +195,7 @@ TEST_F(BrowsingDataCookieHelperTest, DomainCookie) {
   cookie_helper->StartFetching(
       base::Bind(&BrowsingDataCookieHelperTest::DomainCookieCallback,
                  base::Unretained(this)));
-
-  // Blocks until BrowsingDataCookieHelperTest::FetchCallback is notified.
-  MessageLoop::current()->Run();
+  base::RunLoop().RunUntilIdle();
 }
 
 TEST_F(BrowsingDataCookieHelperTest, DeleteCookie) {
@@ -251,9 +206,7 @@ TEST_F(BrowsingDataCookieHelperTest, DeleteCookie) {
   cookie_helper->StartFetching(
       base::Bind(&BrowsingDataCookieHelperTest::FetchCallback,
                  base::Unretained(this)));
-
-  // Blocks until BrowsingDataCookieHelperTest::FetchCallback is notified.
-  MessageLoop::current()->Run();
+  base::RunLoop().RunUntilIdle();
 
   net::CanonicalCookie cookie = cookie_list_[0];
   cookie_helper->DeleteCookie(cookie);
@@ -261,7 +214,36 @@ TEST_F(BrowsingDataCookieHelperTest, DeleteCookie) {
   cookie_helper->StartFetching(
       base::Bind(&BrowsingDataCookieHelperTest::DeleteCallback,
                  base::Unretained(this)));
-  MessageLoop::current()->Run();
+  base::RunLoop().RunUntilIdle();
+}
+
+TEST_F(BrowsingDataCookieHelperTest, CannedDeleteCookie) {
+  CreateCookiesForTest();
+  scoped_refptr<CannedBrowsingDataCookieHelper> helper(
+      new CannedBrowsingDataCookieHelper(
+          testing_profile_->GetRequestContext()));
+
+  ASSERT_TRUE(helper->empty());
+
+  const GURL origin1("http://www.google.com");
+  const GURL origin2("http://www.gmail.google.com");
+  helper->AddChangedCookie(origin1, origin1, "A=1", net::CookieOptions());
+  helper->AddChangedCookie(origin2, origin2, "B=1", net::CookieOptions());
+
+  helper->StartFetching(
+      base::Bind(&BrowsingDataCookieHelperTest::FetchCallback,
+                 base::Unretained(this)));
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_EQ(2u, helper->GetCookieCount());
+
+  helper->DeleteCookie(cookie_list_[0]);
+
+  EXPECT_EQ(1u, helper->GetCookieCount());
+  helper->StartFetching(
+      base::Bind(&BrowsingDataCookieHelperTest::DeleteCallback,
+                 base::Unretained(this)));
+  base::RunLoop().RunUntilIdle();
 }
 
 TEST_F(BrowsingDataCookieHelperTest, CannedDomainCookie) {
@@ -277,8 +259,10 @@ TEST_F(BrowsingDataCookieHelperTest, CannedDomainCookie) {
   helper->AddChangedCookie(origin, origin, "A=1; Domain=.www.google.com",
                            net::CookieOptions());
   // Try adding invalid cookies that will be ignored.
-  helper->AddChangedCookie(origin, origin, "", net::CookieOptions());
-  helper->AddChangedCookie(origin, origin, "C=bad guy; Domain=wrongdomain.com",
+  helper->AddChangedCookie(origin, origin, std::string(), net::CookieOptions());
+  helper->AddChangedCookie(origin,
+                           origin,
+                           "C=bad guy; Domain=wrongdomain.com",
                            net::CookieOptions());
 
   helper->StartFetching(

@@ -6,7 +6,7 @@
 
 #include "base/logging.h"
 #include "base/mac/bundle_locations.h"
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "content/public/browser/browser_thread.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 
@@ -85,7 +85,7 @@ const int64 kUpdateFrequencyMs = 200;
   NSColor* backgroundHighlight =
       [backgroundColor blendedColorWithFraction:0.85
                                         ofColor:[NSColor whiteColor]];
-  scoped_nsobject<NSGradient> backgroundGradient(
+  base::scoped_nsobject<NSGradient> backgroundGradient(
       [[NSGradient alloc] initWithStartingColor:backgroundHighlight
                                     endingColor:backgroundColor]);
   NSBezierPath* badgeEdge = [NSBezierPath bezierPathWithOvalInRect:badgeRect];
@@ -108,7 +108,7 @@ const int64 kUpdateFrequencyMs = 200;
     NSColor* sliceHighlight =
         [sliceColor blendedColorWithFraction:0.4
                                      ofColor:[NSColor whiteColor]];
-    scoped_nsobject<NSGradient> sliceGradient(
+    base::scoped_nsobject<NSGradient> sliceGradient(
         [[NSGradient alloc] initWithStartingColor:sliceHighlight
                                       endingColor:sliceColor]);
     NSBezierPath* progressSlice;
@@ -140,7 +140,7 @@ const int64 kUpdateFrequencyMs = 200;
   {
     gfx::ScopedNSGraphicsContextSaveGState scopedGState;
     [[NSColor whiteColor] set];
-    scoped_nsobject<NSShadow> shadow([[NSShadow alloc] init]);
+    base::scoped_nsobject<NSShadow> shadow([[NSShadow alloc] init]);
     [shadow.get() setShadowOffset:NSMakeSize(0, -2)];
     [shadow setShadowBlurRadius:2];
     [shadow set];
@@ -149,12 +149,12 @@ const int64 kUpdateFrequencyMs = 200;
   }
 
   // Download count
-  scoped_nsobject<NSNumberFormatter> formatter(
+  base::scoped_nsobject<NSNumberFormatter> formatter(
       [[NSNumberFormatter alloc] init]);
   NSString* countString =
       [formatter stringFromNumber:[NSNumber numberWithInt:downloads_]];
 
-  scoped_nsobject<NSShadow> countShadow([[NSShadow alloc] init]);
+  base::scoped_nsobject<NSShadow> countShadow([[NSShadow alloc] init]);
   [countShadow setShadowBlurRadius:3.0];
   [countShadow.get() setShadowColor:[NSColor whiteColor]];
   [countShadow.get() setShadowOffset:NSMakeSize(0.0, 0.0)];
@@ -165,7 +165,7 @@ const int64 kUpdateFrequencyMs = 200;
           nil];
   CGFloat countFontSize = badgeRadius;
   NSSize countSize = NSZeroSize;
-  scoped_nsobject<NSAttributedString> countAttrString;
+  base::scoped_nsobject<NSAttributedString> countAttrString;
   while (1) {
     NSFont* countFont = [NSFont fontWithName:@"Helvetica-Bold"
                                         size:countFontSize];
@@ -207,7 +207,8 @@ const int64 kUpdateFrequencyMs = 200;
   if (!icon) {
     NSDockTile* dockTile = [[NSApplication sharedApplication] dockTile];
 
-    scoped_nsobject<DockTileView> dockTileView([[DockTileView alloc] init]);
+    base::scoped_nsobject<DockTileView> dockTileView(
+        [[DockTileView alloc] init]);
     [dockTile setContentView:dockTileView];
 
     icon = [[DockIcon alloc] init];
@@ -217,7 +218,7 @@ const int64 kUpdateFrequencyMs = 200;
 }
 
 - (void)updateIcon {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   static base::TimeDelta updateFrequency =
       base::TimeDelta::FromMilliseconds(kUpdateFrequencyMs);
 
@@ -235,7 +236,7 @@ const int64 kUpdateFrequencyMs = 200;
 }
 
 - (void)setDownloads:(int)downloads {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   NSDockTile* dockTile = [[NSApplication sharedApplication] dockTile];
   DockTileView* dockTileView = (DockTileView*)([dockTile contentView]);
 
@@ -246,7 +247,7 @@ const int64 kUpdateFrequencyMs = 200;
 }
 
 - (void)setIndeterminate:(BOOL)indeterminate {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   NSDockTile* dockTile = [[NSApplication sharedApplication] dockTile];
   DockTileView* dockTileView = (DockTileView*)([dockTile contentView]);
 
@@ -257,7 +258,7 @@ const int64 kUpdateFrequencyMs = 200;
 }
 
 - (void)setProgress:(float)progress {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   NSDockTile* dockTile = [[NSApplication sharedApplication] dockTile];
   DockTileView* dockTileView = (DockTileView*)([dockTile contentView]);
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
+/* Copyright (c) 2013 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file. */
 
@@ -7,37 +7,74 @@ html {
 }
 
 body {
-  background-color: #f1f1f1;
+  -webkit-app-region: drag;
+  background-color: rgba(20, 20, 20, 0.93);
+  color: #999;
   font-size: 80%;
   height: 100%;
   margin: 0;
   padding: 0;
 }
 
+/* Click events are not received in draggable area. Making all clickable areas
+ * not draggable to receive click events.
+ * TODO(bshe): Remove this when http://crbug.com/142275 fixed.
+ */
+.dialog-topbar #navstrip,
+.dialog-topbar #window-close-button,
+.overlay-container .page,
+#author-website,
+/* TODO(bshe): Once http://crbug.com/369651 fixed, use .image-picker instead of
+ * #category-container.
+ */
+#category-container,
+#surprise-me {
+  -webkit-app-region: no-drag;
+}
+
+.dialog-container {
+  -webkit-box-orient: vertical;
+  display: -webkit-box;
+  overflow: hidden;
+}
+
+.dialog-topbar {
+  -webkit-box-align: center;
+  display: -webkit-box;
+  height: 54px;
+  overflow: hidden;
+  padding: 0 15px;
+  position: relative;
+}
+
+.dialog-topbar .spacer {
+  -webkit-box-flex: 1;
+}
+
 #categories-list {
   -webkit-box-orient: horizontal;
   display: -webkit-box;
-  height: 40px;
+  height: 54px;
   outline: none;
   width: 100%;
 }
 
 #categories-list > li {
   -webkit-box-align: center;
+  -webkit-transition: border-top 130ms ease;
   -webkit-user-select: none;
-  border-top: 6px solid transparent;
+  border-top: 4px solid transparent;
   color: #777;
   display: -webkit-box;
-  height: 22px;
+  height: 50px;
 }
 
-#categories-list > li:hover {
-  color: rgb(70, 78, 90);
+#categories-list:not([disabled]) > li:hover {
+  border-top-color: rgba(255, 255, 255, 0.4);
   cursor: pointer;
 }
 
 #categories-list > li[selected] {
-  border-top-color: rgb(78, 87, 100);
   color: rgb(70, 78, 90);
   cursor: default;
 }
@@ -47,17 +84,35 @@ body {
   padding: 0 10px;
 }
 
-.dialog-container {
-  -webkit-box-orient: vertical;
-  display: -webkit-box;
-  height: 100%;
-  overflow: hidden;
+#categories-list > li[selected] > div {
+  color: #eee;
 }
 
-.dialog-topbar {
-  -webkit-padding-start: 15px;
-  display: -webkit-box;
-  overflow: hidden;
+.close {
+  background-position: center;
+  background-repeat: no-repeat;
+  height: 14px;
+  padding: 10px;
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 14px;
+}
+
+#window-close-button {
+  background-image: url('../images/ui/close-white.png');
+}
+
+#window-close-button:hover {
+  background-image: url('../images/ui/close-white-hover.png');
+}
+
+#bar {
+  -webkit-transition: left 130ms ease-in-out;
+  background-color: #eee;
+  height: 4px;
+  position: absolute;
+  top: 0;
 }
 
 .dialog-main {
@@ -66,32 +121,64 @@ body {
   display: -webkit-box;
 }
 
-#category-container,
-#custom-container {
+#category-container {
   -webkit-box-flex: 1;
   -webkit-box-orient: vertical;
   display: -webkit-box;
+  position: relative;
 }
 
-#custom-container {
-  margin: 10px;
-  padding: 10px;
+#spinner-container {
+  -webkit-box-align: center;
+  -webkit-box-pack: center;
+  display: -webkit-box;
+  height: 287px;
+  padding-bottom: 15px;
+  padding-top: 5px;
+  position: absolute;
+  top: 0;
+  width: 100%;
 }
 
-#custom-container > div {
-  margin: 10px 0 5px 0;
+@-webkit-keyframes spin {
+  from {
+    -webkit-transform: rotate(0);
+  }
+  to {
+    -webkit-transform: rotate(360deg);
+  }
+}
+
+#spinner-container #spinner {
+  -webkit-animation-duration: 1s;
+  -webkit-animation-iteration-count: infinite;
+  -webkit-animation-name: spin;
+  -webkit-animation-timing-function: linear;
+  background-image: url('../images/ui/spinner.png');
+  background-position: center;
+  background-repeat: no-repeat;
+  height: 16px;
+  width: 16px;
 }
 
 .image-picker {
-  -webkit-box-flex: 1;
-  display: -webkit-box;
+  -webkit-padding-end: 5px;
+  -webkit-padding-start: 15px;
+  display: block;
   /* Set font size to 0 to remove the extra vertical margin between two rows of
    * thumbnails.
    * TODO(bshe): Find the root cause of the margin.
    */
   font-size: 0;
+  height: 287px;
   outline: none;
   overflow-y: auto;
+  padding-bottom: 15px;
+  padding-top: 5px;
+}
+
+.image-picker .spacer {
+  display: block;
 }
 
 .image-picker > * {
@@ -102,9 +189,38 @@ body {
 }
 
 .image-picker [role=listitem] {
+  -webkit-margin-end: 1px;
   height: 68px;
-  margin: 1px;
+  margin-bottom: 1px;
+  position: relative;
   width: 108px;
+}
+
+.image-picker:not([disabled]) [role=listitem]:hover {
+  outline: 3px solid #f1f1f1;
+  z-index: 1;
+}
+
+.image-picker .check {
+  background-image: url('../images/ui/check.png');
+  height: 32px;
+  left: 38px;
+  position: absolute;
+  top: 18px;
+  width: 32px;
+  z-index: 2;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #aaa;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #888;
 }
 
 /* The width and height of img tag need to be set here. Otherwise, an incorrect
@@ -117,12 +233,12 @@ body {
   width: 108px;
 }
 
-.image-picker [selected][lead] img {
-  border: 2px solid rgb(0, 102, 204);
-  height: 64px;
-  width: 104px;
+.image-picker[disabled]~.bottom-bar #online-wallpaper-attribute,
+.image-picker[disabled] .check {
+  visibility: hidden;
 }
 
+.image-picker[disabled],
 .image-picker-offline img:not([offline]) {
   -webkit-filter: grayscale(1);
 }
@@ -137,128 +253,132 @@ body {
   -webkit-box-orient: horizontal;
   -webkit-box-pack: end;
   display: -webkit-box;
-  height: 30px;
-  padding: 15px;
+  height: 40px;
+  padding: 11px 15px 8px 15px;
 }
 
 .bottom-bar > .spacer {
   -webkit-box-flex: 1;
 }
 
-/* Custom wallpaper thumbnail container. */
-#preview {
-  -webkit-box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-  height: 80px;
-  width: 128px;
+#online-wallpaper-attribute {
+  display: -webkit-box;
+}
+
+#attribute-image {
+  -webkit-margin-end: 10px;
+  height: 34px;
+  width: 54px;
+}
+
+#author-website {
+  color: #999;
+  overflow: hidden;
+  white-space: nowrap;
+  width: 240px;
 }
 
 /* [hidden] does display:none, but its priority is too low. */
-[hidden] {
+[hidden],
+body[custom] [visibleif]:not([visibleif~='custom']),
+body:not([custom]) [visibleif~='custom'] {
   display: none !important;
 }
 
-/* The butter bar styles are copied from file_manager.css. We will revisit
- * it to see if we can share some code after butter bar is integrated with
- * Photo Editor.
- * See http://codereview.chromium.org/10916149/ for details.
- */
-/* TODO(bshe): Remove these styles if we can share code with file manager. */
-#butter-bar-container {
-  -webkit-box-pack: center;
-  display: -webkit-box;
-  left: 0;
-  pointer-events: none;
-  position: absolute;
-  top: 0;
-  width: 100%;
-  z-index: 3;
-}
-
-#butter-bar {
-  -webkit-box-align: end;
-  -webkit-box-orient: horizontal;
-  -webkit-transition: opacity 300ms;
-  background-color: #e3e3e3;
-  color: #222;
-  display: -webkit-box;
-  max-width: 340px;
-  min-width: 40px;
-  padding: 0 1em;
-  pointer-events: auto;
-  top: 1px;
-  width: 30%;
-  z-index: 2;
-}
-
-#butter-bar:not(.visible) {
-  opacity: 0;
-  pointer-events: none;
-}
-
-#butter-bar .content {
-  -webkit-box-flex: 1;
-  overflow: hidden;
-  padding-bottom: 4px;
-  padding-top: 4px;
-}
-
-#butter-bar .actions {
-  -webkit-box-orient: horizontal;
-  -webkit-box-pack: end;
-  display: -webkit-box;
-  height: 20px;
-}
-
-#butter-bar .actions a {
-  background: center center no-repeat;
-  background-image: -webkit-image-set(
-    url('../images/ui/close_bar.png') 1x,
-    url('../images/ui/2x/close_bar.png') 2x);
-  display: inline-block;
-  height: 12px;
-  padding: 4px 2px;
-  width: 12px;
-}
-
-#butter-bar .actions a:first-child {
-  margin-left: 2px;
-}
-
-#butter-bar .actions a:last-child {
-  margin-right: -2px;  /* Overlap the padding with butter-bar padding. */
-}
-
-#butter-bar.error {
-  background-color: rgb(236, 207, 203);
-  border: 1px solid rgba(221, 75, 57, 0.5);
-  border-radius: 2px;
-  padding: 2px 1em;
-}
-
 .progress-bar {
-  -webkit-box-flex: 1;
-  border: 1px solid #999;
-  margin-bottom: 2px;
-  margin-top: 3px;
-  padding: 1px;
+  background-color: rgba(255, 255, 255, 0.7);
+  height: 6px;
+  position: absolute;
+  top: 62px;
+  width: 100%;
 }
 
 .progress-track {
-  -webkit-animation-duration: 800ms;
-  -webkit-animation-iteration-count: infinite;
-  -webkit-animation-name: bg;
-  -webkit-animation-timing-function: linear;
-  background-color: #ccc;
-  background-image: -webkit-linear-gradient(315deg, transparent,
-      transparent 33%, rgba(0, 0, 0, 0.12) 33%, rgba(0, 0, 0, 0.12) 66%,
-      transparent 66%, transparent);
-  background-position: 0 0;
-  background-repeat: repeat-x;
-  background-size: 16px 8px;
-  height: 5px;
+  -webkit-transition: width 1ms linear;
+  background-color: rgb(66, 129, 244);
+  height: 100%;
+  width: 0;
 }
 
-@-webkit-keyframes bg {
-  0% { background-position: 0 0; }
-  100% { background-position: -16px 0; }
+.overlay-container {
+  -webkit-box-align: center;
+  -webkit-box-orient: vertical;
+  -webkit-box-pack: center;
+  background-color: rgba(25, 25, 25, 0.25);
+  bottom: 0;
+  display: -webkit-box;
+  left: 0;
+  overflow: auto;
+  position: fixed;
+  right: 0;
+  top: 0;
+  z-index: 4;
+}
+
+.overlay-container .page {
+  -webkit-border-radius: 3px;
+  -webkit-box-orient: vertical;
+  background: rgb(255, 255, 255);
+  box-shadow: 0 4px 23px 5px rgba(0, 0, 0, 0.2), 0 2px 6px rgba(0, 0, 0, 0.15);
+  color: #333;
+  display: -webkit-box;
+  padding: 20px;
+  position: relative;
+  width: 302px;
+}
+
+#error-container {
+  z-index: 5;
+}
+
+.overlay-container .close {
+  background-image: url('../images/ui/close-overlay.png');
+}
+
+.overlay-container .close:hover {
+  background-image: url('../images/ui/close-overlay-hover.png');
+}
+
+/* Custom wallpaper thumbnail container. */
+#add-new img {
+  content: url('../images/ui/add-wallpaper-thumbnail.png');
+}
+
+.image-picker:not([disabled]) #add-new:hover img {
+  content: url('../images/ui/add-wallpaper-thumbnail-hover.png');
+}
+
+#wallpaper-selection-container #content div {
+  margin: 20px 0 5px 0;
+}
+
+#wallpaper-selection-container #warning span {
+  line-height: 17px;
+}
+
+#wallpaper-selection-container select {
+  height: 30px;
+}
+
+#wallpaper-selection-container input[type='file']::-webkit-file-upload-button {
+  height: 30px;
+}
+
+#wallpaper-selection-container .remember-icon {
+  content: url('../images/ui/remember.png');
+}
+
+#surprise-me #checkbox {
+  background-image: url('../images/ui/checkbox_unchecked.png');
+  display: inline-block;
+  height: 17px;
+  margin-right: 4px;
+  opacity: 0.7;
+  position: relative;
+  top: 4px;
+  width: 17px;
+}
+
+#surprise-me #checkbox.checked {
+  background-image: url('../images/ui/checkbox_checked.png');
 }

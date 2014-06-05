@@ -19,9 +19,9 @@
 #include <string>
 #include <vector>
 
-#include "base/time.h"
-#include "googleurl/src/gurl.h"
+#include "base/time/time.h"
 #include "net/base/host_port_pair.h"
+#include "url/gurl.h"
 
 namespace chrome_browser_net {
 

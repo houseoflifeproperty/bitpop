@@ -4,14 +4,14 @@
  * found in the LICENSE file.
  */
 
-#include "native_client/src/trusted/plugin/srpc_client.h"
+#include "ppapi/native_client/src/trusted/plugin/srpc_client.h"
 
 #include <string.h>
 
 #include "native_client/src/shared/platform/nacl_log.h"
-#include "native_client/src/trusted/plugin/plugin.h"
-#include "native_client/src/trusted/plugin/srpc_params.h"
-#include "native_client/src/trusted/plugin/utility.h"
+#include "ppapi/native_client/src/trusted/plugin/plugin.h"
+#include "ppapi/native_client/src/trusted/plugin/srpc_params.h"
+#include "ppapi/native_client/src/trusted/plugin/utility.h"
 
 namespace plugin {
 
@@ -102,12 +102,6 @@ SrpcClient::~SrpcClient() {
     delete iter->second;
   }
   PLUGIN_PRINTF(("SrpcClient::~SrpcClient (return)\n"));
-}
-
-bool SrpcClient::StartJSObjectProxy(Plugin* plugin, ErrorInfo *error_info) {
-  // Start up PPAPI interaction if the plugin determines that the
-  // requisite methods are exported.
-  return plugin->StartProxiedExecution(&srpc_channel_, error_info);
 }
 
 void SrpcClient::GetMethods() {

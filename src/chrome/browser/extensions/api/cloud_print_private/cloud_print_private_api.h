@@ -8,9 +8,18 @@
 #include <string>
 #include <vector>
 
-#include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
 
 namespace extensions {
+
+namespace api {
+namespace cloud_print_private {
+
+struct UserSettings;
+
+}  // namespace cloud_print_private
+}  // namespace api
+
 
 // For use only in tests.
 class CloudPrintTestsDelegate {
@@ -22,10 +31,11 @@ class CloudPrintTestsDelegate {
       const std::string& user_email,
       const std::string& robot_email,
       const std::string& credentials,
-      bool connect_new_printers,
-      const std::vector<std::string>& printer_blacklist) = 0;
+      const api::cloud_print_private::UserSettings& user_settings) = 0;
 
   virtual std::string GetHostName() = 0;
+
+  virtual std::string GetClientId() = 0;
 
   virtual std::vector<std::string> GetPrinters() = 0;
 
@@ -36,46 +46,67 @@ class CloudPrintTestsDelegate {
   static CloudPrintTestsDelegate* instance_;
 };
 
-class CloudPrintSetupConnectorFunction : public AsyncExtensionFunction {
+class CloudPrintPrivateSetupConnectorFunction
+    : public ChromeAsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("cloudPrintPrivate.setupConnector");
+  DECLARE_EXTENSION_FUNCTION("cloudPrintPrivate.setupConnector",
+                             CLOUDPRINTPRIVATE_SETUPCONNECTOR)
 
-  CloudPrintSetupConnectorFunction();
+  CloudPrintPrivateSetupConnectorFunction();
 
  protected:
-  virtual ~CloudPrintSetupConnectorFunction();
+  virtual ~CloudPrintPrivateSetupConnectorFunction();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 };
 
-class CloudPrintGetHostNameFunction : public AsyncExtensionFunction {
+class CloudPrintPrivateGetHostNameFunction
+    : public ChromeAsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("cloudPrintPrivate.getHostName");
+  DECLARE_EXTENSION_FUNCTION("cloudPrintPrivate.getHostName",
+                             CLOUDPRINTPRIVATE_GETHOSTNAME)
 
-  CloudPrintGetHostNameFunction();
+  CloudPrintPrivateGetHostNameFunction();
 
  protected:
-  virtual ~CloudPrintGetHostNameFunction();
+  virtual ~CloudPrintPrivateGetHostNameFunction();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 };
 
-class CloudPrintGetPrintersFunction : public AsyncExtensionFunction {
+class CloudPrintPrivateGetPrintersFunction
+    : public ChromeAsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("cloudPrintPrivate.getPrinters");
+  DECLARE_EXTENSION_FUNCTION("cloudPrintPrivate.getPrinters",
+                             CLOUDPRINTPRIVATE_GETPRINTERS)
 
-  CloudPrintGetPrintersFunction();
+  CloudPrintPrivateGetPrintersFunction();
 
  protected:
-  virtual ~CloudPrintGetPrintersFunction();
+  virtual ~CloudPrintPrivateGetPrintersFunction();
 
-  void CollectPrinters();
-  void ReturnResult(const base::ListValue* printers);
+ private:
+  void SendResults(const std::vector<std::string>& printers);
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
+};
+
+class CloudPrintPrivateGetClientIdFunction
+    : public ChromeAsyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("cloudPrintPrivate.getClientId",
+                             CLOUDPRINTPRIVATE_GETCLIENTID);
+
+  CloudPrintPrivateGetClientIdFunction();
+
+ protected:
+  virtual ~CloudPrintPrivateGetClientIdFunction();
+
+  // ExtensionFunction:
+  virtual bool RunAsync() OVERRIDE;
 };
 
 }  // namespace extensions

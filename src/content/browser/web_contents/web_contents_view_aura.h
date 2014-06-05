@@ -10,12 +10,12 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/browser/renderer_host/overscroll_controller_delegate.h"
+#include "content/browser/renderer_host/render_view_host_delegate_view.h"
+#include "content/browser/web_contents/web_contents_view.h"
 #include "content/common/content_export.h"
-#include "content/port/browser/render_view_host_delegate_view.h"
-#include "content/public/browser/web_contents_view.h"
-#include "ui/aura/client/drag_drop_delegate.h"
 #include "ui/aura/window_delegate.h"
 #include "ui/compositor/layer_animation_observer.h"
+#include "ui/wm/public/drag_drop_delegate.h"
 
 namespace aura {
 class Window;
@@ -26,20 +26,30 @@ class DropTargetEvent;
 }
 
 namespace content {
+class GestureNavSimple;
+class OverscrollNavigationOverlay;
+class RenderWidgetHostImpl;
+class ShadowLayerDelegate;
+class TouchEditableImplAura;
 class WebContentsViewDelegate;
 class WebContentsImpl;
 class WebDragDestDelegate;
 
-class CONTENT_EXPORT WebContentsViewAura
+class WebContentsViewAura
     : public WebContentsView,
       public RenderViewHostDelegateView,
-      NON_EXPORTED_BASE(public OverscrollControllerDelegate),
+      public OverscrollControllerDelegate,
       public ui::ImplicitAnimationObserver,
       public aura::WindowDelegate,
       public aura::client::DragDropDelegate {
  public:
   WebContentsViewAura(WebContentsImpl* web_contents,
                       WebContentsViewDelegate* delegate);
+
+  CONTENT_EXPORT void SetupOverlayWindowForTesting();
+
+  CONTENT_EXPORT void SetTouchEditableForTest(
+      TouchEditableImplAura* touch_editable);
 
  private:
   class WindowObserver;
@@ -48,7 +58,9 @@ class CONTENT_EXPORT WebContentsViewAura
 
   void SizeChangedCommon(const gfx::Size& size);
 
-  void EndDrag(WebKit::WebDragOperationsMask ops);
+  void EndDrag(blink::WebDragOperationsMask ops);
+
+  void InstallOverscrollControllerDelegate(RenderWidgetHostImpl* host);
 
   // Creates and sets up the overlay window that will be displayed during the
   // overscroll gesture.
@@ -77,50 +89,55 @@ class CONTENT_EXPORT WebContentsViewAura
   // the overscroll gesture.
   gfx::Vector2d GetTranslationForOverscroll(int delta_x, int delta_y);
 
+  // A window showing the screenshot is overlayed during a navigation triggered
+  // by overscroll. This function sets this up.
+  void PrepareOverscrollNavigationOverlay();
+
+  // Changes the brightness of the layer depending on the amount of horizontal
+  // overscroll (|delta_x|, in pixels).
+  void UpdateOverscrollWindowBrightness(float delta_x);
+
+  void AttachTouchEditableToRenderView();
+
+  void OverscrollUpdateForWebContentsDelegate(int delta_y);
+
   // Overridden from WebContentsView:
-  virtual void CreateView(
-      const gfx::Size& initial_size, gfx::NativeView context) OVERRIDE;
-  virtual RenderWidgetHostView* CreateViewForWidget(
-      RenderWidgetHost* render_widget_host) OVERRIDE;
   virtual gfx::NativeView GetNativeView() const OVERRIDE;
   virtual gfx::NativeView GetContentNativeView() const OVERRIDE;
   virtual gfx::NativeWindow GetTopLevelNativeWindow() const OVERRIDE;
   virtual void GetContainerBounds(gfx::Rect *out) const OVERRIDE;
-  virtual void SetPageTitle(const string16& title) OVERRIDE;
-  virtual void OnTabCrashed(base::TerminationStatus status,
-                            int error_code) OVERRIDE;
   virtual void SizeContents(const gfx::Size& size) OVERRIDE;
-  virtual void RenderViewCreated(RenderViewHost* host) OVERRIDE;
   virtual void Focus() OVERRIDE;
   virtual void SetInitialFocus() OVERRIDE;
   virtual void StoreFocus() OVERRIDE;
   virtual void RestoreFocus() OVERRIDE;
-  virtual WebDropData* GetDropData() const OVERRIDE;
-  virtual bool IsEventTracking() const OVERRIDE;
-  virtual void CloseTabAfterEventTracking() OVERRIDE;
+  virtual DropData* GetDropData() const OVERRIDE;
   virtual gfx::Rect GetViewBounds() const OVERRIDE;
+  virtual void CreateView(
+      const gfx::Size& initial_size, gfx::NativeView context) OVERRIDE;
+  virtual RenderWidgetHostViewBase* CreateViewForWidget(
+      RenderWidgetHost* render_widget_host) OVERRIDE;
+  virtual RenderWidgetHostViewBase* CreateViewForPopupWidget(
+      RenderWidgetHost* render_widget_host) OVERRIDE;
+  virtual void SetPageTitle(const base::string16& title) OVERRIDE;
+  virtual void RenderViewCreated(RenderViewHost* host) OVERRIDE;
+  virtual void RenderViewSwappedIn(RenderViewHost* host) OVERRIDE;
+  virtual void SetOverscrollControllerEnabled(bool enabled) OVERRIDE;
 
   // Overridden from RenderViewHostDelegateView:
-  virtual void ShowContextMenu(
-      const ContextMenuParams& params,
-      ContextMenuSourceType type) OVERRIDE;
-  virtual void ShowPopupMenu(const gfx::Rect& bounds,
-                             int item_height,
-                             double item_font_size,
-                             int selected_item,
-                             const std::vector<WebMenuItem>& items,
-                             bool right_aligned,
-                             bool allow_multiple_selection) OVERRIDE;
-  virtual void StartDragging(const WebDropData& drop_data,
-                             WebKit::WebDragOperationsMask operations,
+  virtual void ShowContextMenu(RenderFrameHost* render_frame_host,
+                               const ContextMenuParams& params) OVERRIDE;
+  virtual void StartDragging(const DropData& drop_data,
+                             blink::WebDragOperationsMask operations,
                              const gfx::ImageSkia& image,
                              const gfx::Vector2d& image_offset,
                              const DragEventSourceInfo& event_info) OVERRIDE;
-  virtual void UpdateDragCursor(WebKit::WebDragOperation operation) OVERRIDE;
+  virtual void UpdateDragCursor(blink::WebDragOperation operation) OVERRIDE;
   virtual void GotFocus() OVERRIDE;
   virtual void TakeFocus(bool reverse) OVERRIDE;
 
   // Overridden from OverscrollControllerDelegate:
+  virtual gfx::Rect GetVisibleBounds() const OVERRIDE;
   virtual void OnOverscrollUpdate(float delta_x, float delta_y) OVERRIDE;
   virtual void OnOverscrollComplete(OverscrollMode overscroll_mode) OVERRIDE;
   virtual void OnOverscrollModeChange(OverscrollMode old_mode,
@@ -143,12 +160,11 @@ class CONTENT_EXPORT WebContentsViewAura
   virtual void OnCaptureLost() OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
-  virtual void OnWindowDestroying() OVERRIDE;
-  virtual void OnWindowDestroyed() OVERRIDE;
+  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
+  virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE;
   virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE;
   virtual bool HasHitTestMask() const OVERRIDE;
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE;
-  virtual scoped_refptr<ui::Texture> CopyTexture() OVERRIDE;
 
   // Overridden from ui::EventHandler:
   virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
@@ -161,6 +177,9 @@ class CONTENT_EXPORT WebContentsViewAura
   virtual int OnPerformDrop(const ui::DropTargetEvent& event) OVERRIDE;
 
   scoped_ptr<aura::Window> window_;
+
+  // The window that shows the screenshot of the history page during an
+  // overscroll navigation gesture.
   scoped_ptr<aura::Window> overscroll_window_;
 
   scoped_ptr<WindowObserver> window_observer_;
@@ -170,9 +189,9 @@ class CONTENT_EXPORT WebContentsViewAura
 
   scoped_ptr<WebContentsViewDelegate> delegate_;
 
-  WebKit::WebDragOperationsMask current_drag_op_;
+  blink::WebDragOperationsMask current_drag_op_;
 
-  scoped_ptr<WebDropData> current_drop_data_;
+  scoped_ptr<DropData> current_drop_data_;
 
   WebDragDestDelegate* drag_dest_delegate_;
 
@@ -182,12 +201,23 @@ class CONTENT_EXPORT WebContentsViewAura
   // pointers.
   void* current_rvh_for_drag_;
 
+  bool overscroll_change_brightness_;
+
   // The overscroll gesture currently in progress.
   OverscrollMode current_overscroll_gesture_;
 
   // This is the completed overscroll gesture. This is used for the animation
   // callback that happens in response to a completed overscroll gesture.
   OverscrollMode completed_overscroll_gesture_;
+
+  // This manages the overlay window that shows the screenshot during a history
+  // navigation triggered by the overscroll gesture.
+  scoped_ptr<OverscrollNavigationOverlay> navigation_overlay_;
+
+  scoped_ptr<ShadowLayerDelegate> overscroll_shadow_;
+
+  scoped_ptr<TouchEditableImplAura> touch_editable_;
+  scoped_ptr<GestureNavSimple> gesture_nav_simple_;
 
   DISALLOW_COPY_AND_ASSIGN(WebContentsViewAura);
 };

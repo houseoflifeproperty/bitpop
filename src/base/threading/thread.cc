@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/lazy_instance.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
+#include "base/threading/thread_id_name_manager.h"
 #include "base/threading/thread_local.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/synchronization/waitable_event.h"
@@ -21,8 +22,8 @@ namespace {
 
 // We use this thread-local variable to record whether or not a thread exited
 // because its Stop method was called.  This allows us to catch cases where
-// MessageLoop::Quit() is called directly, which is unexpected when using a
-// Thread to setup and run a MessageLoop.
+// MessageLoop::QuitWhenIdle() is called directly, which is unexpected when
+// using a Thread to setup and run a MessageLoop.
 base::LazyInstance<base::ThreadLocalBoolean> lazy_tls_bool =
     LAZY_INSTANCE_INITIALIZER;
 
@@ -30,7 +31,7 @@ base::LazyInstance<base::ThreadLocalBoolean> lazy_tls_bool =
 
 // This is used to trigger the message loop to exit.
 void ThreadQuitHelper() {
-  MessageLoop::current()->Quit();
+  MessageLoop::current()->QuitWhenIdle();
   Thread::SetThreadWasQuitProperly(true);
 }
 
@@ -48,7 +49,21 @@ struct Thread::StartupData {
         event(false, false) {}
 };
 
-Thread::Thread(const char* name)
+Thread::Options::Options()
+    : message_loop_type(MessageLoop::TYPE_DEFAULT),
+      stack_size(0) {
+}
+
+Thread::Options::Options(MessageLoop::Type type,
+                         size_t size)
+    : message_loop_type(type),
+      stack_size(size) {
+}
+
+Thread::Options::~Options() {
+}
+
+Thread::Thread(const std::string& name)
     :
 #if defined(OS_WIN)
       com_status_(NONE),
@@ -146,6 +161,13 @@ bool Thread::IsRunning() const {
   return running_;
 }
 
+void Thread::SetPriority(ThreadPriority priority) {
+  // The thread must be started (and id known) for this to be
+  // compatible with all platforms.
+  DCHECK_NE(thread_id_, kInvalidThreadId);
+  PlatformThread::SetThreadPriority(thread_, priority);
+}
+
 void Thread::Run(MessageLoop* message_loop) {
   message_loop->Run();
 }
@@ -165,14 +187,22 @@ bool Thread::GetThreadWasQuitProperly() {
 void Thread::ThreadMain() {
   {
     // The message loop for this thread.
-    MessageLoop message_loop(startup_data_->options.message_loop_type);
+    // Allocated on the heap to centralize any leak reports at this line.
+    scoped_ptr<MessageLoop> message_loop;
+    if (!startup_data_->options.message_pump_factory.is_null()) {
+      message_loop.reset(
+          new MessageLoop(startup_data_->options.message_pump_factory.Run()));
+    } else {
+      message_loop.reset(
+          new MessageLoop(startup_data_->options.message_loop_type));
+    }
 
     // Complete the initialization of our Thread object.
     thread_id_ = PlatformThread::CurrentId();
     PlatformThread::SetName(name_.c_str());
     ANNOTATE_THREAD_NAME(name_.c_str());  // Tell the name to race detector.
-    message_loop.set_thread_name(name_);
-    message_loop_ = &message_loop;
+    message_loop->set_thread_name(name_);
+    message_loop_ = message_loop.get();
 
 #if defined(OS_WIN)
     scoped_ptr<win::ScopedCOMInitializer> com_initializer;

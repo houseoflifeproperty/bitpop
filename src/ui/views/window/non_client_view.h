@@ -26,18 +26,28 @@ class VIEWS_EXPORT NonClientFrameView : public View {
  public:
   // Internal class name.
   static const char kViewClassName[];
-  // Various edges of the frame border have a 1 px shadow along their edges; in
-  // a few cases we shift elements based on this amount for visual appeal.
-  static const int kFrameShadowThickness;
-  // In restored mode, we draw a 1 px edge around the content area inside the
-  // frame border.
-  static const int kClientEdgeThickness;
+
+  enum {
+    // Various edges of the frame border have a 1 px shadow along their edges;
+    // in a few cases we shift elements based on this amount for visual appeal.
+    kFrameShadowThickness = 1,
+
+    // In restored mode, we draw a 1 px edge around the content area inside the
+    // frame border.
+    kClientEdgeThickness = 1,
+  };
+
+  virtual ~NonClientFrameView();
 
   // Sets whether the window should be rendered as active regardless of the
   // actual active state. Used when bubbles become active to make their parent
   // appear active. A value of true makes the window render as active always,
   // false gives normal behavior.
   void SetInactiveRenderingDisabled(bool disable);
+
+  // Used to determine if the frame should be painted as active. Keyed off the
+  // window's actual active state and |inactive_rendering_disabled_|.
+  bool ShouldPaintAsActive() const;
 
   // Helper for non-client view implementations to determine which area of the
   // window border the specified |point| falls within. The other parameters are
@@ -70,28 +80,18 @@ class VIEWS_EXPORT NonClientFrameView : public View {
 
   // Overridden from View:
   virtual bool HitTestRect(const gfx::Rect& rect) const OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
-  virtual std::string GetClassName() const OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
+  virtual const char* GetClassName() const OVERRIDE;
 
  protected:
   virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE;
 
-  NonClientFrameView() : paint_as_active_(false) {}
-
-  // Used to determine if the frame should be painted as active. Keyed off the
-  // window's actual active state and the override, see
-  // SetInactiveRenderingDisabled() above.
-  bool ShouldPaintAsActive() const;
-
-  // Invoked from SetInactiveRenderingDisabled(). This implementation invokes
-  // SchedulesPaint as necessary.
-  virtual void ShouldPaintAsActiveChanged();
+  NonClientFrameView();
 
  private:
-  // True when the non-client view should always be rendered as if the window
-  // were active, regardless of whether or not the top level window actually
-  // is active.
-  bool paint_as_active_;
+  // Prevents the non-client frame view from being rendered as inactive when
+  // true.
+  bool inactive_rendering_disabled_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -107,7 +107,7 @@ class VIEWS_EXPORT NonClientFrameView : public View {
 //  +- views::Widget ------------------------------------+
 //  | +- views::RootView ------------------------------+ |
 //  | | +- views::NonClientView ---------------------+ | |
-//  | | | +- views::NonClientFrameView subclas  ---+ | | |
+//  | | | +- views::NonClientFrameView subclass ---+ | | |
 //  | | | |                                        | | | |
 //  | | | | << all painting and event receiving >> | | | |
 //  | | | | << of the non-client areas of a     >> | | | |
@@ -145,6 +145,9 @@ class VIEWS_EXPORT NonClientView : public View {
   // Replaces the current NonClientFrameView (if any) with the specified one.
   void SetFrameView(NonClientFrameView* frame_view);
 
+  // Replaces the current |overlay_view_| (if any) with the specified one.
+  void SetOverlayView(View* view);
+
   // Returns true if the ClientView determines that the containing window can be
   // closed, false otherwise.
   bool CanClose();
@@ -153,15 +156,12 @@ class VIEWS_EXPORT NonClientView : public View {
   void WindowClosing();
 
   // Replaces the frame view with a new one. Used when switching window theme
-  // or frame style. Pass true for |layout| to refresh the window layout (the
-  // common case) or false if you will trigger layout yourself.
-  void UpdateFrame(bool layout);
+  // or frame style.
+  void UpdateFrame();
 
   // Prevents the window from being rendered as deactivated when |disable| is
   // true, until called with |disable| false. Used when a sub-window is to be
   // shown that shouldn't visually de-activate the window.
-  // Subclasses can override this to perform additional actions when this value
-  // changes.
   void SetInactiveRenderingDisabled(bool disable);
 
   // Returns the bounds of the window required to display the content area at
@@ -202,23 +202,24 @@ class VIEWS_EXPORT NonClientView : public View {
   void LayoutFrameView();
 
   // Set the accessible name of this view.
-  void SetAccessibleName(const string16& name);
+  void SetAccessibleName(const base::string16& name);
 
   // NonClientView, View overrides:
   virtual gfx::Size GetPreferredSize() OVERRIDE;
   virtual gfx::Size GetMinimumSize() OVERRIDE;
   virtual gfx::Size GetMaximumSize() OVERRIDE;
   virtual void Layout() OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
-  virtual std::string GetClassName() const OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
+  virtual const char* GetClassName() const OVERRIDE;
 
-  virtual views::View* GetEventHandlerForPoint(const gfx::Point& point)
-      OVERRIDE;
+  virtual views::View* GetEventHandlerForRect(const gfx::Rect& rect) OVERRIDE;
+  virtual views::View* GetTooltipHandlerForPoint(
+      const gfx::Point& point) OVERRIDE;
 
  protected:
   // NonClientView, View overrides:
-  virtual void ViewHierarchyChanged(bool is_add, View* parent, View* child)
-      OVERRIDE;
+  virtual void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) OVERRIDE;
 
  private:
   // A ClientView object or subclass, responsible for sizing the contents view
@@ -231,8 +232,12 @@ class VIEWS_EXPORT NonClientView : public View {
   // dynamically as the system settings change.
   scoped_ptr<NonClientFrameView> frame_view_;
 
+  // The overlay view, when non-NULL and visible, takes up the entire widget and
+  // is placed on top of the ClientView and NonClientFrameView.
+  View* overlay_view_;
+
   // The accessible name of this view.
-  string16 accessible_name_;
+  base::string16 accessible_name_;
 
   DISALLOW_COPY_AND_ASSIGN(NonClientView);
 };

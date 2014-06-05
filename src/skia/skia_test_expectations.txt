@@ -48,7 +48,4 @@
 #
 # START OVERRIDES HERE
 
-crbug.com/165935 fast/forms/button-generated-content.html [ ImageOnlyFailure ]
-crbug.com/165935 fast/forms/button-inner-block-reuse.html [ ImageOnlyFailure ]
-
 # END OVERRIDES HERE (this line ensures that the file is newline-terminated)

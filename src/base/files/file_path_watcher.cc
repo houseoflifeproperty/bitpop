@@ -8,37 +8,9 @@
 #include "base/files/file_path_watcher.h"
 
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 
 namespace base {
-namespace files {
-
-namespace {
-
-// A delegate implementation for the callback interface.
-class FilePathWatcherDelegate : public base::files::FilePathWatcher::Delegate {
- public:
-  explicit FilePathWatcherDelegate(const FilePathWatcher::Callback& callback)
-      : callback_(callback) {}
-
-  // FilePathWatcher::Delegate implementation.
-  virtual void OnFilePathChanged(const FilePath& path) OVERRIDE {
-    callback_.Run(path, false);
-  }
-
-  virtual void OnFilePathError(const FilePath& path) OVERRIDE {
-    callback_.Run(path, true);
-  }
-
- private:
-  virtual ~FilePathWatcherDelegate() {}
-
-  FilePathWatcher::Callback callback_;
-
-  DISALLOW_COPY_AND_ASSIGN(FilePathWatcherDelegate);
-};
-
-}  // namespace
 
 FilePathWatcher::~FilePathWatcher() {
   impl_->Cancel();
@@ -48,11 +20,6 @@ FilePathWatcher::~FilePathWatcher() {
 void FilePathWatcher::CancelWatch(
     const scoped_refptr<PlatformDelegate>& delegate) {
   delegate->CancelOnMessageLoopThread();
-}
-
-bool FilePathWatcher::Watch(const FilePath& path, Delegate* delegate) {
-  DCHECK(path.IsAbsolute());
-  return impl_->Watch(path, false, delegate);
 }
 
 FilePathWatcher::PlatformDelegate::PlatformDelegate(): cancelled_(false) {
@@ -66,8 +33,7 @@ bool FilePathWatcher::Watch(const FilePath& path,
                             bool recursive,
                             const Callback& callback) {
   DCHECK(path.IsAbsolute());
-  return impl_->Watch(path, recursive, new FilePathWatcherDelegate(callback));
+  return impl_->Watch(path, recursive, callback);
 }
 
-}  // namespace files
 }  // namespace base

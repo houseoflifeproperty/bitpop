@@ -6,17 +6,36 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/singleton.h"
+#include "ipc/ipc_message.h"
 #include "ppapi/c/dev/ppp_class_deprecated.h"
 #include "ppapi/c/ppb_var.h"
+#include "ppapi/proxy/file_system_resource.h"
+#include "ppapi/proxy/media_stream_audio_track_resource.h"
+#include "ppapi/proxy/media_stream_video_track_resource.h"
 #include "ppapi/proxy/plugin_array_buffer_var.h"
 #include "ppapi/proxy/plugin_dispatcher.h"
+#include "ppapi/proxy/plugin_globals.h"
+#include "ppapi/proxy/plugin_resource_var.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/proxy/proxy_object_var.h"
 #include "ppapi/shared_impl/api_id.h"
+#include "ppapi/shared_impl/ppapi_globals.h"
+#include "ppapi/shared_impl/proxy_lock.h"
+#include "ppapi/shared_impl/resource_tracker.h"
 #include "ppapi/shared_impl/var.h"
 
 namespace ppapi {
 namespace proxy {
+
+namespace {
+
+Connection GetConnectionForInstance(PP_Instance instance) {
+  PluginDispatcher* dispatcher = PluginDispatcher::GetForInstance(instance);
+  DCHECK(dispatcher);
+  return Connection(PluginGlobals::Get()->GetBrowserSender(), dispatcher);
+}
+
+}  // namespace
 
 PluginVarTracker::HostVar::HostVar(PluginDispatcher* d, int32 i)
     : dispatcher(d),
@@ -31,7 +50,7 @@ bool PluginVarTracker::HostVar::operator<(const HostVar& other) const {
   return host_object_id < other.host_object_id;
 }
 
-PluginVarTracker::PluginVarTracker() {
+PluginVarTracker::PluginVarTracker() : VarTracker(THREAD_SAFE) {
 }
 
 PluginVarTracker::~PluginVarTracker() {
@@ -39,7 +58,7 @@ PluginVarTracker::~PluginVarTracker() {
 
 PP_Var PluginVarTracker::ReceiveObjectPassRef(const PP_Var& host_var,
                                               PluginDispatcher* dispatcher) {
-  DCHECK(CalledOnValidThread());
+  CheckThreadingPreconditions();
   DCHECK(host_var.type == PP_VARTYPE_OBJECT);
 
   // Get the object.
@@ -56,7 +75,7 @@ PP_Var PluginVarTracker::ReceiveObjectPassRef(const PP_Var& host_var,
     // two references on our behalf. We want to transfer that extra reference
     // to our list. This means we addref in the plugin, and release the extra
     // one in the renderer.
-    SendReleaseObjectMsg(*object);
+    SendReleaseObjectMsg(*object.get());
   }
   info.ref_count++;
   return ret;
@@ -65,7 +84,7 @@ PP_Var PluginVarTracker::ReceiveObjectPassRef(const PP_Var& host_var,
 PP_Var PluginVarTracker::TrackObjectWithNoReference(
     const PP_Var& host_var,
     PluginDispatcher* dispatcher) {
-  DCHECK(CalledOnValidThread());
+  CheckThreadingPreconditions();
   DCHECK(host_var.type == PP_VARTYPE_OBJECT);
 
   // Get the object.
@@ -83,7 +102,7 @@ PP_Var PluginVarTracker::TrackObjectWithNoReference(
 
 void PluginVarTracker::StopTrackingObjectWithNoReference(
     const PP_Var& plugin_var) {
-  DCHECK(CalledOnValidThread());
+  CheckThreadingPreconditions();
   DCHECK(plugin_var.type == PP_VARTYPE_OBJECT);
 
   VarMap::iterator found = GetLiveVar(plugin_var);
@@ -98,8 +117,7 @@ void PluginVarTracker::StopTrackingObjectWithNoReference(
 }
 
 PP_Var PluginVarTracker::GetHostObject(const PP_Var& plugin_object) const {
-  DCHECK(CalledOnValidThread());
-
+  CheckThreadingPreconditions();
   if (plugin_object.type != PP_VARTYPE_OBJECT) {
     NOTREACHED();
     return PP_MakeUndefined();
@@ -120,8 +138,7 @@ PP_Var PluginVarTracker::GetHostObject(const PP_Var& plugin_object) const {
 
 PluginDispatcher* PluginVarTracker::DispatcherForPluginObject(
     const PP_Var& plugin_object) const {
-  DCHECK(CalledOnValidThread());
-
+  CheckThreadingPreconditions();
   if (plugin_object.type != PP_VARTYPE_OBJECT)
     return NULL;
 
@@ -137,7 +154,7 @@ PluginDispatcher* PluginVarTracker::DispatcherForPluginObject(
 
 void PluginVarTracker::ReleaseHostObject(PluginDispatcher* dispatcher,
                                          const PP_Var& host_object) {
-  DCHECK(CalledOnValidThread());
+  CheckThreadingPreconditions();
   DCHECK(host_object.type == PP_VARTYPE_OBJECT);
 
   // Convert the host object to a normal var valid in the plugin.
@@ -150,6 +167,90 @@ void PluginVarTracker::ReleaseHostObject(PluginDispatcher* dispatcher,
 
   // Now just release the object given the plugin var ID.
   ReleaseVar(found->second);
+}
+
+PP_Var PluginVarTracker::MakeResourcePPVarFromMessage(
+    PP_Instance instance,
+    const IPC::Message& creation_message,
+    int pending_renderer_id,
+    int pending_browser_id) {
+  switch (creation_message.type()) {
+    case PpapiPluginMsg_FileSystem_CreateFromPendingHost::ID: {
+      DCHECK(pending_renderer_id);
+      DCHECK(pending_browser_id);
+      PP_FileSystemType file_system_type;
+      if (!UnpackMessage<PpapiPluginMsg_FileSystem_CreateFromPendingHost>(
+               creation_message, &file_system_type)) {
+        NOTREACHED() << "Invalid message of type "
+                        "PpapiPluginMsg_FileSystem_CreateFromPendingHost";
+        return PP_MakeNull();
+      }
+      // Create a plugin-side resource and attach it to the host resource.
+      // Note: This only makes sense when the plugin is out of process (which
+      // should always be true when passing resource vars).
+      PP_Resource pp_resource =
+          (new FileSystemResource(GetConnectionForInstance(instance),
+                                  instance,
+                                  pending_renderer_id,
+                                  pending_browser_id,
+                                  file_system_type))->GetReference();
+      return MakeResourcePPVar(pp_resource);
+    }
+    case PpapiPluginMsg_MediaStreamAudioTrack_CreateFromPendingHost::ID: {
+      DCHECK(pending_renderer_id);
+      std::string track_id;
+      if (!UnpackMessage<
+              PpapiPluginMsg_MediaStreamAudioTrack_CreateFromPendingHost>(
+          creation_message, &track_id)) {
+        NOTREACHED() <<
+            "Invalid message of type "
+            "PpapiPluginMsg_MediaStreamAudioTrack_CreateFromPendingHost";
+        return PP_MakeNull();
+      }
+      PP_Resource pp_resource =
+          (new MediaStreamAudioTrackResource(GetConnectionForInstance(instance),
+                                             instance,
+                                             pending_renderer_id,
+                                             track_id))->GetReference();
+      return MakeResourcePPVar(pp_resource);
+    }
+    case PpapiPluginMsg_MediaStreamVideoTrack_CreateFromPendingHost::ID: {
+      DCHECK(pending_renderer_id);
+      std::string track_id;
+      if (!UnpackMessage<
+              PpapiPluginMsg_MediaStreamVideoTrack_CreateFromPendingHost>(
+          creation_message, &track_id)) {
+        NOTREACHED() <<
+            "Invalid message of type "
+            "PpapiPluginMsg_MediaStreamVideoTrack_CreateFromPendingHost";
+        return PP_MakeNull();
+      }
+      PP_Resource pp_resource =
+          (new MediaStreamVideoTrackResource(GetConnectionForInstance(instance),
+                                             instance,
+                                             pending_renderer_id,
+                                             track_id))->GetReference();
+      return MakeResourcePPVar(pp_resource);
+    }
+    default: {
+      NOTREACHED() << "Creation message has unexpected type "
+                   << creation_message.type();
+      return PP_MakeNull();
+    }
+  }
+}
+
+ResourceVar* PluginVarTracker::MakeResourceVar(PP_Resource pp_resource) {
+  // The resource 0 returns a null resource var.
+  if (!pp_resource)
+    return new PluginResourceVar();
+
+  ResourceTracker* resource_tracker = PpapiGlobals::Get()->GetResourceTracker();
+  ppapi::Resource* resource = resource_tracker->GetResource(pp_resource);
+  // A non-existant resource other than 0 returns NULL.
+  if (!resource)
+    return NULL;
+  return new PluginResourceVar(resource);
 }
 
 void PluginVarTracker::DidDeleteInstance(PP_Instance instance) {
@@ -177,7 +278,7 @@ void PluginVarTracker::DidDeleteInstance(PP_Instance instance) {
     if (!found->second.plugin_object_id) {
       // This object is for the freed instance and the plugin is not holding
       // any references to it. Deallocate immediately.
-      found->second.ppp_class->Deallocate(found->first);
+      CallWhileUnlocked(found->second.ppp_class->Deallocate, found->first);
       user_data_to_plugin_.erase(found);
     } else {
       // The plugin is holding refs to this object. We don't want to call
@@ -190,8 +291,26 @@ void PluginVarTracker::DidDeleteInstance(PP_Instance instance) {
   }
 }
 
+void PluginVarTracker::DidDeleteDispatcher(PluginDispatcher* dispatcher) {
+  for (VarMap::iterator it = live_vars_.begin();
+       it != live_vars_.end();
+       ++it) {
+    if (it->second.var.get() == NULL)
+      continue;
+    ProxyObjectVar* object = it->second.var->AsProxyObjectVar();
+    if (object && object->dispatcher() == dispatcher)
+      object->clear_dispatcher();
+  }
+}
+
 ArrayBufferVar* PluginVarTracker::CreateArrayBuffer(uint32 size_in_bytes) {
   return new PluginArrayBufferVar(size_in_bytes);
+}
+
+ArrayBufferVar* PluginVarTracker::CreateShmArrayBuffer(
+    uint32 size_in_bytes,
+    base::SharedMemoryHandle handle) {
+  return new PluginArrayBufferVar(size_in_bytes, handle);
 }
 
 void PluginVarTracker::PluginImplementedObjectCreated(
@@ -242,9 +361,11 @@ int32 PluginVarTracker::AddVarInternal(Var* var, AddVarRefMode mode) {
   ProxyObjectVar* proxy_object = var->AsProxyObjectVar();
   if (proxy_object) {
     HostVar host_var(proxy_object->dispatcher(), proxy_object->host_var_id());
-    DCHECK(host_var_to_plugin_var_.find(host_var) ==
-           host_var_to_plugin_var_.end());  // Adding an object twice, use
-                                            // FindOrMakePluginVarFromHostVar.
+    // TODO(teravest): Change to DCHECK when http://crbug.com/276347 is
+    // resolved.
+    CHECK(host_var_to_plugin_var_.find(host_var) ==
+          host_var_to_plugin_var_.end());  // Adding an object twice, use
+                                           // FindOrMakePluginVarFromHostVar.
     host_var_to_plugin_var_[host_var] = new_id;
   }
   return new_id;
@@ -336,14 +457,18 @@ PP_Var PluginVarTracker::GetOrCreateObjectVarID(ProxyObjectVar* object) {
 void PluginVarTracker::SendAddRefObjectMsg(
     const ProxyObjectVar& proxy_object) {
   int unused;
-  proxy_object.dispatcher()->Send(new PpapiHostMsg_PPBVar_AddRefObject(
-      API_ID_PPB_VAR_DEPRECATED, proxy_object.host_var_id(), &unused));
+  if (proxy_object.dispatcher()) {
+    proxy_object.dispatcher()->Send(new PpapiHostMsg_PPBVar_AddRefObject(
+        API_ID_PPB_VAR_DEPRECATED, proxy_object.host_var_id(), &unused));
+  }
 }
 
 void PluginVarTracker::SendReleaseObjectMsg(
     const ProxyObjectVar& proxy_object) {
-  proxy_object.dispatcher()->Send(new PpapiHostMsg_PPBVar_ReleaseObject(
-      API_ID_PPB_VAR_DEPRECATED, proxy_object.host_var_id()));
+  if (proxy_object.dispatcher()) {
+    proxy_object.dispatcher()->Send(new PpapiHostMsg_PPBVar_ReleaseObject(
+        API_ID_PPB_VAR_DEPRECATED, proxy_object.host_var_id()));
+  }
 }
 
 scoped_refptr<ProxyObjectVar> PluginVarTracker::FindOrMakePluginVarFromHostVar(
@@ -362,11 +487,30 @@ scoped_refptr<ProxyObjectVar> PluginVarTracker::FindOrMakePluginVarFromHostVar(
 
   // Have this host var, look up the object.
   VarMap::iterator ret = live_vars_.find(found->second);
-  DCHECK(ret != live_vars_.end());
+
+  // We CHECK here because we currently don't fall back sanely.
+  // This may be involved in a NULL dereference. http://crbug.com/276347
+  CHECK(ret != live_vars_.end());
 
   // All objects should be proxy objects.
   DCHECK(ret->second.var->AsProxyObjectVar());
   return scoped_refptr<ProxyObjectVar>(ret->second.var->AsProxyObjectVar());
+}
+
+int PluginVarTracker::TrackSharedMemoryHandle(PP_Instance instance,
+                                              base::SharedMemoryHandle handle,
+                                              uint32 size_in_bytes) {
+  NOTREACHED();
+  return -1;
+}
+
+bool PluginVarTracker::StopTrackingSharedMemoryHandle(
+    int id,
+    PP_Instance instance,
+    base::SharedMemoryHandle* handle,
+    uint32* size_in_bytes) {
+  NOTREACHED();
+  return false;
 }
 
 }  // namesace proxy

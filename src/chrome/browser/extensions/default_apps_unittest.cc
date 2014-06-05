@@ -2,37 +2,37 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/extensions/external_pref_loader.h"
-
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop/message_loop.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/extensions/default_apps.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/extensions/external_pref_loader.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
+#include "extensions/common/extension.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using default_apps::Provider;
-using namespace extensions;
+
+namespace extensions {
 
 class MockExternalLoader : public ExternalLoader {
  public:
   MockExternalLoader() {}
 
-  void StartLoading() {}
+  virtual void StartLoading() OVERRIDE {}
  private:
   virtual ~MockExternalLoader() {}
 };
 
 class DefaultAppsTest : public testing::Test {
  public:
-  DefaultAppsTest() : loop_(MessageLoop::TYPE_IO),
-      ui_thread_(content::BrowserThread::UI, &loop_) {}
+  DefaultAppsTest() : ui_thread_(content::BrowserThread::UI, &loop_) {}
   virtual ~DefaultAppsTest() {}
  private:
-  MessageLoop loop_;
+  base::MessageLoopForIO loop_;
   content::TestBrowserThread ui_thread_;
 };
 
@@ -41,11 +41,10 @@ class DefaultAppsTest : public testing::Test {
 // Android does not currently support installing apps via Chrome.
 TEST_F(DefaultAppsTest, Install) {
   scoped_ptr<TestingProfile> profile(new TestingProfile());
-  extensions::ExternalLoader* loader = new MockExternalLoader();
+  ExternalLoader* loader = new MockExternalLoader();
 
-
-  Provider provider(profile.get(), NULL, loader, Extension::INTERNAL,
-                    Extension::INTERNAL, Extension::NO_FLAGS);
+  Provider provider(profile.get(), NULL, loader, Manifest::INTERNAL,
+                    Manifest::INTERNAL, Extension::NO_FLAGS);
 
   // The default apps should be installed if kDefaultAppsInstallState
   // is unknown.
@@ -80,8 +79,8 @@ TEST_F(DefaultAppsTest, Install) {
     }
   };
   profile.reset(new DefaultTestingProfile);
-  Provider provider2(profile.get(), NULL, loader, Extension::INTERNAL,
-                     Extension::INTERNAL, Extension::NO_FLAGS);
+  Provider provider2(profile.get(), NULL, loader, Manifest::INTERNAL,
+                     Manifest::INTERNAL, Extension::NO_FLAGS);
   // The old default apps with kProvideLegacyDefaultApps should be migrated
   // even if the profile version is older than Chrome version.
   profile->GetPrefs()->SetInteger(prefs::kDefaultAppsInstallState,
@@ -91,3 +90,5 @@ TEST_F(DefaultAppsTest, Install) {
   EXPECT_TRUE(state == default_apps::kAlreadyInstalledDefaultApps);
 }
 #endif
+
+}  // namespace extensions

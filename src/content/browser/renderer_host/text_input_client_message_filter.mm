@@ -4,21 +4,19 @@
 
 #include "content/browser/renderer_host/text_input_client_message_filter.h"
 
-#include "base/memory/scoped_nsobject.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/text_input_client_mac.h"
 #include "content/common/text_input_client_messages.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "ipc/ipc_message_macros.h"
-#include "ui/base/range/range.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/point.h"
+#include "ui/gfx/range/range.h"
 
 namespace content {
 
 TextInputClientMessageFilter::TextInputClientMessageFilter(int child_id)
-    : BrowserMessageFilter(),
+    : BrowserMessageFilter(TextInputClientMsgStart),
       child_process_id_(child_id) {
 }
 
@@ -28,6 +26,8 @@ bool TextInputClientMessageFilter::OnMessageReceived(
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP_EX(TextInputClientMessageFilter, message,
       *message_was_ok)
+    IPC_MESSAGE_HANDLER(TextInputClientReplyMsg_GotStringAtPoint,
+                        OnGotStringAtPoint)
     IPC_MESSAGE_HANDLER(TextInputClientReplyMsg_GotCharacterIndexForPoint,
                         OnGotCharacterIndexForPoint)
     IPC_MESSAGE_HANDLER(TextInputClientReplyMsg_GotFirstRectForRange,
@@ -40,6 +40,15 @@ bool TextInputClientMessageFilter::OnMessageReceived(
 }
 
 TextInputClientMessageFilter::~TextInputClientMessageFilter() {}
+
+void TextInputClientMessageFilter::OnGotStringAtPoint(
+    const mac::AttributedStringCoder::EncodedString& encoded_string,
+    const gfx::Point& point) {
+  TextInputClientMac* service = TextInputClientMac::GetInstance();
+  NSAttributedString* string =
+      mac::AttributedStringCoder::Decode(&encoded_string);
+  service->GetStringAtPointReply(string, NSPointFromCGPoint(point.ToCGPoint()));
+}
 
 void TextInputClientMessageFilter::OnGotCharacterIndexForPoint(size_t index) {
   TextInputClientMac* service = TextInputClientMac::GetInstance();

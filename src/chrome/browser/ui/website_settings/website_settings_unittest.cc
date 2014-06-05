@@ -5,32 +5,34 @@
 #include "chrome/browser/ui/website_settings/website_settings.h"
 
 #include "base/at_exit.h"
-#include "base/message_loop.h"
-#include "base/string16.h"
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/api/infobars/infobar_delegate.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/content_settings/content_settings_provider.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
+#include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/ui/website_settings/website_settings_ui.h"
 #include "chrome/common/content_settings.h"
 #include "chrome/common/content_settings_types.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/infobars/core/infobar.h"
 #include "content/public/browser/cert_store.h"
 #include "content/public/common/ssl_status.h"
-#include "content/public/test/test_browser_thread.h"
-#include "net/base/cert_status_flags.h"
-#include "net/base/ssl_connection_status_flags.h"
-#include "net/base/test_certificate_data.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/cert_status_flags.h"
+#include "net/cert/x509_certificate.h"
+#include "net/ssl/ssl_connection_status_flags.h"
+#include "net/test/test_certificate_data.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using content::SSLStatus;
-using namespace testing;
+using testing::_;
+using testing::AnyNumber;
+using testing::Return;
+using testing::SetArgPointee;
 
 namespace {
 
@@ -66,19 +68,13 @@ class MockWebsiteSettingsUI : public WebsiteSettingsUI {
   MOCK_METHOD1(SetPermissionInfo,
                void(const PermissionInfoList& permission_info_list));
   MOCK_METHOD1(SetIdentityInfo, void(const IdentityInfo& identity_info));
-  MOCK_METHOD1(SetFirstVisit, void(const string16& first_visit));
+  MOCK_METHOD1(SetFirstVisit, void(const base::string16& first_visit));
   MOCK_METHOD1(SetSelectedTab, void(TabId tab_id));
 };
 
 class WebsiteSettingsTest : public ChromeRenderViewHostTestHarness {
  public:
-  WebsiteSettingsTest()
-      : website_settings_(NULL),
-        mock_ui_(NULL),
-        cert_id_(0),
-        browser_thread_(content::BrowserThread::UI, &message_loop_),
-        url_("http://www.example.com") {
-  }
+  WebsiteSettingsTest() : cert_id_(0), url_("http://www.example.com") {}
 
   virtual ~WebsiteSettingsTest() {
   }
@@ -99,7 +95,7 @@ class WebsiteSettingsTest : public ChromeRenderViewHostTestHarness {
                                      expiration_date);
 
     TabSpecificContentSettings::CreateForWebContents(web_contents());
-    InfoBarTabHelper::CreateForWebContents(web_contents());
+    InfoBarService::CreateForWebContents(web_contents());
 
     // Setup the mock cert store.
     EXPECT_CALL(cert_store_, RetrieveCert(cert_id_, _) )
@@ -122,7 +118,7 @@ class WebsiteSettingsTest : public ChromeRenderViewHostTestHarness {
     EXPECT_CALL(*mock_ui, SetPermissionInfo(_));
     EXPECT_CALL(*mock_ui, SetIdentityInfo(_));
     EXPECT_CALL(*mock_ui, SetCookieInfo(_));
-    EXPECT_CALL(*mock_ui, SetFirstVisit(string16()));
+    EXPECT_CALL(*mock_ui, SetFirstVisit(base::string16()));
   }
 
   const GURL& url() const { return url_; }
@@ -133,15 +129,15 @@ class WebsiteSettingsTest : public ChromeRenderViewHostTestHarness {
   TabSpecificContentSettings* tab_specific_content_settings() {
     return TabSpecificContentSettings::FromWebContents(web_contents());
   }
-  InfoBarTabHelper* infobar_tab_helper() {
-    return InfoBarTabHelper::FromWebContents(web_contents());
+  InfoBarService* infobar_service() {
+    return InfoBarService::FromWebContents(web_contents());
   }
 
   WebsiteSettings* website_settings() {
     if (!website_settings_.get()) {
       website_settings_.reset(new WebsiteSettings(
           mock_ui(), profile(), tab_specific_content_settings(),
-          infobar_tab_helper(), url(), ssl(), cert_store()));
+          infobar_service(), url(), ssl(), cert_store()));
     }
     return website_settings_.get();
   }
@@ -153,7 +149,6 @@ class WebsiteSettingsTest : public ChromeRenderViewHostTestHarness {
   scoped_ptr<MockWebsiteSettingsUI> mock_ui_;
   int cert_id_;
   scoped_refptr<net::X509Certificate> cert_;
-  content::TestBrowserThread browser_thread_;
   MockCertStore cert_store_;
   GURL url_;
 };
@@ -165,27 +160,27 @@ TEST_F(WebsiteSettingsTest, OnPermissionsChanged) {
   HostContentSettingsMap* content_settings =
       profile()->GetHostContentSettingsMap();
   ContentSetting setting = content_settings->GetContentSetting(
-      url(), url(), CONTENT_SETTINGS_TYPE_POPUPS, "");
+      url(), url(), CONTENT_SETTINGS_TYPE_POPUPS, std::string());
   EXPECT_EQ(setting, CONTENT_SETTING_BLOCK);
   setting = content_settings->GetContentSetting(
-      url(), url(), CONTENT_SETTINGS_TYPE_PLUGINS, "");
+      url(), url(), CONTENT_SETTINGS_TYPE_PLUGINS, std::string());
   EXPECT_EQ(setting, CONTENT_SETTING_ALLOW);
   setting = content_settings->GetContentSetting(
-      url(), url(), CONTENT_SETTINGS_TYPE_GEOLOCATION, "");
+      url(), url(), CONTENT_SETTINGS_TYPE_GEOLOCATION, std::string());
   EXPECT_EQ(setting, CONTENT_SETTING_ASK);
   setting = content_settings->GetContentSetting(
-      url(), url(), CONTENT_SETTINGS_TYPE_NOTIFICATIONS, "");
+      url(), url(), CONTENT_SETTINGS_TYPE_NOTIFICATIONS, std::string());
   EXPECT_EQ(setting, CONTENT_SETTING_ASK);
   setting = content_settings->GetContentSetting(
-      url(), url(), CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC, "");
+      url(), url(), CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC, std::string());
   EXPECT_EQ(setting, CONTENT_SETTING_ASK);
   setting = content_settings->GetContentSetting(
-      url(), url(), CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA, "");
+      url(), url(), CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA, std::string());
   EXPECT_EQ(setting, CONTENT_SETTING_ASK);
 
   EXPECT_CALL(*mock_ui(), SetIdentityInfo(_));
   EXPECT_CALL(*mock_ui(), SetCookieInfo(_));
-  EXPECT_CALL(*mock_ui(), SetFirstVisit(string16()));
+  EXPECT_CALL(*mock_ui(), SetFirstVisit(base::string16()));
 
   // SetPermissionInfo() is called once initially, and then again every time
   // OnSitePermissionChanged() is called.
@@ -212,29 +207,29 @@ TEST_F(WebsiteSettingsTest, OnPermissionsChanged) {
 
   // Verify that the site permissions were changed correctly.
   setting = content_settings->GetContentSetting(
-      url(), url(), CONTENT_SETTINGS_TYPE_POPUPS, "");
+      url(), url(), CONTENT_SETTINGS_TYPE_POPUPS, std::string());
   EXPECT_EQ(setting, CONTENT_SETTING_ALLOW);
   setting = content_settings->GetContentSetting(
-      url(), url(), CONTENT_SETTINGS_TYPE_PLUGINS, "");
+      url(), url(), CONTENT_SETTINGS_TYPE_PLUGINS, std::string());
   EXPECT_EQ(setting, CONTENT_SETTING_BLOCK);
   setting = content_settings->GetContentSetting(
-      url(), url(), CONTENT_SETTINGS_TYPE_GEOLOCATION, "");
+      url(), url(), CONTENT_SETTINGS_TYPE_GEOLOCATION, std::string());
   EXPECT_EQ(setting, CONTENT_SETTING_ALLOW);
   setting = content_settings->GetContentSetting(
-      url(), url(), CONTENT_SETTINGS_TYPE_NOTIFICATIONS, "");
+      url(), url(), CONTENT_SETTINGS_TYPE_NOTIFICATIONS, std::string());
   EXPECT_EQ(setting, CONTENT_SETTING_ALLOW);
   setting = content_settings->GetContentSetting(
-      url(), url(), CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC, "");
+      url(), url(), CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC, std::string());
   EXPECT_EQ(setting, CONTENT_SETTING_ALLOW);
   setting = content_settings->GetContentSetting(
-      url(), url(), CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA, "");
+      url(), url(), CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA, std::string());
   EXPECT_EQ(setting, CONTENT_SETTING_ALLOW);
 }
 
 TEST_F(WebsiteSettingsTest, OnSiteDataAccessed) {
   EXPECT_CALL(*mock_ui(), SetPermissionInfo(_));
   EXPECT_CALL(*mock_ui(), SetIdentityInfo(_));
-  EXPECT_CALL(*mock_ui(), SetFirstVisit(string16()));
+  EXPECT_CALL(*mock_ui(), SetFirstVisit(base::string16()));
   EXPECT_CALL(*mock_ui(), SetCookieInfo(_)).Times(2);
   EXPECT_CALL(*mock_ui(), SetSelectedTab(
       WebsiteSettingsUI::TAB_ID_PERMISSIONS));
@@ -250,7 +245,7 @@ TEST_F(WebsiteSettingsTest, HTTPConnection) {
             website_settings()->site_connection_status());
   EXPECT_EQ(WebsiteSettings::SITE_IDENTITY_STATUS_NO_CERT,
             website_settings()->site_identity_status());
-  EXPECT_EQ(string16(), website_settings()->organization_name());
+  EXPECT_EQ(base::string16(), website_settings()->organization_name());
 }
 
 TEST_F(WebsiteSettingsTest, HTTPSConnection) {
@@ -271,7 +266,7 @@ TEST_F(WebsiteSettingsTest, HTTPSConnection) {
             website_settings()->site_connection_status());
   EXPECT_EQ(WebsiteSettings::SITE_IDENTITY_STATUS_CERT,
             website_settings()->site_identity_status());
-  EXPECT_EQ(string16(), website_settings()->organization_name());
+  EXPECT_EQ(base::string16(), website_settings()->organization_name());
 }
 
 TEST_F(WebsiteSettingsTest, HTTPSMixedContent) {
@@ -292,7 +287,7 @@ TEST_F(WebsiteSettingsTest, HTTPSMixedContent) {
             website_settings()->site_connection_status());
   EXPECT_EQ(WebsiteSettings::SITE_IDENTITY_STATUS_CERT,
             website_settings()->site_identity_status());
-  EXPECT_EQ(string16(), website_settings()->organization_name());
+  EXPECT_EQ(base::string16(), website_settings()->organization_name());
 }
 
 TEST_F(WebsiteSettingsTest, HTTPSEVCert) {
@@ -321,7 +316,8 @@ TEST_F(WebsiteSettingsTest, HTTPSEVCert) {
             website_settings()->site_connection_status());
   EXPECT_EQ(WebsiteSettings::SITE_IDENTITY_STATUS_EV_CERT,
             website_settings()->site_identity_status());
-  EXPECT_EQ(UTF8ToUTF16("Google Inc"), website_settings()->organization_name());
+  EXPECT_EQ(base::UTF8ToUTF16("Google Inc"),
+            website_settings()->organization_name());
 }
 
 TEST_F(WebsiteSettingsTest, HTTPSRevocationError) {
@@ -341,7 +337,7 @@ TEST_F(WebsiteSettingsTest, HTTPSRevocationError) {
             website_settings()->site_connection_status());
   EXPECT_EQ(WebsiteSettings::SITE_IDENTITY_STATUS_CERT_REVOCATION_UNKNOWN,
             website_settings()->site_identity_status());
-  EXPECT_EQ(string16(), website_settings()->organization_name());
+  EXPECT_EQ(base::string16(), website_settings()->organization_name());
 }
 
 TEST_F(WebsiteSettingsTest, HTTPSConnectionError) {
@@ -361,22 +357,22 @@ TEST_F(WebsiteSettingsTest, HTTPSConnectionError) {
             website_settings()->site_connection_status());
   EXPECT_EQ(WebsiteSettings::SITE_IDENTITY_STATUS_CERT,
             website_settings()->site_identity_status());
-  EXPECT_EQ(string16(), website_settings()->organization_name());
+  EXPECT_EQ(base::string16(), website_settings()->organization_name());
 }
 
 TEST_F(WebsiteSettingsTest, NoInfoBar) {
   SetDefaultUIExpectations(mock_ui());
   EXPECT_CALL(*mock_ui(), SetSelectedTab(
       WebsiteSettingsUI::TAB_ID_PERMISSIONS));
-  EXPECT_EQ(0u, infobar_tab_helper()->GetInfoBarCount());
+  EXPECT_EQ(0u, infobar_service()->infobar_count());
   website_settings()->OnUIClosing();
-  EXPECT_EQ(0u, infobar_tab_helper()->GetInfoBarCount());
+  EXPECT_EQ(0u, infobar_service()->infobar_count());
 }
 
 TEST_F(WebsiteSettingsTest, ShowInfoBar) {
   EXPECT_CALL(*mock_ui(), SetIdentityInfo(_));
   EXPECT_CALL(*mock_ui(), SetCookieInfo(_));
-  EXPECT_CALL(*mock_ui(), SetFirstVisit(string16()));
+  EXPECT_CALL(*mock_ui(), SetFirstVisit(base::string16()));
 
   // SetPermissionInfo() is called once initially, and then again every time
   // OnSitePermissionChanged() is called.
@@ -390,20 +386,11 @@ TEST_F(WebsiteSettingsTest, ShowInfoBar) {
 
   EXPECT_CALL(*mock_ui(), SetSelectedTab(
       WebsiteSettingsUI::TAB_ID_PERMISSIONS));
-  EXPECT_EQ(0u, infobar_tab_helper()->GetInfoBarCount());
+  EXPECT_EQ(0u, infobar_service()->infobar_count());
   website_settings()->OnSitePermissionChanged(
       CONTENT_SETTINGS_TYPE_GEOLOCATION, CONTENT_SETTING_ALLOW);
   website_settings()->OnUIClosing();
-  EXPECT_EQ(1u, infobar_tab_helper()->GetInfoBarCount());
+  ASSERT_EQ(1u, infobar_service()->infobar_count());
 
-  // Removing an |InfoBarDelegate| from the |InfoBarTabHelper| does not delete
-  // it. Hence the |delegate| must be cleaned up after it was removed from the
-  // |infobar_tab_helper|.
-  scoped_ptr<InfoBarDelegate> delegate(
-      infobar_tab_helper()->GetInfoBarDelegateAt(0));
-  infobar_tab_helper()->RemoveInfoBar(delegate.get());
-  // Right now InfoBarDelegates delete themselves via
-  // InfoBarClosed(); once InfoBars own their delegates, this can become a
-  // simple reset() call
-  delegate.release()->InfoBarClosed();
+  infobar_service()->RemoveInfoBar(infobar_service()->infobar_at(0));
 }

@@ -5,7 +5,7 @@
 #include <string>
 
 #include "base/files/scoped_temp_dir.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/sequenced_task_runner.h"
 #include "chrome/service/service_process_prefs.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -18,7 +18,7 @@ class ServiceProcessPrefsTest : public testing::Test {
 
     prefs_.reset(new ServiceProcessPrefs(
         temp_dir_.path().AppendASCII("service_process_prefs.txt"),
-        message_loop_.message_loop_proxy()));
+        message_loop_.message_loop_proxy().get()));
   }
 
   virtual void TearDown() OVERRIDE {
@@ -28,7 +28,7 @@ class ServiceProcessPrefsTest : public testing::Test {
   // The path to temporary directory used to contain the test operations.
   base::ScopedTempDir temp_dir_;
   // A message loop that we can use as the file thread message loop.
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   scoped_ptr<ServiceProcessPrefs> prefs_;
 };
 
@@ -39,9 +39,8 @@ TEST_F(ServiceProcessPrefsTest, RetrievePrefs) {
   prefs_->WritePrefs();
   message_loop_.RunUntilIdle();
   prefs_->SetBoolean("testb", false);   // overwrite
-  prefs_->SetString("tests", "");   // overwrite
+  prefs_->SetString("tests", std::string());  // overwrite
   prefs_->ReadPrefs();
   EXPECT_EQ(prefs_->GetBoolean("testb", false), true);
-  EXPECT_EQ(prefs_->GetString("tests", ""), "testvalue");
+  EXPECT_EQ(prefs_->GetString("tests", std::string()), "testvalue");
 }
-

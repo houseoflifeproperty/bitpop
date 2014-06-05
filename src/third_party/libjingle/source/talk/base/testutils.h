@@ -30,6 +30,15 @@
 
 // Utilities for testing talk_base infrastructure in unittests
 
+#ifdef LINUX
+#include <X11/Xlib.h>
+#include <X11/extensions/Xrandr.h>
+
+// X defines a few macros that stomp on types that gunit.h uses.
+#undef None
+#undef Bool
+#endif
+
 #include <map>
 #include <vector>
 #include "talk/base/asyncsocket.h"
@@ -565,6 +574,48 @@ inline AssertionResult CmpHelperFileEq(const char* expected_expression,
 
 ///////////////////////////////////////////////////////////////////////////////
 
+// Helpers for determining if X/screencasting is available (on linux).
+
+#define MAYBE_SKIP_SCREENCAST_TEST() \
+  if (!testing::IsScreencastingAvailable()) { \
+    LOG(LS_WARNING) << "Skipping test, since it doesn't have the requisite " \
+                    << "X environment for screen capture."; \
+    return; \
+  } \
+
+#ifdef LINUX
+struct XDisplay {
+  XDisplay() : display_(XOpenDisplay(NULL)) { }
+  ~XDisplay() { if (display_) XCloseDisplay(display_); }
+  bool IsValid() const { return display_ != NULL; }
+  operator Display*() { return display_; }
+ private:
+  Display* display_;
+};
+#endif
+
+// Returns true if screencasting is available. When false, anything that uses
+// screencasting features may fail.
+inline bool IsScreencastingAvailable() {
+#ifdef LINUX
+  XDisplay display;
+  if (!display.IsValid()) {
+    LOG(LS_WARNING) << "No X Display available.";
+    return false;
+  }
+  int ignored_int, major_version, minor_version;
+  if (!XRRQueryExtension(display, &ignored_int, &ignored_int) ||
+      !XRRQueryVersion(display, &major_version, &minor_version) ||
+      major_version < 1 ||
+      (major_version < 2 && minor_version < 3)) {
+    LOG(LS_WARNING) << "XRandr version: " << major_version << "."
+                    << minor_version;
+    LOG(LS_WARNING) << "XRandr is not supported or is too old (pre 1.3).";
+    return false;
+  }
+#endif
+  return true;
+}
 }  // namespace testing
 
 #endif  // TALK_BASE_TESTUTILS_H__

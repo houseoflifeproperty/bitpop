@@ -7,12 +7,13 @@
 #include <math.h>
 
 #include "base/bind.h"
-#include "base/logging.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/rand_util.h"
-#include "base/string_number_conversions.h"
-#include "base/time.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/stringize_macros.h"
+#include "base/time/time.h"
 #include "remoting/base/constants.h"
+#include "remoting/base/logging.h"
 #include "remoting/host/server_log_entry.h"
 #include "remoting/jingle_glue/iq_sender.h"
 #include "remoting/jingle_glue/signal_strategy.h"
@@ -28,6 +29,7 @@ namespace {
 
 const char kHeartbeatQueryTag[] = "heartbeat";
 const char kHostIdAttr[] = "hostid";
+const char kHostVersionTag[] = "host-version";
 const char kHeartbeatSignatureTag[] = "signature";
 const char kSequenceIdAttr[] = "sequence-id";
 
@@ -49,11 +51,13 @@ HeartbeatSender::HeartbeatSender(
     Listener* listener,
     const std::string& host_id,
     SignalStrategy* signal_strategy,
-    HostKeyPair* key_pair)
+    scoped_refptr<RsaKeyPair> key_pair,
+    const std::string& directory_bot_jid)
     : listener_(listener),
       host_id_(host_id),
       signal_strategy_(signal_strategy),
       key_pair_(key_pair),
+      directory_bot_jid_(directory_bot_jid),
       interval_ms_(kDefaultHeartbeatIntervalMs),
       sequence_id_(0),
       sequence_id_was_set_(false),
@@ -61,7 +65,7 @@ HeartbeatSender::HeartbeatSender(
       heartbeat_succeeded_(false),
       failed_startup_heartbeat_count_(0) {
   DCHECK(signal_strategy_);
-  DCHECK(key_pair_);
+  DCHECK(key_pair_.get());
 
   signal_strategy_->AddListener(this);
 
@@ -107,9 +111,9 @@ void HeartbeatSender::ResendStanza() {
 }
 
 void HeartbeatSender::DoSendStanza() {
-  VLOG(1) << "Sending heartbeat stanza to " << kChromotingBotJid;
+  VLOG(1) << "Sending heartbeat stanza to " << directory_bot_jid_;
   request_ = iq_sender_->SendIq(
-      buzz::STR_SET, kChromotingBotJid, CreateHeartbeatMessage(),
+      buzz::STR_SET, directory_bot_jid_, CreateHeartbeatMessage(),
       base::Bind(&HeartbeatSender::ProcessResponse,
                  base::Unretained(this)));
   ++sequence_id_;
@@ -149,6 +153,10 @@ void HeartbeatSender::ProcessResponse(IqRequest* request,
     return;
   }
 
+  // Notify listener of the first successful heartbeat.
+  if (!heartbeat_succeeded_) {
+    listener_->OnHeartbeatSuccessful();
+  }
   heartbeat_succeeded_ = true;
 
   // This method must only be called for error or result stanzas.
@@ -220,7 +228,7 @@ void HeartbeatSender::SetSequenceId(int sequence_id) {
   if (!sequence_id_was_set_) {
     ResendStanza();
   } else {
-    LOG(INFO) << "The heartbeat sequence ID has been set more than once: "
+    HOST_LOG << "The heartbeat sequence ID has been set more than once: "
               << "the new value is " << sequence_id;
     double delay = pow(2.0, sequence_id_recent_set_num_) *
         (1 + base::RandDouble()) * kResendDelayMs;
@@ -234,19 +242,24 @@ void HeartbeatSender::SetSequenceId(int sequence_id) {
 
 scoped_ptr<XmlElement> HeartbeatSender::CreateHeartbeatMessage() {
   // Create heartbeat stanza.
-  scoped_ptr<XmlElement> query(new XmlElement(
+  scoped_ptr<XmlElement> heartbeat(new XmlElement(
       QName(kChromotingXmlNamespace, kHeartbeatQueryTag)));
-  query->AddAttr(QName(kChromotingXmlNamespace, kHostIdAttr), host_id_);
-  query->AddAttr(QName(kChromotingXmlNamespace, kSequenceIdAttr),
+  heartbeat->AddAttr(QName(kChromotingXmlNamespace, kHostIdAttr), host_id_);
+  heartbeat->AddAttr(QName(kChromotingXmlNamespace, kSequenceIdAttr),
                  base::IntToString(sequence_id_));
-  query->AddElement(CreateSignature().release());
+  heartbeat->AddElement(CreateSignature().release());
+  // Append host version.
+  scoped_ptr<XmlElement> version_tag(new XmlElement(
+      QName(kChromotingXmlNamespace, kHostVersionTag)));
+  version_tag->AddText(STRINGIZE(VERSION));
+  heartbeat->AddElement(version_tag.release());
   // Append log message (which isn't signed).
   scoped_ptr<XmlElement> log(ServerLogEntry::MakeStanza());
   scoped_ptr<ServerLogEntry> log_entry(ServerLogEntry::MakeForHeartbeat());
   log_entry->AddHostFields();
   log->AddElement(log_entry->ToStanza().release());
-  query->AddElement(log.release());
-  return query.Pass();
+  heartbeat->AddElement(log.release());
+  return heartbeat.Pass();
 }
 
 scoped_ptr<XmlElement> HeartbeatSender::CreateSignature() {
@@ -255,7 +268,7 @@ scoped_ptr<XmlElement> HeartbeatSender::CreateSignature() {
 
   std::string message = signal_strategy_->GetLocalJid() + ' ' +
       base::IntToString(sequence_id_);
-  std::string signature(key_pair_->GetSignature(message));
+  std::string signature(key_pair_->SignMessage(message));
   signature_tag->AddText(signature);
 
   return signature_tag.Pass();

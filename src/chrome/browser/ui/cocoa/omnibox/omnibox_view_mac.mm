@@ -6,26 +6,32 @@
 
 #include <Carbon/Carbon.h>  // kVK_Return
 
-#include "base/string_util.h"
-#include "base/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/mac/foundation_util.h"
+#include "base/metrics/histogram.h"
+#include "base/strings/string_util.h"
+#include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/ui/cocoa/event_utils.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_cell.h"
+#import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_editor.h"
 #include "chrome/browser/ui/cocoa/omnibox/omnibox_popup_view_mac.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_controller.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/constants.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #import "third_party/mozilla/NSPasteboard+Utils.h"
+#import "ui/base/cocoa/cocoa_base_utils.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/mac/nsimage_cache.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/font.h"
+#include "ui/gfx/font_list.h"
+#include "ui/gfx/geometry/rect.h"
 
 using content::WebContents;
 
@@ -75,9 +81,6 @@ NSColor* HostTextColor() {
 NSColor* BaseTextColor() {
   return [NSColor darkGrayColor];
 }
-NSColor* SuggestTextColor() {
-  return [NSColor grayColor];
-}
 NSColor* SecureSchemeColor() {
   return ColorWithRGBBytes(0x07, 0x95, 0x00);
 }
@@ -113,9 +116,9 @@ const OmniboxViewMacState* GetStateFromTab(const WebContents* tab) {
       tab->GetUserData(&kOmniboxViewMacStateKey));
 }
 
-// Helper to make converting url_parse ranges to NSRange easier to
+// Helper to make converting url ranges to NSRange easier to
 // read.
-NSRange ComponentToNSRange(const url_parse::Component& component) {
+NSRange ComponentToNSRange(const url::Component& component) {
   return NSMakeRange(static_cast<NSInteger>(component.begin),
                      static_cast<NSInteger>(component.len));
 }
@@ -124,38 +127,39 @@ NSRange ComponentToNSRange(const url_parse::Component& component) {
 
 // static
 NSImage* OmniboxViewMac::ImageForResource(int resource_id) {
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   return rb.GetNativeImageNamed(resource_id).ToNSImage();
 }
 
+// static
+NSColor* OmniboxViewMac::SuggestTextColor() {
+  return [NSColor colorWithCalibratedWhite:0.0 alpha:0.5];
+}
+
 OmniboxViewMac::OmniboxViewMac(OmniboxEditController* controller,
-                               ToolbarModel* toolbar_model,
                                Profile* profile,
                                CommandUpdater* command_updater,
                                AutocompleteTextField* field)
-    : OmniboxView(profile, controller, toolbar_model, command_updater),
-      popup_view_(OmniboxPopupViewMac::Create(this, model(), field)),
+    : OmniboxView(profile, controller, command_updater),
+      popup_view_(new OmniboxPopupViewMac(this, model(), field)),
       field_(field),
-      suggest_text_length_(0),
+      saved_temporary_selection_(NSMakeRange(0, 0)),
+      selection_before_change_(NSMakeRange(0, 0)),
+      marked_range_before_change_(NSMakeRange(0, 0)),
       delete_was_pressed_(false),
       delete_at_end_pressed_(false),
-      line_height_(0) {
-  DCHECK(controller);
-  DCHECK(toolbar_model);
-  DCHECK(profile);
-  DCHECK(command_updater);
-  DCHECK(field);
+      in_coalesced_update_block_(false),
+      do_coalesced_text_update_(false),
+      do_coalesced_range_update_(false) {
   [field_ setObserver:this];
 
   // Needed so that editing doesn't lose the styling.
   [field_ setAllowsEditingTextAttributes:YES];
 
   // Get the appropriate line height for the font that we use.
-  scoped_nsobject<NSLayoutManager>
-      layoutManager([[NSLayoutManager alloc] init]);
+  base::scoped_nsobject<NSLayoutManager> layoutManager(
+      [[NSLayoutManager alloc] init]);
   [layoutManager setUsesScreenFonts:YES];
-  line_height_ = [layoutManager defaultLineHeightForFont:GetFieldFont()];
-  DCHECK_GT(line_height_, 0);
 }
 
 OmniboxViewMac::~OmniboxViewMac() {
@@ -186,56 +190,78 @@ void OmniboxViewMac::SaveStateToTab(WebContents* tab) {
   StoreStateToTab(tab, state);
 }
 
-void OmniboxViewMac::Update(const WebContents* tab_for_state_restoring) {
-  // TODO(shess): It seems like if the tab is non-NULL, then this code
-  // shouldn't need to be called at all.  When coded that way, I find
-  // that the field isn't always updated correctly.  Figure out why
-  // this is.  Maybe this method should be refactored into more
-  // specific cases.
-  bool user_visible =
-      model()->UpdatePermanentText(toolbar_model()->GetText(true));
-
-  if (tab_for_state_restoring) {
-    RevertAll();
-
-    const OmniboxViewMacState* state = GetStateFromTab(tab_for_state_restoring);
-    if (state) {
-      // Should restore the user's text via SetUserText().
-      model()->RestoreState(state->model_state);
-
-      // Restore focus and selection if they were present when the tab
-      // was switched away.
-      if (state->has_focus) {
-        // TODO(shess): Unfortunately, there is no safe way to update
-        // this because TabStripController -selectTabWithContents:* is
-        // also messing with focus.  Both parties need to agree to
-        // store existing state before anyone tries to setup the new
-        // state.  Anyhow, it would look something like this.
+void OmniboxViewMac::OnTabChanged(const WebContents* web_contents) {
+  const OmniboxViewMacState* state = GetStateFromTab(web_contents);
+  model()->RestoreState(state ? &state->model_state : NULL);
+  // Restore focus and selection if they were present when the tab
+  // was switched away.
+  if (state && state->has_focus) {
+    // TODO(shess): Unfortunately, there is no safe way to update
+    // this because TabStripController -selectTabWithContents:* is
+    // also messing with focus.  Both parties need to agree to
+    // store existing state before anyone tries to setup the new
+    // state.  Anyhow, it would look something like this.
 #if 0
-        [[field_ window] makeFirstResponder:field_];
-        [[field_ currentEditor] setSelectedRange:state->selection];
+    [[field_ window] makeFirstResponder:field_];
+    [[field_ currentEditor] setSelectedRange:state->selection];
 #endif
-      }
-    }
-  } else if (user_visible) {
+  }
+}
+
+void OmniboxViewMac::Update() {
+  if (chrome::ShouldDisplayOriginChipV2()) {
+    NSDictionary* placeholder_attributes = @{
+      NSFontAttributeName : GetFieldFont(gfx::Font::NORMAL),
+      NSForegroundColorAttributeName : [NSColor disabledControlTextColor]
+    };
+    base::scoped_nsobject<NSMutableAttributedString> placeholder_text(
+        [[NSMutableAttributedString alloc]
+            initWithString:base::SysUTF16ToNSString(GetHintText())
+                attributes:placeholder_attributes]);
+    [[field_ cell] setPlaceholderAttributedString:placeholder_text];
+  }
+  if (model()->UpdatePermanentText()) {
+    // Something visibly changed.  Re-enable URL replacement.
+    controller()->GetToolbarModel()->set_url_replacement_enabled(true);
+    model()->UpdatePermanentText();
+
     // Restore everything to the baseline look.
     RevertAll();
+
     // TODO(shess): Figure out how this case is used, to make sure
     // we're getting the selection and popup right.
-
   } else {
     // TODO(shess): This corresponds to _win and _gtk, except those
     // guard it with a test for whether the security level changed.
     // But AFAICT, that can only change if the text changed, and that
-    // code compares the toolbar_model() security level with the local
+    // code compares the toolbar model security level with the local
     // security level.  Dig in and figure out why this isn't a no-op
     // that should go away.
     EmphasizeURLComponents();
   }
 }
 
-string16 OmniboxViewMac::GetText() const {
-  return base::SysNSStringToUTF16(GetNonSuggestTextSubstring());
+void OmniboxViewMac::OpenMatch(const AutocompleteMatch& match,
+                               WindowOpenDisposition disposition,
+                               const GURL& alternate_nav_url,
+                               const base::string16& pasted_text,
+                               size_t selected_line) {
+  // Coalesce text and selection updates from the following function. If we
+  // don't do this, the user may see intermediate states as brief flickers.
+  in_coalesced_update_block_ = true;
+  OmniboxView::OpenMatch(
+      match, disposition, alternate_nav_url, pasted_text, selected_line);
+  in_coalesced_update_block_ = false;
+  if (do_coalesced_text_update_)
+    SetText(coalesced_text_update_);
+  do_coalesced_text_update_ = false;
+  if (do_coalesced_range_update_)
+    SetSelectedRange(coalesced_range_update_);
+  do_coalesced_range_update_ = false;
+}
+
+base::string16 OmniboxViewMac::GetText() const {
+  return base::SysNSStringToUTF16([field_ stringValue]);
 }
 
 NSRange OmniboxViewMac::GetSelectedRange() const {
@@ -248,6 +274,12 @@ NSRange OmniboxViewMac::GetMarkedRange() const {
 }
 
 void OmniboxViewMac::SetSelectedRange(const NSRange range) {
+  if (in_coalesced_update_block_) {
+    do_coalesced_range_update_ = true;
+    coalesced_range_update_ = range;
+    return;
+  }
+
   // This can be called when we don't have focus.  For instance, when
   // the user clicks the "Go" button.
   if (model()->has_focus()) {
@@ -265,7 +297,7 @@ void OmniboxViewMac::SetSelectedRange(const NSRange range) {
   }
 }
 
-void OmniboxViewMac::SetWindowTextAndCaretPos(const string16& text,
+void OmniboxViewMac::SetWindowTextAndCaretPos(const base::string16& text,
                                               size_t caret_pos,
                                               bool update_popup,
                                               bool notify_text_changed) {
@@ -283,10 +315,10 @@ void OmniboxViewMac::SetForcedQuery() {
   // We need to do this first, else |SetSelectedRange()| won't work.
   FocusLocation(true);
 
-  const string16 current_text(GetText());
-  const size_t start = current_text.find_first_not_of(kWhitespaceUTF16);
-  if (start == string16::npos || (current_text[start] != '?')) {
-    SetUserText(ASCIIToUTF16("?"));
+  const base::string16 current_text(GetText());
+  const size_t start = current_text.find_first_not_of(base::kWhitespaceUTF16);
+  if (start == base::string16::npos || (current_text[start] != '?')) {
+    SetUserText(base::ASCIIToUTF16("?"));
   } else {
     NSRange range = NSMakeRange(start + 1, current_text.size() - start - 1);
     [[field_ currentEditor] setSelectedRange:range];
@@ -304,8 +336,8 @@ bool OmniboxViewMac::DeleteAtEndPressed() {
   return delete_at_end_pressed_;
 }
 
-void OmniboxViewMac::GetSelectionBounds(string16::size_type* start,
-                                        string16::size_type* end) const {
+void OmniboxViewMac::GetSelectionBounds(base::string16::size_type* start,
+                                        base::string16::size_type* end) const {
   if (![field_ currentEditor]) {
     *start = *end = 0;
     return;
@@ -345,8 +377,7 @@ void OmniboxViewMac::UpdatePopup() {
   bool prevent_inline_autocomplete = IsImeComposing();
   NSTextView* editor = (NSTextView*)[field_ currentEditor];
   if (editor) {
-    if (NSMaxRange([editor selectedRange]) <
-        [[editor textStorage] length] - suggest_text_length_)
+    if (NSMaxRange([editor selectedRange]) < [[editor textStorage] length])
       prevent_inline_autocomplete = true;
   }
 
@@ -370,19 +401,24 @@ void OmniboxViewMac::ApplyCaretVisibility() {
                             ofView:field_];
 }
 
-void OmniboxViewMac::SetText(const string16& display_text) {
-  // If we are setting the text directly, there cannot be any suggest text.
-  suggest_text_length_ = 0;
+void OmniboxViewMac::SetText(const base::string16& display_text) {
   SetTextInternal(display_text);
 }
 
-void OmniboxViewMac::SetTextInternal(const string16& display_text) {
+void OmniboxViewMac::SetTextInternal(const base::string16& display_text) {
+  if (in_coalesced_update_block_) {
+    do_coalesced_text_update_ = true;
+    coalesced_text_update_ = display_text;
+    // Don't do any selection changes, since they apply to the previous text.
+    do_coalesced_range_update_ = false;
+    return;
+  }
+
   NSString* ss = base::SysUTF16ToNSString(display_text);
   NSMutableAttributedString* as =
       [[[NSMutableAttributedString alloc] initWithString:ss] autorelease];
 
   ApplyTextAttributes(display_text, as);
-
   [field_ setAttributedStringValue:as];
 
   // TODO(shess): This may be an appropriate place to call:
@@ -402,31 +438,10 @@ void OmniboxViewMac::SetTextInternal(const string16& display_text) {
   // text-field implementation.
 }
 
-void OmniboxViewMac::SetTextAndSelectedRange(const string16& display_text,
+void OmniboxViewMac::SetTextAndSelectedRange(const base::string16& display_text,
                                              const NSRange range) {
   SetText(display_text);
   SetSelectedRange(range);
-}
-
-NSString* OmniboxViewMac::GetNonSuggestTextSubstring() const {
-  NSString* text = [field_ stringValue];
-  if (suggest_text_length_ > 0) {
-    NSUInteger length = [text length];
-
-    DCHECK_LE(suggest_text_length_, length);
-    text = [text substringToIndex:(length - suggest_text_length_)];
-  }
-  return text;
-}
-
-NSString* OmniboxViewMac::GetSuggestTextSubstring() const {
-  if (suggest_text_length_ == 0)
-    return nil;
-
-  NSString* text = [field_ stringValue];
-  NSUInteger length = [text length];
-  DCHECK_LE(suggest_text_length_, length);
-  return [text substringFromIndex:(length - suggest_text_length_)];
 }
 
 void OmniboxViewMac::EmphasizeURLComponents() {
@@ -444,17 +459,23 @@ void OmniboxViewMac::EmphasizeURLComponents() {
     ApplyTextAttributes(GetText(), storage);
 
     [storage endEditing];
+
+    // This function can be called during the editor's -resignFirstResponder. If
+    // that happens, |storage| and |field_| will not be synced automatically any
+    // more. Calling -stringValue ensures that |field_| reflects the changes to
+    // |storage|.
+    [field_ stringValue];
   } else {
     SetText(GetText());
   }
 }
 
-void OmniboxViewMac::ApplyTextAttributes(const string16& display_text,
+void OmniboxViewMac::ApplyTextAttributes(const base::string16& display_text,
                                          NSMutableAttributedString* as) {
   NSUInteger as_length = [as length];
   NSRange as_entire_string = NSMakeRange(0, as_length);
 
-  [as addAttribute:NSFontAttributeName value:GetFieldFont()
+  [as addAttribute:NSFontAttributeName value:GetFieldFont(gfx::Font::NORMAL)
              range:as_entire_string];
 
   // A kinda hacky way to add breaking at periods. This is what Safari does.
@@ -464,34 +485,36 @@ void OmniboxViewMac::ApplyTextAttributes(const string16& display_text,
 
   // Make a paragraph style locking in the standard line height as the maximum,
   // otherwise the baseline may shift "downwards".
-  scoped_nsobject<NSMutableParagraphStyle>
-      paragraph_style([[NSMutableParagraphStyle alloc] init]);
-  [paragraph_style setMaximumLineHeight:line_height_];
+  base::scoped_nsobject<NSMutableParagraphStyle> paragraph_style(
+      [[NSMutableParagraphStyle alloc] init]);
+  CGFloat line_height = [[field_ cell] lineHeight];
+  [paragraph_style setMaximumLineHeight:line_height];
+  [paragraph_style setMinimumLineHeight:line_height];
+  [paragraph_style setLineBreakMode:NSLineBreakByTruncatingTail];
   [as addAttribute:NSParagraphStyleAttributeName value:paragraph_style
              range:as_entire_string];
 
-  // Grey out the suggest text.
-  [as addAttribute:NSForegroundColorAttributeName value:SuggestTextColor()
-             range:NSMakeRange(as_length - suggest_text_length_,
-                               suggest_text_length_)];
-
-  url_parse::Component scheme, host;
+  url::Component scheme, host;
   AutocompleteInput::ParseForEmphasizeComponents(
-      display_text, model()->GetDesiredTLD(), &scheme, &host);
-  const bool emphasize = model()->CurrentTextIsURL() && (host.len > 0);
-  if (emphasize) {
+      display_text, &scheme, &host);
+  bool grey_out_url = display_text.substr(scheme.begin, scheme.len) ==
+      base::UTF8ToUTF16(extensions::kExtensionScheme);
+  if (model()->CurrentTextIsURL() &&
+      (host.is_nonempty() || grey_out_url)) {
     [as addAttribute:NSForegroundColorAttributeName value:BaseTextColor()
                range:as_entire_string];
 
-    [as addAttribute:NSForegroundColorAttributeName value:HostTextColor()
+    if (!grey_out_url) {
+      [as addAttribute:NSForegroundColorAttributeName value:HostTextColor()
                range:ComponentToNSRange(host)];
+    }
   }
 
   // TODO(shess): GTK has this as a member var, figure out why.
   // [Could it be to not change if no change?  If so, I'm guessing
   // AppKit may already handle that.]
   const ToolbarModel::SecurityLevel security_level =
-      toolbar_model()->GetSecurityLevel();
+      controller()->GetToolbarModel()->GetSecurityLevel(false);
 
   // Emphasize the scheme for security UI display purposes (if necessary).
   if (!model()->user_input_in_progress() && model()->CurrentTextIsURL() &&
@@ -517,26 +540,21 @@ void OmniboxViewMac::ApplyTextAttributes(const string16& display_text,
   }
 }
 
-void OmniboxViewMac::OnTemporaryTextMaybeChanged(const string16& display_text,
-                                                 bool save_original_selection) {
+void OmniboxViewMac::OnTemporaryTextMaybeChanged(
+    const base::string16& display_text,
+    bool save_original_selection,
+    bool notify_text_changed) {
   if (save_original_selection)
     saved_temporary_selection_ = GetSelectedRange();
 
-  suggest_text_length_ = 0;
   SetWindowTextAndCaretPos(display_text, display_text.size(), false, false);
-  model()->OnChanged();
+  if (notify_text_changed)
+    model()->OnChanged();
   [field_ clearUndoChain];
 }
 
-void OmniboxViewMac::OnStartingIME() {
-  // Reset the suggest text just before starting an IME composition session,
-  // otherwise the IME composition may be interrupted when the suggest text
-  // gets reset by the IME composition change.
-  SetInstantSuggestion(string16());
-}
-
 bool OmniboxViewMac::OnInlineAutocompleteTextMaybeChanged(
-    const string16& display_text,
+    const base::string16& display_text,
     size_t user_text_length) {
   // TODO(shess): Make sure that this actually works.  The round trip
   // to native form and back may mean that it's the same but not the
@@ -554,8 +572,15 @@ bool OmniboxViewMac::OnInlineAutocompleteTextMaybeChanged(
   return true;
 }
 
+void OmniboxViewMac::OnInlineAutocompleteTextCleared() {
+}
+
 void OmniboxViewMac::OnRevertTemporaryText() {
   SetSelectedRange(saved_temporary_selection_);
+  // We got here because the user hit the Escape key. We explicitly don't call
+  // TextChanged(), since OmniboxPopupModel::ResetToDefaultMatch() has already
+  // been called by now, and it would've called TextChanged() if it was
+  // warranted.
 }
 
 bool OmniboxViewMac::IsFirstResponder() const {
@@ -576,7 +601,7 @@ bool OmniboxViewMac::OnAfterPossibleChange() {
   DCHECK(IsFirstResponder());
 
   const NSRange new_selection(GetSelectedRange());
-  const string16 new_text(GetText());
+  const base::string16 new_text(GetText());
   const size_t length = new_text.length();
 
   const bool selection_differs =
@@ -632,37 +657,27 @@ gfx::NativeView OmniboxViewMac::GetRelativeWindowForPopup() const {
   return NULL;
 }
 
-void OmniboxViewMac::SetInstantSuggestion(const string16& suggest_text) {
-  NSString* text = GetNonSuggestTextSubstring();
-  bool needs_update = (suggest_text_length_ > 0);
-
-  // Append the new suggest text.
-  suggest_text_length_ = suggest_text.length();
-  if (suggest_text_length_ > 0) {
-    text = [text stringByAppendingString:base::SysUTF16ToNSString(
-               suggest_text)];
-    needs_update = true;
-  }
-
-  if (needs_update) {
-    NSRange current_range = GetSelectedRange();
-    SetTextInternal(base::SysNSStringToUTF16(text));
-    if (NSMaxRange(current_range) <= [text length] - suggest_text_length_)
-      SetSelectedRange(current_range);
-    else
-      SetSelectedRange(NSMakeRange([text length] - suggest_text_length_, 0));
-  }
+void OmniboxViewMac::SetGrayTextAutocompletion(
+    const base::string16& suggest_text) {
+  if (suggest_text == suggest_text_)
+    return;
+  suggest_text_ = suggest_text;
+  [field_ setGrayTextAutocompletion:base::SysUTF16ToNSString(suggest_text)
+                          textColor:SuggestTextColor()];
 }
 
-string16 OmniboxViewMac::GetInstantSuggestion() const {
-  return suggest_text_length_ ?
-      base::SysNSStringToUTF16(GetSuggestTextSubstring()) : string16();
+base::string16 OmniboxViewMac::GetGrayTextAutocompletion() const {
+  return suggest_text_;
 }
 
-int OmniboxViewMac::TextWidth() const {
+int OmniboxViewMac::GetTextWidth() const {
   // Not used on mac.
   NOTREACHED();
   return 0;
+}
+
+int OmniboxViewMac::GetWidth() const {
+  return ceil([field_ bounds].size.width);
 }
 
 bool OmniboxViewMac::IsImeComposing() const {
@@ -689,37 +704,35 @@ void OmniboxViewMac::OnDidEndEditing() {
 }
 
 bool OmniboxViewMac::OnDoCommandBySelector(SEL cmd) {
-  // We should only arrive here when the field is focussed.
-  DCHECK(IsFirstResponder());
-
-  if (cmd != @selector(moveRight:) &&
-      cmd != @selector(insertTab:) &&
-      cmd != @selector(insertTabIgnoringFieldEditor:)) {
-    // Reset the suggest text for any change other than key right or tab.
-    // TODO(rohitrao): This is here to prevent complications when editing text.
-    // See if this can be removed.
-    SetInstantSuggestion(string16());
-  }
-
   if (cmd == @selector(deleteForward:))
     delete_was_pressed_ = true;
 
-  // Don't intercept up/down-arrow or backtab if the popup isn't open.
-  if (popup_view_->IsOpen()) {
-    if (cmd == @selector(moveDown:)) {
-      model()->OnUpOrDownKeyPressed(1);
-      return true;
-    }
+  if (cmd == @selector(moveDown:)) {
+    model()->OnUpOrDownKeyPressed(1);
+    return true;
+  }
 
-    if (cmd == @selector(moveUp:)) {
-      model()->OnUpOrDownKeyPressed(-1);
-      return true;
-    }
+  if (cmd == @selector(moveUp:)) {
+    model()->OnUpOrDownKeyPressed(-1);
+    return true;
+  }
 
-    if (cmd == @selector(insertBacktab:) &&
-        model()->popup_model()->selected_line_state() ==
+  if (model()->popup_model()->IsOpen()) {
+    if (cmd == @selector(insertBacktab:)) {
+      if (model()->popup_model()->selected_line_state() ==
             OmniboxPopupModel::KEYWORD) {
-      model()->ClearKeyword(GetText());
+        model()->ClearKeyword(GetText());
+        return true;
+      } else {
+        model()->OnUpOrDownKeyPressed(-1);
+        return true;
+      }
+    }
+
+    if ((cmd == @selector(insertTab:) ||
+        cmd == @selector(insertTabIgnoringFieldEditor:)) &&
+        !model()->is_keyword_hint()) {
+      model()->OnUpOrDownKeyPressed(1);
       return true;
     }
   }
@@ -727,8 +740,8 @@ bool OmniboxViewMac::OnDoCommandBySelector(SEL cmd) {
   if (cmd == @selector(moveRight:)) {
     // Only commit suggested text if the cursor is all the way to the right and
     // there is no selection.
-    if (suggest_text_length_ > 0 && IsCaretAtEnd()) {
-      model()->CommitSuggestedText(true);
+    if (suggest_text_.length() > 0 && IsCaretAtEnd()) {
+      model()->CommitSuggestedText();
       return true;
     }
   }
@@ -750,7 +763,7 @@ bool OmniboxViewMac::OnDoCommandBySelector(SEL cmd) {
   if ((cmd == @selector(insertTab:) ||
       cmd == @selector(insertTabIgnoringFieldEditor:)) &&
       model()->is_keyword_hint()) {
-    return model()->AcceptKeyword();
+    return model()->AcceptKeyword(ENTERED_KEYWORD_MODE_VIA_TAB);
   }
 
   // |-noop:| is sent when the user presses Cmd+Return. Override the no-op
@@ -761,7 +774,7 @@ bool OmniboxViewMac::OnDoCommandBySelector(SEL cmd) {
       ([event type] == NSKeyDown || [event type] == NSKeyUp) &&
       [event keyCode] == kVK_Return)) {
     WindowOpenDisposition disposition =
-        event_utils::WindowOpenDispositionFromNSEvent(event);
+        ui::WindowOpenDispositionFromNSEvent(event);
     model()->AcceptInput(disposition, false);
     // Opening a URL in a background tab should also revert the omnibox contents
     // to their original state.  We cannot do a blanket revert in OpenURL()
@@ -784,7 +797,7 @@ bool OmniboxViewMac::OnDoCommandBySelector(SEL cmd) {
   if (cmd == @selector(insertLineBreak:)) {
     OnControlKeyChanged(true);
     WindowOpenDisposition disposition =
-        event_utils::WindowOpenDispositionFromNSEvent([NSApp currentEvent]);
+        ui::WindowOpenDispositionFromNSEvent([NSApp currentEvent]);
     model()->AcceptInput(disposition, false);
     return true;
   }
@@ -811,13 +824,16 @@ bool OmniboxViewMac::OnDoCommandBySelector(SEL cmd) {
 void OmniboxViewMac::OnSetFocus(bool control_down) {
   model()->OnSetFocus(control_down);
   controller()->OnSetFocus();
+
+  HandleOriginChipMouseRelease();
 }
 
 void OmniboxViewMac::OnKillFocus() {
   // Tell the model to reset itself.
   model()->OnWillKillFocus(NULL);
   model()->OnKillFocus();
-  controller()->OnKillFocus();
+
+  OnDidKillFocus();
 }
 
 void OmniboxViewMac::OnMouseDown(NSInteger button_number) {
@@ -826,6 +842,11 @@ void OmniboxViewMac::OnMouseDown(NSInteger button_number) {
   // omnibox has invisible focus does not trigger a new OnSetFocus() call.
   if (button_number == 0 || button_number == 1)
     model()->SetCaretVisibility(true);
+}
+
+bool OmniboxViewMac::ShouldSelectAllOnMouseDown() {
+  return !controller()->GetToolbarModel()->WouldPerformSearchTermReplacement(
+      false);
 }
 
 bool OmniboxViewMac::CanCopy() {
@@ -837,17 +858,21 @@ void OmniboxViewMac::CopyToPasteboard(NSPasteboard* pb) {
   DCHECK(CanCopy());
 
   const NSRange selection = GetSelectedRange();
-  string16 text = base::SysNSStringToUTF16(
+  base::string16 text = base::SysNSStringToUTF16(
       [[field_ stringValue] substringWithRange:selection]);
 
   // Copy the URL unless this is the search URL and it's being replaced by the
   // Extended Instant API.
   GURL url;
   bool write_url = false;
-  if (!ShouldEnableCopyURL()) {
+  if (!controller()->GetToolbarModel()->WouldPerformSearchTermReplacement(
+      false)) {
     model()->AdjustTextForCopy(selection.location, IsSelectAll(), &text, &url,
                                &write_url);
   }
+
+  if (IsSelectAll())
+    UMA_HISTOGRAM_COUNTS(OmniboxEditModel::kCutOrCopyAllTextHistogram, 1);
 
   NSString* nstext = base::SysUTF16ToNSString(text);
   [pb declareTypes:[NSArray arrayWithObject:NSStringPboardType] owner:nil];
@@ -859,26 +884,16 @@ void OmniboxViewMac::CopyToPasteboard(NSPasteboard* pb) {
   }
 }
 
-void OmniboxViewMac::CopyURLToPasteboard(NSPasteboard* pb) {
-  DCHECK(CanCopy());
-  DCHECK(ShouldEnableCopyURL());
-
-  string16 text = toolbar_model()->GetText(false);
-  GURL url = toolbar_model()->GetURL();
-
-  NSString* nstext = base::SysUTF16ToNSString(text);
-  [pb declareTypes:[NSArray arrayWithObject:NSStringPboardType] owner:nil];
-  [pb setString:nstext forType:NSStringPboardType];
-
-  [pb declareURLPasteboardWithAdditionalTypes:[NSArray array] owner:nil];
-  [pb setDataForURL:base::SysUTF8ToNSString(url.spec()) title:nstext];
+void OmniboxViewMac::ShowURL() {
+  DCHECK(ShouldEnableShowURL());
+  OmniboxView::ShowURL();
 }
 
 void OmniboxViewMac::OnPaste() {
   // This code currently expects |field_| to be focussed.
   DCHECK([field_ currentEditor]);
 
-  string16 text = GetClipboardText();
+  base::string16 text = GetClipboardText();
   if (text.empty()) {
     return;
   }
@@ -894,7 +909,7 @@ void OmniboxViewMac::OnPaste() {
   const NSRange selectedRange = GetSelectedRange();
   if ([editor shouldChangeTextInRange:selectedRange replacementString:s]) {
     // Record this paste, so we can do different behavior.
-    model()->on_paste();
+    model()->OnPaste();
 
     // Force a Paste operation to trigger the text_changed code in
     // OnAfterPossibleChange(), even if identical contents are pasted
@@ -910,9 +925,8 @@ void OmniboxViewMac::OnPaste() {
 // the AutocompleteTextFieldObserver but the logic is shared between all
 // platforms. Some refactor might be necessary to simplify this. Or at least
 // this method could call the OmniboxView version.
-bool OmniboxViewMac::ShouldEnableCopyURL() {
-  return !model()->user_input_in_progress() &&
-      toolbar_model()->WouldReplaceSearchURLWithSearchTerms();
+bool OmniboxViewMac::ShouldEnableShowURL() {
+  return controller()->GetToolbarModel()->WouldReplaceURL();
 }
 
 bool OmniboxViewMac::CanPasteAndGo() {
@@ -920,14 +934,14 @@ bool OmniboxViewMac::CanPasteAndGo() {
 }
 
 int OmniboxViewMac::GetPasteActionStringId() {
-  string16 text(GetClipboardText());
+  base::string16 text(GetClipboardText());
   DCHECK(model()->CanPasteAndGo(text));
-  return model()->IsPasteAndSearch(GetClipboardText()) ?
+  return model()->IsPasteAndSearch(text) ?
       IDS_PASTE_AND_SEARCH : IDS_PASTE_AND_GO;
 }
 
 void OmniboxViewMac::OnPasteAndGo() {
-  string16 text(GetClipboardText());
+  base::string16 text(GetClipboardText());
   if (model()->CanPasteAndGo(text))
     model()->PasteAndGo(text);
 }
@@ -938,7 +952,6 @@ void OmniboxViewMac::OnFrameChanged() {
   // things even cheaper by refactoring between the popup-placement
   // code and the matrix-population code.
   popup_view_->UpdatePopupAppearance();
-  model()->OnPopupBoundsChanged(popup_view_->GetTargetBounds());
 
   // Give controller a chance to rearrange decorations.
   model()->OnChanged();
@@ -968,30 +981,7 @@ bool OmniboxViewMac::OnBackspacePressed() {
 }
 
 NSRange OmniboxViewMac::SelectionRangeForProposedRange(NSRange proposed_range) {
-  // Should never call this function unless editing is in progress.
-  DCHECK([field_ currentEditor]);
-
-  if (![field_ currentEditor])
-    return proposed_range;
-
-  // Do not use [field_ stringValue] here, as that forces a sync between the
-  // field and the editor.  This sync will end up setting the selection, which
-  // in turn calls this method, leading to an infinite loop.  Instead, retrieve
-  // the current string value directly from the editor.
-  size_t text_length = [[[field_ currentEditor] string] length];
-
-  // Cannot select suggested text.
-  size_t max = text_length - suggest_text_length_;
-  NSUInteger start = proposed_range.location;
-  NSUInteger end = proposed_range.location + proposed_range.length;
-
-  if (start > max)
-    start = max;
-
-  if (end > max)
-    end = max;
-
-  return NSMakeRange(start, end - start);
+  return proposed_range;
 }
 
 void OmniboxViewMac::OnControlKeyChanged(bool pressed) {
@@ -1010,9 +1000,11 @@ void OmniboxViewMac::FocusLocation(bool select_all) {
 }
 
 // static
-NSFont* OmniboxViewMac::GetFieldFont() {
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  return rb.GetFont(ResourceBundle::BaseFont).GetNativeFont();
+NSFont* OmniboxViewMac::GetFieldFont(int style) {
+  // This value should be kept in sync with InstantPage::InitializeFonts.
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  return rb.GetFontList(ui::ResourceBundle::BaseFont).Derive(1, style)
+      .GetPrimaryFont().GetNativeFont();
 }
 
 int OmniboxViewMac::GetOmniboxTextLength() const {
@@ -1020,12 +1012,11 @@ int OmniboxViewMac::GetOmniboxTextLength() const {
 }
 
 NSUInteger OmniboxViewMac::GetTextLength() const {
-  return ([field_ currentEditor] ?
-          [[[field_ currentEditor] string] length] :
-          [[field_ stringValue] length]) - suggest_text_length_;
+  return [field_ currentEditor] ?  [[[field_ currentEditor] string] length] :
+                                   [[field_ stringValue] length];
 }
 
 bool OmniboxViewMac::IsCaretAtEnd() const {
   const NSRange selection = GetSelectedRange();
-  return selection.length == 0 && selection.location == GetTextLength();
+  return NSMaxRange(selection) == GetTextLength();
 }

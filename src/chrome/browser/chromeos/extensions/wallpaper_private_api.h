@@ -5,184 +5,211 @@
 #ifndef CHROME_BROWSER_CHROMEOS_EXTENSIONS_WALLPAPER_PRIVATE_API_H_
 #define CHROME_BROWSER_CHROMEOS_EXTENSIONS_WALLPAPER_PRIVATE_API_H_
 
-#include "ash/desktop_background/desktop_background_controller.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/chromeos/extensions/wallpaper_function_base.h"
+#include "chrome/common/extensions/api/wallpaper_private.h"
 #include "net/url_request/url_fetcher_delegate.h"
-#include "ui/gfx/image/image_skia.h"
+
+namespace chromeos {
+class UserImage;
+}  // namespace chromeos
 
 // Wallpaper manager strings.
-class WallpaperStringsFunction : public SyncExtensionFunction {
+class WallpaperPrivateGetStringsFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("wallpaperPrivate.getStrings");
+  DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.getStrings",
+                             WALLPAPERPRIVATE_GETSTRINGS)
 
  protected:
-  virtual ~WallpaperStringsFunction() {}
+  virtual ~WallpaperPrivateGetStringsFunction() {}
 
   // SyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
-// Wallpaper manager function base. It contains a JPEG decoder to decode
-// wallpaper data.
-class WallpaperFunctionBase : public AsyncExtensionFunction {
+class WallpaperPrivateSetWallpaperIfExistsFunction
+    : public WallpaperFunctionBase {
  public:
-  WallpaperFunctionBase();
+  DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.setWallpaperIfExists",
+                             WALLPAPERPRIVATE_SETWALLPAPERIFEXISTS)
+
+  WallpaperPrivateSetWallpaperIfExistsFunction();
 
  protected:
-  virtual ~WallpaperFunctionBase();
-
-  // A class to decode JPEG file.
-  class WallpaperDecoder;
-
-  // Holds an instance of WallpaperDecoder.
-  static WallpaperDecoder* wallpaper_decoder_;
-
-  // Starts to decode |data|. Must run on UI thread.
-  void StartDecode(const std::string& data);
-
-  // Handles failure or cancel cases. Passes error message to Javascript side.
-  void OnFailureOrCancel(const std::string& error);
-
- private:
-  virtual void OnWallpaperDecoded(const gfx::ImageSkia& wallpaper) = 0;
-};
-
-class WallpaperSetWallpaperIfExistFunction : public WallpaperFunctionBase {
- public:
-  DECLARE_EXTENSION_FUNCTION_NAME("wallpaperPrivate.setWallpaperIfExist");
-
-  WallpaperSetWallpaperIfExistFunction();
-
- protected:
-  virtual ~WallpaperSetWallpaperIfExistFunction();
+  virtual ~WallpaperPrivateSetWallpaperIfExistsFunction();
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
-  virtual void OnWallpaperDecoded(const gfx::ImageSkia& wallpaper) OVERRIDE;
+  virtual void OnWallpaperDecoded(const gfx::ImageSkia& image) OVERRIDE;
 
-  // Reads file specified by |file_name|. If success, post a task to start
+  // File doesn't exist. Sets javascript callback parameter to false.
+  void OnFileNotExists(const std::string& error);
+
+  // Reads file specified by |file_path|. If success, post a task to start
   // decoding the file.
-  void ReadFileAndInitiateStartDecode(const std::string& file_name);
+  void ReadFileAndInitiateStartDecode(const base::FilePath& file_path,
+                                      const base::FilePath& fallback_path);
 
-  // High resolution wallpaper URL.
-  std::string url_;
+  scoped_ptr<extensions::api::wallpaper_private::SetWallpaperIfExists::Params>
+      params;
 
-  // Layout of the downloaded wallpaper.
-  ash::WallpaperLayout layout_;
+  // User id of the active user when this api is been called.
+  std::string user_id_;
 
   // Sequence token associated with wallpaper operations. Shared with
   // WallpaperManager.
   base::SequencedWorkerPool::SequenceToken sequence_token_;
-
 };
 
-class WallpaperSetWallpaperFunction : public WallpaperFunctionBase {
+class WallpaperPrivateSetWallpaperFunction : public WallpaperFunctionBase {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("wallpaperPrivate.setWallpaper");
+  DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.setWallpaper",
+                             WALLPAPERPRIVATE_SETWALLPAPER)
 
-  WallpaperSetWallpaperFunction();
+  WallpaperPrivateSetWallpaperFunction();
 
  protected:
-  virtual ~WallpaperSetWallpaperFunction();
+  virtual ~WallpaperPrivateSetWallpaperFunction();
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
-  virtual void OnWallpaperDecoded(const gfx::ImageSkia& wallpaper) OVERRIDE;
+  virtual void OnWallpaperDecoded(const gfx::ImageSkia& image) OVERRIDE;
 
   // Saves the image data to a file.
   void SaveToFile();
 
   // Sets wallpaper to the decoded image.
-  void SetDecodedWallpaper(scoped_ptr<gfx::ImageSkia> wallpaper);
+  void SetDecodedWallpaper(scoped_ptr<gfx::ImageSkia> image);
 
-  // Layout of the downloaded wallpaper.
-  ash::WallpaperLayout layout_;
+  scoped_ptr<extensions::api::wallpaper_private::SetWallpaper::Params> params;
 
   // The decoded wallpaper. It may accessed from UI thread to set wallpaper or
   // FILE thread to resize and save wallpaper to disk.
   gfx::ImageSkia wallpaper_;
 
-  // Email address of logged in user.
-  std::string email_;
-
-  // High resolution wallpaper URL.
-  std::string url_;
-
-  // String representation of downloaded wallpaper.
-  std::string image_data_;
+  // User id of the active user when this api is been called.
+  std::string user_id_;
 
   // Sequence token associated with wallpaper operations. Shared with
   // WallpaperManager.
   base::SequencedWorkerPool::SequenceToken sequence_token_;
 };
 
-class WallpaperSetCustomWallpaperFunction : public WallpaperFunctionBase {
+class WallpaperPrivateResetWallpaperFunction
+    : public AsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("wallpaperPrivate.setCustomWallpaper");
+  DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.resetWallpaper",
+                             WALLPAPERPRIVATE_RESETWALLPAPER)
 
-  WallpaperSetCustomWallpaperFunction();
+  WallpaperPrivateResetWallpaperFunction();
 
  protected:
-  virtual ~WallpaperSetCustomWallpaperFunction();
+  virtual ~WallpaperPrivateResetWallpaperFunction();
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
+};
+
+class WallpaperPrivateSetCustomWallpaperFunction
+    : public WallpaperFunctionBase {
+ public:
+  DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.setCustomWallpaper",
+                             WALLPAPERPRIVATE_SETCUSTOMWALLPAPER)
+
+  WallpaperPrivateSetCustomWallpaperFunction();
+
+ protected:
+  virtual ~WallpaperPrivateSetCustomWallpaperFunction();
+
+  // AsyncExtensionFunction overrides.
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   virtual void OnWallpaperDecoded(const gfx::ImageSkia& wallpaper) OVERRIDE;
 
-  // Layout of the downloaded wallpaper.
-  ash::WallpaperLayout layout_;
+  // Generates thumbnail of custom wallpaper. A simple STRETCH is used for
+  // generating thunbail.
+  void GenerateThumbnail(const base::FilePath& thumbnail_path,
+                         scoped_ptr<gfx::ImageSkia> image);
 
-  // Email address of logged in user.
-  std::string email_;
+  // Thumbnail is ready. Calls api function javascript callback.
+  void ThumbnailGenerated(base::RefCountedBytes* data);
 
-  // String representation of downloaded wallpaper.
-  std::string image_data_;
+  scoped_ptr<extensions::api::wallpaper_private::SetCustomWallpaper::Params>
+      params;
+
+  // User id of the active user when this api is been called.
+  std::string user_id_;
+
+  // User id hash of the logged in user.
+  std::string user_id_hash_;
+
+  // Sequence token associated with wallpaper operations. Shared with
+  // WallpaperManager.
+  base::SequencedWorkerPool::SequenceToken sequence_token_;
 };
 
-class WallpaperMinimizeInactiveWindowsFunction : public AsyncExtensionFunction {
+class WallpaperPrivateSetCustomWallpaperLayoutFunction
+    : public AsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("wallpaperPrivate.minimizeInactiveWindows");
+  DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.setCustomWallpaperLayout",
+                             WALLPAPERPRIVATE_SETCUSTOMWALLPAPERLAYOUT)
 
-  WallpaperMinimizeInactiveWindowsFunction();
+  WallpaperPrivateSetCustomWallpaperLayoutFunction();
 
  protected:
-  virtual ~WallpaperMinimizeInactiveWindowsFunction();
+  virtual ~WallpaperPrivateSetCustomWallpaperLayoutFunction();
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 };
 
-class WallpaperRestoreMinimizedWindowsFunction : public AsyncExtensionFunction {
+class WallpaperPrivateMinimizeInactiveWindowsFunction
+    : public AsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("wallpaperPrivate.restoreMinimizedWindows");
+  DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.minimizeInactiveWindows",
+                             WALLPAPERPRIVATE_MINIMIZEINACTIVEWINDOWS)
 
-  WallpaperRestoreMinimizedWindowsFunction();
+  WallpaperPrivateMinimizeInactiveWindowsFunction();
 
  protected:
-  virtual ~WallpaperRestoreMinimizedWindowsFunction();
+  virtual ~WallpaperPrivateMinimizeInactiveWindowsFunction();
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 };
 
-class WallpaperGetThumbnailFunction : public AsyncExtensionFunction {
+class WallpaperPrivateRestoreMinimizedWindowsFunction
+    : public AsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("wallpaperPrivate.getThumbnail");
+  DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.restoreMinimizedWindows",
+                             WALLPAPERPRIVATE_RESTOREMINIMIZEDWINDOWS)
 
-  WallpaperGetThumbnailFunction();
+  WallpaperPrivateRestoreMinimizedWindowsFunction();
 
  protected:
-  virtual ~WallpaperGetThumbnailFunction();
+  virtual ~WallpaperPrivateRestoreMinimizedWindowsFunction();
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
+};
+
+class WallpaperPrivateGetThumbnailFunction : public AsyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.getThumbnail",
+                             WALLPAPERPRIVATE_GETTHUMBNAIL)
+
+  WallpaperPrivateGetThumbnailFunction();
+
+ protected:
+  virtual ~WallpaperPrivateGetThumbnailFunction();
+
+  // AsyncExtensionFunction overrides.
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   // Failed to get thumbnail for |file_name|.
@@ -196,26 +223,26 @@ class WallpaperGetThumbnailFunction : public AsyncExtensionFunction {
   // when requested wallpaper thumbnail loaded successfully.
   void FileLoaded(const std::string& data);
 
-  // Gets thumbnail with |file_name| from thumbnail directory. If |file_name|
-  // does not exist, call FileNotLoaded().
-  void Get(const std::string& file_name);
+  // Gets thumbnail from |path|. If |path| does not exist, call FileNotLoaded().
+  void Get(const base::FilePath& path);
 
   // Sequence token associated with wallpaper operations. Shared with
   // WallpaperManager.
   base::SequencedWorkerPool::SequenceToken sequence_token_;
 };
 
-class WallpaperSaveThumbnailFunction : public AsyncExtensionFunction {
+class WallpaperPrivateSaveThumbnailFunction : public AsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("wallpaperPrivate.saveThumbnail");
+  DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.saveThumbnail",
+                             WALLPAPERPRIVATE_SAVETHUMBNAIL)
 
-  WallpaperSaveThumbnailFunction();
+  WallpaperPrivateSaveThumbnailFunction();
 
  protected:
-  virtual ~WallpaperSaveThumbnailFunction();
+  virtual ~WallpaperPrivateSaveThumbnailFunction();
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   // Failed to save thumbnail for |file_name|.
@@ -232,19 +259,21 @@ class WallpaperSaveThumbnailFunction : public AsyncExtensionFunction {
   base::SequencedWorkerPool::SequenceToken sequence_token_;
 };
 
-class WallpaperGetOfflineWallpaperListFunction : public AsyncExtensionFunction {
+class WallpaperPrivateGetOfflineWallpaperListFunction
+    : public AsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("wallpaperPrivate.getOfflineWallpaperList");
-  WallpaperGetOfflineWallpaperListFunction();
+  DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.getOfflineWallpaperList",
+                             WALLPAPERPRIVATE_GETOFFLINEWALLPAPERLIST)
+  WallpaperPrivateGetOfflineWallpaperListFunction();
 
  protected:
-  virtual ~WallpaperGetOfflineWallpaperListFunction();
+  virtual ~WallpaperPrivateGetOfflineWallpaperListFunction();
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
-  // Enumerates the list of files in wallpaper directory.
+  // Enumerates the list of files in online wallpaper directory.
   void GetList();
 
   // Sends the list of files to extension api caller. If no files or no

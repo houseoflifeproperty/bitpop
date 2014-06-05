@@ -23,12 +23,13 @@ class AwLoginDelegate;
 class AwHttpAuthHandlerBase {
  public:
   static AwHttpAuthHandlerBase* Create(AwLoginDelegate* login_delegate,
-                                       net::AuthChallengeInfo* auth_info);
+                                       net::AuthChallengeInfo* auth_info,
+                                       bool first_auth_attempt);
   virtual ~AwHttpAuthHandlerBase();
 
   // Provides an 'escape-hatch' out to Java for the browser/ layer
   // AwLoginDelegate.
-  virtual void HandleOnUIThread(content::WebContents*) = 0;
+  virtual bool HandleOnUIThread(content::WebContents*) = 0;
 };
 
 }  // namespace android_webview

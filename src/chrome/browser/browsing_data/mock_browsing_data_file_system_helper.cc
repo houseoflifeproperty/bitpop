@@ -27,16 +27,23 @@ void MockBrowsingDataFileSystemHelper::DeleteFileSystemOrigin(
 }
 
 void MockBrowsingDataFileSystemHelper::AddFileSystem(
-    const GURL& origin, bool has_persistent, bool has_temporary) {
-  response_.push_back(BrowsingDataFileSystemHelper::FileSystemInfo(
-      origin, has_persistent, has_temporary, 0, 0));
+    const GURL& origin, bool has_persistent, bool has_temporary,
+    bool has_syncable) {
+  BrowsingDataFileSystemHelper::FileSystemInfo info(origin);
+  if (has_persistent)
+    info.usage_map[fileapi::kFileSystemTypePersistent] = 0;
+  if (has_temporary)
+    info.usage_map[fileapi::kFileSystemTypeTemporary] = 0;
+  if (has_syncable)
+    info.usage_map[fileapi::kFileSystemTypeSyncable] = 0;
+  response_.push_back(info);
   file_systems_[origin.spec()] = true;
 }
 
 void MockBrowsingDataFileSystemHelper::AddFileSystemSamples() {
-  AddFileSystem(GURL("http://fshost1:1/"), false, true);
-  AddFileSystem(GURL("http://fshost2:2/"), true, false);
-  AddFileSystem(GURL("http://fshost3:3/"), true, true);
+  AddFileSystem(GURL("http://fshost1:1/"), false, true, false);
+  AddFileSystem(GURL("http://fshost2:2/"), true, false, true);
+  AddFileSystem(GURL("http://fshost3:3/"), true, true, true);
 }
 
 void MockBrowsingDataFileSystemHelper::Notify() {

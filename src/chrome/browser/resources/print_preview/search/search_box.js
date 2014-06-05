@@ -70,7 +70,7 @@ cr.define('print_preview', function() {
     /** @override */
     enterDocument: function() {
       print_preview.Component.prototype.enterDocument.call(this);
-      this.tracker.add(this.input_, 'keydown', this.onInputKeyDown_.bind(this));
+      this.tracker.add(this.input_, 'input', this.onInputInput_.bind(this));
     },
 
     /** @override */
@@ -99,7 +99,7 @@ cr.define('print_preview', function() {
      */
     dispatchSearchEvent_: function() {
       this.timeout_ = null;
-      var searchEvent = new cr.Event(SearchBox.EventType.SEARCH);
+      var searchEvent = new Event(SearchBox.EventType.SEARCH);
       searchEvent.query = this.getQuery_();
       this.dispatchEvent(searchEvent);
     },
@@ -108,7 +108,7 @@ cr.define('print_preview', function() {
      * Called when the input element's value changes. Dispatches a search event.
      * @private
      */
-    onInputKeyDown_: function() {
+    onInputInput_: function() {
       if (this.timeout_) {
         clearTimeout(this.timeout_);
       }

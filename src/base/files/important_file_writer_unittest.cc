@@ -4,14 +4,16 @@
 
 #include "base/files/important_file_writer.h"
 
+#include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
 #include "base/threading/thread.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace base {
@@ -20,7 +22,7 @@ namespace {
 
 std::string GetFileContent(const FilePath& path) {
   std::string content;
-  if (!file_util::ReadFileToString(path, &content)) {
+  if (!ReadFileToString(path, &content)) {
     NOTREACHED();
   }
   return content;
@@ -31,7 +33,7 @@ class DataSerializer : public ImportantFileWriter::DataSerializer {
   explicit DataSerializer(const std::string& data) : data_(data) {
   }
 
-  virtual bool SerializeData(std::string* output) {
+  virtual bool SerializeData(std::string* output) OVERRIDE {
     output->assign(data_);
     return true;
   }
@@ -39,6 +41,41 @@ class DataSerializer : public ImportantFileWriter::DataSerializer {
  private:
   const std::string data_;
 };
+
+class SuccessfulWriteObserver {
+ public:
+  SuccessfulWriteObserver() : successful_write_observed_(false) {}
+
+  // Register on_successful_write() to be called on the next successful write
+  // of |writer|.
+  void ObserveNextSuccessfulWrite(ImportantFileWriter* writer);
+
+  // Returns true if a successful write was observed via on_successful_write()
+  // and resets the observation state to false regardless.
+  bool GetAndResetObservationState();
+
+ private:
+  void on_successful_write() {
+    EXPECT_FALSE(successful_write_observed_);
+    successful_write_observed_ = true;
+  }
+
+  bool successful_write_observed_;
+
+  DISALLOW_COPY_AND_ASSIGN(SuccessfulWriteObserver);
+};
+
+void SuccessfulWriteObserver::ObserveNextSuccessfulWrite(
+    ImportantFileWriter* writer) {
+  writer->RegisterOnNextSuccessfulWriteCallback(base::Bind(
+      &SuccessfulWriteObserver::on_successful_write, base::Unretained(this)));
+}
+
+bool SuccessfulWriteObserver::GetAndResetObservationState() {
+  bool was_successful_write_observed = successful_write_observed_;
+  successful_write_observed_ = false;
+  return was_successful_write_observed;
+}
 
 }  // namespace
 
@@ -51,6 +88,7 @@ class ImportantFileWriterTest : public testing::Test {
   }
 
  protected:
+  SuccessfulWriteObserver successful_write_observer_;
   FilePath file_;
   MessageLoop loop_;
 
@@ -59,19 +97,53 @@ class ImportantFileWriterTest : public testing::Test {
 };
 
 TEST_F(ImportantFileWriterTest, Basic) {
-  ImportantFileWriter writer(file_,
-                             MessageLoopProxy::current());
-  EXPECT_FALSE(file_util::PathExists(writer.path()));
+  ImportantFileWriter writer(file_, MessageLoopProxy::current().get());
+  EXPECT_FALSE(PathExists(writer.path()));
+  EXPECT_FALSE(successful_write_observer_.GetAndResetObservationState());
   writer.WriteNow("foo");
-  loop_.RunUntilIdle();
+  RunLoop().RunUntilIdle();
 
-  ASSERT_TRUE(file_util::PathExists(writer.path()));
+  EXPECT_FALSE(successful_write_observer_.GetAndResetObservationState());
+  ASSERT_TRUE(PathExists(writer.path()));
   EXPECT_EQ("foo", GetFileContent(writer.path()));
 }
 
+TEST_F(ImportantFileWriterTest, BasicWithSuccessfulWriteObserver) {
+  ImportantFileWriter writer(file_, MessageLoopProxy::current().get());
+  EXPECT_FALSE(PathExists(writer.path()));
+  EXPECT_FALSE(successful_write_observer_.GetAndResetObservationState());
+  successful_write_observer_.ObserveNextSuccessfulWrite(&writer);
+  writer.WriteNow("foo");
+  RunLoop().RunUntilIdle();
+
+  // Confirm that the observer is invoked.
+  EXPECT_TRUE(successful_write_observer_.GetAndResetObservationState());
+  ASSERT_TRUE(PathExists(writer.path()));
+  EXPECT_EQ("foo", GetFileContent(writer.path()));
+
+  // Confirm that re-installing the observer works for another write.
+  EXPECT_FALSE(successful_write_observer_.GetAndResetObservationState());
+  successful_write_observer_.ObserveNextSuccessfulWrite(&writer);
+  writer.WriteNow("bar");
+  RunLoop().RunUntilIdle();
+
+  EXPECT_TRUE(successful_write_observer_.GetAndResetObservationState());
+  ASSERT_TRUE(PathExists(writer.path()));
+  EXPECT_EQ("bar", GetFileContent(writer.path()));
+
+  // Confirm that writing again without re-installing the observer doesn't
+  // result in a notification.
+  EXPECT_FALSE(successful_write_observer_.GetAndResetObservationState());
+  writer.WriteNow("baz");
+  RunLoop().RunUntilIdle();
+
+  EXPECT_FALSE(successful_write_observer_.GetAndResetObservationState());
+  ASSERT_TRUE(PathExists(writer.path()));
+  EXPECT_EQ("baz", GetFileContent(writer.path()));
+}
+
 TEST_F(ImportantFileWriterTest, ScheduleWrite) {
-  ImportantFileWriter writer(file_,
-                             MessageLoopProxy::current());
+  ImportantFileWriter writer(file_, MessageLoopProxy::current().get());
   writer.set_commit_interval(TimeDelta::FromMilliseconds(25));
   EXPECT_FALSE(writer.HasPendingWrite());
   DataSerializer serializer("foo");
@@ -79,17 +151,16 @@ TEST_F(ImportantFileWriterTest, ScheduleWrite) {
   EXPECT_TRUE(writer.HasPendingWrite());
   MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
-      MessageLoop::QuitClosure(),
+      MessageLoop::QuitWhenIdleClosure(),
       TimeDelta::FromMilliseconds(100));
   MessageLoop::current()->Run();
   EXPECT_FALSE(writer.HasPendingWrite());
-  ASSERT_TRUE(file_util::PathExists(writer.path()));
+  ASSERT_TRUE(PathExists(writer.path()));
   EXPECT_EQ("foo", GetFileContent(writer.path()));
 }
 
 TEST_F(ImportantFileWriterTest, DoScheduledWrite) {
-  ImportantFileWriter writer(file_,
-                             MessageLoopProxy::current());
+  ImportantFileWriter writer(file_, MessageLoopProxy::current().get());
   EXPECT_FALSE(writer.HasPendingWrite());
   DataSerializer serializer("foo");
   writer.ScheduleWrite(&serializer);
@@ -97,17 +168,16 @@ TEST_F(ImportantFileWriterTest, DoScheduledWrite) {
   writer.DoScheduledWrite();
   MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
-      MessageLoop::QuitClosure(),
+      MessageLoop::QuitWhenIdleClosure(),
       TimeDelta::FromMilliseconds(100));
   MessageLoop::current()->Run();
   EXPECT_FALSE(writer.HasPendingWrite());
-  ASSERT_TRUE(file_util::PathExists(writer.path()));
+  ASSERT_TRUE(PathExists(writer.path()));
   EXPECT_EQ("foo", GetFileContent(writer.path()));
 }
 
 TEST_F(ImportantFileWriterTest, BatchingWrites) {
-  ImportantFileWriter writer(file_,
-                             MessageLoopProxy::current());
+  ImportantFileWriter writer(file_, MessageLoopProxy::current().get());
   writer.set_commit_interval(TimeDelta::FromMilliseconds(25));
   DataSerializer foo("foo"), bar("bar"), baz("baz");
   writer.ScheduleWrite(&foo);
@@ -115,10 +185,10 @@ TEST_F(ImportantFileWriterTest, BatchingWrites) {
   writer.ScheduleWrite(&baz);
   MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
-      MessageLoop::QuitClosure(),
+      MessageLoop::QuitWhenIdleClosure(),
       TimeDelta::FromMilliseconds(100));
   MessageLoop::current()->Run();
-  ASSERT_TRUE(file_util::PathExists(writer.path()));
+  ASSERT_TRUE(PathExists(writer.path()));
   EXPECT_EQ("baz", GetFileContent(writer.path()));
 }
 

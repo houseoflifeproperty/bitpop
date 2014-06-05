@@ -15,6 +15,7 @@ import urllib
 import urllib2
 
 from common import chromium_utils
+from slave import build_directory
 from slave import slave_utils
 
 class ExtractHandler(object):
@@ -55,7 +56,7 @@ class WebHandler(ExtractHandler):
     return rc
 
 
-def GetBuildUrl(abs_build_dir, options):
+def GetBuildUrl(options, build_revision, webkit_revision=None):
   """Compute the url to download the build from.  This will use as a base
      string, in order of preference:
      1) options.build_url
@@ -64,28 +65,27 @@ def GetBuildUrl(abs_build_dir, options):
         construction is not compatible with the 'force build' button.
 
      Args:
-       abs_build_dir: Full path to source directory.
        options: options object as specified by parser below.
+       build_revision: Revision for the build.
+       webkit_revision: WebKit revision (optional)
    """
-
-  abs_webkit_dir = None
-  if options.webkit_dir:
-    abs_webkit_dir = os.path.join(abs_build_dir, '..', options.webkit_dir)
   base_filename, version_suffix = slave_utils.GetZipFileNames(
-      options.build_properties, abs_build_dir, abs_webkit_dir, extract=True)
+      options.build_properties, build_revision, webkit_revision, extract=True)
 
   replace_dict = dict(options.build_properties)
   # If builddir isn't specified, assume buildbot used the builder name
   # as the root folder for the build.
-  if not replace_dict.get('parent_builddir'):
-    replace_dict['parent_builddir'] = replace_dict['parentname']
+  if not replace_dict.get('parent_builddir') and replace_dict.get('parentname'):
+    replace_dict['parent_builddir'] = replace_dict.get('parentname', '')
   replace_dict['base_filename'] = base_filename
   url = options.build_url or options.factory_properties.get('build_url')
   if not url:
     url = ('http://%(parentslavename)s/b/build/slave/%(parent_builddir)s/'
            'chrome_staging')
   if url[-4:] != '.zip': # assume filename not specified
-    url = os.path.join(url, '%(base_filename)s.zip')
+    # Append the filename to the base URL. First strip any trailing slashes.
+    url = url.rstrip('/')
+    url = '%s/%s' % (url, '%(base_filename)s.zip')
   url = url % replace_dict
 
   versioned_url = url.replace('.zip', version_suffix + '.zip')
@@ -96,33 +96,24 @@ def real_main(options):
   """ Download a build, extract it to build\BuildDir\full-build-win32
       and rename it to build\BuildDir\Target
   """
-  # TODO: need to get the build *output* directory passed in also so Linux
-  # and Mac don't have to walk up a directory to get to the right directory.
-  if options.build_output_dir:
-    build_output_dir = os.path.join(options.build_dir, options.build_output_dir)
-  elif chromium_utils.IsWindows():
-    build_output_dir = options.build_dir
-  elif chromium_utils.IsLinux():
-    build_output_dir = os.path.join(
-        os.path.dirname(options.build_dir), 'sconsbuild')
-  elif chromium_utils.IsMac():
-    build_output_dir = os.path.join(
-        os.path.dirname(options.build_dir), 'xcodebuild')
-  else:
-    raise NotImplementedError('%s is not supported.' % sys.platform)
-
-  abs_build_dir = os.path.abspath(options.build_dir)
-  abs_build_output_dir = os.path.abspath(build_output_dir)
-  target_build_output_dir = os.path.join(abs_build_output_dir, options.target)
+  abs_build_dir = os.path.abspath(
+      build_directory.GetBuildOutputDirectory(options.src_dir))
+  target_build_output_dir = os.path.join(abs_build_dir, options.target)
 
   # Generic name for the archive.
   archive_name = 'full-build-%s.zip' % chromium_utils.PlatformName()
 
   # Just take the zip off the name for the output directory name.
-  output_dir = os.path.join(abs_build_output_dir,
-                            archive_name.replace('.zip', ''))
+  output_dir = os.path.join(abs_build_dir, archive_name.replace('.zip', ''))
 
-  base_url, url = GetBuildUrl(abs_build_dir, options)
+  src_dir = os.path.dirname(abs_build_dir)
+  if not options.build_revision:
+    (build_revision, webkit_revision) = slave_utils.GetBuildRevisions(
+        src_dir, options.webkit_dir, options.revision_dir)
+  else:
+    build_revision = options.build_revision
+    webkit_revision = options.webkit_revision
+  base_url, url = GetBuildUrl(options, build_revision, webkit_revision)
   archive_name = os.path.basename(base_url)
 
   if url.startswith('gs://'):
@@ -166,10 +157,10 @@ def real_main(options):
         if not handler.download():
           continue
 
-    print 'Extracting build %s to %s...' % (archive_name, abs_build_output_dir)
+    print 'Extracting build %s to %s...' % (archive_name, abs_build_dir)
     try:
       chromium_utils.RemoveDirectory(target_build_output_dir)
-      chromium_utils.ExtractZip(archive_name, abs_build_output_dir)
+      chromium_utils.ExtractZip(archive_name, abs_build_dir)
       # For Chrome builds, the build will be stored in chrome-win32.
       if 'full-build-win32' in output_dir:
         chrome_dir = output_dir.replace('full-build-win32', 'chrome-win32')
@@ -212,19 +203,30 @@ def main():
 
   option_parser.add_option('--target',
                            help='build target to archive (Debug or Release)')
-  option_parser.add_option('--build-dir',
-                           help='path to main build directory (the parent of '
-                                'the Release or Debug directory)')
+  option_parser.add_option('--src-dir', default='src',
+                           help='path to the top-level sources directory')
+  option_parser.add_option('--build-dir', help='ignored')
   option_parser.add_option('--build-url',
                            help='url where to find the build to extract')
   # TODO(cmp): Remove --halt-on-missing-build when the buildbots are upgraded
   #            to not use this argument.
   option_parser.add_option('--halt-on-missing-build', action='store_true',
                            help='whether to halt on a missing build')
-  option_parser.add_option('--webkit-dir', help='webkit directory path, '
-                                                'relative to --build-dir')
-  option_parser.add_option('--build-output-dir',
-                           help='Output path relative to --build-dir.')
+  option_parser.add_option('--build_revision',
+                           help='Revision of the build that is being '
+                                'archived. Overrides the revision found on '
+                                'the local disk')
+  option_parser.add_option('--webkit_revision',
+                           help='Webkit revision of the build that is being '
+                                'archived. Overrides the revision found on '
+                                'the local disk')
+  option_parser.add_option('--webkit-dir', help='WebKit directory path, '
+                                                'relative to the src/ dir.')
+  option_parser.add_option('--revision-dir',
+                           help=('Directory path that shall be used to decide '
+                                 'the revision number for the archive, '
+                                 'relative to the src/ dir.'))
+  option_parser.add_option('--build-output-dir', help='ignored')
   chromium_utils.AddPropertiesOptions(option_parser)
 
   options, args = option_parser.parse_args()
@@ -236,6 +238,10 @@ def main():
     options.target = options.factory_properties.get('target', 'Release')
   if not options.webkit_dir:
     options.webkit_dir = options.factory_properties.get('webkit_dir')
+  if not options.revision_dir:
+    options.revision_dir = options.factory_properties.get('revision_dir')
+  options.src_dir = (options.factory_properties.get('extract_build_src_dir')
+                     or options.src_dir)
 
   return real_main(options)
 

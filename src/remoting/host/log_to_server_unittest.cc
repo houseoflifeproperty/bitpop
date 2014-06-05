@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
-#include "remoting/jingle_glue/mock_objects.h"
+#include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_proxy.h"
+#include "remoting/host/host_status_monitor_fake.h"
 #include "remoting/host/log_to_server.h"
-#include "testing/gmock_mutant.h"
+#include "remoting/jingle_glue/mock_objects.h"
 #include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gmock_mutant.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/libjingle/source/talk/xmllite/xmlelement.h"
 
@@ -23,22 +24,24 @@ namespace remoting {
 namespace {
 
 ACTION_P(QuitMainMessageLoop, message_loop) {
-  message_loop->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+  message_loop->PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
 }
 
 const char kJabberClientNamespace[] = "jabber:client";
 const char kChromotingNamespace[] = "google:remoting";
+const char kTestBotJid[] = "remotingunittest@bot.talk.google.com";
 const char kClientJid1[] = "client@domain.com/1234";
 const char kClientJid2[] = "client@domain.com/5678";
 const char kHostJid[] = "host@domain.com/1234";
 
 bool IsLogEntryForConnection(XmlElement* node, const char* connection_type) {
   return (node->Name() == QName(kChromotingNamespace, "entry") &&
-          node->Attr(QName("", "event-name")) == "session-state" &&
-          node->Attr(QName("", "session-state")) == "connected" &&
-          node->Attr(QName("", "role")) == "host" &&
-          node->Attr(QName("", "mode")) == "me2me" &&
-          node->Attr(QName("", "connection-type")) == connection_type);
+          node->Attr(QName(std::string(), "event-name")) == "session-state" &&
+          node->Attr(QName(std::string(), "session-state")) == "connected" &&
+          node->Attr(QName(std::string(), "role")) == "host" &&
+          node->Attr(QName(std::string(), "mode")) == "me2me" &&
+          node->Attr(QName(std::string(), "connection-type")) ==
+              connection_type);
 }
 
 MATCHER_P(IsClientConnected, connection_type, "") {
@@ -89,10 +92,10 @@ MATCHER_P2(IsTwoClientsConnected, connection_type1, connection_type2, "") {
 
 bool IsLogEntryForDisconnection(XmlElement* node) {
   return (node->Name() == QName(kChromotingNamespace, "entry") &&
-          node->Attr(QName("", "event-name")) == "session-state" &&
-          node->Attr(QName("", "session-state")) == "closed" &&
-          node->Attr(QName("", "role")) == "host" &&
-          node->Attr(QName("", "mode")) == "me2me");
+          node->Attr(QName(std::string(), "event-name")) == "session-state" &&
+          node->Attr(QName(std::string(), "session-state")) == "closed" &&
+          node->Attr(QName(std::string(), "role")) == "host" &&
+          node->Attr(QName(std::string(), "mode")) == "me2me");
 }
 
 MATCHER(IsClientDisconnected, "") {
@@ -125,15 +128,19 @@ class LogToServerTest : public testing::Test {
     message_loop_proxy_ = base::MessageLoopProxy::current();
     EXPECT_CALL(signal_strategy_, AddListener(_));
     log_to_server_.reset(
-        new LogToServer(NULL, ServerLogEntry::ME2ME, &signal_strategy_));
+        new LogToServer(host_status_monitor_.AsWeakPtr(),
+                        ServerLogEntry::ME2ME,
+                        &signal_strategy_,
+                        kTestBotJid));
     EXPECT_CALL(signal_strategy_, RemoveListener(_));
   }
 
  protected:
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   scoped_refptr<base::MessageLoopProxy> message_loop_proxy_;
   MockSignalStrategy signal_strategy_;
   scoped_ptr<LogToServer> log_to_server_;
+  HostStatusMonitorFake host_status_monitor_;
 };
 
 TEST_F(LogToServerTest, SendNow) {

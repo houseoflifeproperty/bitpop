@@ -5,17 +5,13 @@
 #ifndef ASH_WM_GESTURES_LONG_PRESS_AFFORDANCE_HANDLER_H_
 #define ASH_WM_GESTURES_LONG_PRESS_AFFORDANCE_HANDLER_H_
 
-#include "base/timer.h"
-#include "ui/base/animation/animation_delegate.h"
-#include "ui/base/animation/linear_animation.h"
+#include "base/timer/timer.h"
+#include "ui/aura/window_observer.h"
+#include "ui/gfx/animation/linear_animation.h"
 #include "ui/gfx/point.h"
 
-namespace aura {
-class Window;
-}
-
 namespace ui {
-class LocatedEvent;
+class GestureEvent;
 }
 
 namespace ash {
@@ -24,8 +20,6 @@ namespace test {
 class SystemGestureEventFilterTest;
 }
 
-namespace internal {
-
 // LongPressAffordanceHandler displays an animated affordance that is shown
 // on a TAP_DOWN gesture. The animation sequence consists of two parts:
 // The first part is a grow animation that starts at semi-long-press and
@@ -33,19 +27,19 @@ namespace internal {
 // during grow animation.
 // The second part is a shrink animation that start after grow and shrinks the
 // affordance out of view.
-class LongPressAffordanceHandler : public ui::AnimationDelegate,
-                                   public ui::LinearAnimation {
+class LongPressAffordanceHandler : public gfx::LinearAnimation,
+                                   public aura::WindowObserver {
  public:
   LongPressAffordanceHandler();
   virtual ~LongPressAffordanceHandler();
 
-  // Display or removes long press affordance according to the |event|.
-  void ProcessEvent(aura::Window* target,
-                    ui::LocatedEvent* event,
-                    int touch_id);
+  // Displays or removes long press affordance according to the |event|.
+  void ProcessEvent(aura::Window* target, ui::GestureEvent* event);
 
  private:
   friend class ash::test::SystemGestureEventFilterTest;
+
+  class LongPressAffordanceView;
 
   enum LongPressAnimationType {
     NONE,
@@ -54,27 +48,25 @@ class LongPressAffordanceHandler : public ui::AnimationDelegate,
   };
 
   void StartAnimation();
-  void StopAnimation();
+  void StopAffordance();
+  void SetTapDownTarget(aura::Window* target);
 
-  // Overridden from ui::LinearAnimation.
+  // Overridden from gfx::LinearAnimation.
   virtual void AnimateToState(double state) OVERRIDE;
-  virtual bool ShouldSendCanceledFromStop() OVERRIDE;
+  virtual void AnimationStopped() OVERRIDE;
 
-  // Overridden from ui::AnimationDelegate.
-  virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE;
+  // Overridden from aura::WindowObserver.
+  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
 
-  class LongPressAffordanceView;
   scoped_ptr<LongPressAffordanceView> view_;
   gfx::Point tap_down_location_;
-  int tap_down_touch_id_;
   base::OneShotTimer<LongPressAffordanceHandler> timer_;
-  int64 tap_down_display_id_;
+  aura::Window* tap_down_target_;
   LongPressAnimationType current_animation_type_;
 
   DISALLOW_COPY_AND_ASSIGN(LongPressAffordanceHandler);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_WM_GESTURES_LONG_PRESS_AFFORDANCE_HANDLER_H_

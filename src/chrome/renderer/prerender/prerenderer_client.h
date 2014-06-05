@@ -7,20 +7,20 @@
 
 #include "base/compiler_specific.h"
 #include "content/public/renderer/render_view_observer.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPrerendererClient.h"
+#include "third_party/WebKit/public/web/WebPrerendererClient.h"
 
 namespace prerender {
 
 class PrerendererClient : public content::RenderViewObserver,
-                          public WebKit::WebPrerendererClient {
+                          public blink::WebPrerendererClient {
  public:
   explicit PrerendererClient(content::RenderView* render_view);
 
  private:
   virtual ~PrerendererClient();
 
-  // Implements WebKit::WebPrerendererClient
-  virtual void willAddPrerender(WebKit::WebPrerender* prerender) OVERRIDE;
+  // Implements blink::WebPrerendererClient
+  virtual void willAddPrerender(blink::WebPrerender* prerender) OVERRIDE;
 };
 
 }  // namespace prerender

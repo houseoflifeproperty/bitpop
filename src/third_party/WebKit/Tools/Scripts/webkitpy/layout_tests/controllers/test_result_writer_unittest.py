@@ -1,4 +1,4 @@
-# Copyright (C) 2011 Google Inc. All rights reserved.
+# Copyright (C) 2013 Google Inc. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are
@@ -10,7 +10,10 @@
 # copyright notice, this list of conditions and the following disclaimer
 # in the documentation and/or other materials provided with the
 # distribution.
-
+#     * Neither the name of Google Inc. nor the names of its
+# contributors may be used to endorse or promote products derived from
+# this software without specific prior written permission.
+#
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
 # "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
 # LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -23,33 +26,52 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import unittest
+import optparse
+import webkitpy.thirdparty.unittest2 as unittest
 
-from webkitpy.common.host_mock import MockHost
-from webkitpy.layout_tests.controllers import test_result_writer
-from webkitpy.layout_tests.models import test_failures
+from webkitpy.common.system.systemhost_mock import MockSystemHost
+from webkitpy.layout_tests.controllers.test_result_writer import write_test_result
 from webkitpy.layout_tests.port.driver import DriverOutput
 from webkitpy.layout_tests.port.test import TestPort
+from webkitpy.layout_tests.models import test_failures
 
 
-class TestResultWriterTest(unittest.TestCase):
+class TestResultWriterTests(unittest.TestCase):
+    def run_test(self, failures=None, files=None):
+        failures = failures or []
+        host = MockSystemHost()
+        host.filesystem.files = files or {}
+        port = TestPort(host=host, port_name='test-mac-snowleopard', options=optparse.Values())
+        actual_output = DriverOutput(text='', image=None, image_hash=None, audio=None)
+        expected_output = DriverOutput(text='', image=None, image_hash=None, audio=None)
+        write_test_result(host.filesystem, port, '/tmp', 'foo.html', actual_output, expected_output, failures)
+        return host.filesystem.written_files
 
-    def test_reftest_diff_image(self):
-        """A write_test_result should call port.diff_image with tolerance=0 in case of FailureReftestMismatch."""
-        used_tolerance_values = []
+    def test_success(self):
+        # Nothing is written when the test passes.
+        written_files = self.run_test(failures=[])
+        self.assertEqual(written_files, {})
 
-        class ImageDiffTestPort(TestPort):
-            def diff_image(self, expected_contents, actual_contents, tolerance=None):
-                used_tolerance_values.append(tolerance)
-                return (True, 1, None)
+    def test_reference_exists(self):
+        failure = test_failures.FailureReftestMismatch()
+        failure.reference_filename = '/src/exists-expected.html'
+        files = {'/src/exists-expected.html': 'yup'}
+        written_files = self.run_test(failures=[failure], files=files)
+        self.assertEqual(written_files, {'/tmp/exists-expected.html': 'yup'})
 
-        host = MockHost()
-        port = ImageDiffTestPort(host)
-        test_name = 'failures/unexpected/reftest.html'
-        test_reference_file = host.filesystem.join(port.layout_tests_dir(), 'failures/unexpected/reftest-expected.html')
-        driver_output1 = DriverOutput('text1', 'image1', 'imagehash1', 'audio1')
-        driver_output2 = DriverOutput('text2', 'image2', 'imagehash2', 'audio2')
-        failures = [test_failures.FailureReftestMismatch(test_reference_file)]
-        test_result_writer.write_test_result(host.filesystem, ImageDiffTestPort(host), test_name,
-                                             driver_output1, driver_output2, failures)
-        self.assertEqual([0], used_tolerance_values)
+        failure = test_failures.FailureReftestMismatchDidNotOccur()
+        failure.reference_filename = '/src/exists-expected-mismatch.html'
+        files = {'/src/exists-expected-mismatch.html': 'yup'}
+        written_files = self.run_test(failures=[failure], files=files)
+        self.assertEqual(written_files, {'/tmp/exists-expected-mismatch.html': 'yup'})
+
+    def test_reference_is_missing(self):
+        failure = test_failures.FailureReftestMismatch()
+        failure.reference_filename = 'notfound.html'
+        written_files = self.run_test(failures=[failure], files={})
+        self.assertEqual(written_files, {})
+
+        failure = test_failures.FailureReftestMismatchDidNotOccur()
+        failure.reference_filename = 'notfound.html'
+        written_files = self.run_test(failures=[failure], files={})
+        self.assertEqual(written_files, {})

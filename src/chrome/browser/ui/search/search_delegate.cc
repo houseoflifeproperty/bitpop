@@ -7,31 +7,25 @@
 #include "chrome/browser/ui/search/search_model.h"
 #include "chrome/browser/ui/search/search_tab_helper.h"
 
-namespace chrome {
-namespace search {
-
-SearchDelegate::SearchDelegate(SearchModel* browser_search_model,
-                               ToolbarModel* toolbar_model)
+SearchDelegate::SearchDelegate(SearchModel* browser_search_model)
     : browser_model_(browser_search_model),
-      tab_model_(NULL) {
+      tab_model_() {
 }
 
 SearchDelegate::~SearchDelegate() {
   DCHECK(!tab_model_) << "All tabs should have been deactivated or closed.";
 }
 
-void SearchDelegate::ModeChanged(const Mode& old_mode, const Mode& new_mode) {
-  browser_model_->SetMode(new_mode);
+void SearchDelegate::ModelChanged(const SearchModel::State& old_state,
+                                  const SearchModel::State& new_state) {
+  browser_model_->SetState(new_state);
 }
 
 void SearchDelegate::OnTabActivated(content::WebContents* web_contents) {
   if (tab_model_)
     tab_model_->RemoveObserver(this);
-  tab_model_ =
-      chrome::search::SearchTabHelper::FromWebContents(web_contents)->model();
-  DCHECK_EQ(tab_model_->web_contents(), web_contents);
-  browser_model_->set_web_contents(web_contents);
-  browser_model_->SetMode(tab_model_->mode());
+  tab_model_ = SearchTabHelper::FromWebContents(web_contents)->model();
+  browser_model_->SetState(tab_model_->state());
   tab_model_->AddObserver(this);
 }
 
@@ -44,14 +38,10 @@ void SearchDelegate::OnTabDetached(content::WebContents* web_contents) {
 }
 
 void SearchDelegate::StopObservingTab(content::WebContents* web_contents) {
-  chrome::search::SearchTabHelper* search_tab_helper =
-      chrome::search::SearchTabHelper::FromWebContents(web_contents);
+  SearchTabHelper* search_tab_helper =
+      SearchTabHelper::FromWebContents(web_contents);
   if (search_tab_helper->model() == tab_model_) {
     tab_model_->RemoveObserver(this);
-    browser_model_->set_web_contents(NULL);
     tab_model_ = NULL;
   }
 }
-
-}  // namespace search
-}  // namespace chrome

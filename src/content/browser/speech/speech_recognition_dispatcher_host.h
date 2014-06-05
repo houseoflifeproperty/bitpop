@@ -6,6 +6,7 @@
 #define CONTENT_BROWSER_SPEECH_SPEECH_RECOGNITION_DISPATCHER_HOST_H_
 
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/browser/speech_recognition_event_listener.h"
@@ -16,7 +17,6 @@ struct SpeechRecognitionHostMsg_StartRequest_Params;
 namespace content {
 
 class SpeechRecognitionManager;
-class SpeechRecognitionPreferences;
 struct SpeechRecognitionResult;
 
 // SpeechRecognitionDispatcherHost is a delegate for Speech API messages used by
@@ -28,9 +28,11 @@ class CONTENT_EXPORT SpeechRecognitionDispatcherHost
       public SpeechRecognitionEventListener {
  public:
   SpeechRecognitionDispatcherHost(
+      bool is_guest,
       int render_process_id,
-      net::URLRequestContextGetter* context_getter,
-      SpeechRecognitionPreferences* recognition_preferences);
+      net::URLRequestContextGetter* context_getter);
+
+  base::WeakPtr<SpeechRecognitionDispatcherHost> AsWeakPtr();
 
   // SpeechRecognitionEventListener methods.
   virtual void OnRecognitionStart(int session_id) OVERRIDE;
@@ -53,26 +55,33 @@ class CONTENT_EXPORT SpeechRecognitionDispatcherHost
   // BrowserMessageFilter implementation.
   virtual bool OnMessageReceived(const IPC::Message& message,
                                  bool* message_was_ok) OVERRIDE;
+  virtual void OverrideThreadForMessage(
+      const IPC::Message& message,
+      BrowserThread::ID* thread) OVERRIDE;
 
-  // Singleton manager setter useful for tests.
-  static void SetManagerForTests(SpeechRecognitionManager* manager);
+  virtual void OnChannelClosing() OVERRIDE;
 
  private:
   virtual ~SpeechRecognitionDispatcherHost();
 
   void OnStartRequest(
       const SpeechRecognitionHostMsg_StartRequest_Params& params);
+  void OnStartRequestOnIO(
+      int embedder_render_process_id,
+      int embedder_render_view_id,
+      const SpeechRecognitionHostMsg_StartRequest_Params& params,
+      bool filter_profanities);
   void OnAbortRequest(int render_view_id, int request_id);
   void OnStopCaptureRequest(int render_view_id, int request_id);
 
-  // Returns the speech recognition manager to forward requests to.
-  SpeechRecognitionManager* manager();
-
+  bool is_guest_;
   int render_process_id_;
   scoped_refptr<net::URLRequestContextGetter> context_getter_;
-  scoped_refptr<SpeechRecognitionPreferences> recognition_preferences_;
 
-  static SpeechRecognitionManager* manager_for_tests_;
+  // Used for posting asynchronous tasks (on the IO thread) without worrying
+  // about this class being destroyed in the meanwhile (due to browser shutdown)
+  // since tasks pending on a destroyed WeakPtr are automatically discarded.
+  base::WeakPtrFactory<SpeechRecognitionDispatcherHost> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SpeechRecognitionDispatcherHost);
 };

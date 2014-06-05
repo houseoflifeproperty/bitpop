@@ -11,7 +11,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 using content::RenderViewHost;
 using content::SiteInstance;
@@ -31,20 +31,20 @@ content::WebContents* GetWebContentsByID(int render_process_id,
 
 SiteInstance* GetSiteInstanceForNewTab(Profile* profile,
                                        const GURL& url) {
-  // If url is a WebUI or extension, we need to be sure to use the right type
-  // of renderer process up front.  Otherwise, we create a normal SiteInstance
-  // as part of creating the tab.
+  // If |url| is a WebUI or extension, we set the SiteInstance up front so that
+  // we don't end up with an extra process swap on the first navigation.
   ExtensionService* service = profile->GetExtensionService();
   if (ChromeWebUIControllerFactory::GetInstance()->UseWebUIForURL(
           profile, url) ||
       (service &&
-       service->extensions()->GetHostedAppByURL(ExtensionURLInfo(url)))) {
+       service->extensions()->GetHostedAppByURL(url))) {
     return SiteInstance::CreateForURL(profile, url);
   }
 
   // We used to share the SiteInstance for same-site links opened in new tabs,
   // to leverage the in-memory cache and reduce process creation.  It now
-  // appears that it is more useful to have such links open in a new process.
+  // appears that it is more useful to have such links open in a new process,
+  // so we create new tabs in a new BrowsingInstance.
   return NULL;
 }
 

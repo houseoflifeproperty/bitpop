@@ -4,16 +4,11 @@
 
 #include <string>
 
+#include "net/cookies/cookie_constants.h"
 #include "net/cookies/parsed_cookie.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace net {
-
-namespace {
-
-class ParsedCookieTest : public testing::Test { };
-
-}  // namespace
 
 TEST(ParsedCookieTest, TestBasic) {
   ParsedCookie pc("a=b");
@@ -74,10 +69,11 @@ TEST(ParsedCookieTest, TestNameless) {
   EXPECT_EQ("/", pc.Path());
   EXPECT_EQ("", pc.Name());
   EXPECT_EQ("BLAHHH", pc.Value());
+  EXPECT_EQ(COOKIE_PRIORITY_DEFAULT, pc.Priority());
 }
 
 TEST(ParsedCookieTest, TestAttributeCase) {
-  ParsedCookie pc("BLAHHH; Path=/; sECuRe; httpONLY");
+  ParsedCookie pc("BLAHHH; Path=/; sECuRe; httpONLY; pRIoRitY=hIgH");
   EXPECT_TRUE(pc.IsValid());
   EXPECT_TRUE(pc.IsSecure());
   EXPECT_TRUE(pc.IsHttpOnly());
@@ -85,7 +81,8 @@ TEST(ParsedCookieTest, TestAttributeCase) {
   EXPECT_EQ("/", pc.Path());
   EXPECT_EQ("", pc.Name());
   EXPECT_EQ("BLAHHH", pc.Value());
-  EXPECT_EQ(3U, pc.NumberOfAttributes());
+  EXPECT_EQ(COOKIE_PRIORITY_HIGH, pc.Priority());
+  EXPECT_EQ(4U, pc.NumberOfAttributes());
 }
 
 TEST(ParsedCookieTest, TestDoubleQuotedNameless) {
@@ -96,6 +93,7 @@ TEST(ParsedCookieTest, TestDoubleQuotedNameless) {
   EXPECT_EQ("/", pc.Path());
   EXPECT_EQ("", pc.Name());
   EXPECT_EQ("\"BLA\\\"HHH\"", pc.Value());
+  EXPECT_EQ(COOKIE_PRIORITY_DEFAULT, pc.Priority());
   EXPECT_EQ(2U, pc.NumberOfAttributes());
 }
 
@@ -104,6 +102,7 @@ TEST(ParsedCookieTest, QuoteOffTheEnd) {
   EXPECT_TRUE(pc.IsValid());
   EXPECT_EQ("a", pc.Name());
   EXPECT_EQ("\"B", pc.Value());
+  EXPECT_EQ(COOKIE_PRIORITY_DEFAULT, pc.Priority());
   EXPECT_EQ(0U, pc.NumberOfAttributes());
 }
 
@@ -112,6 +111,7 @@ TEST(ParsedCookieTest, MissingName) {
   EXPECT_TRUE(pc.IsValid());
   EXPECT_EQ("", pc.Name());
   EXPECT_EQ("ABC", pc.Value());
+  EXPECT_EQ(COOKIE_PRIORITY_DEFAULT, pc.Priority());
   EXPECT_EQ(0U, pc.NumberOfAttributes());
 }
 
@@ -122,6 +122,7 @@ TEST(ParsedCookieTest, MissingValue) {
   EXPECT_EQ("", pc.Value());
   EXPECT_TRUE(pc.HasPath());
   EXPECT_EQ("/wee", pc.Path());
+  EXPECT_EQ(COOKIE_PRIORITY_DEFAULT, pc.Priority());
   EXPECT_EQ(1U, pc.NumberOfAttributes());
 }
 
@@ -134,6 +135,7 @@ TEST(ParsedCookieTest, Whitespace) {
   EXPECT_FALSE(pc.HasDomain());
   EXPECT_TRUE(pc.IsSecure());
   EXPECT_TRUE(pc.IsHttpOnly());
+  EXPECT_EQ(COOKIE_PRIORITY_DEFAULT, pc.Priority());
   // We parse anything between ; as attributes, so we end up with two
   // attributes with an empty string name and value.
   EXPECT_EQ(4U, pc.NumberOfAttributes());
@@ -147,36 +149,8 @@ TEST(ParsedCookieTest, MultipleEquals) {
   EXPECT_FALSE(pc.HasDomain());
   EXPECT_TRUE(pc.IsSecure());
   EXPECT_TRUE(pc.IsHttpOnly());
+  EXPECT_EQ(COOKIE_PRIORITY_DEFAULT, pc.Priority());
   EXPECT_EQ(4U, pc.NumberOfAttributes());
-}
-
-TEST(ParsedCookieTest, MACKey) {
-  ParsedCookie pc("foo=bar; MAC-Key=3900ac9anw9incvw9f");
-  EXPECT_TRUE(pc.IsValid());
-  EXPECT_EQ("foo", pc.Name());
-  EXPECT_EQ("bar", pc.Value());
-  EXPECT_EQ("3900ac9anw9incvw9f", pc.MACKey());
-  EXPECT_EQ(1U, pc.NumberOfAttributes());
-}
-
-TEST(ParsedCookieTest, MACAlgorithm) {
-  ParsedCookie pc("foo=bar; MAC-Algorithm=hmac-sha-1");
-  EXPECT_TRUE(pc.IsValid());
-  EXPECT_EQ("foo", pc.Name());
-  EXPECT_EQ("bar", pc.Value());
-  EXPECT_EQ("hmac-sha-1", pc.MACAlgorithm());
-  EXPECT_EQ(1U, pc.NumberOfAttributes());
-}
-
-TEST(ParsedCookieTest, MACKeyAndMACAlgorithm) {
-  ParsedCookie pc(
-        "foo=bar; MAC-Key=voiae-09fj0302nfqf; MAC-Algorithm=hmac-sha-256");
-  EXPECT_TRUE(pc.IsValid());
-  EXPECT_EQ("foo", pc.Name());
-  EXPECT_EQ("bar", pc.Value());
-  EXPECT_EQ("voiae-09fj0302nfqf", pc.MACKey());
-  EXPECT_EQ("hmac-sha-256", pc.MACAlgorithm());
-  EXPECT_EQ(2U, pc.NumberOfAttributes());
 }
 
 TEST(ParsedCookieTest, QuotedTrailingWhitespace) {
@@ -190,6 +164,7 @@ TEST(ParsedCookieTest, QuotedTrailingWhitespace) {
   EXPECT_TRUE(pc.HasExpires());
   EXPECT_TRUE(pc.HasPath());
   EXPECT_EQ("/", pc.Path());
+  EXPECT_EQ(COOKIE_PRIORITY_DEFAULT, pc.Priority());
   EXPECT_EQ(2U, pc.NumberOfAttributes());
 }
 
@@ -203,6 +178,7 @@ TEST(ParsedCookieTest, TrailingWhitespace) {
   EXPECT_TRUE(pc.HasExpires());
   EXPECT_TRUE(pc.HasPath());
   EXPECT_EQ("/", pc.Path());
+  EXPECT_EQ(COOKIE_PRIORITY_DEFAULT, pc.Priority());
   EXPECT_EQ(2U, pc.NumberOfAttributes());
 }
 
@@ -237,7 +213,7 @@ TEST(ParsedCookieTest, InvalidTooLong) {
 }
 
 TEST(ParsedCookieTest, InvalidEmpty) {
-  ParsedCookie pc("");
+  ParsedCookie pc((std::string()));
   EXPECT_FALSE(pc.IsValid());
 }
 
@@ -278,17 +254,17 @@ TEST(ParsedCookieTest, ParseTokensAndValues) {
 TEST(ParsedCookieTest, SerializeCookieLine) {
   const char input[] = "ANCUUID=zohNumRKgI0oxyhSsV3Z7D  ; "
                        "expires=Sun, 18-Apr-2027 21:06:29 GMT ; "
-                       "path=/  ;  ";
+                       "path=/  ;  priority=low  ;  ";
   const char output[] = "ANCUUID=zohNumRKgI0oxyhSsV3Z7D; "
                         "expires=Sun, 18-Apr-2027 21:06:29 GMT; "
-                        "path=/";
+                        "path=/; priority=low";
   ParsedCookie pc(input);
   EXPECT_EQ(output, pc.ToCookieLine());
 }
 
 
 TEST(ParsedCookieTest, SetNameAndValue) {
-  ParsedCookie empty("");
+  ParsedCookie empty((std::string()));
   EXPECT_FALSE(empty.IsValid());
   EXPECT_FALSE(empty.SetDomain("foobar.com"));
   EXPECT_TRUE(empty.SetName("name"));
@@ -311,7 +287,7 @@ TEST(ParsedCookieTest, SetNameAndValue) {
   EXPECT_EQ("name=value", pc.ToCookieLine());
   EXPECT_TRUE(pc.IsValid());
 
-  EXPECT_FALSE(pc.SetName(""));
+  EXPECT_FALSE(pc.SetName(std::string()));
   EXPECT_EQ("name=value", pc.ToCookieLine());
   EXPECT_TRUE(pc.IsValid());
 
@@ -332,7 +308,7 @@ TEST(ParsedCookieTest, SetNameAndValue) {
   EXPECT_EQ("test=\"foobar\"", pc.ToCookieLine());
   EXPECT_TRUE(pc.IsValid());
 
-  EXPECT_TRUE(pc.SetValue(""));
+  EXPECT_TRUE(pc.SetValue(std::string()));
   EXPECT_EQ("test=", pc.ToCookieLine());
   EXPECT_TRUE(pc.IsValid());
 }
@@ -342,7 +318,7 @@ TEST(ParsedCookieTest, SetAttributes) {
   EXPECT_TRUE(pc.IsValid());
 
   // Clear an unset attribute.
-  EXPECT_TRUE(pc.SetDomain(""));
+  EXPECT_TRUE(pc.SetDomain(std::string()));
   EXPECT_FALSE(pc.HasDomain());
   EXPECT_EQ("name=value", pc.ToCookieLine());
   EXPECT_TRUE(pc.IsValid());
@@ -356,56 +332,55 @@ TEST(ParsedCookieTest, SetAttributes) {
   // Set all other attributes and check that they are appended in order.
   EXPECT_TRUE(pc.SetDomain("domain.com"));
   EXPECT_TRUE(pc.SetPath("/"));
-  EXPECT_TRUE(pc.SetMACKey("mackey"));
-  EXPECT_TRUE(pc.SetMACAlgorithm("\"macalgorithm\""));
   EXPECT_TRUE(pc.SetExpires("Sun, 18-Apr-2027 21:06:29 GMT"));
   EXPECT_TRUE(pc.SetMaxAge("12345"));
   EXPECT_TRUE(pc.SetIsSecure(true));
   EXPECT_TRUE(pc.SetIsHttpOnly(true));
-  EXPECT_EQ("name=value; domain=domain.com; path=/; mac-key=mackey; "
-            "mac-algorithm=\"macalgorithm\"; "
+  EXPECT_TRUE(pc.SetIsHttpOnly(true));
+  EXPECT_TRUE(pc.SetPriority("HIGH"));
+  EXPECT_EQ("name=value; domain=domain.com; path=/; "
             "expires=Sun, 18-Apr-2027 21:06:29 GMT; max-age=12345; secure; "
-            "httponly",
+            "httponly; priority=HIGH",
             pc.ToCookieLine());
   EXPECT_TRUE(pc.HasDomain());
   EXPECT_TRUE(pc.HasPath());
-  EXPECT_TRUE(pc.HasMACKey());
-  EXPECT_TRUE(pc.HasMACAlgorithm());
   EXPECT_TRUE(pc.HasExpires());
   EXPECT_TRUE(pc.HasMaxAge());
   EXPECT_TRUE(pc.IsSecure());
   EXPECT_TRUE(pc.IsHttpOnly());
+  EXPECT_EQ(COOKIE_PRIORITY_HIGH, pc.Priority());
 
   // Clear one attribute from the middle.
-  EXPECT_TRUE(pc.SetMACAlgorithm(""));
+  EXPECT_TRUE(pc.SetPath("/foo"));
   EXPECT_TRUE(pc.HasDomain());
   EXPECT_TRUE(pc.HasPath());
-  EXPECT_TRUE(pc.HasMACKey());
-  EXPECT_FALSE(pc.HasMACAlgorithm());
   EXPECT_TRUE(pc.HasExpires());
-  EXPECT_TRUE(pc.HasMaxAge());
   EXPECT_TRUE(pc.IsSecure());
   EXPECT_TRUE(pc.IsHttpOnly());
-  EXPECT_EQ("name=value; domain=domain.com; path=/; mac-key=mackey; "
+  EXPECT_EQ("name=value; domain=domain.com; path=/foo; "
             "expires=Sun, 18-Apr-2027 21:06:29 GMT; max-age=12345; secure; "
-            "httponly",
+            "httponly; priority=HIGH",
+            pc.ToCookieLine());
+
+  // Set priority to medium.
+  EXPECT_TRUE(pc.SetPriority("medium"));
+  EXPECT_EQ("name=value; domain=domain.com; path=/foo; "
+            "expires=Sun, 18-Apr-2027 21:06:29 GMT; max-age=12345; secure; "
+            "httponly; priority=medium",
             pc.ToCookieLine());
 
   // Clear the rest and change the name and value.
-  EXPECT_TRUE(pc.SetDomain(""));
-  EXPECT_TRUE(pc.SetPath(""));
-  EXPECT_TRUE(pc.SetMACKey(""));
-  EXPECT_TRUE(pc.SetMACAlgorithm(""));
-  EXPECT_TRUE(pc.SetExpires(""));
-  EXPECT_TRUE(pc.SetMaxAge(""));
+  EXPECT_TRUE(pc.SetDomain(std::string()));
+  EXPECT_TRUE(pc.SetPath(std::string()));
+  EXPECT_TRUE(pc.SetExpires(std::string()));
+  EXPECT_TRUE(pc.SetMaxAge(std::string()));
   EXPECT_TRUE(pc.SetIsSecure(false));
   EXPECT_TRUE(pc.SetIsHttpOnly(false));
   EXPECT_TRUE(pc.SetName("name2"));
   EXPECT_TRUE(pc.SetValue("value2"));
+  EXPECT_TRUE(pc.SetPriority(std::string()));
   EXPECT_FALSE(pc.HasDomain());
   EXPECT_FALSE(pc.HasPath());
-  EXPECT_FALSE(pc.HasMACKey());
-  EXPECT_FALSE(pc.HasMACAlgorithm());
   EXPECT_FALSE(pc.HasExpires());
   EXPECT_FALSE(pc.HasMaxAge());
   EXPECT_FALSE(pc.IsSecure());
@@ -413,4 +388,107 @@ TEST(ParsedCookieTest, SetAttributes) {
   EXPECT_EQ("name2=value2", pc.ToCookieLine());
 }
 
-}  // namespace net
+TEST(ParsedCookieTest, SetPriority) {
+  ParsedCookie pc("name=value");
+  EXPECT_TRUE(pc.IsValid());
+
+  EXPECT_EQ("name=value", pc.ToCookieLine());
+  EXPECT_EQ(COOKIE_PRIORITY_DEFAULT, pc.Priority());
+
+  // Test each priority, expect case-insensitive compare.
+  EXPECT_TRUE(pc.SetPriority("high"));
+  EXPECT_EQ("name=value; priority=high", pc.ToCookieLine());
+  EXPECT_EQ(COOKIE_PRIORITY_HIGH, pc.Priority());
+
+  EXPECT_TRUE(pc.SetPriority("mEDium"));
+  EXPECT_EQ("name=value; priority=mEDium", pc.ToCookieLine());
+  EXPECT_EQ(COOKIE_PRIORITY_MEDIUM, pc.Priority());
+
+  EXPECT_TRUE(pc.SetPriority("LOW"));
+  EXPECT_EQ("name=value; priority=LOW", pc.ToCookieLine());
+  EXPECT_EQ(COOKIE_PRIORITY_LOW, pc.Priority());
+
+  // Interpret invalid priority values as COOKIE_PRIORITY_DEFAULT.
+  EXPECT_TRUE(pc.SetPriority("Blah"));
+  EXPECT_EQ("name=value; priority=Blah", pc.ToCookieLine());
+  EXPECT_EQ(COOKIE_PRIORITY_DEFAULT, pc.Priority());
+
+  EXPECT_TRUE(pc.SetPriority("lowerest"));
+  EXPECT_EQ("name=value; priority=lowerest", pc.ToCookieLine());
+  EXPECT_EQ(COOKIE_PRIORITY_DEFAULT, pc.Priority());
+
+  EXPECT_TRUE(pc.SetPriority(""));
+  EXPECT_EQ("name=value", pc.ToCookieLine());
+  EXPECT_EQ(COOKIE_PRIORITY_DEFAULT, pc.Priority());
+}
+
+TEST(ParsedCookieTest, InvalidNonAlphanumericChars) {
+  ParsedCookie pc1("name=\x05");
+  ParsedCookie pc2("name=foo" "\x1c" "bar");
+  ParsedCookie pc3("name=foobar" "\x11");
+  ParsedCookie pc4("name=\x02" "foobar");
+
+  ParsedCookie pc5("\x05=value");
+  ParsedCookie pc6("foo" "\x05" "bar=value");
+  ParsedCookie pc7("foobar" "\x05" "=value");
+  ParsedCookie pc8("\x05" "foobar" "=value");
+
+  ParsedCookie pc9("foo" "\x05" "bar" "=foo" "\x05" "bar");
+
+  ParsedCookie pc10("foo=bar;ba" "\x05" "z=boo");
+  ParsedCookie pc11("foo=bar;baz=bo" "\x05" "o");
+  ParsedCookie pc12("foo=bar;ba" "\05" "z=bo" "\x05" "o");
+
+  EXPECT_FALSE(pc1.IsValid());
+  EXPECT_FALSE(pc2.IsValid());
+  EXPECT_FALSE(pc3.IsValid());
+  EXPECT_FALSE(pc4.IsValid());
+  EXPECT_FALSE(pc5.IsValid());
+  EXPECT_FALSE(pc6.IsValid());
+  EXPECT_FALSE(pc7.IsValid());
+  EXPECT_FALSE(pc8.IsValid());
+  EXPECT_FALSE(pc9.IsValid());
+  EXPECT_FALSE(pc10.IsValid());
+  EXPECT_FALSE(pc11.IsValid());
+  EXPECT_FALSE(pc12.IsValid());
+}
+
+TEST(ParsedCookieTest, ValidNonAlphanumericChars) {
+  // Note that some of these words are pasted backwords thanks to poor vim bidi
+  // support. This should not affect the tests, however.
+  const char* pc1_literal = "name=العربية";
+  const char* pc2_literal = "name=普通話";
+  const char* pc3_literal = "name=ภาษาไทย";
+  const char* pc4_literal = "name=עִבְרִית";
+  const char* pc5_literal = "العربية=value";
+  const char* pc6_literal = "普通話=value";
+  const char* pc7_literal = "ภาษาไทย=value";
+  const char* pc8_literal = "עִבְרִית=value";
+  ParsedCookie pc1(pc1_literal);
+  ParsedCookie pc2(pc2_literal);
+  ParsedCookie pc3(pc3_literal);
+  ParsedCookie pc4(pc4_literal);
+  ParsedCookie pc5(pc5_literal);
+  ParsedCookie pc6(pc6_literal);
+  ParsedCookie pc7(pc7_literal);
+  ParsedCookie pc8(pc8_literal);
+
+  EXPECT_TRUE(pc1.IsValid());
+  EXPECT_EQ(pc1_literal, pc1.ToCookieLine());
+  EXPECT_TRUE(pc2.IsValid());
+  EXPECT_EQ(pc2_literal, pc2.ToCookieLine());
+  EXPECT_TRUE(pc3.IsValid());
+  EXPECT_EQ(pc3_literal, pc3.ToCookieLine());
+  EXPECT_TRUE(pc4.IsValid());
+  EXPECT_EQ(pc4_literal, pc4.ToCookieLine());
+  EXPECT_TRUE(pc5.IsValid());
+  EXPECT_EQ(pc5_literal, pc5.ToCookieLine());
+  EXPECT_TRUE(pc6.IsValid());
+  EXPECT_EQ(pc6_literal, pc6.ToCookieLine());
+  EXPECT_TRUE(pc7.IsValid());
+  EXPECT_EQ(pc7_literal, pc7.ToCookieLine());
+  EXPECT_TRUE(pc8.IsValid());
+  EXPECT_EQ(pc8_literal, pc8.ToCookieLine());
+}
+
+}

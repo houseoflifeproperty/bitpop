@@ -7,31 +7,37 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
+#include "base/command_line.h"
 #include "base/json/json_writer.h"
+#include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
-#include "base/string_number_conversions.h"
-#include "base/time.h"
-#include "base/utf_string_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/task/cancelable_task_tracker.h"
+#include "base/time/time.h"
 #include "base/values.h"
-#include "chrome/browser/extensions/event_router.h"
-#include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/extensions/activity_log/activity_log.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/history_types.h"
-#include "chrome/browser/history/visit_filter.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/cancelable_task_tracker.h"
-#include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/extensions/api/experimental_history.h"
+#include "chrome/common/chrome_switches.h"
+#include "chrome/common/extensions/api/history.h"
+#include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system_provider.h"
+#include "extensions/browser/extensions_browser_client.h"
 
 namespace extensions {
 
-using api::experimental_history::MostVisitedItem;
 using api::history::HistoryItem;
 using api::history::VisitItem;
+using extensions::ActivityLog;
 
 typedef std::vector<linked_ptr<api::history::HistoryItem> >
     HistoryItemList;
@@ -41,7 +47,6 @@ typedef std::vector<linked_ptr<api::history::VisitItem> >
 namespace AddUrl = api::history::AddUrl;
 namespace DeleteUrl = api::history::DeleteUrl;
 namespace DeleteRange = api::history::DeleteRange;
-namespace GetMostVisited = api::experimental_history::GetMostVisited;
 namespace GetVisits = api::history::GetVisits;
 namespace OnVisited = api::history::OnVisited;
 namespace OnVisitRemoved = api::history::OnVisitRemoved;
@@ -49,11 +54,9 @@ namespace Search = api::history::Search;
 
 namespace {
 
-const char kOnVisited[] = "history.onVisited";
-const char kOnVisitRemoved[] = "history.onVisitRemoved";
-
-const char kInvalidIdError[] = "History item id is invalid.";
 const char kInvalidUrlError[] = "Url is invalid.";
+const char kDeleteProhibitedError[] = "Browsing history is not allowed to be "
+                                      "deleted.";
 
 double MilliSecondsFromTime(const base::Time& time) {
   return 1000 * time.ToDoubleT();
@@ -64,7 +67,7 @@ scoped_ptr<HistoryItem> GetHistoryItem(const history::URLRow& row) {
 
   history_item->id = base::Int64ToString(row.id());
   history_item->url.reset(new std::string(row.url().spec()));
-  history_item->title.reset(new std::string(UTF16ToUTF8(row.title())));
+  history_item->title.reset(new std::string(base::UTF16ToUTF8(row.title())));
   history_item->last_visit_time.reset(
       new double(MilliSecondsFromTime(row.last_visit())));
   history_item->typed_count.reset(new int(row.typed_count()));
@@ -163,9 +166,9 @@ void HistoryEventRouter::HistoryUrlVisited(
     Profile* profile,
     const history::URLVisitedDetails* details) {
   scoped_ptr<HistoryItem> history_item = GetHistoryItem(details->row);
-  scoped_ptr<ListValue> args = OnVisited::Create(*history_item);
+  scoped_ptr<base::ListValue> args = OnVisited::Create(*history_item);
 
-  DispatchEvent(profile, kOnVisited, args.Pass());
+  DispatchEvent(profile, api::history::OnVisited::kEventName, args.Pass());
 }
 
 void HistoryEventRouter::HistoryUrlsRemoved(
@@ -181,46 +184,55 @@ void HistoryEventRouter::HistoryUrlsRemoved(
   }
   removed.urls.reset(urls);
 
-  scoped_ptr<ListValue> args = OnVisitRemoved::Create(removed);
-  DispatchEvent(profile, kOnVisitRemoved, args.Pass());
+  scoped_ptr<base::ListValue> args = OnVisitRemoved::Create(removed);
+  DispatchEvent(profile, api::history::OnVisitRemoved::kEventName, args.Pass());
 }
 
 void HistoryEventRouter::DispatchEvent(
     Profile* profile,
-    const char* event_name,
-    scoped_ptr<ListValue> event_args) {
-  if (profile && extensions::ExtensionSystem::Get(profile)->event_router()) {
+    const std::string& event_name,
+    scoped_ptr<base::ListValue> event_args) {
+  if (profile && extensions::EventRouter::Get(profile)) {
     scoped_ptr<extensions::Event> event(new extensions::Event(
         event_name, event_args.Pass()));
-    event->restrict_to_profile = profile;
-    extensions::ExtensionSystem::Get(profile)->event_router()->
-        BroadcastEvent(event.Pass());
+    event->restrict_to_browser_context = profile;
+    extensions::EventRouter::Get(profile)->BroadcastEvent(event.Pass());
   }
 }
 
-HistoryAPI::HistoryAPI(Profile* profile) : profile_(profile) {
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, kOnVisited);
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, kOnVisitRemoved);
+HistoryAPI::HistoryAPI(content::BrowserContext* context)
+    : browser_context_(context) {
+  EventRouter* event_router = EventRouter::Get(browser_context_);
+  event_router->RegisterObserver(this, api::history::OnVisited::kEventName);
+  event_router->RegisterObserver(this,
+                                 api::history::OnVisitRemoved::kEventName);
 }
 
 HistoryAPI::~HistoryAPI() {
 }
 
 void HistoryAPI::Shutdown() {
-  ExtensionSystem::Get(profile_)->event_router()->UnregisterObserver(this);
+  EventRouter::Get(browser_context_)->UnregisterObserver(this);
+}
+
+static base::LazyInstance<BrowserContextKeyedAPIFactory<HistoryAPI> >
+    g_factory = LAZY_INSTANCE_INITIALIZER;
+
+// static
+BrowserContextKeyedAPIFactory<HistoryAPI>* HistoryAPI::GetFactoryInstance() {
+  return g_factory.Pointer();
+}
+
+template <>
+void BrowserContextKeyedAPIFactory<HistoryAPI>::DeclareFactoryDependencies() {
+  DependsOn(ActivityLog::GetFactoryInstance());
+  DependsOn(ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
 }
 
 void HistoryAPI::OnListenerAdded(const EventListenerInfo& details) {
-  history_event_router_.reset(new HistoryEventRouter(profile_));
-  ExtensionSystem::Get(profile_)->event_router()->UnregisterObserver(this);
-}
-
-void HistoryFunction::Run() {
-  if (!RunImpl()) {
-    SendResponse(false);
-  }
+  history_event_router_.reset(
+      new HistoryEventRouter(Profile::FromBrowserContext(browser_context_)));
+  EventRouter::Get(browser_context_)->UnregisterObserver(this);
 }
 
 bool HistoryFunction::ValidateUrl(const std::string& url_string, GURL* url) {
@@ -230,6 +242,15 @@ bool HistoryFunction::ValidateUrl(const std::string& url_string, GURL* url) {
     return false;
   }
   url->Swap(&temp_url);
+  return true;
+}
+
+bool HistoryFunction::VerifyDeleteAllowed() {
+  PrefService* prefs = GetProfile()->GetPrefs();
+  if (!prefs->GetBoolean(prefs::kAllowDeletingBrowserHistory)) {
+    error_ = kDeleteProhibitedError;
+    return false;
+  }
   return true;
 }
 
@@ -249,7 +270,7 @@ HistoryFunctionWithCallback::HistoryFunctionWithCallback() {
 HistoryFunctionWithCallback::~HistoryFunctionWithCallback() {
 }
 
-bool HistoryFunctionWithCallback::RunImpl() {
+bool HistoryFunctionWithCallback::RunAsync() {
   AddRef();  // Balanced in SendAysncRepose() and below.
   bool retval = RunAsyncImpl();
   if (false == retval)
@@ -258,57 +279,17 @@ bool HistoryFunctionWithCallback::RunImpl() {
 }
 
 void HistoryFunctionWithCallback::SendAsyncResponse() {
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&HistoryFunctionWithCallback::SendResponseToCallback, this));
 }
 
 void HistoryFunctionWithCallback::SendResponseToCallback() {
   SendResponse(true);
-  Release();  // Balanced in RunImpl().
+  Release();  // Balanced in RunAsync().
 }
 
-bool GetMostVisitedHistoryFunction::RunAsyncImpl() {
-  scoped_ptr<GetMostVisited::Params> params =
-      GetMostVisited::Params::Create(*args_);
-  EXTENSION_FUNCTION_VALIDATE(params.get());
-
-  history::VisitFilter filter;
-  if (params->details.filter_time.get())
-    filter.SetFilterTime(GetTime(*params->details.filter_time));
-  if (params->details.filter_width.get()) {
-    filter.SetFilterWidth(base::TimeDelta::FromMilliseconds(
-        static_cast<int64>(*params->details.filter_width)));
-  }
-  if (params->details.day_of_the_week.get())
-    filter.SetDayOfTheWeekFilter(*params->details.day_of_the_week);
-  int max_results = 100;
-  if (params->details.max_results.get())
-    max_results = *params->details.max_results;
-  HistoryService* hs =
-      HistoryServiceFactory::GetForProfile(profile(), Profile::EXPLICIT_ACCESS);
-  hs->QueryFilteredURLs(max_results, filter, false, &cancelable_consumer_,
-      base::Bind(&GetMostVisitedHistoryFunction::QueryComplete,
-                 base::Unretained(this)));
-  return true;
-}
-
-void GetMostVisitedHistoryFunction::QueryComplete(
-    CancelableRequestProvider::Handle handle,
-    const history::FilteredURLList& data) {
-  std::vector<linked_ptr<MostVisitedItem> > results;
-  results.reserve(data.size());
-  for (size_t i = 0; i < data.size(); i++) {
-    linked_ptr<MostVisitedItem> item(new MostVisitedItem);
-    item->url = data[i].url.spec();
-    item->title = UTF16ToUTF8(data[i].title);
-    results.push_back(item);
-  }
-  results_ = GetMostVisited::Results::Create(results);
-  SendAsyncResponse();
-}
-
-bool GetVisitsHistoryFunction::RunAsyncImpl() {
+bool HistoryGetVisitsFunction::RunAsyncImpl() {
   scoped_ptr<GetVisits::Params> params(GetVisits::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
@@ -316,19 +297,18 @@ bool GetVisitsHistoryFunction::RunAsyncImpl() {
   if (!ValidateUrl(params->details.url, &url))
     return false;
 
-  HistoryService* hs =
-      HistoryServiceFactory::GetForProfile(profile(),
-                                           Profile::EXPLICIT_ACCESS);
+  HistoryService* hs = HistoryServiceFactory::GetForProfile(
+      GetProfile(), Profile::EXPLICIT_ACCESS);
   hs->QueryURL(url,
                true,  // Retrieve full history of a URL.
                &cancelable_consumer_,
-               base::Bind(&GetVisitsHistoryFunction::QueryComplete,
+               base::Bind(&HistoryGetVisitsFunction::QueryComplete,
                           base::Unretained(this)));
 
   return true;
 }
 
-void GetVisitsHistoryFunction::QueryComplete(
+void HistoryGetVisitsFunction::QueryComplete(
     HistoryService::Handle request_service,
     bool success,
     const history::URLRow* url_row,
@@ -347,11 +327,11 @@ void GetVisitsHistoryFunction::QueryComplete(
   SendAsyncResponse();
 }
 
-bool SearchHistoryFunction::RunAsyncImpl() {
+bool HistorySearchFunction::RunAsyncImpl() {
   scoped_ptr<Search::Params> params(Search::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
-  string16 search_text = UTF8ToUTF16(params->query.text);
+  base::string16 search_text = base::UTF8ToUTF16(params->query.text);
 
   history::QueryOptions options;
   options.SetRecentDayRange(1);
@@ -364,17 +344,16 @@ bool SearchHistoryFunction::RunAsyncImpl() {
   if (params->query.max_results.get())
     options.max_count = *params->query.max_results;
 
-  HistoryService* hs =
-      HistoryServiceFactory::GetForProfile(profile(),
-                                           Profile::EXPLICIT_ACCESS);
+  HistoryService* hs = HistoryServiceFactory::GetForProfile(
+      GetProfile(), Profile::EXPLICIT_ACCESS);
   hs->QueryHistory(search_text, options, &cancelable_consumer_,
-                   base::Bind(&SearchHistoryFunction::SearchComplete,
+                   base::Bind(&HistorySearchFunction::SearchComplete,
                               base::Unretained(this)));
 
   return true;
 }
 
-void SearchHistoryFunction::SearchComplete(
+void HistorySearchFunction::SearchComplete(
     HistoryService::Handle request_handle,
     history::QueryResults* results) {
   HistoryItemList history_item_vec;
@@ -391,7 +370,7 @@ void SearchHistoryFunction::SearchComplete(
   SendAsyncResponse();
 }
 
-bool AddUrlHistoryFunction::RunImpl() {
+bool HistoryAddUrlFunction::RunAsync() {
   scoped_ptr<AddUrl::Params> params(AddUrl::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
@@ -399,75 +378,106 @@ bool AddUrlHistoryFunction::RunImpl() {
   if (!ValidateUrl(params->details.url, &url))
     return false;
 
-  HistoryService* hs =
-      HistoryServiceFactory::GetForProfile(profile(),
-                                           Profile::EXPLICIT_ACCESS);
+  HistoryService* hs = HistoryServiceFactory::GetForProfile(
+      GetProfile(), Profile::EXPLICIT_ACCESS);
   hs->AddPage(url, base::Time::Now(), history::SOURCE_EXTENSION);
 
   SendResponse(true);
   return true;
 }
 
-bool DeleteUrlHistoryFunction::RunImpl() {
+bool HistoryDeleteUrlFunction::RunAsync() {
   scoped_ptr<DeleteUrl::Params> params(DeleteUrl::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
+
+  if (!VerifyDeleteAllowed())
+    return false;
 
   GURL url;
   if (!ValidateUrl(params->details.url, &url))
     return false;
 
-  HistoryService* hs =
-      HistoryServiceFactory::GetForProfile(profile(),
-                                           Profile::EXPLICIT_ACCESS);
+  HistoryService* hs = HistoryServiceFactory::GetForProfile(
+      GetProfile(), Profile::EXPLICIT_ACCESS);
   hs->DeleteURL(url);
+
+  // Also clean out from the activity log. If the activity log testing flag is
+  // set then don't clean so testers can see what potentially malicious
+  // extensions have been trying to clean from their logs.
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableExtensionActivityLogTesting)) {
+    ActivityLog* activity_log = ActivityLog::GetInstance(GetProfile());
+    DCHECK(activity_log);
+    activity_log->RemoveURL(url);
+  }
 
   SendResponse(true);
   return true;
 }
 
-bool DeleteRangeHistoryFunction::RunAsyncImpl() {
+bool HistoryDeleteRangeFunction::RunAsyncImpl() {
   scoped_ptr<DeleteRange::Params> params(DeleteRange::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
+
+  if (!VerifyDeleteAllowed())
+    return false;
 
   base::Time start_time = GetTime(params->range.start_time);
   base::Time end_time = GetTime(params->range.end_time);
 
   std::set<GURL> restrict_urls;
-  HistoryService* hs =
-      HistoryServiceFactory::GetForProfile(profile(),
-                                           Profile::EXPLICIT_ACCESS);
+  HistoryService* hs = HistoryServiceFactory::GetForProfile(
+      GetProfile(), Profile::EXPLICIT_ACCESS);
   hs->ExpireHistoryBetween(
       restrict_urls,
       start_time,
       end_time,
-      base::Bind(&DeleteRangeHistoryFunction::DeleteComplete,
+      base::Bind(&HistoryDeleteRangeFunction::DeleteComplete,
                  base::Unretained(this)),
       &task_tracker_);
+
+  // Also clean from the activity log unless in testing mode.
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableExtensionActivityLogTesting)) {
+    ActivityLog* activity_log = ActivityLog::GetInstance(GetProfile());
+    DCHECK(activity_log);
+    activity_log->RemoveURLs(restrict_urls);
+  }
 
   return true;
 }
 
-void DeleteRangeHistoryFunction::DeleteComplete() {
+void HistoryDeleteRangeFunction::DeleteComplete() {
   SendAsyncResponse();
 }
 
-bool DeleteAllHistoryFunction::RunAsyncImpl() {
+bool HistoryDeleteAllFunction::RunAsyncImpl() {
+  if (!VerifyDeleteAllowed())
+    return false;
+
   std::set<GURL> restrict_urls;
-  HistoryService* hs =
-      HistoryServiceFactory::GetForProfile(profile(),
-                                           Profile::EXPLICIT_ACCESS);
+  HistoryService* hs = HistoryServiceFactory::GetForProfile(
+      GetProfile(), Profile::EXPLICIT_ACCESS);
   hs->ExpireHistoryBetween(
       restrict_urls,
-      base::Time::UnixEpoch(),     // From the beginning of the epoch.
-      base::Time::Now(),           // To the current time.
-      base::Bind(&DeleteAllHistoryFunction::DeleteComplete,
+      base::Time(),      // Unbounded beginning...
+      base::Time(),      // ...and the end.
+      base::Bind(&HistoryDeleteAllFunction::DeleteComplete,
                  base::Unretained(this)),
       &task_tracker_);
+
+  // Also clean from the activity log unless in testing mode.
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableExtensionActivityLogTesting)) {
+    ActivityLog* activity_log = ActivityLog::GetInstance(GetProfile());
+    DCHECK(activity_log);
+    activity_log->RemoveURLs(restrict_urls);
+  }
 
   return true;
 }
 
-void DeleteAllHistoryFunction::DeleteComplete() {
+void HistoryDeleteAllFunction::DeleteComplete() {
   SendAsyncResponse();
 }
 

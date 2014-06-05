@@ -13,22 +13,22 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/webdata/web_data_service.h"
 
 class GURL;
+class Profile;
 class SearchHostToURLsMap;
 class TemplateURL;
+class TemplateURLService;
 
 namespace content {
-class NotificationSource;
+class RenderProcessHost;
 }
 
 // Provides the search provider install state for the I/O thread. It works by
 // loading the data on demand (when CallWhenLoaded is called) and then throwing
 // away the results after the callbacks are done, so the results are always up
 // to date with what is in the database.
-class SearchProviderInstallData : public WebDataServiceConsumer,
-    public base::SupportsWeakPtr<SearchProviderInstallData> {
+class SearchProviderInstallData {
  public:
   enum State {
     // The search provider is not installed.
@@ -41,13 +41,11 @@ class SearchProviderInstallData : public WebDataServiceConsumer,
     INSTALLED_AS_DEFAULT = 2
   };
 
-  // |ui_death_notification| and |ui_death_source| indentify a notification that
-  // may be observed on the UI thread to know when this class no longer needs to
-  // be kept up to date. (Note that this class may be deleted before or after
-  // that notification occurs. It doesn't matter.)
-  SearchProviderInstallData(Profile* profile,
-                            int ui_death_notification,
-                            const content::NotificationSource& ui_death_source);
+  // |host| is a RenderProcessHost that is observed, and whose destruction is a
+  // signal to this class that it no longer needs to be kept up to date. (Note
+  // that this class may be deleted before or after that death occurs. It
+  // doesn't matter.)
+  SearchProviderInstallData(Profile* profile, content::RenderProcessHost* host);
   virtual ~SearchProviderInstallData();
 
   // Use to determine when the search provider information is loaded. The
@@ -64,13 +62,9 @@ class SearchProviderInstallData : public WebDataServiceConsumer,
   void OnGoogleURLChange(const std::string& google_base_url);
 
  private:
-  // WebDataServiceConsumer
-  // Notification that the keywords have been loaded.
-  // This is invoked from WebDataService, and should not be directly
-  // invoked.
-  virtual void OnWebDataServiceRequestDone(
-      WebDataService::Handle h,
-      const WDTypedResult* result) OVERRIDE;
+  // Receives a copy of the TemplateURLService's keywords on the IO thread.
+  void OnTemplateURLsLoaded(ScopedVector<TemplateURL> template_urls,
+                            TemplateURL* default_provider);
 
   // Stores information about the default search provider.
   void SetDefault(const TemplateURL* template_url);
@@ -83,14 +77,12 @@ class SearchProviderInstallData : public WebDataServiceConsumer,
   // install state has been loaded.
   void NotifyLoaded();
 
-  // The list of closures to call after the load has finished.
+  // The original data source. Only accessed on the UI thread.
+  TemplateURLService* template_url_service_;
+
+  // The list of closures to call after the load has finished. If empty, there
+  // is no pending load.
   std::vector<base::Closure> closure_queue_;
-
-  // Service used to store entries.
-  scoped_refptr<WebDataService> web_service_;
-
-  // If non-zero, we're waiting on a load.
-  WebDataService::Handle load_handle_;
 
   // Holds results of a load that was done using this class.
   scoped_ptr<SearchHostToURLsMap> provider_map_;
@@ -103,6 +95,8 @@ class SearchProviderInstallData : public WebDataServiceConsumer,
 
   // The google base url.
   std::string google_base_url_;
+
+  base::WeakPtrFactory<SearchProviderInstallData> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SearchProviderInstallData);
 };

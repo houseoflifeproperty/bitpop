@@ -8,71 +8,73 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "acm_pcmu.h"
+#include "webrtc/modules/audio_coding/main/source/acm_pcmu.h"
 
-#include "acm_common_defs.h"
-#include "acm_neteq.h"
-#include "trace.h"
-#include "webrtc_neteq.h"
-#include "webrtc_neteq_help_macros.h"
+#include "webrtc/modules/audio_coding/codecs/g711/include/g711_interface.h"
+#include "webrtc/modules/audio_coding/main/acm2/acm_common_defs.h"
+#include "webrtc/modules/audio_coding/main/source/acm_neteq.h"
+#include "webrtc/modules/audio_coding/neteq/interface/webrtc_neteq.h"
+#include "webrtc/modules/audio_coding/neteq/interface/webrtc_neteq_help_macros.h"
+#include "webrtc/system_wrappers/interface/trace.h"
 
 // Codec interface
-#include "g711_interface.h"
 
 namespace webrtc {
 
-ACMPCMU::ACMPCMU(WebRtc_Word16 codecID) {
-  _codecID = codecID;
+namespace acm1 {
+
+ACMPCMU::ACMPCMU(int16_t codec_id) {
+  codec_id_ = codec_id;
 }
 
 ACMPCMU::~ACMPCMU() {
   return;
 }
 
-WebRtc_Word16 ACMPCMU::InternalEncode(WebRtc_UWord8* bitStream,
-                                      WebRtc_Word16* bitStreamLenByte) {
-  *bitStreamLenByte = WebRtcG711_EncodeU(NULL, &_inAudio[_inAudioIxRead],
-                                         _frameLenSmpl * _noChannels,
-                                         (WebRtc_Word16*) bitStream);
+int16_t ACMPCMU::InternalEncode(uint8_t* bitstream,
+                                int16_t* bitstream_len_byte) {
+  *bitstream_len_byte = WebRtcG711_EncodeU(NULL, &in_audio_[in_audio_ix_read_],
+                                           frame_len_smpl_ * num_channels_,
+                                           (int16_t*)bitstream);
   // Increment the read index this tell the caller that how far
   // we have gone forward in reading the audio buffer.
-  _inAudioIxRead += _frameLenSmpl * _noChannels;
-  return *bitStreamLenByte;
+  in_audio_ix_read_ += frame_len_smpl_ * num_channels_;
+  return *bitstream_len_byte;
 }
 
-WebRtc_Word16 ACMPCMU::DecodeSafe(WebRtc_UWord8* /* bitStream */,
-                                  WebRtc_Word16 /* bitStreamLenByte */,
-                                  WebRtc_Word16* /* audio */,
-                                  WebRtc_Word16* /* audioSamples */,
-                                  WebRtc_Word8* /* speechType */) {
+int16_t ACMPCMU::DecodeSafe(uint8_t* /* bitstream */,
+                            int16_t /* bitstream_len_byte */,
+                            int16_t* /* audio */,
+                            int16_t* /* audio_samples */,
+                            int8_t* /* speech_type */) {
   return 0;
 }
 
-WebRtc_Word16 ACMPCMU::InternalInitEncoder(
-    WebRtcACMCodecParams* /* codecParams */) {
+int16_t ACMPCMU::InternalInitEncoder(
+    WebRtcACMCodecParams* /* codec_params */) {
   // This codec does not need initialization, PCM has no instance.
   return 0;
 }
 
-WebRtc_Word16 ACMPCMU::InternalInitDecoder(
-    WebRtcACMCodecParams* /* codecParams */) {
+int16_t ACMPCMU::InternalInitDecoder(
+    WebRtcACMCodecParams* /* codec_params */) {
   // This codec does not need initialization, PCM has no instance.
   return 0;
 }
 
-WebRtc_Word32 ACMPCMU::CodecDef(WebRtcNetEQ_CodecDef& codecDef,
-                                const CodecInst& codecInst) {
+int32_t ACMPCMU::CodecDef(WebRtcNetEQ_CodecDef& codec_def,
+                          const CodecInst& codec_inst) {
   // Fill up the structure by calling
   // "SET_CODEC_PAR" & "SET_PCMU_FUNCTION."
   // Then call NetEQ to add the codec to it's database.
-  if (codecInst.channels == 1) {
+  if (codec_inst.channels == 1) {
     // Mono mode.
-    SET_CODEC_PAR(codecDef, kDecoderPCMu, codecInst.pltype, NULL, 8000);
+    SET_CODEC_PAR(codec_def, kDecoderPCMu, codec_inst.pltype, NULL, 8000);
   } else {
     // Stereo mode.
-    SET_CODEC_PAR(codecDef, kDecoderPCMu_2ch, codecInst.pltype, NULL, 8000);
+    SET_CODEC_PAR(codec_def, kDecoderPCMu_2ch, codec_inst.pltype, NULL, 8000);
   }
-  SET_PCMU_FUNCTIONS(codecDef);
+  SET_PCMU_FUNCTIONS(codec_def);
   return 0;
 }
 
@@ -80,32 +82,32 @@ ACMGenericCodec* ACMPCMU::CreateInstance(void) {
   return NULL;
 }
 
-WebRtc_Word16 ACMPCMU::InternalCreateEncoder() {
+int16_t ACMPCMU::InternalCreateEncoder() {
   // PCM has no instance.
   return 0;
 }
 
-WebRtc_Word16 ACMPCMU::InternalCreateDecoder() {
+int16_t ACMPCMU::InternalCreateDecoder() {
   // PCM has no instance.
   return 0;
 }
 
-void ACMPCMU::InternalDestructEncoderInst(void* /* ptrInst */) {
+void ACMPCMU::InternalDestructEncoderInst(void* /* ptr_inst */) {
   // PCM has no instance.
   return;
 }
 
 void ACMPCMU::DestructEncoderSafe() {
   // PCM has no instance.
-  _encoderExist = false;
-  _encoderInitialized = false;
+  encoder_exist_ = false;
+  encoder_initialized_ = false;
   return;
 }
 
 void ACMPCMU::DestructDecoderSafe() {
   // PCM has no instance.
-  _decoderInitialized = false;
-  _decoderExist = false;
+  decoder_initialized_ = false;
+  decoder_exist_ = false;
   return;
 }
 
@@ -128,5 +130,7 @@ void ACMPCMU::SplitStereoPacket(uint8_t* payload, int32_t* payload_length) {
     payload[*payload_length - 1] = right_byte;
   }
 }
+
+}  // namespace acm1
 
 }  // namespace webrtc

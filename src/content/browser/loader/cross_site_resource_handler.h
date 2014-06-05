@@ -5,7 +5,10 @@
 #ifndef CONTENT_BROWSER_LOADER_CROSS_SITE_RESOURCE_HANDLER_H_
 #define CONTENT_BROWSER_LOADER_CROSS_SITE_RESOURCE_HANDLER_H_
 
+#include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
 #include "content/browser/loader/layered_resource_handler.h"
+#include "content/common/content_export.h"
 #include "net/url_request/url_request_status.h"
 
 namespace net {
@@ -22,8 +25,6 @@ namespace content {
 class CrossSiteResourceHandler : public LayeredResourceHandler {
  public:
   CrossSiteResourceHandler(scoped_ptr<ResourceHandler> next_handler,
-                           int render_process_host_id,
-                           int render_view_id,
                            net::URLRequest* request);
   virtual ~CrossSiteResourceHandler();
 
@@ -38,34 +39,53 @@ class CrossSiteResourceHandler : public LayeredResourceHandler {
   virtual bool OnReadCompleted(int request_id,
                                int bytes_read,
                                bool* defer) OVERRIDE;
-  virtual bool OnResponseCompleted(int request_id,
+  virtual void OnResponseCompleted(int request_id,
                                    const net::URLRequestStatus& status,
-                                   const std::string& security_info) OVERRIDE;
+                                   const std::string& security_info,
+                                   bool* defer) OVERRIDE;
 
   // We can now send the response to the new renderer, which will cause
   // WebContentsImpl to swap in the new renderer and destroy the old one.
   void ResumeResponse();
 
+  // When set to true, requests are leaked when they can't be passed to a
+  // RenderViewHost, for unit tests.
+  CONTENT_EXPORT static void SetLeakRequestsForTesting(
+      bool leak_requests_for_testing);
+
  private:
   // Prepare to render the cross-site response in a new RenderViewHost, by
   // telling the old RenderViewHost to run its onunload handler.
-  void StartCrossSiteTransition(
-      int request_id,
-      ResourceResponse* response);
+  void StartCrossSiteTransition(int request_id,
+                                ResourceResponse* response,
+                                bool should_transfer);
 
+  // Defer the navigation to the UI thread to check whether transfer is required
+  // or not. Currently only used in --site-per-process.
+  bool DeferForNavigationPolicyCheck(ResourceRequestInfoImpl* info,
+                                     ResourceResponse* response,
+                                     bool* defer);
+
+  void ResumeOrTransfer(bool is_transfer);
   void ResumeIfDeferred();
 
-  int render_process_host_id_;
-  int render_view_id_;
-  net::URLRequest* request_;
+  // Called when about to defer a request.  Sets |did_defer_| and logs the
+  // defferral
+  void OnDidDefer();
+
   bool has_started_response_;
   bool in_cross_site_transition_;
-  int request_id_;
   bool completed_during_transition_;
   bool did_defer_;
   net::URLRequestStatus completed_status_;
   std::string completed_security_info_;
-  ResourceResponse* response_;
+  scoped_refptr<ResourceResponse> response_;
+
+  // TODO(nasko): WeakPtr is needed in --site-per-process, since all navigations
+  // are deferred to the UI thread and come back to IO thread via
+  // PostTaskAndReplyWithResult. If a transfer is needed, it goes back to the UI
+  // thread. This can be removed once the code is changed to only do one hop.
+  base::WeakPtrFactory<CrossSiteResourceHandler> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(CrossSiteResourceHandler);
 };

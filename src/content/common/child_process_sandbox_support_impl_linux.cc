@@ -6,25 +6,28 @@
 
 #include <sys/stat.h>
 
+#include "base/debug/trace_event.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/pickle.h"
 #include "base/posix/eintr_wrapper.h"
-#include "base/posix/unix_domain_socket.h"
-#include "content/common/sandbox_linux.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/linux/WebFontFamily.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/linux/WebFontRenderStyle.h"
+#include "base/posix/unix_domain_socket_linux.h"
+#include "base/sys_byteorder.h"
+#include "content/common/sandbox_linux/sandbox_linux.h"
+#include "content/common/zygote_commands_linux.h"
+#include "third_party/WebKit/public/platform/linux/WebFontFamily.h"
+#include "third_party/WebKit/public/platform/linux/WebFontRenderStyle.h"
 
 namespace content {
 
-void GetFontFamilyForCharacters(const uint16_t* utf16,
-                                size_t num_utf16,
-                                const char* preferred_locale,
-                                WebKit::WebFontFamily* family) {
+void GetFontFamilyForCharacter(int32_t character,
+                               const char* preferred_locale,
+                               blink::WebFontFamily* family) {
+  TRACE_EVENT0("sandbox_ipc", "GetFontFamilyForCharacter");
+
   Pickle request;
-  request.WriteInt(LinuxSandbox::METHOD_GET_FONT_FAMILY_FOR_CHARS);
-  request.WriteInt(num_utf16);
-  for (size_t i = 0; i < num_utf16; ++i)
-    request.WriteUInt32(utf16[i]);
+  request.WriteInt(LinuxSandbox::METHOD_GET_FONT_FAMILY_FOR_CHAR);
+  request.WriteInt(character);
   request.WriteString(preferred_locale);
 
   uint8_t buf[512];
@@ -48,7 +51,9 @@ void GetFontFamilyForCharacters(const uint16_t* utf16,
 }
 
 void GetRenderStyleForStrike(const char* family, int sizeAndStyle,
-                             WebKit::WebFontRenderStyle* out) {
+                             blink::WebFontRenderStyle* out) {
+  TRACE_EVENT0("sandbox_ipc", "GetRenderStyleForStrike");
+
   Pickle request;
   request.WriteInt(LinuxSandbox::METHOD_GET_STYLE_FOR_STRIKE);
   request.WriteString(family);
@@ -84,14 +89,20 @@ void GetRenderStyleForStrike(const char* family, int sizeAndStyle,
   }
 }
 
-int MatchFontWithFallback(const std::string& face, bool bold,
-                          bool italic, int charset) {
+int MatchFontWithFallback(const std::string& face,
+                          bool bold,
+                          bool italic,
+                          int charset,
+                          PP_BrowserFont_Trusted_Family fallback_family) {
+  TRACE_EVENT0("sandbox_ipc", "MatchFontWithFallback");
+
   Pickle request;
   request.WriteInt(LinuxSandbox::METHOD_MATCH_WITH_FALLBACK);
   request.WriteString(face);
   request.WriteBool(bold);
   request.WriteBool(italic);
   request.WriteUInt32(charset);
+  request.WriteUInt32(fallback_family);
   uint8_t reply_buf[64];
   int fd = -1;
   UnixDomainSocket::SendRecvMsg(GetSandboxFD(), reply_buf, sizeof(reply_buf),
@@ -99,81 +110,83 @@ int MatchFontWithFallback(const std::string& face, bool bold,
   return fd;
 }
 
-bool GetFontTable(int fd, uint32_t table, uint8_t* output,
-                  size_t* output_length) {
-  if (table == 0) {
+bool GetFontTable(int fd, uint32_t table_tag, off_t offset,
+                  uint8_t* output, size_t* output_length) {
+  if (offset < 0)
+    return false;
+
+  size_t data_length = 0;  // the length of the file data.
+  off_t data_offset = 0;   // the offset of the data in the file.
+  if (table_tag == 0) {
+    // Get the entire font file.
     struct stat st;
     if (fstat(fd, &st) < 0)
       return false;
-    size_t length = st.st_size;
-    if (!output) {
-      *output_length = length;
-      return true;
-    }
-    if (*output_length < length)
+    data_length = base::checked_cast<size_t>(st.st_size);
+  } else {
+    // Get a font table. Read the header to find its offset in the file.
+    uint16_t num_tables;
+    ssize_t n = HANDLE_EINTR(pread(fd, &num_tables, sizeof(num_tables),
+                             4 /* skip the font type */));
+    if (n != sizeof(num_tables))
       return false;
-    *output_length = length;
-    ssize_t n = HANDLE_EINTR(pread(fd, output, length, 0));
-    if (n != static_cast<ssize_t>(length))
+    // Font data is stored in net (big-endian) order.
+    num_tables = base::NetToHost16(num_tables);
+
+    // Read the table directory.
+    static const size_t kTableEntrySize = 16;
+    const size_t directory_size = num_tables * kTableEntrySize;
+    scoped_ptr<uint8_t[]> table_entries(new uint8_t[directory_size]);
+    n = HANDLE_EINTR(pread(fd, table_entries.get(), directory_size,
+                           12 /* skip the SFNT header */));
+    if (n != base::checked_cast<ssize_t>(directory_size))
       return false;
-    return true;
-  }
 
-  unsigned num_tables;
-  uint8_t num_tables_buf[2];
-
-  ssize_t n = HANDLE_EINTR(pread(fd, &num_tables_buf, sizeof(num_tables_buf),
-                           4 /* skip the font type */));
-  if (n != sizeof(num_tables_buf))
-    return false;
-
-  num_tables = static_cast<unsigned>(num_tables_buf[0]) << 8 |
-               num_tables_buf[1];
-
-  // The size in bytes of an entry in the table directory.
-  static const unsigned kTableEntrySize = 16;
-  scoped_array<uint8_t> table_entries(
-      new uint8_t[num_tables * kTableEntrySize]);
-  n = HANDLE_EINTR(pread(fd, table_entries.get(), num_tables * kTableEntrySize,
-                         12 /* skip the SFNT header */));
-  if (n != static_cast<ssize_t>(num_tables * kTableEntrySize))
-    return false;
-
-  size_t offset;
-  size_t length = 0;
-  for (unsigned i = 0; i < num_tables; i++) {
-    const uint8_t* entry = table_entries.get() + i * kTableEntrySize;
-    if (memcmp(entry, &table, sizeof(table)) == 0) {
-      offset = static_cast<size_t>(entry[8]) << 24 |
-               static_cast<size_t>(entry[9]) << 16 |
-               static_cast<size_t>(entry[10]) << 8  |
-               static_cast<size_t>(entry[11]);
-      length = static_cast<size_t>(entry[12]) << 24 |
-               static_cast<size_t>(entry[13]) << 16 |
-               static_cast<size_t>(entry[14]) << 8  |
-               static_cast<size_t>(entry[15]);
-
-      break;
+    for (uint16_t i = 0; i < num_tables; ++i) {
+      uint8_t* entry = table_entries.get() + i * kTableEntrySize;
+      uint32_t tag = *reinterpret_cast<uint32_t*>(entry);
+      if (tag == table_tag) {
+        // Font data is stored in net (big-endian) order.
+        data_offset =
+            base::NetToHost32(*reinterpret_cast<uint32_t*>(entry + 8));
+        data_length =
+            base::NetToHost32(*reinterpret_cast<uint32_t*>(entry + 12));
+        break;
+      }
     }
   }
 
-  if (!length)
+  if (!data_length)
     return false;
+  // Clamp |offset| inside the allowable range. This allows the read to succeed
+  // but return 0 bytes.
+  offset = std::min(offset, base::checked_cast<off_t>(data_length));
+  // Make sure it's safe to add the data offset and the caller's logical offset.
+  // Define the maximum positive offset on 32 bit systems.
+  static const off_t kMaxPositiveOffset32 = 0x7FFFFFFF;  // 2 GB - 1.
+  if ((offset > kMaxPositiveOffset32 / 2) ||
+      (data_offset > kMaxPositiveOffset32 / 2))
+    return false;
+  data_offset += offset;
+  data_length -= offset;
 
-  if (!output) {
-    *output_length = length;
-    return true;
+  if (output) {
+    // 'output_length' holds the maximum amount of data the caller can accept.
+    data_length = std::min(data_length, *output_length);
+    ssize_t n = HANDLE_EINTR(pread(fd, output, data_length, data_offset));
+    if (n != base::checked_cast<ssize_t>(data_length))
+      return false;
   }
-
-  if (*output_length < length)
-    return false;
-
-  *output_length = length;
-  n = HANDLE_EINTR(pread(fd, output, length, offset));
-  if (n != static_cast<ssize_t>(length))
-    return false;
+  *output_length = data_length;
 
   return true;
+}
+
+bool SendZygoteChildPing(int fd) {
+  return UnixDomainSocket::SendMsg(fd,
+                                   kZygoteChildPingMessage,
+                                   sizeof(kZygoteChildPingMessage),
+                                   std::vector<int>());
 }
 
 }  // namespace content

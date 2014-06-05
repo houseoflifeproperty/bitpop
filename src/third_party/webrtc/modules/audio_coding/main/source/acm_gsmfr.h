@@ -11,7 +11,7 @@
 #ifndef WEBRTC_MODULES_AUDIO_CODING_MAIN_SOURCE_ACM_GSMFR_H_
 #define WEBRTC_MODULES_AUDIO_CODING_MAIN_SOURCE_ACM_GSMFR_H_
 
-#include "acm_generic_codec.h"
+#include "webrtc/modules/audio_coding/main/source/acm_generic_codec.h"
 
 // forward declaration
 struct GSMFR_encinst_t_;
@@ -19,47 +19,52 @@ struct GSMFR_decinst_t_;
 
 namespace webrtc {
 
+namespace acm1 {
+
 class ACMGSMFR : public ACMGenericCodec {
  public:
-  ACMGSMFR(WebRtc_Word16 codecID);
+  explicit ACMGSMFR(int16_t codec_id);
   ~ACMGSMFR();
+
   // for FEC
   ACMGenericCodec* CreateInstance(void);
 
-  WebRtc_Word16 InternalEncode(WebRtc_UWord8* bitstream,
-                               WebRtc_Word16* bitStreamLenByte);
+  int16_t InternalEncode(uint8_t* bitstream,
+                         int16_t* bitstream_len_byte);
 
-  WebRtc_Word16 InternalInitEncoder(WebRtcACMCodecParams *codecParams);
+  int16_t InternalInitEncoder(WebRtcACMCodecParams *codec_params);
 
-  WebRtc_Word16 InternalInitDecoder(WebRtcACMCodecParams *codecParams);
+  int16_t InternalInitDecoder(WebRtcACMCodecParams *codec_params);
 
  protected:
-  WebRtc_Word16 DecodeSafe(WebRtc_UWord8* bitStream,
-                           WebRtc_Word16 bitStreamLenByte,
-                           WebRtc_Word16* audio,
-                           WebRtc_Word16* audioSamples,
-                           WebRtc_Word8* speechType);
+  int16_t DecodeSafe(uint8_t* bitstream,
+                     int16_t bitstream_len_byte,
+                     int16_t* audio,
+                     int16_t* audio_samples,
+                     int8_t* speech_type);
 
-  WebRtc_Word32 CodecDef(WebRtcNetEQ_CodecDef& codecDef,
-                         const CodecInst& codecInst);
+  int32_t CodecDef(WebRtcNetEQ_CodecDef& codec_def,
+                   const CodecInst& codec_inst);
 
   void DestructEncoderSafe();
 
   void DestructDecoderSafe();
 
-  WebRtc_Word16 InternalCreateEncoder();
+  int16_t InternalCreateEncoder();
 
-  WebRtc_Word16 InternalCreateDecoder();
+  int16_t InternalCreateDecoder();
 
-  void InternalDestructEncoderInst(void* ptrInst);
+  void InternalDestructEncoderInst(void* ptr_inst);
 
-  WebRtc_Word16 EnableDTX();
+  int16_t EnableDTX();
 
-  WebRtc_Word16 DisableDTX();
+  int16_t DisableDTX();
 
-  GSMFR_encinst_t_* _encoderInstPtr;
-  GSMFR_decinst_t_* _decoderInstPtr;
+  GSMFR_encinst_t_* encoder_inst_ptr_;
+  GSMFR_decinst_t_* decoder_inst_ptr_;
 };
+
+}  // namespace acm1
 
 }  // namespace webrtc
 

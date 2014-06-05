@@ -138,7 +138,6 @@ int NaClSimpleRevClientStartServiceThread(struct NaClSimpleRevClient *self) {
           &self->acceptor)) {
     NaClLog(4, "NaClSimpleRevClientStartServiceThread: no thread\n");
     NaClRefCountUnref((struct NaClRefCount *) self);
-    self->acceptor = NULL;
     return 0;
   }
   return 1;
@@ -238,7 +237,6 @@ int NaClSimpleRevServiceConnectAndSpawnHandlerCb(
      */
     NaClLog(3, "NaClSimpleRevServiceConnectAndSpawnHandler: no thread\n");
     NaClRefCountUnref((struct NaClRefCount *) rev_conn);
-    rev_conn->thread = NULL;
     return -NACL_ABI_EAGAIN;
   }
   /* thread owns rev_conn */
@@ -326,11 +324,14 @@ int NaClSimpleRevConnectionCtor(
     return 0;
   }
 
+  NaClRefCountRef((struct NaClRefCount *) service);
   self->service = service;
   self->connected_socket = conn;
   self->exit_cb = exit_cb;
   self->instance_data = instance_data;
 
+  NACL_VTBL(NaClRefCount, self) =
+      (struct NaClRefCountVtbl *) &kNaClSimpleRevConnectionVtbl;
   return 1;
 }
 

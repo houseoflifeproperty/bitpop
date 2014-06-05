@@ -8,11 +8,11 @@
 #include <map>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/version.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
-namespace webkit {
+namespace content {
 struct WebPluginInfo;
 }
 
@@ -36,11 +36,11 @@ class PluginMetadata {
   static const char kWindowsMediaPlayerGroupName[];
 
   PluginMetadata(const std::string& identifier,
-                 const string16& name,
+                 const base::string16& name,
                  bool url_for_display,
                  const GURL& plugin_url,
                  const GURL& help_url,
-                 const string16& group_name_matcher,
+                 const base::string16& group_name_matcher,
                  const std::string& language);
   ~PluginMetadata();
 
@@ -48,7 +48,7 @@ class PluginMetadata {
   const std::string& identifier() const { return identifier_; }
 
   // Human-readable name of the plug-in.
-  const string16& name() const { return name_; }
+  const base::string16& name() const { return name_; }
 
   // If |url_for_display| is false, |plugin_url| is the URL of the download page
   // for the plug-in, which should be opened in a new tab. If it is true,
@@ -72,7 +72,7 @@ class PluginMetadata {
   // Checks if |plugin| mime types match all |matching_mime_types_|.
   // If there is no |matching_mime_types_|, |group_name_matcher_| is used
   // for matching.
-  bool MatchesPlugin(const webkit::WebPluginInfo& plugin);
+  bool MatchesPlugin(const content::WebPluginInfo& plugin);
 
   // If |status_str| describes a valid security status, writes it to |status|
   // and returns true, else returns false and leaves |status| unchanged.
@@ -81,7 +81,7 @@ class PluginMetadata {
 
   // Returns the security status for the given plug-in (i.e. whether it is
   // considered out-of-date, etc.)
-  SecurityStatus GetSecurityStatus(const webkit::WebPluginInfo& plugin) const;
+  SecurityStatus GetSecurityStatus(const content::WebPluginInfo& plugin) const;
 
   scoped_ptr<PluginMetadata> Clone() const;
 
@@ -91,8 +91,8 @@ class PluginMetadata {
   };
 
   std::string identifier_;
-  string16 name_;
-  string16 group_name_matcher_;
+  base::string16 name_;
+  base::string16 group_name_matcher_;
   bool url_for_display_;
   GURL plugin_url_;
   GURL help_url_;

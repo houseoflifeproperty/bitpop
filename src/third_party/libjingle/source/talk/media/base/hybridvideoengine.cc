@@ -54,7 +54,7 @@ void HybridVideoMediaChannel::SetInterface(NetworkInterface* iface) {
   }
 }
 
-bool HybridVideoMediaChannel::SetOptions(int options) {
+bool HybridVideoMediaChannel::SetOptions(const VideoOptions &options) {
   bool ret = true;
   if (channel1_) {
     ret = channel1_->SetOptions(options);
@@ -65,17 +65,17 @@ bool HybridVideoMediaChannel::SetOptions(int options) {
   return ret;
 }
 
-int HybridVideoMediaChannel::GetOptions() const {
+bool HybridVideoMediaChannel::GetOptions(VideoOptions *options) const {
   if (active_channel_) {
-    return active_channel_->GetOptions();
+    return active_channel_->GetOptions(options);
   }
   if (channel1_) {
-    return channel1_->GetOptions();
+    return channel1_->GetOptions(options);
   }
   if (channel2_) {
-    return channel2_->GetOptions();
+    return channel2_->GetOptions(options);
   }
-  return 0;
+  return false;
 }
 
 bool HybridVideoMediaChannel::SetRecvCodecs(
@@ -160,8 +160,8 @@ bool HybridVideoMediaChannel::SetSendCodecs(
   if (!return_value) {
     return false;
   }
-  active_channel_->UpdateAspectRatio(send_codec.width, send_codec.height);
   engine_->OnNewSendResolution(send_codec.width, send_codec.height);
+  active_channel_->UpdateAspectRatio(send_codec.width, send_codec.height);
   return true;
 }
 
@@ -183,9 +183,12 @@ bool HybridVideoMediaChannel::SetSendRtpHeaderExtensions(
       active_channel_->SetSendRtpHeaderExtensions(extensions);
 }
 
-bool HybridVideoMediaChannel::SetSendBandwidth(bool autobw, int bps) {
-  return active_channel_ &&
-      active_channel_->SetSendBandwidth(autobw, bps);
+bool HybridVideoMediaChannel::SetStartSendBandwidth(int bps) {
+  return active_channel_ && active_channel_->SetStartSendBandwidth(bps);
+}
+
+bool HybridVideoMediaChannel::SetMaxSendBandwidth(int bps) {
+  return active_channel_ && active_channel_->SetMaxSendBandwidth(bps);
 }
 
 bool HybridVideoMediaChannel::SetSend(bool send) {
@@ -270,27 +273,39 @@ bool HybridVideoMediaChannel::RequestIntraFrame() {
       active_channel_->RequestIntraFrame();
 }
 
-bool HybridVideoMediaChannel::GetStats(VideoMediaInfo* info) {
+bool HybridVideoMediaChannel::GetStats(
+    const StatsOptions& options, VideoMediaInfo* info) {
   // TODO(juberti): Ensure that returning no stats until SetSendCodecs is OK.
   return active_channel_ &&
-      active_channel_->GetStats(info);
+      active_channel_->GetStats(options, info);
 }
 
-void HybridVideoMediaChannel::OnPacketReceived(talk_base::Buffer* packet) {
+void HybridVideoMediaChannel::OnPacketReceived(
+    talk_base::Buffer* packet, const talk_base::PacketTime& packet_time) {
   // Eat packets until we have an active channel;
   if (active_channel_) {
-    active_channel_->OnPacketReceived(packet);
+    active_channel_->OnPacketReceived(packet, packet_time);
   } else {
     LOG(LS_INFO) << "HybridVideoChannel: Eating early RTP packet";
   }
 }
 
-void HybridVideoMediaChannel::OnRtcpReceived(talk_base::Buffer* packet) {
+void HybridVideoMediaChannel::OnRtcpReceived(
+    talk_base::Buffer* packet, const talk_base::PacketTime& packet_time) {
   // Eat packets until we have an active channel;
   if (active_channel_) {
-    active_channel_->OnRtcpReceived(packet);
+    active_channel_->OnRtcpReceived(packet, packet_time);
   } else {
     LOG(LS_INFO) << "HybridVideoChannel: Eating early RTCP packet";
+  }
+}
+
+void HybridVideoMediaChannel::OnReadyToSend(bool ready) {
+  if (channel1_) {
+    channel1_->OnReadyToSend(ready);
+  }
+  if (channel2_) {
+    channel2_->OnReadyToSend(ready);
   }
 }
 

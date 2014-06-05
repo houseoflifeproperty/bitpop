@@ -15,27 +15,18 @@ cr.define('print_preview', function() {
     cr.EventTarget.call(this);
 
     /**
-     * Tracker used to keep track of event listeners.
-     * @type {!EventTracker}
-     * @private
-     */
-    this.tracker_ = new EventTracker();
-
-    /**
-     * Google Cloud Print interface to listen to for events. Currently, through
-     * Google Cloud Print is how we determine the info of the logged in user.
-     * @type {cloudprint.CloudPrintInterface}
-     * @private
-     */
-    this.cloudPrintInterface_ = null;
-
-    /**
      * Email address of the logged in user or {@code null} if no user is logged
-     * in.
-     * @type {?string}
-     * @private
+     * in. In case of Google multilogin, can be changed by the user.
+     * @private {?string}
      */
-    this.userEmail_ = null;
+    this.activeUser_ = null;
+
+    /**
+     * Email addresses of the logged in users or empty array if no user is
+     * logged in. {@code null} if not known yet.
+     * @private {?Array.<string>}
+     */
+    this.users_ = null;
   };
 
   /**
@@ -43,47 +34,57 @@ cr.define('print_preview', function() {
    * @enum {string}
    */
   UserInfo.EventType = {
-    EMIAL_CHANGE: 'print_preview.UserInfo.EMAIL_CHANGE'
+    ACTIVE_USER_CHANGED: 'print_preview.UserInfo.ACTIVE_USER_CHANGED',
+    USERS_CHANGED: 'print_preview.UserInfo.USERS_CHANGED'
   };
 
   UserInfo.prototype = {
     __proto__: cr.EventTarget.prototype,
 
+    /** @return {boolean} Whether user accounts are already retrieved. */
+    get initialized() {
+      return this.users_ != null;
+    },
+
+    /** @return {boolean} Whether user is logged in or not. */
+    get loggedIn() {
+      return !!this.activeUser;
+    },
+
     /**
      * @return {?string} Email address of the logged in user or {@code null} if
      *     no user is logged.
      */
-    getUserEmail: function() {
-      return this.userEmail_;
+    get activeUser() {
+      return this.activeUser_;
+    },
+
+    /** Changes active user. */
+    set activeUser(activeUser) {
+      if (this.activeUser_ != activeUser) {
+        this.activeUser_ = activeUser;
+        cr.dispatchSimpleEvent(this, UserInfo.EventType.ACTIVE_USER_CHANGED);
+      }
     },
 
     /**
-     * @param {!cloudprint.CloudPrintInterface} cloudPrintInterface Interface
-     *     to Google Cloud Print that the print preview uses.
+     * @return {?Array.<string>} Email addresses of the logged in users or
+     *     empty array if no user is logged in. {@code null} if not known yet.
      */
-    setCloudPrintInterface: function(cloudPrintInterface) {
-      this.cloudPrintInterface_ = cloudPrintInterface;
-      this.tracker_.add(
-          this.cloudPrintInterface_,
-          cloudprint.CloudPrintInterface.EventType.SEARCH_DONE,
-          this.onCloudPrintSearchDone_.bind(this));
-    },
-
-    /** Removes all event listeners. */
-    removeEventListeners: function() {
-      this.tracker_.removeAll();
+    get users() {
+      return this.users_;
     },
 
     /**
-     * Called when a Google Cloud Print printer search completes. Updates user
-     * information.
-     * @type {cr.Event} event Contains information about the logged in user.
-     * @private
+     * Sets logged in user accounts info.
+     * @param {string} activeUser Active user account (email).
+     * @param {!Array.<string>} users List of currently logged in accounts.
      */
-    onCloudPrintSearchDone_: function(event) {
-      this.userEmail_ = event.email;
-      cr.dispatchSimpleEvent(this, UserInfo.EventType.EMAIL_CHANGE);
-    }
+    setUsers: function(activeUser, users) {
+      this.activeUser_ = activeUser;
+      this.users_ = users || [];
+      cr.dispatchSimpleEvent(this, UserInfo.EventType.USERS_CHANGED);
+    },
   };
 
   return {

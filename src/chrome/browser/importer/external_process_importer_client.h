@@ -11,22 +11,31 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
-#include "base/string16.h"
-#include "chrome/browser/importer/importer_data_types.h"
-#include "chrome/browser/importer/profile_writer.h"
+#include "base/strings/string16.h"
+#include "chrome/browser/history/history_types.h"
+#include "chrome/common/importer/importer_data_types.h"
+#include "chrome/common/importer/importer_url_row.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/utility_process_host_client.h"
 
 class ExternalProcessImporterHost;
+struct ImportedBookmarkEntry;
+struct ImportedFaviconUsage;
 class InProcessImporterBridge;
 
-namespace content {
+namespace autofill {
+struct PasswordForm;
+}
+
+namespace content{
 class UtilityProcessHost;
 }
 
-namespace history {
-class URLRow;
-struct ImportedFaviconUsage;
+namespace importer {
+#if defined(OS_WIN)
+struct ImporterIE7PasswordInfo;
+#endif
+struct URLKeywordInfo;
 }
 
 // This class is the client for the out of process profile importing.  It
@@ -34,10 +43,11 @@ struct ImportedFaviconUsage;
 // importer host, who actually does the writing.
 class ExternalProcessImporterClient : public content::UtilityProcessHostClient {
  public:
-  ExternalProcessImporterClient(ExternalProcessImporterHost* importer_host,
-                                const importer::SourceProfile& source_profile,
-                                uint16 items,
-                                InProcessImporterBridge* bridge);
+  ExternalProcessImporterClient(
+      base::WeakPtr<ExternalProcessImporterHost> importer_host,
+      const importer::SourceProfile& source_profile,
+      uint16 items,
+      InProcessImporterBridge* bridge);
 
   // Launches the task to start the external process.
   void Start();
@@ -55,21 +65,27 @@ class ExternalProcessImporterClient : public content::UtilityProcessHostClient {
   void OnImportItemStart(int item);
   void OnImportItemFinished(int item);
   void OnHistoryImportStart(size_t total_history_rows_count);
-  void OnHistoryImportGroup(const history::URLRows& history_rows_group,
-                            int visit_source);
+  void OnHistoryImportGroup(
+      const std::vector<ImporterURLRow>& history_rows_group,
+      int visit_source);
   void OnHomePageImportReady(const GURL& home_page);
-  void OnBookmarksImportStart(const string16& first_folder_name,
+  void OnBookmarksImportStart(const base::string16& first_folder_name,
                               size_t total_bookmarks_count);
   void OnBookmarksImportGroup(
-      const std::vector<ProfileWriter::BookmarkEntry>& bookmarks_group);
+      const std::vector<ImportedBookmarkEntry>& bookmarks_group);
   void OnFaviconsImportStart(size_t total_favicons_count);
   void OnFaviconsImportGroup(
-      const std::vector<history::ImportedFaviconUsage>& favicons_group);
-  void OnPasswordFormImportReady(const content::PasswordForm& form);
-  // WARNING: This function takes ownership of (and deletes) the pointers in
-  // |template_urls|!
-  void OnKeywordsImportReady(const std::vector<TemplateURL*>& template_urls,
-                             bool unique_on_host_and_path);
+      const std::vector<ImportedFaviconUsage>& favicons_group);
+  void OnPasswordFormImportReady(const autofill::PasswordForm& form);
+  void OnKeywordsImportReady(
+      const std::vector<importer::URLKeywordInfo>& url_keywords,
+      bool unique_on_host_and_path);
+  void OnFirefoxSearchEngineDataReceived(
+      const std::vector<std::string> search_engine_data);
+#if defined(OS_WIN)
+  void OnIE7PasswordReceived(
+        const importer::ImporterIE7PasswordInfo& importer_password_info);
+#endif
 
  protected:
   virtual ~ExternalProcessImporterClient();
@@ -89,13 +105,13 @@ class ExternalProcessImporterClient : public content::UtilityProcessHostClient {
 
   // These variables store data being collected from the importer until the
   // entire group has been collected and is ready to be written to the profile.
-  history::URLRows history_rows_;
-  std::vector<ProfileWriter::BookmarkEntry> bookmarks_;
-  std::vector<history::ImportedFaviconUsage> favicons_;
+  std::vector<ImporterURLRow> history_rows_;
+  std::vector<ImportedBookmarkEntry> bookmarks_;
+  std::vector<ImportedFaviconUsage> favicons_;
 
   // Usually some variation on IDS_BOOKMARK_GROUP_...; the name of the folder
   // under which imported bookmarks will be placed.
-  string16 bookmarks_first_folder_name_;
+  base::string16 bookmarks_first_folder_name_;
 
   // Total number of bookmarks to import.
   size_t total_bookmarks_count_;
@@ -109,8 +125,10 @@ class ExternalProcessImporterClient : public content::UtilityProcessHostClient {
   // Notifications received from the ProfileImportProcessHost are passed back
   // to process_importer_host_, which calls the ProfileWriter to record the
   // import data.  When the import process is done, process_importer_host_
-  // deletes itself.
-  ExternalProcessImporterHost* process_importer_host_;
+  // deletes itself. This is a weak ptr so that any messages received after
+  // the host has deleted itself are ignored (e.g., it's possible to receive
+  // OnProcessCrashed() after NotifyImportEnded()).
+  base::WeakPtr<ExternalProcessImporterHost> process_importer_host_;
 
   // Handles sending messages to the external process.  Deletes itself when
   // the external process dies (see
@@ -118,7 +136,7 @@ class ExternalProcessImporterClient : public content::UtilityProcessHostClient {
   base::WeakPtr<content::UtilityProcessHost> utility_process_host_;
 
   // Data to be passed from the importer host to the external importer.
-  const importer::SourceProfile& source_profile_;
+  importer::SourceProfile source_profile_;
   uint16 items_;
 
   // Takes import data coming over IPC and delivers it to be written by the

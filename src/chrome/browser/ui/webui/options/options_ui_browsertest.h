@@ -10,12 +10,15 @@
 
 namespace options {
 
-class OptionsBrowserTest : public InProcessBrowserTest {
+class OptionsUIBrowserTest : public InProcessBrowserTest {
  public:
-  OptionsBrowserTest();
+  OptionsUIBrowserTest();
 
-  // Navigate to the settings tab and block until complete.
+  // Navigate to the Uber/Settings page and block until it has loaded.
   void NavigateToSettings();
+
+  // Navigate to the Settings frame and block until complete.
+  void NavigateToSettingsFrame();
 
   // Check navbar's existence.
   void VerifyNavbar();

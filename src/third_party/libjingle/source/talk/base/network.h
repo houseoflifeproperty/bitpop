@@ -38,15 +38,29 @@
 #include "talk/base/messagehandler.h"
 #include "talk/base/sigslot.h"
 
-#if defined(POSIX) && !defined(ANDROID)
+#if defined(POSIX)
 struct ifaddrs;
-#endif  // defined(POSIX) && !defined(ANDROID)
+#endif  // defined(POSIX)
 
 namespace talk_base {
 
 class Network;
-class NetworkSession;
 class Thread;
+
+enum AdapterType {
+  // This enum resembles the one in Chromium net::ConnectionType.
+  ADAPTER_TYPE_UNKNOWN = 0,
+  ADAPTER_TYPE_ETHERNET = 1,
+  ADAPTER_TYPE_WIFI = 2,
+  ADAPTER_TYPE_CELLULAR = 3,
+  ADAPTER_TYPE_VPN = 4
+};
+
+// Makes a string key for this network. Used in the network manager's maps.
+// Network objects are keyed on interface name, network prefix and the
+// length of that prefix.
+std::string MakeNetworkKey(const std::string& name, const IPAddress& prefix,
+                           int prefix_length);
 
 // Generic network manager interface. It provides list of local
 // networks.
@@ -127,19 +141,31 @@ class BasicNetworkManager : public NetworkManagerBase,
   virtual void OnMessage(Message* msg);
   bool started() { return start_count_ > 0; }
 
+  // Sets the network ignore list, which is empty by default. Any network on
+  // the ignore list will be filtered from network enumeration results.
+  void set_network_ignore_list(const std::vector<std::string>& list) {
+    network_ignore_list_ = list;
+  }
+#if defined(ANDROID) || defined(LINUX)
+  // Sets the flag for ignoring non-default routes.
+  void set_ignore_non_default_routes(bool value) {
+    ignore_non_default_routes_ = true;
+  }
+#endif
+
  protected:
-#if defined(POSIX) && !defined(ANDROID)
+#if defined(POSIX)
   // Separated from CreateNetworks for tests.
-  void ConvertIfAddrs(struct ifaddrs* interfaces,
+  void ConvertIfAddrs(ifaddrs* interfaces,
                       bool include_ignored,
                       NetworkList* networks) const;
-#endif  // defined(POSIX) && !defined(ANDROID)
+#endif  // defined(POSIX)
 
   // Creates a network object for each network available on the machine.
   bool CreateNetworks(bool include_ignored, NetworkList* networks) const;
 
   // Determines if a network should be ignored.
-  static bool IsIgnoredNetwork(const Network& network);
+  bool IsIgnoredNetwork(const Network& network) const;
 
  private:
   friend class NetworkTest;
@@ -149,14 +175,18 @@ class BasicNetworkManager : public NetworkManagerBase,
   Thread* thread_;
   bool sent_first_update_;
   int start_count_;
+  std::vector<std::string> network_ignore_list_;
+  bool ignore_non_default_routes_;
 };
 
 // Represents a Unix-type network interface, with a name and single address.
 class Network {
  public:
-  Network() : prefix_(INADDR_ANY), scope_id_(0) {}
   Network(const std::string& name, const std::string& description,
           const IPAddress& prefix, int prefix_length);
+
+  Network(const std::string& name, const std::string& description,
+          const IPAddress& prefix, int prefix_length, AdapterType type);
 
   // Returns the name of the interface this network is associated wtih.
   const std::string& name() const { return name_; }
@@ -169,6 +199,10 @@ class Network {
   const IPAddress& prefix() const { return prefix_; }
   // Returns the length, in bits, of this network's prefix.
   int prefix_length() const { return prefix_length_; }
+
+  // |key_| has unique value per network interface. Used in sorting network
+  // interfaces. Key is derived from interface name and it's prefix.
+  std::string key() const { return key_; }
 
   // Returns the Network's current idea of the 'best' IP it has.
   // 'Best' currently means the first one added.
@@ -201,27 +235,28 @@ class Network {
   bool ignored() const { return ignored_; }
   void set_ignored(bool ignored) { ignored_ = ignored; }
 
+  AdapterType type() const { return type_; }
+  int preference() const { return preference_; }
+  void set_preference(int preference) { preference_ = preference; }
+
   // Debugging description of this network
   std::string ToString() const;
 
  private:
-  typedef std::vector<NetworkSession*> SessionList;
-
   std::string name_;
   std::string description_;
   IPAddress prefix_;
   int prefix_length_;
+  std::string key_;
   std::vector<IPAddress> ips_;
   int scope_id_;
   bool ignored_;
-  SessionList sessions_;
-  double uniform_numerator_;
-  double uniform_denominator_;
-  double exponential_numerator_;
-  double exponential_denominator_;
+  AdapterType type_;
+  int preference_;
 
   friend class NetworkManager;
 };
+
 }  // namespace talk_base
 
 #endif  // TALK_BASE_NETWORK_H_

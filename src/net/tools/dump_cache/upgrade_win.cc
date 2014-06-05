@@ -8,21 +8,22 @@
 #include "base/bind_helpers.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/threading/thread.h"
 #include "base/win/scoped_handle.h"
-#include "googleurl/src/gurl.h"
+#include "net/base/cache_type.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
-#include "net/disk_cache/backend_impl.h"
-#include "net/disk_cache/entry_impl.h"
+#include "net/disk_cache/blockfile/backend_impl.h"
+#include "net/disk_cache/blockfile/entry_impl.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/tools/dump_cache/cache_dumper.h"
+#include "url/gurl.h"
 
 namespace {
 
@@ -38,8 +39,8 @@ const int kNumStreams = 4;
 #define DEBUGMSG(...) { printf(__VA_ARGS__); }
 #endif
 
-HANDLE OpenServer(const string16& pipe_number) {
-  string16 pipe_name(kPipePrefix);
+HANDLE OpenServer(const base::string16& pipe_number) {
+  base::string16 pipe_name(kPipePrefix);
   pipe_name.append(pipe_number);
   return CreateFile(pipe_name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, NULL,
                     OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL);
@@ -116,7 +117,7 @@ enum {
 
 // -----------------------------------------------------------------------
 
-class BaseSM : public MessageLoopForIO::IOHandler {
+class BaseSM : public base::MessageLoopForIO::IOHandler {
  public:
   explicit BaseSM(HANDLE channel);
   virtual ~BaseSM();
@@ -127,14 +128,14 @@ class BaseSM : public MessageLoopForIO::IOHandler {
   bool ConnectChannel();
   bool IsPending();
 
-  MessageLoopForIO::IOContext in_context_;
-  MessageLoopForIO::IOContext out_context_;
+  base::MessageLoopForIO::IOContext in_context_;
+  base::MessageLoopForIO::IOContext out_context_;
   disk_cache::EntryImpl* entry_;
   HANDLE channel_;
   int state_;
   int pending_count_;
-  scoped_array<char> in_buffer_;
-  scoped_array<char> out_buffer_;
+  scoped_ptr<char[]> in_buffer_;
+  scoped_ptr<char[]> out_buffer_;
   IoBuffer* input_;
   IoBuffer* output_;
   base::Thread cache_thread_;
@@ -154,9 +155,9 @@ BaseSM::BaseSM(HANDLE channel)
   memset(&out_context_, 0, sizeof(out_context_));
   in_context_.handler = this;
   out_context_.handler = this;
-  MessageLoopForIO::current()->RegisterIOHandler(channel_, this);
+  base::MessageLoopForIO::current()->RegisterIOHandler(channel_, this);
   CHECK(cache_thread_.StartWithOptions(
-            base::Thread::Options(MessageLoop::TYPE_IO, 0)));
+      base::Thread::Options(base::MessageLoop::TYPE_IO, 0)));
 }
 
 BaseSM::~BaseSM() {
@@ -214,7 +215,7 @@ bool BaseSM::IsPending() {
 
 class MasterSM : public BaseSM {
  public:
-  MasterSM(const FilePath& path, HANDLE channel)
+  MasterSM(const base::FilePath& path, HANDLE channel)
       : BaseSM(channel),
         path_(path) {
   }
@@ -223,8 +224,9 @@ class MasterSM : public BaseSM {
   }
 
   bool DoInit();
-  virtual void OnIOCompleted(MessageLoopForIO::IOContext* context,
-                             DWORD bytes_transfered, DWORD error);
+  virtual void OnIOCompleted(base::MessageLoopForIO::IOContext* context,
+                             DWORD bytes_transfered,
+                             DWORD error);
 
  private:
   enum {
@@ -264,11 +266,12 @@ class MasterSM : public BaseSM {
   int read_size_;
   scoped_ptr<disk_cache::Backend> cache_;
   CacheDumpWriter* writer_;
-  const FilePath path_;
+  const base::FilePath path_;
 };
 
-void MasterSM::OnIOCompleted(MessageLoopForIO::IOContext* context,
-                             DWORD bytes_transfered, DWORD error) {
+void MasterSM::OnIOCompleted(base::MessageLoopForIO::IOContext* context,
+                             DWORD bytes_transfered,
+                             DWORD error) {
   pending_count_--;
   if (context == &out_context_) {
     if (!error)
@@ -316,16 +319,18 @@ bool MasterSM::DoInit() {
   DEBUGMSG("Master DoInit\n");
   DCHECK(state_ == MASTER_INITIAL);
 
-  disk_cache::Backend* cache;
+  scoped_ptr<disk_cache::Backend> cache;
   net::TestCompletionCallback cb;
-  int rv = disk_cache::CreateCacheBackend(net::DISK_CACHE, path_, 0, false,
+  int rv = disk_cache::CreateCacheBackend(net::DISK_CACHE,
+                                          net::CACHE_BACKEND_DEFAULT, path_, 0,
+                                          false,
                                           cache_thread_.message_loop_proxy(),
                                           NULL, &cache, cb.callback());
   if (cb.GetResult(rv) != net::OK) {
     printf("Unable to initialize new files\n");
     return false;
   }
-  cache_.reset(cache);
+  cache_ = cache.Pass();
   writer_ = new CacheDumper(cache_.get());
 
   copied_entries_ = 0;
@@ -539,7 +544,8 @@ void MasterSM::SendQuit() {
 
 void MasterSM::DoEnd() {
   DEBUGMSG("Master DoEnd\n");
-  MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+  base::MessageLoop::current()->PostTask(FROM_HERE,
+                                         base::MessageLoop::QuitClosure());
 }
 
 void MasterSM::Fail() {
@@ -552,12 +558,13 @@ void MasterSM::Fail() {
 
 class SlaveSM : public BaseSM {
  public:
-  SlaveSM(const FilePath& path, HANDLE channel);
+  SlaveSM(const base::FilePath& path, HANDLE channel);
   virtual ~SlaveSM();
 
   bool DoInit();
-  virtual void OnIOCompleted(MessageLoopForIO::IOContext* context,
-                             DWORD bytes_transfered, DWORD error);
+  virtual void OnIOCompleted(base::MessageLoopForIO::IOContext* context,
+                             DWORD bytes_transfered,
+                             DWORD error);
 
  private:
   enum {
@@ -585,18 +592,20 @@ class SlaveSM : public BaseSM {
   scoped_ptr<disk_cache::BackendImpl> cache_;
 };
 
-SlaveSM::SlaveSM(const FilePath& path, HANDLE channel)
+SlaveSM::SlaveSM(const base::FilePath& path, HANDLE channel)
     : BaseSM(channel), iterator_(NULL) {
-  disk_cache::Backend* cache;
+  scoped_ptr<disk_cache::Backend> cache;
   net::TestCompletionCallback cb;
-  int rv = disk_cache::CreateCacheBackend(net::DISK_CACHE, path, 0, false,
+  int rv = disk_cache::CreateCacheBackend(net::DISK_CACHE,
+                                          net::CACHE_BACKEND_BLOCKFILE, path, 0,
+                                          false,
                                           cache_thread_.message_loop_proxy(),
                                           NULL, &cache, cb.callback());
   if (cb.GetResult(rv) != net::OK) {
     printf("Unable to open cache files\n");
     return;
   }
-  cache_.reset(reinterpret_cast<disk_cache::BackendImpl*>(cache));
+  cache_.reset(reinterpret_cast<disk_cache::BackendImpl*>(cache.release()));
   cache_->SetUpgradeMode();
 }
 
@@ -605,8 +614,9 @@ SlaveSM::~SlaveSM() {
     cache_->EndEnumeration(&iterator_);
 }
 
-void SlaveSM::OnIOCompleted(MessageLoopForIO::IOContext* context,
-                            DWORD bytes_transfered, DWORD error) {
+void SlaveSM::OnIOCompleted(base::MessageLoopForIO::IOContext* context,
+                            DWORD bytes_transfered,
+                            DWORD error) {
   pending_count_--;
   if (state_ == SLAVE_END) {
     if (IsPending())
@@ -849,7 +859,8 @@ void SlaveSM::DoReadDataComplete(int ret) {
 
 void SlaveSM::DoEnd() {
   DEBUGMSG("\t\t\tSlave DoEnd\n");
-  MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+  base::MessageLoop::current()->PostTask(FROM_HERE,
+                                         base::MessageLoop::QuitClosure());
 }
 
 void SlaveSM::Fail() {
@@ -867,8 +878,8 @@ void SlaveSM::Fail() {
 
 // -----------------------------------------------------------------------
 
-HANDLE CreateServer(string16* pipe_number) {
-  string16 pipe_name(kPipePrefix);
+HANDLE CreateServer(base::string16* pipe_number) {
+  base::string16 pipe_name(kPipePrefix);
   srand(static_cast<int>(base::Time::Now().ToInternalValue()));
   *pipe_number = base::IntToString16(rand());
   pipe_name.append(*pipe_number);
@@ -881,8 +892,8 @@ HANDLE CreateServer(string16* pipe_number) {
 }
 
 // This is the controller process for an upgrade operation.
-int UpgradeCache(const FilePath& output_path, HANDLE pipe) {
-  MessageLoop loop(MessageLoop::TYPE_IO);
+int UpgradeCache(const base::FilePath& output_path, HANDLE pipe) {
+  base::MessageLoopForIO loop;
 
   MasterSM master(output_path, pipe);
   if (!master.DoInit()) {
@@ -895,8 +906,9 @@ int UpgradeCache(const FilePath& output_path, HANDLE pipe) {
 }
 
 // This process will only execute commands from the controller.
-int RunSlave(const FilePath& input_path, const string16& pipe_number) {
-  MessageLoop loop(MessageLoop::TYPE_IO);
+int RunSlave(const base::FilePath& input_path,
+             const base::string16& pipe_number) {
+  base::MessageLoopForIO loop;
 
   base::win::ScopedHandle pipe(OpenServer(pipe_number));
   if (!pipe.IsValid()) {

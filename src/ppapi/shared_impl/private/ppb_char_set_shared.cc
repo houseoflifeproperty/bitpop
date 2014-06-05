@@ -9,10 +9,10 @@
 #include "base/i18n/icu_string_conversions.h"
 #include "ppapi/c/dev/ppb_memory_dev.h"
 #include "ppapi/thunk/thunk.h"
-#include "unicode/ucnv.h"
-#include "unicode/ucnv_cb.h"
-#include "unicode/ucnv_err.h"
-#include "unicode/ustring.h"
+#include "third_party/icu/source/common/unicode/ucnv.h"
+#include "third_party/icu/source/common/unicode/ucnv_cb.h"
+#include "third_party/icu/source/common/unicode/ucnv_err.h"
+#include "third_party/icu/source/common/unicode/ustring.h"
 
 namespace ppapi {
 
@@ -220,7 +220,7 @@ PP_Bool PPB_CharSet_Shared::CharSetToUTF16(
 
   // We can convert this call to the implementation in base to avoid code
   // duplication, although this does introduce an extra copy of the data.
-  string16 output;
+  base::string16 output;
   if (!base::CodepageToUTF16(std::string(input, input_len), input_char_set,
                              base_on_error, &output)) {
     *output_utf16_length = 0;

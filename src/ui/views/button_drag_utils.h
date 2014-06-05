@@ -5,7 +5,7 @@
 #ifndef UI_VIEWS_BUTTON_DRAG_UTILS_H_
 #define UI_VIEWS_BUTTON_DRAG_UTILS_H_
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "ui/views/views_export.h"
 
 class GURL;
@@ -27,7 +27,7 @@ namespace button_drag_utils {
 // Sets url and title on data as well as setting a suitable image for dragging.
 // The image looks like that of the bookmark buttons.
 VIEWS_EXPORT void SetURLAndDragImage(const GURL& url,
-                                     const string16& title,
+                                     const base::string16& title,
                                      const gfx::ImageSkia& icon,
                                      ui::OSExchangeData* data,
                                      views::Widget* widget);

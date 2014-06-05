@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "base/time/time.h"
 #include "net/base/net_export.h"
 #include "net/base/net_log.h"
 #include "net/proxy/proxy_config.h"
@@ -43,9 +44,10 @@ class NET_EXPORT ProxyInfo {
   void UseProxyServer(const ProxyServer& proxy_server);
 
   // Parses from the given PAC result.
-  void UsePacString(const std::string& pac_string) {
-    proxy_list_.SetFromPacString(pac_string);
-  }
+  void UsePacString(const std::string& pac_string);
+
+  // Use the proxies from the given list.
+  void UseProxyList(const ProxyList& proxy_list);
 
   // Returns true if this proxy info specifies a direct connection.
   bool is_direct() const {
@@ -71,6 +73,13 @@ class NET_EXPORT ProxyInfo {
     if (is_empty())
       return false;
     return proxy_server().is_http();
+  }
+
+  // Returns true if the first valid proxy server is a quic proxy.
+  bool is_quic() const {
+    if (is_empty())
+      return false;
+    return proxy_server().is_quic();
   }
 
   // Returns true if the first valid proxy server is a socks server.
@@ -119,6 +128,14 @@ class NET_EXPORT ProxyInfo {
 
   ProxyConfig::ID config_id() const { return config_id_; }
 
+  base::TimeTicks proxy_resolve_start_time() const {
+    return proxy_resolve_start_time_;
+  }
+
+  base::TimeTicks proxy_resolve_end_time() const {
+    return proxy_resolve_end_time_;
+  }
+
  private:
   friend class ProxyService;
 
@@ -147,6 +164,11 @@ class NET_EXPORT ProxyInfo {
 
   // Whether we used a PAC script for resolving the proxy.
   bool did_use_pac_script_;
+
+  // How long it took to resolve the proxy.  Times are both null if proxy was
+  // determined synchronously without running a PAC.
+  base::TimeTicks proxy_resolve_start_time_;
+  base::TimeTicks proxy_resolve_end_time_;
 };
 
 }  // namespace net

@@ -4,10 +4,10 @@
 
 #include "net/dns/dns_response.h"
 
-#include "base/string_util.h"
+#include "base/big_endian.h"
+#include "base/strings/string_util.h"
 #include "base/sys_byteorder.h"
 #include "net/base/address_list.h"
-#include "net/base/big_endian.h"
 #include "net/base/dns_util.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -73,7 +73,7 @@ unsigned DnsRecordParser::ReadName(const void* const vpos,
         if (seen > length_)
           return 0;
         uint16 offset;
-        ReadBigEndian<uint16>(p, &offset);
+        base::ReadBigEndian<uint16>(p, &offset);
         offset &= dns_protocol::kOffsetMask;
         p = packet_ + offset;
         if (p >= end)
@@ -113,8 +113,8 @@ bool DnsRecordParser::ReadRecord(DnsResourceRecord* out) {
   size_t consumed = ReadName(cur_, &out->name);
   if (!consumed)
     return false;
-  BigEndianReader reader(cur_ + consumed,
-                         packet_ + length_ - (cur_ + consumed));
+  base::BigEndianReader reader(cur_ + consumed,
+                               packet_ + length_ - (cur_ + consumed));
   uint16 rdlen;
   if (reader.ReadU16(&out->type) &&
       reader.ReadU16(&out->klass) &&
@@ -127,8 +127,26 @@ bool DnsRecordParser::ReadRecord(DnsResourceRecord* out) {
   return false;
 }
 
+bool DnsRecordParser::SkipQuestion() {
+  size_t consumed = ReadName(cur_, NULL);
+  if (!consumed)
+    return false;
+
+  const char* next = cur_ + consumed + 2 * sizeof(uint16);  // QTYPE + QCLASS
+  if (next > packet_ + length_)
+    return false;
+
+  cur_ = next;
+
+  return true;
+}
+
 DnsResponse::DnsResponse()
     : io_buffer_(new IOBufferWithSize(dns_protocol::kMaxUDPSize + 1)) {
+}
+
+DnsResponse::DnsResponse(size_t length)
+    : io_buffer_(new IOBufferWithSize(length)) {
 }
 
 DnsResponse::DnsResponse(const void* data,
@@ -144,8 +162,9 @@ DnsResponse::~DnsResponse() {
 }
 
 bool DnsResponse::InitParse(int nbytes, const DnsQuery& query) {
+  DCHECK_GE(nbytes, 0);
   // Response includes query, it should be at least that size.
-  if (nbytes < query.io_buffer()->size() || nbytes > dns_protocol::kMaxUDPSize)
+  if (nbytes < query.io_buffer()->size() || nbytes >= io_buffer_->size())
     return false;
 
   // Match the query id.
@@ -171,6 +190,28 @@ bool DnsResponse::InitParse(int nbytes, const DnsQuery& query) {
   return true;
 }
 
+bool DnsResponse::InitParseWithoutQuery(int nbytes) {
+  DCHECK_GE(nbytes, 0);
+
+  size_t hdr_size = sizeof(dns_protocol::Header);
+
+  if (nbytes < static_cast<int>(hdr_size) || nbytes >= io_buffer_->size())
+    return false;
+
+  parser_ = DnsRecordParser(
+      io_buffer_->data(), nbytes, hdr_size);
+
+  unsigned qdcount = base::NetToHost16(header()->qdcount);
+  for (unsigned i = 0; i < qdcount; ++i) {
+    if (!parser_.SkipQuestion()) {
+      parser_ = DnsRecordParser();  // Make parser invalid again.
+      return false;
+    }
+  }
+
+  return true;
+}
+
 bool DnsResponse::IsValid() const {
   return parser_.IsValid();
 }
@@ -190,6 +231,11 @@ unsigned DnsResponse::answer_count() const {
   return base::NetToHost16(header()->ancount);
 }
 
+unsigned DnsResponse::additional_answer_count() const {
+  DCHECK(parser_.IsValid());
+  return base::NetToHost16(header()->arcount);
+}
+
 base::StringPiece DnsResponse::qname() const {
   DCHECK(parser_.IsValid());
   // The response is HEADER QNAME QTYPE QCLASS ANSWER.
@@ -205,7 +251,7 @@ uint16 DnsResponse::qtype() const {
   // QTYPE starts where QNAME ends.
   const size_t type_offset = parser_.GetOffset() - 2 * sizeof(uint16);
   uint16 type;
-  ReadBigEndian<uint16>(io_buffer_->data() + type_offset, &type);
+  base::ReadBigEndian<uint16>(io_buffer_->data() + type_offset, &type);
   return type;
 }
 

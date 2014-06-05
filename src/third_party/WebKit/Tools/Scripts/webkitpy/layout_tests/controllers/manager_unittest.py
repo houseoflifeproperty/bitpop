@@ -31,7 +31,7 @@
 
 import sys
 import time
-import unittest
+import webkitpy.thirdparty.unittest2 as unittest
 
 from webkitpy.common.host_mock import MockHost
 from webkitpy.layout_tests.controllers.manager import Manager
@@ -55,25 +55,55 @@ class ManagerTest(unittest.TestCase):
         manager = get_manager()
         self.assertTrue(manager.needs_servers(['http/tests/misc']))
 
-    def integration_test_needs_servers(self):
-        def get_manager():
-            host = MockHost()
-            port = host.port_factory.get()
-            manager = Manager(port, options=MockOptions(test_list=None, http=True, max_locked_shards=1), printer=Mock())
+    def test_servers_started(self):
+        def get_manager(port):
+            manager = Manager(port, options=MockOptions(http=True, max_locked_shards=1), printer=Mock())
             return manager
 
-        manager = get_manager()
-        self.assertFalse(manager.needs_servers(['fast/html']))
+        def start_http_server(additional_dirs, number_of_drivers):
+            self.http_started = True
 
-        manager = get_manager()
-        self.assertTrue(manager.needs_servers(['http/tests/mime']))
+        def start_websocket_server():
+            self.websocket_started = True
 
-        if sys.platform == 'win32':
-            manager = get_manager()
-            self.assertFalse(manager.needs_servers(['fast\\html']))
+        def stop_http_server():
+            self.http_stopped = True
 
-            manager = get_manager()
-            self.assertTrue(manager.needs_servers(['http\\tests\\mime']))
+        def stop_websocket_server():
+            self.websocket_stopped = True
+
+        host = MockHost()
+        port = host.port_factory.get('test-mac-leopard')
+        port.start_http_server = start_http_server
+        port.start_websocket_server = start_websocket_server
+        port.stop_http_server = stop_http_server
+        port.stop_websocket_server = stop_websocket_server
+
+        self.http_started = self.http_stopped = self.websocket_started = self.websocket_stopped = False
+        manager = get_manager(port)
+        manager._start_servers(['http/tests/foo.html'])
+        self.assertEqual(self.http_started, True)
+        self.assertEqual(self.websocket_started, False)
+        manager._stop_servers()
+        self.assertEqual(self.http_stopped, True)
+        self.assertEqual(self.websocket_stopped, False)
+
+        self.http_started = self.http_stopped = self.websocket_started = self.websocket_stopped = False
+        manager._start_servers(['http/tests/websocket/foo.html'])
+        self.assertEqual(self.http_started, True)
+        self.assertEqual(self.websocket_started, True)
+        manager._stop_servers()
+        self.assertEqual(self.http_stopped, True)
+        self.assertEqual(self.websocket_stopped, True)
+
+        self.http_started = self.http_stopped = self.websocket_started = self.websocket_stopped = False
+        manager._start_servers(['fast/html/foo.html'])
+        self.assertEqual(self.http_started, False)
+        self.assertEqual(self.websocket_started, False)
+        manager._stop_servers()
+        self.assertEqual(self.http_stopped, False)
+        self.assertEqual(self.websocket_stopped, False)
+
 
     def test_look_for_new_crash_logs(self):
         def get_manager():

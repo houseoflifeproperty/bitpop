@@ -5,18 +5,21 @@
 #include "net/spdy/spdy_header_block.h"
 
 #include "base/values.h"
+#include "net/http/http_log_util.h"
 
 namespace net {
 
-Value* SpdyHeaderBlockNetLogCallback(
+base::Value* SpdyHeaderBlockNetLogCallback(
     const SpdyHeaderBlock* headers,
-    NetLog::LogLevel /* log_level */) {
-  DictionaryValue* dict = new DictionaryValue();
-  DictionaryValue* headers_dict = new DictionaryValue();
+    NetLog::LogLevel log_level) {
+  base::DictionaryValue* dict = new base::DictionaryValue();
+  base::DictionaryValue* headers_dict = new base::DictionaryValue();
   for (SpdyHeaderBlock::const_iterator it = headers->begin();
        it != headers->end(); ++it) {
     headers_dict->SetWithoutPathExpansion(
-        it->first, new StringValue(it->second));
+        it->first,
+        new base::StringValue(
+            ElideHeaderValueForNetLog(log_level, it->first, it->second)));
   }
   dict->Set("headers", headers_dict);
   return dict;
@@ -36,11 +39,9 @@ bool SpdyHeaderBlockFromNetLogParam(
     return false;
   }
 
-  for (base::DictionaryValue::key_iterator it = header_dict->begin_keys();
-       it != header_dict->end_keys();
-       ++it) {
-    std::string value;
-    if (!header_dict->GetString(*it, &(*headers)[*it])) {
+  for (base::DictionaryValue::Iterator it(*header_dict); !it.IsAtEnd();
+       it.Advance()) {
+    if (!it.value().GetAsString(&(*headers)[it.key()])) {
       headers->clear();
       return false;
     }

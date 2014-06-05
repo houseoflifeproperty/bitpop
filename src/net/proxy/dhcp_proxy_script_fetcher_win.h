@@ -10,11 +10,15 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_vector.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/threading/non_thread_safe.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "net/proxy/dhcp_proxy_script_fetcher.h"
+
+namespace base {
+class SequencedWorkerPool;
+}
 
 namespace net {
 
@@ -34,7 +38,7 @@ class NET_EXPORT_PRIVATE DhcpProxyScriptFetcherWin
   virtual ~DhcpProxyScriptFetcherWin();
 
   // DhcpProxyScriptFetcher implementation.
-  int Fetch(string16* utf16_text,
+  int Fetch(base::string16* utf16_text,
             const net::CompletionCallback& callback) OVERRIDE;
   void Cancel() OVERRIDE;
   const GURL& GetPacURL() const OVERRIDE;
@@ -49,6 +53,8 @@ class NET_EXPORT_PRIVATE DhcpProxyScriptFetcherWin
   int num_pending_fetchers() const;
 
   URLRequestContext* url_request_context() const;
+
+  scoped_refptr<base::TaskRunner> GetTaskRunner();
 
   // This inner class encapsulate work done on a worker pool thread.
   // The class calls GetCandidateAdapterNames, which can take a couple of
@@ -146,7 +152,7 @@ class NET_EXPORT_PRIVATE DhcpProxyScriptFetcherWin
 
   // Pointer to string we will write results to. Not valid in states
   // START and DONE.
-  string16* destination_string_;
+  base::string16* destination_string_;
 
   // PAC URL retrieved from DHCP, if any. Valid only in state STATE_DONE.
   GURL pac_url_;
@@ -160,6 +166,9 @@ class NET_EXPORT_PRIVATE DhcpProxyScriptFetcherWin
 
   // Time |Fetch()| was last called, 0 if never.
   base::TimeTicks fetch_start_time_;
+
+  // Worker pool we use for all DHCP lookup tasks.
+  scoped_refptr<base::SequencedWorkerPool> worker_pool_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(DhcpProxyScriptFetcherWin);
 };

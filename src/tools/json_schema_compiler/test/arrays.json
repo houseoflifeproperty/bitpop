@@ -1,6 +1,7 @@
 [
   {
     "namespace": "arrays",
+    "description": "The arrays API.",
     "types": [
       {
         "id": "EnumArrayType",
@@ -116,7 +117,7 @@
             "type": "array",
             "items": {
               "type": "object",
-              "additionalProperties": {"type": "any"}
+              "additionalProperties": {"type": "integer"}
             }
           },
           {
@@ -135,6 +136,53 @@
             "name": "refs",
             "type": "array",
             "items": {"$ref": "Item"}
+          },
+          {
+            "name": "callback",
+            "type": "function",
+            "parameters": []
+          }
+        ]
+      },
+      {
+        "name": "justChoices",
+        "type": "function",
+        "description": "Takes some Choices.",
+        "parameters": [
+          {
+            "name": "choices",
+            "choices": [
+              { "type": "integer" },
+              { "type": "boolean" },
+              { "type": "array",
+                "items": {"$ref": "Item"}
+              }
+            ]
+          },
+          {
+            "name": "callback",
+            "type": "function",
+            "parameters": []
+          }
+        ]
+      },
+      {
+        "name": "choicesArray",
+        "type": "function",
+        "description": "Takes some Choices.",
+        "parameters": [
+          {
+            "name": "choices",
+            "type": "array",
+            "items": {
+              "choices": [
+                { "type": "integer" },
+                { "type": "boolean" },
+                { "type": "array",
+                  "items": {"$ref": "Item"}
+                }
+              ]
+            }
           },
           {
             "name": "callback",

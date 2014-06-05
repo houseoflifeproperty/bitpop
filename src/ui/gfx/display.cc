@@ -4,36 +4,43 @@
 
 #include "ui/gfx/display.h"
 
+#include <algorithm>
+
 #include "base/command_line.h"
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
-#include "base/stringprintf.h"
-#include "ui/base/ui_base_switches.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "ui/gfx/insets.h"
+#include "ui/gfx/point_conversions.h"
+#include "ui/gfx/point_f.h"
 #include "ui/gfx/size_conversions.h"
+#include "ui/gfx/switches.h"
 
 namespace gfx {
 namespace {
 
-bool HasForceDeviceScaleFactor() {
+bool HasForceDeviceScaleFactorImpl() {
   return CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kForceDeviceScaleFactor);
 }
 
 float GetForcedDeviceScaleFactorImpl() {
   double scale_in_double = 1.0;
-  if (HasForceDeviceScaleFactor()) {
+  if (HasForceDeviceScaleFactorImpl()) {
     std::string value = CommandLine::ForCurrentProcess()->
         GetSwitchValueASCII(switches::kForceDeviceScaleFactor);
     if (!base::StringToDouble(value, &scale_in_double))
-      LOG(ERROR) << "Failed to parse the deafult device scale factor:" << value;
+      LOG(ERROR) << "Failed to parse the default device scale factor:" << value;
   }
   return static_cast<float>(scale_in_double);
 }
 
-} // namespace
+const int64 kInvalidDisplayIDForCompileTimeInit = -1;
+int64 internal_display_id_ = kInvalidDisplayIDForCompileTimeInit;
 
-const int64 Display::kInvalidDisplayID = -1;
+}  // namespace
+
+const int64 Display::kInvalidDisplayID = kInvalidDisplayIDForCompileTimeInit;
 
 // static
 float Display::GetForcedDeviceScaleFactor() {
@@ -42,37 +49,76 @@ float Display::GetForcedDeviceScaleFactor() {
   return kForcedDeviceScaleFactor;
 }
 
-// static
-int64 Display::GetID(uint16 manufacturer_id,
-                     uint16 product_code,
-                     uint8 output_index) {
-  int64 new_id = ((static_cast<int64>(manufacturer_id) << 24) |
-                  (static_cast<int64>(product_code) << 8) | output_index);
-  DCHECK_NE(kInvalidDisplayID, new_id);
-  return new_id;
+//static
+bool Display::HasForceDeviceScaleFactor() {
+  static const bool kHasForceDeviceScaleFactor =
+      HasForceDeviceScaleFactorImpl();
+  return kHasForceDeviceScaleFactor;
 }
 
 Display::Display()
     : id_(kInvalidDisplayID),
-      device_scale_factor_(GetForcedDeviceScaleFactor()) {
+      device_scale_factor_(GetForcedDeviceScaleFactor()),
+      rotation_(ROTATE_0),
+      touch_support_(TOUCH_SUPPORT_UNKNOWN) {
 }
 
 Display::Display(int64 id)
     : id_(id),
-      device_scale_factor_(GetForcedDeviceScaleFactor()) {
+      device_scale_factor_(GetForcedDeviceScaleFactor()),
+      rotation_(ROTATE_0),
+      touch_support_(TOUCH_SUPPORT_UNKNOWN) {
 }
 
 Display::Display(int64 id, const gfx::Rect& bounds)
     : id_(id),
       bounds_(bounds),
       work_area_(bounds),
-      device_scale_factor_(GetForcedDeviceScaleFactor()) {
+      device_scale_factor_(GetForcedDeviceScaleFactor()),
+      rotation_(ROTATE_0),
+      touch_support_(TOUCH_SUPPORT_UNKNOWN) {
 #if defined(USE_AURA)
   SetScaleAndBounds(device_scale_factor_, bounds);
 #endif
 }
 
 Display::~Display() {
+}
+
+int Display::RotationAsDegree() const {
+  switch (rotation_) {
+    case ROTATE_0:
+      return 0;
+    case ROTATE_90:
+      return 90;
+    case ROTATE_180:
+      return 180;
+    case ROTATE_270:
+      return 270;
+  }
+
+  NOTREACHED();
+  return 0;
+}
+
+void Display::SetRotationAsDegree(int rotation) {
+  switch (rotation) {
+    case 0:
+      rotation_ = ROTATE_0;
+      break;
+    case 90:
+      rotation_ = ROTATE_90;
+      break;
+    case 180:
+      rotation_ = ROTATE_180;
+      break;
+    case 270:
+      rotation_ = ROTATE_270;
+      break;
+    default:
+      // We should not reach that but we will just ignore the call if we do.
+      NOTREACHED();
+  }
 }
 
 Insets Display::GetWorkAreaInsets() const {
@@ -95,22 +141,22 @@ void Display::SetScaleAndBounds(
     device_scale_factor_ = device_scale_factor;
   }
   device_scale_factor_ = std::max(1.0f, device_scale_factor_);
-#if defined(USE_AURA)
-  bounds_in_pixel_ = bounds_in_pixel;
-#endif
-  bounds_ = gfx::Rect(gfx::ToFlooredSize(
-      gfx::ScaleSize(bounds_in_pixel.size(), 1.0f / device_scale_factor_)));
+  bounds_ = gfx::Rect(
+      gfx::ToFlooredPoint(gfx::ScalePoint(bounds_in_pixel.origin(),
+                                          1.0f / device_scale_factor_)),
+      gfx::ToFlooredSize(gfx::ScaleSize(bounds_in_pixel.size(),
+                                        1.0f / device_scale_factor_)));
   UpdateWorkAreaFromInsets(insets);
 }
 
 void Display::SetSize(const gfx::Size& size_in_pixel) {
-  SetScaleAndBounds(
-      device_scale_factor_,
+  gfx::Point origin = bounds_.origin();
 #if defined(USE_AURA)
-      gfx::Rect(bounds_in_pixel_.origin(), size_in_pixel));
-#else
-      gfx::Rect(bounds_.origin(), size_in_pixel));
+  gfx::PointF origin_f = origin;
+  origin_f.Scale(device_scale_factor_);
+  origin.SetPoint(origin_f.x(), origin_f.y());
 #endif
+  SetScaleAndBounds(device_scale_factor_, gfx::Rect(origin, size_in_pixel));
 }
 
 void Display::UpdateWorkAreaFromInsets(const gfx::Insets& insets) {
@@ -123,11 +169,25 @@ gfx::Size Display::GetSizeInPixel() const {
 }
 
 std::string Display::ToString() const {
-  return base::StringPrintf("Display[%lld] bounds=%s, workarea=%s, scale=%f",
-                            static_cast<long long int>(id_),
-                            bounds_.ToString().c_str(),
-                            work_area_.ToString().c_str(),
-                            device_scale_factor_);
+  return base::StringPrintf(
+      "Display[%lld] bounds=%s, workarea=%s, scale=%f, %s",
+      static_cast<long long int>(id_),
+      bounds_.ToString().c_str(),
+      work_area_.ToString().c_str(),
+      device_scale_factor_,
+      IsInternal() ? "internal" : "external");
+}
+
+bool Display::IsInternal() const {
+  return is_valid() && (id_ == internal_display_id_);
+}
+
+int64 Display::InternalDisplayId() {
+  return internal_display_id_;
+}
+
+void Display::SetInternalDisplayId(int64 internal_display_id) {
+  internal_display_id_ = internal_display_id;
 }
 
 }  // namespace gfx

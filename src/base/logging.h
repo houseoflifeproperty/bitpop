@@ -52,10 +52,6 @@
 //
 //   LOG_IF(INFO, num_cookies > 10) << "Got lots of cookies";
 //
-// The above will cause log messages to be output on the 1st, 11th, 21st, ...
-// times it is executed.  Note that the special COUNTER value is used to
-// identify which repetition is happening.
-//
 // The CHECK(condition) macro is active in both debug and release builds and
 // effectively performs a LOG(FATAL) which terminates the process and
 // generates a crashdump unless a debugger is attached.
@@ -146,39 +142,62 @@
 
 namespace logging {
 
-// Where to record logging output? A flat file and/or system debug log via
-// OutputDebugString. Defaults on Windows to LOG_ONLY_TO_FILE, and on
-// POSIX to LOG_ONLY_TO_SYSTEM_DEBUG_LOG (aka stderr).
-enum LoggingDestination { LOG_NONE,
-                          LOG_ONLY_TO_FILE,
-                          LOG_ONLY_TO_SYSTEM_DEBUG_LOG,
-                          LOG_TO_BOTH_FILE_AND_SYSTEM_DEBUG_LOG };
-
-// Indicates that the log file should be locked when being written to.
-// Often, there is no locking, which is fine for a single threaded program.
-// If logging is being done from multiple threads or there can be more than
-// one process doing the logging, the file should be locked during writes to
-// make each log outut atomic. Other writers will block.
-//
-// All processes writing to the log file must have their locking set for it to
-// work properly. Defaults to DONT_LOCK_LOG_FILE.
-enum LogLockingState { LOCK_LOG_FILE, DONT_LOCK_LOG_FILE };
-
-// On startup, should we delete or append to an existing log file (if any)?
-// Defaults to APPEND_TO_OLD_LOG_FILE.
-enum OldFileDeletionState { DELETE_OLD_LOG_FILE, APPEND_TO_OLD_LOG_FILE };
-
-enum DcheckState {
-  DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS,
-  ENABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS
-};
-
 // TODO(avi): do we want to do a unification of character types here?
 #if defined(OS_WIN)
 typedef wchar_t PathChar;
 #else
 typedef char PathChar;
 #endif
+
+// Where to record logging output? A flat file and/or system debug log
+// via OutputDebugString.
+enum LoggingDestination {
+  LOG_NONE                = 0,
+  LOG_TO_FILE             = 1 << 0,
+  LOG_TO_SYSTEM_DEBUG_LOG = 1 << 1,
+
+  LOG_TO_ALL = LOG_TO_FILE | LOG_TO_SYSTEM_DEBUG_LOG,
+
+  // On Windows, use a file next to the exe; on POSIX platforms, where
+  // it may not even be possible to locate the executable on disk, use
+  // stderr.
+#if defined(OS_WIN)
+  LOG_DEFAULT = LOG_TO_FILE,
+#elif defined(OS_POSIX)
+  LOG_DEFAULT = LOG_TO_SYSTEM_DEBUG_LOG,
+#endif
+};
+
+// Indicates that the log file should be locked when being written to.
+// Unless there is only one single-threaded process that is logging to
+// the log file, the file should be locked during writes to make each
+// log output atomic. Other writers will block.
+//
+// All processes writing to the log file must have their locking set for it to
+// work properly. Defaults to LOCK_LOG_FILE.
+enum LogLockingState { LOCK_LOG_FILE, DONT_LOCK_LOG_FILE };
+
+// On startup, should we delete or append to an existing log file (if any)?
+// Defaults to APPEND_TO_OLD_LOG_FILE.
+enum OldFileDeletionState { DELETE_OLD_LOG_FILE, APPEND_TO_OLD_LOG_FILE };
+
+struct BASE_EXPORT LoggingSettings {
+  // The defaults values are:
+  //
+  //  logging_dest: LOG_DEFAULT
+  //  log_file:     NULL
+  //  lock_log:     LOCK_LOG_FILE
+  //  delete_old:   APPEND_TO_OLD_LOG_FILE
+  LoggingSettings();
+
+  LoggingDestination logging_dest;
+
+  // The three settings below have an effect only when LOG_TO_FILE is
+  // set in |logging_dest|.
+  const PathChar* log_file;
+  LogLockingState lock_log;
+  OldFileDeletionState delete_old;
+};
 
 // Define different names for the BaseInitLoggingImpl() function depending on
 // whether NDEBUG is defined or not so that we'll fail to link if someone tries
@@ -193,11 +212,7 @@ typedef char PathChar;
 // Implementation of the InitLogging() method declared below.  We use a
 // more-specific name so we can #define it above without affecting other code
 // that has named stuff "InitLogging".
-BASE_EXPORT bool BaseInitLoggingImpl(const PathChar* log_file,
-                                     LoggingDestination logging_dest,
-                                     LogLockingState lock_log,
-                                     OldFileDeletionState delete_old,
-                                     DcheckState dcheck_state);
+BASE_EXPORT bool BaseInitLoggingImpl(const LoggingSettings& settings);
 
 // Sets the log file name and other global logging state. Calling this function
 // is recommended, and is normally done at the beginning of application init.
@@ -213,13 +228,8 @@ BASE_EXPORT bool BaseInitLoggingImpl(const PathChar* log_file,
 // This function may be called a second time to re-direct logging (e.g after
 // loging in to a user partition), however it should never be called more than
 // twice.
-inline bool InitLogging(const PathChar* log_file,
-                        LoggingDestination logging_dest,
-                        LogLockingState lock_log,
-                        OldFileDeletionState delete_old,
-                        DcheckState dcheck_state) {
-  return BaseInitLoggingImpl(log_file, logging_dest, lock_log,
-                             delete_old, dcheck_state);
+inline bool InitLogging(const LoggingSettings& settings) {
+  return BaseInitLoggingImpl(settings);
 }
 
 // Sets the log level. Anything at or above this level will be written to the
@@ -330,6 +340,7 @@ const LogSeverity LOG_DFATAL = LOG_FATAL;
 #define COMPACT_GOOGLE_LOG_DFATAL \
   COMPACT_GOOGLE_LOG_EX_DFATAL(LogMessage)
 
+#if defined(OS_WIN)
 // wingdi.h defines ERROR to be 0. When we call LOG(ERROR), it gets
 // substituted with 0, and it expands to COMPACT_GOOGLE_LOG_0. To allow us
 // to keep using this syntax, we define this macro to do the same thing
@@ -341,6 +352,7 @@ const LogSeverity LOG_DFATAL = LOG_FATAL;
 #define COMPACT_GOOGLE_LOG_0 COMPACT_GOOGLE_LOG_ERROR
 // Needed for LOG_IS_ON(ERROR).
 const LogSeverity LOG_0 = LOG_ERROR;
+#endif
 
 // As special cases, we can assume that LOG_IS_ON(ERROR_REPORT) and
 // LOG_IS_ON(FATAL) always hold.  Also, LOG_IS_ON(DFATAL) always holds
@@ -414,29 +426,13 @@ const LogSeverity LOG_0 = LOG_ERROR;
   SYSLOG_IF(FATAL, !(condition)) << "Assert failed: " #condition ". "
 
 #if defined(OS_WIN)
-#define LOG_GETLASTERROR_STREAM(severity) \
+#define PLOG_STREAM(severity) \
   COMPACT_GOOGLE_LOG_EX_ ## severity(Win32ErrorLogMessage, \
       ::logging::GetLastSystemErrorCode()).stream()
-#define LOG_GETLASTERROR(severity) \
-  LAZY_STREAM(LOG_GETLASTERROR_STREAM(severity), LOG_IS_ON(severity))
-#define LOG_GETLASTERROR_MODULE_STREAM(severity, module) \
-  COMPACT_GOOGLE_LOG_EX_ ## severity(Win32ErrorLogMessage, \
-      ::logging::GetLastSystemErrorCode(), module).stream()
-#define LOG_GETLASTERROR_MODULE(severity, module)                       \
-  LAZY_STREAM(LOG_GETLASTERROR_STREAM(severity, module),                \
-              LOG_IS_ON(severity))
-// PLOG_STREAM is used by PLOG, which is the usual error logging macro
-// for each platform.
-#define PLOG_STREAM(severity) LOG_GETLASTERROR_STREAM(severity)
 #elif defined(OS_POSIX)
-#define LOG_ERRNO_STREAM(severity) \
+#define PLOG_STREAM(severity) \
   COMPACT_GOOGLE_LOG_EX_ ## severity(ErrnoLogMessage, \
       ::logging::GetLastSystemErrorCode()).stream()
-#define LOG_ERRNO(severity) \
-  LAZY_STREAM(LOG_ERRNO_STREAM(severity), LOG_IS_ON(severity))
-// PLOG_STREAM is used by PLOG, which is the usual error logging macro
-// for each platform.
-#define PLOG_STREAM(severity) LOG_ERRNO_STREAM(severity)
 #endif
 
 #define PLOG(severity)                                          \
@@ -444,16 +440,6 @@ const LogSeverity LOG_0 = LOG_ERROR;
 
 #define PLOG_IF(severity, condition) \
   LAZY_STREAM(PLOG_STREAM(severity), LOG_IS_ON(severity) && (condition))
-
-// http://crbug.com/16512 is open for a real fix for this.  For now, Windows
-// uses OFFICIAL_BUILD and other platforms use the branding flag when NDEBUG is
-// defined.
-#if ( defined(OS_WIN) && defined(OFFICIAL_BUILD)) || \
-    (!defined(OS_WIN) && defined(NDEBUG) && defined(GOOGLE_CHROME_BUILD))
-#define LOGGING_IS_OFFICIAL_BUILD 1
-#else
-#define LOGGING_IS_OFFICIAL_BUILD 0
-#endif
 
 // The actual stream used isn't important.
 #define EAT_STREAM_PARAMETERS                                           \
@@ -466,10 +452,10 @@ const LogSeverity LOG_0 = LOG_ERROR;
 // We make sure CHECK et al. always evaluates their arguments, as
 // doing CHECK(FunctionWithSideEffect()) is a common idiom.
 
-#if LOGGING_IS_OFFICIAL_BUILD
+#if defined(OFFICIAL_BUILD) && defined(NDEBUG)
 
 // Make all CHECK functions discard their log strings to reduce code
-// bloat for official builds.
+// bloat for official release builds.
 
 // TODO(akalin): This would be more valuable if there were some way to
 // remove BreakDebugger() from the backtrace, perhaps by turning it
@@ -566,22 +552,16 @@ DEFINE_CHECK_OP_IMPL(GT, > )
 #define CHECK_GE(val1, val2) CHECK_OP(GE, >=, val1, val2)
 #define CHECK_GT(val1, val2) CHECK_OP(GT, > , val1, val2)
 
-#if LOGGING_IS_OFFICIAL_BUILD
-// In order to have optimized code for official builds, remove DLOGs and
-// DCHECKs.
+#if defined(NDEBUG)
 #define ENABLE_DLOG 0
-#define ENABLE_DCHECK 0
-
-#elif defined(NDEBUG)
-// Otherwise, if we're a release build, remove DLOGs but not DCHECKs
-// (since those can still be turned on via a command-line flag).
-#define ENABLE_DLOG 0
-#define ENABLE_DCHECK 1
-
 #else
-// Otherwise, we're a debug build so enable DLOGs and DCHECKs.
 #define ENABLE_DLOG 1
-#define ENABLE_DCHECK 1
+#endif
+
+#if defined(NDEBUG) && !defined(DCHECK_ALWAYS_ON)
+#define DCHECK_IS_ON 0
+#else
+#define DCHECK_IS_ON 1
 #endif
 
 // Definitions for DLOG et al.
@@ -626,17 +606,6 @@ enum { DEBUG_MODE = ENABLE_DLOG };
 #define DLOG(severity)                                          \
   LAZY_STREAM(LOG_STREAM(severity), DLOG_IS_ON(severity))
 
-#if defined(OS_WIN)
-#define DLOG_GETLASTERROR(severity) \
-  LAZY_STREAM(LOG_GETLASTERROR_STREAM(severity), DLOG_IS_ON(severity))
-#define DLOG_GETLASTERROR_MODULE(severity, module)                      \
-  LAZY_STREAM(LOG_GETLASTERROR_STREAM(severity, module),                \
-              DLOG_IS_ON(severity))
-#elif defined(OS_POSIX)
-#define DLOG_ERRNO(severity)                                    \
-  LAZY_STREAM(LOG_ERRNO_STREAM(severity), DLOG_IS_ON(severity))
-#endif
-
 #define DPLOG(severity)                                         \
   LAZY_STREAM(PLOG_STREAM(severity), DLOG_IS_ON(severity))
 
@@ -644,76 +613,51 @@ enum { DEBUG_MODE = ENABLE_DLOG };
 
 #define DVPLOG(verboselevel) DVPLOG_IF(verboselevel, VLOG_IS_ON(verboselevel))
 
+// TODO(vitalybuka): following should be removed and replaced with PLOG.
+#if defined(OS_WIN)
+#define LOG_GETLASTERROR(severity) PLOG(severity)
+#define DLOG_GETLASTERROR(severity) DPLOG(severity)
+#elif defined(OS_POSIX)
+#define LOG_ERRNO(severity) PLOG(severity)
+#define DLOG_ERRNO(severity) DPLOG(severity)
+#endif
+
 // Definitions for DCHECK et al.
 
-#if ENABLE_DCHECK
+#if DCHECK_IS_ON
 
-#if defined(NDEBUG)
-
-BASE_EXPORT extern DcheckState g_dcheck_state;
-
-#if defined(DCHECK_ALWAYS_ON)
-
-#define DCHECK_IS_ON() true
 #define COMPACT_GOOGLE_LOG_EX_DCHECK(ClassName, ...) \
   COMPACT_GOOGLE_LOG_EX_FATAL(ClassName , ##__VA_ARGS__)
 #define COMPACT_GOOGLE_LOG_DCHECK COMPACT_GOOGLE_LOG_FATAL
 const LogSeverity LOG_DCHECK = LOG_FATAL;
 
-#else
+#else  // DCHECK_IS_ON
 
-#define COMPACT_GOOGLE_LOG_EX_DCHECK(ClassName, ...) \
-  COMPACT_GOOGLE_LOG_EX_ERROR_REPORT(ClassName , ##__VA_ARGS__)
-#define COMPACT_GOOGLE_LOG_DCHECK COMPACT_GOOGLE_LOG_ERROR_REPORT
-const LogSeverity LOG_DCHECK = LOG_ERROR_REPORT;
-#define DCHECK_IS_ON()                                                  \
-  ((::logging::g_dcheck_state ==                                        \
-    ::logging::ENABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS) &&        \
-   LOG_IS_ON(DCHECK))
-
-#endif  // defined(DCHECK_ALWAYS_ON)
-
-#else  // defined(NDEBUG)
-
-// On a regular debug build, we want to have DCHECKs enabled.
-#define COMPACT_GOOGLE_LOG_EX_DCHECK(ClassName, ...) \
-  COMPACT_GOOGLE_LOG_EX_FATAL(ClassName , ##__VA_ARGS__)
-#define COMPACT_GOOGLE_LOG_DCHECK COMPACT_GOOGLE_LOG_FATAL
-const LogSeverity LOG_DCHECK = LOG_FATAL;
-#define DCHECK_IS_ON() true
-
-#endif  // defined(NDEBUG)
-
-#else  // ENABLE_DCHECK
-
-// These are just dummy values since DCHECK_IS_ON() is always false in
-// this case.
+// These are just dummy values.
 #define COMPACT_GOOGLE_LOG_EX_DCHECK(ClassName, ...) \
   COMPACT_GOOGLE_LOG_EX_INFO(ClassName , ##__VA_ARGS__)
 #define COMPACT_GOOGLE_LOG_DCHECK COMPACT_GOOGLE_LOG_INFO
 const LogSeverity LOG_DCHECK = LOG_INFO;
-#define DCHECK_IS_ON() false
 
-#endif  // ENABLE_DCHECK
-#undef ENABLE_DCHECK
+#endif  // DCHECK_IS_ON
 
 // DCHECK et al. make sure to reference |condition| regardless of
 // whether DCHECKs are enabled; this is so that we don't get unused
 // variable warnings if the only use of a variable is in a DCHECK.
 // This behavior is different from DLOG_IF et al.
 
-#define DCHECK(condition)                                           \
-  LAZY_STREAM(LOG_STREAM(DCHECK), DCHECK_IS_ON() && !(condition))   \
+#define DCHECK(condition)                                         \
+  LAZY_STREAM(LOG_STREAM(DCHECK), DCHECK_IS_ON && !(condition))   \
   << "Check failed: " #condition ". "
 
-#define DPCHECK(condition)                                          \
-  LAZY_STREAM(PLOG_STREAM(DCHECK), DCHECK_IS_ON() && !(condition))  \
+#define DPCHECK(condition)                                        \
+  LAZY_STREAM(PLOG_STREAM(DCHECK), DCHECK_IS_ON && !(condition))  \
   << "Check failed: " #condition ". "
 
 // Helper macro for binary operators.
 // Don't use this macro directly in your code, use DCHECK_EQ et al below.
 #define DCHECK_OP(name, op, val1, val2)                         \
-  if (DCHECK_IS_ON())                                           \
+  if (DCHECK_IS_ON)                                             \
     if (std::string* _result =                                  \
         logging::Check##name##Impl((val1), (val2),              \
                                    #val1 " " #op " " #val2))    \
@@ -747,7 +691,12 @@ const LogSeverity LOG_DCHECK = LOG_INFO;
 #define DCHECK_GE(val1, val2) DCHECK_OP(GE, >=, val1, val2)
 #define DCHECK_GT(val1, val2) DCHECK_OP(GT, > , val1, val2)
 
+#if defined(NDEBUG) && defined(OS_CHROMEOS)
+#define NOTREACHED() LOG(ERROR) << "NOTREACHED() hit in " << \
+    __FUNCTION__ << ". "
+#else
 #define NOTREACHED() DCHECK(false)
+#endif
 
 // Redefine the standard assert to use our nice log files
 #undef assert
@@ -856,17 +805,12 @@ typedef int SystemErrorCode;
 // Alias for ::GetLastError() on Windows and errno on POSIX. Avoids having to
 // pull in windows.h just for GetLastError() and DWORD.
 BASE_EXPORT SystemErrorCode GetLastSystemErrorCode();
+BASE_EXPORT std::string SystemErrorCodeToString(SystemErrorCode error_code);
 
 #if defined(OS_WIN)
 // Appends a formatted system message of the GetLastError() type.
 class BASE_EXPORT Win32ErrorLogMessage {
  public:
-  Win32ErrorLogMessage(const char* file,
-                       int line,
-                       LogSeverity severity,
-                       SystemErrorCode err,
-                       const char* module);
-
   Win32ErrorLogMessage(const char* file,
                        int line,
                        LogSeverity severity,
@@ -879,8 +823,6 @@ class BASE_EXPORT Win32ErrorLogMessage {
 
  private:
   SystemErrorCode err_;
-  // Optional name of the module defining the error.
-  const char* module_;
   LogMessage log_message_;
 
   DISALLOW_COPY_AND_ASSIGN(Win32ErrorLogMessage);
@@ -923,6 +865,11 @@ BASE_EXPORT void RawLog(int level, const char* message);
     if (!(condition))                                                          \
       logging::RawLog(logging::LOG_FATAL, "Check failed: " #condition "\n");   \
   } while (0)
+
+#if defined(OS_WIN)
+// Returns the default log file path.
+BASE_EXPORT std::wstring GetLogFileFullPath();
+#endif
 
 }  // namespace logging
 
@@ -978,9 +925,11 @@ inline std::ostream& operator<<(std::ostream& out, const std::wstring& wstr) {
 #define NOTIMPLEMENTED() LOG(ERROR) << NOTIMPLEMENTED_MSG
 #elif NOTIMPLEMENTED_POLICY == 5
 #define NOTIMPLEMENTED() do {\
-  static int count = 0;\
-  LOG_IF(ERROR, 0 == count++) << NOTIMPLEMENTED_MSG;\
-} while(0)
+  static bool logged_once = false;\
+  LOG_IF(ERROR, !logged_once) << NOTIMPLEMENTED_MSG;\
+  logged_once = true;\
+} while(0);\
+EAT_STREAM_PARAMETERS
 #endif
 
 #endif  // BASE_LOGGING_H_

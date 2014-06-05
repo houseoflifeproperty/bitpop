@@ -38,7 +38,7 @@ import java.util.Map;
  * propagation of any C2DM registration notifications to active clients.
  *
  */
-class AndroidClientManager {
+public class AndroidClientManager {
 
   /** Logger */
   private static final Logger logger = AndroidLogger.forTag("InvClientManager");
@@ -52,15 +52,18 @@ class AndroidClientManager {
   /** The invalidation service associated with this manager */
   private final AndroidInvalidationService service;
 
+  /**
+   * When set, this registration ID is used rather than the ID returned by
+   * {@code GCMRegistrar.getRegistrationId()}.
+   */
+  private static String registrationIdForTest;
+
   /** A map from client key to client proxy instances for in-memory client instances */
   private final Map<String, AndroidClientProxy> clientMap =
       new HashMap<String, AndroidClientProxy>();
 
-  /** The C2DM registration ID that should be used for all managed clients */
-  private String registrationId;
-
   /** All client manager operations are synchronized on this lock */
-  private Object lock = new Object();
+  private final Object lock = new Object();
 
   /** Creates a new client manager instance associated with the provided service */
   AndroidClientManager(AndroidInvalidationService service) {
@@ -107,7 +110,10 @@ class AndroidClientManager {
       // If not found, create a new client proxy instance to represent the client.
       AndroidStorage store = createAndroidStorage(service, clientKey);
       store.create(clientType, account, authType, eventIntent);
-      proxy = new AndroidClientProxy(service, registrationId, store, clientConfig);
+      proxy = new AndroidClientProxy(service, store, clientConfig);
+      if (registrationIdForTest != null) {
+        proxy.getChannel().setRegistrationIdForTest(registrationIdForTest);
+      }
       clientMap.put(clientKey, proxy);
       logger.fine("Client %s created", clientKey);
       return proxy;
@@ -160,7 +166,7 @@ class AndroidClientManager {
         AndroidStorage storage = createAndroidStorage(service, clientKey);
         if (storage.load()) {
           logger.fine("Client %s loaded from disk", clientKey);
-          client = new AndroidClientProxy(service, registrationId, storage, clientConfig);
+          client = new AndroidClientProxy(service, storage, clientConfig);
           clientMap.put(clientKey, client);
         }
       }
@@ -169,25 +175,15 @@ class AndroidClientManager {
   }
 
   /**
-   * Sets the C2DM registration ID that should be used for all managed clients (new and existing).
+   * Sets the GCM registration ID that should be used for all managed clients (new and existing).
    */
-  void setRegistrationId(String registrationId) {
+  void informRegistrationIdChanged() {
     synchronized (lock) {
-      // Set the value used for new clients
-      this.registrationId = registrationId;
-
       // Propagate the value to all existing clients
       for (AndroidClientProxy proxy : clientMap.values()) {
-        proxy.getChannel().setRegistrationId(registrationId);
+        proxy.getChannel().informRegistrationIdChanged();
       }
     }
-  }
-
-  /**
-   * Returns the current C2DM registration ID used for managed clients.
-   */
-   String getRegistrationId() {
-    return registrationId;
   }
 
   /**
@@ -218,6 +214,11 @@ class AndroidClientManager {
     ClientConfigP currentConfig = clientConfig;
     clientConfig = newConfig;
     return clientConfig;
+  }
+
+  
+  public static void setRegistrationIdForTest(String registrationIdForTest) {
+    AndroidClientManager.registrationIdForTest = registrationIdForTest;
   }
 
   /** Returns whether all loaded clients are stopped. */

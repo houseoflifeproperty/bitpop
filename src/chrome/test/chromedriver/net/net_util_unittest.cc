@@ -8,20 +8,19 @@
 #include "base/compiler_specific.h"
 #include "base/location.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/single_thread_task_runner.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
 #include "chrome/test/chromedriver/net/net_util.h"
 #include "chrome/test/chromedriver/net/url_request_context_getter.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
-#include "net/base/tcp_listen_socket.h"
 #include "net/server/http_server.h"
 #include "net/server/http_server_request_info.h"
+#include "net/socket/tcp_listen_socket.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -33,7 +32,7 @@ class FetchUrlTest : public testing::Test,
   FetchUrlTest()
       : io_thread_("io"),
         response_(kSendHello) {
-    base::Thread::Options options(MessageLoop::TYPE_IO, 0);
+    base::Thread::Options options(base::MessageLoop::TYPE_IO, 0);
     CHECK(io_thread_.StartWithOptions(options));
     context_getter_ = new URLRequestContextGetter(
         io_thread_.message_loop_proxy());
@@ -59,8 +58,7 @@ class FetchUrlTest : public testing::Test,
     server_ = new net::HttpServer(factory, this);
     net::IPEndPoint address;
     CHECK_EQ(net::OK, server_->GetLocalAddress(&address));
-    server_url_ = GURL(
-        base::StringPrintf("http://127.0.0.1:%d", address.port()));
+    server_url_ = base::StringPrintf("http://127.0.0.1:%d", address.port());
     event->Signal();
   }
 
@@ -81,7 +79,7 @@ class FetchUrlTest : public testing::Test,
         break;
       case kClose:
         // net::HttpServer doesn't allow us to close connection during callback.
-        MessageLoop::current()->PostTask(
+        base::MessageLoop::current()->PostTask(
             FROM_HERE,
             base::Bind(&net::HttpServer::Close, server_, connection_id));
         break;
@@ -108,34 +106,34 @@ class FetchUrlTest : public testing::Test,
   ServerResponse response_;
   scoped_refptr<net::HttpServer> server_;
   scoped_refptr<URLRequestContextGetter> context_getter_;
-  GURL server_url_;
+  std::string server_url_;
 };
 
 }  // namespace
 
 TEST_F(FetchUrlTest, Http200) {
   std::string response("stuff");
-  ASSERT_TRUE(FetchUrl(server_url_, context_getter_, &response));
+  ASSERT_TRUE(FetchUrl(server_url_, context_getter_.get(), &response));
   ASSERT_STREQ("hello", response.c_str());
 }
 
 TEST_F(FetchUrlTest, HttpNon200) {
   response_ = kSend404;
   std::string response("stuff");
-  ASSERT_FALSE(FetchUrl(server_url_, context_getter_, &response));
+  ASSERT_FALSE(FetchUrl(server_url_, context_getter_.get(), &response));
   ASSERT_STREQ("stuff", response.c_str());
 }
 
 TEST_F(FetchUrlTest, ConnectionClose) {
   response_ = kClose;
   std::string response("stuff");
-  ASSERT_FALSE(FetchUrl(server_url_, context_getter_, &response));
+  ASSERT_FALSE(FetchUrl(server_url_, context_getter_.get(), &response));
   ASSERT_STREQ("stuff", response.c_str());
 }
 
 TEST_F(FetchUrlTest, NoServer) {
   std::string response("stuff");
-  GURL bogus_url("http://localhost:33333");
-  ASSERT_FALSE(FetchUrl(bogus_url, context_getter_, &response));
+  ASSERT_FALSE(
+      FetchUrl("http://localhost:33333", context_getter_.get(), &response));
   ASSERT_STREQ("stuff", response.c_str());
 }

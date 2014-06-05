@@ -2,15 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <asm/unistd.h>
-#include <bits/wordsize.h>
-#include <errno.h>
-
-#include "sandbox/linux/seccomp-bpf/sandbox_bpf.h"
 #include "sandbox/linux/seccomp-bpf/syscall.h"
 
+#include <asm/unistd.h>
+#include <errno.h>
 
-namespace playground2 {
+#include "base/basictypes.h"
+
+namespace sandbox {
 
   asm(      // We need to be able to tell the kernel exactly where we made a
             // system call. The C++ compiler likes to sometimes clone or
@@ -144,7 +143,7 @@ namespace playground2 {
             // used as a marker that BPF code inspects.
             "cmp r0, #0\n"
             "bge 1f\n"
-            "ldr r0, =2f\n"
+            "adr r0, 2f\n"
             "b   2f\n"
             // We declared (almost) all clobbered registers to the compiler. On
             // ARM there is no particular register pressure. So, we can go
@@ -197,7 +196,7 @@ intptr_t SandboxSyscall(int nr,
     // N.B. These are not the calling conventions normally used by the ABI.
     : "=a"(ret)
     : "0"(ret), "D"(args)
-    : "esp", "memory", "ecx", "edx");
+    : "cc", "esp", "memory", "ecx", "edx");
 #elif defined(__x86_64__)
   intptr_t ret = nr;
   {
@@ -209,7 +208,7 @@ intptr_t SandboxSyscall(int nr,
       // N.B. These are not the calling conventions normally used by the ABI.
       : "=a"(ret)
       : "0"(ret), "r"(data)
-      : "rsp", "memory",
+      : "cc", "rsp", "memory",
         "rcx", "rdi", "rsi", "rdx", "r8", "r9", "r10", "r11");
   }
 #elif defined(__arm__)
@@ -222,15 +221,15 @@ intptr_t SandboxSyscall(int nr,
       // N.B. These are not the calling conventions normally used by the ABI.
       : "=r"(inout)
       : "0"(inout), "r"(data)
-      : "lr", "memory", "r1", "r2", "r3", "r4", "r5"
-#if !defined(__arm__)
+      : "cc", "lr", "memory", "r1", "r2", "r3", "r4", "r5"
+#if !defined(__thumb__)
       // In thumb mode, we cannot use "r7" as a general purpose register, as
       // it is our frame pointer. We have to manually manage and preserve it.
       // In ARM mode, we have a dedicated frame pointer register and "r7" is
       // thus available as a general purpose register. We don't preserve it,
       // but instead mark it as clobbered.
         , "r7"
-#endif
+#endif  // !defined(__thumb__)
       );
     ret = inout;
   }
@@ -241,4 +240,4 @@ intptr_t SandboxSyscall(int nr,
   return ret;
 }
 
-}  // namespace
+}  // namespace sandbox

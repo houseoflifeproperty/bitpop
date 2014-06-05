@@ -5,7 +5,7 @@
 #include "content/browser/download/download_request_handle.h"
 
 #include "base/bind.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/browser_context.h"
@@ -31,7 +31,7 @@ DownloadRequestHandle::DownloadRequestHandle(
       child_id_(child_id),
       render_view_id_(render_view_id),
       request_id_(request_id) {
-  DCHECK(handler_);
+  DCHECK(handler_.get());
 }
 
 WebContents* DownloadRequestHandle::GetWebContents() const {

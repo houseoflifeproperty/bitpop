@@ -4,13 +4,14 @@
 
 #include "chrome/browser/ui/cocoa/tab_modal_confirm_dialog_mac.h"
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #import "chrome/browser/ui/cocoa/constrained_window/constrained_window_alert.h"
 #import "chrome/browser/ui/cocoa/constrained_window/constrained_window_custom_sheet.h"
 #import "chrome/browser/ui/cocoa/key_equivalent_constants.h"
 #include "chrome/browser/ui/tab_modal_confirm_dialog_delegate.h"
 #include "chrome/common/chrome_switches.h"
+#include "ui/base/cocoa/cocoa_base_utils.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/gfx/image/image.h"
 
@@ -45,20 +46,31 @@ TabModalConfirmDialog* TabModalConfirmDialog::Create(
   delegate_->Cancel();
 }
 
+- (void)onLinkClicked:(id)sender {
+  WindowOpenDisposition disposition =
+      ui::WindowOpenDispositionFromNSEvent([NSApp currentEvent]);
+  delegate_->LinkClicked(disposition);
+}
+
 @end
 
 TabModalConfirmDialogMac::TabModalConfirmDialogMac(
     TabModalConfirmDialogDelegate* delegate,
     content::WebContents* web_contents)
-    : delegate_(delegate) {
+    : closing_(false),
+      delegate_(delegate) {
   bridge_.reset([[TabModalConfirmDialogMacBridge alloc]
       initWithDelegate:delegate]);
 
   alert_.reset([[ConstrainedWindowAlert alloc] init]);
   [alert_ setMessageText:
       l10n_util::FixUpWindowsStyleLabel(delegate->GetTitle())];
+  [alert_ setLinkText:l10n_util::FixUpWindowsStyleLabel(
+                          delegate->GetLinkText())
+               target:bridge_
+               action:@selector(onLinkClicked:)];
   [alert_ setInformativeText:
-      l10n_util::FixUpWindowsStyleLabel(delegate->GetMessage())];
+      l10n_util::FixUpWindowsStyleLabel(delegate->GetDialogMessage())];
   [alert_ addButtonWithTitle:
       l10n_util::FixUpWindowsStyleLabel(delegate->GetAcceptButtonTitle())
               keyEquivalent:kKeyEquivalentReturn
@@ -73,11 +85,11 @@ TabModalConfirmDialogMac::TabModalConfirmDialogMac(
   [[alert_ closeButton] setAction:@selector(onCancelButton:)];
   [alert_ layout];
 
-  scoped_nsobject<CustomConstrainedWindowSheet> sheet(
+  base::scoped_nsobject<CustomConstrainedWindowSheet> sheet(
       [[CustomConstrainedWindowSheet alloc]
           initWithCustomWindow:[alert_ window]]);
   window_.reset(new ConstrainedWindowMac(this, web_contents, sheet));
-  delegate->set_window(window_.get());
+  delegate_->set_close_delegate(this);
 }
 
 TabModalConfirmDialogMac::~TabModalConfirmDialogMac() {
@@ -91,7 +103,22 @@ void TabModalConfirmDialogMac::CancelTabModalDialog() {
   delegate_->Cancel();
 }
 
+void TabModalConfirmDialogMac::CloseDialog() {
+  if (!closing_) {
+    closing_ = true;
+    window_->CloseWebContentsModalDialog();
+  }
+}
+
 void TabModalConfirmDialogMac::OnConstrainedWindowClosed(
     ConstrainedWindowMac* window) {
+  // If this method should mistakenly be called during Delegate::Close(),
+  // prevent a double-delete by moving delegate_ to a stack variable.
+  if (!delegate_)
+    return;
+  scoped_ptr<TabModalConfirmDialogDelegate> delegate(delegate_.Pass());
+  // Provide a disposition in case the dialog was closed without accepting or
+  // cancelling.
+  delegate->Close();
   delete this;
 }

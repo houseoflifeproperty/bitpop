@@ -9,7 +9,7 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 
@@ -43,7 +43,7 @@ class NetworkConfigWatcherMacThread : public base::Thread {
   // on, so we invoke this function later on in startup to keep it fast.
   void InitNotifications();
 
-  base::mac::ScopedCFTypeRef<CFRunLoopSourceRef> run_loop_source_;
+  base::ScopedCFTypeRef<CFRunLoopSourceRef> run_loop_source_;
   NetworkConfigWatcherMac::Delegate* const delegate_;
   base::WeakPtrFactory<NetworkConfigWatcherMacThread> weak_factory_;
 
@@ -54,7 +54,7 @@ NetworkConfigWatcherMacThread::NetworkConfigWatcherMacThread(
     NetworkConfigWatcherMac::Delegate* delegate)
     : base::Thread("NetworkConfigWatcher"),
       delegate_(delegate),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {}
+      weak_factory_(this) {}
 
 NetworkConfigWatcherMacThread::~NetworkConfigWatcherMacThread() {
   // Allow IO because Stop() calls PlatformThread::Join(), which is a blocking
@@ -101,7 +101,7 @@ void NetworkConfigWatcherMacThread::InitNotifications() {
     NULL,       // This is not reference counted.  No release function.
     NULL,       // No description for this.
   };
-  base::mac::ScopedCFTypeRef<SCDynamicStoreRef> store(SCDynamicStoreCreate(
+  base::ScopedCFTypeRef<SCDynamicStoreRef> store(SCDynamicStoreCreate(
       NULL, CFSTR("org.chromium"), DynamicStoreCallback, &context));
   run_loop_source_.reset(SCDynamicStoreCreateRunLoopSource(
       NULL, store.get(), 0));
@@ -123,7 +123,7 @@ NetworkConfigWatcherMac::NetworkConfigWatcherMac(Delegate* delegate)
   // We create this notifier thread because the notification implementation
   // needs a thread with a CFRunLoop, and there's no guarantee that
   // MessageLoop::current() meets that criterion.
-  base::Thread::Options thread_options(MessageLoop::TYPE_UI, 0);
+  base::Thread::Options thread_options(base::MessageLoop::TYPE_UI, 0);
   notifier_thread_->StartWithOptions(thread_options);
 }
 

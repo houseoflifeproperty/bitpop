@@ -11,7 +11,7 @@ FFmpeg's configure scripts and Makefiles. It scans through build directories for
 object files then does a reverse lookup against the FFmpeg source tree to find
 the corresponding C or assembly file.
 
-Running build_ffmpeg.sh for ia32, x64, arm, and arm-neon platforms is required
+Running build_ffmpeg.sh for ia32, arm, and arm-neon platforms is required
 prior to running this script. The arm and arm-neon platforms assume a
 Chromium OS build environment.
 
@@ -20,16 +20,17 @@ Step 1: Have a Chromium OS checkout (refer to http://dev.chromium.org)
   repo init ...
   repo sync
 
-Step 2: Check out deps/third_party/ffmpeg inside Chromium OS (or symlink it in).
+Step 2: Check out deps/third_party/ffmpeg inside Chromium OS (or cp -fpr it over
+from an existing checkout; symlinks and mount --bind no longer appear to enable
+access from within chroot)
   cd path/to/chromeos
   mkdir deps
   cd deps
   git clone http://git.chromium.org/chromium/third_party/ffmpeg.git
 
-Step 3: Build for ia32/x64 platforms outside chroot (will need yasm in path)
+Step 3: Build for ia32 platform outside chroot (will need yasm in path)
   cd path/to/chromeos/deps/ffmpeg
-  ./chromium/scripts/build_ffmpeg.sh linux ia32 path/to/chromeos/deps
-  ./chromium/scripts/build_ffmpeg.sh linux x64 path/to/chromeos/deps
+  ./chromium/scripts/build_ffmpeg.sh linux ia32 path/to/chromeos/deps/ffmpeg
 
 Step 4: Build and enter Chromium OS chroot:
   cd path/to/chromeos/src/scripts
@@ -39,8 +40,8 @@ Step 5: Setup build environment for ARM:
   ./setup_board --board arm-generic
 
 Step 6: Build for arm/arm-neon platforms inside chroot
-  ./chromium/scripts/build_ffmpeg.sh linux arm path/to/chromeos/deps
-  ./chromium/scripts/build_ffmpeg.sh linux arm-neon path/to/chromeos/deps
+  ./chromium/scripts/build_ffmpeg.sh linux arm path/to/chromeos/deps/ffmpeg
+  ./chromium/scripts/build_ffmpeg.sh linux arm-neon path/to/chromeos/deps/ffmpeg
 
 Step 7: Build for Windows platform; you will need a MinGW shell started from
 inside a Visual Studio Command Prompt to run build_ffmpeg.sh:
@@ -98,20 +99,11 @@ GYP_CONDITIONAL_C_SOURCE_STANZA_BEGIN = """        'c_sources': [
 """
 GYP_CONDITIONAL_ASM_SOURCE_STANZA_BEGIN = """        'asm_sources': [
 """
-GYP_CONDITIONAL_MSVC_OUTPUT_STANZA_BEGIN = """        'converter_outputs': [
-"""
 GYP_CONDITIONAL_ITEM_STANZA_END = """        ],
 """
 
-GYP_HEADERS_STANZA_BEGIN = """    'c_headers': [
-"""
-GYP_HEADERS_STANZA_END = """    ],  # c_headers
-"""
-GYP_HEADERS_STANZA_ITEM = """      '%s',
-"""
-
 # Controls GYP conditional stanza generation.
-SUPPORTED_ARCHITECTURES = ['ia32', 'x64', 'arm', 'arm-neon']
+SUPPORTED_ARCHITECTURES = ['ia32', 'arm', 'arm-neon']
 SUPPORTED_TARGETS = ['Chromium', 'Chrome', 'ChromiumOS', 'ChromeOS']
 # Mac doesn't have any platform specific files, so just use linux and win.
 SUPPORTED_PLATFORMS = ['linux', 'win']
@@ -130,23 +122,36 @@ def CleanObjectFiles(object_files):
   """
   blacklist = [
       'libavcodec/inverse.o',  # Includes libavutil/inverse.c
+      'libavcodec/file_open.o', # Includes libavutil/file_open.c
+      'libavcodec/log2_tab.o',  # Includes libavutil/log2_tab.c
+      'libavformat/log2_tab.o',  # Includes libavutil/log2_tab.c
+      'libavformat/file_open.o', # Includes libavutil/file_open.c
 
       # The following files are removed to trim down on binary size.
       # TODO(ihf): Warning, it is *easy* right now to remove more files
       # than is healthy and end up with a library that the linker does
       # not complain about but that can't be loaded. Add some verification!
+      'libavcodec/audioconvert.o',
       'libavcodec/resample.o',
       'libavcodec/resample2.o',
       'libavcodec/x86/dnxhd_mmx.o',
       'libavformat/sdp.o',
       'libavutil/adler32.o',
+      'libavutil/audio_fifo.o',
       'libavutil/aes.o',
+      'libavutil/blowfish.o',
       'libavutil/des.o',
-      'libavutil/error.o',
       'libavutil/file.o',
+      'libavutil/hash.o',
+      'libavutil/hmac.o',
       'libavutil/lls.o',
+      'libavutil/murmur3.o',
       'libavutil/rc4.o',
+      'libavutil/ripemd.o',
+      'libavutil/sha512.o',
       'libavutil/tree.o',
+      'libavutil/xtea.o',
+      'libavutil/xga_font_data.o',
   ]
   for name in blacklist:
     name = name.replace('/', os.sep)
@@ -322,7 +327,7 @@ class SourceSet(object):
     # Only build a non-trivial conditional if it's a subset of all supported
     # architectures.
     arch_conditions = []
-    if self.architectures == set(SUPPORTED_ARCHITECTURES):
+    if self.architectures == set(SUPPORTED_ARCHITECTURES + ['x64']):
       arch_conditions.append('1')
     else:
       for arch in self.architectures:
@@ -371,14 +376,6 @@ class SourceSet(object):
       stanza += GYP_CONDITIONAL_ASM_SOURCE_STANZA_BEGIN
       for name in asm_sources:
         stanza += GYP_CONDITIONAL_STANZA_ITEM % (name)
-      stanza += GYP_CONDITIONAL_ITEM_STANZA_END
-
-    # Write out all MSVC outputs.
-    msvc_outputs = filter(IsCFile, self.sources)
-    if msvc_outputs:
-      stanza += GYP_CONDITIONAL_MSVC_OUTPUT_STANZA_BEGIN
-      for name in msvc_outputs:
-        stanza += GYP_CONDITIONAL_STANZA_OUTPUT_ITEM % (name)
       stanza += GYP_CONDITIONAL_ITEM_STANZA_END
 
     stanza += GYP_CONDITIONAL_STANZA_END % (conditions)
@@ -495,24 +492,16 @@ def main():
         s = GetSourceFileSet(object_to_sources, object_files)
         sets.append(SourceSet(s, set([arch]), set([target]), set([platform])))
 
+        # x64 and ia32 are the same file set.
+        if arch == 'ia32':
+          sets.append(SourceSet(s, set(['x64']), set([target]),
+                      set([platform])))
+
   # Generate conditional stanza for each disjoint source set.
   fd.write(GYP_CONDITIONAL_BEGIN)
   for s in CreatePairwiseDisjointSets(sets):
     fd.write(s.GenerateGypStanza())
   fd.write(GYP_CONDITIONAL_END)
-
-  # Generate full list of .h files in source tree and write headers stanza.
-  fd.write(GYP_HEADERS_STANZA_BEGIN)
-  for root, dirnames, filenames in os.walk('.'):
-    # Strip './' and other cruft from path.
-    root = os.path.normpath(root)
-    # Only process headers in code we use.  There should be no dependencies on
-    # headers from libraries we don't use.
-    if not root.startswith(('libavcodec', 'libavutil', 'libavformat')):
-      continue
-    for fn in fnmatch.filter(filenames, '*.h'):
-      fd.write(GYP_HEADERS_STANZA_ITEM % os.path.join(root, fn))
-  fd.write(GYP_HEADERS_STANZA_END)
 
   fd.write(GYP_FOOTER)
   fd.close()

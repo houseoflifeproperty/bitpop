@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_UI_VIEWS_IMPORTER_IMPORT_LOCK_DIALOG_VIEW_H_
 
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "ui/views/view.h"
@@ -15,16 +16,15 @@ namespace views {
 class Label;
 }
 
-class ImporterHost;
-
 // ImportLockDialogView asks the user to shut down Firefox before starting the
 // profile import.
 class ImportLockDialogView : public views::DialogDelegateView {
  public:
-  static void Show(gfx::NativeWindow parent, ImporterHost* importer_host);
+  static void Show(gfx::NativeWindow parent,
+                   const base::Callback<void(bool)>& callback);
 
  private:
-  explicit ImportLockDialogView(ImporterHost* importer_host);
+  explicit ImportLockDialogView(const base::Callback<void(bool)>& callback);
   virtual ~ImportLockDialogView();
 
   // views::View:
@@ -32,17 +32,17 @@ class ImportLockDialogView : public views::DialogDelegateView {
   virtual void Layout() OVERRIDE;
 
   // views::DialogDelegate:
-  virtual string16 GetDialogButtonLabel(ui::DialogButton button) const OVERRIDE;
-  virtual string16 GetWindowTitle() const OVERRIDE;
+  virtual base::string16 GetDialogButtonLabel(
+      ui::DialogButton button) const OVERRIDE;
+  virtual base::string16 GetWindowTitle() const OVERRIDE;
   virtual bool Accept() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
-  virtual views::View* GetContentsView() OVERRIDE;
 
  private:
   views::Label* description_label_;
 
-  // Utility class that does the actual import.
-  scoped_refptr<ImporterHost> importer_host_;
+  // Called with the result of the dialog.
+  base::Callback<void(bool)> callback_;
 
   DISALLOW_COPY_AND_ASSIGN(ImportLockDialogView);
 };

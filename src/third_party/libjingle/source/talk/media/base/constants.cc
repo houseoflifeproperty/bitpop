@@ -35,9 +35,82 @@ const int kVideoCodecClockrate = 90000;
 const int kDataCodecClockrate = 90000;
 const int kDataMaxBandwidth = 30720;  // bps
 
-const char* kRtxCodecName = "rtx";
+const float kHighSystemCpuThreshold = 0.85f;
+const float kLowSystemCpuThreshold = 0.65f;
+const float kProcessCpuThreshold = 0.10f;
 
-const char* kCodecParamAssociatedPayloadType = "apt";
+const char kRtxCodecName[] = "rtx";
+
+// RTP payload type is in the 0-127 range. Use 128 to indicate "all" payload
+// types.
+const int kWildcardPayloadType = -1;
+
+const char kCodecParamAssociatedPayloadType[] = "apt";
+
+const char kOpusCodecName[] = "opus";
+
+// draft-spittka-payload-rtp-opus-03.txt
+const char kCodecParamPTime[] = "ptime";
+const char kCodecParamMaxPTime[] = "maxptime";
+const char kCodecParamMinPTime[] = "minptime";
+const char kCodecParamSPropStereo[] = "sprop-stereo";
+const char kCodecParamStereo[] = "stereo";
+const char kCodecParamUseInbandFec[] = "useinbandfec";
+const char kCodecParamMaxAverageBitrate[] = "maxaveragebitrate";
+
+const char kCodecParamSctpProtocol[] = "protocol";
+const char kCodecParamSctpStreams[] = "streams";
+
+const char kParamValueTrue[] = "1";
+const char kParamValueEmpty[] = "";
+
+const int kOpusDefaultMaxPTime = 120;
+const int kOpusDefaultPTime = 20;
+const int kOpusDefaultMinPTime = 3;
+const int kOpusDefaultSPropStereo = 0;
+const int kOpusDefaultStereo = 0;
+const int kOpusDefaultUseInbandFec = 0;
+
+const int kPreferredMaxPTime = 60;
+const int kPreferredMinPTime = 10;
+const int kPreferredSPropStereo = 0;
+const int kPreferredStereo = 0;
+const int kPreferredUseInbandFec = 0;
+
+const char kRtcpFbParamNack[] = "nack";
+const char kRtcpFbNackParamPli[] = "pli";
+const char kRtcpFbParamRemb[] = "goog-remb";
+
+const char kRtcpFbParamCcm[] = "ccm";
+const char kRtcpFbCcmParamFir[] = "fir";
+const char kCodecParamMaxBitrate[] = "x-google-max-bitrate";
+const char kCodecParamMinBitrate[] = "x-google-min-bitrate";
+const char kCodecParamStartBitrate[] = "x-google-start-bitrate";
+const char kCodecParamMaxQuantization[] = "x-google-max-quantization";
+const char kCodecParamPort[] = "x-google-port";
+
+const int kGoogleRtpDataCodecId = 101;
+const char kGoogleRtpDataCodecName[] = "google-data";
+
+const int kGoogleSctpDataCodecId = 108;
+const char kGoogleSctpDataCodecName[] = "google-sctp-data";
+
+const char kComfortNoiseCodecName[] = "CN";
+
+const int kRtpAudioLevelHeaderExtensionDefaultId = 1;
+const char kRtpAudioLevelHeaderExtension[] =
+    "urn:ietf:params:rtp-hdrext:ssrc-audio-level";
+
+const int kRtpTimestampOffsetHeaderExtensionDefaultId = 2;
+const char kRtpTimestampOffsetHeaderExtension[] =
+    "urn:ietf:params:rtp-hdrext:toffset";
+
+const int kRtpAbsoluteSenderTimeHeaderExtensionDefaultId = 3;
+const char kRtpAbsoluteSenderTimeHeaderExtension[] =
+    "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time";
+
+const int kNumDefaultUnsignalledVideoRecvStreams = 0;
 
 
 }  // namespace cricket
+

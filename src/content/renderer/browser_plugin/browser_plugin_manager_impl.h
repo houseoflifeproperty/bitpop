@@ -5,11 +5,10 @@
 #ifndef CONTENT_RENDERER_BROWSER_PLUGIN_BROWSER_PLUGIN_MANAGER_IMPL_H_
 #define CONTENT_RENDERER_BROWSER_PLUGIN_BROWSER_PLUGIN_MANAGER_IMPL_H_
 
-#include "content/renderer/browser_plugin/browser_plugin_manager.h"
-#include "googleurl/src/gurl.h"
+#include <map>
 
-struct BrowserPluginMsg_UpdateRect_Params;
-class WebCursor;
+#include "content/renderer/browser_plugin/browser_plugin_manager.h"
+#include "ui/gfx/size.h"
 
 namespace gfx {
 class Point;
@@ -19,32 +18,37 @@ namespace content {
 
 class BrowserPluginManagerImpl : public BrowserPluginManager {
  public:
-  BrowserPluginManagerImpl(RenderViewImpl* render_view);
+  explicit BrowserPluginManagerImpl(RenderViewImpl* render_view);
 
   // BrowserPluginManager implementation.
   virtual BrowserPlugin* CreateBrowserPlugin(
       RenderViewImpl* render_view,
-      WebKit::WebFrame* frame,
-      const WebKit::WebPluginParams& params) OVERRIDE;
+      blink::WebFrame* frame,
+      bool auto_navigate) OVERRIDE;
+  virtual void AllocateInstanceID(
+      const base::WeakPtr<BrowserPlugin>& browser_plugin) OVERRIDE;
 
   // IPC::Sender implementation.
   virtual bool Send(IPC::Message* msg) OVERRIDE;
 
   // RenderViewObserver override. Call on render thread.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  virtual void DidCommitCompositorFrame() OVERRIDE;
+
  private:
   virtual ~BrowserPluginManagerImpl();
 
-  void OnPluginAtPositionRequest(const IPC::Message& message,
-                                 int request_id,
-                                 const gfx::Point& position);
+  void OnAllocateInstanceIDACK(const IPC::Message& message,
+                               int request_id,
+                               int guest_instance_id);
 
-  // Returns whether a message should be forwarded to BrowserPlugins.
-  static bool ShouldForwardToBrowserPlugin(const IPC::Message& message);
+  int request_id_counter_;
+  typedef std::map<int, const base::WeakPtr<BrowserPlugin> > InstanceIDMap;
+  InstanceIDMap pending_allocate_guest_instance_id_requests_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserPluginManagerImpl);
 };
 
 }  // namespace content
 
-#endif //  CONTENT_RENDERER_BROWSER_PLUGIN_BROWSER_PLUGIN_MANAGER_IMPL_H_
+#endif  // CONTENT_RENDERER_BROWSER_PLUGIN_BROWSER_PLUGIN_MANAGER_IMPL_H_

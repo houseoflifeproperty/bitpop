@@ -4,7 +4,7 @@
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
  *  tree. An additional intellectual property rights grant can be found
- *  in the file PATENTS.  All contributing project authors may
+ *  in the file PATENTS. All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
@@ -17,9 +17,10 @@ extern "C" {
 #endif
 
 // This module is for GCC MIPS DSPR2
-#if !defined(YUV_DISABLE_ASM) && defined(__mips_dsp) && (__mips_dsp_rev >= 2)
+#if !defined(LIBYUV_DISABLE_MIPS) && \
+    defined(__mips_dsp) && (__mips_dsp_rev >= 2)
 
-void ScaleRowDown2_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t /* src_stride */,
+void ScaleRowDown2_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t src_stride,
                               uint8* dst, int dst_width) {
   __asm__ __volatile__(
     ".set push                                     \n"
@@ -29,6 +30,7 @@ void ScaleRowDown2_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t /* src_stride */,
     "beqz           $t9, 2f                        \n"
     " nop                                          \n"
 
+    ".p2align       2                              \n"
   "1:                                              \n"
     "lw             $t0, 0(%[src_ptr])             \n"  // |3|2|1|0|
     "lw             $t1, 4(%[src_ptr])             \n"  // |7|6|5|4|
@@ -38,6 +40,7 @@ void ScaleRowDown2_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t /* src_stride */,
     "lw             $t5, 20(%[src_ptr])            \n"  // |23|22|21|20|
     "lw             $t6, 24(%[src_ptr])            \n"  // |27|26|25|24|
     "lw             $t7, 28(%[src_ptr])            \n"  // |31|30|29|28|
+    // TODO(fbarchard): Use odd pixels instead of even.
     "precr.qb.ph    $t8, $t1, $t0                  \n"  // |6|4|2|0|
     "precr.qb.ph    $t0, $t3, $t2                  \n"  // |14|12|10|8|
     "precr.qb.ph    $t1, $t5, $t4                  \n"  // |22|20|18|16|
@@ -74,7 +77,7 @@ void ScaleRowDown2_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t /* src_stride */,
   );
 }
 
-void ScaleRowDown2Int_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t src_stride,
+void ScaleRowDown2Box_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t src_stride,
                                  uint8* dst, int dst_width) {
   const uint8* t = src_ptr + src_stride;
 
@@ -86,6 +89,7 @@ void ScaleRowDown2Int_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t src_stride,
     "bltz           $t9, 2f                       \n"
     " nop                                         \n"
 
+    ".p2align       2                             \n"
   "1:                                             \n"
     "lw             $t0, 0(%[src_ptr])            \n"  // |3|2|1|0|
     "lw             $t1, 4(%[src_ptr])            \n"  // |7|6|5|4|
@@ -173,8 +177,8 @@ void ScaleRowDown2Int_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t src_stride,
   );
 }
 
-void ScaleRowDown4_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t /* src_stride */,
-                                     uint8* dst, int dst_width) {
+void ScaleRowDown4_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t src_stride,
+                              uint8* dst, int dst_width) {
   __asm__ __volatile__ (
       ".set push                                    \n"
       ".set noreorder                               \n"
@@ -183,6 +187,7 @@ void ScaleRowDown4_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t /* src_stride */,
       "beqz           $t9, 2f                       \n"
       " nop                                         \n"
 
+      ".p2align       2                             \n"
      "1:                                            \n"
       "lw             $t1, 0(%[src_ptr])            \n"  // |3|2|1|0|
       "lw             $t2, 4(%[src_ptr])            \n"  // |7|6|5|4|
@@ -228,8 +233,8 @@ void ScaleRowDown4_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t /* src_stride */,
   );
 }
 
-void ScaleRowDown4Int_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t src_stride,
-                                        uint8* dst, int dst_width) {
+void ScaleRowDown4Box_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t src_stride,
+                                 uint8* dst, int dst_width) {
   intptr_t stride = src_stride;
   const uint8* s1 = src_ptr + stride;
   const uint8* s2 = s1 + stride;
@@ -242,6 +247,7 @@ void ScaleRowDown4Int_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t src_stride,
       "srl           $t9, %[dst_width], 1         \n"
       "andi          $t8, %[dst_width], 1         \n"
 
+      ".p2align      2                            \n"
      "1:                                          \n"
       "lw            $t0, 0(%[src_ptr])           \n"  // |3|2|1|0|
       "lw            $t1, 0(%[s1])                \n"  // |7|6|5|4|
@@ -307,11 +313,12 @@ void ScaleRowDown4Int_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t src_stride,
   );
 }
 
-void ScaleRowDown34_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t /* src_stride */,
+void ScaleRowDown34_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t src_stride,
                                uint8* dst, int dst_width) {
   __asm__ __volatile__ (
       ".set push                                          \n"
       ".set noreorder                                     \n"
+      ".p2align        2                                  \n"
     "1:                                                   \n"
       "lw              $t1, 0(%[src_ptr])                 \n"  // |3|2|1|0|
       "lw              $t2, 4(%[src_ptr])                 \n"  // |7|6|5|4|
@@ -353,12 +360,14 @@ void ScaleRowDown34_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t /* src_stride */,
   );
 }
 
-void ScaleRowDown34_0_Int_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t src_stride,
+void ScaleRowDown34_0_Box_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t src_stride,
                                      uint8* d, int dst_width) {
   __asm__ __volatile__ (
       ".set push                                         \n"
       ".set noreorder                                    \n"
-      "repl.ph          $t3, 3                           \n"  // 0x00030003
+      "repl.ph           $t3, 3                          \n"  // 0x00030003
+
+     ".p2align           2                               \n"
     "1:                                                  \n"
       "lw                $t0, 0(%[src_ptr])              \n"  // |S3|S2|S1|S0|
       "lwx               $t1, %[src_stride](%[src_ptr])  \n"  // |T3|T2|T1|T0|
@@ -408,12 +417,14 @@ void ScaleRowDown34_0_Int_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t src_stride,
   );
 }
 
-void ScaleRowDown34_1_Int_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t src_stride,
+void ScaleRowDown34_1_Box_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t src_stride,
                                      uint8* d, int dst_width) {
   __asm__ __volatile__ (
       ".set push                                           \n"
       ".set noreorder                                      \n"
       "repl.ph           $t2, 3                            \n"  // 0x00030003
+
+      ".p2align          2                                 \n"
     "1:                                                    \n"
       "lw                $t0, 0(%[src_ptr])                \n"  // |S3|S2|S1|S0|
       "lwx               $t1, %[src_stride](%[src_ptr])    \n"  // |T3|T2|T1|T0|
@@ -459,11 +470,13 @@ void ScaleRowDown34_1_Int_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t src_stride,
   );
 }
 
-void ScaleRowDown38_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t /* src_stride */,
+void ScaleRowDown38_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t src_stride,
                                uint8* dst, int dst_width) {
   __asm__ __volatile__ (
       ".set push                                     \n"
       ".set noreorder                                \n"
+
+      ".p2align   2                                  \n"
     "1:                                              \n"
       "lw         $t0, 0(%[src_ptr])                 \n"  // |3|2|1|0|
       "lw         $t1, 4(%[src_ptr])                 \n"  // |7|6|5|4|
@@ -504,7 +517,7 @@ void ScaleRowDown38_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t /* src_stride */,
   );
 }
 
-void ScaleRowDown38_2_Int_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t src_stride,
+void ScaleRowDown38_2_Box_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t src_stride,
                                      uint8* dst_ptr, int dst_width) {
   intptr_t stride = src_stride;
   const uint8* t = src_ptr + stride;
@@ -513,6 +526,8 @@ void ScaleRowDown38_2_Int_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t src_stride,
   __asm__ __volatile__ (
       ".set push                                         \n"
       ".set noreorder                                    \n"
+
+      ".p2align        2                                 \n"
     "1:                                                  \n"
       "lw              $t0, 0(%[src_ptr])                \n"  // |S3|S2|S1|S0|
       "lw              $t1, 4(%[src_ptr])                \n"  // |S7|S6|S5|S4|
@@ -556,7 +571,7 @@ void ScaleRowDown38_2_Int_MIPS_DSPR2(const uint8* src_ptr, ptrdiff_t src_stride,
   );
 }
 
-void ScaleRowDown38_3_Int_MIPS_DSPR2(const uint8* src_ptr,
+void ScaleRowDown38_3_Box_MIPS_DSPR2(const uint8* src_ptr,
                                      ptrdiff_t src_stride,
                                      uint8* dst_ptr, int dst_width) {
   intptr_t stride = src_stride;
@@ -569,6 +584,8 @@ void ScaleRowDown38_3_Int_MIPS_DSPR2(const uint8* src_ptr,
   __asm__ __volatile__ (
       ".set push                                         \n"
       ".set noreorder                                    \n"
+
+      ".p2align        2                                 \n"
     "1:                                                  \n"
       "lw              $t0, 0(%[src_ptr])                \n"  // |S3|S2|S1|S0|
       "lw              $t1, 4(%[src_ptr])                \n"  // |S7|S6|S5|S4|
@@ -627,64 +644,6 @@ void ScaleRowDown38_3_Int_MIPS_DSPR2(const uint8* src_ptr,
   );
 }
 
-void ScaleFilterRows_MIPS_DSPR2(unsigned char *dst_ptr,
-                                const unsigned char* src_ptr,
-                                ptrdiff_t src_stride,
-                                int dst_width, int source_y_fraction) {
-    int y0_fraction = 256 - source_y_fraction;
-    const unsigned char* src_ptr1 = src_ptr + src_stride;
-
-  __asm__ __volatile__ (
-     ".set push                                           \n"
-     ".set noreorder                                      \n"
-
-     "replv.ph          $t0, %[y0_fraction]               \n"
-     "replv.ph          $t1, %[source_y_fraction]         \n"
-   "1:                                                    \n"
-     "lw                $t2, 0(%[src_ptr])                \n"
-     "lw                $t3, 0(%[src_ptr1])               \n"
-     "lw                $t4, 4(%[src_ptr])                \n"
-     "lw                $t5, 4(%[src_ptr1])               \n"
-     "muleu_s.ph.qbl    $t6, $t2, $t0                     \n"
-     "muleu_s.ph.qbr    $t7, $t2, $t0                     \n"
-     "muleu_s.ph.qbl    $t8, $t3, $t1                     \n"
-     "muleu_s.ph.qbr    $t9, $t3, $t1                     \n"
-     "muleu_s.ph.qbl    $t2, $t4, $t0                     \n"
-     "muleu_s.ph.qbr    $t3, $t4, $t0                     \n"
-     "muleu_s.ph.qbl    $t4, $t5, $t1                     \n"
-     "muleu_s.ph.qbr    $t5, $t5, $t1                     \n"
-     "addq.ph           $t6, $t6, $t8                     \n"
-     "addq.ph           $t7, $t7, $t9                     \n"
-     "addq.ph           $t2, $t2, $t4                     \n"
-     "addq.ph           $t3, $t3, $t5                     \n"
-     "shra.ph           $t6, $t6, 8                       \n"
-     "shra.ph           $t7, $t7, 8                       \n"
-     "shra.ph           $t2, $t2, 8                       \n"
-     "shra.ph           $t3, $t3, 8                       \n"
-     "precr.qb.ph       $t6, $t6, $t7                     \n"
-     "precr.qb.ph       $t2, $t2, $t3                     \n"
-     "addiu             %[src_ptr], %[src_ptr], 8         \n"
-     "addiu             %[src_ptr1], %[src_ptr1], 8       \n"
-     "addiu             %[dst_width], %[dst_width], -8    \n"
-     "sw                $t6, 0(%[dst_ptr])                \n"
-     "sw                $t2, 4(%[dst_ptr])                \n"
-     "bgtz              %[dst_width], 1b                  \n"
-     " addiu            %[dst_ptr], %[dst_ptr], 8         \n"
-
-     "lbu               $t0, -1(%[dst_ptr])               \n"
-     "sb                $t0, 0(%[dst_ptr])                \n"
-     ".set pop                                            \n"
-  : [dst_ptr] "+r" (dst_ptr),
-    [src_ptr1] "+r" (src_ptr1),
-    [src_ptr] "+r" (src_ptr),
-    [dst_width] "+r" (dst_width)
-  : [source_y_fraction] "r" (source_y_fraction),
-    [y0_fraction] "r" (y0_fraction),
-    [src_stride] "r" (src_stride)
-  : "t0", "t1", "t2", "t3", "t4", "t5",
-    "t6", "t7", "t8", "t9"
-  );
-}
 #endif  // defined(__mips_dsp) && (__mips_dsp_rev >= 2)
 
 #ifdef __cplusplus

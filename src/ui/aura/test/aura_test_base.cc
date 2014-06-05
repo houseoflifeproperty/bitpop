@@ -4,29 +4,42 @@
 
 #include "ui/aura/test/aura_test_base.h"
 
+#include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/test/aura_test_helper.h"
+#include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
-#include "ui/base/gestures/gesture_configuration.h"
-#include "ui/base/ime/text_input_test_support.h"
+#include "ui/base/ime/input_method_initializer.h"
+#include "ui/compositor/test/context_factories_for_test.h"
+#include "ui/events/event_dispatcher.h"
+#include "ui/events/event_processor.h"
+#include "ui/events/gestures/gesture_configuration.h"
 
 namespace aura {
 namespace test {
 
-AuraTestBase::AuraTestBase() {
+AuraTestBase::AuraTestBase()
+    : setup_called_(false),
+      teardown_called_(false) {
 }
 
 AuraTestBase::~AuraTestBase() {
+  CHECK(setup_called_)
+      << "You have overridden SetUp but never called super class's SetUp";
+  CHECK(teardown_called_)
+      << "You have overridden TearDown but never called super class's TearDown";
 }
 
 void AuraTestBase::SetUp() {
+  setup_called_ = true;
   testing::Test::SetUp();
-  ui::TextInputTestSupport::Initialize();
+  ui::InitializeInputMethodForTesting();
 
   // Changing the parameters for gesture recognition shouldn't cause
   // tests to fail, so we use a separate set of parameters for unit
   // testing.
   ui::GestureConfiguration::set_long_press_time_in_seconds(1.0);
   ui::GestureConfiguration::set_semi_long_press_time_in_seconds(0.4);
+  ui::GestureConfiguration::set_show_press_delay_in_ms(5);
   ui::GestureConfiguration::set_max_distance_for_two_finger_tap_in_pixels(300);
   ui::GestureConfiguration::set_max_seconds_between_double_click(0.7);
   ui::GestureConfiguration::
@@ -41,10 +54,11 @@ void AuraTestBase::SetUp() {
   ui::GestureConfiguration::set_min_rail_break_velocity(200);
   ui::GestureConfiguration::set_min_scroll_delta_squared(5 * 5);
   ui::GestureConfiguration::
-      set_min_touch_down_duration_in_seconds_for_click(0.01);
+      set_min_touch_down_duration_in_seconds_for_click(0.0005);
   ui::GestureConfiguration::set_points_buffered_for_velocity(10);
   ui::GestureConfiguration::set_rail_break_proportion(15);
   ui::GestureConfiguration::set_rail_start_proportion(2);
+  ui::GestureConfiguration::set_scroll_prediction_seconds(0);
   ui::GestureConfiguration::set_default_radius(0);
   ui::GestureConfiguration::set_fling_acceleration_curve_coefficients(
       0, 0.0166667f);
@@ -55,37 +69,55 @@ void AuraTestBase::SetUp() {
   ui::GestureConfiguration::set_fling_acceleration_curve_coefficients(
       3, 0.8f);
   ui::GestureConfiguration::set_fling_velocity_cap(15000.0f);
+  ui::GestureConfiguration::set_min_swipe_speed(10);
+
+  // The ContextFactory must exist before any Compositors are created.
+  bool enable_pixel_output = false;
+  ui::InitializeContextFactoryForTests(enable_pixel_output);
 
   helper_.reset(new AuraTestHelper(&message_loop_));
   helper_->SetUp();
 }
 
 void AuraTestBase::TearDown() {
+  teardown_called_ = true;
+
   // Flush the message loop because we have pending release tasks
   // and these tasks if un-executed would upset Valgrind.
   RunAllPendingInMessageLoop();
 
   helper_->TearDown();
-  ui::TextInputTestSupport::Shutdown();
+  ui::TerminateContextFactoryForTests();
+  ui::ShutdownInputMethodForTesting();
   testing::Test::TearDown();
 }
 
-Window* AuraTestBase::CreateTransientChild(int id, Window* parent) {
-  Window* window = new Window(NULL);
+Window* AuraTestBase::CreateNormalWindow(int id, Window* parent,
+                                         WindowDelegate* delegate) {
+  Window* window = new Window(
+      delegate ? delegate :
+      test::TestWindowDelegate::CreateSelfDestroyingDelegate());
   window->set_id(id);
-  window->SetType(aura::client::WINDOW_TYPE_NORMAL);
-  window->Init(ui::LAYER_TEXTURED);
-  window->SetDefaultParentByRootWindow(root_window(), gfx::Rect());
-  parent->AddTransientChild(window);
+  window->Init(aura::WINDOW_LAYER_TEXTURED);
+  parent->AddChild(window);
+  window->SetBounds(gfx::Rect(0, 0, 100, 100));
+  window->Show();
   return window;
-}
-
-void AuraTestBase::SetDefaultParentByPrimaryRootWindow(aura::Window* window) {
-  window->SetDefaultParentByRootWindow(root_window(), gfx::Rect());
 }
 
 void AuraTestBase::RunAllPendingInMessageLoop() {
   helper_->RunAllPendingInMessageLoop();
+}
+
+void AuraTestBase::ParentWindow(Window* window) {
+  client::ParentWindowWithContext(window, root_window(), gfx::Rect());
+}
+
+bool AuraTestBase::DispatchEventUsingWindowDispatcher(ui::Event* event) {
+  ui::EventDispatchDetails details =
+      event_processor()->OnEventFromSource(event);
+  CHECK(!details.dispatcher_destroyed);
+  return event->handled();
 }
 
 }  // namespace test

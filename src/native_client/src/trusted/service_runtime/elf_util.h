@@ -12,11 +12,13 @@
 #include "native_client/src/trusted/service_runtime/sel_ldr.h"
 
 struct NaClElfImage;
+struct NaClValidationMetadata;
 struct Gio;
 
 uintptr_t NaClElfImageGetEntryPoint(struct NaClElfImage *image);
 
-struct NaClElfImage *NaClElfImageNew(struct Gio *gp, NaClErrorCode *err_code);
+struct NaClElfImage *NaClElfImageNew(struct NaClDesc *gp,
+                                     NaClErrorCode *err_code);
 
 NaClErrorCode NaClElfImageValidateElfHeader(struct NaClElfImage *image);
 
@@ -39,16 +41,17 @@ NaClErrorCode NaClElfImageValidateProgramHeaders(
  * protections have been set up by NaClMemoryProtection().
  */
 NaClErrorCode NaClElfImageLoad(struct NaClElfImage *image,
-                               struct Gio          *gp,
-                               uint8_t             addr_bits,
-                               uintptr_t           mem_start);
+                               struct NaClDesc *ndp,
+                               struct NaClApp *nap);
 
 /*
  * Loads an ELF object after NaClMemoryProtection() has been called.
  */
-NaClErrorCode NaClElfImageLoadDynamically(struct NaClElfImage *image,
-                                          struct NaClApp      *nap,
-                                          struct Gio          *gfile);
+NaClErrorCode NaClElfImageLoadDynamically(
+    struct NaClElfImage *image,
+    struct NaClApp *nap,
+    struct NaClDesc *gfile,
+    struct NaClValidationMetadata *metadata);
 
 void NaClElfImageDelete(struct NaClElfImage *image);
 

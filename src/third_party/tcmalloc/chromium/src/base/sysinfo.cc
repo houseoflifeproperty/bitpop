@@ -30,6 +30,8 @@
 #include <config.h>
 #if (defined(_WIN32) || defined(__MINGW32__)) && !defined(__CYGWIN__) && !defined(__CYGWIN32)
 # define PLATFORM_WINDOWS 1
+#elif defined(__ANDROID__) || defined(ANDROID)
+# define PLATFORM_ANDROID 1
 #endif
 
 #include <ctype.h>    // for isspace()
@@ -54,6 +56,8 @@
 #include <process.h>          // for getpid() (actually, _getpid())
 #include <shlwapi.h>          // for SHGetValueA()
 #include <tlhelp32.h>         // for Module32First()
+#elif defined(PLATFORM_ANDROID)
+#include <sys/system_properties.h>
 #endif
 #include "base/sysinfo.h"
 #include "base/commandlineflags.h"
@@ -192,7 +196,12 @@ const char* GetenvBeforeMain(const char* name) {
 // In Chromium this hack is intentionally disabled, because the path is not
 // re-initialized upon fork.
 bool GetUniquePathFromEnv(const char* env_name, char* path) {
+#if defined(PLATFORM_ANDROID)
+  char envval[PROP_VALUE_MAX];
+  __system_property_get(env_name, envval);
+#else
   char* envval = getenv(env_name);
+#endif
   if (envval == NULL || *envval == '\0')
     return false;
   if (envval[0] & 128) {                  // high bit is set
@@ -494,7 +503,9 @@ int NumCPUs(void) {
 //      true.
 // ----------------------------------------------------------------------
 bool HasPosixThreads() {
-#if defined(__linux__)
+// Android doesn't have confstr(), assume posix thread and fallback to
+// "other os".
+#if defined(__linux__) && !defined(__ANDROID__)
 #ifndef _CS_GNU_LIBPTHREAD_VERSION
 #define _CS_GNU_LIBPTHREAD_VERSION 3
 #endif
@@ -668,7 +679,7 @@ static bool ParseProcMapsLine(char *text, uint64 *start, uint64 *end,
 #if defined(__linux__)
   /*
    * It's similar to:
-   * sscanf(text, "%"SCNx64"-%"SCNx64" %4s %"SCNx64" %x:%x %"SCNd64" %n",
+   * sscanf(text,"%" SCNx64 "-%" SCNx64 " %4s %" SCNx64 " %x:%x %" SCNd64 " %n",
    *        start, end, flags, offset, major, minor, inode, filename_offset)
    */
   char *endptr = text;
@@ -932,7 +943,8 @@ bool ProcMapsIterator::NextExt(uint64 *start, uint64 *end, char **flags,
             uint64 tmp_anon_mapping;
             uint64 tmp_anon_pages;
 
-            sscanf(backing_ptr+1, "F %"SCNx64" %"SCNd64") (A %"SCNx64" %"SCNd64")",
+            sscanf(backing_ptr+1,
+                   "F %" SCNx64 " %" SCNd64 ") (A %" SCNx64 " %" SCNd64 ")",
                    file_mapping ? file_mapping : &tmp_file_mapping,
                    file_pages ? file_pages : &tmp_file_pages,
                    anon_mapping ? anon_mapping : &tmp_anon_mapping,
@@ -1072,7 +1084,8 @@ int ProcMapsIterator::FormatLine(char* buffer, int bufsize,
       ? '-' : 'p';
 
   const int rc = snprintf(buffer, bufsize,
-                          "%08"PRIx64"-%08"PRIx64" %c%c%c%c %08"PRIx64" %02x:%02x %-11"PRId64" %s\n",
+                          "%08" PRIx64 "-%08" PRIx64 " %c%c%c%c %08" PRIx64 " "
+                          "%02x:%02x %-11" PRId64 " %s\n",
                           start, end, r,w,x,p, offset,
                           static_cast<int>(dev/256), static_cast<int>(dev%256),
                           inode, filename);

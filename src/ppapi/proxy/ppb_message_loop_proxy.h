@@ -9,8 +9,9 @@
 #include "base/bind.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "ppapi/proxy/interface_proxy.h"
+#include "ppapi/proxy/ppapi_proxy_export.h"
 #include "ppapi/shared_impl/ppb_message_loop_shared.h"
 #include "ppapi/thunk/ppb_message_loop_api.h"
 
@@ -19,7 +20,7 @@ struct PPB_MessageLoop_1_0;
 namespace ppapi {
 namespace proxy {
 
-class MessageLoopResource : public MessageLoopShared {
+class PPAPI_PROXY_EXPORT MessageLoopResource : public MessageLoopShared {
  public:
   explicit MessageLoopResource(PP_Instance instance);
   // Construct the one MessageLoopResource for the main thread. This must be
@@ -62,6 +63,8 @@ class MessageLoopResource : public MessageLoopShared {
                            const base::Closure& closure,
                            int64 delay_ms) OVERRIDE;
 
+  virtual base::MessageLoopProxy* GetMessageLoopProxy() OVERRIDE;
+
   // TLS destructor function.
   static void ReleaseMessageLoop(void* value);
 
@@ -69,7 +72,7 @@ class MessageLoopResource : public MessageLoopShared {
   // that it's created on the thread it will run on. NULL for the main thread
   // loop, since that's owned by somebody else. This is needed for Run and Quit.
   // Any time we post tasks, we should post them using loop_proxy_.
-  scoped_ptr<MessageLoop> loop_;
+  scoped_ptr<base::MessageLoop> loop_;
   scoped_refptr<base::MessageLoopProxy> loop_proxy_;
 
   // Number of invocations of Run currently on the stack.

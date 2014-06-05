@@ -14,16 +14,17 @@ namespace ash {
 namespace network_icon {
 
 NetworkIconAnimation::NetworkIconAnimation()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(animation_(this)) {
+    : animation_(this) {
   // Set up the animation throbber.
   animation_.SetThrobDuration(kThrobDurationMs);
-  animation_.SetTweenType(ui::Tween::LINEAR);
+  animation_.SetTweenType(gfx::Tween::LINEAR);
 }
 
 NetworkIconAnimation::~NetworkIconAnimation() {
 }
 
-void NetworkIconAnimation::AnimationProgressed(const ui::Animation* animation) {
+void NetworkIconAnimation::AnimationProgressed(
+    const gfx::Animation* animation) {
   if (animation != &animation_)
     return;
   FOR_EACH_OBSERVER(AnimationObserver, observers_, NetworkIconChanged());
@@ -39,13 +40,14 @@ double NetworkIconAnimation::GetAnimation() {
 }
 
 void NetworkIconAnimation::AddObserver(AnimationObserver* observer) {
-  observers_.AddObserver(observer);
+  if (!observers_.HasObserver(observer))
+    observers_.AddObserver(observer);
 }
 
 void NetworkIconAnimation::RemoveObserver(AnimationObserver* observer) {
   observers_.RemoveObserver(observer);
-  if (observers_.size() == 0)
-    animation_.Stop();
+  if (!observers_.might_have_observers())
+    animation_.Reset();  // Stops the animation and resets the current value.
 }
 
 // static

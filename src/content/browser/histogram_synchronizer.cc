@@ -8,6 +8,8 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/histogram_delta_serialization.h"
+#include "base/pickle.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "content/browser/histogram_controller.h"
@@ -200,7 +202,7 @@ void HistogramSynchronizer::FetchHistograms() {
       base::TimeDelta::FromMinutes(1));
 }
 
-void FetchHistogramsAsynchronously(MessageLoop* callback_thread,
+void FetchHistogramsAsynchronously(base::MessageLoop* callback_thread,
                                    const base::Closure& callback,
                                    base::TimeDelta wait_time) {
   HistogramSynchronizer::FetchHistogramsAsynchronously(
@@ -209,7 +211,7 @@ void FetchHistogramsAsynchronously(MessageLoop* callback_thread,
 
 // static
 void HistogramSynchronizer::FetchHistogramsAsynchronously(
-    MessageLoop* callback_thread,
+    base::MessageLoop* callback_thread,
     const base::Closure& callback,
     base::TimeDelta wait_time) {
   DCHECK(callback_thread != NULL);
@@ -267,14 +269,10 @@ void HistogramSynchronizer::OnHistogramDataCollected(
     const std::vector<std::string>& pickled_histograms) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
+  base::HistogramDeltaSerialization::DeserializeAndAddSamples(
+      pickled_histograms);
+
   RequestContext* request = RequestContext::GetRequestContext(sequence_number);
-
-  for (std::vector<std::string>::const_iterator it = pickled_histograms.begin();
-       it < pickled_histograms.end();
-       ++it) {
-    base::Histogram::DeserializeHistogramInfo(*it);
-  }
-
   if (!request)
     return;
 
@@ -284,10 +282,10 @@ void HistogramSynchronizer::OnHistogramDataCollected(
 }
 
 void HistogramSynchronizer::SetCallbackTaskAndThread(
-    MessageLoop* callback_thread,
+    base::MessageLoop* callback_thread,
     const base::Closure& callback) {
   base::Closure old_callback;
-  MessageLoop* old_thread = NULL;
+  base::MessageLoop* old_thread = NULL;
   {
     base::AutoLock auto_lock(lock_);
     old_callback = callback_;
@@ -304,7 +302,7 @@ void HistogramSynchronizer::SetCallbackTaskAndThread(
 void HistogramSynchronizer::ForceHistogramSynchronizationDoneCallback(
     int sequence_number) {
   base::Closure callback;
-  MessageLoop* thread = NULL;
+  base::MessageLoop* thread = NULL;
   {
     base::AutoLock lock(lock_);
     if (sequence_number != async_sequence_number_)
@@ -317,7 +315,7 @@ void HistogramSynchronizer::ForceHistogramSynchronizationDoneCallback(
   InternalPostTask(thread, callback);
 }
 
-void HistogramSynchronizer::InternalPostTask(MessageLoop* thread,
+void HistogramSynchronizer::InternalPostTask(base::MessageLoop* thread,
                                              const base::Closure& callback) {
   if (callback.is_null() || !thread)
     return;

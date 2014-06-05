@@ -23,25 +23,21 @@ InputEventData::InputEventData()
       wheel_ticks(PP_MakeFloatPoint(0.0f, 0.0f)),
       wheel_scroll_by_page(false),
       key_code(0),
-      usb_key_code(0),
+      code(),
       character_text(),
       composition_target_segment(-1),
       composition_selection_start(0),
       composition_selection_end(0),
       touches(),
       changed_touches(),
-      target_touches() {
-}
+      target_touches() {}
 
-InputEventData::~InputEventData() {
-}
+InputEventData::~InputEventData() {}
 
 PPB_InputEvent_Shared::PPB_InputEvent_Shared(ResourceObjectType type,
                                              PP_Instance instance,
                                              const InputEventData& data)
-    : Resource(type, instance),
-      data_(data) {
-}
+    : Resource(type, instance), data_(data) {}
 
 PPB_InputEvent_API* PPB_InputEvent_Shared::AsPPB_InputEvent_API() {
   return this;
@@ -51,17 +47,13 @@ const InputEventData& PPB_InputEvent_Shared::GetInputEventData() const {
   return data_;
 }
 
-PP_InputEvent_Type PPB_InputEvent_Shared::GetType() {
-  return data_.event_type;
-}
+PP_InputEvent_Type PPB_InputEvent_Shared::GetType() { return data_.event_type; }
 
 PP_TimeTicks PPB_InputEvent_Shared::GetTimeStamp() {
   return data_.event_time_stamp;
 }
 
-uint32_t PPB_InputEvent_Shared::GetModifiers() {
-  return data_.event_modifiers;
-}
+uint32_t PPB_InputEvent_Shared::GetModifiers() { return data_.event_modifiers; }
 
 PP_InputEvent_MouseButton PPB_InputEvent_Shared::GetMouseButton() {
   return data_.mouse_button;
@@ -91,21 +83,14 @@ PP_Bool PPB_InputEvent_Shared::GetWheelScrollByPage() {
   return PP_FromBool(data_.wheel_scroll_by_page);
 }
 
-uint32_t PPB_InputEvent_Shared::GetKeyCode() {
-  return data_.key_code;
-}
+uint32_t PPB_InputEvent_Shared::GetKeyCode() { return data_.key_code; }
 
 PP_Var PPB_InputEvent_Shared::GetCharacterText() {
   return StringVar::StringToPPVar(data_.character_text);
 }
 
-PP_Bool PPB_InputEvent_Shared::SetUsbKeyCode(uint32_t usb_key_code) {
-  data_.usb_key_code = usb_key_code;
-  return PP_TRUE;
-}
-
-uint32_t PPB_InputEvent_Shared::GetUsbKeyCode() {
-  return data_.usb_key_code;
+PP_Var PPB_InputEvent_Shared::GetCode() {
+  return StringVar::StringToPPVar(data_.code);
 }
 
 uint32_t PPB_InputEvent_Shared::GetIMESegmentNumber() {
@@ -206,7 +191,7 @@ PP_TouchPoint PPB_InputEvent_Shared::GetTouchById(PP_TouchListType list,
   return PP_MakeTouchPoint();
 }
 
-//static
+// static
 PP_Resource PPB_InputEvent_Shared::CreateIMEInputEvent(
     ResourceObjectType type,
     PP_Instance instance,
@@ -244,7 +229,7 @@ PP_Resource PPB_InputEvent_Shared::CreateIMEInputEvent(
   return (new PPB_InputEvent_Shared(type, instance, data))->GetReference();
 }
 
-//static
+// static
 PP_Resource PPB_InputEvent_Shared::CreateKeyboardInputEvent(
     ResourceObjectType type,
     PP_Instance instance,
@@ -252,7 +237,8 @@ PP_Resource PPB_InputEvent_Shared::CreateKeyboardInputEvent(
     PP_TimeTicks time_stamp,
     uint32_t modifiers,
     uint32_t key_code,
-    struct PP_Var character_text) {
+    struct PP_Var character_text,
+    struct PP_Var code) {
   if (event_type != PP_INPUTEVENT_TYPE_RAWKEYDOWN &&
       event_type != PP_INPUTEVENT_TYPE_KEYDOWN &&
       event_type != PP_INPUTEVENT_TYPE_KEYUP &&
@@ -270,11 +256,17 @@ PP_Resource PPB_InputEvent_Shared::CreateKeyboardInputEvent(
       return 0;
     data.character_text = text_str->value();
   }
+  if (code.type == PP_VARTYPE_STRING) {
+    StringVar* code_str = StringVar::FromPPVar(code);
+    if (!code_str)
+      return 0;
+    data.code = code_str->value();
+  }
 
   return (new PPB_InputEvent_Shared(type, instance, data))->GetReference();
 }
 
-//static
+// static
 PP_Resource PPB_InputEvent_Shared::CreateMouseInputEvent(
     ResourceObjectType type,
     PP_Instance instance,
@@ -304,7 +296,7 @@ PP_Resource PPB_InputEvent_Shared::CreateMouseInputEvent(
   return (new PPB_InputEvent_Shared(type, instance, data))->GetReference();
 }
 
-//static
+// static
 PP_Resource PPB_InputEvent_Shared::CreateWheelInputEvent(
     ResourceObjectType type,
     PP_Instance instance,

@@ -13,50 +13,53 @@
 
 class ChromeAppHostDistribution : public BrowserDistribution {
  public:
-  virtual string16 GetAppGuid() OVERRIDE;
+  virtual base::string16 GetAppGuid() OVERRIDE;
 
-  virtual string16 GetBaseAppName() OVERRIDE;
+  virtual base::string16 GetDisplayName() OVERRIDE;
 
-  virtual string16 GetAppShortCutName() OVERRIDE;
+  virtual base::string16 GetBrowserProgIdPrefix() OVERRIDE;
 
-  virtual string16 GetAlternateApplicationName() OVERRIDE;
+  virtual base::string16 GetBrowserProgIdDesc() OVERRIDE;
 
-  virtual string16 GetBaseAppId() OVERRIDE;
+  // This can only be called with SHORTCUT_APP_LAUNCHER for |shortcut_type|.
+  virtual base::string16 GetShortcutName(ShortcutType shortcut_type) OVERRIDE;
 
-  virtual string16 GetInstallSubDir() OVERRIDE;
+  virtual base::string16 GetIconFilename() OVERRIDE;
 
-  virtual string16 GetPublisherName() OVERRIDE;
+  virtual base::string16 GetBaseAppName() OVERRIDE;
 
-  virtual string16 GetAppDescription() OVERRIDE;
+  virtual base::string16 GetBaseAppId() OVERRIDE;
 
-  virtual string16 GetLongAppDescription() OVERRIDE;
+  virtual base::string16 GetInstallSubDir() OVERRIDE;
+
+  virtual base::string16 GetPublisherName() OVERRIDE;
+
+  virtual base::string16 GetAppDescription() OVERRIDE;
+
+  virtual base::string16 GetLongAppDescription() OVERRIDE;
 
   virtual std::string GetSafeBrowsingName() OVERRIDE;
 
-  virtual string16 GetStateKey() OVERRIDE;
+  virtual base::string16 GetStateKey() OVERRIDE;
 
-  virtual string16 GetStateMediumKey() OVERRIDE;
-
-  virtual string16 GetStatsServerURL() OVERRIDE;
+  virtual base::string16 GetStateMediumKey() OVERRIDE;
 
   virtual std::string GetNetworkStatsServer() const OVERRIDE;
 
   virtual std::string GetHttpPipeliningTestServer() const OVERRIDE;
 
-  virtual string16 GetUninstallLinkName() OVERRIDE;
+  virtual base::string16 GetUninstallLinkName() OVERRIDE;
 
-  virtual string16 GetUninstallRegPath() OVERRIDE;
+  virtual base::string16 GetUninstallRegPath() OVERRIDE;
 
-  virtual string16 GetVersionKey() OVERRIDE;
+  virtual base::string16 GetVersionKey() OVERRIDE;
 
-  virtual bool CanSetAsDefault() OVERRIDE;
+  virtual DefaultBrowserControlPolicy GetDefaultBrowserControlPolicy() OVERRIDE;
 
   virtual bool CanCreateDesktopShortcuts() OVERRIDE;
 
-  virtual string16 GetIconFilename() OVERRIDE;
-
   virtual bool GetCommandExecuteImplClsid(
-      string16* handler_class_uuid) OVERRIDE;
+      base::string16* handler_class_uuid) OVERRIDE;
 
   virtual void UpdateInstallStatus(bool system_install,
       installer::ArchiveType archive_type,

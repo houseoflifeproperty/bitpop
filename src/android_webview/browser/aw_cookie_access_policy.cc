@@ -7,9 +7,11 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/public/browser/browser_thread.h"
+#include "net/base/net_errors.h"
 
 using base::AutoLock;
 using content::BrowserThread;
+using net::StaticCookiePolicy;
 
 namespace android_webview {
 
@@ -21,7 +23,8 @@ AwCookieAccessPolicy::~AwCookieAccessPolicy() {
 }
 
 AwCookieAccessPolicy::AwCookieAccessPolicy()
-    : allow_access_(false) {
+    : allow_access_(true),
+      allow_third_party_access_(true) {
 }
 
 AwCookieAccessPolicy* AwCookieAccessPolicy::GetInstance() {
@@ -38,15 +41,25 @@ void AwCookieAccessPolicy::SetGlobalAllowAccess(bool allow) {
   allow_access_ = allow;
 }
 
+bool AwCookieAccessPolicy::GetThirdPartyAllowAccess() {
+  AutoLock lock(lock_);
+  return allow_third_party_access_;
+}
+
+void AwCookieAccessPolicy::SetThirdPartyAllowAccess(bool allow) {
+  AutoLock lock(lock_);
+  allow_third_party_access_ = allow;
+}
+
 bool AwCookieAccessPolicy::OnCanGetCookies(const net::URLRequest& request,
                                            const net::CookieList& cookie_list) {
-  return GetGlobalAllowAccess();
+  return AllowGet(request.url(), request.first_party_for_cookies());
 }
 
 bool AwCookieAccessPolicy::OnCanSetCookie(const net::URLRequest& request,
                                           const std::string& cookie_line,
                                           net::CookieOptions* options) {
-  return GetGlobalAllowAccess();
+  return AllowSet(request.url(), request.first_party_for_cookies());
 }
 
 bool AwCookieAccessPolicy::AllowGetCookie(const GURL& url,
@@ -54,8 +67,8 @@ bool AwCookieAccessPolicy::AllowGetCookie(const GURL& url,
                                           const net::CookieList& cookie_list,
                                           content::ResourceContext* context,
                                           int render_process_id,
-                                          int render_view_id) {
-  return GetGlobalAllowAccess();
+                                          int render_frame_id) {
+  return AllowGet(url, first_party);
 }
 
 bool AwCookieAccessPolicy::AllowSetCookie(const GURL& url,
@@ -63,9 +76,28 @@ bool AwCookieAccessPolicy::AllowSetCookie(const GURL& url,
                                           const std::string& cookie_line,
                                           content::ResourceContext* context,
                                           int render_process_id,
-                                          int render_view_id,
+                                          int render_frame_id,
                                           net::CookieOptions* options) {
-  return GetGlobalAllowAccess();
+  return AllowSet(url, first_party);
+}
+
+StaticCookiePolicy::Type AwCookieAccessPolicy::GetPolicy() {
+  if (!GetGlobalAllowAccess()) {
+    return StaticCookiePolicy::BLOCK_ALL_COOKIES;
+  } else if (!GetThirdPartyAllowAccess()) {
+    return StaticCookiePolicy::BLOCK_ALL_THIRD_PARTY_COOKIES;
+  }
+  return StaticCookiePolicy::ALLOW_ALL_COOKIES;
+}
+
+bool AwCookieAccessPolicy::AllowSet(const GURL& url, const GURL& first_party) {
+  return StaticCookiePolicy(GetPolicy()).CanSetCookie(url, first_party)
+      == net::OK;
+}
+
+bool AwCookieAccessPolicy::AllowGet(const GURL& url, const GURL& first_party) {
+  return StaticCookiePolicy(GetPolicy()).CanGetCookies(url, first_party)
+      == net::OK;
 }
 
 }  // namespace android_webview

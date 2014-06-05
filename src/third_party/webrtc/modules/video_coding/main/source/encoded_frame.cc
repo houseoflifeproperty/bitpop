@@ -8,10 +8,10 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "encoded_frame.h"
-#include "generic_encoder.h"
-#include "jitter_buffer_common.h"
-#include "video_coding_defines.h"
+#include "webrtc/modules/video_coding/main/interface/video_coding_defines.h"
+#include "webrtc/modules/video_coding/main/source/encoded_frame.h"
+#include "webrtc/modules/video_coding/main/source/generic_encoder.h"
+#include "webrtc/modules/video_coding/main/source/jitter_buffer_common.h"
 
 namespace webrtc {
 
@@ -104,7 +104,7 @@ void VCMEncodedFrame::CopyCodecSpecific(const RTPVideoHeader* header)
     {
         switch (header->codec)
         {
-            case kRTPVideoVP8:
+            case kRtpVideoVp8:
             {
                 if (_codecSpecificInfo.codecType != kVideoCodecVP8)
                 {
@@ -149,40 +149,12 @@ const RTPFragmentationHeader* VCMEncodedFrame::FragmentationHeader() const {
   return &_fragmentation;
 }
 
-WebRtc_Word32
-VCMEncodedFrame::Store(VCMFrameStorageCallback& storeCallback) const
-{
-    EncodedVideoData frameToStore;
-    frameToStore.codec = _codec;
-    if (_buffer != NULL)
-    {
-        frameToStore.VerifyAndAllocate(_length);
-        memcpy(frameToStore.payloadData, _buffer, _length);
-        frameToStore.payloadSize = _length;
-    }
-    frameToStore.completeFrame = _completeFrame;
-    frameToStore.encodedWidth = _encodedWidth;
-    frameToStore.encodedHeight = _encodedHeight;
-    frameToStore.frameType = ConvertFrameType(_frameType);
-    frameToStore.missingFrame = _missingFrame;
-    frameToStore.payloadType = _payloadType;
-    frameToStore.renderTimeMs = _renderTimeMs;
-    frameToStore.timeStamp = _timeStamp;
-    storeCallback.StoreReceivedFrame(frameToStore);
-    return VCM_OK;
-}
-
-WebRtc_Word32
-VCMEncodedFrame::VerifyAndAllocate(const WebRtc_UWord32 minimumSize)
+void VCMEncodedFrame::VerifyAndAllocate(const uint32_t minimumSize)
 {
     if(minimumSize > _size)
     {
         // create buffer of sufficient size
-        WebRtc_UWord8* newBuffer = new WebRtc_UWord8[minimumSize];
-        if (newBuffer == NULL)
-        {
-            return -1;
-        }
+        uint8_t* newBuffer = new uint8_t[minimumSize];
         if(_buffer)
         {
             // copy old data
@@ -192,38 +164,20 @@ VCMEncodedFrame::VerifyAndAllocate(const WebRtc_UWord32 minimumSize)
         _buffer = newBuffer;
         _size = minimumSize;
     }
-    return 0;
 }
 
 webrtc::FrameType VCMEncodedFrame::ConvertFrameType(VideoFrameType frameType)
 {
-    switch(frameType)
-    {
+  switch(frameType) {
     case kKeyFrame:
-        {
-            return  kVideoFrameKey;
-        }
+      return  kVideoFrameKey;
     case kDeltaFrame:
-        {
-            return kVideoFrameDelta;
-        }
-    case kGoldenFrame:
-        {
-            return kVideoFrameGolden;
-        }
-    case kAltRefFrame:
-        {
-            return kVideoFrameAltRef;
-        }
+      return kVideoFrameDelta;
     case kSkipFrame:
-        {
-            return kFrameEmpty;
-        }
+      return kFrameEmpty;
     default:
-        {
-            return kVideoFrameDelta;
-        }
-    }
+      return kVideoFrameDelta;
+  }
 }
 
 VideoFrameType VCMEncodedFrame::ConvertFrameType(webrtc::FrameType frame_type) {
@@ -232,10 +186,6 @@ VideoFrameType VCMEncodedFrame::ConvertFrameType(webrtc::FrameType frame_type) {
       return kKeyFrame;
     case kVideoFrameDelta:
       return kDeltaFrame;
-    case kVideoFrameGolden:
-      return kGoldenFrame;
-    case kVideoFrameAltRef:
-      return kAltRefFrame;
     default:
       assert(false);
       return kDeltaFrame;

@@ -12,6 +12,14 @@
 class Profile;
 class TabModel;
 
+namespace chrome {
+struct NavigateParams;
+}
+
+namespace content {
+class WebContents;
+}
+
 // Stores a list of all TabModel objects.
 class TabModelList {
  public:
@@ -19,10 +27,12 @@ class TabModelList {
   typedef TabModelVector::iterator iterator;
   typedef TabModelVector::const_iterator const_iterator;
 
+  static void HandlePopupNavigation(chrome::NavigateParams* params);
   static void AddTabModel(TabModel* tab_model);
   static void RemoveTabModel(TabModel* tab_model);
 
-  static TabModel* GetTabModelWithProfile(Profile* profile);
+  static TabModel* GetTabModelForWebContents(
+      content::WebContents* web_contents);
   static TabModel* FindTabModelWithId(SessionID::id_type desired_id);
   static bool IsOffTheRecordSessionActive();
 
@@ -30,6 +40,8 @@ class TabModelList {
   static const_iterator end();
   static bool empty();
   static size_t size();
+
+  static TabModel* get(size_t index);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(TabModelList);
